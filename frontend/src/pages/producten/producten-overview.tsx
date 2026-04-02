@@ -1,10 +1,10 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { Search, ChevronDown, ChevronRight, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { formatCurrency, formatNumber } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
-import { useProducten } from '@/hooks/use-producten'
+import { useProducten, useUpdateProductType } from '@/hooks/use-producten'
 import { useRollenVoorProduct } from '@/hooks/use-producten'
 import type { ProductType, ProductRow as ProductRowData, ProductSortField, SortDirection } from '@/lib/supabase/queries/producten'
 
@@ -18,22 +18,81 @@ const TYPE_OPTIONS: { value: ProductType | 'alle'; label: string }[] = [
 
 const COL_COUNT = 9
 
+const TYPE_LABELS: Record<ProductType, string> = {
+  vast: 'Vaste maat',
+  staaltje: 'Staaltje',
+  rol: 'Rol',
+  overig: 'Overig',
+}
+
+const TYPE_STYLES: Record<ProductType, string> = {
+  vast: 'bg-blue-100 text-blue-700',
+  staaltje: 'bg-purple-100 text-purple-700',
+  rol: 'bg-amber-100 text-amber-700',
+  overig: 'bg-slate-100 text-slate-500',
+}
+
 function ProductTypeBadge({ type }: { type: ProductType | null }) {
   if (!type) return null
   return (
-    <span className={cn(
-      'px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap',
-      type === 'vast' && 'bg-blue-100 text-blue-700',
-      type === 'staaltje' && 'bg-purple-100 text-purple-700',
-      type === 'rol' && 'bg-amber-100 text-amber-700',
-      type === 'overig' && 'bg-slate-100 text-slate-500',
-    )}>
-      {type === 'vast' ? 'Vaste maat' : type === 'staaltje' ? 'Staaltje' : type === 'rol' ? 'Rol' : 'Overig'}
+    <span className={cn('px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap', TYPE_STYLES[type])}>
+      {TYPE_LABELS[type]}
     </span>
   )
 }
 
 export { ProductTypeBadge }
+
+function EditableProductType({ artikelnr, type }: { artikelnr: string; type: ProductType | null }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const mutation = useUpdateProductType()
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  const handleSelect = (newType: ProductType) => {
+    if (newType !== type) {
+      mutation.mutate({ artikelnr, productType: newType })
+    }
+    setOpen(false)
+  }
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen(!open)}
+        className="cursor-pointer hover:ring-2 hover:ring-slate-300 rounded-full transition-all"
+        title="Klik om type te wijzigen"
+      >
+        <ProductTypeBadge type={type} />
+      </button>
+      {open && (
+        <div className="absolute z-50 top-full left-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg py-1 min-w-[130px]">
+          {(['vast', 'staaltje', 'rol', 'overig'] as ProductType[]).map((t) => (
+            <button
+              key={t}
+              onClick={() => handleSelect(t)}
+              className={cn(
+                'w-full text-left px-3 py-1.5 text-sm hover:bg-slate-50 flex items-center gap-2',
+                t === type && 'font-medium bg-slate-50',
+              )}
+            >
+              <span className={cn('w-2 h-2 rounded-full', TYPE_STYLES[t])} />
+              {TYPE_LABELS[t]}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 function SortIcon({ field, sortBy, sortDir }: { field: ProductSortField; sortBy: ProductSortField; sortDir: SortDirection }) {
   if (field !== sortBy) return <ArrowUpDown size={14} className="text-slate-300" />
@@ -157,7 +216,7 @@ function ProductRow({ p, expanded, onToggle }: { p: ProductRowData; expanded: bo
         <td className="px-4 py-3 text-xs font-mono text-slate-500">{p.karpi_code ?? '—'}</td>
         <td className="px-4 py-3">{p.omschrijving}</td>
         <td className="px-4 py-3">
-          <ProductTypeBadge type={p.product_type} />
+          <EditableProductType artikelnr={p.artikelnr} type={p.product_type} />
         </td>
         <td className="px-4 py-3">
           {p.zoeksleutel && (

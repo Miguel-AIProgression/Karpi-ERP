@@ -1,5 +1,12 @@
 # Changelog — RugFlow ERP
 
+## 2026-04-02 (update 4)
+
+### Product type inline bewerkbaar
+- **Type badge** in producten-overzicht is nu klikbaar — opent dropdown om type te wijzigen
+- Nieuwe `updateProductType()` query + `useUpdateProductType()` mutation hook
+- Na wijziging wordt de productenlijst automatisch ververst
+
 ## 2026-04-02 (update 3)
 
 ### Staaltjes herkenning (product_type)

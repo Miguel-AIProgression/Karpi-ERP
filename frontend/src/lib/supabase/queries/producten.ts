@@ -94,6 +94,16 @@ export async function fetchProductDetail(artikelnr: string): Promise<ProductDeta
   return data as ProductDetail
 }
 
+/** Update product type */
+export async function updateProductType(artikelnr: string, productType: ProductType) {
+  const { error } = await supabase
+    .from('producten')
+    .update({ product_type: productType })
+    .eq('artikelnr', artikelnr)
+
+  if (error) throw error
+}
+
 /** Fetch rollen for a product */
 export async function fetchRollenVoorProduct(artikelnr: string): Promise<RolRow[]> {
   const { data, error } = await supabase
