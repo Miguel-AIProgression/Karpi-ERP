@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
-import { fetchProducten, fetchProductDetail, fetchRollenVoorProduct, type ProductType } from '@/lib/supabase/queries/producten'
+import { fetchProducten, fetchProductDetail, fetchRollenVoorProduct, type ProductType, type ProductSortField, type SortDirection } from '@/lib/supabase/queries/producten'
 
-export function useProducten(params: { search?: string; page?: number; productType?: ProductType | 'alle' }) {
+export function useProducten(params: { search?: string; page?: number; productType?: ProductType | 'alle'; sortBy?: ProductSortField; sortDir?: SortDirection }) {
   return useQuery({
     queryKey: ['producten', params],
     queryFn: () => fetchProducten(params),

@@ -1,18 +1,22 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Search } from 'lucide-react'
+import { Search, ChevronDown, ChevronRight, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { formatCurrency, formatNumber } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
 import { useProducten } from '@/hooks/use-producten'
-import type { ProductType } from '@/lib/supabase/queries/producten'
+import { useRollenVoorProduct } from '@/hooks/use-producten'
+import type { ProductType, ProductRow as ProductRowData, ProductSortField, SortDirection } from '@/lib/supabase/queries/producten'
 
 const TYPE_OPTIONS: { value: ProductType | 'alle'; label: string }[] = [
   { value: 'alle', label: 'Alle' },
   { value: 'vast', label: 'Vaste maten' },
+  { value: 'staaltje', label: 'Staaltjes' },
   { value: 'rol', label: 'Rolproducten' },
   { value: 'overig', label: 'Overig' },
 ]
+
+const COL_COUNT = 9
 
 function ProductTypeBadge({ type }: { type: ProductType | null }) {
   if (!type) return null
@@ -20,24 +24,210 @@ function ProductTypeBadge({ type }: { type: ProductType | null }) {
     <span className={cn(
       'px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap',
       type === 'vast' && 'bg-blue-100 text-blue-700',
+      type === 'staaltje' && 'bg-purple-100 text-purple-700',
       type === 'rol' && 'bg-amber-100 text-amber-700',
       type === 'overig' && 'bg-slate-100 text-slate-500',
     )}>
-      {type === 'vast' ? 'Vaste maat' : type === 'rol' ? 'Rol' : 'Overig'}
+      {type === 'vast' ? 'Vaste maat' : type === 'staaltje' ? 'Staaltje' : type === 'rol' ? 'Rol' : 'Overig'}
     </span>
   )
 }
 
 export { ProductTypeBadge }
 
+function SortIcon({ field, sortBy, sortDir }: { field: ProductSortField; sortBy: ProductSortField; sortDir: SortDirection }) {
+  if (field !== sortBy) return <ArrowUpDown size={14} className="text-slate-300" />
+  return sortDir === 'asc'
+    ? <ArrowUp size={14} className="text-terracotta-500" />
+    : <ArrowDown size={14} className="text-terracotta-500" />
+}
+
+function SortHeader({ field, label, align = 'left', sortBy, sortDir, onSort }: {
+  field: ProductSortField
+  label: string
+  align?: 'left' | 'right'
+  sortBy: ProductSortField
+  sortDir: SortDirection
+  onSort: (field: ProductSortField) => void
+}) {
+  return (
+    <th
+      className={`text-${align} px-4 py-3 font-medium text-slate-600 cursor-pointer select-none hover:text-slate-900 transition-colors`}
+      onClick={() => onSort(field)}
+    >
+      <span className={`inline-flex items-center gap-1 ${align === 'right' ? 'justify-end' : ''}`}>
+        {label}
+        <SortIcon field={field} sortBy={sortBy} sortDir={sortDir} />
+      </span>
+    </th>
+  )
+}
+
+function RollenExpandRow({ artikelnr }: { artikelnr: string }) {
+  const { data: rollen, isLoading } = useRollenVoorProduct(artikelnr)
+
+  if (isLoading) {
+    return (
+      <tr>
+        <td colSpan={COL_COUNT} className="px-8 py-3 bg-amber-50/50 text-sm text-slate-400">
+          Rollen laden...
+        </td>
+      </tr>
+    )
+  }
+
+  if (!rollen || rollen.length === 0) {
+    return (
+      <tr>
+        <td colSpan={COL_COUNT} className="px-8 py-3 bg-amber-50/50 text-sm text-slate-400">
+          Geen rollen gevonden
+        </td>
+      </tr>
+    )
+  }
+
+  return (
+    <>
+      <tr className="bg-amber-50/50">
+        <td colSpan={COL_COUNT} className="px-0 py-0">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-amber-200/50">
+                <th className="text-left pl-12 pr-4 py-2 font-medium text-slate-500 text-xs">Rolnummer</th>
+                <th className="text-right px-4 py-2 font-medium text-slate-500 text-xs">Lengte</th>
+                <th className="text-right px-4 py-2 font-medium text-slate-500 text-xs">Breedte</th>
+                <th className="text-right px-4 py-2 font-medium text-slate-500 text-xs">m²</th>
+                <th className="text-right px-4 py-2 font-medium text-slate-500 text-xs">€/m²</th>
+                <th className="text-right px-4 py-2 font-medium text-slate-500 text-xs">Waarde</th>
+                <th className="text-left px-4 py-2 font-medium text-slate-500 text-xs">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rollen.map((r) => (
+                <tr key={r.id} className="border-b border-amber-100/50 hover:bg-amber-100/30">
+                  <td className="pl-12 pr-4 py-2 font-mono text-xs">{r.rolnummer}</td>
+                  <td className="px-4 py-2 text-right">{r.lengte_cm ? `${formatNumber(r.lengte_cm)} cm` : '—'}</td>
+                  <td className="px-4 py-2 text-right">{r.breedte_cm ? `${formatNumber(r.breedte_cm)} cm` : '—'}</td>
+                  <td className="px-4 py-2 text-right">{r.oppervlak_m2?.toFixed(2) ?? '—'}</td>
+                  <td className="px-4 py-2 text-right">{formatCurrency(r.vvp_m2)}</td>
+                  <td className="px-4 py-2 text-right">{formatCurrency(r.waarde)}</td>
+                  <td className="px-4 py-2">
+                    <span className={cn(
+                      'px-2 py-0.5 rounded-full text-xs',
+                      r.status === 'beschikbaar' && 'bg-emerald-100 text-emerald-700',
+                      r.status === 'gereserveerd' && 'bg-amber-100 text-amber-700',
+                      r.status === 'verkocht' && 'bg-slate-100 text-slate-500',
+                      r.status === 'gesneden' && 'bg-blue-100 text-blue-700',
+                      r.status === 'reststuk' && 'bg-purple-100 text-purple-700',
+                    )}>
+                      {r.status}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </td>
+      </tr>
+    </>
+  )
+}
+
+function ProductRow({ p, expanded, onToggle }: { p: ProductRowData; expanded: boolean; onToggle: () => void }) {
+  const isRol = p.product_type === 'rol'
+  const hasRollen = isRol && p.aantal_rollen > 0
+
+  return (
+    <>
+      <tr className={cn('border-b border-slate-50 hover:bg-slate-50', expanded && 'bg-amber-50/30')}>
+        <td className="px-4 py-3">
+          <div className="flex items-center gap-1">
+            {hasRollen ? (
+              <button onClick={onToggle} className="text-slate-400 hover:text-slate-600 -ml-1 p-0.5">
+                {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              </button>
+            ) : (
+              <span className="w-[22px]" />
+            )}
+            <Link to={`/producten/${p.artikelnr}`} className="text-terracotta-500 hover:underline font-mono text-xs">
+              {p.artikelnr}
+            </Link>
+          </div>
+        </td>
+        <td className="px-4 py-3 text-xs font-mono text-slate-500">{p.karpi_code ?? '—'}</td>
+        <td className="px-4 py-3">{p.omschrijving}</td>
+        <td className="px-4 py-3">
+          <ProductTypeBadge type={p.product_type} />
+        </td>
+        <td className="px-4 py-3">
+          {p.zoeksleutel && (
+            <span className="px-2 py-0.5 rounded bg-slate-100 text-xs font-mono">{p.zoeksleutel}</span>
+          )}
+        </td>
+        <td className="px-4 py-3 text-right">
+          {hasRollen ? (
+            <button onClick={onToggle} className="font-medium text-amber-700 hover:text-amber-900 hover:underline cursor-pointer">
+              {p.aantal_rollen}
+            </button>
+          ) : isRol ? (
+            <span className="text-slate-300">—</span>
+          ) : (
+            <span className="text-slate-300">—</span>
+          )}
+        </td>
+        <td className="px-4 py-3 text-right">
+          {isRol ? (
+            <span title="m² beschikbaar">{p.totaal_oppervlak_m2 > 0 ? `${formatNumber(p.totaal_oppervlak_m2)} m²` : '—'}</span>
+          ) : (
+            formatNumber(p.voorraad)
+          )}
+        </td>
+        <td className="px-4 py-3 text-right">
+          {isRol ? (
+            <span className="text-slate-300">—</span>
+          ) : (
+            <span className={cn(
+              'font-medium',
+              p.vrije_voorraad <= 0 && 'text-rose-500',
+              p.vrije_voorraad > 0 && p.vrije_voorraad <= 10 && 'text-amber-500',
+              p.vrije_voorraad > 10 && 'text-emerald-600',
+            )}>
+              {formatNumber(p.vrije_voorraad)}
+            </span>
+          )}
+        </td>
+        <td className="px-4 py-3 text-right">{formatCurrency(p.verkoopprijs)}</td>
+      </tr>
+      {expanded && <RollenExpandRow artikelnr={p.artikelnr} />}
+    </>
+  )
+}
+
 export function ProductenOverviewPage() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(0)
   const [productType, setProductType] = useState<ProductType | 'alle'>('alle')
+  const [expandedArtikel, setExpandedArtikel] = useState<string | null>(null)
+  const [sortBy, setSortBy] = useState<ProductSortField>('artikelnr')
+  const [sortDir, setSortDir] = useState<SortDirection>('asc')
 
-  const { data, isLoading } = useProducten({ search, page, productType })
+  const handleSort = (field: ProductSortField) => {
+    if (field === sortBy) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortBy(field)
+      setSortDir(['verkoopprijs', 'voorraad', 'vrije_voorraad', 'aantal_rollen', 'totaal_oppervlak_m2'].includes(field) ? 'desc' : 'asc')
+    }
+    setPage(0)
+  }
+
+  const { data, isLoading } = useProducten({ search, page, productType, sortBy, sortDir })
   const producten = data?.producten ?? []
   const totalCount = data?.totalCount ?? 0
+
+  const toggleExpand = (artikelnr: string) => {
+    setExpandedArtikel(prev => prev === artikelnr ? null : artikelnr)
+  }
 
   return (
     <>
@@ -89,47 +279,25 @@ export function ProductenOverviewPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50">
-                <th className="text-left px-4 py-3 font-medium text-slate-600">Artikelnr</th>
-                <th className="text-left px-4 py-3 font-medium text-slate-600">Karpi-code</th>
-                <th className="text-left px-4 py-3 font-medium text-slate-600">Omschrijving</th>
+                <SortHeader field="artikelnr" label="Artikelnr" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+                <SortHeader field="karpi_code" label="Karpi-code" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+                <SortHeader field="omschrijving" label="Omschrijving" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
                 <th className="text-left px-4 py-3 font-medium text-slate-600">Type</th>
                 <th className="text-left px-4 py-3 font-medium text-slate-600">Kwaliteit</th>
-                <th className="text-right px-4 py-3 font-medium text-slate-600">Voorraad</th>
-                <th className="text-right px-4 py-3 font-medium text-slate-600">Vrij</th>
-                <th className="text-right px-4 py-3 font-medium text-slate-600">Prijs</th>
+                <SortHeader field="aantal_rollen" label="Rollen" align="right" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+                <SortHeader field="voorraad" label="Voorraad" align="right" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+                <SortHeader field="vrije_voorraad" label="Vrij" align="right" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+                <SortHeader field="verkoopprijs" label="Prijs" align="right" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
               </tr>
             </thead>
             <tbody>
               {producten.map((p) => (
-                <tr key={p.artikelnr} className="border-b border-slate-50 hover:bg-slate-50">
-                  <td className="px-4 py-3">
-                    <Link to={`/producten/${p.artikelnr}`} className="text-terracotta-500 hover:underline font-mono text-xs">
-                      {p.artikelnr}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3 text-xs font-mono text-slate-500">{p.karpi_code ?? '—'}</td>
-                  <td className="px-4 py-3">{p.omschrijving}</td>
-                  <td className="px-4 py-3">
-                    <ProductTypeBadge type={p.product_type} />
-                  </td>
-                  <td className="px-4 py-3">
-                    {p.zoeksleutel && (
-                      <span className="px-2 py-0.5 rounded bg-slate-100 text-xs font-mono">{p.zoeksleutel}</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-right">{formatNumber(p.voorraad)}</td>
-                  <td className="px-4 py-3 text-right">
-                    <span className={cn(
-                      'font-medium',
-                      p.vrije_voorraad <= 0 && 'text-rose-500',
-                      p.vrije_voorraad > 0 && p.vrije_voorraad <= 10 && 'text-amber-500',
-                      p.vrije_voorraad > 10 && 'text-emerald-600',
-                    )}>
-                      {formatNumber(p.vrije_voorraad)}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right">{formatCurrency(p.verkoopprijs)}</td>
-                </tr>
+                <ProductRow
+                  key={p.artikelnr}
+                  p={p}
+                  expanded={expandedArtikel === p.artikelnr}
+                  onToggle={() => toggleExpand(p.artikelnr)}
+                />
               ))}
             </tbody>
           </table>

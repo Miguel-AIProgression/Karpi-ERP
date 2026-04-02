@@ -1,7 +1,9 @@
 import { supabase } from '../client'
 import { sanitizeSearch } from '@/lib/utils/sanitize'
 
-export type ProductType = 'vast' | 'rol' | 'overig'
+export type ProductType = 'vast' | 'rol' | 'overig' | 'staaltje'
+export type ProductSortField = 'artikelnr' | 'karpi_code' | 'omschrijving' | 'verkoopprijs' | 'voorraad' | 'vrije_voorraad' | 'aantal_rollen' | 'totaal_oppervlak_m2'
+export type SortDirection = 'asc' | 'desc'
 
 export interface ProductRow {
   artikelnr: string
@@ -15,6 +17,9 @@ export interface ProductRow {
   verkoopprijs: number | null
   actief: boolean
   product_type: ProductType | null
+  aantal_rollen: number
+  totaal_oppervlak_m2: number
+  totaal_waarde_rollen: number
 }
 
 export interface ProductDetail extends ProductRow {
@@ -46,14 +51,16 @@ export async function fetchProducten(params: {
   page?: number
   pageSize?: number
   productType?: ProductType | 'alle'
+  sortBy?: ProductSortField
+  sortDir?: SortDirection
 }) {
-  const { search, page = 0, pageSize = 50, productType } = params
+  const { search, page = 0, pageSize = 50, productType, sortBy = 'artikelnr', sortDir = 'asc' } = params
 
   let query = supabase
-    .from('producten')
-    .select('artikelnr, karpi_code, omschrijving, kwaliteit_code, kleur_code, zoeksleutel, voorraad, vrije_voorraad, verkoopprijs, actief, product_type', { count: 'exact' })
+    .from('producten_overzicht')
+    .select('artikelnr, karpi_code, omschrijving, kwaliteit_code, kleur_code, zoeksleutel, voorraad, vrije_voorraad, verkoopprijs, actief, product_type, aantal_rollen, totaal_oppervlak_m2, totaal_waarde_rollen', { count: 'exact' })
     .eq('actief', true)
-    .order('artikelnr')
+    .order(sortBy, { ascending: sortDir === 'asc' })
     .range(page * pageSize, (page + 1) * pageSize - 1)
 
   if (productType && productType !== 'alle') {

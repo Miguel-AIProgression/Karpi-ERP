@@ -1,5 +1,13 @@
 # Changelog — RugFlow ERP
 
+## 2026-04-02 (update 3)
+
+### Staaltjes herkenning (product_type)
+- **Migratie 017**: producten met vaste afmetingen < 1m² krijgen `product_type = 'staaltje'`
+  - Afmeting wordt geparsed uit omschrijving (`CA: NNNxNNN`) — breedte × hoogte < 10.000 cm²
+- **Frontend**: nieuw filter tab "Staaltjes", paarse badge "Staaltje"
+- **ProductType**: uitgebreid met `'staaltje'` waarde
+
 ## 2026-04-02 (update 2)
 
 ### Product type onderscheid (vast vs rol)

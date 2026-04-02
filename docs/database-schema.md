@@ -182,7 +182,7 @@ Artikelen uit het oude systeem.
 | zoeksleutel | TEXT | kwaliteit_code + "_" + kleur_code |
 | inkoopprijs, verkoopprijs | NUMERIC(10,2) | |
 | gewicht_kg | NUMERIC(8,2) | |
-| product_type | TEXT | 'vast' (CA:NNNxNNN), 'rol' (BREED), 'overig' |
+| product_type | TEXT | 'vast' (CA:NNNxNNN >= 1m²), 'staaltje' (CA:NNNxNNN < 1m²), 'rol' (BREED), 'overig' |
 | actief | BOOLEAN | Default true |
 
 ---

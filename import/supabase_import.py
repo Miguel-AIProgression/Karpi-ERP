@@ -208,7 +208,12 @@ for _, r in df_producten.iterrows():
     if 'BREED' in oms.upper() or 'BREED' in kcode.upper():
         ptype = 'rol'
     elif 'CA:' in oms.upper():
-        ptype = 'vast'
+        import re
+        m = re.search(r'(?i)CA:\s*(\d+)\s*[xX]\s*(\d+)', oms)
+        if m and int(m.group(1)) * int(m.group(2)) < 10000:
+            ptype = 'staaltje'
+        else:
+            ptype = 'vast'
     else:
         ptype = 'overig'
 
