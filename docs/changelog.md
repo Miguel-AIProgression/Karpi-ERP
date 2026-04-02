@@ -1,11 +1,37 @@
 # Changelog — RugFlow ERP
 
+## 2026-04-02 (update 6)
+
+### Magazijnlocaties op producten
+- **Migratie 019**: `locatie` kolom (TEXT) toegevoegd aan `producten` tabel
+- `producten_overzicht` view uitgebreid met locatie
+- **Import script** `import_locaties.py`: leest 5.606 locaties uit `Locaties123.xls`, slaat "Maatw." over (302 unieke locaties)
+- **Frontend**: locatie als sorteerbare kolom in producten-overzicht
+- Inline bewerkbaar: klik op locatie badge om te wijzigen of toe te voegen
+- Lege locaties tonen een "Locatie" placeholder bij hover
+
+## 2026-04-02 (update 5)
+
+### Uitwisselbaar-tab op producten overzicht
+- **Tab-navigatie** toegevoegd: "Collecties" (bestaande tabel) en "Uitwisselbaar"
+- Uitwisselbaar-tab toont alle collecties met 2+ kwaliteiten, gegroepeerd per uitwisselbare groep
+- Per kwaliteit worden kleurbadges getoond; gedeelde kleuren (in 2+ kwaliteiten) zijn blauw gemarkeerd met ketting-icoon
+- Nieuwe query `fetchUitwisselbareGroepen()` combineert collecties, kwaliteiten en producten-kleuren
+- Nieuwe hook `useUitwisselbareGroepen()` met 5 min staleTime
+- Nieuw component: `uitwisselbaar-tab.tsx`
+
 ## 2026-04-02 (update 4)
 
-### Product type inline bewerkbaar
+### Product type inline bewerkbaar + herclassificatie
 - **Type badge** in producten-overzicht is nu klikbaar — opent dropdown om type te wijzigen
 - Nieuwe `updateProductType()` query + `useUpdateProductType()` mutation hook
 - Na wijziging wordt de productenlijst automatisch ververst
+- **Migratie 018**: Herclassificatie van 1407 → 2 "overig" producten:
+  - 208 → vast (NNNxNNN >= 1m², ROND patronen)
+  - 86 → staaltje (NNNxNNN < 1m², tegels, zitkussens)
+  - 175 → rol (BR patroon, ROLLEN, typische rolbreedtes 145-500)
+  - 908 MAATWK placeholders gedeactiveerd
+  - 17 "NIET GEBRUIKEN" producten gedeactiveerd
 
 ## 2026-04-02 (update 3)
 

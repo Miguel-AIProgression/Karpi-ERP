@@ -183,6 +183,7 @@ Artikelen uit het oude systeem.
 | inkoopprijs, verkoopprijs | NUMERIC(10,2) | |
 | gewicht_kg | NUMERIC(8,2) | |
 | product_type | TEXT | 'vast' (CA:NNNxNNN >= 1m²), 'staaltje' (CA:NNNxNNN < 1m²), 'rol' (BREED), 'overig' |
+| locatie | TEXT | Magazijnlocatie (bijv. "A.01.L", "C.04.H"). Bron: Locaties123.xls |
 | actief | BOOLEAN | Default true |
 
 ---
@@ -441,6 +442,7 @@ Audit trail: wie heeft wat wanneer gedaan.
 
 | View | Doel |
 |------|------|
+| producten_overzicht | Producten + rollen-aggregatie (aantal_rollen, oppervlak, waarde) + locatie |
 | dashboard_stats | Aggregaties: producten, rollen, waarde, marge, open orders, klanten |
 | klant_omzet_ytd | Per klant: omzet YTD, % totaal, gem/maand, tier, vertegenwoordiger |
 | rollen_overzicht | Per kwaliteit/kleur: aantal, oppervlak, waarde |

@@ -1,12 +1,15 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { Search, ChevronDown, ChevronRight, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
+import { Search, ChevronDown, ChevronRight, ArrowUp, ArrowDown, ArrowUpDown, Link2, LayoutGrid, MapPin, Check, X, Pencil } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { formatCurrency, formatNumber } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
-import { useProducten, useUpdateProductType } from '@/hooks/use-producten'
+import { useProducten, useUpdateProductType, useUpdateProductLocatie } from '@/hooks/use-producten'
 import { useRollenVoorProduct } from '@/hooks/use-producten'
+import { UitwisselbaarTab } from './uitwisselbaar-tab'
 import type { ProductType, ProductRow as ProductRowData, ProductSortField, SortDirection } from '@/lib/supabase/queries/producten'
+
+type OverviewTab = 'collecties' | 'uitwisselbaar'
 
 const TYPE_OPTIONS: { value: ProductType | 'alle'; label: string }[] = [
   { value: 'alle', label: 'Alle' },
@@ -16,7 +19,7 @@ const TYPE_OPTIONS: { value: ProductType | 'alle'; label: string }[] = [
   { value: 'overig', label: 'Overig' },
 ]
 
-const COL_COUNT = 9
+const COL_COUNT = 10
 
 const TYPE_LABELS: Record<ProductType, string> = {
   vast: 'Vaste maat',
@@ -45,6 +48,7 @@ export { ProductTypeBadge }
 
 function EditableProductType({ artikelnr, type }: { artikelnr: string; type: ProductType | null }) {
   const [open, setOpen] = useState(false)
+  const [dropUp, setDropUp] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const mutation = useUpdateProductType()
 
@@ -57,6 +61,15 @@ function EditableProductType({ artikelnr, type }: { artikelnr: string; type: Pro
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
 
+  const handleOpen = () => {
+    if (!open && ref.current) {
+      const rect = ref.current.getBoundingClientRect()
+      const spaceBelow = window.innerHeight - rect.bottom
+      setDropUp(spaceBelow < 180)
+    }
+    setOpen(!open)
+  }
+
   const handleSelect = (newType: ProductType) => {
     if (newType !== type) {
       mutation.mutate({ artikelnr, productType: newType })
@@ -67,14 +80,21 @@ function EditableProductType({ artikelnr, type }: { artikelnr: string; type: Pro
   return (
     <div className="relative" ref={ref}>
       <button
-        onClick={() => setOpen(!open)}
+        onClick={handleOpen}
         className="cursor-pointer hover:ring-2 hover:ring-slate-300 rounded-full transition-all"
         title="Klik om type te wijzigen"
       >
         <ProductTypeBadge type={type} />
       </button>
       {open && (
-        <div className="absolute z-50 top-full left-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg py-1 min-w-[130px]">
+        <div className={cn(
+          'fixed z-50 bg-white border border-slate-200 rounded-lg shadow-lg py-1 min-w-[130px]',
+        )} style={{
+          left: ref.current ? ref.current.getBoundingClientRect().left : 0,
+          top: dropUp
+            ? (ref.current ? ref.current.getBoundingClientRect().top - 160 : 0)
+            : (ref.current ? ref.current.getBoundingClientRect().bottom + 4 : 0),
+        }}>
           {(['vast', 'staaltje', 'rol', 'overig'] as ProductType[]).map((t) => (
             <button
               key={t}
@@ -91,6 +111,75 @@ function EditableProductType({ artikelnr, type }: { artikelnr: string; type: Pro
         </div>
       )}
     </div>
+  )
+}
+
+function EditableLocatie({ artikelnr, locatie }: { artikelnr: string; locatie: string | null }) {
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState(locatie ?? '')
+  const inputRef = useRef<HTMLInputElement>(null)
+  const mutation = useUpdateProductLocatie()
+
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus()
+      inputRef.current.select()
+    }
+  }, [editing])
+
+  const handleSave = () => {
+    const trimmed = value.trim()
+    const newLocatie = trimmed || null
+    if (newLocatie !== locatie) {
+      mutation.mutate({ artikelnr, locatie: newLocatie })
+    }
+    setEditing(false)
+  }
+
+  const handleCancel = () => {
+    setValue(locatie ?? '')
+    setEditing(false)
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') handleSave()
+    if (e.key === 'Escape') handleCancel()
+  }
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1">
+        <input
+          ref={inputRef}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onBlur={handleSave}
+          className="w-20 px-1.5 py-0.5 text-xs font-mono border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-terracotta-400"
+          placeholder="A.01.L"
+        />
+      </div>
+    )
+  }
+
+  return (
+    <button
+      onClick={() => { setValue(locatie ?? ''); setEditing(true) }}
+      className="group flex items-center gap-1 cursor-pointer"
+      title="Klik om locatie te wijzigen"
+    >
+      {locatie ? (
+        <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-xs font-mono">
+          <MapPin size={11} />
+          {locatie}
+        </span>
+      ) : (
+        <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-slate-300 text-xs opacity-0 group-hover:opacity-100 transition-opacity">
+          <Pencil size={11} />
+          Locatie
+        </span>
+      )}
+    </button>
   )
 }
 
@@ -192,7 +281,7 @@ function RollenExpandRow({ artikelnr }: { artikelnr: string }) {
   )
 }
 
-function ProductRow({ p, expanded, onToggle }: { p: ProductRowData; expanded: boolean; onToggle: () => void }) {
+function ProductRow({ p, expanded, onToggle, showRollen }: { p: ProductRowData; expanded: boolean; onToggle: () => void; showRollen: boolean }) {
   const isRol = p.product_type === 'rol'
   const hasRollen = isRol && p.aantal_rollen > 0
 
@@ -223,17 +312,22 @@ function ProductRow({ p, expanded, onToggle }: { p: ProductRowData; expanded: bo
             <span className="px-2 py-0.5 rounded bg-slate-100 text-xs font-mono">{p.zoeksleutel}</span>
           )}
         </td>
-        <td className="px-4 py-3 text-right">
-          {hasRollen ? (
-            <button onClick={onToggle} className="font-medium text-amber-700 hover:text-amber-900 hover:underline cursor-pointer">
-              {p.aantal_rollen}
-            </button>
-          ) : isRol ? (
-            <span className="text-slate-300">—</span>
-          ) : (
-            <span className="text-slate-300">—</span>
-          )}
+        <td className="px-4 py-3">
+          <EditableLocatie artikelnr={p.artikelnr} locatie={p.locatie} />
         </td>
+        {showRollen && (
+          <td className="px-4 py-3 text-right">
+            {hasRollen ? (
+              <button onClick={onToggle} className="font-medium text-amber-700 hover:text-amber-900 hover:underline cursor-pointer">
+                {p.aantal_rollen}
+              </button>
+            ) : isRol ? (
+              <span className="text-slate-300">—</span>
+            ) : (
+              <span className="text-slate-300">—</span>
+            )}
+          </td>
+        )}
         <td className="px-4 py-3 text-right">
           {isRol ? (
             <span title="m² beschikbaar">{p.totaal_oppervlak_m2 > 0 ? `${formatNumber(p.totaal_oppervlak_m2)} m²` : '—'}</span>
@@ -263,6 +357,7 @@ function ProductRow({ p, expanded, onToggle }: { p: ProductRowData; expanded: bo
 }
 
 export function ProductenOverviewPage() {
+  const [activeTab, setActiveTab] = useState<OverviewTab>('collecties')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(0)
   const [productType, setProductType] = useState<ProductType | 'alle'>('alle')
@@ -283,6 +378,7 @@ export function ProductenOverviewPage() {
   const { data, isLoading } = useProducten({ search, page, productType, sortBy, sortDir })
   const producten = data?.producten ?? []
   const totalCount = data?.totalCount ?? 0
+  const showRollen = productType !== 'vast' && productType !== 'staaltje'
 
   const toggleExpand = (artikelnr: string) => {
     setExpandedArtikel(prev => prev === artikelnr ? null : artikelnr)
@@ -295,6 +391,38 @@ export function ProductenOverviewPage() {
         description={`${totalCount} producten`}
       />
 
+      {/* Tabs */}
+      <div className="flex gap-6 border-b border-slate-200 mb-6">
+        <button
+          onClick={() => setActiveTab('collecties')}
+          className={cn(
+            'flex items-center gap-2 pb-2.5 text-sm font-medium border-b-2 transition-colors -mb-px',
+            activeTab === 'collecties'
+              ? 'border-terracotta-500 text-terracotta-600'
+              : 'border-transparent text-slate-500 hover:text-slate-700',
+          )}
+        >
+          <LayoutGrid size={15} />
+          Collecties
+        </button>
+        <button
+          onClick={() => setActiveTab('uitwisselbaar')}
+          className={cn(
+            'flex items-center gap-2 pb-2.5 text-sm font-medium border-b-2 transition-colors -mb-px',
+            activeTab === 'uitwisselbaar'
+              ? 'border-terracotta-500 text-terracotta-600'
+              : 'border-transparent text-slate-500 hover:text-slate-700',
+          )}
+        >
+          <Link2 size={15} />
+          Uitwisselbaar
+        </button>
+      </div>
+
+      {activeTab === 'uitwisselbaar' ? (
+        <UitwisselbaarTab />
+      ) : (
+      <>
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-4 mb-6">
         {/* Search */}
@@ -343,7 +471,8 @@ export function ProductenOverviewPage() {
                 <SortHeader field="omschrijving" label="Omschrijving" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
                 <th className="text-left px-4 py-3 font-medium text-slate-600">Type</th>
                 <th className="text-left px-4 py-3 font-medium text-slate-600">Kwaliteit</th>
-                <SortHeader field="aantal_rollen" label="Rollen" align="right" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+                <SortHeader field="locatie" label="Locatie" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+                {showRollen && <SortHeader field="aantal_rollen" label="Rollen" align="right" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />}
                 <SortHeader field="voorraad" label="Voorraad" align="right" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
                 <SortHeader field="vrije_voorraad" label="Vrij" align="right" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
                 <SortHeader field="verkoopprijs" label="Prijs" align="right" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
@@ -356,6 +485,7 @@ export function ProductenOverviewPage() {
                   p={p}
                   expanded={expandedArtikel === p.artikelnr}
                   onToggle={() => toggleExpand(p.artikelnr)}
+                  showRollen={showRollen}
                 />
               ))}
             </tbody>
@@ -372,6 +502,8 @@ export function ProductenOverviewPage() {
             <button onClick={() => setPage(page + 1)} disabled={producten.length < 50} className="px-3 py-1.5 text-sm rounded-[var(--radius-sm)] border border-slate-200 disabled:opacity-50">Volgende</button>
           </div>
         </div>
+      )}
+      </>
       )}
     </>
   )
