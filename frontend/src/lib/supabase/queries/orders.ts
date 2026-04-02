@@ -177,11 +177,39 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
   const regels = data ?? []
   const debiteurNr = orderData?.debiteur_nr
 
+  // Helper to strip the joined 'producten' field and cast to OrderRegel
+  function toRegel(
+    r: (typeof regels)[number],
+    eigenNaamMap?: Map<string, string>,
+    klantArtMap?: Map<string, string>,
+  ): OrderRegel {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const row = r as any
+    const product = row.producten as { kwaliteit_code: string } | null
+    const kwalCode = product?.kwaliteit_code ?? null
+
+    return {
+      id: row.id,
+      regelnummer: row.regelnummer,
+      artikelnr: row.artikelnr,
+      karpi_code: row.karpi_code,
+      omschrijving: row.omschrijving,
+      omschrijving_2: row.omschrijving_2,
+      orderaantal: row.orderaantal,
+      te_leveren: row.te_leveren,
+      backorder: row.backorder,
+      prijs: row.prijs,
+      korting_pct: row.korting_pct,
+      bedrag: row.bedrag,
+      gewicht_kg: row.gewicht_kg,
+      vrije_voorraad: row.vrije_voorraad,
+      klant_eigen_naam: kwalCode && eigenNaamMap ? eigenNaamMap.get(kwalCode) ?? null : null,
+      klant_artikelnr: row.artikelnr && klantArtMap ? klantArtMap.get(row.artikelnr) ?? null : null,
+    }
+  }
+
   if (!debiteurNr) {
-    return regels.map((r) => {
-      const { producten: _, ...rest } = r as Record<string, unknown>
-      return rest as OrderRegel
-    })
+    return regels.map((r) => toRegel(r))
   }
 
   // Fetch all klanteigen namen for this customer in one query
@@ -204,15 +232,5 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
     (klantArtNrs ?? []).map((n: { artikelnr: string; klant_artikel: string }) => [n.artikelnr, n.klant_artikel])
   )
 
-  return regels.map((r) => {
-    const row = r as Record<string, unknown>
-    const product = row.producten as { kwaliteit_code: string } | null
-    const { producten: _, ...rest } = row
-
-    return {
-      ...rest,
-      klant_eigen_naam: product?.kwaliteit_code ? eigenNaamMap.get(product.kwaliteit_code) ?? null : null,
-      klant_artikelnr: row.artikelnr ? klantArtMap.get(row.artikelnr as string) ?? null : null,
-    } as OrderRegel
-  })
+  return regels.map((r) => toRegel(r, eigenNaamMap, klantArtMap))
 }
