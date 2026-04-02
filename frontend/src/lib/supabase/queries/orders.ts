@@ -69,13 +69,8 @@ export async function fetchOrders(params: {
   const { status, search, debiteurNr, page = 0, pageSize = 50 } = params
 
   let query = supabase
-    .from('orders')
-    .select(`
-      id, order_nr, oud_order_nr, debiteur_nr, klant_referentie,
-      orderdatum, afleverdatum, status, aantal_regels, totaal_bedrag,
-      totaal_gewicht, vertegenw_code,
-      debiteuren!debiteur_nr(naam)
-    `, { count: 'exact' })
+    .from('orders_list')
+    .select('*', { count: 'exact' })
     .order('orderdatum', { ascending: false })
     .range(page * pageSize, (page + 1) * pageSize - 1)
 
@@ -91,7 +86,7 @@ export async function fetchOrders(params: {
     const s = sanitizeSearch(search)
     if (s) {
       query = query.or(
-        `order_nr.ilike.%${s}%,klant_referentie.ilike.%${s}%`
+        `order_nr.ilike.%${s}%,klant_referentie.ilike.%${s}%,klant_naam.ilike.%${s}%`
       )
     }
   }
@@ -100,13 +95,7 @@ export async function fetchOrders(params: {
 
   if (error) throw error
 
-  const orders: OrderRow[] = (data ?? []).map((row: Record<string, unknown>) => ({
-    ...row,
-    klant_naam: (row.debiteuren as { naam: string } | null)?.naam ?? '—',
-    debiteuren: undefined,
-  })) as unknown as OrderRow[]
-
-  return { orders, totalCount: count ?? 0 }
+  return { orders: (data ?? []) as OrderRow[], totalCount: count ?? 0 }
 }
 
 /** Fetch status counts for tabs */
@@ -121,24 +110,40 @@ export async function fetchStatusCounts(): Promise<StatusCount[]> {
 
 /** Fetch single order with details */
 export async function fetchOrderDetail(id: number): Promise<OrderDetail> {
+  // Use orders table directly but fetch klant_naam and vertegenw_naam separately
   const { data, error } = await supabase
     .from('orders')
-    .select(`
-      *,
-      debiteuren!debiteur_nr(naam),
-      vertegenwoordigers(naam)
-    `)
+    .select('*')
     .eq('id', id)
     .single()
 
   if (error) throw error
 
-  const row = data as Record<string, unknown>
-  return {
-    ...row,
-    klant_naam: (row.debiteuren as { naam: string } | null)?.naam ?? '—',
-    vertegenw_naam: (row.vertegenwoordigers as { naam: string } | null)?.naam ?? undefined,
-  } as unknown as OrderDetail
+  const order = data as Record<string, unknown>
+
+  // Fetch klant naam
+  let klant_naam = '—'
+  if (order.debiteur_nr) {
+    const { data: deb } = await supabase
+      .from('debiteuren')
+      .select('naam')
+      .eq('debiteur_nr', order.debiteur_nr)
+      .single()
+    if (deb) klant_naam = deb.naam
+  }
+
+  // Fetch vertegenwoordiger naam
+  let vertegenw_naam: string | undefined
+  if (order.vertegenw_code) {
+    const { data: vtw } = await supabase
+      .from('vertegenwoordigers')
+      .select('naam')
+      .eq('code', order.vertegenw_code)
+      .single()
+    if (vtw) vertegenw_naam = vtw.naam
+  }
+
+  return { ...order, klant_naam, vertegenw_naam } as unknown as OrderDetail
 }
 
 /** Fetch order lines */
