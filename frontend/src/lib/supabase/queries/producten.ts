@@ -1,6 +1,8 @@
 import { supabase } from '../client'
 import { sanitizeSearch } from '@/lib/utils/sanitize'
 
+export type ProductType = 'vast' | 'rol' | 'overig'
+
 export interface ProductRow {
   artikelnr: string
   karpi_code: string | null
@@ -12,6 +14,7 @@ export interface ProductRow {
   vrije_voorraad: number
   verkoopprijs: number | null
   actief: boolean
+  product_type: ProductType | null
 }
 
 export interface ProductDetail extends ProductRow {
@@ -22,6 +25,7 @@ export interface ProductDetail extends ProductRow {
   besteld_inkoop: number
   inkoopprijs: number | null
   gewicht_kg: number | null
+  product_type: ProductType | null
 }
 
 export interface RolRow {
@@ -41,15 +45,20 @@ export async function fetchProducten(params: {
   search?: string
   page?: number
   pageSize?: number
+  productType?: ProductType | 'alle'
 }) {
-  const { search, page = 0, pageSize = 50 } = params
+  const { search, page = 0, pageSize = 50, productType } = params
 
   let query = supabase
     .from('producten')
-    .select('artikelnr, karpi_code, omschrijving, kwaliteit_code, kleur_code, zoeksleutel, voorraad, vrije_voorraad, verkoopprijs, actief', { count: 'exact' })
+    .select('artikelnr, karpi_code, omschrijving, kwaliteit_code, kleur_code, zoeksleutel, voorraad, vrije_voorraad, verkoopprijs, actief, product_type', { count: 'exact' })
     .eq('actief', true)
     .order('artikelnr')
     .range(page * pageSize, (page + 1) * pageSize - 1)
+
+  if (productType && productType !== 'alle') {
+    query = query.eq('product_type', productType)
+  }
 
   if (search) {
     const s = sanitizeSearch(search)

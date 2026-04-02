@@ -1,5 +1,19 @@
 # Changelog — RugFlow ERP
 
+## 2026-04-02 (update 2)
+
+### Product type onderscheid (vast vs rol)
+- Analyse van Karpi_Import.xlsx vs Karpi_Importv2.xlsx: v2 verwijdert 367 MAATWERK placeholders
+- **Migratie 015**: `product_type` kolom toegevoegd aan producten (`vast`, `rol`, `overig`)
+  - `vast` = vaste afmeting (omschrijving bevat `CA:NNNxNNN`)
+  - `rol` = rolproduct, maatwerk (omschrijving bevat `BREED`)
+  - `overig` = niet geclassificeerd
+  - MAATWERK placeholder producten verwijderd
+- **Config**: import wijst nu naar `Karpi_Importv2.xlsx`
+- **Import script**: leidt `product_type` af uit omschrijving/karpi_code bij import
+- **Frontend producten overzicht**: type filter (Alle/Vaste maten/Rolproducten/Overig) + kleur-badges
+- **Frontend product detail**: type badge naast productnaam
+
 ## 2026-04-02
 
 ### Project opgezet

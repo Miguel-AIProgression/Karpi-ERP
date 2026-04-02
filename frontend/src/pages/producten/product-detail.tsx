@@ -5,6 +5,7 @@ import { InfoField } from '@/components/ui/info-field'
 import { formatCurrency, formatNumber } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
 import { useProductDetail, useRollenVoorProduct } from '@/hooks/use-producten'
+import { ProductTypeBadge } from './producten-overview'
 
 export function ProductDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -32,7 +33,10 @@ export function ProductDetailPage() {
         </Link>
       </div>
 
-      <PageHeader title={product.omschrijving} description={`Artikelnr: ${product.artikelnr}`} />
+      <div className="flex items-center gap-3 mb-1">
+        <PageHeader title={product.omschrijving} description={`Artikelnr: ${product.artikelnr}`} />
+        <ProductTypeBadge type={product.product_type} />
+      </div>
 
       {/* Info card */}
       <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-6 mb-6">

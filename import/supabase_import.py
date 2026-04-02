@@ -202,6 +202,16 @@ upsert_batch("afleveradressen", afl_records, on_conflict="debiteur_nr,adres_nr")
 print("\n6  Producten...")
 prod_records = []
 for _, r in df_producten.iterrows():
+    # Bepaal product_type op basis van omschrijving/karpi_code
+    oms = str(r['Omschrijving']) if pd.notna(r['Omschrijving']) else ''
+    kcode = str(r['Karpi-code']) if pd.notna(r['Karpi-code']) else ''
+    if 'BREED' in oms.upper() or 'BREED' in kcode.upper():
+        ptype = 'rol'
+    elif 'CA:' in oms.upper():
+        ptype = 'vast'
+    else:
+        ptype = 'overig'
+
     prod_records.append({
         "artikelnr": str(int(r['Artikelnr'])) if pd.notna(r['Artikelnr']) else None,
         "karpi_code": clean(r['Karpi-code']),
@@ -216,6 +226,7 @@ for _, r in df_producten.iterrows():
         "kwaliteit_code": clean(r['Kwaliteit_code']),
         "kleur_code": clean(r['Kleur_code']),
         "zoeksleutel": clean(r['Zoeksleutel']),
+        "product_type": ptype,
     })
 
 # Filter out records without artikelnr

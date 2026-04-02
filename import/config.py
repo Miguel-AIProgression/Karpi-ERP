@@ -20,5 +20,5 @@ SUPABASE_KEY = _env.get("SUPABASE_SERVICE_ROLE_KEY", "")
 BASE_DIR = Path(__file__).parent.parent
 BRONDATA_DIR = BASE_DIR / "brondata"
 DEBITEUREN_FILE = BRONDATA_DIR / "debiteuren" / "Karpi_Debiteuren_Import.xlsx"
-VOORRAAD_FILE = BRONDATA_DIR / "voorraad" / "Karpi_Import.xlsx"
+VOORRAAD_FILE = BRONDATA_DIR / "voorraad" / "Karpi_Importv2.xlsx"
 LOGOS_DIR = BRONDATA_DIR / "logos"
