@@ -6,3 +6,4 @@ brondata/logos/
 brondata/*.zip
 brondata/**/*.xlsx
 brondata/**/*.xls
+*.xlsx
