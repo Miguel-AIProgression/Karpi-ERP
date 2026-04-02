@@ -460,6 +460,9 @@ Audit trail: wie heeft wat wanneer gedaan.
 | `uitwisselbare_kwaliteiten(code TEXT)` | Alle kwaliteiten in dezelfde collectie |
 | `herbereken_klant_tiers()` | Gold (top 10%), Silver (top 30%), Bronze (rest) |
 | `update_order_totalen()` | Trigger: herbereken order bedrag/gewicht/regels |
+| `herbereken_product_reservering(artikelnr TEXT)` | Herbereken gereserveerd + vrije_voorraad voor één product op basis van actieve orders |
+| `update_reservering_bij_orderregel()` | Trigger: bij INSERT/UPDATE/DELETE op order_regels → herbereken reservering |
+| `update_reservering_bij_order_status()` | Trigger: bij statuswijziging order → herbereken reservering alle producten in die order |
 
 ---
 

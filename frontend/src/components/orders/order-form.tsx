@@ -4,8 +4,16 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ClientSelector, type SelectedClient } from './client-selector'
 import { AddressSelector } from './address-selector'
 import { OrderLineEditor } from './order-line-editor'
-import { createOrder, updateOrderWithLines, lookupPrice } from '@/lib/supabase/queries/order-mutations'
+import { createOrder, updateOrderWithLines, deleteOrder, lookupPrice, fetchKlanteigenNaam, fetchKlantArtikelnummer } from '@/lib/supabase/queries/order-mutations'
 import type { OrderFormData, OrderRegelFormData } from '@/lib/supabase/queries/order-mutations'
+
+function getISOWeek(dateStr: string): number {
+  const date = new Date(dateStr)
+  const tmp = new Date(date.getTime())
+  tmp.setDate(tmp.getDate() + 4 - (tmp.getDay() || 7))
+  const yearStart = new Date(tmp.getFullYear(), 0, 1)
+  return Math.ceil(((tmp.getTime() - yearStart.getTime()) / 86400000 + 1) / 7)
+}
 
 interface OrderFormProps {
   mode: 'create' | 'edit'
@@ -62,11 +70,46 @@ export function OrderForm({ mode, initialData }: OrderFormProps) {
     }))
   }
 
-  // Price lookup when article is added
-  const handleArticleSelected = useCallback(async (article: { artikelnr: string }) => {
-    if (!client?.prijslijst_nr) return null
-    return lookupPrice(client.prijslijst_nr, article.artikelnr)
-  }, [client?.prijslijst_nr])
+  // Price + customer-specific data lookup when article is added
+  const handleArticleSelected = useCallback(async (article: { artikelnr: string; kwaliteit_code: string | null }) => {
+    const debiteurNr = client?.debiteur_nr
+    let prijs: number | null = null
+    let klant_eigen_naam: string | null = null
+    let klant_artikelnr: string | null = null
+
+    // Lookup price from price list
+    if (client?.prijslijst_nr) {
+      prijs = await lookupPrice(client.prijslijst_nr, article.artikelnr)
+    }
+
+    if (debiteurNr) {
+      // Lookup klanteigen naam (via kwaliteit_code)
+      if (article.kwaliteit_code) {
+        const kenResult = await fetchKlanteigenNaam(debiteurNr, article.kwaliteit_code)
+        if (kenResult) klant_eigen_naam = kenResult.benaming
+      }
+
+      // Lookup klant artikelnummer
+      const kanResult = await fetchKlantArtikelnummer(debiteurNr, article.artikelnr)
+      if (kanResult) klant_artikelnr = kanResult.klant_artikel
+    }
+
+    return { prijs, klant_eigen_naam, klant_artikelnr }
+  }, [client?.prijslijst_nr, client?.debiteur_nr])
+
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteOrder(initialData!.orderId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] })
+      navigate('/orders')
+    },
+    onError: (err) => {
+      setError(err instanceof Error ? err.message : 'Verwijderen mislukt')
+      setShowDeleteConfirm(false)
+    },
+  })
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -123,7 +166,10 @@ export function OrderForm({ mode, initialData }: OrderFormProps) {
       {/* Header fields */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Field label="Klant referentie" value={header.klant_referentie} onChange={(v) => setHeader({ ...header, klant_referentie: v })} />
-        <Field label="Afleverdatum" value={header.afleverdatum} onChange={(v) => setHeader({ ...header, afleverdatum: v })} type="date" />
+        <Field label="Afleverdatum" value={header.afleverdatum} onChange={(v) => {
+          const week = v ? getISOWeek(v) : undefined
+          setHeader({ ...header, afleverdatum: v, week: week ? String(week) : undefined })
+        }} type="date" />
         <Field label="Week" value={header.week} onChange={(v) => setHeader({ ...header, week: v })} />
       </div>
 
@@ -168,7 +214,47 @@ export function OrderForm({ mode, initialData }: OrderFormProps) {
         >
           Annuleren
         </button>
+
+        {mode === 'edit' && (
+          <button
+            type="button"
+            onClick={() => setShowDeleteConfirm(true)}
+            className="ml-auto px-6 py-2 border border-rose-200 text-rose-600 rounded-[var(--radius-sm)] text-sm font-medium hover:bg-rose-50 transition-colors"
+          >
+            Verwijderen
+          </button>
+        )}
       </div>
+
+      {/* Delete confirmation dialog */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-[var(--radius)] shadow-xl p-6 max-w-sm w-full mx-4">
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">Order verwijderen?</h3>
+            <p className="text-sm text-slate-600 mb-6">
+              Weet je zeker dat je deze order wilt verwijderen? Dit kan niet ongedaan worden gemaakt.
+            </p>
+            <div className="flex items-center gap-3 justify-end">
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={deleteMutation.isPending}
+                className="px-4 py-2 border border-slate-200 rounded-[var(--radius-sm)] text-sm hover:bg-slate-50"
+              >
+                Annuleren
+              </button>
+              <button
+                type="button"
+                onClick={() => deleteMutation.mutate()}
+                disabled={deleteMutation.isPending}
+                className="px-4 py-2 bg-rose-600 text-white rounded-[var(--radius-sm)] text-sm font-medium hover:bg-rose-700 disabled:opacity-50 transition-colors"
+              >
+                {deleteMutation.isPending ? 'Verwijderen...' : 'Ja, verwijderen'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

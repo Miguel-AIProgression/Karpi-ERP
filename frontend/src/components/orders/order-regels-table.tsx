@@ -62,11 +62,21 @@ export function OrderRegelsTable({ regels, isLoading }: OrderRegelsTableProps) {
                   {regel.karpi_code && (
                     <span className="block text-xs text-slate-400">{regel.karpi_code}</span>
                   )}
+                  {regel.klant_artikelnr && (
+                    <span className="block text-xs text-blue-500" title="Klant artikelnr">
+                      {regel.klant_artikelnr}
+                    </span>
+                  )}
                 </td>
                 <td className="px-4 py-2">
                   {regel.omschrijving}
                   {regel.omschrijving_2 && (
                     <span className="block text-xs text-slate-400">{regel.omschrijving_2}</span>
+                  )}
+                  {regel.klant_eigen_naam && (
+                    <span className="block text-xs text-blue-500" title="Klanteigen naam">
+                      {regel.klant_eigen_naam}
+                    </span>
                   )}
                 </td>
                 <td className="px-4 py-2 text-right">{regel.orderaantal}</td>

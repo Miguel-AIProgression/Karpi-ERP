@@ -32,6 +32,11 @@ export interface OrderRegelFormData {
   korting_pct: number
   bedrag?: number
   gewicht_kg?: number
+  // Display-only fields (not sent to RPC)
+  vrije_voorraad?: number
+  besteld_inkoop?: number
+  klant_eigen_naam?: string
+  klant_artikelnr?: string
 }
 
 /** Create order + lines atomically via RPC */
@@ -123,6 +128,15 @@ export async function updateOrderStatus(orderId: number, status: string) {
   if (error) throw error
 }
 
+/** Delete order, its lines, and recalculate stock reservations via RPC */
+export async function deleteOrder(orderId: number) {
+  const { error } = await supabase.rpc('delete_order', {
+    p_order_id: orderId,
+  })
+
+  if (error) throw error
+}
+
 /** Lookup price for an article in a client's price list */
 export async function lookupPrice(prijslijstNr: string, artikelnr: string): Promise<number | null> {
   const { data, error } = await supabase
@@ -134,6 +148,32 @@ export async function lookupPrice(prijslijstNr: string, artikelnr: string): Prom
 
   if (error) throw error
   return data?.prijs ?? null
+}
+
+/** Fetch klanteigen naam for a quality code + customer */
+export async function fetchKlanteigenNaam(debiteurNr: number, kwaliteitCode: string) {
+  const { data, error } = await supabase
+    .from('klanteigen_namen')
+    .select('benaming, omschrijving')
+    .eq('debiteur_nr', debiteurNr)
+    .eq('kwaliteit_code', kwaliteitCode)
+    .maybeSingle()
+
+  if (error) throw error
+  return data as { benaming: string; omschrijving: string | null } | null
+}
+
+/** Fetch klant artikelnummer for an article + customer */
+export async function fetchKlantArtikelnummer(debiteurNr: number, artikelnr: string) {
+  const { data, error } = await supabase
+    .from('klant_artikelnummers')
+    .select('klant_artikel, omschrijving')
+    .eq('debiteur_nr', debiteurNr)
+    .eq('artikelnr', artikelnr)
+    .maybeSingle()
+
+  if (error) throw error
+  return data as { klant_artikel: string; omschrijving: string | null } | null
 }
 
 /** Fetch prijslijst_nr and korting_pct for a debiteur (needed in edit mode) */

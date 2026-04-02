@@ -9,7 +9,11 @@ interface OrderLineEditorProps {
   lines: OrderRegelFormData[]
   onChange: (lines: OrderRegelFormData[]) => void
   defaultKorting: number
-  onArticleSelected?: (article: SelectedArticle) => Promise<number | null>
+  onArticleSelected?: (article: SelectedArticle) => Promise<{
+    prijs: number | null
+    klant_eigen_naam?: string | null
+    klant_artikelnr?: string | null
+  }>
 }
 
 function calcBedrag(line: OrderRegelFormData): number {
@@ -45,9 +49,14 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, onArticleSele
 
   const addArticle = async (article: SelectedArticle) => {
     let prijs = article.verkoopprijs
+    let klant_eigen_naam: string | undefined
+    let klant_artikelnr: string | undefined
+
     if (onArticleSelected) {
-      const klantPrijs = await onArticleSelected(article)
-      if (klantPrijs !== null) prijs = klantPrijs
+      const result = await onArticleSelected(article)
+      if (result.prijs !== null) prijs = result.prijs
+      klant_eigen_naam = result.klant_eigen_naam ?? undefined
+      klant_artikelnr = result.klant_artikelnr ?? undefined
     }
 
     const newLine: OrderRegelFormData = {
@@ -60,6 +69,10 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, onArticleSele
       korting_pct: defaultKorting,
       gewicht_kg: article.gewicht_kg ?? undefined,
       bedrag: 0,
+      vrije_voorraad: article.vrije_voorraad,
+      besteld_inkoop: article.besteld_inkoop,
+      klant_eigen_naam,
+      klant_artikelnr,
     }
     newLine.bedrag = calcBedrag(newLine)
     onChange([...lines, newLine])
@@ -85,80 +98,105 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, onArticleSele
           Zoek een artikel hierboven om een orderregel toe te voegen
         </div>
       ) : (
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-slate-100 bg-slate-50">
-              <th className="text-left px-3 py-2 font-medium text-slate-600">Artikel</th>
-              <th className="text-left px-3 py-2 font-medium text-slate-600">Omschrijving</th>
-              <th className="text-right px-3 py-2 font-medium text-slate-600 w-20">Aantal</th>
-              <th className="text-right px-3 py-2 font-medium text-slate-600 w-24">Prijs</th>
-              <th className="text-right px-3 py-2 font-medium text-slate-600 w-20">Korting%</th>
-              <th className="text-right px-3 py-2 font-medium text-slate-600 w-24">Bedrag</th>
-              <th className="w-10"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {lines.map((line, i) => (
-              <tr key={getKey(i)} className="border-b border-slate-50">
-                <td className="px-3 py-2 font-mono text-xs text-slate-500">
-                  {line.artikelnr ?? '—'}
-                </td>
-                <td className="px-3 py-2">
-                  <input
-                    type="text"
-                    value={line.omschrijving}
-                    onChange={(e) => updateLine(i, { omschrijving: e.target.value })}
-                    className="w-full bg-transparent border-0 p-0 text-sm focus:outline-none focus:ring-0"
-                  />
-                </td>
-                <td className="px-3 py-2">
-                  <input
-                    type="number"
-                    value={line.orderaantal}
-                    onChange={(e) => {
-                      const val = parseInt(e.target.value) || 0
-                      updateLine(i, { orderaantal: val, te_leveren: val })
-                    }}
-                    className="w-full text-right bg-transparent border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-terracotta-400/30"
-                    min={1}
-                  />
-                </td>
-                <td className="px-3 py-2">
-                  <input
-                    type="number"
-                    value={line.prijs ?? ''}
-                    onChange={(e) => updateLine(i, { prijs: parseFloat(e.target.value) || 0 })}
-                    className="w-full text-right bg-transparent border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-terracotta-400/30"
-                    step="0.01"
-                  />
-                </td>
-                <td className="px-3 py-2">
-                  <input
-                    type="number"
-                    value={line.korting_pct}
-                    onChange={(e) => updateLine(i, { korting_pct: parseFloat(e.target.value) || 0 })}
-                    className="w-full text-right bg-transparent border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-terracotta-400/30"
-                    step="0.1"
-                    min={0}
-                    max={100}
-                  />
-                </td>
-                <td className="px-3 py-2 text-right font-medium">
-                  {formatCurrency(line.bedrag)}
-                </td>
-                <td className="px-3 py-2">
-                  <button
-                    type="button"
-                    onClick={() => removeLine(i)}
-                    className="text-slate-400 hover:text-rose-500"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </td>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-100 bg-slate-50">
+                <th className="text-left px-3 py-2 font-medium text-slate-600">Artikel</th>
+                <th className="text-left px-3 py-2 font-medium text-slate-600">Omschrijving</th>
+                <th className="text-right px-3 py-2 font-medium text-slate-600 w-20">Voorraad</th>
+                <th className="text-right px-3 py-2 font-medium text-slate-600 w-20">Aantal</th>
+                <th className="text-right px-3 py-2 font-medium text-slate-600 w-24">Prijs</th>
+                <th className="text-right px-3 py-2 font-medium text-slate-600 w-20">Korting%</th>
+                <th className="text-right px-3 py-2 font-medium text-slate-600 w-24">Bedrag</th>
+                <th className="w-10"></th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {lines.map((line, i) => (
+                <tr key={getKey(i)} className="border-b border-slate-50">
+                  <td className="px-3 py-2">
+                    <div className="font-mono text-xs text-slate-500">
+                      {line.artikelnr ?? '—'}
+                    </div>
+                    {line.klant_artikelnr && (
+                      <div className="text-xs text-blue-500" title="Klant artikelnr">
+                        {line.klant_artikelnr}
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-3 py-2">
+                    <input
+                      type="text"
+                      value={line.omschrijving}
+                      onChange={(e) => updateLine(i, { omschrijving: e.target.value })}
+                      className="w-full bg-transparent border-0 p-0 text-sm focus:outline-none focus:ring-0"
+                    />
+                    {line.klant_eigen_naam && (
+                      <div className="text-xs text-blue-500" title="Klanteigen naam">
+                        {line.klant_eigen_naam}
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <div className={`text-xs ${(line.vrije_voorraad ?? 0) > 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+                      {line.vrije_voorraad ?? 0}
+                    </div>
+                    {(line.besteld_inkoop ?? 0) > 0 && (
+                      <div className="text-xs text-slate-400" title="Verwacht (besteld inkoop)">
+                        +{line.besteld_inkoop}
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-3 py-2">
+                    <input
+                      type="number"
+                      value={line.orderaantal}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value) || 0
+                        updateLine(i, { orderaantal: val, te_leveren: val })
+                      }}
+                      className="w-full text-right bg-transparent border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-terracotta-400/30"
+                      min={1}
+                    />
+                  </td>
+                  <td className="px-3 py-2">
+                    <input
+                      type="number"
+                      value={line.prijs ?? ''}
+                      onChange={(e) => updateLine(i, { prijs: parseFloat(e.target.value) || 0 })}
+                      className="w-full text-right bg-transparent border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-terracotta-400/30"
+                      step="0.01"
+                    />
+                  </td>
+                  <td className="px-3 py-2">
+                    <input
+                      type="number"
+                      value={line.korting_pct}
+                      onChange={(e) => updateLine(i, { korting_pct: parseFloat(e.target.value) || 0 })}
+                      className="w-full text-right bg-transparent border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-terracotta-400/30"
+                      step="0.1"
+                      min={0}
+                      max={100}
+                    />
+                  </td>
+                  <td className="px-3 py-2 text-right font-medium">
+                    {formatCurrency(line.bedrag)}
+                  </td>
+                  <td className="px-3 py-2">
+                    <button
+                      type="button"
+                      onClick={() => removeLine(i)}
+                      className="text-slate-400 hover:text-rose-500"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   )

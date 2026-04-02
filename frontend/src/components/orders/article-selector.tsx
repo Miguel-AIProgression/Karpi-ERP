@@ -10,6 +10,8 @@ export interface SelectedArticle {
   verkoopprijs: number | null
   gewicht_kg: number | null
   vrije_voorraad: number
+  besteld_inkoop: number
+  kwaliteit_code: string | null
 }
 
 interface ArticleSelectorProps {
@@ -30,7 +32,7 @@ export function ArticleSelector({ onSelect }: ArticleSelectorProps) {
     const timer = setTimeout(async () => {
       const { data } = await supabase
         .from('producten')
-        .select('artikelnr, karpi_code, omschrijving, verkoopprijs, gewicht_kg, vrije_voorraad')
+        .select('artikelnr, karpi_code, omschrijving, verkoopprijs, gewicht_kg, vrije_voorraad, besteld_inkoop, kwaliteit_code')
         .eq('actief', true)
         .or(`artikelnr.ilike.%${s}%,karpi_code.ilike.%${s}%,omschrijving.ilike.%${s}%,zoeksleutel.ilike.%${s}%`)
         .limit(10)
@@ -87,9 +89,14 @@ export function ArticleSelector({ onSelect }: ArticleSelectorProps) {
                   <span className="font-mono text-xs text-terracotta-500">{article.artikelnr}</span>
                   <span className="ml-2">{article.omschrijving}</span>
                 </div>
-                <span className="text-xs text-slate-400">
-                  Vrij: {article.vrije_voorraad}
-                </span>
+                <div className="text-xs text-right shrink-0 ml-2">
+                  <span className={article.vrije_voorraad > 0 ? 'text-emerald-600' : 'text-rose-500'}>
+                    Vrij: {article.vrije_voorraad}
+                  </span>
+                  {article.besteld_inkoop > 0 && (
+                    <span className="text-slate-400 ml-2">Verwacht: {article.besteld_inkoop}</span>
+                  )}
+                </div>
               </div>
               {article.karpi_code && (
                 <div className="text-xs text-slate-400">{article.karpi_code}</div>

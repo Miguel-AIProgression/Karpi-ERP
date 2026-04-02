@@ -2,13 +2,15 @@ import { useState } from 'react'
 import { Search } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { KlantCard } from '@/components/klanten/klant-card'
-import { useKlanten } from '@/hooks/use-klanten'
+import { useKlanten, useVertegenwoordigers } from '@/hooks/use-klanten'
 
 export function KlantenOverviewPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('Actief')
+  const [vertegFilter, setVertegFilter] = useState<string>('')
 
-  const { data, isLoading } = useKlanten({ search, status: statusFilter })
+  const { data, isLoading } = useKlanten({ search, status: statusFilter, vertegenw_code: vertegFilter || undefined })
+  const { data: vertegenwoordigers } = useVertegenwoordigers()
 
   const klanten = data?.klanten ?? []
 
@@ -39,6 +41,16 @@ export function KlantenOverviewPage() {
           <option value="">Alle statussen</option>
           <option value="Actief">Actief</option>
           <option value="Inactief">Inactief</option>
+        </select>
+        <select
+          value={vertegFilter}
+          onChange={(e) => setVertegFilter(e.target.value)}
+          className="px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm"
+        >
+          <option value="">Alle vertegenwoordigers</option>
+          {vertegenwoordigers?.map((v) => (
+            <option key={v.code} value={v.code}>{v.naam}</option>
+          ))}
         </select>
       </div>
 

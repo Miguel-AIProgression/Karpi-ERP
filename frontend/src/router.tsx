@@ -10,6 +10,8 @@ import { KlantenOverviewPage } from '@/pages/klanten/klanten-overview'
 import { KlantDetailPage } from '@/pages/klanten/klant-detail'
 import { ProductenOverviewPage } from '@/pages/producten/producten-overview'
 import { ProductDetailPage } from '@/pages/producten/product-detail'
+import { VertegenwoordigersOverviewPage } from '@/pages/vertegenwoordigers/vertegenwoordigers-overview'
+import { VertegenwoordigerDetailPage } from '@/pages/vertegenwoordigers/vertegenwoordiger-detail'
 
 export const router = createBrowserRouter([
   {
@@ -34,7 +36,8 @@ export const router = createBrowserRouter([
       // Placeholders (V2+)
       { path: 'samples', element: <PlaceholderPage title="Samples" /> },
       { path: 'facturatie', element: <PlaceholderPage title="Facturatie" /> },
-      { path: 'vertegenwoordigers', element: <PlaceholderPage title="Vertegenwoordigers" /> },
+      { path: 'vertegenwoordigers', element: <VertegenwoordigersOverviewPage /> },
+      { path: 'vertegenwoordigers/:code', element: <VertegenwoordigerDetailPage /> },
       { path: 'rollen', element: <PlaceholderPage title="Rollen & Reststukken" /> },
       { path: 'scanstation', element: <PlaceholderPage title="Scanstation" /> },
       { path: 'magazijn', element: <PlaceholderPage title="Magazijn" /> },

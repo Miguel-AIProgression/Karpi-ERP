@@ -1,5 +1,49 @@
 # Changelog — RugFlow ERP
 
+## 2026-04-02 (update 8)
+
+### Vertegenwoordigers module (nieuw)
+- **Overzichtspagina** (`/vertegenwoordigers`): ranking tabel met alle reps
+  - Kolommen: ranking, naam, omzet, % van totaal, klanten, tier-verdeling (G/S/B), open orders, gem. orderwaarde
+  - Sorteerbaar op omzet, naam, klanten, open orders
+  - Periodefilter: YTD, Q1, Q2, Q3, Q4 (berekend uit orders tabel)
+  - Inactieve reps visueel gedempt
+- **Detailpagina** (`/vertegenwoordigers/:code`):
+  - Header met contactgegevens + 4 stat-kaarten (omzet, klanten, open orders, gem. order)
+  - CSS mini-bars per maand (omzet trend, proportioneel aan hoogste maand)
+  - Tab Klanten: alle gekoppelde klanten met omzet, tier, orders, plaats
+  - Tab Orders: alle orders met statusfilter (Alle/Open/Afgerond)
+- Nieuwe queries: `fetchVertegOverview`, `fetchVertegDetail`, `fetchVertegMaandomzet`, `fetchVertegKlanten`, `fetchVertegOrders`
+- Spec: `specs/08-vertegenwoordigers-module.md`
+
+### Klanteigen namen, artikelnummers en vertegenwoordigers overal zichtbaar
+- **Klant-detail pagina** volledig vernieuwd met 5 tabs (conform spec 07):
+  - Info (met vertegenwoordiger, route, rayon, factuurgegevens)
+  - Afleveradressen
+  - Orders
+  - Klanteigen namen (kwaliteiten met klant-specifieke benamingen)
+  - Artikelnummers (klant-specifieke artikelnummers met product lookup)
+- **Order-detail**: orderregels tonen nu klanteigen naam (blauw, onder omschrijving) en klant-artikelnr
+- **Order-detail**: vertegenwoordiger fallback naar klant's vertegenwoordiger als order geen eigen code heeft
+- **Klant-card**: vertegenwoordiger naam zichtbaar op elke klantkaart
+- **Klanten-overzicht**: filter op vertegenwoordiger toegevoegd
+- Nieuwe queries: `fetchKlanteigenNamen`, `fetchKlantArtikelnummers`, `fetchVertegenwoordigers`
+- `fetchKlantDetail` joint nu vertegenwoordiger naam via relatie
+- `fetchOrderRegels` verrijkt regels met klanteigen namen en klant-artikelnummers (batch lookup)
+
+## 2026-04-02 (update 7)
+
+### Automatische voorraadreservering bij orders
+- **Migratie 020**: Trigger-gebaseerd reserveringssysteem
+  - `herbereken_product_reservering(artikelnr)`: herberekent `gereserveerd` en `vrije_voorraad` voor één product
+  - Trigger op `order_regels` (INSERT/UPDATE/DELETE): update productreservering bij elke wijziging
+  - Trigger op `orders` (status UPDATE): herbereken bij statuswijziging (bijv. annulering geeft voorraad vrij)
+  - Actieve statussen reserveren: Nieuw t/m Klaar voor verzending
+  - Eindstatussen geven vrij: Verzonden, Geannuleerd
+- **Migratie 021**: Eenmalige sync van bestaande orders naar `producten.gereserveerd`
+- Formule: `gereserveerd = SUM(te_leveren)` van alle actieve order_regels per artikelnr
+- Formule: `vrije_voorraad = voorraad - gereserveerd - backorder + besteld_inkoop`
+
 ## 2026-04-02 (update 6)
 
 ### Magazijnlocaties op producten

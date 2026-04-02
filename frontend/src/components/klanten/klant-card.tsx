@@ -52,7 +52,13 @@ export function KlantCard({ klant }: KlantCardProps) {
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+      {klant.vertegenwoordiger_naam && (
+        <p className="mt-2 text-xs text-slate-400 truncate">
+          Verteg: <span className="text-slate-600">{klant.vertegenwoordiger_naam}</span>
+        </p>
+      )}
+
+      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
         <div>
           <span className="text-slate-400">Omzet YTD</span>
           <p className="font-medium">{formatCurrency(klant.omzet_ytd)}</p>

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
@@ -6,10 +7,23 @@ import { StatusBadge } from '@/components/ui/status-badge'
 import { formatCurrency } from '@/lib/utils/formatters'
 import { useKlantDetail, useAfleveradressen } from '@/hooks/use-klanten'
 import { useOrders } from '@/hooks/use-orders'
+import { KlanteigenNamenTab } from '@/components/klanten/klanteigen-namen-tab'
+import { KlantArtikelnummersTab } from '@/components/klanten/klant-artikelnummers-tab'
+
+type Tab = 'info' | 'adressen' | 'orders' | 'eigennamen' | 'artikelnummers'
+
+const TABS: { key: Tab; label: string }[] = [
+  { key: 'info', label: 'Info' },
+  { key: 'adressen', label: 'Afleveradressen' },
+  { key: 'orders', label: 'Orders' },
+  { key: 'eigennamen', label: 'Klanteigen namen' },
+  { key: 'artikelnummers', label: 'Artikelnummers' },
+]
 
 export function KlantDetailPage() {
   const { id } = useParams<{ id: string }>()
   const debiteurNr = Number(id)
+  const [activeTab, setActiveTab] = useState<Tab>('info')
 
   const { data: klant, isLoading } = useKlantDetail(debiteurNr)
   const { data: adressen } = useAfleveradressen(debiteurNr)
@@ -50,6 +64,11 @@ export function KlantDetailPage() {
           <span className="text-sm text-slate-400">#{klant.debiteur_nr}</span>
           <StatusBadge status={klant.status} type="order" />
           <StatusBadge status={klant.tier} type="tier" />
+          {klant.vertegenwoordiger_naam && (
+            <span className="text-sm text-slate-500">
+              Verteg: <span className="font-medium text-slate-700">{klant.vertegenwoordiger_naam}</span>
+            </span>
+          )}
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
@@ -64,50 +83,93 @@ export function KlantDetailPage() {
         </div>
       </div>
 
-      {/* Afleveradressen */}
-      <div className="bg-white rounded-[var(--radius)] border border-slate-200 mb-6">
-        <div className="px-5 py-3 border-b border-slate-100">
-          <h3 className="font-medium">Afleveradressen ({adressen?.length ?? 0})</h3>
-        </div>
-        {adressen && adressen.length > 0 ? (
-          <div className="divide-y divide-slate-50">
-            {adressen.map((a) => (
-              <div key={a.id} className="px-5 py-3 text-sm">
-                <span className="text-slate-400 mr-2">#{a.adres_nr}</span>
-                <span className="font-medium">{a.naam}</span>
-                {a.adres && <span className="text-slate-500"> — {a.adres}, {a.postcode} {a.plaats}</span>}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="p-5 text-sm text-slate-400">Geen afleveradressen</div>
-        )}
+      {/* Tabs */}
+      <div className="border-b border-slate-200 mb-4">
+        <nav className="flex gap-1 -mb-px">
+          {TABS.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === tab.key
+                  ? 'border-terracotta-500 text-terracotta-600'
+                  : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
       </div>
 
-      {/* Recent orders */}
+      {/* Tab content */}
       <div className="bg-white rounded-[var(--radius)] border border-slate-200">
-        <div className="px-5 py-3 border-b border-slate-100">
-          <h3 className="font-medium">Recente orders ({ordersData?.totalCount ?? 0})</h3>
-        </div>
-        {ordersData?.orders && ordersData.orders.length > 0 ? (
-          <div className="divide-y divide-slate-50">
-            {ordersData.orders.slice(0, 10).map((o) => (
-              <Link
-                key={o.id}
-                to={`/orders/${o.id}`}
-                className="flex items-center justify-between px-5 py-3 text-sm hover:bg-slate-50"
-              >
-                <span className="text-terracotta-500 font-medium">{o.order_nr}</span>
-                <span className="text-slate-500">{formatCurrency(o.totaal_bedrag)}</span>
-                <StatusBadge status={o.status} />
-              </Link>
-            ))}
-          </div>
-        ) : (
-          <div className="p-5 text-sm text-slate-400">Nog geen orders</div>
-        )}
+        {activeTab === 'info' && <InfoTab klant={klant} />}
+        {activeTab === 'adressen' && <AdressenTab adressen={adressen} />}
+        {activeTab === 'orders' && <OrdersTab orders={ordersData?.orders} totalCount={ordersData?.totalCount} />}
+        {activeTab === 'eigennamen' && <KlanteigenNamenTab debiteurNr={debiteurNr} />}
+        {activeTab === 'artikelnummers' && <KlantArtikelnummersTab debiteurNr={debiteurNr} />}
       </div>
     </>
   )
 }
 
+function InfoTab({ klant }: { klant: NonNullable<ReturnType<typeof useKlantDetail>['data']> }) {
+  return (
+    <div className="p-5 grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+      <InfoField label="Vertegenwoordiger" value={klant.vertegenwoordiger_naam ?? klant.vertegenw_code} />
+      <InfoField label="Route" value={klant.route} />
+      <InfoField label="Rayon" value={klant.rayon_naam} />
+      <InfoField label="Factuur naam" value={klant.fact_naam} />
+      <InfoField label="Factuur adres" value={[klant.fact_adres, `${klant.fact_postcode ?? ''} ${klant.fact_plaats ?? ''}`.trim()].filter(Boolean).join(', ')} />
+      <InfoField label="Email (overig)" value={klant.email_overig} />
+      <InfoField label="Email 2" value={klant.email_2} />
+      <InfoField label="Fax" value={klant.fax} />
+      <InfoField label="GLN" value={klant.gln_bedrijf} />
+      <InfoField label="Land" value={klant.land} />
+    </div>
+  )
+}
+
+function AdressenTab({ adressen }: { adressen?: { id: number; adres_nr: number; naam: string | null; adres: string | null; postcode: string | null; plaats: string | null }[] }) {
+  if (!adressen || adressen.length === 0) {
+    return <div className="p-5 text-sm text-slate-400">Geen afleveradressen</div>
+  }
+  return (
+    <div className="divide-y divide-slate-50">
+      {adressen.map((a) => (
+        <div key={a.id} className="px-5 py-3 text-sm">
+          <span className="text-slate-400 mr-2">#{a.adres_nr}</span>
+          <span className="font-medium">{a.naam}</span>
+          {a.adres && <span className="text-slate-500"> — {a.adres}, {a.postcode} {a.plaats}</span>}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function OrdersTab({ orders, totalCount }: { orders?: { id: number; order_nr: string; totaal_bedrag: number; status: string }[]; totalCount?: number }) {
+  if (!orders || orders.length === 0) {
+    return <div className="p-5 text-sm text-slate-400">Nog geen orders</div>
+  }
+  return (
+    <>
+      <div className="px-5 py-3 border-b border-slate-100 text-xs text-slate-400">
+        {totalCount ?? orders.length} orders totaal
+      </div>
+      <div className="divide-y divide-slate-50">
+        {orders.slice(0, 10).map((o) => (
+          <Link
+            key={o.id}
+            to={`/orders/${o.id}`}
+            className="flex items-center justify-between px-5 py-3 text-sm hover:bg-slate-50"
+          >
+            <span className="text-terracotta-500 font-medium">{o.order_nr}</span>
+            <span className="text-slate-500">{formatCurrency(o.totaal_bedrag)}</span>
+            <StatusBadge status={o.status} />
+          </Link>
+        ))}
+      </div>
+    </>
+  )
+}
