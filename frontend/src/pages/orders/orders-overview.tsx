@@ -5,13 +5,26 @@ import { PageHeader } from '@/components/layout/page-header'
 import { StatusTabs } from '@/components/orders/status-tabs'
 import { OrdersTable } from '@/components/orders/orders-table'
 import { useOrders, useStatusCounts } from '@/hooks/use-orders'
+import type { OrderSortField, SortDirection } from '@/lib/supabase/queries/orders'
 
 export function OrdersOverviewPage() {
   const [status, setStatus] = useState('Alle')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(0)
+  const [sortBy, setSortBy] = useState<OrderSortField>('orderdatum')
+  const [sortDir, setSortDir] = useState<SortDirection>('desc')
 
-  const { data, isLoading } = useOrders({ status, search, page })
+  const handleSort = (field: OrderSortField) => {
+    if (sortBy === field) {
+      setSortDir(sortDir === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortBy(field)
+      setSortDir(field === 'klant_naam' ? 'asc' : 'desc')
+    }
+    setPage(0)
+  }
+
+  const { data, isLoading } = useOrders({ status, search, page, sortBy, sortDir })
   const { data: statusCounts } = useStatusCounts()
 
   const orders = data?.orders ?? []
@@ -61,7 +74,7 @@ export function OrdersOverviewPage() {
       />
 
       {/* Table */}
-      <OrdersTable orders={orders} isLoading={isLoading} />
+      <OrdersTable orders={orders} isLoading={isLoading} sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
 
       {/* Pagination */}
       {totalPages > 1 && (

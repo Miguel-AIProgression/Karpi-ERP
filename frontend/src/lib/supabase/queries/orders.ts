@@ -58,6 +58,9 @@ export interface StatusCount {
   aantal: number
 }
 
+export type OrderSortField = 'orderdatum' | 'klant_naam' | 'totaal_bedrag' | 'aantal_regels' | 'order_nr' | 'status'
+export type SortDirection = 'asc' | 'desc'
+
 /** Fetch orders with client name, optionally filtered by status or debiteur */
 export async function fetchOrders(params: {
   status?: string
@@ -65,13 +68,15 @@ export async function fetchOrders(params: {
   debiteurNr?: number
   page?: number
   pageSize?: number
+  sortBy?: OrderSortField
+  sortDir?: SortDirection
 }) {
-  const { status, search, debiteurNr, page = 0, pageSize = 50 } = params
+  const { status, search, debiteurNr, page = 0, pageSize = 50, sortBy = 'orderdatum', sortDir = 'desc' } = params
 
   let query = supabase
     .from('orders_list')
     .select('*', { count: 'exact' })
-    .order('orderdatum', { ascending: false })
+    .order(sortBy, { ascending: sortDir === 'asc' })
     .range(page * pageSize, (page + 1) * pageSize - 1)
 
   if (status && status !== 'Alle') {

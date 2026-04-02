@@ -5,12 +5,15 @@ import {
   fetchOrderDetail,
   fetchOrderRegels,
 } from '@/lib/supabase/queries/orders'
+import type { OrderSortField, SortDirection } from '@/lib/supabase/queries/orders'
 
 export function useOrders(params: {
   status?: string
   search?: string
   debiteurNr?: number
   page?: number
+  sortBy?: OrderSortField
+  sortDir?: SortDirection
 }) {
   return useQuery({
     queryKey: ['orders', params],

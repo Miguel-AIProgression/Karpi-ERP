@@ -1,14 +1,46 @@
 import { Link } from 'react-router-dom'
+import { ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { formatCurrency, formatDate } from '@/lib/utils/formatters'
-import type { OrderRow } from '@/lib/supabase/queries/orders'
+import type { OrderRow, OrderSortField, SortDirection } from '@/lib/supabase/queries/orders'
 
 interface OrdersTableProps {
   orders: OrderRow[]
   isLoading: boolean
+  sortBy: OrderSortField
+  sortDir: SortDirection
+  onSort: (field: OrderSortField) => void
 }
 
-export function OrdersTable({ orders, isLoading }: OrdersTableProps) {
+function SortIcon({ field, sortBy, sortDir }: { field: OrderSortField; sortBy: OrderSortField; sortDir: SortDirection }) {
+  if (field !== sortBy) return <ArrowUpDown size={14} className="text-slate-300" />
+  return sortDir === 'asc'
+    ? <ArrowUp size={14} className="text-terracotta-500" />
+    : <ArrowDown size={14} className="text-terracotta-500" />
+}
+
+function SortHeader({ field, label, align = 'left', sortBy, sortDir, onSort }: {
+  field: OrderSortField
+  label: string
+  align?: 'left' | 'right'
+  sortBy: OrderSortField
+  sortDir: SortDirection
+  onSort: (field: OrderSortField) => void
+}) {
+  return (
+    <th
+      className={`text-${align} px-4 py-3 font-medium text-slate-600 cursor-pointer select-none hover:text-slate-900 transition-colors`}
+      onClick={() => onSort(field)}
+    >
+      <span className={`inline-flex items-center gap-1 ${align === 'right' ? 'justify-end' : ''}`}>
+        {label}
+        <SortIcon field={field} sortBy={sortBy} sortDir={sortDir} />
+      </span>
+    </th>
+  )
+}
+
+export function OrdersTable({ orders, isLoading, sortBy, sortDir, onSort }: OrdersTableProps) {
   if (isLoading) {
     return (
       <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-12 text-center text-slate-400">
@@ -25,18 +57,20 @@ export function OrdersTable({ orders, isLoading }: OrdersTableProps) {
     )
   }
 
+  const sortProps = { sortBy, sortDir, onSort }
+
   return (
     <div className="bg-white rounded-[var(--radius)] border border-slate-200 overflow-hidden">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-slate-100 bg-slate-50">
-            <th className="text-left px-4 py-3 font-medium text-slate-600">Order</th>
-            <th className="text-left px-4 py-3 font-medium text-slate-600">Datum</th>
-            <th className="text-left px-4 py-3 font-medium text-slate-600">Klant</th>
+            <SortHeader field="order_nr" label="Order" {...sortProps} />
+            <SortHeader field="orderdatum" label="Datum" {...sortProps} />
+            <SortHeader field="klant_naam" label="Klant" {...sortProps} />
             <th className="text-left px-4 py-3 font-medium text-slate-600">Referentie</th>
-            <th className="text-right px-4 py-3 font-medium text-slate-600">Regels</th>
-            <th className="text-right px-4 py-3 font-medium text-slate-600">Bedrag</th>
-            <th className="text-left px-4 py-3 font-medium text-slate-600">Status</th>
+            <SortHeader field="aantal_regels" label="Regels" align="right" {...sortProps} />
+            <SortHeader field="totaal_bedrag" label="Bedrag" align="right" {...sortProps} />
+            <SortHeader field="status" label="Status" {...sortProps} />
           </tr>
         </thead>
         <tbody>
