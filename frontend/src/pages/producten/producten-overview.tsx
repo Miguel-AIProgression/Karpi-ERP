@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { Search, ChevronDown, ChevronRight, ArrowUp, ArrowDown, ArrowUpDown, Link2, LayoutGrid, MapPin, Check, X, Pencil } from 'lucide-react'
+import { Search, ChevronDown, ChevronRight, ArrowUp, ArrowDown, ArrowUpDown, Link2, LayoutGrid, MapPin, Pencil } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { formatCurrency, formatNumber } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
