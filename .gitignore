@@ -1,0 +1,8 @@
+node_modules
+dist
+.env
+*.local
+brondata/logos/
+brondata/*.zip
+brondata/**/*.xlsx
+brondata/**/*.xls

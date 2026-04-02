@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RugFlow ERP — Producten</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,500;0,9..40,700;1,9..40,400&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --slate-950: #0a0f1a;
+    --slate-900: #111827;
+    --slate-800: #1e2738;
+    --slate-700: #2d3a4e;
+    --slate-600: #475569;
+    --slate-500: #64748b;
+    --slate-400: #94a3b8;
+    --slate-300: #cbd5e1;
+    --slate-200: #e2e8f0;
+    --slate-100: #f1f5f9;
+    --slate-50: #f8fafc;
+    --terracotta-600: #c2410c;
+    --terracotta-500: #d4572a;
+    --terracotta-400: #ea7a4b;
+    --terracotta-100: #fff1eb;
+    --amber-500: #f59e0b;
+    --amber-400: #fbbf24;
+    --amber-100: #fef3c7;
+    --emerald-600: #059669;
+    --emerald-500: #10b981;
+    --emerald-100: #d1fae5;
+    --rose-500: #f43f5e;
+    --rose-100: #ffe4e6;
+    --blue-500: #3b82f6;
+    --blue-100: #dbeafe;
+    --sidebar-w: 260px;
+    --topbar-h: 64px;
+    --font-display: 'Instrument Serif', Georgia, serif;
+    --font-body: 'DM Sans', system-ui, sans-serif;
+    --radius: 12px;
+    --radius-sm: 8px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: var(--font-body);
+    background: var(--slate-100);
+    color: var(--slate-900);
+    display: flex;
+    min-height: 100vh;
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    width: var(--sidebar-w);
+    min-height: 100vh;
+    background: var(--slate-950);
+    color: var(--slate-400);
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    top: 0; left: 0;
+    z-index: 50;
+    overflow-y: auto;
+    border-right: 1px solid rgba(255,255,255,.04);
+  }
+  .sidebar-brand {
+    padding: 24px 24px 20px;
+    display: flex; align-items: center; gap: 12px;
+    border-bottom: 1px solid rgba(255,255,255,.06);
+  }
+  .sidebar-brand .logo {
+    width: 36px; height: 36px;
+    background: linear-gradient(135deg, var(--terracotta-500), var(--amber-500));
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 16px; color: white;
+  }
+  .sidebar-brand h1 {
+    font-family: var(--font-display); font-size: 22px; color: white; font-weight: 400;
+  }
+  .sidebar-brand span { font-size: 11px; color: var(--slate-500); font-weight: 500; text-transform: uppercase; letter-spacing: 1px; }
+  .sidebar-section { padding: 20px 16px 4px; }
+  .sidebar-section-title {
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 1.5px; color: var(--slate-600); padding: 0 8px 8px;
+  }
+  .sidebar-link {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 12px; border-radius: var(--radius-sm);
+    text-decoration: none; color: var(--slate-400);
+    font-size: 13.5px; font-weight: 500; transition: all .15s; cursor: pointer;
+  }
+  .sidebar-link:hover { background: rgba(255,255,255,.06); color: var(--slate-200); }
+  .sidebar-link.active { background: rgba(212,87,42,.15); color: var(--terracotta-400); }
+  .sidebar-link svg { width: 18px; height: 18px; flex-shrink: 0; opacity: .7; }
+  .sidebar-link.active svg { opacity: 1; }
+  .sidebar-badge {
+    margin-left: auto; background: var(--terracotta-500); color: white;
+    font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 99px;
+  }
+
+  /* ── Main ── */
+  .main { margin-left: var(--sidebar-w); flex: 1; display: flex; flex-direction: column; min-height: 100vh; }
+
+  /* ── Top Bar ── */
+  .topbar {
+    height: var(--topbar-h); background: white;
+    border-bottom: 1px solid var(--slate-200);
+    display: flex; align-items: center;
+    padding: 0 32px; gap: 16px;
+    position: sticky; top: 0; z-index: 40;
+  }
+  .topbar-search { flex: 1; max-width: 420px; position: relative; }
+  .topbar-search input {
+    width: 100%; padding: 9px 16px 9px 40px;
+    border: 1px solid var(--slate-200); border-radius: 99px;
+    font-family: var(--font-body); font-size: 13px;
+    background: var(--slate-50); color: var(--slate-900); outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .topbar-search input:focus { border-color: var(--terracotta-400); box-shadow: 0 0 0 3px rgba(212,87,42,.1); }
+  .topbar-search input::placeholder { color: var(--slate-400); }
+  .topbar-search svg { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: var(--slate-400); }
+  .topbar-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+  .topbar-icon-btn {
+    width: 38px; height: 38px; border-radius: 50%;
+    border: 1px solid var(--slate-200); background: white;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; color: var(--slate-500); transition: all .15s;
+  }
+  .topbar-icon-btn:hover { background: var(--slate-50); color: var(--slate-700); }
+  .topbar-icon-btn svg { width: 18px; height: 18px; }
+  .topbar-avatar {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--terracotta-500), var(--amber-400));
+    display: flex; align-items: center; justify-content: center;
+    color: white; font-weight: 700; font-size: 13px; margin-left: 4px;
+  }
+
+  /* ── Content ── */
+  .content { padding: 32px; flex: 1; }
+
+  .page-header {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    margin-bottom: 24px;
+  }
+  .page-header h2 {
+    font-family: var(--font-display); font-size: 32px; font-weight: 400;
+    color: var(--slate-950); letter-spacing: -0.5px;
+  }
+  .page-header p { color: var(--slate-500); margin-top: 4px; font-size: 14px; }
+  .page-header-actions { display: flex; gap: 10px; align-items: center; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 10px 20px; border-radius: var(--radius-sm);
+    font-family: var(--font-body); font-size: 13.5px; font-weight: 600;
+    cursor: pointer; transition: all .15s; text-decoration: none; border: none;
+  }
+  .btn-primary { background: var(--terracotta-500); color: white; }
+  .btn-primary:hover { background: var(--terracotta-600); }
+  .btn-secondary { background: white; color: var(--slate-700); border: 1px solid var(--slate-200); }
+  .btn-secondary:hover { background: var(--slate-50); border-color: var(--slate-300); }
+  .btn svg { width: 16px; height: 16px; }
+
+  /* ── Summary Cards ── */
+  .summary-cards {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    margin-bottom: 24px;
+  }
+  .summary-card {
+    background: white;
+    border: 1px solid var(--slate-200);
+    border-radius: var(--radius);
+    padding: 18px 22px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    transition: all .2s;
+    position: relative;
+    overflow: hidden;
+  }
+  .summary-card:hover {
+    box-shadow: 0 6px 20px rgba(0,0,0,.06);
+    transform: translateY(-1px);
+  }
+  .summary-icon {
+    width: 48px; height: 48px;
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .summary-icon svg { width: 24px; height: 24px; }
+  .summary-icon.blue { background: var(--blue-100); color: var(--blue-500); }
+  .summary-icon.emerald { background: var(--emerald-100); color: var(--emerald-500); }
+  .summary-icon.amber { background: var(--amber-100); color: var(--amber-500); }
+  .summary-icon.terracotta { background: var(--terracotta-100); color: var(--terracotta-500); }
+  .summary-info h4 { font-size: 13px; color: var(--slate-500); font-weight: 500; }
+  .summary-info .summary-count {
+    font-family: var(--font-display);
+    font-size: 26px; font-weight: 400; color: var(--slate-950);
+    letter-spacing: -0.5px; line-height: 1.1;
+  }
+
+  /* ── Tabs ── */
+  .tabs {
+    display: flex; gap: 0; margin-bottom: 20px;
+    border-bottom: 2px solid var(--slate-200);
+  }
+  .tab {
+    padding: 12px 24px;
+    font-size: 14px; font-weight: 600;
+    color: var(--slate-500);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: all .15s;
+    background: none; border-top: none; border-left: none; border-right: none;
+    font-family: var(--font-body);
+  }
+  .tab:hover { color: var(--slate-700); }
+  .tab.active {
+    color: var(--terracotta-500);
+    border-bottom-color: var(--terracotta-500);
+  }
+
+  /* ── Filter Bar ── */
+  .filter-bar {
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 20px;
+  }
+  .filter-search { flex: 1; position: relative; }
+  .filter-search input {
+    width: 100%; padding: 10px 16px 10px 42px;
+    border: 1px solid var(--slate-200); border-radius: var(--radius-sm);
+    font-family: var(--font-body); font-size: 13.5px;
+    background: white; color: var(--slate-900); outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .filter-search input:focus { border-color: var(--terracotta-400); box-shadow: 0 0 0 3px rgba(212,87,42,.1); }
+  .filter-search input::placeholder { color: var(--slate-400); }
+  .filter-search svg {
+    position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+    width: 18px; height: 18px; color: var(--slate-400);
+  }
+  .filter-select {
+    padding: 10px 36px 10px 14px;
+    border: 1px solid var(--slate-200); border-radius: var(--radius-sm);
+    font-family: var(--font-body); font-size: 13.5px;
+    background: white; color: var(--slate-700); outline: none;
+    cursor: pointer; appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' viewBox='0 0 24 24' stroke='%2394a3b8' stroke-width='2'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='m19.5 8.25-7.5 7.5-7.5-7.5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+  }
+
+  /* ── Table ── */
+  .table-wrapper {
+    background: white;
+    border: 1px solid var(--slate-200);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  thead th {
+    padding: 12px 16px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--slate-500);
+    text-align: left;
+    background: var(--slate-50);
+    border-bottom: 1px solid var(--slate-200);
+    white-space: nowrap;
+  }
+  tbody td {
+    padding: 14px 16px;
+    font-size: 13.5px;
+    color: var(--slate-700);
+    border-bottom: 1px solid var(--slate-100);
+    vertical-align: middle;
+  }
+  tbody tr { transition: background .1s; }
+  tbody tr:hover { background: var(--slate-50); }
+  tbody tr:last-child td { border-bottom: none; }
+
+  .artikelnr {
+    font-weight: 700;
+    color: var(--slate-900);
+    font-variant-numeric: tabular-nums;
+  }
+  .karpi-code {
+    font-family: 'DM Sans', monospace;
+    font-size: 12px;
+    color: var(--slate-500);
+    background: var(--slate-100);
+    padding: 3px 8px;
+    border-radius: 4px;
+    letter-spacing: 0.3px;
+  }
+
+  /* Stock bar */
+  .stock-cell { min-width: 120px; }
+  .stock-bar-wrap {
+    display: flex; align-items: center; gap: 10px;
+  }
+  .stock-value {
+    font-size: 13px; font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    min-width: 32px;
+  }
+  .stock-bar {
+    flex: 1; height: 6px;
+    background: var(--slate-100);
+    border-radius: 99px;
+    overflow: hidden;
+  }
+  .stock-bar-fill {
+    height: 100%; border-radius: 99px;
+    transition: width .6s cubic-bezier(.22,.61,.36,1);
+  }
+  .stock-bar-fill.green { background: var(--emerald-500); }
+  .stock-bar-fill.amber { background: var(--amber-500); }
+  .stock-bar-fill.red { background: var(--rose-500); }
+  .stock-value.green { color: var(--emerald-600); }
+  .stock-value.amber { color: var(--amber-500); }
+  .stock-value.red { color: var(--rose-500); }
+
+  /* Status badge */
+  .status-badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 4px 10px; border-radius: 99px;
+    font-size: 12px; font-weight: 600;
+  }
+  .status-badge.actief { background: var(--emerald-100); color: var(--emerald-600); }
+  .status-badge.inactief { background: var(--slate-100); color: var(--slate-500); }
+  .status-badge.uitlopend { background: var(--amber-100); color: #b45309; }
+  .status-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+  }
+  .status-dot.actief { background: var(--emerald-500); }
+  .status-dot.inactief { background: var(--slate-400); }
+  .status-dot.uitlopend { background: var(--amber-500); }
+
+  .vvp { font-variant-numeric: tabular-nums; font-weight: 600; }
+
+  /* ── Tab panels ── */
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* ── Rollen table extras ── */
+  .rol-locatie {
+    font-size: 12px;
+    background: var(--blue-100);
+    color: var(--blue-500);
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+  .rol-status {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 4px 10px; border-radius: 99px;
+    font-size: 12px; font-weight: 600;
+  }
+  .rol-status.beschikbaar { background: var(--emerald-100); color: var(--emerald-600); }
+  .rol-status.gereserveerd { background: var(--amber-100); color: #b45309; }
+  .rol-status.verkocht { background: var(--slate-100); color: var(--slate-500); }
+  .rol-status.reststuk { background: var(--terracotta-100); color: var(--terracotta-500); }
+
+  /* ── Pagination ── */
+  .pagination {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-top: 20px; padding: 16px 20px;
+    background: white;
+    border: 1px solid var(--slate-200);
+    border-radius: var(--radius);
+  }
+  .pagination-info { font-size: 13px; color: var(--slate-500); }
+  .pagination-buttons { display: flex; gap: 4px; }
+  .pagination-btn {
+    width: 36px; height: 36px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--slate-200); background: white;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; font-size: 13px; font-weight: 600;
+    color: var(--slate-600); transition: all .15s;
+  }
+  .pagination-btn:hover { background: var(--slate-50); border-color: var(--slate-300); }
+  .pagination-btn.active { background: var(--slate-900); color: white; border-color: var(--slate-900); }
+  .pagination-btn svg { width: 16px; height: 16px; }
+
+  /* ── Animations ── */
+  @keyframes fadeSlideUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .summary-card:nth-child(1) { animation: fadeSlideUp .4s ease-out .05s both; }
+  .summary-card:nth-child(2) { animation: fadeSlideUp .4s ease-out .1s both; }
+  .summary-card:nth-child(3) { animation: fadeSlideUp .4s ease-out .15s both; }
+  .summary-card:nth-child(4) { animation: fadeSlideUp .4s ease-out .2s both; }
+  .table-wrapper { animation: fadeSlideUp .4s ease-out .25s both; }
+  .filter-bar { animation: fadeSlideUp .35s ease-out .15s both; }
+  .tabs { animation: fadeSlideUp .35s ease-out .1s both; }
+  .pagination { animation: fadeSlideUp .35s ease-out .3s both; }
+</style>
+</head>
+<body>
+
+<!-- ═══ SIDEBAR ═══ -->
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <div class="logo">RF</div>
+    <div><h1>RugFlow</h1><span>ERP Systeem</span></div>
+  </div>
+  <div class="sidebar-section">
+    <div class="sidebar-section-title">Overzicht</div>
+    <a class="sidebar-link" href="dashboard.html">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25a2.25 2.25 0 0 1-2.25-2.25v-2.25Z"/></svg>
+      Dashboard
+    </a>
+  </div>
+  <div class="sidebar-section">
+    <div class="sidebar-section-title">Commercieel</div>
+    <a class="sidebar-link" href="orders.html">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 0 0 2.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 0 0-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75 2.25 2.25 0 0 0-.1-.664m-5.8 0A2.251 2.251 0 0 1 13.5 2.25H15a2.25 2.25 0 0 1 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25Z"/></svg>
+      Orders <span class="sidebar-badge">102</span>
+    </a>
+    <a class="sidebar-link" href="#">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z"/></svg>
+      Samples
+    </a>
+    <a class="sidebar-link" href="#">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg>
+      Facturatie
+    </a>
+    <a class="sidebar-link" href="klanten.html">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z"/></svg>
+      Klanten
+    </a>
+    <a class="sidebar-link" href="#">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z"/></svg>
+      Vertegenwoordigers
+    </a>
+    <a class="sidebar-link active" href="producten.html">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m21 7.5-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9"/></svg>
+      Producten
+    </a>
+  </div>
+  <div class="sidebar-section">
+    <div class="sidebar-section-title">Operationeel</div>
+    <a class="sidebar-link" href="#"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m7.848 8.25 1.536.887M7.848 8.25a3 3 0 1 1-5.196-3 3 3 0 0 1 5.196 3Zm1.536.887a2.165 2.165 0 0 1 1.083 1.839c.005.351.054.695.14 1.024M9.384 9.137l2.077 1.199"/></svg>Snijplanning</a>
+    <a class="sidebar-link" href="#"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17 17.25 21A2.652 2.652 0 0 0 21 17.25l-5.877-5.877M11.42 15.17l2.496-3.03"/></svg>Confectie</a>
+    <a class="sidebar-link" href="#"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0 1 3.75 9.375v-4.5Z"/></svg>Scanstation</a>
+    <a class="sidebar-link" href="#"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 21v-7.5a.75.75 0 0 1 .75-.75h3a.75.75 0 0 1 .75.75V21"/></svg>Magazijn</a>
+    <a class="sidebar-link" href="#"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 18.75a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h6"/></svg>Pick &amp; Ship</a>
+    <a class="sidebar-link" href="#"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3"/></svg>Rollen &amp; Reststukken</a>
+  </div>
+  <div class="sidebar-section">
+    <div class="sidebar-section-title">Systeem</div>
+    <a class="sidebar-link" href="#"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281"/></svg>Instellingen</a>
+  </div>
+</aside>
+
+<!-- ═══ MAIN ═══ -->
+<div class="main">
+  <header class="topbar">
+    <div class="topbar-search">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"/></svg>
+      <input type="text" placeholder="Zoek klanten, orders, producten...">
+    </div>
+    <div class="topbar-actions">
+      <button class="topbar-icon-btn"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0"/></svg></button>
+      <div class="topbar-avatar">MK</div>
+    </div>
+  </header>
+
+  <div class="content">
+    <!-- Page Header -->
+    <div class="page-header">
+      <div>
+        <h2>Producten</h2>
+        <p>Beheer artikelen, voorraad en rollen van alle tapijtkwaliteiten</p>
+      </div>
+      <div class="page-header-actions">
+        <button class="btn btn-secondary">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5"/></svg>
+          Exporteer
+        </button>
+        <button class="btn btn-primary">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+          Product Toevoegen
+        </button>
+      </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="summary-cards">
+      <div class="summary-card">
+        <div class="summary-icon blue">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m21 7.5-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9"/></svg>
+        </div>
+        <div class="summary-info">
+          <h4>Totaal Producten</h4>
+          <div class="summary-count">12.458</div>
+        </div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-icon emerald">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 12l4.179 2.25m0 0 5.571 3 5.571-3"/></svg>
+        </div>
+        <div class="summary-info">
+          <h4>Beschikbare Rollen</h4>
+          <div class="summary-count">3.847</div>
+        </div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-icon amber">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg>
+        </div>
+        <div class="summary-info">
+          <h4>Voorraadwaarde</h4>
+          <div class="summary-count">&euro;2.847.320</div>
+        </div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-icon terracotta">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 7.125C2.25 6.504 2.754 6 3.375 6h6c.621 0 1.125.504 1.125 1.125v3.75c0 .621-.504 1.125-1.125 1.125h-6a1.125 1.125 0 0 1-1.125-1.125v-3.75ZM14.25 8.625c0-.621.504-1.125 1.125-1.125h5.25c.621 0 1.125.504 1.125 1.125v8.25c0 .621-.504 1.125-1.125 1.125h-5.25a1.125 1.125 0 0 1-1.125-1.125v-8.25ZM3.75 16.125c0-.621.504-1.125 1.125-1.125h5.25c.621 0 1.125.504 1.125 1.125v2.25c0 .621-.504 1.125-1.125 1.125h-5.25a1.125 1.125 0 0 1-1.125-1.125v-2.25Z"/></svg>
+        </div>
+        <div class="summary-info">
+          <h4>Collecties</h4>
+          <div class="summary-count">47</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('producten')">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" style="width:16px;height:16px;vertical-align:-3px;margin-right:6px;"><path stroke-linecap="round" stroke-linejoin="round" d="m21 7.5-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9"/></svg>
+        Producten
+      </button>
+      <button class="tab" onclick="switchTab('rollen')">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" style="width:16px;height:16px;vertical-align:-3px;margin-right:6px;"><path stroke-linecap="round" stroke-linejoin="round" d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 12l4.179 2.25m0 0 5.571 3 5.571-3"/></svg>
+        Rollen &amp; Reststukken
+      </button>
+    </div>
+
+    <!-- ═══ TAB 1: PRODUCTEN ═══ -->
+    <div id="tab-producten" class="tab-panel active">
+      <!-- Filter Bar -->
+      <div class="filter-bar">
+        <div class="filter-search">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"/></svg>
+          <input type="text" placeholder="Zoek op artikelnummer, Karpi code, omschrijving...">
+        </div>
+        <select class="filter-select">
+          <option>Alle kwaliteiten</option>
+          <option>AUBU — Aubusson</option>
+          <option>CALI — California</option>
+          <option>DELT — Delta</option>
+          <option>OXFO — Oxford</option>
+        </select>
+        <select class="filter-select">
+          <option>Alle statussen</option>
+          <option>Actief</option>
+          <option>Uitlopend</option>
+          <option>Inactief</option>
+        </select>
+      </div>
+
+      <!-- Product Table -->
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Artikelnr</th>
+              <th>Karpi Code</th>
+              <th>Omschrijving</th>
+              <th>Kwaliteit</th>
+              <th>Kleur</th>
+              <th>Voorraad</th>
+              <th>VVP/m&sup2;</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="artikelnr">517240001</td>
+              <td><span class="karpi-code">AUBU01XX400500</span></td>
+              <td>Aubusson Antraciet 400cm</td>
+              <td>AUBU</td>
+              <td>01 — Antraciet</td>
+              <td class="stock-cell">
+                <div class="stock-bar-wrap">
+                  <span class="stock-value green">124</span>
+                  <div class="stock-bar"><div class="stock-bar-fill green" style="width:82%"></div></div>
+                </div>
+              </td>
+              <td class="vvp">&euro;34,50</td>
+              <td><span class="status-badge actief"><span class="status-dot actief"></span>Actief</span></td>
+            </tr>
+            <tr>
+              <td class="artikelnr">517240002</td>
+              <td><span class="karpi-code">AUBU02XX400500</span></td>
+              <td>Aubusson Beige 400cm</td>
+              <td>AUBU</td>
+              <td>02 — Beige</td>
+              <td class="stock-cell">
+                <div class="stock-bar-wrap">
+                  <span class="stock-value green">98</span>
+                  <div class="stock-bar"><div class="stock-bar-fill green" style="width:65%"></div></div>
+                </div>
+              </td>
+              <td class="vvp">&euro;34,50</td>
+              <td><span class="status-badge actief"><span class="status-dot actief"></span>Actief</span></td>
+            </tr>
+            <tr>
+              <td class="artikelnr">518230015</td>
+              <td><span class="karpi-code">CALI03XX400500</span></td>
+              <td>California Grijs 400cm</td>
+              <td>CALI</td>
+              <td>03 — Grijs</td>
+              <td class="stock-cell">
+                <div class="stock-bar-wrap">
+                  <span class="stock-value amber">18</span>
+                  <div class="stock-bar"><div class="stock-bar-fill amber" style="width:22%"></div></div>
+                </div>
+              </td>
+              <td class="vvp">&euro;42,80</td>
+              <td><span class="status-badge actief"><span class="status-dot actief"></span>Actief</span></td>
+            </tr>
+            <tr>
+              <td class="artikelnr">518230016</td>
+              <td><span class="karpi-code">CALI01XX500500</span></td>
+              <td>California Antraciet 500cm</td>
+              <td>CALI</td>
+              <td>01 — Antraciet</td>
+              <td class="stock-cell">
+                <div class="stock-bar-wrap">
+                  <span class="stock-value green">67</span>
+                  <div class="stock-bar"><div class="stock-bar-fill green" style="width:55%"></div></div>
+                </div>
+              </td>
+              <td class="vvp">&euro;44,20</td>
+              <td><span class="status-badge actief"><span class="status-dot actief"></span>Actief</span></td>
+            </tr>
+            <tr>
+              <td class="artikelnr">519210042</td>
+              <td><span class="karpi-code">DELT04XX400500</span></td>
+              <td>Delta Rood 400cm</td>
+              <td>DELT</td>
+              <td>04 — Rood</td>
+              <td class="stock-cell">
+                <div class="stock-bar-wrap">
+                  <span class="stock-value red">0</span>
+                  <div class="stock-bar"><div class="stock-bar-fill red" style="width:0%"></div></div>
+                </div>
+              </td>
+              <td class="vvp">&euro;28,90</td>
+              <td><span class="status-badge uitlopend"><span class="status-dot uitlopend"></span>Uitlopend</span></td>
+            </tr>
+            <tr>
+              <td class="artikelnr">519210043</td>
+              <td><span class="karpi-code">DELT02XX400500</span></td>
+              <td>Delta Beige 400cm</td>
+              <td>DELT</td>
+              <td>02 — Beige</td>
+              <td class="stock-cell">
+                <div class="stock-bar-wrap">
+                  <span class="stock-value amber">12</span>
+                  <div class="stock-bar"><div class="stock-bar-fill amber" style="width:15%"></div></div>
+                </div>
+              </td>
+              <td class="vvp">&euro;28,90</td>
+              <td><span class="status-badge actief"><span class="status-dot actief"></span>Actief</span></td>
+            </tr>
+            <tr>
+              <td class="artikelnr">520250078</td>
+              <td><span class="karpi-code">OXFO03XX400500</span></td>
+              <td>Oxford Grijs 400cm</td>
+              <td>OXFO</td>
+              <td>03 — Grijs</td>
+              <td class="stock-cell">
+                <div class="stock-bar-wrap">
+                  <span class="stock-value green">203</span>
+                  <div class="stock-bar"><div class="stock-bar-fill green" style="width:92%"></div></div>
+                </div>
+              </td>
+              <td class="vvp">&euro;52,60</td>
+              <td><span class="status-badge actief"><span class="status-dot actief"></span>Actief</span></td>
+            </tr>
+            <tr>
+              <td class="artikelnr">520250079</td>
+              <td><span class="karpi-code">OXFO01XX500500</span></td>
+              <td>Oxford Antraciet 500cm</td>
+              <td>OXFO</td>
+              <td>01 — Antraciet</td>
+              <td class="stock-cell">
+                <div class="stock-bar-wrap">
+                  <span class="stock-value red">3</span>
+                  <div class="stock-bar"><div class="stock-bar-fill red" style="width:4%"></div></div>
+                </div>
+              </td>
+              <td class="vvp">&euro;54,10</td>
+              <td><span class="status-badge actief"><span class="status-dot actief"></span>Actief</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Pagination -->
+      <div class="pagination">
+        <div class="pagination-info">1 - 8 van 12.458 producten</div>
+        <div class="pagination-buttons">
+          <button class="pagination-btn">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5"/></svg>
+          </button>
+          <button class="pagination-btn active">1</button>
+          <button class="pagination-btn">2</button>
+          <button class="pagination-btn">3</button>
+          <button class="pagination-btn">4</button>
+          <button class="pagination-btn">5</button>
+          <button class="pagination-btn">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ TAB 2: ROLLEN & RESTSTUKKEN ═══ -->
+    <div id="tab-rollen" class="tab-panel">
+      <!-- Filter Bar -->
+      <div class="filter-bar">
+        <div class="filter-search">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"/></svg>
+          <input type="text" placeholder="Zoek op rolnummer, artikelnummer, locatie...">
+        </div>
+        <select class="filter-select">
+          <option>Alle statussen</option>
+          <option>Beschikbaar</option>
+          <option>Gereserveerd</option>
+          <option>Verkocht</option>
+          <option>Reststuk</option>
+        </select>
+        <select class="filter-select">
+          <option>Alle locaties</option>
+          <option>A1 — Hal A Rij 1</option>
+          <option>A2 — Hal A Rij 2</option>
+          <option>B1 — Hal B Rij 1</option>
+          <option>B3 — Hal B Rij 3</option>
+        </select>
+      </div>
+
+      <!-- Rollen Table -->
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Rolnummer</th>
+              <th>Artikelnr</th>
+              <th>Omschrijving</th>
+              <th>Lengte (m)</th>
+              <th>Breedte (m)</th>
+              <th>m&sup2;</th>
+              <th>Waarde</th>
+              <th>Status</th>
+              <th>Locatie</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="artikelnr">R-2024-00147</td>
+              <td>517240001</td>
+              <td>Aubusson Antraciet 400cm</td>
+              <td style="font-variant-numeric:tabular-nums;">30,00</td>
+              <td style="font-variant-numeric:tabular-nums;">4,00</td>
+              <td style="font-weight:600;font-variant-numeric:tabular-nums;">120,00</td>
+              <td style="font-weight:600;font-variant-numeric:tabular-nums;">&euro;4.140,00</td>
+              <td><span class="rol-status beschikbaar"><span class="status-dot actief"></span>Beschikbaar</span></td>
+              <td><span class="rol-locatie">A1-03-R</span></td>
+            </tr>
+            <tr>
+              <td class="artikelnr">R-2024-00148</td>
+              <td>517240001</td>
+              <td>Aubusson Antraciet 400cm</td>
+              <td style="font-variant-numeric:tabular-nums;">25,50</td>
+              <td style="font-variant-numeric:tabular-nums;">4,00</td>
+              <td style="font-weight:600;font-variant-numeric:tabular-nums;">102,00</td>
+              <td style="font-weight:600;font-variant-numeric:tabular-nums;">&euro;3.519,00</td>
+              <td><span class="rol-status gereserveerd"><span class="status-dot uitlopend"></span>Gereserveerd</span></td>
+              <td><span class="rol-locatie">A1-03-L</span></td>
+            </tr>
+            <tr>
+              <td class="artikelnr">R-2024-00152</td>
+              <td>517240002</td>
+              <td>Aubusson Beige 400cm</td>
+              <td style="font-variant-numeric:tabular-nums;">18,75</td>
+              <td style="font-variant-numeric:tabular-nums;">4,00</td>
+              <td style="font-weight:600;font-variant-numeric:tabular-nums;">75,00</td>
+              <td style="font-weight:600;font-variant-numeric:tabular-nums;">&euro;2.587,50</td>
+              <td><span class="rol-status beschikbaar"><span class="status-dot actief"></span>Beschikbaar</span></td>
+              <td><span class="rol-locatie">A2-07-R</span></td>
+            </tr>
+            <tr>
+              <td class="artikelnr">R-2024-00189</td>
+              <td>518230015</td>
+              <td>California Grijs 400cm</td>
+              <td style="font-variant-numeric:tabular-nums;">8,30</td>
+              <td style="font-variant-numeric:tabular-nums;">4,00</td>
+              <td style="font-weight:600;font-variant-numeric:tabular-nums;">33,20</td>
+              <td style="font-weight:600;font-variant-numeric:tabular-nums;">&euro;1.420,96</td>
+              <td><span class="rol-status reststuk"><span class="status-dot" style="background:var(--terracotta-500)"></span>Reststuk</span></td>
+              <td><span class="rol-locatie">B1-12-L</span></td>
+            </tr>
+            <tr>
+              <td class="artikelnr">R-2024-00201</td>
+              <td>520250078</td>
+              <td>Oxford Grijs 400cm</td>
+              <td style="font-variant-numeric:tabular-nums;">30,00</td>
+              <td style="font-variant-numeric:tabular-nums;">4,00</td>
+              <td style="font-weight:600;font-variant-numeric:tabular-nums;">120,00</td>
+              <td style="font-weight:600;font-variant-numeric:tabular-nums;">&euro;6.312,00</td>
+              <td><span class="rol-status beschikbaar"><span class="status-dot actief"></span>Beschikbaar</span></td>
+              <td><span class="rol-locatie">B3-01-R</span></td>
+            </tr>
+            <tr>
+              <td class="artikelnr">R-2024-00215</td>
+              <td>520250079</td>
+              <td>Oxford Antraciet 500cm</td>
+              <td style="font-variant-numeric:tabular-nums;">22,40</td>
+              <td style="font-variant-numeric:tabular-nums;">5,00</td>
+              <td style="font-weight:600;font-variant-numeric:tabular-nums;">112,00</td>
+              <td style="font-weight:600;font-variant-numeric:tabular-nums;">&euro;6.059,20</td>
+              <td><span class="rol-status verkocht"><span class="status-dot inactief"></span>Verkocht</span></td>
+              <td><span class="rol-locatie">B3-02-L</span></td>
+            </tr>
+            <tr>
+              <td class="artikelnr">R-2024-00223</td>
+              <td>519210043</td>
+              <td>Delta Beige 400cm</td>
+              <td style="font-variant-numeric:tabular-nums;">4,60</td>
+              <td style="font-variant-numeric:tabular-nums;">4,00</td>
+              <td style="font-weight:600;font-variant-numeric:tabular-nums;">18,40</td>
+              <td style="font-weight:600;font-variant-numeric:tabular-nums;">&euro;531,76</td>
+              <td><span class="rol-status reststuk"><span class="status-dot" style="background:var(--terracotta-500)"></span>Reststuk</span></td>
+              <td><span class="rol-locatie">A2-11-R</span></td>
+            </tr>
+            <tr>
+              <td class="artikelnr">R-2024-00230</td>
+              <td>518230016</td>
+              <td>California Antraciet 500cm</td>
+              <td style="font-variant-numeric:tabular-nums;">30,00</td>
+              <td style="font-variant-numeric:tabular-nums;">5,00</td>
+              <td style="font-weight:600;font-variant-numeric:tabular-nums;">150,00</td>
+              <td style="font-weight:600;font-variant-numeric:tabular-nums;">&euro;6.630,00</td>
+              <td><span class="rol-status gereserveerd"><span class="status-dot uitlopend"></span>Gereserveerd</span></td>
+              <td><span class="rol-locatie">A1-08-L</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Pagination -->
+      <div class="pagination">
+        <div class="pagination-info">1 - 8 van 3.847 rollen</div>
+        <div class="pagination-buttons">
+          <button class="pagination-btn">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5"/></svg>
+          </button>
+          <button class="pagination-btn active">1</button>
+          <button class="pagination-btn">2</button>
+          <button class="pagination-btn">3</button>
+          <button class="pagination-btn">4</button>
+          <button class="pagination-btn">5</button>
+          <button class="pagination-btn">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+function switchTab(tab) {
+  // Update tab buttons
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  event.currentTarget.classList.add('active');
+
+  // Update tab panels
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+}
+</script>
+
+</body>
+</html>
