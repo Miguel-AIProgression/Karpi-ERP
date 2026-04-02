@@ -1,6 +1,12 @@
-import { Search } from 'lucide-react'
+import { Search, LogOut } from 'lucide-react'
+import { useAuth } from '@/hooks/use-auth'
 
 export function TopBar() {
+  const { user, signOut } = useAuth()
+
+  const name = user?.user_metadata?.name ?? user?.email?.split('@')[0] ?? 'User'
+  const initials = name.split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2)
+
   return (
     <header className="fixed top-0 left-[var(--sidebar-w)] right-0 h-[var(--topbar-h)] bg-white border-b border-slate-200 flex items-center justify-between px-6 z-20">
       {/* Search */}
@@ -13,11 +19,19 @@ export function TopBar() {
         />
       </div>
 
-      {/* User (placeholder) */}
+      {/* User */}
       <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-xs font-medium text-slate-600">
-          U
+        <div className="w-8 h-8 rounded-full bg-terracotta-100 flex items-center justify-center text-xs font-medium text-terracotta-600">
+          {initials}
         </div>
+        <span className="text-sm text-slate-600 hidden md:block">{name}</span>
+        <button
+          onClick={signOut}
+          className="p-1.5 text-slate-400 hover:text-slate-600 transition-colors"
+          title="Uitloggen"
+        >
+          <LogOut size={16} />
+        </button>
       </div>
     </header>
   )
