@@ -74,7 +74,7 @@ export async function fetchOrders(params: {
       id, order_nr, oud_order_nr, debiteur_nr, klant_referentie,
       orderdatum, afleverdatum, status, aantal_regels, totaal_bedrag,
       totaal_gewicht, vertegenw_code,
-      debiteuren!inner(naam)
+      debiteuren!debiteur_nr(naam)
     `, { count: 'exact' })
     .order('orderdatum', { ascending: false })
     .range(page * pageSize, (page + 1) * pageSize - 1)
@@ -125,7 +125,7 @@ export async function fetchOrderDetail(id: number): Promise<OrderDetail> {
     .from('orders')
     .select(`
       *,
-      debiteuren!inner(naam),
+      debiteuren!debiteur_nr(naam),
       vertegenwoordigers(naam)
     `)
     .eq('id', id)
