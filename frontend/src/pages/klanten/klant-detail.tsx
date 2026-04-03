@@ -124,20 +124,19 @@ export function KlantDetailPage() {
 
         <div className="mt-4 pt-4 border-t border-slate-100 flex items-center gap-3">
           <label className="text-sm font-medium text-slate-700">Gratis verzending</label>
+          <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+            klant.gratis_verzending
+              ? 'bg-emerald-100 text-emerald-700'
+              : 'bg-slate-100 text-slate-500'
+          }`}>
+            {klant.gratis_verzending ? 'Ja' : 'Nee'}
+          </span>
           <button
             onClick={() => gratisVerzendingMutation.mutate(!klant.gratis_verzending)}
             disabled={gratisVerzendingMutation.isPending}
-            className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-              klant.gratis_verzending
-                ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
-                : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-            } ${gratisVerzendingMutation.isPending ? 'opacity-50 cursor-wait' : ''}`}
+            className="text-xs text-terracotta-500 hover:text-terracotta-700 font-medium disabled:opacity-50"
           >
-            {gratisVerzendingMutation.isPending
-              ? 'Opslaan...'
-              : klant.gratis_verzending
-                ? 'Ja'
-                : 'Nee'}
+            {gratisVerzendingMutation.isPending ? 'Opslaan...' : 'Wijzig'}
           </button>
         </div>
       </div>
