@@ -46,7 +46,8 @@ export function ArticleSelector({ onSelect }: ArticleSelectorProps) {
         .eq('actief', true)
         .neq('artikelnr', 'VERZEND')
         .or(`artikelnr.ilike.%${s}%,karpi_code.ilike.%${s}%,omschrijving.ilike.%${s}%,zoeksleutel.ilike.%${s}%`)
-        .limit(10)
+        .order('omschrijving')
+        .limit(25)
 
       setResults((data ?? []) as SelectedArticle[])
     }, 300)
