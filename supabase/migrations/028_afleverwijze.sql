@@ -3,4 +3,4 @@
 
 ALTER TABLE debiteuren
   ADD COLUMN IF NOT EXISTS afleverwijze TEXT DEFAULT 'Bezorgen'
-  CHECK (afleverwijze IN ('Bezorgen', 'Afhalen', 'Franco'));
+  CHECK (afleverwijze IN ('Bezorgen', 'Afhalen'));

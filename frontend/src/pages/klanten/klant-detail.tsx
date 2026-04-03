@@ -146,7 +146,6 @@ export function KlantDetailPage() {
             >
               <option value="Bezorgen">Bezorgen</option>
               <option value="Afhalen">Afhalen</option>
-              <option value="Franco">Franco</option>
             </select>
           </div>
 
