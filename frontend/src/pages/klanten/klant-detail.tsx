@@ -10,6 +10,8 @@ import { useOrders } from '@/hooks/use-orders'
 import { KlanteigenNamenTab } from '@/components/klanten/klanteigen-namen-tab'
 import { KlantArtikelnummersTab } from '@/components/klanten/klant-artikelnummers-tab'
 
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+
 type Tab = 'info' | 'adressen' | 'orders' | 'eigennamen' | 'artikelnummers'
 
 const TABS: { key: Tab; label: string }[] = [
@@ -27,7 +29,7 @@ export function KlantDetailPage() {
 
   const { data: klant, isLoading } = useKlantDetail(debiteurNr)
   const { data: adressen } = useAfleveradressen(debiteurNr)
-  const { data: ordersData } = useOrders({ debiteurNr })
+  const { data: ordersData } = useOrders({ debiteurNr, pageSize: 1000 })
 
   if (isLoading) {
     return <PageHeader title="Klant laden..." />
@@ -56,19 +58,36 @@ export function KlantDetailPage() {
         </Link>
       </div>
 
-      <PageHeader title={klant.naam} />
-
       {/* Header card */}
       <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-6 mb-6">
-        <div className="flex items-center gap-3 mb-4">
-          <span className="text-sm text-slate-400">#{klant.debiteur_nr}</span>
-          <StatusBadge status={klant.status} type="order" />
-          <StatusBadge status={klant.tier} type="tier" />
-          {klant.vertegenwoordiger_naam && (
-            <span className="text-sm text-slate-500">
-              Verteg: <span className="font-medium text-slate-700">{klant.vertegenwoordiger_naam}</span>
-            </span>
+        <div className="flex items-start gap-4 mb-4">
+          {/* Logo / initialen */}
+          {klant.logo_path ? (
+            <img
+              src={`${SUPABASE_URL}/storage/v1/object/public/logos/${klant.debiteur_nr}.jpg`}
+              alt={klant.naam}
+              className="w-16 h-16 rounded-[var(--radius-sm)] object-contain bg-slate-50 border border-slate-100"
+              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+            />
+          ) : (
+            <div className="w-16 h-16 rounded-[var(--radius-sm)] bg-slate-100 flex items-center justify-center text-lg font-medium text-slate-400">
+              {klant.naam.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()}
+            </div>
           )}
+
+          <div className="flex-1">
+            <h1 className="text-xl font-semibold text-slate-900 mb-1">{klant.naam}</h1>
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-slate-400">#{klant.debiteur_nr}</span>
+              <StatusBadge status={klant.status} type="order" />
+              <StatusBadge status={klant.tier} type="tier" />
+              {klant.vertegenwoordiger_naam && (
+                <span className="text-sm text-slate-500">
+                  Verteg: <span className="font-medium text-slate-700">{klant.vertegenwoordiger_naam}</span>
+                </span>
+              )}
+            </div>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
@@ -149,16 +168,23 @@ function AdressenTab({ adressen }: { adressen?: { id: number; adres_nr: number; 
 }
 
 function OrdersTab({ orders, totalCount }: { orders?: { id: number; order_nr: string; totaal_bedrag: number; status: string }[]; totalCount?: number }) {
+  const PAGE_SIZE = 20
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
+
   if (!orders || orders.length === 0) {
     return <div className="p-5 text-sm text-slate-400">Nog geen orders</div>
   }
+
+  const total = totalCount ?? orders.length
+  const shown = Math.min(visibleCount, orders.length)
+
   return (
     <>
       <div className="px-5 py-3 border-b border-slate-100 text-xs text-slate-400">
-        {totalCount ?? orders.length} orders totaal
+        {total} orders totaal
       </div>
       <div className="divide-y divide-slate-50">
-        {orders.slice(0, 10).map((o) => (
+        {orders.slice(0, shown).map((o) => (
           <Link
             key={o.id}
             to={`/orders/${o.id}`}
@@ -170,6 +196,14 @@ function OrdersTab({ orders, totalCount }: { orders?: { id: number; order_nr: st
           </Link>
         ))}
       </div>
+      {shown < orders.length && (
+        <button
+          onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
+          className="w-full py-3 text-sm text-terracotta-500 hover:bg-slate-50 border-t border-slate-100"
+        >
+          Meer laden ({orders.length - shown} resterend)
+        </button>
+      )}
     </>
   )
 }
