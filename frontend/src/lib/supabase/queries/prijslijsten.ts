@@ -26,6 +26,23 @@ export interface PrijslijstRegelRow {
   ean_code: string | null
 }
 
+/** Paginate all rows from a Supabase table query */
+async function paginateAll<T>(
+  queryFn: (offset: number, limit: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
+  pageSize = 1000,
+): Promise<T[]> {
+  const all: T[] = []
+  let offset = 0
+  while (true) {
+    const { data, error } = await queryFn(offset, offset + pageSize - 1)
+    if (error) throw error
+    all.push(...((data ?? []) as T[]))
+    if (!data || data.length < pageSize) break
+    offset += pageSize
+  }
+  return all
+}
+
 /** Fetch all prijslijsten with linked klanten count */
 export async function fetchPrijslijsten(): Promise<PrijslijstOverviewRow[]> {
   // Get all headers
@@ -36,46 +53,48 @@ export async function fetchPrijslijsten(): Promise<PrijslijstOverviewRow[]> {
 
   if (hErr) throw hErr
 
-  // Get klanten grouped by prijslijst_nr
-  const { data: debiteuren, error: dErr } = await supabase
-    .from('debiteuren')
-    .select('debiteur_nr, naam, prijslijst_nr')
-    .not('prijslijst_nr', 'is', null)
-
-  if (dErr) throw dErr
+  // Get ALL klanten with prijslijst_nr (paginated past 1000-row limit)
+  const debiteuren = await paginateAll<{ debiteur_nr: number; naam: string; prijslijst_nr: string }>(
+    (from, to) =>
+      supabase
+        .from('debiteuren')
+        .select('debiteur_nr, naam, prijslijst_nr')
+        .not('prijslijst_nr', 'is', null)
+        .range(from, to),
+  )
 
   // Build klant map
   const klantMap: Record<string, { debiteur_nr: number; naam: string }[]> = {}
-  for (const d of debiteuren ?? []) {
-    const pnr = d.prijslijst_nr as string
+  for (const d of debiteuren) {
+    const pnr = d.prijslijst_nr
     if (!klantMap[pnr]) klantMap[pnr] = []
-    klantMap[pnr].push({ debiteur_nr: d.debiteur_nr as number, naam: d.naam as string })
+    klantMap[pnr].push({ debiteur_nr: d.debiteur_nr, naam: d.naam })
   }
 
-  // Get all regels for counting — paginate past 1000-row default limit
-  const allRegels: { prijslijst_nr: string }[] = []
-  const pageSize = 1000
-  let offset = 0
-  while (true) {
-    const { data: regels, error: rErr } = await supabase
-      .from('prijslijst_regels')
-      .select('prijslijst_nr')
-      .range(offset, offset + pageSize - 1)
-
-    if (rErr) throw rErr
-    allRegels.push(...((regels ?? []) as { prijslijst_nr: string }[]))
-    if (!regels || regels.length < pageSize) break
-    offset += pageSize
-  }
-
-  // Build count map
+  // Get regel counts per prijslijst (only count, no data transfer)
   const countMap: Record<string, number> = {}
-  for (const r of allRegels) {
-    const pnr = r.prijslijst_nr as string
-    countMap[pnr] = (countMap[pnr] ?? 0) + 1
+  const batchSize = 10
+  const headerList = headers ?? []
+  for (let i = 0; i < headerList.length; i += batchSize) {
+    const batch = headerList.slice(i, i + batchSize)
+    const results = await Promise.all(
+      batch.map((h) =>
+        supabase
+          .from('prijslijst_regels')
+          .select('*', { count: 'exact', head: true })
+          .eq('prijslijst_nr', h.nr as string)
+          .then(({ count, error }) => {
+            if (error) throw error
+            return { nr: h.nr as string, count: count ?? 0 }
+          }),
+      ),
+    )
+    for (const r of results) {
+      countMap[r.nr] = r.count
+    }
   }
 
-  return (headers ?? []).map((h) => ({
+  return headerList.map((h) => ({
     nr: h.nr as string,
     naam: h.naam as string,
     geldig_vanaf: h.geldig_vanaf as string | null,

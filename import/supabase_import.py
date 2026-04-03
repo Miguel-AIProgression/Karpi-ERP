@@ -95,9 +95,9 @@ print("\n3  Prijslijst headers...")
 # Collect from prijslijsten tab
 pls = df_prijslijsten[['_Prijslijst_nr', '_Prijslijst_naam']].drop_duplicates()
 pl_header_records = {
-    str(row['_Prijslijst_nr']).strip(): {"nr": str(row['_Prijslijst_nr']).strip(), "naam": clean(row['_Prijslijst_naam'])}
+    str(int(row['_Prijslijst_nr'])).zfill(4): {"nr": str(int(row['_Prijslijst_nr'])).zfill(4), "naam": clean(row['_Prijslijst_naam'])}
     for _, row in pls.iterrows()
-    if str(row['_Prijslijst_nr']).strip()
+    if pd.notna(row['_Prijslijst_nr']) and str(row['_Prijslijst_nr']).strip()
 }
 # Also collect from debiteuren (many more prijslijst nrs)
 for _, r in df_debiteuren.iterrows():
@@ -282,7 +282,7 @@ for _, r in df_prijslijsten.iterrows():
     artnr = str(int(r['Artikelnr'])) if pd.notna(r['Artikelnr']) else None
     if not artnr or artnr not in product_nrs:
         continue
-    pnr = str(r['_Prijslijst_nr']).strip()
+    pnr = str(int(r['_Prijslijst_nr'])).zfill(4)
     pl_records.append({
         "prijslijst_nr": pnr,
         "artikelnr": artnr,

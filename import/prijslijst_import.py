@@ -333,6 +333,17 @@ def main():
         print(f"\n4  {len(all_missing_products)} ontbrekende producten aanmaken in producten tabel...\n")
         new_products = []
         for artikelnr, info in all_missing_products.items():
+            oms = (info["omschrijving"] or "").upper()
+            if "BREED" in oms:
+                ptype = "rol"
+            elif "CA:" in oms:
+                m = re.search(r'CA:\s*(\d+)\s*[xX]\s*(\d+)', oms)
+                if m and int(m.group(1)) * int(m.group(2)) < 10000:
+                    ptype = "staaltje"
+                else:
+                    ptype = "vast"
+            else:
+                ptype = "overig"
             new_products.append({
                 "artikelnr": artikelnr,
                 "omschrijving": info["omschrijving"] or "Onbekend product",
@@ -341,7 +352,7 @@ def main():
                 "voorraad": 0,
                 "gereserveerd": 0,
                 "vrije_voorraad": 0,
-                "product_type": "vast",
+                "product_type": ptype,
                 "actief": True,
             })
         upsert_batch("producten", new_products, on_conflict="artikelnr")
