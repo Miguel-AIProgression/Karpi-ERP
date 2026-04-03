@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, X } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { InfoField } from '@/components/ui/info-field'
 import { StatusBadge } from '@/components/ui/status-badge'
@@ -28,6 +28,7 @@ export function KlantDetailPage() {
   const { id } = useParams<{ id: string }>()
   const debiteurNr = Number(id)
   const [activeTab, setActiveTab] = useState<Tab>('info')
+  const [showLogo, setShowLogo] = useState(false)
 
   const { data: klant, isLoading } = useKlantDetail(debiteurNr)
   const { data: adressen } = useAfleveradressen(debiteurNr)
@@ -65,12 +66,14 @@ export function KlantDetailPage() {
         <div className="flex items-start gap-4 mb-4">
           {/* Logo / initialen */}
           {klant.logo_path ? (
-            <img
-              src={`${SUPABASE_URL}/storage/v1/object/public/logos/${klant.debiteur_nr}.jpg`}
-              alt={klant.naam}
-              className="w-16 h-16 rounded-[var(--radius-sm)] object-contain bg-slate-50 border border-slate-100"
-              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
-            />
+            <button onClick={() => setShowLogo(true)} className="cursor-zoom-in">
+              <img
+                src={`${SUPABASE_URL}/storage/v1/object/public/logos/${klant.debiteur_nr}.jpg`}
+                alt={klant.naam}
+                className="w-16 h-16 rounded-[var(--radius-sm)] object-contain bg-slate-50 border border-slate-100"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+              />
+            </button>
           ) : (
             <div className="w-16 h-16 rounded-[var(--radius-sm)] bg-slate-100 flex items-center justify-center text-lg font-medium text-slate-400">
               {klant.naam.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()}
@@ -132,6 +135,28 @@ export function KlantDetailPage() {
         {activeTab === 'artikelnummers' && <KlantArtikelnummersTab debiteurNr={debiteurNr} />}
         {activeTab === 'prijslijst' && <KlantPrijslijstTab debiteurNr={debiteurNr} />}
       </div>
+
+      {/* Logo lightbox */}
+      {showLogo && klant.logo_path && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          onClick={() => setShowLogo(false)}
+        >
+          <div className="relative max-w-lg max-h-[80vh] p-2 bg-white rounded-[var(--radius)] shadow-xl">
+            <button
+              onClick={() => setShowLogo(false)}
+              className="absolute -top-3 -right-3 w-8 h-8 flex items-center justify-center rounded-full bg-white shadow-md text-slate-500 hover:text-slate-700"
+            >
+              <X size={16} />
+            </button>
+            <img
+              src={`${SUPABASE_URL}/storage/v1/object/public/logos/${klant.debiteur_nr}.jpg`}
+              alt={klant.naam}
+              className="max-w-full max-h-[75vh] object-contain"
+            />
+          </div>
+        </div>
+      )}
     </>
   )
 }
