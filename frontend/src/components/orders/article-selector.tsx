@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Search } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
-import { sanitizeSearch } from '@/lib/utils/sanitize'
+import { sanitizeSearch, applyProductSearch, filterProductsWordBoundary } from '@/lib/utils/sanitize'
 import { SubstitutionPicker } from './substitution-picker'
 
 export interface SelectedArticle {
@@ -19,7 +19,9 @@ export interface SubstitutionInfo {
   fysiek_artikelnr: string
   fysiek_omschrijving: string
   fysiek_karpi_code: string | null
+  fysiek_kwaliteit_code: string
   fysiek_vrije_voorraad: number
+  fysiek_verkoopprijs: number | null
   omstickeren: true
 }
 
@@ -40,16 +42,18 @@ export function ArticleSelector({ onSelect }: ArticleSelectorProps) {
     if (!s) return
 
     const timer = setTimeout(async () => {
-      const { data } = await supabase
-        .from('producten')
-        .select('artikelnr, karpi_code, omschrijving, verkoopprijs, gewicht_kg, vrije_voorraad, besteld_inkoop, kwaliteit_code')
-        .eq('actief', true)
-        .neq('artikelnr', 'VERZEND')
-        .or(`artikelnr.ilike.%${s}%,karpi_code.ilike.%${s}%,omschrijving.ilike.%${s}%,zoeksleutel.ilike.%${s}%`)
-        .order('omschrijving')
-        .limit(25)
+      let query = applyProductSearch(
+        supabase
+          .from('producten')
+          .select('artikelnr, karpi_code, omschrijving, verkoopprijs, gewicht_kg, vrije_voorraad, besteld_inkoop, kwaliteit_code')
+          .eq('actief', true)
+          .neq('artikelnr', 'VERZEND'),
+        search
+      )
+      const { data } = await query.order('omschrijving').limit(500)
+      const filtered = filterProductsWordBoundary((data ?? []) as SelectedArticle[], search).slice(0, 50)
 
-      setResults((data ?? []) as SelectedArticle[])
+      setResults(filtered as SelectedArticle[])
     }, 300)
 
     return () => clearTimeout(timer)
@@ -137,7 +141,9 @@ export function ArticleSelector({ onSelect }: ArticleSelectorProps) {
                 fysiek_artikelnr: equivalent.artikelnr,
                 fysiek_omschrijving: equivalent.omschrijving,
                 fysiek_karpi_code: equivalent.karpi_code,
+                fysiek_kwaliteit_code: equivalent.kwaliteit_code,
                 fysiek_vrije_voorraad: equivalent.vrije_voorraad,
+                fysiek_verkoopprijs: equivalent.verkoopprijs,
                 omstickeren: true,
               })
               setPendingArticle(null)

@@ -1,5 +1,5 @@
 import { supabase } from '../client'
-import { sanitizeSearch } from '@/lib/utils/sanitize'
+import { applyProductSearch, filterProductsWordBoundary } from '@/lib/utils/sanitize'
 
 export type ProductType = 'vast' | 'rol' | 'overig' | 'staaltje'
 export type ProductSortField = 'artikelnr' | 'karpi_code' | 'omschrijving' | 'verkoopprijs' | 'voorraad' | 'vrije_voorraad' | 'aantal_rollen' | 'totaal_oppervlak_m2' | 'locatie'
@@ -56,31 +56,34 @@ export async function fetchProducten(params: {
   sortDir?: SortDirection
 }) {
   const { search, page = 0, pageSize = 50, productType, sortBy = 'artikelnr', sortDir = 'asc' } = params
+  const hasSearch = Boolean(search?.trim())
 
   let query = supabase
     .from('producten_overzicht')
     .select('artikelnr, karpi_code, omschrijving, kwaliteit_code, kleur_code, zoeksleutel, voorraad, vrije_voorraad, verkoopprijs, actief, product_type, locatie, aantal_rollen, totaal_oppervlak_m2, totaal_waarde_rollen', { count: 'exact' })
     .eq('actief', true)
     .order(sortBy, { ascending: sortDir === 'asc' })
-    .range(page * pageSize, (page + 1) * pageSize - 1)
 
   if (productType && productType !== 'alle') {
     query = query.eq('product_type', productType)
   }
 
-  if (search) {
-    const s = sanitizeSearch(search)
-    if (s) {
-      query = query.or(
-        `artikelnr.ilike.%${s}%,karpi_code.ilike.%${s}%,omschrijving.ilike.%${s}%,zoeksleutel.ilike.%${s}%`
-      )
-    }
+  if (hasSearch) {
+    // Bij zoeken: geen paginering zodat client-side word-boundary filter alle kandidaten verwerkt
+    query = applyProductSearch(query, search!).limit(1000)
+  } else {
+    query = query.range(page * pageSize, (page + 1) * pageSize - 1)
   }
 
   const { data, error, count } = await query
   if (error) throw error
 
-  return { producten: (data ?? []) as ProductRow[], totalCount: count ?? 0 }
+  // Client-side word-boundary filter: voorkomt dat "16" matcht in "160 ROND"
+  const producten = hasSearch
+    ? filterProductsWordBoundary((data ?? []) as ProductRow[], search!)
+    : (data ?? []) as ProductRow[]
+
+  return { producten, totalCount: hasSearch ? producten.length : (count ?? 0) }
 }
 
 /** Fetch single product */

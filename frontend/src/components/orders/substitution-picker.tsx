@@ -1,6 +1,7 @@
 import { ArrowRightLeft, Package } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { fetchEquivalenteProducten, type EquivalentProduct } from '@/lib/supabase/queries/product-equivalents'
+import { formatCurrency } from '@/lib/utils/formatters'
 
 interface SubstitutionPickerProps {
   artikelnr: string
@@ -72,7 +73,12 @@ export function SubstitutionPicker({ artikelnr, omschrijving, onSelect, onSkip }
                   </span>
                   <span className="ml-2">{eq.omschrijving}</span>
                 </div>
-                <div className="flex items-center gap-2 shrink-0 ml-2">
+                <div className="flex items-center gap-3 shrink-0 ml-2">
+                  {eq.verkoopprijs != null && (
+                    <span className="text-xs font-medium text-slate-700">
+                      {formatCurrency(eq.verkoopprijs)}
+                    </span>
+                  )}
                   <span className={`text-xs ${opVoorraad ? 'text-emerald-600' : 'text-rose-400'}`}>
                     <Package size={10} className="inline mr-1" />
                     Vrij: {eq.vrije_voorraad}

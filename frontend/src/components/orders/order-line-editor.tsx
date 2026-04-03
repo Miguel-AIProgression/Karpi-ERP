@@ -52,12 +52,32 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, onArticleSele
     let prijs = article.verkoopprijs
     let klant_eigen_naam: string | undefined
     let klant_artikelnr: string | undefined
+    let prijsUitPrijslijst = false
 
     if (onArticleSelected) {
       const result = await onArticleSelected(article)
-      if (result.prijs !== null) prijs = result.prijs
+      if (result.prijs !== null) {
+        prijs = result.prijs
+        prijsUitPrijslijst = true
+      }
       klant_eigen_naam = result.klant_eigen_naam ?? undefined
       klant_artikelnr = result.klant_artikelnr ?? undefined
+    }
+
+    // Als origineel geen prijs heeft in de prijslijst, zoek de vervanger op
+    if (!prijsUitPrijslijst && substitution && onArticleSelected) {
+      const fysiekArticle: SelectedArticle = {
+        ...article,
+        artikelnr: substitution.fysiek_artikelnr,
+        kwaliteit_code: substitution.fysiek_kwaliteit_code,
+        verkoopprijs: substitution.fysiek_verkoopprijs,
+      }
+      const fysiekResult = await onArticleSelected(fysiekArticle)
+      if (fysiekResult.prijs !== null) {
+        prijs = fysiekResult.prijs
+      } else {
+        prijs = substitution.fysiek_verkoopprijs
+      }
     }
 
     const newLine: OrderRegelFormData = {
@@ -97,6 +117,7 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, onArticleSele
           ) : (
             <>Totaal: {formatCurrency(totaal)}</>
           )}
+          <span className="text-xs font-normal text-slate-400 ml-1">ex BTW</span>
         </span>
       </div>
 
