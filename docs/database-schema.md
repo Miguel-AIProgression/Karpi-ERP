@@ -276,6 +276,8 @@ Productregels per order. artikelnr nullable voor service-items.
 | vrije_voorraad, verwacht_aantal | NUMERIC | Snapshot |
 | volgende_ontvangst | DATE | |
 | laatste_bon | DATE | |
+| fysiek_artikelnr | TEXT FK → producten | Fysiek te leveren artikel bij substitutie (NULL = zelfde als artikelnr) |
+| omstickeren | BOOLEAN | Product moet omgestickerd worden naar bestelde naam (default false) |
 | UK: (order_id, regelnummer) | | |
 
 ---
@@ -463,6 +465,7 @@ Audit trail: wie heeft wat wanneer gedaan.
 | `herbereken_product_reservering(artikelnr TEXT)` | Herbereken gereserveerd + vrije_voorraad voor één product op basis van actieve orders |
 | `update_reservering_bij_orderregel()` | Trigger: bij INSERT/UPDATE/DELETE op order_regels → herbereken reservering |
 | `update_reservering_bij_order_status()` | Trigger: bij statuswijziging order → herbereken reservering alle producten in die order |
+| `zoek_equivalente_producten(artikelnr TEXT, min_voorraad INTEGER)` | Zoekt producten met dezelfde collectie + kleur_code die op voorraad zijn (substitutie-suggesties) |
 
 ---
 

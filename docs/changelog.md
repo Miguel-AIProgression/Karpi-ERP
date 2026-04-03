@@ -1,5 +1,16 @@
 # Changelog — RugFlow ERP
 
+## 2026-04-03 — Product substitutie bij orderregels
+- **Database:** `fysiek_artikelnr` en `omstickeren` kolommen op `order_regels` (migratie 025)
+- **Database:** `zoek_equivalente_producten()` functie voor equivalentie-lookup via collecties
+- **Database:** Reserveringstriggers aangepast: reserveert op `fysiek_artikelnr` (indien gezet)
+- **Database:** RPCs `create/update/delete_order_with_lines` bijgewerkt voor substitutie-kolommen (migratie 026)
+- **Frontend:** ArticleSelector toont automatisch substitutie-suggesties bij voorraad = 0
+- **Frontend:** SubstitutionPicker component voor kiezen van equivalent product
+- **Frontend:** Orderregels tonen substitutie-indicator (fysiek artikel + omstickeren badge)
+- **Frontend:** fetchOrderRegels laadt substitutie-data voor edit mode
+- **Doel:** Klant bestelt product X (factuur), magazijn levert product Y (pakbon) en stickert om
+
 ## 2026-04-03 — Klantspecifieke prijslijsten import
 - Spec: `specs/09-prijslijst-excel-import.md` — koppeling WeTransfer ZIP (45 Excel prijslijsten) aan klanten
 - Python importscript `import/prijslijst_import.py`:

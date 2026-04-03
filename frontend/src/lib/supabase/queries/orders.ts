@@ -53,6 +53,10 @@ export interface OrderRegel {
   vrije_voorraad: number | null
   klant_eigen_naam?: string | null
   klant_artikelnr?: string | null
+  // Substitutie
+  fysiek_artikelnr?: string | null
+  omstickeren?: boolean
+  fysiek_omschrijving?: string | null
 }
 
 export interface StatusCount {
@@ -168,7 +172,7 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
 
   const { data, error } = await supabase
     .from('order_regels')
-    .select('id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2, orderaantal, te_leveren, backorder, prijs, korting_pct, bedrag, gewicht_kg, vrije_voorraad, producten(kwaliteit_code)')
+    .select('id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2, orderaantal, te_leveren, backorder, prijs, korting_pct, bedrag, gewicht_kg, vrije_voorraad, fysiek_artikelnr, omstickeren, producten(kwaliteit_code)')
     .eq('order_id', orderId)
     .order('regelnummer')
 
@@ -182,6 +186,7 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
     r: (typeof regels)[number],
     eigenNaamMap?: Map<string, string>,
     klantArtMap?: Map<string, string>,
+    fysiekOmschMap?: Map<string, string>,
   ): OrderRegel {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const row = r as any
@@ -205,11 +210,31 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
       vrije_voorraad: row.vrije_voorraad,
       klant_eigen_naam: kwalCode && eigenNaamMap ? eigenNaamMap.get(kwalCode) ?? null : null,
       klant_artikelnr: row.artikelnr && klantArtMap ? klantArtMap.get(row.artikelnr) ?? null : null,
+      fysiek_artikelnr: row.fysiek_artikelnr ?? null,
+      omstickeren: row.omstickeren ?? false,
+      fysiek_omschrijving: row.fysiek_artikelnr && fysiekOmschMap
+        ? fysiekOmschMap.get(row.fysiek_artikelnr) ?? null : null,
     }
   }
 
+  // Fetch omschrijving for substituted products
+  const fysiekeArtikelnrs = regels
+    .map((r: any) => r.fysiek_artikelnr)
+    .filter((a: string | null) => a != null) as string[]
+
+  let fysiekOmschMap = new Map<string, string>()
+  if (fysiekeArtikelnrs.length > 0) {
+    const { data: fysiekData } = await supabase
+      .from('producten')
+      .select('artikelnr, omschrijving')
+      .in('artikelnr', fysiekeArtikelnrs)
+    fysiekOmschMap = new Map(
+      (fysiekData ?? []).map((p: { artikelnr: string; omschrijving: string }) => [p.artikelnr, p.omschrijving])
+    )
+  }
+
   if (!debiteurNr) {
-    return regels.map((r) => toRegel(r))
+    return regels.map((r) => toRegel(r, undefined, undefined, fysiekOmschMap))
   }
 
   // Fetch all klanteigen namen for this customer in one query
@@ -232,5 +257,5 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
     (klantArtNrs ?? []).map((n: { artikelnr: string; klant_artikel: string }) => [n.artikelnr, n.klant_artikel])
   )
 
-  return regels.map((r) => toRegel(r, eigenNaamMap, klantArtMap))
+  return regels.map((r) => toRegel(r, eigenNaamMap, klantArtMap, fysiekOmschMap))
 }

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Search } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
 import { sanitizeSearch } from '@/lib/utils/sanitize'
+import { SubstitutionPicker } from './substitution-picker'
 
 export interface SelectedArticle {
   artikelnr: string
@@ -14,14 +15,23 @@ export interface SelectedArticle {
   kwaliteit_code: string | null
 }
 
+export interface SubstitutionInfo {
+  fysiek_artikelnr: string
+  fysiek_omschrijving: string
+  fysiek_karpi_code: string | null
+  fysiek_vrije_voorraad: number
+  omstickeren: true
+}
+
 interface ArticleSelectorProps {
-  onSelect: (article: SelectedArticle) => void
+  onSelect: (article: SelectedArticle, substitution?: SubstitutionInfo) => void
 }
 
 export function ArticleSelector({ onSelect }: ArticleSelectorProps) {
   const [search, setSearch] = useState('')
   const [results, setResults] = useState<SelectedArticle[]>([])
   const [open, setOpen] = useState(false)
+  const [pendingArticle, setPendingArticle] = useState<SelectedArticle | null>(null)
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -45,7 +55,10 @@ export function ArticleSelector({ onSelect }: ArticleSelectorProps) {
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false)
+        setPendingArticle(null)
+      }
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
@@ -78,9 +91,15 @@ export function ArticleSelector({ onSelect }: ArticleSelectorProps) {
               key={article.artikelnr}
               type="button"
               onClick={() => {
-                onSelect(article)
-                setSearch('')
-                setOpen(false)
+                if (article.vrije_voorraad <= 0) {
+                  setPendingArticle(article)
+                  setSearch('')
+                  setOpen(false)
+                } else {
+                  onSelect(article)
+                  setSearch('')
+                  setOpen(false)
+                }
               }}
               className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 border-b border-slate-50 last:border-0"
             >
@@ -103,6 +122,29 @@ export function ArticleSelector({ onSelect }: ArticleSelectorProps) {
               )}
             </button>
           ))}
+        </div>
+      )}
+
+      {pendingArticle && (
+        <div className="mt-2">
+          <SubstitutionPicker
+            artikelnr={pendingArticle.artikelnr}
+            omschrijving={pendingArticle.omschrijving}
+            onSelect={(equivalent) => {
+              onSelect(pendingArticle, {
+                fysiek_artikelnr: equivalent.artikelnr,
+                fysiek_omschrijving: equivalent.omschrijving,
+                fysiek_karpi_code: equivalent.karpi_code,
+                fysiek_vrije_voorraad: equivalent.vrije_voorraad,
+                omstickeren: true,
+              })
+              setPendingArticle(null)
+            }}
+            onSkip={() => {
+              onSelect(pendingArticle)
+              setPendingArticle(null)
+            }}
+          />
         </div>
       )}
     </div>

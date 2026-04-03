@@ -2,7 +2,7 @@ import { useRef } from 'react'
 import { Trash2 } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils/formatters'
 import { ArticleSelector } from './article-selector'
-import type { SelectedArticle } from './article-selector'
+import type { SelectedArticle, SubstitutionInfo } from './article-selector'
 import type { OrderRegelFormData } from '@/lib/supabase/queries/order-mutations'
 
 interface OrderLineEditorProps {
@@ -47,7 +47,7 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, onArticleSele
     onChange(lines.filter((_, i) => i !== index))
   }
 
-  const addArticle = async (article: SelectedArticle) => {
+  const addArticle = async (article: SelectedArticle, substitution?: SubstitutionInfo) => {
     let prijs = article.verkoopprijs
     let klant_eigen_naam: string | undefined
     let klant_artikelnr: string | undefined
@@ -69,10 +69,14 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, onArticleSele
       korting_pct: defaultKorting,
       gewicht_kg: article.gewicht_kg ?? undefined,
       bedrag: 0,
-      vrije_voorraad: article.vrije_voorraad,
+      vrije_voorraad: substitution ? substitution.fysiek_vrije_voorraad : article.vrije_voorraad,
       besteld_inkoop: article.besteld_inkoop,
       klant_eigen_naam,
       klant_artikelnr,
+      // Substitutie
+      fysiek_artikelnr: substitution?.fysiek_artikelnr,
+      fysiek_omschrijving: substitution?.fysiek_omschrijving,
+      omstickeren: substitution?.omstickeren,
     }
     newLine.bedrag = calcBedrag(newLine)
     onChange([...lines, newLine])
@@ -124,6 +128,11 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, onArticleSele
                         {line.klant_artikelnr}
                       </div>
                     )}
+                    {line.omstickeren && line.fysiek_artikelnr && (
+                      <div className="text-xs text-amber-600 flex items-center gap-1 mt-0.5" title="Wordt omgestickerd">
+                        ↔ Fysiek: {line.fysiek_artikelnr}
+                      </div>
+                    )}
                   </td>
                   <td className="px-3 py-2">
                     <input
@@ -135,6 +144,11 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, onArticleSele
                     {line.klant_eigen_naam && (
                       <div className="text-xs text-blue-500" title="Klanteigen naam">
                         {line.klant_eigen_naam}
+                      </div>
+                    )}
+                    {line.omstickeren && line.fysiek_omschrijving && (
+                      <div className="text-xs text-amber-600 mt-0.5">
+                        Omstickeren van: {line.fysiek_omschrijving}
                       </div>
                     )}
                   </td>
@@ -159,6 +173,11 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, onArticleSele
                       className="w-full text-right bg-transparent border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-terracotta-400/30"
                       min={1}
                     />
+                    {line.omstickeren && (line.vrije_voorraad ?? 0) > 0 && line.orderaantal > (line.vrije_voorraad ?? 0) && (
+                      <div className="text-xs text-amber-600 mt-0.5">
+                        Max {line.vrije_voorraad} vrij
+                      </div>
+                    )}
                   </td>
                   <td className="px-3 py-2">
                     <input

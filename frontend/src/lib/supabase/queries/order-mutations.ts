@@ -37,6 +37,10 @@ export interface OrderRegelFormData {
   besteld_inkoop?: number
   klant_eigen_naam?: string
   klant_artikelnr?: string
+  // Substitutie fields
+  fysiek_artikelnr?: string
+  fysiek_omschrijving?: string  // Display-only
+  omstickeren?: boolean
 }
 
 /** Create order + lines atomically via RPC */
@@ -78,6 +82,8 @@ export async function createOrder(
     korting_pct: r.korting_pct,
     bedrag: r.bedrag ?? null,
     gewicht_kg: r.gewicht_kg ?? null,
+    fysiek_artikelnr: r.fysiek_artikelnr || null,
+    omstickeren: r.omstickeren ?? false,
   }))
 
   const { data, error } = await supabase.rpc('create_order_with_lines', {
@@ -107,6 +113,8 @@ export async function updateOrderWithLines(
     korting_pct: r.korting_pct,
     bedrag: r.bedrag ?? null,
     gewicht_kg: r.gewicht_kg ?? null,
+    fysiek_artikelnr: r.fysiek_artikelnr || null,
+    omstickeren: r.omstickeren ?? false,
   }))
 
   const { error } = await supabase.rpc('update_order_with_lines', {
