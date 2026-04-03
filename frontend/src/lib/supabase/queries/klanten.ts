@@ -46,6 +46,8 @@ export interface KlantDetail {
   btw_nummer: string | null
   gln_bedrijf: string | null
   omzet_ytd: number
+  gratis_verzending: boolean
+  afleverwijze: string | null
 }
 
 export interface KlanteigenNaam {
