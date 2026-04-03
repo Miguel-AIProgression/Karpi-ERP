@@ -1,5 +1,17 @@
 # Changelog — RugFlow ERP
 
+## 2026-04-03 — Klantlogo's import & weergave
+- Storage bucket `logos` aangemaakt met publieke leestoegang (migratie 024)
+- Python upload script `import/upload_logos.py` met deduplicatie en DB-matching
+- Logo zichtbaar op klant-detailpagina met initialen-fallback
+- 1.800+ logo's klaar voor upload naar Supabase Storage
+
+## 2026-04-03
+
+### Herclassificatie band-producten
+- Band-producten (katoen, leder, leather) zonder karpi_code van "Vaste maat" → "Overig"
+- Migratie: `023_herclassificatie_banden_naar_overig.sql`
+
 ## 2026-04-02 (update 8)
 
 ### Vertegenwoordigers module (nieuw)
