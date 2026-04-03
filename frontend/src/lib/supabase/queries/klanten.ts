@@ -213,14 +213,24 @@ export async function fetchKlantPrijslijst(debiteurNr: number): Promise<Prijslij
   if (klantError) throw klantError
   if (!klant?.prijslijst_nr) return []
 
-  const { data, error } = await supabase
-    .from('prijslijst_regels')
-    .select('artikelnr, omschrijving, omschrijving_2, prijs, gewicht')
-    .eq('prijslijst_nr', klant.prijslijst_nr)
-    .order('artikelnr')
+  // Paginate to fetch all rows (Supabase default limit is 1000)
+  const allRows: PrijslijstRegel[] = []
+  const pageSize = 1000
+  let offset = 0
+  while (true) {
+    const { data, error } = await supabase
+      .from('prijslijst_regels')
+      .select('artikelnr, omschrijving, omschrijving_2, prijs, gewicht')
+      .eq('prijslijst_nr', klant.prijslijst_nr)
+      .order('artikelnr')
+      .range(offset, offset + pageSize - 1)
 
-  if (error) throw error
-  return (data ?? []) as PrijslijstRegel[]
+    if (error) throw error
+    allRows.push(...((data ?? []) as PrijslijstRegel[]))
+    if (!data || data.length < pageSize) break
+    offset += pageSize
+  }
+  return allRows
 }
 
 /** Fetch all vertegenwoordigers (for filter dropdown) */

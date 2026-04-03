@@ -52,16 +52,25 @@ export async function fetchPrijslijsten(): Promise<PrijslijstOverviewRow[]> {
     klantMap[pnr].push({ debiteur_nr: d.debiteur_nr as number, naam: d.naam as string })
   }
 
-  // Get all regels for counting (select only prijslijst_nr for minimal payload)
-  const { data: regels, error: rErr } = await supabase
-    .from('prijslijst_regels')
-    .select('prijslijst_nr')
+  // Get all regels for counting — paginate past 1000-row default limit
+  const allRegels: { prijslijst_nr: string }[] = []
+  const pageSize = 1000
+  let offset = 0
+  while (true) {
+    const { data: regels, error: rErr } = await supabase
+      .from('prijslijst_regels')
+      .select('prijslijst_nr')
+      .range(offset, offset + pageSize - 1)
 
-  if (rErr) throw rErr
+    if (rErr) throw rErr
+    allRegels.push(...((regels ?? []) as { prijslijst_nr: string }[]))
+    if (!regels || regels.length < pageSize) break
+    offset += pageSize
+  }
 
   // Build count map
   const countMap: Record<string, number> = {}
-  for (const r of regels ?? []) {
+  for (const r of allRegels) {
     const pnr = r.prijslijst_nr as string
     countMap[pnr] = (countMap[pnr] ?? 0) + 1
   }
@@ -88,16 +97,25 @@ export async function fetchPrijslijstDetail(nr: string): Promise<PrijslijstDetai
   return data as PrijslijstDetailRow | null
 }
 
-/** Fetch all regels for a prijslijst */
+/** Fetch all regels for a prijslijst (paginated past 1000-row limit) */
 export async function fetchPrijslijstRegels(prijslijstNr: string): Promise<PrijslijstRegelRow[]> {
-  const { data, error } = await supabase
-    .from('prijslijst_regels')
-    .select('id, artikelnr, omschrijving, omschrijving_2, prijs, gewicht, ean_code')
-    .eq('prijslijst_nr', prijslijstNr)
-    .order('artikelnr')
+  const allRows: PrijslijstRegelRow[] = []
+  const pageSize = 1000
+  let offset = 0
+  while (true) {
+    const { data, error } = await supabase
+      .from('prijslijst_regels')
+      .select('id, artikelnr, omschrijving, omschrijving_2, prijs, gewicht, ean_code')
+      .eq('prijslijst_nr', prijslijstNr)
+      .order('artikelnr')
+      .range(offset, offset + pageSize - 1)
 
-  if (error) throw error
-  return (data ?? []) as PrijslijstRegelRow[]
+    if (error) throw error
+    allRows.push(...((data ?? []) as PrijslijstRegelRow[]))
+    if (!data || data.length < pageSize) break
+    offset += pageSize
+  }
+  return allRows
 }
 
 /** Fetch klanten linked to a prijslijst */

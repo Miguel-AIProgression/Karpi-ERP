@@ -30,9 +30,9 @@ sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 ZIP_PATH = BASE_DIR / "wetransfer_prijslijst_2025-11-19_1107.zip"
 EXTRACT_DIR = BASE_DIR / "supabase" / ".temp" / "prijslijsten" / "wetransfer_prijslijst_2025-11-19_1107"
 
-# Als True: sla artikelnrs die niet in producten bestaan over (voorkom FK-fouten).
-# Als False: importeer alles (kan FK-errors geven als constraint actief is).
-SKIP_UNKNOWN_ARTIKELNRS = True
+# Als True: maak ontbrekende artikelnrs automatisch aan in producten tabel.
+# Als False: sla onbekende artikelnrs over (oude gedrag).
+AUTO_CREATE_MISSING_PRODUCTS = True
 
 
 def upsert_batch(table, records, batch_size=500, on_conflict=None):
@@ -243,7 +243,10 @@ def main():
     debiteur_map = fetch_linked_debiteuren()
     known_artikelnrs = fetch_known_artikelnrs()
     print(f"  {sum(len(v) for v in debiteur_map.values())} debiteuren met prijslijst_nr")
-    print(f"  {len(known_artikelnrs)} bekende artikelnrs in producten\n")
+    print(f"  {len(known_artikelnrs)} bekende artikelnrs in producten")
+
+    # Collect all unknown artikelnrs across all files first (for auto-create)
+    all_missing_products = {}  # artikelnr -> {omschrijving, omschrijving_2, prijs, gewicht}
 
     # Step 4: Process each file
     all_headers = []
@@ -283,7 +286,16 @@ def main():
             is_unknown = row["artikelnr"] not in known_artikelnrs
             if is_unknown:
                 unknown_in_file += 1
-                if SKIP_UNKNOWN_ARTIKELNRS:
+                if AUTO_CREATE_MISSING_PRODUCTS:
+                    # Collect for bulk create later
+                    if row["artikelnr"] not in all_missing_products:
+                        all_missing_products[row["artikelnr"]] = {
+                            "omschrijving": row["omschrijving"],
+                            "omschrijving_2": row["omschrijving_2"],
+                            "verkoopprijs": row["prijs"],
+                            "gewicht_kg": row["gewicht"],
+                        }
+                else:
                     continue  # Skip om FK-fouten te voorkomen
 
             file_regels.append({
@@ -316,8 +328,31 @@ def main():
             f"  Onbekende artikelnrs: {unknown_in_file}"
         )
 
-    # Step 5: Upsert to Supabase
-    print("\n4  Upsert naar Supabase...\n")
+    # Step 5: Auto-create missing products
+    if AUTO_CREATE_MISSING_PRODUCTS and all_missing_products:
+        print(f"\n4  {len(all_missing_products)} ontbrekende producten aanmaken in producten tabel...\n")
+        new_products = []
+        for artikelnr, info in all_missing_products.items():
+            new_products.append({
+                "artikelnr": artikelnr,
+                "omschrijving": info["omschrijving"] or "Onbekend product",
+                "verkoopprijs": info["verkoopprijs"],
+                "gewicht_kg": info["gewicht_kg"],
+                "voorraad": 0,
+                "gereserveerd": 0,
+                "vrije_voorraad": 0,
+                "product_type": "vast",
+                "actief": True,
+            })
+        upsert_batch("producten", new_products, on_conflict="artikelnr")
+        # Update known set so report is accurate
+        known_artikelnrs.update(all_missing_products.keys())
+        print(f"  {len(new_products)} producten aangemaakt\n")
+    elif all_missing_products:
+        print(f"\n  WAARSCHUWING: {len(all_missing_products)} artikelnrs niet in producten (AUTO_CREATE uit)\n")
+
+    # Step 6: Upsert to Supabase
+    print("\n5  Upsert naar Supabase...\n")
     print("  --- Prijslijst headers ---")
     upsert_batch("prijslijst_headers", all_headers, on_conflict="nr")
     print()
