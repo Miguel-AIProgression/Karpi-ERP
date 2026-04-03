@@ -63,7 +63,6 @@ BEGIN
      AND SUBSTRING(p.karpi_code FROM LENGTH(p.kwaliteit_code) + 1) = v_afmeting
      AND p.artikelnr <> p_artikelnr
      AND p.actief = true
-     AND p.vrije_voorraad >= p_min_voorraad
    ORDER BY p.vrije_voorraad DESC;
 END;
 $$ LANGUAGE plpgsql STABLE;

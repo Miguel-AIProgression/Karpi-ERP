@@ -11,14 +11,13 @@ export interface EquivalentProduct {
   verkoopprijs: number | null
 }
 
-/** Fetch equivalent in-stock products for a given artikelnr */
+/** Fetch all equivalent products for a given artikelnr (including out of stock) */
 export async function fetchEquivalenteProducten(
-  artikelnr: string,
-  minVoorraad: number = 1
+  artikelnr: string
 ): Promise<EquivalentProduct[]> {
   const { data, error } = await supabase.rpc('zoek_equivalente_producten', {
     p_artikelnr: artikelnr,
-    p_min_voorraad: minVoorraad,
+    p_min_voorraad: 0,
   })
 
   if (error) throw error

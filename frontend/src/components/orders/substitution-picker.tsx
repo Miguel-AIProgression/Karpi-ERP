@@ -51,27 +51,37 @@ export function SubstitutionPicker({ artikelnr, omschrijving, onSelect, onSkip }
       </div>
 
       <div className="space-y-1">
-        {equivalents.map((eq) => (
-          <button
-            key={eq.artikelnr}
-            type="button"
-            onClick={() => onSelect(eq)}
-            className="w-full text-left px-3 py-2 bg-white rounded border border-amber-100 hover:border-amber-300 transition-colors"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="font-mono text-xs text-terracotta-500">{eq.artikelnr}</span>
-                <span className="ml-2">{eq.omschrijving}</span>
+        {equivalents.map((eq) => {
+          const opVoorraad = eq.vrije_voorraad > 0
+          return (
+            <button
+              key={eq.artikelnr}
+              type="button"
+              onClick={() => opVoorraad && onSelect(eq)}
+              disabled={!opVoorraad}
+              className={`w-full text-left px-3 py-2 rounded border transition-colors ${
+                opVoorraad
+                  ? 'bg-white border-amber-100 hover:border-amber-300 cursor-pointer'
+                  : 'bg-slate-50 border-slate-100 cursor-default opacity-70'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <div className={!opVoorraad ? 'italic text-slate-400' : ''}>
+                  <span className={`font-mono text-xs ${opVoorraad ? 'text-terracotta-500' : 'text-slate-400'}`}>
+                    {eq.artikelnr}
+                  </span>
+                  <span className="ml-2">{eq.omschrijving}</span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0 ml-2">
+                  <span className={`text-xs ${opVoorraad ? 'text-emerald-600' : 'text-rose-400'}`}>
+                    <Package size={10} className="inline mr-1" />
+                    Vrij: {eq.vrije_voorraad}
+                  </span>
+                </div>
               </div>
-              <div className="flex items-center gap-2 shrink-0 ml-2">
-                <span className="text-xs text-emerald-600">
-                  <Package size={10} className="inline mr-1" />
-                  Vrij: {eq.vrije_voorraad}
-                </span>
-              </div>
-            </div>
-          </button>
-        ))}
+            </button>
+          )
+        })}
       </div>
 
       <button
