@@ -115,19 +115,35 @@ export async function fetchKlanten(params: {
 
 /** Fetch single klant with vertegenwoordiger naam */
 export async function fetchKlantDetail(debiteurNr: number): Promise<KlantDetail> {
-  const { data, error } = await supabase
-    .from('debiteuren')
-    .select('*, vertegenwoordigers(naam)')
-    .eq('debiteur_nr', debiteurNr)
-    .single()
+  const ytdFrom = new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10)
 
-  if (error) throw error
+  const [klantRes, omzetRes] = await Promise.all([
+    supabase
+      .from('debiteuren')
+      .select('*, vertegenwoordigers(naam)')
+      .eq('debiteur_nr', debiteurNr)
+      .single(),
+    supabase
+      .from('orders')
+      .select('totaal_bedrag')
+      .eq('debiteur_nr', debiteurNr)
+      .gte('orderdatum', ytdFrom)
+      .neq('status', 'Geannuleerd'),
+  ])
 
-  const row = data as Record<string, unknown>
+  if (klantRes.error) throw klantRes.error
+
+  const row = klantRes.data as Record<string, unknown>
   const verteg = row.vertegenwoordigers as { naam: string } | null
+  const omzetYtd = (omzetRes.data ?? []).reduce(
+    (sum, o) => sum + (Number(o.totaal_bedrag) || 0),
+    0,
+  )
+
   return {
     ...row,
     vertegenwoordiger_naam: verteg?.naam ?? null,
+    omzet_ytd: omzetYtd,
   } as KlantDetail
 }
 
@@ -175,6 +191,36 @@ export async function fetchKlantArtikelnummers(debiteurNr: number): Promise<Klan
       product_omschrijving: product?.omschrijving ?? null,
     }
   })
+}
+
+export interface PrijslijstRegel {
+  artikelnr: string
+  omschrijving: string | null
+  omschrijving_2: string | null
+  prijs: number
+  gewicht: number | null
+}
+
+/** Fetch prijslijst regels for a klant (via debiteuren.prijslijst_nr) */
+export async function fetchKlantPrijslijst(debiteurNr: number): Promise<PrijslijstRegel[]> {
+  // First get the klant's prijslijst_nr
+  const { data: klant, error: klantError } = await supabase
+    .from('debiteuren')
+    .select('prijslijst_nr')
+    .eq('debiteur_nr', debiteurNr)
+    .single()
+
+  if (klantError) throw klantError
+  if (!klant?.prijslijst_nr) return []
+
+  const { data, error } = await supabase
+    .from('prijslijst_regels')
+    .select('artikelnr, omschrijving, omschrijving_2, prijs, gewicht')
+    .eq('prijslijst_nr', klant.prijslijst_nr)
+    .order('artikelnr')
+
+  if (error) throw error
+  return (data ?? []) as PrijslijstRegel[]
 }
 
 /** Fetch all vertegenwoordigers (for filter dropdown) */

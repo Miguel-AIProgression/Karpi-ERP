@@ -12,6 +12,8 @@ import { ProductenOverviewPage } from '@/pages/producten/producten-overview'
 import { ProductDetailPage } from '@/pages/producten/product-detail'
 import { VertegenwoordigersOverviewPage } from '@/pages/vertegenwoordigers/vertegenwoordigers-overview'
 import { VertegenwoordigerDetailPage } from '@/pages/vertegenwoordigers/vertegenwoordiger-detail'
+import { PrijslijstenOverviewPage } from '@/pages/prijslijsten/prijslijsten-overview'
+import { PrijslijstDetailPage } from '@/pages/prijslijsten/prijslijst-detail'
 
 export const router = createBrowserRouter([
   {
@@ -32,6 +34,10 @@ export const router = createBrowserRouter([
       // Producten (V1)
       { path: 'producten', element: <ProductenOverviewPage /> },
       { path: 'producten/:id', element: <ProductDetailPage /> },
+
+      // Prijslijsten
+      { path: 'prijslijsten', element: <PrijslijstenOverviewPage /> },
+      { path: 'prijslijsten/:nr', element: <PrijslijstDetailPage /> },
 
       // Placeholders (V2+)
       { path: 'samples', element: <PlaceholderPage title="Samples" /> },

@@ -5,6 +5,7 @@ import {
   fetchAfleveradressen,
   fetchKlanteigenNamen,
   fetchKlantArtikelnummers,
+  fetchKlantPrijslijst,
   fetchVertegenwoordigers,
 } from '@/lib/supabase/queries/klanten'
 
@@ -49,6 +50,14 @@ export function useKlantArtikelnummers(debiteurNr: number) {
   return useQuery({
     queryKey: ['klanten', debiteurNr, 'klant-artikelnummers'],
     queryFn: () => fetchKlantArtikelnummers(debiteurNr),
+    enabled: debiteurNr > 0,
+  })
+}
+
+export function useKlantPrijslijst(debiteurNr: number) {
+  return useQuery({
+    queryKey: ['klanten', debiteurNr, 'prijslijst'],
+    queryFn: () => fetchKlantPrijslijst(debiteurNr),
     enabled: debiteurNr > 0,
   })
 }

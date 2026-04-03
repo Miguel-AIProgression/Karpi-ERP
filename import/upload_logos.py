@@ -33,9 +33,16 @@ def collect_best_logos(logo_files: list[Path]) -> dict[int, Path]:
 def main():
     client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-    # Haal alle debiteur_nrs op (ook inactieve — logo moet beschikbaar blijven bij heractivering)
-    result = client.table('debiteuren').select('debiteur_nr').execute()
-    valid_nrs = {row['debiteur_nr'] for row in result.data}
+    # Haal alle debiteur_nrs op (gepagineerd — Supabase limiet is 1000 per request)
+    valid_nrs: set[int] = set()
+    offset = 0
+    page_size = 1000
+    while True:
+        result = client.table('debiteuren').select('debiteur_nr').range(offset, offset + page_size - 1).execute()
+        valid_nrs.update(row['debiteur_nr'] for row in result.data)
+        if len(result.data) < page_size:
+            break
+        offset += page_size
     print(f"Debiteuren in DB: {len(valid_nrs)}")
 
     # Verzamel uploadbare logo's en deduplicate

@@ -1,5 +1,16 @@
 # Changelog — RugFlow ERP
 
+## 2026-04-03 — Klantspecifieke prijslijsten import
+- Spec: `specs/09-prijslijst-excel-import.md` — koppeling WeTransfer ZIP (45 Excel prijslijsten) aan klanten
+- Python importscript `import/prijslijst_import.py`:
+  - ZIP-extractie met filtering van lock-bestanden en macOS metadata
+  - Bestandsnaam → prijslijst_nr mapping (regex + zero-padding)
+  - Cross-validatie bestandsnaam vs Excel-celwaarde
+  - Upsert naar `prijslijst_headers` (nr, naam, geldig_vanaf) en `prijslijst_regels` (artikelnr, prijs, gewicht, etc.)
+  - Validatie tegen debiteuren (gekoppelde klanten) en producten (bekende artikelnrs)
+  - Configureerbare FK-bescherming (`SKIP_UNKNOWN_ARTIKELNRS`)
+  - Gedetailleerd rapport per bestand + totalen
+
 ## 2026-04-03 — Klantlogo's import & weergave
 - Storage bucket `logos` aangemaakt met publieke leestoegang (migratie 024)
 - Python upload script `import/upload_logos.py` met deduplicatie en DB-matching

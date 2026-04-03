@@ -35,6 +35,7 @@ export const NAV_GROUPS = [
       { label: 'Facturatie', path: '/facturatie', icon: 'FileText' },
       { label: 'Klanten', path: '/klanten', icon: 'Users' },
       { label: 'Vertegenwoordigers', path: '/vertegenwoordigers', icon: 'UserCheck' },
+      { label: 'Prijslijsten', path: '/prijslijsten', icon: 'ListOrdered' },
     ],
   },
   {

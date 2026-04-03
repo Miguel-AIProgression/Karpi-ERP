@@ -12,6 +12,7 @@ export function useOrders(params: {
   search?: string
   debiteurNr?: number
   page?: number
+  pageSize?: number
   sortBy?: OrderSortField
   sortDir?: SortDirection
 }) {

@@ -9,10 +9,11 @@ import { useKlantDetail, useAfleveradressen } from '@/hooks/use-klanten'
 import { useOrders } from '@/hooks/use-orders'
 import { KlanteigenNamenTab } from '@/components/klanten/klanteigen-namen-tab'
 import { KlantArtikelnummersTab } from '@/components/klanten/klant-artikelnummers-tab'
+import { KlantPrijslijstTab } from '@/components/klanten/klant-prijslijst-tab'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 
-type Tab = 'info' | 'adressen' | 'orders' | 'eigennamen' | 'artikelnummers'
+type Tab = 'info' | 'adressen' | 'orders' | 'eigennamen' | 'artikelnummers' | 'prijslijst'
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'info', label: 'Info' },
@@ -20,6 +21,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'orders', label: 'Orders' },
   { key: 'eigennamen', label: 'Klanteigen namen' },
   { key: 'artikelnummers', label: 'Artikelnummers' },
+  { key: 'prijslijst', label: 'Prijslijst' },
 ]
 
 export function KlantDetailPage() {
@@ -128,6 +130,7 @@ export function KlantDetailPage() {
         {activeTab === 'orders' && <OrdersTab orders={ordersData?.orders} totalCount={ordersData?.totalCount} />}
         {activeTab === 'eigennamen' && <KlanteigenNamenTab debiteurNr={debiteurNr} />}
         {activeTab === 'artikelnummers' && <KlantArtikelnummersTab debiteurNr={debiteurNr} />}
+        {activeTab === 'prijslijst' && <KlantPrijslijstTab debiteurNr={debiteurNr} />}
       </div>
     </>
   )

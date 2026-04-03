@@ -22,9 +22,9 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto py-4 px-3">
+      <nav className="flex-1 overflow-y-auto py-4 px-3" style={{ direction: 'rtl' }}>
         {NAV_GROUPS.map((group) => (
-          <div key={group.label} className="mb-5">
+          <div key={group.label} className="mb-5" style={{ direction: 'ltr' }}>
             <div className="px-3 mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
               {group.label}
             </div>
