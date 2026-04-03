@@ -116,6 +116,7 @@ Klanten/afnemers. PK = debiteur_nr uit het oude systeem.
 | korting_pct | NUMERIC(5,2) | Debiteurenkorting |
 | betaalconditie | TEXT | |
 | gratis_verzending | BOOLEAN DEFAULT false | Klant krijgt altijd gratis verzending |
+| afleverwijze | TEXT DEFAULT 'Bezorgen' | Standaard afleverwijze (Bezorgen/Afhalen/Franco) |
 | inkooporganisatie | TEXT | |
 | betaler | INTEGER FK → debiteuren (self-ref) | Betalende partij |
 | btw_nummer | TEXT | |

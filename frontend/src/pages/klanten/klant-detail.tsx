@@ -50,6 +50,19 @@ export function KlantDetailPage() {
     },
   })
 
+  const afleverwijzeMutation = useMutation({
+    mutationFn: async (newValue: string) => {
+      const { error } = await supabase
+        .from('debiteuren')
+        .update({ afleverwijze: newValue })
+        .eq('debiteur_nr', debiteurNr)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['klanten', debiteurNr] })
+    },
+  })
+
   if (isLoading) {
     return <PageHeader title="Klant laden..." />
   }
@@ -122,22 +135,38 @@ export function KlantDetailPage() {
           <InfoField label="Omzet YTD" value={formatCurrency(klant.omzet_ytd)} />
         </div>
 
-        <div className="mt-4 pt-4 border-t border-slate-100 flex items-center gap-3">
-          <label className="text-sm font-medium text-slate-700">Gratis verzending</label>
-          <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-            klant.gratis_verzending
-              ? 'bg-emerald-100 text-emerald-700'
-              : 'bg-slate-100 text-slate-500'
-          }`}>
-            {klant.gratis_verzending ? 'Ja' : 'Nee'}
-          </span>
-          <button
-            onClick={() => gratisVerzendingMutation.mutate(!klant.gratis_verzending)}
-            disabled={gratisVerzendingMutation.isPending}
-            className="text-xs text-terracotta-500 hover:text-terracotta-700 font-medium disabled:opacity-50"
-          >
-            {gratisVerzendingMutation.isPending ? 'Opslaan...' : 'Wijzig'}
-          </button>
+        <div className="mt-4 pt-4 border-t border-slate-100 flex items-center gap-6">
+          <div className="flex items-center gap-3">
+            <label className="text-sm font-medium text-slate-700">Afleverwijze</label>
+            <select
+              value={klant.afleverwijze ?? 'Bezorgen'}
+              onChange={(e) => afleverwijzeMutation.mutate(e.target.value)}
+              disabled={afleverwijzeMutation.isPending}
+              className="px-3 py-1 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400 disabled:opacity-50"
+            >
+              <option value="Bezorgen">Bezorgen</option>
+              <option value="Afhalen">Afhalen</option>
+              <option value="Franco">Franco</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <label className="text-sm font-medium text-slate-700">Gratis verzending</label>
+            <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+              klant.gratis_verzending
+                ? 'bg-emerald-100 text-emerald-700'
+                : 'bg-slate-100 text-slate-500'
+            }`}>
+              {klant.gratis_verzending ? 'Ja' : 'Nee'}
+            </span>
+            <button
+              onClick={() => gratisVerzendingMutation.mutate(!klant.gratis_verzending)}
+              disabled={gratisVerzendingMutation.isPending}
+              className="text-xs text-terracotta-500 hover:text-terracotta-700 font-medium disabled:opacity-50"
+            >
+              {gratisVerzendingMutation.isPending ? 'Opslaan...' : 'Wijzig'}
+            </button>
+          </div>
         </div>
       </div>
 
