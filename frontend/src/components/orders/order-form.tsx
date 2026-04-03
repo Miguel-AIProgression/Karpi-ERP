@@ -6,6 +6,7 @@ import { AddressSelector } from './address-selector'
 import { OrderLineEditor } from './order-line-editor'
 import { createOrder, updateOrderWithLines, deleteOrder, lookupPrice, fetchKlanteigenNaam, fetchKlantArtikelnummer } from '@/lib/supabase/queries/order-mutations'
 import type { OrderFormData, OrderRegelFormData } from '@/lib/supabase/queries/order-mutations'
+import { SHIPPING_PRODUCT_ID, SHIPPING_THRESHOLD, SHIPPING_COST } from '@/lib/constants/shipping'
 
 function getISOWeek(dateStr: string): number {
   const date = new Date(dateStr)
@@ -35,9 +36,44 @@ export function OrderForm({ mode, initialData }: OrderFormProps) {
   const [regels, setRegels] = useState<OrderRegelFormData[]>(initialData?.regels ?? [])
   const [error, setError] = useState<string | null>(null)
 
-  // Auto-fill addresses when client is selected
-  const handleClientChange = (c: SelectedClient | null) => {
+  // In edit mode, if a VERZEND line already exists, preserve it (override=true)
+  const [shippingOverridden, setShippingOverridden] = useState(
+    () => mode === 'edit' && (initialData?.regels ?? []).some(r => r.artikelnr === SHIPPING_PRODUCT_ID)
+  )
+
+  /** Apply automatic shipping logic to a set of order lines. Returns new lines array. */
+  function applyShippingLogic(currentRegels: OrderRegelFormData[], currentClient: SelectedClient | null): OrderRegelFormData[] {
+    const subtotaal = currentRegels
+      .filter(l => l.artikelnr !== SHIPPING_PRODUCT_ID)
+      .reduce((sum, l) => sum + (l.bedrag ?? 0), 0)
+
+    const needsShipping = subtotaal < SHIPPING_THRESHOLD && !currentClient?.gratis_verzending
+    const hasShippingLine = currentRegels.some(l => l.artikelnr === SHIPPING_PRODUCT_ID)
+
+    if (needsShipping && !hasShippingLine) {
+      const shippingLine: OrderRegelFormData = {
+        artikelnr: SHIPPING_PRODUCT_ID,
+        omschrijving: 'Verzendkosten',
+        orderaantal: 1,
+        te_leveren: 1,
+        prijs: SHIPPING_COST,
+        korting_pct: 0,
+        bedrag: SHIPPING_COST,
+      }
+      return [...currentRegels, shippingLine]
+    }
+
+    if (!needsShipping && hasShippingLine) {
+      return currentRegels.filter(l => l.artikelnr !== SHIPPING_PRODUCT_ID)
+    }
+
+    return currentRegels
+  }
+
+  // Auto-fill addresses when client is selected + reprice existing lines
+  const handleClientChange = async (c: SelectedClient | null) => {
     setClient(c)
+    setShippingOverridden(false)
     if (c) {
       setHeader((h) => ({
         ...h,
@@ -56,6 +92,40 @@ export function OrderForm({ mode, initialData }: OrderFormProps) {
         afl_plaats: c.plaats ?? undefined,
         afl_land: c.land ?? 'NL',
       }))
+
+      // Reprice existing order lines for the new customer
+      if (regels.length > 0) {
+        const nonShippingRegels = regels.filter(l => l.artikelnr !== SHIPPING_PRODUCT_ID)
+        const updatedRegels = await Promise.all(
+          nonShippingRegels.map(async (line) => {
+            if (!line.artikelnr) return line
+
+            // Lookup new price from customer's price list
+            let newPrijs = line.prijs
+            if (c.prijslijst_nr) {
+              const prijsResult = await lookupPrice(c.prijslijst_nr, line.artikelnr)
+              if (prijsResult !== null) newPrijs = prijsResult
+            }
+
+            // Lookup klant artikelnummer
+            let klant_artikelnr: string | undefined
+            const kanResult = await fetchKlantArtikelnummer(c.debiteur_nr, line.artikelnr)
+            if (kanResult) klant_artikelnr = kanResult.klant_artikel
+
+            const updated = {
+              ...line,
+              prijs: newPrijs,
+              korting_pct: c.korting_pct ?? line.korting_pct,
+              klant_artikelnr,
+            }
+            updated.bedrag = (updated.orderaantal ?? 0) * (updated.prijs ?? 0) *
+              (1 - (updated.korting_pct ?? 0) / 100)
+            updated.bedrag = Math.round(updated.bedrag * 100) / 100
+            return updated
+          })
+        )
+        setRegels(applyShippingLogic(updatedRegels, c))
+      }
     }
   }
 
@@ -114,7 +184,7 @@ export function OrderForm({ mode, initialData }: OrderFormProps) {
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!client) throw new Error('Selecteer een klant')
-      if (regels.length === 0) throw new Error('Voeg minstens één orderregel toe')
+      if (regels.filter(r => r.artikelnr !== SHIPPING_PRODUCT_ID).length === 0) throw new Error('Voeg minstens één orderregel toe')
 
       const orderData: OrderFormData = { ...header, debiteur_nr: client.debiteur_nr }
 
@@ -192,7 +262,32 @@ export function OrderForm({ mode, initialData }: OrderFormProps) {
       {/* Order lines */}
       <OrderLineEditor
         lines={regels}
-        onChange={setRegels}
+        onChange={(newRegels) => {
+          // Detect manual changes to the VERZEND line
+          const oldShipping = regels.find(l => l.artikelnr === SHIPPING_PRODUCT_ID)
+          const newShipping = newRegels.find(l => l.artikelnr === SHIPPING_PRODUCT_ID)
+
+          if (oldShipping && !newShipping) {
+            // User removed the shipping line
+            setShippingOverridden(true)
+            setRegels(newRegels)
+            return
+          }
+
+          if (oldShipping && newShipping && oldShipping.bedrag !== newShipping.bedrag) {
+            // User edited the shipping line amount
+            setShippingOverridden(true)
+            setRegels(newRegels)
+            return
+          }
+
+          // Normal change — apply shipping auto-logic if not overridden
+          if (shippingOverridden) {
+            setRegels(newRegels)
+          } else {
+            setRegels(applyShippingLogic(newRegels, client))
+          }
+        }}
         defaultKorting={client?.korting_pct ?? 0}
         onArticleSelected={handleArticleSelected}
       />
@@ -202,7 +297,7 @@ export function OrderForm({ mode, initialData }: OrderFormProps) {
         <button
           type="button"
           onClick={() => saveMutation.mutate()}
-          disabled={saveMutation.isPending || !client || regels.length === 0}
+          disabled={saveMutation.isPending || !client || regels.filter(r => r.artikelnr !== SHIPPING_PRODUCT_ID).length === 0}
           className="px-6 py-2 bg-terracotta-500 text-white rounded-[var(--radius-sm)] text-sm font-medium hover:bg-terracotta-600 disabled:opacity-50 transition-colors"
         >
           {saveMutation.isPending ? 'Opslaan...' : mode === 'create' ? 'Order aanmaken' : 'Wijzigingen opslaan'}

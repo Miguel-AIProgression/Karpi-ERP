@@ -115,6 +115,7 @@ Klanten/afnemers. PK = debiteur_nr uit het oude systeem.
 | prijslijst_nr | TEXT FK → prijslijst_headers.nr | |
 | korting_pct | NUMERIC(5,2) | Debiteurenkorting |
 | betaalconditie | TEXT | |
+| gratis_verzending | BOOLEAN DEFAULT false | Klant krijgt altijd gratis verzending |
 | inkooporganisatie | TEXT | |
 | betaler | INTEGER FK → debiteuren (self-ref) | Betalende partij |
 | btw_nummer | TEXT | |

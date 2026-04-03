@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, X } from 'lucide-react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { supabase } from '@/lib/supabase/client'
 import { PageHeader } from '@/components/layout/page-header'
 import { InfoField } from '@/components/ui/info-field'
 import { StatusBadge } from '@/components/ui/status-badge'
@@ -30,9 +32,23 @@ export function KlantDetailPage() {
   const [activeTab, setActiveTab] = useState<Tab>('info')
   const [showLogo, setShowLogo] = useState(false)
 
+  const queryClient = useQueryClient()
   const { data: klant, isLoading } = useKlantDetail(debiteurNr)
   const { data: adressen } = useAfleveradressen(debiteurNr)
   const { data: ordersData } = useOrders({ debiteurNr, pageSize: 1000 })
+
+  const gratisVerzendingMutation = useMutation({
+    mutationFn: async (newValue: boolean) => {
+      const { error } = await supabase
+        .from('debiteuren')
+        .update({ gratis_verzending: newValue })
+        .eq('debiteur_nr', debiteurNr)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['klanten', debiteurNr] })
+    },
+  })
 
   if (isLoading) {
     return <PageHeader title="Klant laden..." />
@@ -104,6 +120,25 @@ export function KlantDetailPage() {
           <InfoField label="Korting" value={klant.korting_pct ? `${klant.korting_pct}%` : null} />
           <InfoField label="Betaalconditie" value={klant.betaalconditie} />
           <InfoField label="Omzet YTD" value={formatCurrency(klant.omzet_ytd)} />
+        </div>
+
+        <div className="mt-4 pt-4 border-t border-slate-100 flex items-center gap-3">
+          <label className="text-sm font-medium text-slate-700">Gratis verzending</label>
+          <button
+            onClick={() => gratisVerzendingMutation.mutate(!klant.gratis_verzending)}
+            disabled={gratisVerzendingMutation.isPending}
+            className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+              klant.gratis_verzending
+                ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+            } ${gratisVerzendingMutation.isPending ? 'opacity-50 cursor-wait' : ''}`}
+          >
+            {gratisVerzendingMutation.isPending
+              ? 'Opslaan...'
+              : klant.gratis_verzending
+                ? 'Ja'
+                : 'Nee'}
+          </button>
         </div>
       </div>
 

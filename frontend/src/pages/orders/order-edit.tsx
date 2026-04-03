@@ -51,6 +51,7 @@ export function OrderEditPage() {
     korting_pct: clientData?.korting_pct ?? 0,
     betaler: order.betaler,
     inkooporganisatie: order.inkooporganisatie,
+    gratis_verzending: clientData?.gratis_verzending ?? false,
   }
 
   const regelData: OrderRegelFormData[] = (regels ?? []).map((r) => ({

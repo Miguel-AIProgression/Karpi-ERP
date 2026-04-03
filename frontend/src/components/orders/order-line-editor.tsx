@@ -4,6 +4,7 @@ import { formatCurrency } from '@/lib/utils/formatters'
 import { ArticleSelector } from './article-selector'
 import type { SelectedArticle, SubstitutionInfo } from './article-selector'
 import type { OrderRegelFormData } from '@/lib/supabase/queries/order-mutations'
+import { SHIPPING_PRODUCT_ID } from '@/lib/constants/shipping'
 
 interface OrderLineEditorProps {
   lines: OrderRegelFormData[]
@@ -82,13 +83,21 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, onArticleSele
     onChange([...lines, newLine])
   }
 
+  const hasShippingLine = lines.some(l => l.artikelnr === SHIPPING_PRODUCT_ID)
+  const subtotaal = lines.filter(l => l.artikelnr !== SHIPPING_PRODUCT_ID).reduce((sum, l) => sum + (l.bedrag ?? 0), 0)
   const totaal = lines.reduce((sum, l) => sum + (l.bedrag ?? 0), 0)
 
   return (
     <div className="bg-white rounded-[var(--radius)] border border-slate-200">
       <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
         <h3 className="font-medium">Orderregels ({lines.length})</h3>
-        <span className="font-medium">Totaal: {formatCurrency(totaal)}</span>
+        <span className="font-medium">
+          {hasShippingLine ? (
+            <>Subtotaal: {formatCurrency(subtotaal)} | Totaal: {formatCurrency(totaal)}</>
+          ) : (
+            <>Totaal: {formatCurrency(totaal)}</>
+          )}
+        </span>
       </div>
 
       {/* Add article */}

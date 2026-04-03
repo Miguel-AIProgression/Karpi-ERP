@@ -1,5 +1,16 @@
 # Changelog — RugFlow ERP
 
+## 2026-04-03 — Automatische verzendkosten (VERZEND) in orderformulier
+- **Frontend:** Nieuw bestand `frontend/src/lib/constants/shipping.ts` met SHIPPING_PRODUCT_ID, SHIPPING_THRESHOLD (€500), SHIPPING_COST (€20)
+- **Frontend:** `order-form.tsx` — automatische VERZEND-regel bij subtotaal < €500, verwijderd bij ≥ €500
+- **Frontend:** Klanten met `gratis_verzending = true` krijgen nooit verzendkosten
+- **Frontend:** Handmatige override: na bewerking/verwijdering van VERZEND-regel stopt de automatische logica
+- **Frontend:** Edit mode: bestaande VERZEND-regels worden behouden (override=true)
+- **Frontend:** `order-line-editor.tsx` — toont subtotaal en totaal apart wanneer VERZEND-regel aanwezig is
+- **Frontend:** `article-selector.tsx` — filtert VERZEND-product uit zoekresultaten
+- **Frontend:** `client-selector.tsx` + `order-mutations.ts` — `gratis_verzending` veld toegevoegd aan queries
+- **Doel:** Automatische verzendkosten voor kleine orders, met mogelijkheid tot handmatige override
+
 ## 2026-04-03 — Product substitutie bij orderregels
 - **Database:** `fysiek_artikelnr` en `omstickeren` kolommen op `order_regels` (migratie 025)
 - **Database:** `zoek_equivalente_producten()` functie voor equivalentie-lookup via collecties

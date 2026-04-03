@@ -44,6 +44,7 @@ export function ArticleSelector({ onSelect }: ArticleSelectorProps) {
         .from('producten')
         .select('artikelnr, karpi_code, omschrijving, verkoopprijs, gewicht_kg, vrije_voorraad, besteld_inkoop, kwaliteit_code')
         .eq('actief', true)
+        .neq('artikelnr', 'VERZEND')
         .or(`artikelnr.ilike.%${s}%,karpi_code.ilike.%${s}%,omschrijving.ilike.%${s}%,zoeksleutel.ilike.%${s}%`)
         .limit(10)
 

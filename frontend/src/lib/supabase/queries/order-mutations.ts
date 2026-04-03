@@ -188,10 +188,10 @@ export async function fetchKlantArtikelnummer(debiteurNr: number, artikelnr: str
 export async function fetchClientCommercialData(debiteurNr: number) {
   const { data, error } = await supabase
     .from('debiteuren')
-    .select('prijslijst_nr, korting_pct')
+    .select('prijslijst_nr, korting_pct, gratis_verzending')
     .eq('debiteur_nr', debiteurNr)
     .single()
 
   if (error) throw error
-  return data as { prijslijst_nr: string | null; korting_pct: number }
+  return data as { prijslijst_nr: string | null; korting_pct: number; gratis_verzending: boolean }
 }

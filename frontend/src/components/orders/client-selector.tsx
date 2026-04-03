@@ -19,6 +19,7 @@ export interface SelectedClient {
   korting_pct: number
   betaler: number | null
   inkooporganisatie: string | null
+  gratis_verzending: boolean
 }
 
 interface ClientSelectorProps {
@@ -42,7 +43,7 @@ export function ClientSelector({ value, onChange, disabled }: ClientSelectorProp
       const numSearch = Number(search)
       let query = supabase
         .from('debiteuren')
-        .select('debiteur_nr, naam, adres, postcode, plaats, land, fact_naam, fact_adres, fact_postcode, fact_plaats, vertegenw_code, prijslijst_nr, korting_pct, betaler, inkooporganisatie')
+        .select('debiteur_nr, naam, adres, postcode, plaats, land, fact_naam, fact_adres, fact_postcode, fact_plaats, vertegenw_code, prijslijst_nr, korting_pct, betaler, inkooporganisatie, gratis_verzending')
         .eq('status', 'Actief')
         .limit(10)
 
