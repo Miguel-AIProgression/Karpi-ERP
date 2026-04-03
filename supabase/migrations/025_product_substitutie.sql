@@ -30,20 +30,24 @@ RETURNS TABLE(
 DECLARE
   v_collectie_id  BIGINT;
   v_kleur_code    TEXT;
+  v_afmeting      TEXT;
 BEGIN
-  -- Haal collectie + kleur op van het bronproduct
-  SELECT k.collectie_id, p.kleur_code
-    INTO v_collectie_id, v_kleur_code
+  -- Haal collectie + kleur + afmeting op van het bronproduct
+  -- Afmeting = karpi_code zonder kwaliteit_code prefix (bv. "12XX120170")
+  SELECT k.collectie_id,
+         p.kleur_code,
+         SUBSTRING(p.karpi_code FROM LENGTH(p.kwaliteit_code) + 1)
+    INTO v_collectie_id, v_kleur_code, v_afmeting
     FROM producten p
     JOIN kwaliteiten k ON k.code = p.kwaliteit_code
    WHERE p.artikelnr = p_artikelnr;
 
-  -- Geen collectie = geen equivalenten
-  IF v_collectie_id IS NULL THEN
+  -- Geen collectie of geen karpi_code = geen equivalenten
+  IF v_collectie_id IS NULL OR v_afmeting IS NULL THEN
     RETURN;
   END IF;
 
-  -- Zoek producten met zelfde collectie + zelfde kleur, maar ander artikelnr
+  -- Zoek producten met zelfde collectie + zelfde kleur + zelfde afmeting
   RETURN QUERY
   SELECT p.artikelnr,
          p.karpi_code,
@@ -56,7 +60,7 @@ BEGIN
     FROM producten p
     JOIN kwaliteiten k ON k.code = p.kwaliteit_code
    WHERE k.collectie_id = v_collectie_id
-     AND p.kleur_code = v_kleur_code
+     AND SUBSTRING(p.karpi_code FROM LENGTH(p.kwaliteit_code) + 1) = v_afmeting
      AND p.artikelnr <> p_artikelnr
      AND p.actief = true
      AND p.vrije_voorraad >= p_min_voorraad
