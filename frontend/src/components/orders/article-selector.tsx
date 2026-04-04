@@ -42,12 +42,13 @@ export function ArticleSelector({ onSelect }: ArticleSelectorProps) {
     if (!s) return
 
     const timer = setTimeout(async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let query = applyProductSearch(
         supabase
           .from('producten')
           .select('artikelnr, karpi_code, omschrijving, verkoopprijs, gewicht_kg, vrije_voorraad, besteld_inkoop, kwaliteit_code')
           .eq('actief', true)
-          .neq('artikelnr', 'VERZEND'),
+          .neq('artikelnr', 'VERZEND') as any,
         search
       )
       const { data } = await query.order('omschrijving').limit(500)

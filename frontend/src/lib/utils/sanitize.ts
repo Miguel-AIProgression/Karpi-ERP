@@ -25,7 +25,7 @@ export function applyProductSearch<T>(
     const fields = zoekInArtikelnr
       ? `artikelnr.ilike.%${term}%,karpi_code.ilike.%${term}%,omschrijving.ilike.%${term}%,zoeksleutel.ilike.%${term}%`
       : `karpi_code.ilike.%${term}%,omschrijving.ilike.%${term}%,zoeksleutel.ilike.%${term}%`
-    query = query.or(fields)
+    query = query.or(fields) as typeof query
   }
 
   return query

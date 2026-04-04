@@ -70,7 +70,8 @@ export async function fetchProducten(params: {
 
   if (hasSearch) {
     // Bij zoeken: geen paginering zodat client-side word-boundary filter alle kandidaten verwerkt
-    query = applyProductSearch(query, search!).limit(1000)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    query = applyProductSearch(query as any, search!).limit(1000) as typeof query
   } else {
     query = query.range(page * pageSize, (page + 1) * pageSize - 1)
   }
