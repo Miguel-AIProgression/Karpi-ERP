@@ -61,7 +61,7 @@ export async function fetchProducten(params: {
 
   let query = supabase
     .from('producten_overzicht')
-    .select('artikelnr, karpi_code, omschrijving, kwaliteit_code, kleur_code, zoeksleutel, voorraad, vrije_voorraad, verkoopprijs, actief, product_type, locatie, aantal_rollen, totaal_oppervlak_m2, totaal_waarde_rollen, totaal_lengte_m', { count: 'exact' })
+    .select('artikelnr, karpi_code, omschrijving, kwaliteit_code, kleur_code, zoeksleutel, voorraad, vrije_voorraad, verkoopprijs, actief, product_type, locatie, aantal_rollen, totaal_oppervlak_m2, totaal_waarde_rollen', { count: 'exact' })
     .eq('actief', true)
     .order(sortBy, { ascending: sortDir === 'asc' })
 
