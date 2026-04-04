@@ -99,6 +99,11 @@ export async function fetchProductDetail(artikelnr: string): Promise<ProductDeta
   return data as ProductDetail
 }
 
+export interface LeverancierRow {
+  id: number
+  naam: string
+}
+
 export interface ProductFormData {
   artikelnr: string
   karpi_code?: string | null
@@ -114,6 +119,7 @@ export interface ProductFormData {
   voorraad?: number
   besteld_inkoop?: number
   locatie?: string | null
+  leverancier_id?: number | null
   actief?: boolean
 }
 
@@ -151,6 +157,17 @@ export async function updateProduct(artikelnr: string, data: Partial<Omit<Produc
     .eq('artikelnr', artikelnr)
 
   if (error) throw error
+}
+
+/** Fetch all leveranciers for dropdown */
+export async function fetchLeveranciers(): Promise<LeverancierRow[]> {
+  const { data, error } = await supabase
+    .from('leveranciers')
+    .select('id, naam')
+    .eq('actief', true)
+    .order('naam')
+  if (error) throw error
+  return (data ?? []) as LeverancierRow[]
 }
 
 /** Fetch all kwaliteit codes for dropdown */

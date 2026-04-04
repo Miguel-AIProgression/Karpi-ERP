@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { useKwaliteiten, useCreateProduct } from '@/hooks/use-producten'
+import { useKwaliteiten, useLeveranciers, useCreateProduct } from '@/hooks/use-producten'
 import type { ProductType } from '@/lib/supabase/queries/producten'
 
 const PRODUCT_TYPES: { value: ProductType; label: string }[] = [
@@ -13,35 +13,39 @@ const PRODUCT_TYPES: { value: ProductType; label: string }[] = [
 ]
 
 interface VariantRow {
-  id: string
+  _key: number
   artikelnr: string
+  product_type: ProductType | ''
   breedte: string
   lengte: string
   karpi_code: string
+  ean_code: string
   verkoopprijs: string
   inkoopprijs: string
+  gewicht_kg: string
   voorraad: string
   locatie: string
 }
 
-let _counter = 0
-function makeVariant(): VariantRow {
-  return {
-    id: String(++_counter),
-    artikelnr: '',
-    breedte: '',
-    lengte: '',
-    karpi_code: '',
-    verkoopprijs: '',
-    inkoopprijs: '',
-    voorraad: '0',
-    locatie: '',
-  }
-}
+let _seq = 0
+const newRow = (): VariantRow => ({
+  _key: ++_seq,
+  artikelnr: '',
+  product_type: '',
+  breedte: '',
+  lengte: '',
+  karpi_code: '',
+  ean_code: '',
+  verkoopprijs: '',
+  inkoopprijs: '',
+  gewicht_kg: '',
+  voorraad: '0',
+  locatie: '',
+})
 
 function buildOmschrijving(naam: string, kleurCode: string, breedte: string, lengte: string) {
-  const parts: string[] = [naam]
-  if (kleurCode) parts.push(`Kleur ${kleurCode}`)
+  const parts = [naam.trim()]
+  if (kleurCode.trim()) parts.push(`Kleur ${kleurCode.trim()}`)
   if (breedte && lengte) parts.push(`${breedte}x${lengte}cm`)
   return parts.join(' ')
 }
@@ -49,53 +53,64 @@ function buildOmschrijving(naam: string, kleurCode: string, breedte: string, len
 export function ProductCreatePage() {
   const navigate = useNavigate()
   const { data: kwaliteiten } = useKwaliteiten()
+  const { data: leveranciers } = useLeveranciers()
   const createMutation = useCreateProduct()
 
+  // Familie / header velden
   const [naam, setNaam] = useState('')
   const [kwaliteitCode, setKwaliteitCode] = useState('')
   const [kleurCode, setKleurCode] = useState('')
-  const [productType, setProductType] = useState<ProductType | null>(null)
+  const [leverancierId, setLeverancierId] = useState<string>('')
   const [actief, setActief] = useState(true)
-  const [variants, setVariants] = useState<VariantRow[]>([makeVariant()])
+
+  // Varianten
+  const [rows, setRows] = useState<VariantRow[]>([newRow()])
   const [error, setError] = useState<string | null>(null)
 
-  function setField(id: string, field: keyof VariantRow, value: string) {
-    setVariants(vs => vs.map(v => v.id === id ? { ...v, [field]: value } : v))
+  function updateRow(key: number, field: keyof VariantRow, value: string) {
+    setRows(rs => rs.map(r => r._key === key ? { ...r, [field]: value } : r))
   }
+
+  function removeRow(key: number) {
+    setRows(rs => rs.filter(r => r._key !== key))
+  }
+
+  const filledRows = rows.filter(r => r.artikelnr.trim())
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
 
-    const toCreate = variants.filter(v => v.artikelnr.trim())
-    if (toCreate.length === 0) {
-      setError('Voeg minimaal één variant toe met een artikelnr.')
+    if (filledRows.length === 0) {
+      setError('Voeg minimaal één variant toe met een artikelnummer.')
       return
     }
 
     try {
-      for (const v of toCreate) {
+      for (const r of filledRows) {
         await createMutation.mutateAsync({
-          artikelnr: v.artikelnr.trim(),
-          karpi_code: v.karpi_code.trim() || null,
-          omschrijving: buildOmschrijving(naam, kleurCode, v.breedte, v.lengte),
+          artikelnr: r.artikelnr.trim(),
+          karpi_code: r.karpi_code.trim() || null,
+          ean_code: r.ean_code.trim() || null,
+          omschrijving: buildOmschrijving(naam, kleurCode, r.breedte, r.lengte),
           kwaliteit_code: kwaliteitCode || null,
-          kleur_code: kleurCode || null,
-          product_type: productType,
-          verkoopprijs: v.verkoopprijs ? Number(v.verkoopprijs) : null,
-          inkoopprijs: v.inkoopprijs ? Number(v.inkoopprijs) : null,
-          voorraad: v.voorraad ? Number(v.voorraad) : 0,
-          locatie: v.locatie.trim() || null,
+          kleur_code: kleurCode.trim() || null,
+          product_type: (r.product_type as ProductType) || null,
+          verkoopprijs: r.verkoopprijs ? Number(r.verkoopprijs) : null,
+          inkoopprijs: r.inkoopprijs ? Number(r.inkoopprijs) : null,
+          gewicht_kg: r.gewicht_kg ? Number(r.gewicht_kg) : null,
+          voorraad: r.voorraad ? Number(r.voorraad) : 0,
+          locatie: r.locatie.trim() || null,
+          leverancier_id: leverancierId ? Number(leverancierId) : null,
           actief,
         })
       }
-      navigate(`/producten/${toCreate[0].artikelnr.trim()}`)
+      navigate(`/producten/${filledRows[0].artikelnr.trim()}`)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Er is een fout opgetreden')
     }
   }
 
-  const filledVariants = variants.filter(v => v.artikelnr.trim())
   const isPending = createMutation.isPending
 
   return (
@@ -106,14 +121,17 @@ export function ProductCreatePage() {
         </Link>
       </div>
 
-      <PageHeader title="Nieuw product" />
+      <PageHeader title="Nieuw product aanmaken" />
 
-      <form onSubmit={handleSubmit} className="mt-6 space-y-6 max-w-5xl">
+      <form onSubmit={handleSubmit} className="mt-6 space-y-6 max-w-6xl">
 
-        {/* Familie */}
-        <section className="bg-white rounded-[var(--radius)] border border-slate-200 p-6">
-          <h3 className="font-medium mb-4">Familie</h3>
-          <div className="grid grid-cols-2 gap-4">
+        {/* ── Sectie 1: Stamgegevens ─────────────────────────────── */}
+        <section className="bg-white rounded-[var(--radius)] border border-slate-200">
+          <div className="px-6 py-4 border-b border-slate-100">
+            <h3 className="font-semibold text-slate-800">Stamgegevens</h3>
+            <p className="text-xs text-slate-500 mt-0.5">Gemeenschappelijk voor alle varianten van dit product</p>
+          </div>
+          <div className="p-6 grid grid-cols-2 gap-x-8 gap-y-4">
             <Field label="Naam *">
               <input
                 required
@@ -123,19 +141,7 @@ export function ProductCreatePage() {
                 placeholder="bijv. FADED MUSCAT"
               />
             </Field>
-            <Field label="Type">
-              <select
-                value={productType ?? ''}
-                onChange={e => setProductType(e.target.value as ProductType || null)}
-                className="input"
-              >
-                <option value="">— selecteer —</option>
-                {PRODUCT_TYPES.map(t => (
-                  <option key={t.value} value={t.value}>{t.label}</option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Kwaliteit">
+            <Field label="Kwaliteitscode">
               <select
                 value={kwaliteitCode}
                 onChange={e => setKwaliteitCode(e.target.value)}
@@ -157,143 +163,213 @@ export function ProductCreatePage() {
                 placeholder="bijv. 48"
               />
             </Field>
+            <Field label="Leverancier">
+              <select
+                value={leverancierId}
+                onChange={e => setLeverancierId(e.target.value)}
+                className="input"
+              >
+                <option value="">— geen —</option>
+                {leveranciers?.map(l => (
+                  <option key={l.id} value={l.id}>{l.naam}</option>
+                ))}
+              </select>
+            </Field>
           </div>
-          <div className="mt-4">
-            <label className="flex items-center gap-3 cursor-pointer">
+          <div className="px-6 pb-5">
+            <label className="flex items-center gap-3 cursor-pointer w-fit">
               <input
                 type="checkbox"
                 checked={actief}
                 onChange={e => setActief(e.target.checked)}
-                className="w-4 h-4"
+                className="w-4 h-4 rounded"
               />
-              <span className="text-sm font-medium">Actief</span>
+              <span className="text-sm text-slate-700">Actief (zichtbaar in systeem)</span>
             </label>
           </div>
         </section>
 
-        {/* Maten / Varianten */}
-        <section className="bg-white rounded-[var(--radius)] border border-slate-200 p-6">
-          <h3 className="font-medium mb-4">Maten / Varianten</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+        {/* ── Sectie 2: Varianten / Maten ────────────────────────── */}
+        <section className="bg-white rounded-[var(--radius)] border border-slate-200">
+          <div className="px-6 py-4 border-b border-slate-100">
+            <h3 className="font-semibold text-slate-800">Varianten / Maten</h3>
+            <p className="text-xs text-slate-500 mt-0.5">Elke rij wordt een apart artikel in het systeem</p>
+          </div>
+          <div className="p-6">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="border-b-2 border-slate-200">
+                    <Th>Artikelnr *</Th>
+                    <Th>Type</Th>
+                    <Th>Breedte cm</Th>
+                    <Th>Lengte cm</Th>
+                    <Th>Karpi-code</Th>
+                    <Th>EAN</Th>
+                    <Th>Verkoop €</Th>
+                    <Th>Inkoop €</Th>
+                    <Th>Gewicht kg</Th>
+                    <Th>Voorraad</Th>
+                    <Th>Locatie</Th>
+                    <th className="pb-2 w-8"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r, idx) => (
+                    <tr key={r._key} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                      <Td>
+                        <input
+                          value={r.artikelnr}
+                          onChange={e => updateRow(r._key, 'artikelnr', e.target.value)}
+                          className="input w-28 font-mono text-xs"
+                          placeholder="298480000"
+                        />
+                      </Td>
+                      <Td>
+                        <select
+                          value={r.product_type}
+                          onChange={e => updateRow(r._key, 'product_type', e.target.value)}
+                          className="input w-36"
+                        >
+                          <option value="">— type —</option>
+                          {PRODUCT_TYPES.map(t => (
+                            <option key={t.value} value={t.value}>{t.label}</option>
+                          ))}
+                        </select>
+                      </Td>
+                      <Td>
+                        <input
+                          type="number" min="0"
+                          value={r.breedte}
+                          onChange={e => updateRow(r._key, 'breedte', e.target.value)}
+                          className="input w-20"
+                          placeholder="160"
+                        />
+                      </Td>
+                      <Td>
+                        <input
+                          type="number" min="0"
+                          value={r.lengte}
+                          onChange={e => updateRow(r._key, 'lengte', e.target.value)}
+                          className="input w-20"
+                          placeholder="230"
+                        />
+                      </Td>
+                      <Td>
+                        <input
+                          value={r.karpi_code}
+                          onChange={e => updateRow(r._key, 'karpi_code', e.target.value)}
+                          className="input w-36 font-mono text-xs"
+                          placeholder="FAMU48XX160230"
+                        />
+                      </Td>
+                      <Td>
+                        <input
+                          value={r.ean_code}
+                          onChange={e => updateRow(r._key, 'ean_code', e.target.value)}
+                          className="input w-32 font-mono text-xs"
+                          placeholder="8712345678901"
+                        />
+                      </Td>
+                      <Td>
+                        <input
+                          type="number" step="0.01" min="0"
+                          value={r.verkoopprijs}
+                          onChange={e => updateRow(r._key, 'verkoopprijs', e.target.value)}
+                          className="input w-24"
+                        />
+                      </Td>
+                      <Td>
+                        <input
+                          type="number" step="0.01" min="0"
+                          value={r.inkoopprijs}
+                          onChange={e => updateRow(r._key, 'inkoopprijs', e.target.value)}
+                          className="input w-24"
+                        />
+                      </Td>
+                      <Td>
+                        <input
+                          type="number" step="0.01" min="0"
+                          value={r.gewicht_kg}
+                          onChange={e => updateRow(r._key, 'gewicht_kg', e.target.value)}
+                          className="input w-20"
+                        />
+                      </Td>
+                      <Td>
+                        <input
+                          type="number" min="0"
+                          value={r.voorraad}
+                          onChange={e => updateRow(r._key, 'voorraad', e.target.value)}
+                          className="input w-20"
+                        />
+                      </Td>
+                      <Td>
+                        <input
+                          value={r.locatie}
+                          onChange={e => updateRow(r._key, 'locatie', e.target.value)}
+                          className="input w-24"
+                          placeholder="A3-12"
+                        />
+                      </Td>
+                      <Td>
+                        <button
+                          type="button"
+                          onClick={() => removeRow(r._key)}
+                          disabled={rows.length === 1}
+                          className="text-slate-300 hover:text-rose-500 disabled:opacity-20 transition-colors p-1"
+                          title="Verwijder rij"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setRows(rs => [...rs, newRow()])}
+              className="mt-4 flex items-center gap-1.5 text-sm text-terracotta-500 hover:text-terracotta-600 font-medium transition-colors"
+            >
+              <Plus size={15} /> Maat / variant toevoegen
+            </button>
+          </div>
+        </section>
+
+        {/* ── Sectie 3: Preview ──────────────────────────────────── */}
+        {naam.trim() && filledRows.length > 0 && (
+          <section className="bg-slate-50 rounded-[var(--radius)] border border-slate-200 p-4">
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
+              Voorbeeld — zo komen de artikelen in het systeem
+            </p>
+            <table className="text-sm w-full">
               <thead>
-                <tr className="border-b border-slate-100">
-                  <th className="text-left text-slate-500 font-normal pb-2 pr-3 whitespace-nowrap">Artikelnr *</th>
-                  <th className="text-left text-slate-500 font-normal pb-2 pr-3 whitespace-nowrap">Breedte (cm)</th>
-                  <th className="text-left text-slate-500 font-normal pb-2 pr-3 whitespace-nowrap">Lengte (cm)</th>
-                  <th className="text-left text-slate-500 font-normal pb-2 pr-3 whitespace-nowrap">Karpi-code</th>
-                  <th className="text-left text-slate-500 font-normal pb-2 pr-3 whitespace-nowrap">Verkoop (€)</th>
-                  <th className="text-left text-slate-500 font-normal pb-2 pr-3 whitespace-nowrap">Inkoop (€)</th>
-                  <th className="text-left text-slate-500 font-normal pb-2 pr-3 whitespace-nowrap">Voorraad</th>
-                  <th className="text-left text-slate-500 font-normal pb-2 pr-3 whitespace-nowrap">Locatie</th>
-                  <th className="pb-2"></th>
+                <tr className="text-xs text-slate-400">
+                  <th className="text-left font-normal pb-1.5 pr-6">Artikelnr</th>
+                  <th className="text-left font-normal pb-1.5 pr-6">Omschrijving</th>
+                  <th className="text-left font-normal pb-1.5 pr-6">Type</th>
+                  <th className="text-right font-normal pb-1.5">Verkoop</th>
                 </tr>
               </thead>
-              <tbody>
-                {variants.map(v => (
-                  <tr key={v.id} className="border-b border-slate-50 last:border-0">
-                    <td className="py-2 pr-3">
-                      <input
-                        value={v.artikelnr}
-                        onChange={e => setField(v.id, 'artikelnr', e.target.value)}
-                        className="input w-28"
-                        placeholder="298480000"
-                      />
+              <tbody className="divide-y divide-slate-100">
+                {filledRows.map(r => (
+                  <tr key={r._key}>
+                    <td className="py-1.5 pr-6 font-mono text-xs text-slate-500">{r.artikelnr}</td>
+                    <td className="py-1.5 pr-6 text-slate-800">
+                      {buildOmschrijving(naam, kleurCode, r.breedte, r.lengte)}
                     </td>
-                    <td className="py-2 pr-3">
-                      <input
-                        type="number" min="0"
-                        value={v.breedte}
-                        onChange={e => setField(v.id, 'breedte', e.target.value)}
-                        className="input w-20"
-                        placeholder="160"
-                      />
+                    <td className="py-1.5 pr-6 text-slate-500">
+                      {PRODUCT_TYPES.find(t => t.value === r.product_type)?.label ?? '—'}
                     </td>
-                    <td className="py-2 pr-3">
-                      <input
-                        type="number" min="0"
-                        value={v.lengte}
-                        onChange={e => setField(v.id, 'lengte', e.target.value)}
-                        className="input w-20"
-                        placeholder="230"
-                      />
-                    </td>
-                    <td className="py-2 pr-3">
-                      <input
-                        value={v.karpi_code}
-                        onChange={e => setField(v.id, 'karpi_code', e.target.value)}
-                        className="input w-36"
-                        placeholder="FAMU48XX160230"
-                      />
-                    </td>
-                    <td className="py-2 pr-3">
-                      <input
-                        type="number" step="0.01" min="0"
-                        value={v.verkoopprijs}
-                        onChange={e => setField(v.id, 'verkoopprijs', e.target.value)}
-                        className="input w-24"
-                      />
-                    </td>
-                    <td className="py-2 pr-3">
-                      <input
-                        type="number" step="0.01" min="0"
-                        value={v.inkoopprijs}
-                        onChange={e => setField(v.id, 'inkoopprijs', e.target.value)}
-                        className="input w-24"
-                      />
-                    </td>
-                    <td className="py-2 pr-3">
-                      <input
-                        type="number" min="0"
-                        value={v.voorraad}
-                        onChange={e => setField(v.id, 'voorraad', e.target.value)}
-                        className="input w-20"
-                      />
-                    </td>
-                    <td className="py-2 pr-3">
-                      <input
-                        value={v.locatie}
-                        onChange={e => setField(v.id, 'locatie', e.target.value)}
-                        className="input w-24"
-                        placeholder="A3-12"
-                      />
-                    </td>
-                    <td className="py-2">
-                      <button
-                        type="button"
-                        onClick={() => setVariants(vs => vs.filter(x => x.id !== v.id))}
-                        disabled={variants.length === 1}
-                        className="text-slate-300 hover:text-rose-500 disabled:opacity-30 transition-colors"
-                      >
-                        <Trash2 size={15} />
-                      </button>
+                    <td className="py-1.5 text-right text-slate-700">
+                      {r.verkoopprijs ? `€ ${Number(r.verkoopprijs).toFixed(2)}` : '—'}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
-          <button
-            type="button"
-            onClick={() => setVariants(vs => [...vs, makeVariant()])}
-            className="mt-4 flex items-center gap-1.5 text-sm text-terracotta-500 hover:text-terracotta-600 font-medium"
-          >
-            <Plus size={15} /> Maat toevoegen
-          </button>
-        </section>
-
-        {/* Preview */}
-        {naam && filledVariants.length > 0 && (
-          <section className="bg-slate-50 rounded-[var(--radius)] border border-slate-200 p-4">
-            <p className="text-xs text-slate-500 mb-2 font-medium uppercase tracking-wide">Voorbeeld omschrijvingen</p>
-            <div className="space-y-1">
-              {filledVariants.map(v => (
-                <p key={v.id} className="text-sm text-slate-700">
-                  <span className="font-mono text-slate-400 mr-3 text-xs">{v.artikelnr}</span>
-                  {buildOmschrijving(naam, kleurCode, v.breedte, v.lengte)}
-                </p>
-              ))}
-            </div>
           </section>
         )}
 
@@ -303,19 +379,20 @@ export function ProductCreatePage() {
           </p>
         )}
 
-        <div className="flex gap-3">
+        {/* ── Acties ─────────────────────────────────────────────── */}
+        <div className="flex items-center gap-3 pb-8">
           <button
             type="submit"
-            disabled={isPending || filledVariants.length === 0}
-            className="px-6 py-2 bg-terracotta-500 text-white rounded-[var(--radius-sm)] text-sm font-medium hover:bg-terracotta-600 disabled:opacity-50"
+            disabled={isPending || filledRows.length === 0}
+            className="px-6 py-2.5 bg-terracotta-500 text-white rounded-[var(--radius-sm)] text-sm font-medium hover:bg-terracotta-600 disabled:opacity-50 transition-colors"
           >
             {isPending
               ? 'Opslaan...'
-              : `${filledVariants.length} product${filledVariants.length !== 1 ? 'en' : ''} aanmaken`}
+              : `${filledRows.length} artikel${filledRows.length !== 1 ? 'en' : ''} aanmaken`}
           </button>
           <Link
             to="/producten"
-            className="px-6 py-2 border border-slate-200 rounded-[var(--radius-sm)] text-sm text-slate-600 hover:bg-slate-50"
+            className="px-6 py-2.5 border border-slate-200 rounded-[var(--radius-sm)] text-sm text-slate-600 hover:bg-slate-50 transition-colors"
           >
             Annuleren
           </Link>
@@ -326,11 +403,25 @@ export function ProductCreatePage() {
   )
 }
 
+/* ── Hulpcomponenten ───────────────────────────────────────── */
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <label className="block text-sm text-slate-500 mb-1">{label}</label>
+      <label className="block text-xs font-medium text-slate-500 mb-1.5 uppercase tracking-wide">{label}</label>
       {children}
     </div>
   )
+}
+
+function Th({ children }: { children: React.ReactNode }) {
+  return (
+    <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wide pb-2 pr-3 whitespace-nowrap">
+      {children}
+    </th>
+  )
+}
+
+function Td({ children }: { children: React.ReactNode }) {
+  return <td className="py-1.5 pr-3 align-top">{children}</td>
 }

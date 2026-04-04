@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { useKwaliteiten, useCreateProduct, useUpdateProduct } from '@/hooks/use-producten'
+import { useKwaliteiten, useLeveranciers, useUpdateProduct } from '@/hooks/use-producten'
 import type { ProductDetail, ProductFormData, ProductType } from '@/lib/supabase/queries/producten'
 
 const PRODUCT_TYPES: { value: ProductType; label: string }[] = [
@@ -17,10 +17,9 @@ interface ProductFormProps {
 }
 
 export function ProductFormPage({ product }: ProductFormProps) {
-  const isEdit = !!product
   const navigate = useNavigate()
   const { data: kwaliteiten } = useKwaliteiten()
-  const createMutation = useCreateProduct()
+  const { data: leveranciers } = useLeveranciers()
   const updateMutation = useUpdateProduct()
 
   const [form, setForm] = useState<ProductFormData>({
@@ -38,6 +37,7 @@ export function ProductFormPage({ product }: ProductFormProps) {
     voorraad: product?.voorraad ?? 0,
     besteld_inkoop: product?.besteld_inkoop ?? 0,
     locatie: product?.locatie ?? '',
+    leverancier_id: (product as ProductDetail & { leverancier_id?: number | null })?.leverancier_id ?? null,
     actief: product?.actief ?? true,
   })
   const [error, setError] = useState<string | null>(null)
@@ -49,36 +49,31 @@ export function ProductFormPage({ product }: ProductFormProps) {
     e.preventDefault()
     setError(null)
     try {
-      if (isEdit) {
-        const { artikelnr, ...rest } = form
-        void artikelnr
-        await updateMutation.mutateAsync({ artikelnr: product.artikelnr, data: rest })
-        navigate(`/producten/${product.artikelnr}`)
-      } else {
-        await createMutation.mutateAsync(form)
-        navigate(`/producten/${form.artikelnr}`)
-      }
+      const { artikelnr, ...rest } = form
+      void artikelnr
+      await updateMutation.mutateAsync({ artikelnr: product!.artikelnr, data: rest })
+      navigate(`/producten/${product!.artikelnr}`)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Er is een fout opgetreden')
     }
   }
 
-  const isPending = createMutation.isPending || updateMutation.isPending
+  const isPending = updateMutation.isPending
 
   return (
     <>
       <div className="mb-4">
         <Link
-          to={isEdit ? `/producten/${product.artikelnr}` : '/producten'}
+          to={`/producten/${product!.artikelnr}`}
           className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700"
         >
-          <ArrowLeft size={14} /> {isEdit ? 'Terug naar product' : 'Terug naar producten'}
+          <ArrowLeft size={14} /> Terug naar product
         </Link>
       </div>
 
       <PageHeader
-        title={isEdit ? `${product.omschrijving} bewerken` : 'Nieuw product'}
-        description={isEdit ? `Artikelnr: ${product.artikelnr}` : undefined}
+        title={`${product!.omschrijving} bewerken`}
+        description={`Artikelnr: ${product!.artikelnr}`}
       />
 
       <form onSubmit={handleSubmit} className="max-w-3xl space-y-6 mt-6">
@@ -90,7 +85,7 @@ export function ProductFormPage({ product }: ProductFormProps) {
             <Field label="Artikelnr *">
               <input
                 required
-                disabled={isEdit}
+                disabled
                 value={form.artikelnr}
                 onChange={e => set('artikelnr', e.target.value)}
                 className="input"
@@ -172,6 +167,18 @@ export function ProductFormPage({ product }: ProductFormProps) {
                 className="input"
                 placeholder="bijv. 16"
               />
+            </Field>
+            <Field label="Leverancier">
+              <select
+                value={form.leverancier_id ?? ''}
+                onChange={e => set('leverancier_id', e.target.value ? Number(e.target.value) : null)}
+                className="input"
+              >
+                <option value="">— geen —</option>
+                {leveranciers?.map(l => (
+                  <option key={l.id} value={l.id}>{l.naam}</option>
+                ))}
+              </select>
             </Field>
             <Field label="Locatie">
               <input
@@ -261,10 +268,10 @@ export function ProductFormPage({ product }: ProductFormProps) {
             disabled={isPending}
             className="px-6 py-2 bg-terracotta-500 text-white rounded-[var(--radius-sm)] text-sm font-medium hover:bg-terracotta-600 disabled:opacity-50"
           >
-            {isPending ? 'Opslaan...' : isEdit ? 'Wijzigingen opslaan' : 'Product aanmaken'}
+            {isPending ? 'Opslaan...' : 'Wijzigingen opslaan'}
           </button>
           <Link
-            to={isEdit ? `/producten/${product.artikelnr}` : '/producten'}
+            to={`/producten/${product!.artikelnr}`}
             className="px-6 py-2 border border-slate-200 rounded-[var(--radius-sm)] text-sm text-slate-600 hover:bg-slate-50"
           >
             Annuleren
