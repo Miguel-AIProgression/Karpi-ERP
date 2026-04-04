@@ -13,9 +13,9 @@ type OverviewTab = 'collecties' | 'uitwisselbaar'
 
 const TYPE_OPTIONS: { value: ProductType | 'alle'; label: string }[] = [
   { value: 'alle', label: 'Alle' },
-  { value: 'vast', label: 'Vaste maten' },
-  { value: 'staaltje', label: 'Staaltjes' },
-  { value: 'rol', label: 'Rolproducten' },
+  { value: 'vast', label: 'Standaard maten' },
+  { value: 'rol', label: 'Rollen' },
+  { value: 'staaltje', label: 'Stalen' },
   { value: 'overig', label: 'Overig' },
 ]
 
