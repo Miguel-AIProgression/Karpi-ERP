@@ -10,6 +10,8 @@ import { KlantenOverviewPage } from '@/pages/klanten/klanten-overview'
 import { KlantDetailPage } from '@/pages/klanten/klant-detail'
 import { ProductenOverviewPage } from '@/pages/producten/producten-overview'
 import { ProductDetailPage } from '@/pages/producten/product-detail'
+import { ProductCreatePage } from '@/pages/producten/product-create'
+import { ProductEditPage } from '@/pages/producten/product-edit'
 import { VertegenwoordigersOverviewPage } from '@/pages/vertegenwoordigers/vertegenwoordigers-overview'
 import { VertegenwoordigerDetailPage } from '@/pages/vertegenwoordigers/vertegenwoordiger-detail'
 import { PrijslijstenOverviewPage } from '@/pages/prijslijsten/prijslijsten-overview'
@@ -33,7 +35,9 @@ export const router = createBrowserRouter([
 
       // Producten (V1)
       { path: 'producten', element: <ProductenOverviewPage /> },
+      { path: 'producten/nieuw', element: <ProductCreatePage /> },
       { path: 'producten/:id', element: <ProductDetailPage /> },
+      { path: 'producten/:id/bewerken', element: <ProductEditPage /> },
 
       // Prijslijsten
       { path: 'prijslijsten', element: <PrijslijstenOverviewPage /> },

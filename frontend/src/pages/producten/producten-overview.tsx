@@ -385,10 +385,18 @@ export function ProductenOverviewPage() {
 
   return (
     <>
-      <PageHeader
-        title="Producten"
-        description={`${totalCount} producten`}
-      />
+      <div className="flex items-center justify-between mb-0">
+        <PageHeader
+          title="Producten"
+          description={`${totalCount} producten`}
+        />
+        <Link
+          to="/producten/nieuw"
+          className="px-4 py-2 bg-terracotta-500 text-white rounded-[var(--radius-sm)] text-sm font-medium hover:bg-terracotta-600"
+        >
+          + Nieuw product
+        </Link>
+      </div>
 
       {/* Tabs */}
       <div className="flex gap-6 border-b border-slate-200 mb-6">

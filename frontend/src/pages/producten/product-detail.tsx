@@ -34,9 +34,17 @@ export function ProductDetailPage() {
         </Link>
       </div>
 
-      <div className="flex items-center gap-3 mb-1">
-        <PageHeader title={product.omschrijving} description={`Artikelnr: ${product.artikelnr}`} />
-        <ProductTypeBadge type={product.product_type} />
+      <div className="flex items-start justify-between mb-1">
+        <div className="flex items-center gap-3">
+          <PageHeader title={product.omschrijving} description={`Artikelnr: ${product.artikelnr}`} />
+          <ProductTypeBadge type={product.product_type} />
+        </div>
+        <Link
+          to={`/producten/${product.artikelnr}/bewerken`}
+          className="px-4 py-2 border border-slate-200 rounded-[var(--radius-sm)] text-sm text-slate-600 hover:bg-slate-50 shrink-0"
+        >
+          Bewerken
+        </Link>
       </div>
 
       {/* Info card */}

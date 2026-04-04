@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { fetchProducten, fetchProductDetail, fetchRollenVoorProduct, fetchReserveringenVoorProduct, updateProductType, updateProductLocatie, fetchUitwisselbareGroepen, type ProductType, type ProductSortField, type SortDirection } from '@/lib/supabase/queries/producten'
+import { fetchProducten, fetchProductDetail, fetchRollenVoorProduct, fetchReserveringenVoorProduct, updateProductType, updateProductLocatie, fetchUitwisselbareGroepen, fetchKwaliteiten, createProduct, updateProduct, type ProductType, type ProductSortField, type SortDirection, type ProductFormData } from '@/lib/supabase/queries/producten'
 
 export function useProducten(params: { search?: string; page?: number; productType?: ProductType | 'alle'; sortBy?: ProductSortField; sortDir?: SortDirection }) {
   return useQuery({
@@ -29,6 +29,34 @@ export function useReserveringenVoorProduct(artikelnr: string) {
     queryKey: ['producten', artikelnr, 'reserveringen'],
     queryFn: () => fetchReserveringenVoorProduct(artikelnr),
     enabled: !!artikelnr,
+  })
+}
+
+export function useKwaliteiten() {
+  return useQuery({
+    queryKey: ['kwaliteiten'],
+    queryFn: fetchKwaliteiten,
+    staleTime: 10 * 60 * 1000,
+  })
+}
+
+export function useCreateProduct() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (data: ProductFormData) => createProduct(data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['producten'] }),
+  })
+}
+
+export function useUpdateProduct() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ artikelnr, data }: { artikelnr: string; data: Partial<Omit<ProductFormData, 'artikelnr'>> }) =>
+      updateProduct(artikelnr, data),
+    onSuccess: (_r, { artikelnr }) => {
+      queryClient.invalidateQueries({ queryKey: ['producten'] })
+      queryClient.invalidateQueries({ queryKey: ['producten', artikelnr] })
+    },
   })
 }
 

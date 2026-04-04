@@ -99,6 +99,70 @@ export async function fetchProductDetail(artikelnr: string): Promise<ProductDeta
   return data as ProductDetail
 }
 
+export interface ProductFormData {
+  artikelnr: string
+  karpi_code?: string | null
+  ean_code?: string | null
+  omschrijving: string
+  vervolgomschrijving?: string | null
+  kwaliteit_code?: string | null
+  kleur_code?: string | null
+  product_type?: ProductType | null
+  verkoopprijs?: number | null
+  inkoopprijs?: number | null
+  gewicht_kg?: number | null
+  voorraad?: number
+  besteld_inkoop?: number
+  locatie?: string | null
+  actief?: boolean
+}
+
+/** Create a new product */
+export async function createProduct(data: ProductFormData): Promise<void> {
+  const zoeksleutel = data.kwaliteit_code && data.kleur_code
+    ? `${data.kwaliteit_code}_${data.kleur_code}`
+    : null
+
+  const { error } = await supabase
+    .from('producten')
+    .insert({ ...data, zoeksleutel })
+
+  if (error) throw error
+}
+
+/** Update an existing product */
+export async function updateProduct(artikelnr: string, data: Partial<Omit<ProductFormData, 'artikelnr'>>): Promise<void> {
+  const updates: Record<string, unknown> = { ...data }
+
+  if ('kwaliteit_code' in data || 'kleur_code' in data) {
+    const { data: current } = await supabase
+      .from('producten')
+      .select('kwaliteit_code, kleur_code')
+      .eq('artikelnr', artikelnr)
+      .single()
+    const kwal = data.kwaliteit_code ?? current?.kwaliteit_code
+    const kleur = data.kleur_code ?? current?.kleur_code
+    updates.zoeksleutel = kwal && kleur ? `${kwal}_${kleur}` : null
+  }
+
+  const { error } = await supabase
+    .from('producten')
+    .update(updates)
+    .eq('artikelnr', artikelnr)
+
+  if (error) throw error
+}
+
+/** Fetch all kwaliteit codes for dropdown */
+export async function fetchKwaliteiten(): Promise<{ code: string; omschrijving: string | null }[]> {
+  const { data, error } = await supabase
+    .from('kwaliteiten')
+    .select('code, omschrijving')
+    .order('code')
+  if (error) throw error
+  return data ?? []
+}
+
 /** Update product type */
 export async function updateProductType(artikelnr: string, productType: ProductType) {
   const { error } = await supabase
