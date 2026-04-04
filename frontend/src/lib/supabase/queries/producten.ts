@@ -2,7 +2,7 @@ import { supabase } from '../client'
 import { applyProductSearch, filterProductsWordBoundary } from '@/lib/utils/sanitize'
 
 export type ProductType = 'vast' | 'rol' | 'overig' | 'staaltje'
-export type ProductSortField = 'artikelnr' | 'karpi_code' | 'omschrijving' | 'verkoopprijs' | 'voorraad' | 'vrije_voorraad' | 'aantal_rollen' | 'totaal_oppervlak_m2' | 'locatie'
+export type ProductSortField = 'artikelnr' | 'karpi_code' | 'omschrijving' | 'verkoopprijs' | 'voorraad' | 'vrije_voorraad' | 'aantal_rollen' | 'totaal_oppervlak_m2' | 'totaal_lengte_m' | 'locatie'
 export type SortDirection = 'asc' | 'desc'
 
 export interface ProductRow {
@@ -21,6 +21,7 @@ export interface ProductRow {
   aantal_rollen: number
   totaal_oppervlak_m2: number
   totaal_waarde_rollen: number
+  totaal_lengte_m: number
 }
 
 export interface ProductDetail extends ProductRow {
@@ -60,7 +61,7 @@ export async function fetchProducten(params: {
 
   let query = supabase
     .from('producten_overzicht')
-    .select('artikelnr, karpi_code, omschrijving, kwaliteit_code, kleur_code, zoeksleutel, voorraad, vrije_voorraad, verkoopprijs, actief, product_type, locatie, aantal_rollen, totaal_oppervlak_m2, totaal_waarde_rollen', { count: 'exact' })
+    .select('artikelnr, karpi_code, omschrijving, kwaliteit_code, kleur_code, zoeksleutel, voorraad, vrije_voorraad, verkoopprijs, actief, product_type, locatie, aantal_rollen, totaal_oppervlak_m2, totaal_waarde_rollen, totaal_lengte_m', { count: 'exact' })
     .eq('actief', true)
     .order(sortBy, { ascending: sortDir === 'asc' })
 

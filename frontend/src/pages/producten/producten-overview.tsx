@@ -19,7 +19,7 @@ const TYPE_OPTIONS: { value: ProductType | 'alle'; label: string }[] = [
   { value: 'overig', label: 'Overig' },
 ]
 
-const COL_COUNT = 10
+const COL_COUNT = 11
 
 const TYPE_LABELS: Record<ProductType, string> = {
   vast: 'Vaste maat',
@@ -321,11 +321,14 @@ function ProductRow({ p, expanded, onToggle, showRollen }: { p: ProductRowData; 
               <button onClick={onToggle} className="font-medium text-amber-700 hover:text-amber-900 hover:underline cursor-pointer">
                 {p.aantal_rollen}
               </button>
-            ) : isRol ? (
-              <span className="text-slate-300">—</span>
             ) : (
               <span className="text-slate-300">—</span>
             )}
+          </td>
+        )}
+        {showRollen && (
+          <td className="px-4 py-3 text-right text-sm">
+            {isRol && p.totaal_lengte_m > 0 ? `${p.totaal_lengte_m} m` : <span className="text-slate-300">—</span>}
           </td>
         )}
         <td className="px-4 py-3 text-right">
@@ -370,7 +373,7 @@ export function ProductenOverviewPage() {
       setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     } else {
       setSortBy(field)
-      setSortDir(['verkoopprijs', 'voorraad', 'vrije_voorraad', 'aantal_rollen', 'totaal_oppervlak_m2'].includes(field) ? 'desc' : 'asc')
+      setSortDir(['verkoopprijs', 'voorraad', 'vrije_voorraad', 'aantal_rollen', 'totaal_oppervlak_m2', 'totaal_lengte_m'].includes(field) ? 'desc' : 'asc')
     }
     setPage(0)
   }
@@ -473,6 +476,7 @@ export function ProductenOverviewPage() {
                 <th className="text-left px-4 py-3 font-medium text-slate-600">Kwaliteit</th>
                 <SortHeader field="locatie" label="Locatie" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
                 {showRollen && <SortHeader field="aantal_rollen" label="Rollen" align="right" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />}
+                {showRollen && <SortHeader field="totaal_lengte_m" label="Lengte" align="right" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />}
                 <SortHeader field="voorraad" label="Voorraad" align="right" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
                 <SortHeader field="vrije_voorraad" label="Vrij" align="right" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
                 <SortHeader field="verkoopprijs" label="Prijs" align="right" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
