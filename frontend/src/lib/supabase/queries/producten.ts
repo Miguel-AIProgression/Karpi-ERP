@@ -225,6 +225,56 @@ export async function fetchUitwisselbareGroepen(): Promise<UitwisselbareGroep[]>
   return groepen
 }
 
+export interface ReserveringRow {
+  order_id: number
+  order_nr: string
+  status: string
+  orderdatum: string | null
+  klant_naam: string | null
+  te_leveren: number
+  omschrijving: string | null
+}
+
+/** Fetch active reservations (order lines) for a product */
+export async function fetchReserveringenVoorProduct(artikelnr: string): Promise<ReserveringRow[]> {
+  // Step 1: fetch order_regels with order info (avoid debiteuren join: orders has 2 FKs to debiteuren)
+  const { data, error } = await supabase
+    .from('order_regels')
+    .select(`
+      te_leveren,
+      omschrijving,
+      orders!inner(id, order_nr, status, orderdatum, debiteur_nr)
+    `)
+    .or(`artikelnr.eq.${artikelnr},fysiek_artikelnr.eq.${artikelnr}`)
+    .gt('te_leveren', 0)
+
+  if (error) throw error
+
+  const rows = ((data ?? []) as any[])
+    .filter(r => !['Verzonden', 'Geannuleerd'].includes(r.orders?.status))
+
+  if (rows.length === 0) return []
+
+  // Step 2: fetch klant names for the debiteur_nrs we found
+  const debiteurNrs = [...new Set(rows.map((r: any) => r.orders.debiteur_nr).filter(Boolean))]
+  const { data: debiteuren } = await supabase
+    .from('debiteuren')
+    .select('debiteur_nr, naam')
+    .in('debiteur_nr', debiteurNrs)
+
+  const naamMap = new Map((debiteuren ?? []).map((d: any) => [d.debiteur_nr, d.naam]))
+
+  return rows.map(r => ({
+    order_id: r.orders.id,
+    order_nr: r.orders.order_nr,
+    status: r.orders.status,
+    orderdatum: r.orders.orderdatum,
+    klant_naam: naamMap.get(r.orders.debiteur_nr) ?? null,
+    te_leveren: r.te_leveren,
+    omschrijving: r.omschrijving,
+  }))
+}
+
 /** Fetch rollen for a product */
 export async function fetchRollenVoorProduct(artikelnr: string): Promise<RolRow[]> {
   const { data, error } = await supabase

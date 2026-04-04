@@ -4,15 +4,25 @@ import { PageHeader } from '@/components/layout/page-header'
 import { KlantCard } from '@/components/klanten/klant-card'
 import { useKlanten, useVertegenwoordigers } from '@/hooks/use-klanten'
 
+const PAGE_SIZE = 50
+
 export function KlantenOverviewPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('Actief')
   const [vertegFilter, setVertegFilter] = useState<string>('')
+  const [pageSize, setPageSize] = useState(PAGE_SIZE)
 
-  const { data, isLoading } = useKlanten({ search, status: statusFilter, vertegenw_code: vertegFilter || undefined })
+  const { data, isLoading } = useKlanten({ search, status: statusFilter, vertegenw_code: vertegFilter || undefined, pageSize })
   const { data: vertegenwoordigers } = useVertegenwoordigers()
 
   const klanten = data?.klanten ?? []
+  const totalCount = data?.totalCount ?? 0
+  const hasMore = klanten.length < totalCount
+
+  function handleFilterChange(setter: (v: string) => void, value: string) {
+    setter(value)
+    setPageSize(PAGE_SIZE)
+  }
 
   return (
     <>
@@ -35,7 +45,7 @@ export function KlantenOverviewPage() {
         </div>
         <select
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
+          onChange={(e) => handleFilterChange(setStatusFilter, e.target.value)}
           className="px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm"
         >
           <option value="">Alle statussen</option>
@@ -44,7 +54,7 @@ export function KlantenOverviewPage() {
         </select>
         <select
           value={vertegFilter}
-          onChange={(e) => setVertegFilter(e.target.value)}
+          onChange={(e) => handleFilterChange(setVertegFilter, e.target.value)}
           className="px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm"
         >
           <option value="">Alle vertegenwoordigers</option>
@@ -55,16 +65,29 @@ export function KlantenOverviewPage() {
       </div>
 
       {/* Grid */}
-      {isLoading ? (
+      {isLoading && klanten.length === 0 ? (
         <div className="text-slate-400">Klanten laden...</div>
       ) : klanten.length === 0 ? (
         <div className="text-slate-400">Geen klanten gevonden</div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {klanten.map((klant) => (
-            <KlantCard key={klant.debiteur_nr} klant={klant} />
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {klanten.map((klant) => (
+              <KlantCard key={klant.debiteur_nr} klant={klant} />
+            ))}
+          </div>
+          {hasMore && (
+            <div className="mt-6 text-center">
+              <button
+                onClick={() => setPageSize(ps => ps + PAGE_SIZE)}
+                disabled={isLoading}
+                className="px-6 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+              >
+                {isLoading ? 'Laden...' : `Meer laden (${klanten.length} van ${totalCount})`}
+              </button>
+            </div>
+          )}
+        </>
       )}
     </>
   )

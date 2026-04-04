@@ -15,6 +15,7 @@ export function useKlanten(params: {
   tier?: string
   vertegenw_code?: string
   page?: number
+  pageSize?: number
 }) {
   return useQuery({
     queryKey: ['klanten', params],

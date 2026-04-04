@@ -4,7 +4,7 @@ import { PageHeader } from '@/components/layout/page-header'
 import { InfoField } from '@/components/ui/info-field'
 import { formatCurrency, formatNumber } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
-import { useProductDetail, useRollenVoorProduct } from '@/hooks/use-producten'
+import { useProductDetail, useRollenVoorProduct, useReserveringenVoorProduct } from '@/hooks/use-producten'
 import { ProductTypeBadge } from './producten-overview'
 
 export function ProductDetailPage() {
@@ -13,6 +13,7 @@ export function ProductDetailPage() {
 
   const { data: product, isLoading } = useProductDetail(artikelnr)
   const { data: rollen } = useRollenVoorProduct(artikelnr)
+  const { data: reserveringen } = useReserveringenVoorProduct(artikelnr)
 
   if (isLoading) return <PageHeader title="Product laden..." />
 
@@ -63,6 +64,45 @@ export function ProductDetailPage() {
           />
         </div>
       </div>
+
+      {/* Reserveringen */}
+      {product.gereserveerd > 0 && (
+        <div className="bg-white rounded-[var(--radius)] border border-slate-200 overflow-hidden mb-6">
+          <div className="px-5 py-3 border-b border-slate-100">
+            <h3 className="font-medium">Reserveringen ({reserveringen?.length ?? 0})</h3>
+          </div>
+          {reserveringen && reserveringen.length > 0 ? (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 bg-slate-50">
+                  <th className="text-left px-4 py-2 font-medium text-slate-600">Order</th>
+                  <th className="text-left px-4 py-2 font-medium text-slate-600">Klant</th>
+                  <th className="text-left px-4 py-2 font-medium text-slate-600">Status</th>
+                  <th className="text-right px-4 py-2 font-medium text-slate-600">Te leveren</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reserveringen.map((r) => (
+                  <tr key={r.order_id} className="border-b border-slate-50 hover:bg-slate-50">
+                    <td className="px-4 py-2">
+                      <Link to={`/orders/${r.order_id}`} className="text-terracotta-500 hover:underline font-mono text-xs">
+                        {r.order_nr}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-2 text-slate-700">{r.klant_naam ?? '—'}</td>
+                    <td className="px-4 py-2">
+                      <span className="px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700">{r.status}</span>
+                    </td>
+                    <td className="px-4 py-2 text-right font-medium">{r.te_leveren}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div className="p-5 text-sm text-slate-400">Reserveringen laden...</div>
+          )}
+        </div>
+      )}
 
       {/* Rollen */}
       <div className="bg-white rounded-[var(--radius)] border border-slate-200 overflow-hidden">

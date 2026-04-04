@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { fetchProducten, fetchProductDetail, fetchRollenVoorProduct, updateProductType, updateProductLocatie, fetchUitwisselbareGroepen, type ProductType, type ProductSortField, type SortDirection } from '@/lib/supabase/queries/producten'
+import { fetchProducten, fetchProductDetail, fetchRollenVoorProduct, fetchReserveringenVoorProduct, updateProductType, updateProductLocatie, fetchUitwisselbareGroepen, type ProductType, type ProductSortField, type SortDirection } from '@/lib/supabase/queries/producten'
 
 export function useProducten(params: { search?: string; page?: number; productType?: ProductType | 'alle'; sortBy?: ProductSortField; sortDir?: SortDirection }) {
   return useQuery({
@@ -20,6 +20,14 @@ export function useRollenVoorProduct(artikelnr: string) {
   return useQuery({
     queryKey: ['producten', artikelnr, 'rollen'],
     queryFn: () => fetchRollenVoorProduct(artikelnr),
+    enabled: !!artikelnr,
+  })
+}
+
+export function useReserveringenVoorProduct(artikelnr: string) {
+  return useQuery({
+    queryKey: ['producten', artikelnr, 'reserveringen'],
+    queryFn: () => fetchReserveringenVoorProduct(artikelnr),
     enabled: !!artikelnr,
   })
 }
