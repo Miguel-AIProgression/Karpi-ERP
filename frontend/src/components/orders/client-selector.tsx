@@ -20,6 +20,8 @@ export interface SelectedClient {
   betaler: number | null
   inkooporganisatie: string | null
   gratis_verzending: boolean
+  verzendkosten: number
+  verzend_drempel: number
 }
 
 interface ClientSelectorProps {

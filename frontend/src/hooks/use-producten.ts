@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { fetchProducten, fetchProductDetail, fetchRollenVoorProduct, fetchReserveringenVoorProduct, updateProductType, updateProductLocatie, fetchUitwisselbareGroepen, fetchKwaliteiten, fetchLeveranciers, createProduct, updateProduct, type ProductType, type ProductSortField, type SortDirection, type ProductFormData } from '@/lib/supabase/queries/producten'
+import { fetchEquivalenteProducten } from '@/lib/supabase/queries/product-equivalents'
 
 export function useProducten(params: { search?: string; page?: number; productType?: ProductType | 'alle'; sortBy?: ProductSortField; sortDir?: SortDirection }) {
   return useQuery({
@@ -28,6 +29,14 @@ export function useReserveringenVoorProduct(artikelnr: string) {
   return useQuery({
     queryKey: ['producten', artikelnr, 'reserveringen'],
     queryFn: () => fetchReserveringenVoorProduct(artikelnr),
+    enabled: !!artikelnr,
+  })
+}
+
+export function useEquivalenteProducten(artikelnr: string) {
+  return useQuery({
+    queryKey: ['producten', artikelnr, 'equivalenten'],
+    queryFn: () => fetchEquivalenteProducten(artikelnr),
     enabled: !!artikelnr,
   })
 }

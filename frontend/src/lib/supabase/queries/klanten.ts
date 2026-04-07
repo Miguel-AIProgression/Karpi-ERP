@@ -48,6 +48,8 @@ export interface KlantDetail {
   omzet_ytd: number
   gratis_verzending: boolean
   afleverwijze: string | null
+  verzendkosten: number
+  verzend_drempel: number
 }
 
 export interface KlanteigenNaam {

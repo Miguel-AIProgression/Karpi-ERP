@@ -9,6 +9,7 @@ interface Address {
   postcode: string | null
   plaats: string | null
   land: string | null
+  gln_afleveradres: string | null
 }
 
 interface AddressSelectorProps {
@@ -18,12 +19,13 @@ interface AddressSelectorProps {
 
 export function AddressSelector({ debiteurNr, onSelect }: AddressSelectorProps) {
   const [addresses, setAddresses] = useState<Address[]>([])
+  const [selectedGln, setSelectedGln] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!debiteurNr) { setAddresses([]); return }
+    if (!debiteurNr) { setAddresses([]); setSelectedGln(null); return }
     supabase
       .from('afleveradressen')
-      .select('id, adres_nr, naam, adres, postcode, plaats, land')
+      .select('id, adres_nr, naam, adres, postcode, plaats, land, gln_afleveradres')
       .eq('debiteur_nr', debiteurNr)
       .order('adres_nr')
       .then(({ data }) => setAddresses((data ?? []) as Address[]))
@@ -45,6 +47,9 @@ export function AddressSelector({ debiteurNr, onSelect }: AddressSelectorProps) 
               plaats: addr.plaats ?? '',
               land: addr.land ?? 'NL',
             })
+            setSelectedGln(addr.gln_afleveradres ?? null)
+          } else {
+            setSelectedGln(null)
           }
         }}
         className="w-full px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm"
@@ -56,6 +61,11 @@ export function AddressSelector({ debiteurNr, onSelect }: AddressSelectorProps) 
           </option>
         ))}
       </select>
+      {selectedGln && (
+        <p className="mt-1 text-xs text-slate-500">
+          GLN: <span className="font-mono font-medium text-slate-700">{selectedGln}</span>
+        </p>
+      )}
     </div>
   )
 }

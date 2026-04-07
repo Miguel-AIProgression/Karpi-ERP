@@ -4,7 +4,7 @@ import { PageHeader } from '@/components/layout/page-header'
 import { InfoField } from '@/components/ui/info-field'
 import { formatCurrency, formatNumber } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
-import { useProductDetail, useRollenVoorProduct, useReserveringenVoorProduct } from '@/hooks/use-producten'
+import { useProductDetail, useRollenVoorProduct, useReserveringenVoorProduct, useEquivalenteProducten } from '@/hooks/use-producten'
 import { ProductTypeBadge } from './producten-overview'
 
 export function ProductDetailPage() {
@@ -14,6 +14,7 @@ export function ProductDetailPage() {
   const { data: product, isLoading } = useProductDetail(artikelnr)
   const { data: rollen } = useRollenVoorProduct(artikelnr)
   const { data: reserveringen } = useReserveringenVoorProduct(artikelnr)
+  const { data: equivalenten } = useEquivalenteProducten(artikelnr)
 
   if (isLoading) return <PageHeader title="Product laden..." />
 
@@ -72,6 +73,50 @@ export function ProductDetailPage() {
           />
         </div>
       </div>
+
+      {/* Uitwisselbare producten */}
+      {equivalenten && equivalenten.filter(e => e.artikelnr !== artikelnr).length > 0 && (
+        <div className="bg-white rounded-[var(--radius)] border border-slate-200 overflow-hidden mb-6">
+          <div className="px-5 py-3 border-b border-slate-100">
+            <h3 className="font-medium">Uitwisselbare producten ({equivalenten.filter(e => e.artikelnr !== artikelnr).length})</h3>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-100 bg-slate-50">
+                <th className="text-left px-4 py-2 font-medium text-slate-600">Artikelnr</th>
+                <th className="text-left px-4 py-2 font-medium text-slate-600">Omschrijving</th>
+                <th className="text-right px-4 py-2 font-medium text-slate-600">Vrije voorraad</th>
+                <th className="text-right px-4 py-2 font-medium text-slate-600">Besteld (ink)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {equivalenten
+                .filter(e => e.artikelnr !== artikelnr)
+                .map((e) => (
+                  <tr key={e.artikelnr} className="border-b border-slate-50 hover:bg-slate-50">
+                    <td className="px-4 py-2">
+                      <Link to={`/producten/${e.artikelnr}`} className="text-terracotta-500 hover:underline font-mono text-xs">
+                        {e.artikelnr}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-2 text-slate-700">{e.omschrijving}</td>
+                    <td className="px-4 py-2 text-right">
+                      <span className={cn(
+                        'font-semibold',
+                        e.vrije_voorraad > 10 && 'text-emerald-600',
+                        e.vrije_voorraad > 0 && e.vrije_voorraad <= 10 && 'text-amber-500',
+                        e.vrije_voorraad <= 0 && 'text-rose-500',
+                      )}>
+                        {formatNumber(e.vrije_voorraad)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2 text-right text-slate-600">{formatNumber(e.besteld_inkoop)}</td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* Reserveringen */}
       {product.gereserveerd > 0 && (

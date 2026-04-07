@@ -37,6 +37,9 @@ export function KlantDetailPage() {
   const { data: adressen } = useAfleveradressen(debiteurNr)
   const { data: ordersData } = useOrders({ debiteurNr, pageSize: 1000 })
 
+  const [editVerzendkosten, setEditVerzendkosten] = useState(false)
+  const [editVerzendDrempel, setEditVerzendDrempel] = useState(false)
+
   const gratisVerzendingMutation = useMutation({
     mutationFn: async (newValue: boolean) => {
       const { error } = await supabase
@@ -60,6 +63,34 @@ export function KlantDetailPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['klanten', debiteurNr] })
+    },
+  })
+
+  const verzendkostenMutation = useMutation({
+    mutationFn: async (newValue: number) => {
+      const { error } = await supabase
+        .from('debiteuren')
+        .update({ verzendkosten: newValue })
+        .eq('debiteur_nr', debiteurNr)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['klanten', debiteurNr] })
+      setEditVerzendkosten(false)
+    },
+  })
+
+  const verzendDrempelMutation = useMutation({
+    mutationFn: async (newValue: number) => {
+      const { error } = await supabase
+        .from('debiteuren')
+        .update({ verzend_drempel: newValue })
+        .eq('debiteur_nr', debiteurNr)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['klanten', debiteurNr] })
+      setEditVerzendDrempel(false)
     },
   })
 
@@ -166,6 +197,86 @@ export function KlantDetailPage() {
               {gratisVerzendingMutation.isPending ? 'Opslaan...' : 'Wijzig'}
             </button>
           </div>
+
+          {!klant.gratis_verzending && (
+            <>
+              <div className="flex items-center gap-3">
+                <label className="text-sm font-medium text-slate-700">Verzendkosten</label>
+                {editVerzendkosten ? (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault()
+                      const val = parseFloat((e.currentTarget.elements.namedItem('verzendkosten') as HTMLInputElement).value)
+                      if (!isNaN(val) && val >= 0) verzendkostenMutation.mutate(val)
+                    }}
+                    className="flex items-center gap-2"
+                  >
+                    <span className="text-sm text-slate-500">€</span>
+                    <input
+                      name="verzendkosten"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      defaultValue={klant.verzendkosten ?? 35}
+                      autoFocus
+                      className="w-20 px-2 py-1 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
+                    />
+                    <button type="submit" disabled={verzendkostenMutation.isPending} className="text-xs text-terracotta-500 font-medium disabled:opacity-50">
+                      {verzendkostenMutation.isPending ? 'Opslaan...' : 'Opslaan'}
+                    </button>
+                    <button type="button" onClick={() => setEditVerzendkosten(false)} className="text-xs text-slate-400 hover:text-slate-600">
+                      Annuleer
+                    </button>
+                  </form>
+                ) : (
+                  <>
+                    <span className="text-sm text-slate-700">€ {(klant.verzendkosten ?? 35).toFixed(2).replace('.', ',')}</span>
+                    <button onClick={() => setEditVerzendkosten(true)} className="text-xs text-terracotta-500 hover:text-terracotta-700 font-medium">
+                      Wijzig
+                    </button>
+                  </>
+                )}
+              </div>
+
+              <div className="flex items-center gap-3">
+                <label className="text-sm font-medium text-slate-700">Drempel gratis verzending</label>
+                {editVerzendDrempel ? (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault()
+                      const val = parseFloat((e.currentTarget.elements.namedItem('verzend_drempel') as HTMLInputElement).value)
+                      if (!isNaN(val) && val >= 0) verzendDrempelMutation.mutate(val)
+                    }}
+                    className="flex items-center gap-2"
+                  >
+                    <span className="text-sm text-slate-500">€</span>
+                    <input
+                      name="verzend_drempel"
+                      type="number"
+                      min="0"
+                      step="1"
+                      defaultValue={klant.verzend_drempel ?? 500}
+                      autoFocus
+                      className="w-24 px-2 py-1 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
+                    />
+                    <button type="submit" disabled={verzendDrempelMutation.isPending} className="text-xs text-terracotta-500 font-medium disabled:opacity-50">
+                      {verzendDrempelMutation.isPending ? 'Opslaan...' : 'Opslaan'}
+                    </button>
+                    <button type="button" onClick={() => setEditVerzendDrempel(false)} className="text-xs text-slate-400 hover:text-slate-600">
+                      Annuleer
+                    </button>
+                  </form>
+                ) : (
+                  <>
+                    <span className="text-sm text-slate-700">€ {(klant.verzend_drempel ?? 500).toFixed(0)}</span>
+                    <button onClick={() => setEditVerzendDrempel(true)} className="text-xs text-terracotta-500 hover:text-terracotta-700 font-medium">
+                      Wijzig
+                    </button>
+                  </>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </div>
 

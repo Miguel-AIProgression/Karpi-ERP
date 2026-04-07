@@ -47,7 +47,9 @@ export function OrderForm({ mode, initialData }: OrderFormProps) {
       .filter(l => l.artikelnr !== SHIPPING_PRODUCT_ID)
       .reduce((sum, l) => sum + (l.bedrag ?? 0), 0)
 
-    const needsShipping = subtotaal < SHIPPING_THRESHOLD && !currentClient?.gratis_verzending
+    const drempel = currentClient?.verzend_drempel ?? SHIPPING_THRESHOLD
+    const kosten = currentClient?.verzendkosten ?? SHIPPING_COST
+    const needsShipping = subtotaal < drempel && !currentClient?.gratis_verzending
     const hasShippingLine = currentRegels.some(l => l.artikelnr === SHIPPING_PRODUCT_ID)
 
     if (needsShipping && !hasShippingLine) {
@@ -56,9 +58,9 @@ export function OrderForm({ mode, initialData }: OrderFormProps) {
         omschrijving: 'Verzendkosten',
         orderaantal: 1,
         te_leveren: 1,
-        prijs: SHIPPING_COST,
+        prijs: kosten,
         korting_pct: 0,
-        bedrag: SHIPPING_COST,
+        bedrag: kosten,
       }
       return [...currentRegels, shippingLine]
     }
