@@ -17,6 +17,12 @@ import {
   assignRolToSnijplan,
   approveSnijvoorstel,
 } from '@/lib/supabase/queries/snijplanning-mutations'
+import {
+  generateSnijvoorstel,
+  fetchSnijvoorstel,
+  approveSnijvoorstel as approveVoorstelOptimalisatie,
+  rejectSnijvoorstel,
+} from '@/lib/supabase/queries/snijvoorstel'
 
 export function useSnijplanningPool(params: {
   status?: string
@@ -142,6 +148,49 @@ export function useApproveSnijvoorstel() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['snijplanning'] })
       qc.invalidateQueries({ queryKey: ['productie', 'dashboard'] })
+    },
+  })
+}
+
+export function useGenereerSnijvoorstel() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ kwaliteitCode, kleurCode }: { kwaliteitCode: string; kleurCode: string }) =>
+      generateSnijvoorstel(kwaliteitCode, kleurCode),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['snijplanning'] })
+      qc.invalidateQueries({ queryKey: ['productie', 'dashboard'] })
+    },
+  })
+}
+
+export function useSnijvoorstel(voorstelId: number | null) {
+  return useQuery({
+    queryKey: ['snijvoorstel', voorstelId],
+    queryFn: () => fetchSnijvoorstel(voorstelId!),
+    enabled: !!voorstelId,
+  })
+}
+
+export function useKeurSnijvoorstelGoed() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (voorstelId: number) => approveVoorstelOptimalisatie(voorstelId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['snijplanning'] })
+      qc.invalidateQueries({ queryKey: ['snijvoorstel'] })
+      qc.invalidateQueries({ queryKey: ['productie', 'dashboard'] })
+    },
+  })
+}
+
+export function useVerwerpSnijvoorstel() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (voorstelId: number) => rejectSnijvoorstel(voorstelId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['snijvoorstel'] })
+      qc.invalidateQueries({ queryKey: ['snijplanning'] })
     },
   })
 }

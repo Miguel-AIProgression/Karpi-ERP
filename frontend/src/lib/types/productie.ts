@@ -106,6 +106,7 @@ export interface SnijStuk {
   afwerking: MaatwerkAfwerking | null
   x_cm: number  // position on roll
   y_cm: number  // position on roll
+  geroteerd?: boolean
   afleverdatum: string | null
 }
 
@@ -223,6 +224,81 @@ export interface PlanningConfig {
   capaciteit_marge_pct: number
   weken_vooruit: number
   max_reststuk_verspilling_pct: number
+}
+
+// === Snijvoorstel types ===
+
+export interface SnijvoorstelSamenvatting {
+  totaal_stukken: number
+  geplaatst: number
+  niet_geplaatst: number
+  totaal_rollen: number
+  gemiddeld_afval_pct: number
+  totaal_m2_gebruikt: number
+  totaal_m2_afval: number
+}
+
+export interface SnijvoorstelPlaatsing {
+  snijplan_id: number
+  positie_x_cm: number
+  positie_y_cm: number
+  lengte_cm: number
+  breedte_cm: number
+  geroteerd: boolean
+}
+
+export interface SnijvoorstelRol {
+  rol_id: number
+  rolnummer: string
+  rol_lengte_cm: number
+  rol_breedte_cm: number
+  rol_status: RolStatus
+  plaatsingen: SnijvoorstelPlaatsing[]
+  gebruikte_lengte_cm: number
+  afval_percentage: number
+  restlengte_cm: number
+}
+
+export interface SnijvoorstelNietGeplaatst {
+  snijplan_id: number
+  reden: string
+}
+
+export interface SnijvoorstelResponse {
+  voorstel_id: number
+  voorstel_nr: string
+  rollen: SnijvoorstelRol[]
+  niet_geplaatst: SnijvoorstelNietGeplaatst[]
+  samenvatting: SnijvoorstelSamenvatting
+}
+
+export type SnijvoorstelStatus = 'concept' | 'goedgekeurd' | 'verworpen'
+
+export interface SnijvoorstelRow {
+  id: number
+  voorstel_nr: string
+  kwaliteit_code: string
+  kleur_code: string
+  status: SnijvoorstelStatus
+  totaal_stukken: number
+  totaal_rollen: number
+  totaal_m2_gebruikt: number
+  totaal_m2_afval: number
+  afval_percentage: number
+  aangemaakt_door: string | null
+  created_at: string
+}
+
+export interface SnijvoorstelPlaatsingRow {
+  id: number
+  voorstel_id: number
+  snijplan_id: number
+  rol_id: number
+  positie_x_cm: number
+  positie_y_cm: number
+  geroteerd: boolean
+  lengte_cm: number
+  breedte_cm: number
 }
 
 // === Dashboard stats ===

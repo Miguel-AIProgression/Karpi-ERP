@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
-import { ChevronDown, ChevronRight, Printer } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { ChevronDown, ChevronRight, Printer, Scissors, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
-import { useSnijplannenVoorGroep } from '@/hooks/use-snijplanning'
+import { useSnijplannenVoorGroep, useGenereerSnijvoorstel } from '@/hooks/use-snijplanning'
 import type { SnijplanRow } from '@/lib/types/productie'
 
 interface GroepAccordionProps {
@@ -23,6 +23,9 @@ export function GroepAccordion({
   totaalGesneden,
 }: GroepAccordionProps) {
   const [open, setOpen] = useState(false)
+  const [genError, setGenError] = useState<string | null>(null)
+  const navigate = useNavigate()
+  const genereer = useGenereerSnijvoorstel()
 
   // Lazy load: only fetch detail rows when accordion is opened
   const { data: stukken, isLoading } = useSnijplannenVoorGroep(
@@ -61,8 +64,42 @@ export function GroepAccordion({
             </span>
           </div>
         </div>
-        <Printer size={16} className="text-slate-400 hover:text-slate-600 flex-shrink-0" />
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              setGenError(null)
+              genereer.mutate(
+                { kwaliteitCode, kleurCode },
+                {
+                  onSuccess: (result) => {
+                    navigate(`/snijplanning/voorstel/${result.voorstel_id}`, {
+                      state: { voorstelResponse: result, kwaliteitCode, kleurCode },
+                    })
+                  },
+                  onError: (err) => {
+                    setGenError(err instanceof Error ? err.message : 'Onbekende fout')
+                  },
+                },
+              )
+            }}
+            disabled={genereer.isPending}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-terracotta-500 text-white rounded-[var(--radius-sm)] text-xs font-medium hover:bg-terracotta-600 transition-colors disabled:opacity-50"
+          >
+            {genereer.isPending ? <Loader2 size={14} className="animate-spin" /> : <Scissors size={14} />}
+            Genereren
+          </button>
+          <Printer size={16} className="text-slate-400 hover:text-slate-600" />
+        </div>
       </button>
+
+      {/* Generation error */}
+      {genError && (
+        <div className="mx-4 mb-2 px-3 py-2 bg-red-50 border border-red-200 rounded-[var(--radius-sm)] text-sm text-red-700">
+          Fout bij genereren: {genError}
+          <button onClick={() => setGenError(null)} className="ml-2 underline text-xs">Sluiten</button>
+        </div>
+      )}
 
       {/* Detail: loaded on expand */}
       {open && (

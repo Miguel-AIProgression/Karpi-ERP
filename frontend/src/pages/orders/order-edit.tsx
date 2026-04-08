@@ -52,6 +52,8 @@ export function OrderEditPage() {
     betaler: order.betaler,
     inkooporganisatie: order.inkooporganisatie,
     gratis_verzending: clientData?.gratis_verzending ?? false,
+    verzendkosten: clientData?.verzendkosten ?? 0,
+    verzend_drempel: clientData?.verzend_drempel ?? 0,
   }
 
   const regelData: OrderRegelFormData[] = (regels ?? []).map((r) => ({

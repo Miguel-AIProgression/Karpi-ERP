@@ -7,12 +7,6 @@ interface ConfectieTabelProps {
   isLoading?: boolean
 }
 
-function formatDate(iso: string | null): string {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  return d.toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric' })
-}
-
 function formatDateTime(iso: string | null): string {
   if (!iso) return '—'
   const d = new Date(iso)

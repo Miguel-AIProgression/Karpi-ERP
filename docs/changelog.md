@@ -1,5 +1,37 @@
 # Changelog — RugFlow ERP
 
+## 2026-04-08 — Snijoptimalisatie: automatische snijplanning
+
+### Database (migration 037)
+- Nieuw: `snijvoorstellen` tabel — voorstellen per kwaliteit+kleur met afvalstatistieken
+- Nieuw: `snijvoorstel_plaatsingen` tabel — individuele stuk-plaatsingen per rol
+- Nieuw: `geroteerd` kolom op `snijplannen` — of stuk 90° gedraaid is
+- Nieuw: `keur_snijvoorstel_goed()` functie — atomische goedkeuring met concurrency guards
+- Nieuw: `verwerp_snijvoorstel()` functie — verwerp concept-voorstellen
+- Nummering: SNIJV prefix voor snijvoorstel nummers
+
+## 2026-04-08 — Frontend snijoptimalisatie review
+
+### Frontend
+- Nieuw: `snijvoorstel.ts` query module — Edge Function aanroep, voorstel ophalen, goedkeuren/verwerpen
+- Nieuw: `snijvoorstel-review.tsx` pagina — review van gegenereerd snijvoorstel met SVG visualisatie per rol, samenvattingskaart, niet-geplaatste stukken, goedkeuren/verwerpen flow
+- Gewijzigd: `groep-accordion.tsx` — "Genereren" knop (Scissors icon) per kwaliteit+kleur groep, roept Edge Function aan en navigeert naar review pagina
+- Gewijzigd: `use-snijplanning.ts` — 4 nieuwe hooks: useGenereerSnijvoorstel, useSnijvoorstel, useKeurSnijvoorstelGoed, useVerwerpSnijvoorstel
+- Gewijzigd: `productie.ts` types — SnijvoorstelResponse, SnijvoorstelRol, SnijvoorstelPlaatsing, etc. + geroteerd op SnijStuk
+- Nieuwe route: `/snijplanning/voorstel/:voorstelId`
+
+## 2026-04-08 — Edge Function snijoptimalisatie (FFDH strip-packing)
+
+### Supabase Edge Function
+- Nieuw: `supabase/functions/optimaliseer-snijplan/index.ts`
+- FFDH 2D strip-packing algoritme voor optimale plaatsing van snijstukken op rollen
+- Input: kwaliteit_code + kleur_code, vindt alle wachtende snijplannen
+- Rolselectie: reststukken eerst (kleinste eerst), dan beschikbare rollen (kleinste eerst)
+- Stuks worden in twee orientaties geprobeerd, best-fit shelf selectie
+- Berekent afvalpercentage (rekening houdend met ronde vormen via pi*r^2)
+- Slaat voorstel op in snijvoorstellen + snijvoorstel_plaatsingen tabellen
+- Vereist: SNIJV nummeringstype, snijvoorstellen en snijvoorstel_plaatsingen tabellen (nog aan te maken)
+
 ## 2026-04-08 — Prijslijsten update april 2026
 
 ### Prijslijsten

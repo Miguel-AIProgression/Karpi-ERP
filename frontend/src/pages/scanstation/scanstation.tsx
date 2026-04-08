@@ -20,7 +20,7 @@ export function ScanstationPage() {
   const [ingepaktCount, setIngepaktCount] = useState(0)
   const [scanError, setScanError] = useState<string | null>(null)
   const [scanFeedback, setScanFeedback] = useState<ScanFeedback>('idle')
-  const feedbackTimer = useRef<ReturnType<typeof setTimeout>>()
+  const feedbackTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   const lookup = useLookupScancode()
   const logEvent = useLogScanEvent()

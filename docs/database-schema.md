@@ -5,7 +5,7 @@
 
 ## Overzicht
 
-29 tabellen, 6 enums, 8 views, 8 functies. Alle tabellen hebben RLS enabled (fase 1: authenticated = volledige toegang).
+31 tabellen, 6 enums, 8 views, 10 functies. Alle tabellen hebben RLS enabled (fase 1: authenticated = volledige toegang).
 
 ---
 
@@ -27,6 +27,8 @@ prijslijst_headers ──┬── debiteuren.prijslijst_nr
 producten ── kwaliteiten ── collecties
 rollen ── producten, magazijn_locaties
 snijplannen ── order_regels, rollen
+snijvoorstellen ── kwaliteiten
+snijvoorstel_plaatsingen ── snijvoorstellen, snijplannen, rollen
 confectie_orders ── order_regels, snijplannen, rollen
 leveranciers ── inkooporders ── inkooporder_regels ── producten
 ```
@@ -358,11 +360,44 @@ Tapijt op maat snijden uit rollen.
 | prioriteit | INTEGER | Sorteervolgorde binnen planning |
 | planning_week | INTEGER | Weeknummer waarvoor gepland |
 | planning_jaar | INTEGER | Jaar waarvoor gepland |
-| positie_x | INTEGER | X-positie op de rol in cm (strip-packing) |
-| positie_y | INTEGER | Y-positie op de rol in cm (strip-packing) |
+| positie_x_cm | NUMERIC | X-positie op de rol in cm (strip-packing) |
+| positie_y_cm | NUMERIC | Y-positie op de rol in cm (strip-packing) |
+| geroteerd | BOOLEAN | Of het stuk 90° gedraaid is t.o.v. originele afmetingen |
 | afleverdatum | DATE | Gewenste afleverdatum (overgenomen uit order) |
 | gesneden_datum | DATE | |
 | opmerkingen | TEXT | |
+
+---
+
+### snijvoorstellen
+Geoptimaliseerde snijvoorstellen per kwaliteit+kleur groep. Gegenereerd door de `optimaliseer-snijplan` Edge Function.
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| id | BIGINT PK | |
+| voorstel_nr | TEXT UK | SNIJV-2026-0001 |
+| kwaliteit_code | TEXT FK → kwaliteiten | |
+| kleur_code | TEXT | |
+| status | TEXT CHECK | 'concept', 'goedgekeurd', 'verworpen' |
+| totaal_stukken | INTEGER | Aantal snijplannen in voorstel |
+| totaal_rollen | INTEGER | Aantal rollen gebruikt |
+| totaal_m2_gebruikt | NUMERIC(10,2) | Totaal materiaalverbruik |
+| totaal_m2_afval | NUMERIC(10,2) | Totaal afval |
+| afval_percentage | NUMERIC(5,2) | Gemiddeld afvalpercentage |
+| aangemaakt_door | TEXT | Gebruiker die voorstel genereerde |
+
+### snijvoorstel_plaatsingen
+Individuele stuk-plaatsingen per rol binnen een snijvoorstel.
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| id | BIGINT PK | |
+| voorstel_id | BIGINT FK → snijvoorstellen | CASCADE DELETE |
+| snijplan_id | BIGINT FK → snijplannen | |
+| rol_id | BIGINT FK → rollen | |
+| positie_x_cm | NUMERIC | X-positie op de rol (over de breedte) |
+| positie_y_cm | NUMERIC | Y-positie op de rol (langs de lengte) |
+| geroteerd | BOOLEAN | Of het stuk 90° gedraaid is |
+| lengte_cm | INTEGER | Effectieve lengte na evt. rotatie |
+| breedte_cm | INTEGER | Effectieve breedte na evt. rotatie |
 
 ---
 
@@ -537,6 +572,8 @@ Audit trail: wie heeft wat wanneer gedaan.
 | `maak_reststuk(rol_id BIGINT, nieuwe_lengte INTEGER, snijplan_id BIGINT)` | Maakt een reststuk-rol aan na het snijden, werkt originele rol bij en logt voorraadmutatie |
 | `auto_markeer_maatwerk()` | Trigger: markeert nieuwe order_regels automatisch als is_maatwerk=true wanneer product_type='rol' |
 | `auto_maak_snijplan()` | Trigger: maakt automatisch een snijplan aan (status 'Wacht') voor nieuwe maatwerk order_regels |
+| `keur_snijvoorstel_goed(voorstel_id BIGINT)` | Keurt een snijvoorstel goed: wijst rollen toe aan snijplannen, zet status 'Gepland', met concurrency guards |
+| `verwerp_snijvoorstel(voorstel_id BIGINT)` | Verwerpt een concept-snijvoorstel zonder wijzigingen |
 
 ### Triggers op order_regels (maatwerk)
 

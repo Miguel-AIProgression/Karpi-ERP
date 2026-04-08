@@ -73,6 +73,7 @@ De `kwaliteit_code` (3-4 letters uit de karpi_code) is de spil tussen producten,
 /magazijn                  (placeholder)
 /snijplanning              Snijplanning overzicht per week, gegroepeerd per kwaliteit+kleur
 /snijplanning/rol/:rolId   Snijvoorstel per rol (SVG strip-packing visualisatie)
+/snijplanning/voorstel/:voorstelId  Review pagina voor gegenereerd snijvoorstel (optimalisatie)
 /snijplanning/:id/stickers Sticker print weergave voor gesneden stukken
 /confectie                 Confectie overzicht: scan-gestuurd afwerkingsstatus
 /scanstation               Tablet-vriendelijk scaninterface voor barcode/QR inpak
@@ -104,6 +105,9 @@ Elk snijplan en confectie-order krijgt een unieke scancode (via `genereer_scanco
 
 ### Strip-packing snijvoorstel
 Snijplannen worden gevisualiseerd als SVG op de rol (2D strip-packing). `positie_x`/`positie_y` kolommen bepalen de plaatsing. De `beste_rol_voor_snijplan()` functie selecteert de optimale rol (minste verspilling).
+
+### Edge Function: optimaliseer-snijplan
+Supabase Edge Function (`supabase/functions/optimaliseer-snijplan/index.ts`) die FFDH (First Fit Decreasing Height) 2D strip-packing uitvoert. Neemt kwaliteit_code + kleur_code als input, vindt alle wachtende snijplannen, pakt ze optimaal op beschikbare rollen (reststukken eerst), en slaat het voorstel op in `snijvoorstellen` + `snijvoorstel_plaatsingen`. Retourneert plaatsingen met coordinaten, afvalpercentages en samenvatting. Vereist SNIJV nummeringstype.
 
 ### Reststuk tracking
 Na het snijden maakt `maak_reststuk()` automatisch een nieuwe rol aan met status 'reststuk', gekoppeld via `oorsprong_rol_id`. Alle voorraadmutaties worden gelogd in `voorraad_mutaties`.
