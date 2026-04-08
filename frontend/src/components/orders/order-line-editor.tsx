@@ -1,5 +1,5 @@
 import { useRef } from 'react'
-import { Trash2, ChevronDown, ChevronRight } from 'lucide-react'
+import { Trash2 } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils/formatters'
 import { AFWERKING_OPTIES } from '@/lib/utils/constants'
 import { ArticleSelector } from './article-selector'

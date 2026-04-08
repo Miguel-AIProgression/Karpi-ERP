@@ -38,9 +38,24 @@ export function GroepAccordion({
   const heeftWacht = useMemo(() => (stukken ?? []).some(s => s.status === 'Wacht'), [stukken])
 
   // Fetch existing approved voorstel when user clicks "Bekijk plan"
-  const { data: bestaandVoorstel, isFetching: loadingPlan } = useGoedgekeurdVoorstel(
+  const { data: bestaandVoorstel, isFetching: loadingPlan, isSuccess: planQueryDone, error: planError } = useGoedgekeurdVoorstel(
     kwaliteitCode, kleurCode, showPlan,
   )
+
+  // When query completes but no voorstel found (or error), show feedback
+  useEffect(() => {
+    if (!showPlan) return
+    if (loadingPlan) return
+    if (planError) {
+      setGenError('Fout bij ophalen snijvoorstel')
+      setShowPlan(false)
+      return
+    }
+    if (planQueryDone && !bestaandVoorstel) {
+      setGenError('Geen goedgekeurd snijvoorstel gevonden — genereer een nieuw voorstel')
+      setShowPlan(false)
+    }
+  }, [showPlan, loadingPlan, planQueryDone, bestaandVoorstel, planError])
 
   // Show modal when bestaand voorstel loads
   const modalData = voorstelResult ?? (showPlan && bestaandVoorstel ? bestaandVoorstel : null)

@@ -1,5 +1,5 @@
 import { supabase } from '../client'
-import type { SnijvoorstelResponse, SnijvoorstelRow, SnijvoorstelPlaatsingRow } from '@/lib/types/productie'
+import type { SnijvoorstelResponse, SnijvoorstelRow, SnijvoorstelPlaatsingRow, RolStatus } from '@/lib/types/productie'
 
 /** Call the Edge Function to generate a cutting proposal */
 export async function generateSnijvoorstel(
@@ -82,7 +82,7 @@ export async function fetchGoedgekeurdVoorstel(
 
   // Group plaatsingen by rol
   const rolMap = new Map<number, {
-    rol_id: number; rolnummer: string; rol_lengte_cm: number; rol_breedte_cm: number; rol_status: string;
+    rol_id: number; rolnummer: string; rol_lengte_cm: number; rol_breedte_cm: number; rol_status: RolStatus;
     plaatsingen: Array<{ snijplan_id: number; positie_x_cm: number; positie_y_cm: number; lengte_cm: number; breedte_cm: number; geroteerd: boolean }>
   }>()
 
@@ -91,7 +91,7 @@ export async function fetchGoedgekeurdVoorstel(
     if (!rolMap.has(rol.id)) {
       rolMap.set(rol.id, {
         rol_id: rol.id, rolnummer: rol.rolnummer,
-        rol_lengte_cm: rol.lengte_cm, rol_breedte_cm: rol.breedte_cm, rol_status: rol.status,
+        rol_lengte_cm: rol.lengte_cm, rol_breedte_cm: rol.breedte_cm, rol_status: rol.status as RolStatus,
         plaatsingen: [],
       })
     }
