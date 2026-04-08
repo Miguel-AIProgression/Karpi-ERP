@@ -16,6 +16,14 @@ import { VertegenwoordigersOverviewPage } from '@/pages/vertegenwoordigers/verte
 import { VertegenwoordigerDetailPage } from '@/pages/vertegenwoordigers/vertegenwoordiger-detail'
 import { PrijslijstenOverviewPage } from '@/pages/prijslijsten/prijslijsten-overview'
 import { PrijslijstDetailPage } from '@/pages/prijslijsten/prijslijst-detail'
+import { SnijplanningOverviewPage } from '@/pages/snijplanning/snijplanning-overview'
+import { RolSnijvoorstelPage } from '@/pages/snijplanning/rol-snijvoorstel'
+import { StickerPrintPage } from '@/pages/snijplanning/sticker-print'
+import { ProductieInstellingenPage } from '@/pages/instellingen/productie-instellingen'
+import { ConfectieOverviewPage } from '@/pages/confectie/confectie-overview'
+import { ScanstationPage } from '@/pages/scanstation/scanstation'
+import { RollenOverviewPage } from '@/pages/rollen/rollen-overview'
+import { MagazijnOverviewPage } from '@/pages/magazijn/magazijn-overview'
 
 export const router = createBrowserRouter([
   {
@@ -48,16 +56,19 @@ export const router = createBrowserRouter([
       { path: 'facturatie', element: <PlaceholderPage title="Facturatie" /> },
       { path: 'vertegenwoordigers', element: <VertegenwoordigersOverviewPage /> },
       { path: 'vertegenwoordigers/:code', element: <VertegenwoordigerDetailPage /> },
-      { path: 'rollen', element: <PlaceholderPage title="Rollen & Reststukken" /> },
-      { path: 'scanstation', element: <PlaceholderPage title="Scanstation" /> },
-      { path: 'magazijn', element: <PlaceholderPage title="Magazijn" /> },
-      { path: 'snijplanning', element: <PlaceholderPage title="Snijplanning" /> },
-      { path: 'confectie', element: <PlaceholderPage title="Confectie" /> },
+      { path: 'rollen', element: <RollenOverviewPage /> },
+      { path: 'scanstation', element: <ScanstationPage /> },
+      { path: 'magazijn', element: <MagazijnOverviewPage /> },
+      { path: 'snijplanning', element: <SnijplanningOverviewPage /> },
+      { path: 'snijplanning/rol/:rolId', element: <RolSnijvoorstelPage /> },
+      { path: 'snijplanning/:id/stickers', element: <StickerPrintPage /> },
+      { path: 'confectie', element: <ConfectieOverviewPage /> },
       { path: 'pick-ship', element: <PlaceholderPage title="Pick & Ship" /> },
       { path: 'logistiek', element: <PlaceholderPage title="Logistiek" /> },
       { path: 'inkoop', element: <PlaceholderPage title="Inkooporders" /> },
       { path: 'leveranciers', element: <PlaceholderPage title="Leveranciers" /> },
       { path: 'instellingen', element: <PlaceholderPage title="Instellingen" /> },
+      { path: 'instellingen/productie', element: <ProductieInstellingenPage /> },
     ],
   },
 ])

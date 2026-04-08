@@ -5,7 +5,7 @@
 
 ## Overzicht
 
-26 tabellen, 6 enums, 5 views, 5 functies. Alle tabellen hebben RLS enabled (fase 1: authenticated = volledige toegang).
+29 tabellen, 6 enums, 8 views, 8 functies. Alle tabellen hebben RLS enabled (fase 1: authenticated = volledige toegang).
 
 ---
 
@@ -204,7 +204,9 @@ Individuele fysieke tapijtrol. Elk met uniek rolnummer.
 | waarde | NUMERIC(12,2) | Totale waarde |
 | kwaliteit_code | TEXT FK → kwaliteiten | Gedenormaliseerd |
 | kleur_code, zoeksleutel | TEXT | |
-| status | TEXT | 'beschikbaar', 'gereserveerd', 'verkocht', 'gesneden', 'reststuk' |
+| status | TEXT | 'beschikbaar', 'gereserveerd', 'verkocht', 'gesneden', 'reststuk', 'in_snijplan' |
+| oorsprong_rol_id | BIGINT FK → rollen (self-ref) | Verwijst naar de originele rol waaruit dit reststuk is gesneden |
+| reststuk_datum | TIMESTAMPTZ | Datum waarop het reststuk is aangemaakt |
 | locatie_id | BIGINT FK → magazijn_locaties | |
 
 ---
@@ -280,6 +282,12 @@ Productregels per order. artikelnr nullable voor service-items.
 | laatste_bon | DATE | |
 | fysiek_artikelnr | TEXT FK → producten | Fysiek te leveren artikel bij substitutie (NULL = zelfde als artikelnr) |
 | omstickeren | BOOLEAN | Product moet omgestickerd worden naar bestelde naam (default false) |
+| is_maatwerk | BOOLEAN | Default false. Regel vereist snijden/confectie |
+| maatwerk_lengte_cm | INTEGER | Gewenste lengte in cm |
+| maatwerk_breedte_cm | INTEGER | Gewenste breedte in cm |
+| maatwerk_afwerking | TEXT | 'geen', 'overzomen', 'backing', 'binden' |
+| maatwerk_instructies | TEXT | Vrije tekst snij/confectie-instructies |
+| productie_groep | TEXT | Groepering voor snijplanning (kwaliteit+kleur) |
 | UK: (order_id, regelnummer) | | |
 
 ---
@@ -346,6 +354,13 @@ Tapijt op maat snijden uit rollen.
 | rol_id | BIGINT FK → rollen | |
 | lengte_cm, breedte_cm | INTEGER | Snijinstructies |
 | status | snijplan_status | Default 'Gepland' |
+| scancode | TEXT UK | Unieke scancode voor barcode/QR (gegenereerd via genereer_scancode()) |
+| prioriteit | INTEGER | Sorteervolgorde binnen planning |
+| planning_week | INTEGER | Weeknummer waarvoor gepland |
+| planning_jaar | INTEGER | Jaar waarvoor gepland |
+| positie_x | INTEGER | X-positie op de rol in cm (strip-packing) |
+| positie_y | INTEGER | Y-positie op de rol in cm (strip-packing) |
+| afleverdatum | DATE | Gewenste afleverdatum (overgenomen uit order) |
 | gesneden_datum | DATE | |
 | opmerkingen | TEXT | |
 
@@ -362,7 +377,11 @@ Nabewerking: overzomen, backing, binden.
 | rol_id | BIGINT FK → rollen | |
 | type_bewerking | TEXT | "overzomen", "backing", "binden" |
 | instructies | TEXT | |
+| scancode | TEXT UK | Unieke scancode voor barcode/QR |
 | status | confectie_status | Default 'Wacht op materiaal' |
+| gestart_op | TIMESTAMPTZ | Wanneer confectie is gestart |
+| gereed_op | TIMESTAMPTZ | Wanneer confectie is afgerond |
+| medewerker | TEXT | Naam/code van de medewerker die de confectie uitvoert |
 | gereed_datum | DATE | |
 | opmerkingen | TEXT | |
 
@@ -415,6 +434,48 @@ Stalen/monsters.
 
 ---
 
+### scan_events
+Registratie van elke barcode/QR-scan in het productieproces.
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| id | BIGINT PK | Auto-increment |
+| scancode | TEXT | De gescande code |
+| scan_type | TEXT | 'snijplan', 'confectie', 'inpak', 'expeditie' |
+| actie | TEXT | 'start', 'gereed', 'controle' |
+| medewerker | TEXT | Wie heeft gescand |
+| station | TEXT | Welk werkstation/tablet |
+| metadata | JSONB | Extra data per scan |
+| created_at | TIMESTAMPTZ | Tijdstip van de scan |
+
+---
+
+### voorraad_mutaties
+Logboek van alle voorraadwijzigingen (snijden, reststuk, correctie).
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| id | BIGINT PK | Auto-increment |
+| rol_id | BIGINT FK → rollen | Betrokken rol |
+| type | TEXT | 'gesneden', 'reststuk_aangemaakt', 'correctie', 'ontvangst' |
+| lengte_voor_cm | INTEGER | Lengte voor mutatie |
+| lengte_na_cm | INTEGER | Lengte na mutatie |
+| reden | TEXT | Toelichting |
+| snijplan_id | BIGINT FK → snijplannen | Optioneel: gekoppeld snijplan |
+| medewerker | TEXT | Wie heeft de mutatie uitgevoerd |
+| created_at | TIMESTAMPTZ | Auto |
+
+---
+
+### app_config
+Applicatie-instellingen (key-value). Gebruikt voor productie-configuratie.
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| key | TEXT PK | Configuratiesleutel (bijv. 'productie.capaciteit_m2_per_dag') |
+| value | JSONB | Waarde (type-vrij) |
+| beschrijving | TEXT | Uitleg van de instelling |
+| updated_at | TIMESTAMPTZ | Laatst gewijzigd |
+
+---
+
 ### activiteiten_log
 Audit trail: wie heeft wat wanneer gedaan.
 | Kolom | Type | Toelichting |
@@ -436,7 +497,7 @@ Audit trail: wie heeft wat wanneer gedaan.
 | order_status | Nieuw, Actie vereist, Wacht op picken, Wacht op voorraad, In snijplan, In productie, Deels gereed, Klaar voor verzending, Verzonden, Geannuleerd |
 | zending_status | Gepland, Picken, Ingepakt, Klaar voor verzending, Onderweg, Afgeleverd |
 | factuur_status | Concept, Verstuurd, Betaald, Herinnering, Aanmaning, Gecrediteerd |
-| snijplan_status | Gepland, In productie, Gereed, Geannuleerd |
+| snijplan_status | Gepland, Wacht, Gesneden, In confectie, Ingepakt, In productie, Gereed, Geannuleerd |
 | inkooporder_status | Concept, Besteld, Deels ontvangen, Ontvangen, Geannuleerd |
 | confectie_status | Wacht op materiaal, In productie, Kwaliteitscontrole, Gereed, Geannuleerd |
 
@@ -452,6 +513,9 @@ Audit trail: wie heeft wat wanneer gedaan.
 | rollen_overzicht | Per kwaliteit/kleur: aantal, oppervlak, waarde |
 | recente_orders | Laatste 50 orders met klantnaam |
 | orders_status_telling | Aantal per order_status |
+| snijplanning_overzicht | Snijplannen met order-, klant- en rolgegevens voor de planningsweergave |
+| confectie_overzicht | Confectie-orders met scan- en voortgangsstatus |
+| productie_dashboard | Aggregaties voor het productie-dashboard: aantallen per status, capaciteit, doorlooptijd |
 
 ---
 
@@ -468,6 +532,18 @@ Audit trail: wie heeft wat wanneer gedaan.
 | `update_reservering_bij_orderregel()` | Trigger: bij INSERT/UPDATE/DELETE op order_regels → herbereken reservering |
 | `update_reservering_bij_order_status()` | Trigger: bij statuswijziging order → herbereken reservering alle producten in die order |
 | `zoek_equivalente_producten(artikelnr TEXT, min_voorraad INTEGER)` | Zoekt producten met dezelfde collectie + kleur_code die op voorraad zijn (substitutie-suggesties) |
+| `genereer_scancode()` | Genereert een unieke scancode (bijv. SNIJ-XXXX of CONF-XXXX) voor barcode/QR-stickers |
+| `beste_rol_voor_snijplan(kwaliteit TEXT, kleur TEXT, lengte INTEGER, breedte INTEGER)` | Selecteert de optimale rol (minste verspilling) voor een snijplan op basis van kwaliteit, kleur en afmetingen |
+| `maak_reststuk(rol_id BIGINT, nieuwe_lengte INTEGER, snijplan_id BIGINT)` | Maakt een reststuk-rol aan na het snijden, werkt originele rol bij en logt voorraadmutatie |
+| `auto_markeer_maatwerk()` | Trigger: markeert nieuwe order_regels automatisch als is_maatwerk=true wanneer product_type='rol' |
+| `auto_maak_snijplan()` | Trigger: maakt automatisch een snijplan aan (status 'Wacht') voor nieuwe maatwerk order_regels |
+
+### Triggers op order_regels (maatwerk)
+
+| Trigger | Event | Timing | Functie |
+|---------|-------|--------|---------|
+| `trg_auto_maatwerk` | INSERT | BEFORE | `auto_markeer_maatwerk()` — zet is_maatwerk=true voor rol-producten |
+| `trg_auto_snijplan` | INSERT | AFTER | `auto_maak_snijplan()` — maakt snijplan aan voor maatwerk regels |
 
 ---
 

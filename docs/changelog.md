@@ -1,5 +1,46 @@
 # Changelog — RugFlow ERP
 
+## 2026-04-08 — Prijslijsten update april 2026
+
+### Prijslijsten
+- Alle bestaande prijslijsten verwijderd (101 stuks) behalve Floorpassion (0145)
+- 8 nieuwe Benelux prijslijsten geïmporteerd (210-217), geldig per 01-04-2026:
+  - 210: Benelux | 211: Benelux + MV | 212: Benelux + bamboe | 213: Benelux + MV + bamboe
+  - 214: Benelux + RM | 215: Benelux + RM + MV | 216: Benelux + RM + bamboe | 217: Benelux + RM + MV + bamboe
+- Totaal 15.780 prijsregels geïmporteerd, 52 nieuwe producten automatisch aangemaakt
+- Klant-koppelingen bijgewerkt: 0150→0210, 0151→0211 (184 klanten), 0152→0212 (99 klanten), 0153→0213 (239 klanten)
+- Nieuw Excel formaat: kolommen A=artikelnr, B=EAN, C=omschrijving, D=omschr.2, E=prijs
+- Import script: `import/prijslijst_update_2026.py`
+
+## 2026-04-08 — Automatische maatwerk detectie en snijplan aanmaak
+
+### Database
+- Migratie 034: auto-detect maatwerk orders en genereer snijplannen
+- Alle order_regels met product_type='rol' worden automatisch gemarkeerd als is_maatwerk=true
+- Snijplannen worden automatisch aangemaakt (status 'Wacht') voor alle maatwerk orderregels
+- Trigger trg_auto_maatwerk: markeert nieuwe order_regels automatisch als maatwerk bij rol-producten
+- Trigger trg_auto_snijplan: maakt automatisch een snijplan aan bij nieuwe maatwerk orderregels
+- SNIJ nummeringstype toegevoegd voor snijplan_nr generatie
+- snijplanning_overzicht view uitgebreid met sp.rol_id kolom
+
+## 2026-04-08 — Productiemodule maatwerk tapijten
+
+### Database
+- Migraties 030-033: maatwerk velden, snijplan uitbreidingen, scan tracking, productie functies en views
+- Nieuwe tabellen: scan_events, voorraad_mutaties, app_config
+- Nieuwe functies: genereer_scancode(), beste_rol_voor_snijplan(), maak_reststuk()
+- Nieuwe views: snijplanning_overzicht, confectie_overzicht, productie_dashboard
+- Extended: snijplan_status enum, rollen.status CHECK, order_regels maatwerk kolommen
+
+### Frontend
+- Snijplanning module: overzicht per week, gegroepeerd per kwaliteit+kleur, SVG snijvoorstel visualisatie, sticker print
+- Confectie module: scan-gestuurd overzicht van afwerkingsstatus
+- Scanstation Inpak: tablet-vriendelijk scaninterface voor barcode/QR
+- Magazijn: overzicht gereed product met locatiebeheer
+- Rollen & Reststukken: gegroepeerd rolbeheer met status badges
+- Planning Instellingen: configuratie capaciteit, modus, reststuk verspilling
+- Shared: scan-input component, productie types, status kleuren
+
 ## 2026-04-03 — Automatische verzendkosten (VERZEND) in orderformulier
 - **Frontend:** Nieuw bestand `frontend/src/lib/constants/shipping.ts` met SHIPPING_PRODUCT_ID, SHIPPING_THRESHOLD (€500), SHIPPING_COST (€20)
 - **Frontend:** `order-form.tsx` — automatische VERZEND-regel bij subtotaal < €500, verwijderd bij ≥ €500

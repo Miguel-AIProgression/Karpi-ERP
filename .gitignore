@@ -7,3 +7,6 @@ brondata/*.zip
 brondata/**/*.xlsx
 brondata/**/*.xls
 *.xlsx
+*.zip
+__pycache__/
+supabase/.temp/

@@ -48,6 +48,14 @@ Domeinbegrippen die je moet kennen om dit project te begrijpen.
 | **Zending** | Fysieke levering. Kan producten uit meerdere orderregels bevatten. |
 | **Sample/staal** | Monster van een product, verstuurd naar een klant. |
 | **Backorder** | Besteld maar niet op voorraad; wacht op levering van leverancier. |
+| **Maatwerk** | Orderregel die snijden en/of confectie vereist (is_maatwerk = true). Bevat lengte, breedte, afwerking en instructies. |
+| **Productie_groep** | Groeperingssleutel voor snijplanning: kwaliteit + kleur. Alle maatwerk-regels met dezelfde productie_groep kunnen uit dezelfde rol gesneden worden. |
+| **Scancode** | Unieke code op barcode/QR-sticker, gekoppeld aan een snijplan of confectie-order. Gegenereerd via `genereer_scancode()`. Wordt gescand op elk werkstation. |
+| **Reststuk** | Overgebleven stuk na het snijden van een rol. Wordt automatisch aangemaakt via `maak_reststuk()` met eigen rolnummer, gekoppeld aan oorsprong_rol_id. |
+| **Snijvoorstel** | Visuele weergave (SVG) van hoe stukken op een rol geplaatst worden. Gebruikt strip-packing algoritme met positie_x/positie_y. |
+| **Strip-packing** | 2D-inpakalgoritme dat stukken zo efficient mogelijk op een rol plaatst. Minimaliseert verspilling. |
+| **Scan_event** | Registratie van een individuele barcode/QR-scan: wie, wanneer, welk station, welke actie. Opgeslagen in `scan_events` tabel. |
+| **Voorraad_mutatie** | Logboekregel van een voorraadwijziging op een rol (gesneden, reststuk aangemaakt, correctie). Opgeslagen in `voorraad_mutaties` tabel. |
 
 ## Systeem
 

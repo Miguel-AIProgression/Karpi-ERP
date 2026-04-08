@@ -19,6 +19,37 @@ export const TIER_COLORS: Record<string, { bg: string; text: string }> = {
   'Bronze': { bg: 'bg-orange-100', text: 'text-orange-700' },
 }
 
+/** Snijplan status → badge color mapping */
+export const SNIJPLAN_STATUS_COLORS: Record<string, { bg: string; text: string }> = {
+  'Wacht': { bg: 'bg-slate-100', text: 'text-slate-600' },
+  'Gepland': { bg: 'bg-blue-100', text: 'text-blue-700' },
+  'In productie': { bg: 'bg-indigo-100', text: 'text-indigo-700' },
+  'Gesneden': { bg: 'bg-amber-100', text: 'text-amber-700' },
+  'In confectie': { bg: 'bg-purple-100', text: 'text-purple-700' },
+  'Gereed': { bg: 'bg-emerald-100', text: 'text-emerald-700' },
+  'Ingepakt': { bg: 'bg-teal-100', text: 'text-teal-700' },
+  'Geannuleerd': { bg: 'bg-gray-100', text: 'text-gray-500' },
+}
+
+/** Confectie status → badge color mapping */
+export const CONFECTIE_STATUS_COLORS: Record<string, { bg: string; text: string }> = {
+  'Wacht op materiaal': { bg: 'bg-amber-100', text: 'text-amber-700' },
+  'In productie': { bg: 'bg-indigo-100', text: 'text-indigo-700' },
+  'Kwaliteitscontrole': { bg: 'bg-purple-100', text: 'text-purple-700' },
+  'Gereed': { bg: 'bg-emerald-100', text: 'text-emerald-700' },
+  'Geannuleerd': { bg: 'bg-gray-100', text: 'text-gray-500' },
+}
+
+/** Rol status → badge color mapping */
+export const ROL_STATUS_COLORS: Record<string, { bg: string; text: string }> = {
+  'beschikbaar': { bg: 'bg-emerald-100', text: 'text-emerald-700' },
+  'gereserveerd': { bg: 'bg-blue-100', text: 'text-blue-700' },
+  'in_snijplan': { bg: 'bg-indigo-100', text: 'text-indigo-700' },
+  'gesneden': { bg: 'bg-amber-100', text: 'text-amber-700' },
+  'reststuk': { bg: 'bg-orange-100', text: 'text-orange-700' },
+  'verkocht': { bg: 'bg-gray-100', text: 'text-gray-500' },
+}
+
 /** Sidebar navigation structure */
 export const NAV_GROUPS = [
   {
@@ -51,6 +82,7 @@ export const NAV_GROUPS = [
     items: [
       { label: 'Snijplanning', path: '/snijplanning', icon: 'Scissors' },
       { label: 'Confectie', path: '/confectie', icon: 'Factory' },
+      { label: 'Magazijn', path: '/magazijn', icon: 'Warehouse' },
       { label: 'Pick & Ship', path: '/pick-ship', icon: 'PackageCheck' },
       { label: 'Logistiek', path: '/logistiek', icon: 'Truck' },
     ],

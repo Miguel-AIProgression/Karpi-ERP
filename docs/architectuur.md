@@ -71,14 +71,19 @@ De `kwaliteit_code` (3-4 letters uit de karpi_code) is de spil tussen producten,
 /vertegenwoordigers        (placeholder)
 /rollen                    (placeholder)
 /magazijn                  (placeholder)
-/snijplanning              (placeholder)
-/confectie                 (placeholder)
-/scanstation               (placeholder)
+/snijplanning              Snijplanning overzicht per week, gegroepeerd per kwaliteit+kleur
+/snijplanning/rol/:rolId   Snijvoorstel per rol (SVG strip-packing visualisatie)
+/snijplanning/:id/stickers Sticker print weergave voor gesneden stukken
+/confectie                 Confectie overzicht: scan-gestuurd afwerkingsstatus
+/scanstation               Tablet-vriendelijk scaninterface voor barcode/QR inpak
+/rollen                    Rolbeheer: gegroepeerd per kwaliteit/kleur met status badges
+/magazijn                  Gereed product overzicht met locatiebeheer
 /pick-ship                 (placeholder)
 /logistiek                 (placeholder)
 /inkoop                    (placeholder)
 /leveranciers              (placeholder)
 /instellingen              (placeholder)
+/instellingen/productie    Planning instellingen: capaciteit, modus, reststuk verspilling
 ```
 
 ## Security
@@ -91,3 +96,27 @@ De `kwaliteit_code` (3-4 letters uit de karpi_code) is de spil tussen producten,
 ### Fase 2 (later)
 - Rollen: admin, verkoop, magazijn, management
 - Per-rol policies (bijv. magazijn kan geen debiteuren bewerken)
+
+## Productie Patterns
+
+### Scancode-gestuurd proces
+Elk snijplan en confectie-order krijgt een unieke scancode (via `genereer_scancode()`). Barcode/QR-stickers worden geprint en gescand op elk werkstation. Scans worden gelogd in `scan_events` voor traceerbaarheid.
+
+### Strip-packing snijvoorstel
+Snijplannen worden gevisualiseerd als SVG op de rol (2D strip-packing). `positie_x`/`positie_y` kolommen bepalen de plaatsing. De `beste_rol_voor_snijplan()` functie selecteert de optimale rol (minste verspilling).
+
+### Reststuk tracking
+Na het snijden maakt `maak_reststuk()` automatisch een nieuwe rol aan met status 'reststuk', gekoppeld via `oorsprong_rol_id`. Alle voorraadmutaties worden gelogd in `voorraad_mutaties`.
+
+### Productie modules
+- **Snijplanning**: weekoverzicht, gegroepeerd per kwaliteit+kleur, SVG snijvoorstel, sticker print
+- **Confectie**: scan-gestuurd overzicht van afwerkingsstatus per medewerker
+- **Scanstation Inpak**: tablet-vriendelijk interface, barcode/QR scan voor status-updates
+- **Magazijn**: gereed product met locatiebeheer
+- **Rollen & Reststukken**: gegroepeerd rolbeheer met status badges en oorsprong-tracking
+- **Planning Instellingen**: configuratie via `app_config` tabel (capaciteit m2/dag, planmodus, max verspilling)
+
+### Shared productie componenten
+- `ScanInput`: herbruikbaar scan-invoer component (camera + handmatig)
+- Productie types: gedeelde TypeScript types voor snijplannen, confectie, scan events
+- Status kleuren: consistente kleurcodering per productie-status
