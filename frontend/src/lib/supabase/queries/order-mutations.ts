@@ -41,6 +41,14 @@ export interface OrderRegelFormData {
   fysiek_artikelnr?: string
   fysiek_omschrijving?: string  // Display-only
   omstickeren?: boolean
+  // Maatwerk fields
+  is_maatwerk?: boolean
+  maatwerk_vorm?: string
+  maatwerk_lengte_cm?: number
+  maatwerk_breedte_cm?: number
+  maatwerk_afwerking?: string
+  maatwerk_band_kleur?: string
+  maatwerk_instructies?: string
 }
 
 /** Create order + lines atomically via RPC */
@@ -84,6 +92,13 @@ export async function createOrder(
     gewicht_kg: r.gewicht_kg ?? null,
     fysiek_artikelnr: r.fysiek_artikelnr || null,
     omstickeren: r.omstickeren ?? false,
+    is_maatwerk: r.is_maatwerk ?? false,
+    maatwerk_vorm: r.maatwerk_vorm || null,
+    maatwerk_lengte_cm: r.maatwerk_lengte_cm ?? null,
+    maatwerk_breedte_cm: r.maatwerk_breedte_cm ?? null,
+    maatwerk_afwerking: r.maatwerk_afwerking || null,
+    maatwerk_band_kleur: r.maatwerk_band_kleur || null,
+    maatwerk_instructies: r.maatwerk_instructies || null,
   }))
 
   const { data, error } = await supabase.rpc('create_order_with_lines', {
@@ -115,6 +130,13 @@ export async function updateOrderWithLines(
     gewicht_kg: r.gewicht_kg ?? null,
     fysiek_artikelnr: r.fysiek_artikelnr || null,
     omstickeren: r.omstickeren ?? false,
+    is_maatwerk: r.is_maatwerk ?? false,
+    maatwerk_vorm: r.maatwerk_vorm || null,
+    maatwerk_lengte_cm: r.maatwerk_lengte_cm ?? null,
+    maatwerk_breedte_cm: r.maatwerk_breedte_cm ?? null,
+    maatwerk_afwerking: r.maatwerk_afwerking || null,
+    maatwerk_band_kleur: r.maatwerk_band_kleur || null,
+    maatwerk_instructies: r.maatwerk_instructies || null,
   }))
 
   const { error } = await supabase.rpc('update_order_with_lines', {

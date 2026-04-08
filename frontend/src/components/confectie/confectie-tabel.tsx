@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils/cn'
-import { CONFECTIE_STATUS_COLORS } from '@/lib/utils/constants'
+import { CONFECTIE_STATUS_COLORS, AFWERKING_MAP } from '@/lib/utils/constants'
 import type { ConfectieRow } from '@/lib/types/productie'
 
 interface ConfectieTabelProps {
@@ -23,18 +23,14 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function AfwerkingBadge({ afwerking }: { afwerking: string | null }) {
-  if (!afwerking || afwerking === 'geen') return <span className="text-slate-300">—</span>
+  if (!afwerking) return <span className="text-slate-300">—</span>
 
-  const colorMap: Record<string, { bg: string; text: string }> = {
-    overlocked: { bg: 'bg-blue-100', text: 'text-blue-700' },
-    band: { bg: 'bg-purple-100', text: 'text-purple-700' },
-    blindzoom: { bg: 'bg-amber-100', text: 'text-amber-700' },
-  }
-  const colors = colorMap[afwerking] ?? { bg: 'bg-slate-100', text: 'text-slate-600' }
+  const info = AFWERKING_MAP[afwerking]
+  if (!info) return <span className="text-slate-300">—</span>
 
   return (
-    <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium', colors.bg, colors.text)}>
-      {afwerking}
+    <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium', info.bg, info.text)}>
+      {info.code} — {info.label}
     </span>
   )
 }

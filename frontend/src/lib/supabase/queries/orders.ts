@@ -36,6 +36,13 @@ export interface OrderDetail extends OrderRow {
   vertegenw_naam?: string
 }
 
+export interface OrderRegelSnijplan {
+  id: number
+  snijplan_nr: string
+  status: string
+  scancode: string
+}
+
 export interface OrderRegel {
   id: number
   regelnummer: number
@@ -57,6 +64,16 @@ export interface OrderRegel {
   fysiek_artikelnr?: string | null
   omstickeren?: boolean
   fysiek_omschrijving?: string | null
+  // Maatwerk
+  is_maatwerk?: boolean
+  maatwerk_vorm?: string | null
+  maatwerk_lengte_cm?: number | null
+  maatwerk_breedte_cm?: number | null
+  maatwerk_afwerking?: string | null
+  maatwerk_band_kleur?: string | null
+  maatwerk_instructies?: string | null
+  // Productie tracking
+  snijplannen?: OrderRegelSnijplan[]
 }
 
 export interface StatusCount {
@@ -172,7 +189,7 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
 
   const { data, error } = await supabase
     .from('order_regels')
-    .select('id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2, orderaantal, te_leveren, backorder, prijs, korting_pct, bedrag, gewicht_kg, vrije_voorraad, fysiek_artikelnr, omstickeren, producten!order_regels_artikelnr_fkey(kwaliteit_code)')
+    .select('id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2, orderaantal, te_leveren, backorder, prijs, korting_pct, bedrag, gewicht_kg, vrije_voorraad, fysiek_artikelnr, omstickeren, is_maatwerk, maatwerk_vorm, maatwerk_lengte_cm, maatwerk_breedte_cm, maatwerk_afwerking, maatwerk_band_kleur, maatwerk_instructies, producten!order_regels_artikelnr_fkey(kwaliteit_code)')
     .eq('order_id', orderId)
     .order('regelnummer')
 
@@ -214,6 +231,13 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
       omstickeren: row.omstickeren ?? false,
       fysiek_omschrijving: row.fysiek_artikelnr && fysiekOmschMap
         ? fysiekOmschMap.get(row.fysiek_artikelnr) ?? null : null,
+      is_maatwerk: row.is_maatwerk ?? false,
+      maatwerk_vorm: row.maatwerk_vorm ?? null,
+      maatwerk_lengte_cm: row.maatwerk_lengte_cm ?? null,
+      maatwerk_breedte_cm: row.maatwerk_breedte_cm ?? null,
+      maatwerk_afwerking: row.maatwerk_afwerking ?? null,
+      maatwerk_band_kleur: row.maatwerk_band_kleur ?? null,
+      maatwerk_instructies: row.maatwerk_instructies ?? null,
     }
   }
 
@@ -257,5 +281,36 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
     (klantArtNrs ?? []).map((n: { artikelnr: string; klant_artikel: string }) => [n.artikelnr, n.klant_artikel])
   )
 
-  return regels.map((r) => toRegel(r, eigenNaamMap, klantArtMap, fysiekOmschMap))
+  const baseRegels = regels.map((r) => toRegel(r, eigenNaamMap, klantArtMap, fysiekOmschMap))
+
+  // Fetch snijplannen for maatwerk regels
+  const maatwerkRegelIds = baseRegels.filter((r) => r.is_maatwerk).map((r) => r.id)
+  if (maatwerkRegelIds.length > 0) {
+    const { data: snijplanData } = await supabase
+      .from('snijplannen')
+      .select('id, snijplan_nr, status, scancode, order_regel_id')
+      .in('order_regel_id', maatwerkRegelIds)
+      .order('snijplan_nr')
+
+    if (snijplanData) {
+      const snijplanMap = new Map<number, OrderRegelSnijplan[]>()
+      for (const sp of snijplanData) {
+        const regelId = sp.order_regel_id as number
+        if (!snijplanMap.has(regelId)) snijplanMap.set(regelId, [])
+        snijplanMap.get(regelId)!.push({
+          id: sp.id,
+          snijplan_nr: sp.snijplan_nr,
+          status: sp.status,
+          scancode: sp.scancode,
+        })
+      }
+      for (const regel of baseRegels) {
+        if (snijplanMap.has(regel.id)) {
+          regel.snijplannen = snijplanMap.get(regel.id)!
+        }
+      }
+    }
+  }
+
+  return baseRegels
 }

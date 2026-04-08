@@ -1,4 +1,5 @@
 import type { SnijplanRow } from '@/lib/types/productie'
+import { AFWERKING_MAP } from '@/lib/utils/constants'
 
 interface StickerLayoutProps {
   snijplan: SnijplanRow
@@ -22,14 +23,10 @@ function formatVorm(row: SnijplanRow): string {
 }
 
 function formatAfwerking(row: SnijplanRow): string {
-  if (!row.maatwerk_afwerking || row.maatwerk_afwerking === 'geen') return 'Geen'
-  const labels: Record<string, string> = {
-    overlocked: 'Overlocked',
-    band: 'Band',
-    blindzoom: 'Blindzoom',
-  }
-  const base = labels[row.maatwerk_afwerking] ?? row.maatwerk_afwerking
-  if (row.maatwerk_afwerking === 'band' && row.maatwerk_band_kleur) {
+  if (!row.maatwerk_afwerking) return 'Geen'
+  const info = AFWERKING_MAP[row.maatwerk_afwerking]
+  const base = info ? `${info.code} ${info.label}` : row.maatwerk_afwerking
+  if ((row.maatwerk_afwerking === 'B' || row.maatwerk_afwerking === 'SB') && row.maatwerk_band_kleur) {
     return `${base} - ${row.maatwerk_band_kleur}`
   }
   return base

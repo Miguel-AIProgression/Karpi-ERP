@@ -1,5 +1,27 @@
 # Changelog — RugFlow ERP
 
+## 2026-04-08 — Productiestatus zichtbaar in order detail
+
+### Frontend
+- Gewijzigd: `orders.ts` — `OrderRegelSnijplan` interface + snijplannen ophalen per maatwerk orderregel in `fetchOrderRegels`
+- Gewijzigd: `order-regels-table.tsx` — maatwerk regels tonen nu maat, vorm, afwerking en productiestatus badge met link naar snijplanning
+
+## 2026-04-08 — Afwerkingscodes uitbreiden + maatwerk in orderformulier
+
+### Database (migration 038)
+- Gewijzigd: `maatwerk_afwerking` CHECK constraint — oude waarden (geen/overlocked/band/blindzoom) vervangen door Karpi-standaard codes: B (Breedband), FE (Feston), LO (Locken), ON (Onafgewerkt), SB (Smalband), SF (Smalfeston), VO (Volume afwerking), ZO (Zonder afwerking)
+- Migratie van bestaande data: overlocked→LO, band→B, blindzoom→ZO, geen→NULL
+
+### Frontend
+- Gewijzigd: `order-line-editor.tsx` — maatwerk-rij onder orderregel met afwerking, vorm, afmetingen, bandkleur en instructies
+- Gewijzigd: `order-mutations.ts` — maatwerk velden meesturen naar create/update RPC
+- Gewijzigd: `orders.ts` — maatwerk velden ophalen bij fetchOrderRegels
+- Gewijzigd: `order-edit.tsx` — maatwerk velden doorgeven bij bewerken
+- Gewijzigd: `article-selector.tsx` — product_type meenemen voor auto-detectie maatwerk
+- Gewijzigd: `constants.ts` — AFWERKING_OPTIES en AFWERKING_MAP centraal
+- Gewijzigd: `productie.ts` — MaatwerkAfwerking type met nieuwe codes
+- Gewijzigd: confectie-tabel, sticker-layout, groep-accordion, week-groep-accordion, snijstukken-tabel — gebruiken nu AFWERKING_MAP
+
 ## 2026-04-08 — Snijoptimalisatie: automatische snijplanning
 
 ### Database (migration 037)

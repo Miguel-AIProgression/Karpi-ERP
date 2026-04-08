@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { ChevronDown, ChevronRight, Printer } from 'lucide-react'
 import { SnijVisualisatie } from './snij-visualisatie'
 import { cn } from '@/lib/utils/cn'
+import { AFWERKING_MAP } from '@/lib/utils/constants'
 import type { SnijGroep, SnijStuk } from '@/lib/types/productie'
 
 interface WeekGroepAccordionProps {
@@ -118,8 +119,10 @@ function StukRow({ stuk }: { stuk: SnijStuk }) {
       <td className="py-2 pr-3">{stuk.klant_naam}</td>
       <td className="py-2 pr-3 text-slate-500">{stuk.order_nr}</td>
       <td className="py-2 pr-3">
-        {stuk.afwerking && stuk.afwerking !== 'geen' ? (
-          <span className="text-xs px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">{stuk.afwerking}</span>
+        {stuk.afwerking && AFWERKING_MAP[stuk.afwerking] ? (
+          <span className={cn('text-xs px-1.5 py-0.5 rounded', AFWERKING_MAP[stuk.afwerking].bg, AFWERKING_MAP[stuk.afwerking].text)}>
+            {stuk.afwerking}
+          </span>
         ) : '—'}
       </td>
       <td className="py-2 pr-3 text-slate-500">

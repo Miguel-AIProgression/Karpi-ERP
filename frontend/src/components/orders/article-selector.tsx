@@ -13,6 +13,7 @@ export interface SelectedArticle {
   vrije_voorraad: number
   besteld_inkoop: number
   kwaliteit_code: string | null
+  product_type: string | null
 }
 
 export interface SubstitutionInfo {
@@ -46,7 +47,7 @@ export function ArticleSelector({ onSelect }: ArticleSelectorProps) {
       let query = applyProductSearch(
         supabase
           .from('producten')
-          .select('artikelnr, karpi_code, omschrijving, verkoopprijs, gewicht_kg, vrije_voorraad, besteld_inkoop, kwaliteit_code')
+          .select('artikelnr, karpi_code, omschrijving, verkoopprijs, gewicht_kg, vrije_voorraad, besteld_inkoop, kwaliteit_code, product_type')
           .eq('actief', true)
           .neq('artikelnr', 'VERZEND') as any,
         search

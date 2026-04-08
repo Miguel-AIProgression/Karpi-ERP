@@ -40,6 +40,22 @@ export const CONFECTIE_STATUS_COLORS: Record<string, { bg: string; text: string 
   'Geannuleerd': { bg: 'bg-gray-100', text: 'text-gray-500' },
 }
 
+/** Afwerking code → label + badge color mapping */
+export const AFWERKING_OPTIES: { code: string; label: string; bg: string; text: string }[] = [
+  { code: 'B',  label: 'Breedband',        bg: 'bg-purple-100',  text: 'text-purple-700' },
+  { code: 'FE', label: 'Feston',           bg: 'bg-blue-100',    text: 'text-blue-700' },
+  { code: 'LO', label: 'Locken',           bg: 'bg-cyan-100',    text: 'text-cyan-700' },
+  { code: 'ON', label: 'Onafgewerkt',      bg: 'bg-slate-100',   text: 'text-slate-600' },
+  { code: 'SB', label: 'Smalband',         bg: 'bg-indigo-100',  text: 'text-indigo-700' },
+  { code: 'SF', label: 'Smalfeston',       bg: 'bg-teal-100',    text: 'text-teal-700' },
+  { code: 'VO', label: 'Volume afwerking', bg: 'bg-amber-100',   text: 'text-amber-700' },
+  { code: 'ZO', label: 'Zonder afwerking', bg: 'bg-gray-100',    text: 'text-gray-500' },
+]
+
+export const AFWERKING_MAP = Object.fromEntries(
+  AFWERKING_OPTIES.map((a) => [a.code, a])
+) as Record<string, (typeof AFWERKING_OPTIES)[number]>
+
 /** Rol status → badge color mapping */
 export const ROL_STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   'beschikbaar': { bg: 'bg-emerald-100', text: 'text-emerald-700' },

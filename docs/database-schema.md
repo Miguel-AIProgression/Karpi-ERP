@@ -287,7 +287,7 @@ Productregels per order. artikelnr nullable voor service-items.
 | is_maatwerk | BOOLEAN | Default false. Regel vereist snijden/confectie |
 | maatwerk_lengte_cm | INTEGER | Gewenste lengte in cm |
 | maatwerk_breedte_cm | INTEGER | Gewenste breedte in cm |
-| maatwerk_afwerking | TEXT | 'geen', 'overzomen', 'backing', 'binden' |
+| maatwerk_afwerking | TEXT | 'B' (Breedband), 'FE' (Feston), 'LO' (Locken), 'ON' (Onafgewerkt), 'SB' (Smalband), 'SF' (Smalfeston), 'VO' (Volume afwerking), 'ZO' (Zonder afwerking) |
 | maatwerk_instructies | TEXT | Vrije tekst snij/confectie-instructies |
 | productie_groep | TEXT | Groepering voor snijplanning (kwaliteit+kleur) |
 | UK: (order_id, regelnummer) | | |

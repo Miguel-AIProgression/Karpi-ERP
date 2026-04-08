@@ -1,9 +1,11 @@
-import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { ChevronDown, ChevronRight, Printer, Scissors, Loader2 } from 'lucide-react'
+import { useState, useMemo, useEffect } from 'react'
+import { Link } from 'react-router-dom'
+import { ChevronDown, ChevronRight, Printer, Scissors, Loader2, Eye } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
-import { useSnijplannenVoorGroep, useGenereerSnijvoorstel } from '@/hooks/use-snijplanning'
-import type { SnijplanRow } from '@/lib/types/productie'
+import { AFWERKING_MAP } from '@/lib/utils/constants'
+import { useSnijplannenVoorGroep, useGenereerSnijvoorstel, useGoedgekeurdVoorstel, useBeschikbareCapaciteit } from '@/hooks/use-snijplanning'
+import { SnijvoorstelModal } from './snijvoorstel-modal'
+import type { SnijplanRow, SnijvoorstelResponse } from '@/lib/types/productie'
 
 interface GroepAccordionProps {
   kwaliteitCode: string
@@ -24,22 +26,34 @@ export function GroepAccordion({
 }: GroepAccordionProps) {
   const [open, setOpen] = useState(false)
   const [genError, setGenError] = useState<string | null>(null)
-  const navigate = useNavigate()
+  const [voorstelResult, setVoorstelResult] = useState<SnijvoorstelResponse | null>(null)
+  const [showPlan, setShowPlan] = useState(false)
   const genereer = useGenereerSnijvoorstel()
+  const { data: capaciteit } = useBeschikbareCapaciteit(kwaliteitCode, kleurCode)
 
-  // Lazy load: only fetch detail rows when accordion is opened
-  const { data: stukken, isLoading } = useSnijplannenVoorGroep(
-    kwaliteitCode,
-    kleurCode,
-    open, // enabled only when open
+  const { data: stukken, isLoading } = useSnijplannenVoorGroep(kwaliteitCode, kleurCode, open)
+
+  // Check if there are planned items (to show "Bekijk plan" button)
+  const heeftGepland = useMemo(() => (stukken ?? []).some(s => s.status === 'Gepland'), [stukken])
+  const heeftWacht = useMemo(() => (stukken ?? []).some(s => s.status === 'Wacht'), [stukken])
+
+  // Fetch existing approved voorstel when user clicks "Bekijk plan"
+  const { data: bestaandVoorstel, isFetching: loadingPlan } = useGoedgekeurdVoorstel(
+    kwaliteitCode, kleurCode, showPlan,
   )
+
+  // Show modal when bestaand voorstel loads
+  const modalData = voorstelResult ?? (showPlan && bestaandVoorstel ? bestaandVoorstel : null)
 
   return (
     <div className="bg-white rounded-[var(--radius)] border border-slate-200 overflow-hidden">
       {/* Header */}
-      <button
+      <div
+        role="button"
+        tabIndex={0}
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors text-left"
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(!open) } }}
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors text-left cursor-pointer"
       >
         <div className="flex items-center gap-3 flex-wrap">
           {open ? (
@@ -62,41 +76,89 @@ export function GroepAccordion({
             )}>
               {totaalGesneden}/{totaalStukken} gesneden
             </span>
+            {capaciteit && (
+              <span className={cn(
+                'text-xs px-2 py-0.5 rounded-full',
+                capaciteit.totaalM2 >= totaalM2
+                  ? 'bg-emerald-50 text-emerald-700'
+                  : 'bg-red-50 text-red-700'
+              )}>
+                {capaciteit.totaalRollen} rollen · {capaciteit.totaalM2} m² beschikbaar
+                {capaciteit.heeftUitwisselbaar && (
+                  <span className="text-[10px] opacity-70"> (+{capaciteit.uitwisselbaarM2} m² uitw.)</span>
+                )}
+              </span>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              setGenError(null)
-              genereer.mutate(
-                { kwaliteitCode, kleurCode },
-                {
-                  onSuccess: (result) => {
-                    navigate(`/snijplanning/voorstel/${result.voorstel_id}`, {
-                      state: { voorstelResponse: result, kwaliteitCode, kleurCode },
-                    })
+          {/* Bekijk plan button — when items are Gepland */}
+          {heeftGepland && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setShowPlan(true)
+              }}
+              disabled={loadingPlan}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500 text-white rounded-[var(--radius-sm)] text-xs font-medium hover:bg-blue-600 transition-colors disabled:opacity-50"
+            >
+              {loadingPlan ? <Loader2 size={14} className="animate-spin" /> : <Eye size={14} />}
+              Bekijk plan
+            </button>
+          )}
+
+          {/* Genereren button — only when there are Wacht items */}
+          {heeftWacht && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setGenError(null)
+                genereer.mutate(
+                  { kwaliteitCode, kleurCode },
+                  {
+                    onSuccess: (result) => setVoorstelResult(result),
+                    onError: (err) => setGenError(err instanceof Error ? err.message : 'Onbekende fout'),
                   },
-                  onError: (err) => {
-                    setGenError(err instanceof Error ? err.message : 'Onbekende fout')
+                )
+              }}
+              disabled={genereer.isPending}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-terracotta-500 text-white rounded-[var(--radius-sm)] text-xs font-medium hover:bg-terracotta-600 transition-colors disabled:opacity-50"
+            >
+              {genereer.isPending ? <Loader2 size={14} className="animate-spin" /> : <Scissors size={14} />}
+              Genereren
+            </button>
+          )}
+
+          {/* Show genereren when accordion not open yet (we don't know status) */}
+          {!open && !heeftGepland && !heeftWacht && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setGenError(null)
+                genereer.mutate(
+                  { kwaliteitCode, kleurCode },
+                  {
+                    onSuccess: (result) => setVoorstelResult(result),
+                    onError: (err) => setGenError(err instanceof Error ? err.message : 'Onbekende fout'),
                   },
-                },
-              )
-            }}
-            disabled={genereer.isPending}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-terracotta-500 text-white rounded-[var(--radius-sm)] text-xs font-medium hover:bg-terracotta-600 transition-colors disabled:opacity-50"
-          >
-            {genereer.isPending ? <Loader2 size={14} className="animate-spin" /> : <Scissors size={14} />}
-            Genereren
-          </button>
+                )
+              }}
+              disabled={genereer.isPending}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-terracotta-500 text-white rounded-[var(--radius-sm)] text-xs font-medium hover:bg-terracotta-600 transition-colors disabled:opacity-50"
+            >
+              {genereer.isPending ? <Loader2 size={14} className="animate-spin" /> : <Scissors size={14} />}
+              Genereren
+            </button>
+          )}
+
           <Printer size={16} className="text-slate-400 hover:text-slate-600" />
         </div>
-      </button>
+      </div>
 
       {/* Generation error */}
       {genError && (
         <div className="mx-4 mb-2 px-3 py-2 bg-red-50 border border-red-200 rounded-[var(--radius-sm)] text-sm text-red-700">
-          Fout bij genereren: {genError}
+          {genError}
           <button onClick={() => setGenError(null)} className="ml-2 underline text-xs">Sluiten</button>
         </div>
       )}
@@ -128,6 +190,17 @@ export function GroepAccordion({
             </table>
           )}
         </div>
+      )}
+
+      {/* Snijvoorstel modal */}
+      {modalData && (
+        <SnijvoorstelModal
+          voorstel={modalData}
+          kwaliteitCode={kwaliteitCode}
+          kleurCode={kleurCode}
+          onClose={() => { setVoorstelResult(null); setShowPlan(false) }}
+          readOnly={showPlan && !voorstelResult}
+        />
       )}
     </div>
   )
@@ -166,8 +239,10 @@ function StukRow({ stuk }: { stuk: SnijplanRow }) {
         </Link>
       </td>
       <td className="py-2 pr-3">
-        {stuk.maatwerk_afwerking && stuk.maatwerk_afwerking !== 'geen' ? (
-          <span className="text-xs px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">{stuk.maatwerk_afwerking}</span>
+        {stuk.maatwerk_afwerking && AFWERKING_MAP[stuk.maatwerk_afwerking] ? (
+          <span className={cn('text-xs px-1.5 py-0.5 rounded', AFWERKING_MAP[stuk.maatwerk_afwerking].bg, AFWERKING_MAP[stuk.maatwerk_afwerking].text)}>
+            {stuk.maatwerk_afwerking}
+          </span>
         ) : '—'}
       </td>
       <td className="py-2 pr-3">

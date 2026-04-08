@@ -1,5 +1,6 @@
 import { Printer } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
+import { AFWERKING_MAP } from '@/lib/utils/constants'
 import type { SnijStuk } from '@/lib/types/productie'
 
 interface SnijstukkenTabelProps {
@@ -66,8 +67,8 @@ export function SnijstukkenTabel({ stukken, compact }: SnijstukkenTabelProps) {
                 </span>
               </td>
               <td className="px-3 py-2">
-                {stuk.afwerking && stuk.afwerking !== 'geen' ? (
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                {stuk.afwerking && AFWERKING_MAP[stuk.afwerking] ? (
+                  <span className={cn('text-xs px-2 py-0.5 rounded-full', AFWERKING_MAP[stuk.afwerking].bg, AFWERKING_MAP[stuk.afwerking].text)}>
                     {stuk.afwerking}
                   </span>
                 ) : (

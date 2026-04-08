@@ -32,6 +32,7 @@ interface Roll {
   status: string
   oppervlak_m2: number
   sort_priority: number // 1=reststuk, 2=beschikbaar
+  is_exact: boolean     // true = exact kwaliteit match, false = uitwisselbaar
 }
 
 interface Shelf {
@@ -290,12 +291,36 @@ serve(async (req) => {
       )
     }
 
-    // ---- Step 1b: Fetch available rolls ----
+    // ---- Step 1b: Find interchangeable quality codes via collecties ----
+    // Kwaliteiten in the same collectie are interchangeable (same material, different name)
+    const { data: kwaliteit } = await supabase
+      .from('kwaliteiten')
+      .select('code, collectie_id')
+      .eq('code', kwaliteit_code)
+      .maybeSingle()
+
+    let uitwisselbareCodes: string[] = [kwaliteit_code]
+    if (kwaliteit?.collectie_id) {
+      const { data: verwant } = await supabase
+        .from('kwaliteiten')
+        .select('code')
+        .eq('collectie_id', kwaliteit.collectie_id)
+      if (verwant) {
+        uitwisselbareCodes = verwant.map((k: { code: string }) => k.code)
+      }
+    }
+
+    // ---- Step 1c: Fetch available rolls (exact + interchangeable) ----
+    // kleur_code in rollen may have ".0" suffix (e.g. "13.0" vs "13")
+    const kleurVariants = [kleur_code]
+    if (!kleur_code.includes('.')) kleurVariants.push(`${kleur_code}.0`)
+    if (kleur_code.endsWith('.0')) kleurVariants.push(kleur_code.replace('.0', ''))
+
     const { data: rollen, error: rolError } = await supabase
       .from('rollen')
-      .select('id, rolnummer, lengte_cm, breedte_cm, status, oppervlak_m2')
-      .eq('kwaliteit_code', kwaliteit_code)
-      .eq('kleur_code', kleur_code)
+      .select('id, rolnummer, lengte_cm, breedte_cm, status, oppervlak_m2, kwaliteit_code')
+      .in('kwaliteit_code', uitwisselbareCodes)
+      .in('kleur_code', kleurVariants)
       .in('status', ['beschikbaar', 'reststuk'])
 
     if (rolError) throw rolError
@@ -303,7 +328,10 @@ serve(async (req) => {
     if (!rollen || rollen.length === 0) {
       return new Response(
         JSON.stringify({
-          error: `Geen beschikbare rollen gevonden voor ${kwaliteit_code} / ${kleur_code}`,
+          error: `Geen beschikbare rollen voor ${kwaliteit_code} ${kleur_code}` +
+            (uitwisselbareCodes.length > 1
+              ? ` (ook gezocht: ${uitwisselbareCodes.filter(c => c !== kwaliteit_code).join(', ')})`
+              : ''),
         }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       )
@@ -330,6 +358,7 @@ serve(async (req) => {
     )
 
     // Rolls: reststukken first (ascending area), then beschikbaar (ascending area)
+    // Rolls: exact kwaliteit first, then interchangeable. Within each: reststuk first, then smallest.
     const sortedRolls: Roll[] = rollen
       .map((r: Record<string, unknown>) => ({
         id: r.id as number,
@@ -339,9 +368,14 @@ serve(async (req) => {
         status: r.status as string,
         oppervlak_m2: r.oppervlak_m2 as number,
         sort_priority: (r.status as string) === 'reststuk' ? 1 : 2,
+        is_exact: (r.kwaliteit_code as string) === kwaliteit_code,
       }))
-      .sort((a: Roll, b: Roll) => {
+      .sort((a, b) => {
+        // 1. Exact kwaliteit match first
+        if (a.is_exact !== b.is_exact) return a.is_exact ? -1 : 1
+        // 2. Reststuk before beschikbaar
         if (a.sort_priority !== b.sort_priority) return a.sort_priority - b.sort_priority
+        // 3. Smallest area first
         return a.lengte_cm * a.breedte_cm - b.lengte_cm * b.breedte_cm
       })
 

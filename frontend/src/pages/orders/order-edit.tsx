@@ -67,6 +67,14 @@ export function OrderEditPage() {
     korting_pct: r.korting_pct,
     bedrag: r.bedrag ?? undefined,
     gewicht_kg: r.gewicht_kg ?? undefined,
+    // Maatwerk
+    is_maatwerk: r.is_maatwerk ?? false,
+    maatwerk_vorm: r.maatwerk_vorm ?? undefined,
+    maatwerk_lengte_cm: r.maatwerk_lengte_cm ?? undefined,
+    maatwerk_breedte_cm: r.maatwerk_breedte_cm ?? undefined,
+    maatwerk_afwerking: r.maatwerk_afwerking ?? undefined,
+    maatwerk_band_kleur: r.maatwerk_band_kleur ?? undefined,
+    maatwerk_instructies: r.maatwerk_instructies ?? undefined,
   }))
 
   return (
