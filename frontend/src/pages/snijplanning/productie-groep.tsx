@@ -110,6 +110,7 @@ function RolCard({ rol, kwaliteit, kleur }: { rol: RolGroepData; kwaliteit: stri
   const voltooiRol = useVoltooiSnijplanRol()
   const [voltooid, setVoltooid] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [open, setOpen] = useState(false)
 
   const teSnijden = rol.stukken.filter(s => s.status === 'Gepland' || s.status === 'In productie')
   const alGesneden = rol.stukken.filter(s => s.status === 'Gesneden' || s.status === 'In confectie' || s.status === 'Gereed')
@@ -132,9 +133,20 @@ function RolCard({ rol, kwaliteit, kleur }: { rol: RolGroepData; kwaliteit: stri
 
   return (
     <div className="bg-white rounded-[var(--radius)] border border-slate-200 overflow-hidden">
-      {/* Rol header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+      {/* Rol header — klikbaar om uit te vouwen */}
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => setOpen(!open)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(!open) } }}
+        className="w-full flex items-center justify-between px-6 py-4 hover:bg-slate-50 transition-colors cursor-pointer"
+      >
         <div className="flex items-center gap-3">
+          {open ? (
+            <ChevronDown size={16} className="text-slate-400 flex-shrink-0" />
+          ) : (
+            <ChevronRight size={16} className="text-slate-400 flex-shrink-0" />
+          )}
           <h2 className="text-base font-semibold text-slate-900">{rol.rolnummer}</h2>
           <span className="text-sm text-slate-500">
             {rol.rolBreedte} × {rol.rolLengte} cm
@@ -156,7 +168,7 @@ function RolCard({ rol, kwaliteit, kleur }: { rol: RolGroepData; kwaliteit: stri
             </span>
           ) : teSnijden.length > 0 ? (
             <button
-              onClick={handleVoltooiRol}
+              onClick={(e) => { e.stopPropagation(); handleVoltooiRol() }}
               disabled={voltooiRol.isPending}
               className="flex items-center gap-2 px-4 py-2 rounded-[var(--radius-sm)] bg-emerald-500 text-white font-medium hover:bg-emerald-600 transition-colors disabled:opacity-50"
             >
@@ -170,6 +182,7 @@ function RolCard({ rol, kwaliteit, kleur }: { rol: RolGroepData; kwaliteit: stri
           ) : null}
           <Link
             to={`/snijplanning/stickers?kwaliteit=${kwaliteit}&kleur=${kleur}&rol=${rol.rolId}`}
+            onClick={(e) => e.stopPropagation()}
             className="text-slate-400 hover:text-slate-600"
             title="Stickers printen"
           >
@@ -184,8 +197,8 @@ function RolCard({ rol, kwaliteit, kleur }: { rol: RolGroepData; kwaliteit: stri
         </div>
       )}
 
-      {/* Visualisatie + tabel */}
-      <div className="p-6">
+      {/* Visualisatie + tabel — uitklapbaar */}
+      {open && <div className="border-t border-slate-100 p-6">
         <div className="flex justify-center mb-4">
           <SnijVisualisatie
             rolBreedte={rol.rolBreedte}
@@ -245,7 +258,7 @@ function RolCard({ rol, kwaliteit, kleur }: { rol: RolGroepData; kwaliteit: stri
             ))}
           </tbody>
         </table>
-      </div>
+      </div>}
     </div>
   )
 }
