@@ -90,7 +90,7 @@ export async function fetchRollenStats(): Promise<RollenStats> {
 }
 
 /** Fetch rollen grouped by kwaliteit_code + kleur_code */
-export async function fetchRollenGegroepeerd(search?: string): Promise<RolGroep[]> {
+export async function fetchRollenGegroepeerd(search?: string, kwaliteitFilter?: string, kleurFilter?: string): Promise<RolGroep[]> {
   let query = supabase
     .from('rollen')
     .select('*')
@@ -98,7 +98,19 @@ export async function fetchRollenGegroepeerd(search?: string): Promise<RolGroep[
     .order('kwaliteit_code', { ascending: true })
     .order('kleur_code', { ascending: true })
 
-  if (search) {
+  // Exact filters (from URL params)
+  if (kwaliteitFilter) {
+    query = query.eq('kwaliteit_code', kwaliteitFilter)
+  }
+  if (kleurFilter) {
+    // Include .0 variant
+    const variants = [kleurFilter]
+    if (!kleurFilter.includes('.')) variants.push(`${kleurFilter}.0`)
+    if (kleurFilter.endsWith('.0')) variants.push(kleurFilter.replace('.0', ''))
+    query = query.in('kleur_code', variants)
+  }
+
+  if (search && !kwaliteitFilter) {
     const s = sanitizeSearch(search)
     if (s) {
       query = query.or(

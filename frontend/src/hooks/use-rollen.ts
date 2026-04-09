@@ -21,10 +21,10 @@ export function useRollenStats() {
   })
 }
 
-export function useRollenGegroepeerd(search?: string) {
+export function useRollenGegroepeerd(search?: string, kwaliteitFilter?: string, kleurFilter?: string) {
   return useQuery({
-    queryKey: ['rollen', 'gegroepeerd', search],
-    queryFn: () => fetchRollenGegroepeerd(search),
+    queryKey: ['rollen', 'gegroepeerd', search, kwaliteitFilter, kleurFilter],
+    queryFn: () => fetchRollenGegroepeerd(search, kwaliteitFilter, kleurFilter),
   })
 }
 

@@ -17,6 +17,7 @@ import {
   assignRolToSnijplan,
   approveSnijvoorstel,
 } from '@/lib/supabase/queries/snijplanning-mutations'
+import type { SnijplanFormData } from '@/lib/supabase/queries/snijplanning-mutations'
 import {
   generateSnijvoorstel,
   fetchSnijvoorstel,
@@ -26,6 +27,14 @@ import {
   rejectSnijvoorstel,
   voltooiSnijplanRol,
 } from '@/lib/supabase/queries/snijvoorstel'
+import {
+  fetchAutoplanningConfig,
+  updateAutoplanningConfig,
+  triggerAutoplan,
+  startProductieRol,
+} from '@/lib/supabase/queries/auto-planning'
+import type { AutoPlanningConfig } from '@/lib/supabase/queries/auto-planning'
+import { berekenTotDatum } from '@/components/snijplanning/week-filter'
 
 export function useSnijplanningPool(params: {
   status?: string
@@ -103,13 +112,38 @@ export function useProductieDashboard() {
   })
 }
 
+export interface CreateSnijplanData extends SnijplanFormData {
+  /** Kwaliteit code voor auto-planning trigger */
+  kwaliteit_code?: string
+  /** Kleur code voor auto-planning trigger */
+  kleur_code?: string
+  /** Afleverdatum (ISO) voor auto-planning horizon check */
+  afleverdatum?: string
+}
+
 export function useCreateSnijplan() {
   const qc = useQueryClient()
+  const autoplan = useTriggerAutoplan()
+  const { data: autoConfig } = useAutoplanningConfig()
+
   return useMutation({
-    mutationFn: createSnijplan,
-    onSuccess: () => {
+    mutationFn: (data: CreateSnijplanData) => createSnijplan(data),
+    onSuccess: (_result, variables) => {
       qc.invalidateQueries({ queryKey: ['snijplanning'] })
       qc.invalidateQueries({ queryKey: ['productie', 'dashboard'] })
+
+      // Auto-plan trigger: als auto-planning aan staat, trigger heroptimalisatie
+      if (autoConfig?.enabled && variables.kwaliteit_code && variables.kleur_code) {
+        const horizonDatum = berekenTotDatum(autoConfig.horizon_weken)
+        // Trigger als geen afleverdatum of binnen horizon
+        if (!variables.afleverdatum || !horizonDatum || variables.afleverdatum <= horizonDatum) {
+          autoplan.mutate({
+            kwaliteitCode: variables.kwaliteit_code,
+            kleurCode: variables.kleur_code,
+            totDatum: horizonDatum,
+          })
+        }
+      }
     },
   })
 }
@@ -228,6 +262,55 @@ export function useVoltooiSnijplanRol() {
       qc.invalidateQueries({ queryKey: ['snijplanning'] })
       qc.invalidateQueries({ queryKey: ['productie', 'dashboard'] })
       qc.invalidateQueries({ queryKey: ['rollen'] })
+    },
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Auto-planning hooks
+// ---------------------------------------------------------------------------
+
+export function useAutoplanningConfig() {
+  return useQuery({
+    queryKey: ['auto-planning', 'config'],
+    queryFn: fetchAutoplanningConfig,
+    staleTime: 5 * 60_000, // cache 5 min
+  })
+}
+
+export function useUpdateAutoplanningConfig() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (config: AutoPlanningConfig) => updateAutoplanningConfig(config),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['auto-planning', 'config'] })
+    },
+  })
+}
+
+export function useTriggerAutoplan() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ kwaliteitCode, kleurCode, totDatum }: {
+      kwaliteitCode: string
+      kleurCode: string
+      totDatum?: string | null
+    }) => triggerAutoplan(kwaliteitCode, kleurCode, totDatum),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['snijplanning'] })
+      qc.invalidateQueries({ queryKey: ['snijvoorstel'] })
+      qc.invalidateQueries({ queryKey: ['productie', 'dashboard'] })
+    },
+  })
+}
+
+export function useStartProductieRol() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (rolId: number) => startProductieRol(rolId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['snijplanning'] })
+      qc.invalidateQueries({ queryKey: ['productie', 'dashboard'] })
     },
   })
 }

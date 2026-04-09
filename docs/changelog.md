@@ -1,5 +1,22 @@
 # Changelog — RugFlow ERP
 
+### 2026-04-09 — Fix: dubbele groepen in snijplanning (kleur_code normalisatie)
+- **Wat:** Kleur_codes "12" en "12.0" werden als aparte groepen getoond in snijplanning
+- **Oorzaak:** Database bevat beide varianten; RPC groepeerde op ruwe kleur_code
+- **Fix:** Nieuwe `normaliseer_kleur_code()` SQL helper die ".0" suffix stript. RPC `snijplanning_groepen_gefilterd` groepeert nu op genormaliseerde waarden. Frontend queries gebruiken `getKleurVariants()` om beide varianten op te vragen bij detail- en rollen-queries.
+- **Impact:** Migratie 047, frontend queries snijplanning.ts aangepast
+
+### 2026-04-09 — Automatische snijplanning met rolreservering
+- **Wat:** Automatische snijplanning die bij nieuwe orders de snijplanning heroptimaliseert en rollen direct reserveert
+- **Waarom:** Voorkomt dubbele rolreservering en geeft voorraad-inzicht (gereserveerd vs. vrij). Prioriteit: levertermijn → efficiëntie
+- **Hoe:**
+  - Nieuwe edge function `auto-plan-groep`: release Gepland stukken → FFDH heroptimalisatie → auto-goedkeuring
+  - FFDH algoritme geëxtraheerd naar `_shared/ffdh-packing.ts` (gedeeld door beide edge functions)
+  - Globale configuratie via `app_config` (aan/uit + horizon 1-4 weken)
+  - "Start productie" knop per rol: beschermt stukken tegen heroptimalisatie
+  - Race condition preventie via `snijplan_groep_locks` tabel
+- **Impact:** Migratie 046, 2 nieuwe RPCs (`release_gepland_stukken`, `start_productie_rol`), nieuwe edge function, frontend config component
+
 ### 2026-04-09 — Snijplanning week-filter
 - **Wat:** Leverdatum-filter toegevoegd aan snijplanning overzicht — filtert op week-niveau (deze week, 1-4 weken vooruit)
 - **Waarom:** Planning op basis van leverdata — focus op urgente orders ipv heel de backlog

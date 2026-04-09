@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Search, Plus, Cylinder, Package, Scissors, AlertCircle } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { RollenGroepRow } from '@/components/rollen/rollen-groep-row'
@@ -9,10 +10,18 @@ function formatM2(value: number): string {
 }
 
 export function RollenOverviewPage() {
+  const [params] = useSearchParams()
+  const kwaliteitFilter = params.get('kwaliteit') || undefined
+  const kleurFilter = params.get('kleur') || undefined
+  const hasFilter = !!kwaliteitFilter
   const [search, setSearch] = useState('')
 
   const { data: stats } = useRollenStats()
-  const { data: groepen, isLoading } = useRollenGegroepeerd(search || undefined)
+  const { data: groepen, isLoading } = useRollenGegroepeerd(
+    search || undefined,
+    kwaliteitFilter,
+    kleurFilter,
+  )
 
   const statCards = [
     {
@@ -79,19 +88,36 @@ export function RollenOverviewPage() {
         ))}
       </div>
 
-      {/* Search */}
-      <div className="flex items-center gap-3 mb-4">
-        <div className="relative w-96">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Zoek op product, kleur, rolnummer, locatie..."
-            className="w-full pl-10 pr-4 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
-          />
+      {/* Active filter banner */}
+      {hasFilter && (
+        <div className="flex items-center gap-2 px-4 py-2 mb-4 bg-blue-50 border border-blue-200 rounded-[var(--radius)] text-sm text-blue-700">
+          <span>
+            Gefilterd op: <strong>{kwaliteitFilter} {kleurFilter}</strong>
+          </span>
+          <a
+            href="/rollen"
+            className="ml-auto px-2 py-1 text-xs font-medium bg-blue-100 hover:bg-blue-200 rounded transition-colors"
+          >
+            Toon alle rollen
+          </a>
         </div>
-      </div>
+      )}
+
+      {/* Search */}
+      {!hasFilter && (
+        <div className="flex items-center gap-3 mb-4">
+          <div className="relative w-96">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Zoek op product, kleur, rolnummer, locatie..."
+              className="w-full pl-10 pr-4 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
+            />
+          </div>
+        </div>
+      )}
 
       {/* Grouped rows */}
       {isLoading ? (

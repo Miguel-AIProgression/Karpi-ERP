@@ -4,7 +4,7 @@ import { ChevronDown, ChevronRight, Printer, Scissors, Loader2, Eye } from 'luci
 import { cn } from '@/lib/utils/cn'
 import { AFWERKING_MAP } from '@/lib/utils/constants'
 import { getVormDisplay } from '@/lib/utils/vorm-labels'
-import { useSnijplannenVoorGroep, useGenereerSnijvoorstel, useBeschikbareCapaciteit, useGoedgekeurdVoorstel } from '@/hooks/use-snijplanning'
+import { useSnijplannenVoorGroep, useGenereerSnijvoorstel, useBeschikbareCapaciteit, useGoedgekeurdVoorstel, useTriggerAutoplan } from '@/hooks/use-snijplanning'
 import { SnijvoorstelModal } from './snijvoorstel-modal'
 import { buildPlanFromStukken } from '@/lib/utils/snijplan-mapping'
 import type { SnijplanRow, SnijvoorstelResponse } from '@/lib/types/productie'
@@ -38,6 +38,7 @@ export function GroepAccordion({
   const [voorstelResult, setVoorstelResult] = useState<SnijvoorstelResponse | null>(null)
   const [showPlan, setShowPlan] = useState(false)
   const genereer = useGenereerSnijvoorstel()
+  const autoplan = useTriggerAutoplan()
   const { data: capaciteit } = useBeschikbareCapaciteit(kwaliteitCode, kleurCode)
 
   // Use parent props for button visibility (no need to expand accordion first)
@@ -91,17 +92,30 @@ export function GroepAccordion({
               {totaalGesneden}/{totaalStukken} gesneden
             </span>
             {capaciteit && (
-              <span className={cn(
-                'text-xs px-2 py-0.5 rounded-full',
-                capaciteit.totaalM2 >= totaalM2
-                  ? 'bg-emerald-50 text-emerald-700'
-                  : 'bg-red-50 text-red-700'
-              )}>
-                {capaciteit.totaalRollen} rollen · {capaciteit.totaalM2} m² beschikbaar
+              <Link
+                to={`/rollen?kwaliteit=${kwaliteitCode}&kleur=${kleurCode}`}
+                onClick={(e) => e.stopPropagation()}
+                className={cn(
+                  'text-xs px-2 py-0.5 rounded-full hover:underline',
+                  capaciteit.totaalRollen === 0
+                    ? 'bg-red-50 text-red-700'
+                    : capaciteit.vrijRollen > 0
+                    ? 'bg-emerald-50 text-emerald-700'
+                    : 'bg-blue-50 text-blue-700'
+                )}
+              >
+                {capaciteit.vrijRollen > 0 && (
+                  <>{capaciteit.vrijRollen} vrij ({capaciteit.vrijM2} m²)</>
+                )}
+                {capaciteit.vrijRollen > 0 && capaciteit.restcapaciteitRollen > 0 && ' · '}
+                {capaciteit.restcapaciteitRollen > 0 && (
+                  <>{capaciteit.restcapaciteitRollen} gepland ({capaciteit.restcapaciteitM2} m² over)</>
+                )}
+                {capaciteit.totaalRollen === 0 && '0 rollen · 0 m² beschikbaar'}
                 {capaciteit.heeftUitwisselbaar && (
                   <span className="text-[10px] opacity-70"> (+{capaciteit.uitwisselbaarM2} m² uitw.)</span>
                 )}
-              </span>
+              </Link>
             )}
           </div>
         </div>
@@ -132,25 +146,36 @@ export function GroepAccordion({
             </Link>
           )}
 
-          {/* Genereren button — only when there are Wacht items */}
-          {heeftWacht && (
+          {/* Genereren / Herplannen button — verberg als er geen rollen beschikbaar zijn */}
+          {heeftWacht && (capaciteit?.totaalRollen ?? 0) > 0 && (
             <button
               onClick={(e) => {
                 e.stopPropagation()
                 setGenError(null)
-                genereer.mutate(
-                  { kwaliteitCode, kleurCode, totDatum },
-                  {
-                    onSuccess: (result) => setVoorstelResult(result),
-                    onError: (err) => setGenError(err instanceof Error ? err.message : 'Onbekende fout'),
-                  },
-                )
+                if (heeftGepland) {
+                  // Er zijn al geplande stukken: gebruik auto-plan (release + heroptimaliseer)
+                  autoplan.mutate(
+                    { kwaliteitCode, kleurCode, totDatum },
+                    {
+                      onError: (err) => setGenError(err instanceof Error ? err.message : 'Onbekende fout'),
+                    },
+                  )
+                } else {
+                  // Alleen wachtende stukken: standaard genereren
+                  genereer.mutate(
+                    { kwaliteitCode, kleurCode, totDatum },
+                    {
+                      onSuccess: (result) => setVoorstelResult(result),
+                      onError: (err) => setGenError(err instanceof Error ? err.message : 'Onbekende fout'),
+                    },
+                  )
+                }
               }}
-              disabled={genereer.isPending}
+              disabled={genereer.isPending || autoplan.isPending}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-terracotta-500 text-white rounded-[var(--radius-sm)] text-xs font-medium hover:bg-terracotta-600 transition-colors disabled:opacity-50"
             >
-              {genereer.isPending ? <Loader2 size={14} className="animate-spin" /> : <Scissors size={14} />}
-              Genereren
+              {(genereer.isPending || autoplan.isPending) ? <Loader2 size={14} className="animate-spin" /> : <Scissors size={14} />}
+              {heeftGepland ? 'Herplannen' : 'Genereren'}
             </button>
           )}
 

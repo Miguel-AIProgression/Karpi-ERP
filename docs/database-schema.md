@@ -5,7 +5,7 @@
 
 ## Overzicht
 
-35 tabellen, 6 enums, 8 views, 11 functies. Alle tabellen hebben RLS enabled (fase 1: authenticated = volledige toegang).
+35 tabellen, 6 enums, 8 views, 12 functies. Alle tabellen hebben RLS enabled (fase 1: authenticated = volledige toegang).
 
 ---
 
@@ -515,13 +515,22 @@ Logboek van alle voorraadwijzigingen (snijden, reststuk, correctie).
 ---
 
 ### app_config
-Applicatie-instellingen (key-value). Gebruikt voor productie-configuratie.
+Applicatie-instellingen (key-value). Gebruikt voor productie-configuratie en auto-planning.
 | Kolom | Type | Toelichting |
 |-------|------|-------------|
-| key | TEXT PK | Configuratiesleutel (bijv. 'productie.capaciteit_m2_per_dag') |
-| value | JSONB | Waarde (type-vrij) |
-| beschrijving | TEXT | Uitleg van de instelling |
-| updated_at | TIMESTAMPTZ | Laatst gewijzigd |
+| sleutel | TEXT PK | Configuratiesleutel (bijv. 'productie_planning', 'snijplanning.auto_planning') |
+| waarde | JSONB | Waarde (type-vrij) |
+
+---
+
+### snijplan_groep_locks
+Race condition preventie voor automatische snijplanning. Voorkomt dat twee processen tegelijk dezelfde kwaliteit/kleur groep optimaliseren.
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| kwaliteit_code | TEXT PK | Onderdeel van composite PK |
+| kleur_code | TEXT PK | Onderdeel van composite PK |
+| locked | BOOLEAN | Of een optimalisatie bezig is (default false) |
+| locked_at | TIMESTAMPTZ | Wanneer de lock is gezet (staleness check: >5 min = verlaten) |
 
 ---
 
@@ -641,8 +650,13 @@ Audit trail: wie heeft wat wanneer gedaan.
 | `keur_snijvoorstel_goed(voorstel_id BIGINT)` | Keurt een snijvoorstel goed: wijst rollen toe aan snijplannen, zet status 'Gepland', met concurrency guards |
 | `verwerp_snijvoorstel(voorstel_id BIGINT)` | Verwerpt een concept-snijvoorstel zonder wijzigingen |
 | `kleuren_voor_kwaliteit(p_kwaliteit TEXT)` | Retourneert kleuren met m²-prijs, kostprijs, gewicht en max breedte voor een kwaliteit (uit maatwerk_m2_prijzen) |
-| `snijplanning_groepen_gefilterd(p_tot_datum)` | Gegroepeerde snijplanning met optionele afleverdatum-filter |
+| `normaliseer_kleur_code(code TEXT)` | Normaliseert kleur_code: strip trailing ".0" (bijv. "12.0" → "12") — IMMUTABLE helper |
+| `snijplanning_groepen_gefilterd(p_tot_datum)` | Gegroepeerde snijplanning met optionele afleverdatum-filter (groepeert op genormaliseerde kleur_code) |
 | `snijplanning_status_counts_gefilterd(p_tot_datum)` | Status counts met optionele afleverdatum-filter |
+| `release_gepland_stukken(kwaliteit TEXT, kleur TEXT)` | Maakt alle Gepland stukken in een groep vrij: reset naar Wacht, rollen terug naar beschikbaar/reststuk |
+| `start_productie_rol(rol_id BIGINT)` | Zet alle Gepland stukken op een rol naar In productie (beschermt tegen heroptimalisatie) |
+| `acquire_snijplan_lock(kwaliteit TEXT, kleur TEXT)` | Atomisch lock verkrijgen voor auto-planning (5 min staleness timeout) |
+| `release_snijplan_lock(kwaliteit TEXT, kleur TEXT)` | Lock vrijgeven na auto-planning |
 
 ### Triggers op order_regels (maatwerk)
 

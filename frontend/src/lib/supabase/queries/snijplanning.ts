@@ -29,6 +29,14 @@ export interface SnijGroepSummary {
 
 /** Fetch grouped summaries, optionally filtered by delivery date.
  *  Always uses RPC function (handles NULL = no filter natively). */
+/** Get kleur_code variants: "12" ↔ "12.0" to handle inconsistent DB storage */
+function getKleurVariants(kleurCode: string): string[] {
+  const variants = [kleurCode]
+  if (!kleurCode.includes('.')) variants.push(`${kleurCode}.0`)
+  if (kleurCode.endsWith('.0')) variants.push(kleurCode.replace(/\.0$/, ''))
+  return variants
+}
+
 export async function fetchSnijplanningGroepen(
   search?: string,
   totDatum?: string | null
@@ -58,11 +66,12 @@ export async function fetchSnijplannenVoorGroep(
   kleurCode: string,
   totDatum?: string | null
 ): Promise<SnijplanRow[]> {
+  const kleurVariants = getKleurVariants(kleurCode)
   let query = supabase
     .from('snijplanning_overzicht')
     .select('*')
     .eq('kwaliteit_code', kwaliteitCode)
-    .eq('kleur_code', kleurCode)
+    .in('kleur_code', kleurVariants)
     .order('afleverdatum', { ascending: true, nullsFirst: false })
 
   if (totDatum) {
@@ -174,11 +183,12 @@ export async function fetchRolSnijstukken(rolId: number): Promise<SnijplanRow[]>
 
 /** Fetch available rolls for a quality+color combo, ordered by priority */
 export async function fetchBeschikbareRollen(kwaliteitCode: string, kleurCode: string) {
+  const kleurVariants = getKleurVariants(kleurCode)
   const { data, error } = await supabase
     .from('rollen')
     .select('id, rolnummer, lengte_cm, breedte_cm, oppervlak_m2, status, locatie')
     .eq('kwaliteit_code', kwaliteitCode)
-    .eq('kleur_code', kleurCode)
+    .in('kleur_code', kleurVariants)
     .in('status', ['reststuk', 'beschikbaar'])
     .order('status', { ascending: true })  // reststuk before beschikbaar
     .order('lengte_cm', { ascending: true })

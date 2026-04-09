@@ -43,6 +43,17 @@ De `kwaliteit_code` (3-4 letters uit de karpi_code) is de spil tussen producten,
 ### Nummering via database-functie
 `volgend_nummer('ORD')` genereert doorlopende nummers (ORD-2026-0001). Dit garandeert uniciteit en voorkomt race conditions.
 
+### Automatische snijplanning
+Bij nieuwe orders wordt de snijplanning automatisch herberekend en goedgekeurd:
+1. Order aangemaakt → `auto_maak_snijplan()` trigger maakt snijplan (status Wacht)
+2. Frontend of edge function triggert `auto-plan-groep` als leverdatum binnen horizon
+3. `auto-plan-groep`: lock → release Gepland stukken → FFDH heroptimalisatie → auto-approve
+4. Rollen direct gereserveerd (status `in_snijplan`)
+5. Snijder klikt "Start productie" → status `In productie` (niet meer herberekend)
+6. Stukken buiten horizon of zonder beschikbare rollen blijven in Wacht (handmatige flow)
+
+Gedeelde code in `supabase/functions/_shared/` (FFDH algoritme, DB helpers) wordt door beide edge functions geïmporteerd.
+
 ## Frontend Patterns
 
 ### Data fetching

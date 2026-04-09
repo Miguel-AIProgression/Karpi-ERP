@@ -200,16 +200,31 @@ export async function fetchBeschikbareCapaciteit(kwaliteitCode: string, kleurCod
   let uitwisselbaarM2 = 0
   let exactRollen = 0
   let uitwisselRollen = 0
+  let vrijM2 = 0
+  let vrijRollen = 0
+  let restcapaciteitM2 = 0
+  let restcapaciteitRollen = 0
 
   for (const r of rollen ?? []) {
     let beschikbareLengte = r.lengte_cm
-    if (r.status === 'in_snijplan') {
+    const isInPlan = r.status === 'in_snijplan'
+
+    if (isInPlan) {
       const used = usedLengthMap.get(r.id) ?? 0
       beschikbareLengte = Math.max(0, r.lengte_cm - Math.ceil(used))
       if (beschikbareLengte < 50) continue // te klein om mee te tellen
     }
 
     const m2 = (beschikbareLengte * r.breedte_cm) / 10000
+
+    if (isInPlan) {
+      restcapaciteitM2 += m2
+      restcapaciteitRollen++
+    } else {
+      vrijM2 += m2
+      vrijRollen++
+    }
+
     if (r.kwaliteit_code === kwaliteitCode) {
       exactM2 += m2
       exactRollen++
@@ -227,6 +242,10 @@ export async function fetchBeschikbareCapaciteit(kwaliteitCode: string, kleurCod
     uitwisselRollen,
     totaalRollen: exactRollen + uitwisselRollen,
     heeftUitwisselbaar: uitwisselRollen > 0,
+    vrijM2: Math.round(vrijM2 * 10) / 10,
+    vrijRollen,
+    restcapaciteitM2: Math.round(restcapaciteitM2 * 10) / 10,
+    restcapaciteitRollen,
   }
 }
 

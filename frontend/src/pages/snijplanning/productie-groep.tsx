@@ -3,7 +3,7 @@ import { useSearchParams, Link } from 'react-router-dom'
 import { ArrowLeft, Scissors, Printer, CheckCircle2, Loader2, ChevronDown, ChevronRight } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { SnijVisualisatie } from '@/components/snijplanning/snij-visualisatie'
-import { useSnijplannenVoorGroep, useVoltooiSnijplanRol } from '@/hooks/use-snijplanning'
+import { useSnijplannenVoorGroep, useVoltooiSnijplanRol, useStartProductieRol } from '@/hooks/use-snijplanning'
 import { mapSnijplannenToStukken } from '@/lib/utils/snijplan-mapping'
 import { cn } from '@/lib/utils/cn'
 import { AFWERKING_MAP } from '@/lib/utils/constants'
@@ -108,12 +108,17 @@ export function ProductieGroepPage() {
 
 function RolCard({ rol, kwaliteit, kleur }: { rol: RolGroepData; kwaliteit: string; kleur: string }) {
   const voltooiRol = useVoltooiSnijplanRol()
+  const startProductie = useStartProductieRol()
   const [voltooid, setVoltooid] = useState(false)
+  const [inProductie, setInProductie] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
 
-  const teSnijden = rol.stukken.filter(s => s.status === 'Gepland' || s.status === 'In productie')
+  const gepland = rol.stukken.filter(s => s.status === 'Gepland')
+  const inProd = rol.stukken.filter(s => s.status === 'In productie')
+  const teSnijden = [...gepland, ...inProd]
   const alGesneden = rol.stukken.filter(s => s.status === 'Gesneden' || s.status === 'In confectie' || s.status === 'Gereed')
+  const heeftGepland = gepland.length > 0 && inProd.length === 0 && !inProductie
 
   const { snijStukken, gebruikteLengte, afvalPct, reststukBruikbaar } =
     mapSnijplannenToStukken(rol.stukken, rol.rolBreedte, rol.rolLengte)
@@ -166,6 +171,26 @@ function RolCard({ rol, kwaliteit, kleur }: { rol: RolGroepData; kwaliteit: stri
               <CheckCircle2 size={16} />
               Gesneden
             </span>
+          ) : heeftGepland ? (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setError(null)
+                startProductie.mutate(rol.rolId, {
+                  onSuccess: () => setInProductie(true),
+                  onError: (err) => setError(err instanceof Error ? err.message : 'Onbekende fout'),
+                })
+              }}
+              disabled={startProductie.isPending}
+              className="flex items-center gap-2 px-4 py-2 rounded-[var(--radius-sm)] bg-indigo-500 text-white font-medium hover:bg-indigo-600 transition-colors disabled:opacity-50"
+            >
+              {startProductie.isPending ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <Scissors size={16} />
+              )}
+              Start productie ({gepland.length} stuks)
+            </button>
           ) : teSnijden.length > 0 ? (
             <button
               onClick={(e) => { e.stopPropagation(); handleVoltooiRol() }}
