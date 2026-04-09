@@ -4,15 +4,18 @@ import { PageHeader } from '@/components/layout/page-header'
 import { GroepAccordion } from '@/components/snijplanning/groep-accordion'
 import { cn } from '@/lib/utils/cn'
 import { useSnijplanningGroepen, useSnijplanningStatusCounts, useProductieDashboard } from '@/hooks/use-snijplanning'
+import { WeekFilter, berekenTotDatum } from '@/components/snijplanning/week-filter'
 
 const SNIJPLAN_STATUSES = ['Alle', 'Wacht', 'Gepland', 'In productie', 'Gesneden', 'Gereed']
 
 export function SnijplanningOverviewPage() {
   const [status, setStatus] = useState('Alle')
   const [search, setSearch] = useState('')
+  const [wekenVooruit, setWekenVooruit] = useState<number | null>(null)
+  const totDatum = berekenTotDatum(wekenVooruit)
 
-  const { data: groepen, isLoading } = useSnijplanningGroepen(search || undefined)
-  const { data: statusCounts } = useSnijplanningStatusCounts()
+  const { data: groepen, isLoading } = useSnijplanningGroepen(search || undefined, totDatum)
+  const { data: statusCounts } = useSnijplanningStatusCounts(totDatum)
   const { data: dashboard } = useProductieDashboard()
 
   // Client-side filtering op basis van per-status counts
@@ -74,6 +77,11 @@ export function SnijplanningOverviewPage() {
         </div>
       </div>
 
+      {/* Week filter */}
+      <div className="mb-4">
+        <WeekFilter geselecteerd={wekenVooruit} onChange={setWekenVooruit} />
+      </div>
+
       {/* Status tabs */}
       <div className="flex gap-1 overflow-x-auto pb-2 mb-4">
         {SNIJPLAN_STATUSES.map((s) => {
@@ -121,6 +129,7 @@ export function SnijplanningOverviewPage() {
               totaalGesneden={g.totaal_gesneden}
               totaalGepland={g.totaal_gepland ?? 0}
               totaalWacht={g.totaal_wacht ?? 0}
+              totDatum={totDatum}
             />
           ))}
         </div>

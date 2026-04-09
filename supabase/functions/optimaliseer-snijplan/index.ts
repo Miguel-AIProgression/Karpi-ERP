@@ -309,7 +309,7 @@ serve(async (req) => {
     )
 
     // ---- Parse & validate input ----
-    const { kwaliteit_code, kleur_code } = await req.json()
+    const { kwaliteit_code, kleur_code, tot_datum } = await req.json()
 
     if (!kwaliteit_code || !kleur_code) {
       return new Response(
@@ -321,7 +321,7 @@ serve(async (req) => {
     }
 
     // ---- Step 1: Fetch waiting snijplannen via the view ----
-    const { data: snijplannen, error: spError } = await supabase
+    let spQuery = supabase
       .from('snijplanning_overzicht')
       .select(
         'id, snij_lengte_cm, snij_breedte_cm, maatwerk_vorm, order_nr, klant_naam, afleverdatum, kwaliteit_code, kleur_code',
@@ -329,6 +329,12 @@ serve(async (req) => {
       .eq('status', 'Wacht')
       .eq('kwaliteit_code', kwaliteit_code)
       .eq('kleur_code', kleur_code)
+
+    if (tot_datum) {
+      spQuery = spQuery.lte('afleverdatum', tot_datum)
+    }
+
+    const { data: snijplannen, error: spError } = await spQuery
 
     if (spError) throw spError
 

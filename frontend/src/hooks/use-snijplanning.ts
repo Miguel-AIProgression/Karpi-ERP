@@ -163,8 +163,8 @@ export function useApproveSnijvoorstel() {
 export function useGenereerSnijvoorstel() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ kwaliteitCode, kleurCode }: { kwaliteitCode: string; kleurCode: string }) =>
-      generateSnijvoorstel(kwaliteitCode, kleurCode),
+    mutationFn: ({ kwaliteitCode, kleurCode, totDatum }: { kwaliteitCode: string; kleurCode: string; totDatum?: string | null }) =>
+      generateSnijvoorstel(kwaliteitCode, kleurCode, totDatum),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['snijplanning'] })
       qc.invalidateQueries({ queryKey: ['productie', 'dashboard'] })

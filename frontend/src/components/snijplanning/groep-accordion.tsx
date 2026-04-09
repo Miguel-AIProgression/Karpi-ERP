@@ -18,6 +18,7 @@ interface GroepAccordionProps {
   totaalGesneden: number
   totaalGepland: number
   totaalWacht: number
+  totDatum?: string | null
 }
 
 
@@ -30,6 +31,7 @@ export function GroepAccordion({
   totaalGesneden,
   totaalGepland,
   totaalWacht,
+  totDatum,
 }: GroepAccordionProps) {
   const [open, setOpen] = useState(false)
   const [genError, setGenError] = useState<string | null>(null)
@@ -43,7 +45,7 @@ export function GroepAccordion({
   const heeftWacht = totaalWacht > 0
 
   // Load stukken when accordion is open OR when showing plan (fallback needs it)
-  const { data: stukken, isLoading } = useSnijplannenVoorGroep(kwaliteitCode, kleurCode, open || showPlan || heeftGepland)
+  const { data: stukken, isLoading } = useSnijplannenVoorGroep(kwaliteitCode, kleurCode, open || showPlan || heeftGepland, totDatum)
 
   // Try loading the approved voorstel (has correct placed dimensions from optimizer)
   const { data: goedgekeurdPlan } = useGoedgekeurdVoorstel(kwaliteitCode, kleurCode, showPlan && !voorstelResult)
@@ -137,7 +139,7 @@ export function GroepAccordion({
                 e.stopPropagation()
                 setGenError(null)
                 genereer.mutate(
-                  { kwaliteitCode, kleurCode },
+                  { kwaliteitCode, kleurCode, totDatum },
                   {
                     onSuccess: (result) => setVoorstelResult(result),
                     onError: (err) => setGenError(err instanceof Error ? err.message : 'Onbekende fout'),

@@ -4,11 +4,13 @@ import type { SnijvoorstelResponse, SnijvoorstelRow, SnijvoorstelPlaatsingRow, R
 /** Call the Edge Function to generate a cutting proposal */
 export async function generateSnijvoorstel(
   kwaliteitCode: string,
-  kleurCode: string
+  kleurCode: string,
+  totDatum?: string | null
 ): Promise<SnijvoorstelResponse> {
-  const { data, error } = await supabase.functions.invoke('optimaliseer-snijplan', {
-    body: { kwaliteit_code: kwaliteitCode, kleur_code: kleurCode },
-  })
+  const body: Record<string, string> = { kwaliteit_code: kwaliteitCode, kleur_code: kleurCode }
+  if (totDatum) body.tot_datum = totDatum
+
+  const { data, error } = await supabase.functions.invoke('optimaliseer-snijplan', { body })
   if (error) {
     // Extract actual error from response body (supabase-js puts Response in error.context)
     let msg = error.message
