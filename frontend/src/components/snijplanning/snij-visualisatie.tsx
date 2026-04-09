@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import type { SnijStuk } from '@/lib/types/productie'
 import { cn } from '@/lib/utils/cn'
+import { isRondeVorm } from '@/lib/utils/vorm-labels'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -80,7 +81,7 @@ export function SnijVisualisatie({
     () =>
       stukken.reduce((sum, s) => {
         const area =
-          s.vorm === 'rond'
+          isRondeVorm(s.vorm)
             ? Math.PI * (s.breedte_cm / 200) * (s.lengte_cm / 200)
             : (s.breedte_cm * s.lengte_cm) / 10_000
         return sum + area
@@ -166,7 +167,7 @@ export function SnijVisualisatie({
               onMouseLeave={() => setTooltip(null)}
               className="cursor-pointer"
             >
-              {stuk.vorm === 'rond' ? (
+              {isRondeVorm(stuk.vorm) ? (
                 <ellipse
                   cx={px + stuk.breedte_cm / 2}
                   cy={py + stuk.lengte_cm / 2}
@@ -192,7 +193,7 @@ export function SnijVisualisatie({
               )}
 
               {/* Colored left edge accent */}
-              {stuk.vorm !== 'rond' && (
+              {!isRondeVorm(stuk.vorm) && (
                 <rect
                   x={px}
                   y={py}

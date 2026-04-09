@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { Scissors } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils/formatters'
 import { SNIJPLAN_STATUS_COLORS, AFWERKING_MAP } from '@/lib/utils/constants'
+import { getVormDisplay } from '@/lib/utils/vorm-labels'
 import type { OrderRegel } from '@/lib/supabase/queries/orders'
 
 function formatMaat(regel: OrderRegel): string {
@@ -87,8 +88,8 @@ function RegelRow({ regel }: { regel: OrderRegel }) {
               {maat && (
                 <span className="text-slate-600">{maat}</span>
               )}
-              {regel.maatwerk_vorm && regel.maatwerk_vorm !== 'rechthoek' && (
-                <span className="text-slate-600">{regel.maatwerk_vorm}</span>
+              {regel.maatwerk_vorm && (
+                <span className="text-xs text-purple-600">{getVormDisplay(regel.maatwerk_vorm).label}</span>
               )}
               {afwerkingInfo && (
                 <span className={`px-1.5 py-0.5 rounded text-xs ${afwerkingInfo.bg} ${afwerkingInfo.text}`}>

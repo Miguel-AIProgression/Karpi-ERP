@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight, Printer } from 'lucide-react'
 import { SnijVisualisatie } from './snij-visualisatie'
 import { cn } from '@/lib/utils/cn'
 import { AFWERKING_MAP } from '@/lib/utils/constants'
+import { getVormDisplay } from '@/lib/utils/vorm-labels'
 import type { SnijGroep, SnijStuk } from '@/lib/types/productie'
 
 interface WeekGroepAccordionProps {
@@ -109,12 +110,14 @@ function StukRow({ stuk }: { stuk: SnijStuk }) {
         {stuk.breedte_cm}×{stuk.lengte_cm} cm
       </td>
       <td className="py-2 pr-3">
-        <span className={cn(
-          'text-xs px-1.5 py-0.5 rounded',
-          stuk.vorm === 'rond' ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-600'
-        )}>
-          {stuk.vorm}
-        </span>
+        {(() => {
+          const vd = getVormDisplay(stuk.vorm)
+          return (
+            <span className={cn('text-xs px-1.5 py-0.5 rounded', vd.bg, vd.text)}>
+              {vd.label}
+            </span>
+          )
+        })()}
       </td>
       <td className="py-2 pr-3">{stuk.klant_naam}</td>
       <td className="py-2 pr-3 text-slate-500">{stuk.order_nr}</td>

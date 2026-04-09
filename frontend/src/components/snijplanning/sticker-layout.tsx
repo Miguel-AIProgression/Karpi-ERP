@@ -1,5 +1,6 @@
 import type { SnijplanRow } from '@/lib/types/productie'
 import { AFWERKING_MAP } from '@/lib/utils/constants'
+import { getVormDisplay } from '@/lib/utils/vorm-labels'
 
 interface StickerLayoutProps {
   snijplan: SnijplanRow
@@ -14,12 +15,7 @@ function formatMaat(row: SnijplanRow): string {
 
 function formatVorm(row: SnijplanRow): string {
   if (!row.maatwerk_vorm) return '-'
-  const labels: Record<string, string> = {
-    rechthoek: 'Rechthoek',
-    rond: 'Rond',
-    ovaal: 'Ovaal',
-  }
-  return labels[row.maatwerk_vorm] ?? row.maatwerk_vorm
+  return getVormDisplay(row.maatwerk_vorm).label
 }
 
 function formatAfwerking(row: SnijplanRow): string {

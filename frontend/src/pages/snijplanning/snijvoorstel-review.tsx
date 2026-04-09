@@ -109,7 +109,7 @@ export function SnijvoorstelReviewPage() {
             klant_naam: '?',
             breedte_cm: p.breedte_cm,
             lengte_cm: p.lengte_cm,
-            vorm: 'rechthoek' as const,
+            vorm: 'rechthoek',
             afwerking: null,
             x_cm: p.positie_x_cm,
             y_cm: p.positie_y_cm,
