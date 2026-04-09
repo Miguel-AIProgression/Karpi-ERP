@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { Search, Scissors, Calendar, CheckCircle2, Clock } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { GroepAccordion } from '@/components/snijplanning/groep-accordion'
@@ -15,6 +15,21 @@ export function SnijplanningOverviewPage() {
   const { data: statusCounts } = useSnijplanningStatusCounts()
   const { data: dashboard } = useProductieDashboard()
 
+  // Client-side filtering op basis van per-status counts
+  const filteredGroepen = useMemo(() => {
+    if (!groepen || status === 'Alle') return groepen ?? []
+    return groepen.filter((g) => {
+      switch (status) {
+        case 'Wacht': return (g.totaal_wacht ?? 0) > 0
+        case 'Gepland': return (g.totaal_gepland ?? 0) > 0
+        case 'In productie': return (g.totaal_in_productie ?? 0) > 0
+        case 'Gesneden': return (g.totaal_status_gesneden ?? 0) > 0
+        case 'Gereed': return (g.totaal_gereed ?? 0) > 0
+        default: return true
+      }
+    })
+  }, [groepen, status])
+
   const countMap = new Map((statusCounts ?? []).map((c) => [c.status, c.aantal]))
   const allCount = (statusCounts ?? []).reduce((sum, c) => sum + c.aantal, 0)
 
@@ -29,7 +44,7 @@ export function SnijplanningOverviewPage() {
     <>
       <PageHeader
         title="Snijplanning"
-        description={`${groepen?.length ?? 0} kwaliteit/kleur groepen — ${allCount} snijplannen`}
+        description={`${filteredGroepen.length ?? 0} kwaliteit/kleur groepen — ${allCount} snijplannen`}
       />
 
       {/* Stat cards */}
@@ -89,13 +104,13 @@ export function SnijplanningOverviewPage() {
         <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-12 text-center text-slate-400">
           Snijplannen laden...
         </div>
-      ) : !groepen || groepen.length === 0 ? (
+      ) : !filteredGroepen || filteredGroepen.length === 0 ? (
         <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-12 text-center text-slate-400">
           Geen snijplannen gevonden
         </div>
       ) : (
         <div className="space-y-2">
-          {groepen.map((g) => (
+          {filteredGroepen.map((g) => (
             <GroepAccordion
               key={`${g.kwaliteit_code}-${g.kleur_code}`}
               kwaliteitCode={g.kwaliteit_code}
@@ -104,6 +119,8 @@ export function SnijplanningOverviewPage() {
               totaalOrders={g.totaal_orders}
               totaalM2={g.totaal_m2}
               totaalGesneden={g.totaal_gesneden}
+              totaalGepland={g.totaal_gepland ?? 0}
+              totaalWacht={g.totaal_wacht ?? 0}
             />
           ))}
         </div>
