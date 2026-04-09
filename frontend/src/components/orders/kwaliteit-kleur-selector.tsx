@@ -45,6 +45,8 @@ export function KwaliteitKleurSelector({ onSelect }: KwaliteitKleurSelectorProps
   const {
     data: kleuren,
     isLoading: kleurenLoading,
+    isError: kleurenError,
+    error: kleurenErrorObj,
   } = useQuery({
     queryKey: ['kleuren', selectedKwaliteit?.code],
     queryFn: () => fetchKleurenVoorKwaliteit(selectedKwaliteit!.code),
@@ -175,27 +177,33 @@ export function KwaliteitKleurSelector({ onSelect }: KwaliteitKleurSelectorProps
       {/* Stap 2: Kleur */}
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1">Kleur</label>
-        <select
-          value={selectedKleurCode}
-          onChange={(e) => handleKleurChange(e.target.value)}
-          disabled={!selectedKwaliteit || kleurenLoading}
-          className="w-full px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400/30 focus:border-purple-400 disabled:bg-slate-100 disabled:text-slate-400"
-        >
-          <option value="">
-            {kleurenLoading
-              ? 'Laden...'
-              : !selectedKwaliteit
-                ? 'Selecteer eerst een kwaliteit'
-                : 'Selecteer een kleur'}
-          </option>
-          {(kleuren ?? []).map((kleur) => (
-            <option key={kleur.kleur_code} value={kleur.kleur_code}>
-              {kleur.kleur_code} — {kleur.omschrijving}{' '}
-              ({kleur.verkoopprijs_m2 != null ? formatCurrency(kleur.verkoopprijs_m2) : '—'}/m²
-              {kleur.max_breedte_cm != null ? `, max ${kleur.max_breedte_cm} cm` : ''})
+        {kleurenError ? (
+          <div className="p-3 rounded-[var(--radius-sm)] bg-red-50 text-red-700 text-sm">
+            Fout bij laden van kleuren: {(kleurenErrorObj as Error)?.message ?? 'Onbekende fout'}
+          </div>
+        ) : (
+          <select
+            value={selectedKleurCode}
+            onChange={(e) => handleKleurChange(e.target.value)}
+            disabled={!selectedKwaliteit || kleurenLoading}
+            className="w-full px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400/30 focus:border-purple-400 disabled:bg-slate-100 disabled:text-slate-400"
+          >
+            <option value="">
+              {kleurenLoading
+                ? 'Laden...'
+                : !selectedKwaliteit
+                  ? 'Selecteer eerst een kwaliteit'
+                  : `Selecteer een kleur (${(kleuren ?? []).length} beschikbaar)`}
             </option>
-          ))}
-        </select>
+            {(kleuren ?? []).map((kleur) => (
+              <option key={kleur.kleur_code} value={kleur.kleur_code}>
+                {kleur.kleur_code} — {kleur.omschrijving}{' '}
+                ({kleur.verkoopprijs_m2 != null ? formatCurrency(kleur.verkoopprijs_m2) : '—'}/m²
+                {kleur.max_breedte_cm != null ? `, max ${kleur.max_breedte_cm} cm` : ''})
+              </option>
+            ))}
+          </select>
+        )}
       </div>
     </div>
   )
