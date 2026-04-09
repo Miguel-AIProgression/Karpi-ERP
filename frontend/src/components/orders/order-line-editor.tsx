@@ -78,13 +78,28 @@ function MaatwerkLineRow({
           )}
         </td>
         <td className="px-3 py-2 text-right">
-          <div className={`text-xs ${(line.vrije_voorraad ?? 0) > 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
-            {line.vrije_voorraad ?? 0}
-          </div>
-          {(line.besteld_inkoop ?? 0) > 0 && (
-            <div className="text-xs text-slate-400" title="Verwacht (besteld inkoop)">
-              +{line.besteld_inkoop}
-            </div>
+          {line.is_maatwerk && line.maatwerk_beschikbaar_m2 != null ? (
+            <>
+              <div className={`text-xs ${line.maatwerk_beschikbaar_m2 > 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+                {line.maatwerk_beschikbaar_m2} m²
+              </div>
+              {(line.maatwerk_equiv_m2 ?? 0) > 0 && (
+                <div className="text-xs text-slate-400" title="Uitwisselbare kwaliteiten">
+                  +{line.maatwerk_equiv_m2} m² equiv
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <div className={`text-xs ${(line.vrije_voorraad ?? 0) > 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+                {line.vrije_voorraad ?? 0}
+              </div>
+              {(line.besteld_inkoop ?? 0) > 0 && (
+                <div className="text-xs text-slate-400" title="Verwacht (besteld inkoop)">
+                  +{line.besteld_inkoop}
+                </div>
+              )}
+            </>
           )}
         </td>
         <td className="px-3 py-2">

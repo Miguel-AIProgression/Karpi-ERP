@@ -215,6 +215,8 @@ export function OpMaatSelector({ defaultKorting, onAdd }: OpMaatSelectorProps) {
       maatwerk_afwerking_prijs: afwerkingPrijs,
       maatwerk_kwaliteit_code: state.kwaliteitCode,
       maatwerk_kleur_code: state.kleurCode,
+      maatwerk_beschikbaar_m2: state.beschikbaarM2,
+      maatwerk_equiv_m2: state.equivM2,
     }
 
     onAdd(line)

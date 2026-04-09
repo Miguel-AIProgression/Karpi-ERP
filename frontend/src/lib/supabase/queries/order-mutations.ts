@@ -58,6 +58,9 @@ export interface OrderRegelFormData {
   maatwerk_diameter_cm?: number
   maatwerk_kwaliteit_code?: string
   maatwerk_kleur_code?: string
+  // Display-only: voorraad in m² (niet opgeslagen in DB)
+  maatwerk_beschikbaar_m2?: number
+  maatwerk_equiv_m2?: number
 }
 
 /** Create order + lines atomically via RPC */
