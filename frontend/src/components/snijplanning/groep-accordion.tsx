@@ -229,7 +229,7 @@ export function GroepAccordion({
       )}
 
       {/* Snijvoorstel modal */}
-      {modalData && (
+      {modalData && (voorstelResult || showPlan) && (
         <SnijvoorstelModal
           voorstel={modalData}
           kwaliteitCode={kwaliteitCode}
