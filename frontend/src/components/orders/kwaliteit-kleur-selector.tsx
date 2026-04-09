@@ -54,9 +54,10 @@ export function KwaliteitKleurSelector({ onSelect }: KwaliteitKleurSelectorProps
   // Client-side filter
   const filtered = (kwaliteiten ?? [])
     .filter((k) => {
+      if (!k.code) return false
       if (!search) return true
       const q = search.toLowerCase()
-      return k.code.toLowerCase().includes(q) || k.omschrijving.toLowerCase().includes(q)
+      return k.code.toLowerCase().includes(q) || (k.omschrijving ?? '').toLowerCase().includes(q)
     })
     .slice(0, 30)
 
