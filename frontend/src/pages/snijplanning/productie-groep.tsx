@@ -198,7 +198,8 @@ function RolCard({ rol, kwaliteit, kleur }: { rol: RolGroepData; kwaliteit: stri
       )}
 
       {/* Visualisatie + tabel — uitklapbaar */}
-      {open && <div className="border-t border-slate-100 p-6">
+      {open && (
+        <div className="border-t border-slate-100 p-6">
         <div className="flex justify-center mb-4">
           <SnijVisualisatie
             rolBreedte={rol.rolBreedte}
@@ -258,7 +259,8 @@ function RolCard({ rol, kwaliteit, kleur }: { rol: RolGroepData; kwaliteit: stri
             ))}
           </tbody>
         </table>
-      </div>}
+        </div>
+      )}
     </div>
   )
 }
