@@ -7,7 +7,7 @@ import { getVormDisplay } from '@/lib/utils/vorm-labels'
 import { useSnijplannenVoorGroep, useGenereerSnijvoorstel, useBeschikbareCapaciteit, useGoedgekeurdVoorstel } from '@/hooks/use-snijplanning'
 import { SnijvoorstelModal } from './snijvoorstel-modal'
 import { buildPlanFromStukken } from '@/lib/utils/snijplan-mapping'
-import type { SnijplanRow } from '@/lib/types/productie'
+import type { SnijplanRow, SnijvoorstelResponse } from '@/lib/types/productie'
 
 interface GroepAccordionProps {
   kwaliteitCode: string
@@ -38,12 +38,12 @@ export function GroepAccordion({
   const genereer = useGenereerSnijvoorstel()
   const { data: capaciteit } = useBeschikbareCapaciteit(kwaliteitCode, kleurCode)
 
-  // Load stukken when accordion is open OR when showing plan (fallback needs it)
-  const { data: stukken, isLoading } = useSnijplannenVoorGroep(kwaliteitCode, kleurCode, open || showPlan)
-
   // Use parent props for button visibility (no need to expand accordion first)
   const heeftGepland = totaalGepland > 0
   const heeftWacht = totaalWacht > 0
+
+  // Load stukken when accordion is open OR when showing plan (fallback needs it)
+  const { data: stukken, isLoading } = useSnijplannenVoorGroep(kwaliteitCode, kleurCode, open || showPlan || heeftGepland)
 
   // Try loading the approved voorstel (has correct placed dimensions from optimizer)
   const { data: goedgekeurdPlan } = useGoedgekeurdVoorstel(kwaliteitCode, kleurCode, showPlan && !voorstelResult)
@@ -118,6 +118,18 @@ export function GroepAccordion({
             </button>
           )}
 
+          {/* Snijden shortcut — linkt naar productie van eerste rol */}
+          {heeftGepland && stukken && stukken.some(s => s.rol_id) && (
+            <Link
+              to={`/snijplanning/productie/${stukken.find(s => s.rol_id)?.rol_id}`}
+              onClick={(e) => e.stopPropagation()}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 text-white rounded-[var(--radius-sm)] text-xs font-medium hover:bg-emerald-600 transition-colors"
+            >
+              <Scissors size={14} />
+              Snijden
+            </Link>
+          )}
+
           {/* Genereren button — only when there are Wacht items */}
           {heeftWacht && (
             <button
@@ -140,7 +152,14 @@ export function GroepAccordion({
             </button>
           )}
 
-          <Printer size={16} className="text-slate-400 hover:text-slate-600" />
+          <Link
+            to={`/snijplanning/stickers?kwaliteit=${kwaliteitCode}&kleur=${kleurCode}&status=Gepland`}
+            onClick={(e) => e.stopPropagation()}
+            className="text-slate-400 hover:text-slate-600"
+            title="Stickers printen"
+          >
+            <Printer size={16} />
+          </Link>
         </div>
       </div>
 
@@ -164,6 +183,7 @@ export function GroepAccordion({
               <thead>
                 <tr className="border-b border-slate-200 text-left text-xs text-slate-500 uppercase">
                   <th className="py-2 pr-3">Maat</th>
+                  <th className="py-2 pr-3">Rol</th>
                   <th className="py-2 pr-3">Vorm</th>
                   <th className="py-2 pr-3">Klant</th>
                   <th className="py-2 pr-3">Order</th>
@@ -208,6 +228,16 @@ function StukRow({ stuk }: { stuk: SnijplanRow }) {
     <tr className="hover:bg-slate-50">
       <td className="py-2 pr-3 font-medium">
         {stuk.snij_breedte_cm}×{stuk.snij_lengte_cm} cm
+      </td>
+      <td className="py-2 pr-3">
+        {stuk.rolnummer && stuk.rol_id ? (
+          <Link
+            to={`/snijplanning/productie/${stuk.rol_id}`}
+            className="text-terracotta-600 hover:underline text-xs"
+          >
+            {stuk.rolnummer}
+          </Link>
+        ) : '—'}
       </td>
       <td className="py-2 pr-3">
         {stuk.maatwerk_vorm && (() => {
