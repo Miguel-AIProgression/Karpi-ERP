@@ -186,7 +186,6 @@ export function OpMaatSelector({ defaultKorting, onAdd }: OpMaatSelectorProps) {
     if (!canAdd) return
 
     const totalRollen = state.aantalRollen + state.equivRollen
-    const totalM2 = state.beschikbaarM2 + state.equivM2
 
     const line: OrderRegelFormData = {
       artikelnr: state.artikelnr ?? undefined,

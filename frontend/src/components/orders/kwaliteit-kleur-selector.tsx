@@ -5,7 +5,6 @@ import {
   fetchKwaliteiten,
   fetchKleurenVoorKwaliteit,
   type KwaliteitOptie,
-  type KleurOptie,
 } from '@/lib/supabase/queries/op-maat'
 import { formatCurrency } from '@/lib/utils/formatters'
 
@@ -210,8 +209,6 @@ export function KwaliteitKleurSelector({ onSelect }: KwaliteitKleurSelectorProps
                   : `Selecteer een kleur (${(kleuren ?? []).length} beschikbaar)`}
             </option>
             {(kleuren ?? []).map((kleur) => {
-              const totaalM2 = (kleur.beschikbaar_m2 ?? 0) + (kleur.equiv_m2 ?? 0)
-              const totaalRollen = (kleur.aantal_rollen ?? 0) + (kleur.equiv_rollen ?? 0)
               const heeftEquiv = (kleur.equiv_rollen ?? 0) > 0
               return (
                 <option key={kleur.kleur_code} value={kleur.kleur_code}>

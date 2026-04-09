@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { Trash2 } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils/formatters'
-import { berekenPrijsOppervlakM2, berekenMaatwerkPrijs } from '@/lib/utils/maatwerk-prijs'
+import { berekenPrijsOppervlakM2 } from '@/lib/utils/maatwerk-prijs'
 import { AFWERKING_OPTIES } from '@/lib/utils/constants'
 import { ArticleSelector } from './article-selector'
 import { ProductTypeToggle } from './product-type-toggle'
