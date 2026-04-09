@@ -82,12 +82,10 @@ function MaatwerkLineRow({
             <>
               <div className={`text-xs ${line.maatwerk_beschikbaar_m2 > 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
                 {line.maatwerk_beschikbaar_m2} m²
+                {(line.maatwerk_equiv_m2 ?? 0) > 0 && (
+                  <span className="text-slate-400" title="Uitwisselbare kwaliteiten"> (+{line.maatwerk_equiv_m2})</span>
+                )}
               </div>
-              {(line.maatwerk_equiv_m2 ?? 0) > 0 && (
-                <div className="text-xs text-slate-400" title="Uitwisselbare kwaliteiten">
-                  +{line.maatwerk_equiv_m2} m² equiv
-                </div>
-              )}
             </>
           ) : (
             <>
