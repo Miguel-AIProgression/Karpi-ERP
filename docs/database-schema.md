@@ -5,7 +5,7 @@
 
 ## Overzicht
 
-31 tabellen, 6 enums, 8 views, 10 functies. Alle tabellen hebben RLS enabled (fase 1: authenticated = volledige toegang).
+35 tabellen, 6 enums, 8 views, 11 functies. Alle tabellen hebben RLS enabled (fase 1: authenticated = volledige toegang).
 
 ---
 
@@ -31,6 +31,11 @@ snijvoorstellen ── kwaliteiten
 snijvoorstel_plaatsingen ── snijvoorstellen, snijplannen, rollen
 confectie_orders ── order_regels, snijplannen, rollen
 leveranciers ── inkooporders ── inkooporder_regels ── producten
+
+maatwerk_vormen ── order_regels.maatwerk_vorm
+afwerking_types ── order_regels.maatwerk_afwerking
+                ── kwaliteit_standaard_afwerking ── kwaliteiten
+maatwerk_m2_prijzen ── kwaliteiten
 ```
 
 ---
@@ -287,8 +292,17 @@ Productregels per order. artikelnr nullable voor service-items.
 | is_maatwerk | BOOLEAN | Default false. Regel vereist snijden/confectie |
 | maatwerk_lengte_cm | INTEGER | Gewenste lengte in cm |
 | maatwerk_breedte_cm | INTEGER | Gewenste breedte in cm |
-| maatwerk_afwerking | TEXT | 'B' (Breedband), 'FE' (Feston), 'LO' (Locken), 'ON' (Onafgewerkt), 'SB' (Smalband), 'SF' (Smalfeston), 'VO' (Volume afwerking), 'ZO' (Zonder afwerking) |
+| maatwerk_afwerking | TEXT FK → afwerking_types(code) | Afwerkingscode (B, FE, LO, ON, SB, SF, VO, ZO). FK: fk_order_regels_afwerking ON DELETE RESTRICT |
 | maatwerk_instructies | TEXT | Vrije tekst snij/confectie-instructies |
+| maatwerk_vorm | TEXT FK → maatwerk_vormen(code) | Vormcode. FK: fk_order_regels_vorm ON DELETE RESTRICT |
+| maatwerk_m2_prijs | NUMERIC(10,2) | Verkoopprijs per m² snapshot |
+| maatwerk_kostprijs_m2 | NUMERIC(10,2) | Kostprijs per m² snapshot |
+| maatwerk_oppervlak_m2 | NUMERIC(8,4) | Berekend prijsoppervlak |
+| maatwerk_vorm_toeslag | NUMERIC(10,2) | Vorm toeslag snapshot |
+| maatwerk_afwerking_prijs | NUMERIC(10,2) | Afwerking prijs snapshot |
+| maatwerk_diameter_cm | INTEGER | Diameter voor ronde vormen |
+| maatwerk_kwaliteit_code | TEXT | Kwaliteitscode (voor groepering zonder artikelnr) |
+| maatwerk_kleur_code | TEXT | Kleurcode |
 | productie_groep | TEXT | Groepering voor snijplanning (kwaliteit+kleur) |
 | UK: (order_id, regelnummer) | | |
 
@@ -511,6 +525,58 @@ Applicatie-instellingen (key-value). Gebruikt voor productie-configuratie.
 
 ---
 
+### maatwerk_vormen
+Beschikbare vormen voor op-maat tapijt (rechthoek, rond, ovaal, organisch).
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| id | BIGINT PK | Auto-increment |
+| code | TEXT UK | Unieke vormcode (rechthoek, rond, ovaal, organisch_a, organisch_b_sp) |
+| naam | TEXT | Display naam |
+| afmeting_type | TEXT | 'lengte_breedte' of 'diameter' |
+| toeslag | NUMERIC(10,2) | Vaste toeslag in EUR (default 0) |
+| actief | BOOLEAN | Default true |
+| volgorde | INTEGER | Sorteer-volgorde in dropdowns |
+
+---
+
+### afwerking_types
+Afwerkingsopties voor op-maat tapijt (banden, feston, locken, etc.).
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| id | BIGINT PK | Auto-increment |
+| code | TEXT UK | Afwerkingscode (B, FE, LO, ON, SB, SF, VO, ZO) |
+| naam | TEXT | Display naam |
+| prijs | NUMERIC(10,2) | Prijs per stuk (default 0) |
+| heeft_band_kleur | BOOLEAN | True voor B en SB |
+| actief | BOOLEAN | Default true |
+| volgorde | INTEGER | Sorteer-volgorde |
+
+---
+
+### kwaliteit_standaard_afwerking
+Standaard afwerking per kwaliteit (bijv. MIRA → SB).
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| kwaliteit_code | TEXT PK, FK → kwaliteiten | Kwaliteitscode |
+| afwerking_code | TEXT FK → afwerking_types | Standaard afwerkingscode |
+
+---
+
+### maatwerk_m2_prijzen
+M²-prijzen per kwaliteit+kleur voor op-maat berekening (admin-instelbaar, geseeded vanuit rollen).
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| id | BIGINT PK | Auto-increment |
+| kwaliteit_code | TEXT FK → kwaliteiten | Kwaliteitscode |
+| kleur_code | TEXT | Kleurcode |
+| verkoopprijs_m2 | NUMERIC(10,2) | Verkoopprijs per m² |
+| kostprijs_m2 | NUMERIC(10,2) | Kostprijs per m² (nullable) |
+| gewicht_per_m2_kg | NUMERIC(8,3) | Gewicht per m² in kg |
+| max_breedte_cm | INTEGER | Maximale rolbreedte voor validatie |
+| UK: (kwaliteit_code, kleur_code) | | Unieke combinatie |
+
+---
+
 ### activiteiten_log
 Audit trail: wie heeft wat wanneer gedaan.
 | Kolom | Type | Toelichting |
@@ -574,6 +640,7 @@ Audit trail: wie heeft wat wanneer gedaan.
 | `auto_maak_snijplan()` | Trigger: maakt automatisch een snijplan aan (status 'Wacht') voor nieuwe maatwerk order_regels |
 | `keur_snijvoorstel_goed(voorstel_id BIGINT)` | Keurt een snijvoorstel goed: wijst rollen toe aan snijplannen, zet status 'Gepland', met concurrency guards |
 | `verwerp_snijvoorstel(voorstel_id BIGINT)` | Verwerpt een concept-snijvoorstel zonder wijzigingen |
+| `kleuren_voor_kwaliteit(p_kwaliteit TEXT)` | Retourneert kleuren met m²-prijs, kostprijs, gewicht en max breedte voor een kwaliteit (uit maatwerk_m2_prijzen) |
 
 ### Triggers op order_regels (maatwerk)
 

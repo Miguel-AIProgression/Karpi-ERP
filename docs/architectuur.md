@@ -124,3 +124,11 @@ Na het snijden maakt `maak_reststuk()` automatisch een nieuwe rol aan met status
 - `ScanInput`: herbruikbaar scan-invoer component (camera + handmatig)
 - Productie types: gedeelde TypeScript types voor snijplannen, confectie, scan events
 - Status kleuren: consistente kleurcodering per productie-status
+
+### Op Maat Module
+- Toggle "Standaard / Op maat" in order-line-editor
+- Bij "Op maat": KwaliteitKleurSelector → VormAfmetingSelector → prijsberekening → toevoegen
+- Prijsberekening: oppervlak_m² × verkoopprijs/m² + vormtoeslag + afwerkingprijs - korting%
+- m²-prijs bron: `maatwerk_m2_prijzen` tabel (admin-instelbaar, geseeded vanuit rollen)
+- Vorm-weergave: centraal `vorm-labels.ts` systeem (gebruikt door snijplanning, stickers, orders)
+- Rol-producten in ArticleSelector redirecten automatisch naar op-maat flow
