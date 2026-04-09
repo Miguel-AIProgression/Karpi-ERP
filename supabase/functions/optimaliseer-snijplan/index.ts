@@ -331,7 +331,8 @@ serve(async (req) => {
       .eq('kleur_code', kleur_code)
 
     if (tot_datum) {
-      spQuery = spQuery.lte('afleverdatum', tot_datum)
+      // Include items with afleverdatum <= tot_datum OR afleverdatum IS NULL
+      spQuery = spQuery.or(`afleverdatum.lte.${tot_datum},afleverdatum.is.null`)
     }
 
     const { data: snijplannen, error: spError } = await spQuery

@@ -24,7 +24,11 @@ export function berekenTotDatum(weken: number | null): string | null {
   const dagenTotZondag = dag === 0 ? 0 : 7 - dag
   const totDatum = new Date(nu)
   totDatum.setDate(nu.getDate() + dagenTotZondag + (weken * 7))
-  return totDatum.toISOString().split('T')[0]  // YYYY-MM-DD
+  // Format as local date (toISOString uses UTC which can shift the day)
+  const y = totDatum.getFullYear()
+  const m = String(totDatum.getMonth() + 1).padStart(2, '0')
+  const d = String(totDatum.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
 }
 
 interface WeekFilterProps {

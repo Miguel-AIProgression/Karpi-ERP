@@ -66,7 +66,8 @@ export async function fetchSnijplannenVoorGroep(
     .order('afleverdatum', { ascending: true, nullsFirst: false })
 
   if (totDatum) {
-    query = query.lte('afleverdatum', totDatum)
+    // Include items with afleverdatum <= totDatum OR afleverdatum IS NULL
+    query = query.or(`afleverdatum.lte.${totDatum},afleverdatum.is.null`)
   }
 
   const { data, error } = await query

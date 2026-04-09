@@ -32,8 +32,8 @@ RETURNS TABLE (
     COUNT(*) FILTER (WHERE so.status = 'In confectie')::INTEGER AS totaal_in_confectie,
     COUNT(*) FILTER (WHERE so.status IN ('Gereed', 'Ingepakt'))::INTEGER AS totaal_gereed
   FROM snijplanning_overzicht so
-  WHERE so.kqualiteit_code IS NOT NULL
-    AND (p_tot_datum IS NULL OR so.afleverdatum <= p_tot_datum)
+  WHERE so.kwaliteit_code IS NOT NULL
+    AND (p_tot_datum IS NULL OR so.afleverdatum IS NULL OR so.afleverdatum <= p_tot_datum)
   GROUP BY so.kwaliteit_code, so.kleur_code
   ORDER BY so.kwaliteit_code, so.kleur_code;
 $$;
@@ -50,7 +50,7 @@ RETURNS TABLE (
   FROM snijplanning_overzicht so
   WHERE so.kwaliteit_code IS NOT NULL
     AND so.status NOT IN ('Geannuleerd')
-    AND (p_tot_datum IS NULL OR so.afleverdatum <= p_tot_datum)
+    AND (p_tot_datum IS NULL OR so.afleverdatum IS NULL OR so.afleverdatum <= p_tot_datum)
   GROUP BY so.status
   HAVING COUNT(*) > 0;
 $$;
