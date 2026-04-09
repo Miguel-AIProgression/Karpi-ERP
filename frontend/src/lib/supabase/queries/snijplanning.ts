@@ -27,37 +27,49 @@ export interface SnijGroepSummary {
   totaal_gereed: number
 }
 
-/** Fetch grouped summaries (313 rows instead of 2167) */
-export async function fetchSnijplanningGroepen(search?: string): Promise<SnijGroepSummary[]> {
-  let query = supabase
-    .from('snijplanning_groepen')
-    .select('*')
-    .order('kwaliteit_code', { ascending: true })
+/** Fetch grouped summaries, optionally filtered by delivery date.
+ *  Always uses RPC function (handles NULL = no filter natively). */
+export async function fetchSnijplanningGroepen(
+  search?: string,
+  totDatum?: string | null
+): Promise<SnijGroepSummary[]> {
+  const { data, error } = await supabase.rpc('snijplanning_groepen_gefilterd', {
+    p_tot_datum: totDatum ?? null,
+  })
+  if (error) throw error
+  let results = (data ?? []) as SnijGroepSummary[]
 
   if (search) {
-    const s = sanitizeSearch(search)
+    const s = sanitizeSearch(search)?.toLowerCase()
     if (s) {
-      query = query.or(`kwaliteit_code.ilike.%${s}%,kleur_code.ilike.%${s}%`)
+      results = results.filter(
+        (g) =>
+          g.kwaliteit_code.toLowerCase().includes(s) ||
+          g.kleur_code.toLowerCase().includes(s)
+      )
     }
   }
-
-  const { data, error } = await query
-  if (error) throw error
-  return (data ?? []) as SnijGroepSummary[]
+  return results
 }
 
 /** Fetch individual snijplannen for a specific kwaliteit+kleur group */
 export async function fetchSnijplannenVoorGroep(
   kwaliteitCode: string,
-  kleurCode: string
+  kleurCode: string,
+  totDatum?: string | null
 ): Promise<SnijplanRow[]> {
-  const { data, error } = await supabase
+  let query = supabase
     .from('snijplanning_overzicht')
     .select('*')
     .eq('kwaliteit_code', kwaliteitCode)
     .eq('kleur_code', kleurCode)
     .order('afleverdatum', { ascending: true, nullsFirst: false })
 
+  if (totDatum) {
+    query = query.lte('afleverdatum', totDatum)
+  }
+
+  const { data, error } = await query
   if (error) throw error
   return (data ?? []) as SnijplanRow[]
 }
@@ -120,24 +132,19 @@ export async function fetchSnijplanningPool(params: {
   return { snijplannen: (data ?? []) as SnijplanRow[], totalCount: count ?? 0 }
 }
 
-/** Fetch status counts for snijplan tabs */
-export async function fetchSnijplanningStatusCounts(): Promise<SnijplanStatusCount[]> {
-  const statuses = ['Wacht', 'Gepland', 'In productie', 'Gesneden', 'In confectie', 'Gereed', 'Ingepakt', 'Geannuleerd']
-
-  const results: SnijplanStatusCount[] = []
-  for (const s of statuses) {
-    const { count, error } = await supabase
-      .from('snijplanning_overzicht')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', s)
-
-    if (error) throw error
-    if (count && count > 0) {
-      results.push({ status: s, aantal: count })
-    }
-  }
-
-  return results
+/** Fetch status counts, optionally filtered by delivery date.
+ *  Always uses RPC function (single query instead of 8 separate counts). */
+export async function fetchSnijplanningStatusCounts(
+  totDatum?: string | null
+): Promise<SnijplanStatusCount[]> {
+  const { data, error } = await supabase.rpc('snijplanning_status_counts_gefilterd', {
+    p_tot_datum: totDatum ?? null,
+  })
+  if (error) throw error
+  return (data ?? []).map((r: { status: string; aantal: number }) => ({
+    status: r.status,
+    aantal: Number(r.aantal),
+  }))
 }
 
 /** Fetch single snijplan detail */

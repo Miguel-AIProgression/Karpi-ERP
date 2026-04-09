@@ -45,25 +45,30 @@ export function useSnijplanningPool(params: {
   })
 }
 
-export function useSnijplanningGroepen(search?: string) {
+export function useSnijplanningGroepen(search?: string, totDatum?: string | null) {
   return useQuery({
-    queryKey: ['snijplanning', 'groepen', search],
-    queryFn: () => fetchSnijplanningGroepen(search),
+    queryKey: ['snijplanning', 'groepen', search, totDatum],
+    queryFn: () => fetchSnijplanningGroepen(search, totDatum),
   })
 }
 
-export function useSnijplannenVoorGroep(kwaliteitCode: string, kleurCode: string, enabled = true) {
+export function useSnijplannenVoorGroep(
+  kwaliteitCode: string,
+  kleurCode: string,
+  enabled = true,
+  totDatum?: string | null
+) {
   return useQuery({
-    queryKey: ['snijplanning', 'groep', kwaliteitCode, kleurCode],
-    queryFn: () => fetchSnijplannenVoorGroep(kwaliteitCode, kleurCode),
+    queryKey: ['snijplanning', 'groep', kwaliteitCode, kleurCode, totDatum],
+    queryFn: () => fetchSnijplannenVoorGroep(kwaliteitCode, kleurCode, totDatum),
     enabled,
   })
 }
 
-export function useSnijplanningStatusCounts() {
+export function useSnijplanningStatusCounts(totDatum?: string | null) {
   return useQuery({
-    queryKey: ['snijplanning', 'status-counts'],
-    queryFn: fetchSnijplanningStatusCounts,
+    queryKey: ['snijplanning', 'status-counts', totDatum],
+    queryFn: () => fetchSnijplanningStatusCounts(totDatum),
   })
 }
 
