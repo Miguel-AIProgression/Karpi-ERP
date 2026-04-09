@@ -49,6 +49,15 @@ export interface OrderRegelFormData {
   maatwerk_afwerking?: string
   maatwerk_band_kleur?: string
   maatwerk_instructies?: string
+  // Op-maat prijscomponenten (nieuw)
+  maatwerk_m2_prijs?: number
+  maatwerk_kostprijs_m2?: number
+  maatwerk_oppervlak_m2?: number
+  maatwerk_vorm_toeslag?: number
+  maatwerk_afwerking_prijs?: number
+  maatwerk_diameter_cm?: number
+  maatwerk_kwaliteit_code?: string
+  maatwerk_kleur_code?: string
 }
 
 /** Create order + lines atomically via RPC */
@@ -99,6 +108,14 @@ export async function createOrder(
     maatwerk_afwerking: r.maatwerk_afwerking || null,
     maatwerk_band_kleur: r.maatwerk_band_kleur || null,
     maatwerk_instructies: r.maatwerk_instructies || null,
+    maatwerk_m2_prijs: r.maatwerk_m2_prijs ?? null,
+    maatwerk_kostprijs_m2: r.maatwerk_kostprijs_m2 ?? null,
+    maatwerk_oppervlak_m2: r.maatwerk_oppervlak_m2 ?? null,
+    maatwerk_vorm_toeslag: r.maatwerk_vorm_toeslag ?? null,
+    maatwerk_afwerking_prijs: r.maatwerk_afwerking_prijs ?? null,
+    maatwerk_diameter_cm: r.maatwerk_diameter_cm ?? null,
+    maatwerk_kwaliteit_code: r.maatwerk_kwaliteit_code || null,
+    maatwerk_kleur_code: r.maatwerk_kleur_code || null,
   }))
 
   const { data, error } = await supabase.rpc('create_order_with_lines', {
@@ -137,6 +154,14 @@ export async function updateOrderWithLines(
     maatwerk_afwerking: r.maatwerk_afwerking || null,
     maatwerk_band_kleur: r.maatwerk_band_kleur || null,
     maatwerk_instructies: r.maatwerk_instructies || null,
+    maatwerk_m2_prijs: r.maatwerk_m2_prijs ?? null,
+    maatwerk_kostprijs_m2: r.maatwerk_kostprijs_m2 ?? null,
+    maatwerk_oppervlak_m2: r.maatwerk_oppervlak_m2 ?? null,
+    maatwerk_vorm_toeslag: r.maatwerk_vorm_toeslag ?? null,
+    maatwerk_afwerking_prijs: r.maatwerk_afwerking_prijs ?? null,
+    maatwerk_diameter_cm: r.maatwerk_diameter_cm ?? null,
+    maatwerk_kwaliteit_code: r.maatwerk_kwaliteit_code || null,
+    maatwerk_kleur_code: r.maatwerk_kleur_code || null,
   }))
 
   const { error } = await supabase.rpc('update_order_with_lines', {

@@ -19,7 +19,7 @@ export type ConfectieStatus =
   | 'Gereed'
   | 'Geannuleerd'
 
-export type MaatwerkVorm = 'rechthoek' | 'rond' | 'ovaal'
+export type MaatwerkVorm = string  // Configureerbaar via maatwerk_vormen tabel
 export type MaatwerkAfwerking = 'B' | 'FE' | 'LO' | 'ON' | 'SB' | 'SF' | 'VO' | 'ZO'
 export type RolStatus = 'beschikbaar' | 'gereserveerd' | 'verkocht' | 'gesneden' | 'reststuk' | 'in_snijplan'
 export type ScanActie = 'start' | 'gereed' | 'pauze' | 'herstart' | 'fout'
