@@ -114,10 +114,12 @@ function RolVisualisatie({
               width: pw,
               height: ph,
               backgroundColor: color.bg,
-              border: `2px solid ${color.border}`,
               borderRadius: 3,
               zIndex: isHovered ? 20 : 1,
-              boxShadow: isHovered ? '0 4px 12px rgba(0,0,0,0.15)' : 'none',
+              boxShadow: isHovered
+                ? `inset 0 0 0 2px ${color.border}, 0 4px 12px rgba(0,0,0,0.15)`
+                : `inset 0 0 0 2px ${color.border}`,
+              boxSizing: 'content-box',
             }}
             onMouseEnter={() => setHover(i)}
             onMouseLeave={() => setHover(null)}
