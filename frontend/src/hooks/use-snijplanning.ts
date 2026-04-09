@@ -26,6 +26,7 @@ import {
   approveSnijvoorstel as approveVoorstelOptimalisatie,
   rejectSnijvoorstel,
   voltooiSnijplanRol,
+  type ReststukResult,
 } from '@/lib/supabase/queries/snijvoorstel'
 import {
   fetchAutoplanningConfig,
@@ -256,8 +257,8 @@ export function useVerwerpSnijvoorstel() {
 export function useVoltooiSnijplanRol() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ rolId, gesnedenDoor }: { rolId: number; gesnedenDoor?: string }) =>
-      voltooiSnijplanRol(rolId, gesnedenDoor),
+    mutationFn: ({ rolId, gesnedenDoor, overrideRestLengte }: { rolId: number; gesnedenDoor?: string; overrideRestLengte?: number | null }) =>
+      voltooiSnijplanRol(rolId, gesnedenDoor, overrideRestLengte),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['snijplanning'] })
       qc.invalidateQueries({ queryKey: ['productie', 'dashboard'] })
@@ -265,6 +266,8 @@ export function useVoltooiSnijplanRol() {
     },
   })
 }
+
+export type { ReststukResult }
 
 // ---------------------------------------------------------------------------
 // Auto-planning hooks

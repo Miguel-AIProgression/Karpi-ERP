@@ -249,12 +249,19 @@ export async function fetchBeschikbareCapaciteit(kwaliteitCode: string, kleurCod
   }
 }
 
+export interface ReststukResult {
+  reststuk_id: number | null
+  reststuk_rolnummer: string | null
+  reststuk_lengte_cm: number | null
+}
+
 /** Complete cutting of a roll: mark snijplannen as cut, create remnant */
-export async function voltooiSnijplanRol(rolId: number, gesnedenDoor?: string) {
+export async function voltooiSnijplanRol(rolId: number, gesnedenDoor?: string, overrideRestLengte?: number | null) {
   const { data, error } = await supabase.rpc('voltooi_snijplan_rol', {
     p_rol_id: rolId,
     p_gesneden_door: gesnedenDoor ?? null,
+    p_override_rest_lengte: overrideRestLengte ?? null,
   })
   if (error) throw error
-  return data as { reststuk_id: number | null; reststuk_rolnummer: string | null; reststuk_lengte_cm: number | null }[]
+  return data as ReststukResult[]
 }

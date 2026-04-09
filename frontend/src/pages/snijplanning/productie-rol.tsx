@@ -4,7 +4,10 @@ import { ArrowLeft, Scissors, Printer, CheckCircle2, Loader2 } from 'lucide-reac
 import { PageHeader } from '@/components/layout/page-header'
 import { SnijVisualisatie } from '@/components/snijplanning/snij-visualisatie'
 import { StickerLayout } from '@/components/snijplanning/sticker-layout'
+import { ReststukBevestigingModal } from '@/components/snijplanning/reststuk-bevestiging-modal'
+import { ReststukStickerLayout } from '@/components/snijplanning/reststuk-sticker-layout'
 import { useRolSnijstukken, useVoltooiSnijplanRol } from '@/hooks/use-snijplanning'
+import type { ReststukResult } from '@/hooks/use-snijplanning'
 import { mapSnijplannenToStukken } from '@/lib/utils/snijplan-mapping'
 import { cn } from '@/lib/utils/cn'
 import { AFWERKING_MAP } from '@/lib/utils/constants'
@@ -20,6 +23,8 @@ export function ProductieRolPage() {
   const [voltooid, setVoltooid] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showStickers, setShowStickers] = useState(false)
+  const [showReststukModal, setShowReststukModal] = useState(false)
+  const [reststukResult, setReststukResult] = useState<ReststukResult | null>(null)
 
   if (isLoading) {
     return <PageHeader title="Laden..." />
@@ -54,8 +59,48 @@ export function ProductieRolPage() {
   const handleVoltooiRol = () => {
     if (!rolIdNum) return
     setError(null)
+    // Als er een bruikbaar reststuk is (>50cm), toon eerst het bevestigingsmodal
+    if (restLengte > 50) {
+      setShowReststukModal(true)
+    } else {
+      // Geen bruikbaar reststuk — direct voltooien
+      voltooiRol.mutate(
+        { rolId: rolIdNum, overrideRestLengte: 0 },
+        {
+          onSuccess: () => {
+            setVoltooid(true)
+            setShowStickers(true)
+          },
+          onError: (err) => setError(err instanceof Error ? err.message : 'Onbekende fout'),
+        },
+      )
+    }
+  }
+
+  const handleReststukBevestig = (lengte: number) => {
+    if (!rolIdNum) return
+    setShowReststukModal(false)
     voltooiRol.mutate(
-      { rolId: rolIdNum },
+      { rolId: rolIdNum, overrideRestLengte: lengte },
+      {
+        onSuccess: (data) => {
+          setVoltooid(true)
+          setShowStickers(true)
+          const result = Array.isArray(data) ? data[0] : data
+          if (result?.reststuk_id) {
+            setReststukResult(result)
+          }
+        },
+        onError: (err) => setError(err instanceof Error ? err.message : 'Onbekende fout'),
+      },
+    )
+  }
+
+  const handleGeenReststuk = () => {
+    if (!rolIdNum) return
+    setShowReststukModal(false)
+    voltooiRol.mutate(
+      { rolId: rolIdNum, overrideRestLengte: 0 },
       {
         onSuccess: () => {
           setVoltooid(true)
@@ -117,7 +162,34 @@ export function ProductieRolPage() {
         {voltooid && (
           <div className="mb-4 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-[var(--radius-sm)] text-sm text-emerald-700 flex items-center gap-2">
             <CheckCircle2 size={16} />
-            Rol is gesneden! Stukken zijn gemarkeerd als "Gesneden". Print de stickers hieronder.
+            Rol is gesneden! Stukken zijn gemarkeerd als "Gesneden".
+            {reststukResult?.reststuk_rolnummer && (
+              <span> Reststuk <strong>{reststukResult.reststuk_rolnummer}</strong> ({reststukResult.reststuk_lengte_cm} cm) aangemaakt.</span>
+            )}
+          </div>
+        )}
+
+        {/* Reststuk sticker */}
+        {reststukResult?.reststuk_rolnummer && (
+          <div className="mb-4 bg-white rounded-[var(--radius)] border border-emerald-200 p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-medium text-slate-700">Reststuk sticker</h2>
+              <button
+                onClick={() => window.print()}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-[var(--radius-sm)] bg-emerald-500 text-white text-sm hover:bg-emerald-600 transition-colors"
+              >
+                <Printer size={14} />
+                Print reststuk sticker
+              </button>
+            </div>
+            <ReststukStickerLayout
+              rolnummer={reststukResult.reststuk_rolnummer}
+              kwaliteit={kwaliteit}
+              kleur={kleur}
+              lengte_cm={reststukResult.reststuk_lengte_cm ?? 0}
+              breedte_cm={rolBreedte}
+              datum={new Date().toLocaleDateString('nl-NL')}
+            />
           </div>
         )}
 
@@ -238,6 +310,20 @@ export function ProductieRolPage() {
             </p>
           )}
         </div>
+      )}
+
+      {/* Reststuk bevestigingsmodal */}
+      {showReststukModal && (
+        <ReststukBevestigingModal
+          berekendeLengte={restLengte}
+          rolBreedte={rolBreedte}
+          kwaliteit={kwaliteit}
+          kleur={kleur}
+          rolnummer={rolnummer}
+          onBevestig={handleReststukBevestig}
+          onGeenReststuk={handleGeenReststuk}
+          onAnnuleer={() => setShowReststukModal(false)}
+        />
       )}
     </>
   )

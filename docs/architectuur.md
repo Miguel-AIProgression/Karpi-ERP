@@ -123,15 +123,18 @@ Snijplannen worden gevisualiseerd als SVG op de rol (2D strip-packing). `positie
 Supabase Edge Function (`supabase/functions/optimaliseer-snijplan/index.ts`) die FFDH (First Fit Decreasing Height) 2D strip-packing uitvoert. Neemt kwaliteit_code + kleur_code als input, vindt alle wachtende snijplannen, pakt ze optimaal op beschikbare rollen (reststukken eerst), en slaat het voorstel op in `snijvoorstellen` + `snijvoorstel_plaatsingen`. Retourneert plaatsingen met coordinaten, afvalpercentages en samenvatting. Vereist SNIJV nummeringstype.
 
 ### Reststuk tracking
-Na het snijden maakt `maak_reststuk()` automatisch een nieuwe rol aan met status 'reststuk', gekoppeld via `oorsprong_rol_id`. Alle voorraadmutaties worden gelogd in `voorraad_mutaties`.
+Na het snijden toont `voltooi_snijplan_rol()` een bevestigingsmodal waarin de gebruiker de restlengte kan aanpassen of kan kiezen om geen reststuk op te slaan. Na bevestiging wordt een reststuk-sticker geprint (rolnummer, kwaliteit, kleur, afmetingen, QR-code, locatieveld). Reststukken worden opgeslagen als nieuwe rol met status 'reststuk', gekoppeld via `oorsprong_rol_id`. Alle voorraadmutaties worden gelogd in `voorraad_mutaties`.
+
+### Snijtijden
+Wisseltijd per rol en snijtijd per karpet zijn configureerbaar via Productie Instellingen (`app_config`). Geschatte totaaltijd wordt getoond op snijvoorstel-review en productie-groep pagina's. Formule: `(rollen × wisseltijd) + (stukken × snijtijd)`.
 
 ### Productie modules
-- **Snijplanning**: weekoverzicht, gegroepeerd per kwaliteit+kleur, SVG snijvoorstel, sticker print
+- **Snijplanning**: weekoverzicht, gegroepeerd per kwaliteit+kleur, SVG snijvoorstel, sticker print, reststuk-bevestigingsflow
 - **Confectie**: scan-gestuurd overzicht van afwerkingsstatus per medewerker
 - **Scanstation Inpak**: tablet-vriendelijk interface, barcode/QR scan voor status-updates
 - **Magazijn**: gereed product met locatiebeheer
 - **Rollen & Reststukken**: gegroepeerd rolbeheer met status badges en oorsprong-tracking
-- **Planning Instellingen**: configuratie via `app_config` tabel (capaciteit m2/dag, planmodus, max verspilling)
+- **Planning Instellingen**: configuratie via `app_config` tabel (capaciteit, planmodus, max verspilling, snijtijden)
 
 ### Shared productie componenten
 - `ScanInput`: herbruikbaar scan-invoer component (camera + handmatig)

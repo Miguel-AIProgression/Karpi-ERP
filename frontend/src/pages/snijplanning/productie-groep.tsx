@@ -3,7 +3,11 @@ import { useSearchParams, Link } from 'react-router-dom'
 import { ArrowLeft, Scissors, Printer, CheckCircle2, Loader2, ChevronDown, ChevronRight } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { SnijVisualisatie } from '@/components/snijplanning/snij-visualisatie'
+import { ReststukBevestigingModal } from '@/components/snijplanning/reststuk-bevestiging-modal'
+import { ReststukStickerLayout } from '@/components/snijplanning/reststuk-sticker-layout'
 import { useSnijplannenVoorGroep, useVoltooiSnijplanRol, useStartProductieRol } from '@/hooks/use-snijplanning'
+import type { ReststukResult } from '@/hooks/use-snijplanning'
+import { usePlanningConfig } from '@/hooks/use-planning-config'
 import { mapSnijplannenToStukken } from '@/lib/utils/snijplan-mapping'
 import { cn } from '@/lib/utils/cn'
 import { AFWERKING_MAP } from '@/lib/utils/constants'
@@ -55,6 +59,17 @@ export function ProductieGroepPage() {
 
   const totaalTeSnijden = (alleStukken ?? []).filter(s => s.status === 'Gepland' || s.status === 'In productie').length
   const totaalGesneden = (alleStukken ?? []).filter(s => s.status === 'Gesneden' || s.status === 'In confectie' || s.status === 'Gereed').length
+  const { data: planningConfig } = usePlanningConfig()
+
+  const geschatteTijd = useMemo(() => {
+    if (!planningConfig || rolGroepen.length === 0) return null
+    const minuten = (rolGroepen.length * planningConfig.wisseltijd_minuten) + (totaalTeSnijden * planningConfig.snijtijd_minuten)
+    if (minuten === 0) return null
+    const uren = Math.floor(minuten / 60)
+    const min = Math.round(minuten % 60)
+    if (uren === 0) return `${min} min`
+    return min === 0 ? `${uren} uur` : `${uren} uur ${min} min`
+  }, [planningConfig, rolGroepen.length, totaalTeSnijden])
 
   if (isLoading) {
     return <PageHeader title="Laden..." />
@@ -64,7 +79,7 @@ export function ProductieGroepPage() {
     <>
       <PageHeader
         title={`Productie — ${kwaliteit} ${kleur}`}
-        description={`${rolGroepen.length} rollen · ${totaalTeSnijden} te snijden · ${totaalGesneden} gesneden`}
+        description={`${rolGroepen.length} rollen · ${totaalTeSnijden} te snijden · ${totaalGesneden} gesneden${geschatteTijd ? ` · ~${geschatteTijd}` : ''}`}
         actions={
           <div className="flex items-center gap-3">
             <Link
@@ -113,6 +128,8 @@ function RolCard({ rol, kwaliteit, kleur }: { rol: RolGroepData; kwaliteit: stri
   const [inProductie, setInProductie] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
+  const [showReststukModal, setShowReststukModal] = useState(false)
+  const [reststukResult, setReststukResult] = useState<ReststukResult | null>(null)
 
   const gepland = rol.stukken.filter(s => s.status === 'Gepland')
   const inProd = rol.stukken.filter(s => s.status === 'In productie')
@@ -127,10 +144,41 @@ function RolCard({ rol, kwaliteit, kleur }: { rol: RolGroepData; kwaliteit: stri
 
   const handleVoltooiRol = () => {
     setError(null)
+    if (restLengte > 50) {
+      setShowReststukModal(true)
+    } else {
+      voltooiRol.mutate(
+        { rolId: rol.rolId, overrideRestLengte: 0 },
+        {
+          onSuccess: () => { setVoltooid(true); setOpen(true) },
+          onError: (err) => setError(err instanceof Error ? err.message : 'Onbekende fout'),
+        },
+      )
+    }
+  }
+
+  const handleReststukBevestig = (lengte: number) => {
+    setShowReststukModal(false)
     voltooiRol.mutate(
-      { rolId: rol.rolId },
+      { rolId: rol.rolId, overrideRestLengte: lengte },
       {
-        onSuccess: () => setVoltooid(true),
+        onSuccess: (data) => {
+          setVoltooid(true)
+          setOpen(true)
+          const result = Array.isArray(data) ? data[0] : data
+          if (result?.reststuk_id) setReststukResult(result)
+        },
+        onError: (err) => setError(err instanceof Error ? err.message : 'Onbekende fout'),
+      },
+    )
+  }
+
+  const handleGeenReststuk = () => {
+    setShowReststukModal(false)
+    voltooiRol.mutate(
+      { rolId: rol.rolId, overrideRestLengte: 0 },
+      {
+        onSuccess: () => { setVoltooid(true); setOpen(true) },
         onError: (err) => setError(err instanceof Error ? err.message : 'Onbekende fout'),
       },
     )
@@ -284,7 +332,47 @@ function RolCard({ rol, kwaliteit, kleur }: { rol: RolGroepData; kwaliteit: stri
             ))}
           </tbody>
         </table>
+
+        {/* Reststuk sticker */}
+        {reststukResult?.reststuk_rolnummer && (
+          <div className="mt-4 p-4 bg-emerald-50 border border-emerald-200 rounded-[var(--radius-sm)]">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm font-medium text-emerald-700">
+                Reststuk {reststukResult.reststuk_rolnummer} ({reststukResult.reststuk_lengte_cm} cm) aangemaakt
+              </span>
+              <button
+                onClick={(e) => { e.stopPropagation(); window.print() }}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-[var(--radius-sm)] bg-emerald-500 text-white text-sm hover:bg-emerald-600 transition-colors"
+              >
+                <Printer size={14} />
+                Print sticker
+              </button>
+            </div>
+            <ReststukStickerLayout
+              rolnummer={reststukResult.reststuk_rolnummer}
+              kwaliteit={kwaliteit}
+              kleur={kleur}
+              lengte_cm={reststukResult.reststuk_lengte_cm ?? 0}
+              breedte_cm={rol.rolBreedte}
+              datum={new Date().toLocaleDateString('nl-NL')}
+            />
+          </div>
+        )}
         </div>
+      )}
+
+      {/* Reststuk bevestigingsmodal */}
+      {showReststukModal && (
+        <ReststukBevestigingModal
+          berekendeLengte={restLengte}
+          rolBreedte={rol.rolBreedte}
+          kwaliteit={kwaliteit}
+          kleur={kleur}
+          rolnummer={rol.rolnummer}
+          onBevestig={handleReststukBevestig}
+          onGeenReststuk={handleGeenReststuk}
+          onAnnuleer={() => setShowReststukModal(false)}
+        />
       )}
     </div>
   )

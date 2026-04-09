@@ -521,6 +521,17 @@ Applicatie-instellingen (key-value). Gebruikt voor productie-configuratie en aut
 | sleutel | TEXT PK | Configuratiesleutel (bijv. 'productie_planning', 'snijplanning.auto_planning') |
 | waarde | JSONB | Waarde (type-vrij) |
 
+**productie_planning waarde-structuur:**
+| Veld | Type | Default | Toelichting |
+|------|------|---------|-------------|
+| planning_modus | 'weken' \| 'capaciteit' | 'weken' | Planmodus |
+| capaciteit_per_week | number | 450 | Max tapijten per week |
+| capaciteit_marge_pct | number | 10 | Buffer % boven capaciteit |
+| weken_vooruit | number | 4 | Hoeveel weken vooruit plannen |
+| max_reststuk_verspilling_pct | number | 15 | Max afval % voor reststuk-suggesties |
+| wisseltijd_minuten | number | 15 | Tijd om nieuwe rol op machine te leggen |
+| snijtijd_minuten | number | 5 | Gemiddelde snijtijd per karpet |
+
 ---
 
 ### snijplan_groep_locks
@@ -623,7 +634,7 @@ Audit trail: wie heeft wat wanneer gedaan.
 | rollen_overzicht | Per kwaliteit/kleur: aantal, oppervlak, waarde |
 | recente_orders | Laatste 50 orders met klantnaam |
 | orders_status_telling | Aantal per order_status |
-| snijplanning_overzicht | Snijplannen met order-, klant- en rolgegevens voor de planningsweergave |
+| snijplanning_overzicht | Snijplannen met order-, klant- en rolgegevens voor de planningsweergave (incl. geroteerd vlag) |
 | confectie_overzicht | Confectie-orders met scan- en voortgangsstatus |
 | productie_dashboard | Aggregaties voor het productie-dashboard: aantallen per status, capaciteit, doorlooptijd |
 
@@ -645,6 +656,7 @@ Audit trail: wie heeft wat wanneer gedaan.
 | `genereer_scancode()` | Genereert een unieke scancode (bijv. SNIJ-XXXX of CONF-XXXX) voor barcode/QR-stickers |
 | `beste_rol_voor_snijplan(kwaliteit TEXT, kleur TEXT, lengte INTEGER, breedte INTEGER)` | Selecteert de optimale rol (minste verspilling) voor een snijplan op basis van kwaliteit, kleur en afmetingen |
 | `maak_reststuk(rol_id BIGINT, nieuwe_lengte INTEGER, snijplan_id BIGINT)` | Maakt een reststuk-rol aan na het snijden, werkt originele rol bij en logt voorraadmutatie |
+| `voltooi_snijplan_rol(p_rol_id BIGINT, p_gesneden_door TEXT, p_override_rest_lengte INTEGER)` | Markeert snijplannen als gesneden, maakt optioneel reststuk. Override: NULL=auto, 0=geen reststuk, >0=aangepaste lengte |
 | `auto_markeer_maatwerk()` | Trigger: markeert nieuwe order_regels automatisch als is_maatwerk=true wanneer product_type='rol' |
 | `auto_maak_snijplan()` | Trigger: maakt automatisch een snijplan aan (status 'Wacht') voor nieuwe maatwerk order_regels |
 | `keur_snijvoorstel_goed(voorstel_id BIGINT)` | Keurt een snijvoorstel goed: wijst rollen toe aan snijplannen, zet status 'Gepland', met concurrency guards |

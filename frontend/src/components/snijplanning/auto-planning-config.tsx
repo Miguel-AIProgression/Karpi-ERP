@@ -59,23 +59,6 @@ export function AutoPlanningConfig() {
         Auto-planning {enabled ? 'aan' : 'uit'}
       </button>
 
-      {enabled && (
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-slate-400">Horizon:</span>
-          <select
-            value={horizonWeken}
-            onChange={(e) => handleHorizonChange(Number(e.target.value))}
-            disabled={updateConfig.isPending}
-            className="text-sm px-2 py-1 rounded-[var(--radius-sm)] border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-400/30 focus:border-emerald-400"
-          >
-            {HORIZON_OPTIONS.map((opt) => (
-              <option key={opt.weken} value={opt.weken}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
     </div>
   )
 }

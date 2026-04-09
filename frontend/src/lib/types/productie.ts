@@ -39,6 +39,7 @@ export interface SnijplanRow {
   afleverdatum: string | null
   positie_x_cm: number | null
   positie_y_cm: number | null
+  geroteerd: boolean | null
   gesneden_datum: string | null
   gesneden_op: string | null
   gesneden_door: string | null
@@ -225,6 +226,8 @@ export interface PlanningConfig {
   capaciteit_marge_pct: number
   weken_vooruit: number
   max_reststuk_verspilling_pct: number
+  wisseltijd_minuten: number
+  snijtijd_minuten: number
 }
 
 // === Snijvoorstel types ===

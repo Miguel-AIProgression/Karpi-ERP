@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Settings, Save, CheckCircle2 } from 'lucide-react'
+import { Settings, Save, CheckCircle2, Clock } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { usePlanningConfig, useUpdatePlanningConfig } from '@/hooks/use-planning-config'
 import type { PlanningConfig } from '@/lib/types/productie'
@@ -160,7 +160,45 @@ export function ProductieInstellingenPage() {
           </div>
         </div>
 
-        {/* Card 3: A/B Groepen (placeholder) */}
+        {/* Card 3: Snijtijden */}
+        <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Clock size={18} className="text-slate-500" />
+            <h2 className="text-lg font-semibold text-slate-900">Snijtijden</h2>
+          </div>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Wisseltijd per rol (minuten)
+              </label>
+              <input
+                type="number"
+                min={0}
+                max={120}
+                value={form.wisseltijd_minuten}
+                onChange={(e) => update('wisseltijd_minuten', Number(e.target.value))}
+                className="w-32 px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
+              />
+              <p className="mt-1 text-xs text-slate-400">Tijd om een nieuwe rol op de machine te leggen</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Snijtijd per karpet (minuten)
+              </label>
+              <input
+                type="number"
+                min={0}
+                max={60}
+                value={form.snijtijd_minuten}
+                onChange={(e) => update('snijtijd_minuten', Number(e.target.value))}
+                className="w-32 px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
+              />
+              <p className="mt-1 text-xs text-slate-400">Gemiddelde snijtijd per individueel karpet</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Card 4: A/B Groepen (placeholder) */}
         <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-6">
           <h2 className="text-lg font-semibold text-slate-900 mb-2">A/B Groepen</h2>
           <p className="text-sm text-slate-500">

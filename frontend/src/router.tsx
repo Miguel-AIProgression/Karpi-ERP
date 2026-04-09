@@ -75,7 +75,7 @@ export const router = createBrowserRouter([
       { path: 'logistiek', element: <PlaceholderPage title="Logistiek" /> },
       { path: 'inkoop', element: <PlaceholderPage title="Inkooporders" /> },
       { path: 'leveranciers', element: <PlaceholderPage title="Leveranciers" /> },
-      { path: 'instellingen', element: <PlaceholderPage title="Instellingen" /> },
+      { path: 'instellingen', element: <ProductieInstellingenPage /> },
       { path: 'instellingen/productie', element: <ProductieInstellingenPage /> },
     ],
   },

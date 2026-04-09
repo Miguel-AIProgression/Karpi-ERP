@@ -9,6 +9,7 @@ import {
   useKeurSnijvoorstelGoed,
   useVerwerpSnijvoorstel,
 } from '@/hooks/use-snijplanning'
+import { usePlanningConfig } from '@/hooks/use-planning-config'
 import type {
   SnijvoorstelResponse,
   SnijvoorstelPlaatsing,
@@ -16,6 +17,7 @@ import type {
   SnijplanRow,
   SnijRolVoorstel,
   SnijStuk,
+  PlanningConfig,
 } from '@/lib/types/productie'
 
 // ---------------------------------------------------------------------------
@@ -144,6 +146,7 @@ export function SnijvoorstelReviewPage() {
   }
 
   const sam = voorstelResponse.samenvatting
+  const { data: planningConfig } = usePlanningConfig()
 
   return (
     <>
@@ -160,7 +163,7 @@ export function SnijvoorstelReviewPage() {
       <PageHeader title={`Snijvoorstel -- ${voorstelResponse.voorstel_nr}`} />
 
       {/* Summary card */}
-      <SummaryCard samenvatting={sam} />
+      <SummaryCard samenvatting={sam} planningConfig={planningConfig} />
 
       {/* Per-roll visualisations */}
       {rolVoorstellen.map((rv) => (
@@ -195,10 +198,21 @@ export function SnijvoorstelReviewPage() {
 // Sub-components
 // ---------------------------------------------------------------------------
 
-function SummaryCard({ samenvatting }: { samenvatting: SnijvoorstelResponse['samenvatting'] }) {
+function formatTijd(minuten: number): string {
+  const uren = Math.floor(minuten / 60)
+  const min = Math.round(minuten % 60)
+  if (uren === 0) return `${min} min`
+  return min === 0 ? `${uren} uur` : `${uren} uur ${min} min`
+}
+
+function SummaryCard({ samenvatting, planningConfig }: { samenvatting: SnijvoorstelResponse['samenvatting']; planningConfig?: PlanningConfig | null }) {
+  const geschatteTijd = planningConfig
+    ? (samenvatting.totaal_rollen * planningConfig.wisseltijd_minuten) + (samenvatting.geplaatst * planningConfig.snijtijd_minuten)
+    : null
+
   return (
     <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-4 mb-6">
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 text-sm">
         <div>
           <p className="text-xs text-slate-500 mb-0.5">Stukken / Rollen</p>
           <p className="font-medium text-slate-900">
@@ -211,12 +225,18 @@ function SummaryCard({ samenvatting }: { samenvatting: SnijvoorstelResponse['sam
         </div>
         <div>
           <p className="text-xs text-slate-500 mb-0.5">Gebruikt</p>
-          <p className="font-medium text-slate-900">{samenvatting.totaal_m2_gebruikt.toFixed(1)} m2</p>
+          <p className="font-medium text-slate-900">{samenvatting.totaal_m2_gebruikt.toFixed(1)} m²</p>
         </div>
         <div>
           <p className="text-xs text-slate-500 mb-0.5">Afval</p>
-          <p className="font-medium text-slate-900">{samenvatting.totaal_m2_afval.toFixed(1)} m2</p>
+          <p className="font-medium text-slate-900">{samenvatting.totaal_m2_afval.toFixed(1)} m²</p>
         </div>
+        {geschatteTijd !== null && (
+          <div>
+            <p className="text-xs text-slate-500 mb-0.5">Geschatte tijd</p>
+            <p className="font-medium text-slate-900">{formatTijd(geschatteTijd)}</p>
+          </div>
+        )}
       </div>
       {samenvatting.niet_geplaatst > 0 && (
         <div className="mt-3 flex items-center gap-2 text-amber-700 text-xs">

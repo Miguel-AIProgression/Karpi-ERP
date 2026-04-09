@@ -1,11 +1,10 @@
 import type { SnijplanRow, SnijStuk, SnijvoorstelResponse, SnijvoorstelRol } from '@/lib/types/productie'
 
 /**
- * Map SnijplanRow items naar SnijStuk array met correcte rotatie-inferentie.
+ * Map SnijplanRow items naar SnijStuk array.
  *
  * Optimizer convention: lengte_cm = X (across roll width), breedte_cm = Y (along roll length).
- * Raw piece data (snij_lengte_cm/snij_breedte_cm) has no rotation info.
- * We infer rotation by checking which orientation fits the stored shelf position.
+ * Uses the stored `geroteerd` flag to determine placed dimensions.
  */
 export function mapSnijplannenToStukken(
   stukken: SnijplanRow[],
@@ -14,26 +13,13 @@ export function mapSnijplannenToStukken(
 ): { snijStukken: SnijStuk[]; gebruikteLengte: number; afvalPct: number; reststukBruikbaar: boolean } {
   const placed = stukken.filter(s => s.positie_x_cm != null && s.positie_y_cm != null)
 
-  // Determine shelf heights from Y positions for rotation inference
-  const uniqueYs = [...new Set(placed.map(s => s.positie_y_cm!))].sort((a, b) => a - b)
-  const shelfHeightAt = new Map<number, number>()
-  for (let i = 0; i < uniqueYs.length; i++) {
-    const nextY = i + 1 < uniqueYs.length ? uniqueYs[i + 1] : rolLengte
-    shelfHeightAt.set(uniqueYs[i], nextY - uniqueYs[i])
-  }
-
   const snijStukken: SnijStuk[] = placed.map(s => {
     const x = s.positie_x_cm!
     const y = s.positie_y_cm!
-    const shelfH = shelfHeightAt.get(y) ?? rolLengte
+    const isRotated = s.geroteerd === true
 
-    // Pick orientation whose Y-extent fits the shelf height
-    // Default (not rotated): X = snij_lengte, Y = snij_breedte
-    // Rotated: X = snij_breedte, Y = snij_lengte
-    const defaultYFits = s.snij_breedte_cm <= shelfH && x + s.snij_lengte_cm <= rolBreedte
-    const rotatedYFits = s.snij_lengte_cm <= shelfH && x + s.snij_breedte_cm <= rolBreedte
-    const isRotated = !defaultYFits && rotatedYFits
-
+    // Rotated: X = snij_breedte, Y = snij_lengte (dimensions swap)
+    // Default: X = snij_lengte, Y = snij_breedte
     const lengte_cm = isRotated ? s.snij_breedte_cm : s.snij_lengte_cm  // X dimension
     const breedte_cm = isRotated ? s.snij_lengte_cm : s.snij_breedte_cm // Y dimension
 
