@@ -22,6 +22,7 @@ import { StickerPrintPage } from '@/pages/snijplanning/sticker-print'
 import { StickersBulkPage } from '@/pages/snijplanning/stickers-bulk'
 import { SnijvoorstelReviewPage } from '@/pages/snijplanning/snijvoorstel-review'
 import { ProductieRolPage } from '@/pages/snijplanning/productie-rol'
+import { ProductieGroepPage } from '@/pages/snijplanning/productie-groep'
 import { ProductieInstellingenPage } from '@/pages/instellingen/productie-instellingen'
 import { ConfectieOverviewPage } from '@/pages/confectie/confectie-overview'
 import { ScanstationPage } from '@/pages/scanstation/scanstation'
@@ -67,6 +68,7 @@ export const router = createBrowserRouter([
       { path: 'snijplanning/voorstel/:voorstelId', element: <SnijvoorstelReviewPage /> },
       { path: 'snijplanning/:id/stickers', element: <StickerPrintPage /> },
       { path: 'snijplanning/stickers', element: <StickersBulkPage /> },
+      { path: 'snijplanning/productie', element: <ProductieGroepPage /> },
       { path: 'snijplanning/productie/:rolId', element: <ProductieRolPage /> },
       { path: 'confectie', element: <ConfectieOverviewPage /> },
       { path: 'pick-ship', element: <PlaceholderPage title="Pick & Ship" /> },

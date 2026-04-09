@@ -118,10 +118,10 @@ export function GroepAccordion({
             </button>
           )}
 
-          {/* Snijden shortcut — linkt naar productie van eerste rol */}
+          {/* Snijden shortcut — linkt naar groepsproductie met alle rollen */}
           {heeftGepland && stukken && stukken.some(s => s.rol_id) && (
             <Link
-              to={`/snijplanning/productie/${stukken.find(s => s.rol_id)?.rol_id}`}
+              to={`/snijplanning/productie?kwaliteit=${kwaliteitCode}&kleur=${kleurCode}`}
               onClick={(e) => e.stopPropagation()}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 text-white rounded-[var(--radius-sm)] text-xs font-medium hover:bg-emerald-600 transition-colors"
             >
