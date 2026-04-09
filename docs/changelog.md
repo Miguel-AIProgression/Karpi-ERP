@@ -1,5 +1,28 @@
 # Changelog — RugFlow ERP
 
+## 2026-04-09 — Snijplanning productie workflow
+
+### Tab-filtering
+- Tabs op snijplanning overview filteren nu daadwerkelijk de groepen
+- View `snijplanning_groepen` uitgebreid met per-status counts (incl. `totaal_in_confectie`)
+- Naamgeving: `totaal_status_gesneden` (enkel status) vs `totaal_gesneden` (voorbij snijfase)
+
+### Productie-flow
+- Nieuwe pagina `/snijplanning/productie/:rolId` voor productie per rol
+- Rol-visualisatie met correcte rotatie-inferentie (gedeelde utility)
+- "Rol gesneden" knop markeert alle stukken als gesneden via RPC `voltooi_snijplan_rol`
+- Sticker preview na het snijden
+- "Snijden" shortcut knop in accordion header
+- V1 aanname: hele rol wordt in één keer gesneden, geen partial cutting
+- Status-transitie V1: Gepland → Gesneden (tussenliggende "In productie" status niet gebruikt)
+
+### Stickers
+- Herontwerp met Floorpassion branding en QR-code (synchroon SVG, geen flash)
+- QR-codes dienen als tracking door het hele proces (snijden → confectie → inpak)
+- Bulk sticker print pagina `/snijplanning/stickers`
+- Per regel of bulk (hele groep/rol) printen
+- 2 stickers per stuk: tapijt + orderdossier
+
 ## 2026-04-09 — Op Maat configuratie-tabellen
 - Nieuwe tabel `maatwerk_vormen`: instelbare vormen met toeslag (rechthoek, rond, ovaal, organisch A/B)
 - Nieuwe tabel `afwerking_types`: instelbare afwerkingen met prijs (B, FE, LO, ON, SB, SF, VO, ZO)

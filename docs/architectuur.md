@@ -74,6 +74,8 @@ De `kwaliteit_code` (3-4 letters uit de karpi_code) is de spil tussen producten,
 /snijplanning              Snijplanning overzicht per week, gegroepeerd per kwaliteit+kleur
 /snijplanning/rol/:rolId   Snijvoorstel per rol (SVG strip-packing visualisatie)
 /snijplanning/voorstel/:voorstelId  Review pagina voor gegenereerd snijvoorstel (optimalisatie)
+/snijplanning/productie/:rolId  Productie-pagina per rol
+/snijplanning/stickers     Bulk sticker print (query params: kwaliteit, kleur, rol, status)
 /snijplanning/:id/stickers Sticker print weergave voor gesneden stukken
 /confectie                 Confectie overzicht: scan-gestuurd afwerkingsstatus
 /scanstation               Tablet-vriendelijk scaninterface voor barcode/QR inpak
@@ -124,6 +126,7 @@ Na het snijden maakt `maak_reststuk()` automatisch een nieuwe rol aan met status
 - `ScanInput`: herbruikbaar scan-invoer component (camera + handmatig)
 - Productie types: gedeelde TypeScript types voor snijplannen, confectie, scan events
 - Status kleuren: consistente kleurcodering per productie-status
+- `frontend/src/lib/utils/snijplan-mapping.ts` — Gedeelde rotatie-inferentie + plan-reconstructie
 
 ### Op Maat Module
 - Toggle "Standaard / Op maat" in order-line-editor
