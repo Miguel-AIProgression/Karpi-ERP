@@ -73,19 +73,41 @@ interface UnplacedPiece {
 // ---------------------------------------------------------------------------
 
 /**
- * Try to place a single piece on a roll using FFDH.
+ * Check of minstens één toekomstig stuk (in enige orientatie) past in een gat
+ * van `gapWidth` breed en `shelfHeight` hoog.
+ */
+function gapIsUseful(
+  gapWidth: number,
+  shelfHeight: number,
+  futurePieces: SnijplanPiece[],
+): boolean {
+  return futurePieces.some(p =>
+    (p.lengte_cm <= gapWidth && p.breedte_cm <= shelfHeight) ||
+    (p.breedte_cm <= gapWidth && p.lengte_cm <= shelfHeight)
+  )
+}
+
+/**
+ * Try to place a single piece on a roll using FFDH with lookahead scoring.
  *
  * Axes:
  *   X = across roll width (breedte)
  *   Y = along roll length (lengte)
  *
- * We try both orientations and pick the one with the best (tightest) fit.
+ * Scoring tiers (lower = better):
+ *   0: Perfect fit (remaining width = 0)
+ *   1: Existing shelf, gap fillable by future piece
+ *   2: New shelf, gap fillable by future piece
+ *   3: Existing shelf, unusable gap
+ *   4: New shelf, unusable gap
+ * Tiebreakers: least height waste, then least width waste.
  */
 function tryPlacePiece(
   piece: SnijplanPiece,
   shelves: Shelf[],
   rollWidth: number,
   rollLength: number,
+  futurePieces: SnijplanPiece[],
 ): Placement | null {
   // Two orientations to try
   const orientations: Array<{
@@ -98,18 +120,31 @@ function tryPlacePiece(
   ]
 
   let bestPlacement: Placement | null = null
-  let bestWaste = Infinity // remaining width after placement (lower = tighter fit)
+  let bestTier = Infinity
+  let bestHeightWaste = Infinity
+  let bestWidthWaste = Infinity
 
   for (const orient of orientations) {
     // Skip if piece wider than roll
     if (orient.w > rollWidth) continue
 
-    // 1. Try existing shelves (best-fit: least remaining width)
+    // 1. Try existing shelves
     for (const shelf of shelves) {
       if (orient.h <= shelf.height && shelf.usedWidth + orient.w <= shelf.maxWidth) {
         const remaining = shelf.maxWidth - shelf.usedWidth - orient.w
-        if (remaining < bestWaste) {
-          bestWaste = remaining
+        const heightWaste = shelf.height - orient.h
+        const tier = remaining === 0 ? 0
+          : gapIsUseful(remaining, shelf.height, futurePieces) ? 1
+          : 3
+
+        if (
+          tier < bestTier ||
+          (tier === bestTier && heightWaste < bestHeightWaste) ||
+          (tier === bestTier && heightWaste === bestHeightWaste && remaining < bestWidthWaste)
+        ) {
+          bestTier = tier
+          bestHeightWaste = heightWaste
+          bestWidthWaste = remaining
           bestPlacement = {
             snijplan_id: piece.id,
             positie_x_cm: shelf.usedWidth,
@@ -128,10 +163,20 @@ function tryPlacePiece(
       0,
     )
     if (totalShelfHeight + orient.h <= rollLength && orient.w <= rollWidth) {
-      // A new shelf always has full width remaining after placement
       const remaining = rollWidth - orient.w
-      if (remaining < bestWaste) {
-        bestWaste = remaining
+      const heightWaste = 0 // new shelf matches piece height exactly
+      const tier = remaining === 0 ? 0
+        : gapIsUseful(remaining, orient.h, futurePieces) ? 2
+        : 4
+
+      if (
+        tier < bestTier ||
+        (tier === bestTier && heightWaste < bestHeightWaste) ||
+        (tier === bestTier && heightWaste === bestHeightWaste && remaining < bestWidthWaste)
+      ) {
+        bestTier = tier
+        bestHeightWaste = heightWaste
+        bestWidthWaste = remaining
         bestPlacement = {
           snijplan_id: piece.id,
           positie_x_cm: 0,
@@ -159,12 +204,17 @@ function packRoll(
   const shelves: Shelf[] = []
   const placed: Placement[] = []
   const remaining: SnijplanPiece[] = []
+  const placedIds = new Set<number>()
 
-  for (const piece of pieces) {
-    const placement = tryPlacePiece(piece, shelves, rollWidth, rollLength)
+  for (let i = 0; i < pieces.length; i++) {
+    const piece = pieces[i]
+    // Lookahead: alleen toekomstige, nog niet geplaatste stukken
+    const futurePieces = pieces.slice(i + 1).filter(p => !placedIds.has(p.id))
+    const placement = tryPlacePiece(piece, shelves, rollWidth, rollLength, futurePieces)
 
     if (placement) {
       placed.push(placement)
+      placedIds.add(piece.id)
 
       // Update or create shelf
       const existingShelf = shelves.find(
