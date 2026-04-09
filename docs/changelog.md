@@ -1,5 +1,16 @@
 # Changelog — RugFlow ERP
 
+## 2026-04-09 — Op Maat configuratie-tabellen
+- Nieuwe tabel `maatwerk_vormen`: instelbare vormen met toeslag (rechthoek, rond, ovaal, organisch A/B)
+- Nieuwe tabel `afwerking_types`: instelbare afwerkingen met prijs (B, FE, LO, ON, SB, SF, VO, ZO)
+- Nieuwe tabel `kwaliteit_standaard_afwerking`: standaard afwerking per kwaliteit
+- Nieuwe tabel `maatwerk_m2_prijzen`: instelbare m²-prijs per kwaliteit/kleur (geseeded vanuit rollen)
+- Extra kolommen op `order_regels`: m²-prijs, kostprijs/m², oppervlak, vorm-toeslag, afwerking-prijs, diameter, kwaliteit_code, kleur_code
+- DROP CHECK constraint `order_regels_maatwerk_afwerking_check`, vervangen door FK naar `afwerking_types`
+- FK constraint `fk_order_regels_vorm` naar `maatwerk_vormen` (ON DELETE RESTRICT)
+- DB-functie `kleuren_voor_kwaliteit()` voor efficiënte kleur+prijs lookup
+- RLS policies voor alle 4 nieuwe tabellen
+
 ## 2026-04-08 — Productiestatus zichtbaar in order detail
 
 ### Frontend
