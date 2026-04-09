@@ -339,7 +339,7 @@ serve(async (req) => {
 
     // ---- Step 2: Sort pieces and rolls ----
 
-    // Pieces: descending by area (largest first = FFD)
+    // Pieces: descending by max dimension (widest first), then by area
     const pieces: SnijplanPiece[] = snijplannen.map((sp: Record<string, unknown>) => ({
       id: sp.id as number,
       lengte_cm: sp.snij_lengte_cm as number,
@@ -350,7 +350,12 @@ serve(async (req) => {
       afleverdatum: sp.afleverdatum as string | null,
       area_cm2: (sp.snij_lengte_cm as number) * (sp.snij_breedte_cm as number),
     }))
-    pieces.sort((a, b) => b.area_cm2 - a.area_cm2)
+    pieces.sort((a, b) => {
+      const maxA = Math.max(a.lengte_cm, a.breedte_cm)
+      const maxB = Math.max(b.lengte_cm, b.breedte_cm)
+      if (maxB !== maxA) return maxB - maxA  // widest first
+      return b.area_cm2 - a.area_cm2         // then by area
+    })
 
     // Build a lookup: snijplan_id -> maatwerk_vorm (for area calculations)
     const pieceVormMap = new Map<number, string | null>(

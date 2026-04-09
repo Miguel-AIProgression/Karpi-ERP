@@ -9,7 +9,18 @@ export async function generateSnijvoorstel(
   const { data, error } = await supabase.functions.invoke('optimaliseer-snijplan', {
     body: { kwaliteit_code: kwaliteitCode, kleur_code: kleurCode },
   })
-  if (error) throw error
+  if (error) {
+    // Extract actual error from response body (supabase-js puts Response in error.context)
+    let msg = error.message
+    try {
+      const ctx = (error as Record<string, unknown>).context
+      if (ctx instanceof Response) {
+        const body = await ctx.json()
+        if (body?.error) msg = body.error
+      }
+    } catch { /* fallback to generic message */ }
+    throw new Error(msg)
+  }
   return data as SnijvoorstelResponse
 }
 

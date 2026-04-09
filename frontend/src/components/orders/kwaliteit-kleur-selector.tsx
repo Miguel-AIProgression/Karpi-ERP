@@ -13,11 +13,14 @@ export interface KwaliteitKleurData {
   kwaliteitCode: string
   kwaliteitNaam: string
   kleurCode: string
+  kleurLabel: string              // display zonder '.0'
   kleurOmschrijving: string
   verkoopprijsM2: number
   kostprijsM2: number | null
   gewichtPerM2Kg: number | null
   maxBreedteCm: number | null
+  artikelnr: string | null        // rol-product voor koppeling
+  karpiCode: string | null
 }
 
 interface KwaliteitKleurSelectorProps {
@@ -82,13 +85,16 @@ export function KwaliteitKleurSelector({ onSelect }: KwaliteitKleurSelectorProps
 
     onSelect({
       kwaliteitCode: selectedKwaliteit.code,
-      kwaliteitNaam: selectedKwaliteit.omschrijving,
+      kwaliteitNaam: selectedKwaliteit.omschrijving ?? selectedKwaliteit.code,
       kleurCode: kleur.kleur_code,
+      kleurLabel: kleur.kleur_label,
       kleurOmschrijving: kleur.omschrijving,
       verkoopprijsM2: kleur.verkoopprijs_m2,
       kostprijsM2: kleur.kostprijs_m2,
       gewichtPerM2Kg: kleur.gewicht_per_m2_kg,
       maxBreedteCm: kleur.max_breedte_cm,
+      artikelnr: kleur.artikelnr,
+      karpiCode: kleur.karpi_code,
     })
   }
 
@@ -197,7 +203,7 @@ export function KwaliteitKleurSelector({ onSelect }: KwaliteitKleurSelectorProps
             </option>
             {(kleuren ?? []).map((kleur) => (
               <option key={kleur.kleur_code} value={kleur.kleur_code}>
-                {kleur.kleur_code} — {kleur.omschrijving}{' '}
+                {kleur.kleur_label ?? kleur.kleur_code} — {kleur.omschrijving}{' '}
                 ({kleur.verkoopprijs_m2 != null ? formatCurrency(kleur.verkoopprijs_m2) : '—'}/m²
                 {kleur.max_breedte_cm != null ? `, max ${kleur.max_breedte_cm} cm` : ''})
               </option>

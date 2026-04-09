@@ -29,11 +29,14 @@ interface OpMaatState {
   kwaliteitCode: string
   kwaliteitNaam: string
   kleurCode: string
+  kleurLabel: string
   kleurOmschrijving: string
   verkoopprijsM2: number
   kostprijsM2: number | null
   gewichtPerM2Kg: number | null
   maxBreedteCm: number | null
+  artikelnr: string | null
+  karpiCode: string | null
   // Vorm + afmeting (stap 2)
   vormCode: string
   lengteCm?: number
@@ -55,11 +58,14 @@ const initialState: OpMaatState = {
   kwaliteitCode: '',
   kwaliteitNaam: '',
   kleurCode: '',
+  kleurLabel: '',
   kleurOmschrijving: '',
   verkoopprijsM2: 0,
   kostprijsM2: null,
   gewichtPerM2Kg: null,
   maxBreedteCm: null,
+  artikelnr: null,
+  karpiCode: null,
   vormCode: '',
   lengteCm: undefined,
   breedteCm: undefined,
@@ -78,11 +84,14 @@ function reducer(state: OpMaatState, action: OpMaatAction): OpMaatState {
         kwaliteitCode: action.payload.kwaliteitCode,
         kwaliteitNaam: action.payload.kwaliteitNaam,
         kleurCode: action.payload.kleurCode,
+        kleurLabel: action.payload.kleurLabel,
         kleurOmschrijving: action.payload.kleurOmschrijving,
         verkoopprijsM2: action.payload.verkoopprijsM2,
         kostprijsM2: action.payload.kostprijsM2,
         gewichtPerM2Kg: action.payload.gewichtPerM2Kg,
         maxBreedteCm: action.payload.maxBreedteCm,
+        artikelnr: action.payload.artikelnr,
+        karpiCode: action.payload.karpiCode,
         step: 'vorm_afmeting',
       }
     case 'VORM_AFMETING_CHANGED':
@@ -165,9 +174,9 @@ export function OpMaatSelector({ defaultKorting, onAdd }: OpMaatSelectorProps) {
     if (!canAdd) return
 
     const line: OrderRegelFormData = {
-      artikelnr: undefined,
-      karpi_code: `${state.kwaliteitCode}-${state.kleurCode}`,
-      omschrijving: `${state.kwaliteitNaam} ${state.kleurCode} - Op maat ${selectedVorm?.naam ?? state.vormCode}`,
+      artikelnr: state.artikelnr ?? undefined,
+      karpi_code: state.karpiCode ?? `${state.kwaliteitCode}${state.kleurCode}`,
+      omschrijving: `${state.kwaliteitNaam} ${state.kleurLabel} - Op maat ${selectedVorm?.naam ?? state.vormCode}`,
       orderaantal: 1,
       te_leveren: 1,
       prijs: oppervlakM2 * state.verkoopprijsM2 + vormToeslag + afwerkingPrijs,

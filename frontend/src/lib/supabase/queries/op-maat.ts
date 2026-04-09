@@ -115,11 +115,14 @@ export async function fetchKwaliteiten(): Promise<KwaliteitOptie[]> {
 
 export interface KleurOptie {
   kleur_code: string
+  kleur_label: string           // display zonder '.0' (bijv. "11" ipv "11.0")
   omschrijving: string
   verkoopprijs_m2: number | null
   kostprijs_m2: number | null
   gewicht_per_m2_kg: number | null
   max_breedte_cm: number | null
+  artikelnr: string | null      // rol-product artikelnr voor koppeling
+  karpi_code: string | null     // rol-product karpi_code
 }
 
 export async function fetchKleurenVoorKwaliteit(kwaliteitCode: string): Promise<KleurOptie[]> {
