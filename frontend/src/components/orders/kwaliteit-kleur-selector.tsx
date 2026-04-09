@@ -201,13 +201,19 @@ export function KwaliteitKleurSelector({ onSelect }: KwaliteitKleurSelectorProps
                   ? 'Selecteer eerst een kwaliteit'
                   : `Selecteer een kleur (${(kleuren ?? []).length} beschikbaar)`}
             </option>
-            {(kleuren ?? []).map((kleur) => (
-              <option key={kleur.kleur_code} value={kleur.kleur_code}>
-                {kleur.kleur_label ?? kleur.kleur_code} — {kleur.omschrijving}{' '}
-                ({kleur.verkoopprijs_m2 != null ? formatCurrency(kleur.verkoopprijs_m2) : '—'}/m²
-                {kleur.max_breedte_cm != null ? `, max ${kleur.max_breedte_cm} cm` : ''})
-              </option>
-            ))}
+            {(kleuren ?? []).map((kleur) => {
+              const totaalM2 = (kleur.beschikbaar_m2 ?? 0) + (kleur.equiv_m2 ?? 0)
+              const totaalRollen = (kleur.aantal_rollen ?? 0) + (kleur.equiv_rollen ?? 0)
+              const heeftEquiv = (kleur.equiv_rollen ?? 0) > 0
+              return (
+                <option key={kleur.kleur_code} value={kleur.kleur_code}>
+                  {kleur.kleur_label ?? kleur.kleur_code} — {kleur.omschrijving}
+                  {' | '}{kleur.verkoopprijs_m2 != null ? formatCurrency(kleur.verkoopprijs_m2) : '—'}/m²
+                  {' | '}{kleur.aantal_rollen ?? 0} rol{(kleur.aantal_rollen ?? 0) !== 1 ? 'len' : ''} ({kleur.beschikbaar_m2 ?? 0} m²)
+                  {heeftEquiv ? ` +${kleur.equiv_rollen} equiv (${kleur.equiv_m2} m²)` : ''}
+                </option>
+              )
+            })}
           </select>
         )}
       </div>

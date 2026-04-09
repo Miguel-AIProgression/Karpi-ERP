@@ -123,6 +123,10 @@ export interface KleurOptie {
   max_breedte_cm: number | null
   artikelnr: string | null      // rol-product artikelnr voor koppeling
   karpi_code: string | null     // rol-product karpi_code
+  aantal_rollen: number         // beschikbare eigen rollen
+  beschikbaar_m2: number        // totaal m² eigen rollen
+  equiv_rollen: number          // rollen van uitwisselbare kwaliteiten
+  equiv_m2: number              // m² van uitwisselbare rollen
 }
 
 export async function fetchKleurenVoorKwaliteit(kwaliteitCode: string): Promise<KleurOptie[]> {
