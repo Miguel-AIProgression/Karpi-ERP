@@ -119,7 +119,6 @@ function RolVisualisatie({
               boxShadow: isHovered
                 ? `inset 0 0 0 2px ${color.border}, 0 4px 12px rgba(0,0,0,0.15)`
                 : `inset 0 0 0 2px ${color.border}`,
-              boxSizing: 'content-box',
             }}
             onMouseEnter={() => setHover(i)}
             onMouseLeave={() => setHover(null)}
