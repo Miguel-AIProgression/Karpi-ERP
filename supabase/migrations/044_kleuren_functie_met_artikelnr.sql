@@ -24,12 +24,20 @@ RETURNS TABLE(
       WHEN mp.kleur_code LIKE '%.0' THEN LEFT(mp.kleur_code, LENGTH(mp.kleur_code) - 2)
       ELSE mp.kleur_code
     END AS kleur_label,
-    MIN(p.omschrijving) AS omschrijving,
+    -- Gebruik rol-product omschrijving (niet het vaste product)
+    COALESCE(
+      (SELECT pr.omschrijving FROM producten pr
+       WHERE pr.kwaliteit_code = mp.kwaliteit_code
+         AND pr.kleur_code = mp.kleur_code
+         AND pr.product_type = 'rol'
+         AND pr.actief = true
+       LIMIT 1),
+      MIN(p.omschrijving)
+    ) AS omschrijving,
     mp.verkoopprijs_m2,
     mp.kostprijs_m2,
     mp.gewicht_per_m2_kg,
     mp.max_breedte_cm,
-    -- Zoek het rol-product voor deze kwaliteit+kleur (voor artikelnr koppeling)
     (SELECT pr.artikelnr FROM producten pr
      WHERE pr.kwaliteit_code = mp.kwaliteit_code
        AND pr.kleur_code = mp.kleur_code
