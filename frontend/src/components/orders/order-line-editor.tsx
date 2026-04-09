@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { Trash2 } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils/formatters'
+import { berekenPrijsOppervlakM2, berekenMaatwerkPrijs } from '@/lib/utils/maatwerk-prijs'
 import { AFWERKING_OPTIES } from '@/lib/utils/constants'
 import { ArticleSelector } from './article-selector'
 import { ProductTypeToggle } from './product-type-toggle'
@@ -245,6 +246,21 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, onArticleSele
     const updated = lines.map((l, i) => {
       if (i !== index) return l
       const merged = { ...l, ...updates }
+
+      // Herbereken m²-prijs bij maatwerk wanneer afmetingen/vorm veranderen
+      if (merged.is_maatwerk && merged.maatwerk_m2_prijs) {
+        const oppervlak = berekenPrijsOppervlakM2(
+          merged.maatwerk_vorm ?? 'rechthoek',
+          merged.maatwerk_lengte_cm,
+          merged.maatwerk_breedte_cm,
+          merged.maatwerk_diameter_cm,
+        )
+        merged.maatwerk_oppervlak_m2 = oppervlak
+        merged.prijs = oppervlak * merged.maatwerk_m2_prijs
+          + (merged.maatwerk_vorm_toeslag ?? 0)
+          + (merged.maatwerk_afwerking_prijs ?? 0)
+      }
+
       merged.bedrag = calcBedrag(merged)
       return merged
     })
