@@ -1,8 +1,11 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { Trash2 } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils/formatters'
 import { AFWERKING_OPTIES } from '@/lib/utils/constants'
 import { ArticleSelector } from './article-selector'
+import { ProductTypeToggle } from './product-type-toggle'
+import { OpMaatSelector } from './op-maat-selector'
+import { getVormDisplay } from '@/lib/utils/vorm-labels'
 import type { SelectedArticle, SubstitutionInfo } from './article-selector'
 import type { OrderRegelFormData } from '@/lib/supabase/queries/order-mutations'
 import { SHIPPING_PRODUCT_ID } from '@/lib/constants/shipping'
@@ -158,9 +161,10 @@ function MaatwerkLineRow({
                   onChange={(e) => updateLine(index, { maatwerk_vorm: e.target.value })}
                   className={selectClass}
                 >
-                  <option value="rechthoek">Rechthoek</option>
-                  <option value="rond">Rond</option>
-                  <option value="ovaal">Ovaal</option>
+                  {['rechthoek', 'rond', 'ovaal', 'organisch_a', 'organisch_b_sp'].map(code => {
+                    const display = getVormDisplay(code)
+                    return <option key={code} value={code}>{display.label}</option>
+                  })}
                 </select>
               </label>
 
@@ -209,6 +213,14 @@ function MaatwerkLineRow({
                   placeholder="Extra instructies..."
                 />
               </label>
+
+              {line.maatwerk_m2_prijs != null && line.maatwerk_m2_prijs > 0 && (
+                <span className="text-purple-600 font-medium">
+                  {line.maatwerk_oppervlak_m2?.toFixed(2)} m² x {formatCurrency(line.maatwerk_m2_prijs)}/m²
+                  {(line.maatwerk_vorm_toeslag ?? 0) > 0 && ` + ${formatCurrency(line.maatwerk_vorm_toeslag!)} vorm`}
+                  {(line.maatwerk_afwerking_prijs ?? 0) > 0 && ` + ${formatCurrency(line.maatwerk_afwerking_prijs!)} afwerking`}
+                </span>
+              )}
             </div>
           </td>
         </tr>
@@ -218,6 +230,7 @@ function MaatwerkLineRow({
 }
 
 export function OrderLineEditor({ lines, onChange, defaultKorting, onArticleSelected }: OrderLineEditorProps) {
+  const [productType, setProductType] = useState<'standaard' | 'op_maat'>('standaard')
   const keyCounter = useRef(0)
   const lineKeys = useRef<Map<number, string>>(new Map())
 
@@ -278,6 +291,12 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, onArticleSele
     const isMaatwerk = article.product_type === 'rol'
       || /MAATWERK|BREED/i.test(article.artikelnr)
 
+    if (isMaatwerk) {
+      // Redirect naar op-maat flow — gebruiker kiest daar kwaliteit/kleur/vorm/afmeting
+      setProductType('op_maat')
+      return
+    }
+
     const newLine: OrderRegelFormData = {
       artikelnr: article.artikelnr,
       karpi_code: article.karpi_code ?? undefined,
@@ -297,8 +316,7 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, onArticleSele
       fysiek_omschrijving: substitution?.fysiek_omschrijving,
       omstickeren: substitution?.omstickeren,
       // Maatwerk
-      is_maatwerk: isMaatwerk,
-      maatwerk_vorm: isMaatwerk ? 'rechthoek' : undefined,
+      is_maatwerk: false,
     }
     newLine.bedrag = calcBedrag(newLine)
     onChange([...lines, newLine])
@@ -322,9 +340,20 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, onArticleSele
         </span>
       </div>
 
-      {/* Add article */}
-      <div className="px-5 py-3 border-b border-slate-100">
-        <ArticleSelector onSelect={addArticle} />
+      {/* Product type keuze + invoer */}
+      <div className="px-5 py-3 border-b border-slate-100 space-y-3">
+        <ProductTypeToggle value={productType} onChange={setProductType} />
+        {productType === 'standaard' ? (
+          <ArticleSelector onSelect={addArticle} />
+        ) : (
+          <OpMaatSelector
+            defaultKorting={defaultKorting}
+            onAdd={(line) => {
+              onChange([...lines, line])
+              setProductType('standaard')  // Reset na toevoegen
+            }}
+          />
+        )}
       </div>
 
       {/* Lines table */}
