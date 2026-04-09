@@ -149,8 +149,11 @@ export function SnijVisualisatie({
           const color = orderColor(stuk.order_nr)
           const px = PADDING + stuk.x_cm
           const py = PADDING + stuk.y_cm
-          const labelSize = Math.min(10, stuk.breedte_cm * 0.08, stuk.lengte_cm * 0.12)
-          const showLabels = stuk.breedte_cm > 30 && stuk.lengte_cm > 20
+          // lengte_cm = X dimension (across roll width), breedte_cm = Y dimension (along roll length)
+          const w = stuk.lengte_cm   // SVG width = X extent
+          const h = stuk.breedte_cm  // SVG height = Y extent
+          const labelSize = Math.min(10, w * 0.08, h * 0.12)
+          const showLabels = w > 30 && h > 20
 
           return (
             <g
@@ -169,10 +172,10 @@ export function SnijVisualisatie({
             >
               {isRondeVorm(stuk.vorm) ? (
                 <ellipse
-                  cx={px + stuk.breedte_cm / 2}
-                  cy={py + stuk.lengte_cm / 2}
-                  rx={stuk.breedte_cm / 2}
-                  ry={stuk.lengte_cm / 2}
+                  cx={px + w / 2}
+                  cy={py + h / 2}
+                  rx={w / 2}
+                  ry={h / 2}
                   fill={color}
                   fillOpacity={0.25}
                   stroke={color}
@@ -182,8 +185,8 @@ export function SnijVisualisatie({
                 <rect
                   x={px}
                   y={py}
-                  width={stuk.breedte_cm}
-                  height={stuk.lengte_cm}
+                  width={w}
+                  height={h}
                   fill={color}
                   fillOpacity={0.25}
                   stroke="white"
@@ -198,7 +201,7 @@ export function SnijVisualisatie({
                   x={px}
                   y={py}
                   width={3}
-                  height={stuk.lengte_cm}
+                  height={h}
                   fill={color}
                   rx={1}
                 />
@@ -208,19 +211,19 @@ export function SnijVisualisatie({
               {showLabels && (
                 <>
                   <text
-                    x={px + stuk.breedte_cm / 2}
-                    y={py + stuk.lengte_cm / 2 - labelSize * 0.4}
+                    x={px + w / 2}
+                    y={py + h / 2 - labelSize * 0.4}
                     textAnchor="middle"
                     dominantBaseline="central"
                     fontSize={labelSize}
                     fontWeight={600}
                     fill="#1e293b"
                   >
-                    {stuk.breedte_cm}x{stuk.lengte_cm}
+                    {w}x{h}
                   </text>
                   <text
-                    x={px + stuk.breedte_cm / 2}
-                    y={py + stuk.lengte_cm / 2 + labelSize * 0.8}
+                    x={px + w / 2}
+                    y={py + h / 2 + labelSize * 0.8}
                     textAnchor="middle"
                     dominantBaseline="central"
                     fontSize={Math.max(7, labelSize * 0.75)}
@@ -336,7 +339,7 @@ export function SnijVisualisatie({
               {tooltip.stuk.klant_naam}
             </text>
             <text x={tooltip.x + 14} y={tooltip.y - 10} fontSize={8} fill="#475569">
-              {tooltip.stuk.breedte_cm}x{tooltip.stuk.lengte_cm} cm
+              {tooltip.stuk.lengte_cm}x{tooltip.stuk.breedte_cm} cm
               {tooltip.stuk.vorm !== 'rechthoek' ? ` (${tooltip.stuk.vorm})` : ''}
             </text>
             <text x={tooltip.x + 14} y={tooltip.y + 2} fontSize={8} fill="#94a3b8">
