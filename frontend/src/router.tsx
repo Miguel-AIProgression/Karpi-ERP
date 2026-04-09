@@ -19,6 +19,7 @@ import { PrijslijstDetailPage } from '@/pages/prijslijsten/prijslijst-detail'
 import { SnijplanningOverviewPage } from '@/pages/snijplanning/snijplanning-overview'
 import { RolSnijvoorstelPage } from '@/pages/snijplanning/rol-snijvoorstel'
 import { StickerPrintPage } from '@/pages/snijplanning/sticker-print'
+import { StickersBulkPage } from '@/pages/snijplanning/stickers-bulk'
 import { SnijvoorstelReviewPage } from '@/pages/snijplanning/snijvoorstel-review'
 import { ProductieInstellingenPage } from '@/pages/instellingen/productie-instellingen'
 import { ConfectieOverviewPage } from '@/pages/confectie/confectie-overview'
@@ -64,6 +65,7 @@ export const router = createBrowserRouter([
       { path: 'snijplanning/rol/:rolId', element: <RolSnijvoorstelPage /> },
       { path: 'snijplanning/voorstel/:voorstelId', element: <SnijvoorstelReviewPage /> },
       { path: 'snijplanning/:id/stickers', element: <StickerPrintPage /> },
+      { path: 'snijplanning/stickers', element: <StickersBulkPage /> },
       { path: 'confectie', element: <ConfectieOverviewPage /> },
       { path: 'pick-ship', element: <PlaceholderPage title="Pick & Ship" /> },
       { path: 'logistiek', element: <PlaceholderPage title="Logistiek" /> },
