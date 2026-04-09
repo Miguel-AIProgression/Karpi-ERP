@@ -1,5 +1,10 @@
 # Changelog — RugFlow ERP
 
+### 2026-04-09 — Snijplanning week-filter
+- **Wat:** Leverdatum-filter toegevoegd aan snijplanning overzicht — filtert op week-niveau (deze week, 1-4 weken vooruit)
+- **Waarom:** Planning op basis van leverdata — focus op urgente orders ipv heel de backlog
+- **Impact:** Nieuwe RPC functies `snijplanning_groepen_gefilterd` en `snijplanning_status_counts_gefilterd`, week-filter component, edge function accepteert `tot_datum`
+
 ## 2026-04-09 — Snijplanning productie workflow
 
 ### Tab-filtering
