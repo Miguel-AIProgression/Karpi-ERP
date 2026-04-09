@@ -43,6 +43,7 @@ export interface SnijplanRow {
   gesneden_op: string | null
   gesneden_door: string | null
   // Rol info
+  rol_id: number | null
   rolnummer: string | null
   kwaliteit_code: string | null
   kleur_code: string | null

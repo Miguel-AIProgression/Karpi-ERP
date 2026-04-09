@@ -19,6 +19,12 @@ export interface SnijGroepSummary {
   totaal_m2: number
   totaal_gesneden: number
   vroegste_afleverdatum: string | null
+  totaal_gepland: number
+  totaal_wacht: number
+  totaal_in_productie: number
+  totaal_status_gesneden: number
+  totaal_in_confectie: number
+  totaal_gereed: number
 }
 
 /** Fetch grouped summaries (313 rows instead of 2167) */
