@@ -37,6 +37,10 @@ interface OpMaatState {
   maxBreedteCm: number | null
   artikelnr: string | null
   karpiCode: string | null
+  aantalRollen: number
+  beschikbaarM2: number
+  equivRollen: number
+  equivM2: number
   // Vorm + afmeting (stap 2)
   vormCode: string
   lengteCm?: number
@@ -66,6 +70,10 @@ const initialState: OpMaatState = {
   maxBreedteCm: null,
   artikelnr: null,
   karpiCode: null,
+  aantalRollen: 0,
+  beschikbaarM2: 0,
+  equivRollen: 0,
+  equivM2: 0,
   vormCode: '',
   lengteCm: undefined,
   breedteCm: undefined,
@@ -92,6 +100,10 @@ function reducer(state: OpMaatState, action: OpMaatAction): OpMaatState {
         maxBreedteCm: action.payload.maxBreedteCm,
         artikelnr: action.payload.artikelnr,
         karpiCode: action.payload.karpiCode,
+        aantalRollen: action.payload.aantalRollen,
+        beschikbaarM2: action.payload.beschikbaarM2,
+        equivRollen: action.payload.equivRollen,
+        equivM2: action.payload.equivM2,
         step: 'vorm_afmeting',
       }
     case 'VORM_AFMETING_CHANGED':
@@ -173,6 +185,9 @@ export function OpMaatSelector({ defaultKorting, onAdd }: OpMaatSelectorProps) {
   function handleAdd() {
     if (!canAdd) return
 
+    const totalRollen = state.aantalRollen + state.equivRollen
+    const totalM2 = state.beschikbaarM2 + state.equivM2
+
     const line: OrderRegelFormData = {
       artikelnr: state.artikelnr ?? undefined,
       karpi_code: state.karpiCode ?? `${state.kwaliteitCode}${state.kleurCode}`,
@@ -183,6 +198,8 @@ export function OpMaatSelector({ defaultKorting, onAdd }: OpMaatSelectorProps) {
       korting_pct: defaultKorting,
       bedrag: totaalPrijs,
       gewicht_kg: berekenMaatwerkGewicht(oppervlakM2, state.gewichtPerM2Kg),
+      vrije_voorraad: totalRollen,
+      besteld_inkoop: state.equivRollen > 0 ? state.equivRollen : 0,
       is_maatwerk: true,
       maatwerk_vorm: state.vormCode,
       maatwerk_lengte_cm: isDiameter ? state.diameterCm : state.lengteCm,

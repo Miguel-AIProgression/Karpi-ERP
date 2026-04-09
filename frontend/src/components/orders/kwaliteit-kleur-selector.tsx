@@ -21,6 +21,10 @@ export interface KwaliteitKleurData {
   maxBreedteCm: number | null
   artikelnr: string | null        // rol-product voor koppeling
   karpiCode: string | null
+  aantalRollen: number
+  beschikbaarM2: number
+  equivRollen: number
+  equivM2: number
 }
 
 interface KwaliteitKleurSelectorProps {
@@ -95,6 +99,10 @@ export function KwaliteitKleurSelector({ onSelect }: KwaliteitKleurSelectorProps
       maxBreedteCm: kleur.max_breedte_cm,
       artikelnr: kleur.artikelnr,
       karpiCode: kleur.karpi_code,
+      aantalRollen: kleur.aantal_rollen ?? 0,
+      beschikbaarM2: kleur.beschikbaar_m2 ?? 0,
+      equivRollen: kleur.equiv_rollen ?? 0,
+      equivM2: kleur.equiv_m2 ?? 0,
     })
   }
 

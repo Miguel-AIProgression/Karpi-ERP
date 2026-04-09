@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useSearchParams, Link } from 'react-router-dom'
-import { ArrowLeft, Scissors, Printer, CheckCircle2, Loader2 } from 'lucide-react'
+import { ArrowLeft, Scissors, Printer, CheckCircle2, Loader2, ChevronDown, ChevronRight } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { SnijVisualisatie } from '@/components/snijplanning/snij-visualisatie'
 import { useSnijplannenVoorGroep, useVoltooiSnijplanRol } from '@/hooks/use-snijplanning'
