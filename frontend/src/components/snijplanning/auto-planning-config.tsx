@@ -3,15 +3,6 @@ import { Zap, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { useAutoplanningConfig, useUpdateAutoplanningConfig } from '@/hooks/use-snijplanning'
 
-const HORIZON_OPTIONS = [
-  { label: '2 weken', weken: 2 },
-  { label: '4 weken', weken: 4 },
-  { label: '6 weken', weken: 6 },
-  { label: '8 weken', weken: 8 },
-  { label: '10 weken', weken: 10 },
-  { label: '12 weken', weken: 12 },
-]
-
 export function AutoPlanningConfig() {
   const { data: config, isLoading } = useAutoplanningConfig()
   const updateConfig = useUpdateAutoplanningConfig()
@@ -30,11 +21,6 @@ export function AutoPlanningConfig() {
     const newEnabled = !enabled
     setEnabled(newEnabled)
     updateConfig.mutate({ enabled: newEnabled, horizon_weken: horizonWeken })
-  }
-
-  const handleHorizonChange = (weken: number) => {
-    setHorizonWeken(weken)
-    updateConfig.mutate({ enabled, horizon_weken: weken })
   }
 
   if (isLoading) return null

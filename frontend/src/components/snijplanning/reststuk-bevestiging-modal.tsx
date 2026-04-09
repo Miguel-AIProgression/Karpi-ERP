@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CheckCircle2, XCircle, Printer, Package } from 'lucide-react'
+import { XCircle, Printer, Package } from 'lucide-react'
 
 interface ReststukBevestigingModalProps {
   berekendeLengte: number
