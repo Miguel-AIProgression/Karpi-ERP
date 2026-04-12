@@ -111,6 +111,30 @@ export async function fetchKwaliteiten(): Promise<KwaliteitOptie[]> {
   return data ?? []
 }
 
+/** Zoek kwaliteiten via productnamen — vindt "CISC" bij zoekterm "cisco" */
+export async function searchKwaliteitenViaProducten(term: string): Promise<KwaliteitOptie[]> {
+  const { data, error } = await supabase
+    .from('producten')
+    .select('kwaliteit_code, kwaliteiten!inner(code, omschrijving)')
+    .ilike('omschrijving', `%${term}%`)
+    .eq('actief', true)
+    .not('kwaliteit_code', 'is', null)
+    .limit(200)
+  if (error) throw error
+
+  // Dedupliceer op kwaliteit_code
+  const seen = new Set<string>()
+  const result: KwaliteitOptie[] = []
+  for (const row of data ?? []) {
+    const k = row.kwaliteiten as unknown as { code: string; omschrijving: string }
+    if (k?.code && !seen.has(k.code)) {
+      seen.add(k.code)
+      result.push({ code: k.code, omschrijving: k.omschrijving })
+    }
+  }
+  return result.sort((a, b) => a.code.localeCompare(b.code)).slice(0, 30)
+}
+
 // === Kleuren via DB-functie (één query, geen client-side join) ===
 
 export interface KleurOptie {
@@ -123,8 +147,9 @@ export interface KleurOptie {
   max_breedte_cm: number | null
   artikelnr: string | null      // rol-product artikelnr voor koppeling
   karpi_code: string | null     // rol-product karpi_code
-  aantal_rollen: number         // beschikbare eigen rollen
-  beschikbaar_m2: number        // totaal m² eigen rollen
+  aantal_rollen: number         // eigen rollen met status 'beschikbaar'
+  beschikbaar_m2: number        // vrij m² (alleen status 'beschikbaar')
+  totaal_m2: number             // totaal fysiek aanwezig m² (excl. gesneden/verkocht)
   equiv_rollen: number          // rollen van uitwisselbare kwaliteiten
   equiv_m2: number              // m² van uitwisselbare rollen
 }
@@ -135,4 +160,31 @@ export async function fetchKleurenVoorKwaliteit(kwaliteitCode: string): Promise<
   })
   if (error) throw error
   return (data ?? []) as KleurOptie[]
+}
+
+// === Standaard maten per kwaliteit ===
+
+export interface StandaardMaat {
+  artikelnr: string
+  karpi_code: string | null
+  omschrijving: string
+  verkoopprijs: number | null
+  gewicht_kg: number | null
+  vrije_voorraad: number
+  besteld_inkoop: number
+  kwaliteit_code: string | null
+  kleur_code: string | null
+  product_type: string | null
+}
+
+export async function fetchStandaardMatenVoorKwaliteit(kwaliteitCode: string): Promise<StandaardMaat[]> {
+  const { data, error } = await supabase
+    .from('producten')
+    .select('artikelnr, karpi_code, omschrijving, verkoopprijs, gewicht_kg, vrije_voorraad, besteld_inkoop, kwaliteit_code, kleur_code, product_type')
+    .eq('kwaliteit_code', kwaliteitCode)
+    .eq('actief', true)
+    .not('product_type', 'in', '("rol","staaltje")')
+    .order('omschrijving')
+  if (error) throw error
+  return (data ?? []) as StandaardMaat[]
 }

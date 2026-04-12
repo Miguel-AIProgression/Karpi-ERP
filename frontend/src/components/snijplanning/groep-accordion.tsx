@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronDown, ChevronRight, Printer, Scissors, Loader2, Eye } from 'lucide-react'
+import { formatDate } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
 import { AFWERKING_MAP } from '@/lib/utils/constants'
 import { getVormDisplay } from '@/lib/utils/vorm-labels'
@@ -214,6 +215,7 @@ export function GroepAccordion({
                   <th className="py-2 pr-3">Vorm</th>
                   <th className="py-2 pr-3">Klant</th>
                   <th className="py-2 pr-3">Order</th>
+                  <th className="py-2 pr-3">Leverdatum</th>
                   <th className="py-2 pr-3">Afwerking</th>
                   <th className="py-2 pr-3">Status</th>
                 </tr>
@@ -281,6 +283,13 @@ function StukRow({ stuk }: { stuk: SnijplanRow }) {
         <Link to={`/orders/${stuk.order_id}`} className="text-terracotta-600 hover:underline">
           {stuk.order_nr}
         </Link>
+      </td>
+      <td className="py-2 pr-3">
+        {stuk.afleverdatum ? (
+          <span className="text-sm text-slate-700">{formatDate(stuk.afleverdatum)}</span>
+        ) : (
+          <span className="text-slate-300">—</span>
+        )}
       </td>
       <td className="py-2 pr-3">
         {stuk.maatwerk_afwerking && AFWERKING_MAP[stuk.maatwerk_afwerking] ? (

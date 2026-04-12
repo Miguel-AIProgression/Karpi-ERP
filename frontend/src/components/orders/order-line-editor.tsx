@@ -1,11 +1,9 @@
-import { useRef, useState } from 'react'
+import { useRef } from 'react'
 import { Trash2 } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils/formatters'
 import { berekenPrijsOppervlakM2 } from '@/lib/utils/maatwerk-prijs'
 import { AFWERKING_OPTIES } from '@/lib/utils/constants'
-import { ArticleSelector } from './article-selector'
-import { ProductTypeToggle } from './product-type-toggle'
-import { OpMaatSelector } from './op-maat-selector'
+import { KwaliteitFirstSelector } from './kwaliteit-first-selector'
 import { getVormDisplay } from '@/lib/utils/vorm-labels'
 import type { SelectedArticle, SubstitutionInfo } from './article-selector'
 import type { OrderRegelFormData } from '@/lib/supabase/queries/order-mutations'
@@ -244,7 +242,6 @@ function MaatwerkLineRow({
 }
 
 export function OrderLineEditor({ lines, onChange, defaultKorting, onArticleSelected }: OrderLineEditorProps) {
-  const [productType, setProductType] = useState<'standaard' | 'op_maat'>('standaard')
   const keyCounter = useRef(0)
   const lineKeys = useRef<Map<number, string>>(new Map())
 
@@ -317,15 +314,6 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, onArticleSele
       }
     }
 
-    const isMaatwerk = article.product_type === 'rol'
-      || /MAATWERK|BREED/i.test(article.artikelnr)
-
-    if (isMaatwerk) {
-      // Redirect naar op-maat flow — gebruiker kiest daar kwaliteit/kleur/vorm/afmeting
-      setProductType('op_maat')
-      return
-    }
-
     const newLine: OrderRegelFormData = {
       artikelnr: article.artikelnr,
       karpi_code: article.karpi_code ?? undefined,
@@ -369,20 +357,13 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, onArticleSele
         </span>
       </div>
 
-      {/* Product type keuze + invoer */}
-      <div className="px-5 py-3 border-b border-slate-100 space-y-3">
-        <ProductTypeToggle value={productType} onChange={setProductType} />
-        {productType === 'standaard' ? (
-          <ArticleSelector onSelect={addArticle} />
-        ) : (
-          <OpMaatSelector
-            defaultKorting={defaultKorting}
-            onAdd={(line) => {
-              onChange([...lines, line])
-              setProductType('standaard')  // Reset na toevoegen
-            }}
-          />
-        )}
+      {/* Artikel toevoegen */}
+      <div className="px-5 py-3 border-b border-slate-100">
+        <KwaliteitFirstSelector
+          defaultKorting={defaultKorting}
+          onSelectArticle={addArticle}
+          onAddMaatwerk={(line) => onChange([...lines, line])}
+        />
       </div>
 
       {/* Lines table */}

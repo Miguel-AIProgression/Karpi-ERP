@@ -163,8 +163,8 @@ export async function fetchOrderDetail(id: number): Promise<OrderDetail> {
     }
   }
 
-  // Use order's vertegenw_code, fallback to customer's vertegenw_code
-  const effectiveCode = (order.vertegenw_code as string | null) || klant_vertegenw_code
+  // Gebruik altijd de vertegenw_code van de klant (actueel); fallback op de order zelf
+  const effectiveCode = klant_vertegenw_code || (order.vertegenw_code as string | null)
   let vertegenw_naam: string | undefined
   if (effectiveCode) {
     const { data: vtw } = await supabase
