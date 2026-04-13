@@ -19,9 +19,8 @@ export interface SnijGroepSummary {
   totaal_m2: number
   totaal_gesneden: number
   vroegste_afleverdatum: string | null
-  totaal_gepland: number
-  totaal_wacht: number
-  totaal_in_productie: number
+  totaal_snijden: number
+  totaal_snijden_gepland: number
   totaal_status_gesneden: number
   totaal_in_confectie: number
   totaal_gereed: number
@@ -72,6 +71,7 @@ export async function fetchSnijplannenVoorGroep(
     .select('*')
     .eq('kwaliteit_code', kwaliteitCode)
     .in('kleur_code', kleurVariants)
+    .eq('status', 'Snijden')
     .order('afleverdatum', { ascending: true, nullsFirst: false })
 
   if (totDatum) {
@@ -203,6 +203,19 @@ export async function fetchBeschikbareRollen(kwaliteitCode: string, kleurCode: s
     status: string
     locatie: string | null
   }[]
+}
+
+/** Fetch all snijplannen for the confectielijst (status Gesneden/In confectie/Gereed),
+ *  ordered by afwerking then delivery date */
+export async function fetchConfectielijst(): Promise<SnijplanRow[]> {
+  const { data, error } = await supabase
+    .from('snijplanning_overzicht')
+    .select('*')
+    .in('status', ['Gesneden', 'In confectie', 'Gereed'])
+    .order('maatwerk_afwerking', { ascending: true, nullsFirst: true })
+    .order('afleverdatum', { ascending: true, nullsFirst: false })
+  if (error) throw error
+  return (data ?? []) as SnijplanRow[]
 }
 
 /** Fetch productie dashboard stats */

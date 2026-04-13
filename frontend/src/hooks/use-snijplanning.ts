@@ -8,6 +8,7 @@ import {
   fetchRolSnijstukken,
   fetchBeschikbareRollen,
   fetchProductieDashboard,
+  fetchConfectielijst,
 } from '@/lib/supabase/queries/snijplanning'
 import type { SnijplanSortField, SortDirection } from '@/lib/supabase/queries/snijplanning'
 import {
@@ -72,6 +73,13 @@ export function useSnijplannenVoorGroep(
     queryKey: ['snijplanning', 'groep', kwaliteitCode, kleurCode, totDatum],
     queryFn: () => fetchSnijplannenVoorGroep(kwaliteitCode, kleurCode, totDatum),
     enabled,
+  })
+}
+
+export function useConfectielijst() {
+  return useQuery({
+    queryKey: ['snijplanning', 'confectielijst'],
+    queryFn: fetchConfectielijst,
   })
 }
 

@@ -56,9 +56,11 @@ export async function triggerAutoplan(
     let msg = error.message
     try {
       const ctx = (error as Record<string, unknown>).context
-      if (ctx instanceof Response) {
-        const body = await ctx.json()
-        if (body?.error) msg = body.error
+      const resp = ctx as Response
+      if (resp?.json) {
+        const parsed = await resp.json()
+        if (parsed?.error) msg = parsed.error
+        else msg = JSON.stringify(parsed)
       }
     } catch { /* fallback */ }
     throw new Error(msg)

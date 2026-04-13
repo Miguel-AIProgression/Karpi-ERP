@@ -111,6 +111,45 @@ export async function fetchKwaliteiten(): Promise<KwaliteitOptie[]> {
   return data ?? []
 }
 
+/**
+ * Zoek het maatwerk-artikel (overig-type) voor een kwaliteit+kleur.
+ * Probeert meerdere strategieën per kleurvariant (bijv. '16' en '16.0'):
+ * 1. product_type='overig' (import-logica: geen BREED of CA: → overig)
+ * 2. karpi_code bevat 'maatwerk'
+ * 3. omschrijving bevat 'maatwerk'
+ */
+export async function fetchMaatwerkArtikelNr(kwaliteitCode: string, kleurCode: string): Promise<string | null> {
+  const normKleur = kleurCode.replace(/\.0$/, '')
+  const kleurVariants = Array.from(new Set([kleurCode, normKleur]))
+
+  for (const kc of kleurVariants) {
+    // Strategie 1: product_type = 'overig'
+    const { data: d1 } = await supabase
+      .from('producten').select('artikelnr')
+      .eq('kwaliteit_code', kwaliteitCode).eq('kleur_code', kc)
+      .eq('actief', true).eq('product_type', 'overig')
+      .limit(1).maybeSingle()
+    if (d1?.artikelnr) return d1.artikelnr
+
+    // Strategie 2: karpi_code bevat 'maatwerk'
+    const { data: d2 } = await supabase
+      .from('producten').select('artikelnr')
+      .eq('kwaliteit_code', kwaliteitCode).eq('kleur_code', kc)
+      .eq('actief', true).ilike('karpi_code', '%maatwerk%')
+      .limit(1).maybeSingle()
+    if (d2?.artikelnr) return d2.artikelnr
+
+    // Strategie 3: omschrijving bevat 'maatwerk'
+    const { data: d3 } = await supabase
+      .from('producten').select('artikelnr')
+      .eq('kwaliteit_code', kwaliteitCode).eq('kleur_code', kc)
+      .eq('actief', true).ilike('omschrijving', '%maatwerk%')
+      .limit(1).maybeSingle()
+    if (d3?.artikelnr) return d3.artikelnr
+  }
+  return null
+}
+
 /** Zoek kwaliteiten via productnamen — vindt "CISC" bij zoekterm "cisco" */
 export async function searchKwaliteitenViaProducten(term: string): Promise<KwaliteitOptie[]> {
   const { data, error } = await supabase

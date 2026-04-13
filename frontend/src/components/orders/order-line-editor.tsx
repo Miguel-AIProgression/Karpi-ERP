@@ -13,6 +13,7 @@ interface OrderLineEditorProps {
   lines: OrderRegelFormData[]
   onChange: (lines: OrderRegelFormData[]) => void
   defaultKorting: number
+  prijslijstNr?: string
   onArticleSelected?: (article: SelectedArticle) => Promise<{
     prijs: number | null
     klant_eigen_naam?: string | null
@@ -241,7 +242,7 @@ function MaatwerkLineRow({
   )
 }
 
-export function OrderLineEditor({ lines, onChange, defaultKorting, onArticleSelected }: OrderLineEditorProps) {
+export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr, onArticleSelected }: OrderLineEditorProps) {
   const keyCounter = useRef(0)
   const lineKeys = useRef<Map<number, string>>(new Map())
 
@@ -361,6 +362,7 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, onArticleSele
       <div className="px-5 py-3 border-b border-slate-100">
         <KwaliteitFirstSelector
           defaultKorting={defaultKorting}
+          prijslijstNr={prijslijstNr}
           onSelectArticle={addArticle}
           onAddMaatwerk={(line) => onChange([...lines, line])}
         />

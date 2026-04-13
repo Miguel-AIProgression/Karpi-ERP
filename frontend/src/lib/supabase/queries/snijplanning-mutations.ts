@@ -27,7 +27,7 @@ export async function createSnijplan(data: SnijplanFormData) {
       planning_jaar: data.planning_jaar ?? null,
       positie_x_cm: data.positie_x_cm ?? null,
       positie_y_cm: data.positie_y_cm ?? null,
-      status: 'Wacht' as SnijplanStatus,
+      status: 'Snijden' as SnijplanStatus,
     })
     .select('id, snijplan_nr, scancode')
     .single()
@@ -81,12 +81,8 @@ export async function assignRolToSnijplan(snijplanId: number, rolId: number) {
   if (error) throw error
 }
 
-/** Approve snijvoorstel: mark multiple plans as 'Gepland' */
-export async function approveSnijvoorstel(snijplanIds: number[]) {
-  const { error } = await supabase
-    .from('snijplannen')
-    .update({ status: 'Gepland' as SnijplanStatus })
-    .in('id', snijplanIds)
-
-  if (error) throw error
+/** Approve snijvoorstel: status blijft 'Snijden', rol_id wordt door optimizer gezet */
+export async function approveSnijvoorstel(_snijplanIds: number[]) {
+  // Status verandert niet meer bij goedkeuring — onderscheid gepland/wacht
+  // loopt nu via rol_id IS NOT NULL (ingesteld door de optimizer).
 }

@@ -188,7 +188,7 @@ export async function fetchBeschikbareCapaciteit(kwaliteitCode: string, kleurCod
       .from('snijplannen')
       .select('rol_id, positie_y_cm, lengte_cm, breedte_cm, geroteerd')
       .in('rol_id', inPlanRolIds)
-      .in('status', ['Gepland', 'In productie'])
+      .eq('status', 'Snijden')
 
     for (const p of plannen ?? []) {
       const endY = (p.positie_y_cm ?? 0) + (p.geroteerd ? p.lengte_cm : p.breedte_cm)

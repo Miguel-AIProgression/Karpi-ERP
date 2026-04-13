@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { ChevronDown, ChevronRight, Printer, Scissors, Loader2, Eye } from 'lucide-react'
+import { ChevronDown, ChevronRight, Printer, Scissors, Loader2, Eye, CheckSquare } from 'lucide-react'
+import { SnijBevestigingModal } from './snij-bevestiging-modal'
 import { formatDate } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
 import { AFWERKING_MAP } from '@/lib/utils/constants'
@@ -17,8 +18,8 @@ interface GroepAccordionProps {
   totaalOrders: number
   totaalM2: number
   totaalGesneden: number
-  totaalGepland: number
-  totaalWacht: number
+  totaalSnijden: number
+  totaalSnijdenGepland: number
   totDatum?: string | null
 }
 
@@ -30,24 +31,26 @@ export function GroepAccordion({
   totaalOrders,
   totaalM2,
   totaalGesneden,
-  totaalGepland,
-  totaalWacht,
+  totaalSnijden,
+  totaalSnijdenGepland,
   totDatum,
 }: GroepAccordionProps) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(true)
   const [genError, setGenError] = useState<string | null>(null)
   const [voorstelResult, setVoorstelResult] = useState<SnijvoorstelResponse | null>(null)
   const [showPlan, setShowPlan] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [showSnijModal, setShowSnijModal] = useState(false)
   const genereer = useGenereerSnijvoorstel()
   const autoplan = useTriggerAutoplan()
   const { data: capaciteit } = useBeschikbareCapaciteit(kwaliteitCode, kleurCode)
 
-  // Use parent props for button visibility (no need to expand accordion first)
-  const heeftGepland = totaalGepland > 0
-  const heeftWacht = totaalWacht > 0
+  // Gepland = heeft rol toegewezen; Wacht = nog geen rol
+  const heeftGepland = totaalSnijdenGepland > 0
+  const heeftWacht = totaalSnijden - totaalSnijdenGepland > 0
 
-  // Load stukken when accordion is open OR when showing plan (fallback needs it)
-  const { data: stukken, isLoading } = useSnijplannenVoorGroep(kwaliteitCode, kleurCode, open || showPlan || heeftGepland, totDatum)
+  // Altijd stukken laden (view is standaard open)
+  const { data: stukken, isLoading } = useSnijplannenVoorGroep(kwaliteitCode, kleurCode, true, totDatum)
 
   // Try loading the approved voorstel (has correct placed dimensions from optimizer)
   const { data: goedgekeurdPlan } = useGoedgekeurdVoorstel(kwaliteitCode, kleurCode, showPlan && !voorstelResult)
@@ -60,6 +63,33 @@ export function GroepAccordion({
 
   // Priority: new voorstel > approved voorstel > reconstructed plan
   const modalData = voorstelResult ?? goedgekeurdPlan ?? reconstructedPlan
+
+  // Snijbare stukken (status = Snijden)
+  const snijbareStukken = useMemo(
+    () => (stukken ?? []).filter(s => s.status === 'Snijden'),
+    [stukken]
+  )
+  const selectedStukken = useMemo(
+    () => snijbareStukken.filter(s => selectedIds.has(s.id)),
+    [snijbareStukken, selectedIds]
+  )
+  const alleGeselecteerd = snijbareStukken.length > 0 && snijbareStukken.every(s => selectedIds.has(s.id))
+
+  function toggleStuk(id: number) {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  function toggleAlles() {
+    if (alleGeselecteerd) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(snijbareStukken.map(s => s.id)))
+    }
+  }
 
   return (
     <div className="bg-white rounded-[var(--radius)] border border-slate-200 overflow-hidden">
@@ -181,12 +211,13 @@ export function GroepAccordion({
           )}
 
           <Link
-            to={`/snijplanning/stickers?kwaliteit=${kwaliteitCode}&kleur=${kleurCode}&status=Gepland`}
+            to={`/snijplanning/stickers?kwaliteit=${kwaliteitCode}&kleur=${kleurCode}`}
             onClick={(e) => e.stopPropagation()}
-            className="text-slate-400 hover:text-slate-600"
-            title="Stickers printen"
+            className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 text-slate-600 rounded-[var(--radius-sm)] text-xs font-medium hover:bg-slate-50 transition-colors"
+            title="Stickers printen voor hele groep"
           >
-            <Printer size={16} />
+            <Printer size={14} />
+            Stickers
           </Link>
         </div>
       </div>
@@ -207,27 +238,80 @@ export function GroepAccordion({
           ) : !stukken || stukken.length === 0 ? (
             <p className="text-sm text-slate-400 text-center py-4">Geen items gevonden</p>
           ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 text-left text-xs text-slate-500 uppercase">
-                  <th className="py-2 pr-3">Maat</th>
-                  <th className="py-2 pr-3">Rol</th>
-                  <th className="py-2 pr-3">Vorm</th>
-                  <th className="py-2 pr-3">Klant</th>
-                  <th className="py-2 pr-3">Order</th>
-                  <th className="py-2 pr-3">Leverdatum</th>
-                  <th className="py-2 pr-3">Afwerking</th>
-                  <th className="py-2 pr-3">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {stukken.map((stuk) => (
-                  <StukRow key={stuk.id} stuk={stuk} />
-                ))}
-              </tbody>
-            </table>
+            <>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 text-left text-xs text-slate-500 uppercase">
+                    <th className="py-2 pl-3 pr-1 w-8">
+                      {snijbareStukken.length > 0 && (
+                        <input
+                          type="checkbox"
+                          checked={alleGeselecteerd}
+                          onChange={toggleAlles}
+                          className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                          title="Selecteer alles"
+                        />
+                      )}
+                    </th>
+                    <th className="py-2 pr-3">Maat</th>
+                    <th className="py-2 pr-3">Rol</th>
+                    <th className="py-2 pr-3">Vorm</th>
+                    <th className="py-2 pr-3">Klant</th>
+                    <th className="py-2 pr-3">Order</th>
+                    <th className="py-2 pr-3">Leverdatum</th>
+                    <th className="py-2 pr-3">Afwerking</th>
+                    <th className="py-2 pr-3">Status</th>
+                    <th className="py-2 pr-3 w-8"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {stukken.map((stuk) => (
+                    <StukRow
+                      key={stuk.id}
+                      stuk={stuk}
+                      selected={selectedIds.has(stuk.id)}
+                      onToggle={toggleStuk}
+                    />
+                  ))}
+                </tbody>
+              </table>
+
+              {/* Actie-balk bij selectie */}
+              {selectedIds.size > 0 && (
+                <div className="flex items-center justify-between px-4 py-3 bg-emerald-50 border-t border-emerald-200">
+                  <div className="flex items-center gap-2 text-sm text-emerald-800">
+                    <CheckSquare size={15} />
+                    <span>
+                      <strong>{selectedIds.size}</strong> stuk{selectedIds.size !== 1 ? 'ken' : ''} geselecteerd
+                    </span>
+                    <button
+                      onClick={() => setSelectedIds(new Set())}
+                      className="text-xs text-emerald-600 hover:underline ml-1"
+                    >
+                      Deselecteer
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => setShowSnijModal(true)}
+                    className="flex items-center gap-1.5 px-4 py-1.5 bg-emerald-600 text-white text-sm font-medium rounded-[var(--radius-sm)] hover:bg-emerald-700 transition-colors"
+                  >
+                    <Scissors size={14} />
+                    Snijden
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
+      )}
+
+      {/* Snijbevestiging modal */}
+      {showSnijModal && selectedStukken.length > 0 && (
+        <SnijBevestigingModal
+          stukken={selectedStukken}
+          onClose={() => setShowSnijModal(false)}
+          onSuccess={() => setSelectedIds(new Set())}
+        />
       )}
 
       {/* Snijvoorstel modal */}
@@ -252,9 +336,24 @@ function Badge({ children }: { children: React.ReactNode }) {
   )
 }
 
-function StukRow({ stuk }: { stuk: SnijplanRow }) {
+function StukRow({ stuk, selected, onToggle }: {
+  stuk: SnijplanRow
+  selected: boolean
+  onToggle: (id: number) => void
+}) {
+  const kanSnijden = stuk.status === 'Snijden'
   return (
-    <tr className="hover:bg-slate-50">
+    <tr className={cn('hover:bg-slate-50', selected && 'bg-emerald-50/60')}>
+      <td className="py-2 pl-3 pr-1">
+        {kanSnijden && (
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={() => onToggle(stuk.id)}
+            className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+          />
+        )}
+      </td>
       <td className="py-2 pr-3 font-medium">
         {stuk.snij_breedte_cm}×{stuk.snij_lengte_cm} cm
       </td>
@@ -301,13 +400,21 @@ function StukRow({ stuk }: { stuk: SnijplanRow }) {
       <td className="py-2 pr-3">
         <span className={cn(
           'text-xs px-1.5 py-0.5 rounded',
-          stuk.status === 'Wacht' ? 'bg-slate-100 text-slate-600'
-            : stuk.status === 'Gepland' ? 'bg-blue-100 text-blue-700'
-            : stuk.status === 'Gesneden' ? 'bg-emerald-100 text-emerald-700'
+          stuk.status === 'Snijden' ? 'bg-blue-100 text-blue-700'
+            : stuk.status === 'Gesneden' ? 'bg-amber-100 text-amber-700'
             : 'bg-slate-100 text-slate-600'
         )}>
           {stuk.status}
         </span>
+      </td>
+      <td className="py-2 pr-3">
+        <Link
+          to={`/snijplanning/${stuk.id}/stickers`}
+          className="text-slate-300 hover:text-slate-600 transition-colors"
+          title="Sticker printen"
+        >
+          <Printer size={14} />
+        </Link>
       </td>
     </tr>
   )

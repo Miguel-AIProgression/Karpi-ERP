@@ -8,6 +8,7 @@ export interface MagazijnStats {
   afgewerkt: number
   ingepakt: number
   voorraadwaarde: number
+  totaal_m2?: number
 }
 
 export interface MagazijnParams {
@@ -18,7 +19,7 @@ export interface MagazijnParams {
   pageSize?: number
 }
 
-/** Fetch magazijn items — snijplannen in post-cutting stages */
+/** Fetch magazijn items — alleen Ingepakt (klaar voor verzending) */
 export async function fetchMagazijnItems(params: MagazijnParams) {
   const {
     type,
@@ -31,7 +32,7 @@ export async function fetchMagazijnItems(params: MagazijnParams) {
   let query = supabase
     .from('snijplanning_overzicht')
     .select('*', { count: 'exact' })
-    .in('status', ['Gesneden', 'In confectie', 'Gereed', 'Ingepakt'])
+    .eq('status', 'Ingepakt')
     .order('gesneden_datum', { ascending: false, nullsFirst: false })
     .range(page * pageSize, (page + 1) * pageSize - 1)
 
@@ -87,25 +88,21 @@ export async function fetchMagazijnStats(): Promise<MagazijnStats> {
   const { data, error } = await supabase
     .from('snijplanning_overzicht')
     .select('status, snij_lengte_cm, snij_breedte_cm')
-    .in('status', ['Gesneden', 'In confectie', 'Gereed', 'Ingepakt'])
+    .eq('status', 'Ingepakt')
 
   if (error) throw error
 
   const rows = data ?? []
-  const stats: MagazijnStats = {
+  const totalM2 = rows.reduce((sum, row) => {
+    return sum + ((Number(row.snij_lengte_cm) * Number(row.snij_breedte_cm)) / 10000)
+  }, 0)
+
+  return {
     totaal: rows.length,
     gesneden: 0,
     afgewerkt: 0,
-    ingepakt: 0,
+    ingepakt: rows.length,
     voorraadwaarde: 0,
+    totaal_m2: Math.round(totalM2 * 100) / 100,
   }
-
-  for (const row of rows) {
-    const s = row.status as string
-    if (s === 'Gesneden') stats.gesneden++
-    else if (s === 'In confectie' || s === 'Gereed') stats.afgewerkt++
-    else if (s === 'Ingepakt') stats.ingepakt++
-  }
-
-  return stats
 }

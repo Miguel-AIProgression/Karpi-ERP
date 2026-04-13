@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, Fragment } from 'react'
 import { Search, Scissors, Calendar, CheckCircle2, Clock, AlertTriangle } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { GroepAccordion } from '@/components/snijplanning/groep-accordion'
@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils/cn'
 import { useSnijplanningGroepen, useSnijplanningStatusCounts, useProductieDashboard, useAutoplanningConfig } from '@/hooks/use-snijplanning'
 import { berekenTotDatum } from '@/components/snijplanning/week-filter'
 
-const SNIJPLAN_STATUSES = ['Alle', 'Tekort', 'Wacht', 'Gepland', 'In productie', 'Gesneden', 'Gereed']
+const SNIJPLAN_STATUSES = ['Alle', 'Tekort', 'Snijden']
 
 export function SnijplanningOverviewPage() {
   const [status, setStatus] = useState('Alle')
@@ -22,36 +22,47 @@ export function SnijplanningOverviewPage() {
   const { data: statusCounts } = useSnijplanningStatusCounts(totDatum)
   const { data: dashboard } = useProductieDashboard()
 
-  // Groepen met tekort: nog wachtende stukken die niet gepland konden worden (geen/onvoldoende rollen)
+  // Groepen met tekort: stukken zonder rol (niet gepland) terwijl rollen nodig zijn
   const tekortGroepen = useMemo(() => {
     if (!groepen) return []
-    return groepen.filter((g) => (g.totaal_wacht ?? 0) > 0)
+    return groepen.filter((g) => (g.totaal_snijden ?? 0) - (g.totaal_snijden_gepland ?? 0) > 0)
   }, [groepen])
 
-  // Client-side filtering op basis van per-status counts
+  // Verberg groepen waar alle stukken al gesneden zijn — die staan in de confectielijst
+  const actieveGroepen = useMemo(() => {
+    if (!groepen) return []
+    return groepen.filter((g) => (g.totaal_snijden ?? 0) > 0)
+  }, [groepen])
+
+  // Client-side filtering
   const filteredGroepen = useMemo(() => {
-    if (!groepen || status === 'Alle') return groepen ?? []
+    if (status === 'Alle') return actieveGroepen
     if (status === 'Tekort') return tekortGroepen
-    return groepen.filter((g) => {
-      switch (status) {
-        case 'Wacht': return (g.totaal_wacht ?? 0) > 0
-        case 'Gepland': return (g.totaal_gepland ?? 0) > 0
-        case 'In productie': return (g.totaal_in_productie ?? 0) > 0
-        case 'Gesneden': return (g.totaal_status_gesneden ?? 0) > 0
-        case 'Gereed': return (g.totaal_gereed ?? 0) > 0
-        default: return true
-      }
-    })
-  }, [groepen, status, tekortGroepen])
+    if (status === 'Snijden') return actieveGroepen
+    return actieveGroepen
+  }, [actieveGroepen, status, tekortGroepen])
+
+  // Groepeer per kwaliteit voor de gegroepeerde weergave
+  const groepenPerKwaliteit = useMemo(() => {
+    const map = new Map<string, typeof filteredGroepen>()
+    for (const g of filteredGroepen) {
+      const lijst = map.get(g.kwaliteit_code) ?? []
+      lijst.push(g)
+      map.set(g.kwaliteit_code, lijst)
+    }
+    return Array.from(map.entries()) // [kwaliteitCode, groepen[]]
+  }, [filteredGroepen])
 
   const countMap = new Map((statusCounts ?? []).map((c) => [c.status, c.aantal]))
-  const allCount = (statusCounts ?? []).reduce((sum, c) => sum + c.aantal, 0)
+  const allCount = (statusCounts ?? [])
+    .filter((c) => c.status === 'Snijden')
+    .reduce((sum, c) => sum + c.aantal, 0)
 
   const stats = [
-    { label: 'Totaal te snijden', value: dashboard?.snijplannen_wacht ?? 0, icon: Scissors, color: 'text-slate-700' },
+    { label: 'Wacht op planning', value: dashboard?.snijplannen_wacht ?? 0, icon: Scissors, color: 'text-slate-700' },
     { label: 'Gepland', value: dashboard?.snijplannen_gepland ?? 0, icon: Calendar, color: 'text-blue-600' },
     { label: 'In productie', value: dashboard?.snijplannen_in_productie ?? 0, icon: Clock, color: 'text-indigo-600' },
-    { label: 'Gesneden', value: dashboard?.snijplannen_gesneden ?? 0, icon: CheckCircle2, color: 'text-emerald-600' },
+    { label: 'Klaar voor confectie', value: dashboard?.snijplannen_gesneden ?? 0, icon: CheckCircle2, color: 'text-emerald-600' },
   ]
 
   return (
@@ -144,31 +155,54 @@ export function SnijplanningOverviewPage() {
         })}
       </div>
 
-      {/* Groepen lijst */}
+      {/* Groepen lijst — gegroepeerd per kwaliteit, altijd uitgeklapt */}
       {isLoading ? (
         <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-12 text-center text-slate-400">
           Snijplannen laden...
         </div>
-      ) : !filteredGroepen || filteredGroepen.length === 0 ? (
+      ) : filteredGroepen.length === 0 ? (
         <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-12 text-center text-slate-400">
           Geen snijplannen gevonden
         </div>
       ) : (
-        <div className="space-y-2">
-          {filteredGroepen.map((g) => (
-            <GroepAccordion
-              key={`${g.kwaliteit_code}-${g.kleur_code}`}
-              kwaliteitCode={g.kwaliteit_code}
-              kleurCode={g.kleur_code}
-              totaalStukken={g.totaal_stukken}
-              totaalOrders={g.totaal_orders}
-              totaalM2={g.totaal_m2}
-              totaalGesneden={g.totaal_gesneden}
-              totaalGepland={g.totaal_gepland ?? 0}
-              totaalWacht={g.totaal_wacht ?? 0}
-              totDatum={totDatum}
-            />
-          ))}
+        <div className="space-y-6">
+          {groepenPerKwaliteit.map(([kwaliteitCode, groepen]) => {
+            const totStukken = groepen.reduce((s, g) => s + g.totaal_stukken, 0)
+            const totOrders = groepen.reduce((s, g) => s + g.totaal_orders, 0)
+            const totM2 = groepen.reduce((s, g) => s + g.totaal_m2, 0)
+            return (
+              <Fragment key={kwaliteitCode}>
+                {/* Kwaliteit scheidingsbalk */}
+                <div className="flex items-center gap-3 pt-2">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">
+                    {kwaliteitCode}
+                  </span>
+                  <div className="flex-1 h-px bg-slate-200" />
+                  <span className="text-xs text-slate-400 whitespace-nowrap">
+                    {groepen.length} {groepen.length === 1 ? 'kleur' : 'kleuren'}
+                    {' · '}{totStukken} stuks · {totM2} m²
+                  </span>
+                </div>
+                {/* Groepen per kleur */}
+                <div className="space-y-2">
+                  {groepen.map((g) => (
+                    <GroepAccordion
+                      key={`${g.kwaliteit_code}-${g.kleur_code}`}
+                      kwaliteitCode={g.kwaliteit_code}
+                      kleurCode={g.kleur_code}
+                      totaalStukken={g.totaal_stukken}
+                      totaalOrders={g.totaal_orders}
+                      totaalM2={g.totaal_m2}
+                      totaalGesneden={g.totaal_gesneden}
+                      totaalSnijden={g.totaal_snijden ?? 0}
+                      totaalSnijdenGepland={g.totaal_snijden_gepland ?? 0}
+                      totDatum={totDatum}
+                    />
+                  ))}
+                </div>
+              </Fragment>
+            )
+          })}
         </div>
       )}
     </>

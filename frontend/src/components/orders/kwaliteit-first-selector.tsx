@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { Search, ChevronLeft, Plus } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -8,6 +8,7 @@ import {
   fetchAfwerkingTypes,
   fetchStandaardAfwerking,
   fetchStandaardMatenVoorKwaliteit,
+  fetchMaatwerkArtikelNr,
   type KwaliteitOptie,
   type KleurOptie,
 } from '@/lib/supabase/queries/op-maat'
@@ -20,6 +21,7 @@ import {
 } from '@/lib/utils/maatwerk-prijs'
 import { formatCurrency } from '@/lib/utils/formatters'
 import type { SelectedArticle, SubstitutionInfo } from './article-selector'
+import { lookupPrice } from '@/lib/supabase/queries/order-mutations'
 import type { OrderRegelFormData } from '@/lib/supabase/queries/order-mutations'
 import type { EquivalentProduct } from '@/lib/supabase/queries/product-equivalents'
 
@@ -27,6 +29,7 @@ type Step = 'kwaliteit' | 'maten' | 'op_maat'
 
 interface KwaliteitFirstSelectorProps {
   defaultKorting: number
+  prijslijstNr?: string
   onSelectArticle: (article: SelectedArticle, substitution?: SubstitutionInfo) => void
   onAddMaatwerk: (line: OrderRegelFormData) => void
 }
@@ -54,6 +57,7 @@ function parseSearch(input: string): { kwaliteitTerm: string; kleurHint: string 
 
 export function KwaliteitFirstSelector({
   defaultKorting,
+  prijslijstNr,
   onSelectArticle,
   onAddMaatwerk,
 }: KwaliteitFirstSelectorProps) {
@@ -65,6 +69,7 @@ export function KwaliteitFirstSelector({
   const [selectedKleur, setSelectedKleur] = useState<KleurOptie | null>(null) // alleen op_maat
   const [kleurHint, setKleurHint] = useState('')                   // hint vanuit zoekveld
   const [pendingArticle, setPendingArticle] = useState<SelectedArticle | null>(null)
+  const [klantM2Prijs, setKlantM2Prijs] = useState<number | null>(null)
 
   // Op maat state
   const [vormData, setVormData] = useState<VormAfmetingData>({
@@ -166,6 +171,46 @@ export function KwaliteitFirstSelector({
 
   const hasOpMaat = kleuren.length > 0
 
+  // ── Klantspecifieke m²-prijs ophalen uit prijslijst ──────────
+  // Maatwerk heeft een apart artikel met 'maatwerk' in de omschrijving
+  // (bijv. DANT23MAATWERK, LORA13MAATWERK). Zoek dat direct in de DB.
+  const fetchKlantPrijs = useCallback(async (kleur: KleurOptie | null) => {
+    if (!prijslijstNr || !kleur || !selectedKwaliteit) {
+      setKlantM2Prijs(null)
+      return
+    }
+    // Directe DB-query naar maatwerk-artikel voor deze kwaliteit+kleur
+    const maatwerkArtikelNr = await fetchMaatwerkArtikelNr(
+      selectedKwaliteit.code,
+      kleur.kleur_code,
+    )
+    const artikelnr = maatwerkArtikelNr ?? kleur.artikelnr
+    console.debug('[maatwerk prijs]', {
+      kwaliteit: selectedKwaliteit.code,
+      kleur: kleur.kleur_code,
+      prijslijstNr,
+      maatwerkArtikelNr,
+      artikelnr,
+    })
+    if (!artikelnr) {
+      setKlantM2Prijs(null)
+      return
+    }
+    const prijs = await lookupPrice(prijslijstNr, artikelnr)
+    console.debug('[maatwerk prijs] lookup resultaat:', { artikelnr, prijs })
+    setKlantM2Prijs(prijs)
+  }, [prijslijstNr, selectedKwaliteit])
+
+  useEffect(() => {
+    setKlantM2Prijs(null)
+    if (selectedKleur) {
+      fetchKlantPrijs(selectedKleur)
+    }
+  }, [selectedKleur, fetchKlantPrijs])
+
+  // Effectieve m²-prijs: klantprijs uit prijslijst heeft prioriteit
+  const effectieveM2Prijs = klantM2Prijs ?? (selectedKleur?.verkoopprijs_m2 ?? 0)
+
   // ── Op maat prijsberekeningen ─────────────────────────────────
   const selectedVorm = vormen.find((v) => v.code === vormData.vormCode)
   const isDiameter = selectedVorm?.afmeting_type === 'diameter'
@@ -182,15 +227,15 @@ export function KwaliteitFirstSelector({
     () =>
       berekenMaatwerkPrijs({
         oppervlakM2,
-        m2Prijs: selectedKleur?.verkoopprijs_m2 ?? 0,
+        m2Prijs: effectieveM2Prijs,
         vormToeslag,
         afwerkingPrijs,
         korting_pct: defaultKorting,
       }),
-    [oppervlakM2, selectedKleur, vormToeslag, afwerkingPrijs, defaultKorting]
+    [oppervlakM2, effectieveM2Prijs, vormToeslag, afwerkingPrijs, defaultKorting]
   )
 
-  const canAdd = !!selectedKleur && (selectedKleur.verkoopprijs_m2 ?? 0) > 0 && oppervlakM2 > 0
+  const canAdd = !!selectedKleur && effectieveM2Prijs > 0 && oppervlakM2 > 0
 
   // ── Click outside ─────────────────────────────────────────────
   useEffect(() => {
@@ -270,7 +315,7 @@ export function KwaliteitFirstSelector({
       omschrijving: `${selectedKwaliteit.omschrijving ?? selectedKwaliteit.code} ${selectedKleur.kleur_label} - Op maat ${selectedVorm?.naam ?? vormData.vormCode}`,
       orderaantal: 1,
       te_leveren: 1,
-      prijs: oppervlakM2 * selectedKleur.verkoopprijs_m2! + vormToeslag + afwerkingPrijs,
+      prijs: oppervlakM2 * effectieveM2Prijs + vormToeslag + afwerkingPrijs,
       korting_pct: defaultKorting,
       bedrag: totaalPrijs,
       gewicht_kg: berekenMaatwerkGewicht(oppervlakM2, selectedKleur.gewicht_per_m2_kg),
@@ -284,7 +329,7 @@ export function KwaliteitFirstSelector({
       maatwerk_afwerking: vormData.afwerkingCode || undefined,
       maatwerk_band_kleur: vormData.bandKleur || undefined,
       maatwerk_instructies: vormData.instructies || undefined,
-      maatwerk_m2_prijs: selectedKleur.verkoopprijs_m2!,
+      maatwerk_m2_prijs: effectieveM2Prijs,
       maatwerk_kostprijs_m2: selectedKleur.kostprijs_m2 ?? undefined,
       maatwerk_oppervlak_m2: oppervlakM2,
       maatwerk_vorm_toeslag: vormToeslag,
@@ -307,6 +352,7 @@ export function KwaliteitFirstSelector({
     setSelectedKleur(null)
     setKleurHint('')
     setPendingArticle(null)
+    setKlantM2Prijs(null)
   }
 
   if (kwaliteitenLoading) {
@@ -581,7 +627,7 @@ export function KwaliteitFirstSelector({
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-purple-900">
               <span>
                 {oppervlakM2.toLocaleString('nl-NL', { maximumFractionDigits: 2 })} m²
-                {' '}× {formatCurrency(selectedKleur.verkoopprijs_m2!)}/m²
+                {' '}× {formatCurrency(effectieveM2Prijs)}/m²
               </span>
               {vormToeslag > 0 && <span>+ {formatCurrency(vormToeslag)} (vorm)</span>}
               {afwerkingPrijs > 0 && <span>+ {formatCurrency(afwerkingPrijs)} (afwerking)</span>}

@@ -3,9 +3,7 @@
 // === Enums as string literals ===
 
 export type SnijplanStatus =
-  | 'Wacht'
-  | 'Gepland'
-  | 'In productie'
+  | 'Snijden'
   | 'Gesneden'
   | 'In confectie'
   | 'Gereed'

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Search, Warehouse, Scissors, CheckCircle2, PackageCheck, Euro } from 'lucide-react'
+import { Search, Warehouse, PackageCheck, Layers } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { cn } from '@/lib/utils/cn'
 import { SNIJPLAN_STATUS_COLORS } from '@/lib/utils/constants'
@@ -48,16 +48,9 @@ export function MagazijnOverviewPage() {
   const items = result?.items ?? []
 
   const statCards = [
-    { label: 'Totaal in magazijn', value: stats?.totaal ?? 0, icon: Warehouse, color: 'text-slate-700' },
-    { label: 'Gesneden', value: stats?.gesneden ?? 0, icon: Scissors, color: 'text-amber-600' },
-    { label: 'Afgewerkt', value: stats?.afgewerkt ?? 0, icon: CheckCircle2, color: 'text-emerald-600' },
-    { label: 'Ingepakt', value: stats?.ingepakt ?? 0, icon: PackageCheck, color: 'text-teal-600' },
-    {
-      label: 'Voorraadwaarde',
-      value: `\u20AC ${(stats?.voorraadwaarde ?? 0).toLocaleString('nl-NL', { minimumFractionDigits: 2 })}`,
-      icon: Euro,
-      color: 'text-slate-700',
-    },
+    { label: 'Ingepakt in magazijn', value: stats?.ingepakt ?? 0, icon: PackageCheck, color: 'text-teal-600' },
+    { label: 'Op maat', value: result?.items.filter(i => i.type === 'op_maat').length ?? 0, icon: Warehouse, color: 'text-slate-700' },
+    { label: 'Standaard', value: result?.items.filter(i => i.type === 'standaard').length ?? 0, icon: Layers, color: 'text-slate-700' },
   ]
 
   const tabs: TabFilter[] = ['Alles', 'Op maat', 'Standaard']
@@ -74,11 +67,11 @@ export function MagazijnOverviewPage() {
     <>
       <PageHeader
         title="Magazijn"
-        description="Gereed product — gesneden, wacht op verzending"
+        description="Ingepakt product — klaar voor verzending of ophalen"
       />
 
       {/* Stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
         {statCards.map((s) => (
           <div key={s.label} className="bg-white rounded-[var(--radius)] border border-slate-200 p-4">
             <div className="flex items-center gap-2 mb-1">

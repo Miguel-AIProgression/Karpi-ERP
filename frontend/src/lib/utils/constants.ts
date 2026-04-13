@@ -21,9 +21,7 @@ export const TIER_COLORS: Record<string, { bg: string; text: string }> = {
 
 /** Snijplan status → badge color mapping */
 export const SNIJPLAN_STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-  'Wacht': { bg: 'bg-slate-100', text: 'text-slate-600' },
-  'Gepland': { bg: 'bg-blue-100', text: 'text-blue-700' },
-  'In productie': { bg: 'bg-indigo-100', text: 'text-indigo-700' },
+  'Snijden': { bg: 'bg-blue-100', text: 'text-blue-700' },
   'Gesneden': { bg: 'bg-amber-100', text: 'text-amber-700' },
   'In confectie': { bg: 'bg-purple-100', text: 'text-purple-700' },
   'Gereed': { bg: 'bg-emerald-100', text: 'text-emerald-700' },
