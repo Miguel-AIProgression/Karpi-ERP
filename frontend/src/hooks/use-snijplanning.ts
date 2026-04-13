@@ -9,6 +9,8 @@ import {
   fetchBeschikbareRollen,
   fetchProductieDashboard,
   fetchConfectielijst,
+  fetchAlleSnijden,
+  fetchRolLocaties,
 } from '@/lib/supabase/queries/snijplanning'
 import type { SnijplanSortField, SortDirection } from '@/lib/supabase/queries/snijplanning'
 import {
@@ -118,6 +120,23 @@ export function useProductieDashboard() {
   return useQuery({
     queryKey: ['productie', 'dashboard'],
     queryFn: fetchProductieDashboard,
+  })
+}
+
+export function useAlleSnijden() {
+  return useQuery({
+    queryKey: ['snijplanning', 'alle-snijden'],
+    queryFn: fetchAlleSnijden,
+  })
+}
+
+export function useRolLocaties(rolIds: number[]) {
+  const sorted = [...rolIds].sort((a, b) => a - b).join(',')
+  return useQuery({
+    queryKey: ['rollen', 'locaties', sorted],
+    queryFn: () => fetchRolLocaties(rolIds),
+    enabled: rolIds.length > 0,
+    staleTime: 60_000,
   })
 }
 

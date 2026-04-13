@@ -50,6 +50,7 @@ export interface SnijplanRow {
   rol_breedte_cm: number | null
   rol_oppervlak_m2: number | null
   rol_status: string | null
+  locatie: string | null
   // Maatwerk specs (from order_regels)
   maatwerk_vorm: MaatwerkVorm | null
   maatwerk_lengte_cm: number | null

@@ -5,7 +5,7 @@
 
 ## Overzicht
 
-35 tabellen, 6 enums, 8 views, 12 functies. Alle tabellen hebben RLS enabled (fase 1: authenticated = volledige toegang).
+36 tabellen, 6 enums, 9 views, 12 functies. Alle tabellen hebben RLS enabled (fase 1: authenticated = volledige toegang).
 
 ---
 
@@ -436,6 +436,18 @@ Nabewerking: overzomen, backing, binden.
 
 ---
 
+### confectie_werktijden
+Configuratie per `type_bewerking` voor de confectie-planning (minuten per strekkende meter + wisseltijd). Eén rij per type; seed in migratie 053.
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| type_bewerking | TEXT PK | 'breedband', 'smalband', 'feston', 'smalfeston', 'locken', 'volume afwerking', 'stickeren' |
+| minuten_per_meter | NUMERIC(6,2) NOT NULL | Tijd per strekkende meter |
+| wisseltijd_minuten | INTEGER NOT NULL DEFAULT 5 | Pakken + wegleggen volgend stuk |
+| actief | BOOLEAN NOT NULL DEFAULT true | False = type wordt niet gepland (bv. stickeren) |
+| bijgewerkt_op | TIMESTAMPTZ DEFAULT NOW() | Auto-update via trigger `set_bijgewerkt_op()` |
+
+---
+
 ### samples
 Stalen/monsters.
 | Kolom | Type | Toelichting |
@@ -636,6 +648,7 @@ Audit trail: wie heeft wat wanneer gedaan.
 | orders_status_telling | Aantal per order_status |
 | snijplanning_overzicht | Snijplannen met order-, klant- en rolgegevens voor de planningsweergave (incl. geroteerd vlag) |
 | confectie_overzicht | Confectie-orders met scan- en voortgangsstatus |
+| confectie_planning_overzicht | Confectie-orders (status Wacht op materiaal / In productie) met klant, order, maatwerk-afmetingen en strekkende meter voor planningsweergave |
 | productie_dashboard | Aggregaties voor het productie-dashboard: aantallen per status, capaciteit, doorlooptijd |
 
 ---

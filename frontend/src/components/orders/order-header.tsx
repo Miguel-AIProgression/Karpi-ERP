@@ -5,9 +5,10 @@ import type { OrderDetail } from '@/lib/supabase/queries/orders'
 
 interface OrderHeaderProps {
   order: OrderDetail
+  locked?: boolean
 }
 
-export function OrderHeader({ order }: OrderHeaderProps) {
+export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
   return (
     <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-6 mb-6">
       <div className="flex items-start justify-between mb-4">
@@ -25,12 +26,21 @@ export function OrderHeader({ order }: OrderHeaderProps) {
           )}
         </div>
         <div className="flex gap-2">
-          <Link
-            to={`/orders/${order.id}/bewerken`}
-            className="px-4 py-2 text-sm border border-slate-200 rounded-[var(--radius-sm)] hover:bg-slate-50"
-          >
-            Bewerken
-          </Link>
+          {locked ? (
+            <span
+              className="px-4 py-2 text-sm border border-slate-200 rounded-[var(--radius-sm)] text-slate-400 cursor-not-allowed bg-slate-50"
+              title="Order is al (deels) gesneden en kan niet meer worden bewerkt"
+            >
+              Bewerken
+            </span>
+          ) : (
+            <Link
+              to={`/orders/${order.id}/bewerken`}
+              className="px-4 py-2 text-sm border border-slate-200 rounded-[var(--radius-sm)] hover:bg-slate-50"
+            >
+              Bewerken
+            </Link>
+          )}
         </div>
       </div>
 

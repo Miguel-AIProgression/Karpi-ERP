@@ -5,6 +5,7 @@ import { OrderHeader } from '@/components/orders/order-header'
 import { OrderAddresses } from '@/components/orders/order-addresses'
 import { OrderRegelsTable } from '@/components/orders/order-regels-table'
 import { useOrderDetail, useOrderRegels } from '@/hooks/use-orders'
+import { computeOrderLock } from '@/lib/utils/order-lock'
 
 export function OrderDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -47,7 +48,7 @@ export function OrderDetailPage() {
 
       <PageHeader title={order.order_nr} />
 
-      <OrderHeader order={order} />
+      <OrderHeader order={order} locked={computeOrderLock(regels) === 'full'} />
       <OrderAddresses order={order} />
       <OrderRegelsTable regels={regels ?? []} isLoading={regelsLoading} />
     </>

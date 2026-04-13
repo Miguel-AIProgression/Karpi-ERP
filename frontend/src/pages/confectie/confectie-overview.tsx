@@ -3,8 +3,10 @@ import { Link } from 'react-router-dom'
 import { Factory, Scissors } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { useConfectielijst } from '@/hooks/use-snijplanning'
-import { formatDate } from '@/lib/utils/formatters'
+import { ConfectieTabs } from './confectie-planning'
 import { cn } from '@/lib/utils/cn'
+import { confectieDeadline } from '@/lib/utils/confectie-deadline'
+import { AlertTriangle } from 'lucide-react'
 import { AFWERKING_MAP, AFWERKING_OPTIES, SNIJPLAN_STATUS_COLORS } from '@/lib/utils/constants'
 import { getVormDisplay } from '@/lib/utils/vorm-labels'
 import type { SnijplanRow } from '@/lib/types/productie'
@@ -48,6 +50,8 @@ export function ConfectieOverviewPage() {
         title="Confectielijst"
         description={`${totaal} stuk${totaal !== 1 ? 'ken' : ''} te confectioneren — gesorteerd per afwerking en leverdatum`}
       />
+
+      <ConfectieTabs active="lijst" />
 
       {isLoading ? (
         <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-12 text-center text-slate-400">
@@ -95,8 +99,8 @@ export function ConfectieOverviewPage() {
                         <th className="py-2 px-4">Vorm</th>
                         <th className="py-2 px-4">Klant</th>
                         <th className="py-2 px-4">Order</th>
-                        <th className="py-2 px-4">Leverdatum</th>
-                        <th className="py-2 px-4">Gesneden op</th>
+                        <th className="py-2 px-4">Deadline</th>
+                        <th className="py-2 px-4">Locatie</th>
                         <th className="py-2 px-4">Status</th>
                       </tr>
                     </thead>
@@ -158,15 +162,26 @@ function ConfectieRij({ stuk }: { stuk: SnijplanRow }) {
         </Link>
       </td>
       <td className="py-2.5 px-4">
-        {stuk.afleverdatum ? (
-          <span className="text-slate-700">{formatDate(stuk.afleverdatum)}</span>
-        ) : (
-          <span className="text-slate-300">—</span>
-        )}
+        {(() => {
+          const deadline = confectieDeadline(stuk.afleverdatum)
+          if (!deadline) return <span className="text-slate-300">—</span>
+          const teLaat = new Date() > deadline
+          const dd = String(deadline.getDate()).padStart(2, '0')
+          const mm = String(deadline.getMonth() + 1).padStart(2, '0')
+          return (
+            <span className={cn(
+              'inline-flex items-center gap-1 tabular-nums',
+              teLaat ? 'text-red-700 font-medium' : 'text-slate-700',
+            )}>
+              {teLaat && <AlertTriangle size={12} />}
+              vr {dd}-{mm}
+            </span>
+          )
+        })()}
       </td>
       <td className="py-2.5 px-4">
-        {stuk.gesneden_datum ? (
-          <span className="text-slate-500 text-xs">{formatDate(stuk.gesneden_datum)}</span>
+        {stuk.locatie ? (
+          <span className="text-slate-700 font-mono text-xs">{stuk.locatie}</span>
         ) : (
           <span className="text-slate-300">—</span>
         )}

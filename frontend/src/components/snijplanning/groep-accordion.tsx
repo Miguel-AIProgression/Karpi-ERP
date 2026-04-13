@@ -6,7 +6,7 @@ import { formatDate } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
 import { AFWERKING_MAP } from '@/lib/utils/constants'
 import { getVormDisplay } from '@/lib/utils/vorm-labels'
-import { useSnijplannenVoorGroep, useGenereerSnijvoorstel, useBeschikbareCapaciteit, useGoedgekeurdVoorstel, useTriggerAutoplan } from '@/hooks/use-snijplanning'
+import { useSnijplannenVoorGroep, useGenereerSnijvoorstel, useBeschikbareCapaciteit, useGoedgekeurdVoorstel, useTriggerAutoplan, useRolLocaties } from '@/hooks/use-snijplanning'
 import { usePlanningConfig } from '@/hooks/use-planning-config'
 import { SnijvoorstelModal } from './snijvoorstel-modal'
 import { buildPlanFromStukken } from '@/lib/utils/snijplan-mapping'
@@ -15,10 +15,7 @@ import type { SnijplanRow, SnijvoorstelResponse } from '@/lib/types/productie'
 interface GroepAccordionProps {
   kwaliteitCode: string
   kleurCode: string
-  totaalStukken: number
   totaalOrders: number
-  totaalM2: number
-  totaalGesneden: number
   totaalSnijden: number
   totaalSnijdenGepland: number
   totDatum?: string | null
@@ -28,10 +25,7 @@ interface GroepAccordionProps {
 export function GroepAccordion({
   kwaliteitCode,
   kleurCode,
-  totaalStukken,
   totaalOrders,
-  totaalM2,
-  totaalGesneden,
   totaalSnijden,
   totaalSnijdenGepland,
   totDatum,
@@ -54,6 +48,16 @@ export function GroepAccordion({
 
   // Altijd stukken laden (view is standaard open)
   const { data: stukken, isLoading } = useSnijplannenVoorGroep(kwaliteitCode, kleurCode, true, totDatum)
+
+  // m² van de nog-te-snijden stukken (view query filtert al op status='Snijden')
+  const teSnijdenM2 = useMemo(() => {
+    if (!stukken) return null
+    const totaal = stukken.reduce((s, x) => {
+      const m2 = ((x.snij_lengte_cm ?? 0) * (x.snij_breedte_cm ?? 0)) / 10000
+      return s + m2
+    }, 0)
+    return Math.round(totaal * 10) / 10
+  }, [stukken])
 
   // Sorteer op rol-niveau: rollen op vroegste leverdatum, binnen een rol op leverdatum.
   // Stukken zonder rol krijgen een eigen groep per stuk en staan na de echte rollen.
@@ -109,6 +113,13 @@ export function GroepAccordion({
     return gesorteerdeStukken.slice(0, cutoff)
   }, [toonAlles, gesorteerdeStukken])
   const verborgenStukken = gesorteerdeStukken.length - zichtbareStukken.length
+
+  // Haal locaties op voor de zichtbare rollen
+  const zichtbareRolIds = useMemo(
+    () => Array.from(new Set(zichtbareStukken.map((s) => s.rol_id).filter((id): id is number => id != null))),
+    [zichtbareStukken],
+  )
+  const { data: locatieMap } = useRolLocaties(zichtbareRolIds)
 
   // Geschatte snijtijd voor de zichtbare stukken (status 'Snijden')
   const { data: planningConfig } = usePlanningConfig()
@@ -186,16 +197,8 @@ export function GroepAccordion({
           </span>
           <div className="flex items-center gap-2 flex-wrap">
             <Badge>{totaalOrders} {totaalOrders === 1 ? 'order' : 'orders'}</Badge>
-            <Badge>{totaalStukken} stuks</Badge>
-            <Badge>{totaalM2} m²</Badge>
-            <span className={cn(
-              'text-xs px-2 py-0.5 rounded-full',
-              totaalGesneden === totaalStukken
-                ? 'bg-emerald-100 text-emerald-700'
-                : 'bg-amber-100 text-amber-700'
-            )}>
-              {totaalGesneden}/{totaalStukken} gesneden
-            </span>
+            <Badge>{totaalSnijden} stuks</Badge>
+            {teSnijdenM2 != null && <Badge>{teSnijdenM2} m²</Badge>}
             {geschatteTijd && (
               <span
                 className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600"
@@ -337,6 +340,7 @@ export function GroepAccordion({
                     </th>
                     <th className="py-2 pr-3">Maat</th>
                     <th className="py-2 pr-3">Rol</th>
+                    <th className="py-2 pr-3">Locatie</th>
                     <th className="py-2 pr-3">Vorm</th>
                     <th className="py-2 pr-3">Klant</th>
                     <th className="py-2 pr-3">Order</th>
@@ -353,11 +357,12 @@ export function GroepAccordion({
                       stuk={stuk}
                       selected={selectedIds.has(stuk.id)}
                       onToggle={toggleStuk}
+                      locatie={stuk.rol_id != null ? locatieMap?.get(stuk.rol_id) ?? null : null}
                     />
                   ))}
                   {gesorteerdeStukken.length > INITIEEL_ZICHTBAAR_STUKKEN && (
                     <tr>
-                      <td colSpan={10} className="p-0">
+                      <td colSpan={11} className="p-0">
                         <button
                           onClick={() => setToonAlles((v) => !v)}
                           className="w-full py-2 text-xs text-slate-500 hover:text-slate-900 hover:bg-slate-50 transition-colors"
@@ -432,10 +437,11 @@ function Badge({ children }: { children: React.ReactNode }) {
   )
 }
 
-function StukRow({ stuk, selected, onToggle }: {
+function StukRow({ stuk, selected, onToggle, locatie }: {
   stuk: SnijplanRow
   selected: boolean
   onToggle: (id: number) => void
+  locatie: string | null
 }) {
   const kanSnijden = stuk.status === 'Snijden'
   return (
@@ -462,6 +468,9 @@ function StukRow({ stuk, selected, onToggle }: {
             {stuk.rolnummer}
           </Link>
         ) : '—'}
+      </td>
+      <td className="py-2 pr-3 text-xs text-slate-600 tabular-nums">
+        {locatie ?? <span className="text-slate-300">—</span>}
       </td>
       <td className="py-2 pr-3">
         {stuk.maatwerk_vorm && (() => {

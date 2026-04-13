@@ -25,6 +25,7 @@ import { ProductieRolPage } from '@/pages/snijplanning/productie-rol'
 import { ProductieGroepPage } from '@/pages/snijplanning/productie-groep'
 import { ProductieInstellingenPage } from '@/pages/instellingen/productie-instellingen'
 import { ConfectieOverviewPage } from '@/pages/confectie/confectie-overview'
+import { ConfectiePlanningPage } from '@/pages/confectie/confectie-planning'
 import { ScanstationPage } from '@/pages/scanstation/scanstation'
 import { RollenOverviewPage } from '@/pages/rollen/rollen-overview'
 import { MagazijnOverviewPage } from '@/pages/magazijn/magazijn-overview'
@@ -71,6 +72,7 @@ export const router = createBrowserRouter([
       { path: 'snijplanning/productie', element: <ProductieGroepPage /> },
       { path: 'snijplanning/productie/:rolId', element: <ProductieRolPage /> },
       { path: 'confectie', element: <ConfectieOverviewPage /> },
+      { path: 'confectie/planning', element: <ConfectiePlanningPage /> },
       { path: 'pick-ship', element: <PlaceholderPage title="Pick & Ship" /> },
       { path: 'logistiek', element: <PlaceholderPage title="Logistiek" /> },
       { path: 'inkoop', element: <PlaceholderPage title="Inkooporders" /> },

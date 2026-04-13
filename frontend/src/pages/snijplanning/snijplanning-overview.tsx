@@ -1,8 +1,9 @@
 import { useState, useMemo, Fragment } from 'react'
-import { Search, Scissors, Calendar, CheckCircle2, Factory, AlertTriangle } from 'lucide-react'
+import { Search, Scissors, Calendar, CheckCircle2, Factory, AlertTriangle, List } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { GroepAccordion } from '@/components/snijplanning/groep-accordion'
 import { AutoPlanningConfig } from '@/components/snijplanning/auto-planning-config'
+import { AgendaWeergave } from '@/components/snijplanning/agenda-weergave'
 import { cn } from '@/lib/utils/cn'
 import { useSnijplanningGroepen, useSnijplanningStatusCounts, useAutoplanningConfig } from '@/hooks/use-snijplanning'
 import { berekenTotDatum } from '@/components/snijplanning/week-filter'
@@ -31,6 +32,7 @@ function sorteerGroepen<T extends { kleur_code: string; vroegste_afleverdatum: s
 }
 
 export function SnijplanningOverviewPage() {
+  const [tab, setTab] = useState<'lijst' | 'agenda'>('lijst')
   const [status, setStatus] = useState('Alle')
   const [search, setSearch] = useState('')
   const [sortMode, setSortMode] = useState<SortMode>('leverdatum')
@@ -111,6 +113,38 @@ export function SnijplanningOverviewPage() {
         description={`${filteredGroepen.length ?? 0} kwaliteit/kleur groepen — ${allCount} snijplannen`}
       />
 
+      {/* Tab switcher */}
+      <div className="flex gap-1 mb-6 border-b border-slate-200">
+        {([
+          { key: 'lijst' as const, label: 'Lijst', icon: List },
+          { key: 'agenda' as const, label: 'Agenda', icon: Calendar },
+        ]).map((t) => {
+          const isActive = tab === t.key
+          return (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={cn(
+                'flex items-center gap-1.5 px-4 py-2 text-sm transition-colors border-b-2 -mb-px',
+                isActive
+                  ? 'border-terracotta-500 text-terracotta-700 font-medium'
+                  : 'border-transparent text-slate-500 hover:text-slate-700',
+              )}
+            >
+              <t.icon size={14} />
+              {t.label}
+            </button>
+          )
+        })}
+      </div>
+
+      {tab === 'agenda' ? <AgendaWeergave /> : <LijstWeergave />}
+    </>
+  )
+
+  function LijstWeergave() {
+    return (
+      <>
       {/* Stat cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         {stats.map((s) => (
@@ -232,10 +266,7 @@ export function SnijplanningOverviewPage() {
               key={`${g.kwaliteit_code}-${g.kleur_code}`}
               kwaliteitCode={g.kwaliteit_code}
               kleurCode={g.kleur_code}
-              totaalStukken={g.totaal_stukken}
               totaalOrders={g.totaal_orders}
-              totaalM2={g.totaal_m2}
-              totaalGesneden={g.totaal_gesneden}
               totaalSnijden={g.totaal_snijden ?? 0}
               totaalSnijdenGepland={g.totaal_snijden_gepland ?? 0}
               totDatum={totDatum}
@@ -245,7 +276,7 @@ export function SnijplanningOverviewPage() {
       ) : (
         <div className="space-y-6">
           {groepenPerKwaliteit.map(([kwaliteitCode, groepen]) => {
-            const totStukken = groepen.reduce((s, g) => s + g.totaal_stukken, 0)
+            const totStukken = groepen.reduce((s, g) => s + (g.totaal_snijden ?? 0), 0)
             const totM2 = groepen.reduce((s, g) => s + g.totaal_m2, 0)
             return (
               <Fragment key={kwaliteitCode}>
@@ -265,10 +296,7 @@ export function SnijplanningOverviewPage() {
                       key={`${g.kwaliteit_code}-${g.kleur_code}`}
                       kwaliteitCode={g.kwaliteit_code}
                       kleurCode={g.kleur_code}
-                      totaalStukken={g.totaal_stukken}
                       totaalOrders={g.totaal_orders}
-                      totaalM2={g.totaal_m2}
-                      totaalGesneden={g.totaal_gesneden}
                       totaalSnijden={g.totaal_snijden ?? 0}
                       totaalSnijdenGepland={g.totaal_snijden_gepland ?? 0}
                       totDatum={totDatum}
@@ -280,6 +308,7 @@ export function SnijplanningOverviewPage() {
           })}
         </div>
       )}
-    </>
-  )
+      </>
+    )
+  }
 }

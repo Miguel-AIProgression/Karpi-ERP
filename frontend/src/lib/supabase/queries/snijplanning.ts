@@ -84,6 +84,28 @@ export async function fetchSnijplannenVoorGroep(
   return (data ?? []) as SnijplanRow[]
 }
 
+/** Fetch locaties voor een set rol-IDs (losse query want view heeft geen locatie-kolom) */
+export async function fetchRolLocaties(rolIds: number[]): Promise<Map<number, string | null>> {
+  if (rolIds.length === 0) return new Map()
+  const { data, error } = await supabase
+    .from('rollen')
+    .select('id, locatie')
+    .in('id', rolIds)
+  if (error) throw error
+  return new Map((data ?? []).map((r: { id: number; locatie: string | null }) => [r.id, r.locatie]))
+}
+
+/** Fetch alle snijplannen met status='Snijden' voor agenda-planning */
+export async function fetchAlleSnijden(): Promise<SnijplanRow[]> {
+  const { data, error } = await supabase
+    .from('snijplanning_overzicht')
+    .select('*')
+    .eq('status', 'Snijden')
+    .order('afleverdatum', { ascending: true, nullsFirst: false })
+  if (error) throw error
+  return (data ?? []) as SnijplanRow[]
+}
+
 /** Fetch snijplannen pool from snijplanning_overzicht view with filters */
 export async function fetchSnijplanningPool(params: {
   status?: string
@@ -211,7 +233,7 @@ export async function fetchConfectielijst(): Promise<SnijplanRow[]> {
   const { data, error } = await supabase
     .from('snijplanning_overzicht')
     .select('*')
-    .in('status', ['Gesneden', 'In confectie', 'Gereed'])
+    .in('status', ['Gesneden', 'In confectie'])
     .order('maatwerk_afwerking', { ascending: true, nullsFirst: true })
     .order('afleverdatum', { ascending: true, nullsFirst: false })
   if (error) throw error

@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react'
 import { Settings, Save, CheckCircle2, Clock } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { usePlanningConfig, useUpdatePlanningConfig } from '@/hooks/use-planning-config'
+import { ConfectieTijdenConfig } from '@/components/confectie/confectie-tijden-config'
+import { WerktijdenConfig, useWerktijden } from '@/components/werkagenda/werktijden-config'
+import { VrijeDagenConfig } from '@/components/werkagenda/vrije-dagen-config'
 import type { PlanningConfig } from '@/lib/types/productie'
 
 export function ProductieInstellingenPage() {
@@ -9,6 +12,7 @@ export function ProductieInstellingenPage() {
   const updateMutation = useUpdatePlanningConfig()
   const [form, setForm] = useState<PlanningConfig | null>(null)
   const [saved, setSaved] = useState(false)
+  const [werktijden, setWerktijden] = useWerktijden()
 
   useEffect(() => {
     if (config && !form) setForm(config)
@@ -198,7 +202,16 @@ export function ProductieInstellingenPage() {
           </div>
         </div>
 
-        {/* Card 4: A/B Groepen (placeholder) */}
+        {/* Card 4: Werktijden (gedeeld snij + confectie) */}
+        <WerktijdenConfig werktijden={werktijden} onChange={setWerktijden} />
+
+        {/* Card 5: Vrije dagen / feestdagen */}
+        <VrijeDagenConfig werktijden={werktijden} onChange={setWerktijden} />
+
+        {/* Card 6: Confectietijden per type */}
+        <ConfectieTijdenConfig />
+
+        {/* Card 5: A/B Groepen (placeholder) */}
         <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-6">
           <h2 className="text-lg font-semibold text-slate-900 mb-2">A/B Groepen</h2>
           <p className="text-sm text-slate-500">

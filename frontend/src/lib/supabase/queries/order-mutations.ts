@@ -245,3 +245,21 @@ export async function fetchClientCommercialData(debiteurNr: number) {
   if (error) throw error
   return data as { prijslijst_nr: string | null; korting_pct: number; gratis_verzending: boolean; verzendkosten: number; verzend_drempel: number }
 }
+
+/** Update only the afwerking (+ optional band_kleur) on a single order_regel — used for locked orders where
+ *  everything else is immutable but afwerking was still pending. */
+export async function updateRegelAfwerking(
+  regelId: number,
+  afwerking: string,
+  bandKleur: string | null,
+) {
+  const { error } = await supabase
+    .from('order_regels')
+    .update({
+      maatwerk_afwerking: afwerking,
+      maatwerk_band_kleur: bandKleur,
+    })
+    .eq('id', regelId)
+
+  if (error) throw error
+}

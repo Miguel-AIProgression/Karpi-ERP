@@ -5,6 +5,8 @@ import { PageHeader } from '@/components/layout/page-header'
 import { OrderForm } from '@/components/orders/order-form'
 import { useOrderDetail, useOrderRegels } from '@/hooks/use-orders'
 import { fetchClientCommercialData } from '@/lib/supabase/queries/order-mutations'
+import { computeOrderLock } from '@/lib/utils/order-lock'
+import { AfwerkingOnlyEditor } from '@/components/orders/afwerking-only-editor'
 import type { SelectedClient } from '@/components/orders/client-selector'
 import type { OrderRegelFormData } from '@/lib/supabase/queries/order-mutations'
 
@@ -31,6 +33,46 @@ export function OrderEditPage() {
       <>
         <PageHeader title="Order niet gevonden" />
         <Link to="/orders" className="text-terracotta-500 hover:underline">Terug</Link>
+      </>
+    )
+  }
+
+  const lockMode = computeOrderLock(regels)
+
+  if (lockMode === 'full') {
+    return (
+      <>
+        <div className="mb-4">
+          <Link
+            to={`/orders/${orderId}`}
+            className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700"
+          >
+            <ArrowLeft size={14} />
+            Terug naar order
+          </Link>
+        </div>
+        <PageHeader title={`Order ${order.order_nr} kan niet worden bewerkt`} />
+        <div className="bg-amber-50 border border-amber-200 rounded-[var(--radius)] p-4 text-sm text-amber-900">
+          Deze order is (deels) al gesneden en kan daarom niet meer worden gewijzigd.
+        </div>
+      </>
+    )
+  }
+
+  if (lockMode === 'afwerking-only') {
+    return (
+      <>
+        <div className="mb-4">
+          <Link
+            to={`/orders/${orderId}`}
+            className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700"
+          >
+            <ArrowLeft size={14} />
+            Terug naar order
+          </Link>
+        </div>
+        <PageHeader title={`Order ${order.order_nr} — afwerking toevoegen`} />
+        <AfwerkingOnlyEditor orderId={orderId} regels={regels ?? []} />
       </>
     )
   }
