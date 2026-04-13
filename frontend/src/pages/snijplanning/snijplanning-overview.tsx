@@ -1,17 +1,39 @@
 import { useState, useMemo, Fragment } from 'react'
-import { Search, Scissors, Calendar, CheckCircle2, Clock, AlertTriangle } from 'lucide-react'
+import { Search, Scissors, Calendar, CheckCircle2, Factory, AlertTriangle } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { GroepAccordion } from '@/components/snijplanning/groep-accordion'
 import { AutoPlanningConfig } from '@/components/snijplanning/auto-planning-config'
 import { cn } from '@/lib/utils/cn'
-import { useSnijplanningGroepen, useSnijplanningStatusCounts, useProductieDashboard, useAutoplanningConfig } from '@/hooks/use-snijplanning'
+import { useSnijplanningGroepen, useSnijplanningStatusCounts, useAutoplanningConfig } from '@/hooks/use-snijplanning'
 import { berekenTotDatum } from '@/components/snijplanning/week-filter'
 
 const SNIJPLAN_STATUSES = ['Alle', 'Tekort', 'Snijden']
+type SortMode = 'alfabetisch' | 'leverdatum'
+
+function sorteerGroepen<T extends { kleur_code: string; vroegste_afleverdatum: string | null }>(
+  lijst: T[],
+  mode: SortMode,
+): T[] {
+  const copy = [...lijst]
+  if (mode === 'leverdatum') {
+    copy.sort((a, b) => {
+      const aD = a.vroegste_afleverdatum
+      const bD = b.vroegste_afleverdatum
+      if (aD === bD) return a.kleur_code.localeCompare(b.kleur_code)
+      if (!aD) return 1
+      if (!bD) return -1
+      return aD.localeCompare(bD)
+    })
+  } else {
+    copy.sort((a, b) => a.kleur_code.localeCompare(b.kleur_code))
+  }
+  return copy
+}
 
 export function SnijplanningOverviewPage() {
   const [status, setStatus] = useState('Alle')
   const [search, setSearch] = useState('')
+  const [sortMode, setSortMode] = useState<SortMode>('leverdatum')
   const { data: autoConfig } = useAutoplanningConfig()
 
   // Gebruik de auto-planning horizon als filter (als die aan staat)
@@ -20,7 +42,6 @@ export function SnijplanningOverviewPage() {
 
   const { data: groepen, isLoading } = useSnijplanningGroepen(search || undefined, totDatum)
   const { data: statusCounts } = useSnijplanningStatusCounts(totDatum)
-  const { data: dashboard } = useProductieDashboard()
 
   // Groepen met tekort: stukken zonder rol (niet gepland) terwijl rollen nodig zijn
   const tekortGroepen = useMemo(() => {
@@ -42,7 +63,12 @@ export function SnijplanningOverviewPage() {
     return actieveGroepen
   }, [actieveGroepen, status, tekortGroepen])
 
-  // Groepeer per kwaliteit voor de gegroepeerde weergave
+  // Bij 'leverdatum': platte lijst gesorteerd op vroegste leverdatum (null achteraan).
+  // Bij 'alfabetisch': gegroepeerd per kwaliteit voor overzicht.
+  const platteGroepen = useMemo(
+    () => sorteerGroepen(filteredGroepen, 'leverdatum'),
+    [filteredGroepen],
+  )
   const groepenPerKwaliteit = useMemo(() => {
     const map = new Map<string, typeof filteredGroepen>()
     for (const g of filteredGroepen) {
@@ -50,7 +76,12 @@ export function SnijplanningOverviewPage() {
       lijst.push(g)
       map.set(g.kwaliteit_code, lijst)
     }
-    return Array.from(map.entries()) // [kwaliteitCode, groepen[]]
+    for (const [code, lijst] of map.entries()) {
+      map.set(code, sorteerGroepen(lijst, 'alfabetisch'))
+    }
+    const entries = Array.from(map.entries())
+    entries.sort(([a], [b]) => a.localeCompare(b))
+    return entries
   }, [filteredGroepen])
 
   const countMap = new Map((statusCounts ?? []).map((c) => [c.status, c.aantal]))
@@ -58,12 +89,20 @@ export function SnijplanningOverviewPage() {
     .filter((c) => c.status === 'Snijden')
     .reduce((sum, c) => sum + c.aantal, 0)
 
-  const stats = [
-    { label: 'Wacht op planning', value: dashboard?.snijplannen_wacht ?? 0, icon: Scissors, color: 'text-slate-700' },
-    { label: 'Gepland', value: dashboard?.snijplannen_gepland ?? 0, icon: Calendar, color: 'text-blue-600' },
-    { label: 'In productie', value: dashboard?.snijplannen_in_productie ?? 0, icon: Clock, color: 'text-indigo-600' },
-    { label: 'Klaar voor confectie', value: dashboard?.snijplannen_gesneden ?? 0, icon: CheckCircle2, color: 'text-emerald-600' },
-  ]
+  // Aggregeer stats uit de groepen — matcht de nieuwe 3-fase workflow
+  const stats = useMemo(() => {
+    const g = groepen ?? []
+    const snijdenZonderRol = g.reduce((s, x) => s + (x.totaal_snijden ?? 0) - (x.totaal_snijden_gepland ?? 0), 0)
+    const snijdenGepland = g.reduce((s, x) => s + (x.totaal_snijden_gepland ?? 0), 0)
+    const gesneden = g.reduce((s, x) => s + (x.totaal_status_gesneden ?? 0), 0)
+    const inConfectie = g.reduce((s, x) => s + (x.totaal_in_confectie ?? 0) + (x.totaal_gereed ?? 0), 0)
+    return [
+      { label: 'Wacht op planning', value: snijdenZonderRol, icon: Scissors, color: 'text-slate-700' },
+      { label: 'Gepland', value: snijdenGepland, icon: Calendar, color: 'text-blue-600' },
+      { label: 'Gesneden', value: gesneden, icon: CheckCircle2, color: 'text-emerald-600' },
+      { label: 'In confectie', value: inConfectie, icon: Factory, color: 'text-indigo-600' },
+    ]
+  }, [groepen])
 
   return (
     <>
@@ -97,7 +136,29 @@ export function SnijplanningOverviewPage() {
             className="w-full pl-10 pr-4 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
           />
         </div>
-        <AutoPlanningConfig />
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-[var(--radius-sm)] border border-slate-200 overflow-hidden text-xs">
+            <button
+              onClick={() => setSortMode('leverdatum')}
+              className={cn(
+                'px-3 py-1.5 transition-colors',
+                sortMode === 'leverdatum' ? 'bg-terracotta-500 text-white font-medium' : 'bg-white text-slate-600 hover:bg-slate-50',
+              )}
+            >
+              Leverdatum
+            </button>
+            <button
+              onClick={() => setSortMode('alfabetisch')}
+              className={cn(
+                'px-3 py-1.5 transition-colors border-l border-slate-200',
+                sortMode === 'alfabetisch' ? 'bg-terracotta-500 text-white font-medium' : 'bg-white text-slate-600 hover:bg-slate-50',
+              )}
+            >
+              Alfabetisch
+            </button>
+          </div>
+          <AutoPlanningConfig />
+        </div>
       </div>
 
       {/* Tekort banner */}
@@ -164,6 +225,23 @@ export function SnijplanningOverviewPage() {
         <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-12 text-center text-slate-400">
           Geen snijplannen gevonden
         </div>
+      ) : sortMode === 'leverdatum' ? (
+        <div className="space-y-2">
+          {platteGroepen.map((g) => (
+            <GroepAccordion
+              key={`${g.kwaliteit_code}-${g.kleur_code}`}
+              kwaliteitCode={g.kwaliteit_code}
+              kleurCode={g.kleur_code}
+              totaalStukken={g.totaal_stukken}
+              totaalOrders={g.totaal_orders}
+              totaalM2={g.totaal_m2}
+              totaalGesneden={g.totaal_gesneden}
+              totaalSnijden={g.totaal_snijden ?? 0}
+              totaalSnijdenGepland={g.totaal_snijden_gepland ?? 0}
+              totDatum={totDatum}
+            />
+          ))}
+        </div>
       ) : (
         <div className="space-y-6">
           {groepenPerKwaliteit.map(([kwaliteitCode, groepen]) => {
@@ -171,7 +249,6 @@ export function SnijplanningOverviewPage() {
             const totM2 = groepen.reduce((s, g) => s + g.totaal_m2, 0)
             return (
               <Fragment key={kwaliteitCode}>
-                {/* Kwaliteit scheidingsbalk */}
                 <div className="flex items-center gap-3 pt-2">
                   <span className="text-xs font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">
                     {kwaliteitCode}
@@ -179,10 +256,9 @@ export function SnijplanningOverviewPage() {
                   <div className="flex-1 h-px bg-slate-200" />
                   <span className="text-xs text-slate-400 whitespace-nowrap">
                     {groepen.length} {groepen.length === 1 ? 'kleur' : 'kleuren'}
-                    {' · '}{totStukken} stuks · {totM2} m²
+                    {' · '}{totStukken} stuks · {Math.round(totM2)} m²
                   </span>
                 </div>
-                {/* Groepen per kleur */}
                 <div className="space-y-2">
                   {groepen.map((g) => (
                     <GroepAccordion

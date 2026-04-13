@@ -19,9 +19,12 @@ interface RolGroepData {
   rolBreedte: number
   rolLengte: number
   stukken: SnijplanRow[]
+  vroegsteLeverdatum: string | null
 }
 
-/** Groepeer stukken per rol_id */
+const INITIEEL_ZICHTBAAR = 3
+
+/** Groepeer stukken per rol_id en sorteer op vroegste leverdatum (null achteraan) */
 function groepeerPerRol(stukken: SnijplanRow[]): RolGroepData[] {
   const map = new Map<number, RolGroepData>()
   for (const s of stukken) {
@@ -33,11 +36,21 @@ function groepeerPerRol(stukken: SnijplanRow[]): RolGroepData[] {
         rolBreedte: s.rol_breedte_cm ?? 400,
         rolLengte: s.rol_lengte_cm ?? 2000,
         stukken: [],
+        vroegsteLeverdatum: null,
       })
     }
-    map.get(s.rol_id)!.stukken.push(s)
+    const groep = map.get(s.rol_id)!
+    groep.stukken.push(s)
+    if (s.afleverdatum && (!groep.vroegsteLeverdatum || s.afleverdatum < groep.vroegsteLeverdatum)) {
+      groep.vroegsteLeverdatum = s.afleverdatum
+    }
   }
-  return Array.from(map.values())
+  return Array.from(map.values()).sort((a, b) => {
+    if (a.vroegsteLeverdatum === b.vroegsteLeverdatum) return 0
+    if (!a.vroegsteLeverdatum) return 1
+    if (!b.vroegsteLeverdatum) return -1
+    return a.vroegsteLeverdatum.localeCompare(b.vroegsteLeverdatum)
+  })
 }
 
 export function ProductieGroepPage() {
@@ -46,11 +59,15 @@ export function ProductieGroepPage() {
   const kleur = params.get('kleur') ?? ''
 
   const { data: alleStukken, isLoading } = useSnijplannenVoorGroep(kwaliteit, kleur, !!kwaliteit && !!kleur)
+  const [toonAlles, setToonAlles] = useState(false)
 
   const rolGroepen = useMemo(() => {
     if (!alleStukken) return []
     return groepeerPerRol(alleStukken)
   }, [alleStukken])
+
+  const zichtbareRollen = toonAlles ? rolGroepen : rolGroepen.slice(0, INITIEEL_ZICHTBAAR)
+  const verborgen = rolGroepen.length - zichtbareRollen.length
 
   // Stukken zonder rol (nog niet ingepland)
   const zonderRol = useMemo(() => {
@@ -112,9 +129,19 @@ export function ProductieGroepPage() {
         </div>
       ) : (
         <div className="space-y-6">
-          {rolGroepen.map((rol) => (
+          {zichtbareRollen.map((rol) => (
             <RolCard key={rol.rolId} rol={rol} kwaliteit={kwaliteit} kleur={kleur} />
           ))}
+          {rolGroepen.length > INITIEEL_ZICHTBAAR && (
+            <button
+              onClick={() => setToonAlles((v) => !v)}
+              className="w-full py-2.5 text-sm text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-[var(--radius-sm)] border border-dashed border-slate-300 transition-colors"
+            >
+              {toonAlles
+                ? `Toon minder — verberg ${rolGroepen.length - INITIEEL_ZICHTBAAR} latere rol${rolGroepen.length - INITIEEL_ZICHTBAAR === 1 ? '' : 'len'}`
+                : `Toon ${verborgen} latere rol${verborgen === 1 ? '' : 'len'}`}
+            </button>
+          )}
         </div>
       )}
     </>

@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils/cn'
 import { AFWERKING_MAP } from '@/lib/utils/constants'
 import { getVormDisplay } from '@/lib/utils/vorm-labels'
 import { useSnijplannenVoorGroep, useGenereerSnijvoorstel, useBeschikbareCapaciteit, useGoedgekeurdVoorstel, useTriggerAutoplan } from '@/hooks/use-snijplanning'
+import { usePlanningConfig } from '@/hooks/use-planning-config'
 import { SnijvoorstelModal } from './snijvoorstel-modal'
 import { buildPlanFromStukken } from '@/lib/utils/snijplan-mapping'
 import type { SnijplanRow, SnijvoorstelResponse } from '@/lib/types/productie'
@@ -41,6 +42,8 @@ export function GroepAccordion({
   const [showPlan, setShowPlan] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [showSnijModal, setShowSnijModal] = useState(false)
+  const [toonAlles, setToonAlles] = useState(false)
+  const INITIEEL_ZICHTBAAR_STUKKEN = 5
   const genereer = useGenereerSnijvoorstel()
   const autoplan = useTriggerAutoplan()
   const { data: capaciteit } = useBeschikbareCapaciteit(kwaliteitCode, kleurCode)
@@ -51,6 +54,77 @@ export function GroepAccordion({
 
   // Altijd stukken laden (view is standaard open)
   const { data: stukken, isLoading } = useSnijplannenVoorGroep(kwaliteitCode, kleurCode, true, totDatum)
+
+  // Sorteer op rol-niveau: rollen op vroegste leverdatum, binnen een rol op leverdatum.
+  // Stukken zonder rol krijgen een eigen groep per stuk en staan na de echte rollen.
+  const gesorteerdeStukken = useMemo(() => {
+    if (!stukken) return []
+    // Groepeer per rol_id (null = eigen groep per stuk, geen samenvoeging)
+    type Groep = { key: string; stukken: SnijplanRow[]; vroegste: string | null }
+    const groepen = new Map<string, Groep>()
+    for (const s of stukken) {
+      const key = s.rol_id != null ? `rol-${s.rol_id}` : `stuk-${s.id}`
+      let g = groepen.get(key)
+      if (!g) {
+        g = { key, stukken: [], vroegste: null }
+        groepen.set(key, g)
+      }
+      g.stukken.push(s)
+      if (s.afleverdatum && (!g.vroegste || s.afleverdatum < g.vroegste)) {
+        g.vroegste = s.afleverdatum
+      }
+    }
+    const sorterenOpDatum = <T extends { afleverdatum?: string | null }>(a: T, b: T) => {
+      const aD = a.afleverdatum ?? null
+      const bD = b.afleverdatum ?? null
+      if (aD === bD) return 0
+      if (!aD) return 1
+      if (!bD) return -1
+      return aD.localeCompare(bD)
+    }
+    const sortedGroepen = Array.from(groepen.values()).sort((a, b) => {
+      if (a.vroegste === b.vroegste) return 0
+      if (!a.vroegste) return 1
+      if (!b.vroegste) return -1
+      return a.vroegste.localeCompare(b.vroegste)
+    })
+    return sortedGroepen.flatMap((g) => [...g.stukken].sort(sorterenOpDatum))
+  }, [stukken])
+
+  // Zichtbare = eerste N stukken, uitgebreid tot einde van de rol die daar valt
+  // (nooit een rol halveren).
+  const zichtbareStukken = useMemo(() => {
+    if (toonAlles) return gesorteerdeStukken
+    if (gesorteerdeStukken.length <= INITIEEL_ZICHTBAAR_STUKKEN) return gesorteerdeStukken
+    let cutoff = INITIEEL_ZICHTBAAR_STUKKEN
+    const laatsteRolId = gesorteerdeStukken[cutoff - 1]?.rol_id ?? null
+    if (laatsteRolId != null) {
+      while (
+        cutoff < gesorteerdeStukken.length
+        && gesorteerdeStukken[cutoff].rol_id === laatsteRolId
+      ) {
+        cutoff++
+      }
+    }
+    return gesorteerdeStukken.slice(0, cutoff)
+  }, [toonAlles, gesorteerdeStukken])
+  const verborgenStukken = gesorteerdeStukken.length - zichtbareStukken.length
+
+  // Geschatte snijtijd voor de zichtbare stukken (status 'Snijden')
+  const { data: planningConfig } = usePlanningConfig()
+  const geschatteTijd = useMemo(() => {
+    if (!planningConfig) return null
+    const teSnijden = zichtbareStukken.filter((s) => s.status === 'Snijden')
+    if (teSnijden.length === 0) return null
+    const uniekeRollen = new Set(teSnijden.map((s) => s.rol_id).filter((id) => id != null)).size
+    const minuten = uniekeRollen * planningConfig.wisseltijd_minuten
+      + teSnijden.length * planningConfig.snijtijd_minuten
+    if (minuten === 0) return null
+    const uren = Math.floor(minuten / 60)
+    const min = Math.round(minuten % 60)
+    if (uren === 0) return `${min} min`
+    return min === 0 ? `${uren} uur` : `${uren} uur ${min} min`
+  }, [planningConfig, zichtbareStukken])
 
   // Try loading the approved voorstel (has correct placed dimensions from optimizer)
   const { data: goedgekeurdPlan } = useGoedgekeurdVoorstel(kwaliteitCode, kleurCode, showPlan && !voorstelResult)
@@ -122,6 +196,14 @@ export function GroepAccordion({
             )}>
               {totaalGesneden}/{totaalStukken} gesneden
             </span>
+            {geschatteTijd && (
+              <span
+                className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600"
+                title={toonAlles ? 'Geschatte snijtijd voor alle stukken' : 'Geschatte snijtijd voor de zichtbare stukken'}
+              >
+                ~{geschatteTijd}
+              </span>
+            )}
             {capaciteit && (
               <Link
                 to={`/rollen?kwaliteit=${kwaliteitCode}&kleur=${kleurCode}`}
@@ -265,7 +347,7 @@ export function GroepAccordion({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {stukken.map((stuk) => (
+                  {zichtbareStukken.map((stuk) => (
                     <StukRow
                       key={stuk.id}
                       stuk={stuk}
@@ -273,6 +355,20 @@ export function GroepAccordion({
                       onToggle={toggleStuk}
                     />
                   ))}
+                  {gesorteerdeStukken.length > INITIEEL_ZICHTBAAR_STUKKEN && (
+                    <tr>
+                      <td colSpan={10} className="p-0">
+                        <button
+                          onClick={() => setToonAlles((v) => !v)}
+                          className="w-full py-2 text-xs text-slate-500 hover:text-slate-900 hover:bg-slate-50 transition-colors"
+                        >
+                          {toonAlles
+                            ? `Toon minder — verberg ${gesorteerdeStukken.length - INITIEEL_ZICHTBAAR_STUKKEN} latere stukken`
+                            : `Toon ${verborgenStukken} latere stukken`}
+                        </button>
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
 
