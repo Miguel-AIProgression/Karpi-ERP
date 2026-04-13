@@ -106,7 +106,7 @@ export function SnijplanningOverviewPage() {
           <AlertTriangle size={16} className="flex-shrink-0" />
           <span>
             <strong>{tekortGroepen.length} groepen</strong> hebben onvoldoende rollen —{' '}
-            {tekortGroepen.reduce((sum, g) => sum + (g.totaal_wacht ?? 0), 0)} stukken wachten op materiaal.
+            {tekortGroepen.reduce((sum, g) => sum + (g.totaal_snijden ?? 0), 0)} stukken wachten op materiaal.
           </span>
           <button
             onClick={() => setStatus('Tekort')}
@@ -168,7 +168,6 @@ export function SnijplanningOverviewPage() {
         <div className="space-y-6">
           {groepenPerKwaliteit.map(([kwaliteitCode, groepen]) => {
             const totStukken = groepen.reduce((s, g) => s + g.totaal_stukken, 0)
-            const totOrders = groepen.reduce((s, g) => s + g.totaal_orders, 0)
             const totM2 = groepen.reduce((s, g) => s + g.totaal_m2, 0)
             return (
               <Fragment key={kwaliteitCode}>

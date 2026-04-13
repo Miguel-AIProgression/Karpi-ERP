@@ -54,10 +54,10 @@ export function ProductieGroepPage() {
 
   // Stukken zonder rol (nog niet ingepland)
   const zonderRol = useMemo(() => {
-    return (alleStukken ?? []).filter(s => !s.rol_id && s.status === 'Gepland')
+    return (alleStukken ?? []).filter(s => !s.rol_id && s.status === 'Snijden')
   }, [alleStukken])
 
-  const totaalTeSnijden = (alleStukken ?? []).filter(s => s.status === 'Gepland' || s.status === 'In productie').length
+  const totaalTeSnijden = (alleStukken ?? []).filter(s => s.status === 'Snijden').length
   const totaalGesneden = (alleStukken ?? []).filter(s => s.status === 'Gesneden' || s.status === 'In confectie' || s.status === 'Gereed').length
   const { data: planningConfig } = usePlanningConfig()
 
@@ -131,11 +131,9 @@ function RolCard({ rol, kwaliteit, kleur }: { rol: RolGroepData; kwaliteit: stri
   const [showReststukModal, setShowReststukModal] = useState(false)
   const [reststukResult, setReststukResult] = useState<ReststukResult | null>(null)
 
-  const gepland = rol.stukken.filter(s => s.status === 'Gepland')
-  const inProd = rol.stukken.filter(s => s.status === 'In productie')
-  const teSnijden = [...gepland, ...inProd]
+  const teSnijden = rol.stukken.filter(s => s.status === 'Snijden')
   const alGesneden = rol.stukken.filter(s => s.status === 'Gesneden' || s.status === 'In confectie' || s.status === 'Gereed')
-  const heeftGepland = gepland.length > 0 && inProd.length === 0 && !inProductie
+  const heeftGepland = teSnijden.length > 0 && !inProductie
 
   const { snijStukken, gebruikteLengte, afvalPct, reststukBruikbaar } =
     mapSnijplannenToStukken(rol.stukken, rol.rolBreedte, rol.rolLengte)
@@ -237,7 +235,7 @@ function RolCard({ rol, kwaliteit, kleur }: { rol: RolGroepData; kwaliteit: stri
               ) : (
                 <Scissors size={16} />
               )}
-              Start productie ({gepland.length} stuks)
+              Start productie ({teSnijden.length} stuks)
             </button>
           ) : teSnijden.length > 0 ? (
             <button
@@ -320,8 +318,7 @@ function RolCard({ rol, kwaliteit, kleur }: { rol: RolGroepData; kwaliteit: stri
                 <td className="py-2 pr-3">
                   <span className={cn(
                     'text-xs px-1.5 py-0.5 rounded',
-                    stuk.status === 'Gepland' ? 'bg-blue-100 text-blue-700'
-                      : stuk.status === 'In productie' ? 'bg-indigo-100 text-indigo-700'
+                    stuk.status === 'Snijden' ? 'bg-blue-100 text-blue-700'
                       : stuk.status === 'Gesneden' ? 'bg-emerald-100 text-emerald-700'
                       : 'bg-slate-100 text-slate-600'
                   )}>
