@@ -5,10 +5,10 @@ import { GroepAccordion } from '@/components/snijplanning/groep-accordion'
 import { AutoPlanningConfig } from '@/components/snijplanning/auto-planning-config'
 import { AgendaWeergave } from '@/components/snijplanning/agenda-weergave'
 import { cn } from '@/lib/utils/cn'
-import { useSnijplanningGroepen, useSnijplanningStatusCounts, useAutoplanningConfig } from '@/hooks/use-snijplanning'
+import { useSnijplanningGroepen, useAutoplanningConfig } from '@/hooks/use-snijplanning'
 import { berekenTotDatum } from '@/components/snijplanning/week-filter'
 
-const SNIJPLAN_STATUSES = ['Alle', 'Tekort', 'Snijden']
+const SNIJPLAN_STATUSES = ['Te snijden', 'Tekort']
 type SortMode = 'alfabetisch' | 'leverdatum'
 
 function sorteerGroepen<T extends { kleur_code: string; vroegste_afleverdatum: string | null }>(
@@ -33,7 +33,7 @@ function sorteerGroepen<T extends { kleur_code: string; vroegste_afleverdatum: s
 
 export function SnijplanningOverviewPage() {
   const [tab, setTab] = useState<'lijst' | 'agenda'>('lijst')
-  const [status, setStatus] = useState('Alle')
+  const [status, setStatus] = useState('Te snijden')
   const [search, setSearch] = useState('')
   const [sortMode, setSortMode] = useState<SortMode>('leverdatum')
   const { data: autoConfig } = useAutoplanningConfig()
@@ -43,7 +43,6 @@ export function SnijplanningOverviewPage() {
   const totDatum = berekenTotDatum(horizonWeken)
 
   const { data: groepen, isLoading } = useSnijplanningGroepen(search || undefined, totDatum)
-  const { data: statusCounts } = useSnijplanningStatusCounts(totDatum)
 
   // Groepen met tekort: stukken zonder rol (niet gepland) terwijl rollen nodig zijn
   const tekortGroepen = useMemo(() => {
@@ -51,19 +50,19 @@ export function SnijplanningOverviewPage() {
     return groepen.filter((g) => (g.totaal_snijden ?? 0) - (g.totaal_snijden_gepland ?? 0) > 0)
   }, [groepen])
 
-  // Verberg groepen waar alle stukken al gesneden zijn — die staan in de confectielijst
-  const actieveGroepen = useMemo(() => {
+  // Te snijden: groepen met minimaal één stuk dat een rol toegewezen heeft.
+  // Dit is de werklijst voor snijders — tekorten (stukken zonder rol) zijn
+  // voor inkoop en verschijnen in de Tekort-tab.
+  const teSnijdenGroepen = useMemo(() => {
     if (!groepen) return []
-    return groepen.filter((g) => (g.totaal_snijden ?? 0) > 0)
+    return groepen.filter((g) => (g.totaal_snijden_gepland ?? 0) > 0)
   }, [groepen])
 
   // Client-side filtering
   const filteredGroepen = useMemo(() => {
-    if (status === 'Alle') return actieveGroepen
     if (status === 'Tekort') return tekortGroepen
-    if (status === 'Snijden') return actieveGroepen
-    return actieveGroepen
-  }, [actieveGroepen, status, tekortGroepen])
+    return teSnijdenGroepen
+  }, [teSnijdenGroepen, status, tekortGroepen])
 
   // Bij 'leverdatum': platte lijst gesorteerd op vroegste leverdatum (null achteraan).
   // Bij 'alfabetisch': gegroepeerd per kwaliteit voor overzicht.
@@ -86,10 +85,10 @@ export function SnijplanningOverviewPage() {
     return entries
   }, [filteredGroepen])
 
-  const countMap = new Map((statusCounts ?? []).map((c) => [c.status, c.aantal]))
-  const allCount = (statusCounts ?? [])
-    .filter((c) => c.status === 'Snijden')
-    .reduce((sum, c) => sum + c.aantal, 0)
+  const teSnijdenCount = useMemo(
+    () => teSnijdenGroepen.reduce((sum, g) => sum + (g.totaal_snijden_gepland ?? 0), 0),
+    [teSnijdenGroepen],
+  )
 
   // Aggregeer stats uit de groepen — matcht de nieuwe 3-fase workflow
   const stats = useMemo(() => {
@@ -110,7 +109,7 @@ export function SnijplanningOverviewPage() {
     <>
       <PageHeader
         title="Snijplanning"
-        description={`${filteredGroepen.length ?? 0} kwaliteit/kleur groepen — ${allCount} snijplannen`}
+        description={`${filteredGroepen.length ?? 0} kwaliteit/kleur groepen — ${teSnijdenCount} snijplannen`}
       />
 
       {/* Tab switcher */}
@@ -215,9 +214,7 @@ export function SnijplanningOverviewPage() {
       {/* Status tabs */}
       <div className="flex gap-1 overflow-x-auto pb-2 mb-4">
         {SNIJPLAN_STATUSES.map((s) => {
-          const count = s === 'Alle' ? allCount
-            : s === 'Tekort' ? tekortGroepen.length
-            : (countMap.get(s) ?? 0)
+          const count = s === 'Tekort' ? tekortGroepen.length : teSnijdenCount
           const isActive = status === s
           const isTekort = s === 'Tekort'
           return (
@@ -261,7 +258,7 @@ export function SnijplanningOverviewPage() {
         </div>
       ) : sortMode === 'leverdatum' ? (
         <div className="space-y-2">
-          {platteGroepen.map((g) => (
+          {platteGroepen.map((g, idx) => (
             <GroepAccordion
               key={`${g.kwaliteit_code}-${g.kleur_code}`}
               kwaliteitCode={g.kwaliteit_code}
@@ -270,12 +267,13 @@ export function SnijplanningOverviewPage() {
               totaalSnijden={g.totaal_snijden ?? 0}
               totaalSnijdenGepland={g.totaal_snijden_gepland ?? 0}
               totDatum={totDatum}
+              defaultOpen={idx === 0}
             />
           ))}
         </div>
       ) : (
         <div className="space-y-6">
-          {groepenPerKwaliteit.map(([kwaliteitCode, groepen]) => {
+          {groepenPerKwaliteit.map(([kwaliteitCode, groepen], kIdx) => {
             const totStukken = groepen.reduce((s, g) => s + (g.totaal_snijden ?? 0), 0)
             const totM2 = groepen.reduce((s, g) => s + g.totaal_m2, 0)
             return (
@@ -291,7 +289,7 @@ export function SnijplanningOverviewPage() {
                   </span>
                 </div>
                 <div className="space-y-2">
-                  {groepen.map((g) => (
+                  {groepen.map((g, gIdx) => (
                     <GroepAccordion
                       key={`${g.kwaliteit_code}-${g.kleur_code}`}
                       kwaliteitCode={g.kwaliteit_code}
@@ -300,6 +298,7 @@ export function SnijplanningOverviewPage() {
                       totaalSnijden={g.totaal_snijden ?? 0}
                       totaalSnijdenGepland={g.totaal_snijden_gepland ?? 0}
                       totDatum={totDatum}
+                      defaultOpen={kIdx === 0 && gIdx === 0}
                     />
                   ))}
                 </div>
