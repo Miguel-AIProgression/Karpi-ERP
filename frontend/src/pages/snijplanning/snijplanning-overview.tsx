@@ -266,6 +266,7 @@ export function SnijplanningOverviewPage() {
               totaalOrders={g.totaal_orders}
               totaalSnijden={g.totaal_snijden ?? 0}
               totaalSnijdenGepland={g.totaal_snijden_gepland ?? 0}
+              modus={status === 'Tekort' ? 'tekort' : 'te-snijden'}
               totDatum={totDatum}
               defaultOpen={idx === 0}
             />

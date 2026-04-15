@@ -1,15 +1,15 @@
 import { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { ChevronDown, ChevronRight, Printer, Scissors, Loader2, Eye, CheckSquare } from 'lucide-react'
-import { SnijBevestigingModal } from './snij-bevestiging-modal'
+import { ChevronDown, ChevronRight, Printer, Scissors, Loader2 } from 'lucide-react'
+import { RolUitvoerModal } from './rol-uitvoer-modal'
 import { formatDate } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
 import { AFWERKING_MAP } from '@/lib/utils/constants'
 import { getVormDisplay } from '@/lib/utils/vorm-labels'
-import { useSnijplannenVoorGroep, useGenereerSnijvoorstel, useBeschikbareCapaciteit, useGoedgekeurdVoorstel, useTriggerAutoplan, useRolLocaties } from '@/hooks/use-snijplanning'
+import { useSnijplannenVoorGroep, useGenereerSnijvoorstel, useBeschikbareCapaciteit, useGoedgekeurdVoorstel, useTriggerAutoplan, useRolLocaties, useStartProductieRol } from '@/hooks/use-snijplanning'
 import { usePlanningConfig } from '@/hooks/use-planning-config'
 import { SnijvoorstelModal } from './snijvoorstel-modal'
-import { buildPlanFromStukken } from '@/lib/utils/snijplan-mapping'
+import { buildPlanFromStukken, groepeerStukkenPerRol, type RolGroep } from '@/lib/utils/snijplan-mapping'
 import type { SnijplanRow, SnijvoorstelResponse } from '@/lib/types/productie'
 
 interface GroepAccordionProps {
@@ -19,8 +19,10 @@ interface GroepAccordionProps {
   totaalSnijden: number
   totaalSnijdenGepland: number
   totDatum?: string | null
+  defaultOpen?: boolean
+  /** 'te-snijden' toont alleen stukken met rol; 'tekort' toont alleen stukken zonder rol. */
+  modus?: 'te-snijden' | 'tekort'
 }
-
 
 export function GroepAccordion({
   kwaliteitCode,
@@ -29,27 +31,28 @@ export function GroepAccordion({
   totaalSnijden,
   totaalSnijdenGepland,
   totDatum,
+  defaultOpen = false,
+  modus = 'te-snijden',
 }: GroepAccordionProps) {
-  const [open, setOpen] = useState(true)
+  const [toonExtraRollen, setToonExtraRollen] = useState(false)
+  const kleurCodeZonderDecimaal = kleurCode.replace(/\.0$/, '')
+  // defaultOpen was voorheen voor collapse — nu altijd open, prop blijft voor compat
+  void defaultOpen
   const [genError, setGenError] = useState<string | null>(null)
   const [voorstelResult, setVoorstelResult] = useState<SnijvoorstelResponse | null>(null)
   const [showPlan, setShowPlan] = useState(false)
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
-  const [showSnijModal, setShowSnijModal] = useState(false)
-  const [toonAlles, setToonAlles] = useState(false)
-  const INITIEEL_ZICHTBAAR_STUKKEN = 5
+  const [activeRolId, setActiveRolId] = useState<number | null>(null)
+  const startProductie = useStartProductieRol()
+  const [startError, setStartError] = useState<string | null>(null)
   const genereer = useGenereerSnijvoorstel()
   const autoplan = useTriggerAutoplan()
   const { data: capaciteit } = useBeschikbareCapaciteit(kwaliteitCode, kleurCode)
 
-  // Gepland = heeft rol toegewezen; Wacht = nog geen rol
   const heeftGepland = totaalSnijdenGepland > 0
   const heeftWacht = totaalSnijden - totaalSnijdenGepland > 0
 
-  // Altijd stukken laden (view is standaard open)
   const { data: stukken, isLoading } = useSnijplannenVoorGroep(kwaliteitCode, kleurCode, true, totDatum)
 
-  // m² van de nog-te-snijden stukken (view query filtert al op status='Snijden')
   const teSnijdenM2 = useMemo(() => {
     if (!stukken) return null
     const totaal = stukken.reduce((s, x) => {
@@ -59,255 +62,75 @@ export function GroepAccordion({
     return Math.round(totaal * 10) / 10
   }, [stukken])
 
-  // Sorteer op rol-niveau: rollen op vroegste leverdatum, binnen een rol op leverdatum.
-  // Stukken zonder rol krijgen een eigen groep per stuk en staan na de echte rollen.
-  const gesorteerdeStukken = useMemo(() => {
+  // Rol-groepen (stukken met rol_id), gesorteerd op leverdatum + aantal
+  const rolGroepen = useMemo<RolGroep[]>(() => {
     if (!stukken) return []
-    // Groepeer per rol_id (null = eigen groep per stuk, geen samenvoeging)
-    type Groep = { key: string; stukken: SnijplanRow[]; vroegste: string | null }
-    const groepen = new Map<string, Groep>()
-    for (const s of stukken) {
-      const key = s.rol_id != null ? `rol-${s.rol_id}` : `stuk-${s.id}`
-      let g = groepen.get(key)
-      if (!g) {
-        g = { key, stukken: [], vroegste: null }
-        groepen.set(key, g)
-      }
-      g.stukken.push(s)
-      if (s.afleverdatum && (!g.vroegste || s.afleverdatum < g.vroegste)) {
-        g.vroegste = s.afleverdatum
-      }
-    }
-    const sorterenOpDatum = <T extends { afleverdatum?: string | null }>(a: T, b: T) => {
-      const aD = a.afleverdatum ?? null
-      const bD = b.afleverdatum ?? null
-      if (aD === bD) return 0
-      if (!aD) return 1
-      if (!bD) return -1
-      return aD.localeCompare(bD)
-    }
-    const sortedGroepen = Array.from(groepen.values()).sort((a, b) => {
-      if (a.vroegste === b.vroegste) return 0
-      if (!a.vroegste) return 1
-      if (!b.vroegste) return -1
-      return a.vroegste.localeCompare(b.vroegste)
-    })
-    return sortedGroepen.flatMap((g) => [...g.stukken].sort(sorterenOpDatum))
+    return groepeerStukkenPerRol(stukken)
   }, [stukken])
 
-  // Zichtbare = eerste N stukken, uitgebreid tot einde van de rol die daar valt
-  // (nooit een rol halveren).
-  const zichtbareStukken = useMemo(() => {
-    if (toonAlles) return gesorteerdeStukken
-    if (gesorteerdeStukken.length <= INITIEEL_ZICHTBAAR_STUKKEN) return gesorteerdeStukken
-    let cutoff = INITIEEL_ZICHTBAAR_STUKKEN
-    const laatsteRolId = gesorteerdeStukken[cutoff - 1]?.rol_id ?? null
-    if (laatsteRolId != null) {
-      while (
-        cutoff < gesorteerdeStukken.length
-        && gesorteerdeStukken[cutoff].rol_id === laatsteRolId
-      ) {
-        cutoff++
-      }
-    }
-    return gesorteerdeStukken.slice(0, cutoff)
-  }, [toonAlles, gesorteerdeStukken])
-  const verborgenStukken = gesorteerdeStukken.length - zichtbareStukken.length
+  // Stukken zonder rol_id (nog niet toegewezen)
+  const stukkenZonderRol = useMemo(() => {
+    return (stukken ?? []).filter((s) => s.rol_id == null)
+  }, [stukken])
 
-  // Haal locaties op voor de zichtbare rollen
-  const zichtbareRolIds = useMemo(
-    () => Array.from(new Set(zichtbareStukken.map((s) => s.rol_id).filter((id): id is number => id != null))),
-    [zichtbareStukken],
-  )
-  const { data: locatieMap } = useRolLocaties(zichtbareRolIds)
+  // Locaties voor alle rollen
+  const rolIds = useMemo(() => rolGroepen.map((g) => g.rolId), [rolGroepen])
+  const { data: locatieMap } = useRolLocaties(rolIds)
 
-  // Geschatte snijtijd voor de zichtbare stukken (status 'Snijden')
+  // Geschatte snijtijd (alle rollen, status 'Snijden')
   const { data: planningConfig } = usePlanningConfig()
   const geschatteTijd = useMemo(() => {
     if (!planningConfig) return null
-    const teSnijden = zichtbareStukken.filter((s) => s.status === 'Snijden')
-    if (teSnijden.length === 0) return null
-    const uniekeRollen = new Set(teSnijden.map((s) => s.rol_id).filter((id) => id != null)).size
+    const totaalTeSnijden = rolGroepen.reduce((s, g) => s + g.aantalTeSnijden, 0)
+    if (totaalTeSnijden === 0) return null
+    const uniekeRollen = rolGroepen.filter((g) => g.aantalTeSnijden > 0).length
     const minuten = uniekeRollen * planningConfig.wisseltijd_minuten
-      + teSnijden.length * planningConfig.snijtijd_minuten
+      + totaalTeSnijden * planningConfig.snijtijd_minuten
     if (minuten === 0) return null
     const uren = Math.floor(minuten / 60)
     const min = Math.round(minuten % 60)
     if (uren === 0) return `${min} min`
     return min === 0 ? `${uren} uur` : `${uren} uur ${min} min`
-  }, [planningConfig, zichtbareStukken])
+  }, [planningConfig, rolGroepen])
 
-  // Try loading the approved voorstel (has correct placed dimensions from optimizer)
   const { data: goedgekeurdPlan } = useGoedgekeurdVoorstel(kwaliteitCode, kleurCode, showPlan && !voorstelResult)
 
-  // Fallback: reconstruct from snijplannen data (infers rotation from position)
   const reconstructedPlan = useMemo(() => {
     if (!showPlan || !stukken || goedgekeurdPlan) return null
     return buildPlanFromStukken(stukken)
   }, [showPlan, stukken, goedgekeurdPlan])
 
-  // Priority: new voorstel > approved voorstel > reconstructed plan
   const modalData = voorstelResult ?? goedgekeurdPlan ?? reconstructedPlan
 
-  // Snijbare stukken (status = Snijden)
-  const snijbareStukken = useMemo(
-    () => (stukken ?? []).filter(s => s.status === 'Snijden'),
-    [stukken]
-  )
-  const selectedStukken = useMemo(
-    () => snijbareStukken.filter(s => selectedIds.has(s.id)),
-    [snijbareStukken, selectedIds]
-  )
-  const alleGeselecteerd = snijbareStukken.length > 0 && snijbareStukken.every(s => selectedIds.has(s.id))
+  const pendingRolId = startProductie.isPending ? (startProductie.variables ?? null) : null
 
-  function toggleStuk(id: number) {
-    setSelectedIds(prev => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
+  function formatMinuten(aantalTeSnijden: number): string | null {
+    if (!planningConfig || aantalTeSnijden === 0) return null
+    const minuten = planningConfig.wisseltijd_minuten + aantalTeSnijden * planningConfig.snijtijd_minuten
+    if (minuten === 0) return null
+    const uren = Math.floor(minuten / 60)
+    const min = Math.round(minuten % 60)
+    if (uren === 0) return `${min} min`
+    return min === 0 ? `${uren} uur` : `${uren} uur ${min} min`
+  }
+
+  const handleStartRol = (rolId: number) => {
+    setStartError(null)
+    startProductie.mutate(rolId, {
+      onSuccess: () => setActiveRolId(rolId),
+      onError: (err) => {
+        const msg = err instanceof Error ? err.message : 'Onbekende fout'
+        if (msg.toLowerCase().includes('al in productie') || msg.toLowerCase().includes('already')) {
+          setActiveRolId(rolId)
+        } else {
+          setStartError(msg)
+        }
+      },
     })
   }
 
-  function toggleAlles() {
-    if (alleGeselecteerd) {
-      setSelectedIds(new Set())
-    } else {
-      setSelectedIds(new Set(snijbareStukken.map(s => s.id)))
-    }
-  }
-
   return (
-    <div className="bg-white rounded-[var(--radius)] border border-slate-200 overflow-hidden">
-      {/* Header */}
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={() => setOpen(!open)}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(!open) } }}
-        className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors text-left cursor-pointer"
-      >
-        <div className="flex items-center gap-3 flex-wrap">
-          {open ? (
-            <ChevronDown size={16} className="text-slate-400 flex-shrink-0" />
-          ) : (
-            <ChevronRight size={16} className="text-slate-400 flex-shrink-0" />
-          )}
-          <span className="font-medium text-slate-900">
-            {kwaliteitCode} {kleurCode}
-          </span>
-          <div className="flex items-center gap-2 flex-wrap">
-            <Badge>{totaalOrders} {totaalOrders === 1 ? 'order' : 'orders'}</Badge>
-            <Badge>{totaalSnijden} stuks</Badge>
-            {teSnijdenM2 != null && <Badge>{teSnijdenM2} m²</Badge>}
-            {geschatteTijd && (
-              <span
-                className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600"
-                title={toonAlles ? 'Geschatte snijtijd voor alle stukken' : 'Geschatte snijtijd voor de zichtbare stukken'}
-              >
-                ~{geschatteTijd}
-              </span>
-            )}
-            {capaciteit && (
-              <Link
-                to={`/rollen?kwaliteit=${kwaliteitCode}&kleur=${kleurCode}`}
-                onClick={(e) => e.stopPropagation()}
-                className={cn(
-                  'text-xs px-2 py-0.5 rounded-full hover:underline',
-                  capaciteit.totaalRollen === 0
-                    ? 'bg-red-50 text-red-700'
-                    : capaciteit.vrijRollen > 0
-                    ? 'bg-emerald-50 text-emerald-700'
-                    : 'bg-blue-50 text-blue-700'
-                )}
-              >
-                {capaciteit.vrijRollen > 0 && (
-                  <>{capaciteit.vrijRollen} vrij ({capaciteit.vrijM2} m²)</>
-                )}
-                {capaciteit.vrijRollen > 0 && capaciteit.restcapaciteitRollen > 0 && ' · '}
-                {capaciteit.restcapaciteitRollen > 0 && (
-                  <>{capaciteit.restcapaciteitRollen} gepland ({capaciteit.restcapaciteitM2} m² over)</>
-                )}
-                {capaciteit.totaalRollen === 0 && '0 rollen · 0 m² beschikbaar'}
-                {capaciteit.heeftUitwisselbaar && (
-                  <span className="text-[10px] opacity-70"> (+{capaciteit.uitwisselbaarM2} m² uitw.)</span>
-                )}
-              </Link>
-            )}
-          </div>
-        </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {/* Bekijk plan button — when items are Gepland */}
-          {heeftGepland && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                setShowPlan(true)
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500 text-white rounded-[var(--radius-sm)] text-xs font-medium hover:bg-blue-600 transition-colors"
-            >
-              <Eye size={14} />
-              Bekijk plan
-            </button>
-          )}
-
-          {/* Snijden shortcut — linkt naar groepsproductie met alle rollen */}
-          {heeftGepland && stukken && stukken.some(s => s.rol_id) && (
-            <Link
-              to={`/snijplanning/productie?kwaliteit=${kwaliteitCode}&kleur=${kleurCode}`}
-              onClick={(e) => e.stopPropagation()}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 text-white rounded-[var(--radius-sm)] text-xs font-medium hover:bg-emerald-600 transition-colors"
-            >
-              <Scissors size={14} />
-              Snijden
-            </Link>
-          )}
-
-          {/* Genereren / Herplannen button — verberg als er geen rollen beschikbaar zijn */}
-          {heeftWacht && (capaciteit?.totaalRollen ?? 0) > 0 && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                setGenError(null)
-                if (heeftGepland) {
-                  // Er zijn al geplande stukken: gebruik auto-plan (release + heroptimaliseer)
-                  autoplan.mutate(
-                    { kwaliteitCode, kleurCode, totDatum },
-                    {
-                      onError: (err) => setGenError(err instanceof Error ? err.message : 'Onbekende fout'),
-                    },
-                  )
-                } else {
-                  // Alleen wachtende stukken: standaard genereren
-                  genereer.mutate(
-                    { kwaliteitCode, kleurCode, totDatum },
-                    {
-                      onSuccess: (result) => setVoorstelResult(result),
-                      onError: (err) => setGenError(err instanceof Error ? err.message : 'Onbekende fout'),
-                    },
-                  )
-                }
-              }}
-              disabled={genereer.isPending || autoplan.isPending}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-terracotta-500 text-white rounded-[var(--radius-sm)] text-xs font-medium hover:bg-terracotta-600 transition-colors disabled:opacity-50"
-            >
-              {(genereer.isPending || autoplan.isPending) ? <Loader2 size={14} className="animate-spin" /> : <Scissors size={14} />}
-              {heeftGepland ? 'Herplannen' : 'Genereren'}
-            </button>
-          )}
-
-          <Link
-            to={`/snijplanning/stickers?kwaliteit=${kwaliteitCode}&kleur=${kleurCode}`}
-            onClick={(e) => e.stopPropagation()}
-            className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 text-slate-600 rounded-[var(--radius-sm)] text-xs font-medium hover:bg-slate-50 transition-colors"
-            title="Stickers printen voor hele groep"
-          >
-            <Printer size={14} />
-            Stickers
-          </Link>
-        </div>
-      </div>
-
-      {/* Generation error */}
+    <div className="space-y-2">
       {genError && (
         <div className="mx-4 mb-2 px-3 py-2 bg-red-50 border border-red-200 rounded-[var(--radius-sm)] text-sm text-red-700">
           {genError}
@@ -315,105 +138,82 @@ export function GroepAccordion({
         </div>
       )}
 
-      {/* Detail: loaded on expand */}
-      {open && (
-        <div className="border-t border-slate-100 p-4">
+      <div>
           {isLoading ? (
             <p className="text-sm text-slate-400 text-center py-4">Laden...</p>
           ) : !stukken || stukken.length === 0 ? (
             <p className="text-sm text-slate-400 text-center py-4">Geen items gevonden</p>
           ) : (
             <>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 text-left text-xs text-slate-500 uppercase">
-                    <th className="py-2 pl-3 pr-1 w-8">
-                      {snijbareStukken.length > 0 && (
-                        <input
-                          type="checkbox"
-                          checked={alleGeselecteerd}
-                          onChange={toggleAlles}
-                          className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
-                          title="Selecteer alles"
-                        />
-                      )}
-                    </th>
-                    <th className="py-2 pr-3">Maat</th>
-                    <th className="py-2 pr-3">Rol</th>
-                    <th className="py-2 pr-3">Locatie</th>
-                    <th className="py-2 pr-3">Vorm</th>
-                    <th className="py-2 pr-3">Klant</th>
-                    <th className="py-2 pr-3">Order</th>
-                    <th className="py-2 pr-3">Leverdatum</th>
-                    <th className="py-2 pr-3">Afwerking</th>
-                    <th className="py-2 pr-3">Status</th>
-                    <th className="py-2 pr-3 w-8"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {zichtbareStukken.map((stuk) => (
-                    <StukRow
-                      key={stuk.id}
-                      stuk={stuk}
-                      selected={selectedIds.has(stuk.id)}
-                      onToggle={toggleStuk}
-                      locatie={stuk.rol_id != null ? locatieMap?.get(stuk.rol_id) ?? null : null}
+              {startError && (
+                <div className="mb-3 px-3 py-2 bg-red-50 border border-red-200 rounded-[var(--radius-sm)] text-sm text-red-700">
+                  {startError}
+                  <button onClick={() => setStartError(null)} className="ml-2 underline text-xs">Sluiten</button>
+                </div>
+              )}
+
+              {rolGroepen.length > 0 && (
+                <div className="space-y-2">
+                  <RolSectie
+                    key={rolGroepen[0].rolId}
+                    rol={rolGroepen[0]}
+                    locatieMap={locatieMap ?? null}
+                    kwaliteitCode={kwaliteitCode}
+                    kleurLabel={kleurCodeZonderDecimaal}
+                    geschatteTijd={formatMinuten(rolGroepen[0].aantalTeSnijden)}
+                    defaultOpen={true}
+                    onStart={handleStartRol}
+                    isStartPending={startProductie.isPending}
+                    pendingRolId={pendingRolId}
+                  />
+                  {rolGroepen.length > 1 && !toonExtraRollen && (
+                    <button
+                      onClick={() => setToonExtraRollen(true)}
+                      className="w-full py-2 text-xs text-slate-500 hover:text-slate-900 hover:bg-slate-50 rounded-[var(--radius-sm)] border border-dashed border-slate-300 transition-colors"
+                    >
+                      Toon {rolGroepen.length - 1} {rolGroepen.length - 1 === 1 ? 'andere rol' : 'andere rollen'}
+                    </button>
+                  )}
+                  {toonExtraRollen && rolGroepen.slice(1).map((rol) => (
+                    <RolSectie
+                      key={rol.rolId}
+                      rol={rol}
+                      locatieMap={locatieMap ?? null}
+                      kwaliteitCode={kwaliteitCode}
+                      kleurLabel={kleurCodeZonderDecimaal}
+                      geschatteTijd={formatMinuten(rol.aantalTeSnijden)}
+                      defaultOpen={false}
+                      onStart={handleStartRol}
+                      isStartPending={startProductie.isPending}
+                      pendingRolId={pendingRolId}
                     />
                   ))}
-                  {gesorteerdeStukken.length > INITIEEL_ZICHTBAAR_STUKKEN && (
-                    <tr>
-                      <td colSpan={11} className="p-0">
-                        <button
-                          onClick={() => setToonAlles((v) => !v)}
-                          className="w-full py-2 text-xs text-slate-500 hover:text-slate-900 hover:bg-slate-50 transition-colors"
-                        >
-                          {toonAlles
-                            ? `Toon minder — verberg ${gesorteerdeStukken.length - INITIEEL_ZICHTBAAR_STUKKEN} latere stukken`
-                            : `Toon ${verborgenStukken} latere stukken`}
-                        </button>
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-
-              {/* Actie-balk bij selectie */}
-              {selectedIds.size > 0 && (
-                <div className="flex items-center justify-between px-4 py-3 bg-emerald-50 border-t border-emerald-200">
-                  <div className="flex items-center gap-2 text-sm text-emerald-800">
-                    <CheckSquare size={15} />
-                    <span>
-                      <strong>{selectedIds.size}</strong> stuk{selectedIds.size !== 1 ? 'ken' : ''} geselecteerd
-                    </span>
+                  {toonExtraRollen && rolGroepen.length > 1 && (
                     <button
-                      onClick={() => setSelectedIds(new Set())}
-                      className="text-xs text-emerald-600 hover:underline ml-1"
+                      onClick={() => setToonExtraRollen(false)}
+                      className="w-full py-2 text-xs text-slate-500 hover:text-slate-900 hover:bg-slate-50 rounded-[var(--radius-sm)] transition-colors"
                     >
-                      Deselecteer
+                      Verberg overige rollen
                     </button>
-                  </div>
-                  <button
-                    onClick={() => setShowSnijModal(true)}
-                    className="flex items-center gap-1.5 px-4 py-1.5 bg-emerald-600 text-white text-sm font-medium rounded-[var(--radius-sm)] hover:bg-emerald-700 transition-colors"
-                  >
-                    <Scissors size={14} />
-                    Snijden
-                  </button>
+                  )}
+                </div>
+              )}
+
+              {modus === 'tekort' && stukkenZonderRol.length > 0 && (
+                <div className="mt-4 px-3 py-2 bg-amber-50 border border-amber-200 rounded-[var(--radius-sm)] text-sm text-amber-700">
+                  {stukkenZonderRol.length} {stukkenZonderRol.length === 1 ? 'stuk is' : 'stukken zijn'} nog niet toegewezen aan een rol.
                 </div>
               )}
             </>
           )}
         </div>
-      )}
 
-      {/* Snijbevestiging modal */}
-      {showSnijModal && selectedStukken.length > 0 && (
-        <SnijBevestigingModal
-          stukken={selectedStukken}
-          onClose={() => setShowSnijModal(false)}
-          onSuccess={() => setSelectedIds(new Set())}
-        />
-      )}
+      {/* Rol-uitvoer modal */}
+      <RolUitvoerModal
+        rolId={activeRolId}
+        open={activeRolId !== null}
+        onClose={() => setActiveRolId(null)}
+      />
 
       {/* Snijvoorstel modal */}
       {modalData && (voorstelResult || showPlan) && (
@@ -429,6 +229,125 @@ export function GroepAccordion({
   )
 }
 
+interface RolSectieProps {
+  rol: RolGroep
+  locatieMap: Map<number, string> | null
+  kwaliteitCode: string
+  kleurLabel: string
+  geschatteTijd: string | null
+  defaultOpen: boolean
+  onStart: (rolId: number) => void
+  isStartPending: boolean
+  pendingRolId: number | null
+}
+
+function RolSectie({ rol, locatieMap, kwaliteitCode, kleurLabel, geschatteTijd, defaultOpen, onStart, isStartPending, pendingRolId }: RolSectieProps) {
+  const [open, setOpen] = useState(defaultOpen)
+  const locatie = locatieMap?.get(rol.rolId) ?? null
+  const isPendingThis = isStartPending && pendingRolId === rol.rolId
+
+  // Sorteer stukken binnen een rol op leverdatum (null achteraan)
+  const gesorteerdeStukken = useMemo(() => {
+    return [...rol.stukken].sort((a, b) => {
+      const aD = a.afleverdatum ?? null
+      const bD = b.afleverdatum ?? null
+      if (aD === bD) return 0
+      if (!aD) return 1
+      if (!bD) return -1
+      return aD.localeCompare(bD)
+    })
+  }, [rol.stukken])
+
+  return (
+    <div className="rounded-[var(--radius-sm)] border border-slate-200 overflow-hidden">
+      {/* Rol header bar */}
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => setOpen(!open)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(!open) } }}
+        className={cn(
+          'w-full flex items-center justify-between px-3 py-2 text-left cursor-pointer transition-colors',
+          open ? 'bg-slate-50' : 'hover:bg-slate-50'
+        )}
+      >
+        <div className="flex items-center gap-2 flex-wrap">
+          {open ? (
+            <ChevronDown size={14} className="text-slate-400 flex-shrink-0" />
+          ) : (
+            <ChevronRight size={14} className="text-slate-400 flex-shrink-0" />
+          )}
+          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            {kwaliteitCode} {kleurLabel}
+          </span>
+          <span className="font-medium text-sm text-slate-900">Rol {rol.rolnummer}</span>
+          <span className="text-xs text-slate-500">{rol.rolBreedte} × {rol.rolLengte} cm</span>
+          <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+            {rol.stukken.length} {rol.stukken.length === 1 ? 'stuk' : 'stuks'}
+          </span>
+          {rol.aantalTeSnijden > 0 && rol.aantalTeSnijden !== rol.stukken.length && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
+              {rol.aantalTeSnijden} te snijden
+            </span>
+          )}
+          {rol.vroegsteLeverdatum && (
+            <span className="text-xs text-slate-600">{formatDate(rol.vroegsteLeverdatum)}</span>
+          )}
+          {geschatteTijd && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600" title="Geschatte snijtijd">
+              ~{geschatteTijd}
+            </span>
+          )}
+          {locatie && (
+            <span className="text-xs text-slate-500 tabular-nums">· {locatie}</span>
+          )}
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {rol.aantalTeSnijden > 0 && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onStart(rol.rolId) }}
+              disabled={isStartPending}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-sm)] bg-indigo-500 text-white text-xs font-medium hover:bg-indigo-600 transition-colors disabled:opacity-50"
+            >
+              {isPendingThis ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <Scissors size={12} />
+              )}
+              Start snijden rol ({rol.aantalTeSnijden})
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Expanded: stukken-tabel */}
+      {open && (
+        <div className="border-t border-slate-100 px-3 py-2">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 text-left text-xs text-slate-500 uppercase">
+                <th className="py-2 pr-3">Maat</th>
+                <th className="py-2 pr-3">Vorm</th>
+                <th className="py-2 pr-3">Klant</th>
+                <th className="py-2 pr-3">Order</th>
+                <th className="py-2 pr-3">Leverdatum</th>
+                <th className="py-2 pr-3">Afwerking</th>
+                <th className="py-2 pr-3">Status</th>
+                <th className="py-2 pr-3 w-8"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {gesorteerdeStukken.map((stuk) => (
+                <StukRow key={stuk.id} stuk={stuk} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function Badge({ children }: { children: React.ReactNode }) {
   return (
     <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
@@ -437,40 +356,11 @@ function Badge({ children }: { children: React.ReactNode }) {
   )
 }
 
-function StukRow({ stuk, selected, onToggle, locatie }: {
-  stuk: SnijplanRow
-  selected: boolean
-  onToggle: (id: number) => void
-  locatie: string | null
-}) {
-  const kanSnijden = stuk.status === 'Snijden'
+function StukRow({ stuk }: { stuk: SnijplanRow }) {
   return (
-    <tr className={cn('hover:bg-slate-50', selected && 'bg-emerald-50/60')}>
-      <td className="py-2 pl-3 pr-1">
-        {kanSnijden && (
-          <input
-            type="checkbox"
-            checked={selected}
-            onChange={() => onToggle(stuk.id)}
-            className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
-          />
-        )}
-      </td>
+    <tr className="hover:bg-slate-50">
       <td className="py-2 pr-3 font-medium">
         {stuk.snij_breedte_cm}×{stuk.snij_lengte_cm} cm
-      </td>
-      <td className="py-2 pr-3">
-        {stuk.rolnummer && stuk.rol_id ? (
-          <Link
-            to={`/snijplanning/productie/${stuk.rol_id}`}
-            className="text-terracotta-600 hover:underline text-xs"
-          >
-            {stuk.rolnummer}
-          </Link>
-        ) : '—'}
-      </td>
-      <td className="py-2 pr-3 text-xs text-slate-600 tabular-nums">
-        {locatie ?? <span className="text-slate-300">—</span>}
       </td>
       <td className="py-2 pr-3">
         {stuk.maatwerk_vorm && (() => {
