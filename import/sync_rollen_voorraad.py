@@ -5,9 +5,50 @@ Draai standaard in dry-run:  python sync_rollen_voorraad.py
 Schrijf wijzigingen:          python sync_rollen_voorraad.py --apply
 """
 import argparse
+import numpy as np
 import pandas as pd
 from supabase import create_client
 from config import SUPABASE_URL, SUPABASE_KEY, ROLLEN_SYNC_FILE
+
+
+def _clean(v):
+    if v is None:
+        return None
+    if isinstance(v, float) and np.isnan(v):
+        return None
+    if isinstance(v, (np.integer,)):
+        return int(v)
+    if isinstance(v, (np.floating,)):
+        return float(v)
+    return v
+
+
+def bouw_insert_record(r):
+    return {
+        'rolnummer': str(r['rolnummer']),
+        'artikelnr': _clean(r['artikelnr']),
+        'karpi_code': _clean(r['karpi_code']),
+        'omschrijving': _clean(r['omschrijving']),
+        'lengte_cm': int(r['lengte_cm']) if pd.notna(r['lengte_cm']) else None,
+        'breedte_cm': int(r['breedte_cm']) if pd.notna(r['breedte_cm']) else None,
+        'oppervlak_m2': _clean(r['oppervlak_m2']),
+        'vvp_m2': _clean(r['vvp_m2']),
+        'waarde': _clean(r['waarde']),
+        'kwaliteit_code': _clean(r['kwaliteit_code']),
+        'kleur_code': _clean(r['kleur_code']),
+        'zoeksleutel': _clean(r['zoeksleutel']),
+        'status': 'beschikbaar',
+    }
+
+
+def bouw_update_record(r):
+    return {
+        'lengte_cm': int(r['lengte_cm']) if pd.notna(r['lengte_cm']) else None,
+        'breedte_cm': int(r['breedte_cm']) if pd.notna(r['breedte_cm']) else None,
+        'oppervlak_m2': _clean(r['oppervlak_m2']),
+        'vvp_m2': _clean(r['vvp_m2']),
+        'waarde': _clean(r['waarde']),
+    }
 
 
 def parse_karpi_code(code):
@@ -98,7 +139,7 @@ def diff(df_bron, huidige):
 
     - nieuw: list of pd.Series from bron (rolnummer niet in DB)
     - update: list of (db_id, bron_series) waar dimensies/waarde veranderd zijn
-    - afvoeren: list of db-dicts (status -> 'geen_voorraad')
+    - afvoeren: list of db-dicts (status -> 'verkocht')
     - beschermd_weg: list of db-dicts (niet in bron, workflow-status, waarschuwen)
     """
     bron_map = {r['rolnummer']: r for _, r in df_bron.iterrows()}
@@ -149,7 +190,7 @@ def main():
     print("\n=== DIFF RAPPORT ===")
     print(f"  Toevoegen:                      {len(nieuw)}")
     print(f"  Updaten (dims/waarde):          {len(update)}")
-    print(f"  Afvoeren (-> geen_voorraad):    {len(afvoeren)}")
+    print(f"  Afvoeren (-> verkocht):         {len(afvoeren)}")
     print(f"  Beschermd (workflow-actief):    {len(beschermd_weg)}")
 
     if beschermd_weg:
@@ -167,7 +208,34 @@ def main():
                   f"{int(bron['lengte_cm']) if pd.notna(bron['lengte_cm']) else None}x"
                   f"{int(bron['breedte_cm']) if pd.notna(bron['breedte_cm']) else None}")
 
-    # TODO Task 3: apply
+    if not args.apply:
+        print("\nDry-run. Draai opnieuw met --apply om te schrijven.")
+        return
+
+    print("\n>>> Schrijven naar Supabase...")
+
+    if nieuw:
+        records = [bouw_insert_record(r) for r in nieuw]
+        for i in range(0, len(records), 500):
+            batch = records[i:i + 500]
+            sb.table('rollen').insert(batch).execute()
+            print(f"  insert: {min(i + 500, len(records))}/{len(records)}")
+
+    if update:
+        for idx, (rol_id, r) in enumerate(update, 1):
+            sb.table('rollen').update(bouw_update_record(r)).eq('id', rol_id).execute()
+            if idx % 50 == 0:
+                print(f"  update: {idx}/{len(update)}")
+        print(f"  update: {len(update)}/{len(update)}")
+
+    if afvoeren:
+        ids = [d['id'] for d in afvoeren]
+        for i in range(0, len(ids), 500):
+            batch = ids[i:i + 500]
+            sb.table('rollen').update({'status': 'verkocht'}).in_('id', batch).execute()
+            print(f"  afvoeren: {min(i + 500, len(ids))}/{len(ids)}")
+
+    print("\nKlaar.")
 
 
 if __name__ == '__main__':
