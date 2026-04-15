@@ -130,6 +130,7 @@ export function SnijvoorstelModal({ voorstel, kwaliteitCode, kleurCode, onClose,
                     restLengte={visLengte - rol.gebruikte_lengte_cm}
                     afvalPct={rol.afval_percentage}
                     reststukBruikbaar={rol.restlengte_cm > 100}
+                    reststukken={rol.reststukken}
                     className="max-w-lg"
                   />
                 </div>

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { cn } from '@/lib/utils/cn'
-import { ROL_STATUS_COLORS } from '@/lib/utils/constants'
+import { ROL_STATUS_COLORS, ROL_TYPE_COLORS, ROL_TYPE_LABELS } from '@/lib/utils/constants'
 import { useReserveringenVoorProduct } from '@/hooks/use-producten'
 import { useRolSnijstukken } from '@/hooks/use-snijplanning'
 import type { RolGroep, RolRow } from '@/lib/types/productie'
@@ -12,16 +12,18 @@ interface RollenGroepRowProps {
 }
 
 const STATUS_LABELS: Record<string, string> = {
-  beschikbaar: 'VOLLE ROL',
+  beschikbaar: 'BESCHIKBAAR',
   gereserveerd: 'GERESERVEERD',
-  in_snijplan: 'AANGEBROKEN',
+  in_snijplan: 'IN SNIJPLAN',
+  gesneden: 'GESNEDEN',
   reststuk: 'RESTSTUK',
+  verkocht: 'VERKOCHT',
 }
 
-function StatusBadge({ status, count }: { status: string; count: number }) {
+function StatusBadge({ rolType, count }: { rolType: string; count: number }) {
   if (count === 0) return null
-  const colors = ROL_STATUS_COLORS[status] ?? { bg: 'bg-gray-100', text: 'text-gray-600' }
-  const label = STATUS_LABELS[status] ?? status
+  const colors = ROL_TYPE_COLORS[rolType] ?? { bg: 'bg-gray-100', text: 'text-gray-600' }
+  const label = ROL_TYPE_LABELS[rolType] ?? rolType
   return (
     <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium', colors.bg, colors.text)}>
       {count}&times; {label}
@@ -194,9 +196,22 @@ function RolTabel({ rollen }: { rollen: RolRow[] }) {
                 </td>
                 <td className="py-2 px-3 text-right">{Number(rol.oppervlak_m2).toFixed(1)} m&sup2;</td>
                 <td className="py-2 px-3">
-                  <span className={cn('text-xs px-2 py-0.5 rounded-full', colors.bg, colors.text)}>
-                    {STATUS_LABELS[rol.status] ?? rol.status}
-                  </span>
+                  <div className="flex items-center gap-1 flex-wrap">
+                    <span className={cn('text-xs px-2 py-0.5 rounded-full', colors.bg, colors.text)}>
+                      {STATUS_LABELS[rol.status] ?? rol.status}
+                    </span>
+                    {rol.rol_type && (
+                      <span
+                        className={cn(
+                          'text-[10px] px-1.5 py-0.5 rounded-full font-medium',
+                          (ROL_TYPE_COLORS[rol.rol_type] ?? { bg: 'bg-gray-100', text: 'text-gray-600' }).bg,
+                          (ROL_TYPE_COLORS[rol.rol_type] ?? { bg: 'bg-gray-100', text: 'text-gray-600' }).text,
+                        )}
+                      >
+                        {ROL_TYPE_LABELS[rol.rol_type] ?? rol.rol_type}
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td className="py-2 px-3 text-slate-500">{rol.locatie ?? '—'}</td>
               </tr>
@@ -240,9 +255,9 @@ export function RollenGroepRow({ groep }: RollenGroepRowProps) {
             {groep.product_naam}
           </span>
           <div className="flex items-center gap-2 flex-wrap">
-            <StatusBadge status="reststuk" count={groep.reststukken} />
-            <StatusBadge status="in_snijplan" count={groep.aangebroken} />
-            <StatusBadge status="beschikbaar" count={groep.volle_rollen} />
+            <StatusBadge rolType="volle_rol" count={groep.volle_rollen} />
+            <StatusBadge rolType="aangebroken" count={groep.aangebroken} />
+            <StatusBadge rolType="reststuk" count={groep.reststukken} />
           </div>
         </div>
 

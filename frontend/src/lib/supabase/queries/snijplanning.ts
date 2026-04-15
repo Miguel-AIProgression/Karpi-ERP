@@ -96,12 +96,20 @@ export async function fetchRolLocaties(rolIds: number[]): Promise<Map<number, st
 }
 
 /** Fetch alle snijplannen met status='Snijden' voor agenda-planning */
-export async function fetchAlleSnijden(): Promise<SnijplanRow[]> {
-  const { data, error } = await supabase
+export async function fetchAlleSnijden(totDatum?: string | null): Promise<SnijplanRow[]> {
+  let query = supabase
     .from('snijplanning_overzicht')
     .select('*')
     .eq('status', 'Snijden')
     .order('afleverdatum', { ascending: true, nullsFirst: false })
+
+  // Filter op planning-horizon: alléén orders met afleverdatum <= totDatum.
+  // Snijplannen zonder afleverdatum blijven meedoen (zeldzaam — backlog/onbekend).
+  if (totDatum) {
+    query = query.or(`afleverdatum.lte.${totDatum},afleverdatum.is.null`)
+  }
+
+  const { data, error } = await query
   if (error) throw error
   return (data ?? []) as SnijplanRow[]
 }
@@ -162,6 +170,94 @@ export async function fetchSnijplanningPool(params: {
   if (error) throw error
 
   return { snijplannen: (data ?? []) as SnijplanRow[], totalCount: count ?? 0 }
+}
+
+export interface SnijplanningKpis {
+  /** Snijplannen met status='Snijden' binnen de planning-horizon (incl. zonder afleverdatum) */
+  binnen_horizon: number
+  /** Snijplannen met status='Snijden' en afleverdatum in de huidige week (Mon-Sun) */
+  deze_week_te_snijden: number
+  /** Snijplannen met status='Gesneden' die deze week (Mon-Sun) zijn afgesneden */
+  deze_week_gesneden: number
+}
+
+/** Bereken Mon-Sun grenzen (ISO) voor de huidige kalenderweek + N weken offset */
+function weekRange(offsetWeken = 0): { maandag: string; zondag: string } {
+  const nu = new Date()
+  const dag = nu.getDay() // 0=zo, 1=ma, ...
+  const offsetMa = dag === 0 ? -6 : 1 - dag
+  const ma = new Date(nu)
+  ma.setDate(nu.getDate() + offsetMa + offsetWeken * 7)
+  const zo = new Date(ma)
+  zo.setDate(ma.getDate() + 6)
+  const fmt = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return { maandag: fmt(ma), zondag: fmt(zo) }
+}
+
+/** Fetch 3 KPI-cijfers voor de snijplanning-overview header */
+export async function fetchSnijplanningKpis(
+  totDatum?: string | null,
+): Promise<SnijplanningKpis> {
+  const dezeWeek = weekRange(0)
+  const volgendeWeek = weekRange(1)
+
+  let horizonQuery = supabase
+    .from('snijplanning_overzicht')
+    .select('*', { count: 'exact', head: true })
+    .eq('status', 'Snijden')
+  if (totDatum) {
+    horizonQuery = horizonQuery.or(`afleverdatum.lte.${totDatum},afleverdatum.is.null`)
+  }
+
+  // "Te snijden deze week" = moet deze week door de snijmachine omdat het
+  // volgende week geleverd wordt. Filter dus op afleverdatum in volgende week.
+  const dezeWeekTeSnijdenQuery = supabase
+    .from('snijplanning_overzicht')
+    .select('*', { count: 'exact', head: true })
+    .eq('status', 'Snijden')
+    .gte('afleverdatum', volgendeWeek.maandag)
+    .lte('afleverdatum', volgendeWeek.zondag)
+
+  const dezeWeekGesnedenQuery = supabase
+    .from('snijplanning_overzicht')
+    .select('*', { count: 'exact', head: true })
+    .eq('status', 'Gesneden')
+    .gte('gesneden_op', dezeWeek.maandag)
+    .lte('gesneden_op', dezeWeek.zondag + 'T23:59:59')
+
+  const [horizon, dezeWeekTs, dezeWeekGs] = await Promise.all([
+    horizonQuery,
+    dezeWeekTeSnijdenQuery,
+    dezeWeekGesnedenQuery,
+  ])
+
+  if (horizon.error) throw horizon.error
+  if (dezeWeekTs.error) throw dezeWeekTs.error
+  if (dezeWeekGs.error) throw dezeWeekGs.error
+
+  return {
+    binnen_horizon: horizon.count ?? 0,
+    deze_week_te_snijden: dezeWeekTs.count ?? 0,
+    deze_week_gesneden: dezeWeekGs.count ?? 0,
+  }
+}
+
+export interface TekortAnalyseRow {
+  kwaliteit_code: string
+  kleur_code: string
+  heeft_collectie: boolean
+  uitwisselbare_codes: string[]
+  aantal_beschikbaar: number
+  totaal_beschikbaar_m2: number
+  max_lange_zijde_cm: number
+  max_korte_zijde_cm: number
+}
+
+export async function fetchTekortAnalyse(): Promise<TekortAnalyseRow[]> {
+  const { data, error } = await supabase.rpc('snijplanning_tekort_analyse', {})
+  if (error) throw error
+  return (data ?? []) as TekortAnalyseRow[]
 }
 
 /** Fetch status counts, optionally filtered by delivery date.

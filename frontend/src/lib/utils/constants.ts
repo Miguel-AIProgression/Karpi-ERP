@@ -64,6 +64,18 @@ export const ROL_STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   'verkocht': { bg: 'bg-gray-100', text: 'text-gray-500' },
 }
 
+export const ROL_TYPE_COLORS: Record<string, { bg: string; text: string }> = {
+  'volle_rol': { bg: 'bg-emerald-100', text: 'text-emerald-700' },
+  'aangebroken': { bg: 'bg-blue-100', text: 'text-blue-700' },
+  'reststuk': { bg: 'bg-red-100', text: 'text-red-700' },
+}
+
+export const ROL_TYPE_LABELS: Record<string, string> = {
+  'volle_rol': 'VOLLE ROL',
+  'aangebroken': 'AANGEBROKEN',
+  'reststuk': 'RESTSTUK',
+}
+
 /** Sidebar navigation structure */
 export const NAV_GROUPS = [
   {

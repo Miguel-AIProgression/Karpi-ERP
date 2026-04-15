@@ -9,6 +9,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { packAcrossRolls } from '../_shared/ffdh-packing.ts'
+import { computeReststukken } from '../_shared/compute-reststukken.ts'
 import {
   fetchStukken,
   fetchUitwisselbareCodes,
@@ -123,11 +124,17 @@ serve(async (req) => {
       afvalPercentage: samenvatting.gemiddeld_afval_pct,
     }, plaatsingen)
 
+    // ---- Step 5: Verrijk elke rol met bruikbare reststukken ----
+    const rollenMetReststukken = rollResults.map((r) => ({
+      ...r,
+      reststukken: computeReststukken(r.rol_lengte_cm, r.rol_breedte_cm, r.plaatsingen),
+    }))
+
     // ---- Build response ----
     const result = {
       voorstel_id,
       voorstel_nr,
-      rollen: rollResults,
+      rollen: rollenMetReststukken,
       niet_geplaatst: nietGeplaatst,
       samenvatting,
     }

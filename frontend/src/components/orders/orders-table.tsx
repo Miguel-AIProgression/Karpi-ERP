@@ -65,7 +65,8 @@ export function OrdersTable({ orders, isLoading, sortBy, sortDir, onSort }: Orde
         <thead>
           <tr className="border-b border-slate-100 bg-slate-50">
             <SortHeader field="order_nr" label="Order" {...sortProps} />
-            <SortHeader field="orderdatum" label="Datum" {...sortProps} />
+            <SortHeader field="orderdatum" label="Orderdatum" {...sortProps} />
+            <SortHeader field="afleverdatum" label="Leverdatum" {...sortProps} />
             <SortHeader field="klant_naam" label="Klant" {...sortProps} />
             <th className="text-left px-4 py-3 font-medium text-slate-600">Referentie</th>
             <SortHeader field="aantal_regels" label="Regels" align="right" {...sortProps} />
@@ -92,8 +93,15 @@ export function OrdersTable({ orders, isLoading, sortBy, sortDir, onSort }: Orde
                   </span>
                 )}
               </td>
-              <td className="px-4 py-3 text-slate-600">
+              <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
                 {formatDate(order.orderdatum)}
+              </td>
+              <td className="px-4 py-3 whitespace-nowrap">
+                {order.afleverdatum ? (
+                  <span className="text-slate-900 font-medium">{formatDate(order.afleverdatum)}</span>
+                ) : (
+                  <span className="text-slate-300">—</span>
+                )}
               </td>
               <td className="px-4 py-3">
                 <Link

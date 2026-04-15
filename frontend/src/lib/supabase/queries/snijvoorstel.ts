@@ -1,5 +1,6 @@
 import { supabase } from '../client'
-import type { SnijvoorstelResponse, SnijvoorstelRow, SnijvoorstelPlaatsingRow, RolStatus } from '@/lib/types/productie'
+import type { SnijvoorstelResponse, SnijvoorstelRow, SnijvoorstelPlaatsingRow, RolStatus, ReststukRect } from '@/lib/types/productie'
+import { computeReststukken } from '@/lib/utils/compute-reststukken'
 
 /** Call the Edge Function to generate a cutting proposal */
 export async function generateSnijvoorstel(
@@ -125,7 +126,8 @@ export async function fetchGoedgekeurdVoorstel(
     const usedArea = r.rol_breedte_cm * gebruikte
     const pieceArea = r.plaatsingen.reduce((s, p) => s + p.lengte_cm * p.breedte_cm, 0)
     const afval = usedArea > 0 ? Math.round((1 - pieceArea / usedArea) * 1000) / 10 : 0
-    return { ...r, gebruikte_lengte_cm: gebruikte, afval_percentage: afval, restlengte_cm: restlengte }
+    const reststukken: ReststukRect[] = computeReststukken(r.rol_lengte_cm, r.rol_breedte_cm, r.plaatsingen)
+    return { ...r, gebruikte_lengte_cm: gebruikte, afval_percentage: afval, restlengte_cm: restlengte, reststukken }
   })
 
   return {
@@ -255,13 +257,33 @@ export interface ReststukResult {
   reststuk_lengte_cm: number | null
 }
 
-/** Complete cutting of a roll: mark snijplannen as cut, create remnant */
-export async function voltooiSnijplanRol(rolId: number, gesnedenDoor?: string, overrideRestLengte?: number | null) {
+/** Complete cutting of a roll: mark snijplannen as cut, create remnants.
+ *  Voor nieuwe flow: geef `reststukken` array mee (ReststukRect[]) → backend
+ *  maakt per kwalificerend rechthoek een reststuk aan. Laat `overrideRestLengte`
+ *  null of weg voor nieuwe flow. */
+export async function voltooiSnijplanRol(
+  rolId: number,
+  gesnedenDoor?: string,
+  overrideRestLengte?: number | null,
+  reststukken?: ReststukRect[],
+  snijplanIds?: number[],
+) {
   const { data, error } = await supabase.rpc('voltooi_snijplan_rol', {
     p_rol_id: rolId,
     p_gesneden_door: gesnedenDoor ?? null,
     p_override_rest_lengte: overrideRestLengte ?? null,
+    p_reststukken: reststukken ? reststukken : null,
+    p_snijplan_ids: snijplanIds && snijplanIds.length > 0 ? snijplanIds : null,
   })
   if (error) throw error
   return data as ReststukResult[]
+}
+
+/** Start snijden op een rol: registreert snijden_gestart_op timestamp. Idempotent. */
+export async function startSnijdenRol(rolId: number, gebruiker?: string | null): Promise<void> {
+  const { error } = await supabase.rpc('start_snijden_rol', {
+    p_rol_id: rolId,
+    p_gebruiker: gebruiker ?? null,
+  })
+  if (error) throw error
 }

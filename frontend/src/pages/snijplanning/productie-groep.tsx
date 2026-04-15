@@ -1,12 +1,11 @@
 import { useState, useMemo } from 'react'
 import { useSearchParams, Link } from 'react-router-dom'
-import { ArrowLeft, Scissors, Printer, CheckCircle2, Loader2, ChevronDown, ChevronRight } from 'lucide-react'
+import { ArrowLeft, Scissors, Printer, Loader2, ChevronDown, ChevronRight } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { SnijVisualisatie } from '@/components/snijplanning/snij-visualisatie'
-import { ReststukBevestigingModal } from '@/components/snijplanning/reststuk-bevestiging-modal'
-import { ReststukStickerLayout } from '@/components/snijplanning/reststuk-sticker-layout'
-import { useSnijplannenVoorGroep, useVoltooiSnijplanRol, useStartProductieRol } from '@/hooks/use-snijplanning'
-import type { ReststukResult } from '@/hooks/use-snijplanning'
+import { RolUitvoerModal } from '@/components/snijplanning/rol-uitvoer-modal'
+import { computeReststukkenFromStukken } from '@/lib/utils/compute-reststukken'
+import { useSnijplannenVoorGroep, useStartProductieRol } from '@/hooks/use-snijplanning'
 import { usePlanningConfig } from '@/hooks/use-planning-config'
 import { mapSnijplannenToStukken } from '@/lib/utils/snijplan-mapping'
 import { cn } from '@/lib/utils/cn'
@@ -149,64 +148,36 @@ export function ProductieGroepPage() {
 }
 
 function RolCard({ rol, kwaliteit, kleur }: { rol: RolGroepData; kwaliteit: string; kleur: string }) {
-  const voltooiRol = useVoltooiSnijplanRol()
   const startProductie = useStartProductieRol()
-  const [voltooid, setVoltooid] = useState(false)
-  const [inProductie, setInProductie] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
-  const [showReststukModal, setShowReststukModal] = useState(false)
-  const [reststukResult, setReststukResult] = useState<ReststukResult | null>(null)
+  const [modalOpen, setModalOpen] = useState(false)
 
-  const teSnijden = rol.stukken.filter(s => s.status === 'Snijden')
+  const teSnijden = rol.stukken.filter(s => s.status === 'Snijden' || s.status === 'Gepland' || s.status === 'Wacht')
   const alGesneden = rol.stukken.filter(s => s.status === 'Gesneden' || s.status === 'In confectie' || s.status === 'Gereed')
-  const heeftGepland = teSnijden.length > 0 && !inProductie
 
   const { snijStukken, gebruikteLengte, afvalPct, reststukBruikbaar } =
     mapSnijplannenToStukken(rol.stukken, rol.rolBreedte, rol.rolLengte)
 
   const restLengte = rol.rolLengte - gebruikteLengte
+  const reststukken = computeReststukkenFromStukken(rol.rolLengte, rol.rolBreedte, snijStukken)
 
-  const handleVoltooiRol = () => {
+  const handleStartMetRol = (e: React.MouseEvent) => {
+    e.stopPropagation()
     setError(null)
-    if (restLengte > 50) {
-      setShowReststukModal(true)
-    } else {
-      voltooiRol.mutate(
-        { rolId: rol.rolId, overrideRestLengte: 0 },
-        {
-          onSuccess: () => { setVoltooid(true); setOpen(true) },
-          onError: (err) => setError(err instanceof Error ? err.message : 'Onbekende fout'),
-        },
-      )
-    }
-  }
-
-  const handleReststukBevestig = (lengte: number) => {
-    setShowReststukModal(false)
-    voltooiRol.mutate(
-      { rolId: rol.rolId, overrideRestLengte: lengte },
-      {
-        onSuccess: (data) => {
-          setVoltooid(true)
-          setOpen(true)
-          const result = Array.isArray(data) ? data[0] : data
-          if (result?.reststuk_id) setReststukResult(result)
-        },
-        onError: (err) => setError(err instanceof Error ? err.message : 'Onbekende fout'),
+    // Lock rol tegen heroptimalisatie, dan modal openen
+    startProductie.mutate(rol.rolId, {
+      onSuccess: () => setModalOpen(true),
+      onError: (err) => {
+        const msg = err instanceof Error ? err.message : 'Onbekende fout'
+        // Als rol al in productie is, modal gewoon openen
+        if (msg.toLowerCase().includes('al in productie') || msg.toLowerCase().includes('already')) {
+          setModalOpen(true)
+        } else {
+          setError(msg)
+        }
       },
-    )
-  }
-
-  const handleGeenReststuk = () => {
-    setShowReststukModal(false)
-    voltooiRol.mutate(
-      { rolId: rol.rolId, overrideRestLengte: 0 },
-      {
-        onSuccess: () => { setVoltooid(true); setOpen(true) },
-        onError: (err) => setError(err instanceof Error ? err.message : 'Onbekende fout'),
-      },
-    )
+    })
   }
 
   return (
@@ -239,21 +210,9 @@ function RolCard({ rol, kwaliteit, kleur }: { rol: RolGroepData; kwaliteit: stri
           )}
         </div>
         <div className="flex items-center gap-2">
-          {voltooid ? (
-            <span className="flex items-center gap-1.5 text-sm text-emerald-600 font-medium">
-              <CheckCircle2 size={16} />
-              Gesneden
-            </span>
-          ) : heeftGepland ? (
+          {teSnijden.length > 0 && (
             <button
-              onClick={(e) => {
-                e.stopPropagation()
-                setError(null)
-                startProductie.mutate(rol.rolId, {
-                  onSuccess: () => setInProductie(true),
-                  onError: (err) => setError(err instanceof Error ? err.message : 'Onbekende fout'),
-                })
-              }}
+              onClick={handleStartMetRol}
               disabled={startProductie.isPending}
               className="flex items-center gap-2 px-4 py-2 rounded-[var(--radius-sm)] bg-indigo-500 text-white font-medium hover:bg-indigo-600 transition-colors disabled:opacity-50"
             >
@@ -262,22 +221,9 @@ function RolCard({ rol, kwaliteit, kleur }: { rol: RolGroepData; kwaliteit: stri
               ) : (
                 <Scissors size={16} />
               )}
-              Start productie ({teSnijden.length} stuks)
+              Start met rol ({teSnijden.length} stuks)
             </button>
-          ) : teSnijden.length > 0 ? (
-            <button
-              onClick={(e) => { e.stopPropagation(); handleVoltooiRol() }}
-              disabled={voltooiRol.isPending}
-              className="flex items-center gap-2 px-4 py-2 rounded-[var(--radius-sm)] bg-emerald-500 text-white font-medium hover:bg-emerald-600 transition-colors disabled:opacity-50"
-            >
-              {voltooiRol.isPending ? (
-                <Loader2 size={16} className="animate-spin" />
-              ) : (
-                <Scissors size={16} />
-              )}
-              Rol gesneden ({teSnijden.length} stuks)
-            </button>
-          ) : null}
+          )}
           <Link
             to={`/snijplanning/stickers?kwaliteit=${kwaliteit}&kleur=${kleur}&rol=${rol.rolId}`}
             onClick={(e) => e.stopPropagation()}
@@ -306,6 +252,7 @@ function RolCard({ rol, kwaliteit, kleur }: { rol: RolGroepData; kwaliteit: stri
             restLengte={restLengte}
             afvalPct={afvalPct}
             reststukBruikbaar={reststukBruikbaar}
+            reststukken={reststukken}
             className="max-w-2xl"
           />
         </div>
@@ -357,47 +304,14 @@ function RolCard({ rol, kwaliteit, kleur }: { rol: RolGroepData; kwaliteit: stri
           </tbody>
         </table>
 
-        {/* Reststuk sticker */}
-        {reststukResult?.reststuk_rolnummer && (
-          <div className="mt-4 p-4 bg-emerald-50 border border-emerald-200 rounded-[var(--radius-sm)]">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-sm font-medium text-emerald-700">
-                Reststuk {reststukResult.reststuk_rolnummer} ({reststukResult.reststuk_lengte_cm} cm) aangemaakt
-              </span>
-              <button
-                onClick={(e) => { e.stopPropagation(); window.print() }}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-[var(--radius-sm)] bg-emerald-500 text-white text-sm hover:bg-emerald-600 transition-colors"
-              >
-                <Printer size={14} />
-                Print sticker
-              </button>
-            </div>
-            <ReststukStickerLayout
-              rolnummer={reststukResult.reststuk_rolnummer}
-              kwaliteit={kwaliteit}
-              kleur={kleur}
-              lengte_cm={reststukResult.reststuk_lengte_cm ?? 0}
-              breedte_cm={rol.rolBreedte}
-              datum={new Date().toLocaleDateString('nl-NL')}
-            />
-          </div>
-        )}
         </div>
       )}
 
-      {/* Reststuk bevestigingsmodal */}
-      {showReststukModal && (
-        <ReststukBevestigingModal
-          berekendeLengte={restLengte}
-          rolBreedte={rol.rolBreedte}
-          kwaliteit={kwaliteit}
-          kleur={kleur}
-          rolnummer={rol.rolnummer}
-          onBevestig={handleReststukBevestig}
-          onGeenReststuk={handleGeenReststuk}
-          onAnnuleer={() => setShowReststukModal(false)}
-        />
-      )}
+      <RolUitvoerModal
+        rolId={modalOpen ? rol.rolId : null}
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+      />
     </div>
   )
 }

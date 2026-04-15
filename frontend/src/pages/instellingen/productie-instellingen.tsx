@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
-import { Settings, Save, CheckCircle2, Clock } from 'lucide-react'
+import { Settings, Save, CheckCircle2, Clock, Truck } from 'lucide-react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { PageHeader } from '@/components/layout/page-header'
 import { usePlanningConfig, useUpdatePlanningConfig } from '@/hooks/use-planning-config'
 import { ConfectieTijdenConfig } from '@/components/confectie/confectie-tijden-config'
 import { WerktijdenConfig, useWerktijden } from '@/components/werkagenda/werktijden-config'
 import { VrijeDagenConfig } from '@/components/werkagenda/vrije-dagen-config'
+import { fetchOrderConfig, updateOrderConfig } from '@/lib/supabase/queries/order-config'
 import type { PlanningConfig } from '@/lib/types/productie'
 
 export function ProductieInstellingenPage() {
@@ -13,6 +15,30 @@ export function ProductieInstellingenPage() {
   const [form, setForm] = useState<PlanningConfig | null>(null)
   const [saved, setSaved] = useState(false)
   const [werktijden, setWerktijden] = useWerktijden()
+
+  const queryClient = useQueryClient()
+  const { data: orderConfig } = useQuery({ queryKey: ['order-config'], queryFn: fetchOrderConfig })
+  const [standaardDagen, setStandaardDagen] = useState<number>(5)
+  const [maatwerkWeken, setMaatwerkWeken] = useState<number>(4)
+  const [orderCfgSaved, setOrderCfgSaved] = useState(false)
+  useEffect(() => {
+    if (orderConfig) {
+      setStandaardDagen(orderConfig.standaard_maat_werkdagen)
+      setMaatwerkWeken(orderConfig.maatwerk_weken)
+    }
+  }, [orderConfig])
+  const orderCfgDirty =
+    !!orderConfig &&
+    (standaardDagen !== orderConfig.standaard_maat_werkdagen ||
+      maatwerkWeken !== orderConfig.maatwerk_weken)
+  const orderMutation = useMutation({
+    mutationFn: () => updateOrderConfig({ standaard_maat_werkdagen: standaardDagen, maatwerk_weken: maatwerkWeken }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['order-config'] })
+      setOrderCfgSaved(true)
+      setTimeout(() => setOrderCfgSaved(false), 3000)
+    },
+  })
 
   useEffect(() => {
     if (config && !form) setForm(config)
@@ -210,6 +236,57 @@ export function ProductieInstellingenPage() {
 
         {/* Card 6: Confectietijden per type */}
         <ConfectieTijdenConfig />
+
+        {/* Card: Order-instellingen */}
+        <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Truck size={18} className="text-slate-500" />
+            <h2 className="text-lg font-semibold text-slate-900">Order-instellingen</h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Standaard-maat levertermijn (werkdagen)
+              </label>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={standaardDagen}
+                onChange={(e) => setStandaardDagen(Number(e.target.value))}
+                className="w-32 px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
+              />
+              <p className="mt-1 text-xs text-slate-400">Uit voorraad leverbaar. Default: 5.</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Maatwerk levertermijn (weken)
+              </label>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={maatwerkWeken}
+                onChange={(e) => setMaatwerkWeken(Number(e.target.value))}
+                className="w-32 px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
+              />
+              <p className="mt-1 text-xs text-slate-400">Gesneden + geconfectioneerd. Default: 4.</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => orderMutation.mutate()}
+              disabled={orderMutation.isPending || !orderCfgDirty}
+              className="flex items-center gap-2 px-3 py-2 rounded-[var(--radius-sm)] bg-terracotta-500 text-white text-sm font-medium hover:bg-terracotta-600 transition-colors disabled:opacity-50"
+            >
+              {orderCfgSaved ? <CheckCircle2 size={14} /> : <Save size={14} />}
+              {orderMutation.isPending ? 'Opslaan...' : orderCfgSaved ? 'Opgeslagen!' : 'Opslaan'}
+            </button>
+            <p className="text-xs text-slate-400">
+              Wordt automatisch ingevuld bij nieuwe orders. Per klant overschrijfbaar.
+            </p>
+          </div>
+        </div>
 
         {/* Card 5: A/B Groepen (placeholder) */}
         <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-6">

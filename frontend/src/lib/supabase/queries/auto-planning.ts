@@ -2,7 +2,6 @@ import { supabase } from '../client'
 
 export interface AutoPlanningConfig {
   enabled: boolean
-  horizon_weken: number
 }
 
 /** Fetch auto-planning configuration from app_config */
@@ -16,13 +15,12 @@ export async function fetchAutoplanningConfig(): Promise<AutoPlanningConfig> {
   if (error) throw error
 
   if (!data) {
-    return { enabled: false, horizon_weken: 2 }
+    return { enabled: false }
   }
 
   const val = data.waarde as Record<string, unknown>
   return {
     enabled: (val.enabled as boolean) ?? false,
-    horizon_weken: (val.horizon_weken as number) ?? 2,
   }
 }
 

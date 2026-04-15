@@ -16,6 +16,8 @@ Domeinbegrippen die je moet kennen om dit project te begrijpen.
 | **Prijslijst** | Per klant een prijslijst (header + regels). Bepaalt welke prijs een klant betaalt per artikel. |
 | **Betaalconditie** | Betalingstermijn, bijv. "30 dagen netto". |
 | **Inkooporganisatie** | Centrale inkoper waar de klant onder valt. |
+| **Standaard levertermijn** | Twee aparte getallen: `standaard_maat_werkdagen` (default 5, kalenderdagen, voor karpetten uit voorraad) en `maatwerk_weken` (default 4, voor gesneden+geconfectioneerde karpetten). Globale defaults in `app_config.order_config`; per klant overschrijfbaar. Order-afleverdatum wordt automatisch berekend als max van beide typen in de order. |
+| **Deelleveringen** | Per klant boolean (`debiteuren.deelleveringen_toegestaan`, default FALSE). Als TRUE en een order bevat zowel standaard-maat als maatwerk regels: bij aanmaken wordt de order opgesplitst in 2 losse orders — één met de standaard-regels (korte levertermijn) en één met de maatwerk-regels (lange levertermijn). Verzendkosten-regel gaat mee met de standaard-order. |
 
 ## Producten & Voorraad
 
@@ -33,7 +35,10 @@ Domeinbegrippen die je moet kennen om dit project te begrijpen.
 | **Rolnummer** | Unieke identifier per fysieke rol. |
 | **VVP** | Verkoopprijs per vierkante meter (Verkoop Vaste Prijs per m2). |
 | **Vrije voorraad** | Voorraad minus gereserveerd minus backorder + besteld inkoop. Wat daadwerkelijk beschikbaar is. |
-| **Reststuk** | Overgebleven stuk na het snijden van een rol. Heeft status 'reststuk'. |
+| **Volle rol** | Rol met standaard breedte én volledige lengte. `rol_type = 'volle_rol'`. Standaard breedte wordt afgeleid uit `artikelnr` (laatste 3 cijfers, bv `CISC12400` → 400 cm). |
+| **Aangebroken rol** | Rol met standaard breedte maar reeds aangesneden (kortere lengte, ≥100 cm). Ontstaat na `voltooi_snijplan_rol()`. `rol_type = 'aangebroken'`, `status = 'beschikbaar'`. |
+| **Reststuk** | Rol met afwijkende (smallere) breedte t.o.v. standaard, óf met lengte <100 cm. `rol_type = 'reststuk'`. Classificatie gebeurt automatisch via trigger op basis van artikelnr-breedte vs werkelijke breedte. |
+| **Artikelnr-codering** | Karpi-artikelnummers bestaan uit 4 letters (kwaliteit) + 2 cijfers (kleur) + 3 cijfers (breedte in cm). Voorbeeld: `CISC12400` = CISC kwaliteit, kleur 12, breedte 400 cm. |
 
 ## Orders & Operationeel
 

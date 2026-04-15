@@ -99,6 +99,7 @@ export function OrderEditPage() {
   }
 
   const regelData: OrderRegelFormData[] = (regels ?? []).map((r) => ({
+    id: r.id,
     artikelnr: r.artikelnr ?? undefined,
     karpi_code: r.karpi_code ?? undefined,
     omschrijving: r.omschrijving,

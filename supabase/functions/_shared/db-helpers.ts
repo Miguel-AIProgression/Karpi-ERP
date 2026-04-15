@@ -30,6 +30,7 @@ export async function fetchStukken(
       'id, snij_lengte_cm, snij_breedte_cm, maatwerk_vorm, order_nr, klant_naam, afleverdatum',
     )
     .in('status', statuses)
+    .is('rol_id', null)
     .eq('kwaliteit_code', kwaliteitCode)
     .in('kleur_code', kleurVariants)
 

@@ -1,6 +1,6 @@
 import { supabase } from '../client'
 import { sanitizeSearch } from '@/lib/utils/sanitize'
-import type { RolRow, RolGroep } from '@/lib/types/productie'
+import type { RolRow, RolGroep, RolType } from '@/lib/types/productie'
 
 export interface RollenStats {
   totaal: number
@@ -16,6 +16,7 @@ export interface RollenStats {
 
 export interface RollenParams {
   status?: string
+  rol_type?: RolType
   kwaliteit_code?: string
   kleur_code?: string
   search?: string
@@ -27,6 +28,7 @@ export interface RollenParams {
 export async function fetchRollen(params: RollenParams) {
   const {
     status,
+    rol_type,
     kwaliteit_code,
     kleur_code,
     search,
@@ -43,6 +45,10 @@ export async function fetchRollen(params: RollenParams) {
 
   if (status && status !== 'Alle') {
     query = query.eq('status', status)
+  }
+
+  if (rol_type) {
+    query = query.eq('rol_type', rol_type)
   }
 
   if (kwaliteit_code) {
@@ -91,40 +97,43 @@ export async function fetchRollenStats(): Promise<RollenStats> {
 
 /** Fetch rollen grouped by kwaliteit_code + kleur_code */
 export async function fetchRollenGegroepeerd(search?: string, kwaliteitFilter?: string, kleurFilter?: string): Promise<RolGroep[]> {
-  let query = supabase
-    .from('rollen')
-    .select('*')
-    .not('status', 'in', '("verkocht","gesneden")')
-    .order('kwaliteit_code', { ascending: true })
-    .order('kleur_code', { ascending: true })
+  const buildQuery = () => {
+    let q = supabase
+      .from('rollen')
+      .select('*')
+      .not('status', 'in', '("verkocht","gesneden")')
+      .order('kwaliteit_code', { ascending: true })
+      .order('kleur_code', { ascending: true })
 
-  // Exact filters (from URL params)
-  if (kwaliteitFilter) {
-    query = query.eq('kwaliteit_code', kwaliteitFilter)
-  }
-  if (kleurFilter) {
-    // Include .0 variant
-    const variants = [kleurFilter]
-    if (!kleurFilter.includes('.')) variants.push(`${kleurFilter}.0`)
-    if (kleurFilter.endsWith('.0')) variants.push(kleurFilter.replace('.0', ''))
-    query = query.in('kleur_code', variants)
-  }
-
-  if (search && !kwaliteitFilter) {
-    const s = sanitizeSearch(search)
-    if (s) {
-      query = query.or(
-        `rolnummer.ilike.%${s}%,kwaliteit_code.ilike.%${s}%,kleur_code.ilike.%${s}%,omschrijving.ilike.%${s}%`
-      )
+    if (kwaliteitFilter) {
+      q = q.eq('kwaliteit_code', kwaliteitFilter)
     }
+    if (kleurFilter) {
+      q = q.eq('kleur_code', kleurFilter.replace(/\.0+$/, ''))
+    }
+    if (search && !kwaliteitFilter) {
+      const s = sanitizeSearch(search)
+      if (s) {
+        q = q.or(
+          `rolnummer.ilike.%${s}%,kwaliteit_code.ilike.%${s}%,kleur_code.ilike.%${s}%,omschrijving.ilike.%${s}%`
+        )
+      }
+    }
+    return q
   }
 
-  // Supabase default limit = 1000; expliciet hoger zetten
-  const { data, error } = await query.limit(10000)
-
-  if (error) throw error
-
-  const rows = (data ?? []) as RolRow[]
+  // PostgREST heeft server-side max_rows=1000; paginate via range()
+  const PAGE_SIZE = 1000
+  const rows: RolRow[] = []
+  let offset = 0
+  while (true) {
+    const { data, error } = await buildQuery().range(offset, offset + PAGE_SIZE - 1)
+    if (error) throw error
+    if (!data || data.length === 0) break
+    rows.push(...(data as RolRow[]))
+    if (data.length < PAGE_SIZE) break
+    offset += PAGE_SIZE
+  }
   const groupMap = new Map<string, RolGroep>()
 
   for (const rol of rows) {
@@ -148,11 +157,11 @@ export async function fetchRollenGegroepeerd(search?: string, kwaliteitFilter?: 
     group.totaal_rollen++
     group.totaal_m2 += Number(rol.oppervlak_m2) || 0
 
-    if (rol.status === 'beschikbaar' || rol.status === 'gereserveerd') {
+    if (rol.rol_type === 'volle_rol') {
       group.volle_rollen++
-    } else if (rol.status === 'in_snijplan') {
+    } else if (rol.rol_type === 'aangebroken') {
       group.aangebroken++
-    } else if (rol.status === 'reststuk') {
+    } else if (rol.rol_type === 'reststuk') {
       group.reststukken++
     }
   }

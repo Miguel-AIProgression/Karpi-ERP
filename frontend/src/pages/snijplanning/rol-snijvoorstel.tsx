@@ -6,6 +6,7 @@ import { RolHeaderCard } from '@/components/snijplanning/rol-header-card'
 import { SnijstukkenTabel } from '@/components/snijplanning/snijstukken-tabel'
 import { SnijVisualisatie } from '@/components/snijplanning/snij-visualisatie'
 import { useRolSnijstukken } from '@/hooks/use-snijplanning'
+import { computeReststukkenFromStukken } from '@/lib/utils/compute-reststukken'
 import type { SnijplanRow, SnijRolVoorstel, SnijStuk } from '@/lib/types/productie'
 
 /** Map flat SnijplanRow[] from the query into a SnijRolVoorstel for the UI */
@@ -53,6 +54,7 @@ function mapToVoorstel(rows: SnijplanRow[]): SnijRolVoorstel | null {
     rest_lengte_cm: restLengte,
     afval_pct: afvalPct,
     reststuk_bruikbaar: restLengte >= 50,
+    reststukken: computeReststukkenFromStukken(rolLengte, rolBreedte, stukken),
   }
 }
 
@@ -109,6 +111,7 @@ export function RolSnijvoorstelPage() {
           restLengte={voorstel.rest_lengte_cm}
           afvalPct={voorstel.afval_pct}
           reststukBruikbaar={voorstel.reststuk_bruikbaar}
+          reststukken={voorstel.reststukken}
         />
       </div>
 

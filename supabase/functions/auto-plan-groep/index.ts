@@ -204,11 +204,25 @@ serve(async (req) => {
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     )
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    console.error('auto-plan-groep error:', message)
+    let message: string
+    let detail: string | undefined
+    let hint: string | undefined
+    let code: string | undefined
+    if (err instanceof Error) {
+      message = err.message
+    } else if (err && typeof err === 'object') {
+      const e = err as Record<string, unknown>
+      message = (e.message as string) ?? JSON.stringify(e)
+      detail = e.details as string | undefined
+      hint = e.hint as string | undefined
+      code = e.code as string | undefined
+    } else {
+      message = String(err)
+    }
+    console.error('auto-plan-groep error:', { message, detail, hint, code, kwaliteit_code, kleur_code })
 
     return new Response(
-      JSON.stringify({ error: `Auto-plan fout: ${message}` }),
+      JSON.stringify({ error: `Auto-plan fout: ${message}`, detail, hint, code }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     )
   } finally {

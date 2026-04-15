@@ -1,17 +1,18 @@
 import { useState, useMemo, Fragment } from 'react'
-import { Search, Scissors, Calendar, CheckCircle2, Factory, AlertTriangle, List } from 'lucide-react'
+import { Search, Scissors, Calendar, CheckCircle2, AlertTriangle, List } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { GroepAccordion } from '@/components/snijplanning/groep-accordion'
 import { AutoPlanningConfig } from '@/components/snijplanning/auto-planning-config'
 import { AgendaWeergave } from '@/components/snijplanning/agenda-weergave'
 import { cn } from '@/lib/utils/cn'
-import { useSnijplanningGroepen, useAutoplanningConfig } from '@/hooks/use-snijplanning'
+import { useSnijplanningGroepen, useTekortAnalyse, useSnijplanningKpis } from '@/hooks/use-snijplanning'
+import { usePlanningConfig } from '@/hooks/use-planning-config'
 import { berekenTotDatum } from '@/components/snijplanning/week-filter'
 
 const SNIJPLAN_STATUSES = ['Te snijden', 'Tekort']
 type SortMode = 'alfabetisch' | 'leverdatum'
 
-function sorteerGroepen<T extends { kleur_code: string; vroegste_afleverdatum: string | null }>(
+function sorteerGroepen<T extends { kwaliteit_code: string; kleur_code: string; vroegste_afleverdatum: string | null }>(
   lijst: T[],
   mode: SortMode,
 ): T[] {
@@ -26,7 +27,19 @@ function sorteerGroepen<T extends { kleur_code: string; vroegste_afleverdatum: s
       return aD.localeCompare(bD)
     })
   } else {
-    copy.sort((a, b) => a.kleur_code.localeCompare(b.kleur_code))
+    // Kwaliteit → kleur → leverdatum (oudste eerst, NULL achteraan)
+    copy.sort((a, b) => {
+      const k = a.kwaliteit_code.localeCompare(b.kwaliteit_code)
+      if (k !== 0) return k
+      const c = a.kleur_code.localeCompare(b.kleur_code)
+      if (c !== 0) return c
+      const aD = a.vroegste_afleverdatum
+      const bD = b.vroegste_afleverdatum
+      if (aD === bD) return 0
+      if (!aD) return 1
+      if (!bD) return -1
+      return aD.localeCompare(bD)
+    })
   }
   return copy
 }
@@ -36,13 +49,17 @@ export function SnijplanningOverviewPage() {
   const [status, setStatus] = useState('Te snijden')
   const [search, setSearch] = useState('')
   const [sortMode, setSortMode] = useState<SortMode>('leverdatum')
-  const { data: autoConfig } = useAutoplanningConfig()
+  const { data: planningConfig } = usePlanningConfig()
 
-  // Gebruik de auto-planning horizon als filter (als die aan staat)
-  const horizonWeken = autoConfig?.enabled ? autoConfig.horizon_weken : null
+  // Planning horizon: `weken_vooruit` uit Productie Instellingen is de
+  // single source of truth. Altijd actief — orders met leverdatum voorbij de
+  // horizon vallen buiten de snijplanning.
+  const horizonWeken = planningConfig?.weken_vooruit ?? null
   const totDatum = berekenTotDatum(horizonWeken)
 
   const { data: groepen, isLoading } = useSnijplanningGroepen(search || undefined, totDatum)
+  const { data: tekortAnalyseMap } = useTekortAnalyse()
+  const { data: kpis } = useSnijplanningKpis(totDatum)
 
   // Groepen met tekort: stukken zonder rol (niet gepland) terwijl rollen nodig zijn
   const tekortGroepen = useMemo(() => {
@@ -90,26 +107,43 @@ export function SnijplanningOverviewPage() {
     [teSnijdenGroepen],
   )
 
-  // Aggregeer stats uit de groepen — matcht de nieuwe 3-fase workflow
+  // KPI cards: gefocust op de actieve planning-horizon + deze week
   const stats = useMemo(() => {
-    const g = groepen ?? []
-    const snijdenZonderRol = g.reduce((s, x) => s + (x.totaal_snijden ?? 0) - (x.totaal_snijden_gepland ?? 0), 0)
-    const snijdenGepland = g.reduce((s, x) => s + (x.totaal_snijden_gepland ?? 0), 0)
-    const gesneden = g.reduce((s, x) => s + (x.totaal_status_gesneden ?? 0), 0)
-    const inConfectie = g.reduce((s, x) => s + (x.totaal_in_confectie ?? 0) + (x.totaal_gereed ?? 0), 0)
+    const horizonLabel =
+      horizonWeken !== null
+        ? `Binnen horizon (${horizonWeken} ${horizonWeken === 1 ? 'wk' : 'wkn'})`
+        : 'Binnen horizon'
     return [
-      { label: 'Wacht op planning', value: snijdenZonderRol, icon: Scissors, color: 'text-slate-700' },
-      { label: 'Gepland', value: snijdenGepland, icon: Calendar, color: 'text-blue-600' },
-      { label: 'Gesneden', value: gesneden, icon: CheckCircle2, color: 'text-emerald-600' },
-      { label: 'In confectie', value: inConfectie, icon: Factory, color: 'text-indigo-600' },
+      {
+        label: horizonLabel,
+        value: kpis?.binnen_horizon ?? 0,
+        icon: Scissors,
+        color: 'text-slate-700',
+      },
+      {
+        label: 'Te snijden deze week',
+        value: kpis?.deze_week_te_snijden ?? 0,
+        icon: Calendar,
+        color: 'text-blue-600',
+      },
+      {
+        label: 'Gesneden deze week',
+        value: kpis?.deze_week_gesneden ?? 0,
+        icon: CheckCircle2,
+        color: 'text-emerald-600',
+      },
     ]
-  }, [groepen])
+  }, [kpis, horizonWeken])
 
   return (
     <>
       <PageHeader
         title="Snijplanning"
-        description={`${filteredGroepen.length ?? 0} kwaliteit/kleur groepen — ${teSnijdenCount} snijplannen`}
+        description={
+          horizonWeken !== null && totDatum
+            ? `${filteredGroepen.length ?? 0} kwaliteit/kleur groepen — ${teSnijdenCount} snijplannen · horizon ${horizonWeken} ${horizonWeken === 1 ? 'week' : 'weken'} (t/m ${new Date(totDatum + 'T00:00:00').toLocaleDateString('nl-NL')})`
+            : `${filteredGroepen.length ?? 0} kwaliteit/kleur groepen — ${teSnijdenCount} snijplannen`
+        }
       />
 
       {/* Tab switcher */}
@@ -145,7 +179,7 @@ export function SnijplanningOverviewPage() {
     return (
       <>
       {/* Stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         {stats.map((s) => (
           <div key={s.label} className="bg-white rounded-[var(--radius)] border border-slate-200 p-4">
             <div className="flex items-center gap-2 mb-1">
@@ -258,7 +292,9 @@ export function SnijplanningOverviewPage() {
         </div>
       ) : sortMode === 'leverdatum' ? (
         <div className="space-y-2">
-          {platteGroepen.map((g, idx) => (
+          {platteGroepen.map((g, idx) => {
+            const kleurKey = g.kleur_code.replace(/\.0$/, '')
+            return (
             <GroepAccordion
               key={`${g.kwaliteit_code}-${g.kleur_code}`}
               kwaliteitCode={g.kwaliteit_code}
@@ -269,8 +305,10 @@ export function SnijplanningOverviewPage() {
               modus={status === 'Tekort' ? 'tekort' : 'te-snijden'}
               totDatum={totDatum}
               defaultOpen={idx === 0}
+              tekortAnalyse={tekortAnalyseMap?.get(`${g.kwaliteit_code}_${kleurKey}`) ?? null}
             />
-          ))}
+            )
+          })}
         </div>
       ) : (
         <div className="space-y-6">
@@ -290,7 +328,9 @@ export function SnijplanningOverviewPage() {
                   </span>
                 </div>
                 <div className="space-y-2">
-                  {groepen.map((g, gIdx) => (
+                  {groepen.map((g, gIdx) => {
+                    const kleurKey = g.kleur_code.replace(/\.0$/, '')
+                    return (
                     <GroepAccordion
                       key={`${g.kwaliteit_code}-${g.kleur_code}`}
                       kwaliteitCode={g.kwaliteit_code}
@@ -298,10 +338,13 @@ export function SnijplanningOverviewPage() {
                       totaalOrders={g.totaal_orders}
                       totaalSnijden={g.totaal_snijden ?? 0}
                       totaalSnijdenGepland={g.totaal_snijden_gepland ?? 0}
+                      modus={status === 'Tekort' ? 'tekort' : 'te-snijden'}
                       totDatum={totDatum}
                       defaultOpen={kIdx === 0 && gIdx === 0}
+                      tekortAnalyse={tekortAnalyseMap?.get(`${g.kwaliteit_code}_${kleurKey}`) ?? null}
                     />
-                  ))}
+                    )
+                  })}
                 </div>
               </Fragment>
             )

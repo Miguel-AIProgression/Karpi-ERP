@@ -39,6 +39,8 @@ export function KlantDetailPage() {
 
   const [editVerzendkosten, setEditVerzendkosten] = useState(false)
   const [editVerzendDrempel, setEditVerzendDrempel] = useState(false)
+  const [editStandaardDagen, setEditStandaardDagen] = useState(false)
+  const [editMaatwerkWeken, setEditMaatwerkWeken] = useState(false)
 
   const gratisVerzendingMutation = useMutation({
     mutationFn: async (newValue: boolean) => {
@@ -77,6 +79,47 @@ export function KlantDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['klanten', debiteurNr] })
       setEditVerzendkosten(false)
+    },
+  })
+
+  const standaardDagenMutation = useMutation({
+    mutationFn: async (newValue: number | null) => {
+      const { error } = await supabase
+        .from('debiteuren')
+        .update({ standaard_maat_werkdagen: newValue })
+        .eq('debiteur_nr', debiteurNr)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['klanten', debiteurNr] })
+      setEditStandaardDagen(false)
+    },
+  })
+
+  const maatwerkWekenMutation = useMutation({
+    mutationFn: async (newValue: number | null) => {
+      const { error } = await supabase
+        .from('debiteuren')
+        .update({ maatwerk_weken: newValue })
+        .eq('debiteur_nr', debiteurNr)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['klanten', debiteurNr] })
+      setEditMaatwerkWeken(false)
+    },
+  })
+
+  const deelleveringenMutation = useMutation({
+    mutationFn: async (newValue: boolean) => {
+      const { error } = await supabase
+        .from('debiteuren')
+        .update({ deelleveringen_toegestaan: newValue })
+        .eq('debiteur_nr', debiteurNr)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['klanten', debiteurNr] })
     },
   })
 
@@ -166,117 +209,243 @@ export function KlantDetailPage() {
           <InfoField label="Omzet YTD" value={formatCurrency(klant.omzet_ytd)} />
         </div>
 
-        <div className="mt-4 pt-4 border-t border-slate-100 flex items-center gap-6">
-          <div className="flex items-center gap-3">
-            <label className="text-sm font-medium text-slate-700">Afleverwijze</label>
+        <div className="mt-4 pt-4 border-t border-slate-100 space-y-5 text-sm">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-3">Verzending</div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-4">
+          {/* Afleverwijze */}
+          <div>
+            <div className="text-xs text-slate-400 mb-1">Afleverwijze</div>
             <select
               value={klant.afleverwijze ?? 'Bezorgen'}
               onChange={(e) => afleverwijzeMutation.mutate(e.target.value)}
               disabled={afleverwijzeMutation.isPending}
-              className="px-3 py-1 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400 disabled:opacity-50"
+              className="w-full px-2 py-1 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400 disabled:opacity-50"
             >
               <option value="Bezorgen">Bezorgen</option>
               <option value="Afhalen">Afhalen</option>
             </select>
           </div>
 
-          <div className="flex items-center gap-3">
-            <label className="text-sm font-medium text-slate-700">Gratis verzending</label>
-            <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-              klant.gratis_verzending
-                ? 'bg-emerald-100 text-emerald-700'
-                : 'bg-slate-100 text-slate-500'
-            }`}>
-              {klant.gratis_verzending ? 'Ja' : 'Nee'}
-            </span>
-            <button
-              onClick={() => gratisVerzendingMutation.mutate(!klant.gratis_verzending)}
-              disabled={gratisVerzendingMutation.isPending}
-              className="text-xs text-terracotta-500 hover:text-terracotta-700 font-medium disabled:opacity-50"
-            >
-              {gratisVerzendingMutation.isPending ? 'Opslaan...' : 'Wijzig'}
-            </button>
+          {/* Gratis verzending */}
+          <div>
+            <div className="text-xs text-slate-400 mb-1">Gratis verzending</div>
+            <div className="flex items-center gap-2">
+              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                klant.gratis_verzending
+                  ? 'bg-emerald-100 text-emerald-700'
+                  : 'bg-slate-100 text-slate-500'
+              }`}>
+                {klant.gratis_verzending ? 'Ja' : 'Nee'}
+              </span>
+              <button
+                onClick={() => gratisVerzendingMutation.mutate(!klant.gratis_verzending)}
+                disabled={gratisVerzendingMutation.isPending}
+                className="text-xs text-terracotta-500 hover:text-terracotta-700 font-medium disabled:opacity-50"
+              >
+                {gratisVerzendingMutation.isPending ? '...' : 'Wijzig'}
+              </button>
+            </div>
           </div>
 
-          {!klant.gratis_verzending && (
-            <>
-              <div className="flex items-center gap-3">
-                <label className="text-sm font-medium text-slate-700">Verzendkosten</label>
-                {editVerzendkosten ? (
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault()
-                      const val = parseFloat((e.currentTarget.elements.namedItem('verzendkosten') as HTMLInputElement).value)
-                      if (!isNaN(val) && val >= 0) verzendkostenMutation.mutate(val)
-                    }}
-                    className="flex items-center gap-2"
-                  >
-                    <span className="text-sm text-slate-500">€</span>
-                    <input
-                      name="verzendkosten"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      defaultValue={klant.verzendkosten ?? 35}
-                      autoFocus
-                      className="w-20 px-2 py-1 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
-                    />
-                    <button type="submit" disabled={verzendkostenMutation.isPending} className="text-xs text-terracotta-500 font-medium disabled:opacity-50">
-                      {verzendkostenMutation.isPending ? 'Opslaan...' : 'Opslaan'}
-                    </button>
-                    <button type="button" onClick={() => setEditVerzendkosten(false)} className="text-xs text-slate-400 hover:text-slate-600">
-                      Annuleer
-                    </button>
-                  </form>
-                ) : (
-                  <>
-                    <span className="text-sm text-slate-700">€ {(klant.verzendkosten ?? 35).toFixed(2).replace('.', ',')}</span>
-                    <button onClick={() => setEditVerzendkosten(true)} className="text-xs text-terracotta-500 hover:text-terracotta-700 font-medium">
-                      Wijzig
-                    </button>
-                  </>
-                )}
+          {/* Verzendkosten */}
+          <div>
+            <div className="text-xs text-slate-400 mb-1">Verzendkosten</div>
+            {klant.gratis_verzending ? (
+              <span className="text-slate-400 italic">n.v.t.</span>
+            ) : editVerzendkosten ? (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  const val = parseFloat((e.currentTarget.elements.namedItem('verzendkosten') as HTMLInputElement).value)
+                  if (!isNaN(val) && val >= 0) verzendkostenMutation.mutate(val)
+                }}
+                className="flex items-center gap-1"
+              >
+                <span className="text-slate-500">€</span>
+                <input
+                  name="verzendkosten"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  defaultValue={klant.verzendkosten ?? 35}
+                  autoFocus
+                  className="w-16 px-1 py-0.5 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30"
+                />
+                <button type="submit" disabled={verzendkostenMutation.isPending} className="text-xs text-terracotta-500 font-medium disabled:opacity-50">
+                  OK
+                </button>
+                <button type="button" onClick={() => setEditVerzendkosten(false)} className="text-xs text-slate-400 hover:text-slate-600">
+                  ✕
+                </button>
+              </form>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="text-slate-700">€ {(klant.verzendkosten ?? 35).toFixed(2).replace('.', ',')}</span>
+                <button onClick={() => setEditVerzendkosten(true)} className="text-xs text-terracotta-500 hover:text-terracotta-700 font-medium">
+                  Wijzig
+                </button>
               </div>
+            )}
+          </div>
 
-              <div className="flex items-center gap-3">
-                <label className="text-sm font-medium text-slate-700">Drempel gratis verzending</label>
-                {editVerzendDrempel ? (
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault()
-                      const val = parseFloat((e.currentTarget.elements.namedItem('verzend_drempel') as HTMLInputElement).value)
-                      if (!isNaN(val) && val >= 0) verzendDrempelMutation.mutate(val)
-                    }}
-                    className="flex items-center gap-2"
-                  >
-                    <span className="text-sm text-slate-500">€</span>
-                    <input
-                      name="verzend_drempel"
-                      type="number"
-                      min="0"
-                      step="1"
-                      defaultValue={klant.verzend_drempel ?? 500}
-                      autoFocus
-                      className="w-24 px-2 py-1 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
-                    />
-                    <button type="submit" disabled={verzendDrempelMutation.isPending} className="text-xs text-terracotta-500 font-medium disabled:opacity-50">
-                      {verzendDrempelMutation.isPending ? 'Opslaan...' : 'Opslaan'}
-                    </button>
-                    <button type="button" onClick={() => setEditVerzendDrempel(false)} className="text-xs text-slate-400 hover:text-slate-600">
-                      Annuleer
-                    </button>
-                  </form>
-                ) : (
-                  <>
-                    <span className="text-sm text-slate-700">€ {(klant.verzend_drempel ?? 500).toFixed(0)}</span>
-                    <button onClick={() => setEditVerzendDrempel(true)} className="text-xs text-terracotta-500 hover:text-terracotta-700 font-medium">
-                      Wijzig
-                    </button>
-                  </>
-                )}
+          {/* Drempel gratis verzending */}
+          <div>
+            <div className="text-xs text-slate-400 mb-1">Drempel gratis verzending</div>
+            {klant.gratis_verzending ? (
+              <span className="text-slate-400 italic">n.v.t.</span>
+            ) : editVerzendDrempel ? (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  const val = parseFloat((e.currentTarget.elements.namedItem('verzend_drempel') as HTMLInputElement).value)
+                  if (!isNaN(val) && val >= 0) verzendDrempelMutation.mutate(val)
+                }}
+                className="flex items-center gap-1"
+              >
+                <span className="text-slate-500">€</span>
+                <input
+                  name="verzend_drempel"
+                  type="number"
+                  min="0"
+                  step="1"
+                  defaultValue={klant.verzend_drempel ?? 500}
+                  autoFocus
+                  className="w-20 px-1 py-0.5 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30"
+                />
+                <button type="submit" disabled={verzendDrempelMutation.isPending} className="text-xs text-terracotta-500 font-medium disabled:opacity-50">
+                  OK
+                </button>
+                <button type="button" onClick={() => setEditVerzendDrempel(false)} className="text-xs text-slate-400 hover:text-slate-600">
+                  ✕
+                </button>
+              </form>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="text-slate-700">€ {(klant.verzend_drempel ?? 500).toFixed(0)}</span>
+                <button onClick={() => setEditVerzendDrempel(true)} className="text-xs text-terracotta-500 hover:text-terracotta-700 font-medium">
+                  Wijzig
+                </button>
               </div>
-            </>
-          )}
+            )}
+          </div>
+          </div>
+        </div>
+
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-3">Leveringen</div>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-4">
+          {/* Standaard-maat levertermijn */}
+          <div>
+            <div className="text-xs text-slate-400 mb-1">Standaard-maat levertermijn</div>
+            {editStandaardDagen ? (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  const raw = (e.currentTarget.elements.namedItem('standaardDagen') as HTMLInputElement).value.trim()
+                  if (raw === '') { standaardDagenMutation.mutate(null); return }
+                  const val = parseInt(raw, 10)
+                  if (!isNaN(val) && val >= 0) standaardDagenMutation.mutate(val)
+                }}
+                className="flex items-center gap-1"
+              >
+                <input
+                  name="standaardDagen"
+                  type="number"
+                  min="0"
+                  step="1"
+                  defaultValue={klant.standaard_maat_werkdagen ?? ''}
+                  placeholder="—"
+                  autoFocus
+                  className="w-14 px-1 py-0.5 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30"
+                />
+                <span className="text-slate-500 text-xs">dgn</span>
+                <button type="submit" disabled={standaardDagenMutation.isPending} className="text-xs text-terracotta-500 font-medium disabled:opacity-50">OK</button>
+                <button type="button" onClick={() => setEditStandaardDagen(false)} className="text-xs text-slate-400 hover:text-slate-600">✕</button>
+              </form>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="text-slate-700">
+                  {klant.standaard_maat_werkdagen != null
+                    ? `${klant.standaard_maat_werkdagen} ${klant.standaard_maat_werkdagen === 1 ? 'dag' : 'dagen'}`
+                    : <span className="text-slate-400 italic">Standaard</span>}
+                </span>
+                <button onClick={() => setEditStandaardDagen(true)} className="text-xs text-terracotta-500 hover:text-terracotta-700 font-medium">
+                  Wijzig
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Maatwerk levertermijn */}
+          <div>
+            <div className="text-xs text-slate-400 mb-1">Maatwerk levertermijn</div>
+            {editMaatwerkWeken ? (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  const raw = (e.currentTarget.elements.namedItem('maatwerkWeken') as HTMLInputElement).value.trim()
+                  if (raw === '') { maatwerkWekenMutation.mutate(null); return }
+                  const val = parseInt(raw, 10)
+                  if (!isNaN(val) && val >= 0) maatwerkWekenMutation.mutate(val)
+                }}
+                className="flex items-center gap-1"
+              >
+                <input
+                  name="maatwerkWeken"
+                  type="number"
+                  min="0"
+                  step="1"
+                  defaultValue={klant.maatwerk_weken ?? ''}
+                  placeholder="—"
+                  autoFocus
+                  className="w-14 px-1 py-0.5 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30"
+                />
+                <span className="text-slate-500 text-xs">wkn</span>
+                <button type="submit" disabled={maatwerkWekenMutation.isPending} className="text-xs text-terracotta-500 font-medium disabled:opacity-50">OK</button>
+                <button type="button" onClick={() => setEditMaatwerkWeken(false)} className="text-xs text-slate-400 hover:text-slate-600">✕</button>
+              </form>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="text-slate-700">
+                  {klant.maatwerk_weken != null
+                    ? `${klant.maatwerk_weken} ${klant.maatwerk_weken === 1 ? 'week' : 'weken'}`
+                    : <span className="text-slate-400 italic">Standaard</span>}
+                </span>
+                <button onClick={() => setEditMaatwerkWeken(true)} className="text-xs text-terracotta-500 hover:text-terracotta-700 font-medium">
+                  Wijzig
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Deelleveringen (toggle) */}
+          <div>
+            <div className="text-xs text-slate-400 mb-1">Deelleveringen</div>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={klant.deelleveringen_toegestaan}
+                onClick={() => deelleveringenMutation.mutate(!klant.deelleveringen_toegestaan)}
+                disabled={deelleveringenMutation.isPending}
+                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 disabled:opacity-50 ${
+                  klant.deelleveringen_toegestaan ? 'bg-terracotta-500' : 'bg-slate-300'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                    klant.deelleveringen_toegestaan ? 'translate-x-4' : 'translate-x-0.5'
+                  }`}
+                />
+              </button>
+              <span className="text-slate-700">
+                {klant.deelleveringen_toegestaan ? 'Aan' : 'Uit'}
+              </span>
+            </div>
+          </div>
+          </div>
+        </div>
         </div>
       </div>
 

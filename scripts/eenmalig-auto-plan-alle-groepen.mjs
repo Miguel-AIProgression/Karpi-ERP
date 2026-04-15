@@ -41,10 +41,12 @@ async function main() {
 
   const groepen = await groepenRes.json()
 
-  // Filter: alleen groepen met wachtende stukken
-  const wachtGroepen = groepen.filter(g => (g.totaal_wacht ?? 0) > 0)
+  // Filter: alleen groepen met ongeplande stukken (totaal_snijden minus wat al een rol heeft)
+  const wachtGroepen = groepen.filter(
+    (g) => ((g.totaal_snijden ?? 0) - (g.totaal_snijden_gepland ?? 0)) > 0,
+  )
 
-  console.log(`   ${groepen.length} totale groepen, ${wachtGroepen.length} met wachtende stukken`)
+  console.log(`   ${groepen.length} totale groepen, ${wachtGroepen.length} met ongeplande stukken`)
 
   if (wachtGroepen.length === 0) {
     console.log('✅ Geen wachtende stukken gevonden. Niets te doen.')
@@ -59,7 +61,8 @@ async function main() {
   for (let i = 0; i < wachtGroepen.length; i++) {
     const g = wachtGroepen[i]
     const label = `${g.kwaliteit_code} ${g.kleur_code}`
-    process.stdout.write(`[${i + 1}/${wachtGroepen.length}] ${label} (${g.totaal_wacht} wacht)... `)
+    const ongeplandCount = (g.totaal_snijden ?? 0) - (g.totaal_snijden_gepland ?? 0)
+    process.stdout.write(`[${i + 1}/${wachtGroepen.length}] ${label} (${ongeplandCount} ongepland)... `)
 
     try {
       const res = await fetch(
@@ -87,6 +90,12 @@ async function main() {
         overgeslagen++
       } else if (data.error) {
         console.log(`❌ ${data.error}`)
+        if (data.detail || data.hint || data.code) {
+          console.log(`   detail: ${JSON.stringify({ code: data.code, detail: data.detail, hint: data.hint })}`)
+        }
+        fouten++
+      } else {
+        console.log(`⚠️  onverwachte respons: ${JSON.stringify(data).slice(0, 300)}`)
         fouten++
       }
     } catch (err) {

@@ -50,6 +50,9 @@ export interface KlantDetail {
   afleverwijze: string | null
   verzendkosten: number
   verzend_drempel: number
+  standaard_maat_werkdagen: number | null
+  maatwerk_weken: number | null
+  deelleveringen_toegestaan: boolean
 }
 
 export interface KlanteigenNaam {

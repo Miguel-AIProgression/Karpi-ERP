@@ -20,6 +20,7 @@ export type ConfectieStatus =
 export type MaatwerkVorm = string  // Configureerbaar via maatwerk_vormen tabel
 export type MaatwerkAfwerking = 'B' | 'FE' | 'LO' | 'ON' | 'SB' | 'SF' | 'VO' | 'ZO'
 export type RolStatus = 'beschikbaar' | 'gereserveerd' | 'verkocht' | 'gesneden' | 'reststuk' | 'in_snijplan'
+export type RolType = 'volle_rol' | 'aangebroken' | 'reststuk'
 export type ScanActie = 'start' | 'gereed' | 'pauze' | 'herstart' | 'fout'
 
 // === Snijplanning types ===
@@ -93,6 +94,7 @@ export interface SnijRolVoorstel {
   rest_lengte_cm: number
   afval_pct: number
   reststuk_bruikbaar: boolean
+  reststukken?: ReststukRect[]
 }
 
 /** Individual piece on a roll */
@@ -183,6 +185,7 @@ export interface RolRow {
   breedte_cm: number
   oppervlak_m2: number
   status: RolStatus
+  rol_type: RolType
   locatie: string | null
   oorsprong_rol_id: number | null
   reststuk_datum: string | null
@@ -250,6 +253,13 @@ export interface SnijvoorstelPlaatsing {
   geroteerd: boolean
 }
 
+export interface ReststukRect {
+  x_cm: number
+  y_cm: number
+  breedte_cm: number
+  lengte_cm: number
+}
+
 export interface SnijvoorstelRol {
   rol_id: number
   rolnummer: string
@@ -260,6 +270,7 @@ export interface SnijvoorstelRol {
   gebruikte_lengte_cm: number
   afval_percentage: number
   restlengte_cm: number
+  reststukken: ReststukRect[]
 }
 
 export interface SnijvoorstelNietGeplaatst {

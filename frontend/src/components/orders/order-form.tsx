@@ -1,11 +1,13 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ClientSelector, type SelectedClient } from './client-selector'
 import { AddressSelector } from './address-selector'
 import { OrderLineEditor } from './order-line-editor'
 import { createOrder, updateOrderWithLines, deleteOrder, lookupPrice, fetchKlanteigenNaam, fetchKlantArtikelnummer } from '@/lib/supabase/queries/order-mutations'
 import type { OrderFormData, OrderRegelFormData } from '@/lib/supabase/queries/order-mutations'
+import { fetchOrderConfig, type OrderConfig } from '@/lib/supabase/queries/order-config'
+import { berekenAfleverdatum } from '@/lib/utils/afleverdatum'
 import { SHIPPING_PRODUCT_ID, SHIPPING_THRESHOLD, SHIPPING_COST } from '@/lib/constants/shipping'
 
 function getISOWeek(dateStr: string): number {
@@ -35,6 +37,45 @@ export function OrderForm({ mode, initialData }: OrderFormProps) {
   const [header, setHeader] = useState<Partial<OrderFormData>>(initialData?.header ?? {})
   const [regels, setRegels] = useState<OrderRegelFormData[]>(initialData?.regels ?? [])
   const [error, setError] = useState<string | null>(null)
+  const [deelleveringen, setDeelleveringen] = useState<boolean>(
+    initialData?.client?.deelleveringen_toegestaan ?? false
+  )
+  const [afleverdatumOverridden, setAfleverdatumOverridden] = useState<boolean>(
+    () => mode === 'edit' && !!initialData?.header?.afleverdatum
+  )
+
+  const { data: orderConfig } = useQuery({ queryKey: ['order-config'], queryFn: fetchOrderConfig })
+
+  function computeAfleverdatum(
+    currentRegels: OrderRegelFormData[],
+    currentClient: SelectedClient | null,
+    cfg: OrderConfig | undefined,
+  ) {
+    const contentRegels = currentRegels.filter(r => r.artikelnr !== SHIPPING_PRODUCT_ID)
+    const heeftStandaardMaat = contentRegels.some(r => !r.is_maatwerk)
+    const heeftMaatwerk = contentRegels.some(r => r.is_maatwerk)
+    const standaardMaatWerkdagen = currentClient?.standaard_maat_werkdagen ?? cfg?.standaard_maat_werkdagen ?? 5
+    const maatwerkWeken = currentClient?.maatwerk_weken ?? cfg?.maatwerk_weken ?? 4
+    return berekenAfleverdatum({
+      heeftStandaardMaat: heeftStandaardMaat || contentRegels.length === 0,
+      heeftMaatwerk,
+      standaardMaatWerkdagen,
+      maatwerkWeken,
+    })
+  }
+
+  const afleverdatumInfo = useMemo(
+    () => computeAfleverdatum(regels, client, orderConfig),
+    [regels, client, orderConfig],
+  )
+
+  function applyAfleverdatum(nieuwRegels: OrderRegelFormData[], c: SelectedClient | null) {
+    if (afleverdatumOverridden) return
+    const info = computeAfleverdatum(nieuwRegels, c, orderConfig)
+    if (!info.langsteDatum) return
+    const week = String(getISOWeek(info.langsteDatum))
+    setHeader((h) => ({ ...h, afleverdatum: info.langsteDatum!, week }))
+  }
 
   // In edit mode, if a VERZEND line already exists, preserve it (override=true)
   const [shippingOverridden, setShippingOverridden] = useState(
@@ -76,6 +117,7 @@ export function OrderForm({ mode, initialData }: OrderFormProps) {
   const handleClientChange = async (c: SelectedClient | null) => {
     setClient(c)
     setShippingOverridden(false)
+    setDeelleveringen(c?.deelleveringen_toegestaan ?? false)
     if (c) {
       setHeader((h) => ({
         ...h,
@@ -94,6 +136,7 @@ export function OrderForm({ mode, initialData }: OrderFormProps) {
         afl_plaats: c.plaats ?? undefined,
         afl_land: c.land ?? 'NL',
       }))
+      applyAfleverdatum(regels, c)
 
       // Reprice existing order lines for the new customer
       if (regels.length > 0) {
@@ -191,19 +234,52 @@ export function OrderForm({ mode, initialData }: OrderFormProps) {
       const orderData: OrderFormData = { ...header, debiteur_nr: client.debiteur_nr }
 
       if (mode === 'create') {
-        return createOrder(orderData, regels)
+        // Split-order flow: deelleveringen AAN + gemengde order
+        if (deelleveringen && afleverdatumInfo.heeftGemengd) {
+          const shippingRegel = regels.find(r => r.artikelnr === SHIPPING_PRODUCT_ID)
+          const standaardRegels = regels.filter(r => r.artikelnr !== SHIPPING_PRODUCT_ID && !r.is_maatwerk)
+          const maatwerkRegels = regels.filter(r => r.artikelnr !== SHIPPING_PRODUCT_ID && r.is_maatwerk)
+
+          const standaardOrder: OrderFormData = {
+            ...orderData,
+            afleverdatum: afleverdatumInfo.standaardDatum ?? orderData.afleverdatum,
+            week: afleverdatumInfo.standaardDatum ? String(getISOWeek(afleverdatumInfo.standaardDatum)) : orderData.week,
+          }
+          const maatwerkOrder: OrderFormData = {
+            ...orderData,
+            afleverdatum: afleverdatumInfo.maatwerkDatum ?? orderData.afleverdatum,
+            week: afleverdatumInfo.maatwerkDatum ? String(getISOWeek(afleverdatumInfo.maatwerkDatum)) : orderData.week,
+          }
+          const regelsA = shippingRegel ? [...standaardRegels, shippingRegel] : standaardRegels
+          const a = await createOrder(standaardOrder, regelsA)
+          const b = await createOrder(maatwerkOrder, maatwerkRegels)
+          return { split: true as const, standaard: a, maatwerk: b }
+        }
+
+        const single = await createOrder(orderData, regels)
+        return { split: false as const, ...single }
       } else {
         const orderId = initialData!.orderId
         await updateOrderWithLines(orderId, orderData, regels)
-        return { id: orderId, order_nr: '' }
+        return { split: false as const, id: orderId, order_nr: '' }
       }
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['orders'] })
-      navigate(`/orders/${data.id}`)
+      if (data.split) {
+        navigate('/orders')
+      } else {
+        navigate(`/orders/${data.id}`)
+      }
     },
     onError: (err) => {
-      setError(err instanceof Error ? err.message : 'Er ging iets mis')
+      setError(
+        err instanceof Error
+          ? err.message
+          : typeof err === 'object' && err !== null && 'message' in err
+            ? String((err as { message: unknown }).message)
+            : 'Er ging iets mis',
+      )
     },
   })
 
@@ -240,10 +316,35 @@ export function OrderForm({ mode, initialData }: OrderFormProps) {
         <Field label="Klant referentie" value={header.klant_referentie} onChange={(v) => setHeader({ ...header, klant_referentie: v })} />
         <Field label="Afleverdatum" value={header.afleverdatum} onChange={(v) => {
           const week = v ? getISOWeek(v) : undefined
+          setAfleverdatumOverridden(true)
           setHeader({ ...header, afleverdatum: v, week: week ? String(week) : undefined })
         }} type="date" />
         <Field label="Week" value={header.week} onChange={(v) => setHeader({ ...header, week: v })} />
       </div>
+
+      {/* Deelleveringen + levertermijn-hint */}
+      {client && mode === 'create' && (
+        <div className="text-xs text-slate-500 space-y-1">
+          {afleverdatumInfo.heeftGemengd && (
+            <div>
+              Standaard-maat regels: <span className="font-medium text-slate-700">{afleverdatumInfo.standaardDatum}</span>
+              {' · '}
+              Maatwerk regels: <span className="font-medium text-slate-700">{afleverdatumInfo.maatwerkDatum}</span>
+            </div>
+          )}
+          {client.deelleveringen_toegestaan && afleverdatumInfo.heeftGemengd && (
+            <label className="inline-flex items-center gap-2 text-slate-700">
+              <input
+                type="checkbox"
+                checked={deelleveringen}
+                onChange={(e) => setDeelleveringen(e.target.checked)}
+                className="rounded border-slate-300 text-terracotta-500 focus:ring-terracotta-400/30"
+              />
+              Deelleveringen — order wordt bij aanmaken gesplitst in 2 losse orders (standaard + maatwerk)
+            </label>
+          )}
+        </div>
+      )}
 
       {/* Address selector */}
       {client && (
@@ -274,6 +375,7 @@ export function OrderForm({ mode, initialData }: OrderFormProps) {
             // User removed the shipping line
             setShippingOverridden(true)
             setRegels(newRegels)
+            applyAfleverdatum(newRegels, client)
             return
           }
 
@@ -281,15 +383,14 @@ export function OrderForm({ mode, initialData }: OrderFormProps) {
             // User edited the shipping line amount
             setShippingOverridden(true)
             setRegels(newRegels)
+            applyAfleverdatum(newRegels, client)
             return
           }
 
           // Normal change — apply shipping auto-logic if not overridden
-          if (shippingOverridden) {
-            setRegels(newRegels)
-          } else {
-            setRegels(applyShippingLogic(newRegels, client))
-          }
+          const finalRegels = shippingOverridden ? newRegels : applyShippingLogic(newRegels, client)
+          setRegels(finalRegels)
+          applyAfleverdatum(finalRegels, client)
         }}
         defaultKorting={client?.korting_pct ?? 0}
         onArticleSelected={handleArticleSelected}

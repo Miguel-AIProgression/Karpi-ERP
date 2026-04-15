@@ -124,6 +124,11 @@ Klanten/afnemers. PK = debiteur_nr uit het oude systeem.
 | betaalconditie | TEXT | |
 | gratis_verzending | BOOLEAN DEFAULT false | Klant krijgt altijd gratis verzending |
 | afleverwijze | TEXT DEFAULT 'Bezorgen' | Standaard afleverwijze (Bezorgen/Afhalen) |
+| verzendkosten | NUMERIC | Per-klant override verzendkosten (€) |
+| verzend_drempel | NUMERIC | Per-klant drempel gratis verzending (€) |
+| standaard_maat_werkdagen | INTEGER | Override levertermijn voor standaard-maat karpetten (dagen). NULL = globale default. |
+| maatwerk_weken | INTEGER | Override levertermijn voor maatwerk karpetten (weken). NULL = globale default. |
+| deelleveringen_toegestaan | BOOLEAN DEFAULT false | Als TRUE: gemengde orders worden bij aanmaken gesplitst in 2 orders (standaard + maatwerk). |
 | inkooporganisatie | TEXT | |
 | betaler | INTEGER FK → debiteuren (self-ref) | Betalende partij |
 | btw_nummer | TEXT | |
@@ -211,9 +216,13 @@ Individuele fysieke tapijtrol. Elk met uniek rolnummer.
 | waarde | NUMERIC(12,2) | Totale waarde |
 | kwaliteit_code | TEXT FK → kwaliteiten | Gedenormaliseerd |
 | kleur_code, zoeksleutel | TEXT | |
-| status | TEXT | 'beschikbaar', 'gereserveerd', 'verkocht', 'gesneden', 'reststuk', 'in_snijplan' |
-| oorsprong_rol_id | BIGINT FK → rollen (self-ref) | Verwijst naar de originele rol waaruit dit reststuk is gesneden |
-| reststuk_datum | TIMESTAMPTZ | Datum waarop het reststuk is aangemaakt |
+| status | TEXT | Workflow-status: 'beschikbaar', 'gereserveerd', 'verkocht', 'gesneden', 'reststuk', 'in_snijplan' |
+| rol_type | ENUM rol_type | Fysieke classificatie: 'volle_rol', 'aangebroken', 'reststuk'. Automatisch gezet via trigger op basis van artikelnr (laatste 3 cijfers = standaard breedte), breedte_cm, lengte_cm en oorsprong_rol_id. Lengte <100cm of breedte <standaard → reststuk; gesneden + std breedte + lengte ≥100cm → aangebroken; anders → volle_rol. Zie migratie 058. |
+| oorsprong_rol_id | BIGINT FK → rollen (self-ref) | Verwijst naar de originele rol waaruit deze rol is gesneden (aangebroken of reststuk) |
+| reststuk_datum | TIMESTAMPTZ | Datum waarop de gesneden rol is aangemaakt |
+| snijden_gestart_op | TIMESTAMPTZ | Timestamp wanneer medewerker "Start met rol" klikte (via `start_snijden_rol`). Voor tijdanalyse snijduur. Migratie 063. |
+| snijden_voltooid_op | TIMESTAMPTZ | Timestamp wanneer rol werd afgesloten via `voltooi_snijplan_rol`. Migratie 063. |
+| snijden_gestart_door | TEXT | Medewerker die snijden gestart is. Migratie 063. |
 | locatie_id | BIGINT FK → magazijn_locaties | |
 
 ---
@@ -544,6 +553,12 @@ Applicatie-instellingen (key-value). Gebruikt voor productie-configuratie en aut
 | wisseltijd_minuten | number | 15 | Tijd om nieuwe rol op machine te leggen |
 | snijtijd_minuten | number | 5 | Gemiddelde snijtijd per karpet |
 
+**order_config waarde-structuur:**
+| Veld | Type | Default | Toelichting |
+|------|------|---------|-------------|
+| standaard_maat_werkdagen | number | 5 | Globale levertermijn voor standaard-maat (kalenderdagen); per klant overschrijfbaar via `debiteuren.standaard_maat_werkdagen` |
+| maatwerk_weken | number | 4 | Globale levertermijn voor maatwerk (weken); per klant overschrijfbaar via `debiteuren.maatwerk_weken` |
+
 ---
 
 ### snijplan_groep_locks
@@ -669,7 +684,8 @@ Audit trail: wie heeft wat wanneer gedaan.
 | `genereer_scancode()` | Genereert een unieke scancode (bijv. SNIJ-XXXX of CONF-XXXX) voor barcode/QR-stickers |
 | `beste_rol_voor_snijplan(kwaliteit TEXT, kleur TEXT, lengte INTEGER, breedte INTEGER)` | Selecteert de optimale rol (minste verspilling) voor een snijplan op basis van kwaliteit, kleur en afmetingen |
 | `maak_reststuk(rol_id BIGINT, nieuwe_lengte INTEGER, snijplan_id BIGINT)` | Maakt een reststuk-rol aan na het snijden, werkt originele rol bij en logt voorraadmutatie |
-| `voltooi_snijplan_rol(p_rol_id BIGINT, p_gesneden_door TEXT, p_override_rest_lengte INTEGER)` | Markeert snijplannen als gesneden, maakt optioneel reststuk. Override: NULL=auto, 0=geen reststuk, >0=aangepaste lengte |
+| `voltooi_snijplan_rol(p_rol_id BIGINT, p_gesneden_door TEXT, p_override_rest_lengte INTEGER, p_reststukken JSONB, p_snijplan_ids BIGINT[])` | Markeert snijplannen als gesneden + maakt reststukken aan. Met `p_snijplan_ids` gevuld: alleen die IDs → Gesneden; overige `Snijden` stukken op de rol → terug naar `Wacht` (rol_id/positie gereset) voor volgende optimalisatie-run. Zet ook `rollen.snijden_voltooid_op=NOW()`. Reststukken: geef `p_reststukken` JSONB array mee → één rol per rechthoek ≥70×140 cm. Returns: TABLE(reststuk_id, reststuk_rolnummer, reststuk_lengte_cm). (migraties 060, 066) |
+| `start_snijden_rol(p_rol_id BIGINT, p_gebruiker TEXT)` | Idempotent: zet `rollen.snijden_gestart_op=NOW()` en `snijden_gestart_door` als nog niet gevuld. Voor tijdanalyse snijduur. (migratie 064) |
 | `auto_markeer_maatwerk()` | Trigger: markeert nieuwe order_regels automatisch als is_maatwerk=true wanneer product_type='rol' |
 | `auto_maak_snijplan()` | Trigger: maakt automatisch een snijplan aan (status 'Wacht') voor nieuwe maatwerk order_regels |
 | `keur_snijvoorstel_goed(voorstel_id BIGINT)` | Keurt een snijvoorstel goed: wijst rollen toe aan snijplannen, zet status 'Gepland', met concurrency guards |
@@ -682,6 +698,7 @@ Audit trail: wie heeft wat wanneer gedaan.
 | `start_productie_rol(rol_id BIGINT)` | Zet alle Gepland stukken op een rol naar In productie (beschermt tegen heroptimalisatie) |
 | `acquire_snijplan_lock(kwaliteit TEXT, kleur TEXT)` | Atomisch lock verkrijgen voor auto-planning (5 min staleness timeout) |
 | `release_snijplan_lock(kwaliteit TEXT, kleur TEXT)` | Lock vrijgeven na auto-planning |
+| `update_order_with_lines(p_order_id BIGINT, p_header JSONB, p_regels JSONB)` | Merge-update van order header + regels: UPDATE bestaande regels op `id`, INSERT nieuwe, DELETE regels die uit payload verdwenen zijn. Preserveert `snijplannen.order_regel_id` FK-koppelingen (migratie 074) |
 
 ### Triggers op order_regels (maatwerk)
 

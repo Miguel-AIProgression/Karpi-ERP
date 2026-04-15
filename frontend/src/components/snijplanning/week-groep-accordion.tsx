@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronRight, Printer } from 'lucide-react'
+import { ChevronDown, ChevronRight, Printer, Scissors } from 'lucide-react'
 import { SnijVisualisatie } from './snij-visualisatie'
+import { RolUitvoerModal } from './rol-uitvoer-modal'
 import { cn } from '@/lib/utils/cn'
 import { AFWERKING_MAP } from '@/lib/utils/constants'
 import { getVormDisplay } from '@/lib/utils/vorm-labels'
@@ -12,6 +13,7 @@ interface WeekGroepAccordionProps {
 
 export function WeekGroepAccordion({ groep }: WeekGroepAccordionProps) {
   const [open, setOpen] = useState(false)
+  const [activeRolId, setActiveRolId] = useState<number | null>(null)
 
   // Flatten all stukken across rollen for the simple list view
   const alleStukken = groep.rollen.flatMap((r) => r.stukken)
@@ -64,8 +66,19 @@ export function WeekGroepAccordion({ groep }: WeekGroepAccordionProps) {
         <div className="border-t border-slate-100 p-4">
           {hasRol && groep.rollen.filter(r => r.rol_breedte_cm > 0).map((voorstel) => (
             <div key={voorstel.rol_id} className="mb-4">
-              <div className="text-sm font-medium text-slate-700 mb-2">
-                Rol: {voorstel.rolnummer} — {voorstel.rol_breedte_cm} × {voorstel.rol_lengte_cm} cm
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-sm font-medium text-slate-700">
+                  Rol: {voorstel.rolnummer} — {voorstel.rol_breedte_cm} × {voorstel.rol_lengte_cm} cm
+                </div>
+                {voorstel.rol_id > 0 && voorstel.stukken.length > 0 && (
+                  <button
+                    onClick={() => setActiveRolId(voorstel.rol_id)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-sm)] bg-indigo-500 text-white text-xs font-medium hover:bg-indigo-600 transition-colors"
+                  >
+                    <Scissors size={12} />
+                    Start met rol
+                  </button>
+                )}
               </div>
               <SnijVisualisatie
                 rolBreedte={voorstel.rol_breedte_cm}
@@ -74,6 +87,7 @@ export function WeekGroepAccordion({ groep }: WeekGroepAccordionProps) {
                 restLengte={voorstel.rest_lengte_cm}
                 afvalPct={voorstel.afval_pct}
                 reststukBruikbaar={voorstel.reststuk_bruikbaar}
+                reststukken={voorstel.reststukken}
                 className="my-3"
               />
             </div>
@@ -99,6 +113,12 @@ export function WeekGroepAccordion({ groep }: WeekGroepAccordionProps) {
           </table>
         </div>
       )}
+
+      <RolUitvoerModal
+        rolId={activeRolId}
+        open={activeRolId !== null}
+        onClose={() => setActiveRolId(null)}
+      />
     </div>
   )
 }

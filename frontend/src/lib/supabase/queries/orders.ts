@@ -81,7 +81,7 @@ export interface StatusCount {
   aantal: number
 }
 
-export type OrderSortField = 'orderdatum' | 'klant_naam' | 'totaal_bedrag' | 'aantal_regels' | 'order_nr' | 'status'
+export type OrderSortField = 'orderdatum' | 'afleverdatum' | 'klant_naam' | 'totaal_bedrag' | 'aantal_regels' | 'order_nr' | 'status'
 export type SortDirection = 'asc' | 'desc'
 
 /** Fetch orders with client name, optionally filtered by status or debiteur */

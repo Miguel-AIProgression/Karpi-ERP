@@ -22,6 +22,9 @@ export interface SelectedClient {
   gratis_verzending: boolean
   verzendkosten: number
   verzend_drempel: number
+  standaard_maat_werkdagen: number | null
+  maatwerk_weken: number | null
+  deelleveringen_toegestaan: boolean
 }
 
 interface ClientSelectorProps {
@@ -45,7 +48,7 @@ export function ClientSelector({ value, onChange, disabled }: ClientSelectorProp
       const numSearch = Number(search)
       let query = supabase
         .from('debiteuren')
-        .select('debiteur_nr, naam, adres, postcode, plaats, land, fact_naam, fact_adres, fact_postcode, fact_plaats, vertegenw_code, prijslijst_nr, korting_pct, betaler, inkooporganisatie, gratis_verzending')
+        .select('debiteur_nr, naam, adres, postcode, plaats, land, fact_naam, fact_adres, fact_postcode, fact_plaats, vertegenw_code, prijslijst_nr, korting_pct, betaler, inkooporganisatie, gratis_verzending, standaard_maat_werkdagen, maatwerk_weken, deelleveringen_toegestaan')
         .eq('status', 'Actief')
         .limit(10)
 

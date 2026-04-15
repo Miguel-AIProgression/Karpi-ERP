@@ -11,8 +11,10 @@ import {
   fetchConfectielijst,
   fetchAlleSnijden,
   fetchRolLocaties,
+  fetchTekortAnalyse,
+  fetchSnijplanningKpis,
 } from '@/lib/supabase/queries/snijplanning'
-import type { SnijplanSortField, SortDirection } from '@/lib/supabase/queries/snijplanning'
+import type { SnijplanSortField, SortDirection, TekortAnalyseRow } from '@/lib/supabase/queries/snijplanning'
 import {
   createSnijplan,
   updateSnijplanStatus,
@@ -29,6 +31,7 @@ import {
   approveSnijvoorstel as approveVoorstelOptimalisatie,
   rejectSnijvoorstel,
   voltooiSnijplanRol,
+  startSnijdenRol,
   type ReststukResult,
 } from '@/lib/supabase/queries/snijvoorstel'
 import {
@@ -39,6 +42,7 @@ import {
 } from '@/lib/supabase/queries/auto-planning'
 import type { AutoPlanningConfig } from '@/lib/supabase/queries/auto-planning'
 import { berekenTotDatum } from '@/components/snijplanning/week-filter'
+import { fetchPlanningConfig } from '@/lib/supabase/queries/planning-config'
 
 export function useSnijplanningPool(params: {
   status?: string
@@ -62,6 +66,21 @@ export function useSnijplanningGroepen(search?: string, totDatum?: string | null
   return useQuery({
     queryKey: ['snijplanning', 'groepen', search, totDatum],
     queryFn: () => fetchSnijplanningGroepen(search, totDatum),
+  })
+}
+
+export function useTekortAnalyse() {
+  return useQuery({
+    queryKey: ['snijplanning', 'tekort-analyse'],
+    queryFn: fetchTekortAnalyse,
+    select: (rows): Map<string, TekortAnalyseRow> => {
+      const m = new Map<string, TekortAnalyseRow>()
+      for (const r of rows) {
+        const kleurNormalised = r.kleur_code.replace(/\.0$/, '')
+        m.set(`${r.kwaliteit_code}_${kleurNormalised}`, r)
+      }
+      return m
+    },
   })
 }
 
@@ -123,10 +142,17 @@ export function useProductieDashboard() {
   })
 }
 
-export function useAlleSnijden() {
+export function useSnijplanningKpis(totDatum?: string | null) {
   return useQuery({
-    queryKey: ['snijplanning', 'alle-snijden'],
-    queryFn: fetchAlleSnijden,
+    queryKey: ['snijplanning', 'kpis', totDatum ?? null],
+    queryFn: () => fetchSnijplanningKpis(totDatum),
+  })
+}
+
+export function useAlleSnijden(totDatum?: string | null) {
+  return useQuery({
+    queryKey: ['snijplanning', 'alle-snijden', totDatum ?? null],
+    queryFn: () => fetchAlleSnijden(totDatum),
   })
 }
 
@@ -156,14 +182,18 @@ export function useCreateSnijplan() {
 
   return useMutation({
     mutationFn: (data: CreateSnijplanData) => createSnijplan(data),
-    onSuccess: (_result, variables) => {
+    onSuccess: async (_result, variables) => {
       qc.invalidateQueries({ queryKey: ['snijplanning'] })
       qc.invalidateQueries({ queryKey: ['productie', 'dashboard'] })
 
-      // Auto-plan trigger: als auto-planning aan staat, trigger heroptimalisatie
+      // Auto-plan trigger: als auto-planning aan staat, trigger heroptimalisatie.
+      // De horizon komt uit planningConfig.weken_vooruit (single source of truth).
       if (autoConfig?.enabled && variables.kwaliteit_code && variables.kleur_code) {
-        const horizonDatum = berekenTotDatum(autoConfig.horizon_weken)
-        // Trigger als geen afleverdatum of binnen horizon
+        const planning = await qc.ensureQueryData({
+          queryKey: ['planning-config'],
+          queryFn: fetchPlanningConfig,
+        })
+        const horizonDatum = berekenTotDatum(planning.weken_vooruit ?? null)
         if (!variables.afleverdatum || !horizonDatum || variables.afleverdatum <= horizonDatum) {
           autoplan.mutate({
             kwaliteitCode: variables.kwaliteit_code,
@@ -284,12 +314,24 @@ export function useVerwerpSnijvoorstel() {
 export function useVoltooiSnijplanRol() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ rolId, gesnedenDoor, overrideRestLengte }: { rolId: number; gesnedenDoor?: string; overrideRestLengte?: number | null }) =>
-      voltooiSnijplanRol(rolId, gesnedenDoor, overrideRestLengte),
+    mutationFn: ({ rolId, gesnedenDoor, overrideRestLengte, reststukken, snijplanIds }: { rolId: number; gesnedenDoor?: string; overrideRestLengte?: number | null; reststukken?: import('@/lib/types/productie').ReststukRect[]; snijplanIds?: number[] }) =>
+      voltooiSnijplanRol(rolId, gesnedenDoor, overrideRestLengte, reststukken, snijplanIds),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['snijplanning'] })
       qc.invalidateQueries({ queryKey: ['productie', 'dashboard'] })
       qc.invalidateQueries({ queryKey: ['rollen'] })
+    },
+  })
+}
+
+export function useStartSnijdenRol() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ rolId, gebruiker }: { rolId: number; gebruiker?: string | null }) =>
+      startSnijdenRol(rolId, gebruiker),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['rollen'] })
+      qc.invalidateQueries({ queryKey: ['snijplanning'] })
     },
   })
 }

@@ -1,7 +1,9 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import QRCode from 'qrcode'
 import type { SnijplanRow } from '@/lib/types/productie'
 import { AFWERKING_MAP } from '@/lib/utils/constants'
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 
 interface StickerLayoutProps {
   snijplan: SnijplanRow
@@ -49,7 +51,7 @@ function useQrSvg(text: string): string {
   }, [text])
 }
 
-export function StickerLayout({ snijplan, label }: StickerLayoutProps) {
+export function StickerLayout({ snijplan, label: _label }: StickerLayoutProps) {
   const qrSvg = useQrSvg(snijplan.scancode)
 
   return (
@@ -57,13 +59,9 @@ export function StickerLayout({ snijplan, label }: StickerLayoutProps) {
       className="sticker-label border border-dashed border-slate-300 bg-white box-border p-4 flex flex-col justify-between"
       style={{ width: '100mm', height: '60mm' }}
     >
-      {label && (
-        <div className="text-[8px] text-slate-400 mb-0.5 print:hidden">{label}</div>
-      )}
-
-      {/* Header: Logo */}
+      {/* Header: Klantlogo */}
       <div className="flex items-center gap-2 mb-1">
-        <FloorpassionLogo />
+        <KlantLogo debiteurNr={snijplan.debiteur_nr} klantNaam={snijplan.klant_naam} />
       </div>
 
       <hr className="border-slate-300 mb-2" />
@@ -111,28 +109,38 @@ export function StickerLayout({ snijplan, label }: StickerLayoutProps) {
               QR
             </div>
           )}
-          <span className="text-[9px] text-slate-500 mt-0.5">{snijplan.scancode}</span>
         </div>
       </div>
 
-      {/* Footer: snijplan_nr + order_nr */}
-      <div className="flex justify-between items-end mt-1 pt-1">
-        <span className="text-xs font-bold">{snijplan.snijplan_nr}</span>
+      {/* Footer: order_nr */}
+      <div className="flex justify-end items-end mt-1 pt-1">
         <span className="text-xs text-slate-500">{snijplan.order_nr}</span>
       </div>
     </div>
   )
 }
 
-/** Inline SVG Floorpassion logo — simpele tekst-versie */
-function FloorpassionLogo() {
+/** Klantlogo uit Supabase storage; fallback naar klantnaam als tekst */
+function KlantLogo({ debiteurNr, klantNaam }: { debiteurNr: number; klantNaam: string }) {
+  const [failed, setFailed] = useState(false)
+  const logoUrl = SUPABASE_URL
+    ? `${SUPABASE_URL}/storage/v1/object/public/logos/${debiteurNr}.jpg`
+    : null
+
+  if (!logoUrl || failed) {
+    return (
+      <span className="text-sm font-bold tracking-tight uppercase truncate">
+        {klantNaam}
+      </span>
+    )
+  }
+
   return (
-    <div className="flex items-center gap-1.5">
-      <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <rect x="4" y="4" width="16" height="16" rx="1" transform="rotate(45 12 12)" />
-        <text x="12" y="14" textAnchor="middle" fontSize="8" fill="currentColor" stroke="none" fontWeight="bold">FP</text>
-      </svg>
-      <span className="text-sm font-bold tracking-tight">FLOORPASSION.</span>
-    </div>
+    <img
+      src={logoUrl}
+      alt={klantNaam}
+      className="h-8 max-w-[60mm] object-contain"
+      onError={() => setFailed(true)}
+    />
   )
 }

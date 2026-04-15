@@ -60,3 +60,44 @@ Overige modules: placeholder pagina's, worden feature-voor-feature uitgebouwd.
 - Queries: per module in `frontend/src/lib/supabase/queries/`
 - **Bestanden klein houden:** splits logisch op als een bestand >200-300 regels groeit
 - Componenten: 1 concern per bestand, extracteer herbruikbare delen
+
+## Werkwijze met Claude Code (team-tips van Boris Cherny)
+Deze werkafspraken verhogen kwaliteit en snelheid. Geen dogma's — experimenteer en behoud wat werkt.
+
+### Planning & uitvoering
+- **Plan-mode eerst bij niet-triviale taken:** maak eerst een solide plan, laat daarna implementeren. Bij complexe features: één Claude schrijft plan, een tweede reviewt als "staff engineer". Loopt het mis → terug naar plan-mode, niet doorduwen.
+- **Detailleer specs:** verwijder ambiguïteit vóór overdracht. Specificiteit = autonomie.
+- **Daag output uit:** vraag Claude om keuzes te rechtvaardigen ("prove this works", vergelijk main vs branch). Middelmatige fix? Vraag om verse herschrijving ("scrap it, implement the elegant solution").
+
+### Parallelliseren met git worktrees
+- Bij 2+ onafhankelijke taken: gebruik git worktrees zodat elke sessie een eigen werkdirectory heeft.
+- Eventueel een vaste "analyse"-worktree voor log/data-onderzoek zonder de hoofdbranch te vervuilen.
+
+### Subagents
+- Expliciet "gebruik subagents" vragen bij zware taken — houdt hoofdcontext schoon.
+- Offload deelonderzoek (codebase-verkenning, research) naar Explore-subagents.
+
+### CLAUDE.md onderhouden
+- Corrigeer je Claude? Vraag dán: "werk CLAUDE.md bij zodat dit niet opnieuw gebeurt." Itereer totdat foutmarge daalt.
+- Per module/feature eventueel een notes/-map bijhouden, bijgewerkt na elke significante wijziging.
+
+### Herbruikbare skills & commands
+- Doe je iets >1x per dag → maak er een slash-command of skill van en commit naar git.
+- Kandidaten in deze repo: `/techdebt` (duplicatie opruimen), `/sync-context` (Slack/Drive/issues dump), `/schema-refresh` (regenereer database-schema.md vanuit Supabase).
+
+### Bug-fixing end-to-end
+- Plak volledige bug-threads (Slack/issue) en laat Claude de fix uitvoeren — niet micromanagen.
+- Bij CI-failures: "fix de failing tests", laat de methode los.
+- Wijs naar Docker/Supabase logs voor distributed-systems debugging.
+
+### Data & analytics in Claude Code
+- Gebruik Supabase MCP of `psql`/CLI om metrics direct op te halen en inline te analyseren.
+- Zelfde patroon voor BigQuery/andere datastores met CLI of MCP.
+
+### Leren & begrijpen
+- Onbekende code? Vraag om ASCII-diagram of korte HTML-presentatie ter uitleg.
+- Overweeg Learning/Explanatory output-style in `/config` zodat Claude het *waarom* van wijzigingen toelicht.
+
+### Terminal & omgeving
+- `/statusline` aan: altijd context-usage en huidige branch zichtbaar.
+- Tab-naamgeving/kleur per worktree; overweeg voice-dictation voor rijkere prompts.

@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { AlertTriangle, Calendar } from 'lucide-react'
 import { useAlleSnijden } from '@/hooks/use-snijplanning'
 import { usePlanningConfig } from '@/hooks/use-planning-config'
+import { berekenTotDatum } from '@/components/snijplanning/week-filter'
 import { berekenAgenda, type RolBlok, type Werktijden } from '@/lib/utils/bereken-agenda'
 import { WerktijdenConfig, useWerktijden } from '@/components/werkagenda/werktijden-config'
 import { cn } from '@/lib/utils/cn'
@@ -20,8 +21,9 @@ function isoDay(d: Date): string {
 
 export function AgendaWeergave() {
   const [werktijden, setWerktijden] = useWerktijden()
-  const { data: alleSnijden, isLoading } = useAlleSnijden()
   const { data: planningConfig } = usePlanningConfig()
+  const totDatum = berekenTotDatum(planningConfig?.weken_vooruit ?? null)
+  const { data: alleSnijden, isLoading } = useAlleSnijden(totDatum)
 
   const blokken = useMemo(() => {
     if (!alleSnijden || !planningConfig) return []

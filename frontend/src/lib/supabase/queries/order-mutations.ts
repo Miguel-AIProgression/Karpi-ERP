@@ -22,6 +22,7 @@ export interface OrderFormData {
 }
 
 export interface OrderRegelFormData {
+  id?: number
   artikelnr?: string
   karpi_code?: string
   omschrijving: string
@@ -137,6 +138,7 @@ export async function updateOrderWithLines(
   regels: OrderRegelFormData[]
 ) {
   const p_regels = regels.map((r, i) => ({
+    id: r.id ?? null,
     regelnummer: i + 1,
     artikelnr: r.artikelnr || null,
     karpi_code: r.karpi_code || null,

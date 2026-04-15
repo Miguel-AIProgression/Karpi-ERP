@@ -8,19 +8,17 @@ export function AutoPlanningConfig() {
   const updateConfig = useUpdateAutoplanningConfig()
 
   const [enabled, setEnabled] = useState(false)
-  const [horizonWeken, setHorizonWeken] = useState(2)
 
   useEffect(() => {
     if (config) {
       setEnabled(config.enabled)
-      setHorizonWeken(config.horizon_weken)
     }
   }, [config])
 
   const handleToggle = () => {
     const newEnabled = !enabled
     setEnabled(newEnabled)
-    updateConfig.mutate({ enabled: newEnabled, horizon_weken: horizonWeken })
+    updateConfig.mutate({ enabled: newEnabled })
   }
 
   if (isLoading) return null

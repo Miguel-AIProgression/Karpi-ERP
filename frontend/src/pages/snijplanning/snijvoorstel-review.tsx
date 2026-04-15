@@ -57,6 +57,7 @@ function mapToRolVoorstel(
     rest_lengte_cm: rol.restlengte_cm,
     afval_pct: rol.afval_percentage,
     reststuk_bruikbaar: rol.restlengte_cm >= 50,
+    reststukken: rol.reststukken,
   }
 }
 
@@ -177,8 +178,20 @@ export function SnijvoorstelReviewPage() {
               restLengte={rv.rest_lengte_cm}
               afvalPct={rv.afval_pct}
               reststukBruikbaar={rv.reststuk_bruikbaar}
+              reststukken={rv.reststukken}
             />
           </div>
+          {rv.reststukken && rv.reststukken.length > 0 && (
+            <div className="mt-3 px-3 py-2 bg-emerald-50 border border-emerald-100 rounded-[var(--radius-sm)] text-xs text-emerald-800">
+              <strong>{rv.reststukken.length} reststuk{rv.reststukken.length > 1 ? 'ken' : ''}</strong> worden aangemaakt bij het snijden:{' '}
+              {rv.reststukken.map((r, i) => (
+                <span key={i}>
+                  {i > 0 && ', '}
+                  {Math.round(r.breedte_cm)}×{Math.round(r.lengte_cm)} cm
+                </span>
+              ))}
+            </div>
+          )}
           <StukkenLijst stukken={rv.stukken} />
         </div>
       ))}

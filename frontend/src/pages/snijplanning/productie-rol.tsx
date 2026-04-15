@@ -4,11 +4,11 @@ import { ArrowLeft, Scissors, Printer, CheckCircle2, Loader2 } from 'lucide-reac
 import { PageHeader } from '@/components/layout/page-header'
 import { SnijVisualisatie } from '@/components/snijplanning/snij-visualisatie'
 import { StickerLayout } from '@/components/snijplanning/sticker-layout'
-import { ReststukBevestigingModal } from '@/components/snijplanning/reststuk-bevestiging-modal'
 import { ReststukStickerLayout } from '@/components/snijplanning/reststuk-sticker-layout'
 import { useRolSnijstukken, useVoltooiSnijplanRol } from '@/hooks/use-snijplanning'
 import type { ReststukResult } from '@/hooks/use-snijplanning'
 import { mapSnijplannenToStukken } from '@/lib/utils/snijplan-mapping'
+import { computeReststukkenFromStukken } from '@/lib/utils/compute-reststukken'
 import { cn } from '@/lib/utils/cn'
 import { AFWERKING_MAP } from '@/lib/utils/constants'
 
@@ -23,8 +23,7 @@ export function ProductieRolPage() {
   const [voltooid, setVoltooid] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showStickers, setShowStickers] = useState(false)
-  const [showReststukModal, setShowReststukModal] = useState(false)
-  const [reststukResult, setReststukResult] = useState<ReststukResult | null>(null)
+  const [reststukResults, setReststukResults] = useState<ReststukResult[]>([])
 
   if (isLoading) {
     return <PageHeader title="Laden..." />
@@ -55,56 +54,21 @@ export function ProductieRolPage() {
     mapSnijplannenToStukken(stukken, rolBreedte, rolLengte)
 
   const restLengte = rolLengte - gebruikteLengte
+  const reststukken = computeReststukkenFromStukken(rolLengte, rolBreedte, snijStukken)
 
   const handleVoltooiRol = () => {
     if (!rolIdNum) return
     setError(null)
-    // Als er een bruikbaar reststuk is (>50cm), toon eerst het bevestigingsmodal
-    if (restLengte > 50) {
-      setShowReststukModal(true)
-    } else {
-      // Geen bruikbaar reststuk — direct voltooien
-      voltooiRol.mutate(
-        { rolId: rolIdNum, overrideRestLengte: 0 },
-        {
-          onSuccess: () => {
-            setVoltooid(true)
-            setShowStickers(true)
-          },
-          onError: (err) => setError(err instanceof Error ? err.message : 'Onbekende fout'),
-        },
-      )
-    }
-  }
-
-  const handleReststukBevestig = (lengte: number) => {
-    if (!rolIdNum) return
-    setShowReststukModal(false)
     voltooiRol.mutate(
-      { rolId: rolIdNum, overrideRestLengte: lengte },
+      { rolId: rolIdNum, reststukken },
       {
         onSuccess: (data) => {
           setVoltooid(true)
           setShowStickers(true)
-          const result = Array.isArray(data) ? data[0] : data
-          if (result?.reststuk_id) {
-            setReststukResult(result)
-          }
-        },
-        onError: (err) => setError(err instanceof Error ? err.message : 'Onbekende fout'),
-      },
-    )
-  }
-
-  const handleGeenReststuk = () => {
-    if (!rolIdNum) return
-    setShowReststukModal(false)
-    voltooiRol.mutate(
-      { rolId: rolIdNum, overrideRestLengte: 0 },
-      {
-        onSuccess: () => {
-          setVoltooid(true)
-          setShowStickers(true)
+          const results = (Array.isArray(data) ? data : [data]).filter(
+            (r): r is ReststukResult => !!r && r.reststuk_id !== null,
+          )
+          setReststukResults(results)
         },
         onError: (err) => setError(err instanceof Error ? err.message : 'Onbekende fout'),
       },
@@ -160,36 +124,59 @@ export function ProductieRolPage() {
         )}
 
         {voltooid && (
-          <div className="mb-4 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-[var(--radius-sm)] text-sm text-emerald-700 flex items-center gap-2">
-            <CheckCircle2 size={16} />
-            Rol is gesneden! Stukken zijn gemarkeerd als "Gesneden".
-            {reststukResult?.reststuk_rolnummer && (
-              <span> Reststuk <strong>{reststukResult.reststuk_rolnummer}</strong> ({reststukResult.reststuk_lengte_cm} cm) aangemaakt.</span>
-            )}
+          <div className="mb-4 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-[var(--radius-sm)] text-sm text-emerald-700 flex items-start gap-2">
+            <CheckCircle2 size={16} className="mt-0.5 flex-shrink-0" />
+            <div>
+              Rol is gesneden! Stukken zijn gemarkeerd als "Gesneden".
+              {reststukResults.length > 0 && (
+                <div className="mt-1">
+                  <strong>{reststukResults.length} reststuk{reststukResults.length > 1 ? 'ken' : ''}</strong>{' '}
+                  aangemaakt:{' '}
+                  {reststukResults.map((r, i) => (
+                    <span key={r.reststuk_id ?? i}>
+                      {i > 0 && ', '}
+                      {r.reststuk_rolnummer}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
-        {/* Reststuk sticker */}
-        {reststukResult?.reststuk_rolnummer && (
+        {/* Reststuk stickers — header/knop hier (print:hidden via parent);
+            daadwerkelijke stickers staan buiten de print:hidden wrapper,
+            zie reststuk-print-area verderop */}
+        {reststukResults.length > 0 && (
           <div className="mb-4 bg-white rounded-[var(--radius)] border border-emerald-200 p-4">
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-sm font-medium text-slate-700">Reststuk sticker</h2>
+              <h2 className="text-sm font-medium text-slate-700">
+                Reststuk stickers ({reststukResults.length})
+              </h2>
               <button
                 onClick={() => window.print()}
                 className="flex items-center gap-2 px-3 py-1.5 rounded-[var(--radius-sm)] bg-emerald-500 text-white text-sm hover:bg-emerald-600 transition-colors"
               >
                 <Printer size={14} />
-                Print reststuk sticker
+                Print alle reststuk stickers
               </button>
             </div>
-            <ReststukStickerLayout
-              rolnummer={reststukResult.reststuk_rolnummer}
-              kwaliteit={kwaliteit}
-              kleur={kleur}
-              lengte_cm={reststukResult.reststuk_lengte_cm ?? 0}
-              breedte_cm={rolBreedte}
-              datum={new Date().toLocaleDateString('nl-NL')}
-            />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {reststukResults.map((r, i) => {
+                const rect = reststukken[i]
+                return (
+                  <ReststukStickerLayout
+                    key={`preview-${r.reststuk_id ?? i}`}
+                    rolnummer={r.reststuk_rolnummer ?? ''}
+                    kwaliteit={kwaliteit}
+                    kleur={kleur}
+                    lengte_cm={r.reststuk_lengte_cm ?? 0}
+                    breedte_cm={rect?.breedte_cm ?? rolBreedte}
+                    datum={new Date().toLocaleDateString('nl-NL')}
+                  />
+                )
+              })}
+            </div>
           </div>
         )}
 
@@ -206,6 +193,7 @@ export function ProductieRolPage() {
               restLengte={restLengte}
               afvalPct={afvalPct}
               reststukBruikbaar={reststukBruikbaar}
+              reststukken={reststukken}
               className="max-w-3xl"
             />
           </div>
@@ -311,19 +299,48 @@ export function ProductieRolPage() {
         </div>
       )}
 
-      {/* Reststuk bevestigingsmodal */}
-      {showReststukModal && (
-        <ReststukBevestigingModal
-          berekendeLengte={restLengte}
-          rolBreedte={rolBreedte}
-          kwaliteit={kwaliteit}
-          kleur={kleur}
-          rolnummer={rolnummer}
-          onBevestig={handleReststukBevestig}
-          onGeenReststuk={handleGeenReststuk}
-          onAnnuleer={() => setShowReststukModal(false)}
-        />
+      {/* Print-only area voor reststuk stickers — buiten print:hidden wrappers
+          zodat window.print() ze daadwerkelijk meeneemt. Hidden op scherm. */}
+      {reststukResults.length > 0 && (
+        <div className="reststuk-print-area hidden print:block">
+          {reststukResults.map((r, i) => {
+            const rect = reststukken[i]
+            return (
+              <ReststukStickerLayout
+                key={`print-${r.reststuk_id ?? i}`}
+                rolnummer={r.reststuk_rolnummer ?? ''}
+                kwaliteit={kwaliteit}
+                kleur={kleur}
+                lengte_cm={r.reststuk_lengte_cm ?? 0}
+                breedte_cm={rect?.breedte_cm ?? rolBreedte}
+                datum={new Date().toLocaleDateString('nl-NL')}
+              />
+            )
+          })}
+        </div>
       )}
+
+      <style>{`
+        @media print {
+          body * { visibility: hidden; }
+          .reststuk-print-area,
+          .reststuk-print-area * { visibility: visible; }
+          .reststuk-print-area {
+            position: absolute;
+            top: 0;
+            left: 0;
+          }
+          .reststuk-print-area .sticker-label {
+            page-break-after: always;
+            margin: 0;
+            border: none;
+          }
+          @page {
+            size: 100mm 60mm;
+            margin: 0;
+          }
+        }
+      `}</style>
     </>
   )
 }

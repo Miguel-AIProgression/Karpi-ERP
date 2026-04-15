@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import type { SnijStuk } from '@/lib/types/productie'
+import type { SnijStuk, ReststukRect } from '@/lib/types/productie'
 import { cn } from '@/lib/utils/cn'
 import { isRondeVorm } from '@/lib/utils/vorm-labels'
 
@@ -14,6 +14,7 @@ interface SnijVisualisatieProps {
   restLengte: number   // cm
   afvalPct: number
   reststukBruikbaar: boolean
+  reststukken?: ReststukRect[]  // bruikbare reststukken (>= 70x140 cm) per rechthoek
   className?: string
 }
 
@@ -72,6 +73,7 @@ export function SnijVisualisatie({
   restLengte,
   afvalPct,
   reststukBruikbaar,
+  reststukken,
   className,
 }: SnijVisualisatieProps) {
   const [tooltip, setTooltip] = useState<Tooltip | null>(null)
@@ -117,31 +119,74 @@ export function SnijVisualisatie({
           rx={2}
         />
 
-        {/* ---- Remnant area (dashed) ---- */}
-        {restLengte > 0 && (
-          <g>
-            <rect
-              x={PADDING}
-              y={PADDING + gebruikteLengte}
-              width={rolBreedte}
-              height={restLengte}
-              fill={reststukBruikbaar ? '#f0fdf4' : '#fafafa'}
-              stroke={reststukBruikbaar ? '#86efac' : '#d1d5db'}
-              strokeWidth={1}
-              strokeDasharray="6 3"
-            />
-            <text
-              x={PADDING + rolBreedte / 2}
-              y={PADDING + gebruikteLengte + restLengte / 2}
-              textAnchor="middle"
-              dominantBaseline="central"
-              fontSize={Math.min(12, restLengte * 0.4)}
-              fill="#94a3b8"
-              fontWeight={500}
-            >
-              {Math.round(restLengte)} cm rest
-            </text>
-          </g>
+        {/* ---- Reststukken (bruikbaar, per rechthoek) ---- */}
+        {reststukken && reststukken.length > 0 ? (
+          reststukken.map((r, idx) => {
+            const w = r.breedte_cm
+            const h = r.lengte_cm
+            const fontSize = Math.min(11, Math.min(w, h) * 0.18)
+            return (
+              <g key={`rest-${idx}`}>
+                <rect
+                  x={PADDING + r.x_cm}
+                  y={PADDING + r.y_cm}
+                  width={w}
+                  height={h}
+                  fill="#f0fdf4"
+                  stroke="#16a34a"
+                  strokeWidth={1.5}
+                  strokeDasharray="6 3"
+                />
+                <text
+                  x={PADDING + r.x_cm + w / 2}
+                  y={PADDING + r.y_cm + h / 2 - fontSize * 0.5}
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  fontSize={fontSize}
+                  fill="#15803d"
+                  fontWeight={600}
+                >
+                  RESTSTUK
+                </text>
+                <text
+                  x={PADDING + r.x_cm + w / 2}
+                  y={PADDING + r.y_cm + h / 2 + fontSize * 0.7}
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  fontSize={fontSize}
+                  fill="#166534"
+                >
+                  {Math.round(w)}×{Math.round(h)} cm
+                </text>
+              </g>
+            )
+          })
+        ) : (
+          restLengte > 0 && (
+            <g>
+              <rect
+                x={PADDING}
+                y={PADDING + gebruikteLengte}
+                width={rolBreedte}
+                height={restLengte}
+                fill={reststukBruikbaar ? '#f0fdf4' : '#fafafa'}
+                stroke={reststukBruikbaar ? '#86efac' : '#d1d5db'}
+                strokeWidth={1}
+                strokeDasharray="6 3"
+              />
+              <text
+                x={PADDING + rolBreedte / 2}
+                y={PADDING + gebruikteLengte + restLengte / 2}
+                textAnchor="middle"
+                dominantBaseline="central"
+                fontSize={Math.min(12, restLengte * 0.4)}
+                fill="#94a3b8"
+                fontWeight={500}
+              >
+                {Math.round(restLengte)} cm rest
+              </text>
+            </g>
+          )
         )}
 
         {/* ---- Cut pieces ---- */}
@@ -219,7 +264,7 @@ export function SnijVisualisatie({
                     fontWeight={600}
                     fill="#1e293b"
                   >
-                    {w}x{h}
+                    {stuk.geroteerd ? w : h}x{stuk.geroteerd ? h : w}
                   </text>
                   <text
                     x={px + w / 2}
@@ -339,7 +384,7 @@ export function SnijVisualisatie({
               {tooltip.stuk.klant_naam}
             </text>
             <text x={tooltip.x + 14} y={tooltip.y - 10} fontSize={8} fill="#475569">
-              {tooltip.stuk.lengte_cm}x{tooltip.stuk.breedte_cm} cm
+              {tooltip.stuk.geroteerd ? tooltip.stuk.lengte_cm : tooltip.stuk.breedte_cm}x{tooltip.stuk.geroteerd ? tooltip.stuk.breedte_cm : tooltip.stuk.lengte_cm} cm
               {tooltip.stuk.vorm !== 'rechthoek' ? ` (${tooltip.stuk.vorm})` : ''}
             </text>
             <text x={tooltip.x + 14} y={tooltip.y + 2} fontSize={8} fill="#94a3b8">
