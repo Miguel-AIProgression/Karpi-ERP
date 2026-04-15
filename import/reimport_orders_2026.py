@@ -75,8 +75,13 @@ existing_codes = set(r['code'] for r in res.data)
 res = sb.table("debiteuren").select("debiteur_nr").execute()
 existing_debs = set(r['debiteur_nr'] for r in res.data)
 
-res = sb.table("producten").select("artikelnr").limit(30000).execute()
-existing_arts = set(r['artikelnr'] for r in res.data)
+existing_arts = set()
+for offset in range(0, 50000, 1000):
+    res = sb.table("producten").select("artikelnr").range(offset, offset + 999).execute()
+    existing_arts.update(r['artikelnr'] for r in res.data)
+    if len(res.data) < 1000:
+        break
+print(f"  {len(existing_arts)} producten geladen")
 
 # --- Build orders ---
 print("Bouw orders...")
@@ -147,6 +152,39 @@ for offset in range(0, 10000, 1000):
 print(f"  {len(order_id_map)} orders gevonden in DB")
 
 # --- Build order_regels ---
+def parse_maatwerk(karpi_code, omschrijving):
+    """Detecteer maatwerk-regel en parse afmetingen/vorm uit de artikel-code.
+    karpi_code zoals 'GALA53MAATWERK' => maatwerk; afmetingen uit omschrijving
+    (bv 'GALA53XX070140' => rechthoek 70x140, 'VELV15XX200RND' => rond 200).
+    Retourneert dict met is_maatwerk + maatwerk_vorm/lengte/breedte, of is_maatwerk=False."""
+    if not karpi_code or 'MAATWERK' not in str(karpi_code).upper():
+        return {"is_maatwerk": False}
+    result = {"is_maatwerk": True, "maatwerk_vorm": "rechthoek",
+              "maatwerk_lengte_cm": None, "maatwerk_breedte_cm": None}
+    if not omschrijving:
+        return result
+    suffix = str(omschrijving)[-6:].upper()
+    m = re.match(r'^(\d{3})(\d{3})$', suffix)
+    if m:
+        result["maatwerk_lengte_cm"] = int(m.group(1))
+        result["maatwerk_breedte_cm"] = int(m.group(2))
+        return result
+    m = re.match(r'^(\d{3})RND$', suffix)
+    if m:
+        d = int(m.group(1))
+        result["maatwerk_vorm"] = "rond"
+        result["maatwerk_lengte_cm"] = d
+        result["maatwerk_breedte_cm"] = d
+        return result
+    m = re.match(r'^(\d{3})OVL$', suffix)
+    if m:
+        d = int(m.group(1))
+        result["maatwerk_vorm"] = "ovaal"
+        result["maatwerk_lengte_cm"] = d
+        result["maatwerk_breedte_cm"] = d
+        return result
+    return result
+
 print("Bouw order_regels...")
 regel_records = []
 for order_nr, group in df.groupby('Order'):
@@ -158,13 +196,17 @@ for order_nr, group in df.groupby('Order'):
         artnr = str(int(r['Artikelnr'])) if pd.notna(r['Artikelnr']) else None
         if artnr and artnr not in existing_arts:
             artnr = None
+        karpi = clean(r['Karpi-code'])
+        omsch = clean(r['Omschrijving'])
+        maatwerk = parse_maatwerk(karpi, omsch)
         regel_records.append({
             "order_id": oid,
             "regelnummer": int(r['Regel']),
             "artikelnr": artnr,
-            "karpi_code": clean(r['Karpi-code']),
-            "omschrijving": clean(r['Omschrijving']) or "Onbekend",
+            "karpi_code": karpi,
+            "omschrijving": omsch or "Onbekend",
             "omschrijving_2": clean(r['Omschrijving 2']),
+            **maatwerk,
             "orderaantal": int(r['Orderaantal']) if pd.notna(r['Orderaantal']) else 1,
             "te_leveren": int(r['Te lev.']) if pd.notna(r['Te lev.']) else 0,
             "backorder": int(r['Backorder']) if pd.notna(r['Backorder']) else 0,
