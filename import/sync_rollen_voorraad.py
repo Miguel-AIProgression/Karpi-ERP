@@ -73,6 +73,63 @@ def fetch_huidige(sb):
     return huidige
 
 
+PROTECTED_STATUSSEN = {'in_snijplan', 'gereserveerd', 'gesneden'}
+AFVOER_BARE_STATUSSEN = {'beschikbaar', 'reststuk', ''}
+
+
+def _neq_int(a, b):
+    if pd.isna(a) and b is None:
+        return False
+    if pd.isna(a) or b is None:
+        return True
+    return int(a) != int(b)
+
+
+def _neq_float(a, b, tol=0.01):
+    if pd.isna(a) and b is None:
+        return False
+    if pd.isna(a) or b is None:
+        return True
+    return abs(float(a) - float(b)) > tol
+
+
+def diff(df_bron, huidige):
+    """Return (nieuw, update, afvoeren, beschermd_weg).
+
+    - nieuw: list of pd.Series from bron (rolnummer niet in DB)
+    - update: list of (db_id, bron_series) waar dimensies/waarde veranderd zijn
+    - afvoeren: list of db-dicts (status -> 'geen_voorraad')
+    - beschermd_weg: list of db-dicts (niet in bron, workflow-status, waarschuwen)
+    """
+    bron_map = {r['rolnummer']: r for _, r in df_bron.iterrows()}
+    huidig_map = {h['rolnummer']: h for h in huidige}
+
+    nieuw, update, afvoeren, beschermd_weg = [], [], [], []
+
+    for rolnr, bron in bron_map.items():
+        db = huidig_map.get(rolnr)
+        if db is None:
+            nieuw.append(bron)
+            continue
+        if (_neq_int(bron['lengte_cm'], db.get('lengte_cm'))
+                or _neq_int(bron['breedte_cm'], db.get('breedte_cm'))
+                or _neq_float(bron['oppervlak_m2'], db.get('oppervlak_m2'))
+                or _neq_float(bron['vvp_m2'], db.get('vvp_m2'))
+                or _neq_float(bron['waarde'], db.get('waarde'))):
+            update.append((db['id'], bron))
+
+    for rolnr, db in huidig_map.items():
+        if rolnr in bron_map:
+            continue
+        status = (db.get('status') or '').lower()
+        if status in AFVOER_BARE_STATUSSEN:
+            afvoeren.append(db)
+        else:
+            beschermd_weg.append(db)
+
+    return nieuw, update, afvoeren, beschermd_weg
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--apply', action='store_true',
@@ -88,9 +145,29 @@ def main():
     huidige = fetch_huidige(sb)
     print(f"  {len(huidige)} rollen in database")
 
-    # TODO Task 2: diff + rapport
+    nieuw, update, afvoeren, beschermd_weg = diff(df, huidige)
+    print("\n=== DIFF RAPPORT ===")
+    print(f"  Toevoegen:                      {len(nieuw)}")
+    print(f"  Updaten (dims/waarde):          {len(update)}")
+    print(f"  Afvoeren (-> geen_voorraad):    {len(afvoeren)}")
+    print(f"  Beschermd (workflow-actief):    {len(beschermd_weg)}")
+
+    if beschermd_weg:
+        print("\n  Eerste 10 beschermde rollen (niet in bron, workflow-status):")
+        for d in beschermd_weg[:10]:
+            print(f"    {d['rolnummer']} status={d.get('status')}")
+
+    if update:
+        print("\n  Voorbeeld update (eerste 3):")
+        huidig_by_id = {h['id']: h for h in huidige}
+        for rol_id, bron in update[:3]:
+            db = huidig_by_id[rol_id]
+            print(f"    {db['rolnummer']}: "
+                  f"{db.get('lengte_cm')}x{db.get('breedte_cm')} -> "
+                  f"{int(bron['lengte_cm']) if pd.notna(bron['lengte_cm']) else None}x"
+                  f"{int(bron['breedte_cm']) if pd.notna(bron['breedte_cm']) else None}")
+
     # TODO Task 3: apply
-    print("(skeleton — diff/apply komt in Task 2/3)")
 
 
 if __name__ == '__main__':
