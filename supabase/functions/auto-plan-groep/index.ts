@@ -104,11 +104,12 @@ serve(async (req) => {
     )
     if (releaseError) throw releaseError
 
-    // ---- Step 3: Fetch all Wacht stukken (including freshly released ones) ----
+    // ---- Step 3: Fetch all Snijden stukken (including freshly released ones) ----
+    // 'Wacht' meegenomen voor backwards-compat met legacy rows (zie migratie 069).
     const pieces = await fetchStukken(supabase, {
       kwaliteitCode: kwaliteit_code,
       kleurCode: kleur_code,
-      statuses: ['Wacht'],
+      statuses: ['Snijden', 'Wacht'],
       totDatum: tot_datum,
     })
 
