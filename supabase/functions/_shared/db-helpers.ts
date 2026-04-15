@@ -80,6 +80,43 @@ export async function fetchUitwisselbareCodes(
   return codes
 }
 
+// Fijnmazige uitwisselbaarheid (Map1.xlsx → kwaliteit_kleur_uitwisselgroepen).
+// Geeft de set van (kwaliteit_code, kleur_code)-paren die onderling uitwisselbaar
+// zijn voor snijplanning. Valt leeg terug als het input-paar niet in de tabel
+// staat — de aanroeper gebruikt dan het collectie-pad.
+export interface KwaliteitKleurPair {
+  kwaliteit_code: string
+  kleur_code: string
+}
+
+export async function fetchUitwisselbarePairs(
+  supabase: SupabaseClient,
+  kwaliteitCode: string,
+  kleurCode: string,
+): Promise<KwaliteitKleurPair[]> {
+  const kleurVariants = getKleurVariants(kleurCode)
+  const { data, error } = await supabase
+    .from('kwaliteit_kleur_uitwisselbaar')
+    .select('uitwissel_kwaliteit_code, uitwissel_kleur_code')
+    .eq('input_kwaliteit_code', kwaliteitCode)
+    .in('input_kleur_code', kleurVariants)
+
+  if (error) throw error
+  if (!data || data.length === 0) return []
+
+  const seen = new Set<string>()
+  const pairs: KwaliteitKleurPair[] = []
+  for (const row of data as Array<Record<string, string>>) {
+    const kw = row.uitwissel_kwaliteit_code
+    const kl = row.uitwissel_kleur_code
+    const k = `${kw}|${kl}`
+    if (seen.has(k)) continue
+    seen.add(k)
+    pairs.push({ kwaliteit_code: kw, kleur_code: kl })
+  }
+  return pairs
+}
+
 export function getKleurVariants(kleurCode: string): string[] {
   const variants = [kleurCode]
   if (!kleurCode.includes('.')) variants.push(`${kleurCode}.0`)
@@ -92,13 +129,24 @@ export async function fetchBeschikbareRollen(
   uitwisselbareCodes: string[],
   kleurVariants: string[],
   kwaliteitCode: string,
+  uitwisselbarePairs?: KwaliteitKleurPair[],
 ): Promise<Roll[]> {
-  const { data: rollen, error } = await supabase
+  let query = supabase
     .from('rollen')
     .select('id, rolnummer, lengte_cm, breedte_cm, status, oppervlak_m2, kwaliteit_code')
-    .in('kwaliteit_code', uitwisselbareCodes)
-    .in('kleur_code', kleurVariants)
     .in('status', ['beschikbaar', 'reststuk'])
+
+  if (uitwisselbarePairs && uitwisselbarePairs.length > 0) {
+    // Fijnmazig: OR over expliciete (kwaliteit,kleur)-paren
+    const orClause = uitwisselbarePairs
+      .map((p) => `and(kwaliteit_code.eq.${p.kwaliteit_code},kleur_code.eq.${p.kleur_code})`)
+      .join(',')
+    query = query.or(orClause)
+  } else {
+    query = query.in('kwaliteit_code', uitwisselbareCodes).in('kleur_code', kleurVariants)
+  }
+
+  const { data: rollen, error } = await query
 
   if (error) throw error
 

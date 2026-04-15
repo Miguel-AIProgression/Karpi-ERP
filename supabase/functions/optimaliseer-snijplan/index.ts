@@ -13,6 +13,7 @@ import { computeReststukken } from '../_shared/compute-reststukken.ts'
 import {
   fetchStukken,
   fetchUitwisselbareCodes,
+  fetchUitwisselbarePairs,
   getKleurVariants,
   fetchBeschikbareRollen,
   saveVoorstel,
@@ -74,12 +75,22 @@ serve(async (req) => {
       )
     }
 
-    // ---- Step 1b: Find interchangeable quality codes via collecties ----
-    const uitwisselbareCodes = await fetchUitwisselbareCodes(supabase, kwaliteit_code)
+    // ---- Step 1b: Find interchangeable (kwaliteit,kleur)-pairs ----
+    //   Primair: fijnmazige Map1-tabel. Fallback: collecties.
+    const uitwisselbarePairs = await fetchUitwisselbarePairs(supabase, kwaliteit_code, kleur_code)
+    const uitwisselbareCodes = uitwisselbarePairs.length > 0
+      ? Array.from(new Set(uitwisselbarePairs.map((p) => p.kwaliteit_code)))
+      : await fetchUitwisselbareCodes(supabase, kwaliteit_code)
 
-    // ---- Step 1c: Fetch available rolls (exact + interchangeable) ----
+    // ---- Step 1c: Fetch available rolls ----
     const kleurVariants = getKleurVariants(kleur_code)
-    const rollen = await fetchBeschikbareRollen(supabase, uitwisselbareCodes, kleurVariants, kwaliteit_code)
+    const rollen = await fetchBeschikbareRollen(
+      supabase,
+      uitwisselbareCodes,
+      kleurVariants,
+      kwaliteit_code,
+      uitwisselbarePairs,
+    )
 
     if (rollen.length === 0) {
       return new Response(
