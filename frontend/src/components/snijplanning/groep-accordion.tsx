@@ -152,7 +152,7 @@ export function GroepAccordion({
                 </div>
               )}
 
-              {rolGroepen.length > 0 && (
+              {modus !== 'tekort' && rolGroepen.length > 0 && (
                 <div className="space-y-2">
                   <RolSectie
                     key={rolGroepen[0].rolId}
