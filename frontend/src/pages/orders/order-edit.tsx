@@ -96,6 +96,9 @@ export function OrderEditPage() {
     gratis_verzending: clientData?.gratis_verzending ?? false,
     verzendkosten: clientData?.verzendkosten ?? 0,
     verzend_drempel: clientData?.verzend_drempel ?? 0,
+    standaard_maat_werkdagen: clientData?.standaard_maat_werkdagen ?? null,
+    maatwerk_weken: clientData?.maatwerk_weken ?? null,
+    deelleveringen_toegestaan: clientData?.deelleveringen_toegestaan ?? false,
   }
 
   const regelData: OrderRegelFormData[] = (regels ?? []).map((r) => ({

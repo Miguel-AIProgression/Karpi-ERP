@@ -153,7 +153,7 @@ function RolCard({ rol, kwaliteit, kleur }: { rol: RolGroepData; kwaliteit: stri
   const [open, setOpen] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
 
-  const teSnijden = rol.stukken.filter(s => s.status === 'Snijden' || s.status === 'Gepland' || s.status === 'Wacht')
+  const teSnijden = rol.stukken.filter(s => s.status === 'Snijden')
   const alGesneden = rol.stukken.filter(s => s.status === 'Gesneden' || s.status === 'In confectie' || s.status === 'Gereed')
 
   const { snijStukken, gebruikteLengte, afvalPct, reststukBruikbaar } =

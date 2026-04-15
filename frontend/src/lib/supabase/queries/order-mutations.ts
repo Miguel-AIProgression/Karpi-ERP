@@ -240,12 +240,12 @@ export async function fetchKlantArtikelnummer(debiteurNr: number, artikelnr: str
 export async function fetchClientCommercialData(debiteurNr: number) {
   const { data, error } = await supabase
     .from('debiteuren')
-    .select('prijslijst_nr, korting_pct, gratis_verzending, verzendkosten, verzend_drempel')
+    .select('prijslijst_nr, korting_pct, gratis_verzending, verzendkosten, verzend_drempel, standaard_maat_werkdagen, maatwerk_weken, deelleveringen_toegestaan')
     .eq('debiteur_nr', debiteurNr)
     .single()
 
   if (error) throw error
-  return data as { prijslijst_nr: string | null; korting_pct: number; gratis_verzending: boolean; verzendkosten: number; verzend_drempel: number }
+  return data as { prijslijst_nr: string | null; korting_pct: number; gratis_verzending: boolean; verzendkosten: number; verzend_drempel: number; standaard_maat_werkdagen: number | null; maatwerk_weken: number | null; deelleveringen_toegestaan: boolean }
 }
 
 /** Update only the afwerking (+ optional band_kleur) on a single order_regel — used for locked orders where

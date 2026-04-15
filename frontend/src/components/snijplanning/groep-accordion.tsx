@@ -367,7 +367,7 @@ export function GroepAccordion({
 
 interface RolSectieProps {
   rol: RolGroep
-  locatieMap: Map<number, string> | null
+  locatieMap: Map<number, string | null> | null
   kwaliteitCode: string
   kleurLabel: string
   geschatteTijd: string | null
@@ -484,13 +484,6 @@ function RolSectie({ rol, locatieMap, kwaliteitCode, kleurLabel, geschatteTijd, 
   )
 }
 
-function Badge({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
-      {children}
-    </span>
-  )
-}
 
 function StukRow({ stuk }: { stuk: SnijplanRow }) {
   return (

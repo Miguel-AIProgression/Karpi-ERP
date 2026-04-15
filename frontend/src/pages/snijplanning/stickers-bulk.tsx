@@ -61,10 +61,11 @@ export function StickersBulkPage() {
 
   // Preview reststukken uit modal (nog niet in DB — voltooi_snijplan_rol niet gedraaid)
   const previewReststukken = useMemo(() => {
-    if (!rolId) return [] as { rolnummer: string; kwaliteit_code: string; kleur_code: string; lengte_cm: number; breedte_cm: number }[]
+    type PreviewReststuk = { rolnummer: string; kwaliteit_code: string; kleur_code: string; lengte_cm: number; breedte_cm: number }
+    if (!rolId) return [] as PreviewReststuk[]
     const raw = sessionStorage.getItem(`reststuk-preview-${rolId}`)
-    if (!raw) return []
-    try { return JSON.parse(raw) } catch { return [] }
+    if (!raw) return [] as PreviewReststuk[]
+    try { return JSON.parse(raw) as PreviewReststuk[] } catch { return [] as PreviewReststuk[] }
   }, [rolId])
 
   const title = rolId
