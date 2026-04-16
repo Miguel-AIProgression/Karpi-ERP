@@ -552,6 +552,11 @@ Applicatie-instellingen (key-value). Gebruikt voor productie-configuratie en aut
 | max_reststuk_verspilling_pct | number | 15 | Max afval % voor reststuk-suggesties |
 | wisseltijd_minuten | number | 15 | Tijd om nieuwe rol op machine te leggen |
 | snijtijd_minuten | number | 5 | Gemiddelde snijtijd per karpet |
+| logistieke_buffer_dagen | number | 2 | Kalenderdagen tussen snij-datum en lever-datum (transport/afhandeling). Gebruikt door `check-levertijd` edge function (migratie 081) |
+| backlog_minimum_m2 | number | 12 | Minimale totale backlog (m²) per kwaliteit/kleur om een nieuwe rol "efficient" aan te kunnen snijden. Daaronder geeft `check-levertijd` scenario `wacht_op_orders` (migratie 081) |
+| spoed_buffer_uren | number | 4 | Minimum aantal vrije werkuren dat per ISO-week beschikbaar moet blijven om de week niet als "vol" te markeren in de spoed-evaluatie (migratie 082) |
+| spoed_toeslag_bedrag | number | 50 | Vast bedrag (€) dat als SPOEDTOESLAG-orderregel wordt toegevoegd wanneer de gebruiker spoed activeert in `<LevertijdSuggestie>` (migratie 082) |
+| spoed_product_id | string | "SPOEDTOESLAG" | Artikelnr voor de spoed-toeslag-orderregel; analoog aan VERZEND-shipping logica (migratie 082) |
 
 **order_config waarde-structuur:**
 | Veld | Type | Default | Toelichting |
@@ -699,6 +704,7 @@ Audit trail: wie heeft wat wanneer gedaan.
 | `acquire_snijplan_lock(kwaliteit TEXT, kleur TEXT)` | Atomisch lock verkrijgen voor auto-planning (5 min staleness timeout) |
 | `release_snijplan_lock(kwaliteit TEXT, kleur TEXT)` | Lock vrijgeven na auto-planning |
 | `update_order_with_lines(p_order_id BIGINT, p_header JSONB, p_regels JSONB)` | Merge-update van order header + regels: UPDATE bestaande regels op `id`, INSERT nieuwe, DELETE regels die uit payload verdwenen zijn. Preserveert `snijplannen.order_regel_id` FK-koppelingen (migratie 074) |
+| `backlog_per_kwaliteit_kleur(p_kwaliteit TEXT, p_kleur TEXT)` | Aggregeert wachtende snijplan-stukken voor real-time levertijd-check: returnt `(totaal_m2, aantal_stukken, vroegste_afleverdatum)`. Match op kleur-varianten (X, X.0). Gebruikt door `check-levertijd` edge function (migratie 080) |
 
 ### Triggers op order_regels (maatwerk)
 

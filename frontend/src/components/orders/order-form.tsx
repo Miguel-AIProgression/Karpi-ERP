@@ -4,11 +4,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ClientSelector, type SelectedClient } from './client-selector'
 import { AddressSelector } from './address-selector'
 import { OrderLineEditor } from './order-line-editor'
+import { LevertijdSuggestie } from './levertijd-suggestie'
 import { createOrder, updateOrderWithLines, deleteOrder, lookupPrice, fetchKlanteigenNaam, fetchKlantArtikelnummer } from '@/lib/supabase/queries/order-mutations'
 import type { OrderFormData, OrderRegelFormData } from '@/lib/supabase/queries/order-mutations'
 import { fetchOrderConfig, type OrderConfig } from '@/lib/supabase/queries/order-config'
+import { triggerAutoplan, fetchAutoplanningConfig } from '@/lib/supabase/queries/auto-planning'
 import { berekenAfleverdatum } from '@/lib/utils/afleverdatum'
 import { SHIPPING_PRODUCT_ID, SHIPPING_THRESHOLD, SHIPPING_COST } from '@/lib/constants/shipping'
+import { SPOED_PRODUCT_ID, SPOED_FALLBACK_BEDRAG } from '@/lib/constants/spoed'
 
 function getISOWeek(dateStr: string): number {
   const date = new Date(dateStr)
@@ -43,6 +46,9 @@ export function OrderForm({ mode, initialData }: OrderFormProps) {
   const [afleverdatumOverridden, setAfleverdatumOverridden] = useState<boolean>(
     () => mode === 'edit' && !!initialData?.header?.afleverdatum
   )
+  const [spoedActief, setSpoedActief] = useState<boolean>(
+    () => mode === 'edit' && (initialData?.regels ?? []).some(r => r.artikelnr === SPOED_PRODUCT_ID)
+  )
 
   const { data: orderConfig } = useQuery({ queryKey: ['order-config'], queryFn: fetchOrderConfig })
 
@@ -68,6 +74,30 @@ export function OrderForm({ mode, initialData }: OrderFormProps) {
     () => computeAfleverdatum(regels, client, orderConfig),
     [regels, client, orderConfig],
   )
+
+  // Laatste maatwerk-regel met complete kwaliteit + kleur + afmetingen,
+  // gebruikt als input voor de real-time levertijd-check.
+  const levertijdInput = useMemo(() => {
+    for (let i = regels.length - 1; i >= 0; i--) {
+      const r = regels[i]
+      if (
+        r.is_maatwerk &&
+        r.maatwerk_kwaliteit_code &&
+        r.maatwerk_kleur_code &&
+        r.maatwerk_lengte_cm &&
+        r.maatwerk_breedte_cm
+      ) {
+        return {
+          kwaliteitCode: r.maatwerk_kwaliteit_code,
+          kleurCode: r.maatwerk_kleur_code,
+          lengteCm: r.maatwerk_lengte_cm,
+          breedteCm: r.maatwerk_breedte_cm,
+          vorm: r.maatwerk_vorm ?? null,
+        }
+      }
+    }
+    return null
+  }, [regels])
 
   function applyAfleverdatum(nieuwRegels: OrderRegelFormData[], c: SelectedClient | null) {
     if (afleverdatumOverridden) return
@@ -226,6 +256,55 @@ export function OrderForm({ mode, initialData }: OrderFormProps) {
     },
   })
 
+  /**
+   * Voeg of verwijder een SPOEDTOESLAG-orderregel afhankelijk van actief-state.
+   * Zelfde patroon als applyShippingLogic.
+   */
+  function applySpoedToeslag(currentRegels: OrderRegelFormData[], actief: boolean, bedrag: number): OrderRegelFormData[] {
+    const heeft = currentRegels.some(r => r.artikelnr === SPOED_PRODUCT_ID)
+    if (actief && !heeft) {
+      return [...currentRegels, {
+        artikelnr: SPOED_PRODUCT_ID,
+        omschrijving: 'Spoedtoeslag',
+        orderaantal: 1,
+        te_leveren: 1,
+        prijs: bedrag,
+        korting_pct: 0,
+        bedrag,
+      }]
+    }
+    if (!actief && heeft) {
+      return currentRegels.filter(r => r.artikelnr !== SPOED_PRODUCT_ID)
+    }
+    return currentRegels
+  }
+
+  /**
+   * Trigger auto-plan-groep voor elke unieke (kwaliteit, kleur) van maatwerk-regels.
+   * Respecteert auto-planning config; failures zijn niet-blokkerend voor order-aanmaak.
+   */
+  async function triggerAutoplanForMaatwerk(allRegels: OrderRegelFormData[]) {
+    try {
+      const cfg = await fetchAutoplanningConfig()
+      if (!cfg.enabled) return
+      const groepen = new Set<string>()
+      for (const r of allRegels) {
+        if (r.is_maatwerk && r.maatwerk_kwaliteit_code && r.maatwerk_kleur_code) {
+          groepen.add(`${r.maatwerk_kwaliteit_code}|${r.maatwerk_kleur_code}`)
+        }
+      }
+      if (groepen.size === 0) return
+      await Promise.allSettled(
+        Array.from(groepen).map((key) => {
+          const [kwaliteit, kleur] = key.split('|')
+          return triggerAutoplan(kwaliteit, kleur)
+        }),
+      )
+    } catch (e) {
+      console.warn('Auto-plan trigger faalde (niet-blokkerend):', e)
+    }
+  }
+
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!client) throw new Error('Selecteer een klant')
@@ -253,19 +332,26 @@ export function OrderForm({ mode, initialData }: OrderFormProps) {
           const regelsA = shippingRegel ? [...standaardRegels, shippingRegel] : standaardRegels
           const a = await createOrder(standaardOrder, regelsA)
           const b = await createOrder(maatwerkOrder, maatwerkRegels)
+          await triggerAutoplanForMaatwerk(maatwerkRegels)
           return { split: true as const, standaard: a, maatwerk: b }
         }
 
         const single = await createOrder(orderData, regels)
+        await triggerAutoplanForMaatwerk(regels)
         return { split: false as const, ...single }
       } else {
         const orderId = initialData!.orderId
         await updateOrderWithLines(orderId, orderData, regels)
+        await triggerAutoplanForMaatwerk(regels)
         return { split: false as const, id: orderId, order_nr: '' }
       }
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['orders'] })
+      // Snijplanning is mogelijk gewijzigd door triggerAutoplanForMaatwerk
+      queryClient.invalidateQueries({ queryKey: ['snijplanning'] })
+      queryClient.invalidateQueries({ queryKey: ['snijvoorstel'] })
+      queryClient.invalidateQueries({ queryKey: ['productie', 'dashboard'] })
       if (data.split) {
         navigate('/orders')
       } else {
@@ -321,6 +407,33 @@ export function OrderForm({ mode, initialData }: OrderFormProps) {
         }} type="date" />
         <Field label="Week" value={header.week} onChange={(v) => setHeader({ ...header, week: v })} />
       </div>
+
+      {/* Real-time levertijd-suggestie voor maatwerk-regels */}
+      {levertijdInput && (
+        <LevertijdSuggestie
+          kwaliteitCode={levertijdInput.kwaliteitCode}
+          kleurCode={levertijdInput.kleurCode}
+          lengteCm={levertijdInput.lengteCm}
+          breedteCm={levertijdInput.breedteCm}
+          vorm={levertijdInput.vorm}
+          gewensteLeverdatum={header.afleverdatum ?? null}
+          debiteurNr={client?.debiteur_nr ?? null}
+          fallbackDatum={afleverdatumInfo.langsteDatum}
+          onNeemOver={(leverDatum, week) => {
+            setAfleverdatumOverridden(true)
+            setHeader((h) => ({ ...h, afleverdatum: leverDatum, week: String(week) }))
+          }}
+          spoedActief={spoedActief}
+          onSpoedToggle={(actief, leverDatum, week, toeslag) => {
+            setSpoedActief(actief)
+            setRegels((r) => applySpoedToeslag(r, actief, toeslag || SPOED_FALLBACK_BEDRAG))
+            if (actief && leverDatum) {
+              setAfleverdatumOverridden(true)
+              setHeader((h) => ({ ...h, afleverdatum: leverDatum, week: week ? String(week) : h.week }))
+            }
+          }}
+        />
+      )}
 
       {/* Deelleveringen + levertermijn-hint */}
       {client && mode === 'create' && (

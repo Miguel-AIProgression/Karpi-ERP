@@ -179,6 +179,7 @@ export function berekenAgenda(
   werktijden: Werktijden,
   planningConfig: PlanningConfigLite,
   startVanaf: Date = new Date(),
+  snijLeverBufferDagen: number = 2,
 ): RolBlok[] {
   type Groep = {
     rolId: number
@@ -225,7 +226,14 @@ export function berekenAgenda(
       + g.stukken.length * planningConfig.snijtijd_minuten
     const start = volgendeWerkminuut(cursor, werktijden)
     const eind = plusWerkminuten(start, duur, werktijden)
-    const teLaat = !!g.vroegsteLeverdatum && eind > new Date(g.vroegsteLeverdatum + 'T23:59:59')
+    // Te laat = snij-eind valt minder dan `snijLeverBufferDagen` voor leverdatum.
+    // Anders is er geen tijd voor de logistieke afhandeling (afwerking + verzending).
+    let teLaat = false
+    if (g.vroegsteLeverdatum) {
+      const deadline = new Date(g.vroegsteLeverdatum + 'T23:59:59')
+      deadline.setDate(deadline.getDate() - snijLeverBufferDagen)
+      teLaat = eind > deadline
+    }
     blokken.push({
       rolId: g.rolId,
       rolnummer: g.rolnummer,

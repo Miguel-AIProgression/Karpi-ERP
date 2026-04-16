@@ -128,6 +128,18 @@ Na het snijden toont `voltooi_snijplan_rol()` een bevestigingsmodal waarin de ge
 ### Snijtijden
 Wisseltijd per rol en snijtijd per karpet zijn configureerbaar via Productie Instellingen (`app_config`). Geschatte totaaltijd wordt getoond op snijvoorstel-review en productie-groep pagina's. Formule: `(rollen × wisseltijd) + (stukken × snijtijd)`.
 
+### Real-time levertijd-check (order-aanmaak)
+Edge function `check-levertijd` (`supabase/functions/check-levertijd/`) berekent tijdens order-entry een concrete leverdatum voor maatwerk-regels. Drie pure helper-modules in `supabase/functions/_shared/levertijd-*.ts`:
+- **levertijd-match.ts**: zoekt rol in pipeline (status `Gepland`/`Wacht`) waar het nieuwe stuk nog op past via `tryPlacePiece` (FFDH); kiest vroegste snij-datum, exact match wint van uitwisselbaar bij gelijke datum.
+- **levertijd-capacity.ts**: bepaalt snij-week (lever-week − 1), itereert tot ruimte beschikbaar (max 6 weken), vergelijkt bezetting (stuks + minuten) met `capaciteit_per_week × (1 − marge_pct/100)`. Backlog-check via RPC `backlog_per_kwaliteit_kleur`.
+- **levertijd-resolver.ts**: combineert tot scenario (`match_bestaande_rol` | `nieuwe_rol_gepland` | `wacht_op_orders` | `spoed`) + NL onderbouwing (max 240 chars).
+
+Frontend: `useLevertijdCheck` hook (TanStack Query, 350 ms debounce, 60 s staleTime) + `<LevertijdSuggestie>` component met scenario-badge, datum, onderbouwing en "Neem datum over"-knop. Geïntegreerd in `order-form.tsx` voor de laatste maatwerk-regel met complete (kwaliteit, kleur, lengte, breedte). Bij edge-function fout valt de UI terug op `berekenAfleverdatum()`.
+
+Configuratie in `app_config.productie_planning`: `logistieke_buffer_dagen` (default 2), `backlog_minimum_m2` (default 12). Performance-doel: < 1.5 s p95.
+
+**Spoed-tak**: `evalueerSpoed()` (`_shared/spoed-check.ts`) checkt per ISO-week (deze + volgende) of er na de bestaande backlog nog ≥ benodigde-snijduur + `spoed_buffer_uren × 60` werkminuten beschikbaar zijn (over `werkdagen × 510` werkminuten/dag, gemeten met `werkminutenTussen`). Bij beschikbaar wordt de **laatste werkdag van de gekozen week** als snij-datum belofte gegeven (spoed krijgt voorrang in de planning), met `lever_datum = snij_datum + logistieke_buffer_dagen`. De UI-toggle in `<LevertijdSuggestie>` voegt automatisch een SPOEDTOESLAG-orderregel toe (zelfde patroon als VERZEND) en overschrijft de header-leverdatum. Spoed-config-velden in `app_config.productie_planning`: `spoed_buffer_uren`, `spoed_toeslag_bedrag`, `spoed_product_id`.
+
 ### Productie modules
 - **Snijplanning**: weekoverzicht, gegroepeerd per kwaliteit+kleur, SVG snijvoorstel, sticker print, reststuk-bevestigingsflow
 - **Confectie**: scan-gestuurd overzicht van afwerkingsstatus per medewerker
