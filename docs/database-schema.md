@@ -86,6 +86,7 @@ Alle 997 kwaliteitscodes (3-4 letters). 170 met collectie, 822 zonder, 5 alleen 
 | code | TEXT PK | "MIRA", "CISC", "BEAC" etc. |
 | collectie_id | BIGINT FK → collecties | NULL als niet in een groep |
 | omschrijving | TEXT | Volledige naam |
+| standaard_breedte_cm | INTEGER | Standaard rolbreedte voor deze kwaliteit. Primaire bron voor `bereken_rol_type()` sinds migratie 086/087. NULL = fallback op artikelnr-heuristiek (laatste 3 cijfers), daarna 400 cm. |
 | created_at | TIMESTAMPTZ | Auto |
 
 **Uitwisselbaarheid:** kwaliteiten met dezelfde collectie_id zijn uitwisselbaar. Query: `SELECT * FROM uitwisselbare_kwaliteiten('VERI')`
@@ -213,11 +214,11 @@ Individuele fysieke tapijtrol. Elk met uniek rolnummer.
 | lengte_cm, breedte_cm | INTEGER | |
 | oppervlak_m2 | NUMERIC(10,2) | |
 | vvp_m2 | NUMERIC(10,2) | Verkoopprijs per m2 |
-| waarde | NUMERIC(12,2) | Totale waarde |
+| waarde | NUMERIC(12,2) | Totale inkoopwaarde van de rol. Voor reststuk-rollen aangemaakt vanaf migratie 088: `oppervlak_m2 × bronrol.inkoopprijs_m2`. Oudere reststuk-rollen kunnen NULL zijn. |
 | kwaliteit_code | TEXT FK → kwaliteiten | Gedenormaliseerd |
 | kleur_code, zoeksleutel | TEXT | |
 | status | TEXT | Workflow-status: 'beschikbaar', 'gereserveerd', 'verkocht', 'gesneden', 'reststuk', 'in_snijplan' |
-| rol_type | ENUM rol_type | Fysieke classificatie: 'volle_rol', 'aangebroken', 'reststuk'. Automatisch gezet via trigger op basis van artikelnr (laatste 3 cijfers = standaard breedte), breedte_cm, lengte_cm en oorsprong_rol_id. Lengte <100cm of breedte <standaard → reststuk; gesneden + std breedte + lengte ≥100cm → aangebroken; anders → volle_rol. Zie migratie 058. |
+| rol_type | ENUM rol_type | Fysieke classificatie: 'volle_rol', 'aangebroken', 'reststuk'. Automatisch gezet via trigger o.b.v. `bereken_rol_type()`. Standaard breedte komt uit `kwaliteiten.standaard_breedte_cm` (sinds migratie 086/087), fallback op laatste 3 cijfers artikelnr, daarna 400 cm. Lengte <100cm of breedte <standaard → reststuk; gesneden + std breedte + lengte ≥100cm → aangebroken; anders → volle_rol. |
 | oorsprong_rol_id | BIGINT FK → rollen (self-ref) | Verwijst naar de originele rol waaruit deze rol is gesneden (aangebroken of reststuk) |
 | reststuk_datum | TIMESTAMPTZ | Datum waarop de gesneden rol is aangemaakt |
 | snijden_gestart_op | TIMESTAMPTZ | Timestamp wanneer medewerker "Start met rol" klikte (via `start_snijden_rol`). Voor tijdanalyse snijduur. Migratie 063. |
@@ -388,6 +389,9 @@ Tapijt op maat snijden uit rollen.
 | geroteerd | BOOLEAN | Of het stuk 90° gedraaid is t.o.v. originele afmetingen |
 | afleverdatum | DATE | Gewenste afleverdatum (overgenomen uit order) |
 | gesneden_datum | DATE | |
+| grondstofkosten | NUMERIC(12,2) | Toegerekende inkoopkosten in € incl. proportioneel afval. Gezet bij `voltooi_snijplan_rol`. NULL = bronrol had geen waarde/oppervlak. Zie migratie 088. |
+| grondstofkosten_m2 | NUMERIC(10,4) | Aan dit stuk toegerekend oppervlak in m² = stuk_m² + aandeel × afval_m². Snapshot. |
+| inkoopprijs_m2 | NUMERIC(10,2) | Snapshot `rol.waarde / rol.oppervlak_m2` op moment van snijden. |
 | opmerkingen | TEXT | |
 
 ---
@@ -553,7 +557,7 @@ Applicatie-instellingen (key-value). Gebruikt voor productie-configuratie en aut
 | wisseltijd_minuten | number | 15 | Tijd om nieuwe rol op machine te leggen |
 | snijtijd_minuten | number | 5 | Gemiddelde snijtijd per karpet |
 | logistieke_buffer_dagen | number | 2 | Kalenderdagen tussen snij-datum en lever-datum (transport/afhandeling). Gebruikt door `check-levertijd` edge function (migratie 081) |
-| backlog_minimum_m2 | number | 12 | Minimale totale backlog (m²) per kwaliteit/kleur om een nieuwe rol "efficient" aan te kunnen snijden. Daaronder geeft `check-levertijd` scenario `wacht_op_orders` (migratie 081) |
+| backlog_minimum_m2 | number | 12 | Informatieve drempel: backlog (m²) per kwaliteit/kleur waaronder een nieuwe rol "inefficiënt" wordt benut. Wordt getoond in `check-levertijd` `details.backlog`, maar blokkeert NIET — sinds 2026-04-17 plant de resolver altijd ASAP een nieuwe rol mits voorraadmateriaal beschikbaar is (migratie 081) |
 | spoed_buffer_uren | number | 4 | Minimum aantal vrije werkuren dat per ISO-week beschikbaar moet blijven om de week niet als "vol" te markeren in de spoed-evaluatie (migratie 082) |
 | spoed_toeslag_bedrag | number | 50 | Vast bedrag (€) dat als SPOEDTOESLAG-orderregel wordt toegevoegd wanneer de gebruiker spoed activeert in `<LevertijdSuggestie>` (migratie 082) |
 | spoed_product_id | string | "SPOEDTOESLAG" | Artikelnr voor de spoed-toeslag-orderregel; analoog aan VERZEND-shipping logica (migratie 082) |
