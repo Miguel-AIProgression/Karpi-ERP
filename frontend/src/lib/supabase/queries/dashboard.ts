@@ -3,7 +3,9 @@ import { supabase } from '../client'
 export interface DashboardStats {
   aantal_producten: number
   beschikbare_rollen: number
+  /** SUM(rollen.waarde) over alle rollen (ongeacht status). Zie migratie 083. */
   voorraadwaarde_inkoop: number
+  /** Orderomzet excl. verzendkosten: SUM(totaal_bedrag) − SUM(VERZEND-regels), excl. Geannuleerd. Zie migratie 083. */
   voorraadwaarde_verkoop: number
   gemiddelde_marge_pct: number
   open_orders: number
