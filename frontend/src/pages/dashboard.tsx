@@ -40,7 +40,7 @@ export function DashboardPage() {
           value={statsLoading ? '...' : formatCurrency(stats?.voorraadwaarde_inkoop ?? 0)}
         />
         <StatCard
-          label="Voorraadwaarde (verkoop)"
+          label="Omzet (excl. verzendkosten)"
           value={statsLoading ? '...' : formatCurrency(stats?.voorraadwaarde_verkoop ?? 0)}
         />
         <StatCard
