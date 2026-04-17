@@ -11,9 +11,9 @@
 -- niet mee in dashboard_stats.voorraadwaarde_inkoop.
 
 ALTER TABLE snijplannen
-  ADD COLUMN grondstofkosten     NUMERIC(12,2),
-  ADD COLUMN grondstofkosten_m2  NUMERIC(10,4),
-  ADD COLUMN inkoopprijs_m2      NUMERIC(10,2);
+  ADD COLUMN IF NOT EXISTS grondstofkosten     NUMERIC(12,2),
+  ADD COLUMN IF NOT EXISTS grondstofkosten_m2  NUMERIC(10,4),
+  ADD COLUMN IF NOT EXISTS inkoopprijs_m2      NUMERIC(10,2);
 
 COMMENT ON COLUMN snijplannen.grondstofkosten IS
   'Toegerekende grondstofkosten in € voor dit gesneden stuk incl. proportioneel afval. Gezet bij voltooi_snijplan_rol. NULL als bronrol geen waarde/oppervlak had. Zie migratie 088.';
