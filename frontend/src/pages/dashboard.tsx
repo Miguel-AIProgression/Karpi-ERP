@@ -36,11 +36,11 @@ export function DashboardPage() {
           linkTo="/rollen"
         />
         <StatCard
-          label="Voorraadwaarde (inkoop)"
+          label="Vastliggend in voorraad"
           value={statsLoading ? '...' : formatCurrency(stats?.voorraadwaarde_inkoop ?? 0)}
         />
         <StatCard
-          label="Omzet (excl. verzendkosten)"
+          label="Openstaande verkooporders"
           value={statsLoading ? '...' : formatCurrency(stats?.voorraadwaarde_verkoop ?? 0)}
         />
         <StatCard
