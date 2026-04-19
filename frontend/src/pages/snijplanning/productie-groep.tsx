@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useSearchParams, Link } from 'react-router-dom'
-import { ArrowLeft, Scissors, Printer, Loader2, ChevronDown, ChevronRight } from 'lucide-react'
+import { ArrowLeft, Scissors, Printer, ChevronDown, ChevronRight } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { SnijVisualisatie } from '@/components/snijplanning/snij-visualisatie'
 import { RolUitvoerModal } from '@/components/snijplanning/rol-uitvoer-modal'
