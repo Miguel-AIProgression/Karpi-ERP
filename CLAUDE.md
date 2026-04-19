@@ -52,6 +52,9 @@ vertegenwoordigers → collecties → kwaliteiten → debiteuren → producten �
 4. Dashboard (statistieken + recente orders)
 Overige modules: placeholder pagina's, worden feature-voor-feature uitgebouwd.
 
+## Bedrijfsregels
+- **Orders verwijderen:** mag alleen als er geen snijplannen zijn met status 'Snijden', 'Gesneden' of later. Snijplannen met vroege statussen ('Wacht', 'Gepland') moeten eerst handmatig verwijderd worden vóór de order. Gooit anders FK-fout op `snijplannen_order_regel_id_fkey`.
+
 ## Conventies
 - Taal in code: Engels (variabelen, functies). Taal in UI: Nederlands.
 - Bedragen: € 1.234,56 (Nederlands formaat)

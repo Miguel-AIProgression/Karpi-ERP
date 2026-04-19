@@ -108,6 +108,7 @@ interface RegelRow {
   omschrijving_2: string | null
   prijs: number
   gewicht: number | null
+  producten: { gewicht_kg: number | null } | null
 }
 
 function RegelsTab({
@@ -224,7 +225,10 @@ function EditableRow({ regel, prijslijstNr }: { regel: RegelRow; prijslijstNr: s
         )}
       </td>
       <td className="px-5 py-2 text-right text-slate-500">
-        {regel.gewicht != null ? `${regel.gewicht} kg` : '—'}
+        {(() => {
+          const w = regel.producten?.gewicht_kg ?? regel.gewicht
+          return w != null ? `${w} kg` : '—'
+        })()}
       </td>
       <td className="px-5 py-2 text-right">
         {editing ? (

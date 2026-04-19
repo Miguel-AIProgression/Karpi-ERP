@@ -34,7 +34,15 @@ export function OrderAddresses({ order }: OrderAddressesProps) {
             postcode={order.afl_postcode}
             plaats={order.afl_plaats}
             land={order.afl_land}
+            email={order.afl_email}
+            telefoon={order.afl_telefoon}
           />
+          {order.opmerkingen && (
+            <div className="mt-3 pt-3 border-t border-slate-100 text-sm text-slate-600">
+              <span className="text-slate-400 block mb-0.5">Opmerking</span>
+              {order.opmerkingen}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -48,16 +56,18 @@ function AddressBlock(props: {
   postcode?: string | null
   plaats?: string | null
   land?: string | null
+  email?: string | null
+  telefoon?: string | null
 }) {
   return (
     <div className="text-sm leading-relaxed">
       {props.naam && <p className="font-medium">{props.naam}</p>}
       {props.naam2 && <p className="text-slate-500">{props.naam2}</p>}
       {props.adres && <p>{props.adres}</p>}
-      <p>
-        {[props.postcode, props.plaats].filter(Boolean).join(' ')}
-      </p>
+      <p>{[props.postcode, props.plaats].filter(Boolean).join(' ')}</p>
       {props.land && props.land !== 'NL' && <p>{props.land}</p>}
+      {props.email && <p className="text-slate-500 mt-1">{props.email}</p>}
+      {props.telefoon && <p className="text-slate-500">{props.telefoon}</p>}
     </div>
   )
 }

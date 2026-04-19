@@ -51,7 +51,7 @@ function RegelRow({ regel }: { regel: OrderRegel }) {
         </td>
         <td className="px-4 py-2">
           {regel.omschrijving}
-          {regel.omschrijving_2 && (
+          {regel.omschrijving_2 && !regel.is_maatwerk && (
             <span className="block text-xs text-slate-400">{regel.omschrijving_2}</span>
           )}
           {regel.klant_eigen_naam && (
@@ -85,9 +85,11 @@ function RegelRow({ regel }: { regel: OrderRegel }) {
                 <Scissors size={12} />
                 Maatwerk
               </span>
-              {maat && (
-                <span className="text-slate-600">{maat}</span>
-              )}
+              {maat ? (
+                <span className="text-slate-600 font-medium">{maat}</span>
+              ) : regel.omschrijving_2 ? (
+                <span className="text-slate-600">{regel.omschrijving_2}</span>
+              ) : null}
               {regel.maatwerk_vorm && (
                 <span className="text-xs text-purple-600">{getVormDisplay(regel.maatwerk_vorm).label}</span>
               )}

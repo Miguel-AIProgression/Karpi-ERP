@@ -24,6 +24,7 @@ export interface PrijslijstRegelRow {
   prijs: number
   gewicht: number | null
   ean_code: string | null
+  producten: { gewicht_kg: number | null } | null
 }
 
 /** Paginate all rows from a Supabase table query */
@@ -124,7 +125,7 @@ export async function fetchPrijslijstRegels(prijslijstNr: string): Promise<Prijs
   while (true) {
     const { data, error } = await supabase
       .from('prijslijst_regels')
-      .select('id, artikelnr, omschrijving, omschrijving_2, prijs, gewicht, ean_code')
+      .select('id, artikelnr, omschrijving, omschrijving_2, prijs, gewicht, ean_code, producten(gewicht_kg)')
       .eq('prijslijst_nr', prijslijstNr)
       .order('artikelnr')
       .range(offset, offset + pageSize - 1)

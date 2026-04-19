@@ -30,6 +30,9 @@ export interface OrderDetail extends OrderRow {
   afl_postcode: string | null
   afl_plaats: string | null
   afl_land: string | null
+  afl_email: string | null
+  afl_telefoon: string | null
+  opmerkingen: string | null
   betaler: number | null
   inkooporganisatie: string | null
   compleet_geleverd: boolean
