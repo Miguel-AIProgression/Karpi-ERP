@@ -210,13 +210,21 @@ export function berekenAgenda(
     }
   }
 
+  // Sort-key blijft in sync met de Lijst-weergave (snijplanning-overview.tsx):
+  // leverdatum → kwaliteit → kleur → rolnummer. Zo staan rollen van dezelfde
+  // kwaliteit aaneengesloten in de agenda (gunstig voor wisseltijd) en klopt
+  // de volgorde 1-op-1 met wat de planner in de Lijst ziet.
   const groepen = Array.from(map.values()).sort((a, b) => {
-    if (a.vroegsteLeverdatum === b.vroegsteLeverdatum) {
-      return a.rolnummer.localeCompare(b.rolnummer)
+    if (a.vroegsteLeverdatum !== b.vroegsteLeverdatum) {
+      if (!a.vroegsteLeverdatum) return 1
+      if (!b.vroegsteLeverdatum) return -1
+      return a.vroegsteLeverdatum.localeCompare(b.vroegsteLeverdatum)
     }
-    if (!a.vroegsteLeverdatum) return 1
-    if (!b.vroegsteLeverdatum) return -1
-    return a.vroegsteLeverdatum.localeCompare(b.vroegsteLeverdatum)
+    const k = a.kwaliteitCode.localeCompare(b.kwaliteitCode)
+    if (k !== 0) return k
+    const c = a.kleurCode.localeCompare(b.kleurCode)
+    if (c !== 0) return c
+    return a.rolnummer.localeCompare(b.rolnummer)
   })
 
   const blokken: RolBlok[] = []

@@ -18,13 +18,21 @@ function sorteerGroepen<T extends { kwaliteit_code: string; kleur_code: string; 
 ): T[] {
   const copy = [...lijst]
   if (mode === 'leverdatum') {
+    // Consistente tie-break met de Agenda-weergave (bereken-agenda.ts):
+    // leverdatum → kwaliteit → kleur. Zonder kwaliteit als eerste tie-break
+    // zou kleur '11' van OASI vóór kleur '12' van CAVA komen, terwijl de
+    // Agenda op rolnummer CAVA eerst zet — verwarrend voor de planner.
     copy.sort((a, b) => {
       const aD = a.vroegste_afleverdatum
       const bD = b.vroegste_afleverdatum
-      if (aD === bD) return a.kleur_code.localeCompare(b.kleur_code)
-      if (!aD) return 1
-      if (!bD) return -1
-      return aD.localeCompare(bD)
+      if (aD !== bD) {
+        if (!aD) return 1
+        if (!bD) return -1
+        return aD.localeCompare(bD)
+      }
+      const k = a.kwaliteit_code.localeCompare(b.kwaliteit_code)
+      if (k !== 0) return k
+      return a.kleur_code.localeCompare(b.kleur_code)
     })
   } else {
     // Kwaliteit → kleur → leverdatum (oudste eerst, NULL achteraan)
