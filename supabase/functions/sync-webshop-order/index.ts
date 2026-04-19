@@ -27,6 +27,12 @@ import {
 } from '../_shared/lightspeed-client.ts'
 import { verifyLightspeedSignature } from '../_shared/lightspeed-verify.ts'
 import { matchProduct, buildOmschrijving } from '../_shared/product-matcher.ts'
+import { naarWerkdag, plusKalenderDagen } from '../_shared/levertijd-match.ts'
+
+// Fallback als de debiteur geen `maatwerk_weken` heeft ingesteld. Floorpassion
+// staat op 2; nieuwe verzameldebiteuren zonder configuratie krijgen hetzelfde
+// zodat de order nooit zonder deadline in de snijplanning belandt.
+const DEFAULT_WEBSHOP_MAATWERK_WEKEN = 2
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -187,11 +193,30 @@ serve(async (req) => {
     const shipping = extractShippingAddress(order)
     const billing = extractBillingAddress(order)
 
+    // Afleverdatum = orderdatum + maatwerk_weken (debiteur-instelling), naar
+    // de eerstvolgende werkdag. Webshop-orders kwamen voorheen zonder datum
+    // binnen, waardoor ze in de snijplanning achteraan vielen. Met een
+    // concrete deadline pakt auto-plan ze consistent op en blijft de
+    // afgesproken 2-weken-levertijd voor Floorpassion overeind.
+    const { data: debRow } = await supabase
+      .from('debiteuren')
+      .select('maatwerk_weken')
+      .eq('debiteur_nr', debiteurNr)
+      .maybeSingle()
+    const maatwerkWeken =
+      typeof debRow?.maatwerk_weken === 'number' && debRow.maatwerk_weken > 0
+        ? debRow.maatwerk_weken
+        : DEFAULT_WEBSHOP_MAATWERK_WEKEN
+    const orderdatum = order.createdAt ? order.createdAt.slice(0, 10) : null
+    const afleverdatum = orderdatum
+      ? naarWerkdag(plusKalenderDagen(orderdatum, maatwerkWeken * 7))
+      : null
+
     const header = {
       debiteur_nr: debiteurNr,
       klant_referentie: `Floorpassion #${order.number}`,
-      orderdatum: order.createdAt ? order.createdAt.slice(0, 10) : null,
-      afleverdatum: null,
+      orderdatum,
+      afleverdatum,
       ...shipping,
       ...billing,
       bron_systeem: 'lightspeed',
