@@ -275,6 +275,10 @@ Orderheaders. Adressen zijn snapshots (niet FK naar afleveradressen).
 | status | order_status | Default 'Nieuw' |
 | compleet_geleverd | BOOLEAN | |
 | aantal_regels, totaal_bedrag, totaal_gewicht | NUMERIC | Berekend door trigger |
+| bron_systeem | TEXT | NULL = handmatig aangemaakt. 'lightspeed' = webshop-integratie (migratie 092). |
+| bron_shop | TEXT | Sub-identifier binnen bron_systeem. Lightspeed: 'floorpassion_nl' / 'floorpassion_de'. |
+| bron_order_id | TEXT | Externe order-ID (Lightspeed orders.id). Samen met bron_systeem uniek (partial index `orders_bron_unique`). |
+| heeft_unmatched_regels | BOOLEAN DEFAULT false | TRUE als ≥1 order_regel een NULL artikelnr heeft. Automatisch gesynchroniseerd door trigger op order_regels (migratie 094). |
 
 ---
 
