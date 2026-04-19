@@ -131,7 +131,9 @@ export async function fetchPrijslijstRegels(prijslijstNr: string): Promise<Prijs
       .range(offset, offset + pageSize - 1)
 
     if (error) throw error
-    allRows.push(...((data ?? []) as PrijslijstRegelRow[]))
+    // Supabase infereert `producten` als array (geen 1:1-hint op PK),
+    // runtime is het een enkel object omdat artikelnr PK is op producten.
+    allRows.push(...((data ?? []) as unknown as PrijslijstRegelRow[]))
     if (!data || data.length < pageSize) break
     offset += pageSize
   }
