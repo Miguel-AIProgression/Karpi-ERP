@@ -53,11 +53,59 @@ function uniekeCodes(row: LightspeedOrderRow): string[] {
   return Array.from(set)
 }
 
-// "Ross 63 - Hochflor Teppich" → { naam: "Ross", kleur: "63" }
+// Parse "naam + kleur" uit Lightspeed productTitle. Floorpassion hanteert
+// twee patronen:
+//   "Ross 63 - Hochflor Teppich"                      → { naam:"Ross", kleur:"63" }
+//   "Fay Soft Beige 13 - Zacht vloerkleed"            → { naam:"Fay Soft Beige", kleur:"13" }
+//   "Weicher Einfarbiger Teppich - Frisco 21"         → { naam:"Frisco", kleur:"21" }
+//   "Einfarbiger Teppich in organischer Form - Lunar 21" → { naam:"Lunar", kleur:"21" }
+// Strategie: check eerst VOOR " - " op "X Y Z NN"-formaat; zo niet, check NA " - ".
 function splitNaamKleur(title: string): { naam: string; kleur: string | null } {
-  const match = title.trim().match(/^(.+?)\s+(\d+)(\s|$|-|,)/)
-  if (match) return { naam: match[1].trim(), kleur: match[2] }
-  return { naam: title.trim(), kleur: null }
+  const t = title.trim()
+  const sepIdx = t.search(/\s[-–]\s/)
+  const voor = sepIdx >= 0 ? t.slice(0, sepIdx).trim() : t
+  const na = sepIdx >= 0 ? t.slice(sepIdx).replace(/^\s*[-–]\s*/, '').trim() : ''
+
+  const voorMatch = voor.match(/^(.+?)\s+(\d{1,3})\s*$/)
+  if (voorMatch) return { naam: voorMatch[1].trim(), kleur: voorMatch[2] }
+
+  if (na) {
+    const naMatch = na.match(/^(.+?)\s+(\d{1,3})(\s|$|,|cm)/)
+    if (naMatch) return { naam: naMatch[1].trim(), kleur: naMatch[2] }
+  }
+
+  // Fallback: hele titel, eerste naam+nummer combinatie.
+  const anyMatch = t.match(/^(.+?)\s+(\d{1,3})(\s|$|-|,)/)
+  if (anyMatch) return { naam: anyMatch[1].trim(), kleur: anyMatch[2] }
+  return { naam: t, kleur: null }
+}
+
+/** Strip diacritics en lowercase. "Brüssel" → "brussel". */
+function normaliseerNaam(s: string): string {
+  return s.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
+}
+
+/** Vind aliases waarvan de benaming een prefix van `naam` is (of vice versa),
+ *  case-insensitive en diacritics-safe. "FAY" ↔ "Fay Soft Beige" matcht. */
+function matchAliasesViaPrefix(
+  naam: string,
+  aliases: Array<{ benaming: string; kwaliteit_code: string }>,
+): Array<{ benaming: string; kwaliteit_code: string }> {
+  const nNorm = normaliseerNaam(naam)
+  if (!nNorm) return []
+  return aliases
+    .filter((a) => {
+      const aNorm = normaliseerNaam(a.benaming)
+      if (!aNorm) return false
+      if (aNorm === nNorm) return true
+      // Alias-benaming is prefix van productnaam ("FAY" ⊂ "fay soft beige")
+      if (nNorm.startsWith(aNorm + ' ')) return true
+      // Andersom: productnaam is prefix van alias ("Ross" ⊂ "ROSS DELUXE")
+      if (aNorm.startsWith(nNorm + ' ')) return true
+      return false
+    })
+    // Langste alias-match eerst (meer specifiek wint)
+    .sort((a, b) => b.benaming.length - a.benaming.length)
 }
 
 // "Firenze 12 - Niederflorteppich" → { basis: "Firenze", kleur: "12" }
@@ -132,18 +180,26 @@ export async function matchProduct(
 
   // Klanteigen_namen EERST als debiteurNr bekend is — naam+kleur parsen heeft prioriteit
   // over code-matching zodat maatwerk-artikelen correct herkend worden.
+  // We halen ALLE aliases voor de debiteur in één query en matchen in-memory
+  // met prefix-regels (zodat "FAY" matcht op "Fay Soft Beige" en "Brüssel"
+  // op "BRUSSEL" dankzij diacritics-normalisatie).
   if (debiteurNr && row.productTitle?.trim()) {
     const { naam, kleur: kleurUitTitel } = splitNaamKleur(row.productTitle)
-    const kleur = kleurUitTitel ?? row.variantTitle?.trim() ?? null
+    // Kleur moet numeriek zijn. variantTitle bevat vaak "Op maat" / "Wunschgröße"
+    // — die mag NIET als kleur doorschuiven anders zoekt de producten-query op
+    // een tekst-string en maakt maatwerk-records met kleur "Wunschgröße".
+    const variantNumeriek = row.variantTitle?.trim().match(/^\d{1,3}$/)?.[0] ?? null
+    const kleur = kleurUitTitel ?? variantNumeriek ?? null
 
-    const { data: aliases } = await supabase
+    const { data: aliasRows } = await supabase
       .from('klanteigen_namen')
-      .select('kwaliteit_code')
+      .select('benaming, kwaliteit_code')
       .eq('debiteur_nr', debiteurNr)
-      .ilike('benaming', naam)
 
-    if (aliases && aliases.length > 0 && kleur) {
-      const kwaliteitCodes = aliases.map((a: { kwaliteit_code: string }) => a.kwaliteit_code)
+    const aliases = matchAliasesViaPrefix(naam, (aliasRows ?? []) as Array<{ benaming: string; kwaliteit_code: string }>)
+
+    if (aliases.length > 0 && kleur) {
+      const kwaliteitCodes = aliases.map((a) => a.kwaliteit_code)
 
       // Maat uit variantTitle, productTitle én customFields (bijv. "Afmeting: 120x120 (cm)")
       const sizeRaw = [
@@ -243,20 +299,29 @@ export async function matchProduct(
   }
 
   // Fallback voor maatwerk zonder artikel-match: is_maatwerk vlag zetten
-  // zodat sync-webshop-order de afmeting uitleest + kwaliteit/kleur afleiden
-  // uit articleCode (bv. "PLUS13MAATWERK" → PLUS 13). Deze vlag laat downstream
-  // code (snijplanning) het stuk herkennen als maatwerk ook als er geen
-  // klanteigen_namen-alias is.
+  // zodat sync-webshop-order de afmeting uitleest + kwaliteit/kleur afleiden.
+  // Bron-volgorde: alias uit klanteigen_namen → articleCode (bv. "PLUS13MAATWERK").
+  // Kleur bij voorkeur uit productTitle, anders uit articleCode-tail.
   const unmatchedReden = classifyRow(row)
   if (unmatchedReden === 'wunschgrosse' || unmatchedReden === 'durchmesser') {
+    const { naam, kleur: kleurUitTitel } = splitNaamKleur(row.productTitle ?? '')
     const artcode = parseArticleCode(row.articleCode)
+    let kwaliteit: string | null = artcode.kwaliteit
+    if (debiteurNr) {
+      const { data: aliasRows } = await supabase
+        .from('klanteigen_namen')
+        .select('benaming, kwaliteit_code')
+        .eq('debiteur_nr', debiteurNr)
+      const hits = matchAliasesViaPrefix(naam, (aliasRows ?? []) as Array<{ benaming: string; kwaliteit_code: string }>)
+      if (hits.length > 0) kwaliteit = hits[0].kwaliteit_code
+    }
     return {
       artikelnr: null,
       matchedOn: 'maatwerk',
       unmatchedReden,
       is_maatwerk: true,
-      maatwerk_kwaliteit_code: artcode.kwaliteit,
-      maatwerk_kleur_code: artcode.kleur,
+      maatwerk_kwaliteit_code: kwaliteit,
+      maatwerk_kleur_code: kleurUitTitel ?? artcode.kleur,
     }
   }
   return { artikelnr: null, matchedOn: 'geen', unmatchedReden }
