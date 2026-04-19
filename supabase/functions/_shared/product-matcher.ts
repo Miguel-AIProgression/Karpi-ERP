@@ -75,6 +75,20 @@ function parseAfmeting(txt: string | null | undefined): [number, number] | null 
   return [Number(m[1]), Number(m[2])]
 }
 
+/**
+ * Parse kwaliteit + kleur uit Lightspeed `articleCode`.
+ * Floorpassion hanteert `{KWALITEIT}{KLEUR}{SIZE|MAATWERK}` — bv.
+ *   "PLUS13MAATWERK" → { kwaliteit: "PLUS", kleur: "13" }
+ *   "GALA14XX140200" → { kwaliteit: "GALA", kleur: "14" }
+ * Gebruikt als fallback voor maatwerk-artikelen zonder alias-match.
+ */
+function parseArticleCode(code: string | null | undefined): { kwaliteit: string | null; kleur: string | null } {
+  if (!code) return { kwaliteit: null, kleur: null }
+  const m = code.match(/^([A-Z]{2,6})(\d{1,3})/i)
+  if (!m) return { kwaliteit: null, kleur: null }
+  return { kwaliteit: m[1].toUpperCase(), kleur: m[2] }
+}
+
 function classifyRow(row: LightspeedOrderRow): UnmatchedReden {
   const hay = `${row.productTitle ?? ''} ${row.variantTitle ?? ''}`
   if (MUSTER_PATROON.test(hay)) return 'muster'
@@ -228,7 +242,24 @@ export async function matchProduct(
     if (data && data.length === 1) return { artikelnr: data[0].artikelnr, matchedOn: 'omschrijving' }
   }
 
-  return { artikelnr: null, matchedOn: 'geen', unmatchedReden: classifyRow(row) }
+  // Fallback voor maatwerk zonder artikel-match: is_maatwerk vlag zetten
+  // zodat sync-webshop-order de afmeting uitleest + kwaliteit/kleur afleiden
+  // uit articleCode (bv. "PLUS13MAATWERK" → PLUS 13). Deze vlag laat downstream
+  // code (snijplanning) het stuk herkennen als maatwerk ook als er geen
+  // klanteigen_namen-alias is.
+  const unmatchedReden = classifyRow(row)
+  if (unmatchedReden === 'wunschgrosse' || unmatchedReden === 'durchmesser') {
+    const artcode = parseArticleCode(row.articleCode)
+    return {
+      artikelnr: null,
+      matchedOn: 'maatwerk',
+      unmatchedReden,
+      is_maatwerk: true,
+      maatwerk_kwaliteit_code: artcode.kwaliteit,
+      maatwerk_kleur_code: artcode.kleur,
+    }
+  }
+  return { artikelnr: null, matchedOn: 'geen', unmatchedReden }
 }
 
 export function buildOmschrijving(row: LightspeedOrderRow, match: ProductMatch): string {
