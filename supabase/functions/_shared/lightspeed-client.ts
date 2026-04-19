@@ -51,6 +51,9 @@ export interface LightspeedOrder {
   status: string
   paymentStatus: string
   shipmentStatus: string | null
+  shipmentTitle?: string | null
+  deliveryDate?: string | null
+  shippingDate?: string | null
   createdAt: string
   priceExcl: number
   priceIncl: number

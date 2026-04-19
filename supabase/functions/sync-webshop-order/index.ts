@@ -27,7 +27,7 @@ import {
 } from '../_shared/lightspeed-client.ts'
 import { verifyLightspeedSignature } from '../_shared/lightspeed-verify.ts'
 import { matchProduct, buildOmschrijving } from '../_shared/product-matcher.ts'
-import { naarWerkdag, plusKalenderDagen } from '../_shared/levertijd-match.ts'
+import { bepaalAfleverdatumUitOrder } from '../_shared/lightspeed-leverdatum.ts'
 
 // Fallback als de debiteur geen `maatwerk_weken` heeft ingesteld. Floorpassion
 // staat op 2; nieuwe verzameldebiteuren zonder configuratie krijgen hetzelfde
@@ -193,11 +193,10 @@ serve(async (req) => {
     const shipping = extractShippingAddress(order)
     const billing = extractBillingAddress(order)
 
-    // Afleverdatum = orderdatum + maatwerk_weken (debiteur-instelling), naar
-    // de eerstvolgende werkdag. Webshop-orders kwamen voorheen zonder datum
-    // binnen, waardoor ze in de snijplanning achteraan vielen. Met een
-    // concrete deadline pakt auto-plan ze consistent op en blijft de
-    // afgesproken 2-weken-levertijd voor Floorpassion overeind.
+    // Afleverdatum uit de order halen. Primair: shipmentTitle (bv.
+    // "Bezorging op woensdag 22 april" of "Versandfertig in 2 Wochen").
+    // Fallback: orderdatum + debiteur.maatwerk_weken (Floorpassion=2). Zo
+    // belandt de order nooit zonder deadline in de snijplanning.
     const { data: debRow } = await supabase
       .from('debiteuren')
       .select('maatwerk_weken')
@@ -208,15 +207,16 @@ serve(async (req) => {
         ? debRow.maatwerk_weken
         : DEFAULT_WEBSHOP_MAATWERK_WEKEN
     const orderdatum = order.createdAt ? order.createdAt.slice(0, 10) : null
-    const afleverdatum = orderdatum
-      ? naarWerkdag(plusKalenderDagen(orderdatum, maatwerkWeken * 7))
-      : null
+    const leverInfo = bepaalAfleverdatumUitOrder(order, maatwerkWeken)
+    console.log(
+      `[sync-webshop-order] shop=${shop} order=${order.id} afleverdatum=${leverInfo.afleverdatum} bron=${leverInfo.bron}${leverInfo.details ? ` ("${leverInfo.details}")` : ''}`,
+    )
 
     const header = {
       debiteur_nr: debiteurNr,
       klant_referentie: `Floorpassion #${order.number}`,
       orderdatum,
-      afleverdatum,
+      afleverdatum: leverInfo.afleverdatum,
       ...shipping,
       ...billing,
       bron_systeem: 'lightspeed',
