@@ -15,6 +15,9 @@ export interface OrderRow {
   totaal_gewicht: number
   vertegenw_code: string | null
   klant_naam?: string
+  heeft_unmatched_regels?: boolean
+  bron_systeem?: string | null
+  bron_shop?: string | null
 }
 
 export interface OrderDetail extends OrderRow {
@@ -102,7 +105,11 @@ export async function fetchOrders(params: {
     .order(sortBy, { ascending: sortDir === 'asc' })
     .range(page * pageSize, (page + 1) * pageSize - 1)
 
-  if (status && status !== 'Alle') {
+  if (status === 'Actie vereist') {
+    // Combineert de 'Actie vereist' order-status met webshop-orders
+    // waarvoor ≥1 regel geen artikelnr heeft (heeft_unmatched_regels).
+    query = query.or('status.eq.Actie vereist,heeft_unmatched_regels.eq.true')
+  } else if (status && status !== 'Alle') {
     query = query.eq('status', status)
   }
 
@@ -126,14 +133,32 @@ export async function fetchOrders(params: {
   return { orders: (data ?? []) as OrderRow[], totalCount: count ?? 0 }
 }
 
-/** Fetch status counts for tabs */
+/** Fetch status counts for tabs. "Actie vereist" wordt aangevuld met orders
+ * die heeft_unmatched_regels=true hebben (webshop-review), zodat die tab
+ * altijd reflecteert wat er in de lijst verschijnt bij selectie.
+ */
 export async function fetchStatusCounts(): Promise<StatusCount[]> {
-  const { data, error } = await supabase
-    .from('orders_status_telling')
-    .select('status, aantal')
+  const [tellingRes, unmatchedRes] = await Promise.all([
+    supabase.from('orders_status_telling').select('status, aantal'),
+    supabase
+      .from('orders')
+      .select('id', { count: 'exact', head: true })
+      .eq('heeft_unmatched_regels', true)
+      .neq('status', 'Actie vereist'),
+  ])
 
-  if (error) throw error
-  return (data ?? []) as StatusCount[]
+  if (tellingRes.error) throw tellingRes.error
+
+  const counts = (tellingRes.data ?? []) as StatusCount[]
+  const extraUnmatched = unmatchedRes.count ?? 0
+
+  if (extraUnmatched > 0) {
+    const existing = counts.find((c) => c.status === 'Actie vereist')
+    if (existing) existing.aantal += extraUnmatched
+    else counts.push({ status: 'Actie vereist', aantal: extraUnmatched })
+  }
+
+  return counts
 }
 
 /** Fetch single order with details */
