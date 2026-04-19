@@ -6,7 +6,7 @@ import { formatDate } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
 import { AFWERKING_MAP } from '@/lib/utils/constants'
 import { getVormDisplay } from '@/lib/utils/vorm-labels'
-import { useSnijplannenVoorGroep, useGenereerSnijvoorstel, useGoedgekeurdVoorstel, useTriggerAutoplan, useRolLocaties, useStartProductieRol } from '@/hooks/use-snijplanning'
+import { useSnijplannenVoorGroep, useGenereerSnijvoorstel, useGoedgekeurdVoorstel, useTriggerAutoplan, useRolLocaties } from '@/hooks/use-snijplanning'
 import { usePlanningConfig } from '@/hooks/use-planning-config'
 import { SnijvoorstelModal } from './snijvoorstel-modal'
 import { buildPlanFromStukken, groepeerStukkenPerRol, type RolGroep } from '@/lib/utils/snijplan-mapping'
@@ -45,7 +45,6 @@ export function GroepAccordion({
   const [voorstelResult, setVoorstelResult] = useState<SnijvoorstelResponse | null>(null)
   const [showPlan, setShowPlan] = useState(false)
   const [activeRolId, setActiveRolId] = useState<number | null>(null)
-  const startProductie = useStartProductieRol()
   const [startError, setStartError] = useState<string | null>(null)
   const genereer = useGenereerSnijvoorstel(); void genereer
   const autoplan = useTriggerAutoplan(); void autoplan
@@ -135,8 +134,6 @@ export function GroepAccordion({
 
   const modalData = voorstelResult ?? goedgekeurdPlan ?? reconstructedPlan
 
-  const pendingRolId = startProductie.isPending ? (startProductie.variables ?? null) : null
-
   function formatMinuten(aantalTeSnijden: number): string | null {
     if (!planningConfig || aantalTeSnijden === 0) return null
     const minuten = planningConfig.wisseltijd_minuten + aantalTeSnijden * planningConfig.snijtijd_minuten
@@ -147,19 +144,13 @@ export function GroepAccordion({
     return min === 0 ? `${uren} uur` : `${uren} uur ${min} min`
   }
 
+  // Opent alleen de rol-uitvoer-modal. De modal roept zelf `start_snijden_rol`
+  // aan via useEffect (promoot Gepland-stukken op de rol naar Snijden +
+  // zet snijden_gestart_op). De legacy `start_productie_rol` flow (stukken
+  // naar 'In productie') wordt niet meer gebruikt.
   const handleStartRol = (rolId: number) => {
     setStartError(null)
-    startProductie.mutate(rolId, {
-      onSuccess: () => setActiveRolId(rolId),
-      onError: (err) => {
-        const msg = err instanceof Error ? err.message : 'Onbekende fout'
-        if (msg.toLowerCase().includes('al in productie') || msg.toLowerCase().includes('already')) {
-          setActiveRolId(rolId)
-        } else {
-          setStartError(msg)
-        }
-      },
-    })
+    setActiveRolId(rolId)
   }
 
   return (
@@ -196,8 +187,8 @@ export function GroepAccordion({
                     geschatteTijd={formatMinuten(rolGroepen[0].aantalTeSnijden)}
                     defaultOpen={true}
                     onStart={handleStartRol}
-                    isStartPending={startProductie.isPending}
-                    pendingRolId={pendingRolId}
+                    isStartPending={false}
+                    pendingRolId={null}
                   />
                   {rolGroepen.length > 1 && !toonExtraRollen && (
                     <button
@@ -217,8 +208,8 @@ export function GroepAccordion({
                       geschatteTijd={formatMinuten(rol.aantalTeSnijden)}
                       defaultOpen={false}
                       onStart={handleStartRol}
-                      isStartPending={startProductie.isPending}
-                      pendingRolId={pendingRolId}
+                      isStartPending={false}
+                      pendingRolId={null}
                     />
                   ))}
                   {toonExtraRollen && rolGroepen.length > 1 && (
@@ -524,7 +515,8 @@ function StukRow({ stuk }: { stuk: SnijplanRow }) {
       <td className="py-2 pr-3">
         <span className={cn(
           'text-xs px-1.5 py-0.5 rounded',
-          stuk.status === 'Snijden' ? 'bg-blue-100 text-blue-700'
+          stuk.status === 'Gepland' ? 'bg-slate-100 text-slate-700'
+            : stuk.status === 'Snijden' ? 'bg-blue-100 text-blue-700'
             : stuk.status === 'Gesneden' ? 'bg-amber-100 text-amber-700'
             : 'bg-slate-100 text-slate-600'
         )}>

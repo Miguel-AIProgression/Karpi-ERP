@@ -5,7 +5,7 @@ import { PageHeader } from '@/components/layout/page-header'
 import { SnijVisualisatie } from '@/components/snijplanning/snij-visualisatie'
 import { RolUitvoerModal } from '@/components/snijplanning/rol-uitvoer-modal'
 import { computeReststukkenFromStukken } from '@/lib/utils/compute-reststukken'
-import { useSnijplannenVoorGroep, useStartProductieRol } from '@/hooks/use-snijplanning'
+import { useSnijplannenVoorGroep } from '@/hooks/use-snijplanning'
 import { usePlanningConfig } from '@/hooks/use-planning-config'
 import { mapSnijplannenToStukken } from '@/lib/utils/snijplan-mapping'
 import { cn } from '@/lib/utils/cn'
@@ -70,10 +70,10 @@ export function ProductieGroepPage() {
 
   // Stukken zonder rol (nog niet ingepland)
   const zonderRol = useMemo(() => {
-    return (alleStukken ?? []).filter(s => !s.rol_id && s.status === 'Snijden')
+    return (alleStukken ?? []).filter(s => !s.rol_id && (s.status === 'Gepland' || s.status === 'Snijden'))
   }, [alleStukken])
 
-  const totaalTeSnijden = (alleStukken ?? []).filter(s => s.status === 'Snijden').length
+  const totaalTeSnijden = (alleStukken ?? []).filter(s => s.status === 'Gepland' || s.status === 'Snijden').length
   const totaalGesneden = (alleStukken ?? []).filter(s => s.status === 'Gesneden' || s.status === 'In confectie' || s.status === 'Gereed').length
   const { data: planningConfig } = usePlanningConfig()
 
@@ -148,12 +148,11 @@ export function ProductieGroepPage() {
 }
 
 function RolCard({ rol, kwaliteit, kleur }: { rol: RolGroepData; kwaliteit: string; kleur: string }) {
-  const startProductie = useStartProductieRol()
   const [error, setError] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
 
-  const teSnijden = rol.stukken.filter(s => s.status === 'Snijden')
+  const teSnijden = rol.stukken.filter(s => s.status === 'Gepland' || s.status === 'Snijden')
   const alGesneden = rol.stukken.filter(s => s.status === 'Gesneden' || s.status === 'In confectie' || s.status === 'Gereed')
 
   const { snijStukken, gebruikteLengte, afvalPct, reststukBruikbaar } =
@@ -162,22 +161,12 @@ function RolCard({ rol, kwaliteit, kleur }: { rol: RolGroepData; kwaliteit: stri
   const restLengte = rol.rolLengte - gebruikteLengte
   const reststukken = computeReststukkenFromStukken(rol.rolLengte, rol.rolBreedte, snijStukken)
 
+  // Opent alleen de modal. De modal roept zelf `start_snijden_rol` aan
+  // (Gepland -> Snijden + snijden_gestart_op). Geen legacy start_productie_rol.
   const handleStartMetRol = (e: React.MouseEvent) => {
     e.stopPropagation()
     setError(null)
-    // Lock rol tegen heroptimalisatie, dan modal openen
-    startProductie.mutate(rol.rolId, {
-      onSuccess: () => setModalOpen(true),
-      onError: (err) => {
-        const msg = err instanceof Error ? err.message : 'Onbekende fout'
-        // Als rol al in productie is, modal gewoon openen
-        if (msg.toLowerCase().includes('al in productie') || msg.toLowerCase().includes('already')) {
-          setModalOpen(true)
-        } else {
-          setError(msg)
-        }
-      },
-    })
+    setModalOpen(true)
   }
 
   return (
@@ -213,14 +202,9 @@ function RolCard({ rol, kwaliteit, kleur }: { rol: RolGroepData; kwaliteit: stri
           {teSnijden.length > 0 && (
             <button
               onClick={handleStartMetRol}
-              disabled={startProductie.isPending}
-              className="flex items-center gap-2 px-4 py-2 rounded-[var(--radius-sm)] bg-indigo-500 text-white font-medium hover:bg-indigo-600 transition-colors disabled:opacity-50"
+              className="flex items-center gap-2 px-4 py-2 rounded-[var(--radius-sm)] bg-indigo-500 text-white font-medium hover:bg-indigo-600 transition-colors"
             >
-              {startProductie.isPending ? (
-                <Loader2 size={16} className="animate-spin" />
-              ) : (
-                <Scissors size={16} />
-              )}
+              <Scissors size={16} />
               Start met rol ({teSnijden.length} stuks)
             </button>
           )}
@@ -292,7 +276,8 @@ function RolCard({ rol, kwaliteit, kleur }: { rol: RolGroepData; kwaliteit: stri
                 <td className="py-2 pr-3">
                   <span className={cn(
                     'text-xs px-1.5 py-0.5 rounded',
-                    stuk.status === 'Snijden' ? 'bg-blue-100 text-blue-700'
+                    stuk.status === 'Gepland' ? 'bg-slate-100 text-slate-700'
+                      : stuk.status === 'Snijden' ? 'bg-blue-100 text-blue-700'
                       : stuk.status === 'Gesneden' ? 'bg-emerald-100 text-emerald-700'
                       : 'bg-slate-100 text-slate-600'
                   )}>

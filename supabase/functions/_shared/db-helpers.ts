@@ -2,7 +2,7 @@
 // Used by: optimaliseer-snijplan, auto-plan-groep
 
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import type { SnijplanPiece, Roll } from './ffdh-packing.ts'
+import type { SnijplanPiece, Roll, Placement } from './ffdh-packing.ts'
 
 // ---------------------------------------------------------------------------
 // Fetch snijplannen from the view
@@ -11,7 +11,7 @@ import type { SnijplanPiece, Roll } from './ffdh-packing.ts'
 export interface FetchStukkenOptions {
   kwaliteitCode: string
   kleurCode: string
-  statuses?: string[]  // default: ['Wacht']
+  statuses?: string[]  // default: ['Gepland']
   totDatum?: string | null
 }
 
@@ -20,7 +20,7 @@ export async function fetchStukken(
   options: FetchStukkenOptions,
 ): Promise<SnijplanPiece[]> {
   const { kwaliteitCode, kleurCode, totDatum } = options
-  const statuses = options.statuses ?? ['Wacht']
+  const statuses = options.statuses ?? ['Gepland']
 
   const kleurVariants = getKleurVariants(kleurCode)
 
@@ -131,10 +131,12 @@ export async function fetchBeschikbareRollen(
   kwaliteitCode: string,
   uitwisselbarePairs?: KwaliteitKleurPair[],
 ): Promise<Roll[]> {
+  // Inclusief rollen met status in_snijplan die nog niet in productie zijn,
+  // zodat nieuwe stukken in hun bestaande shelf-gaps kunnen landen.
   let query = supabase
     .from('rollen')
-    .select('id, rolnummer, lengte_cm, breedte_cm, status, oppervlak_m2, kwaliteit_code')
-    .in('status', ['beschikbaar', 'reststuk'])
+    .select('id, rolnummer, lengte_cm, breedte_cm, status, oppervlak_m2, kwaliteit_code, snijden_gestart_op')
+    .in('status', ['beschikbaar', 'reststuk', 'in_snijplan'])
 
   if (uitwisselbarePairs && uitwisselbarePairs.length > 0) {
     // Fijnmazig: OR over expliciete (kwaliteit,kleur)-paren
@@ -150,16 +152,97 @@ export async function fetchBeschikbareRollen(
 
   if (error) throw error
 
-  return (rollen ?? []).map((r: Record<string, unknown>) => ({
-    id: r.id as number,
-    rolnummer: r.rolnummer as string,
-    lengte_cm: r.lengte_cm as number,
-    breedte_cm: r.breedte_cm as number,
-    status: r.status as string,
-    oppervlak_m2: r.oppervlak_m2 as number,
-    sort_priority: (r.status as string) === 'reststuk' ? 1 : 2,
-    is_exact: (r.kwaliteit_code as string) === kwaliteitCode,
-  }))
+  return (rollen ?? [])
+    .filter((r: Record<string, unknown>) => {
+      // Rollen die al in productie zijn (snijden_gestart_op gezet) blijven buiten
+      // de pool — hun cutlist is bevroren.
+      if (r.status === 'in_snijplan' && r.snijden_gestart_op !== null) return false
+      return true
+    })
+    .map((r: Record<string, unknown>) => ({
+      id: r.id as number,
+      rolnummer: r.rolnummer as string,
+      lengte_cm: r.lengte_cm as number,
+      breedte_cm: r.breedte_cm as number,
+      status: r.status as string,
+      oppervlak_m2: r.oppervlak_m2 as number,
+      sort_priority: (r.status as string) === 'reststuk' ? 1 : 2,
+      is_exact: (r.kwaliteit_code as string) === kwaliteitCode,
+      has_existing_placements: (r.status as string) === 'in_snijplan',
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Fetch bestaande Snijden-plaatsingen per rol (voor shelf-reconstructie)
+// ---------------------------------------------------------------------------
+
+/**
+ * Haal alle Gepland-stukken op die al aan een rol gekoppeld zijn in deze
+ * kwaliteit/kleur-groep. Gebruikt voor shelf-reconstructie: nieuwe stukken
+ * kunnen in bestaande shelf-gaps landen i.p.v. een nieuwe rol aan te snijden.
+ *
+ * Status 'Gepland' impliceert al dat de rol nog niet fysiek gestart is
+ * (na migratie 086). Zodra `start_snijden_rol` wordt aangeroepen promoveren
+ * de stukken naar 'Snijden' en verdwijnen ze uit deze set.
+ */
+export async function fetchBezettePlaatsingen(
+  supabase: SupabaseClient,
+  uitwisselbareCodes: string[],
+  kleurVariants: string[],
+  uitwisselbarePairs?: KwaliteitKleurPair[],
+): Promise<Map<number, Placement[]>> {
+  let rolQuery = supabase
+    .from('rollen')
+    .select('id')
+    .eq('status', 'in_snijplan')
+    .is('snijden_gestart_op', null)
+
+  if (uitwisselbarePairs && uitwisselbarePairs.length > 0) {
+    const orClause = uitwisselbarePairs
+      .map((p) => `and(kwaliteit_code.eq.${p.kwaliteit_code},kleur_code.eq.${p.kleur_code})`)
+      .join(',')
+    rolQuery = rolQuery.or(orClause)
+  } else {
+    rolQuery = rolQuery.in('kwaliteit_code', uitwisselbareCodes).in('kleur_code', kleurVariants)
+  }
+
+  const { data: rolRows, error: rolError } = await rolQuery
+  if (rolError) throw rolError
+
+  const rolIds = (rolRows ?? []).map((r: { id: number }) => r.id)
+  if (rolIds.length === 0) return new Map()
+
+  const { data, error } = await supabase
+    .from('snijplannen')
+    .select('id, rol_id, positie_x_cm, positie_y_cm, lengte_cm, breedte_cm, geroteerd')
+    .in('rol_id', rolIds)
+    .eq('status', 'Gepland')
+    .not('positie_x_cm', 'is', null)
+    .not('positie_y_cm', 'is', null)
+
+  if (error) throw error
+
+  const map = new Map<number, Placement[]>()
+  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+    const rolId = row.rol_id as number
+    const geroteerd = (row.geroteerd as boolean) ?? false
+    // snijplannen.lengte_cm/breedte_cm zijn de oorspronkelijke stukmaten.
+    // In tryPlacePiece is de niet-geroteerde orientatie {w: piece.lengte_cm,
+    // h: piece.breedte_cm} → placement.lengte_cm = X (w), placement.breedte_cm
+    // = Y (h). Bij rotatie worden ze omgedraaid.
+    const placement: Placement = {
+      snijplan_id: row.id as number,
+      positie_x_cm: Number(row.positie_x_cm),
+      positie_y_cm: Number(row.positie_y_cm),
+      lengte_cm: geroteerd ? Number(row.breedte_cm) : Number(row.lengte_cm),
+      breedte_cm: geroteerd ? Number(row.lengte_cm) : Number(row.breedte_cm),
+      geroteerd,
+    }
+    const arr = map.get(rolId) ?? []
+    arr.push(placement)
+    map.set(rolId, arr)
+  }
+  return map
 }
 
 // ---------------------------------------------------------------------------

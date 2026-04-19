@@ -66,12 +66,14 @@ export async function fetchSnijplannenVoorGroep(
   totDatum?: string | null
 ): Promise<SnijplanRow[]> {
   const kleurVariants = getKleurVariants(kleurCode)
+  // Gepland = aan rol toegewezen, niet gestart. Snijden = fysiek onder het mes.
+  // Beide tellen als "in de snijplanning" voor het groepoverzicht (migratie 086).
   let query = supabase
     .from('snijplanning_overzicht')
     .select('*')
     .eq('kwaliteit_code', kwaliteitCode)
     .in('kleur_code', kleurVariants)
-    .eq('status', 'Snijden')
+    .in('status', ['Gepland', 'Snijden'])
     .order('afleverdatum', { ascending: true, nullsFirst: false })
 
   if (totDatum) {
@@ -95,12 +97,12 @@ export async function fetchRolLocaties(rolIds: number[]): Promise<Map<number, st
   return new Map((data ?? []).map((r: { id: number; locatie: string | null }) => [r.id, r.locatie]))
 }
 
-/** Fetch alle snijplannen met status='Snijden' voor agenda-planning */
+/** Fetch alle in-pipeline snijplannen (Gepland + Snijden) voor agenda-planning */
 export async function fetchAlleSnijden(totDatum?: string | null): Promise<SnijplanRow[]> {
   let query = supabase
     .from('snijplanning_overzicht')
     .select('*')
-    .eq('status', 'Snijden')
+    .in('status', ['Gepland', 'Snijden'])
     .order('afleverdatum', { ascending: true, nullsFirst: false })
 
   // Filter op planning-horizon: alléén orders met afleverdatum <= totDatum.
@@ -202,10 +204,11 @@ export async function fetchSnijplanningKpis(
   const dezeWeek = weekRange(0)
   const volgendeWeek = weekRange(1)
 
+  // Gepland + Snijden = beide "in pipeline" (na migratie 086).
   let horizonQuery = supabase
     .from('snijplanning_overzicht')
     .select('*', { count: 'exact', head: true })
-    .eq('status', 'Snijden')
+    .in('status', ['Gepland', 'Snijden'])
   if (totDatum) {
     horizonQuery = horizonQuery.or(`afleverdatum.lte.${totDatum},afleverdatum.is.null`)
   }
@@ -215,7 +218,7 @@ export async function fetchSnijplanningKpis(
   const dezeWeekTeSnijdenQuery = supabase
     .from('snijplanning_overzicht')
     .select('*', { count: 'exact', head: true })
-    .eq('status', 'Snijden')
+    .in('status', ['Gepland', 'Snijden'])
     .gte('afleverdatum', volgendeWeek.maandag)
     .lte('afleverdatum', volgendeWeek.zondag)
 

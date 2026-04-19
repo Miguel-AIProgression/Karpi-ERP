@@ -126,29 +126,14 @@ export function resolveScenario(input: ResolveScenarioInput): CheckLevertijdResp
     }
   }
 
-  // Scenario 3: Wacht op meer orders (capaciteit kan, maar te weinig backlog)
-  if (!backlog.voldoende) {
-    const vroegst = naarWerkdag(plusKalenderDagen(toIsoDate(vandaag), cfg.maatwerk_weken * 7))
-    const { week, jaar } = isoWeekJaar(new Date(`${vroegst}T00:00:00Z`))
-    return {
-      scenario: 'wacht_op_orders',
-      lever_datum: null,
-      vroegst_mogelijk: vroegst,
-      week,
-      jaar,
-      onderbouwing: trim(
-        `Wacht op meer orders voor deze kwaliteit/kleur (huidige backlog ${backlog.totaal_m2.toFixed(1)} m², drempel ${cfg.backlog_minimum_m2} m²). Vroegst: ${formatDatum(vroegst)}.`,
-      ),
-      details: {
-        capaciteit,
-        backlog: { ...backlog, drempel_m2: cfg.backlog_minimum_m2 },
-        spoed,
-        logistieke_buffer_dagen: cfg.logistieke_buffer_dagen,
-      },
-    }
-  }
-
-  // Scenario 2: Nieuwe rol gepland in (mogelijk doorgeschoven) snij-week
+  // Scenario 2: Nieuwe rol gepland in (mogelijk doorgeschoven) snij-week.
+  //
+  // De backlog-drempel (`backlog.voldoende`) wordt bewust NIET gebruikt om
+  // wachten af te dwingen: doelstelling is altijd "zo snel mogelijk leveren
+  // mits het andere orders niet hindert". De capaciteits-check verschuift al
+  // naar een latere week als de huidige vol zit, dus orders blokkeren elkaar
+  // niet. Lage backlog blijft zichtbaar in `details.backlog` voor planners,
+  // maar leidt niet tot scenario `wacht_op_orders`.
   const snijMaandag = maandagVanWeek(capaciteit.week, capaciteit.jaar)
   // 5 werkdagen na snij-maandag → vrijdag dezelfde week + buffer
   const snijVrijdag = plusKalenderDagen(snijMaandag, 4)

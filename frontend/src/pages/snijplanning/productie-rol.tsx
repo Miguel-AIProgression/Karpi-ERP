@@ -47,7 +47,7 @@ export function ProductieRolPage() {
   const kwaliteit = eerste.kwaliteit_code ?? ''
   const kleur = eerste.kleur_code ?? ''
 
-  const teSnijden = stukken.filter(s => s.status === 'Snijden')
+  const teSnijden = stukken.filter(s => s.status === 'Gepland' || s.status === 'Snijden')
   const alGesneden = stukken.filter(s => s.status === 'Gesneden' || s.status === 'In confectie' || s.status === 'Gereed')
 
   const { snijStukken, gebruikteLengte, afvalPct, reststukBruikbaar } =
@@ -239,7 +239,8 @@ export function ProductieRolPage() {
                   <td className="py-2 pr-3">
                     <span className={cn(
                       'text-xs px-1.5 py-0.5 rounded',
-                      stuk.status === 'Snijden' ? 'bg-blue-100 text-blue-700'
+                      stuk.status === 'Gepland' ? 'bg-slate-100 text-slate-700'
+                        : stuk.status === 'Snijden' ? 'bg-blue-100 text-blue-700'
                         : stuk.status === 'Gesneden' ? 'bg-emerald-100 text-emerald-700'
                         : 'bg-slate-100 text-slate-600'
                     )}>

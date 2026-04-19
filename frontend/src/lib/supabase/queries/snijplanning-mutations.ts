@@ -27,7 +27,7 @@ export async function createSnijplan(data: SnijplanFormData) {
       planning_jaar: data.planning_jaar ?? null,
       positie_x_cm: data.positie_x_cm ?? null,
       positie_y_cm: data.positie_y_cm ?? null,
-      status: 'Snijden' as SnijplanStatus,
+      status: 'Gepland' as SnijplanStatus,
     })
     .select('id, snijplan_nr, scancode')
     .single()
@@ -81,8 +81,8 @@ export async function assignRolToSnijplan(snijplanId: number, rolId: number) {
   if (error) throw error
 }
 
-/** Approve snijvoorstel: status blijft 'Snijden', rol_id wordt door optimizer gezet */
+/** Approve snijvoorstel: keur_snijvoorstel_goed zet status op 'Gepland' en
+ *  wijst rol toe. No-op helper voor backwards-compat. */
 export async function approveSnijvoorstel(_snijplanIds: number[]) {
-  // Status verandert niet meer bij goedkeuring — onderscheid gepland/wacht
-  // loopt nu via rol_id IS NOT NULL (ingesteld door de optimizer).
+  // Status wordt gezet door keur_snijvoorstel_goed RPC (migratie 086).
 }

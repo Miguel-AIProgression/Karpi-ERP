@@ -14,13 +14,14 @@ import {
 import {
   useRolSnijstukken,
   useStartSnijdenRol,
+  usePauzeerSnijdenRol,
   useVoltooiSnijplanRol,
 } from '@/hooks/use-snijplanning'
+import { useRolDetail } from '@/hooks/use-rollen'
 import { ReststukStickerLayout } from './reststuk-sticker-layout'
 import { mapSnijplannenToStukken } from '@/lib/utils/snijplan-mapping'
 import {
-  computeReststukkenFromStukken,
-  computeReststukkenEnAfvalFromStukken,
+  computeReststukkenAngebrokenAfval,
 } from '@/lib/utils/compute-reststukken'
 import { cn } from '@/lib/utils/cn'
 import { AFWERKING_MAP } from '@/lib/utils/constants'
@@ -53,6 +54,13 @@ type RolGebeurtenis =
       index: number
     }
   | {
+      kind: 'aangebroken_end'
+      y: number
+      x: number
+      breedteCm: number
+      lengteCm: number
+    }
+  | {
       kind: 'afval'
       y: number
       x: number
@@ -64,6 +72,7 @@ function buildRolGebeurtenissen(
   afgevinkteStukkenRows: SnijplanRow[],
   snijStukken: SnijStuk[],
   reststukRects: ReststukRect[],
+  aangebrokenEnd: { y_cm: number; breedte_cm: number; lengte_cm: number } | null,
   afvalRects: ReststukRect[],
 ): RolGebeurtenis[] {
   const events: RolGebeurtenis[] = []
@@ -98,6 +107,16 @@ function buildRolGebeurtenissen(
       index: i + 1,
     })
   })
+
+  if (aangebrokenEnd) {
+    events.push({
+      kind: 'aangebroken_end',
+      y: aangebrokenEnd.y_cm,
+      x: 0,
+      breedteCm: aangebrokenEnd.breedte_cm,
+      lengteCm: aangebrokenEnd.lengte_cm,
+    })
+  }
 
   for (const r of afvalRects) {
     events.push({
@@ -169,7 +188,9 @@ function printReststukSticker(props: {
 export function RolUitvoerModal({ rolId, open, onClose }: RolUitvoerModalProps) {
   const navigate = useNavigate()
   const { data: stukken, isLoading } = useRolSnijstukken(open ? rolId : null)
+  const { data: rolDetail } = useRolDetail(open ? rolId : null)
   const startSnijden = useStartSnijdenRol()
+  const pauzeerSnijden = usePauzeerSnijdenRol()
   const voltooiRol = useVoltooiSnijplanRol()
 
   const [checkedIds, setCheckedIds] = useState<Set<number>>(new Set())
@@ -197,7 +218,7 @@ export function RolUitvoerModal({ rolId, open, onClose }: RolUitvoerModalProps) 
   }, [open])
 
   const teSnijden = useMemo(
-    () => (stukken ?? []).filter((s) => s.status === 'Snijden'),
+    () => (stukken ?? []).filter((s) => s.status === 'Gepland' || s.status === 'Snijden'),
     [stukken],
   )
 
@@ -227,9 +248,15 @@ export function RolUitvoerModal({ rolId, open, onClose }: RolUitvoerModalProps) 
     [snijStukken, checkedIds],
   )
 
-  const { reststukken: reststukRects, afval: afvalRects } = useMemo(
-    () => computeReststukkenEnAfvalFromStukken(rolLengte, rolBreedte, afgevinkteSnijStukken),
-    [rolLengte, rolBreedte, afgevinkteSnijStukken],
+  const { reststukken: reststukRects, aangebrokenEnd, afval: afvalRects } = useMemo(
+    () =>
+      computeReststukkenAngebrokenAfval(
+        rolLengte,
+        rolBreedte,
+        afgevinkteSnijStukken,
+        rolDetail?.rol_type ?? null,
+      ),
+    [rolLengte, rolBreedte, afgevinkteSnijStukken, rolDetail?.rol_type],
   )
 
   // Afgevinkte SnijplanRow's in dezelfde volgorde als teSnijden, voor gebeurtenis-lijst
@@ -239,8 +266,15 @@ export function RolUitvoerModal({ rolId, open, onClose }: RolUitvoerModalProps) 
   )
 
   const gebeurtenissen = useMemo(
-    () => buildRolGebeurtenissen(afgevinkteRows, snijStukken, reststukRects, afvalRects),
-    [afgevinkteRows, snijStukken, reststukRects, afvalRects],
+    () =>
+      buildRolGebeurtenissen(
+        afgevinkteRows,
+        snijStukken,
+        reststukRects,
+        aangebrokenEnd,
+        afvalRects,
+      ),
+    [afgevinkteRows, snijStukken, reststukRects, aangebrokenEnd, afvalRects],
   )
 
   // Ook niet-afgevinkte stukken moeten in de tabel staan (als grijze rij, checkbox uit).
@@ -291,19 +325,24 @@ export function RolUitvoerModal({ rolId, open, onClose }: RolUitvoerModalProps) 
       if (!ok) return
     }
 
-    const reststukken = computeReststukkenFromStukken(
-      rolLengte,
-      rolBreedte,
-      afgevinkteSnijStukken,
-    )
+    const aangebrokenLengte =
+      aangebrokenEnd && aangebrokenEnd.lengte_cm >= 100 ? aangebrokenEnd.lengte_cm : null
 
     setError(null)
     voltooiRol.mutate(
-      { rolId, snijplanIds: afgevinkt, reststukken },
+      {
+        rolId,
+        snijplanIds: afgevinkt,
+        reststukken: reststukRects,
+        aangebrokenLengte,
+      },
       {
         onSuccess: () => {
+          const extra = aangebrokenLengte
+            ? ` · rol blijft aangebroken (${aangebrokenLengte} cm over)`
+            : ''
           setSuccess(
-            `Rol afgesloten: ${afgevinkt.length} stuk${afgevinkt.length === 1 ? '' : 'ken'} gesneden${nietAangevinkt > 0 ? `, ${nietAangevinkt} terug naar wachtlijst` : ''}.`,
+            `Rol afgesloten: ${afgevinkt.length} stuk${afgevinkt.length === 1 ? '' : 'ken'} gesneden${nietAangevinkt > 0 ? `, ${nietAangevinkt} terug naar wachtlijst` : ''}${extra}.`,
           )
           setTimeout(() => onClose(), 1200)
         },
@@ -343,9 +382,22 @@ export function RolUitvoerModal({ rolId, open, onClose }: RolUitvoerModalProps) 
     onClose()
   }
 
+  const handlePauzeer = async () => {
+    if (!rolId) return
+    setError(null)
+    try {
+      await pauzeerSnijden.mutateAsync({ rolId })
+      setStartedRolId(null)
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Fout bij pauzeren')
+    }
+  }
+
   const aantalTeSnijdenAfgevinkt = afgevinkteRows.length
   const aantalReststukken = reststukRects.length
   const aantalAfval = afvalRects.length
+  const aantalAangebroken = aangebrokenEnd ? 1 : 0
 
   return (
     <div
@@ -385,7 +437,8 @@ export function RolUitvoerModal({ rolId, open, onClose }: RolUitvoerModalProps) 
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-sm font-medium text-slate-700">
                     Snij-volgorde ({aantalTeSnijdenAfgevinkt} te snijden · {aantalReststukken}{' '}
-                    reststukken · {aantalAfval} afval)
+                    reststukken{aantalAangebroken > 0 ? ` · 1 aangebroken rol` : ''} · {aantalAfval}{' '}
+                    afval)
                   </h3>
                   <button
                     onClick={toggleAll}
@@ -438,12 +491,21 @@ export function RolUitvoerModal({ rolId, open, onClose }: RolUitvoerModalProps) 
                                   />
                                 </td>
                                 <td className="py-2 pr-3 font-medium">
-                                  {stuk.snij_breedte_cm} × {stuk.snij_lengte_cm} cm
+                                  {Math.round(e.snijStuk.breedte_cm)} ×{' '}
+                                  {Math.round(e.snijStuk.lengte_cm)} cm
                                   {stuk.maatwerk_vorm && (
                                     <span className="ml-2 text-xs font-normal text-slate-500">
                                       {stuk.maatwerk_vorm}
                                     </span>
                                   )}
+                                  {stuk.snij_breedte_cm !== undefined &&
+                                    stuk.snij_lengte_cm !== undefined &&
+                                    (Math.round(e.snijStuk.breedte_cm) !== stuk.snij_breedte_cm ||
+                                      Math.round(e.snijStuk.lengte_cm) !== stuk.snij_lengte_cm) && (
+                                      <span className="ml-2 text-xs font-normal text-slate-400">
+                                        (besteld {stuk.snij_breedte_cm}×{stuk.snij_lengte_cm})
+                                      </span>
+                                    )}
                                 </td>
                                 <td className="py-2 pr-3">{stuk.klant_naam}</td>
                                 <td className="py-2 pr-3">
@@ -518,6 +580,23 @@ export function RolUitvoerModal({ rolId, open, onClose }: RolUitvoerModalProps) 
                               </tr>
                             )
                           }
+                          if (e.kind === 'aangebroken_end') {
+                            return (
+                              <tr key={`aang-${idx}`} className={cn('bg-blue-50/50', topBorder)}>
+                                <td className={cn('py-2 pl-2 pr-2 text-center', indentClass)}>
+                                  <Package size={14} className="text-blue-600 inline" />
+                                </td>
+                                <td className="py-2 pr-3 font-medium text-blue-800">
+                                  {Math.round(e.breedteCm)} × {Math.round(e.lengteCm)} cm
+                                </td>
+                                <td className="py-2 pr-3 text-xs text-blue-700" colSpan={2}>
+                                  → behoud rol {rolnummer} (aangebroken, volle breedte)
+                                </td>
+                                <td className="py-2 pr-3 text-xs text-blue-700">Aangebroken</td>
+                                <td className="py-2 pr-3 text-xs text-slate-400">—</td>
+                              </tr>
+                            )
+                          }
                           return (
                             <tr key={`afv-${idx}`} className={cn('bg-slate-50/60 text-slate-400', topBorder)}>
                               <td className={cn('py-2 pl-2 pr-2 text-center', indentClass)}>
@@ -572,10 +651,12 @@ export function RolUitvoerModal({ rolId, open, onClose }: RolUitvoerModalProps) 
               {checkedIds.size}/{teSnijden.length} aangevinkt
             </span>
             <button
-              onClick={requestClose}
-              className="px-3 py-2 rounded-[var(--radius-sm)] text-sm text-slate-600 hover:bg-slate-100 transition-colors"
+              onClick={handlePauzeer}
+              disabled={pauzeerSnijden.isPending}
+              className="px-3 py-2 rounded-[var(--radius-sm)] text-sm text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50"
+              title="Lock vrijgeven zodat de rol weer herplant kan worden"
             >
-              Pauzeer
+              {pauzeerSnijden.isPending ? 'Pauzeren…' : 'Pauzeer'}
             </button>
             <button
               onClick={handleAfsluiten}

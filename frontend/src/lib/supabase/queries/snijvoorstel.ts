@@ -190,7 +190,7 @@ export async function fetchBeschikbareCapaciteit(kwaliteitCode: string, kleurCod
       .from('snijplannen')
       .select('rol_id, positie_y_cm, lengte_cm, breedte_cm, geroteerd')
       .in('rol_id', inPlanRolIds)
-      .eq('status', 'Snijden')
+      .in('status', ['Gepland', 'Snijden'])
 
     for (const p of plannen ?? []) {
       const endY = (p.positie_y_cm ?? 0) + (p.geroteerd ? p.lengte_cm : p.breedte_cm)
@@ -260,13 +260,17 @@ export interface ReststukResult {
 /** Complete cutting of a roll: mark snijplannen as cut, create remnants.
  *  Voor nieuwe flow: geef `reststukken` array mee (ReststukRect[]) → backend
  *  maakt per kwalificerend rechthoek een reststuk aan. Laat `overrideRestLengte`
- *  null of weg voor nieuwe flow. */
+ *  null of weg voor nieuwe flow.
+ *  `aangebrokenLengte` (sinds migratie 088): als gezet én ≥100 cm blijft de
+ *  originele rol bestaan met verkorte lengte en status='beschikbaar' i.p.v.
+ *  status='gesneden'. Gebruik voor end-of-roll strips met volle breedte. */
 export async function voltooiSnijplanRol(
   rolId: number,
   gesnedenDoor?: string,
   overrideRestLengte?: number | null,
   reststukken?: ReststukRect[],
   snijplanIds?: number[],
+  aangebrokenLengte?: number | null,
 ) {
   const { data, error } = await supabase.rpc('voltooi_snijplan_rol', {
     p_rol_id: rolId,
@@ -274,16 +278,25 @@ export async function voltooiSnijplanRol(
     p_override_rest_lengte: overrideRestLengte ?? null,
     p_reststukken: reststukken ? reststukken : null,
     p_snijplan_ids: snijplanIds && snijplanIds.length > 0 ? snijplanIds : null,
+    p_aangebroken_lengte: aangebrokenLengte ?? null,
   })
   if (error) throw error
   return data as ReststukResult[]
 }
 
-/** Start snijden op een rol: registreert snijden_gestart_op timestamp. Idempotent. */
+/** Start snijden op een rol: registreert snijden_gestart_op timestamp + promoot
+ *  alle Gepland-stukken naar Snijden. Idempotent. */
 export async function startSnijdenRol(rolId: number, gebruiker?: string | null): Promise<void> {
   const { error } = await supabase.rpc('start_snijden_rol', {
     p_rol_id: rolId,
     p_gebruiker: gebruiker ?? null,
   })
+  if (error) throw error
+}
+
+/** Pauzeer snijden op een rol: Snijden-stukken terug naar Gepland + wist
+ *  snijden_gestart_op. Weigert als er al Gesneden-stukken zijn. */
+export async function pauzeerSnijdenRol(rolId: number): Promise<void> {
+  const { error } = await supabase.rpc('pauzeer_snijden_rol', { p_rol_id: rolId })
   if (error) throw error
 }

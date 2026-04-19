@@ -138,7 +138,7 @@ Deno.test('resolveScenario: capaciteits-iteratie wordt gemeld', () => {
 // resolveScenario — wacht op orders scenario
 // ---------------------------------------------------------------------------
 
-Deno.test('resolveScenario: geen match + lage backlog → wacht_op_orders', () => {
+Deno.test('resolveScenario: geen match + lage backlog → nieuwe_rol_gepland (ASAP, backlog-drempel blokkeert niet)', () => {
   const result = resolveScenario({
     match: matchNietGevonden,
     capaciteit: capaciteitOk,
@@ -147,11 +147,11 @@ Deno.test('resolveScenario: geen match + lage backlog → wacht_op_orders', () =
     nieuw_stuk_m2: 6,
     vandaag: VANDAAG,
   })
-  assertEquals(result.scenario, 'wacht_op_orders')
-  assertEquals(result.lever_datum, null)
-  assert(result.vroegst_mogelijk !== undefined)
-  assertStringIncludes(result.onderbouwing, 'backlog')
-  assertStringIncludes(result.onderbouwing, 'drempel')
+  assertEquals(result.scenario, 'nieuwe_rol_gepland')
+  assert(result.lever_datum !== null)
+  assertStringIncludes(result.onderbouwing, 'week')
+  // Backlog-info blijft zichtbaar in details voor planners
+  assertEquals(result.details.backlog?.totaal_m2, 2)
 })
 
 Deno.test('resolveScenario: geen passende rol in voorraad → wacht_op_orders met inkoop-uitleg', () => {

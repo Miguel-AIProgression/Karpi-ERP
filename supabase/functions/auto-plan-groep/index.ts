@@ -17,6 +17,7 @@ import {
   fetchUitwisselbarePairs,
   getKleurVariants,
   fetchBeschikbareRollen,
+  fetchBezettePlaatsingen,
   saveVoorstel,
 } from '../_shared/db-helpers.ts'
 
@@ -105,12 +106,13 @@ serve(async (req) => {
     )
     if (releaseError) throw releaseError
 
-    // ---- Step 3: Fetch all Snijden stukken (including freshly released ones) ----
+    // ---- Step 3: Fetch all Gepland stukken (including freshly released ones) ----
     // 'Wacht' meegenomen voor backwards-compat met legacy rows (zie migratie 069).
+    // 'Gepland' = stukken die nog geen rol hebben of waarvan de rol niet gestart is.
     const pieces = await fetchStukken(supabase, {
       kwaliteitCode: kwaliteit_code,
       kleurCode: kleur_code,
-      statuses: ['Snijden', 'Wacht'],
+      statuses: ['Gepland', 'Wacht'],
       totDatum: tot_datum,
     })
 
@@ -126,7 +128,7 @@ serve(async (req) => {
       )
     }
 
-    // ---- Step 4: Fetch available rolls ----
+    // ---- Step 4: Fetch available rolls + bezette plaatsingen ----
     const uitwisselbarePairs = await fetchUitwisselbarePairs(supabase, kwaliteit_code, kleur_code)
     const uitwisselbareCodes = uitwisselbarePairs.length > 0
       ? Array.from(new Set(uitwisselbarePairs.map((p) => p.kwaliteit_code)))
@@ -152,11 +154,40 @@ serve(async (req) => {
       )
     }
 
+    // Bezette plaatsingen: al-gesneden Snijden-stukken op rollen die nog niet
+    // in productie zijn → reconstructie van hun shelves zodat nieuwe stukken
+    // in bestaande gaps kunnen landen i.p.v. een verse rol aan te snijden.
+    const bezetteMap = await fetchBezettePlaatsingen(
+      supabase,
+      uitwisselbareCodes,
+      kleurVariants,
+      uitwisselbarePairs,
+    )
+
+    // Max-afval-percentage voor reststukken (uit app_config). Als een reststuk
+    // na packing meer verspilling zou opleveren, wordt die overgeslagen —
+    // zo blijven kleine reststukken intact voor een betere gelegenheid.
+    const { data: cfgRow } = await supabase
+      .from('app_config')
+      .select('waarde')
+      .eq('sleutel', 'productie_planning')
+      .maybeSingle()
+    const cfgWaarde = (cfgRow?.waarde ?? {}) as Record<string, unknown>
+    const maxReststukVerspillingPct =
+      typeof cfgWaarde.max_reststuk_verspilling_pct === 'number'
+        ? cfgWaarde.max_reststuk_verspilling_pct
+        : 15
+
     // ---- Step 5: FFDH packing ----
     const pieceVormMap = new Map<number, string | null>(
       pieces.map((p) => [p.id, p.maatwerk_vorm]),
     )
-    const { rollResults, nietGeplaatst, samenvatting } = packAcrossRolls(pieces, rollen, pieceVormMap)
+    const { rollResults, nietGeplaatst, samenvatting } = packAcrossRolls(
+      pieces,
+      rollen,
+      pieceVormMap,
+      { bezetteMap, maxReststukVerspillingPct },
+    )
 
     if (rollResults.length === 0) {
       return new Response(

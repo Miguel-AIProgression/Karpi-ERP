@@ -32,6 +32,7 @@ import {
   rejectSnijvoorstel,
   voltooiSnijplanRol,
   startSnijdenRol,
+  pauzeerSnijdenRol,
   type ReststukResult,
 } from '@/lib/supabase/queries/snijvoorstel'
 import {
@@ -314,8 +315,8 @@ export function useVerwerpSnijvoorstel() {
 export function useVoltooiSnijplanRol() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ rolId, gesnedenDoor, overrideRestLengte, reststukken, snijplanIds }: { rolId: number; gesnedenDoor?: string; overrideRestLengte?: number | null; reststukken?: import('@/lib/types/productie').ReststukRect[]; snijplanIds?: number[] }) =>
-      voltooiSnijplanRol(rolId, gesnedenDoor, overrideRestLengte, reststukken, snijplanIds),
+    mutationFn: ({ rolId, gesnedenDoor, overrideRestLengte, reststukken, snijplanIds, aangebrokenLengte }: { rolId: number; gesnedenDoor?: string; overrideRestLengte?: number | null; reststukken?: import('@/lib/types/productie').ReststukRect[]; snijplanIds?: number[]; aangebrokenLengte?: number | null }) =>
+      voltooiSnijplanRol(rolId, gesnedenDoor, overrideRestLengte, reststukken, snijplanIds, aangebrokenLengte),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['snijplanning'] })
       qc.invalidateQueries({ queryKey: ['productie', 'dashboard'] })
@@ -329,6 +330,17 @@ export function useStartSnijdenRol() {
   return useMutation({
     mutationFn: ({ rolId, gebruiker }: { rolId: number; gebruiker?: string | null }) =>
       startSnijdenRol(rolId, gebruiker),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['rollen'] })
+      qc.invalidateQueries({ queryKey: ['snijplanning'] })
+    },
+  })
+}
+
+export function usePauzeerSnijdenRol() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ rolId }: { rolId: number }) => pauzeerSnijdenRol(rolId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['rollen'] })
       qc.invalidateQueries({ queryKey: ['snijplanning'] })
