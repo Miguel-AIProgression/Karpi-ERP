@@ -18,6 +18,11 @@ Domeinbegrippen die je moet kennen om dit project te begrijpen.
 | **Inkooporganisatie** | Centrale inkoper waar de klant onder valt. |
 | **Standaard levertermijn** | Twee aparte getallen: `standaard_maat_werkdagen` (default 5, kalenderdagen, voor karpetten uit voorraad) en `maatwerk_weken` (default 4, voor gesneden+geconfectioneerde karpetten). Globale defaults in `app_config.order_config`; per klant overschrijfbaar. Order-afleverdatum wordt automatisch berekend als max van beide typen in de order. |
 | **Deelleveringen** | Per klant boolean (`debiteuren.deelleveringen_toegestaan`, default FALSE). Als TRUE en een order bevat zowel standaard-maat als maatwerk regels: bij aanmaken wordt de order opgesplitst in 2 losse orders — één met de standaard-regels (korte levertermijn) en één met de maatwerk-regels (lange levertermijn). Verzendkosten-regel gaat mee met de standaard-order. |
+| **Verzameldebiteur** | Debiteuren-rij die een groep externe eindklanten vertegenwoordigt. Voor webshop-orders gebruikt RugFlow de bestaande **debiteur 260000 "FLOORPASSION"** — particuliere kopers krijgen geen eigen debiteuren-rij, hun naam/adres landt in de `afl_*`-snapshotvelden op de order. (Synthetische rij 99001 uit migratie 091 is niet in productie: keuze viel op 260000 om aan te sluiten bij het oude systeem.) |
+| **Webshop-order** | Order die automatisch is aangemaakt door de Lightspeed webhook-integratie (of via batch-import uit het oude systeem). Herkenbaar aan `orders.bron_systeem = 'lightspeed'`. Valt onder debiteur 260000; de shop van herkomst staat in `bron_shop` (`floorpassion_nl` / `floorpassion_de`). |
+| **Bron-systeem** | Veld `orders.bron_systeem` dat aangeeft waar een order vandaan komt. NULL = handmatig in RugFlow aangemaakt. Bekende externe bronnen: `'lightspeed'` (Floorpassion webshops). Toekomstig mogelijk: `'edi'`, `'marketplace'`. Samen met `bron_order_id` uniek voor idempotentie bij webhook-retries. |
+| **Unmatched-regel** | Orderregel waar geen `artikelnr` aan kon worden gekoppeld. Herkenbaar aan een prefix in `omschrijving`: `[UNMATCHED]` (onbekend), `[STAAL]` (gratis muster/sample), `[MAATWERK]` (Wunschgröße / op maat / volgens tekening), `[MAATWERK-ROND]` (ronde maatwerk met diameter). Order krijgt `heeft_unmatched_regels = TRUE`, wat in de orderlijst als actie-vereist-badge zichtbaar moet worden. |
+| **`heeft_unmatched_regels`** | Boolean-vlag op `orders`. TRUE zodra minstens 1 regel `artikelnr IS NULL` heeft. Automatisch onderhouden door trigger op `order_regels` (migratie 094) + expliciete set in `create_webshop_order` RPC. Index `orders_heeft_unmatched_idx` voor snel filteren van review-orders. |
 
 ## Producten & Voorraad
 
@@ -35,10 +40,11 @@ Domeinbegrippen die je moet kennen om dit project te begrijpen.
 | **Rolnummer** | Unieke identifier per fysieke rol. |
 | **VVP** | Verkoopprijs per vierkante meter (Verkoop Vaste Prijs per m2). |
 | **Vrije voorraad** | Voorraad minus gereserveerd minus backorder + besteld inkoop. Wat daadwerkelijk beschikbaar is. |
-| **Volle rol** | Rol met standaard breedte én volledige lengte. `rol_type = 'volle_rol'`. Standaard breedte wordt afgeleid uit `artikelnr` (laatste 3 cijfers, bv `CISC12400` → 400 cm). |
+| **Volle rol** | Rol met standaard breedte én volledige lengte. `rol_type = 'volle_rol'`. Standaard breedte komt primair uit `kwaliteiten.standaard_breedte_cm` (bron van waarheid sinds migratie 086), fallback op laatste 3 cijfers artikelnr, daarna 400 cm. |
 | **Aangebroken rol** | Rol met standaard breedte maar reeds aangesneden (kortere lengte, ≥100 cm). Ontstaat na `voltooi_snijplan_rol()`. `rol_type = 'aangebroken'`, `status = 'beschikbaar'`. |
-| **Reststuk** | Rol met afwijkende (smallere) breedte t.o.v. standaard, óf met lengte <100 cm. `rol_type = 'reststuk'`. Classificatie gebeurt automatisch via trigger op basis van artikelnr-breedte vs werkelijke breedte. |
-| **Artikelnr-codering** | Karpi-artikelnummers bestaan uit 4 letters (kwaliteit) + 2 cijfers (kleur) + 3 cijfers (breedte in cm). Voorbeeld: `CISC12400` = CISC kwaliteit, kleur 12, breedte 400 cm. |
+| **Reststuk** | Rol met afwijkende (smallere) breedte t.o.v. standaard, óf met lengte <100 cm. `rol_type = 'reststuk'`. Classificatie gebeurt automatisch via trigger o.b.v. `bereken_rol_type()`. |
+| **Standaard rolbreedte** | Per kwaliteit vastgelegd in `kwaliteiten.standaard_breedte_cm`. Voorbeelden: 400 cm (default, CISC/GALA/VERR/…), 320 cm (OASI/NOMA/RUBI/CAVA/EMIR/…), 200 cm (DUBE/VETB/CLAS), 147-180 cm (BUX-serie lopers), 160 cm (BEAC/BEAB), 500 cm (CROW). |
+| **Artikelnr-codering** | Veel (niet alle) Karpi-artikelnummers volgen: 4 letters (kwaliteit) + 2 cijfers (kleur) + 3 cijfers (breedte in cm). Voorbeeld: `CISC12400` = CISC kwaliteit, kleur 12, breedte 400 cm. Voor kwaliteiten zonder dit suffix (OASI-serie e.d.) geldt uitsluitend `kwaliteiten.standaard_breedte_cm`. |
 
 ## Orders & Operationeel
 

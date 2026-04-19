@@ -132,13 +132,25 @@ Wisseltijd per rol en snijtijd per karpet zijn configureerbaar via Productie Ins
 Edge function `check-levertijd` (`supabase/functions/check-levertijd/`) berekent tijdens order-entry een concrete leverdatum voor maatwerk-regels. Drie pure helper-modules in `supabase/functions/_shared/levertijd-*.ts`:
 - **levertijd-match.ts**: zoekt rol in pipeline (status `Gepland`/`Wacht`) waar het nieuwe stuk nog op past via `tryPlacePiece` (FFDH); kiest vroegste snij-datum, exact match wint van uitwisselbaar bij gelijke datum.
 - **levertijd-capacity.ts**: bepaalt snij-week (lever-week − 1), itereert tot ruimte beschikbaar (max 6 weken), vergelijkt bezetting (stuks + minuten) met `capaciteit_per_week × (1 − marge_pct/100)`. Backlog-check via RPC `backlog_per_kwaliteit_kleur`.
-- **levertijd-resolver.ts**: combineert tot scenario (`match_bestaande_rol` | `nieuwe_rol_gepland` | `wacht_op_orders` | `spoed`) + NL onderbouwing (max 240 chars).
+- **levertijd-resolver.ts**: combineert tot scenario (`match_bestaande_rol` | `nieuwe_rol_gepland` | `wacht_op_orders` | `spoed`) + NL onderbouwing (max 240 chars). **ASAP-by-default:** `wacht_op_orders` triggert alléén bij `geen_rol_passend` (geen voorraadrol breed/lang genoeg → inkoop nodig). De backlog-drempel `backlog_minimum_m2` is informatief en blokkeert niet — dat zorgt ervoor dat klanten standaard de vroegst mogelijke leverdatum krijgen.
 
 Frontend: `useLevertijdCheck` hook (TanStack Query, 350 ms debounce, 60 s staleTime) + `<LevertijdSuggestie>` component met scenario-badge, datum, onderbouwing en "Neem datum over"-knop. Geïntegreerd in `order-form.tsx` voor de laatste maatwerk-regel met complete (kwaliteit, kleur, lengte, breedte). Bij edge-function fout valt de UI terug op `berekenAfleverdatum()`.
 
 Configuratie in `app_config.productie_planning`: `logistieke_buffer_dagen` (default 2), `backlog_minimum_m2` (default 12). Performance-doel: < 1.5 s p95.
 
 **Spoed-tak**: `evalueerSpoed()` (`_shared/spoed-check.ts`) checkt per ISO-week (deze + volgende) of er na de bestaande backlog nog ≥ benodigde-snijduur + `spoed_buffer_uren × 60` werkminuten beschikbaar zijn (over `werkdagen × 510` werkminuten/dag, gemeten met `werkminutenTussen`). Bij beschikbaar wordt de **laatste werkdag van de gekozen week** als snij-datum belofte gegeven (spoed krijgt voorrang in de planning), met `lever_datum = snij_datum + logistieke_buffer_dagen`. De UI-toggle in `<LevertijdSuggestie>` voegt automatisch een SPOEDTOESLAG-orderregel toe (zelfde patroon als VERZEND) en overschrijft de header-leverdatum. Spoed-config-velden in `app_config.productie_planning`: `spoed_buffer_uren`, `spoed_toeslag_bedrag`, `spoed_product_id`.
+
+### Webshop-integratie (Lightspeed eCom)
+Edge function `sync-webshop-order` (`supabase/functions/sync-webshop-order/index.ts`) ontvangt webhooks van de twee Floorpassion Lightspeed-shops (NL + DE, EU1-cluster `api.webshopapp.com`). Flow:
+
+1. Lightspeed stuurt `orders/paid` webhook naar `/sync-webshop-order?shop=nl|de` (auth via MD5-signature in `x-signature` header, secret per shop uit env)
+2. Edge function verifieert signature (constante tijd), fetcht de volledige order + regels via de Lightspeed REST API
+3. **Idempotentie-check gaat vóór Lightspeed-fetch**: als `(bron_systeem, bron_order_id)` al bestaat retourneert de function meteen `was_existing=true` zonder REST-calls (voorkomt rate-limit hits bij Lightspeed's tot 10× retry-mechanisme)
+4. Elke orderregel wordt gematched via de slimme matcher: (a) `articleCode`/`sku` → `producten.karpi_code` (Floorpassion stuurt karpi-codes zoals `GALA14XX140200`), (b) `artikelnr` fallback, (c) `ean_code`, (d) **parsed karpi**: `kwaliteit + kleur + afmeting` geëxtraheerd uit productTitle+variantTitle → kandidaat-karpi-codes, (e) `omschrijving` ilike (uniek). Speciale categorieën: `VERZEND` (verzendkosten), `[STAAL]` (Gratis Muster), `[MAATWERK]` (Wunschgröße/Op maat/Volgens tekening), `[MAATWERK-ROND]` (Durchmesser/rond)
+5. RPC `create_webshop_order` (migraties 092/093/094) doet atomic insert in `orders` + `order_regels` onder debiteur **260000 "FLOORPASSION"** (bestaande rij uit het oude systeem; de synthetische 99001 uit migratie 091 wordt in productie niet gebruikt). Zet `orders.heeft_unmatched_regels = TRUE` als ≥1 regel NULL artikelnr heeft — orderlijst kan daarmee "Actie vereist" filter tonen. Trigger op `order_regels` houdt de vlag live synchroon bij handmatige mutaties
+6. Particuliere eindkoper komt alléén in de leveradres-snapshot (`afl_*` velden), consistent met bestaande snapshot-architectuur
+
+Credentials per shop in `supabase/functions/.env` (gitignored): `LIGHTSPEED_{NL,DE}_API_{KEY,SECRET}`, `LIGHTSPEED_{NL,DE}_CLUSTER_URL`, `FLOORPASSION_DEBITEUR_NR`. Deploy edge function met `--no-verify-jwt` (webhooks hebben geen Supabase JWT). Webhook-registratie via `scripts/register-lightspeed-webhooks.mjs`. Unmatched producten krijgen `[UNMATCHED]`-prefix in `omschrijving` + NULL `artikelnr` — order wordt niet geblokkeerd maar gemarkeerd voor handmatige review. Fase 2 (voorraad-sync, levertijden terug naar webshop) is nog niet in scope.
 
 ### Productie modules
 - **Snijplanning**: weekoverzicht, gegroepeerd per kwaliteit+kleur, SVG snijvoorstel, sticker print, reststuk-bevestigingsflow

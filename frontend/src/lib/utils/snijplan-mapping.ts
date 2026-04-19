@@ -36,7 +36,7 @@ export function groepeerStukkenPerRol(stukken: SnijplanRow[]): RolGroep[] {
       map.set(s.rol_id, groep)
     }
     groep.stukken.push(s)
-    if (s.status === 'Snijden') groep.aantalTeSnijden += 1
+    if (s.status === 'Gepland' || s.status === 'Snijden') groep.aantalTeSnijden += 1
     if (s.afleverdatum && (!groep.vroegsteLeverdatum || s.afleverdatum < groep.vroegsteLeverdatum)) {
       groep.vroegsteLeverdatum = s.afleverdatum
     }
@@ -112,7 +112,7 @@ export function mapSnijplannenToStukken(
  * Fallback when no approved voorstel record exists.
  */
 export function buildPlanFromStukken(stukken: SnijplanRow[]): SnijvoorstelResponse | null {
-  const gepland = stukken.filter(s => s.status === 'Snijden' && s.rolnummer)
+  const gepland = stukken.filter(s => (s.status === 'Gepland' || s.status === 'Snijden') && s.rolnummer)
   if (gepland.length === 0) return null
 
   const rolMap = new Map<string, { stukken: SnijplanRow[]; rol_lengte_cm: number; rol_breedte_cm: number; rol_status: string }>()

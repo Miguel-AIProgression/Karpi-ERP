@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
+import { ArrowUp, ArrowDown, ArrowUpDown, AlertCircle } from 'lucide-react'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { formatCurrency, formatDate } from '@/lib/utils/formatters'
 import type { OrderRow, OrderSortField, SortDirection } from '@/lib/supabase/queries/orders'
@@ -81,12 +81,23 @@ export function OrdersTable({ orders, isLoading, sortBy, sortDir, onSort }: Orde
               className="border-b border-slate-50 hover:bg-slate-50 transition-colors"
             >
               <td className="px-4 py-3">
-                <Link
-                  to={`/orders/${order.id}`}
-                  className="text-terracotta-500 hover:underline font-medium"
-                >
-                  {order.order_nr}
-                </Link>
+                <div className="flex items-center gap-2">
+                  <Link
+                    to={`/orders/${order.id}`}
+                    className="text-terracotta-500 hover:underline font-medium"
+                  >
+                    {order.order_nr}
+                  </Link>
+                  {order.heeft_unmatched_regels && (
+                    <span
+                      className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-800 px-2 py-0.5 text-xs font-medium"
+                      title="Deze order bevat regels zonder gekoppeld artikelnummer — review nodig"
+                    >
+                      <AlertCircle size={12} />
+                      Actie vereist
+                    </span>
+                  )}
+                </div>
                 {order.oud_order_nr && (
                   <span className="block text-xs text-slate-400">
                     Oud: {order.oud_order_nr}

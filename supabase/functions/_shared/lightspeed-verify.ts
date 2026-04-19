@@ -2,6 +2,8 @@
 //
 // Lightspeed stuurt `x-signature: <hex>` waar hex = MD5(payload + api_secret).
 // Zie https://developers.lightspeedhq.com/ecom/tutorials/webhooks/
+//
+// We vergelijken in constante tijd om timing-attacks te voorkomen.
 
 import SparkMD5 from 'https://esm.sh/spark-md5@3.0.2'
 

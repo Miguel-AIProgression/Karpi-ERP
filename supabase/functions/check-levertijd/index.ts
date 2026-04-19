@@ -47,10 +47,10 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// Migratie 070 mapt 'Gepland'/'Wacht' → 'Snijden' (via trigger). Een snijplan dat
-// al toegewezen is aan een rol heeft dus altijd status='Snijden' totdat het fysiek
-// gesneden is (gesneden_datum gevuld).
-const PLANNING_STATUS_IN_PIPELINE = ['Snijden']
+// Na migratie 086 bestaan 'Gepland' (nog niet gestart) en 'Snijden' (fysiek
+// onder het mes) naast elkaar. Beide tellen als "in pipeline" voor capaciteit
+// en levertijd-berekening — pas bij status 'Gesneden' is de rol klaar.
+const PLANNING_STATUS_IN_PIPELINE = ['Gepland', 'Snijden']
 
 // ---------------------------------------------------------------------------
 // Config-fetch

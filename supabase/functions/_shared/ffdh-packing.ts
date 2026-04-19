@@ -25,6 +25,7 @@ export interface Roll {
   oppervlak_m2: number
   sort_priority: number // 1=reststuk, 2=beschikbaar
   is_exact: boolean     // true = exact kwaliteit match, false = uitwisselbaar
+  has_existing_placements?: boolean // true als rol al Snijden-stukken heeft (nog niet in productie)
 }
 
 export interface Shelf {
@@ -185,15 +186,52 @@ export function tryPlacePiece(
 }
 
 /**
+ * Reconstrueer shelves uit bestaande plaatsingen op een rol.
+ * Plaatsingen met dezelfde positie_y_cm liggen op dezelfde shelf.
+ * Gebruikt voor rollen die al gedeeltelijk gepland zijn (status in_snijplan,
+ * nog niet in productie) — zodat nieuwe stukken in bestaande shelf-gaps
+ * geplaatst kunnen worden i.p.v. een nieuwe rol aan te snijden.
+ */
+export function reconstructShelves(
+  placements: Placement[],
+  rollWidth: number,
+): Shelf[] {
+  if (placements.length === 0) return []
+
+  const byY = new Map<number, Placement[]>()
+  for (const p of placements) {
+    const arr = byY.get(p.positie_y_cm) ?? []
+    arr.push(p)
+    byY.set(p.positie_y_cm, arr)
+  }
+
+  const shelves: Shelf[] = []
+  for (const [y, group] of byY) {
+    const height = Math.max(...group.map((p) => p.breedte_cm))
+    const usedWidth = group.reduce(
+      (sum, p) => Math.max(sum, p.positie_x_cm + p.lengte_cm),
+      0,
+    )
+    shelves.push({ y, height, usedWidth, maxWidth: rollWidth })
+  }
+  return shelves
+}
+
+/**
  * Run FFDH packing for a list of pieces onto a single roll.
  * Returns placed pieces and remaining unplaced pieces.
+ *
+ * `initialShelves` bevat bestaande plaatsingen (uit eerder snijvoorstel).
+ * Nieuwe stukken kunnen bestaande shelf-gaps opvullen voor optimaal
+ * materiaalgebruik.
  */
 export function packRoll(
   pieces: SnijplanPiece[],
   rollWidth: number,
   rollLength: number,
+  initialShelves: Shelf[] = [],
 ): { placed: Placement[]; remaining: SnijplanPiece[] } {
-  const shelves: Shelf[] = []
+  const shelves: Shelf[] = initialShelves.map((s) => ({ ...s }))
   const placed: Placement[] = []
   const remaining: SnijplanPiece[] = []
   const placedIds = new Set<number>()
@@ -278,31 +316,44 @@ export function calcRollStats(
 // ---------------------------------------------------------------------------
 
 /**
- * Sort pieces: earliest delivery date first, then by max dimension (widest first), then by area.
- * Pieces without a delivery date are sorted last (lowest priority).
- * This ensures urgent orders are placed first while still packing efficiently.
+ * Sort pieces voor klassieke FFDH: hoogste dimensie eerst (Decreasing Height),
+ * dan grootste oppervlak, dan afleverdatum als tie-breaker.
+ *
+ * Volgorde-keuze: strip-packing literatuur toont dat grootste-eerst de
+ * beste materiaalbenutting geeft. Als we afleverdatum primair zouden
+ * sorteren, kan een klein-urgent stuk een nieuwe shelf afdwingen terwijl
+ * een groter-later stuk daarna een passend gap-vrije shelf creëert waar
+ * het kleine stuk in had gepast. Praktijkvoorbeeld (OASI 11): 100×100 vóór
+ * 170×170 gaf 3 shelves; 170×170 vóór 100×100 geeft 2 shelves met 100×100
+ * in het 150×170-gap naast de 170×170. Afleverdatum speelt nog mee als
+ * tie-breaker én via de horizon-filter (p_tot_datum) in de auto-plan flow.
  */
 export function sortPieces(pieces: SnijplanPiece[]): SnijplanPiece[] {
   return [...pieces].sort((a, b) => {
-    // 1. Earliest delivery date first (null = last)
-    const dateA = a.afleverdatum ?? '9999-12-31'
-    const dateB = b.afleverdatum ?? '9999-12-31'
-    if (dateA !== dateB) return dateA < dateB ? -1 : 1
-
-    // 2. Widest first (better packing within same urgency)
+    // 1. Grootste dimensie eerst (FFDH-standaard).
     const maxA = Math.max(a.lengte_cm, a.breedte_cm)
     const maxB = Math.max(b.lengte_cm, b.breedte_cm)
     if (maxB !== maxA) return maxB - maxA
 
-    // 3. Largest area first
-    return b.area_cm2 - a.area_cm2
+    // 2. Grootste oppervlak eerst (bij gelijke hoogte).
+    if (b.area_cm2 !== a.area_cm2) return b.area_cm2 - a.area_cm2
+
+    // 3. Vroegste afleverdatum als tie-breaker.
+    const dateA = a.afleverdatum ?? '9999-12-31'
+    const dateB = b.afleverdatum ?? '9999-12-31'
+    return dateA < dateB ? -1 : dateA > dateB ? 1 : 0
   })
 }
 
-/** Sort rolls: exact kwaliteit first, then reststuk before beschikbaar, smallest area first */
+/** Sort rolls: exact kwaliteit first, then rollen-met-bestaande-plaatsingen
+ * (gap-filling boven nieuwe rol aansnijden), dan reststuk voor beschikbaar,
+ * dan kleinste oppervlak eerst. */
 export function sortRolls(rollen: Roll[]): Roll[] {
   return [...rollen].sort((a, b) => {
     if (a.is_exact !== b.is_exact) return a.is_exact ? -1 : 1
+    const aExisting = a.has_existing_placements ? 1 : 0
+    const bExisting = b.has_existing_placements ? 1 : 0
+    if (aExisting !== bExisting) return bExisting - aExisting
     if (a.sort_priority !== b.sort_priority) return a.sort_priority - b.sort_priority
     return a.lengte_cm * a.breedte_cm - b.lengte_cm * b.breedte_cm
   })
@@ -328,15 +379,33 @@ export interface PackingResult {
   samenvatting: PackingSummary
 }
 
+export interface PackOptions {
+  /** Bestaande Snijden-plaatsingen per rol_id, voor shelf-reconstructie. */
+  bezetteMap?: Map<number, Placement[]>
+  /** Max toegestane verspilling (%) om een reststuk-rol aan te snijden.
+   *  Als afval > max_pct na packing, wordt de reststuk-rol verworpen
+   *  (stukken gaan terug in de pool voor een andere rol). */
+  maxReststukVerspillingPct?: number
+}
+
 /**
  * Pack pieces across multiple rolls using FFDH algorithm.
  * Returns complete packing result with statistics.
+ *
+ * - `options.bezetteMap`: nieuwe stukken landen in bestaande shelf-gaps van
+ *   reeds-deels-geplande rollen (status in_snijplan, niet in productie).
+ *   Bestaande plaatsingen komen NIET opnieuw in het resultaat.
+ * - `options.maxReststukVerspillingPct`: reststukken worden alleen gebruikt
+ *   als hun afval_percentage ≤ max_pct blijft. Anders verworpen om het
+ *   reststuk intact te bewaren.
  */
 export function packAcrossRolls(
   pieces: SnijplanPiece[],
   rolls: Roll[],
   pieceVormMap: Map<number, string | null>,
+  options: PackOptions = {},
 ): PackingResult {
+  const { bezetteMap, maxReststukVerspillingPct } = options
   const sortedPieces = sortPieces(pieces)
   const sortedRolls = sortRolls(rolls)
 
@@ -346,25 +415,43 @@ export function packAcrossRolls(
   for (const roll of sortedRolls) {
     if (unplacedPieces.length === 0) break
 
+    const bezettePlaatsingen = bezetteMap?.get(roll.id) ?? []
+    const initialShelves = reconstructShelves(bezettePlaatsingen, roll.breedte_cm)
+
     const { placed, remaining } = packRoll(
       unplacedPieces,
       roll.breedte_cm, // X axis = roll width
       roll.lengte_cm,  // Y axis = roll length
+      initialShelves,
     )
 
-    if (placed.length > 0) {
-      const stats = calcRollStats(placed, roll.breedte_cm, roll.lengte_cm, pieceVormMap)
-      rollResults.push({
-        rol_id: roll.id,
-        rolnummer: roll.rolnummer,
-        rol_lengte_cm: roll.lengte_cm,
-        rol_breedte_cm: roll.breedte_cm,
-        rol_status: roll.status,
-        plaatsingen: placed,
-        ...stats,
-      })
+    if (placed.length === 0) continue
+
+    // Statistieken bevatten zowel nieuwe als bestaande plaatsingen, zodat
+    // afval_percentage klopt t.o.v. de daadwerkelijk gebruikte rol-lengte.
+    const allPlacements = [...bezettePlaatsingen, ...placed]
+    const stats = calcRollStats(allPlacements, roll.breedte_cm, roll.lengte_cm, pieceVormMap)
+
+    // Reststuk-bescherming: als afval boven max_pct uitkomt, verwerpen —
+    // unplacedPieces blijft onveranderd zodat de stukken op een andere rol
+    // kunnen landen.
+    if (
+      roll.status === 'reststuk' &&
+      maxReststukVerspillingPct !== undefined &&
+      stats.afval_percentage > maxReststukVerspillingPct
+    ) {
+      continue
     }
 
+    rollResults.push({
+      rol_id: roll.id,
+      rolnummer: roll.rolnummer,
+      rol_lengte_cm: roll.lengte_cm,
+      rol_breedte_cm: roll.breedte_cm,
+      rol_status: roll.status,
+      plaatsingen: placed,
+      ...stats,
+    })
     unplacedPieces = remaining
   }
 

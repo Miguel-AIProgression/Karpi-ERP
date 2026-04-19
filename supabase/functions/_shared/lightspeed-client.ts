@@ -60,7 +60,6 @@ export interface LightspeedOrder {
   lastname?: string
   phone?: string
   customerNote?: string
-  // Shipping address
   addressShippingName?: string
   addressShippingStreet?: string
   addressShippingNumber?: string
@@ -69,7 +68,6 @@ export interface LightspeedOrder {
   addressShippingCity?: string
   addressShippingRegion?: string
   addressShippingCountry?: { id: number; code: string; title: string } | string
-  // Billing address
   addressBillingName?: string
   addressBillingStreet?: string
   addressBillingNumber?: string
@@ -78,8 +76,15 @@ export interface LightspeedOrder {
   addressBillingCity?: string
   addressBillingRegion?: string
   addressBillingCountry?: { id: number; code: string; title: string } | string
-  // Embedded products
   products?: Array<LightspeedOrderRow>
+}
+
+export interface LightspeedListOrdersParams {
+  status?: string
+  paymentStatus?: string
+  createdAtMin?: string
+  limit?: number
+  page?: number
 }
 
 export interface LightspeedClient {
@@ -87,14 +92,6 @@ export interface LightspeedClient {
   getOrder: (id: number | string) => Promise<LightspeedOrder>
   getOrderProducts: (orderId: number | string) => Promise<LightspeedOrderRow[]>
   listOrders: (params: LightspeedListOrdersParams) => Promise<{ count: number; orders: LightspeedOrder[] }>
-}
-
-export interface LightspeedListOrdersParams {
-  status?: string           // 'processing_awaiting_shipment' | 'completed_shipped' | etc.
-  paymentStatus?: string    // 'paid' | 'unpaid' | 'authorization'
-  createdAtMin?: string     // ISO date string: '2026-04-19'
-  limit?: number            // max 250
-  page?: number             // 1-based
 }
 
 function envOrThrow(name: string): string {
@@ -114,6 +111,7 @@ export function createClient(shop: LightspeedShop): LightspeedClient {
   async function request<T>(path: string): Promise<T> {
     const url = `${base}${path}`
     let lastErr: unknown
+    // 1 retry op 5xx, exponential: 200ms → 800ms
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const res = await fetch(url, {
@@ -140,24 +138,20 @@ export function createClient(shop: LightspeedShop): LightspeedClient {
 
   return {
     shop,
-
     async getOrder(id) {
       const resp = await request<{ order: LightspeedOrder }>(`/orders/${id}.json`)
       return resp.order
     },
-
     async getOrderProducts(id) {
       const resp = await request<{ orderProducts: LightspeedOrderRow[] }>(
         `/orders/${id}/products.json`,
       )
       const products = resp.orderProducts ?? []
       if (products.length > 0) {
-        console.log('[lightspeed] orderProduct keys:', Object.keys(products[0]).join(', '))
         console.log('[lightspeed] customFields:', JSON.stringify(products[0].customFields ?? null))
       }
       return products
     },
-
     async listOrders(params) {
       const qs = new URLSearchParams()
       if (params.status) qs.set('status[]', params.status)
@@ -166,7 +160,6 @@ export function createClient(shop: LightspeedShop): LightspeedClient {
       qs.set('limit', String(params.limit ?? 250))
       qs.set('page', String(params.page ?? 1))
       qs.set('sort', 'createdAt ASC')
-
       const resp = await request<{ count: number; orders: LightspeedOrder[] }>(
         `/orders.json?${qs.toString()}`,
       )
@@ -177,7 +170,7 @@ export function createClient(shop: LightspeedShop): LightspeedClient {
 
 /**
  * Verzamelt alle tekst-values uit customFields van een orderregel.
- * Wordt gebruikt voor maatwerk-afmeting extractie (bijv. "Afmeting: 120x120 (cm)").
+ * Gebruikt voor maatwerk-afmeting extractie (bijv. "Afmeting: 120x120 (cm)").
  */
 export function collectExtraTexts(row: LightspeedOrderRow): string[] {
   const texts: string[] = []
@@ -189,6 +182,7 @@ export function collectExtraTexts(row: LightspeedOrderRow): string[] {
   return texts
 }
 
+// Haal orderadres-snapshot op in RugFlow-formaat.
 export function extractShippingAddress(order: LightspeedOrder): {
   afl_naam: string | null
   afl_naam_2: string | null

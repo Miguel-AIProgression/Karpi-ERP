@@ -195,3 +195,51 @@ export function computeReststukkenEnAfvalFromStukken(
   }))
   return computeReststukkenEnAfval(rolLengte, rolBreedte, plaatsingen, minShort, minLong)
 }
+
+/**
+ * Splitst de analyse verder: end-of-roll strip met volle breedte wordt als
+ * "aangebrokenEnd" apart teruggegeven (de originele rol krijgt dan een
+ * verkorte lengte — zie `voltooi_snijplan_rol(p_aangebroken_lengte)`).
+ * Overige rechthoeken blijven reststukken (eigen rolnummer) of afval.
+ *
+ * `aangebrokenEnd` is alleen gezet wanneer rol_type in ('volle_rol',
+ * 'aangebroken'); bij een reststuk-rol geeft deze functie altijd null
+ * terug en blijft het oude reststuk-gedrag gelden.
+ */
+export function computeReststukkenAngebrokenAfval(
+  rolLengte: number,
+  rolBreedte: number,
+  stukken: SnijStuk[],
+  rolType: 'volle_rol' | 'aangebroken' | 'reststuk' | null | undefined,
+  minShort: number = RESTSTUK_MIN_SHORT,
+  minLong: number = RESTSTUK_MIN_LONG,
+): {
+  reststukken: ReststukRect[]
+  aangebrokenEnd: { y_cm: number; breedte_cm: number; lengte_cm: number } | null
+  afval: ReststukRect[]
+} {
+  const { reststukken: allRest, afval } = computeReststukkenEnAfvalFromStukken(
+    rolLengte,
+    rolBreedte,
+    stukken,
+    minShort,
+    minLong,
+  )
+
+  const kanAanbreken = rolType === 'volle_rol' || rolType === 'aangebroken'
+  if (!kanAanbreken) {
+    return { reststukken: allRest, aangebrokenEnd: null, afval }
+  }
+
+  let aangebrokenEnd: { y_cm: number; breedte_cm: number; lengte_cm: number } | null = null
+  const reststukken: ReststukRect[] = []
+  for (const r of allRest) {
+    const isFullWidthEnd = r.x_cm === 0 && r.breedte_cm === rolBreedte
+    if (isFullWidthEnd && !aangebrokenEnd) {
+      aangebrokenEnd = { y_cm: r.y_cm, breedte_cm: r.breedte_cm, lengte_cm: r.lengte_cm }
+    } else {
+      reststukken.push(r)
+    }
+  }
+  return { reststukken, aangebrokenEnd, afval }
+}

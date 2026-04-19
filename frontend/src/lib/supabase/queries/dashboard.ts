@@ -3,7 +3,9 @@ import { supabase } from '../client'
 export interface DashboardStats {
   aantal_producten: number
   beschikbare_rollen: number
+  /** Inventory (Goldratt TOC): SUM(rollen.waarde) excl. status='verkocht'. Kapitaal vastgebonden in voorraad aan inkoopprijs. Zie migratie 084. */
   voorraadwaarde_inkoop: number
+  /** Open verkooporders (pipeline): SUM(orders.totaal_bedrag) − SUM(VERZEND-regels), status NOT IN ('Verzonden','Geannuleerd'). Zie migratie 084. */
   voorraadwaarde_verkoop: number
   gemiddelde_marge_pct: number
   open_orders: number
