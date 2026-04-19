@@ -327,8 +327,14 @@ export function calcRollStats(
  * 170×170 gaf 3 shelves; 170×170 vóór 100×100 geeft 2 shelves met 100×100
  * in het 150×170-gap naast de 170×170. Afleverdatum speelt nog mee als
  * tie-breaker én via de horizon-filter (p_tot_datum) in de auto-plan flow.
+ *
+ * NULL-afleverdatum (maatwerk zonder afgesproken deadline): behandelen we
+ * als 'vandaag' — wens is zsm leveren, dus sorteren alsof de deadline nu
+ * is. Tie-break daaronder geeft echte deadlines voorrang bij gelijke
+ * datum, zodat een NULL-stuk nooit een afspraak verdringt.
  */
 export function sortPieces(pieces: SnijplanPiece[]): SnijplanPiece[] {
+  const vandaag = new Date().toISOString().slice(0, 10)
   return [...pieces].sort((a, b) => {
     // 1. Grootste dimensie eerst (FFDH-standaard).
     const maxA = Math.max(a.lengte_cm, a.breedte_cm)
@@ -338,10 +344,15 @@ export function sortPieces(pieces: SnijplanPiece[]): SnijplanPiece[] {
     // 2. Grootste oppervlak eerst (bij gelijke hoogte).
     if (b.area_cm2 !== a.area_cm2) return b.area_cm2 - a.area_cm2
 
-    // 3. Vroegste afleverdatum als tie-breaker.
-    const dateA = a.afleverdatum ?? '9999-12-31'
-    const dateB = b.afleverdatum ?? '9999-12-31'
-    return dateA < dateB ? -1 : dateA > dateB ? 1 : 0
+    // 3. Effectieve deadline: NULL = vandaag (ASAP).
+    const dateA = a.afleverdatum ?? vandaag
+    const dateB = b.afleverdatum ?? vandaag
+    if (dateA !== dateB) return dateA < dateB ? -1 : 1
+
+    // 4. Bij gelijke datum: echte deadline vóór NULL (geen deadline verdringen).
+    const nullA = a.afleverdatum == null ? 1 : 0
+    const nullB = b.afleverdatum == null ? 1 : 0
+    return nullA - nullB
   })
 }
 

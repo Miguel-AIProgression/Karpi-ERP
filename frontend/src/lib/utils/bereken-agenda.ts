@@ -214,12 +214,20 @@ export function berekenAgenda(
   // leverdatum → kwaliteit → kleur → rolnummer. Zo staan rollen van dezelfde
   // kwaliteit aaneengesloten in de agenda (gunstig voor wisseltijd) en klopt
   // de volgorde 1-op-1 met wat de planner in de Lijst ziet.
+  //
+  // Rol zonder afgesproken leverdatum (alleen NULL-stukken): behandelen we
+  // als 'vandaag' voor de sort — wens is zsm snijden, dus niet achteraan
+  // stoppen. Tie-break daaronder geeft rollen mét deadline voorrang bij
+  // gelijke datum, zodat we nooit een afspraak verdringen.
+  const vandaagIso = new Date().toISOString().slice(0, 10)
   const groepen = Array.from(map.values()).sort((a, b) => {
-    if (a.vroegsteLeverdatum !== b.vroegsteLeverdatum) {
-      if (!a.vroegsteLeverdatum) return 1
-      if (!b.vroegsteLeverdatum) return -1
-      return a.vroegsteLeverdatum.localeCompare(b.vroegsteLeverdatum)
-    }
+    const aD = a.vroegsteLeverdatum ?? vandaagIso
+    const bD = b.vroegsteLeverdatum ?? vandaagIso
+    if (aD !== bD) return aD.localeCompare(bD)
+    // Bij gelijke effectieve datum: echte deadline vóór NULL.
+    const nullA = a.vroegsteLeverdatum == null ? 1 : 0
+    const nullB = b.vroegsteLeverdatum == null ? 1 : 0
+    if (nullA !== nullB) return nullA - nullB
     const k = a.kwaliteitCode.localeCompare(b.kwaliteitCode)
     if (k !== 0) return k
     const c = a.kleurCode.localeCompare(b.kleurCode)
