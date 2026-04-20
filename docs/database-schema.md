@@ -460,6 +460,7 @@ Configuratie per `type_bewerking` voor de confectie-planning (minuten per strekk
 | type_bewerking | TEXT PK | 'breedband', 'smalband', 'feston', 'smalfeston', 'locken', 'volume afwerking', 'stickeren' |
 | minuten_per_meter | NUMERIC(6,2) NOT NULL | Tijd per strekkende meter |
 | wisseltijd_minuten | INTEGER NOT NULL DEFAULT 5 | Pakken + wegleggen volgend stuk |
+| parallelle_werkplekken | INTEGER NOT NULL DEFAULT 1 | Aantal parallelle werkplekken. Planning rekent beschikbare minuten × dit getal per week. |
 | actief | BOOLEAN NOT NULL DEFAULT true | False = type wordt niet gepland (bv. stickeren) |
 | bijgewerkt_op | TIMESTAMPTZ DEFAULT NOW() | Auto-update via trigger `set_bijgewerkt_op()` |
 

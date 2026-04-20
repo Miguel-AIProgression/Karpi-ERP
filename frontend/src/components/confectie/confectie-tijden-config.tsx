@@ -11,7 +11,7 @@ export function ConfectieTijdenConfig() {
   const totaal = werktijden?.length ?? 0
   const actief = werktijden?.filter((w) => w.actief).length ?? 0
 
-  function patch(type: string, velden: Partial<Pick<ConfectieWerktijd, 'minuten_per_meter' | 'wisseltijd_minuten' | 'actief'>>) {
+  function patch(type: string, velden: Partial<Pick<ConfectieWerktijd, 'minuten_per_meter' | 'wisseltijd_minuten' | 'parallelle_werkplekken' | 'actief'>>) {
     update.mutate({ type_bewerking: type, velden })
   }
 
@@ -38,6 +38,7 @@ export function ConfectieTijdenConfig() {
                   <th className="py-2 px-3">Type bewerking</th>
                   <th className="py-2 px-3 w-40">Minuten / meter</th>
                   <th className="py-2 px-3 w-40">Wisseltijd (min)</th>
+                  <th className="py-2 px-3 w-28">Werkplekken</th>
                   <th className="py-2 px-3 w-24">Actief</th>
                 </tr>
               </thead>
@@ -73,6 +74,21 @@ export function ConfectieTijdenConfig() {
                           }
                         }}
                         className="w-28 px-2 py-1 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
+                      />
+                    </td>
+                    <td className="py-2 px-3">
+                      <input
+                        type="number"
+                        min={1}
+                        step={1}
+                        defaultValue={w.parallelle_werkplekken}
+                        onBlur={(e) => {
+                          const val = parseInt(e.target.value, 10)
+                          if (Number.isFinite(val) && val >= 1 && val !== w.parallelle_werkplekken) {
+                            patch(w.type_bewerking, { parallelle_werkplekken: val })
+                          }
+                        }}
+                        className="w-20 px-2 py-1 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
                       />
                     </td>
                     <td className="py-2 px-3">

@@ -31,6 +31,7 @@ export interface ConfectieWerktijd {
   type_bewerking: string
   minuten_per_meter: number
   wisseltijd_minuten: number
+  parallelle_werkplekken: number
   actief: boolean
   bijgewerkt_op: string | null
 }
@@ -79,7 +80,7 @@ export async function afrondConfectie({ snijplan_id, afgerond, ingepakt, locatie
 
 export async function updateConfectieWerktijd(
   type_bewerking: string,
-  velden: Partial<Pick<ConfectieWerktijd, 'minuten_per_meter' | 'wisseltijd_minuten' | 'actief'>>,
+  velden: Partial<Pick<ConfectieWerktijd, 'minuten_per_meter' | 'wisseltijd_minuten' | 'parallelle_werkplekken' | 'actief'>>,
 ): Promise<ConfectieWerktijd> {
   const { data, error } = await supabase
     .from('confectie_werktijden')
