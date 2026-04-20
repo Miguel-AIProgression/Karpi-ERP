@@ -168,6 +168,27 @@ async function zoekOpKarpi(supabase: SupabaseClient, codes: string[]): Promise<s
   return data && data.length > 0 ? data[0].artikelnr : null
 }
 
+/**
+ * Vind het generieke maatwerk-artikel voor een kwaliteit+kleur. Karpi-conventie:
+ * de omschrijving is `{KWALITEIT}{KLEUR}MAATWERK` (bv. "LAGO19MAATWERK" →
+ * artikelnr 553199998). Gebruikt zodat maatwerk-regels toch aan een product
+ * hangen voor voorraad/facturatie, terwijl is_maatwerk=true + maatwerk-dims
+ * de uniekheid bewaren.
+ */
+async function zoekMaatwerkProduct(
+  supabase: SupabaseClient,
+  kwaliteit: string,
+  kleur: string,
+): Promise<string | null> {
+  const pattern = `${kwaliteit}${kleur}MAATWERK`
+  const { data } = await supabase
+    .from('producten')
+    .select('artikelnr')
+    .ilike('omschrijving', pattern)
+    .limit(1)
+  return data && data.length > 0 ? data[0].artikelnr : null
+}
+
 async function zoekViaParsing(supabase: SupabaseClient, row: LightspeedOrderRow): Promise<string | null> {
   const { basis, kleur } = parseTitel(row.productTitle ?? '')
   const afm = parseAfmeting(row.variantTitle ?? '') ?? parseAfmeting(row.productTitle ?? '')
@@ -238,8 +259,12 @@ export async function matchProduct(
         const gekozenKwaliteit = artcode.kwaliteit && kwaliteitCodes.includes(artcode.kwaliteit)
           ? artcode.kwaliteit
           : kwaliteitCodes[0]
+        // Koppel aan generiek maatwerk-artikel `{KWALITEIT}{KLEUR}MAATWERK`
+        // zodat voorraad/facturatie een artikelnr heeft; dims zitten in
+        // maatwerk_lengte/breedte_cm.
+        const maatwerkArtikelnr = await zoekMaatwerkProduct(supabase, gekozenKwaliteit, kleur)
         return {
-          artikelnr: null,
+          artikelnr: maatwerkArtikelnr,
           matchedOn: 'maatwerk',
           unmatchedReden: DURCHMESSER_PATROON.test(titleBlobEarly) ? 'durchmesser' : 'wunschgrosse',
           is_maatwerk: true,
@@ -280,11 +305,16 @@ export async function matchProduct(
         }
 
         // Maat aanwezig maar geen standaard artikel → maatwerk
+        const artcode2 = parseArticleCode(row.articleCode)
+        const gekozenKwaliteit2 = artcode2.kwaliteit && kwaliteitCodes.includes(artcode2.kwaliteit)
+          ? artcode2.kwaliteit
+          : kwaliteitCodes[0]
+        const maatwerkArtikelnr2 = await zoekMaatwerkProduct(supabase, gekozenKwaliteit2, kleur)
         return {
-          artikelnr: null,
+          artikelnr: maatwerkArtikelnr2,
           matchedOn: 'maatwerk',
           is_maatwerk: true,
-          maatwerk_kwaliteit_code: kwaliteitCodes[0],
+          maatwerk_kwaliteit_code: gekozenKwaliteit2,
           maatwerk_kleur_code: kleur,
         }
       }
@@ -369,13 +399,17 @@ export async function matchProduct(
       const hits = matchAliasesViaPrefix(naam, (aliasRows ?? []) as Array<{ benaming: string; kwaliteit_code: string }>)
       if (hits.length > 0) kwaliteit = hits[0].kwaliteit_code
     }
+    const finaleKleur = kleurUitTitel ?? artcode.kleur
+    const maatwerkArtikelnr3 = kwaliteit && finaleKleur
+      ? await zoekMaatwerkProduct(supabase, kwaliteit, finaleKleur)
+      : null
     return {
-      artikelnr: null,
+      artikelnr: maatwerkArtikelnr3,
       matchedOn: 'maatwerk',
       unmatchedReden,
       is_maatwerk: true,
       maatwerk_kwaliteit_code: kwaliteit,
-      maatwerk_kleur_code: kleurUitTitel ?? artcode.kleur,
+      maatwerk_kleur_code: finaleKleur,
     }
   }
   return { artikelnr: null, matchedOn: 'geen', unmatchedReden }

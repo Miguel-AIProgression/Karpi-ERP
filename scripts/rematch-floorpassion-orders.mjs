@@ -160,6 +160,14 @@ async function zoekOpProductenKol(kol, waarden) {
   return rows?.[0]?.artikelnr ?? null
 }
 
+// Generiek maatwerk-artikel per kwaliteit+kleur (omschrijving '{KW}{KL}MAATWERK')
+async function zoekMaatwerkProduct(kwaliteit, kleur) {
+  if (!kwaliteit || !kleur) return null
+  const pattern = `${kwaliteit}${kleur}MAATWERK`
+  const rows = await sbGet(`/rest/v1/producten?omschrijving=ilike.${encodeURIComponent(pattern)}&select=artikelnr&limit=1`)
+  return rows?.[0]?.artikelnr ?? null
+}
+
 async function matchProductInline(row, debiteurNr, aliases) {
   // Klanteigen_namen path
   if (debiteurNr && row.productTitle?.trim()) {
@@ -180,8 +188,9 @@ async function matchProductInline(row, debiteurNr, aliases) {
         const gekozenKwaliteit = artcode.kwaliteit && kwaliteitCodes.includes(artcode.kwaliteit)
           ? artcode.kwaliteit
           : kwaliteitCodes[0]
+        const maatwerkArt = await zoekMaatwerkProduct(gekozenKwaliteit, kleur)
         return {
-          artikelnr: null, matchedOn: 'maatwerk', is_maatwerk: true,
+          artikelnr: maatwerkArt, matchedOn: 'maatwerk', is_maatwerk: true,
           unmatchedReden: DURCH_RE.test(blob) ? 'durchmesser' : 'wunschgrosse',
           maatwerk_kwaliteit_code: gekozenKwaliteit, maatwerk_kleur_code: kleur,
         }
@@ -198,9 +207,14 @@ async function matchProductInline(row, debiteurNr, aliases) {
           if (rs?.length > 0) return { artikelnr: rs[0].artikelnr, matchedOn: 'alias' }
         }
         // Maat aanwezig, geen standaard artikel → maatwerk
+        const artcode2 = parseArticleCode(row.articleCode)
+        const gekozenKwaliteit2 = artcode2.kwaliteit && kwaliteitCodes.includes(artcode2.kwaliteit)
+          ? artcode2.kwaliteit
+          : kwaliteitCodes[0]
+        const maatwerkArt2 = await zoekMaatwerkProduct(gekozenKwaliteit2, kleur)
         return {
-          artikelnr: null, matchedOn: 'maatwerk', is_maatwerk: true,
-          maatwerk_kwaliteit_code: kwaliteitCodes[0], maatwerk_kleur_code: kleur,
+          artikelnr: maatwerkArt2, matchedOn: 'maatwerk', is_maatwerk: true,
+          maatwerk_kwaliteit_code: gekozenKwaliteit2, maatwerk_kleur_code: kleur,
         }
       }
       // Geen maat → eerste hit op kwaliteit + kleur
@@ -241,9 +255,11 @@ async function matchProductInline(row, debiteurNr, aliases) {
       const hits = matchAliases(naam, aliases)
       if (hits.length > 0) kwaliteit = hits[0].kwaliteit_code
     }
+    const finaleKleur = kUit ?? artcode.kleur
+    const maatwerkArt = await zoekMaatwerkProduct(kwaliteit, finaleKleur)
     return {
-      artikelnr: null, matchedOn: 'maatwerk', is_maatwerk: true, unmatchedReden: reden,
-      maatwerk_kwaliteit_code: kwaliteit, maatwerk_kleur_code: kUit ?? artcode.kleur,
+      artikelnr: maatwerkArt, matchedOn: 'maatwerk', is_maatwerk: true, unmatchedReden: reden,
+      maatwerk_kwaliteit_code: kwaliteit, maatwerk_kleur_code: finaleKleur,
     }
   }
   return { artikelnr: null, matchedOn: 'geen', unmatchedReden: reden }
