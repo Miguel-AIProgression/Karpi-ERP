@@ -204,8 +204,14 @@ export function KwaliteitFirstSelector({
   // Maatwerk heeft een apart artikel met 'maatwerk' in de omschrijving
   // (bijv. DANT23MAATWERK, LORA13MAATWERK). Zoek dat direct in de DB.
   const fetchKlantPrijs = useCallback(async (kleur: KleurOptie | null) => {
-    if (!prijslijstNr || !kleur || !selectedKwaliteit) {
+    if (!kleur || !selectedKwaliteit) {
       setKlantM2Prijs(null)
+      return
+    }
+    // Geen prijslijst → val direct terug op maatwerk_m2_prijzen
+    if (!prijslijstNr) {
+      const kwaliteitPrijs = await fetchKwaliteitM2Prijs(selectedKwaliteit.code)
+      setKlantM2Prijs(kwaliteitPrijs)
       return
     }
     // Directe DB-query naar maatwerk-artikel voor deze kwaliteit+kleur
@@ -240,7 +246,7 @@ export function KwaliteitFirstSelector({
   useEffect(() => {
     setKlantM2Prijs(null)
     if (selectedKleur) {
-      fetchKlantPrijs(selectedKleur)
+      fetchKlantPrijs(selectedKleur).catch((e) => console.error('[maatwerk prijs] fout:', e))
     }
   }, [selectedKleur, fetchKlantPrijs])
 
