@@ -15,7 +15,7 @@
 //   6. productTitle omschrijving ilike — alleen unieke match
 
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { collectExtraTexts, type LightspeedOrderRow } from './lightspeed-client.ts'
+import { collectExtraTexts, parseMaatwerkDims, type LightspeedOrderRow } from './lightspeed-client.ts'
 
 export type MatchBron =
   | 'verzend'
@@ -204,6 +204,14 @@ export async function matchProduct(
     const variantNumeriek = row.variantTitle?.trim().match(/^\d{1,3}$/)?.[0] ?? null
     const kleur = kleurUitTitel ?? variantNumeriek ?? null
 
+    // Expliciet maatwerk-signaal: "Op maat" / "Wunschgröße" / "Custom size".
+    // Deze regels moeten ALTIJD maatwerk worden, óók als de dims toevallig
+    // overeenkomen met een standaard artikel (klant heeft bewust "Op maat"
+    // gekozen, dat is een snijplan-opdracht). Nooit doorvallen naar
+    // "eerste hit op kwaliteit+kleur" want dat matcht willekeurig.
+    const titleBlobEarly = `${row.productTitle ?? ''} ${row.variantTitle ?? ''}`
+    const isExplicietMaatwerk = WUNSCHGROSSE_PATROON.test(titleBlobEarly) || DURCHMESSER_PATROON.test(titleBlobEarly)
+
     const { data: aliasRows } = await supabase
       .from('klanteigen_namen')
       .select('benaming, kwaliteit_code')
@@ -214,12 +222,31 @@ export async function matchProduct(
     if (aliases.length > 0 && kleur) {
       const kwaliteitCodes = aliases.map((a) => a.kwaliteit_code)
 
-      // Maat uit variantTitle, productTitle én customFields (bijv. "Afmeting: 120x120 (cm)")
-      const sizeRaw = [
-        row.variantTitle,
-        row.productTitle,
-        ...collectExtraTexts(row),
-      ].join(' ').match(/(\d+)\s*[xX×]\s*(\d+)/)
+      // Maat uit variantTitle, productTitle, articleCode én customFields (rechthoek + rond)
+      const dims = parseMaatwerkDims(row)
+      const sizeRaw = dims ? [String(dims.lengte), String(dims.breedte)] as [string, string] : null
+
+      // Bij expliciet maatwerk ALTIJD maatwerk-record (afmeting kan ontbreken
+      // als customFields tijdelijk niet binnenkwamen — dan is_maatwerk=true
+      // met lege dims en backfill-script vult later aan).
+      if (isExplicietMaatwerk) {
+        // Kwaliteit disambiguïtieit: als meerdere aliases bestaan voor dezelfde
+        // benaming (bijv. ROSS → GLAM/LAGO/LAMI/…), geeft articleCode de
+        // definitieve keuze aan. "LAGO19MAATWERK" → LAGO. Val terug op aliases[0]
+        // als articleCode geen geldige alias aanwijst.
+        const artcode = parseArticleCode(row.articleCode)
+        const gekozenKwaliteit = artcode.kwaliteit && kwaliteitCodes.includes(artcode.kwaliteit)
+          ? artcode.kwaliteit
+          : kwaliteitCodes[0]
+        return {
+          artikelnr: null,
+          matchedOn: 'maatwerk',
+          unmatchedReden: DURCHMESSER_PATROON.test(titleBlobEarly) ? 'durchmesser' : 'wunschgrosse',
+          is_maatwerk: true,
+          maatwerk_kwaliteit_code: gekozenKwaliteit,
+          maatwerk_kleur_code: kleur,
+        }
+      }
 
       if (sizeRaw) {
         // Niet-rechthoekige vorm → altijd maatwerk, nooit koppelen aan standaard artikel.

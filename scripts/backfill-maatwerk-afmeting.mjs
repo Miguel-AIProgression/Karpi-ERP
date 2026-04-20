@@ -49,9 +49,11 @@ function parseArticleCode(code) {
 }
 
 function collectTexts(row) {
+  const fields = Array.isArray(row.customFields) ? row.customFields : []
   const out = []
-  for (const f of row.customFields ?? []) {
-    for (const v of f.values ?? []) {
+  for (const f of fields) {
+    const values = Array.isArray(f.values) ? f.values : []
+    for (const v of values) {
       if (v.value != null && typeof v.value === 'string') out.push(v.value)
     }
   }

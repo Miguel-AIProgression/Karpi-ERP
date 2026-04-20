@@ -18,7 +18,7 @@ import {
   createClient as createLightspeed,
   extractShippingAddress,
   extractBillingAddress,
-  collectExtraTexts,
+  parseMaatwerkDims,
   type LightspeedShop,
   type LightspeedOrder,
   type LightspeedOrderRow,
@@ -74,14 +74,10 @@ async function buildRegels(
     let maatwerk_lengte_cm: number | null = null
     let maatwerk_breedte_cm: number | null = null
     if (match.is_maatwerk) {
-      const afmetingMatch = [
-        row.variantTitle,
-        row.productTitle,
-        ...collectExtraTexts(row),
-      ].join(' ').match(/(\d+)\s*[xX×]\s*(\d+)/)
-      if (afmetingMatch) {
-        maatwerk_lengte_cm = parseInt(afmetingMatch[1])
-        maatwerk_breedte_cm = parseInt(afmetingMatch[2])
+      const dims = parseMaatwerkDims(row)
+      if (dims) {
+        maatwerk_lengte_cm = dims.lengte
+        maatwerk_breedte_cm = dims.breedte
       }
     }
 

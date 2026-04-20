@@ -48,7 +48,12 @@ const VERZEND_RE = /verzend|versand|shipping/i
 const MUSTER_RE = /muster|sample|gratis\s+staal/i
 const WUNSCH_RE = /wunschgr[öo]ß?e|op\s+maat|custom\s+size|volgens\s+tekening/i
 const DURCH_RE = /durchmesser|diameter|rond\s+\d|rund\s+\d/i
-const AFM_RE = /(\d+)\s*[xX×]\s*(\d+)/
+// Rechthoek (L x B) — niet-RND, binnen 20-900 cm range
+const RECT_RE = /(\d{2,3})\s*[xX×]\s*(\d{2,3})(?!\s*RND)/
+// Rond — via "Durchmesser N", "N rnd/rond/rund", of articleCode "XX{N}RND"
+const DURCH_NUM_RE = /durchmesser[\s:]*(\d{2,3})/i
+const RND_WORD_RE = /(\d{2,3})\s*(?:rnd|rond|rund)\b/i
+const CODE_RND_RE = /XX(\d{2,3})RND/i
 
 function splitNaamKleur(title) {
   const t = (title ?? '').trim()
@@ -93,9 +98,12 @@ function parseArticleCode(code) {
 }
 
 function collectTexts(row) {
+  // Lightspeed retourneert soms `customFields: false` — Array.isArray-guard
+  const fields = Array.isArray(row.customFields) ? row.customFields : []
   const out = []
-  for (const f of row.customFields ?? []) {
-    for (const v of f.values ?? []) {
+  for (const f of fields) {
+    const values = Array.isArray(f.values) ? f.values : []
+    for (const v of values) {
       if (v.value != null && typeof v.value === 'string') out.push(v.value)
     }
   }
@@ -103,10 +111,32 @@ function collectTexts(row) {
 }
 
 function parseAfmeting(row) {
-  const hay = [row.variantTitle, row.productTitle, ...collectTexts(row)].join(' ')
-  const m = hay.match(AFM_RE)
-  if (!m) return null
-  return [parseInt(m[1], 10), parseInt(m[2], 10)]
+  const hay = [row.variantTitle, row.productTitle, row.articleCode, ...collectTexts(row)]
+    .filter(Boolean).join(' ')
+
+  // Rechthoek
+  const rect = hay.match(RECT_RE)
+  if (rect) {
+    const l = parseInt(rect[1], 10), b = parseInt(rect[2], 10)
+    if (l >= 20 && b >= 20 && l <= 900 && b <= 900) return [l, b, false]
+  }
+  // Rond — Durchmesser / rnd/rond/rund / articleCode XX{N}RND
+  const dNum = hay.match(DURCH_NUM_RE)
+  if (dNum) {
+    const d = parseInt(dNum[1], 10)
+    if (d >= 40 && d <= 900) return [d, d, true]
+  }
+  const rnd = hay.match(RND_WORD_RE)
+  if (rnd) {
+    const d = parseInt(rnd[1], 10)
+    if (d >= 40 && d <= 900) return [d, d, true]
+  }
+  const code = (row.articleCode ?? '').match(CODE_RND_RE)
+  if (code) {
+    const d = parseInt(code[1], 10)
+    if (d >= 40 && d <= 900) return [d, d, true]
+  }
+  return null
 }
 
 function classify(row) {
@@ -137,8 +167,26 @@ async function matchProductInline(row, debiteurNr, aliases) {
     const variantNum = row.variantTitle?.trim().match(/^\d{1,3}$/)?.[0] ?? null
     const kleur = kUit ?? variantNum ?? null
     const hits = matchAliases(naam, aliases)
+    // Expliciet maatwerk-signaal — zie product-matcher.ts
+    const blob = `${row.productTitle ?? ''} ${row.variantTitle ?? ''}`
+    const isExplicietMaatwerk = WUNSCH_RE.test(blob) || DURCH_RE.test(blob)
+
     if (hits.length > 0 && kleur) {
       const kwaliteitCodes = hits.map((h) => h.kwaliteit_code)
+
+      if (isExplicietMaatwerk) {
+        // Kwaliteit-disambiguïteit via articleCode (bijv. "LAGO19MAATWERK" → LAGO)
+        const artcode = parseArticleCode(row.articleCode)
+        const gekozenKwaliteit = artcode.kwaliteit && kwaliteitCodes.includes(artcode.kwaliteit)
+          ? artcode.kwaliteit
+          : kwaliteitCodes[0]
+        return {
+          artikelnr: null, matchedOn: 'maatwerk', is_maatwerk: true,
+          unmatchedReden: DURCH_RE.test(blob) ? 'durchmesser' : 'wunschgrosse',
+          maatwerk_kwaliteit_code: gekozenKwaliteit, maatwerk_kleur_code: kleur,
+        }
+      }
+
       const afm = parseAfmeting(row)
       if (afm) {
         const [a, b] = afm
@@ -248,10 +296,29 @@ async function updateRegel(id, patch) {
 async function main() {
   console.log(`Mode: ${DRY_RUN ? 'DRY-RUN' : 'APPLY'}\n`)
 
-  // Alle unmatched regels op webshop-orders
-  const regels = await sbGet(
-    `/rest/v1/order_regels?artikelnr=is.null&select=id,order_id,regelnummer,omschrijving,omschrijving_2,is_maatwerk,maatwerk_kwaliteit_code,maatwerk_kleur_code,maatwerk_lengte_cm,maatwerk_breedte_cm`,
+  // Kandidaat-regels: (a) unmatched (artikelnr IS NULL) én (b) foutief
+  // gematcht op standaard artikel terwijl variantTitle "Op maat"/"Wunschgröße"
+  // was (is_maatwerk=false, maar omschrijving_2 geeft maatwerk-signaal).
+  const SELECT = 'id,order_id,regelnummer,omschrijving,omschrijving_2,artikelnr,is_maatwerk,maatwerk_kwaliteit_code,maatwerk_kleur_code,maatwerk_lengte_cm,maatwerk_breedte_cm'
+  const unmatched = await sbGet(
+    `/rest/v1/order_regels?artikelnr=is.null&select=${SELECT}`,
   )
+  // ilike-patroon is case-insensitive; ö/ß worden expliciet gematcht via 2 varianten
+  const opMaatPatterns = ['*Op maat*', '*op maat*', '*Wunschgr*', '*wunschgr*', '*Durchmesser*', '*durchmesser*']
+  const opMaatRegels = []
+  for (const p of opMaatPatterns) {
+    const rs = await sbGet(
+      `/rest/v1/order_regels?is_maatwerk=eq.false&omschrijving_2=like.${encodeURIComponent(p)}&select=${SELECT}`,
+    )
+    opMaatRegels.push(...rs)
+  }
+  const alleIds = new Set()
+  const regels = []
+  for (const r of [...unmatched, ...opMaatRegels]) {
+    if (alleIds.has(r.id)) continue
+    alleIds.add(r.id)
+    regels.push(r)
+  }
   const orderIds = [...new Set(regels.map((r) => r.order_id))]
   const orders = await sbGet(
     `/rest/v1/orders?id=in.(${orderIds.join(',')})&bron_systeem=eq.lightspeed&select=id,order_nr,debiteur_nr,bron_shop,bron_order_id`,
@@ -309,7 +376,7 @@ async function main() {
         maatwerk_breedte_cm: afm ? afm[1] : null,
       }
 
-      const zelfdeArt = (patch.artikelnr ?? null) === null && r.artikelnr == null
+      const zelfdeArt = (patch.artikelnr ?? null) === (r.artikelnr ?? null)
       const zelfdeOms = nieuweOms === r.omschrijving
       const zelfdeMW = patch.is_maatwerk === (r.is_maatwerk === true)
         && (patch.maatwerk_kwaliteit_code ?? null) === (r.maatwerk_kwaliteit_code ?? null)

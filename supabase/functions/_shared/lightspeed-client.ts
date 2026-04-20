@@ -177,12 +177,65 @@ export function createClient(shop: LightspeedShop): LightspeedClient {
  */
 export function collectExtraTexts(row: LightspeedOrderRow): string[] {
   const texts: string[] = []
-  for (const field of row.customFields ?? []) {
-    for (const v of field.values ?? []) {
+  // Lightspeed retourneert soms `customFields: false` (PHP-style) i.p.v. []/null.
+  // `?? []` dekt die niet — Array.isArray garandeert iterable.
+  const fields = Array.isArray(row.customFields) ? row.customFields : []
+  for (const field of fields) {
+    const values = Array.isArray(field.values) ? field.values : []
+    for (const v of values) {
       if (v.value != null && typeof v.value === 'string') texts.push(v.value)
     }
   }
   return texts
+}
+
+/**
+ * Haal maatwerk-afmeting uit een Lightspeed-orderregel. Bekijkt variantTitle,
+ * productTitle, articleCode én customFields-tekst. Ondersteunt:
+ *   - Rechthoek: "270x140", "285 x 205", "140×200", "Afmeting: 270x140 (cm)"
+ *   - Rond (Durchmesser): "Durchmesser 300 cm", "220rnd", "170 rond",
+ *                         articleCode-suffix "XX{NNN}RND" (bv. "CISC15XX250RND")
+ *
+ * Retourneert `{ lengte, breedte, rond }` waarbij bij rond lengte=breedte=diameter.
+ * Null als geen afmeting gevonden.
+ */
+export function parseMaatwerkDims(
+  row: LightspeedOrderRow,
+): { lengte: number; breedte: number; rond: boolean } | null {
+  const hay = [row.variantTitle, row.productTitle, row.articleCode, ...collectExtraTexts(row)]
+    .filter(Boolean)
+    .join(' ')
+
+  // 1) Rechthoek — LxB of BxL
+  const rect = hay.match(/(\d{2,3})\s*[xX×]\s*(\d{2,3})(?!\s*RND)/)
+  if (rect) {
+    const l = Number(rect[1]); const b = Number(rect[2])
+    if (l >= 20 && b >= 20 && l <= 900 && b <= 900) {
+      return { lengte: l, breedte: b, rond: false }
+    }
+  }
+
+  // 2) Rond — diverse notaties
+  //    "Durchmesser 300 cm" / "Durchmesser: 250"
+  const durch = hay.match(/durchmesser[\s:]*(\d{2,3})/i)
+  if (durch) {
+    const d = Number(durch[1])
+    if (d >= 40 && d <= 900) return { lengte: d, breedte: d, rond: true }
+  }
+  //    "220rnd" / "170 rond" / "250 rund"
+  const rnd = hay.match(/(\d{2,3})\s*(?:rnd|rond|rund)\b/i)
+  if (rnd) {
+    const d = Number(rnd[1])
+    if (d >= 40 && d <= 900) return { lengte: d, breedte: d, rond: true }
+  }
+  //    articleCode-suffix "XX250RND"
+  const codeRnd = (row.articleCode ?? '').match(/XX(\d{2,3})RND/i)
+  if (codeRnd) {
+    const d = Number(codeRnd[1])
+    if (d >= 40 && d <= 900) return { lengte: d, breedte: d, rond: true }
+  }
+
+  return null
 }
 
 // Haal orderadres-snapshot op in RugFlow-formaat.
