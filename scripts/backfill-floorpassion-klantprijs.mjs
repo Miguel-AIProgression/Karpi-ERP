@@ -1,18 +1,17 @@
 /**
- * Backfill klantprijs voor bestaande Floorpassion webshop-orderregels.
+ * Backfill klantprijs voor ALLE webshop-orderregels (bron_systeem=lightspeed).
  *
  * Waarom: tot nu toe landde de Lightspeed `priceIncl` (consumentprijs) op
- * `order_regels.prijs`. Karpi factureert aan Floorpassion, dus de prijs moet
- * uit `prijslijst_regels` komen (debiteur.prijslijst_nr; voor maatwerk ×
- * oppervlak in m²). Dit script herrekent `prijs` + `bedrag` voor alle
- * webshop-orders van een bepaalde debiteur.
+ * `order_regels.prijs`. Karpi factureert aan de debiteur die de order plaatst,
+ * dus de prijs moet uit `prijslijst_regels` komen (via `debiteuren.prijslijst_nr`;
+ * voor maatwerk × oppervlak in m²). Dit script herrekent `prijs` + `bedrag`
+ * voor elke webshop-order, prijslijst opgezocht per debiteur.
  *
  * Gebruik:
- *   node scripts/backfill-floorpassion-klantprijs.mjs [--dry-run]
+ *   node scripts/backfill-floorpassion-klantprijs.mjs [--dry-run] [--debiteur=NR]
  *
  * Env:
  *   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (auto-geladen uit .env)
- *   FLOORPASSION_DEBITEUR_NR (default 260000)
  */
 
 import { readFileSync, existsSync } from 'node:fs'
@@ -32,8 +31,9 @@ for (const f of ['supabase/functions/.env', 'frontend/.env']) {
 
 const SUPABASE_URL = process.env.SUPABASE_URL
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY
-const DEBITEUR_NR = Number(process.env.FLOORPASSION_DEBITEUR_NR ?? 260000)
 const DRY_RUN = process.argv.includes('--dry-run')
+const debArg = process.argv.find((a) => a.startsWith('--debiteur='))
+const DEBITEUR_FILTER = debArg ? Number(debArg.slice('--debiteur='.length)) : null
 
 if (!SUPABASE_URL || !SERVICE_ROLE) {
   console.error('SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY verplicht')
@@ -63,29 +63,30 @@ function oppervlakM2(lengte, breedte) {
 }
 
 async function main() {
-  console.log(`Mode: ${DRY_RUN ? 'DRY-RUN' : 'APPLY'}  debiteur: ${DEBITEUR_NR}\n`)
+  console.log(`Mode: ${DRY_RUN ? 'DRY-RUN' : 'APPLY'}${DEBITEUR_FILTER ? `  debiteur-filter: ${DEBITEUR_FILTER}` : '  alle debiteuren'}\n`)
 
-  // 1) Prijslijst van de debiteur
-  const deb = (await sbGet(`/rest/v1/debiteuren?debiteur_nr=eq.${DEBITEUR_NR}&select=prijslijst_nr,naam`))[0]
-  if (!deb?.prijslijst_nr) {
-    console.error(`Geen prijslijst_nr voor debiteur ${DEBITEUR_NR} (${deb?.naam ?? '?'})`)
-    process.exit(1)
-  }
-  const prijslijstNr = deb.prijslijst_nr
-  console.log(`Debiteur: ${deb.naam}, prijslijst ${prijslijstNr}`)
-
-  // 2) Alle webshop-orders van deze debiteur
+  // 1) Alle webshop-orders (evt. gefilterd op debiteur)
+  const filter = DEBITEUR_FILTER ? `&debiteur_nr=eq.${DEBITEUR_FILTER}` : ''
   const orders = await sbGet(
-    `/rest/v1/orders?debiteur_nr=eq.${DEBITEUR_NR}&bron_systeem=eq.lightspeed&select=id,order_nr`,
+    `/rest/v1/orders?bron_systeem=eq.lightspeed${filter}&select=id,order_nr,debiteur_nr`,
   )
   if (orders.length === 0) {
     console.log('Geen webshop-orders gevonden.')
     return
   }
-  console.log(`Webshop-orders: ${orders.length}`)
+  const debiteurNrs = [...new Set(orders.map((o) => o.debiteur_nr))]
+  console.log(`Webshop-orders: ${orders.length} over ${debiteurNrs.length} debiteur(en)`)
+
+  // 2) Prijslijst per debiteur ophalen
+  const debRows = await sbGet(
+    `/rest/v1/debiteuren?debiteur_nr=in.(${debiteurNrs.join(',')})&select=debiteur_nr,naam,prijslijst_nr`,
+  )
+  const debMap = new Map(debRows.map((d) => [d.debiteur_nr, d]))
+  for (const d of debRows) {
+    console.log(`  deb ${d.debiteur_nr} (${d.naam}) → prijslijst ${d.prijslijst_nr ?? 'GEEN'}`)
+  }
 
   const orderIds = orders.map((o) => o.id)
-  // Regels in batches ophalen
   const regels = []
   const CHUNK = 100
   for (let i = 0; i < orderIds.length; i += CHUNK) {
@@ -97,15 +98,19 @@ async function main() {
   }
   console.log(`Orderregels: ${regels.length}\n`)
 
-  // 3) Unieke artikelnrs → fetch prijslijst-prijzen + verkoopprijzen in bulk
+  // 3) Unieke artikelnrs in bulk: prijslijsten (per unieke prijslijst_nr) + verkoopprijzen
   const artikelnrs = [...new Set(regels.map((r) => r.artikelnr).filter(Boolean))]
-  const prijslijstMap = new Map()
-  for (let i = 0; i < artikelnrs.length; i += CHUNK) {
-    const ids = artikelnrs.slice(i, i + CHUNK).map(encodeURIComponent).join(',')
-    const rows = await sbGet(
-      `/rest/v1/prijslijst_regels?prijslijst_nr=eq.${prijslijstNr}&artikelnr=in.(${ids})&select=artikelnr,prijs`,
-    )
-    for (const r of rows) prijslijstMap.set(r.artikelnr, Number(r.prijs))
+  const uniekePrijslijsten = [...new Set(debRows.map((d) => d.prijslijst_nr).filter(Boolean))]
+  // Map: `${prijslijst_nr}|${artikelnr}` → prijs
+  const plMap = new Map()
+  for (const pl of uniekePrijslijsten) {
+    for (let i = 0; i < artikelnrs.length; i += CHUNK) {
+      const ids = artikelnrs.slice(i, i + CHUNK).map(encodeURIComponent).join(',')
+      const rows = await sbGet(
+        `/rest/v1/prijslijst_regels?prijslijst_nr=eq.${pl}&artikelnr=in.(${ids})&select=artikelnr,prijs`,
+      )
+      for (const r of rows) plMap.set(`${pl}|${r.artikelnr}`, Number(r.prijs))
+    }
   }
   const verkoopMap = new Map()
   for (let i = 0; i < artikelnrs.length; i += CHUNK) {
@@ -117,16 +122,25 @@ async function main() {
   }
 
   const byOrder = new Map(orders.map((o) => [o.id, o]))
-  const stats = { updated: 0, ongewijzigd: 0, geen_prijs: 0, geen_artikel: 0 }
+  const stats = { updated: 0, ongewijzigd: 0, geen_prijs: 0, geen_artikel: 0, geen_prijslijst: 0 }
 
   for (const r of regels) {
     const o = byOrder.get(r.order_id)
     if (!r.artikelnr) { stats.geen_artikel++; continue }
+    const deb = debMap.get(o.debiteur_nr)
+    const plNr = deb?.prijslijst_nr ?? null
 
-    const basis = prijslijstMap.get(r.artikelnr) ?? verkoopMap.get(r.artikelnr) ?? null
-    if (basis == null) { stats.geen_prijs++; continue }
+    const plKey = plNr ? `${plNr}|${r.artikelnr}` : null
+    const prijslijstPrijs = plKey ? plMap.get(plKey) : undefined
+    const verkoopPrijs = verkoopMap.get(r.artikelnr)
+    const basis = prijslijstPrijs ?? verkoopPrijs ?? null
+    if (basis == null) {
+      if (!plNr) stats.geen_prijslijst++
+      else stats.geen_prijs++
+      continue
+    }
 
-    const bron = prijslijstMap.has(r.artikelnr) ? 'prijslijst' : 'verkoopprijs'
+    const bron = prijslijstPrijs != null ? 'prijslijst' : 'verkoopprijs'
     let nieuwePrijs
     if (r.is_maatwerk && bron === 'prijslijst') {
       const opp = oppervlakM2(r.maatwerk_lengte_cm, r.maatwerk_breedte_cm)
