@@ -68,10 +68,11 @@ interface LaneGroep {
 interface Props {
   weekLabel: string
   lanes: LaneGroep[]
+  volgendeId?: number | null
   onSelect?: (row: ConfectiePlanningForwardRow) => void
 }
 
-export function WeekLijst({ weekLabel, lanes, onSelect }: Props) {
+export function WeekLijst({ weekLabel, lanes, volgendeId, onSelect }: Props) {
   const { jaar, week } = parseIsoWeek(weekLabel)
   const { van, tot } = isoWeekRange(jaar, week)
 
@@ -98,13 +99,23 @@ export function WeekLijst({ weekLabel, lanes, onSelect }: Props) {
       </div>
 
       {nietLeeg.map((laneGroep, i) => (
-        <LaneBlok key={laneGroep.type} laneGroep={laneGroep} onSelect={onSelect} isFirst={i === 0} />
+        <LaneBlok key={laneGroep.type} laneGroep={laneGroep} volgendeId={volgendeId} onSelect={onSelect} isFirst={i === 0} />
       ))}
     </div>
   )
 }
 
-function LaneBlok({ laneGroep, onSelect, isFirst }: { laneGroep: LaneGroep; onSelect?: (row: ConfectiePlanningForwardRow) => void; isFirst: boolean }) {
+function LaneBlok({
+  laneGroep,
+  volgendeId,
+  onSelect,
+  isFirst,
+}: {
+  laneGroep: LaneGroep
+  volgendeId?: number | null
+  onSelect?: (row: ConfectiePlanningForwardRow) => void
+  isFirst: boolean
+}) {
   const rows = sortRows(laneGroep.rows)
 
   return (
@@ -116,7 +127,7 @@ function LaneBlok({ laneGroep, onSelect, isFirst }: { laneGroep: LaneGroep; onSe
       <table className="w-full text-sm">
         <tbody className="divide-y divide-slate-100">
           {rows.map((r) => (
-            <Rij key={r.snijplan_id} row={r} onSelect={onSelect} />
+            <Rij key={r.snijplan_id} row={r} isVolgende={r.snijplan_id === volgendeId} onSelect={onSelect} />
           ))}
         </tbody>
       </table>
@@ -124,7 +135,7 @@ function LaneBlok({ laneGroep, onSelect, isFirst }: { laneGroep: LaneGroep; onSe
   )
 }
 
-function Rij({ row, onSelect }: { row: ConfectiePlanningForwardRow; onSelect?: (row: ConfectiePlanningForwardRow) => void }) {
+function Rij({ row, isVolgende, onSelect }: { row: ConfectiePlanningForwardRow; isVolgende?: boolean; onSelect?: (row: ConfectiePlanningForwardRow) => void }) {
   const gesneden = isGesneden(row)
   const afgerond = !!row.confectie_afgerond_op
   const deadline = confectieDeadline(row.afleverdatum)
@@ -133,10 +144,17 @@ function Rij({ row, onSelect }: { row: ConfectiePlanningForwardRow; onSelect?: (
 
   return (
     <tr
-      className={cn('hover:bg-slate-50', onSelect && 'cursor-pointer')}
+      className={cn(
+        'hover:bg-slate-50',
+        onSelect && 'cursor-pointer',
+        isVolgende && 'bg-emerald-50/70 hover:bg-emerald-100/60',
+      )}
       onClick={onSelect ? () => onSelect(row) : undefined}
     >
-      <td className="py-2 px-4 w-8">
+      <td className="py-2 px-4 w-8 relative">
+        {isVolgende && (
+          <span className="absolute -left-0 top-1/2 -translate-y-1/2 h-full w-1 bg-emerald-500 rounded-r" />
+        )}
         {afgerond ? (
           <CheckCircle2 size={18} className="text-emerald-600" aria-label="Afgerond" />
         ) : gesneden ? (
@@ -146,6 +164,11 @@ function Rij({ row, onSelect }: { row: ConfectiePlanningForwardRow; onSelect?: (
         )}
       </td>
       <td className="py-2 px-2 font-medium tabular-nums whitespace-nowrap">
+        {isVolgende && (
+          <span className="inline-block mr-2 px-1.5 py-0.5 rounded-full bg-emerald-500 text-white text-[10px] font-semibold uppercase tracking-wider align-middle">
+            Volgende
+          </span>
+        )}
         {row.lengte_cm ?? '?'}×{row.breedte_cm ?? '?'} cm
       </td>
       <td className="py-2 px-2 text-slate-700 whitespace-nowrap">

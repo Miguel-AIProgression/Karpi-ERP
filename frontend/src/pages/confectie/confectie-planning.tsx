@@ -56,6 +56,16 @@ export function ConfectiePlanningPage() {
     return lanes.filter((l) => metStukken.has(l))
   }, [werktijdenConfig, teConfectioneren])
 
+  // "Volgende op te pakken" = eerste gesneden stuk over de hele horizon,
+  // gesorteerd op leverdatum (respecteert lane-filter).
+  const volgendeId = useMemo(() => {
+    const gesneden = teConfectioneren
+      .filter((r) => r.snijplan_status === 'Gesneden' || r.snijplan_status === 'In confectie')
+      .filter((r) => !laneFilter || r.type_bewerking === laneFilter)
+      .sort((a, b) => (a.afleverdatum ?? '9999-12-31').localeCompare(b.afleverdatum ?? '9999-12-31'))
+    return gesneden[0]?.snijplan_id ?? null
+  }, [teConfectioneren, laneFilter])
+
   // Groepeer per week, en binnen week per lane (toegepast filter)
   const perWeek = useMemo(() => {
     const map = new Map<string, Map<string, ConfectiePlanningForwardRow[]>>()
@@ -152,6 +162,7 @@ export function ConfectiePlanningPage() {
                 key={weekLabel}
                 weekLabel={weekLabel}
                 lanes={lanes}
+                volgendeId={volgendeId}
                 onSelect={setGeselecteerd}
               />
             )
