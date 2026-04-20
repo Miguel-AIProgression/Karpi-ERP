@@ -17,6 +17,7 @@ import type {
 
 export function ConfectiePlanningPage() {
   const [horizon, setHorizon] = useState<HorizonWeken>(4)
+  const [laneFilter, setLaneFilter] = useState<string | null>(null)
   const [geselecteerd, setGeselecteerd] = useState<ConfectiePlanningForwardRow | null>(null)
   const { data: forward, isLoading: fwLoading } = useConfectiePlanningForward()
   const { data: werktijdenConfig, isLoading: tijdenLoading } = useConfectieWerktijden()
@@ -45,10 +46,21 @@ export function ConfectiePlanningPage() {
     return { teConfectioneren: tc, geenConfectie: gc }
   }, [forward, tijdenMap])
 
-  // Groepeer per week, en binnen week per lane
+  // Actieve lanes (voor filter-tabs), gesorteerd op de configured volgorde
+  const actieveLanes = useMemo(() => {
+    const lanes = (werktijdenConfig ?? [])
+      .filter((w) => w.actief && w.type_bewerking !== 'stickeren')
+      .map((w) => w.type_bewerking)
+    // Alleen lanes die daadwerkelijk stukken hebben in de pijplijn
+    const metStukken = new Set(teConfectioneren.map((r) => r.type_bewerking).filter((t): t is string => !!t))
+    return lanes.filter((l) => metStukken.has(l))
+  }, [werktijdenConfig, teConfectioneren])
+
+  // Groepeer per week, en binnen week per lane (toegepast filter)
   const perWeek = useMemo(() => {
     const map = new Map<string, Map<string, ConfectiePlanningForwardRow[]>>()
     for (const r of teConfectioneren) {
+      if (laneFilter && r.type_bewerking !== laneFilter) continue
       const week = isoWeekKey(r.confectie_startdatum)
       let lanes = map.get(week)
       if (!lanes) {
@@ -61,7 +73,7 @@ export function ConfectiePlanningPage() {
       lanes.set(lane, lijst)
     }
     return map
-  }, [teConfectioneren])
+  }, [teConfectioneren, laneFilter])
 
   const isLoading = fwLoading || tijdenLoading
   const totaal = teConfectioneren.length
@@ -76,9 +88,31 @@ export function ConfectiePlanningPage() {
 
       <ConfectieTabs active="planning" />
 
-      <div className="mb-4 flex items-center gap-3">
-        <span className="text-xs text-slate-500">Horizon:</span>
-        <WeekSelector waarde={horizon} onChange={setHorizon} />
+      <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-3">
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-slate-500">Horizon:</span>
+          <WeekSelector waarde={horizon} onChange={setHorizon} />
+        </div>
+
+        {actieveLanes.length > 0 && (
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-slate-500">Afwerking:</span>
+            <div className="inline-flex rounded-[var(--radius)] border border-slate-200 bg-white p-0.5">
+              <LaneFilterKnop active={laneFilter === null} onClick={() => setLaneFilter(null)}>
+                Alle
+              </LaneFilterKnop>
+              {actieveLanes.map((lane) => (
+                <LaneFilterKnop
+                  key={lane}
+                  active={laneFilter === lane}
+                  onClick={() => setLaneFilter(lane)}
+                >
+                  <span className="capitalize">{lane}</span>
+                </LaneFilterKnop>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {isLoading ? (
@@ -97,8 +131,22 @@ export function ConfectiePlanningPage() {
             const lanesMap = perWeek.get(weekLabel)
             if (!lanesMap || lanesMap.size === 0) return null
             const lanes = Array.from(lanesMap.entries())
-              .map(([type, rows]) => ({ type, rows }))
-              .sort((a, b) => a.type.localeCompare(b.type))
+              .map(([type, rows]) => ({
+                type,
+                rows,
+                vroegsteDeadline: rows.reduce<string>(
+                  (min, r) => (r.afleverdatum && (!min || r.afleverdatum < min) ? r.afleverdatum : min),
+                  '',
+                ),
+              }))
+              .sort((a, b) => {
+                // Lanes met vroegste deadline bovenaan; zonder deadline achteraan
+                const da = a.vroegsteDeadline || '9999-12-31'
+                const db = b.vroegsteDeadline || '9999-12-31'
+                if (da !== db) return da.localeCompare(db)
+                return a.type.localeCompare(b.type)
+              })
+              .map(({ type, rows }) => ({ type, rows }))
             return (
               <WeekLijst
                 key={weekLabel}
@@ -177,6 +225,30 @@ export function ConfectiePlanningPage() {
         <AfrondModal stuk={geselecteerd as unknown as ConfectiePlanningRow} onClose={() => setGeselecteerd(null)} />
       )}
     </>
+  )
+}
+
+function LaneFilterKnop({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        'px-3 py-1.5 text-xs rounded transition-colors',
+        active
+          ? 'bg-terracotta-50 text-terracotta-700 font-medium'
+          : 'text-slate-500 hover:text-slate-700',
+      )}
+    >
+      {children}
+    </button>
   )
 }
 
