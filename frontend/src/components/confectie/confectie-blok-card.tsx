@@ -9,13 +9,27 @@ function fmtDagKort(d: Date): string {
   return `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
+const DAG_KORT = ['zo', 'ma', 'di', 'wo', 'do', 'vr', 'za']
+
+function fmtTijd(d: Date): string {
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+/** "Ma 08:15" — of "vandaag 08:15" als dag == vandaag. */
+function fmtStart(d: Date): string {
+  const nu = new Date()
+  const zelfdeDag = d.getDate() === nu.getDate() && d.getMonth() === nu.getMonth() && d.getFullYear() === nu.getFullYear()
+  if (zelfdeDag) return `vandaag ${fmtTijd(d)}`
+  return `${DAG_KORT[d.getDay()]} ${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')} ${fmtTijd(d)}`
+}
+
 interface Props {
   blok: LaneBlok<ConfectiePlanningRow>
   onClick?: () => void
 }
 
 export function ConfectieBlokCard({ blok, onClick }: Props) {
-  const { item, eind, duurMinuten } = blok
+  const { item, start, eind, duurMinuten } = blok
   const deadline = confectieDeadline(item.afleverdatum)
   const teLaat = !!deadline && eind > deadline
   const afgerond = !!item.confectie_afgerond_op
@@ -44,6 +58,10 @@ export function ConfectieBlokCard({ blok, onClick }: Props) {
         <span className="text-xs text-slate-500 tabular-nums">
           {uren > 0 ? `${uren}u ` : ''}{min}m
         </span>
+      </div>
+      <div className="text-xs text-slate-700 tabular-nums mb-1">
+        Start: <span className="font-medium">{fmtStart(start)}</span>
+        <span className="text-slate-400"> → {fmtTijd(eind)}</span>
       </div>
       <div className="text-xs text-slate-600 truncate">{item.klant_naam}</div>
       <div className="text-xs">

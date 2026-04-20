@@ -279,6 +279,8 @@ export interface BerekenLanesOpties<TItem, TKey> {
   duur: (item: TItem) => number
   sortKey: (item: TItem) => string | number
   startVanaf?: Date
+  /** Minimum-starttijd per item (bv. rol-klaar + buffer). Lane-cursor wordt hiermee opgetrokken. */
+  minStart?: (item: TItem) => Date | null | undefined
 }
 
 /**
@@ -290,7 +292,7 @@ export function berekenLanes<TItem, TKey>(
   werktijden: Werktijden,
   opties: BerekenLanesOpties<TItem, TKey>,
 ): Map<TKey, Array<LaneBlok<TItem>>> {
-  const { laneKey, duur, sortKey, startVanaf = new Date() } = opties
+  const { laneKey, duur, sortKey, minStart, startVanaf = new Date() } = opties
 
   const perLane = new Map<TKey, TItem[]>()
   for (const it of items) {
@@ -313,7 +315,9 @@ export function berekenLanes<TItem, TKey>(
     let cursor = startVanaf
     for (const item of gesorteerd) {
       const d = duur(item)
-      const start = volgendeWerkminuut(cursor, werktijden)
+      const ms = minStart?.(item)
+      const vanaf = ms && ms > cursor ? ms : cursor
+      const start = volgendeWerkminuut(vanaf, werktijden)
       const eind = plusWerkminuten(start, d, werktijden)
       blokken.push({ item, start, eind, duurMinuten: d })
       cursor = eind

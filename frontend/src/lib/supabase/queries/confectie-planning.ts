@@ -127,6 +127,7 @@ export interface ConfectiePlanningForwardRow {
   ingepakt_op: string | null
   locatie: string | null
   // Vooruitkijk
+  confectie_klaar_op: string | null  // rol-klaar + buffer (ISO timestamp)
   confectie_startdatum: string
   opmerkingen: string | null
 }

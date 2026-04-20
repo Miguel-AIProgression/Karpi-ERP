@@ -94,10 +94,17 @@ export function ConfectiePlanningPage() {
       if (!cfg) continue
       const blokken = berekenLanes<ConfectiePlanningForwardRow, string>(blokkenInHorizon, werktijden, {
         laneKey: () => type,
-        sortKey: (r) => r.confectie_startdatum,
+        sortKey: (r) => r.confectie_klaar_op ?? r.confectie_startdatum,
         duur: (r) => {
           const meters = strekkendeMeterCm(r) / 100
           return meters * Number(cfg.minuten_per_meter) + cfg.wisseltijd_minuten
+        },
+        minStart: (r) => {
+          // Gesneden stukken met rol-klaar-tijd: gebruik snijden_voltooid_op + buffer
+          if (r.confectie_klaar_op) return new Date(r.confectie_klaar_op)
+          // Nog-te-snijden stukken: start op begin van de geschatte confectie-startdatum
+          if (r.confectie_startdatum) return new Date(r.confectie_startdatum + 'T00:00:00')
+          return null
         },
       })
       map.set(type, blokken)
