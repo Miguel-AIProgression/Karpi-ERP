@@ -9,6 +9,7 @@ import {
   fetchStandaardAfwerking,
   fetchStandaardMatenVoorKwaliteit,
   fetchMaatwerkArtikelNr,
+  fetchKwaliteitM2Prijs,
   type KwaliteitOptie,
   type KleurOptie,
 } from '@/lib/supabase/queries/op-maat'
@@ -226,7 +227,14 @@ export function KwaliteitFirstSelector({
     }
     const prijs = await lookupPrice(prijslijstNr, artikelnr)
     console.debug('[maatwerk prijs] lookup resultaat:', { artikelnr, prijs })
-    setKlantM2Prijs(prijs)
+    if (prijs != null) {
+      setKlantM2Prijs(prijs)
+      return
+    }
+    // Fallback: geen klantprijs gevonden → gebruik kwaliteits-m²-prijs uit maatwerk_m2_prijzen
+    const kwaliteitPrijs = await fetchKwaliteitM2Prijs(selectedKwaliteit.code)
+    console.debug('[maatwerk prijs] kwaliteit fallback:', kwaliteitPrijs)
+    setKlantM2Prijs(kwaliteitPrijs)
   }, [prijslijstNr, selectedKwaliteit])
 
   useEffect(() => {

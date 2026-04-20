@@ -123,11 +123,13 @@ export async function fetchMaatwerkArtikelNr(kwaliteitCode: string, kleurCode: s
   const kleurVariants = Array.from(new Set([kleurCode, normKleur]))
 
   for (const kc of kleurVariants) {
-    // Strategie 1: product_type = 'overig'
+    // Strategie 1: product_type='overig' én 'maatwerk' in naam/code
+    // (sluit Contour/overige stukprijsproducten uit die geen m²-referentie zijn)
     const { data: d1 } = await supabase
       .from('producten').select('artikelnr')
       .eq('kwaliteit_code', kwaliteitCode).eq('kleur_code', kc)
       .eq('actief', true).eq('product_type', 'overig')
+      .ilike('omschrijving', '%maatwerk%')
       .limit(1).maybeSingle()
     if (d1?.artikelnr) return d1.artikelnr
 
@@ -147,7 +149,56 @@ export async function fetchMaatwerkArtikelNr(kwaliteitCode: string, kleurCode: s
       .limit(1).maybeSingle()
     if (d3?.artikelnr) return d3.artikelnr
   }
+
+  // Strategie 4: zoek via uitwisselgroepen — zelfde kleur, uitwisselbare kwaliteit
+  // (bijv. VELV16 → CISC16 die wél een MAATWERK-artikel heeft)
+  const { data: basisData } = await supabase
+    .from('kwaliteit_kleur_uitwisselgroepen')
+    .select('basis_code')
+    .eq('kwaliteit_code', kwaliteitCode)
+    .eq('kleur_code', normKleur)
+    .limit(1).maybeSingle()
+  if (basisData?.basis_code) {
+    const { data: uitwisselData } = await supabase
+      .from('kwaliteit_kleur_uitwisselgroepen')
+      .select('kwaliteit_code')
+      .eq('basis_code', basisData.basis_code)
+      .neq('kwaliteit_code', kwaliteitCode)
+    const uitwisselKwaliteiten = (uitwisselData ?? []).map((r) => r.kwaliteit_code)
+    for (const uitKwal of uitwisselKwaliteiten) {
+      for (const kc of kleurVariants) {
+        const { data: du } = await supabase
+          .from('producten').select('artikelnr')
+          .eq('kwaliteit_code', uitKwal).eq('kleur_code', kc)
+          .eq('actief', true).ilike('omschrijving', '%maatwerk%')
+          .limit(1).maybeSingle()
+        if (du?.artikelnr) return du.artikelnr
+      }
+    }
+  }
+
+  // Strategie 5: zelfde kwaliteit, andere kleur — laatste redmiddel
+  const { data: d5 } = await supabase
+    .from('producten').select('artikelnr')
+    .eq('kwaliteit_code', kwaliteitCode)
+    .eq('actief', true).ilike('omschrijving', '%maatwerk%')
+    .limit(1).maybeSingle()
+  if (d5?.artikelnr) return d5.artikelnr
+
   return null
+}
+
+/** Basis m²-prijs voor een kwaliteit uit maatwerk_m2_prijzen (kleur-onafhankelijk).
+ *  Fallback wanneer geen kleur-specifiek MAATWERK-artikel gevonden wordt. */
+export async function fetchKwaliteitM2Prijs(kwaliteitCode: string): Promise<number | null> {
+  const { data } = await supabase
+    .from('maatwerk_m2_prijzen')
+    .select('verkoopprijs_m2')
+    .eq('kwaliteit_code', kwaliteitCode)
+    .not('verkoopprijs_m2', 'is', null)
+    .limit(1)
+    .maybeSingle()
+  return data?.verkoopprijs_m2 ?? null
 }
 
 /** Zoek kwaliteiten via productnamen — vindt "CISC" bij zoekterm "cisco" */
