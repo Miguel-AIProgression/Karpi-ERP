@@ -610,6 +610,7 @@ Afwerkingsopties voor op-maat tapijt (banden, feston, locken, etc.).
 | heeft_band_kleur | BOOLEAN | True voor B en SB |
 | actief | BOOLEAN | Default true |
 | volgorde | INTEGER | Sorteer-volgorde |
+| type_bewerking | TEXT FK → confectie_werktijden.type_bewerking | Lane waar dit afwerkingstype wordt gedaan. NULL = geen confectie (alleen stickeren). |
 
 ---
 
