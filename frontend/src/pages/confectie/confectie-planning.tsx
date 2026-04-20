@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom'
 import { Calendar, List, Sticker } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { useWerktijden } from '@/components/werkagenda/werktijden-config'
-import { LaneKolom } from '@/components/confectie/lane-kolom'
+import { AgendaDag, type LaneBlokkenMap } from '@/components/confectie/agenda-dag'
+import { CapaciteitBalk } from '@/components/confectie/capaciteit-balk'
 import { AfrondModal } from '@/components/confectie/afrond-modal'
 import { WeekSelector, type HorizonWeken } from '@/components/confectie/week-selector'
 import { berekenLanes, werkminutenTussen, type Werktijden } from '@/lib/utils/bereken-agenda'
@@ -41,6 +42,25 @@ export function ConfectiePlanningPage() {
 
   const weekLabels = useMemo(() => berekenWeeksInHorizon(horizon), [horizon])
   const horizonSet = useMemo(() => new Set(weekLabels), [weekLabels])
+
+  // Alle werkdagen in de horizon (start vandaag), respectheeft werkdagen + feestdagen
+  const werkdagenInHorizon = useMemo(() => {
+    const dagen: Date[] = []
+    const vandaag = new Date()
+    vandaag.setHours(0, 0, 0, 0)
+    const totaalDagen = horizon * 7
+    for (let i = 0; i < totaalDagen; i++) {
+      const d = new Date(vandaag)
+      d.setDate(vandaag.getDate() + i)
+      const js = d.getDay() // 0=zo, 1=ma
+      const iso = js === 0 ? 7 : js
+      if (!werktijden.werkdagen.includes(iso)) continue
+      const isoStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      if (werktijden.vrij.some((v) => v.datum === isoStr)) continue
+      dagen.push(d)
+    }
+    return dagen
+  }, [horizon, werktijden])
 
   // Binnen horizon én actieve lane: "teplannen"
   // Buiten lane of inactief: "geenConfectie"
@@ -140,26 +160,48 @@ export function ConfectiePlanningPage() {
           <p className="text-sm mt-1">Stukken verschijnen hier zodra ze in een snijplan zitten</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {laneData.map(({ type, bezettingen }) => {
-            const lanesResult = laneBlokkenMap.get(type)
-            const blokken = (lanesResult?.get(type) ?? []).map((b) => ({
-              ...b,
-              // Cast naar ConfectiePlanningRow: structureel compatibel (forward-view levert aliassen)
-              item: b.item as unknown as ConfectiePlanningRow,
-            }))
+        <div className="space-y-4">
+          {/* Weekbezetting per lane (overzicht) */}
+          <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-3 space-y-2">
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Bezetting per lane</div>
+            {laneData.map(({ type, bezettingen }) => (
+              <div key={type} className="grid grid-cols-[100px_1fr] gap-3 items-start">
+                <span className="text-xs font-medium text-slate-700 capitalize pt-1">{type}</span>
+                <div className="space-y-0.5">
+                  {bezettingen.map((b) => (
+                    <CapaciteitBalk
+                      key={b.weekLabel}
+                      label={b.weekLabel.replace(/^\d{4}-/, '')}
+                      nodigMin={b.nodigMin}
+                      beschikbaarMin={b.beschikbaarMin}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Per werkdag: agenda met alle lanes naast elkaar */}
+          {werkdagenInHorizon.map((datum) => {
+            // Voor elke lane: verzamel alle blokken en cast naar ConfectiePlanningRow
+            const lanes: LaneBlokkenMap[] = laneData
+              .filter(({ type }) => laneBlokkenMap.has(type))
+              .map(({ type }) => {
+                const lanesResult = laneBlokkenMap.get(type)
+                const blokken = (lanesResult?.get(type) ?? []).map((b) => ({
+                  ...b,
+                  item: b.item as unknown as ConfectiePlanningRow,
+                }))
+                return { type, blokken }
+              })
             return (
-              <LaneKolom
-                key={type}
-                typeBewerking={type}
-                blokken={blokken}
-                bezettingen={bezettingen}
+              <AgendaDag
+                key={datum.toISOString().slice(0, 10)}
+                datum={datum}
+                lanes={lanes}
+                werktijden={werktijden}
                 onSelect={(row) => {
-                  // Vind origineel forward-object (via confectie_id == snijplan_id)
-                  const origineel = laneData
-                    .find((l) => l.type === type)
-                    ?.blokkenInHorizon
-                    .find((r) => r.confectie_id === (row as ConfectiePlanningRow).confectie_id)
+                  const origineel = (forward ?? []).find((r) => r.confectie_id === (row as ConfectiePlanningRow).confectie_id)
                   if (origineel) setGeselecteerd(origineel)
                 }}
               />
