@@ -1,14 +1,16 @@
 import { ConfectieBlokCard } from './confectie-blok-card'
+import { CapaciteitBalk } from './capaciteit-balk'
 import type { LaneBlok } from '@/lib/utils/bereken-agenda'
 import type { ConfectiePlanningRow } from '@/lib/supabase/queries/confectie-planning'
 
 interface Props {
   typeBewerking: string
   blokken: LaneBlok<ConfectiePlanningRow>[]
+  bezettingen?: Array<{ weekLabel: string; nodigMin: number; beschikbaarMin: number }>
   onSelect?: (row: ConfectiePlanningRow) => void
 }
 
-export function LaneKolom({ typeBewerking, blokken, onSelect }: Props) {
+export function LaneKolom({ typeBewerking, blokken, bezettingen, onSelect }: Props) {
   const totMin = blokken.reduce((s, b) => s + b.duurMinuten, 0)
   const uren = Math.floor(totMin / 60)
   const min = Math.round(totMin % 60)
@@ -22,6 +24,18 @@ export function LaneKolom({ typeBewerking, blokken, onSelect }: Props) {
             {blokken.length} stuks · {uren > 0 ? `${uren}u ` : ''}{min}m
           </span>
         </div>
+        {bezettingen && bezettingen.length > 0 && (
+          <div className="mt-2 space-y-1">
+            {bezettingen.map((b) => (
+              <CapaciteitBalk
+                key={b.weekLabel}
+                label={b.weekLabel}
+                nodigMin={b.nodigMin}
+                beschikbaarMin={b.beschikbaarMin}
+              />
+            ))}
+          </div>
+        )}
       </div>
       <div className="p-3 space-y-2 flex-1">
         {blokken.length === 0 ? (

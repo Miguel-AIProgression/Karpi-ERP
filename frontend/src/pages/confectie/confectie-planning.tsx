@@ -5,27 +5,32 @@ import { PageHeader } from '@/components/layout/page-header'
 import { useWerktijden } from '@/components/werkagenda/werktijden-config'
 import { LaneKolom } from '@/components/confectie/lane-kolom'
 import { AfrondModal } from '@/components/confectie/afrond-modal'
-import { berekenLanes, werkminutenTussen, type LaneBlok } from '@/lib/utils/bereken-agenda'
-import { useConfectiePlanning, useConfectieWerktijden } from '@/hooks/use-confectie-planning'
+import { WeekSelector, type HorizonWeken } from '@/components/confectie/week-selector'
+import { berekenLanes, werkminutenTussen, type Werktijden } from '@/lib/utils/bereken-agenda'
+import {
+  groepeerPerLaneEnWeek,
+  bezettingPerWeek,
+  isoWeekKey,
+  type Bezetting,
+} from '@/lib/utils/confectie-forward-planner'
+import { useConfectiePlanningForward, useConfectieWerktijden } from '@/hooks/use-confectie-planning'
 import { formatDate } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
-import type { ConfectiePlanningRow, ConfectieWerktijd } from '@/lib/supabase/queries/confectie-planning'
+import type {
+  ConfectiePlanningRow,
+  ConfectiePlanningForwardRow,
+  ConfectieWerktijd,
+} from '@/lib/supabase/queries/confectie-planning'
 
-function strekkendeMeter(row: ConfectiePlanningRow): number {
-  const l = row.lengte_cm ?? 0
-  const b = row.breedte_cm ?? 0
-  if (!l && !b) return 0
-  const vorm = (row.vorm ?? '').toLowerCase()
-  // Rond/ovaal: omtrek via langste zijde als diameter → π × d
-  if (vorm === 'rond' || vorm === 'ovaal') return (Math.PI * Math.max(l, b)) / 100
-  // Rechthoek / overig: omtrek = 2 × (l + b)
-  return (2 * (l + b)) / 100
+function strekkendeMeterCm(row: ConfectiePlanningForwardRow): number {
+  return row.strekkende_meter_cm ?? 0
 }
 
 export function ConfectiePlanningPage() {
   const [werktijden] = useWerktijden()
-  const [geselecteerd, setGeselecteerd] = useState<ConfectiePlanningRow | null>(null)
-  const { data: planning, isLoading: planLoading } = useConfectiePlanning()
+  const [horizon, setHorizon] = useState<HorizonWeken>(4)
+  const [geselecteerd, setGeselecteerd] = useState<ConfectiePlanningForwardRow | null>(null)
+  const { data: forward, isLoading: fwLoading } = useConfectiePlanningForward()
   const { data: werktijdenConfig, isLoading: tijdenLoading } = useConfectieWerktijden()
 
   const tijdenMap = useMemo(() => {
@@ -34,61 +39,74 @@ export function ConfectiePlanningPage() {
     return map
   }, [werktijdenConfig])
 
+  const weekLabels = useMemo(() => berekenWeeksInHorizon(horizon), [horizon])
+  const horizonSet = useMemo(() => new Set(weekLabels), [weekLabels])
+
+  // Binnen horizon én actieve lane: "teplannen"
+  // Buiten lane of inactief: "geenConfectie"
   const { teplannen, geenConfectie } = useMemo(() => {
-    const tp: ConfectiePlanningRow[] = []
-    const gc: ConfectiePlanningRow[] = []
-    for (const r of planning ?? []) {
-      const cfg = tijdenMap.get(r.type_bewerking)
-      if (!cfg || !cfg.actief || r.type_bewerking === 'stickeren') {
+    const tp: ConfectiePlanningForwardRow[] = []
+    const gc: ConfectiePlanningForwardRow[] = []
+    for (const r of forward ?? []) {
+      const lane = r.type_bewerking
+      const cfg = lane ? tijdenMap.get(lane) : undefined
+      if (!lane || !cfg || !cfg.actief || lane === 'stickeren') {
         gc.push(r)
       } else {
         tp.push(r)
       }
     }
     return { teplannen: tp, geenConfectie: gc }
-  }, [planning, tijdenMap])
+  }, [forward, tijdenMap])
 
-  const lanes = useMemo(() => {
-    if (!teplannen.length || !werktijdenConfig) return new Map<string, LaneBlok<ConfectiePlanningRow>[]>()
-    return berekenLanes<ConfectiePlanningRow, string>(teplannen, werktijden, {
-      laneKey: (r) => r.type_bewerking,
-      sortKey: (r) => r.afleverdatum ?? '9999-12-31',
-      duur: (r) => {
-        const cfg = tijdenMap.get(r.type_bewerking)
-        if (!cfg) return 0
-        const meters = strekkendeMeter(r)
-        return meters * Number(cfg.minuten_per_meter) + cfg.wisseltijd_minuten
-      },
-    })
-  }, [teplannen, werktijden, werktijdenConfig, tijdenMap])
-
-  const laneEntries = useMemo(() => Array.from(lanes.entries()), [lanes])
-  const isLoading = planLoading || tijdenLoading
-  const totaal = (planning ?? []).length
-
-  const { totaalNodigMin, restWeekMin } = useMemo(() => {
-    // Lanes lopen parallel → wall-clock = max som van één lane
-    let nodig = 0
-    for (const [, blokken] of lanes) {
-      const laneSom = blokken.reduce((s, b) => s + b.duurMinuten, 0)
-      if (laneSom > nodig) nodig = laneSom
+  // Groepeer teplannen per lane + week voor bezetting-berekening
+  const laneData = useMemo(() => {
+    const perLane = groepeerPerLaneEnWeek(teplannen)
+    const result: Array<{
+      type: string
+      bezettingen: Array<{ weekLabel: string; nodigMin: number; beschikbaarMin: number }>
+      blokkenInHorizon: ConfectiePlanningForwardRow[]
+    }> = []
+    for (const [lane, perWeek] of perLane) {
+      if (lane === '__geen_lane__') continue
+      const cfg = tijdenMap.get(lane)
+      if (!cfg) continue
+      const bezettingen = weekLabels.map((weekLabel) => {
+        const items = perWeek.get(weekLabel) ?? []
+        const beschikbaar = werkminutenInWeek(weekLabel, werktijden)
+        const bez: Bezetting = bezettingPerWeek(items, cfg, beschikbaar)
+        return { weekLabel, nodigMin: bez.nodigMin, beschikbaarMin: bez.beschikbaarMin }
+      })
+      const blokkenInHorizon: ConfectiePlanningForwardRow[] = []
+      for (const [week, items] of perWeek) {
+        if (horizonSet.has(week)) blokkenInHorizon.push(...items)
+      }
+      result.push({ type: lane, bezettingen, blokkenInHorizon })
     }
-    const nu = new Date()
-    const eindWeek = new Date(nu)
-    const js = eindWeek.getDay()
-    const iso = js === 0 ? 7 : js
-    eindWeek.setDate(eindWeek.getDate() + (7 - iso))
-    eindWeek.setHours(23, 59, 59, 999)
-    const rest = werkminutenTussen(nu, eindWeek, werktijden)
-    return { totaalNodigMin: Math.round(nodig), restWeekMin: rest }
-  }, [lanes, werktijden])
+    return result.sort((a, b) => a.type.localeCompare(b.type))
+  }, [teplannen, tijdenMap, weekLabels, horizonSet, werktijden])
 
-  const fmtHM = (m: number) => {
-    const u = Math.floor(m / 60)
-    const r = Math.round(m % 60)
-    return u > 0 ? `${u}u ${r}m` : `${r}m`
-  }
-  const past = totaalNodigMin <= restWeekMin
+  // Per lane: sequentieel plannen in de werkagenda via berekenLanes
+  const laneBlokkenMap = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof berekenLanes<ConfectiePlanningForwardRow, string>>>()
+    for (const { type, blokkenInHorizon } of laneData) {
+      const cfg = tijdenMap.get(type)
+      if (!cfg) continue
+      const blokken = berekenLanes<ConfectiePlanningForwardRow, string>(blokkenInHorizon, werktijden, {
+        laneKey: () => type,
+        sortKey: (r) => r.confectie_startdatum,
+        duur: (r) => {
+          const meters = strekkendeMeterCm(r) / 100
+          return meters * Number(cfg.minuten_per_meter) + cfg.wisseltijd_minuten
+        },
+      })
+      map.set(type, blokken)
+    }
+    return map
+  }, [laneData, tijdenMap, werktijden])
+
+  const isLoading = fwLoading || tijdenLoading
+  const totaal = (forward ?? []).length
 
   return (
     <>
@@ -99,40 +117,47 @@ export function ConfectiePlanningPage() {
 
       <ConfectieTabs active="planning" />
 
-      {teplannen.length > 0 && (
-        <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-[var(--radius)] border border-slate-200 bg-white px-4 py-3 text-sm">
-          <div>
-            <span className="text-slate-500">Totaal benodigd: </span>
-            <span className="font-semibold tabular-nums">{fmtHM(totaalNodigMin)}</span>
-          </div>
-          <div>
-            <span className="text-slate-500">Nog beschikbaar deze week: </span>
-            <span className="font-semibold tabular-nums">{fmtHM(restWeekMin)}</span>
-          </div>
-          <div className={cn(
-            'ml-auto px-2 py-0.5 rounded-full text-xs font-medium',
-            past ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700',
-          )}>
-            {past ? 'Past binnen week' : `Tekort ${fmtHM(totaalNodigMin - restWeekMin)}`}
-          </div>
-        </div>
-      )}
+      <div className="mb-4 flex items-center gap-3">
+        <span className="text-xs text-slate-500">Horizon:</span>
+        <WeekSelector waarde={horizon} onChange={setHorizon} />
+      </div>
 
       {isLoading ? (
         <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-12 text-center text-slate-400">
           Planning berekenen...
         </div>
-      ) : laneEntries.length === 0 ? (
+      ) : laneData.length === 0 ? (
         <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-12 text-center text-slate-400">
           <Calendar size={32} className="mx-auto mb-3 opacity-30" />
-          <p>Niets om te plannen</p>
-          <p className="text-sm mt-1">Stukken verschijnen hier als ze status 'Wacht op materiaal' of 'In productie' hebben</p>
+          <p>Niets om te plannen in de gekozen horizon</p>
+          <p className="text-sm mt-1">Stukken verschijnen hier zodra ze in een snijplan zitten</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {laneEntries.map(([type, blokken]) => (
-            <LaneKolom key={type} typeBewerking={type} blokken={blokken} onSelect={setGeselecteerd} />
-          ))}
+          {laneData.map(({ type, bezettingen }) => {
+            const lanesResult = laneBlokkenMap.get(type)
+            const blokken = (lanesResult?.get(type) ?? []).map((b) => ({
+              ...b,
+              // Cast naar ConfectiePlanningRow: structureel compatibel (forward-view levert aliassen)
+              item: b.item as unknown as ConfectiePlanningRow,
+            }))
+            return (
+              <LaneKolom
+                key={type}
+                typeBewerking={type}
+                blokken={blokken}
+                bezettingen={bezettingen}
+                onSelect={(row) => {
+                  // Vind origineel forward-object (via confectie_id == snijplan_id)
+                  const origineel = laneData
+                    .find((l) => l.type === type)
+                    ?.blokkenInHorizon
+                    .find((r) => r.confectie_id === (row as ConfectiePlanningRow).confectie_id)
+                  if (origineel) setGeselecteerd(origineel)
+                }}
+              />
+            )
+          })}
         </div>
       )}
 
@@ -182,7 +207,9 @@ export function ConfectiePlanningPage() {
                         <span className="text-slate-300">—</span>
                       )}
                     </td>
-                    <td className="py-2 px-4 capitalize text-slate-700">{r.type_bewerking}</td>
+                    <td className="py-2 px-4 capitalize text-slate-700">
+                      {r.type_bewerking ?? <span className="text-slate-400">stickeren</span>}
+                    </td>
                     <td className="py-2 px-4 text-slate-700">{r.klant_naam}</td>
                     <td className="py-2 px-4 text-terracotta-600">{r.order_nr}</td>
                     <td className="py-2 px-4">
@@ -197,10 +224,38 @@ export function ConfectiePlanningPage() {
       )}
 
       {geselecteerd && (
-        <AfrondModal stuk={geselecteerd} onClose={() => setGeselecteerd(null)} />
+        <AfrondModal stuk={geselecteerd as unknown as ConfectiePlanningRow} onClose={() => setGeselecteerd(null)} />
       )}
     </>
   )
+}
+
+function toLocalIsoDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function berekenWeeksInHorizon(horizon: HorizonWeken): string[] {
+  const vandaag = new Date()
+  const weken: string[] = []
+  for (let i = 0; i < horizon; i++) {
+    const d = new Date(vandaag)
+    d.setDate(vandaag.getDate() + i * 7)
+    weken.push(isoWeekKey(toLocalIsoDate(d)))
+  }
+  return Array.from(new Set(weken))
+}
+
+function werkminutenInWeek(weekLabel: string, werktijden: Werktijden): number {
+  const [jaar, w] = weekLabel.split('-W').map(Number)
+  const jan4 = new Date(jaar, 0, 4)
+  const jan4Dow = (jan4.getDay() + 6) % 7 // 0 = ma
+  const week1Monday = new Date(jan4)
+  week1Monday.setDate(jan4.getDate() - jan4Dow)
+  const maandag = new Date(week1Monday)
+  maandag.setDate(week1Monday.getDate() + (w - 1) * 7)
+  const zondag = new Date(maandag)
+  zondag.setDate(maandag.getDate() + 7)
+  return werkminutenTussen(maandag, zondag, werktijden)
 }
 
 export function ConfectieTabs({ active }: { active: 'lijst' | 'planning' }) {
