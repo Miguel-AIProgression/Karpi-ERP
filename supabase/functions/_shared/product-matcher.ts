@@ -2,7 +2,8 @@
 //
 // Strategie (eerste hit wint):
 //   Als debiteurNr opgegeven → klanteigen_namen EERST (naam+kleur parsen):
-//     a. maat aanwezig → zoek standaard artikel (ook gedraaid: 200x250 = 250x200)
+//     a. maat aanwezig + niet-rechthoekige vorm (organisch/ovaal/rond) → maatwerk
+//        maat aanwezig + rechthoekig → zoek standaard artikel (ook gedraaid: 200x250 = 250x200)
 //        gevonden → artikelnr; niet gevonden → maatwerk
 //     b. geen maat → eerste hit op kwaliteit + kleur
 //   Daarna fallback op codes (alleen als geen alias gevonden):
@@ -36,6 +37,7 @@ export interface ProductMatch {
   is_maatwerk?: boolean
   maatwerk_kwaliteit_code?: string | null
   maatwerk_kleur_code?: string | null
+  maatwerk_vorm?: string | null
 }
 
 const VERZEND_PATROON = /verzend|versand|shipping/i
@@ -43,6 +45,17 @@ const MUSTER_PATROON = /muster|sample|gratis\s+staal/i
 const WUNSCHGROSSE_PATROON = /wunschgr[öo]ß?e|op\s+maat|custom\s+size|volgens\s+tekening/i
 const DURCHMESSER_PATROON = /durchmesser|diameter|rond\s+\d|rund\s+\d/i
 const AFMETING_PATROON = /(\d{2,3})\s*x\s*(\d{2,3})\s*cm/i
+const ORGANISCH_PATROON = /organisch[e]?\s*(vorm|form|shape)?/i
+const OVAAL_PATROON = /ovaal|oval/i
+
+// Detecteert niet-rechthoekige vormen → altijd maatwerk, geen standaard artikel.
+// Geeft de maatwerk_vormen.code terug, of null als rechthoekig.
+function detectVorm(text: string): string | null {
+  if (ORGANISCH_PATROON.test(text)) return 'organisch_a'
+  if (OVAAL_PATROON.test(text)) return 'ovaal'
+  if (DURCHMESSER_PATROON.test(text)) return 'rond'
+  return null
+}
 
 function uniekeCodes(row: LightspeedOrderRow): string[] {
   const set = new Set<string>()
@@ -209,6 +222,20 @@ export async function matchProduct(
       ].join(' ').match(/(\d+)\s*[xX×]\s*(\d+)/)
 
       if (sizeRaw) {
+        // Niet-rechthoekige vorm → altijd maatwerk, nooit koppelen aan standaard artikel.
+        const fullText = [row.productTitle, row.variantTitle, ...collectExtraTexts(row)].join(' ')
+        const vorm = detectVorm(fullText)
+        if (vorm) {
+          return {
+            artikelnr: null,
+            matchedOn: 'maatwerk',
+            is_maatwerk: true,
+            maatwerk_kwaliteit_code: kwaliteitCodes[0],
+            maatwerk_kleur_code: kleur,
+            maatwerk_vorm: vorm,
+          }
+        }
+
         const maat        = `${sizeRaw[1]}x${sizeRaw[2]}`
         const maatDraaien = `${sizeRaw[2]}x${sizeRaw[1]}`
 

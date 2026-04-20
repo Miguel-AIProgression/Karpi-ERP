@@ -98,6 +98,7 @@ async function buildRegels(
       is_maatwerk: match.is_maatwerk ?? false,
       maatwerk_kwaliteit_code: match.maatwerk_kwaliteit_code ?? null,
       maatwerk_kleur_code: match.maatwerk_kleur_code ?? null,
+      maatwerk_vorm: match.maatwerk_vorm ?? null,
       maatwerk_lengte_cm,
       maatwerk_breedte_cm,
     })

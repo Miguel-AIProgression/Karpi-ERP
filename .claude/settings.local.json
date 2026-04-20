@@ -3,7 +3,8 @@
   "permissions": {
     "allow": [
       "mcp__claude_ai_Supabase__deploy_edge_function",
-      "Bash(git fetch:*)"
+      "Bash(git fetch:*)",
+      "Bash(supabase functions *)"
     ],
     "deny": []
   }
