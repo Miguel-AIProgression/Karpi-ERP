@@ -2,18 +2,10 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Calendar, List, Sticker } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { useWerktijden } from '@/components/werkagenda/werktijden-config'
-import { AgendaDag, type LaneBlokkenMap } from '@/components/confectie/agenda-dag'
-import { CapaciteitBalk } from '@/components/confectie/capaciteit-balk'
 import { AfrondModal } from '@/components/confectie/afrond-modal'
 import { WeekSelector, type HorizonWeken } from '@/components/confectie/week-selector'
-import { berekenLanes, werkminutenTussen, type Werktijden } from '@/lib/utils/bereken-agenda'
-import {
-  groepeerPerLaneEnWeek,
-  bezettingPerWeek,
-  isoWeekKey,
-  type Bezetting,
-} from '@/lib/utils/confectie-forward-planner'
+import { WeekLijst } from '@/components/confectie/week-lijst'
+import { isoWeekKey } from '@/lib/utils/confectie-forward-planner'
 import { useConfectiePlanningForward, useConfectieWerktijden } from '@/hooks/use-confectie-planning'
 import { formatDate } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
@@ -23,12 +15,7 @@ import type {
   ConfectieWerktijd,
 } from '@/lib/supabase/queries/confectie-planning'
 
-function strekkendeMeterCm(row: ConfectiePlanningForwardRow): number {
-  return row.strekkende_meter_cm ?? 0
-}
-
 export function ConfectiePlanningPage() {
-  const [werktijden] = useWerktijden()
   const [horizon, setHorizon] = useState<HorizonWeken>(4)
   const [geselecteerd, setGeselecteerd] = useState<ConfectiePlanningForwardRow | null>(null)
   const { data: forward, isLoading: fwLoading } = useConfectiePlanningForward()
@@ -41,31 +28,10 @@ export function ConfectiePlanningPage() {
   }, [werktijdenConfig])
 
   const weekLabels = useMemo(() => berekenWeeksInHorizon(horizon), [horizon])
-  const horizonSet = useMemo(() => new Set(weekLabels), [weekLabels])
 
-  // Alle werkdagen in de horizon (start vandaag), respectheeft werkdagen + feestdagen
-  const werkdagenInHorizon = useMemo(() => {
-    const dagen: Date[] = []
-    const vandaag = new Date()
-    vandaag.setHours(0, 0, 0, 0)
-    const totaalDagen = horizon * 7
-    for (let i = 0; i < totaalDagen; i++) {
-      const d = new Date(vandaag)
-      d.setDate(vandaag.getDate() + i)
-      const js = d.getDay() // 0=zo, 1=ma
-      const iso = js === 0 ? 7 : js
-      if (!werktijden.werkdagen.includes(iso)) continue
-      const isoStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-      if (werktijden.vrij.some((v) => v.datum === isoStr)) continue
-      dagen.push(d)
-    }
-    return dagen
-  }, [horizon, werktijden])
-
-  // Binnen horizon én actieve lane: "teplannen"
-  // Buiten lane of inactief: "geenConfectie"
-  const { teplannen, geenConfectie } = useMemo(() => {
-    const tp: ConfectiePlanningForwardRow[] = []
+  // Splits in "te confectioneren" (actieve lane) vs "alleen stickeren"
+  const { teConfectioneren, geenConfectie } = useMemo(() => {
+    const tc: ConfectiePlanningForwardRow[] = []
     const gc: ConfectiePlanningForwardRow[] = []
     for (const r of forward ?? []) {
       const lane = r.type_bewerking
@@ -73,73 +39,39 @@ export function ConfectiePlanningPage() {
       if (!lane || !cfg || !cfg.actief || lane === 'stickeren') {
         gc.push(r)
       } else {
-        tp.push(r)
+        tc.push(r)
       }
     }
-    return { teplannen: tp, geenConfectie: gc }
+    return { teConfectioneren: tc, geenConfectie: gc }
   }, [forward, tijdenMap])
 
-  // Groepeer teplannen per lane + week voor bezetting-berekening
-  const laneData = useMemo(() => {
-    const perLane = groepeerPerLaneEnWeek(teplannen)
-    const result: Array<{
-      type: string
-      bezettingen: Array<{ weekLabel: string; nodigMin: number; beschikbaarMin: number }>
-      blokkenInHorizon: ConfectiePlanningForwardRow[]
-    }> = []
-    for (const [lane, perWeek] of perLane) {
-      if (lane === '__geen_lane__') continue
-      const cfg = tijdenMap.get(lane)
-      if (!cfg) continue
-      const bezettingen = weekLabels.map((weekLabel) => {
-        const items = perWeek.get(weekLabel) ?? []
-        const beschikbaar = werkminutenInWeek(weekLabel, werktijden)
-        const bez: Bezetting = bezettingPerWeek(items, cfg, beschikbaar)
-        return { weekLabel, nodigMin: bez.nodigMin, beschikbaarMin: bez.beschikbaarMin }
-      })
-      const blokkenInHorizon: ConfectiePlanningForwardRow[] = []
-      for (const [week, items] of perWeek) {
-        if (horizonSet.has(week)) blokkenInHorizon.push(...items)
+  // Groepeer per week, en binnen week per lane
+  const perWeek = useMemo(() => {
+    const map = new Map<string, Map<string, ConfectiePlanningForwardRow[]>>()
+    for (const r of teConfectioneren) {
+      const week = isoWeekKey(r.confectie_startdatum)
+      let lanes = map.get(week)
+      if (!lanes) {
+        lanes = new Map()
+        map.set(week, lanes)
       }
-      result.push({ type: lane, bezettingen, blokkenInHorizon })
-    }
-    return result.sort((a, b) => a.type.localeCompare(b.type))
-  }, [teplannen, tijdenMap, weekLabels, horizonSet, werktijden])
-
-  // Per lane: sequentieel plannen in de werkagenda via berekenLanes
-  const laneBlokkenMap = useMemo(() => {
-    const map = new Map<string, ReturnType<typeof berekenLanes<ConfectiePlanningForwardRow, string>>>()
-    for (const { type, blokkenInHorizon } of laneData) {
-      const cfg = tijdenMap.get(type)
-      if (!cfg) continue
-      const blokken = berekenLanes<ConfectiePlanningForwardRow, string>(blokkenInHorizon, werktijden, {
-        laneKey: () => type,
-        sortKey: (r) => r.confectie_klaar_op ?? r.confectie_startdatum,
-        duur: (r) => {
-          const meters = strekkendeMeterCm(r) / 100
-          return meters * Number(cfg.minuten_per_meter) + cfg.wisseltijd_minuten
-        },
-        minStart: (r) => {
-          // Gesneden stukken met rol-klaar-tijd: gebruik snijden_voltooid_op + buffer
-          if (r.confectie_klaar_op) return new Date(r.confectie_klaar_op)
-          // Nog-te-snijden stukken: start op begin van de geschatte confectie-startdatum
-          if (r.confectie_startdatum) return new Date(r.confectie_startdatum + 'T00:00:00')
-          return null
-        },
-      })
-      map.set(type, blokken)
+      const lane = r.type_bewerking!  // gegarandeerd non-null via teConfectioneren
+      const lijst = lanes.get(lane) ?? []
+      lijst.push(r)
+      lanes.set(lane, lijst)
     }
     return map
-  }, [laneData, tijdenMap, werktijden])
+  }, [teConfectioneren])
 
   const isLoading = fwLoading || tijdenLoading
-  const totaal = (forward ?? []).length
+  const totaal = teConfectioneren.length
+  const totaalGesneden = teConfectioneren.filter((r) => r.snijplan_status === 'Gesneden' || r.snijplan_status === 'In confectie').length
 
   return (
     <>
       <PageHeader
         title="Confectie-planning"
-        description={`${totaal} stuk${totaal !== 1 ? 'ken' : ''} — gepland per afwerkingstype`}
+        description={`${totaalGesneden} klaar voor confectie · ${totaal} totaal in de pijplijn`}
       />
 
       <ConfectieTabs active="planning" />
@@ -151,59 +83,28 @@ export function ConfectiePlanningPage() {
 
       {isLoading ? (
         <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-12 text-center text-slate-400">
-          Planning berekenen...
+          Planning laden...
         </div>
-      ) : laneData.length === 0 ? (
+      ) : totaal === 0 ? (
         <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-12 text-center text-slate-400">
           <Calendar size={32} className="mx-auto mb-3 opacity-30" />
-          <p>Niets om te plannen in de gekozen horizon</p>
+          <p>Niets om te plannen</p>
           <p className="text-sm mt-1">Stukken verschijnen hier zodra ze in een snijplan zitten</p>
         </div>
       ) : (
         <div className="space-y-4">
-          {/* Weekbezetting per lane (overzicht) */}
-          <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-3 space-y-2">
-            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Bezetting per lane</div>
-            {laneData.map(({ type, bezettingen }) => (
-              <div key={type} className="grid grid-cols-[100px_1fr] gap-3 items-start">
-                <span className="text-xs font-medium text-slate-700 capitalize pt-1">{type}</span>
-                <div className="space-y-0.5">
-                  {bezettingen.map((b) => (
-                    <CapaciteitBalk
-                      key={b.weekLabel}
-                      label={b.weekLabel.replace(/^\d{4}-/, '')}
-                      nodigMin={b.nodigMin}
-                      beschikbaarMin={b.beschikbaarMin}
-                    />
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Per werkdag: agenda met alle lanes naast elkaar */}
-          {werkdagenInHorizon.map((datum) => {
-            // Voor elke lane: verzamel alle blokken en cast naar ConfectiePlanningRow
-            const lanes: LaneBlokkenMap[] = laneData
-              .filter(({ type }) => laneBlokkenMap.has(type))
-              .map(({ type }) => {
-                const lanesResult = laneBlokkenMap.get(type)
-                const blokken = (lanesResult?.get(type) ?? []).map((b) => ({
-                  ...b,
-                  item: b.item as unknown as ConfectiePlanningRow,
-                }))
-                return { type, blokken }
-              })
+          {weekLabels.map((weekLabel) => {
+            const lanesMap = perWeek.get(weekLabel)
+            if (!lanesMap || lanesMap.size === 0) return null
+            const lanes = Array.from(lanesMap.entries())
+              .map(([type, rows]) => ({ type, rows }))
+              .sort((a, b) => a.type.localeCompare(b.type))
             return (
-              <AgendaDag
-                key={datum.toISOString().slice(0, 10)}
-                datum={datum}
+              <WeekLijst
+                key={weekLabel}
+                weekLabel={weekLabel}
                 lanes={lanes}
-                werktijden={werktijden}
-                onSelect={(row) => {
-                  const origineel = (forward ?? []).find((r) => r.confectie_id === (row as ConfectiePlanningRow).confectie_id)
-                  if (origineel) setGeselecteerd(origineel)
-                }}
+                onSelect={setGeselecteerd}
               />
             )
           })}
@@ -292,19 +193,6 @@ function berekenWeeksInHorizon(horizon: HorizonWeken): string[] {
     weken.push(isoWeekKey(toLocalIsoDate(d)))
   }
   return Array.from(new Set(weken))
-}
-
-function werkminutenInWeek(weekLabel: string, werktijden: Werktijden): number {
-  const [jaar, w] = weekLabel.split('-W').map(Number)
-  const jan4 = new Date(jaar, 0, 4)
-  const jan4Dow = (jan4.getDay() + 6) % 7 // 0 = ma
-  const week1Monday = new Date(jan4)
-  week1Monday.setDate(jan4.getDate() - jan4Dow)
-  const maandag = new Date(week1Monday)
-  maandag.setDate(week1Monday.getDate() + (w - 1) * 7)
-  const zondag = new Date(maandag)
-  zondag.setDate(maandag.getDate() + 7)
-  return werkminutenTussen(maandag, zondag, werktijden)
 }
 
 export function ConfectieTabs({ active }: { active: 'lijst' | 'planning' }) {

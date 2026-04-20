@@ -33,6 +33,7 @@ const basisRow: ConfectiePlanningForwardRow = {
   confectie_afgerond_op: null,
   ingepakt_op: null,
   locatie: null,
+  confectie_klaar_op: null,
   confectie_startdatum: '2026-04-20', // maandag week 17
   opmerkingen: null,
 }
