@@ -193,7 +193,7 @@ Artikelen uit het oude systeem.
 | omschrijving, vervolgomschrijving | TEXT | |
 | voorraad, backorder, gereserveerd, besteld_inkoop, vrije_voorraad | INTEGER | |
 | kwaliteit_code | TEXT FK → kwaliteiten | |
-| kleur_code | TEXT | Eerste 2 cijfers uit karpi_code |
+| kleur_code | TEXT | Eerste 2 cijfers uit karpi_code. **Let op:** fragiel als de leverancier-prefix zelf cijfers bevat (bv. `TAM1` → pakt `11` i.p.v. `13` uit `TAM113400ONG`). Bij nieuwe leveranciers met zulke prefixen: kleur_code handmatig corrigeren of importscript aanpassen (veilig: positie direct na alfabetische prefix). Zie migratie [096](../supabase/migrations/096_tama_kwaliteit_harmoniseren.sql). |
 | zoeksleutel | TEXT | kwaliteit_code + "_" + kleur_code |
 | inkoopprijs, verkoopprijs | NUMERIC(10,2) | |
 | gewicht_kg | NUMERIC(8,2) | |
@@ -397,6 +397,9 @@ Tapijt op maat snijden uit rollen.
 | grondstofkosten_m2 | NUMERIC(10,4) | Aan dit stuk toegerekend oppervlak in m² = stuk_m² + aandeel × afval_m². Snapshot. |
 | inkoopprijs_m2 | NUMERIC(10,2) | Snapshot `rol.waarde / rol.oppervlak_m2` op moment van snijden. |
 | opmerkingen | TEXT | |
+| confectie_afgerond_op | TIMESTAMPTZ | Moment waarop confectie klaar is (NULL = nog niet afgerond) |
+| ingepakt_op | TIMESTAMPTZ | Moment waarop het stuk is ingepakt voor verzending |
+| locatie | TEXT | Magazijnlocatie waar het ingepakte stuk ligt (vrije tekst bv. "A-12") |
 
 ---
 
@@ -679,6 +682,7 @@ Audit trail: wie heeft wat wanneer gedaan.
 | snijplanning_overzicht | Snijplannen met order-, klant- en rolgegevens voor de planningsweergave (incl. geroteerd vlag) |
 | confectie_overzicht | Confectie-orders met scan- en voortgangsstatus |
 | confectie_planning_overzicht | Confectie-orders (status Wacht op materiaal / In productie) met klant, order, maatwerk-afmetingen en strekkende meter voor planningsweergave |
+| confectie_planning_forward | Vooruitkijkende confectie-planning — alle open maatwerk-snijplannen (Gepland..In confectie/Ingepakt) met afgeleide type_bewerking + confectie_startdatum + backward-compat aliassen |
 | productie_dashboard | Aggregaties voor het productie-dashboard: aantallen per status, capaciteit, doorlooptijd |
 
 ---
