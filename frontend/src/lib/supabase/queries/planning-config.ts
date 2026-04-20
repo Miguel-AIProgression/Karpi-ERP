@@ -11,6 +11,7 @@ const DEFAULT_CONFIG: PlanningConfig = {
   max_reststuk_verspilling_pct: 15,
   wisseltijd_minuten: 15,
   snijtijd_minuten: 5,
+  confectie_buffer_minuten: 15,
 }
 
 /** Fetch planning config from app_config */

@@ -231,6 +231,7 @@ export interface PlanningConfig {
   max_reststuk_verspilling_pct: number
   wisseltijd_minuten: number
   snijtijd_minuten: number
+  confectie_buffer_minuten: number
 }
 
 // === Snijvoorstel types ===

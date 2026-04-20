@@ -225,6 +225,24 @@ export function ProductieInstellingenPage() {
               />
               <p className="mt-1 text-xs text-slate-400">Gemiddelde snijtijd per individueel karpet</p>
             </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Confectie-buffer na afronden rol (minuten)
+              </label>
+              <input
+                type="number"
+                min={0}
+                max={240}
+                step={1}
+                value={form.confectie_buffer_minuten}
+                onChange={(e) => update('confectie_buffer_minuten', Number(e.target.value))}
+                className="w-32 px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
+              />
+              <p className="mt-1 text-xs text-slate-400">
+                Wachttijd na afronden rol voordat gesneden stukken in de confectie-planning verschijnen.
+                Standaard: 15 min.
+              </p>
+            </div>
           </div>
         </div>
 
