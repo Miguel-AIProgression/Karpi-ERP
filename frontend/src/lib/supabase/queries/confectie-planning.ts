@@ -61,19 +61,18 @@ export interface AfrondConfectieInput {
 }
 
 export async function afrondConfectie({ snijplan_id, afgerond, ingepakt, locatie }: AfrondConfectieInput) {
-  const nu = new Date().toISOString()
-  const update: Record<string, unknown> = {
-    locatie: locatie && locatie.trim() ? locatie.trim() : null,
-    confectie_afgerond_op: afgerond || ingepakt ? nu : null,
-    ingepakt_op: ingepakt ? nu : null,
-  }
-  if (ingepakt) update.status = 'Gereed'
-  const { data, error } = await supabase
-    .from('snijplannen')
-    .update(update)
-    .eq('id', snijplan_id)
-    .select('id')
-    .single()
+  const { data, error } = await supabase.rpc('voltooi_confectie', {
+    p_snijplan_id: snijplan_id,
+    p_afgerond: afgerond,
+    p_ingepakt: ingepakt,
+    p_locatie: locatie,
+  })
+  if (error) throw error
+  return data
+}
+
+export async function startConfectie(snijplan_id: number) {
+  const { data, error } = await supabase.rpc('start_confectie', { p_snijplan_id: snijplan_id })
   if (error) throw error
   return data
 }
