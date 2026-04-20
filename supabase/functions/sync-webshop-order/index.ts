@@ -28,6 +28,7 @@ import {
 import { verifyLightspeedSignature } from '../_shared/lightspeed-verify.ts'
 import { matchProduct, buildOmschrijving } from '../_shared/product-matcher.ts'
 import { bepaalAfleverdatumUitOrder } from '../_shared/lightspeed-leverdatum.ts'
+import { haalKlantPrijs } from '../_shared/klant-prijs.ts'
 
 // Fallback als de debiteur geen `maatwerk_weken` heeft ingesteld. Floorpassion
 // staat op 2; nieuwe verzameldebiteuren zonder configuratie krijgen hetzelfde
@@ -96,15 +97,28 @@ async function buildRegels(
       }
     }
 
+    // Klantprijs uit prijslijst van de debiteur. Lightspeed's priceIncl is de
+    // CONSUMENT-prijs (die mag niet naar Karpi). Fallback: verkoopprijs van
+    // het product. Als álles leeg blijft → prijs=null (order ongewijzigd naar
+    // DB; medewerker moet handmatig een prijs zetten).
+    const aantal = row.quantityOrdered ?? 1
+    const klantPrijs = await haalKlantPrijs(supabase, debiteurNr, match.artikelnr, {
+      is_maatwerk: match.is_maatwerk,
+      lengte_cm: maatwerk_lengte_cm,
+      breedte_cm: maatwerk_breedte_cm,
+    })
+    const prijs = klantPrijs.prijs
+    const bedrag = prijs != null ? Math.round(prijs * aantal * 100) / 100 : null
+
     regels.push({
       artikelnr: match.artikelnr,
       omschrijving,
       omschrijving_2: row.variantTitle ?? null,
-      orderaantal: row.quantityOrdered ?? 1,
-      te_leveren: row.quantityOrdered ?? 1,
-      prijs: row.priceIncl ?? null,
+      orderaantal: aantal,
+      te_leveren: aantal,
+      prijs,
       korting_pct: 0,
-      bedrag: (row.priceIncl ?? 0) * (row.quantityOrdered ?? 1),
+      bedrag,
       gewicht_kg: normalizeGewicht(row.weight),
       is_maatwerk: match.is_maatwerk ?? false,
       maatwerk_kwaliteit_code: match.maatwerk_kwaliteit_code ?? null,

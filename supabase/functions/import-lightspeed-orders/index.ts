@@ -24,6 +24,7 @@ import {
   type LightspeedOrderRow,
 } from '../_shared/lightspeed-client.ts'
 import { matchProduct } from '../_shared/product-matcher.ts'
+import { haalKlantPrijs } from '../_shared/klant-prijs.ts'
 
 const SHOPS: LightspeedShop[] = ['nl', 'de']
 const PAGE_LIMIT = 250
@@ -81,15 +82,25 @@ async function buildRegels(
       }
     }
 
+    // Klantprijs uit prijslijst (NIET de consumentprijs van Lightspeed)
+    const aantal = row.quantityOrdered ?? 1
+    const klantPrijs = await haalKlantPrijs(supabase, debiteurNr, match.artikelnr, {
+      is_maatwerk: match.is_maatwerk,
+      lengte_cm: maatwerk_lengte_cm,
+      breedte_cm: maatwerk_breedte_cm,
+    })
+    const prijs = klantPrijs.prijs
+    const bedrag = prijs != null ? Math.round(prijs * aantal * 100) / 100 : null
+
     regels.push({
       artikelnr: match.artikelnr,
       omschrijving,
       omschrijving_2: row.variantTitle ?? null,
-      orderaantal: row.quantityOrdered ?? 1,
-      te_leveren: row.quantityOrdered ?? 1,
-      prijs: row.priceIncl ?? null,
+      orderaantal: aantal,
+      te_leveren: aantal,
+      prijs,
       korting_pct: 0,
-      bedrag: (row.priceIncl ?? 0) * (row.quantityOrdered ?? 1),
+      bedrag,
       gewicht_kg: normalizeGewicht(row.weight),
       is_maatwerk: match.is_maatwerk ?? false,
       maatwerk_kwaliteit_code: match.maatwerk_kwaliteit_code ?? null,
