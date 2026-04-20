@@ -312,14 +312,15 @@ async function updateRegel(id, patch) {
 async function main() {
   console.log(`Mode: ${DRY_RUN ? 'DRY-RUN' : 'APPLY'}\n`)
 
-  // Kandidaat-regels: (a) unmatched (artikelnr IS NULL) én (b) foutief
-  // gematcht op standaard artikel terwijl variantTitle "Op maat"/"Wunschgröße"
-  // was (is_maatwerk=false, maar omschrijving_2 geeft maatwerk-signaal).
+  // Kandidaat-regels: (a) unmatched (artikelnr IS NULL), (b) foutief gematcht
+  // op standaard artikel terwijl variantTitle "Op maat"/"Wunschgröße" was
+  // (is_maatwerk=false + maatwerk-signaal in omschrijving_2), en (c)
+  // is_maatwerk=true maar geen maatwerk_kwaliteit_code — dat signaleert een
+  // regel van vóór de fix die aan een rol-artikel i.p.v. MAATWERK-artikel hangt.
   const SELECT = 'id,order_id,regelnummer,omschrijving,omschrijving_2,artikelnr,is_maatwerk,maatwerk_kwaliteit_code,maatwerk_kleur_code,maatwerk_lengte_cm,maatwerk_breedte_cm'
   const unmatched = await sbGet(
     `/rest/v1/order_regels?artikelnr=is.null&select=${SELECT}`,
   )
-  // ilike-patroon is case-insensitive; ö/ß worden expliciet gematcht via 2 varianten
   const opMaatPatterns = ['*Op maat*', '*op maat*', '*Wunschgr*', '*wunschgr*', '*Durchmesser*', '*durchmesser*']
   const opMaatRegels = []
   for (const p of opMaatPatterns) {
@@ -328,9 +329,13 @@ async function main() {
     )
     opMaatRegels.push(...rs)
   }
+  // (c) Incomplete maatwerk-regels: is_maatwerk=true zonder kwaliteit_code
+  const incompleetMW = await sbGet(
+    `/rest/v1/order_regels?is_maatwerk=eq.true&maatwerk_kwaliteit_code=is.null&select=${SELECT}`,
+  )
   const alleIds = new Set()
   const regels = []
-  for (const r of [...unmatched, ...opMaatRegels]) {
+  for (const r of [...unmatched, ...opMaatRegels, ...incompleetMW]) {
     if (alleIds.has(r.id)) continue
     alleIds.add(r.id)
     regels.push(r)
