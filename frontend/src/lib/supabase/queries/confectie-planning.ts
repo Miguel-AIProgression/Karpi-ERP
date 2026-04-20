@@ -91,3 +91,52 @@ export async function updateConfectieWerktijd(
   if (error) throw error
   return data as ConfectieWerktijd
 }
+
+export interface ConfectiePlanningForwardRow {
+  // Primaire identifiers
+  snijplan_id: number
+  snijplan_nr: string
+  scancode: string | null
+  snijplan_status: string
+  // Backward-compat aliassen (voor bestaande LaneKolom/AfrondModal/overview)
+  confectie_id: number          // = snijplan_id
+  confectie_nr: string           // = snijplan_nr
+  status: string                 // = snijplan_status
+  snij_lengte_cm: number | null  // = lengte_cm
+  snij_breedte_cm: number | null // = breedte_cm
+  maatwerk_vorm: string | null   // = vorm (andere alias)
+  // Lane + derived
+  type_bewerking: string | null
+  order_regel_id: number
+  order_id: number
+  order_nr: string
+  klant_naam: string | null
+  maatwerk_afwerking: string | null
+  maatwerk_band_kleur: string | null
+  maatwerk_instructies: string | null
+  vorm: string | null
+  lengte_cm: number | null
+  breedte_cm: number | null
+  strekkende_meter_cm: number | null
+  rol_id: number | null
+  rolnummer: string | null
+  kwaliteit_code: string | null
+  kleur_code: string | null
+  afleverdatum: string | null
+  // Afrond-velden
+  confectie_afgerond_op: string | null
+  ingepakt_op: string | null
+  locatie: string | null
+  // Vooruitkijk
+  confectie_startdatum: string
+  opmerkingen: string | null
+}
+
+export async function fetchConfectiePlanningForward(): Promise<ConfectiePlanningForwardRow[]> {
+  const { data, error } = await supabase
+    .from('confectie_planning_forward')
+    .select('*')
+    .order('confectie_startdatum', { ascending: true })
+  if (error) throw error
+  return (data ?? []) as ConfectiePlanningForwardRow[]
+}

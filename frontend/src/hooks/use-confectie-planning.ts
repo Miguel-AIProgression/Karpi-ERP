@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   afrondConfectie,
   fetchConfectiePlanning,
+  fetchConfectiePlanningForward,
   fetchConfectieWerktijden,
   updateConfectieWerktijd,
   type AfrondConfectieInput,
@@ -46,5 +47,13 @@ export function useUpdateConfectieWerktijd() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['confectie-werktijden'] })
     },
+  })
+}
+
+export function useConfectiePlanningForward() {
+  return useQuery({
+    queryKey: ['confectie', 'planning-forward'],
+    queryFn: fetchConfectiePlanningForward,
+    staleTime: 30_000,
   })
 }
