@@ -88,7 +88,8 @@ Gedeelde code in `supabase/functions/_shared/` (FFDH algoritme, DB helpers) word
 /snijplanning/productie/:rolId  Productie-pagina per rol
 /snijplanning/stickers     Bulk sticker print (query params: kwaliteit, kleur, rol, status)
 /snijplanning/:id/stickers Sticker print weergave voor gesneden stukken
-/confectie                 Confectie overzicht: scan-gestuurd afwerkingsstatus
+/confectie                 Confectielijst (stukken te confectioneren) — leest confectie_planning_forward view
+/confectie/planning        Meerweekse planning per lane (breedband/smalband/feston/...) met horizon 1/2/4/8 wk
 /scanstation               Tablet-vriendelijk scaninterface voor barcode/QR inpak
 /rollen                    Rolbeheer: gegroepeerd per kwaliteit/kleur met status badges
 /magazijn                  Gereed product overzicht met locatiebeheer
@@ -165,6 +166,15 @@ Credentials per shop in `supabase/functions/.env` (gitignored): `LIGHTSPEED_{NL,
 - Productie types: gedeelde TypeScript types voor snijplannen, confectie, scan events
 - Status kleuren: consistente kleurcodering per productie-status
 - `frontend/src/lib/utils/snijplan-mapping.ts` — Gedeelde rotatie-inferentie + plan-reconstructie
+
+## Confectie workflow
+
+- **Bron-of-truth:** tabel `snijplannen`. Alle lijst/planning-views lezen hiervan (niet van legacy `confectie_orders`).
+- **Lane-mapping:** `order_regels.maatwerk_afwerking` (B/FE/LO/SB/SF/VO/ON/ZO) → `afwerking_types.type_bewerking` → `confectie_werktijden.type_bewerking` (breedband/smalband/feston/smalfeston/locken/volume afwerking). ON/ZO hebben geen lane (alleen stickeren).
+- **Forward-view:** `confectie_planning_forward` levert alle open maatwerk-snijplannen (status Gepland..In confectie/Ingepakt) inclusief verwachte `confectie_startdatum`. Backward-compat aliassen voor legacy components.
+- **Capaciteit per lane:** `confectie_werktijden.parallelle_werkplekken` (integer, default 1). Planning rekent `beschikbare_werkminuten × parallelle_werkplekken` per week per lane.
+- **Status-transities:** via RPC's `start_confectie(snijplan_id)` en `voltooi_confectie(snijplan_id, afgerond, ingepakt, locatie)`, niet via directe UPDATE. Idempotent.
+- **TOC-framing:** elke lane is een constraint; capaciteitsbalk per week signaleert overload vóór het zover is.
 
 ### Op Maat Module
 - Toggle "Standaard / Op maat" in order-line-editor

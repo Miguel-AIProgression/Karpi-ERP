@@ -54,6 +54,7 @@ Overige modules: placeholder pagina's, worden feature-voor-feature uitgebouwd.
 
 ## Bedrijfsregels
 - **Orders verwijderen:** mag alleen als er geen snijplannen zijn met status 'Snijden', 'Gesneden' of later. Snijplannen met vroege statussen ('Wacht', 'Gepland') moeten eerst handmatig verwijderd worden vóór de order. Gooit anders FK-fout op `snijplannen_order_regel_id_fkey`.
+- **Confectie-planning:** bron is `snijplannen` via view `confectie_planning_forward`. Lane (type_bewerking) wordt afgeleid van `maatwerk_afwerking` via `afwerking_types.type_bewerking`. Afwerkingen `ON`/`ZO` hebben geen lane en verschijnen onder "alleen stickeren". Status-transities lopen via RPC's `start_confectie` en `voltooi_confectie`, niet directe UPDATE.
 
 ## Conventies
 - Taal in code: Engels (variabelen, functies). Taal in UI: Nederlands.

@@ -56,6 +56,9 @@ Domeinbegrippen die je moet kennen om dit project te begrijpen.
 | **Adres-snapshot** | Kopie van het adres op het moment van de order. Latere adreswijzigingen raken de order niet. |
 | **Snijplan** | Instructie om tapijt op maat te snijden uit een rol voor een orderregel. |
 | **Confectie** | Nabewerking na het snijden: overzomen, backing, binden. |
+| **Confectie-lane** | Werkstation voor één type_bewerking (breedband, smalband, feston, smalfeston, locken, volume afwerking). Meerdere parallelle werkplekken mogelijk per lane. |
+| **Confectie-horizon** | Aantal weken vooruit dat de planning toont (1, 2, 4 of 8 — default 4). |
+| **Bezetting** | Nodig / beschikbaar × 100%. >100% = overload van de lane in die week. |
 | **Zending** | Fysieke levering. Kan producten uit meerdere orderregels bevatten. |
 | **Sample/staal** | Monster van een product, verstuurd naar een klant. |
 | **Backorder** | Besteld maar niet op voorraad; wacht op levering van leverancier. |
