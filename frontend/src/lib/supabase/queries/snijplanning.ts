@@ -326,19 +326,6 @@ export async function fetchBeschikbareRollen(kwaliteitCode: string, kleurCode: s
   }[]
 }
 
-/** Fetch all snijplannen for the confectielijst (status Gesneden/In confectie/Gereed),
- *  ordered by afwerking then delivery date */
-export async function fetchConfectielijst(): Promise<SnijplanRow[]> {
-  const { data, error } = await supabase
-    .from('snijplanning_overzicht')
-    .select('*')
-    .in('status', ['Gesneden', 'In confectie'])
-    .order('maatwerk_afwerking', { ascending: true, nullsFirst: true })
-    .order('afleverdatum', { ascending: true, nullsFirst: false })
-  if (error) throw error
-  return (data ?? []) as SnijplanRow[]
-}
-
 /** Fetch productie dashboard stats */
 export async function fetchProductieDashboard(): Promise<ProductieDashboard> {
   const { data, error } = await supabase

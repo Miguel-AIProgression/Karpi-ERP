@@ -1,8 +1,8 @@
-import { useMemo, Fragment } from 'react'
+import { useMemo, Fragment, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Factory, Scissors } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { useConfectielijst } from '@/hooks/use-snijplanning'
+import { useConfectiePlanningForward } from '@/hooks/use-confectie-planning'
 import { ConfectieTabs } from './confectie-planning'
 import { cn } from '@/lib/utils/cn'
 import { confectieDeadline } from '@/lib/utils/confectie-deadline'
@@ -10,6 +10,7 @@ import { AlertTriangle } from 'lucide-react'
 import { AFWERKING_MAP, AFWERKING_OPTIES, SNIJPLAN_STATUS_COLORS } from '@/lib/utils/constants'
 import { getVormDisplay } from '@/lib/utils/vorm-labels'
 import type { SnijplanRow } from '@/lib/types/productie'
+import type { ConfectiePlanningForwardRow } from '@/lib/supabase/queries/confectie-planning'
 
 /** Label voor afwerking-code of fallback tekst */
 function afwerkingLabel(code: string | null): string {
@@ -24,13 +25,22 @@ function afwerkingVolgorde(code: string | null): number {
   return idx === -1 ? 998 : idx
 }
 
+const KLAAR_STATUSSEN = ['Gesneden', 'In confectie']
+
 export function ConfectieOverviewPage() {
-  const { data: stukken, isLoading } = useConfectielijst()
+  const { data: alleStukken, isLoading } = useConfectiePlanningForward()
+  const [filter, setFilter] = useState<'klaar' | 'alles'>('klaar')
+
+  // Filter op status
+  const stukken = useMemo(() => {
+    if (!alleStukken) return []
+    if (filter === 'klaar') return alleStukken.filter((s) => KLAAR_STATUSSEN.includes(s.snijplan_status))
+    return alleStukken
+  }, [alleStukken, filter])
 
   // Groepeer per afwerking, gesorteerd op volgorde
   const groepenPerAfwerking = useMemo(() => {
-    if (!stukken) return []
-    const map = new Map<string | null, SnijplanRow[]>()
+    const map = new Map<string | null, ConfectiePlanningForwardRow[]>()
     for (const s of stukken) {
       const key = s.maatwerk_afwerking ?? null
       const lijst = map.get(key) ?? []
@@ -42,16 +52,45 @@ export function ConfectieOverviewPage() {
     )
   }, [stukken])
 
-  const totaal = stukken?.length ?? 0
+  const totaal = stukken.length
+  const beschrijving = filter === 'klaar'
+    ? `${totaal} klaar voor afwerking — gesorteerd per afwerking en leverdatum`
+    : `${totaal} stuk${totaal !== 1 ? 'ken' : ''} open (incl. gepland) — gesorteerd per afwerking en leverdatum`
 
   return (
     <>
       <PageHeader
         title="Confectielijst"
-        description={`${totaal} stuk${totaal !== 1 ? 'ken' : ''} te confectioneren — gesorteerd per afwerking en leverdatum`}
+        description={beschrijving}
       />
 
       <ConfectieTabs active="lijst" />
+
+      {/* Filter-toggle */}
+      <div className="flex gap-2 mt-1 mb-4">
+        <button
+          onClick={() => setFilter('klaar')}
+          className={cn(
+            'px-3 py-1.5 rounded text-sm font-medium transition-colors',
+            filter === 'klaar'
+              ? 'bg-terracotta-600 text-white'
+              : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+          )}
+        >
+          Klaar voor confectie
+        </button>
+        <button
+          onClick={() => setFilter('alles')}
+          className={cn(
+            'px-3 py-1.5 rounded text-sm font-medium transition-colors',
+            filter === 'alles'
+              ? 'bg-terracotta-600 text-white'
+              : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+          )}
+        >
+          Alles (incl. gepland)
+        </button>
+      </div>
 
       {isLoading ? (
         <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-12 text-center text-slate-400">
@@ -60,8 +99,14 @@ export function ConfectieOverviewPage() {
       ) : totaal === 0 ? (
         <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-12 text-center text-slate-400">
           <Scissors size={32} className="mx-auto mb-3 opacity-30" />
-          <p>Geen stukken klaar voor afwerking</p>
-          <p className="text-sm mt-1">Orders verschijnen hier zodra ze Gesneden zijn</p>
+          {filter === 'klaar' ? (
+            <>
+              <p>Geen stukken klaar voor afwerking</p>
+              <p className="text-sm mt-1">Orders verschijnen hier zodra ze Gesneden zijn</p>
+            </>
+          ) : (
+            <p>Geen open stukken in de planning</p>
+          )}
         </div>
       ) : (
         <div className="space-y-6">
@@ -106,7 +151,7 @@ export function ConfectieOverviewPage() {
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {rows.map((s) => (
-                        <ConfectieRij key={s.id} stuk={s} />
+                        <ConfectieRij key={s.snijplan_id} stuk={s as unknown as SnijplanRow} />
                       ))}
                     </tbody>
                   </table>

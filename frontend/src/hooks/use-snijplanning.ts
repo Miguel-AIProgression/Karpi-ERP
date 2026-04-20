@@ -8,7 +8,6 @@ import {
   fetchRolSnijstukken,
   fetchBeschikbareRollen,
   fetchProductieDashboard,
-  fetchConfectielijst,
   fetchAlleSnijden,
   fetchRolLocaties,
   fetchTekortAnalyse,
@@ -95,13 +94,6 @@ export function useSnijplannenVoorGroep(
     queryKey: ['snijplanning', 'groep', kwaliteitCode, kleurCode, totDatum],
     queryFn: () => fetchSnijplannenVoorGroep(kwaliteitCode, kleurCode, totDatum),
     enabled,
-  })
-}
-
-export function useConfectielijst() {
-  return useQuery({
-    queryKey: ['snijplanning', 'confectielijst'],
-    queryFn: fetchConfectielijst,
   })
 }
 
