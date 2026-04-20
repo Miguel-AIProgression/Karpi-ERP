@@ -212,6 +212,15 @@ export async function matchProduct(
   debiteurNr?: number,
 ): Promise<ProductMatch> {
 
+  // Muster/staaltjes VROEG detecteren — deze regels worden upstream
+  // (sync-webshop-order + import-lightspeed-orders) overgeslagen omdat Karpi
+  // geen staaltjes factureert aan Floorpassion (altijd gratis). De caller
+  // gebruikt `unmatchedReden === 'muster'` als skip-signaal.
+  const musterBlob = `${row.productTitle ?? ''} ${row.variantTitle ?? ''}`
+  if (MUSTER_PATROON.test(musterBlob)) {
+    return { artikelnr: null, matchedOn: 'geen', unmatchedReden: 'muster' }
+  }
+
   // Klanteigen_namen EERST als debiteurNr bekend is — naam+kleur parsen heeft prioriteit
   // over code-matching zodat maatwerk-artikelen correct herkend worden.
   // We halen ALLE aliases voor de debiteur in één query en matchen in-memory

@@ -82,6 +82,10 @@ async function buildRegels(
 
   for (const row of rows) {
     const match = await matchProduct(supabase, row, debiteurNr)
+
+    // Staaltjes (Gratis Muster) worden niet ingeladen — Karpi factureert ze niet aan Floorpassion
+    if (match.unmatchedReden === 'muster') continue
+
     const omschrijving = buildOmschrijving(row, match)
 
     if (match.artikelnr || match.is_maatwerk) matched++
