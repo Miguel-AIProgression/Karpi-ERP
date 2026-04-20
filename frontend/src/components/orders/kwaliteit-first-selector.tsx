@@ -136,9 +136,9 @@ export function KwaliteitFirstSelector({
 
   // ── Auto-selecteer kleur vanuit kleurHint zodra kleuren geladen zijn ──
   useEffect(() => {
-    if (!kleurHint || kleuren.length === 0 || selectedKleurCode) return
+    if (!kleurHint || beschikbareKleuren.length === 0 || selectedKleurCode) return
     const hint = normalizeKleur(kleurHint)
-    const match = kleuren.find((k) => normalizeKleur(k.kleur_code) === hint || normalizeKleur(k.kleur_label) === hint)
+    const match = beschikbareKleuren.find((k) => normalizeKleur(k.kleur_code) === hint || normalizeKleur(k.kleur_label) === hint)
     if (match) {
       setSelectedKleurCode(match.kleur_code)
       setSelectedKleur(match)
@@ -163,13 +163,41 @@ export function KwaliteitFirstSelector({
     )
   }, [standaardMaten, selectedKleurCode])
 
-  // ── Beschikbare kleuren in de maten lijst ─────────────────────
-  const beschikbareKleuren = useMemo(() => {
-    const codes = new Set(standaardMaten.map((m) => m.kleur_code).filter(Boolean))
-    return kleuren.filter((k) => codes.has(k.kleur_code))
-  }, [standaardMaten, kleuren])
+  // ── Beschikbare kleuren: union van m²-geconfigureerde kleuren én kleuren die
+  //    alleen als product bestaan (bv. VELV15MAATWERK zonder m²-prijs in DB).
+  //    Zo kunnen ook kleuren zonder voorraad of m²-prijs geselecteerd worden.
+  const beschikbareKleuren = useMemo((): KleurOptie[] => {
+    const map = new Map<string, KleurOptie>()
+    for (const k of kleuren) map.set(k.kleur_code, k)
+    for (const m of standaardMaten) {
+      if (m.kleur_code && !map.has(m.kleur_code)) {
+        // Gebruik de prijs van het MAATWERK-product als basis m²-prijs fallback.
+        const maatwerkProduct = standaardMaten.find(
+          (s) => s.kleur_code === m.kleur_code &&
+          (s.omschrijving?.toUpperCase().includes('MAATWERK') || s.karpi_code?.toUpperCase().includes('MAATWERK'))
+        )
+        map.set(m.kleur_code, {
+          kleur_code: m.kleur_code,
+          kleur_label: m.kleur_code.replace(/\.0$/, ''),
+          omschrijving: '',
+          verkoopprijs_m2: maatwerkProduct?.verkoopprijs ?? null,
+          kostprijs_m2: null,
+          gewicht_per_m2_kg: null,
+          max_breedte_cm: null,
+          artikelnr: maatwerkProduct?.artikelnr ?? null,
+          karpi_code: maatwerkProduct?.karpi_code ?? null,
+          aantal_rollen: 0,
+          beschikbaar_m2: 0,
+          totaal_m2: 0,
+          equiv_rollen: 0,
+          equiv_m2: 0,
+        })
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => a.kleur_code.localeCompare(b.kleur_code))
+  }, [kleuren, standaardMaten])
 
-  const hasOpMaat = kleuren.length > 0
+  const hasOpMaat = beschikbareKleuren.length > 0
 
   // ── Klantspecifieke m²-prijs ophalen uit prijslijst ──────────
   // Maatwerk heeft een apart artikel met 'maatwerk' in de omschrijving
@@ -260,7 +288,7 @@ export function KwaliteitFirstSelector({
   function handleKleurFilter(kleurCode: string) {
     setSelectedKleurCode(kleurCode)
     // Bij op maat ook de KleurOptie bijhouden
-    setSelectedKleur(kleuren.find((k) => k.kleur_code === kleurCode) ?? null)
+    setSelectedKleur(beschikbareKleuren.find((k) => k.kleur_code === kleurCode) ?? null)
   }
 
   function handleMaatClick(maat: typeof standaardMaten[0]) {
@@ -301,7 +329,7 @@ export function KwaliteitFirstSelector({
   function handleOpMaatClick() {
     // Kleur is al geselecteerd via het filter → meteen naar op_maat
     if (selectedKleurCode) {
-      setSelectedKleur(kleuren.find((k) => k.kleur_code === selectedKleurCode) ?? null)
+      setSelectedKleur(beschikbareKleuren.find((k) => k.kleur_code === selectedKleurCode) ?? null)
     }
     setStep('op_maat')
   }
@@ -494,7 +522,7 @@ export function KwaliteitFirstSelector({
             {/* Op maat optie */}
             {hasOpMaat && (() => {
               const opMaatKleur = selectedKleurCode
-                ? kleuren.find((k) => k.kleur_code === selectedKleurCode)
+                ? beschikbareKleuren.find((k) => k.kleur_code === selectedKleurCode)
                 : null
               // totaal_m2 bestaat na migratie 049; vóór migratie: fallback op beschikbaar_m2
               const displayM2 = opMaatKleur
@@ -592,9 +620,9 @@ export function KwaliteitFirstSelector({
           className="w-full px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400/30 focus:border-purple-400 disabled:bg-slate-100 disabled:text-slate-400"
         >
           <option value="">
-            {kleurenLoading ? 'Laden...' : `Selecteer een kleur (${kleuren.length} beschikbaar)`}
+            {kleurenLoading ? 'Laden...' : `Selecteer een kleur (${beschikbareKleuren.length} beschikbaar)`}
           </option>
-          {kleuren.map((k) => {
+          {beschikbareKleuren.map((k) => {
             const heeftEquiv = (k.equiv_rollen ?? 0) > 0
             return (
               <option key={k.kleur_code} value={k.kleur_code}>
