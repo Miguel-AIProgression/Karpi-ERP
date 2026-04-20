@@ -41,17 +41,23 @@ function isGesneden(row: ConfectiePlanningForwardRow): boolean {
 
 function sortRows(rows: ConfectiePlanningForwardRow[]): ConfectiePlanningForwardRow[] {
   return [...rows].sort((a, b) => {
-    // 1. Deadline oplopend (null achteraan)
-    const da = a.afleverdatum ?? '9999-12-31'
-    const db = b.afleverdatum ?? '9999-12-31'
-    if (da !== db) return da.localeCompare(db)
-    // 2. Gesneden stukken eerst (direct oppakbaar)
+    // 1. Gesneden stukken eerst (direct oppakbaar), dan nog-niet-gesneden
     const ga = isGesneden(a) ? 0 : 1
     const gb = isGesneden(b) ? 0 : 1
     if (ga !== gb) return ga - gb
+    // 2. Binnen elke groep: op leverdatum oplopend (null achteraan)
+    const da = a.afleverdatum ?? '9999-12-31'
+    const db = b.afleverdatum ?? '9999-12-31'
+    if (da !== db) return da.localeCompare(db)
     // 3. Snijplan-nr voor stabiele volgorde
     return (a.snijplan_nr ?? '').localeCompare(b.snijplan_nr ?? '')
   })
+}
+
+function fmtLeverdatum(iso: string | null): string {
+  if (!iso) return '—'
+  const d = new Date(iso + 'T00:00:00')
+  return `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
 interface LaneGroep {
@@ -174,6 +180,9 @@ function Rij({ row, onSelect }: { row: ConfectiePlanningForwardRow; onSelect?: (
         ) : (
           <span className="text-slate-300 text-xs">—</span>
         )}
+      </td>
+      <td className="py-2 px-2 whitespace-nowrap tabular-nums text-slate-700">
+        {fmtLeverdatum(row.afleverdatum)}
       </td>
       <td className="py-2 px-2 whitespace-nowrap tabular-nums">
         {deadline ? (
