@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ClientSelector, type SelectedClient } from './client-selector'
@@ -49,6 +49,18 @@ export function OrderForm({ mode, initialData }: OrderFormProps) {
   const [spoedActief, setSpoedActief] = useState<boolean>(
     () => mode === 'edit' && (initialData?.regels ?? []).some(r => r.artikelnr === SPOED_PRODUCT_ID)
   )
+
+  // In edit-modus laadt clientData asynchroon na de eerste render.
+  // Sync de prijslijst en korting zodra die beschikbaar komen.
+  useEffect(() => {
+    if (mode !== 'edit' || !initialData?.client) return
+    const incoming = initialData.client
+    setClient((prev) => {
+      if (!prev) return incoming
+      if (prev.prijslijst_nr === incoming.prijslijst_nr && prev.korting_pct === incoming.korting_pct) return prev
+      return { ...prev, prijslijst_nr: incoming.prijslijst_nr, korting_pct: incoming.korting_pct }
+    })
+  }, [mode, initialData?.client?.prijslijst_nr, initialData?.client?.korting_pct])
 
   const { data: orderConfig } = useQuery({ queryKey: ['order-config'], queryFn: fetchOrderConfig })
 
