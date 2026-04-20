@@ -242,6 +242,9 @@ export interface KleurOptie {
   totaal_m2: number             // totaal fysiek aanwezig m² (excl. gesneden/verkocht)
   equiv_rollen: number          // rollen van uitwisselbare kwaliteiten
   equiv_m2: number              // m² van uitwisselbare rollen
+  equiv_kwaliteit_code: string | null // beste uitwisselbare kwaliteit (meeste m²)
+  equiv_artikelnr: string | null      // MAATWERK-artikelnr van die uitwisselbare kwaliteit+kleur — gebruikt als fysiek_artikelnr bij omstickeren
+  equiv_m2_prijs: number | null       // m²-prijs van die uitwisselbare combinatie uit maatwerk_m2_prijzen
 }
 
 export async function fetchKleurenVoorKwaliteit(kwaliteitCode: string): Promise<KleurOptie[]> {

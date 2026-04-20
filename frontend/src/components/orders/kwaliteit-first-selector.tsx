@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { Search, ChevronLeft, Plus } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
+import { supabase } from '@/lib/supabase/client'
 import {
   searchKwaliteitenViaProducten,
   fetchKleurenVoorKwaliteit,
@@ -192,6 +193,9 @@ export function KwaliteitFirstSelector({
           totaal_m2: 0,
           equiv_rollen: 0,
           equiv_m2: 0,
+          equiv_kwaliteit_code: null,
+          equiv_artikelnr: null,
+          equiv_m2_prijs: null,
         })
       }
     }
@@ -208,13 +212,8 @@ export function KwaliteitFirstSelector({
       setKlantM2Prijs(null)
       return
     }
-    // Geen prijslijst → val direct terug op maatwerk_m2_prijzen
-    if (!prijslijstNr) {
-      const kwaliteitPrijs = await fetchKwaliteitM2Prijs(selectedKwaliteit.code)
-      setKlantM2Prijs(kwaliteitPrijs)
-      return
-    }
-    // Directe DB-query naar maatwerk-artikel voor deze kwaliteit+kleur
+    // Zoek altijd eerst het kleur-specifieke maatwerk-artikel — die prijs is
+    // autoritatiever dan de kwaliteitsbrede maatwerk_m2_prijzen-fallback.
     const maatwerkArtikelNr = await fetchMaatwerkArtikelNr(
       selectedKwaliteit.code,
       kleur.kleur_code,
@@ -227,17 +226,34 @@ export function KwaliteitFirstSelector({
       maatwerkArtikelNr,
       artikelnr,
     })
-    if (!artikelnr) {
-      setKlantM2Prijs(null)
-      return
+
+    // 1. Klant-prijslijst heeft voorrang (indien klant een prijslijst heeft)
+    if (prijslijstNr && artikelnr) {
+      const prijs = await lookupPrice(prijslijstNr, artikelnr)
+      console.debug('[maatwerk prijs] prijslijst lookup:', { artikelnr, prijs })
+      if (prijs != null) {
+        setKlantM2Prijs(prijs)
+        return
+      }
     }
-    const prijs = await lookupPrice(prijslijstNr, artikelnr)
-    console.debug('[maatwerk prijs] lookup resultaat:', { artikelnr, prijs })
-    if (prijs != null) {
-      setKlantM2Prijs(prijs)
-      return
+
+    // 2. Verkoopprijs van het kleur-specifieke maatwerk-artikel (bijv.
+    //    VELV16MAATWERK €24,26). Dit dekt zowel klanten zonder prijslijst
+    //    als klanten mét prijslijst waarin dit artikel ontbreekt.
+    if (artikelnr) {
+      const { data: prodData } = await supabase
+        .from('producten')
+        .select('verkoopprijs')
+        .eq('artikelnr', artikelnr)
+        .maybeSingle()
+      if (prodData?.verkoopprijs != null) {
+        console.debug('[maatwerk prijs] product verkoopprijs fallback:', prodData.verkoopprijs)
+        setKlantM2Prijs(prodData.verkoopprijs)
+        return
+      }
     }
-    // Fallback: geen klantprijs gevonden → gebruik kwaliteits-m²-prijs uit maatwerk_m2_prijzen
+
+    // 3. Generieke kwaliteits-m²-prijs uit maatwerk_m2_prijzen (laatste redmiddel)
     const kwaliteitPrijs = await fetchKwaliteitM2Prijs(selectedKwaliteit.code)
     console.debug('[maatwerk prijs] kwaliteit fallback:', kwaliteitPrijs)
     setKlantM2Prijs(kwaliteitPrijs)
@@ -250,8 +266,21 @@ export function KwaliteitFirstSelector({
     }
   }, [selectedKleur, fetchKlantPrijs])
 
-  // Effectieve m²-prijs: klantprijs uit prijslijst heeft prioriteit
-  const effectieveM2Prijs = klantM2Prijs ?? (selectedKleur?.verkoopprijs_m2 ?? 0)
+  // Uitwisselbaar-modus: eigen kleur heeft geen rollen maar een uitwisselbare
+  // kwaliteit wel. Factuur behoudt de bestelde kwaliteit (omstickeer-model),
+  // snijplan pakt fysiek de uitwisselbare rol.
+  const gebruiktUitwisselbaar =
+    !!selectedKleur &&
+    selectedKleur.aantal_rollen === 0 &&
+    (selectedKleur.equiv_rollen ?? 0) > 0 &&
+    !!selectedKleur.equiv_kwaliteit_code
+
+  // Effectieve m²-prijs: klantprijs uit prijslijst heeft prioriteit; valt
+  // terug op maatwerk_m2_prijzen van de uitwisselbare (bij swap) of van de
+  // eigen kleur.
+  const effectieveM2Prijs =
+    klantM2Prijs
+    ?? (gebruiktUitwisselbaar ? (selectedKleur?.equiv_m2_prijs ?? 0) : (selectedKleur?.verkoopprijs_m2 ?? 0))
 
   // ── Op maat prijsberekeningen ─────────────────────────────────
   const selectedVorm = vormen.find((v) => v.code === vormData.vormCode)
@@ -351,6 +380,9 @@ export function KwaliteitFirstSelector({
   function handleAdd() {
     if (!canAdd || !selectedKleur || !selectedKwaliteit) return
     const totalRollen = selectedKleur.aantal_rollen + selectedKleur.equiv_rollen
+    // Bij swap: factuur toont bestelde kwaliteit; intern wijst fysiek_artikelnr
+    // naar de MAATWERK-artikelref van de uitwisselbare kwaliteit zodat snijplan/
+    // voorraadreservering op de juiste rol landt (omstickeer-model).
     const line: OrderRegelFormData = {
       artikelnr: selectedKleur.artikelnr ?? undefined,
       karpi_code: selectedKleur.karpi_code ?? `${selectedKwaliteit.code}${selectedKleur.kleur_code}`,
@@ -363,6 +395,11 @@ export function KwaliteitFirstSelector({
       gewicht_kg: berekenMaatwerkGewicht(oppervlakM2, selectedKleur.gewicht_per_m2_kg),
       vrije_voorraad: totalRollen,
       besteld_inkoop: selectedKleur.equiv_rollen > 0 ? selectedKleur.equiv_rollen : 0,
+      fysiek_artikelnr: gebruiktUitwisselbaar ? (selectedKleur.equiv_artikelnr ?? undefined) : undefined,
+      fysiek_omschrijving: gebruiktUitwisselbaar && selectedKleur.equiv_kwaliteit_code
+        ? `${selectedKleur.equiv_kwaliteit_code} ${selectedKleur.kleur_label} MAATWERK`
+        : undefined,
+      omstickeren: gebruiktUitwisselbaar ? true : undefined,
       is_maatwerk: true,
       maatwerk_vorm: vormData.vormCode,
       maatwerk_lengte_cm: isDiameter ? vormData.diameterCm : vormData.lengteCm,
@@ -638,18 +675,31 @@ export function KwaliteitFirstSelector({
           </option>
           {beschikbareKleuren.map((k) => {
             const heeftEquiv = (k.equiv_rollen ?? 0) > 0
+            const prijs = k.verkoopprijs_m2 ?? (k.aantal_rollen === 0 && heeftEquiv ? k.equiv_m2_prijs : null)
             return (
               <option key={k.kleur_code} value={k.kleur_code}>
                 {k.kleur_label} — {k.omschrijving}
-                {' | '}{k.verkoopprijs_m2 != null ? formatCurrency(k.verkoopprijs_m2) : '—'}/m²
-                {' | '}{k.totaal_m2} m² totaal
-                {k.beschikbaar_m2 < k.totaal_m2 ? ` (vrij: ${k.beschikbaar_m2} m²)` : ''}
-                {heeftEquiv ? ` +${k.equiv_m2} m² equiv` : ''}
+                {' | '}{prijs != null ? formatCurrency(prijs) : '—'}/m²
+                {' | '}{(k.totaal_m2 ?? k.beschikbaar_m2 ?? 0)} m² totaal
+                {k.beschikbaar_m2 < (k.totaal_m2 ?? k.beschikbaar_m2) ? ` (vrij: ${k.beschikbaar_m2} m²)` : ''}
+                {heeftEquiv ? ` +${k.equiv_m2} m² via ${k.equiv_kwaliteit_code}` : ''}
               </option>
             )
           })}
         </select>
       </div>
+
+      {/* Banner: uitwisselbare rol wordt gebruikt (omstickeer-model) */}
+      {gebruiktUitwisselbaar && selectedKleur && (
+        <div className="p-3 bg-amber-50 border border-amber-200 rounded-[var(--radius-sm)] text-sm">
+          <div className="font-medium text-amber-800">
+            {selectedKwaliteit?.code} {selectedKleur.kleur_label} heeft geen eigen voorraad — wordt gesneden uit {selectedKleur.equiv_kwaliteit_code} {selectedKleur.kleur_label}
+          </div>
+          <div className="text-xs text-amber-700 mt-0.5">
+            {selectedKleur.equiv_rollen} rol{selectedKleur.equiv_rollen !== 1 ? 'len' : ''} · {selectedKleur.equiv_m2} m² beschikbaar · factuur toont bestelde kwaliteit ({selectedKwaliteit?.code})
+          </div>
+        </div>
+      )}
 
       {/* Vorm + afmeting (alleen na kleurkeuze) */}
       {selectedKleur && (
