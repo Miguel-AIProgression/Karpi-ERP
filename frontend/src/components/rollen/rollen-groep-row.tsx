@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils/cn'
 import { ROL_STATUS_COLORS, ROL_TYPE_COLORS, ROL_TYPE_LABELS } from '@/lib/utils/constants'
 import { useReserveringenVoorProduct } from '@/hooks/use-producten'
 import { useRolSnijstukken } from '@/hooks/use-snijplanning'
-import type { RolGroep, RolRow } from '@/lib/types/productie'
+import type { RolGroep, RolRow, UitwisselbarePartner } from '@/lib/types/productie'
 
 interface RollenGroepRowProps {
   groep: RolGroep
@@ -28,6 +28,28 @@ function StatusBadge({ rolType, count }: { rolType: string; count: number }) {
     <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium', colors.bg, colors.text)}>
       {count}&times; {label}
     </span>
+  )
+}
+
+function PartnerChip({ partner }: { partner: UitwisselbarePartner }) {
+  const hasStock = partner.m2 > 0
+  const title = hasStock
+    ? `${partner.kwaliteit_code} ${partner.kleur_code} — ${partner.rollen} ${partner.rollen === 1 ? 'rol' : 'rollen'}, ${partner.m2.toFixed(1)} m²`
+    : `${partner.kwaliteit_code} ${partner.kleur_code} — geen voorraad`
+  return (
+    <Link
+      to={`/rollen?kwaliteit=${encodeURIComponent(partner.kwaliteit_code)}&kleur=${encodeURIComponent(partner.kleur_code)}`}
+      onClick={(e) => e.stopPropagation()}
+      title={title}
+      className={cn(
+        'text-xs px-2 py-0.5 rounded-full font-medium border',
+        hasStock
+          ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+          : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100',
+      )}
+    >
+      &#8646; {partner.kwaliteit_code} {partner.kleur_code}
+    </Link>
   )
 }
 
@@ -268,38 +290,45 @@ export function RollenGroepRow({ groep }: RollenGroepRowProps) {
           </span>
           <div className="flex items-center gap-2 flex-wrap">
             {isEmpty ? (
-              heeftEquiv ? (
-                <Link
-                  to={`/rollen?kwaliteit=${encodeURIComponent(groep.equiv_kwaliteit_code!)}&kleur=${encodeURIComponent(groep.equiv_kleur_code ?? '')}`}
-                  onClick={(e) => e.stopPropagation()}
-                  className="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-50 text-blue-700 hover:bg-blue-100"
-                >
-                  Leverbaar via {groep.equiv_kwaliteit_code} {groep.equiv_kleur_code}
-                  {' — '}
-                  {groep.equiv_rollen} {groep.equiv_rollen === 1 ? 'rol' : 'rollen'}
-                  {', '}
-                  {groep.equiv_m2.toFixed(1)} m&sup2;
-                </Link>
-              ) : (
-                <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-slate-100 text-slate-500">
-                  Geen voorraad
-                </span>
-              )
+              <>
+                {heeftEquiv ? (
+                  <Link
+                    to={`/rollen?kwaliteit=${encodeURIComponent(groep.equiv_kwaliteit_code!)}&kleur=${encodeURIComponent(groep.equiv_kleur_code ?? '')}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-50 text-blue-700 hover:bg-blue-100"
+                  >
+                    Leverbaar via {groep.equiv_kwaliteit_code} {groep.equiv_kleur_code}
+                    {' — '}
+                    {groep.equiv_rollen} {groep.equiv_rollen === 1 ? 'rol' : 'rollen'}
+                    {', '}
+                    {groep.equiv_m2.toFixed(1)} m&sup2;
+                  </Link>
+                ) : (
+                  <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-slate-100 text-slate-500">
+                    Geen voorraad
+                  </span>
+                )}
+                {/* Andere uitwisselbare partners (de beste is al als "Leverbaar via" getoond) */}
+                {groep.uitwisselbare_partners
+                  .filter(
+                    (p) =>
+                      !(
+                        p.kwaliteit_code === groep.equiv_kwaliteit_code &&
+                        p.kleur_code === groep.equiv_kleur_code
+                      ),
+                  )
+                  .map((p) => (
+                    <PartnerChip key={`${p.kwaliteit_code}|${p.kleur_code}`} partner={p} />
+                  ))}
+              </>
             ) : (
               <>
                 <StatusBadge rolType="volle_rol" count={groep.volle_rollen} />
                 <StatusBadge rolType="aangebroken" count={groep.aangebroken} />
                 <StatusBadge rolType="reststuk" count={groep.reststukken} />
-                {heeftEquiv && (
-                  <Link
-                    to={`/rollen?kwaliteit=${encodeURIComponent(groep.equiv_kwaliteit_code!)}&kleur=${encodeURIComponent(groep.equiv_kleur_code ?? '')}`}
-                    onClick={(e) => e.stopPropagation()}
-                    title={`Uitwisselbaar met ${groep.equiv_kwaliteit_code} ${groep.equiv_kleur_code} — ${groep.equiv_rollen} ${groep.equiv_rollen === 1 ? 'rol' : 'rollen'}, ${groep.equiv_m2.toFixed(1)} m²`}
-                    className="text-xs px-2 py-0.5 rounded-full font-medium bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200"
-                  >
-                    &#8646; {groep.equiv_kwaliteit_code} {groep.equiv_kleur_code}
-                  </Link>
-                )}
+                {groep.uitwisselbare_partners.map((p) => (
+                  <PartnerChip key={`${p.kwaliteit_code}|${p.kleur_code}`} partner={p} />
+                ))}
               </>
             )}
           </div>

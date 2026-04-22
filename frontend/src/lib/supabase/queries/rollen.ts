@@ -1,6 +1,6 @@
 import { supabase } from '../client'
 import { sanitizeSearch } from '@/lib/utils/sanitize'
-import type { RolRow, RolGroep, RolType } from '@/lib/types/productie'
+import type { RolRow, RolGroep, RolType, UitwisselbarePartner } from '@/lib/types/productie'
 
 export interface RollenStats {
   totaal: number
@@ -104,6 +104,15 @@ interface UitwisselRow {
   equiv_m2: number
 }
 
+interface PartnerRow {
+  kwaliteit_code: string
+  kleur_code: string
+  partner_kwaliteit_code: string
+  partner_kleur_code: string
+  partner_rollen: number
+  partner_m2: number
+}
+
 /** Fetch rollen grouped by kwaliteit_code + kleur_code, met equiv-info
  *  op groepen zonder eigen voorraad (via rollen_uitwissel_voorraad RPC). */
 export async function fetchRollenGegroepeerd(
@@ -167,6 +176,7 @@ export async function fetchRollenGegroepeerd(
         equiv_kleur_code: null,
         equiv_rollen: 0,
         equiv_m2: 0,
+        uitwisselbare_partners: [],
       }
       groupMap.set(key, group)
     }
@@ -203,6 +213,31 @@ export async function fetchRollenGegroepeerd(
     g.equiv_kleur_code = normKleur(eq.equiv_kleur_code)
     g.equiv_rollen = Number(eq.equiv_rollen) || 0
     g.equiv_m2 = Number(eq.equiv_m2) || 0
+  }
+
+  // Cast: uitwisselbare_partners staat nog niet in de generated types
+  // (migratie 114 is mogelijk nog niet op de live DB toegepast).
+  const { data: partnerData, error: partnerError } = await (supabase.rpc as any)(
+    'uitwisselbare_partners',
+  )
+  if (partnerError) throw partnerError
+
+  const partnersMap = new Map<string, UitwisselbarePartner[]>()
+  for (const row of (partnerData ?? []) as PartnerRow[]) {
+    const key = `${row.kwaliteit_code}|${normKleur(row.kleur_code)}`
+    const list = partnersMap.get(key) ?? []
+    list.push({
+      kwaliteit_code: row.partner_kwaliteit_code,
+      kleur_code: normKleur(row.partner_kleur_code),
+      rollen: Number(row.partner_rollen) || 0,
+      m2: Number(row.partner_m2) || 0,
+    })
+    partnersMap.set(key, list)
+  }
+
+  for (const g of groupMap.values()) {
+    const key = `${g.kwaliteit_code}|${normKleur(g.kleur_code ?? '')}`
+    g.uitwisselbare_partners = partnersMap.get(key) ?? []
   }
 
   return Array.from(groupMap.values())

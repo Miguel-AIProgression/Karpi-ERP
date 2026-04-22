@@ -192,6 +192,13 @@ export interface RolRow {
   reststuk_datum: string | null
 }
 
+export interface UitwisselbarePartner {
+  kwaliteit_code: string
+  kleur_code: string
+  rollen: number
+  m2: number
+}
+
 export interface RolGroep {
   kwaliteit_code: string
   kleur_code: string
@@ -207,6 +214,8 @@ export interface RolGroep {
   equiv_kleur_code: string | null
   equiv_rollen: number
   equiv_m2: number
+  /** Alle uitwisselbare partners uit dezelfde uitwisselgroep, gesorteerd op m² DESC. */
+  uitwisselbare_partners: UitwisselbarePartner[]
 }
 
 // === Magazijn types ===
