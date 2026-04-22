@@ -185,7 +185,7 @@ function printReststukSticker(props: {
 // Component
 // ---------------------------------------------------------------------------
 
-export function RolUitvoerModal({ rolId, open, onClose }: RolUitvoerModalProps) {
+export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoerModalProps) {
   const navigate = useNavigate()
   const { data: stukken, isLoading } = useRolSnijstukken(open ? rolId : null)
   const { data: rolDetail } = useRolDetail(open ? rolId : null)
@@ -193,17 +193,55 @@ export function RolUitvoerModal({ rolId, open, onClose }: RolUitvoerModalProps) 
   const pauzeerSnijden = usePauzeerSnijdenRol()
   const voltooiRol = useVoltooiSnijplanRol()
 
+  // DEBUG: log elke call naar onClose met stack trace zodat we zien welke
+  // code-path 'm aanroept. Tijdelijk — weg te halen zodra auto-close-bug opgelost.
+  const onClose = () => {
+    // eslint-disable-next-line no-console
+    console.log('[RolUitvoerModal] onClose called', { rolId, open }, new Error('stack').stack)
+    onCloseRaw()
+  }
+
   const [checkedIds, setCheckedIds] = useState<Set<number>>(new Set())
   const [initialized, setInitialized] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [startedRolId, setStartedRolId] = useState<number | null>(null)
 
+  // DEBUG: log open/rolId veranderingen
+  useEffect(() => {
+    // eslint-disable-next-line no-console
+    console.log('[RolUitvoerModal] props changed', { open, rolId })
+  }, [open, rolId])
+
+  // DEBUG: log mount/unmount
+  useEffect(() => {
+    // eslint-disable-next-line no-console
+    console.log('[RolUitvoerModal] MOUNT')
+    return () => {
+      // eslint-disable-next-line no-console
+      console.log('[RolUitvoerModal] UNMOUNT')
+    }
+  }, [])
+
   useEffect(() => {
     if (!open || !rolId) return
     if (startedRolId === rolId) return
+    // eslint-disable-next-line no-console
+    console.log('[RolUitvoerModal] start_snijden_rol triggering for rolId', rolId)
     setStartedRolId(rolId)
-    startSnijden.mutate({ rolId })
+    startSnijden.mutate(
+      { rolId },
+      {
+        onSuccess: (data) => {
+          // eslint-disable-next-line no-console
+          console.log('[RolUitvoerModal] start_snijden_rol SUCCESS', data)
+        },
+        onError: (err) => {
+          // eslint-disable-next-line no-console
+          console.error('[RolUitvoerModal] start_snijden_rol ERROR', err)
+        },
+      },
+    )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, rolId])
 
