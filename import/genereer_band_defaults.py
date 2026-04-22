@@ -6,24 +6,24 @@ Formaat: elke rij = één PIERO-code, cellen bevatten 'kwaliteitnaam kleurnummer
 import pandas as pd, re
 
 NAAM_NAAR_CODE = {
-    'birma':    'BIRM',
-    'cachet':   'CACH',
-    'cisco':    'CISC',
-    'ciso':     'CISC',   # typfout in bronbestand
-    'elias':    'ELIA',
-    'galaxy':   'GALA',
-    'lonrda':   'LORA',   # typfout in bronbestand
-    'lorand':   'LORA',
-    'loranda':  'LORA',
-    'louvre':   'LOUV',
-    'luxury':   'LUXR',
-    'magic':    'MAGI',
-    'marich':   'MARI',
-    'plush':    'PLUS',
-    'rich':     'RICH',
-    'splendid': 'SPLE',
-    'vemi':     'VEMI',
-    'veri':     'VERI',
+    'birma':    ['BIRM'],
+    'cachet':   ['CACH'],
+    'cisco':    ['CISC', 'VELV'],   # VELV is uitwisselbaar met CISC
+    'ciso':     ['CISC', 'VELV'],   # typfout in bronbestand
+    'elias':    ['ELIA'],
+    'galaxy':   ['GALA'],
+    'lonrda':   ['LORA'],           # typfout in bronbestand
+    'lorand':   ['LORA'],
+    'loranda':  ['LORA'],
+    'louvre':   ['LOUV'],
+    'luxury':   ['LUXR', 'VERR'],   # VERR (Vernon) is uitwisselbaar met LUXR
+    'magic':    ['MAGI'],
+    'marich':   ['MARI'],
+    'plush':    ['PLUS'],
+    'rich':     ['RICH'],
+    'splendid': ['SPLE'],
+    'vemi':     ['VEMI', 'LAMI'],   # LAMI is uitwisselbaar met VEMI
+    'veri':     ['VERI', 'LAGO'],   # LAGO is uitwisselbaar met VERI
 }
 
 xl = pd.ExcelFile('/Users/pd/Desktop/claude/Karpi-ERP/op maat productie /smalband.xlsx')
@@ -50,11 +50,12 @@ for _, row in df.iterrows():
             continue
         naam = m.group(1).lower()
         kleur = m.group(2)
-        kwal = NAAM_NAAR_CODE.get(naam)
-        if not kwal:
+        kwals = NAAM_NAAR_CODE.get(naam)
+        if not kwals:
             print(f"ONBEKENDE NAAM: '{naam}' in cel '{cell}'")
             continue
-        sb_rows.append((kwal, kleur, piero, omschr))
+        for kwal in kwals:
+            sb_rows.append((kwal, kleur, piero, omschr))
 
 # Eerste PIERO per kwal+kleur (meest specifieke / eerste match in bestand)
 seen = {}
@@ -116,7 +117,7 @@ ON CONFLICT (kwaliteit_code, kleur_code)
     band_omschrijving = EXCLUDED.band_omschrijving;
 """.format(values=values)
 
-out = '/Users/pd/Desktop/claude/Karpi-ERP/supabase/migrations/109_band_defaults_smalband_nieuw.sql'
+out = '/Users/pd/Desktop/claude/Karpi-ERP/supabase/migrations/110_band_defaults_met_aliassen.sql'
 with open(out, 'w') as f:
     f.write(sql)
 
