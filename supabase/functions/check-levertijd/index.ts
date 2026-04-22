@@ -181,10 +181,14 @@ async function fetchWerkagendaInput(
   supabase: SupabaseClient,
   cfg: LevertijdConfig,
 ): Promise<RolAgendaInput[]> {
+  // Moet overeenkomen met PLANNING_STATUS_IN_PIPELINE. Alleen 'Snijden' filteren
+  // mist de 'Gepland' backlog en dan valt de match-tak door naar
+  // `snijDatumVoorRol(afleverdatum − buffer)` — die kon eerder in het
+  // verleden uitkomen als een bestaande plaatsing al overtijd was.
   const { data, error } = await supabase
     .from('snijplannen')
     .select('rol_id, order_regel:order_regels(orders(afleverdatum))')
-    .eq('status', 'Snijden')
+    .in('status', PLANNING_STATUS_IN_PIPELINE)
     .not('rol_id', 'is', null)
     .is('gesneden_datum', null)
   if (error) throw error

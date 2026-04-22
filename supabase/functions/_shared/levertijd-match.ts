@@ -106,18 +106,25 @@ export function volgendeWerkdag(vanaf: Date = new Date()): string {
  *      (de rol moet vóór die leverdatum klaar zijn)
  *   2. `planning_week`/`planning_jaar` → maandag van die week
  *   3. Fallback: volgende werkdag
+ *
+ * Floort altijd aan `volgendeWerkdag(vandaag)`: bij backlog (afleverdatum
+ * overtijd) mag de berekende snij_datum niet in het verleden vallen, anders
+ * toont de UI een leverdatum vóór vandaag.
  */
 export function snijDatumVoorRol(
   bestaande: PlanRecord[],
   logistiekeBufferDagen: number = 2,
   vandaag: Date = new Date(),
 ): string {
+  const vroegstMogelijk = volgendeWerkdag(vandaag)
+
   const afleverdatums = bestaande
     .filter((p) => p.afleverdatum != null)
     .map((p) => p.afleverdatum as string)
   if (afleverdatums.length > 0) {
     afleverdatums.sort()
-    return plusKalenderDagen(afleverdatums[0], -logistiekeBufferDagen)
+    const berekend = plusKalenderDagen(afleverdatums[0], -logistiekeBufferDagen)
+    return berekend < vroegstMogelijk ? vroegstMogelijk : berekend
   }
 
   const weekDatums = bestaande
@@ -125,9 +132,9 @@ export function snijDatumVoorRol(
     .map((p) => maandagVanWeek(p.planning_week as number, p.planning_jaar as number))
   if (weekDatums.length > 0) {
     weekDatums.sort()
-    return weekDatums[0]
+    return weekDatums[0] < vroegstMogelijk ? vroegstMogelijk : weekDatums[0]
   }
-  return volgendeWerkdag(vandaag)
+  return vroegstMogelijk
 }
 
 // ---------------------------------------------------------------------------
