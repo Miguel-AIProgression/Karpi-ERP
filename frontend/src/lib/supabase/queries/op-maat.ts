@@ -231,7 +231,10 @@ export async function fetchStandaardBandKleur(
   kleurCode: string,
 ): Promise<BandDefault | null> {
   const normKleur = kleurCode.replace(/\.0$/, '')
-  for (const kc of Array.from(new Set([kleurCode, normKleur]))) {
+  const kleurVariants = Array.from(new Set([kleurCode, normKleur]))
+
+  // 1. Directe lookup
+  for (const kc of kleurVariants) {
     const { data } = await supabase
       .from('maatwerk_band_defaults')
       .select('band_kleur, band_omschrijving')
@@ -240,6 +243,39 @@ export async function fetchStandaardBandKleur(
       .maybeSingle()
     if (data) return data as BandDefault
   }
+
+  // 2. Fallback via uitwisselgroepen (bijv. LAMI → VEMI, VELV → CISC)
+  let basisCode: string | null = null
+  for (const kc of kleurVariants) {
+    const { data } = await supabase
+      .from('kwaliteit_kleur_uitwisselgroepen')
+      .select('basis_code')
+      .eq('kwaliteit_code', kwaliteitCode)
+      .eq('kleur_code', kc)
+      .limit(1).maybeSingle()
+    if (data?.basis_code) { basisCode = data.basis_code; break }
+  }
+  if (!basisCode) return null
+
+  const { data: uitwisselData } = await supabase
+    .from('kwaliteit_kleur_uitwisselgroepen')
+    .select('kwaliteit_code, kleur_code')
+    .eq('basis_code', basisCode)
+    .neq('kwaliteit_code', kwaliteitCode)
+
+  for (const row of uitwisselData ?? []) {
+    const uitKleurNorm = (row.kleur_code as string).replace(/\.0$/, '')
+    for (const kc of Array.from(new Set([row.kleur_code as string, uitKleurNorm]))) {
+      const { data } = await supabase
+        .from('maatwerk_band_defaults')
+        .select('band_kleur, band_omschrijving')
+        .eq('kwaliteit_code', row.kwaliteit_code)
+        .eq('kleur_code', kc)
+        .maybeSingle()
+      if (data) return data as BandDefault
+    }
+  }
+
   return null
 }
 
