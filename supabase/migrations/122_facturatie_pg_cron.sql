@@ -1,9 +1,28 @@
 -- Migration 122: pg_cron jobs voor facturatie
 -- Vereist: extensions pg_cron + pg_net (check: SELECT extname FROM pg_extension WHERE extname IN ('pg_cron','pg_net');)
 --
--- ⚠️  VOOR APPLY: vervang <PROJECT_REF> hieronder door de werkelijke Supabase project-ref.
---     Ook vereist: ALTER DATABASE postgres SET "app.settings.service_role_key" = '<service-role-key>';
---     Zie: https://supabase.com/docs/guides/functions/schedule-functions
+-- ⚠️  VOOR APPLY:
+--    1. Vervang <PROJECT_REF> hieronder door de werkelijke Supabase project-ref.
+--    2. Run ook: ALTER DATABASE postgres SET "app.settings.service_role_key" = '<service-role-key>';
+--       (en daarna sessie opnieuw openen of SELECT pg_reload_conf(); runnen)
+--    Zie: https://supabase.com/docs/guides/functions/schedule-functions
+--
+-- Idempotent: eerst eventueel bestaande jobs unschedulen, dan (re)schedulen.
+
+-- Unschedule bestaande jobs (no-op als ze niet bestaan; vangen we met exception)
+DO $$
+DECLARE
+  jobnames TEXT[] := ARRAY['facturatie-queue-drain', 'facturatie-queue-recovery', 'facturatie-wekelijks'];
+  jn TEXT;
+BEGIN
+  FOREACH jn IN ARRAY jobnames LOOP
+    BEGIN
+      PERFORM cron.unschedule(jn);
+    EXCEPTION WHEN OTHERS THEN
+      NULL;  -- job bestond niet, geen probleem
+    END;
+  END LOOP;
+END $$;
 
 -- Drain elke minuut: roept edge function factuur-verzenden aan om pending-items af te handelen
 SELECT cron.schedule(

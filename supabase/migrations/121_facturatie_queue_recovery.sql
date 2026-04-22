@@ -3,7 +3,7 @@
 -- blijft item stuck. Deze functie zet items >10 min in 'processing' terug op 'pending'.
 
 ALTER TABLE factuur_queue
-  ADD COLUMN processing_started_at TIMESTAMPTZ;
+  ADD COLUMN IF NOT EXISTS processing_started_at TIMESTAMPTZ;
 
 -- Edge function factuur-verzenden zet deze kolom bij 'processing' en clearet hem op done/failed/pending.
 

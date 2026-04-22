@@ -1,10 +1,15 @@
 -- Migration 118: Factuur-queue + order-trigger
 -- Als orders.status overgaat naar 'Verzonden' EN klant.factuurvoorkeur = 'per_zending',
 -- wordt een queue-entry aangemaakt. Een edge function (via pg_cron, migratie 122) pikt deze op.
+--
+-- Idempotent: enum in DO-block, table IF NOT EXISTS, trigger DROP+CREATE.
 
-CREATE TYPE factuur_queue_status AS ENUM ('pending', 'processing', 'done', 'failed');
+DO $$ BEGIN
+  CREATE TYPE factuur_queue_status AS ENUM ('pending', 'processing', 'done', 'failed');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
-CREATE TABLE factuur_queue (
+CREATE TABLE IF NOT EXISTS factuur_queue (
   id BIGSERIAL PRIMARY KEY,
   debiteur_nr INTEGER NOT NULL REFERENCES debiteuren(debiteur_nr),
   order_ids BIGINT[] NOT NULL,
@@ -17,7 +22,7 @@ CREATE TABLE factuur_queue (
   processed_at TIMESTAMPTZ
 );
 
-CREATE INDEX idx_factuur_queue_pending ON factuur_queue(created_at) WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_factuur_queue_pending ON factuur_queue(created_at) WHERE status = 'pending';
 
 CREATE OR REPLACE FUNCTION enqueue_factuur_bij_verzonden() RETURNS TRIGGER AS $$
 DECLARE
@@ -41,6 +46,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trg_enqueue_factuur ON orders;
 CREATE TRIGGER trg_enqueue_factuur
   AFTER UPDATE OF status ON orders
   FOR EACH ROW EXECUTE FUNCTION enqueue_factuur_bij_verzonden();
