@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useReducer, useRef } from 'react'
 import type { MaatwerkVormRow, AfwerkingTypeRow } from '@/lib/supabase/queries/op-maat'
 import { formatCurrency } from '@/lib/utils/formatters'
 
@@ -16,6 +16,7 @@ interface VormAfmetingSelectorProps {
   vormen: MaatwerkVormRow[]
   afwerkingen: AfwerkingTypeRow[]
   standaardAfwerking: string | null
+  standaardBandKleur: string | null
   maxBreedteCm: number | null
   onChange: (data: VormAfmetingData) => void
 }
@@ -24,9 +25,12 @@ export function VormAfmetingSelector({
   vormen,
   afwerkingen,
   standaardAfwerking,
+  standaardBandKleur,
   maxBreedteCm,
   onChange,
 }: VormAfmetingSelectorProps) {
+  const [, forceUpdate] = useReducer(x => x + 1, 0)
+
   const dataRef = useRef<VormAfmetingData>({
     vormCode: vormen[0]?.code ?? '',
     lengteCm: undefined,
@@ -42,6 +46,7 @@ export function VormAfmetingSelector({
     if (vormen.length > 0 && !dataRef.current.vormCode) {
       dataRef.current.vormCode = vormen[0].code
       onChange({ ...dataRef.current })
+      forceUpdate()
     }
   }, [vormen, onChange])
 
@@ -50,8 +55,18 @@ export function VormAfmetingSelector({
     if (standaardAfwerking && standaardAfwerking !== dataRef.current.afwerkingCode) {
       dataRef.current.afwerkingCode = standaardAfwerking
       onChange({ ...dataRef.current })
+      forceUpdate()
     }
   }, [standaardAfwerking, onChange])
+
+  // Stel standaard bandkleur in wanneer prop verandert (alleen als nog niet handmatig ingevuld)
+  useEffect(() => {
+    if (standaardBandKleur && standaardBandKleur !== dataRef.current.bandKleur) {
+      dataRef.current.bandKleur = standaardBandKleur
+      onChange({ ...dataRef.current })
+      forceUpdate()
+    }
+  }, [standaardBandKleur, onChange])
 
   function update(partial: Partial<VormAfmetingData>) {
     Object.assign(dataRef.current, partial)

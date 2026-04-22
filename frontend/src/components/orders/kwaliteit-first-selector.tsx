@@ -8,6 +8,8 @@ import {
   fetchVormen,
   fetchAfwerkingTypes,
   fetchStandaardAfwerking,
+  fetchAfwerkingVoorKleur,
+  fetchStandaardBandKleur,
   fetchStandaardMatenVoorKwaliteit,
   fetchMaatwerkArtikelNr,
   fetchKwaliteitM2Prijs,
@@ -72,6 +74,7 @@ export function KwaliteitFirstSelector({
   const [kleurHint, setKleurHint] = useState('')                   // hint vanuit zoekveld
   const [pendingArticle, setPendingArticle] = useState<SelectedArticle | null>(null)
   const [klantM2Prijs, setKlantM2Prijs] = useState<number | null>(null)
+  const [standaardBandKleur, setStandaardBandKleur] = useState<string | null>(null)
 
   // Op maat state
   const [vormData, setVormData] = useState<VormAfmetingData>({
@@ -131,8 +134,13 @@ export function KwaliteitFirstSelector({
   })
 
   const { data: standaardAfwerking } = useQuery({
-    queryKey: ['standaard-afwerking', selectedKwaliteit?.code],
-    queryFn: () => fetchStandaardAfwerking(selectedKwaliteit!.code),
+    queryKey: ['standaard-afwerking', selectedKwaliteit?.code, selectedKleur?.kleur_code],
+    queryFn: async () => {
+      const perKleur = selectedKleur
+        ? await fetchAfwerkingVoorKleur(selectedKwaliteit!.code, selectedKleur.kleur_code)
+        : null
+      return perKleur ?? fetchStandaardAfwerking(selectedKwaliteit!.code)
+    },
     enabled: !!selectedKwaliteit && step === 'op_maat',
   })
 
@@ -219,7 +227,7 @@ export function KwaliteitFirstSelector({
       kleur.kleur_code,
     )
     const artikelnr = maatwerkArtikelNr ?? kleur.artikelnr
-    console.debug('[maatwerk prijs]', {
+    console.log('[maatwerk prijs]', {
       kwaliteit: selectedKwaliteit.code,
       kleur: kleur.kleur_code,
       prijslijstNr,
@@ -255,7 +263,7 @@ export function KwaliteitFirstSelector({
 
     // 3. Generieke kwaliteits-m²-prijs uit maatwerk_m2_prijzen (laatste redmiddel)
     const kwaliteitPrijs = await fetchKwaliteitM2Prijs(selectedKwaliteit.code)
-    console.debug('[maatwerk prijs] kwaliteit fallback:', kwaliteitPrijs)
+    console.log('[maatwerk prijs] kwaliteit fallback:', kwaliteitPrijs)
     setKlantM2Prijs(kwaliteitPrijs)
   }, [prijslijstNr, selectedKwaliteit])
 
@@ -265,6 +273,15 @@ export function KwaliteitFirstSelector({
       fetchKlantPrijs(selectedKleur).catch((e) => console.error('[maatwerk prijs] fout:', e))
     }
   }, [selectedKleur, fetchKlantPrijs])
+
+  // Standaard bandkleur ophalen zodra kwaliteit + kleur bekend zijn
+  useEffect(() => {
+    setStandaardBandKleur(null)
+    if (!selectedKwaliteit || !selectedKleur) return
+    fetchStandaardBandKleur(selectedKwaliteit.code, selectedKleur.kleur_code)
+      .then((r) => setStandaardBandKleur(r?.band_kleur ?? null))
+      .catch(() => {})
+  }, [selectedKwaliteit, selectedKleur])
 
   // Uitwisselbaar-modus: eigen kleur heeft geen rollen maar een uitwisselbare
   // kwaliteit wel. Factuur behoudt de bestelde kwaliteit (omstickeer-model),
@@ -432,6 +449,7 @@ export function KwaliteitFirstSelector({
     setKleurHint('')
     setPendingArticle(null)
     setKlantM2Prijs(null)
+    setStandaardBandKleur(null)
   }
 
   if (kwaliteitenLoading) {
@@ -709,6 +727,7 @@ export function KwaliteitFirstSelector({
               vormen={vormen}
               afwerkingen={afwerkingen}
               standaardAfwerking={standaardAfwerking ?? null}
+              standaardBandKleur={standaardBandKleur}
               maxBreedteCm={selectedKleur.max_breedte_cm}
               onChange={setVormData}
             />

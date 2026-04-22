@@ -88,6 +88,24 @@ export async function fetchStandaardAfwerking(kwaliteitCode: string): Promise<st
   return data?.afwerking_code ?? null
 }
 
+/** Per kwaliteit+kleur afwerking (overschrijft kwaliteit-default indien aanwezig). */
+export async function fetchAfwerkingVoorKleur(
+  kwaliteitCode: string,
+  kleurCode: string,
+): Promise<string | null> {
+  const normKleur = kleurCode.replace(/\.0$/, '')
+  for (const kc of Array.from(new Set([kleurCode, normKleur]))) {
+    const { data } = await supabase
+      .from('maatwerk_afwerking_per_kleur')
+      .select('afwerking_code')
+      .eq('kwaliteit_code', kwaliteitCode)
+      .eq('kleur_code', kc)
+      .maybeSingle()
+    if (data?.afwerking_code) return data.afwerking_code
+  }
+  return null
+}
+
 export async function setStandaardAfwerking(kwaliteitCode: string, afwerkingCode: string) {
   const { error } = await supabase
     .from('kwaliteit_standaard_afwerking')
@@ -152,27 +170,42 @@ export async function fetchMaatwerkArtikelNr(kwaliteitCode: string, kleurCode: s
 
   // Strategie 4: zoek via uitwisselgroepen — zelfde kleur, uitwisselbare kwaliteit
   // (bijv. VELV16 → CISC16 die wél een MAATWERK-artikel heeft)
-  const { data: basisData } = await supabase
-    .from('kwaliteit_kleur_uitwisselgroepen')
-    .select('basis_code')
-    .eq('kwaliteit_code', kwaliteitCode)
-    .eq('kleur_code', normKleur)
-    .limit(1).maybeSingle()
-  if (basisData?.basis_code) {
+  // Probeer beide kleurvarianten ('16.0' en '16') want opslag kan verschillen.
+  let basisCode4: string | null = null
+  for (const kc4 of kleurVariants) {
+    const { data: bd } = await supabase
+      .from('kwaliteit_kleur_uitwisselgroepen')
+      .select('basis_code')
+      .eq('kwaliteit_code', kwaliteitCode)
+      .eq('kleur_code', kc4)
+      .limit(1).maybeSingle()
+    if (bd?.basis_code) { basisCode4 = bd.basis_code; break }
+  }
+  if (basisCode4) {
+    // Haal uitwisselbare kwaliteiten + hun eigen kleur_code op (niet alleen kwaliteit_code!)
     const { data: uitwisselData } = await supabase
       .from('kwaliteit_kleur_uitwisselgroepen')
-      .select('kwaliteit_code')
-      .eq('basis_code', basisData.basis_code)
+      .select('kwaliteit_code, kleur_code')
+      .eq('basis_code', basisCode4)
       .neq('kwaliteit_code', kwaliteitCode)
-    const uitwisselKwaliteiten = (uitwisselData ?? []).map((r) => r.kwaliteit_code)
-    for (const uitKwal of uitwisselKwaliteiten) {
-      for (const kc of kleurVariants) {
-        const { data: du } = await supabase
+    for (const row of uitwisselData ?? []) {
+      const uitKwal = row.kwaliteit_code
+      const uitKleurNorm = (row.kleur_code as string).replace(/\.0$/, '')
+      const uitKleurVariants = Array.from(new Set([row.kleur_code as string, uitKleurNorm]))
+      for (const kc of uitKleurVariants) {
+        // Probeer omschrijving én karpi_code; actief-filter weggelaten (referentie-artikel kan inactief zijn)
+        const { data: du1 } = await supabase
           .from('producten').select('artikelnr')
           .eq('kwaliteit_code', uitKwal).eq('kleur_code', kc)
-          .eq('actief', true).ilike('omschrijving', '%maatwerk%')
+          .ilike('omschrijving', '%maatwerk%')
           .limit(1).maybeSingle()
-        if (du?.artikelnr) return du.artikelnr
+        if (du1?.artikelnr) return du1.artikelnr
+        const { data: du2 } = await supabase
+          .from('producten').select('artikelnr')
+          .eq('kwaliteit_code', uitKwal).eq('kleur_code', kc)
+          .ilike('karpi_code', '%maatwerk%')
+          .limit(1).maybeSingle()
+        if (du2?.artikelnr) return du2.artikelnr
       }
     }
   }
@@ -185,6 +218,28 @@ export async function fetchMaatwerkArtikelNr(kwaliteitCode: string, kleurCode: s
     .limit(1).maybeSingle()
   if (d5?.artikelnr) return d5.artikelnr
 
+  return null
+}
+
+export interface BandDefault {
+  band_kleur: string
+  band_omschrijving: string | null
+}
+
+export async function fetchStandaardBandKleur(
+  kwaliteitCode: string,
+  kleurCode: string,
+): Promise<BandDefault | null> {
+  const normKleur = kleurCode.replace(/\.0$/, '')
+  for (const kc of Array.from(new Set([kleurCode, normKleur]))) {
+    const { data } = await supabase
+      .from('maatwerk_band_defaults')
+      .select('band_kleur, band_omschrijving')
+      .eq('kwaliteit_code', kwaliteitCode)
+      .eq('kleur_code', kc)
+      .maybeSingle()
+    if (data) return data as BandDefault
+  }
   return null
 }
 
