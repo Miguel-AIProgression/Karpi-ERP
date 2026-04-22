@@ -63,6 +63,9 @@ export interface FreeRect {
 export const RESTSTUK_MIN_SHORT = 50
 export const RESTSTUK_MIN_LONG = 100
 
+/** Extra snijmarge voor ronde stukken: diameter + 5 cm in beide richtingen. */
+export const ROND_SNIJ_MARGE = 5
+
 /**
  * Minimale rol-rest om een rol nog als "aangebroken" terug te zetten. Blijft
  * er minder dan dit over na snijden, dan is de rol-rest feitelijk verspild
@@ -582,7 +585,13 @@ export function packAcrossRolls(
   options: PackOptions = {},
 ): PackingResult {
   const { bezetteMap, maxReststukVerspillingPct } = options
-  const sortedPieces = sortPieces(pieces)
+  // Ronde stukken krijgen 5 cm extra in beide dimensies zodat de fysieke snij
+  // voldoende marge geeft voor de cirkelvorm (diameter + ROND_SNIJ_MARGE cm).
+  const sortedPieces = sortPieces(pieces).map(p =>
+    p.maatwerk_vorm === 'rond'
+      ? { ...p, lengte_cm: p.lengte_cm + ROND_SNIJ_MARGE, breedte_cm: p.breedte_cm + ROND_SNIJ_MARGE }
+      : p,
+  )
   const sortedRolls = sortRolls(rolls)
 
   let unplacedPieces = [...sortedPieces]
