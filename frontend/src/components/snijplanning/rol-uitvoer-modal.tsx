@@ -569,8 +569,37 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
                           )
                           const toonHeader = !alleenAangebroken
                           if (toonHeader) rijIdx += 1
-                          const breedteSnitCm = Math.round(shelf.y + shelf.height)
+                          // Lengte-mes: snijdt de rol dwars af op de Y-positie
+                          // aan het eind van de shelf. Eén waarde per rij.
+                          const lengteMesCm = Math.round(shelf.y + shelf.height)
                           const shelfHoogte = Math.round(shelf.height)
+                          // Breedte-messen (max 3): interne X-posities waar een
+                          // snit langs de rol door de VOLLEDIGE shelf-hoogte kan
+                          // lopen zonder een stuk te doorsnijden. Een X waar twee
+                          // items elkaar verticaal onderbreken (bv. 265×265 +
+                          // 15×265 onder een 280×280) is géén geldige mes-snit —
+                          // dat wordt met de hand afgesneden.
+                          const xRanges = shelf.events.map((ev) => {
+                            const xWidth =
+                              ev.kind === 'snij' ? ev.snijStuk.lengte_cm : ev.breedteCm
+                            return { start: ev.x, end: ev.x + xWidth }
+                          })
+                          const kandidaten = Array.from(
+                            new Set(
+                              shelf.events
+                                .filter((ev) => ev.x > 0)
+                                .map((ev) => Math.round(ev.x)),
+                            ),
+                          )
+                          // Machine heeft 3 breedte-messen; meer posities betekent
+                          // dat de rij niet met één lengte-mes-slag gesneden kan
+                          // worden. De edge function (shelf-mes-validator) flagt
+                          // dit als waarschuwing, hier tonen we de eerste 3.
+                          const MAX_BREEDTE_MESSEN = 3
+                          const breedteMesPosities = kandidaten
+                            .filter((x) => !xRanges.some((r) => r.start < x && r.end > x))
+                            .sort((a, b) => a - b)
+                            .slice(0, MAX_BREEDTE_MESSEN)
                           return (
                             <Fragment key={`shelf-${shelfIdx}`}>
                               {toonHeader && (
@@ -579,11 +608,19 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
                                     <div className="flex items-center gap-2 flex-wrap">
                                       <Minus size={12} className="text-amber-700" />
                                       <span className="font-semibold">
-                                        Rij {rijIdx} · breedtesnit op {breedteSnitCm} cm
+                                        Rij {rijIdx} · Lengte-mes op {lengteMesCm} cm
                                       </span>
                                       <span className="text-amber-700">
-                                        (shelf {shelfHoogte} cm hoog)
+                                        (rij {shelfHoogte} cm hoog)
                                       </span>
+                                      {breedteMesPosities.length > 0 && (
+                                        <span className="text-amber-800 font-medium">
+                                          ·{' '}
+                                          {breedteMesPosities
+                                            .map((x, i) => `Breedte-mes ${i + 1} op ${x} cm`)
+                                            .join(' · ')}
+                                        </span>
+                                      )}
                                     </div>
                                   </td>
                                 </tr>
