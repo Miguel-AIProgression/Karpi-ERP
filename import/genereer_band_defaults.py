@@ -1,80 +1,62 @@
 #!/usr/bin/env python3
 """
-Genereer maatwerk_band_defaults uit Smalbandafw Collectie 2024 - juli 2025.xlsx.
-Kolommen zijn kwaliteitnamen, rijen zijn PIERO-codes, cellen bevatten kleurnummers.
+Genereer maatwerk_band_defaults uit smalband.xlsx (nieuw formaat).
+Formaat: elke rij = één PIERO-code, cellen bevatten 'kwaliteitnaam kleurnummer'-paren.
 """
 import pandas as pd, re
 
 NAAM_NAAR_CODE = {
-    # SB tuft
-    'Birma': ['BIRM'],
-    'Cachet': ['CACH'],
-    'Cisco/VELV': ['CISC', 'VELV'],
-    'Elias': ['ELIA'],
-    'Frisco': ['FRIS'],
-    'Leslie / Galaxy': ['LESL', 'GALA'],
-    'Loranda       tbv Dld': ['LORA'],
-    'Louvre': ['LOUV'],
-    'Magic': ['MAGI'],
-    'Marich': ['MARI'],
-    'Plush': ['PLUS'],
-    'Rich': ['RICH'],
-    'Splendid': ['SPLE'],
-    'VERI': ['VERI', 'LAMI', 'LAGO'],
-    'VEMI': ['VEMI'],
-    'Vernon/ Luxury': ['VERR', 'LUXR'],
-    'Destiny': ['DYST'],
-    # SB sisal
-    'S.Gold': ['GOLD', 'GOKI'],
-    'Radius': ['RADI', 'RADS'],
-    'Matric': ['MATR'],
-    'Marly': ['MARL'],
-    'Ramses': ['RAMS'],
-    # SB uit coll
-    'Bergamo': ['BERG'],
-    'Berko': ['BERK'],
-    'Blanche': ['BLAN'],
-    'Calida': ['CALI'],
-    'Coral uni': ['CORU'],
-    'Diego': ['DIEG'],
-    'Jumbo': ['JUMB'],
-    'Lucia': ['LUCI'],
-    'Motion': ['MOTI'],
-    'Pearl': ['PEAR'],
-    'Pisa': ['PISA'],
-    'Residence': ['RESI'],
-    'Salsa': ['SALS'],
-    'Spaghetti': ['SPAG'],
-    'Verona': ['VERO'],
+    'birma':    'BIRM',
+    'cachet':   'CACH',
+    'cisco':    'CISC',
+    'ciso':     'CISC',   # typfout in bronbestand
+    'elias':    'ELIA',
+    'galaxy':   'GALA',
+    'lonrda':   'LORA',   # typfout in bronbestand
+    'lorand':   'LORA',
+    'loranda':  'LORA',
+    'louvre':   'LOUV',
+    'luxury':   'LUXR',
+    'magic':    'MAGI',
+    'marich':   'MARI',
+    'plush':    'PLUS',
+    'rich':     'RICH',
+    'splendid': 'SPLE',
+    'vemi':     'VEMI',
+    'veri':     'VERI',
 }
 
-sb_rows = []
+xl = pd.ExcelFile('/Users/pd/Desktop/claude/Karpi-ERP/op maat productie /smalband.xlsx')
+df = pd.read_excel(xl, 'Blad1', header=None, dtype=str)
 
-def parse(df, header_row, data_start, col_start=2):
-    header = df.iloc[header_row]
-    for col_idx in range(col_start, len(df.columns)):
-        naam = str(header.iloc[col_idx]).strip() if pd.notna(header.iloc[col_idx]) else ''
-        kwals = NAAM_NAAR_CODE.get(naam, [])
-        if not kwals:
+sb_rows = []   # (kwal_code, kleur, piero, omschr)
+
+for _, row in df.iterrows():
+    if str(row.iloc[0]).strip() != 'Piero':
+        continue
+    piero = str(row.iloc[1]).strip().split('.')[0]
+    omschr = str(row.iloc[2]).strip() if pd.notna(row.iloc[2]) else ''
+    if not piero or piero == 'nan':
+        continue
+
+    for col in range(3, len(row)):
+        cell = str(row.iloc[col]).strip() if pd.notna(row.iloc[col]) else ''
+        if not cell or cell == 'nan':
             continue
-        for row_idx in range(data_start, len(df)):
-            piero = str(df.iat[row_idx, 0]).strip() if pd.notna(df.iat[row_idx, 0]) else ''
-            omschr = str(df.iat[row_idx, 1]).strip() if pd.notna(df.iat[row_idx, 1]) else ''
-            cell = str(df.iat[row_idx, col_idx]).strip() if pd.notna(df.iat[row_idx, col_idx]) else ''
-            if not piero or not cell or cell == 'nan' or not re.match(r'^\d', piero):
-                continue
-            piero = piero.split('.')[0]
-            omschr_clean = re.sub(r'[^a-zA-Z. ]', '', omschr).strip()
-            for kleur in re.findall(r'\d+', cell):
-                for kwal in kwals:
-                    sb_rows.append((kwal, kleur, piero, omschr_clean))
+        # Verwijder toelichting tussen haakjes
+        cell_clean = re.sub(r'\s*\(.*?\)', '', cell).strip()
+        m = re.match(r'^([A-Za-z]+)\s+(\d+)', cell_clean)
+        if not m:
+            continue
+        naam = m.group(1).lower()
+        kleur = m.group(2)
+        kwal = NAAM_NAAR_CODE.get(naam)
+        if not kwal:
+            print(f"ONBEKENDE NAAM: '{naam}' in cel '{cell}'")
+            continue
+        sb_rows.append((kwal, kleur, piero, omschr))
 
-xl = pd.ExcelFile('/Users/pd/Desktop/claude/Karpi-ERP/op maat productie /Smalbandafw Collectie 2024 - juli 2025.xlsx')
-parse(pd.read_excel(xl, 'SB tuft',     header=None, dtype=str), 3, 4)
-parse(pd.read_excel(xl, 'SB sisal',    header=None, dtype=str), 4, 5)
-parse(pd.read_excel(xl, 'SB uit coll', header=None, dtype=str), 2, 3)
-
-# Eerste PIERO per kwal+kleur (de meest specifieke)
+# Eerste PIERO per kwal+kleur (meest specifieke / eerste match in bestand)
 seen = {}
 for kwal, kleur, piero, omschr in sb_rows:
     key = (kwal, kleur)
@@ -114,8 +96,8 @@ for (kwal, kleur), (band_code, opm) in sorted(b_band.items()):
 values = ",\n".join(sql_parts)
 
 sql = """-- Standaard bandkleur per kwaliteit + kleur — volledig hergenereerd.
--- Bronnen: Smalbandafw Collectie 2024 - juli 2025.xlsx (SB/sisal/uit-coll)
---          Art + aliassen + afwerking 22-04-2026.xlsx (B breedband)
+-- Bron: smalband.xlsx (nieuw formaat: rij=PIERO, cellen=kwaliteit+kleur)
+--       Art + aliassen + afwerking 22-04-2026.xlsx (B breedband)
 
 CREATE TABLE IF NOT EXISTS maatwerk_band_defaults (
   kwaliteit_code    TEXT NOT NULL,
@@ -134,15 +116,10 @@ ON CONFLICT (kwaliteit_code, kleur_code)
     band_omschrijving = EXCLUDED.band_omschrijving;
 """.format(values=values)
 
-out = '/Users/pd/Desktop/claude/Karpi-ERP/supabase/migrations/108_band_defaults_volledig.sql'
+out = '/Users/pd/Desktop/claude/Karpi-ERP/supabase/migrations/109_band_defaults_smalband_nieuw.sql'
 with open(out, 'w') as f:
     f.write(sql)
 
-print("SB rijen: {}  B rijen: {}  Totaal: {}".format(len(seen), len(b_band), len(seen)+len(b_band)))
+print("SB rijen: {}  B rijen: {}  Totaal: {}".format(len(seen), len(b_band), len(seen) + len(b_band)))
+print("Kwaliteiten gedekt:", sorted({k for k, _ in seen.keys()}))
 print("Opgeslagen:", out)
-
-# Toon nieuwe kwaliteiten tov vorige run
-prev = {'BIRM','CACH','CISC','VELV','ELIA','FRIS','LESL','GALA','LORA','LOUV','MAGI','MARI','PLUS','SPLE',
-        'VERI','LAMI','LAGO','VEMI','VERR','LUXR','DYST','GOLD','GOKI','BERG','BLAN','CORU','MOTI','SPAG','BERM'}
-new_kwals = {k for k,_ in seen.keys()} - prev
-print("Nieuwe kwaliteiten:", sorted(new_kwals))
