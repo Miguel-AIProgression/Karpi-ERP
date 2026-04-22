@@ -290,6 +290,16 @@ export function RollenGroepRow({ groep }: RollenGroepRowProps) {
                 <StatusBadge rolType="volle_rol" count={groep.volle_rollen} />
                 <StatusBadge rolType="aangebroken" count={groep.aangebroken} />
                 <StatusBadge rolType="reststuk" count={groep.reststukken} />
+                {heeftEquiv && (
+                  <Link
+                    to={`/rollen?kwaliteit=${encodeURIComponent(groep.equiv_kwaliteit_code!)}&kleur=${encodeURIComponent(groep.equiv_kleur_code ?? '')}`}
+                    onClick={(e) => e.stopPropagation()}
+                    title={`Uitwisselbaar met ${groep.equiv_kwaliteit_code} ${groep.equiv_kleur_code} — ${groep.equiv_rollen} ${groep.equiv_rollen === 1 ? 'rol' : 'rollen'}, ${groep.equiv_m2.toFixed(1)} m²`}
+                    className="text-xs px-2 py-0.5 rounded-full font-medium bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200"
+                  >
+                    &#8646; {groep.equiv_kwaliteit_code} {groep.equiv_kleur_code}
+                  </Link>
+                )}
               </>
             )}
           </div>

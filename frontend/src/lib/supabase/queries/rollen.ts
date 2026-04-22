@@ -193,8 +193,9 @@ export async function fetchRollenGegroepeerd(
     uitwisselMap.set(key, row)
   }
 
+  // Equiv-info mergen voor álle groepen: lege groepen krijgen een "Leverbaar via"-
+  // badge; gevulde groepen een "⇄"-chip die de beste uitwissel-kandidaat toont.
   for (const g of groupMap.values()) {
-    if (g.totaal_m2 > 0) continue // alleen lege groepen krijgen equiv-info
     const key = `${g.kwaliteit_code}|${normKleur(g.kleur_code ?? '')}`
     const eq = uitwisselMap.get(key)
     if (!eq) continue
