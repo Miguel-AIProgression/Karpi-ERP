@@ -95,8 +95,22 @@ export async function fetchRollenStats(): Promise<RollenStats> {
   }
 }
 
-/** Fetch rollen grouped by kwaliteit_code + kleur_code */
-export async function fetchRollenGegroepeerd(search?: string, kwaliteitFilter?: string, kleurFilter?: string): Promise<RolGroep[]> {
+interface UitwisselRow {
+  kwaliteit_code: string
+  kleur_code: string
+  equiv_kwaliteit_code: string
+  equiv_kleur_code: string
+  equiv_rollen: number
+  equiv_m2: number
+}
+
+/** Fetch rollen grouped by kwaliteit_code + kleur_code, met equiv-info
+ *  op groepen zonder eigen voorraad (via rollen_uitwissel_voorraad RPC). */
+export async function fetchRollenGegroepeerd(
+  search?: string,
+  kwaliteitFilter?: string,
+  kleurFilter?: string,
+): Promise<RolGroep[]> {
   const buildQuery = () => {
     let q = supabase
       .from('rollen')
@@ -115,14 +129,13 @@ export async function fetchRollenGegroepeerd(search?: string, kwaliteitFilter?: 
       const s = sanitizeSearch(search)
       if (s) {
         q = q.or(
-          `rolnummer.ilike.%${s}%,kwaliteit_code.ilike.%${s}%,kleur_code.ilike.%${s}%,omschrijving.ilike.%${s}%`
+          `rolnummer.ilike.%${s}%,kwaliteit_code.ilike.%${s}%,kleur_code.ilike.%${s}%,omschrijving.ilike.%${s}%`,
         )
       }
     }
     return q
   }
 
-  // PostgREST heeft server-side max_rows=1000; paginate via range()
   const PAGE_SIZE = 1000
   const rows: RolRow[] = []
   let offset = 0
@@ -134,8 +147,8 @@ export async function fetchRollenGegroepeerd(search?: string, kwaliteitFilter?: 
     if (data.length < PAGE_SIZE) break
     offset += PAGE_SIZE
   }
-  const groupMap = new Map<string, RolGroep>()
 
+  const groupMap = new Map<string, RolGroep>()
   for (const rol of rows) {
     const key = `${rol.kwaliteit_code}|${rol.kleur_code}`
     let group = groupMap.get(key)
@@ -150,20 +163,43 @@ export async function fetchRollenGegroepeerd(search?: string, kwaliteitFilter?: 
         volle_rollen: 0,
         aangebroken: 0,
         reststukken: 0,
+        equiv_kwaliteit_code: null,
+        equiv_kleur_code: null,
+        equiv_rollen: 0,
+        equiv_m2: 0,
       }
       groupMap.set(key, group)
     }
     group.rollen.push(rol)
     group.totaal_rollen++
     group.totaal_m2 += Number(rol.oppervlak_m2) || 0
+    if (rol.rol_type === 'volle_rol') group.volle_rollen++
+    else if (rol.rol_type === 'aangebroken') group.aangebroken++
+    else if (rol.rol_type === 'reststuk') group.reststukken++
+  }
 
-    if (rol.rol_type === 'volle_rol') {
-      group.volle_rollen++
-    } else if (rol.rol_type === 'aangebroken') {
-      group.aangebroken++
-    } else if (rol.rol_type === 'reststuk') {
-      group.reststukken++
-    }
+  // Uitwissel-info ophalen en mergen op groepen met totaal_m2 = 0
+  const { data: uitwisselData, error: uitwisselError } = await (supabase.rpc as any)(
+    'rollen_uitwissel_voorraad',
+  )
+  if (uitwisselError) throw uitwisselError
+
+  const normKleur = (k: string) => k.replace(/\.0+$/, '')
+  const uitwisselMap = new Map<string, UitwisselRow>()
+  for (const row of (uitwisselData ?? []) as UitwisselRow[]) {
+    const key = `${row.kwaliteit_code}|${normKleur(row.kleur_code)}`
+    uitwisselMap.set(key, row)
+  }
+
+  for (const g of groupMap.values()) {
+    if (g.totaal_m2 > 0) continue // alleen lege groepen krijgen equiv-info
+    const key = `${g.kwaliteit_code}|${normKleur(g.kleur_code)}`
+    const eq = uitwisselMap.get(key)
+    if (!eq) continue
+    g.equiv_kwaliteit_code = eq.equiv_kwaliteit_code
+    g.equiv_kleur_code = normKleur(eq.equiv_kleur_code)
+    g.equiv_rollen = Number(eq.equiv_rollen) || 0
+    g.equiv_m2 = Number(eq.equiv_m2) || 0
   }
 
   return Array.from(groupMap.values())
