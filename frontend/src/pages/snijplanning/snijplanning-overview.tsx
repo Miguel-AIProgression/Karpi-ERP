@@ -12,10 +12,17 @@ import { berekenTotDatum } from '@/components/snijplanning/week-filter'
 const SNIJPLAN_STATUSES = ['Te snijden', 'Tekort']
 type SortMode = 'alfabetisch' | 'leverdatum'
 
-function sorteerGroepen<T extends { kwaliteit_code: string; kleur_code: string; vroegste_afleverdatum: string | null }>(
+function sorteerGroepen<T extends { kwaliteit_code: string | null; kleur_code: string | null; vroegste_afleverdatum: string | null }>(
   lijst: T[],
   mode: SortMode,
 ): T[] {
+  // Null-safe string compare: NULL altijd achteraan, anders localeCompare.
+  const cmp = (a: string | null | undefined, b: string | null | undefined): number => {
+    if (a === b) return 0
+    if (a == null) return 1
+    if (b == null) return -1
+    return a.localeCompare(b)
+  }
   const copy = [...lijst]
   if (mode === 'leverdatum') {
     // Consistente tie-break met de Agenda-weergave (bereken-agenda.ts):
@@ -23,30 +30,20 @@ function sorteerGroepen<T extends { kwaliteit_code: string; kleur_code: string; 
     // zou kleur '11' van OASI vóór kleur '12' van CAVA komen, terwijl de
     // Agenda op rolnummer CAVA eerst zet — verwarrend voor de planner.
     copy.sort((a, b) => {
-      const aD = a.vroegste_afleverdatum
-      const bD = b.vroegste_afleverdatum
-      if (aD !== bD) {
-        if (!aD) return 1
-        if (!bD) return -1
-        return aD.localeCompare(bD)
-      }
-      const k = a.kwaliteit_code.localeCompare(b.kwaliteit_code)
+      const d = cmp(a.vroegste_afleverdatum, b.vroegste_afleverdatum)
+      if (d !== 0) return d
+      const k = cmp(a.kwaliteit_code, b.kwaliteit_code)
       if (k !== 0) return k
-      return a.kleur_code.localeCompare(b.kleur_code)
+      return cmp(a.kleur_code, b.kleur_code)
     })
   } else {
     // Kwaliteit → kleur → leverdatum (oudste eerst, NULL achteraan)
     copy.sort((a, b) => {
-      const k = a.kwaliteit_code.localeCompare(b.kwaliteit_code)
+      const k = cmp(a.kwaliteit_code, b.kwaliteit_code)
       if (k !== 0) return k
-      const c = a.kleur_code.localeCompare(b.kleur_code)
+      const c = cmp(a.kleur_code, b.kleur_code)
       if (c !== 0) return c
-      const aD = a.vroegste_afleverdatum
-      const bD = b.vroegste_afleverdatum
-      if (aD === bD) return 0
-      if (!aD) return 1
-      if (!bD) return -1
-      return aD.localeCompare(bD)
+      return cmp(a.vroegste_afleverdatum, b.vroegste_afleverdatum)
     })
   }
   return copy
@@ -106,7 +103,12 @@ export function SnijplanningOverviewPage() {
       map.set(code, sorteerGroepen(lijst, 'alfabetisch'))
     }
     const entries = Array.from(map.entries())
-    entries.sort(([a], [b]) => a.localeCompare(b))
+    entries.sort(([a], [b]) => {
+      if (a === b) return 0
+      if (a == null) return 1
+      if (b == null) return -1
+      return a.localeCompare(b)
+    })
     return entries
   }, [filteredGroepen])
 
