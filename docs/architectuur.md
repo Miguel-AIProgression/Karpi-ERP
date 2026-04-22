@@ -127,6 +127,18 @@ Supabase Edge Function (`supabase/functions/optimaliseer-snijplan/index.ts`) die
 
 **Algoritme-keuze per rol:** Guillotine wint op scenarios waar kleine stukken uit grote vrije ruimtes gehaald moeten worden (letterlijk "haal het stuk uit het reststuk") én op scenarios waar rotatie een kwalificerend reststuk oplevert. FFDH wint op specifieke patronen dankzij rotatie-lookahead. De best-of-both wrapper (`_shared/guillotine-packing.ts`) garandeert dat we nooit slechter presteren dan de oude FFDH-only flow.
 
+### Operator-terminologie & snij-marges
+De snijmachine heeft **1 lengte-mes** (snijdt de rol dwars af op een ingestelde Y-positie) en **3 breedte-messen** (staan parallel aan de rol-lengte op instelbare X-posities, verdelen een rij in max 4 naast-elkaar-strips bij één lengte-mes-slag). De `rol-uitvoer-modal` spreekt deze taal: header per rij toont `Lengte-mes op Y cm` + `Breedte-mes 1/2/3 op X cm`. Interne X-snit-posities worden afgeleid uit placement-coördinaten (regels waar een verticale snit door de volledige shelf-hoogte loopt zonder een stuk te doorsnijden). Stukken die groter geplaatst zijn dan besteld (door marge-ophoging, zie onder) tonen een amber `→ bijsnijden met hand naar …`-instructie.
+
+**Snij-marges** (single source of truth in [snij-marges.ts](supabase/functions/_shared/snij-marges.ts) + SQL-functie `stuk_snij_marge_cm` in migratie 126):
+- `maatwerk_afwerking = 'ZO'` → **+6 cm** op beide dimensies (rondom 6 cm voor afwerking)
+- `maatwerk_vorm IN ('rond', 'ovaal')` → **+5 cm** op beide dimensies (speling voor handmatig uitzagen)
+- Combi ZO + rond: **grootste marge wint** (niet cumulatief)
+
+`fetchStukken()` past de marge toe vóór de packer, zodat fysieke snij-maat wordt gepland. `snijplanning_tekort_analyse()` past dezelfde marge toe bij de rol-past-check. De view-kolommen `snij_lengte_cm`/`snij_breedte_cm` blijven nominale (klant-)maat — de opgehoogde maat verschijnt alleen in het packing-resultaat, zodat de modal `placed vs besteld` automatisch uit elkaar kan trekken.
+
+**Shelf-mes-validator** ([shelf-mes-validator.ts](supabase/functions/_shared/shelf-mes-validator.ts)): post-check in `optimaliseer-snijplan` + `auto-plan-groep` die rapporteert als een shelf meer dan 3 breedte-mes-posities vereist. Zachte check — output gaat als `samenvatting.shelf_waarschuwingen` op de edge-function-response + `console.warn`, plaatsingen worden niet afgewezen.
+
 ### Reststuk tracking
 Na het snijden toont `voltooi_snijplan_rol()` een bevestigingsmodal waarin de gebruiker de restlengte kan aanpassen of kan kiezen om geen reststuk op te slaan. Na bevestiging wordt een reststuk-sticker geprint (rolnummer, kwaliteit, kleur, afmetingen, QR-code, locatieveld). Reststukken worden opgeslagen als nieuwe rol met status 'reststuk', gekoppeld via `oorsprong_rol_id`. Alle voorraadmutaties worden gelogd in `voorraad_mutaties`.
 

@@ -653,16 +653,18 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
                                   />
                                 </td>
                                 <td className="py-2 pr-3 font-medium">
-                                  {placedBreedte} × {placedLengte} cm
-                                  {stuk.maatwerk_vorm && (
-                                    <span className="ml-2 text-xs font-normal text-slate-500">
-                                      {stuk.maatwerk_vorm}
-                                    </span>
-                                  )}
+                                  <div>
+                                    {placedBreedte} × {placedLengte} cm
+                                    {stuk.maatwerk_vorm && (
+                                      <span className="ml-2 text-xs font-normal text-slate-500">
+                                        {stuk.maatwerk_vorm}
+                                      </span>
+                                    )}
+                                  </div>
                                   {toonBesteld && (
-                                    <span className="ml-2 text-xs font-normal text-slate-400">
-                                      (besteld {stuk.snij_breedte_cm}×{stuk.snij_lengte_cm})
-                                    </span>
+                                    <div className="text-xs font-normal text-amber-700 mt-0.5">
+                                      → bijsnijden met hand naar {stuk.snij_breedte_cm} × {stuk.snij_lengte_cm} cm
+                                    </div>
                                   )}
                                 </td>
                                 <td className="py-2 pr-3">{stuk.klant_naam}</td>

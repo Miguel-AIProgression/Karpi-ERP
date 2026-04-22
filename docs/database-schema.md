@@ -712,7 +712,7 @@ Audit trail: wie heeft wat wanneer gedaan.
 | rollen_overzicht | Per kwaliteit/kleur: aantal, oppervlak, waarde |
 | recente_orders | Laatste 50 orders met klantnaam |
 | orders_status_telling | Aantal per order_status |
-| snijplanning_overzicht | Snijplannen met order-, klant- en rolgegevens voor de planningsweergave (incl. geroteerd vlag) |
+| snijplanning_overzicht | Snijplannen met order-, klant- en rolgegevens voor de planningsweergave (incl. geroteerd vlag). `snij_lengte_cm`/`snij_breedte_cm` zijn **nominale (bestelde) maten** — edge function en tekort-analyse passen `stuk_snij_marge_cm()` toe voor de fysieke snij-maat (ZO +6, rond/ovaal +5). |
 | confectie_overzicht | Confectie-orders met scan- en voortgangsstatus |
 | confectie_planning_overzicht | Confectie-orders (status Wacht op materiaal / In productie) met klant, order, maatwerk-afmetingen en strekkende meter voor planningsweergave |
 | confectie_planning_forward | Vooruitkijkende confectie-planning — alle open maatwerk-snijplannen (Gepland..In confectie/Ingepakt) met afgeleide type_bewerking + confectie_startdatum + backward-compat aliassen |
@@ -746,6 +746,7 @@ Audit trail: wie heeft wat wanneer gedaan.
 | `rollen_uitwissel_voorraad()` | Voor elk (kwaliteit, kleur) in `kwaliteit_kleur_uitwisselgroepen`: beste uitwissel-kandidaat (meeste beschikbare m² in rollen met `status=beschikbaar` en `oppervlak_m2>0`). Gebruikt door Rollen & Reststukken-pagina voor "Leverbaar via"-badge. |
 | `normaliseer_kleur_code(code TEXT)` | Normaliseert kleur_code: strip trailing ".0" (bijv. "12.0" → "12") — IMMUTABLE helper |
 | `snijplanning_groepen_gefilterd(p_tot_datum)` | Gegroepeerde snijplanning met optionele afleverdatum-filter (groepeert op genormaliseerde kleur_code) |
+| `stuk_snij_marge_cm(afwerking TEXT, vorm TEXT)` | Extra cm op elke dimensie bij snijden: ZO-afwerking +6, rond/ovaal +5. Combi → grootste wint (niet cumulatief). IMMUTABLE. Wordt gebruikt in `snijplanning_tekort_analyse()`. TS-equivalent in `_shared/snij-marges.ts`. (migratie 126) |
 | `snijplanning_status_counts_gefilterd(p_tot_datum)` | Status counts met optionele afleverdatum-filter |
 | `release_gepland_stukken(kwaliteit TEXT, kleur TEXT)` | Maakt alle Gepland stukken in een groep vrij: reset naar Wacht, rollen terug naar beschikbaar/reststuk |
 | `start_productie_rol(rol_id BIGINT)` | Zet alle Gepland stukken op een rol naar In productie (beschermt tegen heroptimalisatie) |

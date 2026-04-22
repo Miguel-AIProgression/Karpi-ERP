@@ -10,6 +10,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { packAcrossRolls } from '../_shared/guillotine-packing.ts'
 import { computeReststukken } from '../_shared/compute-reststukken.ts'
+import { validateShelfMesLimiet } from '../_shared/shelf-mes-validator.ts'
 import {
   fetchStukken,
   fetchUitwisselbareCodes,
@@ -155,13 +156,34 @@ serve(async (req) => {
       reststukken: computeReststukken(r.rol_lengte_cm, r.rol_breedte_cm, r.plaatsingen),
     }))
 
+    // ---- Step 6: shelf-mes-validator — waarschuw als een rij meer dan 3
+    //             breedte-mes-posities nodig heeft (machine heeft er maar 3).
+    //             Zachte check: alleen rapporteren, niet afwijzen.
+    const shelfWaarschuwingen = validateShelfMesLimiet(
+      rollResults.map((r) => ({
+        rol_id: r.rol_id,
+        rolnummer: r.rolnummer,
+        rol_breedte_cm: r.rol_breedte_cm,
+        plaatsingen: r.plaatsingen,
+      })),
+    )
+    if (shelfWaarschuwingen.length > 0) {
+      console.warn(
+        `[optimaliseer-snijplan] ${shelfWaarschuwingen.length} shelf(s) vereisen meer dan 3 breedte-messen:`,
+        JSON.stringify(shelfWaarschuwingen),
+      )
+    }
+
     // ---- Build response ----
     const result = {
       voorstel_id,
       voorstel_nr,
       rollen: rollenMetReststukken,
       niet_geplaatst: nietGeplaatst,
-      samenvatting,
+      samenvatting: {
+        ...samenvatting,
+        shelf_waarschuwingen: shelfWaarschuwingen,
+      },
     }
 
     return new Response(JSON.stringify(result), {

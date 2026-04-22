@@ -12,6 +12,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { packAcrossRolls } from '../_shared/guillotine-packing.ts'
+import { validateShelfMesLimiet } from '../_shared/shelf-mes-validator.ts'
 import {
   fetchStukken,
   fetchUitwisselbareCodes,
@@ -253,6 +254,22 @@ serve(async (req) => {
     )
     if (keurError) throw keurError
 
+    // ---- Step 8: shelf-mes-validator (zacht: alleen rapporteren) ----
+    const shelfWaarschuwingen = validateShelfMesLimiet(
+      rollResults.map((r) => ({
+        rol_id: r.rol_id,
+        rolnummer: r.rolnummer,
+        rol_breedte_cm: r.rol_breedte_cm,
+        plaatsingen: r.plaatsingen,
+      })),
+    )
+    if (shelfWaarschuwingen.length > 0) {
+      console.warn(
+        `[auto-plan-groep] ${shelfWaarschuwingen.length} shelf(s) vereisen meer dan 3 breedte-messen:`,
+        JSON.stringify(shelfWaarschuwingen),
+      )
+    }
+
     // ---- Build response ----
     return new Response(
       JSON.stringify({
@@ -260,7 +277,10 @@ serve(async (req) => {
         voorstel_id,
         voorstel_nr,
         released: releaseCount ?? 0,
-        samenvatting,
+        samenvatting: {
+          ...samenvatting,
+          shelf_waarschuwingen: shelfWaarschuwingen,
+        },
         niet_geplaatst: nietGeplaatst,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
