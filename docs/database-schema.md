@@ -710,6 +710,7 @@ Audit trail: wie heeft wat wanneer gedaan.
 | `keur_snijvoorstel_goed(voorstel_id BIGINT)` | Keurt een snijvoorstel goed: wijst rollen toe aan snijplannen, zet status 'Gepland', met concurrency guards |
 | `verwerp_snijvoorstel(voorstel_id BIGINT)` | Verwerpt een concept-snijvoorstel zonder wijzigingen |
 | `kleuren_voor_kwaliteit(p_kwaliteit TEXT)` | Retourneert kleuren met m²-prijs, kostprijs, gewicht en max breedte voor een kwaliteit (uit maatwerk_m2_prijzen) |
+| `rollen_uitwissel_voorraad()` | Voor elk (kwaliteit, kleur) in `kwaliteit_kleur_uitwisselgroepen`: beste uitwissel-kandidaat (meeste beschikbare m² in rollen met `status=beschikbaar` en `oppervlak_m2>0`). Gebruikt door Rollen & Reststukken-pagina voor "Leverbaar via"-badge. |
 | `normaliseer_kleur_code(code TEXT)` | Normaliseert kleur_code: strip trailing ".0" (bijv. "12.0" → "12") — IMMUTABLE helper |
 | `snijplanning_groepen_gefilterd(p_tot_datum)` | Gegroepeerde snijplanning met optionele afleverdatum-filter (groepeert op genormaliseerde kleur_code) |
 | `snijplanning_status_counts_gefilterd(p_tot_datum)` | Status counts met optionele afleverdatum-filter |
