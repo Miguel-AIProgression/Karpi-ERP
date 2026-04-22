@@ -1,0 +1,16 @@
+project_id = "wqzeevfobwauxkalagtn"
+
+# Edge functions die vanuit de browser worden aangeroepen via
+# `supabase.functions.invoke()`. Met de nieuwe `sb_publishable_...` key-vorm
+# wijst de Edge-gateway de key af als "Invalid JWT" wanneer verify_jwt=true.
+# Alle onderstaande functies gebruiken intern de SERVICE_ROLE_KEY voor
+# DB-toegang en lezen geen user-JWT, dus gateway-check is overbodig.
+
+[functions.check-levertijd]
+verify_jwt = false
+
+[functions.auto-plan-groep]
+verify_jwt = false
+
+[functions.optimaliseer-snijplan]
+verify_jwt = false
