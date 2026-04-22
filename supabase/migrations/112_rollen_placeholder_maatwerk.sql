@@ -28,17 +28,13 @@ DECLARE
   v_ingevoegd  INTEGER;
   v_geskipt    INTEGER;
 BEGIN
-  -- Paren zonder matchend producten-record: we loggen ze, we inserten ze niet
-  -- (rollen.artikelnr is NOT NULL + FK). Na de run kun je handmatig bekijken.
+  -- Paren zonder matchend actief producten-record: we loggen ze bij elke run
+  -- (ook bij re-runs na eerdere placeholder-inserts) zodat je kunt zien of er
+  -- nog ontbrekende producten handmatig aangemaakt moeten worden. Deze paren
+  -- kunnen niet ingevoegd worden vanwege rollen.artikelnr NOT NULL + FK.
   SELECT COUNT(*) INTO v_geskipt
   FROM maatwerk_m2_prijzen mp
   WHERE NOT EXISTS (
-    SELECT 1 FROM rollen r
-    WHERE r.kwaliteit_code = mp.kwaliteit_code
-      AND r.kleur_code = mp.kleur_code
-      AND r.status NOT IN ('verkocht', 'gesneden')
-  )
-  AND NOT EXISTS (
     SELECT 1 FROM producten pr
     WHERE pr.kwaliteit_code = mp.kwaliteit_code
       AND pr.kleur_code = mp.kleur_code
