@@ -3,6 +3,7 @@
 
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import type { SnijplanPiece, Roll, Placement } from './ffdh-packing.ts'
+import { snijMargeCm } from './snij-marges.ts'
 
 // ---------------------------------------------------------------------------
 // Fetch snijplannen from the view
@@ -27,7 +28,7 @@ export async function fetchStukken(
   let query = supabase
     .from('snijplanning_overzicht')
     .select(
-      'id, snij_lengte_cm, snij_breedte_cm, maatwerk_vorm, order_nr, klant_naam, afleverdatum',
+      'id, snij_lengte_cm, snij_breedte_cm, maatwerk_vorm, maatwerk_afwerking, order_nr, klant_naam, afleverdatum',
     )
     .in('status', statuses)
     .is('rol_id', null)
@@ -41,16 +42,28 @@ export async function fetchStukken(
   const { data, error } = await query
   if (error) throw error
 
-  return (data ?? []).map((sp: Record<string, unknown>) => ({
-    id: sp.id as number,
-    lengte_cm: sp.snij_lengte_cm as number,
-    breedte_cm: sp.snij_breedte_cm as number,
-    maatwerk_vorm: sp.maatwerk_vorm as string | null,
-    order_nr: sp.order_nr as string | null,
-    klant_naam: sp.klant_naam as string | null,
-    afleverdatum: sp.afleverdatum as string | null,
-    area_cm2: (sp.snij_lengte_cm as number) * (sp.snij_breedte_cm as number),
-  }))
+  return (data ?? []).map((sp: Record<string, unknown>) => {
+    // Snij-marge ophogen t.o.v. nominale maat: ZO-afwerking +6 cm, rond/ovaal
+    // +5 cm. De nominale maat in de view is wat de klant besteld heeft; de
+    // packer moet met de fysieke snij-maat werken anders wordt een 120x120
+    // ZO-stuk te krap geplaatst. De modal toont straks beide (besteld + placed).
+    const marge = snijMargeCm(
+      sp.maatwerk_afwerking as string | null,
+      sp.maatwerk_vorm as string | null,
+    )
+    const lengte = (sp.snij_lengte_cm as number) + marge
+    const breedte = (sp.snij_breedte_cm as number) + marge
+    return {
+      id: sp.id as number,
+      lengte_cm: lengte,
+      breedte_cm: breedte,
+      maatwerk_vorm: sp.maatwerk_vorm as string | null,
+      order_nr: sp.order_nr as string | null,
+      klant_naam: sp.klant_naam as string | null,
+      afleverdatum: sp.afleverdatum as string | null,
+      area_cm2: lengte * breedte,
+    }
+  })
 }
 
 // ---------------------------------------------------------------------------
