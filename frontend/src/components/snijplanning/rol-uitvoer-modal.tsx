@@ -477,6 +477,16 @@ export function RolUitvoerModal({ rolId, open, onClose }: RolUitvoerModalProps) 
                           if (e.kind === 'snij') {
                             const stuk = e.stuk
                             const checked = checkedIds.has(stuk.id)
+                            // SnijStuk noemt X (over de rolbreedte) "lengte_cm" en Y (langs
+                            // de rollengte) "breedte_cm" — vertaal hier naar de UI-conventie
+                            // breedte × lengte = over × langs (zelfde als header en reststukken).
+                            const placedBreedte = Math.round(e.snijStuk.lengte_cm)
+                            const placedLengte = Math.round(e.snijStuk.breedte_cm)
+                            const toonBesteld =
+                              stuk.snij_breedte_cm !== undefined &&
+                              stuk.snij_lengte_cm !== undefined &&
+                              (placedBreedte !== stuk.snij_breedte_cm ||
+                                placedLengte !== stuk.snij_lengte_cm)
                             return (
                               <tr
                                 key={`snij-${stuk.id}`}
@@ -491,21 +501,17 @@ export function RolUitvoerModal({ rolId, open, onClose }: RolUitvoerModalProps) 
                                   />
                                 </td>
                                 <td className="py-2 pr-3 font-medium">
-                                  {Math.round(e.snijStuk.breedte_cm)} ×{' '}
-                                  {Math.round(e.snijStuk.lengte_cm)} cm
+                                  {placedBreedte} × {placedLengte} cm
                                   {stuk.maatwerk_vorm && (
                                     <span className="ml-2 text-xs font-normal text-slate-500">
                                       {stuk.maatwerk_vorm}
                                     </span>
                                   )}
-                                  {stuk.snij_breedte_cm !== undefined &&
-                                    stuk.snij_lengte_cm !== undefined &&
-                                    (Math.round(e.snijStuk.breedte_cm) !== stuk.snij_breedte_cm ||
-                                      Math.round(e.snijStuk.lengte_cm) !== stuk.snij_lengte_cm) && (
-                                      <span className="ml-2 text-xs font-normal text-slate-400">
-                                        (besteld {stuk.snij_breedte_cm}×{stuk.snij_lengte_cm})
-                                      </span>
-                                    )}
+                                  {toonBesteld && (
+                                    <span className="ml-2 text-xs font-normal text-slate-400">
+                                      (besteld {stuk.snij_breedte_cm}×{stuk.snij_lengte_cm})
+                                    </span>
+                                  )}
                                 </td>
                                 <td className="py-2 pr-3">{stuk.klant_naam}</td>
                                 <td className="py-2 pr-3">
