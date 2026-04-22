@@ -179,6 +179,8 @@ export async function fetchRollenGegroepeerd(
   }
 
   // Uitwissel-info ophalen en mergen op groepen met totaal_m2 = 0
+  // Cast: rollen_uitwissel_voorraad staat nog niet in de generated types
+  // (migratie 112 is nog niet op de live DB toegepast).
   const { data: uitwisselData, error: uitwisselError } = await (supabase.rpc as any)(
     'rollen_uitwissel_voorraad',
   )
@@ -193,7 +195,7 @@ export async function fetchRollenGegroepeerd(
 
   for (const g of groupMap.values()) {
     if (g.totaal_m2 > 0) continue // alleen lege groepen krijgen equiv-info
-    const key = `${g.kwaliteit_code}|${normKleur(g.kleur_code)}`
+    const key = `${g.kwaliteit_code}|${normKleur(g.kleur_code ?? '')}`
     const eq = uitwisselMap.get(key)
     if (!eq) continue
     g.equiv_kwaliteit_code = eq.equiv_kwaliteit_code
