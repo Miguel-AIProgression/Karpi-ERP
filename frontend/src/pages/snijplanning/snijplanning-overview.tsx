@@ -82,8 +82,12 @@ export function SnijplanningOverviewPage() {
 
   // Client-side filtering
   const filteredGroepen = useMemo(() => {
-    if (status === 'Tekort') return tekortGroepen
-    return teSnijdenGroepen
+    // Filter groepen met NULL kwaliteit/kleur — die horen niet in de snijplanning
+    // maar bestaan historisch (order_regels waar maatwerk_kwaliteit_code nooit
+    // gevuld is). Data-hygiene issue los van deze view. Zonder filter crashen
+    // downstream sort en kleur-display op `.localeCompare`/`.replace(null)`.
+    const bron = status === 'Tekort' ? tekortGroepen : teSnijdenGroepen
+    return bron.filter((g) => g.kwaliteit_code != null && g.kleur_code != null)
   }, [teSnijdenGroepen, status, tekortGroepen])
 
   // Bij 'leverdatum': platte lijst gesorteerd op vroegste leverdatum (null achteraan).
