@@ -130,18 +130,38 @@ serve(async (req) => {
     }
 
     // ---- Step 4: Fetch available rolls + bezette plaatsingen ----
-    const uitwisselbarePairs = await fetchUitwisselbarePairs(supabase, kwaliteit_code, kleur_code)
-    const uitwisselbareCodes = uitwisselbarePairs.length > 0
+    // Twee uitwissel-paden bestaan: fijnmazig Map1 (kwaliteit_kleur_uitwisselbaar
+    // view) en bredere collectie_id. Map1 kan een beperkte set pairs geven die
+    // toevallig geen voorraad heeft, terwijl de bredere collectie-set wél
+    // voorraad heeft — dat is exact wat de UI via tekort_analyse toont.
+    // Strategie: probeer eerst Map1 (precies), val terug op collectie (breed)
+    // als Map1 niks oplevert, zodat edge function nooit minder voorraad ziet
+    // dan de UI.
+    let uitwisselbarePairs = await fetchUitwisselbarePairs(supabase, kwaliteit_code, kleur_code)
+    let uitwisselbareCodes = uitwisselbarePairs.length > 0
       ? Array.from(new Set(uitwisselbarePairs.map((p) => p.kwaliteit_code)))
       : await fetchUitwisselbareCodes(supabase, kwaliteit_code)
     const kleurVariants = getKleurVariants(kleur_code)
-    const rollen = await fetchBeschikbareRollen(
+    let rollen = await fetchBeschikbareRollen(
       supabase,
       uitwisselbareCodes,
       kleurVariants,
       kwaliteit_code,
       uitwisselbarePairs,
     )
+
+    // Fallback: Map1 gaf pairs maar die hebben geen voorraad — probeer de
+    // volledige collectie-set (zelfde pad als tekort_analyse in UI).
+    if (rollen.length === 0 && uitwisselbarePairs.length > 0) {
+      uitwisselbarePairs = []
+      uitwisselbareCodes = await fetchUitwisselbareCodes(supabase, kwaliteit_code)
+      rollen = await fetchBeschikbareRollen(
+        supabase,
+        uitwisselbareCodes,
+        kleurVariants,
+        kwaliteit_code,
+      )
+    }
 
     if (rollen.length === 0) {
       return new Response(

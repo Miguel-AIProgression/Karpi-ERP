@@ -255,6 +255,8 @@ export interface TekortAnalyseRow {
   totaal_beschikbaar_m2: number
   max_lange_zijde_cm: number
   max_korte_zijde_cm: number
+  grootste_onpassend_stuk_lange_cm?: number
+  grootste_onpassend_stuk_korte_cm?: number
 }
 
 export async function fetchTekortAnalyse(): Promise<TekortAnalyseRow[]> {

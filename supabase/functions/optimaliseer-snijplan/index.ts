@@ -76,21 +76,35 @@ serve(async (req) => {
     }
 
     // ---- Step 1b: Find interchangeable (kwaliteit,kleur)-pairs ----
-    //   Primair: fijnmazige Map1-tabel. Fallback: collecties.
-    const uitwisselbarePairs = await fetchUitwisselbarePairs(supabase, kwaliteit_code, kleur_code)
-    const uitwisselbareCodes = uitwisselbarePairs.length > 0
+    //   Primair: fijnmazige Map1-tabel. Fallback: collecties. Als Map1 pairs
+    //   oplevert die geen voorraad hebben, vallen we alsnog terug op de brede
+    //   collectie-set (zelfde pad als tekort_analyse in UI) — anders ziet de
+    //   edge function minder voorraad dan de UI en blijft een groep hangen.
+    let uitwisselbarePairs = await fetchUitwisselbarePairs(supabase, kwaliteit_code, kleur_code)
+    let uitwisselbareCodes = uitwisselbarePairs.length > 0
       ? Array.from(new Set(uitwisselbarePairs.map((p) => p.kwaliteit_code)))
       : await fetchUitwisselbareCodes(supabase, kwaliteit_code)
 
     // ---- Step 1c: Fetch available rolls ----
     const kleurVariants = getKleurVariants(kleur_code)
-    const rollen = await fetchBeschikbareRollen(
+    let rollen = await fetchBeschikbareRollen(
       supabase,
       uitwisselbareCodes,
       kleurVariants,
       kwaliteit_code,
       uitwisselbarePairs,
     )
+
+    if (rollen.length === 0 && uitwisselbarePairs.length > 0) {
+      uitwisselbarePairs = []
+      uitwisselbareCodes = await fetchUitwisselbareCodes(supabase, kwaliteit_code)
+      rollen = await fetchBeschikbareRollen(
+        supabase,
+        uitwisselbareCodes,
+        kleurVariants,
+        kwaliteit_code,
+      )
+    }
 
     if (rollen.length === 0) {
       return new Response(

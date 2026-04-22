@@ -88,27 +88,19 @@ export function GroepAccordion({
       return { kind: 'geen_voorraad', codes: tekortAnalyse.uitwisselbare_codes }
     }
 
-    const grootste = stukkenZonderRol.reduce(
-      (acc, s) => {
-        const l = s.snij_lengte_cm ?? 0
-        const b = s.snij_breedte_cm ?? 0
-        const lange = Math.max(l, b)
-        const korte = Math.min(l, b)
-        if (lange > acc.lange) return { lange, korte }
-        if (lange === acc.lange && korte > acc.korte) return { lange, korte }
-        return acc
-      },
-      { lange: 0, korte: 0 },
-    )
-
-    if (grootste.lange > tekortAnalyse.max_lange_zijde_cm || grootste.korte > tekortAnalyse.max_korte_zijde_cm) {
+    // RPC geeft het grootste stuk dat op GEEN ENKELE rol past (per-stuk check
+    // tegen individuele rol-afmetingen, niet aggregatie over rollen). Als > 0
+    // → minstens één stuk kan nergens op → rol_te_klein. Zie migratie 117.
+    const onpassendLange = tekortAnalyse.grootste_onpassend_stuk_lange_cm ?? 0
+    const onpassendKorte = tekortAnalyse.grootste_onpassend_stuk_korte_cm ?? 0
+    if (onpassendLange > 0 && onpassendKorte > 0) {
       return {
         kind: 'rol_te_klein',
         codes: tekortAnalyse.uitwisselbare_codes,
         maxLange: tekortAnalyse.max_lange_zijde_cm,
         maxKorte: tekortAnalyse.max_korte_zijde_cm,
-        stukLange: grootste.lange,
-        stukKorte: grootste.korte,
+        stukLange: onpassendLange,
+        stukKorte: onpassendKorte,
       }
     }
 
