@@ -1,4 +1,4 @@
--- Migration 110: placeholder-rollen voor maatwerk-paren zonder eigen voorraad
+-- Migration 112: placeholder-rollen voor maatwerk-paren zonder eigen voorraad
 --
 -- Achtergrond: bij de import van "rollenvoorraad per 15-04-2026" zijn alleen
 -- rollen aangemaakt voor kwaliteiten waar daadwerkelijk voorraad van was.
