@@ -136,6 +136,8 @@ Klanten/afnemers. PK = debiteur_nr uit het oude systeem.
 | gln_bedrijf | TEXT | GLN/EAN moederbedrijf |
 | tier | TEXT | 'Gold', 'Silver', 'Bronze' (berekend) |
 | omzet_ytd, omzet_pct_totaal, gem_omzet_maand | NUMERIC | Berekend/gecached |
+| factuurvoorkeur | factuurvoorkeur enum | Default 'per_zending'. 'wekelijks' → verzamelfactuur op maandag. Zie migratie 117. |
+| btw_percentage | NUMERIC(5,2) | Default 21.00. Check 0-100. Per klant aan te passen voor EU/export. Zie migratie 117. |
 | logo_path | TEXT | Pad in Supabase Storage |
 | created_at, updated_at | TIMESTAMPTZ | Auto |
 
@@ -323,6 +325,8 @@ Productregels per order. artikelnr nullable voor service-items.
 ---
 
 ### facturen
+_Aangemaakt in migratie 117 (2026-04-22)._
+
 | Kolom | Type | Toelichting |
 |-------|------|-------------|
 | id | BIGINT PK | |
@@ -334,8 +338,14 @@ Productregels per order. artikelnr nullable voor service-items.
 | subtotaal, btw_percentage, btw_bedrag, totaal | NUMERIC | |
 | fact_naam, fact_adres, fact_postcode, fact_plaats, fact_land | TEXT | Snapshot |
 | opmerkingen | TEXT | |
+| pdf_storage_path | TEXT | Pad in bucket 'facturen' ({debiteur_nr}/FACT-YYYY-NNNN.pdf) |
+| verstuurd_op | TIMESTAMPTZ | Wanneer email verzonden |
+| verstuurd_naar | TEXT | Email-adres waar factuur naartoe is |
+| created_at, updated_at | TIMESTAMPTZ | Auto |
 
 ### factuur_regels
+_Aangemaakt in migratie 117 (2026-04-22)._
+
 | Kolom | Type | Toelichting |
 |-------|------|-------------|
 | id | BIGINT PK | |
@@ -344,6 +354,27 @@ Productregels per order. artikelnr nullable voor service-items.
 | omschrijving | TEXT | |
 | aantal | INTEGER | |
 | prijs, korting_pct, bedrag, btw_percentage | NUMERIC | |
+
+---
+
+### factuur_queue
+Queue voor asynchrone factuur-generatie + email. Gevuld door trigger (migratie 118) bij
+`orders.status='Verzonden'` (klant met `factuurvoorkeur='per_zending'`) of door pg_cron
+maandag 05:00 UTC (klanten met `factuurvoorkeur='wekelijks'`). Gedrainst door edge
+function `factuur-verzenden`. Zie migraties 118, 121, 122.
+
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| id | BIGSERIAL PK | |
+| debiteur_nr | INTEGER FK → debiteuren | |
+| order_ids | BIGINT[] | Welke orders samen op 1 factuur |
+| type | TEXT | 'per_zending' of 'wekelijks' |
+| status | factuur_queue_status | pending → processing → done / failed |
+| attempts | INTEGER | Aantal retry-pogingen (max 3) |
+| last_error | TEXT | Laatste error-message bij falen |
+| factuur_id | BIGINT FK → facturen | Gezet na succes |
+| processing_started_at | TIMESTAMPTZ | Voor stuck-detection. Zie migratie 121. |
+| created_at, processed_at | TIMESTAMPTZ | |
 
 ---
 
@@ -663,6 +694,8 @@ Audit trail: wie heeft wat wanneer gedaan.
 | order_status | Nieuw, Actie vereist, Wacht op picken, Wacht op voorraad, In snijplan, In productie, Deels gereed, Klaar voor verzending, Verzonden, Geannuleerd |
 | zending_status | Gepland, Picken, Ingepakt, Klaar voor verzending, Onderweg, Afgeleverd |
 | factuur_status | Concept, Verstuurd, Betaald, Herinnering, Aanmaning, Gecrediteerd |
+| factuurvoorkeur | per_zending, wekelijks |
+| factuur_queue_status | pending, processing, done, failed |
 | snijplan_status | Gepland, Wacht, Gesneden, In confectie, Ingepakt, In productie, Gereed, Geannuleerd |
 | inkooporder_status | Concept, Besteld, Deels ontvangen, Ontvangen, Geannuleerd |
 | confectie_status | Wacht op materiaal, In productie, Kwaliteitscontrole, Gereed, Geannuleerd |
@@ -722,6 +755,10 @@ Audit trail: wie heeft wat wanneer gedaan.
 | `voltooi_confectie(p_snijplan_id BIGINT, p_afgerond BOOLEAN DEFAULT true, p_ingepakt BOOLEAN DEFAULT false, p_locatie TEXT DEFAULT NULL)` | Rondt confectie af. p_afgerond=false clears + status terug naar Gesneden. p_ingepakt=true zet status Gereed + ingepakt_op. p_locatie="" wist locatie; NULL laat ongemoeid. |
 | `update_order_with_lines(p_order_id BIGINT, p_header JSONB, p_regels JSONB)` | Merge-update van order header + regels: UPDATE bestaande regels op `id`, INSERT nieuwe, DELETE regels die uit payload verdwenen zijn. Preserveert `snijplannen.order_regel_id` FK-koppelingen (migratie 074) |
 | `backlog_per_kwaliteit_kleur(p_kwaliteit TEXT, p_kleur TEXT)` | Aggregeert wachtende snijplan-stukken voor real-time levertijd-check: returnt `(totaal_m2, aantal_stukken, vroegste_afleverdatum)`. Match op kleur-varianten (X, X.0). Gebruikt door `check-levertijd` edge function (migratie 080) |
+| `genereer_factuur(p_order_ids BIGINT[])` | Atomair: maakt factuur + regels aan voor 1+ orders van dezelfde debiteur, markeert order_regels.gefactureerd. Retourneert factuur_id. Migratie 119. |
+| `enqueue_factuur_bij_verzonden()` | Trigger: bij orders.status → 'Verzonden' vult factuur_queue voor per_zending-klanten. Migratie 118. |
+| `enqueue_wekelijkse_verzamelfacturen()` | Verzamelt niet-gefactureerde Verzonden-orders per wekelijks-klant in de queue. Maandag 05:00 UTC via pg_cron. Migratie 122. |
+| `recover_stuck_factuur_queue()` | Zet queue-items >10 min in 'processing' terug op 'pending'. Elke 5 min via pg_cron. Migratie 121. |
 
 ### Triggers op order_regels (maatwerk)
 

@@ -1,5 +1,36 @@
 # Changelog — RugFlow ERP
 
+## 2026-04-22 — Facturatie-module V1
+
+Facturen worden automatisch gegenereerd + gemaild bij order-status 'Verzonden'
+(klanten met `factuurvoorkeur='per_zending'`) of via wekelijkse cron (maandag 05:00 UTC,
+voor klanten met `factuurvoorkeur='wekelijks'`). PDF volgens Karpi-layout, algemene
+voorwaarden als tweede bijlage.
+
+- Migraties 117–122: enums + tabellen facturen/factuur_regels, factuur_queue + trigger,
+  RPC genereer_factuur, seed Karpi BV bedrijfsgegevens, queue-recovery, pg_cron
+  (drain 1min + recovery 5min + wekelijks maandag 05:00 UTC).
+- Kolommen `debiteuren.factuurvoorkeur` + `debiteuren.btw_percentage` toegevoegd
+  (BTW per klant: 21% NL default, 0% voor EU-intracom/export).
+- Edge function `factuur-verzenden` drainst queue: RPC → PDF (pdf-lib) → storage upload
+  → Resend email met algemene voorwaarden als 2e bijlage.
+- Pure helpers in `_shared/`: `factuur-bedrag.ts`, `factuur-pdf.ts`, `resend-client.ts`
+  met Deno tests.
+- Frontend: `/facturatie` lijst + detail, klant-detail tab "Facturering",
+  `/instellingen/bedrijfsgegevens`, nieuwe sidebar-items.
+- Secrets nodig: `RESEND_API_KEY`, `FACTUUR_FROM_EMAIL`, `FACTUUR_REPLY_TO`,
+  `ALGEMENE_VOORWAARDEN_PATH`. Storage buckets: `facturen` (privé), `documenten` (public).
+- Out of scope V1: herinneringen, aanmaningen, credit-nota's, partiële facturatie,
+  herversturen-knop, automatische BTW-afleiding uit land.
+- Plan: `docs/superpowers/plans/2026-04-22-facturatie-module.md`.
+
+### 2026-04-22 — Levertijd-check: geen datums in het verleden meer
+- **Wat:** Twee fixes in [check-levertijd/index.ts](supabase/functions/check-levertijd/index.ts) + [levertijd-match.ts](supabase/functions/_shared/levertijd-match.ts).
+  1. **Primair** — `fetchWerkagendaInput` filtert nu `.in('status', PLANNING_STATUS_IN_PIPELINE)` (`'Gepland'` + `'Snijden'`) i.p.v. alleen `'Snijden'`, consistent met `fetchBestaandePlaatsingen`. Gepland-rollen krijgen daardoor een realistisch sequentieel werkagenda-slot (start ≥ vandaag) en de match-tak hoeft niet meer door te vallen naar de ongeflourde fallback.
+  2. **Defense-in-depth** — `snijDatumVoorRol` floort uitkomst aan `volgendeWerkdag(vandaag)`: afleverdatum-pad én planning_week-pad retourneren nooit meer een datum in het verleden, ook niet wanneer de werkagenda om een of andere reden geen slot heeft.
+- **Waarom:** Miguel meldde "Past op bestaande rol — leverdatum 06-04-2026" terwijl vandaag 22-04 is. Oorzaak: rol CISC11 3 stond op `Gepland` met een bestaande order die al overtijd was (afleverdatum 6-4). Werkagenda negeerde `'Gepland'` → match-tak viel terug op `snijDatumVoorRol(afleverdatum − buffer)` = 4-4-2026. Leverdatum = 6-4. Drie weken in het verleden.
+- **Files:** [supabase/functions/check-levertijd/index.ts](supabase/functions/check-levertijd/index.ts), [supabase/functions/_shared/levertijd-match.ts](supabase/functions/_shared/levertijd-match.ts), [supabase/functions/_shared/levertijd-match.test.ts](supabase/functions/_shared/levertijd-match.test.ts) (+ 2 regressie-tests voor backlog scenarios), [docs/architectuur.md](docs/architectuur.md).
+
 ### 2026-04-22 — Facturatie Task 8: PDF-generator met Karpi-layout (pdf-lib)
 - **Wat:** `supabase/functions/_shared/factuur-pdf.ts` — server-side PDF-generatie voor Karpi BV facturen via `pdf-lib@1.17.1` (esm.sh). A4 portrait, Courier-font, volledige Karpi-layout: bedrijfs-header, klant-adresblok, info-blok, tabel-header, gegroepeerde orderregels per order_nr, TRANSPORTEREN/TRANSPORT BLAD bij paginering, BTW-blok, betalingscondities, gecentreerde footer (kvk/btw/bank/IBAN). Automatische pagina-ombreuk wanneer de cursor <40mm boven onderkant uitkomt. `supabase/functions/_shared/factuur-pdf.test.ts` — drie Deno-tests: magic-bytes (PDF-signature), 50-regeltest (paginering), 0%-BTW-test (intracom/export).
 - **Waarom:** Task 8 van het facturatie-module plan. PDF wordt server-side gegenereerd (Deno Edge Function) zodat wekelijkse verzamelfacturen zonder actieve browser werken en als bijlage aan de Resend-mail gehangen kunnen worden.
