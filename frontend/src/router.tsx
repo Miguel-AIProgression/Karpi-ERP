@@ -29,6 +29,8 @@ import { ConfectiePlanningPage } from '@/pages/confectie/confectie-planning'
 import { ScanstationPage } from '@/pages/scanstation/scanstation'
 import { RollenOverviewPage } from '@/pages/rollen/rollen-overview'
 import { MagazijnOverviewPage } from '@/pages/magazijn/magazijn-overview'
+import { FacturatieOverviewPage } from '@/pages/facturatie/facturatie-overview'
+import { FactuurDetailPage } from '@/pages/facturatie/factuur-detail'
 
 export const router = createBrowserRouter([
   {
@@ -58,7 +60,8 @@ export const router = createBrowserRouter([
 
       // Placeholders (V2+)
       { path: 'samples', element: <PlaceholderPage title="Samples" /> },
-      { path: 'facturatie', element: <PlaceholderPage title="Facturatie" /> },
+      { path: 'facturatie', element: <FacturatieOverviewPage /> },
+      { path: 'facturatie/:id', element: <FactuurDetailPage /> },
       { path: 'vertegenwoordigers', element: <VertegenwoordigersOverviewPage /> },
       { path: 'vertegenwoordigers/:code', element: <VertegenwoordigerDetailPage /> },
       { path: 'rollen', element: <RollenOverviewPage /> },
