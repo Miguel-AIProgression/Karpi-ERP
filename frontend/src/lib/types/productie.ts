@@ -202,6 +202,11 @@ export interface RolGroep {
   volle_rollen: number
   aangebroken: number
   reststukken: number
+  /** Beste uitwisselbare kwaliteit+kleur met beschikbare voorraad, NULL als er geen is. */
+  equiv_kwaliteit_code: string | null
+  equiv_kleur_code: string | null
+  equiv_rollen: number
+  equiv_m2: number
 }
 
 // === Magazijn types ===
