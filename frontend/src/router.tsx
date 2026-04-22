@@ -24,6 +24,7 @@ import { SnijvoorstelReviewPage } from '@/pages/snijplanning/snijvoorstel-review
 import { ProductieRolPage } from '@/pages/snijplanning/productie-rol'
 import { ProductieGroepPage } from '@/pages/snijplanning/productie-groep'
 import { ProductieInstellingenPage } from '@/pages/instellingen/productie-instellingen'
+import { BedrijfsgegevensPage } from '@/pages/instellingen/bedrijfsgegevens'
 import { ConfectieOverviewPage } from '@/pages/confectie/confectie-overview'
 import { ConfectiePlanningPage } from '@/pages/confectie/confectie-planning'
 import { ScanstationPage } from '@/pages/scanstation/scanstation'
@@ -82,6 +83,7 @@ export const router = createBrowserRouter([
       { path: 'leveranciers', element: <PlaceholderPage title="Leveranciers" /> },
       { path: 'instellingen', element: <ProductieInstellingenPage /> },
       { path: 'instellingen/productie', element: <ProductieInstellingenPage /> },
+      { path: 'instellingen/bedrijfsgegevens', element: <BedrijfsgegevensPage /> },
     ],
   },
 ])

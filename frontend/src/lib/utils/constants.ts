@@ -135,6 +135,7 @@ export const NAV_GROUPS = [
     label: 'Systeem',
     items: [
       { label: 'Instellingen', path: '/instellingen', icon: 'Settings' },
+      { label: 'Bedrijfsgegevens', path: '/instellingen/bedrijfsgegevens', icon: 'Building2' },
     ],
   },
 ] as const
