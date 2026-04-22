@@ -233,31 +233,65 @@ function RolTabel({ rollen }: { rollen: RolRow[] }) {
 export function RollenGroepRow({ groep }: RollenGroepRowProps) {
   const [open, setOpen] = useState(false)
 
-  // Calculate a usage percentage (arbitrary: based on reststuk ratio)
+  const isEmpty = groep.totaal_m2 === 0
+  const heeftEquiv = !!groep.equiv_kwaliteit_code && groep.equiv_rollen > 0
+
   const vollePct = groep.totaal_rollen > 0
     ? Math.round((groep.volle_rollen / groep.totaal_rollen) * 100)
     : 0
 
   return (
-    <div className="bg-white rounded-[var(--radius)] border border-slate-200 overflow-hidden">
-      {/* Collapsed header */}
+    <div
+      className={cn(
+        'bg-white rounded-[var(--radius)] border overflow-hidden',
+        isEmpty ? 'border-slate-200/70' : 'border-slate-200',
+      )}
+    >
       <button
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors text-left"
+        onClick={() => !isEmpty && setOpen(!open)}
+        disabled={isEmpty}
+        className={cn(
+          'w-full flex items-center justify-between px-4 py-3 text-left transition-colors',
+          isEmpty ? 'cursor-default' : 'hover:bg-slate-50',
+        )}
       >
         <div className="flex items-center gap-3 flex-wrap">
-          {open ? (
+          {isEmpty ? (
+            <span className="w-4" />
+          ) : open ? (
             <ChevronDown size={16} className="text-slate-400" />
           ) : (
             <ChevronRight size={16} className="text-slate-400" />
           )}
-          <span className="font-medium text-slate-900">
+          <span className={cn('font-medium', isEmpty ? 'text-slate-500' : 'text-slate-900')}>
             {groep.product_naam}
           </span>
           <div className="flex items-center gap-2 flex-wrap">
-            <StatusBadge rolType="volle_rol" count={groep.volle_rollen} />
-            <StatusBadge rolType="aangebroken" count={groep.aangebroken} />
-            <StatusBadge rolType="reststuk" count={groep.reststukken} />
+            {isEmpty ? (
+              heeftEquiv ? (
+                <Link
+                  to={`/rollen?kwaliteit=${encodeURIComponent(groep.equiv_kwaliteit_code!)}&kleur=${encodeURIComponent(groep.equiv_kleur_code ?? '')}`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-50 text-blue-700 hover:bg-blue-100"
+                >
+                  Leverbaar via {groep.equiv_kwaliteit_code} {groep.equiv_kleur_code}
+                  {' — '}
+                  {groep.equiv_rollen} {groep.equiv_rollen === 1 ? 'rol' : 'rollen'}
+                  {', '}
+                  {groep.equiv_m2.toFixed(1)} m&sup2;
+                </Link>
+              ) : (
+                <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-slate-100 text-slate-500">
+                  Geen voorraad
+                </span>
+              )
+            ) : (
+              <>
+                <StatusBadge rolType="volle_rol" count={groep.volle_rollen} />
+                <StatusBadge rolType="aangebroken" count={groep.aangebroken} />
+                <StatusBadge rolType="reststuk" count={groep.reststukken} />
+              </>
+            )}
           </div>
         </div>
 
@@ -266,7 +300,12 @@ export function RollenGroepRow({ groep }: RollenGroepRowProps) {
             {groep.totaal_rollen} {groep.totaal_rollen === 1 ? 'rol' : 'rollen'}
           </span>
           <div className="flex items-center gap-2 min-w-[140px]">
-            <span className="text-sm font-medium text-slate-700 whitespace-nowrap">
+            <span
+              className={cn(
+                'text-sm font-medium whitespace-nowrap',
+                isEmpty ? 'text-slate-400' : 'text-slate-700',
+              )}
+            >
               {groep.totaal_m2.toFixed(1)} m&sup2;
             </span>
             <div className="w-20 h-1.5 bg-slate-100 rounded-full overflow-hidden">
@@ -279,8 +318,7 @@ export function RollenGroepRow({ groep }: RollenGroepRowProps) {
         </div>
       </button>
 
-      {/* Expanded content */}
-      {open && (
+      {open && !isEmpty && (
         <div className="border-t border-slate-100 px-2 py-2">
           <RolTabel rollen={groep.rollen} />
         </div>
