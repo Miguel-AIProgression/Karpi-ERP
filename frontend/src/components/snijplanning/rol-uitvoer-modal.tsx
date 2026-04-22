@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Link, useNavigate } from 'react-router-dom'
 import {
@@ -10,6 +10,7 @@ import {
   AlertTriangle,
   Package,
   Trash2,
+  Minus,
 } from 'lucide-react'
 import {
   useRolSnijstukken,
@@ -486,11 +487,62 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
                   </button>
                 </div>
                 {(() => {
-                  // Groepeer events op y-band (stukken naast elkaar gesneden delen ~dezelfde y)
-                  const bandKey = (y: number) => Math.round(y / 5)
-                  const bandCount = new Map<number, number>()
-                  for (const ev of displayGebeurtenissen) bandCount.set(bandKey(ev.y), (bandCount.get(bandKey(ev.y)) ?? 0) + 1)
-                  let prevBand: number | null = null
+                  // Groepeer events in **shelves** (strips langs rol-lengte) zodat de
+                  // snij-volgorde de fysieke guillotine-workflow volgt:
+                  //   1. Per shelf één breedtesnit over de volle rol-breedte.
+                  //   2. Binnen die shelf lengtesnitten tussen stukken (zelfde
+                  //      mesinstelling voor alle stukken in dezelfde shelf).
+                  // Shelf-grouping op y-band met 5 cm tolerantie (afrondingen).
+                  const BAND_STEP = 5
+                  const bandKey = (y: number) => Math.round(y / BAND_STEP)
+                  const yDimOf = (ev: RolGebeurtenis): number =>
+                    ev.kind === 'snij' ? ev.snijStuk.breedte_cm : ev.lengteCm
+
+                  interface ShelfGroep {
+                    y: number
+                    height: number
+                    events: RolGebeurtenis[]
+                  }
+                  const shelvesMap = new Map<number, ShelfGroep>()
+                  for (const ev of displayGebeurtenissen) {
+                    const k = bandKey(ev.y)
+                    let s = shelvesMap.get(k)
+                    if (!s) {
+                      s = { y: ev.y, height: 0, events: [] }
+                      shelvesMap.set(k, s)
+                    }
+                    s.events.push(ev)
+                    const yEnd = ev.y + yDimOf(ev)
+                    if (yEnd - s.y > s.height) s.height = yEnd - s.y
+                  }
+                  const rawShelves: ShelfGroep[] = Array.from(shelvesMap.values())
+                    .sort((a, b) => a.y - b.y)
+                  // Merge y-overlappende shelves: als shelf[i].y < shelf[i-1].yEnd,
+                  // valt shelf[i] BINNEN de breedtesnit-slice van shelf[i-1] (nested
+                  // guillotine: bv. kleiner stuk onder een groter stuk in dezelfde
+                  // kolom). Voor de snijder is het dan één fysieke rij met één
+                  // breedtesnit — ook al zijn er intern meerdere sub-stukken.
+                  const shelves: ShelfGroep[] = []
+                  for (const s of rawShelves) {
+                    const last = shelves[shelves.length - 1]
+                    if (last && s.y < last.y + last.height - 1) {
+                      last.events.push(...s.events)
+                      const yEnd = Math.max(last.y + last.height, s.y + s.height)
+                      last.height = yEnd - last.y
+                    } else {
+                      shelves.push({ y: s.y, height: s.height, events: [...s.events] })
+                    }
+                  }
+                  // Binnen een shelf sorteren op x (kolom-volgorde), dan op y
+                  // (binnen dezelfde kolom bovenste-eerst) — zo staan stukken die
+                  // onder elkaar liggen direct na elkaar in de lijst.
+                  for (const s of shelves) {
+                    s.events.sort((a, b) => {
+                      if (a.x !== b.x) return a.x - b.x
+                      return a.y - b.y
+                    })
+                  }
+
                   return (
                     <table className="w-full text-sm">
                       <thead>
@@ -504,14 +556,39 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
                         </tr>
                       </thead>
                       <tbody>
-                        {displayGebeurtenissen.map((e, idx) => {
-                          const band = bandKey(e.y)
-                          const grouped = (bandCount.get(band) ?? 0) > 1
-                          const isFirstInBand = prevBand !== band
-                          prevBand = band
-                          const topBorder = isFirstInBand ? 'border-t border-slate-200' : ''
-                          const indentClass = grouped && !isFirstInBand ? 'pl-8' : ''
-
+                        {(() => {
+                          // Shelves die alleen uit 'aangebroken_end' bestaan krijgen geen
+                          // header — de aangebroken rol is geen snij-operatie, dus een
+                          // breedtesnit-instructie slaat nergens op. Daarnaast nummeren we
+                          // alleen de shelves die echt gesneden worden, zodat "Rij N" de
+                          // werkelijke handeling-volgorde weergeeft.
+                          let rijIdx = 0
+                          return shelves.map((shelf, shelfIdx) => {
+                          const alleenAangebroken = shelf.events.every(
+                            (ev) => ev.kind === 'aangebroken_end',
+                          )
+                          const toonHeader = !alleenAangebroken
+                          if (toonHeader) rijIdx += 1
+                          const breedteSnitCm = Math.round(shelf.y + shelf.height)
+                          const shelfHoogte = Math.round(shelf.height)
+                          return (
+                            <Fragment key={`shelf-${shelfIdx}`}>
+                              {toonHeader && (
+                                <tr className="bg-amber-50 border-t-2 border-amber-300">
+                                  <td colSpan={6} className="py-2 px-3 text-xs text-amber-900">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <Minus size={12} className="text-amber-700" />
+                                      <span className="font-semibold">
+                                        Rij {rijIdx} · breedtesnit op {breedteSnitCm} cm
+                                      </span>
+                                      <span className="text-amber-700">
+                                        (shelf {shelfHoogte} cm hoog)
+                                      </span>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                              {shelf.events.map((e, idx) => {
                           if (e.kind === 'snij') {
                             const stuk = e.stuk
                             const checked = checkedIds.has(stuk.id)
@@ -528,9 +605,9 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
                             return (
                               <tr
                                 key={`snij-${stuk.id}`}
-                                className={cn('hover:bg-slate-50', topBorder, !checked && 'opacity-60')}
+                                className={cn('hover:bg-slate-50', !checked && 'opacity-60')}
                               >
-                                <td className={cn('py-2 pl-2 pr-2', indentClass)}>
+                                <td className="py-2 pl-2 pr-2">
                                   <input
                                     type="checkbox"
                                     checked={checked}
@@ -591,8 +668,8 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
                           }
                           if (e.kind === 'reststuk') {
                             return (
-                              <tr key={`rest-${idx}`} className={cn('bg-emerald-50/40', topBorder)}>
-                                <td className={cn('py-2 pl-2 pr-2 text-center', indentClass)}>
+                              <tr key={`rest-${idx}`} className="bg-emerald-50/40">
+                                <td className="py-2 pl-2 pr-2 text-center">
                                   <Package size={14} className="text-emerald-600 inline" />
                                 </td>
                                 <td className="py-2 pr-3 font-medium text-emerald-800">
@@ -626,8 +703,8 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
                           }
                           if (e.kind === 'aangebroken_end') {
                             return (
-                              <tr key={`aang-${idx}`} className={cn('bg-blue-50/50', topBorder)}>
-                                <td className={cn('py-2 pl-2 pr-2 text-center', indentClass)}>
+                              <tr key={`aang-${idx}`} className="bg-blue-50/50">
+                                <td className="py-2 pl-2 pr-2 text-center">
                                   <Package size={14} className="text-blue-600 inline" />
                                 </td>
                                 <td className="py-2 pr-3 font-medium text-blue-800">
@@ -642,8 +719,8 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
                             )
                           }
                           return (
-                            <tr key={`afv-${idx}`} className={cn('bg-slate-50/60 text-slate-400', topBorder)}>
-                              <td className={cn('py-2 pl-2 pr-2 text-center', indentClass)}>
+                            <tr key={`afv-${idx}`} className="bg-slate-50/60 text-slate-400">
+                              <td className="py-2 pl-2 pr-2 text-center">
                                 <Trash2 size={14} className="inline" />
                               </td>
                               <td className="py-2 pr-3">
@@ -656,7 +733,11 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
                               <td className="py-2 pr-3 text-xs">—</td>
                             </tr>
                           )
-                        })}
+                              })}
+                            </Fragment>
+                          )
+                        })
+                        })()}
                       </tbody>
                     </table>
                   )

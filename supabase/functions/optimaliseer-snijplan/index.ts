@@ -1,14 +1,14 @@
 // Supabase Edge Function: optimaliseer-snijplan
-// FFDH (First Fit Decreasing Height) 2D strip-packing algorithm
-// for optimal placement of carpet pieces on rolls.
+// 2D strip-packing voor optimale plaatsing van tapijt-stukken op rollen.
+// Gebruikt de best-of-both strategie (Guillotine + FFDH per rol) uit
+// _shared/guillotine-packing.ts — zie daar voor algoritme-details.
 //
-// Expects tables: snijvoorstellen, snijvoorstel_plaatsingen
-// Uses view: snijplanning_overzicht
-// Uses table: rollen
+// Tabellen: snijvoorstellen, snijvoorstel_plaatsingen, rollen
+// View: snijplanning_overzicht
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { packAcrossRolls } from '../_shared/ffdh-packing.ts'
+import { packAcrossRolls } from '../_shared/guillotine-packing.ts'
 import { computeReststukken } from '../_shared/compute-reststukken.ts'
 import {
   fetchStukken,
@@ -109,7 +109,7 @@ serve(async (req) => {
       pieces.map((p) => [p.id, p.maatwerk_vorm]),
     )
 
-    // ---- Step 3: FFDH packing across rolls ----
+    // ---- Step 3: best-of-both packing across rolls ----
     const { rollResults, nietGeplaatst, samenvatting } = packAcrossRolls(pieces, rollen, pieceVormMap)
 
     // ---- Step 4: Save to database ----

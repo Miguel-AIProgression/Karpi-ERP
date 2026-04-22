@@ -4,13 +4,14 @@
 // Orchestreert het volledige auto-plan proces voor één kwaliteit/kleur groep:
 // 1. Lock verkrijgen (race condition preventie)
 // 2. Gepland stukken vrijgeven
-// 3. Alle Wacht stukken ophalen + FFDH optimalisatie
+// 3. Alle Wacht/Gepland stukken ophalen + best-of-both packing
+//    (Guillotine + FFDH per rol, kies beste — zie guillotine-packing.ts)
 // 4. Voorstel opslaan + automatisch goedkeuren
 // 5. Lock vrijgeven
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { packAcrossRolls } from '../_shared/ffdh-packing.ts'
+import { packAcrossRolls } from '../_shared/guillotine-packing.ts'
 import {
   fetchStukken,
   fetchUitwisselbareCodes,
@@ -178,7 +179,7 @@ serve(async (req) => {
         ? cfgWaarde.max_reststuk_verspilling_pct
         : 15
 
-    // ---- Step 5: FFDH packing ----
+    // ---- Step 5: best-of-both packing ----
     const pieceVormMap = new Map<number, string | null>(
       pieces.map((p) => [p.id, p.maatwerk_vorm]),
     )

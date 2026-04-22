@@ -1,6 +1,18 @@
-// Bereken bruikbare reststukken uit een FFDH snijplan-layout.
+// Bereken bruikbare reststukken uit een snijplan-layout.
 // Input: rol-dimensies + plaatsingen. Output: lijst rechthoekige vrije gebieden
 // die groot genoeg zijn om als herbruikbaar reststuk te markeren.
+//
+// Strategie: free-rect subtraction (zelfde logic als guillotine-packing) +
+// disjoint greedy cover. De oudere shelf-based benadering miste interne gaps
+// zoals "rechter strip + sliver onder korter stuk → samengevoegde rechthoek
+// onder de shelf". Door met subtract + greedy disjoint cover te werken vinden
+// we exact dezelfde reststukken die het placement-algoritme "ziet", zodat de
+// UI de werkelijke restwaarde toont.
+//
+// Waarom disjoint (i.p.v. maximal rectangles met overlap): twee overlappende
+// reststukken zouden in de UI suggereren dat we dezelfde fysieke ruimte 2×
+// op voorraad kunnen zetten — dat is ondoenlijk. Greedy (grootste kwalificerend
+// eerst, dan obstacle voor de volgende iteratie) levert een praktische cover.
 
 import type { Placement } from './ffdh-packing.ts'
 
@@ -11,8 +23,8 @@ export interface ReststukRect {
   lengte_cm: number   // afmeting langs Y
 }
 
-export const RESTSTUK_MIN_SHORT = 70
-export const RESTSTUK_MIN_LONG = 140
+export const RESTSTUK_MIN_SHORT = 50
+export const RESTSTUK_MIN_LONG = 100
 
 function qualifies(r: ReststukRect, minShort: number, minLong: number): boolean {
   const short = Math.min(r.breedte_cm, r.lengte_cm)
@@ -20,27 +32,136 @@ function qualifies(r: ReststukRect, minShort: number, minLong: number): boolean 
   return short >= minShort && long >= minLong
 }
 
-interface ShelfInfo {
+interface FreeRect {
+  x: number
   y: number
+  width: number
   height: number
-  pieces: Placement[]  // gesorteerd op positie_x_cm
 }
 
-function groupShelves(plaatsingen: Placement[]): ShelfInfo[] {
-  const byY = new Map<number, Placement[]>()
+function intersects(a: FreeRect, b: FreeRect): boolean {
+  return (
+    a.x < b.x + b.width &&
+    a.x + a.width > b.x &&
+    a.y < b.y + b.height &&
+    a.y + a.height > b.y
+  )
+}
+
+function contains(outer: FreeRect, inner: FreeRect): boolean {
+  return (
+    inner.x >= outer.x &&
+    inner.y >= outer.y &&
+    inner.x + inner.width <= outer.x + outer.width &&
+    inner.y + inner.height <= outer.y + outer.height
+  )
+}
+
+function subtractRect(freeList: FreeRect[], obstacle: FreeRect): FreeRect[] {
+  const result: FreeRect[] = []
+  for (const fr of freeList) {
+    if (!intersects(fr, obstacle)) {
+      result.push(fr)
+      continue
+    }
+    if (obstacle.y > fr.y) {
+      result.push({ x: fr.x, y: fr.y, width: fr.width, height: obstacle.y - fr.y })
+    }
+    if (obstacle.y + obstacle.height < fr.y + fr.height) {
+      result.push({
+        x: fr.x,
+        y: obstacle.y + obstacle.height,
+        width: fr.width,
+        height: fr.y + fr.height - (obstacle.y + obstacle.height),
+      })
+    }
+    if (obstacle.x > fr.x) {
+      result.push({ x: fr.x, y: fr.y, width: obstacle.x - fr.x, height: fr.height })
+    }
+    if (obstacle.x + obstacle.width < fr.x + fr.width) {
+      result.push({
+        x: obstacle.x + obstacle.width,
+        y: fr.y,
+        width: fr.x + fr.width - (obstacle.x + obstacle.width),
+        height: fr.height,
+      })
+    }
+  }
+  return removeDominated(result)
+}
+
+function removeDominated(rects: FreeRect[]): FreeRect[] {
+  const result: FreeRect[] = []
+  for (let i = 0; i < rects.length; i++) {
+    let dominated = false
+    for (let j = 0; j < rects.length; j++) {
+      if (i === j) continue
+      if (contains(rects[j], rects[i])) {
+        dominated = true
+        break
+      }
+    }
+    if (!dominated) result.push(rects[i])
+  }
+  return result
+}
+
+function computeMaximalFreeRects(
+  rolBreedte: number,
+  rolLengte: number,
+  plaatsingen: Placement[],
+): FreeRect[] {
+  let free: FreeRect[] = [{ x: 0, y: 0, width: rolBreedte, height: rolLengte }]
   for (const p of plaatsingen) {
-    const arr = byY.get(p.positie_y_cm) ?? []
-    arr.push(p)
-    byY.set(p.positie_y_cm, arr)
+    free = subtractRect(free, {
+      x: p.positie_x_cm,
+      y: p.positie_y_cm,
+      width: p.lengte_cm,
+      height: p.breedte_cm,
+    })
   }
-  const shelves: ShelfInfo[] = []
-  for (const [y, pieces] of byY) {
-    pieces.sort((a, b) => a.positie_x_cm - b.positie_x_cm)
-    const height = Math.max(...pieces.map((p) => p.breedte_cm))
-    shelves.push({ y, height, pieces })
+  return free
+}
+
+/**
+ * Selecteer een disjoint set reststukken greedy: kies telkens de grootste
+ * kwalificerende rechthoek, "claim" die, en gebruik hem als obstacle voor de
+ * volgende iteratie. Stopt wanneer geen kwalificerende rechthoek meer over is.
+ */
+function greedyDisjointReststukken(
+  rolBreedte: number,
+  rolLengte: number,
+  plaatsingen: Placement[],
+  minShort: number,
+  minLong: number,
+): FreeRect[] {
+  let free = computeMaximalFreeRects(rolBreedte, rolLengte, plaatsingen)
+  const claimed: FreeRect[] = []
+
+  while (true) {
+    const kwalificerend = free.filter((r) => {
+      const s = Math.min(r.width, r.height)
+      const l = Math.max(r.width, r.height)
+      return s >= minShort && l >= minLong
+    })
+    if (kwalificerend.length === 0) break
+
+    // Grootste area eerst; bij gelijk area: langste zijde eerst (bruikbaarder).
+    kwalificerend.sort((a, b) => {
+      const areaA = a.width * a.height
+      const areaB = b.width * b.height
+      if (areaB !== areaA) return areaB - areaA
+      const longA = Math.max(a.width, a.height)
+      const longB = Math.max(b.width, b.height)
+      return longB - longA
+    })
+    const pick = kwalificerend[0]
+    claimed.push(pick)
+    // Verwijder de claim uit de vrije ruimte voor de volgende iteratie.
+    free = subtractRect(free, pick)
   }
-  shelves.sort((a, b) => a.y - b.y)
-  return shelves
+
+  return claimed
 }
 
 export function computeReststukken(
@@ -50,7 +171,6 @@ export function computeReststukken(
   minShort: number = RESTSTUK_MIN_SHORT,
   minLong: number = RESTSTUK_MIN_LONG,
 ): ReststukRect[] {
-  const result: ReststukRect[] = []
   if (plaatsingen.length === 0) {
     const full: ReststukRect = {
       x_cm: 0,
@@ -61,47 +181,11 @@ export function computeReststukken(
     return qualifies(full, minShort, minLong) ? [full] : []
   }
 
-  const shelves = groupShelves(plaatsingen)
-
-  for (const shelf of shelves) {
-    const last = shelf.pieces[shelf.pieces.length - 1]
-    const usedWidth = last.positie_x_cm + last.lengte_cm
-
-    // 1. Rechter-strip van shelf (naast laatste stuk, over volle shelf-hoogte)
-    if (usedWidth < rolBreedte) {
-      result.push({
-        x_cm: usedWidth,
-        y_cm: shelf.y,
-        breedte_cm: rolBreedte - usedWidth,
-        lengte_cm: shelf.height,
-      })
-    }
-
-    // 2. Sliver onder elk stuk dat korter is dan shelf-hoogte
-    for (const p of shelf.pieces) {
-      const sliver = shelf.height - p.breedte_cm
-      if (sliver > 0) {
-        result.push({
-          x_cm: p.positie_x_cm,
-          y_cm: p.positie_y_cm + p.breedte_cm,
-          breedte_cm: p.lengte_cm,
-          lengte_cm: sliver,
-        })
-      }
-    }
-  }
-
-  // 3. End-of-roll strip na laatste shelf
-  const lastShelf = shelves[shelves.length - 1]
-  const totaalShelvesEind = lastShelf.y + lastShelf.height
-  if (totaalShelvesEind < rolLengte) {
-    result.push({
-      x_cm: 0,
-      y_cm: totaalShelvesEind,
-      breedte_cm: rolBreedte,
-      lengte_cm: rolLengte - totaalShelvesEind,
-    })
-  }
-
-  return result.filter((r) => qualifies(r, minShort, minLong))
+  const rects = greedyDisjointReststukken(rolBreedte, rolLengte, plaatsingen, minShort, minLong)
+  return rects.map((r) => ({
+    x_cm: r.x,
+    y_cm: r.y,
+    breedte_cm: r.width,
+    lengte_cm: r.height,
+  }))
 }

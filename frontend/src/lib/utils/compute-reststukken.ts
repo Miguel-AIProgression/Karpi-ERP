@@ -1,11 +1,15 @@
 // Bereken bruikbare reststukken uit een snijplan-layout.
 // Frontend-kopie van supabase/functions/_shared/compute-reststukken.ts
 // (Deno-specifieke imports kunnen niet in Vite-bundle; logica is identiek.)
+//
+// Strategie: free-rect subtraction + greedy disjoint cover. Zie edge-kant voor
+// achtergrond. De oudere shelf-based benadering miste interne gaps; deze
+// versie matcht wat het placement-algoritme "ziet" als reststuk-m².
 
 import type { ReststukRect, SnijvoorstelPlaatsing, SnijStuk } from '@/lib/types/productie'
 
-export const RESTSTUK_MIN_SHORT = 70
-export const RESTSTUK_MIN_LONG = 140
+export const RESTSTUK_MIN_SHORT = 50
+export const RESTSTUK_MIN_LONG = 100
 
 function qualifies(r: ReststukRect, minShort: number, minLong: number): boolean {
   const short = Math.min(r.breedte_cm, r.lengte_cm)
@@ -13,27 +17,131 @@ function qualifies(r: ReststukRect, minShort: number, minLong: number): boolean 
   return short >= minShort && long >= minLong
 }
 
-interface ShelfInfo {
+interface FreeRect {
+  x: number
   y: number
+  width: number
   height: number
-  pieces: SnijvoorstelPlaatsing[]
 }
 
-function groupShelves(plaatsingen: SnijvoorstelPlaatsing[]): ShelfInfo[] {
-  const byY = new Map<number, SnijvoorstelPlaatsing[]>()
+function intersects(a: FreeRect, b: FreeRect): boolean {
+  return (
+    a.x < b.x + b.width &&
+    a.x + a.width > b.x &&
+    a.y < b.y + b.height &&
+    a.y + a.height > b.y
+  )
+}
+
+function contains(outer: FreeRect, inner: FreeRect): boolean {
+  return (
+    inner.x >= outer.x &&
+    inner.y >= outer.y &&
+    inner.x + inner.width <= outer.x + outer.width &&
+    inner.y + inner.height <= outer.y + outer.height
+  )
+}
+
+function subtractRect(freeList: FreeRect[], obstacle: FreeRect): FreeRect[] {
+  const result: FreeRect[] = []
+  for (const fr of freeList) {
+    if (!intersects(fr, obstacle)) {
+      result.push(fr)
+      continue
+    }
+    if (obstacle.y > fr.y) {
+      result.push({ x: fr.x, y: fr.y, width: fr.width, height: obstacle.y - fr.y })
+    }
+    if (obstacle.y + obstacle.height < fr.y + fr.height) {
+      result.push({
+        x: fr.x,
+        y: obstacle.y + obstacle.height,
+        width: fr.width,
+        height: fr.y + fr.height - (obstacle.y + obstacle.height),
+      })
+    }
+    if (obstacle.x > fr.x) {
+      result.push({ x: fr.x, y: fr.y, width: obstacle.x - fr.x, height: fr.height })
+    }
+    if (obstacle.x + obstacle.width < fr.x + fr.width) {
+      result.push({
+        x: obstacle.x + obstacle.width,
+        y: fr.y,
+        width: fr.x + fr.width - (obstacle.x + obstacle.width),
+        height: fr.height,
+      })
+    }
+  }
+  return removeDominated(result)
+}
+
+function removeDominated(rects: FreeRect[]): FreeRect[] {
+  const result: FreeRect[] = []
+  for (let i = 0; i < rects.length; i++) {
+    let dominated = false
+    for (let j = 0; j < rects.length; j++) {
+      if (i === j) continue
+      if (contains(rects[j], rects[i])) {
+        dominated = true
+        break
+      }
+    }
+    if (!dominated) result.push(rects[i])
+  }
+  return result
+}
+
+function computeMaximalFreeRects(
+  rolBreedte: number,
+  rolLengte: number,
+  plaatsingen: SnijvoorstelPlaatsing[],
+): FreeRect[] {
+  let free: FreeRect[] = [{ x: 0, y: 0, width: rolBreedte, height: rolLengte }]
   for (const p of plaatsingen) {
-    const arr = byY.get(p.positie_y_cm) ?? []
-    arr.push(p)
-    byY.set(p.positie_y_cm, arr)
+    free = subtractRect(free, {
+      x: p.positie_x_cm,
+      y: p.positie_y_cm,
+      width: p.lengte_cm,
+      height: p.breedte_cm,
+    })
   }
-  const shelves: ShelfInfo[] = []
-  for (const [y, pieces] of byY) {
-    pieces.sort((a, b) => a.positie_x_cm - b.positie_x_cm)
-    const height = Math.max(...pieces.map((p) => p.breedte_cm))
-    shelves.push({ y, height, pieces })
+  return free
+}
+
+/**
+ * Greedy disjoint: kies grootste kwalificerende rechthoek, claim hem,
+ * gebruik als obstacle voor volgende iteratie. Voorkomt dat overlappende
+ * maximal-rectangles als losse reststukken worden geteld.
+ */
+function greedyDisjointReststukken(
+  rolBreedte: number,
+  rolLengte: number,
+  plaatsingen: SnijvoorstelPlaatsing[],
+  minShort: number,
+  minLong: number,
+): FreeRect[] {
+  let free = computeMaximalFreeRects(rolBreedte, rolLengte, plaatsingen)
+  const claimed: FreeRect[] = []
+  while (true) {
+    const kwalificerend = free.filter((r) => {
+      const s = Math.min(r.width, r.height)
+      const l = Math.max(r.width, r.height)
+      return s >= minShort && l >= minLong
+    })
+    if (kwalificerend.length === 0) break
+    kwalificerend.sort((a, b) => {
+      const areaA = a.width * a.height
+      const areaB = b.width * b.height
+      if (areaB !== areaA) return areaB - areaA
+      const longA = Math.max(a.width, a.height)
+      const longB = Math.max(b.width, b.height)
+      return longB - longA
+    })
+    const pick = kwalificerend[0]
+    claimed.push(pick)
+    free = subtractRect(free, pick)
   }
-  shelves.sort((a, b) => a.y - b.y)
-  return shelves
+  return claimed
 }
 
 export function computeReststukken(
@@ -43,7 +151,6 @@ export function computeReststukken(
   minShort: number = RESTSTUK_MIN_SHORT,
   minLong: number = RESTSTUK_MIN_LONG,
 ): ReststukRect[] {
-  const result: ReststukRect[] = []
   if (plaatsingen.length === 0) {
     const full: ReststukRect = {
       x_cm: 0,
@@ -53,52 +160,22 @@ export function computeReststukken(
     }
     return qualifies(full, minShort, minLong) ? [full] : []
   }
-
-  const shelves = groupShelves(plaatsingen)
-
-  for (const shelf of shelves) {
-    const last = shelf.pieces[shelf.pieces.length - 1]
-    const usedWidth = last.positie_x_cm + last.lengte_cm
-
-    if (usedWidth < rolBreedte) {
-      result.push({
-        x_cm: usedWidth,
-        y_cm: shelf.y,
-        breedte_cm: rolBreedte - usedWidth,
-        lengte_cm: shelf.height,
-      })
-    }
-
-    for (const p of shelf.pieces) {
-      const sliver = shelf.height - p.breedte_cm
-      if (sliver > 0) {
-        result.push({
-          x_cm: p.positie_x_cm,
-          y_cm: p.positie_y_cm + p.breedte_cm,
-          breedte_cm: p.lengte_cm,
-          lengte_cm: sliver,
-        })
-      }
-    }
-  }
-
-  const lastShelf = shelves[shelves.length - 1]
-  const totaalShelvesEind = lastShelf.y + lastShelf.height
-  if (totaalShelvesEind < rolLengte) {
-    result.push({
-      x_cm: 0,
-      y_cm: totaalShelvesEind,
-      breedte_cm: rolBreedte,
-      lengte_cm: rolLengte - totaalShelvesEind,
-    })
-  }
-
-  return result.filter((r) => qualifies(r, minShort, minLong))
+  const rects = greedyDisjointReststukken(rolBreedte, rolLengte, plaatsingen, minShort, minLong)
+  return rects.map((r) => ({
+    x_cm: r.x,
+    y_cm: r.y,
+    breedte_cm: r.width,
+    lengte_cm: r.height,
+  }))
 }
 
 /**
- * Variant die ALLE resterende rechthoeken teruggeeft, gesplitst in
- * kwalificerende reststukken (≥ minShort × minLong) en afval (de rest > 0).
+ * Variant die ook afval-rechthoeken teruggeeft: alle resterende vrije ruimte
+ * die NIET als reststuk kwalificeert.
+ *
+ * Implementatie: claim eerst alle reststukken via greedy, dan wat overblijft
+ * in de maximal free-rects = afval. Dat geeft een samenhangend beeld: som van
+ * reststuk-area + afval-area = totale vrije rol-area.
  */
 export function computeReststukkenEnAfval(
   rolLengte: number,
@@ -107,54 +184,23 @@ export function computeReststukkenEnAfval(
   minShort: number = RESTSTUK_MIN_SHORT,
   minLong: number = RESTSTUK_MIN_LONG,
 ): { reststukken: ReststukRect[]; afval: ReststukRect[] } {
-  const all: ReststukRect[] = []
   if (plaatsingen.length === 0) {
     const full: ReststukRect = { x_cm: 0, y_cm: 0, breedte_cm: rolBreedte, lengte_cm: rolLengte }
-    all.push(full)
-  } else {
-    const shelves = groupShelves(plaatsingen)
-    for (const shelf of shelves) {
-      const last = shelf.pieces[shelf.pieces.length - 1]
-      const usedWidth = last.positie_x_cm + last.lengte_cm
-      if (usedWidth < rolBreedte) {
-        all.push({
-          x_cm: usedWidth,
-          y_cm: shelf.y,
-          breedte_cm: rolBreedte - usedWidth,
-          lengte_cm: shelf.height,
-        })
-      }
-      for (const p of shelf.pieces) {
-        const sliver = shelf.height - p.breedte_cm
-        if (sliver > 0) {
-          all.push({
-            x_cm: p.positie_x_cm,
-            y_cm: p.positie_y_cm + p.breedte_cm,
-            breedte_cm: p.lengte_cm,
-            lengte_cm: sliver,
-          })
-        }
-      }
-    }
-    const lastShelf = shelves[shelves.length - 1]
-    const totaalShelvesEind = lastShelf.y + lastShelf.height
-    if (totaalShelvesEind < rolLengte) {
-      all.push({
-        x_cm: 0,
-        y_cm: totaalShelvesEind,
-        breedte_cm: rolBreedte,
-        lengte_cm: rolLengte - totaalShelvesEind,
-      })
-    }
+    if (qualifies(full, minShort, minLong)) return { reststukken: [full], afval: [] }
+    return { reststukken: [], afval: [full] }
   }
-
-  const reststukken: ReststukRect[] = []
-  const afval: ReststukRect[] = []
-  for (const r of all) {
-    if (r.breedte_cm <= 0 || r.lengte_cm <= 0) continue
-    if (qualifies(r, minShort, minLong)) reststukken.push(r)
-    else afval.push(r)
+  const reststukRects = greedyDisjointReststukken(rolBreedte, rolLengte, plaatsingen, minShort, minLong)
+  // Afval = maximal free rects minus geclaimde reststukken.
+  let afvalFree = computeMaximalFreeRects(rolBreedte, rolLengte, plaatsingen)
+  for (const claim of reststukRects) {
+    afvalFree = subtractRect(afvalFree, claim)
   }
+  const reststukken = reststukRects.map((r) => ({
+    x_cm: r.x, y_cm: r.y, breedte_cm: r.width, lengte_cm: r.height,
+  }))
+  const afval: ReststukRect[] = afvalFree
+    .filter((r) => r.width > 0 && r.height > 0)
+    .map((r) => ({ x_cm: r.x, y_cm: r.y, breedte_cm: r.width, lengte_cm: r.height }))
   return { reststukken, afval }
 }
 
@@ -197,10 +243,22 @@ export function computeReststukkenEnAfvalFromStukken(
 }
 
 /**
+ * Minimale lengte voor een bruikbare aangebroken rol. Full-width end-strips
+ * korter dan deze waarde zijn niet aan te breken (want het volgende snijplan
+ * zou er geen zinvol stuk uit kunnen halen) — die worden daarom als reststuk
+ * geclassificeerd zolang ze voldoen aan RESTSTUK_MIN_SHORT × RESTSTUK_MIN_LONG,
+ * en anders als afval. Synchroon met `rol-uitvoer-modal.tsx` (aangebrokenLengte).
+ */
+export const AANGEBROKEN_MIN_LENGTE = 100
+
+/**
  * Splitst de analyse verder: end-of-roll strip met volle breedte wordt als
  * "aangebrokenEnd" apart teruggegeven (de originele rol krijgt dan een
- * verkorte lengte — zie `voltooi_snijplan_rol(p_aangebroken_lengte)`).
- * Overige rechthoeken blijven reststukken (eigen rolnummer) of afval.
+ * verkorte lengte — zie `voltooi_snijplan_rol(p_aangebroken_lengte)`) MITS
+ * lang genoeg om de rol opnieuw aan te breken (≥ AANGEBROKEN_MIN_LENGTE).
+ * Kortere full-width strips gaan als normaal reststuk door (met eigen rolnummer
+ * en sticker), zodat ze niet "verloren" gaan in een dode zone tussen reststuk
+ * en aangebroken-rol.
  *
  * `aangebrokenEnd` is alleen gezet wanneer rol_type in ('volle_rol',
  * 'aangebroken'); bij een reststuk-rol geeft deze functie altijd null
@@ -235,7 +293,8 @@ export function computeReststukkenAngebrokenAfval(
   const reststukken: ReststukRect[] = []
   for (const r of allRest) {
     const isFullWidthEnd = r.x_cm === 0 && r.breedte_cm === rolBreedte
-    if (isFullWidthEnd && !aangebrokenEnd) {
+    const aanbreekbaar = r.lengte_cm >= AANGEBROKEN_MIN_LENGTE
+    if (isFullWidthEnd && aanbreekbaar && !aangebrokenEnd) {
       aangebrokenEnd = { y_cm: r.y_cm, breedte_cm: r.breedte_cm, lengte_cm: r.lengte_cm }
     } else {
       reststukken.push(r)

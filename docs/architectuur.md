@@ -47,12 +47,12 @@ De `kwaliteit_code` (3-4 letters uit de karpi_code) is de spil tussen producten,
 Bij nieuwe orders wordt de snijplanning automatisch herberekend en goedgekeurd:
 1. Order aangemaakt → `auto_maak_snijplan()` trigger maakt snijplan (status Wacht)
 2. Frontend of edge function triggert `auto-plan-groep` als leverdatum binnen horizon
-3. `auto-plan-groep`: lock → release Gepland stukken → FFDH heroptimalisatie → auto-approve
+3. `auto-plan-groep`: lock → release Gepland stukken → best-of-both heroptimalisatie → auto-approve
 4. Rollen direct gereserveerd (status `in_snijplan`)
 5. Snijder klikt "Start productie" → status `In productie` (niet meer herberekend)
 6. Stukken buiten horizon of zonder beschikbare rollen blijven in Wacht (handmatige flow)
 
-Gedeelde code in `supabase/functions/_shared/` (FFDH algoritme, DB helpers) wordt door beide edge functions geïmporteerd.
+Gedeelde code in `supabase/functions/_shared/` (packing-algoritmes, DB helpers) wordt door beide edge functions geïmporteerd.
 
 ## Frontend Patterns
 
@@ -121,7 +121,11 @@ Elk snijplan en confectie-order krijgt een unieke scancode (via `genereer_scanco
 Snijplannen worden gevisualiseerd als SVG op de rol (2D strip-packing). `positie_x`/`positie_y` kolommen bepalen de plaatsing. De `beste_rol_voor_snijplan()` functie selecteert de optimale rol (minste verspilling).
 
 ### Edge Function: optimaliseer-snijplan
-Supabase Edge Function (`supabase/functions/optimaliseer-snijplan/index.ts`) die FFDH (First Fit Decreasing Height) 2D strip-packing uitvoert. Neemt kwaliteit_code + kleur_code als input, vindt alle wachtende snijplannen, pakt ze optimaal op beschikbare rollen (reststukken eerst), en slaat het voorstel op in `snijvoorstellen` + `snijvoorstel_plaatsingen`. Retourneert plaatsingen met coordinaten, afvalpercentages en samenvatting. Vereist SNIJV nummeringstype.
+Supabase Edge Function (`supabase/functions/optimaliseer-snijplan/index.ts`) die 2D strip-packing uitvoert via de **best-of-both strategie**: per rol runt de code zowel Guillotine-cut (reststuk-aware placement-scoring) als FFDH (First Fit Decreasing Height), en kiest het resultaat met meeste geplaatste stukken, kleinste rol-lengte, meeste reststuk-waarde, laagste afval. Neemt kwaliteit_code + kleur_code als input, vindt alle wachtende snijplannen, pakt ze optimaal op beschikbare rollen (reststukken eerst), en slaat het voorstel op in `snijvoorstellen` + `snijvoorstel_plaatsingen`. Retourneert plaatsingen met coordinaten, afvalpercentages en samenvatting. Vereist SNIJV nummeringstype.
+
+**Placement-selectie (Guillotine, dead-zone aware):** Lexicografisch per zone. Een placement zit in de **safe zone** als `yEnd ≤ rolLengte − AANGEBROKEN_MIN_LENGTE` (rol-rest blijft ≥ 100 cm en dus aanbreekbaar), anders **dead zone** (rol gaat toch op). Safe wint altijd van dead. Binnen **safe**: (1) Y-eindpositie minimaal (rol zuinig), (2) reststuk-m² maximaal, (3) Best Area Fit, (4) leftover-short. Binnen **dead**: (1) reststuk-m² maximaal (prio 4 promoveert — rol gaat toch op, dan telt elke bruikbare rest), (2) Y-eind minimaal, (3) BAF, (4) leftover-short. Voor elke kandidaat wordt de volledige free-rect-update gesimuleerd om de reststuk-waarde te meten. Reststuk-detectie in de UI gebruikt dezelfde free-rect subtraction + greedy disjoint cover, zodat wat het algoritme "ziet" ook in de snij-modal en op stickers verschijnt.
+
+**Algoritme-keuze per rol:** Guillotine wint op scenarios waar kleine stukken uit grote vrije ruimtes gehaald moeten worden (letterlijk "haal het stuk uit het reststuk") én op scenarios waar rotatie een kwalificerend reststuk oplevert. FFDH wint op specifieke patronen dankzij rotatie-lookahead. De best-of-both wrapper (`_shared/guillotine-packing.ts`) garandeert dat we nooit slechter presteren dan de oude FFDH-only flow.
 
 ### Reststuk tracking
 Na het snijden toont `voltooi_snijplan_rol()` een bevestigingsmodal waarin de gebruiker de restlengte kan aanpassen of kan kiezen om geen reststuk op te slaan. Na bevestiging wordt een reststuk-sticker geprint (rolnummer, kwaliteit, kleur, afmetingen, QR-code, locatieveld). Reststukken worden opgeslagen als nieuwe rol met status 'reststuk', gekoppeld via `oorsprong_rol_id`. Alle voorraadmutaties worden gelogd in `voorraad_mutaties`.

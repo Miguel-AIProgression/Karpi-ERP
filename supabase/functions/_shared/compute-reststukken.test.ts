@@ -49,29 +49,27 @@ Deno.test('end-of-roll strip wordt gedetecteerd na laatste shelf', () => {
 })
 
 Deno.test('sliver onder korter stuk wordt gedetecteerd', () => {
-  // Shelf hoogte 300 (piece A=300), piece B=250 hoog ernaast → sliver 50 onder B
-  // Met min 70x140 filter valt een 150x50 sliver weg (short=50 < 70)
+  // Shelf hoogte 300 (piece A=300), piece B=250 hoog ernaast → sliver 50 onder B.
+  // Met default min 50x100: 150x50 heeft short=50 ≥ 50 en long=150 ≥ 100 → OK.
   const plaatsingen = [
     p(1, 0, 0, 200, 300), // A
     p(2, 200, 0, 150, 250), // B (korter)
   ]
-  // Met lagere threshold voor test
-  const r = computeReststukken(500, 400, plaatsingen, 30, 100)
+  const r = computeReststukken(500, 400, plaatsingen)
   const sliver = r.find(
     (x) => x.x_cm === 200 && x.y_cm === 250 && x.breedte_cm === 150 && x.lengte_cm === 50,
   )
-  // 150x50 → short=50, long=150 → voldoet aan (30, 100)
   assertEquals(sliver !== undefined, true, 'verwacht 150x50 sliver onder korter stuk')
 })
 
-Deno.test('te klein reststuk wordt uitgefilterd (< 70x140)', () => {
-  // Rol 400x1000, stuk 350x900 → rechter strip 50x900 (short=50 < 70 → afval)
-  //                            → end strip 400x100 (long=400, short=100, maar long 400 ok maar short=100 >= 70 én long=400 >= 140 → OK)
-  const plaatsingen = [p(1, 0, 0, 350, 900)]
+Deno.test('te klein reststuk wordt uitgefilterd (< 50x100)', () => {
+  // Rol 400x1000, stuk 360x900 → rechter strip 40x900 (short=40 < 50 → afval)
+  //                            → end strip 400x100 (short=100 ≥ 50, long=400 ≥ 100 → OK)
+  const plaatsingen = [p(1, 0, 0, 360, 900)]
   const r = computeReststukken(1000, 400, plaatsingen)
 
-  const tesmal = r.find((x) => x.breedte_cm === 50)
-  assertEquals(tesmal, undefined, 'strip 50 cm breed moet weggefilterd zijn')
+  const tesmal = r.find((x) => x.breedte_cm === 40)
+  assertEquals(tesmal, undefined, 'strip 40 cm breed moet weggefilterd zijn (< 50)')
 
   const eind = r.find((x) => x.y_cm === 900)
   assertEquals(eind !== undefined, true, 'end strip 400x100 moet blijven')
@@ -86,6 +84,50 @@ Deno.test('screenshot-scenario: 320x300 stuk geeft 80x300 reststuk', () => {
   assertEquals(
     reststuk !== undefined,
     true,
-    '80x300 reststuk moet herkend worden (short=80>=70, long=300>=140)',
+    '80x300 reststuk moet herkend worden (short=80>=50, long=300>=100)',
   )
+})
+
+Deno.test('IC2901TA13B: full-width end-strip 400x50 kwalificeert als reststuk', () => {
+  // Screenshot-scenario dat voorheen "0 reststukken, 4 afval" gaf:
+  // rol 400×250, placements 243×200 + 45×170 + 80×163 in één shelf op y=0.
+  // End-strip 400×50 (short=50≥50, long=400≥100) moet als reststuk verschijnen.
+  // (Of de UI hem daarna als "aangebrokenEnd" classificeert gebeurt in
+  // computeReststukkenAngebrokenAfval, niet hier.)
+  const plaatsingen: Placement[] = [
+    p(1, 0, 0, 243, 200),
+    p(2, 243, 0, 45, 170),
+    p(3, 288, 0, 80, 163),
+  ]
+  const r = computeReststukken(250, 400, plaatsingen)
+
+  const endStrip = r.find(
+    (x) => x.y_cm === 200 && x.breedte_cm === 400 && x.lengte_cm === 50,
+  )
+  assertEquals(
+    endStrip !== undefined,
+    true,
+    'end-strip 400x50 moet als reststuk verschijnen (short=50≥50, long=400≥100)',
+  )
+})
+
+Deno.test('free-rect-based: interne gaps onder korter stuk worden samengevoegd', () => {
+  // Placements die een grote "L-vormige" vrije ruimte achterlaten. De oude
+  // shelf-based impl splitste dit in meerdere kleine fragmenten; de nieuwe
+  // free-rect impl levert grotere samenhangende reststukken op.
+  // Rol 400×500, stukken: 200×300 linksboven, 150×250 ernaast.
+  // Vrije ruimte onder shelf + rechterstrip = disjoint cover van 2 rechthoeken.
+  const plaatsingen: Placement[] = [
+    p(1, 0, 0, 200, 300),
+    p(2, 200, 0, 150, 250),
+  ]
+  const r = computeReststukken(500, 400, plaatsingen)
+
+  // Bottom-strip over volle breedte (0,300,400,200) is grootste reststuk.
+  const bottom = r.find(
+    (x) => x.x_cm === 0 && x.y_cm === 300 && x.breedte_cm === 400 && x.lengte_cm === 200,
+  )
+  assertEquals(bottom !== undefined, true, 'verwacht 400x200 bottom-strip als grootste reststuk')
+  // Totaal reststuk-aantal is ≥ 2 (bottom + ≥ 1 andere claim)
+  assertEquals(r.length >= 2, true, `verwacht ≥2 reststukken, kreeg ${r.length}`)
 })

@@ -14,7 +14,7 @@ interface SnijVisualisatieProps {
   restLengte: number   // cm
   afvalPct: number
   reststukBruikbaar: boolean
-  reststukken?: ReststukRect[]  // bruikbare reststukken (>= 70x140 cm) per rechthoek
+  reststukken?: ReststukRect[]  // bruikbare reststukken (>= 50x100 cm) per rechthoek
   className?: string
 }
 
