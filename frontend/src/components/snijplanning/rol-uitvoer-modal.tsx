@@ -28,10 +28,8 @@ import {
 } from '@/lib/utils/compute-reststukken'
 import { cn } from '@/lib/utils/cn'
 import { AFWERKING_MAP } from '@/lib/utils/constants'
+import { snijMargeCm, isRondeVorm } from '@/lib/utils/snij-marges'
 import type { SnijplanRow, SnijStuk, ReststukRect } from '@/lib/types/productie'
-
-/** Extra snijmarge voor ronde stukken: diameter + 5 cm. Synchroon met packing-algoritme. */
-const ROND_SNIJ_MARGE = 5
 
 interface RolUitvoerModalProps {
   rolId: number | null
@@ -296,12 +294,9 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
 
     const groups: ShelfGroup[] = []
     for (const ev of gesorteerd) {
-      const effLengte = ev.snijStuk.vorm === 'rond'
-        ? ev.snijStuk.lengte_cm + ROND_SNIJ_MARGE
-        : ev.snijStuk.lengte_cm
-      const effBreedte = ev.snijStuk.vorm === 'rond'
-        ? ev.snijStuk.breedte_cm + ROND_SNIJ_MARGE
-        : ev.snijStuk.breedte_cm
+      const marge = snijMargeCm(ev.stuk.maatwerk_afwerking, ev.snijStuk.vorm)
+      const effLengte = ev.snijStuk.lengte_cm + marge
+      const effBreedte = ev.snijStuk.breedte_cm + marge
       const maxX = Math.round(ev.x + effLengte)
 
       const last = groups[groups.length - 1]
@@ -329,10 +324,8 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
       // Breedte-mes posities gesorteerd (rechterrand van elk stuk, links naar rechts)
       const breedtePosities = group.events
         .map(ev => {
-          const effL = ev.snijStuk.vorm === 'rond'
-            ? ev.snijStuk.lengte_cm + ROND_SNIJ_MARGE
-            : ev.snijStuk.lengte_cm
-          return Math.round(ev.x + effL)
+          const m = snijMargeCm(ev.stuk.maatwerk_afwerking, ev.snijStuk.vorm)
+          return Math.round(ev.x + ev.snijStuk.lengte_cm + m)
         })
         .sort((a, b) => a - b)
         .filter((v, i, arr) => arr.indexOf(v) === i)
@@ -573,20 +566,20 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
                                 if (e.kind === 'snij') {
                                   const stuk = e.stuk
                                   const checked = checkedIds.has(stuk.id)
-                                  const isRond = e.snijStuk.vorm === 'rond'
-                                  // Fysieke snijmaat: +5cm voor ronde stukken, lengte = max(stuk, rijhoogte)
-                                  const snijBreedte = Math.round(e.snijStuk.lengte_cm) + (isRond ? ROND_SNIJ_MARGE : 0)
+                                  const marge = snijMargeCm(stuk.maatwerk_afwerking, e.snijStuk.vorm)
+                                  const isRond = isRondeVorm(e.snijStuk.vorm)
+                                  // Fysieke snijmaat: marge voor afwerking/vorm, lengte = max(stuk, rijhoogte)
+                                  const snijBreedte = Math.round(e.snijStuk.lengte_cm) + marge
                                   const snijLengte = Math.max(
-                                    Math.round(e.snijStuk.breedte_cm) + (isRond ? ROND_SNIJ_MARGE : 0),
+                                    Math.round(e.snijStuk.breedte_cm) + marge,
                                     Math.round(shelf.height),
                                   )
-                                  // Besteld formaat (na handmatig bijsnijden)
-                                  const besteldBreedte = stuk.snij_breedte_cm ?? snijBreedte
-                                  const besteldLengte = stuk.snij_lengte_cm ?? snijLengte
-                                  const toonBijsnijden =
-                                    isRond ||
-                                    snijBreedte !== besteldBreedte ||
-                                    snijLengte !== besteldLengte
+                                  // Besteld formaat (eindmaat na eventueel bijsnijden)
+                                  const besteldBreedte = stuk.snij_breedte_cm ?? (snijBreedte - marge)
+                                  const besteldLengte = stuk.snij_lengte_cm ?? (snijLengte - marge)
+                                  // Bijsnijden = handmatig nasnijden nodig (alleen bij ronde vormen)
+                                  // ZO-marge is machine-snijmarge — geen handwerk, geen bijsnijden-tekst
+                                  const toonBijsnijden = isRond && (snijBreedte !== besteldBreedte || snijLengte !== besteldLengte)
                                   return (
                                     <tr
                                       key={`snij-${stuk.id}`}
@@ -615,6 +608,12 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
                                           <div className="text-xs text-terracotta-600 mt-0.5">
                                             → bijsnijden met hand naar {besteldBreedte} × {besteldLengte} cm
                                             {isRond ? ' (rond)' : ''}
+                                          </div>
+                                        )}
+                                        {/* ZO-afwerking: snijmaat incl. machine-marge, geen handwerk */}
+                                        {!isRond && marge > 0 && (
+                                          <div className="text-xs text-slate-400 mt-0.5">
+                                            → incl. +{marge} cm ZO-rand (machine)
                                           </div>
                                         )}
                                       </td>
