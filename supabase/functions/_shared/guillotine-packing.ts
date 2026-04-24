@@ -555,36 +555,42 @@ function scorePacking(
 // ---------------------------------------------------------------------------
 // Multi-roll orchestration (drop-in replacement voor FFDH packAcrossRolls)
 // ---------------------------------------------------------------------------
+// `packAcrossRolls` orkestreert twee niveaus van "best-of-N":
+//   1. Per rol: Guillotine vs FFDH (via scorePacking).
+//   2. Over de hele pool: default sort (klein-eerst) vs largest-first sort —
+//      zodat we minder rollen gebruiken wanneer een grote rol alles had gepast.
+// ---------------------------------------------------------------------------
 
 /**
- * Pack stukken over meerdere rollen — combineert Guillotine en FFDH per rol
- * en kiest per rol het beste resultaat.
- *
- * Waarom best-of-both: Guillotine wint overtuigend op scenarios waar kleine
- * stukken uit grote "reststuk-achtige" vrije ruimtes gehaald moeten worden
- * (voorbeeld 2, stress-tests) maar kan suboptimaal zijn op lange smalle
- * rollen met lange smalle stukken (FFDH's shelf-aanpak met rotatie-lookahead
- * pakt dat soort patronen beter op). Door beide te runnen en per rol het
- * beste te kiezen, winnen we de problematische gevallen zonder regressies.
- *
- * Keuze-criterium per rol: (a) meeste stukken geplaatst, (b) kleinste
- * gebruikte rol-lengte, (c) laagste afval-percentage. Bij volkomen gelijk
- * spel valt de keuze op Guillotine (consistenter gedrag voor samengestelde
- * reststukken).
- *
- * Publieke API is compatibel met ffdh-packing.packAcrossRolls — consumenten
- * kunnen wisselen door enkel de import-regel te veranderen.
+ * Alternatieve rol-sortering: grootste eerst binnen elke priority-tier. Bedoeld
+ * als look-ahead-variant in `packAcrossRolls`: soms is het globaal voordeliger
+ * om een grote rol uit te putten i.p.v. eerst een kleine aan te snijden en dan
+ * alsnog een grote. Wordt naast de default (kleinste-eerst) geprobeerd; de
+ * uitkomst met minste rollen wint.
  */
-export function packAcrossRolls(
-  pieces: SnijplanPiece[],
-  rolls: Roll[],
+function sortRollsLargestFirst(rolls: Roll[]): Roll[] {
+  return [...rolls].sort((a, b) => {
+    if (a.is_exact !== b.is_exact) return a.is_exact ? -1 : 1
+    const aExisting = a.has_existing_placements ? 1 : 0
+    const bExisting = b.has_existing_placements ? 1 : 0
+    if (aExisting !== bExisting) return bExisting - aExisting
+    if (a.sort_priority !== b.sort_priority) return a.sort_priority - b.sort_priority
+    return b.lengte_cm * b.breedte_cm - a.lengte_cm * a.breedte_cm
+  })
+}
+
+/**
+ * Eén greedy pass met een gegeven rol-volgorde. Per rol: kies tussen
+ * Guillotine en FFDH op basis van scorePacking. Stukken die op die rol landen
+ * worden uit de pool verwijderd voor de volgende rol.
+ */
+function runGreedyPass(
+  sortedPieces: SnijplanPiece[],
+  sortedRolls: Roll[],
   pieceVormMap: Map<number, string | null>,
-  options: PackOptions = {},
+  options: PackOptions,
 ): PackingResult {
   const { bezetteMap, maxReststukVerspillingPct } = options
-  const sortedPieces = sortPieces(pieces)
-  const sortedRolls = sortRolls(rolls)
-
   let unplacedPieces = [...sortedPieces]
   const rollResults: RollResult[] = []
 
@@ -687,7 +693,7 @@ export function packAcrossRolls(
     rollResults,
     nietGeplaatst,
     samenvatting: {
-      totaal_stukken: pieces.length,
+      totaal_stukken: sortedPieces.length,
       geplaatst: totaalGeplaatst,
       niet_geplaatst: nietGeplaatst.length,
       totaal_rollen: rollResults.length,
@@ -696,6 +702,99 @@ export function packAcrossRolls(
       totaal_m2_afval: Math.round(totaalM2Afval * 10) / 10,
     },
   }
+}
+
+/**
+ * Vergelijk twee packing-resultaten. Negatief = `a` beter, positief = `b` beter.
+ *
+ * Prioriteit:
+ *   1. Minder niet-geplaatste stukken (systeemfalen vermijden).
+ *   2. Minder rollen aangesneden (= minder schaar-tijd + minder aangebroken
+ *      voorraad). Dit is het doel van de lookahead.
+ *   3. Minder totale rol-lengte gebruikt (minder materiaalverbruik).
+ *   4. Lager gemiddeld afval-percentage.
+ */
+function compareResults(a: PackingResult, b: PackingResult): number {
+  const aNiet = a.samenvatting.niet_geplaatst
+  const bNiet = b.samenvatting.niet_geplaatst
+  if (aNiet !== bNiet) return aNiet - bNiet
+
+  const aRol = a.samenvatting.totaal_rollen
+  const bRol = b.samenvatting.totaal_rollen
+  if (aRol !== bRol) return aRol - bRol
+
+  const aM2 = a.samenvatting.totaal_m2_gebruikt
+  const bM2 = b.samenvatting.totaal_m2_gebruikt
+  if (Math.abs(aM2 - bM2) > 0.01) return aM2 - bM2
+
+  return a.samenvatting.gemiddeld_afval_pct - b.samenvatting.gemiddeld_afval_pct
+}
+
+/**
+ * Pack stukken over meerdere rollen met **multi-strategy lookahead**: draai de
+ * greedy packer met verschillende rol-volgordes en kies de globaal beste
+ * uitkomst. Dit voorkomt het klassieke greedy-probleem "kleine rol eerst
+ * aangebroken, daarna alsnog grote rol gebruikt" — met look-ahead zien we dat
+ * een enkele grote rol soms volstaat en slaan die kleine rol over.
+ *
+ * Strategieën (minimaal 2 passes, max 2):
+ *   - **default** (sortRolls): priority → reststuk → exact → klein-eerst.
+ *     Goed voor opmaken van reststuk-voorraad en standaard-gedrag.
+ *   - **largest-first** (sortRollsLargestFirst): binnen dezelfde priority-tier
+ *     grootste rol eerst. Goed voor bundelen op één grote rol om extra
+ *     aanbrekingen te voorkomen.
+ *
+ * Selectie via `compareResults`: eerst minste niet-geplaatst, dan minste
+ * rollen, dan minste materiaalgebruik, dan laagste afval.
+ */
+export function packAcrossRolls(
+  pieces: SnijplanPiece[],
+  rolls: Roll[],
+  pieceVormMap: Map<number, string | null>,
+  options: PackOptions = {},
+): PackingResult {
+  const sortedPieces = sortPieces(pieces)
+
+  const strategies: Array<(r: Roll[]) => Roll[]> = [
+    sortRolls,
+    sortRollsLargestFirst,
+  ]
+
+  let best: PackingResult | null = null
+  for (const sortFn of strategies) {
+    const sortedRolls = sortFn(rolls)
+    const result = runGreedyPass(sortedPieces, sortedRolls, pieceVormMap, options)
+    if (best === null || compareResults(result, best) < 0) {
+      best = result
+    }
+  }
+
+  // Niet-bereikbaar: sortedPieces is never null en beide strategies retourneren.
+  // Maar TS eist de narrow — bij 0 strategieën zouden we hier komen.
+  if (best === null) {
+    return {
+      rollResults: [],
+      nietGeplaatst: pieces.map((p) => ({
+        snijplan_id: p.id,
+        reden: 'Geen strategie beschikbaar',
+      })),
+      samenvatting: {
+        totaal_stukken: pieces.length,
+        geplaatst: 0,
+        niet_geplaatst: pieces.length,
+        totaal_rollen: 0,
+        gemiddeld_afval_pct: 0,
+        totaal_m2_gebruikt: 0,
+        totaal_m2_afval: 0,
+      },
+    }
+  }
+
+  // Corrigeer totaal_stukken: runGreedyPass gebruikt sortedPieces.length wat
+  // gelijk is aan pieces.length (geen filter tussenin), maar expliciet zetten
+  // beschermt tegen toekomstige pieces-deduplicatie.
+  best.samenvatting.totaal_stukken = pieces.length
+  return best
 }
 
 // ---------------------------------------------------------------------------
