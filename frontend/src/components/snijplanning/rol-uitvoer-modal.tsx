@@ -283,7 +283,8 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
     interface ShelfGroup {
       y: number
       height: number
-      maxX: number
+      maxX: number         // buitenste rand van de hele rij (voor reststuk-berekening)
+      primaryMaxX: number  // breedte van het EERSTE (meest linkse) stuk — sorteer-sleutel
       events: SnijEvent[]
     }
 
@@ -308,15 +309,18 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
         // Zelfde Y-start: stuk ligt naast vorige → zelfde rij
         last.events.push(ev)
         last.maxX = Math.max(last.maxX, maxX)
+        // primaryMaxX blijft die van het eerste (meest linkse) stuk
         last.height = Math.max(last.height, effBreedte)
       } else {
-        groups.push({ y: ev.y, height: effBreedte, maxX, events: [ev] })
+        groups.push({ y: ev.y, height: effBreedte, maxX, primaryMaxX: maxX, events: [ev] })
       }
     }
 
-    // Sorteer groepen: grootste breedte-mes eerst (bespaart tijd — mes hoeft niet terug).
-    // Binnen zelfde breedte: oorspronkelijke Y-volgorde bewaren.
-    groups.sort((a, b) => b.maxX - a.maxX || a.y - b.y)
+    // Sorteer groepen op breedte van het EERSTE stuk (groot → klein).
+    // Rede: mes hoeft nooit terug naar breder. Bij naast-elkaar-liggende stukken
+    // is primaryMaxX de breedte van het primaire (meest linkse) stuk — de
+    // secundaire stukken (rechts ervan) tellen niet mee voor de volgorde.
+    groups.sort((a, b) => b.primaryMaxX - a.primaryMaxX || a.y - b.y)
 
     let prevMaxX: number | null = null
     const shelves: SnijShelf[] = groups.map(group => {
@@ -333,9 +337,9 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
         .sort((a, b) => a - b)
         .filter((v, i, arr) => arr.indexOf(v) === i)
 
-      // Gewijzigd t.o.v. vorige rij? Als maxX gelijk → mes laten staan.
-      const breedteMesGewijzigd = prevMaxX !== group.maxX
-      prevMaxX = group.maxX
+      // Gewijzigd t.o.v. vorige rij? Vergelijk op primaryMaxX (breedte primair stuk).
+      const breedteMesGewijzigd = prevMaxX !== group.primaryMaxX
+      prevMaxX = group.primaryMaxX
 
       const sideW = Math.round(rolBreedte - group.maxX)
       const sideH = Math.round(group.height)
