@@ -1,43 +1,65 @@
 import { useState, type FormEvent } from 'react'
-import { Plus, Trash2, X } from 'lucide-react'
+import { Plus, Printer, Trash2, X } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { useBoekOntvangst } from '@/hooks/use-inkooporders'
-import type { InkooporderRegel, OntvangstRol } from '@/lib/supabase/queries/inkooporders'
+import { useAuth } from '@/hooks/use-auth'
+import {
+  fetchRollenVoorArtikel,
+  type InkooporderRegel,
+  type OntvangstRol,
+} from '@/lib/supabase/queries/inkooporders'
 
 interface Props {
   regel: InkooporderRegel
   inkooporderNr: string
+  breedteCm?: number | null
   onClose: () => void
 }
 
 interface RolInput {
-  rolnummer: string
-  lengte_cm: string
-  breedte_cm: string
+  strekkende_m: string
+  breedte_cm_manueel: string
 }
 
 function formatAantal(value: number): string {
   return value.toLocaleString('nl-NL', { minimumFractionDigits: 0, maximumFractionDigits: 1 })
 }
 
-export function OntvangstBoekenDialog({ regel, inkooporderNr, onClose }: Props) {
+export function OntvangstBoekenDialog({ regel, inkooporderNr, breedteCm, onClose }: Props) {
+  const { user } = useAuth()
+  const medewerker =
+    (user?.user_metadata?.name as string | undefined) ?? user?.email ?? null
+
+  const breedteBekend = breedteCm != null && breedteCm > 0
   const [rollen, setRollen] = useState<RolInput[]>([
-    { rolnummer: '', lengte_cm: '', breedte_cm: '' },
+    { strekkende_m: '', breedte_cm_manueel: '' },
   ])
-  const [medewerker, setMedewerker] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [toegekend, setToegekend] = useState<Array<{ rol_id: number; rolnummer: string }> | null>(null)
 
+  const { data: huidigeRollen = [], isLoading: rollenLaden } = useQuery({
+    queryKey: ['rollen-voor-artikel', regel.artikelnr],
+    queryFn: () => fetchRollenVoorArtikel(regel.artikelnr!),
+    enabled: !!regel.artikelnr,
+  })
+
   const boek = useBoekOntvangst()
 
+  const breedteVoorRol = (r: RolInput): number | null => {
+    if (breedteBekend) return breedteCm as number
+    const b = Number(r.breedte_cm_manueel)
+    return Number.isFinite(b) && b > 0 ? b : null
+  }
+
   const totaalM2 = rollen.reduce((s, r) => {
-    const l = Number(r.lengte_cm)
-    const b = Number(r.breedte_cm)
-    if (!Number.isFinite(l) || !Number.isFinite(b)) return s
-    return s + (l * b) / 10000
+    const l = Number(r.strekkende_m)
+    const b = breedteVoorRol(r)
+    if (!Number.isFinite(l) || l <= 0 || b == null) return s
+    return s + l * (b / 100)
   }, 0)
 
   const voegRolToe = () =>
-    setRollen((prev) => [...prev, { rolnummer: '', lengte_cm: '', breedte_cm: '' }])
+    setRollen((prev) => [...prev, { strekkende_m: '', breedte_cm_manueel: '' }])
 
   const verwijderRol = (idx: number) =>
     setRollen((prev) => prev.filter((_, i) => i !== idx))
@@ -51,19 +73,18 @@ export function OntvangstBoekenDialog({ regel, inkooporderNr, onClose }: Props) 
 
     const payload: OntvangstRol[] = []
     for (const [i, r] of rollen.entries()) {
-      const lengte = Number(r.lengte_cm)
-      const breedte = Number(r.breedte_cm)
-      if (!Number.isFinite(lengte) || lengte <= 0) {
-        setError(`Rol ${i + 1}: ongeldige lengte (cm)`)
+      const strekkende = Number(r.strekkende_m)
+      if (!Number.isFinite(strekkende) || strekkende <= 0) {
+        setError(`Rol ${i + 1}: ongeldige lengte (m)`)
         return
       }
-      if (!Number.isFinite(breedte) || breedte <= 0) {
-        setError(`Rol ${i + 1}: ongeldige breedte (cm)`)
+      const breedte = breedteVoorRol(r)
+      if (breedte == null) {
+        setError(`Rol ${i + 1}: breedte (cm) ontbreekt`)
         return
       }
       payload.push({
-        rolnummer: r.rolnummer.trim() || null,
-        lengte_cm: lengte,
+        lengte_cm: Math.round(strekkende * 100),
         breedte_cm: breedte,
       })
     }
@@ -72,7 +93,7 @@ export function OntvangstBoekenDialog({ regel, inkooporderNr, onClose }: Props) 
       const result = await boek.mutateAsync({
         regelId: regel.id,
         rollen: payload,
-        medewerker: medewerker || undefined,
+        medewerker: medewerker ?? undefined,
       })
       setToegekend(result)
     } catch (err) {
@@ -114,11 +135,22 @@ export function OntvangstBoekenDialog({ regel, inkooporderNr, onClose }: Props) 
                 Noteer of print deze nummers voor de fysieke rollen.
               </p>
             </div>
-            <div className="flex justify-end pt-3 border-t border-slate-100">
+            <div className="flex justify-between items-center pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => {
+                  const ids = toegekend.map((t) => t.rol_id).join(',')
+                  window.open(`/rollen/stickers?ids=${ids}`, '_blank', 'noopener,noreferrer')
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-[var(--radius-sm)] text-sm font-medium hover:bg-emerald-700"
+              >
+                <Printer size={14} />
+                Stickers printen
+              </button>
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 bg-terracotta-500 text-white rounded-[var(--radius-sm)] text-sm font-medium hover:bg-terracotta-600"
+                className="px-4 py-2 text-sm text-slate-600 hover:text-slate-900"
               >
                 Sluiten
               </button>
@@ -143,7 +175,14 @@ export function OntvangstBoekenDialog({ regel, inkooporderNr, onClose }: Props) 
 
           <div>
             <div className="flex items-center justify-between mb-2">
-              <h3 className="font-medium text-sm">Rollen die binnenkomen</h3>
+              <h3 className="font-medium text-sm">
+                Rollen die binnenkomen
+                {breedteBekend && (
+                  <span className="ml-2 text-xs font-normal text-slate-400">
+                    breedte: {breedteCm} cm
+                  </span>
+                )}
+              </h3>
               <span className="text-sm text-slate-500">
                 Totaal nu: <strong>{formatAantal(totaalM2)} m²</strong>
               </span>
@@ -160,24 +199,32 @@ export function OntvangstBoekenDialog({ regel, inkooporderNr, onClose }: Props) 
                     placeholder="Rolnummer (leeg = auto R-YYYY-NNNN)"
                     className={`flex-1 ${inputClasses}`}
                   />
-                  <input
-                    type="number"
-                    value={r.lengte_cm}
-                    onChange={(e) => wijzigRol(idx, 'lengte_cm', e.target.value)}
-                    placeholder="Lengte (cm)"
-                    className={`w-32 ${inputClasses}`}
-                    min="1"
-                    required
-                  />
-                  <input
-                    type="number"
-                    value={r.breedte_cm}
-                    onChange={(e) => wijzigRol(idx, 'breedte_cm', e.target.value)}
-                    placeholder="Breedte (cm)"
-                    className={`w-32 ${inputClasses}`}
-                    min="1"
-                    required
-                  />
+                  <div className="relative w-40">
+                    <input
+                      type="number"
+                      value={r.strekkende_m}
+                      onChange={(e) => wijzigRol(idx, 'strekkende_m', e.target.value)}
+                      placeholder="Lengte"
+                      className={`w-full pr-8 ${inputClasses}`}
+                      step="0.01"
+                      min="0.01"
+                      required
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 pointer-events-none">
+                      m
+                    </span>
+                  </div>
+                  {!breedteBekend && (
+                    <input
+                      type="number"
+                      value={r.breedte_cm_manueel}
+                      onChange={(e) => wijzigRol(idx, 'breedte_cm_manueel', e.target.value)}
+                      placeholder="Breedte (cm)"
+                      className={`w-32 ${inputClasses}`}
+                      min="1"
+                      required
+                    />
+                  )}
                   <button
                     type="button"
                     onClick={() => verwijderRol(idx)}
@@ -200,16 +247,50 @@ export function OntvangstBoekenDialog({ regel, inkooporderNr, onClose }: Props) 
             </button>
           </div>
 
-          <label className="text-sm block">
-            <span className="block mb-1 text-slate-600">Medewerker (optioneel)</span>
-            <input
-              type="text"
-              value={medewerker}
-              onChange={(e) => setMedewerker(e.target.value)}
-              className={`w-64 ${inputClasses}`}
-              placeholder="Naam"
-            />
-          </label>
+          <div>
+            <h3 className="font-medium text-sm mb-2">
+              Huidige voorraad
+              <span className="ml-2 text-xs font-normal text-slate-400">
+                {regel.karpi_code ?? regel.artikelnr ?? '-'}
+              </span>
+            </h3>
+            {rollenLaden ? (
+              <p className="text-xs text-slate-400">Rollen laden…</p>
+            ) : huidigeRollen.length === 0 ? (
+              <p className="text-xs text-slate-400">Geen bestaande rollen in voorraad.</p>
+            ) : (
+              <div className="border border-slate-200 rounded-[var(--radius-sm)] max-h-48 overflow-y-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-50 text-slate-500 sticky top-0">
+                    <tr>
+                      <th className="text-left px-3 py-1.5 font-medium">Rolnummer</th>
+                      <th className="text-right px-3 py-1.5 font-medium">Lengte</th>
+                      <th className="text-right px-3 py-1.5 font-medium">Breedte</th>
+                      <th className="text-right px-3 py-1.5 font-medium">m²</th>
+                      <th className="text-left px-3 py-1.5 font-medium">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {huidigeRollen.map((h) => (
+                      <tr key={h.id}>
+                        <td className="px-3 py-1 font-mono text-slate-700">{h.rolnummer}</td>
+                        <td className="px-3 py-1 text-right tabular-nums">
+                          {h.lengte_cm != null ? `${(h.lengte_cm / 100).toFixed(2)} m` : '-'}
+                        </td>
+                        <td className="px-3 py-1 text-right tabular-nums">
+                          {h.breedte_cm != null ? `${h.breedte_cm} cm` : '-'}
+                        </td>
+                        <td className="px-3 py-1 text-right tabular-nums">
+                          {h.oppervlak_m2 != null ? formatAantal(Number(h.oppervlak_m2)) : '-'}
+                        </td>
+                        <td className="px-3 py-1 text-slate-500">{h.status}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
 
           {error && (
             <div className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">{error}</div>

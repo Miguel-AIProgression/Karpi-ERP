@@ -9,8 +9,7 @@ import {
 import { InkooporderStatusBadge } from '@/components/inkooporders/inkooporder-status-badge'
 import { OntvangstBoekenDialog } from '@/components/inkooporders/ontvangst-boeken-dialog'
 import { VoorraadOntvangstDialog } from '@/components/inkooporders/voorraad-ontvangst-dialog'
-import type { InkooporderRegel, RegelContext } from '@/lib/supabase/queries/inkooporders'
-import { afleidRolSchatting } from '@/lib/utils/rol-schatting'
+import type { InkooporderRegel } from '@/lib/supabase/queries/inkooporders'
 
 function formatAantal(value: number): string {
   return value.toLocaleString('nl-NL', { minimumFractionDigits: 0, maximumFractionDigits: 1 })
@@ -150,10 +149,6 @@ export function InkooporderDetailPage() {
             <tbody className="divide-y divide-slate-100">
               {regels.map((r) => {
                 const eh = eenheidKort(r.eenheid)
-                const ctx: RegelContext | undefined = r.artikelnr ? context.get(r.artikelnr) : undefined
-                const schatting = r.eenheid === 'm'
-                  ? afleidRolSchatting(Number(r.te_leveren_m ?? 0), ctx?.breedte_cm, ctx?.typische_lengte_cm)
-                  : null
                 return (
                   <tr key={r.id}>
                     <td className="py-2 text-slate-400 align-top">{r.regelnummer}</td>
@@ -166,17 +161,6 @@ export function InkooporderDetailPage() {
                       </div>
                       {r.artikel_omschrijving && (
                         <div className="text-xs text-slate-500">{r.artikel_omschrijving}</div>
-                      )}
-                      {schatting && schatting.strekkende_m !== null && (
-                        <div className="text-xs text-slate-400 mt-0.5">
-                          ≈ {formatAantal(schatting.strekkende_m)} m strekkend
-                          {schatting.aantal_rollen !== null && (
-                            <> · ≈ {schatting.aantal_rollen} rol{schatting.aantal_rollen === 1 ? '' : 'len'}</>
-                          )}
-                          {schatting.breedte_cm !== null && (
-                            <> · {schatting.breedte_cm} cm breed</>
-                          )}
-                        </div>
                       )}
                     </td>
                     <td className="py-2 text-right tabular-nums text-slate-600">
@@ -220,6 +204,9 @@ export function InkooporderDetailPage() {
         <OntvangstBoekenDialog
           regel={ontvangstRegel}
           inkooporderNr={order.inkooporder_nr}
+          breedteCm={
+            ontvangstRegel.artikelnr ? context.get(ontvangstRegel.artikelnr)?.breedte_cm ?? null : null
+          }
           onClose={() => setOntvangstRegel(null)}
         />
       )}

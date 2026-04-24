@@ -34,6 +34,7 @@ import { FacturatieOverviewPage } from '@/pages/facturatie/facturatie-overview'
 import { FactuurDetailPage } from '@/pages/facturatie/factuur-detail'
 import { InkooporderOverviewPage } from '@/pages/inkooporders/inkooporders-overview'
 import { InkooporderDetailPage } from '@/pages/inkooporders/inkooporder-detail'
+import { RolStickersPrintPage } from '@/pages/inkooporders/rol-stickers-print'
 import { LeveranciersOverviewPage } from '@/pages/leveranciers/leveranciers-overview'
 import { LeverancierDetailPage } from '@/pages/leveranciers/leverancier-detail'
 
@@ -70,6 +71,7 @@ export const router = createBrowserRouter([
       { path: 'vertegenwoordigers', element: <VertegenwoordigersOverviewPage /> },
       { path: 'vertegenwoordigers/:code', element: <VertegenwoordigerDetailPage /> },
       { path: 'rollen', element: <RollenOverviewPage /> },
+      { path: 'rollen/stickers', element: <RolStickersPrintPage /> },
       { path: 'scanstation', element: <ScanstationPage /> },
       { path: 'magazijn', element: <MagazijnOverviewPage /> },
       { path: 'snijplanning', element: <SnijplanningOverviewPage /> },

@@ -792,7 +792,7 @@ Audit trail: wie heeft wat wanneer gedaan.
 | `recover_stuck_factuur_queue()` | Zet queue-items >10 min in 'processing' terug op 'pending'. Elke 5 min via pg_cron. Migratie 121. |
 | `sync_besteld_inkoop_voor_artikel(p_artikelnr TEXT)` | Herbereken `producten.besteld_inkoop` als som van `te_leveren_m` over open inkooporder_regels, omgerekend naar m² via `kwaliteiten.standaard_breedte_cm` (fallback: meters). Migratie 127. |
 | `trg_sync_besteld_inkoop()` | Trigger op inkooporder_regels INSERT/UPDATE/DELETE die bovenstaande aanroept. Migratie 127. |
-| `boek_ontvangst(p_regel_id BIGINT, p_rollen JSONB, p_medewerker TEXT)` | Atomair: maakt N rollen aan op basis van `[{rolnummer, lengte_cm, breedte_cm}, ...]`, logt `voorraad_mutaties` (type='ontvangst'), werkt `geleverd_m`/`te_leveren_m` bij en zet order-status op 'Deels ontvangen'/'Ontvangen'. Alleen voor eenheid='m'. Returns TABLE(rol_id, rolnummer). Migratie 127. |
+| `boek_ontvangst(p_regel_id BIGINT, p_rollen JSONB, p_medewerker TEXT)` | Atomair: maakt N rollen aan op basis van `[{lengte_cm, breedte_cm, rolnummer?}, ...]`, logt `voorraad_mutaties` (type='ontvangst'), werkt `geleverd_m`/`te_leveren_m` bij (boekt **m²**, niet strekkende meters — fix migratie 133) en zet order-status op 'Deels ontvangen'/'Ontvangen'. Alleen voor eenheid='m'. Rolnummer optioneel — leeg = auto-genereer `R-YYYY-NNNN` via `volgend_nummer('R')` (migratie 135). Returns TABLE(rol_id, rolnummer). Migraties 127/133/135. |
 | `boek_voorraad_ontvangst(p_regel_id BIGINT, p_aantal INTEGER, p_medewerker TEXT)` | Voor vaste producten (eenheid='stuks'): verhoogt `producten.voorraad` met p_aantal en werkt regel + order-status bij. Migratie 127. |
 
 ### Triggers op order_regels (maatwerk)

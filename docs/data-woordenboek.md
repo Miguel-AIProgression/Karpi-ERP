@@ -37,7 +37,7 @@ Domeinbegrippen die je moet kennen om dit project te begrijpen.
 | **Collectie** | Groep van uitwisselbare kwaliteiten. Bijv. collectie "Vernissage/Lago" bevat VERI, LAGO, GLOR, etc. 56 groepen, 170 codes. |
 | **Uitwisselbaar** | Kwaliteiten in dezelfde collectie zijn uitwisselbaar = hetzelfde type tapijt, andere variant. |
 | **Rol** | Individuele fysieke tapijtrol in het magazijn. Elke rol heeft een uniek `rolnummer`, specifieke afmetingen en waarde. |
-| **Rolnummer** | Unieke identifier per fysieke rol. |
+| **Rolnummer** | Unieke identifier per fysieke rol. Legacy: puur numeriek (bv. `109801`), S-prefix (bv. `S0375-1CBON`) of andere formaten uit de oude administratie. **Nieuw (migratie 135)**: rollen die via `boek_ontvangst` aangemaakt worden krijgen automatisch `R-YYYY-NNNN` (bv. `R-2026-0001`) uit sequence `r_2026_seq` via `volgend_nummer('R')` — consistent met `ORD-`/`INK-`/`SNIJ-`-nummering. |
 | **VVP** | Verkoopprijs per vierkante meter (Verkoop Vaste Prijs per m2). |
 | **Vrije voorraad** | Voorraad minus gereserveerd minus backorder + besteld inkoop. Wat daadwerkelijk beschikbaar is. |
 | **Volle rol** | Rol met standaard breedte én volledige lengte. `rol_type = 'volle_rol'`. Standaard breedte komt primair uit `kwaliteiten.standaard_breedte_cm` (bron van waarheid sinds migratie 086), fallback op laatste 3 cijfers artikelnr, daarna 400 cm. |

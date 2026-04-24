@@ -362,3 +362,73 @@ export async function boekVoorraadOntvangst(
   })
   if (error) throw error
 }
+
+export interface HuidigeRol {
+  id: number
+  rolnummer: string
+  lengte_cm: number | null
+  breedte_cm: number | null
+  oppervlak_m2: number | null
+  status: string
+}
+
+export async function fetchRollenVoorStickers(
+  rol_ids: number[],
+): Promise<Array<import('../../../components/inkooporders/rol-sticker-layout').RolStickerData>> {
+  if (rol_ids.length === 0) return []
+  const { data, error } = await supabase
+    .from('rollen')
+    .select(
+      `id, rolnummer, karpi_code, omschrijving, kwaliteit_code, kleur_code,
+       lengte_cm, breedte_cm, oppervlak_m2,
+       inkooporder_regel:inkooporder_regels!rollen_inkooporder_regel_id_fkey (
+         inkooporder:inkooporders!inkooporder_regels_inkooporder_id_fkey (
+           inkooporder_nr,
+           leverancier:leveranciers!inkooporders_leverancier_id_fkey ( naam )
+         )
+       )`,
+    )
+    .in('id', rol_ids)
+  if (error) throw error
+  type RowInkooporder = { inkooporder_nr: string | null; leverancier: { naam: string | null } | null }
+  type RowRegel = { inkooporder: RowInkooporder | null }
+  type Row = {
+    id: number
+    rolnummer: string
+    karpi_code: string | null
+    omschrijving: string | null
+    kwaliteit_code: string | null
+    kleur_code: string | null
+    lengte_cm: number | null
+    breedte_cm: number | null
+    oppervlak_m2: number | null
+    inkooporder_regel: RowRegel | null
+  }
+  return (data ?? []).map((r) => {
+    const row = r as unknown as Row
+    return {
+      id: row.id,
+      rolnummer: row.rolnummer,
+      karpi_code: row.karpi_code,
+      omschrijving: row.omschrijving,
+      kwaliteit_code: row.kwaliteit_code,
+      kleur_code: row.kleur_code,
+      lengte_cm: row.lengte_cm,
+      breedte_cm: row.breedte_cm,
+      oppervlak_m2: row.oppervlak_m2 != null ? Number(row.oppervlak_m2) : null,
+      leverancier_naam: row.inkooporder_regel?.inkooporder?.leverancier?.naam ?? null,
+      inkooporder_nr: row.inkooporder_regel?.inkooporder?.inkooporder_nr ?? null,
+    }
+  })
+}
+
+export async function fetchRollenVoorArtikel(artikelnr: string): Promise<HuidigeRol[]> {
+  const { data, error } = await supabase
+    .from('rollen')
+    .select('id, rolnummer, lengte_cm, breedte_cm, oppervlak_m2, status')
+    .eq('artikelnr', artikelnr)
+    .not('status', 'in', '(verkocht,gesneden)')
+    .order('rolnummer', { ascending: true })
+  if (error) throw error
+  return (data ?? []) as HuidigeRol[]
+}
