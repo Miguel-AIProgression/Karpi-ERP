@@ -10,3 +10,4 @@ brondata/**/*.xls
 *.zip
 __pycache__/
 supabase/.temp/
+.claude/scheduled_tasks.lock

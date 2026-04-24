@@ -95,8 +95,10 @@ Gedeelde code in `supabase/functions/_shared/` (packing-algoritmes, DB helpers) 
 /magazijn                  Gereed product overzicht met locatiebeheer
 /pick-ship                 (placeholder)
 /logistiek                 (placeholder)
-/inkoop                    (placeholder)
-/leveranciers              (placeholder)
+/inkoop                    Inkooporders overzicht (stat-cards + filters op status/leverancier/alleen-open)
+/inkoop/:id                Inkooporder detail (regels met "Ontvangst boeken" knop per regel)
+/leveranciers              Leveranciers overzicht (met openstaande orders/meters per leverancier)
+/leveranciers/:id          Leverancier detail (gegevens + openstaande inkooporders)
 /instellingen              (placeholder)
 /instellingen/productie    Planning instellingen: capaciteit, modus, reststuk verspilling
 ```
@@ -138,6 +140,12 @@ De snijmachine heeft **1 lengte-mes** (snijdt de rol dwars af op een ingestelde 
 `fetchStukken()` past de marge toe vóór de packer, zodat fysieke snij-maat wordt gepland. `snijplanning_tekort_analyse()` past dezelfde marge toe bij de rol-past-check. De view-kolommen `snij_lengte_cm`/`snij_breedte_cm` blijven nominale (klant-)maat — de opgehoogde maat verschijnt alleen in het packing-resultaat, zodat de modal `placed vs besteld` automatisch uit elkaar kan trekken.
 
 **Shelf-mes-validator** ([shelf-mes-validator.ts](supabase/functions/_shared/shelf-mes-validator.ts)): post-check in `optimaliseer-snijplan` + `auto-plan-groep` die rapporteert als een shelf meer dan 3 breedte-mes-posities vereist. Zachte check — output gaat als `samenvatting.shelf_waarschuwingen` op de edge-function-response + `console.warn`, plaatsingen worden niet afgewezen.
+
+### Inkoop & ontvangst flow
+- Openstaande inkooporders worden geimporteerd uit `Inkoopoverzicht.xlsx` via `import/import_inkoopoverzicht.py` (dry-run default, `--apply` voor persistent). Alleen regels met `Te leveren > 0` én `Status ∈ {0,1}` komen erin.
+- Nieuwe bestellingen worden handmatig ingevoerd via `InkooporderFormDialog` op `/inkoop` — inkooporder-nummer wordt gegenereerd via `volgend_nummer('INK')` (INK-YYYY-NNNN).
+- Bij binnenkomst opent de operator een regel via de `Ontvangst` knop op `/inkoop/:id` en vult N rollen in (rolnummer + lengte_cm + breedte_cm). De RPC `boek_ontvangst` maakt de rollen aan (status=`beschikbaar`, gekoppeld aan `inkooporder_regel_id`), schrijft een `voorraad_mutaties`-entry type=`ontvangst` en werkt de order-status bij. De trigger `trg_sync_besteld_inkoop` synchroniseert tegelijkertijd `producten.besteld_inkoop` op basis van resterende open regels.
+- Voor het Excel-bestand matcht `Artikelnummer` (numeriek 7-digit) 1-op-1 met `producten.artikelnr`. Artikelen die niet in de masterdata staan (~20%, vermoedelijk grondstoffen/obsolete) worden geimporteerd met `artikelnr=NULL` en snapshot in `artikel_omschrijving`/`karpi_code`.
 
 ### Reststuk tracking
 Na het snijden toont `voltooi_snijplan_rol()` een bevestigingsmodal waarin de gebruiker de restlengte kan aanpassen of kan kiezen om geen reststuk op te slaan. Na bevestiging wordt een reststuk-sticker geprint (rolnummer, kwaliteit, kleur, afmetingen, QR-code, locatieveld). Reststukken worden opgeslagen als nieuwe rol met status 'reststuk', gekoppeld via `oorsprong_rol_id`. Alle voorraadmutaties worden gelogd in `voorraad_mutaties`.

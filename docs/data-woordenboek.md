@@ -69,7 +69,19 @@ Domeinbegrippen die je moet kennen om dit project te begrijpen.
 | **Snijvoorstel** | Visuele weergave (SVG) van hoe stukken op een rol geplaatst worden. Gebruikt strip-packing algoritme met positie_x/positie_y. |
 | **Strip-packing** | 2D-inpakalgoritme dat stukken zo efficient mogelijk op een rol plaatst. Minimaliseert verspilling. |
 | **Scan_event** | Registratie van een individuele barcode/QR-scan: wie, wanneer, welk station, welke actie. Opgeslagen in `scan_events` tabel. |
-| **Voorraad_mutatie** | Logboekregel van een voorraadwijziging op een rol (gesneden, reststuk aangemaakt, correctie). Opgeslagen in `voorraad_mutaties` tabel. |
+| **Voorraad_mutatie** | Logboekregel van een voorraadwijziging op een rol (gesneden, reststuk aangemaakt, correctie, **ontvangst**). Opgeslagen in `voorraad_mutaties` tabel. |
+
+## Inkoop
+
+| Term | Betekenis |
+|------|-----------|
+| **Leverancier** | Externe partij waar Karpi tapijten/rollen van inkoopt. 30 leveranciers in de Excel-bron. `leverancier_nr` (INTEGER) is het externe nummer uit het oude systeem. |
+| **Inkooporder** | Bestelling bij een leverancier. Status: Concept → Besteld → (Deels ontvangen) → Ontvangen (of Geannuleerd). Nummering `INK-YYYY-NNNN` via `volgend_nummer('INK')`. |
+| **Oud_inkooporder_nr** | BIGINT uit het oude systeem — op Inkoopoverzicht.xlsx de kolom "Ordernummer". Is uniek en wordt gebruikt voor idempotente import. |
+| **Besteld / Geleverd / Te leveren (m)** | Strekkende meters per regel. `te_leveren_m = besteld_m − geleverd_m`. Bij 0 is de regel afgerond. |
+| **Leverweek** | Verwachte levering als weeknummer + jaar (`18/2026`). Wordt geparsed naar `verwacht_datum` (maandag van de ISO-week). Dummy-waarden (`01/2049`, `50/2017`) krijgen `verwacht_datum = NULL`. |
+| **Ontvangst boeken** | Actie waarbij de operator aangeeft welke fysieke rollen uit een openstaande inkooporder-regel zijn binnengekomen. Maakt N rollen aan in voorraad (status=`beschikbaar`), logt `voorraad_mutaties` (type=`ontvangst`), werkt `geleverd_m`/`te_leveren_m` bij en zet de order-status op Deels ontvangen / Ontvangen. RPC `boek_ontvangst`. |
+| **Besteld_inkoop** | Veld `producten.besteld_inkoop` (INTEGER, m²). Automatisch gesynchroniseerd door trigger op inkooporder_regels: som van `te_leveren_m × standaard_breedte_cm / 100` over open regels. Meet telt mee in `vrije_voorraad`. |
 
 ## Systeem
 
