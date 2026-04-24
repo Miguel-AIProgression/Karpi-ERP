@@ -44,7 +44,8 @@ interface SnijShelf {
   height: number
   maxX: number
   events: RolGebeurtenis[]
-  breedtePosities: number[]  // gesorteerde breedte-mes posities (één per stuk in de rij)
+  breedtePosities: number[]    // gesorteerde breedte-mes posities (één per stuk in de rij)
+  breedteMesGewijzigd: boolean // false = mes laten staan t.o.v. vorige rij
 }
 
 // ---------------------------------------------------------------------------
@@ -313,6 +314,11 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
       }
     }
 
+    // Sorteer groepen: grootste breedte-mes eerst (bespaart tijd — mes hoeft niet terug).
+    // Binnen zelfde breedte: oorspronkelijke Y-volgorde bewaren.
+    groups.sort((a, b) => b.maxX - a.maxX || a.y - b.y)
+
+    let prevMaxX: number | null = null
     const shelves: SnijShelf[] = groups.map(group => {
       const shelfEvents: RolGebeurtenis[] = [...group.events]
 
@@ -326,6 +332,10 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
         })
         .sort((a, b) => a - b)
         .filter((v, i, arr) => arr.indexOf(v) === i)
+
+      // Gewijzigd t.o.v. vorige rij? Als maxX gelijk → mes laten staan.
+      const breedteMesGewijzigd = prevMaxX !== group.maxX
+      prevMaxX = group.maxX
 
       const sideW = Math.round(rolBreedte - group.maxX)
       const sideH = Math.round(group.height)
@@ -350,7 +360,7 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
         aantalAfval++
       }
 
-      return { y: group.y, height: group.height, maxX: group.maxX, events: shelfEvents, breedtePosities }
+      return { y: group.y, height: group.height, maxX: group.maxX, events: shelfEvents, breedtePosities, breedteMesGewijzigd }
     })
 
     return { shelves, reststukken, aantalAfval }
@@ -525,21 +535,33 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
                         {shelves.map((shelf, shelfIdx) => {
                           rijIdx += 1
                           const lengteMesCm = Math.round(shelf.height)
-                          const { breedtePosities } = shelf
+                          const { breedtePosities, breedteMesGewijzigd } = shelf
                           return (
                             <Fragment key={`shelf-${shelfIdx}`}>
-                              <tr className="bg-amber-50 border-t-2 border-amber-300">
+                              <tr className={cn(
+                                'border-t-2',
+                                breedteMesGewijzigd
+                                  ? 'bg-amber-50 border-amber-300'
+                                  : 'bg-amber-50/50 border-amber-200',
+                              )}>
                                 <td colSpan={6} className="py-2 px-3 text-xs text-amber-900">
                                   <div className="flex items-center gap-2 flex-wrap">
                                     <Minus size={12} className="text-amber-700" />
                                     <span className="font-semibold">
                                       Rij {rijIdx} · Lengte-mes op {lengteMesCm} cm
                                     </span>
-                                    {breedtePosities.map((pos, i) => (
-                                      <span key={pos} className="font-semibold">
-                                        · Breedte-mes {breedtePosities.length > 1 ? i + 1 : ''} op {pos} cm
-                                      </span>
-                                    ))}
+                                    {breedteMesGewijzigd
+                                      ? breedtePosities.map((pos, i) => (
+                                          <span key={pos} className="font-semibold">
+                                            · Breedte-mes {breedtePosities.length > 1 ? i + 1 : ''} op {pos} cm
+                                          </span>
+                                        ))
+                                      : (
+                                          <span className="text-amber-600 italic">
+                                            · Breedte-mes laten staan ({breedtePosities[breedtePosities.length - 1]} cm)
+                                          </span>
+                                        )
+                                    }
                                   </div>
                                 </td>
                               </tr>
