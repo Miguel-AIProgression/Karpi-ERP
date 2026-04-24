@@ -51,12 +51,13 @@ export function OntvangstBoekenDialog({ regel, inkooporderNr, breedteCm, onClose
     return Number.isFinite(b) && b > 0 ? b : null
   }
 
-  const totaalM2 = rollen.reduce((s, r) => {
+  const ingevuldM2 = rollen.reduce((s, r) => {
     const l = Number(r.strekkende_m)
     const b = breedteVoorRol(r)
     if (!Number.isFinite(l) || l <= 0 || b == null) return s
     return s + l * (b / 100)
   }, 0)
+  const restM2 = regel.te_leveren_m - ingevuldM2
 
   const voegRolToe = () =>
     setRollen((prev) => [...prev, { strekkende_m: '', breedte_cm_manueel: '' }])
@@ -184,7 +185,18 @@ export function OntvangstBoekenDialog({ regel, inkooporderNr, breedteCm, onClose
                 )}
               </h3>
               <span className="text-sm text-slate-500">
-                Totaal nu: <strong>{formatAantal(totaalM2)} m²</strong>
+                Nog te verdelen:{' '}
+                <strong
+                  className={
+                    restM2 < -0.005
+                      ? 'text-red-600'
+                      : Math.abs(restM2) < 0.005
+                      ? 'text-emerald-600'
+                      : 'text-slate-800'
+                  }
+                >
+                  {formatAantal(restM2)} m²
+                </strong>
               </span>
             </div>
 
@@ -192,14 +204,7 @@ export function OntvangstBoekenDialog({ regel, inkooporderNr, breedteCm, onClose
               {rollen.map((r, idx) => (
                 <div key={idx} className="flex items-center gap-2">
                   <span className="w-6 text-sm text-slate-400">{idx + 1}.</span>
-                  <input
-                    type="text"
-                    value={r.rolnummer}
-                    onChange={(e) => wijzigRol(idx, 'rolnummer', e.target.value)}
-                    placeholder="Rolnummer (leeg = auto R-YYYY-NNNN)"
-                    className={`flex-1 ${inputClasses}`}
-                  />
-                  <div className="relative w-40">
+                  <div className="relative flex-1">
                     <input
                       type="number"
                       value={r.strekkende_m}
