@@ -95,8 +95,10 @@ Gedeelde code in `supabase/functions/_shared/` (packing-algoritmes, DB helpers) 
 /magazijn                  Gereed product overzicht met locatiebeheer
 /pick-ship                 (placeholder)
 /logistiek                 (placeholder)
-/inkoop                    (placeholder)
-/leveranciers              (placeholder)
+/inkoop                    Inkooporders overzicht (stat-cards + filters op status/leverancier/alleen-open)
+/inkoop/:id                Inkooporder detail (regels met "Ontvangst boeken" knop per regel)
+/leveranciers              Leveranciers overzicht (met openstaande orders/meters per leverancier)
+/leveranciers/:id          Leverancier detail (gegevens + openstaande inkooporders)
 /instellingen              (placeholder)
 /instellingen/productie    Planning instellingen: capaciteit, modus, reststuk verspilling
 ```
@@ -127,6 +129,24 @@ Supabase Edge Function (`supabase/functions/optimaliseer-snijplan/index.ts`) die
 
 **Algoritme-keuze per rol:** Guillotine wint op scenarios waar kleine stukken uit grote vrije ruimtes gehaald moeten worden (letterlijk "haal het stuk uit het reststuk") én op scenarios waar rotatie een kwalificerend reststuk oplevert. FFDH wint op specifieke patronen dankzij rotatie-lookahead. De best-of-both wrapper (`_shared/guillotine-packing.ts`) garandeert dat we nooit slechter presteren dan de oude FFDH-only flow.
 
+### Operator-terminologie & snij-marges
+De snijmachine heeft **1 lengte-mes** (snijdt de rol dwars af op een ingestelde Y-positie) en **3 breedte-messen** (staan parallel aan de rol-lengte op instelbare X-posities, verdelen een rij in max 4 naast-elkaar-strips bij één lengte-mes-slag). De `rol-uitvoer-modal` spreekt deze taal: header per rij toont `Lengte-mes op Y cm` + `Breedte-mes 1/2/3 op X cm`. Interne X-snit-posities worden afgeleid uit placement-coördinaten (regels waar een verticale snit door de volledige shelf-hoogte loopt zonder een stuk te doorsnijden). Stukken die groter geplaatst zijn dan besteld (door marge-ophoging, zie onder) tonen een amber `→ bijsnijden met hand naar …`-instructie.
+
+**Snij-marges** (single source of truth in [snij-marges.ts](supabase/functions/_shared/snij-marges.ts) + SQL-functie `stuk_snij_marge_cm` in migratie 126):
+- `maatwerk_afwerking = 'ZO'` → **+6 cm** op beide dimensies (rondom 6 cm voor afwerking)
+- `maatwerk_vorm IN ('rond', 'ovaal')` → **+5 cm** op beide dimensies (speling voor handmatig uitzagen)
+- Combi ZO + rond: **grootste marge wint** (niet cumulatief)
+
+`fetchStukken()` past de marge toe vóór de packer, zodat fysieke snij-maat wordt gepland. `snijplanning_tekort_analyse()` past dezelfde marge toe bij de rol-past-check. De view-kolommen `snij_lengte_cm`/`snij_breedte_cm` blijven nominale (klant-)maat — de opgehoogde maat verschijnt alleen in het packing-resultaat, zodat de modal `placed vs besteld` automatisch uit elkaar kan trekken.
+
+**Shelf-mes-validator** ([shelf-mes-validator.ts](supabase/functions/_shared/shelf-mes-validator.ts)): post-check in `optimaliseer-snijplan` + `auto-plan-groep` die rapporteert als een shelf meer dan 3 breedte-mes-posities vereist. Zachte check — output gaat als `samenvatting.shelf_waarschuwingen` op de edge-function-response + `console.warn`, plaatsingen worden niet afgewezen.
+
+### Inkoop & ontvangst flow
+- Openstaande inkooporders worden geimporteerd uit `Inkoopoverzicht.xlsx` via `import/import_inkoopoverzicht.py` (dry-run default, `--apply` voor persistent). Alleen regels met `Te leveren > 0` én `Status ∈ {0,1}` komen erin.
+- Nieuwe bestellingen worden handmatig ingevoerd via `InkooporderFormDialog` op `/inkoop` — inkooporder-nummer wordt gegenereerd via `volgend_nummer('INK')` (INK-YYYY-NNNN).
+- Bij binnenkomst opent de operator een regel via de `Ontvangst` knop op `/inkoop/:id` en vult N rollen in (rolnummer + lengte_cm + breedte_cm). De RPC `boek_ontvangst` maakt de rollen aan (status=`beschikbaar`, gekoppeld aan `inkooporder_regel_id`), schrijft een `voorraad_mutaties`-entry type=`ontvangst` en werkt de order-status bij. De trigger `trg_sync_besteld_inkoop` synchroniseert tegelijkertijd `producten.besteld_inkoop` op basis van resterende open regels.
+- Voor het Excel-bestand matcht `Artikelnummer` (numeriek 7-digit) 1-op-1 met `producten.artikelnr`. Artikelen die niet in de masterdata staan (~20%, vermoedelijk grondstoffen/obsolete) worden geimporteerd met `artikelnr=NULL` en snapshot in `artikel_omschrijving`/`karpi_code`.
+
 ### Reststuk tracking
 Na het snijden toont `voltooi_snijplan_rol()` een bevestigingsmodal waarin de gebruiker de restlengte kan aanpassen of kan kiezen om geen reststuk op te slaan. Na bevestiging wordt een reststuk-sticker geprint (rolnummer, kwaliteit, kleur, afmetingen, QR-code, locatieveld). Reststukken worden opgeslagen als nieuwe rol met status 'reststuk', gekoppeld via `oorsprong_rol_id`. Alle voorraadmutaties worden gelogd in `voorraad_mutaties`.
 
@@ -135,11 +155,13 @@ Wisseltijd per rol en snijtijd per karpet zijn configureerbaar via Productie Ins
 
 ### Real-time levertijd-check (order-aanmaak)
 Edge function `check-levertijd` (`supabase/functions/check-levertijd/`) berekent tijdens order-entry een concrete leverdatum voor maatwerk-regels. Drie pure helper-modules in `supabase/functions/_shared/levertijd-*.ts`:
-- **levertijd-match.ts**: zoekt rol in pipeline (status `Gepland`/`Wacht`) waar het nieuwe stuk nog op past via `tryPlacePiece` (FFDH); kiest vroegste snij-datum, exact match wint van uitwisselbaar bij gelijke datum.
+- **levertijd-match.ts**: zoekt rol in pipeline (status `Gepland`/`Snijden`) waar het nieuwe stuk nog op past via `tryPlacePiece` (FFDH); kiest vroegste snij-datum, exact match wint van uitwisselbaar bij gelijke datum. Snij-datum komt bij voorkeur uit de sequentiële werkagenda (realistisch moment na bestaande backlog); fallback `snijDatumVoorRol` floort altijd op eerstvolgende werkdag ≥ vandaag zodat backlog-rollen met overtijd-afleverdatum nooit een snij-datum in het verleden opleveren.
 - **levertijd-capacity.ts**: bepaalt snij-week (lever-week − 1), itereert tot ruimte beschikbaar (max 6 weken), vergelijkt bezetting (stuks + minuten) met `capaciteit_per_week × (1 − marge_pct/100)`. Backlog-check via RPC `backlog_per_kwaliteit_kleur`.
 - **levertijd-resolver.ts**: combineert tot scenario (`match_bestaande_rol` | `nieuwe_rol_gepland` | `wacht_op_orders` | `spoed`) + NL onderbouwing (max 240 chars). **ASAP-by-default:** `wacht_op_orders` triggert alléén bij `geen_rol_passend` (geen voorraadrol breed/lang genoeg → inkoop nodig). De backlog-drempel `backlog_minimum_m2` is informatief en blokkeert niet — dat zorgt ervoor dat klanten standaard de vroegst mogelijke leverdatum krijgen.
 
 Frontend: `useLevertijdCheck` hook (TanStack Query, 350 ms debounce, 60 s staleTime) + `<LevertijdSuggestie>` component met scenario-badge, datum, onderbouwing en "Neem datum over"-knop. Geïntegreerd in `order-form.tsx` voor de laatste maatwerk-regel met complete (kwaliteit, kleur, lengte, breedte). Bij edge-function fout valt de UI terug op `berekenAfleverdatum()`.
+
+**Auth-noot (Edge-gateway):** `check-levertijd`, `auto-plan-groep` en `optimaliseer-snijplan` zijn gedeployed met `verify_jwt = false` (zie [supabase/config.toml](supabase/config.toml)). De nieuwe `sb_publishable_...` API-keyvorm in de frontend is geen JWT; met de default `verify_jwt=true` zou de Edge-gateway `supabase.functions.invoke()`-calls blokkeren met HTTP 401 `UNAUTHORIZED_INVALID_JWT_FORMAT`. De functies gebruiken intern `SUPABASE_SERVICE_ROLE_KEY` voor DB-toegang en lezen geen user-JWT, dus gateway-check is overbodig. Toggle staat ook aan/uit via Supabase Dashboard → Edge Functions → [naam] → "Enforce JWT Verification".
 
 Configuratie in `app_config.productie_planning`: `logistieke_buffer_dagen` (default 2), `backlog_minimum_m2` (default 12). Performance-doel: < 1.5 s p95.
 
@@ -187,3 +209,45 @@ Credentials per shop in `supabase/functions/.env` (gitignored): `LIGHTSPEED_{NL,
 - m²-prijs bron: `maatwerk_m2_prijzen` tabel (admin-instelbaar, geseeded vanuit rollen)
 - Vorm-weergave: centraal `vorm-labels.ts` systeem (gebruikt door snijplanning, stickers, orders)
 - Rol-producten in ArticleSelector redirecten automatisch naar op-maat flow
+
+## Facturatie-flow (2026-04-22)
+
+```
+order.status='Verzonden'
+        │
+        ▼
+  TRIGGER enqueue_factuur_bij_verzonden (migratie 118)
+        │ (alleen als klant.factuurvoorkeur='per_zending')
+        ▼
+  factuur_queue (status=pending)
+        │
+        ▼  pg_cron elke minuut (migratie 122)
+  EDGE FN factuur-verzenden
+        │
+        ├─ markeer processing + processing_started_at=now()
+        ├─ RPC genereer_factuur (migratie 119):
+        │    facturen + factuur_regels INSERT, order_regels.gefactureerd = orderaantal,
+        │    BTW-% uit debiteuren.btw_percentage
+        ├─ pdf-lib → Uint8Array (Karpi layout, Courier monospace, A4)
+        ├─ Storage.upload('facturen/{debiteur_nr}/FACT-YYYY-NNNN.pdf')
+        ├─ Storage.download('documenten/algemene-voorwaarden-karpi-bv.pdf')
+        ├─ Resend.emails.send(to=debiteur.email_factuur,
+        │    attachments=[factuur-pdf, algemene-voorwaarden])
+        └─ facturen.status='Verstuurd', factuur_queue.status='done'
+
+Wekelijkse modus (maandag 05:00 UTC):
+  pg_cron → enqueue_wekelijkse_verzamelfacturen()
+        → per klant met factuurvoorkeur='wekelijks':
+          INSERT factuur_queue(order_ids=[alle ongefactureerde verzonden orders])
+
+Recovery (elke 5 minuten):
+  pg_cron → recover_stuck_factuur_queue()
+        → zet factuur_queue-items >10 min in 'processing' terug op 'pending'
+```
+
+**Bedrijfsgegevens-config**: `app_config.sleutel='bedrijfsgegevens'` bevat KVK, BTW, IBAN
+etc. Bewerkbaar via `/instellingen/bedrijfsgegevens`.
+
+**Klantvoorkeur**: `debiteuren.factuurvoorkeur` (`per_zending` | `wekelijks`) +
+`debiteuren.btw_percentage` (21.00 standaard; 0 voor EU-intracom/export).
+Bewerkbaar in klant-detail → tab "Facturering".

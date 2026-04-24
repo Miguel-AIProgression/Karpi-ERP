@@ -10,6 +10,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { packAcrossRolls } from '../_shared/guillotine-packing.ts'
 import { computeReststukken } from '../_shared/compute-reststukken.ts'
+import { validateShelfMesLimiet } from '../_shared/shelf-mes-validator.ts'
 import {
   fetchStukken,
   fetchUitwisselbareCodes,
@@ -76,21 +77,35 @@ serve(async (req) => {
     }
 
     // ---- Step 1b: Find interchangeable (kwaliteit,kleur)-pairs ----
-    //   Primair: fijnmazige Map1-tabel. Fallback: collecties.
-    const uitwisselbarePairs = await fetchUitwisselbarePairs(supabase, kwaliteit_code, kleur_code)
-    const uitwisselbareCodes = uitwisselbarePairs.length > 0
+    //   Primair: fijnmazige Map1-tabel. Fallback: collecties. Als Map1 pairs
+    //   oplevert die geen voorraad hebben, vallen we alsnog terug op de brede
+    //   collectie-set (zelfde pad als tekort_analyse in UI) — anders ziet de
+    //   edge function minder voorraad dan de UI en blijft een groep hangen.
+    let uitwisselbarePairs = await fetchUitwisselbarePairs(supabase, kwaliteit_code, kleur_code)
+    let uitwisselbareCodes = uitwisselbarePairs.length > 0
       ? Array.from(new Set(uitwisselbarePairs.map((p) => p.kwaliteit_code)))
       : await fetchUitwisselbareCodes(supabase, kwaliteit_code)
 
     // ---- Step 1c: Fetch available rolls ----
     const kleurVariants = getKleurVariants(kleur_code)
-    const rollen = await fetchBeschikbareRollen(
+    let rollen = await fetchBeschikbareRollen(
       supabase,
       uitwisselbareCodes,
       kleurVariants,
       kwaliteit_code,
       uitwisselbarePairs,
     )
+
+    if (rollen.length === 0 && uitwisselbarePairs.length > 0) {
+      uitwisselbarePairs = []
+      uitwisselbareCodes = await fetchUitwisselbareCodes(supabase, kwaliteit_code)
+      rollen = await fetchBeschikbareRollen(
+        supabase,
+        uitwisselbareCodes,
+        kleurVariants,
+        kwaliteit_code,
+      )
+    }
 
     if (rollen.length === 0) {
       return new Response(
@@ -141,13 +156,34 @@ serve(async (req) => {
       reststukken: computeReststukken(r.rol_lengte_cm, r.rol_breedte_cm, r.plaatsingen),
     }))
 
+    // ---- Step 6: shelf-mes-validator — waarschuw als een rij meer dan 3
+    //             breedte-mes-posities nodig heeft (machine heeft er maar 3).
+    //             Zachte check: alleen rapporteren, niet afwijzen.
+    const shelfWaarschuwingen = validateShelfMesLimiet(
+      rollResults.map((r) => ({
+        rol_id: r.rol_id,
+        rolnummer: r.rolnummer,
+        rol_breedte_cm: r.rol_breedte_cm,
+        plaatsingen: r.plaatsingen,
+      })),
+    )
+    if (shelfWaarschuwingen.length > 0) {
+      console.warn(
+        `[optimaliseer-snijplan] ${shelfWaarschuwingen.length} shelf(s) vereisen meer dan 3 breedte-messen:`,
+        JSON.stringify(shelfWaarschuwingen),
+      )
+    }
+
     // ---- Build response ----
     const result = {
       voorstel_id,
       voorstel_nr,
       rollen: rollenMetReststukken,
       niet_geplaatst: nietGeplaatst,
-      samenvatting,
+      samenvatting: {
+        ...samenvatting,
+        shelf_waarschuwingen: shelfWaarschuwingen,
+      },
     }
 
     return new Response(JSON.stringify(result), {

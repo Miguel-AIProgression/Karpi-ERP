@@ -12,6 +12,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { packAcrossRolls } from '../_shared/guillotine-packing.ts'
+import { validateShelfMesLimiet } from '../_shared/shelf-mes-validator.ts'
 import {
   fetchStukken,
   fetchUitwisselbareCodes,
@@ -130,18 +131,38 @@ serve(async (req) => {
     }
 
     // ---- Step 4: Fetch available rolls + bezette plaatsingen ----
-    const uitwisselbarePairs = await fetchUitwisselbarePairs(supabase, kwaliteit_code, kleur_code)
-    const uitwisselbareCodes = uitwisselbarePairs.length > 0
+    // Twee uitwissel-paden bestaan: fijnmazig Map1 (kwaliteit_kleur_uitwisselbaar
+    // view) en bredere collectie_id. Map1 kan een beperkte set pairs geven die
+    // toevallig geen voorraad heeft, terwijl de bredere collectie-set wél
+    // voorraad heeft — dat is exact wat de UI via tekort_analyse toont.
+    // Strategie: probeer eerst Map1 (precies), val terug op collectie (breed)
+    // als Map1 niks oplevert, zodat edge function nooit minder voorraad ziet
+    // dan de UI.
+    let uitwisselbarePairs = await fetchUitwisselbarePairs(supabase, kwaliteit_code, kleur_code)
+    let uitwisselbareCodes = uitwisselbarePairs.length > 0
       ? Array.from(new Set(uitwisselbarePairs.map((p) => p.kwaliteit_code)))
       : await fetchUitwisselbareCodes(supabase, kwaliteit_code)
     const kleurVariants = getKleurVariants(kleur_code)
-    const rollen = await fetchBeschikbareRollen(
+    let rollen = await fetchBeschikbareRollen(
       supabase,
       uitwisselbareCodes,
       kleurVariants,
       kwaliteit_code,
       uitwisselbarePairs,
     )
+
+    // Fallback: Map1 gaf pairs maar die hebben geen voorraad — probeer de
+    // volledige collectie-set (zelfde pad als tekort_analyse in UI).
+    if (rollen.length === 0 && uitwisselbarePairs.length > 0) {
+      uitwisselbarePairs = []
+      uitwisselbareCodes = await fetchUitwisselbareCodes(supabase, kwaliteit_code)
+      rollen = await fetchBeschikbareRollen(
+        supabase,
+        uitwisselbareCodes,
+        kleurVariants,
+        kwaliteit_code,
+      )
+    }
 
     if (rollen.length === 0) {
       return new Response(
@@ -233,6 +254,22 @@ serve(async (req) => {
     )
     if (keurError) throw keurError
 
+    // ---- Step 8: shelf-mes-validator (zacht: alleen rapporteren) ----
+    const shelfWaarschuwingen = validateShelfMesLimiet(
+      rollResults.map((r) => ({
+        rol_id: r.rol_id,
+        rolnummer: r.rolnummer,
+        rol_breedte_cm: r.rol_breedte_cm,
+        plaatsingen: r.plaatsingen,
+      })),
+    )
+    if (shelfWaarschuwingen.length > 0) {
+      console.warn(
+        `[auto-plan-groep] ${shelfWaarschuwingen.length} shelf(s) vereisen meer dan 3 breedte-messen:`,
+        JSON.stringify(shelfWaarschuwingen),
+      )
+    }
+
     // ---- Build response ----
     return new Response(
       JSON.stringify({
@@ -240,7 +277,10 @@ serve(async (req) => {
         voorstel_id,
         voorstel_nr,
         released: releaseCount ?? 0,
-        samenvatting,
+        samenvatting: {
+          ...samenvatting,
+          shelf_waarschuwingen: shelfWaarschuwingen,
+        },
         niet_geplaatst: nietGeplaatst,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },

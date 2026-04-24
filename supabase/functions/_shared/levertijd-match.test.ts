@@ -195,21 +195,44 @@ Deno.test('volgendeWerkdag: zaterdag → maandag', () => {
 // ---------------------------------------------------------------------------
 
 Deno.test('snijDatumVoorRol: afleverdatum wint, snij = afleverdatum − buffer', () => {
-  // Twee plaatsingen, vroegste afleverdatum = 29-04-2026, buffer = 2 dagen → snij = 27-04
+  // Twee plaatsingen, vroegste afleverdatum = 29-04-2026, buffer = 2 dagen → snij = 27-04.
+  // vandaag < berekend dus floor activeert niet.
+  const vandaag = new Date('2026-04-15T12:00:00Z')
   const datum = snijDatumVoorRol([
     makePlan({ afleverdatum: '2026-05-04' }),
     makePlan({ afleverdatum: '2026-04-29' }),
-  ], 2)
+  ], 2, vandaag)
   assertEquals(datum, '2026-04-27')
 })
 
+Deno.test('snijDatumVoorRol: afleverdatum in verleden (backlog) → floor op volgende werkdag', () => {
+  // Scenario: rol staat op Gepland maar bevat een order die al overtijd is.
+  // Zonder floor zou snij_datum = 2026-04-03 worden → leverdatum in het verleden.
+  const vandaag = new Date('2026-04-22T12:00:00Z') // woensdag
+  const datum = snijDatumVoorRol([
+    makePlan({ afleverdatum: '2026-04-05' }),
+  ], 2, vandaag)
+  assertEquals(datum, '2026-04-23') // eerstvolgende werkdag (donderdag)
+})
+
 Deno.test('snijDatumVoorRol: zonder afleverdatum → vroegste planning_week wint', () => {
+  // planning_week 16, 17, 18 in 2026 → maandag week 16 = 13-04-2026.
+  // vandaag voor week 16 zodat floor niet activeert.
+  const vandaag = new Date('2026-04-10T12:00:00Z')
   const datum = snijDatumVoorRol([
     makePlan({ planning_week: 18, planning_jaar: 2026 }),
     makePlan({ planning_week: 16, planning_jaar: 2026 }),
     makePlan({ planning_week: 17, planning_jaar: 2026 }),
-  ], 2)
+  ], 2, vandaag)
   assertEquals(datum, maandagVanWeek(16, 2026))
+})
+
+Deno.test('snijDatumVoorRol: planning_week in verleden → floor op volgende werkdag', () => {
+  const vandaag = new Date('2026-04-22T12:00:00Z') // week 17
+  const datum = snijDatumVoorRol([
+    makePlan({ planning_week: 14, planning_jaar: 2026 }),
+  ], 2, vandaag)
+  assertEquals(datum, '2026-04-23')
 })
 
 Deno.test('snijDatumVoorRol: geen planning + geen afleverdatum → volgende werkdag', () => {

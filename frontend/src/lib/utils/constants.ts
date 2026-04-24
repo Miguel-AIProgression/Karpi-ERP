@@ -77,6 +77,16 @@ export const ROL_TYPE_LABELS: Record<string, string> = {
   'reststuk': 'RESTSTUK',
 }
 
+/** Factuur status → badge color mapping */
+export const FACTUUR_STATUS_COLORS: Record<string, { bg: string; text: string }> = {
+  'Concept':      { bg: 'bg-slate-100',   text: 'text-slate-700' },
+  'Verstuurd':    { bg: 'bg-blue-100',    text: 'text-blue-700' },
+  'Betaald':      { bg: 'bg-emerald-100', text: 'text-emerald-700' },
+  'Herinnering':  { bg: 'bg-amber-100',   text: 'text-amber-700' },
+  'Aanmaning':    { bg: 'bg-rose-100',    text: 'text-rose-700' },
+  'Gecrediteerd': { bg: 'bg-gray-100',    text: 'text-gray-500' },
+}
+
 /** Sidebar navigation structure */
 export const NAV_GROUPS = [
   {
@@ -125,6 +135,7 @@ export const NAV_GROUPS = [
     label: 'Systeem',
     items: [
       { label: 'Instellingen', path: '/instellingen', icon: 'Settings' },
+      { label: 'Bedrijfsgegevens', path: '/instellingen/bedrijfsgegevens', icon: 'Building2' },
     ],
   },
 ] as const

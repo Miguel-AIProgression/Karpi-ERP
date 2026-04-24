@@ -5,7 +5,7 @@
 
 ## Overzicht
 
-36 tabellen, 6 enums, 9 views, 12 functies. Alle tabellen hebben RLS enabled (fase 1: authenticated = volledige toegang).
+36 tabellen, 7 enums, 11 views, 14 functies. Alle tabellen hebben RLS enabled (fase 1: authenticated = volledige toegang).
 
 ---
 
@@ -136,6 +136,8 @@ Klanten/afnemers. PK = debiteur_nr uit het oude systeem.
 | gln_bedrijf | TEXT | GLN/EAN moederbedrijf |
 | tier | TEXT | 'Gold', 'Silver', 'Bronze' (berekend) |
 | omzet_ytd, omzet_pct_totaal, gem_omzet_maand | NUMERIC | Berekend/gecached |
+| factuurvoorkeur | factuurvoorkeur enum | Default 'per_zending'. 'wekelijks' → verzamelfactuur op maandag. Zie migratie 117. |
+| btw_percentage | NUMERIC(5,2) | Default 21.00. Check 0-100. Per klant aan te passen voor EU/export. Zie migratie 117. |
 | logo_path | TEXT | Pad in Supabase Storage |
 | created_at, updated_at | TIMESTAMPTZ | Auto |
 
@@ -225,6 +227,7 @@ Individuele fysieke tapijtrol. Elk met uniek rolnummer.
 | snijden_voltooid_op | TIMESTAMPTZ | Timestamp wanneer rol werd afgesloten via `voltooi_snijplan_rol`. Migratie 063. |
 | snijden_gestart_door | TEXT | Medewerker die snijden gestart is. Migratie 063. |
 | locatie_id | BIGINT FK → magazijn_locaties | |
+| inkooporder_regel_id | BIGINT FK → inkooporder_regels | Welke inkooporder-regel deze rol heeft geleverd. NULL voor rollen uit historische voorraad-import. Migratie 127. |
 
 ---
 
@@ -290,7 +293,9 @@ Productregels per order. artikelnr nullable voor service-items.
 | order_id | BIGINT FK → orders | CASCADE DELETE |
 | regelnummer | INTEGER | |
 | artikelnr | TEXT FK → producten | Nullable |
-| karpi_code, omschrijving, omschrijving_2 | TEXT | |
+| karpi_code | TEXT | Nullable |
+| omschrijving | TEXT NOT NULL | Regel-beschrijving, verplicht |
+| omschrijving_2 | TEXT | Nullable |
 | orderaantal, te_leveren, backorder, te_factureren, gefactureerd | INTEGER | |
 | prijs | NUMERIC(10,2) | |
 | korting_pct | NUMERIC(5,2) | |
@@ -323,6 +328,8 @@ Productregels per order. artikelnr nullable voor service-items.
 ---
 
 ### facturen
+_Aangemaakt in migratie 117 (2026-04-22)._
+
 | Kolom | Type | Toelichting |
 |-------|------|-------------|
 | id | BIGINT PK | |
@@ -334,8 +341,14 @@ Productregels per order. artikelnr nullable voor service-items.
 | subtotaal, btw_percentage, btw_bedrag, totaal | NUMERIC | |
 | fact_naam, fact_adres, fact_postcode, fact_plaats, fact_land | TEXT | Snapshot |
 | opmerkingen | TEXT | |
+| pdf_storage_path | TEXT | Pad in bucket 'facturen' ({debiteur_nr}/FACT-YYYY-NNNN.pdf) |
+| verstuurd_op | TIMESTAMPTZ | Wanneer email verzonden |
+| verstuurd_naar | TEXT | Email-adres waar factuur naartoe is |
+| created_at, updated_at | TIMESTAMPTZ | Auto |
 
 ### factuur_regels
+_Aangemaakt in migratie 117 (2026-04-22)._
+
 | Kolom | Type | Toelichting |
 |-------|------|-------------|
 | id | BIGINT PK | |
@@ -344,6 +357,27 @@ Productregels per order. artikelnr nullable voor service-items.
 | omschrijving | TEXT | |
 | aantal | INTEGER | |
 | prijs, korting_pct, bedrag, btw_percentage | NUMERIC | |
+
+---
+
+### factuur_queue
+Queue voor asynchrone factuur-generatie + email. Gevuld door trigger (migratie 118) bij
+`orders.status='Verzonden'` (klant met `factuurvoorkeur='per_zending'`) of door pg_cron
+maandag 05:00 UTC (klanten met `factuurvoorkeur='wekelijks'`). Gedrainst door edge
+function `factuur-verzenden`. Zie migraties 118, 121, 122.
+
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| id | BIGSERIAL PK | |
+| debiteur_nr | INTEGER FK → debiteuren | |
+| order_ids | BIGINT[] | Welke orders samen op 1 factuur |
+| type | TEXT | 'per_zending' of 'wekelijks' |
+| status | factuur_queue_status | pending → processing → done / failed |
+| attempts | INTEGER | Aantal retry-pogingen (max 3) |
+| last_error | TEXT | Laatste error-message bij falen |
+| factuur_id | BIGINT FK → facturen | Gezet na succes |
+| processing_started_at | TIMESTAMPTZ | Voor stuck-detection. Zie migratie 121. |
+| created_at, processed_at | TIMESTAMPTZ | |
 
 ---
 
@@ -485,34 +519,57 @@ Stalen/monsters.
 ---
 
 ### leveranciers
+_Aangemaakt in migratie 127 (2026-04-24)._
+
 | Kolom | Type | Toelichting |
 |-------|------|-------------|
-| id | BIGINT PK | |
-| naam | TEXT | |
-| adres, postcode, plaats, land | TEXT | |
+| id | BIGSERIAL PK | |
+| leverancier_nr | INTEGER UK | Extern nummer uit oud systeem (Inkoopoverzicht.xlsx). NULL voor handmatig aangemaakt. |
+| naam | TEXT NOT NULL | |
+| woonplaats | TEXT | |
+| adres, postcode, land | TEXT | |
 | contactpersoon, telefoon, email | TEXT | |
 | betaalconditie | TEXT | |
-| actief | BOOLEAN | |
+| actief | BOOLEAN NOT NULL DEFAULT true | |
+| created_at, updated_at | TIMESTAMPTZ | Auto (trigger) |
 
 ### inkooporders
+_Aangemaakt in migratie 127 (2026-04-24)._
+
 | Kolom | Type | Toelichting |
 |-------|------|-------------|
-| id | BIGINT PK | |
-| inkooporder_nr | TEXT UK | INK-2026-0001 |
-| leverancier_id | BIGINT FK → leveranciers | |
-| besteldatum, verwacht_datum | DATE | |
-| status | inkooporder_status | Default 'Concept' |
+| id | BIGSERIAL PK | |
+| inkooporder_nr | TEXT UK NOT NULL | INK-2026-0001, via `volgend_nummer('INK')` bij handmatige invoer; bij import berekend uit oud_inkooporder_nr |
+| oud_inkooporder_nr | BIGINT UK | Ordernummer uit oud systeem (Inkoopoverzicht.xlsx). NULL voor nieuwe orders. |
+| leverancier_id | BIGINT FK → leveranciers(id) | ON DELETE RESTRICT |
+| besteldatum | DATE | |
+| leverweek | TEXT | Format "NN/YYYY" uit oud systeem, bijv. "18/2026" |
+| verwacht_datum | DATE | Maandag van leverweek (NULL bij dummy-weken buiten 2024–2030) |
+| status | inkooporder_status NOT NULL DEFAULT 'Concept' | |
+| bron | TEXT NOT NULL DEFAULT 'handmatig' | `'import'` of `'handmatig'` |
 | opmerkingen | TEXT | |
+| created_at, updated_at | TIMESTAMPTZ | Auto (trigger) |
 
 ### inkooporder_regels
+_Aangemaakt in migratie 127 (2026-04-24)._
+
 | Kolom | Type | Toelichting |
 |-------|------|-------------|
-| id | BIGINT PK | |
+| id | BIGSERIAL PK | |
 | inkooporder_id | BIGINT FK → inkooporders | CASCADE DELETE |
-| artikelnr | TEXT FK → producten | |
-| aantal | INTEGER | |
-| inkoopprijs | NUMERIC(10,2) | |
-| ontvangen | INTEGER | Default 0 |
+| regelnummer | INTEGER NOT NULL DEFAULT 1 | |
+| artikelnr | TEXT FK → producten(artikelnr) ON DELETE SET NULL | NULL voor regels met onbekend artikel (import) |
+| artikel_omschrijving | TEXT | Snapshot Excel-kolom "Omschrijving 1" |
+| karpi_code | TEXT | Snapshot Excel-kolom "Omschrijving" (bijv. TWIS15400VIL) |
+| inkoopprijs_eur | NUMERIC(10,2) | |
+| besteld_m | NUMERIC(10,2) NOT NULL DEFAULT 0 | Besteld aantal — meters als `eenheid='m'`, stuks als `eenheid='stuks'`. Kolomnaam blijft `besteld_m` voor backwards-compat. |
+| geleverd_m | NUMERIC(10,2) NOT NULL DEFAULT 0 | |
+| te_leveren_m | NUMERIC(10,2) NOT NULL DEFAULT 0 | = besteld_m − geleverd_m |
+| eenheid | TEXT NOT NULL DEFAULT 'm' CHECK ('m','stuks') | `'m'` voor rolproducten, `'stuks'` voor vaste afmetingen / staaltjes. Afgeleid uit `producten.product_type` bij import. |
+| status_excel | INTEGER | Status-code uit bron-Excel (1 actief, 8 geannuleerd, 0 onbekend) |
+| UK: (inkooporder_id, regelnummer) | | |
+
+**Koppeling aan rollen:** `rollen.inkooporder_regel_id` (BIGINT FK → inkooporder_regels) legt vast uit welke regel een fysieke rol ontvangen is. Gevuld door RPC `boek_ontvangst`.
 
 ---
 
@@ -663,6 +720,8 @@ Audit trail: wie heeft wat wanneer gedaan.
 | order_status | Nieuw, Actie vereist, Wacht op picken, Wacht op voorraad, In snijplan, In productie, Deels gereed, Klaar voor verzending, Verzonden, Geannuleerd |
 | zending_status | Gepland, Picken, Ingepakt, Klaar voor verzending, Onderweg, Afgeleverd |
 | factuur_status | Concept, Verstuurd, Betaald, Herinnering, Aanmaning, Gecrediteerd |
+| factuurvoorkeur | per_zending, wekelijks |
+| factuur_queue_status | pending, processing, done, failed |
 | snijplan_status | Gepland, Wacht, Gesneden, In confectie, Ingepakt, In productie, Gereed, Geannuleerd |
 | inkooporder_status | Concept, Besteld, Deels ontvangen, Ontvangen, Geannuleerd |
 | confectie_status | Wacht op materiaal, In productie, Kwaliteitscontrole, Gereed, Geannuleerd |
@@ -679,11 +738,14 @@ Audit trail: wie heeft wat wanneer gedaan.
 | rollen_overzicht | Per kwaliteit/kleur: aantal, oppervlak, waarde |
 | recente_orders | Laatste 50 orders met klantnaam |
 | orders_status_telling | Aantal per order_status |
-| snijplanning_overzicht | Snijplannen met order-, klant- en rolgegevens voor de planningsweergave (incl. geroteerd vlag) |
+| snijplanning_overzicht | Snijplannen met order-, klant- en rolgegevens voor de planningsweergave (incl. geroteerd vlag). `snij_lengte_cm`/`snij_breedte_cm` zijn **nominale (bestelde) maten** — edge function en tekort-analyse passen `stuk_snij_marge_cm()` toe voor de fysieke snij-maat (ZO +6, rond/ovaal +5). |
 | confectie_overzicht | Confectie-orders met scan- en voortgangsstatus |
 | confectie_planning_overzicht | Confectie-orders (status Wacht op materiaal / In productie) met klant, order, maatwerk-afmetingen en strekkende meter voor planningsweergave |
 | confectie_planning_forward | Vooruitkijkende confectie-planning — alle open maatwerk-snijplannen (Gepland..In confectie/Ingepakt) met afgeleide type_bewerking + confectie_startdatum + backward-compat aliassen |
 | productie_dashboard | Aggregaties voor het productie-dashboard: aantallen per status, capaciteit, doorlooptijd |
+| leveranciers_overzicht | Per leverancier: openstaande orders/meters + eerstvolgende verwachte levering. Basis voor Leveranciers-overzichtspagina. Migratie 127. |
+| inkooporders_overzicht | Per inkooporder: leveranciersnaam + aantal regels + totaal besteld/geleverd/te_leveren. Basis voor Inkooporders-overzichtspagina. Migratie 127. |
+| openstaande_inkooporder_regels | Open regels (`te_leveren_m > 0` én order in Concept/Besteld/Deels ontvangen) met leverancier, product, kwaliteit/kleur. Migratie 127. |
 
 ---
 
@@ -713,8 +775,10 @@ Audit trail: wie heeft wat wanneer gedaan.
 | `rollen_uitwissel_voorraad()` | Voor elk (kwaliteit, kleur) in `kwaliteit_kleur_uitwisselgroepen`: beste uitwissel-kandidaat (meeste beschikbare m² in rollen met `status=beschikbaar` en `oppervlak_m2>0`). Gebruikt door Rollen & Reststukken-pagina voor "Leverbaar via"-badge. |
 | `normaliseer_kleur_code(code TEXT)` | Normaliseert kleur_code: strip trailing ".0" (bijv. "12.0" → "12") — IMMUTABLE helper |
 | `snijplanning_groepen_gefilterd(p_tot_datum)` | Gegroepeerde snijplanning met optionele afleverdatum-filter (groepeert op genormaliseerde kleur_code) |
+| `stuk_snij_marge_cm(afwerking TEXT, vorm TEXT)` | Extra cm op elke dimensie bij snijden: ZO-afwerking +6, rond/ovaal +5. Combi → grootste wint (niet cumulatief). IMMUTABLE. Wordt gebruikt in `snijplanning_tekort_analyse()`. TS-equivalent in `_shared/snij-marges.ts`. (migratie 126) |
+| `snijplanning_tekort_analyse()` | Per snijden-groep: uitwisselbare kwaliteits (Map1 primair, collectie-fallback), aantal beschikbare rollen, totaal m², `max_lange/max_korte` rolmaten, en `grootste_onpassend_stuk_*` met marge-check. Sluit placeholder-rollen (0×0) uit, synchroon met `auto-plan-groep` edge. `heeft_collectie` = heeft uitwissel-partners (Map1 OR collectie). (migratie 134, basis 102/117/126) |
 | `snijplanning_status_counts_gefilterd(p_tot_datum)` | Status counts met optionele afleverdatum-filter |
-| `release_gepland_stukken(kwaliteit TEXT, kleur TEXT)` | Maakt alle Gepland stukken in een groep vrij: reset naar Wacht, rollen terug naar beschikbaar/reststuk |
+| `release_gepland_stukken(kwaliteit TEXT, kleur TEXT)` | Geeft Gepland-snijplannen van de BESTEL-groep (`order_regels.maatwerk_kwaliteit_code / _kleur_code`) vrij voor heroptimalisatie: clear `rol_id`/posities, rollen zonder resterende Gepland/Snijden/Gesneden stukken terug naar `beschikbaar`/`reststuk`. Raakt rollen met `snijden_gestart_op IS NOT NULL` niet aan. Filter op BESTEL-kwaliteit i.p.v. rol-kwaliteit is essentieel voor cross-kwaliteit plaatsingen via uitwisselbaarheid (migratie 133, fixt regressie uit 073). |
 | `start_productie_rol(rol_id BIGINT)` | Zet alle Gepland stukken op een rol naar In productie (beschermt tegen heroptimalisatie) |
 | `acquire_snijplan_lock(kwaliteit TEXT, kleur TEXT)` | Atomisch lock verkrijgen voor auto-planning (5 min staleness timeout) |
 | `release_snijplan_lock(kwaliteit TEXT, kleur TEXT)` | Lock vrijgeven na auto-planning |
@@ -722,6 +786,14 @@ Audit trail: wie heeft wat wanneer gedaan.
 | `voltooi_confectie(p_snijplan_id BIGINT, p_afgerond BOOLEAN DEFAULT true, p_ingepakt BOOLEAN DEFAULT false, p_locatie TEXT DEFAULT NULL)` | Rondt confectie af. p_afgerond=false clears + status terug naar Gesneden. p_ingepakt=true zet status Gereed + ingepakt_op. p_locatie="" wist locatie; NULL laat ongemoeid. |
 | `update_order_with_lines(p_order_id BIGINT, p_header JSONB, p_regels JSONB)` | Merge-update van order header + regels: UPDATE bestaande regels op `id`, INSERT nieuwe, DELETE regels die uit payload verdwenen zijn. Preserveert `snijplannen.order_regel_id` FK-koppelingen (migratie 074) |
 | `backlog_per_kwaliteit_kleur(p_kwaliteit TEXT, p_kleur TEXT)` | Aggregeert wachtende snijplan-stukken voor real-time levertijd-check: returnt `(totaal_m2, aantal_stukken, vroegste_afleverdatum)`. Match op kleur-varianten (X, X.0). Gebruikt door `check-levertijd` edge function (migratie 080) |
+| `genereer_factuur(p_order_ids BIGINT[])` | Atomair: maakt factuur + regels aan voor 1+ orders van dezelfde debiteur, markeert order_regels.gefactureerd. Retourneert factuur_id. Migratie 119. |
+| `enqueue_factuur_bij_verzonden()` | Trigger: bij orders.status → 'Verzonden' vult factuur_queue voor per_zending-klanten. Migratie 118. |
+| `enqueue_wekelijkse_verzamelfacturen()` | Verzamelt niet-gefactureerde Verzonden-orders per wekelijks-klant in de queue. Maandag 05:00 UTC via pg_cron. Migratie 122. |
+| `recover_stuck_factuur_queue()` | Zet queue-items >10 min in 'processing' terug op 'pending'. Elke 5 min via pg_cron. Migratie 121. |
+| `sync_besteld_inkoop_voor_artikel(p_artikelnr TEXT)` | Herbereken `producten.besteld_inkoop` als som van `te_leveren_m` over open inkooporder_regels, omgerekend naar m² via `kwaliteiten.standaard_breedte_cm` (fallback: meters). Migratie 127. |
+| `trg_sync_besteld_inkoop()` | Trigger op inkooporder_regels INSERT/UPDATE/DELETE die bovenstaande aanroept. Migratie 127. |
+| `boek_ontvangst(p_regel_id BIGINT, p_rollen JSONB, p_medewerker TEXT)` | Atomair: maakt N rollen aan op basis van `[{lengte_cm, breedte_cm, rolnummer?}, ...]`, logt `voorraad_mutaties` (type='ontvangst'), werkt `geleverd_m`/`te_leveren_m` bij (boekt **m²**, niet strekkende meters — fix migratie 133) en zet order-status op 'Deels ontvangen'/'Ontvangen'. Alleen voor eenheid='m'. Rolnummer optioneel — leeg = auto-genereer `R-YYYY-NNNN` via `volgend_nummer('R')` (migratie 135). Returns TABLE(rol_id, rolnummer). Migraties 127/133/135. |
+| `boek_voorraad_ontvangst(p_regel_id BIGINT, p_aantal INTEGER, p_medewerker TEXT)` | Voor vaste producten (eenheid='stuks'): verhoogt `producten.voorraad` met p_aantal en werkt regel + order-status bij. Migratie 127. |
 
 ### Triggers op order_regels (maatwerk)
 

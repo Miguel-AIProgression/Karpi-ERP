@@ -222,6 +222,7 @@ export async function fetchMaatwerkArtikelNr(kwaliteitCode: string, kleurCode: s
 }
 
 export interface BandDefault {
+  band_merk?: string | null
   band_kleur: string
   band_omschrijving: string | null
 }
@@ -235,12 +236,13 @@ export async function fetchStandaardBandKleur(
 
   // 1. Directe lookup
   for (const kc of kleurVariants) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('maatwerk_band_defaults')
-      .select('band_kleur, band_omschrijving')
+      .select('band_merk, band_kleur, band_omschrijving')
       .eq('kwaliteit_code', kwaliteitCode)
       .eq('kleur_code', kc)
       .maybeSingle()
+    console.log('[band query]', kwaliteitCode, kc, data, error)
     if (data) return data as BandDefault
   }
 
@@ -268,7 +270,7 @@ export async function fetchStandaardBandKleur(
     for (const kc of Array.from(new Set([row.kleur_code as string, uitKleurNorm]))) {
       const { data } = await supabase
         .from('maatwerk_band_defaults')
-        .select('band_kleur, band_omschrijving')
+        .select('band_merk, band_kleur, band_omschrijving')
         .eq('kwaliteit_code', row.kwaliteit_code)
         .eq('kleur_code', kc)
         .maybeSingle()

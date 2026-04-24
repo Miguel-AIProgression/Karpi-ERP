@@ -349,6 +349,53 @@ Deno.test('SPEC regressie: 4-order rol consumeert exact 820 cm rol-lengte', () =
 })
 
 // ---------------------------------------------------------------------------
+// Multi-strategy lookahead (regressie)
+// ---------------------------------------------------------------------------
+
+Deno.test('LOOKAHEAD: MARI13 — bundelt op 1 grote rol i.p.v. 3 aan te snijden', () => {
+  // Real-world case 2026-04-24: 5 stukken met 3 beschikbare rollen.
+  // Greedy-klein-eerst kiest 350-reststuk + 1300-volle + 1500-volle = 3 rollen
+  // met 1300-rol op 975cm Y-gebruik. Een look-ahead ziet dat alle 5 stukken
+  // samen op de 1500-rol passen met rotaties → 1 rol nodig.
+  const pieces = [
+    piece(1, 270, 565),
+    piece(2, 230, 270),
+    piece(3, 230, 260),
+    piece(4, 180, 250),
+    piece(5, 235, 315),
+  ]
+  const rolls = [
+    roll(101, 1300, 400, 'beschikbaar'),
+    roll(102, 1500, 400, 'beschikbaar'),
+    roll(103, 350, 400, 'beschikbaar'),
+  ]
+  const { rollResults, nietGeplaatst, samenvatting } = packAcrossRolls(
+    pieces, rolls, new Map(),
+  )
+  assertEquals(nietGeplaatst.length, 0, 'alle 5 stukken moeten geplaatst zijn')
+  assert(
+    samenvatting.totaal_rollen <= 2,
+    `met lookahead max 2 rollen; greedy gaf 3, nu ${samenvatting.totaal_rollen}`,
+  )
+  const totaalGeplaatst = rollResults.reduce((s, r) => s + r.plaatsingen.length, 0)
+  assertEquals(totaalGeplaatst, 5)
+})
+
+Deno.test('LOOKAHEAD: reststuk-voorkeur blijft gerespecteerd als dat past', () => {
+  // Als ALLE stukken op een reststuk passen, moet de reststuk gekozen worden
+  // (voorkomt aansnijden volle rol). Default-sort (klein-eerst, reststuk-eerst)
+  // wint hier.
+  const pieces = [piece(1, 200, 300), piece(2, 150, 200)]
+  const rolls = [
+    roll(1, 2000, 400, 'beschikbaar'),  // volle, groot
+    roll(2, 600, 400, 'reststuk'),       // reststuk, past
+  ]
+  const { rollResults } = packAcrossRolls(pieces, rolls, new Map())
+  assertEquals(rollResults.length, 1)
+  assertEquals(rollResults[0].rol_id, 2, 'reststuk moet gebruikt worden i.p.v. volle rol')
+})
+
+// ---------------------------------------------------------------------------
 // Reststuk-berekening
 // ---------------------------------------------------------------------------
 

@@ -3,6 +3,7 @@
 
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import type { SnijplanPiece, Roll, Placement } from './ffdh-packing.ts'
+import { snijMargeCm } from './snij-marges.ts'
 
 // ---------------------------------------------------------------------------
 // Fetch snijplannen from the view
@@ -27,7 +28,7 @@ export async function fetchStukken(
   let query = supabase
     .from('snijplanning_overzicht')
     .select(
-      'id, snij_lengte_cm, snij_breedte_cm, maatwerk_vorm, order_nr, klant_naam, afleverdatum',
+      'id, snij_lengte_cm, snij_breedte_cm, maatwerk_vorm, maatwerk_afwerking, order_nr, klant_naam, afleverdatum',
     )
     .in('status', statuses)
     .is('rol_id', null)
@@ -41,16 +42,28 @@ export async function fetchStukken(
   const { data, error } = await query
   if (error) throw error
 
-  return (data ?? []).map((sp: Record<string, unknown>) => ({
-    id: sp.id as number,
-    lengte_cm: sp.snij_lengte_cm as number,
-    breedte_cm: sp.snij_breedte_cm as number,
-    maatwerk_vorm: sp.maatwerk_vorm as string | null,
-    order_nr: sp.order_nr as string | null,
-    klant_naam: sp.klant_naam as string | null,
-    afleverdatum: sp.afleverdatum as string | null,
-    area_cm2: (sp.snij_lengte_cm as number) * (sp.snij_breedte_cm as number),
-  }))
+  return (data ?? []).map((sp: Record<string, unknown>) => {
+    // Snij-marge ophogen t.o.v. nominale maat: ZO-afwerking +6 cm, rond/ovaal
+    // +5 cm. De nominale maat in de view is wat de klant besteld heeft; de
+    // packer moet met de fysieke snij-maat werken anders wordt een 120x120
+    // ZO-stuk te krap geplaatst. De modal toont straks beide (besteld + placed).
+    const marge = snijMargeCm(
+      sp.maatwerk_afwerking as string | null,
+      sp.maatwerk_vorm as string | null,
+    )
+    const lengte = (sp.snij_lengte_cm as number) + marge
+    const breedte = (sp.snij_breedte_cm as number) + marge
+    return {
+      id: sp.id as number,
+      lengte_cm: lengte,
+      breedte_cm: breedte,
+      maatwerk_vorm: sp.maatwerk_vorm as string | null,
+      order_nr: sp.order_nr as string | null,
+      klant_naam: sp.klant_naam as string | null,
+      afleverdatum: sp.afleverdatum as string | null,
+      area_cm2: lengte * breedte,
+    }
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -157,6 +170,14 @@ export async function fetchBeschikbareRollen(
       // Rollen die al in productie zijn (snijden_gestart_op gezet) blijven buiten
       // de pool — hun cutlist is bevroren.
       if (r.status === 'in_snijplan' && r.snijden_gestart_op !== null) return false
+      // Placeholder-rollen (PH-*, lengte/breedte = 0) staan in de voorraad als
+      // stub voor inkoop-signalering — ze hebben geen fysiek tapijt. Sluit ze
+      // uit van de packing-pool, anders blokkeren ze de loop (sort zet ze
+      // vooraan, ze accepteren niks, en afhankelijk van sortering wordt een
+      // echte rol soms niet eens geprobeerd).
+      const lengte = Number(r.lengte_cm ?? 0)
+      const breedte = Number(r.breedte_cm ?? 0)
+      if (lengte <= 0 || breedte <= 0) return false
       return true
     })
     .map((r: Record<string, unknown>) => ({
@@ -260,6 +281,15 @@ export interface SaveVoorstelOptions {
   aangemaakt_door?: string
 }
 
+/**
+ * Insert-with-retry voor voorstel_nr unique collisions. Zonder dit vangnet
+ * leidt één out-of-sync `volgend_nummer`-counter tot een volledig gefaalde
+ * herplan-run over 100+ groepen. Met retry probeert de functie MAX_RETRIES×
+ * opnieuw een nieuw nummer op te halen voordat 'ie opgeeft — in de praktijk
+ * is 1 retry voldoende omdat de self-healing functie dan de echte max ziet
+ * (het net gefaalde nummer zit niet in snijvoorstellen want de insert rolled
+ * back) en MAX+1 teruggeeft.
+ */
 export async function saveVoorstel(
   supabase: SupabaseClient,
   options: SaveVoorstelOptions,
@@ -273,43 +303,66 @@ export async function saveVoorstel(
     geroteerd: boolean
   }>,
 ): Promise<{ voorstel_id: number; voorstel_nr: string }> {
-  // Get next voorstel number
-  const { data: nrData, error: nrError } = await supabase.rpc(
-    'volgend_nummer',
-    { p_type: 'SNIJV' },
-  )
-  if (nrError) throw nrError
-  const voorstel_nr = nrData as string
+  const MAX_RETRIES = 10
+  let lastError: unknown = null
 
-  // Insert voorstel
-  const { data: voorstel, error: vsError } = await supabase
-    .from('snijvoorstellen')
-    .insert({
-      voorstel_nr,
-      kwaliteit_code: options.kwaliteitCode,
-      kleur_code: options.kleurCode,
-      totaal_stukken: options.totaalStukken,
-      totaal_rollen: options.totaalRollen,
-      totaal_m2_gebruikt: Math.round(options.totaalM2Gebruikt * 100) / 100,
-      totaal_m2_afval: Math.round(options.totaalM2Afval * 100) / 100,
-      afval_percentage: options.afvalPercentage,
-      status: 'concept',
-      ...(options.aangemaakt_door ? { aangemaakt_door: options.aangemaakt_door } : {}),
-    })
-    .select('id')
-    .single()
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    // Get next voorstel number
+    const { data: nrData, error: nrError } = await supabase.rpc(
+      'volgend_nummer',
+      { p_type: 'SNIJV' },
+    )
+    if (nrError) throw nrError
+    const voorstel_nr = nrData as string
 
-  if (vsError) throw vsError
-  const voorstel_id = voorstel.id
+    // Insert voorstel
+    const { data: voorstel, error: vsError } = await supabase
+      .from('snijvoorstellen')
+      .insert({
+        voorstel_nr,
+        kwaliteit_code: options.kwaliteitCode,
+        kleur_code: options.kleurCode,
+        totaal_stukken: options.totaalStukken,
+        totaal_rollen: options.totaalRollen,
+        totaal_m2_gebruikt: Math.round(options.totaalM2Gebruikt * 100) / 100,
+        totaal_m2_afval: Math.round(options.totaalM2Afval * 100) / 100,
+        afval_percentage: options.afvalPercentage,
+        status: 'concept',
+        ...(options.aangemaakt_door ? { aangemaakt_door: options.aangemaakt_door } : {}),
+      })
+      .select('id')
+      .single()
 
-  // Insert plaatsingen
-  if (plaatsingen.length > 0) {
-    const { error: plError } = await supabase
-      .from('snijvoorstel_plaatsingen')
-      .insert(plaatsingen.map(p => ({ voorstel_id, ...p })))
+    if (!vsError) {
+      const voorstel_id = voorstel.id
+      if (plaatsingen.length > 0) {
+        const { error: plError } = await supabase
+          .from('snijvoorstel_plaatsingen')
+          .insert(plaatsingen.map(p => ({ voorstel_id, ...p })))
+        if (plError) throw plError
+      }
+      return { voorstel_id, voorstel_nr }
+    }
 
-    if (plError) throw plError
+    // Duplicate voorstel_nr? Retry met een nieuw nummer — de self-healing
+    // functie compenseert automatisch omdat het gefaalde nummer niet in de
+    // tabel terecht komt (transactie rolled back).
+    const isDuplicateVoorstelNr =
+      (vsError as { code?: string }).code === '23505' &&
+      (vsError.message?.includes('voorstel_nr') ||
+        (vsError as { details?: string }).details?.includes('voorstel_nr'))
+
+    if (!isDuplicateVoorstelNr) throw vsError
+    lastError = vsError
+
+    // Exponential-backoff delay + force-bump counter boven de echte max zodat
+    // retry gegarandeerd een nieuw nummer krijgt.
+    if (attempt < MAX_RETRIES) {
+      await new Promise(resolve => setTimeout(resolve, 50 * attempt))
+    }
   }
 
-  return { voorstel_id, voorstel_nr }
+  throw new Error(
+    `saveVoorstel: ${MAX_RETRIES} retries uitgeput — counter blijft out-of-sync. Laatste fout: ${JSON.stringify(lastError)}`,
+  )
 }

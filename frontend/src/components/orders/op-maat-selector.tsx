@@ -13,6 +13,7 @@ import {
   fetchVormen,
   fetchAfwerkingTypes,
   fetchStandaardAfwerking,
+  fetchStandaardBandKleur,
 } from '@/lib/supabase/queries/op-maat'
 import {
   berekenPrijsOppervlakM2,
@@ -150,6 +151,11 @@ export function OpMaatSelector({ defaultKorting, onAdd }: OpMaatSelectorProps) {
     queryFn: () => fetchStandaardAfwerking(state.kwaliteitCode),
     enabled: !!state.kwaliteitCode,
   })
+  const { data: standaardBandDefault } = useQuery({
+    queryKey: ['standaard-band-kleur', state.kwaliteitCode, state.kleurCode],
+    queryFn: () => fetchStandaardBandKleur(state.kwaliteitCode, state.kleurCode),
+    enabled: !!state.kwaliteitCode && !!state.kleurCode,
+  })
 
   // Afgeleide berekeningen
   const selectedVorm = vormen.find((v) => v.code === state.vormCode)
@@ -237,6 +243,7 @@ export function OpMaatSelector({ defaultKorting, onAdd }: OpMaatSelectorProps) {
               vormen={vormen}
               afwerkingen={afwerkingen}
               standaardAfwerking={standaardAfwerking ?? null}
+              standaardBandKleur={standaardBandDefault?.band_kleur ?? null}
               maxBreedteCm={state.maxBreedteCm}
               onChange={(data) => dispatch({ type: 'VORM_AFMETING_CHANGED', payload: data })}
             />

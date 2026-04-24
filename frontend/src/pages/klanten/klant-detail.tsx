@@ -12,15 +12,17 @@ import { useOrders } from '@/hooks/use-orders'
 import { KlanteigenNamenTab } from '@/components/klanten/klanteigen-namen-tab'
 import { KlantArtikelnummersTab } from '@/components/klanten/klant-artikelnummers-tab'
 import { KlantPrijslijstTab } from '@/components/klanten/klant-prijslijst-tab'
+import { KlantFactureringTab } from '@/components/klanten/klant-facturering-tab'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 
-type Tab = 'info' | 'adressen' | 'orders' | 'eigennamen' | 'artikelnummers' | 'prijslijst'
+type Tab = 'info' | 'adressen' | 'orders' | 'facturering' | 'eigennamen' | 'artikelnummers' | 'prijslijst'
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'info', label: 'Info' },
   { key: 'adressen', label: 'Afleveradressen' },
   { key: 'orders', label: 'Orders' },
+  { key: 'facturering', label: 'Facturering' },
   { key: 'eigennamen', label: 'Klanteigen namen' },
   { key: 'artikelnummers', label: 'Artikelnummers' },
   { key: 'prijslijst', label: 'Prijslijst' },
@@ -473,6 +475,15 @@ export function KlantDetailPage() {
         {activeTab === 'info' && <InfoTab klant={klant} />}
         {activeTab === 'adressen' && <AdressenTab adressen={adressen} />}
         {activeTab === 'orders' && <OrdersTab orders={ordersData?.orders} totalCount={ordersData?.totalCount} />}
+        {activeTab === 'facturering' && klant && (
+          <KlantFactureringTab
+            debiteurNr={debiteurNr}
+            factuurvoorkeur={klant.factuurvoorkeur}
+            emailFactuur={klant.email_factuur}
+            btwPercentage={klant.btw_percentage}
+            btwNummer={klant.btw_nummer}
+          />
+        )}
         {activeTab === 'eigennamen' && <KlanteigenNamenTab debiteurNr={debiteurNr} />}
         {activeTab === 'artikelnummers' && <KlantArtikelnummersTab debiteurNr={debiteurNr} />}
         {activeTab === 'prijslijst' && <KlantPrijslijstTab debiteurNr={debiteurNr} />}

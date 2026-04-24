@@ -53,6 +53,8 @@ export interface KlantDetail {
   standaard_maat_werkdagen: number | null
   maatwerk_weken: number | null
   deelleveringen_toegestaan: boolean
+  factuurvoorkeur: 'per_zending' | 'wekelijks'
+  btw_percentage: number
 }
 
 export interface KlanteigenNaam {
