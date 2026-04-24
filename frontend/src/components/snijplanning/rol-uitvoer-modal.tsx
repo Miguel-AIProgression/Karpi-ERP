@@ -575,20 +575,20 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
                                         />
                                       </td>
                                       <td className="py-2 pr-3">
-                                        {/* Eindmaat — wat de klant wil, prominent tonen */}
+                                        {/* Snijmaat — wat de cutter fysiek afsnijdt (=wat op de machine staat) */}
                                         <div className="font-medium text-slate-900">
-                                          {besteldBreedte} × {besteldLengte} cm
+                                          {snijBreedte} × {snijLengte} cm
                                           {stuk.maatwerk_vorm && (
                                             <span className="ml-1 text-xs font-normal text-slate-500">
                                               {stuk.maatwerk_vorm}
                                             </span>
                                           )}
                                         </div>
-                                        {/* Snijmaat — alleen tonen als die afwijkt van eindmaat */}
+                                        {/* Eindmaat — alleen tonen als die afwijkt (bijsnijden nodig) */}
                                         {toonBijsnijden && (
                                           <div className="text-xs text-terracotta-600 mt-0.5">
-                                            → snijmaat {snijBreedte} × {snijLengte} cm{' '}
-                                            · bijsnijden met hand{isRond ? ' (rond uitsnijden)' : ''}
+                                            → bijsnijden met hand naar {besteldBreedte} × {besteldLengte} cm
+                                            {isRond ? ' (rond)' : ''}
                                           </div>
                                         )}
                                       </td>
