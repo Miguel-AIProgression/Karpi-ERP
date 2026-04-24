@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { X, Zap, CheckCircle2, XCircle, Loader2, AlertTriangle } from 'lucide-react'
+import { X, Zap, CheckCircle2, XCircle, Loader2, AlertTriangle, CalendarClock } from 'lucide-react'
 import { useSnijplannenVoorGroep, useKeurSnijvoorstelGoed, useVerwerpSnijvoorstel } from '@/hooks/use-snijplanning'
 import { SnijVisualisatie } from './snij-visualisatie'
 import type { SnijvoorstelResponse, SnijvoorstelPlaatsing, SnijplanRow, SnijStuk } from '@/lib/types/productie'
@@ -137,6 +137,16 @@ export function SnijvoorstelModal({ voorstel, kwaliteitCode, kleurCode, onClose,
               </div>
             )
           })}
+
+          {(voorstel.buiten_scope_ids?.length ?? 0) > 0 && (
+            <div className="flex items-start gap-2 px-3 py-2 bg-orange-50 border border-orange-200 rounded text-sm text-orange-800">
+              <CalendarClock size={14} className="mt-0.5 flex-shrink-0" />
+              <span>
+                <strong>{voorstel.buiten_scope_ids!.length} {voorstel.buiten_scope_ids!.length === 1 ? 'stuk' : 'stukken'}</strong> buiten planningshorizon toegevoegd om de {voorstel.buiten_scope_ids!.length === 1 ? 'rol' : 'rollen'} vol te snijden.
+                {' '}De leverdatum van deze stukken valt later dan de ingestelde horizon — controleer of ze goed passen bij de volgorde.
+              </span>
+            </div>
+          )}
 
           {voorstel.niet_geplaatst.length > 0 && (
             <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded text-sm text-amber-800">

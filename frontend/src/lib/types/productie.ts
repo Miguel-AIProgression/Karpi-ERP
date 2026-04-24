@@ -299,6 +299,8 @@ export interface SnijvoorstelResponse {
   voorstel_nr: string
   rollen: SnijvoorstelRol[]
   niet_geplaatst: SnijvoorstelNietGeplaatst[]
+  /** Snijplan-IDs die buiten de planningshorizon vallen maar zijn toegevoegd om de rol vol te snijden. */
+  buiten_scope_ids?: number[]
   samenvatting: SnijvoorstelSamenvatting
 }
 
