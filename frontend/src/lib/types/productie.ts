@@ -199,6 +199,16 @@ export interface UitwisselbarePartner {
   m2: number
 }
 
+export interface BesteldInkoopInfo {
+  besteld_m: number
+  besteld_m2: number
+  orders_count: number
+  eerstvolgende_leverweek: string | null
+  eerstvolgende_verwacht_datum: string | null
+  eerstvolgende_m: number
+  eerstvolgende_m2: number
+}
+
 export interface RolGroep {
   kwaliteit_code: string
   kleur_code: string
@@ -216,6 +226,8 @@ export interface RolGroep {
   equiv_m2: number
   /** Alle uitwisselbare partners uit dezelfde uitwisselgroep, gesorteerd op m² DESC. */
   uitwisselbare_partners: UitwisselbarePartner[]
+  /** Openstaande inkooporders voor deze kwaliteit+kleur, NULL als er geen zijn. */
+  inkoop: BesteldInkoopInfo | null
 }
 
 // === Magazijn types ===

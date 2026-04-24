@@ -1,11 +1,11 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, Loader2, Truck } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { cn } from '@/lib/utils/cn'
 import { ROL_STATUS_COLORS, ROL_TYPE_COLORS, ROL_TYPE_LABELS } from '@/lib/utils/constants'
 import { useReserveringenVoorProduct } from '@/hooks/use-producten'
 import { useRolSnijstukken } from '@/hooks/use-snijplanning'
-import type { RolGroep, RolRow, UitwisselbarePartner } from '@/lib/types/productie'
+import type { BesteldInkoopInfo, RolGroep, RolRow, UitwisselbarePartner } from '@/lib/types/productie'
 
 interface RollenGroepRowProps {
   groep: RolGroep
@@ -27,6 +27,36 @@ function StatusBadge({ rolType, count }: { rolType: string; count: number }) {
   return (
     <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium', colors.bg, colors.text)}>
       {count}&times; {label}
+    </span>
+  )
+}
+
+function formatLeverweek(info: BesteldInkoopInfo): string | null {
+  if (info.eerstvolgende_leverweek) return `wk ${info.eerstvolgende_leverweek}`
+  if (info.eerstvolgende_verwacht_datum) {
+    const d = new Date(info.eerstvolgende_verwacht_datum)
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit' })
+    }
+  }
+  return null
+}
+
+function BesteldChip({ info }: { info: BesteldInkoopInfo }) {
+  const weekLabel = formatLeverweek(info)
+  const hasSplit =
+    info.eerstvolgende_m2 > 0 && info.eerstvolgende_m2 < info.besteld_m2
+  const title = hasSplit
+    ? `${info.besteld_m2.toFixed(1)} m² besteld (${info.orders_count} ${info.orders_count === 1 ? 'order' : 'orders'}), waarvan ${info.eerstvolgende_m2.toFixed(1)} m² in ${weekLabel ?? 'eerstvolgende levering'}`
+    : `${info.besteld_m2.toFixed(1)} m² besteld (${info.orders_count} ${info.orders_count === 1 ? 'order' : 'orders'})${weekLabel ? ` · ${weekLabel}` : ''}`
+  return (
+    <span
+      title={title}
+      className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium bg-indigo-50 text-indigo-700 border border-indigo-200"
+    >
+      <Truck size={11} />
+      {info.besteld_m2.toFixed(1)} m&sup2; besteld
+      {weekLabel && <span className="text-indigo-500">· {weekLabel}</span>}
     </span>
   )
 }
@@ -303,7 +333,7 @@ export function RollenGroepRow({ groep }: RollenGroepRowProps) {
                     {', '}
                     {groep.equiv_m2.toFixed(1)} m&sup2;
                   </Link>
-                ) : (
+                ) : groep.inkoop ? null : (
                   <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-slate-100 text-slate-500">
                     Geen voorraad
                   </span>
@@ -320,6 +350,7 @@ export function RollenGroepRow({ groep }: RollenGroepRowProps) {
                   .map((p) => (
                     <PartnerChip key={`${p.kwaliteit_code}|${p.kleur_code}`} partner={p} />
                   ))}
+                {groep.inkoop && <BesteldChip info={groep.inkoop} />}
               </>
             ) : (
               <>
@@ -329,6 +360,7 @@ export function RollenGroepRow({ groep }: RollenGroepRowProps) {
                 {groep.uitwisselbare_partners.map((p) => (
                   <PartnerChip key={`${p.kwaliteit_code}|${p.kleur_code}`} partner={p} />
                 ))}
+                {groep.inkoop && <BesteldChip info={groep.inkoop} />}
               </>
             )}
           </div>

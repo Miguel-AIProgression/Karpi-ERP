@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { ArrowLeft, PackageCheck, Ban } from 'lucide-react'
+import { ArrowLeft, PackageCheck, Ban, Printer } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import {
   useInkooporderDetail,
@@ -54,7 +54,7 @@ export function InkooporderDetailPage() {
     return <div className="p-12 text-center text-slate-400">Inkooporder {orderId} niet gevonden</div>
   }
 
-  const { order, regels, context } = data
+  const { order, regels, context, rolIdsPerRegel } = data
   const totaalM2 = regels.filter((r) => r.eenheid === 'm').reduce((s, r) => s + Number(r.te_leveren_m ?? 0), 0)
   const totaalStuks = regels.filter((r) => r.eenheid === 'stuks').reduce((s, r) => s + Number(r.te_leveren_m ?? 0), 0)
   const totaalLabel = [
@@ -182,7 +182,7 @@ export function InkooporderDetailPage() {
                       )}
                     </td>
                     <td className="py-2 text-right">
-                      {r.te_leveren_m > 0 && (
+                      {r.te_leveren_m > 0 ? (
                         <button
                           onClick={() => setOntvangstRegel(r)}
                           className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-[var(--radius-sm)]"
@@ -190,6 +190,26 @@ export function InkooporderDetailPage() {
                           <PackageCheck size={13} />
                           Ontvangst
                         </button>
+                      ) : (
+                        (() => {
+                          const ids = rolIdsPerRegel.get(r.id) ?? []
+                          if (ids.length === 0) return null
+                          return (
+                            <button
+                              onClick={() =>
+                                window.open(
+                                  `/rollen/stickers?ids=${ids.join(',')}`,
+                                  '_blank',
+                                  'noopener,noreferrer',
+                                )
+                              }
+                              className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-[var(--radius-sm)]"
+                            >
+                              <Printer size={13} />
+                              Stickers
+                            </button>
+                          )
+                        })()
                       )}
                     </td>
                   </tr>

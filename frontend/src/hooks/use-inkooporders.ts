@@ -6,6 +6,7 @@ import {
   fetchInkooporderDetail,
   fetchInkooporders,
   fetchInkooporderStats,
+  fetchOpenstaandeInkoopregelsVoorArtikel,
   updateInkooporderStatus,
   type InkooporderFilters,
   type InkooporderFormData,
@@ -13,6 +14,15 @@ import {
   type InkooporderStatus,
   type OntvangstRol,
 } from '@/lib/supabase/queries/inkooporders'
+
+export function useOpenstaandeInkoopVoorArtikel(artikelnr: string) {
+  return useQuery({
+    queryKey: ['inkoop', 'artikel', artikelnr],
+    queryFn: () => fetchOpenstaandeInkoopregelsVoorArtikel(artikelnr),
+    enabled: !!artikelnr,
+    staleTime: 30 * 1000,
+  })
+}
 
 export function useInkooporders(filters: InkooporderFilters = {}) {
   return useQuery({

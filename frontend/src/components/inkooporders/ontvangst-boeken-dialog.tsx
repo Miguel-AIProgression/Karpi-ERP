@@ -98,7 +98,10 @@ export function OntvangstBoekenDialog({ regel, inkooporderNr, breedteCm, onClose
       })
       setToegekend(result)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ontvangst boeken mislukt')
+      console.error('boek_ontvangst RPC error:', err)
+      const e = err as { message?: string; details?: string; hint?: string; code?: string }
+      const parts = [e?.message, e?.details, e?.hint].filter(Boolean)
+      setError(parts.length ? parts.join(' · ') : JSON.stringify(err))
     }
   }
 

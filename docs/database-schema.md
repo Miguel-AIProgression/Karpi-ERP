@@ -589,18 +589,21 @@ Registratie van elke barcode/QR-scan in het productieproces.
 ---
 
 ### voorraad_mutaties
-Logboek van alle voorraadwijzigingen (snijden, reststuk, correctie).
+Logboek van alle voorraadwijzigingen (snijden, reststuk, correctie, inkoop).
 | Kolom | Type | Toelichting |
 |-------|------|-------------|
-| id | BIGINT PK | Auto-increment |
-| rol_id | BIGINT FK → rollen | Betrokken rol |
-| type | TEXT | 'gesneden', 'reststuk_aangemaakt', 'correctie', 'ontvangst' |
-| lengte_voor_cm | INTEGER | Lengte voor mutatie |
-| lengte_na_cm | INTEGER | Lengte na mutatie |
-| reden | TEXT | Toelichting |
-| snijplan_id | BIGINT FK → snijplannen | Optioneel: gekoppeld snijplan |
-| medewerker | TEXT | Wie heeft de mutatie uitgevoerd |
-| created_at | TIMESTAMPTZ | Auto |
+| id | BIGINT PK | Auto-increment (`GENERATED ALWAYS AS IDENTITY`) |
+| rol_id | BIGINT FK → rollen | Betrokken rol (NOT NULL) |
+| type | TEXT | CHECK: `'inkoop'`, `'snij'`, `'reststuk'`, `'correctie'`, `'afgekeurd'` |
+| lengte_cm | NUMERIC | Lengte van de mutatie (bij inkoop = nieuwe rol-lengte, bij snij = afgesneden lengte) — NOT NULL |
+| breedte_cm | NUMERIC | Breedte (nullable) |
+| referentie_id | BIGINT | ID van gerelateerd record (bv. snijplan_id, inkooporder_regel_id) |
+| referentie_type | TEXT | Soort referentie: `'snijplan'`, `'inkooporder_regel'`, etc. |
+| notitie | TEXT | Vrije tekst/toelichting |
+| aangemaakt_op | TIMESTAMPTZ | Auto (`DEFAULT now()`) |
+| aangemaakt_door | TEXT | Wie heeft de mutatie uitgevoerd |
+
+⚠️ **Let op:** eerdere versies van deze docs beschreven verzonnen kolommen (`lengte_voor_cm`, `lengte_na_cm`, `reden`, `medewerker`, type=`'ontvangst'`/`'gesneden'`). De werkelijke schema komt uit commit `ece9ecd` en is hierboven weergegeven. Migratie 136 herstelt `boek_ontvangst` naar deze echte kolommen.
 
 ---
 
@@ -792,7 +795,8 @@ Audit trail: wie heeft wat wanneer gedaan.
 | `recover_stuck_factuur_queue()` | Zet queue-items >10 min in 'processing' terug op 'pending'. Elke 5 min via pg_cron. Migratie 121. |
 | `sync_besteld_inkoop_voor_artikel(p_artikelnr TEXT)` | Herbereken `producten.besteld_inkoop` als som van `te_leveren_m` over open inkooporder_regels, omgerekend naar m² via `kwaliteiten.standaard_breedte_cm` (fallback: meters). Migratie 127. |
 | `trg_sync_besteld_inkoop()` | Trigger op inkooporder_regels INSERT/UPDATE/DELETE die bovenstaande aanroept. Migratie 127. |
-| `boek_ontvangst(p_regel_id BIGINT, p_rollen JSONB, p_medewerker TEXT)` | Atomair: maakt N rollen aan op basis van `[{lengte_cm, breedte_cm, rolnummer?}, ...]`, logt `voorraad_mutaties` (type='ontvangst'), werkt `geleverd_m`/`te_leveren_m` bij (boekt **m²**, niet strekkende meters — fix migratie 133) en zet order-status op 'Deels ontvangen'/'Ontvangen'. Alleen voor eenheid='m'. Rolnummer optioneel — leeg = auto-genereer `R-YYYY-NNNN` via `volgend_nummer('R')` (migratie 135). Returns TABLE(rol_id, rolnummer). Migraties 127/133/135. |
+| `besteld_per_kwaliteit_kleur()` | Aggregeert `openstaande_inkooporder_regels` per (kwaliteit_code, kleur_code) → `besteld_m`, `besteld_m2`, `orders_count`, `eerstvolgende_leverweek` + `eerstvolgende_verwacht_datum`, plus het deel (`eerstvolgende_m`/`eerstvolgende_m2`) dat in díe eerstvolgende levering valt. Gebruikt door rollen-overview (tag "besteld m²") en als basis voor alles-op-een-blik voorraad/inkoop-dashboards. M² via `kwaliteiten.standaard_breedte_cm` (regels zonder bekende breedte: m² = 0). Migratie 137. |
+| `boek_ontvangst(p_regel_id BIGINT, p_rollen JSONB, p_medewerker TEXT)` | Atomair: maakt N rollen aan op basis van `[{lengte_cm, breedte_cm, rolnummer?}, ...]`, logt `voorraad_mutaties` (type=`'inkoop'`, referentie_type=`'inkooporder_regel'`), werkt `geleverd_m`/`te_leveren_m` bij (boekt **m²**, niet strekkende meters — fix migratie 133) en zet order-status op 'Deels ontvangen'/'Ontvangen'. Alleen voor eenheid='m'. Rolnummer optioneel — leeg = auto-genereer `R-YYYY-NNNN` via `volgend_nummer('R')` (migratie 135). Returns TABLE(rol_id, rolnummer). Migraties 127/133/135/136. |
 | `boek_voorraad_ontvangst(p_regel_id BIGINT, p_aantal INTEGER, p_medewerker TEXT)` | Voor vaste producten (eenheid='stuks'): verhoogt `producten.voorraad` met p_aantal en werkt regel + order-status bij. Migratie 127. |
 
 ### Triggers op order_regels (maatwerk)

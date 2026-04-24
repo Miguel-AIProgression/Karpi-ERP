@@ -1,11 +1,31 @@
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Truck } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { InfoField } from '@/components/ui/info-field'
 import { formatCurrency, formatNumber } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
 import { useProductDetail, useRollenVoorProduct, useReserveringenVoorProduct, useEquivalenteProducten } from '@/hooks/use-producten'
+import { useOpenstaandeInkoopVoorArtikel } from '@/hooks/use-inkooporders'
 import { ProductTypeBadge } from './producten-overview'
+
+const INKOOP_STATUS_COLORS: Record<string, string> = {
+  Concept: 'bg-slate-100 text-slate-600',
+  Besteld: 'bg-blue-100 text-blue-700',
+  'Deels ontvangen': 'bg-amber-100 text-amber-700',
+  Ontvangen: 'bg-emerald-100 text-emerald-700',
+  Geannuleerd: 'bg-rose-100 text-rose-700',
+}
+
+function formatLeverweek(leverweek: string | null, verwacht: string | null): string {
+  if (leverweek) return `wk ${leverweek}`
+  if (verwacht) {
+    const d = new Date(verwacht)
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    }
+  }
+  return '—'
+}
 
 export function ProductDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -15,6 +35,7 @@ export function ProductDetailPage() {
   const { data: rollen } = useRollenVoorProduct(artikelnr)
   const { data: reserveringen } = useReserveringenVoorProduct(artikelnr)
   const { data: equivalenten } = useEquivalenteProducten(artikelnr)
+  const { data: inkoopregels } = useOpenstaandeInkoopVoorArtikel(artikelnr)
 
   if (isLoading) return <PageHeader title="Product laden..." />
 
@@ -113,6 +134,70 @@ export function ProductDetailPage() {
                     <td className="px-4 py-2 text-right text-slate-600">{formatNumber(e.besteld_inkoop)}</td>
                   </tr>
                 ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Openstaande inkooporders */}
+      {inkoopregels && inkoopregels.length > 0 && (
+        <div className="bg-white rounded-[var(--radius)] border border-slate-200 overflow-hidden mb-6">
+          <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+            <h3 className="font-medium flex items-center gap-2">
+              <Truck size={16} className="text-indigo-500" />
+              Openstaande inkooporders ({inkoopregels.length})
+            </h3>
+            <span className="text-sm text-slate-500">
+              Totaal te leveren:{' '}
+              <span className="font-semibold text-slate-700">
+                {formatNumber(inkoopregels.reduce((s, r) => s + r.te_leveren_m, 0))} m
+              </span>
+            </span>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-100 bg-slate-50">
+                <th className="text-left px-4 py-2 font-medium text-slate-600">Inkooporder</th>
+                <th className="text-left px-4 py-2 font-medium text-slate-600">Leverancier</th>
+                <th className="text-left px-4 py-2 font-medium text-slate-600">Status</th>
+                <th className="text-left px-4 py-2 font-medium text-slate-600">Verwachte levering</th>
+                <th className="text-right px-4 py-2 font-medium text-slate-600">Besteld</th>
+                <th className="text-right px-4 py-2 font-medium text-slate-600">Geleverd</th>
+                <th className="text-right px-4 py-2 font-medium text-slate-600">Te leveren</th>
+              </tr>
+            </thead>
+            <tbody>
+              {inkoopregels.map((r) => (
+                <tr key={r.regel_id} className="border-b border-slate-50 hover:bg-slate-50">
+                  <td className="px-4 py-2">
+                    <Link
+                      to={`/inkooporders/${r.inkooporder_id}`}
+                      className="text-terracotta-500 hover:underline font-mono text-xs"
+                    >
+                      {r.inkooporder_nr}
+                    </Link>
+                  </td>
+                  <td className="px-4 py-2 text-slate-700">{r.leverancier_naam ?? '—'}</td>
+                  <td className="px-4 py-2">
+                    <span
+                      className={cn(
+                        'px-2 py-0.5 rounded-full text-xs',
+                        INKOOP_STATUS_COLORS[r.order_status] ?? 'bg-slate-100 text-slate-600',
+                      )}
+                    >
+                      {r.order_status}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2 text-slate-700 font-medium">
+                    {formatLeverweek(r.leverweek, r.verwacht_datum)}
+                  </td>
+                  <td className="px-4 py-2 text-right text-slate-600">{formatNumber(r.besteld_m)}</td>
+                  <td className="px-4 py-2 text-right text-slate-500">{formatNumber(r.geleverd_m)}</td>
+                  <td className="px-4 py-2 text-right font-semibold text-indigo-700">
+                    {formatNumber(r.te_leveren_m)}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
