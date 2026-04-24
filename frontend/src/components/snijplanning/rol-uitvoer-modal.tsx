@@ -44,6 +44,7 @@ interface SnijShelf {
   height: number
   maxX: number
   events: RolGebeurtenis[]
+  breedtePosities: number[]  // gesorteerde breedte-mes posities (één per stuk in de rij)
 }
 
 // ---------------------------------------------------------------------------
@@ -268,17 +269,31 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
       .filter((e): e is SnijEvent => e !== null)
   }, [teSnijden, snijStukken])
 
-  // Groepeer snij-events in rijen op basis van gedeelde breedte-mes (maxX).
+  // Groepeer snij-events in rijen op basis van Y-startpositie:
+  // — Stukken met dezelfde Y-start liggen naast elkaar → één rij (één set mes-instructies).
+  // — Stukken met een andere Y-start zijn gestapeld → aparte rij.
   // Ronde stukken krijgen +5 cm marge in beide richtingen.
-  // Per rij wordt de zijdelingse strip berekend als reststuk of afval.
+  // De zijdelingse strip van de gehele rij (buiten het verste stuk) → reststuk of afval.
   const snijVolgorde = useMemo((): {
     shelves: SnijShelf[]
     reststukken: ReststukRect[]
     aantalAfval: number
   } => {
-    const shelves: SnijShelf[] = []
+    interface ShelfGroup {
+      y: number
+      height: number
+      maxX: number
+      events: SnijEvent[]
+    }
 
-    for (const ev of alleSnijEvents) {
+    const reststukken: ReststukRect[] = []
+    let aantalAfval = 0
+    let reststukIdx = 1
+
+    const gesorteerd = [...alleSnijEvents].sort((a, b) => a.y - b.y || a.x - b.x)
+
+    const groups: ShelfGroup[] = []
+    for (const ev of gesorteerd) {
       const effLengte = ev.snijStuk.vorm === 'rond'
         ? ev.snijStuk.lengte_cm + ROND_SNIJ_MARGE
         : ev.snijStuk.lengte_cm
@@ -286,48 +301,57 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
         ? ev.snijStuk.breedte_cm + ROND_SNIJ_MARGE
         : ev.snijStuk.breedte_cm
       const maxX = Math.round(ev.x + effLengte)
-      const yEnd = ev.y + effBreedte
 
-      const last = shelves[shelves.length - 1]
-      const prevEnd = last ? last.y + last.height : 0
-
-      if (last && Math.round(last.maxX) === maxX) {
+      const last = groups[groups.length - 1]
+      if (last && Math.round(last.y) === Math.round(ev.y)) {
+        // Zelfde Y-start: stuk ligt naast vorige → zelfde rij
         last.events.push(ev)
-        last.height = Math.max(last.height, yEnd - last.y)
+        last.maxX = Math.max(last.maxX, maxX)
+        last.height = Math.max(last.height, effBreedte)
       } else {
-        const y = Math.max(ev.y, prevEnd)
-        shelves.push({ y, height: yEnd - y, maxX, events: [ev] })
+        groups.push({ y: ev.y, height: effBreedte, maxX, events: [ev] })
       }
     }
 
-    const reststukken: ReststukRect[] = []
-    let aantalAfval = 0
-    let reststukIdx = 1
+    const shelves: SnijShelf[] = groups.map(group => {
+      const shelfEvents: RolGebeurtenis[] = [...group.events]
 
-    for (const shelf of shelves) {
-      const sideW = Math.round(rolBreedte - shelf.maxX)
-      const sideH = Math.round(shelf.height)
+      // Breedte-mes posities gesorteerd (rechterrand van elk stuk, links naar rechts)
+      const breedtePosities = group.events
+        .map(ev => {
+          const effL = ev.snijStuk.vorm === 'rond'
+            ? ev.snijStuk.lengte_cm + ROND_SNIJ_MARGE
+            : ev.snijStuk.lengte_cm
+          return Math.round(ev.x + effL)
+        })
+        .sort((a, b) => a - b)
+        .filter((v, i, arr) => arr.indexOf(v) === i)
+
+      const sideW = Math.round(rolBreedte - group.maxX)
+      const sideH = Math.round(group.height)
       if (sideW >= RESTSTUK_MIN_SHORT && sideH >= RESTSTUK_MIN_LONG) {
-        shelf.events.push({
+        shelfEvents.push({
           kind: 'reststuk',
-          y: shelf.y,
-          x: shelf.maxX,
+          y: group.y,
+          x: group.maxX,
           breedteCm: sideW,
           lengteCm: sideH,
           index: reststukIdx++,
         })
-        reststukken.push({ x_cm: shelf.maxX, y_cm: shelf.y, breedte_cm: sideW, lengte_cm: sideH })
+        reststukken.push({ x_cm: group.maxX, y_cm: group.y, breedte_cm: sideW, lengte_cm: sideH })
       } else if (sideW > 0) {
-        shelf.events.push({
+        shelfEvents.push({
           kind: 'afval',
-          y: shelf.y,
-          x: shelf.maxX,
+          y: group.y,
+          x: group.maxX,
           breedteCm: sideW,
           lengteCm: sideH,
         })
         aantalAfval++
       }
-    }
+
+      return { y: group.y, height: group.height, maxX: group.maxX, events: shelfEvents, breedtePosities }
+    })
 
     return { shelves, reststukken, aantalAfval }
   }, [alleSnijEvents, rolBreedte])
@@ -500,9 +524,8 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
                       <tbody>
                         {shelves.map((shelf, shelfIdx) => {
                           rijIdx += 1
-                          const lengteMesCm = Math.round(shelf.y + shelf.height)
-                          const breedteMesCm = Math.round(shelf.maxX)
-                          const shelfHoogte = Math.round(shelf.height)
+                          const lengteMesCm = Math.round(shelf.height)
+                          const { breedtePosities } = shelf
                           return (
                             <Fragment key={`shelf-${shelfIdx}`}>
                               <tr className="bg-amber-50 border-t-2 border-amber-300">
@@ -512,12 +535,11 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
                                     <span className="font-semibold">
                                       Rij {rijIdx} · Lengte-mes op {lengteMesCm} cm
                                     </span>
-                                    <span className="text-amber-700">
-                                      (rij {shelfHoogte} cm hoog)
-                                    </span>
-                                    <span className="font-semibold">
-                                      · Breedte-mes op {breedteMesCm} cm
-                                    </span>
+                                    {breedtePosities.map((pos, i) => (
+                                      <span key={pos} className="font-semibold">
+                                        · Breedte-mes {breedtePosities.length > 1 ? i + 1 : ''} op {pos} cm
+                                      </span>
+                                    ))}
                                   </div>
                                 </td>
                               </tr>
@@ -526,14 +548,19 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
                                   const stuk = e.stuk
                                   const checked = checkedIds.has(stuk.id)
                                   const isRond = e.snijStuk.vorm === 'rond'
-                                  // Ronde stukken tonen de fysieke snijmaat (diameter + marge).
-                                  const placedBreedte = Math.round(e.snijStuk.lengte_cm) + (isRond ? ROND_SNIJ_MARGE : 0)
-                                  const placedLengte = Math.round(e.snijStuk.breedte_cm) + (isRond ? ROND_SNIJ_MARGE : 0)
-                                  const toonBesteld =
-                                    stuk.snij_breedte_cm !== undefined &&
-                                    stuk.snij_lengte_cm !== undefined &&
-                                    (placedBreedte !== stuk.snij_breedte_cm ||
-                                      placedLengte !== stuk.snij_lengte_cm)
+                                  // Fysieke snijmaat: +5cm voor ronde stukken, lengte = max(stuk, rijhoogte)
+                                  const snijBreedte = Math.round(e.snijStuk.lengte_cm) + (isRond ? ROND_SNIJ_MARGE : 0)
+                                  const snijLengte = Math.max(
+                                    Math.round(e.snijStuk.breedte_cm) + (isRond ? ROND_SNIJ_MARGE : 0),
+                                    Math.round(shelf.height),
+                                  )
+                                  // Besteld formaat (na handmatig bijsnijden)
+                                  const besteldBreedte = stuk.snij_breedte_cm ?? snijBreedte
+                                  const besteldLengte = stuk.snij_lengte_cm ?? snijLengte
+                                  const toonBijsnijden =
+                                    isRond ||
+                                    snijBreedte !== besteldBreedte ||
+                                    snijLengte !== besteldLengte
                                   return (
                                     <tr
                                       key={`snij-${stuk.id}`}
@@ -547,17 +574,22 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
                                           className="h-4 w-4 accent-terracotta-500 cursor-pointer"
                                         />
                                       </td>
-                                      <td className="py-2 pr-3 font-medium">
-                                        {placedBreedte} × {placedLengte} cm
-                                        {stuk.maatwerk_vorm && (
-                                          <span className="ml-2 text-xs font-normal text-slate-500">
-                                            {stuk.maatwerk_vorm}
-                                          </span>
-                                        )}
-                                        {toonBesteld && (
-                                          <span className="ml-2 text-xs font-normal text-slate-400">
-                                            (besteld {stuk.snij_breedte_cm}×{stuk.snij_lengte_cm})
-                                          </span>
+                                      <td className="py-2 pr-3">
+                                        {/* Eindmaat — wat de klant wil, prominent tonen */}
+                                        <div className="font-medium text-slate-900">
+                                          {besteldBreedte} × {besteldLengte} cm
+                                          {stuk.maatwerk_vorm && (
+                                            <span className="ml-1 text-xs font-normal text-slate-500">
+                                              {stuk.maatwerk_vorm}
+                                            </span>
+                                          )}
+                                        </div>
+                                        {/* Snijmaat — alleen tonen als die afwijkt van eindmaat */}
+                                        {toonBijsnijden && (
+                                          <div className="text-xs text-terracotta-600 mt-0.5">
+                                            → snijmaat {snijBreedte} × {snijLengte} cm{' '}
+                                            · bijsnijden met hand{isRond ? ' (rond uitsnijden)' : ''}
+                                          </div>
                                         )}
                                       </td>
                                       <td className="py-2 pr-3">{stuk.klant_naam}</td>
