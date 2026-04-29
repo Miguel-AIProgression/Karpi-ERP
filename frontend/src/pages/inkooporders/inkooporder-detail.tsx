@@ -9,6 +9,7 @@ import {
 import { InkooporderStatusBadge } from '@/components/inkooporders/inkooporder-status-badge'
 import { OntvangstBoekenDialog } from '@/components/inkooporders/ontvangst-boeken-dialog'
 import { VoorraadOntvangstDialog } from '@/components/inkooporders/voorraad-ontvangst-dialog'
+import { IORegelClaimsPopover } from '@/components/inkooporders/io-regel-claims-popover'
 import type { InkooporderRegel } from '@/lib/supabase/queries/inkooporders'
 
 function formatAantal(value: number): string {
@@ -143,6 +144,7 @@ export function InkooporderDetailPage() {
                 <th className="text-right pb-2 font-medium">Besteld</th>
                 <th className="text-right pb-2 font-medium">Geleverd</th>
                 <th className="text-right pb-2 font-medium">Te leveren</th>
+                <th className="text-right pb-2 font-medium">Geclaimd</th>
                 <th className="pb-2"></th>
               </tr>
             </thead>
@@ -179,6 +181,19 @@ export function InkooporderDetailPage() {
                         </span>
                       ) : (
                         <span className="text-slate-400">0</span>
+                      )}
+                    </td>
+                    <td className="py-2 text-right tabular-nums">
+                      {r.eenheid === 'stuks' && (r.aantal_geclaimd ?? 0) > 0 ? (
+                        <IORegelClaimsPopover ioRegelId={r.id}>
+                          <span className="text-xs text-slate-700 font-medium underline decoration-dotted underline-offset-2 cursor-pointer">
+                            {r.aantal_geclaimd}/{Math.floor(r.te_leveren_m)}
+                          </span>
+                        </IORegelClaimsPopover>
+                      ) : r.eenheid === 'stuks' ? (
+                        <span className="text-xs text-slate-400">—</span>
+                      ) : (
+                        <span className="text-xs text-slate-300">n.v.t.</span>
                       )}
                     </td>
                     <td className="py-2 text-right">

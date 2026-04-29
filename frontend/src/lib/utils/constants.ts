@@ -132,6 +132,12 @@ export const NAV_GROUPS = [
     ],
   },
   {
+    label: 'EDI',
+    items: [
+      { label: 'Berichten', path: '/edi/berichten', icon: 'Mail' },
+    ],
+  },
+  {
     label: 'Systeem',
     items: [
       { label: 'Instellingen', path: '/instellingen', icon: 'Settings' },

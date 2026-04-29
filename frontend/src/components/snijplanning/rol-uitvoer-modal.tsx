@@ -58,7 +58,7 @@ function RijHeaderRow({ rij }: { rij: Rij }) {
           {rij.is_breedte_mes_overgenomen && (
             <span className="text-emerald-700 italic">(blijft staan)</span>
           )}
-          <span className="text-amber-700">· lengte {rij.lengte_mes_cm} cm</span>
+          <span className="font-medium">· Lengte-mes op {rij.lengte_mes_cm} cm</span>
         </div>
       </td>
     </tr>

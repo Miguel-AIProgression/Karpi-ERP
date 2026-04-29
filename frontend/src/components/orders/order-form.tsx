@@ -5,8 +5,12 @@ import { ClientSelector, type SelectedClient } from './client-selector'
 import { AddressSelector } from './address-selector'
 import { OrderLineEditor } from './order-line-editor'
 import { LevertijdSuggestie } from './levertijd-suggestie'
-import { createOrder, updateOrderWithLines, deleteOrder, lookupPrice, fetchKlanteigenNaam, fetchKlantArtikelnummer } from '@/lib/supabase/queries/order-mutations'
+import { LeverModusDialog, type LeverModusTekort } from './lever-modus-dialog'
+import type { LeverModus } from '@/lib/supabase/queries/reserveringen'
+import { berekenRegelDekking } from '@/lib/utils/regel-dekking'
+import { createOrder, updateOrderWithLines, deleteOrder, lookupPrice, fetchKlanteigenNaam, fetchKlantArtikelnummer, setUitwisselbaarClaims } from '@/lib/supabase/queries/order-mutations'
 import type { OrderFormData, OrderRegelFormData } from '@/lib/supabase/queries/order-mutations'
+import { supabase } from '@/lib/supabase/client'
 import { fetchOrderConfig, type OrderConfig } from '@/lib/supabase/queries/order-config'
 import { triggerAutoplan, fetchAutoplanningConfig } from '@/lib/supabase/queries/auto-planning'
 import { berekenAfleverdatum } from '@/lib/utils/afleverdatum'
@@ -49,6 +53,7 @@ export function OrderForm({ mode, initialData }: OrderFormProps) {
   const [spoedActief, setSpoedActief] = useState<boolean>(
     () => mode === 'edit' && (initialData?.regels ?? []).some(r => r.artikelnr === SPOED_PRODUCT_ID)
   )
+  const [leverModusDialogOpen, setLeverModusDialogOpen] = useState(false)
 
   // In edit-modus laadt clientData asynchroon na de eerste render.
   // Sync de prijslijst en korting zodra die beschikbaar komen.
@@ -317,15 +322,49 @@ export function OrderForm({ mode, initialData }: OrderFormProps) {
     }
   }
 
+  /**
+   * Persist handmatige uitwisselbaar-keuzes per regel via set_uitwisselbaar_claims-RPC.
+   * Matcht op regelnummer (volgorde-index) na fetch van de net opgeslagen regels.
+   */
+  async function persistUitwisselbaarKeuzes(orderId: number, regelsList: OrderRegelFormData[]) {
+    const regelsMetKeuzes = regelsList.filter(r => (r.uitwisselbaar_keuzes ?? []).length > 0)
+    if (regelsMetKeuzes.length === 0) return
+
+    const { data: dbRegels } = await supabase
+      .from('order_regels')
+      .select('id, regelnummer')
+      .eq('order_id', orderId)
+    const idPerRegelnummer = new Map<number, number>(
+      ((dbRegels ?? []) as { id: number; regelnummer: number }[]).map(r => [r.regelnummer, r.id]),
+    )
+
+    for (let i = 0; i < regelsList.length; i++) {
+      const r = regelsList[i]
+      const keuzes = r.uitwisselbaar_keuzes ?? []
+      if (keuzes.length === 0) continue
+      // Bij create: regelnummer = i + 1 (zie create_order_with_lines payload).
+      // Bij edit: regelnummer wordt ook hergenummerd als i + 1 in updateOrderWithLines.
+      const dbId = idPerRegelnummer.get(i + 1) ?? r.id
+      if (!dbId) continue
+      await setUitwisselbaarClaims(
+        dbId,
+        keuzes.map(k => ({ artikelnr: k.artikelnr, aantal: k.aantal })),
+      )
+    }
+  }
+
   const saveMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (overrideLeverModus?: LeverModus) => {
       if (!client) throw new Error('Selecteer een klant')
       if (regels.filter(r => r.artikelnr !== SHIPPING_PRODUCT_ID).length === 0) throw new Error('Voeg minstens één orderregel toe')
 
-      const orderData: OrderFormData = { ...header, debiteur_nr: client.debiteur_nr }
+      const headerWithModus: Partial<OrderFormData> = overrideLeverModus
+        ? { ...header, lever_modus: overrideLeverModus }
+        : header
+      const orderData: OrderFormData = { ...headerWithModus, debiteur_nr: client.debiteur_nr }
 
       if (mode === 'create') {
-        // Split-order flow: deelleveringen AAN + gemengde order
+        // Split-order flow: deelleveringen AAN + gemengde order (standaard + maatwerk)
         if (deelleveringen && afleverdatumInfo.heeftGemengd) {
           const shippingRegel = regels.find(r => r.artikelnr === SHIPPING_PRODUCT_ID)
           const standaardRegels = regels.filter(r => r.artikelnr !== SHIPPING_PRODUCT_ID && !r.is_maatwerk)
@@ -344,16 +383,76 @@ export function OrderForm({ mode, initialData }: OrderFormProps) {
           const regelsA = shippingRegel ? [...standaardRegels, shippingRegel] : standaardRegels
           const a = await createOrder(standaardOrder, regelsA)
           const b = await createOrder(maatwerkOrder, maatwerkRegels)
+          await persistUitwisselbaarKeuzes(a.id, regelsA)
+          await persistUitwisselbaarKeuzes(b.id, maatwerkRegels)
           await triggerAutoplanForMaatwerk(maatwerkRegels)
           return { split: true as const, standaard: a, maatwerk: b }
         }
 
+        // IO-split flow: lever_modus=deelleveringen + ≥1 regel met IO-tekort.
+        // Splits in 2 orders: directe levering (voorraad + uitwisselbaar, mét verzend)
+        // en IO-deel (zonder verzend, één zending op laatste IO-leverdatum).
+        const effectieveModus = overrideLeverModus ?? headerWithModus.lever_modus
+        const heeftIoTekort = regels.some(r => berekenRegelDekking(r).ioTekort > 0)
+
+        if (effectieveModus === 'deelleveringen' && heeftIoTekort) {
+          const directeRegels: OrderRegelFormData[] = []
+          const ioRegels: OrderRegelFormData[] = []
+
+          for (const r of regels) {
+            if (r.artikelnr === SHIPPING_PRODUCT_ID) {
+              directeRegels.push(r)  // verzendkosten alleen op directe order
+              continue
+            }
+            const d = berekenRegelDekking(r)
+            const directDeel = d.direct + d.uitwisselbaar
+
+            if (d.ioTekort === 0) {
+              directeRegels.push(r)
+            } else if (directDeel === 0) {
+              // Volledig op IO
+              ioRegels.push({ ...r, uitwisselbaar_keuzes: [] })
+            } else {
+              // Per-regel splitsing
+              const prijs = r.prijs ?? 0
+              const korting = (r.korting_pct ?? 0) / 100
+              directeRegels.push({
+                ...r,
+                orderaantal: directDeel,
+                te_leveren: directDeel,
+                bedrag: Math.round(prijs * directDeel * (1 - korting) * 100) / 100,
+              })
+              ioRegels.push({
+                ...r,
+                id: undefined,
+                orderaantal: d.ioTekort,
+                te_leveren: d.ioTekort,
+                uitwisselbaar_keuzes: [],
+                bedrag: Math.round(prijs * d.ioTekort * (1 - korting) * 100) / 100,
+              })
+            }
+          }
+
+          const directeOrder: OrderFormData = { ...orderData, lever_modus: 'in_een_keer' }
+          // De IO-order hangt aan de IO-leverdatum (mig 153 zet afleverdatum vooruit)
+          const ioOrder: OrderFormData = { ...orderData, lever_modus: 'in_een_keer' }
+
+          const a = await createOrder(directeOrder, directeRegels)
+          const b = await createOrder(ioOrder, ioRegels)
+          await persistUitwisselbaarKeuzes(a.id, directeRegels)
+          await persistUitwisselbaarKeuzes(b.id, ioRegels)
+          await triggerAutoplanForMaatwerk(directeRegels)
+          return { split: true as const, standaard: a, maatwerk: b }
+        }
+
         const single = await createOrder(orderData, regels)
+        await persistUitwisselbaarKeuzes(single.id, regels)
         await triggerAutoplanForMaatwerk(regels)
         return { split: false as const, ...single }
       } else {
         const orderId = initialData!.orderId
         await updateOrderWithLines(orderId, orderData, regels)
+        await persistUitwisselbaarKeuzes(orderId, regels)
         await triggerAutoplanForMaatwerk(regels)
         return { split: false as const, id: orderId, order_nr: '' }
       }
@@ -380,6 +479,40 @@ export function OrderForm({ mode, initialData }: OrderFormProps) {
       )
     },
   })
+
+  // IO-tekort = stuks die niet via voorraad eigen artikel + uitwisselbaar gedekt zijn
+  // → echte wacht-op-inkoop. Alleen dán moet LeverModusDialog openen.
+  // Gebruikt gedeelde helper berekenRegelDekking — zelfde bron als inline tekst.
+  const tekortRegels: LeverModusTekort[] = useMemo(
+    () => regels
+      .map((r, i) => {
+        const { ioTekort } = berekenRegelDekking(r)
+        if (ioTekort <= 0) return null
+        return {
+          regelnummer: i + 1,
+          artikelnr: r.artikelnr ?? null,
+          aantal_tekort: ioTekort,
+          verwachte_leverweek: null,
+        } as LeverModusTekort
+      })
+      .filter((x): x is LeverModusTekort => x !== null),
+    [regels],
+  )
+
+  const handleSaveClick = () => {
+    setError(null)
+    if (tekortRegels.length > 0 && !header.lever_modus) {
+      setLeverModusDialogOpen(true)
+      return
+    }
+    saveMutation.mutate(undefined)
+  }
+
+  const handleLeverModusConfirm = (modus: LeverModus) => {
+    setHeader(h => ({ ...h, lever_modus: modus }))
+    setLeverModusDialogOpen(false)
+    saveMutation.mutate(modus)
+  }
 
   const isLocked = initialData?.status === 'Verzonden' || initialData?.status === 'Geannuleerd'
 
@@ -525,7 +658,7 @@ export function OrderForm({ mode, initialData }: OrderFormProps) {
       <div className="flex items-center gap-3">
         <button
           type="button"
-          onClick={() => saveMutation.mutate()}
+          onClick={handleSaveClick}
           disabled={saveMutation.isPending || !client || regels.filter(r => r.artikelnr !== SHIPPING_PRODUCT_ID).length === 0}
           className="px-6 py-2 bg-terracotta-500 text-white rounded-[var(--radius-sm)] text-sm font-medium hover:bg-terracotta-600 disabled:opacity-50 transition-colors"
         >
@@ -579,6 +712,14 @@ export function OrderForm({ mode, initialData }: OrderFormProps) {
           </div>
         </div>
       )}
+
+      <LeverModusDialog
+        open={leverModusDialogOpen}
+        tekorten={tekortRegels}
+        defaultModus={client?.deelleveringen_toegestaan ? 'deelleveringen' : 'in_een_keer'}
+        onConfirm={handleLeverModusConfirm}
+        onCancel={() => setLeverModusDialogOpen(false)}
+      />
     </div>
   )
 }

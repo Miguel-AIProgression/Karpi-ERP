@@ -251,3 +251,49 @@ etc. Bewerkbaar via `/instellingen/bedrijfsgegevens`.
 **Klantvoorkeur**: `debiteuren.factuurvoorkeur` (`per_zending` | `wekelijks`) +
 `debiteuren.btw_percentage` (21.00 standaard; 0 voor EU-intracom/export).
 Bewerkbaar in klant-detail → tab "Facturering".
+
+## Inkoop-reserveringen (2026-04-29, mig 144–152)
+
+Bij order-aanmaak worden vaste-maat-orderregels automatisch gealloceerd over voorraad + openstaande inkoop. Bron-van-waarheid: tabel [`order_reserveringen`](../supabase/migrations/144_order_reserveringen_basis.sql) met rijen voor zowel voorraadclaims als IO-claims.
+
+```
+order_regel ─┬─ order_reserveringen ─┬─ bron='voorraad'         (geen FK)
+             │                       └─ bron='inkooporder_regel' ── inkooporder_regel
+             │
+             └─ herallocateer_orderregel(id) (centrale RPC, idempotent)
+```
+
+### Allocatie-volgorde
+1. **Voorraad eerst** — `LEAST(te_leveren, voorraad_beschikbaar_voor_artikel())`
+2. **Daarna oudste IO** — over `inkooporder_regels` met `eenheid='stuks'` en `inkooporders.status IN ('Besteld','Deels ontvangen')`, geordend op `verwacht_datum ASC NULLS LAST`. Per IO-regel `LEAST(resterend, io_regel_ruimte())`.
+3. Resterend > 0 → tekort → order op `Wacht op inkoop` (claim aanwezig) of `Wacht op voorraad` (geen claim, geen IO beschikbaar).
+
+### Claim-volgorde-prio
+FIFO via `claim_volgorde TIMESTAMPTZ DEFAULT now()`. Geen automatische herallocatie wanneer een nieuwere order met urgenter afleverdatum binnenkomt — wie eerst claimt, wordt eerst beleverd bij IO-ontvangst. Spoed-prio (claim-stelen) staat op de V2-backlog.
+
+### Levenscyclus
+| Event | Trigger | Effect |
+|-------|---------|--------|
+| Orderregel INSERT/UPDATE (artikelnr/te_leveren/is_maatwerk wisselt) | `trg_orderregel_herallocateer` | `herallocateer_orderregel(id)` — release + nieuw alloceren |
+| Orderregel DELETE | FK ON DELETE CASCADE | Claims verdwijnen; trigger C herberekent `producten.gereserveerd` |
+| Order status → `Geannuleerd` / `Verzonden` | `trg_order_status_herallocateer` | Per regel `herallocateer_orderregel` (releaset claims) |
+| `inkooporders.status → 'Geannuleerd'` | `trg_inkooporder_status_release` | Per IO-regel `release_claims_voor_io_regel` → getroffen orderregels heralloceren naar volgende IO of "Wacht op nieuwe inkoop" |
+| IO `verwacht_datum` wijzigt | (geen trigger) | Levertijd wordt live afgeleid via view `order_regel_levertijd` |
+| `boek_voorraad_ontvangst(io_regel, aantal)` | (RPC, mig 148) | IO-claims consumeren in `claim_volgorde`; geconsumeerd deel → voorraad-claim op zelfde orderregel; `producten.voorraad += aantal`; per geraakte order `herwaardeer_order_status` |
+| `order_reserveringen` INSERT/UPDATE/DELETE | `trg_reservering_sync_producten` | `herbereken_product_reservering(artikelnr)` |
+
+### Levertijd-berekening
+View `order_regel_levertijd` (mig 150) levert per orderregel:
+- `levertijd_status`: `voorraad` | `op_inkoop` | `wacht_op_nieuwe_inkoop` | `maatwerk`
+- `verwachte_leverweek`: `iso_week_plus(io_datum, buffer)` waar `buffer = inkoop_buffer_weken_vast` (default 1) uit `app_config.order_config`. Bij `orders.lever_modus='in_een_keer'` wint de max IO-datum, anders de min (eerste week).
+
+### Maatwerk (V1)
+Maatwerk-regels (`is_maatwerk=true`) reserveren NIET op IO. Op de orderregel wordt een hint getoond via `MaatwerkLevertijdHint`: eerstvolgende inkoop-leverweek + 2 weken buffer (`inkoop_buffer_weken_maatwerk`). Echte claim op rol-IO (`eenheid='m'`) staat in V2.
+
+### Claim-uitsplitsing per orderregel (UI)
+Op order-detail toont elke stuks-orderregel met `te_leveren > 0` een geneste sub-rij per claim-bron, in vaste volgorde: eigen voorraad → omsticker (uitwisselbaar) → IO → "Wacht op nieuwe inkoop". De synthetische "wacht"-rij vult `te_leveren − som(actieve claims)` zodat de sub-aantallen altijd optellen tot het hoofdregel-getal. Bron: query `fetchClaimsVoorOrder(orderId)` — één call op `order_reserveringen` plus een gebatchte `producten`-lookup voor omschrijving + locatie van afwijkende `fysiek_artikelnr`-waardes.
+
+Doel is de verzamelaar in het magazijn: omsticker-rijen krijgen amber-accent + locatie-tag + expliciete "→ stickeren naar {orderregel.artikelnr}"-noot, wacht-rijen krijgen rose-accent. Maatwerk- en m-regels krijgen geen uitsplitsing (vallen buiten de stuks-claim-flow). Factuur- en orderregel-uitvoer blijven 1× origineel artikel — de uitsplitsing is puur intern.
+
+### `vrije_voorraad`-formule (mig 149)
+Voorheen: `voorraad − gereserveerd − backorder + besteld_inkoop`. Sinds mig 149: `voorraad − gereserveerd − backorder` (geen `+ besteld_inkoop`). Toekomstige inkoop is zichtbaar via aparte velden + via `order_reserveringen`, maar telt niet in "vandaag-leverbaar".

@@ -1,5 +1,61 @@
 # Changelog — RugFlow ERP
 
+## 2026-04-29 — Orderregel claim-uitsplitsing als geneste sub-rijen
+
+Op order-detail toont elke stuks-orderregel nu de volledige bron-uitsplitsing als visueel geneste sub-rijen onder de hoofdregel — gericht op de verzamelaar in het magazijn die moet zien dat een deel van een uitwisselbaar artikel komt en omgestickerd moet worden.
+
+- **Wat er per regel staat:** vier mogelijke sub-rijen in vaste leverbaarheid-volgorde — eigen voorraad → omsticker → IO → wacht op nieuwe inkoop. Sub-aantallen tellen op tot `te_leveren` (synthetische "wacht"-rij vult het tekort in).
+- **Visuele stijl:** neutraal grijs voor eigen voorraad + IO; amber voor omsticker (actie vereist); rose voor wacht (probleem). Sub-aantallen staan onder de "Te leveren"-kolom; bron-info colSpant Artikel + Omschrijving (Patroon II — aantallen blijven uitgelijnd).
+- **Omsticker-regel** toont het bron-artikelnr (klikbaar), omschrijving van het uitwisselbare product, locatie als bekend, en een expliciete "→ stickeren naar {orderregel.artikelnr}"-noot.
+- **Scope:** alleen stuks-orders met `te_leveren > 0` en `is_maatwerk=false`. Maatwerk-regels behouden hun bestaande paarse maatwerk-info-rij; m-rollen-orders en volledig verzonden regels blijven zonder sub-rijen.
+- **Verwijderd:** de klikbare popover (`RegelClaimDetail`) op de levertijd-badge en de `via INK-...`-hint daaronder — dezelfde info staat nu uitgeklapt zonder klik. `LevertijdBadge` blijft op de hoofdregel als snelle status-glance.
+- **Niet op factuur:** de uitsplitsing is puur intern/operationeel. Conform business-rule mig 154 blijven factuur en order-regel-weergave 1× origineel artikel.
+- **Data:** nieuwe query [`fetchClaimsVoorOrder`](../frontend/src/lib/supabase/queries/reserveringen.ts) — één call voor alle claims van een order + één gebatchte product-lookup voor `fysiek_artikelnr`-omschrijving en -locatie. Hook `useClaimsVoorOrder` parallel aan `useLevertijdVoorOrder`.
+
+---
+
+## 2026-04-29 — EDI/Transus-koppeling: fundament voor inkomend verkeer
+
+Eerste fase van de migratie van Windows Connect (op MITS-CA-01-009) naar de Transus SOAP API. Karpi heeft 39 EDI-handelspartners (~9.000 berichten/12 maanden, top-5 = 84% volume — BDSK 44%, SB-Möbel BOSS 18%, Hornbach NL, Hammer, Krieger). Plan: [`docs/superpowers/plans/2026-04-29-edi-transus-koppeling.md`](superpowers/plans/2026-04-29-edi-transus-koppeling.md).
+
+- **Bericht-formaat: fixed-width "Custom ERP" (Basta-compatibel).** Drie productie-voorbeelden van 2026-04-29 geanalyseerd ([`docs/transus/voorbeelden/`](transus/voorbeelden/)). Transus-Online label bevestigt: gegevensbron-type "Fixed length", ID 17653, versie 10. Kolomposities reverse-engineered uit Ostermann (rijke veldenset, 23 regels) + BDSK (schrale veldenset, 1 regel). Header = 463 bytes, article = 281 bytes. EDIFACT-passthrough naar partners blijft werk van Transus.
+- **Datamodel:** [`edi_handelspartner_config`](../supabase/migrations/156_edi_handelspartner_config.sql) (per debiteur de 4 berichttype-toggles + transus_actief + test_modus); [`edi_berichten`](../supabase/migrations/157_edi_berichten.sql) (centrale audit-/queue-tabel met enum `edi_bericht_status`); GLN-velden + `bes_*`-snapshots op `orders` voor de 4-staps partij-keten (BY/IV/DP/SN); `app_config.bedrijfsgegevens.gln_eigen=8715954999998`.
+- **RPCs:** `log_edi_inkomend` (idempotent op transactie_id), `markeer_edi_ack`, `enqueue_edi_uitgaand` (idempotent op berichttype+bron), `claim_volgende_uitgaand` (FOR UPDATE SKIP LOCKED), `markeer_edi_verstuurd`, `markeer_edi_fout` (retry-loop, max 3).
+- **Edge functions:** [`_shared/transus-soap.ts`](../supabase/functions/_shared/transus-soap.ts) (M10100/M10110/M10300 SOAP-client, base64+CP-1252 handling); [`_shared/transus-formats/karpi-fixed-width.ts`](../supabase/functions/_shared/transus-formats/karpi-fixed-width.ts) (parser voor Order-bericht — 100% match tegen 2 voorbeelden in test); [`transus-poll`](../supabase/functions/transus-poll/index.ts) (cron-driven inbox-leeghaler in **read-only modus**: parseert + logt + ackt zonder order-creatie).
+- **Frontend:** nieuwe sidebar-sectie "EDI" met `/edi/berichten`-overzicht (in/uit toggle, status- en type-filters, polling 30s) en `/edi/berichten/:id` detailpagina (geparseerde JSON + ruwe payload + retry-info + gerelateerde order/factuur).
+- **Buiten V1-fase 1:** order-creatie via `create_edi_order` RPC (komt in fase 2 zodra parser-validatie via Transus' Testen-tab klopt); uitgaande triggers voor orderbev/factuur/verzending; cutover van WC naar API. Vereist nog: `TRANSUS_CLIENT_ID` + `TRANSUS_CLIENT_KEY` als Supabase secrets, test-handelspartner van Transus, en Maureen-akkoord voor de Custom ERP-config-overstap.
+- **Cutover-constraint** (uit Transus' antwoord): Windows Connect en de API kunnen niet parallel draaien (beide bevestigen automatisch). Cutover is dus big-bang voor alle 39 partners. Pilot-validatie loopt via Transus' test-handelspartner.
+- **Migraties:** [156](../supabase/migrations/156_edi_handelspartner_config.sql), [157](../supabase/migrations/157_edi_berichten.sql).
+
+---
+
+## 2026-04-29 — Inkoop-reserveringen V1: bugfixes + afleverdatum-sync + uitwisselbaar-hint
+
+Drie issues uit de eerste live-test van ORD-2026-2004:
+
+- **Migratie 153** — `herwaardeer_order_status` synct nu ook `orders.afleverdatum` naar de laatste IO-claim-leverdatum (verwacht_datum + buffer). Schuift alleen vooruit, nooit terug. Voorheen gaf ORD-2026-2004 afleverdatum 04-05-2026 + levertijd 2026-W27 — inconsistent. Helper `bereken_late_claim_afleverdatum(order_id)` + `sync_order_afleverdatum_met_claims(order_id)`. Backfill draait éénmalig over alle open orders met IO-claims.
+- **Bug fix** [`fetchClaimsVoorProduct`](../frontend/src/lib/supabase/queries/producten.ts) — PostgREST `.eq()` op een nested join-kolom (`order_regels.artikelnr`) filterde niet. Herschreven naar twee-stap: eerst orderregel-IDs van het artikel ophalen (incl. `fysiek_artikelnr` voor omstickeren), dan claims op die IDs. Product-detail toont nu correct de "Op voorraad gereserveerd" + "Wacht op inkoop" secties voor het bekeken artikel.
+- **UI-suggestie uitwisselbaar bij tekort** — nieuwe component [`UitwisselbaarTekortHint`](../frontend/src/components/orders/uitwisselbaar-tekort-hint.tsx) verschijnt inline onder een orderregel met `te_leveren > vrije_voorraad` als er uitwisselbare producten met voorraad zijn. Klik = `omstickeren` aanzetten (commerciële keuze van de gebruiker, geen DB-allocatie). Allocator blijft simpel: exact-artikelnr-matching.
+
+---
+
+## 2026-04-29 — Inkoop-reserveringen V1 (vaste maten)
+
+Reserveringssysteem uitgebreid met harde koppeling naar inkooporderregels voor vaste maten — order-aanmaak alloceert automatisch over voorraad + openstaande inkoop, met klantkeuze "deelleveren / in 1×" en berekende verwachte leverweek per orderregel. Maatwerk krijgt alleen een levertijd-indicator (V1).
+
+- **Datamodel:** nieuwe tabel [`order_reserveringen`](../supabase/migrations/144_order_reserveringen_basis.sql) (`bron='voorraad' | 'inkooporder_regel'`); kolom `orders.lever_modus` (`deelleveringen | in_een_keer`); enum-waarde `Wacht op inkoop`. Buffer-keys `inkoop_buffer_weken_vast=1` / `inkoop_buffer_weken_maatwerk=2` in `app_config.order_config`.
+- **Allocatie-seam:** [`herallocateer_orderregel(p_order_regel_id)`](../supabase/migrations/145_order_reserveringen_rpcs.sql) — idempotent: release alle actieve claims + alloceer voorraad-eerst, dan oudste IO (`verwacht_datum ASC`). Triggers (mig 146) op `order_regels` mutatie + `orders` status + `inkooporders` `Geannuleerd` schakelen automatisch in. Claim-volgorde-prio: wie eerst claimt, wordt eerst beleverd.
+- **Vrije voorraad:** `vrije_voorraad = voorraad − gereserveerd − backorder` (geen `+ besteld_inkoop` meer); `gereserveerd` is voortaan SUM van actieve `bron='voorraad'`-claims (mig 149). Toekomstige inkoop blijft zichtbaar via `besteld_inkoop` en `order_reserveringen` maar telt niet meer mee in "vandaag-leverbaar".
+- **Ontvangst:** [`boek_voorraad_ontvangst`](../supabase/migrations/148_boek_voorraad_ontvangst_consumeer_claims.sql) consumeert IO-claims in claim-volgorde en verschuift naar voorraad-claims (mig 148).
+- **Views:** `order_regel_levertijd` (status + verwachte_leverweek per regel) + `inkooporder_regel_claim_zicht` (geclaimd/vrij per IO-regel) — mig 150.
+- **RPC's bijgewerkt (mig 152):** `create_order_with_lines` + `update_order_with_lines` lezen `lever_modus` uit JSONB-payload zodat de `LeverModusDialog`-keuze persisteert.
+- **Frontend:** levertijd-badge per orderregel (groen/amber/rose/violet) met claim-popover (`RegelClaimDetail`); `LeverModusDialog` opent bij opslaan als ≥1 regel tekort heeft (default uit `debiteuren.deelleveringen_toegestaan`); `IORegelClaimsPopover` op IO-detail; "Op voorraad gereserveerd" + "Wacht op inkoop" secties op product-detail; maatwerk-levertijdhint op `op-maat-selector` (eerstvolgende inkoopweek + 2 wk).
+- **Architectuur:** gedeelde [`isoWeek()`-helper](../frontend/src/lib/utils/iso-week.ts) — bron-van-waarheid voor week-uit-datum berekeningen in de UI, parallel aan SQL-side `iso_week_plus()`.
+- **Migraties:** [144](../supabase/migrations/144_order_reserveringen_basis.sql), [145](../supabase/migrations/145_order_reserveringen_rpcs.sql), [146](../supabase/migrations/146_order_reserveringen_triggers.sql), [147](../supabase/migrations/147_inkoop_status_release_trigger.sql), [148](../supabase/migrations/148_boek_voorraad_ontvangst_consumeer_claims.sql), [149](../supabase/migrations/149_vrije_voorraad_semantiek.sql), [150](../supabase/migrations/150_order_reserveringen_views.sql), [151](../supabase/migrations/151_backfill_order_reserveringen.sql), [152](../supabase/migrations/152_order_rpcs_lever_modus.sql).
+- **V2-backlog:** maatwerk-claim op IO-rol, handmatige IO-keuze (override), spoed-prio (claim-stelen), klantnotificatie bij IO-vertraging, claim voor `eenheid='m'`-rollen.
+
+---
+
 ## 2026-04-29 — Snijden: SnijVolgorde als deep module + operator-vriendelijke mes-instructies
 
 ### 2026-04-29 — Rol-uitvoer modal: rij = breedte-mes-instelling, geen y-band-clustering

@@ -4,10 +4,12 @@ import { formatCurrency } from '@/lib/utils/formatters'
 import { berekenPrijsOppervlakM2 } from '@/lib/utils/maatwerk-prijs'
 import { AFWERKING_OPTIES } from '@/lib/utils/constants'
 import { KwaliteitFirstSelector } from './kwaliteit-first-selector'
+import { UitwisselbaarTekortHint } from './uitwisselbaar-tekort-hint'
 import { getVormDisplay } from '@/lib/utils/vorm-labels'
 import type { SelectedArticle, SubstitutionInfo } from './article-selector'
 import type { OrderRegelFormData } from '@/lib/supabase/queries/order-mutations'
 import { SHIPPING_PRODUCT_ID } from '@/lib/constants/shipping'
+import { berekenRegelDekking } from '@/lib/utils/regel-dekking'
 
 interface OrderLineEditorProps {
   lines: OrderRegelFormData[]
@@ -37,6 +39,14 @@ function MaatwerkLineRow({
   updateLine: (i: number, u: Partial<OrderRegelFormData>) => void
   removeLine: (i: number) => void
 }) {
+  const isVasteMaatRegel = !line.is_maatwerk
+    && line.artikelnr
+    && line.artikelnr !== SHIPPING_PRODUCT_ID
+    && !line.omstickeren
+
+  const dekking = berekenRegelDekking(line)
+  const uitwisselbaarTotaal = dekking.uitwisselbaar
+  const tekortAantal = dekking.ioTekort
   return (
     <>
       <tr className={line.is_maatwerk ? 'border-b-0' : 'border-b border-slate-50'}>
@@ -115,6 +125,19 @@ function MaatwerkLineRow({
               Max {line.vrije_voorraad} vrij
             </div>
           )}
+          {isVasteMaatRegel && line.te_leveren > (line.vrije_voorraad ?? 0) && (
+            <div className="text-xs text-slate-500 mt-0.5 leading-tight">
+              {(() => {
+                const direct = Math.min(line.vrije_voorraad ?? 0, line.te_leveren)
+                const opInkoop = tekortAantal
+                const parts: string[] = []
+                if (direct > 0) parts.push(`${direct}× direct`)
+                if (uitwisselbaarTotaal > 0) parts.push(`${uitwisselbaarTotaal}× omstickeren`)
+                if (opInkoop > 0) parts.push(`${opInkoop}× wacht op inkoop`)
+                return parts.join(', ')
+              })()}
+            </div>
+          )}
         </td>
         <td className="px-3 py-2">
           <input
@@ -149,6 +172,18 @@ function MaatwerkLineRow({
           </button>
         </td>
       </tr>
+      {isVasteMaatRegel && line.artikelnr && (tekortAantal > 0 || (line.uitwisselbaar_keuzes ?? []).length > 0) && (
+        <tr className="border-b border-slate-50">
+          <td colSpan={8} className="px-3 pb-2 pt-0">
+            <UitwisselbaarTekortHint
+              artikelnr={line.artikelnr}
+              tekortAantal={tekortAantal}
+              keuzes={line.uitwisselbaar_keuzes ?? []}
+              onChange={(keuzes) => updateLine(index, { uitwisselbaar_keuzes: keuzes })}
+            />
+          </td>
+        </tr>
+      )}
       {line.is_maatwerk && (
         <tr className="border-b border-slate-50 bg-purple-50/30">
           <td colSpan={8} className="px-3 py-2">

@@ -40,6 +40,7 @@ export interface OrderDetail extends OrderRow {
   inkooporganisatie: string | null
   compleet_geleverd: boolean
   vertegenw_naam?: string
+  lever_modus: 'deelleveringen' | 'in_een_keer' | null
 }
 
 export interface OrderRegelSnijplan {

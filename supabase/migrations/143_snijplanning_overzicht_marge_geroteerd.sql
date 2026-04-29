@@ -35,7 +35,7 @@ SELECT
   sp.prioriteit,                                                               -- 8
   sp.planning_week,                                                            -- 9
   sp.planning_jaar,                                                            -- 10
-  sp.afleverdatum,                                                             -- 11
+  o.afleverdatum,                                                              -- 11 (uit orders-tabel; sp.afleverdatum is altijd NULL)
   sp.positie_x_cm,                                                             -- 12
   sp.positie_y_cm,                                                             -- 13
   sp.geroteerd,                                                                -- 14

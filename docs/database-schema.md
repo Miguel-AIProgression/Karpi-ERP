@@ -5,7 +5,7 @@
 
 ## Overzicht
 
-36 tabellen, 7 enums, 12 views, 15 functies. Alle tabellen hebben RLS enabled (fase 1: authenticated = volledige toegang).
+39 tabellen, 8 enums, 14 views, 30 functies. Alle tabellen hebben RLS enabled (fase 1: authenticated = volledige toegang).
 
 ---
 
@@ -193,7 +193,7 @@ Artikelen uit het oude systeem.
 | karpi_code | TEXT | Volledige code (kwaliteit+kleur+afmeting) |
 | ean_code | TEXT | EAN barcode |
 | omschrijving, vervolgomschrijving | TEXT | |
-| voorraad, backorder, gereserveerd, besteld_inkoop, vrije_voorraad | INTEGER | |
+| voorraad, backorder, gereserveerd, besteld_inkoop, vrije_voorraad | INTEGER | Sinds migratie 149: `gereserveerd` = SUM van `order_reserveringen.aantal` waar `bron='voorraad'` en `status='actief'`. `vrije_voorraad` = `voorraad − gereserveerd − backorder` (geen `+ besteld_inkoop` meer). |
 | kwaliteit_code | TEXT FK → kwaliteiten | |
 | kleur_code | TEXT | Eerste 2 cijfers uit karpi_code. **Let op:** fragiel als de leverancier-prefix zelf cijfers bevat (bv. `TAM1` → pakt `11` i.p.v. `13` uit `TAM113400ONG`). Bij nieuwe leveranciers met zulke prefixen: kleur_code handmatig corrigeren of importscript aanpassen (veilig: positie direct na alfabetische prefix). Zie migratie [096](../supabase/migrations/096_tama_kwaliteit_harmoniseren.sql). |
 | zoeksleutel | TEXT | kwaliteit_code + "_" + kleur_code |
@@ -282,6 +282,35 @@ Orderheaders. Adressen zijn snapshots (niet FK naar afleveradressen).
 | bron_shop | TEXT | Sub-identifier binnen bron_systeem. Lightspeed: 'floorpassion_nl' / 'floorpassion_de'. |
 | bron_order_id | TEXT | Externe order-ID (Lightspeed orders.id). Samen met bron_systeem uniek (partial index `orders_bron_unique`). |
 | heeft_unmatched_regels | BOOLEAN DEFAULT false | TRUE als ≥1 order_regel een NULL artikelnr heeft. Automatisch gesynchroniseerd door trigger op order_regels (migratie 094). |
+| lever_modus | TEXT | NULL / 'deelleveringen' / 'in_een_keer'. Per-order keuze hoe om te gaan met (deels) wachten op inkoop. Default uit `debiteuren.deelleveringen_toegestaan`, gevuld via `LeverModusDialog` bij opslaan als ≥1 regel tekort heeft. NULL voor orders zonder tekort. Migratie 144. |
+
+---
+
+### order_reserveringen
+Harde koppeling orderregel ↔ voorraad/inkooporder-regel. Bron-van-waarheid voor `producten.gereserveerd` en levertijd-berekening (migratie 144, 2026-04-29).
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| id | BIGSERIAL PK | |
+| order_regel_id | BIGINT FK → order_regels | CASCADE DELETE |
+| bron | TEXT CHECK | 'voorraad' \| 'inkooporder_regel' |
+| inkooporder_regel_id | BIGINT FK → inkooporder_regels | NULL bij bron='voorraad', verplicht bij bron='inkooporder_regel' (CHECK constraint) |
+| aantal | INTEGER CHECK > 0 | Aantal stuks in deze claim |
+| claim_volgorde | TIMESTAMPTZ DEFAULT now() | FIFO-volgorde: wie eerst claimt, wordt eerst beleverd bij IO-ontvangst |
+| status | TEXT CHECK | 'actief' \| 'geleverd' \| 'released' |
+| geleverd_op | TIMESTAMPTZ | Gevuld bij status-overgang naar 'geleverd' |
+| fysiek_artikelnr | TEXT | Sinds migratie 154: wat fysiek wordt afgenomen uit voorraad. NULL → trigger `trg_default_fysiek_artikelnr` vult uit `order_regels.artikelnr`. Bij uitwisselbaar/omstickeren-claim wijst naar het uitwisselbaar artikel. |
+| is_handmatig | BOOLEAN DEFAULT false | Sinds migratie 154: true = gebruiker-gekozen uitwisselbaar-claim. Allocator (`herallocateer_orderregel`) releaset deze claims NIET en telt ze mee als reeds-gedekt. |
+| created_at, updated_at | TIMESTAMPTZ | Auto |
+
+**Unieke partial indexen:**
+- `idx_order_reserveringen_voorraad_uniek` — één actieve voorraad-claim per (orderregel, fysiek_artikelnr)-combi (mig 154 — eerder per orderregel)
+- `idx_order_reserveringen_io_uniek` — één actieve IO-claim per (orderregel, IO-regel)-combi
+
+**Levenscyclus:**
+- Orderregel-mutatie / -DELETE → trigger `trg_orderregel_herallocateer` roept `herallocateer_orderregel(id)` aan
+- IO-status → 'Geannuleerd' → trigger `trg_inkooporder_status_release` releaset claims; getroffen orderregels worden opnieuw gealloceerd
+- `boek_voorraad_ontvangst` consumeert IO-claims in `claim_volgorde`-volgorde en verschuift ze naar voorraad-claims
+- INSERT/UPDATE/DELETE → trigger `trg_reservering_sync_producten` roept `herbereken_product_reservering(artikelnr)` aan
 
 ---
 
@@ -716,11 +745,61 @@ Audit trail: wie heeft wat wanneer gedaan.
 
 ---
 
+### edi_handelspartner_config
+Per debiteur welke EDI-Transus-berichttypen actief zijn (mig 156).
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| debiteur_nr | INTEGER PK FK → debiteuren | CASCADE DELETE |
+| transus_actief | BOOLEAN DEFAULT false | Hoofdschakelaar — false = debiteur wordt door EDI-laag genegeerd |
+| order_in | BOOLEAN DEFAULT false | Ontvangen we orders van deze klant? |
+| orderbev_uit | BOOLEAN DEFAULT false | Sturen we orderbevestigingen? |
+| factuur_uit | BOOLEAN DEFAULT false | Sturen we facturen via EDI? |
+| verzend_uit | BOOLEAN DEFAULT false | Sturen we verzendberichten? |
+| test_modus | BOOLEAN DEFAULT false | Alle uitgaande berichten met IsTestMessage-marker |
+| notities | TEXT | Vrije tekst voor partner-specifieke notes |
+| created_at, updated_at | TIMESTAMPTZ | Auto |
+
+Komt overeen met de toggles per partner in Transus Online → Handelspartners → Processen.
+
+---
+
+### edi_berichten
+Centrale audit-/queue-tabel voor alle EDI-berichten via Transus (in én uit) (mig 157).
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| id | BIGSERIAL PK | |
+| richting | TEXT CHECK | 'in' (M10110-ontvangen) of 'uit' (M10100-versturen) |
+| berichttype | TEXT CHECK | 'order' / 'orderbev' / 'factuur' / 'verzendbericht' |
+| status | edi_bericht_status enum | Wachtrij / Bezig / Verstuurd / Verwerkt / Fout / Geannuleerd |
+| transactie_id | TEXT UNIQUE | Transus' TransactionID (uniek per bericht) — idempotency-key voor inkomend |
+| debiteur_nr | INTEGER FK → debiteuren | NULL als GLN niet matcht |
+| order_id | BIGINT FK → orders | Voor inkomende orders + uitgaande orderbev/verzending |
+| factuur_id | BIGINT FK → facturen | Voor uitgaande factuurberichten |
+| zending_id | BIGINT | FK volgt zodra zendingen-tabel DESADV-velden krijgt |
+| bron_tabel | TEXT | Voor uitgaand: welke tabel triggerde ('orders'/'facturen'/'zendingen') |
+| bron_id | BIGINT | PK van het bron-record. Idempotent met (berichttype, bron_tabel, bron_id) UK |
+| payload_raw | TEXT | Letterlijke fixed-width / EDIFACT / XML |
+| payload_parsed | JSONB | Geparseerde data |
+| is_test | BOOLEAN | Test-marker (uit IsTestMessage of `edi_handelspartner_config.test_modus`) |
+| retry_count | INTEGER | Aantal mislukte verzendpogingen — `markeer_edi_fout` zet door tot max 3 |
+| error_msg | TEXT | Foutbeschrijving |
+| ack_status | INTEGER | 0=ge-ackt OK, 1=ge-ackt fout, 2=pending |
+| ack_details | TEXT | M10300 statusDetails-tekst |
+| created_at, sent_at, acked_at, updated_at | TIMESTAMPTZ | Lifecycle-timestamps |
+
+**Unieke partial indexen:**
+- `uk_edi_berichten_transactie_id` — UNIQUE op `transactie_id` (idempotentie inkomend)
+- `uk_edi_berichten_uitgaand_actief` — UNIQUE op `(berichttype, bron_tabel, bron_id)` waar `richting='uit' AND status NOT IN ('Fout','Geannuleerd')` (voorkomt dubbele triggers)
+
+**RPCs:** `log_edi_inkomend`, `markeer_edi_ack`, `enqueue_edi_uitgaand`, `claim_volgende_uitgaand`, `markeer_edi_verstuurd`, `markeer_edi_fout`.
+
+---
+
 ## Enums
 
 | Enum | Waarden |
 |------|---------|
-| order_status | Nieuw, Actie vereist, Wacht op picken, Wacht op voorraad, In snijplan, In productie, Deels gereed, Klaar voor verzending, Verzonden, Geannuleerd |
+| order_status | Nieuw, Actie vereist, Wacht op picken, Wacht op voorraad, **Wacht op inkoop** (mig 144), In snijplan, In productie, Deels gereed, Klaar voor verzending, Verzonden, Geannuleerd |
 | zending_status | Gepland, Picken, Ingepakt, Klaar voor verzending, Onderweg, Afgeleverd |
 | factuur_status | Concept, Verstuurd, Betaald, Herinnering, Aanmaning, Gecrediteerd |
 | factuurvoorkeur | per_zending, wekelijks |
@@ -728,6 +807,7 @@ Audit trail: wie heeft wat wanneer gedaan.
 | snijplan_status | Gepland, Wacht, Gesneden, In confectie, Ingepakt, In productie, Gereed, Geannuleerd |
 | inkooporder_status | Concept, Besteld, Deels ontvangen, Ontvangen, Geannuleerd |
 | confectie_status | Wacht op materiaal, In productie, Kwaliteitscontrole, Gereed, Geannuleerd |
+| edi_bericht_status | Wachtrij, Bezig, Verstuurd, Verwerkt, Fout, Geannuleerd (mig 157) |
 
 ---
 
@@ -749,6 +829,8 @@ Audit trail: wie heeft wat wanneer gedaan.
 | leveranciers_overzicht | Per leverancier: openstaande orders/meters + eerstvolgende verwachte levering. Basis voor Leveranciers-overzichtspagina. Migratie 127. |
 | inkooporders_overzicht | Per inkooporder: leveranciersnaam + aantal regels + totaal besteld/geleverd/te_leveren. Basis voor Inkooporders-overzichtspagina. Migratie 127. |
 | openstaande_inkooporder_regels | Open regels (`te_leveren_m > 0` én order in Concept/Besteld/Deels ontvangen) met leverancier, product, kwaliteit/kleur. Migratie 127. |
+| order_regel_levertijd | Per orderregel: levertijd-status (`voorraad` / `op_inkoop` / `wacht_op_nieuwe_inkoop` / `maatwerk`), claim-aantallen (`aantal_voorraad`, `aantal_io`, `aantal_tekort`), eerste/laatste IO-datum en berekende `verwachte_leverweek` (ISO `YYYY-Www`) op basis van `lever_modus` + buffer uit `app_config.order_config`. Migratie 150. |
+| inkooporder_regel_claim_zicht | Per IO-regel: `aantal_geclaimd` / `aantal_vrij` / `aantal_orderregels` (alleen voor `eenheid='stuks'`-regels relevant). Migratie 150. |
 | uitwisselbaarheid_map1_diff | Diagnostiek (migratie 138): Map1-paren in `kwaliteit_kleur_uitwisselgroepen` die NIET door `uitwisselbare_paren()` afgedekt worden, met `reden`-kolom (input-kw zonder collectie_id, kwaliteiten in andere collecties, kleur-code-mismatch, target ontbreekt in producten/rollen/maatwerk_m2_prijzen). Moet 0 rijen geven voordat Map1 fysiek gedropt mag worden. |
 
 ---
@@ -763,9 +845,17 @@ Audit trail: wie heeft wat wanneer gedaan.
 | `uitwisselbare_paren(kw TEXT, kleur TEXT)` | **Canonieke uitwisselbaarheids-seam** (migratie 138). Returns TABLE(`target_kwaliteit_code`, `target_kleur_code`, `is_zelf BOOLEAN`). Resolver: zelfde `kwaliteiten.collectie_id` én genormaliseerde kleur-code matcht. Bron: producten ∪ rollen ∪ maatwerk_m2_prijzen. Self-row altijd gegarandeerd. Vervangt de versplinterde uitwissel-implementaties in `_shared/db-helpers.ts`, `snijplanning_tekort_analyse()`, `kleuren_voor_kwaliteit()` en `op-maat.ts`. |
 | `herbereken_klant_tiers()` | Gold (top 10%), Silver (top 30%), Bronze (rest) |
 | `update_order_totalen()` | Trigger: herbereken order bedrag/gewicht/regels |
-| `herbereken_product_reservering(artikelnr TEXT)` | Herbereken gereserveerd + vrije_voorraad voor één product op basis van actieve orders |
-| `update_reservering_bij_orderregel()` | Trigger: bij INSERT/UPDATE/DELETE op order_regels → herbereken reservering |
-| `update_reservering_bij_order_status()` | Trigger: bij statuswijziging order → herbereken reservering alle producten in die order |
+| `herbereken_product_reservering(artikelnr TEXT)` | Sinds migratie 149: `gereserveerd` = SUM van `order_reserveringen.aantal` waar `bron='voorraad'` en `status='actief'`; `vrije_voorraad = voorraad − gereserveerd − backorder`. |
+| `iso_week_plus(p_datum DATE, p_weken INTEGER)` | NULL-safe: returnt ISO-week-string `YYYY-Www` voor `p_datum + p_weken*7`. IMMUTABLE. Migratie 145. |
+| `voorraad_beschikbaar_voor_artikel(p_artikelnr TEXT, p_excl_order_regel_id BIGINT)` | Beschikbare voorraad voor allocatie aan deze orderregel: `voorraad − backorder − ANDERE actieve voorraadclaims`. Migratie 145. |
+| `io_regel_ruimte(p_io_regel_id BIGINT)` | Resterende claim-ruimte op een IO-regel (alleen `eenheid='stuks'`): `FLOOR(te_leveren_m) − SUM(actieve claims)`. Migratie 145. |
+| `herallocateer_orderregel(p_order_regel_id BIGINT)` | **Centrale seam**. Idempotent: release alle actieve claims voor de orderregel + alloceer opnieuw (voorraad-eerst, dan oudste IO via `verwacht_datum ASC`). Sluit maatwerk en regels zonder artikelnr uit. Migratie 145. |
+| `herwaardeer_order_status(p_order_id BIGINT)` | Herwaardeer `orders.status` op basis van claim-staat: `Wacht op inkoop` > `Wacht op voorraad` > `Nieuw`. Eindstatussen / actieve productie/picking blijven ongewijzigd. Migratie 145. |
+| `release_claims_voor_io_regel(p_io_regel_id BIGINT)` | Bij IO-regel annulering: alle orderregels met claim op deze IO worden via `herallocateer_orderregel` opnieuw gealloceerd. Migratie 145. |
+| `bereken_late_claim_afleverdatum(p_order_id BIGINT)` | Returnt afleverdatum voor een order op basis van de laatste actieve IO-claim (`MAX(verwacht_datum) + inkoop_buffer_weken_vast × 7` dagen). NULL als er geen IO-claims zijn. Migratie 153. |
+| `sync_order_afleverdatum_met_claims(p_order_id BIGINT)` | Schuift `orders.afleverdatum` + `week` vooruit naar de laatste IO-claim-leverdatum als die later is. Schuift alleen vooruit, nooit terug. Eindstatussen blijven ongewijzigd. Aangeroepen vanuit `herwaardeer_order_status`. Migratie 153. |
+| `set_uitwisselbaar_claims(p_order_regel_id BIGINT, p_keuzes JSONB)` | Vervangt handmatige uitwisselbaar-claims voor een orderregel met de in `p_keuzes` opgegeven `[{artikelnr, aantal}]`-lijst. Roept daarna `herallocateer_orderregel` aan om voorraad eigen + IO aan te vullen voor het resterende deel. Migratie 154. |
+| `trg_default_fysiek_artikelnr()` | BEFORE-trigger op `order_reserveringen`: vult `fysiek_artikelnr` uit `order_regels.artikelnr` als die NULL is. Migratie 154. |
 | `zoek_equivalente_producten(artikelnr TEXT, min_voorraad INTEGER)` | Zoekt producten met dezelfde collectie + kleur_code die op voorraad zijn (substitutie-suggesties) |
 | `genereer_scancode()` | Genereert een unieke scancode (bijv. SNIJ-XXXX of CONF-XXXX) voor barcode/QR-stickers |
 | `beste_rol_voor_snijplan(kwaliteit TEXT, kleur TEXT, lengte INTEGER, breedte INTEGER)` | Selecteert de optimale rol (minste verspilling) voor een snijplan op basis van kwaliteit, kleur en afmetingen |
@@ -799,7 +889,7 @@ Audit trail: wie heeft wat wanneer gedaan.
 | `trg_sync_besteld_inkoop()` | Trigger op inkooporder_regels INSERT/UPDATE/DELETE die bovenstaande aanroept. Migratie 127. |
 | `besteld_per_kwaliteit_kleur()` | Aggregeert `openstaande_inkooporder_regels` per (kwaliteit_code, kleur_code) → `besteld_m`, `besteld_m2`, `orders_count`, `eerstvolgende_leverweek` + `eerstvolgende_verwacht_datum`, plus het deel (`eerstvolgende_m`/`eerstvolgende_m2`) dat in díe eerstvolgende levering valt. Gebruikt door rollen-overview (tag "besteld m²") en als basis voor alles-op-een-blik voorraad/inkoop-dashboards. M² via `kwaliteiten.standaard_breedte_cm` (regels zonder bekende breedte: m² = 0). Migratie 137. |
 | `boek_ontvangst(p_regel_id BIGINT, p_rollen JSONB, p_medewerker TEXT)` | Atomair: maakt N rollen aan op basis van `[{lengte_cm, breedte_cm, rolnummer?}, ...]`, logt `voorraad_mutaties` (type=`'inkoop'`, referentie_type=`'inkooporder_regel'`), werkt `geleverd_m`/`te_leveren_m` bij (boekt **m²**, niet strekkende meters — fix migratie 133) en zet order-status op 'Deels ontvangen'/'Ontvangen'. Alleen voor eenheid='m'. Rolnummer optioneel — leeg = auto-genereer `R-YYYY-NNNN` via `volgend_nummer('R')` (migratie 135). Returns TABLE(rol_id, rolnummer). Migraties 127/133/135/136. |
-| `boek_voorraad_ontvangst(p_regel_id BIGINT, p_aantal INTEGER, p_medewerker TEXT)` | Voor vaste producten (eenheid='stuks'): verhoogt `producten.voorraad` met p_aantal en werkt regel + order-status bij. Migratie 127. |
+| `boek_voorraad_ontvangst(p_regel_id BIGINT, p_aantal INTEGER, p_medewerker TEXT)` | Voor vaste producten (eenheid='stuks'): verhoogt `producten.voorraad` met p_aantal en werkt regel + order-status bij. Sinds migratie 148: consumeert IO-claims in `claim_volgorde`-volgorde en verschuift ze naar voorraad-claims op dezelfde orderregel; roept `herwaardeer_order_status` aan per geraakte order. |
 
 ### Triggers op order_regels (maatwerk)
 

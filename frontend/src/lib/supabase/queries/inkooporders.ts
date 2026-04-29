@@ -56,6 +56,12 @@ export interface InkooporderRegel {
   te_leveren_m: number
   eenheid: RegelEenheid
   status_excel: number | null
+  /** Sinds migratie 150: aantal stuks van deze IO-regel dat aan klantorders is geclaimd. */
+  aantal_geclaimd?: number
+  /** Sinds migratie 150: aantal stuks dat nog vrij is (FLOOR(te_leveren_m) − aantal_geclaimd). */
+  aantal_vrij?: number
+  /** Sinds migratie 150: aantal distincte orderregels dat op deze IO-regel wacht. */
+  aantal_orderregels?: number
 }
 
 export interface InkooporderFilters {
@@ -240,6 +246,31 @@ export async function fetchInkooporderDetail(
     throw e2
   }
 
+  // Claim-aantallen per regel ophalen uit view (migratie 150)
+  const regelIdsForClaims = (regels ?? []).map((r) => r.id as number)
+  const claimMap = new Map<number, { aantal_geclaimd: number; aantal_vrij: number; aantal_orderregels: number }>()
+  if (regelIdsForClaims.length > 0) {
+    const { data: claimRows, error: eClaims } = await supabase
+      .from('inkooporder_regel_claim_zicht')
+      .select('inkooporder_regel_id, aantal_geclaimd, aantal_vrij, aantal_orderregels')
+      .in('inkooporder_regel_id', regelIdsForClaims)
+    if (eClaims) {
+      console.error('fetchInkooporderDetail: claim-zicht query error', { id, error: eClaims })
+    } else {
+      for (const c of (claimRows ?? []) as Array<{ inkooporder_regel_id: number; aantal_geclaimd: number; aantal_vrij: number; aantal_orderregels: number }>) {
+        claimMap.set(c.inkooporder_regel_id, {
+          aantal_geclaimd: Number(c.aantal_geclaimd ?? 0),
+          aantal_vrij: Number(c.aantal_vrij ?? 0),
+          aantal_orderregels: Number(c.aantal_orderregels ?? 0),
+        })
+      }
+    }
+  }
+  const regelsMetClaims = (regels ?? []).map((r) => ({
+    ...(r as InkooporderRegel),
+    ...(claimMap.get((r as { id: number }).id) ?? { aantal_geclaimd: 0, aantal_vrij: 0, aantal_orderregels: 0 }),
+  })) as InkooporderRegel[]
+
   const artikelnrs = (regels ?? [])
     .map((r) => r.artikelnr)
     .filter((a): a is string => !!a)
@@ -268,7 +299,7 @@ export async function fetchInkooporderDetail(
 
   return {
     order: order as unknown as InkooporderDetail,
-    regels: (regels ?? []) as InkooporderRegel[],
+    regels: regelsMetClaims,
     context,
     rolIdsPerRegel,
   }
