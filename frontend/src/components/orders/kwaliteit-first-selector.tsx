@@ -279,8 +279,11 @@ export function KwaliteitFirstSelector({
     setStandaardBandKleur(null)
     if (!selectedKwaliteit || !selectedKleur) return
     fetchStandaardBandKleur(selectedKwaliteit.code, selectedKleur.kleur_code)
-      .then((r) => setStandaardBandKleur(r?.band_kleur ?? null))
-      .catch(() => {})
+      .then((r) => {
+        console.log('[bandkleur]', selectedKwaliteit.code, selectedKleur.kleur_code, r)
+        setStandaardBandKleur(r ? [r.band_merk ?? 'Piero', r.band_omschrijving, r.band_kleur].filter(Boolean).join(' ') : null)
+      })
+      .catch((e) => console.error('[bandkleur error]', e))
   }, [selectedKwaliteit, selectedKleur])
 
   // Uitwisselbaar-modus: eigen kleur heeft geen rollen maar een uitwisselbare

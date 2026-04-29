@@ -10,6 +10,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { packAcrossRolls } from '../_shared/guillotine-packing.ts'
 import { computeReststukken } from '../_shared/compute-reststukken.ts'
+import { calcRollStats } from '../_shared/ffdh-packing.ts'
 import { validateShelfMesLimiet } from '../_shared/shelf-mes-validator.ts'
 import {
   fetchStukken,
@@ -106,6 +107,64 @@ serve(async (req) => {
     // ---- Step 3: best-of-both packing across rolls ----
     const { rollResults, nietGeplaatst, samenvatting } = packAcrossRolls(pieces, rollen, pieceVormMap)
 
+    // ---- Step 3b: Vul-op fase — voeg stukken buiten horizon toe op bestaande rollen ----
+    // Als tot_datum gezet is en er al rollen gepakt zijn, probeer stukken met
+    // een latere leverdatum op die rollen te passen zodat de rol zoveel mogelijk
+    // opgesneden wordt. Er worden GEEN nieuwe rollen geopend in deze fase.
+    let buiten_scope_ids: number[] = []
+
+    if (tot_datum && rollResults.length > 0) {
+      const fillUpPieces = await fetchStukken(supabase, {
+        kwaliteitCode: kwaliteit_code,
+        kleurCode: kleur_code,
+        statuses: ['Wacht'],
+        vanDatum: tot_datum,
+      })
+
+      if (fillUpPieces.length > 0) {
+        const primaryIds = new Set(pieces.map((p) => p.id))
+        const extraPieces = fillUpPieces.filter((p) => !primaryIds.has(p.id))
+
+        if (extraPieces.length > 0) {
+          const extraVormMap = new Map<number, string | null>(
+            extraPieces.map((p) => [p.id, p.maatwerk_vorm ?? null]),
+          )
+          // bezetteMap voor fase 2: fase-1 plaatsingen per rol
+          const fillBezetteMap = new Map<number, typeof rollResults[0]['plaatsingen']>(
+            rollResults.map((r) => [r.rol_id, r.plaatsingen]),
+          )
+          // Alleen rollen die al in fase 1 gebruikt zijn (geen nieuwe rollen openen)
+          const usedRolIds = new Set(rollResults.map((r) => r.rol_id))
+          const fillRollen = rollen.filter((r) => usedRolIds.has(r.id))
+
+          const fillResult = packAcrossRolls(extraPieces, fillRollen, extraVormMap, {
+            bezetteMap: fillBezetteMap,
+          })
+
+          buiten_scope_ids = fillResult.rollResults.flatMap((r) =>
+            r.plaatsingen.map((p) => p.snijplan_id),
+          )
+
+          if (buiten_scope_ids.length > 0) {
+            // Merge fill-up plaatsingen in bestaande rollResults + herbereken stats
+            const combinedVormMap = new Map([...pieceVormMap, ...extraVormMap])
+            for (const fr of fillResult.rollResults) {
+              const existing = rollResults.find((r) => r.rol_id === fr.rol_id)
+              if (!existing) continue
+              const allPlaats = [...existing.plaatsingen, ...fr.plaatsingen]
+              existing.plaatsingen = allPlaats
+              const stats = calcRollStats(allPlaats, existing.rol_breedte_cm, existing.rol_lengte_cm, combinedVormMap)
+              existing.gebruikte_lengte_cm = stats.gebruikte_lengte_cm
+              existing.afval_percentage = stats.afval_percentage
+              existing.restlengte_cm = stats.restlengte_cm
+            }
+            samenvatting.totaal_stukken += buiten_scope_ids.length
+            samenvatting.geplaatst += buiten_scope_ids.length
+          }
+        }
+      }
+    }
+
     // ---- Step 4: Save to database ----
     const plaatsingen = rollResults.flatMap((r) =>
       r.plaatsingen.map((p) => ({
@@ -159,6 +218,7 @@ serve(async (req) => {
       voorstel_nr,
       rollen: rollenMetReststukken,
       niet_geplaatst: nietGeplaatst,
+      buiten_scope_ids,
       samenvatting: {
         ...samenvatting,
         shelf_waarschuwingen: shelfWaarschuwingen,

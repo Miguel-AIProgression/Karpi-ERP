@@ -63,6 +63,9 @@ export interface FreeRect {
 export const RESTSTUK_MIN_SHORT = 50
 export const RESTSTUK_MIN_LONG = 100
 
+/** Extra snijmarge voor ronde stukken: diameter + 5 cm in beide richtingen. */
+export const ROND_SNIJ_MARGE = 5
+
 /**
  * Minimale rol-rest om een rol nog als "aangebroken" terug te zetten. Blijft
  * er minder dan dit over na snijden, dan is de rol-rest feitelijk verspild

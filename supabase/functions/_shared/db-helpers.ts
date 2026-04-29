@@ -14,13 +14,15 @@ export interface FetchStukkenOptions {
   kleurCode: string
   statuses?: string[]  // default: ['Gepland']
   totDatum?: string | null
+  /** Alleen stukken met afleverdatum STRIKT NA vanDatum (null-datums uitgesloten). */
+  vanDatum?: string | null
 }
 
 export async function fetchStukken(
   supabase: SupabaseClient,
   options: FetchStukkenOptions,
 ): Promise<SnijplanPiece[]> {
-  const { kwaliteitCode, kleurCode, totDatum } = options
+  const { kwaliteitCode, kleurCode, totDatum, vanDatum } = options
   const statuses = options.statuses ?? ['Gepland']
 
   const kleurVariants = getKleurVariants(kleurCode)
@@ -37,6 +39,10 @@ export async function fetchStukken(
 
   if (totDatum) {
     query = query.or(`afleverdatum.lte.${totDatum},afleverdatum.is.null`)
+  }
+  if (vanDatum) {
+    // Fill-up fase: alleen stukken met datum NA de horizon (null = geen datum → al in primaire fase)
+    query = query.gt('afleverdatum', vanDatum)
   }
 
   const { data, error } = await query
