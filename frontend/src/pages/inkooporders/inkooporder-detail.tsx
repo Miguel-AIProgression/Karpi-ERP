@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { ArrowLeft, PackageCheck, Ban } from 'lucide-react'
+import { ArrowLeft, PackageCheck, Ban, Printer } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import {
   useInkooporderDetail,
@@ -9,6 +9,7 @@ import {
 import { InkooporderStatusBadge } from '@/components/inkooporders/inkooporder-status-badge'
 import { OntvangstBoekenDialog } from '@/components/inkooporders/ontvangst-boeken-dialog'
 import { VoorraadOntvangstDialog } from '@/components/inkooporders/voorraad-ontvangst-dialog'
+import { IORegelClaimsPopover } from '@/components/inkooporders/io-regel-claims-popover'
 import type { InkooporderRegel } from '@/lib/supabase/queries/inkooporders'
 
 function formatAantal(value: number): string {
@@ -54,7 +55,7 @@ export function InkooporderDetailPage() {
     return <div className="p-12 text-center text-slate-400">Inkooporder {orderId} niet gevonden</div>
   }
 
-  const { order, regels, context } = data
+  const { order, regels, context, rolIdsPerRegel } = data
   const totaalM2 = regels.filter((r) => r.eenheid === 'm').reduce((s, r) => s + Number(r.te_leveren_m ?? 0), 0)
   const totaalStuks = regels.filter((r) => r.eenheid === 'stuks').reduce((s, r) => s + Number(r.te_leveren_m ?? 0), 0)
   const totaalLabel = [
@@ -143,6 +144,7 @@ export function InkooporderDetailPage() {
                 <th className="text-right pb-2 font-medium">Besteld</th>
                 <th className="text-right pb-2 font-medium">Geleverd</th>
                 <th className="text-right pb-2 font-medium">Te leveren</th>
+                <th className="text-right pb-2 font-medium">Geclaimd</th>
                 <th className="pb-2"></th>
               </tr>
             </thead>
@@ -181,8 +183,21 @@ export function InkooporderDetailPage() {
                         <span className="text-slate-400">0</span>
                       )}
                     </td>
+                    <td className="py-2 text-right tabular-nums">
+                      {r.eenheid === 'stuks' && (r.aantal_geclaimd ?? 0) > 0 ? (
+                        <IORegelClaimsPopover ioRegelId={r.id}>
+                          <span className="text-xs text-slate-700 font-medium underline decoration-dotted underline-offset-2 cursor-pointer">
+                            {r.aantal_geclaimd}/{Math.floor(r.te_leveren_m)}
+                          </span>
+                        </IORegelClaimsPopover>
+                      ) : r.eenheid === 'stuks' ? (
+                        <span className="text-xs text-slate-400">—</span>
+                      ) : (
+                        <span className="text-xs text-slate-300">n.v.t.</span>
+                      )}
+                    </td>
                     <td className="py-2 text-right">
-                      {r.te_leveren_m > 0 && (
+                      {r.te_leveren_m > 0 ? (
                         <button
                           onClick={() => setOntvangstRegel(r)}
                           className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-[var(--radius-sm)]"
@@ -190,6 +205,26 @@ export function InkooporderDetailPage() {
                           <PackageCheck size={13} />
                           Ontvangst
                         </button>
+                      ) : (
+                        (() => {
+                          const ids = rolIdsPerRegel.get(r.id) ?? []
+                          if (ids.length === 0) return null
+                          return (
+                            <button
+                              onClick={() =>
+                                window.open(
+                                  `/rollen/stickers?ids=${ids.join(',')}`,
+                                  '_blank',
+                                  'noopener,noreferrer',
+                                )
+                              }
+                              className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-[var(--radius-sm)]"
+                            >
+                              <Printer size={13} />
+                              Stickers
+                            </button>
+                          )
+                        })()
                       )}
                     </td>
                   </tr>

@@ -357,6 +357,111 @@ export async function fetchReserveringenVoorProduct(artikelnr: string): Promise<
   }))
 }
 
+export interface ProductClaimRij {
+  claim_id: number
+  bron: 'voorraad' | 'inkooporder_regel'
+  aantal: number
+  inkooporder_nr: string | null
+  verwacht_datum: string | null
+  order_id: number
+  order_nr: string
+  order_status: string
+  orderdatum: string | null
+  klant_naam: string | null
+}
+
+/**
+ * Fetch alle actieve order_reserveringen-rijen voor een product.
+ * Per claim één rij, met `bron` (voorraad / inkooporder_regel) en (als IO-claim)
+ * leverancier-leverweek info. Bron-van-waarheid: tabel order_reserveringen
+ * (sinds migratie 144). Niet te verwarren met de aggregaat-variant
+ * `fetchReserveringenVoorProduct` die per orderregel telt.
+ *
+ * Twee-stap omdat PostgREST `.eq()` op nested join-kolommen niet betrouwbaar filtert.
+ */
+export async function fetchClaimsVoorProduct(artikelnr: string): Promise<ProductClaimRij[]> {
+  // Stap 1: orderregels van dit artikel (incl. fysiek_artikelnr voor omstickeren)
+  const { data: regels, error: regelsErr } = await supabase
+    .from('order_regels')
+    .select('id, order_id')
+    .or(`artikelnr.eq.${artikelnr},fysiek_artikelnr.eq.${artikelnr}`)
+  if (regelsErr) throw regelsErr
+  const regelIds = (regels ?? []).map((r: { id: number }) => r.id)
+  if (regelIds.length === 0) return []
+
+  // Stap 2: actieve claims op die regels
+  const { data: claims, error: claimsErr } = await supabase
+    .from('order_reserveringen')
+    .select(`
+      id, bron, aantal, order_regel_id,
+      inkooporder_regels:inkooporder_regel_id (
+        inkooporders:inkooporder_id ( inkooporder_nr, verwacht_datum )
+      )
+    `)
+    .eq('status', 'actief')
+    .in('order_regel_id', regelIds)
+  if (claimsErr) throw claimsErr
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const claimRows = (claims ?? []) as any[]
+  if (claimRows.length === 0) return []
+
+  // Stap 3: order-info voor de betrokken orders (uniek)
+  const orderIds = [...new Set(claimRows.map(c => {
+    const reg = (regels ?? []).find((r: { id: number }) => r.id === c.order_regel_id)
+    return (reg as { order_id: number } | undefined)?.order_id
+  }).filter((n): n is number => n != null))]
+
+  const { data: orders } = await supabase
+    .from('orders')
+    .select('id, order_nr, status, orderdatum, debiteur_nr')
+    .in('id', orderIds)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const orderMap = new Map<number, any>(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ((orders ?? []) as any[]).map(o => [o.id, o]),
+  )
+  const regelToOrder = new Map<number, number>(
+    (regels ?? []).map((r: { id: number; order_id: number }) => [r.id, r.order_id]),
+  )
+
+  // Stap 4: klant-namen
+  const debiteurNrs = [...new Set(
+    Array.from(orderMap.values()).map(o => o.debiteur_nr).filter((n: number | null) => n != null),
+  )] as number[]
+  const naamMap = new Map<number, string>()
+  if (debiteurNrs.length > 0) {
+    const { data: debs } = await supabase
+      .from('debiteuren')
+      .select('debiteur_nr, naam')
+      .in('debiteur_nr', debiteurNrs)
+    for (const d of (debs ?? []) as { debiteur_nr: number; naam: string }[]) {
+      naamMap.set(d.debiteur_nr, d.naam)
+    }
+  }
+
+  return claimRows
+    .map(c => {
+      const orderId = regelToOrder.get(c.order_regel_id)
+      const ord = orderId != null ? orderMap.get(orderId) : null
+      if (!ord || ['Verzonden', 'Geannuleerd'].includes(ord.status)) return null
+      const io = c.inkooporder_regels?.inkooporders
+      return {
+        claim_id: c.id as number,
+        bron: c.bron as 'voorraad' | 'inkooporder_regel',
+        aantal: c.aantal as number,
+        inkooporder_nr: io?.inkooporder_nr ?? null,
+        verwacht_datum: io?.verwacht_datum ?? null,
+        order_id: ord.id as number,
+        order_nr: ord.order_nr as string,
+        order_status: ord.status as string,
+        orderdatum: ord.orderdatum as string | null,
+        klant_naam: ord.debiteur_nr != null ? naamMap.get(ord.debiteur_nr) ?? null : null,
+      }
+    })
+    .filter((r): r is ProductClaimRij => r !== null)
+}
+
 /** Fetch rollen for a product */
 export async function fetchRollenVoorProduct(artikelnr: string): Promise<RolRow[]> {
   const { data, error } = await supabase

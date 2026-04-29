@@ -73,101 +73,83 @@ export async function fetchStukken(
 }
 
 // ---------------------------------------------------------------------------
-// Fetch available rolls (with interchangeable kwaliteiten + kleur variants)
+// Uitwisselbare (kwaliteit, kleur)-paren via canonieke RPC
 // ---------------------------------------------------------------------------
 
-export async function fetchUitwisselbareCodes(
-  supabase: SupabaseClient,
-  kwaliteitCode: string,
-): Promise<string[]> {
-  const { data: kwaliteit } = await supabase
-    .from('kwaliteiten')
-    .select('code, collectie_id')
-    .eq('code', kwaliteitCode)
-    .maybeSingle()
-
-  let codes = [kwaliteitCode]
-  if (kwaliteit?.collectie_id) {
-    const { data: verwant } = await supabase
-      .from('kwaliteiten')
-      .select('code')
-      .eq('collectie_id', kwaliteit.collectie_id)
-    if (verwant) {
-      codes = verwant.map((k: { code: string }) => k.code)
-    }
-  }
-  return codes
-}
-
-// Fijnmazige uitwisselbaarheid (Map1.xlsx → kwaliteit_kleur_uitwisselgroepen).
-// Geeft de set van (kwaliteit_code, kleur_code)-paren die onderling uitwisselbaar
-// zijn voor snijplanning. Valt leeg terug als het input-paar niet in de tabel
-// staat — de aanroeper gebruikt dan het collectie-pad.
+// Een uitwissel-paar zoals teruggegeven door `uitwisselbare_paren()` (migratie
+// 138/140). `kleur_code` is altijd genormaliseerd (".0"-suffix gestript). Voor
+// joining op `rollen.kleur_code` (die nog "12" of "12.0" kan zijn) moet de
+// caller alle varianten meenemen — `expandKleurVarianten()` doet dat.
 export interface KwaliteitKleurPair {
   kwaliteit_code: string
-  kleur_code: string
+  kleur_code: string  // ALTIJD genormaliseerd
+  is_zelf?: boolean
 }
 
-export async function fetchUitwisselbarePairs(
+/**
+ * Haal alle uitwisselbare (kwaliteit, kleur)-paren voor de input op via de
+ * canonieke RPC. Vervangt de oude fallback-cascade (Map1 → collectie → self).
+ *
+ * Resolver in SQL: zelfde `kwaliteiten.collectie_id` + genormaliseerde
+ * kleur-code. Self-row gegarandeerd aanwezig.
+ */
+export async function fetchUitwisselbareParen(
   supabase: SupabaseClient,
   kwaliteitCode: string,
   kleurCode: string,
 ): Promise<KwaliteitKleurPair[]> {
-  const kleurVariants = getKleurVariants(kleurCode)
-  const { data, error } = await supabase
-    .from('kwaliteit_kleur_uitwisselbaar')
-    .select('uitwissel_kwaliteit_code, uitwissel_kleur_code')
-    .eq('input_kwaliteit_code', kwaliteitCode)
-    .in('input_kleur_code', kleurVariants)
-
+  const { data, error } = await supabase.rpc('uitwisselbare_paren', {
+    p_kwaliteit_code: kwaliteitCode,
+    p_kleur_code: kleurCode,
+  })
   if (error) throw error
-  if (!data || data.length === 0) return []
 
-  const seen = new Set<string>()
-  const pairs: KwaliteitKleurPair[] = []
-  for (const row of data as Array<Record<string, string>>) {
-    const kw = row.uitwissel_kwaliteit_code
-    const kl = row.uitwissel_kleur_code
-    const k = `${kw}|${kl}`
-    if (seen.has(k)) continue
-    seen.add(k)
-    pairs.push({ kwaliteit_code: kw, kleur_code: kl })
-  }
-  return pairs
+  return (data ?? []).map((row: Record<string, unknown>) => ({
+    kwaliteit_code: row.target_kwaliteit_code as string,
+    kleur_code: row.target_kleur_code as string,
+    is_zelf: row.is_zelf as boolean,
+  }))
 }
 
-export function getKleurVariants(kleurCode: string): string[] {
-  const variants = [kleurCode]
-  if (!kleurCode.includes('.')) variants.push(`${kleurCode}.0`)
-  if (kleurCode.endsWith('.0')) variants.push(kleurCode.replace('.0', ''))
-  return variants
+/**
+ * Helper: een genormaliseerd paar uitbreiden naar alle kleur-varianten die in
+ * `rollen.kleur_code` of `producten.kleur_code` kunnen voorkomen ("12" en
+ * "12.0"). Nodig zolang die kolom niet zelf genormaliseerd is.
+ */
+function expandKleurVarianten(paren: KwaliteitKleurPair[]): KwaliteitKleurPair[] {
+  const out: KwaliteitKleurPair[] = []
+  const seen = new Set<string>()
+  for (const p of paren) {
+    const variants = p.kleur_code.includes('.') ? [p.kleur_code] : [p.kleur_code, `${p.kleur_code}.0`]
+    for (const kl of variants) {
+      const key = `${p.kwaliteit_code}|${kl}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push({ kwaliteit_code: p.kwaliteit_code, kleur_code: kl })
+    }
+  }
+  return out
 }
 
 export async function fetchBeschikbareRollen(
   supabase: SupabaseClient,
-  uitwisselbareCodes: string[],
-  kleurVariants: string[],
+  paren: KwaliteitKleurPair[],
   kwaliteitCode: string,
-  uitwisselbarePairs?: KwaliteitKleurPair[],
 ): Promise<Roll[]> {
+  if (paren.length === 0) return []
+
   // Inclusief rollen met status in_snijplan die nog niet in productie zijn,
   // zodat nieuwe stukken in hun bestaande shelf-gaps kunnen landen.
-  let query = supabase
+  const expanded = expandKleurVarianten(paren)
+  const orClause = expanded
+    .map((p) => `and(kwaliteit_code.eq.${p.kwaliteit_code},kleur_code.eq.${p.kleur_code})`)
+    .join(',')
+
+  const { data: rollen, error } = await supabase
     .from('rollen')
     .select('id, rolnummer, lengte_cm, breedte_cm, status, oppervlak_m2, kwaliteit_code, snijden_gestart_op')
     .in('status', ['beschikbaar', 'reststuk', 'in_snijplan'])
-
-  if (uitwisselbarePairs && uitwisselbarePairs.length > 0) {
-    // Fijnmazig: OR over expliciete (kwaliteit,kleur)-paren
-    const orClause = uitwisselbarePairs
-      .map((p) => `and(kwaliteit_code.eq.${p.kwaliteit_code},kleur_code.eq.${p.kleur_code})`)
-      .join(',')
-    query = query.or(orClause)
-  } else {
-    query = query.in('kwaliteit_code', uitwisselbareCodes).in('kleur_code', kleurVariants)
-  }
-
-  const { data: rollen, error } = await query
+    .or(orClause)
 
   if (error) throw error
 
@@ -214,26 +196,21 @@ export async function fetchBeschikbareRollen(
  */
 export async function fetchBezettePlaatsingen(
   supabase: SupabaseClient,
-  uitwisselbareCodes: string[],
-  kleurVariants: string[],
-  uitwisselbarePairs?: KwaliteitKleurPair[],
+  paren: KwaliteitKleurPair[],
 ): Promise<Map<number, Placement[]>> {
-  let rolQuery = supabase
+  if (paren.length === 0) return new Map()
+
+  const expanded = expandKleurVarianten(paren)
+  const orClause = expanded
+    .map((p) => `and(kwaliteit_code.eq.${p.kwaliteit_code},kleur_code.eq.${p.kleur_code})`)
+    .join(',')
+
+  const { data: rolRows, error: rolError } = await supabase
     .from('rollen')
     .select('id')
     .eq('status', 'in_snijplan')
     .is('snijden_gestart_op', null)
-
-  if (uitwisselbarePairs && uitwisselbarePairs.length > 0) {
-    const orClause = uitwisselbarePairs
-      .map((p) => `and(kwaliteit_code.eq.${p.kwaliteit_code},kleur_code.eq.${p.kleur_code})`)
-      .join(',')
-    rolQuery = rolQuery.or(orClause)
-  } else {
-    rolQuery = rolQuery.in('kwaliteit_code', uitwisselbareCodes).in('kleur_code', kleurVariants)
-  }
-
-  const { data: rolRows, error: rolError } = await rolQuery
+    .or(orClause)
   if (rolError) throw rolError
 
   const rolIds = (rolRows ?? []).map((r: { id: number }) => r.id)

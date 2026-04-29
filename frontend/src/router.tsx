@@ -37,6 +37,8 @@ import { InkooporderDetailPage } from '@/pages/inkooporders/inkooporder-detail'
 import { RolStickersPrintPage } from '@/pages/inkooporders/rol-stickers-print'
 import { LeveranciersOverviewPage } from '@/pages/leveranciers/leveranciers-overview'
 import { LeverancierDetailPage } from '@/pages/leveranciers/leverancier-detail'
+import { EdiBerichtenOverzichtPage } from '@/pages/edi/berichten-overzicht'
+import { EdiBerichtDetailPage } from '@/pages/edi/bericht-detail'
 
 export const router = createBrowserRouter([
   {
@@ -89,6 +91,11 @@ export const router = createBrowserRouter([
       { path: 'inkoop/:id', element: <InkooporderDetailPage /> },
       { path: 'leveranciers', element: <LeveranciersOverviewPage /> },
       { path: 'leveranciers/:id', element: <LeverancierDetailPage /> },
+
+      // EDI / Transus
+      { path: 'edi/berichten', element: <EdiBerichtenOverzichtPage /> },
+      { path: 'edi/berichten/:id', element: <EdiBerichtDetailPage /> },
+
       { path: 'instellingen', element: <ProductieInstellingenPage /> },
       { path: 'instellingen/productie', element: <ProductieInstellingenPage /> },
       { path: 'instellingen/bedrijfsgegevens', element: <BedrijfsgegevensPage /> },

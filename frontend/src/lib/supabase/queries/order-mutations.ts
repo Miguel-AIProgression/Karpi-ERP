@@ -19,6 +19,8 @@ export interface OrderFormData {
   afl_postcode?: string
   afl_plaats?: string
   afl_land?: string
+  /** Per-order keuze bij tekort. Default uit debiteuren.deelleveringen_toegestaan. NULL voor orders zonder tekort. */
+  lever_modus?: 'deelleveringen' | 'in_een_keer' | null
 }
 
 export interface OrderRegelFormData {
@@ -62,6 +64,25 @@ export interface OrderRegelFormData {
   // Display-only: voorraad in m² (niet opgeslagen in DB)
   maatwerk_beschikbaar_m2?: number
   maatwerk_equiv_m2?: number
+  /**
+   * Handmatige uitwisselbaar-allocaties: gebruiker kiest hoeveel stuks van
+   * welk uitwisselbaar product (omstickeren) deze regel mag dekken. Niet
+   * onderdeel van create_order_with_lines RPC — wordt na regel-INSERT via
+   * set_uitwisselbaar_claims-RPC gepersisteerd. Migratie 154.
+   */
+  uitwisselbaar_keuzes?: { artikelnr: string; aantal: number; omschrijving?: string }[]
+}
+
+/** Roept RPC `set_uitwisselbaar_claims` aan om handmatige uitwisselbaar-allocaties op een orderregel te zetten. Migratie 154. */
+export async function setUitwisselbaarClaims(
+  orderRegelId: number,
+  keuzes: { artikelnr: string; aantal: number }[],
+) {
+  const { error } = await supabase.rpc('set_uitwisselbaar_claims', {
+    p_order_regel_id: orderRegelId,
+    p_keuzes: keuzes,
+  })
+  if (error) throw error
 }
 
 /** Create order + lines atomically via RPC */
@@ -89,6 +110,7 @@ export async function createOrder(
     afl_postcode: order.afl_postcode || null,
     afl_plaats: order.afl_plaats || null,
     afl_land: order.afl_land || null,
+    lever_modus: order.lever_modus ?? null,
   }
 
   const p_regels = regels.map((r, i) => ({

@@ -1,6 +1,6 @@
 import { supabase } from '../client'
 import { sanitizeSearch } from '@/lib/utils/sanitize'
-import type { RolRow, RolGroep, RolType, UitwisselbarePartner } from '@/lib/types/productie'
+import type { RolRow, RolGroep, RolType, UitwisselbarePartner, BesteldInkoopInfo } from '@/lib/types/productie'
 
 export interface RollenStats {
   totaal: number
@@ -113,6 +113,18 @@ interface PartnerRow {
   partner_m2: number
 }
 
+interface BesteldRow {
+  kwaliteit_code: string
+  kleur_code: string
+  besteld_m: number | string
+  besteld_m2: number | string
+  orders_count: number | string
+  eerstvolgende_leverweek: string | null
+  eerstvolgende_verwacht_datum: string | null
+  eerstvolgende_m: number | string
+  eerstvolgende_m2: number | string
+}
+
 /** Fetch rollen grouped by kwaliteit_code + kleur_code, met equiv-info
  *  op groepen zonder eigen voorraad (via rollen_uitwissel_voorraad RPC). */
 export async function fetchRollenGegroepeerd(
@@ -177,6 +189,7 @@ export async function fetchRollenGegroepeerd(
         equiv_rollen: 0,
         equiv_m2: 0,
         uitwisselbare_partners: [],
+        inkoop: null,
       }
       groupMap.set(key, group)
     }
@@ -238,6 +251,71 @@ export async function fetchRollenGegroepeerd(
   for (const g of groupMap.values()) {
     const key = `${g.kwaliteit_code}|${normKleur(g.kleur_code ?? '')}`
     g.uitwisselbare_partners = partnersMap.get(key) ?? []
+  }
+
+  // Inkoop-info per (kwaliteit, kleur) ophalen en mergen.
+  // Cast: besteld_per_kwaliteit_kleur staat nog niet in de generated types
+  // (migratie 137 is nog niet op de live DB toegepast).
+  const { data: inkoopData, error: inkoopError } = await (supabase.rpc as any)(
+    'besteld_per_kwaliteit_kleur',
+  )
+  if (inkoopError) {
+    // RPC bestaat nog niet op live DB — stilzwijgend negeren en doorgaan zonder inkoop-info.
+    console.warn('besteld_per_kwaliteit_kleur RPC niet beschikbaar:', inkoopError.message)
+  } else {
+    const inkoopMap = new Map<string, BesteldInkoopInfo>()
+    for (const row of (inkoopData ?? []) as BesteldRow[]) {
+      const key = `${row.kwaliteit_code}|${normKleur(row.kleur_code)}`
+      inkoopMap.set(key, {
+        besteld_m: Number(row.besteld_m) || 0,
+        besteld_m2: Number(row.besteld_m2) || 0,
+        orders_count: Number(row.orders_count) || 0,
+        eerstvolgende_leverweek: row.eerstvolgende_leverweek,
+        eerstvolgende_verwacht_datum: row.eerstvolgende_verwacht_datum,
+        eerstvolgende_m: Number(row.eerstvolgende_m) || 0,
+        eerstvolgende_m2: Number(row.eerstvolgende_m2) || 0,
+      })
+    }
+
+    // Merge inkoop-info op bestaande groepen
+    for (const g of groupMap.values()) {
+      const key = `${g.kwaliteit_code}|${normKleur(g.kleur_code ?? '')}`
+      const info = inkoopMap.get(key)
+      if (info && info.besteld_m > 0) {
+        g.inkoop = info
+      }
+    }
+
+    // Groepen aanmaken voor combinaties met inkoop maar zonder eigen voorraad,
+    // zodat je "LAMI 15 — alleen besteld" toch in de overview ziet.
+    // Respecteer wel de actieve kwaliteit/kleur/search filters.
+    for (const [key, info] of inkoopMap.entries()) {
+      if (groupMap.has(key) || info.besteld_m <= 0) continue
+      const [kw, kleur] = key.split('|')
+      if (kwaliteitFilter && kw !== kwaliteitFilter) continue
+      if (kleurFilter && kleur !== normKleur(kleurFilter)) continue
+      if (search && !kwaliteitFilter) {
+        const s = sanitizeSearch(search).toLowerCase()
+        if (s && !kw.toLowerCase().includes(s) && !kleur.toLowerCase().includes(s)) continue
+      }
+      groupMap.set(key, {
+        kwaliteit_code: kw,
+        kleur_code: kleur,
+        product_naam: `${kw} ${kleur}`,
+        rollen: [],
+        totaal_rollen: 0,
+        totaal_m2: 0,
+        volle_rollen: 0,
+        aangebroken: 0,
+        reststukken: 0,
+        equiv_kwaliteit_code: null,
+        equiv_kleur_code: null,
+        equiv_rollen: 0,
+        equiv_m2: 0,
+        uitwisselbare_partners: partnersMap.get(key) ?? [],
+        inkoop: info,
+      })
+    }
   }
 
   return Array.from(groupMap.values())

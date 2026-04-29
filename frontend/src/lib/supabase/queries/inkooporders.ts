@@ -56,6 +56,12 @@ export interface InkooporderRegel {
   te_leveren_m: number
   eenheid: RegelEenheid
   status_excel: number | null
+  /** Sinds migratie 150: aantal stuks van deze IO-regel dat aan klantorders is geclaimd. */
+  aantal_geclaimd?: number
+  /** Sinds migratie 150: aantal stuks dat nog vrij is (FLOOR(te_leveren_m) − aantal_geclaimd). */
+  aantal_vrij?: number
+  /** Sinds migratie 150: aantal distincte orderregels dat op deze IO-regel wacht. */
+  aantal_orderregels?: number
 }
 
 export interface InkooporderFilters {
@@ -213,7 +219,12 @@ export async function fetchInkooporderRegelContext(
 
 export async function fetchInkooporderDetail(
   id: number,
-): Promise<{ order: InkooporderDetail; regels: InkooporderRegel[]; context: Map<string, RegelContext> } | null> {
+): Promise<{
+  order: InkooporderDetail
+  regels: InkooporderRegel[]
+  context: Map<string, RegelContext>
+  rolIdsPerRegel: Map<number, number[]>
+} | null> {
   const { data: order, error: e1 } = await supabase
     .from('inkooporders')
     .select('*, leverancier:leveranciers!inkooporders_leverancier_id_fkey(id, naam, woonplaats)')
@@ -235,15 +246,62 @@ export async function fetchInkooporderDetail(
     throw e2
   }
 
+  // Claim-aantallen per regel ophalen uit view (migratie 150)
+  const regelIdsForClaims = (regels ?? []).map((r) => r.id as number)
+  const claimMap = new Map<number, { aantal_geclaimd: number; aantal_vrij: number; aantal_orderregels: number }>()
+  if (regelIdsForClaims.length > 0) {
+    const { data: claimRows, error: eClaims } = await supabase
+      .from('inkooporder_regel_claim_zicht')
+      .select('inkooporder_regel_id, aantal_geclaimd, aantal_vrij, aantal_orderregels')
+      .in('inkooporder_regel_id', regelIdsForClaims)
+    if (eClaims) {
+      console.error('fetchInkooporderDetail: claim-zicht query error', { id, error: eClaims })
+    } else {
+      for (const c of (claimRows ?? []) as Array<{ inkooporder_regel_id: number; aantal_geclaimd: number; aantal_vrij: number; aantal_orderregels: number }>) {
+        claimMap.set(c.inkooporder_regel_id, {
+          aantal_geclaimd: Number(c.aantal_geclaimd ?? 0),
+          aantal_vrij: Number(c.aantal_vrij ?? 0),
+          aantal_orderregels: Number(c.aantal_orderregels ?? 0),
+        })
+      }
+    }
+  }
+  const regelsMetClaims = (regels ?? []).map((r) => ({
+    ...(r as InkooporderRegel),
+    ...(claimMap.get((r as { id: number }).id) ?? { aantal_geclaimd: 0, aantal_vrij: 0, aantal_orderregels: 0 }),
+  })) as InkooporderRegel[]
+
   const artikelnrs = (regels ?? [])
     .map((r) => r.artikelnr)
     .filter((a): a is string => !!a)
   const context = await fetchInkooporderRegelContext(artikelnrs)
 
+  const regelIds = (regels ?? []).map((r) => r.id)
+  const rolIdsPerRegel = new Map<number, number[]>()
+  if (regelIds.length > 0) {
+    const { data: rollen, error: e3 } = await supabase
+      .from('rollen')
+      .select('id, inkooporder_regel_id')
+      .in('inkooporder_regel_id', regelIds)
+      .order('id', { ascending: true })
+    if (e3) {
+      console.error('fetchInkooporderDetail: rollen query error', { id, error: e3 })
+      throw e3
+    }
+    for (const r of rollen ?? []) {
+      const regelId = (r as { inkooporder_regel_id: number | null }).inkooporder_regel_id
+      if (regelId == null) continue
+      const list = rolIdsPerRegel.get(regelId) ?? []
+      list.push((r as { id: number }).id)
+      rolIdsPerRegel.set(regelId, list)
+    }
+  }
+
   return {
     order: order as unknown as InkooporderDetail,
-    regels: (regels ?? []) as InkooporderRegel[],
+    regels: regelsMetClaims,
     context,
+    rolIdsPerRegel,
   }
 }
 
@@ -420,6 +478,57 @@ export async function fetchRollenVoorStickers(
       inkooporder_nr: row.inkooporder_regel?.inkooporder?.inkooporder_nr ?? null,
     }
   })
+}
+
+export interface OpenstaandeInkoopRegel {
+  regel_id: number
+  inkooporder_id: number
+  inkooporder_nr: string
+  order_status: InkooporderStatus
+  besteldatum: string | null
+  leverweek: string | null
+  verwacht_datum: string | null
+  leverancier_id: number | null
+  leverancier_naam: string | null
+  regelnummer: number
+  artikelnr: string | null
+  besteld_m: number
+  geleverd_m: number
+  te_leveren_m: number
+}
+
+export async function fetchOpenstaandeInkoopregelsVoorArtikel(
+  artikelnr: string,
+): Promise<OpenstaandeInkoopRegel[]> {
+  const { data, error } = await supabase
+    .from('openstaande_inkooporder_regels')
+    .select(
+      `regel_id, inkooporder_id, inkooporder_nr, order_status,
+       besteldatum, leverweek, verwacht_datum,
+       leverancier_id, leverancier_naam,
+       regelnummer, artikelnr, besteld_m, geleverd_m, te_leveren_m`,
+    )
+    .eq('artikelnr', artikelnr)
+    .order('verwacht_datum', { ascending: true, nullsFirst: false })
+    .order('besteldatum', { ascending: false })
+  if (error) throw error
+
+  return ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
+    regel_id: Number(r.regel_id),
+    inkooporder_id: Number(r.inkooporder_id),
+    inkooporder_nr: String(r.inkooporder_nr ?? ''),
+    order_status: r.order_status as InkooporderStatus,
+    besteldatum: (r.besteldatum as string | null) ?? null,
+    leverweek: (r.leverweek as string | null) ?? null,
+    verwacht_datum: (r.verwacht_datum as string | null) ?? null,
+    leverancier_id: r.leverancier_id == null ? null : Number(r.leverancier_id),
+    leverancier_naam: (r.leverancier_naam as string | null) ?? null,
+    regelnummer: Number(r.regelnummer ?? 0),
+    artikelnr: (r.artikelnr as string | null) ?? null,
+    besteld_m: Number(r.besteld_m ?? 0),
+    geleverd_m: Number(r.geleverd_m ?? 0),
+    te_leveren_m: Number(r.te_leveren_m ?? 0),
+  }))
 }
 
 export async function fetchRollenVoorArtikel(artikelnr: string): Promise<HuidigeRol[]> {

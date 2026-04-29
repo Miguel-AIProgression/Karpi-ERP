@@ -374,3 +374,50 @@ export async function fetchStandaardMatenVoorKwaliteit(kwaliteitCode: string): P
   if (error) throw error
   return (data ?? []) as StandaardMaat[]
 }
+
+// === Maatwerk-levertijdhint (V1: indicator op basis van eerstvolgende inkoop) ===
+
+export interface MaatwerkLevertijdHint {
+  verwacht_datum: string
+  verwachte_leverweek: string
+}
+
+/**
+ * Returns een levertijd-hint voor een (kwaliteit, kleur)-combinatie:
+ * eerstvolgende inkoop-leverweek + maatwerk-buffer (default 2 weken).
+ * Returnt `null` als er geen openstaande inkoop is voor deze combinatie.
+ */
+export async function fetchMaatwerkLevertijdHint(
+  kwaliteitCode: string,
+  kleurCode: string,
+): Promise<MaatwerkLevertijdHint | null> {
+  // RPC returnt rows; filter client-side want supabase-js .rpc().eq() werkt niet
+  // voor TABLE-functions met composite return.
+  const { data: rows, error } = await supabase.rpc('besteld_per_kwaliteit_kleur')
+  if (error) throw error
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const match = ((rows ?? []) as any[]).find(
+    (r) => r.kwaliteit_code === kwaliteitCode && r.kleur_code === kleurCode,
+  )
+  const verwachtDatum = match?.eerstvolgende_verwacht_datum as string | null | undefined
+  if (!verwachtDatum) return null
+
+  const { data: cfg } = await supabase
+    .from('app_config')
+    .select('waarde')
+    .eq('sleutel', 'order_config')
+    .maybeSingle()
+  const buffer = (cfg?.waarde as { inkoop_buffer_weken_maatwerk?: number } | null)?.inkoop_buffer_weken_maatwerk ?? 2
+
+  const { data: weekStr, error: weekErr } = await supabase.rpc('iso_week_plus', {
+    p_datum: verwachtDatum,
+    p_weken: buffer,
+  })
+  if (weekErr) throw weekErr
+
+  return {
+    verwacht_datum: verwachtDatum,
+    verwachte_leverweek: weekStr as unknown as string,
+  }
+}

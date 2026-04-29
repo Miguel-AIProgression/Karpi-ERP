@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/layout/page-header'
 import { OrderForm } from '@/components/orders/order-form'
 import { useOrderDetail, useOrderRegels } from '@/hooks/use-orders'
 import { fetchClientCommercialData } from '@/lib/supabase/queries/order-mutations'
+import { fetchHandmatigeKeuzesVoorOrder } from '@/lib/supabase/queries/reserveringen'
 import { computeOrderLock } from '@/lib/utils/order-lock'
 import { AfwerkingOnlyEditor } from '@/components/orders/afwerking-only-editor'
 import type { SelectedClient } from '@/components/orders/client-selector'
@@ -22,6 +23,13 @@ export function OrderEditPage() {
     queryKey: ['client-commercial', order?.debiteur_nr],
     queryFn: () => fetchClientCommercialData(order!.debiteur_nr),
     enabled: !!order?.debiteur_nr,
+  })
+
+  // Bestaande handmatige uitwisselbaar-claims om de form-state te hydrateren
+  const { data: handmatigeKeuzes } = useQuery({
+    queryKey: ['handmatige-keuzes', orderId],
+    queryFn: () => fetchHandmatigeKeuzesVoorOrder(orderId),
+    enabled: !!orderId,
   })
 
   if (orderLoading || regelsLoading) {
@@ -101,6 +109,14 @@ export function OrderEditPage() {
     deelleveringen_toegestaan: clientData?.deelleveringen_toegestaan ?? false,
   }
 
+  // Groepeer handmatige keuzes per orderregel-id
+  const keuzesPerRegel = new Map<number, { artikelnr: string; aantal: number; omschrijving?: string }[]>()
+  for (const k of handmatigeKeuzes ?? []) {
+    const existing = keuzesPerRegel.get(k.order_regel_id) ?? []
+    existing.push({ artikelnr: k.artikelnr, aantal: k.aantal, omschrijving: k.omschrijving })
+    keuzesPerRegel.set(k.order_regel_id, existing)
+  }
+
   const regelData: OrderRegelFormData[] = (regels ?? []).map((r) => ({
     id: r.id,
     artikelnr: r.artikelnr ?? undefined,
@@ -121,6 +137,8 @@ export function OrderEditPage() {
     maatwerk_afwerking: r.maatwerk_afwerking ?? undefined,
     maatwerk_band_kleur: r.maatwerk_band_kleur ?? undefined,
     maatwerk_instructies: r.maatwerk_instructies ?? undefined,
+    // Handmatige uitwisselbaar-claims gerehydrateerd
+    uitwisselbaar_keuzes: keuzesPerRegel.get(r.id) ?? [],
   }))
 
   return (

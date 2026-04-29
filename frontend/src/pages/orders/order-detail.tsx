@@ -5,6 +5,7 @@ import { OrderHeader } from '@/components/orders/order-header'
 import { OrderAddresses } from '@/components/orders/order-addresses'
 import { OrderRegelsTable } from '@/components/orders/order-regels-table'
 import { useOrderDetail, useOrderRegels } from '@/hooks/use-orders'
+import { useLevertijdVoorOrder, useClaimsVoorOrder } from '@/hooks/use-reserveringen'
 import { computeOrderLock } from '@/lib/utils/order-lock'
 
 export function OrderDetailPage() {
@@ -13,6 +14,8 @@ export function OrderDetailPage() {
 
   const { data: order, isLoading: orderLoading } = useOrderDetail(orderId)
   const { data: regels, isLoading: regelsLoading } = useOrderRegels(orderId)
+  const { data: levertijden } = useLevertijdVoorOrder(orderId)
+  const { data: claims } = useClaimsVoorOrder(orderId)
 
   if (orderLoading) {
     return (
@@ -50,7 +53,7 @@ export function OrderDetailPage() {
 
       <OrderHeader order={order} locked={computeOrderLock(regels) === 'full'} />
       <OrderAddresses order={order} />
-      <OrderRegelsTable regels={regels ?? []} isLoading={regelsLoading} />
+      <OrderRegelsTable regels={regels ?? []} isLoading={regelsLoading} levertijden={levertijden} claims={claims} />
     </>
   )
 }

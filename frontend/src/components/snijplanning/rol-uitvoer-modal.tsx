@@ -23,13 +23,11 @@ import { ReststukStickerLayout } from './reststuk-sticker-layout'
 import { mapSnijplannenToStukken } from '@/lib/utils/snijplan-mapping'
 import {
   computeReststukkenAngebrokenAfval,
-  RESTSTUK_MIN_SHORT,
-  RESTSTUK_MIN_LONG,
 } from '@/lib/utils/compute-reststukken'
 import { cn } from '@/lib/utils/cn'
 import { AFWERKING_MAP } from '@/lib/utils/constants'
-import { snijMargeCm, isRondeVorm } from '@/lib/utils/snij-marges'
-import type { SnijplanRow, SnijStuk, ReststukRect } from '@/lib/types/productie'
+import { buildSnijVolgorde, type PlacementInput } from '@/lib/snij-volgorde/derive'
+import type { KnifeOperation, Rij } from '@/lib/snij-volgorde/types'
 
 interface RolUitvoerModalProps {
   rolId: number | null
@@ -37,50 +35,154 @@ interface RolUitvoerModalProps {
   onClose: () => void
 }
 
-interface SnijShelf {
-  y: number
-  height: number
-  maxX: number
-  events: RolGebeurtenis[]
-  breedtePosities: number[]    // gesorteerde breedte-mes posities (één per stuk in de rij)
-  breedteMesGewijzigd: boolean // false = mes laten staan t.o.v. vorige rij
+// ---------------------------------------------------------------------------
+// Rij-header en piece-rij (gebruiken SnijVolgorde uit /lib/snij-volgorde/)
+// ---------------------------------------------------------------------------
+
+function RijHeaderRow({ rij }: { rij: Rij }) {
+  const messen = rij.breedte_messen_cm
+  const messenText =
+    messen.length === 0
+      ? null
+      : messen.length === 1
+        ? `Mes op ${messen[0]} cm breed`
+        : messen.map((m, i) => `Mes ${i + 1} op ${m} cm`).join(' · ')
+
+  return (
+    <tr className="bg-amber-50 border-t-2 border-amber-300">
+      <td colSpan={6} className="py-2 px-3 text-xs text-amber-900">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Minus size={12} className="text-amber-700" />
+          <span className="font-semibold">Rij {rij.rij_nummer}</span>
+          {messenText && <span className="font-medium">· {messenText}</span>}
+          {rij.is_breedte_mes_overgenomen && (
+            <span className="text-emerald-700 italic">(blijft staan)</span>
+          )}
+          <span className="font-medium">· Lengte-mes op {rij.lengte_mes_cm} cm</span>
+        </div>
+      </td>
+    </tr>
+  )
 }
 
-// ---------------------------------------------------------------------------
-// Gebeurtenis-types
-// ---------------------------------------------------------------------------
+function pieceLabel(piece: KnifeOperation): {
+  primary: string
+  secondary: string | null
+  vorm_badge: string | null
+} {
+  const sx = piece.snij_maat_x_cm
+  const sy = piece.snij_maat_y_cm
+  const bx = piece.bestelde_x_cm
+  const by = piece.bestelde_y_cm
+  switch (piece.handeling.kind) {
+    case 'rond_uitsnijden':
+      return {
+        primary: `${sx} × ${sy} cm`,
+        secondary: `→ ${bx} × ${by} rond met de hand uit vierkant`,
+        vorm_badge: 'vierkant snijden',
+      }
+    case 'ovaal_uitsnijden':
+      return {
+        primary: `${sx} × ${sy} cm`,
+        secondary: `→ ${bx} × ${by} ovaal met de hand uit rechthoek`,
+        vorm_badge: 'rechthoek snijden',
+      }
+    case 'orientatie_swap':
+      return {
+        primary: `${sx} × ${sy} cm`,
+        secondary: `→ bijsnijden naar ${bx} × ${by} cm`,
+        vorm_badge: null,
+      }
+    case 'zo_marge_extra':
+      return {
+        primary: `${sx} × ${sy} cm`,
+        secondary: `→ afwerken naar ${bx} × ${by} cm (incl. ZO-marge ${piece.handeling.marge_cm} cm)`,
+        vorm_badge: null,
+      }
+    case 'geen':
+    default:
+      return {
+        primary: `${sx} × ${sy} cm`,
+        secondary: null,
+        vorm_badge:
+          piece.bestelde_vorm && piece.bestelde_vorm !== 'rechthoek'
+            ? piece.bestelde_vorm
+            : null,
+      }
+  }
+}
 
-type RolGebeurtenis =
-  | {
-      kind: 'snij'
-      y: number
-      x: number
-      stuk: SnijplanRow
-      snijStuk: SnijStuk
-    }
-  | {
-      kind: 'reststuk'
-      y: number
-      x: number
-      breedteCm: number
-      lengteCm: number
-      index: number
-    }
-  | {
-      kind: 'aangebroken_end'
-      y: number
-      x: number
-      breedteCm: number
-      lengteCm: number
-    }
-  | {
-      kind: 'afval'
-      y: number
-      x: number
-      breedteCm: number
-      lengteCm: number
-    }
-
+function KnifeOperationRow({
+  piece,
+  checked,
+  onToggle,
+}: {
+  piece: KnifeOperation
+  checked: boolean
+  onToggle: () => void
+}) {
+  const label = pieceLabel(piece)
+  return (
+    <tr className={cn('hover:bg-slate-50', !checked && 'opacity-60')}>
+      <td className="py-2 pl-2 pr-2">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={onToggle}
+          className="h-4 w-4 accent-terracotta-500 cursor-pointer"
+        />
+      </td>
+      <td className="py-2 pr-3 font-medium">
+        <div>
+          {label.primary}
+          {label.vorm_badge && (
+            <span className="ml-2 text-xs font-normal text-slate-500">
+              {label.vorm_badge}
+            </span>
+          )}
+        </div>
+        {label.secondary && (
+          <div className="text-xs font-normal text-amber-700 mt-0.5">{label.secondary}</div>
+        )}
+      </td>
+      <td className="py-2 pr-3">{piece.klant_naam}</td>
+      <td className="py-2 pr-3">
+        <Link
+          to={`/orders/${piece.order_id}`}
+          className="text-terracotta-600 hover:underline"
+          onClick={(ev) => ev.stopPropagation()}
+        >
+          {piece.order_nr}
+        </Link>
+      </td>
+      <td className="py-2 pr-3">
+        {piece.bestelde_afwerking && AFWERKING_MAP[piece.bestelde_afwerking] ? (
+          <span
+            className={cn(
+              'text-xs px-1.5 py-0.5 rounded',
+              AFWERKING_MAP[piece.bestelde_afwerking].bg,
+              AFWERKING_MAP[piece.bestelde_afwerking].text,
+            )}
+          >
+            {piece.bestelde_afwerking}
+          </span>
+        ) : (
+          '—'
+        )}
+      </td>
+      <td className="py-2 pr-3">
+        <Link
+          to={`/snijplanning/${piece.snijplan_id}/stickers`}
+          className="inline-flex items-center gap-1 text-xs text-terracotta-500 hover:underline"
+          target="_blank"
+        >
+          <Printer size={12} />
+          Print
+        </Link>
+      </td>
+    </tr>
+  )
+}
 
 // ---------------------------------------------------------------------------
 // Reststuk-sticker preview print (opent nieuw venster)
@@ -236,7 +338,7 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
     [snijStukken, checkedIds],
   )
 
-  const { aangebrokenEnd } = useMemo(
+  const { reststukken: reststukRects, aangebrokenEnd, afval: afvalRects } = useMemo(
     () =>
       computeReststukkenAngebrokenAfval(
         rolLengte,
@@ -247,121 +349,48 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
     [rolLengte, rolBreedte, afgevinkteSnijStukken, rolDetail?.rol_type],
   )
 
-  // Afgevinkte SnijplanRow's in dezelfde volgorde als teSnijden, voor gebeurtenis-lijst
+  // Afgevinkte SnijplanRow's voor de "rol afsluiten"-flow.
   const afgevinkteRows = useMemo(
     () => teSnijden.filter((r) => checkedIds.has(r.id)),
     [teSnijden, checkedIds],
   )
 
-  type SnijEvent = Extract<RolGebeurtenis, { kind: 'snij' }>
-
-  // Alle snij-events (checked én unchecked) voor de snijvolgorde-weergave.
-  const alleSnijEvents = useMemo((): SnijEvent[] => {
-    const byId = new Map<number, SnijStuk>()
-    for (const s of snijStukken) if (s.snijplan_id != null) byId.set(s.snijplan_id, s)
-    return teSnijden
-      .map((row): SnijEvent | null => {
-        const ss = byId.get(row.id)
-        if (!ss) return null
-        return { kind: 'snij', y: ss.y_cm, x: ss.x_cm, stuk: row, snijStuk: ss }
-      })
-      .filter((e): e is SnijEvent => e !== null)
-  }, [teSnijden, snijStukken])
-
-  // Groepeer snij-events in rijen op basis van Y-startpositie:
-  // — Stukken met dezelfde Y-start liggen naast elkaar → één rij (één set mes-instructies).
-  // — Stukken met een andere Y-start zijn gestapeld → aparte rij.
-  // Ronde stukken krijgen +5 cm marge in beide richtingen.
-  // De zijdelingse strip van de gehele rij (buiten het verste stuk) → reststuk of afval.
-  const snijVolgorde = useMemo((): {
-    shelves: SnijShelf[]
-    reststukken: ReststukRect[]
-    aantalAfval: number
-  } => {
-    interface ShelfGroup {
-      y: number
-      height: number
-      maxX: number         // buitenste rand van de hele rij (voor reststuk-berekening)
-      primaryMaxX: number  // breedte van het EERSTE (meest linkse) stuk — sorteer-sleutel
-      events: SnijEvent[]
-    }
-
-    const reststukken: ReststukRect[] = []
-    let aantalAfval = 0
-    let reststukIdx = 1
-
-    const gesorteerd = [...alleSnijEvents].sort((a, b) => a.y - b.y || a.x - b.x)
-
-    const groups: ShelfGroup[] = []
-    for (const ev of gesorteerd) {
-      const marge = snijMargeCm(ev.stuk.maatwerk_afwerking, ev.snijStuk.vorm)
-      const effLengte = ev.snijStuk.lengte_cm + marge
-      const effBreedte = ev.snijStuk.breedte_cm + marge
-      const maxX = Math.round(ev.x + effLengte)
-
-      const last = groups[groups.length - 1]
-      if (last && Math.round(last.y) === Math.round(ev.y)) {
-        // Zelfde Y-start: stuk ligt naast vorige → zelfde rij
-        last.events.push(ev)
-        last.maxX = Math.max(last.maxX, maxX)
-        // primaryMaxX blijft die van het eerste (meest linkse) stuk
-        last.height = Math.max(last.height, effBreedte)
-      } else {
-        groups.push({ y: ev.y, height: effBreedte, maxX, primaryMaxX: maxX, events: [ev] })
-      }
-    }
-
-    // Sorteer groepen op breedte van het EERSTE stuk (groot → klein).
-    // Rede: mes hoeft nooit terug naar breder. Bij naast-elkaar-liggende stukken
-    // is primaryMaxX de breedte van het primaire (meest linkse) stuk — de
-    // secundaire stukken (rechts ervan) tellen niet mee voor de volgorde.
-    groups.sort((a, b) => b.primaryMaxX - a.primaryMaxX || a.y - b.y)
-
-    let prevMaxX: number | null = null
-    const shelves: SnijShelf[] = groups.map(group => {
-      const shelfEvents: RolGebeurtenis[] = [...group.events]
-
-      // Breedte-mes posities gesorteerd (rechterrand van elk stuk, links naar rechts)
-      const breedtePosities = group.events
-        .map(ev => {
-          const m = snijMargeCm(ev.stuk.maatwerk_afwerking, ev.snijStuk.vorm)
-          return Math.round(ev.x + ev.snijStuk.lengte_cm + m)
-        })
-        .sort((a, b) => a - b)
-        .filter((v, i, arr) => arr.indexOf(v) === i)
-
-      // Gewijzigd t.o.v. vorige rij? Vergelijk op primaryMaxX (breedte primair stuk).
-      const breedteMesGewijzigd = prevMaxX !== group.primaryMaxX
-      prevMaxX = group.primaryMaxX
-
-      const sideW = Math.round(rolBreedte - group.maxX)
-      const sideH = Math.round(group.height)
-      if (sideW >= RESTSTUK_MIN_SHORT && sideH >= RESTSTUK_MIN_LONG) {
-        shelfEvents.push({
-          kind: 'reststuk',
-          y: group.y,
-          x: group.maxX,
-          breedteCm: sideW,
-          lengteCm: sideH,
-          index: reststukIdx++,
-        })
-        reststukken.push({ x_cm: group.maxX, y_cm: group.y, breedte_cm: sideW, lengte_cm: sideH })
-      } else if (sideW > 0) {
-        shelfEvents.push({
-          kind: 'afval',
-          y: group.y,
-          x: group.maxX,
-          breedteCm: sideW,
-          lengteCm: sideH,
-        })
-        aantalAfval++
-      }
-
-      return { y: group.y, height: group.height, maxX: group.maxX, events: shelfEvents, breedtePosities, breedteMesGewijzigd }
+  // SnijVolgorde: pure transformatie van placements + reststuk/afval/aangebroken
+  // naar operator-rijen ("Mes op X breed, lengte Y") — zie
+  // frontend/src/lib/snij-volgorde/derive.ts. Rijen reflecteren ALLE teSnijden
+  // (ook niet-afgevinkte, om de volgorde context te tonen). Reststukken/afval/
+  // aangebroken zijn afgeleid van afgevinkte alleen — dat verandert wanneer de
+  // operator een stuk uitvinkt.
+  const snijVolgorde = useMemo(() => {
+    const placements: PlacementInput[] = teSnijden.map((row) => ({
+      id: row.id,
+      snijplan_nr: row.snijplan_nr,
+      positie_x_cm: row.positie_x_cm ?? 0,
+      positie_y_cm: row.positie_y_cm ?? 0,
+      snij_lengte_cm: row.snij_lengte_cm,
+      snij_breedte_cm: row.snij_breedte_cm,
+      geroteerd: row.geroteerd,
+      // Fallback 0 zolang migratie 143 nog niet is toegepast — UI toont dan
+      // bestelde maat zonder marge (cosmetisch issue, geen functionele fout).
+      marge_cm: row.marge_cm ?? 0,
+      maatwerk_vorm: row.maatwerk_vorm,
+      maatwerk_afwerking: row.maatwerk_afwerking,
+      order_id: row.order_id,
+      order_nr: row.order_nr,
+      klant_naam: row.klant_naam,
+      artikelnr: row.artikelnr,
+      afleverdatum: row.afleverdatum,
+    }))
+    return buildSnijVolgorde({
+      rolnummer,
+      rol_breedte_cm: rolBreedte,
+      rol_lengte_cm: rolLengte,
+      placements,
+      reststukken: reststukRects,
+      aangebrokenEnd,
+      afval: afvalRects,
     })
-
-    return { shelves, reststukken, aantalAfval }
-  }, [alleSnijEvents, rolBreedte])
+  }, [teSnijden, rolnummer, rolBreedte, rolLengte, reststukRects, aangebrokenEnd, afvalRects])
 
   if (!open || !rolId) return null
 
@@ -399,7 +428,7 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
       {
         rolId,
         snijplanIds: afgevinkt,
-        reststukken: snijVolgorde.reststukken,
+        reststukken: reststukRects,
         aangebrokenLengte,
       },
       {
@@ -420,8 +449,8 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
   const printBulk = () => {
     // Geef reststuk-preview data mee via sessionStorage zodat stickers-bulk
     // ook de (nog niet in DB bestaande) reststukken kan renderen.
-    if (rolId && snijVolgorde.reststukken.length > 0) {
-      const previews = snijVolgorde.reststukken
+    if (rolId && reststukRects.length > 0) {
+      const previews = reststukRects
         .slice()
         .sort((a, b) => a.y_cm - b.y_cm || a.x_cm - b.x_cm)
         .map((r, i) => ({
@@ -461,8 +490,8 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
   }
 
   const aantalTeSnijdenAfgevinkt = afgevinkteRows.length
-  const aantalReststukken = snijVolgorde.reststukken.length
-  const aantalAfval = snijVolgorde.aantalAfval
+  const aantalReststukken = reststukRects.length
+  const aantalAfval = afvalRects.length
   const aantalAangebroken = aangebrokenEnd ? 1 : 0
 
   return (
@@ -513,223 +542,100 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
                     {checkedIds.size === teSnijden.length ? 'Alles uitvinken' : 'Alles aanvinken'}
                   </button>
                 </div>
-                {(() => {
-                  const { shelves } = snijVolgorde
-                  let rijIdx = 0
-                  return (
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-slate-200 text-left text-xs text-slate-500 uppercase">
-                          <th className="py-2 pr-2 w-8"></th>
-                          <th className="py-2 pr-3">Maat</th>
-                          <th className="py-2 pr-3">Klant / Bestemming</th>
-                          <th className="py-2 pr-3">Order</th>
-                          <th className="py-2 pr-3">Afwerking</th>
-                          <th className="py-2 pr-3">Actie</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {shelves.map((shelf, shelfIdx) => {
-                          rijIdx += 1
-                          const lengteMesCm = Math.round(shelf.height)
-                          const { breedtePosities, breedteMesGewijzigd } = shelf
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-left text-xs text-slate-500 uppercase">
+                      <th className="py-2 pr-2 w-8"></th>
+                      <th className="py-2 pr-3">Maat</th>
+                      <th className="py-2 pr-3">Klant / Bestemming</th>
+                      <th className="py-2 pr-3">Order</th>
+                      <th className="py-2 pr-3">Afwerking</th>
+                      <th className="py-2 pr-3">Actie</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {snijVolgorde.rijen.map((rij) => (
+                      <Fragment key={`rij-${rij.rij_nummer}`}>
+                        <RijHeaderRow rij={rij} />
+                        {rij.pieces.map((piece) => {
+                          const checked = checkedIds.has(piece.snijplan_id)
                           return (
-                            <Fragment key={`shelf-${shelfIdx}`}>
-                              <tr className={cn(
-                                'border-t-2',
-                                breedteMesGewijzigd
-                                  ? 'bg-amber-50 border-amber-300'
-                                  : 'bg-amber-50/50 border-amber-200',
-                              )}>
-                                <td colSpan={6} className="py-2 px-3 text-xs text-amber-900">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <Minus size={12} className="text-amber-700" />
-                                    <span className="font-semibold">
-                                      Rij {rijIdx} · Lengte-mes op {lengteMesCm} cm
-                                    </span>
-                                    {breedteMesGewijzigd
-                                      ? breedtePosities.map((pos, i) => (
-                                          <span key={pos} className="font-semibold">
-                                            · Breedte-mes {breedtePosities.length > 1 ? i + 1 : ''} op {pos} cm
-                                          </span>
-                                        ))
-                                      : (
-                                          <span className="text-amber-600 italic">
-                                            · Breedte-mes laten staan ({breedtePosities[breedtePosities.length - 1]} cm)
-                                          </span>
-                                        )
-                                    }
-                                  </div>
-                                </td>
-                              </tr>
-                              {shelf.events.map((e, idx) => {
-                                if (e.kind === 'snij') {
-                                  const stuk = e.stuk
-                                  const checked = checkedIds.has(stuk.id)
-                                  const marge = snijMargeCm(stuk.maatwerk_afwerking, e.snijStuk.vorm)
-                                  const isRond = isRondeVorm(e.snijStuk.vorm)
-                                  // Fysieke snijmaat: marge voor afwerking/vorm, lengte = max(stuk, rijhoogte)
-                                  const snijBreedte = Math.round(e.snijStuk.lengte_cm) + marge
-                                  const snijLengte = Math.max(
-                                    Math.round(e.snijStuk.breedte_cm) + marge,
-                                    Math.round(shelf.height),
-                                  )
-                                  // Besteld formaat (eindmaat na eventueel bijsnijden)
-                                  const besteldBreedte = stuk.snij_breedte_cm ?? (snijBreedte - marge)
-                                  const besteldLengte = stuk.snij_lengte_cm ?? (snijLengte - marge)
-                                  // Bijsnijden = handmatig nasnijden nodig (alleen bij ronde vormen)
-                                  // ZO-marge is machine-snijmarge — geen handwerk, geen bijsnijden-tekst
-                                  const toonBijsnijden = isRond && (snijBreedte !== besteldBreedte || snijLengte !== besteldLengte)
-                                  return (
-                                    <tr
-                                      key={`snij-${stuk.id}`}
-                                      className={cn('hover:bg-slate-50', !checked && 'opacity-60')}
-                                    >
-                                      <td className="py-2 pl-2 pr-2">
-                                        <input
-                                          type="checkbox"
-                                          checked={checked}
-                                          onChange={() => toggle(stuk.id)}
-                                          className="h-4 w-4 accent-terracotta-500 cursor-pointer"
-                                        />
-                                      </td>
-                                      <td className="py-2 pr-3">
-                                        {/* Snijmaat — wat de cutter fysiek afsnijdt (=wat op de machine staat) */}
-                                        <div className="font-medium text-slate-900">
-                                          {snijBreedte} × {snijLengte} cm
-                                          {stuk.maatwerk_vorm && (
-                                            <span className="ml-1 text-xs font-normal text-slate-500">
-                                              {stuk.maatwerk_vorm}
-                                            </span>
-                                          )}
-                                        </div>
-                                        {/* Eindmaat — alleen tonen als die afwijkt (bijsnijden nodig) */}
-                                        {toonBijsnijden && (
-                                          <div className="text-xs text-terracotta-600 mt-0.5">
-                                            → bijsnijden met hand naar {besteldBreedte} × {besteldLengte} cm
-                                            {isRond ? ' (rond)' : ''}
-                                          </div>
-                                        )}
-                                        {/* ZO-afwerking: snijmaat incl. machine-marge, geen handwerk */}
-                                        {!isRond && marge > 0 && (
-                                          <div className="text-xs text-slate-400 mt-0.5">
-                                            → incl. +{marge} cm ZO-rand (machine)
-                                          </div>
-                                        )}
-                                      </td>
-                                      <td className="py-2 pr-3">{stuk.klant_naam}</td>
-                                      <td className="py-2 pr-3">
-                                        <Link
-                                          to={`/orders/${stuk.order_id}`}
-                                          className="text-terracotta-600 hover:underline"
-                                          onClick={(ev) => ev.stopPropagation()}
-                                        >
-                                          {stuk.order_nr}
-                                        </Link>
-                                      </td>
-                                      <td className="py-2 pr-3">
-                                        {stuk.maatwerk_afwerking && AFWERKING_MAP[stuk.maatwerk_afwerking] ? (
-                                          <span
-                                            className={cn(
-                                              'text-xs px-1.5 py-0.5 rounded',
-                                              AFWERKING_MAP[stuk.maatwerk_afwerking].bg,
-                                              AFWERKING_MAP[stuk.maatwerk_afwerking].text,
-                                            )}
-                                          >
-                                            {stuk.maatwerk_afwerking}
-                                          </span>
-                                        ) : (
-                                          '—'
-                                        )}
-                                      </td>
-                                      <td className="py-2 pr-3">
-                                        <Link
-                                          to={`/snijplanning/${stuk.id}/stickers`}
-                                          className="inline-flex items-center gap-1 text-xs text-terracotta-500 hover:underline"
-                                          target="_blank"
-                                        >
-                                          <Printer size={12} />
-                                          Print
-                                        </Link>
-                                      </td>
-                                    </tr>
-                                  )
-                                }
-                                if (e.kind === 'reststuk') {
-                                  return (
-                                    <tr key={`rest-${idx}`} className="bg-emerald-50/40">
-                                      <td className="py-2 pl-2 pr-2 text-center">
-                                        <Package size={14} className="text-emerald-600 inline" />
-                                      </td>
-                                      <td className="py-2 pr-3 font-medium text-emerald-800">
-                                        <span className="text-xs text-emerald-700 font-semibold mr-1">R{e.index}</span>
-                                        {Math.round(e.breedteCm)} × {Math.round(e.lengteCm)} cm
-                                      </td>
-                                      <td className="py-2 pr-3 text-xs text-emerald-700" colSpan={2}>
-                                        → voorraad ({rolnummer}-R{e.index})
-                                      </td>
-                                      <td className="py-2 pr-3 text-xs text-slate-400">Reststuk</td>
-                                      <td className="py-2 pr-3">
-                                        <button
-                                          onClick={() =>
-                                            printReststukSticker({
-                                              rolnummer,
-                                              index: e.index,
-                                              kwaliteit,
-                                              kleur,
-                                              lengte_cm: e.lengteCm,
-                                              breedte_cm: e.breedteCm,
-                                            })
-                                          }
-                                          className="inline-flex items-center gap-1 text-xs text-emerald-600 hover:underline"
-                                        >
-                                          <Printer size={12} />
-                                          Preview sticker
-                                        </button>
-                                      </td>
-                                    </tr>
-                                  )
-                                }
-                                // afval
-                                return (
-                                  <tr key={`afv-${idx}`} className="bg-slate-50/60 text-slate-400">
-                                    <td className="py-2 pl-2 pr-2 text-center">
-                                      <Trash2 size={14} className="inline" />
-                                    </td>
-                                    <td className="py-2 pr-3">
-                                      {Math.round(e.breedteCm)} × {Math.round(e.lengteCm)} cm
-                                    </td>
-                                    <td className="py-2 pr-3 text-xs italic" colSpan={2}>
-                                      → afval (te klein voor reststuk)
-                                    </td>
-                                    <td className="py-2 pr-3 text-xs">Afval</td>
-                                    <td className="py-2 pr-3 text-xs">—</td>
-                                  </tr>
-                                )
-                              })}
-                            </Fragment>
+                            <KnifeOperationRow
+                              key={`piece-${piece.snijplan_id}`}
+                              piece={piece}
+                              checked={checked}
+                              onToggle={() => toggle(piece.snijplan_id)}
+                            />
                           )
                         })}
-                        {/* Aangebroken rol-einde — geen snij-rij, aparte weergave */}
-                        {aangebrokenEnd && (
-                          <tr className="bg-blue-50/50">
-                            <td className="py-2 pl-2 pr-2 text-center">
-                              <Package size={14} className="text-blue-600 inline" />
-                            </td>
-                            <td className="py-2 pr-3 font-medium text-blue-800">
-                              {Math.round(aangebrokenEnd.breedte_cm)} × {Math.round(aangebrokenEnd.lengte_cm)} cm
-                            </td>
-                            <td className="py-2 pr-3 text-xs text-blue-700" colSpan={2}>
-                              → behoud rol {rolnummer} (aangebroken, volle breedte)
-                            </td>
-                            <td className="py-2 pr-3 text-xs text-blue-700">Aangebroken</td>
-                            <td className="py-2 pr-3 text-xs text-slate-400">—</td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  )
-                })()}
+                      </Fragment>
+                    ))}
+                    {snijVolgorde.reststukken.map((r) => (
+                      <tr key={`rest-${r.letter}`} className="bg-emerald-50/40">
+                        <td className="py-2 pl-2 pr-2 text-center">
+                          <Package size={14} className="text-emerald-600 inline" />
+                        </td>
+                        <td className="py-2 pr-3 font-medium text-emerald-800">
+                          <span className="text-xs text-emerald-700 font-semibold mr-1">{r.letter}</span>
+                          {r.breedte_cm} × {r.lengte_cm} cm
+                        </td>
+                        <td className="py-2 pr-3 text-xs text-emerald-700" colSpan={2}>
+                          → voorraad ({r.rolnummer_volledig})
+                        </td>
+                        <td className="py-2 pr-3 text-xs text-slate-400">Reststuk</td>
+                        <td className="py-2 pr-3">
+                          <button
+                            onClick={() =>
+                              printReststukSticker({
+                                rolnummer,
+                                index: parseInt(r.letter.slice(1), 10),
+                                kwaliteit,
+                                kleur,
+                                lengte_cm: r.lengte_cm,
+                                breedte_cm: r.breedte_cm,
+                              })
+                            }
+                            className="inline-flex items-center gap-1 text-xs text-emerald-600 hover:underline"
+                          >
+                            <Printer size={12} />
+                            Preview sticker
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {snijVolgorde.aangebroken_rest && (
+                      <tr className="bg-blue-50/50">
+                        <td className="py-2 pl-2 pr-2 text-center">
+                          <Package size={14} className="text-blue-600 inline" />
+                        </td>
+                        <td className="py-2 pr-3 font-medium text-blue-800">
+                          {snijVolgorde.aangebroken_rest.breedte_cm} ×{' '}
+                          {snijVolgorde.aangebroken_rest.lengte_cm} cm
+                        </td>
+                        <td className="py-2 pr-3 text-xs text-blue-700" colSpan={2}>
+                          → behoud rol {rolnummer} (aangebroken, volle breedte)
+                        </td>
+                        <td className="py-2 pr-3 text-xs text-blue-700">Aangebroken</td>
+                        <td className="py-2 pr-3 text-xs text-slate-400">—</td>
+                      </tr>
+                    )}
+                    {snijVolgorde.afval.map((a, idx) => (
+                      <tr key={`afv-${idx}`} className="bg-slate-50/60 text-slate-400">
+                        <td className="py-2 pl-2 pr-2 text-center">
+                          <Trash2 size={14} className="inline" />
+                        </td>
+                        <td className="py-2 pr-3">
+                          {a.breedte_cm} × {a.lengte_cm} cm
+                        </td>
+                        <td className="py-2 pr-3 text-xs italic" colSpan={2}>
+                          → afval (te klein voor reststuk)
+                        </td>
+                        <td className="py-2 pr-3 text-xs">Afval</td>
+                        <td className="py-2 pr-3 text-xs">—</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
 
             </>

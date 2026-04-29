@@ -1,11 +1,32 @@
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Truck } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { InfoField } from '@/components/ui/info-field'
 import { formatCurrency, formatNumber } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
-import { useProductDetail, useRollenVoorProduct, useReserveringenVoorProduct, useEquivalenteProducten } from '@/hooks/use-producten'
+import { useProductDetail, useRollenVoorProduct, useClaimsVoorProduct, useEquivalenteProducten } from '@/hooks/use-producten'
+import { useOpenstaandeInkoopVoorArtikel } from '@/hooks/use-inkooporders'
 import { ProductTypeBadge } from './producten-overview'
+import { isoWeekFromString } from '@/lib/utils/iso-week'
+
+const INKOOP_STATUS_COLORS: Record<string, string> = {
+  Concept: 'bg-slate-100 text-slate-600',
+  Besteld: 'bg-blue-100 text-blue-700',
+  'Deels ontvangen': 'bg-amber-100 text-amber-700',
+  Ontvangen: 'bg-emerald-100 text-emerald-700',
+  Geannuleerd: 'bg-rose-100 text-rose-700',
+}
+
+function formatLeverweek(leverweek: string | null, verwacht: string | null): string {
+  if (leverweek) return `wk ${leverweek}`
+  if (verwacht) {
+    const d = new Date(verwacht)
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    }
+  }
+  return '—'
+}
 
 export function ProductDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -13,8 +34,9 @@ export function ProductDetailPage() {
 
   const { data: product, isLoading } = useProductDetail(artikelnr)
   const { data: rollen } = useRollenVoorProduct(artikelnr)
-  const { data: reserveringen } = useReserveringenVoorProduct(artikelnr)
+  const { data: claims } = useClaimsVoorProduct(artikelnr)
   const { data: equivalenten } = useEquivalenteProducten(artikelnr)
+  const { data: inkoopregels } = useOpenstaandeInkoopVoorArtikel(artikelnr)
 
   if (isLoading) return <PageHeader title="Product laden..." />
 
@@ -59,20 +81,36 @@ export function ProductDetailPage() {
       </div>
 
       {/* Voorraad card */}
-      <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-6 mb-6">
-        <h3 className="font-medium mb-4">Voorraad</h3>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
-          <StockField label="Voorraad" value={product.voorraad} />
-          <StockField label="Backorder" value={product.backorder} warning={product.backorder > 0} />
-          <StockField label="Gereserveerd" value={product.gereserveerd} />
-          <StockField label="Besteld (ink)" value={product.besteld_inkoop} />
-          <StockField label="Vrije voorraad" value={product.vrije_voorraad}
-            success={product.vrije_voorraad > 10}
-            warning={product.vrije_voorraad > 0 && product.vrije_voorraad <= 10}
-            danger={product.vrije_voorraad <= 0}
-          />
-        </div>
-      </div>
+      {(() => {
+        const ioClaimAantal = (claims ?? [])
+          .filter(c => c.bron === 'inkooporder_regel')
+          .reduce((s, c) => s + (c.aantal || 0), 0)
+        return (
+          <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-6 mb-6">
+            <h3 className="font-medium mb-4">Voorraad</h3>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+              <StockField label="Voorraad" value={product.voorraad} />
+              <StockField label="Gereserveerd" value={product.gereserveerd} />
+              <StockField
+                label="Wacht op inkoop"
+                value={ioClaimAantal}
+                warning={ioClaimAantal > 0}
+              />
+              <StockField label="Besteld (ink)" value={product.besteld_inkoop} />
+              <StockField label="Vrije voorraad" value={product.vrije_voorraad}
+                success={product.vrije_voorraad > 10}
+                warning={product.vrije_voorraad > 0 && product.vrije_voorraad <= 10}
+                danger={product.vrije_voorraad <= 0}
+              />
+            </div>
+            {product.backorder > 0 && (
+              <div className="mt-3 pt-3 border-t border-slate-100 text-xs text-amber-700">
+                <span className="font-medium">Backorder (legacy):</span> {formatNumber(product.backorder)} — handmatig openstaand saldo uit oud systeem
+              </div>
+            )}
+          </div>
+        )
+      })()}
 
       {/* Uitwisselbare producten */}
       {equivalenten && equivalenten.filter(e => e.artikelnr !== artikelnr).length > 0 && (
@@ -118,42 +156,143 @@ export function ProductDetailPage() {
         </div>
       )}
 
-      {/* Reserveringen */}
-      {product.gereserveerd > 0 && (
+      {/* Openstaande inkooporders */}
+      {inkoopregels && inkoopregels.length > 0 && (
+        <div className="bg-white rounded-[var(--radius)] border border-slate-200 overflow-hidden mb-6">
+          <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+            <h3 className="font-medium flex items-center gap-2">
+              <Truck size={16} className="text-indigo-500" />
+              Openstaande inkooporders ({inkoopregels.length})
+            </h3>
+            <span className="text-sm text-slate-500">
+              Totaal te leveren:{' '}
+              <span className="font-semibold text-slate-700">
+                {formatNumber(inkoopregels.reduce((s, r) => s + r.te_leveren_m, 0))} m
+              </span>
+            </span>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-100 bg-slate-50">
+                <th className="text-left px-4 py-2 font-medium text-slate-600">Inkooporder</th>
+                <th className="text-left px-4 py-2 font-medium text-slate-600">Leverancier</th>
+                <th className="text-left px-4 py-2 font-medium text-slate-600">Status</th>
+                <th className="text-left px-4 py-2 font-medium text-slate-600">Verwachte levering</th>
+                <th className="text-right px-4 py-2 font-medium text-slate-600">Besteld</th>
+                <th className="text-right px-4 py-2 font-medium text-slate-600">Geleverd</th>
+                <th className="text-right px-4 py-2 font-medium text-slate-600">Te leveren</th>
+              </tr>
+            </thead>
+            <tbody>
+              {inkoopregels.map((r) => (
+                <tr key={r.regel_id} className="border-b border-slate-50 hover:bg-slate-50">
+                  <td className="px-4 py-2">
+                    <Link
+                      to={`/inkooporders/${r.inkooporder_id}`}
+                      className="text-terracotta-500 hover:underline font-mono text-xs"
+                    >
+                      {r.inkooporder_nr}
+                    </Link>
+                  </td>
+                  <td className="px-4 py-2 text-slate-700">{r.leverancier_naam ?? '—'}</td>
+                  <td className="px-4 py-2">
+                    <span
+                      className={cn(
+                        'px-2 py-0.5 rounded-full text-xs',
+                        INKOOP_STATUS_COLORS[r.order_status] ?? 'bg-slate-100 text-slate-600',
+                      )}
+                    >
+                      {r.order_status}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2 text-slate-700 font-medium">
+                    {formatLeverweek(r.leverweek, r.verwacht_datum)}
+                  </td>
+                  <td className="px-4 py-2 text-right text-slate-600">{formatNumber(r.besteld_m)}</td>
+                  <td className="px-4 py-2 text-right text-slate-500">{formatNumber(r.geleverd_m)}</td>
+                  <td className="px-4 py-2 text-right font-semibold text-indigo-700">
+                    {formatNumber(r.te_leveren_m)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Claims op voorraad */}
+      {claims && claims.filter(c => c.bron === 'voorraad').length > 0 && (
         <div className="bg-white rounded-[var(--radius)] border border-slate-200 overflow-hidden mb-6">
           <div className="px-5 py-3 border-b border-slate-100">
-            <h3 className="font-medium">Reserveringen ({reserveringen?.length ?? 0})</h3>
+            <h3 className="font-medium">
+              Op voorraad gereserveerd ({claims.filter(c => c.bron === 'voorraad').length})
+            </h3>
           </div>
-          {reserveringen && reserveringen.length > 0 ? (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-100 bg-slate-50">
-                  <th className="text-left px-4 py-2 font-medium text-slate-600">Order</th>
-                  <th className="text-left px-4 py-2 font-medium text-slate-600">Klant</th>
-                  <th className="text-left px-4 py-2 font-medium text-slate-600">Status</th>
-                  <th className="text-right px-4 py-2 font-medium text-slate-600">Te leveren</th>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-100 bg-slate-50">
+                <th className="text-left px-4 py-2 font-medium text-slate-600">Order</th>
+                <th className="text-left px-4 py-2 font-medium text-slate-600">Klant</th>
+                <th className="text-left px-4 py-2 font-medium text-slate-600">Status</th>
+                <th className="text-right px-4 py-2 font-medium text-slate-600">Aantal</th>
+              </tr>
+            </thead>
+            <tbody>
+              {claims.filter(c => c.bron === 'voorraad').map((c) => (
+                <tr key={c.claim_id} className="border-b border-slate-50 hover:bg-slate-50">
+                  <td className="px-4 py-2">
+                    <Link to={`/orders/${c.order_id}`} className="text-terracotta-500 hover:underline font-mono text-xs">
+                      {c.order_nr}
+                    </Link>
+                  </td>
+                  <td className="px-4 py-2 text-slate-700">{c.klant_naam ?? '—'}</td>
+                  <td className="px-4 py-2">
+                    <span className="px-2 py-0.5 rounded-full text-xs bg-emerald-100 text-emerald-700">{c.order_status}</span>
+                  </td>
+                  <td className="px-4 py-2 text-right font-medium">{c.aantal}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {reserveringen.map((r) => (
-                  <tr key={r.order_id} className="border-b border-slate-50 hover:bg-slate-50">
-                    <td className="px-4 py-2">
-                      <Link to={`/orders/${r.order_id}`} className="text-terracotta-500 hover:underline font-mono text-xs">
-                        {r.order_nr}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-2 text-slate-700">{r.klant_naam ?? '—'}</td>
-                    <td className="px-4 py-2">
-                      <span className="px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700">{r.status}</span>
-                    </td>
-                    <td className="px-4 py-2 text-right font-medium">{r.te_leveren}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <div className="p-5 text-sm text-slate-400">Reserveringen laden...</div>
-          )}
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Claims op inkoop */}
+      {claims && claims.filter(c => c.bron === 'inkooporder_regel').length > 0 && (
+        <div className="bg-white rounded-[var(--radius)] border border-slate-200 overflow-hidden mb-6">
+          <div className="px-5 py-3 border-b border-slate-100">
+            <h3 className="font-medium">
+              Wacht op inkoop ({claims.filter(c => c.bron === 'inkooporder_regel').length})
+            </h3>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-100 bg-slate-50">
+                <th className="text-left px-4 py-2 font-medium text-slate-600">Order</th>
+                <th className="text-left px-4 py-2 font-medium text-slate-600">Klant</th>
+                <th className="text-left px-4 py-2 font-medium text-slate-600">Inkooporder</th>
+                <th className="text-left px-4 py-2 font-medium text-slate-600">Lever wk</th>
+                <th className="text-right px-4 py-2 font-medium text-slate-600">Aantal</th>
+              </tr>
+            </thead>
+            <tbody>
+              {claims.filter(c => c.bron === 'inkooporder_regel').map((c) => (
+                <tr key={c.claim_id} className="border-b border-slate-50 hover:bg-slate-50">
+                  <td className="px-4 py-2">
+                    <Link to={`/orders/${c.order_id}`} className="text-terracotta-500 hover:underline font-mono text-xs">
+                      {c.order_nr}
+                    </Link>
+                  </td>
+                  <td className="px-4 py-2 text-slate-700">{c.klant_naam ?? '—'}</td>
+                  <td className="px-4 py-2 font-mono text-xs">{c.inkooporder_nr ?? '—'}</td>
+                  <td className="px-4 py-2 text-slate-700">
+                    {c.verwacht_datum ? `wk ${isoWeekFromString(c.verwacht_datum)}` : '—'}
+                  </td>
+                  <td className="px-4 py-2 text-right font-medium">{c.aantal}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 

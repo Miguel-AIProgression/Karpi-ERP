@@ -9,6 +9,7 @@ import {
   VormAfmetingSelector,
   type VormAfmetingData,
 } from './vorm-afmeting-selector'
+import { MaatwerkLevertijdHint } from './maatwerk-levertijd-hint'
 import {
   fetchVormen,
   fetchAfwerkingTypes,
@@ -234,6 +235,17 @@ export function OpMaatSelector({ defaultKorting, onAdd }: OpMaatSelectorProps) {
       <KwaliteitKleurSelector
         onSelect={(data) => dispatch({ type: 'KWALITEIT_KLEUR_SELECTED', payload: data })}
       />
+
+      {/* Levertijd-hint: geen rol op voorraad, maar wel openstaande inkoop */}
+      {state.step === 'vorm_afmeting'
+        && state.aantalRollen === 0
+        && state.equivRollen === 0
+        && (
+          <MaatwerkLevertijdHint
+            kwaliteitCode={state.kwaliteitCode}
+            kleurCode={state.kleurCode}
+          />
+        )}
 
       {/* Stap 2: Vorm + Afmeting + Afwerking (alleen als kwaliteit geselecteerd) */}
       {state.step === 'vorm_afmeting' && (
