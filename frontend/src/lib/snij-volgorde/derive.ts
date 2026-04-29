@@ -137,15 +137,15 @@ function clusterShelves(placements: AugmentedPlacement[]): ShelfRaw[] {
 
   const shelves: ShelfRaw[] = []
   for (const p of sorted) {
-    const y_start = p.positie_y_cm
-    const y_end = p.positie_y_cm + p.placed_y_cm
+    const y_start_cm = p.positie_y_cm
+    const y_end_cm = p.positie_y_cm + p.placed_y_cm
     const last = shelves[shelves.length - 1]
     // Overlap = strict less than current shelf's y_end (touching counts as separate).
-    if (last && y_start < last.y_end - Y_OVERLAP_EPSILON) {
+    if (last && y_start_cm < last.y_end_cm - Y_OVERLAP_EPSILON) {
       last.pieces.push(p)
-      if (y_end > last.y_end) last.y_end = y_end
+      if (y_end_cm > last.y_end_cm) last.y_end_cm = y_end_cm
     } else {
-      shelves.push({ y_start, y_end, pieces: [p] })
+      shelves.push({ y_start_cm, y_end_cm, pieces: [p] })
     }
   }
   return shelves
@@ -179,7 +179,7 @@ function buildRij(
   const lengte_mes_cm = Math.round(
     Math.max(...lanes.map((p) => p.placed_y_cm)),
   )
-  const lengte_mes_absoluut_cm = Math.round(shelf.y_end)
+  const lengte_mes_absoluut_cm = Math.round(shelf.y_end_cm)
 
   const primary_mes_cm = breedte_messen_cm[0] ?? 0
   const is_overgenomen = prev_primary_mes_cm !== null && prev_primary_mes_cm === primary_mes_cm
