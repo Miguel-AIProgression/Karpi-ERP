@@ -1,6 +1,16 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AlertTriangle, CalendarClock, ClipboardList, Package, Plus, Search } from 'lucide-react'
+import {
+  AlertTriangle,
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  CalendarClock,
+  ClipboardList,
+  Package,
+  Plus,
+  Search,
+} from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { useInkooporders, useInkooporderStats } from '@/hooks/use-inkooporders'
 import { useLeveranciersOverzicht } from '@/hooks/use-leveranciers'
@@ -27,6 +37,37 @@ function formatDatum(iso: string | null): string {
   return d.toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
+type SortKey = 'leverancier' | 'leverweek' | 'besteldatum'
+type SortDir = 'asc' | 'desc'
+
+function leverweekVolgnr(leverweek: string | null, fallbackIso: string | null): number | null {
+  if (leverweek) {
+    const m = /^(\d{1,2})\s*\/\s*(\d{4})$/.exec(leverweek.trim())
+    if (m) {
+      const week = Number(m[1])
+      const jaar = Number(m[2])
+      return jaar * 100 + week
+    }
+  }
+  if (fallbackIso) {
+    const d = new Date(fallbackIso)
+    if (!Number.isNaN(d.getTime())) {
+      const onejan = new Date(d.getFullYear(), 0, 1)
+      const week = Math.ceil(((d.getTime() - onejan.getTime()) / 86400000 + onejan.getDay() + 1) / 7)
+      return d.getFullYear() * 100 + week
+    }
+  }
+  return null
+}
+
+function compareNullable<T>(a: T | null, b: T | null, cmp: (x: T, y: T) => number, dir: SortDir): number {
+  if (a === null && b === null) return 0
+  if (a === null) return 1
+  if (b === null) return -1
+  const r = cmp(a, b)
+  return dir === 'asc' ? r : -r
+}
+
 export function InkooporderOverviewPage() {
   const navigate = useNavigate()
   const [status, setStatus] = useState<InkooporderStatus | 'alle'>('alle')
@@ -34,6 +75,8 @@ export function InkooporderOverviewPage() {
   const [alleenOpen, setAlleenOpen] = useState(true)
   const [zoek, setZoek] = useState('')
   const [formOpen, setFormOpen] = useState(false)
+  const [sortKey, setSortKey] = useState<SortKey | null>(null)
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
 
   const { data: orders = [], isLoading } = useInkooporders({
     status,
@@ -41,6 +84,48 @@ export function InkooporderOverviewPage() {
     alleen_open: alleenOpen,
     zoek,
   })
+
+  const sortedOrders = useMemo(() => {
+    if (!sortKey) return orders
+    const collator = new Intl.Collator('nl-NL', { sensitivity: 'base' })
+    const arr = [...orders]
+    arr.sort((a, b) => {
+      if (sortKey === 'leverancier') {
+        return compareNullable(a.leverancier_naam, b.leverancier_naam, (x, y) => collator.compare(x, y), sortDir)
+      }
+      if (sortKey === 'besteldatum') {
+        return compareNullable(a.besteldatum, b.besteldatum, (x, y) => x.localeCompare(y), sortDir)
+      }
+      // leverweek
+      const av = leverweekVolgnr(a.leverweek, a.verwacht_datum)
+      const bv = leverweekVolgnr(b.leverweek, b.verwacht_datum)
+      return compareNullable(av, bv, (x, y) => x - y, sortDir)
+    })
+    return arr
+  }, [orders, sortKey, sortDir])
+
+  function toggleSort(key: SortKey) {
+    if (sortKey !== key) {
+      setSortKey(key)
+      setSortDir(key === 'besteldatum' ? 'desc' : 'asc')
+      return
+    }
+    if (sortDir === 'asc') {
+      setSortDir('desc')
+    } else {
+      setSortKey(null)
+      setSortDir('asc')
+    }
+  }
+
+  function SortIcon({ k }: { k: SortKey }) {
+    if (sortKey !== k) return <ArrowUpDown size={12} className="text-slate-300" />
+    return sortDir === 'asc' ? (
+      <ArrowUp size={12} className="text-slate-600" />
+    ) : (
+      <ArrowDown size={12} className="text-slate-600" />
+    )
+  }
   const { data: stats } = useInkooporderStats()
   const { data: leveranciers = [] } = useLeveranciersOverzicht()
 
@@ -164,9 +249,36 @@ export function InkooporderOverviewPage() {
             <thead className="bg-slate-50 text-slate-600">
               <tr>
                 <th className="px-4 py-3 text-left font-medium">Ordernummer</th>
-                <th className="px-4 py-3 text-left font-medium">Leverancier</th>
-                <th className="px-4 py-3 text-left font-medium">Besteldatum</th>
-                <th className="px-4 py-3 text-left font-medium">Leverweek</th>
+                <th className="px-4 py-3 text-left font-medium">
+                  <button
+                    type="button"
+                    onClick={() => toggleSort('leverancier')}
+                    className="inline-flex items-center gap-1.5 font-medium hover:text-slate-900"
+                  >
+                    Leverancier
+                    <SortIcon k="leverancier" />
+                  </button>
+                </th>
+                <th className="px-4 py-3 text-left font-medium">
+                  <button
+                    type="button"
+                    onClick={() => toggleSort('besteldatum')}
+                    className="inline-flex items-center gap-1.5 font-medium hover:text-slate-900"
+                  >
+                    Besteldatum
+                    <SortIcon k="besteldatum" />
+                  </button>
+                </th>
+                <th className="px-4 py-3 text-left font-medium">
+                  <button
+                    type="button"
+                    onClick={() => toggleSort('leverweek')}
+                    className="inline-flex items-center gap-1.5 font-medium hover:text-slate-900"
+                  >
+                    Leverweek
+                    <SortIcon k="leverweek" />
+                  </button>
+                </th>
                 <th className="px-4 py-3 text-right font-medium">Regels</th>
                 <th className="px-4 py-3 text-right font-medium">Besteld</th>
                 <th className="px-4 py-3 text-right font-medium">Te leveren</th>
@@ -174,7 +286,7 @@ export function InkooporderOverviewPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {orders.map((o) => (
+              {sortedOrders.map((o) => (
                 <tr
                   key={o.id}
                   onClick={() => navigate(`/inkoop/${o.id}`)}

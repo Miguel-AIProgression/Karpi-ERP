@@ -5,7 +5,7 @@
 
 ## Overzicht
 
-36 tabellen, 7 enums, 11 views, 14 functies. Alle tabellen hebben RLS enabled (fase 1: authenticated = volledige toegang).
+36 tabellen, 7 enums, 12 views, 15 functies. Alle tabellen hebben RLS enabled (fase 1: authenticated = volledige toegang).
 
 ---
 
@@ -89,7 +89,7 @@ Alle 997 kwaliteitscodes (3-4 letters). 170 met collectie, 822 zonder, 5 alleen 
 | standaard_breedte_cm | INTEGER | Standaard rolbreedte voor deze kwaliteit. Primaire bron voor `bereken_rol_type()` sinds migratie 086/087. NULL = fallback op artikelnr-heuristiek (laatste 3 cijfers), daarna 400 cm. |
 | created_at | TIMESTAMPTZ | Auto |
 
-**Uitwisselbaarheid:** kwaliteiten met dezelfde collectie_id zijn uitwisselbaar. Query: `SELECT * FROM uitwisselbare_kwaliteiten('VERI')`
+**Uitwisselbaarheid:** kwaliteiten met dezelfde `collectie_id` zijn uitwisselbaar. Canonieke seam (sinds migratie 138): `SELECT * FROM uitwisselbare_paren('VERI', '15')` — geeft alle (kwaliteit_code, kleur_code)-aliassen terug, incl. zichzelf. Resolver: zelfde `collectie_id` én genormaliseerde kleur-code matcht. Bron-van-waarheid voor snijplanning, order-aanmaak en voorraad-aggregatie. De legacy tabel `kwaliteit_kleur_uitwisselgroepen` (Map1) is een parallel spoor dat fade-out wordt; check dekking via view `uitwisselbaarheid_map1_diff` voordat hij gedropt wordt.
 
 ---
 
@@ -741,7 +741,7 @@ Audit trail: wie heeft wat wanneer gedaan.
 | rollen_overzicht | Per kwaliteit/kleur: aantal, oppervlak, waarde |
 | recente_orders | Laatste 50 orders met klantnaam |
 | orders_status_telling | Aantal per order_status |
-| snijplanning_overzicht | Snijplannen met order-, klant- en rolgegevens voor de planningsweergave (incl. geroteerd vlag). `snij_lengte_cm`/`snij_breedte_cm` zijn **nominale (bestelde) maten** — edge function en tekort-analyse passen `stuk_snij_marge_cm()` toe voor de fysieke snij-maat (ZO +6, rond/ovaal +5). |
+| snijplanning_overzicht | Snijplannen met order-, klant- en rolgegevens voor de planningsweergave. `snij_lengte_cm`/`snij_breedte_cm` zijn **nominale (bestelde) maten**. Migratie 143 voegt `marge_cm` toe (single-source via `stuk_snij_marge_cm()` migratie 126; ZO +6, rond/ovaal +5, max bij combi) en `geroteerd` toe — beide nodig voor de SnijVolgorde-transformer ([frontend/src/lib/snij-volgorde/derive.ts](../frontend/src/lib/snij-volgorde/derive.ts)) die de rol-uitvoer modal voedt. Fysieke snij-maat = bestelde + marge. |
 | confectie_overzicht | Confectie-orders met scan- en voortgangsstatus |
 | confectie_planning_overzicht | Confectie-orders (status Wacht op materiaal / In productie) met klant, order, maatwerk-afmetingen en strekkende meter voor planningsweergave |
 | confectie_planning_forward | Vooruitkijkende confectie-planning — alle open maatwerk-snijplannen (Gepland..In confectie/Ingepakt) met afgeleide type_bewerking + confectie_startdatum + backward-compat aliassen |
@@ -749,6 +749,7 @@ Audit trail: wie heeft wat wanneer gedaan.
 | leveranciers_overzicht | Per leverancier: openstaande orders/meters + eerstvolgende verwachte levering. Basis voor Leveranciers-overzichtspagina. Migratie 127. |
 | inkooporders_overzicht | Per inkooporder: leveranciersnaam + aantal regels + totaal besteld/geleverd/te_leveren. Basis voor Inkooporders-overzichtspagina. Migratie 127. |
 | openstaande_inkooporder_regels | Open regels (`te_leveren_m > 0` én order in Concept/Besteld/Deels ontvangen) met leverancier, product, kwaliteit/kleur. Migratie 127. |
+| uitwisselbaarheid_map1_diff | Diagnostiek (migratie 138): Map1-paren in `kwaliteit_kleur_uitwisselgroepen` die NIET door `uitwisselbare_paren()` afgedekt worden, met `reden`-kolom (input-kw zonder collectie_id, kwaliteiten in andere collecties, kleur-code-mismatch, target ontbreekt in producten/rollen/maatwerk_m2_prijzen). Moet 0 rijen geven voordat Map1 fysiek gedropt mag worden. |
 
 ---
 
@@ -758,7 +759,8 @@ Audit trail: wie heeft wat wanneer gedaan.
 |---------|------|
 | `update_updated_at()` | Trigger: auto-update updated_at |
 | `volgend_nummer(type TEXT)` | Geeft ORD-2026-0001, FACT-2026-0001, etc. |
-| `uitwisselbare_kwaliteiten(code TEXT)` | Alle kwaliteiten in dezelfde collectie |
+| `uitwisselbare_kwaliteiten(code TEXT)` | Alle kwaliteiten in dezelfde collectie. **Note:** voor snijplanning/order-aanmaak gebruikt sinds migratie 138 de bredere functie `uitwisselbare_paren(kw, kl)` die ook kleur-matching meeneemt. |
+| `uitwisselbare_paren(kw TEXT, kleur TEXT)` | **Canonieke uitwisselbaarheids-seam** (migratie 138). Returns TABLE(`target_kwaliteit_code`, `target_kleur_code`, `is_zelf BOOLEAN`). Resolver: zelfde `kwaliteiten.collectie_id` én genormaliseerde kleur-code matcht. Bron: producten ∪ rollen ∪ maatwerk_m2_prijzen. Self-row altijd gegarandeerd. Vervangt de versplinterde uitwissel-implementaties in `_shared/db-helpers.ts`, `snijplanning_tekort_analyse()`, `kleuren_voor_kwaliteit()` en `op-maat.ts`. |
 | `herbereken_klant_tiers()` | Gold (top 10%), Silver (top 30%), Bronze (rest) |
 | `update_order_totalen()` | Trigger: herbereken order bedrag/gewicht/regels |
 | `herbereken_product_reservering(artikelnr TEXT)` | Herbereken gereserveerd + vrije_voorraad voor één product op basis van actieve orders |

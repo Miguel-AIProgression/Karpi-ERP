@@ -60,6 +60,8 @@ export interface SnijplanRow {
   maatwerk_afwerking: MaatwerkAfwerking | null
   maatwerk_band_kleur: string | null
   maatwerk_instructies: string | null
+  /** Snij-marge per dimensie (rond/ovaal +5, ZO +6, max). Vanuit view (migratie 143). */
+  marge_cm: number
   // Order info
   order_regel_id: number
   artikelnr: string | null

@@ -13,9 +13,7 @@ import { computeReststukken } from '../_shared/compute-reststukken.ts'
 import { validateShelfMesLimiet } from '../_shared/shelf-mes-validator.ts'
 import {
   fetchStukken,
-  fetchUitwisselbareCodes,
-  fetchUitwisselbarePairs,
-  getKleurVariants,
+  fetchUitwisselbareParen,
   fetchBeschikbareRollen,
   saveVoorstel,
 } from '../_shared/db-helpers.ts'
@@ -76,43 +74,24 @@ serve(async (req) => {
       )
     }
 
-    // ---- Step 1b: Find interchangeable (kwaliteit,kleur)-pairs ----
-    //   Primair: fijnmazige Map1-tabel. Fallback: collecties. Als Map1 pairs
-    //   oplevert die geen voorraad hebben, vallen we alsnog terug op de brede
-    //   collectie-set (zelfde pad als tekort_analyse in UI) — anders ziet de
-    //   edge function minder voorraad dan de UI en blijft een groep hangen.
-    let uitwisselbarePairs = await fetchUitwisselbarePairs(supabase, kwaliteit_code, kleur_code)
-    let uitwisselbareCodes = uitwisselbarePairs.length > 0
-      ? Array.from(new Set(uitwisselbarePairs.map((p) => p.kwaliteit_code)))
-      : await fetchUitwisselbareCodes(supabase, kwaliteit_code)
+    // ---- Step 1b: Uitwissel-paren via canonieke RPC ----
+    //   Eén bron-van-waarheid (migraties 138/140): zelfde collectie_id +
+    //   genormaliseerde kleur-code. Self-row gegarandeerd inbegrepen.
+    const paren = await fetchUitwisselbareParen(supabase, kwaliteit_code, kleur_code)
 
     // ---- Step 1c: Fetch available rolls ----
-    const kleurVariants = getKleurVariants(kleur_code)
-    let rollen = await fetchBeschikbareRollen(
-      supabase,
-      uitwisselbareCodes,
-      kleurVariants,
-      kwaliteit_code,
-      uitwisselbarePairs,
-    )
-
-    if (rollen.length === 0 && uitwisselbarePairs.length > 0) {
-      uitwisselbarePairs = []
-      uitwisselbareCodes = await fetchUitwisselbareCodes(supabase, kwaliteit_code)
-      rollen = await fetchBeschikbareRollen(
-        supabase,
-        uitwisselbareCodes,
-        kleurVariants,
-        kwaliteit_code,
-      )
-    }
+    const rollen = await fetchBeschikbareRollen(supabase, paren, kwaliteit_code)
 
     if (rollen.length === 0) {
+      const partners = paren
+        .filter((p) => !p.is_zelf)
+        .map((p) => p.kwaliteit_code)
+        .filter((c, i, a) => a.indexOf(c) === i)
       return new Response(
         JSON.stringify({
           error: `Geen beschikbare rollen voor ${kwaliteit_code} ${kleur_code}` +
-            (uitwisselbareCodes.length > 1
-              ? ` (ook gezocht: ${uitwisselbareCodes.filter(c => c !== kwaliteit_code).join(', ')})`
+            (partners.length > 0
+              ? ` (ook gezocht: ${partners.join(', ')})`
               : ''),
         }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },

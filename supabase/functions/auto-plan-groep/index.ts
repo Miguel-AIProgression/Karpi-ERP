@@ -15,9 +15,7 @@ import { packAcrossRolls } from '../_shared/guillotine-packing.ts'
 import { validateShelfMesLimiet } from '../_shared/shelf-mes-validator.ts'
 import {
   fetchStukken,
-  fetchUitwisselbareCodes,
-  fetchUitwisselbarePairs,
-  getKleurVariants,
+  fetchUitwisselbareParen,
   fetchBeschikbareRollen,
   fetchBezettePlaatsingen,
   saveVoorstel,
@@ -131,38 +129,12 @@ serve(async (req) => {
     }
 
     // ---- Step 4: Fetch available rolls + bezette plaatsingen ----
-    // Twee uitwissel-paden bestaan: fijnmazig Map1 (kwaliteit_kleur_uitwisselbaar
-    // view) en bredere collectie_id. Map1 kan een beperkte set pairs geven die
-    // toevallig geen voorraad heeft, terwijl de bredere collectie-set wél
-    // voorraad heeft — dat is exact wat de UI via tekort_analyse toont.
-    // Strategie: probeer eerst Map1 (precies), val terug op collectie (breed)
-    // als Map1 niks oplevert, zodat edge function nooit minder voorraad ziet
-    // dan de UI.
-    let uitwisselbarePairs = await fetchUitwisselbarePairs(supabase, kwaliteit_code, kleur_code)
-    let uitwisselbareCodes = uitwisselbarePairs.length > 0
-      ? Array.from(new Set(uitwisselbarePairs.map((p) => p.kwaliteit_code)))
-      : await fetchUitwisselbareCodes(supabase, kwaliteit_code)
-    const kleurVariants = getKleurVariants(kleur_code)
-    let rollen = await fetchBeschikbareRollen(
-      supabase,
-      uitwisselbareCodes,
-      kleurVariants,
-      kwaliteit_code,
-      uitwisselbarePairs,
-    )
-
-    // Fallback: Map1 gaf pairs maar die hebben geen voorraad — probeer de
-    // volledige collectie-set (zelfde pad als tekort_analyse in UI).
-    if (rollen.length === 0 && uitwisselbarePairs.length > 0) {
-      uitwisselbarePairs = []
-      uitwisselbareCodes = await fetchUitwisselbareCodes(supabase, kwaliteit_code)
-      rollen = await fetchBeschikbareRollen(
-        supabase,
-        uitwisselbareCodes,
-        kleurVariants,
-        kwaliteit_code,
-      )
-    }
+    // Eén bron-van-waarheid voor uitwisselbaarheid: de canonieke RPC
+    // `uitwisselbare_paren()` (migraties 138/140). Resolver: zelfde
+    // collectie_id + genormaliseerde kleur-code. Geen Map1 / fallback-cascade
+    // meer — de UI tekort_analyse en deze edge zien gegarandeerd dezelfde set.
+    const paren = await fetchUitwisselbareParen(supabase, kwaliteit_code, kleur_code)
+    const rollen = await fetchBeschikbareRollen(supabase, paren, kwaliteit_code)
 
     if (rollen.length === 0) {
       return new Response(
@@ -179,12 +151,7 @@ serve(async (req) => {
     // Bezette plaatsingen: al-gesneden Snijden-stukken op rollen die nog niet
     // in productie zijn → reconstructie van hun shelves zodat nieuwe stukken
     // in bestaande gaps kunnen landen i.p.v. een verse rol aan te snijden.
-    const bezetteMap = await fetchBezettePlaatsingen(
-      supabase,
-      uitwisselbareCodes,
-      kleurVariants,
-      uitwisselbarePairs,
-    )
+    const bezetteMap = await fetchBezettePlaatsingen(supabase, paren)
 
     // Max-afval-percentage voor reststukken (uit app_config). Als een reststuk
     // na packing meer verspilling zou opleveren, wordt die overgeslagen —

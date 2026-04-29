@@ -34,8 +34,9 @@ Domeinbegrippen die je moet kennen om dit project te begrijpen.
 | **Kwaliteitscode** | De 3-4 letter code. Eerste letters uit de karpi_code. |
 | **Kleur-code** | Eerste 2 cijfers uit de karpi_code na de kwaliteitscode. |
 | **Zoeksleutel** | kwaliteit_code + "_" + kleur_code. Bijv. "CISC_21". Gebruikt voor gecombineerd zoeken. |
-| **Collectie** | Groep van uitwisselbare kwaliteiten. Bijv. collectie "Vernissage/Lago" bevat VERI, LAGO, GLOR, etc. 56 groepen, 170 codes. |
-| **Uitwisselbaar** | Kwaliteiten in dezelfde collectie zijn uitwisselbaar = hetzelfde type tapijt, andere variant. |
+| **Collectie** | Canonieke groep van **aliassen voor één fysiek tapijt-type**. Bijv. "Vernissage/Lago" bevat VERI, LAGO, GLOR — fysiek dezelfde partij, andere namen voor verschillende afnemers/markten. 56 groepen, 170 codes. **Bron-van-waarheid voor uitwisselbaarheid; bewerkt via Producten → tab Uitwisselbaar.** |
+| **Uitwisselbaar** | Twee `(kwaliteit_code, kleur_code)`-paren zijn uitwisselbaar wanneer (a) beide kwaliteiten dezelfde `collectie_id` hebben **én** (b) de kleur-codes na normalisatie (`normaliseer_kleur_code()`, strip trailing `.0`) gelijk zijn. Resolver: SQL-functie `uitwisselbare_paren(kw, kl)` — alle voorraad-/order-/snijplan-callers gaan hierdoor. Een paar zonder partners ("niet-overeenkomend" in UI) is uitwisselbaar met zichzelf. |
+| **Aliassing-lagen** | Drie niveaus van naam-versus-fysieke-identiteit: (1) **collectie** = markt/leverancier-niveau aliassing, één partij onder N namen; (2) **`klanteigen_namen`** = klant-niveau display-naam, per debiteur; (3) **stickering** = bij rol-output krijgt het stuk de naam uit `order_regel.maatwerk_kwaliteit_code`. Voor rollen is uitwisseling kosteloos (sticker komt pas na snijden); voor vaste-maat producten kost het een sticker-wissel ("liever sticker veranderen dan nee-verkopen"). |
 | **Rol** | Individuele fysieke tapijtrol in het magazijn. Elke rol heeft een uniek `rolnummer`, specifieke afmetingen en waarde. |
 | **Rolnummer** | Unieke identifier per fysieke rol. Legacy: puur numeriek (bv. `109801`), S-prefix (bv. `S0375-1CBON`) of andere formaten uit de oude administratie. **Nieuw (migratie 135)**: rollen die via `boek_ontvangst` aangemaakt worden krijgen automatisch `R-YYYY-NNNN` (bv. `R-2026-0001`) uit sequence `r_2026_seq` via `volgend_nummer('R')` — consistent met `ORD-`/`INK-`/`SNIJ-`-nummering. |
 | **VVP** | Verkoopprijs per vierkante meter (Verkoop Vaste Prijs per m2). |
@@ -68,6 +69,11 @@ Domeinbegrippen die je moet kennen om dit project te begrijpen.
 | **Reststuk** | Overgebleven stuk na het snijden van een rol. Wordt automatisch aangemaakt via `maak_reststuk()` met eigen rolnummer, gekoppeld aan oorsprong_rol_id. |
 | **Snijvoorstel** | Visuele weergave (SVG) van hoe stukken op een rol geplaatst worden. Gebruikt strip-packing algoritme met positie_x/positie_y. |
 | **Strip-packing** | 2D-inpakalgoritme dat stukken zo efficient mogelijk op een rol plaatst. Minimaliseert verspilling. |
+| **SnijVolgorde** | Operator-perspectief van een snijplan: pure transformatie van geplaatste rechthoeken naar geordende mes-instructies. Pure functie [`buildSnijVolgorde`](../frontend/src/lib/snij-volgorde/derive.ts). Voedt de rol-uitvoer modal. |
+| **Rij** (snijden) | **Eén breedte-mes-instelling** op de guillotine. Pieces met dezelfde breedte-mes-positie consecutive in y-volgorde delen een Rij; verschillende breedtes worden aparte Rijen. Tegen-intuïtief vs. de oude shelf-clustering die alle aangrenzende y-banden in één Rij stopte. |
+| **Breedte-mes-overgenomen** | Hint op een Rij-header: de primary breedte-mes-positie matcht die van de vorige Rij — operator hoeft het mes niet te verzetten ("Mes laten staan op 325"). Spaart wisseltijd. |
+| **Snij-marge** | Extra cm per dimensie tov. bestelde maat (rond/ovaal +5, ZO +6, max bij combi). Single-source via SQL-functie `stuk_snij_marge_cm()` (migratie 126); via view exposed in `marge_cm` kolom (migratie 143). Voor ronde stukken snijdt de operator eerst een vierkant van bestelde+marge, daarna handmatig rond uit. |
+| **KnifeOperation** | Eén individuele snij-handeling binnen een Rij. Bevat `snij_maat` (wat het mes maakt, incl. marge), `bestelde_maat` (klant-orientatie, voor sticker), en `handeling`-enum (`geen | orientatie_swap | rond_uitsnijden | ovaal_uitsnijden | zo_marge_extra`). |
 | **Scan_event** | Registratie van een individuele barcode/QR-scan: wie, wanneer, welk station, welke actie. Opgeslagen in `scan_events` tabel. |
 | **Voorraad_mutatie** | Logboekregel van een voorraadwijziging op een rol (gesneden, reststuk aangemaakt, correctie, **ontvangst**). Opgeslagen in `voorraad_mutaties` tabel. |
 
