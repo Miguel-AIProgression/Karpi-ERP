@@ -23,8 +23,6 @@ import { ReststukStickerLayout } from './reststuk-sticker-layout'
 import { mapSnijplannenToStukken } from '@/lib/utils/snijplan-mapping'
 import {
   computeReststukkenAngebrokenAfval,
-  RESTSTUK_MIN_SHORT,
-  RESTSTUK_MIN_LONG,
 } from '@/lib/utils/compute-reststukken'
 import { cn } from '@/lib/utils/cn'
 import { AFWERKING_MAP } from '@/lib/utils/constants'
@@ -35,15 +33,6 @@ interface RolUitvoerModalProps {
   rolId: number | null
   open: boolean
   onClose: () => void
-}
-
-interface SnijShelf {
-  y: number
-  height: number
-  maxX: number
-  events: RolGebeurtenis[]
-  breedtePosities: number[]    // gesorteerde breedte-mes posities (één per stuk in de rij)
-  breedteMesGewijzigd: boolean // false = mes laten staan t.o.v. vorige rij
 }
 
 // ---------------------------------------------------------------------------
@@ -349,7 +338,7 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
     [snijStukken, checkedIds],
   )
 
-  const { aangebrokenEnd } = useMemo(
+  const { reststukken: reststukRects, aangebrokenEnd, afval: afvalRects } = useMemo(
     () =>
       computeReststukkenAngebrokenAfval(
         rolLengte,
@@ -439,7 +428,7 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
       {
         rolId,
         snijplanIds: afgevinkt,
-        reststukken: snijVolgorde.reststukken,
+        reststukken: reststukRects,
         aangebrokenLengte,
       },
       {
@@ -460,8 +449,8 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
   const printBulk = () => {
     // Geef reststuk-preview data mee via sessionStorage zodat stickers-bulk
     // ook de (nog niet in DB bestaande) reststukken kan renderen.
-    if (rolId && snijVolgorde.reststukken.length > 0) {
-      const previews = snijVolgorde.reststukken
+    if (rolId && reststukRects.length > 0) {
+      const previews = reststukRects
         .slice()
         .sort((a, b) => a.y_cm - b.y_cm || a.x_cm - b.x_cm)
         .map((r, i) => ({
@@ -501,8 +490,8 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
   }
 
   const aantalTeSnijdenAfgevinkt = afgevinkteRows.length
-  const aantalReststukken = snijVolgorde.reststukken.length
-  const aantalAfval = snijVolgorde.aantalAfval
+  const aantalReststukken = reststukRects.length
+  const aantalAfval = afvalRects.length
   const aantalAangebroken = aangebrokenEnd ? 1 : 0
 
   return (
