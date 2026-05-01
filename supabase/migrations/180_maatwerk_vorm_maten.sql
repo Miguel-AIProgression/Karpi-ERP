@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS maatwerk_vorm_maten (
 CREATE INDEX IF NOT EXISTS maatwerk_vorm_maten_vorm_idx ON maatwerk_vorm_maten(vorm_code, volgorde);
 
 ALTER TABLE maatwerk_vorm_maten ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS maatwerk_vorm_maten_all ON maatwerk_vorm_maten;
 CREATE POLICY maatwerk_vorm_maten_all ON maatwerk_vorm_maten FOR ALL USING (true) WITH CHECK (true);
 
 COMMENT ON TABLE maatwerk_vorm_maten IS
@@ -37,6 +38,17 @@ CREATE UNIQUE INDEX IF NOT EXISTS maatwerk_vorm_maten_uniek_idx
     COALESCE(breedte_cm, 0),
     COALESCE(diameter_cm, 0)
   );
+
+-- Sluit COALESCE(x,0) collision-risico af: gevulde dimensies moeten altijd >0 zijn.
+DO $$ BEGIN
+  ALTER TABLE maatwerk_vorm_maten
+    ADD CONSTRAINT maatwerk_vorm_maten_positief_check CHECK (
+      (lengte_cm IS NULL OR lengte_cm > 0) AND
+      (breedte_cm IS NULL OR breedte_cm > 0) AND
+      (diameter_cm IS NULL OR diameter_cm > 0)
+    );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- Standaard-set: 160x230, 200x290, 240x340, 300x400 voor alle 6 aparte vormen.
 -- Rechthoek/rond blijven vrij invoerbaar (geen chips).

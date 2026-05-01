@@ -11,7 +11,7 @@ ALTER TABLE maatwerk_vormen
 
 COMMENT ON COLUMN maatwerk_vormen.kan_afwijkende_maten IS
   'Of de gebruiker een eigen lengte/breedte/diameter mag invullen die niet in maatwerk_vorm_maten staat. '
-  'True voor: rechthoek, rond, ovaal, afgeronde_hoeken. False voor de overige (alleen vaste maten).';
+  'Zie de tabel voor actuele waarden per vorm-code.';
 
 -- 2. Update bestaande organische toeslagen 20€ → 75€
 UPDATE maatwerk_vormen SET toeslag = 75 WHERE code IN ('organisch_a','organisch_b_sp');
