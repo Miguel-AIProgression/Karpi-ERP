@@ -4,6 +4,7 @@ import { PageHeader } from '@/components/layout/page-header'
 import { OrderHeader } from '@/components/orders/order-header'
 import { OrderAddresses } from '@/components/orders/order-addresses'
 import { OrderRegelsTable } from '@/components/orders/order-regels-table'
+import { ZendingAanmakenKnop } from '@/components/orders/zending-aanmaken-knop'
 import { useOrderDetail, useOrderRegels } from '@/hooks/use-orders'
 import { useLevertijdVoorOrder, useClaimsVoorOrder } from '@/hooks/use-reserveringen'
 import { computeOrderLock } from '@/lib/utils/order-lock'
@@ -49,7 +50,14 @@ export function OrderDetailPage() {
         </Link>
       </div>
 
-      <PageHeader title={order.order_nr} />
+      <PageHeader
+        title={order.order_nr}
+        actions={
+          <ZendingAanmakenKnop
+            order={{ id: order.id, status: order.status, debiteur_nr: order.debiteur_nr }}
+          />
+        }
+      />
 
       <OrderHeader order={order} locked={computeOrderLock(regels) === 'full'} />
       <OrderAddresses order={order} />

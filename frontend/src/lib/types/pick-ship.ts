@@ -31,6 +31,10 @@ export const BUCKET_LABEL: Record<BucketKey, string> = {
 
 export type PickShipBron = 'snijplan' | 'rol' | 'producten_default' | null
 export type PickShipWachtOp = 'snijden' | 'confectie' | 'inpak' | 'inkoop' | null
+export type VervoerderSelectieStatus =
+  | 'selecteerbaar'
+  | 'geen_actieve_vervoerder'
+  | 'meerdere_actieve_vervoerders'
 
 export interface PickShipRegel {
   order_regel_id: number
@@ -52,8 +56,13 @@ export interface PickShipRegel {
 export interface PickShipOrder {
   order_id: number
   order_nr: string
+  status: string
   klant_naam: string
   debiteur_nr: number
+  vervoerder_code: string | null
+  vervoerder_naam: string | null
+  vervoerder_actief: boolean | null
+  vervoerder_selectie_status: VervoerderSelectieStatus
   afl_naam: string | null
   afl_plaats: string | null
   afleverdatum: string | null
