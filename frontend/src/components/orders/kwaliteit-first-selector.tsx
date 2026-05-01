@@ -13,6 +13,7 @@ import {
   fetchStandaardMatenVoorKwaliteit,
   fetchMaatwerkArtikelNr,
   fetchKwaliteitM2Prijs,
+  fetchKwaliteitAlleenRechtMaatwerk,
   type KwaliteitOptie,
   type KleurOptie,
 } from '@/lib/supabase/queries/op-maat'
@@ -141,6 +142,12 @@ export function KwaliteitFirstSelector({
         : null
       return perKleur ?? fetchStandaardAfwerking(selectedKwaliteit!.code)
     },
+    enabled: !!selectedKwaliteit && step === 'op_maat',
+  })
+
+  const { data: alleenRechtMaatwerk = false } = useQuery({
+    queryKey: ['kwaliteit-alleen-recht', selectedKwaliteit?.code],
+    queryFn: () => fetchKwaliteitAlleenRechtMaatwerk(selectedKwaliteit!.code),
     enabled: !!selectedKwaliteit && step === 'op_maat',
   })
 
@@ -732,6 +739,7 @@ export function KwaliteitFirstSelector({
               standaardAfwerking={standaardAfwerking ?? null}
               standaardBandKleur={standaardBandKleur}
               maxBreedteCm={selectedKleur.max_breedte_cm}
+              alleenRechtMaatwerk={alleenRechtMaatwerk}
               onChange={setVormData}
             />
           </div>

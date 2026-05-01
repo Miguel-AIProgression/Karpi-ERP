@@ -15,6 +15,7 @@ import {
   fetchAfwerkingTypes,
   fetchStandaardAfwerking,
   fetchStandaardBandKleur,
+  fetchKwaliteitAlleenRechtMaatwerk,
 } from '@/lib/supabase/queries/op-maat'
 import {
   berekenPrijsOppervlakM2,
@@ -106,6 +107,11 @@ function reducer(state: OpMaatState, action: OpMaatAction): OpMaatState {
         beschikbaarM2: action.payload.beschikbaarM2,
         equivRollen: action.payload.equivRollen,
         equivM2: action.payload.equivM2,
+        // Default naar 'rechthoek' zodat omschrijving en handleAdd niet kapot
+        // gaan als gebruiker direct submit zonder vorm-tegel te klikken. De
+        // child VormAfmetingSelector forceert dit alsnog naar de eerste
+        // beschikbare vorm via useEffect indien rechthoek niet bestaat (BEAC).
+        vormCode: 'rechthoek',
         step: 'vorm_afmeting',
       }
     case 'VORM_AFMETING_CHANGED':
@@ -156,6 +162,11 @@ export function OpMaatSelector({ defaultKorting, onAdd }: OpMaatSelectorProps) {
     queryKey: ['standaard-band-kleur', state.kwaliteitCode, state.kleurCode],
     queryFn: () => fetchStandaardBandKleur(state.kwaliteitCode, state.kleurCode),
     enabled: !!state.kwaliteitCode && !!state.kleurCode,
+  })
+  const { data: alleenRechtMaatwerk = false } = useQuery({
+    queryKey: ['kwaliteit-alleen-recht', state.kwaliteitCode],
+    queryFn: () => fetchKwaliteitAlleenRechtMaatwerk(state.kwaliteitCode),
+    enabled: !!state.kwaliteitCode,
   })
 
   // Afgeleide berekeningen
@@ -257,6 +268,7 @@ export function OpMaatSelector({ defaultKorting, onAdd }: OpMaatSelectorProps) {
               standaardAfwerking={standaardAfwerking ?? null}
               standaardBandKleur={standaardBandDefault?.band_kleur ?? null}
               maxBreedteCm={state.maxBreedteCm}
+              alleenRechtMaatwerk={alleenRechtMaatwerk}
               onChange={(data) => dispatch({ type: 'VORM_AFMETING_CHANGED', payload: data })}
             />
           </div>

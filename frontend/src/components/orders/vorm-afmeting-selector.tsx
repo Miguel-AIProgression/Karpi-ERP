@@ -1,6 +1,13 @@
-import { useState, useEffect } from 'react'
-import type { MaatwerkVormRow, AfwerkingTypeRow } from '@/lib/supabase/queries/op-maat'
+import { useState, useEffect, useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import {
+  fetchVormMaten,
+  type MaatwerkVormRow,
+  type AfwerkingTypeRow,
+} from '@/lib/supabase/queries/op-maat'
 import { formatCurrency } from '@/lib/utils/formatters'
+import { VormTegel } from './vorm-tegel'
+import { VormMaatChip } from './vorm-maat-chip'
 
 export interface VormAfmetingData {
   vormCode: string
@@ -18,6 +25,7 @@ interface VormAfmetingSelectorProps {
   standaardAfwerking: string | null
   standaardBandKleur: string | null
   maxBreedteCm: number | null
+  alleenRechtMaatwerk: boolean
   onChange: (data: VormAfmetingData) => void
 }
 
@@ -27,6 +35,7 @@ export function VormAfmetingSelector({
   standaardAfwerking,
   standaardBandKleur,
   maxBreedteCm,
+  alleenRechtMaatwerk,
   onChange,
 }: VormAfmetingSelectorProps) {
   const [data, setData] = useState<VormAfmetingData>({
@@ -38,18 +47,28 @@ export function VormAfmetingSelector({
     bandKleur: '',
     instructies: '',
   })
+  const [afwijkendeMaten, setAfwijkendeMaten] = useState(false)
+
+  // Beperk vormen tot rechthoek bij Beach Life-achtige kwaliteiten
+  const beschikbareVormen = useMemo(
+    () => (alleenRechtMaatwerk ? vormen.filter((v) => v.code === 'rechthoek') : vormen),
+    [vormen, alleenRechtMaatwerk],
+  )
 
   // Sync naar parent bij elke datawijziging
   useEffect(() => {
     onChange(data)
   }, [data, onChange])
 
-  // Initialiseer standaard vorm zodra vormen laden
+  // Forceer geldige vorm: als huidige vormCode niet (meer) in beschikbareVormen voorkomt
   useEffect(() => {
-    if (vormen.length > 0) {
-      setData((prev) => prev.vormCode ? prev : { ...prev, vormCode: vormen[0].code })
+    if (beschikbareVormen.length > 0) {
+      const isInLijst = beschikbareVormen.some((v) => v.code === data.vormCode)
+      if (!isInLijst) {
+        setData((prev) => ({ ...prev, vormCode: beschikbareVormen[0].code }))
+      }
     }
-  }, [vormen])
+  }, [beschikbareVormen, data.vormCode])
 
   // Pre-fill afwerking vanuit kwaliteit+kleur default
   useEffect(() => {
@@ -69,88 +88,114 @@ export function VormAfmetingSelector({
     }
   }, [standaardBandKleur])
 
+  // Vaste-maat-suggesties (mig 180): tonen als vorm geen kan_afwijkende_maten heeft
+  const { data: vormMaten = [] } = useQuery({
+    queryKey: ['vorm-maten', data.vormCode],
+    queryFn: () => fetchVormMaten(data.vormCode),
+    enabled: !!data.vormCode,
+  })
+
+  // Reset toggle bij vormwissel
+  useEffect(() => {
+    setAfwijkendeMaten(false)
+  }, [data.vormCode])
+
   function update(partial: Partial<VormAfmetingData>) {
     setData((prev) => ({ ...prev, ...partial }))
   }
 
-  const selectedVorm = vormen.find((v) => v.code === data.vormCode)
-  const isDiameter = selectedVorm?.afmeting_type === 'diameter'
+  const selectedVormRow = beschikbareVormen.find((v) => v.code === data.vormCode)
+  const isDiameter = selectedVormRow?.afmeting_type === 'diameter'
+  const kanAfwijkend = selectedVormRow?.kan_afwijkende_maten ?? true
   const selectedAfwerking = afwerkingen.find((a) => a.code === data.afwerkingCode)
 
   const breedteWaarde = isDiameter ? data.diameterCm : data.breedteCm
   const showBreedteWarning = maxBreedteCm != null && breedteWaarde != null && breedteWaarde > maxBreedteCm
 
+  const toonAfmetingInputs = afwijkendeMaten || vormMaten.length === 0
+
   return (
     <div className="space-y-4">
-      {/* Vorm + afmetingen */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {/* Vorm dropdown */}
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Vorm</label>
-          <select
-            value={data.vormCode}
-            onChange={(e) => {
-              const newVorm = vormen.find((v) => v.code === e.target.value)
-              const newIsDiameter = newVorm?.afmeting_type === 'diameter'
-              update({
-                vormCode: e.target.value,
-                lengteCm: newIsDiameter ? undefined : data.lengteCm,
-                breedteCm: newIsDiameter ? undefined : data.breedteCm,
-                diameterCm: newIsDiameter ? data.diameterCm : undefined,
-              })
-            }}
-            className="w-full px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400/30 focus:border-purple-400"
-          >
-            {vormen.map((v) => (
-              <option key={v.code} value={v.code}>
-                {v.naam}{v.toeslag > 0 ? ` (+${formatCurrency(v.toeslag)})` : ''}
-              </option>
-            ))}
-          </select>
-        </div>
+      {alleenRechtMaatwerk && (
+        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-[var(--radius-sm)] p-2">
+          Deze kwaliteit kan alleen in recht maatwerk geproduceerd worden.
+        </p>
+      )}
 
-        {/* Dynamische afmeting inputs */}
-        {isDiameter ? (
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Diameter (cm)</label>
-            <input
-              type="number"
-              min={1}
-              step={1}
-              value={data.diameterCm ?? ''}
-              onChange={(e) => update({ diameterCm: e.target.value ? Number(e.target.value) : undefined })}
-              placeholder="bijv. 200"
-              className="w-full px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400/30 focus:border-purple-400"
+      {/* Vorm tegel-grid */}
+      <div>
+        <label className="block text-sm font-medium text-slate-700 mb-2">Vorm</label>
+        <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+          {beschikbareVormen.map((v) => (
+            <VormTegel
+              key={v.code}
+              vorm={v}
+              selected={data.vormCode === v.code}
+              onClick={() => {
+                const newIsDiameter = v.afmeting_type === 'diameter'
+                update({
+                  vormCode: v.code,
+                  lengteCm: newIsDiameter ? undefined : data.lengteCm,
+                  breedteCm: newIsDiameter ? undefined : data.breedteCm,
+                  diameterCm: newIsDiameter ? data.diameterCm : undefined,
+                })
+              }}
             />
-            {showBreedteWarning && (
-              <p className="mt-1 text-xs text-red-600">
-                Let op: maximale rolbreedte is {maxBreedteCm} cm
-              </p>
-            )}
+          ))}
+        </div>
+      </div>
+
+      {/* Vaste-maten chips */}
+      {vormMaten.length > 0 && (
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-2">Maat</label>
+          <div className="flex flex-wrap gap-2">
+            {vormMaten.map((m) => {
+              const isActive = m.diameter_cm
+                ? data.diameterCm === m.diameter_cm
+                : data.lengteCm === m.lengte_cm && data.breedteCm === m.breedte_cm
+              return (
+                <VormMaatChip
+                  key={m.id}
+                  maat={m}
+                  active={isActive}
+                  onClick={() =>
+                    update(
+                      m.diameter_cm
+                        ? { diameterCm: m.diameter_cm, lengteCm: undefined, breedteCm: undefined }
+                        : { lengteCm: m.lengte_cm!, breedteCm: m.breedte_cm!, diameterCm: undefined },
+                    )
+                  }
+                />
+              )
+            })}
           </div>
-        ) : (
-          <>
+
+          {kanAfwijkend && (
+            <button
+              type="button"
+              onClick={() => setAfwijkendeMaten((p) => !p)}
+              className="text-xs text-purple-700 underline mt-2"
+            >
+              {afwijkendeMaten ? '← terug naar standaardmaten' : 'Afwijkende maat invoeren →'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Afmeting inputs — alleen tonen als geen chips of toggle aan */}
+      {toonAfmetingInputs && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {isDiameter ? (
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Lengte (cm)</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Diameter (cm)</label>
               <input
                 type="number"
                 min={1}
                 step={1}
-                value={data.lengteCm ?? ''}
-                onChange={(e) => update({ lengteCm: e.target.value ? Number(e.target.value) : undefined })}
-                placeholder="bijv. 300"
-                className="w-full px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400/30 focus:border-purple-400"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Breedte (cm)</label>
-              <input
-                type="number"
-                min={1}
-                step={1}
-                value={data.breedteCm ?? ''}
-                onChange={(e) => update({ breedteCm: e.target.value ? Number(e.target.value) : undefined })}
-                placeholder="bijv. 400"
+                value={data.diameterCm ?? ''}
+                onChange={(e) => update({ diameterCm: e.target.value ? Number(e.target.value) : undefined })}
+                placeholder="bijv. 200"
                 className="w-full px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400/30 focus:border-purple-400"
               />
               {showBreedteWarning && (
@@ -159,13 +204,44 @@ export function VormAfmetingSelector({
                 </p>
               )}
             </div>
-          </>
-        )}
-      </div>
+          ) : (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Lengte (cm)</label>
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={data.lengteCm ?? ''}
+                  onChange={(e) => update({ lengteCm: e.target.value ? Number(e.target.value) : undefined })}
+                  placeholder="bijv. 300"
+                  className="w-full px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400/30 focus:border-purple-400"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Breedte (cm)</label>
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={data.breedteCm ?? ''}
+                  onChange={(e) => update({ breedteCm: e.target.value ? Number(e.target.value) : undefined })}
+                  placeholder="bijv. 400"
+                  className="w-full px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400/30 focus:border-purple-400"
+                />
+                {showBreedteWarning && (
+                  <p className="mt-1 text-xs text-red-600">
+                    Let op: maximale rolbreedte is {maxBreedteCm} cm
+                  </p>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Afwerking rij */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {/* Afwerking dropdown */}
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Afwerking</label>
           <select
@@ -182,7 +258,6 @@ export function VormAfmetingSelector({
           </select>
         </div>
 
-        {/* Bandkleur — alleen als afwerking heeft_band_kleur */}
         {selectedAfwerking?.heeft_band_kleur && (
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Bandkleur</label>
@@ -196,7 +271,6 @@ export function VormAfmetingSelector({
           </div>
         )}
 
-        {/* Instructies */}
         <div className={selectedAfwerking?.heeft_band_kleur ? '' : 'sm:col-span-2'}>
           <label className="block text-sm font-medium text-slate-700 mb-1">Instructies</label>
           <input
