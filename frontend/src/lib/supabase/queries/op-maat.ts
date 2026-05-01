@@ -8,6 +8,7 @@ export interface MaatwerkVormRow {
   naam: string
   afmeting_type: 'lengte_breedte' | 'diameter'
   toeslag: number
+  kan_afwijkende_maten: boolean   // mig 179: vaste-maten-formulier tonen indien false
   actief: boolean
   volgorde: number
 }
@@ -26,6 +27,27 @@ export async function fetchAlleVormen(): Promise<MaatwerkVormRow[]> {
   const { data, error } = await supabase
     .from('maatwerk_vormen')
     .select('*')
+    .order('volgorde')
+  if (error) throw error
+  return data ?? []
+}
+
+// === Vorm-maten (vaste suggesties per vorm, mig 180) ===
+
+export interface MaatwerkVormMaat {
+  id: number
+  vorm_code: string
+  lengte_cm: number | null
+  breedte_cm: number | null
+  diameter_cm: number | null
+  volgorde: number
+}
+
+export async function fetchVormMaten(vormCode: string): Promise<MaatwerkVormMaat[]> {
+  const { data, error } = await supabase
+    .from('maatwerk_vorm_maten')
+    .select('*')
+    .eq('vorm_code', vormCode)
     .order('volgorde')
   if (error) throw error
   return data ?? []
@@ -127,6 +149,20 @@ export async function fetchKwaliteiten(): Promise<KwaliteitOptie[]> {
     .order('code')
   if (error) throw error
   return data ?? []
+}
+
+/**
+ * Returnt true als de kwaliteit alleen rechte maatwerk-afmetingen toestaat (mig 182).
+ * Gebruikt om organische/ronde vormen te verbergen in het bestelformulier (bv. Beach Life).
+ */
+export async function fetchKwaliteitAlleenRechtMaatwerk(kwaliteitCode: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('kwaliteiten')
+    .select('alleen_recht_maatwerk')
+    .eq('code', kwaliteitCode)
+    .maybeSingle()
+  if (error) throw error
+  return data?.alleen_recht_maatwerk ?? false
 }
 
 /**
