@@ -80,6 +80,9 @@ Domeinbegrippen die je moet kennen om dit project te begrijpen.
 | **Sample/staal** | Monster van een product, verstuurd naar een klant. |
 | **Backorder** | Besteld maar niet op voorraad; wacht op levering van leverancier. |
 | **Maatwerk** | Orderregel die snijden en/of confectie vereist (is_maatwerk = true). Bevat lengte, breedte, afwerking en instructies. |
+| **Recht maatwerk** | Maatwerk-tapijt zonder vorm-bewerking (alleen rechthoekig snijden). Verplicht voor BEAC (Beach Life) — die kwaliteit kan technisch geen organische vorm aan. |
+| **Vorm-toeslag** | Vaste meerprijs (€75 ex. btw) bovenop m²×m²-prijs voor productie van een vloerkleed in één van de 6 aparte vormen uit de prijslijst: Organic, Organic Gespiegeld, Pebble, Ellips, Ovaal, Afgeronde Hoeken. Voor recht maatwerk (rechthoek) en `rond` geen toeslag — ronde tapijten worden geleverd via voorraadproducten. |
+| **Afwijkende maten** | Maatwerk-keuze waarbij de gebruiker eigen lengte/breedte/diameter invoert i.p.v. één van de vaste maten kiest. Alleen toegestaan voor vormen met `maatwerk_vormen.kan_afwijkende_maten = true` (rechthoek, rond, ovaal, afgeronde hoeken). |
 | **Productie_groep** | Groeperingssleutel voor snijplanning: kwaliteit + kleur. Alle maatwerk-regels met dezelfde productie_groep kunnen uit dezelfde rol gesneden worden. |
 | **Scancode** | Unieke code op barcode/QR-sticker, gekoppeld aan een snijplan of confectie-order. Gegenereerd via `genereer_scancode()`. Wordt gescand op elk werkstation. |
 | **Reststuk** | Overgebleven stuk na het snijden van een rol. Wordt automatisch aangemaakt via `maak_reststuk()` met eigen rolnummer, gekoppeld aan oorsprong_rol_id. |

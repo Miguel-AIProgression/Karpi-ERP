@@ -88,6 +88,7 @@ Alle 997 kwaliteitscodes (3-4 letters). 170 met collectie, 822 zonder, 5 alleen 
 | collectie_id | BIGINT FK → collecties | NULL als niet in een groep |
 | omschrijving | TEXT | Volledige naam |
 | standaard_breedte_cm | INTEGER | Standaard rolbreedte voor deze kwaliteit. Primaire bron voor `bereken_rol_type()` sinds migratie 086/087. NULL = fallback op artikelnr-heuristiek (laatste 3 cijfers), daarna 400 cm. |
+| alleen_recht_maatwerk | BOOLEAN | True voor BEAC: in op-maat alleen vorm rechthoek toegestaan, UI verbergt overige vormen |
 | created_at | TIMESTAMPTZ | Auto |
 
 **Uitwisselbaarheid:** kwaliteiten met dezelfde `collectie_id` zijn uitwisselbaar. Canonieke seam (sinds migratie 138): `SELECT * FROM uitwisselbare_paren('VERI', '15')` — geeft alle (kwaliteit_code, kleur_code)-aliassen terug, incl. zichzelf. Resolver: zelfde `collectie_id` én genormaliseerde kleur-code matcht. Bron-van-waarheid voor snijplanning, order-aanmaak en voorraad-aggregatie. De legacy tabel `kwaliteit_kleur_uitwisselgroepen` (Map1) is een parallel spoor dat fade-out wordt; check dekking via view `uitwisselbaarheid_map1_diff` voordat hij gedropt wordt.
@@ -749,12 +750,30 @@ Beschikbare vormen voor op-maat tapijt (rechthoek, rond, ovaal, organisch).
 | Kolom | Type | Toelichting |
 |-------|------|-------------|
 | id | BIGINT PK | Auto-increment |
-| code | TEXT UK | Unieke vormcode (rechthoek, rond, ovaal, organisch_a, organisch_b_sp) |
+| code | TEXT UK | Unieke vormcode — 8 actieve codes: `rechthoek, rond, ovaal, organisch_a, organisch_b_sp, pebble, ellips, afgeronde_hoeken`. Cloud bewust niet — ronde tapijten via voorraadproducten. |
 | naam | TEXT | Display naam |
 | afmeting_type | TEXT | 'lengte_breedte' of 'diameter' |
 | toeslag | NUMERIC(10,2) | Vaste toeslag in EUR (default 0) |
 | actief | BOOLEAN | Default true |
 | volgorde | INTEGER | Sorteer-volgorde in dropdowns |
+| kan_afwijkende_maten | BOOLEAN | True voor rechthoek/rond/ovaal/afgeronde_hoeken — alleen die vormen accepteren input buiten maatwerk_vorm_maten |
+
+---
+
+### maatwerk_vorm_maten
+Vaste maat-suggesties per vorm voor de op-maat-flow (UI rendert deze als chips). Mig 180.
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| id | BIGINT PK | Auto-increment |
+| vorm_code | TEXT FK → maatwerk_vormen | Naar welke vorm de maat hoort (ON DELETE CASCADE) |
+| lengte_cm | INTEGER | Voor afmeting_type='lengte_breedte'; NULL anders |
+| breedte_cm | INTEGER | Idem |
+| diameter_cm | INTEGER | Voor afmeting_type='diameter'; NULL anders |
+| volgorde | INTEGER NOT NULL DEFAULT 0 | Sorteervolgorde van chips |
+
+CHECK: precies één van (lengte+breedte) of diameter is gevuld.
+CHECK: alle gevulde dimensies > 0 (sluit COALESCE(x,0) collision in unique index af).
+UNIQUE: (vorm_code, COALESCE(lengte_cm,0), COALESCE(breedte_cm,0), COALESCE(diameter_cm,0)).
 
 ---
 

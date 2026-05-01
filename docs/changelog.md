@@ -1,5 +1,20 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-01 — Organische vormen voor maatwerk
+
+- Drie nieuwe vormen `pebble`, `ellips`, `afgeronde_hoeken` in tabel `maatwerk_vormen` (Cloud is bewust weggelaten — ronde tapijten worden via voorraadproducten verkocht, zoals 771110031).
+- Bestaande `organisch_a` / `organisch_b_sp` hernoemd naar "Organic" / "Organic Gespiegeld" en toeslag verhoogd 20€ → 75€. `ovaal` toeslag 0€ → 75€.
+- `rond` blijft op toeslag 0€ (eigen voorraadproducten, niet via vorm-maatwerk-flow).
+- Nieuwe tabel `maatwerk_vorm_maten` met vaste maat-suggesties (160×230, 200×290, 240×340, 300×400) voor de 6 lengte_breedte vormen.
+- Nieuwe kolom `maatwerk_vormen.kan_afwijkende_maten` (true voor rechthoek/rond/ovaal/afgeronde_hoeken).
+- Nieuwe kolom `kwaliteiten.alleen_recht_maatwerk` (true voor BEAC) — UI verbergt vormen voor deze kwaliteiten.
+- Snij-marge functie `stuk_snij_marge_cm()` uitgebreid: alle niet-rechthoekige vormen (rond, ovaal, organisch_a, organisch_b_sp, pebble, ellips, afgeronde_hoeken) krijgen +5cm.
+- `app_config.order_config.inkoop_buffer_weken_vormwerk = 6`: levertijd-buffer voor vorm-maatwerk.
+- Frontend: `VormAfmetingSelector` vervangen dropdown door tegelgrid + maat-chips + "afwijkende maten" toggle. Nieuwe `VormTegel`-component + `VORM_ICONS`-map met SVG-omtrekken.
+- Migraties: 179, 180, 181, 182, 183.
+
+---
+
 ## 2026-05-01 - Pick & Ship verzendset met stickers en pakbon
 
 Pick & Ship heeft nu per volledig pickbare order een **Verzendset**-actie. De actie maakt/hergebruikt een `zendingen`-rij via `create_zending_voor_order`, kiest automatisch de vervoerder uit `edi_handelspartner_config.vervoerder_code`, en opent `/logistiek/:zending_nr/printset` met printbare colli-stickers en A4-pakbon. Stickers tonen afleveradres, vervoerder, colli-volgnummer en GS1-128/SSCC-barcode; de pakbon toont orderregels, besteld/geleverd, afleveradres, colli en gewicht.
