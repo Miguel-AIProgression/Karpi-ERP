@@ -113,11 +113,32 @@ export async function setStandaardAfwerking(kwaliteitCode: string, afwerkingCode
   if (error) throw error
 }
 
+/** Per kwaliteit+kleur afwerking opslaan (overschrijft kwaliteit-default). */
+export async function setAfwerkingVoorKleur(
+  kwaliteitCode: string,
+  kleurCode: string,
+  afwerkingCode: string,
+) {
+  const { error } = await supabase
+    .from('maatwerk_afwerking_per_kleur')
+    .upsert({
+      kwaliteit_code: kwaliteitCode,
+      kleur_code: kleurCode,
+      afwerking_code: afwerkingCode,
+    })
+  if (error) throw error
+}
+
 // === Kwaliteiten (voor zoekbare combobox) ===
 
 export interface KwaliteitOptie {
   code: string
   omschrijving: string
+  /** Klant-eigen naam (uit `klanteigen_namen.benaming`) waarop de match plaatsvond.
+   *  Alleen gevuld bij zoekopdrachten met `debiteurNr` waar de term matched op
+   *  de klant-eigen naam — UI toont dit als hint zodat duidelijk is waarom dit
+   *  resultaat verschijnt bij een term die niet in de Karpi-omschrijving staat. */
+  klant_eigen_naam?: string
 }
 
 export async function fetchKwaliteiten(): Promise<KwaliteitOptie[]> {
@@ -294,28 +315,101 @@ export async function fetchKwaliteitM2Prijs(kwaliteitCode: string): Promise<numb
   return data?.verkoopprijs_m2 ?? null
 }
 
-/** Zoek kwaliteiten via productnamen — vindt "CISC" bij zoekterm "cisco" */
-export async function searchKwaliteitenViaProducten(term: string): Promise<KwaliteitOptie[]> {
-  const { data, error } = await supabase
+/** Zoek kwaliteiten via productnamen — vindt "CISC" bij zoekterm "cisco".
+ *  Wanneer `debiteurNr` is opgegeven, worden ook klant-eigen namen
+ *  (`klanteigen_namen.benaming` / `omschrijving`) doorzocht voor die klant.
+ *  Voorbeeld: klant heeft eigen naam "BREDA" voor kwaliteit BEAC → zoekterm
+ *  "breda" levert BEAC op, met `klant_eigen_naam: "BREDA"` als hint.
+ *
+ *  Wanneer `kleurHint` is opgegeven (bijv. "55" uit zoekterm "ross 55"),
+ *  worden alleen kwaliteiten teruggegeven die ook minstens één actief product
+ *  hebben met die kleurcode. Anders zou "ross 55" óók LAGO opleveren via de
+ *  klant-eigen naam ROSS, terwijl LAGO geen kleur 55 heeft. Kleurcodes worden
+ *  vergeleken met en zonder `.0`-suffix (DB heeft beide vormen). */
+export async function searchKwaliteitenViaProducten(
+  term: string,
+  debiteurNr?: number,
+  kleurHint?: string,
+): Promise<KwaliteitOptie[]> {
+  const trimmed = term.trim()
+  if (trimmed.length < 2) return []
+
+  const productenQuery = supabase
     .from('producten')
     .select('kwaliteit_code, kwaliteiten!inner(code, omschrijving)')
-    .ilike('omschrijving', `%${term}%`)
+    .ilike('omschrijving', `%${trimmed}%`)
     .eq('actief', true)
     .not('kwaliteit_code', 'is', null)
     .limit(200)
-  if (error) throw error
 
-  // Dedupliceer op kwaliteit_code
+  const klanteigenQuery = debiteurNr
+    ? supabase
+        .from('klanteigen_namen')
+        .select('kwaliteit_code, benaming, omschrijving, kwaliteiten!inner(code, omschrijving)')
+        .eq('debiteur_nr', debiteurNr)
+        .or(`benaming.ilike.%${trimmed}%,omschrijving.ilike.%${trimmed}%`)
+        .limit(50)
+    : null
+
+  const [productenResult, klanteigenResult] = await Promise.all([
+    productenQuery,
+    klanteigenQuery,
+  ])
+
+  if (productenResult.error) throw productenResult.error
+  if (klanteigenResult?.error) throw klanteigenResult.error
+
   const seen = new Set<string>()
   const result: KwaliteitOptie[] = []
-  for (const row of data ?? []) {
+
+  // Klant-eigen matches eerst — die zijn voor deze klant het meest relevant.
+  for (const row of klanteigenResult?.data ?? []) {
+    const k = row.kwaliteiten as unknown as { code: string; omschrijving: string }
+    if (k?.code && !seen.has(k.code)) {
+      seen.add(k.code)
+      result.push({
+        code: k.code,
+        omschrijving: k.omschrijving,
+        klant_eigen_naam: (row as { benaming?: string }).benaming ?? undefined,
+      })
+    }
+  }
+
+  for (const row of productenResult.data ?? []) {
     const k = row.kwaliteiten as unknown as { code: string; omschrijving: string }
     if (k?.code && !seen.has(k.code)) {
       seen.add(k.code)
       result.push({ code: k.code, omschrijving: k.omschrijving })
     }
   }
-  return result.sort((a, b) => a.code.localeCompare(b.code)).slice(0, 30)
+
+  // Filter op kleurHint: kwaliteit moet minstens 1 actief product met die kleur hebben.
+  let filtered = result
+  const kleurTrim = kleurHint?.trim() ?? ''
+  if (kleurTrim && filtered.length > 0) {
+    const normalized = kleurTrim.replace(/\.0$/, '').toLowerCase()
+    const candidates = filtered.map((r) => r.code)
+    const { data: kleurRows, error: kleurError } = await supabase
+      .from('producten')
+      .select('kwaliteit_code, kleur_code')
+      .in('kwaliteit_code', candidates)
+      .eq('actief', true)
+      .not('kleur_code', 'is', null)
+    if (kleurError) throw kleurError
+
+    const kleurMatchSet = new Set<string>()
+    for (const row of (kleurRows ?? []) as { kwaliteit_code: string; kleur_code: string }[]) {
+      const norm = row.kleur_code.replace(/\.0$/, '').toLowerCase()
+      if (norm === normalized) kleurMatchSet.add(row.kwaliteit_code)
+    }
+    filtered = filtered.filter((r) => kleurMatchSet.has(r.code))
+  }
+
+  // Sorteer: klant-eigen matches blijven bovenaan (insertion order),
+  // overige op code. Splitsen om volgorde-prioriteit te bewaren.
+  const klanteigen = filtered.filter((r) => r.klant_eigen_naam)
+  const overig = filtered.filter((r) => !r.klant_eigen_naam).sort((a, b) => a.code.localeCompare(b.code))
+  return [...klanteigen, ...overig].slice(0, 30)
 }
 
 // === Kleuren via DB-functie (één query, geen client-side join) ===

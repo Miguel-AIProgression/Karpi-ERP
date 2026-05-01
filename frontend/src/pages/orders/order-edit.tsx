@@ -8,6 +8,7 @@ import { fetchClientCommercialData } from '@/lib/supabase/queries/order-mutation
 import { fetchHandmatigeKeuzesVoorOrder } from '@/lib/supabase/queries/reserveringen'
 import { computeOrderLock } from '@/lib/utils/order-lock'
 import { AfwerkingOnlyEditor } from '@/components/orders/afwerking-only-editor'
+import { DocumentenCompact } from '@/components/documenten/documenten-compact'
 import type { SelectedClient } from '@/components/orders/client-selector'
 import type { OrderRegelFormData } from '@/lib/supabase/queries/order-mutations'
 
@@ -154,6 +155,8 @@ export function OrderEditPage() {
       </div>
 
       <PageHeader title={`Order ${order.order_nr} bewerken`} />
+
+      <DocumentenCompact kind="order" parentId={orderId} className="mb-3" />
 
       <OrderForm
         mode="edit"

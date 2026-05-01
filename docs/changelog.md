@@ -1,5 +1,42 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-01 — Nieuw-product-formulier: auto artikelnr/karpi-code, maatwerk-afwerking, voorraad-lock
+
+[`ProductCreatePage`](../frontend/src/pages/producten/product-create.tsx) heeft drie kwaliteitsverbeteringen gekregen die het aanmaakproces afstemmen op de Karpi-conventies:
+
+- **Artikelnummer auto-doornummeren.** Nieuwe query [`fetchNextArtikelnr`](../frontend/src/lib/supabase/queries/producten.ts) bepaalt het volgende 9-cijferige artikelnr op basis van `MAX(artikelnr) + 1` binnen de karpi_code-prefix `{kwaliteit}{kleur}` (bijv. `FAMU48` → 298480000…298480003 → suggestie `298480004`). Fallbacks: zelfde kleurcode-range als kwaliteit+kleur leeg is, anders globale max +1, anders `298000000`. Per variant-rij telt het nummer op (rij 0 = base, rij 1 = base+1, etc.). Veld blijft editable; manuele wijziging schakelt auto-suggestie voor die rij uit.
+- **Karpi-code auto-genereren.** Nieuwe `buildKarpiCode`-helper produceert het format `{KWALITEIT}{KLEUR:2}XX{BREEDTE:3}{LENGTE:3 of "RND"}` zodra kwaliteit, kleur, breedte en lengte ingevuld zijn — zelfde conventie als `parse_karpi_code` in `import/sync_rollen_voorraad.py`. Manuele override blijft mogelijk.
+- **Maatwerk-afwerking in stamgegevens.** Nieuw selectveld in de stamgegevens-sectie toont `afwerking_types` (B, FE, LO, ON, SB, SF, VO, ZO). Bij opslaan wordt de waarde geüpsert in `maatwerk_afwerking_per_kleur` als zowel kwaliteit als kleur gezet zijn (per-kleur override), anders in `kwaliteit_standaard_afwerking` (kwaliteit-default). Bij heropenen wordt de bestaande waarde voor (kwaliteit, kleur) voorgevuld via `fetchAfwerkingVoorKleur` → `fetchStandaardAfwerking`. Nieuwe helper [`setAfwerkingVoorKleur`](../frontend/src/lib/supabase/queries/op-maat.ts).
+- **Voorraad locked op 0 + actief default false.** Voorraadveld in de variantentabel is read-only/disabled (visueel gegrijst) — voorraad ontstaat pas via boek-ontvangst op de inkooporder. De `Actief`-checkbox staat standaard uit met uitleg ("pas zichtbaar zodra de eerste inkoop is ontvangen"), aansluitend bij de werkflow: product aanmaken → IO maken → ontvangen → activeren.
+
+Geen migratie nodig — alle gebruikte tabellen (`afwerking_types`, `kwaliteit_standaard_afwerking`, `maatwerk_afwerking_per_kleur`) bestonden al.
+
+---
+
+## 2026-05-01 — Debiteuren gekoppeld aan nieuwe prijslijsten 0210 / 0211
+
+Op basis van twee Excel-exports uit het oude systeem (`klantenbestand prijslijst 150.xlsx` met 644 debiteuren en `klantenbestand prijslijst 151.xlsx` met 183 debiteuren) zijn de actuele klantkoppelingen in `debiteuren.prijslijst_nr` bijgewerkt: lijst 150 → `0210` (BENELUX PER 01.04.2026), lijst 151 → `0211` (BENELUX INCL. MV PER 01.04.2026). De 0211-debiteuren stonden al gekoppeld vanuit `prijslijst_update_2026.py`; de 642 0210-debiteuren stonden op `NULL` en zijn nu bijgewerkt. Twee debiteuren ontbraken nog volledig in de DB en zijn alsnog aangemaakt op basis van de Excel-bron (incl. `afleveradres adres_nr=0` en koppeling aan `0210`): `301009 SARAH COUMANS INTERIEURONTWERP` (NL, Astrid Roth) en `570004 MEUBLETA` (BE, Siemen Esprit). Eindstand: prijslijst `0210` = 644 debiteuren, `0211` = 184 debiteuren. Script: [`import/koppel_debiteuren_prijslijst_2026_05.py`](../import/koppel_debiteuren_prijslijst_2026_05.py) — idempotent, slaat reeds-correcte koppelingen over.
+
+---
+
+## 2026-05-01 — Productzoek in order matcht klant-eigen kwaliteitsnamen
+
+Klanten plaatsen vaak bestellingen onder hun eigen kwaliteitsnaam (bijv. "BREDA") in plaats van de Karpi-code (`BEAC`). Het zoekveld in `KwaliteitFirstSelector` (zichtbaar als "Zoek kwaliteit..." in [`OrderLineEditor`](../frontend/src/components/orders/order-line-editor.tsx)) gebruikt nu — zodra een klant geselecteerd is — óók `klanteigen_namen.benaming` en `klanteigen_namen.omschrijving` als zoekbron. Klant-eigen matches verschijnen bovenaan de resultatenlijst met een blauwe `· klant: <naam>`-hint, zodat de orderintake-medewerker direct ziet waarom een kwaliteit gevonden werd op een term die niet in de Karpi-omschrijving voorkomt.
+
+Daarnaast filtert het zoekveld nu strikter wanneer de zoekterm óók een kleurcode bevat (bijv. `ross 55`): kwaliteiten zonder een actief product met die kleurcode vallen af. Voorheen verscheen LAGO bij "ross 55" omdat de klant-eigen naam ROSS matchte, terwijl LAGO geen kleur 55 voert. Kleurcodes worden vergeleken met en zonder `.0`-suffix.
+
+Aanpassingen: [`searchKwaliteitenViaProducten`](../frontend/src/lib/supabase/queries/op-maat.ts) accepteert optioneel `debiteurNr` + `kleurHint`, query't `klanteigen_namen` parallel, en doet bij kleurHint een tweede `producten`-query om de kandidaat-kwaliteiten te filteren op werkelijke kleurbeschikbaarheid; `KwaliteitOptie` heeft nieuw veld `klant_eigen_naam`. [`KwaliteitFirstSelector`](../frontend/src/components/orders/kwaliteit-first-selector.tsx), [`OrderLineEditor`](../frontend/src/components/orders/order-line-editor.tsx) en [`OrderForm`](../frontend/src/components/orders/order-form.tsx) reiken `debiteur_nr` van `client` door. Geen migratie nodig — de tabel `klanteigen_namen` bestond al sinds V1-import.
+
+---
+
+## 2026-05-01 — Migratie 178: documenten-bijlagen bij orders en inkooporders
+
+Gebruikers kunnen nu PDF/JPG/PNG/Excel/Word/TXT-bijlagen koppelen aan zowel verkooporders (klant-PO, bevestiging) als inkooporders (orderbevestiging leverancier, pakbon, factuur). Migratie 178 voegt twee tabellen toe (`order_documenten`, `inkooporder_documenten`, beide met `ON DELETE CASCADE` op de parent + RLS voor `authenticated`) en één gedeelde private storage-bucket `order-documenten` met paden `orders/{order_id}/...` en `inkooporders/{inkooporder_id}/...`. Bucket-limiet: 25 MB per bestand, expliciete `allowed_mime_types`.
+
+Frontend: gedeelde `<DocumentenSectie>` component (drag-drop + signed-URL preview + omschrijving inline editen + delete) plus `<DocumentenBuffer>` voor de order-create-flow waar nog geen `order_id` bestaat — buffert files lokaal en uploadt ze in `OrderForm.onAfterCreate` na succesvolle save (bij split-orders gekoppeld aan beide order-id's). Inpassingen op `inkooporder-detail.tsx`, `order-detail.tsx`, `order-edit.tsx`, `order-create.tsx`. Centrale queries in `lib/supabase/queries/documenten.ts` en hooks in `hooks/use-documenten.ts` (één set, parameteriseerbaar via `kind: 'order' | 'inkooporder'`).
+
+---
+
 ## 2026-05-01 - Pick & Ship verzendset met stickers en pakbon
 
 Pick & Ship heeft nu per volledig pickbare order een **Verzendset**-actie. De actie maakt/hergebruikt een `zendingen`-rij via `create_zending_voor_order`, kiest automatisch de vervoerder uit `edi_handelspartner_config.vervoerder_code`, en opent `/logistiek/:zending_nr/printset` met printbare colli-stickers en A4-pakbon. Stickers tonen afleveradres, vervoerder, colli-volgnummer en GS1-128/SSCC-barcode; de pakbon toont orderregels, besteld/geleverd, afleveradres, colli en gewicht.

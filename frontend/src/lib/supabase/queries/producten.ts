@@ -136,6 +136,71 @@ export async function createProduct(data: ProductFormData): Promise<void> {
   if (error) throw error
 }
 
+/**
+ * Volgend artikelnr bepalen voor een kwaliteit+kleur combinatie.
+ *
+ * Karpi-conventie (afgeleid uit brondata): 9-cijferig artikelnr waarvan
+ * varianten van dezelfde kwaliteit+kleur sequentieel oplopen — bijv.
+ * FAMU kleur 48 → 298480000, 298480001, 298480002, 298480003. Per kleur
+ * is er dus een vaste basis (eerste 5 cijfers) en oplopend volgnummer.
+ *
+ * Strategie:
+ *   1) MAX(artikelnr) binnen karpi_code-prefix `{kwaliteit}{kleur}` → +1
+ *   2) Anders: MAX binnen kleurcode-range (`%{kleur}XX%`) → +1 (zelfde kleur,
+ *      andere kwaliteit reuse'd dezelfde basis-prefix in praktijk)
+ *   3) Anders: globale MAX(9-digit artikelnrs) + 1
+ *   4) Fallback "298000000" als de tabel leeg is
+ */
+export async function fetchNextArtikelnr(
+  kwaliteit_code: string | null,
+  kleur_code: string | null,
+): Promise<string> {
+  const isNineDigit = (s: string) => /^\d{9}$/.test(s)
+  const toMaxPlusOne = (rows: { artikelnr: string }[]): string | null => {
+    const nums = rows
+      .map(r => r.artikelnr)
+      .filter(a => typeof a === 'string' && isNineDigit(a))
+      .map(a => parseInt(a, 10))
+    if (nums.length === 0) return null
+    return String(Math.max(...nums) + 1).padStart(9, '0')
+  }
+
+  if (kwaliteit_code && kleur_code) {
+    const prefix = `${kwaliteit_code.toUpperCase()}${kleur_code}`
+    const { data } = await supabase
+      .from('producten')
+      .select('artikelnr')
+      .ilike('karpi_code', `${prefix}%`)
+      .not('artikelnr', 'is', null)
+      .limit(500)
+
+    const next = toMaxPlusOne((data ?? []) as { artikelnr: string }[])
+    if (next) return next
+
+    // Fallback: zelfde kleur, andere kwaliteit — leen de basis-prefix
+    const { data: kleurData } = await supabase
+      .from('producten')
+      .select('artikelnr')
+      .ilike('karpi_code', `____${kleur_code}XX%`)
+      .not('artikelnr', 'is', null)
+      .limit(500)
+
+    const nextKleur = toMaxPlusOne((kleurData ?? []) as { artikelnr: string }[])
+    if (nextKleur) return nextKleur
+  }
+
+  // Globale fallback: hoogste 9-digit artikelnr + 1
+  const { data: allData } = await supabase
+    .from('producten')
+    .select('artikelnr')
+    .not('artikelnr', 'is', null)
+    .order('artikelnr', { ascending: false })
+    .limit(200)
+
+  const next = toMaxPlusOne((allData ?? []) as { artikelnr: string }[])
+  return next ?? '298000000'
+}
+
 /** Update an existing product */
 export async function updateProduct(artikelnr: string, data: Partial<Omit<ProductFormData, 'artikelnr'>>): Promise<void> {
   const updates: Record<string, unknown> = { ...data }

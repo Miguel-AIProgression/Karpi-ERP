@@ -1,8 +1,16 @@
-import { useState } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { useKwaliteiten, useLeveranciers, useCreateProduct } from '@/hooks/use-producten'
+import { useKwaliteiten, useLeveranciers, useCreateProduct, useNextArtikelnr } from '@/hooks/use-producten'
+import {
+  fetchAfwerkingTypes,
+  fetchStandaardAfwerking,
+  fetchAfwerkingVoorKleur,
+  setStandaardAfwerking,
+  setAfwerkingVoorKleur,
+} from '@/lib/supabase/queries/op-maat'
 import type { ProductType } from '@/lib/supabase/queries/producten'
 
 const PRODUCT_TYPES: { value: ProductType; label: string }[] = [
@@ -50,6 +58,26 @@ function buildOmschrijving(naam: string, kleurCode: string, breedte: string, len
   return parts.join(' ')
 }
 
+/**
+ * Karpi-code conventie (zie sync_rollen_voorraad.parse_karpi_code):
+ *   {KWALITEIT}{KLEUR:2}XX{BREEDTE:3}{LENGTE:3 of "RND"}
+ * Voorbeelden: FAMU48XX160230, VELV15XX200RND.
+ * Lege string als verplichte velden ontbreken.
+ */
+function buildKarpiCode(kwaliteit: string, kleur: string, breedte: string, lengte: string) {
+  const k = (kwaliteit || '').trim().toUpperCase()
+  const klr = (kleur || '').trim()
+  if (!k || !klr || !breedte) return ''
+  const klrPad = klr.padStart(2, '0').slice(0, 2)
+  const w = String(parseInt(breedte, 10) || 0).padStart(3, '0').slice(-3)
+  const lTrim = (lengte || '').trim()
+  const l = lTrim
+    ? String(parseInt(lTrim, 10) || 0).padStart(3, '0').slice(-3)
+    : ''
+  if (!l) return ''
+  return `${k}${klrPad}XX${w}${l}`
+}
+
 export function ProductCreatePage() {
   const navigate = useNavigate()
   const { data: kwaliteiten } = useKwaliteiten()
@@ -61,21 +89,120 @@ export function ProductCreatePage() {
   const [kwaliteitCode, setKwaliteitCode] = useState('')
   const [kleurCode, setKleurCode] = useState('')
   const [leverancierId, setLeverancierId] = useState<string>('')
-  const [actief, setActief] = useState(true)
+  const [afwerkingCode, setAfwerkingCode] = useState('')
+  // Nieuw product is initieel inactief: pas zichtbaar in selectors zodra de
+  // eerste inkoop is ontvangen (`Actief` wordt dan handmatig of via boek-ontvangst aangezet).
+  const [actief, setActief] = useState(false)
 
   // Varianten
   const [rows, setRows] = useState<VariantRow[]>([newRow()])
+  // Manuele overrides: rij-keys waarin de gebruiker artikelnr/karpi_code zelf heeft
+  // ingevuld → niet meer overschrijven door auto-suggestie.
+  const [manualArtikelnr, setManualArtikelnr] = useState<Set<number>>(new Set())
+  const [manualKarpi, setManualKarpi] = useState<Set<number>>(new Set())
   const [error, setError] = useState<string | null>(null)
 
+  // Afwerking-types (alleen geladen als kwaliteit gekozen is — pas dan zinvol)
+  const { data: afwerkingTypes } = useQuery({
+    queryKey: ['afwerking-types'],
+    queryFn: fetchAfwerkingTypes,
+  })
+
+  // Standaard afwerking voor (kwaliteit, kleur) → vooraf invullen indien bekend
+  useEffect(() => {
+    let cancelled = false
+    if (!kwaliteitCode) {
+      setAfwerkingCode('')
+      return
+    }
+    ;(async () => {
+      const perKleur = kleurCode.trim()
+        ? await fetchAfwerkingVoorKleur(kwaliteitCode, kleurCode.trim())
+        : null
+      const code = perKleur ?? (await fetchStandaardAfwerking(kwaliteitCode))
+      if (!cancelled) setAfwerkingCode(code ?? '')
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [kwaliteitCode, kleurCode])
+
+  // Volgend artikelnr ophalen op basis van kwaliteit+kleur prefix
+  const { data: nextArtikelnr } = useNextArtikelnr(
+    kwaliteitCode || null,
+    kleurCode.trim() || null,
+  )
+
+  // Auto-fill artikelnr per rij (oplopend vanaf nextArtikelnr) en karpi-code
+  // op basis van kwaliteit/kleur/breedte/lengte. Manuele overrides blijven staan.
+  useEffect(() => {
+    setRows(rs => rs.map((r, idx) => {
+      const next: VariantRow = { ...r }
+      if (!manualArtikelnr.has(r._key) && nextArtikelnr) {
+        const base = parseInt(nextArtikelnr, 10)
+        if (!Number.isNaN(base)) {
+          next.artikelnr = String(base + idx).padStart(9, '0')
+        }
+      }
+      if (!manualKarpi.has(r._key)) {
+        next.karpi_code = buildKarpiCode(kwaliteitCode, kleurCode, r.breedte, r.lengte)
+      }
+      return next
+    }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nextArtikelnr, kwaliteitCode, kleurCode])
+
   function updateRow(key: number, field: keyof VariantRow, value: string) {
-    setRows(rs => rs.map(r => r._key === key ? { ...r, [field]: value } : r))
+    setRows(rs => rs.map(r => {
+      if (r._key !== key) return r
+      const next = { ...r, [field]: value }
+      // Bij wijziging breedte/lengte: hergenereer karpi-code (mits niet manueel)
+      if ((field === 'breedte' || field === 'lengte') && !manualKarpi.has(key)) {
+        next.karpi_code = buildKarpiCode(kwaliteitCode, kleurCode, next.breedte, next.lengte)
+      }
+      return next
+    }))
+    if (field === 'artikelnr') {
+      setManualArtikelnr(prev => {
+        const s = new Set(prev)
+        s.add(key)
+        return s
+      })
+    } else if (field === 'karpi_code') {
+      setManualKarpi(prev => {
+        const s = new Set(prev)
+        s.add(key)
+        return s
+      })
+    }
+  }
+
+  function addRow() {
+    const r = newRow()
+    if (nextArtikelnr) {
+      const base = parseInt(nextArtikelnr, 10)
+      if (!Number.isNaN(base)) {
+        r.artikelnr = String(base + rows.length).padStart(9, '0')
+      }
+    }
+    setRows(rs => [...rs, r])
   }
 
   function removeRow(key: number) {
     setRows(rs => rs.filter(r => r._key !== key))
+    setManualArtikelnr(prev => {
+      const s = new Set(prev)
+      s.delete(key)
+      return s
+    })
+    setManualKarpi(prev => {
+      const s = new Set(prev)
+      s.delete(key)
+      return s
+    })
   }
 
-  const filledRows = rows.filter(r => r.artikelnr.trim())
+  const filledRows = useMemo(() => rows.filter(r => r.artikelnr.trim()), [rows])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -99,12 +226,24 @@ export function ProductCreatePage() {
           verkoopprijs: r.verkoopprijs ? Number(r.verkoopprijs) : null,
           inkoopprijs: r.inkoopprijs ? Number(r.inkoopprijs) : null,
           gewicht_kg: r.gewicht_kg ? Number(r.gewicht_kg) : null,
-          voorraad: r.voorraad ? Number(r.voorraad) : 0,
+          // Voorraad start altijd op 0 — eerst inkopen + ontvangen vóór actief.
+          voorraad: 0,
           locatie: r.locatie.trim() || null,
           leverancier_id: leverancierId ? Number(leverancierId) : null,
           actief,
         })
       }
+
+      // Maatwerk-afwerking opslaan: per kwaliteit+kleur indien beide gezet,
+      // anders op kwaliteit-niveau als default.
+      if (afwerkingCode && kwaliteitCode) {
+        if (kleurCode.trim()) {
+          await setAfwerkingVoorKleur(kwaliteitCode, kleurCode.trim(), afwerkingCode)
+        } else {
+          await setStandaardAfwerking(kwaliteitCode, afwerkingCode)
+        }
+      }
+
       navigate(`/producten/${filledRows[0].artikelnr.trim()}`)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Er is een fout opgetreden')
@@ -175,6 +314,28 @@ export function ProductCreatePage() {
                 ))}
               </select>
             </Field>
+            <Field label="Maatwerk afwerking">
+              <select
+                value={afwerkingCode}
+                onChange={e => setAfwerkingCode(e.target.value)}
+                className="input"
+                disabled={!kwaliteitCode}
+              >
+                <option value="">— geen —</option>
+                {afwerkingTypes?.map(a => (
+                  <option key={a.code} value={a.code}>
+                    {a.code} – {a.naam}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-slate-400">
+                {kwaliteitCode
+                  ? kleurCode.trim()
+                    ? 'Wordt opgeslagen als afwerking voor deze kwaliteit + kleur.'
+                    : 'Wordt opgeslagen als standaard afwerking voor deze kwaliteit.'
+                  : 'Kies eerst een kwaliteit.'}
+              </p>
+            </Field>
           </div>
           <div className="px-6 pb-5">
             <label className="flex items-center gap-3 cursor-pointer w-fit">
@@ -186,6 +347,9 @@ export function ProductCreatePage() {
               />
               <span className="text-sm text-slate-700">Actief (zichtbaar in systeem)</span>
             </label>
+            <p className="mt-1 text-xs text-slate-400">
+              Standaard inactief: nieuw product wordt pas zichtbaar in selectors zodra de eerste inkoop is ontvangen.
+            </p>
           </div>
         </section>
 
@@ -297,10 +461,12 @@ export function ProductCreatePage() {
                       </Td>
                       <Td>
                         <input
-                          type="number" min="0"
-                          value={r.voorraad}
-                          onChange={e => updateRow(r._key, 'voorraad', e.target.value)}
-                          className="input w-20"
+                          type="number"
+                          value={0}
+                          readOnly
+                          disabled
+                          className="input w-20 bg-slate-50 text-slate-400 cursor-not-allowed"
+                          title="Voorraad start op 0 — wordt opgehoogd via boek-ontvangst op de inkooporder"
                         />
                       </Td>
                       <Td>
@@ -330,7 +496,7 @@ export function ProductCreatePage() {
 
             <button
               type="button"
-              onClick={() => setRows(rs => [...rs, newRow()])}
+              onClick={addRow}
               className="mt-4 flex items-center gap-1.5 text-sm text-terracotta-500 hover:text-terracotta-600 font-medium transition-colors"
             >
               <Plus size={15} /> Maat / variant toevoegen

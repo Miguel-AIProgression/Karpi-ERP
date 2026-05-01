@@ -34,6 +34,9 @@ type Step = 'kwaliteit' | 'maten' | 'op_maat'
 interface KwaliteitFirstSelectorProps {
   defaultKorting: number
   prijslijstNr?: string
+  /** Geselecteerde klant — wanneer gegeven worden klant-eigen kwaliteitsnamen
+   *  meegenomen in de zoekopdracht (zie `searchKwaliteitenViaProducten`). */
+  debiteurNr?: number
   onSelectArticle: (article: SelectedArticle, substitution?: SubstitutionInfo) => void
   onAddMaatwerk: (line: OrderRegelFormData) => void
 }
@@ -62,6 +65,7 @@ function parseSearch(input: string): { kwaliteitTerm: string; kleurHint: string 
 export function KwaliteitFirstSelector({
   defaultKorting,
   prijslijstNr,
+  debiteurNr,
   onSelectArticle,
   onAddMaatwerk,
 }: KwaliteitFirstSelectorProps) {
@@ -97,14 +101,14 @@ export function KwaliteitFirstSelector({
   }, [search])
 
   // ── Queries ──────────────────────────────────────────────────
-  const { kwaliteitTerm: debouncedKwaliteitTerm } = useMemo(
+  const { kwaliteitTerm: debouncedKwaliteitTerm, kleurHint: debouncedKleurHint } = useMemo(
     () => parseSearch(debouncedSearch),
     [debouncedSearch]
   )
 
   const { data: kwaliteiten = [], isLoading: kwaliteitenLoading } = useQuery({
-    queryKey: ['kwaliteiten-search', debouncedKwaliteitTerm],
-    queryFn: () => searchKwaliteitenViaProducten(debouncedKwaliteitTerm || ''),
+    queryKey: ['kwaliteiten-search', debouncedKwaliteitTerm, debouncedKleurHint, debiteurNr ?? null],
+    queryFn: () => searchKwaliteitenViaProducten(debouncedKwaliteitTerm || '', debiteurNr, debouncedKleurHint || undefined),
     enabled: debouncedKwaliteitTerm.length >= 2,
     staleTime: 30_000,
   })
@@ -470,7 +474,9 @@ export function KwaliteitFirstSelector({
             value={search}
             onChange={(e) => { setSearch(e.target.value); setSearchOpen(true) }}
             onFocus={() => setSearchOpen(true)}
-            placeholder="Zoek kwaliteit, bijv. Cisco of Cisco 11..."
+            placeholder={debiteurNr
+              ? 'Zoek kwaliteit op Karpi-naam of klant-eigen naam...'
+              : 'Zoek kwaliteit, bijv. Cisco of Cisco 11...'}
             className="w-full pl-10 pr-4 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
           />
         </div>
@@ -484,6 +490,7 @@ export function KwaliteitFirstSelector({
         {searchOpen && !kwaliteitenLoading && debouncedKwaliteitTerm.length >= 2 && filtered.length === 0 && (
           <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-[var(--radius-sm)] shadow-lg p-3 text-sm text-slate-400">
             Geen kwaliteiten gevonden voor "{debouncedKwaliteitTerm}"
+            {debouncedKleurHint && ` met kleur ${debouncedKleurHint}`}
           </div>
         )}
 
@@ -498,6 +505,11 @@ export function KwaliteitFirstSelector({
               >
                 <span className="font-mono text-xs text-terracotta-500">{k.code}</span>
                 <span className="ml-2">{k.omschrijving}</span>
+                {k.klant_eigen_naam && (
+                  <span className="ml-2 text-xs text-blue-500" title="Klant-eigen naam voor deze kwaliteit">
+                    · klant: {k.klant_eigen_naam}
+                  </span>
+                )}
                 {parsedKleurHint && (
                   <span className="ml-2 text-xs text-slate-400">→ kleur {parsedKleurHint}</span>
                 )}
