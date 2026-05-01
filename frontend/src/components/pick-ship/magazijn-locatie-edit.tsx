@@ -13,6 +13,7 @@ export function MagazijnLocatieEdit({ huidigeCode, onSave }: Props) {
   const [bewerken, setBewerken] = useState(false)
   const [waarde, setWaarde] = useState(huidigeCode ?? '')
   const [bezig, setBezig] = useState(false)
+  const [fout, setFout] = useState<string | null>(null)
   const { data: locaties } = useMagazijnLocaties()
 
   const suggesties = useMemo(() => {
@@ -53,9 +54,12 @@ export function MagazijnLocatieEdit({ huidigeCode, onSave }: Props) {
       return
     }
     setBezig(true)
+    setFout(null)
     try {
       await onSave(code)
       setBewerken(false)
+    } catch (err) {
+      setFout(err instanceof Error ? err.message : 'Opslaan mislukt')
     } finally {
       setBezig(false)
     }
@@ -86,6 +90,9 @@ export function MagazijnLocatieEdit({ huidigeCode, onSave }: Props) {
           <X size={14} />
         </button>
       </div>
+      {fout && (
+        <span className="text-xs text-rose-500 mt-0.5">{fout}</span>
+      )}
       {suggesties.length > 0 && (
         <ul className="absolute top-6 left-0 z-10 bg-white border border-slate-200 rounded shadow-md text-xs min-w-[6rem]">
           {suggesties.map((l) => (
