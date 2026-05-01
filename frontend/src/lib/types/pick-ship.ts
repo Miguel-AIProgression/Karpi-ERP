@@ -29,16 +29,24 @@ export const BUCKET_LABEL: Record<BucketKey, string> = {
   geen_datum: 'Geen datum',
 }
 
+export type PickShipBron = 'snijplan' | 'rol' | 'producten_default' | null
+export type PickShipWachtOp = 'snijden' | 'confectie' | 'inpak' | 'inkoop' | null
+
 export interface PickShipRegel {
-  snijplan_id: number
-  snijplan_nr: string
-  scancode: string | null
+  order_regel_id: number
+  artikelnr: string | null
+  is_maatwerk: boolean
   product: string
   kleur: string | null
   maat_cm: string
   m2: number
-  status: string
-  locatie: string | null
+  orderaantal: number
+  is_pickbaar: boolean
+  bron: PickShipBron
+  fysieke_locatie: string | null
+  wacht_op: PickShipWachtOp
+  totaal_stuks?: number | null
+  pickbaar_stuks?: number | null
 }
 
 export interface PickShipOrder {
