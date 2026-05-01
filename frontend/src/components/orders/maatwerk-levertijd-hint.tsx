@@ -4,16 +4,18 @@ import { fetchMaatwerkLevertijdHint } from '@/lib/supabase/queries/op-maat'
 interface Props {
   kwaliteitCode: string | null | undefined
   kleurCode: string | null | undefined
+  vormCode?: string | null
 }
 
 /**
  * Toont een inline hint onder een maatwerk-orderregel als er geen rol op
  * voorraad is, maar wel openstaande inkoop. V1: alleen indicator (geen claim).
+ * Voor niet-rechthoek vormen wordt de langere vormwerk-buffer gebruikt (6 weken).
  */
-export function MaatwerkLevertijdHint({ kwaliteitCode, kleurCode }: Props) {
+export function MaatwerkLevertijdHint({ kwaliteitCode, kleurCode, vormCode = null }: Props) {
   const { data } = useQuery({
-    queryKey: ['maatwerk-levertijd-hint', kwaliteitCode, kleurCode],
-    queryFn: () => fetchMaatwerkLevertijdHint(kwaliteitCode!, kleurCode!),
+    queryKey: ['maatwerk-levertijd-hint', kwaliteitCode, kleurCode, vormCode ?? null],
+    queryFn: () => fetchMaatwerkLevertijdHint(kwaliteitCode!, kleurCode!, vormCode ?? null),
     enabled: !!kwaliteitCode && !!kleurCode,
   })
 

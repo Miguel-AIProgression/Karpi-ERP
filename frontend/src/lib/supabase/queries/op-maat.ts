@@ -420,12 +420,14 @@ export interface MaatwerkLevertijdHint {
 
 /**
  * Returns een levertijd-hint voor een (kwaliteit, kleur)-combinatie:
- * eerstvolgende inkoop-leverweek + maatwerk-buffer (default 2 weken).
+ * eerstvolgende inkoop-leverweek + maatwerk-buffer (default 2 weken) of
+ * vormwerk-buffer (default 6 weken) voor niet-rechthoek vormen.
  * Returnt `null` als er geen openstaande inkoop is voor deze combinatie.
  */
 export async function fetchMaatwerkLevertijdHint(
   kwaliteitCode: string,
   kleurCode: string,
+  vormCode: string | null,
 ): Promise<MaatwerkLevertijdHint | null> {
   // RPC returnt rows; filter client-side want supabase-js .rpc().eq() werkt niet
   // voor TABLE-functions met composite return.
@@ -444,7 +446,11 @@ export async function fetchMaatwerkLevertijdHint(
     .select('waarde')
     .eq('sleutel', 'order_config')
     .maybeSingle()
-  const buffer = (cfg?.waarde as { inkoop_buffer_weken_maatwerk?: number } | null)?.inkoop_buffer_weken_maatwerk ?? 2
+  const cfgWaarde = cfg?.waarde as { inkoop_buffer_weken_maatwerk?: number; inkoop_buffer_weken_vormwerk?: number } | null
+  const isVormwerk = !!vormCode && vormCode !== 'rechthoek'
+  const buffer = isVormwerk
+    ? (cfgWaarde?.inkoop_buffer_weken_vormwerk ?? 6)
+    : (cfgWaarde?.inkoop_buffer_weken_maatwerk ?? 2)
 
   const { data: weekStr, error: weekErr } = await supabase.rpc('iso_week_plus', {
     p_datum: verwachtDatum,

@@ -255,6 +255,7 @@ export function OpMaatSelector({ defaultKorting, onAdd }: OpMaatSelectorProps) {
           <MaatwerkLevertijdHint
             kwaliteitCode={state.kwaliteitCode}
             kleurCode={state.kleurCode}
+            vormCode={state.vormCode || null}
           />
         )}
 
