@@ -5,7 +5,7 @@
 
 ## Overzicht
 
-39 tabellen, 8 enums, 14 views, 30 functies. Alle tabellen hebben RLS enabled (fase 1: authenticated = volledige toegang).
+41 tabellen, 9 enums, 15 views, 36 functies. Alle tabellen hebben RLS enabled (fase 1: authenticated = volledige toegang).
 
 ---
 
@@ -16,8 +16,9 @@ vertegenwoordigers ──┬── debiteuren ──┬── afleveradressen
                      │                ├── klanteigen_namen ──── kwaliteiten ── collecties
                      │                ├── klant_artikelnummers ── producten ── rollen
                      │                ├── orders ──┬── order_regels
-                     │                │            ├── zendingen ── zending_regels
+                     │                │            ├── zendingen ── zending_regels ── hst_transportorders
                      │                │            └── facturen ── factuur_regels
+                     │                ├── edi_handelspartner_config ── vervoerders
                      │                └── samples
                      └── orders
 
@@ -411,29 +412,94 @@ function `factuur-verzenden`. Zie migraties 118, 121, 122.
 ---
 
 ### zendingen
-Fysieke leveringen.
+Fysieke leveringen. Werkelijk aangemaakt sinds migratie 169 — bron-van-waarheid voor de logistieke flow (één rij per fysieke zending naar een afleveradres). Adres-snapshot zodat één order in V2 kan splitsen naar verschillende adressen zonder de orderkolommen te muteren. `track_trace` wordt door de vervoerder-adapter teruggeschreven (bv. HST `transportOrderId` of `trackingNumber`).
 | Kolom | Type | Toelichting |
 |-------|------|-------------|
-| id | BIGINT PK | |
-| zending_nr | TEXT UK | ZEND-2026-0001 |
-| order_id | BIGINT FK → orders | |
-| status | zending_status | Default 'Gepland' |
+| id | BIGSERIAL PK | |
+| zending_nr | TEXT UK | ZEND-2026-0001 (via `volgend_nummer('ZEND')`) |
+| order_id | BIGINT FK → orders | ON DELETE RESTRICT |
+| status | zending_status NOT NULL | Default 'Gepland' |
+| vervoerder_code | TEXT FK → vervoerders.code | Mig 176. Gekozen vervoerder voor deze zending, bepaald door `selecteer_vervoerder_voor_zending()` / `enqueue_zending_naar_vervoerder()` |
+| vervoerder_selectie_uitleg | JSONB | Mig 176. Audit-uitleg van de selector (V1: enige actieve vervoerder; later voorwaarden/tarieven) |
 | verzenddatum | DATE | |
-| track_trace | TEXT | |
-| afl_naam, afl_adres, afl_postcode, afl_plaats, afl_land | TEXT | Snapshot |
-| totaal_gewicht_kg | NUMERIC | |
-| aantal_colli | INTEGER | |
+| track_trace | TEXT | HST-tracking-nummer of EDI-equivalent — gevuld door adapter na verzending |
+| afl_naam, afl_adres, afl_postcode, afl_plaats, afl_land | TEXT | Adres-snapshot (kopie van orders.afl_*) |
+| totaal_gewicht_kg | NUMERIC | Gevuld door `create_zending_voor_order` vanuit orderregelgewichten; handmatig corrigeerbaar in latere UI |
+| aantal_colli | INTEGER | Gevuld door `create_zending_voor_order` als som van `order_regels.orderaantal`; gebruikt voor sticker `x VAN y` |
 | opmerkingen | TEXT | |
+| created_at, updated_at | TIMESTAMPTZ | Auto |
+
+**Indexen:** `idx_zendingen_order` (order_id), `idx_zendingen_status` (status), `idx_zendingen_vervoerder` (partial op `vervoerder_code`). `updated_at` via trigger `set_zendingen_updated_at()`.
+
+**Trigger:** `trg_zending_klaar_voor_verzending` (AFTER INSERT/UPDATE OF status, mig 172) roept bij transitie naar `'Klaar voor verzending'` de switch-RPC `enqueue_zending_naar_vervoerder()` aan. Sinds mig 176 vult die eerst `zendingen.vervoerder_code` via `selecteer_vervoerder_voor_zending()`.
 
 ### zending_regels
+Welke artikel-regels in een zending zitten. Sinds migratie 169.
 | Kolom | Type | Toelichting |
 |-------|------|-------------|
-| id | BIGINT PK | |
+| id | BIGSERIAL PK | |
 | zending_id | BIGINT FK → zendingen | CASCADE DELETE |
-| order_regel_id | BIGINT FK → order_regels | |
+| order_regel_id | BIGINT FK → order_regels | ON DELETE SET NULL |
 | artikelnr | TEXT FK → producten | |
-| rol_id | BIGINT FK → rollen | Optioneel |
-| aantal | INTEGER | |
+| rol_id | BIGINT FK → rollen | Optioneel — voor maatwerk-stukken die uit een specifieke rol komen |
+| aantal | INTEGER NOT NULL | Default 1 |
+| created_at | TIMESTAMPTZ | Auto |
+
+**Indexen:** `idx_zending_regels_zending` (zending_id).
+
+---
+
+### vervoerders
+Lookup-tabel met de beschikbare vervoerders waarmee Karpi werkt (mig 170, uitgebreid mig 174). Routing-keuze, géén berichten — daadwerkelijk verkeer per vervoerder loopt via een **adapter-tabel** (HST → `hst_transportorders`; EDI-vervoerders → `edi_berichten` met `berichttype='verzendbericht'`). Gezaaid met 3 rijen: `hst_api`, `edi_partner_a` (Rhenus, placeholder), `edi_partner_b` (Verhoek, placeholder). Alleen de HST-koppeling is in dit plan actief; EDI-koppelingen volgen in aparte plans en hun rij staat default `actief=FALSE`. Migratie 174 voegt instellingen-, contact- en tarief-kolommen toe als basis voor de `/logistiek/vervoerders`-UI (vrije-tekst tarieven in V1; gestructureerde tariefmatrix volgt in Fase B — zie roadmap in [`docs/superpowers/plans/2026-05-01-logistiek-vervoerder-instellingen.md`](superpowers/plans/2026-05-01-logistiek-vervoerder-instellingen.md)).
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| code | TEXT PK | `'hst_api'`, `'edi_partner_a'`, `'edi_partner_b'` — wordt als FK gebruikt op `zendingen.vervoerder_code` |
+| display_naam | TEXT NOT NULL | UI-label: `'HST'`, `'Rhenus'`, `'Verhoek'` |
+| type | TEXT NOT NULL | CHECK in (`'api'`, `'edi'`) |
+| actief | BOOLEAN NOT NULL | Default FALSE — pas TRUE als koppeling werkt. Switch-RPC `enqueue_zending_naar_vervoerder` weigert met `'vervoerder_inactief'` als FALSE |
+| notities | TEXT | Vrije tekst (bv. "REST API. Auth via Basic.") |
+| api_endpoint | TEXT | Mig 174. Basis-URL van de vervoerder-API (alleen relevant voor `type='api'`, bv. `https://accp.hstonline.nl/rest/api/v1`). Read-only referentie in UI; effectieve endpoint voor edge functions blijft uit env-variabelen komen. |
+| api_customer_id | TEXT | Mig 174. Klant-/account-identifier bij de vervoerder-API (alleen relevant voor `type='api'`). |
+| account_nummer | TEXT | Mig 174. Algemeen account-/klantnummer bij de vervoerder (zowel api als edi). |
+| kontakt_naam | TEXT | Mig 174. Naam van de contactpersoon bij de vervoerder. |
+| kontakt_email | TEXT | Mig 174. E-mailadres van de contactpersoon. |
+| kontakt_telefoon | TEXT | Mig 174. Telefoonnummer van de contactpersoon. |
+| tarief_notities | TEXT | Mig 174. Vrije-tekst tariefafspraken voor V1 (bv. "NL t/m 30 kg €9,50, BE +€2"). Gestructureerde `vervoerder_tarieven`-tabel komt in Fase B. |
+| created_at, updated_at | TIMESTAMPTZ | Auto via `set_vervoerders_updated_at()` |
+
+---
+
+### hst_transportorders
+**HST-adapter-tabel** (mig 171) — één rij per transportorder die naar HST is/wordt verstuurd. **HST-specifiek**: géén multi-vervoerder-abstractie, géén berichttype-discriminator (alle rijen zijn transportorders), géén `vervoerder_code` (deze tabel ÍS HST). Toekomstige EDI-vervoerders (Rhenus, Verhoek) hergebruiken de bestaande `edi_berichten`-tabel met `berichttype='verzendbericht'` (DESADV) — geen wijziging aan `hst_transportorders`. Het ontwerp is bewust per-vervoerder verticaal omdat een gegeneraliseerde `vervoerder_berichten`-queue *shallow* zou zijn: de interface (JSONB-payload + tekstuele extern_id + retry) is bijna net zo complex als de twee implementaties zelf.
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| id | BIGSERIAL PK | |
+| zending_id | BIGINT FK → zendingen | NOT NULL, ON DELETE CASCADE |
+| debiteur_nr | INTEGER FK → debiteuren | Snapshot voor query-gemak |
+| status | hst_transportorder_status NOT NULL | Default `'Wachtrij'` |
+| extern_transport_order_id | TEXT | HST `transportOrderId` uit response |
+| extern_tracking_number | TEXT | HST `trackingNumber` uit response (mogelijk leeg bij creatie) |
+| request_payload | JSONB | Door payload-builder gevuld bij claim of bij `markeer_hst_verstuurd` |
+| response_payload | JSONB | Volledige HST-response (200 of foutbody) |
+| response_http_code | INTEGER | HTTP-status — voor retry-strategie |
+| retry_count | INTEGER NOT NULL | Default 0; max 3 (configureerbaar in `markeer_hst_fout`) |
+| error_msg | TEXT | Laatste foutomschrijving |
+| is_test | BOOLEAN NOT NULL | Default FALSE — markeert acceptatie-omgeving-orders |
+| created_at, sent_at, updated_at | TIMESTAMPTZ | Lifecycle-timestamps |
+
+**Indexen:**
+- `idx_hst_to_status` (status) — voor cron-claim-query
+- `idx_hst_to_zending` (zending_id)
+- `idx_hst_to_debiteur` (debiteur_nr, created_at DESC)
+- `uk_hst_to_zending_actief` — UNIQUE op `zending_id` waar `status NOT IN ('Fout', 'Geannuleerd')` (idempotentie: één actieve transportorder per zending; retry via `verstuurZendingOpnieuw` zet de oude rij eerst op `Geannuleerd`)
+
+**Triggers:** `trg_hst_to_updated_at` via `set_hst_to_updated_at()`.
+
+**RPCs (HST-adapter):**
+- `enqueue_hst_transportorder(p_zending_id BIGINT, p_debiteur_nr INTEGER, p_is_test BOOLEAN DEFAULT FALSE) → BIGINT` — adapter-RPC, idempotent (no-op bij bestaande actieve rij). Wordt aangeroepen door `enqueue_zending_naar_vervoerder` als `vervoerder_code='hst_api'`. Request-payload wordt **niet** hier gebouwd, maar door de edge function bij claim-tijd (zo blijft data vers).
+- `claim_volgende_hst_transportorder() → hst_transportorders` — pakt oudste `Wachtrij`-rij via `FOR UPDATE SKIP LOCKED`, zet status `Bezig`. Aangeroepen door edge function `hst-send` per cron-tick.
+- `markeer_hst_verstuurd(p_id, p_extern_transport_order_id, p_extern_tracking_number, p_request_payload, p_response_payload, p_response_http_code) → VOID` — na 200-respons: status `Verstuurd`, schrijft `track_trace` terug op `zendingen` en zet zending-status van `'Klaar voor verzending'` naar `'Onderweg'`.
+- `markeer_hst_fout(p_id, p_error, p_request_payload, p_response_payload, p_response_http_code, p_max_retries DEFAULT 3) → VOID` — verhoogt `retry_count`; bij `>=` max → status `Fout`, anders terug naar `Wachtrij`.
 
 ---
 
@@ -756,10 +822,14 @@ Per debiteur welke EDI-Transus-berichttypen actief zijn (mig 156).
 | factuur_uit | BOOLEAN DEFAULT false | Sturen we facturen via EDI? |
 | verzend_uit | BOOLEAN DEFAULT false | Sturen we verzendberichten? |
 | test_modus | BOOLEAN DEFAULT false | Alle uitgaande berichten met IsTestMessage-marker |
+| orderbev_format | edi_orderbev_format DEFAULT 'transus_xml' | Default formaat voor uitgaande orderbevestiging: `transus_xml` of `fixed_width` (mig 161). |
+| vervoerder_code | TEXT FK → vervoerders.code | Legacy/voorlopig veld uit mig 170. Niet meer leidend voor logistieke dispatch sinds mig 176; gekozen vervoerder staat op `zendingen.vervoerder_code`. |
 | notities | TEXT | Vrije tekst voor partner-specifieke notes |
 | created_at, updated_at | TIMESTAMPTZ | Auto |
 
-Komt overeen met de toggles per partner in Transus Online → Handelspartners → Processen.
+Komt overeen met de toggles per partner in Transus Online → Handelspartners → Processen. De logistieke vervoerderkeuze gebeurt sinds mig 176 op zendingniveau via `selecteer_vervoerder_voor_zending()` en niet meer via de klantkaart.
+
+**UI:** Bewerkbaar via klant-detail → tab "EDI" ([klant-edi-tab.tsx](../frontend/src/modules/edi/components/klant-edi-tab.tsx)). Klanten-overzicht heeft EDI-filter en toont een EDI-tag op kaarten van debiteuren met `transus_actief=true`. Proces-lijst wordt gegenereerd uit [`modules/edi/registry.ts`](../frontend/src/modules/edi/registry.ts).
 
 ---
 
@@ -781,17 +851,21 @@ Centrale audit-/queue-tabel voor alle EDI-berichten via Transus (in én uit) (mi
 | payload_raw | TEXT | Letterlijke fixed-width / EDIFACT / XML |
 | payload_parsed | JSONB | Geparseerde data |
 | is_test | BOOLEAN | Test-marker (uit IsTestMessage of `edi_handelspartner_config.test_modus`) |
+| order_response_seq | INTEGER | Sequentie per order voor TransusXML `<OrderResponseNumber>` (Karpi ordernr + 4-digit suffix), mig 161. |
 | retry_count | INTEGER | Aantal mislukte verzendpogingen — `markeer_edi_fout` zet door tot max 3 |
 | error_msg | TEXT | Foutbeschrijving |
 | ack_status | INTEGER | 0=ge-ackt OK, 1=ge-ackt fout, 2=pending |
 | ack_details | TEXT | M10300 statusDetails-tekst |
+| transus_test_status | edi_transus_test_status DEFAULT 'niet_getest' | Handmatige validatiestatus na upload in Transus Online "Bekijken en testen" (mig 161). |
+| transus_test_resultaat | TEXT | Vrije tekst met Transus-validatie-output of foutmelding (mig 161). |
+| transus_test_at | TIMESTAMPTZ | Moment waarop het handmatige Transus-testresultaat is vastgelegd (mig 161). |
 | created_at, sent_at, acked_at, updated_at | TIMESTAMPTZ | Lifecycle-timestamps |
 
 **Unieke partial indexen:**
 - `uk_edi_berichten_transactie_id` — UNIQUE op `transactie_id` (idempotentie inkomend)
 - `uk_edi_berichten_uitgaand_actief` — UNIQUE op `(berichttype, bron_tabel, bron_id)` waar `richting='uit' AND status NOT IN ('Fout','Geannuleerd')` (voorkomt dubbele triggers)
 
-**RPCs:** `log_edi_inkomend`, `markeer_edi_ack`, `enqueue_edi_uitgaand`, `claim_volgende_uitgaand`, `markeer_edi_verstuurd`, `markeer_edi_fout`.
+**RPCs:** `log_edi_inkomend`, `markeer_edi_ack`, `create_edi_order`, `match_edi_artikel`, `enqueue_edi_uitgaand`, `claim_volgende_uitgaand`, `markeer_edi_verstuurd`, `markeer_edi_fout`. Sinds migratie 166 gebruikt `create_edi_order` de debiteur-prijslijst (`debiteuren.prijslijst_nr -> prijslijst_regels`) voor orderregelprijzen, met fallback op `producten.verkoopprijs`.
 
 ---
 
@@ -800,7 +874,7 @@ Centrale audit-/queue-tabel voor alle EDI-berichten via Transus (in én uit) (mi
 | Enum | Waarden |
 |------|---------|
 | order_status | Nieuw, Actie vereist, Wacht op picken, Wacht op voorraad, **Wacht op inkoop** (mig 144), In snijplan, In productie, Deels gereed, Klaar voor verzending, Verzonden, Geannuleerd |
-| zending_status | Gepland, Picken, Ingepakt, Klaar voor verzending, Onderweg, Afgeleverd |
+| zending_status | Gepland, Picken, Ingepakt, Klaar voor verzending, Onderweg, Afgeleverd (mig 169) |
 | factuur_status | Concept, Verstuurd, Betaald, Herinnering, Aanmaning, Gecrediteerd |
 | factuurvoorkeur | per_zending, wekelijks |
 | factuur_queue_status | pending, processing, done, failed |
@@ -808,6 +882,9 @@ Centrale audit-/queue-tabel voor alle EDI-berichten via Transus (in én uit) (mi
 | inkooporder_status | Concept, Besteld, Deels ontvangen, Ontvangen, Geannuleerd |
 | confectie_status | Wacht op materiaal, In productie, Kwaliteitscontrole, Gereed, Geannuleerd |
 | edi_bericht_status | Wachtrij, Bezig, Verstuurd, Verwerkt, Fout, Geannuleerd (mig 157) |
+| edi_orderbev_format | transus_xml, fixed_width (mig 161) |
+| edi_transus_test_status | niet_getest, goedgekeurd, afgekeurd (mig 161) |
+| hst_transportorder_status | Wachtrij, Bezig, Verstuurd, Fout, Geannuleerd (mig 171) |
 
 ---
 
@@ -832,6 +909,21 @@ Centrale audit-/queue-tabel voor alle EDI-berichten via Transus (in én uit) (mi
 | order_regel_levertijd | Per orderregel: levertijd-status (`voorraad` / `op_inkoop` / `wacht_op_nieuwe_inkoop` / `maatwerk`), claim-aantallen (`aantal_voorraad`, `aantal_io`, `aantal_tekort`), eerste/laatste IO-datum en berekende `verwachte_leverweek` (ISO `YYYY-Www`) op basis van `lever_modus` + buffer uit `app_config.order_config`. Migratie 150. |
 | inkooporder_regel_claim_zicht | Per IO-regel: `aantal_geclaimd` / `aantal_vrij` / `aantal_orderregels` (alleen voor `eenheid='stuks'`-regels relevant). Migratie 150. |
 | uitwisselbaarheid_map1_diff | Diagnostiek (migratie 138): Map1-paren in `kwaliteit_kleur_uitwisselgroepen` die NIET door `uitwisselbare_paren()` afgedekt worden, met `reden`-kolom (input-kw zonder collectie_id, kwaliteiten in andere collecties, kleur-code-mismatch, target ontbreekt in producten/rollen/maatwerk_m2_prijzen). Moet 0 rijen geven voordat Map1 fysiek gedropt mag worden. |
+| vervoerder_stats | Per-vervoerder dashboard-aggregaties (mig 174, aangepast mig 176): `aantal_klanten` (distinct debiteuren uit zendingen), `aantal_zendingen_totaal` + `aantal_zendingen_deze_maand` (uit `zendingen.vervoerder_code`), `hst_aantal_verstuurd` + `hst_aantal_fout` (uit `hst_transportorders`, alleen niet-NULL voor de `hst_api`-rij). Voedt de `/logistiek/vervoerders`-overzichts- en detailpagina's. EDI-equivalent uit `edi_berichten` met `berichttype='verzendbericht'` volgt later. |
+
+---
+
+### vervoerder_stats
+Mig 174, aangepast in mig 176. Read-only view die de `/logistiek/vervoerders`-overzichts- en detailpagina's voedt. Per `vervoerders.code` levert de view klant- en zending-tellingen plus per-vervoerder success/fail-counters.
+
+**Kolommen:** `code`, `display_naam`, `type`, `actief` (uit `vervoerders`), `aantal_klanten`, `aantal_zendingen_totaal`, `aantal_zendingen_deze_maand`, `hst_aantal_verstuurd`, `hst_aantal_fout`.
+
+**Joins:**
+- `vervoerders` LEFT JOIN op `zendingen` JOIN `orders`, gegroepeerd per `zendingen.vervoerder_code`; `aantal_klanten` is `COUNT(DISTINCT orders.debiteur_nr)`.
+- LEFT JOIN op `zendingen` (COUNT per `vervoerder_code`) → `aantal_zendingen_totaal`; idem met `WHERE z.created_at >= date_trunc('month', now())` → `aantal_zendingen_deze_maand`.
+- LEFT JOIN op `hst_transportorders`-aggregaten (`status='Verstuurd'` resp. `status='Fout'`) — gehard-coded gekoppeld aan `code='hst_api'`. Voor `edi_partner_a/b` blijven deze kolommen 0 totdat een vergelijkbaar EDI-aggregaat (uit `edi_berichten` met `berichttype='verzendbericht'`) is toegevoegd.
+
+`GRANT SELECT ... TO authenticated`. Gebruik in frontend: `frontend/src/modules/logistiek/queries/vervoerders.ts → fetchVervoerderStats()`.
 
 ---
 
@@ -890,6 +982,13 @@ Centrale audit-/queue-tabel voor alle EDI-berichten via Transus (in én uit) (mi
 | `besteld_per_kwaliteit_kleur()` | Aggregeert `openstaande_inkooporder_regels` per (kwaliteit_code, kleur_code) → `besteld_m`, `besteld_m2`, `orders_count`, `eerstvolgende_leverweek` + `eerstvolgende_verwacht_datum`, plus het deel (`eerstvolgende_m`/`eerstvolgende_m2`) dat in díe eerstvolgende levering valt. Gebruikt door rollen-overview (tag "besteld m²") en als basis voor alles-op-een-blik voorraad/inkoop-dashboards. M² via `kwaliteiten.standaard_breedte_cm` (regels zonder bekende breedte: m² = 0). Migratie 137. |
 | `boek_ontvangst(p_regel_id BIGINT, p_rollen JSONB, p_medewerker TEXT)` | Atomair: maakt N rollen aan op basis van `[{lengte_cm, breedte_cm, rolnummer?}, ...]`, logt `voorraad_mutaties` (type=`'inkoop'`, referentie_type=`'inkooporder_regel'`), werkt `geleverd_m`/`te_leveren_m` bij (boekt **m²**, niet strekkende meters — fix migratie 133) en zet order-status op 'Deels ontvangen'/'Ontvangen'. Alleen voor eenheid='m'. Rolnummer optioneel — leeg = auto-genereer `R-YYYY-NNNN` via `volgend_nummer('R')` (migratie 135). Returns TABLE(rol_id, rolnummer). Migraties 127/133/135/136. |
 | `boek_voorraad_ontvangst(p_regel_id BIGINT, p_aantal INTEGER, p_medewerker TEXT)` | Voor vaste producten (eenheid='stuks'): verhoogt `producten.voorraad` met p_aantal en werkt regel + order-status bij. Sinds migratie 148: consumeert IO-claims in `claim_volgorde`-volgorde en verschuift ze naar voorraad-claims op dezelfde orderregel; roept `herwaardeer_order_status` aan per geraakte order. |
+| `create_zending_voor_order(p_order_id BIGINT) → BIGINT` | Maakt één `zendingen`-rij + bijbehorende `zending_regels` voor één order. Adres-snapshot uit `orders.afl_*`, één zending_regel per `order_regels`-rij met `orderaantal > 0`; migratie 177 vult `zending_regels.aantal`, `zendingen.aantal_colli` en `zendingen.totaal_gewicht_kg` vanuit `orderaantal`/`gewicht_kg` voor Pick & Ship stickers en pakbon. Idempotent: returnt bestaande actieve zending als die er al is (alle statussen behalve `Afgeleverd`) en enqueue't opnieuw als status `'Klaar voor verzending'` is. Status direct op `'Klaar voor verzending'` zodat de zending-trigger meteen vuurt. Aangeroepen vanuit order-detail en Pick & Ship Verzendset. Migratie 172, aangescherpt in 177. |
+| `selecteer_vervoerder_voor_zending(p_zending_id BIGINT) → TABLE(gekozen_vervoerder_code, keuze_uitleg)` | Centrale vervoerderselector (mig 176). V1 kiest alleen als precies één vervoerder actief is. Bij 0 actieve of meerdere actieve vervoerders zonder criteria geeft de functie NULL + JSON-uitleg terug. Latere uitbreiding: voorwaarden, zones en tarieven per zending. |
+| `enqueue_zending_naar_vervoerder(p_zending_id BIGINT) → TEXT` | **Single switch-point voor multi-vervoerder dispatch** — enige plek in de codebase waar op `vervoerder_code` wordt geswitcht. Leest `zendingen.vervoerder_code` of vult die via `selecteer_vervoerder_voor_zending()` en dispatcht naar de juiste adapter-RPC: `'hst_api'` → `enqueue_hst_transportorder`; toekomstige `'edi_partner_a/b'` → `enqueue_edi_verzendbericht` (op `edi_berichten`). Returnt textuele status (`enqueued_hst` / `geen_actieve_vervoerder` / `meerdere_actieve_vervoerders_geen_criteria` / `vervoerder_inactief` / `no_adapter_voor_<code>`) — alleen voor logging/debugging, niet voor caller-control-flow. Migratie 172, aangepast in 176. |
+| `enqueue_hst_transportorder(p_zending_id BIGINT, p_debiteur_nr INTEGER, p_is_test BOOLEAN) → BIGINT` | HST-adapter: plaatst transportorder op wachtrij in `hst_transportorders`. Idempotent via `uk_hst_to_zending_actief`. Migratie 171. |
+| `claim_volgende_hst_transportorder() → hst_transportorders` | HST-adapter: pakt oudste `Wachtrij`-rij (`FOR UPDATE SKIP LOCKED`), zet status `Bezig`. Aangeroepen door edge function `hst-send`. Migratie 171. |
+| `markeer_hst_verstuurd(p_id, p_extern_transport_order_id, p_extern_tracking_number, p_request_payload, p_response_payload, p_response_http_code) → VOID` | HST-adapter: na 200-respons. Status → `Verstuurd`; schrijft `track_trace` terug op `zendingen` en promoveert zending-status van `'Klaar voor verzending'` naar `'Onderweg'`. Migratie 171. |
+| `markeer_hst_fout(p_id, p_error, p_request_payload, p_response_payload, p_response_http_code, p_max_retries DEFAULT 3) → VOID` | HST-adapter: incrementeert `retry_count`. Bij `>=` max_retries → status `Fout`, anders terug naar `Wachtrij`. Migratie 171. |
 
 ### Triggers op order_regels (maatwerk)
 
