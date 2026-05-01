@@ -24,10 +24,10 @@ HST-credentials voor de **acceptatie-omgeving** (pre-productie) zijn al door HST
 
 ```
 API endpoint:   https://accp.hstonline.nl/rest/api/v1/TransportOrder
-Username:       <Supabase Vault: HST_API_USERNAME — opvragen bij Wilfred / 1Password>
-Wachtwoord:     <Supabase Vault: HST_API_WACHTWOORD — opvragen bij Wilfred / 1Password>
-CustomerID:     <Supabase Vault: HST_API_CUSTOMER_ID — opvragen bij Wilfred / 1Password>
-Web-portaal:    https://accp.hstonline.nl  (login + wachtwoord uit 1Password — niet committen)
+Username:       karpi_array1_api_user
+Wachtwoord:     1niC}{~KDyMheZ<H$P{B
+CustomerID:     038267
+Web-portaal:    https://accp.hstonline.nl  (login: wilfred@array1.nl / Wilfred26!)
 Documentatie:   https://accp.hstonline.nl/restdoc/rest/api/v1#/   (geeft 404 zonder auth — handmatig in browser openen)
 ```
 
@@ -278,9 +278,8 @@ Uit de mail van Thom ten Brinke (2026-02-26): de **fysieke etiketten** die wij o
 
 - [ ] **Stap 2:** POST de payload naar HST ACCP via curl:
   ```bash
-  # Exporteer eerst HST_API_WACHTWOORD uit Supabase Vault (of 1Password) — NIET inline plakken / committen.
   curl -X POST 'https://accp.hstonline.nl/rest/api/v1/TransportOrder' \
-    -u "$HST_API_USERNAME:$HST_API_WACHTWOORD" \
+    -u 'karpi_array1_api_user:1niC}{~KDyMheZ<H$P{B' \
     -H 'Content-Type: application/json' \
     -d @supabase/functions/hst-send/fixtures/example-transportorder-request.json \
     -v
@@ -293,7 +292,7 @@ Uit de mail van Thom ten Brinke (2026-02-26): de **fysieke etiketten** die wij o
   - Tijd in ms
   - Welk veld in de response is het tracking-/order-ID?
 
-- [ ] **Stap 4:** Verifieer in het web-portaal `https://accp.hstonline.nl` (login + wachtwoord uit 1Password/Vault — niet hier inplakken) dat de testorder zichtbaar is. Maak een screenshot in `docs/logistiek/hst-api/screenshots/`.
+- [ ] **Stap 4:** Verifieer in het web-portaal `https://accp.hstonline.nl` (login `wilfred@array1.nl` / `Wilfred26!`) dat de testorder zichtbaar is. Maak een screenshot in `docs/logistiek/hst-api/screenshots/`.
 
 - [ ] **Stap 5:** Commit
   ```bash
@@ -963,11 +962,11 @@ Uit de mail van Thom ten Brinke (2026-02-26): de **fysieke etiketten** die wij o
   ```env
   # HST vervoerder API (acceptatie + productie)
   HST_API_BASE_URL=https://accp.hstonline.nl/rest/api/v1
-  HST_API_USERNAME=
+  HST_API_USERNAME=karpi_array1_api_user
   HST_API_WACHTWOORD=
-  HST_API_CUSTOMER_ID=
+  HST_API_CUSTOMER_ID=038267
   ```
-  (Niet de werkelijke credentials in deze file — leeg laten en in Supabase Vault zetten. ACCP-username, -wachtwoord en -CustomerID staan in 1Password / Vault.)
+  (Niet de werkelijke productie-credentials in deze file — leeg laten en in Supabase Vault zetten.)
 
 - [ ] **Stap 2:** Maak `index.ts` skeleton (kopieer structuur van `transus-send/index.ts`):
   ```ts

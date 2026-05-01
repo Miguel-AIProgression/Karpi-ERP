@@ -18,9 +18,8 @@ sectie "Fase 0 — API-discovery", taken 0.1 t/m 0.3:
 2. **Task 0.2** — Live curl tegen ACCP:
 
    ```bash
-   # Username + wachtwoord uit Supabase Vault / 1Password — NIET inline plakken / committen.
    curl -X POST 'https://accp.hstonline.nl/rest/api/v1/TransportOrder' \
-     -u "$HST_API_USERNAME:$HST_API_WACHTWOORD" \
+     -u 'karpi_array1_api_user:<wachtwoord>' \
      -H 'Content-Type: application/json' \
      -d @example-transportorder-request.json \
      -v
