@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Trash2 } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils/formatters'
 import { berekenPrijsOppervlakM2 } from '@/lib/utils/maatwerk-prijs'
+import { berekenOrganischVoorraadPrijs } from '@/lib/utils/organisch-voorraad-prijs'
 import { AFWERKING_OPTIES } from '@/lib/utils/constants'
 import { KwaliteitFirstSelector } from './kwaliteit-first-selector'
 import { UitwisselbaarTekortHint } from './uitwisselbaar-tekort-hint'
@@ -353,6 +354,18 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr,
       } else {
         prijs = substitution.fysiek_verkoopprijs
       }
+    }
+
+    // Auto-prijs voor ORGANISCH voorraadproducten zonder verkoopprijs.
+    // Mig 179 zorgt dat 'organisch_a' toeslag €75 heeft. Berekent
+    // (lengte × breedte) / 10000 × m²-prijs + €75.
+    if (prijs == null && /ORGANISCH/i.test(article.omschrijving)) {
+      const autoPrijs = await berekenOrganischVoorraadPrijs(
+        article.omschrijving,
+        article.kwaliteit_code,
+        article.kleur_code,
+      )
+      if (autoPrijs != null) prijs = autoPrijs
     }
 
     const newLine: OrderRegelFormData = {
