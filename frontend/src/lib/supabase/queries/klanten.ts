@@ -15,6 +15,8 @@ export interface KlantRow {
   aantal_orders_ytd: number
   pct_van_totaal: number
   plaats: string | null
+  edi_actief: boolean
+  edi_test_modus: boolean
 }
 
 export interface KlantDetail {
@@ -55,6 +57,8 @@ export interface KlantDetail {
   deelleveringen_toegestaan: boolean
   factuurvoorkeur: 'per_zending' | 'wekelijks'
   btw_percentage: number
+  edi_actief: boolean
+  edi_test_modus: boolean
 }
 
 export interface KlanteigenNaam {
@@ -92,10 +96,22 @@ export async function fetchKlanten(params: {
   status?: string
   tier?: string
   vertegenw_code?: string
+  edi_filter?: 'edi' | 'niet_edi'
   page?: number
   pageSize?: number
 }) {
-  const { search, status, tier, vertegenw_code, page = 0, pageSize = 50 } = params
+  const { search, status, tier, vertegenw_code, edi_filter, page = 0, pageSize = 50 } = params
+
+  // Lichte query: alle actieve EDI-debiteurs (in productie ~39 rijen). Klein dataset,
+  // extra roundtrip is sub-50ms. V2: hijs naar de view klant_omzet_ytd.
+  const { data: ediRows, error: ediErr } = await supabase
+    .from('edi_handelspartner_config')
+    .select('debiteur_nr, test_modus')
+    .eq('transus_actief', true)
+  if (ediErr) throw ediErr
+  const ediMap = new Map<number, boolean>(
+    (ediRows ?? []).map((r) => [r.debiteur_nr as number, r.test_modus as boolean]),
+  )
 
   let query = supabase
     .from('klant_omzet_ytd')
@@ -116,17 +132,36 @@ export async function fetchKlanten(params: {
     }
   }
 
+  if (edi_filter === 'edi') {
+    if (ediMap.size === 0) {
+      return { klanten: [], totalCount: 0 }
+    }
+    query = query.in('debiteur_nr', Array.from(ediMap.keys()))
+  } else if (edi_filter === 'niet_edi' && ediMap.size > 0) {
+    // PostgREST not.in syntax: ?col=not.in.(1,2,3)
+    query = query.not('debiteur_nr', 'in', `(${Array.from(ediMap.keys()).join(',')})`)
+  }
+
   const { data, error, count } = await query
   if (error) throw error
 
-  return { klanten: (data ?? []) as KlantRow[], totalCount: count ?? 0 }
+  const klanten = (data ?? []).map((row: Record<string, unknown>) => {
+    const debNr = row.debiteur_nr as number
+    return {
+      ...(row as Omit<KlantRow, 'edi_actief' | 'edi_test_modus'>),
+      edi_actief: ediMap.has(debNr),
+      edi_test_modus: ediMap.get(debNr) ?? false,
+    }
+  })
+
+  return { klanten, totalCount: count ?? 0 }
 }
 
 /** Fetch single klant with vertegenwoordiger naam */
 export async function fetchKlantDetail(debiteurNr: number): Promise<KlantDetail> {
   const ytdFrom = new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10)
 
-  const [klantRes, omzetRes] = await Promise.all([
+  const [klantRes, omzetRes, ediRes] = await Promise.all([
     supabase
       .from('debiteuren')
       .select('*, vertegenwoordigers(naam)')
@@ -138,9 +173,15 @@ export async function fetchKlantDetail(debiteurNr: number): Promise<KlantDetail>
       .eq('debiteur_nr', debiteurNr)
       .gte('orderdatum', ytdFrom)
       .neq('status', 'Geannuleerd'),
+    supabase
+      .from('edi_handelspartner_config')
+      .select('transus_actief, test_modus')
+      .eq('debiteur_nr', debiteurNr)
+      .maybeSingle(),
   ])
 
   if (klantRes.error) throw klantRes.error
+  if (ediRes.error) throw ediRes.error
 
   const row = klantRes.data as Record<string, unknown>
   const verteg = row.vertegenwoordigers as { naam: string } | null
@@ -153,6 +194,8 @@ export async function fetchKlantDetail(debiteurNr: number): Promise<KlantDetail>
     ...row,
     vertegenwoordiger_naam: verteg?.naam ?? null,
     omzet_ytd: omzetYtd,
+    edi_actief: ediRes.data?.transus_actief ?? false,
+    edi_test_modus: ediRes.data?.test_modus ?? false,
   } as KlantDetail
 }
 

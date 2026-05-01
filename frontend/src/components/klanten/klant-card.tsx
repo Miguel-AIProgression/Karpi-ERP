@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { formatCurrency } from '@/lib/utils/formatters'
 import type { KlantRow } from '@/lib/supabase/queries/klanten'
+import { EdiTag } from '@/modules/edi'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 
@@ -47,6 +48,7 @@ export function KlantCard({ klant }: KlantCardProps) {
           <div className="flex items-center gap-2 mb-1">
             <h3 className="font-medium text-sm truncate">{klant.naam}</h3>
             <StatusBadge status={klant.tier} type="tier" />
+            {klant.edi_actief && <EdiTag testModus={klant.edi_test_modus} />}
           </div>
           <p className="text-xs text-slate-400">#{klant.debiteur_nr}</p>
         </div>

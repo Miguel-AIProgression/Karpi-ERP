@@ -13,10 +13,11 @@ import { KlanteigenNamenTab } from '@/components/klanten/klanteigen-namen-tab'
 import { KlantArtikelnummersTab } from '@/components/klanten/klant-artikelnummers-tab'
 import { KlantPrijslijstTab } from '@/components/klanten/klant-prijslijst-tab'
 import { KlantFactureringTab } from '@/components/klanten/klant-facturering-tab'
+import { EdiTag, KlantEdiTab } from '@/modules/edi'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 
-type Tab = 'info' | 'adressen' | 'orders' | 'facturering' | 'eigennamen' | 'artikelnummers' | 'prijslijst'
+type Tab = 'info' | 'adressen' | 'orders' | 'facturering' | 'eigennamen' | 'artikelnummers' | 'prijslijst' | 'edi'
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'info', label: 'Info' },
@@ -26,6 +27,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'eigennamen', label: 'Klanteigen namen' },
   { key: 'artikelnummers', label: 'Artikelnummers' },
   { key: 'prijslijst', label: 'Prijslijst' },
+  { key: 'edi', label: 'EDI' },
 ]
 
 export function KlantDetailPage() {
@@ -191,6 +193,7 @@ export function KlantDetailPage() {
               <span className="text-sm text-slate-400">#{klant.debiteur_nr}</span>
               <StatusBadge status={klant.status} type="order" />
               <StatusBadge status={klant.tier} type="tier" />
+              {klant.edi_actief && <EdiTag testModus={klant.edi_test_modus} />}
               {klant.vertegenwoordiger_naam && (
                 <span className="text-sm text-slate-500">
                   Verteg: <span className="font-medium text-slate-700">{klant.vertegenwoordiger_naam}</span>
@@ -487,6 +490,7 @@ export function KlantDetailPage() {
         {activeTab === 'eigennamen' && <KlanteigenNamenTab debiteurNr={debiteurNr} />}
         {activeTab === 'artikelnummers' && <KlantArtikelnummersTab debiteurNr={debiteurNr} />}
         {activeTab === 'prijslijst' && <KlantPrijslijstTab debiteurNr={debiteurNr} />}
+        {activeTab === 'edi' && <KlantEdiTab debiteurNr={debiteurNr} />}
       </div>
 
       {/* Logo lightbox */}

@@ -14,6 +14,7 @@ export function useKlanten(params: {
   status?: string
   tier?: string
   vertegenw_code?: string
+  edi_filter?: 'edi' | 'niet_edi'
   page?: number
   pageSize?: number
 }) {
