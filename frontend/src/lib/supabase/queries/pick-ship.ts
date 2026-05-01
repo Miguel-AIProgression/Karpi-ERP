@@ -74,10 +74,28 @@ export async function fetchPickShipOrders(
   const orderIds = Array.from(new Set(regels.map((r) => r.order_id)))
   const { data: ordersRaw, error: oerr } = await supabase
     .from('orders')
-    .select('id, order_nr, klant_naam, debiteur_nr, afl_naam, afl_plaats, afleverdatum')
+    .select('id, order_nr, debiteur_nr, afl_naam, afl_plaats, afleverdatum')
     .in('id', orderIds)
   if (oerr) throw oerr
-  const headers = (ordersRaw ?? []) as unknown as OrderHeaderRij[]
+  const ordersBase = (ordersRaw ?? []) as unknown as Array<Omit<OrderHeaderRij, 'klant_naam'>>
+
+  const debiteurNrs = Array.from(new Set(ordersBase.map((o) => o.debiteur_nr)))
+  const naamMap = new Map<number, string>()
+  if (debiteurNrs.length > 0) {
+    const { data: debs, error: derr } = await supabase
+      .from('debiteuren')
+      .select('debiteur_nr, naam')
+      .in('debiteur_nr', debiteurNrs)
+    if (derr) throw derr
+    for (const d of (debs ?? []) as Array<{ debiteur_nr: number; naam: string }>) {
+      naamMap.set(d.debiteur_nr, d.naam)
+    }
+  }
+
+  const headers: OrderHeaderRij[] = ordersBase.map((o) => ({
+    ...o,
+    klant_naam: naamMap.get(o.debiteur_nr) ?? null,
+  }))
   const headerMap = new Map(headers.map((h) => [h.id, h]))
 
   let work = regels
