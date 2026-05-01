@@ -36,7 +36,7 @@ export function PickShipOverviewPage() {
 
   const statCards = [
     {
-      label: 'Te picken orders',
+      label: 'Open orders',
       value: stats?.totaal_orders ?? 0,
       icon: Package,
       color: 'text-teal-600',
@@ -68,7 +68,7 @@ export function PickShipOverviewPage() {
     <>
       <PageHeader
         title="Pick & Ship"
-        description="Te picken orders — gegroepeerd op afleverdatum"
+        description="Open orders - gegroepeerd op afleverdatum"
       />
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
@@ -129,7 +129,7 @@ export function PickShipOverviewPage() {
         </div>
       ) : gefilterd.length === 0 ? (
         <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-12 text-center text-slate-400">
-          Geen orders te picken
+          Geen open orders
         </div>
       ) : filter !== 'alles' ? (
         <div className="space-y-3">

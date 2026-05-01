@@ -1,8 +1,11 @@
 import { Link } from 'react-router-dom'
 import { CheckCircle2, Clock, ExternalLink } from 'lucide-react'
 import { LocatieEdit } from './locatie-edit'
+import { VerzendsetButton } from './verzendset-button'
+import { VervoerderTag } from '@/modules/logistiek'
 import { formatDate } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
+import { ORDER_STATUS_COLORS } from '@/lib/utils/constants'
 import type { PickShipOrder, PickShipWachtOp } from '@/lib/types/pick-ship'
 
 const WACHT_OP_LABEL: Record<NonNullable<PickShipWachtOp>, string> = {
@@ -17,17 +20,33 @@ interface Props {
 }
 
 export function OrderPickCard({ order }: Props) {
+  const statusColor = ORDER_STATUS_COLORS[order.status] ?? {
+    bg: 'bg-slate-100',
+    text: 'text-slate-700',
+  }
+
   return (
     <div className="bg-white rounded-[var(--radius)] border border-slate-200 overflow-hidden">
-      <div className="flex items-start justify-between px-4 py-3 bg-slate-50 border-b border-slate-200">
+      <div className="flex items-start justify-between gap-4 px-4 py-3 bg-slate-50 border-b border-slate-200">
         <div>
-          <Link
-            to={`/orders/${order.order_id}`}
-            className="inline-flex items-center gap-1 text-terracotta-600 font-medium hover:underline"
-          >
-            {order.order_nr}
-            <ExternalLink size={12} />
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              to={`/orders/${order.order_id}`}
+              className="inline-flex items-center gap-1 text-terracotta-600 font-medium hover:underline"
+            >
+              {order.order_nr}
+              <ExternalLink size={12} />
+            </Link>
+            <span
+              className={cn(
+                'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
+                statusColor.bg,
+                statusColor.text
+              )}
+            >
+              {order.status}
+            </span>
+          </div>
           <div className="text-sm text-slate-700 mt-0.5">{order.klant_naam}</div>
           {order.afl_naam && (
             <div className="text-xs text-slate-500 mt-0.5">
@@ -35,12 +54,18 @@ export function OrderPickCard({ order }: Props) {
             </div>
           )}
         </div>
-        <div className="text-right text-sm">
+        <div className="flex items-start gap-4">
+          <div className="text-right text-sm">
           <div className="text-slate-700 font-medium">{formatDate(order.afleverdatum)}</div>
           <div className="text-xs text-slate-500">
             {order.aantal_regels} regel{order.aantal_regels === 1 ? '' : 's'}
             {order.totaal_m2 > 0 ? ` · ${order.totaal_m2.toFixed(2)} m²` : ''}
           </div>
+            <div className="mt-1 flex justify-end">
+              <VervoerderTag code={order.vervoerder_code} showLeeg />
+            </div>
+          </div>
+          <VerzendsetButton order={order} />
         </div>
       </div>
       <table className="w-full text-sm">

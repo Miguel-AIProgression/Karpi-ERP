@@ -1,49 +1,44 @@
 import { supabase } from '../client'
-import { sanitizeSearch } from '@/lib/utils/sanitize'
-import { bucketVoor } from '@/lib/utils/pick-ship-buckets'
 import type {
   BucketKey,
-  PickShipBron,
   PickShipOrder,
-  PickShipRegel,
-  PickShipWachtOp,
+  VervoerderSelectieStatus,
 } from '@/lib/types/pick-ship'
+import {
+  chunks,
+  comparePickShipOrders,
+  filterPickShipOrders,
+  initPickShipOrders,
+  mapPickbaarheidRegel,
+  type OrderHeaderRij,
+  type PickbaarheidRij,
+} from './pick-ship-transform'
 
-interface PickbaarheidRij {
-  order_regel_id: number
+interface FallbackOrderRegelRij {
+  id: number
   order_id: number
   regelnummer: number
   artikelnr: string | null
-  is_maatwerk: boolean
-  orderaantal: number
+  is_maatwerk: boolean | null
+  orderaantal: number | null
   maatwerk_lengte_cm: number | null
   maatwerk_breedte_cm: number | null
   omschrijving: string | null
   maatwerk_kwaliteit_code: string | null
   maatwerk_kleur_code: string | null
-  totaal_stuks: number | null
-  pickbaar_stuks: number | null
-  is_pickbaar: boolean
-  bron: PickShipBron
-  fysieke_locatie: string | null
-  wacht_op: PickShipWachtOp
 }
 
-interface OrderHeaderRij {
-  id: number
-  order_nr: string
-  klant_naam: string | null
-  debiteur_nr: number
-  afl_naam: string | null
-  afl_plaats: string | null
-  afleverdatum: string | null
+interface VervoerderRij {
+  code: string
+  display_naam: string
+  actief: boolean
 }
 
 export interface PickShipParams {
   bucket?: BucketKey
   search?: string
   vandaag?: Date
-  /** Default true: alleen orders met >=1 pickbare regel. */
+  /** Default false: toon alle open orders. Zet true voor alleen orders met >=1 pickbare regel. */
   alleen_pickbaar?: boolean
 }
 
@@ -57,110 +52,23 @@ export interface PickShipStats {
 export async function fetchPickShipOrders(
   params: PickShipParams = {}
 ): Promise<PickShipOrder[]> {
-  const { search, bucket, vandaag = new Date(), alleen_pickbaar = true } = params
+  const { search, bucket, vandaag = new Date(), alleen_pickbaar = false } = params
 
-  const { data: regelsRaw, error } = await supabase
-    .from('orderregel_pickbaarheid')
-    .select(
-      'order_regel_id, order_id, regelnummer, artikelnr, is_maatwerk, ' +
-        'orderaantal, maatwerk_lengte_cm, maatwerk_breedte_cm, omschrijving, ' +
-        'maatwerk_kwaliteit_code, maatwerk_kleur_code, totaal_stuks, ' +
-        'pickbaar_stuks, is_pickbaar, bron, fysieke_locatie, wacht_op'
-    )
-  if (error) throw error
-  const regels = (regelsRaw ?? []) as unknown as PickbaarheidRij[]
-  if (regels.length === 0) return []
+  const headers = await fetchOpenOrderHeaders()
+  if (headers.length === 0) return []
 
-  const orderIds = Array.from(new Set(regels.map((r) => r.order_id)))
-  const { data: ordersRaw, error: oerr } = await supabase
-    .from('orders')
-    .select('id, order_nr, debiteur_nr, afl_naam, afl_plaats, afleverdatum')
-    .in('id', orderIds)
-  if (oerr) throw oerr
-  const ordersBase = (ordersRaw ?? []) as unknown as Array<Omit<OrderHeaderRij, 'klant_naam'>>
-
-  const debiteurNrs = Array.from(new Set(ordersBase.map((o) => o.debiteur_nr)))
-  const naamMap = new Map<number, string>()
-  if (debiteurNrs.length > 0) {
-    const { data: debs, error: derr } = await supabase
-      .from('debiteuren')
-      .select('debiteur_nr, naam')
-      .in('debiteur_nr', debiteurNrs)
-    if (derr) throw derr
-    for (const d of (debs ?? []) as Array<{ debiteur_nr: number; naam: string }>) {
-      naamMap.set(d.debiteur_nr, d.naam)
-    }
-  }
-
-  const headers: OrderHeaderRij[] = ordersBase.map((o) => ({
-    ...o,
-    klant_naam: naamMap.get(o.debiteur_nr) ?? null,
-  }))
+  const perOrder = initPickShipOrders(headers, vandaag)
   const headerMap = new Map(headers.map((h) => [h.id, h]))
+  const regels = await fetchPickbaarheidRegels(headers.map((h) => h.id))
 
-  let work = regels
-  if (search) {
-    const s = sanitizeSearch(search).toLowerCase()
-    if (s) {
-      work = regels.filter((r) => {
-        const h = headerMap.get(r.order_id)
-        return (
-          (h?.order_nr ?? '').toLowerCase().includes(s) ||
-          (h?.klant_naam ?? '').toLowerCase().includes(s) ||
-          (r.omschrijving ?? '').toLowerCase().includes(s) ||
-          (r.artikelnr ?? '').toLowerCase().includes(s)
-        )
-      })
-    }
-  }
-
-  const perOrder = new Map<number, PickShipOrder>()
-  for (const r of work) {
+  for (const r of regels) {
     const h = headerMap.get(r.order_id)
-    if (!h) continue
+    const order = perOrder.get(r.order_id)
+    if (!h || !order) continue
 
-    const lengte = r.maatwerk_lengte_cm ?? 0
-    const breedte = r.maatwerk_breedte_cm ?? 0
-    const m2 = r.is_maatwerk ? Math.round(((lengte * breedte) / 10000) * 100) / 100 : 0
-
-    const regel: PickShipRegel = {
-      order_regel_id: r.order_regel_id,
-      artikelnr: r.artikelnr,
-      is_maatwerk: r.is_maatwerk,
-      product:
-        r.omschrijving ??
-        [r.maatwerk_kwaliteit_code, r.maatwerk_kleur_code].filter(Boolean).join(' '),
-      kleur: r.maatwerk_kleur_code,
-      maat_cm: r.is_maatwerk ? `${lengte} x ${breedte}` : `${r.orderaantal} stuk(s)`,
-      m2,
-      orderaantal: r.orderaantal,
-      is_pickbaar: r.is_pickbaar,
-      bron: r.bron,
-      fysieke_locatie: r.fysieke_locatie,
-      wacht_op: r.wacht_op,
-      totaal_stuks: r.totaal_stuks,
-      pickbaar_stuks: r.pickbaar_stuks,
-    }
-
-    let order = perOrder.get(r.order_id)
-    if (!order) {
-      order = {
-        order_id: h.id,
-        order_nr: h.order_nr,
-        klant_naam: h.klant_naam ?? '',
-        debiteur_nr: h.debiteur_nr,
-        afl_naam: h.afl_naam,
-        afl_plaats: h.afl_plaats,
-        afleverdatum: h.afleverdatum,
-        bucket: bucketVoor(h.afleverdatum, vandaag),
-        regels: [],
-        totaal_m2: 0,
-        aantal_regels: 0,
-      }
-      perOrder.set(r.order_id, order)
-    }
+    const regel = mapPickbaarheidRegel(r)
     order.regels.push(regel)
-    order.totaal_m2 = Math.round((order.totaal_m2 + m2) * 100) / 100
+    order.totaal_m2 = Math.round((order.totaal_m2 + regel.m2) * 100) / 100
     order.aantal_regels = order.regels.length
   }
 
@@ -168,8 +76,128 @@ export async function fetchPickShipOrders(
   if (alleen_pickbaar) {
     result = result.filter((o) => o.regels.some((r) => r.is_pickbaar))
   }
+  if (search) result = filterPickShipOrders(result, search)
   if (bucket) result = result.filter((o) => o.bucket === bucket)
+  result.sort(comparePickShipOrders)
   return result
+}
+
+async function fetchOpenOrderHeaders(): Promise<OrderHeaderRij[]> {
+  const { data: ordersRaw, error } = await supabase
+    .from('orders')
+    .select('id, order_nr, status, debiteur_nr, afl_naam, afl_plaats, afleverdatum')
+    .neq('status', 'Verzonden')
+    .neq('status', 'Geannuleerd')
+    .order('afleverdatum', { ascending: true })
+    .order('order_nr', { ascending: true })
+
+  if (error) throw error
+
+  const ordersBase = (ordersRaw ?? []) as unknown as Array<Omit<OrderHeaderRij, 'klant_naam'>>
+  const debiteurNrs = Array.from(new Set(ordersBase.map((o) => o.debiteur_nr)))
+  const naamMap = new Map<number, string>()
+  let vervoerderSelectieStatus: VervoerderSelectieStatus = 'geen_actieve_vervoerder'
+  let geselecteerdeVervoerder: VervoerderRij | null = null
+
+  if (debiteurNrs.length > 0) {
+    const { data: debs, error: derr } = await supabase
+      .from('debiteuren')
+      .select('debiteur_nr, naam')
+      .in('debiteur_nr', debiteurNrs)
+    if (derr) throw derr
+
+    for (const d of (debs ?? []) as Array<{ debiteur_nr: number; naam: string }>) {
+      naamMap.set(d.debiteur_nr, d.naam)
+    }
+
+    const { data: actieveVervoerders, error: verr } = await supabase
+      .from('vervoerders')
+      .select('code, display_naam, actief')
+      .eq('actief', true)
+      .order('code')
+    if (verr) throw verr
+
+    const actief = (actieveVervoerders ?? []) as VervoerderRij[]
+    if (actief.length === 1) {
+      vervoerderSelectieStatus = 'selecteerbaar'
+      geselecteerdeVervoerder = actief[0]
+    } else if (actief.length > 1) {
+      vervoerderSelectieStatus = 'meerdere_actieve_vervoerders'
+    }
+  }
+
+  return ordersBase.map((o) => {
+    return {
+      ...o,
+      klant_naam: naamMap.get(o.debiteur_nr) ?? null,
+      vervoerder_code: geselecteerdeVervoerder?.code ?? null,
+      vervoerder_naam: geselecteerdeVervoerder?.display_naam ?? null,
+      vervoerder_actief: geselecteerdeVervoerder?.actief ?? null,
+      vervoerder_selectie_status: vervoerderSelectieStatus,
+    }
+  })
+}
+
+async function fetchPickbaarheidRegels(orderIds: number[]): Promise<PickbaarheidRij[]> {
+  const { data, error } = await supabase
+    .from('orderregel_pickbaarheid')
+    .select(
+      'order_regel_id, order_id, regelnummer, artikelnr, is_maatwerk, ' +
+        'orderaantal, maatwerk_lengte_cm, maatwerk_breedte_cm, omschrijving, ' +
+        'maatwerk_kwaliteit_code, maatwerk_kleur_code, totaal_stuks, ' +
+        'pickbaar_stuks, is_pickbaar, bron, fysieke_locatie, wacht_op'
+    )
+
+  if (!error) return (data ?? []) as unknown as PickbaarheidRij[]
+  if (!isMissingPickbaarheidViewError(error)) throw error
+
+  return fetchFallbackOrderRegels(orderIds)
+}
+
+async function fetchFallbackOrderRegels(orderIds: number[]): Promise<PickbaarheidRij[]> {
+  const rows: FallbackOrderRegelRij[] = []
+
+  for (const ids of chunks(orderIds, 100)) {
+    const { data, error } = await supabase
+      .from('order_regels')
+      .select(
+        'id, order_id, regelnummer, artikelnr, is_maatwerk, orderaantal, ' +
+          'maatwerk_lengte_cm, maatwerk_breedte_cm, omschrijving, ' +
+          'maatwerk_kwaliteit_code, maatwerk_kleur_code'
+      )
+      .in('order_id', ids)
+      .order('regelnummer', { ascending: true })
+
+    if (error) throw error
+    rows.push(...((data ?? []) as unknown as FallbackOrderRegelRij[]))
+  }
+
+  return rows.map((r) => ({
+    order_regel_id: r.id,
+    order_id: r.order_id,
+    regelnummer: r.regelnummer,
+    artikelnr: r.artikelnr,
+    is_maatwerk: r.is_maatwerk ?? false,
+    orderaantal: r.orderaantal ?? 0,
+    maatwerk_lengte_cm: r.maatwerk_lengte_cm,
+    maatwerk_breedte_cm: r.maatwerk_breedte_cm,
+    omschrijving: r.omschrijving,
+    maatwerk_kwaliteit_code: r.maatwerk_kwaliteit_code,
+    maatwerk_kleur_code: r.maatwerk_kleur_code,
+    totaal_stuks: null,
+    pickbaar_stuks: null,
+    is_pickbaar: false,
+    bron: null,
+    fysieke_locatie: null,
+    wacht_op: null,
+  }))
+}
+
+function isMissingPickbaarheidViewError(error: { code?: string; message?: string }): boolean {
+  return (
+    error.code === 'PGRST205' ||
+    (error.message ?? '').includes("Could not find the table 'public.orderregel_pickbaarheid'")
+  )
 }
 
 export async function fetchPickShipStats(vandaag: Date = new Date()): Promise<PickShipStats> {

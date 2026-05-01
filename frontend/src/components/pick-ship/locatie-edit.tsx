@@ -10,6 +10,10 @@ export function LocatieEdit({ regel }: Props) {
   const maatwerkMut = useUpdateMaatwerkLocatie()
   const rolMut = useUpdateRolLocatie()
 
+  if (!regel.is_pickbaar && !regel.fysieke_locatie) {
+    return <span className="text-slate-300 text-xs">-</span>
+  }
+
   const onSave = async (code: string) => {
     if (regel.is_maatwerk) {
       await maatwerkMut.mutateAsync({ orderRegelId: regel.order_regel_id, code })
