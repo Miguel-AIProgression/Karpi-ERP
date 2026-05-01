@@ -10,9 +10,16 @@ export function KlantenOverviewPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('Actief')
   const [vertegFilter, setVertegFilter] = useState<string>('')
+  const [ediFilter, setEdiFilter] = useState<'' | 'edi' | 'niet_edi'>('')
   const [pageSize, setPageSize] = useState(PAGE_SIZE)
 
-  const { data, isLoading } = useKlanten({ search, status: statusFilter, vertegenw_code: vertegFilter || undefined, pageSize })
+  const { data, isLoading } = useKlanten({
+    search,
+    status: statusFilter,
+    vertegenw_code: vertegFilter || undefined,
+    edi_filter: ediFilter || undefined,
+    pageSize,
+  })
   const { data: vertegenwoordigers } = useVertegenwoordigers()
 
   const klanten = data?.klanten ?? []
@@ -61,6 +68,15 @@ export function KlantenOverviewPage() {
           {vertegenwoordigers?.map((v) => (
             <option key={v.code} value={v.code}>{v.naam}</option>
           ))}
+        </select>
+        <select
+          value={ediFilter}
+          onChange={(e) => handleFilterChange(setEdiFilter as (v: string) => void, e.target.value)}
+          className="px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm"
+        >
+          <option value="">Alle EDI-statussen</option>
+          <option value="edi">EDI-klanten</option>
+          <option value="niet_edi">Niet-EDI</option>
         </select>
       </div>
 

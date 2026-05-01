@@ -1,0 +1,30 @@
+{
+  "customerId": "038267",
+  "referenceNumber": "ZEND-2026-0001",
+  "customerReference": "ORD-2026-0042",
+  "pickupDate": "2026-05-04",
+  "shipper": {
+    "name": "KARPI BV",
+    "address": "Tweede Broekdijk 10",
+    "postalCode": "7122 LB",
+    "city": "Aalten",
+    "country": "NL",
+    "phone": "+31 (0)543-476116",
+    "email": "info@karpi.nl"
+  },
+  "consignee": {
+    "name": "KNUTZEN TEPPICH-HOF",
+    "address": "OSTERWEIDE 14",
+    "postalCode": "23562",
+    "city": "LUEBECK",
+    "country": "DE"
+  },
+  "packages": [
+    {
+      "type": "PARCEL",
+      "quantity": 1,
+      "weightKg": 12.5
+    }
+  ],
+  "remarks": null
+}

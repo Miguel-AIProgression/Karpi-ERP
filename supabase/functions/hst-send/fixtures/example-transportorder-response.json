@@ -1,0 +1,6 @@
+{
+  "transportOrderId": "ACCP-TEST-12345",
+  "trackingNumber": "TRK-TEST-67890",
+  "status": "ACCEPTED",
+  "createdAt": "2026-05-04T08:30:00Z"
+}
