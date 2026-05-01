@@ -8,6 +8,9 @@ export function berekenPrijsOppervlakM2(
   breedteCm?: number,
   diameterCm?: number
 ): number {
+  // Rond is in dit plan (mig 179) de enige vorm met afmeting_type='diameter';
+  // alle 6 nieuwe aparte vormen (organic, pebble, etc.) zijn lengte_breedte.
+  // Cloud-diameter is bewust NIET in maatwerk_vormen — ronde tapijten via voorraad.
   if (vorm === 'rond' && diameterCm) {
     return (diameterCm * diameterCm) / 10000
   }

@@ -1,15 +1,16 @@
 import { useRef } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Trash2 } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils/formatters'
 import { berekenPrijsOppervlakM2 } from '@/lib/utils/maatwerk-prijs'
 import { AFWERKING_OPTIES } from '@/lib/utils/constants'
 import { KwaliteitFirstSelector } from './kwaliteit-first-selector'
 import { UitwisselbaarTekortHint } from './uitwisselbaar-tekort-hint'
-import { getVormDisplay } from '@/lib/utils/vorm-labels'
 import type { SelectedArticle, SubstitutionInfo } from './article-selector'
 import type { OrderRegelFormData } from '@/lib/supabase/queries/order-mutations'
 import { SHIPPING_PRODUCT_ID } from '@/lib/constants/shipping'
 import { berekenRegelDekking } from '@/lib/utils/regel-dekking'
+import { fetchVormen } from '@/lib/supabase/queries/op-maat'
 
 interface OrderLineEditorProps {
   lines: OrderRegelFormData[]
@@ -39,6 +40,11 @@ function MaatwerkLineRow({
   updateLine: (i: number, u: Partial<OrderRegelFormData>) => void
   removeLine: (i: number) => void
 }) {
+  const { data: vormen = [] } = useQuery({
+    queryKey: ['maatwerk-vormen'],
+    queryFn: fetchVormen,
+  })
+
   const isVasteMaatRegel = !line.is_maatwerk
     && line.artikelnr
     && line.artikelnr !== SHIPPING_PRODUCT_ID
@@ -209,10 +215,9 @@ function MaatwerkLineRow({
                   onChange={(e) => updateLine(index, { maatwerk_vorm: e.target.value })}
                   className={selectClass}
                 >
-                  {['rechthoek', 'rond', 'ovaal', 'organisch_a', 'organisch_b_sp'].map(code => {
-                    const display = getVormDisplay(code)
-                    return <option key={code} value={code}>{display.label}</option>
-                  })}
+                  {vormen.map((v) => (
+                    <option key={v.code} value={v.code}>{v.naam}</option>
+                  ))}
                 </select>
               </label>
 
