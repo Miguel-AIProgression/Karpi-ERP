@@ -1,4 +1,4 @@
-import { createBrowserRouter } from 'react-router-dom'
+import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { AppLayout } from '@/components/layout/app-layout'
 import { DashboardPage } from '@/pages/dashboard'
 import { PlaceholderPage } from '@/pages/placeholder'
@@ -29,7 +29,7 @@ import { ConfectieOverviewPage } from '@/pages/confectie/confectie-overview'
 import { ConfectiePlanningPage } from '@/pages/confectie/confectie-planning'
 import { ScanstationPage } from '@/pages/scanstation/scanstation'
 import { RollenOverviewPage } from '@/pages/rollen/rollen-overview'
-import { MagazijnOverviewPage } from '@/pages/magazijn/magazijn-overview'
+import { PickShipOverviewPage } from '@/pages/pick-ship/pick-ship-overview'
 import { FacturatieOverviewPage } from '@/pages/facturatie/facturatie-overview'
 import { FactuurDetailPage } from '@/pages/facturatie/factuur-detail'
 import { InkooporderOverviewPage } from '@/pages/inkooporders/inkooporders-overview'
@@ -37,8 +37,8 @@ import { InkooporderDetailPage } from '@/pages/inkooporders/inkooporder-detail'
 import { RolStickersPrintPage } from '@/pages/inkooporders/rol-stickers-print'
 import { LeveranciersOverviewPage } from '@/pages/leveranciers/leveranciers-overview'
 import { LeverancierDetailPage } from '@/pages/leveranciers/leverancier-detail'
-import { EdiBerichtenOverzichtPage } from '@/pages/edi/berichten-overzicht'
-import { EdiBerichtDetailPage } from '@/pages/edi/bericht-detail'
+import { EdiBerichtenOverzichtPage } from '@/modules/edi/pages/berichten-overzicht'
+import { EdiBerichtDetailPage } from '@/modules/edi/pages/bericht-detail'
 
 export const router = createBrowserRouter([
   {
@@ -75,7 +75,7 @@ export const router = createBrowserRouter([
       { path: 'rollen', element: <RollenOverviewPage /> },
       { path: 'rollen/stickers', element: <RolStickersPrintPage /> },
       { path: 'scanstation', element: <ScanstationPage /> },
-      { path: 'magazijn', element: <MagazijnOverviewPage /> },
+      { path: 'magazijn', element: <Navigate to="/pick-ship" replace /> },
       { path: 'snijplanning', element: <SnijplanningOverviewPage /> },
       { path: 'snijplanning/rol/:rolId', element: <RolSnijvoorstelPage /> },
       { path: 'snijplanning/voorstel/:voorstelId', element: <SnijvoorstelReviewPage /> },
@@ -85,7 +85,7 @@ export const router = createBrowserRouter([
       { path: 'snijplanning/productie/:rolId', element: <ProductieRolPage /> },
       { path: 'confectie', element: <ConfectieOverviewPage /> },
       { path: 'confectie/planning', element: <ConfectiePlanningPage /> },
-      { path: 'pick-ship', element: <PlaceholderPage title="Pick & Ship" /> },
+      { path: 'pick-ship', element: <PickShipOverviewPage /> },
       { path: 'logistiek', element: <PlaceholderPage title="Logistiek" /> },
       { path: 'inkoop', element: <InkooporderOverviewPage /> },
       { path: 'inkoop/:id', element: <InkooporderDetailPage /> },
