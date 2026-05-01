@@ -1,0 +1,99 @@
+{
+  "batch": "2026-05-01-prijslijsten-aanvulling",
+  "description": "Aanvullende client-specifieke prijslijsten uit prijslijsten.zip en toevoegingprijslijsten.zip. Debiteurkoppelingen worden afgeleid uit brondata/debiteuren/Karpi_Debiteuren_Import.xlsx op basis van de oorspronkelijke Prijslijst-kolom; expliciete debiteurnummers uit de mail dienen als validatie.",
+  "source_debiteuren_file": "brondata/debiteuren/Karpi_Debiteuren_Import.xlsx",
+  "files": [
+    {
+      "source_zip": "prijslijsten.zip",
+      "filename": "Prijslijst Dekowe 200814.xlsx",
+      "prijslijst_nr": "0200",
+      "expected_debiteur_nrs": [200814],
+      "match_basis": "bestandsnaam bevat debiteur_nr en debiteuren-export prijslijst 0200"
+    },
+    {
+      "source_zip": "prijslijsten.zip",
+      "filename": "Prijslijst begros.xlsx",
+      "prijslijst_nr": "0202",
+      "match_basis": "debiteuren-export prijslijst 0202"
+    },
+    {
+      "source_zip": "prijslijsten.zip",
+      "filename": "Prijslijst Decor Union.xlsx",
+      "prijslijst_nr": "0198",
+      "match_basis": "debiteuren-export prijslijst 0198"
+    },
+    {
+      "source_zip": "prijslijsten.zip",
+      "filename": "Prijslijst lutz.xlsx",
+      "prijslijst_nr": "0201",
+      "expected_debiteur_nrs": [600556, 600562, 600571, 600572],
+      "match_basis": "mail Piet-Hein Dobbe en debiteuren-export prijslijst 0201"
+    },
+    {
+      "source_zip": "prijslijsten.zip",
+      "filename": "Prijslijst boss.xlsx",
+      "prijslijst_nr": "0199",
+      "match_basis": "debiteuren-export prijslijst 0199"
+    },
+    {
+      "source_zip": "prijslijsten.zip",
+      "filename": "Prijslijst Porta.xlsx",
+      "prijslijst_nr": "0172",
+      "expected_debiteur_nrs": [630859, 630861, 630862],
+      "match_basis": "mail Piet-Hein Dobbe en debiteuren-export prijslijst 0172"
+    },
+    {
+      "source_zip": "toevoegingprijslijsten.zip",
+      "filename": "Prijslijst Fachhandelsring.xlsx",
+      "prijslijst_nr": "0175",
+      "match_basis": "debiteuren-export prijslijst 0175"
+    },
+    {
+      "source_zip": "toevoegingprijslijsten.zip",
+      "filename": "Prijslijst KHG 420000.xlsx",
+      "prijslijst_nr": "0176",
+      "expected_debiteur_nrs": [420000],
+      "match_basis": "bestandsnaam bevat debiteur_nr en debiteuren-export prijslijst 0176"
+    },
+    {
+      "source_zip": "toevoegingprijslijsten.zip",
+      "filename": "Prijslijst Knutzen.xlsx",
+      "prijslijst_nr": "0146",
+      "match_basis": "debiteuren-export prijslijst 0146"
+    },
+    {
+      "source_zip": "toevoegingprijslijsten.zip",
+      "filename": "Prijslijst Musterring.xlsx",
+      "prijslijst_nr": "0194",
+      "match_basis": "debiteuren-export prijslijst 0194"
+    },
+    {
+      "source_zip": "toevoegingprijslijsten.zip",
+      "filename": "Prijslijst Moebel Martin 541816.xlsx",
+      "prijslijst_nr": "0203",
+      "expected_debiteur_nrs": [541816],
+      "match_basis": "bestandsnaam bevat debiteur_nr en debiteuren-export prijslijst 0203"
+    },
+    {
+      "source_zip": "toevoegingprijslijsten.zip",
+      "filename": "Prijslijst Ostermann 621816.xlsx",
+      "prijslijst_nr": "0204",
+      "expected_debiteur_nrs": [621816],
+      "match_basis": "bestandsnaam bevat debiteur_nr en debiteuren-export prijslijst 0204"
+    },
+    {
+      "source_zip": "toevoegingprijslijsten.zip",
+      "filename": "Prijslijst Segmueller 722530.xlsx",
+      "prijslijst_nr": "0205",
+      "expected_debiteur_nrs": [722530],
+      "match_basis": "bestandsnaam bevat debiteur_nr en debiteuren-export prijslijst 0205"
+    },
+    {
+      "source_zip": "toevoegingprijslijsten.zip",
+      "filename": "Prijslijst KIBEK 420400.xlsx",
+      "prijslijst_nr": "0177",
+      "expected_debiteur_nrs": [420400],
+      "match_basis": "bestandsnaam bevat debiteur_nr en debiteuren-export prijslijst 0177"
+    }
+  ]
+}

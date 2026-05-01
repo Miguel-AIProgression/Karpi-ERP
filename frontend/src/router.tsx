@@ -39,6 +39,13 @@ import { LeveranciersOverviewPage } from '@/pages/leveranciers/leveranciers-over
 import { LeverancierDetailPage } from '@/pages/leveranciers/leverancier-detail'
 import { EdiBerichtenOverzichtPage } from '@/modules/edi/pages/berichten-overzicht'
 import { EdiBerichtDetailPage } from '@/modules/edi/pages/bericht-detail'
+import {
+  ZendingenOverzichtPage,
+  ZendingDetailPage,
+  ZendingPrintSetPage,
+  VervoerdersOverzichtPage,
+  VervoerderDetailPage,
+} from '@/modules/logistiek'
 
 export const router = createBrowserRouter([
   {
@@ -86,7 +93,12 @@ export const router = createBrowserRouter([
       { path: 'confectie', element: <ConfectieOverviewPage /> },
       { path: 'confectie/planning', element: <ConfectiePlanningPage /> },
       { path: 'pick-ship', element: <PickShipOverviewPage /> },
-      { path: 'logistiek', element: <PlaceholderPage title="Logistiek" /> },
+      { path: 'logistiek', element: <ZendingenOverzichtPage /> },
+      // Belangrijk: vervoerders-routes vóór `:zending_nr` om matching-conflict te vermijden.
+      { path: 'logistiek/vervoerders', element: <VervoerdersOverzichtPage /> },
+      { path: 'logistiek/vervoerders/:code', element: <VervoerderDetailPage /> },
+      { path: 'logistiek/:zending_nr/printset', element: <ZendingPrintSetPage /> },
+      { path: 'logistiek/:zending_nr', element: <ZendingDetailPage /> },
       { path: 'inkoop', element: <InkooporderOverviewPage /> },
       { path: 'inkoop/:id', element: <InkooporderDetailPage /> },
       { path: 'leveranciers', element: <LeveranciersOverviewPage /> },
