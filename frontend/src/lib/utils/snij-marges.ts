@@ -1,27 +1,32 @@
 // Frontend-kopie van supabase/functions/_shared/snij-marges.ts
-// Houd synchroon met de backend-versie en met supabase/migrations/126_snij_marges_zo_rond.sql
+// Houd synchroon met de backend-versie en met supabase/migrations/181_snij_marge_vormen_uitbreiding.sql
 
 const AFWERKING_MARGE_CM: Record<string, number> = {
   ZO: 6,
 }
 
-const RONDE_VORMEN = new Set(['rond', 'ovaal'])
+// Houd synchroon met supabase/migrations/181_snij_marge_vormen_uitbreiding.sql
+// en supabase/functions/_shared/snij-marges.ts
+const NIET_RECHTHOEKIGE_VORMEN = new Set([
+  'rond', 'ovaal',
+  'organisch_a', 'organisch_b_sp',
+  'pebble', 'ellips', 'afgeronde_hoeken',
+])
 
 /**
  * Extra snij-cm voor een stuk op basis van afwerking en vorm.
- * ZO: +6 cm (zoom-rand eet materiaal op), rond/ovaal: +5 cm (marge voor vrijzagen).
- * Bij combi: grootste wint (niet cumulatief).
+ * ZO: +6 cm, niet-rechthoekige vormen: +5 cm. Bij combi: grootste wint.
  */
 export function snijMargeCm(
   afwerking: string | null | undefined,
   vorm: string | null | undefined,
 ): number {
   const afwerkingMarge = afwerking ? (AFWERKING_MARGE_CM[afwerking] ?? 0) : 0
-  const vormMarge = vorm && RONDE_VORMEN.has(vorm.toLowerCase()) ? 5 : 0
+  const vormMarge = vorm && NIET_RECHTHOEKIGE_VORMEN.has(vorm.toLowerCase()) ? 5 : 0
   return Math.max(afwerkingMarge, vormMarge)
 }
 
-/** True als de marge voortkomt uit de vorm (rond/ovaal) — dan bijsnijden nodig. */
-export function isRondeVorm(vorm: string | null | undefined): boolean {
-  return !!vorm && RONDE_VORMEN.has(vorm.toLowerCase())
+/** True als de vorm een snij-marge nodig heeft (rond, ovaal, organisch, pebble, ellips, afgeronde hoeken). */
+export function isNietRechthoekigeVorm(vorm: string | null | undefined): boolean {
+  return !!vorm && NIET_RECHTHOEKIGE_VORMEN.has(vorm.toLowerCase())
 }
