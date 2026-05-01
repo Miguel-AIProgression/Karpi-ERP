@@ -50,7 +50,9 @@ export async function fetchPickShipOrders(
   if (error) throw error
 
   // Haal afl_naam/afl_plaats apart op (niet in view) -- één extra query op orders.
-  const orderIds = Array.from(new Set((data ?? []).map((r) => r.order_id as number)))
+  const orderIds = Array.from(
+    new Set(((data ?? []) as unknown as Record<string, unknown>[]).map((r) => r.order_id as number))
+  )
   let orderMeta = new Map<number, { afl_naam: string | null; afl_plaats: string | null }>()
   if (orderIds.length > 0) {
     const { data: ord, error: oerr } = await supabase
@@ -59,7 +61,7 @@ export async function fetchPickShipOrders(
       .in('id', orderIds)
     if (oerr) throw oerr
     orderMeta = new Map(
-      (ord ?? []).map((o) => [
+      ((ord ?? []) as unknown as Record<string, unknown>[]).map((o) => [
         o.id as number,
         { afl_naam: (o.afl_naam as string) ?? null, afl_plaats: (o.afl_plaats as string) ?? null },
       ])
@@ -68,7 +70,7 @@ export async function fetchPickShipOrders(
 
   // Groepeer per order
   const perOrder = new Map<number, PickShipOrder>()
-  for (const row of data ?? []) {
+  for (const row of (data ?? []) as unknown as Record<string, unknown>[]) {
     const orderId = row.order_id as number
     const lengte = Number(row.snij_lengte_cm) || 0
     const breedte = Number(row.snij_breedte_cm) || 0
