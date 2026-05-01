@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { X, Loader2, Check } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { genereerDemoBerichten, type DemoTemplate, type DemoResult } from '@/lib/edi/demo-helper'
+import { genereerDemoBerichten, type DemoTemplate, type DemoResult } from '@/modules/edi/lib/demo-helper'
 
 const KARPI_GLN_DEFAULT = '8715954999998'
 

@@ -2,13 +2,14 @@ import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import {
-  ArrowLeft, ArrowDownCircle, ArrowUpCircle, AlertCircle, Check, Download, Send, Loader2,
+  ArrowLeft, ArrowDownCircle, ArrowUpCircle, AlertCircle, Check, Download, Send, Loader2, FileCode,
 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { useEdiBericht } from '@/hooks/use-edi'
-import { bevestigOrderViaEdi } from '@/lib/edi/bevestig-helper'
-import type { KarpiOrder } from '@/lib/edi/karpi-fixed-width'
-import type { EdiBerichtStatus, EdiBerichtType } from '@/lib/supabase/queries/edi'
+import { useEdiBericht } from '@/modules/edi/hooks/use-edi'
+import { bevestigOrderViaEdi } from '@/modules/edi/lib/bevestig-helper'
+import { downloadOrderbevAlsXml } from '@/modules/edi/lib/download-orderbev-xml'
+import type { KarpiOrder } from '@/modules/edi/lib/karpi-fixed-width'
+import type { EdiBerichtStatus, EdiBerichtType } from '@/modules/edi/queries/edi'
 import { cn } from '@/lib/utils/cn'
 
 const KARPI_GLN_DEFAULT = '8715954999998'
@@ -31,14 +32,37 @@ export function EdiBerichtDetailPage() {
   const [bevestigBusy, setBevestigBusy] = useState(false)
   const [bevestigError, setBevestigError] = useState<string | null>(null)
   const [bevestigResult, setBevestigResult] = useState<{ uitgaandId: number; reedsEerderBevestigd: boolean } | null>(null)
+  const [xmlBusy, setXmlBusy] = useState(false)
+  const [xmlError, setXmlError] = useState<string | null>(null)
 
   if (isLoading) return <div className="p-8 text-slate-500">Laden…</div>
   if (!bericht) return <div className="p-8 text-rose-600">Bericht niet gevonden.</div>
 
   const kleur = STATUS_KLEUREN[bericht.status]
   const isInkomendeOrder = bericht.richting === 'in' && bericht.berichttype === 'order'
+  const isUitgaandeOrderbev = bericht.richting === 'uit' && bericht.berichttype === 'orderbev'
   const heeftOrder = bericht.order_id != null
   const kanBevestigen = isInkomendeOrder && heeftOrder
+  const kanXmlDownloaden = isUitgaandeOrderbev && heeftOrder
+
+  async function handleXmlDownload() {
+    if (!bericht || !bericht.order_id) return
+    setXmlBusy(true)
+    setXmlError(null)
+    try {
+      await downloadOrderbevAlsXml({
+        id: bericht.id,
+        order_id: bericht.order_id,
+        payload_parsed: bericht.payload_parsed as Record<string, unknown> | null,
+        is_test: bericht.is_test ?? false,
+        order_response_seq: (bericht as unknown as { order_response_seq: number | null }).order_response_seq ?? null,
+      })
+    } catch (err) {
+      setXmlError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setXmlBusy(false)
+    }
+  }
 
   async function handleBevestig() {
     if (!bericht || !bericht.order_id || !bericht.payload_parsed) return
@@ -51,6 +75,7 @@ export function EdiBerichtDetailPage() {
         bericht.id,
         bericht.payload_parsed as unknown as KarpiOrder,
         KARPI_GLN_DEFAULT,
+        { isTest: bericht.is_test ?? false },
       )
       setBevestigResult({
         uitgaandId: result.uitgaandId,
@@ -82,14 +107,32 @@ export function EdiBerichtDetailPage() {
         }
         actions={
           <div className="flex items-center gap-2">
-            {bericht.payload_raw && (
+            {bericht.payload_raw && (() => {
+              const payloadIsXml = bericht.payload_raw.trimStart().startsWith('<')
+              return (
+                <button
+                  onClick={() => downloadPayload(bericht.id, bericht.berichttype, bericht.payload_raw!)}
+                  className="px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm font-medium hover:bg-slate-50 inline-flex items-center gap-2"
+                  title={
+                    payloadIsXml
+                      ? 'Download de opgeslagen TransusXML payload (.xml). Upload dit bestand in Transus "Bekijken en testen".'
+                      : 'Download de opgeslagen Karpi-fixed-width payload (.inh).'
+                  }
+                >
+                  <Download size={14} />
+                  Download payload {payloadIsXml ? '(.xml)' : '(.inh)'}
+                </button>
+              )
+            })()}
+            {kanXmlDownloaden && (
               <button
-                onClick={() => downloadPayload(bericht.id, bericht.berichttype, bericht.payload_raw!)}
-                className="px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm font-medium hover:bg-slate-50 inline-flex items-center gap-2"
-                title="Download payload als .inh-bestand"
+                onClick={handleXmlDownload}
+                disabled={xmlBusy}
+                className="px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm font-medium hover:bg-slate-50 disabled:opacity-50 inline-flex items-center gap-2"
+                title="Bouw TransusXML uit order + regels en download. Upload dit bestand in Transus' 'Bekijken en testen'-tab van proces 'Orderbevestiging versturen'."
               >
-                <Download size={14} />
-                Download payload
+                {xmlBusy ? <Loader2 size={14} className="animate-spin" /> : <FileCode size={14} />}
+                TransusXML
               </button>
             )}
             {kanBevestigen && (
@@ -127,6 +170,11 @@ export function EdiBerichtDetailPage() {
       {bevestigError && (
         <div className="mb-6 p-3 rounded-[var(--radius-sm)] border border-rose-200 bg-rose-50 text-rose-700 text-xs">
           Bevestigen mislukt: {bevestigError}
+        </div>
+      )}
+      {xmlError && (
+        <div className="mb-6 p-3 rounded-[var(--radius-sm)] border border-rose-200 bg-rose-50 text-rose-700 text-xs">
+          TransusXML genereren mislukt: {xmlError}
         </div>
       )}
 
@@ -273,11 +321,16 @@ function labelType(t: string): string {
 }
 
 function downloadPayload(id: number, type: EdiBerichtType, payload: string): void {
-  const blob = new Blob([payload], { type: 'application/octet-stream' })
+  // Content-detectie zodat Transus' "Bekijken en testen"-tab de juiste mime/extensie ziet.
+  const isXml = payload.trimStart().startsWith('<?xml') || payload.trimStart().startsWith('<')
+  const ext = isXml ? 'xml' : 'inh'
+  const mime = isXml ? 'application/xml;charset=utf-8' : 'application/octet-stream'
+
+  const blob = new Blob([payload], { type: mime })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `edi-${type}-${id}.inh`
+  a.download = `edi-${type}-${id}.${ext}`
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)

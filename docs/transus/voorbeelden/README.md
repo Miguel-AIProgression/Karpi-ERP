@@ -24,10 +24,13 @@ Drie real-world berichten gedownload uit Transus Online op 2026-04-29, gebruikt 
 |---|---|
 | `factuur-uit-bdsk-166794659.txt` | Karpi-fixed-width INVOIC-bron. Factuurnr 26039533, 1 regel à €68,59 BTW-vrijgesteld. |
 | `edifact-output-invoic-bdsk.edi` | EDIFACT D96A INVOIC zoals BDSK het ontvangt. |
+| `factuur-uit-bdsk-168849861.txt` | Karpi-fixed-width INVOIC-bron. Factuurnr 26040215, 1 regel à €59,46 BTW-vrijgesteld. |
+| `edifact-output-invoic-bdsk-168849861.edi` | EDIFACT D96A INVOIC zoals BDSK het ontvangt voor bericht-ID 168849861. |
 
 ## Gebruik in tests
 
-Deze bestanden worden geladen door `supabase/functions/_shared/transus-formats/karpi-fixed-width.test.ts` als
+Deze bestanden worden geladen door `supabase/functions/_shared/transus-formats/karpi-fixed-width.test.ts`
+en `supabase/functions/_shared/transus-formats/karpi-invoice-fixed-width.test.ts` als
 fixtures. **Niet aanpassen** zonder de tests bij te werken — ze representeren echte productie-data van 2026-04.
 
 ## Privacy

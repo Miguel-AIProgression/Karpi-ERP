@@ -1,4 +1,4 @@
-import { supabase } from '../client'
+import { supabase } from '@/lib/supabase/client'
 
 export type EdiBerichtStatus = 'Wachtrij' | 'Bezig' | 'Verstuurd' | 'Verwerkt' | 'Fout' | 'Geannuleerd'
 export type EdiRichting = 'in' | 'uit'

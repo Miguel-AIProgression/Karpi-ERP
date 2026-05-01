@@ -1,11 +1,12 @@
 import { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { Search, ArrowDownCircle, ArrowUpCircle, AlertCircle, Beaker, Trash2 } from 'lucide-react'
+import { Search, ArrowDownCircle, ArrowUpCircle, AlertCircle, Beaker, Trash2, Upload } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { useEdiBerichten } from '@/hooks/use-edi'
-import { DemoBerichtDialog } from '@/components/edi/demo-bericht-dialog'
-import { ruimEdiDemoData, type EdiBerichtStatus, type EdiRichting, type EdiBerichtType } from '@/lib/supabase/queries/edi'
+import { useEdiBerichten } from '@/modules/edi/hooks/use-edi'
+import { DemoBerichtDialog } from '@/modules/edi/components/demo-bericht-dialog'
+import { UploadBerichtDialog } from '@/modules/edi/components/upload-bericht-dialog'
+import { ruimEdiDemoData, type EdiBerichtStatus, type EdiRichting, type EdiBerichtType } from '@/modules/edi/queries/edi'
 import { cn } from '@/lib/utils/cn'
 
 const ALLE_STATUSSEN: EdiBerichtStatus[] = [
@@ -35,6 +36,7 @@ export function EdiBerichtenOverzichtPage() {
   const [statusFilter, setStatusFilter] = useState<'alle' | EdiBerichtStatus>('alle')
   const [typeFilter, setTypeFilter] = useState<'alle' | EdiBerichtType>('alle')
   const [demoOpen, setDemoOpen] = useState(false)
+  const [uploadOpen, setUploadOpen] = useState(false)
   const [opruimBusy, setOpruimBusy] = useState(false)
   const qc = useQueryClient()
 
@@ -46,10 +48,28 @@ export function EdiBerichtenOverzichtPage() {
       alert(`Opgeruimd: ${res.verwijderde_orders} orders en ${res.verwijderde_berichten} berichten.`)
       qc.invalidateQueries({ queryKey: ['edi-berichten'] })
     } catch (err) {
-      alert('Opruimen mislukt: ' + (err instanceof Error ? err.message : String(err)))
+      const detail = formatSupabaseError(err)
+      console.error('ruim_edi_demo_data error:', err)
+      alert('Opruimen mislukt:\n\n' + detail)
     } finally {
       setOpruimBusy(false)
     }
+  }
+
+  function formatSupabaseError(err: unknown): string {
+    if (err instanceof Error) return err.message
+    if (typeof err === 'object' && err !== null) {
+      const e = err as { message?: string; details?: string; hint?: string; code?: string }
+      return [
+        e.message && `Bericht: ${e.message}`,
+        e.details && `Details: ${e.details}`,
+        e.hint && `Hint: ${e.hint}`,
+        e.code && `Code: ${e.code}`,
+      ]
+        .filter(Boolean)
+        .join('\n') || JSON.stringify(err, null, 2)
+    }
+    return String(err)
   }
 
   const { data: berichten = [], isLoading } = useEdiBerichten({
@@ -88,6 +108,14 @@ export function EdiBerichtenOverzichtPage() {
               Demo-data opruimen
             </button>
             <button
+              onClick={() => setUploadOpen(true)}
+              className="px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm font-medium hover:bg-slate-50 inline-flex items-center gap-2"
+              title="Upload een echt .inh-bestand uit Transus' archief"
+            >
+              <Upload size={14} />
+              Bestand uploaden
+            </button>
+            <button
               onClick={() => setDemoOpen(true)}
               className="px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm font-medium hover:bg-slate-50 inline-flex items-center gap-2"
             >
@@ -98,6 +126,7 @@ export function EdiBerichtenOverzichtPage() {
         }
       />
       <DemoBerichtDialog open={demoOpen} onClose={() => setDemoOpen(false)} />
+      <UploadBerichtDialog open={uploadOpen} onClose={() => setUploadOpen(false)} />
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3 mb-5">

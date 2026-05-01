@@ -7,13 +7,14 @@
 //
 // Geen Transus API-calls — pure simulatie.
 
-import { supabase } from '../supabase/client'
+import { supabase } from '@/lib/supabase/client'
 import {
   parseKarpiOrder,
   buildKarpiOrderbev,
   type KarpiOrder,
   type OrderbevInput,
 } from './karpi-fixed-width'
+import { herprijsEdiOrderUitPrijslijst, zoekDebiteurOpGln } from './pricing-helper'
 
 export type DemoTemplate = 'bdsk-sparse' | 'ostermann-rich'
 
@@ -88,26 +89,13 @@ export async function genereerDemoBerichten(
       orderSkippedReason: `create_edi_order faalde: ${rpcErr.message}`,
     }
   }
+  await herprijsEdiOrderUitPrijslijst(orderId as number)
 
   return {
     inkomendId: inRow.id,
     inkomendPayload: rawIn,
     orderId: orderId as number,
   }
-}
-
-async function zoekDebiteurOpGln(kandidaten: (string | null)[]): Promise<number | null> {
-  for (const gln of kandidaten) {
-    if (!gln) continue
-    const { data } = await supabase
-      .from('debiteuren')
-      .select('debiteur_nr')
-      .eq('gln_bedrijf', gln)
-      .limit(1)
-      .maybeSingle()
-    if (data?.debiteur_nr) return data.debiteur_nr
-  }
-  return null
 }
 
 function bouwInkomendeOrder(

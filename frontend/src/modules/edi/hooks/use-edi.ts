@@ -6,7 +6,7 @@ import {
   upsertHandelspartnerConfig,
   type EdiBerichtenFilters,
   type EdiHandelspartnerConfig,
-} from '@/lib/supabase/queries/edi'
+} from '@/modules/edi/queries/edi'
 
 export function useEdiBerichten(filters: EdiBerichtenFilters = {}) {
   return useQuery({

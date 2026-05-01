@@ -114,12 +114,13 @@ export function parseKarpiOrder(raw: string, options?: { karpiGln?: string }): K
     );
   }
 
-  const headerLine = lines[0];
-  if (headerLine.length !== HEADER_LEN) {
-    throw new Error(
-      `Karpi-fixed-width header: verwachtte ${HEADER_LEN} bytes, kreeg ${headerLine.length}`,
-    );
-  }
+  // Transus kapt trailing spaces soms af. Productievoorbeelden uit 2026-04-30
+  // hebben daardoor headerregels van 462 bytes en artikelregels van 280 bytes,
+  // terwijl onze offset-tabel op 463/281 uitkomt.
+  const HDR_MIN_LEN = HDR.testFlag[1];
+  const ART_MIN_LEN = ART.ordernummerRef[1];
+
+  const headerLine = padOrFail(lines[0], HEADER_LEN, HDR_MIN_LEN, 'header');
   if (slice(headerLine, HDR.recordType) !== '0') {
     throw new Error(
       `Karpi-fixed-width header: eerste karakter moet '0' zijn (record-type header), kreeg '${slice(headerLine, HDR.recordType)}'`,
@@ -130,12 +131,7 @@ export function parseKarpiOrder(raw: string, options?: { karpiGln?: string }): K
   const regels: KarpiOrderRegel[] = [];
 
   for (let i = 1; i < lines.length; i++) {
-    const line = lines[i];
-    if (line.length !== ARTICLE_LEN) {
-      throw new Error(
-        `Karpi-fixed-width article ${i}: verwachtte ${ARTICLE_LEN} bytes, kreeg ${line.length}`,
-      );
-    }
+    const line = padOrFail(lines[i], ARTICLE_LEN, ART_MIN_LEN, `article ${i}`);
     if (slice(line, ART.recordType) !== '1') {
       throw new Error(
         `Karpi-fixed-width article ${i}: record-type moet '1' zijn`,
@@ -186,6 +182,23 @@ function parseArticle(line: string): KarpiOrderRegel {
 // Utilities
 // ============================================================================
 
+function padOrFail(line: string, expectedLen: number, minLen: number, label: string): string {
+  if (line.length < minLen) {
+    throw new Error(
+      `Karpi-fixed-width ${label}: te kort (${line.length} bytes, minimaal ${minLen} nodig voor alle data-velden)`,
+    );
+  }
+  if (line.length < expectedLen) {
+    return line + ' '.repeat(expectedLen - line.length);
+  }
+  if (line.length > expectedLen + 5) {
+    throw new Error(
+      `Karpi-fixed-width ${label}: te lang (${line.length} bytes, verwacht max ${expectedLen + 5})`,
+    );
+  }
+  return line;
+}
+
 function slice(line: string, range: readonly [number, number]): string {
   return line.substring(range[0], range[1]);
 }
@@ -230,8 +243,21 @@ export function isTestMessage(header: KarpiOrderHeader): boolean {
 export type FixedWidthBerichtType = 'order' | 'orderbev' | 'factuur' | 'verzendbericht' | 'unknown';
 
 export function detectBerichttype(raw: string): FixedWidthBerichtType {
-  const firstLine = raw.split(/\r?\n/, 1)[0] ?? '';
-  if (firstLine.length === HEADER_LEN && firstLine[0] === '0') {
+  const lines = raw.split(/\r?\n/).filter((l) => l.length > 0);
+  const firstLine = lines[0] ?? '';
+  const articleLines = lines.slice(1);
+  const hasOrderShape =
+    firstLine[0] === '0' &&
+    firstLine.length >= HDR.testFlag[1] &&
+    firstLine.length <= HEADER_LEN + 5 &&
+    articleLines.length > 0 &&
+    articleLines.every((line) =>
+      line[0] === '1' &&
+      line.length >= ART.ordernummerRef[1] &&
+      line.length <= ARTICLE_LEN + 5
+    );
+
+  if (hasOrderShape) {
     return 'order';
   }
   // Factuur-format start eveneens met '0' maar heeft een ander veld-patroon
