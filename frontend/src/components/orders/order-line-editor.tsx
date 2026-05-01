@@ -16,6 +16,10 @@ interface OrderLineEditorProps {
   onChange: (lines: OrderRegelFormData[]) => void
   defaultKorting: number
   prijslijstNr?: string
+  /** Debiteur-nr van de geselecteerde klant — wordt doorgegeven aan
+   *  `KwaliteitFirstSelector` zodat zoekopdrachten ook klant-eigen namen
+   *  matchen (zie `searchKwaliteitenViaProducten`). */
+  debiteurNr?: number
   onArticleSelected?: (article: SelectedArticle) => Promise<{
     prijs: number | null
     klant_eigen_naam?: string | null
@@ -277,7 +281,7 @@ function MaatwerkLineRow({
   )
 }
 
-export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr, onArticleSelected }: OrderLineEditorProps) {
+export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr, debiteurNr, onArticleSelected }: OrderLineEditorProps) {
   const keyCounter = useRef(0)
   const lineKeys = useRef<Map<number, string>>(new Map())
 
@@ -398,6 +402,7 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr,
         <KwaliteitFirstSelector
           defaultKorting={defaultKorting}
           prijslijstNr={prijslijstNr}
+          debiteurNr={debiteurNr}
           onSelectArticle={addArticle}
           onAddMaatwerk={(line) => onChange([...lines, line])}
         />

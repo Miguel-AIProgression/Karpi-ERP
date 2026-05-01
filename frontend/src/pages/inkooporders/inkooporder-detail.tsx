@@ -10,6 +10,7 @@ import { InkooporderStatusBadge } from '@/components/inkooporders/inkooporder-st
 import { OntvangstBoekenDialog } from '@/components/inkooporders/ontvangst-boeken-dialog'
 import { VoorraadOntvangstDialog } from '@/components/inkooporders/voorraad-ontvangst-dialog'
 import { IORegelClaimsPopover } from '@/components/inkooporders/io-regel-claims-popover'
+import { DocumentenCompact } from '@/components/documenten/documenten-compact'
 import type { InkooporderRegel } from '@/lib/supabase/queries/inkooporders'
 
 function formatAantal(value: number): string {
@@ -100,6 +101,8 @@ export function InkooporderDetailPage() {
           </div>
         }
       />
+
+      <DocumentenCompact kind="inkooporder" parentId={order.id} className="mb-3" />
 
       <div className="grid md:grid-cols-3 gap-5 mb-6">
         <section className="bg-white rounded-[var(--radius)] border border-slate-200 p-5 md:col-span-1">

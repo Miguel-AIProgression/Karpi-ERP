@@ -34,9 +34,16 @@ interface OrderFormProps {
     regels: OrderRegelFormData[]
     status?: string
   }
+  /**
+   * Bij `mode='create'` aangeroepen na succesvolle opslag, vóór navigatie.
+   * Krijgt alle aangemaakte order-id's (1 bij niet-split, 2 bij split).
+   * Geeft de pagina de kans om buffered side-effects (zoals document-uploads)
+   * af te ronden.
+   */
+  onAfterCreate?: (orderIds: number[]) => Promise<void>
 }
 
-export function OrderForm({ mode, initialData }: OrderFormProps) {
+export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
@@ -457,12 +464,27 @@ export function OrderForm({ mode, initialData }: OrderFormProps) {
         return { split: false as const, id: orderId, order_nr: '' }
       }
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       queryClient.invalidateQueries({ queryKey: ['orders'] })
       // Snijplanning is mogelijk gewijzigd door triggerAutoplanForMaatwerk
       queryClient.invalidateQueries({ queryKey: ['snijplanning'] })
       queryClient.invalidateQueries({ queryKey: ['snijvoorstel'] })
       queryClient.invalidateQueries({ queryKey: ['productie', 'dashboard'] })
+
+      if (mode === 'create' && onAfterCreate) {
+        const ids = data.split ? [data.standaard.id, data.maatwerk.id] : [data.id]
+        try {
+          await onAfterCreate(ids)
+        } catch (e) {
+          setError(
+            e instanceof Error
+              ? `Order opgeslagen, maar uploaden van bijlagen mislukte: ${e.message}`
+              : 'Order opgeslagen, maar uploaden van bijlagen mislukte',
+          )
+          return
+        }
+      }
+
       if (data.split) {
         navigate('/orders')
       } else {
@@ -624,6 +646,7 @@ export function OrderForm({ mode, initialData }: OrderFormProps) {
       <OrderLineEditor
         lines={regels}
         prijslijstNr={client?.prijslijst_nr ?? undefined}
+        debiteurNr={client?.debiteur_nr ?? undefined}
         onChange={(newRegels) => {
           // Detect manual changes to the VERZEND line
           const oldShipping = regels.find(l => l.artikelnr === SHIPPING_PRODUCT_ID)

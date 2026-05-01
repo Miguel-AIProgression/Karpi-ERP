@@ -8,6 +8,7 @@ import { ZendingAanmakenKnop } from '@/components/orders/zending-aanmaken-knop'
 import { useOrderDetail, useOrderRegels } from '@/hooks/use-orders'
 import { useLevertijdVoorOrder, useClaimsVoorOrder } from '@/hooks/use-reserveringen'
 import { computeOrderLock } from '@/lib/utils/order-lock'
+import { DocumentenCompact } from '@/components/documenten/documenten-compact'
 
 export function OrderDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -58,6 +59,8 @@ export function OrderDetailPage() {
           />
         }
       />
+
+      <DocumentenCompact kind="order" parentId={order.id} className="mb-3" />
 
       <OrderHeader order={order} locked={computeOrderLock(regels) === 'full'} />
       <OrderAddresses order={order} />

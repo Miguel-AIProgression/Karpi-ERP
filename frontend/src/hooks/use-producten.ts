@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { fetchProducten, fetchProductDetail, fetchRollenVoorProduct, fetchReserveringenVoorProduct, fetchClaimsVoorProduct, updateProductType, updateProductLocatie, fetchUitwisselbareGroepen, fetchKwaliteiten, fetchLeveranciers, createProduct, updateProduct, type ProductType, type ProductSortField, type SortDirection, type ProductFormData } from '@/lib/supabase/queries/producten'
+import { fetchProducten, fetchProductDetail, fetchRollenVoorProduct, fetchReserveringenVoorProduct, fetchClaimsVoorProduct, updateProductType, updateProductLocatie, fetchUitwisselbareGroepen, fetchKwaliteiten, fetchLeveranciers, createProduct, updateProduct, fetchNextArtikelnr, type ProductType, type ProductSortField, type SortDirection, type ProductFormData } from '@/lib/supabase/queries/producten'
 import { fetchEquivalenteProducten } from '@/lib/supabase/queries/product-equivalents'
 
 export function useProducten(params: { search?: string; page?: number; productType?: ProductType | 'alle'; sortBy?: ProductSortField; sortDir?: SortDirection }) {
@@ -62,6 +62,14 @@ export function useLeveranciers() {
     queryKey: ['leveranciers'],
     queryFn: fetchLeveranciers,
     staleTime: 10 * 60 * 1000,
+  })
+}
+
+export function useNextArtikelnr(kwaliteit_code: string | null, kleur_code: string | null) {
+  return useQuery({
+    queryKey: ['next-artikelnr', kwaliteit_code, kleur_code],
+    queryFn: () => fetchNextArtikelnr(kwaliteit_code, kleur_code),
+    staleTime: 0,
   })
 }
 

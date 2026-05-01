@@ -5,7 +5,7 @@
 
 ## Overzicht
 
-41 tabellen, 9 enums, 15 views, 36 functies. Alle tabellen hebben RLS enabled (fase 1: authenticated = volledige toegang).
+43 tabellen, 9 enums, 15 views, 36 functies. Alle tabellen hebben RLS enabled (fase 1: authenticated = volledige toegang).
 
 ---
 
@@ -666,6 +666,40 @@ _Aangemaakt in migratie 127 (2026-04-24)._
 
 **Koppeling aan rollen:** `rollen.inkooporder_regel_id` (BIGINT FK → inkooporder_regels) legt vast uit welke regel een fysieke rol ontvangen is. Gevuld door RPC `boek_ontvangst`.
 
+### order_documenten
+_Aangemaakt in migratie 178 (2026-05-01)._
+
+PDF/afbeelding/Excel/Word/TXT-bijlagen bij een verkooporder (klant-PO, bevestiging, bijlagen).
+
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| id | BIGSERIAL PK | |
+| order_id | BIGINT FK → orders ON DELETE CASCADE | |
+| bestandsnaam | TEXT NOT NULL | Originele filename incl. extensie |
+| storage_path | TEXT UK NOT NULL | `orders/{order_id}/{uuid}-{sanitized}` in bucket `order-documenten` |
+| mime_type | TEXT | |
+| grootte_bytes | BIGINT | |
+| omschrijving | TEXT | Optioneel, inline editbaar in UI |
+| geupload_door | UUID FK → auth.users ON DELETE SET NULL | |
+| geupload_op | TIMESTAMPTZ NOT NULL DEFAULT now() | |
+
+### inkooporder_documenten
+_Aangemaakt in migratie 178 (2026-05-01)._
+
+PDF/afbeelding/Excel/Word/TXT-bijlagen bij een inkooporder (orderbevestiging leverancier, pakbon, factuur).
+
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| id | BIGSERIAL PK | |
+| inkooporder_id | BIGINT FK → inkooporders ON DELETE CASCADE | |
+| bestandsnaam | TEXT NOT NULL | |
+| storage_path | TEXT UK NOT NULL | `inkooporders/{inkooporder_id}/{uuid}-{sanitized}` in bucket `order-documenten` |
+| mime_type | TEXT | |
+| grootte_bytes | BIGINT | |
+| omschrijving | TEXT | |
+| geupload_door | UUID FK → auth.users ON DELETE SET NULL | |
+| geupload_op | TIMESTAMPTZ NOT NULL DEFAULT now() | |
+
 ---
 
 ### scan_events
@@ -1004,3 +1038,6 @@ Mig 174, aangepast in mig 176. Read-only view die de `/logistiek/vervoerders`-ov
 | Bucket | Doel | Toegang |
 |--------|------|---------|
 | logos | Klantlogo's ({debiteur_nr}.jpg) | Publiek lezen, auth upload/delete |
+| facturen | Verstuurde factuur-PDFs ({debiteur_nr}/FACT-YYYY-NNNN.pdf) | Privé, frontend leest via signed URL (10 min); uploads via service role |
+| documenten | Algemene documenten (algemene-voorwaarden-karpi-bv.pdf) | Publiek lezen, uploads via service role |
+| order-documenten | Bijlagen bij orders en inkooporders. Paden `orders/{id}/...` en `inkooporders/{id}/...`. Max 25 MB; alleen PDF/JPG/PNG/WebP/Excel/Word/TXT toegestaan. | Privé, authenticated SELECT/INSERT/UPDATE/DELETE; frontend leest via signed URL |
