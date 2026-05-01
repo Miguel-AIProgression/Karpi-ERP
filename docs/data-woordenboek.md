@@ -18,6 +18,8 @@ Domeinbegrippen die je moet kennen om dit project te begrijpen.
 | **Transus** | EDI-dienstverlener die als full-duplex-vertaler tussen Karpi en handelspartners zit. Karpi spreekt fixed-width "Custom ERP", partners spreken EDIFACT — Transus vertaalt beide kanten op. Productie-endpoint: `https://webconnect.transus.com/exchange.asmx`. |
 | **EDIFACT** | UN/EDIFACT — internationale EDI-standaard van de VN. Berichten als `ORDERS`, `ORDRSP`, `INVOIC`, `DESADV`. Karpi's partners (BDSK, Ostermann, XXXLUTZ, Hornbach) gebruiken D96A EANCOM (subset voor retail). Karpi zelf "spreekt" alleen het door Transus vertaalde fixed-width. |
 | **Custom ERP (Transus)** | Naam van Karpi's gegevensbron-config in Transus Online (ID 17653, versie 10, type "Fixed length"). Definieert welke velden uit een EDIFACT-bericht naar welke kolompositie in onze `.inh`-output gaan. |
+| **TransusXML** | XML-bronformaat dat Transus accepteert voor uitgaande orderbevestigingen (`<ORDERRESPONSES>`). RugFlow bouwt dit voor `orderbev` en Transus vertaalt het naar EDIFACT `ORDRSP` voor de handelspartner. |
+| **Karpi fixed-width INVOIC** | Uitgaand bronformaat voor EDI-facturen. RugFlow bouwt een 1107-byte headerregel + 312-byte artikelregels; Transus vertaalt dit naar EDIFACT D96A `INVOIC` (`BGM+380`). Wordt gequeued als `edi_berichten.berichttype='factuur'`. |
 | **M10100 / M10110 / M10300** | De drie SOAP-methodes van de Transus API. M10100 = bericht versturen, M10110 = bericht ontvangen (poll-based, geen webhook), M10300 = ontvangst bevestigen (anders krijg je hetzelfde bericht eindeloos terug). |
 | **TransactionID** | Uniek ID per Transus-bericht (zowel inkomend als uitgaand). Bron-van-waarheid voor idempotentie in `edi_berichten.transactie_id`. |
 | **MessageReference** | Unieke ID per logisch EDIFACT-bericht (UNH-segment). Een Transus-interchange (UNB...UNZ) kan meerdere UNH's bevatten; Transus splitst die in losse berichten richting Karpi (één TransactionID per UNH). |
@@ -74,6 +76,7 @@ Domeinbegrippen die je moet kennen om dit project te begrijpen.
 | **Confectie-horizon** | Aantal weken vooruit dat de planning toont (1, 2, 4 of 8 — default 4). |
 | **Bezetting** | Nodig / beschikbaar × 100%. >100% = overload van de lane in die week. |
 | **Zending** | Fysieke levering. Kan producten uit meerdere orderregels bevatten. |
+| **Vervoerderselectie** | Automatische keuze van de logistieke partij voor een zending. Sinds migratie 176 staat de gekozen vervoerder op `zendingen.vervoerder_code`; V1 kiest alleen als precies één vervoerder actief is, later volgen voorwaarden/tarieven. |
 | **Sample/staal** | Monster van een product, verstuurd naar een klant. |
 | **Backorder** | Besteld maar niet op voorraad; wacht op levering van leverancier. |
 | **Maatwerk** | Orderregel die snijden en/of confectie vereist (is_maatwerk = true). Bevat lengte, breedte, afwerking en instructies. |

@@ -1,5 +1,186 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-01 - Pick & Ship verzendset met stickers en pakbon
+
+Pick & Ship heeft nu per volledig pickbare order een **Verzendset**-actie. De actie maakt/hergebruikt een `zendingen`-rij via `create_zending_voor_order`, kiest automatisch de vervoerder uit `edi_handelspartner_config.vervoerder_code`, en opent `/logistiek/:zending_nr/printset` met printbare colli-stickers en A4-pakbon. Stickers tonen afleveradres, vervoerder, colli-volgnummer en GS1-128/SSCC-barcode; de pakbon toont orderregels, besteld/geleverd, afleveradres, colli en gewicht.
+
+Migratie 177 scherpt `create_zending_voor_order` definitief aan nadat `176_zending_vervoerder_auto_selectie` de RPC opnieuw overschreef: gebruikt `order_regels.orderaantal` in plaats van de niet-bestaande kolom `aantal`, vult `zending_regels.aantal`, `zendingen.aantal_colli` en `zendingen.totaal_gewicht_kg` voor de printflow.
+
+---
+
+## 2026-05-01 - Vervoerders achter Logistiek-instellingen
+
+Het losse sidebar-item "Vervoerders" is verwijderd. Vervoerderbeheer blijft beschikbaar via de instellingenknop rechtsboven op het Logistiek-overzicht (`/logistiek`), zodat de operationele navigatie compacter blijft en de routes `/logistiek/vervoerders` en `/logistiek/vervoerders/:code` intact blijven.
+
+---
+
+## 2026-05-01 - Pick & Ship toont open orders met fallback
+
+Pick & Ship leest nu standaard alle open orders (`status != Verzonden/Geannuleerd`) in plaats van alleen regels die al als pickbaar zijn gemarkeerd. Als de database-view `orderregel_pickbaarheid` nog niet is toegepast of nog niet in de Supabase schema-cache zit, valt de frontend terug op `orders` + `order_regels`, zodat de pickpagina niet leeg blijft. Orderkaarten tonen nu ook de orderstatus.
+
+---
+
+## 2026-05-01 — Migratie 175: HST-instellingen seed
+
+Vult `vervoerders`-rij voor `hst_api` met `api_endpoint` (acceptatie-host), `api_customer_id` (`038267`), contactpersoon (Niek Zandvoort, n.zandvoort@hst.nl) en uitgebreide `notities` op basis van e-mailcorrespondentie 2026-02-26 t/m 2026-03-02. `actief` blijft `FALSE` tot na succesvolle cutover-test (Fase 4 van het HST-API-plan).
+
+Plan: [`docs/superpowers/plans/2026-05-01-logistiek-vervoerder-instellingen.md`](superpowers/plans/2026-05-01-logistiek-vervoerder-instellingen.md).
+
+---
+
+## 2026-05-01 — Migratie 174: vervoerder-instellingen + stats-view
+
+Uitbreiding `vervoerders`-tabel met 7 kolommen voor instellingen, contactgegevens en tarief-notities (vrije tekst V1): `api_endpoint`, `api_customer_id`, `account_nummer`, `kontakt_naam`, `kontakt_email`, `kontakt_telefoon`, `tarief_notities`. Nieuwe view `vervoerder_stats` voor dashboard-pages (aantal klanten, zendingen totaal/deze-maand, HST success/fail-counts). Frontend `/logistiek/vervoerders` overzicht + detail-pagina onder `frontend/src/modules/logistiek/`.
+
+Plan: [`docs/superpowers/plans/2026-05-01-logistiek-vervoerder-instellingen.md`](superpowers/plans/2026-05-01-logistiek-vervoerder-instellingen.md) (Fase A; B = gestructureerde tarieven, C = auto-selectie blijven roadmap).
+
+---
+
+## 2026-05-01 — Migratie 169: zendingen-tabel
+
+Eerste werkelijke materialisatie van `zendingen` + `zending_regels` (stond al in schema-doc beschreven, maar nog nooit aangemaakt). Inclusief enum `zending_status` (Gepland, Picken, Ingepakt, Klaar voor verzending, Onderweg, Afgeleverd), `created_at`/`updated_at` met trigger, RLS, en lazy `volgend_nummer('ZEND')`-sequence voor `ZEND-2026-0001`. Voorbereiding op logistiek-module HST API-koppeling.
+
+Plan: [`docs/superpowers/plans/2026-05-01-logistiek-hst-api-koppeling.md`](superpowers/plans/2026-05-01-logistiek-hst-api-koppeling.md).
+
+---
+
+## 2026-05-01 — Migratie 170: vervoerders + per-debiteur vervoerderkeuze
+
+Nieuwe `vervoerders`-lookup-tabel met 3 zaad-rijen (`hst_api`, `edi_partner_a` Rhenus, `edi_partner_b` Verhoek — alle drie default `actief=FALSE`). Plus nieuwe kolom `edi_handelspartner_config.vervoerder_code` (FK → `vervoerders.code`) voor per-debiteur routing. Géén automatische re-routing van openstaande zendingen bij wisseling — alleen nieuwe zendingen volgen de nieuwe waarde.
+
+---
+
+## 2026-05-01 — Migratie 171: hst_transportorders + adapter-RPCs
+
+HST-adapter-implementatie. Eigen tabel `hst_transportorders` met HST-specifieke kolommen (`extern_transport_order_id`, `extern_tracking_number`, `request_payload`, `response_payload`, `response_http_code`, retry/status, `is_test`). Nieuwe enum `hst_transportorder_status` (Wachtrij, Bezig, Verstuurd, Fout, Geannuleerd). Vier RPC's: `enqueue_hst_transportorder`, `claim_volgende_hst_transportorder`, `markeer_hst_verstuurd`, `markeer_hst_fout`. Idempotentie via partial unique index `uk_hst_to_zending_actief` (één actieve transportorder per zending, retry zet oude rij eerst op `Geannuleerd`).
+
+Géén gegeneraliseerde `vervoerder_berichten`-tabel — verticale slice voor HST. Toekomstige EDI-vervoerders hergebruiken straks de bestaande `edi_berichten`-tabel met `berichttype='verzendbericht'`. Reden: deletion-test wijst uit dat een gegeneraliseerde queue-tabel shallow zou zijn (interface bijna net zo complex als de twee implementaties).
+
+---
+
+## 2026-05-01 — Migratie 172: switch-RPC + zending-trigger
+
+Nieuwe RPC `create_zending_voor_order(p_order_id)` (idempotent — returnt bestaande actieve zending of maakt nieuwe rij + bijbehorende `zending_regels` met status direct `'Klaar voor verzending'`). Nieuwe **single-switch-point** RPC `enqueue_zending_naar_vervoerder(p_zending_id)` als enige plek in de codebase waar op `vervoerder_code` wordt gedispatcht naar de adapter-RPC (`'hst_api'` → `enqueue_hst_transportorder`; toekomstige `'edi_partner_a/b'` → `enqueue_edi_verzendbericht`). Plus AFTER INSERT/UPDATE OF status-trigger `trg_zending_klaar_voor_verzending` op `zendingen` die bij transitie naar `'Klaar voor verzending'` de switch-RPC aanroept. Trigger weet niets over HST/EDI — alle vervoerder-onderscheid leeft in de switch.
+
+---
+
+## 2026-05-01 — Migratie 173: hst-send pg_cron schedule
+
+Edge function `hst-send` draait elke minuut via pg_cron. Claimt rijen uit `hst_transportorders` (status `Wachtrij`), bouwt HST TransportOrder-payload (lokale builder in [`supabase/functions/hst-send/payload-builder.ts`](../supabase/functions/hst-send/payload-builder.ts)), POST'st naar `https://accp.hstonline.nl/rest/api/v1/TransportOrder` met HTTP Basic-auth, schrijft response + tracking terug via `markeer_hst_verstuurd` of retry/fout via `markeer_hst_fout`. Cutover blijft op ACCP-omgeving; productie-credentials volgen apart.
+
+---
+
+## 2026-05-01 - EDI-orderprijzen uit debiteurprijslijst
+
+EDI-orders `ORD-2026-2022` en `ORD-2026-2023` kwamen correct binnen qua artikelen, maar hadden `€0,00` omdat `create_edi_order` alleen `producten.verkoopprijs` gebruikte. Voor BDSK/LUTZ PATCH-artikelen is die productprijs leeg; de juiste prijs staat in prijslijst `0201`.
+
+- **Data-correctie:** legacy BDSK-debiteuren `600553`, `600554` en `600555` zijn gekoppeld aan LUTZ-prijslijst `0201`; `ORD-2026-2022` en `ORD-2026-2023` zijn herprijsd naar totaal `€56,49` (`29,73 + 13,38 + 13,38`).
+- **Migratie 166:** [`166_edi_prijzen_uit_prijslijst.sql`](../supabase/migrations/166_edi_prijzen_uit_prijslijst.sql) herdefinieert `create_edi_order` zodat EDI-regels eerst uit `debiteuren.prijslijst_nr -> prijslijst_regels` worden geprijsd, met fallback op `producten.verkoopprijs`.
+- **Frontend-vangnet:** handmatige EDI-upload en demo-flow kiezen bij dubbele GLN's voortaan eerst een actieve debiteur met prijslijst en herprijzen de aangemaakte order direct na de RPC-call.
+- **Backfill:** dezelfde migratie vult bestaande EDI-orderregels zonder prijs bij waar een prijslijstprijs bestaat.
+
+---
+
+## 2026-05-01 - aanvullende prijslijsten geimporteerd en gekoppeld
+
+De nieuwe ZIP-bestanden `prijslijsten.zip` en `toevoegingprijslijsten.zip` zijn verwerkt naar Supabase.
+
+- **Import tooling:** toegevoegd: [`import/prijslijsten_aanvulling_manifest.json`](../import/prijslijsten_aanvulling_manifest.json) en [`import/import_prijslijsten_aanvulling.py`](../import/import_prijslijsten_aanvulling.py). Het script draait standaard als dry-run en schrijft rapporten onder `import/rapporten/`.
+- **Koppellogica:** debiteuren worden gekoppeld via de oude `Prijslijst`-kolom in [`brondata/debiteuren/Karpi_Debiteuren_Import.xlsx`](../brondata/debiteuren/Karpi_Debiteuren_Import.xlsx), met expliciete validatie voor Porta (`630859`, `630861`, `630862`) en LUTZ (`600556`, `600562`, `600571`, `600572`) uit de mail.
+- **Supabase-resultaat:** 14 prijslijsten geupsert, 13.627 prijslijstregels geupsert, 227 debiteuren gekoppeld en 6 ontbrekende producten minimaal aangemaakt.
+- **Nacontrole:** idempotentie-dry-run na import gaf 0 nieuwe producten, 0 waarschuwingen en 0 blokkerende problemen.
+
+---
+
+## 2026-04-30 — EDI vertical-module + berichttype-registry + klantconfiguratie UI
+
+Twee architectuurkeuzes uit `/improve-codebase-architecture`-review samengebracht met de geplande klant-config-UI.
+
+- **Vertical-module:** `frontend/src/lib/edi/`, `frontend/src/pages/edi/`, `frontend/src/components/edi/`, `frontend/src/lib/supabase/queries/edi.ts` en `frontend/src/hooks/use-edi.ts` zijn samengevoegd onder [`frontend/src/modules/edi/`](../frontend/src/modules/edi/) (sub-folders `pages/`, `components/`, `hooks/`, `queries/`, `lib/`). Externe consumers importeren via de barrel `@/modules/edi`.
+- **Berichttype-registry:** [`registry.ts`](../frontend/src/modules/edi/registry.ts) is bron-van-waarheid voor de vier types (`order`, `orderbev`, `factuur`, `verzendbericht`) — code, richting, UI-label, UI-subtitle, `configToggleKey`, `relatedEntity`, `transusProcess`. Frontend itereert over `getBerichttypenVoorRichting(...)`. Backend (poll/send edge functions) blijft V1 op huidige switch — registry-spiegel volgt in een follow-up plan.
+- **EDI-klantconfiguratie UI** — klant-detail krijgt EDI-tab met de processen uit de registry (Inkomend/Uitgaand gegroepeerd) + test-modus + notities. Klanten-overzicht krijgt EDI-filter (Alle / EDI / Niet-EDI) en EDI-tag op klantkaart + detail-header. Schrijft naar bestaande `edi_handelspartner_config` (mig 156). UI: [klant-edi-tab.tsx](../frontend/src/modules/edi/components/klant-edi-tab.tsx), [edi-tag.tsx](../frontend/src/modules/edi/components/edi-tag.tsx). Geen migratie nodig.
+
+---
+
+## 2026-04-30 - EDI/Transus facturen via Karpi fixed-width INVOIC
+
+Uitgaande facturen kunnen nu als Transus INVOIC-bericht in de EDI-wachtrij worden gezet. Het nieuwe BDSK-voorbeeld `Bericht-ID 168849861.zip` is toegevoegd als fixture en gebruikt om de byte-layout van Karpi's fixed-width factuurformaat te verankeren.
+
+- **Edge/shared:** nieuwe builder `supabase/functions/_shared/transus-formats/karpi-invoice-fixed-width.ts` maakt 1107-byte headerregels en 312-byte artikelregels voor Transus' Custom ERP INVOIC-formaat.
+- **Factuurflow:** `supabase/functions/factuur-verzenden/index.ts` queue't bij `edi_handelspartner_config.transus_actief=true` en `factuur_uit=true` automatisch een `edi_berichten`-rij (`berichttype='factuur'`, `status='Wachtrij'`). E-mail blijft mogelijk naast EDI, maar is niet meer verplicht voor EDI-only debiteuren.
+- **Fixtures/tests:** toegevoegd: `factuur-uit-bdsk-168849861.txt`, `edifact-output-invoic-bdsk-168849861.edi` en unit-testdekking voor beide BDSK-factuurvoorbeelden plus RugFlow-nummernormalisatie.
+- **Docs:** architectuur, data-woordenboek en Transus voorbeeld-README bijgewerkt zodat het verschil duidelijk is: orderbevestigingen gaan als TransusXML, facturen als Karpi fixed-width INVOIC.
+
+---
+
+## 2026-04-30 — BTW-verlegd-flag voor intracommunautaire EU-debiteuren
+
+Eerste echte BDSK round-trip in Transus' "Bekijken en testen" leverde een **structureel correcte EDIFACT D96A `ORDRSP`** op — alle GLN's, datums en LIN-segmenten matchen het origineel `edifact-output-ordrsp-bdsk-168911805.edi`. Eén productie-blokker bleef over: `<VATPercentage>21</VATPercentage>` ipv `0` (BDSK is intracommunautair B2B → BTW-verlegd).
+
+- **Migratie 164** ([`164_btw_verlegd_intracom.sql`](../supabase/migrations/164_btw_verlegd_intracom.sql)):
+  - Nieuwe kolom `debiteuren.btw_verlegd_intracom BOOLEAN DEFAULT FALSE`.
+  - Conservatieve backfill — zet TRUE voor debiteuren met `land` in een herkenbare EU-non-NL lidstaat (DE, BE, FR, AT, IT, ES en ~20 andere; varianten incl. landcode + voluit-naam).
+  - Partial index `idx_debiteuren_btw_verlegd_intracom` voor snelle filtering.
+- **Frontend** ([`download-orderbev-xml.ts`](../frontend/src/lib/edi/download-orderbev-xml.ts)):
+  - Query haalt `btw_verlegd_intracom` mee uit `debiteuren`.
+  - Als flag=TRUE → `vatPercentage = 0`, anders fallback naar `btw_percentage` (default 21%).
+- **Format-validatie BDSK orderbev:** in deze test bewezen dat `<OrderResponseNumber>ORD-2026-20200001</...>` (alfanumeriek) wordt geaccepteerd, en dat Karpi-artikelnrs in `<ArticleCodeSupplier>` (i.p.v. Basta-legacy `PATS23XX080150`) ook werken zolang GTIN klopt.
+- **Auto-memory bijgewerkt:** `project_edi_transus` legt vast dat TransusXML voor BDSK orderbev werkt + alle BDSK-GLN-rollen.
+
+---
+
+## 2026-04-30 - EDI/Transus orderbevestiging technisch cutover-ready gemaakt
+
+De handmatige round-trip-flow is doorgetrokken naar de echte queue/send-kant: orderbevestigingen worden nu als TransusXML in `edi_berichten.payload_raw` gezet, bestaande wachtrij-rijen met het oude fixed-width formaat worden omgezet zolang ze nog niet verstuurd zijn, en de nieuwe `transus-send` edge function verstuurt wachtrij-payloads via M10100.
+
+- **Frontend:** `download-orderbev-xml.ts` gebruikt nu de echte orderkolommen (`order_nr`, `klant_referentie`, `besteller_gln`, `factuuradres_gln`, `afleveradres_gln`) en haalt BTW via `debiteuren.btw_percentage`; `bevestig-helper.ts` bouwt/queue't TransusXML met `order_response_seq`.
+- **Edge:** gedeelde fixed-width parser accepteert Transus-regels met afgekapte trailing spaces; `transus-poll` schrijft M10300 ack-resultaten terug naar `ack_status`/`acked_at`; `transus-send` claimt en verstuurt uitgaande berichten via M10100.
+- **Waarom:** de eerdere build faalde en de echte M10110-parser/send-flow liep nog niet gelijk met de bewezen BDSK TransusXML-rondreis.
+
+---
+
+## 2026-04-30 — producten.ean_code cleanup (`.0`-suffix) + tolerante EDI-matching
+
+Fix voor data-quality issue dat tijdens de eerste echte BDSK-upload aan het licht kwam: `producten.ean_code` bevatte consistent een trailing `.0` (bv. `8715954176023.0`), erfenis van een Excel-import die GTIN's als FLOAT las. Hierdoor matchte de EDI-`match_edi_artikel`-RPC nooit op echte GTIN's uit Transus-berichten en vielen alle inkomende EDI-orderregels terug op `[EDI ongematcht]`.
+
+- **Migratie 162** ([`supabase/migrations/162_producten_ean_code_cleanup.sql`](../supabase/migrations/162_producten_ean_code_cleanup.sql)):
+  - Eenmalige `UPDATE` strijkt `.0`-suffix weg op alle bestaande rijen.
+  - Nieuwe `BEFORE INSERT OR UPDATE`-trigger `producten_normaliseer_ean_code` strijkt `.0` + whitespace bij elke schrijfactie — voorkomt herhaling bij volgende imports.
+  - `match_edi_artikel` uitgebreid met defensieve fallback (1b: probeert ook `p_gtin || '.0'`) als safety net mocht de trigger ooit niet gevuurd hebben.
+- **Scope:** ~25.000 producten met `.0`-suffix, geen schade aan numeriek-correcte rijen.
+- **Diagnose:** klant 8MRE0 op BDSK had drie GTIN's (`8715954176023`, `218143`, `235829`) die wel in `producten` stonden, maar onder Karpi's interne artikelnrs (`526230180`, `526920010`, `526100024`) — niet onder de Basta-legacy nummering `PATS23XX080150` etc. die in oude orderbev-XML's staat.
+
+---
+
+## 2026-04-30 — EDI handmatige upload/download voor round-trip-validatie
+
+Nieuwe knop **"Bestand uploaden"** op [`/edi/berichten`](../frontend/src/pages/edi/berichten-overzicht.tsx) waarmee echte `.inh`-bestanden uit Transus' archief kunnen worden geüpload, geparseerd en verwerkt zonder dat de M10110 SOAP-poll actief hoeft te zijn. Op uitgaande orderbev-berichten staat een nieuwe **"TransusXML"-download-knop** die een `<ORDERRESPONSES>`-XML on-the-fly bouwt uit `orders` + `order_regels` — dat bestand kan in Transus' "Bekijken en testen"-tab worden geüpload om de partner-format-validatie te testen.
+
+- **Plan:** [`docs/superpowers/plans/2026-04-30-edi-handmatige-upload-download.md`](superpowers/plans/2026-04-30-edi-handmatige-upload-download.md).
+- **Nieuwe modules:**
+  - [`frontend/src/lib/edi/upload-helper.ts`](../frontend/src/lib/edi/upload-helper.ts) — verwerkt `.inh`-bestand: sanity-check, parse, dedup op SHA-256, debiteur-match op GLN, insert, `create_edi_order` RPC.
+  - [`frontend/src/lib/edi/transus-xml.ts`](../frontend/src/lib/edi/transus-xml.ts) — pure TransusXML-builder met `buildOrderbevTransusXml` + `buildOrderResponseNumber`. Format reverse-engineered uit echt BDSK-bestand `orderbev-uit-bdsk-168911805.xml`.
+  - [`frontend/src/lib/edi/download-orderbev-xml.ts`](../frontend/src/lib/edi/download-orderbev-xml.ts) — bouwt XML on-demand uit DB-state (order + regels + producten.ean_code) en triggert download.
+  - [`frontend/src/components/edi/upload-bericht-dialog.tsx`](../frontend/src/components/edi/upload-bericht-dialog.tsx) — modal met file-input, dedup-flag en preview-stap.
+- **Database (migratie 161):**
+  - `edi_handelspartner_config.orderbev_format` enum (`transus_xml` / `fixed_width`, default `transus_xml`).
+  - `edi_berichten.order_response_seq` integer voor `<OrderResponseNumber>`-bouw (4-digit zero-padded suffix conform BDSK-voorbeeld: `26554360` + `0001` = `265543600001`).
+  - `edi_berichten.transus_test_*` velden voor handmatige Transus-validatie-status (fase 4).
+  - `ruim_edi_demo_data()` uitgebreid met `UPLOAD-`-prefix.
+- **Parser-tolerantie:** `parseKarpiOrder` accepteert nu lengte-varianten van ±2 bytes per regel (rechts-padding met spaces). Echte BDSK 8MRE0 fixture had header 462 bytes ipv 463 — Transus levert soms zonder trailing space.
+- **Tests:** 19 unit-tests groen in `src/lib/edi/`. Inclusief byte-vergelijking van TransusXML-builder tegen `orderbev-uit-bdsk-168911805.xml` en parser-test op `rondreis-bdsk-8MRE0/Karpi Group home fashion/ord168871472.inh`.
+
+---
+
+## 2026-04-30 — EDI/Transus pre-cutover dataverzamelplan
+
+Nieuw document [`docs/transus/pre-cutover-data-stappenplan.md`](transus/pre-cutover-data-stappenplan.md) toegevoegd met een praktisch stappenplan voor de EDI-cutover: welke Transus-specificaties, voorbeeldberichten, GLN-/artikelmappings, API-testgegevens en operationele afspraken nog verzameld moeten worden, plus wat er technisch moet gebeuren zodra die data compleet is.
+
+- **Waarom:** De huidige demo-rondreis bewijst vooral de interne RugFlow-flow, maar nog niet dat echte Transus input/output voor orderbevestiging en factuur door partners wordt geaccepteerd. Het plan maakt expliciet waar de go/no-go voor cutover op gebaseerd moet zijn.
+- **Belangrijkste focus:** orderbevestiging eerst hard valideren via Transus Online `Bekijken en testen`; pas daarna M10100/M10110/M10300 productieflow activeren.
+
+---
+
 ## 2026-04-29 — Orderregel claim-uitsplitsing als geneste sub-rijen
 
 Op order-detail toont elke stuks-orderregel nu de volledige bron-uitsplitsing als visueel geneste sub-rijen onder de hoofdregel — gericht op de verzamelaar in het magazijn die moet zien dat een deel van een uitwisselbaar artikel komt en omgestickerd moet worden.

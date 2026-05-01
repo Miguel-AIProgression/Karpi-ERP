@@ -119,7 +119,6 @@ export const NAV_GROUPS = [
     items: [
       { label: 'Snijplanning', path: '/snijplanning', icon: 'Scissors' },
       { label: 'Confectie', path: '/confectie', icon: 'Factory' },
-      { label: 'Magazijn', path: '/magazijn', icon: 'Warehouse' },
       { label: 'Pick & Ship', path: '/pick-ship', icon: 'PackageCheck' },
       { label: 'Logistiek', path: '/logistiek', icon: 'Truck' },
     ],

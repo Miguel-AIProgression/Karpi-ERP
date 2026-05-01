@@ -1,0 +1,63 @@
+<?xml version="1.0"?>
+<ORDERRESPONSES>
+<ORDERRESPONSE>
+<HEADER>
+<MessageFormat>TRANSUSXML</MessageFormat>
+<SenderGLN>8715954999998</SenderGLN>
+<RecipientGLN>9007019015989</RecipientGLN>
+<IsTestMessage>N</IsTestMessage>
+<OrderResponseNumber>265543600001</OrderResponseNumber>
+<OrderResponseDate>20260430</OrderResponseDate>
+<Action>ACC</Action>
+<OrderNumberBuyer>8MRE0                              </OrderNumberBuyer>
+<OrderNumberSupplier>26554360</OrderNumberSupplier>
+<OrderDate>20260429</OrderDate>
+<EarliestDeliveryDate>20260522</EarliestDeliveryDate>
+<LatestDeliveryDate>20260522</LatestDeliveryDate>
+<CurrencyCode>EUR</CurrencyCode>
+<BuyerGLN>9007019005430</BuyerGLN>
+<SupplierGLN>8715954999998</SupplierGLN>
+<InvoiceeGLN>9007019015989</InvoiceeGLN>
+<DeliveryPartyGLN>9007019005430</DeliveryPartyGLN>
+</HEADER>
+<ARTICLE>
+<LineNumber>00001</LineNumber>
+<ArticleDescription>PATCH FARBE 23 CA  080X150 CM</ArticleDescription>
+<ArticleCodeSupplier>PATS23XX080150</ArticleCodeSupplier>
+<GTIN>8715954176023</GTIN>
+<PurchasePrice>29.73</PurchasePrice>
+<ArticleNetPrice>29.73</ArticleNetPrice>
+<VATPercentage>0</VATPercentage>
+<Action>ACC</Action>
+<OrderedQuantity>1</OrderedQuantity>
+<DespatchedQuantity>1</DespatchedQuantity>
+<DeliveryDate>20260522</DeliveryDate>
+</ARTICLE>
+<ARTICLE>
+<LineNumber>00002</LineNumber>
+<ArticleDescription>PATCH FARBE 92 CA  060X090 CM</ArticleDescription>
+<ArticleCodeSupplier>PATS92XX060090</ArticleCodeSupplier>
+<GTIN>8715954218143</GTIN>
+<PurchasePrice>13.38</PurchasePrice>
+<ArticleNetPrice>13.38</ArticleNetPrice>
+<VATPercentage>0</VATPercentage>
+<Action>ACC</Action>
+<OrderedQuantity>1</OrderedQuantity>
+<DespatchedQuantity>1</DespatchedQuantity>
+<DeliveryDate>20260522</DeliveryDate>
+</ARTICLE>
+<ARTICLE>
+<LineNumber>00003</LineNumber>
+<ArticleDescription>PATCH FARBE 10 CA  060X090 CM</ArticleDescription>
+<ArticleCodeSupplier>PATS10XX060090</ArticleCodeSupplier>
+<GTIN>8715954235829</GTIN>
+<PurchasePrice>13.38</PurchasePrice>
+<ArticleNetPrice>13.38</ArticleNetPrice>
+<VATPercentage>0</VATPercentage>
+<Action>ACC</Action>
+<OrderedQuantity>1</OrderedQuantity>
+<DespatchedQuantity>1</DespatchedQuantity>
+<DeliveryDate>20260522</DeliveryDate>
+</ARTICLE>
+</ORDERRESPONSE>
+</ORDERRESPONSES>

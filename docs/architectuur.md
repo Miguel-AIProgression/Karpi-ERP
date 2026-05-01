@@ -81,7 +81,7 @@ Gedeelde code in `supabase/functions/_shared/` (packing-algoritmes, DB helpers) 
 /facturatie                (placeholder)
 /vertegenwoordigers        (placeholder)
 /rollen                    (placeholder)
-/magazijn                  (placeholder)
+/magazijn                  Redirect naar /pick-ship
 /snijplanning              Snijplanning overzicht per week, gegroepeerd per kwaliteit+kleur
 /snijplanning/rol/:rolId   Snijvoorstel per rol (SVG strip-packing visualisatie)
 /snijplanning/voorstel/:voorstelId  Review pagina voor gegenereerd snijvoorstel (optimalisatie)
@@ -92,9 +92,10 @@ Gedeelde code in `supabase/functions/_shared/` (packing-algoritmes, DB helpers) 
 /confectie/planning        Meerweekse planning per lane (breedband/smalband/feston/...) met horizon 1/2/4/8 wk
 /scanstation               Tablet-vriendelijk scaninterface voor barcode/QR inpak
 /rollen                    Rolbeheer: gegroepeerd per kwaliteit/kleur met status badges
-/magazijn                  Gereed product overzicht met locatiebeheer
-/pick-ship                 (placeholder)
-/logistiek                 (placeholder)
+/pick-ship                 Open orders gegroepeerd op afleverdatum; verrijkt met pickbaarheid/locatie als view beschikbaar is
+/logistiek                 Zendingen-overzicht met vervoerder/status-filters
+/logistiek/:zending_nr     Zending-detail met transportorder/API-historie
+/logistiek/:zending_nr/printset  Printbare verzendset: stickers + pakbon
 /inkoop                    Inkooporders overzicht (stat-cards + filters op status/leverancier/alleen-open)
 /inkoop/:id                Inkooporder detail (regels met "Ontvangst boeken" knop per regel)
 /leveranciers              Leveranciers overzicht (met openstaande orders/meters per leverancier)
@@ -102,6 +103,100 @@ Gedeelde code in `supabase/functions/_shared/` (packing-algoritmes, DB helpers) 
 /instellingen              (placeholder)
 /instellingen/productie    Planning instellingen: capaciteit, modus, reststuk verspilling
 ```
+
+## EDI / Transus Flow
+
+Alle EDI-verkeer loopt via `edi_berichten` als audit- en queue-tabel.
+
+**Inkomend:** `supabase/functions/transus-poll` pollt Transus M10110 met `CRON_TOKEN`, decodeert het bericht via `_shared/transus-soap.ts`, detecteert Karpi fixed-width ORDERS en parseert via `_shared/transus-formats/karpi-fixed-width.ts`. De parser accepteert echte Transus-bestanden waarvan trailing spaces zijn afgekapt (header 462/463, artikel 280/281). Na verwerking wordt M10300 aangeroepen en schrijft `markeer_edi_ack` `ack_status`, `ack_details` en `acked_at` terug. Ordercreatie via `create_edi_order` matcht artikelen met `match_edi_artikel` en prijst regels via `debiteuren.prijslijst_nr -> prijslijst_regels`; alleen als daar geen prijs staat valt de RPC terug op `producten.verkoopprijs`.
+
+**Uitgaand:** de EDI-bevestig-flow bouwt orderbevestigingen als TransusXML (`<ORDERRESPONSES>`) en zet die XML direct in `edi_berichten.payload_raw` met `richting='uit'`, `berichttype='orderbev'`, status `Wachtrij` en `order_response_seq`. Facturen gebruiken Karpi fixed-width INVOIC (1107-byte header + 312-byte regels), gebouwd in `supabase/functions/_shared/transus-formats/karpi-invoice-fixed-width.ts` op basis van echte BDSK-voorbeelden. `factuur-verzenden` queue't zo'n EDI-factuur automatisch wanneer `edi_handelspartner_config.transus_actief=true` en `factuur_uit=true`; e-mail blijft mogelijk naast EDI, maar is niet vereist voor EDI-only debiteuren. `supabase/functions/transus-send` claimt alle uitgaande wachtrij-rijen via `claim_volgende_uitgaand()`, verstuurt `payload_raw` ongewijzigd via M10100, en markeert succes met `markeer_edi_verstuurd` of retry/fout met `markeer_edi_fout`.
+
+Handmatige pre-cutover-validatie blijft beschikbaar via `/edi/berichten`: echte `.inh` uploaden, order aanmaken, orderbev queue'en en de TransusXML downloaden voor Transus Online "Bekijken en testen".
+
+**Frontend-organisatie (vanaf 2026-04-30):** alle EDI-frontend-code leeft onder [`frontend/src/modules/edi/`](../frontend/src/modules/edi/) als één feature-module (`pages/`, `components/`, `hooks/`, `queries/`, `lib/`). Externe consumers (klanten-, orders-modules, router, sidebar) importeren via de barrel `@/modules/edi`. **Berichttype-registry** [`registry.ts`](../frontend/src/modules/edi/registry.ts) is bron-van-waarheid voor de vier types (`order`, `orderbev`, `factuur`, `verzendbericht`); UI-componenten itereren over `getBerichttypenVoorRichting(...)` i.p.v. hard-coded lijsten. Backend (poll/send edge functions) gebruikt de registry nog niet — V2-werk: spiegel naar `supabase/functions/_shared/edi/registry.ts`.
+
+## Logistiek-module
+
+Karpi verzendt met **drie vervoerders**: HST (REST API), Rhenus (EDI) en Verhoek (EDI). Dit document beschrijft de end-state vanaf migraties 169–173, waarin de **HST-koppeling** is opgeleverd; de twee EDI-vervoerders volgen in latere plans en gebruiken straks de bestaande `edi_berichten`-tabel met `berichttype='verzendbericht'`. Per debiteur wordt vastgelegd welke vervoerder gebruikt wordt via `edi_handelspartner_config.vervoerder_code` (FK → `vervoerders.code`).
+
+### Flow
+
+```
+┌──────────────────┐  1. order Klaar voor verzending           ┌──────────────────┐
+│ Order detail-    │ ────────────────────────────────────────▶ │ Knop: "Zending   │
+│ pagina (UI)      │                                           │ aanmaken"        │
+└──────────────────┘                                           └─────────┬────────┘
+                                                                         │ 2. RPC create_zending_voor_order(p_order_id)
+                                                                         ▼
+                                                              ┌────────────────────┐
+                                                              │ INSERT zendingen   │
+                                                              │ (status='Klaar     │
+                                                              │  voor verzending') │
+                                                              └─────────┬──────────┘
+                                                                        │ 3. AFTER INSERT/UPDATE trigger
+                                                                        │    op status='Klaar voor verzending'
+                                                                        ▼
+                                                              ┌────────────────────────────────┐
+                                                              │ enqueue_zending_naar_         │
+                                                              │   vervoerder(zending_id)       │  ◀── single switch-point
+                                                              │                                │
+                                                              │ leest vervoerder_code uit      │
+                                                              │ edi_handelspartner_config en   │
+                                                              │ dispatcht naar adapter-RPC:    │
+                                                              │                                │
+                                                              │   'hst_api'                    │
+                                                              │      → enqueue_hst_            │
+                                                              │          transportorder        │
+                                                              │   'edi_partner_a/b' (later)    │
+                                                              │      → enqueue_edi_            │
+                                                              │          verzendbericht        │
+                                                              │   NULL                         │
+                                                              │      → no-op                   │
+                                                              └─────────┬──────────────────────┘
+                                                                        │ INSERT hst_transportorders
+                                                                        │ status='Wachtrij'
+                                                                        ▼
+                                              ┌─────────────────────────────────────────────┐
+                                              │ edge function hst-send (cron elke minuut)   │
+                                              │  • claim_volgende_hst_transportorder()      │
+                                              │  • bouw TransportOrder JSON (lokale builder)│
+                                              │  • POST /rest/api/v1/TransportOrder         │
+                                              │    Authorization: Basic ...                 │
+                                              │  • bij 200: markeer_hst_verstuurd()         │
+                                              │      → schrijf extern_transport_order_id +  │
+                                              │        eventueel tracking_nummer terug op   │
+                                              │        zendingen.track_trace                │
+                                              │  • bij 4xx/5xx: markeer_hst_fout()          │
+                                              │      → retry tot max_retries=3              │
+                                              └─────────────────────────────────────────────┘
+```
+
+### Pick & Ship verzendset
+
+Vanaf `/pick-ship` kan een magazijnmedewerker op een volledig pickbare order de actie **Verzendset** starten. De frontend roept `create_zending_voor_order(p_order_id)` aan; de database kiest daarna op zendingniveau de vervoerder via `selecteer_vervoerder_voor_zending()` (V1: precies één actieve vervoerder) en opent `/logistiek/:zending_nr/printset`. Die printset bevat per colli een verzendsticker met GS1-128/SSCC-barcode en vervoerderbadge, plus een A4-pakbon met orderregels, aantallen, afleveradres en colli/gewicht-samenvatting. De zending-trigger blijft de bron voor automatische dispatch naar de adapter; de printset is de magazijn-output voor de fysieke zending.
+
+### Belangrijkste design-besluiten
+
+- **Adapter-pattern, géén gegeneraliseerde queue-tabel.** HST krijgt z'n eigen tabel `hst_transportorders` met HST-specifieke kolommen (`extern_transport_order_id`, `request_payload`, `response_payload`, `response_http_code`, retry/status). EDI-vervoerders hergebruiken straks `edi_berichten` met `berichttype='verzendbericht'`. Reden — *deletion-test*: als een hypothetische `vervoerder_berichten`-tabel werd weggehaald, zou complexiteit voor de EDI-vervoerders niet toenemen (die zit al in `edi_berichten`); alleen HST-complexiteit zou ergens heen moeten — naar een eigen tabel. Dat doen we dus meteen, zonder shallow-abstraction-tussenlaag.
+- **Single switch-point in `enqueue_zending_naar_vervoerder`.** PL/pgSQL-functie van ~30 regels is de enige plek in de codebase waar op `vervoerder_code` wordt geswitcht. Trigger, frontend en edge function zijn vervoerder-blind óf vervoerder-specifiek — geen tussenlaag. Bij vervoerder #4 voeg je één `WHEN`-tak toe en je weet zeker dat je niets vergeet.
+- **Verticale folder per vervoerder.** Alle HST-files leven in [`supabase/functions/hst-send/`](../supabase/functions/hst-send/) — payload-builder, HTTP-client, types, fixtures. Géén HST-types in `_shared/`. Bij toekomstige Rhenus-vertical: nieuwe map `supabase/functions/rhenus-send/` met dezelfde interne structuur.
+- **HST-tracking → `zendingen.track_trace`.** Na 200-respons schrijft `markeer_hst_verstuurd` het `transportOrderId` (of `trackingNumber` als HST dat al heeft) terug op `zendingen.track_trace` en promoveert de zending-status van `'Klaar voor verzending'` naar `'Onderweg'`.
+- **Vervoerders-tabel als enum-light.** Lookup-tabel i.p.v. PostgreSQL-enum omdat we per vervoerder metadata nodig hebben (display-naam, kleur, type). Migratie 170 zaait 3 rijen; alleen `hst_api` wordt actief gezet bij cutover.
+- **Trigger-bron is `zendingen.status`, niet `orders.status`.** Eén order kan in V2 in meerdere zendingen splitsen met verschillende leverdata — de zending is de werkelijke fysieke eenheid die HST ophaalt.
+- **Cron-frequentie:** edge function `hst-send` draait elke minuut via pg_cron (mig 173).
+
+Voor implementatiedetails (taak-volgorde, fixtures, payload-shape, retry-strategieën): zie [`docs/superpowers/plans/2026-05-01-logistiek-hst-api-koppeling.md`](superpowers/plans/2026-05-01-logistiek-hst-api-koppeling.md).
+
+### Vervoerder-instellingen + roadmap
+
+De `/logistiek/vervoerders`-pages (overzicht + detail) wijzen op een drie-fase-roadmap:
+
+- **Fase A (mig 174 — vandaag):** uitbreiding `vervoerders`-tabel met instellingen, contactgegevens en `tarief_notities` (vrije tekst). View `vervoerder_stats` voedt de UI met klant- en zending-tellingen. Twee nieuwe pages onder `frontend/src/modules/logistiek/` (`vervoerders-overzicht.tsx` + `vervoerder-detail.tsx`), bereikbaar via de instellingenknop op het Logistiek-overzicht.
+- **Fase B (later, ~4-8 weken na A):** vervang vrije-tekst tarieven door gestructureerde tabellen `vervoerder_zones`, `vervoerder_zone_postcodes` en `vervoerder_tarieven` met versie-historie via `geldig_vanaf`/`geldig_tot`. Lookup-RPC `get_tarief(vervoerder, zone, gewicht_kg, datum)`.
+- **Fase C (eindstaat):** auto-selectie via `selecteer_vervoerder_voor_zending(zending_id)` — filter op `vervoerder_voorwaarden` (max gewicht/afmetingen, ondersteunde landen, leverdagen), score op tarief + klant-voorkeur. Trigger `fn_zending_klaar_voor_verzending` roept de selector aan vóór `enqueue_zending_naar_vervoerder`. `edi_handelspartner_config.vervoerder_code` wordt zachte voorkeur i.p.v. harde keuze.
+
+A → B → C is een harde volgorde: geen B vóór ≥2 weken Fase A-gebruik en geen C vóór ten minste 2 vervoerders volledige tarieven hebben in B. Volledig plan: [`docs/superpowers/plans/2026-05-01-logistiek-vervoerder-instellingen.md`](superpowers/plans/2026-05-01-logistiek-vervoerder-instellingen.md).
 
 ## Security
 
@@ -146,6 +241,12 @@ De snijmachine heeft **1 lengte-mes** (snijdt de rol dwars af op een ingestelde 
 - Nieuwe bestellingen worden handmatig ingevoerd via `InkooporderFormDialog` op `/inkoop` — inkooporder-nummer wordt gegenereerd via `volgend_nummer('INK')` (INK-YYYY-NNNN).
 - Bij binnenkomst opent de operator een regel via de `Ontvangst` knop op `/inkoop/:id` en vult N rollen in (rolnummer + lengte_cm + breedte_cm). De RPC `boek_ontvangst` maakt de rollen aan (status=`beschikbaar`, gekoppeld aan `inkooporder_regel_id`), schrijft een `voorraad_mutaties`-entry type=`ontvangst` en werkt de order-status bij. De trigger `trg_sync_besteld_inkoop` synchroniseert tegelijkertijd `producten.besteld_inkoop` op basis van resterende open regels.
 - Voor het Excel-bestand matcht `Artikelnummer` (numeriek 7-digit) 1-op-1 met `producten.artikelnr`. Artikelen die niet in de masterdata staan (~20%, vermoedelijk grondstoffen/obsolete) worden geimporteerd met `artikelnr=NULL` en snapshot in `artikel_omschrijving`/`karpi_code`.
+
+### Prijslijst-imports
+
+Aanvullende klant-/inkooporganisatie-prijslijsten worden geimporteerd via [`import/import_prijslijsten_aanvulling.py`](../import/import_prijslijsten_aanvulling.py). Het script is dry-run by default en gebruikt [`import/prijslijsten_aanvulling_manifest.json`](../import/prijslijsten_aanvulling_manifest.json) als bestandsmanifest. De debiteurkoppeling komt niet uit fuzzy naammatching maar uit de oorspronkelijke debiteuren-export [`brondata/debiteuren/Karpi_Debiteuren_Import.xlsx`](../brondata/debiteuren/Karpi_Debiteuren_Import.xlsx), kolom `Prijslijst`.
+
+Flow: ZIP-bestand + Excel lezen -> Excel-prijslijstnummer valideren tegen manifest -> actieve debiteuren zoeken met dezelfde oude prijslijstcode -> ontbrekende producten minimaal aanmaken -> `prijslijst_headers` en `prijslijst_regels` upserten -> `debiteuren.prijslijst_nr` zetten. Na elke run schrijft het script een rapport onder `import/rapporten/`.
 
 ### Reststuk tracking
 Na het snijden toont `voltooi_snijplan_rol()` een bevestigingsmodal waarin de gebruiker de restlengte kan aanpassen of kan kiezen om geen reststuk op te slaan. Na bevestiging wordt een reststuk-sticker geprint (rolnummer, kwaliteit, kleur, afmetingen, QR-code, locatieveld). Reststukken worden opgeslagen als nieuwe rol met status 'reststuk', gekoppeld via `oorsprong_rol_id`. Alle voorraadmutaties worden gelogd in `voorraad_mutaties`.
@@ -230,9 +331,12 @@ order.status='Verzonden'
         │    BTW-% uit debiteuren.btw_percentage
         ├─ pdf-lib → Uint8Array (Karpi layout, Courier monospace, A4)
         ├─ Storage.upload('facturen/{debiteur_nr}/FACT-YYYY-NNNN.pdf')
-        ├─ Storage.download('documenten/algemene-voorwaarden-karpi-bv.pdf')
-        ├─ Resend.emails.send(to=debiteur.email_factuur,
-        │    attachments=[factuur-pdf, algemene-voorwaarden])
+        ├─ als EDI actief is voor debiteur:
+        │    bouw Karpi fixed-width INVOIC en INSERT edi_berichten(status='Wachtrij')
+        ├─ als email_factuur gevuld is:
+        │    Storage.download('documenten/algemene-voorwaarden-karpi-bv.pdf')
+        │    Resend.emails.send(to=debiteur.email_factuur,
+        │      attachments=[factuur-pdf, algemene-voorwaarden])
         └─ facturen.status='Verstuurd', factuur_queue.status='done'
 
 Wekelijkse modus (maandag 05:00 UTC):

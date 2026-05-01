@@ -232,23 +232,6 @@ export interface RolGroep {
   inkoop: BesteldInkoopInfo | null
 }
 
-// === Magazijn types ===
-
-export interface MagazijnItem {
-  type: 'op_maat' | 'standaard'
-  snijplan_id: number | null
-  scancode: string | null
-  order_nr: string
-  klant_naam: string
-  product: string
-  kleur: string
-  maat_cm: string
-  m2: number
-  kostprijs: number | null
-  status: string
-  locatie: string | null
-}
-
 // === Planning config ===
 
 export interface PlanningConfig {
