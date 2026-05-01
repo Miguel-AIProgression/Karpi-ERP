@@ -10,6 +10,7 @@ export function usePickShipOrders(params: PickShipParams = {}) {
   return useQuery({
     queryKey: ['pick-ship', 'orders', params],
     queryFn: () => fetchPickShipOrders(params),
+    staleTime: 30_000,
   })
 }
 
@@ -17,6 +18,7 @@ export function usePickShipStats() {
   return useQuery({
     queryKey: ['pick-ship', 'stats'],
     queryFn: () => fetchPickShipStats(),
+    staleTime: 30_000,
   })
 }
 

@@ -7,6 +7,29 @@ import type {
   PickShipRegel,
 } from '@/lib/types/pick-ship'
 
+interface SnijplanningRij {
+  id: number
+  snijplan_nr: string
+  scancode: string | null
+  status: string
+  snij_lengte_cm: number | null
+  snij_breedte_cm: number | null
+  product_omschrijving: string | null
+  kleur_code: string | null
+  snijplan_locatie: string | null
+  order_id: number
+  order_nr: string
+  debiteur_nr: number
+  klant_naam: string
+  afleverdatum: string | null
+}
+
+interface OrderMetaRij {
+  id: number
+  afl_naam: string | null
+  afl_plaats: string | null
+}
+
 export interface PickShipParams {
   /** Optioneel: alleen orders in dit bucket. `undefined` = alle. */
   bucket?: BucketKey
@@ -51,7 +74,7 @@ export async function fetchPickShipOrders(
 
   // Haal afl_naam/afl_plaats apart op (niet in view) -- één extra query op orders.
   const orderIds = Array.from(
-    new Set(((data ?? []) as unknown as Record<string, unknown>[]).map((r) => r.order_id as number))
+    new Set(((data ?? []) as unknown as SnijplanningRij[]).map((r) => r.order_id))
   )
   let orderMeta = new Map<number, { afl_naam: string | null; afl_plaats: string | null }>()
   if (orderIds.length > 0) {
@@ -61,42 +84,42 @@ export async function fetchPickShipOrders(
       .in('id', orderIds)
     if (oerr) throw oerr
     orderMeta = new Map(
-      ((ord ?? []) as unknown as Record<string, unknown>[]).map((o) => [
-        o.id as number,
-        { afl_naam: (o.afl_naam as string) ?? null, afl_plaats: (o.afl_plaats as string) ?? null },
+      ((ord ?? []) as unknown as OrderMetaRij[]).map((o) => [
+        o.id,
+        { afl_naam: o.afl_naam, afl_plaats: o.afl_plaats },
       ])
     )
   }
 
   // Groepeer per order
   const perOrder = new Map<number, PickShipOrder>()
-  for (const row of (data ?? []) as unknown as Record<string, unknown>[]) {
-    const orderId = row.order_id as number
-    const lengte = Number(row.snij_lengte_cm) || 0
-    const breedte = Number(row.snij_breedte_cm) || 0
+  for (const row of (data ?? []) as unknown as SnijplanningRij[]) {
+    const orderId = row.order_id
+    const lengte = row.snij_lengte_cm ?? 0
+    const breedte = row.snij_breedte_cm ?? 0
     const m2 = Math.round(((lengte * breedte) / 10000) * 100) / 100
 
     const regel: PickShipRegel = {
-      snijplan_id: row.id as number,
-      snijplan_nr: row.snijplan_nr as string,
-      scancode: (row.scancode as string) ?? null,
-      product: (row.product_omschrijving as string) ?? '',
-      kleur: (row.kleur_code as string) ?? null,
+      snijplan_id: row.id,
+      snijplan_nr: row.snijplan_nr,
+      scancode: row.scancode ?? null,
+      product: row.product_omschrijving ?? '',
+      kleur: row.kleur_code ?? null,
       maat_cm: `${lengte} x ${breedte}`,
       m2,
-      status: row.status as string,
-      locatie: (row.snijplan_locatie as string) ?? null,
+      status: row.status,
+      locatie: row.snijplan_locatie ?? null,
     }
 
     let order = perOrder.get(orderId)
     if (!order) {
       const meta = orderMeta.get(orderId) ?? { afl_naam: null, afl_plaats: null }
-      const afleverdatum = (row.afleverdatum as string) ?? null
+      const afleverdatum = row.afleverdatum ?? null
       order = {
         order_id: orderId,
-        order_nr: row.order_nr as string,
-        klant_naam: row.klant_naam as string,
-        debiteur_nr: row.debiteur_nr as number,
+        order_nr: row.order_nr,
+        klant_naam: row.klant_naam,
+        debiteur_nr: row.debiteur_nr,
         afl_naam: meta.afl_naam,
         afl_plaats: meta.afl_plaats,
         afleverdatum,
