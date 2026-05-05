@@ -35,6 +35,14 @@ export {
   useLevertijdCheck,
   type UseLevertijdCheckArgs,
 } from './hooks/use-levertijd-check'
+export { useOrderVoorstel } from './hooks/use-order-voorstel'
+export type {
+  OrderVoorstelResult,
+  OrderConceptInput,
+  OrderConceptRegel,
+  OrderVoorstelRegel,
+  OrderVoorstelStatus,
+} from './hooks/use-order-voorstel'
 export { useOrderBewerking } from './hooks/use-order-bewerking'
 
 // Queries — types
