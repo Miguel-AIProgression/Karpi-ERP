@@ -215,16 +215,18 @@ export async function fetchPickShipStats(vandaag: Date = new Date()): Promise<Pi
   return stats
 }
 
-export async function updateMaatwerkLocatie(
+// Atomaire vervanger van `createOrGetMagazijnLocatie + UPDATE snijplannen`.
+// Zie migratie 0183 + ADR-0002.
+export async function setLocatieVoorOrderregel(
   orderRegelId: number,
   locatieCode: string
-): Promise<void> {
-  const { error } = await supabase
-    .from('snijplannen')
-    .update({ locatie: locatieCode })
-    .eq('order_regel_id', orderRegelId)
-    .eq('status', 'Ingepakt')
+): Promise<number> {
+  const { data, error } = await supabase.rpc('set_locatie_voor_orderregel', {
+    p_order_regel_id: orderRegelId,
+    p_code: locatieCode,
+  })
   if (error) throw error
+  return data as number
 }
 
 export async function updateRolLocatieVoorArtikel(

@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   fetchPickShipOrders,
   fetchPickShipStats,
-  updateMaatwerkLocatie,
+  setLocatieVoorOrderregel,
   updateRolLocatieVoorArtikel,
   type PickShipParams,
 } from '../queries/pickbaarheid'
@@ -27,10 +27,8 @@ export function usePickShipStats() {
 export function useUpdateMaatwerkLocatie() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ orderRegelId, code }: { orderRegelId: number; code: string }) => {
-      await createOrGetMagazijnLocatie(code)
-      await updateMaatwerkLocatie(orderRegelId, code)
-    },
+    mutationFn: ({ orderRegelId, code }: { orderRegelId: number; code: string }) =>
+      setLocatieVoorOrderregel(orderRegelId, code),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['pick-ship'] }),
   })
 }

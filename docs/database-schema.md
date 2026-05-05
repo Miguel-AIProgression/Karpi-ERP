@@ -1023,6 +1023,8 @@ Mig 174, aangepast in mig 176. Read-only view die de `/logistiek/vervoerders`-ov
 | `claim_volgende_hst_transportorder() → hst_transportorders` | HST-adapter: pakt oudste `Wachtrij`-rij (`FOR UPDATE SKIP LOCKED`), zet status `Bezig`. Aangeroepen door edge function `hst-send`. Migratie 171. |
 | `markeer_hst_verstuurd(p_id, p_extern_transport_order_id, p_extern_tracking_number, p_request_payload, p_response_payload, p_response_http_code) → VOID` | HST-adapter: na 200-respons. Status → `Verstuurd`; schrijft `track_trace` terug op `zendingen` en promoveert zending-status van `'Klaar voor verzending'` naar `'Onderweg'`. Migratie 171. |
 | `markeer_hst_fout(p_id, p_error, p_request_payload, p_response_payload, p_response_http_code, p_max_retries DEFAULT 3) → VOID` | HST-adapter: incrementeert `retry_count`. Bij `>=` max_retries → status `Fout`, anders terug naar `Wachtrij`. Migratie 171. |
+| `create_or_get_magazijn_locatie(p_code TEXT, p_omschrijving TEXT DEFAULT NULL, p_type TEXT DEFAULT 'rek') → BIGINT` | Idempotent: vindt-of-maakt `magazijn_locaties.id` voor `code` (UPPER+TRIM). Wordt gebruikt door `MagazijnLocatieEdit` (rol-locatie zetten) en `boek_ontvangst`. Migratie 169. |
+| `set_locatie_voor_orderregel(p_order_regel_id INTEGER, p_code TEXT) → BIGINT` | **Atomair**: vindt-of-maakt `magazijn_locaties`-rij voor `code` én zet `snijplannen.locatie = code` voor alle `Ingepakt`-rijen van de orderregel. Vervangt twee opeenvolgende RPC-calls (`createOrGetMagazijnLocatie + UPDATE snijplannen`) in `useUpdateMaatwerkLocatie` — voorkomt dangling `magazijn_locaties`-rijen wanneer de tweede call faalt. Returnt `magazijn_locaties.id`. Migratie 0183 (ADR-0002). |
 
 ### Triggers op order_regels (maatwerk)
 
