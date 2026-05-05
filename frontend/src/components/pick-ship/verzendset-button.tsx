@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Loader2, Printer } from 'lucide-react'
 import { useCreateZendingVoorOrder } from '@/modules/logistiek'
-import type { PickShipOrder } from '@/lib/types/pick-ship'
+import type { PickShipOrder } from '@/modules/magazijn'
 
 interface VerzendsetButtonProps {
   order: PickShipOrder

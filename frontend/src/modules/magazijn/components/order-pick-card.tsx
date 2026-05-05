@@ -1,12 +1,12 @@
 import { Link } from 'react-router-dom'
 import { CheckCircle2, Clock, ExternalLink } from 'lucide-react'
 import { LocatieEdit } from './locatie-edit'
-import { VerzendsetButton } from './verzendset-button'
+import { VerzendsetButton } from '@/components/pick-ship/verzendset-button'
 import { VervoerderTag } from '@/modules/logistiek'
 import { formatDate } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
 import { ORDER_STATUS_COLORS } from '@/lib/utils/constants'
-import type { PickShipOrder, PickShipWachtOp } from '@/lib/types/pick-ship'
+import type { PickShipOrder, PickShipWachtOp } from '../lib/types'
 
 const WACHT_OP_LABEL: Record<NonNullable<PickShipWachtOp>, string> = {
   snijden: 'Wacht op snijden',

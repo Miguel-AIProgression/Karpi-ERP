@@ -5,8 +5,8 @@ import {
   updateMaatwerkLocatie,
   updateRolLocatieVoorArtikel,
   type PickShipParams,
-} from '@/lib/supabase/queries/pick-ship'
-import { createOrGetMagazijnLocatie } from '@/lib/supabase/queries/magazijn-locaties'
+} from '../queries/pickbaarheid'
+import { createOrGetMagazijnLocatie } from '../queries/magazijn-locaties'
 
 export function usePickShipOrders(params: PickShipParams = {}) {
   return useQuery({

@@ -1,6 +1,6 @@
 import { MagazijnLocatieEdit } from './magazijn-locatie-edit'
-import { useUpdateMaatwerkLocatie, useUpdateRolLocatie } from '@/hooks/use-pick-ship'
-import type { PickShipRegel } from '@/lib/types/pick-ship'
+import { useUpdateMaatwerkLocatie, useUpdateRolLocatie } from '../hooks/use-pick-ship'
+import type { PickShipRegel } from '../lib/types'
 
 interface Props {
   regel: PickShipRegel

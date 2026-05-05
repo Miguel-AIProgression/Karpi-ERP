@@ -1,4 +1,4 @@
-import { bucketVoor } from '@/lib/utils/pick-ship-buckets'
+import { bucketVoor } from '../lib/buckets'
 import { sanitizeSearch } from '@/lib/utils/sanitize'
 import type {
   PickShipBron,
@@ -6,7 +6,7 @@ import type {
   PickShipRegel,
   VervoerderSelectieStatus,
   PickShipWachtOp,
-} from '@/lib/types/pick-ship'
+} from '../lib/types'
 
 export interface PickbaarheidRij {
   order_regel_id: number

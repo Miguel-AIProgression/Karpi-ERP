@@ -1,9 +1,9 @@
-import { supabase } from '../client'
+import { supabase } from '@/lib/supabase/client'
 import type {
   BucketKey,
   PickShipOrder,
   VervoerderSelectieStatus,
-} from '@/lib/types/pick-ship'
+} from '../lib/types'
 import {
   chunks,
   comparePickShipOrders,

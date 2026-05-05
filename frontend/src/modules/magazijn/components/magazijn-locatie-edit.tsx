@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Check, Pencil, X } from 'lucide-react'
-import { useMagazijnLocaties } from '@/hooks/use-magazijn-locaties'
+import { useMagazijnLocaties } from '../hooks/use-magazijn-locaties'
 
 interface Props {
   /** Huidige locatie-code (text voor maatwerk; ML.code voor rol). NULL = niet ingesteld. */

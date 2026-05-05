@@ -1,4 +1,4 @@
-import type { BucketKey } from '@/lib/types/pick-ship'
+import type { BucketKey } from './types'
 
 /** Geeft maandag van de ISO-week waarin `d` valt (lokale tijd, midnacht). */
 function isoMaandag(d: Date): Date {
