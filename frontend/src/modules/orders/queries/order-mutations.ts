@@ -1,4 +1,4 @@
-import { supabase } from '../client'
+import { supabase } from '@/lib/supabase/client'
 
 export interface OrderFormData {
   debiteur_nr: number

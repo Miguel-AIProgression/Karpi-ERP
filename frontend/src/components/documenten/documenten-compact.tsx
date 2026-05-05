@@ -7,7 +7,7 @@ import {
   useDocumenten,
   useUploadDocument,
   useDeleteDocument,
-} from '@/hooks/use-documenten'
+} from '@/modules/orders/hooks/use-documenten'
 import { getDocumentSignedUrl, type DocumentItem, type DocumentKind } from '@/lib/supabase/queries/documenten'
 
 interface Props {

@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- utility function and type are co-located with the component that defines the filter options */
 import { cn } from '@/lib/utils/cn'
 import { CalendarDays } from 'lucide-react'
 

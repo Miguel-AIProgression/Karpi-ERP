@@ -2,15 +2,15 @@ import { useMemo, Fragment, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Factory, Scissors } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { useConfectiePlanningForward } from '@/hooks/use-confectie-planning'
+import { useConfectiePlanningForward } from '@/modules/planning/hooks/use-confectie-planning'
 import { ConfectieTabs } from './confectie-planning'
 import { cn } from '@/lib/utils/cn'
-import { confectieDeadline } from '@/lib/utils/confectie-deadline'
+import { confectieDeadline } from '@/modules/planning/lib/confectie-deadline'
 import { AlertTriangle } from 'lucide-react'
 import { AFWERKING_MAP, AFWERKING_OPTIES, SNIJPLAN_STATUS_COLORS } from '@/lib/utils/constants'
 import { getVormDisplay } from '@/lib/utils/vorm-labels'
 import type { SnijplanRow } from '@/lib/types/productie'
-import type { ConfectiePlanningForwardRow } from '@/lib/supabase/queries/confectie-planning'
+import type { ConfectiePlanningForwardRow } from '@/modules/planning/queries/confectie-planning'
 
 /** Label voor afwerking-code of fallback tekst */
 function afwerkingLabel(code: string | null): string {

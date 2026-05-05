@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { formatDate, formatCurrency } from '@/lib/utils/formatters'
-import type { OrderDetail } from '@/lib/supabase/queries/orders'
+import type { OrderDetail } from '@/modules/orders/queries/orders'
 
 interface OrderHeaderProps {
   order: OrderDetail

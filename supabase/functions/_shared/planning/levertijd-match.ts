@@ -1,7 +1,7 @@
 // Stap 1 van real-time levertijd-check: zoek bestaande rol-planning waar het
 // nieuwe stuk nog op past. Hergebruikt FFDH `tryPlacePiece` voor scoring.
 
-import { tryPlacePiece, type Shelf, type SnijplanPiece } from './ffdh-packing.ts'
+import { tryPlacePiece, type Shelf, type SnijplanPiece } from '../ffdh-packing.ts'
 import type {
   KandidaatRol,
   MatchResult,

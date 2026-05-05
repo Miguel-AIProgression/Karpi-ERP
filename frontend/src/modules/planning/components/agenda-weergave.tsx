@@ -1,9 +1,9 @@
 import { useMemo } from 'react'
 import { AlertTriangle, Calendar } from 'lucide-react'
-import { useAlleSnijden } from '@/hooks/use-snijplanning'
-import { usePlanningConfig } from '@/hooks/use-planning-config'
-import { berekenTotDatum } from '@/components/snijplanning/week-filter'
-import { berekenAgenda, type RolBlok, type Werktijden } from '@/lib/utils/bereken-agenda'
+import { useAlleSnijden } from '@/modules/planning/hooks/use-snijplanning'
+import { usePlanningConfig } from '@/modules/planning/hooks/use-planning-config'
+import { berekenTotDatum } from '@/modules/planning/components/week-filter'
+import { berekenAgenda, type RolBlok, type Werktijden } from '@/modules/planning/lib/bereken-agenda'
 import { WerktijdenConfig, useWerktijden } from '@/components/werkagenda/werktijden-config'
 import { cn } from '@/lib/utils/cn'
 

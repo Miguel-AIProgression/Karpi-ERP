@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { ArrowRightLeft, Package } from 'lucide-react'
 import {
   fetchEquivalenteProducten,
-} from '@/lib/supabase/queries/product-equivalents'
+} from '@/modules/orders/queries/product-equivalents'
 
 export interface UitwisselbaarKeuze {
   artikelnr: string

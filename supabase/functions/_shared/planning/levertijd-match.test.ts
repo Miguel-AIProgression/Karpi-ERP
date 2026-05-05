@@ -14,7 +14,7 @@ import {
   leverdatumVoorSnijDatum,
 } from './levertijd-match.ts'
 import type { KandidaatRol, PlanRecord, RolMatchKandidaat } from './levertijd-types.ts'
-import type { SnijplanPiece } from './ffdh-packing.ts'
+import type { SnijplanPiece } from '../ffdh-packing.ts'
 
 // ---------------------------------------------------------------------------
 // Test helpers

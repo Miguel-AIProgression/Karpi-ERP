@@ -51,7 +51,7 @@ function useQrSvg(text: string): string {
   }, [text])
 }
 
-export function StickerLayout({ snijplan, label: _label }: StickerLayoutProps) {
+export function StickerLayout({ snijplan }: StickerLayoutProps) {
   const qrSvg = useQrSvg(snijplan.scancode)
 
   return (

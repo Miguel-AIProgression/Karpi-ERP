@@ -6,7 +6,7 @@ project_id = "wqzeevfobwauxkalagtn"
 # Alle onderstaande functies gebruiken intern de SERVICE_ROLE_KEY voor
 # DB-toegang en lezen geen user-JWT, dus gateway-check is overbodig.
 
-[functions.check-levertijd]
+[functions.planning-simuleer-levertijd]
 verify_jwt = false
 
 [functions.auto-plan-groep]

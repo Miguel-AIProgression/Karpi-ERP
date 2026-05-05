@@ -2,9 +2,9 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { AFWERKING_OPTIES } from '@/lib/utils/constants'
-import { updateRegelAfwerking } from '@/lib/supabase/queries/order-mutations'
+import { updateRegelAfwerking } from '@/modules/orders/queries/order-mutations'
 import { isAfwerkingEditable } from '@/lib/utils/order-lock'
-import type { OrderRegel } from '@/lib/supabase/queries/orders'
+import type { OrderRegel } from '@/modules/orders/queries/orders'
 
 interface Props {
   orderId: number

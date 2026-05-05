@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { fetchMaatwerkLevertijdHint } from '@/lib/supabase/queries/op-maat'
+import { fetchMaatwerkLevertijdHint } from '@/modules/orders/queries/op-maat'
 
 interface Props {
   kwaliteitCode: string | null | undefined

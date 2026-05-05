@@ -11,7 +11,7 @@
 // ongewijzigd — een hardere constraint in findBestPlacement raakt scoring en
 // fallback-paden en is een apart traject.
 
-import type { Placement } from './ffdh-packing.ts'
+import type { Placement } from '../ffdh-packing.ts'
 
 // Moet gelijk zijn aan BAND_STEP in rol-uitvoer-modal.tsx zodat frontend en
 // backend dezelfde shelves afleiden.

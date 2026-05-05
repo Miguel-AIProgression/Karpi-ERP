@@ -40,6 +40,7 @@ export function ClientSelector({ value, onChange, disabled }: ClientSelectorProp
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting results when search is too short
     if (!search || search.length < 2) { setResults([]); return }
     const s = sanitizeSearch(search)
     if (!s) return

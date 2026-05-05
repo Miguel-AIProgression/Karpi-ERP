@@ -4,9 +4,9 @@ import { formatCurrency } from '@/lib/utils/formatters'
 import { SNIJPLAN_STATUS_COLORS, AFWERKING_MAP } from '@/lib/utils/constants'
 import { getVormDisplay } from '@/lib/utils/vorm-labels'
 import { isoWeekFromString } from '@/lib/utils/iso-week'
-import type { OrderRegel } from '@/lib/supabase/queries/orders'
-import type { OrderRegelLevertijd, OrderClaim } from '@/lib/supabase/queries/reserveringen'
-import { LevertijdBadge } from './levertijd-badge'
+import type { OrderRegel } from '@/modules/orders/queries/orders'
+import type { OrderRegelLevertijd, OrderClaim } from '@/modules/orders/queries/reserveringen'
+import { LevertijdBadge } from '@/modules/planning'
 
 function formatMaat(regel: OrderRegel): string {
   const l = regel.maatwerk_lengte_cm

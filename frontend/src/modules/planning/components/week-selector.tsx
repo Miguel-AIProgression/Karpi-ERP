@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- type and constant are co-located with the component that uses them */
 // frontend/src/components/confectie/week-selector.tsx
 import { cn } from '@/lib/utils/cn'
 

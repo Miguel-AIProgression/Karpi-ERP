@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Settings } from 'lucide-react'
-import { STANDAARD_WERKTIJDEN, type Werktijden } from '@/lib/utils/bereken-agenda'
+import { STANDAARD_WERKTIJDEN, type Werktijden } from '@/modules/planning/lib/bereken-agenda'
 import { cn } from '@/lib/utils/cn'
 
 const STORAGE_KEY = 'karpi.werkagenda.werktijden'

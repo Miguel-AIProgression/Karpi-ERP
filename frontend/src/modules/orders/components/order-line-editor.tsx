@@ -1,13 +1,13 @@
 import { useRef } from 'react'
 import { Trash2 } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils/formatters'
-import { berekenPrijsOppervlakM2 } from '@/lib/utils/maatwerk-prijs'
+import { berekenPrijsOppervlakM2 } from '@/modules/orders/lib/maatwerk-prijs'
 import { AFWERKING_OPTIES } from '@/lib/utils/constants'
 import { KwaliteitFirstSelector } from './kwaliteit-first-selector'
 import { UitwisselbaarTekortHint } from './uitwisselbaar-tekort-hint'
 import { getVormDisplay } from '@/lib/utils/vorm-labels'
 import type { SelectedArticle, SubstitutionInfo } from './article-selector'
-import type { OrderRegelFormData } from '@/lib/supabase/queries/order-mutations'
+import type { OrderRegelFormData } from '@/modules/orders/queries/order-mutations'
 import { SHIPPING_PRODUCT_ID } from '@/lib/constants/shipping'
 import { berekenRegelDekking } from '@/lib/utils/regel-dekking'
 
@@ -429,6 +429,7 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr,
               </tr>
             </thead>
             <tbody>
+              {/* eslint-disable-next-line react-hooks/refs -- stable ref used for stable key generation; does not affect render output */}
               {lines.map((line, i) => (
                 <MaatwerkLineRow
                   key={getKey(i)}

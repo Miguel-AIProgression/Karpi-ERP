@@ -1,4 +1,4 @@
-import type { OrderRegelFormData } from '@/lib/supabase/queries/order-mutations'
+import type { OrderRegelFormData } from '@/modules/orders/queries/order-mutations'
 import { SHIPPING_PRODUCT_ID } from '@/lib/constants/shipping'
 
 export interface RegelDekking {

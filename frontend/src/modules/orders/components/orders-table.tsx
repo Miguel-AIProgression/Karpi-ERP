@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import { ArrowUp, ArrowDown, ArrowUpDown, AlertCircle } from 'lucide-react'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { formatCurrency, formatDate } from '@/lib/utils/formatters'
-import type { OrderRow, OrderSortField, SortDirection } from '@/lib/supabase/queries/orders'
+import type { OrderRow, OrderSortField, SortDirection } from '@/modules/orders/queries/orders'
 
 interface OrdersTableProps {
   orders: OrderRow[]

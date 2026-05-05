@@ -10,7 +10,7 @@ import {
   fetchAfwerkingVoorKleur,
   setStandaardAfwerking,
   setAfwerkingVoorKleur,
-} from '@/lib/supabase/queries/op-maat'
+} from '@/modules/orders/queries/op-maat'
 import type { ProductType } from '@/lib/supabase/queries/producten'
 
 const PRODUCT_TYPES: { value: ProductType; label: string }[] = [

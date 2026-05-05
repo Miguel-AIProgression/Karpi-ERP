@@ -3,7 +3,7 @@
 
 import { assertEquals } from 'https://deno.land/std@0.168.0/testing/asserts.ts'
 import { validateShelfMesLimiet, type RolPlacementsInput } from './shelf-mes-validator.ts'
-import type { Placement } from './ffdh-packing.ts'
+import type { Placement } from '../ffdh-packing.ts'
 
 function placement(id: number, x: number, y: number, lengte: number, breedte: number): Placement {
   return {

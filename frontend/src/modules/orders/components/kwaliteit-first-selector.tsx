@@ -15,19 +15,19 @@ import {
   fetchKwaliteitM2Prijs,
   type KwaliteitOptie,
   type KleurOptie,
-} from '@/lib/supabase/queries/op-maat'
+} from '@/modules/orders/queries/op-maat'
 import { VormAfmetingSelector, type VormAfmetingData } from './vorm-afmeting-selector'
 import { SubstitutionPicker } from './substitution-picker'
 import {
   berekenPrijsOppervlakM2,
   berekenMaatwerkPrijs,
   berekenMaatwerkGewicht,
-} from '@/lib/utils/maatwerk-prijs'
+} from '@/modules/orders/lib/maatwerk-prijs'
 import { formatCurrency } from '@/lib/utils/formatters'
 import type { SelectedArticle, SubstitutionInfo } from './article-selector'
-import { lookupPrice } from '@/lib/supabase/queries/order-mutations'
-import type { OrderRegelFormData } from '@/lib/supabase/queries/order-mutations'
-import type { EquivalentProduct } from '@/lib/supabase/queries/product-equivalents'
+import { lookupPrice } from '@/modules/orders/queries/order-mutations'
+import type { OrderRegelFormData } from '@/modules/orders/queries/order-mutations'
+import type { EquivalentProduct } from '@/modules/orders/queries/product-equivalents'
 
 type Step = 'kwaliteit' | 'maten' | 'op_maat'
 
@@ -148,17 +148,6 @@ export function KwaliteitFirstSelector({
     enabled: !!selectedKwaliteit && step === 'op_maat',
   })
 
-  // ── Auto-selecteer kleur vanuit kleurHint zodra kleuren geladen zijn ──
-  useEffect(() => {
-    if (!kleurHint || beschikbareKleuren.length === 0 || selectedKleurCode) return
-    const hint = normalizeKleur(kleurHint)
-    const match = beschikbareKleuren.find((k) => normalizeKleur(k.kleur_code) === hint || normalizeKleur(k.kleur_label) === hint)
-    if (match) {
-      setSelectedKleurCode(match.kleur_code)
-      setSelectedKleur(match)
-    }
-  }, [kleuren, kleurHint, selectedKleurCode])
-
   // ── Zoekterm (live, voor hint-weergave) ──────────────────────
   const { kwaliteitTerm, kleurHint: parsedKleurHint } = useMemo(
     () => parseSearch(search),
@@ -216,6 +205,18 @@ export function KwaliteitFirstSelector({
 
   const hasOpMaat = beschikbareKleuren.length > 0
 
+  // ── Auto-selecteer kleur vanuit kleurHint zodra kleuren geladen zijn ──
+  useEffect(() => {
+    if (!kleurHint || beschikbareKleuren.length === 0 || selectedKleurCode) return
+    const hint = normalizeKleur(kleurHint)
+    const match = beschikbareKleuren.find((k) => normalizeKleur(k.kleur_code) === hint || normalizeKleur(k.kleur_label) === hint)
+    if (match) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- selecting colour after async kleuren data arrives
+      setSelectedKleurCode(match.kleur_code)
+      setSelectedKleur(match)
+    }
+  }, [beschikbareKleuren, kleurHint, selectedKleurCode])
+
   // ── Klantspecifieke m²-prijs ophalen uit prijslijst ──────────
   // Maatwerk heeft een apart artikel met 'maatwerk' in de omschrijving
   // (bijv. DANT23MAATWERK, LORA13MAATWERK). Zoek dat direct in de DB.
@@ -231,18 +232,10 @@ export function KwaliteitFirstSelector({
       kleur.kleur_code,
     )
     const artikelnr = maatwerkArtikelNr ?? kleur.artikelnr
-    console.log('[maatwerk prijs]', {
-      kwaliteit: selectedKwaliteit.code,
-      kleur: kleur.kleur_code,
-      prijslijstNr,
-      maatwerkArtikelNr,
-      artikelnr,
-    })
 
     // 1. Klant-prijslijst heeft voorrang (indien klant een prijslijst heeft)
     if (prijslijstNr && artikelnr) {
       const prijs = await lookupPrice(prijslijstNr, artikelnr)
-      console.debug('[maatwerk prijs] prijslijst lookup:', { artikelnr, prijs })
       if (prijs != null) {
         setKlantM2Prijs(prijs)
         return
@@ -259,7 +252,6 @@ export function KwaliteitFirstSelector({
         .eq('artikelnr', artikelnr)
         .maybeSingle()
       if (prodData?.verkoopprijs != null) {
-        console.debug('[maatwerk prijs] product verkoopprijs fallback:', prodData.verkoopprijs)
         setKlantM2Prijs(prodData.verkoopprijs)
         return
       }
@@ -267,27 +259,27 @@ export function KwaliteitFirstSelector({
 
     // 3. Generieke kwaliteits-m²-prijs uit maatwerk_m2_prijzen (laatste redmiddel)
     const kwaliteitPrijs = await fetchKwaliteitM2Prijs(selectedKwaliteit.code)
-    console.log('[maatwerk prijs] kwaliteit fallback:', kwaliteitPrijs)
     setKlantM2Prijs(kwaliteitPrijs)
   }, [prijslijstNr, selectedKwaliteit])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting price before async lookup
     setKlantM2Prijs(null)
     if (selectedKleur) {
-      fetchKlantPrijs(selectedKleur).catch((e) => console.error('[maatwerk prijs] fout:', e))
+      fetchKlantPrijs(selectedKleur).catch(console.error)
     }
   }, [selectedKleur, fetchKlantPrijs])
 
   // Standaard bandkleur ophalen zodra kwaliteit + kleur bekend zijn
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting band colour before async lookup
     setStandaardBandKleur(null)
     if (!selectedKwaliteit || !selectedKleur) return
     fetchStandaardBandKleur(selectedKwaliteit.code, selectedKleur.kleur_code)
       .then((r) => {
-        console.log('[bandkleur]', selectedKwaliteit.code, selectedKleur.kleur_code, r)
         setStandaardBandKleur(r ? [r.band_merk ?? 'Piero', r.band_omschrijving, r.band_kleur].filter(Boolean).join(' ') : null)
       })
-      .catch((e) => console.error('[bandkleur error]', e))
+      .catch(console.error)
   }, [selectedKwaliteit, selectedKleur])
 
   // Uitwisselbaar-modus: eigen kleur heeft geen rollen maar een uitwisselbare

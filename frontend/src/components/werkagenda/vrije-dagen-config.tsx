@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { CalendarOff, Plus, Trash2 } from 'lucide-react'
-import type { Werktijden, FeestdagVrij } from '@/lib/utils/bereken-agenda'
+import type { Werktijden, FeestdagVrij } from '@/modules/planning/lib/bereken-agenda'
 
 interface Props {
   werktijden: Werktijden

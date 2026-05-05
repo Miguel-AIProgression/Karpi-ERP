@@ -162,12 +162,12 @@ export function useOrderVoorstel(concept: OrderConceptInput | null) {
 
   useEffect(() => {
     if (!enabled) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting debounced when concept becomes invalid
       setDebounced(null)
       return
     }
     const t = setTimeout(() => setDebounced(hash), DEBOUNCE_MS)
     return () => clearTimeout(t)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hash, enabled])
 
   return useQuery<OrderVoorstelResult, Error>({

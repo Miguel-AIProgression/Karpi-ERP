@@ -15,14 +15,14 @@ import {
   fetchAfwerkingTypes,
   fetchStandaardAfwerking,
   fetchStandaardBandKleur,
-} from '@/lib/supabase/queries/op-maat'
+} from '@/modules/orders/queries/op-maat'
 import {
   berekenPrijsOppervlakM2,
   berekenMaatwerkPrijs,
   berekenMaatwerkGewicht,
-} from '@/lib/utils/maatwerk-prijs'
+} from '@/modules/orders/lib/maatwerk-prijs'
 import { formatCurrency } from '@/lib/utils/formatters'
-import type { OrderRegelFormData } from '@/lib/supabase/queries/order-mutations'
+import type { OrderRegelFormData } from '@/modules/orders/queries/order-mutations'
 
 // ─── State & Actions ────────────────────────────────────────────
 

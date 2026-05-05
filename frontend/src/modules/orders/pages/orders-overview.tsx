@@ -2,10 +2,10 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Plus, Search } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { StatusTabs } from '@/components/orders/status-tabs'
-import { OrdersTable } from '@/components/orders/orders-table'
-import { useOrders, useStatusCounts } from '@/hooks/use-orders'
-import type { OrderSortField, SortDirection } from '@/lib/supabase/queries/orders'
+import { StatusTabs } from '@/modules/orders/components/status-tabs'
+import { OrdersTable } from '@/modules/orders/components/orders-table'
+import { useOrders, useStatusCounts } from '@/modules/orders/hooks/use-orders'
+import type { OrderSortField, SortDirection } from '@/modules/orders/queries/orders'
 
 export function OrdersOverviewPage() {
   const [status, setStatus] = useState('Alle')

@@ -2,18 +2,18 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Calendar, List, Sticker } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { AfrondModal } from '@/components/confectie/afrond-modal'
-import { WeekSelector, type HorizonWeken } from '@/components/confectie/week-selector'
-import { WeekLijst } from '@/components/confectie/week-lijst'
-import { isoWeekKey } from '@/lib/utils/confectie-forward-planner'
-import { useConfectiePlanningForward, useConfectieWerktijden } from '@/hooks/use-confectie-planning'
+import { AfrondModal } from '@/modules/planning/components/afrond-modal'
+import { WeekSelector, type HorizonWeken } from '@/modules/planning/components/week-selector'
+import { WeekLijst } from '@/modules/planning/components/week-lijst'
+import { isoWeekKey } from '@/modules/planning/lib/confectie-forward-planner'
+import { useConfectiePlanningForward, useConfectieWerktijden } from '@/modules/planning/hooks/use-confectie-planning'
 import { formatDate } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
 import type {
   ConfectiePlanningRow,
   ConfectiePlanningForwardRow,
   ConfectieWerktijd,
-} from '@/lib/supabase/queries/confectie-planning'
+} from '@/modules/planning/queries/confectie-planning'
 
 export function ConfectiePlanningPage() {
   const [horizon, setHorizon] = useState<HorizonWeken>(4)

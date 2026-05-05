@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import { CapaciteitBalk } from '../capaciteit-balk'
+import { CapaciteitBalk } from './capaciteit-balk'
 
 describe('CapaciteitBalk', () => {
   it('toont groen bij <80% bezetting', () => {

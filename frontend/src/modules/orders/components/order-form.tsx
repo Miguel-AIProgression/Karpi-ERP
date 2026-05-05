@@ -4,15 +4,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ClientSelector, type SelectedClient } from './client-selector'
 import { AddressSelector } from './address-selector'
 import { OrderLineEditor } from './order-line-editor'
-import { LevertijdSuggestie } from './levertijd-suggestie'
+import { LevertijdSuggestie } from '@/modules/planning'
 import { LeverModusDialog, type LeverModusTekort } from './lever-modus-dialog'
-import type { LeverModus } from '@/lib/supabase/queries/reserveringen'
+import type { LeverModus } from '@/modules/orders/queries/reserveringen'
 import { berekenRegelDekking } from '@/lib/utils/regel-dekking'
-import { createOrder, updateOrderWithLines, deleteOrder, lookupPrice, fetchKlanteigenNaam, fetchKlantArtikelnummer, setUitwisselbaarClaims } from '@/lib/supabase/queries/order-mutations'
-import type { OrderFormData, OrderRegelFormData } from '@/lib/supabase/queries/order-mutations'
+import { createOrder, updateOrderWithLines, deleteOrder, lookupPrice, fetchKlanteigenNaam, fetchKlantArtikelnummer, setUitwisselbaarClaims } from '@/modules/orders/queries/order-mutations'
+import type { OrderFormData, OrderRegelFormData } from '@/modules/orders/queries/order-mutations'
 import { supabase } from '@/lib/supabase/client'
 import { fetchOrderConfig, type OrderConfig } from '@/lib/supabase/queries/order-config'
-import { triggerAutoplan, fetchAutoplanningConfig } from '@/lib/supabase/queries/auto-planning'
+import { triggerAutoplan, fetchAutoplanningConfig } from '@/modules/planning/queries/auto-planning'
 import { berekenAfleverdatum } from '@/lib/utils/afleverdatum'
 import { SHIPPING_PRODUCT_ID, SHIPPING_THRESHOLD, SHIPPING_COST } from '@/lib/constants/shipping'
 import { SPOED_PRODUCT_ID, SPOED_FALLBACK_BEDRAG } from '@/lib/constants/spoed'
@@ -72,6 +72,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
       if (prev.prijslijst_nr === incoming.prijslijst_nr && prev.korting_pct === incoming.korting_pct) return prev
       return { ...prev, prijslijst_nr: incoming.prijslijst_nr, korting_pct: incoming.korting_pct }
     })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally watching specific fields only
   }, [mode, initialData?.client?.prijslijst_nr, initialData?.client?.korting_pct])
 
   const { data: orderConfig } = useQuery({ queryKey: ['order-config'], queryFn: fetchOrderConfig })

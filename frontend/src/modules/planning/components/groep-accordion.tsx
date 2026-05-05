@@ -6,12 +6,12 @@ import { formatDate } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
 import { AFWERKING_MAP } from '@/lib/utils/constants'
 import { getVormDisplay } from '@/lib/utils/vorm-labels'
-import { useSnijplannenVoorGroep, useGenereerSnijvoorstel, useGoedgekeurdVoorstel, useTriggerAutoplan, useRolLocaties } from '@/hooks/use-snijplanning'
-import { usePlanningConfig } from '@/hooks/use-planning-config'
+import { useSnijplannenVoorGroep, useGenereerSnijvoorstel, useGoedgekeurdVoorstel, useTriggerAutoplan, useRolLocaties } from '@/modules/planning/hooks/use-snijplanning'
+import { usePlanningConfig } from '@/modules/planning/hooks/use-planning-config'
 import { SnijvoorstelModal } from './snijvoorstel-modal'
-import { buildPlanFromStukken, groepeerStukkenPerRol, type RolGroep } from '@/lib/utils/snijplan-mapping'
+import { buildPlanFromStukken, groepeerStukkenPerRol, type RolGroep } from '@/modules/planning/lib/snijplan-mapping'
 import type { SnijplanRow, SnijvoorstelResponse } from '@/lib/types/productie'
-import type { TekortAnalyseRow } from '@/lib/supabase/queries/snijplanning'
+import type { TekortAnalyseRow } from '@/modules/planning/queries/snijplanning'
 
 interface GroepAccordionProps {
   kwaliteitCode: string

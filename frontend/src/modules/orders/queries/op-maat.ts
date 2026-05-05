@@ -1,4 +1,4 @@
-import { supabase } from '../client'
+import { supabase } from '@/lib/supabase/client'
 
 // === Vormen ===
 
@@ -257,13 +257,12 @@ export async function fetchStandaardBandKleur(
 
   // 1. Directe lookup
   for (const kc of kleurVariants) {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('maatwerk_band_defaults')
       .select('band_merk, band_kleur, band_omschrijving')
       .eq('kwaliteit_code', kwaliteitCode)
       .eq('kleur_code', kc)
       .maybeSingle()
-    console.log('[band query]', kwaliteitCode, kc, data, error)
     if (data) return data as BandDefault
   }
 

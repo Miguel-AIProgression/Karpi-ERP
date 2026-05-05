@@ -1,4 +1,4 @@
-import { supabase } from '../client'
+import { supabase } from '@/lib/supabase/client'
 import type { PlanningConfig } from '@/lib/types/productie'
 
 const CONFIG_KEY = 'productie_planning'

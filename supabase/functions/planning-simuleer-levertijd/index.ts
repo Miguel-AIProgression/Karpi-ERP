@@ -19,19 +19,19 @@ import {
   snijDatumVoorRol,
   kiesBesteMatch,
   plusKalenderDagen,
-} from '../_shared/levertijd-match.ts'
+} from '../_shared/planning/levertijd-match.ts'
 import {
   capaciteitsCheck,
   snijWeekVoorLever,
   backlogIsVoldoende,
-} from '../_shared/levertijd-capacity.ts'
-import { resolveScenario } from '../_shared/levertijd-resolver.ts'
+} from '../_shared/planning/levertijd-capacity.ts'
+import { resolveScenario } from '../_shared/planning/levertijd-resolver.ts'
 import {
   berekenSnijAgenda,
   STANDAARD_WERKTIJDEN,
   type RolAgendaInput,
 } from '../_shared/werkagenda.ts'
-import { evalueerSpoed } from '../_shared/spoed-check.ts'
+import { evalueerSpoed } from '../_shared/planning/spoed-check.ts'
 import type {
   CheckLevertijdRequest,
   CheckLevertijdResponse,
@@ -39,7 +39,7 @@ import type {
   LevertijdConfig,
   PlanRecord,
   RolMatchKandidaat,
-} from '../_shared/levertijd-types.ts'
+} from '../_shared/planning/levertijd-types.ts'
 import type { SnijplanPiece } from '../_shared/ffdh-packing.ts'
 
 const corsHeaders = {

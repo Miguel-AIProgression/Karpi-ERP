@@ -38,20 +38,22 @@ export function ArticleSelector({ onSelect }: ArticleSelectorProps) {
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting results when search is too short
     if (!search || search.length < 2) { setResults([]); return }
     const s = sanitizeSearch(search)
     if (!s) return
 
     const timer = setTimeout(async () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let query = applyProductSearch(
-        supabase
+      // Supabase query builder type is too complex for the generic applyProductSearch helper
+      /* eslint-disable @typescript-eslint/no-explicit-any */
+      const query = applyProductSearch(supabase
           .from('producten')
           .select('artikelnr, karpi_code, omschrijving, verkoopprijs, gewicht_kg, vrije_voorraad, besteld_inkoop, kwaliteit_code, product_type')
           .eq('actief', true)
           .neq('artikelnr', 'VERZEND') as any,
         search
       )
+      /* eslint-enable @typescript-eslint/no-explicit-any */
       const { data } = await query.order('omschrijving').limit(500)
       const filtered = filterProductsWordBoundary((data ?? []) as SelectedArticle[], search).slice(0, 50)
 

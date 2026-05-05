@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Zap, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
-import { useAutoplanningConfig, useUpdateAutoplanningConfig } from '@/hooks/use-snijplanning'
+import { useAutoplanningConfig, useUpdateAutoplanningConfig } from '@/modules/planning/hooks/use-snijplanning'
 
 export function AutoPlanningConfig() {
   const { data: config, isLoading } = useAutoplanningConfig()
@@ -11,6 +11,7 @@ export function AutoPlanningConfig() {
 
   useEffect(() => {
     if (config) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- initialising local toggle state from server config
       setEnabled(config.enabled)
     }
   }, [config])

@@ -1,8 +1,8 @@
-// Wrapper rond de check-levertijd edge function.
+// Wrapper rond de planning-simuleer-levertijd edge function.
 // Houdt request/response shape gesynchroniseerd met
 // supabase/functions/_shared/levertijd-types.ts.
 
-import { supabase } from '../client'
+import { supabase } from '@/lib/supabase/client'
 
 export type LevertijdScenario =
   | 'match_bestaande_rol'
@@ -72,7 +72,7 @@ export interface CheckLevertijdResponse {
 }
 
 export async function checkLevertijd(req: CheckLevertijdRequest): Promise<CheckLevertijdResponse> {
-  const { data, error } = await supabase.functions.invoke('check-levertijd', { body: req })
+  const { data, error } = await supabase.functions.invoke('planning-simuleer-levertijd', { body: req })
 
   if (error) {
     let msg = error.message

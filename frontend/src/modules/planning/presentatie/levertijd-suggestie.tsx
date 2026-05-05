@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { cn } from '@/lib/utils/cn'
-import { useLevertijdCheck } from '@/hooks/use-levertijd-check'
-import type { CheckLevertijdResponse, LevertijdScenario, SpoedDetails } from '@/lib/supabase/queries/levertijd'
+import { useLevertijdCheck } from '@/modules/orders/hooks/use-levertijd-check'
+import type { CheckLevertijdResponse, LevertijdScenario, SpoedDetails } from '@/modules/orders/queries/levertijd'
 
 interface LevertijdSuggestieProps {
   kwaliteitCode?: string | null

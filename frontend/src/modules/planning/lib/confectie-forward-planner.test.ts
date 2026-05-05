@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { groepeerPerLaneEnWeek, bezettingPerWeek } from '../confectie-forward-planner'
-import type { ConfectiePlanningForwardRow } from '@/lib/supabase/queries/confectie-planning'
+import { groepeerPerLaneEnWeek, bezettingPerWeek } from './confectie-forward-planner'
+import type { ConfectiePlanningForwardRow } from '@/modules/planning/queries/confectie-planning'
 
 const basisRow: ConfectiePlanningForwardRow = {
   snijplan_id: 1,

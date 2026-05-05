@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { X, CheckCircle2, Package } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
-import { useAfrondConfectie } from '@/hooks/use-confectie-planning'
-import type { ConfectiePlanningRow } from '@/lib/supabase/queries/confectie-planning'
+import { useAfrondConfectie } from '@/modules/planning/hooks/use-confectie-planning'
+import type { ConfectiePlanningRow } from '@/modules/planning/queries/confectie-planning'
 
 interface Props {
   stuk: ConfectiePlanningRow

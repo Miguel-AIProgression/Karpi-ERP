@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Loader2 } from 'lucide-react'
-import { useClaimsVoorOrderRegel } from '@/hooks/use-reserveringen'
+import { useClaimsVoorOrderRegel } from '@/modules/orders/hooks/use-reserveringen'
 import { isoWeekFromString } from '@/lib/utils/iso-week'
 
 interface Props {

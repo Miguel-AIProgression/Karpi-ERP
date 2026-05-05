@@ -19,5 +19,21 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
+    rules: {
+      // Module-discipline: externe consumers mogen alleen via de barrel importeren,
+      // niet rechtstreeks uit `internal/` sub-folders van een andere module.
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@/modules/*/internal/**'],
+              message:
+                'Importeer via de module-barrel (index.ts), niet uit internal/ sub-folders.',
+            },
+          ],
+        },
+      ],
+    },
   },
 ])

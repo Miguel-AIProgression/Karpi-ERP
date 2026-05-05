@@ -1,4 +1,4 @@
-import { supabase } from '../client'
+import { supabase } from '@/lib/supabase/client'
 import { sanitizeSearch } from '@/lib/utils/sanitize'
 
 export interface OrderRow {
@@ -272,8 +272,9 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
 
   // Fetch omschrijving for substituted products
   const fysiekeArtikelnrs = regels
-    .map((r: any) => r.fysiek_artikelnr)
-    .filter((a: string | null) => a != null) as string[]
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .map((r: any) => r.fysiek_artikelnr as string | null)
+    .filter((a): a is string => a != null)
 
   let fysiekOmschMap = new Map<string, string>()
   if (fysiekeArtikelnrs.length > 0) {

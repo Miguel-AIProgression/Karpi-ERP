@@ -8,10 +8,10 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { packAcrossRolls } from '../_shared/guillotine-packing.ts'
+import { packAcrossRolls } from '../_shared/planning/guillotine-packing.ts'
 import { computeReststukken } from '../_shared/compute-reststukken.ts'
 import { calcRollStats } from '../_shared/ffdh-packing.ts'
-import { validateShelfMesLimiet } from '../_shared/shelf-mes-validator.ts'
+import { validateShelfMesLimiet } from '../_shared/planning/shelf-mes-validator.ts'
 import {
   fetchStukken,
   fetchUitwisselbareParen,

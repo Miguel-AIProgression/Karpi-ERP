@@ -7,7 +7,7 @@ import {
   updateConfectieWerktijd,
   type AfrondConfectieInput,
   type ConfectieWerktijd,
-} from '@/lib/supabase/queries/confectie-planning'
+} from '@/modules/planning/queries/confectie-planning'
 
 export function useConfectiePlanning() {
   return useQuery({

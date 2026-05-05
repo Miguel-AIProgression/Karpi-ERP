@@ -29,13 +29,13 @@ import type {
   PackOptions,
   PackingResult,
   Shelf,
-} from './ffdh-packing.ts'
+} from '../ffdh-packing.ts'
 import {
   calcRollStats,
   sortRolls,
   packRoll as packRollFfdh,
   reconstructShelves,
-} from './ffdh-packing.ts'
+} from '../ffdh-packing.ts'
 
 // ---------------------------------------------------------------------------
 // Free rectangle tracking

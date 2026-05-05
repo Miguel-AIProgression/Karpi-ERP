@@ -1,4 +1,4 @@
-import type { OrderRegel } from '@/lib/supabase/queries/orders'
+import type { OrderRegel } from '@/modules/orders/queries/orders'
 
 const STAGE: Record<string, number> = {
   Snijden: 0,

@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { fetchPlanningConfig, updatePlanningConfig } from '@/lib/supabase/queries/planning-config'
+import { fetchPlanningConfig, updatePlanningConfig } from '@/modules/planning/queries/planning-config'
 import type { PlanningConfig } from '@/lib/types/productie'
 
 export function usePlanningConfig() {

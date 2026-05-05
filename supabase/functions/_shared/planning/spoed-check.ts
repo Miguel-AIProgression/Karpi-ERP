@@ -13,7 +13,7 @@ import {
   volgendeWerkminuut,
   plusWerkminuten,
   werkminutenTussen,
-} from './werkagenda.ts'
+} from '../werkagenda.ts'
 import { naarWerkdag } from './levertijd-match.ts'
 
 const MIN_PER_WEEKDAG = 510  // 09:00-uur netto (08:00-17:00 minus 30 min pauze)

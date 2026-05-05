@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils/cn'
-import type { StatusCount } from '@/lib/supabase/queries/orders'
+import type { StatusCount } from '@/modules/orders/queries/orders'
 
 const ALL_STATUSES = [
   'Alle',

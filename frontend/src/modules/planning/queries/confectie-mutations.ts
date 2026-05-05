@@ -1,4 +1,4 @@
-import { supabase } from '../client'
+import { supabase } from '@/lib/supabase/client'
 import type { ConfectieStatus } from '@/lib/types/productie'
 
 /** Update confectie status with auto-set timestamps */

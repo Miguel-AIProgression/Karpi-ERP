@@ -3,7 +3,7 @@
 import { assertEquals, assert } from 'https://deno.land/std@0.168.0/testing/asserts.ts'
 import { evalueerSpoed } from './spoed-check.ts'
 import type { LevertijdConfig } from './levertijd-types.ts'
-import type { RolAgendaSlot } from './werkagenda.ts'
+import type { RolAgendaSlot } from '../werkagenda.ts'
 
 function defaultConfig(overrides: Partial<LevertijdConfig> = {}): LevertijdConfig {
   return {

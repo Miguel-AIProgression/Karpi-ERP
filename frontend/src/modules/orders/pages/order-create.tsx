@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { OrderForm } from '@/components/orders/order-form'
+import { OrderForm } from '@/modules/orders/components/order-form'
 import {
   DocumentenBuffer,
   type BufferedDoc,

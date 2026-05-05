@@ -3,9 +3,9 @@ import { useSearchParams, Link } from 'react-router-dom'
 import { ArrowLeft, Printer } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { PageHeader } from '@/components/layout/page-header'
-import { StickerLayout } from '@/components/snijplanning/sticker-layout'
-import { ReststukStickerLayout } from '@/components/snijplanning/reststuk-sticker-layout'
-import { useSnijplannenVoorGroep, useRolSnijstukken } from '@/hooks/use-snijplanning'
+import { StickerLayout } from '@/modules/planning/components/sticker-layout'
+import { ReststukStickerLayout } from '@/modules/planning/components/reststuk-sticker-layout'
+import { useSnijplannenVoorGroep, useRolSnijstukken } from '@/modules/planning/hooks/use-snijplanning'
 import { supabase } from '@/lib/supabase/client'
 
 interface ReststukRol {

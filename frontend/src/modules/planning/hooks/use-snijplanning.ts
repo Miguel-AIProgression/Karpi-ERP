@@ -12,16 +12,16 @@ import {
   fetchRolLocaties,
   fetchTekortAnalyse,
   fetchSnijplanningKpis,
-} from '@/lib/supabase/queries/snijplanning'
-import type { SnijplanSortField, SortDirection, TekortAnalyseRow } from '@/lib/supabase/queries/snijplanning'
+} from '@/modules/planning/queries/snijplanning'
+import type { SnijplanSortField, SortDirection, TekortAnalyseRow } from '@/modules/planning/queries/snijplanning'
 import {
   createSnijplan,
   updateSnijplanStatus,
   batchUpdateSnijplanStatus,
   assignRolToSnijplan,
   approveSnijvoorstel,
-} from '@/lib/supabase/queries/snijplanning-mutations'
-import type { SnijplanFormData } from '@/lib/supabase/queries/snijplanning-mutations'
+} from '@/modules/planning/queries/snijplanning-mutations'
+import type { SnijplanFormData } from '@/modules/planning/queries/snijplanning-mutations'
 import {
   generateSnijvoorstel,
   fetchSnijvoorstel,
@@ -33,16 +33,16 @@ import {
   startSnijdenRol,
   pauzeerSnijdenRol,
   type ReststukResult,
-} from '@/lib/supabase/queries/snijvoorstel'
+} from '@/modules/planning/queries/snijvoorstel'
 import {
   fetchAutoplanningConfig,
   updateAutoplanningConfig,
   triggerAutoplan,
   startProductieRol,
-} from '@/lib/supabase/queries/auto-planning'
-import type { AutoPlanningConfig } from '@/lib/supabase/queries/auto-planning'
-import { berekenTotDatum } from '@/components/snijplanning/week-filter'
-import { fetchPlanningConfig } from '@/lib/supabase/queries/planning-config'
+} from '@/modules/planning/queries/auto-planning'
+import type { AutoPlanningConfig } from '@/modules/planning/queries/auto-planning'
+import { berekenTotDatum } from '@/modules/planning/components/week-filter'
+import { fetchPlanningConfig } from '@/modules/planning/queries/planning-config'
 
 export function useSnijplanningPool(params: {
   status?: string

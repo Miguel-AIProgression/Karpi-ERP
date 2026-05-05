@@ -83,7 +83,7 @@ export async function fetchEdiBerichten(filters: EdiBerichtenFilters = {}): Prom
   const { data, error } = await q
   if (error) throw error
 
-  return (data ?? []).map((row: any) => ({
+  return (data ?? []).map((row: Record<string, unknown> & { debiteuren?: { naam?: string }; orders?: { order_nr?: string }; facturen?: { factuur_nr?: string } }) => ({
     id: row.id,
     richting: row.richting,
     berichttype: row.berichttype,
@@ -120,7 +120,7 @@ export async function fetchEdiBericht(id: number): Promise<EdiBerichtDetail | nu
   if (error) throw error
   if (!data) return null
 
-  const row = data as any
+  const row = data as Record<string, unknown> & { debiteuren?: { naam?: string }; orders?: { order_nr?: string }; facturen?: { factuur_nr?: string } }
   return {
     id: row.id,
     richting: row.richting,

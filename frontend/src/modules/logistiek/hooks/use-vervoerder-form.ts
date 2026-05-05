@@ -56,6 +56,7 @@ export function useVervoerderForm(vervoerder: Vervoerder | null | undefined) {
 
   useEffect(() => {
     if (!vervoerder) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- synchronising derived form state from server data
     setForm(fromVervoerder(vervoerder))
   }, [vervoerder])
 

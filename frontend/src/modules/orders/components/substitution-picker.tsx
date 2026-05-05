@@ -1,6 +1,6 @@
 import { ArrowRightLeft, Package } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
-import { fetchEquivalenteProducten, type EquivalentProduct } from '@/lib/supabase/queries/product-equivalents'
+import { fetchEquivalenteProducten, type EquivalentProduct } from '@/modules/orders/queries/product-equivalents'
 import { formatCurrency } from '@/lib/utils/formatters'
 
 interface SubstitutionPickerProps {

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import type { MaatwerkVormRow, AfwerkingTypeRow } from '@/lib/supabase/queries/op-maat'
+import type { MaatwerkVormRow, AfwerkingTypeRow } from '@/modules/orders/queries/op-maat'
 import { formatCurrency } from '@/lib/utils/formatters'
 
 export interface VormAfmetingData {
@@ -47,6 +47,7 @@ export function VormAfmetingSelector({
   // Initialiseer standaard vorm zodra vormen laden
   useEffect(() => {
     if (vormen.length > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- initialising default vorm after async data arrives
       setData((prev) => prev.vormCode ? prev : { ...prev, vormCode: vormen[0].code })
     }
   }, [vormen])
@@ -54,6 +55,7 @@ export function VormAfmetingSelector({
   // Pre-fill afwerking vanuit kwaliteit+kleur default
   useEffect(() => {
     if (standaardAfwerking) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- synchronising afwerking default from server data
       setData((prev) =>
         prev.afwerkingCode === standaardAfwerking ? prev : { ...prev, afwerkingCode: standaardAfwerking }
       )
@@ -63,6 +65,7 @@ export function VormAfmetingSelector({
   // Pre-fill bandkleur vanuit kwaliteit+kleur default
   useEffect(() => {
     if (standaardBandKleur) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- synchronising band colour default from server data
       setData((prev) =>
         prev.bandKleur === standaardBandKleur ? prev : { ...prev, bandKleur: standaardBandKleur }
       )

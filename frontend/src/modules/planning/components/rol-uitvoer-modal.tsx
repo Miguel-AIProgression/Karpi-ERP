@@ -17,17 +17,17 @@ import {
   useStartSnijdenRol,
   usePauzeerSnijdenRol,
   useVoltooiSnijplanRol,
-} from '@/hooks/use-snijplanning'
+} from '@/modules/planning/hooks/use-snijplanning'
 import { useRolDetail } from '@/hooks/use-rollen'
 import { ReststukStickerLayout } from './reststuk-sticker-layout'
-import { mapSnijplannenToStukken } from '@/lib/utils/snijplan-mapping'
+import { mapSnijplannenToStukken } from '@/modules/planning/lib/snijplan-mapping'
 import {
   computeReststukkenAngebrokenAfval,
-} from '@/lib/utils/compute-reststukken'
+} from '@/modules/planning/lib/compute-reststukken'
 import { cn } from '@/lib/utils/cn'
 import { AFWERKING_MAP } from '@/lib/utils/constants'
-import { buildSnijVolgorde, type PlacementInput } from '@/lib/snij-volgorde/derive'
-import type { KnifeOperation, Rij } from '@/lib/snij-volgorde/types'
+import { buildSnijVolgorde, type PlacementInput } from '@/modules/planning/lib/snij-volgorde/derive'
+import type { KnifeOperation, Rij } from '@/modules/planning/lib/snij-volgorde/types'
 
 interface RolUitvoerModalProps {
   rolId: number | null
@@ -245,13 +245,7 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
   const pauzeerSnijden = usePauzeerSnijdenRol()
   const voltooiRol = useVoltooiSnijplanRol()
 
-  // DEBUG: log elke call naar onClose met stack trace zodat we zien welke
-  // code-path 'm aanroept. Tijdelijk — weg te halen zodra auto-close-bug opgelost.
-  const onClose = () => {
-    // eslint-disable-next-line no-console
-    console.log('[RolUitvoerModal] onClose called', { rolId, open }, new Error('stack').stack)
-    onCloseRaw()
-  }
+  const onClose = onCloseRaw
 
   const [checkedIds, setCheckedIds] = useState<Set<number>>(new Set())
   const [initialized, setInitialized] = useState(false)
@@ -259,41 +253,11 @@ export function RolUitvoerModal({ rolId, open, onClose: onCloseRaw }: RolUitvoer
   const [success, setSuccess] = useState<string | null>(null)
   const [startedRolId, setStartedRolId] = useState<number | null>(null)
 
-  // DEBUG: log open/rolId veranderingen
-  useEffect(() => {
-    // eslint-disable-next-line no-console
-    console.log('[RolUitvoerModal] props changed', { open, rolId })
-  }, [open, rolId])
-
-  // DEBUG: log mount/unmount
-  useEffect(() => {
-    // eslint-disable-next-line no-console
-    console.log('[RolUitvoerModal] MOUNT')
-    return () => {
-      // eslint-disable-next-line no-console
-      console.log('[RolUitvoerModal] UNMOUNT')
-    }
-  }, [])
-
   useEffect(() => {
     if (!open || !rolId) return
     if (startedRolId === rolId) return
-    // eslint-disable-next-line no-console
-    console.log('[RolUitvoerModal] start_snijden_rol triggering for rolId', rolId)
     setStartedRolId(rolId)
-    startSnijden.mutate(
-      { rolId },
-      {
-        onSuccess: (data) => {
-          // eslint-disable-next-line no-console
-          console.log('[RolUitvoerModal] start_snijden_rol SUCCESS', data)
-        },
-        onError: (err) => {
-          // eslint-disable-next-line no-console
-          console.error('[RolUitvoerModal] start_snijden_rol ERROR', err)
-        },
-      },
-    )
+    startSnijden.mutate({ rolId })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, rolId])
 

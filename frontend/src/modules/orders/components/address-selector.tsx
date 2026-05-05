@@ -22,6 +22,7 @@ export function AddressSelector({ debiteurNr, onSelect }: AddressSelectorProps) 
   const [selectedGln, setSelectedGln] = useState<string | null>(null)
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting address list on debiteur change
     if (!debiteurNr) { setAddresses([]); setSelectedGln(null); return }
     supabase
       .from('afleveradressen')

@@ -6,7 +6,7 @@ import {
   computeFreeRects,
   computeReststukkenGuillotine,
 } from './guillotine-packing.ts'
-import type { Placement, Roll, SnijplanPiece } from './ffdh-packing.ts'
+import type { Placement, Roll, SnijplanPiece } from '../ffdh-packing.ts'
 
 function piece(
   id: number,

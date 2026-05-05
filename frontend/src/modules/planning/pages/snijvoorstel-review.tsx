@@ -2,14 +2,14 @@ import { useMemo, useState } from 'react'
 import { useParams, useLocation, useNavigate, Link } from 'react-router-dom'
 import { ArrowLeft, CheckCircle2, XCircle, AlertTriangle, Loader2 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { RolHeaderCard } from '@/components/snijplanning/rol-header-card'
-import { SnijVisualisatie } from '@/components/snijplanning/snij-visualisatie'
+import { RolHeaderCard } from '@/modules/planning/components/rol-header-card'
+import { SnijVisualisatie } from '@/modules/planning/components/snij-visualisatie'
 import {
   useSnijplannenVoorGroep,
   useKeurSnijvoorstelGoed,
   useVerwerpSnijvoorstel,
-} from '@/hooks/use-snijplanning'
-import { usePlanningConfig } from '@/hooks/use-planning-config'
+} from '@/modules/planning/hooks/use-snijplanning'
+import { usePlanningConfig } from '@/modules/planning/hooks/use-planning-config'
 import type {
   SnijvoorstelResponse,
   SnijvoorstelPlaatsing,
@@ -80,6 +80,9 @@ export function SnijvoorstelReviewPage() {
   const kwaliteitCode = state?.kwaliteitCode ?? ''
   const kleurCode = state?.kleurCode ?? ''
 
+  // Must be called before any early return to obey rules-of-hooks
+  const { data: planningConfig } = usePlanningConfig()
+
   // Fetch snijplannen for this group to get order/klant info
   const { data: snijplannen } = useSnijplannenVoorGroep(
     kwaliteitCode,
@@ -147,7 +150,6 @@ export function SnijvoorstelReviewPage() {
   }
 
   const sam = voorstelResponse.samenvatting
-  const { data: planningConfig } = usePlanningConfig()
 
   return (
     <>
