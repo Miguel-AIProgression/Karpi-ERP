@@ -68,6 +68,7 @@ Domeinbegrippen die je moet kennen om dit project te begrijpen.
 |------|-----------|
 | **Order** | Klantopdracht. Bevat header (klant, data, adressen) en regels (producten). |
 | **Orderregel** | Eén productregel in een order. Bevat artikel, aantal, prijs, korting. |
+| **Order-voorstel** | Conceptuele order-in-aanmaak vóór persistentie. Bundelt voor de gebruiker zichtbaar: regels, voorgestelde dekking per regel (voorraad/uitwisselbaar/IO/wacht), levertijd-scenario per regel, vereiste `lever_modus`-keuze bij tekort, voorgestelde afleverdatum en eventuele spoed-suggestie. Diep gemodelleerd in de backend (allocatie-simulatie zonder commit), dun aanroepbaar vanuit de frontend. Bron-van-waarheid voor wat order-form en order-line-editor tonen vóór save. Parallel aan `Snijvoorstel` (berekend resultaat dat gereviewd wordt voor commit). Architectureel als deep verticale Module met eigen barrel-export; planning-aspecten (maatwerk-levertijd) worden via een TS-functie-contract bij `modules/planning/` opgevraagd. Zie [ADR-0001](adr/0001-order-voorstel-en-planning-als-twee-modules.md). |
 | **Klant referentie** | Referentie die de klant meegeeft bij een bestelling. Bijv. "BRINK (18)", "#5435/16260113785". |
 | **Adres-snapshot** | Kopie van het adres op het moment van de order. Latere adreswijzigingen raken de order niet. |
 | **Snijplan** | Instructie om tapijt op maat te snijden uit een rol voor een orderregel. |
