@@ -118,6 +118,18 @@ Domeinbegrippen die je moet kennen om dit project te begrijpen.
 | **Claim-volgorde-prio** | FIFO: wie eerst claimt op een IO-regel, wordt eerst beleverd bij ontvangst. Geen automatische herallocatie als een nieuwere order met urgenter afleverdatum binnenkomt. Spoed-overrides staan in V2-backlog. |
 | **Wacht op inkoop / Wacht op nieuwe inkoop** | Order-status `Wacht op inkoop` (mig 144): order heeft ≥1 actieve `bron='inkooporder_regel'`-claim. "Wacht op nieuwe inkoop" is geen status maar een view-derived label voor regels met `aantal_tekort > 0` — order blijft in `Wacht op inkoop` of `Wacht op voorraad` totdat een nieuwe IO de allocator opnieuw triggert via orderregel-bewerking. |
 
+## Magazijn & Pick-flow
+
+| Term | Betekenis |
+|------|-----------|
+| **Magazijn** | De Module die de fysieke voorraad-locatie en pickbaarheid van orderregels bezit. Eigenaar van de pick-overview, locatie-mutaties op rollen + snijplannen, en de pick-bucket-categorisering. Frontend-folder: `modules/magazijn/`. Niet te verwarren met `magazijn_locaties` (de tabel) of `Voorraad` (de bezittelijke kant van producten). _Vermijd:_ "pick-ship" als domeinconcept — dat was de oude folder-naam, niet een entiteit. |
+| **Pickbaarheid** | Per orderregel: kan deze nu uit het magazijn opgepakt worden? Bron: view `orderregel_pickbaarheid` (samengesteld uit voorraad-claims, snijplan-status, confectie-status, locatie). Een regel is `is_pickbaar=true` als `pickbaar_stuks ≥ totaal_stuks`. Magazijn-Module heeft een fallback achter de seam voor envs zonder de view. |
+| **Pick-bucket** | Afleverdatum-categorisering op de pick-overview: `achterstallig`, `vandaag`, `morgen`, `deze_week`, `volgende_week`, `later`, `geen_datum`. Pure functie `bucketVoor(afleverdatum, vandaag)`. Drijft de groepering en sortering van de pick-cards. |
+| **Wacht-op** | Reden waarom een orderregel niet pickbaar is: `snijden`, `confectie`, `inpak`, of `inkoop`. Komt uit de pickbaarheid-view en wordt op de pick-card als labelled badge getoond. |
+| **Magazijn-locatie** | Fysieke opslagplek (rek/vak-code, vrije tekst). Tabel `magazijn_locaties` met `code` (PK-stijl), `omschrijving`, `type`, `actief`. Wordt gekoppeld aan een rol (`rollen.locatie_id`) of via de magazijn-Module aan een afgewerkt maatwerk-stuk (kolom `locatie` op `snijplannen`). RPC `set_locatie_voor_orderregel(p_order_regel_id, p_code)` is de atomic write-pad. |
+| **Verzendset** | Magazijn-output bij overhandiging aan logistiek: een set verzendstickers (GS1-128/SSCC) + A4-pakbon, geprint vanuit `/logistiek/:zending_nr/printset`. Gestart door de `<VerzendsetButton>` op een volledig pickbare order — knop leeft in `modules/logistiek/`, niet magazijn, omdat hij `create_zending_voor_order` aanroept. |
+| **Vervoerder-tag** | Visuele badge op de pick-card die de geselecteerde vervoerder toont (HST/Rhenus/Verhoek/…). Component leeft in `modules/logistiek/`, geconsumeerd door `OrderPickCard` in `modules/magazijn/` als slot — een seam zonder data-coupling. |
+
 ## Systeem
 
 | Term | Betekenis |

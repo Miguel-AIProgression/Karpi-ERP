@@ -1,12 +1,11 @@
 import { Link } from 'react-router-dom'
 import { CheckCircle2, Clock, ExternalLink } from 'lucide-react'
 import { LocatieEdit } from './locatie-edit'
-import { VerzendsetButton } from './verzendset-button'
-import { VervoerderTag } from '@/modules/logistiek'
+import { VerzendsetButton, VervoerderTag } from '@/modules/logistiek'
 import { formatDate } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
 import { ORDER_STATUS_COLORS } from '@/lib/utils/constants'
-import type { PickShipOrder, PickShipWachtOp } from '@/lib/types/pick-ship'
+import type { PickShipOrder, PickShipWachtOp } from '../lib/types'
 
 const WACHT_OP_LABEL: Record<NonNullable<PickShipWachtOp>, string> = {
   snijden: 'Wacht op snijden',
@@ -62,7 +61,7 @@ export function OrderPickCard({ order }: Props) {
             {order.totaal_m2 > 0 ? ` · ${order.totaal_m2.toFixed(2)} m²` : ''}
           </div>
             <div className="mt-1 flex justify-end">
-              <VervoerderTag code={order.vervoerder_code} showLeeg />
+              <VervoerderTag showLeeg />
             </div>
           </div>
           <VerzendsetButton order={order} />

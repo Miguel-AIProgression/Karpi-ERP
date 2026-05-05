@@ -1,18 +1,18 @@
 import { useMemo, useState } from 'react'
 import { Search, Package, AlertTriangle, Calendar } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { OrderPickCard } from '@/components/pick-ship/order-pick-card'
-import { usePickShipOrders, usePickShipStats } from '@/hooks/use-pick-ship'
+import { OrderPickCard } from '../components/order-pick-card'
+import { usePickShipOrders, usePickShipStats } from '../hooks/use-pick-ship'
 import { cn } from '@/lib/utils/cn'
 import {
   BUCKET_LABEL,
   BUCKET_VOLGORDE,
   type BucketKey,
-} from '@/lib/types/pick-ship'
+} from '../lib/types'
 
 type FilterTab = 'alles' | BucketKey
 
-export function PickShipOverviewPage() {
+export function MagazijnOverviewPage() {
   const [filter, setFilter] = useState<FilterTab>('alles')
   const [search, setSearch] = useState('')
 

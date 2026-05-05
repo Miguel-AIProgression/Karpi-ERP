@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { bucketVoor } from '../pick-ship-buckets'
+import { bucketVoor } from '../buckets'
 
 describe('bucketVoor', () => {
   // Vaste referentiedatum: woensdag 2026-05-06 (ISO-week 19, 2026)

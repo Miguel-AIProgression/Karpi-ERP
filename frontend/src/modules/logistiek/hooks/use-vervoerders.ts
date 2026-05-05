@@ -10,6 +10,46 @@ import {
 
 const STALE_5_MIN = 5 * 60_000
 
+export type VervoerderSelectieStatus =
+  | 'selecteerbaar'
+  | 'geen_actieve_vervoerder'
+  | 'meerdere_actieve_vervoerders'
+
+export interface ActieveVervoerderResultaat {
+  code: string | null
+  naam: string | null
+  selectie_status: VervoerderSelectieStatus
+  isLoading: boolean
+}
+
+/**
+ * V1-logica: kiest de actieve vervoerder als precies één `actief=true` heeft.
+ * Bij 0 of meer dan 1 actieve vervoerder valt de status terug op
+ * `geen_actieve_vervoerder` / `meerdere_actieve_vervoerders`.
+ *
+ * Slot-pattern (ADR-0002): `<VervoerderTag />` consumeert deze hook zelf in
+ * pick-context — geen data-coupling tussen magazijn en logistiek.
+ */
+export function useActieveVervoerder(): ActieveVervoerderResultaat {
+  const { data, isLoading } = useVervoerders()
+  const actief = (data ?? []).filter((v) => v.actief)
+  if (actief.length === 1) {
+    return {
+      code: actief[0].code,
+      naam: actief[0].display_naam,
+      selectie_status: 'selecteerbaar',
+      isLoading,
+    }
+  }
+  return {
+    code: null,
+    naam: null,
+    selectie_status:
+      actief.length > 1 ? 'meerdere_actieve_vervoerders' : 'geen_actieve_vervoerder',
+    isLoading,
+  }
+}
+
 export function useVervoerders() {
   return useQuery({
     queryKey: ['logistiek', 'vervoerders', 'list'],

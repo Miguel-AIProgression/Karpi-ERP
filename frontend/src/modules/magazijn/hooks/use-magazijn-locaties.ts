@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   createOrGetMagazijnLocatie,
   fetchMagazijnLocaties,
-} from '@/lib/supabase/queries/magazijn-locaties'
+} from '../queries/magazijn-locaties'
 
 export function useMagazijnLocaties() {
   return useQuery({
