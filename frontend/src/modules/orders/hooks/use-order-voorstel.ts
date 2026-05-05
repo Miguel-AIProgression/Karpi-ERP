@@ -91,6 +91,9 @@ export interface CommitOrderVoorstelResult {
   order_id: number
   was_split: boolean
   split_reason: string | null
+  /** Verzendkosten-routing strategie. 'duurste_suborder' = verzendkosten gaan naar
+   *  het sub-order met de hoogste totale regelwaarde. Altijd aanwezig na mig 0182. */
+  verzendkosten_routing?: string
   claim_summary: {
     totaal: number
     voorraad: number
