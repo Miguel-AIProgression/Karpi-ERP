@@ -15,12 +15,12 @@ export {
 } from './hooks/use-pick-ship'
 export { useMagazijnLocaties } from './hooks/use-magazijn-locaties'
 
-// Types
+// Types — VervoerderSelectieStatus zit niet meer hier; magazijn weet niets
+// over vervoerders meer. Zie modules/logistiek voor self-fetching VervoerderTag.
 export type {
   PickShipOrder,
   PickShipRegel,
   PickShipBron,
   PickShipWachtOp,
   BucketKey,
-  VervoerderSelectieStatus,
 } from './lib/types'

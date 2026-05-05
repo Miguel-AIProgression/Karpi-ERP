@@ -4,7 +4,6 @@ import type {
   PickShipBron,
   PickShipOrder,
   PickShipRegel,
-  VervoerderSelectieStatus,
   PickShipWachtOp,
 } from '../lib/types'
 
@@ -34,10 +33,6 @@ export interface OrderHeaderRij {
   status: string
   klant_naam: string | null
   debiteur_nr: number
-  vervoerder_code: string | null
-  vervoerder_naam: string | null
-  vervoerder_actief: boolean | null
-  vervoerder_selectie_status: VervoerderSelectieStatus
   afl_naam: string | null
   afl_plaats: string | null
   afleverdatum: string | null
@@ -56,10 +51,6 @@ export function initPickShipOrders(
       status: h.status,
       klant_naam: h.klant_naam ?? '',
       debiteur_nr: h.debiteur_nr,
-      vervoerder_code: h.vervoerder_code,
-      vervoerder_naam: h.vervoerder_naam,
-      vervoerder_actief: h.vervoerder_actief,
-      vervoerder_selectie_status: h.vervoerder_selectie_status,
       afl_naam: h.afl_naam,
       afl_plaats: h.afl_plaats,
       afleverdatum: h.afleverdatum,

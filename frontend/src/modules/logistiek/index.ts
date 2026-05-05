@@ -77,6 +77,9 @@ export {
   useVervoerderStats,
   useRecenteZendingenVervoerder,
   useUpdateVervoerder,
+  useActieveVervoerder,
+  type VervoerderSelectieStatus,
+  type ActieveVervoerderResultaat,
 } from './hooks/use-vervoerders'
 export {
   useVervoerderForm,

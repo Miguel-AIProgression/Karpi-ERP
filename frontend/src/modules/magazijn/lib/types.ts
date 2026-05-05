@@ -1,4 +1,7 @@
-// frontend/src/lib/types/pick-ship.ts
+// modules/magazijn/lib/types.ts — public shapes voor pickbaarheid + pick-flow.
+// VervoerderSelectieStatus is verhuisd naar modules/logistiek (slot-pattern via
+// useActieveVervoerder + <VervoerderTag>); magazijn weet niets meer over
+// vervoerders. Zie ADR-0002.
 
 export type BucketKey =
   | 'achterstallig'
@@ -31,10 +34,6 @@ export const BUCKET_LABEL: Record<BucketKey, string> = {
 
 export type PickShipBron = 'snijplan' | 'rol' | 'producten_default' | null
 export type PickShipWachtOp = 'snijden' | 'confectie' | 'inpak' | 'inkoop' | null
-export type VervoerderSelectieStatus =
-  | 'selecteerbaar'
-  | 'geen_actieve_vervoerder'
-  | 'meerdere_actieve_vervoerders'
 
 export interface PickShipRegel {
   order_regel_id: number
@@ -59,10 +58,6 @@ export interface PickShipOrder {
   status: string
   klant_naam: string
   debiteur_nr: number
-  vervoerder_code: string | null
-  vervoerder_naam: string | null
-  vervoerder_actief: boolean | null
-  vervoerder_selectie_status: VervoerderSelectieStatus
   afl_naam: string | null
   afl_plaats: string | null
   afleverdatum: string | null

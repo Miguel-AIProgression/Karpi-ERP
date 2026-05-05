@@ -61,7 +61,7 @@ export function OrderPickCard({ order }: Props) {
             {order.totaal_m2 > 0 ? ` · ${order.totaal_m2.toFixed(2)} m²` : ''}
           </div>
             <div className="mt-1 flex justify-end">
-              <VervoerderTag code={order.vervoerder_code} showLeeg />
+              <VervoerderTag showLeeg />
             </div>
           </div>
           <VerzendsetButton order={order} />

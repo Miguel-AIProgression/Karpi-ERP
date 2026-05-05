@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Loader2, Printer } from 'lucide-react'
 import { useCreateZendingVoorOrder } from '../hooks/use-zendingen'
+import { useActieveVervoerder } from '../hooks/use-vervoerders'
 import type { PickShipOrder } from '@/modules/magazijn'
 
 interface VerzendsetButtonProps {
@@ -11,15 +12,16 @@ interface VerzendsetButtonProps {
 export function VerzendsetButton({ order }: VerzendsetButtonProps) {
   const navigate = useNavigate()
   const createMutation = useCreateZendingVoorOrder()
+  const actieveVervoerder = useActieveVervoerder()
   const [error, setError] = useState<string | null>(null)
 
-  const heeftVervoerder = order.vervoerder_selectie_status === 'selecteerbaar'
+  const heeftVervoerder = actieveVervoerder.selectie_status === 'selecteerbaar'
   const isVolledigPickbaar = order.regels.length > 0 && order.regels.every((r) => r.is_pickbaar)
   const disabled = createMutation.isPending || !heeftVervoerder || !isVolledigPickbaar
   const tooltip =
-    order.vervoerder_selectie_status === 'geen_actieve_vervoerder'
+    actieveVervoerder.selectie_status === 'geen_actieve_vervoerder'
       ? 'Activeer eerst een vervoerder bij Logistiek > instellingen'
-      : order.vervoerder_selectie_status === 'meerdere_actieve_vervoerders'
+      : actieveVervoerder.selectie_status === 'meerdere_actieve_vervoerders'
         ? 'Meerdere vervoerders actief: richt eerst prijs/criteria-selectie in'
         : !isVolledigPickbaar
           ? 'Nog niet alle regels zijn klaar om te picken'

@@ -1,9 +1,5 @@
 import { supabase } from '@/lib/supabase/client'
-import type {
-  BucketKey,
-  PickShipOrder,
-  VervoerderSelectieStatus,
-} from '../lib/types'
+import type { BucketKey, PickShipOrder } from '../lib/types'
 import {
   chunks,
   comparePickShipOrders,
@@ -26,12 +22,6 @@ interface FallbackOrderRegelRij {
   omschrijving: string | null
   maatwerk_kwaliteit_code: string | null
   maatwerk_kleur_code: string | null
-}
-
-interface VervoerderRij {
-  code: string
-  display_naam: string
-  actief: boolean
 }
 
 export interface PickShipParams {
@@ -96,8 +86,6 @@ async function fetchOpenOrderHeaders(): Promise<OrderHeaderRij[]> {
   const ordersBase = (ordersRaw ?? []) as unknown as Array<Omit<OrderHeaderRij, 'klant_naam'>>
   const debiteurNrs = Array.from(new Set(ordersBase.map((o) => o.debiteur_nr)))
   const naamMap = new Map<number, string>()
-  let vervoerderSelectieStatus: VervoerderSelectieStatus = 'geen_actieve_vervoerder'
-  let geselecteerdeVervoerder: VervoerderRij | null = null
 
   if (debiteurNrs.length > 0) {
     const { data: debs, error: derr } = await supabase
@@ -109,33 +97,12 @@ async function fetchOpenOrderHeaders(): Promise<OrderHeaderRij[]> {
     for (const d of (debs ?? []) as Array<{ debiteur_nr: number; naam: string }>) {
       naamMap.set(d.debiteur_nr, d.naam)
     }
-
-    const { data: actieveVervoerders, error: verr } = await supabase
-      .from('vervoerders')
-      .select('code, display_naam, actief')
-      .eq('actief', true)
-      .order('code')
-    if (verr) throw verr
-
-    const actief = (actieveVervoerders ?? []) as VervoerderRij[]
-    if (actief.length === 1) {
-      vervoerderSelectieStatus = 'selecteerbaar'
-      geselecteerdeVervoerder = actief[0]
-    } else if (actief.length > 1) {
-      vervoerderSelectieStatus = 'meerdere_actieve_vervoerders'
-    }
   }
 
-  return ordersBase.map((o) => {
-    return {
-      ...o,
-      klant_naam: naamMap.get(o.debiteur_nr) ?? null,
-      vervoerder_code: geselecteerdeVervoerder?.code ?? null,
-      vervoerder_naam: geselecteerdeVervoerder?.display_naam ?? null,
-      vervoerder_actief: geselecteerdeVervoerder?.actief ?? null,
-      vervoerder_selectie_status: vervoerderSelectieStatus,
-    }
-  })
+  return ordersBase.map((o) => ({
+    ...o,
+    klant_naam: naamMap.get(o.debiteur_nr) ?? null,
+  }))
 }
 
 async function fetchPickbaarheidRegels(orderIds: number[]): Promise<PickbaarheidRij[]> {
