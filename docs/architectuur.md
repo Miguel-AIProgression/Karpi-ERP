@@ -26,7 +26,17 @@
 ## Architectuurbeslissingen
 
 ### Module-grafiek (vertical slices met expliciete seams)
-Frontend en backend worden geleidelijk per feature heringericht als **deep verticale Modules** onder `frontend/src/modules/{naam}/` en `supabase/functions/{naam}-*/`. Eerste twee modules in dit patroon waren `modules/edi/` en `modules/logistiek/`; daarop volgen `modules/orders/` (bezit het Order-voorstel) en `modules/planning/` (bezit snijplanning, confectie, levertijd-simulatie). Cross-Module aanroepen lopen via een **TS-functie-contract** (shared edge-helper of barrel-export), niet via god-Module en niet via HTTP-tussenstappen. Iedere seam wordt afgedwongen met contract-tests die in beide kanten dezelfde fixtures draaien. Beslissing en alternatieven: [ADR-0001](adr/0001-order-voorstel-en-planning-als-twee-modules.md).
+Frontend en backend worden geleidelijk per feature heringericht als **deep verticale Modules** onder `frontend/src/modules/{naam}/` en `supabase/functions/{naam}-*/`. Eerste twee modules in dit patroon waren `modules/edi/` en `modules/logistiek/`; daarop volgden `modules/orders/` (bezit het Order-voorstel) en `modules/planning/` (bezit snijplanning, confectie, levertijd-simulatie). De **derde domein-module is `modules/magazijn/`** (pickbaarheid, pick-flow, locatie-mutaties op rollen + snijplannen) — zie [ADR-0002](adr/0002-pick-ship-splitst-naar-magazijn-en-logistiek.md). Cross-Module aanroepen lopen via een **TS-functie-contract** (shared edge-helper of barrel-export), niet via god-Module en niet via HTTP-tussenstappen. Iedere seam wordt afgedwongen met contract-tests die in beide kanten dezelfde fixtures draaien. Beslissing en alternatieven: [ADR-0001](adr/0001-order-voorstel-en-planning-als-twee-modules.md).
+
+#### Slot-pattern (presentatie-seam zonder data-coupling)
+Wanneer een Module een component uit een andere Module wil renderen zonder bij die Module's data te hoeven, wordt de componente **self-fetching**: de consument plaatst 'm als slot zonder props, en de component haalt zelf zijn state op via een hook uit zijn eigen Module-barrel. Voorbeelden:
+- `<VervoerderTag />` in `modules/logistiek/` — pick-context (`OrderPickCard` in `modules/magazijn/`) rendert 'm zonder props; de tag self-fetcht de actieve vervoerder via `useActieveVervoerder()`. Magazijn weet zo niets meer over vervoerders. Voor zending-specifieke weergave (logistiek-pagina's) blijft `<VervoerderTag code={...} />` werken.
+- `<LevertijdSuggestie />` in `modules/planning/` — gebruikt door order-form in `modules/orders/` zonder dat orders weet wat de planning-database-shape is.
+
+Dit is duurder in queries (elke instance fetcht zelf) maar voorkomt dat seams datamodellen in beide richtingen koppelen.
+
+#### Atomic-RPC-pattern voor multi-step state-mutaties
+Wanneer een UI-actie meerdere DB-rijen moet aanpassen (vinden-of-maken + updaten), is twee opeenvolgende client-side calls fragiel: faalt de tweede dan blijft een dangling rij van de eerste achter. Centraliseer in één plpgsql-RPC. Voorbeeld: `set_locatie_voor_orderregel` (mig 0183) bundelt `INSERT magazijn_locaties ON CONFLICT` + `UPDATE snijplannen.locatie` voor `useUpdateMaatwerkLocatie`. Eén RPC = één transactie = atomair. Zie ADR-0002 ("Locatie-mutaties — pragma, geen seam-leak-fix").
 
 ### debiteur_nr als INTEGER PK (niet UUID)
 Alle bronbestanden, logo-bestanden (`{debiteur_nr}.jpg`), klanteigen namen, orders, en afleveradressen verwijzen naar het debiteurnummer uit het oude systeem. UUID zou een onnodige mapping-laag toevoegen.

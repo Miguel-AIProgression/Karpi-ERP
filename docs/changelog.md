@@ -1,5 +1,17 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-05 — Pick-ship gesplitst naar `modules/magazijn/` + uitbreiding `modules/logistiek/`
+
+Pick-ship-folder bevatte drie verschillende concerns (pickbaarheid, vervoerder-selectie, zending-creatie) in een flat-namespace. Heringericht volgens [ADR-0002](adr/0002-pick-ship-splitst-naar-magazijn-en-logistiek.md).
+
+- **`modules/magazijn/`** is de derde deep verticale Module (na orders + planning). Bezit pickbaarheid, pick-buckets, locatie-mutaties op rollen + snijplannen, magazijn-locaties-tabel, pick-overview-pagina (route `/pick-ship` blijft), `OrderPickCard`. Smal publiek oppervlak via barrel — pure helpers blijven privé.
+- **`modules/logistiek/`** uitgebreid met `<VerzendsetButton>` en `useActieveVervoerder()`-hook. `<VervoerderTag>` is voortaan self-fetching wanneer geen `code`-prop wordt gegeven (slot-pattern in pick-context).
+- **Atomiciteitsbug locatie-update opgelost**: nieuwe RPC `set_locatie_voor_orderregel` (mig 0183) bundelt `INSERT magazijn_locaties ON CONFLICT` + `UPDATE snijplannen.locatie` in één transactie. Voorkomt dangling rijen wanneer de tweede call faalt.
+- Contract-test `magazijn-pickbaarheid.contract.test.ts` bewaakt vier `fetchPickShipOrders`-scenario's (view + N regels, view + 0 regels, view ontbreekt → fallback, header-only).
+- `architectuur.md` documenteert nu het slot-pattern en atomic-RPC-pattern als bewuste designkeuzes.
+
+Issues #20-#24 (epic:magazijn-module). Geen DB-schema-migratie naar FK voor `snijplannen.locatie` — V2.
+
 ## 2026-05-05 — Architectuurplan: Order-voorstel + Planning als deep verticale Modules
 
 Architectuur-grilling-sessie heeft de order-intake-flow geanalyseerd en als deepening-kandidaat geïdentificeerd: zes lagen (order-form → line-editor → uitwisselbaar-hint → levertijd-suggestie → claim-RPC's → DB) die één logisch domeinconcept (`Order-voorstel`) verdelen.
