@@ -43,6 +43,11 @@ export type {
   OrderVoorstelRegel,
   OrderVoorstelStatus,
 } from './hooks/use-order-voorstel'
+export { useOrderVoorstelSave } from './hooks/use-order-voorstel'
+export type {
+  CommitOrderVoorstelResult,
+  CommitOrderVoorstelInput,
+} from './hooks/use-order-voorstel'
 export { useOrderBewerking } from './hooks/use-order-bewerking'
 
 // Queries — types

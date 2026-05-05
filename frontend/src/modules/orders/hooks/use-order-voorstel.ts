@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase/client'
 import type { PerRegelScenario } from '@/modules/planning'
 
@@ -81,6 +81,74 @@ function conceptHash(concept: OrderConceptInput): string {
 
 function hasVulledRegels(concept: OrderConceptInput): boolean {
   return concept.regels.some((r) => r.artikelnr && r.aantal > 0)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// commit_order_voorstel — zet concept om naar echte order (idempotent via UUID)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface CommitOrderVoorstelResult {
+  order_id: number
+  was_split: boolean
+  split_reason: string | null
+  claim_summary: {
+    totaal: number
+    voorraad: number
+    op_inkoop: number
+    uitwisselbaar: number
+    wacht: number
+  }
+  afwijking_t_o_v_voorstel: Array<{
+    regel_id: string
+    gevraagd: number
+    gekregen: number
+  }>
+}
+
+export interface CommitOrderVoorstelInput {
+  voorstel: OrderConceptInput & {
+    /** Lever-modus keuze van de klant; null als niet van toepassing. */
+    lever_modus?: 'deelleveringen' | 'in_een_keer' | null
+    /** Uitwisselbaar-keuzes zoals ingevuld in UitwisselbaarTekortHint. */
+    regels: Array<
+      OrderConceptRegel & {
+        omschrijving?: string
+        prijs_per_stuk?: number
+        korting_pct?: number
+      }
+    >
+  }
+  /** Persistent per concept-sessie — gebruik crypto.randomUUID() bij initialisatie. */
+  voorstel_id: string
+}
+
+/**
+ * Slaat een concept-voorstel op als echte order via de `commit_order_voorstel` RPC.
+ *
+ * Idempotent: als `voorstel_id` al bestaat in de DB wordt het opgeslagen resultaat
+ * teruggegeven zonder nieuwe order aan te maken.
+ *
+ * @example
+ * ```ts
+ * const [voorstelId] = useState(() => crypto.randomUUID())
+ * const save = useOrderVoorstelSave()
+ * save.mutate({ voorstel: concept, voorstel_id: voorstelId })
+ * ```
+ */
+export function useOrderVoorstelSave() {
+  return useMutation<CommitOrderVoorstelResult, Error, CommitOrderVoorstelInput>({
+    mutationFn: async ({ voorstel, voorstel_id }) => {
+      const { data, error } = await supabase.rpc('commit_order_voorstel', {
+        p_voorstel:    voorstel as unknown as Record<string, unknown>,
+        p_voorstel_id: voorstel_id,
+      })
+
+      if (error) throw new Error(error.message)
+      if (!data) throw new Error('Geen data ontvangen van commit_order_voorstel')
+
+      return data as CommitOrderVoorstelResult
+    },
+  })
 }
 
 export function useOrderVoorstel(concept: OrderConceptInput | null) {
