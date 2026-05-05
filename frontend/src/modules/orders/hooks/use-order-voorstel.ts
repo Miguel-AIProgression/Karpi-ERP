@@ -12,7 +12,11 @@ export interface OrderVoorstelRegel {
   artikelnr: string
   gevraagd: number
   beschikbaar_voorraad: number
+  op_inkoop: number
+  wacht: number
+  uitwisselbaar: number
   status: OrderVoorstelStatus
+  eerste_io_datum: string | null
 }
 
 export interface OrderVoorstelResult {
@@ -21,6 +25,7 @@ export interface OrderVoorstelResult {
     totaal: number
     voorraad: number
     op_inkoop: number
+    uitwisselbaar: number
     wacht: number
   }
   regels: OrderVoorstelRegel[]
@@ -36,12 +41,14 @@ export interface OrderConceptRegel {
 
 export interface OrderConceptInput {
   debiteur_nr?: number | null
+  uitwisselbaar_keuzes?: Array<{ regel_id: string; artikelnr: string; aantal: number }>
   regels: OrderConceptRegel[]
 }
 
 function conceptHash(concept: OrderConceptInput): string {
   return JSON.stringify({
     debiteur_nr: concept.debiteur_nr ?? null,
+    uitwisselbaar_keuzes: concept.uitwisselbaar_keuzes ?? [],
     regels: concept.regels.map((r) => ({
       regel_id: r.regel_id,
       artikelnr: r.artikelnr,
