@@ -4,7 +4,7 @@ import {
   fetchClaimsVoorOrder,
   fetchClaimsVoorOrderRegel,
   fetchClaimsVoorIORegel,
-} from '@/lib/supabase/queries/reserveringen'
+} from '@/modules/orders/queries/reserveringen'
 
 export function useLevertijdVoorOrder(orderId?: number) {
   return useQuery({
@@ -20,6 +20,11 @@ export function useClaimsVoorOrder(orderId?: number) {
     queryFn: () => fetchClaimsVoorOrder(orderId!),
     enabled: !!orderId,
   })
+}
+
+/** Publieke alias voor useClaimsVoorOrder — voor externe module-consumers. */
+export function useOrderClaims(orderId: number) {
+  return useClaimsVoorOrder(orderId)
 }
 
 export function useClaimsVoorOrderRegel(orderRegelId?: number) {

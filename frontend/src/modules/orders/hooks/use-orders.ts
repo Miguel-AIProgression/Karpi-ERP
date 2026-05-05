@@ -4,8 +4,8 @@ import {
   fetchStatusCounts,
   fetchOrderDetail,
   fetchOrderRegels,
-} from '@/lib/supabase/queries/orders'
-import type { OrderSortField, SortDirection } from '@/lib/supabase/queries/orders'
+} from '@/modules/orders/queries/orders'
+import type { OrderSortField, SortDirection } from '@/modules/orders/queries/orders'
 
 export function useOrders(params: {
   status?: string
@@ -43,4 +43,9 @@ export function useOrderRegels(orderId: number) {
     queryFn: () => fetchOrderRegels(orderId),
     enabled: orderId > 0,
   })
+}
+
+/** Publieke alias voor useOrderDetail — voor externe module-consumers. */
+export function useOrder(orderId: number) {
+  return useOrderDetail(orderId)
 }

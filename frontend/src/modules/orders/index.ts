@@ -16,10 +16,12 @@ export {
   useStatusCounts,
   useOrderDetail,
   useOrderRegels,
+  useOrder,
 } from './hooks/use-orders'
 export {
   useLevertijdVoorOrder,
   useClaimsVoorOrder,
+  useOrderClaims,
   useClaimsVoorOrderRegel,
   useClaimsVoorIORegel,
 } from './hooks/use-reserveringen'
@@ -52,6 +54,9 @@ export type {
   OrderRegelLevertijd,
   LevertijdStatus,
 } from './queries/reserveringen'
+
+// Components
+export { RegelClaimDetail } from './components/regel-claim-detail'
 
 // Lib
 export {
