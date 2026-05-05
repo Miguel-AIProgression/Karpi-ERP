@@ -57,6 +57,7 @@ export { VervoerderDetailPage } from './pages/vervoerder-detail'
 export { VervoerderTag } from './components/vervoerder-tag'
 export { VervoerderStatsCard } from './components/vervoerder-stats-card'
 export { ZendingStatusBadge } from './components/zending-status-badge'
+export { VerzendsetButton } from './components/verzendset-button'
 
 // Fase A — vervoerder-instellingen (mig 174)
 export {
