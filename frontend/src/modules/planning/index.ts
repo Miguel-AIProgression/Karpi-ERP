@@ -68,3 +68,12 @@ export {
   usePlanningConfig,
   useUpdatePlanningConfig,
 } from './hooks/use-planning-config'
+
+// Levertijd-simulatie seam — contract types + implementatie
+export { simuleerLevertijd } from './lib/simuleer-levertijd'
+export type {
+  MaatwerkRegelConcept,
+  PlanningScenario,
+  PerRegelScenario,
+  SeamResult,
+} from './lib/levertijd-simulatie-contract'
