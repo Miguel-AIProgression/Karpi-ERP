@@ -25,6 +25,9 @@
 
 ## Architectuurbeslissingen
 
+### Module-grafiek (vertical slices met expliciete seams)
+Frontend en backend worden geleidelijk per feature heringericht als **deep verticale Modules** onder `frontend/src/modules/{naam}/` en `supabase/functions/{naam}-*/`. Eerste twee modules in dit patroon waren `modules/edi/` en `modules/logistiek/`; daarop volgen `modules/orders/` (bezit het Order-voorstel) en `modules/planning/` (bezit snijplanning, confectie, levertijd-simulatie). Cross-Module aanroepen lopen via een **TS-functie-contract** (shared edge-helper of barrel-export), niet via god-Module en niet via HTTP-tussenstappen. Iedere seam wordt afgedwongen met contract-tests die in beide kanten dezelfde fixtures draaien. Beslissing en alternatieven: [ADR-0001](adr/0001-order-voorstel-en-planning-als-twee-modules.md).
+
 ### debiteur_nr als INTEGER PK (niet UUID)
 Alle bronbestanden, logo-bestanden (`{debiteur_nr}.jpg`), klanteigen namen, orders, en afleveradressen verwijzen naar het debiteurnummer uit het oude systeem. UUID zou een onnodige mapping-laag toevoegen.
 

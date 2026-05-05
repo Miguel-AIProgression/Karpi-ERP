@@ -1,5 +1,20 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-05 — Architectuurplan: Order-voorstel + Planning als deep verticale Modules
+
+Architectuur-grilling-sessie heeft de order-intake-flow geanalyseerd en als deepening-kandidaat geïdentificeerd: zes lagen (order-form → line-editor → uitwisselbaar-hint → levertijd-suggestie → claim-RPC's → DB) die één logisch domeinconcept (`Order-voorstel`) verdelen.
+
+- **Beslissing**: Order-voorstel + Planning worden twee aparte deep verticale Modules met een TS-functie-contract als seam — vastgelegd in [ADR-0001](adr/0001-order-voorstel-en-planning-als-twee-modules.md).
+- **Plan**: zie [`2026-05-05-order-voorstel-en-planning-modules.md`](superpowers/plans/2026-05-05-order-voorstel-en-planning-modules.md) voor scope, module-grenzen, save/read-paths, migratie-aanpak (big-bang in worktree met regression-snapshot), en test-strategie (contract-tests op de seam, regression-snapshot op 20 representatieve order-fixtures).
+- **`data-woordenboek.md`**: nieuwe term `Order-voorstel` toegevoegd (parallel aan `Snijvoorstel`); verwijst naar ADR-0001.
+- **`architectuur.md`**: nieuwe subsectie "Module-grafiek (vertical slices met expliciete seams)" als anker-beslissing.
+
+Pick-ship blijft uit scope (eigen Module in latere migratie); `<LevertijdSuggestie>` verhuist naar Planning-Module; `maatwerk-prijs.ts` valt onder Orders-Module.
+
+Uitvoering nog niet gestart — eerstvolgende stap is het genereren van de regression-fixture-set.
+
+---
+
 ## 2026-05-01 — Nieuw-product-formulier: auto artikelnr/karpi-code, maatwerk-afwerking, voorraad-lock
 
 [`ProductCreatePage`](../frontend/src/pages/producten/product-create.tsx) heeft drie kwaliteitsverbeteringen gekregen die het aanmaakproces afstemmen op de Karpi-conventies:
