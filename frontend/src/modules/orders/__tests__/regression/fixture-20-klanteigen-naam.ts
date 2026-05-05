@@ -16,6 +16,8 @@ export const fixture20: OrderVoorstelResult = {
       uitwisselbaar: 0,
       status: 'voorraad',
       eerste_io_datum: null,
+      planning_scenario: null,
+      planning_beschikbaar: false,
     },
     {
       regel_id: 'regel-2',
@@ -27,6 +29,8 @@ export const fixture20: OrderVoorstelResult = {
       uitwisselbaar: 0,
       status: 'voorraad',
       eerste_io_datum: null,
+      planning_scenario: null,
+      planning_beschikbaar: false,
     },
   ],
 }

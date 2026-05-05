@@ -16,6 +16,8 @@ export const fixture04: OrderVoorstelResult = {
       uitwisselbaar: 2,
       status: 'voorraad',
       eerste_io_datum: null,
+      planning_scenario: null,
+      planning_beschikbaar: false,
     },
   ],
 }

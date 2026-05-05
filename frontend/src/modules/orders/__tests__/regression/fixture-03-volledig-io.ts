@@ -15,6 +15,8 @@ export const fixture03: OrderVoorstelResult = {
       uitwisselbaar: 0,
       status: 'op_inkoop',
       eerste_io_datum: '2026-07-01',
+      planning_scenario: null,
+      planning_beschikbaar: false,
     },
   ],
 }
