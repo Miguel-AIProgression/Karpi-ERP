@@ -67,7 +67,7 @@ export function ClientSelector({ value, onChange, disabled }: ClientSelectorProp
         return
       }
       const mapped: SelectedClient[] = (data ?? []).map((row) => {
-        const { inkoopgroepen, ...rest } = row as Record<string, unknown> & {
+        const { inkoopgroepen, ...rest } = row as unknown as Record<string, unknown> & {
           inkoopgroepen: { naam: string } | null
         }
         return {
