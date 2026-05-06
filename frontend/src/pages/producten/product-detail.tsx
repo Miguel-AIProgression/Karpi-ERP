@@ -4,11 +4,13 @@ import { PageHeader } from '@/components/layout/page-header'
 import { InfoField } from '@/components/ui/info-field'
 import { formatCurrency, formatNumber } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
+import { useQuery } from '@tanstack/react-query'
 import { useProductDetail, useRollenVoorProduct, useClaimsVoorProduct, useEquivalenteProducten } from '@/hooks/use-producten'
 import { useOpenstaandeInkoopVoorArtikel } from '@/hooks/use-inkooporders'
 import { useVoorraadpositie } from '@/modules/voorraadpositie'
 import { ProductTypeBadge } from './producten-overview'
 import { GewichtBronBadge } from '@/components/kwaliteiten/gewicht-bron-badge'
+import { fetchKwaliteitInfo } from '@/lib/supabase/queries/kwaliteiten'
 import { isoWeekFromString } from '@/lib/utils/iso-week'
 
 const INKOOP_STATUS_COLORS: Record<string, string> = {
@@ -47,6 +49,11 @@ export function ProductDetailPage() {
     product?.kwaliteit_code ?? '',
     product?.kleur_code ?? '',
   )
+  const { data: kwaliteitInfo } = useQuery({
+    queryKey: ['kwaliteit-info', product?.kwaliteit_code],
+    queryFn: () => fetchKwaliteitInfo(product?.kwaliteit_code ?? null),
+    enabled: !!product?.kwaliteit_code,
+  })
 
   if (isLoading) return <PageHeader title="Product laden..." />
 
@@ -92,14 +99,34 @@ export function ProductDetailPage() {
           )}
           {product.gewicht_kg != null && (
             <div>
-              <div className="text-xs text-slate-500 mb-0.5">Gewicht</div>
+              <div className="text-xs text-slate-500 mb-0.5">Gewicht (per stuk)</div>
               <div className="flex items-center gap-2">
                 <span>{formatNumber(product.gewicht_kg, 2)} kg</span>
                 <GewichtBronBadge gewichtUitKwaliteit={product.gewicht_uit_kwaliteit} />
               </div>
             </div>
           )}
+          {kwaliteitInfo?.gewicht_per_m2_kg != null && (
+            <InfoField
+              label="Gewicht per m² (kwaliteit)"
+              value={`${formatNumber(kwaliteitInfo.gewicht_per_m2_kg, 3)} kg/m²`}
+            />
+          )}
+          {kwaliteitInfo?.standaard_breedte_cm != null && product.product_type === 'rol' && (
+            <InfoField label="Standaard rolbreedte" value={`${kwaliteitInfo.standaard_breedte_cm} cm`} />
+          )}
         </div>
+        {product.kwaliteit_code && kwaliteitInfo?.gewicht_per_m2_kg == null && (
+          <div className="mt-4 pt-4 border-t border-slate-100 text-xs text-amber-700 flex items-start gap-2">
+            <span>⚠</span>
+            <span>
+              Kwaliteit <span className="font-mono">{product.kwaliteit_code}</span> heeft nog geen gewicht/m² ingevuld —
+              <Link to="/instellingen/kwaliteiten" className="underline ml-1">
+                vul aan op instellingen-pagina
+              </Link>.
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Voorraad card */}

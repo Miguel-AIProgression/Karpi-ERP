@@ -57,3 +57,22 @@ export async function updateKwaliteitGewicht(code: string, gewichtPerM2Kg: numbe
     .eq('code', code)
   if (error) throw error
 }
+
+export interface KwaliteitInfo {
+  code: string
+  omschrijving: string | null
+  gewicht_per_m2_kg: number | null
+  standaard_breedte_cm: number | null
+}
+
+/** Single kwaliteit-fetch voor product-detail enrichment */
+export async function fetchKwaliteitInfo(code: string | null): Promise<KwaliteitInfo | null> {
+  if (!code) return null
+  const { data, error } = await supabase
+    .from('kwaliteiten')
+    .select('code, omschrijving, gewicht_per_m2_kg, standaard_breedte_cm')
+    .eq('code', code)
+    .maybeSingle()
+  if (error) throw error
+  return data
+}
