@@ -33,6 +33,7 @@ export interface ProductDetail extends ProductRow {
   gewicht_kg: number | null
   lengte_cm: number | null
   breedte_cm: number | null
+  vorm: 'rechthoek' | 'rond'
   gewicht_uit_kwaliteit: boolean
   product_type: ProductType | null
 }
@@ -55,10 +56,11 @@ export async function fetchProducten(params: {
   page?: number
   pageSize?: number
   productType?: ProductType | 'alle'
+  kwaliteitCode?: string | null
   sortBy?: ProductSortField
   sortDir?: SortDirection
 }) {
-  const { search, page = 0, pageSize = 50, productType, sortBy = 'artikelnr', sortDir = 'asc' } = params
+  const { search, page = 0, pageSize = 50, productType, kwaliteitCode, sortBy = 'artikelnr', sortDir = 'asc' } = params
   const hasSearch = Boolean(search?.trim())
 
   let query = supabase
@@ -69,6 +71,10 @@ export async function fetchProducten(params: {
 
   if (productType && productType !== 'alle') {
     query = query.eq('product_type', productType)
+  }
+
+  if (kwaliteitCode) {
+    query = query.eq('kwaliteit_code', kwaliteitCode)
   }
 
   if (hasSearch) {

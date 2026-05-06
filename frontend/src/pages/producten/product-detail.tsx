@@ -3,6 +3,7 @@ import { ArrowLeft, Truck } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { InfoField } from '@/components/ui/info-field'
 import { formatCurrency, formatNumber } from '@/lib/utils/formatters'
+import { berekenProductGewichtKg } from '@/lib/utils/gewicht'
 import { cn } from '@/lib/utils/cn'
 import { useQuery } from '@tanstack/react-query'
 import { useProductDetail, useRollenVoorProduct, useClaimsVoorProduct, useEquivalenteProducten } from '@/hooks/use-producten'
@@ -97,21 +98,31 @@ export function ProductDetailPage() {
           {product.lengte_cm != null && product.breedte_cm != null && (
             <InfoField label="Maat" value={`${product.lengte_cm} × ${product.breedte_cm} cm`} />
           )}
-          {product.gewicht_kg != null && (
-            <div>
-              <div className="text-xs text-slate-500 mb-0.5">Gewicht (per stuk)</div>
-              <div className="flex items-center gap-2">
-                <span>{formatNumber(product.gewicht_kg, 2)} kg</span>
-                <GewichtBronBadge gewichtUitKwaliteit={product.gewicht_uit_kwaliteit} />
-              </div>
-            </div>
-          )}
           {kwaliteitInfo?.gewicht_per_m2_kg != null && (
             <InfoField
               label="Gewicht per m² (kwaliteit)"
               value={`${formatNumber(kwaliteitInfo.gewicht_per_m2_kg, 3)} kg/m²`}
             />
           )}
+          {(() => {
+            const berekend = berekenProductGewichtKg({
+              lengte_cm: product.lengte_cm,
+              breedte_cm: product.breedte_cm,
+              vorm: product.vorm,
+              gewichtPerM2Kg: kwaliteitInfo?.gewicht_per_m2_kg ?? null,
+            })
+            const effectief = berekend ?? product.gewicht_kg
+            if (effectief == null) return null
+            return (
+              <div>
+                <div className="text-xs text-slate-500 mb-0.5">Totaal gewicht (deze afmeting)</div>
+                <div className="flex items-center gap-2">
+                  <span>{formatNumber(effectief, 2)} kg</span>
+                  <GewichtBronBadge gewichtUitKwaliteit={berekend != null || product.gewicht_uit_kwaliteit} />
+                </div>
+              </div>
+            )
+          })()}
           {kwaliteitInfo?.standaard_breedte_cm != null && product.product_type === 'rol' && (
             <InfoField label="Standaard rolbreedte" value={`${kwaliteitInfo.standaard_breedte_cm} cm`} />
           )}
