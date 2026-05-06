@@ -107,6 +107,11 @@ export async function fetchOrders(params: {
     .from('orders_list')
     .select('*', { count: 'exact' })
     .order(sortBy, { ascending: sortDir === 'asc' })
+    // Tiebreaker: id is monotoon stijgend (auto-increment) → bij gelijke
+    // sort-waarde (typisch: meerdere orders op dezelfde orderdatum) komt de
+    // laatst-aangemaakte order bovenaan. orders heeft geen aangemaakt_op
+    // kolom, dus id DESC is de pragmatische proxy. Zie issue #34.
+    .order('id', { ascending: false })
     .range(page * pageSize, (page + 1) * pageSize - 1)
 
   if (status === 'Actie vereist') {

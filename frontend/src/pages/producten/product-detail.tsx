@@ -6,6 +6,7 @@ import { formatCurrency, formatNumber } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
 import { useProductDetail, useRollenVoorProduct, useClaimsVoorProduct, useEquivalenteProducten } from '@/hooks/use-producten'
 import { useOpenstaandeInkoopVoorArtikel } from '@/hooks/use-inkooporders'
+import { useVoorraadpositie } from '@/modules/voorraadpositie'
 import { ProductTypeBadge } from './producten-overview'
 import { isoWeekFromString } from '@/lib/utils/iso-week'
 
@@ -37,6 +38,14 @@ export function ProductDetailPage() {
   const { data: claims } = useClaimsVoorProduct(artikelnr)
   const { data: equivalenten } = useEquivalenteProducten(artikelnr)
   const { data: inkoopregels } = useOpenstaandeInkoopVoorArtikel(artikelnr)
+  // Voorraadpositie-Module seam (T001 tracer-bullet, mig 179) — levert
+  // de aggregate "Openstaande inkooporders"-totaal m¹ via voorraadpositie.besteld.
+  // De per-IO-regel-detail blijft uit useOpenstaandeInkoopVoorArtikel komen
+  // (aggregate kent geen regel-niveau leverancier/status/leverweek).
+  const { data: voorraadpositie } = useVoorraadpositie(
+    product?.kwaliteit_code ?? '',
+    product?.kleur_code ?? '',
+  )
 
   if (isLoading) return <PageHeader title="Product laden..." />
 
@@ -167,7 +176,10 @@ export function ProductDetailPage() {
             <span className="text-sm text-slate-500">
               Totaal te leveren:{' '}
               <span className="font-semibold text-slate-700">
-                {formatNumber(inkoopregels.reduce((s, r) => s + r.te_leveren_m, 0))} m
+                {formatNumber(
+                  voorraadpositie?.besteld?.besteld_m ??
+                    inkoopregels.reduce((s, r) => s + r.te_leveren_m, 0),
+                )} m
               </span>
             </span>
           </div>

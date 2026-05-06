@@ -14,6 +14,7 @@ import { supabase } from '@/lib/supabase/client'
 import { fetchOrderConfig, type OrderConfig } from '@/lib/supabase/queries/order-config'
 import { triggerAutoplan, fetchAutoplanningConfig } from '@/lib/supabase/queries/auto-planning'
 import { berekenAfleverdatum } from '@/lib/utils/afleverdatum'
+import { berekenMaatwerkAfleverdatumViaSeam } from '@/lib/utils/maatwerk-leverdatum'
 import { SHIPPING_PRODUCT_ID, SHIPPING_THRESHOLD, SHIPPING_COST } from '@/lib/constants/shipping'
 import { SPOED_PRODUCT_ID, SPOED_FALLBACK_BEDRAG } from '@/lib/constants/spoed'
 
@@ -377,6 +378,16 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
           const standaardRegels = regels.filter(r => r.artikelnr !== SHIPPING_PRODUCT_ID && !r.is_maatwerk)
           const maatwerkRegels = regels.filter(r => r.artikelnr !== SHIPPING_PRODUCT_ID && r.is_maatwerk)
 
+          // Issue #33: maatwerk-afleverdatum via echte planning-seam (check-levertijd)
+          // i.p.v. de statische maatwerk_weken-config — die laatste levert "1 week
+          // later" terwijl de echte capaciteit 15 weken kan zijn.
+          const echteMaatwerkDatum = await berekenMaatwerkAfleverdatumViaSeam({
+            maatwerkRegels,
+            debiteurNr: client.debiteur_nr,
+            fallbackDatum: afleverdatumInfo.maatwerkDatum,
+            gewensteLeverdatum: header.afleverdatum ?? null,
+          })
+
           const standaardOrder: OrderFormData = {
             ...orderData,
             afleverdatum: afleverdatumInfo.standaardDatum ?? orderData.afleverdatum,
@@ -384,15 +395,27 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
           }
           const maatwerkOrder: OrderFormData = {
             ...orderData,
-            afleverdatum: afleverdatumInfo.maatwerkDatum ?? orderData.afleverdatum,
-            week: afleverdatumInfo.maatwerkDatum ? String(getISOWeek(afleverdatumInfo.maatwerkDatum)) : orderData.week,
+            afleverdatum: echteMaatwerkDatum ?? orderData.afleverdatum,
+            week: echteMaatwerkDatum ? String(getISOWeek(echteMaatwerkDatum)) : orderData.week,
           }
-          const regelsA = shippingRegel ? [...standaardRegels, shippingRegel] : standaardRegels
+
+          // Issue #33: verzendkosten naar de duurste sub-order (eerder altijd
+          // standaard-deel — onlogisch als maatwerk-deel waardevoller is).
+          const totaalStandaard = standaardRegels.reduce((s, r) => s + (r.bedrag ?? 0), 0)
+          const totaalMaatwerk = maatwerkRegels.reduce((s, r) => s + (r.bedrag ?? 0), 0)
+          const verzendNaarMaatwerk = totaalMaatwerk > totaalStandaard
+          const regelsA = !verzendNaarMaatwerk && shippingRegel
+            ? [...standaardRegels, shippingRegel]
+            : standaardRegels
+          const regelsB = verzendNaarMaatwerk && shippingRegel
+            ? [...maatwerkRegels, shippingRegel]
+            : maatwerkRegels
+
           const a = await createOrder(standaardOrder, regelsA)
-          const b = await createOrder(maatwerkOrder, maatwerkRegels)
+          const b = await createOrder(maatwerkOrder, regelsB)
           await persistUitwisselbaarKeuzes(a.id, regelsA)
-          await persistUitwisselbaarKeuzes(b.id, maatwerkRegels)
-          await triggerAutoplanForMaatwerk(maatwerkRegels)
+          await persistUitwisselbaarKeuzes(b.id, regelsB)
+          await triggerAutoplanForMaatwerk(regelsB)
           return { split: true as const, standaard: a, maatwerk: b }
         }
 
@@ -405,10 +428,11 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
         if (effectieveModus === 'deelleveringen' && heeftIoTekort) {
           const directeRegels: OrderRegelFormData[] = []
           const ioRegels: OrderRegelFormData[] = []
+          let shippingRegel: OrderRegelFormData | null = null
 
           for (const r of regels) {
             if (r.artikelnr === SHIPPING_PRODUCT_ID) {
-              directeRegels.push(r)  // verzendkosten alleen op directe order
+              shippingRegel = r  // pas later toewijzen aan duurste deel (issue #33)
               continue
             }
             const d = berekenRegelDekking(r)
@@ -438,6 +462,14 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
                 bedrag: Math.round(prijs * d.ioTekort * (1 - korting) * 100) / 100,
               })
             }
+          }
+
+          // Issue #33: verzendkosten naar duurste sub-order (i.p.v. altijd directe).
+          if (shippingRegel) {
+            const totaalDirect = directeRegels.reduce((s, r) => s + (r.bedrag ?? 0), 0)
+            const totaalIo = ioRegels.reduce((s, r) => s + (r.bedrag ?? 0), 0)
+            if (totaalIo > totaalDirect) ioRegels.push(shippingRegel)
+            else directeRegels.push(shippingRegel)
           }
 
           const directeOrder: OrderFormData = { ...orderData, lever_modus: 'in_een_keer' }

@@ -1,5 +1,6 @@
 import { useRef } from 'react'
 import { Trash2 } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { formatCurrency } from '@/lib/utils/formatters'
 import { berekenPrijsOppervlakM2 } from '@/lib/utils/maatwerk-prijs'
 import { AFWERKING_OPTIES } from '@/lib/utils/constants'
@@ -10,6 +11,7 @@ import type { SelectedArticle, SubstitutionInfo } from './article-selector'
 import type { OrderRegelFormData } from '@/lib/supabase/queries/order-mutations'
 import { SHIPPING_PRODUCT_ID } from '@/lib/constants/shipping'
 import { berekenRegelDekking } from '@/lib/utils/regel-dekking'
+import { fetchEquivalenteProducten } from '@/lib/supabase/queries/product-equivalents'
 
 interface OrderLineEditorProps {
   lines: OrderRegelFormData[]
@@ -36,12 +38,13 @@ const inputClass = 'w-full text-right bg-transparent border border-slate-200 rou
 const selectClass = 'bg-transparent border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-terracotta-400/30'
 
 function MaatwerkLineRow({
-  line, index, updateLine, removeLine,
+  line, index, updateLine, removeLine, prijslijstNr,
 }: {
   line: OrderRegelFormData
   index: number
   updateLine: (i: number, u: Partial<OrderRegelFormData>) => void
   removeLine: (i: number) => void
+  prijslijstNr?: string
 }) {
   const isVasteMaatRegel = !line.is_maatwerk
     && line.artikelnr
@@ -51,6 +54,37 @@ function MaatwerkLineRow({
   const dekking = berekenRegelDekking(line)
   const uitwisselbaarTotaal = dekking.uitwisselbaar
   const tekortAantal = dekking.ioTekort
+
+  // Issue #35: passieve summary van uitwisselbare voorraad — toont onder
+  // het vrije-voorraad getal "+N via ander type" zodra er überhaupt
+  // omsticker-baar alternatief bestaat (ook als er nog geen tekort is).
+  const { data: equivSummary } = useQuery({
+    queryKey: ['equivalente-producten-summary', line.artikelnr],
+    queryFn: () => fetchEquivalenteProducten(line.artikelnr!),
+    enabled: !!isVasteMaatRegel && !!line.artikelnr,
+    staleTime: 60_000,
+  })
+  const equivVoorraadTotaal = (equivSummary ?? []).reduce(
+    (s, e) => s + (e.vrije_voorraad ?? 0),
+    0,
+  )
+
+  // Issue #36: bij keuze van een product zónder eigen voorraad moet de UI
+  // ondubbelzinnig laten zien WAARVANDAAN de regel geleverd kan worden —
+  // uitwisselbaar (omsticker) of openstaande inkoop. We bouwen één expliciete
+  // "Leverbaar via …"-summary zodat de gebruiker bij het toevoegen van de
+  // regel direct weet welk pad gevolgd wordt; subtiele slate-400-tekst werd
+  // gemist (zie QA-bevinding #36).
+  const heeftEigenVoorraad = (line.vrije_voorraad ?? 0) > 0
+  const eersteEquivOpVoorraad = (equivSummary ?? []).find((e) => (e.vrije_voorraad ?? 0) > 0)
+  const equivPartnerLabel =
+    eersteEquivOpVoorraad
+      ? `${eersteEquivOpVoorraad.kwaliteit_code}-${eersteEquivOpVoorraad.kleur_code}`
+      : null
+  const toonLeverbaarVia =
+    isVasteMaatRegel
+    && !heeftEigenVoorraad
+    && (equivVoorraadTotaal > 0 || (line.besteld_inkoop ?? 0) > 0)
   return (
     <>
       <tr className={line.is_maatwerk ? 'border-b-0' : 'border-b border-slate-50'}>
@@ -93,22 +127,84 @@ function MaatwerkLineRow({
         <td className="px-3 py-2 text-right">
           {line.is_maatwerk && line.maatwerk_beschikbaar_m2 != null ? (
             <>
-              <div className={`text-xs ${line.maatwerk_beschikbaar_m2 > 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
-                {line.maatwerk_beschikbaar_m2} m²
-                {(line.maatwerk_equiv_m2 ?? 0) > 0 && (
-                  <span className="text-slate-400" title="Uitwisselbare kwaliteiten"> (+{line.maatwerk_equiv_m2})</span>
-                )}
-              </div>
+              {(() => {
+                // Issue #37: bij maatwerk-regel zónder eigen voorraad maar mét
+                // uitwisselbare m² is "0 m²" in rose-500 misleidend; de regel
+                // is wel produceerbaar via een omsticker-rol. Toon dan een
+                // emerald-500-style met expliciete "via uitwisselbaar"-label.
+                const beschikbaar = line.maatwerk_beschikbaar_m2 ?? 0
+                const equivM2 = line.maatwerk_equiv_m2 ?? 0
+                const heeftEigen = beschikbaar > 0
+                const heeftAlleenEquiv = !heeftEigen && equivM2 > 0
+                const kleurClass = heeftEigen
+                  ? 'text-emerald-600'
+                  : heeftAlleenEquiv
+                    ? 'text-slate-500'
+                    : 'text-rose-500'
+                return (
+                  <>
+                    <div className={`text-xs ${kleurClass}`}>
+                      {beschikbaar} m²
+                      {equivM2 > 0 && heeftEigen && (
+                        <span className="text-slate-400" title="Uitwisselbare kwaliteiten"> (+{equivM2})</span>
+                      )}
+                    </div>
+                    {heeftAlleenEquiv && (
+                      <div
+                        className="text-xs text-emerald-700 font-medium mt-0.5"
+                        title="Te produceren via uitwisselbare kwaliteit (omsticker-rol)"
+                      >
+                        ↔ via uitwisselbaar ({equivM2} m²)
+                      </div>
+                    )}
+                  </>
+                )
+              })()}
             </>
           ) : (
             <>
-              <div className={`text-xs ${(line.vrije_voorraad ?? 0) > 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+              <div className={`text-xs ${heeftEigenVoorraad ? 'text-emerald-600' : toonLeverbaarVia ? 'text-slate-500' : 'text-rose-500'}`}>
                 {line.vrije_voorraad ?? 0}
               </div>
-              {(line.besteld_inkoop ?? 0) > 0 && (
-                <div className="text-xs text-slate-400" title="Verwacht (besteld inkoop)">
-                  +{line.besteld_inkoop}
+              {/* Issue #36: expliciete "Leverbaar via …"-summary wanneer eigen
+                  voorraad = 0 maar omsticker- of inkoop-pad beschikbaar is. */}
+              {toonLeverbaarVia ? (
+                <div className="mt-0.5 space-y-0.5">
+                  {equivVoorraadTotaal > 0 && (
+                    <div
+                      className="text-xs text-emerald-700 font-medium"
+                      title="Leverbaar via uitwisselbaar product (omstickeren)"
+                    >
+                      ↔ via {equivPartnerLabel ?? 'ander type'}
+                      {equivVoorraadTotaal > 0 && ` (${equivVoorraadTotaal})`}
+                    </div>
+                  )}
+                  {(line.besteld_inkoop ?? 0) > 0 && (
+                    <div
+                      className="text-xs text-amber-700 font-medium"
+                      title="Verwacht uit openstaande inkoop"
+                    >
+                      ⌛ via inkoop (+{line.besteld_inkoop})
+                    </div>
+                  )}
                 </div>
+              ) : (
+                <>
+                  {(line.besteld_inkoop ?? 0) > 0 && (
+                    <div className="text-xs text-slate-400" title="Verwacht (besteld inkoop)">
+                      +{line.besteld_inkoop}
+                    </div>
+                  )}
+                  {/* Issue #35: passieve indicator dat er uitwisselbare voorraad bestaat */}
+                  {isVasteMaatRegel && equivVoorraadTotaal > 0 && (
+                    <div
+                      className="text-xs text-slate-400"
+                      title="Beschikbaar via uitwisselbaar product (omstickeren)"
+                    >
+                      (+{equivVoorraadTotaal} via ander type)
+                    </div>
+                  )}
+                </>
               )}
             </>
           )}
@@ -151,6 +247,15 @@ function MaatwerkLineRow({
             className={inputClass}
             step="0.01"
           />
+          {/* Issue #35: signaleer als prijs niet uit klant-prijslijst komt */}
+          {prijslijstNr && line.prijs_uit_prijslijst === false && !line.is_maatwerk && (
+            <div
+              className="text-xs text-amber-600 mt-0.5"
+              title={`Geen prijs in klant-prijslijst ${prijslijstNr} — fallback op standaard verkoopprijs`}
+            >
+              ⚠ Niet uit prijslijst
+            </div>
+          )}
         </td>
         <td className="px-3 py-2">
           <input
@@ -374,6 +479,8 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr,
       omstickeren: substitution?.omstickeren,
       // Maatwerk
       is_maatwerk: false,
+      // Issue #35: signaleer of prijs uit klant-prijslijst komt of fallback
+      prijs_uit_prijslijst: prijsUitPrijslijst,
     }
     newLine.bedrag = calcBedrag(newLine)
     onChange([...lines, newLine])
@@ -436,6 +543,7 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr,
                   index={i}
                   updateLine={updateLine}
                   removeLine={removeLine}
+                  prijslijstNr={prijslijstNr}
                 />
               ))}
             </tbody>

@@ -1,5 +1,126 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-06 — Oude RPC's na Voorraadpositie-Module-cutover (T005 / #30)
+
+Vijfde en laatste slice van de Voorraadpositie-Module-epic ([PRD #25](https://github.com/Miguel-AIProgression/karpi-erp/issues/25)). Cleanup van de drie RPC's die door `voorraadposities()` (mig 179/180) zijn vervangen: `rollen_uitwissel_voorraad` (mig 112/115), `uitwisselbare_partners` (mig 114/115), `besteld_per_kwaliteit_kleur` (mig 137). Hiermee is de epic compleet — alle vijf taken (T001–T005) staan.
+
+- **Audit-bevindingen — geen externe callers meer**:
+  - `rollen_uitwissel_voorraad`: 0 callers in frontend / edge-functions / scripts / import / SQL-callers (voorraadposities consumeert 'm NIET — die roept `uitwisselbare_partners()` rechtstreeks aan). ⇒ **DROP**.
+  - `uitwisselbare_partners`: 0 directe externe callers. SQL-caller: `voorraadposities()` (CTE-bron in partners-aggregaat). ⇒ **DEMOTE** (COMMENT-only). GRANT EXECUTE blijft voor `anon`/`authenticated` omdat `voorraadposities()` als `LANGUAGE sql STABLE` (= SECURITY INVOKER) inner-permissies eist.
+  - `besteld_per_kwaliteit_kleur`: na T005-refactor enige frontend-callers via Module-seam (`fetchVoorraadpositie` + nieuw `fetchGhostBesteldParen`). SQL-caller: `voorraadposities()`. ⇒ **DEMOTE** (COMMENT-only). GRANT blijft om dezelfde reden + omdat `fetchGhostBesteldParen` vanuit de browser draait met `anon`/`authenticated`.
+- **Optie Y-refactor (ghost-merge achter Module-seam)**: `pages/rollen/rollen-overview.tsx` riep direct `supabase.rpc('besteld_per_kwaliteit_kleur')` aan (T003's ghost-merge). Verplaatst naar nieuwe Module-export [`fetchGhostBesteldParen`](../frontend/src/modules/voorraadpositie/queries/ghost-besteld.ts). Module's bestaans-regel ("batch-modus geeft alleen eigen-voorraad-paren") onveranderd; ghost-merge-logica blijft op page-niveau. Resultaat: alle frontend-DB-calls voor de Voorraadpositie-data-flow lopen nu door de Module-barrel, zodat `besteld_per_kwaliteit_kleur` logisch gedemoot kan worden zonder breuk.
+- **Mig 187 — uitvoering**: `DROP FUNCTION IF EXISTS rollen_uitwissel_voorraad();` + twee `COMMENT ON FUNCTION` met "INTERN — niet direct aanroepen vanuit nieuwe code"-richtlijn voor de andere twee. Geen `REVOKE` (zou `voorraadposities()` breken).
+- **Tests**: nieuwe regression-fixture 10 (`fetchGhostBesteldParen` shape + RPC-aanroep + lege-array fallback bij fout + null→0-cast voor numerieken). 4 nieuwe tests (96/97 groen, 1 perf-test skipped). Rollen-overzicht-flow regression-vrij — Module-seam transparante vervanger voor de directe RPC-call.
+- **Demote = conceptueel, niet permissief**: omdat browser-callers `anon`/`authenticated` gebruiken kan een echte `REVOKE` niet zonder Module + `voorraadposities()` te breken. De `COMMENT`-tekst documenteert de design-intent: nieuwe code hoort de Module-seam te gebruiken.
+
+**Bestanden touched**:
+- [`supabase/migrations/187_oude_rpcs_cleanup.sql`](../supabase/migrations/187_oude_rpcs_cleanup.sql) — DROP + COMMENT-only-demote.
+- [`frontend/src/modules/voorraadpositie/queries/ghost-besteld.ts`](../frontend/src/modules/voorraadpositie/queries/ghost-besteld.ts) — nieuwe Module-query.
+- [`frontend/src/modules/voorraadpositie/index.ts`](../frontend/src/modules/voorraadpositie/index.ts) — barrel-export uitgebreid.
+- [`frontend/src/pages/rollen/rollen-overview.tsx`](../frontend/src/pages/rollen/rollen-overview.tsx) — directe RPC-call vervangen door `fetchGhostBesteldParen`.
+- [`frontend/src/modules/voorraadpositie/__tests__/regression/fixture-10-ghost-besteld-paren.test.ts`](../frontend/src/modules/voorraadpositie/__tests__/regression/fixture-10-ghost-besteld-paren.test.ts) — 4 nieuwe testcases.
+- [`docs/changelog.md`](changelog.md), [`docs/database-schema.md`](database-schema.md).
+
+**HITL — migratie 187 handmatig toepassen op Supabase Karpi-project** (MCP heeft geen toegang). Idempotent: `DROP FUNCTION IF EXISTS` + `COMMENT ON FUNCTION` zijn beide veilig her-uitvoerbaar.
+
+## 2026-05-06 — Gewicht per kwaliteit — bron-van-waarheid op `kwaliteiten` (#38–#43)
+
+Implementatie van de gewicht-per-kwaliteit feature, aangevraagd door Piet-Hein Dobbe — relevante info voor vervoerder (HST-pakbon `weightKg`). Plan: [`docs/superpowers/plans/2026-05-06-gewicht-per-kwaliteit.md`](superpowers/plans/2026-05-06-gewicht-per-kwaliteit.md).
+
+**Architectuur — Gewicht-resolver als deep SQL-Module:**
+- Smal interface: `gewicht_per_m2_voor_kwaliteit`, `bereken_product_gewicht_kg`, `bereken_orderregel_gewicht_kg`.
+- Brede implementatie: oppervlak-bepaling per producttype (vast/staaltje uit `lengte_cm × breedte_cm`, maatwerk uit `maatwerk_oppervlak_m2`), kwaliteit-density-lookup, NULL-fallback, trigger-cascade kwaliteit → producten → open order_regels.
+- Alle gewicht-callers gaan voortaan hierdoor; bestaande `COALESCE(ore.gewicht_kg, p.gewicht_kg, 0)` in zending-aanmaak vervalt.
+
+**Migraties:** _(originele nummers 180/181/182 hernummerd naar 184/185/186 wegens collisie met `180_voorraadposities_batch_filter` (T003) en `182_placeholder_rollen_opruim` (T004) op de feat/voorraadpositie-module-branch)_
+- **184** — fundament: `kwaliteiten.gewicht_per_m2_kg` toegevoegd, `producten.lengte_cm`/`breedte_cm`/`gewicht_uit_kwaliteit` toegevoegd. Eenmalige regex-parsing van `karpi_code` (laatste 6 cijfers) vult lengte+breedte voor vaste en staaltje-producten.
+- **185** — resolver-functies + cascade-triggers (`trg_kwaliteit_gewicht_recalc`, `trg_product_gewicht_recalc`) + modus-seed van `maatwerk_m2_prijzen.gewicht_per_m2_kg` naar `kwaliteiten` voor kwaliteiten zonder Excel-data. RPC `kleuren_voor_kwaliteit` leest gewicht voortaan uit `kwaliteiten`.
+- **186** — cutover: hard reset van `order_regels.gewicht_kg` voor open orders, simplificatie van `create_zending_voor_order` (geen `p.gewicht_kg`-fallback meer), drop van `maatwerk_m2_prijzen.gewicht_per_m2_kg`.
+
+**Frontend:**
+- `berekenMaatwerkGewicht` → `berekenGewichtKg` verhuisd naar [`lib/utils/gewicht.ts`](../frontend/src/lib/utils/gewicht.ts). Importeurs: `op-maat-selector`, `kwaliteit-first-selector`.
+- Nieuwe component [`<GewichtBronBadge>`](../frontend/src/components/kwaliteiten/gewicht-bron-badge.tsx) toont "uit oude bron"-badge op product-detail wanneer `producten.gewicht_uit_kwaliteit = false`.
+- Nieuwe pagina `/instellingen/kwaliteiten` ([`pages/instellingen/kwaliteiten.tsx`](../frontend/src/pages/instellingen/kwaliteiten.tsx)) — sorteerbare tabel met inline-edit van gewicht-per-m², filters (alle/ontbreekt/ingevuld), banner met data-completing-status.
+- Queries-bestand [`lib/supabase/queries/kwaliteiten.ts`](../frontend/src/lib/supabase/queries/kwaliteiten.ts) — `fetchKwaliteitenMetGewicht` + `updateKwaliteitGewicht`.
+- Router-route + sidebar-item toegevoegd (`/instellingen/kwaliteiten`, icon `Scale`).
+
+**Excel-import:**
+- Bron: `brondata/voorraad/akwaliteitscodeslijst-260505.xlsx` — Karpi legacy-export (1049 kwaliteit-rijen, kolommen `Kwaliteitscode | Omschrijving | Gewicht per m2`). 1033 met geldig gewicht (1.25–25 kg/m², gemiddeld 2.29). 16 met 0.0 = niet-tapijt placeholder-codes (DIMV, MIXX, STAA etc.) → script behandelt als NULL.
+- Script [`import/import_kwaliteit_gewichten.py`](../import/import_kwaliteit_gewichten.py) met `--dry-run` flag. Filtert no-op updates (huidige waarde = nieuwe waarde) zodat cascade-triggers niet onnodig firen. Onbekende codes → warning, niet fataal.
+
+**Domeinwoordenboek toegevoegd:** Gewicht/m², Gewicht-resolver, Gewicht-cache, Gewicht-uit-kwaliteit-flag, Bbox-oppervlak (gewicht). Zie [`docs/data-woordenboek.md`](data-woordenboek.md).
+
+**HITL — handmatig uit te voeren door Miguel:**
+1. Migratie 184 + 185 apply'en op Karpi-Supabase (MCP heeft geen toegang, cf. memory).
+2. `python import/import_kwaliteit_gewichten.py --dry-run` voor verificatie.
+3. `python import/import_kwaliteit_gewichten.py` voor echte run.
+4. Migratie 186 apply'en (cutover + cleanup).
+
+## 2026-05-06 — Placeholder-rollen mig 112 + 113 opruim (T004 / #29)
+
+Vierde slice van de Voorraadpositie-Module-epic ([PRD #25](https://github.com/Miguel-AIProgression/karpi-erp/issues/25)). Na T003's ghost-merge (rollen-overzicht toont (kw, kl)-paren zonder eigen voorraad via `besteld_per_kwaliteit_kleur` + view-laag-aanvulling) zijn de placeholder-rollen uit migraties 112 + 113 (oppervlak_m2=0, rolnummer 'PH-...') overbodig geworden. Ze waren een truc om "leeg-toch-zichtbaar"-paren te krijgen via de oude `fetchRollenGegroepeerd`-query, die in T003 is verwijderd.
+
+- **Audit-bevindingen** — 0 frontend-hits voor `oppervlak_m2 = 0` of `rolnummer LIKE 'PH-%'`-filtering. Geen consumer leest meer specifiek op deze placeholder-shape:
+  - RPC's mig 114 (`uitwisselbare_partners`), mig 115 (`rollen_uitwissel_voorraad`) en mig 137 (`besteld_per_kwaliteit_kleur`) filteren al expliciet op `oppervlak_m2 > 0`.
+  - Mig 134 (`snijplanning_tekort_analyse`) sluit placeholders uit via `r.lengte_cm > 0 AND r.breedte_cm > 0`.
+  - Mig 179 + 180 (`voorraadposities`) filtert eigen rollen op `oppervlak_m2 > 0`.
+  - Edge-function `_shared/db-helpers.ts::fetchBeschikbareRollen` filtert PH-rollen al uit via `lengte <= 0 || breedte <= 0`. Defensieve filter blijft bestaan; mig 182 maakt hem hooguit nooit-true (geen breaking change).
+- **Mig 182 — opruim** — `DELETE FROM rollen WHERE rolnummer LIKE 'PH-%' AND oppervlak_m2 = 0;`. Idempotent: bij re-run vindt DELETE 0 rijen.
+- **Mig 112 + 113 INSERT-blok geneutraliseerd** — beide DO-blocks gewikkeld in `IF FALSE THEN ... END IF;`. RPC `rollen_uitwissel_voorraad()` in mig 112 (Deel 2) blijft intact — die wordt in T005 separaat gedemoteerd of gedropt na consumer-audit. Re-runs van mig 112/113 maken géén nieuwe PH-rollen meer aan.
+- **Snijplanning + maatwerk-flow regression-vrij** — placeholders worden door alle bestaande filters al genegeerd. Rollen-overzicht ghost-groepen blijven verschijnen via de T003-ghost-merge.
+
+**HITL — migraties 182 + de mig 112/113-updates handmatig toepassen op Supabase Karpi-project** (MCP heeft geen toegang). Volgorde: eerst mig 182 (DELETE), daarna mig 112/113 herinladen (no-op INSERT's overschrijven oude logica). Op een DB die mig 112/113 nooit heeft gedraaid is mig 182 eveneens een no-op DELETE.
+
+## 2026-05-06 — MaatwerkLevertijdHint via Voorraadpositie-Module (T002 / #27)
+
+Derde slice van de Voorraadpositie-Module-epic ([PRD #25](https://github.com/Miguel-AIProgression/karpi-erp/issues/25)). De maatwerk-levertijdhint cut-overt op de Module-seam zodat order-form, product-detail en rollen-overzicht alle drie via dezelfde `fetchVoorraadpositie`-call lezen.
+
+- **`fetchMaatwerkLevertijdHint` migreert** — `frontend/src/lib/supabase/queries/op-maat.ts` regels 472–525. Vervangt de directe `supabase.rpc('besteld_per_kwaliteit_kleur')` + client-side `.find()` door één `await fetchVoorraadpositie(kw, kl)` uit `@/modules/voorraadpositie`. `besteld.eerstvolgende_verwacht_datum` wordt direct uit de Voorraadpositie gelezen i.p.v. uit een raw RPC-row. `app_config.order_config`-fetch en `iso_week_plus`-RPC-call ongewijzigd (buiten scope T002).
+- **Nieuwe invariant — eigen voorraad blokkeert hint**: `voorraadpositie.voorraad.totaal_m2 > 0` ⇒ `{ status: 'geen_inkoop' }`. Reden: maatwerk kan direct uit voorraad gemaakt worden, dus een "wacht-op-inkoop"-melding is misleidend. Voorheen impliciet via caller-checks (snij-flow), nu expliciet in de hint-laag zelf.
+- **Hint-tekst en weergave op orderregel ongewijzigd** — `MaatwerkLevertijdHint`-component (`frontend/src/components/orders/maatwerk-levertijd-hint.tsx`) ongemoeid; status-discriminator `inkoop_bekend | geen_inkoop` en signature van `fetchMaatwerkLevertijdHint` identiek aan main.
+- **5 nieuwe vitest-tests** in `frontend/src/lib/supabase/queries/__tests__/op-maat.test.ts`: (a) ghost-paar → inkoop_bekend; (b) default-buffer 2 weken bij ontbrekende app_config; (c) geen voorraad én geen besteld → geen_inkoop; (d) eigen voorraad blokkeert hint ook als er besteld is; (e) `fetchVoorraadpositie` retourneert null → geen_inkoop. Mocks via `vi.mock('@/modules/voorraadpositie')` en `vi.mock('../../client')`.
+
+Tests groen: 90/90 (85 → 90). Typecheck clean. Lint geen nieuwe errors.
+
+## 2026-05-06 — Voorraadpositie-Module batch+filter + rollen-overzicht migratie (T003 / #28)
+
+Tweede slice van de Voorraadpositie-Module-epic ([PRD #25](https://github.com/Miguel-AIProgression/karpi-erp/issues/25)). De Module krijgt batch+filter-modus, de rollen-overzicht-pagina cut-overt 1-op-1 op het Voorraadpositie-concept, en de oude `fetchRollenGegroepeerd` + `RolGroep`-type verdwijnen.
+
+- **SQL-RPC `voorraadposities()` uitgebreid** (mig 180) — drie modi: (a) single-paar (kw + kl beide gevuld) → exacte match incl. ghost-paren, ongewijzigd t.o.v. T001; (b) batch (beide leeg) → álle paren met eigen voorraad; (c) batch+filter (kw / kl / search los) → server-side filtering op kwaliteit (ILIKE-substring), kleur (exact na normalisatie), search (ILIKE op `kw-kl` of `producten.naam`). Bestaans-regel: batch retourneert ALLEEN paren met eigen voorraad — ghost-paren met enkel besteld worden expliciet uitgesloten en moeten door de caller gemerged worden. Nieuwe output-kolommen: `rollen JSONB` (per-rol details voor expand-rows: id, rolnummer, lengte, breedte, oppervlak, status, rol_type, locatie, oorsprong_rol_id, reststuk_datum, artikelnr, kwaliteit_code, kleur_code — gesorteerd `rol_type ASC, rolnummer ASC`); `product_naam TEXT` (uit `producten`-tabel); `eerstvolgende_m`/`eerstvolgende_m2` (vroegste leverweek aandeel — uit mig 137).
+- **Module-uitbreiding** — `Voorraadpositie` heeft nu `rollen: RolRow[]` + `product_naam: string | null`; `BesteldInkoop` heeft `eerstvolgende_m` + `eerstvolgende_m2`; nieuwe `VoorraadpositieFilter`-interface; nieuwe `fetchVoorraadposities(filter)` + `useVoorraadposities(filter)`-hook met queryKey `['voorraadposities', 'batch', kw, kl, search]`. queryKey-conventie gedocumenteerd in JSDoc bovenaan `hooks/use-voorraadpositie.ts`.
+- **Rollen-overzicht migratie** — `RollenGroepRow` consumeert `Voorraadpositie` direct (geen tijdelijke `toRolGroep`-adapter in main). `RollenOverviewPage` gebruikt `useVoorraadposities` voor de batch-call + een aparte `besteld_per_kwaliteit_kleur`-call voor ghost-paren-merge (view-laag-aanvulling op page-niveau). Visueel + functioneel ongewijzigd t.o.v. T001-baseline.
+- **Cleanup** — `fetchRollenGegroepeerd` verwijderd uit `frontend/src/lib/supabase/queries/rollen.ts` (de paginated rollen-fetch + 4-RPC-merge-logic); `useRollenGegroepeerd` verwijderd uit `hooks/use-rollen.ts`; `RolGroep`-interface verwijderd uit `frontend/src/lib/types/productie.ts`. Let op: `RolGroep` in `lib/utils/snijplan-mapping.ts` en `components/snijplanning/snij-bevestiging-modal.tsx` is een **ander** concept (snijplan-rol-grouping) en blijft bestaan.
+- **5 nieuwe regression-fixtures** (vitest) — invarianten 5 t/m 9: (5) partners-sortering m² DESC, kw ASC, kl ASC; (6) bestaans-asymmetrie batch vs single (ghost-paar zit in single, niet in batch); (7) leverweek-aggregatie vroegste verwacht_datum wint; (8) `partners` is altijd een array (nooit NULL); (9) batch-call met lege filter geeft alle params als `null` door, lege strings worden ook null. Bestaande T001-fixtures aangepast om de nieuwe veld-shapes te tolereren.
+- **Performance-baseline** — `__tests__/performance.test.ts` (skip-by-default via `VITEST_INCLUDE_PERF=1`) documenteert de strategie: seed Supabase test-branch met ~5000 rollen + ~200 IO-regels, run `fetchVoorraadposities({})` 10×, asserteer p95 < 500 ms. Implementatie als HITL-vervolg.
+
+**HITL — migratie 180 nog handmatig toepassen op Supabase Karpi-project** (MCP heeft geen toegang). Tot dan retourneert `fetchVoorraadposities` een lege array met een warn-log; rollen-overzicht valt netjes terug op de ghost-merge zodat de "alleen besteld"-paren in elk geval zichtbaar blijven (zij het zonder eigen-voorraad-lijst).
+
+## 2026-05-06 — QA-fixes order-voorstel epic (sub-issues van #17)
+
+Vier UI-bugs gevonden tijdens handmatige QA-walkthrough van issue #17, met losse sub-issues geïsoleerd en gefixt.
+
+- **#34 — Sortering orders-overzicht**: `fetchOrders` had geen secundaire sort, dus binnen dezelfde `orderdatum` kon de meest recente order op willekeurige plek belanden. `id DESC` toegevoegd als tiebreaker (id is auto-increment → monotoon stijgend → perfect proxy voor aanmaakvolgorde). Geen migratie nodig.
+- **#32 — Maatwerk-regel zonder voorraad én zonder inkoop**: `fetchMaatwerkLevertijdHint` returnde `null` wanneer er geen openstaande inkoop was → component verbergde zichzelf → gebruiker zag niets. Discriminated-union-result `inkoop_bekend | geen_inkoop`; bij `geen_inkoop` toont de hint nu een amber-waarschuwing "Niet op voorraad — geen lopende inkoop bekend. Levertijd onbekend." zodat de gebruiker niet stilzwijgend een onleverbare regel toevoegt.
+- **#33 — Verzendkosten + maatwerk-levertijd bij split-order (deelleveringen aan)**:
+  - Verzendkosten gingen altijd naar het standaard- (resp. directe-) deel. Nu naar het **duurste** sub-totaal (gemixt-split én IO-split).
+  - Maatwerk-deel gebruikte de statische `maatwerk_weken`-config (default 4 weken, klant-override mogelijk 1) → kreeg "+1 week" terwijl echte capaciteit 15 weken kan zijn. Nieuwe helper `berekenMaatwerkAfleverdatumViaSeam` roept de echte planning-seam (`check-levertijd`) aan voor élke maatwerk-regel met complete data en neemt de **MAX lever_datum** als afleverdatum van de maatwerk-sub-order. Fallback op de oude statische berekening voor onvolledige regels.
+- **#35 — Uitwisselbaar-zichtbaarheid + prijslijst-fallback**:
+  - In de voorraad-cel van `OrderLineEditor` verschijnt nu een passieve `(+N via ander type)`-indicator zodra er uitwisselbare voorraad bestaat — ongeacht tekort. Voorheen moest de gebruiker het orderaantal eerst boven de eigen voorraad drukken om dat te zien.
+  - Nieuwe `prijs_uit_prijslijst`-flag op `OrderRegelFormData` (display-only). Bij prijs-fallback (klant heeft prijslijst, maar artikel staat er niet in) toont de prijs-cel "⚠ Niet uit prijslijst" — gebruiker weet dat hij een fallback-prijs gebruikt en kan handmatig corrigeren.
+
+Tests groen: 13 testfiles, 74 tests. Typecheck clean. Lint geen nieuwe errors (6 pre-existing onveranderd).
+
+## 2026-05-06 — Voorraadpositie-Module tracer-bullet (T001 / #26)
+
+Eerste slice van de Voorraadpositie-Module-epic ([PRD #25](https://github.com/Miguel-AIProgression/karpi-erp/issues/25)). Levert één deep TS-Module rond het concept "Voorraadpositie per (kwaliteit, kleur)" + één SQL-RPC als seam. Past binnen [ADR-0001](adr/0001-order-voorstel-en-planning-als-twee-modules.md) — geen aparte ADR.
+
+- **SQL-RPC `voorraadposities(p_kwaliteit, p_kleur, p_search)`** (mig 179) — single-paar-modus volledig werkend. Retourneert per (kw, kl) eigen voorraad (volle/aangebroken/reststuk + m²), uitwisselbare partners (gesorteerd m² DESC), `beste_partner` (alleen wanneer eigen_m²=0 én partners[0].m²>0 — invariant 1), en besteld-aggregatie. Bouwt op bestaande RPC's `uitwisselbare_partners()` (mig 115) en `besteld_per_kwaliteit_kleur()` (mig 137). Kleur-normalisatie (`'15.0' → '15'`) via één `regexp_replace`. Single-call retourneert ook ghost-paren (FULL OUTER JOIN tussen eigen, partners en besteld). T003 (#28) breidt uit met batch+filter-modus.
+- **Module `frontend/src/modules/voorraadpositie/`** met `types.ts`, `queries/voorraadposities.ts` (`fetchVoorraadpositie`), `hooks/use-voorraadpositie.ts`, `lib/normaliseer-kleur.ts` en barrel-export. queryKey-conventie `['voorraadpositie', kw, kl]`, staleTime 60 s. Lege string voor kw of kl → `null` zonder Supabase-call.
+- **Product-detail-pagina** consumeert `useVoorraadpositie` voor de "Openstaande inkooporders"-sectie-totaal (m¹). De per-IO-regel-detail (leverancier, status, leverweek per regel) blijft uit `useOpenstaandeInkoopVoorArtikel` komen — die data zit niet in het aggregate. Visueel + functioneel ongewijzigd t.o.v. main; de `voorraadpositie?.besteld?.besteld_m` heeft een fallback op de regel-sum zodat de UI ook zonder mig 179 deployment correct blijft tonen.
+- **4 regression-fixtures** (vitest) in `frontend/src/modules/voorraadpositie/__tests__/regression/` bewaken de invarianten: (1) eigen blokkeert beste_partner; (2) symmetrie partners; (3) kleur-normalisatie + lege-string-guard zonder rpc-call; (4) `besteld_m2 = 0` (niet null) bij ontbrekende standaard_breedte_cm.
+
+**HITL — migratie 179 nog handmatig toepassen op Supabase Karpi-project** (MCP heeft geen toegang). Tot dan retourneert `fetchVoorraadpositie` `null` met een warn-log; de product-detail-pagina valt netjes terug op de regel-sum-berekening voor het sectie-totaal.
+
 ## 2026-05-05 — Pick-ship gesplitst naar `modules/magazijn/` + uitbreiding `modules/logistiek/`
 
 Pick-ship-folder bevatte drie verschillende concerns (pickbaarheid, vervoerder-selectie, zending-creatie) in een flat-namespace. Heringericht volgens [ADR-0002](adr/0002-pick-ship-splitst-naar-magazijn-en-logistiek.md).
