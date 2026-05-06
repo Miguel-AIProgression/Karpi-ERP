@@ -67,6 +67,21 @@ Sales reps. Code uit orders, naam uit debiteuren.
 
 ---
 
+### vertegenwoordiger_werkdagen
+Werkdagen per vertegenwoordiger (mig 195). Rij aanwezig = werkt die dag.
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| vertegenw_code | TEXT FK → vertegenwoordigers.code | ON DELETE CASCADE, ON UPDATE CASCADE |
+| dag_van_week | SMALLINT (1-7) | ISO 8601: 1=ma ... 7=zo |
+| start_tijd | TIME | NULL = "hele dag" |
+| eind_tijd | TIME | NULL = "hele dag" |
+| opmerking | TEXT | Vrije tekst (bijv. "thuis", "oneven weken") |
+| created_at, updated_at | TIMESTAMPTZ | Auto via trg_set_updated_at |
+
+PK: `(vertegenw_code, dag_van_week)`. CHECK: `start_tijd < eind_tijd` (indien beide gezet).
+
+---
+
 ### collecties
 Groepen uitwisselbare kwaliteiten (56 groepen). Bron: aliassen-bestand.
 | Kolom | Type | Toelichting |
@@ -132,7 +147,7 @@ Klanten/afnemers. PK = debiteur_nr uit het oude systeem.
 | standaard_maat_werkdagen | INTEGER | Override levertermijn voor standaard-maat karpetten (dagen). NULL = globale default. |
 | maatwerk_weken | INTEGER | Override levertermijn voor maatwerk karpetten (weken). NULL = globale default. |
 | deelleveringen_toegestaan | BOOLEAN DEFAULT false | Als TRUE: gemengde orders worden bij aanmaken gesplitst in 2 orders (standaard + maatwerk). |
-| inkooporganisatie | TEXT | |
+| inkoopgroep_code | TEXT FK → inkoopgroepen.code | Inkooporganisatie waaronder de klant inkoopt (1 groep per debiteur). ON UPDATE CASCADE, ON DELETE SET NULL. Vervangt losse TEXT-kolom in mig 189. |
 | betaler | INTEGER FK → debiteuren (self-ref) | Betalende partij |
 | btw_nummer | TEXT | |
 | gln_bedrijf | TEXT | GLN/EAN moederbedrijf |
@@ -159,6 +174,20 @@ Per debiteur meerdere afleveradressen. adres_nr 0 = hoofdadres.
 | route | TEXT | |
 | vertegenw_code | TEXT FK → vertegenwoordigers.code | |
 | UK: (debiteur_nr, adres_nr) | | Unieke combinatie |
+
+---
+
+### inkoopgroepen
+Inkooporganisaties (INKC-codes) waaronder debiteuren samen inkopen — gedeelde prijslijst/korting. 1 debiteur ↔ max 1 groep. Mig 189.
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| code | TEXT PK | 'INKC02', 'INKC11', ... — afgeleid uit Excel-bestandsnaam |
+| naam | TEXT NOT NULL | 'BEGROS', 'DECOR UNION', 'FACHHANDELSRING', etc. |
+| omschrijving | TEXT | Optioneel |
+| actief | BOOLEAN DEFAULT true | |
+| created_at, updated_at | TIMESTAMPTZ | Auto, trigger `trg_inkoopgroepen_updated_at` |
+
+**View `inkoopgroepen_met_aantal_leden`** — alle kolommen + `aantal_leden INTEGER` (count debiteuren met deze code). Gebruikt door overzichtspagina.
 
 ---
 
@@ -203,6 +232,7 @@ Artikelen uit het oude systeem.
 | gewicht_kg | NUMERIC(8,2) | **Sinds migratie 185: gederiveerde cache.** Voor `product_type IN ('vast','staaltje')` automatisch herrekend door trigger. Vorm-aware sinds mig 188: `vorm='rond'` → `π × (lengte_cm/200)² × kwaliteiten.gewicht_per_m2_kg`, anders `(lengte_cm × breedte_cm / 10000) × density`. Voor 'rol'/'overig' blijft handmatige waarde staan. |
 | lengte_cm, breedte_cm | INTEGER | Maat in cm voor vaste/staaltje-producten. **Rechthoekig**: geparset uit `karpi_code`-suffix in mig 184 (`^.{8}(\d{3})(\d{3})$`). **Rond** (mig 188): geparset uit `^.{8}(\d{3})RND$` — `lengte_cm = breedte_cm = diameter`. **Ovaal-bbox** (mig 188): geparset uit omschrijving (`NxN cm OVAAL`) als bbox. NULL voor 'rol'/'overig' of afwijkend patroon. Voedt gewicht-resolver. |
 | vorm | TEXT | `rechthoek` (default, ook voor ovaal — bbox-aanname) of `rond` (cirkel-oppervlak via `π × (lengte_cm/200)²`). Bepaalt formule in `bereken_product_gewicht_kg`. Mig 188. |
+| maatwerk_vorm_code | TEXT FK → maatwerk_vormen(code) | **Logische vormcode** voor de prijs-resolver (mig 191). Onderscheidt `ovaal/organisch_a/organisch_b_sp/pebble/ellips/afgeronde_hoeken` waar `vorm` alleen `rechthoek/rond` kent. Bepaalt vormtoeslag (€0/€75 uit `maatwerk_vormen.toeslag`) bij m²-fallback in `bereken_orderregel_prijs`. NULL = onbekend → resolver behandelt als rechthoek (€0). Backfill via karpi_code-suffix (`RND`/`OVL`) + omschrijving-substring (`ORGANISCH`/`PEBBLE`/`ELLIPS`/`AFGEROND`). Mig 190. |
 | gewicht_uit_kwaliteit | BOOLEAN | Default false. TRUE = `gewicht_kg` gederiveerd uit `kwaliteiten.gewicht_per_m2_kg` (cache vers). FALSE = legacy waarde uit oude systeem of kwaliteit heeft nog geen gewicht. UI toont badge "uit oude bron" bij FALSE. Migratie-voortgang-indicator. |
 | product_type | TEXT | 'vast' (CA:NNNxNNN >= 1m²), 'staaltje' (CA:NNNxNNN < 1m²), 'rol' (BREED), 'overig' |
 | locatie | TEXT | Magazijnlocatie (bijv. "A.01.L", "C.04.H"). Bron: Locaties123.xls |
@@ -279,7 +309,7 @@ Orderheaders. Adressen zijn snapshots (niet FK naar afleveradressen).
 | afl_naam, afl_naam_2, afl_adres, afl_postcode, afl_plaats, afl_land | TEXT | Snapshot |
 | betaler | INTEGER FK → debiteuren | |
 | vertegenw_code | TEXT FK → vertegenwoordigers.code | |
-| inkooporganisatie | TEXT | |
+| inkooporganisatie | TEXT | Snapshot van de inkoopgroep-code op moment van aanmaak (orders bewegen niet mee bij wijziging op debiteur). |
 | status | order_status | Default 'Nieuw' |
 | compleet_geleverd | BOOLEAN | |
 | aantal_regels, totaal_bedrag, totaal_gewicht | NUMERIC | Berekend door trigger |
@@ -346,6 +376,8 @@ Productregels per order. artikelnr nullable voor service-items.
 | maatwerk_lengte_cm | INTEGER | Gewenste lengte in cm |
 | maatwerk_breedte_cm | INTEGER | Gewenste breedte in cm |
 | maatwerk_afwerking | TEXT FK → afwerking_types(code) | Afwerkingscode (B, FE, LO, ON, SB, SF, VO, ZO). FK: fk_order_regels_afwerking ON DELETE RESTRICT |
+| maatwerk_band_kleur | TEXT | Tekst-snapshot van bandkleur-label op moment van order ("Piero Taupe 431"). Historisch — voor nieuwe orders gevuld vanuit `afwerking_kleuren.label` via `maatwerk_band_kleur_id`. |
+| maatwerk_band_kleur_id | BIGINT FK → afwerking_kleuren | Strict-FK naar bandkleur-master (mig 194). ON DELETE RESTRICT. NULL voor pre-mig-194 regels en regels zonder bandkleur. |
 | maatwerk_instructies | TEXT | Vrije tekst snij/confectie-instructies |
 | maatwerk_vorm | TEXT FK → maatwerk_vormen(code) | Vormcode. FK: fk_order_regels_vorm ON DELETE RESTRICT |
 | maatwerk_m2_prijs | NUMERIC(10,2) | Verkoopprijs per m² snapshot |
@@ -820,6 +852,33 @@ Standaard afwerking per kwaliteit (bijv. MIRA → SB).
 
 ---
 
+### afwerking_kleuren
+Master-lijst van kleurlabels per afwerking (bv. "Piero Taupe 431" onder SB). Voedt order-form bandkleur-dropdown en /producten kleur-tussenlaag (mig 194).
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| id | BIGINT PK | Auto-increment |
+| afwerking_code | TEXT FK → afwerking_types(code) ON DELETE CASCADE | Onder welke afwerking dit label valt |
+| label | TEXT | Vrije tekst, bv. "Piero Taupe 431" |
+| volgorde | INTEGER | Sortering in dropdowns |
+| actief | BOOLEAN | Soft-delete; default true |
+| created_at | TIMESTAMPTZ | |
+| UK: (afwerking_code, label) | | |
+
+---
+
+### maatwerk_band_defaults
+Default-bandkleur per (kwaliteit, kleur). Wordt voorgeselecteerd in de order-form en ingesteld via /producten kleur-uitvouw. Vóór mig 194 alleen vrije-tekst; vanaf mig 194 strict-FK naar `afwerking_kleuren`.
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| kwaliteit_code | TEXT PK | Kwaliteitscode |
+| kleur_code | TEXT PK | Kleurcode |
+| afwerking_kleur_id | BIGINT FK → afwerking_kleuren ON DELETE RESTRICT | Strict-FK naar bandkleur-master (mig 194). NULL voor niet-Piero rijen die handmatig gevuld moeten worden. |
+| band_kleur | TEXT | Legacy: bandkleur-code (bv. "431"). Sinds mig 194 nullable; blijft als fallback voor niet-gemigreerde rijen. |
+| band_omschrijving | TEXT | Legacy: kleurnaam (bv. "taupe"). |
+| band_merk | TEXT | Legacy: merk (bv. "Piero", default in code). Vóór mig 194 hardcoded prefix in UI. |
+
+---
+
 ### maatwerk_m2_prijzen
 M²-prijzen per kwaliteit+kleur voor op-maat berekening (admin-instelbaar, geseeded vanuit rollen).
 | Kolom | Type | Toelichting |
@@ -1000,6 +1059,7 @@ Mig 174, aangepast in mig 176. Read-only view die de `/logistiek/vervoerders`-ov
 | `gewicht_per_m2_voor_kwaliteit(p_kwaliteit_code TEXT) → NUMERIC` | **Gewicht-resolver — publiek seam #1.** Eenvoudige lookup van density per kwaliteit. NULL als kwaliteit nog geen gewicht heeft. STABLE. Mig 185. |
 | `bereken_product_gewicht_kg(p_artikelnr TEXT) → TABLE(gewicht_kg, uit_kwaliteit)` | **Gewicht-resolver — publiek seam #2.** Gewicht (kg/stuk) voor een vast/staaltje-product. Vorm-aware sinds mig 188: `vorm='rond'` → `π × (lengte_cm/200)² × density`; anders `(lengte × breedte / 10000) × density`. Bij volledige cache-bron retourneert `(gewicht, true)`; bij ontbrekende kwaliteit-density of maat-data retourneert `(legacy_gewicht, false)`. STABLE. Mig 185, vorm-logica mig 188. |
 | `bereken_orderregel_gewicht_kg(p_order_regel_id BIGINT) → NUMERIC` | **Gewicht-resolver — publiek seam #3.** Gewicht (kg/stuk) voor een orderregel. Maatwerk: `oppervlak × kwaliteit-density`. Vast: copy van `producten.gewicht_kg`. Service-items zonder artikelnr → NULL. STABLE. Mig 185. |
+| `bereken_orderregel_prijs(p_artikelnr TEXT, p_prijslijst_nr TEXT) → JSONB` | **Prijs-resolver voor order-aanmaak.** 5-stappen fallback-keten: `prijslijst_vast` (prijslijst_regels) → `prijslijst_m2` (m²-prijs van kleur-specifiek MAATWERK-artikel × oppervlak + vormtoeslag) → `maatwerk_artikel_m2` (`producten.verkoopprijs` van MAATWERK-artikel × oppervlak + vormtoeslag) → `kwaliteit_m2` (`maatwerk_m2_prijzen` × oppervlak + vormtoeslag) → `product_verkoopprijs` (eigen verkoopprijs). Vormtoeslag uit `maatwerk_vormen.toeslag` via `producten.maatwerk_vorm_code`. Retourneert `{ prijs, bron, breakdown }`. STABLE. Mig 191. |
 | `trg_kwaliteit_gewicht_recalc()` | Trigger op `kwaliteiten` (AFTER UPDATE OF gewicht_per_m2_kg). Cascade: herrekent producten in die kwaliteit + open maatwerk-orderregels. Mig 185. |
 | `trg_product_gewicht_recalc()` | Trigger op `producten` (AFTER UPDATE OF gewicht_kg). Cascade: kopieert gewicht naar open vaste-orderregels met dat artikelnr. Mig 185. |
 | ~~`rollen_uitwissel_voorraad()`~~ | **GEDROPT in mig 187 (T005)** — vervangen door `voorraadposities()` (mig 179/180). Geen externe callers meer; functie definitief verwijderd. |

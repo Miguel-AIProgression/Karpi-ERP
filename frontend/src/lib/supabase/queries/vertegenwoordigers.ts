@@ -269,6 +269,110 @@ export async function fetchVertegKlanten(code: string): Promise<VertegKlant[]> {
   return (data ?? []) as VertegKlant[]
 }
 
+/** Update telefoon, email of actief van een vertegenwoordiger. */
+export async function updateVerteg(
+  code: string,
+  patch: Partial<Pick<VertegDetail, 'naam' | 'email' | 'telefoon' | 'actief'>>,
+) {
+  const { error } = await supabase
+    .from('vertegenwoordigers')
+    .update(patch)
+    .eq('code', code)
+  if (error) throw error
+}
+
+export interface VertegWerkdag {
+  dag_van_week: number
+  start_tijd: string | null
+  eind_tijd: string | null
+  opmerking: string | null
+}
+
+/** Fetch werkdagen voor een vertegenwoordiger (rij aanwezig = werkt die dag). */
+export async function fetchVertegWerkdagen(code: string): Promise<VertegWerkdag[]> {
+  const { data, error } = await supabase
+    .from('vertegenwoordiger_werkdagen')
+    .select('dag_van_week, start_tijd, eind_tijd, opmerking')
+    .eq('vertegenw_code', code)
+    .order('dag_van_week')
+  if (error) throw error
+  return (data ?? []) as VertegWerkdag[]
+}
+
+/** Zet of update werkdag — werkt=true betekent rij aanwezig. */
+export async function upsertVertegWerkdag(code: string, werkdag: VertegWerkdag) {
+  const { error } = await supabase
+    .from('vertegenwoordiger_werkdagen')
+    .upsert(
+      {
+        vertegenw_code: code,
+        dag_van_week: werkdag.dag_van_week,
+        start_tijd: werkdag.start_tijd,
+        eind_tijd: werkdag.eind_tijd,
+        opmerking: werkdag.opmerking,
+      },
+      { onConflict: 'vertegenw_code,dag_van_week' },
+    )
+  if (error) throw error
+}
+
+/** Verwijder een werkdag — verteg werkt niet meer op die dag. */
+export async function deleteVertegWerkdag(code: string, dagVanWeek: number) {
+  const { error } = await supabase
+    .from('vertegenwoordiger_werkdagen')
+    .delete()
+    .eq('vertegenw_code', code)
+    .eq('dag_van_week', dagVanWeek)
+  if (error) throw error
+}
+
+/** Update de vertegenwoordiger-koppeling van één debiteur. */
+export async function setKlantVerteg(debiteurNr: number, code: string | null) {
+  const { error } = await supabase
+    .from('debiteuren')
+    .update({ vertegenw_code: code })
+    .eq('debiteur_nr', debiteurNr)
+  if (error) throw error
+}
+
+/** Lichtgewicht lijst van actieve debiteurs met huidige verteg (voor koppel-pickers). */
+export interface KoppelbareDebiteur {
+  debiteur_nr: number
+  naam: string
+  plaats: string | null
+  vertegenw_code: string | null
+  vertegenwoordiger_naam: string | null
+}
+
+export async function fetchKoppelbareDebiteurenMetVerteg(): Promise<KoppelbareDebiteur[]> {
+  const all: KoppelbareDebiteur[] = []
+  const pageSize = 1000
+  let from = 0
+  while (true) {
+    const { data, error } = await supabase
+      .from('debiteuren')
+      .select('debiteur_nr, naam, plaats, vertegenw_code, vertegenwoordigers(naam)')
+      .eq('status', 'Actief')
+      .order('naam')
+      .range(from, from + pageSize - 1)
+    if (error) throw error
+    const batch = (data ?? []).map((row: Record<string, unknown>) => {
+      const verteg = row.vertegenwoordigers as { naam: string } | null
+      return {
+        debiteur_nr: row.debiteur_nr as number,
+        naam: row.naam as string,
+        plaats: (row.plaats as string | null) ?? null,
+        vertegenw_code: (row.vertegenw_code as string | null) ?? null,
+        vertegenwoordiger_naam: verteg?.naam ?? null,
+      }
+    })
+    all.push(...batch)
+    if (batch.length < pageSize) break
+    from += pageSize
+  }
+  return all
+}
+
 /** Fetch orders for a vertegenwoordiger */
 export async function fetchVertegOrders(code: string, statusFilter?: string): Promise<VertegOrder[]> {
   let query = supabase

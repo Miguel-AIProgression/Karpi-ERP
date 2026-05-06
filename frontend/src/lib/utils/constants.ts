@@ -102,6 +102,7 @@ export const NAV_GROUPS = [
       { label: 'Samples', path: '/samples', icon: 'Package' },
       { label: 'Facturatie', path: '/facturatie', icon: 'FileText' },
       { label: 'Klanten', path: '/klanten', icon: 'Users' },
+      { label: 'Inkoopgroepen', path: '/inkoopgroepen', icon: 'Network' },
       { label: 'Vertegenwoordigers', path: '/vertegenwoordigers', icon: 'UserCheck' },
       { label: 'Prijslijsten', path: '/prijslijsten', icon: 'ListOrdered' },
     ],
@@ -142,6 +143,8 @@ export const NAV_GROUPS = [
       { label: 'Instellingen', path: '/instellingen', icon: 'Settings' },
       { label: 'Bedrijfsgegevens', path: '/instellingen/bedrijfsgegevens', icon: 'Building2' },
       { label: 'Kwaliteiten', path: '/instellingen/kwaliteiten', icon: 'Scale' },
+      { label: 'Vormen', path: '/instellingen/vormen', icon: 'Shapes' },
+      { label: 'Afwerkingen', path: '/instellingen/afwerkingen', icon: 'Scissors' },
     ],
   },
 ] as const

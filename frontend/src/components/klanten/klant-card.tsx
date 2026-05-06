@@ -60,6 +60,18 @@ export function KlantCard({ klant }: KlantCardProps) {
         </p>
       )}
 
+      <p className="mt-1 text-xs text-slate-400 truncate">
+        Prijslijst:{' '}
+        {klant.prijslijst_nr ? (
+          <span className="text-slate-600">
+            {klant.prijslijst_nr}
+            {klant.prijslijst_naam ? ` — ${klant.prijslijst_naam}` : ''}
+          </span>
+        ) : (
+          <span className="text-slate-300 italic">geen</span>
+        )}
+      </p>
+
       <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
         <div>
           <span className="text-slate-400">Omzet YTD</span>

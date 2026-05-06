@@ -3,11 +3,25 @@ RugFlow ERP  Data Import Script
 Importeert alle data uit Excel bronbestanden naar Supabase.
 Volgorde respecteert FK dependencies.
 """
+import re
 import sys
 import pandas as pd
 import numpy as np
 from supabase import create_client
 from config import SUPABASE_URL, SUPABASE_KEY, DEBITEUREN_FILE, VOORRAAD_FILE
+
+_INKC_RE = re.compile(r"INKC\s*0*(\d+)", re.IGNORECASE)
+
+
+def extract_inkc_code(val):
+    """Normaliseer 'INKC 14', 'inkc14', 'INKC02 BEGROS' -> 'INKC14' / 'INKC02'.
+    Retourneert None bij NaN of geen match (FK-vriendelijk)."""
+    if val is None or (isinstance(val, float) and np.isnan(val)):
+        return None
+    m = _INKC_RE.search(str(val))
+    if not m:
+        return None
+    return f"INKC{int(m.group(1)):02d}"
 
 # --- Init ---
 if not SUPABASE_URL or not SUPABASE_KEY:
@@ -137,7 +151,7 @@ for _, r in df_debiteuren.iterrows():
         "email_overig": clean(r['Mailadres (overig)']),
         "email_2": clean(r['Mail-2']),
         "fax": clean(r['Fax']),
-        "inkooporganisatie": clean(r['Inkooporg.']),
+        "inkoopgroep_code": extract_inkc_code(r['Inkooporg.']),
         "betaler": int(''.join(c for c in str(r['Betaler']).split('-')[0].split(' ')[0] if c.isdigit()) or '0') if pd.notna(r['Betaler']) else None,
         "vertegenw_code": vcode,
         "route": clean(r['Route']),

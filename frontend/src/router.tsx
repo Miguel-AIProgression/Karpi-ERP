@@ -8,6 +8,8 @@ import { OrderCreatePage } from '@/pages/orders/order-create'
 import { OrderEditPage } from '@/pages/orders/order-edit'
 import { KlantenOverviewPage } from '@/pages/klanten/klanten-overview'
 import { KlantDetailPage } from '@/pages/klanten/klant-detail'
+import { InkoopgroepenOverviewPage } from '@/pages/inkoopgroepen/inkoopgroepen-overview'
+import { InkoopgroepDetailPage } from '@/pages/inkoopgroepen/inkoopgroep-detail'
 import { ProductenOverviewPage } from '@/pages/producten/producten-overview'
 import { ProductDetailPage } from '@/pages/producten/product-detail'
 import { ProductCreatePage } from '@/pages/producten/product-create'
@@ -26,6 +28,8 @@ import { ProductieGroepPage } from '@/pages/snijplanning/productie-groep'
 import { ProductieInstellingenPage } from '@/pages/instellingen/productie-instellingen'
 import { BedrijfsgegevensPage } from '@/pages/instellingen/bedrijfsgegevens'
 import { KwaliteitenInstellingenPage } from '@/pages/instellingen/kwaliteiten'
+import { VormenInstellingenPage } from '@/pages/instellingen/vormen'
+import { AfwerkingenInstellingenPage } from '@/pages/instellingen/afwerkingen'
 import { ConfectieOverviewPage } from '@/pages/confectie/confectie-overview'
 import { ConfectiePlanningPage } from '@/pages/confectie/confectie-planning'
 import { ScanstationPage } from '@/pages/scanstation/scanstation'
@@ -63,6 +67,10 @@ export const router = createBrowserRouter([
       // Klanten (V1)
       { path: 'klanten', element: <KlantenOverviewPage /> },
       { path: 'klanten/:id', element: <KlantDetailPage /> },
+
+      // Inkoopgroepen
+      { path: 'inkoopgroepen', element: <InkoopgroepenOverviewPage /> },
+      { path: 'inkoopgroepen/:code', element: <InkoopgroepDetailPage /> },
 
       // Producten (V1)
       { path: 'producten', element: <ProductenOverviewPage /> },
@@ -113,6 +121,8 @@ export const router = createBrowserRouter([
       { path: 'instellingen/productie', element: <ProductieInstellingenPage /> },
       { path: 'instellingen/bedrijfsgegevens', element: <BedrijfsgegevensPage /> },
       { path: 'instellingen/kwaliteiten', element: <KwaliteitenInstellingenPage /> },
+      { path: 'instellingen/vormen', element: <VormenInstellingenPage /> },
+      { path: 'instellingen/afwerkingen', element: <AfwerkingenInstellingenPage /> },
     ],
   },
 ])

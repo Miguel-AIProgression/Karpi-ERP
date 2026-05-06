@@ -8,8 +8,8 @@ import { LevertijdSuggestie } from './levertijd-suggestie'
 import { LeverModusDialog, type LeverModusTekort } from './lever-modus-dialog'
 import type { LeverModus } from '@/lib/supabase/queries/reserveringen'
 import { berekenRegelDekking } from '@/lib/utils/regel-dekking'
-import { createOrder, updateOrderWithLines, deleteOrder, lookupPrice, fetchKlanteigenNaam, fetchKlantArtikelnummer, setUitwisselbaarClaims } from '@/lib/supabase/queries/order-mutations'
-import type { OrderFormData, OrderRegelFormData } from '@/lib/supabase/queries/order-mutations'
+import { createOrder, updateOrderWithLines, deleteOrder, resolveOrderlinePrice, fetchKlanteigenNaam, fetchKlantArtikelnummer, setUitwisselbaarClaims } from '@/lib/supabase/queries/order-mutations'
+import type { OrderFormData, OrderRegelFormData, PrijsBron, PrijsBreakdown } from '@/lib/supabase/queries/order-mutations'
 import { supabase } from '@/lib/supabase/client'
 import { fetchOrderConfig, type OrderConfig } from '@/lib/supabase/queries/order-config'
 import { triggerAutoplan, fetchAutoplanningConfig } from '@/lib/supabase/queries/auto-planning'
@@ -200,11 +200,16 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
           nonShippingRegels.map(async (line) => {
             if (!line.artikelnr) return line
 
-            // Lookup new price from customer's price list
+            // Reprice via fallback-keten (mig 191) — vermijdt
+            // dubbele logica met handleArticleSelected.
             let newPrijs = line.prijs
-            if (c.prijslijst_nr) {
-              const prijsResult = await lookupPrice(c.prijslijst_nr, line.artikelnr)
-              if (prijsResult !== null) newPrijs = prijsResult
+            let newPrijsBron: PrijsBron | undefined = line.prijs_bron
+            let newPrijsBreakdown: PrijsBreakdown | undefined = line.prijs_breakdown
+            const resolved = await resolveOrderlinePrice(line.artikelnr, c.prijslijst_nr ?? null)
+            if (resolved.prijs !== null) {
+              newPrijs = resolved.prijs
+              newPrijsBron = resolved.bron
+              newPrijsBreakdown = resolved.breakdown
             }
 
             // Lookup klant artikelnummer
@@ -215,6 +220,9 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
             const updated = {
               ...line,
               prijs: newPrijs,
+              prijs_bron: newPrijsBron,
+              prijs_breakdown: newPrijsBreakdown,
+              prijs_uit_prijslijst: newPrijsBron === 'prijslijst_vast',
               korting_pct: c.korting_pct ?? line.korting_pct,
               klant_artikelnr,
             }
@@ -240,16 +248,24 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
     }))
   }
 
-  // Price + customer-specific data lookup when article is added
+  // Price + customer-specific data lookup when article is added.
+  // Sinds mig 191: gebruikt RPC `bereken_orderregel_prijs` met fallback-keten
+  // (prijslijst_vast → prijslijst_m2 → maatwerk_artikel_m2 → kwaliteit_m2 →
+  // product_verkoopprijs). Voor verzend/spoed niet aanroepen — die hebben
+  // hun eigen logica in applyShippingLogic / applySpoedToeslag.
   const handleArticleSelected = useCallback(async (article: { artikelnr: string; kwaliteit_code: string | null }) => {
     const debiteurNr = client?.debiteur_nr
     let prijs: number | null = null
+    let prijs_bron: PrijsBron = 'geen'
+    let prijs_breakdown: PrijsBreakdown = {}
     let klant_eigen_naam: string | null = null
     let klant_artikelnr: string | null = null
 
-    // Lookup price from price list
-    if (client?.prijslijst_nr) {
-      prijs = await lookupPrice(client.prijslijst_nr, article.artikelnr)
+    if (article.artikelnr !== SHIPPING_PRODUCT_ID && article.artikelnr !== SPOED_PRODUCT_ID) {
+      const resolved = await resolveOrderlinePrice(article.artikelnr, client?.prijslijst_nr ?? null)
+      prijs = resolved.prijs
+      prijs_bron = resolved.bron
+      prijs_breakdown = resolved.breakdown
     }
 
     if (debiteurNr) {
@@ -264,7 +280,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
       if (kanResult) klant_artikelnr = kanResult.klant_artikel
     }
 
-    return { prijs, klant_eigen_naam, klant_artikelnr }
+    return { prijs, prijs_bron, prijs_breakdown, klant_eigen_naam, klant_artikelnr }
   }, [client?.prijslijst_nr, client?.debiteur_nr])
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)

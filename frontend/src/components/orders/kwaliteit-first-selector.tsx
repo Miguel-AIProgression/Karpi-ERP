@@ -21,6 +21,7 @@ import { SubstitutionPicker } from './substitution-picker'
 import {
   berekenPrijsOppervlakM2,
   berekenMaatwerkPrijs,
+  berekenOmtrekMeter,
 } from '@/lib/utils/maatwerk-prijs'
 import { berekenGewichtKg } from '@/lib/utils/gewicht'
 import { formatCurrency } from '@/lib/utils/formatters'
@@ -78,7 +79,7 @@ export function KwaliteitFirstSelector({
   const [kleurHint, setKleurHint] = useState('')                   // hint vanuit zoekveld
   const [pendingArticle, setPendingArticle] = useState<SelectedArticle | null>(null)
   const [klantM2Prijs, setKlantM2Prijs] = useState<number | null>(null)
-  const [standaardBandKleur, setStandaardBandKleur] = useState<string | null>(null)
+  const [standaardBandKleurId, setStandaardBandKleurId] = useState<number | null>(null)
 
   // Op maat state
   const [vormData, setVormData] = useState<VormAfmetingData>({
@@ -87,6 +88,7 @@ export function KwaliteitFirstSelector({
     breedteCm: undefined,
     diameterCm: undefined,
     afwerkingCode: '',
+    bandKleurId: null,
     bandKleur: '',
     instructies: '',
   })
@@ -280,13 +282,10 @@ export function KwaliteitFirstSelector({
 
   // Standaard bandkleur ophalen zodra kwaliteit + kleur bekend zijn
   useEffect(() => {
-    setStandaardBandKleur(null)
+    setStandaardBandKleurId(null)
     if (!selectedKwaliteit || !selectedKleur) return
     fetchStandaardBandKleur(selectedKwaliteit.code, selectedKleur.kleur_code)
-      .then((r) => {
-        console.log('[bandkleur]', selectedKwaliteit.code, selectedKleur.kleur_code, r)
-        setStandaardBandKleur(r ? [r.band_merk ?? 'Piero', r.band_omschrijving, r.band_kleur].filter(Boolean).join(' ') : null)
-      })
+      .then((r) => setStandaardBandKleurId(r?.afwerking_kleur_id ?? null))
       .catch((e) => console.error('[bandkleur error]', e))
   }, [selectedKwaliteit, selectedKleur])
 
@@ -315,8 +314,13 @@ export function KwaliteitFirstSelector({
     () => berekenPrijsOppervlakM2(vormData.vormCode, vormData.lengteCm, vormData.breedteCm, vormData.diameterCm),
     [vormData]
   )
+  const omtrekMeter = useMemo(
+    () => berekenOmtrekMeter(vormData.vormCode, vormData.lengteCm, vormData.breedteCm, vormData.diameterCm),
+    [vormData]
+  )
   const vormToeslag = selectedVorm?.toeslag ?? 0
-  const afwerkingPrijs = selectedAfwerking?.prijs ?? 0
+  // Afwerkingsprijs = omtrek × tarief per strekkende meter (mig 193).
+  const afwerkingPrijs = omtrekMeter * (selectedAfwerking?.prijs_per_meter ?? 0)
 
   const totaalPrijs = useMemo(
     () =>
@@ -431,6 +435,7 @@ export function KwaliteitFirstSelector({
       maatwerk_diameter_cm: isDiameter ? vormData.diameterCm : undefined,
       maatwerk_afwerking: vormData.afwerkingCode || undefined,
       maatwerk_band_kleur: vormData.bandKleur || undefined,
+      maatwerk_band_kleur_id: vormData.bandKleurId ?? undefined,
       maatwerk_instructies: vormData.instructies || undefined,
       maatwerk_m2_prijs: effectieveM2Prijs,
       maatwerk_kostprijs_m2: selectedKleur.kostprijs_m2 ?? undefined,
@@ -456,7 +461,7 @@ export function KwaliteitFirstSelector({
     setKleurHint('')
     setPendingArticle(null)
     setKlantM2Prijs(null)
-    setStandaardBandKleur(null)
+    setStandaardBandKleurId(null)
   }
 
   if (kwaliteitenLoading) {
@@ -742,7 +747,7 @@ export function KwaliteitFirstSelector({
               vormen={vormen}
               afwerkingen={afwerkingen}
               standaardAfwerking={standaardAfwerking ?? null}
-              standaardBandKleur={standaardBandKleur}
+              standaardBandKleurId={standaardBandKleurId}
               maxBreedteCm={selectedKleur.max_breedte_cm}
               onChange={setVormData}
             />

@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase/client'
+import { SHIPPING_PRODUCT_ID } from '@/lib/constants/shipping'
 import type { BucketKey, PickShipOrder } from '../lib/types'
 import {
   chunks,
@@ -114,6 +115,7 @@ async function fetchPickbaarheidRegels(orderIds: number[]): Promise<Pickbaarheid
         'maatwerk_kwaliteit_code, maatwerk_kleur_code, totaal_stuks, ' +
         'pickbaar_stuks, is_pickbaar, bron, fysieke_locatie, wacht_op'
     )
+    .neq('artikelnr', SHIPPING_PRODUCT_ID)
 
   if (!error) return (data ?? []) as unknown as PickbaarheidRij[]
   if (!isMissingPickbaarheidViewError(error)) throw error
@@ -133,6 +135,7 @@ async function fetchFallbackOrderRegels(orderIds: number[]): Promise<Pickbaarhei
           'maatwerk_kwaliteit_code, maatwerk_kleur_code'
       )
       .in('order_id', ids)
+      .neq('artikelnr', SHIPPING_PRODUCT_ID)
       .order('regelnummer', { ascending: true })
 
     if (error) throw error

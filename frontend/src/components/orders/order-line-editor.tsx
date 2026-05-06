@@ -8,8 +8,9 @@ import { KwaliteitFirstSelector } from './kwaliteit-first-selector'
 import { UitwisselbaarTekortHint } from './uitwisselbaar-tekort-hint'
 import { getVormDisplay } from '@/lib/utils/vorm-labels'
 import type { SelectedArticle, SubstitutionInfo } from './article-selector'
-import type { OrderRegelFormData } from '@/lib/supabase/queries/order-mutations'
+import type { OrderRegelFormData, PrijsBron, PrijsBreakdown } from '@/lib/supabase/queries/order-mutations'
 import { SHIPPING_PRODUCT_ID } from '@/lib/constants/shipping'
+import { formatPrijsBron } from '@/lib/utils/prijs-bron'
 import { berekenRegelDekking } from '@/lib/utils/regel-dekking'
 import { fetchEquivalenteProducten } from '@/lib/supabase/queries/product-equivalents'
 
@@ -24,6 +25,8 @@ interface OrderLineEditorProps {
   debiteurNr?: number
   onArticleSelected?: (article: SelectedArticle) => Promise<{
     prijs: number | null
+    prijs_bron?: PrijsBron
+    prijs_breakdown?: PrijsBreakdown
     klant_eigen_naam?: string | null
     klant_artikelnr?: string | null
   }>
@@ -38,13 +41,12 @@ const inputClass = 'w-full text-right bg-transparent border border-slate-200 rou
 const selectClass = 'bg-transparent border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-terracotta-400/30'
 
 function MaatwerkLineRow({
-  line, index, updateLine, removeLine, prijslijstNr,
+  line, index, updateLine, removeLine,
 }: {
   line: OrderRegelFormData
   index: number
   updateLine: (i: number, u: Partial<OrderRegelFormData>) => void
   removeLine: (i: number) => void
-  prijslijstNr?: string
 }) {
   const isVasteMaatRegel = !line.is_maatwerk
     && line.artikelnr
@@ -247,15 +249,15 @@ function MaatwerkLineRow({
             className={inputClass}
             step="0.01"
           />
-          {/* Issue #35: signaleer als prijs niet uit klant-prijslijst komt */}
-          {prijslijstNr && line.prijs_uit_prijslijst === false && !line.is_maatwerk && (
-            <div
-              className="text-xs text-amber-600 mt-0.5"
-              title={`Geen prijs in klant-prijslijst ${prijslijstNr} — fallback op standaard verkoopprijs`}
-            >
-              ⚠ Niet uit prijslijst
-            </div>
-          )}
+          {/* Mig 191: prijs-bron + breakdown — vervangt "Niet uit prijslijst" */}
+          {!line.is_maatwerk && line.prijs_bron && line.prijs_bron !== 'prijslijst_vast' && (() => {
+            const fmt = formatPrijsBron(line.prijs_bron, line.prijs_breakdown ?? {})
+            return (
+              <div className={`text-xs ${fmt.kleur} mt-0.5`} title={fmt.tooltip}>
+                {fmt.label}
+              </div>
+            )
+          })()}
         </td>
         <td className="px-3 py-2">
           <input
@@ -431,20 +433,27 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr,
     let prijs = article.verkoopprijs
     let klant_eigen_naam: string | undefined
     let klant_artikelnr: string | undefined
-    let prijsUitPrijslijst = false
+    let prijs_bron: PrijsBron | undefined
+    let prijs_breakdown: PrijsBreakdown | undefined
 
     if (onArticleSelected) {
       const result = await onArticleSelected(article)
       if (result.prijs !== null) {
         prijs = result.prijs
-        prijsUitPrijslijst = true
       }
+      prijs_bron = result.prijs_bron
+      prijs_breakdown = result.prijs_breakdown
       klant_eigen_naam = result.klant_eigen_naam ?? undefined
       klant_artikelnr = result.klant_artikelnr ?? undefined
     }
 
-    // Als origineel geen prijs heeft in de prijslijst, zoek de vervanger op
-    if (!prijsUitPrijslijst && substitution && onArticleSelected) {
+    // Als origineel niets oplevert (geen prijslijst, geen m²-fallback),
+    // val terug op vervanger (omsticker-flow)
+    const origineelHeeftPrijs = prijs_bron === 'prijslijst_vast'
+      || prijs_bron === 'prijslijst_m2'
+      || prijs_bron === 'maatwerk_artikel_m2'
+      || prijs_bron === 'kwaliteit_m2'
+    if (!origineelHeeftPrijs && substitution && onArticleSelected) {
       const fysiekArticle: SelectedArticle = {
         ...article,
         artikelnr: substitution.fysiek_artikelnr,
@@ -454,6 +463,8 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr,
       const fysiekResult = await onArticleSelected(fysiekArticle)
       if (fysiekResult.prijs !== null) {
         prijs = fysiekResult.prijs
+        prijs_bron = fysiekResult.prijs_bron
+        prijs_breakdown = fysiekResult.prijs_breakdown
       } else {
         prijs = substitution.fysiek_verkoopprijs
       }
@@ -479,8 +490,10 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr,
       omstickeren: substitution?.omstickeren,
       // Maatwerk
       is_maatwerk: false,
-      // Issue #35: signaleer of prijs uit klant-prijslijst komt of fallback
-      prijs_uit_prijslijst: prijsUitPrijslijst,
+      // Issue #35 / mig 191: prijs-bron + breakdown voor UI-hint
+      prijs_uit_prijslijst: prijs_bron === 'prijslijst_vast',
+      prijs_bron,
+      prijs_breakdown,
     }
     newLine.bedrag = calcBedrag(newLine)
     onChange([...lines, newLine])
@@ -543,7 +556,6 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr,
                   index={i}
                   updateLine={updateLine}
                   removeLine={removeLine}
-                  prijslijstNr={prijslijstNr}
                 />
               ))}
             </tbody>

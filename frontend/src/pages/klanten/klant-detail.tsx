@@ -12,6 +12,8 @@ import { useOrders } from '@/hooks/use-orders'
 import { KlanteigenNamenTab } from '@/components/klanten/klanteigen-namen-tab'
 import { KlantArtikelnummersTab } from '@/components/klanten/klant-artikelnummers-tab'
 import { KlantPrijslijstTab } from '@/components/klanten/klant-prijslijst-tab'
+import { KlantPrijslijstSelector } from '@/components/klanten/klant-prijslijst-selector'
+import { KlantVertegSelector } from '@/components/klanten/klant-verteg-selector'
 import { KlantFactureringTab } from '@/components/klanten/klant-facturering-tab'
 import { EdiTag, KlantEdiTab } from '@/modules/edi'
 
@@ -194,11 +196,12 @@ export function KlantDetailPage() {
               <StatusBadge status={klant.status} type="order" />
               <StatusBadge status={klant.tier} type="tier" />
               {klant.edi_actief && <EdiTag testModus={klant.edi_test_modus} />}
-              {klant.vertegenwoordiger_naam && (
-                <span className="text-sm text-slate-500">
-                  Verteg: <span className="font-medium text-slate-700">{klant.vertegenwoordiger_naam}</span>
-                </span>
-              )}
+              <KlantVertegSelector
+                debiteurNr={debiteurNr}
+                vertegCode={klant.vertegenw_code}
+                vertegNaam={klant.vertegenwoordiger_naam ?? null}
+                variant="header"
+              />
             </div>
           </div>
         </div>
@@ -208,7 +211,11 @@ export function KlantDetailPage() {
           <InfoField label="Telefoon" value={klant.telefoon} />
           <InfoField label="Email" value={klant.email_factuur} />
           <InfoField label="BTW" value={klant.btw_nummer} />
-          <InfoField label="Prijslijst" value={klant.prijslijst_nr} />
+          <KlantPrijslijstSelector
+            debiteurNr={debiteurNr}
+            prijslijstNr={klant.prijslijst_nr}
+            prijslijstNaam={klant.prijslijst_naam ?? null}
+          />
           <InfoField label="Korting" value={klant.korting_pct ? `${klant.korting_pct}%` : null} />
           <InfoField label="Betaalconditie" value={klant.betaalconditie} />
           <InfoField label="Omzet YTD" value={formatCurrency(klant.omzet_ytd)} />
@@ -521,7 +528,27 @@ export function KlantDetailPage() {
 function InfoTab({ klant }: { klant: NonNullable<ReturnType<typeof useKlantDetail>['data']> }) {
   return (
     <div className="p-5 grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-      <InfoField label="Vertegenwoordiger" value={klant.vertegenwoordiger_naam ?? klant.vertegenw_code} />
+      <KlantVertegSelector
+        debiteurNr={klant.debiteur_nr}
+        vertegCode={klant.vertegenw_code}
+        vertegNaam={klant.vertegenwoordiger_naam ?? null}
+        variant="info"
+      />
+      <div>
+        <span className="text-slate-500">Inkoopgroep</span>
+        <p className="font-medium">
+          {klant.inkoopgroep_code ? (
+            <Link
+              to={`/inkoopgroepen/${klant.inkoopgroep_code}`}
+              className="text-terracotta-500 hover:underline"
+            >
+              {klant.inkoopgroep_naam ?? klant.inkoopgroep_code}
+            </Link>
+          ) : (
+            '—'
+          )}
+        </p>
+      </div>
       <InfoField label="Route" value={klant.route} />
       <InfoField label="Rayon" value={klant.rayon_naam} />
       <InfoField label="Factuur naam" value={klant.fact_naam} />

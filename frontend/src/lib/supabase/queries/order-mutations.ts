@@ -51,6 +51,8 @@ export interface OrderRegelFormData {
   maatwerk_breedte_cm?: number
   maatwerk_afwerking?: string
   maatwerk_band_kleur?: string
+  /** FK naar afwerking_kleuren.id — strict-key vanaf mig 194. */
+  maatwerk_band_kleur_id?: number | null
   maatwerk_instructies?: string
   // Op-maat prijscomponenten (nieuw)
   maatwerk_m2_prijs?: number
@@ -78,6 +80,43 @@ export interface OrderRegelFormData {
    * de getoonde prijs een fallback is. Issue #35.
    */
   prijs_uit_prijslijst?: boolean
+  /**
+   * Display-only: bron + breakdown van de via `bereken_orderregel_prijs`-RPC
+   * (mig 191) bepaalde prijs. Wordt niet opgeslagen — voedt de UI-hint die
+   * laat zien hoe een fallback-prijs is opgebouwd (m²-prijs × oppervlak +
+   * vormtoeslag, etc.). Mig 190/191.
+   */
+  prijs_bron?: PrijsBron
+  prijs_breakdown?: PrijsBreakdown
+}
+
+/** Bronlabel voor de orderregel-prijs zoals geretourneerd door `bereken_orderregel_prijs` (mig 191). */
+export type PrijsBron =
+  | 'prijslijst_vast'
+  | 'prijslijst_m2'
+  | 'maatwerk_artikel_m2'
+  | 'kwaliteit_m2'
+  | 'product_verkoopprijs'
+  | 'onbekend_artikel'
+  | 'geen'
+
+/** Vrij-vorm breakdown per fallback-tak. Aanwezigheid van velden hangt af van `bron`. */
+export interface PrijsBreakdown {
+  reden?: string
+  prijslijst_nr?: string
+  artikelnr?: string
+  oppervlak_m2?: number
+  m2_prijs?: number
+  vorm_code?: string
+  vorm_toeslag?: number
+  maatwerk_artikel?: string
+  kwaliteit_code?: string
+}
+
+export interface PrijsResolverResult {
+  prijs: number | null
+  bron: PrijsBron
+  breakdown: PrijsBreakdown
 }
 
 /** Roept RPC `set_uitwisselbaar_claims` aan om handmatige uitwisselbaar-allocaties op een orderregel te zetten. Migratie 154. */
@@ -140,6 +179,7 @@ export async function createOrder(
     maatwerk_breedte_cm: r.maatwerk_breedte_cm ?? null,
     maatwerk_afwerking: r.maatwerk_afwerking || null,
     maatwerk_band_kleur: r.maatwerk_band_kleur || null,
+    maatwerk_band_kleur_id: r.maatwerk_band_kleur_id ?? null,
     maatwerk_instructies: r.maatwerk_instructies || null,
     maatwerk_m2_prijs: r.maatwerk_m2_prijs ?? null,
     maatwerk_kostprijs_m2: r.maatwerk_kostprijs_m2 ?? null,
@@ -187,6 +227,7 @@ export async function updateOrderWithLines(
     maatwerk_breedte_cm: r.maatwerk_breedte_cm ?? null,
     maatwerk_afwerking: r.maatwerk_afwerking || null,
     maatwerk_band_kleur: r.maatwerk_band_kleur || null,
+    maatwerk_band_kleur_id: r.maatwerk_band_kleur_id ?? null,
     maatwerk_instructies: r.maatwerk_instructies || null,
     maatwerk_m2_prijs: r.maatwerk_m2_prijs ?? null,
     maatwerk_kostprijs_m2: r.maatwerk_kostprijs_m2 ?? null,
@@ -237,6 +278,38 @@ export async function lookupPrice(prijslijstNr: string, artikelnr: string): Prom
 
   if (error) throw error
   return data?.prijs ?? null
+}
+
+/**
+ * Resolver voor orderregel-prijs (mig 191). Roept SQL-RPC `bereken_orderregel_prijs`
+ * aan die de fallback-keten doet:
+ *   1. prijslijst_vast       — vaste prijs in `prijslijst_regels`
+ *   2. prijslijst_m2         — m²-prijs uit prijslijst via maatwerk-artikel × oppervlak + vormtoeslag
+ *   3. maatwerk_artikel_m2   — `producten.verkoopprijs` van maatwerk-artikel × oppervlak + vormtoeslag
+ *   4. kwaliteit_m2          — `maatwerk_m2_prijzen.verkoopprijs_m2` × oppervlak + vormtoeslag
+ *   5. product_verkoopprijs  — eigen `producten.verkoopprijs`
+ *   6. geen                  — niets gevonden
+ *
+ * Vormtoeslag komt uit `maatwerk_vormen.toeslag` via `producten.maatwerk_vorm_code` (mig 190).
+ * `prijslijstNr` mag NULL zijn — dan worden de prijslijst-stappen overgeslagen.
+ */
+export async function resolveOrderlinePrice(
+  artikelnr: string,
+  prijslijstNr: string | null,
+): Promise<PrijsResolverResult> {
+  const { data, error } = await supabase.rpc('bereken_orderregel_prijs', {
+    p_artikelnr: artikelnr,
+    p_prijslijst_nr: prijslijstNr,
+  })
+
+  if (error) throw error
+  // RPC retourneert JSONB; supabase-js geeft het als object terug.
+  const result = data as { prijs: number | null; bron: PrijsBron; breakdown: PrijsBreakdown }
+  return {
+    prijs:     result?.prijs ?? null,
+    bron:      result?.bron ?? 'geen',
+    breakdown: result?.breakdown ?? {},
+  }
 }
 
 /** Fetch klanteigen naam for a quality code + customer */

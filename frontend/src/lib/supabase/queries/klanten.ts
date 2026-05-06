@@ -17,6 +17,8 @@ export interface KlantRow {
   plaats: string | null
   edi_actief: boolean
   edi_test_modus: boolean
+  prijslijst_nr: string | null
+  prijslijst_naam: string | null
 }
 
 export interface KlantDetail {
@@ -43,6 +45,7 @@ export interface KlantDetail {
   route: string | null
   rayon_naam: string | null
   prijslijst_nr: string | null
+  prijslijst_naam?: string | null
   korting_pct: number
   betaalconditie: string | null
   btw_nummer: string | null
@@ -57,6 +60,8 @@ export interface KlantDetail {
   deelleveringen_toegestaan: boolean
   factuurvoorkeur: 'per_zending' | 'wekelijks'
   btw_percentage: number
+  inkoopgroep_code: string | null
+  inkoopgroep_naam?: string | null
   edi_actief: boolean
   edi_test_modus: boolean
 }
@@ -97,10 +102,11 @@ export async function fetchKlanten(params: {
   tier?: string
   vertegenw_code?: string
   edi_filter?: 'edi' | 'niet_edi'
+  inkoopgroep_code?: string
   page?: number
   pageSize?: number
 }) {
-  const { search, status, tier, vertegenw_code, edi_filter, page = 0, pageSize = 50 } = params
+  const { search, status, tier, vertegenw_code, edi_filter, inkoopgroep_code, page = 0, pageSize = 50 } = params
 
   // Lichte query: alle actieve EDI-debiteurs (in productie ~39 rijen). Klein dataset,
   // extra roundtrip is sub-50ms. V2: hijs naar de view klant_omzet_ytd.
@@ -142,15 +148,52 @@ export async function fetchKlanten(params: {
     query = query.not('debiteur_nr', 'in', `(${Array.from(ediMap.keys()).join(',')})`)
   }
 
+  if (inkoopgroep_code) {
+    // klant_omzet_ytd-view heeft geen inkoopgroep-kolom → eerst leden ophalen
+    const { data: leden, error: ledenErr } = await supabase
+      .from('debiteuren')
+      .select('debiteur_nr')
+      .eq('inkoopgroep_code', inkoopgroep_code)
+    if (ledenErr) throw ledenErr
+    const ledenNrs = (leden ?? []).map((r) => r.debiteur_nr as number)
+    if (ledenNrs.length === 0) {
+      return { klanten: [], totalCount: 0 }
+    }
+    query = query.in('debiteur_nr', ledenNrs)
+  }
+
   const { data, error, count } = await query
   if (error) throw error
 
+  // Haal prijslijst-mapping op voor de teruggegeven debiteurs (klant_omzet_ytd-view
+  // bevat dit niet). Alleen voor de zichtbare batch — ~50 rijen, dus klein.
+  const debNrs = (data ?? []).map((r) => r.debiteur_nr as number)
+  const prijslijstMap = new Map<number, { nr: string | null; naam: string | null }>()
+  if (debNrs.length > 0) {
+    const { data: prijsRows, error: prijsErr } = await supabase
+      .from('debiteuren')
+      .select('debiteur_nr, prijslijst_nr, prijslijst_headers(naam)')
+      .in('debiteur_nr', debNrs)
+    if (prijsErr) throw prijsErr
+    for (const row of prijsRows ?? []) {
+      const r = row as Record<string, unknown>
+      const header = r.prijslijst_headers as { naam: string } | null
+      prijslijstMap.set(r.debiteur_nr as number, {
+        nr: (r.prijslijst_nr as string | null) ?? null,
+        naam: header?.naam ?? null,
+      })
+    }
+  }
+
   const klanten = (data ?? []).map((row: Record<string, unknown>) => {
     const debNr = row.debiteur_nr as number
+    const prijs = prijslijstMap.get(debNr)
     return {
-      ...(row as Omit<KlantRow, 'edi_actief' | 'edi_test_modus'>),
+      ...(row as Omit<KlantRow, 'edi_actief' | 'edi_test_modus' | 'prijslijst_nr' | 'prijslijst_naam'>),
       edi_actief: ediMap.has(debNr),
       edi_test_modus: ediMap.get(debNr) ?? false,
+      prijslijst_nr: prijs?.nr ?? null,
+      prijslijst_naam: prijs?.naam ?? null,
     }
   })
 
@@ -164,7 +207,7 @@ export async function fetchKlantDetail(debiteurNr: number): Promise<KlantDetail>
   const [klantRes, omzetRes, ediRes] = await Promise.all([
     supabase
       .from('debiteuren')
-      .select('*, vertegenwoordigers(naam)')
+      .select('*, vertegenwoordigers(naam), inkoopgroepen(naam), prijslijst_headers(naam)')
       .eq('debiteur_nr', debiteurNr)
       .single(),
     supabase
@@ -185,6 +228,8 @@ export async function fetchKlantDetail(debiteurNr: number): Promise<KlantDetail>
 
   const row = klantRes.data as Record<string, unknown>
   const verteg = row.vertegenwoordigers as { naam: string } | null
+  const inkgroep = row.inkoopgroepen as { naam: string } | null
+  const prijsHdr = row.prijslijst_headers as { naam: string } | null
   const omzetYtd = (omzetRes.data ?? []).reduce(
     (sum, o) => sum + (Number(o.totaal_bedrag) || 0),
     0,
@@ -193,10 +238,62 @@ export async function fetchKlantDetail(debiteurNr: number): Promise<KlantDetail>
   return {
     ...row,
     vertegenwoordiger_naam: verteg?.naam ?? null,
+    inkoopgroep_naam: inkgroep?.naam ?? null,
+    prijslijst_naam: prijsHdr?.naam ?? null,
     omzet_ytd: omzetYtd,
     edi_actief: ediRes.data?.transus_actief ?? false,
     edi_test_modus: ediRes.data?.test_modus ?? false,
   } as KlantDetail
+}
+
+/** Lightweight list van prijslijst-headers voor dropdown / search-pickers. */
+export async function fetchPrijslijstHeadersList() {
+  const { data, error } = await supabase
+    .from('prijslijst_headers')
+    .select('nr, naam, actief')
+    .order('nr')
+  if (error) throw error
+  return (data ?? []) as { nr: string; naam: string; actief: boolean }[]
+}
+
+/** Update de prijslijst-koppeling van één debiteur. */
+export async function setKlantPrijslijst(debiteurNr: number, prijslijstNr: string | null) {
+  const { error } = await supabase
+    .from('debiteuren')
+    .update({ prijslijst_nr: prijslijstNr })
+    .eq('debiteur_nr', debiteurNr)
+  if (error) throw error
+}
+
+/** Bulk-update prijslijst-koppeling op meerdere debiteuren tegelijk. */
+export async function setKlantenPrijslijst(debiteurNrs: number[], prijslijstNr: string | null) {
+  if (debiteurNrs.length === 0) return
+  const { error } = await supabase
+    .from('debiteuren')
+    .update({ prijslijst_nr: prijslijstNr })
+    .in('debiteur_nr', debiteurNrs)
+  if (error) throw error
+}
+
+/** Lichtgewicht lijst van actieve debiteurs voor klant-pickers (met huidige prijslijst). */
+export async function fetchKoppelbareDebiteurenMetPrijslijst() {
+  const all: { debiteur_nr: number; naam: string; plaats: string | null; prijslijst_nr: string | null }[] = []
+  const pageSize = 1000
+  let from = 0
+  while (true) {
+    const { data, error } = await supabase
+      .from('debiteuren')
+      .select('debiteur_nr, naam, plaats, prijslijst_nr')
+      .eq('status', 'Actief')
+      .order('naam')
+      .range(from, from + pageSize - 1)
+    if (error) throw error
+    const batch = (data ?? []) as typeof all
+    all.push(...batch)
+    if (batch.length < pageSize) break
+    from += pageSize
+  }
+  return all
 }
 
 /** Fetch afleveradressen for a klant */
