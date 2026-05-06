@@ -31,6 +31,9 @@ export interface ProductDetail extends ProductRow {
   besteld_inkoop: number
   inkoopprijs: number | null
   gewicht_kg: number | null
+  lengte_cm: number | null
+  breedte_cm: number | null
+  gewicht_uit_kwaliteit: boolean
   product_type: ProductType | null
 }
 

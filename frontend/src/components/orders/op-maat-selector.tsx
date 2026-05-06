@@ -19,8 +19,8 @@ import {
 import {
   berekenPrijsOppervlakM2,
   berekenMaatwerkPrijs,
-  berekenMaatwerkGewicht,
 } from '@/lib/utils/maatwerk-prijs'
+import { berekenGewichtKg } from '@/lib/utils/gewicht'
 import { formatCurrency } from '@/lib/utils/formatters'
 import type { OrderRegelFormData } from '@/lib/supabase/queries/order-mutations'
 
@@ -203,7 +203,7 @@ export function OpMaatSelector({ defaultKorting, onAdd }: OpMaatSelectorProps) {
       prijs: oppervlakM2 * state.verkoopprijsM2 + vormToeslag + afwerkingPrijs,
       korting_pct: defaultKorting,
       bedrag: totaalPrijs,
-      gewicht_kg: berekenMaatwerkGewicht(oppervlakM2, state.gewichtPerM2Kg),
+      gewicht_kg: berekenGewichtKg(oppervlakM2, state.gewichtPerM2Kg),
       vrije_voorraad: totalRollen,
       besteld_inkoop: state.equivRollen > 0 ? state.equivRollen : 0,
       is_maatwerk: true,

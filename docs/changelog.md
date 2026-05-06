@@ -1,5 +1,14 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-06 — Voorraadpositie-Module post-cutover fixes
+
+Twee fixes na de eerste live-apply-poging van de Voorraadpositie-Module-migraties:
+
+1. **Mig 180 — `producten.naam` → `producten.omschrijving`.** De batch+filter-RPC verwees naar een niet-bestaande kolom `producten.naam` (de echte kolom heet `omschrijving`, conform alle andere SQL — bv. mig 105/107/108/162). Dit faalde bij apply met `ERROR: 42703: column p.naam does not exist`. Gefixt op vier plekken in [`180_voorraadposities_batch_filter.sql`](../supabase/migrations/180_voorraadposities_batch_filter.sql): de `product_naam_per_paar`-CTE-source, de `p_search`-ILIKE-clausule via `pn.naam` (interne CTE-alias blijft `naam`), en twee documentatie-comments. Output-shape ongewijzigd — `product_naam`-kolom in de RPC-output bevat dezelfde tekst als voorheen, alleen de bron-kolom is correct.
+2. **Migratie-hernummering ten gevolge van collisie met gewicht-workstream.** Tijdens onze sessie liep een parallelle ungecommitte gewicht-per-kwaliteit-feature (mig 180/181/182) die identieke nummers gebruikte als de Voorraadpositie-Module (mig 180 + mig 182). De gewicht-set is hernummerd naar `184_/185_/186_`, en mijn `183_oude_rpcs_cleanup.sql` (T005) is verschoven naar [`187_oude_rpcs_cleanup.sql`](../supabase/migrations/187_oude_rpcs_cleanup.sql) voor consecutive ordering met de gewicht-set. Doc-refs in [`database-schema.md`](database-schema.md), `ralph/state.json` en `fixture-10-ghost-besteld-paren.test.ts` bijgewerkt: "mig 183" → "mig 187". Geen functionele wijziging — alleen filename/comment.
+
+**HITL** (na deze fix): mig 180 opnieuw apply'en op Supabase Karpi-project. Idempotent (`CREATE OR REPLACE FUNCTION`). De eerdere mislukte transactie heeft niets achtergelaten.
+
 ## 2026-05-06 — Oude RPC's na Voorraadpositie-Module-cutover (T005 / #30)
 
 Vijfde en laatste slice van de Voorraadpositie-Module-epic ([PRD #25](https://github.com/Miguel-AIProgression/karpi-erp/issues/25)). Cleanup van de drie RPC's die door `voorraadposities()` (mig 179/180) zijn vervangen: `rollen_uitwissel_voorraad` (mig 112/115), `uitwisselbare_partners` (mig 114/115), `besteld_per_kwaliteit_kleur` (mig 137). Hiermee is de epic compleet — alle vijf taken (T001–T005) staan.

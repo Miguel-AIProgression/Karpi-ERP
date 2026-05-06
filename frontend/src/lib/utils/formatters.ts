@@ -23,8 +23,12 @@ export function formatPercentage(pct: number | null | undefined): string {
   return `${pct.toLocaleString('nl-NL', { maximumFractionDigits: 1 })}%`
 }
 
-/** Format a number with Dutch locale: 1.234 */
-export function formatNumber(n: number | null | undefined): string {
+/** Format a number with Dutch locale: 1.234. Pass `decimals` to fix fractie-digits (1.234,56). */
+export function formatNumber(n: number | null | undefined, decimals?: number): string {
   if (n == null) return '—'
-  return n.toLocaleString('nl-NL')
+  if (decimals == null) return n.toLocaleString('nl-NL')
+  return n.toLocaleString('nl-NL', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })
 }
