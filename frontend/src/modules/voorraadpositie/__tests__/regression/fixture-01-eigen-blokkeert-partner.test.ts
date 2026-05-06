@@ -28,10 +28,12 @@ describe('fixture 01 — eigen voorraad blokkeert beste_partner', () => {
         {
           kwaliteit_code: 'TAP',
           kleur_code: '15',
+          product_naam: 'TAP 15',
           eigen_volle_rollen: 2,
           eigen_aangebroken_rollen: 1,
           eigen_reststuk_rollen: 0,
           eigen_totaal_m2: 80,
+          rollen: [],
           partners: [
             { kwaliteit_code: 'LAMI', kleur_code: '15', rollen: 3, m2: 120 },
           ],
@@ -42,6 +44,8 @@ describe('fixture 01 — eigen voorraad blokkeert beste_partner', () => {
           besteld_orders_count: 0,
           eerstvolgende_leverweek: null,
           eerstvolgende_verwacht_datum: null,
+          eerstvolgende_m: 0,
+          eerstvolgende_m2: 0,
         },
       ],
       error: null,
@@ -63,10 +67,12 @@ describe('fixture 01 — eigen voorraad blokkeert beste_partner', () => {
         {
           kwaliteit_code: 'TAP',
           kleur_code: '15',
+          product_naam: 'TAP 15',
           eigen_volle_rollen: 0,
           eigen_aangebroken_rollen: 0,
           eigen_reststuk_rollen: 0,
           eigen_totaal_m2: 0,
+          rollen: [],
           partners: [
             { kwaliteit_code: 'LAMI', kleur_code: '15', rollen: 3, m2: 120 },
           ],
@@ -76,6 +82,8 @@ describe('fixture 01 — eigen voorraad blokkeert beste_partner', () => {
           besteld_orders_count: 0,
           eerstvolgende_leverweek: null,
           eerstvolgende_verwacht_datum: null,
+          eerstvolgende_m: 0,
+          eerstvolgende_m2: 0,
         },
       ],
       error: null,

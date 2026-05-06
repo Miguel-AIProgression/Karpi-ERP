@@ -211,26 +211,11 @@ export interface BesteldInkoopInfo {
   eerstvolgende_m2: number
 }
 
-export interface RolGroep {
-  kwaliteit_code: string
-  kleur_code: string
-  product_naam: string
-  rollen: RolRow[]
-  totaal_rollen: number
-  totaal_m2: number
-  volle_rollen: number
-  aangebroken: number
-  reststukken: number
-  /** Beste uitwisselbare kwaliteit+kleur met beschikbare voorraad, NULL als er geen is. */
-  equiv_kwaliteit_code: string | null
-  equiv_kleur_code: string | null
-  equiv_rollen: number
-  equiv_m2: number
-  /** Alle uitwisselbare partners uit dezelfde uitwisselgroep, gesorteerd op m² DESC. */
-  uitwisselbare_partners: UitwisselbarePartner[]
-  /** Openstaande inkooporders voor deze kwaliteit+kleur, NULL als er geen zijn. */
-  inkoop: BesteldInkoopInfo | null
-}
+// `RolGroep` (gegroepeerd-rollen-overzicht) verhuisd naar Voorraadpositie-Module
+// (zie `Voorraadpositie` in `@/modules/voorraadpositie`). Verwijderd in T003 (#28)
+// — `RolGroep` in `lib/utils/snijplan-mapping.ts` en
+// `components/snijplanning/snij-bevestiging-modal.tsx` is een ander concept
+// (snijplan-rol-grouping) en blijft bestaan.
 
 // === Planning config ===
 

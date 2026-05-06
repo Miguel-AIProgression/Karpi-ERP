@@ -39,10 +39,12 @@ describe('fixture 03 — kleur-normalisatie', () => {
           kleur_code: '15.0', // RPC zou dit normaal genormaliseerd retourneren,
                               // maar als verdediging in-depth canonicaliseert
                               // de TS-mapper opnieuw.
+          product_naam: 'TAP 15',
           eigen_volle_rollen: 0,
           eigen_aangebroken_rollen: 0,
           eigen_reststuk_rollen: 0,
           eigen_totaal_m2: 0,
+          rollen: [],
           partners: [
             // Partner-kleurcode komt mogelijk uit een andere kolom — mapper
             // moet ook die normaliseren.
@@ -54,6 +56,8 @@ describe('fixture 03 — kleur-normalisatie', () => {
           besteld_orders_count: 0,
           eerstvolgende_leverweek: null,
           eerstvolgende_verwacht_datum: null,
+          eerstvolgende_m: 0,
+          eerstvolgende_m2: 0,
         },
       ],
       error: null,

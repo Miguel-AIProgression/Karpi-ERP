@@ -5,10 +5,15 @@ import { cn } from '@/lib/utils/cn'
 import { ROL_STATUS_COLORS, ROL_TYPE_COLORS, ROL_TYPE_LABELS } from '@/lib/utils/constants'
 import { useReserveringenVoorProduct } from '@/hooks/use-producten'
 import { useRolSnijstukken } from '@/hooks/use-snijplanning'
-import type { BesteldInkoopInfo, RolGroep, RolRow, UitwisselbarePartner } from '@/lib/types/productie'
+import type { RolRow } from '@/lib/types/productie'
+import type {
+  BesteldInkoop,
+  UitwisselbarePartner,
+  Voorraadpositie,
+} from '@/modules/voorraadpositie'
 
 interface RollenGroepRowProps {
-  groep: RolGroep
+  positie: Voorraadpositie
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -31,7 +36,7 @@ function StatusBadge({ rolType, count }: { rolType: string; count: number }) {
   )
 }
 
-function formatLeverweek(info: BesteldInkoopInfo): string | null {
+function formatLeverweek(info: BesteldInkoop): string | null {
   if (info.eerstvolgende_leverweek) return `wk ${info.eerstvolgende_leverweek}`
   if (info.eerstvolgende_verwacht_datum) {
     const d = new Date(info.eerstvolgende_verwacht_datum)
@@ -42,7 +47,7 @@ function formatLeverweek(info: BesteldInkoopInfo): string | null {
   return null
 }
 
-function BesteldChip({ info }: { info: BesteldInkoopInfo }) {
+function BesteldChip({ info }: { info: BesteldInkoop }) {
   const weekLabel = formatLeverweek(info)
   const hasSplit =
     info.eerstvolgende_m2 > 0 && info.eerstvolgende_m2 < info.besteld_m2
@@ -282,15 +287,32 @@ function RolTabel({ rollen }: { rollen: RolRow[] }) {
   )
 }
 
-export function RollenGroepRow({ groep }: RollenGroepRowProps) {
+export function RollenGroepRow({ positie }: RollenGroepRowProps) {
   const [open, setOpen] = useState(false)
 
-  const isEmpty = groep.totaal_m2 === 0
-  const heeftEquiv = !!groep.equiv_kwaliteit_code && groep.equiv_rollen > 0
+  // Aggregaten afgeleid uit Voorraadpositie. Lege groepen ('ghost'-paren met
+  // alleen besteld) komen door de view-laag op page-niveau hier binnen met
+  // voorraad-tellingen op 0.
+  const totaalRollen =
+    positie.voorraad.volle_rollen +
+    positie.voorraad.aangebroken_rollen +
+    positie.voorraad.reststuk_rollen
+  const totaalM2 = positie.voorraad.totaal_m2
+  const isEmpty = totaalM2 === 0
 
-  const vollePct = groep.totaal_rollen > 0
-    ? Math.round((groep.volle_rollen / groep.totaal_rollen) * 100)
+  // Beste partner (alleen wanneer eigen=0 en partners[0].m²>0 — invariant 1).
+  const bestePartner = positie.beste_partner
+  const heeftBestePartner = !!bestePartner && bestePartner.rollen > 0
+
+  // Inkoop is altijd aanwezig als object met 0-defaults; toon BesteldChip
+  // alleen wanneer er werkelijk besteld is.
+  const heeftBesteld = positie.besteld.besteld_m > 0
+
+  const vollePct = totaalRollen > 0
+    ? Math.round((positie.voorraad.volle_rollen / totaalRollen) * 100)
     : 0
+
+  const productLabel = positie.product_naam ?? `${positie.kwaliteit_code} ${positie.kleur_code}`
 
   return (
     <div
@@ -316,51 +338,52 @@ export function RollenGroepRow({ groep }: RollenGroepRowProps) {
             <ChevronRight size={16} className="text-slate-400" />
           )}
           <span className={cn('font-medium', isEmpty ? 'text-slate-500' : 'text-slate-900')}>
-            {groep.product_naam}
+            {productLabel}
           </span>
           <div className="flex items-center gap-2 flex-wrap">
             {isEmpty ? (
               <>
-                {heeftEquiv ? (
+                {heeftBestePartner ? (
                   <Link
-                    to={`/rollen?kwaliteit=${encodeURIComponent(groep.equiv_kwaliteit_code!)}&kleur=${encodeURIComponent(groep.equiv_kleur_code ?? '')}`}
+                    to={`/rollen?kwaliteit=${encodeURIComponent(bestePartner!.kwaliteit_code)}&kleur=${encodeURIComponent(bestePartner!.kleur_code)}`}
                     onClick={(e) => e.stopPropagation()}
                     className="text-xs px-2 py-0.5 rounded-full font-medium bg-blue-50 text-blue-700 hover:bg-blue-100"
                   >
-                    Leverbaar via {groep.equiv_kwaliteit_code} {groep.equiv_kleur_code}
+                    Leverbaar via {bestePartner!.kwaliteit_code} {bestePartner!.kleur_code}
                     {' — '}
-                    {groep.equiv_rollen} {groep.equiv_rollen === 1 ? 'rol' : 'rollen'}
+                    {bestePartner!.rollen} {bestePartner!.rollen === 1 ? 'rol' : 'rollen'}
                     {', '}
-                    {groep.equiv_m2.toFixed(1)} m&sup2;
+                    {bestePartner!.m2.toFixed(1)} m&sup2;
                   </Link>
-                ) : groep.inkoop ? null : (
+                ) : heeftBesteld ? null : (
                   <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-slate-100 text-slate-500">
                     Geen voorraad
                   </span>
                 )}
                 {/* Andere uitwisselbare partners (de beste is al als "Leverbaar via" getoond) */}
-                {groep.uitwisselbare_partners
+                {positie.partners
                   .filter(
                     (p) =>
                       !(
-                        p.kwaliteit_code === groep.equiv_kwaliteit_code &&
-                        p.kleur_code === groep.equiv_kleur_code
+                        bestePartner &&
+                        p.kwaliteit_code === bestePartner.kwaliteit_code &&
+                        p.kleur_code === bestePartner.kleur_code
                       ),
                   )
                   .map((p) => (
                     <PartnerChip key={`${p.kwaliteit_code}|${p.kleur_code}`} partner={p} />
                   ))}
-                {groep.inkoop && <BesteldChip info={groep.inkoop} />}
+                {heeftBesteld && <BesteldChip info={positie.besteld} />}
               </>
             ) : (
               <>
-                <StatusBadge rolType="volle_rol" count={groep.volle_rollen} />
-                <StatusBadge rolType="aangebroken" count={groep.aangebroken} />
-                <StatusBadge rolType="reststuk" count={groep.reststukken} />
-                {groep.uitwisselbare_partners.map((p) => (
+                <StatusBadge rolType="volle_rol" count={positie.voorraad.volle_rollen} />
+                <StatusBadge rolType="aangebroken" count={positie.voorraad.aangebroken_rollen} />
+                <StatusBadge rolType="reststuk" count={positie.voorraad.reststuk_rollen} />
+                {positie.partners.map((p) => (
                   <PartnerChip key={`${p.kwaliteit_code}|${p.kleur_code}`} partner={p} />
                 ))}
-                {groep.inkoop && <BesteldChip info={groep.inkoop} />}
+                {heeftBesteld && <BesteldChip info={positie.besteld} />}
               </>
             )}
           </div>
@@ -368,7 +391,7 @@ export function RollenGroepRow({ groep }: RollenGroepRowProps) {
 
         <div className="flex items-center gap-4 shrink-0">
           <span className="text-xs text-slate-500">
-            {groep.totaal_rollen} {groep.totaal_rollen === 1 ? 'rol' : 'rollen'}
+            {totaalRollen} {totaalRollen === 1 ? 'rol' : 'rollen'}
           </span>
           <div className="flex items-center gap-2 min-w-[140px]">
             <span
@@ -377,7 +400,7 @@ export function RollenGroepRow({ groep }: RollenGroepRowProps) {
                 isEmpty ? 'text-slate-400' : 'text-slate-700',
               )}
             >
-              {groep.totaal_m2.toFixed(1)} m&sup2;
+              {totaalM2.toFixed(1)} m&sup2;
             </span>
             <div className="w-20 h-1.5 bg-slate-100 rounded-full overflow-hidden">
               <div
@@ -391,7 +414,7 @@ export function RollenGroepRow({ groep }: RollenGroepRowProps) {
 
       {open && !isEmpty && (
         <div className="border-t border-slate-100 px-2 py-2">
-          <RolTabel rollen={groep.rollen} />
+          <RolTabel rollen={positie.rollen} />
         </div>
       )}
     </div>

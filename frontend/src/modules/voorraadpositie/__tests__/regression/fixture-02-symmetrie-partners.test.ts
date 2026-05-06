@@ -27,10 +27,12 @@ describe('fixture 02 — symmetrie partners (A heeft B ⇔ B heeft A)', () => {
         {
           kwaliteit_code: 'TAP',
           kleur_code: '15',
+          product_naam: 'TAP 15',
           eigen_volle_rollen: 1,
           eigen_aangebroken_rollen: 0,
           eigen_reststuk_rollen: 0,
           eigen_totaal_m2: 40,
+          rollen: [],
           partners: [
             { kwaliteit_code: 'LAMI', kleur_code: '15', rollen: 2, m2: 80 },
           ],
@@ -40,6 +42,8 @@ describe('fixture 02 — symmetrie partners (A heeft B ⇔ B heeft A)', () => {
           besteld_orders_count: 0,
           eerstvolgende_leverweek: null,
           eerstvolgende_verwacht_datum: null,
+          eerstvolgende_m: 0,
+          eerstvolgende_m2: 0,
         },
       ],
       error: null,
@@ -51,10 +55,12 @@ describe('fixture 02 — symmetrie partners (A heeft B ⇔ B heeft A)', () => {
         {
           kwaliteit_code: 'LAMI',
           kleur_code: '15',
+          product_naam: 'LAMI 15',
           eigen_volle_rollen: 2,
           eigen_aangebroken_rollen: 0,
           eigen_reststuk_rollen: 0,
           eigen_totaal_m2: 80,
+          rollen: [],
           partners: [
             { kwaliteit_code: 'TAP', kleur_code: '15', rollen: 1, m2: 40 },
           ],
@@ -64,6 +70,8 @@ describe('fixture 02 — symmetrie partners (A heeft B ⇔ B heeft A)', () => {
           besteld_orders_count: 0,
           eerstvolgende_leverweek: null,
           eerstvolgende_verwacht_datum: null,
+          eerstvolgende_m: 0,
+          eerstvolgende_m2: 0,
         },
       ],
       error: null,
