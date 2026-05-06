@@ -1,4 +1,4 @@
-// Regression fixture 10 — `fetchGhostBesteldParen()` (T005, mig 183).
+// Regression fixture 10 — `fetchGhostBesteldParen()` (T005, mig 187).
 //
 // Achtergrond: T005 verplaatst de directe `besteld_per_kwaliteit_kleur`-RPC-call
 // uit `pages/rollen/rollen-overview.tsx` achter de Voorraadpositie-Module-seam.

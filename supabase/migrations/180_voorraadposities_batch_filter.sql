@@ -6,7 +6,7 @@
 --   * Voegt batch+filter-modus toe: als p_kwaliteit IS NULL OR p_kwaliteit = ''
 --     EN p_kleur IS NULL OR p_kleur = '', dan retourneert de RPC álle paren.
 --     Optioneel filter via p_kwaliteit (gedeeltelijke match), p_kleur (exact na
---     normalisatie), of p_search (ILIKE op `kw-kl` of producten.naam).
+--     normalisatie), of p_search (ILIKE op `kw-kl` of producten.omschrijving).
 --
 -- Bestaans-regel afgedwongen op SQL-niveau (asymmetrie batch vs single):
 --   * Batch retourneert alléén paren met eigen voorraad (≥1 rol of m²>0).
@@ -175,13 +175,13 @@ AS $$
       COALESCE(bk.eerstvolgende_m2, 0)::NUMERIC         AS b_eerstvolg_m2
     FROM besteld_per_kwaliteit_kleur() bk
   ),
-  -- product_naam: pak één producten.naam per (kw, kl) — eerste hit op artikelnr.
+  -- product_naam: pak één producten.omschrijving per (kw, kl) — eerste hit op artikelnr.
   -- LEFT JOIN, NULL als geen match.
   product_naam_per_paar AS (
     SELECT DISTINCT ON (p.kwaliteit_code, regexp_replace(p.kleur_code, '\.0+$', ''))
       p.kwaliteit_code                                  AS kwaliteit_code,
       regexp_replace(p.kleur_code, '\.0+$', '')         AS kleur_code,
-      p.naam                                            AS naam
+      p.omschrijving                                    AS naam
     FROM producten p
     WHERE p.kwaliteit_code IS NOT NULL
       AND p.kleur_code     IS NOT NULL
@@ -280,12 +280,12 @@ COMMENT ON FUNCTION voorraadposities(TEXT, TEXT, TEXT) IS
   '(b) Batch (beide leeg) → álle paren met eigen voorraad. '
   '(c) Batch+filter (één van beide of p_search) → alleen eigen-voorraad-paren '
   'die matchen op kwaliteit (ILIKE), kleur (exact na normalisatie) en/of '
-  'search (ILIKE op kw-kl of producten.naam). '
+  'search (ILIKE op kw-kl of producten.omschrijving). '
   'Invarianten: eigen>0 ⇒ beste_partner=NULL; symmetrie via uitwisselbare_partners(); '
   'besteld_m2=0 bij ontbrekende breedte; kleur-normalisatie strip trailing .0+; '
   'partners is altijd een (mogelijk lege) JSONB-array. '
   'Hergebruikt: uitwisselbare_partners() (mig 115), '
-  'besteld_per_kwaliteit_kleur() (mig 137), producten (voor naam). '
+  'besteld_per_kwaliteit_kleur() (mig 137), producten (voor omschrijving). '
   'Output bevat extra kolommen rollen JSONB[] (per-rol details voor expand-rows), '
   'product_naam TEXT, eerstvolgende_m + eerstvolgende_m2 (mig 137-doorgifte). '
   'Migratie 180 (T003 / #28).';
