@@ -1,5 +1,20 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-06 — Placeholder-rollen mig 112 + 113 opruim (T004 / #29)
+
+Vierde slice van de Voorraadpositie-Module-epic ([PRD #25](https://github.com/Miguel-AIProgression/karpi-erp/issues/25)). Na T003's ghost-merge (rollen-overzicht toont (kw, kl)-paren zonder eigen voorraad via `besteld_per_kwaliteit_kleur` + view-laag-aanvulling) zijn de placeholder-rollen uit migraties 112 + 113 (oppervlak_m2=0, rolnummer 'PH-...') overbodig geworden. Ze waren een truc om "leeg-toch-zichtbaar"-paren te krijgen via de oude `fetchRollenGegroepeerd`-query, die in T003 is verwijderd.
+
+- **Audit-bevindingen** — 0 frontend-hits voor `oppervlak_m2 = 0` of `rolnummer LIKE 'PH-%'`-filtering. Geen consumer leest meer specifiek op deze placeholder-shape:
+  - RPC's mig 114 (`uitwisselbare_partners`), mig 115 (`rollen_uitwissel_voorraad`) en mig 137 (`besteld_per_kwaliteit_kleur`) filteren al expliciet op `oppervlak_m2 > 0`.
+  - Mig 134 (`snijplanning_tekort_analyse`) sluit placeholders uit via `r.lengte_cm > 0 AND r.breedte_cm > 0`.
+  - Mig 179 + 180 (`voorraadposities`) filtert eigen rollen op `oppervlak_m2 > 0`.
+  - Edge-function `_shared/db-helpers.ts::fetchBeschikbareRollen` filtert PH-rollen al uit via `lengte <= 0 || breedte <= 0`. Defensieve filter blijft bestaan; mig 182 maakt hem hooguit nooit-true (geen breaking change).
+- **Mig 182 — opruim** — `DELETE FROM rollen WHERE rolnummer LIKE 'PH-%' AND oppervlak_m2 = 0;`. Idempotent: bij re-run vindt DELETE 0 rijen.
+- **Mig 112 + 113 INSERT-blok geneutraliseerd** — beide DO-blocks gewikkeld in `IF FALSE THEN ... END IF;`. RPC `rollen_uitwissel_voorraad()` in mig 112 (Deel 2) blijft intact — die wordt in T005 separaat gedemoteerd of gedropt na consumer-audit. Re-runs van mig 112/113 maken géén nieuwe PH-rollen meer aan.
+- **Snijplanning + maatwerk-flow regression-vrij** — placeholders worden door alle bestaande filters al genegeerd. Rollen-overzicht ghost-groepen blijven verschijnen via de T003-ghost-merge.
+
+**HITL — migraties 182 + de mig 112/113-updates handmatig toepassen op Supabase Karpi-project** (MCP heeft geen toegang). Volgorde: eerst mig 182 (DELETE), daarna mig 112/113 herinladen (no-op INSERT's overschrijven oude logica). Op een DB die mig 112/113 nooit heeft gedraaid is mig 182 eveneens een no-op DELETE.
+
 ## 2026-05-06 — MaatwerkLevertijdHint via Voorraadpositie-Module (T002 / #27)
 
 Derde slice van de Voorraadpositie-Module-epic ([PRD #25](https://github.com/Miguel-AIProgression/karpi-erp/issues/25)). De maatwerk-levertijdhint cut-overt op de Module-seam zodat order-form, product-detail en rollen-overzicht alle drie via dezelfde `fetchVoorraadpositie`-call lezen.
