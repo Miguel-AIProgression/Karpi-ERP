@@ -6,10 +6,11 @@ import { PageHeader } from '@/components/layout/page-header'
 import { RollenGroepRow } from '@/components/rollen/rollen-groep-row'
 import { useRollenStats } from '@/hooks/use-rollen'
 import { sanitizeSearch } from '@/lib/utils/sanitize'
-import { supabase } from '@/lib/supabase/client'
 import {
+  fetchGhostBesteldParen,
   normaliseerKleurcode,
   useVoorraadposities,
+  type GhostBesteldRij,
   type Voorraadpositie,
 } from '@/modules/voorraadpositie'
 
@@ -17,49 +18,20 @@ function formatM2(value: number): string {
   return value.toLocaleString('nl-NL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
 }
 
-// Ghost-bron: rij uit besteld_per_kwaliteit_kleur() die we mergen voor paren
-// zonder eigen voorraad. Bewust niet via Module — Module's bestaans-regel zegt
-// expliciet dat batch-modus alleen eigen-voorraad-paren teruggeeft.
-interface GhostBesteldRow {
-  kwaliteit_code: string
-  kleur_code: string
-  besteld_m: number | string | null
-  besteld_m2: number | string | null
-  orders_count: number | string | null
-  eerstvolgende_leverweek: string | null
-  eerstvolgende_verwacht_datum: string | null
-  eerstvolgende_m: number | string | null
-  eerstvolgende_m2: number | string | null
-}
-
-function num(v: unknown): number {
-  if (v === null || v === undefined) return 0
-  const n = Number(v)
-  return Number.isFinite(n) ? n : 0
-}
-
-/** Fetch besteld-aggregaten — bron voor ghost-paren in rollen-overzicht. */
-async function fetchBesteldAggregaten(): Promise<GhostBesteldRow[]> {
-  // Cast: RPC staat nog niet in de generated types.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase.rpc as any)('besteld_per_kwaliteit_kleur')
-  if (error) {
-    console.warn('besteld_per_kwaliteit_kleur RPC niet beschikbaar:', error.message)
-    return []
-  }
-  return (data ?? []) as GhostBesteldRow[]
-}
-
 /**
  * Construeert een "ghost"-Voorraadpositie voor een (kw, kl) zonder eigen
  * voorraad. Alleen `besteld` is gevuld; `voorraad`/`rollen`/`partners` zijn
  * leeg. RollenGroepRow rendert dit als `isEmpty=true`-rij — dezelfde
  * "alleen besteld"-zichtbaarheid als in main vóór de Module-cutover.
+ *
+ * Bron: `fetchGhostBesteldParen` uit de Module — Module's bestaans-regel
+ * (batch-modus geeft alleen eigen-voorraad-paren) blijft onveranderd; deze
+ * page-niveau-merge is een view-laag-aanvulling.
  */
-function maakGhostPositie(row: GhostBesteldRow): Voorraadpositie {
+function maakGhostPositie(row: GhostBesteldRij): Voorraadpositie {
   return {
     kwaliteit_code: row.kwaliteit_code,
-    kleur_code: normaliseerKleurcode(row.kleur_code),
+    kleur_code: row.kleur_code,
     product_naam: null,
     voorraad: {
       volle_rollen: 0,
@@ -71,13 +43,13 @@ function maakGhostPositie(row: GhostBesteldRow): Voorraadpositie {
     partners: [],
     beste_partner: null,
     besteld: {
-      besteld_m: num(row.besteld_m),
-      besteld_m2: num(row.besteld_m2),
-      orders_count: num(row.orders_count),
-      eerstvolgende_leverweek: row.eerstvolgende_leverweek ?? null,
-      eerstvolgende_verwacht_datum: row.eerstvolgende_verwacht_datum ?? null,
-      eerstvolgende_m: num(row.eerstvolgende_m),
-      eerstvolgende_m2: num(row.eerstvolgende_m2),
+      besteld_m: row.besteld_m,
+      besteld_m2: row.besteld_m2,
+      orders_count: row.orders_count,
+      eerstvolgende_leverweek: row.eerstvolgende_leverweek,
+      eerstvolgende_verwacht_datum: row.eerstvolgende_verwacht_datum,
+      eerstvolgende_m: row.eerstvolgende_m,
+      eerstvolgende_m2: row.eerstvolgende_m2,
     },
   }
 }
@@ -99,11 +71,12 @@ export function RollenOverviewPage() {
     search: search || undefined,
   })
 
-  // Ghost-bron: alle besteld-aggregaten. Wordt gemerged op page-niveau zodat
-  // het Module-concept zuiver blijft (Voorraadpositie = "iets dat bestaat").
+  // Ghost-bron: alle besteld-aggregaten via Module-seam. Wordt gemerged op
+  // page-niveau zodat het Module-concept zuiver blijft (Voorraadpositie =
+  // "iets dat bestaat"). De RPC zelf zit achter `fetchGhostBesteldParen`.
   const { data: besteldAggregaten } = useQuery({
-    queryKey: ['besteld-per-kwaliteit-kleur'],
-    queryFn: fetchBesteldAggregaten,
+    queryKey: ['voorraadpositie', 'ghost-besteld'],
+    queryFn: fetchGhostBesteldParen,
     staleTime: 60_000,
   })
 
@@ -121,9 +94,9 @@ export function RollenOverviewPage() {
 
     const ghosts: Voorraadpositie[] = []
     for (const row of besteldAggregaten) {
-      if (num(row.besteld_m) <= 0) continue
+      if (row.besteld_m <= 0) continue
       const kw = row.kwaliteit_code
-      const kl = normaliseerKleurcode(row.kleur_code)
+      const kl = row.kleur_code
       const key = `${kw}|${kl}`
       if (aanwezig.has(key)) continue
 

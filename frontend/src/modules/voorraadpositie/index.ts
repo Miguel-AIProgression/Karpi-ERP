@@ -21,6 +21,10 @@ export {
   fetchVoorraadposities,
 } from './queries/voorraadposities'
 export {
+  fetchGhostBesteldParen,
+  type GhostBesteldRij,
+} from './queries/ghost-besteld'
+export {
   useVoorraadpositie,
   useVoorraadposities,
 } from './hooks/use-voorraadpositie'
