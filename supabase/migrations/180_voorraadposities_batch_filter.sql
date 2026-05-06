@@ -113,7 +113,7 @@ AS $$
             'oppervlak_m2',      r.oppervlak_m2,
             'status',            r.status,
             'rol_type',          r.rol_type,
-            'locatie',           r.locatie,
+            'locatie',           ml.code,
             'oorsprong_rol_id',  r.oorsprong_rol_id,
             'reststuk_datum',    r.reststuk_datum
           )
@@ -122,6 +122,7 @@ AS $$
         '[]'::jsonb
       )                                                       AS rollen_json
     FROM rollen r
+    LEFT JOIN magazijn_locaties ml ON ml.id = r.locatie_id
     WHERE r.status NOT IN ('verkocht', 'gesneden')
       AND r.oppervlak_m2 > 0
       AND r.kwaliteit_code IS NOT NULL
