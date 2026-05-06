@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   fetchKlanten,
   fetchKlantDetail,
@@ -6,7 +6,11 @@ import {
   fetchKlanteigenNamen,
   fetchKlantArtikelnummers,
   fetchKlantPrijslijst,
+  fetchKoppelbareDebiteurenMetPrijslijst,
+  fetchPrijslijstHeadersList,
   fetchVertegenwoordigers,
+  setKlantPrijslijst,
+  setKlantenPrijslijst,
 } from '@/lib/supabase/queries/klanten'
 
 export function useKlanten(params: {
@@ -68,5 +72,44 @@ export function useVertegenwoordigers() {
   return useQuery({
     queryKey: ['vertegenwoordigers'],
     queryFn: fetchVertegenwoordigers,
+  })
+}
+
+export function usePrijslijstHeadersList() {
+  return useQuery({
+    queryKey: ['prijslijst-headers-list'],
+    queryFn: fetchPrijslijstHeadersList,
+  })
+}
+
+export function useKoppelbareDebiteurenMetPrijslijst() {
+  return useQuery({
+    queryKey: ['klanten', 'koppelbare-met-prijslijst'],
+    queryFn: fetchKoppelbareDebiteurenMetPrijslijst,
+  })
+}
+
+export function useSetKlantPrijslijst() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ debiteurNr, prijslijstNr }: { debiteurNr: number; prijslijstNr: string | null }) =>
+      setKlantPrijslijst(debiteurNr, prijslijstNr),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ['klanten'] })
+      qc.invalidateQueries({ queryKey: ['klanten', vars.debiteurNr] })
+      qc.invalidateQueries({ queryKey: ['prijslijsten'] })
+    },
+  })
+}
+
+export function useSetKlantenPrijslijst() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ debiteurNrs, prijslijstNr }: { debiteurNrs: number[]; prijslijstNr: string | null }) =>
+      setKlantenPrijslijst(debiteurNrs, prijslijstNr),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['klanten'] })
+      qc.invalidateQueries({ queryKey: ['prijslijsten'] })
+    },
   })
 }

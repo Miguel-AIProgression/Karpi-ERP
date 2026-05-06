@@ -109,7 +109,7 @@ export async function fetchZendingen(filters: ZendingenFilters = {}) {
       aantal_colli, totaal_gewicht_kg, created_at,
       orders!inner (
         id, order_nr, debiteur_nr,
-        debiteuren (
+        debiteuren:debiteuren!orders_debiteur_nr_fkey (
           debiteur_nr, naam
         )
       ),
@@ -138,7 +138,7 @@ export async function fetchZendingMetTransportorders(zending_nr: string) {
       *,
       orders!inner (
         *,
-        debiteuren (
+        debiteuren:debiteuren!orders_debiteur_nr_fkey (
           *
         )
       ),
@@ -161,7 +161,7 @@ export async function fetchZendingPrintSet(zending_nr: string): Promise<ZendingP
       vervoerders ( code, display_naam, type, actief ),
       orders!inner (
         id, order_nr, oud_order_nr, klant_referentie, orderdatum, afleverdatum, debiteur_nr,
-        debiteuren (
+        debiteuren:debiteuren!orders_debiteur_nr_fkey (
           naam, gln_bedrijf
         )
       ),

@@ -2,6 +2,7 @@ node_modules
 dist
 .env
 *.local
+*.local.md
 brondata/logos/
 brondata/*.zip
 brondata/**/*.xlsx
@@ -12,3 +13,11 @@ __pycache__/
 supabase/.temp/
 .claude/scheduled_tasks.lock
 .worktrees/
+
+# Ralph-Wiggum-toolkit lokale werkdirectories en plan-bestanden (zie CLAUDE.md)
+.clone/
+ralph/
+ralph-*-done/
+IMPLEMENTATION_PLAN.md
+IMPLEMENTATION_PLAN-*.md
+PROMPT_build.md

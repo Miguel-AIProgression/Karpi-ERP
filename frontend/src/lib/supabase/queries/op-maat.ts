@@ -33,10 +33,19 @@ export async function fetchAlleVormen(): Promise<MaatwerkVormRow[]> {
 }
 
 export async function upsertVorm(vorm: Omit<MaatwerkVormRow, 'id'> & { id?: number }) {
-  const { error } = vorm.id
-    ? await supabase.from('maatwerk_vormen').update(vorm).eq('id', vorm.id)
-    : await supabase.from('maatwerk_vormen').insert(vorm)
-  if (error) throw error
+  const { id, ...payload } = vorm
+  if (id) {
+    const { error } = await supabase.from('maatwerk_vormen').update(payload).eq('id', id)
+    if (error) throw new Error(error.message)
+  } else {
+    const { error } = await supabase.from('maatwerk_vormen').insert(payload)
+    if (error) throw new Error(error.message)
+  }
+}
+
+export async function deleteVorm(id: number) {
+  const { error } = await supabase.from('maatwerk_vormen').delete().eq('id', id)
+  if (error) throw new Error(error.message)
 }
 
 // === Afwerkingen ===
@@ -45,10 +54,15 @@ export interface AfwerkingTypeRow {
   id: number
   code: string
   naam: string
+  /** Legacy vaste afwerkingsprijs (€). Niet meer in UI; blijft op 0 voor
+   *  nieuwe records. Bestaande snapshots in `order_regels` blijven intact. */
   prijs: number
+  /** Tarief per strekkende meter omtrek (€/m). Mig 193. */
+  prijs_per_meter: number
   heeft_band_kleur: boolean
   actief: boolean
   volgorde: number
+  type_bewerking: string | null
 }
 
 export async function fetchAfwerkingTypes(): Promise<AfwerkingTypeRow[]> {
@@ -71,10 +85,30 @@ export async function fetchAlleAfwerkingTypes(): Promise<AfwerkingTypeRow[]> {
 }
 
 export async function upsertAfwerkingType(at: Omit<AfwerkingTypeRow, 'id'> & { id?: number }) {
-  const { error } = at.id
-    ? await supabase.from('afwerking_types').update(at).eq('id', at.id)
-    : await supabase.from('afwerking_types').insert(at)
+  const { id, ...payload } = at
+  if (id) {
+    const { error } = await supabase.from('afwerking_types').update(payload).eq('id', id)
+    if (error) throw new Error(error.message)
+  } else {
+    const { error } = await supabase.from('afwerking_types').insert(payload)
+    if (error) throw new Error(error.message)
+  }
+}
+
+export async function deleteAfwerkingType(id: number) {
+  const { error } = await supabase.from('afwerking_types').delete().eq('id', id)
+  if (error) throw new Error(error.message)
+}
+
+/** Beschikbare confectie-lanes voor afwerking_types.type_bewerking (FK).
+ *  NULL is geldig: betekent "alleen stickeren" (zoals ON, ZO). */
+export async function fetchTypeBewerkingen(): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('confectie_werktijden')
+    .select('type_bewerking')
+    .order('type_bewerking')
   if (error) throw error
+  return (data ?? []).map((r) => r.type_bewerking as string)
 }
 
 // === Standaard afwerking per kwaliteit ===
@@ -112,6 +146,50 @@ export async function setStandaardAfwerking(kwaliteitCode: string, afwerkingCode
     .from('kwaliteit_standaard_afwerking')
     .upsert({ kwaliteit_code: kwaliteitCode, afwerking_code: afwerkingCode })
   if (error) throw error
+}
+
+/** Bulk-fetch — Map<kwaliteit_code, afwerking_code>. Gebruikt door /producten kwaliteit-overzicht. */
+export async function fetchAlleStandaardAfwerkingen(): Promise<Map<string, string>> {
+  const { data, error } = await supabase
+    .from('kwaliteit_standaard_afwerking')
+    .select('kwaliteit_code, afwerking_code')
+  if (error) throw error
+  return new Map((data ?? []).map((r) => [r.kwaliteit_code as string, r.afwerking_code as string]))
+}
+
+/** Set van kwaliteit-codes die maatwerk-relevant zijn (≥1 rij in maatwerk_m2_prijzen).
+ *  Gebruikt om de afwerking-editor in /producten alleen te activeren waar 't zin heeft. */
+export async function fetchMaatwerkKwaliteiten(): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from('maatwerk_m2_prijzen')
+    .select('kwaliteit_code')
+  if (error) throw error
+  return new Set((data ?? []).map((r) => r.kwaliteit_code as string))
+}
+
+/** Set van kleur-codes die maatwerk-relevant zijn binnen een kwaliteit
+ *  (≥1 rij in maatwerk_m2_prijzen). Zonder kleur-rij geen bandkleur-dropdown. */
+export async function fetchMaatwerkKleurenVoorKwaliteit(kwaliteitCode: string): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from('maatwerk_m2_prijzen')
+    .select('kleur_code')
+    .eq('kwaliteit_code', kwaliteitCode)
+  if (error) throw error
+  const set = new Set<string>()
+  for (const r of data ?? []) {
+    const k = r.kleur_code as string
+    set.add(k)
+    set.add(k.replace(/\.0$/, '')) // accept beide normaliseringen
+  }
+  return set
+}
+
+export async function clearStandaardAfwerking(kwaliteitCode: string): Promise<void> {
+  const { error } = await supabase
+    .from('kwaliteit_standaard_afwerking')
+    .delete()
+    .eq('kwaliteit_code', kwaliteitCode)
+  if (error) throw new Error(error.message)
 }
 
 /** Per kwaliteit+kleur afwerking opslaan (overschrijft kwaliteit-default). */
@@ -247,6 +325,9 @@ export interface BandDefault {
   band_merk?: string | null
   band_kleur: string
   band_omschrijving: string | null
+  /** FK naar afwerking_kleuren.id — gevuld voor gemigreerde Piero-rijen (mig 194).
+   *  Als gevuld: voorkeur boven de losse band_*-velden. */
+  afwerking_kleur_id?: number | null
 }
 
 export async function fetchStandaardBandKleur(
@@ -258,13 +339,12 @@ export async function fetchStandaardBandKleur(
 
   // 1. Directe lookup
   for (const kc of kleurVariants) {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('maatwerk_band_defaults')
-      .select('band_merk, band_kleur, band_omschrijving')
+      .select('band_merk, band_kleur, band_omschrijving, afwerking_kleur_id')
       .eq('kwaliteit_code', kwaliteitCode)
       .eq('kleur_code', kc)
       .maybeSingle()
-    console.log('[band query]', kwaliteitCode, kc, data, error)
     if (data) return data as BandDefault
   }
 
@@ -292,7 +372,7 @@ export async function fetchStandaardBandKleur(
     for (const kc of Array.from(new Set([row.kleur_code as string, uitKleurNorm]))) {
       const { data } = await supabase
         .from('maatwerk_band_defaults')
-        .select('band_merk, band_kleur, band_omschrijving')
+        .select('band_merk, band_kleur, band_omschrijving, afwerking_kleur_id')
         .eq('kwaliteit_code', row.kwaliteit_code)
         .eq('kleur_code', kc)
         .maybeSingle()
@@ -301,6 +381,64 @@ export async function fetchStandaardBandKleur(
   }
 
   return null
+}
+
+/** Bandkleur-defaults voor alle kleuren in een kwaliteit (voor /producten kleur-tussenlaag). */
+export interface BandDefaultRow {
+  kleur_code: string
+  afwerking_kleur_id: number | null
+  band_merk: string | null
+  band_kleur: string | null
+  band_omschrijving: string | null
+}
+export async function fetchBandDefaultsVoorKwaliteit(kwaliteitCode: string): Promise<BandDefaultRow[]> {
+  const { data, error } = await supabase
+    .from('maatwerk_band_defaults')
+    .select('kleur_code, afwerking_kleur_id, band_merk, band_kleur, band_omschrijving')
+    .eq('kwaliteit_code', kwaliteitCode)
+  if (error) throw error
+  return (data ?? []) as BandDefaultRow[]
+}
+
+/** Default-bandkleur zetten of leegmaken voor (kwaliteit, kleur).
+ *  Gebruikt UPDATE-then-INSERT (geen upsert) zodat bestaande legacy-velden
+ *  intact blijven als de rij al bestaat. */
+export async function setBandKleurDefault(
+  kwaliteitCode: string,
+  kleurCode: string,
+  afwerkingKleurId: number | null,
+): Promise<void> {
+  // 1) Probeer UPDATE — werkt als rij al bestaat (de meest voorkomende case voor Piero-rijen).
+  const { data: updated, error: upErr } = await supabase
+    .from('maatwerk_band_defaults')
+    .update({ afwerking_kleur_id: afwerkingKleurId })
+    .eq('kwaliteit_code', kwaliteitCode)
+    .eq('kleur_code', kleurCode)
+    .select('kwaliteit_code')
+  if (upErr) throw new Error(upErr.message)
+  if ((updated?.length ?? 0) > 0) return
+
+  // 2) Geen bestaande rij — INSERT met label-snapshot zodat legacy band_kleur niet leeg blijft.
+  if (afwerkingKleurId === null) {
+    return // niets opslaan; geen FK + geen legacy = geen rij nodig
+  }
+  const { data: kleurRow, error: lookupErr } = await supabase
+    .from('afwerking_kleuren')
+    .select('label')
+    .eq('id', afwerkingKleurId)
+    .maybeSingle()
+  if (lookupErr) throw new Error(lookupErr.message)
+  const labelSnapshot = kleurRow?.label ?? ''
+
+  const { error: insErr } = await supabase
+    .from('maatwerk_band_defaults')
+    .insert({
+      kwaliteit_code: kwaliteitCode,
+      kleur_code: kleurCode,
+      afwerking_kleur_id: afwerkingKleurId,
+      band_kleur: labelSnapshot,
+    })
+  if (insErr) throw new Error(insErr.message)
 }
 
 /** Basis m²-prijs voor een kwaliteit uit maatwerk_m2_prijzen (kleur-onafhankelijk).

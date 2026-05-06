@@ -1,14 +1,16 @@
 import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Mail, Phone } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { formatCurrency } from '@/lib/utils/formatters'
 import { useVertegDetail, useVertegMaandomzet } from '@/hooks/use-vertegenwoordigers'
 import { OmzetTrend } from '@/components/vertegenwoordigers/omzet-trend'
 import { VertegKlantenTab } from '@/components/vertegenwoordigers/verteg-klanten-tab'
 import { VertegOrdersTab } from '@/components/vertegenwoordigers/verteg-orders-tab'
+import { VertegWerkdagenTab } from '@/components/vertegenwoordigers/verteg-werkdagen-tab'
+import { VertegContactEdit } from '@/components/vertegenwoordigers/verteg-contact-edit'
 
-type Tab = 'klanten' | 'orders'
+type Tab = 'klanten' | 'orders' | 'werkdagen'
 
 export function VertegenwoordigerDetailPage() {
   const { code } = useParams<{ code: string }>()
@@ -48,18 +50,9 @@ export function VertegenwoordigerDetailPage() {
 
       {/* Header card */}
       <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-6 mb-6">
-        <div className="flex items-center gap-4 mb-5">
-          <span className="text-sm text-slate-400">Code: {verteg.code}</span>
-          {verteg.email && (
-            <span className="inline-flex items-center gap-1 text-sm text-slate-500">
-              <Mail size={14} /> {verteg.email}
-            </span>
-          )}
-          {verteg.telefoon && (
-            <span className="inline-flex items-center gap-1 text-sm text-slate-500">
-              <Phone size={14} /> {verteg.telefoon}
-            </span>
-          )}
+        <div className="flex items-center flex-wrap gap-x-5 gap-y-2 mb-5">
+          <VertegContactEdit code={verteg.code} field="email" value={verteg.email} />
+          <VertegContactEdit code={verteg.code} field="telefoon" value={verteg.telefoon} />
           {!verteg.actief && (
             <span className="px-2 py-0.5 text-xs rounded bg-slate-200 text-slate-500">Inactief</span>
           )}
@@ -93,12 +86,16 @@ export function VertegenwoordigerDetailPage() {
           <TabButton active={activeTab === 'orders'} onClick={() => setActiveTab('orders')}>
             Orders
           </TabButton>
+          <TabButton active={activeTab === 'werkdagen'} onClick={() => setActiveTab('werkdagen')}>
+            Werkdagen
+          </TabButton>
         </nav>
       </div>
 
       <div className="bg-white rounded-[var(--radius)] border border-slate-200">
-        {activeTab === 'klanten' && <VertegKlantenTab code={code ?? ''} />}
+        {activeTab === 'klanten' && <VertegKlantenTab code={code ?? ''} naam={verteg.naam} />}
         {activeTab === 'orders' && <VertegOrdersTab code={code ?? ''} />}
+        {activeTab === 'werkdagen' && <VertegWerkdagenTab code={code ?? ''} />}
       </div>
     </>
   )

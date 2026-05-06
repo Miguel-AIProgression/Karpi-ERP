@@ -3,6 +3,7 @@ import { Search } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { KlantCard } from '@/components/klanten/klant-card'
 import { useKlanten, useVertegenwoordigers } from '@/hooks/use-klanten'
+import { useInkoopgroepen } from '@/hooks/use-inkoopgroepen'
 
 const PAGE_SIZE = 50
 
@@ -11,6 +12,7 @@ export function KlantenOverviewPage() {
   const [statusFilter, setStatusFilter] = useState<string>('Actief')
   const [vertegFilter, setVertegFilter] = useState<string>('')
   const [ediFilter, setEdiFilter] = useState<'' | 'edi' | 'niet_edi'>('')
+  const [inkoopgroepFilter, setInkoopgroepFilter] = useState<string>('')
   const [pageSize, setPageSize] = useState(PAGE_SIZE)
 
   const { data, isLoading } = useKlanten({
@@ -18,9 +20,11 @@ export function KlantenOverviewPage() {
     status: statusFilter,
     vertegenw_code: vertegFilter || undefined,
     edi_filter: ediFilter || undefined,
+    inkoopgroep_code: inkoopgroepFilter || undefined,
     pageSize,
   })
   const { data: vertegenwoordigers } = useVertegenwoordigers()
+  const { data: inkoopgroepen } = useInkoopgroepen()
 
   const klanten = data?.klanten ?? []
   const totalCount = data?.totalCount ?? 0
@@ -77,6 +81,18 @@ export function KlantenOverviewPage() {
           <option value="">Alle EDI-statussen</option>
           <option value="edi">EDI-klanten</option>
           <option value="niet_edi">Niet-EDI</option>
+        </select>
+        <select
+          value={inkoopgroepFilter}
+          onChange={(e) => handleFilterChange(setInkoopgroepFilter, e.target.value)}
+          className="px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm"
+        >
+          <option value="">Alle inkoopgroepen</option>
+          {inkoopgroepen?.map((g) => (
+            <option key={g.code} value={g.code}>
+              {g.naam} ({g.aantal_leden})
+            </option>
+          ))}
         </select>
       </div>
 

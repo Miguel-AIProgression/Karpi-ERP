@@ -4,7 +4,13 @@ import {
   fetchPrijslijstDetail,
   fetchPrijslijstRegels,
   fetchPrijslijstKlanten,
+  fetchKoppelbareProductenVoorPrijslijst,
+  addProductenAanPrijslijst,
+  createPrijslijst,
+  deletePrijslijst,
+  removePrijslijstRegel,
   updatePrijslijstRegel,
+  type CreatePrijslijstInput,
 } from '@/lib/supabase/queries/prijslijsten'
 
 export function usePrijslijsten() {
@@ -45,6 +51,58 @@ export function useUpdatePrijsRegel(prijslijstNr: string) {
       updatePrijslijstRegel(id, prijs),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['prijslijsten', prijslijstNr, 'regels'] })
+    },
+  })
+}
+
+export function useKoppelbareProductenVoorPrijslijst(prijslijstNr: string, search: string) {
+  return useQuery({
+    queryKey: ['prijslijsten', prijslijstNr, 'koppelbare-producten', search],
+    queryFn: () => fetchKoppelbareProductenVoorPrijslijst(prijslijstNr, search),
+    enabled: !!prijslijstNr,
+    staleTime: 30_000,
+  })
+}
+
+export function useAddProductenAanPrijslijst(prijslijstNr: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (producten: Parameters<typeof addProductenAanPrijslijst>[1]) =>
+      addProductenAanPrijslijst(prijslijstNr, producten),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['prijslijsten', prijslijstNr] })
+      qc.invalidateQueries({ queryKey: ['prijslijsten'] })
+    },
+  })
+}
+
+export function useCreatePrijslijst() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: CreatePrijslijstInput) => createPrijslijst(input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['prijslijsten'] })
+    },
+  })
+}
+
+export function useDeletePrijslijst() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (nr: string) => deletePrijslijst(nr),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['prijslijsten'] })
+    },
+  })
+}
+
+export function useRemovePrijslijstRegel(prijslijstNr: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (regelId: number) => removePrijslijstRegel(regelId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['prijslijsten', prijslijstNr] })
+      qc.invalidateQueries({ queryKey: ['prijslijsten'] })
     },
   })
 }

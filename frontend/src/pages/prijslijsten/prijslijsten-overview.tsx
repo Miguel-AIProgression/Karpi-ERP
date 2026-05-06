@@ -1,12 +1,15 @@
 import { useState, useMemo } from 'react'
-import { Link } from 'react-router-dom'
-import { Search, Users, FileSpreadsheet } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { Search, Users, FileSpreadsheet, Plus } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { usePrijslijsten } from '@/hooks/use-prijslijsten'
+import { PrijslijstCreateDialog } from '@/components/prijslijsten/prijslijst-create-dialog'
 
 export function PrijslijstenOverviewPage() {
   const { data: prijslijsten, isLoading } = usePrijslijsten()
   const [zoek, setZoek] = useState('')
+  const [showCreate, setShowCreate] = useState(false)
+  const navigate = useNavigate()
 
   const filtered = useMemo(() => {
     if (!prijslijsten) return []
@@ -49,8 +52,8 @@ export function PrijslijstenOverviewPage() {
         </div>
       </div>
 
-      {/* Search */}
-      <div className="mb-4">
+      {/* Search + create */}
+      <div className="mb-4 flex items-center justify-between gap-3">
         <div className="relative w-80">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
@@ -61,6 +64,13 @@ export function PrijslijstenOverviewPage() {
             className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-[var(--radius-sm)] focus:outline-none focus:ring-1 focus:ring-terracotta-300 focus:border-terracotta-300"
           />
         </div>
+        <button
+          onClick={() => setShowCreate(true)}
+          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-[var(--radius-sm)] bg-terracotta-500 text-white font-medium hover:bg-terracotta-600"
+        >
+          <Plus size={14} />
+          Nieuwe prijslijst
+        </button>
       </div>
 
       {/* Table */}
@@ -126,6 +136,16 @@ export function PrijslijstenOverviewPage() {
           </div>
         )}
       </div>
+
+      {showCreate && (
+        <PrijslijstCreateDialog
+          onClose={() => setShowCreate(false)}
+          onCreated={(nr) => {
+            setShowCreate(false)
+            navigate(`/prijslijsten/${nr}?addProduct=1`)
+          }}
+        />
+      )}
     </>
   )
 }

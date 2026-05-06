@@ -19,6 +19,7 @@ import {
 import {
   berekenPrijsOppervlakM2,
   berekenMaatwerkPrijs,
+  berekenOmtrekMeter,
 } from '@/lib/utils/maatwerk-prijs'
 import { berekenGewichtKg } from '@/lib/utils/gewicht'
 import { formatCurrency } from '@/lib/utils/formatters'
@@ -49,6 +50,7 @@ interface OpMaatState {
   breedteCm?: number
   diameterCm?: number
   afwerkingCode: string
+  bandKleurId: number | null
   bandKleur: string
   instructies: string
   // UI state
@@ -81,6 +83,7 @@ const initialState: OpMaatState = {
   breedteCm: undefined,
   diameterCm: undefined,
   afwerkingCode: '',
+  bandKleurId: null,
   bandKleur: '',
   instructies: '',
   step: 'kwaliteit_kleur',
@@ -116,6 +119,7 @@ function reducer(state: OpMaatState, action: OpMaatAction): OpMaatState {
         breedteCm: action.payload.breedteCm,
         diameterCm: action.payload.diameterCm,
         afwerkingCode: action.payload.afwerkingCode,
+        bandKleurId: action.payload.bandKleurId,
         bandKleur: action.payload.bandKleur,
         instructies: action.payload.instructies,
       }
@@ -167,9 +171,14 @@ export function OpMaatSelector({ defaultKorting, onAdd }: OpMaatSelectorProps) {
     () => berekenPrijsOppervlakM2(state.vormCode, state.lengteCm, state.breedteCm, state.diameterCm),
     [state.vormCode, state.lengteCm, state.breedteCm, state.diameterCm]
   )
+  const omtrekMeter = useMemo(
+    () => berekenOmtrekMeter(state.vormCode, state.lengteCm, state.breedteCm, state.diameterCm),
+    [state.vormCode, state.lengteCm, state.breedteCm, state.diameterCm]
+  )
 
   const vormToeslag = selectedVorm?.toeslag ?? 0
-  const afwerkingPrijs = selectedAfwerking?.prijs ?? 0
+  // Mig 193: afwerkingsprijs = omtrek × tarief per strekkende meter.
+  const afwerkingPrijs = omtrekMeter * (selectedAfwerking?.prijs_per_meter ?? 0)
 
   const totaalPrijs = useMemo(
     () =>
@@ -213,6 +222,7 @@ export function OpMaatSelector({ defaultKorting, onAdd }: OpMaatSelectorProps) {
       maatwerk_diameter_cm: isDiameter ? state.diameterCm : undefined,
       maatwerk_afwerking: state.afwerkingCode || undefined,
       maatwerk_band_kleur: state.bandKleur || undefined,
+      maatwerk_band_kleur_id: state.bandKleurId ?? undefined,
       maatwerk_instructies: state.instructies || undefined,
       maatwerk_m2_prijs: state.verkoopprijsM2,
       maatwerk_kostprijs_m2: state.kostprijsM2 ?? undefined,
@@ -258,7 +268,7 @@ export function OpMaatSelector({ defaultKorting, onAdd }: OpMaatSelectorProps) {
               vormen={vormen}
               afwerkingen={afwerkingen}
               standaardAfwerking={standaardAfwerking ?? null}
-              standaardBandKleur={standaardBandDefault?.band_kleur ?? null}
+              standaardBandKleurId={standaardBandDefault?.afwerking_kleur_id ?? null}
               maxBreedteCm={state.maxBreedteCm}
               onChange={(data) => dispatch({ type: 'VORM_AFMETING_CHANGED', payload: data })}
             />

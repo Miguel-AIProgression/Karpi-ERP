@@ -17,6 +17,26 @@ export function berekenPrijsOppervlakM2(
   return 0
 }
 
+/**
+ * Bereken de omtrek in strekkende meters voor afwerking-tarief (mig 193).
+ * Rechthoek-achtig = 2 × (L+B) / 100 (bv. 200×300 → 10 m).
+ * Rond = π × diameter / 100.
+ */
+export function berekenOmtrekMeter(
+  vorm: string,
+  lengteCm?: number,
+  breedteCm?: number,
+  diameterCm?: number
+): number {
+  if (vorm === 'rond' && diameterCm) {
+    return (Math.PI * diameterCm) / 100
+  }
+  if (lengteCm && breedteCm) {
+    return (2 * (lengteCm + breedteCm)) / 100
+  }
+  return 0
+}
+
 /** Bereken totaalprijs voor een op-maat orderregel */
 export function berekenMaatwerkPrijs(params: {
   oppervlakM2: number

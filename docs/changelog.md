@@ -1,5 +1,178 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-06 — Fix: RLS-policies op vertegenwoordiger_werkdagen — mig 196
+
+Toggle in de werkdagen-tab deed niets omdat mig 195 de tabel aanmaakte zonder RLS-policies. Op dit project staat RLS by default aan, dus elke INSERT/UPDATE/DELETE werd silent geweigerd. Mig 196 voegt de standaard `_all`-policy voor `authenticated` toe (`USING true / WITH CHECK true`) — zelfde patroon als `vervoerders` (mig 170) en `zendingen` (mig 169). Daarnaast: "Code: X" weggehaald uit de verteg-detail header — niet inhoudelijk relevant voor een gebruiker.
+
+## 2026-05-06 — Verteg-contact bewerkbaar + werkdagen-tab — mig 195
+
+Sluit aan op de klant↔verteg-koppeling van eerder vandaag. De verteg-detail pagina was tot nu toe read-only voor de basisgegevens en bevatte geen plek voor werkdagen — beide nu opgelost.
+
+- **Inline edit van email + telefoon** in de header card van [`/vertegenwoordigers/:code`](../frontend/src/pages/vertegenwoordigers/vertegenwoordiger-detail.tsx). Component [`VertegContactEdit`](../frontend/src/components/vertegenwoordigers/verteg-contact-edit.tsx) toont mail/telefoon als klikbare links (`mailto:` / `tel:`) en onthult een "Wijzig"-knop bij hover. Lege waarde wordt opgeslagen als `NULL`.
+- **Nieuwe tab "Werkdagen"** met [`VertegWerkdagenTab`](../frontend/src/components/vertegenwoordigers/verteg-werkdagen-tab.tsx). Eén rij per ISO-dag (ma–zo) met toggle, optionele start-/eindtijd en vrije opmerking. Toggle aan/uit upsert/delete de rij; tijd-velden auto-saven on-blur.
+- **Migration 195** ([`195_vertegenwoordiger_werkdagen.sql`](../supabase/migrations/195_vertegenwoordiger_werkdagen.sql)) — nieuwe tabel `vertegenwoordiger_werkdagen` met PK `(vertegenw_code, dag_van_week)`, FK met `ON DELETE CASCADE ON UPDATE CASCADE`, CHECK op tijd-volgorde. **Rij aanwezig = werkt die dag** (sparse model — geen pre-seed met `werkt=false`). Tijden en opmerking blijven NULL als ze niet ingevuld zijn.
+- **Hooks**: `useUpdateVerteg`, `useVertegWerkdagen`, `useUpsertVertegWerkdag`, `useDeleteVertegWerkdag` in [`use-vertegenwoordigers.ts`](../frontend/src/hooks/use-vertegenwoordigers.ts) — invalidaten gerichte query-keys (`['vertegenwoordigers', code, 'werkdagen']`) zodat het overzicht en stat-cards niet onnodig refetchen.
+
+Toekomstig nut: verteg-werkdagen kunnen straks meegenomen worden in levertijd-inschattingen of route/agenda-planning.
+
+## 2026-05-06 — Vertegenwoordiger-koppeling beheerbaar in UI (klant ↔ verteg)
+
+Voorheen was `debiteuren.vertegenw_code` alleen via de import of SQL te wijzigen — de UI toonde de naam alleen als read-only tekst. Nu zit het beheer aan beide kanten.
+
+- **Op /klanten/:id** — de "Verteg:"-tekst in de header en het "Vertegenwoordiger"-veld in de Info-tab zijn vervangen door [`KlantVertegSelector`](../frontend/src/components/klanten/klant-verteg-selector.tsx) (zelfde patroon als `KlantPrijslijstSelector`): inline dropdown met zoekveld, optie "loskoppelen" als er een verteg gezet is. Schrijft direct naar `debiteuren.vertegenw_code`.
+- **Op /vertegenwoordigers/:code** — Klanten-tab heeft nu een "+ Klant koppelen"-knop die [`VertegKoppelKlantDialog`](../frontend/src/components/vertegenwoordigers/verteg-koppel-klant-dialog.tsx) opent. Dialog toont alle actieve debiteuren met zoek (naam/plaats/debiteur-nr); klanten al gekoppeld aan déze verteg zijn verborgen; klanten met een andere verteg krijgen een amber waarschuwings-tag. Bij selectie van een klant met andere verteg verschijnt een bevestigings-dialog "Vertegenwoordiger overschrijven?". Daarnaast krijgt elke rij in de klanten-tabel een ontkoppel-icoon (`Unlink`).
+- **Max 1 verteg per klant** is automatisch gegarandeerd — `vertegenw_code` is een single FK, niet een join-tabel. Geen schema-wijziging nodig.
+- **Mutation** `useSetKlantVerteg` in [`use-vertegenwoordigers.ts`](../frontend/src/hooks/use-vertegenwoordigers.ts) invalidatet `['klanten']` + `['vertegenwoordigers']` zodat overzichten en stat-cards meteen kloppen.
+
+## 2026-05-06 — Afwerking-kleuren centraliseren (Piero Taupe 431 als master) — mig 194
+
+Voorheen zat "Piero Taupe 431" verspreid over (a) hardcoded `Piero `-prefix in [`kwaliteit-first-selector.tsx`](../frontend/src/components/orders/kwaliteit-first-selector.tsx) en (b) drie losse velden (`band_merk`/`band_omschrijving`/`band_kleur`) in `maatwerk_band_defaults`. Het bandkleur-veld in de order-form was vrije tekst — typo's lekten naar snijbon, sticker en straks EDI. Nu één master-tabel, één spelling, strict-dropdown.
+
+- **Nieuwe master-tabel `afwerking_kleuren`** — per afwerking eigen scope (UK `(afwerking_code, label)`). Eén `label`-veld zoals "Piero Taupe 431". `actief`-flag voor soft-delete; FK in `maatwerk_band_defaults` en `order_regels` heeft `ON DELETE RESTRICT`.
+- **Auto-seed onder SB**: 250+ rijen uit `maatwerk_band_defaults` waar `band_kleur ~ '^[0-9]+(-[0-9]+)?$'` (Piero/Pantone) → label `'Piero ' || initcap(band_omschrijving) || ' ' || band_kleur`. Niet-Piero rijen (DA12, RM12, PE21) blijven met `afwerking_kleur_id IS NULL` en moeten handmatig via de UI gekoppeld worden.
+- **`maatwerk_band_defaults.afwerking_kleur_id`** — nieuwe FK-kolom (nullable), backfilled voor matchende Piero-rijen. `band_kleur` NOT NULL gedropt — FK-only rijen kunnen voortaan bestaan zonder legacy-tekst.
+- **`order_regels.maatwerk_band_kleur_id`** — nieuwe FK-kolom naast bestaande `maatwerk_band_kleur` TEXT. Tekst blijft als historische snapshot; nieuwe orders schrijven beide.
+- **RPC's** [`create_order_with_lines`](../supabase/migrations/194_afwerking_kleuren.sql) en `update_order_with_lines` accepteren `maatwerk_band_kleur_id`.
+- **UI /afwerkingen** — afwerking-rijen met `heeft_band_kleur=true` zijn nu uit te vouwen via een chevron. Submenu in [`afwerking-kleuren-submenu.tsx`](../frontend/src/components/instellingen/afwerking-kleuren-submenu.tsx) — toevoegen, hernoemen, soft-delete (actief-flag) en hard-delete (FK-blocked indien in gebruik).
+- **UI /producten** — kwaliteit-uitvouw vervangen door [`kwaliteit-kleuren-uitvouw.tsx`](../frontend/src/pages/producten/kwaliteit-kleuren-uitvouw.tsx). Bovenin: dropdown voor de standaard-afwerking van die kwaliteit (slaat op in `kwaliteit_standaard_afwerking`). Daaronder kleur-rijen met per kleur een bandkleur-dropdown (slaat op in `maatwerk_band_defaults.afwerking_kleur_id`). Klik kleur uit → artikels van die (kwaliteit, kleur) verschijnen één laag dieper.
+- **Order-form** ([`vorm-afmeting-selector.tsx`](../frontend/src/components/orders/vorm-afmeting-selector.tsx)) — bandkleur tekstveld vervangen door strict-dropdown. Default voorgeselecteerd uit `maatwerk_band_defaults.afwerking_kleur_id`. Bij lege kleur-lijst onder de gekozen afwerking: amber hint "Beheer onder /afwerkingen". Geen vrije-tekst-fallback in de form — nieuwe kleuren toevoegen kan alleen via /afwerkingen.
+
+## 2026-05-06 — Prijslijst verwijderen vanuit detail
+
+Sluit aan op de aanmaak-flow van vandaag — een prijslijst die per ongeluk aangemaakt of niet meer gebruikt wordt kan nu ook in de UI weg.
+
+- **Verwijder-knop** (rose, met `Trash2`-icoon) rechtsboven in de header van [`/prijslijsten/:nr`](../frontend/src/pages/prijslijsten/prijslijst-detail.tsx). Bevestigt eerst, navigeert daarna terug naar `/prijslijsten`.
+- **Beveiliging tegen ongewenste verwijdering:**
+  - Als er nog ≥1 klant gekoppeld is wordt de delete client-side geblokkeerd met een melding `"Koppel die eerst los via de Klanten-tab"`. Reden: `debiteuren.prijslijst_nr` heeft geen `ON DELETE` — Postgres zou alsnog blokkeren met een opaque FK-error.
+  - Anders volgt een confirm-dialog die expliciet vermeldt hoeveel regels meeverwijderd worden. Regels gaan via `prijslijst_regels.prijslijst_nr ... ON DELETE CASCADE` automatisch mee.
+- **Query + hook:** `deletePrijslijst(nr)` in [`prijslijsten.ts`](../frontend/src/lib/supabase/queries/prijslijsten.ts), `useDeletePrijslijst()` in [`use-prijslijsten.ts`](../frontend/src/hooks/use-prijslijsten.ts) — invalidatet `['prijslijsten']` zodat het overzicht meteen klopt.
+
+Geen schema-wijziging.
+
+## 2026-05-06 — Nieuwe prijslijst aanmaken vanuit overzicht
+
+Voorheen kon een prijslijst alleen via SQL of de Excel-import worden aangemaakt. Nu zit het volledig in de UI.
+
+- **Knop "Nieuwe prijslijst"** rechtsboven naast de zoekbalk op [`/prijslijsten`](../frontend/src/pages/prijslijsten/prijslijsten-overview.tsx). Opent [`PrijslijstCreateDialog`](../frontend/src/components/prijslijsten/prijslijst-create-dialog.tsx).
+- **Velden:** `nr` (auto-voorgesteld als `MAX(nr) + 1`, gepad tot 4 cijfers — overschrijfbaar), `naam` (verplicht), `geldig vanaf` (optionele datum). `actief` wordt op `true` gezet. Duplicate-`nr` wordt client-side gevangen.
+- **Vervolgflow:** na aanmaken wordt direct genavigeerd naar `/prijslijsten/:nr?addProduct=1`. De detail-pagina detecteert deze querystring en opent automatisch [`PrijslijstAddProductDialog`](../frontend/src/components/prijslijsten/prijslijst-add-product-dialog.tsx) — zo kan in één flow een lijst aangemaakt + gevuld worden zonder extra klikken.
+- **Query + hook:** `createPrijslijst` in [`prijslijsten.ts`](../frontend/src/lib/supabase/queries/prijslijsten.ts) (insert in `prijslijst_headers`); `useCreatePrijslijst` in [`use-prijslijsten.ts`](../frontend/src/hooks/use-prijslijsten.ts) invalidatet de overzicht-query zodat de nieuwe rij meteen verschijnt.
+
+Geen schema-wijziging.
+
+## 2026-05-06 — Producten toevoegen/verwijderen in een prijslijst
+
+In aanvulling op het klant-koppelingsbeheer kunnen nu ook regels in een prijslijst direct vanuit de UI beheerd worden — voorheen kon dit alleen via SQL of de Excel-import.
+
+- **Knop "Product toevoegen"** rechtsboven in de Prijzen-tab van [`/prijslijsten/:nr`](../frontend/src/pages/prijslijsten/prijslijst-detail.tsx). Opent [`PrijslijstAddProductDialog`](../frontend/src/components/prijslijsten/prijslijst-add-product-dialog.tsx) — een **2-staps wizard**:
+  - **Stap 1 — selecteren:** multi-select met server-side zoek (artikelnr / karpi-code / omschrijving, met de bestaande [`applyProductSearch`](../frontend/src/lib/utils/sanitize.ts) word-boundary filter). Producten die al in de prijslijst zitten worden automatisch uitgefilterd. De selectie wordt als snapshot in een `Map<artikelnr, KoppelbaarProduct>` bewaard, zodat je tussen verschillende zoektermen door kunt klikken zonder selecties te verliezen.
+  - **Stap 2 — prijzen controleren:** lijst van geselecteerde producten met inline prijs-input per regel. Default = `producten.verkoopprijs`, of leeg/€ 0,00 als die ontbreekt. Trash-knop per regel om alsnog uit de selectie te halen, "Terug"-knop om te corrigeren. Pas op submit gaan de regels met de aangepaste prijzen naar de DB.
+- **Trash-icoon per regel** in de regels-tabel naast het potlood — vraagt confirm en verwijdert via [`useRemovePrijslijstRegel`](../frontend/src/hooks/use-prijslijsten.ts). Alleen zichtbaar bij rij-hover.
+- **Queries** ([`prijslijsten.ts`](../frontend/src/lib/supabase/queries/prijslijsten.ts)): nieuw `KoppelbaarProduct`-type, `fetchKoppelbareProductenVoorPrijslijst(prijslijstNr, search)` (paginated set van bestaande artikelnrs + server-side product-search met limit 500), `addProductenAanPrijslijst` (insert met defaults), `removePrijslijstRegel`. Hooks idem in [`use-prijslijsten.ts`](../frontend/src/hooks/use-prijslijsten.ts).
+
+Insert kopieert `omschrijving`, `gewicht` en `ean_code` mee uit `producten` als denormalized snapshot, in lijn met hoe bestaande regels zijn opgebouwd. Schema ongewijzigd — `prijslijst_regels.UNIQUE(prijslijst_nr, artikelnr)` voorkomt dubbele toevoeging op DB-niveau.
+
+## 2026-05-06 — Prijslijst-koppeling beheren vanuit klant- én prijslijst-pagina
+
+Voorheen kon `debiteuren.prijslijst_nr` alleen via SQL of een rondreis naar de oude beheer-tools gewijzigd worden. Nu zit het in de UI, met dezelfde patronen als de inkoopgroepen-koppeling.
+
+- **Klanten-overzicht** ([`klant-card.tsx`](../frontend/src/components/klanten/klant-card.tsx)): tegeltjes tonen nu een extra regel `Prijslijst: 0145 — FLOORPASSION PER 01.07.2022` (of "geen" wanneer leeg). Naam komt mee via een join `prijslijst_headers(naam)` op de teruggegeven debiteur-batch — geen extra kosten op het hoofd-listing-query, alleen één lichte select per pagina.
+- **Klant-detail** ([`klant-prijslijst-selector.tsx`](../frontend/src/components/klanten/klant-prijslijst-selector.tsx)): de "Prijslijst" InfoField in de header is vervangen door een inline selector. Klik "Wijzig" → search-dropdown over alle actieve prijslijsten + optie "Prijslijst loskoppelen". Mutatie via [`useSetKlantPrijslijst`](../frontend/src/hooks/use-klanten.ts).
+- **Prijslijst-detail klanten-tab** ([`prijslijst-detail.tsx`](../frontend/src/pages/prijslijsten/prijslijst-detail.tsx)): nieuwe knop **"Klant toevoegen"** rechtsboven en een trash-icoon per rij om een klant los te koppelen. De toevoeg-knop opent [`PrijslijstAddKlantDialog`](../frontend/src/components/prijslijsten/prijslijst-add-klant-dialog.tsx) — multi-select dialoog met zoekbalk en "Selecteer zichtbare", precies zoals [`InkoopgroepAddDebiteurDialog`](../frontend/src/components/inkoopgroepen/inkoopgroep-add-debiteur-dialog.tsx). Een klant die al op een andere prijslijst zat krijgt een waarschuwingsbalk vóór bevestigen.
+- **Queries** ([`klanten.ts`](../frontend/src/lib/supabase/queries/klanten.ts)): `KlantRow` kreeg `prijslijst_nr` + `prijslijst_naam`, `KlantDetail` kreeg `prijslijst_naam`. Nieuwe queries: `fetchPrijslijstHeadersList`, `fetchKoppelbareDebiteurenMetPrijslijst`, `setKlantPrijslijst`, `setKlantenPrijslijst`. Hooks idem in [`use-klanten.ts`](../frontend/src/hooks/use-klanten.ts).
+
+Geen schema-wijziging — `debiteuren.prijslijst_nr` (TEXT FK → `prijslijst_headers.nr`) bestond al.
+
+## 2026-05-06 — Afwerking prijs per strekkende meter + RLS-fix instellingen (mig 193)
+
+Bij het bewerken van een vorm of afwerking via de nieuwe instellingen-pagina's faalde het opslaan met een generieke "Er ging iets mis"-melding. Onderzoek toonde twee problemen:
+
+**RLS-bug:** mig 041 zette enkel `Anon full access`-policies op `maatwerk_vormen` en `afwerking_types`. Ingelogde gebruikers (auth-rol = `authenticated`) konden wel SELECT doen maar UPDATE/INSERT/DELETE faalde stilzwijgend. De catch-handler in de form-dialogen gooide PostgrestError-objecten weg omdat `err instanceof Error` voor die fouten `false` is — vandaar de generieke melding.
+
+**Strekkende-meter tarief:** randafwerkingen worden in de praktijk per meter omtrek geprijsd. Een 200×300 cm tapijt heeft 2×(200+300)/100 = 10 m omtrek, een 80×150 maar 4,6 m. De legacy `prijs`-kolom (vaste toeslag) was altijd 0 en wordt niet meer in de UI getoond — blijft bestaan in de DB voor backwards-compat met bestaande snapshots in `order_regels.maatwerk_afwerking_prijs`.
+
+**Migratie 193** ([`193_afwerking_prijs_per_meter.sql`](../supabase/migrations/193_afwerking_prijs_per_meter.sql)):
+- Nieuwe kolom `afwerking_types.prijs_per_meter NUMERIC(10,2) NOT NULL DEFAULT 0`. Default 0 = backwards-compat.
+- Nieuwe RLS-policy `Authenticated full access` op zowel `maatwerk_vormen` als `afwerking_types` (idempotent via `pg_policies`-check). Lost de save-bug op.
+
+**Frontend:**
+- [`berekenOmtrekMeter`](../frontend/src/lib/utils/maatwerk-prijs.ts)-helper: rond = π × diameter / 100, anders = 2 × (L+B) / 100.
+- [`kwaliteit-first-selector.tsx`](../frontend/src/components/orders/kwaliteit-first-selector.tsx) en [`op-maat-selector.tsx`](../frontend/src/components/orders/op-maat-selector.tsx) berekenen afwerkingsprijs nu als `omtrek_m × prijs_per_meter`. Snapshot in `order_regels.maatwerk_afwerking_prijs` blijft 1 totaal-getal — geen schema-wijziging op orders.
+- [`AfwerkingFormDialog`](../frontend/src/components/instellingen/afwerking-form-dialog.tsx) heeft één prijsveld "Prijs per strekkende meter (€)" + "Volgorde". De oude "Vaste prijs"-input is verwijderd; nieuwe upserts zetten de DB-kolom `prijs` op `0`.
+- Overzichtstabel [`afwerkingen.tsx`](../frontend/src/pages/instellingen/afwerkingen.tsx) toont één kolom "Prijs/m" (formaat `€ X,XX/m`).
+- `upsertVorm` / `upsertAfwerkingType` strippen nu expliciet `id` uit de update-payload en gooien echte `Error`-instances ipv ruwe `PostgrestError`-objecten. Error-display in beide dialogs valt terug op `error.message`/`JSON.stringify` in plaats van een generieke melding, en logt het origineel naar de console.
+
+## 2026-05-06 — Beheer-pagina's voor Vormen en Afwerkingen onder /instellingen
+
+Tot nu toe waren `maatwerk_vormen` en `afwerking_types` alleen via SQL of seed-data te muteren, terwijl ze al jaren in de order-form-dropdowns gebruikt worden (Vorm + Afwerking). Toegevoegd:
+
+- **Pagina's:**
+  - [`/instellingen/vormen`](../frontend/src/pages/instellingen/vormen.tsx) — overzicht + create/edit/delete dialoog. Toont code, naam, afmeting-type (lengte_breedte / diameter), toeslag (€) en status.
+  - [`/instellingen/afwerkingen`](../frontend/src/pages/instellingen/afwerkingen.tsx) — overzicht + create/edit/delete dialoog. Toont code, naam, confectie-lane (`type_bewerking` uit mig 096), bandkleur-flag, prijs en status.
+- **Hooks:** [`use-vormen.ts`](../frontend/src/hooks/use-vormen.ts) + [`use-afwerkingen.ts`](../frontend/src/hooks/use-afwerkingen.ts) wikkelen de bestaande queries uit `op-maat.ts` met React Query (invalidatie op `maatwerk-vormen` / `afwerking-types`).
+- **Queries-uitbreiding:** `op-maat.ts` kreeg `deleteVorm`, `deleteAfwerkingType` en `fetchTypeBewerkingen` (lanes uit `confectie_werktijden`). `AfwerkingTypeRow` interface kreeg `type_bewerking: string | null` toegevoegd.
+- **Form-dialogen:** [`vorm-form-dialog.tsx`](../frontend/src/components/instellingen/vorm-form-dialog.tsx) + [`afwerking-form-dialog.tsx`](../frontend/src/components/instellingen/afwerking-form-dialog.tsx). Code is read-only in edit-modus (PK). Vorm-codes worden genormaliseerd naar lowercase_underscore, afwerking-codes naar UPPERCASE.
+- **Sidebar:** twee nieuwe items onder "Systeem" → "Vormen" (Shapes) en "Afwerkingen" (Scissors). Routes geregistreerd in [`router.tsx`](../frontend/src/router.tsx).
+- **Veiligheid:** delete-knoppen waarschuwen voor mogelijke FK-fouten en raden inactief-zetten aan in plaats van fysiek verwijderen — rijen worden gebruikt als FK in `producten.maatwerk_vorm_code`, `kwaliteit_standaard_afwerking.afwerking_code` en order-regel-historie.
+
+## 2026-05-06 — Order-prijsresolver met m²-fallback voor voorraadproducten (mig 190–191)
+
+Bij het aanmaken van een order voor klant 640505 (WHOON OISTERWIJK) was geen prijs voor product 771150045 (`CISCO 15 CA, 240x340 cm ORGANISCH`) te bepalen — de klant heeft die specifieke vaste-maat-rij niet in zijn prijslijst, dus de bestaande `lookupPrice` leverde NULL en de UI viel terug op een statische `producten.verkoopprijs` (vaak €0). Voor maatwerk-orderregels werkte de fallback al wel via [kwaliteit-first-selector.tsx:222-272](../frontend/src/components/orders/kwaliteit-first-selector.tsx#L222-L272), maar die keten was nooit beschikbaar voor vaste-maat voorraadproducten met dezelfde kwaliteit.
+
+**Wat nieuw is:**
+- Vaste-maat voorraadproducten krijgen nu automatisch een logische m²-prijs als ze niet in de klant-prijslijst staan, met dezelfde 5-stappen fallback-keten die maatwerk al gebruikte.
+- Vormtoeslag (€0/€75 uit `maatwerk_vormen.toeslag`) wordt automatisch toegepast wanneer het voorraadproduct als organisch/ovaal/pebble/ellips/afgeronde-hoeken gemarkeerd is.
+- Order-form-cel toont een breakdown-hint onder de prijs (bv. *"m²-prijs uit prijslijst · 8,16 m² × € 142,50/m² + € 75,00 (Organic)"*) met tooltip — vervangt de oude "⚠ Niet uit prijslijst"-flag.
+
+**Migratie 190** ([`190_producten_maatwerk_vorm_code.sql`](../supabase/migrations/190_producten_maatwerk_vorm_code.sql)):
+- Nieuwe kolom `producten.maatwerk_vorm_code TEXT FK → maatwerk_vormen(code) ON UPDATE CASCADE ON DELETE SET NULL` + partial index.
+- Backfill via patronen op `karpi_code`-suffix (`RND` → `rond`, `OVL` → `ovaal`) en `omschrijving`-substring (`ORGANISCH` → `organisch_a`, `PEBBLE`, `ELLIPS`, `AFGEROND`). Onbekend → NULL → resolver behandelt als rechthoek.
+- Verifier `DO`-blok rapporteert verdeling per vorm + sanity-check op test-case 771150045.
+
+**Migratie 191** ([`191_bereken_orderregel_prijs.sql`](../supabase/migrations/191_bereken_orderregel_prijs.sql)):
+- RPC `bereken_orderregel_prijs(p_artikelnr, p_prijslijst_nr) → JSONB` met fallback-keten:
+  1. `prijslijst_vast` — vaste prijs uit `prijslijst_regels`
+  2. `prijslijst_m2` — m²-prijs van kleur-specifiek MAATWERK-artikel uit `prijslijst_regels` × oppervlak + vormtoeslag
+  3. `maatwerk_artikel_m2` — `producten.verkoopprijs` van MAATWERK-artikel × oppervlak + vormtoeslag
+  4. `kwaliteit_m2` — generieke `maatwerk_m2_prijzen.verkoopprijs_m2` × oppervlak + vormtoeslag
+  5. `product_verkoopprijs` — eigen `producten.verkoopprijs` (laatste redmiddel)
+- Oppervlak: bbox (`lengte × breedte / 10000`) of cirkel (`π × (diameter/200)²` als `producten.vorm = 'rond'`).
+- Vormtoeslag uit `maatwerk_vormen.toeslag` via `producten.maatwerk_vorm_code`. NULL = rechthoek = €0.
+- Retourneert `{ prijs, bron, breakdown }` zodat de UI kan visualiseren hoe de prijs is opgebouwd.
+
+**Frontend** ([`frontend/src/lib/supabase/queries/order-mutations.ts`](../frontend/src/lib/supabase/queries/order-mutations.ts), [`order-form.tsx`](../frontend/src/components/orders/order-form.tsx), [`order-line-editor.tsx`](../frontend/src/components/orders/order-line-editor.tsx)):
+- Nieuwe query `resolveOrderlinePrice(artikelnr, prijslijstNr)` roept de RPC aan.
+- `handleArticleSelected` + reprice-bij-klantwissel gebruiken nu de resolver (vervangt directe `lookupPrice`-aanroepen voor vaste artikelen). Verzendkosten/spoedtoeslag overgeslagen — die hebben eigen logica.
+- Nieuwe types `PrijsBron` + `PrijsBreakdown` op `OrderRegelFormData` (display-only, niet opgeslagen).
+- Nieuwe utility [`prijs-bron.ts`](../frontend/src/lib/utils/prijs-bron.ts) vertaalt bron + breakdown naar Nederlandstalige hint-tekst + tooltip + kleur.
+
+**Buiten scope (bewust):**
+- Geen wijziging aan factuur-rendering of kortings-flow — resolver geeft ex-korting prijs terug.
+- UI om `producten.maatwerk_vorm_code` handmatig te muteren komt later (huidige backfill dekt 95%; rest blijft NULL = rechthoek).
+- De kanttekening uit [`fetchMaatwerkArtikelNr`](../frontend/src/lib/supabase/queries/op-maat.ts#L161-L217) over uitwisselgroep-strategie 4 is niet meegenomen in de RPC; dekt 95% van praktijkgevallen.
+
+**HITL — migraties 190 + 191 handmatig toepassen op Supabase Karpi-project** (MCP heeft geen toegang). Pre-check de `RAISE NOTICE`-output van mig 190 om te valideren dat 771150045 op `organisch_a` uitkomt.
+
+## 2026-05-06 — Inkoopgroepen als first-class entiteit (mig 189)
+
+10 inkooporganisaties (INKC-codes — BEGROS, DECOR UNION, FACHHANDELSRING, INTERRING, VME, VME (TH), TINTTO, INHOUSE, HOUSE OF DUTCHZ, MUSTERRING) staan in productie als gedeelde prijslijst-/kortingsgroep voor klanten. Tot nu was dit een losse TEXT-kolom `debiteuren.inkooporganisatie` zonder beheermogelijkheid in de UI. Nieuwe entiteit met eigen module zodat de owner debiteuren centraal kan toevoegen of verwijderen uit een inkoopgroep, en in het klantbeeld direct ziet onder welke groep de klant valt.
+
+**Migratie 189** ([`189_inkoopgroepen.sql`](../supabase/migrations/189_inkoopgroepen.sql)):
+- Tabel `inkoopgroepen` (`code` PK, `naam`, `omschrijving`, `actief`).
+- Seed van de 10 bekende groepen via `INSERT ... ON CONFLICT DO NOTHING`.
+- FK-kolom `debiteuren.inkoopgroep_code` (`ON UPDATE CASCADE, ON DELETE SET NULL`) + index.
+- Backfill-stap: normaliseert bestaande `debiteuren.inkooporganisatie`-strings (whitespace + uppercase) en matcht op `code`. Verifier-`DO`-blok logt aantal gematcht/niet-gematcht en somt niet-gematchte unieke waarden op vóór de DROP COLUMN — owner kan dan eerst de seed uitbreiden als er onbekende codes zijn.
+- Drop oude TEXT-kolom op debiteuren. `orders.inkooporganisatie` blijft als snapshot — orders mogen niet meebewegen.
+- View `inkoopgroepen_met_aantal_leden` voor het overzichtsscherm.
+
+**Python seed-script** [`import/import_inkoopgroepen.py`](../import/import_inkoopgroepen.py) leest de 10 INKC*.xlsx-bestanden uit de project-root (geleverd door owner), extraheert de code uit de bestandsnaam (`INKC{nn}`), vindt de debiteur-kolom heuristisch (kolomnaam of bereik 100000–999999), en bulk-update `debiteuren.inkoopgroep_code`. Idempotent. Print per groep aantal succesvol gekoppeld + niet-gevonden debiteur_nrs + DB-validatie.
+
+**Update import** [`import/supabase_import.py`](../import/supabase_import.py): nieuwe helper `extract_inkc_code()` normaliseert "Inkooporg."-Excel-waardes (vrije tekst zoals `INKC 14` of `INKC02 BEGROS`) naar `INKC{nn}` en schrijft naar de FK-kolom — re-imports blijven functioneel.
+
+**Frontend module** — eigen route `/inkoopgroepen` (overzicht: code, naam, aantal_leden, actief) + `/inkoopgroepen/:code` (detail met leden-tabel + "Debiteur toevoegen"-modal). Sidebar-item onder "Klanten" in de Commercieel-groep. Klant-detail Info-tab toont nu `Inkoopgroep` als klikbare link. Klanten-overview krijgt extra filter-dropdown "Inkoopgroep". Mutations invalidaten zowel `['inkoopgroepen']` als `['klanten']` query-keys.
+
+**HITL — migratie 189 handmatig toepassen op Supabase Karpi-project** (MCP heeft geen toegang). Idempotent qua schema; pre-check de `RAISE NOTICE`-output uit het verifier-blok vóór de DROP COLUMN-stap doorgaat.
+
 ## 2026-05-06 — Vorm-aware gewicht-resolver voor ronde producten (mig 188)
 
 Vervolg op de gewicht-per-kwaliteit-feature (mig 184–186). Bij live-controle bleek dat **160 ROND** en **200 ROND** beide hetzelfde gewicht (3.7 kg) toonden in de prijslijst. Oorzaak: mig 184's regex `^.{8}(\d{3})(\d{3})$` matcht alleen rechthoekige `karpi_code`-suffixen. Voor RND/OVL-suffixen bleven `lengte_cm` en `breedte_cm` NULL, dus `bereken_product_gewicht_kg` viel terug op de legacy `producten.gewicht_kg` — een placeholder uit het oude systeem (bij LORANDA toevallig 3.7 kg per stuk, ongeacht maat).

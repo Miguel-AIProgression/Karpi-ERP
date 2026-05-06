@@ -46,9 +46,11 @@ export function ClientSelector({ value, onChange, disabled }: ClientSelectorProp
 
     const timer = setTimeout(async () => {
       const numSearch = Number(search)
+      // inkooporganisatie als snapshot-string komt uit FK inkoopgroepen.naam
+      // (mig 189 dropte de oude TEXT-kolom op debiteuren).
       let query = supabase
         .from('debiteuren')
-        .select('debiteur_nr, naam, adres, postcode, plaats, land, fact_naam, fact_adres, fact_postcode, fact_plaats, vertegenw_code, prijslijst_nr, korting_pct, betaler, inkooporganisatie, gratis_verzending, standaard_maat_werkdagen, maatwerk_weken, deelleveringen_toegestaan')
+        .select('debiteur_nr, naam, adres, postcode, plaats, land, fact_naam, fact_adres, fact_postcode, fact_plaats, vertegenw_code, prijslijst_nr, korting_pct, betaler, inkoopgroepen(naam), gratis_verzending, standaard_maat_werkdagen, maatwerk_weken, deelleveringen_toegestaan')
         .eq('status', 'Actief')
         .limit(10)
 
@@ -58,8 +60,22 @@ export function ClientSelector({ value, onChange, disabled }: ClientSelectorProp
         query = query.ilike('naam', `%${s}%`)
       }
 
-      const { data } = await query
-      setResults((data ?? []) as SelectedClient[])
+      const { data, error } = await query
+      if (error) {
+        console.error('ClientSelector zoekquery faalde:', error)
+        setResults([])
+        return
+      }
+      const mapped: SelectedClient[] = (data ?? []).map((row) => {
+        const { inkoopgroepen, ...rest } = row as Record<string, unknown> & {
+          inkoopgroepen: { naam: string } | null
+        }
+        return {
+          ...(rest as unknown as Omit<SelectedClient, 'inkooporganisatie'>),
+          inkooporganisatie: inkoopgroepen?.naam ?? null,
+        }
+      })
+      setResults(mapped)
     }, 300)
 
     return () => clearTimeout(timer)
