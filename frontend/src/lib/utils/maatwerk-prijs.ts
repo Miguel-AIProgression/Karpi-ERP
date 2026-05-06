@@ -32,8 +32,5 @@ export function berekenMaatwerkPrijs(params: {
   return Math.round(netto * 100) / 100
 }
 
-/** Bereken gewicht op basis van oppervlak en gewicht/m² */
-export function berekenMaatwerkGewicht(oppervlakM2: number, gewichtPerM2Kg: number | null): number | undefined {
-  if (!gewichtPerM2Kg || oppervlakM2 <= 0) return undefined
-  return Math.round(oppervlakM2 * gewichtPerM2Kg * 100) / 100
-}
+// `berekenMaatwerkGewicht` verhuisd naar `./gewicht.ts` als `berekenGewichtKg`
+// (mig 184/185 — gewicht-resolver-Module). Importeer daar voortaan vandaan.

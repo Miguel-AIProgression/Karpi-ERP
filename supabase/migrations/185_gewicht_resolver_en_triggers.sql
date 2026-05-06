@@ -50,7 +50,7 @@ $$ LANGUAGE sql STABLE;
 
 COMMENT ON FUNCTION gewicht_per_m2_voor_kwaliteit IS
   'Gewicht-resolver — eenvoudige lookup van density per kwaliteit. NULL als '
-  'kwaliteit nog geen gewicht heeft. Mig 181.';
+  'kwaliteit nog geen gewicht heeft. Mig 185.';
 
 CREATE OR REPLACE FUNCTION bereken_product_gewicht_kg(p_artikelnr TEXT)
 RETURNS TABLE(gewicht_kg NUMERIC, uit_kwaliteit BOOLEAN) AS $$
@@ -79,7 +79,7 @@ $$ LANGUAGE plpgsql STABLE;
 COMMENT ON FUNCTION bereken_product_gewicht_kg IS
   'Gewicht-resolver — gewicht (kg/stuk) voor een vast/staaltje-product. Bij '
   'volledige cache-bron retourneert (gewicht, true). Bij ontbrekende kwaliteit-'
-  'density of maat-data retourneert (legacy_gewicht, false). Mig 181.';
+  'density of maat-data retourneert (legacy_gewicht, false). Mig 185.';
 
 CREATE OR REPLACE FUNCTION bereken_orderregel_gewicht_kg(p_order_regel_id BIGINT)
 RETURNS NUMERIC AS $$
@@ -122,7 +122,7 @@ $$ LANGUAGE plpgsql STABLE;
 COMMENT ON FUNCTION bereken_orderregel_gewicht_kg IS
   'Gewicht-resolver — gewicht (kg/stuk) voor een orderregel. Maatwerk: '
   'oppervlak × kwaliteit-density. Vast: copy van producten.gewicht_kg (zelf '
-  'cache). Service-items zonder artikelnr retourneren NULL. Mig 181.';
+  'cache). Service-items zonder artikelnr retourneren NULL. Mig 185.';
 
 ------------------------------------------------------------------------
 -- 3. Triggers — cascade kwaliteit → producten → open order_regels
@@ -173,7 +173,7 @@ CREATE TRIGGER trg_kwaliteit_gewicht_recalc
 
 COMMENT ON TRIGGER trg_kwaliteit_gewicht_recalc ON kwaliteiten IS
   'Cascade: bij wijziging gewicht_per_m2_kg op kwaliteit, herrekent producten + '
-  'open maatwerk-orderregels in die kwaliteit. Mig 181.';
+  'open maatwerk-orderregels in die kwaliteit. Mig 185.';
 
 -- 3b. Product-update cascadeert naar open vaste-orderregels met dat artikelnr.
 CREATE OR REPLACE FUNCTION trg_product_gewicht_recalc()
@@ -200,7 +200,7 @@ CREATE TRIGGER trg_product_gewicht_recalc
 
 COMMENT ON TRIGGER trg_product_gewicht_recalc ON producten IS
   'Cascade: bij wijziging gewicht_kg op product, kopieert naar gewicht_kg op '
-  'open vaste-orderregels met dat artikelnr. Mig 181.';
+  'open vaste-orderregels met dat artikelnr. Mig 185.';
 
 ------------------------------------------------------------------------
 -- 4. Eénmalige back-fill: pas modus-seed door tot producten + open orders.

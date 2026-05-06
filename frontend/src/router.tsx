@@ -25,6 +25,7 @@ import { ProductieRolPage } from '@/pages/snijplanning/productie-rol'
 import { ProductieGroepPage } from '@/pages/snijplanning/productie-groep'
 import { ProductieInstellingenPage } from '@/pages/instellingen/productie-instellingen'
 import { BedrijfsgegevensPage } from '@/pages/instellingen/bedrijfsgegevens'
+import { KwaliteitenInstellingenPage } from '@/pages/instellingen/kwaliteiten'
 import { ConfectieOverviewPage } from '@/pages/confectie/confectie-overview'
 import { ConfectiePlanningPage } from '@/pages/confectie/confectie-planning'
 import { ScanstationPage } from '@/pages/scanstation/scanstation'
@@ -111,6 +112,7 @@ export const router = createBrowserRouter([
       { path: 'instellingen', element: <ProductieInstellingenPage /> },
       { path: 'instellingen/productie', element: <ProductieInstellingenPage /> },
       { path: 'instellingen/bedrijfsgegevens', element: <BedrijfsgegevensPage /> },
+      { path: 'instellingen/kwaliteiten', element: <KwaliteitenInstellingenPage /> },
     ],
   },
 ])

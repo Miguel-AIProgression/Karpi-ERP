@@ -21,8 +21,8 @@ import { SubstitutionPicker } from './substitution-picker'
 import {
   berekenPrijsOppervlakM2,
   berekenMaatwerkPrijs,
-  berekenMaatwerkGewicht,
 } from '@/lib/utils/maatwerk-prijs'
+import { berekenGewichtKg } from '@/lib/utils/gewicht'
 import { formatCurrency } from '@/lib/utils/formatters'
 import type { SelectedArticle, SubstitutionInfo } from './article-selector'
 import { lookupPrice } from '@/lib/supabase/queries/order-mutations'
@@ -416,7 +416,7 @@ export function KwaliteitFirstSelector({
       prijs: oppervlakM2 * effectieveM2Prijs + vormToeslag + afwerkingPrijs,
       korting_pct: defaultKorting,
       bedrag: totaalPrijs,
-      gewicht_kg: berekenMaatwerkGewicht(oppervlakM2, selectedKleur.gewicht_per_m2_kg),
+      gewicht_kg: berekenGewichtKg(oppervlakM2, selectedKleur.gewicht_per_m2_kg),
       vrije_voorraad: totalRollen,
       besteld_inkoop: selectedKleur.equiv_rollen > 0 ? selectedKleur.equiv_rollen : 0,
       fysiek_artikelnr: gebruiktUitwisselbaar ? (selectedKleur.equiv_artikelnr ?? undefined) : undefined,

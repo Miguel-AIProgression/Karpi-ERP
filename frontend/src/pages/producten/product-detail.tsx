@@ -8,6 +8,7 @@ import { useProductDetail, useRollenVoorProduct, useClaimsVoorProduct, useEquiva
 import { useOpenstaandeInkoopVoorArtikel } from '@/hooks/use-inkooporders'
 import { useVoorraadpositie } from '@/modules/voorraadpositie'
 import { ProductTypeBadge } from './producten-overview'
+import { GewichtBronBadge } from '@/components/kwaliteiten/gewicht-bron-badge'
 import { isoWeekFromString } from '@/lib/utils/iso-week'
 
 const INKOOP_STATUS_COLORS: Record<string, string> = {
@@ -86,6 +87,18 @@ export function ProductDetailPage() {
           <InfoField label="EAN" value={product.ean_code} />
           <InfoField label="Kwaliteit" value={product.kwaliteit_code} />
           <InfoField label="Zoeksleutel" value={product.zoeksleutel} />
+          {product.lengte_cm != null && product.breedte_cm != null && (
+            <InfoField label="Maat" value={`${product.lengte_cm} × ${product.breedte_cm} cm`} />
+          )}
+          {product.gewicht_kg != null && (
+            <div>
+              <div className="text-xs text-slate-500 mb-0.5">Gewicht</div>
+              <div className="flex items-center gap-2">
+                <span>{formatNumber(product.gewicht_kg, 2)} kg</span>
+                <GewichtBronBadge gewichtUitKwaliteit={product.gewicht_uit_kwaliteit} />
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
