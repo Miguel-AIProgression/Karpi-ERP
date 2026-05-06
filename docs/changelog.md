@@ -9,19 +9,52 @@ Vijfde en laatste slice van de Voorraadpositie-Module-epic ([PRD #25](https://gi
   - `uitwisselbare_partners`: 0 directe externe callers. SQL-caller: `voorraadposities()` (CTE-bron in partners-aggregaat). ⇒ **DEMOTE** (COMMENT-only). GRANT EXECUTE blijft voor `anon`/`authenticated` omdat `voorraadposities()` als `LANGUAGE sql STABLE` (= SECURITY INVOKER) inner-permissies eist.
   - `besteld_per_kwaliteit_kleur`: na T005-refactor enige frontend-callers via Module-seam (`fetchVoorraadpositie` + nieuw `fetchGhostBesteldParen`). SQL-caller: `voorraadposities()`. ⇒ **DEMOTE** (COMMENT-only). GRANT blijft om dezelfde reden + omdat `fetchGhostBesteldParen` vanuit de browser draait met `anon`/`authenticated`.
 - **Optie Y-refactor (ghost-merge achter Module-seam)**: `pages/rollen/rollen-overview.tsx` riep direct `supabase.rpc('besteld_per_kwaliteit_kleur')` aan (T003's ghost-merge). Verplaatst naar nieuwe Module-export [`fetchGhostBesteldParen`](../frontend/src/modules/voorraadpositie/queries/ghost-besteld.ts). Module's bestaans-regel ("batch-modus geeft alleen eigen-voorraad-paren") onveranderd; ghost-merge-logica blijft op page-niveau. Resultaat: alle frontend-DB-calls voor de Voorraadpositie-data-flow lopen nu door de Module-barrel, zodat `besteld_per_kwaliteit_kleur` logisch gedemoot kan worden zonder breuk.
-- **Mig 183 — uitvoering**: `DROP FUNCTION IF EXISTS rollen_uitwissel_voorraad();` + twee `COMMENT ON FUNCTION` met "INTERN — niet direct aanroepen vanuit nieuwe code"-richtlijn voor de andere twee. Geen `REVOKE` (zou `voorraadposities()` breken).
+- **Mig 187 — uitvoering**: `DROP FUNCTION IF EXISTS rollen_uitwissel_voorraad();` + twee `COMMENT ON FUNCTION` met "INTERN — niet direct aanroepen vanuit nieuwe code"-richtlijn voor de andere twee. Geen `REVOKE` (zou `voorraadposities()` breken).
 - **Tests**: nieuwe regression-fixture 10 (`fetchGhostBesteldParen` shape + RPC-aanroep + lege-array fallback bij fout + null→0-cast voor numerieken). 4 nieuwe tests (96/97 groen, 1 perf-test skipped). Rollen-overzicht-flow regression-vrij — Module-seam transparante vervanger voor de directe RPC-call.
 - **Demote = conceptueel, niet permissief**: omdat browser-callers `anon`/`authenticated` gebruiken kan een echte `REVOKE` niet zonder Module + `voorraadposities()` te breken. De `COMMENT`-tekst documenteert de design-intent: nieuwe code hoort de Module-seam te gebruiken.
 
 **Bestanden touched**:
-- [`supabase/migrations/183_oude_rpcs_cleanup.sql`](../supabase/migrations/183_oude_rpcs_cleanup.sql) — DROP + COMMENT-only-demote.
+- [`supabase/migrations/187_oude_rpcs_cleanup.sql`](../supabase/migrations/187_oude_rpcs_cleanup.sql) — DROP + COMMENT-only-demote.
 - [`frontend/src/modules/voorraadpositie/queries/ghost-besteld.ts`](../frontend/src/modules/voorraadpositie/queries/ghost-besteld.ts) — nieuwe Module-query.
 - [`frontend/src/modules/voorraadpositie/index.ts`](../frontend/src/modules/voorraadpositie/index.ts) — barrel-export uitgebreid.
 - [`frontend/src/pages/rollen/rollen-overview.tsx`](../frontend/src/pages/rollen/rollen-overview.tsx) — directe RPC-call vervangen door `fetchGhostBesteldParen`.
 - [`frontend/src/modules/voorraadpositie/__tests__/regression/fixture-10-ghost-besteld-paren.test.ts`](../frontend/src/modules/voorraadpositie/__tests__/regression/fixture-10-ghost-besteld-paren.test.ts) — 4 nieuwe testcases.
 - [`docs/changelog.md`](changelog.md), [`docs/database-schema.md`](database-schema.md).
 
-**HITL — migratie 183 handmatig toepassen op Supabase Karpi-project** (MCP heeft geen toegang). Idempotent: `DROP FUNCTION IF EXISTS` + `COMMENT ON FUNCTION` zijn beide veilig her-uitvoerbaar.
+**HITL — migratie 187 handmatig toepassen op Supabase Karpi-project** (MCP heeft geen toegang). Idempotent: `DROP FUNCTION IF EXISTS` + `COMMENT ON FUNCTION` zijn beide veilig her-uitvoerbaar.
+
+## 2026-05-06 — Gewicht per kwaliteit — bron-van-waarheid op `kwaliteiten` (#38–#43)
+
+Implementatie van de gewicht-per-kwaliteit feature, aangevraagd door Piet-Hein Dobbe — relevante info voor vervoerder (HST-pakbon `weightKg`). Plan: [`docs/superpowers/plans/2026-05-06-gewicht-per-kwaliteit.md`](superpowers/plans/2026-05-06-gewicht-per-kwaliteit.md).
+
+**Architectuur — Gewicht-resolver als deep SQL-Module:**
+- Smal interface: `gewicht_per_m2_voor_kwaliteit`, `bereken_product_gewicht_kg`, `bereken_orderregel_gewicht_kg`.
+- Brede implementatie: oppervlak-bepaling per producttype (vast/staaltje uit `lengte_cm × breedte_cm`, maatwerk uit `maatwerk_oppervlak_m2`), kwaliteit-density-lookup, NULL-fallback, trigger-cascade kwaliteit → producten → open order_regels.
+- Alle gewicht-callers gaan voortaan hierdoor; bestaande `COALESCE(ore.gewicht_kg, p.gewicht_kg, 0)` in zending-aanmaak vervalt.
+
+**Migraties:** _(originele nummers 180/181/182 hernummerd naar 184/185/186 wegens collisie met `180_voorraadposities_batch_filter` (T003) en `182_placeholder_rollen_opruim` (T004) op de feat/voorraadpositie-module-branch)_
+- **184** — fundament: `kwaliteiten.gewicht_per_m2_kg` toegevoegd, `producten.lengte_cm`/`breedte_cm`/`gewicht_uit_kwaliteit` toegevoegd. Eenmalige regex-parsing van `karpi_code` (laatste 6 cijfers) vult lengte+breedte voor vaste en staaltje-producten.
+- **185** — resolver-functies + cascade-triggers (`trg_kwaliteit_gewicht_recalc`, `trg_product_gewicht_recalc`) + modus-seed van `maatwerk_m2_prijzen.gewicht_per_m2_kg` naar `kwaliteiten` voor kwaliteiten zonder Excel-data. RPC `kleuren_voor_kwaliteit` leest gewicht voortaan uit `kwaliteiten`.
+- **186** — cutover: hard reset van `order_regels.gewicht_kg` voor open orders, simplificatie van `create_zending_voor_order` (geen `p.gewicht_kg`-fallback meer), drop van `maatwerk_m2_prijzen.gewicht_per_m2_kg`.
+
+**Frontend:**
+- `berekenMaatwerkGewicht` → `berekenGewichtKg` verhuisd naar [`lib/utils/gewicht.ts`](../frontend/src/lib/utils/gewicht.ts). Importeurs: `op-maat-selector`, `kwaliteit-first-selector`.
+- Nieuwe component [`<GewichtBronBadge>`](../frontend/src/components/kwaliteiten/gewicht-bron-badge.tsx) toont "uit oude bron"-badge op product-detail wanneer `producten.gewicht_uit_kwaliteit = false`.
+- Nieuwe pagina `/instellingen/kwaliteiten` ([`pages/instellingen/kwaliteiten.tsx`](../frontend/src/pages/instellingen/kwaliteiten.tsx)) — sorteerbare tabel met inline-edit van gewicht-per-m², filters (alle/ontbreekt/ingevuld), banner met data-completing-status.
+- Queries-bestand [`lib/supabase/queries/kwaliteiten.ts`](../frontend/src/lib/supabase/queries/kwaliteiten.ts) — `fetchKwaliteitenMetGewicht` + `updateKwaliteitGewicht`.
+- Router-route + sidebar-item toegevoegd (`/instellingen/kwaliteiten`, icon `Scale`).
+
+**Excel-import:**
+- Bron: `brondata/voorraad/akwaliteitscodeslijst-260505.xlsx` — Karpi legacy-export (1049 kwaliteit-rijen, kolommen `Kwaliteitscode | Omschrijving | Gewicht per m2`). 1033 met geldig gewicht (1.25–25 kg/m², gemiddeld 2.29). 16 met 0.0 = niet-tapijt placeholder-codes (DIMV, MIXX, STAA etc.) → script behandelt als NULL.
+- Script [`import/import_kwaliteit_gewichten.py`](../import/import_kwaliteit_gewichten.py) met `--dry-run` flag. Filtert no-op updates (huidige waarde = nieuwe waarde) zodat cascade-triggers niet onnodig firen. Onbekende codes → warning, niet fataal.
+
+**Domeinwoordenboek toegevoegd:** Gewicht/m², Gewicht-resolver, Gewicht-cache, Gewicht-uit-kwaliteit-flag, Bbox-oppervlak (gewicht). Zie [`docs/data-woordenboek.md`](data-woordenboek.md).
+
+**HITL — handmatig uit te voeren door Miguel:**
+1. Migratie 184 + 185 apply'en op Karpi-Supabase (MCP heeft geen toegang, cf. memory).
+2. `python import/import_kwaliteit_gewichten.py --dry-run` voor verificatie.
+3. `python import/import_kwaliteit_gewichten.py` voor echte run.
+4. Migratie 186 apply'en (cutover + cleanup).
 
 ## 2026-05-06 — Placeholder-rollen mig 112 + 113 opruim (T004 / #29)
 

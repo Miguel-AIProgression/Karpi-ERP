@@ -1,4 +1,4 @@
--- Migratie 183: cleanup oude RPC's na Voorraadpositie-Module-cutover (T005, GH #30)
+-- Migratie 187: cleanup oude RPC's na Voorraadpositie-Module-cutover (T005, GH #30)
 --
 -- Audit-bevindingen per RPC (commit feat/voorraadpositie-module, 2026-05-06):
 --
@@ -59,7 +59,7 @@ COMMENT ON FUNCTION uitwisselbare_partners() IS
   'frontend-code is afgekeurd; gebruik in plaats daarvan de Voorraadpositie-Module '
   '(@/modules/voorraadpositie). GRANT EXECUTE blijft staan voor anon/authenticated '
   'omdat voorraadposities() LANGUAGE sql STABLE (= SECURITY INVOKER) is en '
-  'dezelfde permissies eist op de inner-call. Status na T005 (mig 183).';
+  'dezelfde permissies eist op de inner-call. Status na T005 (mig 187).';
 
 -- ----------------------------------------------------------------------------
 -- 3. DEMOTE besteld_per_kwaliteit_kleur — Module-seam is enige frontend-caller.
@@ -75,4 +75,4 @@ COMMENT ON FUNCTION besteld_per_kwaliteit_kleur() IS
   '(fetchVoorraadpositie / fetchVoorraadposities / fetchGhostBesteldParen). '
   'GRANT EXECUTE blijft staan voor anon/authenticated omdat zowel '
   'voorraadposities() (SECURITY INVOKER) als de browser-call dezelfde permissies '
-  'eisen. Status na T005 (mig 183).';
+  'eisen. Status na T005 (mig 187).';
