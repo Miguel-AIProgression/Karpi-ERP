@@ -1,5 +1,33 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-06 — Vorm-aware gewicht-resolver voor ronde producten (mig 188)
+
+Vervolg op de gewicht-per-kwaliteit-feature (mig 184–186). Bij live-controle bleek dat **160 ROND** en **200 ROND** beide hetzelfde gewicht (3.7 kg) toonden in de prijslijst. Oorzaak: mig 184's regex `^.{8}(\d{3})(\d{3})$` matcht alleen rechthoekige `karpi_code`-suffixen. Voor RND/OVL-suffixen bleven `lengte_cm` en `breedte_cm` NULL, dus `bereken_product_gewicht_kg` viel terug op de legacy `producten.gewicht_kg` — een placeholder uit het oude systeem (bij LORANDA toevallig 3.7 kg per stuk, ongeacht maat).
+
+**Scope** (smal — beslissing van de owner):
+- Rond → cirkel-formule `π × (diameter/200)² × density`.
+- Ovaal → bbox-formule (rechthoek-aanname). Overschat ~27% (factor 4/π) maar pragmatisch.
+
+**Migratie 188** ([`188_vorm_rond_gewicht.sql`](../supabase/migrations/188_vorm_rond_gewicht.sql)):
+- Nieuwe kolom `producten.vorm` (`rechthoek` default | `rond`) met CHECK-constraint.
+- **RND parsing** (1541 producten): `karpi_code ~ '^.{8}\d{3}RND$'` → `lengte_cm = breedte_cm = diameter`, `vorm = 'rond'`.
+- **OVL parsing** (127 producten): bbox uit omschrijving (`(\d+)\s*[xX]\s*(\d+)\s*cm\s*OVAAL`) → `lengte_cm + breedte_cm` als rechthoek-bbox. `vorm` blijft `rechthoek`.
+- **Resolver-update** `bereken_product_gewicht_kg` nu vorm-aware: `vorm='rond'` → `π × (lengte_cm/200)² × density`; anders bbox-formule.
+- **Trigger-update** `trg_kwaliteit_gewicht_recalc` zelfde vorm-logica in cascade.
+- **Self-update truc**: `UPDATE kwaliteiten SET gewicht_per_m2_kg = gewicht_per_m2_kg WHERE gewicht_per_m2_kg IS NOT NULL` — vuurt de trigger zodat alle bestaande RND/OVL-producten direct herrekend worden met de nieuwe formules. Idempotent.
+- Verifier-rapport in `DO $$ ... $$`-blok telt rond/ovl-producten + `gewicht_uit_kwaliteit=true`-totaal.
+
+**Verwachte resultaten na apply** (LORANDA Kleur 11, density 3.7 kg/m²):
+- 160 ROND: π × 0.8² × 3.7 ≈ **7.44 kg** (was 3.7).
+- 200 ROND: π × 1.0² × 3.7 ≈ **11.62 kg** (was 3.7).
+- 160×230 cm rechthoek: 13.62 kg (ongewijzigd).
+
+**HITL — migratie 188 handmatig toepassen op Supabase Karpi-project** (MCP heeft geen toegang). Idempotent: `ADD COLUMN IF NOT EXISTS` + `CREATE OR REPLACE FUNCTION` + self-update.
+
+## 2026-05-06 — Pick & Ship verzendset PGRST201-fix
+
+Bugfix voor de knop **Verzendset** op de Pick & Ship-kaart: de printset-route faalde met `PGRST201` omdat de logistiek-zending queries `orders -> debiteuren` embedden zonder FK-disambiguatie. `orders` heeft twee relaties naar `debiteuren` (`debiteur_nr` voor de besteller en `betaler` voor de betalende partij), waardoor PostgREST niet kon kiezen. In [`frontend/src/modules/logistiek/queries/zendingen.ts`](../frontend/src/modules/logistiek/queries/zendingen.ts) gebruiken de zending-overzicht-, detail- en printset-query nu expliciet `debiteuren:debiteuren!orders_debiteur_nr_fkey(...)`, zodat de bestaande frontend-shape gelijk blijft en altijd de bestellende klant wordt geladen. Toegevoegd: contracttest [`zendingen-query.contract.test.ts`](../frontend/src/modules/logistiek/__tests__/zendingen-query.contract.test.ts) die deze queryvorm bewaakt.
+
 ## 2026-05-06 — Voorraadpositie-Module post-cutover fixes
 
 Twee fixes na de eerste live-apply-poging van de Voorraadpositie-Module-migraties:
