@@ -1,5 +1,16 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-06 — MaatwerkLevertijdHint via Voorraadpositie-Module (T002 / #27)
+
+Derde slice van de Voorraadpositie-Module-epic ([PRD #25](https://github.com/Miguel-AIProgression/karpi-erp/issues/25)). De maatwerk-levertijdhint cut-overt op de Module-seam zodat order-form, product-detail en rollen-overzicht alle drie via dezelfde `fetchVoorraadpositie`-call lezen.
+
+- **`fetchMaatwerkLevertijdHint` migreert** — `frontend/src/lib/supabase/queries/op-maat.ts` regels 472–525. Vervangt de directe `supabase.rpc('besteld_per_kwaliteit_kleur')` + client-side `.find()` door één `await fetchVoorraadpositie(kw, kl)` uit `@/modules/voorraadpositie`. `besteld.eerstvolgende_verwacht_datum` wordt direct uit de Voorraadpositie gelezen i.p.v. uit een raw RPC-row. `app_config.order_config`-fetch en `iso_week_plus`-RPC-call ongewijzigd (buiten scope T002).
+- **Nieuwe invariant — eigen voorraad blokkeert hint**: `voorraadpositie.voorraad.totaal_m2 > 0` ⇒ `{ status: 'geen_inkoop' }`. Reden: maatwerk kan direct uit voorraad gemaakt worden, dus een "wacht-op-inkoop"-melding is misleidend. Voorheen impliciet via caller-checks (snij-flow), nu expliciet in de hint-laag zelf.
+- **Hint-tekst en weergave op orderregel ongewijzigd** — `MaatwerkLevertijdHint`-component (`frontend/src/components/orders/maatwerk-levertijd-hint.tsx`) ongemoeid; status-discriminator `inkoop_bekend | geen_inkoop` en signature van `fetchMaatwerkLevertijdHint` identiek aan main.
+- **5 nieuwe vitest-tests** in `frontend/src/lib/supabase/queries/__tests__/op-maat.test.ts`: (a) ghost-paar → inkoop_bekend; (b) default-buffer 2 weken bij ontbrekende app_config; (c) geen voorraad én geen besteld → geen_inkoop; (d) eigen voorraad blokkeert hint ook als er besteld is; (e) `fetchVoorraadpositie` retourneert null → geen_inkoop. Mocks via `vi.mock('@/modules/voorraadpositie')` en `vi.mock('../../client')`.
+
+Tests groen: 90/90 (85 → 90). Typecheck clean. Lint geen nieuwe errors.
+
 ## 2026-05-06 — Voorraadpositie-Module batch+filter + rollen-overzicht migratie (T003 / #28)
 
 Tweede slice van de Voorraadpositie-Module-epic ([PRD #25](https://github.com/Miguel-AIProgression/karpi-erp/issues/25)). De Module krijgt batch+filter-modus, de rollen-overzicht-pagina cut-overt 1-op-1 op het Voorraadpositie-concept, en de oude `fetchRollenGegroepeerd` + `RolGroep`-type verdwijnen.

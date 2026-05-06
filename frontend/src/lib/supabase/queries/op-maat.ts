@@ -1,4 +1,5 @@
 import { supabase } from '../client'
+import { fetchVoorraadpositie } from '@/modules/voorraadpositie'
 
 // === Vormen ===
 
@@ -478,27 +479,28 @@ export type MaatwerkLevertijdHintResult =
 /**
  * Returns een levertijd-hint voor een (kwaliteit, kleur)-combinatie:
  * - `inkoop_bekend` → eerstvolgende inkoop-leverweek + maatwerk-buffer (default 2 weken)
- * - `geen_inkoop`   → er is geen openstaande inkoop voor deze combinatie (issue #32)
+ * - `geen_inkoop`   → er is geen openstaande inkoop voor deze combinatie (issue #32),
+ *                     OF er is eigen voorraad voor dit (kw, kl)-paar (T002 / issue #27):
+ *                     de hint is dan niet relevant want maatwerk kan direct uit voorraad.
  *
- * In tegenstelling tot de oude implementatie returnt deze functie nooit `null`
- * meer: de hint moet altijd iets tonen — ook als er geen voorraad én geen
- * inkoop is — zodat de gebruiker niet stilzwijgend een onleverbare regel
- * toevoegt.
+ * Sinds T002 (#27) leest deze functie de Voorraadpositie-Module
+ * (`fetchVoorraadpositie`) i.p.v. direct de RPC `besteld_per_kwaliteit_kleur`,
+ * zodat hint-logica één seam deelt met product-detail en rollen-overzicht.
  */
 export async function fetchMaatwerkLevertijdHint(
   kwaliteitCode: string,
   kleurCode: string,
 ): Promise<MaatwerkLevertijdHintResult> {
-  // RPC returnt rows; filter client-side want supabase-js .rpc().eq() werkt niet
-  // voor TABLE-functions met composite return.
-  const { data: rows, error } = await supabase.rpc('besteld_per_kwaliteit_kleur')
-  if (error) throw error
+  const positie = await fetchVoorraadpositie(kwaliteitCode, kleurCode)
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const match = ((rows ?? []) as any[]).find(
-    (r) => r.kwaliteit_code === kwaliteitCode && r.kleur_code === kleurCode,
-  )
-  const verwachtDatum = match?.eerstvolgende_verwacht_datum as string | null | undefined
+  // Geen positie (lege input of geen rij) → niets te tonen.
+  if (!positie) return { status: 'geen_inkoop' }
+
+  // Invariant T002: eigen voorraad blokkeert de hint — maatwerk kan direct
+  // uit voorraad gemaakt worden, dus geen "wacht-op-inkoop"-melding.
+  if (positie.voorraad.totaal_m2 > 0) return { status: 'geen_inkoop' }
+
+  const verwachtDatum = positie.besteld.eerstvolgende_verwacht_datum
   if (!verwachtDatum) return { status: 'geen_inkoop' }
 
   const { data: cfg } = await supabase
