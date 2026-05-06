@@ -471,20 +471,24 @@ export async function fetchStandaardMatenVoorKwaliteit(kwaliteitCode: string): P
 
 // === Maatwerk-levertijdhint (V1: indicator op basis van eerstvolgende inkoop) ===
 
-export interface MaatwerkLevertijdHint {
-  verwacht_datum: string
-  verwachte_leverweek: string
-}
+export type MaatwerkLevertijdHintResult =
+  | { status: 'inkoop_bekend'; verwacht_datum: string; verwachte_leverweek: string }
+  | { status: 'geen_inkoop' }
 
 /**
  * Returns een levertijd-hint voor een (kwaliteit, kleur)-combinatie:
- * eerstvolgende inkoop-leverweek + maatwerk-buffer (default 2 weken).
- * Returnt `null` als er geen openstaande inkoop is voor deze combinatie.
+ * - `inkoop_bekend` → eerstvolgende inkoop-leverweek + maatwerk-buffer (default 2 weken)
+ * - `geen_inkoop`   → er is geen openstaande inkoop voor deze combinatie (issue #32)
+ *
+ * In tegenstelling tot de oude implementatie returnt deze functie nooit `null`
+ * meer: de hint moet altijd iets tonen — ook als er geen voorraad én geen
+ * inkoop is — zodat de gebruiker niet stilzwijgend een onleverbare regel
+ * toevoegt.
  */
 export async function fetchMaatwerkLevertijdHint(
   kwaliteitCode: string,
   kleurCode: string,
-): Promise<MaatwerkLevertijdHint | null> {
+): Promise<MaatwerkLevertijdHintResult> {
   // RPC returnt rows; filter client-side want supabase-js .rpc().eq() werkt niet
   // voor TABLE-functions met composite return.
   const { data: rows, error } = await supabase.rpc('besteld_per_kwaliteit_kleur')
@@ -495,7 +499,7 @@ export async function fetchMaatwerkLevertijdHint(
     (r) => r.kwaliteit_code === kwaliteitCode && r.kleur_code === kleurCode,
   )
   const verwachtDatum = match?.eerstvolgende_verwacht_datum as string | null | undefined
-  if (!verwachtDatum) return null
+  if (!verwachtDatum) return { status: 'geen_inkoop' }
 
   const { data: cfg } = await supabase
     .from('app_config')
@@ -511,6 +515,7 @@ export async function fetchMaatwerkLevertijdHint(
   if (weekErr) throw weekErr
 
   return {
+    status: 'inkoop_bekend',
     verwacht_datum: verwachtDatum,
     verwachte_leverweek: weekStr as unknown as string,
   }
