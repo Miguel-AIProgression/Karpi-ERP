@@ -1,5 +1,20 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-06 — QA-fixes order-voorstel epic (sub-issues van #17)
+
+Vier UI-bugs gevonden tijdens handmatige QA-walkthrough van issue #17, met losse sub-issues geïsoleerd en gefixt.
+
+- **#34 — Sortering orders-overzicht**: `fetchOrders` had geen secundaire sort, dus binnen dezelfde `orderdatum` kon de meest recente order op willekeurige plek belanden. `id DESC` toegevoegd als tiebreaker (id is auto-increment → monotoon stijgend → perfect proxy voor aanmaakvolgorde). Geen migratie nodig.
+- **#32 — Maatwerk-regel zonder voorraad én zonder inkoop**: `fetchMaatwerkLevertijdHint` returnde `null` wanneer er geen openstaande inkoop was → component verbergde zichzelf → gebruiker zag niets. Discriminated-union-result `inkoop_bekend | geen_inkoop`; bij `geen_inkoop` toont de hint nu een amber-waarschuwing "Niet op voorraad — geen lopende inkoop bekend. Levertijd onbekend." zodat de gebruiker niet stilzwijgend een onleverbare regel toevoegt.
+- **#33 — Verzendkosten + maatwerk-levertijd bij split-order (deelleveringen aan)**:
+  - Verzendkosten gingen altijd naar het standaard- (resp. directe-) deel. Nu naar het **duurste** sub-totaal (gemixt-split én IO-split).
+  - Maatwerk-deel gebruikte de statische `maatwerk_weken`-config (default 4 weken, klant-override mogelijk 1) → kreeg "+1 week" terwijl echte capaciteit 15 weken kan zijn. Nieuwe helper `berekenMaatwerkAfleverdatumViaSeam` roept de echte planning-seam (`check-levertijd`) aan voor élke maatwerk-regel met complete data en neemt de **MAX lever_datum** als afleverdatum van de maatwerk-sub-order. Fallback op de oude statische berekening voor onvolledige regels.
+- **#35 — Uitwisselbaar-zichtbaarheid + prijslijst-fallback**:
+  - In de voorraad-cel van `OrderLineEditor` verschijnt nu een passieve `(+N via ander type)`-indicator zodra er uitwisselbare voorraad bestaat — ongeacht tekort. Voorheen moest de gebruiker het orderaantal eerst boven de eigen voorraad drukken om dat te zien.
+  - Nieuwe `prijs_uit_prijslijst`-flag op `OrderRegelFormData` (display-only). Bij prijs-fallback (klant heeft prijslijst, maar artikel staat er niet in) toont de prijs-cel "⚠ Niet uit prijslijst" — gebruiker weet dat hij een fallback-prijs gebruikt en kan handmatig corrigeren.
+
+Tests groen: 13 testfiles, 74 tests. Typecheck clean. Lint geen nieuwe errors (6 pre-existing onveranderd).
+
 ## 2026-05-06 — Voorraadpositie-Module tracer-bullet (T001 / #26)
 
 Eerste slice van de Voorraadpositie-Module-epic ([PRD #25](https://github.com/Miguel-AIProgression/karpi-erp/issues/25)). Levert één deep TS-Module rond het concept "Voorraadpositie per (kwaliteit, kleur)" + één SQL-RPC als seam. Past binnen [ADR-0001](adr/0001-order-voorstel-en-planning-als-twee-modules.md) — geen aparte ADR.
