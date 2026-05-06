@@ -71,6 +71,13 @@ export interface OrderRegelFormData {
    * set_uitwisselbaar_claims-RPC gepersisteerd. Migratie 154.
    */
   uitwisselbaar_keuzes?: { artikelnr: string; aantal: number; omschrijving?: string }[]
+  /**
+   * Display-only: of de prijs uit de klant-specifieke prijslijst komt (true)
+   * of dat we zijn teruggevallen op `producten.verkoopprijs` (false). Wordt
+   * niet opgeslagen — alleen voor UI-signalering aan de orderaanmaker dat
+   * de getoonde prijs een fallback is. Issue #35.
+   */
+  prijs_uit_prijslijst?: boolean
 }
 
 /** Roept RPC `set_uitwisselbaar_claims` aan om handmatige uitwisselbaar-allocaties op een orderregel te zetten. Migratie 154. */

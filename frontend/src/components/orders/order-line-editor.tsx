@@ -1,5 +1,6 @@
 import { useRef } from 'react'
 import { Trash2 } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { formatCurrency } from '@/lib/utils/formatters'
 import { berekenPrijsOppervlakM2 } from '@/lib/utils/maatwerk-prijs'
 import { AFWERKING_OPTIES } from '@/lib/utils/constants'
@@ -10,6 +11,7 @@ import type { SelectedArticle, SubstitutionInfo } from './article-selector'
 import type { OrderRegelFormData } from '@/lib/supabase/queries/order-mutations'
 import { SHIPPING_PRODUCT_ID } from '@/lib/constants/shipping'
 import { berekenRegelDekking } from '@/lib/utils/regel-dekking'
+import { fetchEquivalenteProducten } from '@/lib/supabase/queries/product-equivalents'
 
 interface OrderLineEditorProps {
   lines: OrderRegelFormData[]
@@ -36,12 +38,13 @@ const inputClass = 'w-full text-right bg-transparent border border-slate-200 rou
 const selectClass = 'bg-transparent border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-terracotta-400/30'
 
 function MaatwerkLineRow({
-  line, index, updateLine, removeLine,
+  line, index, updateLine, removeLine, prijslijstNr,
 }: {
   line: OrderRegelFormData
   index: number
   updateLine: (i: number, u: Partial<OrderRegelFormData>) => void
   removeLine: (i: number) => void
+  prijslijstNr?: string
 }) {
   const isVasteMaatRegel = !line.is_maatwerk
     && line.artikelnr
@@ -51,6 +54,20 @@ function MaatwerkLineRow({
   const dekking = berekenRegelDekking(line)
   const uitwisselbaarTotaal = dekking.uitwisselbaar
   const tekortAantal = dekking.ioTekort
+
+  // Issue #35: passieve summary van uitwisselbare voorraad — toont onder
+  // het vrije-voorraad getal "+N via ander type" zodra er überhaupt
+  // omsticker-baar alternatief bestaat (ook als er nog geen tekort is).
+  const { data: equivSummary } = useQuery({
+    queryKey: ['equivalente-producten-summary', line.artikelnr],
+    queryFn: () => fetchEquivalenteProducten(line.artikelnr!),
+    enabled: !!isVasteMaatRegel && !!line.artikelnr,
+    staleTime: 60_000,
+  })
+  const equivVoorraadTotaal = (equivSummary ?? []).reduce(
+    (s, e) => s + (e.vrije_voorraad ?? 0),
+    0,
+  )
   return (
     <>
       <tr className={line.is_maatwerk ? 'border-b-0' : 'border-b border-slate-50'}>
@@ -110,6 +127,15 @@ function MaatwerkLineRow({
                   +{line.besteld_inkoop}
                 </div>
               )}
+              {/* Issue #35: passieve indicator dat er uitwisselbare voorraad bestaat */}
+              {isVasteMaatRegel && equivVoorraadTotaal > 0 && (
+                <div
+                  className="text-xs text-slate-400"
+                  title="Beschikbaar via uitwisselbaar product (omstickeren)"
+                >
+                  (+{equivVoorraadTotaal} via ander type)
+                </div>
+              )}
             </>
           )}
         </td>
@@ -151,6 +177,15 @@ function MaatwerkLineRow({
             className={inputClass}
             step="0.01"
           />
+          {/* Issue #35: signaleer als prijs niet uit klant-prijslijst komt */}
+          {prijslijstNr && line.prijs_uit_prijslijst === false && !line.is_maatwerk && (
+            <div
+              className="text-xs text-amber-600 mt-0.5"
+              title={`Geen prijs in klant-prijslijst ${prijslijstNr} — fallback op standaard verkoopprijs`}
+            >
+              ⚠ Niet uit prijslijst
+            </div>
+          )}
         </td>
         <td className="px-3 py-2">
           <input
@@ -374,6 +409,8 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr,
       omstickeren: substitution?.omstickeren,
       // Maatwerk
       is_maatwerk: false,
+      // Issue #35: signaleer of prijs uit klant-prijslijst komt of fallback
+      prijs_uit_prijslijst: prijsUitPrijslijst,
     }
     newLine.bedrag = calcBedrag(newLine)
     onChange([...lines, newLine])
@@ -436,6 +473,7 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr,
                   index={i}
                   updateLine={updateLine}
                   removeLine={removeLine}
+                  prijslijstNr={prijslijstNr}
                 />
               ))}
             </tbody>
