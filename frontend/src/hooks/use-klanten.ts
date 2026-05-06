@@ -19,6 +19,7 @@ export function useKlanten(params: {
   tier?: string
   vertegenw_code?: string
   edi_filter?: 'edi' | 'niet_edi'
+  inkoopgroep_code?: string
   page?: number
   pageSize?: number
 }) {
