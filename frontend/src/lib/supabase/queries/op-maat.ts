@@ -474,14 +474,24 @@ export async function fetchStandaardMatenVoorKwaliteit(kwaliteitCode: string): P
 
 export type MaatwerkLevertijdHintResult =
   | { status: 'inkoop_bekend'; verwacht_datum: string; verwachte_leverweek: string }
+  | {
+      status: 'voorraad_uitwisselbaar'
+      partner_kwaliteit: string
+      partner_kleur: string
+      partner_rollen: number
+      partner_m2: number
+    }
   | { status: 'geen_inkoop' }
 
 /**
  * Returns een levertijd-hint voor een (kwaliteit, kleur)-combinatie:
- * - `inkoop_bekend` → eerstvolgende inkoop-leverweek + maatwerk-buffer (default 2 weken)
- * - `geen_inkoop`   → er is geen openstaande inkoop voor deze combinatie (issue #32),
- *                     OF er is eigen voorraad voor dit (kw, kl)-paar (T002 / issue #27):
- *                     de hint is dan niet relevant want maatwerk kan direct uit voorraad.
+ * - `voorraad_uitwisselbaar` → eigen voorraad = 0, maar er is een uitwisselbare
+ *                              partner-rol op voorraad (issue #37). Maatwerk kan
+ *                              direct uit een omsticker-rol gemaakt worden.
+ * - `inkoop_bekend`          → eerstvolgende inkoop-leverweek + maatwerk-buffer (default 2 weken)
+ * - `geen_inkoop`            → er is geen openstaande inkoop voor deze combinatie (issue #32),
+ *                              OF er is eigen voorraad voor dit (kw, kl)-paar (T002 / issue #27):
+ *                              de hint is dan niet relevant want maatwerk kan direct uit voorraad.
  *
  * Sinds T002 (#27) leest deze functie de Voorraadpositie-Module
  * (`fetchVoorraadpositie`) i.p.v. direct de RPC `besteld_per_kwaliteit_kleur`,
@@ -499,6 +509,20 @@ export async function fetchMaatwerkLevertijdHint(
   // Invariant T002: eigen voorraad blokkeert de hint — maatwerk kan direct
   // uit voorraad gemaakt worden, dus geen "wacht-op-inkoop"-melding.
   if (positie.voorraad.totaal_m2 > 0) return { status: 'geen_inkoop' }
+
+  // Issue #37: eigen voorraad = 0, maar uitwisselbare partner heeft wel
+  // voorraad → toon dat expliciet zodat de gebruiker weet dat de maatwerk-
+  // order via een omsticker-rol gedekt kan worden.
+  const partner = positie.beste_partner
+  if (partner && partner.m2 > 0) {
+    return {
+      status: 'voorraad_uitwisselbaar',
+      partner_kwaliteit: partner.kwaliteit_code,
+      partner_kleur: partner.kleur_code,
+      partner_rollen: partner.rollen,
+      partner_m2: partner.m2,
+    }
+  }
 
   const verwachtDatum = positie.besteld.eerstvolgende_verwacht_datum
   if (!verwachtDatum) return { status: 'geen_inkoop' }

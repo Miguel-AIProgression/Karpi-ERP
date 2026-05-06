@@ -236,10 +236,13 @@ export function OpMaatSelector({ defaultKorting, onAdd }: OpMaatSelectorProps) {
         onSelect={(data) => dispatch({ type: 'KWALITEIT_KLEUR_SELECTED', payload: data })}
       />
 
-      {/* Levertijd-hint: geen rol op voorraad, maar wel openstaande inkoop */}
+      {/* Levertijd-hint: geen eigen rol op voorraad. Hint dekt drie scenarios:
+          - uitwisselbare partner-rol beschikbaar (issue #37)
+          - openstaande inkoop bekend
+          - geen voorraad én geen inkoop (issue #32)
+          De hint zelf bepaalt welke variant getoond wordt o.b.v. Voorraadpositie. */}
       {state.step === 'vorm_afmeting'
         && state.aantalRollen === 0
-        && state.equivRollen === 0
         && (
           <MaatwerkLevertijdHint
             kwaliteitCode={state.kwaliteitCode}

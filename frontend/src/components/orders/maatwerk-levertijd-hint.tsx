@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, ArrowRightLeft } from 'lucide-react'
 import { fetchMaatwerkLevertijdHint } from '@/lib/supabase/queries/op-maat'
 
 interface Props {
@@ -8,10 +8,11 @@ interface Props {
 }
 
 /**
- * Toont een inline hint onder een maatwerk-orderregel als er geen rol op
- * voorraad is. Twee varianten:
- * - openstaande inkoop bekend → eerstvolgende leverweek (neutraal grijs)
- * - geen openstaande inkoop   → expliciete waarschuwing in amber (issue #32)
+ * Toont een inline hint onder een maatwerk-orderregel als er geen eigen rol op
+ * voorraad is. Drie varianten:
+ * - uitwisselbare partner-rol op voorraad → groen "leverbaar via omsticker" (issue #37)
+ * - openstaande inkoop bekend             → eerstvolgende leverweek (neutraal grijs)
+ * - geen openstaande inkoop               → expliciete waarschuwing in amber (issue #32)
  *
  * V1: alleen indicator (geen claim op rol-IO).
  */
@@ -23,6 +24,21 @@ export function MaatwerkLevertijdHint({ kwaliteitCode, kleurCode }: Props) {
   })
 
   if (!data) return null
+
+  if (data.status === 'voorraad_uitwisselbaar') {
+    return (
+      <div className="text-xs text-emerald-700 mt-1 inline-flex items-center gap-1">
+        <ArrowRightLeft size={12} />
+        <span>
+          Geen eigen rol op voorraad — leverbaar via uitwisselbare kwaliteit{' '}
+          <span className="font-mono font-medium text-emerald-800">
+            {data.partner_kwaliteit}-{data.partner_kleur}
+          </span>
+          {' '}({data.partner_rollen} rol{data.partner_rollen !== 1 ? 'len' : ''}, {data.partner_m2} m²) — wordt omgestickerd.
+        </span>
+      </div>
+    )
+  }
 
   if (data.status === 'geen_inkoop') {
     return (

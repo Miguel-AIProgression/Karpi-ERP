@@ -47,6 +47,7 @@ const { fetchMaatwerkLevertijdHint } = await import('../op-maat')
 function makePositie(overrides: {
   totaal_m2?: number
   eerstvolgende_verwacht_datum?: string | null
+  beste_partner?: Voorraadpositie['beste_partner']
 }): Voorraadpositie {
   return {
     kwaliteit_code: 'TAP',
@@ -59,8 +60,8 @@ function makePositie(overrides: {
       totaal_m2: overrides.totaal_m2 ?? 0,
     },
     rollen: [],
-    partners: [],
-    beste_partner: null,
+    partners: overrides.beste_partner ? [overrides.beste_partner] : [],
+    beste_partner: overrides.beste_partner ?? null,
     besteld: {
       besteld_m: 0,
       besteld_m2: 0,
@@ -169,5 +170,52 @@ describe('fetchMaatwerkLevertijdHint — Voorraadpositie-Module seam (T002)', ()
     const result = await fetchMaatwerkLevertijdHint('', '15')
 
     expect(result).toEqual({ status: 'geen_inkoop' })
+  })
+
+  it('issue #37: geen eigen voorraad, wel uitwisselbare partner → voorraad_uitwisselbaar', async () => {
+    fetchVoorraadpositieMock.mockResolvedValueOnce(
+      makePositie({
+        totaal_m2: 0,
+        beste_partner: {
+          kwaliteit_code: 'TAP2',
+          kleur_code: '15',
+          rollen: 2,
+          m2: 60,
+        },
+      }),
+    )
+
+    const result = await fetchMaatwerkLevertijdHint('TAP', '15')
+
+    expect(result).toEqual({
+      status: 'voorraad_uitwisselbaar',
+      partner_kwaliteit: 'TAP2',
+      partner_kleur: '15',
+      partner_rollen: 2,
+      partner_m2: 60,
+    })
+    // Geen onnodige config-/week-calls — partner-pad gaat niet door iso_week_plus.
+    expect(maybeSingleMock).not.toHaveBeenCalled()
+    expect(rpcMock).not.toHaveBeenCalled()
+  })
+
+  it('issue #37: uitwisselbare partner heeft voorrang op besteld-hint', async () => {
+    fetchVoorraadpositieMock.mockResolvedValueOnce(
+      makePositie({
+        totaal_m2: 0,
+        eerstvolgende_verwacht_datum: '2026-06-15',
+        beste_partner: {
+          kwaliteit_code: 'TAP2',
+          kleur_code: '15',
+          rollen: 1,
+          m2: 30,
+        },
+      }),
+    )
+
+    const result = await fetchMaatwerkLevertijdHint('TAP', '15')
+
+    // Partner-voorraad is ~direct; verkiezen boven wachten op IO.
+    expect(result.status).toBe('voorraad_uitwisselbaar')
   })
 })
