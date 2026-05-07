@@ -1,19 +1,28 @@
--- Migratie 213: fix genereer_zending_colli — kolomnamen rechtgetrokken
+-- Migratie 213: fix genereer_zending_colli — kolom + type-cast rechtgetrokken
 --
 -- Symptoom op staging: bij klik "Verzendset" op pick & ship gaven achtereen-
--- volgens twee fouten op `genereer_zending_colli`:
+-- volgens vier fouten op `genereer_zending_colli`:
 --
 --   1. "column ore.kwaliteit_code does not exist (42703)"
 --      → moet `ore.maatwerk_kwaliteit_code` zijn (order_regels heeft alleen
 --        die maatwerk-variant; vaste-product kwaliteit zit op producten).
 --
 --   2. "column p.naam does not exist (42703)"
---      → producten heeft geen `naam`-kolom, wel `omschrijving` (en
---        `vervolgomschrijving`). Zie docs/database-schema.md §producten.
+--      → producten heeft geen `naam`-kolom, wel `omschrijving`.
 --
--- Beide fouten zaten ook in de repo-versie van mig 209 — die is dus zelf
--- nooit op staging getest. Deze migratie zet alleen `genereer_zending_colli`
--- recht. Geen schema-mutaties.
+--   3. "column k.naam does not exist (42703)"
+--      → kwaliteiten heeft `omschrijving`, geen `naam`.
+--
+--   4. "function compose_colli_omschrijving(... numeric, numeric ...) does
+--       not exist (42883)"
+--      → live signatuur verwacht INTEGER voor alle 4 dimensies, maar
+--        order_regels.maatwerk_lengte_cm/_breedte_cm zijn NUMERIC. Postgres
+--        cast NUMERIC niet impliciet naar INTEGER. Fix: expliciete cast in
+--        de SELECT, zodat het record-type integer is.
+--
+-- Alle vier fouten zaten in de repo-versie van mig 209. Die migratie is dus
+-- zelf nooit op staging getest. Deze migratie zet alleen
+-- `genereer_zending_colli` recht. Geen schema-mutaties.
 --
 -- Idempotent (CREATE OR REPLACE).
 
@@ -43,8 +52,10 @@ BEGIN
       zr.rol_id,
       zr.aantal,
       ore.is_maatwerk,
-      ore.maatwerk_lengte_cm,
-      ore.maatwerk_breedte_cm,
+      -- Cast naar INTEGER: live compose_colli_omschrijving verwacht INTEGER,
+      -- maar order_regels.maatwerk_lengte_cm/_breedte_cm zijn NUMERIC.
+      ore.maatwerk_lengte_cm::INTEGER  AS maatwerk_lengte_cm,
+      ore.maatwerk_breedte_cm::INTEGER AS maatwerk_breedte_cm,
       ore.maatwerk_afwerking,
       p.omschrijving      AS product_naam,
       p.lengte_cm         AS prod_lengte_cm,
@@ -93,9 +104,11 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 GRANT EXECUTE ON FUNCTION genereer_zending_colli(BIGINT) TO authenticated;
 
 COMMENT ON FUNCTION genereer_zending_colli(BIGINT) IS
-  'Mig 213: drievoudige kolom-fix tov mig 209: ore.kwaliteit_code → '
+  'Mig 213: kolom- + type-fix tov mig 209: ore.kwaliteit_code → '
   'ore.maatwerk_kwaliteit_code, p.naam → p.omschrijving, k.naam → '
-  'k.omschrijving. Functie-gedrag verder identiek: maakt zending_colli-rijen '
-  'aan voor een zending (1 colli per stuk), idempotent.';
+  'k.omschrijving, expliciete INTEGER-cast op maatwerk_lengte/breedte_cm '
+  '(NUMERIC in order_regels, INTEGER verwacht door compose_colli_omschrijving). '
+  'Functie-gedrag verder identiek: maakt zending_colli-rijen aan voor een '
+  'zending (1 colli per stuk), idempotent.';
 
 NOTIFY pgrst, 'reload schema';
