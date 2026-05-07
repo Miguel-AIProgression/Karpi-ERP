@@ -245,3 +245,40 @@ COMMENT ON FUNCTION herbereken_wacht_status IS
   'Mig 218 (ADR-0006): leest claim-state, kiest Wacht op X / Nieuw, schrijft via _apply_transitie. '
   'Eindstatussen + actieve productie/picking-statussen worden niet aangeraakt. '
   'Wordt aangeroepen door herwaardeer_order_status (mig 153) en kan ook handmatig.';
+
+-- 7. Backfill: één synthetisch event per bestaande order
+-- 'aangemaakt' op orders.orderdatum (DATE → cast naar timestamptz), plus
+-- 'pickronde_voltooid' als verzonden_at gevuld. Idempotent: NOT EXISTS-guard.
+--
+-- Noot: orders heeft geen aangemaakt_op-kolom — orderdatum is de beste
+-- proxy voor ontstaan-moment. Voor strikte audit-rapportage zijn historische
+-- timestamps benaderend; nieuwe events na mig 218 hebben created_at = now().
+INSERT INTO order_events (order_id, event_type, status_voor, status_na, created_at, metadata)
+SELECT
+  o.id,
+  'aangemaakt'::order_event_type,
+  NULL,
+  o.status,
+  COALESCE(o.orderdatum::timestamptz, now()),
+  jsonb_build_object('backfill', true)
+FROM orders o
+WHERE NOT EXISTS (
+  SELECT 1 FROM order_events oe
+  WHERE oe.order_id = o.id AND oe.event_type = 'aangemaakt'
+);
+
+INSERT INTO order_events (order_id, event_type, status_voor, status_na, created_at, metadata)
+SELECT
+  o.id,
+  'pickronde_voltooid'::order_event_type,
+  NULL,
+  'Verzonden'::order_status,
+  o.verzonden_at,
+  jsonb_build_object('backfill', true)
+FROM orders o
+WHERE o.verzonden_at IS NOT NULL
+  AND o.status = 'Verzonden'
+  AND NOT EXISTS (
+    SELECT 1 FROM order_events oe
+    WHERE oe.order_id = o.id AND oe.event_type = 'pickronde_voltooid'
+  );
