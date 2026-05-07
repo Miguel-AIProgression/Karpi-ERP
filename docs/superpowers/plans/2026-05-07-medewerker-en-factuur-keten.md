@@ -4,7 +4,7 @@
 
 **Goal:** Introduceer een Medewerker-tabel met rol-tags (vertegenwoordiger/picker), koppel pickers aan de Pickronde-RPCs, en sluit de factuur-keten zodat `voltooi_pickronde` automatisch `orders.status='Verzonden'` flipt bij de laatste open zending.
 
-**Architecture:** Twee opeenvolgende DB-migraties (214 + 215) met bijbehorende frontend-aanpassingen. Migratie 214 hernoemt `vertegenwoordigers` → `medewerkers`, voegt `rollen medewerker_rol[]` toe en maakt pickers mogelijk. Migratie 215 voegt `picker_id` toe aan `start_pickronde`/`voltooi_pickronde`/`markeer_colli_niet_gevonden` en laat `voltooi_pickronde` de factuur-keten sluiten via `orders.status='Verzonden'`. UI krijgt een nieuwe `/instellingen/medewerkers`-tab (vertegenwoordigers + pickers) en een picker-dropdown op de pick-flow.
+**Architecture:** Twee opeenvolgende DB-migraties (215 + 216) met bijbehorende frontend-aanpassingen. Migratie 215 hernoemt `vertegenwoordigers` → `medewerkers`, voegt `rollen medewerker_rol[]` toe en maakt pickers mogelijk. Migratie 216 voegt `picker_id` toe aan `start_pickronde`/`voltooi_pickronde`/`markeer_colli_niet_gevonden` en laat `voltooi_pickronde` de factuur-keten sluiten via `orders.status='Verzonden'`. UI krijgt een nieuwe `/instellingen/medewerkers`-tab (vertegenwoordigers + pickers) en een picker-dropdown op de pick-flow.
 
 **Tech Stack:** PostgreSQL 15 / Supabase, TypeScript, React 18+, TanStack Query, Vitest voor contract-tests.
 
@@ -22,8 +22,8 @@
 
 | Bestand | Verantwoordelijkheid |
 |---|---|
-| `supabase/migrations/214_medewerker_tabel.sql` | Enum `medewerker_rol`, hernoem `vertegenwoordigers` → `medewerkers`, voeg `id BIGSERIAL` + `rollen medewerker_rol[]` toe, backfill, vertegenwoordigers-view voor backwards-compat. |
-| `supabase/migrations/215_pickronde_picker_factuur_keten.sql` | Voeg `orders.verzonden_at`, `zendingen.picker_id`, `zending_colli.gepickt_door_id` toe. Update `start_pickronde`/`voltooi_pickronde`/`markeer_colli_niet_gevonden` met `p_picker_id`. Sluit factuur-keten in `voltooi_pickronde`. |
+| `supabase/migrations/215_medewerker_tabel.sql` | Enum `medewerker_rol`, hernoem `vertegenwoordigers` → `medewerkers`, voeg `id BIGSERIAL` + `rollen medewerker_rol[]` toe, backfill, vertegenwoordigers-view voor backwards-compat. |
+| `supabase/migrations/216_pickronde_picker_factuur_keten.sql` | Voeg `orders.verzonden_at`, `zendingen.picker_id`, `zending_colli.gepickt_door_id` toe. Update `start_pickronde`/`voltooi_pickronde`/`markeer_colli_niet_gevonden` met `p_picker_id`. Sluit factuur-keten in `voltooi_pickronde`. |
 
 ### Frontend — nieuw
 
@@ -58,7 +58,7 @@
 |---|---|
 | `docs/database-schema.md` | Tabel `medewerkers` + enum `medewerker_rol` + nieuwe kolommen op `orders`/`zendingen`/`zending_colli`. |
 | `docs/architectuur.md` | Verwijs naar ADR-0004 en ADR-0005 in module-overzicht. |
-| `docs/changelog.md` | Mig 214 + 215 entries. |
+| `docs/changelog.md` | Mig 215 + 216 entries. |
 
 ---
 
@@ -79,17 +79,17 @@ git checkout -b feat/medewerker-en-factuur-keten
 
 ---
 
-## Phase 1: ADR-0004 — Medewerker-tabel (migratie 214)
+## Phase 1: ADR-0004 — Medewerker-tabel (migratie 215)
 
-### Task 1.1: Migratie 214 — schrijf de SQL
+### Task 1.1: Migratie 215 — schrijf de SQL
 
 **Files:**
-- Create: `supabase/migrations/214_medewerker_tabel.sql`
+- Create: `supabase/migrations/215_medewerker_tabel.sql`
 
 - [ ] **Step 1: Schrijf de migratie**
 
 ```sql
--- Migratie 214: Medewerker als overkoepelend identity-concept
+-- Migratie 215: Medewerker als overkoepelend identity-concept
 --
 -- Achtergrond: ADR-0004. De methodiek-flow vereist dat we bij een Pickronde
 -- een Picker selecteren. We konden een aparte `pickers`-tabel maken naast
@@ -198,7 +198,7 @@ FROM medewerkers
 WHERE 'vertegenwoordiger' = ANY(rollen);
 
 COMMENT ON VIEW vertegenwoordigers IS
-  'Compat-view voor pre-mig-214 callers. Filtert medewerkers op rol '
+  'Compat-view voor pre-mig-215 callers. Filtert medewerkers op rol '
   'vertegenwoordiger. Nieuwe code: gebruik direct medewerkers + rollen-filter.';
 
 ------------------------------------------------------------------------
@@ -261,8 +261,8 @@ SELECT COUNT(*) FROM vertegenwoordigers;
 - [ ] **Step 5: Commit**
 
 ```powershell
-git add supabase/migrations/214_medewerker_tabel.sql
-git commit -m "feat(medewerker): mig 214 — vertegenwoordigers → medewerkers + rol-array (ADR-0004)"
+git add supabase/migrations/215_medewerker_tabel.sql
+git commit -m "feat(medewerker): mig 215 — vertegenwoordigers → medewerkers + rol-array (ADR-0004)"
 ```
 
 ---
@@ -284,7 +284,7 @@ Als gevonden → regenereer via `npx supabase gen types typescript --project-id 
 
 ```powershell
 git add frontend/src/lib/supabase/database.types.ts
-git commit -m "chore(types): regenerate na mig 214"
+git commit -m "chore(types): regenerate na mig 215"
 ```
 
 ---
@@ -436,7 +436,7 @@ import {
 } from '@/lib/supabase/queries/medewerkers'
 import { supabase } from '@/lib/supabase/client'
 
-describe('Medewerker rollen-array gedrag (mig 214)', () => {
+describe('Medewerker rollen-array gedrag (mig 215)', () => {
   let createdIds: number[] = []
 
   beforeEach(() => {
@@ -507,20 +507,20 @@ describe('Medewerker rollen-array gedrag (mig 214)', () => {
 })
 ```
 
-- [ ] **Step 2: Run test — verwacht: groen na mig 214 staat op staging**
+- [ ] **Step 2: Run test — verwacht: groen na mig 215 staat op staging**
 
 ```powershell
 cd frontend
 npm run test -- medewerker-rollen.contract
 ```
 
-Verwacht: 5 tests passing. Als test faalt op connectivity — controleer `frontend/.env.test` of soortgelijk. Als test faalt op view → mig 214 niet geapplyd.
+Verwacht: 5 tests passing. Als test faalt op connectivity — controleer `frontend/.env.test` of soortgelijk. Als test faalt op view → mig 215 niet geapplyd.
 
 - [ ] **Step 3: Commit**
 
 ```powershell
 git add frontend/src/modules/magazijn/__tests__/medewerker-rollen.contract.test.ts
-git commit -m "test(medewerker): contract-test rol-array gedrag (mig 214)"
+git commit -m "test(medewerker): contract-test rol-array gedrag (mig 215)"
 ```
 
 ---
@@ -908,7 +908,7 @@ git commit -m "feat(medewerker): zijbalk-link Medewerkers"
 Onder de juiste sectie (waarschijnlijk bij Klanten & Commercieel of nieuwe sectie Medewerkers):
 
 ```markdown
-### medewerkers (was: vertegenwoordigers, mig 214)
+### medewerkers (was: vertegenwoordigers, mig 215)
 
 | Kolom | Type | Beschrijving |
 |---|---|---|
@@ -925,7 +925,7 @@ Enum `medewerker_rol`: `vertegenwoordiger | picker`. View `vertegenwoordigers` i
 - [ ] **Step 2: Voeg changelog-entry toe**
 
 ```markdown
-## 2026-05-07 — mig 214 Medewerker-tabel (ADR-0004)
+## 2026-05-07 — mig 215 Medewerker-tabel (ADR-0004)
 - Hernoem `vertegenwoordigers` → `medewerkers` met `id BIGSERIAL` PK + `rollen medewerker_rol[]`
 - Enum `medewerker_rol` (`vertegenwoordiger | picker`)
 - Backfill bestaande rijen met `rollen={'vertegenwoordiger'}`
@@ -937,12 +937,12 @@ Enum `medewerker_rol`: `vertegenwoordiger | picker`. View `vertegenwoordigers` i
 
 ```powershell
 git add docs/database-schema.md docs/changelog.md
-git commit -m "docs(medewerker): database-schema + changelog mig 214"
+git commit -m "docs(medewerker): database-schema + changelog mig 215"
 ```
 
 ---
 
-## Phase 2: ADR-0005 — Pickronde-picker + factuur-keten (migratie 215)
+## Phase 2: ADR-0005 — Pickronde-picker + factuur-keten (migratie 216)
 
 ### Task 2.1: Bestaande pickronde-RPCs lezen voor referentie
 
@@ -958,19 +958,19 @@ Verifieer met name:
 - Of er een `create_zending_voor_order`-alias bestaat
 - Of het idempotentie-mechanisme via `IF NOT EXISTS` of via een sentinel-status werkt
 
-> **Belangrijk:** lees deze body's letterlijk; mig 215 is `CREATE OR REPLACE` op exact dezelfde signatuur (anders wordt het een nieuwe overload).
+> **Belangrijk:** lees deze body's letterlijk; mig 216 is `CREATE OR REPLACE` op exact dezelfde signatuur (anders wordt het een nieuwe overload).
 
 ---
 
-### Task 2.2: Migratie 215 — schema-wijzigingen + RPC-updates
+### Task 2.2: Migratie 216 — schema-wijzigingen + RPC-updates
 
 **Files:**
-- Create: `supabase/migrations/215_pickronde_picker_factuur_keten.sql`
+- Create: `supabase/migrations/216_pickronde_picker_factuur_keten.sql`
 
 - [ ] **Step 1: Schema-additions**
 
 ```sql
--- Migratie 215: Pickronde krijgt Picker, voltooi sluit factuur-keten
+-- Migratie 216: Pickronde krijgt Picker, voltooi sluit factuur-keten
 --
 -- Achtergrond: ADR-0005. voltooi_pickronde flipte alleen zending-status;
 -- orders.status='Verzonden' werd nergens gezet, dus mig-118-factuur-trigger
@@ -1234,8 +1234,8 @@ WHERE proname IN ('start_pickronde', 'voltooi_pickronde', 'markeer_colli_niet_ge
 - [ ] **Step 7: Commit**
 
 ```powershell
-git add supabase/migrations/215_pickronde_picker_factuur_keten.sql
-git commit -m "feat(pickronde): mig 215 — picker_id + factuur-keten sluitstuk (ADR-0005)"
+git add supabase/migrations/216_pickronde_picker_factuur_keten.sql
+git commit -m "feat(pickronde): mig 216 — picker_id + factuur-keten sluitstuk (ADR-0005)"
 ```
 
 ---
@@ -1252,7 +1252,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { supabase } from '@/lib/supabase/client'
 import { createPicker } from '@/lib/supabase/queries/medewerkers'
 
-describe('voltooi_pickronde — factuur-keten sluitstuk (mig 215)', () => {
+describe('voltooi_pickronde — factuur-keten sluitstuk (mig 216)', () => {
   let pickerId: number
   let testOrderId: number | null = null
 
@@ -1394,7 +1394,7 @@ cd frontend
 npm run test -- voltooi-pickronde-keten.contract
 ```
 
-Verwacht: tests groen na fixture-helpers ingevuld zijn. Verwacht falende rood vóór mig 215 staat.
+Verwacht: tests groen na fixture-helpers ingevuld zijn. Verwacht falende rood vóór mig 216 staat.
 
 - [ ] **Step 3: Commit**
 
@@ -1642,22 +1642,22 @@ git commit -m "feat(orders): toon verzonden_at + factuur-link na sluiting"
 
 **Files:**
 - Modify: `docs/database-schema.md` — kolommen + RPC-signaturen
-- Modify: `docs/changelog.md` — entry voor mig 215
+- Modify: `docs/changelog.md` — entry voor mig 216
 - Modify: `docs/data-woordenboek.md` — al voorbereid; alleen verifiëren
 
 - [ ] **Step 1: Update database-schema.md**
 
 ```markdown
-### orders (mig 215)
+### orders (mig 216)
 - + `verzonden_at TIMESTAMPTZ` — ingevuld door `voltooi_pickronde` bij sluiten van laatste zending
 
-### zendingen (mig 215)
+### zendingen (mig 216)
 - + `picker_id BIGINT REFERENCES medewerkers(id)` — picker die de Pickronde startte/voltooide
 
-### zending_colli (mig 215)
+### zending_colli (mig 216)
 - + `gepickt_door_id BIGINT REFERENCES medewerkers(id)` — picker die deze colli markeerde
 
-### RPC-signatuur-wijzigingen (mig 215)
+### RPC-signatuur-wijzigingen (mig 216)
 - `start_pickronde(p_order_id BIGINT, p_picker_id BIGINT) RETURNS BIGINT`
 - `voltooi_pickronde(p_zending_id BIGINT, p_picker_id BIGINT) RETURNS BIGINT`
 - `markeer_colli_niet_gevonden(p_zending_colli_id, p_modus, p_opmerking, p_picker_id) RETURNS VOID`
@@ -1667,7 +1667,7 @@ git commit -m "feat(orders): toon verzonden_at + factuur-link na sluiting"
 - [ ] **Step 2: Update changelog**
 
 ```markdown
-## 2026-05-07 — mig 215 Pickronde-picker + factuur-keten sluitstuk (ADR-0005)
+## 2026-05-07 — mig 216 Pickronde-picker + factuur-keten sluitstuk (ADR-0005)
 - `orders.verzonden_at`, `zendingen.picker_id`, `zending_colli.gepickt_door_id`
 - `start_pickronde`/`voltooi_pickronde`/`markeer_colli_niet_gevonden` accepteren `p_picker_id` (verplicht)
 - `voltooi_pickronde` flipt `orders.status='Verzonden'` bij laatste open zending → factuur-trigger (mig 118) vuurt
@@ -1678,7 +1678,7 @@ git commit -m "feat(orders): toon verzonden_at + factuur-link na sluiting"
 
 ```powershell
 git add docs/database-schema.md docs/changelog.md
-git commit -m "docs(pickronde): schema + changelog mig 215"
+git commit -m "docs(pickronde): schema + changelog mig 216"
 ```
 
 ---
@@ -1713,7 +1713,7 @@ Verifieer:
 - [ ] **Step 5: Documenteer test-resultaat in changelog**
 
 ```markdown
-## 2026-05-07 — smoke-test mig 214+215 op staging
+## 2026-05-07 — smoke-test mig 215+215 op staging
 - Test-order [order-nr] doorlopen: pick → voltooi → factuur. Factuur [factuur-nr] verzonden naar [email].
 ```
 
@@ -1721,7 +1721,7 @@ Verifieer:
 
 ```powershell
 git add docs/changelog.md
-git commit -m "docs: smoke-test resultaat mig 214+215"
+git commit -m "docs: smoke-test resultaat mig 215+215"
 ```
 
 ---
@@ -1754,7 +1754,7 @@ git push origin --delete feat/medewerker-en-factuur-keten
 
 ## Risico's en open punten voor de uitvoerder
 
-1. **Migratie-volgorde:** mig 214 móét vóór mig 215. Als staging out-of-order draait → eerst 214 volledig toepassen + verifiëren, dan pas 215.
+1. **Migratie-volgorde:** mig 215 móét vóór mig 216. Als staging out-of-order draait → eerst 215 volledig toepassen + verifiëren, dan pas 216.
 
 2. **`vertegenwoordigers` als view i.p.v. tabel** — bestaande callers die `INSERT INTO vertegenwoordigers` doen breken. Grep eerst:
    ```
@@ -1775,7 +1775,7 @@ git push origin --delete feat/medewerker-en-factuur-keten
 
 ## Definition of Done
 
-- [ ] Mig 214 + 215 toegepast op staging zonder errors
+- [ ] Mig 215 + 216 toegepast op staging zonder errors
 - [ ] Beide contract-tests groen
 - [ ] Smoke-test (Phase 3) doorlopen: order → factuur in één keten
 - [ ] Geen achtergebleven `vertegenwoordigers`-table-only calls (alleen via view)
