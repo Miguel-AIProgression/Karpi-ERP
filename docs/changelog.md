@@ -1,5 +1,210 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-07 — Pickronde-flow (mig 211)
+
+**Beslissing:** [ADR-0003](adr/0003-pickronde-als-deepening-van-magazijn-module.md)
+**Plan:** [docs/superpowers/plans/2026-05-07-pickronde-implementatie.md](superpowers/plans/2026-05-07-pickronde-implementatie.md)
+
+- Migratie 211: enum `pick_uitkomst` + 3 kolommen op `zending_colli`. Drie nieuwe RPC's: `start_pickronde`, `markeer_colli_niet_gevonden`, `voltooi_pickronde`.
+- `create_zending_voor_order` is nu alias voor `start_pickronde`. Zending start in status `Picken`, niet meer direct in `Klaar voor verzending`.
+- Bestaande HST-/EDI-trigger (`trg_zending_klaar_voor_verzending`) ongemoeid — vuurt nu pas op echte voltooi-moment.
+- Frontend: nieuwe `<ColliPickVinkjes>` + `<VoltooiPickrondeKnop>` op printset-pagina; nieuwe `/magazijn/pick-problemen`-werklijst voor magazijnchef.
+- Zendingen-overzicht verbergt lopende Pickrondes default (filter "Picken" laat ze zien).
+- _Waarom_: gebruiker zag zendingen op `Klaar voor verzending` voordat het tapijt fysiek van de plank was — door bundeling van "stickers printen" met "zending creëren". Pickronde scheidt deze twee momenten.
+
+## 2026-05-07 — Mig 212: `update_order_with_lines` UPSERT i.p.v. delete-and-recreate
+
+Een verzendweek (of welke header-veld ook) wijzigen op een order waar al een zending of factuur aan hangt, faalde met:
+
+```
+update or delete on table "order_regels" violates foreign key constraint
+"zending_regels_order_regel_id_fkey" on table "zending_regels"
+```
+
+Oorzaak: de RPC deed `DELETE FROM order_regels WHERE order_id = p_order_id` + volledige re-INSERT van álle regels — ook bij header-only wijzigingen. Daardoor kreeg elke "ongewijzigde" regel een nieuwe `id`, wat naast de FK-fout ook stilletjes de zending-↔ orderregel-koppeling brak.
+
+- **Mig 212** ([`212_update_order_with_lines_upsert.sql`](../supabase/migrations/212_update_order_with_lines_upsert.sql)) — RPC herschreven naar drie stappen: (1) DELETE regels die niet meer in `p_regels` staan, (2) UPDATE bestaande regels gematcht op `id`, (3) INSERT regels zonder `id`. Header-only wijzigingen voeren nu uitsluitend stap 2 als no-op-UPDATEs uit. Echte regel-verwijderingen vallen nog steeds onder de FK-policy van zending_regels/factuur_regels — dat is correct, want een regel verwijderen die al verzonden of gefactureerd is hoort gewoon te falen.
+- **Frontend ongewijzigd** — `updateOrderWithLines` in [`order-mutations.ts`](../frontend/src/lib/supabase/queries/order-mutations.ts) stuurt al `id` mee per regel, dus de RPC-aanroep is hetzelfde gebleven.
+
+## 2026-05-07 — Order-form: "Afleverdatum" + "Week" velden vervangen door één "Verzendweek"
+
+Karpi communiceert leverbeloftes als ISO-week, niet als specifieke dag. De order-form toonde echter beide: een datumveld (afleverdatum, berekend uit orderdatum + werkdagen/weken) én een afgeleid weeknummer-veld. Dat suggereerde dat de dag relevant was voor de gebruiker — wat niet zo is. Nu staat er één veld: **Verzendweek**.
+
+- **Order-form** ([`order-form.tsx`](../frontend/src/components/orders/order-form.tsx)) — Dual-veld vervangen door nieuwe `VerzendweekField`-component met HTML5 `<input type="week">` (native ISO-week-picker, correct rond jaarwisseling). Boven het veld staat altijd "Vandaag: Wk N · YYYY" zodat de orderaannemer direct kan vergelijken; onder het veld staat de gekozen week + relatief label ("deze week" / "volgende week" / "over 3 weken") + pick-week. Het orderdetail-header (verzonden orders inclusief) toont hetzelfde relatief-label achter de week.
+- **Onderliggende kolommen blijven** — `orders.afleverdatum` (DATE, vrijdag van de gekozen week) en `orders.week` (TEXT) blijven gevuld. Geen migratie nodig: alle bestaande logica (mig 153 IO-claim sync, pick & ship bucket, sortering, levertijd-berekening) werkt ongewijzigd door.
+- **Centrale helpers** ([`lib/orders/verzendweek.ts`](../frontend/src/lib/orders/verzendweek.ts)) — Twee nieuwe functies: `verzendWeekIsoString(iso)` (datum → "2026-W21" voor `<input type="week">`) en `verzendWeekStringToDatum(weekStr)` (week-string → vrijdag-ISO-datum). Ronde-reis test verifieert idempotentie. Lokale `getISOWeek` in `order-form.tsx` is teruggebracht tot een dunne wrapper rond `verzendWeekVoor` om duplicate ISO-week-aritmetiek te elimineren.
+- **Order-detailheader** ([`order-header.tsx`](../frontend/src/components/orders/order-header.tsx)) — "Afleverdatum: 21-05-2026" → "Verzendweek: Wk 21 · 2026".
+- **Orders-overzichtstabel** ([`orders-table.tsx`](../frontend/src/components/orders/orders-table.tsx)) — Kolom "Leverdatum" → "Verzendweek". Cel toont "Wk 21 · 2026" met de exacte datum als tooltip; sorteert nog steeds op `afleverdatum` (zelfde sleutel, week-volgorde is identiek aan datum-volgorde).
+- **Pick & ship**: geen wijziging nodig. `bucketVoor` (in [`magazijn/lib/buckets.ts`](../frontend/src/modules/magazijn/lib/buckets.ts)) plaatst orders met afleverdatum < maandag-over-volgende-week in `'deze_week'`. Met de nieuwe vrijdag-binnen-verzendweek-conventie betekent dat: verzendweek N → pickbaar in week N-1, exact zoals bedrijfsregel.
+
+## 2026-05-07 — Vervoerders-overzicht: "Nieuwe vervoerder"-knop + dialog
+
+Voorheen waren vervoerders alleen via SQL-migraties aan te maken (mig 170 / 207). Met de regel-evaluator (mig 208/210) heeft het zin om dit ook in-app te kunnen — handelspartners kunnen verschillen per markt en hoeven niet altijd een nieuwe migratie waard.
+
+- **Knop in [`vervoerders-overzicht.tsx`](../frontend/src/modules/logistiek/pages/vervoerders-overzicht.tsx)** — "Nieuwe vervoerder" rechtsboven, opent [`vervoerder-create-dialog.tsx`](../frontend/src/modules/logistiek/components/vervoerder-create-dialog.tsx). Na aanmaken navigeert de UI direct naar de detailpagina zodat de gebruiker API-/print-instellingen, contact en verzendregels kan invullen.
+- **Minimale create-input** — `code` (PK, genormaliseerd naar `[a-z0-9_]`), `display_naam`, `type` (api/edi/print), optionele notities. `actief` blijft FALSE (DB-default) — pas activeren ná configuratie.
+- **Query + hook** — `createVervoerder` in [`queries/vervoerders.ts`](../frontend/src/modules/logistiek/queries/vervoerders.ts), `useCreateVervoerder` in [`hooks/use-vervoerders.ts`](../frontend/src/modules/logistiek/hooks/use-vervoerders.ts). Invalideert `vervoerders'-list`, `vervoerder-stats` en de oude lichtgewicht `'vervoerders'`-key zodat dropdowns ook updaten.
+
+## 2026-05-07 — Pick & Ship-overzicht: compacte 1-regel pakbon-rij + inline vervoerder-keuze
+
+Het pick & ship-overzicht is herontworpen van expanderende kaarten naar een compacte rijenlijst — één pakbon per regel. Elke rij toont op één lijn: ordernummer + status, klantnaam, totaal-m², totaal-gewicht (kg), land + bestemming, verzendweek, vervoerder en de Verzendset-knop. Klikken klapt de regelsdetails uit (productkolom, pickbaarheid, locatie) — wat voorheen direct zichtbaar was.
+
+- **Type-uitbreiding** ([`types.ts`](../frontend/src/modules/magazijn/lib/types.ts)) — `PickShipOrder` krijgt `afl_adres`, `afl_postcode`, `afl_land` en `totaal_gewicht_kg` zodat de samenvattingsrij land + kg kan tonen zonder extra fetches.
+- **Pickbaarheid-query** ([`pickbaarheid.ts`](../frontend/src/modules/magazijn/queries/pickbaarheid.ts)) — orders-select uitgebreid naar `afl_adres, afl_postcode, afl_land`. Nieuwe helper `fetchTotaalGewichtPerOrder` somt `gewicht_kg × orderaantal` per order (excl. pseudo-regel `VERZEND`); resultaat wordt na de regel-fetch in `PickShipOrder.totaal_gewicht_kg` geschreven. Indicatief op P&S; definitief gewicht zet `create_zending_voor_order` op de zending zelf (mig 206).
+- **Compacte pick-rij** ([`order-pick-card.tsx`](../frontend/src/modules/magazijn/components/order-pick-card.tsx)) — herschreven naar 1-regel-layout. Pickbaarheid-tabel met regels staat in een inklapbaar paneel (default dicht). De rij is toetsenbord-bedienbaar (Enter/Space toggelt).
+- **Vervoerder-inline-selector** ([`vervoerder-inline-select.tsx`](../frontend/src/modules/logistiek/components/vervoerder-inline-select.tsx)) — pill-knop die per pakbon de actieve vervoerder toont (klant-config wint, anders globaal-actief) en bij klik een dropdown opent waarin de gebruiker de **klant**-vervoerder kan wijzigen. Schrijft naar `klant_vervoerder_config` (= zelfde tabel als klant-detail-tab); telt alleen voor toekomstige zendingen, bestaande zendingen blijven ongewijzigd.
+- **Contract-test** ([`magazijn-pickbaarheid.contract.test.ts`](../frontend/src/modules/magazijn/__tests__/magazijn-pickbaarheid.contract.test.ts)) — uitgebreid met `order_regels`-respons voor de gewicht-aggregaat-fetch in elk van de 4 scenario's; nieuwe assertie `expect(order.totaal_gewicht_kg).toBe(16)` in scenario 1.
+
+## 2026-05-07 — Mig 207–210: DPD + verzendregels + per-colli SSCC
+
+DPD als nieuwe vervoerder, gekozen via een regel-evaluator op zending-niveau. Stickers worden lokaal in RugFlow gerenderd op 80×150mm (Zebra ZT230 thermisch) — geen externe API-koppeling. Aanleiding: Karpi gebruikt vandaag DPD voor pakketzendingen (≤30kg) en wil de DPD-portaal-flow vervangen door directe sticker-print uit RugFlow.
+
+- **Mig 207** — `vervoerders.type` verbreed van `('api','edi')` naar `('api','edi','print')`. Print-config-velden toegevoegd: `printer_naam`, `printer_ip`, `label_breedte_mm`, `label_hoogte_mm`, `service_codes` (TEXT[]). DPD-record geseed (initieel inactief).
+- **Mig 208** — nieuwe tabel `vervoerder_selectie_regels` met JSONB-conditie. Conditie-shape V1: `land`, `kleinste_zijde_cm_min/max`, `gewicht_kg_min/max`, `debiteur_nrs`, `inkoopgroep_codes`. Geseed met 2 voorbeeld-regels: Rhenus naar DE >130cm en DPD naar DE ≤130cm. *Kleinste zijde* = `LEAST(lengte, breedte)` per orderregel; voor de zending = MAX over alle regels.
+- **Mig 209** — nieuwe tabel `zending_colli` (1 rij per fysieke colli) + GS1 SSCC-generator (`genereer_sscc`, 18 cijfers, Mod-10 check). RPC `genereer_zending_colli(zending_id)` splitst zending-regels in 1-tapijt-per-colli rijen. V1: strikt 1:1; multi-tapijt-per-colli komt later.
+- **Mig 210** — `selecteer_vervoerder_voor_zending` herschreven als regel-evaluator (eerste matchende regel wint, prio ASC). Returnt nu ook `gekozen_service_code`. `zendingen.service_code` toegevoegd. Switch-RPC `enqueue_zending_naar_vervoerder` uitgebreid met `type='print'`-tak die alleen `genereer_zending_colli` aanroept zonder externe dispatch.
+- **Frontend** — vervoerder-detail ([`vervoerder-detail.tsx`](../frontend/src/modules/logistiek/pages/vervoerder-detail.tsx)) krijgt **Verzendregels-sectie** ([`verzendregels-sectie.tsx`](../frontend/src/modules/logistiek/components/verzendregels-sectie.tsx) + dialog) en print-config-velden (printer-naam, label-formaat, service-codes). Nieuwe DPD-sticker ([`dpd-shipping-label.tsx`](../frontend/src/modules/logistiek/components/dpd-shipping-label.tsx), 80×150mm) met layout volgens DPD-portaal-template. Printset-page ([`zending-printset.tsx`](../frontend/src/modules/logistiek/pages/zending-printset.tsx)) kiest sticker-component en `@page`-formaat op basis van `vervoerders.type` en `label_*_mm`.
+- **Verzendset-knop** — losgekoppeld van "exact 1 actieve vervoerder"-aanname; checkt nu alleen of er minstens één vervoerder actief is (server-side regel-evaluator kiest de juiste).
+
+## 2026-05-07 — Pakbon + sticker filteren VERZEND ook via order_regels
+
+Vervolg op mig 206. De UI-filter op verzendkosten-regels keek alleen naar `zending_regels.artikelnr`. Bij oudere zendingen (en zendingen aangemaakt via paden waarin de snapshot leeg gebleven is) staat die NULL en zit het 'VERZEND'-label alleen op `order_regels.artikelnr` — gevolg: een lege/spook-sticker met "Verzendkosten" naast de echte tapijt-sticker.
+
+- **Nieuwe helper** [`isShippingRegel`](../frontend/src/modules/logistiek/lib/is-shipping-regel.ts) — predikaat dat zowel `zending_regels.artikelnr` als de gekoppelde `order_regels.artikelnr` toetst tegen `SHIPPING_PRODUCT_ID` ('VERZEND').
+- **Pakbon** ([`pakbon-document.tsx`](../frontend/src/modules/logistiek/components/pakbon-document.tsx)) en **stickers** ([`zending-printset.tsx`](../frontend/src/modules/logistiek/pages/zending-printset.tsx)) gebruiken nu beide deze helper.
+- **Sticker-padding fix** — `expandLabels` baseert het collo-totaal nu op `expanded.length` i.p.v. `Math.max(zending.aantal_colli, expanded.length, 1)`. Voor pre-mig-206 zendingen telde `aantal_colli` de VERZEND-regel mee; padden naar dat getal genereerde een extra fantoom-sticker.
+- **Query-uitbreiding** ([`zendingen.ts`](../frontend/src/modules/logistiek/queries/zendingen.ts)) — `ZendingPrintOrderRegel` krijgt `artikelnr`, en `fetchZendingPrintSet` selecteert dat veld mee zodat de helper z'n fallback-check kan doen.
+
+## 2026-05-07 — Pick & Ship toont Karpi-naam; pakbon + sticker tonen klanteigen + Karpi
+
+Sinds mig 200 wordt op een orderregel de **klanteigen-alias** als `omschrijving` weggeschreven (zodat factuur/EDI de naam tonen die de klant in z'n eigen administratie kent). Dat is goed voor uitgaande documenten, maar verwarrend voor het magazijn — daar werkt iedereen op Karpi's eigen artikel-administratie. Pick & Ship toont nu altijd `producten.omschrijving` (de canonische Karpi-naam); pakbon en verzendsticker tonen beide namen zodat de ontvanger 'm herkent én de retour-/magazijncheck terug kan vallen op de Karpi-bron.
+
+- **Pick & Ship-overzicht** ([`order-pick-card.tsx`](../frontend/src/modules/magazijn/components/order-pick-card.tsx) / [`pick-overview.tsx`](../frontend/src/modules/magazijn/pages/pick-overview.tsx)) — productkolom toont alleen nog Karpi-naam.
+- **Pickbaarheid-query** ([`pickbaarheid.ts`](../frontend/src/modules/magazijn/queries/pickbaarheid.ts)) — nieuwe `fetchKarpiNamenVoorArtikelen`-helper haalt `producten.omschrijving` per uniek `artikelnr` op (gebatcht in chunks van 200) en wordt als parameter aan `mapPickbaarheidRegel` doorgegeven.
+- **Transform** ([`pick-ship-transform.ts`](../frontend/src/modules/magazijn/queries/pick-ship-transform.ts)) — `mapPickbaarheidRegel(r, karpiNaam)` gebruikt de Karpi-naam als primaire bron voor het displayed-product-veld; valt terug op `omschrijving` (en daarna `kwaliteit_code + kleur_code`) als de producten-join leeg is.
+- **Pakbon** ([`pakbon-document.tsx`](../frontend/src/modules/logistiek/components/pakbon-document.tsx)) — artikelregel toont eerst de klanteigen-naam en daaronder, alleen als die afwijkt, een grijze `Karpi: <naam>`-regel.
+- **Verzendsticker** ([`shipping-label.tsx`](../frontend/src/modules/logistiek/components/shipping-label.tsx)) — zelfde patroon: klantnaam (groot) + grijze `Karpi: <naam>`-subregel als ze verschillen.
+- **Tests** — bestaande contract-test in [`magazijn-pickbaarheid.contract.test.ts`](../frontend/src/modules/magazijn/__tests__/magazijn-pickbaarheid.contract.test.ts) uitgebreid met `producten`-fixture en assertie dat `regel.product` de Karpi-naam is, niet de orderregel-omschrijving.
+
+## 2026-05-07 — Mig 206: VERZEND-regel buiten zending houden
+
+Vervolg op de pakbon-herwerking. De auto-toegevoegde verzendkosten-regel (`artikelnr='VERZEND'`, zie [`shipping.ts`](../frontend/src/lib/constants/shipping.ts)) is een factuurregel — niet een fysiek collo. Vóór deze migratie kwam die regel mee in `zending_regels`, in `aantal_colli`, en in elke pakbon/sticker-render.
+
+- **Migration 206** ([`206_zending_skip_verzendkosten.sql`](../supabase/migrations/206_zending_skip_verzendkosten.sql)) — `create_zending_voor_order(BIGINT)` vult `aantal_colli`, `totaal_gewicht_kg`, en de `zending_regels`-INSERT nu met `AND COALESCE(ore.artikelnr, '') <> 'VERZEND'`. Bestaande zendingen worden niet retroactief opgeschoond. Idempotent CREATE OR REPLACE + `NOTIFY pgrst`.
+- **Pakbon-component** ([`pakbon-document.tsx`](../frontend/src/modules/logistiek/components/pakbon-document.tsx)) — defensieve UI-side filter `r.artikelnr !== SHIPPING_PRODUCT_ID` voor oude zendingen die vóór mig 206 zijn aangemaakt.
+- **Stickers/colli-expand** ([`zending-printset.tsx`](../frontend/src/modules/logistiek/pages/zending-printset.tsx)) — zelfde filter in `expandLabels` zodat er geen "verzendkosten"-sticker meer wordt geprint voor oude zendingen.
+- **Schema-doc** — kolomtoelichtingen op `zendingen.aantal_colli` en `zendingen.totaal_gewicht_kg` bijgewerkt.
+
+## 2026-05-07 — Pick & Ship: 2 filter-tabs + groeperen per verzendweek (orderdomein-seam)
+
+Pick & Ship-overzicht is gestript naar 2 tabs (`Deze week` / `Later`) en groepeert orders binnen het tabblad per ISO-verzendweek. Vuistregel: picken gebeurt altijd in de week vóór de verzendweek, dus `Deze week` toont verzendweken ≤ huidige_week + 1 (incl. achterstallig) en `Later` alles vanaf huidige_week + 2 plus orders zonder afleverdatum.
+
+**Nieuw orderdomein-seam.** [`lib/orders/verzendweek.ts`](../frontend/src/lib/orders/verzendweek.ts) is de enige plek waar `orders.afleverdatum` → verzendweek wordt vertaald. Karpi-context: een afleverdatum 06-05 betekent semantisch "verzonden in week 19", niet "geleverd op de zesde". Magazijn (pick & ship), logistiek (zendingen) en order-UI consumeren dezelfde helpers (`verzendWeekVoor`, `verzendWeekSleutel`, `verzendWeekLabel` → "Verzendweek 19", `verzendWeekKort` → "Wk 19", plus `isoWeek` / `isoMaandag`). Verandert de mapping ooit (bv. shift voor specifieke vervoerders), dan gebeurt dat hier en nergens anders.
+
+- [`BucketKey`](../frontend/src/modules/magazijn/lib/types.ts) gereduceerd van 7 naar 2 waardes (`'deze_week' | 'later'`); `PickShipOrder` krijgt `verzend_week_sleutel` (`YYYY-Www`) + `verzend_week_label` (`Verzendweek 19`) + `verzend_week_kort` (`Wk 19`) voor stabiele groepering en card-display.
+- [`buckets.ts`](../frontend/src/modules/magazijn/lib/buckets.ts) bevat nu alleen nog magazijn-specifieke `bucketVoor` (pick-bucket-vraag) + re-exports uit de seam, zodat module-consumers één import-locatie hebben.
+- [`MagazijnOverviewPage`](../frontend/src/modules/magazijn/pages/pick-overview.tsx) toont 2 tabs en rendert per actieve tab een serie `Verzendweek N`-secties (gesorteerd op verzendweek-sleutel oplopend). Stat-kaarten geüpdatet naar `Open orders` / `Te picken deze week` / `Later`. Standaard-tab is `Deze week`. Header-tekst praat over "verzendweek" i.p.v. "afleverdatum".
+- [`OrderPickCard`](../frontend/src/modules/magazijn/components/order-pick-card.tsx) toont rechtsboven een truck-icoon + "Wk 19" i.p.v. de losse afleverdatum, met tooltip dat dit de verzendweek is (= week ván de afleverdatum).
+- [`fetchPickShipStats`](../frontend/src/modules/magazijn/queries/pickbaarheid.ts) `per_bucket` heeft nu alleen `deze_week` + `later`.
+- Tests: 5 in [`buckets.test.ts`](../frontend/src/modules/magazijn/lib/__tests__/buckets.test.ts) (incl. jaarwisseling-edgecase) + 11 in nieuwe [`verzendweek.test.ts`](../frontend/src/lib/orders/__tests__/verzendweek.test.ts) (ISO-week, label-formats, zero-padding, null-fallback).
+
+## 2026-05-06 — Pakbon-layout omgezet naar legacy Karpi-factuurstructuur
+
+De pakbon vanuit Pick & Ship volgt nu de opbouw van de oude Karpi-factuur (zoals gebruikt op MITS-systeem) in plaats van de generieke "PAKBON"-template. Magazijn en chauffeurs zijn deze layout gewend; verschil met factuur is dat prijzen weg blijven en dat het document "Pakbonnummer/Pakbondatum" toont.
+
+- [`PakbonDocument`](../frontend/src/modules/logistiek/components/pakbon-document.tsx) compleet herschreven. Nieuwe opbouw: KARPI-headertekst links, bedrijfsadres (uit `app_config.bedrijfsgegevens`) rechts; klantblok met factuuradres + meta-rij (`Uw debiteurnummer`, `Pakbonnummer`, `Pakbondatum`, `Vertegenwoordiger`); gestreepte tabel-divider met kolommen `Artikel | Aantal | Eh | Omschrijving`; per-order sub-blok met `Ons Ordernummer / Uw Referentie (incl. WK) / Afleveradres`; totaalregel `Totaal m2 + Totaal gewicht (kg)` direct onder de regels; dubbele streepjes-footer met KvK / BTW / IBAN / BIC + betalingscondities-tekst.
+- m²-berekening in [`oppervlakM2PerStuk`](../frontend/src/modules/logistiek/components/pakbon-document.tsx) is vorm-aware: maatwerk gebruikt `maatwerk_oppervlak_m2` (of l×b/10000 fallback), vaste producten vallen terug op `producten.lengte_cm/breedte_cm/vorm` (rond → π·r², rest → l·b). Past bij de gewicht-resolver van mig 185/188.
+- [`fetchZendingPrintSet`](../frontend/src/modules/logistiek/queries/zendingen.ts) selecteert nu naast de bestaande velden ook `orders.fact_*`, `orders.afl_naam_2`, `orders.week`, `orders.afhalen`, `orders.vertegenw_code` + `vertegenwoordigers(code, naam)`-join, en op `producten` `lengte_cm / breedte_cm / vorm` plus `order_regels.maatwerk_oppervlak_m2` voor de m²-berekening.
+- Bedrijfsgegevens worden via `useQuery({queryKey: ['bedrijfsgegevens']})` met 5-min staleTime in het pakbon-component opgehaald — geen extra prop-drilling vanuit `ZendingPrintSetPage` nodig.
+
+## 2026-05-06 — Mig 205: afhalen door pick & ship + zending-flow respecteren
+
+Vervolg op mig 204 — de afhalen-vlag wordt nu ook erkend in de logistieke keten.
+
+- **Migration 205** ([`205_afhalen_skip_vervoerder.sql`](../supabase/migrations/205_afhalen_skip_vervoerder.sql)) — `enqueue_zending_naar_vervoerder(BIGINT)` leest nu `orders.afhalen` mee in de eerste JOIN en returnt direct `'afhalen_geen_vervoerder'` zodra de vlag aan staat. Geen HST-transportorder, geen verzendstickers. De zending-rij blijft staan voor pakbon en de overgang naar `Verzonden`.
+- **Pick & Ship card** ([`order-pick-card.tsx`](../frontend/src/modules/magazijn/components/order-pick-card.tsx)) — afhaal-orders tonen een amber `Afhalen`-tag i.p.v. de `<VervoerderTag>`. `PickShipOrder` (en de onderliggende `OrderHeaderRij`) krijgen het veld `afhalen: boolean`; [`fetchPickShipOrders`](../frontend/src/modules/magazijn/queries/pickbaarheid.ts) selecteert het mee.
+- **Verzendset-knop** ([`verzendset-button.tsx`](../frontend/src/modules/logistiek/components/verzendset-button.tsx)) — voor afhaal-orders is een actieve vervoerder geen vereiste meer (de RPC dispatched toch niet). Knop-label wordt **"Afhaalset"** met `PackageCheck`-icon en tooltip "Maak afhaal-zending + pakbon (geen verzendstickers)".
+- **Zending-aanmaken-knop** ([`zending-aanmaken-knop.tsx`](../frontend/src/components/orders/zending-aanmaken-knop.tsx)) — zelfde patroon op de order-detail "Klaar voor verzending"-knop: vervoerder-check overgeslagen bij afhalen, label wordt **"Afhaal-zending aanmaken"**. [`OrderDetailPage`](../frontend/src/pages/orders/order-detail.tsx) geeft `order.afhalen` door.
+
+## 2026-05-06 — Mig 204: order afhalen-vlag + handmatig afleveradres in order-form
+
+Twee uitbreidingen op de order-module die buiten de standaard verzend-flow vallen.
+
+- **Afhalen-vlag** ([`204_orders_afhalen.sql`](../supabase/migrations/204_orders_afhalen.sql)) — `orders.afhalen BOOLEAN NOT NULL DEFAULT false`. RPC's `create_order_with_lines` en `update_order_with_lines` lezen nu `p_order/p_header->>'afhalen'` (update muteert alleen als de key in de payload staat, om bestaande callers ongemoeid te laten). `NOTIFY pgrst, 'reload schema'` aan het einde.
+- **Checkbox in [`OrderForm`](../frontend/src/components/orders/order-form.tsx)** — "Klant haalt zelf af — verzendkosten vervallen". Toggle roept `handleAfhalenToggle` aan die `applyShippingLogic` re-runt met `afhalenActief=true` zodat de VERZEND-regel onmiddellijk verdwijnt; uit-zetten herstelt de auto-shipping-evaluatie (drempel/gratis_verzending/verzendkosten van debiteur). Bij actief afhalen wordt de [`AddressSelector`](../frontend/src/components/orders/address-selector.tsx) verborgen en verschijnt een amber waarschuwingsblok in [`OrderAddresses`](../frontend/src/components/orders/order-addresses.tsx).
+- **Handmatig afleveradres** in [`AddressSelector`](../frontend/src/components/orders/address-selector.tsx) — extra dropdown-optie "+ Nieuw afleveradres invullen…" opent inline een form (naam, adres, postcode, plaats, land) met optionele checkbox **"Opslaan in adresboek voor toekomstige orders"**. Bij opslaan: insert in `afleveradressen` met `adres_nr = max(bestaande)+1` zodat het nieuwe adres meteen in de dropdown verschijnt voor de huidige sessie. Voor losse dropship-orders kan de gebruiker de checkbox uit laten en wordt het adres alleen als snapshot op de order opgeslagen (zelfde gedrag als voorheen voor bestaande adressen).
+- **Order-edit + detail** — [`OrderEditPage`](../frontend/src/pages/orders/order-edit.tsx) propageert `order.afhalen` naar de form-state. [`OrderAddresses`](../frontend/src/components/orders/order-addresses.tsx) toont een amber "Afhalen"-badge bovenaan zodra de vlag aan staat.
+
+## 2026-05-06 — Producten-overzicht: afwerking-editor ook voor rol-kwaliteiten + dropdown-clipping fix
+
+Op `/producten` (kwaliteiten-gegroepeerd) bleef de afwerking-editor verborgen voor kwaliteiten zoals VELE die wel actieve rol-producten hebben (bron voor maatwerk-snijden) maar nog geen rij in `maatwerk_m2_prijzen`. Daardoor kon de gebruiker geen standaard-afwerking instellen, en bleef de bandkleur-keuze per kleur ook geblokkeerd. Daarnaast werd het dropdown-menu zelf afgekapt onderaan de tabel.
+
+- [`fetchMaatwerkKwaliteiten`](../frontend/src/lib/supabase/queries/op-maat.ts) en [`fetchMaatwerkKleurenVoorKwaliteit`](../frontend/src/lib/supabase/queries/op-maat.ts) tellen nu naast `maatwerk_m2_prijzen`-rijen ook actieve `producten` met `product_type='rol'` mee. Een rol IS de fysieke maatwerk-bron, dus afwerking + bandkleur instellen heeft daar zin, ook vóór de m²-prijs geseed is. Geen DB-wijziging — twee parallelle SELECTs, client-side union.
+- **Dropdown clipping fix** in [`AfwerkingEditor`](../frontend/src/pages/producten/kwaliteiten-grouped-view.tsx): het menu rendert nu via `createPortal` naar `document.body` met `position: fixed`-coördinaten uit `getBoundingClientRect`. De table-wrapper heeft `overflow-hidden` voor de afgeronde hoeken, waardoor het oude `position: absolute`-menu door de cel werd afgekapt zodra de rij onderaan stond. Klapt automatisch naar boven als er onder geen ruimte is, sluit bij scroll/resize zodat de positie niet stale wordt.
+
+## 2026-05-06 — Bulk-verplaatsing van klanten tussen betaalcondities
+
+In de [klanten-modal](../frontend/src/components/instellingen/betaalconditie-klanten-dialog.tsx) op `/instellingen/betaalcondities` zit nu een checkbox-kolom + select-all in de header. Zodra ≥1 klant geselecteerd is verschijnt in de footer een dropdown "Verplaats naar — {andere conditie}" + bevestig-knop. Schrijft via `bulkSetBetaalconditie` (Supabase JS `.update().in('debiteur_nr', […])`) het volledige `"{code} - {naam}"`-formaat naar `debiteuren.betaalconditie` zodat de factuur-RPC ongewijzigd blijft. Confirmation-dialog vóór de schrijfactie. Hook `useBulkSetBetaalconditie` invalidert zowel de betaalcondities-counts als alle klanten-queries zodat de aantallen direct kloppen.
+
+## 2026-05-06 — Mig 203: betaalcondities — dagen herleiden + klanten-modal
+
+Vervolg op mig 202: na de eerste seed bleven sommige condities zonder `dagen` staan omdat de naam-tekst andere notatie gebruikte (bv. afgekortte vormen `30 t.`, `45 d.`). Daarnaast wilde de gebruiker direct vanaf de instellingen-pagina de klantenlijst zien achter een conditie.
+
+- **Migration 203** ([`203_betaalcondities_dagen_en_klanten_rpc.sql`](../supabase/migrations/203_betaalcondities_dagen_en_klanten_rpc.sql)) — UPDATE die `dagen` herleidt voor rijen waar het NULL is, met een cascading regex: volledig woord (`dagen|tage|days|tag|day`) → afgekort met punt (`t\.`/`d\.`) → afgekort zonder punt → leading number-fallback. Eerste match wint per rij. Niet-matchende naam-waarden komen als NOTICE in de migratie-output zodat de gebruiker ze handmatig kan invullen via de UI.
+- **RPC `klanten_voor_betaalconditie(code)`** — `STABLE / SECURITY INVOKER`, geeft `(debiteur_nr, naam, plaats, status, betaalconditie)` terug voor alle debiteuren wier `betaalconditie`-veld het format `"{code} - ..."` heeft. Match-logica gespiegeld aan view `betaalcondities_met_aantal_klanten`. `NOTIFY pgrst, 'reload schema'` aan het einde.
+- **Modal "Klanten met deze betaalconditie"** — [`BetaalconditieKlantenDialog`](../frontend/src/components/instellingen/betaalconditie-klanten-dialog.tsx). Op [`/instellingen/betaalcondities`](../frontend/src/pages/instellingen/betaalcondities.tsx) is het aantal-klanten-cijfer nu een terracotta-knop (alleen actief bij > 0). Klik opent de modal met een klikbare lijst (Nr / Naam / Plaats / Status); op klant-naam klikken navigeert naar `/klanten/:nr` en sluit de modal. Hook `useKlantenVoorBetaalconditie(code)` leest via de RPC.
+
+## 2026-05-06 — Mig 202: betaalcondities-referentielijst + dropdown + instellingen-pagina + UI-uitbreidingen
+
+Vervolg op de klant-bewerk-modal: betaalconditie was vrije TEXT, nu beheerbaar. Plus inkoopgroep zichtbaar in de header en delete voor geërfde klanteigen-namen.
+
+- **Migration 202** ([`202_betaalcondities.sql`](../supabase/migrations/202_betaalcondities.sql)) — nieuwe tabel `betaalcondities (code PK, naam, dagen, omschrijving, actief)` met _all RLS-policy en `trg_set_updated_at`-trigger. Seed extraheert unieke waarden uit `debiteuren.betaalconditie` (formaat `{code} - {naam}`) en parseert `dagen` met regex `\b\d+\s*(dagen|tage|days|tag|day)\b` (case-insensitive, dus ook Duits/Engels). View `betaalcondities_met_aantal_klanten` voor het gebruiks-aantal in het overzicht. `NOTIFY pgrst, 'reload schema'` aan het einde. Idempotent.
+- **Instellingen-pagina** [`/instellingen/betaalcondities`](../frontend/src/pages/instellingen/betaalcondities.tsx) — CRUD inclusief actief-toggle, "aantal klanten"-kolom, en delete-bescherming (kan niet als nog gebruikt). Sidebar-item "Betaalcondities" met `Receipt`-icon. [`BetaalconditieFormDialog`](../frontend/src/components/instellingen/betaalconditie-form-dialog.tsx) volgt patroon van afwerking-form.
+- **Dropdown in [`KlantEditDialog`](../frontend/src/components/klanten/klant-edit-dialog.tsx)** — text-input vervangen door select met actieve betaalcondities (via `useActieveBetaalcondities`). Bij submit wordt de gekozen code + naam terug-geschreven naar `debiteuren.betaalconditie` als `"{code} - {naam}"`-string, zodat de bestaande factuur-RPC (regex-parse op `^\d+`) ongewijzigd blijft werken. Orphan-handling: een huidige conditie die niet in de actieve lijst staat blijft als optie zichtbaar (gemarkeerd "(niet in lijst)") zodat data niet verloren gaat.
+- **Inkoopgroep zichtbaar in header-card** — [`klant-detail.tsx`](../frontend/src/pages/klanten/klant-detail.tsx) splitst de info-grid in 2 rijen: NAW (4 kolommen) en commercieel (5 kolommen) met Prijslijst — Inkoopgroep — Korting — Betaalconditie — Omzet YTD. Inkoopgroep is een terracotta-link naar `/inkoopgroepen/:code`.
+- **Delete op geërfde klanteigen-namen** — voorheen was de Trash-knop verborgen voor inkoopgroep-rijen, dus de gebruiker kon op de klant-tab geen enkele alias verwijderen als alle rijen geërfd waren. [`fetchKlanteigenVoorKlant`](../frontend/src/lib/supabase/queries/klanteigen-namen.ts) geeft nu `inkoopgroep_row_id` mee voor geërfde rijen; [`KlanteigenNamenTab`](../frontend/src/components/klanten/klanteigen-namen-tab.tsx) toont de Trash-knop ook op die rijen, met een sterk geformuleerde confirmation dat verwijderen de alias voor álle klanten in de inkoopgroep weghaalt + suggestie om in plaats daarvan "Wijzig" te gebruiken voor een klant-specifieke override.
+
+## 2026-05-06 — Mig 200: klanteigen namen op inkoopgroep-niveau + TKA013-import
+
+Lange tijd ontbrekende koppeling: de oude TKA013-export uit Karpi bevat **klant- én inkoopgroep-eigen kwaliteit-aliassen** (BEAC = "BREDA" voor klant 100004, BEAC = "ROYAL IBIZA" voor INKC04 etc.), maar de inkoopgroep-niveau rijen werden nooit ingeladen — `klanteigen_namen` had alleen `debiteur_nr` als eigenaar. Filialen onder een inkoopgroep moesten elke alias afzonderlijk overnemen, wat in de praktijk niet gebeurd is.
+
+- **Migration 200** ([`200_klanteigen_namen_inkoopgroep.sql`](../supabase/migrations/200_klanteigen_namen_inkoopgroep.sql)) — voegt `inkoopgroep_code TEXT REFERENCES inkoopgroepen(code) ON DELETE CASCADE` + `bron`/`created_at`/`updated_at` toe. Maakt `debiteur_nr` nullable en handhaaft via CHECK `klanteigen_namen_debiteur_xor_inkoopgroep` dat precies één van beide niveaus gevuld is. Voegt partial UK `klanteigen_namen_groep_kwal_kleur_uk` toe op `(inkoopgroep_code, kwaliteit_code, COALESCE(kleur_code, ''))`.
+- **RPC `resolve_klanteigen_naam(debiteur, kwaliteit, kleur)`** — uitgebreid met inkoopgroep-fallback. Volgorde: klant+kleur > klant+NULL kleur > inkoopgroep+kleur > inkoopgroep+NULL kleur > NULL. Inkoopgroep-tak joint via `debiteuren.inkoopgroep_code`.
+- **RPC `resolve_klanteigen_namen_voor_debiteur(debiteur)`** — batch-variant die per kwaliteit/kleur óf de klant-rij óf de geërfde inkoopgroep-rij retourneert (klant heeft voorrang). Gebruikt door de orders-laag om in één round-trip de map te bouwen voor de regel-weergave.
+- **RPC `upsert_klanteigen_naam(...)`** — server-side upsert die de XOR + NULL-kleur-matching afhandelt; supabase-js `.upsert()` kan niet richten op een functional unique index, dus dit is de schoonste UI-route.
+- **Excel-import** ([`import/import_klanteigen_namen.py`](../import/import_klanteigen_namen.py)) — leest `TKA013_Overzicht_*.xls`, splitst op debiteur-nr (numeriek) vs INKC-code (`INKC02` ..). Strategie: **delete-by-bron + insert** (idempotent herlaadbaar) in plaats van upsert, omdat PostgREST `.upsert()` niet richt op de functional partial unique indexen `COALESCE(kleur_code, '')`. Skipt + logt onbekende debiteuren / inkoopgroepen / kwaliteiten naar `import/logs/`. Bron-tag `TKA013-2026-03-19`.
+- **Frontend queries + hooks** — nieuwe module [`klanteigen-namen.ts`](../frontend/src/lib/supabase/queries/klanteigen-namen.ts) + [`use-klanteigen-namen.ts`](../frontend/src/hooks/use-klanteigen-namen.ts) met `fetchKlanteigenVoorKlant` (klant + overerving), `fetchKlanteigenVoorInkoopgroep`, `upsertKlanteigenNaam` (via RPC), `updateKlanteigenNaam` (op id), `deleteKlanteigenNaam`.
+- **Klant-tab** ([`klanteigen-namen-tab.tsx`](../frontend/src/components/klanten/klanteigen-namen-tab.tsx)) — toont nu klant-eigen rijen én geërfde inkoopgroep-rijen in één tabel, met kolom **Bron** (groene `klant`-badge of amber `groep · INKC02`). Geërfde rijen krijgen alleen "overschrijven"-knop (creëert klant-specifieke override). Edit/delete blijven gedrag voor klant-rijen.
+- **Inkoopgroep-detail** ([`inkoopgroep-detail.tsx`](../frontend/src/pages/inkoopgroepen/inkoopgroep-detail.tsx)) — krijgt tab-systeem met "Leden" en nieuwe **Eigen benamingen**-tab ([`inkoopgroep-eigen-namen-tab.tsx`](../frontend/src/components/inkoopgroepen/inkoopgroep-eigen-namen-tab.tsx)). Wijzigingen werken meteen door op alle gekoppelde leden via overerving.
+- **Order-pre-fill** ([`order-line-editor.tsx`](../frontend/src/components/orders/order-line-editor.tsx)) — `omschrijving` op nieuwe regel wordt nu gevuld met `klant_eigen_naam` (van klant- of inkoopgroep-niveau) als die bestaat; anders generieke `producten.omschrijving`. Pakt PDF/factuur/orderbevestiging direct mee.
+- **Orders-laag** ([`orders.ts`](../frontend/src/lib/supabase/queries/orders.ts)) — batch-fetch via `resolve_klanteigen_namen_voor_debiteur`-RPC i.p.v. directe SELECT, zodat overerving automatisch in de regel-display verschijnt.
+- **EDI uitgaand** — geen wijziging nodig: het Karpi-fixed-width-format ([`karpi-fixed-width.ts`](../supabase/functions/_shared/transus-formats/karpi-fixed-width.ts)) heeft geen omschrijving-veld op regel-niveau (alleen GTIN/artikelcode/aantal). Transus mapt zelf naar EDIFACT en gebruikt productinformatie op basis van GTIN; klant-eigen-namen lopen dus niet via deze keten.
+
+## 2026-05-06 — Mig 201: herstel `verzendkosten` + `verzend_drempel` op debiteuren
+
+Tijdens het bewerken van de klant-detail bleek dat opslaan van verzendkosten en drempel-bedrag faalde met PostgREST `PGRST204 — Could not find the 'verzendkosten' column of 'debiteuren' in the schema cache`. Root-cause: de oorspronkelijke migratie 032 (uit april 2026) is uit de repo verwijderd maar **nooit op deze database toegepast**, terwijl frontend ([`klant-detail.tsx`](../frontend/src/pages/klanten/klant-detail.tsx)) en order-flow ([`order-mutations.ts`](../frontend/src/lib/supabase/queries/order-mutations.ts) `fetchClientCommercialData`) er wel naar verwezen.
+
+- **Migration 201** ([`201_verzendkosten_per_klant.sql`](../supabase/migrations/201_verzendkosten_per_klant.sql)) — voegt idempotent `verzendkosten NUMERIC(6,2) DEFAULT 35.00` en `verzend_drempel NUMERIC(8,2) DEFAULT 500.00` toe via `ADD COLUMN IF NOT EXISTS`. Bestaande rijen krijgen automatisch de defaults via PostgreSQL's `ADD COLUMN ... DEFAULT`. Sluit af met `NOTIFY pgrst, 'reload schema'` zodat de Supabase REST-laag de nieuwe kolommen direct serveert (anders blijft PGRST204 nog ~10 min hangen). Veilig herhaalbaar.
+- **Aanleiding:** [memory `reference_karpi_legacy_migraties`](../C:/Users/migue/.claude/projects/c--Users-migue-Documents-Karpi-ERP/memory/reference_karpi_legacy_migraties.md) — meerdere migraties zijn historisch uit de repo verdwenen via squashes; deze is er één van die niet op de live-DB hersteld was.
+
+## 2026-05-06 — Klant-detail: error-feedback op inline mutations + email-factuur bewerkbaar + bewerk-modal
+
+Op de klant-detail pagina faalden inline-edits zoals verzendkosten en drempel gratis verzending stilzwijgend — als een update niet werkte (bv. door RLS, kolomprobleem, netwerk) bleef het edit-formulier hangen zonder feedback. Mutations hadden geen `onError`-handler. Daarnaast: de header-velden (naam, adres, telefoon, email, BTW, korting, betaalconditie) waren niet bewerkbaar.
+
+- **Robuuste error-feedback** — alle inline-mutations in [`klant-detail.tsx`](../frontend/src/pages/klanten/klant-detail.tsx) en [`klant-facturering-tab.tsx`](../frontend/src/components/klanten/klant-facturering-tab.tsx) krijgen een `onError` die niet alleen `Error`-instances afvangt, maar ook plain objects met een `.message`/`.details`/`.hint`/`.code`-shape (zoals Supabase's `PostgrestError`). De volle error wordt naar console gelogd. Voorkomt "onbekende fout"-alerts waar de echte oorzaak onder zat.
+- **E-mailadres factuur bewerkbaar** — [`KlantFactureringTab`](../frontend/src/components/klanten/klant-facturering-tab.tsx) krijgt een inline "Wijzig" naast `email_factuur` met email-input + opslaan/annuleren. Lege waarde slaat als `NULL` op. Hint onder het veld wijst naar de `factuur-verzenden` edge function — die ondersteunt momenteel één ontvanger per klant.
+- **Klant-bewerk-modal** — nieuwe component [`KlantEditDialog`](../frontend/src/components/klanten/klant-edit-dialog.tsx) gekoppeld aan een potlood-knop rechtsboven de header-card. Bewerkt in één formulier: `naam`, `status`, `adres`, `postcode`, `plaats`, `land`, `telefoon`, `email_factuur`, `btw_nummer`, `gln_bedrijf`, `korting_pct`, `betaalconditie`. Eén UPDATE-roundtrip; lege strings worden als `NULL` opgeslagen. Specialistische velden (prijslijst, vertegenwoordiger, inkoopgroep, factuuradres, verzending/leveringen) blijven bij hun eigen knoppen — de modal verwijst daarnaar in een footer-hint.
+
+## 2026-05-06 — Klanteigen namen beheerbaar + per-kleur verfijning — mig 199
+
+Op de klant-detailpagina kon je tot nu toe alleen kijken naar `klanteigen_namen` — niet wijzigen. Nu volledige CRUD plus een nieuwe dimensie voor kleur-specifieke naamgeving.
+
+- **Migration 199** ([`199_klanteigen_namen_kleur_code.sql`](../supabase/migrations/199_klanteigen_namen_kleur_code.sql)) — voegt kolom `kleur_code TEXT` toe (nullable). Vervangt de oude `(debiteur_nr, kwaliteit_code)`-UK door een functional partial unique index `(debiteur_nr, kwaliteit_code, COALESCE(kleur_code, ''))` zodat NULL-kleur als waarde meetelt voor uniqueness. Defensieve DO-blocks zorgen dat de migratie ook werkt als mig 200 (inkoopgroep) nog niet is toegepast — inkoopgroep-partial-index en de uitgebreide RPC-versie worden alleen aangemaakt als de kolom `inkoopgroep_code` al bestaat.
+- **`resolve_klanteigen_naam(debiteur_nr, kwaliteit, kleur)`** — nu kleur-bewust. Volgorde: 1) klant + specifieke kleur, 2) klant + NULL kleur, 3) inkoopgroep + specifieke kleur, 4) inkoopgroep + NULL kleur, 5) NULL. Backwards-compatible: bestaande callers die zonder `p_kleur_code` aanroepen krijgen identiek gedrag.
+- **Frontend**: [`KlanteigenNamenTab`](../frontend/src/components/klanten/klanteigen-namen-tab.tsx) volledig herzien — toevoegen-formulier met kwaliteit-autocomplete + optionele kleur-dropdown (gevuld uit actieve producten van de gekozen kwaliteit), per-rij wijzig/verwijder, zoekbalk op kwaliteit/naam/omschrijving. Hooks `useCreateKlanteigenNaam` / `useUpdateKlanteigenNaam` / `useDeleteKlanteigenNaam` / `useKleurenVoorKwaliteit` in [`use-klanten.ts`](../frontend/src/hooks/use-klanten.ts).
+- **Order-detail klant_eigen_naam**: [`fetchOrderRegels`](../frontend/src/lib/supabase/queries/orders.ts) selecteert nu ook `producten.kleur_code` en bouwt de map op `${kwaliteit}_${kleur ?? ''}`. Specifieke (kwaliteit, kleur)-match wint per regel van de NULL-kleur fallback.
+- **Order-form**: [`fetchKlanteigenNaam`](../frontend/src/lib/supabase/queries/order-mutations.ts) accepteert nu een derde parameter `kleurCode` en geeft die door aan de RPC. `SelectedArticle` heeft een veld `kleur_code` erbij; `article-selector` en `kwaliteit-first-selector` vullen het. Bij omsticker-flow erft `fysiekArticle` de kleur via spread (kwaliteit verandert, kleur blijft gelijk).
+
 ## 2026-05-06 — Fix: RLS-policies op vertegenwoordiger_werkdagen — mig 196
 
 Toggle in de werkdagen-tab deed niets omdat mig 195 de tabel aanmaakte zonder RLS-policies. Op dit project staat RLS by default aan, dus elke INSERT/UPDATE/DELETE werd silent geweigerd. Mig 196 voegt de standaard `_all`-policy voor `authenticated` toe (`USING true / WITH CHECK true`) — zelfde patroon als `vervoerders` (mig 170) en `zendingen` (mig 169). Daarnaast: "Code: X" weggehaald uit de verteg-detail header — niet inhoudelijk relevant voor een gebruiker.
