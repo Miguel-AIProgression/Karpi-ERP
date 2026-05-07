@@ -7,10 +7,14 @@ export interface MarkeerNietGevondenArgs {
   colliId: number
   modus: NietGevondenModus
   opmerking?: string | null
+  pickerId: number
 }
 
-export async function startPickronde(orderId: number): Promise<number> {
-  const { data, error } = await supabase.rpc('start_pickronde', { p_order_id: orderId })
+export async function startPickronde(orderId: number, pickerId: number): Promise<number> {
+  const { data, error } = await supabase.rpc('start_pickronde', {
+    p_order_id: orderId,
+    p_picker_id: pickerId,
+  })
   if (error) throw toError(error, 'Pickronde starten mislukt')
   return Number(data)
 }
@@ -22,13 +26,15 @@ export async function markeerColliNietGevonden(
     p_zending_colli_id: args.colliId,
     p_modus: args.modus,
     p_opmerking: args.opmerking ?? null,
+    p_picker_id: args.pickerId,
   })
   if (error) throw toError(error, 'Markeren niet-gevonden mislukt')
 }
 
-export async function voltooiPickronde(zendingId: number): Promise<number> {
+export async function voltooiPickronde(zendingId: number, pickerId: number): Promise<number> {
   const { data, error } = await supabase.rpc('voltooi_pickronde', {
     p_zending_id: zendingId,
+    p_picker_id: pickerId,
   })
   if (error) throw toError(error, 'Pickronde voltooien mislukt')
   return Number(data)

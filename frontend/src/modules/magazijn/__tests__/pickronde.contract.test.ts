@@ -30,33 +30,48 @@ beforeEach(() => {
 })
 
 describe('startPickronde', () => {
-  it('roept RPC start_pickronde aan met p_order_id en returnt het zending-id', async () => {
+  it('roept RPC start_pickronde aan met p_order_id + p_picker_id en returnt zending-id', async () => {
     nextRpcResponse = { data: 42, error: null }
-    const id = await startPickronde(123)
-    expect(rpcCalls).toEqual([{ fn: 'start_pickronde', args: { p_order_id: 123 } }])
+    const id = await startPickronde(123, 7)
+    expect(rpcCalls).toEqual([
+      { fn: 'start_pickronde', args: { p_order_id: 123, p_picker_id: 7 } },
+    ])
     expect(id).toBe(42)
   })
 
   it('gooit fout met message van Supabase als RPC faalt', async () => {
     nextRpcResponse = { data: null, error: { message: 'Order bestaat niet' } }
-    await expect(startPickronde(999)).rejects.toThrow('Order bestaat niet')
+    await expect(startPickronde(999, 7)).rejects.toThrow('Order bestaat niet')
+  })
+
+  it('mig 217: propageert picker-validatie-fout uit DB (geen actieve picker)', async () => {
+    nextRpcResponse = {
+      data: null,
+      error: { message: 'Medewerker 99 is geen actieve picker', code: '22023' },
+    }
+    await expect(startPickronde(1, 99)).rejects.toThrow(/geen actieve picker/)
   })
 })
 
 describe('markeerColliNietGevonden', () => {
-  it('blokkeer-modus zonder opmerking', async () => {
-    await markeerColliNietGevonden({ colliId: 7, modus: 'blokkeer' })
+  it('blokkeer-modus zonder opmerking, met pickerId', async () => {
+    await markeerColliNietGevonden({ colliId: 7, modus: 'blokkeer', pickerId: 3 })
     expect(rpcCalls).toEqual([{
       fn: 'markeer_colli_niet_gevonden',
-      args: { p_zending_colli_id: 7, p_modus: 'blokkeer', p_opmerking: null },
+      args: { p_zending_colli_id: 7, p_modus: 'blokkeer', p_opmerking: null, p_picker_id: 3 },
     }])
   })
 
-  it('splits-modus met opmerking', async () => {
-    await markeerColliNietGevonden({ colliId: 8, modus: 'splits', opmerking: 'rol kwijt' })
+  it('splits-modus met opmerking en pickerId', async () => {
+    await markeerColliNietGevonden({
+      colliId: 8,
+      modus: 'splits',
+      opmerking: 'rol kwijt',
+      pickerId: 5,
+    })
     expect(rpcCalls).toEqual([{
       fn: 'markeer_colli_niet_gevonden',
-      args: { p_zending_colli_id: 8, p_modus: 'splits', p_opmerking: 'rol kwijt' },
+      args: { p_zending_colli_id: 8, p_modus: 'splits', p_opmerking: 'rol kwijt', p_picker_id: 5 },
     }])
   })
 
@@ -66,16 +81,18 @@ describe('markeerColliNietGevonden', () => {
       error: { message: "Splitsen vereist order.lever_modus='deelleveringen'" },
     }
     await expect(
-      markeerColliNietGevonden({ colliId: 9, modus: 'splits' })
+      markeerColliNietGevonden({ colliId: 9, modus: 'splits', pickerId: 1 })
     ).rejects.toThrow(/deelleveringen/)
   })
 })
 
 describe('voltooiPickronde', () => {
-  it('roept RPC voltooi_pickronde aan met p_zending_id', async () => {
+  it('roept RPC voltooi_pickronde aan met p_zending_id + p_picker_id', async () => {
     nextRpcResponse = { data: 42, error: null }
-    const id = await voltooiPickronde(42)
-    expect(rpcCalls).toEqual([{ fn: 'voltooi_pickronde', args: { p_zending_id: 42 } }])
+    const id = await voltooiPickronde(42, 3)
+    expect(rpcCalls).toEqual([
+      { fn: 'voltooi_pickronde', args: { p_zending_id: 42, p_picker_id: 3 } },
+    ])
     expect(id).toBe(42)
   })
 
@@ -84,6 +101,6 @@ describe('voltooiPickronde', () => {
       data: null,
       error: { message: 'Pickronde heeft 2 openstaand(e) pick-probleem(en)', code: '23001' },
     }
-    await expect(voltooiPickronde(42)).rejects.toThrow(/openstaand/)
+    await expect(voltooiPickronde(42, 3)).rejects.toThrow(/openstaand/)
   })
 })
