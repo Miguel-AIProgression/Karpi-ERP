@@ -9,11 +9,16 @@
 // produceren stickers + pakbon; afhaal-zendingen alleen een pakbon (geen
 // sticker — bulk-printset-pagina onderdrukt die regel). Filter is dus puur
 // op pickbaarheid: niet-pickbare orders kun je sowieso niet starten.
-import { useState } from 'react'
+//
+// Mig 217: één picker per bundel — alle zendingen in deze batch krijgen
+// dezelfde picker_id (= de operator die op het knopje drukt). Bij shift-
+// overgang kan de operator op /logistiek/{nr}/printset alsnog wisselen.
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Loader2, Printer } from 'lucide-react'
+import { Loader2, Printer, X } from 'lucide-react'
 import { createZendingVoorOrder } from '../queries/zendingen'
 import { useVervoerders } from '../hooks/use-vervoerders'
+import { PickerDropdown } from '@/components/orders/picker-dropdown'
 import { useQueryClient } from '@tanstack/react-query'
 import { cn } from '@/lib/utils/cn'
 import type { PickShipOrder } from '@/modules/magazijn'
@@ -22,6 +27,25 @@ interface BulkVerzendsetButtonProps {
   orders: PickShipOrder[]
   /** Optioneel: extra label-suffix, bv. "voor klant" of "voor 🇳🇱 NL". */
   context?: string
+}
+
+const LAST_PICKER_KEY = 'rugflow.last-picker-id'
+
+function loadLastPicker(): number | null {
+  try {
+    const v = localStorage.getItem(LAST_PICKER_KEY)
+    return v ? Number(v) : null
+  } catch {
+    return null
+  }
+}
+
+function saveLastPicker(id: number) {
+  try {
+    localStorage.setItem(LAST_PICKER_KEY, String(id))
+  } catch {
+    /* ignore */
+  }
 }
 
 function isPickbaar(o: PickShipOrder): boolean {
@@ -36,6 +60,20 @@ export function BulkVerzendsetButton({ orders, context }: BulkVerzendsetButtonPr
   const [bezig, setBezig] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [voortgang, setVoortgang] = useState<{ klaar: number; totaal: number } | null>(null)
+  const [showPickerPopover, setShowPickerPopover] = useState(false)
+  const [pickerId, setPickerId] = useState<number | null>(loadLastPicker())
+  const popoverRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!showPickerPopover) return
+    const handler = (e: MouseEvent) => {
+      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+        setShowPickerPopover(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showPickerPopover])
 
   const pickbaar = orders.filter(isPickbaar)
   const heeftAfhalen = pickbaar.some((o) => o.afhalen)
@@ -65,9 +103,19 @@ export function BulkVerzendsetButton({ orders, context }: BulkVerzendsetButtonPr
             ? `Bundel ${aantal} afhaal-pakbon${aantal === 1 ? '' : 'nen'}${context ? ` ${context}` : ''} in één print-job (geen stickers — orders zijn afhalen)`
             : `Bundel ${aantal} verzendset${aantal === 1 ? '' : 'ten'}${context ? ` ${context}` : ''}: stickers + pakbonnen in één print-job`
 
-  async function handleClick() {
+  function openPickerPopover() {
+    setError(null)
+    setShowPickerPopover(true)
+  }
+
+  async function handleStart() {
+    if (!pickerId) {
+      setError('Kies eerst een picker')
+      return
+    }
     setError(null)
     setBezig(true)
+    saveLastPicker(pickerId)
     setVoortgang({ klaar: 0, totaal: aantal })
     const zendingNrs: string[] = []
 
@@ -78,7 +126,7 @@ export function BulkVerzendsetButton({ orders, context }: BulkVerzendsetButtonPr
       // diagnosticeren. Stap-voor-stap is OK: typisch 2-10 zendingen.
       for (let i = 0; i < pickbaar.length; i++) {
         const order = pickbaar[i]
-        const zending = await createZendingVoorOrder(order.order_id)
+        const zending = await createZendingVoorOrder(order.order_id, pickerId)
         zendingNrs.push(zending.zending_nr)
         setVoortgang({ klaar: i + 1, totaal: aantal })
       }
@@ -86,6 +134,7 @@ export function BulkVerzendsetButton({ orders, context }: BulkVerzendsetButtonPr
       qc.invalidateQueries({ queryKey: ['logistiek', 'zendingen'] })
       qc.invalidateQueries({ queryKey: ['pick-ship'] })
 
+      setShowPickerPopover(false)
       const qs = encodeURIComponent(zendingNrs.join(','))
       navigate(`/logistiek/printset/bulk?zendingen=${qs}`)
     } catch (err) {
@@ -104,10 +153,10 @@ export function BulkVerzendsetButton({ orders, context }: BulkVerzendsetButtonPr
   }
 
   return (
-    <div className="inline-flex flex-col items-end gap-1">
+    <div className="relative inline-flex flex-col items-end gap-1">
       <button
         type="button"
-        onClick={handleClick}
+        onClick={openPickerPopover}
         disabled={disabled}
         title={tooltip}
         className={cn(
@@ -126,6 +175,46 @@ export function BulkVerzendsetButton({ orders, context }: BulkVerzendsetButtonPr
               : `Bundel printen (${aantal})`}
       </button>
       {error && <div className="max-w-72 text-right text-[11px] text-rose-600">{error}</div>}
+
+      {showPickerPopover && (
+        <div
+          ref={popoverRef}
+          className="absolute right-0 top-full z-30 mt-1 w-72 rounded-[var(--radius)] border border-slate-200 bg-white p-3 shadow-xl"
+        >
+          <div className="mb-2 flex items-center justify-between">
+            <div className="text-xs font-semibold text-slate-700">
+              Wie pickt deze {aantal === 1 ? 'order' : `${aantal} orders`}?
+            </div>
+            <button
+              onClick={() => setShowPickerPopover(false)}
+              className="text-slate-400 hover:text-slate-700"
+            >
+              <X size={14} />
+            </button>
+          </div>
+          <PickerDropdown value={pickerId} onChange={setPickerId} placeholder="Kies picker…" />
+          <p className="mt-2 text-[11px] text-slate-500">
+            Alle zendingen in deze bundel krijgen dezelfde picker. Op de printset-pagina
+            kun je per zending alsnog wisselen voor een shift-overgang.
+          </p>
+          <div className="mt-3 flex items-center justify-end gap-2">
+            <button
+              onClick={() => setShowPickerPopover(false)}
+              className="px-3 py-1.5 text-xs text-slate-600 hover:text-slate-900"
+            >
+              Annuleren
+            </button>
+            <button
+              onClick={handleStart}
+              disabled={!pickerId || bezig}
+              className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] bg-terracotta-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-terracotta-600 disabled:opacity-45"
+            >
+              {bezig && <Loader2 size={12} className="animate-spin" />}
+              Start bundel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
