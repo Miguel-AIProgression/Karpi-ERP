@@ -54,7 +54,7 @@ Doorlopende nummers per type per jaar.
 ---
 
 ### medewerkers (was: vertegenwoordigers t/m mig 215)
-Interne identity-tabel: vertegenwoordigers, pickers en toekomstige rollen op één tabel met rol-tags. Hernoemd in mig 216 (ADR-0004).
+Interne identity-tabel: vertegenwoordigers, pickers en toekomstige rollen op één tabel met rol-tags. Hernoemd in mig 216 (ADR-0004). FK-target voor `zendingen.picker_id` en `zending_colli.gepickt_door_id` sinds mig 217 (ADR-0005).
 
 Enum `medewerker_rol`: `'vertegenwoordiger' | 'picker'` (uitbreidbaar — magazijnchef, inkoper).
 
@@ -332,6 +332,7 @@ Orderheaders. Adressen zijn snapshots (niet FK naar afleveradressen).
 | heeft_unmatched_regels | BOOLEAN DEFAULT false | TRUE als ≥1 order_regel een NULL artikelnr heeft. Automatisch gesynchroniseerd door trigger op order_regels (migratie 094). |
 | lever_modus | TEXT | NULL / 'deelleveringen' / 'in_een_keer'. Per-order keuze hoe om te gaan met (deels) wachten op inkoop. Default uit `debiteuren.deelleveringen_toegestaan`, gevuld via `LeverModusDialog` bij opslaan als ≥1 regel tekort heeft. NULL voor orders zonder tekort. Migratie 144. |
 | afhalen | BOOLEAN NOT NULL DEFAULT false | TRUE = klant haalt zelf op. UI in `OrderForm` onderdrukt automatische verzendkosten-regel; logistiek/zending overslaat vervoerder-stap. Migratie 204. |
+| verzonden_at | TIMESTAMPTZ | Mig 217 (ADR-0005). Moment waarop `voltooi_pickronde` de laatste open zending sloot en `orders.status='Verzonden'` zette. Triggert factuur-queue (mig 118). NULL voor orders die nog niet verzonden zijn. |
 
 ---
 
@@ -470,6 +471,7 @@ Fysieke leveringen. Werkelijk aangemaakt sinds migratie 169 — bron-van-waarhei
 | order_id | BIGINT FK → orders | ON DELETE RESTRICT |
 | status | zending_status NOT NULL | Default 'Gepland' |
 | vervoerder_code | TEXT FK → vervoerders.code | Mig 176. Gekozen vervoerder voor deze zending, bepaald door `selecteer_vervoerder_voor_zending()` / `enqueue_zending_naar_vervoerder()` |
+| picker_id | BIGINT FK → medewerkers.id | Mig 217. Medewerker met rol picker die deze Pickronde startte/voltooide. ON DELETE SET NULL. |
 | vervoerder_selectie_uitleg | JSONB | Mig 176. Audit-uitleg van de selector (V1: enige actieve vervoerder; later voorwaarden/tarieven) |
 | verzenddatum | DATE | |
 | track_trace | TEXT | HST-tracking-nummer of EDI-equivalent — gevuld door adapter na verzending |
@@ -562,6 +564,10 @@ Eén rij per fysieke colli binnen een zending (mig 209). Bron-van-waarheid voor 
 | gewicht_kg | NUMERIC | Per-colli gewicht; afgeleid van orderregel/product, handmatig overschrijfbaar in latere UI. |
 | omschrijving_snapshot | TEXT | Sticker-tekst zoals gerenderd, bv. `MAATW. SISAL-GOLD 21 160x090 cm, KI21 Band:KI21`. Snapshot zodat re-print consistent blijft na product-rename. |
 | aantal | INTEGER NOT NULL | Default 1, CHECK ≥ 1. V1 = altijd 1. |
+| pick_uitkomst | pick_uitkomst | Mig 211. Default 'open'; bij voltooi_pickronde → 'gepickt'. Enum-waardes: open, gepickt, niet_gevonden. |
+| pick_opmerking | TEXT | Mig 211. Operator-notitie bij niet_gevonden. |
+| gepickt_at | TIMESTAMPTZ | Mig 211. Moment van voltooi_pickronde. |
+| gepickt_door_id | BIGINT FK → medewerkers.id | Mig 217. Picker die deze colli markeerde. Per-colli audit zodat shift-overgang traceerbaar blijft. ON DELETE SET NULL. |
 | created_at | TIMESTAMPTZ | Auto |
 
 **Indexen:** `idx_zending_colli_zending` (zending_id), `idx_zending_colli_orderregel` (order_regel_id).
