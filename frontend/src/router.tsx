@@ -31,6 +31,7 @@ import { KwaliteitenInstellingenPage } from '@/pages/instellingen/kwaliteiten'
 import { VormenInstellingenPage } from '@/pages/instellingen/vormen'
 import { AfwerkingenInstellingenPage } from '@/pages/instellingen/afwerkingen'
 import { BetaalconditiesInstellingenPage } from '@/pages/instellingen/betaalcondities'
+import { MedewerkersInstellingenPage } from '@/pages/instellingen/medewerkers'
 import { ConfectieOverviewPage } from '@/pages/confectie/confectie-overview'
 import { ConfectiePlanningPage } from '@/pages/confectie/confectie-planning'
 import { ScanstationPage } from '@/pages/scanstation/scanstation'
@@ -129,6 +130,7 @@ export const router = createBrowserRouter([
       { path: 'instellingen/vormen', element: <VormenInstellingenPage /> },
       { path: 'instellingen/afwerkingen', element: <AfwerkingenInstellingenPage /> },
       { path: 'instellingen/betaalcondities', element: <BetaalconditiesInstellingenPage /> },
+      { path: 'instellingen/medewerkers', element: <MedewerkersInstellingenPage /> },
     ],
   },
 ])
