@@ -137,3 +137,41 @@ COMMENT ON FUNCTION markeer_verzonden IS
   'Mig 218 (ADR-0006): zet orders.status=Verzonden + verzonden_at=now() + audit-event. '
   'Caller: voltooi_pickronde (mig 217 update) of frontend handmatig. '
   'Idempotent. Faalt op geannuleerde orders.';
+
+-- 5. Command — markeer_geannuleerd
+CREATE OR REPLACE FUNCTION markeer_geannuleerd(
+  p_order_id            BIGINT,
+  p_reden               TEXT,
+  p_actor_medewerker_id BIGINT DEFAULT NULL,
+  p_actor_auth_user_id  UUID   DEFAULT NULL
+) RETURNS VOID
+LANGUAGE plpgsql AS $$
+DECLARE
+  v_huidig order_status;
+BEGIN
+  SELECT status INTO v_huidig FROM orders WHERE id = p_order_id;
+  IF v_huidig IS NULL THEN
+    RAISE EXCEPTION 'Order % bestaat niet', p_order_id
+      USING ERRCODE = 'no_data_found';
+  END IF;
+  IF v_huidig = 'Verzonden' THEN
+    RAISE EXCEPTION 'Verzonden order % kan niet meer worden geannuleerd', p_order_id
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  PERFORM _apply_transitie(
+    p_order_id            := p_order_id,
+    p_event_type          := 'geannuleerd',
+    p_status_na           := 'Geannuleerd',
+    p_actor_medewerker_id := p_actor_medewerker_id,
+    p_actor_auth_user_id  := p_actor_auth_user_id,
+    p_reden               := p_reden
+  );
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION markeer_geannuleerd(BIGINT, TEXT, BIGINT, UUID) TO authenticated;
+
+COMMENT ON FUNCTION markeer_geannuleerd IS
+  'Mig 218 (ADR-0006): zet orders.status=Geannuleerd + audit-event. '
+  'Reden verplicht voor audit-trail. Faalt op reeds verzonden orders.';

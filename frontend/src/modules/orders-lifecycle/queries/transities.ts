@@ -15,11 +15,21 @@ export async function markeerVerzonden(input: MarkeerVerzondenInput): Promise<vo
   if (error) throw new Error(error.message)
 }
 
-// markeerGeannuleerd + herberekenWachtStatus volgen in tasks 1.4 + 1.5.
-// Stub-typing met `unknown` zodat de test-imports in 1.4/1.5 compileren
-// — de echte signaturen vervangen deze in de volgende tasks.
-export async function markeerGeannuleerd(_input: unknown): Promise<void> {
-  throw new Error('not implemented yet')
+export interface MarkeerGeannuleerdInput {
+  orderId: number
+  reden: string
+  actorMedewerkerId?: number | null
+  actorAuthUserId?: string | null
+}
+
+export async function markeerGeannuleerd(input: MarkeerGeannuleerdInput): Promise<void> {
+  const { error } = await supabase.rpc('markeer_geannuleerd', {
+    p_order_id: input.orderId,
+    p_reden: input.reden,
+    p_actor_medewerker_id: input.actorMedewerkerId ?? null,
+    p_actor_auth_user_id: input.actorAuthUserId ?? null,
+  })
+  if (error) throw new Error(error.message)
 }
 export async function herberekenWachtStatus(_input: unknown): Promise<void> {
   throw new Error('not implemented yet')

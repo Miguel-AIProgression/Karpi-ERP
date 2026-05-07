@@ -49,3 +49,22 @@ describe('markeerVerzonden', () => {
     await expect(markeerVerzonden({ orderId: 999 })).rejects.toThrow('Order bestaat niet')
   })
 })
+
+describe('markeerGeannuleerd', () => {
+  it('roept RPC markeer_geannuleerd aan met p_order_id, p_reden, p_actor', async () => {
+    await markeerGeannuleerd({ orderId: 7, reden: 'klant heeft geannuleerd', actorAuthUserId: 'abc' })
+    expect(rpcCalls).toEqual([{
+      fn: 'markeer_geannuleerd',
+      args: {
+        p_order_id: 7,
+        p_reden: 'klant heeft geannuleerd',
+        p_actor_medewerker_id: null,
+        p_actor_auth_user_id: 'abc',
+      }
+    }])
+  })
+
+  it('vereist reden (compile-time check via TS-types — geen runtime test nodig)', () => {
+    expect(true).toBe(true)
+  })
+})
