@@ -1,19 +1,15 @@
 import { useMemo, useState } from 'react'
-import { Search, Package, AlertTriangle, Calendar } from 'lucide-react'
+import { Search, Package, CalendarCheck, CalendarClock } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { OrderPickCard } from '../components/order-pick-card'
+import { PickProblemenBanner } from '../components/pick-problemen-banner'
 import { usePickShipOrders, usePickShipStats } from '../hooks/use-pick-ship'
 import { cn } from '@/lib/utils/cn'
-import {
-  BUCKET_LABEL,
-  BUCKET_VOLGORDE,
-  type BucketKey,
-} from '../lib/types'
-
-type FilterTab = 'alles' | BucketKey
+import { BUCKET_LABEL, BUCKET_VOLGORDE, type BucketKey, type PickShipOrder } from '../lib/types'
+import { isoWeek, pickStatusVoor, verzendWeekVoor, type PickStatus } from '@/lib/orders/verzendweek'
 
 export function MagazijnOverviewPage() {
-  const [filter, setFilter] = useState<FilterTab>('alles')
+  const [filter, setFilter] = useState<BucketKey>('deze_week')
   const [search, setSearch] = useState('')
 
   const { data: stats } = usePickShipStats()
@@ -21,18 +17,43 @@ export function MagazijnOverviewPage() {
     search: search || undefined,
   })
 
+  // Eénmalig vandaag-anker: gebruikt voor de actuele-week-chip én voor de
+  // achterstallig-bepaling per groep, zodat ze altijd consistent zijn.
+  const vandaagDate = useMemo(() => new Date(), [])
+  const huidigeWeek = useMemo(() => isoWeek(vandaagDate), [vandaagDate])
+
   const gefilterd = useMemo(() => {
     if (!orders) return []
-    if (filter === 'alles') return orders
     return orders.filter((o) => o.bucket === filter)
   }, [orders, filter])
 
-  const perBucket = useMemo(() => {
-    const m = new Map<BucketKey, typeof gefilterd>()
-    for (const k of BUCKET_VOLGORDE) m.set(k, [])
-    for (const o of gefilterd) m.get(o.bucket)!.push(o)
-    return m
-  }, [gefilterd])
+  // Groepeer binnen het actieve filter per verzendweek (gesorteerd op sleutel).
+  // Per groep berekenen we direct de pick-status zodat de section header weet
+  // of het achterstallig (rose) of on-track (slate) gerenderd moet worden.
+  const perWeek = useMemo(() => {
+    type Groep = {
+      sleutel: string
+      orders: PickShipOrder[]
+      verzendWeek: number | null
+      status: PickStatus
+    }
+    const map = new Map<string, Groep>()
+    for (const o of gefilterd) {
+      const bestaand = map.get(o.verzend_week_sleutel)
+      if (bestaand) {
+        bestaand.orders.push(o)
+      } else {
+        const verzend = verzendWeekVoor(o.afleverdatum)
+        map.set(o.verzend_week_sleutel, {
+          sleutel: o.verzend_week_sleutel,
+          orders: [o],
+          verzendWeek: verzend?.week ?? null,
+          status: pickStatusVoor(o.afleverdatum, vandaagDate),
+        })
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => a.sleutel.localeCompare(b.sleutel))
+  }, [gefilterd, vandaagDate])
 
   const statCards = [
     {
@@ -42,34 +63,41 @@ export function MagazijnOverviewPage() {
       color: 'text-teal-600',
     },
     {
-      label: 'Achterstallig',
-      value: stats?.per_bucket.achterstallig ?? 0,
-      icon: AlertTriangle,
+      label: 'Te picken deze week',
+      value: stats?.per_bucket.deze_week ?? 0,
+      icon: CalendarCheck,
       color: 'text-rose-600',
     },
     {
-      label: 'Vandaag + morgen',
-      value: (stats?.per_bucket.vandaag ?? 0) + (stats?.per_bucket.morgen ?? 0),
-      icon: Calendar,
+      label: 'Later',
+      value: stats?.per_bucket.later ?? 0,
+      icon: CalendarClock,
       color: 'text-amber-600',
     },
   ]
 
-  const tabs: { key: FilterTab; label: string; aantal: number }[] = [
-    { key: 'alles', label: 'Alles', aantal: stats?.totaal_orders ?? 0 },
-    ...BUCKET_VOLGORDE.map((k) => ({
-      key: k,
-      label: BUCKET_LABEL[k],
-      aantal: stats?.per_bucket[k] ?? 0,
-    })),
-  ]
+  const tabs: { key: BucketKey; label: string; aantal: number }[] = BUCKET_VOLGORDE.map((k) => ({
+    key: k,
+    label: BUCKET_LABEL[k],
+    aantal: stats?.per_bucket[k] ?? 0,
+  }))
 
   return (
     <>
       <PageHeader
         title="Pick & Ship"
-        description="Open orders - gegroepeerd op afleverdatum"
+        description="Open orders gegroepeerd op verzendweek — picken altijd in de week ervóór"
+        actions={
+          <div className="text-right">
+            <div className="text-xs uppercase tracking-wide text-slate-500">Vandaag</div>
+            <div className="text-lg font-semibold text-slate-900 leading-tight">
+              Wk {huidigeWeek.week} · {huidigeWeek.jaar}
+            </div>
+          </div>
+        }
       />
+
+      <PickProblemenBanner />
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
         {statCards.map((s) => (
@@ -127,29 +155,44 @@ export function MagazijnOverviewPage() {
         <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-12 text-center text-slate-400">
           Pick & Ship laden...
         </div>
-      ) : gefilterd.length === 0 ? (
+      ) : perWeek.length === 0 ? (
         <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-12 text-center text-slate-400">
           Geen open orders
         </div>
-      ) : filter !== 'alles' ? (
-        <div className="space-y-3">
-          {gefilterd.map((o) => (
-            <OrderPickCard key={o.order_id} order={o} />
-          ))}
-        </div>
       ) : (
         <div className="space-y-6">
-          {BUCKET_VOLGORDE.map((bucket) => {
-            const lijst = perBucket.get(bucket) ?? []
-            if (lijst.length === 0) return null
+          {perWeek.map((groep) => {
+            const achterstallig = groep.status === 'achterstallig'
             return (
-              <section key={bucket}>
-                <h3 className="text-sm font-semibold text-slate-700 mb-2 px-1">
-                  {BUCKET_LABEL[bucket]}{' '}
-                  <span className="text-slate-400 font-normal">({lijst.length})</span>
+              <section key={groep.sleutel}>
+                <h3 className="flex flex-wrap items-center gap-2 mb-2 px-1 text-sm font-semibold">
+                  <span className={achterstallig ? 'text-rose-700' : 'text-slate-700'}>
+                    Te picken deze week
+                  </span>
+                  {groep.verzendWeek !== null && (
+                    <span
+                      className={cn(
+                        'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium',
+                        achterstallig
+                          ? 'bg-rose-100 text-rose-700'
+                          : 'bg-teal-50 text-teal-700',
+                      )}
+                    >
+                      Verzendweek {groep.verzendWeek}
+                    </span>
+                  )}
+                  {achterstallig && (
+                    <span
+                      className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-rose-500 text-white"
+                      title="Pick-week ligt al in het verleden — had vorige week of eerder gepickt moeten worden"
+                    >
+                      Achterstallig
+                    </span>
+                  )}
+                  <span className="text-slate-400 font-normal">({groep.orders.length})</span>
                 </h3>
                 <div className="space-y-3">
-                  {lijst.map((o) => (
+                  {groep.orders.map((o) => (
                     <OrderPickCard key={o.order_id} order={o} />
                   ))}
                 </div>

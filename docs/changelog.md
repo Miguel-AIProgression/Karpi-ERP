@@ -8,7 +8,7 @@
 - Migratie 211: enum `pick_uitkomst` + 3 kolommen op `zending_colli`. Drie nieuwe RPC's: `start_pickronde`, `markeer_colli_niet_gevonden`, `voltooi_pickronde`.
 - `create_zending_voor_order` is nu alias voor `start_pickronde`. Zending start in status `Picken`, niet meer direct in `Klaar voor verzending`.
 - Bestaande HST-/EDI-trigger (`trg_zending_klaar_voor_verzending`) ongemoeid — vuurt nu pas op echte voltooi-moment.
-- Frontend: nieuwe `<ColliPickVinkjes>` + `<VoltooiPickrondeKnop>` op printset-pagina; nieuwe `/magazijn/pick-problemen`-werklijst voor magazijnchef.
+- Frontend: nieuwe `<ColliPickVinkjes>` + `<VoltooiPickrondeKnop>` op printset-pagina; compact `<PickProblemenBanner>` bovenaan Pick & Ship-pagina (uitklapbaar, alleen zichtbaar als er problemen openstaan).
 - Zendingen-overzicht verbergt lopende Pickrondes default (filter "Picken" laat ze zien).
 - _Waarom_: gebruiker zag zendingen op `Klaar voor verzending` voordat het tapijt fysiek van de plank was — door bundeling van "stickers printen" met "zending creëren". Pickronde scheidt deze twee momenten.
 
