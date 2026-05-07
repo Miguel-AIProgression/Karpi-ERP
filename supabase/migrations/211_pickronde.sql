@@ -230,3 +230,65 @@ COMMENT ON FUNCTION markeer_colli_niet_gevonden IS
   'Markeert één colli als niet gevonden tijdens Pickronde. modus=''blokkeer'' '
   'houdt zending in ''Picken''; ''splits'' verwijdert colli (vereist '
   'lever_modus=''deelleveringen''). Niet bruikbaar als pickronde voltooid is.';
+
+-- ============================================================================
+-- voltooi_pickronde: flipt zending van 'Picken' → 'Klaar voor verzending'.
+-- Default-flow: alle pick_uitkomst='open' colli's worden automatisch op
+-- 'gepickt' gezet (vinkjes-default-aan — operator hoeft alleen uitzonderingen
+-- actief te markeren). Guard: GEEN colli's met pick_uitkomst='niet_gevonden'
+-- mogen nog open staan.
+--
+-- De bestaande trg_zending_klaar_voor_verzending vuurt automatisch op de
+-- status-overgang en regelt HST-dispatch.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION voltooi_pickronde(p_zending_id BIGINT)
+RETURNS BIGINT
+LANGUAGE plpgsql AS $$
+DECLARE
+  v_huidig zending_status;
+  v_aantal_niet_gevonden INTEGER;
+BEGIN
+  SELECT status INTO v_huidig FROM zendingen WHERE id = p_zending_id;
+  IF v_huidig IS NULL THEN
+    RAISE EXCEPTION 'Zending % bestaat niet', p_zending_id;
+  END IF;
+  IF v_huidig <> 'Picken' THEN
+    RAISE EXCEPTION 'Pickronde voor zending % is niet actief (status=%)', p_zending_id, v_huidig;
+  END IF;
+
+  -- Guard: openstaande pick-problemen blokkeren voltooiing.
+  SELECT COUNT(*) INTO v_aantal_niet_gevonden
+    FROM zending_colli
+   WHERE zending_id = p_zending_id
+     AND pick_uitkomst = 'niet_gevonden';
+
+  IF v_aantal_niet_gevonden > 0 THEN
+    RAISE EXCEPTION 'Pickronde heeft % openstaand(e) pick-probleem(en) — los op of splits eerst',
+      v_aantal_niet_gevonden
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+
+  -- Default-aan: alle 'open' colli's worden 'gepickt'.
+  UPDATE zending_colli
+     SET pick_uitkomst = 'gepickt',
+         gepickt_at    = now()
+   WHERE zending_id = p_zending_id
+     AND pick_uitkomst = 'open';
+
+  -- Status-flip → bestaande trigger trg_zending_klaar_voor_verzending vuurt.
+  UPDATE zendingen
+     SET status = 'Klaar voor verzending'
+   WHERE id = p_zending_id;
+
+  RETURN p_zending_id;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION voltooi_pickronde(BIGINT) TO authenticated;
+
+COMMENT ON FUNCTION voltooi_pickronde IS
+  'Sluit Pickronde af. Zet alle ''open''-colli''s op ''gepickt'' en flipt zending '
+  'naar ''Klaar voor verzending''. Faalt als er ''niet_gevonden''-colli''s '
+  'openstaan. Bestaande HST-trigger pakt dispatch op via status-overgang.';
+
+NOTIFY pgrst, 'reload schema';
