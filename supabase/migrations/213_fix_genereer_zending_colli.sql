@@ -1,21 +1,19 @@
--- Migratie 213: fix genereer_zending_colli — kolomnaam ore.kwaliteit_code → ore.maatwerk_kwaliteit_code
+-- Migratie 213: fix genereer_zending_colli — kolomnamen rechtgetrokken
 --
--- Symptoom op staging: bij klik "Verzendset" op pick & ship gaf de RPC
--- `create_zending_voor_order` (alias voor `start_pickronde` sinds mig 211)
--- een fout terug:
+-- Symptoom op staging: bij klik "Verzendset" op pick & ship gaven achtereen-
+-- volgens twee fouten op `genereer_zending_colli`:
 --
---   "column ore.kwaliteit_code does not exist
---    Perhaps you meant to reference the column "p.kwaliteit_code". (42703)"
+--   1. "column ore.kwaliteit_code does not exist (42703)"
+--      → moet `ore.maatwerk_kwaliteit_code` zijn (order_regels heeft alleen
+--        die maatwerk-variant; vaste-product kwaliteit zit op producten).
 --
--- Oorzaak: een oudere live-versie van `genereer_zending_colli` (van vóór de
--- gewicht-per-kwaliteit-feature) referenceerde `ore.kwaliteit_code`. Op
--- `order_regels` heet die kolom echter `maatwerk_kwaliteit_code` — alleen
--- `producten` heeft een platte `kwaliteit_code`. Mig 209 heeft de body al
--- correct (`COALESCE(ore.maatwerk_kwaliteit_code, p.kwaliteit_code)`), maar
--- die migratie is niet (volledig) op staging toegepast — vermoedelijk omdat
--- mig 211 los ervan is gerund.
+--   2. "column p.naam does not exist (42703)"
+--      → producten heeft geen `naam`-kolom, wel `omschrijving` (en
+--        `vervolgomschrijving`). Zie docs/database-schema.md §producten.
 --
--- Deze migratie zet alleen de functie-body recht. Geen schema-mutaties.
+-- Beide fouten zaten ook in de repo-versie van mig 209 — die is dus zelf
+-- nooit op staging getest. Deze migratie zet alleen `genereer_zending_colli`
+-- recht. Geen schema-mutaties.
 --
 -- Idempotent (CREATE OR REPLACE).
 
@@ -48,13 +46,13 @@ BEGIN
       ore.maatwerk_lengte_cm,
       ore.maatwerk_breedte_cm,
       ore.maatwerk_afwerking,
-      p.naam              AS product_naam,
+      p.omschrijving      AS product_naam,
       p.lengte_cm         AS prod_lengte_cm,
       p.breedte_cm        AS prod_breedte_cm,
       p.gewicht_kg        AS prod_gewicht_kg,
       ore.gewicht_kg      AS regel_gewicht_kg,
       COALESCE(ore.maatwerk_kwaliteit_code, p.kwaliteit_code) AS kwaliteit_code,
-      k.naam              AS kwaliteit_naam
+      k.omschrijving      AS kwaliteit_naam
     FROM zending_regels zr
     LEFT JOIN order_regels ore ON ore.id = zr.order_regel_id
     LEFT JOIN producten p     ON p.artikelnr = zr.artikelnr
@@ -95,8 +93,9 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 GRANT EXECUTE ON FUNCTION genereer_zending_colli(BIGINT) TO authenticated;
 
 COMMENT ON FUNCTION genereer_zending_colli(BIGINT) IS
-  'Mig 213: kolom-fix (ore.kwaliteit_code → ore.maatwerk_kwaliteit_code). '
-  'Functie-gedrag identiek aan mig 209: maakt zending_colli-rijen aan voor een '
-  'zending (1 colli per stuk), idempotent — als er al colli''s zijn returnt 0.';
+  'Mig 213: drievoudige kolom-fix tov mig 209: ore.kwaliteit_code → '
+  'ore.maatwerk_kwaliteit_code, p.naam → p.omschrijving, k.naam → '
+  'k.omschrijving. Functie-gedrag verder identiek: maakt zending_colli-rijen '
+  'aan voor een zending (1 colli per stuk), idempotent.';
 
 NOTIFY pgrst, 'reload schema';
