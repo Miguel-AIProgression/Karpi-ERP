@@ -53,17 +53,25 @@ Doorlopende nummers per type per jaar.
 
 ---
 
-### vertegenwoordigers
-Sales reps. Code uit orders, naam uit debiteuren.
+### medewerkers (was: vertegenwoordigers t/m mig 215)
+Interne identity-tabel: vertegenwoordigers, pickers en toekomstige rollen op één tabel met rol-tags. Hernoemd in mig 216 (ADR-0004).
+
+Enum `medewerker_rol`: `'vertegenwoordiger' | 'picker'` (uitbreidbaar — magazijnchef, inkoper).
+
 | Kolom | Type | Toelichting |
 |-------|------|-------------|
-| id | BIGINT PK | Auto-increment |
-| code | TEXT UK | "19", "16" etc. |
-| naam | TEXT | "Emily Dobbe" etc. |
-| email | TEXT | |
-| telefoon | TEXT | |
-| actief | BOOLEAN | Default true |
+| id | BIGINT PK | Auto-increment, surrogate key |
+| code | TEXT UK NULL | 3-4 letter ("19", "16") — alleen vertegenwoordigers; NULL voor pickers |
+| naam | TEXT | "Emily Dobbe", "Jan de Vries" |
+| email | TEXT NULL | |
+| telefoon | TEXT NULL | |
+| actief | BOOLEAN | Default true; bepaalt zichtbaarheid in dropdowns |
+| rollen | medewerker_rol[] | NOT NULL, default `{}`; multi-rol toegestaan (`{vertegenwoordiger,picker}`) |
 | created_at, updated_at | TIMESTAMPTZ | Auto |
+
+Compat-view `vertegenwoordigers` (sinds mig 216) selecteert rijen met `'vertegenwoordiger' = ANY(rollen)`. Pre-mig-216 callers blijven werken zonder code-aanpassing.
+
+FKs `klanten.vertegenw_code` en `orders.vertegenw_code` blijven verwijzen naar `medewerkers.code` (de UNIQUE-kolom is bewaard).
 
 ---
 
@@ -71,7 +79,7 @@ Sales reps. Code uit orders, naam uit debiteuren.
 Werkdagen per vertegenwoordiger (mig 195). Rij aanwezig = werkt die dag.
 | Kolom | Type | Toelichting |
 |-------|------|-------------|
-| vertegenw_code | TEXT FK → vertegenwoordigers.code | ON DELETE CASCADE, ON UPDATE CASCADE |
+| vertegenw_code | TEXT FK → medewerkers.code | ON DELETE CASCADE, ON UPDATE CASCADE; FK overleeft tabel-rename |
 | dag_van_week | SMALLINT (1-7) | ISO 8601: 1=ma ... 7=zo |
 | start_tijd | TIME | NULL = "hele dag" |
 | eind_tijd | TIME | NULL = "hele dag" |
