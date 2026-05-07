@@ -121,6 +121,7 @@ export const NAV_GROUPS = [
       { label: 'Snijplanning', path: '/snijplanning', icon: 'Scissors' },
       { label: 'Confectie', path: '/confectie', icon: 'Factory' },
       { label: 'Pick & Ship', path: '/pick-ship', icon: 'PackageCheck' },
+      { label: 'Pick-problemen', path: '/magazijn/pick-problemen', icon: 'AlertCircle' },
       { label: 'Logistiek', path: '/logistiek', icon: 'Truck' },
     ],
   },
@@ -145,6 +146,7 @@ export const NAV_GROUPS = [
       { label: 'Kwaliteiten', path: '/instellingen/kwaliteiten', icon: 'Scale' },
       { label: 'Vormen', path: '/instellingen/vormen', icon: 'Shapes' },
       { label: 'Afwerkingen', path: '/instellingen/afwerkingen', icon: 'Scissors' },
+      { label: 'Betaalcondities', path: '/instellingen/betaalcondities', icon: 'Receipt' },
     ],
   },
 ] as const

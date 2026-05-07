@@ -5,6 +5,7 @@
 
 // Pages
 export { MagazijnOverviewPage } from './pages/pick-overview'
+export { PickProblemenPage } from './pages/pick-problemen'
 
 // Hooks
 export {

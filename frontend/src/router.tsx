@@ -30,11 +30,12 @@ import { BedrijfsgegevensPage } from '@/pages/instellingen/bedrijfsgegevens'
 import { KwaliteitenInstellingenPage } from '@/pages/instellingen/kwaliteiten'
 import { VormenInstellingenPage } from '@/pages/instellingen/vormen'
 import { AfwerkingenInstellingenPage } from '@/pages/instellingen/afwerkingen'
+import { BetaalconditiesInstellingenPage } from '@/pages/instellingen/betaalcondities'
 import { ConfectieOverviewPage } from '@/pages/confectie/confectie-overview'
 import { ConfectiePlanningPage } from '@/pages/confectie/confectie-planning'
 import { ScanstationPage } from '@/pages/scanstation/scanstation'
 import { RollenOverviewPage } from '@/pages/rollen/rollen-overview'
-import { MagazijnOverviewPage } from '@/modules/magazijn'
+import { MagazijnOverviewPage, PickProblemenPage } from '@/modules/magazijn'
 import { FacturatieOverviewPage } from '@/pages/facturatie/facturatie-overview'
 import { FactuurDetailPage } from '@/pages/facturatie/factuur-detail'
 import { InkooporderOverviewPage } from '@/pages/inkooporders/inkooporders-overview'
@@ -102,6 +103,7 @@ export const router = createBrowserRouter([
       { path: 'confectie', element: <ConfectieOverviewPage /> },
       { path: 'confectie/planning', element: <ConfectiePlanningPage /> },
       { path: 'pick-ship', element: <MagazijnOverviewPage /> },
+      { path: 'magazijn/pick-problemen', element: <PickProblemenPage /> },
       { path: 'logistiek', element: <ZendingenOverzichtPage /> },
       // Belangrijk: vervoerders-routes vóór `:zending_nr` om matching-conflict te vermijden.
       { path: 'logistiek/vervoerders', element: <VervoerdersOverzichtPage /> },
@@ -123,6 +125,7 @@ export const router = createBrowserRouter([
       { path: 'instellingen/kwaliteiten', element: <KwaliteitenInstellingenPage /> },
       { path: 'instellingen/vormen', element: <VormenInstellingenPage /> },
       { path: 'instellingen/afwerkingen', element: <AfwerkingenInstellingenPage /> },
+      { path: 'instellingen/betaalcondities', element: <BetaalconditiesInstellingenPage /> },
     ],
   },
 ])
