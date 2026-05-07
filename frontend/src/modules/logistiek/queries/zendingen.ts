@@ -18,6 +18,8 @@ export type HstTransportorderStatus =
 export interface ZendingenFilters {
   status?: ZendingStatus
   debiteur_nr?: number
+  /** Default true: verberg status='Picken' (lopende pickrondes). */
+  exclude_picken?: boolean
 }
 
 export interface ZendingAanmaakResult {
@@ -146,7 +148,12 @@ export async function fetchZendingen(filters: ZendingenFilters = {}) {
     .order('id', { ascending: false })
     .limit(200)
 
-  if (filters.status) q = q.eq('status', filters.status)
+  if (filters.status) {
+    q = q.eq('status', filters.status)
+  } else if (filters.exclude_picken !== false) {
+    // Default: verberg lopende Pickrondes (status='Picken' / 'Gepland').
+    q = q.in('status', ['Klaar voor verzending', 'Onderweg', 'Afgeleverd'])
+  }
   if (filters.debiteur_nr) q = q.eq('orders.debiteur_nr', filters.debiteur_nr)
 
   return await q
