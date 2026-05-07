@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Loader2, Printer } from 'lucide-react'
+import { Loader2, Printer, PackageCheck } from 'lucide-react'
 import { useCreateZendingVoorOrder } from '../hooks/use-zendingen'
-import { useActieveVervoerder } from '../hooks/use-vervoerders'
+import { useVervoerders } from '../hooks/use-vervoerders'
 import type { PickShipOrder } from '@/modules/magazijn'
 
 interface VerzendsetButtonProps {
@@ -12,20 +12,29 @@ interface VerzendsetButtonProps {
 export function VerzendsetButton({ order }: VerzendsetButtonProps) {
   const navigate = useNavigate()
   const createMutation = useCreateZendingVoorOrder()
-  const actieveVervoerder = useActieveVervoerder()
+  const { data: vervoerders = [] } = useVervoerders()
   const [error, setError] = useState<string | null>(null)
 
-  const heeftVervoerder = actieveVervoerder.selectie_status === 'selecteerbaar'
+  // Sinds mig 210 wordt de vervoerder server-side gekozen via verzendregels
+  // (selecteer_vervoerder_voor_zending). Pre-creëer-time hoeven we alleen te
+  // controleren of er ÜberHaupt een actieve vervoerder is — anders heeft de
+  // selector niets om uit te kiezen.
+  const heeftActieveVervoerder = vervoerders.some((v) => v.actief)
   const isVolledigPickbaar = order.regels.length > 0 && order.regels.every((r) => r.is_pickbaar)
-  const disabled = createMutation.isPending || !heeftVervoerder || !isVolledigPickbaar
-  const tooltip =
-    actieveVervoerder.selectie_status === 'geen_actieve_vervoerder'
-      ? 'Activeer eerst een vervoerder bij Logistiek > instellingen'
-      : actieveVervoerder.selectie_status === 'meerdere_actieve_vervoerders'
-        ? 'Meerdere vervoerders actief: richt eerst prijs/criteria-selectie in'
-        : !isVolledigPickbaar
-          ? 'Nog niet alle regels zijn klaar om te picken'
-          : 'Maak zending, stickers en pakbon'
+
+  const disabled = order.afhalen
+    ? createMutation.isPending || !isVolledigPickbaar
+    : createMutation.isPending || !heeftActieveVervoerder || !isVolledigPickbaar
+
+  const tooltip = order.afhalen
+    ? !isVolledigPickbaar
+      ? 'Nog niet alle regels zijn klaar om te picken'
+      : 'Start afhaal-pickronde (geen verzendstickers)'
+    : !heeftActieveVervoerder
+      ? 'Activeer eerst minstens één vervoerder bij Logistiek > Vervoerders'
+      : !isVolledigPickbaar
+        ? 'Nog niet alle regels zijn klaar om te picken'
+        : 'Start pickronde — print stickers en pakbon, dan afronden op printset-pagina'
 
   async function handleClick() {
     setError(null)
@@ -47,10 +56,12 @@ export function VerzendsetButton({ order }: VerzendsetButtonProps) {
       >
         {createMutation.isPending ? (
           <Loader2 size={13} className="animate-spin" />
+        ) : order.afhalen ? (
+          <PackageCheck size={13} />
         ) : (
           <Printer size={13} />
         )}
-        Verzendset
+        {order.afhalen ? 'Afhaalset' : 'Verzendset'}
       </button>
       {error && <div className="max-w-64 text-right text-[11px] text-rose-600">{error}</div>}
     </div>
