@@ -8,7 +8,27 @@ import { DpdShippingLabel } from '@/modules/logistiek/components/dpd-shipping-la
 import { VervoerderTag } from '@/modules/logistiek/components/vervoerder-tag'
 import { ColliPickVinkjes } from '@/modules/logistiek/components/colli-pick-vinkjes'
 import { VoltooiPickrondeKnop } from '@/modules/logistiek/components/voltooi-pickronde-knop'
+import { PickerDropdown } from '@/components/orders/picker-dropdown'
 import { useZendingPrintSet } from '@/modules/logistiek/hooks/use-zendingen'
+
+const LAST_PICKER_KEY = 'rugflow.last-picker-id'
+
+function loadLastPicker(): number | null {
+  try {
+    const v = localStorage.getItem(LAST_PICKER_KEY)
+    return v ? Number(v) : null
+  } catch {
+    return null
+  }
+}
+
+function saveLastPicker(id: number) {
+  try {
+    localStorage.setItem(LAST_PICKER_KEY, String(id))
+  } catch {
+    /* ignore */
+  }
+}
 import {
   DEFAULT_LABEL_BREEDTE_MM,
   DEFAULT_LABEL_HOOGTE_MM,
@@ -23,12 +43,27 @@ export function ZendingPrintSetPage() {
   const { zending_nr } = useParams<{ zending_nr: string }>()
   const { data: zending, isLoading, error } = useZendingPrintSet(zending_nr)
   const [printMode, setPrintMode] = useState<PrintMode>('all')
+  // Picker-state: gestart door deze persoon. Pre-fill: zending.picker_id (van
+  // start_pickronde) → localStorage last-picker → null. Operator kan wisselen
+  // bij shift-overgang. Wordt gepersisteerd zodra hij voltooi/markeer doet.
+  const [pickerId, setPickerId] = useState<number | null>(null)
 
   useEffect(() => {
     const reset = () => setPrintMode('all')
     window.addEventListener('afterprint', reset)
     return () => window.removeEventListener('afterprint', reset)
   }, [])
+
+  useEffect(() => {
+    if (zending && pickerId === null) {
+      const fromZending = (zending as unknown as { picker_id: number | null }).picker_id ?? null
+      setPickerId(fromZending ?? loadLastPicker())
+    }
+  }, [zending, pickerId])
+
+  useEffect(() => {
+    if (pickerId) saveLastPicker(pickerId)
+  }, [pickerId])
 
   const labels = useMemo(() => (zending ? expandLabels(zending) : []), [zending])
   const vervoerder = zending ? vervoerderInfoVoor(zending) : null
@@ -113,14 +148,33 @@ export function ZendingPrintSetPage() {
 
         {zending.status === 'Picken' && (
           <div className="mb-4 space-y-3">
+            <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-4">
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Picker (verplicht voor voltooi + niet-gevonden audit)
+              </label>
+              <p className="text-xs text-slate-500 mb-2">
+                Wie verzamelt deze order? Default: degene die de pickronde startte.
+                Mag gewijzigd worden bij shift-overgang.
+              </p>
+              <PickerDropdown
+                value={pickerId}
+                onChange={setPickerId}
+                placeholder="Kies picker…"
+              />
+            </div>
             <ColliPickVinkjes
               zendingId={zending.id}
               leverModus={
                 (zending.orders.lever_modus as 'deelleveringen' | 'in_een_keer' | null) ?? null
               }
+              pickerId={pickerId}
             />
             <div className="flex justify-end">
-              <VoltooiPickrondeKnop zendingId={zending.id} zendingStatus={zending.status} />
+              <VoltooiPickrondeKnop
+                zendingId={zending.id}
+                zendingStatus={zending.status}
+                pickerId={pickerId}
+              />
             </div>
           </div>
         )}

@@ -13,9 +13,11 @@ interface Props {
   zendingId: number
   /** order.lever_modus — bepaalt of 'splits'-optie beschikbaar is. */
   leverModus: 'deelleveringen' | 'in_een_keer' | null
+  /** Picker-id voor audit op niet-gevonden-markering (mig 217). */
+  pickerId: number | null
 }
 
-export function ColliPickVinkjes({ zendingId, leverModus }: Props) {
+export function ColliPickVinkjes({ zendingId, leverModus, pickerId }: Props) {
   const { data: colli = [], isLoading } = useColliVoorZending(zendingId)
   const [dialogColli, setDialogColli] = useState<PickColliRij | null>(null)
 
@@ -49,6 +51,7 @@ export function ColliPickVinkjes({ zendingId, leverModus }: Props) {
         <NietGevondenDialog
           colli={dialogColli}
           leverModus={leverModus}
+          pickerId={pickerId}
           onClose={() => setDialogColli(null)}
         />
       )}
@@ -102,10 +105,12 @@ function ColliRij({
 function NietGevondenDialog({
   colli,
   leverModus,
+  pickerId,
   onClose,
 }: {
   colli: PickColliRij
   leverModus: 'deelleveringen' | 'in_een_keer' | null
+  pickerId: number | null
   onClose: () => void
 }) {
   const mutate = useMarkeerColliNietGevonden()
@@ -114,9 +119,13 @@ function NietGevondenDialog({
   const splitsAllowed = leverModus === 'deelleveringen'
 
   async function submit(modus: NietGevondenModus) {
+    if (!pickerId) {
+      setError('Kies eerst een picker bovenaan')
+      return
+    }
     setError(null)
     try {
-      await mutate.mutateAsync({ colliId: colli.id, modus, opmerking: opmerking || null })
+      await mutate.mutateAsync({ colliId: colli.id, modus, opmerking: opmerking || null, pickerId })
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))

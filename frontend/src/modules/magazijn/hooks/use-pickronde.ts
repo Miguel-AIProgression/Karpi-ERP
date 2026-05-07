@@ -29,7 +29,8 @@ export function usePickProblemen() {
 export function useStartPickronde() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (orderId: number) => startPickronde(orderId),
+    mutationFn: ({ orderId, pickerId }: { orderId: number; pickerId: number }) =>
+      startPickronde(orderId, pickerId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['pickronde'] })
       qc.invalidateQueries({ queryKey: ['pick-ship'] })
@@ -56,11 +57,15 @@ export function useMarkeerColliNietGevonden() {
 export function useVoltooiPickronde() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (zendingId: number) => voltooiPickronde(zendingId),
+    mutationFn: ({ zendingId, pickerId }: { zendingId: number; pickerId: number }) =>
+      voltooiPickronde(zendingId, pickerId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['pickronde'] })
       qc.invalidateQueries({ queryKey: ['zendingen'] })
       qc.invalidateQueries({ queryKey: ['pick-ship'] })
+      // Factuur-keten kan vuren na voltooi (mig 217 sluit orders.status='Verzonden')
+      qc.invalidateQueries({ queryKey: ['orders'] })
+      qc.invalidateQueries({ queryKey: ['facturen'] })
     },
   })
 }

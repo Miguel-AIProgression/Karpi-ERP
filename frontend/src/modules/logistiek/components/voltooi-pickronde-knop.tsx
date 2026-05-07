@@ -7,9 +7,10 @@ import { useColliVoorZending, useVoltooiPickronde } from '@/modules/magazijn'
 interface Props {
   zendingId: number
   zendingStatus: string
+  pickerId: number | null
 }
 
-export function VoltooiPickrondeKnop({ zendingId, zendingStatus }: Props) {
+export function VoltooiPickrondeKnop({ zendingId, zendingStatus, pickerId }: Props) {
   const navigate = useNavigate()
   const { data: colli = [] } = useColliVoorZending(zendingId)
   const mutate = useVoltooiPickronde()
@@ -18,21 +19,27 @@ export function VoltooiPickrondeKnop({ zendingId, zendingStatus }: Props) {
   if (zendingStatus !== 'Picken') return null
 
   const aantalNietGevonden = colli.filter((c) => c.pick_uitkomst === 'niet_gevonden').length
-  const disabled = mutate.isPending || aantalNietGevonden > 0
+  const disabled = mutate.isPending || aantalNietGevonden > 0 || !pickerId
 
   async function handleClick() {
+    if (!pickerId) {
+      setError('Kies eerst een picker bovenaan')
+      return
+    }
     setError(null)
     try {
-      await mutate.mutateAsync(zendingId)
+      await mutate.mutateAsync({ zendingId, pickerId })
       navigate('/logistiek')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
   }
 
-  const tooltip = aantalNietGevonden > 0
-    ? `Eerst ${aantalNietGevonden} pick-probleem oplossen (chef)`
-    : 'Markeer alle colli als gepickt en stuur door naar verzending'
+  const tooltip = !pickerId
+    ? 'Kies eerst een picker'
+    : aantalNietGevonden > 0
+      ? `Eerst ${aantalNietGevonden} pick-probleem oplossen (chef)`
+      : 'Markeer alle colli als gepickt en sluit de pickronde — order gaat naar Verzonden, factuur volgt'
 
   return (
     <div className="inline-flex flex-col items-end gap-1">
