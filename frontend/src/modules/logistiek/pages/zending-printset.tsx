@@ -9,76 +9,15 @@ import { VervoerderTag } from '@/modules/logistiek/components/vervoerder-tag'
 import { ColliPickVinkjes } from '@/modules/logistiek/components/colli-pick-vinkjes'
 import { VoltooiPickrondeKnop } from '@/modules/logistiek/components/voltooi-pickronde-knop'
 import { useZendingPrintSet } from '@/modules/logistiek/hooks/use-zendingen'
-import { generateSscc } from '@/modules/logistiek/lib/sscc'
-import { isShippingRegel } from '@/modules/logistiek/lib/is-shipping-regel'
-import { getVervoerderDef } from '@/modules/logistiek/registry'
-import type { ZendingPrintRegel, ZendingPrintSet } from '@/modules/logistiek/queries/zendingen'
-
-const DEFAULT_LABEL_BREEDTE_MM = 105
-const DEFAULT_LABEL_HOOGTE_MM = 60
-
-interface LabelFormaat {
-  breedteMm: number
-  hoogteMm: number
-}
-
-function labelFormaatVoor(zending: ZendingPrintSet): LabelFormaat {
-  return {
-    breedteMm: zending.vervoerders?.label_breedte_mm ?? DEFAULT_LABEL_BREEDTE_MM,
-    hoogteMm: zending.vervoerders?.label_hoogte_mm ?? DEFAULT_LABEL_HOOGTE_MM,
-  }
-}
+import {
+  DEFAULT_LABEL_BREEDTE_MM,
+  DEFAULT_LABEL_HOOGTE_MM,
+  expandLabels,
+  labelFormaatVoor,
+  vervoerderInfoVoor,
+} from '@/modules/logistiek/lib/printset'
 
 type PrintMode = 'all' | 'labels' | 'pakbon'
-
-interface LabelItem {
-  regel: ZendingPrintRegel | null
-  index: number
-  sscc: string
-}
-
-function vervoerderInfo(zending: ZendingPrintSet) {
-  const def = getVervoerderDef(zending.vervoerder_code)
-  return {
-    code: zending.vervoerder_code ?? null,
-    naam: zending.vervoerders?.display_naam ?? def?.displayNaam ?? 'Geen vervoerder',
-    actief: zending.vervoerders?.actief ?? null,
-  }
-}
-
-function expandLabels(zending: ZendingPrintSet): LabelItem[] {
-  // Service-regels (verzendkosten) zijn factuurregels — geen fysiek collo,
-  // dus geen sticker. Sinds mig 206 filtert de RPC ze ook al uit; voor oudere
-  // zendingen vangt `isShippingRegel` ook de variant op waar zending_regels.
-  // artikelnr leeg is en alleen order_regels.artikelnr='VERZEND' staat.
-  const sortedRegels = zending.zending_regels
-    .filter((r) => !isShippingRegel(r))
-    .sort((a, b) => {
-      const ar = a.order_regels?.regelnummer ?? 0
-      const br = b.order_regels?.regelnummer ?? 0
-      return ar - br
-    })
-  const expanded: Array<{ regel: ZendingPrintRegel | null }> = []
-
-  for (const regel of sortedRegels) {
-    const aantal = Math.max(0, Math.trunc(Number(regel.aantal ?? 1)))
-    for (let i = 0; i < aantal; i += 1) expanded.push({ regel })
-  }
-
-  // Aantal_colli kan in oude zendingen verzendkosten meetellen — gebruik dus
-  // expanded.length als bovengrens, niet zending.aantal_colli, om geen extra
-  // VERZEND-stickers te padden voor pre-mig 206 zendingen.
-  const targetTotal = Math.max(expanded.length, 1)
-  while (expanded.length < targetTotal) {
-    expanded.push({ regel: expanded.at(-1)?.regel ?? null })
-  }
-
-  return expanded.slice(0, targetTotal).map((item, index) => ({
-    ...item,
-    index: index + 1,
-    sscc: generateSscc(zending.id, index + 1),
-  }))
-}
 
 export function ZendingPrintSetPage() {
   const { zending_nr } = useParams<{ zending_nr: string }>()
@@ -92,7 +31,7 @@ export function ZendingPrintSetPage() {
   }, [])
 
   const labels = useMemo(() => (zending ? expandLabels(zending) : []), [zending])
-  const vervoerder = zending ? vervoerderInfo(zending) : null
+  const vervoerder = zending ? vervoerderInfoVoor(zending) : null
   const labelFormaat = zending ? labelFormaatVoor(zending) : null
   const isPrintType = zending?.vervoerders?.type === 'print'
 

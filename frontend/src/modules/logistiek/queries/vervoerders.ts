@@ -1,13 +1,14 @@
 import { supabase } from '@/lib/supabase/client'
 
+export type VervoerderType = 'api' | 'edi' | 'print'
+
 /**
- * Vervoerder-row inclusief de Fase A-instellingen (mig 174).
- * `notities` bestond al; de overige kolommen zijn nieuw.
+ * Vervoerder-row inclusief Fase A-instellingen (mig 174) en print-velden (mig 207).
  */
 export interface Vervoerder {
   code: string
   display_naam: string
-  type: 'api' | 'edi'
+  type: VervoerderType
   actief: boolean
   notities: string | null
   api_endpoint: string | null
@@ -17,6 +18,12 @@ export interface Vervoerder {
   kontakt_email: string | null
   kontakt_telefoon: string | null
   tarief_notities: string | null
+  // Print-config (mig 207, alleen relevant voor type='print')
+  printer_naam: string | null
+  printer_ip: string | null
+  label_breedte_mm: number | null
+  label_hoogte_mm: number | null
+  service_codes: string[] | null
 }
 
 /**
@@ -28,13 +35,20 @@ export interface Vervoerder {
 export interface VervoerderStats {
   code: string
   display_naam: string
-  type: 'api' | 'edi'
+  type: VervoerderType
   actief: boolean
   aantal_klanten: number
   aantal_zendingen_totaal: number
   aantal_zendingen_deze_maand: number
   hst_aantal_verstuurd: number
   hst_aantal_fout: number
+}
+
+export interface VervoerderCreateInput {
+  code: string
+  display_naam: string
+  type: VervoerderType
+  notities?: string | null
 }
 
 export interface VervoerderUpdateInput {
@@ -47,13 +61,19 @@ export interface VervoerderUpdateInput {
   tarief_notities?: string | null
   notities?: string | null
   actief?: boolean
+  printer_naam?: string | null
+  printer_ip?: string | null
+  label_breedte_mm?: number | null
+  label_hoogte_mm?: number | null
+  service_codes?: string[] | null
 }
 
 const VERVOERDER_COLUMNS = `
   code, display_naam, type, actief, notities,
   api_endpoint, api_customer_id, account_nummer,
   kontakt_naam, kontakt_email, kontakt_telefoon,
-  tarief_notities
+  tarief_notities,
+  printer_naam, printer_ip, label_breedte_mm, label_hoogte_mm, service_codes
 `
 
 /**
@@ -103,6 +123,20 @@ export async function fetchVervoerderStats(): Promise<VervoerderStats[]> {
  */
 export async function updateVervoerder(code: string, data: VervoerderUpdateInput) {
   const { error } = await supabase.from('vervoerders').update(data).eq('code', code)
+  if (error) throw error
+}
+
+/**
+ * Maakt een nieuwe vervoerder aan. `actief` blijft FALSE (DB-default) — moet
+ * eerst geconfigureerd worden in detailpagina vóór gebruik.
+ */
+export async function createVervoerder(input: VervoerderCreateInput) {
+  const { error } = await supabase.from('vervoerders').insert({
+    code: input.code,
+    display_naam: input.display_naam,
+    type: input.type,
+    notities: input.notities ?? null,
+  })
   if (error) throw error
 }
 

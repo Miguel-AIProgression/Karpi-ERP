@@ -1,16 +1,24 @@
 import { useMemo, useState } from 'react'
-import { Search, Package, CalendarCheck, CalendarClock } from 'lucide-react'
+import { Globe, Search, Package, CalendarCheck, CalendarClock } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { OrderPickCard } from '../components/order-pick-card'
 import { PickProblemenBanner } from '../components/pick-problemen-banner'
+import { PickWeekSectie } from '../components/pick-week-sectie'
 import { usePickShipOrders, usePickShipStats } from '../hooks/use-pick-ship'
 import { cn } from '@/lib/utils/cn'
-import { BUCKET_LABEL, BUCKET_VOLGORDE, type BucketKey, type PickShipOrder } from '../lib/types'
-import { isoWeek, pickStatusVoor, verzendWeekVoor, type PickStatus } from '@/lib/orders/verzendweek'
+import { genereerWeekTabs } from '../lib/buckets'
+import { type BucketKey, type PickShipOrder } from '../lib/types'
+import {
+  isoWeek,
+  pickStatusVoor,
+  pickWeekVoor,
+  verzendWeekVoor,
+  type PickStatus,
+} from '@/lib/orders/verzendweek'
 
 export function MagazijnOverviewPage() {
-  const [filter, setFilter] = useState<BucketKey>('deze_week')
+  const [filter, setFilter] = useState<BucketKey>('wk_1')
   const [search, setSearch] = useState('')
+  const [groepeerOpLand, setGroepeerOpLand] = useState(false)
 
   const { data: stats } = usePickShipStats()
   const { data: orders, isLoading } = usePickShipOrders({
@@ -22,19 +30,22 @@ export function MagazijnOverviewPage() {
   const vandaagDate = useMemo(() => new Date(), [])
   const huidigeWeek = useMemo(() => isoWeek(vandaagDate), [vandaagDate])
 
+  const weekTabs = useMemo(() => genereerWeekTabs(vandaagDate), [vandaagDate])
+
   const gefilterd = useMemo(() => {
     if (!orders) return []
     return orders.filter((o) => o.bucket === filter)
   }, [orders, filter])
 
   // Groepeer binnen het actieve filter per verzendweek (gesorteerd op sleutel).
-  // Per groep berekenen we direct de pick-status zodat de section header weet
-  // of het achterstallig (rose) of on-track (slate) gerenderd moet worden.
+  // Voor wk_1 kunnen er meerdere groepen zijn (achterstallig + huidige + +1);
+  // voor wk_2..wk_5 hoort er normaal precies één verzendweek-groep te zijn.
   const perWeek = useMemo(() => {
     type Groep = {
       sleutel: string
       orders: PickShipOrder[]
       verzendWeek: number | null
+      pickWeek: number | null
       status: PickStatus
     }
     const map = new Map<string, Groep>()
@@ -44,10 +55,12 @@ export function MagazijnOverviewPage() {
         bestaand.orders.push(o)
       } else {
         const verzend = verzendWeekVoor(o.afleverdatum)
+        const pick = pickWeekVoor(o.afleverdatum)
         map.set(o.verzend_week_sleutel, {
           sleutel: o.verzend_week_sleutel,
           orders: [o],
           verzendWeek: verzend?.week ?? null,
+          pickWeek: pick?.week ?? null,
           status: pickStatusVoor(o.afleverdatum, vandaagDate),
         })
       }
@@ -64,7 +77,7 @@ export function MagazijnOverviewPage() {
     },
     {
       label: 'Te picken deze week',
-      value: stats?.per_bucket.deze_week ?? 0,
+      value: stats?.per_bucket.wk_1 ?? 0,
       icon: CalendarCheck,
       color: 'text-rose-600',
     },
@@ -76,10 +89,10 @@ export function MagazijnOverviewPage() {
     },
   ]
 
-  const tabs: { key: BucketKey; label: string; aantal: number }[] = BUCKET_VOLGORDE.map((k) => ({
-    key: k,
-    label: BUCKET_LABEL[k],
-    aantal: stats?.per_bucket[k] ?? 0,
+  const tabs = weekTabs.map((t) => ({
+    key: t.key,
+    label: t.label,
+    aantal: stats?.per_bucket[t.key] ?? 0,
   }))
 
   return (
@@ -139,6 +152,20 @@ export function MagazijnOverviewPage() {
             )
           })}
         </div>
+        <button
+          type="button"
+          onClick={() => setGroepeerOpLand((v) => !v)}
+          aria-pressed={groepeerOpLand}
+          className={cn(
+            'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition-colors',
+            groepeerOpLand
+              ? 'bg-teal-100 text-teal-800 ring-1 ring-teal-300'
+              : 'bg-slate-100 text-slate-600 hover:bg-slate-200',
+          )}
+        >
+          <Globe size={14} />
+          Groeperen op land
+        </button>
         <div className="relative w-80">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
@@ -161,44 +188,16 @@ export function MagazijnOverviewPage() {
         </div>
       ) : (
         <div className="space-y-6">
-          {perWeek.map((groep) => {
-            const achterstallig = groep.status === 'achterstallig'
-            return (
-              <section key={groep.sleutel}>
-                <h3 className="flex flex-wrap items-center gap-2 mb-2 px-1 text-sm font-semibold">
-                  <span className={achterstallig ? 'text-rose-700' : 'text-slate-700'}>
-                    Te picken deze week
-                  </span>
-                  {groep.verzendWeek !== null && (
-                    <span
-                      className={cn(
-                        'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium',
-                        achterstallig
-                          ? 'bg-rose-100 text-rose-700'
-                          : 'bg-teal-50 text-teal-700',
-                      )}
-                    >
-                      Verzendweek {groep.verzendWeek}
-                    </span>
-                  )}
-                  {achterstallig && (
-                    <span
-                      className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-rose-500 text-white"
-                      title="Pick-week ligt al in het verleden — had vorige week of eerder gepickt moeten worden"
-                    >
-                      Achterstallig
-                    </span>
-                  )}
-                  <span className="text-slate-400 font-normal">({groep.orders.length})</span>
-                </h3>
-                <div className="space-y-3">
-                  {groep.orders.map((o) => (
-                    <OrderPickCard key={o.order_id} order={o} />
-                  ))}
-                </div>
-              </section>
-            )
-          })}
+          {perWeek.map((groep) => (
+            <PickWeekSectie
+              key={groep.sleutel}
+              orders={groep.orders}
+              pickWeek={groep.pickWeek}
+              verzendWeek={groep.verzendWeek}
+              status={groep.status}
+              groepeerOpLand={groepeerOpLand}
+            />
+          ))}
         </div>
       )}
     </>

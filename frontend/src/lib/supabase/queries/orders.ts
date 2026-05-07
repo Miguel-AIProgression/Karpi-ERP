@@ -41,6 +41,7 @@ export interface OrderDetail extends OrderRow {
   compleet_geleverd: boolean
   vertegenw_naam?: string
   lever_modus: 'deelleveringen' | 'in_een_keer' | null
+  afhalen: boolean
 }
 
 export interface OrderRegelSnijplan {
@@ -223,7 +224,7 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
 
   const { data, error } = await supabase
     .from('order_regels')
-    .select('id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2, orderaantal, te_leveren, backorder, prijs, korting_pct, bedrag, gewicht_kg, vrije_voorraad, fysiek_artikelnr, omstickeren, is_maatwerk, maatwerk_vorm, maatwerk_lengte_cm, maatwerk_breedte_cm, maatwerk_afwerking, maatwerk_band_kleur, maatwerk_instructies, producten!order_regels_artikelnr_fkey(kwaliteit_code)')
+    .select('id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2, orderaantal, te_leveren, backorder, prijs, korting_pct, bedrag, gewicht_kg, vrije_voorraad, fysiek_artikelnr, omstickeren, is_maatwerk, maatwerk_vorm, maatwerk_lengte_cm, maatwerk_breedte_cm, maatwerk_afwerking, maatwerk_band_kleur, maatwerk_instructies, producten!order_regels_artikelnr_fkey(kwaliteit_code, kleur_code)')
     .eq('order_id', orderId)
     .order('regelnummer')
 
@@ -241,8 +242,17 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
   ): OrderRegel {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const row = r as any
-    const product = row.producten as { kwaliteit_code: string } | null
+    const product = row.producten as { kwaliteit_code: string; kleur_code: string | null } | null
     const kwalCode = product?.kwaliteit_code ?? null
+    const kleurCode = product?.kleur_code ?? null
+
+    let klantEigenNaam: string | null = null
+    if (kwalCode && eigenNaamMap) {
+      // Specifieke (kwaliteit, kleur)-match wint van de kwaliteit-fallback (kleur=NULL).
+      const specifiek = kleurCode ? eigenNaamMap.get(`${kwalCode}_${kleurCode}`) : undefined
+      const fallback = eigenNaamMap.get(`${kwalCode}_`)
+      klantEigenNaam = specifiek ?? fallback ?? null
+    }
 
     return {
       id: row.id,
@@ -259,7 +269,7 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
       bedrag: row.bedrag,
       gewicht_kg: row.gewicht_kg,
       vrije_voorraad: row.vrije_voorraad,
-      klant_eigen_naam: kwalCode && eigenNaamMap ? eigenNaamMap.get(kwalCode) ?? null : null,
+      klant_eigen_naam: klantEigenNaam,
       klant_artikelnr: row.artikelnr && klantArtMap ? klantArtMap.get(row.artikelnr) ?? null : null,
       fysiek_artikelnr: row.fysiek_artikelnr ?? null,
       omstickeren: row.omstickeren ?? false,
@@ -295,14 +305,17 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
     return regels.map((r) => toRegel(r, undefined, undefined, fysiekOmschMap))
   }
 
-  // Fetch all klanteigen namen for this customer in one query
-  const { data: eigenNamen } = await supabase
-    .from('klanteigen_namen')
-    .select('kwaliteit_code, benaming')
-    .eq('debiteur_nr', debiteurNr)
+  // Fetch all klanteigen namen voor deze debiteur via RPC (mig 200).
+  // Levert klant-niveau + overerving via inkoopgroep_code, met klant > groep
+  // prioriteit per (kwaliteit, kleur)-paar.
+  // Map-key = `${kwaliteit_code}_${kleur_code ?? ''}`. Specifiek > fallback (kleur=NULL).
+  const { data: eigenNamen } = await supabase.rpc('resolve_klanteigen_namen_voor_debiteur', {
+    p_debiteur_nr: debiteurNr,
+  })
 
   const eigenNaamMap = new Map(
-    (eigenNamen ?? []).map((n: { kwaliteit_code: string; benaming: string }) => [n.kwaliteit_code, n.benaming])
+    ((eigenNamen ?? []) as { kwaliteit_code: string; kleur_code: string | null; benaming: string }[])
+      .map((n) => [`${n.kwaliteit_code}_${n.kleur_code ?? ''}`, n.benaming])
   )
 
   // Fetch all klant artikelnummers for this customer in one query

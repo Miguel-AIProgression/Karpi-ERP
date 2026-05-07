@@ -8,6 +8,7 @@ interface ZendingAanmakenKnopProps {
     id: number
     status: string
     debiteur_nr: number
+    afhalen?: boolean
   }
 }
 
@@ -31,7 +32,10 @@ export function ZendingAanmakenKnop({ order }: ZendingAanmakenKnopProps) {
 
   const actieveVervoerders = vervoerders.filter((v) => v.actief)
   const kanAutomatischKiezen = actieveVervoerders.length === 1
-  const disabled = busy || vervoerdersLoading || createMutation.isPending || !kanAutomatischKiezen
+  // Afhalen-orders hebben geen vervoerder nodig (mig 205): RPC skipt dispatch.
+  const disabled = order.afhalen
+    ? busy || createMutation.isPending
+    : busy || vervoerdersLoading || createMutation.isPending || !kanAutomatischKiezen
 
   async function handleClick() {
     setBusy(true)
@@ -49,13 +53,15 @@ export function ZendingAanmakenKnop({ order }: ZendingAanmakenKnopProps) {
     }
   }
 
-  const tooltip = vervoerdersLoading
-    ? 'Vervoerders laden...'
-    : actieveVervoerders.length === 0
-      ? 'Activeer eerst een vervoerder bij Logistiek > instellingen'
-      : actieveVervoerders.length > 1
-        ? 'Meerdere vervoerders actief: richt eerst prijs/criteria-selectie in'
-        : `Maak zending aan via ${actieveVervoerders[0].display_naam} en open de verzendset`
+  const tooltip = order.afhalen
+    ? 'Maak afhaal-zending + pakbon (geen vervoerder, geen verzendstickers)'
+    : vervoerdersLoading
+      ? 'Vervoerders laden...'
+      : actieveVervoerders.length === 0
+        ? 'Activeer eerst een vervoerder bij Logistiek > instellingen'
+        : actieveVervoerders.length > 1
+          ? 'Meerdere vervoerders actief: richt eerst prijs/criteria-selectie in'
+          : `Maak zending aan via ${actieveVervoerders[0].display_naam} en open de verzendset`
 
   return (
     <div className="inline-flex flex-col items-end gap-1">
@@ -70,7 +76,7 @@ export function ZendingAanmakenKnop({ order }: ZendingAanmakenKnopProps) {
         ) : (
           <Truck size={14} />
         )}
-        Zending aanmaken
+        {order.afhalen ? 'Afhaal-zending aanmaken' : 'Zending aanmaken'}
       </button>
       {feedback && <div className="text-xs text-rose-600">{feedback.msg}</div>}
     </div>

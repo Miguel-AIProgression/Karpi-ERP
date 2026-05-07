@@ -55,7 +55,7 @@ export function OrderDetailPage() {
         title={order.order_nr}
         actions={
           <ZendingAanmakenKnop
-            order={{ id: order.id, status: order.status, debiteur_nr: order.debiteur_nr }}
+            order={{ id: order.id, status: order.status, debiteur_nr: order.debiteur_nr, afhalen: order.afhalen }}
           />
         }
       />

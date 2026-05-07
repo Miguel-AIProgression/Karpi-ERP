@@ -15,15 +15,17 @@ import { fetchOrderConfig, type OrderConfig } from '@/lib/supabase/queries/order
 import { triggerAutoplan, fetchAutoplanningConfig } from '@/lib/supabase/queries/auto-planning'
 import { berekenAfleverdatum } from '@/lib/utils/afleverdatum'
 import { berekenMaatwerkAfleverdatumViaSeam } from '@/lib/utils/maatwerk-leverdatum'
+import {
+  verzendWeekIsoString,
+  verzendWeekStringToDatum,
+  verzendWeekVoor,
+  verzendWeekRelatief,
+} from '@/lib/orders/verzendweek'
 import { SHIPPING_PRODUCT_ID, SHIPPING_THRESHOLD, SHIPPING_COST } from '@/lib/constants/shipping'
 import { SPOED_PRODUCT_ID, SPOED_FALLBACK_BEDRAG } from '@/lib/constants/spoed'
 
 function getISOWeek(dateStr: string): number {
-  const date = new Date(dateStr)
-  const tmp = new Date(date.getTime())
-  tmp.setDate(tmp.getDate() + 4 - (tmp.getDay() || 7))
-  const yearStart = new Date(tmp.getFullYear(), 0, 1)
-  return Math.ceil(((tmp.getTime() - yearStart.getTime()) / 86400000 + 1) / 7)
+  return verzendWeekVoor(dateStr)?.week ?? 0
 }
 
 interface OrderFormProps {
@@ -62,6 +64,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
     () => mode === 'edit' && (initialData?.regels ?? []).some(r => r.artikelnr === SPOED_PRODUCT_ID)
   )
   const [leverModusDialogOpen, setLeverModusDialogOpen] = useState(false)
+  const [afhalen, setAfhalen] = useState<boolean>(initialData?.header?.afhalen ?? false)
 
   // In edit-modus laadt clientData asynchroon na de eerste render.
   // Sync de prijslijst en korting zodra die beschikbaar komen.
@@ -137,8 +140,18 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
     () => mode === 'edit' && (initialData?.regels ?? []).some(r => r.artikelnr === SHIPPING_PRODUCT_ID)
   )
 
-  /** Apply automatic shipping logic to a set of order lines. Returns new lines array. */
-  function applyShippingLogic(currentRegels: OrderRegelFormData[], currentClient: SelectedClient | null): OrderRegelFormData[] {
+  /** Apply automatic shipping logic to a set of order lines. Returns new lines array.
+   *  Bij `afhalenActief=true` wordt de VERZEND-regel altijd verwijderd en niet
+   *  opnieuw toegevoegd — klant haalt zelf op, dus geen verzendkosten. */
+  function applyShippingLogic(
+    currentRegels: OrderRegelFormData[],
+    currentClient: SelectedClient | null,
+    afhalenActief: boolean = afhalen,
+  ): OrderRegelFormData[] {
+    if (afhalenActief) {
+      return currentRegels.filter(l => l.artikelnr !== SHIPPING_PRODUCT_ID)
+    }
+
     const subtotaal = currentRegels
       .filter(l => l.artikelnr !== SHIPPING_PRODUCT_ID)
       .reduce((sum, l) => sum + (l.bedrag ?? 0), 0)
@@ -166,6 +179,14 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
     }
 
     return currentRegels
+  }
+
+  /** Toggle afhalen — verwijdert/herstelt verzend-regel automatisch en zet
+   *  shippingOverridden uit zodat de auto-logica weer leidend wordt. */
+  function handleAfhalenToggle(nieuw: boolean) {
+    setAfhalen(nieuw)
+    setShippingOverridden(false)
+    setRegels((current) => applyShippingLogic(current, client, nieuw))
   }
 
   // Auto-fill addresses when client is selected + reprice existing lines
@@ -253,7 +274,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
   // (prijslijst_vast → prijslijst_m2 → maatwerk_artikel_m2 → kwaliteit_m2 →
   // product_verkoopprijs). Voor verzend/spoed niet aanroepen — die hebben
   // hun eigen logica in applyShippingLogic / applySpoedToeslag.
-  const handleArticleSelected = useCallback(async (article: { artikelnr: string; kwaliteit_code: string | null }) => {
+  const handleArticleSelected = useCallback(async (article: { artikelnr: string; kwaliteit_code: string | null; kleur_code?: string | null }) => {
     const debiteurNr = client?.debiteur_nr
     let prijs: number | null = null
     let prijs_bron: PrijsBron = 'geen'
@@ -269,9 +290,9 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
     }
 
     if (debiteurNr) {
-      // Lookup klanteigen naam (via kwaliteit_code)
+      // Lookup klanteigen naam (via kwaliteit_code, optioneel verfijnd op kleur)
       if (article.kwaliteit_code) {
-        const kenResult = await fetchKlanteigenNaam(debiteurNr, article.kwaliteit_code)
+        const kenResult = await fetchKlanteigenNaam(debiteurNr, article.kwaliteit_code, article.kleur_code ?? null)
         if (kenResult) klant_eigen_naam = kenResult.benaming
       }
 
@@ -383,8 +404,8 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
       if (regels.filter(r => r.artikelnr !== SHIPPING_PRODUCT_ID).length === 0) throw new Error('Voeg minstens één orderregel toe')
 
       const headerWithModus: Partial<OrderFormData> = overrideLeverModus
-        ? { ...header, lever_modus: overrideLeverModus }
-        : header
+        ? { ...header, lever_modus: overrideLeverModus, afhalen }
+        : { ...header, afhalen }
       const orderData: OrderFormData = { ...headerWithModus, debiteur_nr: client.debiteur_nr }
 
       if (mode === 'create') {
@@ -613,14 +634,15 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
       </div>
 
       {/* Header fields */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Field label="Klant referentie" value={header.klant_referentie} onChange={(v) => setHeader({ ...header, klant_referentie: v })} />
-        <Field label="Afleverdatum" value={header.afleverdatum} onChange={(v) => {
-          const week = v ? getISOWeek(v) : undefined
-          setAfleverdatumOverridden(true)
-          setHeader({ ...header, afleverdatum: v, week: week ? String(week) : undefined })
-        }} type="date" />
-        <Field label="Week" value={header.week} onChange={(v) => setHeader({ ...header, week: v })} />
+        <VerzendweekField
+          afleverdatum={header.afleverdatum}
+          onChange={(nieuweDatum, weekNr) => {
+            setAfleverdatumOverridden(true)
+            setHeader({ ...header, afleverdatum: nieuweDatum, week: weekNr })
+          }}
+        />
       </div>
 
       {/* Real-time levertijd-suggestie voor maatwerk-regels */}
@@ -674,20 +696,38 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
         </div>
       )}
 
-      {/* Address selector */}
+      {/* Afhalen + address selector */}
       {client && (
-        <AddressSelector
-          debiteurNr={client.debiteur_nr}
-          onSelect={handleAddressSelect}
-        />
+        <div className="space-y-3">
+          <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={afhalen}
+              onChange={(e) => handleAfhalenToggle(e.target.checked)}
+              className="rounded border-slate-300 text-terracotta-500 focus:ring-terracotta-400/30"
+            />
+            Klant haalt zelf af — verzendkosten vervallen
+          </label>
+          <AddressSelector
+            debiteurNr={client.debiteur_nr}
+            onSelect={handleAddressSelect}
+            disabled={afhalen}
+          />
+        </div>
       )}
 
       {/* Address preview */}
-      {header.afl_naam && (
-        <div className="grid grid-cols-2 gap-4">
-          <AddressPreview title="Factuuradres" naam={header.fact_naam} adres={header.fact_adres} postcode={header.fact_postcode} plaats={header.fact_plaats} />
-          <AddressPreview title="Afleveradres" naam={header.afl_naam} adres={header.afl_adres} postcode={header.afl_postcode} plaats={header.afl_plaats} />
+      {afhalen ? (
+        <div className="bg-amber-50 border border-amber-200 rounded-[var(--radius-sm)] p-3 text-sm text-amber-800">
+          Order wordt door de klant opgehaald — er wordt geen afleveradres gebruikt en geen verzendkosten in rekening gebracht.
         </div>
+      ) : (
+        header.afl_naam && (
+          <div className="grid grid-cols-2 gap-4">
+            <AddressPreview title="Factuuradres" naam={header.fact_naam} adres={header.fact_adres} postcode={header.fact_postcode} plaats={header.fact_plaats} />
+            <AddressPreview title="Afleveradres" naam={header.afl_naam} adres={header.afl_adres} postcode={header.afl_postcode} plaats={header.afl_plaats} />
+          </div>
+        )
       )}
 
       {/* Order lines */}
@@ -807,6 +847,69 @@ function Field({ label, value, onChange, type = 'text' }: {
         onChange={(e) => onChange(e.target.value)}
         className="w-full px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
       />
+    </div>
+  )
+}
+
+/**
+ * Verzendweek-input. Karpi communiceert leverbeloftes als ISO-week (niet als
+ * specifieke dag) — de onderliggende `orders.afleverdatum` blijft een DATE
+ * (vrijdag van de gekozen week), zodat bestaande logica (mig 153 IO-claim sync,
+ * pick & ship bucket, levertijd-berekening) ongewijzigd blijft.
+ *
+ * Gebruikt HTML5 `<input type="week">` voor native ISO-week-picker mét correct
+ * gedrag rond jaarwisseling.
+ */
+function VerzendweekField({
+  afleverdatum,
+  onChange,
+}: {
+  afleverdatum?: string
+  onChange: (nieuweDatum: string | undefined, weekNr: string | undefined) => void
+}) {
+  const weekString = verzendWeekIsoString(afleverdatum ?? null)
+  const info = verzendWeekVoor(afleverdatum ?? null)
+  const vandaagDate = new Date()
+  // ISO-formaat in lokale tijd — voorkomt off-by-one rond middernacht UTC.
+  const vandaagIso =
+    `${vandaagDate.getFullYear()}-${String(vandaagDate.getMonth() + 1).padStart(2, '0')}-` +
+    String(vandaagDate.getDate()).padStart(2, '0')
+  const huidigeWeek = verzendWeekVoor(vandaagIso)
+  const relatief = verzendWeekRelatief(afleverdatum ?? null, vandaagDate)
+  return (
+    <div>
+      <div className="flex items-baseline justify-between mb-1">
+        <label className="block text-sm font-medium text-slate-700">Verzendweek</label>
+        {huidigeWeek && (
+          <span className="text-xs text-slate-500">
+            Vandaag: <span className="font-medium text-slate-700">Wk {huidigeWeek.week} · {huidigeWeek.jaar}</span>
+          </span>
+        )}
+      </div>
+      <input
+        type="week"
+        value={weekString}
+        onChange={(e) => {
+          const value = e.target.value
+          if (!value) {
+            onChange(undefined, undefined)
+            return
+          }
+          const nieuweDatum = verzendWeekStringToDatum(value)
+          if (!nieuweDatum) return
+          const week = verzendWeekVoor(nieuweDatum)
+          onChange(nieuweDatum, week ? String(week.week) : undefined)
+        }}
+        className="w-full px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
+      />
+      {info && (
+        <p className="mt-1 text-xs text-slate-500">
+          Wk {info.week} · {info.jaar}
+          {relatief && <span className="text-slate-400"> ({relatief})</span>}
+          {' — gepickt in week '}
+          {info.week - 1 || 52}
+        </p>
+      )}
     </div>
   )
 }

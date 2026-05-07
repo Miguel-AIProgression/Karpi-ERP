@@ -1,12 +1,14 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Network } from 'lucide-react'
+import { Network, Plus } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import {
   useVervoerders,
   useVervoerderStats,
   useUpdateVervoerder,
 } from '@/modules/logistiek/hooks/use-vervoerders'
+import { VervoerderCreateDialog } from '@/modules/logistiek/components/vervoerder-create-dialog'
+import { VerzendregelsSectie } from '@/modules/logistiek/components/verzendregels-sectie'
 import type { Vervoerder, VervoerderStats } from '@/modules/logistiek/queries/vervoerders'
 
 interface VervoerderRowVm extends Vervoerder {
@@ -26,6 +28,7 @@ export function VervoerdersOverzichtPage() {
   const { data: vervoerders = [], isLoading } = useVervoerders()
   const { data: alleStats = [] } = useVervoerderStats()
   const updateMut = useUpdateVervoerder()
+  const [showCreate, setShowCreate] = useState(false)
 
   const rijen = useMemo<VervoerderRowVm[]>(() => {
     const statsMap = new Map(alleStats.map((s) => [s.code, s]))
@@ -45,6 +48,15 @@ export function VervoerdersOverzichtPage() {
           </span>
         }
         description={`${rijen.length} vervoerder${rijen.length === 1 ? '' : 's'} geconfigureerd`}
+        actions={
+          <button
+            onClick={() => setShowCreate(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-[var(--radius-sm)] bg-terracotta-500 text-white font-medium hover:bg-terracotta-600"
+          >
+            <Plus size={14} />
+            Nieuwe vervoerder
+          </button>
+        }
       />
 
       <div className="bg-white rounded-[var(--radius)] border border-slate-200 overflow-hidden">
@@ -107,15 +119,26 @@ export function VervoerdersOverzichtPage() {
           </table>
         )}
       </div>
+
+      <VerzendregelsSectie vervoerders={vervoerders} />
+
+      {showCreate && (
+        <VervoerderCreateDialog
+          onClose={() => setShowCreate(false)}
+          onCreated={(code) => navigate(`/logistiek/vervoerders/${code}`)}
+        />
+      )}
     </>
   )
 }
 
-function TypeBadge({ type }: { type: 'api' | 'edi' }) {
+function TypeBadge({ type }: { type: 'api' | 'edi' | 'print' }) {
   const styles =
     type === 'api'
       ? 'bg-blue-100 text-blue-700'
-      : 'bg-orange-100 text-orange-700'
+      : type === 'edi'
+        ? 'bg-orange-100 text-orange-700'
+        : 'bg-violet-100 text-violet-700'
   return (
     <span
       className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide ${styles}`}

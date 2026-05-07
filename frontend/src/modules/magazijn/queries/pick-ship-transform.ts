@@ -1,4 +1,9 @@
 import { bucketVoor } from '../lib/buckets'
+import {
+  verzendWeekKort,
+  verzendWeekLabel,
+  verzendWeekSleutel,
+} from '@/lib/orders/verzendweek'
 import { sanitizeSearch } from '@/lib/utils/sanitize'
 import type {
   PickShipBron,
@@ -34,8 +39,12 @@ export interface OrderHeaderRij {
   klant_naam: string | null
   debiteur_nr: number
   afl_naam: string | null
+  afl_adres: string | null
+  afl_postcode: string | null
   afl_plaats: string | null
+  afl_land: string | null
   afleverdatum: string | null
+  afhalen: boolean
 }
 
 export function initPickShipOrders(
@@ -52,11 +61,19 @@ export function initPickShipOrders(
       klant_naam: h.klant_naam ?? '',
       debiteur_nr: h.debiteur_nr,
       afl_naam: h.afl_naam,
+      afl_adres: h.afl_adres,
+      afl_postcode: h.afl_postcode,
       afl_plaats: h.afl_plaats,
+      afl_land: h.afl_land,
       afleverdatum: h.afleverdatum,
+      afhalen: h.afhalen,
       bucket: bucketVoor(h.afleverdatum, vandaag),
+      verzend_week_sleutel: verzendWeekSleutel(h.afleverdatum),
+      verzend_week_label: verzendWeekLabel(h.afleverdatum),
+      verzend_week_kort: verzendWeekKort(h.afleverdatum),
       regels: [],
       totaal_m2: 0,
+      totaal_gewicht_kg: 0,
       aantal_regels: 0,
     })
   }
@@ -64,11 +81,18 @@ export function initPickShipOrders(
   return perOrder
 }
 
-export function mapPickbaarheidRegel(r: PickbaarheidRij): PickShipRegel {
+export function mapPickbaarheidRegel(
+  r: PickbaarheidRij,
+  karpiNaam: string | null = null,
+): PickShipRegel {
   const lengte = r.maatwerk_lengte_cm ?? 0
   const breedte = r.maatwerk_breedte_cm ?? 0
   const m2 = r.is_maatwerk ? Math.round(((lengte * breedte) / 10000) * 100) / 100 : 0
+  // Pick & Ship toont de canonische Karpi-naam (producten.omschrijving) — geen
+  // klanteigen-naam. Het magazijn werkt op Karpi's eigen artikel-administratie;
+  // klantnamen horen pas op pakbon/verzendsticker thuis.
   const product =
+    karpiNaam ||
     r.omschrijving ||
     [r.maatwerk_kwaliteit_code, r.maatwerk_kleur_code].filter(Boolean).join(' ') ||
     `Regel ${r.regelnummer}`

@@ -1,0 +1,27 @@
+TKA013 import-rapport — 20260506_192546
+Bron: TKA013_Overzicht_20260319104204.xls
+
+Klant-aliassen geupload: 6252
+Inkoopgroep-aliassen geupload: 292
+Skip lege/benaming: 0
+Skip ontbrekend ID: 10
+Skip dupes binnen Excel (klant): 0
+Skip dupes binnen Excel (inkoopgroep): 0
+
+Onbekende kwaliteiten (0 unieke codes, 0 rijen):
+
+Onbekende debiteuren (2 unieke nrs, 38 rijen):
+  851921  (30 rijen)
+  481850  (8 rijen)
+
+Onbekende inkoopgroepen (10 unieke codes, 241 rijen):
+  INKC04   58
+  INKC28   47
+  INKC09   43
+  INKC17   32
+  INKC29   26
+  INKC48   23
+  INKC05   6
+  INKC46   4
+  INKC23   1
+  INKC38   1

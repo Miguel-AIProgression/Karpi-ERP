@@ -21,6 +21,8 @@ export interface OrderFormData {
   afl_land?: string
   /** Per-order keuze bij tekort. Default uit debiteuren.deelleveringen_toegestaan. NULL voor orders zonder tekort. */
   lever_modus?: 'deelleveringen' | 'in_een_keer' | null
+  /** Klant haalt zelf af → UI onderdrukt automatische verzendkosten-regel; logistiek slaat vervoerder over. Mig 204. */
+  afhalen?: boolean
 }
 
 export interface OrderRegelFormData {
@@ -157,6 +159,7 @@ export async function createOrder(
     afl_plaats: order.afl_plaats || null,
     afl_land: order.afl_land || null,
     lever_modus: order.lever_modus ?? null,
+    afhalen: order.afhalen ?? false,
   }
 
   const p_regels = regels.map((r, i) => ({
@@ -312,17 +315,26 @@ export async function resolveOrderlinePrice(
   }
 }
 
-/** Fetch klanteigen naam for a quality code + customer */
-export async function fetchKlanteigenNaam(debiteurNr: number, kwaliteitCode: string) {
-  const { data, error } = await supabase
-    .from('klanteigen_namen')
-    .select('benaming, omschrijving')
-    .eq('debiteur_nr', debiteurNr)
-    .eq('kwaliteit_code', kwaliteitCode)
-    .maybeSingle()
+/**
+ * Fetch klanteigen naam met fallback klant+kleur > klant+NULL >
+ * inkoopgroep+kleur > inkoopgroep+NULL > NULL. Gebruikt RPC
+ * `resolve_klanteigen_naam` uit migratie 199 zodat de prioriteit
+ * server-side wordt afgehandeld en consistent blijft met het overzicht.
+ */
+export async function fetchKlanteigenNaam(
+  debiteurNr: number,
+  kwaliteitCode: string,
+  kleurCode?: string | null,
+) {
+  const { data, error } = await supabase.rpc('resolve_klanteigen_naam', {
+    p_debiteur_nr: debiteurNr,
+    p_kwaliteit_code: kwaliteitCode,
+    p_kleur_code: kleurCode ?? null,
+  })
 
   if (error) throw error
-  return data as { benaming: string; omschrijving: string | null } | null
+  const benaming = data as string | null
+  return benaming ? { benaming, omschrijving: null } : null
 }
 
 /** Fetch klant artikelnummer for an article + customer */

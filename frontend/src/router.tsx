@@ -49,6 +49,7 @@ import {
   ZendingenOverzichtPage,
   ZendingDetailPage,
   ZendingPrintSetPage,
+  BulkPrintSetPage,
   VervoerdersOverzichtPage,
   VervoerderDetailPage,
 } from '@/modules/logistiek'
@@ -104,9 +105,12 @@ export const router = createBrowserRouter([
       { path: 'confectie/planning', element: <ConfectiePlanningPage /> },
       { path: 'pick-ship', element: <MagazijnOverviewPage /> },
       { path: 'logistiek', element: <ZendingenOverzichtPage /> },
-      // Belangrijk: vervoerders-routes vóór `:zending_nr` om matching-conflict te vermijden.
+      // Belangrijk: vervoerders-routes en de bulk-printset-route vóór `:zending_nr`
+      // om matching-conflict te vermijden (anders gaat 'printset' / 'bulk' / 'vervoerders'
+      // als zending_nr de detail-route in).
       { path: 'logistiek/vervoerders', element: <VervoerdersOverzichtPage /> },
       { path: 'logistiek/vervoerders/:code', element: <VervoerderDetailPage /> },
+      { path: 'logistiek/printset/bulk', element: <BulkPrintSetPage /> },
       { path: 'logistiek/:zending_nr/printset', element: <ZendingPrintSetPage /> },
       { path: 'logistiek/:zending_nr', element: <ZendingDetailPage /> },
       { path: 'inkoop', element: <InkooporderOverviewPage /> },

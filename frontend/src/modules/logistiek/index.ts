@@ -52,12 +52,15 @@ export {
 export { ZendingenOverzichtPage } from './pages/zendingen-overzicht'
 export { ZendingDetailPage } from './pages/zending-detail'
 export { ZendingPrintSetPage } from './pages/zending-printset'
+export { BulkPrintSetPage } from './pages/bulk-printset'
 export { VervoerdersOverzichtPage } from './pages/vervoerders-overzicht'
 export { VervoerderDetailPage } from './pages/vervoerder-detail'
 export { VervoerderTag } from './components/vervoerder-tag'
+export { VervoerderInlineSelect } from './components/vervoerder-inline-select'
 export { VervoerderStatsCard } from './components/vervoerder-stats-card'
 export { ZendingStatusBadge } from './components/zending-status-badge'
 export { VerzendsetButton } from './components/verzendset-button'
+export { BulkVerzendsetButton } from './components/bulk-verzendset-button'
 
 // Fase A — vervoerder-instellingen (mig 174)
 export {

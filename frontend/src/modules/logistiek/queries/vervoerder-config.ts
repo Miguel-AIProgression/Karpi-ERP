@@ -22,9 +22,11 @@ export async function fetchKlantVervoerderConfig(debiteur_nr: number) {
 }
 
 /**
- * Schrijf de vervoerder-keuze. Upsert want `edi_handelspartner_config` heeft
- * unique constraint op `debiteur_nr`. Bij wijziging worden bestaande zendingen
- * niet gemigreerd; alleen nieuwe zendingen volgen de nieuwe waarde.
+ * Schrijf de vervoerder-keuze voor toekomstige zendingen van deze klant.
+ * Upsert want `edi_handelspartner_config` heeft unique constraint op
+ * `debiteur_nr`. Voor het bijwerken van een lopende zending (zodat de sticker
+ * de gekozen vervoerder reflecteert) gebruik je
+ * `updateZendingVervoerderVoorOrder`.
  */
 export async function upsertKlantVervoerderConfig(
   debiteur_nr: number,
@@ -33,6 +35,23 @@ export async function upsertKlantVervoerderConfig(
   return await supabase
     .from('edi_handelspartner_config')
     .upsert({ debiteur_nr, vervoerder_code }, { onConflict: 'debiteur_nr' })
+}
+
+/**
+ * Override de vervoerder op de lopende zending(en) van een specifieke order
+ * zodat de sticker meebeweegt met de keuze op pick & ship. Beperkt tot
+ * statussen waarin nog niet verzonden is — eindstatussen ('Onderweg',
+ * 'Afgeleverd') blijven ongewijzigd om het audit-spoor te bewaren.
+ */
+export async function updateZendingVervoerderVoorOrder(
+  order_id: number,
+  vervoerder_code: string | null,
+) {
+  return await supabase
+    .from('zendingen')
+    .update({ vervoerder_code })
+    .eq('order_id', order_id)
+    .in('status', ['Gepland', 'Picken', 'Ingepakt', 'Klaar voor verzending'])
 }
 
 /**

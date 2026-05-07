@@ -1,5 +1,100 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-07 — Pick & Ship: vervoerder-pill werkt ook door op de sticker
+
+De `VervoerderInlineSelect`-pill op de pick-overzicht-card schreef alleen naar `edi_handelspartner_config.vervoerder_code` — een klant-default voor *toekomstige* zendingen. De sticker leest echter `zendingen.vervoerder_code` (gezet bij `start_pickronde` via `selecteer_vervoerder_voor_zending`). Resultaat: gebruiker wijzigde de pill naar bv. "Rhenus", maar het verzendset-PDF bleef "HST" tonen — zoals zichtbaar op pick & ship voor ORD-2026-2034.
+
+- **[`vervoerder-config.ts`](../frontend/src/modules/logistiek/queries/vervoerder-config.ts)** — Nieuwe query `updateZendingVervoerderVoorOrder(order_id, vervoerder_code)` die de lopende zending van één order overschrijft. Filter op `status IN ('Gepland', 'Picken', 'Ingepakt', 'Klaar voor verzending')` zodat reeds verzonden zendingen ('Onderweg', 'Afgeleverd') ongewijzigd blijven voor het audit-spoor.
+- **[`use-vervoerder-config.ts`](../frontend/src/modules/logistiek/hooks/use-vervoerder-config.ts)** — `useUpsertKlantVervoerderConfig` accepteert nu een optionele `order_id`. Wanneer aanwezig wordt na de klant-config-upsert ook de zending-update gedaan, en worden `['logistiek', 'zending-printset']`, `['logistiek', 'zending']` en `['logistiek', 'zendingen']` geïnvalideerd zodat de printset-pagina meteen de nieuwe vervoerder oppakt.
+- **[`vervoerder-inline-select.tsx`](../frontend/src/modules/logistiek/components/vervoerder-inline-select.tsx) + [`order-pick-card.tsx`](../frontend/src/modules/magazijn/components/order-pick-card.tsx)** — `orderId`-prop toegevoegd; pick-card geeft `order.order_id` mee. Klant-detailpagina ([`klant-vervoerder-tab.tsx`](../frontend/src/components/klanten/klant-vervoerder-tab.tsx)) blijft zonder `order_id` werken (alleen klant-default, oude semantiek).
+- _Waarom_: gebruikersverwachting — "als ik hier de vervoerder wijzig, dan moet dat ook wel toegepast worden op de sticker." De fix grijpt in op het bestaande knip-punt (zending al aangemaakt door `start_pickronde`) en laat eindstatussen ongemoeid; geen DB-migratie nodig.
+
+## 2026-05-07 — Mig 214: land-normalisatie in regel-evaluator
+
+`orders.afl_land` (en de gekopieerde `zendingen.afl_land`) is een vrij TEXT-veld — afhankelijk van de orderbron stond er `'NL'`, `'Nederland'`, `'Holland'`, `'BELGIË'`, of `'NL '`. De regel-evaluator `matcht_regel` (mig 210) deed exacte string-equality, dus een regel `land:['NL']` matchte wel orders met `afl_land='NL'` maar niet met `afl_land='Nederland'`. Stille fallthroughs naar generiekere regels of "geen vervoerder gekozen" waren het gevolg.
+
+- **[`214_normaliseer_land_in_regel_evaluator.sql`](../supabase/migrations/214_normaliseer_land_in_regel_evaluator.sql)** — Nieuwe functie `normaliseer_land(TEXT)` die ISO-2 als-is doorgeeft (2 letters → uppercase) en volledige landnamen mapt naar ISO-2. Strip whitespace en de meest voorkomende diakritieken (Á/É/Í/Ó/Ú/Ç/Ñ + accenten) zonder de `unaccent`-extensie te introduceren — Karpi gebruikt geen Postgres-extensies en de set landen rond het afzetgebied is klein en stabiel.
+- **`matcht_regel`** — Beide kanten van de land-vergelijking gaan nu door `normaliseer_land()`: zowel de regel-conditie `land[]` als `zending.afl_land`. Resultaat: een regel met `land:['NL']` matcht alle varianten ('NL', 'Nederland', 'Holland', 'NETHERLANDS'); een regel met `land:['Nederland']` matcht óók orders met `afl_land='NL'`. Andere conditiesleutels (gewicht, kleinste_zijde, debiteur_nrs, inkoopgroep_codes) zijn ongewijzigd.
+- **Geen schemamutatie** — alleen `CREATE OR REPLACE` op functies, idempotent. Bestaande regels en zendingen werken zonder data-fix.
+- _Waarom_: handmatig aangemaakte orders, webshop-orders en EDI-orders schrijven het land niet uniform. We willen dat verzendregels robuust matchen ongeacht hoe de bron het land heeft genoteerd, zonder data-cleanup over alle historische orders te hoeven doen.
+
+## 2026-05-07 — Pick & Ship: bulk-stickers printen op klant- en land-niveau
+
+In de pick-week-tab kon je tot nu toe alleen per order een verzendset starten. Bij een klant met meerdere orders (bv. FLOORPASSION 2 orders) of bij een land-groep wil de magazijnier in één klik alle stickers + pakbonnen uit de printer.
+
+- **[`bulk-verzendset-button.tsx`](../frontend/src/modules/logistiek/components/bulk-verzendset-button.tsx)** _(nieuw)_ — Knop die de pickbare verzend-orders uit de groep filtert (`!afhalen && allRegelsPickbaar`), sequentieel `create_zending_voor_order` aanroept met live voortgangsteller (`Bezig... 2/5`), en bij succes navigeert naar de bulk-printset-pagina. Verschijnt alleen bij ≥2 printbare orders — single-order is goed gedekt door de bestaande `<VerzendsetButton>`. Bij partial fail blijven aangemaakte zendingen staan en wordt een herstelbaar bericht getoond.
+- **[`pages/bulk-printset.tsx`](../frontend/src/modules/logistiek/pages/bulk-printset.tsx)** _(nieuw)_ — Route `/logistiek/printset/bulk?zendingen=Z1,Z2,…`. Laadt alle zending-printsets parallel via `useQueries` en rendert per zending de stickers + A4-pakbon achter elkaar in één scrollbaar document, met dezelfde print-CSS als de single-zending pagina (één `window.print()`-aanroep produceert het hele stapeltje). Header toont `N zendingen · M colli totaal`.
+- **[`lib/printset.ts`](../frontend/src/modules/logistiek/lib/printset.ts)** _(nieuw)_ — `expandLabels`, `vervoerderInfoVoor`, `labelFormaatVoor` extracted uit `zending-printset.tsx` zodat single + bulk dezelfde SSCC- en label-formaat-logica hergebruiken. Zending-printset is daarmee ook beknopter.
+- **[`use-zendingen.ts`](../frontend/src/modules/logistiek/hooks/use-zendingen.ts)** — Nieuwe `useZendingPrintSets(nrs)` op basis van TanStack `useQueries`, met `combine` zodat de page één status (`isLoading`, `hasError`, `data`) ziet i.p.v. een array van resultaten.
+- **[`pick-week-sectie.tsx`](../frontend/src/modules/magazijn/components/pick-week-sectie.tsx)** — `<BulkVerzendsetButton>` rechts in de klant-cluster-header (bij 2+ orders) en in de land-header (alleen als toggle "Groeperen op land" aan staat).
+- **[`router.tsx`](../frontend/src/router.tsx)** — `logistiek/printset/bulk` toegevoegd vóór `logistiek/:zending_nr` om matching-conflict te vermijden.
+- _Waarom_: één klant verzamelt vaak meerdere orders in dezelfde week (samenvoegen-vóór-verzenden bespaart vrachtkosten). Door op cluster-niveau te kunnen printen vermijdt de magazijnier 5× klikken + 5× navigeren + 5× print-dialoog. Het bulk-document gebruikt dezelfde stickers als de single-flow, dus geen aparte template-code.
+
+## 2026-05-07 — Verzendregels: land-eerst weergave i.p.v. platte regellijst
+
+De gegroepeerde dialog (vorige iteratie) was nog steeds te complex voor wat in de praktijk een eenvoudige routing-tabel is: "naar dit land sturen we via deze vervoerder". De gebruiker beschreef het mentale model zelf als "welke partijen leveren aan welk land". De UI is nu gestructureerd om dat model te spiegelen.
+
+- **[`verzendregels-sectie.tsx`](../frontend/src/modules/logistiek/components/verzendregels-sectie.tsx)** — Volledig herschreven naar **land-eerst lijst**. Regels worden gegroepeerd per land (een regel met `conditie.land=['NL','BE']` verschijnt onder zowel NL als BE — geen DB-verandering, alleen weergave). Elk land-blok heeft vlag-emoji + Nederlandse naam + ISO-code + eigen "+ Regel"-knop. Onder de landenblokken staat "Algemeen (alle landen)" voor regels zonder land-conditie. Bovenaan een "+ Land toevoegen"-knop met een inline ISO-input (geen aparte dialog). Vaste sorteervolgorde voor frequente landen: NL, BE, DE, FR, LU, AT, CH; overige alfabetisch.
+- **Regelweergave** — Eén leesbare zin per regel: `als rol-lengte ≤ 130 cm → DPD (internationaal)`. Filter-tekst wordt gebouwd uit aanwezige condities; minimal-display als de regel alleen een vervoerder heeft (`→ PostNL`). Toggle/edit/delete als compacte iconen rechts.
+- **[`verzendregel-dialog.tsx`](../frontend/src/modules/logistiek/components/verzendregel-dialog.tsx)** — Vereenvoudigd: geen aparte fieldsets meer, gewoon plat formulier met land/vervoerder/service als hoofdvelden, gewicht en rol-lengte als 2x2 raster, en een collapsable "Geavanceerd" sectie voor inkoopgroep/debiteur. Nieuwe prop `prefillLand` zodat de "+ Regel"-knop per land het land-veld al invult.
+- **[`land-vlag.ts`](../frontend/src/lib/utils/land-vlag.ts)** — `iso2NaarNaam(iso2)` toegevoegd: ISO-2 → Nederlandse landnaam (NL→Nederland, DE→Duitsland, …) op basis van een hardcoded map rond Karpi's afzetgebied. Zelfde set landen als de bestaande `NAAM_NAAR_ISO2` reverse-mapping.
+- _Waarom_: gebruiker werkt vanuit de bestemming, niet vanuit de vervoerder. "Naar Duitsland sturen we DPD bij kleine rollen, Rhenus bij grote" leest natuurlijker dan "regel 10 prio DE+lengte≥131, regel 20 prio DE+lengte≤130". DB en evaluator zijn ongewijzigd — alleen de presentatie.
+
+## 2026-05-07 — Verzendregels: dialog en tabel gegroepeerd op 3 hoofdcategorieën
+
+De conditievelden in [`verzendregel-dialog.tsx`](../frontend/src/modules/logistiek/components/verzendregel-dialog.tsx) lagen door elkaar in één rooster — Land naast Inkoopgroep naast Kleinste-zijde. Voor de gebruiker zijn er feitelijk drie hoofdassen waarop een vervoerder gekozen wordt: **bestemming (land), gewicht, en tapijt-rol-lengte**. Klant- en inkoopgroep-targeting zijn uitzonderingen, geen hoofdcategorieën.
+
+- **[`verzendregel-dialog.tsx`](../frontend/src/modules/logistiek/components/verzendregel-dialog.tsx)** — Conditievelden gegroepeerd in vier `<fieldset>`'s met categorie-icoon en korte uitleg: **Bestemming** (Land), **Gewicht** (zending min/max), **Tapijt-afmeting** (rol-lengte min/max — sub-uitleg dat dit `LEAST(lengte, breedte)` per regel is, MAX over de zending), **Geavanceerd** (Inkoopgroep, Debiteur-nrs). De DB-kolommen blijven `kleinste_zijde_cm_min/max` — alleen de UI-labels heten nu "Min/Max rol-lengte (cm)" omdat dat is wat de gebruiker fysiek ziet bij het oprollen.
+- **[`verzendregels-sectie.tsx`](../frontend/src/modules/logistiek/components/verzendregels-sectie.tsx)** — De chip-rij in de tabel groepeert per categorie in één gekleurde pill: sky=bestemming, amber=gewicht, emerald=lengte, slate=geavanceerd. Min en max van dezelfde categorie staan nu samen (`Gewicht ≥ 30 kg · ≤ 50 kg`) in plaats van als losse chips, wat de regel sneller leesbaar maakt.
+- _Waarom_: gebruiker omschreef de keuze-logica zelf als "land, gewicht, lengte" — de UI moet die mentale model spiegelen, niet alle conditievelden gelijk behandelen.
+
+## 2026-05-07 — Verzendregels centraal beheerd op vervoerders-overzicht
+
+De verzendregels (mig 208) stonden tot nu toe als sub-sectie op de **detailpagina van elke vervoerder**. Dat dwong de gebruiker om eerst een vervoerder te kiezen voordat hij een regel kon toevoegen, terwijl de mentale modellen omgekeerd is: je begint vanuit een conditie ("Duitsland >130cm") en kiest dáárbij een vervoerder. Eén centraal regelboek over alle vervoerders heen leest ook beter — de prio-volgorde is immers globaal.
+
+- **[`verzendregels-sectie.tsx`](../frontend/src/modules/logistiek/components/verzendregels-sectie.tsx)** — Herschreven naar centrale weergave: gebruikt `useAlleVerzendregels()`, kreeg een nieuwe kolom **Vervoerder** (display-naam + code, inactief-marker) en is niet langer afhankelijk van een `vervoerderCode` prop. Neemt enkel de `Vervoerder[]`-lijst aan om dropdown + display-namen te resolven.
+- **[`verzendregel-dialog.tsx`](../frontend/src/modules/logistiek/components/verzendregel-dialog.tsx)** — Vervoerder is nu een **veld in het formulier** (eerste rij, dropdown met actieve vervoerders). Bij wisselen van vervoerder reset het service-code-veld zodat je niet per ongeluk een service van vervoerder-A bij vervoerder-B opslaat. De `vervoerderCode` + `beschikbareServiceCodes` props zijn vervangen door één `vervoerders: Vervoerder[]`.
+- **[`vervoerders-overzicht.tsx`](../frontend/src/modules/logistiek/pages/vervoerders-overzicht.tsx)** — Toont de `VerzendregelsSectie` direct onder de vervoerderstabel, met `vervoerders`-lijst doorgegeven.
+- **[`vervoerder-detail.tsx`](../frontend/src/modules/logistiek/pages/vervoerder-detail.tsx)** — `VerzendregelsSectie`-import + render verwijderd; detailpagina richt zich nu enkel op vervoerder-eigen instellingen (API/print, contact, tarieven, statistieken, recente zendingen).
+- **[`use-verzendregels.ts`](../frontend/src/modules/logistiek/hooks/use-verzendregels.ts)** — `invalidateVerzendregels` invalideert nu de parent-key `['logistiek','verzendregels']` (raakt zowel `'all'` als per-vervoerder caches in één klap). Mutaties (create/update/delete) hoeven geen `vervoerderCode` meer mee te geven.
+- _Waarom_: gebruiker wilde één plek om alle regels te zien en te beheren — "boven 30 kg → Rhenus", "NL → PostNL", etc. — zonder eerst per vervoerder te navigeren. De centrale lijst maakt prio-conflicten tussen vervoerders ook direct zichtbaar.
+
+## 2026-05-07 — Pick & Ship: klant-clustering + optionele land-groepering binnen pick-week
+
+Binnen één pick-week-tab wil de magazijnier (a) altijd alle orders naar dezelfde klant naast elkaar zien, en (b) optioneel een extra split per land kunnen maken voor magazijniers die op landniveau plannen (bv. eerst alle DE-orders door één vervoerder).
+
+- **[`groeperen.ts`](../frontend/src/modules/magazijn/lib/groeperen.ts)** _(nieuw)_ — Pure helpers `clusterOrdersOpKlant(orders)` en `groepeerOrdersOpLand(orders)`. Klant-clustering = sorteer op `(klant_naam, order_nr)` en bundel aaneengesloten dezelfde-debiteur-orders. Land-groepering = split eerst op `landNaarIso2(afl_land)`, daarna klant-clusteren binnen elk land. Onbekende landen sorteren achteraan.
+- **[`pick-week-sectie.tsx`](../frontend/src/modules/magazijn/components/pick-week-sectie.tsx)** _(nieuw)_ — Verhuist de sectie-render uit `pick-overview.tsx`. Bij toggle-uit: één "all"-bucket; bij toggle-aan: één bucket per land met een vlag-emoji header. Klant-clusters van 2+ orders krijgen een lichte wrapper met klantnaam + telling; single-order = standalone card.
+- **[`pick-overview.tsx`](../frontend/src/modules/magazijn/pages/pick-overview.tsx)** — Toggle-chip "Groeperen op land" naast de week-tabs (default uit). De page levert alleen `orders` per pick-week-groep aan `<PickWeekSectie>` — render-logica zit nu daar.
+- **Tests** — [`groeperen.test.ts`](../frontend/src/modules/magazijn/lib/__tests__/groeperen.test.ts) dekt cluster-aaneengeslotenheid, alfabetische sortering, ISO-2-normalisatie ("Nederland" → NL), en onbekend-land-fallback.
+- _Waarom_: meerdere orders naar één klant samen behandelen scheelt verzendkosten en pakwerk. De toggle staat default uit zodat het standaard-gedrag (klant-clustering) niet onnodig nesting toevoegt; magazijniers die per route plannen kunnen 'm aanzetten.
+
+## 2026-05-07 — Pick & Ship: tabs per pick-week (5 weken vooruit + Later)
+
+De Pick & Ship-overview had twee tabs ("Deze week" / "Later") — die bundelden te grof. Voor planning op de werkvloer wil de magazijnier per pick-week kunnen schakelen.
+
+- **[`buckets.ts`](../frontend/src/modules/magazijn/lib/buckets.ts)** — `BucketKey` is nu `'wk_1' | 'wk_2' | 'wk_3' | 'wk_4' | 'wk_5' | 'later'` (relatieve offsets t.o.v. de huidige pick-week). `bucketVoor()` gebruikt `verzendWeekDiff` uit het orderdomein-seam: ship_diff ≤ 1 → wk_1 (huidige pick-week, incl. achterstallig), ship_diff 2..5 → wk_2..wk_5, ≥ 6 of geen datum → later. Nieuwe helper `genereerWeekTabs(vandaag)` labelt op **pick-week**: vandaag (week 19) → tabs "Week 19", "Week 20", …, "Week 23", "Later".
+- **[`pick-overview.tsx`](../frontend/src/modules/magazijn/pages/pick-overview.tsx)** — Tabs gerenderd uit `genereerWeekTabs`; default-tab is `wk_1` (huidige pick-week). Sectie-koppen binnen een tab tonen `Te picken in week N · verzendweek M`, zodat de magazijnier zowel zijn eigen pick-moment als de uitgaande beloofde verzendweek ziet.
+- **[`pickbaarheid.ts`](../frontend/src/modules/magazijn/queries/pickbaarheid.ts)** — `PickShipStats.per_bucket` initialisatie uitgebreid naar de zes nieuwe sleutels. "Te picken deze week"-statkaart gebruikt nu `per_bucket.wk_1`.
+- **Tests** — [`buckets.test.ts`](../frontend/src/modules/magazijn/lib/__tests__/buckets.test.ts) gemodelleerd op de nieuwe sleutels (12 cases voor `bucketVoor`, 5 voor `genereerWeekTabs`, jaarwisseling gedekt).
+- _Waarom_: pick-werk wordt door de magazijnier in de eigen werkweek gepland — niet de verzendweek. Tab-label `Week 19` betekent "deze week pick ik dit", de bijbehorende sticker-pill `Verzendweek 20` blijft als referentie naar de leverbelofte.
+
+## 2026-05-07 — Pick & Ship: ordertype-badge + landvlag op pickregel
+
+De samenvattingsrij van [`OrderPickCard`](../frontend/src/modules/magazijn/components/order-pick-card.tsx) miste twee informatiestukken die de magazijnier in één oogopslag wil zien: of de order maatwerk, standaard, of een combinatie is, en naar welk land hij moet. Voorheen stond er alleen een grijze ISO-2-tekstpill (bv. "DE") en moest de gebruiker de regels uitklappen om het type te zien.
+
+- **[`order-pick-card.tsx`](../frontend/src/modules/magazijn/components/order-pick-card.tsx)** — Naast de klantnaam staat nu een gekleurde type-pill: `Maatwerk` (oranje, alle regels op maat), `STD` (blauw, alle regels standaard) of `Combi` (paars, gemengd). Afgeleid uit `regels[].is_maatwerk` via nieuwe helper `bepaalOrderType`. De land-pill toont een vlag-emoji vóór de ISO-2-code (🇩🇪 DE, 🇧🇪 BE, …); het mobiele-fallback-blok toont dezelfde vlag.
+- **[`lib/utils/land-vlag.ts`](../frontend/src/lib/utils/land-vlag.ts)** _(nieuw)_ — Centrale util `landNaarIso2` + `iso2NaarVlag` + combinatie `landNaarVlag`. Normaliseert zowel ISO-2-codes als volledige landnamen (NL/EN, met diakritiek-strip) naar een ISO-2-code en levert het regional-indicator vlag-emoji. Geen runtime-data — pure unicode-aritmetiek + kleine landnaam-mapping.
+- _Waarom_: pickronde wordt sneller wanneer type en bestemming meteen zichtbaar zijn — magazijnier kan op type-pill scannen om alle maatwerk-orders eerst af te handelen, en de vlag voorkomt verwarring bij export-orders waar de werkwijze (douane-papieren, andere vervoerder) afwijkt.
+
+## 2026-05-07 — Pick & Ship: vervoerder duidelijker zichtbaar in pickregel
+
+De vervoerder-pill op de samenvattingsrij van [`OrderPickCard`](../frontend/src/modules/magazijn/components/order-pick-card.tsx) was een onopvallende mini-badge (10px, uppercase, alleen een gekleurd bolletje). Voor de magazijnier die per order moet weten welke etiket-flow aan de beurt is, was dat te subtiel.
+
+- **[`vervoerder-inline-select.tsx`](../frontend/src/modules/logistiek/components/vervoerder-inline-select.tsx)** — Pill vergroot van `text-[10px]` uppercase naar `text-xs` mixed-case, padding van `px-2 py-0.5` naar `px-2.5 py-1`, het kleurpunt-bolletje vervangen door een Truck-icoon (12px). De "Afhalen"-variant kreeg dezelfde behandeling voor visuele consistentie.
+- **[`order-pick-card.tsx`](../frontend/src/modules/magazijn/components/order-pick-card.tsx)** — De verzendweek-indicator (eerder ook `Truck`) wisselt naar `CalendarDays` zodat het Truck-icoon nu eenduidig "vervoerder" betekent op de regel.
+- _Waarom_: vervoerder is per pickregel een hoofdactie (bepaalt welke labels/zending-flow loopt), niet metadata — verdient daarom dezelfde visuele prominentie als de andere actie-elementen op de rij.
+
 ## 2026-05-07 — Pickronde-flow (mig 211)
 
 **Beslissing:** [ADR-0003](adr/0003-pickronde-als-deepening-van-magazijn-module.md)
@@ -35,7 +130,7 @@ Karpi communiceert leverbeloftes als ISO-week, niet als specifieke dag. De order
 - **Centrale helpers** ([`lib/orders/verzendweek.ts`](../frontend/src/lib/orders/verzendweek.ts)) — Twee nieuwe functies: `verzendWeekIsoString(iso)` (datum → "2026-W21" voor `<input type="week">`) en `verzendWeekStringToDatum(weekStr)` (week-string → vrijdag-ISO-datum). Ronde-reis test verifieert idempotentie. Lokale `getISOWeek` in `order-form.tsx` is teruggebracht tot een dunne wrapper rond `verzendWeekVoor` om duplicate ISO-week-aritmetiek te elimineren.
 - **Order-detailheader** ([`order-header.tsx`](../frontend/src/components/orders/order-header.tsx)) — "Afleverdatum: 21-05-2026" → "Verzendweek: Wk 21 · 2026".
 - **Orders-overzichtstabel** ([`orders-table.tsx`](../frontend/src/components/orders/orders-table.tsx)) — Kolom "Leverdatum" → "Verzendweek". Cel toont "Wk 21 · 2026" met de exacte datum als tooltip; sorteert nog steeds op `afleverdatum` (zelfde sleutel, week-volgorde is identiek aan datum-volgorde).
-- **Pick & ship**: geen wijziging nodig. `bucketVoor` (in [`magazijn/lib/buckets.ts`](../frontend/src/modules/magazijn/lib/buckets.ts)) plaatst orders met afleverdatum < maandag-over-volgende-week in `'deze_week'`. Met de nieuwe vrijdag-binnen-verzendweek-conventie betekent dat: verzendweek N → pickbaar in week N-1, exact zoals bedrijfsregel.
+- **Pick & ship**: groepskoppen herontworpen. Voorheen was elke groep gelabeld "Verzendweek N" — niet actiegericht. Nu staat boven elke groep "Te picken deze week" met daarnaast twee chips: een teal "Verzendweek N"-chip én, als de pick-week al voorbij is (verzendweek == huidige week), een rose "Achterstallig"-marker met tooltip. Sectie-tekst krijgt rose tint bij achterstallig. De huidige ISO-week staat rechtsboven in de page header ("Vandaag: Wk N · YYYY") zodat de magazijnier altijd weet hoe nu zich verhoudt tot de groepen. Bron: [`pick-overview.tsx`](../frontend/src/modules/magazijn/pages/pick-overview.tsx) + nieuwe helpers `pickStatusVoor`, `pickWeekVoor` in [`lib/orders/verzendweek.ts`](../frontend/src/lib/orders/verzendweek.ts). De `bucketVoor`-logica zelf is ongewijzigd: orders met afleverdatum < maandag-over-volgende-week vallen in `'deze_week'`, dus verzendweek N → pickbaar in week N-1.
 
 ## 2026-05-07 — Vervoerders-overzicht: "Nieuwe vervoerder"-knop + dialog
 

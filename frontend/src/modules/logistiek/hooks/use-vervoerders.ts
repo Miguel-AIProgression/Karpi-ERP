@@ -5,6 +5,8 @@ import {
   fetchVervoerderStats,
   fetchRecenteZendingenVervoerder,
   updateVervoerder,
+  createVervoerder,
+  type VervoerderCreateInput,
   type VervoerderUpdateInput,
 } from '@/modules/logistiek/queries/vervoerders'
 
@@ -81,6 +83,18 @@ export function useRecenteZendingenVervoerder(code: string | undefined, limit = 
     queryFn: () => fetchRecenteZendingenVervoerder(code!, limit),
     enabled: !!code,
     staleTime: 30_000,
+  })
+}
+
+export function useCreateVervoerder() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: VervoerderCreateInput) => createVervoerder(data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['logistiek', 'vervoerders', 'list'] })
+      qc.invalidateQueries({ queryKey: ['logistiek', 'vervoerder-stats'] })
+      qc.invalidateQueries({ queryKey: ['logistiek', 'vervoerders'] })
+    },
   })
 }
 

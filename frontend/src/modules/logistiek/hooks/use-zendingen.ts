@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQueries, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   createZendingVoorOrder,
   fetchZendingen,
@@ -6,6 +6,7 @@ import {
   fetchZendingPrintSet,
   verstuurZendingOpnieuw,
   type ZendingenFilters,
+  type ZendingPrintSet,
 } from '@/modules/logistiek/queries/zendingen'
 
 export function useZendingen(filters: ZendingenFilters = {}) {
@@ -38,6 +39,29 @@ export function useZendingPrintSet(zending_nr: string | undefined) {
     queryKey: ['logistiek', 'zending-printset', zending_nr],
     queryFn: () => fetchZendingPrintSet(zending_nr!),
     enabled: !!zending_nr,
+  })
+}
+
+/**
+ * Parallel fetch van meerdere zending-printsets in dezelfde volgorde als de
+ * input. Gebruikt door de bulk-printset-pagina (`/logistiek/printset/bulk`)
+ * waar één klik meerdere zendingen achter elkaar print.
+ */
+export function useZendingPrintSets(zending_nrs: string[]) {
+  return useQueries({
+    queries: zending_nrs.map((nr) => ({
+      queryKey: ['logistiek', 'zending-printset', nr],
+      queryFn: () => fetchZendingPrintSet(nr),
+      enabled: !!nr,
+    })),
+    combine: (results) => ({
+      data: results
+        .map((r) => r.data)
+        .filter((d): d is ZendingPrintSet => !!d),
+      isLoading: results.some((r) => r.isLoading),
+      hasError: results.some((r) => !!r.error),
+      errors: results.map((r) => r.error).filter((e): e is Error => !!e),
+    }),
   })
 }
 
