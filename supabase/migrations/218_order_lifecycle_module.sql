@@ -358,3 +358,21 @@ $$;
 COMMENT ON FUNCTION voltooi_pickronde(BIGINT, BIGINT) IS
   'Mig 218 (ADR-0006): voltooit Pickronde, delegeert order-status-write aan markeer_verzonden. '
   'Vervangt mig 217-versie die orders direct UPDATE-de.';
+
+-- 9. Herdefinitie herwaardeer_order_status — delegeert status-write aan Module
+CREATE OR REPLACE FUNCTION herwaardeer_order_status(p_order_id BIGINT)
+RETURNS VOID
+LANGUAGE plpgsql AS $$
+BEGIN
+  -- Module bepaalt status (Wacht op X / Nieuw / no-op bij eindstatus)
+  PERFORM herbereken_wacht_status(p_order_id);
+
+  -- Mig 153 verantwoordelijkheid behouden: afleverdatum vooruit syncen
+  PERFORM sync_order_afleverdatum_met_claims(p_order_id);
+END;
+$$;
+
+COMMENT ON FUNCTION herwaardeer_order_status IS
+  'Mig 218 (ADR-0006): herwaardeert order — delegeert status-keuze aan Order-lifecycle Module '
+  '(herbereken_wacht_status) en blijft afleverdatum-sync eigen (sync_order_afleverdatum_met_claims). '
+  'Backwards-compat: alle bestaande callers (triggers, RPCs) blijven dezelfde signature aanroepen.';
