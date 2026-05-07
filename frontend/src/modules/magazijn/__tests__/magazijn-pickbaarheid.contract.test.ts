@@ -185,6 +185,8 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
       ],
       error: null,
     })
+    // Mig 217: actieve Pickrondes per order. Lege array = geen lopende pickronde.
+    queueResponse('zendingen', { data: [], error: null })
 
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 
@@ -211,6 +213,7 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     queueResponse('debiteuren', { data: debiteuren, error: null })
     queueResponse('orderregel_pickbaarheid', { data: [], error: null })
     queueResponse('order_regels', { data: [], error: null })
+    queueResponse('zendingen', { data: [], error: null })
 
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 
@@ -249,6 +252,7 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     })
     queueResponse('order_regels', { data: fallbackRegels, error: null })
     queueResponse('producten', { data: [], error: null })
+    queueResponse('zendingen', { data: [], error: null })
     // Tweede order_regels-call voor het gewicht-aggregaat — fallbackRegels
     // hebben geen gewicht_kg-veld, dus totaal_gewicht_kg blijft 0.
     queueResponse('order_regels', { data: [], error: null })
@@ -277,6 +281,7 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     queueResponse('debiteuren', { data: debiteuren, error: null })
     queueResponse('orderregel_pickbaarheid', { data: [], error: null })
     queueResponse('order_regels', { data: [], error: null })
+    queueResponse('zendingen', { data: [], error: null })
 
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 

@@ -212,9 +212,27 @@ export function OrderPickCard({ order }: Props) {
           />
         </div>
 
-        {/* Actieknop */}
+        {/* Actieknop — als er al een pickronde loopt, toon "Open printset"-link
+            in plaats van een nieuwe Verzendset starten. */}
         <div onClick={(e) => e.stopPropagation()} className="flex-shrink-0">
-          <VerzendsetButton order={order} />
+          {order.actieve_pickronde ? (
+            <Link
+              to={`/logistiek/${order.actieve_pickronde.zending_nr}/printset`}
+              className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] bg-amber-500 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-amber-600"
+              title={
+                order.actieve_pickronde.picker_naam
+                  ? `Pickronde gestart door ${order.actieve_pickronde.picker_naam} — open printset om te voltooien`
+                  : 'Pickronde loopt — open printset om te voltooien'
+              }
+            >
+              <Clock size={13} />
+              {order.actieve_pickronde.picker_naam
+                ? `In pickronde · ${order.actieve_pickronde.picker_naam}`
+                : 'In pickronde'}
+            </Link>
+          ) : (
+            <VerzendsetButton order={order} />
+          )}
         </div>
       </div>
 

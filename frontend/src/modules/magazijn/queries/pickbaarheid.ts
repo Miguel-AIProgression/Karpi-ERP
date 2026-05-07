@@ -53,6 +53,12 @@ export async function fetchPickShipOrders(
   const regels = await fetchPickbaarheidRegels(headers.map((h) => h.id))
   const karpiNamen = await fetchKarpiNamenVoorArtikelen(regels.map((r) => r.artikelnr))
   const gewichtPerOrder = await fetchTotaalGewichtPerOrder(headers.map((h) => h.id))
+  const actievePickrondes = await fetchActievePickrondes(headers.map((h) => h.id))
+
+  for (const [orderId, ronde] of actievePickrondes) {
+    const order = perOrder.get(orderId)
+    if (order) order.actieve_pickronde = ronde
+  }
 
   for (const r of regels) {
     const h = headerMap.get(r.order_id)
@@ -180,6 +186,45 @@ async function fetchFallbackOrderRegels(orderIds: number[]): Promise<Pickbaarhei
  * Wordt indicatief getoond op Pick & Ship; definitief gewicht wordt later door
  * `create_zending_voor_order` op de zending gezet.
  */
+/**
+ * Per order: de actieve Pickronde (zending in 'Picken'-status), inclusief
+ * picker-naam via medewerkers-join. Drijft de "in progress"-banner op de
+ * pick-card (mig 217).
+ */
+async function fetchActievePickrondes(
+  orderIds: number[]
+): Promise<Map<number, import('../lib/types').ActievePickronde>> {
+  const map = new Map<number, import('../lib/types').ActievePickronde>()
+  if (orderIds.length === 0) return map
+
+  for (const ids of chunks(orderIds, 100)) {
+    const { data, error } = await supabase
+      .from('zendingen')
+      .select('id, zending_nr, order_id, picker_id, medewerkers:medewerkers!zendingen_picker_id_fkey(naam)')
+      .in('order_id', ids)
+      .eq('status', 'Picken')
+    if (error) throw error
+
+    for (const row of (data ?? []) as Array<{
+      id: number
+      zending_nr: string
+      order_id: number
+      picker_id: number | null
+      medewerkers: { naam: string } | null
+    }>) {
+      // Bij meerdere Picken-zendingen voor één order: laatste wint (per insert-volgorde).
+      map.set(row.order_id, {
+        zending_id: row.id,
+        zending_nr: row.zending_nr,
+        picker_id: row.picker_id,
+        picker_naam: row.medewerkers?.naam ?? null,
+      })
+    }
+  }
+
+  return map
+}
+
 async function fetchTotaalGewichtPerOrder(orderIds: number[]): Promise<Map<number, number>> {
   const map = new Map<number, number>()
   if (orderIds.length === 0) return map

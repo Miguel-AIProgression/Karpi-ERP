@@ -50,6 +50,9 @@ function saveLastPicker(id: number) {
 
 function isPickbaar(o: PickShipOrder): boolean {
   if (o.regels.length === 0) return false
+  // Orders met een lopende pickronde tellen niet mee voor de bundel — die
+  // zijn al gestart en hebben hun eigen "In pickronde"-link op de card.
+  if (o.actieve_pickronde) return false
   return o.regels.every((r) => r.is_pickbaar)
 }
 
