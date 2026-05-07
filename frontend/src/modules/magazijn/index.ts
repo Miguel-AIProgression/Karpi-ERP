@@ -15,6 +15,14 @@ export {
 } from './hooks/use-pick-ship'
 export { useMagazijnLocaties } from './hooks/use-magazijn-locaties'
 
+export {
+  useColliVoorZending,
+  usePickProblemen,
+  useStartPickronde,
+  useMarkeerColliNietGevonden,
+  useVoltooiPickronde,
+} from './hooks/use-pickronde'
+
 // Types — VervoerderSelectieStatus zit niet meer hier; magazijn weet niets
 // over vervoerders meer. Zie modules/logistiek voor self-fetching VervoerderTag.
 export type {
@@ -24,3 +32,10 @@ export type {
   PickShipWachtOp,
   BucketKey,
 } from './lib/types'
+
+export type {
+  PickColliRij,
+  PickProbleemRij,
+  NietGevondenModus,
+  MarkeerNietGevondenArgs,
+} from './queries/pickronde'
