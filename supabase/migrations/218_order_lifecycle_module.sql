@@ -100,3 +100,40 @@ COMMENT ON FUNCTION _apply_transitie IS
   'Atomair: status + verzonden_at (bij Verzonden) + INSERT order_events. '
   'Idempotent: no-op als status al gelijk is. Niet rechtstreeks aanroepen — gebruik '
   'markeer_verzonden / markeer_geannuleerd / herbereken_wacht_status.';
+
+-- 4. Command — markeer_verzonden
+CREATE OR REPLACE FUNCTION markeer_verzonden(
+  p_order_id            BIGINT,
+  p_actor_medewerker_id BIGINT DEFAULT NULL,
+  p_actor_auth_user_id  UUID   DEFAULT NULL
+) RETURNS VOID
+LANGUAGE plpgsql AS $$
+DECLARE
+  v_huidig order_status;
+BEGIN
+  SELECT status INTO v_huidig FROM orders WHERE id = p_order_id;
+  IF v_huidig IS NULL THEN
+    RAISE EXCEPTION 'Order % bestaat niet', p_order_id
+      USING ERRCODE = 'no_data_found';
+  END IF;
+  IF v_huidig = 'Geannuleerd' THEN
+    RAISE EXCEPTION 'Geannuleerde order % kan niet op Verzonden worden gezet', p_order_id
+      USING ERRCODE = 'invalid_parameter_value';
+  END IF;
+
+  PERFORM _apply_transitie(
+    p_order_id            := p_order_id,
+    p_event_type          := 'pickronde_voltooid',
+    p_status_na           := 'Verzonden',
+    p_actor_medewerker_id := p_actor_medewerker_id,
+    p_actor_auth_user_id  := p_actor_auth_user_id
+  );
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION markeer_verzonden(BIGINT, BIGINT, UUID) TO authenticated;
+
+COMMENT ON FUNCTION markeer_verzonden IS
+  'Mig 218 (ADR-0006): zet orders.status=Verzonden + verzonden_at=now() + audit-event. '
+  'Caller: voltooi_pickronde (mig 217 update) of frontend handmatig. '
+  'Idempotent. Faalt op geannuleerde orders.';
