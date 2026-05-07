@@ -188,8 +188,9 @@ async function fetchFallbackOrderRegels(orderIds: number[]): Promise<Pickbaarhei
  */
 /**
  * Per order: de actieve Pickronde (zending in 'Picken'-status), inclusief
- * picker-naam via medewerkers-join. Drijft de "in progress"-banner op de
- * pick-card (mig 217).
+ * picker-naam. Twee aparte queries (zendingen → medewerkers) ipv FK-embed,
+ * omdat PostgREST schema-cache na mig 217 niet altijd direct de FK kent.
+ * Robuuster + makkelijker te debuggen. Mig 217.
  */
 async function fetchActievePickrondes(
   orderIds: number[]
@@ -197,29 +198,67 @@ async function fetchActievePickrondes(
   const map = new Map<number, import('../lib/types').ActievePickronde>()
   if (orderIds.length === 0) return map
 
+  // Stap 1: zendingen in Picken-status ophalen
+  const zendingen: Array<{
+    id: number
+    zending_nr: string
+    order_id: number
+    picker_id: number | null
+  }> = []
+
   for (const ids of chunks(orderIds, 100)) {
     const { data, error } = await supabase
       .from('zendingen')
-      .select('id, zending_nr, order_id, picker_id, medewerkers:medewerkers!zendingen_picker_id_fkey(naam)')
+      .select('id, zending_nr, order_id, picker_id, status')
       .in('order_id', ids)
       .eq('status', 'Picken')
-    if (error) throw error
-
+    if (error) {
+      console.error('[pickbaarheid] fetchActievePickrondes zendingen-query error', error)
+      throw error
+    }
     for (const row of (data ?? []) as Array<{
       id: number
       zending_nr: string
       order_id: number
       picker_id: number | null
-      medewerkers: { naam: string } | null
     }>) {
-      // Bij meerdere Picken-zendingen voor één order: laatste wint (per insert-volgorde).
-      map.set(row.order_id, {
-        zending_id: row.id,
-        zending_nr: row.zending_nr,
-        picker_id: row.picker_id,
-        picker_naam: row.medewerkers?.naam ?? null,
-      })
+      zendingen.push(row)
     }
+  }
+
+  if (zendingen.length === 0) return map
+
+  // Stap 2: picker-namen ophalen via medewerkers (alleen unieke ids)
+  const pickerIds = Array.from(
+    new Set(zendingen.map((z) => z.picker_id).filter((id): id is number => id != null))
+  )
+  const naamMap = new Map<number, string>()
+  if (pickerIds.length > 0) {
+    const { data: medewerkers, error: mErr } = await supabase
+      .from('medewerkers')
+      .select('id, naam')
+      .in('id', pickerIds)
+    if (mErr) {
+      console.warn('[pickbaarheid] medewerkers-naam-fetch faalde', mErr)
+    } else {
+      for (const m of (medewerkers ?? []) as Array<{ id: number; naam: string }>) {
+        naamMap.set(m.id, m.naam)
+      }
+    }
+  }
+
+  // Bij meerdere Picken-zendingen voor één order: laatste wint (per insert-volgorde).
+  for (const z of zendingen) {
+    map.set(z.order_id, {
+      zending_id: z.id,
+      zending_nr: z.zending_nr,
+      picker_id: z.picker_id,
+      picker_naam: z.picker_id != null ? naamMap.get(z.picker_id) ?? null : null,
+    })
+  }
+
+  if (process.env.NODE_ENV === 'development') {
+    console.debug('[pickbaarheid] actieve pickrondes:', map.size, 'voor', orderIds.length, 'orders')
   }
 
   return map
