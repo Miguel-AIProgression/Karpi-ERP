@@ -1,4 +1,4 @@
--- Migratie 215: Medewerker als overkoepelend identity-concept
+-- Migratie 216: Medewerker als overkoepelend identity-concept
 --
 -- Achtergrond: ADR-0004. De methodiek-flow vereist dat we bij een Pickronde
 -- een Picker selecteren. We konden een aparte `pickers`-tabel maken naast
@@ -39,11 +39,41 @@ BEGIN
 END $$;
 
 ------------------------------------------------------------------------
--- 3. Voeg id + rollen toe
+-- 3. Voeg id + rollen toe — robuust ongeacht of id al bestond
 ------------------------------------------------------------------------
 ALTER TABLE medewerkers
-  ADD COLUMN IF NOT EXISTS id BIGSERIAL,
+  ADD COLUMN IF NOT EXISTS id BIGINT,
   ADD COLUMN IF NOT EXISTS rollen medewerker_rol[] NOT NULL DEFAULT '{}';
+
+-- Zorg dat id auto-increment heeft. ADD COLUMN BIGSERIAL hierboven is
+-- vervangen door BIGINT + handmatige sequence-koppeling, omdat IF NOT
+-- EXISTS de SERIAL-machinery (sequence + default) overslaat als de
+-- kolom al bestond. Dit blok is idempotent en werkt in alle gevallen.
+DO $$
+DECLARE
+  seq_name TEXT;
+BEGIN
+  seq_name := pg_get_serial_sequence('medewerkers', 'id');
+
+  IF seq_name IS NULL THEN
+    -- Geen sequence gekoppeld — maak er een en koppel als default
+    CREATE SEQUENCE IF NOT EXISTS medewerkers_id_seq;
+    EXECUTE 'ALTER TABLE medewerkers ALTER COLUMN id SET DEFAULT nextval(''medewerkers_id_seq'')';
+    EXECUTE 'ALTER SEQUENCE medewerkers_id_seq OWNED BY medewerkers.id';
+
+    -- Vul ontbrekende ids voor bestaande rijen
+    UPDATE medewerkers SET id = nextval('medewerkers_id_seq') WHERE id IS NULL;
+
+    -- Sync sequence naar max bestaande id (zodat volgende INSERT niet botst)
+    PERFORM setval(
+      'medewerkers_id_seq',
+      GREATEST((SELECT COALESCE(MAX(id), 0) FROM medewerkers), 1),
+      true
+    );
+  END IF;
+END $$;
+
+ALTER TABLE medewerkers ALTER COLUMN id SET NOT NULL;
 
 -- id wordt nieuwe surrogate PK; code blijft UNIQUE als business-key.
 DO $$
@@ -106,7 +136,7 @@ FROM medewerkers
 WHERE 'vertegenwoordiger' = ANY(rollen);
 
 COMMENT ON VIEW vertegenwoordigers IS
-  'Compat-view voor pre-mig-215 callers. Filtert medewerkers op rol '
+  'Compat-view voor pre-mig-216 callers. Filtert medewerkers op rol '
   'vertegenwoordiger. Nieuwe code: gebruik direct medewerkers + rollen-filter.';
 
 ------------------------------------------------------------------------
@@ -129,7 +159,19 @@ CREATE POLICY medewerkers_write ON medewerkers
   FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON medewerkers TO authenticated;
-GRANT USAGE, SELECT ON SEQUENCE medewerkers_id_seq TO authenticated;
 GRANT SELECT ON vertegenwoordigers TO authenticated;
+
+-- Sequence-grant defensief: pak de werkelijk gekoppelde sequence-naam op
+-- via pg_get_serial_sequence (kan medewerkers_id_seq zijn maar ook iets
+-- anders als de kolom-coupling eerder anders verliep).
+DO $$
+DECLARE
+  seq_name TEXT;
+BEGIN
+  seq_name := pg_get_serial_sequence('medewerkers', 'id');
+  IF seq_name IS NOT NULL THEN
+    EXECUTE format('GRANT USAGE, SELECT ON SEQUENCE %s TO authenticated', seq_name);
+  END IF;
+END $$;
 
 NOTIFY pgrst, 'reload schema';
