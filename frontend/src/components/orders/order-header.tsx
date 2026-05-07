@@ -21,6 +21,14 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
               {order.order_nr}
             </h2>
             <StatusBadge status={order.status} />
+            {order.status === 'Verzonden' && order.verzonden_at && (
+              <span
+                className="text-xs text-slate-500"
+                title="Moment waarop voltooi_pickronde de laatste zending sloot — factuur is hierna verzonden"
+              >
+                op {formatDate(order.verzonden_at)}
+              </span>
+            )}
           </div>
           {order.oud_order_nr && (
             <p className="text-sm text-slate-400">

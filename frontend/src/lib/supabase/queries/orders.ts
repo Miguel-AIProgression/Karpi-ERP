@@ -42,6 +42,7 @@ export interface OrderDetail extends OrderRow {
   vertegenw_naam?: string
   lever_modus: 'deelleveringen' | 'in_een_keer' | null
   afhalen: boolean
+  verzonden_at: string | null
 }
 
 export interface OrderRegelSnijplan {
