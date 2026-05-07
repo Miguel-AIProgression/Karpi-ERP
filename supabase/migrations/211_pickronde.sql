@@ -140,3 +140,93 @@ GRANT EXECUTE ON FUNCTION create_zending_voor_order(BIGINT) TO authenticated;
 COMMENT ON FUNCTION create_zending_voor_order IS
   'Mig 211: alias voor start_pickronde. Behouden voor bestaande callers (zending-'
   'aanmaken-knop op order-detail). Nieuwe code roept start_pickronde direct aan.';
+
+-- ============================================================================
+-- markeer_colli_niet_gevonden: operator markeert één colli als niet vindbaar.
+-- Twee modi:
+--   'blokkeer' — colli krijgt pick_uitkomst='niet_gevonden'. Zending blijft in
+--                'Picken'. Verschijnt op pick-problemen-werklijst voor chef.
+--   'splits'   — colli wordt losgekoppeld (zending_regels-aantal verlaagd of
+--                row verwijderd). Vereist orders.lever_modus = 'deelleveringen'.
+--                Orderregel blijft open in de order voor latere Pickronde.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION markeer_colli_niet_gevonden(
+  p_zending_colli_id BIGINT,
+  p_modus            TEXT,
+  p_opmerking        TEXT DEFAULT NULL
+) RETURNS VOID
+LANGUAGE plpgsql AS $$
+DECLARE
+  v_zending_id    BIGINT;
+  v_order_id      BIGINT;
+  v_lever_modus   TEXT;
+  v_zending_st    zending_status;
+  v_order_regel_id BIGINT;
+BEGIN
+  IF p_modus NOT IN ('blokkeer', 'splits') THEN
+    RAISE EXCEPTION 'modus moet ''blokkeer'' of ''splits'' zijn (kreeg %)', p_modus;
+  END IF;
+
+  SELECT zc.zending_id, zc.order_regel_id, z.status, z.order_id
+    INTO v_zending_id, v_order_regel_id, v_zending_st, v_order_id
+    FROM zending_colli zc
+    JOIN zendingen z ON z.id = zc.zending_id
+   WHERE zc.id = p_zending_colli_id;
+
+  IF v_zending_id IS NULL THEN
+    RAISE EXCEPTION 'zending_colli % bestaat niet', p_zending_colli_id;
+  END IF;
+
+  IF v_zending_st <> 'Picken' THEN
+    RAISE EXCEPTION 'Pickronde voor zending % is niet actief (status=%)', v_zending_id, v_zending_st;
+  END IF;
+
+  IF p_modus = 'blokkeer' THEN
+    UPDATE zending_colli
+       SET pick_uitkomst   = 'niet_gevonden',
+           pick_opmerking  = p_opmerking,
+           gepickt_at      = NULL
+     WHERE id = p_zending_colli_id;
+    RETURN;
+  END IF;
+
+  -- p_modus = 'splits': vereist deelleveringen.
+  SELECT lever_modus INTO v_lever_modus FROM orders WHERE id = v_order_id;
+  IF v_lever_modus IS DISTINCT FROM 'deelleveringen' THEN
+    RAISE EXCEPTION 'Splitsen vereist order.lever_modus=''deelleveringen'' (was %)', v_lever_modus;
+  END IF;
+
+  -- Verlaag aantal op zending_regels; verwijder regel-rij als aantal=0.
+  UPDATE zending_regels
+     SET aantal = aantal - 1
+   WHERE zending_id = v_zending_id
+     AND order_regel_id = v_order_regel_id
+     AND aantal > 0;
+
+  DELETE FROM zending_regels
+   WHERE zending_id = v_zending_id
+     AND order_regel_id = v_order_regel_id
+     AND COALESCE(aantal, 0) = 0;
+
+  -- Verwijder de colli-rij zelf (CASCADE zorgt voor schoonmaken refs).
+  DELETE FROM zending_colli WHERE id = p_zending_colli_id;
+
+  -- Sync aantal_colli op zending.
+  UPDATE zendingen
+     SET aantal_colli = (SELECT COUNT(*) FROM zending_colli WHERE zending_id = v_zending_id)
+   WHERE id = v_zending_id;
+
+  -- NB: order_regels.te_leveren wordt NIET hier aangepast — dat veld leeft op
+  -- de orderregel en wordt beheerd door de bestaande shipment-status-pipeline
+  -- (eerstvolgende `start_pickronde` voor dezelfde order pakt het op).
+  -- Indien op staging blijkt dat de orderregel niet automatisch terugkomt op
+  -- de pick-card, voeg dan een herallocatie-call toe (volg-issue, niet V1).
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION markeer_colli_niet_gevonden(BIGINT, TEXT, TEXT) TO authenticated;
+
+COMMENT ON FUNCTION markeer_colli_niet_gevonden IS
+  'Markeert één colli als niet gevonden tijdens Pickronde. modus=''blokkeer'' '
+  'houdt zending in ''Picken''; ''splits'' verwijdert colli (vereist '
+  'lever_modus=''deelleveringen''). Niet bruikbaar als pickronde voltooid is.';
