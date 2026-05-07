@@ -69,7 +69,7 @@ Voeg `orders.verzonden_at TIMESTAMPTZ` toe (mag NULL voor historische orders). W
 
 ## Consequenties
 
-- **Migratie (volgnr 216, na ADR-0004's 215):**
+- **Migratie (volgnr 217, na ADR-0004's 216):**
   - Voeg `orders.verzonden_at TIMESTAMPTZ` toe.
   - Update `voltooi_pickronde` met de hierboven beschreven sluitstuk-logica.
   - Update `start_pickronde` en `voltooi_pickronde` met `picker_id BIGINT` parameter (FK → `medewerkers.id`); voeg `zendingen.picker_id` en `zending_colli.gepickt_door_id` toe.

@@ -55,7 +55,7 @@ Een nieuwe `/instellingen/medewerkers`-pagina met sub-tabs *Vertegenwoordigers* 
 
 ## Consequenties
 
-- **Migratie (volgnr 215 — collision met WIP-mig 214 normaliseer_land vermeden):**
+- **Migratie (volgnr 216 — collisions met WIP-mig 214 normaliseer_land en WIP-mig 215 preview_vervoerder_voor_order vermeden):**
   1. Maak enum `medewerker_rol`.
   2. Hernoem tabel `vertegenwoordigers` → `medewerkers`; voeg `id BIGSERIAL`, `rollen` toe.
   3. Backfill `rollen={'vertegenwoordiger'}` voor alle bestaande rijen.
