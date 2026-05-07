@@ -48,3 +48,55 @@ COMMENT ON TABLE order_events IS
   'Mig 218 (ADR-0006): typed audit-log van orders.status-overgangen. '
   'Bron-van-waarheid voor wie/wanneer/waarom een transitie deed. '
   'Geschreven door _apply_transitie binnen Order-lifecycle Module.';
+
+-- 3. Interne helper — atomair: UPDATE orders + INSERT order_events
+CREATE OR REPLACE FUNCTION _apply_transitie(
+  p_order_id            BIGINT,
+  p_event_type          order_event_type,
+  p_status_na           order_status,
+  p_actor_medewerker_id BIGINT DEFAULT NULL,
+  p_actor_auth_user_id  UUID   DEFAULT NULL,
+  p_reden               TEXT   DEFAULT NULL,
+  p_metadata            JSONB  DEFAULT NULL
+) RETURNS VOID
+LANGUAGE plpgsql AS $$
+DECLARE
+  v_status_voor order_status;
+  v_zet_verzonden_at BOOLEAN;
+BEGIN
+  SELECT status INTO v_status_voor FROM orders WHERE id = p_order_id;
+  IF v_status_voor IS NULL THEN
+    RAISE EXCEPTION 'Order % bestaat niet', p_order_id
+      USING ERRCODE = 'no_data_found';
+  END IF;
+
+  -- No-op als status al gelijk is (idempotent).
+  IF v_status_voor = p_status_na THEN
+    RETURN;
+  END IF;
+
+  v_zet_verzonden_at := (p_status_na = 'Verzonden');
+
+  UPDATE orders
+     SET status = p_status_na,
+         verzonden_at = CASE
+           WHEN v_zet_verzonden_at AND verzonden_at IS NULL THEN now()
+           ELSE verzonden_at
+         END
+   WHERE id = p_order_id;
+
+  INSERT INTO order_events (
+    order_id, event_type, status_voor, status_na,
+    actor_medewerker_id, actor_auth_user_id, reden, metadata
+  ) VALUES (
+    p_order_id, p_event_type, v_status_voor, p_status_na,
+    p_actor_medewerker_id, p_actor_auth_user_id, p_reden, p_metadata
+  );
+END;
+$$;
+
+COMMENT ON FUNCTION _apply_transitie IS
+  'Mig 218: interne helper — enige plek in de codebase die UPDATE orders SET status doet. '
+  'Atomair: status + verzonden_at (bij Verzonden) + INSERT order_events. '
+  'Idempotent: no-op als status al gelijk is. Niet rechtstreeks aanroepen — gebruik '
+  'markeer_verzonden / markeer_geannuleerd / herbereken_wacht_status.';
