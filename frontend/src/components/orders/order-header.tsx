@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { formatDate, formatCurrency } from '@/lib/utils/formatters'
+import { verzendWeekVoor, verzendWeekRelatief } from '@/lib/orders/verzendweek'
 import type { OrderDetail } from '@/lib/supabase/queries/orders'
 
 interface OrderHeaderProps {
@@ -9,6 +10,8 @@ interface OrderHeaderProps {
 }
 
 export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
+  const verzendweek = verzendWeekVoor(order.afleverdatum)
+  const relatief = verzendWeekRelatief(order.afleverdatum)
   return (
     <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-6 mb-6">
       <div className="flex items-start justify-between mb-4">
@@ -18,6 +21,14 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
               {order.order_nr}
             </h2>
             <StatusBadge status={order.status} />
+            {order.status === 'Verzonden' && order.verzonden_at && (
+              <span
+                className="text-xs text-slate-500"
+                title="Moment waarop voltooi_pickronde de laatste zending sloot — factuur is hierna verzonden"
+              >
+                op {formatDate(order.verzonden_at)}
+              </span>
+            )}
           </div>
           {order.oud_order_nr && (
             <p className="text-sm text-slate-400">
@@ -59,8 +70,19 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
           <p className="font-medium">{formatDate(order.orderdatum)}</p>
         </div>
         <div>
-          <span className="text-slate-500">Afleverdatum</span>
-          <p className="font-medium">{formatDate(order.afleverdatum)}</p>
+          <span className="text-slate-500">Verzendweek</span>
+          <p className="font-medium">
+            {verzendweek ? (
+              <>
+                Wk {verzendweek.week} · {verzendweek.jaar}
+                {relatief && (
+                  <span className="ml-1 text-xs font-normal text-slate-400">({relatief})</span>
+                )}
+              </>
+            ) : (
+              '—'
+            )}
+          </p>
         </div>
         <div>
           <span className="text-slate-500">Vertegenwoordiger</span>

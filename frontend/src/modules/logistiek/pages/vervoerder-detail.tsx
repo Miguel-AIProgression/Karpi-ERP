@@ -11,6 +11,7 @@ import {
 import { useVervoerderForm } from '@/modules/logistiek/hooks/use-vervoerder-form'
 import { VervoerderStatsCard } from '@/modules/logistiek/components/vervoerder-stats-card'
 import { VervoerderRecenteZendingenTable } from '@/modules/logistiek/components/vervoerder-recente-zendingen-table'
+import type { VervoerderType } from '@/modules/logistiek/queries/vervoerders'
 
 export function VervoerderDetailPage() {
   const { code } = useParams<{ code: string }>()
@@ -31,10 +32,11 @@ export function VervoerderDetailPage() {
     return <div className="p-8 text-rose-600">Vervoerder niet gevonden.</div>
 
   const isApi = vervoerder.type === 'api'
+  const isPrint = vervoerder.type === 'print'
 
   function handleSave() {
-    if (!code) return
-    updateMut.mutate({ code, data: toUpdateInput(isApi) })
+    if (!code || !vervoerder) return
+    updateMut.mutate({ code, data: toUpdateInput(vervoerder.type) })
   }
 
   return (
@@ -100,6 +102,57 @@ export function VervoerderDetailPage() {
               </Field>
             </>
           )}
+          {isPrint && (
+            <>
+              <Field label="Printer-naam (Windows)">
+                <input
+                  type="text"
+                  value={form.printer_naam}
+                  onChange={(e) => update('printer_naam', e.target.value)}
+                  placeholder="Zebra ZT230"
+                  className={inputClass}
+                />
+              </Field>
+              <Field label="Printer-IP (optioneel, voor ZPL-direct)">
+                <input
+                  type="text"
+                  value={form.printer_ip}
+                  onChange={(e) => update('printer_ip', e.target.value)}
+                  placeholder="192.168.1.50"
+                  className={inputClass}
+                />
+              </Field>
+              <Field label="Label-breedte (mm)">
+                <input
+                  type="number"
+                  min={1}
+                  value={form.label_breedte_mm}
+                  onChange={(e) => update('label_breedte_mm', e.target.value)}
+                  placeholder="80"
+                  className={inputClass}
+                />
+              </Field>
+              <Field label="Label-hoogte (mm)">
+                <input
+                  type="number"
+                  min={1}
+                  value={form.label_hoogte_mm}
+                  onChange={(e) => update('label_hoogte_mm', e.target.value)}
+                  placeholder="150"
+                  className={inputClass}
+                />
+              </Field>
+              <Field label="Service-codes (komma-gescheiden)">
+                <input
+                  type="text"
+                  value={form.service_codes}
+                  onChange={(e) => update('service_codes', e.target.value)}
+                  placeholder="srv, classic, predict, internationaal"
+                  className={inputClass}
+                />
+              </Field>
+            </>
+          )}
           <Field label="Account-nummer">
             <input
               type="text"
@@ -110,7 +163,7 @@ export function VervoerderDetailPage() {
             />
           </Field>
         </div>
-        {!isApi && (
+        {!isApi && !isPrint && (
           <div className="mt-2 text-xs text-slate-400 italic">
             Geen API-instellingen — deze vervoerder ontvangt zendingen via EDI.
           </div>
@@ -259,11 +312,13 @@ function Field({
   )
 }
 
-function TypeBadge({ type }: { type: 'api' | 'edi' }) {
+function TypeBadge({ type }: { type: VervoerderType }) {
   const styles =
     type === 'api'
       ? 'bg-blue-100 text-blue-700'
-      : 'bg-orange-100 text-orange-700'
+      : type === 'edi'
+        ? 'bg-orange-100 text-orange-700'
+        : 'bg-violet-100 text-violet-700'
   return (
     <span
       className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide ${styles}`}

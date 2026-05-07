@@ -14,6 +14,7 @@ type StatusFilter = 'alle' | ZendingStatus
 
 const STATUS_PILLEN: StatusFilter[] = [
   'alle',
+  'Picken',
   'Klaar voor verzending',
   'Onderweg',
   'Afgeleverd',
@@ -89,7 +90,7 @@ export function ZendingenOverzichtPage() {
             Zendingen
           </span>
         }
-        description={`${gefilterd.length} zendingen${aantalFout ? ` — ${aantalFout} met HST-fout` : ''}`}
+        description={`${gefilterd.length} zendingen${aantalFout ? ` — ${aantalFout} met HST-fout` : ''}${statusFilter === 'alle' ? ' (lopende Pickrondes verborgen)' : ''}`}
         actions={
           <Link
             to="/logistiek/vervoerders"

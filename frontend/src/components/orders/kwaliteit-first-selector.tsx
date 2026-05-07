@@ -372,6 +372,7 @@ export function KwaliteitFirstSelector({
       vrije_voorraad: maat.vrije_voorraad,
       besteld_inkoop: maat.besteld_inkoop,
       kwaliteit_code: maat.kwaliteit_code,
+      kleur_code: maat.kleur_code ?? selectedKleurCode ?? null,
       product_type: maat.product_type,
     }
     if (maat.vrije_voorraad <= 0) {

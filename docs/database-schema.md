@@ -53,17 +53,25 @@ Doorlopende nummers per type per jaar.
 
 ---
 
-### vertegenwoordigers
-Sales reps. Code uit orders, naam uit debiteuren.
+### medewerkers (was: vertegenwoordigers t/m mig 215)
+Interne identity-tabel: vertegenwoordigers, pickers en toekomstige rollen op één tabel met rol-tags. Hernoemd in mig 216 (ADR-0004). FK-target voor `zendingen.picker_id` en `zending_colli.gepickt_door_id` sinds mig 217 (ADR-0005).
+
+Enum `medewerker_rol`: `'vertegenwoordiger' | 'picker'` (uitbreidbaar — magazijnchef, inkoper).
+
 | Kolom | Type | Toelichting |
 |-------|------|-------------|
-| id | BIGINT PK | Auto-increment |
-| code | TEXT UK | "19", "16" etc. |
-| naam | TEXT | "Emily Dobbe" etc. |
-| email | TEXT | |
-| telefoon | TEXT | |
-| actief | BOOLEAN | Default true |
+| id | BIGINT PK | Auto-increment, surrogate key |
+| code | TEXT UK NULL | 3-4 letter ("19", "16") — alleen vertegenwoordigers; NULL voor pickers |
+| naam | TEXT | "Emily Dobbe", "Jan de Vries" |
+| email | TEXT NULL | |
+| telefoon | TEXT NULL | |
+| actief | BOOLEAN | Default true; bepaalt zichtbaarheid in dropdowns |
+| rollen | medewerker_rol[] | NOT NULL, default `{}`; multi-rol toegestaan (`{vertegenwoordiger,picker}`) |
 | created_at, updated_at | TIMESTAMPTZ | Auto |
+
+Compat-view `vertegenwoordigers` (sinds mig 216) selecteert rijen met `'vertegenwoordiger' = ANY(rollen)`. Pre-mig-216 callers blijven werken zonder code-aanpassing.
+
+FKs `klanten.vertegenw_code` en `orders.vertegenw_code` blijven verwijzen naar `medewerkers.code` (de UNIQUE-kolom is bewaard).
 
 ---
 
@@ -71,7 +79,7 @@ Sales reps. Code uit orders, naam uit debiteuren.
 Werkdagen per vertegenwoordiger (mig 195). Rij aanwezig = werkt die dag.
 | Kolom | Type | Toelichting |
 |-------|------|-------------|
-| vertegenw_code | TEXT FK → vertegenwoordigers.code | ON DELETE CASCADE, ON UPDATE CASCADE |
+| vertegenw_code | TEXT FK → medewerkers.code | ON DELETE CASCADE, ON UPDATE CASCADE; FK overleeft tabel-rename |
 | dag_van_week | SMALLINT (1-7) | ISO 8601: 1=ma ... 7=zo |
 | start_tijd | TIME | NULL = "hele dag" |
 | eind_tijd | TIME | NULL = "hele dag" |
@@ -267,16 +275,21 @@ Individuele fysieke tapijtrol. Elk met uniek rolnummer.
 ---
 
 ### klanteigen_namen
-Klanten geven kwaliteiten eigen namen. Key = debiteur_nr + kwaliteit_code (NIET artikelnr!).
+Klanten (of een hele inkoopgroep) geven kwaliteiten eigen namen, eventueel verfijnd per kleur. Resolutie via `resolve_klanteigen_naam(debiteur_nr, kwaliteit, kleur)` — volgorde: klant+kleur > klant+NULL kleur > inkoopgroep+kleur > inkoopgroep+NULL kleur > NULL.
 | Kolom | Type | Toelichting |
 |-------|------|-------------|
 | id | BIGINT PK | |
-| debiteur_nr | INTEGER FK → debiteuren | CASCADE DELETE |
+| debiteur_nr | INTEGER FK → debiteuren | CASCADE DELETE. Nullable sinds mig 200 — XOR met `inkoopgroep_code`. |
+| inkoopgroep_code | TEXT FK → inkoopgroepen | Nullable. XOR met `debiteur_nr` (CHECK constraint). Mig 200. |
 | kwaliteit_code | TEXT FK → kwaliteiten | |
+| kleur_code | TEXT | **Mig 199.** Optioneel: NULL = van toepassing op alle kleuren van de kwaliteit (fallback); specifieke waarde overruled de fallback. |
 | benaming | TEXT | Eigen naam (bijv. "BREDA" voor BEAC) |
 | omschrijving | TEXT | |
 | leverancier | TEXT | |
-| UK: (debiteur_nr, kwaliteit_code) | | |
+| bron | TEXT | Herkomst (`'ui'`, `'TKA013-…'`, …). Mig 200. |
+| created_at, updated_at | TIMESTAMPTZ | Audit-stack. Mig 200. |
+| UK: (debiteur_nr, kwaliteit_code, COALESCE(kleur_code,'')) WHERE debiteur_nr IS NOT NULL | | Mig 199 |
+| UK: (inkoopgroep_code, kwaliteit_code, COALESCE(kleur_code,'')) WHERE inkoopgroep_code IS NOT NULL | | Mig 200 |
 
 ---
 
@@ -318,6 +331,8 @@ Orderheaders. Adressen zijn snapshots (niet FK naar afleveradressen).
 | bron_order_id | TEXT | Externe order-ID (Lightspeed orders.id). Samen met bron_systeem uniek (partial index `orders_bron_unique`). |
 | heeft_unmatched_regels | BOOLEAN DEFAULT false | TRUE als ≥1 order_regel een NULL artikelnr heeft. Automatisch gesynchroniseerd door trigger op order_regels (migratie 094). |
 | lever_modus | TEXT | NULL / 'deelleveringen' / 'in_een_keer'. Per-order keuze hoe om te gaan met (deels) wachten op inkoop. Default uit `debiteuren.deelleveringen_toegestaan`, gevuld via `LeverModusDialog` bij opslaan als ≥1 regel tekort heeft. NULL voor orders zonder tekort. Migratie 144. |
+| afhalen | BOOLEAN NOT NULL DEFAULT false | TRUE = klant haalt zelf op. UI in `OrderForm` onderdrukt automatische verzendkosten-regel; logistiek/zending overslaat vervoerder-stap. Migratie 204. |
+| verzonden_at | TIMESTAMPTZ | Mig 217 (ADR-0005). Moment waarop `voltooi_pickronde` de laatste open zending sloot en `orders.status='Verzonden'` zette. Triggert factuur-queue (mig 118). NULL voor orders die nog niet verzonden zijn. |
 
 ---
 
@@ -456,12 +471,14 @@ Fysieke leveringen. Werkelijk aangemaakt sinds migratie 169 — bron-van-waarhei
 | order_id | BIGINT FK → orders | ON DELETE RESTRICT |
 | status | zending_status NOT NULL | Default 'Gepland' |
 | vervoerder_code | TEXT FK → vervoerders.code | Mig 176. Gekozen vervoerder voor deze zending, bepaald door `selecteer_vervoerder_voor_zending()` / `enqueue_zending_naar_vervoerder()` |
+| picker_id | BIGINT FK → medewerkers.id | Mig 217. Medewerker met rol picker die deze Pickronde startte/voltooide. ON DELETE SET NULL. |
 | vervoerder_selectie_uitleg | JSONB | Mig 176. Audit-uitleg van de selector (V1: enige actieve vervoerder; later voorwaarden/tarieven) |
 | verzenddatum | DATE | |
 | track_trace | TEXT | HST-tracking-nummer of EDI-equivalent — gevuld door adapter na verzending |
 | afl_naam, afl_adres, afl_postcode, afl_plaats, afl_land | TEXT | Adres-snapshot (kopie van orders.afl_*) |
-| totaal_gewicht_kg | NUMERIC | Gevuld door `create_zending_voor_order` vanuit orderregelgewichten; handmatig corrigeerbaar in latere UI |
-| aantal_colli | INTEGER | Gevuld door `create_zending_voor_order` als som van `order_regels.orderaantal`; gebruikt voor sticker `x VAN y` |
+| totaal_gewicht_kg | NUMERIC | Gevuld door `create_zending_voor_order` vanuit orderregelgewichten; handmatig corrigeerbaar in latere UI. Sinds mig 206 exclusief de pseudo-regel `artikelnr='VERZEND'`. |
+| aantal_colli | INTEGER | Gevuld door `create_zending_voor_order` als som van `order_regels.orderaantal`; gebruikt voor sticker `x VAN y`. Sinds mig 206 exclusief `artikelnr='VERZEND'`. Voor exacte per-stuk identiteit (sticker, SSCC) zie `zending_colli` (mig 209). |
+| service_code | TEXT | Mig 210. Service-variant binnen vervoerder (bv. `'internationaal'` bij DPD), gekozen door `selecteer_vervoerder_voor_zending()`. NULL = vervoerder-default. |
 | opmerkingen | TEXT | |
 | created_at, updated_at | TIMESTAMPTZ | Auto |
 
@@ -489,9 +506,9 @@ Welke artikel-regels in een zending zitten. Sinds migratie 169.
 Lookup-tabel met de beschikbare vervoerders waarmee Karpi werkt (mig 170, uitgebreid mig 174). Routing-keuze, géén berichten — daadwerkelijk verkeer per vervoerder loopt via een **adapter-tabel** (HST → `hst_transportorders`; EDI-vervoerders → `edi_berichten` met `berichttype='verzendbericht'`). Gezaaid met 3 rijen: `hst_api`, `edi_partner_a` (Rhenus, placeholder), `edi_partner_b` (Verhoek, placeholder). Alleen de HST-koppeling is in dit plan actief; EDI-koppelingen volgen in aparte plans en hun rij staat default `actief=FALSE`. Migratie 174 voegt instellingen-, contact- en tarief-kolommen toe als basis voor de `/logistiek/vervoerders`-UI (vrije-tekst tarieven in V1; gestructureerde tariefmatrix volgt in Fase B — zie roadmap in [`docs/superpowers/plans/2026-05-01-logistiek-vervoerder-instellingen.md`](superpowers/plans/2026-05-01-logistiek-vervoerder-instellingen.md)).
 | Kolom | Type | Toelichting |
 |-------|------|-------------|
-| code | TEXT PK | `'hst_api'`, `'edi_partner_a'`, `'edi_partner_b'` — wordt als FK gebruikt op `zendingen.vervoerder_code` |
-| display_naam | TEXT NOT NULL | UI-label: `'HST'`, `'Rhenus'`, `'Verhoek'` |
-| type | TEXT NOT NULL | CHECK in (`'api'`, `'edi'`) |
+| code | TEXT PK | `'hst_api'`, `'edi_partner_a'`, `'edi_partner_b'`, `'dpd'` — wordt als FK gebruikt op `zendingen.vervoerder_code` |
+| display_naam | TEXT NOT NULL | UI-label: `'HST'`, `'Rhenus'`, `'Verhoek'`, `'DPD'` |
+| type | TEXT NOT NULL | CHECK in (`'api'`, `'edi'`, `'print'`). Mig 207: `'print'` toegevoegd voor lokale label-printer-flow (DPD via Zebra ZT230). |
 | actief | BOOLEAN NOT NULL | Default FALSE — pas TRUE als koppeling werkt. Switch-RPC `enqueue_zending_naar_vervoerder` weigert met `'vervoerder_inactief'` als FALSE |
 | notities | TEXT | Vrije tekst (bv. "REST API. Auth via Basic.") |
 | api_endpoint | TEXT | Mig 174. Basis-URL van de vervoerder-API (alleen relevant voor `type='api'`, bv. `https://accp.hstonline.nl/rest/api/v1`). Read-only referentie in UI; effectieve endpoint voor edge functions blijft uit env-variabelen komen. |
@@ -501,7 +518,63 @@ Lookup-tabel met de beschikbare vervoerders waarmee Karpi werkt (mig 170, uitgeb
 | kontakt_email | TEXT | Mig 174. E-mailadres van de contactpersoon. |
 | kontakt_telefoon | TEXT | Mig 174. Telefoonnummer van de contactpersoon. |
 | tarief_notities | TEXT | Mig 174. Vrije-tekst tariefafspraken voor V1 (bv. "NL t/m 30 kg €9,50, BE +€2"). Gestructureerde `vervoerder_tarieven`-tabel komt in Fase B. |
+| printer_naam | TEXT | Mig 207. Windows-printernaam voor `type='print'`. Browser-print-dialoog stuurt PDF hier naartoe. |
+| printer_ip | TEXT | Mig 207. Optioneel IP voor directe ZPL-push (TCP 9100). V1 niet gebruikt — alleen voor toekomstige native ZPL-flow. |
+| label_breedte_mm, label_hoogte_mm | INTEGER | Mig 207. Label-formaat in mm (bv. 80×150 voor DPD/Zebra). Gelezen door printset-page voor `@page`-CSS. |
+| service_codes | TEXT[] | Mig 207. Service-varianten die deze vervoerder ondersteunt, bv. `{'srv','classic','predict','internationaal'}` voor DPD. Verzendregels kiezen er één. |
 | created_at, updated_at | TIMESTAMPTZ | Auto via `set_vervoerders_updated_at()` |
+
+---
+
+### vervoerder_selectie_regels
+Verzendregels die bepalen welke vervoerder voor een zending wordt gekozen (mig 208). Eerste matchende regel wint, prio ASC. Geëvalueerd door `selecteer_vervoerder_voor_zending()` (mig 210). Conditie als JSONB voor uitbreidbaarheid — onbekende sleutels worden door de evaluator genegeerd (forward-compat).
+
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| id | BIGSERIAL PK | |
+| vervoerder_code | TEXT FK → vervoerders | ON DELETE CASCADE |
+| prio | INTEGER NOT NULL | Default 100. Lager = eerst geëvalueerd. Tiebreaker: `id ASC`. |
+| conditie | JSONB NOT NULL | AND-conjunctie van conditie-sleutels. V1: `land` (TEXT[]), `kleinste_zijde_cm_min/max` (INT, MAX over orderregels), `gewicht_kg_min/max` (NUMERIC), `debiteur_nrs` (INT[]), `inkoopgroep_codes` (TEXT[]). Lege JSONB `{}` = altijd-match (fallback-regel). Onbekende sleutels = genegeerd (forward-compat). |
+| service_code | TEXT | Service-variant binnen vervoerder (bv. `'internationaal'`). Moet voorkomen in `vervoerders.service_codes` als die gevuld is. NULL = vervoerder-default. |
+| actief | BOOLEAN NOT NULL | Default TRUE |
+| notitie | TEXT | Vrije uitleg over de regel |
+| created_at, updated_at | TIMESTAMPTZ | Auto |
+
+**Indexen:** `idx_vsr_prio_actief` (partial op `prio` waar `actief=TRUE`), `idx_vsr_vervoerder` (vervoerder_code).
+
+**Seed (mig 208):** twee voorbeeld-regels (Karpi-praktijk):
+- Rhenus, prio 10, `{land:["DE"], kleinste_zijde_cm_min:131}` → DE + tapijt >130cm = pallet
+- DPD, prio 20, `{land:["DE"], kleinste_zijde_cm_max:130}` + service `'internationaal'` → DE + tapijt ≤130cm = pakket
+
+**Land-normalisatie (mig 214):** `matcht_regel` past zowel `conditie.land[]` als `zending.afl_land` door `normaliseer_land(TEXT)` voor de match. Functie strip whitespace/diakritieken en mapt `'Nederland'`/`'Holland'` → `'NL'`, `'BELGIË'`/`'Belgium'` → `'BE'`, `'Deutschland'`/`'Germany'` → `'DE'` etc. Resultaat: een regel met `land:['NL']` matcht zowel orders met `afl_land='NL'` als met `afl_land='Nederland'`.
+
+---
+
+### zending_colli
+Eén rij per fysieke colli binnen een zending (mig 209). Bron-van-waarheid voor verzendstickers: per colli SSCC + welk tapijt erin zit. V1: strikt 1 tapijt = 1 colli (afspraak 2026-05-07); `aantal` reserveert ruimte voor toekomstige multi-tapijt-per-colli.
+
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| id | BIGSERIAL PK | |
+| zending_id | BIGINT FK → zendingen | CASCADE DELETE |
+| colli_nr | INTEGER NOT NULL | 1-based volgorde binnen zending; `(zending_id, colli_nr)` UNIQUE. |
+| order_regel_id | BIGINT FK → order_regels | ON DELETE SET NULL |
+| rol_id | BIGINT FK → rollen | ON DELETE SET NULL — als de colli uit een specifieke rol komt |
+| sscc | TEXT UK | 18-cijferig GS1 SSCC, gegenereerd door `genereer_sscc()` (mig 209). Op label getoond met AI(00)-prefix (totaal 20 chars). |
+| gewicht_kg | NUMERIC | Per-colli gewicht; afgeleid van orderregel/product, handmatig overschrijfbaar in latere UI. |
+| omschrijving_snapshot | TEXT | Sticker-tekst zoals gerenderd, bv. `MAATW. SISAL-GOLD 21 160x090 cm, KI21 Band:KI21`. Snapshot zodat re-print consistent blijft na product-rename. |
+| aantal | INTEGER NOT NULL | Default 1, CHECK ≥ 1. V1 = altijd 1. |
+| pick_uitkomst | pick_uitkomst | Mig 211. Default 'open'; bij voltooi_pickronde → 'gepickt'. Enum-waardes: open, gepickt, niet_gevonden. |
+| pick_opmerking | TEXT | Mig 211. Operator-notitie bij niet_gevonden. |
+| gepickt_at | TIMESTAMPTZ | Mig 211. Moment van voltooi_pickronde. |
+| gepickt_door_id | BIGINT FK → medewerkers.id | Mig 217. Picker die deze colli markeerde. Per-colli audit zodat shift-overgang traceerbaar blijft. ON DELETE SET NULL. |
+| created_at | TIMESTAMPTZ | Auto |
+
+**Indexen:** `idx_zending_colli_zending` (zending_id), `idx_zending_colli_orderregel` (order_regel_id).
+
+**Generator-RPC:** `genereer_zending_colli(p_zending_id)` splitst zending-regels in 1-tapijt-per-stuk colli-rijen, vult SSCC en omschrijving-snapshot. Idempotent (skipt als er al colli's zijn). Aangeroepen door `enqueue_zending_naar_vervoerder` voor `type='print'` vervoerders (mig 210).
+
+**SSCC-generator:** `genereer_sscc()` produceert 18 cijfers — extension `0` + Karpi GS1-prefix `8715954` + 9-cijferig serial (sequence `sscc_serial_seq`) + Mod-10 check digit. Helper `sscc_check_digit(text)` voor verificatie.
 
 ---
 

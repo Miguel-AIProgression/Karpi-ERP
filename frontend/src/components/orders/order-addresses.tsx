@@ -8,43 +8,53 @@ export function OrderAddresses({ order }: OrderAddressesProps) {
   const hasFactuur = order.fact_naam || order.fact_adres
   const hasAflever = order.afl_naam || order.afl_adres
 
-  if (!hasFactuur && !hasAflever) return null
+  if (!hasFactuur && !hasAflever && !order.afhalen) return null
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-      {hasFactuur && (
-        <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-5">
-          <h3 className="text-sm font-medium text-slate-500 mb-2">Factuuradres</h3>
-          <AddressBlock
-            naam={order.fact_naam}
-            adres={order.fact_adres}
-            postcode={order.fact_postcode}
-            plaats={order.fact_plaats}
-            land={order.fact_land}
-          />
+    <div className="space-y-3 mb-6">
+      {order.afhalen && (
+        <div className="bg-amber-50 border border-amber-200 rounded-[var(--radius-sm)] p-3 text-sm text-amber-800 flex items-center gap-2">
+          <span className="inline-block px-2 py-0.5 rounded bg-amber-200 text-amber-900 text-xs font-medium">
+            Afhalen
+          </span>
+          Klant haalt deze order zelf op bij Karpi — geen verzending.
         </div>
       )}
-      {hasAflever && (
-        <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-5">
-          <h3 className="text-sm font-medium text-slate-500 mb-2">Afleveradres</h3>
-          <AddressBlock
-            naam={order.afl_naam}
-            naam2={order.afl_naam_2}
-            adres={order.afl_adres}
-            postcode={order.afl_postcode}
-            plaats={order.afl_plaats}
-            land={order.afl_land}
-            email={order.afl_email}
-            telefoon={order.afl_telefoon}
-          />
-          {order.opmerkingen && (
-            <div className="mt-3 pt-3 border-t border-slate-100 text-sm text-slate-600">
-              <span className="text-slate-400 block mb-0.5">Opmerking</span>
-              {order.opmerkingen}
-            </div>
-          )}
-        </div>
-      )}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {hasFactuur && (
+          <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-5">
+            <h3 className="text-sm font-medium text-slate-500 mb-2">Factuuradres</h3>
+            <AddressBlock
+              naam={order.fact_naam}
+              adres={order.fact_adres}
+              postcode={order.fact_postcode}
+              plaats={order.fact_plaats}
+              land={order.fact_land}
+            />
+          </div>
+        )}
+        {hasAflever && (
+          <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-5">
+            <h3 className="text-sm font-medium text-slate-500 mb-2">Afleveradres</h3>
+            <AddressBlock
+              naam={order.afl_naam}
+              naam2={order.afl_naam_2}
+              adres={order.afl_adres}
+              postcode={order.afl_postcode}
+              plaats={order.afl_plaats}
+              land={order.afl_land}
+              email={order.afl_email}
+              telefoon={order.afl_telefoon}
+            />
+            {order.opmerkingen && (
+              <div className="mt-3 pt-3 border-t border-slate-100 text-sm text-slate-600">
+                <span className="text-slate-400 block mb-0.5">Opmerking</span>
+                {order.opmerkingen}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

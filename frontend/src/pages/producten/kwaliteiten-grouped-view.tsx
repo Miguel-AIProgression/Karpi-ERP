@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight, CheckCircle2, AlertCircle, Pencil, Link2, Check, X } from 'lucide-react'
 import { fetchKwaliteitenMetGewicht, updateKwaliteitGewicht, type KwaliteitMetGewicht } from '@/lib/supabase/queries/kwaliteiten'
@@ -196,7 +197,9 @@ function AfwerkingEditor({ code, huidigeAfwerking, afwerkingen }: {
 }) {
   const qc = useQueryClient()
   const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState<{ top: number; left: number; openUp: boolean } | null>(null)
 
   const setMut = useMutation({
     mutationFn: (afwerkingCode: string) => setStandaardAfwerking(code, afwerkingCode),
@@ -215,21 +218,47 @@ function AfwerkingEditor({ code, huidigeAfwerking, afwerkingen }: {
     },
   })
 
+  // Sluit bij klik buiten menu+button, en bij scroll/resize (positie zou stale worden).
   useEffect(() => {
     if (!open) return
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    const onMouse = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (buttonRef.current?.contains(t)) return
+      if (menuRef.current?.contains(t)) return
+      setOpen(false)
     }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    const onScrollOrResize = () => setOpen(false)
+    document.addEventListener('mousedown', onMouse)
+    window.addEventListener('scroll', onScrollOrResize, true)
+    window.addEventListener('resize', onScrollOrResize)
+    return () => {
+      document.removeEventListener('mousedown', onMouse)
+      window.removeEventListener('scroll', onScrollOrResize, true)
+      window.removeEventListener('resize', onScrollOrResize)
+    }
+  }, [open])
+
+  // Bereken positie op basis van button-rect; flip naar boven als er onder onvoldoende ruimte is.
+  useLayoutEffect(() => {
+    if (!open || !buttonRef.current) return
+    const rect = buttonRef.current.getBoundingClientRect()
+    const menuMaxH = 288 // ~max-h-72
+    const spaceBelow = window.innerHeight - rect.bottom
+    const openUp = spaceBelow < Math.min(menuMaxH, 200) && rect.top > spaceBelow
+    setPos({
+      top: openUp ? rect.top - 4 : rect.bottom + 4,
+      left: rect.left,
+      openUp,
+    })
   }, [open])
 
   const huidige = afwerkingen.find((a) => a.code === huidigeAfwerking)
   const actieve = afwerkingen.filter((a) => a.actief)
 
   return (
-    <div ref={ref} className="relative inline-block">
+    <>
       <button
+        ref={buttonRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
         className={cn(
@@ -250,8 +279,17 @@ function AfwerkingEditor({ code, huidigeAfwerking, afwerkingen }: {
           </>
         )}
       </button>
-      {open && (
-        <div className="absolute z-50 left-0 mt-1 bg-white border border-slate-200 rounded-[var(--radius-sm)] shadow-lg min-w-[200px] max-h-72 overflow-y-auto">
+      {open && pos && createPortal(
+        <div
+          ref={menuRef}
+          style={{
+            position: 'fixed',
+            top: pos.openUp ? undefined : pos.top,
+            bottom: pos.openUp ? window.innerHeight - pos.top : undefined,
+            left: pos.left,
+          }}
+          className="z-[100] bg-white border border-slate-200 rounded-[var(--radius-sm)] shadow-lg min-w-[200px] max-h-72 overflow-y-auto"
+        >
           {actieve.map((a) => (
             <button
               key={a.code}
@@ -277,9 +315,10 @@ function AfwerkingEditor({ code, huidigeAfwerking, afwerkingen }: {
               Wis afwerking
             </button>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
-    </div>
+    </>
   )
 }
 

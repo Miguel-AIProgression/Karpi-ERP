@@ -172,6 +172,19 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     queueResponse('orders', { data: headers, error: null })
     queueResponse('debiteuren', { data: debiteuren, error: null })
     queueResponse('orderregel_pickbaarheid', { data: regels, error: null })
+    queueResponse('producten', {
+      data: [{ artikelnr: 'P-001', omschrijving: 'KARPI SANDRO 200x140' }],
+      error: null,
+    })
+    // Gewicht-aggregaat (nieuwe Pick & Ship-kolom): som van
+    // gewicht_kg × orderaantal per order, gevoed uit order_regels.
+    queueResponse('order_regels', {
+      data: [
+        { order_id: 100, gewicht_kg: 4.5, orderaantal: 2, artikelnr: 'P-001' },
+        { order_id: 100, gewicht_kg: 7.0, orderaantal: 1, artikelnr: null },
+      ],
+      error: null,
+    })
 
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 
@@ -181,8 +194,13 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     expect(order.klant_naam).toBe('Klantnaam BV')
     expect(order.regels).toHaveLength(2)
     expect(order.regels[0].is_pickbaar).toBe(true)
+    // Pick & Ship toont Karpi-naam uit producten.omschrijving, niet de
+    // klanteigen-omschrijving op de orderregel (mig 200).
+    expect(order.regels[0].product).toBe('KARPI SANDRO 200x140')
     expect(order.regels[1].is_maatwerk).toBe(true)
     expect(order.regels[1].wacht_op).toBe('snijden')
+    // Totaal gewicht = 4.5×2 + 7.0×1 = 16.0 kg
+    expect(order.totaal_gewicht_kg).toBe(16)
   })
 
   it('scenario 2: view aanwezig zonder regels — order verschijnt header-only met lege regels-array', async () => {
@@ -192,6 +210,7 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     queueResponse('orders', { data: headers, error: null })
     queueResponse('debiteuren', { data: debiteuren, error: null })
     queueResponse('orderregel_pickbaarheid', { data: [], error: null })
+    queueResponse('order_regels', { data: [], error: null })
 
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 
@@ -200,6 +219,7 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     expect(order.regels).toEqual([])
     expect(order.aantal_regels).toBe(0)
     expect(order.totaal_m2).toBe(0)
+    expect(order.totaal_gewicht_kg).toBe(0)
   })
 
   it('scenario 3: view ontbreekt (PGRST205) — fallback op order_regels', async () => {
@@ -228,6 +248,10 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
       error: { code: 'PGRST205', message: "Could not find the table 'public.orderregel_pickbaarheid'" },
     })
     queueResponse('order_regels', { data: fallbackRegels, error: null })
+    queueResponse('producten', { data: [], error: null })
+    // Tweede order_regels-call voor het gewicht-aggregaat — fallbackRegels
+    // hebben geen gewicht_kg-veld, dus totaal_gewicht_kg blijft 0.
+    queueResponse('order_regels', { data: [], error: null })
 
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 
@@ -252,6 +276,7 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     queueResponse('orders', { data: headers, error: null })
     queueResponse('debiteuren', { data: debiteuren, error: null })
     queueResponse('orderregel_pickbaarheid', { data: [], error: null })
+    queueResponse('order_regels', { data: [], error: null })
 
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 

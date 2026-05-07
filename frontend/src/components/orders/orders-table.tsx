@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { ArrowUp, ArrowDown, ArrowUpDown, AlertCircle } from 'lucide-react'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { formatCurrency, formatDate } from '@/lib/utils/formatters'
+import { verzendWeekVoor } from '@/lib/orders/verzendweek'
 import type { OrderRow, OrderSortField, SortDirection } from '@/lib/supabase/queries/orders'
 
 interface OrdersTableProps {
@@ -66,7 +67,7 @@ export function OrdersTable({ orders, isLoading, sortBy, sortDir, onSort }: Orde
           <tr className="border-b border-slate-100 bg-slate-50">
             <SortHeader field="order_nr" label="Order" {...sortProps} />
             <SortHeader field="orderdatum" label="Orderdatum" {...sortProps} />
-            <SortHeader field="afleverdatum" label="Leverdatum" {...sortProps} />
+            <SortHeader field="afleverdatum" label="Verzendweek" {...sortProps} />
             <SortHeader field="klant_naam" label="Klant" {...sortProps} />
             <th className="text-left px-4 py-3 font-medium text-slate-600">Referentie</th>
             <SortHeader field="aantal_regels" label="Regels" align="right" {...sortProps} />
@@ -108,11 +109,16 @@ export function OrdersTable({ orders, isLoading, sortBy, sortDir, onSort }: Orde
                 {formatDate(order.orderdatum)}
               </td>
               <td className="px-4 py-3 whitespace-nowrap">
-                {order.afleverdatum ? (
-                  <span className="text-slate-900 font-medium">{formatDate(order.afleverdatum)}</span>
-                ) : (
-                  <span className="text-slate-300">—</span>
-                )}
+                {(() => {
+                  const w = verzendWeekVoor(order.afleverdatum)
+                  return w ? (
+                    <span className="text-slate-900 font-medium" title={formatDate(order.afleverdatum)}>
+                      Wk {w.week} · {w.jaar}
+                    </span>
+                  ) : (
+                    <span className="text-slate-300">—</span>
+                  )
+                })()}
               </td>
               <td className="px-4 py-3">
                 <Link

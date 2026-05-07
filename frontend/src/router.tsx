@@ -30,6 +30,8 @@ import { BedrijfsgegevensPage } from '@/pages/instellingen/bedrijfsgegevens'
 import { KwaliteitenInstellingenPage } from '@/pages/instellingen/kwaliteiten'
 import { VormenInstellingenPage } from '@/pages/instellingen/vormen'
 import { AfwerkingenInstellingenPage } from '@/pages/instellingen/afwerkingen'
+import { BetaalconditiesInstellingenPage } from '@/pages/instellingen/betaalcondities'
+import { MedewerkersInstellingenPage } from '@/pages/instellingen/medewerkers'
 import { ConfectieOverviewPage } from '@/pages/confectie/confectie-overview'
 import { ConfectiePlanningPage } from '@/pages/confectie/confectie-planning'
 import { ScanstationPage } from '@/pages/scanstation/scanstation'
@@ -48,6 +50,7 @@ import {
   ZendingenOverzichtPage,
   ZendingDetailPage,
   ZendingPrintSetPage,
+  BulkPrintSetPage,
   VervoerdersOverzichtPage,
   VervoerderDetailPage,
 } from '@/modules/logistiek'
@@ -103,9 +106,12 @@ export const router = createBrowserRouter([
       { path: 'confectie/planning', element: <ConfectiePlanningPage /> },
       { path: 'pick-ship', element: <MagazijnOverviewPage /> },
       { path: 'logistiek', element: <ZendingenOverzichtPage /> },
-      // Belangrijk: vervoerders-routes vóór `:zending_nr` om matching-conflict te vermijden.
+      // Belangrijk: vervoerders-routes en de bulk-printset-route vóór `:zending_nr`
+      // om matching-conflict te vermijden (anders gaat 'printset' / 'bulk' / 'vervoerders'
+      // als zending_nr de detail-route in).
       { path: 'logistiek/vervoerders', element: <VervoerdersOverzichtPage /> },
       { path: 'logistiek/vervoerders/:code', element: <VervoerderDetailPage /> },
+      { path: 'logistiek/printset/bulk', element: <BulkPrintSetPage /> },
       { path: 'logistiek/:zending_nr/printset', element: <ZendingPrintSetPage /> },
       { path: 'logistiek/:zending_nr', element: <ZendingDetailPage /> },
       { path: 'inkoop', element: <InkooporderOverviewPage /> },
@@ -123,6 +129,8 @@ export const router = createBrowserRouter([
       { path: 'instellingen/kwaliteiten', element: <KwaliteitenInstellingenPage /> },
       { path: 'instellingen/vormen', element: <VormenInstellingenPage /> },
       { path: 'instellingen/afwerkingen', element: <AfwerkingenInstellingenPage /> },
+      { path: 'instellingen/betaalcondities', element: <BetaalconditiesInstellingenPage /> },
+      { path: 'instellingen/medewerkers', element: <MedewerkersInstellingenPage /> },
     ],
   },
 ])

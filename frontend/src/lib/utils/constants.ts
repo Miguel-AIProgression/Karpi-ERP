@@ -145,6 +145,8 @@ export const NAV_GROUPS = [
       { label: 'Kwaliteiten', path: '/instellingen/kwaliteiten', icon: 'Scale' },
       { label: 'Vormen', path: '/instellingen/vormen', icon: 'Shapes' },
       { label: 'Afwerkingen', path: '/instellingen/afwerkingen', icon: 'Scissors' },
+      { label: 'Betaalcondities', path: '/instellingen/betaalcondities', icon: 'Receipt' },
+      { label: 'Medewerkers', path: '/instellingen/medewerkers', icon: 'Users' },
     ],
   },
 ] as const

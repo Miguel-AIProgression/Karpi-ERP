@@ -10,10 +10,21 @@ interface ShippingLabelProps {
   sscc: string
 }
 
-function productOmschrijving(regel: ZendingPrintRegel | null): string {
+interface RegelNamen {
+  /** Klanteigen-naam (of fallback uit `order_regels.omschrijving`). */
+  klantNaam: string
+  /** Karpi-eigen `producten.omschrijving`. NULL als producten-join leeg is. */
+  karpiNaam: string | null
+}
+
+function productNamen(regel: ZendingPrintRegel | null): RegelNamen {
   const orderRegel = regel?.order_regels
-  if (!orderRegel) return regel?.artikelnr ?? 'Artikel'
-  return [orderRegel.omschrijving, orderRegel.omschrijving_2].filter(Boolean).join(' ')
+  if (!orderRegel) {
+    return { klantNaam: regel?.artikelnr ?? 'Artikel', karpiNaam: null }
+  }
+  const klantNaam = [orderRegel.omschrijving, orderRegel.omschrijving_2].filter(Boolean).join(' ')
+  const karpiNaam = orderRegel.producten?.omschrijving ?? null
+  return { klantNaam: klantNaam || (regel?.artikelnr ?? 'Artikel'), karpiNaam }
 }
 
 function productMaat(regel: ZendingPrintRegel | null): string {
@@ -34,7 +45,8 @@ export function ShippingLabel({
   sscc,
 }: ShippingLabelProps) {
   const order = zending.orders
-  const product = productOmschrijving(regel)
+  const namen = productNamen(regel)
+  const toonKarpi = namen.karpiNaam && namen.karpiNaam !== namen.klantNaam
   const maat = productMaat(regel)
   const land = zending.afl_land ?? 'NL'
   const barcodeValue = `00${sscc}`
@@ -56,10 +68,15 @@ export function ShippingLabel({
             </div>
             <div className="font-mono text-[8px]">{regel?.artikelnr ?? ''}</div>
           </div>
-          <div className="mt-1 line-clamp-2 text-[10px] font-semibold">
-            {product}
+          <div className="mt-1 text-[10px] font-semibold leading-tight line-clamp-2">
+            {namen.klantNaam}
             {maat ? ` - ${maat}` : ''}
           </div>
+          {toonKarpi && (
+            <div className="text-[8px] text-slate-600 leading-tight line-clamp-1">
+              Karpi: {namen.karpiNaam}
+            </div>
+          )}
         </div>
 
         <div className="border-b border-slate-900 p-1.5">

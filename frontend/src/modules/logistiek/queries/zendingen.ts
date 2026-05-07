@@ -18,6 +18,8 @@ export type HstTransportorderStatus =
 export interface ZendingenFilters {
   status?: ZendingStatus
   debiteur_nr?: number
+  /** Default true: verberg status='Picken' (lopende pickrondes). */
+  exclude_picken?: boolean
 }
 
 export interface ZendingAanmaakResult {
@@ -28,6 +30,9 @@ export interface ZendingAanmaakResult {
 export interface ZendingPrintOrderRegel {
   id: number
   regelnummer: number | null
+  /** Bron-artikelnr op de orderregel. Nodig om VERZEND-regels te filteren bij
+   *  oude zendingen waar `zending_regels.artikelnr` leeg is gebleven. */
+  artikelnr: string | null
   omschrijving: string | null
   omschrijving_2: string | null
   orderaantal: number | null
@@ -36,13 +41,18 @@ export interface ZendingPrintOrderRegel {
   is_maatwerk: boolean | null
   maatwerk_lengte_cm: number | null
   maatwerk_breedte_cm: number | null
+  maatwerk_afwerking: string | null
   maatwerk_kwaliteit_code: string | null
   maatwerk_kleur_code: string | null
+  maatwerk_oppervlak_m2: number | null
   producten?: {
     ean_code: string | null
     omschrijving: string | null
     vervolgomschrijving: string | null
     gewicht_kg: number | null
+    lengte_cm: number | null
+    breedte_cm: number | null
+    vorm: string | null
   } | null
 }
 
@@ -60,6 +70,7 @@ export interface ZendingPrintSet {
   zending_nr: string
   status: string
   vervoerder_code: string | null
+  service_code: string | null
   verzenddatum: string | null
   track_trace: string | null
   afl_naam: string | null
@@ -76,6 +87,8 @@ export interface ZendingPrintSet {
     display_naam: string
     type: string
     actief: boolean
+    label_breedte_mm: number | null
+    label_hoogte_mm: number | null
   } | null
   orders: {
     id: number
@@ -84,10 +97,24 @@ export interface ZendingPrintSet {
     klant_referentie: string | null
     orderdatum: string | null
     afleverdatum: string | null
+    week: string | null
+    afhalen: boolean | null
+    lever_modus: string | null
     debiteur_nr: number
+    vertegenw_code: string | null
+    fact_naam: string | null
+    fact_adres: string | null
+    fact_postcode: string | null
+    fact_plaats: string | null
+    fact_land: string | null
+    afl_naam_2: string | null
     debiteuren?: {
       naam: string | null
       gln_bedrijf: string | null
+    } | null
+    vertegenwoordigers?: {
+      code: string
+      naam: string | null
     } | null
   }
   zending_regels: ZendingPrintRegel[]
@@ -121,7 +148,12 @@ export async function fetchZendingen(filters: ZendingenFilters = {}) {
     .order('id', { ascending: false })
     .limit(200)
 
-  if (filters.status) q = q.eq('status', filters.status)
+  if (filters.status) {
+    q = q.eq('status', filters.status)
+  } else if (filters.exclude_picken !== false) {
+    // Default: verberg lopende Pickrondes (status='Picken' / 'Gepland').
+    q = q.in('status', ['Klaar voor verzending', 'Onderweg', 'Afgeleverd'])
+  }
   if (filters.debiteur_nr) q = q.eq('orders.debiteur_nr', filters.debiteur_nr)
 
   return await q
@@ -155,24 +187,30 @@ export async function fetchZendingPrintSet(zending_nr: string): Promise<ZendingP
     .from('zendingen')
     .select(
       `
-      id, zending_nr, status, vervoerder_code, verzenddatum, track_trace,
+      id, zending_nr, status, vervoerder_code, service_code, verzenddatum, track_trace,
       afl_naam, afl_adres, afl_postcode, afl_plaats, afl_land,
       aantal_colli, totaal_gewicht_kg, opmerkingen, created_at,
-      vervoerders ( code, display_naam, type, actief ),
+      vervoerders ( code, display_naam, type, actief, label_breedte_mm, label_hoogte_mm ),
       orders!inner (
-        id, order_nr, oud_order_nr, klant_referentie, orderdatum, afleverdatum, debiteur_nr,
+        id, order_nr, oud_order_nr, klant_referentie, orderdatum, afleverdatum,
+        week, afhalen, lever_modus, debiteur_nr, vertegenw_code,
+        fact_naam, fact_adres, fact_postcode, fact_plaats, fact_land,
+        afl_naam_2,
         debiteuren:debiteuren!orders_debiteur_nr_fkey (
           naam, gln_bedrijf
-        )
+        ),
+        vertegenwoordigers ( code, naam )
       ),
       zending_regels (
         id, order_regel_id, artikelnr, rol_id, aantal,
         order_regels (
-          id, regelnummer, omschrijving, omschrijving_2, orderaantal, te_leveren,
+          id, regelnummer, artikelnr, omschrijving, omschrijving_2, orderaantal, te_leveren,
           gewicht_kg, is_maatwerk, maatwerk_lengte_cm, maatwerk_breedte_cm,
-          maatwerk_kwaliteit_code, maatwerk_kleur_code,
+          maatwerk_afwerking, maatwerk_kwaliteit_code, maatwerk_kleur_code,
+          maatwerk_oppervlak_m2,
           producten!order_regels_artikelnr_fkey (
-            ean_code, omschrijving, vervolgomschrijving, gewicht_kg
+            ean_code, omschrijving, vervolgomschrijving, gewicht_kg,
+            lengte_cm, breedte_cm, vorm
           )
         )
       )
@@ -185,9 +223,13 @@ export async function fetchZendingPrintSet(zending_nr: string): Promise<ZendingP
   return data as unknown as ZendingPrintSet
 }
 
-export async function createZendingVoorOrder(orderId: number): Promise<ZendingAanmaakResult> {
+export async function createZendingVoorOrder(
+  orderId: number,
+  pickerId: number,
+): Promise<ZendingAanmaakResult> {
   const { data, error } = await supabase.rpc('create_zending_voor_order', {
     p_order_id: orderId,
+    p_picker_id: pickerId,
   })
   if (error) throw toError(error, 'Zending aanmaken mislukt')
 

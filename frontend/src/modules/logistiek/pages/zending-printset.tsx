@@ -4,58 +4,49 @@ import { ArrowLeft, FileText, Printer, Tags } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { PakbonDocument } from '@/modules/logistiek/components/pakbon-document'
 import { ShippingLabel } from '@/modules/logistiek/components/shipping-label'
+import { DpdShippingLabel } from '@/modules/logistiek/components/dpd-shipping-label'
 import { VervoerderTag } from '@/modules/logistiek/components/vervoerder-tag'
+import { ColliPickVinkjes } from '@/modules/logistiek/components/colli-pick-vinkjes'
+import { VoltooiPickrondeKnop } from '@/modules/logistiek/components/voltooi-pickronde-knop'
+import { PickerDropdown } from '@/components/orders/picker-dropdown'
 import { useZendingPrintSet } from '@/modules/logistiek/hooks/use-zendingen'
-import { generateSscc } from '@/modules/logistiek/lib/sscc'
-import { getVervoerderDef } from '@/modules/logistiek/registry'
-import type { ZendingPrintRegel, ZendingPrintSet } from '@/modules/logistiek/queries/zendingen'
+
+const LAST_PICKER_KEY = 'rugflow.last-picker-id'
+
+function loadLastPicker(): number | null {
+  try {
+    const v = localStorage.getItem(LAST_PICKER_KEY)
+    return v ? Number(v) : null
+  } catch {
+    return null
+  }
+}
+
+function saveLastPicker(id: number) {
+  try {
+    localStorage.setItem(LAST_PICKER_KEY, String(id))
+  } catch {
+    /* ignore */
+  }
+}
+import {
+  DEFAULT_LABEL_BREEDTE_MM,
+  DEFAULT_LABEL_HOOGTE_MM,
+  expandLabels,
+  labelFormaatVoor,
+  vervoerderInfoVoor,
+} from '@/modules/logistiek/lib/printset'
 
 type PrintMode = 'all' | 'labels' | 'pakbon'
-
-interface LabelItem {
-  regel: ZendingPrintRegel | null
-  index: number
-  sscc: string
-}
-
-function vervoerderInfo(zending: ZendingPrintSet) {
-  const def = getVervoerderDef(zending.vervoerder_code)
-  return {
-    code: zending.vervoerder_code ?? null,
-    naam: zending.vervoerders?.display_naam ?? def?.displayNaam ?? 'Geen vervoerder',
-    actief: zending.vervoerders?.actief ?? null,
-  }
-}
-
-function expandLabels(zending: ZendingPrintSet): LabelItem[] {
-  const sortedRegels = [...zending.zending_regels].sort((a, b) => {
-    const ar = a.order_regels?.regelnummer ?? 0
-    const br = b.order_regels?.regelnummer ?? 0
-    return ar - br
-  })
-  const expanded: Array<{ regel: ZendingPrintRegel | null }> = []
-
-  for (const regel of sortedRegels) {
-    const aantal = Math.max(0, Math.trunc(Number(regel.aantal ?? 1)))
-    for (let i = 0; i < aantal; i += 1) expanded.push({ regel })
-  }
-
-  const targetTotal = Math.max(Number(zending.aantal_colli ?? 0), expanded.length, 1)
-  while (expanded.length < targetTotal) {
-    expanded.push({ regel: expanded.at(-1)?.regel ?? null })
-  }
-
-  return expanded.slice(0, targetTotal).map((item, index) => ({
-    ...item,
-    index: index + 1,
-    sscc: generateSscc(zending.id, index + 1),
-  }))
-}
 
 export function ZendingPrintSetPage() {
   const { zending_nr } = useParams<{ zending_nr: string }>()
   const { data: zending, isLoading, error } = useZendingPrintSet(zending_nr)
   const [printMode, setPrintMode] = useState<PrintMode>('all')
+  // Picker-state: gestart door deze persoon. Pre-fill: zending.picker_id (van
+  // start_pickronde) → localStorage last-picker → null. Operator kan wisselen
+  // bij shift-overgang. Wordt gepersisteerd zodra hij voltooi/markeer doet.
+  const [pickerId, setPickerId] = useState<number | null>(null)
 
   useEffect(() => {
     const reset = () => setPrintMode('all')
@@ -63,8 +54,21 @@ export function ZendingPrintSetPage() {
     return () => window.removeEventListener('afterprint', reset)
   }, [])
 
+  useEffect(() => {
+    if (zending && pickerId === null) {
+      const fromZending = (zending as unknown as { picker_id: number | null }).picker_id ?? null
+      setPickerId(fromZending ?? loadLastPicker())
+    }
+  }, [zending, pickerId])
+
+  useEffect(() => {
+    if (pickerId) saveLastPicker(pickerId)
+  }, [pickerId])
+
   const labels = useMemo(() => (zending ? expandLabels(zending) : []), [zending])
-  const vervoerder = zending ? vervoerderInfo(zending) : null
+  const vervoerder = zending ? vervoerderInfoVoor(zending) : null
+  const labelFormaat = zending ? labelFormaatVoor(zending) : null
+  const isPrintType = zending?.vervoerders?.type === 'print'
 
   function print(mode: PrintMode) {
     setPrintMode(mode)
@@ -141,21 +145,66 @@ export function ZendingPrintSetPage() {
             </div>
           }
         />
+
+        {zending.status === 'Picken' && (
+          <div className="mb-4 space-y-3">
+            <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-4">
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Picker (verplicht voor voltooi + niet-gevonden audit)
+              </label>
+              <p className="text-xs text-slate-500 mb-2">
+                Wie verzamelt deze order? Default: degene die de pickronde startte.
+                Mag gewijzigd worden bij shift-overgang.
+              </p>
+              <PickerDropdown
+                value={pickerId}
+                onChange={setPickerId}
+                placeholder="Kies picker…"
+              />
+            </div>
+            <ColliPickVinkjes
+              zendingId={zending.id}
+              leverModus={
+                (zending.orders.lever_modus as 'deelleveringen' | 'in_een_keer' | null) ?? null
+              }
+              pickerId={pickerId}
+            />
+            <div className="flex justify-end">
+              <VoltooiPickrondeKnop
+                zendingId={zending.id}
+                zendingStatus={zending.status}
+                pickerId={pickerId}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="zending-printset space-y-8" data-print-mode={printMode}>
         <div className="shipping-labels flex flex-col items-start gap-4">
-          {labels.map((label) => (
-            <ShippingLabel
-              key={label.index}
-              zending={zending}
-              regel={label.regel}
-              colliIndex={label.index}
-              colliTotal={labels.length}
-              vervoerderNaam={vervoerder.naam}
-              sscc={label.sscc}
-            />
-          ))}
+          {labels.map((label) =>
+            isPrintType ? (
+              <DpdShippingLabel
+                key={label.index}
+                zending={zending}
+                regel={label.regel}
+                colliIndex={label.index}
+                colliTotal={labels.length}
+                serviceCode={zending.service_code}
+                sscc={label.sscc}
+              />
+            ) : (
+              <ShippingLabel
+                key={label.index}
+                zending={zending}
+                regel={label.regel}
+                colliIndex={label.index}
+                colliTotal={labels.length}
+                vervoerderNaam={vervoerder.naam}
+                sscc={label.sscc}
+              />
+            ),
+          )}
         </div>
 
         <PakbonDocument
@@ -202,7 +251,7 @@ export function ZendingPrintSetPage() {
             box-shadow: none;
           }
           @page shipping-label {
-            size: 105mm 60mm;
+            size: ${labelFormaat?.breedteMm ?? DEFAULT_LABEL_BREEDTE_MM}mm ${labelFormaat?.hoogteMm ?? DEFAULT_LABEL_HOOGTE_MM}mm;
             margin: 0;
           }
           @page pakbon {

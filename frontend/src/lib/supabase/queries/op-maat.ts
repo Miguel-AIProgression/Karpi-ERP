@@ -157,31 +157,106 @@ export async function fetchAlleStandaardAfwerkingen(): Promise<Map<string, strin
   return new Map((data ?? []).map((r) => [r.kwaliteit_code as string, r.afwerking_code as string]))
 }
 
-/** Set van kwaliteit-codes die maatwerk-relevant zijn (≥1 rij in maatwerk_m2_prijzen).
- *  Gebruikt om de afwerking-editor in /producten alleen te activeren waar 't zin heeft. */
+/** Set van kwaliteit-codes die maatwerk-relevant zijn:
+ *  ≥1 rij in `maatwerk_m2_prijzen` OF ≥1 actief product met `product_type='rol'`.
+ *  Rol-producten zijn de fysieke bron voor maatwerk-snijden, dus tellen mee zelfs
+ *  als er nog geen m²-prijs is geseed. Gebruikt om de afwerking-editor in
+ *  /producten alleen te activeren waar 't zin heeft. */
 export async function fetchMaatwerkKwaliteiten(): Promise<Set<string>> {
-  const { data, error } = await supabase
-    .from('maatwerk_m2_prijzen')
-    .select('kwaliteit_code')
-  if (error) throw error
-  return new Set((data ?? []).map((r) => r.kwaliteit_code as string))
+  const [prijzenRes, rollenRes] = await Promise.all([
+    supabase.from('maatwerk_m2_prijzen').select('kwaliteit_code'),
+    supabase
+      .from('producten')
+      .select('kwaliteit_code')
+      .eq('product_type', 'rol')
+      .eq('actief', true)
+      .not('kwaliteit_code', 'is', null),
+  ])
+  if (prijzenRes.error) throw prijzenRes.error
+  if (rollenRes.error) throw rollenRes.error
+  const set = new Set<string>()
+  for (const r of prijzenRes.data ?? []) set.add(r.kwaliteit_code as string)
+  for (const r of rollenRes.data ?? []) set.add(r.kwaliteit_code as string)
+  return set
 }
 
-/** Set van kleur-codes die maatwerk-relevant zijn binnen een kwaliteit
- *  (≥1 rij in maatwerk_m2_prijzen). Zonder kleur-rij geen bandkleur-dropdown. */
+/** Set van kleur-codes die maatwerk-relevant zijn binnen een kwaliteit:
+ *  ≥1 rij in `maatwerk_m2_prijzen` OF ≥1 actief rol-product voor die kleur.
+ *  Zonder maatwerk-relevantie geen bandkleur-dropdown. */
 export async function fetchMaatwerkKleurenVoorKwaliteit(kwaliteitCode: string): Promise<Set<string>> {
-  const { data, error } = await supabase
-    .from('maatwerk_m2_prijzen')
-    .select('kleur_code')
-    .eq('kwaliteit_code', kwaliteitCode)
-  if (error) throw error
+  const [prijzenRes, rollenRes] = await Promise.all([
+    supabase
+      .from('maatwerk_m2_prijzen')
+      .select('kleur_code')
+      .eq('kwaliteit_code', kwaliteitCode),
+    supabase
+      .from('producten')
+      .select('kleur_code')
+      .eq('kwaliteit_code', kwaliteitCode)
+      .eq('product_type', 'rol')
+      .eq('actief', true)
+      .not('kleur_code', 'is', null),
+  ])
+  if (prijzenRes.error) throw prijzenRes.error
+  if (rollenRes.error) throw rollenRes.error
   const set = new Set<string>()
-  for (const r of data ?? []) {
+  for (const r of [...(prijzenRes.data ?? []), ...(rollenRes.data ?? [])]) {
     const k = r.kleur_code as string
     set.add(k)
     set.add(k.replace(/\.0$/, '')) // accept beide normaliseringen
   }
   return set
+}
+
+/** Maatwerk-kleuren als objecten (voor picker-dropdown in /afwerkingen). */
+export async function fetchMaatwerkKleurOptiesVoorKwaliteit(kwaliteitCode: string): Promise<{ kleur_code: string }[]> {
+  const { data, error } = await supabase
+    .from('maatwerk_m2_prijzen')
+    .select('kleur_code')
+    .eq('kwaliteit_code', kwaliteitCode)
+    .order('kleur_code')
+  if (error) throw error
+  return (data ?? []) as { kleur_code: string }[]
+}
+
+/** Lijst van kwaliteiten met ≥1 maatwerk-prijs-rij. Voor picker-dropdown. */
+export async function fetchMaatwerkKwaliteitOpties(): Promise<{ code: string; omschrijving: string | null }[]> {
+  const { data: prijsData, error: e1 } = await supabase
+    .from('maatwerk_m2_prijzen')
+    .select('kwaliteit_code')
+  if (e1) throw e1
+  const codes = Array.from(new Set((prijsData ?? []).map((r) => r.kwaliteit_code as string)))
+  if (codes.length === 0) return []
+  const { data, error } = await supabase
+    .from('kwaliteiten')
+    .select('code, omschrijving')
+    .in('code', codes)
+    .order('code')
+  if (error) throw error
+  return (data ?? []) as { code: string; omschrijving: string | null }[]
+}
+
+/** (kwaliteit, kleur)-paren die dit afwerking_kleur_id als default hebben.
+ *  Voedt de "gekoppelde producten"-uitvouw onder een kleur-label in /afwerkingen. */
+export interface BandLabelKoppeling {
+  kwaliteit_code: string
+  kleur_code: string
+  kwaliteit_omschrijving: string | null
+}
+export async function fetchKoppelingenVoorKleurLabel(afwerkingKleurId: number): Promise<BandLabelKoppeling[]> {
+  const { data, error } = await supabase
+    .from('maatwerk_band_defaults')
+    .select('kwaliteit_code, kleur_code, kwaliteiten:kwaliteit_code(omschrijving)')
+    .eq('afwerking_kleur_id', afwerkingKleurId)
+    .order('kwaliteit_code')
+    .order('kleur_code')
+  if (error) throw error
+  type Row = { kwaliteit_code: string; kleur_code: string; kwaliteiten: { omschrijving: string | null } | null }
+  return ((data ?? []) as unknown as Row[]).map((r) => ({
+    kwaliteit_code: r.kwaliteit_code,
+    kleur_code: r.kleur_code,
+    kwaliteit_omschrijving: r.kwaliteiten?.omschrijving ?? null,
+  }))
 }
 
 export async function clearStandaardAfwerking(kwaliteitCode: string): Promise<void> {

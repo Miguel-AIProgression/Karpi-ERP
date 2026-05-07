@@ -1,11 +1,12 @@
-import { useState } from 'react'
-import { Plus, Pencil, Trash2, Check, X } from 'lucide-react'
+import { Fragment, useState } from 'react'
+import { ChevronDown, ChevronRight, Plus, Pencil, Trash2, Check, X } from 'lucide-react'
 import {
   useAfwerkingKleuren,
   useDeleteAfwerkingKleur,
   useUpsertAfwerkingKleur,
 } from '@/hooks/use-afwerking-kleuren'
 import type { AfwerkingKleurRow } from '@/lib/supabase/queries/afwerking-kleuren'
+import { AfwerkingKleurKoppelingen } from './afwerking-kleur-koppelingen'
 
 interface Props {
   afwerkingCode: string
@@ -19,6 +20,7 @@ export function AfwerkingKleurenSubmenu({ afwerkingCode, colSpan }: Props) {
   const [editingId, setEditingId] = useState<number | null>(null)
   const [showAdd, setShowAdd] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [expandedKoppelingenId, setExpandedKoppelingenId] = useState<number | null>(null)
 
   const nextVolgorde = (kleuren ?? []).reduce((m, r) => Math.max(m, r.volgorde), 0) + 10
 
@@ -76,19 +78,33 @@ export function AfwerkingKleurenSubmenu({ afwerkingCode, colSpan }: Props) {
                   </tr>
                 </thead>
                 <tbody>
-                  {(kleuren ?? []).map((row) =>
-                    editingId === row.id ? (
-                      <RowEditor
-                        key={row.id}
-                        initial={row}
-                        afwerkingCode={afwerkingCode}
-                        onCancel={() => setEditingId(null)}
-                        onSave={handleSave}
-                        saving={upsertMut.isPending}
-                      />
-                    ) : (
-                      <tr key={row.id} className={`border-b border-slate-50 hover:bg-slate-50 ${!row.actief ? 'opacity-60' : ''}`}>
-                        <td className="px-3 py-1.5 text-slate-400 tabular-nums text-xs">{row.volgorde}</td>
+                  {(kleuren ?? []).map((row) => {
+                    if (editingId === row.id) {
+                      return (
+                        <RowEditor
+                          key={row.id}
+                          initial={row}
+                          afwerkingCode={afwerkingCode}
+                          onCancel={() => setEditingId(null)}
+                          onSave={handleSave}
+                          saving={upsertMut.isPending}
+                        />
+                      )
+                    }
+                    const isExpanded = expandedKoppelingenId === row.id
+                    return (
+                      <Fragment key={row.id}>
+                      <tr className={`border-b border-slate-50 hover:bg-slate-50 ${!row.actief ? 'opacity-60' : ''} ${isExpanded ? 'bg-terracotta-50/40' : ''}`}>
+                        <td className="px-3 py-1.5 text-slate-400 tabular-nums text-xs">
+                          <button
+                            onClick={() => setExpandedKoppelingenId((cur) => (cur === row.id ? null : row.id))}
+                            className="text-slate-400 hover:text-slate-600 mr-1 align-middle"
+                            title={isExpanded ? 'Inklappen' : 'Toon gekoppelde producten'}
+                          >
+                            {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                          </button>
+                          {row.volgorde}
+                        </td>
                         <td className="px-3 py-1.5 text-slate-800">{row.label}</td>
                         <td className="px-3 py-1.5 text-center">
                           {row.actief ? (
@@ -117,8 +133,16 @@ export function AfwerkingKleurenSubmenu({ afwerkingCode, colSpan }: Props) {
                           </div>
                         </td>
                       </tr>
-                    ),
-                  )}
+                      {isExpanded && (
+                        <tr className="bg-slate-50/40">
+                          <td colSpan={4} className="px-6 py-3">
+                            <AfwerkingKleurKoppelingen afwerkingKleurId={row.id} afwerkingCode={afwerkingCode} />
+                          </td>
+                        </tr>
+                      )}
+                      </Fragment>
+                    )
+                  })}
                   {showAdd && (
                     <RowEditor
                       initial={{ id: undefined, afwerking_code: afwerkingCode, label: '', volgorde: nextVolgorde, actief: true }}

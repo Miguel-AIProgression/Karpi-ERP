@@ -35,6 +35,9 @@ Wanneer een Module een component uit een andere Module wil renderen zonder bij d
 
 Dit is duurder in queries (elke instance fetcht zelf) maar voorkomt dat seams datamodellen in beide richtingen koppelen.
 
+#### Verzendweek-seam (orderdomein)
+[`lib/orders/verzendweek.ts`](../frontend/src/lib/orders/verzendweek.ts) is de single source of truth voor de mapping `orders.afleverdatum` → ISO-verzendweek. Karpi-context: een afleverdatum 06-05 betekent semantisch "verzonden in week 19", niet "geleverd op 6 mei". Magazijn (pick & ship — week-groepering, achterstallig-detectie), logistiek (zendingen, pakbon-WK-tag) en order-UI consumeren dezelfde helpers (`verzendWeekVoor`, `verzendWeekSleutel`, `verzendWeekLabel` → "Verzendweek 19", `verzendWeekKort` → "Wk 19", `isoWeek`, `isoMaandag`). Verandert ooit de mapping (bv. shift voor specifieke vervoerders, of expliciete `verzenddatum`-kolom), dan gebeurt dat hier en nergens anders.
+
 #### Atomic-RPC-pattern voor multi-step state-mutaties
 Wanneer een UI-actie meerdere DB-rijen moet aanpassen (vinden-of-maken + updaten), is twee opeenvolgende client-side calls fragiel: faalt de tweede dan blijft een dangling rij van de eerste achter. Centraliseer in één plpgsql-RPC. Voorbeeld: `set_locatie_voor_orderregel` (mig 0183) bundelt `INSERT magazijn_locaties ON CONFLICT` + `UPDATE snijplannen.locatie` voor `useUpdateMaatwerkLocatie`. Eén RPC = één transactie = atomair. Zie ADR-0002 ("Locatie-mutaties — pragma, geen seam-leak-fix").
 

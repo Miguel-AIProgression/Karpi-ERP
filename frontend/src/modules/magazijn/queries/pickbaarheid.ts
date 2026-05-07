@@ -51,16 +51,24 @@ export async function fetchPickShipOrders(
   const perOrder = initPickShipOrders(headers, vandaag)
   const headerMap = new Map(headers.map((h) => [h.id, h]))
   const regels = await fetchPickbaarheidRegels(headers.map((h) => h.id))
+  const karpiNamen = await fetchKarpiNamenVoorArtikelen(regels.map((r) => r.artikelnr))
+  const gewichtPerOrder = await fetchTotaalGewichtPerOrder(headers.map((h) => h.id))
 
   for (const r of regels) {
     const h = headerMap.get(r.order_id)
     const order = perOrder.get(r.order_id)
     if (!h || !order) continue
 
-    const regel = mapPickbaarheidRegel(r)
+    const karpiNaam = r.artikelnr ? karpiNamen.get(r.artikelnr) ?? null : null
+    const regel = mapPickbaarheidRegel(r, karpiNaam)
     order.regels.push(regel)
     order.totaal_m2 = Math.round((order.totaal_m2 + regel.m2) * 100) / 100
     order.aantal_regels = order.regels.length
+  }
+
+  for (const [orderId, kg] of gewichtPerOrder) {
+    const order = perOrder.get(orderId)
+    if (order) order.totaal_gewicht_kg = kg
   }
 
   let result = Array.from(perOrder.values())
@@ -76,7 +84,10 @@ export async function fetchPickShipOrders(
 async function fetchOpenOrderHeaders(): Promise<OrderHeaderRij[]> {
   const { data: ordersRaw, error } = await supabase
     .from('orders')
-    .select('id, order_nr, status, debiteur_nr, afl_naam, afl_plaats, afleverdatum')
+    .select(
+      'id, order_nr, status, debiteur_nr, afl_naam, afl_adres, afl_postcode, ' +
+        'afl_plaats, afl_land, afleverdatum, afhalen'
+    )
     .neq('status', 'Verzonden')
     .neq('status', 'Geannuleerd')
     .order('afleverdatum', { ascending: true })
@@ -163,6 +174,64 @@ async function fetchFallbackOrderRegels(orderIds: number[]): Promise<Pickbaarhei
   }))
 }
 
+/**
+ * Som `gewicht_kg × orderaantal` per order. Pseudo-regel `VERZEND` wordt
+ * uitgesloten — die is een factuurregel, geen fysiek collo (zie mig 206).
+ * Wordt indicatief getoond op Pick & Ship; definitief gewicht wordt later door
+ * `create_zending_voor_order` op de zending gezet.
+ */
+async function fetchTotaalGewichtPerOrder(orderIds: number[]): Promise<Map<number, number>> {
+  const map = new Map<number, number>()
+  if (orderIds.length === 0) return map
+
+  for (const ids of chunks(orderIds, 100)) {
+    const { data, error } = await supabase
+      .from('order_regels')
+      .select('order_id, gewicht_kg, orderaantal, artikelnr')
+      .in('order_id', ids)
+      .neq('artikelnr', SHIPPING_PRODUCT_ID)
+    if (error) throw error
+    for (const row of (data ?? []) as Array<{
+      order_id: number
+      gewicht_kg: number | null
+      orderaantal: number | null
+    }>) {
+      const kg = (row.gewicht_kg ?? 0) * (row.orderaantal ?? 0)
+      map.set(row.order_id, (map.get(row.order_id) ?? 0) + kg)
+    }
+  }
+
+  for (const [k, v] of map) map.set(k, Math.round(v * 100) / 100)
+  return map
+}
+
+/**
+ * Haalt Karpi-product-omschrijving op voor de gegeven artikelen. Wordt gebruikt
+ * op de Pick & Ship-pagina zodat het magazijn altijd de canonische Karpi-naam
+ * uit `producten.omschrijving` ziet — niet de klanteigen-naam die in
+ * `order_regels.omschrijving` is weggeschreven (mig 200). Pakbon en
+ * verzendsticker tonen wél beide namen voor de klant.
+ */
+async function fetchKarpiNamenVoorArtikelen(
+  artikelnrs: Array<string | null>
+): Promise<Map<string, string>> {
+  const uniek = Array.from(new Set(artikelnrs.filter((a): a is string => !!a)))
+  const map = new Map<string, string>()
+  if (uniek.length === 0) return map
+
+  for (const ids of chunks(uniek, 200)) {
+    const { data, error } = await supabase
+      .from('producten')
+      .select('artikelnr, omschrijving')
+      .in('artikelnr', ids)
+    if (error) throw error
+    for (const row of (data ?? []) as Array<{ artikelnr: string; omschrijving: string | null }>) {
+      if (row.omschrijving) map.set(row.artikelnr, row.omschrijving)
+    }
+  }
+  return map
+}
+
 function isMissingPickbaarheidViewError(error: { code?: string; message?: string }): boolean {
   return (
     error.code === 'PGRST205' ||
@@ -176,10 +245,7 @@ export async function fetchPickShipStats(vandaag: Date = new Date()): Promise<Pi
     totaal_orders: orders.length,
     totaal_stuks: orders.reduce((s, o) => s + o.aantal_regels, 0),
     totaal_m2: Math.round(orders.reduce((s, o) => s + o.totaal_m2, 0) * 100) / 100,
-    per_bucket: {
-      achterstallig: 0, vandaag: 0, morgen: 0, deze_week: 0,
-      volgende_week: 0, later: 0, geen_datum: 0,
-    },
+    per_bucket: { wk_1: 0, wk_2: 0, wk_3: 0, wk_4: 0, wk_5: 0, later: 0 },
   }
   for (const o of orders) stats.per_bucket[o.bucket] += 1
   return stats

@@ -11,6 +11,7 @@ import {
   fetchVertegenwoordigers,
   setKlantPrijslijst,
   setKlantenPrijslijst,
+  fetchKleurenVoorKwaliteit,
 } from '@/lib/supabase/queries/klanten'
 
 export function useKlanten(params: {
@@ -50,6 +51,14 @@ export function useKlanteigenNamen(debiteurNr: number) {
     queryKey: ['klanten', debiteurNr, 'klanteigen-namen'],
     queryFn: () => fetchKlanteigenNamen(debiteurNr),
     enabled: debiteurNr > 0,
+  })
+}
+
+export function useKleurenVoorKwaliteit(kwaliteitCode: string | null) {
+  return useQuery({
+    queryKey: ['kleuren-voor-kwaliteit', kwaliteitCode],
+    queryFn: () => fetchKleurenVoorKwaliteit(kwaliteitCode!),
+    enabled: !!kwaliteitCode,
   })
 }
 

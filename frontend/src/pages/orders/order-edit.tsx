@@ -182,6 +182,7 @@ export function OrderEditPage() {
             afl_postcode: order.afl_postcode ?? undefined,
             afl_plaats: order.afl_plaats ?? undefined,
             afl_land: order.afl_land ?? undefined,
+            afhalen: order.afhalen ?? false,
           },
           regels: regelData,
           status: order.status,

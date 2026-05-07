@@ -69,6 +69,7 @@ export interface KlantDetail {
 export interface KlanteigenNaam {
   id: number
   kwaliteit_code: string
+  kleur_code: string | null
   benaming: string
   omschrijving: string | null
   leverancier: string | null
@@ -312,12 +313,29 @@ export async function fetchAfleveradressen(debiteurNr: number): Promise<Aflevera
 export async function fetchKlanteigenNamen(debiteurNr: number): Promise<KlanteigenNaam[]> {
   const { data, error } = await supabase
     .from('klanteigen_namen')
-    .select('id, kwaliteit_code, benaming, omschrijving, leverancier')
+    .select('id, kwaliteit_code, kleur_code, benaming, omschrijving, leverancier')
     .eq('debiteur_nr', debiteurNr)
     .order('kwaliteit_code')
+    .order('kleur_code', { nullsFirst: true })
 
   if (error) throw error
   return (data ?? []) as KlanteigenNaam[]
+}
+
+/** Available kleur_codes for a kwaliteit (across all active products) */
+export async function fetchKleurenVoorKwaliteit(kwaliteitCode: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('producten')
+    .select('kleur_code')
+    .eq('kwaliteit_code', kwaliteitCode)
+    .eq('actief', true)
+    .not('kleur_code', 'is', null)
+  if (error) throw error
+  const set = new Set<string>()
+  for (const row of (data ?? []) as { kleur_code: string }[]) {
+    set.add(row.kleur_code)
+  }
+  return Array.from(set).sort((a, b) => a.localeCompare(b))
 }
 
 /** Fetch klant artikelnummers (customer-specific article numbers) for a klant */

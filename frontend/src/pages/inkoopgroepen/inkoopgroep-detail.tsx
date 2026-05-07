@@ -9,11 +9,15 @@ import {
   useSetDebiteurInkoopgroep,
 } from '@/hooks/use-inkoopgroepen'
 import { InkoopgroepAddDebiteurDialog } from '@/components/inkoopgroepen/inkoopgroep-add-debiteur-dialog'
+import { InkoopgroepEigenNamenTab } from '@/components/inkoopgroepen/inkoopgroep-eigen-namen-tab'
+
+type Tab = 'leden' | 'eigennamen'
 
 export function InkoopgroepDetailPage() {
   const { code } = useParams<{ code: string }>()
   const [showAdd, setShowAdd] = useState(false)
   const [removeBusy, setRemoveBusy] = useState<number | null>(null)
+  const [activeTab, setActiveTab] = useState<Tab>('leden')
 
   const { data: groep, isLoading } = useInkoopgroepDetail(code)
   const { data: leden } = useInkoopgroepLeden(code)
@@ -76,6 +80,30 @@ export function InkoopgroepDetailPage() {
         </div>
       </div>
 
+      <div className="flex items-center gap-4 mb-3 border-b border-slate-200">
+        {([
+          { key: 'leden', label: `Leden (${groep.aantal_leden})` },
+          { key: 'eigennamen', label: 'Eigen benamingen' },
+        ] as const).map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setActiveTab(t.key)}
+            className={`px-1 pb-2 -mb-px text-sm font-medium border-b-2 transition-colors ${
+              activeTab === t.key
+                ? 'border-terracotta-500 text-slate-900'
+                : 'border-transparent text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'eigennamen' && (
+        <InkoopgroepEigenNamenTab inkoopgroepCode={groep.code} inkoopgroepNaam={groep.naam} />
+      )}
+
+      {activeTab === 'leden' && (
       <div className="bg-white rounded-[var(--radius)] border border-slate-200 overflow-hidden">
         <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
           <h2 className="font-medium text-slate-700">Gekoppelde debiteuren</h2>
@@ -141,6 +169,7 @@ export function InkoopgroepDetailPage() {
           </table>
         )}
       </div>
+      )}
 
       {showAdd && (
         <InkoopgroepAddDebiteurDialog

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, X } from 'lucide-react'
+import { ArrowLeft, Pencil, X } from 'lucide-react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase/client'
 import { PageHeader } from '@/components/layout/page-header'
@@ -15,6 +15,7 @@ import { KlantPrijslijstTab } from '@/components/klanten/klant-prijslijst-tab'
 import { KlantPrijslijstSelector } from '@/components/klanten/klant-prijslijst-selector'
 import { KlantVertegSelector } from '@/components/klanten/klant-verteg-selector'
 import { KlantFactureringTab } from '@/components/klanten/klant-facturering-tab'
+import { KlantEditDialog } from '@/components/klanten/klant-edit-dialog'
 import { EdiTag, KlantEdiTab } from '@/modules/edi'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
@@ -37,6 +38,7 @@ export function KlantDetailPage() {
   const debiteurNr = Number(id)
   const [activeTab, setActiveTab] = useState<Tab>('info')
   const [showLogo, setShowLogo] = useState(false)
+  const [showEdit, setShowEdit] = useState(false)
 
   const queryClient = useQueryClient()
   const { data: klant, isLoading } = useKlantDetail(debiteurNr)
@@ -47,6 +49,19 @@ export function KlantDetailPage() {
   const [editVerzendDrempel, setEditVerzendDrempel] = useState(false)
   const [editStandaardDagen, setEditStandaardDagen] = useState(false)
   const [editMaatwerkWeken, setEditMaatwerkWeken] = useState(false)
+
+  const showError = (label: string) => (err: unknown) => {
+    console.error(`[${label}]`, err)
+    const e = err as { message?: unknown; details?: unknown; hint?: unknown; code?: unknown } | null
+    const parts = [
+      typeof e?.message === 'string' ? e.message : null,
+      typeof e?.details === 'string' ? `details: ${e.details}` : null,
+      typeof e?.hint === 'string' ? `hint: ${e.hint}` : null,
+      typeof e?.code === 'string' ? `code: ${e.code}` : null,
+    ].filter(Boolean)
+    const msg = parts.length > 0 ? parts.join('\n') : 'onbekende fout (zie console)'
+    alert(`${label} opslaan mislukt:\n${msg}`)
+  }
 
   const gratisVerzendingMutation = useMutation({
     mutationFn: async (newValue: boolean) => {
@@ -59,6 +74,7 @@ export function KlantDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['klanten', debiteurNr] })
     },
+    onError: showError('Gratis verzending'),
   })
 
   const afleverwijzeMutation = useMutation({
@@ -72,6 +88,7 @@ export function KlantDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['klanten', debiteurNr] })
     },
+    onError: showError('Afleverwijze'),
   })
 
   const verzendkostenMutation = useMutation({
@@ -86,6 +103,7 @@ export function KlantDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['klanten', debiteurNr] })
       setEditVerzendkosten(false)
     },
+    onError: showError('Verzendkosten'),
   })
 
   const standaardDagenMutation = useMutation({
@@ -100,6 +118,7 @@ export function KlantDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['klanten', debiteurNr] })
       setEditStandaardDagen(false)
     },
+    onError: showError('Standaard-maat levertermijn'),
   })
 
   const maatwerkWekenMutation = useMutation({
@@ -114,6 +133,7 @@ export function KlantDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['klanten', debiteurNr] })
       setEditMaatwerkWeken(false)
     },
+    onError: showError('Maatwerk levertermijn'),
   })
 
   const deelleveringenMutation = useMutation({
@@ -127,6 +147,7 @@ export function KlantDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['klanten', debiteurNr] })
     },
+    onError: showError('Deelleveringen'),
   })
 
   const verzendDrempelMutation = useMutation({
@@ -141,6 +162,7 @@ export function KlantDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['klanten', debiteurNr] })
       setEditVerzendDrempel(false)
     },
+    onError: showError('Drempel gratis verzending'),
   })
 
   if (isLoading) {
@@ -171,7 +193,16 @@ export function KlantDetailPage() {
       </div>
 
       {/* Header card */}
-      <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-6 mb-6">
+      <div className="relative bg-white rounded-[var(--radius)] border border-slate-200 p-6 mb-6">
+        <button
+          type="button"
+          onClick={() => setShowEdit(true)}
+          aria-label="Klantgegevens bewerken"
+          title="Klantgegevens bewerken"
+          className="absolute top-4 right-4 inline-flex items-center justify-center w-8 h-8 rounded-[var(--radius-sm)] text-slate-400 hover:text-terracotta-600 hover:bg-terracotta-50 transition-colors"
+        >
+          <Pencil size={16} />
+        </button>
         <div className="flex items-start gap-4 mb-4">
           {/* Logo / initialen */}
           {klant.logo_path ? (
@@ -211,11 +242,26 @@ export function KlantDetailPage() {
           <InfoField label="Telefoon" value={klant.telefoon} />
           <InfoField label="Email" value={klant.email_factuur} />
           <InfoField label="BTW" value={klant.btw_nummer} />
+        </div>
+        <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
           <KlantPrijslijstSelector
             debiteurNr={debiteurNr}
             prijslijstNr={klant.prijslijst_nr}
             prijslijstNaam={klant.prijslijst_naam ?? null}
           />
+          <div>
+            <div className="text-xs text-slate-400 mb-1">Inkoopgroep</div>
+            {klant.inkoopgroep_code ? (
+              <Link
+                to={`/inkoopgroepen/${klant.inkoopgroep_code}`}
+                className="text-terracotta-500 hover:underline font-medium"
+              >
+                {klant.inkoopgroep_naam ?? klant.inkoopgroep_code}
+              </Link>
+            ) : (
+              <span className="text-slate-400">—</span>
+            )}
+          </div>
           <InfoField label="Korting" value={klant.korting_pct ? `${klant.korting_pct}%` : null} />
           <InfoField label="Betaalconditie" value={klant.betaalconditie} />
           <InfoField label="Omzet YTD" value={formatCurrency(klant.omzet_ytd)} />
@@ -499,6 +545,11 @@ export function KlantDetailPage() {
         {activeTab === 'prijslijst' && <KlantPrijslijstTab debiteurNr={debiteurNr} />}
         {activeTab === 'edi' && <KlantEdiTab debiteurNr={debiteurNr} />}
       </div>
+
+      {/* Klant bewerken modal */}
+      {showEdit && klant && (
+        <KlantEditDialog klant={klant} onClose={() => setShowEdit(false)} />
+      )}
 
       {/* Logo lightbox */}
       {showLogo && klant.logo_path && (

@@ -473,7 +473,10 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr,
     const newLine: OrderRegelFormData = {
       artikelnr: article.artikelnr,
       karpi_code: article.karpi_code ?? undefined,
-      omschrijving: article.omschrijving,
+      // Pre-fill met klant-eigen / inkoopgroep-eigen kwaliteitsnaam zodat
+      // PDF/EDI uitgaand de naam toont die de klant in zijn eigen administratie
+      // gebruikt. Generieke product-omschrijving als fallback. Mig 200.
+      omschrijving: klant_eigen_naam ?? article.omschrijving,
       orderaantal: 1,
       te_leveren: 1,
       prijs: prijs ?? undefined,
