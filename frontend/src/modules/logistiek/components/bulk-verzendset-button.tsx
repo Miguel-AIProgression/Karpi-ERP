@@ -112,6 +112,7 @@ export function BulkVerzendsetButton({ orders, context }: BulkVerzendsetButtonPr
   }
 
   async function handleStart() {
+    console.debug('[BulkVerzendset] handleStart triggered', { pickerId, pickbaar: pickbaar.length })
     if (!pickerId) {
       setError('Kies eerst een picker')
       return
@@ -129,7 +130,9 @@ export function BulkVerzendsetButton({ orders, context }: BulkVerzendsetButtonPr
       // diagnosticeren. Stap-voor-stap is OK: typisch 2-10 zendingen.
       for (let i = 0; i < pickbaar.length; i++) {
         const order = pickbaar[i]
+        console.debug('[BulkVerzendset] creating zending', { orderId: order.order_id, pickerId, index: i + 1, total: pickbaar.length })
         const zending = await createZendingVoorOrder(order.order_id, pickerId)
+        console.debug('[BulkVerzendset] zending created', { zending_nr: zending.zending_nr })
         zendingNrs.push(zending.zending_nr)
         setVoortgang({ klaar: i + 1, totaal: aantal })
       }
@@ -139,10 +142,12 @@ export function BulkVerzendsetButton({ orders, context }: BulkVerzendsetButtonPr
 
       setShowPickerPopover(false)
       const qs = encodeURIComponent(zendingNrs.join(','))
+      console.debug('[BulkVerzendset] navigating to bulk-printset', { zendingNrs })
       navigate(`/logistiek/printset/bulk?zendingen=${qs}`)
     } catch (err) {
       // Bij partial fail: laat aangemaakte zendingen staan (geen rollback
       // nodig — magazijnier kan ze los afhandelen). Toon waar we vastliepen.
+      console.error('[BulkVerzendset] handleStart failed', err)
       const klaar = zendingNrs.length
       const fout = err instanceof Error ? err.message : String(err)
       setError(
@@ -200,14 +205,26 @@ export function BulkVerzendsetButton({ orders, context }: BulkVerzendsetButtonPr
             Alle zendingen in deze bundel krijgen dezelfde picker. Op de printset-pagina
             kun je per zending alsnog wisselen voor een shift-overgang.
           </p>
+          {error && (
+            <div className="mt-2 rounded-[var(--radius-sm)] border border-rose-100 bg-rose-50 px-2 py-1.5 text-[11px] text-rose-700">
+              {error}
+            </div>
+          )}
+          {bezig && voortgang && (
+            <div className="mt-2 text-[11px] text-slate-600">
+              Bezig… {voortgang.klaar}/{voortgang.totaal} zendingen aangemaakt
+            </div>
+          )}
           <div className="mt-3 flex items-center justify-end gap-2">
             <button
               onClick={() => setShowPickerPopover(false)}
-              className="px-3 py-1.5 text-xs text-slate-600 hover:text-slate-900"
+              disabled={bezig}
+              className="px-3 py-1.5 text-xs text-slate-600 hover:text-slate-900 disabled:opacity-45"
             >
               Annuleren
             </button>
             <button
+              type="button"
               onClick={handleStart}
               disabled={!pickerId || bezig}
               className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] bg-terracotta-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-terracotta-600 disabled:opacity-45"
