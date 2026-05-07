@@ -4,11 +4,30 @@ import { ArrowLeft, FileText, Printer, Tags } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { PakbonDocument } from '@/modules/logistiek/components/pakbon-document'
 import { ShippingLabel } from '@/modules/logistiek/components/shipping-label'
+import { DpdShippingLabel } from '@/modules/logistiek/components/dpd-shipping-label'
 import { VervoerderTag } from '@/modules/logistiek/components/vervoerder-tag'
+import { ColliPickVinkjes } from '@/modules/logistiek/components/colli-pick-vinkjes'
+import { VoltooiPickrondeKnop } from '@/modules/logistiek/components/voltooi-pickronde-knop'
 import { useZendingPrintSet } from '@/modules/logistiek/hooks/use-zendingen'
 import { generateSscc } from '@/modules/logistiek/lib/sscc'
+import { isShippingRegel } from '@/modules/logistiek/lib/is-shipping-regel'
 import { getVervoerderDef } from '@/modules/logistiek/registry'
 import type { ZendingPrintRegel, ZendingPrintSet } from '@/modules/logistiek/queries/zendingen'
+
+const DEFAULT_LABEL_BREEDTE_MM = 105
+const DEFAULT_LABEL_HOOGTE_MM = 60
+
+interface LabelFormaat {
+  breedteMm: number
+  hoogteMm: number
+}
+
+function labelFormaatVoor(zending: ZendingPrintSet): LabelFormaat {
+  return {
+    breedteMm: zending.vervoerders?.label_breedte_mm ?? DEFAULT_LABEL_BREEDTE_MM,
+    hoogteMm: zending.vervoerders?.label_hoogte_mm ?? DEFAULT_LABEL_HOOGTE_MM,
+  }
+}
 
 type PrintMode = 'all' | 'labels' | 'pakbon'
 
@@ -28,11 +47,17 @@ function vervoerderInfo(zending: ZendingPrintSet) {
 }
 
 function expandLabels(zending: ZendingPrintSet): LabelItem[] {
-  const sortedRegels = [...zending.zending_regels].sort((a, b) => {
-    const ar = a.order_regels?.regelnummer ?? 0
-    const br = b.order_regels?.regelnummer ?? 0
-    return ar - br
-  })
+  // Service-regels (verzendkosten) zijn factuurregels — geen fysiek collo,
+  // dus geen sticker. Sinds mig 206 filtert de RPC ze ook al uit; voor oudere
+  // zendingen vangt `isShippingRegel` ook de variant op waar zending_regels.
+  // artikelnr leeg is en alleen order_regels.artikelnr='VERZEND' staat.
+  const sortedRegels = zending.zending_regels
+    .filter((r) => !isShippingRegel(r))
+    .sort((a, b) => {
+      const ar = a.order_regels?.regelnummer ?? 0
+      const br = b.order_regels?.regelnummer ?? 0
+      return ar - br
+    })
   const expanded: Array<{ regel: ZendingPrintRegel | null }> = []
 
   for (const regel of sortedRegels) {
@@ -40,7 +65,10 @@ function expandLabels(zending: ZendingPrintSet): LabelItem[] {
     for (let i = 0; i < aantal; i += 1) expanded.push({ regel })
   }
 
-  const targetTotal = Math.max(Number(zending.aantal_colli ?? 0), expanded.length, 1)
+  // Aantal_colli kan in oude zendingen verzendkosten meetellen — gebruik dus
+  // expanded.length als bovengrens, niet zending.aantal_colli, om geen extra
+  // VERZEND-stickers te padden voor pre-mig 206 zendingen.
+  const targetTotal = Math.max(expanded.length, 1)
   while (expanded.length < targetTotal) {
     expanded.push({ regel: expanded.at(-1)?.regel ?? null })
   }
@@ -65,6 +93,8 @@ export function ZendingPrintSetPage() {
 
   const labels = useMemo(() => (zending ? expandLabels(zending) : []), [zending])
   const vervoerder = zending ? vervoerderInfo(zending) : null
+  const labelFormaat = zending ? labelFormaatVoor(zending) : null
+  const isPrintType = zending?.vervoerders?.type === 'print'
 
   function print(mode: PrintMode) {
     setPrintMode(mode)
@@ -141,21 +171,47 @@ export function ZendingPrintSetPage() {
             </div>
           }
         />
+
+        {zending.status === 'Picken' && (
+          <div className="mb-4 space-y-3">
+            <ColliPickVinkjes
+              zendingId={zending.id}
+              leverModus={
+                (zending.orders.lever_modus as 'deelleveringen' | 'in_een_keer' | null) ?? null
+              }
+            />
+            <div className="flex justify-end">
+              <VoltooiPickrondeKnop zendingId={zending.id} zendingStatus={zending.status} />
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="zending-printset space-y-8" data-print-mode={printMode}>
         <div className="shipping-labels flex flex-col items-start gap-4">
-          {labels.map((label) => (
-            <ShippingLabel
-              key={label.index}
-              zending={zending}
-              regel={label.regel}
-              colliIndex={label.index}
-              colliTotal={labels.length}
-              vervoerderNaam={vervoerder.naam}
-              sscc={label.sscc}
-            />
-          ))}
+          {labels.map((label) =>
+            isPrintType ? (
+              <DpdShippingLabel
+                key={label.index}
+                zending={zending}
+                regel={label.regel}
+                colliIndex={label.index}
+                colliTotal={labels.length}
+                serviceCode={zending.service_code}
+                sscc={label.sscc}
+              />
+            ) : (
+              <ShippingLabel
+                key={label.index}
+                zending={zending}
+                regel={label.regel}
+                colliIndex={label.index}
+                colliTotal={labels.length}
+                vervoerderNaam={vervoerder.naam}
+                sscc={label.sscc}
+              />
+            ),
+          )}
         </div>
 
         <PakbonDocument
@@ -202,7 +258,7 @@ export function ZendingPrintSetPage() {
             box-shadow: none;
           }
           @page shipping-label {
-            size: 105mm 60mm;
+            size: ${labelFormaat?.breedteMm ?? DEFAULT_LABEL_BREEDTE_MM}mm ${labelFormaat?.hoogteMm ?? DEFAULT_LABEL_HOOGTE_MM}mm;
             margin: 0;
           }
           @page pakbon {
