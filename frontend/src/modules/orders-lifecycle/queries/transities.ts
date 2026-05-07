@@ -31,6 +31,11 @@ export async function markeerGeannuleerd(input: MarkeerGeannuleerdInput): Promis
   })
   if (error) throw new Error(error.message)
 }
-export async function herberekenWachtStatus(_input: unknown): Promise<void> {
-  throw new Error('not implemented yet')
+export interface HerberekenWachtStatusInput { orderId: number }
+
+export async function herberekenWachtStatus(input: HerberekenWachtStatusInput): Promise<void> {
+  const { error } = await supabase.rpc('herbereken_wacht_status', {
+    p_order_id: input.orderId,
+  })
+  if (error) throw new Error(error.message)
 }

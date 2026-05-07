@@ -68,3 +68,13 @@ describe('markeerGeannuleerd', () => {
     expect(true).toBe(true)
   })
 })
+
+describe('herberekenWachtStatus', () => {
+  it('roept RPC herbereken_wacht_status aan met alleen p_order_id', async () => {
+    await herberekenWachtStatus({ orderId: 12 })
+    expect(rpcCalls).toEqual([{
+      fn: 'herbereken_wacht_status',
+      args: { p_order_id: 12 }
+    }])
+  })
+})

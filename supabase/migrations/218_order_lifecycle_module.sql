@@ -175,3 +175,73 @@ GRANT EXECUTE ON FUNCTION markeer_geannuleerd(BIGINT, TEXT, BIGINT, UUID) TO aut
 COMMENT ON FUNCTION markeer_geannuleerd IS
   'Mig 218 (ADR-0006): zet orders.status=Geannuleerd + audit-event. '
   'Reden verplicht voor audit-trail. Faalt op reeds verzonden orders.';
+
+-- 6. Recompute — herbereken_wacht_status
+-- Bevat alleen de status-keuze. De claim-checks + afleverdatum-sync
+-- blijven in herwaardeer_order_status (mig 153, geüpdatet in Task 1.8).
+CREATE OR REPLACE FUNCTION herbereken_wacht_status(p_order_id BIGINT)
+RETURNS VOID
+LANGUAGE plpgsql AS $$
+DECLARE
+  v_huidig order_status;
+  v_heeft_io_claim BOOLEAN;
+  v_heeft_tekort BOOLEAN;
+  v_doel order_status;
+BEGIN
+  SELECT status INTO v_huidig FROM orders WHERE id = p_order_id;
+
+  -- Eindstatussen + actieve productie/picking niet aanraken (compatibel met mig 153).
+  -- Bij pad-strict (Task 1.10): de laatste 5 leden zijn dood — CHECK garandeert
+  -- dat ze niet bestaan op orders. Bij pad-pragmatisch: ze tolereren legacy data.
+  -- Defensief consistent in beide paden; opruimen volgt in vervolg-iteratie als
+  -- pad-strict gekozen is (zie Task 1.11 sentinel-cleanup-scope).
+  IF v_huidig IN (
+    'Verzonden', 'Geannuleerd', 'Klaar voor verzending',
+    'In productie', 'In snijplan', 'Deels gereed', 'Wacht op picken'
+  ) THEN
+    RETURN;
+  END IF;
+
+  SELECT EXISTS (
+    SELECT 1 FROM order_reserveringen r
+    JOIN order_regels oreg ON oreg.id = r.order_regel_id
+    WHERE oreg.order_id = p_order_id
+      AND r.bron = 'inkooporder_regel'
+      AND r.status = 'actief'
+  ) INTO v_heeft_io_claim;
+
+  SELECT EXISTS (
+    SELECT 1 FROM order_regels oreg
+    WHERE oreg.order_id = p_order_id
+      AND COALESCE(oreg.is_maatwerk, false) = false
+      AND oreg.artikelnr IS NOT NULL
+      AND oreg.te_leveren > COALESCE((
+        SELECT SUM(aantal) FROM order_reserveringen r
+        WHERE r.order_regel_id = oreg.id AND r.status = 'actief'
+      ), 0)
+  ) INTO v_heeft_tekort;
+
+  IF v_heeft_io_claim THEN
+    v_doel := 'Wacht op inkoop';
+  ELSIF v_heeft_tekort THEN
+    v_doel := 'Wacht op voorraad';
+  ELSIF v_huidig IN ('Wacht op inkoop', 'Wacht op voorraad') THEN
+    v_doel := 'Nieuw';
+  ELSE
+    RETURN; -- niets te doen
+  END IF;
+
+  PERFORM _apply_transitie(
+    p_order_id   := p_order_id,
+    p_event_type := 'wacht_status_herberekend',
+    p_status_na  := v_doel
+  );
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION herbereken_wacht_status(BIGINT) TO authenticated;
+
+COMMENT ON FUNCTION herbereken_wacht_status IS
+  'Mig 218 (ADR-0006): leest claim-state, kiest Wacht op X / Nieuw, schrijft via _apply_transitie. '
+  'Eindstatussen + actieve productie/picking-statussen worden niet aangeraakt. '
+  'Wordt aangeroepen door herwaardeer_order_status (mig 153) en kan ook handmatig.';
