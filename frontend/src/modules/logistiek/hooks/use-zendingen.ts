@@ -68,7 +68,8 @@ export function useZendingPrintSets(zending_nrs: string[]) {
 export function useCreateZendingVoorOrder() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (orderId: number) => createZendingVoorOrder(orderId),
+    mutationFn: ({ orderId, pickerId }: { orderId: number; pickerId: number }) =>
+      createZendingVoorOrder(orderId, pickerId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['logistiek', 'zendingen'] })
       qc.invalidateQueries({ queryKey: ['pick-ship'] })

@@ -223,9 +223,13 @@ export async function fetchZendingPrintSet(zending_nr: string): Promise<ZendingP
   return data as unknown as ZendingPrintSet
 }
 
-export async function createZendingVoorOrder(orderId: number): Promise<ZendingAanmaakResult> {
+export async function createZendingVoorOrder(
+  orderId: number,
+  pickerId: number,
+): Promise<ZendingAanmaakResult> {
   const { data, error } = await supabase.rpc('create_zending_voor_order', {
     p_order_id: orderId,
+    p_picker_id: pickerId,
   })
   if (error) throw toError(error, 'Zending aanmaken mislukt')
 
