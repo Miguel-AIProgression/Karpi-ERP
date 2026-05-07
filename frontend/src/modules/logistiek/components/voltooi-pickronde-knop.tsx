@@ -1,0 +1,55 @@
+// frontend/src/modules/logistiek/components/voltooi-pickronde-knop.tsx
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { Loader2, PackageCheck } from 'lucide-react'
+import { useColliVoorZending, useVoltooiPickronde } from '@/modules/magazijn'
+
+interface Props {
+  zendingId: number
+  zendingStatus: string
+}
+
+export function VoltooiPickrondeKnop({ zendingId, zendingStatus }: Props) {
+  const navigate = useNavigate()
+  const { data: colli = [] } = useColliVoorZending(zendingId)
+  const mutate = useVoltooiPickronde()
+  const [error, setError] = useState<string | null>(null)
+
+  if (zendingStatus !== 'Picken') return null
+
+  const aantalNietGevonden = colli.filter((c) => c.pick_uitkomst === 'niet_gevonden').length
+  const disabled = mutate.isPending || aantalNietGevonden > 0
+
+  async function handleClick() {
+    setError(null)
+    try {
+      await mutate.mutateAsync(zendingId)
+      navigate('/logistiek')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  const tooltip = aantalNietGevonden > 0
+    ? `Eerst ${aantalNietGevonden} pick-probleem oplossen (chef)`
+    : 'Markeer alle colli als gepickt en stuur door naar verzending'
+
+  return (
+    <div className="inline-flex flex-col items-end gap-1">
+      <button
+        onClick={handleClick}
+        disabled={disabled}
+        title={tooltip}
+        className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-45"
+      >
+        {mutate.isPending ? (
+          <Loader2 size={14} className="animate-spin" />
+        ) : (
+          <PackageCheck size={14} />
+        )}
+        Voltooi pickronde
+      </button>
+      {error && <div className="max-w-72 text-right text-xs text-rose-600">{error}</div>}
+    </div>
+  )
+}
