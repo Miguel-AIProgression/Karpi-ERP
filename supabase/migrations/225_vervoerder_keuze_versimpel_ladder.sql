@@ -237,11 +237,13 @@ SELECT
   COALESCE(hst_fout.aantal, 0)           AS hst_aantal_fout
 FROM vervoerders v
 LEFT JOIN (
-  -- Tel actieve verzendregels die voor specifieke debiteuren gelden (conditie ? 'debiteur_nrs').
-  -- Dit dekt de auto-gemigreerde klant-defaults (mig 224) en handmatig aangemaakte klant-regels.
-  -- Noot: een regel kan meerdere debiteur_nrs bevatten; we tellen het aantal regels, niet debiteuren.
-  SELECT vervoerder_code, COUNT(*)::INT AS aantal
-    FROM vervoerder_selectie_regels
+  -- Tel UNIEKE debiteuren waarvoor een actieve verzendregel met deze vervoerder geldt.
+  -- Een regel kan meerdere debiteur_nrs bevatten ({debiteur_nrs:[1,2,3]}); we unnesten de
+  -- array en tellen DISTINCT zodat een bulk-regel correct als 3 debiteuren telt en
+  -- overlap tussen regels niet dubbel telt.
+  SELECT vervoerder_code, COUNT(DISTINCT debiteur_nr)::INT AS aantal
+    FROM vervoerder_selectie_regels,
+         LATERAL jsonb_array_elements_text(conditie->'debiteur_nrs') AS debiteur_nr
    WHERE actief = TRUE
      AND conditie ? 'debiteur_nrs'
    GROUP BY vervoerder_code
@@ -261,6 +263,10 @@ LEFT JOIN (
      AND created_at >= date_trunc('month', now())
    GROUP BY vervoerder_code
 ) zendingen_maand ON zendingen_maand.vervoerder_code = v.code
+-- HST-stats — patroon ongewijzigd overgenomen uit mig 174. Subqueries hebben hardcoded
+-- 'hst_api' als JOIN-key omdat de hst_transportorders-tabel geen vervoerder_code heeft.
+-- Fragiel: alleen correct zolang de HST-API-vervoerder daadwerkelijk code='hst_api'
+-- heeft in de vervoerders-tabel. Eventuele bredere stats-refactor: aparte ADR.
 LEFT JOIN (
   SELECT 'hst_api'::TEXT AS code, COUNT(*)::INT AS aantal
     FROM hst_transportorders WHERE status = 'Verstuurd'
@@ -271,10 +277,11 @@ LEFT JOIN (
 ) hst_fout ON hst_fout.code = v.code;
 
 COMMENT ON VIEW vervoerder_stats IS
-  'Mig 225 (ADR-0008): per-vervoerder dashboard. aantal_klanten telt nu actieve '
-  'verzendregels met conditie ? ''debiteur_nrs'' i.p.v. edi_handelspartner_config. '
-  'zendingen_totaal/maand tellen via zendingen.vervoerder_code i.p.v. ehc-join. '
-  'hst_aantal_* alleen niet-NULL voor hst_api.';
+  'Mig 225 (ADR-0008): per-vervoerder dashboard. aantal_klanten telt nu unieke '
+  'debiteuren via UNNEST(debiteur_nrs) over actieve verzendregels (correct voor '
+  'bulk-regels met meerdere debiteur_nrs in één rij). zendingen_totaal/maand '
+  'tellen via zendingen.vervoerder_code i.p.v. ehc-join. hst_aantal_* alleen '
+  'niet-NULL voor hst_api (patroon overgenomen uit mig 174).';
 
 GRANT SELECT ON vervoerder_stats TO authenticated;
 
