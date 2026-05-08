@@ -14,7 +14,7 @@ import { fetchKlanteigenNaam } from '@/lib/supabase/queries/klanteigen-namen'
 import { supabase } from '@/lib/supabase/client'
 import { fetchOrderConfig } from '@/lib/supabase/queries/order-config'
 import { triggerAutoplan, fetchAutoplanningConfig } from '@/lib/supabase/queries/auto-planning'
-import { berekenMaatwerkAfleverdatumViaSeam } from '@/lib/utils/maatwerk-leverdatum'
+import { berekenMaatwerkAfleverdatumViaSeam } from '@/modules/maatwerk'
 import {
   verzendWeekIsoString,
   verzendWeekStringToDatum,
