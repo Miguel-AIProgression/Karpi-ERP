@@ -10,3 +10,6 @@
 // Pages — geconsumeerd door router
 export { FactuurDetailPage } from './pages/factuur-detail'
 export { FacturatieOverviewPage } from './pages/facturatie-overview'
+
+// Components
+export { FactuurLijst } from './components/factuur-lijst'

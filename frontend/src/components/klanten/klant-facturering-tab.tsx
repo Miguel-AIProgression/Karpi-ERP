@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase/client'
-import { FactuurLijst } from '@/components/facturatie/factuur-lijst'
+import { FactuurLijst } from '@/modules/facturatie'
 
 interface Props {
   debiteurNr: number
