@@ -1,5 +1,20 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-08 — Facturatie-Module (ADR-0007, mig 223)
+
+Tweede deepening uit de architectuur-review: facturatie was verspreid over 7 frontend-locaties, 2 edge functions, en 6 SQL-migraties zonder Module-container. ADR-0005 noemde het als "kandidaat #3" en punt'te het door; nu opgepakt na de Order-lifecycle-keten van ADR-0006.
+
+**Frontend-consolidatie** ([`modules/facturatie/`](../frontend/src/modules/facturatie/)):
+- Smal-scope verhuizing: `pages/facturatie/`, `components/facturatie/factuur-lijst.tsx`, `hooks/use-facturen.ts`, `lib/supabase/queries/facturen.ts` → onder Module met barrel-export. Cross-cuts (`order-facturen.tsx`, `klant-facturering-tab.tsx`) blijven host-side maar consumeren via barrel.
+- Nieuwe `queries/klant-factuur-instellingen.ts` + `useKlantFactuurInstellingen` / `useUpdateKlantFactuurInstellingen` hooks: Module bezit het concept-eigenaarschap van `factuurvoorkeur` + `btw_percentage` + `email_factuur` ondanks dat de velden op `debiteuren` staan. Klant-facturering-tab importeert via barrel.
+
+**Trigger-migratie** ([`223_facturatie_event_listener.sql`](../supabase/migrations/223_facturatie_event_listener.sql)):
+- `trg_enqueue_factuur` op `orders` (mig 118) gedropt; vervangen door `trg_enqueue_factuur_op_event` op `order_events`. Filter: `event_type='pickronde_voltooid' AND status_na='Verzonden'`. SECURITY DEFINER + `search_path = public` — zelfde RLS-bypass als de eerdere mig 218-hotfix omdat `factuur_queue` geen INSERT-policy voor authenticated heeft.
+- Nieuwe kolom `factuur_queue.bron_event_id BIGINT REFERENCES order_events(id)`: traceert per factuur-job welke pickronde-completion 'm aanmaakte. NULL voor wekelijkse verzamelfacturen + legacy.
+- Mig-nummer-noot: plan-spec sprak oorspronkelijk van mig 219, maar 219+220+221+222 raakten in gebruik door vervoerder + factuur-PDF + bundel-features. 223 is het eerstvolgende vrije nummer.
+
+Termen *Facturatie-Module*, *factuurvoorkeur*, *factuur_queue* eerder toegevoegd aan [data-woordenboek.md](data-woordenboek.md). Beslissing en alternatieven: [ADR-0007](adr/0007-facturatie-als-deep-module.md).
+
 ## 2026-05-08 — Mig 222: zending-bundeling op afleveradres + vervoerder (B2B-pakbon-consolidatie)
 
 Voor B2B-klanten met centraal magazijn (typisch inkoopgroepen als BEGROS) ontstonden er N losse pakbonnen wanneer de klant N losse orders had naar hetzelfde fysieke punt. Mig 222 voegt automatische bundeling toe vóór het picken: orders met identiek genormaliseerd afleveradres + dezelfde effectieve vervoerder, binnen dezelfde debiteur, krijgen 1 gezamenlijke pakbon (1 zending, 1 SSCC-set, 1 transportorder).
