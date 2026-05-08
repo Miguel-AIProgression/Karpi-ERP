@@ -228,7 +228,7 @@ COMMENT ON VIEW voorgestelde_zending_bundels IS
 -- mig 234 zodat bestaande queue-rijen blijven werken — mig 237 maakt
 -- 'm NOT NULL nadat oude rijen gedraind zijn.
 ALTER TABLE factuur_queue
-  ADD COLUMN IF NOT EXISTS zending_id BIGINT REFERENCES zendingen(id) ON DELETE RESTRICT;
+  ADD COLUMN IF NOT EXISTS zending_id BIGINT REFERENCES zendingen(id) ON DELETE SET NULL;
 
 CREATE INDEX IF NOT EXISTS idx_factuur_queue_zending
   ON factuur_queue(zending_id)
@@ -292,6 +292,14 @@ BEGIN
   END IF;
 
   -- Single-debiteur-invariant — bundel kruist nooit klant-grens (mig 222).
+  -- Defensieve check vóór de scalar-subquery: faal met domein-specifieke
+  -- melding i.p.v. generieke "more than one row returned"-PostgreSQL-fout
+  -- als de invariant ooit doorbroken wordt. Volgt mig 227 idiom.
+  IF (SELECT COUNT(DISTINCT debiteur_nr) FROM orders WHERE id = ANY(v_order_ids)) > 1 THEN
+    RAISE EXCEPTION 'Bundel-zending % kruist debiteur-grens (orders %)',
+      p_zending_id, v_order_ids;
+  END IF;
+
   SELECT * INTO v_debiteur FROM debiteuren
    WHERE debiteur_nr = (SELECT DISTINCT debiteur_nr FROM orders WHERE id = ANY(v_order_ids));
   IF NOT FOUND THEN
@@ -363,10 +371,16 @@ BEGIN
     INTO v_bundel_subtotaal
     FROM factuur_regels WHERE factuur_id = v_factuur_id;
 
-  -- Afhalen-state vandaag: vervoerder_code IS NULL op de zending
-  -- (mig 205 afhalen_skip_vervoerder zorgt dat afhalen-orders geen
-  -- zending krijgen, maar defensief afdekken).
-  v_is_afhalen := (v_zending.vervoerder_code IS NULL);
+  -- Afhalen-state via canonical signal `orders.afhalen` (i.p.v. derived
+  -- `vervoerder_code IS NULL` op de zending). Gebruikt BOOL_OR over de
+  -- bundel-orders zodat één afhalen-order in de bundel de hele bundel
+  -- afhalen maakt — consistent met mig 222 invariant dat afhalen-orders
+  -- geen zending krijgen (mig 205), waardoor dit normaliter alleen TRUE
+  -- is bij volledige afhalen-bundels.
+  SELECT BOOL_OR(COALESCE(o.afhalen, FALSE))
+    INTO v_is_afhalen
+    FROM orders o
+   WHERE o.id = ANY(v_order_ids);
 
   SELECT * INTO v_vk
     FROM verzendkosten_voor_bundel(v_debiteur.debiteur_nr, v_bundel_subtotaal, v_is_afhalen);
@@ -385,8 +399,14 @@ BEGIN
     NULL,                            -- geen specifieke order_regel
     v_volgnr,
     'VERZEND',
-    format('Verzendkosten week %s — %s',
-      COALESCE(v_zending.verzendweek, 'onbekend'), v_vk.reden),
+    -- Rich omschrijving consistent met mig 232: week + vervoerder + N orders + reden.
+    -- Vervoerder is 'AFHAAL' bij afhalen-bundels, anders de zending.vervoerder_code.
+    format('Verzendkosten week %s (%s, %s order%s) — %s',
+      COALESCE(v_zending.verzendweek, 'onbekend'),
+      CASE WHEN v_is_afhalen THEN 'AFHAAL' ELSE COALESCE(v_zending.vervoerder_code, 'GEEN') END,
+      array_length(v_order_ids, 1),
+      CASE WHEN array_length(v_order_ids, 1) = 1 THEN '' ELSE 's' END,
+      v_vk.reden),
     1, v_vk.te_betalen, 0, v_vk.te_betalen, v_btw_pct
   );
 
