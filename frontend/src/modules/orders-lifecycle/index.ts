@@ -12,4 +12,4 @@ export {
   type HerberekenWachtStatusInput,
 } from './queries/transities'
 
-// useMarkeerGeannuleerd hook volgt in Task 1.13.
+export { useMarkeerGeannuleerd } from './hooks/use-markeer-geannuleerd'
