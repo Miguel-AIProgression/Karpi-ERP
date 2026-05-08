@@ -1,9 +1,10 @@
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Download, CheckCircle } from 'lucide-react'
+import { ArrowLeft, Download, CheckCircle, ExternalLink } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { StatusBadge } from '@/components/ui/status-badge'
+import { useState } from 'react'
 import { useFactuurDetail, useMarkeerBetaald } from '@/hooks/use-facturen'
-import { getFactuurPdfSignedUrl } from '@/lib/supabase/queries/facturen'
+import { getFactuurPdfSignedUrl, renderFactuurPdfBlobUrl } from '@/lib/supabase/queries/facturen'
 import { formatCurrency, formatDate } from '@/lib/utils/formatters'
 
 export function FactuurDetailPage() {
@@ -12,6 +13,8 @@ export function FactuurDetailPage() {
 
   const { data, isLoading } = useFactuurDetail(factuurId)
   const markeerBetaald = useMarkeerBetaald()
+  const [pdfBezig, setPdfBezig] = useState(false)
+  const [pdfFout, setPdfFout] = useState<string | null>(null)
 
   if (isLoading) {
     return (
@@ -36,12 +39,22 @@ export function FactuurDetailPage() {
   const { factuur, regels } = data
 
   async function handleDownloadPdf() {
-    if (!factuur.pdf_storage_path) return
+    setPdfFout(null)
+    setPdfBezig(true)
     try {
-      const url = await getFactuurPdfSignedUrl(factuur.pdf_storage_path)
+      let url: string
+      if (factuur.pdf_storage_path) {
+        url = await getFactuurPdfSignedUrl(factuur.pdf_storage_path)
+      } else {
+        url = await renderFactuurPdfBlobUrl(factuur.id)
+      }
       window.open(url, '_blank')
     } catch (err) {
+      const msg = err instanceof Error ? err.message : 'PDF kon niet worden gemaakt'
       console.error('PDF downloaden mislukt', err)
+      setPdfFout(msg)
+    } finally {
+      setPdfBezig(false)
     }
   }
 
@@ -50,6 +63,16 @@ export function FactuurDetailPage() {
   }
 
   const isBetaald = factuur.status === 'Betaald'
+
+  const heeftAdres = Boolean(factuur.fact_adres || factuur.fact_postcode || factuur.fact_plaats)
+  const pdfLabel = pdfBezig
+    ? 'PDF maken…'
+    : factuur.pdf_storage_path
+      ? 'Download PDF'
+      : 'Bekijk PDF (preview)'
+  const pdfTooltip = factuur.pdf_storage_path
+    ? 'Open de verzonden factuur-PDF in een nieuw tabblad'
+    : 'Genereert een live preview-PDF op basis van de huidige factuurdata'
 
   return (
     <>
@@ -64,17 +87,24 @@ export function FactuurDetailPage() {
         </Link>
       </div>
 
+      {pdfFout && (
+        <div className="mb-4 px-4 py-3 rounded-[var(--radius-sm)] border border-red-200 bg-red-50 text-sm text-red-700">
+          PDF kon niet worden gemaakt: {pdfFout}
+        </div>
+      )}
+
       <PageHeader
         title={factuur.factuur_nr}
         actions={
           <div className="flex items-center gap-2">
             <button
               onClick={handleDownloadPdf}
-              disabled={!factuur.pdf_storage_path}
+              disabled={pdfBezig}
+              title={pdfTooltip}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               <Download size={15} />
-              Download PDF
+              {pdfLabel}
             </button>
             <button
               onClick={handleMarkeerBetaald}
@@ -92,23 +122,41 @@ export function FactuurDetailPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-6">
         {/* Klant / adres */}
         <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-5">
-          <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
-            Klant
-          </h2>
+          <div className="flex items-start justify-between mb-3">
+            <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+              Klant
+            </h2>
+            <Link
+              to={`/klanten/${factuur.debiteur_nr}`}
+              className="inline-flex items-center gap-1 text-xs text-terracotta-500 hover:text-terracotta-600 hover:underline"
+            >
+              Klantkaart
+              <ExternalLink size={12} />
+            </Link>
+          </div>
+
           <p className="font-medium text-slate-800">{factuur.fact_naam ?? '—'}</p>
-          {factuur.fact_adres && (
-            <p className="text-sm text-slate-600 mt-1">{factuur.fact_adres}</p>
-          )}
-          {(factuur.fact_postcode || factuur.fact_plaats) && (
-            <p className="text-sm text-slate-600">
-              {[factuur.fact_postcode, factuur.fact_plaats].filter(Boolean).join('  ')}
+          <p className="text-xs text-slate-400 font-mono mt-0.5">
+            Klantnr {factuur.debiteur_nr}
+          </p>
+
+          {heeftAdres ? (
+            <div className="mt-3 text-sm text-slate-600 space-y-0.5">
+              {factuur.fact_adres && <p>{factuur.fact_adres}</p>}
+              {(factuur.fact_postcode || factuur.fact_plaats) && (
+                <p>{[factuur.fact_postcode, factuur.fact_plaats].filter(Boolean).join('  ')}</p>
+              )}
+              {factuur.fact_land && <p>{factuur.fact_land}</p>}
+            </div>
+          ) : (
+            <p className="mt-3 text-sm italic text-amber-600">
+              Geen factuuradres bekend
+              {factuur.fact_land ? ` — alleen land: ${factuur.fact_land}` : ''}
             </p>
           )}
-          {factuur.fact_land && (
-            <p className="text-sm text-slate-600">{factuur.fact_land}</p>
-          )}
+
           {factuur.btw_nummer && (
-            <p className="text-xs text-slate-400 mt-2">BTW: {factuur.btw_nummer}</p>
+            <p className="text-xs text-slate-400 mt-3">BTW-nr: {factuur.btw_nummer}</p>
           )}
         </div>
 
@@ -176,8 +224,17 @@ export function FactuurDetailPage() {
                 regels.map((r) => (
                   <tr key={r.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-5 py-3 text-slate-400">{r.regelnummer}</td>
-                    <td className="px-5 py-3 font-mono text-xs text-slate-600">
-                      {r.order_nr ?? '—'}
+                    <td className="px-5 py-3 font-mono text-xs">
+                      {r.order_id ? (
+                        <Link
+                          to={`/orders/${r.order_id}`}
+                          className="text-terracotta-500 hover:text-terracotta-600 hover:underline"
+                        >
+                          {r.order_nr ?? `#${r.order_id}`}
+                        </Link>
+                      ) : (
+                        <span className="text-slate-600">{r.order_nr ?? '—'}</span>
+                      )}
                     </td>
                     <td className="px-5 py-3 text-slate-600">{r.uw_referentie ?? '—'}</td>
                     <td className="px-5 py-3 font-mono text-xs text-slate-600">

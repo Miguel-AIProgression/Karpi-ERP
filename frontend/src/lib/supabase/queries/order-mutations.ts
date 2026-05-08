@@ -251,16 +251,6 @@ export async function updateOrderWithLines(
   if (error) throw error
 }
 
-/** Update order status */
-export async function updateOrderStatus(orderId: number, status: string) {
-  const { error } = await supabase
-    .from('orders')
-    .update({ status })
-    .eq('id', orderId)
-
-  if (error) throw error
-}
-
 /** Delete order, its lines, and recalculate stock reservations via RPC */
 export async function deleteOrder(orderId: number) {
   const { error } = await supabase.rpc('delete_order', {

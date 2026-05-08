@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/layout/page-header'
 import { StatusTabs } from '@/components/orders/status-tabs'
 import { OrdersTable } from '@/components/orders/orders-table'
 import { useOrders, useStatusCounts } from '@/hooks/use-orders'
+import { useFacturenVoorOrders } from '@/hooks/use-facturen'
 import type { OrderSortField, SortDirection } from '@/lib/supabase/queries/orders'
 
 export function OrdersOverviewPage() {
@@ -31,6 +32,8 @@ export function OrdersOverviewPage() {
   const totalCount = data?.totalCount ?? 0
   const pageSize = 50
   const totalPages = Math.ceil(totalCount / pageSize)
+
+  const { data: facturenPerOrder } = useFacturenVoorOrders(orders.map((o) => o.id))
 
   return (
     <>
@@ -74,7 +77,14 @@ export function OrdersOverviewPage() {
       />
 
       {/* Table */}
-      <OrdersTable orders={orders} isLoading={isLoading} sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+      <OrdersTable
+        orders={orders}
+        isLoading={isLoading}
+        sortBy={sortBy}
+        sortDir={sortDir}
+        onSort={handleSort}
+        facturenPerOrder={facturenPerOrder}
+      />
 
       {/* Pagination */}
       {totalPages > 1 && (

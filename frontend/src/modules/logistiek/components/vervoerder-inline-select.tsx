@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, Loader2, Truck } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { ChevronDown, Loader2, Sparkles, Truck } from 'lucide-react'
 import {
   useKlantVervoerderConfig,
   useUpsertKlantVervoerderConfig,
   useVervoerders,
 } from '../hooks/use-vervoerder-config'
 import { useActieveVervoerder } from '../hooks/use-vervoerders'
+import { useVervoerderPreview } from '../hooks/use-verzendregels'
 import { getVervoerderDef, type VervoerderBadgeKleur } from '../registry'
 
 const KLEUR_STYLES: Record<VervoerderBadgeKleur, string> = {
@@ -33,19 +34,27 @@ interface VervoerderInlineSelectProps {
    * van deze order bijgewerkt, zodat de verzendset-sticker meteen de nieuwe
    * vervoerder toont. Zonder `orderId` werkt de selector alleen als
    * klant-default voor toekomstige zendingen.
+   *
+   * Sinds mig 215: met `orderId` wordt ook `preview_vervoerder_voor_order`
+   * geraadpleegd zodat de pill toont welke vervoerder de regels zouden kiezen
+   * — zonder zending te hoeven aanmaken.
    */
   orderId?: number
 }
 
 /**
- * Pill-vormige vervoerder-selector voor de pick & ship-pagina. Toont de
- * effectieve vervoerder (per-klant config > globaal actief) en laat de
- * gebruiker per klant wisselen via klant_vervoerder_config (= zelfde tabel als
- * klant-detail). Wanneer `orderId` is meegegeven (zoals op pick & ship) wordt
- * de gekozen vervoerder ook overschreven op de lopende zending van die order
- * (status `Gepland`/`Picken`/`Ingepakt`/`Klaar voor verzending`), zodat de
- * sticker meebeweegt met de keuze. Reeds verzonden zendingen blijven
- * ongewijzigd voor het audit-spoor.
+ * Pill-vormige vervoerder-selector voor de pick & ship-pagina.
+ *
+ * Effectieve-vervoerder volgorde (hoogste wint):
+ *   1. Regel-evaluator preview — wat de regels zouden kiezen voor deze order
+ *   2. Klant-fallback           — vaste keuze voor wanneer geen regel matcht
+ *   3. Globaal-actief fallback — als er precies 1 vervoerder actief is
+ *
+ * Wijzigingen via de dropdown gaan naar `klant_vervoerder_config`. Met de
+ * nieuwe prio is dat een **fallback** (in plaats van een harde override):
+ * hij wordt alleen gebruikt als geen regel matcht voor deze order. Wanneer
+ * `orderId` is meegegeven wordt bovendien de lopende zending van die order
+ * bijgewerkt zodat de sticker meebeweegt.
  */
 export function VervoerderInlineSelect({
   debiteurNr,
@@ -57,14 +66,23 @@ export function VervoerderInlineSelect({
 
   const { data: vervoerders = [] } = useVervoerders()
   const { data: klantConfig } = useKlantVervoerderConfig(debiteurNr)
+  const { data: preview } = useVervoerderPreview(orderId)
   const upsert = useUpsertKlantVervoerderConfig()
   const actief = useActieveVervoerder()
 
-  // Effectieve code: klant-config wint, anders globaal actieve vervoerder.
   const klantCode = klantConfig?.vervoerder_code ?? null
-  const effectiveCode = klantCode ?? actief.code
-  const def = getVervoerderDef(effectiveCode)
+  const previewCode = preview?.gekozen_vervoerder_code ?? null
   const isExplicitleeg = klantConfig !== undefined && klantConfig !== null && klantCode === null
+
+  // Effectieve keuze: regel-preview > klant-fallback > globaal-actief.
+  // De bron bepaalt label en tooltip — een regel-keuze toont een sparkles-icoon
+  // zodat de gebruiker direct ziet dat dit een automatische match is. De klant-
+  // fallback is alleen zichtbaar wanneer geen regel matcht.
+  const bron: 'regel' | 'klant' | 'actief' | 'geen' =
+    previewCode ? 'regel' : klantCode ? 'klant' : actief.code ? 'actief' : 'geen'
+  const effectiveCode =
+    bron === 'regel' ? previewCode : bron === 'klant' ? klantCode : bron === 'actief' ? actief.code : null
+  const def = getVervoerderDef(effectiveCode)
 
   useEffect(() => {
     if (!open) return
@@ -74,6 +92,28 @@ export function VervoerderInlineSelect({
     document.addEventListener('mousedown', onClick)
     return () => document.removeEventListener('mousedown', onClick)
   }, [open])
+
+  const tooltip = useMemo(() => {
+    if (bron === 'regel' && preview) {
+      const u = preview.keuze_uitleg ?? {}
+      const parts: string[] = [`Regel-keuze: ${def?.displayNaam ?? previewCode}`]
+      if (u.match_prio != null) parts.push(`prio ${u.match_prio}`)
+      if (preview.gekozen_service_code) parts.push(`service ${preview.gekozen_service_code}`)
+      if (u.match_notitie) parts.push(`— ${u.match_notitie}`)
+      return parts.join(' · ')
+    }
+    if (bron === 'klant') {
+      return `Klant-fallback (geen regel matcht): ${def?.displayNaam ?? klantCode}`
+    }
+    if (bron === 'actief') {
+      return `Globaal actieve vervoerder: ${def?.displayNaam}`
+    }
+    if (isExplicitleeg) return 'Handmatig — kies een vervoerder per zending'
+    if (preview?.keuze_uitleg?.reden === 'geen_matchende_regel') {
+      return 'Geen regel matcht deze order — kies handmatig of voeg een regel toe'
+    }
+    return 'Klik om een vervoerder te kiezen'
+  }, [bron, def, klantCode, previewCode, preview, isExplicitleeg])
 
   if (afhalen) {
     return (
@@ -110,16 +150,12 @@ export function VervoerderInlineSelect({
         }}
         disabled={upsert.isPending}
         className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold transition-colors ${KLEUR_STYLES[labelKleur]} disabled:opacity-50`}
-        title={
-          klantCode
-            ? `Vaste vervoerder voor deze klant: ${def?.displayNaam ?? klantCode}`
-            : def
-              ? `Globaal actieve vervoerder: ${def.displayNaam}`
-              : 'Klik om een vervoerder te kiezen'
-        }
+        title={tooltip}
       >
         {upsert.isPending ? (
           <Loader2 size={12} className="animate-spin" />
+        ) : bron === 'regel' ? (
+          <Sparkles size={12} />
         ) : (
           <Truck size={12} />
         )}
@@ -130,10 +166,36 @@ export function VervoerderInlineSelect({
       {open && (
         <div
           onClick={(e) => e.stopPropagation()}
-          className="absolute right-0 mt-1 w-48 rounded-[var(--radius-sm)] border border-slate-200 bg-white shadow-lg z-20 py-1 text-xs"
+          className="absolute right-0 mt-1 w-64 rounded-[var(--radius-sm)] border border-slate-200 bg-white shadow-lg z-20 py-1 text-xs"
         >
+          {bron === 'regel' && preview && (
+            <div className="px-3 py-2 bg-purple-50/60 border-b border-slate-100">
+              <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-purple-700 font-semibold">
+                <Sparkles size={10} /> Regel-keuze
+              </div>
+              <div className="text-slate-700 mt-0.5">
+                {def?.displayNaam ?? previewCode}
+                {preview.gekozen_service_code && (
+                  <span className="text-slate-500"> ({preview.gekozen_service_code})</span>
+                )}
+              </div>
+              {preview.keuze_uitleg?.match_notitie && (
+                <div className="text-[11px] text-slate-500 italic mt-0.5">
+                  {preview.keuze_uitleg.match_notitie}
+                </div>
+              )}
+            </div>
+          )}
+
+          {bron !== 'regel' && preview?.keuze_uitleg?.reden === 'geen_matchende_regel' && (
+            <div className="px-3 py-2 bg-amber-50/60 border-b border-slate-100 text-[11px] text-amber-700">
+              Geen verzendregel matcht deze order — voeg er een toe op de
+              vervoerderpagina, of kies hieronder een klant-fallback.
+            </div>
+          )}
+
           <div className="px-3 py-1.5 text-[10px] uppercase tracking-wide text-slate-400">
-            Vervoerder voor klant
+            Klant-fallback (gebruikt bij geen regel-match)
           </div>
           {vervoerders.map((v) => {
             const isHuidig = klantCode === v.code
@@ -165,7 +227,7 @@ export function VervoerderInlineSelect({
             }`}
           >
             <span className="inline-block w-1.5 h-1.5 rounded-full bg-slate-300" />
-            <span className="flex-1 text-slate-500">Geen voorkeur (handmatig)</span>
+            <span className="flex-1 text-slate-500">Geen voorkeur (regels gebruiken)</span>
           </button>
         </div>
       )}

@@ -2,6 +2,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   fetchFacturen,
   fetchFactuurDetail,
+  fetchFacturenVoorOrder,
+  fetchFacturenVoorOrders,
   zetFactuurOpBetaald,
 } from '@/lib/supabase/queries/facturen'
 
@@ -17,6 +19,23 @@ export function useFactuurDetail(id: number | undefined) {
     queryKey: ['facturen', 'detail', id],
     queryFn: () => fetchFactuurDetail(id!),
     enabled: !!id,
+  })
+}
+
+export function useFacturenVoorOrder(orderId: number | undefined) {
+  return useQuery({
+    queryKey: ['facturen', 'voor-order', orderId],
+    queryFn: () => fetchFacturenVoorOrder(orderId!),
+    enabled: !!orderId,
+  })
+}
+
+export function useFacturenVoorOrders(orderIds: number[]) {
+  const sleutel = [...orderIds].sort((a, b) => a - b).join(',')
+  return useQuery({
+    queryKey: ['facturen', 'voor-orders', sleutel],
+    queryFn: () => fetchFacturenVoorOrders(orderIds),
+    enabled: orderIds.length > 0,
   })
 }
 

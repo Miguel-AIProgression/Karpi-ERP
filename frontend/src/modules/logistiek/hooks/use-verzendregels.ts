@@ -5,10 +5,12 @@ import {
   createVerzendregel,
   updateVerzendregel,
   deleteVerzendregel,
+  previewVervoerderVoorOrder,
   type VerzendregelInput,
 } from '@/modules/logistiek/queries/verzendregels'
 
 const STALE_5_MIN = 5 * 60_000
+const STALE_30_SEC = 30_000
 
 export function useVerzendregelsVoorVervoerder(vervoerderCode: string | undefined) {
   return useQuery({
@@ -60,5 +62,18 @@ export function useDeleteVerzendregel() {
   return useMutation({
     mutationFn: ({ id }: { id: number }) => deleteVerzendregel(id),
     onSuccess: () => invalidateVerzendregels(qc),
+  })
+}
+
+/**
+ * Preview welke vervoerder de regel-evaluator zou kiezen voor deze order.
+ * Korte staleTime zodat een net-gewijzigde regel of order direct doorwerkt.
+ */
+export function useVervoerderPreview(orderId: number | null | undefined) {
+  return useQuery({
+    queryKey: ['logistiek', 'vervoerder-preview', orderId],
+    queryFn: () => previewVervoerderVoorOrder(orderId!),
+    enabled: orderId != null,
+    staleTime: STALE_30_SEC,
   })
 }

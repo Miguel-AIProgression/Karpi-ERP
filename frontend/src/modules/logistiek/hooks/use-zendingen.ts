@@ -1,6 +1,6 @@
 import { useQueries, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  createZendingVoorOrder,
+  startPickrondenVoorOrder,
   fetchZendingen,
   fetchZendingMetTransportorders,
   fetchZendingPrintSet,
@@ -65,14 +65,21 @@ export function useZendingPrintSets(zending_nrs: string[]) {
   })
 }
 
+/**
+ * Sinds mig 220 returnt deze mutation een **array** ZendingAanmaakResult — één
+ * per unieke effectieve vervoerder. Voor single-vervoerder-orders is dat 1
+ * element en gedraagt het zich zoals voorheen. UI-callers moeten op `length`
+ * checken om wel/niet naar bulk-printset te navigeren.
+ */
 export function useCreateZendingVoorOrder() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ orderId, pickerId }: { orderId: number; pickerId: number }) =>
-      createZendingVoorOrder(orderId, pickerId),
+      startPickrondenVoorOrder(orderId, pickerId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['logistiek', 'zendingen'] })
       qc.invalidateQueries({ queryKey: ['pick-ship'] })
+      qc.invalidateQueries({ queryKey: ['logistiek', 'orderregel-vervoerder'] })
     },
   })
 }

@@ -4,6 +4,11 @@ import { PageHeader } from '@/components/layout/page-header'
 import { PickProblemenBanner } from '../components/pick-problemen-banner'
 import { PickWeekSectie } from '../components/pick-week-sectie'
 import { usePickShipOrders, usePickShipStats } from '../hooks/use-pick-ship'
+import {
+  VervoerderFilterButton,
+  useVervoerderPerOrder,
+  type VervoerderFilterValue,
+} from '@/modules/logistiek'
 import { cn } from '@/lib/utils/cn'
 import { genereerWeekTabs } from '../lib/buckets'
 import { type BucketKey, type PickShipOrder } from '../lib/types'
@@ -19,6 +24,7 @@ export function MagazijnOverviewPage() {
   const [filter, setFilter] = useState<BucketKey>('wk_1')
   const [search, setSearch] = useState('')
   const [groepeerOpLand, setGroepeerOpLand] = useState(false)
+  const [vervoerderFilter, setVervoerderFilter] = useState<VervoerderFilterValue>('all')
 
   const { data: stats } = usePickShipStats()
   const { data: orders, isLoading } = usePickShipOrders({
@@ -37,6 +43,30 @@ export function MagazijnOverviewPage() {
     return orders.filter((o) => o.bucket === filter)
   }, [orders, filter])
 
+  // Vervoerder-filter: resolutie via klant-config > regel-preview > globaal-actief.
+  // Cache wordt gedeeld met de inline-select in elke pick-card (ADR-0002).
+  const minimaalVoorVervoerder = useMemo(
+    () =>
+      gefilterd.map((o) => ({
+        order_id: o.order_id,
+        debiteur_nr: o.debiteur_nr,
+        afhalen: o.afhalen,
+      })),
+    [gefilterd],
+  )
+  const { map: vervoerderMap } = useVervoerderPerOrder(minimaalVoorVervoerder)
+
+  const naVervoerderFilter = useMemo(() => {
+    if (vervoerderFilter === 'all') return gefilterd
+    return gefilterd.filter((o) => {
+      const r = vervoerderMap.get(o.order_id)
+      if (!r) return false
+      if (vervoerderFilter === 'afhalen') return r.afhalen
+      if (vervoerderFilter === 'geen') return !r.afhalen && !r.code
+      return !r.afhalen && r.code === vervoerderFilter
+    })
+  }, [gefilterd, vervoerderFilter, vervoerderMap])
+
   // Groepeer binnen het actieve filter per verzendweek (gesorteerd op sleutel).
   // Voor wk_1 kunnen er meerdere groepen zijn (achterstallig + huidige + +1);
   // voor wk_2..wk_5 hoort er normaal precies één verzendweek-groep te zijn.
@@ -49,7 +79,7 @@ export function MagazijnOverviewPage() {
       status: PickStatus
     }
     const map = new Map<string, Groep>()
-    for (const o of gefilterd) {
+    for (const o of naVervoerderFilter) {
       const bestaand = map.get(o.verzend_week_sleutel)
       if (bestaand) {
         bestaand.orders.push(o)
@@ -66,7 +96,7 @@ export function MagazijnOverviewPage() {
       }
     }
     return Array.from(map.values()).sort((a, b) => a.sleutel.localeCompare(b.sleutel))
-  }, [gefilterd, vandaagDate])
+  }, [naVervoerderFilter, vandaagDate])
 
   const statCards = [
     {
@@ -166,6 +196,12 @@ export function MagazijnOverviewPage() {
           <Globe size={14} />
           Groeperen op land
         </button>
+        <VervoerderFilterButton
+          resolvedPerOrder={vervoerderMap}
+          totaalOrders={gefilterd.length}
+          value={vervoerderFilter}
+          onChange={setVervoerderFilter}
+        />
         <div className="relative w-80">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input

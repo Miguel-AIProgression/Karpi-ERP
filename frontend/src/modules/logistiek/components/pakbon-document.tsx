@@ -94,6 +94,27 @@ export function PakbonDocument({ zending, vervoerderNaam: _vervoerderNaam, colli
       return ar - br
     })
 
+  // Mig 222: bij bundel-zendingen regels groeperen op bron-order_id zodat het
+  // pakbon-document onder elke order-sub-kop de bijbehorende regels toont.
+  // Solo-zending: één groep — render-pad is identiek.
+  const isBundel = zending.bundel_orders.length > 1
+  const orderNrPerOrderId = new Map(zending.bundel_orders.map((bo) => [bo.id, bo.order_nr]))
+  const regelsPerOrder = new Map<number, typeof regels>()
+  for (const r of regels) {
+    const oid = r.order_regels?.order_id ?? order.id
+    const lijst = regelsPerOrder.get(oid) ?? []
+    lijst.push(r)
+    regelsPerOrder.set(oid, lijst)
+  }
+  // Render-volgorde matcht bundel_orders (op order_nr) — als een regel bij een
+  // niet-gevonden order-id hoort (mag niet, defensief), valt die achteraan.
+  const orderIdRenderVolgorde: number[] = [
+    ...zending.bundel_orders.map((bo) => bo.id).filter((id) => regelsPerOrder.has(id)),
+    ...Array.from(regelsPerOrder.keys()).filter(
+      (id) => !zending.bundel_orders.some((bo) => bo.id === id),
+    ),
+  ]
+
   const totaalM2 = regels.reduce((sum, r) => sum + oppervlakM2PerStuk(r) * geleverdAantal(r), 0)
   const totaalGewicht =
     Number(zending.totaal_gewicht_kg ?? 0) ||
@@ -159,9 +180,43 @@ export function PakbonDocument({ zending, vervoerderNaam: _vervoerderNaam, colli
         <DashedDivider />
 
         {/* ORDER-BLOK ------------------------------------------------------- */}
+        {/* Mig 222: bij ≥2 orders in zending_orders (bundel) toont de pakbon
+            alle order-nummers + per-order referentie. Solo-zendingen tonen het
+            klassieke één-regelige blok zoals voorheen. */}
         <section className="mt-4 mb-2">
-          <BlockRow label="Ons Ordernummer" value={order.order_nr} />
-          <BlockRow label="Uw Referentie" value={referentieRegel} />
+          {zending.bundel_orders.length > 1 ? (
+            <>
+              <BlockRow
+                label="Onze Ordernummers"
+                value={
+                  <span className="font-semibold">
+                    {`${zending.bundel_orders.length} orders gebundeld`}
+                  </span>
+                }
+              />
+              {zending.bundel_orders.map((bo) => {
+                const refParts = [
+                  bo.klant_referentie,
+                  bo.week ? `(WK ${bo.week})` : null,
+                ].filter(Boolean)
+                const ref = refParts.join(' ') || '-'
+                return (
+                  <div
+                    key={bo.id}
+                    className="grid grid-cols-[28mm_1fr] gap-3 ml-2 text-slate-700"
+                  >
+                    <span>· {bo.order_nr}</span>
+                    <span>: Ref. {ref}</span>
+                  </div>
+                )
+              })}
+            </>
+          ) : (
+            <>
+              <BlockRow label="Ons Ordernummer" value={order.order_nr} />
+              <BlockRow label="Uw Referentie" value={referentieRegel} />
+            </>
+          )}
           <BlockRow
             label="Afleveradres"
             value={
@@ -179,28 +234,44 @@ export function PakbonDocument({ zending, vervoerderNaam: _vervoerderNaam, colli
         {/* ARTIKELREGELS ---------------------------------------------------- */}
         {/* Pakbon toont eerst de klanteigen-naam (zodat de ontvanger 'm herkent) en
             daaronder — alleen als die afwijkt — de Karpi-eigen artikelnaam, zodat
-            magazijn-/retourcontroles altijd terug kunnen vallen op de bron. */}
+            magazijn-/retourcontroles altijd terug kunnen vallen op de bron.
+            Mig 222: bij bundel-zendingen krijgt elke bron-order een sub-kop boven
+            zijn regels zodat magazijnier én ontvanger kunnen zien welke regel
+            bij welke orderbevestiging hoort. */}
         <div className="mt-4 space-y-1">
-          {regels.map((regel) => {
-            const namen = regelNamen(regel)
-            const toonKarpi = namen.karpiNaam && namen.karpiNaam !== namen.klantNaam
+          {orderIdRenderVolgorde.map((oid) => {
+            const orderRegels = regelsPerOrder.get(oid) ?? []
+            const orderNr = orderNrPerOrderId.get(oid)
             return (
-              <div key={regel.id} className="grid grid-cols-[28mm_18mm_10mm_1fr] gap-3">
-                <div className="truncate">{regel.artikelnr ?? '-'}</div>
-                <div className="text-right">{formatNumber(geleverdAantal(regel))}</div>
-                <div>{eenheidVoor(regel)}</div>
-                <div>
-                  <div>{namen.klantNaam}</div>
-                  {toonKarpi && (
-                    <div className="text-slate-500">Karpi: {namen.karpiNaam}</div>
-                  )}
-                  {regel.order_regels?.is_maatwerk && (
-                    <div className="text-slate-600">
-                      Op maat {regel.order_regels.maatwerk_breedte_cm ?? '-'} x{' '}
-                      {regel.order_regels.maatwerk_lengte_cm ?? '-'} cm
+              <div key={oid} className="space-y-1">
+                {isBundel && orderNr && (
+                  <div className="mt-2 pt-1 border-t border-slate-300 font-semibold text-[10px] uppercase tracking-wide">
+                    Order {orderNr}
+                  </div>
+                )}
+                {orderRegels.map((regel) => {
+                  const namen = regelNamen(regel)
+                  const toonKarpi = namen.karpiNaam && namen.karpiNaam !== namen.klantNaam
+                  return (
+                    <div key={regel.id} className="grid grid-cols-[28mm_18mm_10mm_1fr] gap-3">
+                      <div className="truncate">{regel.artikelnr ?? '-'}</div>
+                      <div className="text-right">{formatNumber(geleverdAantal(regel))}</div>
+                      <div>{eenheidVoor(regel)}</div>
+                      <div>
+                        <div>{namen.klantNaam}</div>
+                        {toonKarpi && (
+                          <div className="text-slate-500">Karpi: {namen.karpiNaam}</div>
+                        )}
+                        {regel.order_regels?.is_maatwerk && (
+                          <div className="text-slate-600">
+                            Op maat {regel.order_regels.maatwerk_breedte_cm ?? '-'} x{' '}
+                            {regel.order_regels.maatwerk_lengte_cm ?? '-'} cm
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  )}
-                </div>
+                  )
+                })}
               </div>
             )
           })}

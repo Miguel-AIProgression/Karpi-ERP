@@ -1,8 +1,13 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { formatDate, formatCurrency } from '@/lib/utils/formatters'
 import { verzendWeekVoor, verzendWeekRelatief } from '@/lib/orders/verzendweek'
+import { useMarkeerGeannuleerd } from '@/modules/orders-lifecycle'
 import type { OrderDetail } from '@/lib/supabase/queries/orders'
+
+const EINDSTATUSSEN = ['Verzonden', 'Geannuleerd'] as const
+type EindStatus = (typeof EINDSTATUSSEN)[number]
 
 interface OrderHeaderProps {
   order: OrderDetail
@@ -12,6 +17,18 @@ interface OrderHeaderProps {
 export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
   const verzendweek = verzendWeekVoor(order.afleverdatum)
   const relatief = verzendWeekRelatief(order.afleverdatum)
+  const [showAnnuleerConfirm, setShowAnnuleerConfirm] = useState(false)
+  const annuleer = useMarkeerGeannuleerd()
+
+  const isEindstatus = (EINDSTATUSSEN as readonly string[]).includes(order.status)
+
+  function handleAnnuleer() {
+    annuleer.mutate(
+      { orderId: order.id, reden: 'Handmatig geannuleerd via UI' },
+      { onSuccess: () => setShowAnnuleerConfirm(false) },
+    )
+  }
+
   return (
     <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-6 mb-6">
       <div className="flex items-start justify-between mb-4">
@@ -51,6 +68,15 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
             >
               Bewerken
             </Link>
+          )}
+          {!isEindstatus && (
+            <button
+              type="button"
+              onClick={() => setShowAnnuleerConfirm(true)}
+              className="px-4 py-2 text-sm border border-rose-200 text-rose-600 rounded-[var(--radius-sm)] hover:bg-rose-50 transition-colors"
+            >
+              Annuleer order
+            </button>
           )}
         </div>
       </div>
@@ -105,6 +131,42 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
           <p className="font-medium">{order.totaal_gewicht ? `${order.totaal_gewicht} kg` : '—'}</p>
         </div>
       </div>
+
+      {/* Annuleer bevestiging */}
+      {showAnnuleerConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-[var(--radius)] shadow-xl p-6 max-w-sm w-full mx-4">
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">Order annuleren?</h3>
+            <p className="text-sm text-slate-600 mb-6">
+              Weet je zeker dat je order <strong>{order.order_nr}</strong> wilt annuleren?
+              Dit kan niet ongedaan worden gemaakt. Reserveringen worden vrijgegeven.
+            </p>
+            {annuleer.error && (
+              <p className="text-sm text-rose-600 mb-4">
+                {annuleer.error instanceof Error ? annuleer.error.message : 'Annuleren mislukt'}
+              </p>
+            )}
+            <div className="flex items-center gap-3 justify-end">
+              <button
+                type="button"
+                onClick={() => setShowAnnuleerConfirm(false)}
+                disabled={annuleer.isPending}
+                className="px-4 py-2 border border-slate-200 rounded-[var(--radius-sm)] text-sm hover:bg-slate-50"
+              >
+                Terug
+              </button>
+              <button
+                type="button"
+                onClick={handleAnnuleer}
+                disabled={annuleer.isPending}
+                className="px-4 py-2 bg-rose-600 text-white rounded-[var(--radius-sm)] text-sm font-medium hover:bg-rose-700 disabled:opacity-50 transition-colors"
+              >
+                {annuleer.isPending ? 'Bezig...' : 'Ja, annuleer order'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

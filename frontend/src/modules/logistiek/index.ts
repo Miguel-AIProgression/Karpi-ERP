@@ -17,7 +17,7 @@ export {
   fetchZendingen,
   fetchZendingMetTransportorders,
   fetchZendingPrintSet,
-  createZendingVoorOrder,
+  startPickrondenVoorOrder,
   verstuurZendingOpnieuw,
   type ZendingAanmaakResult,
   type ZendingPrintSet,
@@ -57,7 +57,22 @@ export { VervoerdersOverzichtPage } from './pages/vervoerders-overzicht'
 export { VervoerderDetailPage } from './pages/vervoerder-detail'
 export { VervoerderTag } from './components/vervoerder-tag'
 export { VervoerderInlineSelect } from './components/vervoerder-inline-select'
+export { VervoerderOrderregelPill } from './components/vervoerder-orderregel-pill'
 export { VervoerderStatsCard } from './components/vervoerder-stats-card'
+export {
+  VervoerderFilterButton,
+  type VervoerderFilterValue,
+} from './components/vervoerder-filter-button'
+export {
+  useVervoerderPerOrder,
+  type OrderMinimaalVoorVervoerder,
+  type ResolvedVervoerder,
+} from './hooks/use-vervoerder-per-order'
+export {
+  useEffectieveVervoerderPerOrderregel,
+  useUpdateOrderregelVervoerderOverride,
+  type OrderregelVervoerder,
+} from './hooks/use-orderregel-vervoerder'
 export { ZendingStatusBadge } from './components/zending-status-badge'
 export { VerzendsetButton } from './components/verzendset-button'
 export { BulkVerzendsetButton } from './components/bulk-verzendset-button'

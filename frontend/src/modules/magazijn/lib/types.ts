@@ -70,4 +70,15 @@ export interface PickShipOrder {
    *  `create_zending_voor_order` op de zending gezet. */
   totaal_gewicht_kg: number
   aantal_regels: number
+  /** Mig 217: lopende Pickronde voor deze order (zending in status='Picken').
+   *  Aanwezig zodra `start_pickronde` is aangeroepen, weg na voltooi.
+   *  Drijft de "in progress"-staat op de pick-card. */
+  actieve_pickronde: ActievePickronde | null
+}
+
+export interface ActievePickronde {
+  zending_id: number
+  zending_nr: string
+  picker_id: number | null
+  picker_naam: string | null
 }

@@ -87,3 +87,85 @@ Deno.test('genereerFactuurPDF: 0% BTW werkt (intracom/export)', async () => {
   const bytes = await genereerFactuurPDF(input)
   assert(bytes.length > 500)
 })
+
+Deno.test('genereerFactuurPDF: totaal m2 + gewicht regel rendert', async () => {
+  const input: FactuurPDFInput = {
+    ...MINIMAL_INPUT,
+    factuur: {
+      ...MINIMAL_INPUT.factuur,
+      totaal_m2: 546.14,
+      totaal_gewicht_kg: 1420.18,
+    },
+  }
+  const bytes = await genereerFactuurPDF(input)
+  assert(bytes.length > 500, 'PDF met totaal m2/gewicht moet renderen')
+})
+
+Deno.test('genereerFactuurPDF: multi-line omschrijving_2 (Band:, Uw model:)', async () => {
+  const input: FactuurPDFInput = {
+    ...MINIMAL_INPUT,
+    regels: [
+      {
+        order_nr: 'ORD-2026-0001',
+        uw_referentie: 'FPNL000001',
+        artikelnr: 'DANT13MAATWERK',
+        aantal: 1,
+        eenheid: 'St',
+        omschrijving: 'DANT13D1375RND',
+        omschrijving_2: 'DANTE KLEUR 13 ca: 375cm RND\nBand: DA12\nUw model:LUXOR',
+        prijs: 459.14,
+        bedrag: 459.14,
+      },
+    ],
+  }
+  const bytes = await genereerFactuurPDF(input)
+  assert(bytes.length > 500, 'PDF met 3 omschrijving-regels moet renderen')
+})
+
+Deno.test('genereerFactuurPDF: afwijkend afleveradres-blok rendert', async () => {
+  const input: FactuurPDFInput = {
+    ...MINIMAL_INPUT,
+    regels: [
+      {
+        order_nr: 'ORD-2026-0001',
+        uw_referentie: 'FPNL000001',
+        artikelnr: 'BANG21MAATWERK',
+        aantal: 1,
+        eenheid: 'St',
+        omschrijving: 'BANG21XX230260',
+        omschrijving_2: 'BANGKOK KLEUR 21 ca: 230x260 cm',
+        prijs: 100,
+        bedrag: 100,
+        afleveradres: {
+          naam: 'FLOORPASSION DE',
+          adres: 'MUSTERSTRASSE 12',
+          postcode: '40213',
+          plaats: 'DUSSELDORF',
+        },
+      },
+    ],
+  }
+  const bytes = await genereerFactuurPDF(input)
+  assert(bytes.length > 500, 'PDF met afleveradres-blok moet renderen')
+})
+
+Deno.test('genereerFactuurPDF: dubbele bankregel + 3-talige voorwaarden-footer', async () => {
+  const input: FactuurPDFInput = {
+    ...MINIMAL_INPUT,
+    bedrijf: {
+      ...MINIMAL_INPUT.bedrijf,
+      bank2: {
+        bank: 'Commerzbank AG Bocholt',
+        rekeningnummer: '341011500',
+        blz: '42840005',
+        bic: 'COBADEFFXXX',
+        iban: 'DE32428400050341011500',
+      },
+      voorwaarden_nl: 'Al onze offertes, verkopen en leveringen geschieden uitsluitend overeenkomstig onze Algemene Leverings- en Betalingsvoorwaarden.',
+      voorwaarden_de: 'Alle unsere Angebote, Verkäufe und Lieferungen geschehen gemäss unseren Allgemeinen Lieferungs- und Zahlungsbedingungen.',
+      voorwaarden_en: 'All our offers, sales and deliveries are subject to our general terms and conditions of payment.',
+    },
+  }
+  const bytes = await genereerFactuurPDF(input)
+  assert(bytes.length > 500, 'PDF met 2 banken en 3-talige voorwaarden moet renderen')
+})
