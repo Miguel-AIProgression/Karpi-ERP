@@ -376,3 +376,28 @@ COMMENT ON FUNCTION herwaardeer_order_status IS
   'Mig 218 (ADR-0006): herwaardeert order — delegeert status-keuze aan Order-lifecycle Module '
   '(herbereken_wacht_status) en blijft afleverdatum-sync eigen (sync_order_afleverdatum_met_claims). '
   'Backwards-compat: alle bestaande callers (triggers, RPCs) blijven dezelfde signature aanroepen.';
+
+-- 10b. Cleanup spook-status + CHECK — pragmatisch pad
+-- Audit (Task 1.9): 9 orders, status-distributie niet expliciet maar dataset klein.
+-- Beslissing: alleen 'Klaar voor verzending' opruimen + verbieden; andere legacy-
+-- statussen (In productie, In snijplan, Deels gereed, Wacht op picken) blijven
+-- toegestaan. Strict-pad in vervolg-iteratie als productie-data alleen de
+-- canonieke 5 statussen bevat.
+DO $$
+DECLARE r RECORD;
+BEGIN
+  FOR r IN SELECT id FROM orders WHERE status = 'Klaar voor verzending' LOOP
+    PERFORM _apply_transitie(
+      p_order_id := r.id,
+      p_event_type := 'wacht_status_herberekend',
+      p_status_na := 'Nieuw',
+      p_reden := 'Mig 218 cleanup: spook-status Klaar voor verzending verwijderd (ADR-0006)',
+      p_metadata := jsonb_build_object('cleanup', true)
+    );
+  END LOOP;
+END $$;
+
+-- CHECK verbiedt voortaan 'Klaar voor verzending' op orders
+ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_chk;
+ALTER TABLE orders ADD CONSTRAINT orders_status_chk
+  CHECK (status <> 'Klaar voor verzending');
