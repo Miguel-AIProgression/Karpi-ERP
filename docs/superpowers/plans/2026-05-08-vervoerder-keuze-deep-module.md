@@ -20,7 +20,7 @@
 |---|---|
 | `supabase/migrations/224_vervoerder_keuze_migreer_klant_fallback.sql` | Data-migratie: INSERT in `vervoerder_selectie_regels` voor elke niet-NULL `edi_handelspartner_config.vervoerder_code`. Idempotent. |
 | `supabase/migrations/225_vervoerder_keuze_versimpel_ladder.sql` | Strip klant-fallback uit alle leeskanten: RPCs uit mig 210, 219; trigger uit mig 172; stats-query uit mig 174; afhaal-skip uit mig 205. Kolom blijft nog bestaan (backward-compat-window). |
-| `supabase/migrations/226_vervoerder_keuze_drop_kolom_en_bulk_rpc.sql` | `ALTER TABLE edi_handelspartner_config DROP COLUMN vervoerder_code`. `DROP FUNCTION preview_vervoerder_voor_order`. `CREATE FUNCTION set_orderregel_vervoerder_override_voor_order(BIGINT, TEXT)`. Optionele rename-alias. |
+| `supabase/migrations/227_vervoerder_keuze_drop_kolom_en_bulk_rpc.sql` | `ALTER TABLE edi_handelspartner_config DROP COLUMN vervoerder_code`. `DROP FUNCTION preview_vervoerder_voor_order`. `CREATE FUNCTION set_orderregel_vervoerder_override_voor_order(BIGINT, TEXT)`. Optionele rename-alias. |
 | `frontend/src/modules/logistiek/queries/vervoerder-keuze.ts` | Nieuwe query-laag: `setOrderregelVervoerderOverride`, `setOrderVervoerderOverride` (bulk), `aggregeerVervoerderKeuzeVoorOrder` (TS pure-function). |
 | `frontend/src/modules/logistiek/hooks/use-vervoerder-keuze.ts` | Nieuwe hooks: `useVervoerderKeuzeVoorOrder` (afgeleide aggregatie), `useSetOrderVervoerderOverride` (bulk). Bestaande `useEffectieveVervoerderPerOrderregel` + `useUpdateOrderregelVervoerderOverride` blijven (eventueel hernoemd). |
 | `frontend/src/modules/logistiek/queries/vervoerder-keuze.test.ts` | Vitest-unittest voor `aggregeerVervoerderKeuzeVoorOrder`. |
@@ -247,7 +247,7 @@ Voor elke: noteer welke regels lezen uit `edi_handelspartner_config.vervoerder_c
 --   override → regel-evaluator → geen
 -- Klant-fallback (kolom `edi_handelspartner_config.vervoerder_code`) wordt na
 -- mig 224 gedupliceerd in `vervoerder_selectie_regels` en kan dus uit alle
--- leeskanten weg. De kolom zelf blijft nog bestaan; dropt pas in mig 226.
+-- leeskanten weg. De kolom zelf blijft nog bestaan; dropt pas in mig 227.
 --
 -- Geraakte RPCs/triggers (CREATE OR REPLACE — geen schema-wijziging):
 --   1. selecteer_vervoerder_voor_zending (mig 210)
@@ -492,11 +492,13 @@ git commit -m "refactor(vervoerder-keuze): mig 225 — strip klant-fallback uit 
 
 ---
 
-## Phase 3 — DB-migratie 226: drop kolom + nieuwe bulk-RPC
+## Phase 3 — DB-migratie 227: drop kolom + nieuwe bulk-RPC
+
+> **Mig-nummer-shift:** mig 226 was bezet door een uncommitted facturatie-drain-cron-hotfix op dezelfde branch. De vervoerder-keuze-slot-migratie kreeg daarom 227. Keten loopt nu: mig 224 (data-migratie) → mig 225 (ladder versimpelen) → **mig 227** (drop kolom + bulk-RPC).
 
 ### Task 3.0: Verificatie-checkpoint — geen lezer meer op `ehc.vervoerder_code`
 
-> **Veiligheids-gate:** voer deze task **vóór** mig 226 toe te passen. Als nog ergens iets leest, faalt mig 226 of breekt productie.
+> **Veiligheids-gate:** voer deze task **vóór** mig 227 toe te passen. Als nog ergens iets leest, faalt mig 227 of breekt productie.
 
 - [ ] **Stap 1: Grep over álle code-locaties die runnen tegen de database**
 
@@ -517,15 +519,15 @@ Expected: groen. Als één test faalt op een impliciete leeskant (bv. een view d
 
 - [ ] **Stap 3: Geen commit (verificatie-checkpoint)**
 
-### Task 3.1: Schrijf migratie 226 — DROP COLUMN + bulk-override-RPC + drop preview-RPC
+### Task 3.1: Schrijf migratie 227 — DROP COLUMN + bulk-override-RPC + drop preview-RPC
 
 **Files:**
-- Create: `supabase/migrations/226_vervoerder_keuze_drop_kolom_en_bulk_rpc.sql`
+- Create: `supabase/migrations/227_vervoerder_keuze_drop_kolom_en_bulk_rpc.sql`
 
 - [ ] **Stap 1: Schrijf migratie-bestand**
 
 ```sql
--- Migratie 226: vervoerder-keuze — drop klant-fallback-kolom + bulk-override-RPC
+-- Migratie 227: vervoerder-keuze — drop klant-fallback-kolom + bulk-override-RPC
 --
 -- ADR-0008. Volgt op mig 224 (data-migratie) en mig 225 (ladder versimpelen).
 -- Pas op DIT moment is het veilig om de kolom te droppen — alle leeskanten
@@ -695,8 +697,8 @@ Expected: 0 rijen.
 - [ ] **Stap 6: Commit**
 
 ```bash
-git add supabase/migrations/226_vervoerder_keuze_drop_kolom_en_bulk_rpc.sql
-git commit -m "feat(vervoerder-keuze): mig 226 — drop klant-fallback-kolom, bulk-override-RPC (ADR-0008)"
+git add supabase/migrations/227_vervoerder_keuze_drop_kolom_en_bulk_rpc.sql
+git commit -m "feat(vervoerder-keuze): mig 227 — drop klant-fallback-kolom, bulk-override-RPC (ADR-0008)"
 ```
 
 ---

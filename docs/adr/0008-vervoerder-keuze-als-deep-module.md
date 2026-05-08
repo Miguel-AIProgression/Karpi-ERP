@@ -59,7 +59,7 @@ Volgnummers 224 → 225 → 226 (220-223 zijn bezet).
 
 1. **Mig 224 — auto-migreer klant-fallback naar verzendregels.** Idempotent INSERT in `vervoerder_selectie_regels` voor elke niet-NULL `edi_handelspartner_config.vervoerder_code`. Bevat een DO-block-assertie die op herhaling een exception gooit als duplicaat-rijen ontstaan.
 2. **Mig 225 — vereenvoudig ladder in bestaande RPCs.** Vertrekt van de canonieke body in [mig 221](../../supabase/migrations/221_orderregel_vervoerder_is_locked.sql) (NIET mig 219) — die voegde `is_locked BOOLEAN` aan de signature toe. `effectieve_vervoerder_per_orderregel`, `selecteer_vervoerder_voor_zending` (mig 210), trigger uit mig 172, stats-query uit mig 174, en afhaal-skip uit mig 205 verliezen hun klant-fallback-tak en lezen niet meer uit `edi_handelspartner_config.vervoerder_code`. `is_locked` blijft behouden.
-3. **Mig 226 — drop kolom + nieuwe RPCs.** `SET LOCAL lock_timeout = '3s'` + `ALTER TABLE edi_handelspartner_config DROP COLUMN vervoerder_code`. Drop `preview_vervoerder_voor_order` (mig 215). Maak `set_orderregel_vervoerder_override_voor_order(BIGINT, TEXT)`.
+3. **Mig 227 — drop kolom + nieuwe RPCs.** *(Mig 226 was op dezelfde branch bezet door een facturatie-drain-cron-hotfix; de vervoerder-keuze-slot kreeg daardoor 227.)* `SET LOCAL lock_timeout = '3s'` + `ALTER TABLE edi_handelspartner_config DROP COLUMN vervoerder_code`. Drop `preview_vervoerder_voor_order` (mig 215). Maak `set_orderregel_vervoerder_override_voor_order(BIGINT, TEXT)`.
 4. **Hernoem (optioneel, latere PR)** — `effectieve_vervoerder_per_orderregel` → `vervoerder_keuze_per_orderregel` voor lexicale consistentie. Niet load-bearing; kan ook als alias.
 
 ## Overwogen alternatieven
