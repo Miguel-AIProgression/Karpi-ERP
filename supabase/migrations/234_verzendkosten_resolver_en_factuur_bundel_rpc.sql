@@ -412,3 +412,49 @@ COMMENT ON FUNCTION genereer_factuur_voor_bundel(BIGINT) IS
 
 GRANT EXECUTE ON FUNCTION genereer_factuur_voor_bundel(BIGINT)
   TO authenticated, service_role;
+
+------------------------------------------------------------------------
+-- 5. claim_factuur_queue_items — return-shape uitgebreid
+------------------------------------------------------------------------
+-- Mig 227's RPC returnt vandaag (id, debiteur_nr, order_ids, type, attempts).
+-- Mig 234 voegt zending_id (kolom 3) en verzendweek (mig 231) toe zodat
+-- de drain-edge-function in één call alle data heeft voor het 3-paden-
+-- dispatch.
+
+DROP FUNCTION IF EXISTS claim_factuur_queue_items(INTEGER);
+
+CREATE OR REPLACE FUNCTION claim_factuur_queue_items(p_max_batch INTEGER DEFAULT 10)
+RETURNS TABLE (
+  id          BIGINT,
+  debiteur_nr INTEGER,
+  order_ids   BIGINT[],
+  type        TEXT,
+  attempts    INTEGER,
+  zending_id  BIGINT,
+  verzendweek TEXT
+)
+LANGUAGE sql
+AS $$
+  UPDATE factuur_queue q
+     SET status = 'processing',
+         processing_started_at = now()
+   WHERE q.id IN (
+     SELECT inner_q.id
+       FROM factuur_queue inner_q
+      WHERE inner_q.status = 'pending'
+      ORDER BY inner_q.created_at ASC
+      LIMIT p_max_batch
+      FOR UPDATE SKIP LOCKED
+   )
+  RETURNING q.id, q.debiteur_nr, q.order_ids, q.type, q.attempts,
+            q.zending_id, q.verzendweek;
+$$;
+
+GRANT EXECUTE ON FUNCTION claim_factuur_queue_items(INTEGER) TO authenticated, service_role;
+
+COMMENT ON FUNCTION claim_factuur_queue_items(INTEGER) IS
+  'Mig 234 (ADR-0010): claim met FOR UPDATE SKIP LOCKED. Return-shape '
+  'uitgebreid met zending_id (mig 234) en verzendweek (mig 231) zodat '
+  'de drain-edge-function 3-paden-dispatch zonder extra query kan doen.';
+
+NOTIFY pgrst, 'reload schema';
