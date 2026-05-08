@@ -50,3 +50,9 @@ export {
   clearStandaardAfwerking,
   setBandKleurDefault,
 } from './queries/maatwerk-instellingen'
+
+export { MaatwerkSelector } from './components/maatwerk-selector'
+export { MaatwerkLevertijdHint } from './components/maatwerk-levertijd-hint'
+export { KwaliteitFirstSelector } from './components/kwaliteit-first-selector'
+export { KwaliteitKleurSelector } from './components/kwaliteit-kleur-selector'
+export { VormAfmetingSelector } from './components/vorm-afmeting-selector'
