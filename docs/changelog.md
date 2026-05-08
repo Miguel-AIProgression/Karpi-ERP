@@ -1,5 +1,208 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-08 — Drie kleine deepening-ingrepen (Klanteigen-namen, claims_voor_product, order-form-extracts)
+
+Architectuur-skill `/improve-codebase-architecture` op vier shallow plekken na ADR-0009/0010. Drie eenvoudige refactors zonder ADR-niveau-discussie of Module-folder-werk; mechanische concentratie van verspreide kennis.
+
+**1. Klanteigen-namen-resolver geconcentreerd in [`klanteigen-namen.ts`](../frontend/src/lib/supabase/queries/klanteigen-namen.ts).** De domeinvraag *"wat heet dit voor deze klant"* leefde voor de helft in [`order-mutations.ts`](../frontend/src/lib/supabase/queries/order-mutations.ts) (RPC `resolve_klanteigen_naam`, singular) en voor de helft als ad-hoc `supabase.rpc()`-call in [`orders.ts`](../frontend/src/lib/supabase/queries/orders.ts) (batch). Daarnaast was er een **dode parallelle "domme"-variant**: `fetchKlanteigenNamen` + `useKlanteigenNamen` + `KlanteigenNaam`-interface in [`klanten.ts`](../frontend/src/lib/supabase/queries/klanten.ts) / [`use-klanten.ts`](../frontend/src/hooks/use-klanten.ts) die geen inheritance kende en die geen enkele caller meer had sinds de tab op `useKlanteigenVoorKlant` overstapte. Beide RPC-paden verhuisd naar `klanteigen-namen.ts` (`fetchKlanteigenNaam` singular, `fetchKlanteigenNamenMap` batch); `orders.ts:fetchOrderRegels` consumeert de Map; dode code geschrapt.
+
+**2. [`fetchClaimsVoorProduct`](../frontend/src/lib/supabase/queries/producten.ts) van 80 regels JS-orchestratie naar SQL-RPC.** De client-side 4-stap (orderregels → claims → orders → debiteuren met `Map`/`.find()`) had een eslint-disable-rij voor `any`-types en een hardcoded `['Verzonden', 'Geannuleerd']`-filter buiten de DB. Nieuwe RPC `claims_voor_product(p_artikelnr)` doet de relationele JOIN inclusief omsticker-pad (`reg.artikelnr = p_artikelnr OR reg.fysiek_artikelnr = p_artikelnr`) en de status-filter in één query. TS-functie wordt thin wrapper (4 regels). **Niet in deze commit:** mig 236 toegevoegd maar moet handmatig worden toegepast (Karpi MCP heeft geen toegang).
+
+**3. Order-form pure functies naar [`lib/orders/`](../frontend/src/lib/orders/).** Twee blokken in [`order-form.tsx`](../frontend/src/components/orders/order-form.tsx) (regel-filtering + drempel-toets voor verzend-regel; client+config-fallback voor afleverdatum) waren pure-functie-kandidaten die geen state of effects nodig hadden. Geëxtraheerd naar [`lib/orders/verzend-regel.ts`](../frontend/src/lib/orders/verzend-regel.ts) (`applyShippingLogic`, met smal `KlantVerzendInfo`-contract) en [`lib/orders/order-afleverdatum.ts`](../frontend/src/lib/orders/order-afleverdatum.ts) (`bepaalOrderAfleverdatum`, wrapper boven `lib/utils/afleverdatum.ts`). Order-form importeert uit barrel-stijl naast de bestaande [`verzendweek.ts`](../frontend/src/lib/orders/verzendweek.ts) en [`bundel-sleutel.ts`](../frontend/src/lib/orders/bundel-sleutel.ts). De default-arg-closure (`afhalenActief: boolean = afhalen`) is opgelost door `afhalen` op alle 3 callsites expliciet door te geven. Zet de toon voor de V2-row-splitsing die ADR-0009 op de backlog zette — deze extracts bewijzen dat pure-state derivaties uit het 939-regel-bestand kunnen zonder de form-flow te raken.
+
+**Files**: nieuwe [`mig 236`](../supabase/migrations/236_claims_voor_product_rpc.sql), [`lib/orders/verzend-regel.ts`](../frontend/src/lib/orders/verzend-regel.ts), [`lib/orders/order-afleverdatum.ts`](../frontend/src/lib/orders/order-afleverdatum.ts); aangepast [`klanteigen-namen.ts`](../frontend/src/lib/supabase/queries/klanteigen-namen.ts), [`order-mutations.ts`](../frontend/src/lib/supabase/queries/order-mutations.ts), [`orders.ts`](../frontend/src/lib/supabase/queries/orders.ts), [`klanten.ts`](../frontend/src/lib/supabase/queries/klanten.ts), [`use-klanten.ts`](../frontend/src/hooks/use-klanten.ts), [`producten.ts`](../frontend/src/lib/supabase/queries/producten.ts), [`order-form.tsx`](../frontend/src/components/orders/order-form.tsx).
+
+**Geen ADR**: alle drie binnen bestaande Module-grenzen, geen seam-verandering, geen domein-vocab-uitbreiding.
+
+## 2026-05-08 — ADR-0010 aangenomen: factuur volgt bundel-zending; `factuurvoorkeur='per_zending'` vervalt
+
+Tijdens een grilling-sessie over een geplande Zending-lifecycle Module bleek dat de "per-zending-facturatie" open-kandidaat (genoemd in ADR-0005, ADR-0006 én ADR-0007) **fundamenteel tegenstrijdig** is met Karpi's bundel-drempel-strategie: bij €300 op maandag + €300 op vrijdag van dezelfde klant zou per-zending-facturatie de klant 2× verzendkosten kosten, terwijl bij bundeling het totaal van €600 boven de €500-drempel uitkomt en verzending €0 wordt.
+
+[ADR-0010](adr/0010-factuur-volgt-bundel-zending.md) sluit deze open-kandidaat dicht en herziet de aggregatie-eenheid voor facturatie:
+
+- **Factuur volgt bundel-zending.** Aggregatie volgt de 4-dim bundel-sleutel uit mig 228 — `(debiteur × adres × vervoerder × verzendweek)`. Een klant met 2 verschillende afleveradressen of 2 verschillende vervoerders in dezelfde week krijgt N facturen, één per pakbon.
+- **`factuurvoorkeur` gedropt** (mig 234 te schrijven). Kolom op `debiteuren`, mig 118-trigger en de UI-radio in klant-detail vervallen.
+- **Mig 232 herzien** (mig 235 te schrijven). `genereer_factuur_voor_week(debiteur, week)` wordt vervangen door `genereer_factuur_voor_bundel(zending_id)`. Aggregatie-eenheid is voortaan de bundel-zending, niet de week.
+- **Verzendkosten-resolver geconcentreerd.** Nieuwe SQL-functie `verzendkosten_voor_bundel(deb, subtotaal, is_afhalen)` returnt `(te_betalen, status, reden)` — bron-van-waarheid voor de 4-paden-toets (afhalen / klant-gratis / drempel-gehaald / normaal). View 229 en de nieuwe factuur-RPC consumeren beide deze functie.
+
+ADR-0005, ADR-0006 en ADR-0007 zijn bijgewerkt: hun open-kandidaten over per-zending-facturatie verwijzen nu naar ADR-0010 als sluitsteen. Data-woordenboek + architectuur.md "Facturatie-flow"-sectie aangepast.
+
+**Numbering note**: ADR-eerst geconcipieerd als 0009; tijdens dezelfde dag landde ADR-0009 (Maatwerk-Module) op `main`, dus hernummerd naar 0010.
+
+**Wat is in deze commit (docs-only):**
+- [`docs/adr/0010-factuur-volgt-bundel-zending.md`](adr/0010-factuur-volgt-bundel-zending.md) — nieuwe ADR.
+- [`docs/adr/0005-pickronde-sluit-de-factuur-keten.md`](adr/0005-pickronde-sluit-de-factuur-keten.md), [`0006`](adr/0006-order-lifecycle-als-deep-module.md), [`0007`](adr/0007-facturatie-als-deep-module.md) — open-kandidaten dichtgezet.
+- [`docs/data-woordenboek.md`](data-woordenboek.md) — nieuwe term **Bundel-factuur**, nieuwe term **Verzendkosten-resolver**, **factuurvoorkeur** gemarkeerd als vervallen, **Facturatie-Module** + **factuur_queue**-beschrijving aangescherpt.
+- [`docs/architectuur.md`](architectuur.md) — "Facturatie-flow"-sectie herschreven naar bundel-driven flow met wekelijkse cron als enige enqueue-bron.
+
+**Niet in deze commit (vervolg-implementatie):** mig 234 (drop trigger + factuurvoorkeur-kolom), mig 235 (`genereer_factuur_voor_bundel` + `verzendkosten_voor_bundel`), `enqueue_wekelijkse_verzamelfacturen` herschrijven, frontend `klant-facturering-tab.tsx` opruim. Volgt in een aparte branch.
+
+## 2026-05-08 — Snij-marge: SQL-only seam, TS-spiegels weg (mig 233)
+
+Architectuur-deepening (skill `/improve-codebase-architecture`). De Snij-marge had drie implementaties: SQL `stuk_snij_marge_cm()` (mig 126), edge-shared [`_shared/snij-marges.ts`](../supabase/functions/_shared/snij-marges.ts) en frontend [`lib/utils/snij-marges.ts`](../frontend/src/lib/utils/snij-marges.ts). Code-comments waarschuwden voor "houd synchroon met de andere kant" zonder vangnet — een sync-divergentie zou stilletjes verkeerd-gesneden tapijten produceren. Bovendien bleek de FE-kopie **dode code**: geen enkele caller in `frontend/` importeerde nog uit `lib/utils/snij-marges.ts`. De hele frontend kreeg `marge_cm` al uit view-kolom (mig 143). De edge-kopie werd alleen door [`_shared/db-helpers.fetchStukken`](../supabase/functions/_shared/db-helpers.ts) inline op N stukken aangeroepen.
+
+**Eindstaat — één bron, twee gerichte view-kolommen**:
+
+- [`mig 233`](../supabase/migrations/233_snijplanning_overzicht_placed_kolommen.sql) breidt view `snijplanning_overzicht` uit met `placed_lengte_cm` + `placed_breedte_cm` (snij-maat na marge-ophoging). `marge_cm` (mig 143) blijft voor operator-tekst in [`rol-uitvoer-modal.tsx`](../frontend/src/components/snijplanning/rol-uitvoer-modal.tsx) en [`derive.ts`](../frontend/src/lib/snij-volgorde/derive.ts). Twee verschillende interface-concepten — operator vs. packer — twee kolommen.
+- `fetchStukken` leest de placed-kolommen direct, geen TS-helper-import meer.
+- `_shared/snij-marges.ts` + `_shared/snij-marges.test.ts` + `frontend/src/lib/utils/snij-marges.ts` verwijderd.
+- Regressie-vangnet: `DO $$ ASSERT $$`-blok in mig 233 dekt alle scenario-categorieën uit de oude Deno-test (NULL/empty, ZO, rond/ovaal case-insensitive, combi grootste-wint, niet-marge-afwerkingen B/FE/LO/ON/SB/SF/VO).
+
+**Files**: nieuwe [`mig 233`](../supabase/migrations/233_snijplanning_overzicht_placed_kolommen.sql); aangepast [`_shared/db-helpers.ts`](../supabase/functions/_shared/db-helpers.ts), [`docs/architectuur.md`](architectuur.md) (Snij-marges-sectie + cross-cut-entry), [`docs/data-woordenboek.md`](data-woordenboek.md) (Snij-marge-entry), [`docs/database-schema.md`](database-schema.md) (`stuk_snij_marge_cm`-entry), [`docs/adr/0009-maatwerk-als-deep-module.md`](adr/0009-maatwerk-als-deep-module.md) (drie cross-cut-claims). Verwijderd: drie TS-bestanden + Deno-test.
+
+**Niet aangeraakt**: SQL-functie `stuk_snij_marge_cm()` zelf (mig 126) blijft ongewijzigd — alleen z'n COMMENT verwijst niet meer naar TS-spiegels. `snijplanning_tekort_analyse` (mig 134) gebruikt de SQL-functie nog steeds inline.
+
+## 2026-05-08 — Maatwerk-Module — ADR-0009 (architectuur-beslissing, geen code-verhuizing)
+
+Architectuur-review (2026-05-08) wees Maatwerk aan als #1 deepening-kandidaat: 39 exports verspreid over [`lib/supabase/queries/op-maat.ts`](../frontend/src/lib/supabase/queries/op-maat.ts) (761 regels) + 40 maatwerk-touchpoints in [`order-form.tsx`](../frontend/src/components/orders/order-form.tsx) (939 regels) + [`kwaliteit-first-selector.tsx`](../frontend/src/components/orders/kwaliteit-first-selector.tsx) (783 regels) + losse utils en admin-pages. Geen Module-eigenaar voor een prominent domein-concept.
+
+Grilling-loop op 2026-05-08 leverde drie ankers:
+
+1. **Naam: Maatwerk** — DB-aligned met `is_maatwerk` / `maatwerk_*`-kolommen, niet de UI-toggle "Op Maat".
+2. **Scope: medium** — Module bezit runtime-flow én admin-CRUD voor vormen, afwerkingen, m²-prijzen, band-kleur-defaults. Snij-marge (`_shared/snij-marges.ts` + mig 126) blijft cross-cut; gewicht-resolver (mig 184-186) blijft eigen SQL-Module.
+3. **Seam: hooks-import** — order-form blijft host; alle data + formules via barrel `@/modules/maatwerk` (geen slot-pattern, geen row-splitsing). Vergelijk Facturatie-Module (ADR-0007) waar `klant-facturering-tab.tsx` ook host bleef.
+
+Deze entry is alleen documenten-werk: nieuwe [`docs/adr/0009-maatwerk-als-deep-module.md`](adr/0009-maatwerk-als-deep-module.md), nieuwe sectie `## Maatwerk` in [`data-woordenboek.md`](data-woordenboek.md), sectie "Op Maat Module" in [`architectuur.md`](architectuur.md) hernoemd naar "Maatwerk-Module" en uitgebreid met seam-beschrijving + cross-cut-grenzen, en de Module-graf-paragraaf vermeldt nu zeven domein-modules. Code-verhuizing (~12 files, splitsing van `op-maat.ts`, route-redirect voor admin-pages) volgt in een aparte PR.
+
+## 2026-05-08 — Dynamische zending-bundeling met wekelijkse verzamelfactuur (mig 228-232)
+
+Karpi-eis: orders die naar dezelfde klant in dezelfde week gaan automatisch bundelen → 1 zending → 1× transportbeweging → 1× verzendkosten. Wanneer het bundel-totaal de klant-drempel overschrijdt (`debiteuren.verzend_drempel`, default €500) verdwijnt de verzendkosten zelfs helemaal. Daarnaast: 1 wekelijkse verzamelfactuur per debiteur waarop alle bundel-zendingen samen verschijnen — `factuurvoorkeur='wekelijks'` (mig 117) was sinds vorig jaar een no-op en wordt nu eindelijk operationeel.
+
+**Architectuur — 5 lagen, expliciete seams**:
+
+1. **Bundel-sleutel** ([`mig 228`](../supabase/migrations/228_bundel_sleutel_helper.sql), [`bundel-sleutel.ts`](../frontend/src/lib/orders/bundel-sleutel.ts), [`normaliseer-adres.ts`](../frontend/src/lib/orders/normaliseer-adres.ts)) — pure SQL-functie `bundel_sleutel(debiteur_nr, adres_norm, vervoerder, jaar_week)` + TS-spiegel. Wijzigt één van de 4 dimensies → andere sleutel → orders splitsen automatisch. Mig 228 voegt ook `verzendweek_voor_datum(date)` toe en herstelt de ontbrekende `debiteuren.gratis_verzending`-kolom (frontend kende hem al; mig 201 had hem overgeslagen).
+
+2. **Voorgestelde-bundel** ([`mig 229`](../supabase/migrations/229_voorgestelde_zending_bundels_view.sql), [`voorgestelde-bundels.ts`](../frontend/src/modules/logistiek/queries/voorgestelde-bundels.ts)) — pure SQL-view `voorgestelde_zending_bundels` die open orders × `effectieve_vervoerder_per_orderregel` aggregeert per bundel-sleutel. Geen state, geen triggers, geen materialized view: bij elke fetch opnieuw afgeleid uit de actuele ordergegevens. View levert: `order_ids[]`, `bundel_subtotaal_excl`, `drempel_gehaald`, `te_betalen_verzendkosten`, `bundel_besparing`. Frontend cachet via React Query (staleTime 60s) en invalidate't bij vervoerder-/adres-/datum-mutaties.
+
+3. **Bevestigde bundel** ([`mig 230`](../supabase/migrations/230_zending_verzendweek_lock.sql)) — `zendingen` krijgt `verzendweek TEXT`-snapshot met backfill via `zending_orders` M2M. `start_pickronden_bundel` valideert nu ook **identieke verzendweek** (4e dimensie) en schrijft de week mee naar `zendingen`. Nieuwe trigger `trg_lock_zending_bundel_sleutel` blokkeert mutatie van `afleverdatum`/`afl_*`/`debiteur_nr` op orders die in een actieve bundel-zending zitten (`Klaar voor verzending`+) — voorkomt divergentie tussen pakbon-snapshot en order-data. Trigger `trg_zending_set_verzendweek` vult de week ook bij single-order paden.
+
+4. **Factuur-bundel** ([`mig 231`](../supabase/migrations/231_factuur_queue_verzendweek.sql), [`mig 232`](../supabase/migrations/232_genereer_factuur_voor_week.sql)) — `factuur_queue` krijgt `verzendweek`-kolom. `enqueue_wekelijkse_verzamelfacturen` (mig 122) groepeert nu per (debiteur, ISO-week) i.p.v. alleen per debiteur, met dubbele-cron-bescherming via `NOT EXISTS`-check op pending/processing/done queue-rijen. Nieuwe RPC `genereer_factuur_voor_week(debiteur_nr, jaar_week)` — volgt mig 227 no-op-guard pattern, voegt per bundel-zending van die week 1 VERZEND-regel toe met drempel-toets. **Beleidskeuze**: verzendkosten worden **per bundel** geheven, niet per week — een bundel = 1 fysieke transportbeweging. 2 vervoerders in dezelfde week = 2 verzendkosten-regels (mits onder drempel). Edge function [`factuur-verzenden`](../supabase/functions/factuur-verzenden/index.ts) splitst nu op `item.type`: 'wekelijks' → `genereer_factuur_voor_week`; 'per_zending' → ongewijzigd `genereer_factuur` (V2-backlog: drempel-logica ook in per_zending-pad).
+
+5. **UI / Live preview** ([`pick-overview.tsx`](../frontend/src/modules/magazijn/pages/pick-overview.tsx), [`pick-week-sectie.tsx`](../frontend/src/modules/magazijn/components/pick-week-sectie.tsx), [`voorgestelde-bundel-info.tsx`](../frontend/src/modules/magazijn/components/voorgestelde-bundel-info.tsx), [`drempel-progressbar.tsx`](../frontend/src/modules/magazijn/components/drempel-progressbar.tsx)) — Pick & Ship `KlantClusterBlok` toont nu in elke bundel een infostrip met vervoerder-pill, adres-snippet en `DrempelProgressBar` (slate < ½, amber ≥ ½, teal = gehaald). "Bespaart €X" badge als ≥2 orders. Updates live via React Query: vervoerder-override (`use-orderregel-vervoerder.ts`), afleverdatum-mutatie (`order-form.tsx`) en pickronde-start (`bulk-verzendset-button.tsx`) invalideren `['voorgestelde-bundels']`.
+
+**Edge cases gedekt**:
+- Vervoerder-override op orderregel locked op `is_locked` (mig 221); view filtert orders met actieve zending.
+- Lock-trigger blokkeert adres-/datum-mutaties zodra bundel actief is.
+- Cron `'facturatie-wekelijks'` (mig 122) heeft dubbele-vuur-bescherming via queue-existence-check.
+- Afhalen-orders krijgen eigen `'AFHAAL'`-vervoerder-code in view en vallen niet samen met "GEEN".
+
+**Niet in scope (V2-backlog)**: drempel-logica voor `per_zending`-pad, vervoerder-tarief-tabel, pgTAP-tests, real-time WebSocket-bundel-updates.
+
+Typecheck schoon. Migraties 228-232 draaien op productie.
+
+## 2026-05-08 — Edge-function regressie: `getKleurVariants is not defined` in `auto-plan-groep`
+
+Vlak na het deployen van de "Auto-plan opnieuw draaien"-knop knalde de edge function in productie met `getKleurVariants is not defined`. Oorzaak: latente regressie uit commit `ce6136e` ("wip(snijplanning): uitwisselbare paren + snij-volgorde derive") — die commit verwijderde de `getKleurVariants`-helper uit [`supabase/functions/_shared/db-helpers.ts`](../supabase/functions/_shared/db-helpers.ts) maar liet drie aanroepen (in `db-helpers.ts:fetchStukken`, `check-levertijd:238`, `check-levertijd:289`) staan. Deno gooit pas op runtime in plaats van build-time, dus de bug overleefde tot vandaag.
+
+**Fix**: helper opnieuw toegevoegd én geëxporteerd in [`db-helpers.ts`](../supabase/functions/_shared/db-helpers.ts) (zelfde signatuur als de frontend-versie in [`snijplanning.ts:32`](../frontend/src/lib/supabase/queries/snijplanning.ts) — accepteert "12" of "12.0" en levert beide varianten plus de gestripte vorm). `check-levertijd/index.ts` importeert de helper al uit deze file, dus die call-site is meteen ook gefixt.
+
+**Te doen na deploy**: drie edge functions herdeployen omdat ze allemaal `db-helpers.ts` gebruiken — `auto-plan-groep`, `optimaliseer-snijplan`, `check-levertijd`:
+
+```bash
+npx supabase functions deploy auto-plan-groep --project-ref wqzeevfobwauxkalagtn
+npx supabase functions deploy optimaliseer-snijplan --project-ref wqzeevfobwauxkalagtn
+npx supabase functions deploy check-levertijd --project-ref wqzeevfobwauxkalagtn
+```
+
+## 2026-05-08 — Vervoerder-keuze refactor: Phase 6+7 cleanup (callers + barrel)
+
+Afronding van de ADR-0008-refactor (vervoerder-keuze deep module). Phase 5 (commit `452a0a6`) had `use-vervoerder-config.ts` en `queries/vervoerder-config.ts` verwijderd; Phase 6+7 ruimt nu de overgebleven callers en de module-barrel op.
+
+**Files** (al voor het grootste deel uncommitted in branch `fix/dpd-vervoerder-keuze`):
+- [`vervoerder-inline-select.tsx`](../frontend/src/modules/logistiek/components/vervoerder-inline-select.tsx) — bulk-override-flow + inline foutbanner met auto-hide na 5s + "Geen regel"-state met link naar `/verzendregels` + "Mix · DPD+UPS"-state.
+- [`vervoerder-orderregel-pill.tsx`](../frontend/src/modules/logistiek/components/vervoerder-orderregel-pill.tsx) — imports geüpdatet naar `use-orderregel-vervoerder` + `use-vervoerders` (canonical master-list).
+- [`bulk-verzendset-button.tsx`](../frontend/src/modules/logistiek/components/bulk-verzendset-button.tsx) — `useVervoerderPerOrder` vervangen door per-order `useVervoerderKeuzeVoorOrder`-aggregaten.
+- [`vervoerder-filter-button.tsx`](../frontend/src/modules/logistiek/components/vervoerder-filter-button.tsx) — gebroken `'../hooks/use-vervoerder-config'`-import vervangen door `useVervoerdersFull` uit `use-vervoerders`.
+- [`logistiek/index.ts`](../frontend/src/modules/logistiek/index.ts) — barrel-cleanup: shallow exports (`useKlantVervoerderConfig`, `useUpsertKlantVervoerderConfig`, `fetchKlantVervoerderConfig`, `upsertKlantVervoerderConfig`, `VervoerderRow`, `useVervoerderPerOrder`) verwijderd.
+- [`queries/vervoerders.ts`](../frontend/src/modules/logistiek/queries/vervoerders.ts) (Task 7.2) — misleidende JSDoc over join via `edi_handelspartner_config` vervangen door eerlijke beschrijving (filter direct op `zendingen.vervoerder_code`).
+- [`hooks/use-vervoerders.ts`](../frontend/src/modules/logistiek/hooks/use-vervoerders.ts) — stale comment over `use-vervoerder-config.ts` opgeruimd.
+- [`__tests__/zendingen-query.contract.test.ts`](../frontend/src/modules/logistiek/__tests__/zendingen-query.contract.test.ts) — mock-builder uitgebreid met `.in()` (regressie door mig 219 die `.in('status', [...])` toevoegt aan `fetchZendingen`).
+
+Typecheck schoon, tests groen (185 passed, 1 skipped).
+
+## 2026-05-08 — Snijplanning: handmatige "Auto-plan opnieuw draaien"-knop in `voldoende`-tekortbanner
+
+Productie-observatie: orderregel CISC 16 (300×200 stuk) bleef in de Tekort-tab staan terwijl [`snijplanning_tekort_analyse`](../supabase/migrations/142_tekort_analyse_via_uitwisselbare_paren.sql) bevestigde dat het stuk per-stuk-check op minstens één rol uit de uitwisselbare set (CAST/CISC/SOPI/SOPV/SPRI/VELV, 138 m²) zou moeten passen. De banner zei letterlijk "Draai auto-plan opnieuw" maar er was geen UI-actie om dat te doen — auto-plan wordt alleen automatisch getriggerd na opslaan van een order met maatwerk-regels of via [`useCreateSnijplan`](../frontend/src/hooks/use-snijplanning.ts). Tussen die triggers door kunnen rollen of voorraad veranderen zonder dat het systeem het oppikt.
+
+**Fix** ([`groep-accordion.tsx`](../frontend/src/components/snijplanning/groep-accordion.tsx)):
+- "Auto-plan opnieuw draaien"-knop in de tekort-banner, alleen voor `tekortReden.kind === 'voldoende'` (de andere kinds — `geen_collectie` / `geen_voorraad` / `rol_te_klein` — zijn niet oplosbaar door een herstart, daar is inkoop of config-wijziging nodig).
+- Knop roept de bestaande [`useTriggerAutoplan`](../frontend/src/hooks/use-snijplanning.ts) aan met `(kwaliteitCode, kleurCode, totDatum)`. De hook invalidateerde al de juiste query-keys, dus de UI ververst automatisch zodra het voorstel auto-approved is.
+- Errors worden hergebruikt op de bestaande `genError`-balk bovenin de accordion.
+- Banner-tekst verkort: "Draai auto-plan opnieuw" weg uit de label-zin omdat de knop dat nu communiceert.
+
+Geen migratie nodig; pure frontend-wijziging.
+
+## 2026-05-08 — Mig 227: idempotente factuur-keten (no-op guard + atomic claim)
+
+Vervolg op de eerder vandaag gefixte drain-deploy. De drain werkte daarna, maar produceerde voor 7 echte queue-rijen **22 facturen** — 7 met regels en bedragen, 14 lege €0,00 zonder regels. Diagnose:
+
+1. **Race-condition aan drain-zijde**: [`factuur-verzenden`](../supabase/functions/factuur-verzenden/index.ts) deed `SELECT * FROM factuur_queue WHERE status='pending'` gevolgd door een aparte `UPDATE … SET status='processing'`. Tussen die twee calls kon een parallelle drain (cron-tik tegelijk met handmatige `net.http_post`) dezelfde rij claimen.
+2. **Geen no-op guard in `genereer_factuur`** (mig 119/124): de RPC INSERT'eerde de factuur-header onvoorwaardelijk en SELECT'eerde regels pas daarna op `gefactureerd < orderaantal`. Bij een tweede aanroep voor reeds-gefactureerde orders waren er 0 regels te kopiëren — maar de header stond al, en bleef staan als lege €0,00 factuur.
+
+**Fixes** ([`227_genereer_factuur_no_op_guard.sql`](../supabase/migrations/227_genereer_factuur_no_op_guard.sql)):
+- `genereer_factuur` telt nu eerst de te-factureren regels en gooit `RAISE EXCEPTION 'al volledig gefactureerd'` (ERRCODE `no_data_found`) als dat 0 is. Geen header-INSERT, geen lege factuur. De aanroeper vangt de exception en de drain-error-pad markeert de queue-rij als `failed` (recovery-job vangt 'm op).
+- Nieuwe RPC `claim_factuur_queue_items(p_max_batch)` doet één UPDATE met `FOR UPDATE SKIP LOCKED` — atomair claimen + naar `processing` zetten in één transactie. Parallelle drains slaan elkaars claims over.
+- Drain-edge-function herschreven om `claim_factuur_queue_items` aan te roepen i.p.v. SELECT-then-UPDATE. Mark-processing-step verwijderd (zit nu in de RPC).
+
+**Opruim-actie productie**: 14 lege facturen (FACT-2026-0010 t/m -0023) handmatig gedeletet via `DELETE FROM facturen WHERE id IN (…) AND totaal=0 AND created_at >= '2026-05-08 10:00'` plus `UPDATE nummering SET laatste_nummer = 9 WHERE type='FACT' AND jaar=2026`, zodat de volgende echte factuur weer FACT-2026-0010 wordt.
+
+**Te doen na deploy**:
+1. Migratie 227 toepassen op productie.
+2. Edge function herdeployen: `npx supabase functions deploy factuur-verzenden --project-ref wqzeevfobwauxkalagtn`.
+3. Cron-job weer activeren: `UPDATE cron.job SET active = true WHERE jobname = 'facturatie-queue-drain';`.
+
+## 2026-05-08 — Vervolg-hotfix: edge function `factuur-verzenden` deployen + `verify_jwt=false`
+
+Na mig 226 bleek de queue nog steeds onaangetast (`attempts=0`). Inspectie van `net._http_response` toonde **`status_code=404`** met body `{"code":"NOT_FOUND","message":"Requested function was not found"}` op elke drain-tik. Oorzaak: de edge function `factuur-verzenden` was nooit gedeployd op productie — alleen lokaal in `supabase/functions/factuur-verzenden/index.ts` aanwezig.
+
+**Fix**:
+1. [`supabase/config.toml`](../supabase/config.toml) krijgt regel `[functions.factuur-verzenden]` met `verify_jwt = false`. Reden: drain stuurt `Authorization: Bearer <service_role_key>` uit Vault; met de huidige Supabase API-key-vorm (`sb_secret_*`) is dat geen geldige JWT en zou de Edge-gateway hem afwijzen als `verify_jwt=true`. De function leest zelf nooit een user-JWT (gebruikt service-role intern), dus de gateway-check is overbodig.
+2. Edge function deployen: `npx supabase functions deploy factuur-verzenden --project-ref wqzeevfobwauxkalagtn`.
+3. Verifieer secrets in Supabase dashboard: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, `FACTUUR_FROM_EMAIL` — vereist door [`factuur-verzenden/index.ts`](../supabase/functions/factuur-verzenden/index.ts) regel 15-19.
+
+## 2026-05-08 — Hotfix mig 226: pg_cron `facturatie-queue-drain` registreren met juiste PROJECT_REF
+
+Productie-incident: 7 zendingen op 'Klaar voor verzending' (per_zending-klanten FLOORPASSION/SB MÖBEL BOSS/WHOON), order-status correct geflipt naar 'Verzonden', `order_events.pickronde_voltooid` geschreven, en `factuur_queue` had 7 rijen op `status='pending'`. Maar `attempts=0` op alle rijen → de drain klopte niet op de queue.
+
+**Diagnose** (`cron.job_run_details`): alleen `facturatie-queue-recovery` (jobid 4) draaide elke 5 min; geen enkele run van `facturatie-queue-drain`. Oorzaak: [`mig 122`](../supabase/migrations/122_facturatie_pg_cron.sql) bevatte letterlijk `<PROJECT_REF>` als placeholder met de instructie "vervang vóór apply" — bij apply op productie is dat niet gebeurd, en de scheduled command is daarna nooit functioneel geweest.
+
+**Fix** ([`226_facturatie_drain_cron_hotfix.sql`](../supabase/migrations/226_facturatie_drain_cron_hotfix.sql)): idempotente unschedule + re-schedule met de echte URL `https://wqzeevfobwauxkalagtn.supabase.co/functions/v1/factuur-verzenden`. Service-role-key in `vault.decrypted_secrets.service_role_key` was al aanwezig. Recovery- en wekelijkse jobs niet aangeraakt. Na apply: drain pikt elke minuut tot 5 pending-rijen op (PAGE_SIZE in [`factuur-verzenden`](../supabase/functions/factuur-verzenden/index.ts)), de 7 wachtende facturen worden binnen 1–2 cron-tikken verstuurd.
+
+**Vervolgactie**: `<PROJECT_REF>`-placeholder in mig 122 was een tikkende tijdbom — vervangen door de echte ref of een `current_setting('app.project_ref')`-lookup verdient een aparte iteratie zodat de migratie zelf-applicabel wordt op nieuwe projecten zonder handmatige stap.
+
+## 2026-05-08 — order-form invalideert pick-ship-cache bij save/delete
+
+Vervolg op het pickbaarheidsfilter hieronder. `usePickShipOrders` heeft `staleTime: 30_000`, dus zonder expliciete invalidatie zag de operator een nieuw aangemaakte order pas na ±30 sec verschijnen op Pick & Ship. Voor het filter actief was viel dat minder op (de oude cache toonde de order alvast — alleen niet-pickbaar). Nu wel: [`order-form.tsx`](../frontend/src/components/orders/order-form.tsx) invalideert `['pick-ship']` zowel bij save (create + update) als bij delete, naast de bestaande `['orders']` / `['snijplanning']` / etc. invalidaties.
+
+## 2026-05-08 — Pick & Ship pickbaarheidsfilter (alle onpickbare redenen + lege orders)
+
+Operator-feedback uit het magazijn: Pick & Ship liet orders zien die helemaal niet gepickt konden worden — maatwerk dat nog op snijden wacht, vaste maten in 'Wacht op inkoop', en zelfs Floorpassion-webshop-orders zonder gematchte productregels (`0 regels`). Magazijn moet daar telkens overheen scrollen om de echt-pickbare orders te vinden.
+
+**Filter in [`fetchPickShipOrders`](../frontend/src/modules/magazijn/queries/pickbaarheid.ts):**
+- Een order verschijnt pas in Pick & Ship zodra **álle** regels `is_pickbaar=true` zijn. Reden voor onpickbaar (snijden, inkoop, confectie, inpak, géén regels) maakt niet uit.
+- Klanten met `debiteuren.deelleveringen_toegestaan=true` zien een gemixte order al wél zodra ≥1 regel pickbaar is — operator stuurt een deellevering.
+- Orders zonder enkele pickbare regel verdwijnen ook bij deelleveringen — niks te shippen.
+- Geldt voor alle weekbuckets en stats (omdat `fetchPickShipStats` op dezelfde query leunt).
+
+**Type:** [`OrderHeaderRij`](../frontend/src/modules/magazijn/queries/pick-ship-transform.ts) krijgt `deelleveringen_toegestaan: boolean` (uit debiteur-fetch). Niet doorgegeven aan `PickShipOrder`-shape — UI heeft 'm niet nodig.
+
+**Tests:** [`magazijn-pickbaarheid.contract.test.ts`](../frontend/src/modules/magazijn/__tests__/magazijn-pickbaarheid.contract.test.ts) — scenario 2/4 verwachten nu 0 resultaten (header-only orders verdwijnen), scenario 3 (PGRST205-fallback) ook 0 (onbekende staat = niet tonen), scenario 5/6 dekken het wacht-op-snijden-pad, scenario 7 dekt het wacht-op-inkoop-pad.
+
+## 2026-05-08 — Facturatie-Module (ADR-0007, mig 223)
+
+Tweede deepening uit de architectuur-review: facturatie was verspreid over 7 frontend-locaties, 2 edge functions, en 6 SQL-migraties zonder Module-container. ADR-0005 noemde het als "kandidaat #3" en punt'te het door; nu opgepakt na de Order-lifecycle-keten van ADR-0006.
+
+**Frontend-consolidatie** ([`modules/facturatie/`](../frontend/src/modules/facturatie/)):
+- Smal-scope verhuizing: `pages/facturatie/`, `components/facturatie/factuur-lijst.tsx`, `hooks/use-facturen.ts`, `lib/supabase/queries/facturen.ts` → onder Module met barrel-export. Cross-cuts (`order-facturen.tsx`, `klant-facturering-tab.tsx`) blijven host-side maar consumeren via barrel.
+- Nieuwe `queries/klant-factuur-instellingen.ts` + `useKlantFactuurInstellingen` / `useUpdateKlantFactuurInstellingen` hooks: Module bezit het concept-eigenaarschap van `factuurvoorkeur` + `btw_percentage` + `email_factuur` ondanks dat de velden op `debiteuren` staan. Klant-facturering-tab importeert via barrel.
+
+**Trigger-migratie** ([`223_facturatie_event_listener.sql`](../supabase/migrations/223_facturatie_event_listener.sql)):
+- `trg_enqueue_factuur` op `orders` (mig 118) gedropt; vervangen door `trg_enqueue_factuur_op_event` op `order_events`. Filter: `event_type='pickronde_voltooid' AND status_na='Verzonden'`. SECURITY DEFINER + `search_path = public` — zelfde RLS-bypass als de eerdere mig 218-hotfix omdat `factuur_queue` geen INSERT-policy voor authenticated heeft.
+- Nieuwe kolom `factuur_queue.bron_event_id BIGINT REFERENCES order_events(id)`: traceert per factuur-job welke pickronde-completion 'm aanmaakte. NULL voor wekelijkse verzamelfacturen + legacy.
+- Mig-nummer-noot: plan-spec sprak oorspronkelijk van mig 219, maar 219+220+221+222 raakten in gebruik door vervoerder + factuur-PDF + bundel-features. 223 is het eerstvolgende vrije nummer.
+
+Termen *Facturatie-Module*, *factuurvoorkeur*, *factuur_queue* eerder toegevoegd aan [data-woordenboek.md](data-woordenboek.md). Beslissing en alternatieven: [ADR-0007](adr/0007-facturatie-als-deep-module.md).
+
 ## 2026-05-08 — Mig 222: zending-bundeling op afleveradres + vervoerder (B2B-pakbon-consolidatie)
 
 Voor B2B-klanten met centraal magazijn (typisch inkoopgroepen als BEGROS) ontstonden er N losse pakbonnen wanneer de klant N losse orders had naar hetzelfde fysieke punt. Mig 222 voegt automatische bundeling toe vóór het picken: orders met identiek genormaliseerd afleveradres + dezelfde effectieve vervoerder, binnen dezelfde debiteur, krijgen 1 gezamenlijke pakbon (1 zending, 1 SSCC-set, 1 transportorder).

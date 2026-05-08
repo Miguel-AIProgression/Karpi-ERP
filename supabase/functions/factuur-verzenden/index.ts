@@ -159,12 +159,12 @@ interface KlantArtikelForEdi {
 serve(async () => {
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE)
 
-  const { data: items, error: fetchErr } = await supabase
-    .from('factuur_queue')
-    .select('id, debiteur_nr, order_ids, type, attempts')
-    .eq('status', 'pending')
-    .order('created_at', { ascending: true })
-    .limit(MAX_BATCH)
+  // Mig 227: atomic claim via RPC met FOR UPDATE SKIP LOCKED. Vervangt
+  // SELECT-then-UPDATE die race-conditions veroorzaakte tussen parallelle
+  // drains (cron-tik + handmatige aanroep konden dezelfde rij dubbel pakken).
+  const { data: items, error: fetchErr } = await supabase.rpc('claim_factuur_queue_items', {
+    p_max_batch: MAX_BATCH,
+  })
 
   if (fetchErr) {
     return new Response(JSON.stringify({ error: fetchErr.message }), {
@@ -176,23 +176,37 @@ serve(async () => {
   const results: Array<{ id: number; status: string; error?: string; factuur_nr?: string; edi_bericht_id?: number | null }> = []
 
   for (const item of (items ?? []) as QueueItem[]) {
-    let markedProcessing = false
     try {
-      // 1. Markeer als processing (met timestamp voor recovery van stuck items)
-      const { error: markErr } = await supabase
-        .from('factuur_queue')
-        .update({ status: 'processing', processing_started_at: new Date().toISOString() })
-        .eq('id', item.id)
-      if (markErr) throw new Error(`Mark processing: ${markErr.message}`)
-      markedProcessing = true
 
-      // 2. Genereer factuur via RPC (atomair)
-      const { data: factuurIdData, error: rpcErr } = await supabase.rpc('genereer_factuur', {
-        p_order_ids: item.order_ids,
-      })
-      if (rpcErr) throw new Error(`RPC genereer_factuur: ${rpcErr.message}`)
-      const factuurId = factuurIdData as number
-      if (!factuurId) throw new Error('genereer_factuur returned null')
+      // 2. Genereer factuur via RPC (atomair). Mig 232 splitst het pad:
+      //    'wekelijks' → genereer_factuur_voor_week(debiteur, week) — aggregeert
+      //                  per bundel-zending VERZEND-regels met drempel-toets.
+      //    'per_zending' → genereer_factuur(order_ids) — V1-pad, geen
+      //                    automatische verzendkosten (V2-backlog).
+      let factuurId: number
+      if (item.type === 'wekelijks') {
+        const { data: queueRow, error: queueErr } = await supabase
+          .from('factuur_queue')
+          .select('verzendweek')
+          .eq('id', item.id)
+          .single()
+        if (queueErr) throw new Error(`Fetch queue verzendweek: ${queueErr.message}`)
+        const verzendweek = (queueRow as { verzendweek: string | null }).verzendweek
+        if (!verzendweek) throw new Error(`Queue-rij ${item.id} type=wekelijks heeft geen verzendweek`)
+        const { data, error } = await supabase.rpc('genereer_factuur_voor_week', {
+          p_debiteur_nr: item.debiteur_nr,
+          p_jaar_week: verzendweek,
+        })
+        if (error) throw new Error(`RPC genereer_factuur_voor_week: ${error.message}`)
+        factuurId = data as number
+      } else {
+        const { data, error } = await supabase.rpc('genereer_factuur', {
+          p_order_ids: item.order_ids,
+        })
+        if (error) throw new Error(`RPC genereer_factuur: ${error.message}`)
+        factuurId = data as number
+      }
+      if (!factuurId) throw new Error('genereer_factuur* returned null')
 
       // 3. Laad factuur + regels + bedrijfsconfig + debiteur + vertegenwoordiger
       const [factuurRes, regelsRes, bedrijfRes, debiteurRes] = await Promise.all([
@@ -361,19 +375,17 @@ serve(async () => {
       const nextAttempts = item.attempts + 1
       const nextStatus = nextAttempts >= MAX_ATTEMPTS ? 'failed' : 'pending'
 
-      // Als we de processing-markering hebben gezet, moeten we de status terugzetten.
-      // Zo niet (mark-fout zelf), dan staat het item al op pending — geen DB-update nodig.
-      if (markedProcessing) {
-        await supabase
-          .from('factuur_queue')
-          .update({
-            status: nextStatus,
-            attempts: nextAttempts,
-            last_error: msg,
-            processing_started_at: null,
-          })
-          .eq('id', item.id)
-      }
+      // Mig 227: claim is altijd gelukt (RPC zet 'processing' atomic),
+      // dus we moeten de status hier terugschrijven naar 'pending' of 'failed'.
+      await supabase
+        .from('factuur_queue')
+        .update({
+          status: nextStatus,
+          attempts: nextAttempts,
+          last_error: msg,
+          processing_started_at: null,
+        })
+        .eq('id', item.id)
       results.push({ id: item.id, status: nextStatus, error: msg })
     }
   }

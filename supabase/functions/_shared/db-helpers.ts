@@ -1,9 +1,21 @@
 // Shared database helpers for snijplanning edge functions
-// Used by: optimaliseer-snijplan, auto-plan-groep
+// Used by: optimaliseer-snijplan, auto-plan-groep, check-levertijd
 
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import type { SnijplanPiece, Roll, Placement } from './ffdh-packing.ts'
-import { snijMargeCm } from './snij-marges.ts'
+
+// ---------------------------------------------------------------------------
+// Kleur-code variants — DB heeft historisch zowel "12" als "12.0" gangbaar
+// (Excel-import bewaart trailing .0). Tot we de kolom zelf normaliseren,
+// moet elke gelijkheidsfilter de twee varianten naast elkaar accepteren.
+// ---------------------------------------------------------------------------
+
+export function getKleurVariants(kleurCode: string): string[] {
+  const variants = [kleurCode]
+  if (!kleurCode.includes('.')) variants.push(`${kleurCode}.0`)
+  if (kleurCode.endsWith('.0')) variants.push(kleurCode.replace(/\.0$/, ''))
+  return variants
+}
 
 // ---------------------------------------------------------------------------
 // Fetch snijplannen from the view
@@ -30,7 +42,7 @@ export async function fetchStukken(
   let query = supabase
     .from('snijplanning_overzicht')
     .select(
-      'id, snij_lengte_cm, snij_breedte_cm, maatwerk_vorm, maatwerk_afwerking, order_nr, klant_naam, afleverdatum',
+      'id, placed_lengte_cm, placed_breedte_cm, maatwerk_vorm, order_nr, klant_naam, afleverdatum',
     )
     .in('status', statuses)
     .is('rol_id', null)
@@ -48,17 +60,12 @@ export async function fetchStukken(
   const { data, error } = await query
   if (error) throw error
 
+  // placed_* uit de view heeft de snij-marge al toegepast (mig 233:
+  // stuk_snij_marge_cm). De packer plaatst de fysieke snij-maat; modal
+  // toont nominaal vs. placed via marge_cm-kolom.
   return (data ?? []).map((sp: Record<string, unknown>) => {
-    // Snij-marge ophogen t.o.v. nominale maat: ZO-afwerking +6 cm, rond/ovaal
-    // +5 cm. De nominale maat in de view is wat de klant besteld heeft; de
-    // packer moet met de fysieke snij-maat werken anders wordt een 120x120
-    // ZO-stuk te krap geplaatst. De modal toont straks beide (besteld + placed).
-    const marge = snijMargeCm(
-      sp.maatwerk_afwerking as string | null,
-      sp.maatwerk_vorm as string | null,
-    )
-    const lengte = (sp.snij_lengte_cm as number) + marge
-    const breedte = (sp.snij_breedte_cm as number) + marge
+    const lengte = sp.placed_lengte_cm as number
+    const breedte = sp.placed_breedte_cm as number
     return {
       id: sp.id as number,
       lengte_cm: lengte,

@@ -1,10 +1,18 @@
 import { supabase } from '@/lib/supabase/client'
 
 /**
- * Per-orderregel vervoerder-resolver (mig 219).
+ * Per-orderregel vervoerder-resolver (mig 219, versimpeld in mig 225).
  *
  * Returnt voor elke pickbare regel van een order welke vervoerder uiteindelijk
- * geldt en waarom. Bron-precedentie: override > regel > klant_fallback > geen.
+ * geldt en waarom. Bron-precedentie (3-niveau ladder, ADR-0008):
+ *   1. override  — handmatige override op order_regels.vervoerder_code
+ *   2. regel     — verzendregel-evaluator (vervoerder_selectie_regels)
+ *   3. geen      — geen matchende regel gevonden
+ * Afhalen-orders returnen bron='afhalen' (geen vervoerder, ongeacht overrides).
+ *
+ * Klant-fallback (edi_handelspartner_config.vervoerder_code) bestaat niet meer
+ * als aparte ladder-bron — bestaande klant-keuzes zijn gemigreerd naar
+ * vervoerder_selectie_regels (mig 224, prio 9000).
  */
 export interface OrderregelVervoerder {
   orderregel_id: number
@@ -13,13 +21,15 @@ export interface OrderregelVervoerder {
   /** Vervoerder die de verzendregel-evaluator zou kiezen op per-regel attributen. */
   evaluator_code: string | null
   evaluator_service: string | null
-  /** edi_handelspartner_config.vervoerder_code voor de debiteur. */
-  klant_fallback_code: string | null
   /** Effectieve keuze die de zending-aanmaak gebruikt. */
   effectief_code: string | null
   effectief_service: string | null
-  /** 'override' | 'regel' | 'klant_fallback' | 'geen' | 'afhalen' */
-  bron: 'override' | 'regel' | 'klant_fallback' | 'geen' | 'afhalen'
+  /** Bron van de effectieve keuze: 'override' | 'regel' | 'geen' | 'afhalen' */
+  bron: 'override' | 'regel' | 'geen' | 'afhalen'
+  /** TRUE = er bestaat al een zending_regel voor deze orderregel; UPDATE op
+   *  `vervoerder_code` zou door de lock-trigger geweigerd worden. UI moet de
+   *  pill als locked tonen. Mig 221. */
+  is_locked: boolean
   uitleg: Record<string, unknown> | null
 }
 

@@ -23,6 +23,7 @@ function buildChain(table: string) {
       return chain
     },
     eq: () => chain,
+    in: () => chain,
     order: () => chain,
     limit: () => chain,
     single: () => Promise.resolve(nextResponse(table)),

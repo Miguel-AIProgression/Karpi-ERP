@@ -13,6 +13,7 @@ set -euo pipefail
 
 ALLOWED_PATHS=(
   'supabase/migrations/218_order_lifecycle_module.sql'
+  'supabase/migrations/218_z_order_lifecycle_security_definer.sql'
 )
 
 # Zoek matches: frontend (excl. node_modules/dist) + nieuwe migraties.

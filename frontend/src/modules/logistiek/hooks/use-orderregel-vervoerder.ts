@@ -38,6 +38,10 @@ export function useUpdateOrderregelVervoerderOverride() {
       // Order-niveau preview kan ook veranderen als override de eerste regel
       // betreft die toevallig de groepskeuze drijft.
       qc.invalidateQueries({ queryKey: ['logistiek', 'vervoerder-preview'] })
+      // Mig 229: vervoerder is een dimensie van de bundel-sleutel — wijziging
+      // betekent dat orders kunnen schuiven tussen voorgestelde-bundels in de
+      // Pick & Ship live preview. Invalideer de view-cache.
+      qc.invalidateQueries({ queryKey: ['voorgestelde-bundels'] })
       // Pickbaarheid-snapshot bevat geen vervoerder, dus daar geen invalidation.
       void vars
     },

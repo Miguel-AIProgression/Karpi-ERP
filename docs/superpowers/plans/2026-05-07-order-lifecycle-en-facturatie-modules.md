@@ -1760,9 +1760,18 @@ DROP TRIGGER IF EXISTS trg_enqueue_factuur ON orders;
 -- Schema-noot: factuur_queue heeft debiteur_nr NOT NULL + type NOT NULL CHECK
 -- IN ('per_zending','wekelijks'). factuurvoorkeur is een enum-type (niet TEXT).
 -- Zie mig 117 + 118.
+--
+-- SECURITY DEFINER: trigger draait in context van aanroepende user
+-- (authenticated bij voltooi_pickronde via order_events INSERT). Die heeft
+-- geen INSERT-policy op factuur_queue (interne queue, alleen system-paths
+-- mogen schrijven). DEFINER omzeilt RLS — zelfde aanpak als
+-- 218_enqueue_factuur_security_definer voor de oude orders-trigger.
 CREATE OR REPLACE FUNCTION enqueue_factuur_voor_event()
 RETURNS TRIGGER
-LANGUAGE plpgsql AS $$
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 DECLARE
   v_voorkeur   factuurvoorkeur;
   v_debiteur_nr INTEGER;

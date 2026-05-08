@@ -1,4 +1,4 @@
-import { supabase } from '../client'
+import { supabase } from '@/lib/supabase/client'
 
 export type FactuurStatus =
   | 'Concept' | 'Verstuurd' | 'Betaald' | 'Herinnering' | 'Aanmaning' | 'Gecrediteerd'

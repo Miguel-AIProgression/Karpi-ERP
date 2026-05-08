@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { Receipt } from 'lucide-react'
 import { StatusBadge } from '@/components/ui/status-badge'
-import { useFacturenVoorOrder } from '@/hooks/use-facturen'
+import { useFacturenVoorOrder } from '@/modules/facturatie'
 import { formatCurrency, formatDate } from '@/lib/utils/formatters'
 
 interface OrderFacturenProps {

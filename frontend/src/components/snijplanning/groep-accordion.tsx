@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { ChevronDown, ChevronRight, Printer, Scissors, Loader2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, Printer, Scissors, Loader2, RotateCcw } from 'lucide-react'
 import { RolUitvoerModal } from './rol-uitvoer-modal'
 import { formatDate } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
@@ -47,7 +47,7 @@ export function GroepAccordion({
   const [activeRolId, setActiveRolId] = useState<number | null>(null)
   const [startError, setStartError] = useState<string | null>(null)
   const genereer = useGenereerSnijvoorstel(); void genereer
-  const autoplan = useTriggerAutoplan(); void autoplan
+  const autoplan = useTriggerAutoplan()
 
   const { data: stukken, isLoading } = useSnijplannenVoorGroep(kwaliteitCode, kleurCode, true, totDatum)
 
@@ -236,9 +236,21 @@ export function GroepAccordion({
                     case 'rol_te_klein':
                       return `Rol te klein: grootste stuk ${tekortReden.stukLange}×${tekortReden.stukKorte}cm past niet op beste beschikbare rol (max ${tekortReden.maxLange}×${tekortReden.maxKorte}cm in ${tekortReden.codes.join(', ')}). Inkoop van grotere rol.`
                     case 'voldoende':
-                      return `Zou plannbaar moeten zijn — ${tekortReden.totaalM2} m² in ${tekortReden.codes.join(', ')}. Draai auto-plan opnieuw.`
+                      return `Zou plannbaar moeten zijn — ${tekortReden.totaalM2} m² in ${tekortReden.codes.join(', ')}.`
                   }
                 })()
+                const handleAutoplan = () => {
+                  setGenError(null)
+                  autoplan.mutate(
+                    { kwaliteitCode, kleurCode, totDatum: totDatum ?? null },
+                    {
+                      onError: (err: unknown) => {
+                        const msg = err instanceof Error ? err.message : 'Auto-plan faalde'
+                        setGenError(msg)
+                      },
+                    },
+                  )
+                }
                 return (
                 <div className={cn('mt-2 border rounded-[var(--radius-sm)] overflow-hidden', redenBg)}>
                   <div className={cn('px-3 py-2 text-xs font-medium flex items-center gap-2 flex-wrap', redenText)}>
@@ -249,6 +261,20 @@ export function GroepAccordion({
                       · {stukkenZonderRol.length} {stukkenZonderRol.length === 1 ? 'stuk' : 'stukken'} ({tekortM2} m²)
                     </span>
                     <span className="w-full mt-1 font-normal">{redenLabel}</span>
+                    {tekortReden?.kind === 'voldoende' && (
+                      <button
+                        onClick={handleAutoplan}
+                        disabled={autoplan.isPending}
+                        className="ml-auto flex items-center gap-1.5 px-2.5 py-1 rounded-[var(--radius-sm)] bg-sky-600 text-white text-xs font-medium hover:bg-sky-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                      >
+                        {autoplan.isPending ? (
+                          <Loader2 size={12} className="animate-spin" />
+                        ) : (
+                          <RotateCcw size={12} />
+                        )}
+                        Auto-plan opnieuw draaien
+                      </button>
+                    )}
                   </div>
                   <table className="w-full text-sm">
                     <thead>

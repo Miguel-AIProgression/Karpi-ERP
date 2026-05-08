@@ -136,8 +136,12 @@ function makeOrderHeader(overrides: Partial<{
   }
 }
 
-function makeDebiteur(debiteur_nr: number, naam: string) {
-  return { debiteur_nr, naam }
+function makeDebiteur(
+  debiteur_nr: number,
+  naam: string,
+  deelleveringen_toegestaan = false,
+) {
+  return { debiteur_nr, naam, deelleveringen_toegestaan }
 }
 
 // ---------------------------------------------------------------------------
@@ -151,7 +155,10 @@ beforeEach(() => {
 describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
   it('scenario 1: view aanwezig met N regels — orders krijgen pickbaarheid uit view', async () => {
     const headers = [makeOrderHeader({ id: 100, order_nr: 'ORD-2026-0001' })]
-    const debiteuren = [makeDebiteur(5001, 'Klantnaam BV')]
+    // deelleveringen_toegestaan=true zodat de gemengde order (pickbaar + 'Wacht
+    // op snijden') zichtbaar blijft. Het wacht-op-snijden-filter heeft een
+    // dedicated scenario verderop.
+    const debiteuren = [makeDebiteur(5001, 'Klantnaam BV', true)]
     const regels = [
       makePickbaarheidRow({ order_regel_id: 1, order_id: 100, regelnummer: 1, is_pickbaar: true }),
       makePickbaarheidRow({
@@ -205,7 +212,10 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     expect(order.totaal_gewicht_kg).toBe(16)
   })
 
-  it('scenario 2: view aanwezig zonder regels — order verschijnt header-only met lege regels-array', async () => {
+  it('scenario 2: view aanwezig zonder regels — header-only orders worden uitgefilterd', async () => {
+    // Een order zonder regels valt niet te picken; magazijn ziet 'm dus niet
+    // op Pick & Ship. Dat hoort bij hetzelfde pickbaarheids-filter dat orders
+    // met enkel onpickbare regels (wacht op snijden/inkoop/...) verbergt.
     const headers = [makeOrderHeader({ id: 100 })]
     const debiteuren = [makeDebiteur(5001, 'Klantnaam BV')]
 
@@ -217,15 +227,15 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
 
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 
-    expect(result).toHaveLength(1)
-    const order = result[0] as PickShipOrder
-    expect(order.regels).toEqual([])
-    expect(order.aantal_regels).toBe(0)
-    expect(order.totaal_m2).toBe(0)
-    expect(order.totaal_gewicht_kg).toBe(0)
+    expect(result).toHaveLength(0)
   })
 
-  it('scenario 3: view ontbreekt (PGRST205) — fallback op order_regels', async () => {
+  it('scenario 3: view ontbreekt (PGRST205) — fallback op order_regels, geen pickbaarheid bekend', async () => {
+    // Wanneer de pickbaarheid-view ontbreekt valt de query terug op
+    // `order_regels` zonder pickbaarheids-info; alle regels staan default op
+    // `is_pickbaar=false`. Het pickbaarheidsfilter laat de order daardoor
+    // weg — veiliger dan iets tonen waarvan de staat onbekend is. Dit is een
+    // dev/legacy-pad, niet de productie-flow.
     const headers = [makeOrderHeader({ id: 100 })]
     const debiteuren = [makeDebiteur(5001, 'Klantnaam BV')]
     const fallbackRegels = [
@@ -253,27 +263,83 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     queueResponse('order_regels', { data: fallbackRegels, error: null })
     queueResponse('producten', { data: [], error: null })
     queueResponse('zendingen', { data: [], error: null })
-    // Tweede order_regels-call voor het gewicht-aggregaat — fallbackRegels
-    // hebben geen gewicht_kg-veld, dus totaal_gewicht_kg blijft 0.
     queueResponse('order_regels', { data: [], error: null })
 
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 
-    expect(result).toHaveLength(1)
-    const order = result[0] as PickShipOrder
-    expect(order.regels).toHaveLength(1)
-    // Fallback-regels: is_pickbaar altijd false, bron + locatie null
-    expect(order.regels[0].is_pickbaar).toBe(false)
-    expect(order.regels[0].bron).toBeNull()
-    expect(order.regels[0].fysieke_locatie).toBeNull()
-    expect(order.regels[0].orderaantal).toBe(3)
+    // Fallback-regels staan op is_pickbaar=false en de klant zonder
+    // deelleveringen ziet de order niet. Dit is het correcte gedrag voor
+    // een productie-omgeving zonder pickbaarheid-view (ongebruikelijk maar
+    // veilig: liever niets tonen dan onbekende staat).
+    expect(result).toHaveLength(0)
   })
 
-  it('scenario 4: order zonder regels — header verschijnt zonder regels-rijen', async () => {
-    // Dit dekt het edge-geval waarin een order wel openstaat maar (om wat reden
-    // ook) géén orderregel_pickbaarheid- of order_regels-rijen heeft. De order
-    // moet alsnog in de output staan met regels=[] zodat de magazijn-overview
-    // 'm kan tonen ipv stilletjes te verbergen.
+  it('scenario 5: order met onpickbare regel + klant zonder deelleveringen → uitgefilterd', async () => {
+    // Geldt voor elke onpickbaarheids-reden ('snijden', 'inkoop', 'confectie',
+    // 'inpak'). Klant zonder deelleveringen ziet alleen orders waarbij álles
+    // pickbaar is; gemixte orders blijven verborgen tot het laatste regel
+    // klaar is. Hier: 'wacht op snijden' als representatieve reden.
+    const headers = [makeOrderHeader({ id: 100, order_nr: 'ORD-2026-0040' })]
+    const debiteuren = [makeDebiteur(5001, 'Klantnaam BV', false)]
+    const regels = [
+      makePickbaarheidRow({ order_regel_id: 1, order_id: 100, regelnummer: 1, is_pickbaar: true }),
+      makePickbaarheidRow({
+        order_regel_id: 2,
+        order_id: 100,
+        regelnummer: 2,
+        artikelnr: null,
+        is_maatwerk: true,
+        orderaantal: 1,
+        is_pickbaar: false,
+        bron: 'snijplan',
+        wacht_op: 'snijden',
+      }),
+    ]
+
+    queueResponse('orders', { data: headers, error: null })
+    queueResponse('debiteuren', { data: debiteuren, error: null })
+    queueResponse('orderregel_pickbaarheid', { data: regels, error: null })
+    queueResponse('producten', { data: [], error: null })
+    queueResponse('order_regels', { data: [], error: null })
+    queueResponse('zendingen', { data: [], error: null })
+
+    const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
+
+    expect(result).toHaveLength(0)
+  })
+
+  it('scenario 6: alle regels wacht_op=snijden + klant met deelleveringen → uitgefilterd', async () => {
+    // Zelfs met deelleveringen toegestaan moet er minstens één pickbare regel
+    // zijn — anders valt er niks te shippen.
+    const headers = [makeOrderHeader({ id: 100, order_nr: 'ORD-2026-0040' })]
+    const debiteuren = [makeDebiteur(5001, 'Klantnaam BV', true)]
+    const regels = [
+      makePickbaarheidRow({
+        order_regel_id: 1,
+        order_id: 100,
+        regelnummer: 1,
+        is_pickbaar: false,
+        bron: 'snijplan',
+        wacht_op: 'snijden',
+      }),
+    ]
+
+    queueResponse('orders', { data: headers, error: null })
+    queueResponse('debiteuren', { data: debiteuren, error: null })
+    queueResponse('orderregel_pickbaarheid', { data: regels, error: null })
+    queueResponse('producten', { data: [], error: null })
+    queueResponse('order_regels', { data: [], error: null })
+    queueResponse('zendingen', { data: [], error: null })
+
+    const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
+
+    expect(result).toHaveLength(0)
+  })
+
+  it('scenario 4: order zonder regels — uitgefilterd (niets te picken)', async () => {
+    // Webshop-orders komen soms binnen zonder gematchte productregels (zie
+    // ORD-2026-2039 in de Floorpassion-import). Magazijn kan er niets mee;
+    // het pickbaarheidsfilter haalt ze daarom uit Pick & Ship.
     const headers = [makeOrderHeader({ id: 999, order_nr: 'ORD-2026-0099' })]
     const debiteuren = [makeDebiteur(5001, 'Klantnaam BV')]
 
@@ -285,10 +351,34 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
 
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 
-    expect(result).toHaveLength(1)
-    const order = result[0] as PickShipOrder
-    expect(order.order_nr).toBe('ORD-2026-0099')
-    expect(order.regels).toEqual([])
-    expect(order.aantal_regels).toBe(0)
+    expect(result).toHaveLength(0)
+  })
+
+  it('scenario 7: order met wacht_op=inkoop + klant zonder deelleveringen → uitgefilterd', async () => {
+    // Zelfde regel als scenario 5 maar voor inkoop-tekort. Bevestigt dat het
+    // filter generiek werkt, niet alleen voor 'snijden'.
+    const headers = [makeOrderHeader({ id: 100, order_nr: 'ORD-2026-2033' })]
+    const debiteuren = [makeDebiteur(5001, 'WHOON OISTERWIJK', false)]
+    const regels = [
+      makePickbaarheidRow({
+        order_regel_id: 1,
+        order_id: 100,
+        regelnummer: 1,
+        is_pickbaar: false,
+        bron: null,
+        wacht_op: 'inkoop',
+      }),
+    ]
+
+    queueResponse('orders', { data: headers, error: null })
+    queueResponse('debiteuren', { data: debiteuren, error: null })
+    queueResponse('orderregel_pickbaarheid', { data: regels, error: null })
+    queueResponse('producten', { data: [], error: null })
+    queueResponse('order_regels', { data: [], error: null })
+    queueResponse('zendingen', { data: [], error: null })
+
+    const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
+
+    expect(result).toHaveLength(0)
   })
 })

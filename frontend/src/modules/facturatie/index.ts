@@ -7,5 +7,27 @@
 // Trigger sinds mig 219: AFTER INSERT ON order_events
 // (event_type='pickronde_voltooid' AND status_na='Verzonden').
 
-// Inhoud volgt in tasks 2.2-2.7
-export {}
+// Pages — geconsumeerd door router
+export { FactuurDetailPage } from './pages/factuur-detail'
+export { FacturatieOverviewPage } from './pages/facturatie-overview'
+
+// Components
+export { FactuurLijst } from './components/factuur-lijst'
+
+// Hooks
+export * from './hooks/use-facturen'
+
+// Types (for external consumers)
+export type { FactuurVoorOrder } from './queries/facturen'
+
+// Klant-factuur-instellingen
+export {
+  fetchKlantFactuurInstellingen,
+  updateKlantFactuurInstellingen,
+  type FactuurVoorkeur,
+  type KlantFactuurInstellingen,
+} from './queries/klant-factuur-instellingen'
+export {
+  useKlantFactuurInstellingen,
+  useUpdateKlantFactuurInstellingen,
+} from './hooks/use-klant-factuur-instellingen'

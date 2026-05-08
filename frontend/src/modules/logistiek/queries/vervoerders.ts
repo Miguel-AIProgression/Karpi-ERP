@@ -143,10 +143,9 @@ export async function createVervoerder(input: VervoerderCreateInput) {
 /**
  * Recente zendingen die via deze vervoerder lopen.
  *
- * Koppeling: `zendingen → orders → debiteuren → edi_handelspartner_config`.
- * We gebruiken een filter op `edi_handelspartner_config.vervoerder_code` via
- * de geneste relatie en filteren daarna client-side de rijen die geen match
- * hebben (Supabase laat de niet-matchende rijen wél staan met `null`-config).
+ * Bron: filter direct op `zendingen.vervoerder_code`. (Vóór ADR-0008 stond
+ * hier een opmerking over een join via `edi_handelspartner_config` — die
+ * kolom bestaat niet meer; de query gebruikt sinds altijd zendingen-direct.)
  */
 export interface RecenteZending {
   id: number
@@ -169,7 +168,7 @@ export async function fetchRecenteZendingenVervoerder(
     .select(
       `
       id, zending_nr, status, track_trace, verzenddatum, created_at,
-      orders!inner (
+      orders!zendingen_order_id_fkey!inner (
         order_nr, debiteur_nr,
         debiteuren!inner (
           naam

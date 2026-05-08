@@ -208,7 +208,6 @@ export function OrderPickCard({ order }: Props) {
         {/* Vervoerder-selector */}
         <div onClick={(e) => e.stopPropagation()} className="flex-shrink-0">
           <VervoerderInlineSelect
-            debiteurNr={order.debiteur_nr}
             afhalen={order.afhalen}
             orderId={order.order_id}
           />

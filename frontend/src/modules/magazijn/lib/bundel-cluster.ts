@@ -2,11 +2,22 @@
 // vervoerder). Orders met identieke combinatie eindigen in één bundel; de
 // rest blijft solo. De backend-RPC `start_pickronde_bundel` verwacht exact
 // deze garanties: zelfde debiteur (door de klant-cluster heen), zelfde
-// adres-match-key, zelfde vervoerder. De normalisatie hier moet 1-op-1 lopen
-// met `_normaliseer_afleveradres` in mig 219 — bij wijzigingen beide kanten
-// updaten.
-import type { ResolvedVervoerder } from '@/modules/logistiek'
+// adres-match-key, zelfde vervoerder, zelfde verzendweek (mig 230).
+//
+// Adres-normalisatie loopt via `normaliseerAdresKey` (gedeelde util,
+// 1-op-1 spiegel van SQL `_normaliseer_afleveradres`). Verzendweek is hier
+// impliciet (de UI-pagina groepeert al per week-sectie); voor de explicit
+// 4D-bundel-sleutel gebruik je `bundelSleutel` uit `lib/orders/bundel-sleutel`.
 import type { PickShipOrder } from './types'
+import { normaliseerAdresKey } from '@/lib/orders/normaliseer-adres'
+
+/** Minimale vervoerder-resolutie per order voor cluster-doeleinden. */
+export interface ResolvedVervoerder {
+  /** Effectieve vervoerder-code, of `null` als geen (incl. afhalen). */
+  code: string | null
+  /** TRUE als order op afhalen staat — geen vervoerder maar wel een filter-keuze. */
+  afhalen: boolean
+}
 
 export interface BundelCluster {
   /** Match-sleutel voor groepering: `${vervoerder}::${adres-key}`. */
@@ -18,13 +29,6 @@ export interface BundelCluster {
   /** Normalised adres-snippet voor tooltip. */
   adresLabel: string
   orders: PickShipOrder[]
-}
-
-function normaliseerAdresKey(o: PickShipOrder): string {
-  const postcode = (o.afl_postcode ?? '').replace(/\s+/g, '').toUpperCase() || '?'
-  const adres = (o.afl_adres ?? '').replace(/\s+/g, ' ').trim().toUpperCase() || '?'
-  const land = (o.afl_land ?? '').trim().toUpperCase() || '?'
-  return `${postcode}|${adres}|${land}`
 }
 
 function vervoerderSleutel(v: ResolvedVervoerder | undefined): string {

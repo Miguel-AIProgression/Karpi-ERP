@@ -44,4 +44,4 @@ export type {
 // 'm nodig om binnen een klant-cluster orders met identiek afleveradres +
 // vervoerder samen in 1 bundel-zending te starten (mig 219).
 export { clusterOpAdresEnVervoerder } from './lib/bundel-cluster'
-export type { BundelCluster } from './lib/bundel-cluster'
+export type { BundelCluster, ResolvedVervoerder } from './lib/bundel-cluster'

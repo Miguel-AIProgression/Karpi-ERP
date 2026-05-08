@@ -5,7 +5,7 @@ import { PageHeader } from '@/components/layout/page-header'
 import { StatusTabs } from '@/components/orders/status-tabs'
 import { OrdersTable } from '@/components/orders/orders-table'
 import { useOrders, useStatusCounts } from '@/hooks/use-orders'
-import { useFacturenVoorOrders } from '@/hooks/use-facturen'
+import { useFacturenVoorOrders } from '@/modules/facturatie'
 import type { OrderSortField, SortDirection } from '@/lib/supabase/queries/orders'
 
 export function OrdersOverviewPage() {

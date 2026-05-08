@@ -23,10 +23,15 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Loader2, Printer, X } from 'lucide-react'
+import { useQueries } from '@tanstack/react-query'
 import { startPickrondenBundel, startPickrondenVoorOrder } from '../queries/zendingen'
 import { useVervoerders } from '../hooks/use-vervoerders'
-import { useVervoerderPerOrder } from '../hooks/use-vervoerder-per-order'
+import { fetchEffectieveVervoerderPerOrderregel } from '../queries/orderregel-vervoerder'
+import { aggregeerVervoerderKeuzeVoorOrder } from '../queries/vervoerder-keuze'
+
+const STALE_30_SEC = 30_000
 import { clusterOpAdresEnVervoerder } from '@/modules/magazijn'
+import type { ResolvedVervoerder } from '@/modules/magazijn'
 import { PickerDropdown } from '@/components/orders/picker-dropdown'
 import { useQueryClient } from '@tanstack/react-query'
 import { cn } from '@/lib/utils/cn'
@@ -95,20 +100,30 @@ export function BulkVerzendsetButton({ orders, context }: BulkVerzendsetButtonPr
   const heeftActieveVervoerder = vervoerders.some((v) => v.actief)
   const vervoerderOk = !heeftVerzend || heeftActieveVervoerder
 
-  // Cache-deelt met pick-overview's eigen useVervoerderPerOrder via dezelfde
-  // queryKeys ('logistiek/vervoerder-preview/<id>' + 'logistiek/vervoerder-
-  // config-batch/<debs>'). De cluster-helper gebruikt die map om identieke
-  // (adres × vervoerder)-paren te bundelen vóór de RPC-aanroepen.
-  const minimaalVoorVervoerder = useMemo(
-    () =>
-      pickbaar.map((o) => ({
-        order_id: o.order_id,
-        debiteur_nr: o.debiteur_nr,
+  // Per pickbare order: haal de per-regelvervoerder op en aggregeer naar één
+  // effectieve code. Cache-deelt via dezelfde queryKeys als de inline-select.
+  // De cluster-helper gebruikt de map om identieke (adres × vervoerder)-paren
+  // te bundelen vóór de RPC-aanroepen (mig 222, ADR-0008).
+  const perOrderQueries = useQueries({
+    queries: pickbaar.map((o) => ({
+      queryKey: ['logistiek', 'orderregel-vervoerder', o.order_id],
+      queryFn: () => fetchEffectieveVervoerderPerOrderregel(o.order_id),
+      staleTime: STALE_30_SEC,
+    })),
+  })
+  const vervoerderMap = useMemo(() => {
+    const m = new Map<number, ResolvedVervoerder>()
+    pickbaar.forEach((o, i) => {
+      const q = perOrderQueries[i]
+      const regels = q?.data ?? []
+      const aggregaat = aggregeerVervoerderKeuzeVoorOrder(regels)
+      m.set(o.order_id, {
+        code: aggregaat.soort === 'uniform' ? aggregaat.code : null,
         afhalen: o.afhalen,
-      })),
-    [pickbaar],
-  )
-  const { map: vervoerderMap } = useVervoerderPerOrder(minimaalVoorVervoerder)
+      })
+    })
+    return m
+  }, [pickbaar, perOrderQueries])
 
   // Clusters: bundels (≥2 orders) komen eerst, daarna solo's.
   const clusters = useMemo(
@@ -184,6 +199,9 @@ export function BulkVerzendsetButton({ orders, context }: BulkVerzendsetButtonPr
       // Invalideer pick-ship + zendingen-overzicht in één keer ná de batch.
       qc.invalidateQueries({ queryKey: ['logistiek', 'zendingen'] })
       qc.invalidateQueries({ queryKey: ['pick-ship'] })
+      // Mig 229: orders die nu in een actieve zending zitten verdwijnen uit
+      // voorgestelde-bundels-view; refetch de live preview.
+      qc.invalidateQueries({ queryKey: ['voorgestelde-bundels'] })
 
       setShowPickerPopover(false)
       const qs = encodeURIComponent(zendingNrs.join(','))

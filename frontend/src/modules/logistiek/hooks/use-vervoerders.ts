@@ -107,8 +107,6 @@ export function useUpdateVervoerder() {
       qc.invalidateQueries({ queryKey: ['logistiek', 'vervoerder', vars.code] })
       qc.invalidateQueries({ queryKey: ['logistiek', 'vervoerders', 'list'] })
       qc.invalidateQueries({ queryKey: ['logistiek', 'vervoerder-stats'] })
-      // De oude lichtgewicht hook in `use-vervoerder-config.ts` cached ook onder
-      // ['logistiek', 'vervoerders'] — gooi die ook leeg zodat dropdowns updaten.
       qc.invalidateQueries({ queryKey: ['logistiek', 'vervoerders'] })
     },
   })
