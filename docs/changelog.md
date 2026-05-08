@@ -1,5 +1,46 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-08 — Drie shallow queries verhuisd naar SQL (mig 237-239)
+
+Architectuur-skill `/improve-codebase-architecture` op `frontend/src/lib/supabase/queries/` losgelaten. Drie functies maakten relationele orchestratie of aggregatie client-side die in SQL hoort — zelfde patroon als mig 236 (`claims_voor_product`).
+
+- **Mig 237 `confectie_status_counts()`** — vervangt [`fetchConfectieStatusCounts`](../frontend/src/lib/supabase/queries/confectie.ts) dat alle rijen uit `confectie_overzicht` naar de browser sleepte puur om in JS een `Map` te bouwen voor `COUNT(*) GROUP BY status`. Volgt het bestaande `snijplanning_status_counts_gefilterd`-patroon zodat tab-tellers één shape hebben.
+- **Mig 238 `snijplanning_kpis_gefilterd(p_tot_datum)`** — vervangt drie parallelle `count: 'exact', head: true`-queries in [`fetchSnijplanningKpis`](../frontend/src/lib/supabase/queries/snijplanning.ts). De ISO-week-grenzen (`weekRange()`-helper in JS) zijn weg; Postgres `date_trunc('week', …)` is nu de single source. 3 round-trips → 1, en de pattern-drift met de buurman `*_status_counts_gefilterd` is opgelost.
+- **Mig 239 `handmatige_keuzes_voor_order(p_order_id)`** — vervangt drie sequentiële queries in [`fetchHandmatigeKeuzesVoorOrder`](../frontend/src/lib/supabase/queries/reserveringen.ts) (order_regels → order_reserveringen → producten). Filter `is_handmatig=true AND status='actief'` leeft nu uitsluitend in SQL ipv mengeling van `.eq()`-clauses + JS `.filter()`. Spiegelt mig 236 één-op-één.
+
+Geen schema-wijzigingen; alle drie de RPCs zijn `STABLE` en read-only. Type-check + 194 tests groen.
+
+**Files**: [`237_confectie_status_counts_rpc.sql`](../supabase/migrations/237_confectie_status_counts_rpc.sql), [`238_snijplanning_kpis_gefilterd_rpc.sql`](../supabase/migrations/238_snijplanning_kpis_gefilterd_rpc.sql), [`239_handmatige_keuzes_voor_order_rpc.sql`](../supabase/migrations/239_handmatige_keuzes_voor_order_rpc.sql), aangepast [`confectie.ts`](../frontend/src/lib/supabase/queries/confectie.ts), [`snijplanning.ts`](../frontend/src/lib/supabase/queries/snijplanning.ts), [`reserveringen.ts`](../frontend/src/lib/supabase/queries/reserveringen.ts).
+
+## 2026-05-08 — ADR-0011 aangenomen: Debiteur als achtste deep verticale Module
+
+Architectuur-skill `/improve-codebase-architecture` op de "Debiteur"-shallow-plek. Klant-detail-pagina mengt 8 tabs (masterdata, adressen, orders, facturering, klanteigen namen, artikelnummers, prijslijst, EDI) zonder Module-eigenaar; vier andere Modules (Facturatie ADR-0007, Vervoerder-keuze ADR-0008, EDI, Orders ADR-0001) consumeren klant-velden zonder duidelijke seam.
+
+[ADR-0011](adr/0011-debiteur-als-deep-module.md) introduceert `modules/debiteuren/` als achtste domein-Module na Maatwerk (ADR-0009). Vier ankers in grilling-sessie:
+
+- **Naam strikt DB-aligned**: folder `modules/debiteuren/`, types `DebiteurRow`/`DebiteurDetail`, hooks `useDebiteur*`, page-bestanden `debiteur-detail.tsx`. Routes blijven `/klanten/...`, UI-tekst blijft "Klant" — alleen code- en docs-discipline. Volgt ADR-0009-pattern (Maatwerk Anker 1).
+- **Scope medium**: Module bezit masterdata + afleveradressen + klanteigen-namen-admin (CRUD) + klant-artikelnummers-admin. Slot-tabs voor Orders/Facturering/Prijslijst/EDI komen uit hun eigen Modules (of, voor Orders en Prijslijst, via tussentijdse directe imports).
+- **Twee seam-stijlen**: hooks-import voor host-pagina + admin-mutations; **slot-component `<KlantBenaming/>`** voor cross-Module display in orders/facturatie/magazijn (4-prop interface, self-fetcht via `resolve_klanteigen_naam`-RPC). Backend-callers (factuur-RPC, EDI-builder, pakbon-edge) consumeren dezelfde SQL-RPC direct — twee adapters maken het een echt seam, geen TS-spiegel van de 5-niveaus fallback.
+- **Slot-deps op niet-bestaande Modules**: tussentijdse directe imports voor Orders-tab en Prijslijst-tab; ADR markeert expliciet als technisch krediet dat verhuist zodra ADR-0001 uitgevoerd is / Prijslijst-Module ontstaat. Voorkomt blokkade op Orders-Module-uitvoering (vereist 20-cases regression-baseline).
+
+Bug-fixes meegenomen in migratiepad: `useVertegenwoordigers` verhuist uit `use-klanten.ts` naar `use-medewerkers.ts` (post-ADR-0004 hoort daar); `useKleurenVoorKwaliteit` verhuist naar Producten-hooks. Cross-cuts buiten scope: tier-berekening (SQL-cron), adres-snapshot-helper (komt mee met Orders-Module), inkoopgroep-modus van klanteigen-namen-tab (V2-uitbreiding via `inkoopgroepCode`-prop).
+
+Migratiepad in 8 incrementele stappen (chore folder + lege barrel → feat `<KlantBenaming/>` → refactor queries/hooks/pages → adoptie in andere Modules → splitsen afleveradressen-tab → cleanup → docs). Geen DB-migratie. Eerste vervolg-ADRs op de backlog: Producten-Module (#2 uit ADR-0009-backlog), Orders-Module-uitvoering (ADR-0001), Prijslijst-Module, Medewerkers-Module.
+
+[`data-woordenboek.md`](data-woordenboek.md) krijgt term *Debiteur-Module*; [`architectuur.md`](architectuur.md) Module-graf-paragraaf aangevuld + slot-pattern-sectie krijgt `<KlantBenaming/>`-voorbeeld.
+
+## 2026-05-08 — Pick & Ship bundel-cluster volgt nu écht de 4D bundel-sleutel
+
+Op de Pick & Ship-overview groepeerde [`clusterOrdersOpKlant`](../frontend/src/modules/magazijn/lib/groeperen.ts) orders puur op `debiteur_nr`, terwijl de bundel-definitie (mig 229) 4-dimensionaal is — `(debiteur × adres × effectieve vervoerder × verzendweek)`. Gevolg: twee FLOORPASSION-orders met verschillende vervoerders (Verhoek + HST) verschenen onder één "BUNDEL FLOORPASSION 2 orders"-header, wat suggereerde dat ze één gezamenlijke verzending zouden vormen — terwijl de backend correct twee aparte zendingen + twee verzendkosten-regels (mig 232) had aangemaakt.
+
+Fix is puur frontend-clustering: `clusterOrdersOpKlant` (en transitief `groepeerOrdersOpLand`) accepteren nu een `bundelSleutelByOrderId`-map en clusteren op de bundel-sleutel uit `voorgestelde_zending_bundels`. Orders zonder bundel-entry (geen afleverdatum, actieve zending) krijgen elk een eigen solo-cluster, dus de klant-grouping als zodanig vervalt — sortering blijft op `(klant_naam, order_nr)` zodat dezelfde-klant-clusters visueel naast elkaar blijven staan. Pick-week-sectie bouwt nu naast `bundelByOrderId` (lookup voor decoratie) ook `sleutelByOrderId` (drijft de clustering).
+
+Daarnaast is de **drempel-progressbar** uit [`VoorgesteldeBundelInfo`](../frontend/src/modules/magazijn/components/voorgestelde-bundel-info.tsx) verwijderd: die toonde "€ 347 van € 500 — nog € 153 tot gratis" boven elke bundel, wat factuur-/commerciële informatie is die voor order-pickers irrelevant is. De truck-icoon + adres-snippet + besparing-badge blijven staan zodat de bundel als bundel herkenbaar is.
+
+Tests in [`groeperen.test.ts`](../frontend/src/modules/magazijn/lib/__tests__/groeperen.test.ts) bijgewerkt: nieuwe scenario's bewijzen dat zelfde-klant-orders met verschillende bundel-sleutels in losse clusters belanden, en dat orders zonder bundel-entry een solo-cluster krijgen zonder andere bundels te besmetten.
+
+**Files**: aangepast [`groeperen.ts`](../frontend/src/modules/magazijn/lib/groeperen.ts), [`pick-week-sectie.tsx`](../frontend/src/modules/magazijn/components/pick-week-sectie.tsx), [`voorgestelde-bundel-info.tsx`](../frontend/src/modules/magazijn/components/voorgestelde-bundel-info.tsx), [`groeperen.test.ts`](../frontend/src/modules/magazijn/lib/__tests__/groeperen.test.ts).
+
 ## 2026-05-08 — Drie kleine deepening-ingrepen (Klanteigen-namen, claims_voor_product, order-form-extracts)
 
 Architectuur-skill `/improve-codebase-architecture` op vier shallow plekken na ADR-0009/0010. Drie eenvoudige refactors zonder ADR-niveau-discussie of Module-folder-werk; mechanische concentratie van verspreide kennis.
@@ -52,7 +93,7 @@ Architectuur-deepening (skill `/improve-codebase-architecture`). De Snij-marge h
 
 **Niet aangeraakt**: SQL-functie `stuk_snij_marge_cm()` zelf (mig 126) blijft ongewijzigd — alleen z'n COMMENT verwijst niet meer naar TS-spiegels. `snijplanning_tekort_analyse` (mig 134) gebruikt de SQL-functie nog steeds inline.
 
-## 2026-05-08 — Maatwerk-Module — ADR-0009 (architectuur-beslissing, geen code-verhuizing)
+## 2026-05-08 — Maatwerk-Module — ADR-0009 + uitvoering
 
 Architectuur-review (2026-05-08) wees Maatwerk aan als #1 deepening-kandidaat: 39 exports verspreid over [`lib/supabase/queries/op-maat.ts`](../frontend/src/lib/supabase/queries/op-maat.ts) (761 regels) + 40 maatwerk-touchpoints in [`order-form.tsx`](../frontend/src/components/orders/order-form.tsx) (939 regels) + [`kwaliteit-first-selector.tsx`](../frontend/src/components/orders/kwaliteit-first-selector.tsx) (783 regels) + losse utils en admin-pages. Geen Module-eigenaar voor een prominent domein-concept.
 
@@ -63,6 +104,19 @@ Grilling-loop op 2026-05-08 leverde drie ankers:
 3. **Seam: hooks-import** — order-form blijft host; alle data + formules via barrel `@/modules/maatwerk` (geen slot-pattern, geen row-splitsing). Vergelijk Facturatie-Module (ADR-0007) waar `klant-facturering-tab.tsx` ook host bleef.
 
 Deze entry is alleen documenten-werk: nieuwe [`docs/adr/0009-maatwerk-als-deep-module.md`](adr/0009-maatwerk-als-deep-module.md), nieuwe sectie `## Maatwerk` in [`data-woordenboek.md`](data-woordenboek.md), sectie "Op Maat Module" in [`architectuur.md`](architectuur.md) hernoemd naar "Maatwerk-Module" en uitgebreid met seam-beschrijving + cross-cut-grenzen, en de Module-graf-paragraaf vermeldt nu zeven domein-modules. Code-verhuizing (~12 files, splitsing van `op-maat.ts`, route-redirect voor admin-pages) volgt in een aparte PR.
+
+**Uitvoering 2026-05-08 (commits via 10 incremental refactor-stappen):**
+
+- Module-folder `frontend/src/modules/maatwerk/` opgebouwd met:
+  - `lib/{oppervlak,prijs,leverdatum}.ts` — pure formules (geen DB)
+  - `queries/{maatwerk-runtime,maatwerk-instellingen}.ts` — split van 761-regels-`op-maat.ts` op concern (20 reads + 9 types in runtime, 10 admin-mutations in instellingen)
+  - `components/` — 9 verhuisde components (5 runtime + 4 admin); `OpMaatSelector` hernoemd naar `MaatwerkSelector`
+  - `hooks/use-maatwerk-instellingen.ts` — gecombineerde admin-hooks (was `use-vormen.ts` + `use-afwerkingen.ts`)
+  - `pages/{vormen,afwerkingen}-instellingen.tsx`
+  - `index.ts` — barrel met alle publieke API
+- 17 oude files verwijderd; 6 consumer-files (order-form, order-line-editor, 3 producten-pages, router) overgezet naar `@/modules/maatwerk`
+- ESLint-regressie-regel `no-restricted-imports` voor 3 oude paden toegevoegd in `eslint.config.js`
+- Tests verhuisd naar `modules/maatwerk/queries/__tests__/maatwerk-runtime.test.ts`; vitest run = 194 tests groen
 
 ## 2026-05-08 — Dynamische zending-bundeling met wekelijkse verzamelfactuur (mig 228-232)
 
