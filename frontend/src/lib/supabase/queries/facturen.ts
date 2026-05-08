@@ -112,7 +112,11 @@ export async function renderFactuurPdfBlobUrl(factuurId: number): Promise<string
   } else if (data instanceof ArrayBuffer) {
     blob = new Blob([data], { type: 'application/pdf' })
   } else if (data instanceof Uint8Array) {
-    blob = new Blob([data], { type: 'application/pdf' })
+    // Cast naar ArrayBuffer omdat TS 5.7+ Uint8Array.buffer als
+    // ArrayBufferLike (ArrayBuffer | SharedArrayBuffer) typeert. fetch/edge-
+    // function-responses zijn nooit shared, dus de cast is runtime-veilig.
+    const ab = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer
+    blob = new Blob([ab], { type: 'application/pdf' })
   } else {
     throw new Error('Onverwacht response-type van factuur-pdf edge function')
   }
