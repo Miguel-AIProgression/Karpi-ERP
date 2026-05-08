@@ -40,20 +40,17 @@ BEGIN
   FROM edi_handelspartner_config ehc
   JOIN vervoerders v ON v.code = ehc.vervoerder_code
   WHERE ehc.vervoerder_code IS NOT NULL
-    -- Idempotentie: zoek bestaande regel met exact deze conditie + notitie-marker.
+    -- Idempotentie: zoek bestaande regel met exact deze (conditie, vervoerder_code).
     AND NOT EXISTS (
       SELECT 1 FROM vervoerder_selectie_regels vsr
        WHERE vsr.vervoerder_code = ehc.vervoerder_code
          AND vsr.conditie = jsonb_build_object('debiteur_nrs', jsonb_build_array(ehc.debiteur_nr))
-         AND vsr.notitie LIKE 'Auto-gemigreerd uit klant-fallback%'
     );
 
   GET DIAGNOSTICS v_aantal = ROW_COUNT;
   RAISE NOTICE 'Mig 224: % verzendregels aangemaakt uit klant-fallbacks', v_aantal;
 END
 $$;
-
-NOTIFY pgrst, 'reload schema';
 
 -- Idempotentie-assertie: aantal auto-gemigreerde regels mag MAX 1× per debiteur zijn.
 DO $$
@@ -72,3 +69,4 @@ BEGIN
   END IF;
 END
 $$;
+NOTIFY pgrst, 'reload schema';
