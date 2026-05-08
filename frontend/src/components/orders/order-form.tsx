@@ -8,12 +8,12 @@ import { LevertijdSuggestie } from './levertijd-suggestie'
 import { LeverModusDialog, type LeverModusTekort } from './lever-modus-dialog'
 import type { LeverModus } from '@/lib/supabase/queries/reserveringen'
 import { berekenRegelDekking } from '@/lib/utils/regel-dekking'
-import { createOrder, updateOrderWithLines, deleteOrder, resolveOrderlinePrice, fetchKlanteigenNaam, fetchKlantArtikelnummer, setUitwisselbaarClaims } from '@/lib/supabase/queries/order-mutations'
+import { createOrder, updateOrderWithLines, deleteOrder, resolveOrderlinePrice, fetchKlantArtikelnummer, setUitwisselbaarClaims } from '@/lib/supabase/queries/order-mutations'
 import type { OrderFormData, OrderRegelFormData, PrijsBron, PrijsBreakdown } from '@/lib/supabase/queries/order-mutations'
+import { fetchKlanteigenNaam } from '@/lib/supabase/queries/klanteigen-namen'
 import { supabase } from '@/lib/supabase/client'
-import { fetchOrderConfig, type OrderConfig } from '@/lib/supabase/queries/order-config'
+import { fetchOrderConfig } from '@/lib/supabase/queries/order-config'
 import { triggerAutoplan, fetchAutoplanningConfig } from '@/lib/supabase/queries/auto-planning'
-import { berekenAfleverdatum } from '@/lib/utils/afleverdatum'
 import { berekenMaatwerkAfleverdatumViaSeam } from '@/lib/utils/maatwerk-leverdatum'
 import {
   verzendWeekIsoString,
@@ -21,7 +21,9 @@ import {
   verzendWeekVoor,
   verzendWeekRelatief,
 } from '@/lib/orders/verzendweek'
-import { SHIPPING_PRODUCT_ID, SHIPPING_THRESHOLD, SHIPPING_COST } from '@/lib/constants/shipping'
+import { applyShippingLogic } from '@/lib/orders/verzend-regel'
+import { bepaalOrderAfleverdatum } from '@/lib/orders/order-afleverdatum'
+import { SHIPPING_PRODUCT_ID } from '@/lib/constants/shipping'
 import { SPOED_PRODUCT_ID, SPOED_FALLBACK_BEDRAG } from '@/lib/constants/spoed'
 
 function getISOWeek(dateStr: string): number {
@@ -80,26 +82,8 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
 
   const { data: orderConfig } = useQuery({ queryKey: ['order-config'], queryFn: fetchOrderConfig })
 
-  function computeAfleverdatum(
-    currentRegels: OrderRegelFormData[],
-    currentClient: SelectedClient | null,
-    cfg: OrderConfig | undefined,
-  ) {
-    const contentRegels = currentRegels.filter(r => r.artikelnr !== SHIPPING_PRODUCT_ID)
-    const heeftStandaardMaat = contentRegels.some(r => !r.is_maatwerk)
-    const heeftMaatwerk = contentRegels.some(r => r.is_maatwerk)
-    const standaardMaatWerkdagen = currentClient?.standaard_maat_werkdagen ?? cfg?.standaard_maat_werkdagen ?? 5
-    const maatwerkWeken = currentClient?.maatwerk_weken ?? cfg?.maatwerk_weken ?? 4
-    return berekenAfleverdatum({
-      heeftStandaardMaat: heeftStandaardMaat || contentRegels.length === 0,
-      heeftMaatwerk,
-      standaardMaatWerkdagen,
-      maatwerkWeken,
-    })
-  }
-
   const afleverdatumInfo = useMemo(
-    () => computeAfleverdatum(regels, client, orderConfig),
+    () => bepaalOrderAfleverdatum(regels, client, orderConfig),
     [regels, client, orderConfig],
   )
 
@@ -129,7 +113,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
 
   function applyAfleverdatum(nieuwRegels: OrderRegelFormData[], c: SelectedClient | null) {
     if (afleverdatumOverridden) return
-    const info = computeAfleverdatum(nieuwRegels, c, orderConfig)
+    const info = bepaalOrderAfleverdatum(nieuwRegels, c, orderConfig)
     if (!info.langsteDatum) return
     const week = String(getISOWeek(info.langsteDatum))
     setHeader((h) => ({ ...h, afleverdatum: info.langsteDatum!, week }))
@@ -139,47 +123,6 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
   const [shippingOverridden, setShippingOverridden] = useState(
     () => mode === 'edit' && (initialData?.regels ?? []).some(r => r.artikelnr === SHIPPING_PRODUCT_ID)
   )
-
-  /** Apply automatic shipping logic to a set of order lines. Returns new lines array.
-   *  Bij `afhalenActief=true` wordt de VERZEND-regel altijd verwijderd en niet
-   *  opnieuw toegevoegd — klant haalt zelf op, dus geen verzendkosten. */
-  function applyShippingLogic(
-    currentRegels: OrderRegelFormData[],
-    currentClient: SelectedClient | null,
-    afhalenActief: boolean = afhalen,
-  ): OrderRegelFormData[] {
-    if (afhalenActief) {
-      return currentRegels.filter(l => l.artikelnr !== SHIPPING_PRODUCT_ID)
-    }
-
-    const subtotaal = currentRegels
-      .filter(l => l.artikelnr !== SHIPPING_PRODUCT_ID)
-      .reduce((sum, l) => sum + (l.bedrag ?? 0), 0)
-
-    const drempel = currentClient?.verzend_drempel ?? SHIPPING_THRESHOLD
-    const kosten = currentClient?.verzendkosten ?? SHIPPING_COST
-    const needsShipping = subtotaal < drempel && !currentClient?.gratis_verzending
-    const hasShippingLine = currentRegels.some(l => l.artikelnr === SHIPPING_PRODUCT_ID)
-
-    if (needsShipping && !hasShippingLine) {
-      const shippingLine: OrderRegelFormData = {
-        artikelnr: SHIPPING_PRODUCT_ID,
-        omschrijving: 'Verzendkosten',
-        orderaantal: 1,
-        te_leveren: 1,
-        prijs: kosten,
-        korting_pct: 0,
-        bedrag: kosten,
-      }
-      return [...currentRegels, shippingLine]
-    }
-
-    if (!needsShipping && hasShippingLine) {
-      return currentRegels.filter(l => l.artikelnr !== SHIPPING_PRODUCT_ID)
-    }
-
-    return currentRegels
-  }
 
   /** Toggle afhalen — verwijdert/herstelt verzend-regel automatisch en zet
    *  shippingOverridden uit zodat de auto-logica weer leidend wordt. */
@@ -253,7 +196,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
             return updated
           })
         )
-        setRegels(applyShippingLogic(updatedRegels, c))
+        setRegels(applyShippingLogic(updatedRegels, c, afhalen))
       }
     }
   }
@@ -310,6 +253,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
     mutationFn: () => deleteOrder(initialData!.orderId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['orders'] })
+      queryClient.invalidateQueries({ queryKey: ['pick-ship'] })
       navigate('/orders')
     },
     onError: (err) => {
@@ -539,6 +483,14 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
       queryClient.invalidateQueries({ queryKey: ['snijplanning'] })
       queryClient.invalidateQueries({ queryKey: ['snijvoorstel'] })
       queryClient.invalidateQueries({ queryKey: ['productie', 'dashboard'] })
+      // Pick & Ship filtert op pickbaarheid, dus een nieuwe of gewijzigde
+      // order moet de cache verversen — anders wacht de operator tot
+      // staleTime (30s) verloopt voor de order verschijnt.
+      queryClient.invalidateQueries({ queryKey: ['pick-ship'] })
+      // Mig 229: afleverdatum/adres/debiteur/afhalen zijn dimensies van de
+      // bundel-sleutel — een mutatie kan orders tussen voorgestelde-bundels
+      // doen schuiven. Refetch de live preview.
+      queryClient.invalidateQueries({ queryKey: ['voorgestelde-bundels'] })
 
       if (mode === 'create' && onAfterCreate) {
         const ids = data.split ? [data.standaard.id, data.maatwerk.id] : [data.id]
@@ -757,7 +709,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
           }
 
           // Normal change — apply shipping auto-logic if not overridden
-          const finalRegels = shippingOverridden ? newRegels : applyShippingLogic(newRegels, client)
+          const finalRegels = shippingOverridden ? newRegels : applyShippingLogic(newRegels, client, afhalen)
           setRegels(finalRegels)
           applyAfleverdatum(finalRegels, client)
         }}

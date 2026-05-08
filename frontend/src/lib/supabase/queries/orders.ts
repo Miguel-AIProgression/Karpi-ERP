@@ -1,5 +1,6 @@
 import { supabase } from '../client'
 import { sanitizeSearch } from '@/lib/utils/sanitize'
+import { fetchKlanteigenNamenMap } from './klanteigen-namen'
 
 export interface OrderRow {
   id: number
@@ -306,18 +307,7 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
     return regels.map((r) => toRegel(r, undefined, undefined, fysiekOmschMap))
   }
 
-  // Fetch all klanteigen namen voor deze debiteur via RPC (mig 200).
-  // Levert klant-niveau + overerving via inkoopgroep_code, met klant > groep
-  // prioriteit per (kwaliteit, kleur)-paar.
-  // Map-key = `${kwaliteit_code}_${kleur_code ?? ''}`. Specifiek > fallback (kleur=NULL).
-  const { data: eigenNamen } = await supabase.rpc('resolve_klanteigen_namen_voor_debiteur', {
-    p_debiteur_nr: debiteurNr,
-  })
-
-  const eigenNaamMap = new Map(
-    ((eigenNamen ?? []) as { kwaliteit_code: string; kleur_code: string | null; benaming: string }[])
-      .map((n) => [`${n.kwaliteit_code}_${n.kleur_code ?? ''}`, n.benaming])
-  )
+  const eigenNaamMap = await fetchKlanteigenNamenMap(debiteurNr)
 
   // Fetch all klant artikelnummers for this customer in one query
   const { data: klantArtNrs } = await supabase

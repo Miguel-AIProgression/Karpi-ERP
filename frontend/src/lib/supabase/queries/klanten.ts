@@ -66,15 +66,6 @@ export interface KlantDetail {
   edi_test_modus: boolean
 }
 
-export interface KlanteigenNaam {
-  id: number
-  kwaliteit_code: string
-  kleur_code: string | null
-  benaming: string
-  omschrijving: string | null
-  leverancier: string | null
-}
-
 export interface KlantArtikelnummer {
   id: number
   artikelnr: string
@@ -307,19 +298,6 @@ export async function fetchAfleveradressen(debiteurNr: number): Promise<Aflevera
 
   if (error) throw error
   return (data ?? []) as Afleveradres[]
-}
-
-/** Fetch klanteigen namen (custom quality names) for a klant */
-export async function fetchKlanteigenNamen(debiteurNr: number): Promise<KlanteigenNaam[]> {
-  const { data, error } = await supabase
-    .from('klanteigen_namen')
-    .select('id, kwaliteit_code, kleur_code, benaming, omschrijving, leverancier')
-    .eq('debiteur_nr', debiteurNr)
-    .order('kwaliteit_code')
-    .order('kleur_code', { nullsFirst: true })
-
-  if (error) throw error
-  return (data ?? []) as KlanteigenNaam[]
 }
 
 /** Available kleur_codes for a kwaliteit (across all active products) */

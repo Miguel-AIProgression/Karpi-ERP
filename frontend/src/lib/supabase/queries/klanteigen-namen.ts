@@ -126,6 +126,49 @@ export async function fetchKlanteigenVoorInkoopgroep(
   return (data ?? []) as KlanteigenVoorInkoopgroepRow[]
 }
 
+/**
+ * Resolver: één klant-eigen naam met fallback klant+kleur > klant+NULL >
+ * inkoopgroep+kleur > inkoopgroep+NULL > NULL. Gebruikt RPC
+ * `resolve_klanteigen_naam` (mig 199) zodat de prioriteit server-side wordt
+ * afgehandeld en consistent blijft met het overzicht.
+ *
+ * Imperatief aangeroepen vanuit de order-form bij artikel-selectie — niet
+ * via React Query omdat de waarde direct in form-state moet landen.
+ */
+export async function fetchKlanteigenNaam(
+  debiteurNr: number,
+  kwaliteitCode: string,
+  kleurCode?: string | null,
+): Promise<{ benaming: string; omschrijving: string | null } | null> {
+  const { data, error } = await supabase.rpc('resolve_klanteigen_naam', {
+    p_debiteur_nr: debiteurNr,
+    p_kwaliteit_code: kwaliteitCode,
+    p_kleur_code: kleurCode ?? null,
+  })
+
+  if (error) throw error
+  const benaming = data as string | null
+  return benaming ? { benaming, omschrijving: null } : null
+}
+
+/**
+ * Resolver-batch: alle klant-eigen namen die voor een debiteur gelden
+ * (klant-niveau + overerving via inkoopgroep), als Map met key
+ * `${kwaliteit_code}_${kleur_code ?? ''}`. Klant > inkoopgroep per
+ * (kwaliteit, kleur)-paar. Gebruikt door de orders-laag bij regel-rendering
+ * om in één round-trip alle aliassen op te halen.
+ */
+export async function fetchKlanteigenNamenMap(
+  debiteurNr: number,
+): Promise<Map<string, string>> {
+  const { data, error } = await supabase.rpc('resolve_klanteigen_namen_voor_debiteur', {
+    p_debiteur_nr: debiteurNr,
+  })
+  if (error) throw error
+  const rows = (data ?? []) as { kwaliteit_code: string; kleur_code: string | null; benaming: string }[]
+  return new Map(rows.map((n) => [`${n.kwaliteit_code}_${n.kleur_code ?? ''}`, n.benaming]))
+}
+
 export interface KlanteigenInsert {
   debiteur_nr?: number | null
   inkoopgroep_code?: string | null

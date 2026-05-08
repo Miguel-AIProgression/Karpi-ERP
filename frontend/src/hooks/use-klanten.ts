@@ -3,7 +3,6 @@ import {
   fetchKlanten,
   fetchKlantDetail,
   fetchAfleveradressen,
-  fetchKlanteigenNamen,
   fetchKlantArtikelnummers,
   fetchKlantPrijslijst,
   fetchKoppelbareDebiteurenMetPrijslijst,
@@ -42,14 +41,6 @@ export function useAfleveradressen(debiteurNr: number) {
   return useQuery({
     queryKey: ['klanten', debiteurNr, 'afleveradressen'],
     queryFn: () => fetchAfleveradressen(debiteurNr),
-    enabled: debiteurNr > 0,
-  })
-}
-
-export function useKlanteigenNamen(debiteurNr: number) {
-  return useQuery({
-    queryKey: ['klanten', debiteurNr, 'klanteigen-namen'],
-    queryFn: () => fetchKlanteigenNamen(debiteurNr),
     enabled: debiteurNr > 0,
   })
 }
