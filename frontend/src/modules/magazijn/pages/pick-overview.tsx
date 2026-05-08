@@ -23,6 +23,8 @@ import {
   type PickStatus,
 } from '@/lib/orders/verzendweek'
 
+const STALE_30_SEC = 30_000
+
 export function MagazijnOverviewPage() {
   const [filter, setFilter] = useState<BucketKey>('wk_1')
   const [search, setSearch] = useState('')
@@ -49,7 +51,6 @@ export function MagazijnOverviewPage() {
   // Vervoerder-filter: resolutie via per-orderregel-evaluator (ADR-0008).
   // Cache wordt gedeeld met de inline-select in elke pick-card via dezelfde
   // queryKeys ['logistiek', 'orderregel-vervoerder', orderId] (ADR-0002).
-  const STALE_30_SEC = 30_000
   const perOrderQueries = useQueries({
     queries: gefilterd.map((o) => ({
       queryKey: ['logistiek', 'orderregel-vervoerder', o.order_id],

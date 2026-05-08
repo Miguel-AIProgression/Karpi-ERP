@@ -28,6 +28,8 @@ import { startPickrondenBundel, startPickrondenVoorOrder } from '../queries/zend
 import { useVervoerders } from '../hooks/use-vervoerders'
 import { fetchEffectieveVervoerderPerOrderregel } from '../queries/orderregel-vervoerder'
 import { aggregeerVervoerderKeuzeVoorOrder } from '../queries/vervoerder-keuze'
+
+const STALE_30_SEC = 30_000
 import { clusterOpAdresEnVervoerder } from '@/modules/magazijn'
 import type { ResolvedVervoerder } from '@/modules/magazijn'
 import { PickerDropdown } from '@/components/orders/picker-dropdown'
@@ -102,7 +104,6 @@ export function BulkVerzendsetButton({ orders, context }: BulkVerzendsetButtonPr
   // effectieve code. Cache-deelt via dezelfde queryKeys als de inline-select.
   // De cluster-helper gebruikt de map om identieke (adres × vervoerder)-paren
   // te bundelen vóór de RPC-aanroepen (mig 222, ADR-0008).
-  const STALE_30_SEC = 30_000
   const perOrderQueries = useQueries({
     queries: pickbaar.map((o) => ({
       queryKey: ['logistiek', 'orderregel-vervoerder', o.order_id],
