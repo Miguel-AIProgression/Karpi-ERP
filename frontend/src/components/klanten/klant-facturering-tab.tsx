@@ -1,64 +1,27 @@
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { supabase } from '@/lib/supabase/client'
+import {
+  useKlantFactuurInstellingen,
+  useUpdateKlantFactuurInstellingen,
+} from '@/modules/facturatie'
 import { FactuurLijst } from '@/modules/facturatie'
 
 interface Props {
   debiteurNr: number
-  factuurvoorkeur: 'per_zending' | 'wekelijks'
-  emailFactuur: string | null
-  btwPercentage: number
   btwNummer: string | null
 }
 
-export function KlantFactureringTab({
-  debiteurNr, factuurvoorkeur, emailFactuur, btwPercentage, btwNummer,
-}: Props) {
-  const qc = useQueryClient()
-  const onSuccess = () => qc.invalidateQueries({ queryKey: ['klanten', debiteurNr] })
-  const onError = (label: string) => (err: unknown) => {
-    console.error(`[${label}]`, err)
-    const e = err as { message?: unknown; details?: unknown; hint?: unknown; code?: unknown } | null
-    const parts = [
-      typeof e?.message === 'string' ? e.message : null,
-      typeof e?.details === 'string' ? `details: ${e.details}` : null,
-      typeof e?.hint === 'string' ? `hint: ${e.hint}` : null,
-      typeof e?.code === 'string' ? `code: ${e.code}` : null,
-    ].filter(Boolean)
-    const msg = parts.length > 0 ? parts.join('\n') : 'onbekende fout (zie console)'
-    alert(`${label} opslaan mislukt:\n${msg}`)
-  }
+export function KlantFactureringTab({ debiteurNr, btwNummer }: Props) {
+  const { data: instellingen } = useKlantFactuurInstellingen(debiteurNr)
+  const updateMut = useUpdateKlantFactuurInstellingen()
 
   const [editEmail, setEditEmail] = useState(false)
 
-  const voorkeurMut = useMutation({
-    mutationFn: async (v: 'per_zending' | 'wekelijks') => {
-      const { error } = await supabase.from('debiteuren')
-        .update({ factuurvoorkeur: v }).eq('debiteur_nr', debiteurNr)
-      if (error) throw error
-    },
-    onSuccess,
-    onError: onError('Factuurvoorkeur'),
-  })
-  const btwMut = useMutation({
-    mutationFn: async (v: number) => {
-      const { error } = await supabase.from('debiteuren')
-        .update({ btw_percentage: v }).eq('debiteur_nr', debiteurNr)
-      if (error) throw error
-    },
-    onSuccess,
-    onError: onError('BTW-percentage'),
-  })
-  const emailMut = useMutation({
-    mutationFn: async (v: string | null) => {
-      const { error } = await supabase.from('debiteuren')
-        .update({ email_factuur: v }).eq('debiteur_nr', debiteurNr)
-      if (error) throw error
-    },
-    onSuccess: () => { onSuccess(); setEditEmail(false) },
-    onError: onError('E-mailadres factuur'),
-  })
+  const patch = (p: Parameters<typeof updateMut.mutate>[0]['patch']) =>
+    updateMut.mutate({ debiteur_nr: debiteurNr, patch: p })
 
+  if (!instellingen) return null
+
+  const { factuurvoorkeur, email_factuur: emailFactuur, btw_percentage: btwPercentage } = instellingen
   const btwWaarschuwing = btwPercentage === 0 && !btwNummer
 
   return (
@@ -68,12 +31,12 @@ export function KlantFactureringTab({
         <div className="flex gap-4">
           <label className="flex items-center gap-2 text-sm">
             <input type="radio" checked={factuurvoorkeur === 'per_zending'}
-              onChange={() => voorkeurMut.mutate('per_zending')} />
+              onChange={() => patch({ factuurvoorkeur: 'per_zending' })} />
             Direct na verzending
           </label>
           <label className="flex items-center gap-2 text-sm">
             <input type="radio" checked={factuurvoorkeur === 'wekelijks'}
-              onChange={() => voorkeurMut.mutate('wekelijks')} />
+              onChange={() => patch({ factuurvoorkeur: 'wekelijks' })} />
             Verzamelfactuur per week
           </label>
         </div>
@@ -86,7 +49,10 @@ export function KlantFactureringTab({
             onSubmit={(e) => {
               e.preventDefault()
               const raw = (e.currentTarget.elements.namedItem('email_factuur') as HTMLInputElement).value.trim()
-              emailMut.mutate(raw === '' ? null : raw)
+              updateMut.mutate(
+                { debiteur_nr: debiteurNr, patch: { email_factuur: raw === '' ? null : raw } },
+                { onSuccess: () => setEditEmail(false) },
+              )
             }}
             className="flex items-center gap-2"
           >
@@ -100,10 +66,10 @@ export function KlantFactureringTab({
             />
             <button
               type="submit"
-              disabled={emailMut.isPending}
+              disabled={updateMut.isPending}
               className="text-xs px-2 py-1 rounded bg-terracotta-500 text-white font-medium hover:bg-terracotta-600 disabled:opacity-50"
             >
-              {emailMut.isPending ? 'Opslaan...' : 'Opslaan'}
+              {updateMut.isPending ? 'Opslaan...' : 'Opslaan'}
             </button>
             <button
               type="button"
@@ -144,14 +110,14 @@ export function KlantFactureringTab({
             key={btwPercentage}
             onBlur={(e) => {
               const v = Number(e.currentTarget.value)
-              if (!Number.isNaN(v) && v !== btwPercentage) btwMut.mutate(v)
+              if (!Number.isNaN(v) && v !== btwPercentage) patch({ btw_percentage: v })
             }}
             className="w-24 rounded border border-slate-300 px-2 py-1 text-sm"
           />
           <span className="text-sm text-slate-500">%</span>
-          <button type="button" onClick={() => btwMut.mutate(21)}
+          <button type="button" onClick={() => patch({ btw_percentage: 21 })}
             className="text-xs px-2 py-1 rounded bg-slate-100 hover:bg-slate-200">21% NL</button>
-          <button type="button" onClick={() => btwMut.mutate(0)}
+          <button type="button" onClick={() => patch({ btw_percentage: 0 })}
             className="text-xs px-2 py-1 rounded bg-slate-100 hover:bg-slate-200">0% EU/export</button>
         </div>
         {btwWaarschuwing && (

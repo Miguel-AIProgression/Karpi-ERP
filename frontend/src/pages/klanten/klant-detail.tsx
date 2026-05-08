@@ -534,9 +534,6 @@ export function KlantDetailPage() {
         {activeTab === 'facturering' && klant && (
           <KlantFactureringTab
             debiteurNr={debiteurNr}
-            factuurvoorkeur={klant.factuurvoorkeur}
-            emailFactuur={klant.email_factuur}
-            btwPercentage={klant.btw_percentage}
             btwNummer={klant.btw_nummer}
           />
         )}
