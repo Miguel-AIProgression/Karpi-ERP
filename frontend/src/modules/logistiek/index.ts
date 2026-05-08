@@ -28,12 +28,7 @@ export {
   type ZendingenFilters,
 } from './queries/zendingen'
 
-export {
-  fetchKlantVervoerderConfig,
-  upsertKlantVervoerderConfig,
-  fetchVervoerders,
-  type VervoerderRow,
-} from './queries/vervoerder-config'
+// vervoerder-config (klant-fallback) is verwijderd in ADR-0008 — zie queries/vervoerder-keuze
 
 export {
   useZendingen,
@@ -43,11 +38,7 @@ export {
   useVerstuurZendingOpnieuw,
 } from './hooks/use-zendingen'
 
-export {
-  useKlantVervoerderConfig,
-  useUpsertKlantVervoerderConfig,
-  useVervoerders,
-} from './hooks/use-vervoerder-config'
+// use-vervoerder-config (klant-fallback hooks) verwijderd in ADR-0008
 
 export { ZendingenOverzichtPage } from './pages/zendingen-overzicht'
 export { ZendingDetailPage } from './pages/zending-detail'
@@ -63,16 +54,19 @@ export {
   VervoerderFilterButton,
   type VervoerderFilterValue,
 } from './components/vervoerder-filter-button'
-export {
-  useVervoerderPerOrder,
-  type OrderMinimaalVoorVervoerder,
-  type ResolvedVervoerder,
-} from './hooks/use-vervoerder-per-order'
+// useVervoerderPerOrder + ResolvedVervoerder verwijderd in ADR-0008;
+// ResolvedVervoerder leeft nu in @/modules/magazijn (bundel-cluster.ts)
 export {
   useEffectieveVervoerderPerOrderregel,
   useUpdateOrderregelVervoerderOverride,
   type OrderregelVervoerder,
 } from './hooks/use-orderregel-vervoerder'
+export {
+  useVervoerderKeuzeVoorOrder,
+  useSetOrderVervoerderOverride,
+  type BulkOverrideResultaat,
+  type OrderVervoerderAggregaat,
+} from './hooks/use-vervoerder-keuze'
 export { ZendingStatusBadge } from './components/zending-status-badge'
 export { VerzendsetButton } from './components/verzendset-button'
 export { BulkVerzendsetButton } from './components/bulk-verzendset-button'

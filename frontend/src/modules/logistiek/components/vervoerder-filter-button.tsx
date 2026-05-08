@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, Truck } from 'lucide-react'
-import { useVervoerders } from '../hooks/use-vervoerder-config'
+import { useVervoerders } from '../hooks/use-vervoerders'
 import { getVervoerderDef } from '../registry'
-import type { ResolvedVervoerder } from '../hooks/use-vervoerder-per-order'
+import type { ResolvedVervoerder } from '@/modules/magazijn'
 import { cn } from '@/lib/utils/cn'
 
 /** Filter-keuzes: 'all' = geen filter, 'afhalen' = alleen afhalen, 'geen' =

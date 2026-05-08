@@ -5,8 +5,15 @@
 // adres-match-key, zelfde vervoerder. De normalisatie hier moet 1-op-1 lopen
 // met `_normaliseer_afleveradres` in mig 219 — bij wijzigingen beide kanten
 // updaten.
-import type { ResolvedVervoerder } from '@/modules/logistiek'
 import type { PickShipOrder } from './types'
+
+/** Minimale vervoerder-resolutie per order voor cluster-doeleinden. */
+export interface ResolvedVervoerder {
+  /** Effectieve vervoerder-code, of `null` als geen (incl. afhalen). */
+  code: string | null
+  /** TRUE als order op afhalen staat — geen vervoerder maar wel een filter-keuze. */
+  afhalen: boolean
+}
 
 export interface BundelCluster {
   /** Match-sleutel voor groepering: `${vervoerder}::${adres-key}`. */

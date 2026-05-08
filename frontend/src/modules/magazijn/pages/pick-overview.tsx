@@ -1,14 +1,17 @@
 import { useMemo, useState } from 'react'
 import { Globe, Search, Package, CalendarCheck, CalendarClock } from 'lucide-react'
+import { useQueries } from '@tanstack/react-query'
 import { PageHeader } from '@/components/layout/page-header'
 import { PickProblemenBanner } from '../components/pick-problemen-banner'
 import { PickWeekSectie } from '../components/pick-week-sectie'
 import { usePickShipOrders, usePickShipStats } from '../hooks/use-pick-ship'
 import {
   VervoerderFilterButton,
-  useVervoerderPerOrder,
   type VervoerderFilterValue,
 } from '@/modules/logistiek'
+import { fetchEffectieveVervoerderPerOrderregel } from '@/modules/logistiek/queries/orderregel-vervoerder'
+import { aggregeerVervoerderKeuzeVoorOrder } from '@/modules/logistiek/queries/vervoerder-keuze'
+import type { ResolvedVervoerder } from '../lib/bundel-cluster'
 import { cn } from '@/lib/utils/cn'
 import { genereerWeekTabs } from '../lib/buckets'
 import { type BucketKey, type PickShipOrder } from '../lib/types'
@@ -43,18 +46,30 @@ export function MagazijnOverviewPage() {
     return orders.filter((o) => o.bucket === filter)
   }, [orders, filter])
 
-  // Vervoerder-filter: resolutie via klant-config > regel-preview > globaal-actief.
-  // Cache wordt gedeeld met de inline-select in elke pick-card (ADR-0002).
-  const minimaalVoorVervoerder = useMemo(
-    () =>
-      gefilterd.map((o) => ({
-        order_id: o.order_id,
-        debiteur_nr: o.debiteur_nr,
+  // Vervoerder-filter: resolutie via per-orderregel-evaluator (ADR-0008).
+  // Cache wordt gedeeld met de inline-select in elke pick-card via dezelfde
+  // queryKeys ['logistiek', 'orderregel-vervoerder', orderId] (ADR-0002).
+  const STALE_30_SEC = 30_000
+  const perOrderQueries = useQueries({
+    queries: gefilterd.map((o) => ({
+      queryKey: ['logistiek', 'orderregel-vervoerder', o.order_id],
+      queryFn: () => fetchEffectieveVervoerderPerOrderregel(o.order_id),
+      staleTime: STALE_30_SEC,
+    })),
+  })
+  const vervoerderMap = useMemo(() => {
+    const m = new Map<number, ResolvedVervoerder>()
+    gefilterd.forEach((o, i) => {
+      const q = perOrderQueries[i]
+      const regels = q?.data ?? []
+      const aggregaat = aggregeerVervoerderKeuzeVoorOrder(regels)
+      m.set(o.order_id, {
+        code: aggregaat.soort === 'uniform' ? aggregaat.code : null,
         afhalen: o.afhalen,
-      })),
-    [gefilterd],
-  )
-  const { map: vervoerderMap } = useVervoerderPerOrder(minimaalVoorVervoerder)
+      })
+    })
+    return m
+  }, [gefilterd, perOrderQueries])
 
   const naVervoerderFilter = useMemo(() => {
     if (vervoerderFilter === 'all') return gefilterd

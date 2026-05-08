@@ -5,7 +5,7 @@ import {
   useEffectieveVervoerderPerOrderregel,
   useUpdateOrderregelVervoerderOverride,
 } from '../hooks/use-orderregel-vervoerder'
-import { useVervoerders } from '../hooks/use-vervoerder-config'
+import { useVervoerders } from '../hooks/use-vervoerders'
 import { getVervoerderDef, type VervoerderBadgeKleur } from '../registry'
 
 const KLEUR_STYLES: Record<VervoerderBadgeKleur, string> = {
@@ -25,7 +25,11 @@ const DOT_STYLES: Record<VervoerderBadgeKleur, string> = {
 interface Props {
   orderId: number
   orderregelId: number
-  /** Komt uit `order.actieve_pickronde != null` — locked = geen wijziging mogelijk. */
+  /**
+   * Caller-fallback voor de lock-staat (bv. `order.actieve_pickronde != null`).
+   * De pill OR-t deze met de RPC-eigen `is_locked` (mig 221) — die laatste is
+   * de bron-van-waarheid omdat hij precies de DB-trigger spiegelt.
+   */
   locked: boolean
 }
 
@@ -116,13 +120,16 @@ export function VervoerderOrderregelPill({ orderId, orderregelId, locked }: Prop
       const note = typeof u.match_notitie === 'string' ? u.match_notitie : null
       return `Regel-keuze: ${labelText}${note ? ` — ${note}` : ''}`
     }
-    if (regel.bron === 'klant_fallback') return `Klant-fallback: ${labelText}`
     return 'Geen vervoerder gekozen'
   }, [regel, labelText])
 
   if (!regel) {
     return <span className="text-[10px] text-slate-300">—</span>
   }
+
+  // Effectieve lock = caller-fallback OR bron-van-waarheid uit RPC. Zo blijft
+  // de pill consistent met de DB-trigger ongeacht de zending-status.
+  const effectiefLocked = locked || regel.is_locked
 
   function handleKies(code: string | null) {
     setError(null)
@@ -146,7 +153,7 @@ export function VervoerderOrderregelPill({ orderId, orderregelId, locked }: Prop
         : Truck
 
   const dropdown =
-    open && !locked && regel.bron !== 'afhalen' && pos
+    open && !effectiefLocked && regel.bron !== 'afhalen' && pos
       ? createPortal(
           <div
             ref={popoverRef}
@@ -206,24 +213,30 @@ export function VervoerderOrderregelPill({ orderId, orderregelId, locked }: Prop
         type="button"
         onClick={(e) => {
           e.stopPropagation()
-          if (locked || regel.bron === 'afhalen') return
+          if (effectiefLocked || regel.bron === 'afhalen') return
           setOpen((v) => !v)
         }}
-        disabled={update.isPending || locked || regel.bron === 'afhalen'}
+        disabled={update.isPending || effectiefLocked || regel.bron === 'afhalen'}
         className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${KLEUR_STYLES[labelKleur]} disabled:opacity-70 ${
-          locked || regel.bron === 'afhalen' ? 'cursor-default' : 'cursor-pointer'
+          effectiefLocked || regel.bron === 'afhalen' ? 'cursor-default' : 'cursor-pointer'
         }`}
-        title={locked ? `Vergrendeld — er bestaat al een zending voor deze regel. ${tooltip}` : tooltip}
+        title={
+          effectiefLocked
+            ? `Vergrendeld — er bestaat al een zending voor deze regel. ${tooltip}`
+            : tooltip
+        }
       >
         {update.isPending ? (
           <Loader2 size={10} className="animate-spin" />
-        ) : locked ? (
+        ) : effectiefLocked ? (
           <Lock size={10} />
         ) : (
           <BronIcon size={10} />
         )}
         {labelText}
-        {!locked && regel.bron !== 'afhalen' && <ChevronDown size={9} className="opacity-60" />}
+        {!effectiefLocked && regel.bron !== 'afhalen' && (
+          <ChevronDown size={9} className="opacity-60" />
+        )}
       </button>
       {dropdown}
     </>
