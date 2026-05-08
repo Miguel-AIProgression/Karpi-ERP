@@ -26,7 +26,7 @@
 ## Architectuurbeslissingen
 
 ### Module-grafiek (vertical slices met expliciete seams)
-Frontend en backend worden geleidelijk per feature heringericht als **deep verticale Modules** onder `frontend/src/modules/{naam}/` en `supabase/functions/{naam}-*/`. Eerste twee modules in dit patroon waren `modules/edi/` en `modules/logistiek/`; daarop volgden `modules/orders/` (bezit het Order-voorstel) en `modules/planning/` (bezit snijplanning, confectie, levertijd-simulatie). De **derde domein-module is `modules/magazijn/`** (pickbaarheid, pick-flow, locatie-mutaties op rollen + snijplannen) — zie [ADR-0002](adr/0002-pick-ship-splitst-naar-magazijn-en-logistiek.md). De **vierde is `modules/voorraadpositie/`** (mig 179 + mig 180; T001 tracer-bullet → T003 batch+filter) — bezit één concept "Voorraadpositie per (kwaliteit, kleur)" met SQL-RPC `voorraadposities()` als seam. Drie modi: single-paar (incl. ghost), batch (alleen eigen voorraad), batch+filter (server-side ILIKE op kw / search; exact op kleur). Consumers: **product-detail** (T001 single-paar), **rollen-overzicht** (T003 batch+filter — `RollenGroepRow` consumeert `Voorraadpositie` direct, page-laag mergt ghost-paren via `besteld_per_kwaliteit_kleur`), **MaatwerkLevertijdHint** (T002 — single-paar voor besteld-info). Vervangt op termijn de drie losse callers `rollen_uitwissel_voorraad` / `uitwisselbare_partners` / `besteld_per_kwaliteit_kleur` (cleanup in T005, #30). Past binnen ADR-0001 — geen aparte ADR. De **vijfde domein-module is `modules/orders-lifecycle/`** (mig 218) — enige schrijver van `orders.status` + `verzonden_at`, met typed audit-log `order_events`. Drie publieke RPCs (`markeer_verzonden`, `markeer_geannuleerd`, `herbereken_wacht_status`) via interne `_apply_transitie`. Lint-script `scripts/lint-no-direct-orders-status-update.sh` voorkomt regressie. Zie [ADR-0006](adr/0006-order-lifecycle-als-deep-module.md). De **zesde domein-module is `modules/facturatie/`** (mig 223) — bezit factuur-flow vanaf het Verzonden-event tot bezorgde PDF/EDI-INVOIC. Listener op `order_events` (`event_type='pickronde_voltooid' AND status_na='Verzonden'`) i.p.v. de oude `orders.status`-trigger uit mig 118. Frontend-Module met smal-scope verhuizing (pages, components, hooks, queries) + cross-cuts via barrel. Klant-factuurinstellingen (`factuurvoorkeur`, `btw_percentage`, `email_factuur`) blijven op `debiteuren` maar concept-eigenaarschap ligt bij deze Module. Zie [ADR-0007](adr/0007-facturatie-als-deep-module.md). Cross-Module aanroepen lopen via een **TS-functie-contract** (shared edge-helper of barrel-export), niet via god-Module en niet via HTTP-tussenstappen. Iedere seam wordt afgedwongen met contract-tests die in beide kanten dezelfde fixtures draaien. Beslissing en alternatieven: [ADR-0001](adr/0001-order-voorstel-en-planning-als-twee-modules.md).
+Frontend en backend worden geleidelijk per feature heringericht als **deep verticale Modules** onder `frontend/src/modules/{naam}/` en `supabase/functions/{naam}-*/`. Eerste twee modules in dit patroon waren `modules/edi/` en `modules/logistiek/`; daarop volgden `modules/orders/` (bezit het Order-voorstel) en `modules/planning/` (bezit snijplanning, confectie, levertijd-simulatie). De **derde domein-module is `modules/magazijn/`** (pickbaarheid, pick-flow, locatie-mutaties op rollen + snijplannen) — zie [ADR-0002](adr/0002-pick-ship-splitst-naar-magazijn-en-logistiek.md). De **vierde is `modules/voorraadpositie/`** (mig 179 + mig 180; T001 tracer-bullet → T003 batch+filter) — bezit één concept "Voorraadpositie per (kwaliteit, kleur)" met SQL-RPC `voorraadposities()` als seam. Drie modi: single-paar (incl. ghost), batch (alleen eigen voorraad), batch+filter (server-side ILIKE op kw / search; exact op kleur). Consumers: **product-detail** (T001 single-paar), **rollen-overzicht** (T003 batch+filter — `RollenGroepRow` consumeert `Voorraadpositie` direct, page-laag mergt ghost-paren via `besteld_per_kwaliteit_kleur`), **MaatwerkLevertijdHint** (T002 — single-paar voor besteld-info). Vervangt op termijn de drie losse callers `rollen_uitwissel_voorraad` / `uitwisselbare_partners` / `besteld_per_kwaliteit_kleur` (cleanup in T005, #30). Past binnen ADR-0001 — geen aparte ADR. De **vijfde domein-module is `modules/orders-lifecycle/`** (mig 218) — enige schrijver van `orders.status` + `verzonden_at`, met typed audit-log `order_events`. Drie publieke RPCs (`markeer_verzonden`, `markeer_geannuleerd`, `herbereken_wacht_status`) via interne `_apply_transitie`. Lint-script `scripts/lint-no-direct-orders-status-update.sh` voorkomt regressie. Zie [ADR-0006](adr/0006-order-lifecycle-als-deep-module.md). De **zesde domein-module is `modules/facturatie/`** (mig 223) — bezit factuur-flow vanaf het Verzonden-event tot bezorgde PDF/EDI-INVOIC. Listener op `order_events` (`event_type='pickronde_voltooid' AND status_na='Verzonden'`) i.p.v. de oude `orders.status`-trigger uit mig 118. Frontend-Module met smal-scope verhuizing (pages, components, hooks, queries) + cross-cuts via barrel. Klant-factuurinstellingen (`factuurvoorkeur`, `btw_percentage`, `email_factuur`) blijven op `debiteuren` maar concept-eigenaarschap ligt bij deze Module. Zie [ADR-0007](adr/0007-facturatie-als-deep-module.md). De **zevende domein-module is `modules/maatwerk/`** — bezit de maatwerk-flow (selectors, prijs-/oppervlak-formules, levertijd-hint, m²-prijs-/band-/afwerking-lookups) plus admin-CRUD voor vormen, afwerkingen en m²-prijzen. Hooks-import-seam vanuit `modules/orders/` (geen slot-pattern); SQL `stuk_snij_marge_cm` + view-kolommen op `snijplanning_overzicht` (mig 233) blijven cross-cut, gewicht-resolver blijft eigen SQL-Module. Naam DB-aligned met `is_maatwerk`/`maatwerk_*`-kolommen. Zie [ADR-0009](adr/0009-maatwerk-als-deep-module.md). Cross-Module aanroepen lopen via een **TS-functie-contract** (shared edge-helper of barrel-export), niet via god-Module en niet via HTTP-tussenstappen. Iedere seam wordt afgedwongen met contract-tests die in beide kanten dezelfde fixtures draaien. Beslissing en alternatieven: [ADR-0001](adr/0001-order-voorstel-en-planning-als-twee-modules.md).
 
 #### Slot-pattern (presentatie-seam zonder data-coupling)
 Wanneer een Module een component uit een andere Module wil renderen zonder bij die Module's data te hoeven, wordt de componente **self-fetching**: de consument plaatst 'm als slot zonder props, en de component haalt zelf zijn state op via een hook uit zijn eigen Module-barrel. Voorbeelden:
@@ -266,12 +266,12 @@ Supabase Edge Function (`supabase/functions/optimaliseer-snijplan/index.ts`) die
 ### Operator-terminologie & snij-marges
 De snijmachine heeft **1 lengte-mes** (snijdt de rol dwars af op een ingestelde Y-positie) en **3 breedte-messen** (staan parallel aan de rol-lengte op instelbare X-posities, verdelen een rij in max 4 naast-elkaar-strips bij één lengte-mes-slag). De `rol-uitvoer-modal` spreekt deze taal: header per rij toont `Lengte-mes op Y cm` + `Breedte-mes 1/2/3 op X cm`. Interne X-snit-posities worden afgeleid uit placement-coördinaten (regels waar een verticale snit door de volledige shelf-hoogte loopt zonder een stuk te doorsnijden). Stukken die groter geplaatst zijn dan besteld (door marge-ophoging, zie onder) tonen een amber `→ bijsnijden met hand naar …`-instructie.
 
-**Snij-marges** (single source of truth in [snij-marges.ts](supabase/functions/_shared/snij-marges.ts) + SQL-functie `stuk_snij_marge_cm` in migratie 126):
+**Snij-marges** (single source of truth: SQL-functie `stuk_snij_marge_cm` in migratie 126 — sinds mig 233 zijn er geen TS-spiegels meer):
 - `maatwerk_afwerking = 'ZO'` → **+6 cm** op beide dimensies (rondom 6 cm voor afwerking)
 - `maatwerk_vorm IN ('rond', 'ovaal')` → **+5 cm** op beide dimensies (speling voor handmatig uitzagen)
 - Combi ZO + rond: **grootste marge wint** (niet cumulatief)
 
-`fetchStukken()` past de marge toe vóór de packer, zodat fysieke snij-maat wordt gepland. `snijplanning_tekort_analyse()` past dezelfde marge toe bij de rol-past-check. De view-kolommen `snij_lengte_cm`/`snij_breedte_cm` blijven nominale (klant-)maat — de opgehoogde maat verschijnt alleen in het packing-resultaat, zodat de modal `placed vs besteld` automatisch uit elkaar kan trekken.
+De marge wordt eenmalig in SQL toegepast en aan callers geleverd via twee view-kolommen op `snijplanning_overzicht` met gerichte semantiek: **`marge_cm`** voor operator-tekst ("hoeveel bijsnijden") en **`placed_lengte_cm`/`placed_breedte_cm`** voor de packer ("welke afmeting plaatsen"). `fetchStukken()` leest de placed-kolommen direct, geen TS-helper meer. `snijplanning_tekort_analyse()` past dezelfde SQL-functie inline toe bij de rol-past-check. De originele `snij_lengte_cm`/`snij_breedte_cm` blijven nominale (klant-)maat — de modal kan dus nog altijd `placed vs besteld` uit elkaar trekken. Regressie-bescherming voor `stuk_snij_marge_cm` zit als `DO $$ ASSERT … $$`-blok in mig 233 (vervangt de oude Deno-test).
 
 **Shelf-mes-validator** ([shelf-mes-validator.ts](supabase/functions/_shared/shelf-mes-validator.ts)): post-check in `optimaliseer-snijplan` + `auto-plan-groep` die rapporteert als een shelf meer dan 3 breedte-mes-posities vereist. Zachte check — output gaat als `samenvatting.shelf_waarschuwingen` op de edge-function-response + `console.warn`, plaatsingen worden niet afgewezen.
 
@@ -342,32 +342,56 @@ Credentials per shop in `supabase/functions/.env` (gitignored): `LIGHTSPEED_{NL,
 - **Status-transities:** via RPC's `start_confectie(snijplan_id)` en `voltooi_confectie(snijplan_id, afgerond, ingepakt, locatie)`, niet via directe UPDATE. Idempotent.
 - **TOC-framing:** elke lane is een constraint; capaciteitsbalk per week signaleert overload vóór het zover is.
 
-### Op Maat Module
-- Toggle "Standaard / Op maat" in order-line-editor
-- Bij "Op maat": KwaliteitKleurSelector → VormAfmetingSelector → prijsberekening → toevoegen
-- Prijsberekening: oppervlak_m² × verkoopprijs/m² + vormtoeslag + afwerkingprijs - korting%
-- m²-prijs bron: `maatwerk_m2_prijzen` tabel (admin-instelbaar, geseeded vanuit rollen)
-- Vorm-weergave: centraal `vorm-labels.ts` systeem (gebruikt door snijplanning, stickers, orders)
-- Rol-producten in ArticleSelector redirecten automatisch naar op-maat flow
+### Maatwerk-Module ([ADR-0009](adr/0009-maatwerk-als-deep-module.md))
 
-## Facturatie-flow (2026-04-22)
+Sinds 2026-05-08 leeft de maatwerk-flow als deep verticale Module onder `frontend/src/modules/maatwerk/` met **medium scope**: order-side runtime-flow (selectors, prijs-formule, levertijd-hint, m²-prijs-/band-/standaard-maat-lookups) **plus** admin-CRUD voor vormen, afwerkingen, m²-prijzen en band-kleur-defaults. Eigendom volgt de DB-vocab — folder en docs heten **Maatwerk** (DB-aligned met `is_maatwerk`, `maatwerk_*`-kolommen), niet de oude UI-label "Op Maat".
+
+**Seam-stijl: hooks-import.** [`order-form.tsx`](../frontend/src/components/orders/order-form.tsx) (eigendom van `modules/orders/` per ADR-0001) blijft host van de UI; alle maatwerk-data en -formules komen via barrel-imports uit `@/modules/maatwerk`:
+
+```ts
+import {
+  useMaatwerkKwaliteitOpties,
+  useMaatwerkKleurOpties,
+  useVormOpties,
+  useKwaliteitM2Prijs,
+  useStandaardBandKleur,
+  useMaatwerkLevertijdHint,
+  computeMaatwerkPrijs,
+  computeMaatwerkOppervlak,
+} from '@/modules/maatwerk';
+```
+
+**Cross-cuts (blijven buiten Module):**
+
+- **SQL `stuk_snij_marge_cm` (mig 126) + view-kolommen op `snijplanning_overzicht` (mig 233)** — gedeelde formule voor +5/+6 cm marges (rond/ovaal/ZO/combi). Sinds mig 233 enige bron-van-waarheid; consumers lezen `marge_cm` (operator) of `placed_lengte_cm`/`placed_breedte_cm` (packer) uit de view. Planning's `check-levertijd`, `auto-plan-groep` en `optimaliseer-snijplan` consumeren de placed-kolommen via `_shared/db-helpers.fetchStukken`; Maatwerk's prijs-formule consumeert de SQL-functie indirect via `bereken_orderregel_prijs`. Twee adapters maken het een echt cross-cut, geen Module-eigendom.
+- **Gewicht-resolver (mig 184-186)** — eigen SQL-Module met smal interface. Bezit de bbox-vs-cirkel-keuze voor maatwerk-vormen vs catalogus-rond. Maatwerk hoeft geen gewicht-functie te exporteren.
+- **`<LevertijdSuggestie>` blijft Planning** — toont snij-/leverdatum met capaciteits-simulatie. Maatwerk-Module heeft de **eigen** `<MaatwerkLevertijdHint>` met andere semantiek (eerstvolgende inkoop + 2 weken buffer, geen capaciteits-simulatie).
+
+**Admin-CRUD verhuist:** routes `/instellingen/vormen` en `/instellingen/afwerkingen` worden vervangen door pages onder `modules/maatwerk/pages/`. Eén release lang blijven beide paden bestaan om bookmarks niet te breken.
+
+**Prijsberekening (formule):** `oppervlak_m² × m²-prijs + vorm-toeslag + afwerkingprijs − korting%`. Oppervlak via bbox-formule (rond → diameter², ovaal → bbox, rechthoek → l × b). m²-prijs uit `maatwerk_m2_prijzen` (admin-instelbaar, geseeded vanuit rollen). Vorm-toeslag €75 voor vormen ≠ rechthoek (mig 179-183). Vorm-weergave via centraal `vorm-labels.ts` systeem (gebruikt door snijplanning, stickers, orders). Rol-producten in ArticleSelector redirecten automatisch naar de maatwerk-flow.
+
+## Facturatie-flow (2026-05-08, [ADR-0010](adr/0010-factuur-volgt-bundel-zending.md))
+
+**Eén factuur per bundel-zending.** Aggregatie volgt de 4-dim bundel-sleutel uit mig 228 — `(debiteur × adres-norm × vervoerder × verzendweek)`. Wekelijkse cron is de enige enqueue-bron; per_zending-modus is gedropt (mig 233).
 
 ```
-order.status='Verzonden'
-        │
-        ▼
-  TRIGGER enqueue_factuur_bij_verzonden (migratie 118)
-        │ (alleen als klant.factuurvoorkeur='per_zending')
-        ▼
+Wekelijkse cron (maandag 05:00 UTC, mig 122):
+  pg_cron → enqueue_wekelijkse_verzamelfacturen()
+        → per bundel-zending van vorige week zonder factuur:
+          INSERT factuur_queue(zending_id, order_ids=[zo.order_id WHERE zo.zending_id=…])
+
+Drain (elke minuut, pg_cron):
   factuur_queue (status=pending)
         │
-        ▼  pg_cron elke minuut (migratie 122)
-  EDGE FN factuur-verzenden
+        ▼  EDGE FN factuur-verzenden
         │
-        ├─ markeer processing + processing_started_at=now()
-        ├─ RPC genereer_factuur (migratie 119):
-        │    facturen + factuur_regels INSERT, order_regels.gefactureerd = orderaantal,
-        │    BTW-% uit debiteuren.btw_percentage
+        ├─ atomair claim_factuur_queue_items() (mig 227, FOR UPDATE SKIP LOCKED)
+        ├─ RPC genereer_factuur_voor_bundel(zending_id) (mig 234):
+        │    · facturen + factuur_regels INSERT
+        │    · order_regels.gefactureerd = orderaantal voor regels in zending_orders
+        │    · 1× VERZEND-regel via verzendkosten_voor_bundel(deb, subtotaal, is_afhalen)
+        │    · BTW-% uit debiteuren.btw_percentage
         ├─ pdf-lib → Uint8Array (Karpi layout, Courier monospace, A4)
         ├─ Storage.upload('facturen/{debiteur_nr}/FACT-YYYY-NNNN.pdf')
         ├─ als EDI actief is voor debiteur:
@@ -378,22 +402,16 @@ order.status='Verzonden'
         │      attachments=[factuur-pdf, algemene-voorwaarden])
         └─ facturen.status='Verstuurd', factuur_queue.status='done'
 
-Wekelijkse modus (maandag 05:00 UTC):
-  pg_cron → enqueue_wekelijkse_verzamelfacturen()
-        → per klant met factuurvoorkeur='wekelijks':
-          INSERT factuur_queue(order_ids=[alle ongefactureerde verzonden orders])
-
 Recovery (elke 5 minuten):
   pg_cron → recover_stuck_factuur_queue()
         → zet factuur_queue-items >10 min in 'processing' terug op 'pending'
 ```
 
-**Bedrijfsgegevens-config**: `app_config.sleutel='bedrijfsgegevens'` bevat KVK, BTW, IBAN
-etc. Bewerkbaar via `/instellingen/bedrijfsgegevens`.
+**Verzendkosten-resolver**: SQL-functie `verzendkosten_voor_bundel(deb_nr, subtotaal, is_afhalen)` (mig 234) returnt `(te_betalen, status, reden)` met status uit `{gratis_afhalen | gratis_klantafspraak | gratis_drempel | betaald}`. Bron-van-waarheid voor de drempel-toets — eerder leefde die in 4 verspreide CASE-takken (view 229, mig 232, order-form, drempel-progressbar).
 
-**Klantvoorkeur**: `debiteuren.factuurvoorkeur` (`per_zending` | `wekelijks`) +
-`debiteuren.btw_percentage` (21.00 standaard; 0 voor EU-intracom/export).
-Bewerkbaar in klant-detail → tab "Facturering".
+**Bedrijfsgegevens-config**: `app_config.sleutel='bedrijfsgegevens'` bevat KVK, BTW, IBAN etc. Bewerkbaar via `/instellingen/bedrijfsgegevens`.
+
+**Klant-instellingen**: `debiteuren.btw_percentage` (21.00 standaard; 0 voor EU-intracom/export), `debiteuren.email_factuur`, `debiteuren.verzendkosten`, `debiteuren.verzend_drempel`, `debiteuren.gratis_verzending`. Bewerkbaar in klant-detail → tab "Facturering". `factuurvoorkeur` is gedropt per ADR-0009.
 
 ## Inkoop-reserveringen (2026-04-29, mig 144–152)
 

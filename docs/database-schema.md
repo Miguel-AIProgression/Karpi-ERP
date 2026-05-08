@@ -148,10 +148,10 @@ Klanten/afnemers. PK = debiteur_nr uit het oude systeem.
 | prijslijst_nr | TEXT FK → prijslijst_headers.nr | |
 | korting_pct | NUMERIC(5,2) | Debiteurenkorting |
 | betaalconditie | TEXT | |
-| gratis_verzending | BOOLEAN DEFAULT false | Klant krijgt altijd gratis verzending |
+| gratis_verzending | BOOLEAN NOT NULL DEFAULT false | Klant krijgt altijd gratis verzending, ongeacht bundel-totaal vs `verzend_drempel`. Mig 228 (post-hoc — kolom werd al gelezen door frontend, mig 201 had hem overgeslagen). |
 | afleverwijze | TEXT DEFAULT 'Bezorgen' | Standaard afleverwijze (Bezorgen/Afhalen) |
-| verzendkosten | NUMERIC | Per-klant override verzendkosten (€) |
-| verzend_drempel | NUMERIC | Per-klant drempel gratis verzending (€) |
+| verzendkosten | NUMERIC | Per-klant override verzendkosten (€). Wordt 1× per bundel-zending op de wekelijkse factuur geheven (mig 232). |
+| verzend_drempel | NUMERIC | Per-klant drempel gratis verzending (€). Getoetst op het bundel-subtotaal exclusief BTW (mig 229 view + mig 232 factuur-RPC). |
 | standaard_maat_werkdagen | INTEGER | Override levertermijn voor standaard-maat karpetten (dagen). NULL = globale default. |
 | maatwerk_weken | INTEGER | Override levertermijn voor maatwerk karpetten (weken). NULL = globale default. |
 | deelleveringen_toegestaan | BOOLEAN DEFAULT false | Als TRUE: gemengde orders worden bij aanmaken gesplitst in 2 orders (standaard + maatwerk). |
@@ -433,18 +433,18 @@ Productregels per order. artikelnr nullable voor service-items.
 ---
 
 ### facturen
-_Aangemaakt in migratie 117 (2026-04-22)._
+_Aangemaakt in migratie 117 (2026-04-22). Gepatcht in mig 125: `order_id` op header dropped — koppeling met orders loopt via `factuur_regels.order_id`._
 
 | Kolom | Type | Toelichting |
 |-------|------|-------------|
 | id | BIGINT PK | |
 | factuur_nr | TEXT UK | FACT-2026-0001 |
-| order_id | BIGINT FK → orders | |
 | debiteur_nr | INTEGER FK → debiteuren | |
 | factuurdatum, vervaldatum | DATE | |
 | status | factuur_status | Default 'Concept' |
 | subtotaal, btw_percentage, btw_bedrag, totaal | NUMERIC | |
 | fact_naam, fact_adres, fact_postcode, fact_plaats, fact_land | TEXT | Snapshot |
+| btw_nummer | TEXT | Snapshot van klant-BTW-nummer (mig 125) |
 | opmerkingen | TEXT | |
 | pdf_storage_path | TEXT | Pad in bucket 'facturen' ({debiteur_nr}/FACT-YYYY-NNNN.pdf) |
 | verstuurd_op | TIMESTAMPTZ | Wanneer email verzonden |
@@ -481,8 +481,12 @@ function `factuur-verzenden`. Zie migraties 118, 121, 122.
 | attempts | INTEGER | Aantal retry-pogingen (max 3) |
 | last_error | TEXT | Laatste error-message bij falen |
 | factuur_id | BIGINT FK → facturen | Gezet na succes |
+| bron_event_id | BIGINT FK → order_events | Mig 223 (ADR-0007). Audit-link naar de event-rij die de queue-entry triggerde. NULL voor wekelijkse verzamelfacturen + legacy. |
+| verzendweek | TEXT | Mig 231. ISO-week (`YYYY-Www`) waarvoor type=`wekelijks` werd geënqueued. Gebruikt door edge function `factuur-verzenden` om `genereer_factuur_voor_week(debiteur_nr, jaar_week)` aan te roepen i.p.v. `genereer_factuur(order_ids)`. NULL bij type=`per_zending`. Index: `idx_factuur_queue_wekelijks_week (debiteur_nr, verzendweek) WHERE type='wekelijks'`. |
 | processing_started_at | TIMESTAMPTZ | Voor stuck-detection. Zie migratie 121. |
 | created_at, processed_at | TIMESTAMPTZ | |
+
+**Cron `enqueue_wekelijkse_verzamelfacturen`** (mig 231): groepeert vanaf nu per `(debiteur_nr, verzendweek_voor_datum(orders.afleverdatum))` i.p.v. alleen per debiteur. Filtert op verzendweek = vorige ISO-week (`CURRENT_DATE - 7 days`) en heeft dubbele-vuur-bescherming via `NOT EXISTS`-check op queue-rijen voor dezelfde `(debiteur, week)` met status pending/processing/done.
 
 ---
 
@@ -503,10 +507,11 @@ Fysieke leveringen. Werkelijk aangemaakt sinds migratie 169 — bron-van-waarhei
 | totaal_gewicht_kg | NUMERIC | Gevuld door `create_zending_voor_order` vanuit orderregelgewichten; handmatig corrigeerbaar in latere UI. Sinds mig 206 exclusief de pseudo-regel `artikelnr='VERZEND'`. |
 | aantal_colli | INTEGER | Gevuld door `create_zending_voor_order` als som van `order_regels.orderaantal`; gebruikt voor sticker `x VAN y`. Sinds mig 206 exclusief `artikelnr='VERZEND'`. Voor exacte per-stuk identiteit (sticker, SSCC) zie `zending_colli` (mig 209). |
 | service_code | TEXT | Mig 210. Service-variant binnen vervoerder (bv. `'internationaal'` bij DPD), gekozen door `selecteer_vervoerder_voor_zending()`. NULL = vervoerder-default. |
+| verzendweek | TEXT | Mig 230. ISO-week-snapshot (formaat `YYYY-Www`) van de afleverdatum bij pickronde-start. Bron voor de wekelijkse verzamelfactuur-aggregatie (mig 232) en filter in `genereer_factuur_voor_week`. Onveranderlijk na pickronde-start dankzij `trg_lock_zending_bundel_sleutel`. Backfill via `zending_orders` M2M voor bestaande rijen. Trigger `trg_zending_set_verzendweek` vult bij INSERT als nog NULL. |
 | opmerkingen | TEXT | |
 | created_at, updated_at | TIMESTAMPTZ | Auto |
 
-**Indexen:** `idx_zendingen_order` (order_id), `idx_zendingen_status` (status), `idx_zendingen_vervoerder` (partial op `vervoerder_code`). `updated_at` via trigger `set_zendingen_updated_at()`.
+**Indexen:** `idx_zendingen_order` (order_id), `idx_zendingen_status` (status), `idx_zendingen_vervoerder` (partial op `vervoerder_code`), `idx_zendingen_verzendweek` (partial op `verzendweek IS NOT NULL`, mig 230). `updated_at` via trigger `set_zendingen_updated_at()`.
 
 **Trigger:** `trg_zending_klaar_voor_verzending` (AFTER INSERT/UPDATE OF status, mig 172) roept bij transitie naar `'Klaar voor verzending'` de switch-RPC `enqueue_zending_naar_vervoerder()` aan. Sinds mig 176 vult die eerst `zendingen.vervoerder_code` via `selecteer_vervoerder_voor_zending()`.
 
@@ -523,6 +528,73 @@ Welke artikel-regels in een zending zitten. Sinds migratie 169.
 | created_at | TIMESTAMPTZ | Auto |
 
 **Indexen:** `idx_zending_regels_zending` (zending_id).
+
+---
+
+### zending_orders
+M2M tussen zendingen en orders. Sinds migratie 222 (zending-bundeling op afleveradres + vervoerder). Voor solo-zendingen 1 rij; voor bundel-zendingen N rijen — backfill heeft alle bestaande 1-op-1 koppelingen al gevuld zodat consumenten één uniforme bron hebben. `zendingen.order_id` blijft bestaan als "primaire/eerste" order voor backwards-compat queries.
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| zending_id | BIGINT FK → zendingen | CASCADE DELETE — bij delete van de zending verdwijnen alle koppelingen |
+| order_id | BIGINT FK → orders | ON DELETE RESTRICT — een order kan niet worden gewist zolang hij in een zending zit |
+
+**PK:** (zending_id, order_id). **Index:** `zending_orders_order_id_idx` (order_id).
+
+**Producer:** `start_pickronden_bundel(order_ids[], picker_id)` (mig 222) — multi-order bundel-pickronde, valideert zelfde debiteur + identiek genormaliseerd afleveradres + geen lopende/eindstatus-zendingen, groepeert regels op effectieve vervoerder uit mig 219, maakt 1 zending per groep gekoppeld aan alle betrokken orders. Bij 1 order delegeert naar `start_pickronden_voor_order` (mig 220) zodat callers één code-pad hebben.
+
+**Consumer:** `voltooi_pickronde` (mig 222) leest betrokken orders uit deze tabel en flipt élke order via `markeer_verzonden` zodra dit de laatste open zending is — sluitstuk factuur-keten (ADR-0005) blijft kloppend voor zowel solo- als bundel-zendingen.
+
+**Helper:** `_normaliseer_afleveradres(adres, postcode, land)` (mig 222) — TRIM + UPPER + whitespace-normalisatie. Wordt door de bundel-RPC gebruikt om de adres-invariant SQL-side te bewaken; de frontend (`bundel-cluster.ts`) dupliceert dezelfde logica om identiek te clusteren vóór de RPC-aanroep.
+
+**Lock-trigger:** `trg_lock_zending_bundel_sleutel` (mig 230, BEFORE UPDATE OF afleverdatum/afl_*/debiteur_nr ON orders) — blokkeert mutatie van bundel-sleutel-dimensies zodra de order in een actieve bundel-zending zit (status `Klaar voor verzending`+). Voorkomt divergentie tussen pakbon-snapshot, wekelijkse factuur-week en werkelijke order-data. Gooit `restrict_violation`. Picken-status mag wel muteren: operator kan dan bewust splitsen door pickronde te annuleren.
+
+---
+
+### voorgestelde_zending_bundels (VIEW)
+Pure SQL-view die per (debiteur × genormaliseerd adres × effectieve vervoerder × ISO-verzendweek) alle open orders aggregeert tot voorgestelde bundels. Mig 229 — bron-van-waarheid voor de live preview op Pick & Ship vóór een pickronde is gestart. Geen state, geen triggers, herevalueert per query: wijzigt afleverdatum/adres/vervoerder-override → andere bundel-sleutel → orders schuiven automatisch tussen bundel-rijen bij de eerstvolgende fetch.
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| sleutel | TEXT | `bundel_sleutel(debiteur, adres_norm, vervoerder, week)` — formaat `'D{nr}|V{code}|W{YYYY-Www}|A{adres-norm}'` |
+| debiteur_nr | INTEGER | |
+| debiteur_naam | TEXT | |
+| adres_norm | TEXT | Genormaliseerd `postcode|adres|land`, alle uppercase |
+| afl_naam, afl_postcode, afl_plaats | TEXT | Snippets voor UI-tooltip (alle orders in groep delen het adres) |
+| vervoerder_code | TEXT | Effectieve vervoerder-code, of `'AFHAAL'` / `'GEEN'` |
+| is_afhalen | BOOLEAN | TRUE als alle orders op afhalen staan (afzonderlijke vervoerder-categorie) |
+| jaar_week | TEXT | ISO-week, formaat `'YYYY-Www'` (bv. `'2026-W22'`) |
+| order_ids | BIGINT[] | Order-IDs in deze bundel, gesorteerd |
+| aantal_orders | INTEGER | |
+| bundel_subtotaal_excl | NUMERIC(12,2) | Som order_regels.bedrag exclusief BTW, zonder VERZEND-pseudo's |
+| klant_verzendkosten, klant_drempel, gratis_verzending | NUMERIC, NUMERIC, BOOLEAN | Snapshot van debiteur-config voor UI-tooltip |
+| drempel_gehaald | BOOLEAN | TRUE als afhalen, gratis_verzending of subtotaal ≥ drempel |
+| te_betalen_verzendkosten | NUMERIC(8,2) | Wat de klant zou betalen als deze bundel nu zou worden gefactureerd |
+| bundel_besparing | NUMERIC(10,2) | Geschat verschil met "elke order solo verstuurd". 0 voor 1-order bundels |
+
+**Filter:** alleen open orders (status NOT IN `'Verzonden'`/`'Geannuleerd'`), met afleverdatum, zonder actieve zending (`Picken`+ via `zending_orders` M2M).
+
+**Pure-SQL-keuze (geen materialized view)**: voor het verwachte volume (100-500 open orders × ~5 regels) blijft een reguliere view onder 200ms en vermijdt MV-refresh-complexity rondom `effectieve_vervoerder_per_orderregel`-mutaties. Een MV-upgrade is een logische stap als open-orders > 5k.
+
+**Frontend-consumer:** [`fetchVoorgesteldeBundels`](../frontend/src/modules/logistiek/queries/voorgestelde-bundels.ts) + `useVoorgesteldeBundels`-hook. React Query staleTime 60s; invalidatie via `['voorgestelde-bundels']`-key bij vervoerder-override, afleverdatum-mutatie en pickronde-start.
+
+---
+
+### genereer_factuur_voor_week (RPC, BIGINT)
+Mig 232. Genereert wekelijkse verzamelfactuur voor `(debiteur_nr, jaar_week)`. Aanroeper: edge function `factuur-verzenden` bij queue-rij `type='wekelijks'`.
+
+**Signature:** `genereer_factuur_voor_week(p_debiteur_nr INTEGER, p_jaar_week TEXT) RETURNS BIGINT` (factuur_id).
+
+**Werkwijze**:
+1. Vind alle orders van `(debiteur_nr, jaar_week)` met status='Verzonden' zonder bestaande `factuur_regels`-rij.
+2. Mig 227-style no-op-guard: tel te-factureren orderregels exclusief VERZEND. Bij 0 → `RAISE no_data_found`.
+3. INSERT factuur header (zelfde defaults als `genereer_factuur` mig 227).
+4. INSERT product-regels (zelfde SELECT-shape als mig 227).
+5. Voor elke bundel-zending van die week (`zendingen.verzendweek = p_jaar_week`, status `Klaar voor verzending`+, gekoppeld via `zending_orders` aan een order in de factuur):
+   - Bereken bundel-subtotaal uit zojuist geïnserteerde factuur_regels.
+   - Drempel-toets: `gratis_verzending=TRUE` of `subtotaal ≥ verzend_drempel` → bedrag = 0; afhalen-zendingen → bedrag = 0; anders → bedrag = `verzendkosten`.
+   - INSERT 1 VERZEND-regel met omschrijving zoals `"Verzendkosten 2026-W22 (HST, 2 orders)"` of `"... — gratis vanaf €500,00"`.
+6. Hertotaliseer header subtotaal/btw/totaal over alle regels.
+
+**Beleidskeuze**: verzendkosten worden **per bundel-zending** geheven, niet 1× per week. Een bundel = 1 fysieke transportbeweging. Twee verschillende vervoerders in dezelfde week resulteren in 2 verzending-regels (mits onder drempel). Drempel-toets is per bundel.
 
 ---
 
@@ -1162,7 +1234,7 @@ Mig 174, aangepast in mig 176. Read-only view die de `/logistiek/vervoerders`-ov
 | ~~`rollen_uitwissel_voorraad()`~~ | **GEDROPT in mig 187 (T005)** — vervangen door `voorraadposities()` (mig 179/180). Geen externe callers meer; functie definitief verwijderd. |
 | `normaliseer_kleur_code(code TEXT)` | Normaliseert kleur_code: strip trailing ".0" (bijv. "12.0" → "12") — IMMUTABLE helper |
 | `snijplanning_groepen_gefilterd(p_tot_datum)` | Gegroepeerde snijplanning met optionele afleverdatum-filter (groepeert op genormaliseerde kleur_code) |
-| `stuk_snij_marge_cm(afwerking TEXT, vorm TEXT)` | Extra cm op elke dimensie bij snijden: ZO-afwerking +6, rond/ovaal +5. Combi → grootste wint (niet cumulatief). IMMUTABLE. Wordt gebruikt in `snijplanning_tekort_analyse()`. TS-equivalent in `_shared/snij-marges.ts`. (migratie 126) |
+| `stuk_snij_marge_cm(afwerking TEXT, vorm TEXT)` | Extra cm op elke dimensie bij snijden: ZO-afwerking +6, rond/ovaal +5. Combi → grootste wint (niet cumulatief). IMMUTABLE. Bron-van-waarheid; toegepast in view `snijplanning_overzicht` (kolommen `marge_cm`, `placed_lengte_cm`, `placed_breedte_cm`) en in `snijplanning_tekort_analyse()`. Geen TS-spiegels meer sinds mig 233. (migratie 126, view-kolommen mig 143/233) |
 | `snijplanning_tekort_analyse()` | Per snijden-groep: uitwisselbare kwaliteits (Map1 primair, collectie-fallback), aantal beschikbare rollen, totaal m², `max_lange/max_korte` rolmaten, en `grootste_onpassend_stuk_*` met marge-check. Sluit placeholder-rollen (0×0) uit, synchroon met `auto-plan-groep` edge. `heeft_collectie` = heeft uitwissel-partners (Map1 OR collectie). (migratie 134, basis 102/117/126) |
 | `snijplanning_status_counts_gefilterd(p_tot_datum)` | Status counts met optionele afleverdatum-filter |
 | `release_gepland_stukken(kwaliteit TEXT, kleur TEXT)` | Geeft Gepland-snijplannen van de BESTEL-groep (`order_regels.maatwerk_kwaliteit_code / _kleur_code`) vrij voor heroptimalisatie: clear `rol_id`/posities, rollen zonder resterende Gepland/Snijden/Gesneden stukken terug naar `beschikbaar`/`reststuk`. Raakt rollen met `snijden_gestart_op IS NOT NULL` niet aan. Filter op BESTEL-kwaliteit i.p.v. rol-kwaliteit is essentieel voor cross-kwaliteit plaatsingen via uitwisselbaarheid (migratie 133, fixt regressie uit 073). |
