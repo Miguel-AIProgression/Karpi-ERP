@@ -21,26 +21,12 @@ export function KlantFactureringTab({ debiteurNr, btwNummer }: Props) {
 
   if (!instellingen) return null
 
-  const { factuurvoorkeur, email_factuur: emailFactuur, btw_percentage: btwPercentage } = instellingen
+  const { email_factuur: emailFactuur, btw_percentage: btwPercentage } = instellingen
   const btwWaarschuwing = btwPercentage === 0 && !btwNummer
 
   return (
     <div className="space-y-6">
-      <section>
-        <h3 className="text-sm font-semibold text-slate-700 mb-2">Factuurvoorkeur</h3>
-        <div className="flex gap-4">
-          <label className="flex items-center gap-2 text-sm">
-            <input type="radio" checked={factuurvoorkeur === 'per_zending'}
-              onChange={() => patch({ factuurvoorkeur: 'per_zending' })} />
-            Direct na verzending
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="radio" checked={factuurvoorkeur === 'wekelijks'}
-              onChange={() => patch({ factuurvoorkeur: 'wekelijks' })} />
-            Verzamelfactuur per week
-          </label>
-        </div>
-      </section>
+      {/* Factuurvoorkeur-sectie verwijderd per ADR-0010: factuur volgt voortaan altijd de bundel-zending in de wekelijkse cron. */}
 
       <section>
         <h3 className="text-sm font-semibold text-slate-700 mb-2">E-mailadres factuur</h3>
