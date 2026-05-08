@@ -4,6 +4,7 @@ import { StatusBadge } from '@/components/ui/status-badge'
 import { formatCurrency, formatDate } from '@/lib/utils/formatters'
 import { verzendWeekVoor } from '@/lib/orders/verzendweek'
 import type { OrderRow, OrderSortField, SortDirection } from '@/lib/supabase/queries/orders'
+import type { FactuurVoorOrder } from '@/lib/supabase/queries/facturen'
 
 interface OrdersTableProps {
   orders: OrderRow[]
@@ -11,6 +12,7 @@ interface OrdersTableProps {
   sortBy: OrderSortField
   sortDir: SortDirection
   onSort: (field: OrderSortField) => void
+  facturenPerOrder?: Map<number, FactuurVoorOrder[]>
 }
 
 function SortIcon({ field, sortBy, sortDir }: { field: OrderSortField; sortBy: OrderSortField; sortDir: SortDirection }) {
@@ -41,7 +43,7 @@ function SortHeader({ field, label, align = 'left', sortBy, sortDir, onSort }: {
   )
 }
 
-export function OrdersTable({ orders, isLoading, sortBy, sortDir, onSort }: OrdersTableProps) {
+export function OrdersTable({ orders, isLoading, sortBy, sortDir, onSort, facturenPerOrder }: OrdersTableProps) {
   if (isLoading) {
     return (
       <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-12 text-center text-slate-400">
@@ -73,6 +75,7 @@ export function OrdersTable({ orders, isLoading, sortBy, sortDir, onSort }: Orde
             <SortHeader field="aantal_regels" label="Regels" align="right" {...sortProps} />
             <SortHeader field="totaal_bedrag" label="Bedrag" align="right" {...sortProps} />
             <SortHeader field="status" label="Status" {...sortProps} />
+            <th className="text-left px-4 py-3 font-medium text-slate-600">Factuur</th>
           </tr>
         </thead>
         <tbody>
@@ -142,6 +145,28 @@ export function OrdersTable({ orders, isLoading, sortBy, sortDir, onSort }: Orde
               </td>
               <td className="px-4 py-3">
                 <StatusBadge status={order.status} />
+              </td>
+              <td className="px-4 py-3 whitespace-nowrap">
+                {(() => {
+                  const lijst = facturenPerOrder?.get(order.id) ?? []
+                  if (lijst.length === 0) {
+                    return <span className="text-slate-300">—</span>
+                  }
+                  const eerste = lijst[0]
+                  return (
+                    <Link
+                      to={`/facturatie/${eerste.id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="font-mono text-xs text-terracotta-500 hover:underline"
+                      title={`${eerste.status} · ${formatDate(eerste.factuurdatum)}`}
+                    >
+                      {eerste.factuur_nr}
+                      {lijst.length > 1 && (
+                        <span className="ml-1 text-slate-400">+{lijst.length - 1}</span>
+                      )}
+                    </Link>
+                  )
+                })()}
               </td>
             </tr>
           ))}

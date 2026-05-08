@@ -1,5 +1,64 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-08 — Mig 222: zending-bundeling op afleveradres + vervoerder (B2B-pakbon-consolidatie)
+
+Voor B2B-klanten met centraal magazijn (typisch inkoopgroepen als BEGROS) ontstonden er N losse pakbonnen wanneer de klant N losse orders had naar hetzelfde fysieke punt. Mig 222 voegt automatische bundeling toe vóór het picken: orders met identiek genormaliseerd afleveradres + dezelfde effectieve vervoerder, binnen dezelfde debiteur, krijgen 1 gezamenlijke pakbon (1 zending, 1 SSCC-set, 1 transportorder).
+
+**Schema** ([`222_zending_bundeling_op_adres.sql`](../supabase/migrations/222_zending_bundeling_op_adres.sql))
+- Nieuwe tabel `zending_orders(zending_id, order_id)` — M2M tussen zendingen en orders. Backfill maakt 1 rij per bestaande zending zodat solo's en bundels door dezelfde queries gelezen kunnen worden.
+- Helper `_normaliseer_afleveradres(adres, postcode, land)` — uppercase, postcode-spaties weg, adres-spaties genormaliseerd. Match-key voor SQL-validatie + frontend-clustering.
+- RPC `start_pickronden_bundel(order_ids[], picker_id)` — multi-order bundel-pickronde. Valideert: zelfde debiteur, identiek genormaliseerd adres, geen lopende of eindstatus-zendingen. Groepeert orderregels (over alle orders) op effectieve vervoerder uit mig 219 en maakt 1 zending per vervoerder-groep, gekoppeld aan alle betrokken orders. Bij 1 order delegeert naar `start_pickronden_voor_order` (mig 220).
+- RPC `voltooi_pickronde` — bundel-aware: leest betrokken orders uit `zending_orders` en roept `markeer_verzonden` aan voor elke order waarvan dit de laatste open zending is. SECURITY DEFINER + search_path hersteld na CREATE OR REPLACE.
+
+**Frontend**
+- Cluster-helper [`bundel-cluster.ts`](../frontend/src/modules/magazijn/lib/bundel-cluster.ts) groepeert pickbare orders op `(genormaliseerd-adres × vervoerder)`. Bundels (≥2 orders) komen vóór solo's. Adres-normalisatie spiegelt 1-op-1 met `_normaliseer_afleveradres` in DB.
+- [`BulkVerzendsetButton`](../frontend/src/modules/logistiek/components/bulk-verzendset-button.tsx) clustert eerst, kiest dan per cluster: bundel → `start_pickronden_bundel`, solo → `start_pickronden_voor_order`. Popover toont expliciet hoeveel adres-bundels gedetecteerd zijn.
+- [`fetchZendingPrintSet`](../frontend/src/modules/logistiek/queries/zendingen.ts) haalt `zending_orders` op en levert `bundel_orders[]` op `ZendingPrintSet`. Order_regels include nu `order_id` voor groepering.
+- [`PakbonDocument`](../frontend/src/modules/logistiek/components/pakbon-document.tsx): bij `bundel_orders.length > 1` toont het document alle order_nrs + per-order Uw-Referentie in het kop-blok, en groepeert artikelregels onder een sub-kop per bron-order zodat zowel magazijnier als ontvanger zien welke regel bij welke orderbevestiging hoort. Solo-zendingen gebruiken het ongewijzigde render-pad.
+
+**Bedrijfsregels (CLAUDE.md)**
+- Bundeling is automatisch maar veilig: alleen binnen 1 debiteur, alleen vóór er gepickt wordt, alleen bij identiek genormaliseerd adres + zelfde vervoerder. Eindstatus-zendingen blokkeren een nieuwe bundel-pickronde — operator moet eerst opruimen via /logistiek.
+
+## 2026-05-08 — Factuur-PDF: Karpi-template (logo, oranje branding, dubbele bank, voorwaarden, m2/gewicht, afleveradres)
+
+Een echte Karpi BV-factuur (FACT 26039757, 30 pagina's) als template gebruikt om de PDF-output 1-op-1 te matchen. Deze stap dekt zowel de tekstuele indeling als de visuele branding-elementen.
+
+**Layout** ([`_shared/factuur-pdf.ts`](../supabase/functions/_shared/factuur-pdf.ts))
+- Klantblok zonder bold (alle regels regular Courier)
+- Order-headerlabels (`Ons Ordernummer`, `Uw Referentie`, `Afleveradres`) op vaste 16-tekens prefix-breedte zodat alle `:` uitlijnen
+- Multi-line `omschrijving_2` (split op `\n`) — 3 regels per item: omschrijving + Band + Uw model
+- TRANSPORTEREN/TRANSPORT-regels nu 3-koloms: label rechts, "BLAD" rechts, bedrag rechts
+- Optionele "Totaal m2: X   Totaal gewicht (kg): Y"-regel boven het BTW-blok
+- Afleveradres-blok in order-header (alleen bij eerste regel + alleen als afwijkend van factuuradres)
+
+**Branding** (zelfde bestand)
+- KARPI GROUP-logo gecentreerd bovenin (één keer geëmbedde JPG/PNG, hergebruikt per pagina via `page.drawImage` closure)
+- Bedrijfsnaam (KARPI BV) in Karpi-oranje (rgb 0.76/0.53/0.22 — afgeleid uit logo's gouden lijn)
+- Zware horizontale rule onder de header weggehaald (vervangen door de gouden lijn ín het logo)
+- Footer: tweede bankregel onder de hoofd-bankregel als `bank2` is gevuld
+- Footer: 3-koloms voorwaarden-tekst (NL/DE/EN, 4pt) met word-wrap, alleen renderen als minstens één taal is gevuld
+- Nieuwe types: `BedrijfsBank`, `LogoOptie`, `FactuurAfleveradres`. `FactuurHeader` uitgebreid met `totaal_m2 + totaal_gewicht_kg`. `FactuurPDFInput` heeft optioneel `logo`-veld.
+
+**Edge function** ([`factuur-pdf/index.ts`](../supabase/functions/factuur-pdf/index.ts))
+- Joins toegevoegd naar `orders` (afleveradres-snapshot), `order_regels` (gewicht_kg, maatwerk_oppervlak_m2) en `producten` (lengte_cm/breedte_cm/vorm)
+- m² per regel = `maatwerk_oppervlak_m2` of `(lengte × breedte) / 10000` voor rechthoek of `π × (diameter/200)²` voor `vorm='rond'`, × aantal
+- Gewicht = SUM van `order_regels.gewicht_kg` (UNIQUE 1-op-1 mapping garandeert correct totaal)
+- Afleveradres alleen als afwijkend van factuuradres (case-insensitive trim-vergelijking op adres + postcode)
+- Logo wordt via service-role uit `public-assets/karpi-logo.jpg` gedownload (defaults; overrideable via `app_config.bedrijfsgegevens.logo_storage_*`); faalt download → PDF rendert zonder logo (best-effort)
+- `bank2 + voorwaarden_nl/de/en` worden uit `app_config.bedrijfsgegevens` doorgegeven aan de renderer
+
+**Migratie + upload-script**
+- [`221_factuur_pdf_branding_assets.sql`](../supabase/migrations/221_factuur_pdf_branding_assets.sql) — maakt `public-assets`-bucket aan, vult `bedrijfsgegevens` met Commerzbank AG Bocholt + 3-talige voorwaarden + logo-pad. Idempotent + non-destructive merge: `defaults || waarde` zodat handmatig ingestelde sleutels in JSONB blijven winnen.
+- [`scripts/upload-karpi-logo.mjs`](../scripts/upload-karpi-logo.mjs) — eenmalig CLI-uploadscript via Storage REST + service-role-key (uit `frontend/.env`).
+
+**Tests** ([`_shared/factuur-pdf.test.ts`](../supabase/functions/_shared/factuur-pdf.test.ts)): 4 nieuwe tests — totaal m2/gewicht, multi-line omschrijving, afwijkend afleveradres, dubbele bank + voorwaarden-footer.
+
+**Te doen na merge:**
+1. Migratie 221 toepassen (`supabase db push` of via Studio).
+2. Logo uploaden: `node scripts/upload-karpi-logo.mjs`.
+3. Edge function deployen: `supabase functions deploy factuur-pdf`.
+4. Bestaande factuur opnieuw bekijken — preview-render toont nu het volledige Karpi-template.
+
 ## 2026-05-08 — Per-orderregel vervoerder + auto-split in N zendingen (mig 219+220)
 
 Op Pick & Ship was de vervoerder tot nu toe een **order-niveau** keuze: `preview_vervoerder_voor_order` (mig 215) draaide de verzendregel-evaluator op aggregaten van de order (MAX kleinste-zijde, SUM gewicht), en `start_pickronde` (mig 217+218) maakte 1 zending per order. Voor combi-orders (kleine matjes via DPD + grote rol via HST in dezelfde order) was dat te grof. Vraag uit de magazijn-flow: laat per orderregel zien welke vervoerder geldt, laat de magazijnier per regel afwijken, en als regels uiteenlopen → automatisch 2 zendingen.
@@ -8,7 +67,7 @@ Op Pick & Ship was de vervoerder tot nu toe een **order-niveau** keuze: `preview
 - **[`220_start_pickronden_per_vervoerder.sql`](../supabase/migrations/220_start_pickronden_per_vervoerder.sql)** — nieuwe primitief `start_pickronden_voor_order(order_id, picker_id) RETURNS TABLE`: voor élke unieke effectieve vervoerder maakt hij 1 zending aan met de regels van die groep, vervoerder-code direct gezet bij INSERT (geen `selecteer_vervoerder_voor_zending`-roundtrip nodig voor de primaire keuze). Idempotent: bestaande Picken-zendingen per (order, vervoerder) worden hergebruikt; eindstatus-guard uit mig 218 blijft. `start_pickronde` is een dunne wrapper geworden die het eerste zending_id returnt, zodat bestaande callers/tests doorlopen op single-vervoerder-orders.
 - **[`vervoerder-orderregel-pill.tsx`](../frontend/src/modules/logistiek/components/vervoerder-orderregel-pill.tsx)** — compacte per-regel pill in de uitklap van [`OrderPickCard`](../frontend/src/modules/magazijn/components/order-pick-card.tsx) met bron-iconen: `User` voor handmatige override, `Sparkles` voor regel-match, `Truck` voor klant-fallback, `Lock` als de zending al bestaat. Klik → dropdown met alle vervoerders + "Volg order-default". RPC-fout uit de lock-trigger wordt inline aan de gebruiker getoond.
 - **[`startPickrondenVoorOrder` query + `useCreateZendingVoorOrder`-hook](../frontend/src/modules/logistiek/queries/zendingen.ts)** — return-shape verandert van `ZendingAanmaakResult` naar `ZendingAanmaakResult[]`. `VerzendsetButton`, `ZendingAanmakenKnop` en `BulkVerzendsetButton` checken op `length`: 1 → `/logistiek/{nr}/printset` (zoals voorheen), >1 → `/logistiek/printset/bulk?zendingen=NR1,NR2` zodat alle stickers + pakbonnen in één flow geprint worden.
-- **[`221_zending_bundeling_op_adres.sql`](../supabase/migrations/221_zending_bundeling_op_adres.sql)** — orthogonale uitbreiding aan de andere kant van de keten: meerdere orders met identiek afleveradres + dezelfde effectieve vervoerder worden gebundeld in één pakbon-zending. Voor B2B-klanten met centraal magazijn (bv. inkoopgroep BEGROS) levert dat 1 pakbon i.p.v. N. Tabel `zending_orders` (M2M) + helper `_normaliseer_afleveradres()` + RPC `start_pickronde_bundel(order_ids[], picker_id)` + bundel-aware `voltooi_pickronde`. Frontend-kant: nieuwe [`bundel-cluster.ts`](../frontend/src/modules/magazijn/lib/bundel-cluster.ts) clustert pickbare orders op (debiteur, genormaliseerd adres+land, vervoerder), en [`BulkVerzendsetButton`](../frontend/src/modules/logistiek/components/bulk-verzendset-button.tsx) accepteert nu een cluster i.p.v. losse orders.
+- **[`222_zending_bundeling_op_adres.sql`](../supabase/migrations/222_zending_bundeling_op_adres.sql)** — orthogonale uitbreiding aan de andere kant van de keten: meerdere orders met identiek afleveradres + dezelfde effectieve vervoerder worden gebundeld in één pakbon-zending. Voor B2B-klanten met centraal magazijn (bv. inkoopgroep BEGROS) levert dat 1 pakbon i.p.v. N. Tabel `zending_orders` (M2M) + helper `_normaliseer_afleveradres()` + RPC `start_pickronde_bundel(order_ids[], picker_id)` + bundel-aware `voltooi_pickronde`. Frontend-kant: nieuwe [`bundel-cluster.ts`](../frontend/src/modules/magazijn/lib/bundel-cluster.ts) clustert pickbare orders op (debiteur, genormaliseerd adres+land, vervoerder), en [`BulkVerzendsetButton`](../frontend/src/modules/logistiek/components/bulk-verzendset-button.tsx) accepteert nu een cluster i.p.v. losse orders.
 
 ## 2026-05-08 — Hotfix: SECURITY DEFINER op alle ADR-0006 RPCs (RLS whack-a-mole stoppen)
 

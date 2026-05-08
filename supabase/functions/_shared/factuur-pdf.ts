@@ -15,6 +15,14 @@ import {
 // Types (exported — re-used by factuur-verzenden edge function)
 // ---------------------------------------------------------------------------
 
+export interface BedrijfsBank {
+  bank: string
+  rekeningnummer: string
+  bic: string
+  iban: string
+  blz?: string  // Duitse Bankleitzahl, alleen relevant voor 2e bank
+}
+
 export interface BedrijfsInfo {
   bedrijfsnaam: string
   adres: string
@@ -32,6 +40,22 @@ export interface BedrijfsInfo {
   bank: string
   rekeningnummer: string
   betalingscondities_tekst: string
+  // Tweede bank (bv. Commerzbank AG Bocholt). Optioneel — als gevuld, krijgt elke
+  // pagina-footer een tweede regel onder de hoofd-bankregel.
+  bank2?: BedrijfsBank
+  // Drie-talige algemene voorwaarden-tekst voor de footer.
+  // Als opgegeven, wordt onderaan elke pagina een 3-koloms tekstblok afgedrukt.
+  voorwaarden_nl?: string
+  voorwaarden_de?: string
+  voorwaarden_en?: string
+}
+
+// Logo bytes (JPG of PNG) en gewenste afmeting in punten.
+export interface LogoOptie {
+  bytes: Uint8Array
+  format: 'jpg' | 'png'
+  // Hoogte in mm waarop het logo gerenderd wordt; breedte volgt uit aspect ratio.
+  hoogte_mm: number
 }
 
 export interface FactuurHeader {
@@ -47,6 +71,16 @@ export interface FactuurHeader {
   btw_percentage: number
   btw_bedrag: number
   totaal: number
+  totaal_m2?: number
+  totaal_gewicht_kg?: number
+}
+
+export interface FactuurAfleveradres {
+  naam: string
+  naam_2?: string
+  adres: string
+  postcode: string
+  plaats: string
 }
 
 export interface FactuurPDFRegel {
@@ -56,15 +90,21 @@ export interface FactuurPDFRegel {
   aantal: number
   eenheid: string
   omschrijving: string
+  // Multi-line: "BANGKOK KLEUR 21 ca: 230x260 cm\nBand: PE21\nUw model:DESTINO"
+  // Elke regel wordt apart onder de hoofdregel afgedrukt.
   omschrijving_2?: string
   prijs: number
   bedrag: number
+  // Per order in de groep: alleen op de eerste regel van een order-groep getoond.
+  // Wanneer afleveradres = factuuradres laat de caller dit weg.
+  afleveradres?: FactuurAfleveradres
 }
 
 export interface FactuurPDFInput {
   bedrijf: BedrijfsInfo
   factuur: FactuurHeader
   regels: FactuurPDFRegel[]
+  logo?: LogoOptie
 }
 
 // ---------------------------------------------------------------------------
@@ -103,8 +143,25 @@ const COL_OMSCHR    = MARGIN_L + 68 * MM
 const COL_PRIJS     = PAGE_W - MARGIN_R - 45 * MM  // right-aligned
 const COL_BEDRAG    = PAGE_W - MARGIN_R             // right-aligned
 
+// Transport-regel: 3 right-aligned posities binnen het tabel-gebied.
+// Visueel: "TRANSPORTEREN     BLAD     762.49"
+const COL_TRANSP_LABEL = COL_PRIJS - 5 * MM   // right-edge van "TRANSPORTEREN" / "TRANSPORT"
+const COL_TRANSP_BLAD  = COL_PRIJS + 8 * MM   // right-edge van "BLAD"
+// bedrag eindigt op COL_BEDRAG
+
+// Order-header labels uitlijnen op vaste prefix-breedte (Courier monospace).
+// "Ons Ordernummer ", "Uw Referentie   ", "Afleveradres    " — alle 16 chars vóór ":".
+const ORDER_LABEL_BREEDTE = 16
+
 // Footer Y
 const FOOTER_Y = 15 * MM
+const FOOTER_BANK1_Y = 15 * MM
+const FOOTER_BANK2_Y = 11 * MM
+const FOOTER_VOORWAARDEN_TOP_Y = 8 * MM    // bovenkant van het 3-koloms voorwaarden-blok
+const FOOTER_VOORWAARDEN_HOOGTE = 6 * MM   // beschikbare hoogte voor de 3 kolommen
+
+// Karpi-oranje (afgeleid uit het logo: gouden lijn-kleur)
+const KARPI_ORANJE = { r: 0.76, g: 0.53, b: 0.22 }
 
 // ---------------------------------------------------------------------------
 // Formatting helpers
@@ -119,6 +176,11 @@ function formatDatumNL(iso: string): string {
   const parts = iso.split('-')
   if (parts.length !== 3) return iso
   return `${parts[2]}-${parts[1]}-${parts[0]}`
+}
+
+function padLabel(label: string, breedte: number): string {
+  if (label.length >= breedte) return label
+  return label + ' '.repeat(breedte - label.length)
 }
 
 // ---------------------------------------------------------------------------
@@ -162,40 +224,53 @@ function drawHLine(page: PDFPage, y: number, x1: number = MARGIN_L, x2: number =
 // ---------------------------------------------------------------------------
 
 /**
- * Draw the Karpi BV company header (top-right block) and "FACTUUR" title.
- * Appears on every page (first and continuation).
+ * Draw the Karpi BV company header on every page:
+ *   - "FACTUUR" links (bold)
+ *   - KARPI GROUP-logo gecentreerd (alleen als logoImage gevuld is)
+ *   - KARPI BV in oranje rechts + adres + contact in zwart
  */
 function drawPageHeader(
   page: PDFPage,
   bedrijf: BedrijfsInfo,
   regular: PDFFont,
   bold: PDFFont,
+  logoImage: { width: number; height: number; draw: (x: number, y: number, w: number, h: number) => void } | null,
 ) {
+  // Logo gecentreerd (boven HEADER_LINE_Y)
+  if (logoImage) {
+    const logoH = 18 * MM
+    const logoW = (logoImage.width / logoImage.height) * logoH
+    const logoX = (PAGE_W - logoW) / 2
+    const logoY = PAGE_H - 10 * MM - logoH
+    logoImage.draw(logoX, logoY, logoW, logoH)
+  }
+
+  // KARPI BV (rechtsboven, oranje)
   const x = PAGE_W - 80 * MM
+  page.drawText(bedrijf.bedrijfsnaam, {
+    x,
+    y: HEADER_COMPANY_Y,
+    size: 8,
+    font: bold,
+    color: rgb(KARPI_ORANJE.r, KARPI_ORANJE.g, KARPI_ORANJE.b),
+  })
 
-  // Company name — bold ~12pt
-  drawText(page, bedrijf.bedrijfsnaam, x, HEADER_COMPANY_Y, bold, 12)
-
-  // Address lines — 7pt regular
+  // Adres + contact (zwart, 7pt regular)
   const y2 = HEADER_COMPANY_Y - LINE_H
   const y3 = y2 - LINE_H
   const y4 = y3 - LINE_H
-  const y5 = y4 - LINE_H
 
-  drawText(page, bedrijf.adres, x, y2, regular, 7)
-  drawText(page, `${bedrijf.postcode}  ${bedrijf.plaats}  (${bedrijf.land})`, x, y3, regular, 7)
+  drawText(page, `${bedrijf.adres}, ${bedrijf.postcode} ${bedrijf.plaats} (${bedrijf.land})`, x, y2, regular, 7)
 
   const telFax = bedrijf.fax
     ? `t ${bedrijf.telefoon}  |  f ${bedrijf.fax}`
     : `t ${bedrijf.telefoon}`
-  drawText(page, telFax, x, y4, regular, 7)
-  drawText(page, `e ${bedrijf.email}  |  i ${bedrijf.website}`, x, y5, regular, 7)
+  drawText(page, telFax, x, y3, regular, 7)
+  drawText(page, `e ${bedrijf.email}  |  i ${bedrijf.website}`, x, y4, regular, 7)
 
-  // Horizontal rule
-  drawHLine(page, HEADER_LINE_Y, MARGIN_L, PAGE_W - MARGIN_R)
-
-  // "FACTUUR" title — bold 11pt, left margin
-  drawText(page, 'FACTUUR', MARGIN_L, HEADER_TITLE_Y, bold, 11)
+  // "FACTUUR" links (klein, bold). De zware horizontale rule uit de oude layout
+  // is in het Karpi-template vervangen door de gouden lijn IN het logo.
+  drawText(page, 'FACTUUR', MARGIN_L, HEADER_TITLE_Y, bold, 9)
 }
 
 /**
@@ -208,9 +283,9 @@ function drawFirstPageBlocks(
   regular: PDFFont,
   bold: PDFFont,
 ) {
-  // Klant-blok (left)
+  // Klant-blok (left) — Karpi-template: alle regels regular (geen bold op naam)
   let y = KLANT_BLOCK_Y
-  drawText(page, factuur.fact_naam, MARGIN_L, y, bold, 10)
+  drawText(page, factuur.fact_naam, MARGIN_L, y, regular, 10)
   y -= LINE_H  // blank line
   y -= LINE_H
   drawText(page, factuur.fact_adres, MARGIN_L, y, regular, 10)
@@ -270,6 +345,20 @@ function drawBtwBlok(
 ): number {
   y -= LINE_H  // blank line before block
 
+  // Optionele "Totaal m2 / Totaal gewicht"-regel boven het BTW-blok
+  if (factuur.totaal_m2 !== undefined || factuur.totaal_gewicht_kg !== undefined) {
+    const m2Str = factuur.totaal_m2 !== undefined
+      ? `Totaal m2: ${factuur.totaal_m2.toFixed(2)}`
+      : ''
+    const gewichtStr = factuur.totaal_gewicht_kg !== undefined
+      ? `Totaal gewicht (kg): ${factuur.totaal_gewicht_kg.toFixed(2)}`
+      : ''
+    const samen = [m2Str, gewichtStr].filter(Boolean).join('   ')
+    drawText(page, samen, MARGIN_L + 5 * MM, y, regular, 9)
+    y -= LINE_H
+    y -= LINE_H  // blank line
+  }
+
   // Top horizontal rule
   drawHLine(page, y)
   y -= LINE_H
@@ -302,18 +391,80 @@ function drawBtwBlok(
 }
 
 /**
- * Draw the footer on every page (k.v.k., BTW, bank, IBAN, BIC).
+ * Draw the footer on every page:
+ *   - Eerste bankregel (NL): k.v.k., BTW, hoofd-bank
+ *   - Optionele tweede bankregel (DE): Commerzbank etc.
+ *   - Optionele 3-koloms voorwaarden-tekst (NL/DE/EN)
  */
 function drawFooter(
   page: PDFPage,
   bedrijf: BedrijfsInfo,
   regular: PDFFont,
 ) {
-  const text = `k.v.k. ${bedrijf.kvk}  |  btw ${bedrijf.btw_nummer}  |  ${bedrijf.bank}  |  nr ${bedrijf.rekeningnummer}  |  BIC ${bedrijf.bic}  |  IBAN ${bedrijf.iban}`
-  const SIZE = 6
-  const w = regular.widthOfTextAtSize(text, SIZE)
-  const x = (PAGE_W - w) / 2
-  drawText(page, text, x, FOOTER_Y, regular, SIZE)
+  const SIZE_BANK = 6
+  const bank1 = `k.v.k. ${bedrijf.kvk}  |  btw ${bedrijf.btw_nummer}  |  ${bedrijf.bank}  |  nr ${bedrijf.rekeningnummer}  |  BIC ${bedrijf.bic}  |  IBAN ${bedrijf.iban}`
+  const w1 = regular.widthOfTextAtSize(bank1, SIZE_BANK)
+  drawText(page, bank1, (PAGE_W - w1) / 2, FOOTER_BANK1_Y, regular, SIZE_BANK)
+
+  if (bedrijf.bank2) {
+    const b2 = bedrijf.bank2
+    const blzPart = b2.blz ? `  |  Blz ${b2.blz}` : ''
+    const bank2 = `${b2.bank}  |  Konto ${b2.rekeningnummer}${blzPart}  |  BIC ${b2.bic}  |  IBAN ${b2.iban}`
+    const w2 = regular.widthOfTextAtSize(bank2, SIZE_BANK)
+    drawText(page, bank2, (PAGE_W - w2) / 2, FOOTER_BANK2_Y, regular, SIZE_BANK)
+  }
+
+  // 3-koloms voorwaarden-tekst (NL / DE / EN). Alleen renderen als minstens
+  // één taal opgegeven is; lege talen krijgen een lege kolom.
+  const heeftVoorwaarden = bedrijf.voorwaarden_nl || bedrijf.voorwaarden_de || bedrijf.voorwaarden_en
+  if (heeftVoorwaarden) {
+    const SIZE_VW = 4
+    const kolomBreedte = (PAGE_W - 2 * MARGIN_L) / 3 - 2 * MM
+    const xNL = MARGIN_L
+    const xDE = MARGIN_L + (PAGE_W - 2 * MARGIN_L) / 3
+    const xEN = MARGIN_L + 2 * (PAGE_W - 2 * MARGIN_L) / 3
+
+    drawWrappedText(page, bedrijf.voorwaarden_nl ?? '', xNL, FOOTER_VOORWAARDEN_TOP_Y, kolomBreedte, regular, SIZE_VW)
+    drawWrappedText(page, bedrijf.voorwaarden_de ?? '', xDE, FOOTER_VOORWAARDEN_TOP_Y, kolomBreedte, regular, SIZE_VW)
+    drawWrappedText(page, bedrijf.voorwaarden_en ?? '', xEN, FOOTER_VOORWAARDEN_TOP_Y, kolomBreedte, regular, SIZE_VW)
+  }
+}
+
+/**
+ * Eenvoudige word-wrap renderer: tekent `text` in regels die binnen `maxWidth` blijven,
+ * te beginnen op (x, yTop) en aflopend per regel. Stopt zodra ruimte op is.
+ */
+function drawWrappedText(
+  page: PDFPage,
+  text: string,
+  x: number,
+  yTop: number,
+  maxWidth: number,
+  font: PDFFont,
+  size: number,
+): void {
+  if (!text) return
+  const woorden = text.replace(/\s+/g, ' ').trim().split(' ')
+  const lineHeight = size * 1.15
+  let regel = ''
+  let y = yTop
+  const yMin = MARGIN_B - 5 * MM  // niet te ver naar de bodem
+
+  for (const woord of woorden) {
+    const kandidaat = regel.length === 0 ? woord : `${regel} ${woord}`
+    const breedte = font.widthOfTextAtSize(kandidaat, size)
+    if (breedte > maxWidth && regel.length > 0) {
+      drawText(page, regel, x, y, font, size)
+      y -= lineHeight
+      if (y < yMin) return
+      regel = woord
+    } else {
+      regel = kandidaat
+    }
+  }
+  if (regel.length > 0 && y >= yMin) {
+    drawText(page, regel, x, y, font, size)
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -321,17 +472,33 @@ function drawFooter(
 // ---------------------------------------------------------------------------
 
 export async function genereerFactuurPDF(input: FactuurPDFInput): Promise<Uint8Array> {
-  const { bedrijf, factuur, regels } = input
+  const { bedrijf, factuur, regels, logo } = input
 
   const pdfDoc = await PDFDocument.create()
   const regular = await pdfDoc.embedFont(StandardFonts.Courier)
   const bold    = await pdfDoc.embedFont(StandardFonts.CourierBold)
 
-  // Helper: add a new page with the shared header + table header drawn in.
-  // Returns { page, cursorY } ready for body content.
+  // Embed logo één keer voor de hele PDF; pdf-lib laat hetzelfde image-object
+  // op meerdere pagina's tekenen, dus we hergebruiken via closure in addPage.
+  const logoCache = logo
+    ? (logo.format === 'png'
+        ? await pdfDoc.embedPng(logo.bytes)
+        : await pdfDoc.embedJpg(logo.bytes))
+    : null
+
   function addPage(isContinuation: boolean): { page: PDFPage; cursorY: number } {
     const page = pdfDoc.addPage([PAGE_W, PAGE_H])
-    drawPageHeader(page, bedrijf, regular, bold)
+
+    const pageLogoImage = logoCache
+      ? {
+          width: logoCache.width,
+          height: logoCache.height,
+          draw: (x: number, y: number, w: number, h: number) =>
+            page.drawImage(logoCache, { x, y, width: w, height: h }),
+        }
+      : null
+
+    drawPageHeader(page, bedrijf, regular, bold, pageLogoImage)
     drawFooter(page, bedrijf, regular)
 
     if (!isContinuation) {
@@ -361,21 +528,25 @@ export async function genereerFactuurPDF(input: FactuurPDFInput): Promise<Uint8A
   // Running page subtotal for TRANSPORT lines
   let paginaTotaal = 0
 
+  // Helper: 3-koloms transport-regel zoals Karpi-template:
+  // "TRANSPORTEREN     BLAD     762.49"  → label rechts, BLAD rechts, bedrag rechts.
+  function drawTransportRegel(targetPage: PDFPage, y: number, label: 'TRANSPORTEREN' | 'TRANSPORT', bedrag: number): void {
+    drawTextRight(targetPage, label, COL_TRANSP_LABEL, y, bold, 9)
+    drawTextRight(targetPage, 'BLAD', COL_TRANSP_BLAD, y, bold, 9)
+    drawTextRight(targetPage, formatBedrag(bedrag), COL_BEDRAG, y, bold, 9)
+  }
+
   // Helper: ensure there is room for `neededMM` mm of content.
   // If not, performs a page-break: draws TRANSPORTEREN on old page, creates new page,
   // draws TRANSPORT on new page below table header.
   function ensureRoom(neededMM: number): void {
     const neededPt = neededMM * MM
     if (cursorY - neededPt < BODY_STOP) {
-      // Draw "TRANSPORTEREN BLAD" on old page
       const { page: newPage, cursorY: newCursorStart } = addPage(true)
-      // Transport line goes on the old page just above BODY_STOP
       const transportY = BODY_STOP - LINE_H
-      // Draw TRANSPORTEREN on the old page
-      drawTextRight(page, `TRANSPORTEREN BLAD   ${formatBedrag(paginaTotaal)}`, COL_BEDRAG, transportY, bold, 10)
 
-      // Draw TRANSPORT on new page, just below table header
-      drawTextRight(newPage, `TRANSPORT BLAD   ${formatBedrag(paginaTotaal)}`, COL_BEDRAG, newCursorStart, bold, 10)
+      drawTransportRegel(page, transportY, 'TRANSPORTEREN', paginaTotaal)
+      drawTransportRegel(newPage, newCursorStart, 'TRANSPORT', paginaTotaal)
 
       page = newPage
       cursorY = newCursorStart - LINE_H
@@ -383,29 +554,48 @@ export async function genereerFactuurPDF(input: FactuurPDFInput): Promise<Uint8A
   }
 
   for (const [orderNr, groepRegels] of groupMap.entries()) {
-    // Each group needs: 1 blank + order header (2 lines) + 1 blank = 4 lines min before first body line
-    const groepHeaderMM = 4 * (LINE_H / MM)  // 4 lines in mm = 16mm
-    ensureRoom(groepHeaderMM)
+    const eersteRegel = groepRegels[0]
+    const aflever = eersteRegel.afleveradres
+    // 1 blank + Ons Ordernummer + Uw Referentie + (afleveradres: naam + opt. naam_2 + adres + plaats) + 1 blank
+    const aflRegels = aflever
+      ? 1 + (aflever.naam_2 ? 1 : 0) + 1 + 1 // naam (+naam_2) + adres + postcode/plaats
+      : 0
+    const groepHeaderRegels = 1 + 2 + aflRegels + 1
+    ensureRoom(groepHeaderRegels * (LINE_H / MM))
 
     // Blank line
     cursorY -= LINE_H
 
-    // Group header lines
-    const uw_ref = groepRegels[0].uw_referentie
-    drawText(page, `Ons Ordernummer : ${orderNr}`, MARGIN_L, cursorY, regular, 9)
+    // Group header lines — labels op vaste prefix-breedte zodat alle ":" uitlijnen.
+    drawText(page, `${padLabel('Ons Ordernummer', ORDER_LABEL_BREEDTE)}: ${orderNr}`, MARGIN_L, cursorY, regular, 9)
     cursorY -= LINE_H
-    drawText(page, `Uw Referentie   : ${uw_ref}`, MARGIN_L, cursorY, regular, 9)
+    drawText(page, `${padLabel('Uw Referentie', ORDER_LABEL_BREEDTE)}: ${eersteRegel.uw_referentie}`, MARGIN_L, cursorY, regular, 9)
     cursorY -= LINE_H
+
+    if (aflever) {
+      // "Afleveradres    : <naam>"
+      drawText(page, `${padLabel('Afleveradres', ORDER_LABEL_BREEDTE)}: ${aflever.naam}`, MARGIN_L, cursorY, regular, 9)
+      cursorY -= LINE_H
+      // Vervolgregels op dezelfde indent als de waarde (na ": ")
+      const indentX = MARGIN_L + (regular.widthOfTextAtSize(`${padLabel('Afleveradres', ORDER_LABEL_BREEDTE)}: `, 9))
+      if (aflever.naam_2) {
+        drawText(page, aflever.naam_2, indentX, cursorY, regular, 9)
+        cursorY -= LINE_H
+      }
+      drawText(page, aflever.adres, indentX, cursorY, regular, 9)
+      cursorY -= LINE_H
+      drawText(page, `${aflever.postcode}  ${aflever.plaats}`, indentX, cursorY, regular, 9)
+      cursorY -= LINE_H
+    }
 
     // Blank line after group header
     cursorY -= LINE_H
 
     // Draw each regel in the group
     for (const r of groepRegels) {
-      // Determine rows needed: 1 for main line, +1 if omschrijving_2
-      const rowCount = r.omschrijving_2 ? 2 : 1
-      const neededLineMM = rowCount * (LINE_H / MM)
-      ensureRoom(neededLineMM)
+      const extraRegels = r.omschrijving_2 ? r.omschrijving_2.split('\n').filter(s => s.length > 0) : []
+      const rowCount = 1 + extraRegels.length
+      ensureRoom(rowCount * (LINE_H / MM))
 
       // Main regel line (9pt)
       const SIZE = 9
@@ -419,10 +609,10 @@ export async function genereerFactuurPDF(input: FactuurPDFInput): Promise<Uint8A
       paginaTotaal += r.bedrag
       cursorY -= LINE_H
 
-      // Optional second omschrijving line
-      if (r.omschrijving_2) {
+      // Vervolgregels (BANGKOK KLEUR ..., Band: ..., Uw model:..., MEERWERKKOSTEN ...)
+      for (const extra of extraRegels) {
         ensureRoom(LINE_H / MM)
-        drawText(page, r.omschrijving_2, COL_OMSCHR, cursorY, regular, SIZE)
+        drawText(page, extra, COL_OMSCHR, cursorY, regular, SIZE)
         cursorY -= LINE_H
       }
     }

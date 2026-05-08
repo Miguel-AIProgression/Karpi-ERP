@@ -32,7 +32,7 @@ export interface ZendingAanmaakResult {
 
 export interface ZendingPrintOrderRegel {
   id: number
-  /** Mig 221: bron-order voor groepering in pakbon bij bundel-zendingen. */
+  /** Mig 222: bron-order voor groepering in pakbon bij bundel-zendingen. */
   order_id: number
   regelnummer: number | null
   /** Bron-artikelnr op de orderregel. Nodig om VERZEND-regels te filteren bij
@@ -71,7 +71,7 @@ export interface ZendingPrintRegel {
 }
 
 /**
- * Mig 221: een gebundelde zending bevat orders uit `zending_orders` M2M. Voor
+ * Mig 222: een gebundelde zending bevat orders uit `zending_orders` M2M. Voor
  * de pakbon hebben we per extra order alleen de identificerende velden nodig
  * (order_nr + uw-referentie + week) — het gros van het document komt uit de
  * primaire order (factuuradres, vertegenwoordiger, etc., gelijk over orders
@@ -137,7 +137,7 @@ export interface ZendingPrintSet {
     } | null
   }
   /**
-   * Mig 221: alle orders die aan deze zending hangen — ook de primaire
+   * Mig 222: alle orders die aan deze zending hangen — ook de primaire
    * `zending.orders`. Voor solo-zendingen 1 element; voor bundels ≥2.
    * Bron: `zending_orders` M2M (backfill heeft bestaande 1-op-1 al gevuld).
    */
@@ -253,7 +253,7 @@ export async function fetchZendingPrintSet(zending_nr: string): Promise<ZendingP
   if (error) throw toError(error, 'Verzendset ophalen mislukt')
 
   // Plat de M2M-join om naar `bundel_orders[]`. Voor solo-zendingen geeft de
-  // backfill 1 rij; voor bundels geeft mig 221 N rijen. Sorteer op order_nr
+  // backfill 1 rij; voor bundels geeft mig 222 N rijen. Sorteer op order_nr
   // zodat het pakbon-document een stabiele leesvolgorde heeft.
   const raw = data as unknown as ZendingPrintSet & {
     zending_orders?: Array<{
@@ -266,7 +266,7 @@ export async function fetchZendingPrintSet(zending_nr: string): Promise<ZendingP
     .filter((o): o is ZendingPrintBundelOrder => o != null)
     .sort((a, b) => a.order_nr.localeCompare(b.order_nr))
 
-  // Defensieve fallback: ontbreekt M2M (mig 221 niet uitgevoerd?), val terug
+  // Defensieve fallback: ontbreekt M2M (mig 222 niet uitgevoerd?), val terug
   // op alleen de primaire order zodat de pakbon nog rendert.
   if (bundel_orders.length === 0 && raw.orders) {
     bundel_orders.push({
@@ -318,7 +318,7 @@ export async function startPickrondenVoorOrder(
 }
 
 /**
- * Mig 221: bundel-RPC voor meerdere orders met identiek afleveradres binnen
+ * Mig 222: bundel-RPC voor meerdere orders met identiek afleveradres binnen
  * één debiteur. Groepeert regels (over alle orders) op effectieve vervoerder
  * en levert 1 zending per groep — gekoppeld aan alle betrokken orders via de
  * nieuwe `zending_orders` M2M-tabel. Voor 1 order delegeert de RPC zelf naar
