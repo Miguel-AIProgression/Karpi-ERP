@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import type { MaatwerkVormRow, AfwerkingTypeRow } from '@/lib/supabase/queries/op-maat'
+import type { MaatwerkVormRow, AfwerkingTypeRow } from '@/modules/maatwerk'
 import { useActieveAfwerkingKleuren } from '@/hooks/use-afwerking-kleuren'
 import { formatCurrency } from '@/lib/utils/formatters'
 

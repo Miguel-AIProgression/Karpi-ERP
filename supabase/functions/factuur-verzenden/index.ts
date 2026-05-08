@@ -26,8 +26,10 @@ interface QueueItem {
   id: number
   debiteur_nr: number
   order_ids: number[]
-  type: 'per_zending' | 'wekelijks'
+  type: 'per_zending' | 'wekelijks'  // legacy — mig 237 dropt dit veld
   attempts: number
+  zending_id: number | null  // mig 234 (ADR-0010): nieuwe bron-FK; mig 237 maakt 'm NOT NULL
+  verzendweek: string | null  // mig 231: gevuld voor wekelijks-pad (legacy)
 }
 
 interface EdiConfig {
@@ -178,32 +180,34 @@ serve(async () => {
   for (const item of (items ?? []) as QueueItem[]) {
     try {
 
-      // 2. Genereer factuur via RPC (atomair). Mig 232 splitst het pad:
-      //    'wekelijks' → genereer_factuur_voor_week(debiteur, week) — aggregeert
-      //                  per bundel-zending VERZEND-regels met drempel-toets.
-      //    'per_zending' → genereer_factuur(order_ids) — V1-pad, geen
-      //                    automatische verzendkosten (V2-backlog).
+      // ADR-0010 mig 234: 3-paden-dispatch met legacy-fallback.
+      //   1. NIEUW: item.zending_id gevuld → genereer_factuur_voor_bundel
+      //   2. LEGACY wekelijks: zending_id NULL maar type='wekelijks' →
+      //      genereer_factuur_voor_week (gedropt na mig 237)
+      //   3. LEGACY per_zending: zending_id NULL en type='per_zending' →
+      //      genereer_factuur (gedropt na mig 237)
+      // Mig 234 step 5 zorgt dat zending_id + verzendweek meekomen via
+      // claim_factuur_queue_items, dus geen extra fetch meer.
       let factuurId: number
-      if (item.type === 'wekelijks') {
-        const { data: queueRow, error: queueErr } = await supabase
-          .from('factuur_queue')
-          .select('verzendweek')
-          .eq('id', item.id)
-          .single()
-        if (queueErr) throw new Error(`Fetch queue verzendweek: ${queueErr.message}`)
-        const verzendweek = (queueRow as { verzendweek: string | null }).verzendweek
-        if (!verzendweek) throw new Error(`Queue-rij ${item.id} type=wekelijks heeft geen verzendweek`)
+      if (item.zending_id != null) {
+        const { data, error } = await supabase.rpc('genereer_factuur_voor_bundel', {
+          p_zending_id: item.zending_id,
+        })
+        if (error) throw new Error(`RPC genereer_factuur_voor_bundel: ${error.message}`)
+        factuurId = data as number
+      } else if (item.type === 'wekelijks') {
+        if (!item.verzendweek) throw new Error(`Queue-rij ${item.id} type=wekelijks zonder verzendweek én zonder zending_id`)
         const { data, error } = await supabase.rpc('genereer_factuur_voor_week', {
           p_debiteur_nr: item.debiteur_nr,
-          p_jaar_week: verzendweek,
+          p_jaar_week: item.verzendweek,
         })
-        if (error) throw new Error(`RPC genereer_factuur_voor_week: ${error.message}`)
+        if (error) throw new Error(`RPC genereer_factuur_voor_week (legacy): ${error.message}`)
         factuurId = data as number
       } else {
         const { data, error } = await supabase.rpc('genereer_factuur', {
           p_order_ids: item.order_ids,
         })
-        if (error) throw new Error(`RPC genereer_factuur: ${error.message}`)
+        if (error) throw new Error(`RPC genereer_factuur (legacy): ${error.message}`)
         factuurId = data as number
       }
       if (!factuurId) throw new Error('genereer_factuur* returned null')

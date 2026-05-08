@@ -9,7 +9,7 @@ import {
   fetchBandDefaultsVoorKwaliteit,
   fetchMaatwerkKleurenVoorKwaliteit,
   setBandKleurDefault,
-} from '@/lib/supabase/queries/op-maat'
+} from '@/modules/maatwerk'
 import { ProductRow } from './product-row'
 import type { ProductType } from '@/lib/supabase/queries/producten'
 

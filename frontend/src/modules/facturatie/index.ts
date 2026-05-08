@@ -24,9 +24,9 @@ export type { FactuurVoorOrder } from './queries/facturen'
 export {
   fetchKlantFactuurInstellingen,
   updateKlantFactuurInstellingen,
-  type FactuurVoorkeur,
   type KlantFactuurInstellingen,
 } from './queries/klant-factuur-instellingen'
+// FactuurVoorkeur-type vervalt per ADR-0010.
 export {
   useKlantFactuurInstellingen,
   useUpdateKlantFactuurInstellingen,

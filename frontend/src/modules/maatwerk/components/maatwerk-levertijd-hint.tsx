@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, ArrowRightLeft } from 'lucide-react'
-import { fetchMaatwerkLevertijdHint } from '@/lib/supabase/queries/op-maat'
+import { fetchMaatwerkLevertijdHint } from '@/modules/maatwerk'
 
 interface Props {
   kwaliteitCode: string | null | undefined

@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { Plus, Pencil, Trash2, Shapes } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { useAlleVormen, useDeleteVorm } from '@/hooks/use-vormen'
-import { VormFormDialog } from '@/components/instellingen/vorm-form-dialog'
+import { useAlleVormen, useDeleteVorm } from '../hooks/use-maatwerk-instellingen'
+import { VormFormDialog } from '../components/vorm-form-dialog'
 import { formatNumber } from '@/lib/utils/formatters'
-import type { MaatwerkVormRow } from '@/lib/supabase/queries/op-maat'
+import type { MaatwerkVormRow } from '@/modules/maatwerk'
 
 const AFMETING_LABEL: Record<MaatwerkVormRow['afmeting_type'], string> = {
   lengte_breedte: 'Lengte × Breedte',

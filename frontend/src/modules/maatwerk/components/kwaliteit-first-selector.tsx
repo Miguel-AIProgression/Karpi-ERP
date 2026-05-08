@@ -13,19 +13,17 @@ import {
   fetchStandaardMatenVoorKwaliteit,
   fetchMaatwerkArtikelNr,
   fetchKwaliteitM2Prijs,
-  type KwaliteitOptie,
-  type KleurOptie,
-} from '@/lib/supabase/queries/op-maat'
-import { VormAfmetingSelector, type VormAfmetingData } from './vorm-afmeting-selector'
-import { SubstitutionPicker } from './substitution-picker'
-import {
   berekenPrijsOppervlakM2,
   berekenMaatwerkPrijs,
   berekenOmtrekMeter,
-} from '@/lib/utils/maatwerk-prijs'
+  type KwaliteitOptie,
+  type KleurOptie,
+} from '@/modules/maatwerk'
+import { VormAfmetingSelector, type VormAfmetingData } from './vorm-afmeting-selector'
+import { SubstitutionPicker } from '@/components/orders/substitution-picker'
 import { berekenGewichtKg } from '@/lib/utils/gewicht'
 import { formatCurrency } from '@/lib/utils/formatters'
-import type { SelectedArticle, SubstitutionInfo } from './article-selector'
+import type { SelectedArticle, SubstitutionInfo } from '@/components/orders/article-selector'
 import { lookupPrice } from '@/lib/supabase/queries/order-mutations'
 import type { OrderRegelFormData } from '@/lib/supabase/queries/order-mutations'
 import type { EquivalentProduct } from '@/lib/supabase/queries/product-equivalents'

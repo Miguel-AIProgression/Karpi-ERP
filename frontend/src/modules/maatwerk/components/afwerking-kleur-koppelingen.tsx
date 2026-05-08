@@ -7,7 +7,7 @@ import {
   fetchMaatwerkKwaliteitOpties,
   setBandKleurDefault,
   type BandLabelKoppeling,
-} from '@/lib/supabase/queries/op-maat'
+} from '@/modules/maatwerk'
 
 interface Props {
   afwerkingKleurId: number

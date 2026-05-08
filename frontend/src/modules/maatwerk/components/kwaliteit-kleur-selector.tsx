@@ -5,7 +5,7 @@ import {
   fetchKwaliteiten,
   fetchKleurenVoorKwaliteit,
   type KwaliteitOptie,
-} from '@/lib/supabase/queries/op-maat'
+} from '@/modules/maatwerk'
 import { formatCurrency } from '@/lib/utils/formatters'
 
 export interface KwaliteitKleurData {

@@ -1,11 +1,11 @@
 import { Fragment, useState } from 'react'
 import { Plus, Pencil, Trash2, Scissors, ChevronDown, ChevronRight } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { useAlleAfwerkingen, useDeleteAfwerking } from '@/hooks/use-afwerkingen'
-import { AfwerkingFormDialog } from '@/components/instellingen/afwerking-form-dialog'
-import { AfwerkingKleurenSubmenu } from '@/components/instellingen/afwerking-kleuren-submenu'
+import { useAlleAfwerkingen, useDeleteAfwerking } from '../hooks/use-maatwerk-instellingen'
+import { AfwerkingFormDialog } from '../components/afwerking-form-dialog'
+import { AfwerkingKleurenSubmenu } from '../components/afwerking-kleuren-submenu'
 import { formatNumber } from '@/lib/utils/formatters'
-import type { AfwerkingTypeRow } from '@/lib/supabase/queries/op-maat'
+import type { AfwerkingTypeRow } from '@/modules/maatwerk'
 
 const COL_COUNT = 8
 

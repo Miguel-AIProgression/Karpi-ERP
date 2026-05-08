@@ -15,12 +15,10 @@ import {
   fetchAfwerkingTypes,
   fetchStandaardAfwerking,
   fetchStandaardBandKleur,
-} from '@/lib/supabase/queries/op-maat'
-import {
   berekenPrijsOppervlakM2,
   berekenMaatwerkPrijs,
   berekenOmtrekMeter,
-} from '@/lib/utils/maatwerk-prijs'
+} from '@/modules/maatwerk'
 import { berekenGewichtKg } from '@/lib/utils/gewicht'
 import { formatCurrency } from '@/lib/utils/formatters'
 import type { OrderRegelFormData } from '@/lib/supabase/queries/order-mutations'
@@ -132,14 +130,14 @@ function reducer(state: OpMaatState, action: OpMaatAction): OpMaatState {
 
 // ─── Props ──────────────────────────────────────────────────────
 
-interface OpMaatSelectorProps {
+interface MaatwerkSelectorProps {
   defaultKorting: number
   onAdd: (line: OrderRegelFormData) => void
 }
 
 // ─── Component ──────────────────────────────────────────────────
 
-export function OpMaatSelector({ defaultKorting, onAdd }: OpMaatSelectorProps) {
+export function MaatwerkSelector({ defaultKorting, onAdd }: MaatwerkSelectorProps) {
   const [state, dispatch] = useReducer(reducer, initialState)
 
   // Queries

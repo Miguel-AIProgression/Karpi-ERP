@@ -33,14 +33,14 @@ const fromMock = vi.fn(() => ({
   })),
 }))
 
-vi.mock('../../client', () => ({
+vi.mock('@/lib/supabase/client', () => ({
   supabase: {
     from: fromMock,
     rpc: rpcMock,
   },
 }))
 
-const { fetchMaatwerkLevertijdHint } = await import('../op-maat')
+const { fetchMaatwerkLevertijdHint } = await import('@/modules/maatwerk')
 
 // === Helpers ===
 

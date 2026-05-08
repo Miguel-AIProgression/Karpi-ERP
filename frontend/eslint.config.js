@@ -19,5 +19,14 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
+    rules: {
+      'no-restricted-imports': ['error', {
+        paths: [
+          { name: '@/lib/supabase/queries/op-maat', message: 'Gebruik @/modules/maatwerk (ADR-0009).' },
+          { name: '@/lib/utils/maatwerk-prijs', message: 'Gebruik @/modules/maatwerk (ADR-0009).' },
+          { name: '@/lib/utils/maatwerk-leverdatum', message: 'Gebruik @/modules/maatwerk (ADR-0009).' },
+        ],
+      }],
+    },
   },
 ])

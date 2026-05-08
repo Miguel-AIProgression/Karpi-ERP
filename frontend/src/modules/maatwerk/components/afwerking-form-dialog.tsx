@@ -1,11 +1,10 @@
 import { useState, type FormEvent } from 'react'
 import { X } from 'lucide-react'
-import { useUpsertVorm } from '@/hooks/use-vormen'
-import type { MaatwerkVormRow } from '@/lib/supabase/queries/op-maat'
+import { useUpsertAfwerking, useTypeBewerkingen } from '../hooks/use-maatwerk-instellingen'
+import type { AfwerkingTypeRow } from '@/modules/maatwerk'
 
 interface Props {
-  vorm?: MaatwerkVormRow
-  /** Volgende vrije volgorde-waarde voor nieuwe rijen. */
+  afwerking?: AfwerkingTypeRow
   defaultVolgorde?: number
   onClose: () => void
 }
@@ -13,30 +12,30 @@ interface Props {
 const inputClasses =
   'w-full px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400'
 
-export function VormFormDialog({ vorm, defaultVolgorde, onClose }: Props) {
-  const isEdit = Boolean(vorm)
-  const [code, setCode] = useState(vorm?.code ?? '')
-  const [naam, setNaam] = useState(vorm?.naam ?? '')
-  const [afmetingType, setAfmetingType] = useState<MaatwerkVormRow['afmeting_type']>(
-    vorm?.afmeting_type ?? 'lengte_breedte',
+export function AfwerkingFormDialog({ afwerking, defaultVolgorde, onClose }: Props) {
+  const isEdit = Boolean(afwerking)
+  const [code, setCode] = useState(afwerking?.code ?? '')
+  const [naam, setNaam] = useState(afwerking?.naam ?? '')
+  const [prijsPerMeter, setPrijsPerMeter] = useState<string>(
+    afwerking?.prijs_per_meter !== undefined ? String(afwerking.prijs_per_meter) : '0',
   )
-  const [toeslag, setToeslag] = useState<string>(
-    vorm?.toeslag !== undefined ? String(vorm.toeslag) : '0',
-  )
+  const [heeftBandKleur, setHeeftBandKleur] = useState(afwerking?.heeft_band_kleur ?? false)
+  const [typeBewerking, setTypeBewerking] = useState<string>(afwerking?.type_bewerking ?? '')
   const [volgorde, setVolgorde] = useState<string>(
-    String(vorm?.volgorde ?? defaultVolgorde ?? 0),
+    String(afwerking?.volgorde ?? defaultVolgorde ?? 0),
   )
-  const [actief, setActief] = useState(vorm?.actief ?? true)
+  const [actief, setActief] = useState(afwerking?.actief ?? true)
   const [error, setError] = useState<string | null>(null)
 
-  const upsert = useUpsertVorm()
+  const upsert = useUpsertAfwerking()
+  const { data: lanes } = useTypeBewerkingen()
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setError(null)
-    const trimmedCode = code.trim().toLowerCase().replace(/\s+/g, '_')
+    const trimmedCode = code.trim().toUpperCase().replace(/\s+/g, '')
     const trimmedNaam = naam.trim()
-    const toeslagNum = Number(toeslag.replace(',', '.'))
+    const prijsPerMeterNum = Number(prijsPerMeter.replace(',', '.'))
     const volgordeNum = Number(volgorde)
     if (!trimmedNaam) {
       setError('Naam is verplicht')
@@ -46,8 +45,8 @@ export function VormFormDialog({ vorm, defaultVolgorde, onClose }: Props) {
       setError('Code is verplicht')
       return
     }
-    if (Number.isNaN(toeslagNum) || toeslagNum < 0) {
-      setError('Toeslag moet een geldig (≥ 0) getal zijn')
+    if (Number.isNaN(prijsPerMeterNum) || prijsPerMeterNum < 0) {
+      setError('Prijs per strekkende meter moet een geldig (≥ 0) getal zijn')
       return
     }
     if (Number.isNaN(volgordeNum)) {
@@ -56,11 +55,14 @@ export function VormFormDialog({ vorm, defaultVolgorde, onClose }: Props) {
     }
     try {
       await upsert.mutateAsync({
-        id: vorm?.id,
+        id: afwerking?.id,
         code: trimmedCode,
         naam: trimmedNaam,
-        afmeting_type: afmetingType,
-        toeslag: toeslagNum,
+        // Legacy `prijs`-kolom blijft op 0; UI exposed alleen prijs_per_meter.
+        prijs: afwerking?.prijs ?? 0,
+        prijs_per_meter: prijsPerMeterNum,
+        heeft_band_kleur: heeftBandKleur,
+        type_bewerking: typeBewerking.trim() === '' ? null : typeBewerking,
         volgorde: volgordeNum,
         actief,
       })
@@ -73,7 +75,7 @@ export function VormFormDialog({ vorm, defaultVolgorde, onClose }: Props) {
             ? String((err as { message: unknown }).message)
             : JSON.stringify(err)
       setError(msg)
-      console.error('[VormFormDialog] upsert mislukt:', err)
+      console.error('[AfwerkingFormDialog] upsert mislukt:', err)
     }
   }
 
@@ -82,7 +84,7 @@ export function VormFormDialog({ vorm, defaultVolgorde, onClose }: Props) {
       <div className="bg-white rounded-[var(--radius)] shadow-xl w-full max-w-lg">
         <header className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
           <h2 className="font-medium text-lg">
-            {isEdit ? 'Vorm bewerken' : 'Nieuwe vorm'}
+            {isEdit ? 'Afwerking bewerken' : 'Nieuwe afwerking'}
           </h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700">
             <X size={18} />
@@ -99,14 +101,13 @@ export function VormFormDialog({ vorm, defaultVolgorde, onClose }: Props) {
               value={code}
               onChange={(e) => setCode(e.target.value)}
               disabled={isEdit}
-              placeholder="bv. organic"
+              placeholder="bv. SB"
               className={`${inputClasses} ${isEdit ? 'bg-slate-50 text-slate-500' : ''}`}
               required={!isEdit}
             />
             {!isEdit && (
               <p className="text-xs text-slate-400 mt-1">
-                Wordt genormaliseerd naar kleine letters met underscores. Wordt opgeslagen in
-                <code className="px-1 mx-0.5 bg-slate-100 rounded text-[11px]">producten.maatwerk_vorm_code</code>.
+                Korte unieke code (max 4 letters), wordt automatisch hoofdletters.
               </p>
             )}
           </div>
@@ -119,41 +120,48 @@ export function VormFormDialog({ vorm, defaultVolgorde, onClose }: Props) {
               type="text"
               value={naam}
               onChange={(e) => setNaam(e.target.value)}
-              placeholder="bv. Organic Gespiegeld"
+              placeholder="bv. Smalband"
               className={inputClasses}
               required
               autoFocus={isEdit}
             />
-            <p className="text-xs text-slate-400 mt-1">Verschijnt in de Vorm-dropdown bij order aanmaken.</p>
+            <p className="text-xs text-slate-400 mt-1">Verschijnt in de Afwerking-dropdown bij order aanmaken.</p>
           </div>
 
           <div>
-            <label className="block text-sm text-slate-600 mb-1">Afmeting-type</label>
+            <label className="block text-sm text-slate-600 mb-1">
+              Confectie-lane (type_bewerking)
+            </label>
             <select
-              value={afmetingType}
-              onChange={(e) => setAfmetingType(e.target.value as MaatwerkVormRow['afmeting_type'])}
+              value={typeBewerking}
+              onChange={(e) => setTypeBewerking(e.target.value)}
               className={inputClasses}
             >
-              <option value="lengte_breedte">Lengte × Breedte</option>
-              <option value="diameter">Diameter (cirkel)</option>
+              <option value="">— Geen (alleen stickeren) —</option>
+              {(lanes ?? []).map((lane) => (
+                <option key={lane} value={lane}>
+                  {lane}
+                </option>
+              ))}
             </select>
             <p className="text-xs text-slate-400 mt-1">
-              Bepaalt welke maatvelden zichtbaar worden in het order-formulier.
+              Bepaalt naar welke confectie-lane werk loopt. Leeg = geen lane (zoals ON, ZO).
+              Lijst komt uit <code className="px-1 mx-0.5 bg-slate-100 rounded text-[11px]">confectie_werktijden</code>.
             </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm text-slate-600 mb-1">Toeslag (€)</label>
+              <label className="block text-sm text-slate-600 mb-1">Prijs per strekkende meter (€)</label>
               <input
                 type="number"
                 step="0.01"
                 min="0"
-                value={toeslag}
-                onChange={(e) => setToeslag(e.target.value)}
+                value={prijsPerMeter}
+                onChange={(e) => setPrijsPerMeter(e.target.value)}
                 className={inputClasses}
               />
-              <p className="text-xs text-slate-400 mt-1">Bovenop de m²-prijs.</p>
+              <p className="text-xs text-slate-400 mt-1">× tapijt-omtrek.</p>
             </div>
             <div>
               <label className="block text-sm text-slate-600 mb-1">Volgorde</label>
@@ -164,9 +172,24 @@ export function VormFormDialog({ vorm, defaultVolgorde, onClose }: Props) {
                 onChange={(e) => setVolgorde(e.target.value)}
                 className={inputClasses}
               />
-              <p className="text-xs text-slate-400 mt-1">Sortering in dropdown (laag = eerst).</p>
+              <p className="text-xs text-slate-400 mt-1">Sortering in dropdown.</p>
             </div>
           </div>
+          <p className="text-xs text-slate-500 -mt-2">
+            Afwerkingsprijs op orderregel ={' '}
+            <code className="px-1 bg-slate-100 rounded text-[11px]">omtrek_m × prijs/m</code>.
+            Een 200×300 cm tapijt = 10&nbsp;m omtrek × tarief. Bij rond = π × diameter / 100.
+          </p>
+
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={heeftBandKleur}
+              onChange={(e) => setHeeftBandKleur(e.target.checked)}
+              className="rounded border-slate-300 text-terracotta-500 focus:ring-terracotta-400"
+            />
+            Heeft bandkleur (vraagt om kleurkeuze in order-form)
+          </label>
 
           <label className="flex items-center gap-2 text-sm text-slate-700">
             <input

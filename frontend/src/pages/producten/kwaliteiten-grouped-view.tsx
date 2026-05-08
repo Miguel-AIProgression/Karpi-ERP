@@ -10,7 +10,7 @@ import {
   setStandaardAfwerking,
   clearStandaardAfwerking,
   type AfwerkingTypeRow,
-} from '@/lib/supabase/queries/op-maat'
+} from '@/modules/maatwerk'
 import { formatNumber } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
 import type { ProductType } from '@/lib/supabase/queries/producten'

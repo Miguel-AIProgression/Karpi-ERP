@@ -58,7 +58,6 @@ export interface KlantDetail {
   standaard_maat_werkdagen: number | null
   maatwerk_weken: number | null
   deelleveringen_toegestaan: boolean
-  factuurvoorkeur: 'per_zending' | 'wekelijks'
   btw_percentage: number
   inkoopgroep_code: string | null
   inkoopgroep_naam?: string | null
