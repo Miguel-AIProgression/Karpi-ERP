@@ -102,3 +102,121 @@ GRANT EXECUTE ON FUNCTION verzendkosten_voor_bundel(INTEGER, NUMERIC, BOOLEAN)
 --   -- Pad 4: standaard
 --   SELECT * FROM verzendkosten_voor_bundel(<deb_zonder_gratis>, 100, FALSE);
 --   -- Verwacht: (verzendkosten van klant, 'betaald', 'Standaard verzendkosten')
+
+------------------------------------------------------------------------
+-- 2. View 229 herschrijft naar resolver-consumer
+------------------------------------------------------------------------
+-- Vervangt de CASE-takken voor `te_betalen_verzendkosten` en
+-- `drempel_gehaald` door een LATERAL JOIN op verzendkosten_voor_bundel.
+-- `bundel_besparing` blijft inline — die berekent een hypothese over
+-- "wat had de klant zonder bundel betaald?" en past niet binnen de
+-- resolver-API.
+
+CREATE OR REPLACE VIEW voorgestelde_zending_bundels AS
+WITH open_orders AS (
+  SELECT
+    o.id              AS order_id,
+    o.debiteur_nr,
+    o.afleverdatum,
+    o.afl_naam,
+    o.afl_adres,
+    o.afl_postcode,
+    o.afl_plaats,
+    o.afl_land,
+    _normaliseer_afleveradres(o.afl_adres, o.afl_postcode, o.afl_land) AS adres_norm,
+    verzendweek_voor_datum(o.afleverdatum)                             AS jaar_week,
+    o.afhalen
+    FROM orders o
+   WHERE o.status NOT IN ('Verzonden', 'Geannuleerd')
+     AND o.afleverdatum IS NOT NULL
+     AND NOT EXISTS (
+       SELECT 1
+         FROM zending_orders zo
+         JOIN zendingen z ON z.id = zo.zending_id
+        WHERE zo.order_id = o.id
+          AND z.status IN ('Picken', 'Klaar voor verzending', 'Onderweg', 'Afgeleverd')
+     )
+),
+per_regel AS (
+  SELECT
+    oo.order_id,
+    oo.debiteur_nr,
+    oo.adres_norm,
+    oo.afl_naam,
+    oo.afl_postcode,
+    oo.afl_plaats,
+    oo.jaar_week,
+    CASE
+      WHEN COALESCE(oo.afhalen, FALSE) THEN 'AFHAAL'
+      ELSE COALESCE(pv.effectief_code, 'GEEN')
+    END AS vervoerder_code,
+    pv.bron,
+    ore.bedrag,
+    ore.orderaantal,
+    ore.artikelnr
+    FROM open_orders oo
+    CROSS JOIN LATERAL effectieve_vervoerder_per_orderregel(oo.order_id) pv
+    JOIN order_regels ore ON ore.id = pv.orderregel_id
+   WHERE COALESCE(ore.artikelnr, '') <> 'VERZEND'
+     AND COALESCE(ore.orderaantal, 0) > 0
+),
+gegroepeerd AS (
+  SELECT
+    bundel_sleutel(
+      pr.debiteur_nr,
+      pr.adres_norm,
+      pr.vervoerder_code,
+      pr.jaar_week
+    )                                                      AS sleutel,
+    pr.debiteur_nr,
+    pr.adres_norm,
+    pr.vervoerder_code,
+    pr.jaar_week,
+    MIN(pr.afl_naam)                                       AS afl_naam,
+    MIN(pr.afl_postcode)                                   AS afl_postcode,
+    MIN(pr.afl_plaats)                                     AS afl_plaats,
+    array_agg(DISTINCT pr.order_id ORDER BY pr.order_id)   AS order_ids,
+    COUNT(DISTINCT pr.order_id)::INTEGER                   AS aantal_orders,
+    COALESCE(SUM(COALESCE(pr.bedrag, 0)), 0)::NUMERIC(12,2) AS bundel_subtotaal_excl,
+    BOOL_OR(pr.bron = 'afhalen')                            AS is_afhalen
+    FROM per_regel pr
+   GROUP BY pr.debiteur_nr, pr.adres_norm, pr.vervoerder_code, pr.jaar_week
+)
+SELECT
+  g.sleutel,
+  g.debiteur_nr,
+  d.naam                                                   AS debiteur_naam,
+  g.adres_norm,
+  g.afl_naam,
+  g.afl_postcode,
+  g.afl_plaats,
+  g.vervoerder_code,
+  g.is_afhalen,
+  g.jaar_week,
+  g.order_ids,
+  g.aantal_orders,
+  g.bundel_subtotaal_excl,
+  d.verzendkosten                                          AS klant_verzendkosten,
+  d.verzend_drempel                                        AS klant_drempel,
+  d.gratis_verzending,
+  -- Drempel-toets via resolver — single source of truth (ADR-0010).
+  (vk.status <> 'betaald')                                 AS drempel_gehaald,
+  vk.te_betalen                                            AS te_betalen_verzendkosten,
+  -- Besparing blijft inline: scenario-vergelijking met solo-wereld.
+  CASE
+    WHEN g.is_afhalen OR d.gratis_verzending THEN 0
+    WHEN g.aantal_orders < 2 THEN 0
+    WHEN d.verzend_drempel IS NOT NULL
+         AND g.bundel_subtotaal_excl >= d.verzend_drempel THEN
+      g.aantal_orders * COALESCE(d.verzendkosten, 0)
+    ELSE
+      (g.aantal_orders - 1) * COALESCE(d.verzendkosten, 0)
+  END::NUMERIC(10,2)                                       AS bundel_besparing
+FROM gegroepeerd g
+JOIN debiteuren d ON d.debiteur_nr = g.debiteur_nr
+CROSS JOIN LATERAL verzendkosten_voor_bundel(g.debiteur_nr, g.bundel_subtotaal_excl, g.is_afhalen) vk;
+
+COMMENT ON VIEW voorgestelde_zending_bundels IS
+  'Mig 234 (ADR-0010, herschreven): consumeert verzendkosten_voor_bundel '
+  'als single source of truth voor de drempel-toets. Bundel_besparing '
+  'blijft inline. Aggregatie blijft 4-dim: (debiteur × adres × vervoerder × week).';
