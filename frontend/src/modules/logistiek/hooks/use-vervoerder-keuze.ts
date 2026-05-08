@@ -22,10 +22,15 @@ export type { OrderVervoerderAggregaat }
 /**
  * Gecombineerde hook: per-orderregel data + order-niveau aggregaat in één.
  *
+ * "Keuze" = wat de DB rapporteert als gekozen of geëvalueerd; zie
+ * `useEffectieveVervoerderPerOrderregel` voor de per-regellaag waarop dit
+ * aggregeert.
+ *
  * Cache-key is dezelfde als `useEffectieveVervoerderPerOrderregel` —
  * `['logistiek', 'orderregel-vervoerder', orderId]` — zodat invalidations
  * vanuit `useSetOrderVervoerderOverride.onSuccess` automatisch ook deze hook
- * refreshen zonder extra wiring.
+ * refreshen zonder extra wiring. `staleTime` wordt bepaald door de inner hook
+ * (mig 219: STALE_30_SEC) — deze hook voegt geen eigen cache toe.
  *
  * `aggregaat` is een afgeleide useMemo — nooit undefined, synchroon beschikbaar
  * zodra de query data heeft. Zolang de query laadt is `aggregaat` gebaseerd op
@@ -46,6 +51,13 @@ export function useVervoerderKeuzeVoorOrder(orderId: number | null | undefined) 
  * Bulk-override mutatie: zet vervoerder op alle regels van een order via één
  * RPC-transactie (`set_orderregel_vervoerder_override_voor_order`, mig 227).
  * NULL wist de override (terug naar de verzendregel-evaluator).
+ *
+ * **Typed-error-pattern (geen exception bij geblokkeerde regels):** de mutatie
+ * resolved met `BulkOverrideResultaat[]` waarin geblokkeerde regels (al in een
+ * open zending) als `resultaat='geblokkeerd_door_zending'` voorkomen — niet
+ * als gegooide error. Consument moet zelf checken:
+ *   `data.some(r => r.resultaat !== 'gezet')` → toon waarschuwing.
+ * Echte exceptions (RLS/FK/order-niet-gevonden) komen wél via `onError`.
  *
  * `onSuccess` invalideert 6 cache-keys zodat alle pick/ship/print-views
  * meteen de nieuwe keuze reflecteren:
