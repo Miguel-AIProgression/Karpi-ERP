@@ -96,7 +96,7 @@ Geen commit; deze task is een checkpoint.
 - [ ] **Stap 1: Schrijf migratie-bestand**
 
 ```sql
--- Migratie 223: vervoerder-keuze — migreer klant-fallback naar verzendregels
+-- Migratie 224: vervoerder-keuze — migreer klant-fallback naar verzendregels
 --
 -- ADR-0008: klant-fallback vervalt; regel-engine wordt leidend.
 --
@@ -122,7 +122,7 @@ BEGIN
      WHERE table_name = 'edi_handelspartner_config'
        AND column_name = 'vervoerder_code'
   ) THEN
-    RAISE NOTICE 'Mig 223: kolom edi_handelspartner_config.vervoerder_code bestaat niet meer — migratie wordt overgeslagen';
+    RAISE NOTICE 'Mig 224: kolom edi_handelspartner_config.vervoerder_code bestaat niet meer — migratie wordt overgeslagen';
     RETURN;
   END IF;
 
@@ -147,7 +147,7 @@ BEGIN
     );
 
   GET DIAGNOSTICS v_aantal = ROW_COUNT;
-  RAISE NOTICE 'Mig 223: % verzendregels aangemaakt uit klant-fallbacks', v_aantal;
+  RAISE NOTICE 'Mig 224: % verzendregels aangemaakt uit klant-fallbacks', v_aantal;
 END
 $$;
 
