@@ -4,7 +4,7 @@ import { StatusBadge } from '@/components/ui/status-badge'
 import { formatCurrency, formatDate } from '@/lib/utils/formatters'
 import { verzendWeekVoor } from '@/lib/orders/verzendweek'
 import type { OrderRow, OrderSortField, SortDirection } from '@/lib/supabase/queries/orders'
-import type { FactuurVoorOrder } from '@/lib/supabase/queries/facturen'
+import type { FactuurVoorOrder } from '@/modules/facturatie'
 
 interface OrdersTableProps {
   orders: OrderRow[]

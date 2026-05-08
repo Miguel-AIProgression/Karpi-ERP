@@ -5,7 +5,7 @@ import {
   fetchFacturenVoorOrder,
   fetchFacturenVoorOrders,
   zetFactuurOpBetaald,
-} from '@/lib/supabase/queries/facturen'
+} from '../queries/facturen'
 
 export function useFacturen(debiteurNr?: number) {
   return useQuery({

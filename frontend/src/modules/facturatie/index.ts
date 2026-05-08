@@ -16,3 +16,6 @@ export { FactuurLijst } from './components/factuur-lijst'
 
 // Hooks
 export * from './hooks/use-facturen'
+
+// Types (for external consumers)
+export type { FactuurVoorOrder } from './queries/facturen'
