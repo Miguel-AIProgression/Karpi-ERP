@@ -7,5 +7,6 @@
 // Trigger sinds mig 219: AFTER INSERT ON order_events
 // (event_type='pickronde_voltooid' AND status_na='Verzonden').
 
-// Inhoud volgt in tasks 2.2-2.7
-export {}
+// Pages — geconsumeerd door router
+export { FactuurDetailPage } from './pages/factuur-detail'
+export { FacturatieOverviewPage } from './pages/facturatie-overview'
