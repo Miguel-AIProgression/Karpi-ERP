@@ -37,3 +37,16 @@ export type {
   StandaardMaat,
   MaatwerkLevertijdHintResult,
 } from './queries/maatwerk-runtime'
+
+export {
+  fetchAlleVormen,
+  upsertVorm,
+  deleteVorm,
+  fetchAlleAfwerkingTypes,
+  upsertAfwerkingType,
+  deleteAfwerkingType,
+  setStandaardAfwerking,
+  setAfwerkingVoorKleur,
+  clearStandaardAfwerking,
+  setBandKleurDefault,
+} from './queries/maatwerk-instellingen'
