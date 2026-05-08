@@ -220,3 +220,22 @@ COMMENT ON VIEW voorgestelde_zending_bundels IS
   'Mig 234 (ADR-0010, herschreven): consumeert verzendkosten_voor_bundel '
   'als single source of truth voor de drempel-toets. Bundel_besparing '
   'blijft inline. Aggregatie blijft 4-dim: (debiteur × adres × vervoerder × week).';
+
+------------------------------------------------------------------------
+-- 3. factuur_queue.zending_id-kolom (FK → zendingen)
+------------------------------------------------------------------------
+-- Bron-FK voor de bundel-driven enqueue (mig 235 cron). Nullable in
+-- mig 234 zodat bestaande queue-rijen blijven werken — mig 237 maakt
+-- 'm NOT NULL nadat oude rijen gedraind zijn.
+ALTER TABLE factuur_queue
+  ADD COLUMN IF NOT EXISTS zending_id BIGINT REFERENCES zendingen(id) ON DELETE RESTRICT;
+
+CREATE INDEX IF NOT EXISTS idx_factuur_queue_zending
+  ON factuur_queue(zending_id)
+  WHERE zending_id IS NOT NULL;
+
+COMMENT ON COLUMN factuur_queue.zending_id IS
+  'Mig 234 (ADR-0010): FK naar de bundel-zending die deze factuur '
+  'representeert. Bron-van-waarheid voor de set order_ids — mig 235 '
+  'cron leest zending_orders M2M voor de orderregels. Nullable totdat '
+  'mig 237 oude (debiteur, week)-rijen drained heeft.';
