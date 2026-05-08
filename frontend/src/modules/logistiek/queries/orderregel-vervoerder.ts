@@ -49,5 +49,14 @@ export async function updateOrderregelVervoerderOverride(
     .from('order_regels')
     .update({ vervoerder_code: vervoerderCode })
     .eq('id', orderregelId)
-  if (error) throw error
+  if (error) {
+    // Supabase PostgrestError is een plain object — gooien we als Error met
+    // alle nuttige velden in de message zodat de UI de echte reden toont
+    // (RLS-block, lock-trigger, FK-violation, etc.).
+    const parts = [error.message, error.details, error.hint, error.code]
+      .filter((p): p is string => typeof p === 'string' && p.trim().length > 0)
+    throw new Error(
+      parts.length > 0 ? parts.join(' · ') : 'Wijzigen vervoerder mislukt',
+    )
+  }
 }

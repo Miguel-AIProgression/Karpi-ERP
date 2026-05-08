@@ -94,7 +94,7 @@ export function PakbonDocument({ zending, vervoerderNaam: _vervoerderNaam, colli
       return ar - br
     })
 
-  // Mig 221: bij bundel-zendingen regels groeperen op bron-order_id zodat het
+  // Mig 222: bij bundel-zendingen regels groeperen op bron-order_id zodat het
   // pakbon-document onder elke order-sub-kop de bijbehorende regels toont.
   // Solo-zending: één groep — render-pad is identiek.
   const isBundel = zending.bundel_orders.length > 1
@@ -180,7 +180,7 @@ export function PakbonDocument({ zending, vervoerderNaam: _vervoerderNaam, colli
         <DashedDivider />
 
         {/* ORDER-BLOK ------------------------------------------------------- */}
-        {/* Mig 221: bij ≥2 orders in zending_orders (bundel) toont de pakbon
+        {/* Mig 222: bij ≥2 orders in zending_orders (bundel) toont de pakbon
             alle order-nummers + per-order referentie. Solo-zendingen tonen het
             klassieke één-regelige blok zoals voorheen. */}
         <section className="mt-4 mb-2">
@@ -235,7 +235,7 @@ export function PakbonDocument({ zending, vervoerderNaam: _vervoerderNaam, colli
         {/* Pakbon toont eerst de klanteigen-naam (zodat de ontvanger 'm herkent) en
             daaronder — alleen als die afwijkt — de Karpi-eigen artikelnaam, zodat
             magazijn-/retourcontroles altijd terug kunnen vallen op de bron.
-            Mig 221: bij bundel-zendingen krijgt elke bron-order een sub-kop boven
+            Mig 222: bij bundel-zendingen krijgt elke bron-order een sub-kop boven
             zijn regels zodat magazijnier én ontvanger kunnen zien welke regel
             bij welke orderbevestiging hoort. */}
         <div className="mt-4 space-y-1">

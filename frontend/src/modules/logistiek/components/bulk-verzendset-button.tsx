@@ -14,7 +14,7 @@
 // dezelfde picker_id (= de operator die op het knopje drukt). Bij shift-
 // overgang kan de operator op /logistiek/{nr}/printset alsnog wisselen.
 //
-// Mig 221: orders binnen het cluster worden eerst gegroepeerd op (genormali-
+// Mig 222: orders binnen het cluster worden eerst gegroepeerd op (genormali-
 // seerd afleveradres × effectieve vervoerder). Adres-bundels (≥2 orders met
 // identieke combinatie) gaan via `startPickrondenBundel` (1 zending per
 // vervoerder, gedeeld over orders); solo's gaan via `startPickrondenVoorOrder`
@@ -125,7 +125,7 @@ export function BulkVerzendsetButton({ orders, context }: BulkVerzendsetButtonPr
   const niksTeDoen = aantal === 0
   const disabled = bezig || !vervoerderOk || niksTeDoen
 
-  // Tooltip kort: extra zin als er bundels gedetecteerd zijn (mig 221).
+  // Tooltip kort: extra zin als er bundels gedetecteerd zijn (mig 222).
   const bundelHint =
     aantalBundels > 0
       ? ` Hiervan ${aantalBundels === 1 ? 'wordt 1 bundel-pakbon' : `worden ${aantalBundels} bundel-pakbonnen`} gemaakt (gelijk afleveradres + vervoerder).`
@@ -164,7 +164,7 @@ export function BulkVerzendsetButton({ orders, context }: BulkVerzendsetButtonPr
       // Sequentieel: elke cluster krijgt zijn eigen RPC-call. De RPC's zijn
       // niet idempotent op grote schaal — parallel uitvoeren kan nummer-
       // collisies geven en maakt fouten lastiger te diagnosticeren. Per
-      // cluster: ≥2 orders → bundel-RPC (mig 221), 1 order → solo-RPC die
+      // cluster: ≥2 orders → bundel-RPC (mig 222), 1 order → solo-RPC die
       // intern weer kan splitsen op per-regel-vervoerder (mig 220).
       for (let i = 0; i < clusters.length; i++) {
         const cl = clusters[i]

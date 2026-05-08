@@ -1,9 +1,9 @@
--- Migratie 221: Zending-bundeling op afleveradres + vervoerder
+-- Migratie 222: Zending-bundeling op afleveradres + vervoerder
 --
 -- Achtergrond
 -- -----------
 -- Mig 220 (`start_pickronden_voor_order`) splitst regels van één order over N
--- zendingen op basis van per-regel-vervoerder. Mig 221 sluit het andere uiteinde:
+-- zendingen op basis van per-regel-vervoerder. Mig 222 sluit het andere uiteinde:
 -- meerdere ordens met identiek afleveradres + dezelfde effectieve vervoerder
 -- worden samengevoegd in één bundel-zending (= één pakbon, één SSCC-set, één
 -- transportorder). Concreet voor B2B-klanten met centraal magazijn (bv.
@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS zending_orders (
 CREATE INDEX IF NOT EXISTS zending_orders_order_id_idx ON zending_orders(order_id);
 
 COMMENT ON TABLE zending_orders IS
-  'Mig 221: M2M tussen zendingen en orders. Voor 1-op-1 zendingen 1 rij; voor '
+  'Mig 222: M2M tussen zendingen en orders. Voor 1-op-1 zendingen 1 rij; voor '
   'bundel-zendingen N rijen. zendingen.order_id blijft als "primaire/eerste" '
   'order voor backwards-compat queries; deze tabel is de authoritatieve bron '
   'voor de volledige order-set van een zending bij bundeling.';
@@ -69,7 +69,7 @@ LANGUAGE sql IMMUTABLE AS $$
 $$;
 
 COMMENT ON FUNCTION _normaliseer_afleveradres(TEXT, TEXT, TEXT) IS
-  'Mig 221: produceert match-key voor afleveradres-vergelijking '
+  'Mig 222: produceert match-key voor afleveradres-vergelijking '
   '(postcode|adres|land, alles uppercase, postcode-spaties weg, adres-spaties '
   'genormaliseerd). De frontend dupliceert dezelfde logica voor consistentie '
   'in de UI-clustering vóór de RPC-aanroep.';
@@ -249,7 +249,7 @@ $$;
 GRANT EXECUTE ON FUNCTION start_pickronden_bundel(BIGINT[], BIGINT) TO authenticated;
 
 COMMENT ON FUNCTION start_pickronden_bundel(BIGINT[], BIGINT) IS
-  'Mig 221: start een bundel-pickronde over meerdere orders. Vereist dezelfde '
+  'Mig 222: start een bundel-pickronde over meerdere orders. Vereist dezelfde '
   'debiteur en identiek afleveradres. Groepeert regels (over alle orders) op '
   'effectieve vervoerder uit mig 219 en maakt 1 zending per vervoerder-groep, '
   'gekoppeld aan alle betrokken orders via zending_orders M2M. Bij 1 order '
@@ -303,7 +303,7 @@ BEGIN
 
   -- Sluitstuk factuur-keten: voor élke order in deze (mogelijk gebundelde)
   -- zending kijken of het de laatste open zending is. Bron: zending_orders
-  -- M2M (mig 221) — bevat zowel solo-1-op-1 als bundel-N-op-1 koppelingen.
+  -- M2M (mig 222) — bevat zowel solo-1-op-1 als bundel-N-op-1 koppelingen.
   SELECT array_agg(order_id) INTO v_bundel_orders
     FROM zending_orders WHERE zending_id = p_zending_id;
 
@@ -344,7 +344,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION voltooi_pickronde(BIGINT, BIGINT) IS
-  'Mig 221 (bundel-aware): voltooit Pickronde, delegeert order-status-write per '
+  'Mig 222 (bundel-aware): voltooit Pickronde, delegeert order-status-write per '
   'order in de bundel naar markeer_verzonden. Open-zendingen-telling gebruikt '
   'zending_orders M2M, zodat zowel solo- als bundel-zendingen correct worden '
   'afgesloten in de factuur-keten.';
