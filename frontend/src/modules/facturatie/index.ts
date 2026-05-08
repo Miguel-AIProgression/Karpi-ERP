@@ -19,3 +19,15 @@ export * from './hooks/use-facturen'
 
 // Types (for external consumers)
 export type { FactuurVoorOrder } from './queries/facturen'
+
+// Klant-factuur-instellingen
+export {
+  fetchKlantFactuurInstellingen,
+  updateKlantFactuurInstellingen,
+  type FactuurVoorkeur,
+  type KlantFactuurInstellingen,
+} from './queries/klant-factuur-instellingen'
+export {
+  useKlantFactuurInstellingen,
+  useUpdateKlantFactuurInstellingen,
+} from './hooks/use-klant-factuur-instellingen'
