@@ -159,7 +159,7 @@ export async function fetchZendingen(filters: ZendingenFilters = {}) {
       id, zending_nr, status, vervoerder_code, verzenddatum, track_trace,
       afl_naam, afl_postcode, afl_plaats, afl_land,
       aantal_colli, totaal_gewicht_kg, created_at,
-      orders!inner (
+      orders!zendingen_order_id_fkey!inner (
         id, order_nr, debiteur_nr,
         debiteuren:debiteuren!orders_debiteur_nr_fkey (
           debiteur_nr, naam
@@ -193,7 +193,7 @@ export async function fetchZendingMetTransportorders(zending_nr: string) {
     .select(
       `
       *,
-      orders!inner (
+      orders!zendingen_order_id_fkey!inner (
         *,
         debiteuren:debiteuren!orders_debiteur_nr_fkey (
           *
@@ -216,7 +216,7 @@ export async function fetchZendingPrintSet(zending_nr: string): Promise<ZendingP
       afl_naam, afl_adres, afl_postcode, afl_plaats, afl_land,
       aantal_colli, totaal_gewicht_kg, opmerkingen, created_at,
       vervoerders ( code, display_naam, type, actief, label_breedte_mm, label_hoogte_mm ),
-      orders!inner (
+      orders!zendingen_order_id_fkey!inner (
         id, order_nr, oud_order_nr, klant_referentie, orderdatum, afleverdatum,
         week, afhalen, lever_modus, debiteur_nr, vertegenw_code,
         fact_naam, fact_adres, fact_postcode, fact_plaats, fact_land,

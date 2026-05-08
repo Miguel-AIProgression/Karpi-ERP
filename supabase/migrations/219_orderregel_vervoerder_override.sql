@@ -30,9 +30,8 @@ ALTER TABLE order_regels
 COMMENT ON COLUMN order_regels.vervoerder_code IS
   'Mig 219: per-regel override van de order-default vervoerder. NULL = gebruik '
   'effectieve_vervoerder_per_orderregel-fallback (verzendregel-evaluator → '
-  'klant-fallback). Wijzigen geblokkeerd zodra een open zending (NOT IN '
-  '''Geannuleerd'',''Afgeleverd'') voor de regel bestaat (trigger '
-  'trg_lock_orderregel_vervoerder).';
+  'klant-fallback). Wijzigen geblokkeerd zodra een zending_regel naar deze '
+  'orderregel verwijst (trigger trg_lock_orderregel_vervoerder).';
 
 CREATE INDEX IF NOT EXISTS order_regels_vervoerder_code_idx
   ON order_regels(vervoerder_code)
@@ -48,15 +47,18 @@ BEGIN
     RETURN NEW;
   END IF;
 
+  -- Lock zodra ÉNIGE zending_regel naar deze orderregel verwijst — de
+  -- gebruiker koos "alleen vóór Verzendset wijzigbaar" (geen status-uitzonderingen).
+  -- Bewust GEEN status-filter: de `zending_status` enum kent geen 'Geannuleerd',
+  -- en zelfs Afgeleverd-zendingen blokkeren we voor audit-eenvoud (de override
+  -- na levering veranderen is sowieso betekenisloos).
   IF EXISTS (
     SELECT 1
       FROM zending_regels zr
-      JOIN zendingen z ON z.id = zr.zending_id
      WHERE zr.order_regel_id = NEW.id
-       AND z.status NOT IN ('Geannuleerd', 'Afgeleverd')
   ) THEN
     RAISE EXCEPTION
-      'Vervoerder van orderregel % kan niet meer worden gewijzigd: er bestaat al een open zending voor deze regel',
+      'Vervoerder van orderregel % kan niet meer worden gewijzigd: er bestaat al een zending voor deze regel',
       NEW.id
       USING ERRCODE = 'restrict_violation';
   END IF;
@@ -73,8 +75,8 @@ CREATE TRIGGER trg_lock_orderregel_vervoerder
 
 COMMENT ON FUNCTION lock_orderregel_vervoerder IS
   'Mig 219: voorkomt dat order_regels.vervoerder_code wijzigt zodra er een '
-  'open zending (NOT IN ''Geannuleerd'',''Afgeleverd'') voor de regel bestaat. '
-  'Wie de override toch wil aanpassen moet eerst de zending annuleren.';
+  'zending_regel naar deze orderregel verwijst. Wie de override toch wil '
+  'aanpassen moet eerst de zending verwijderen/annuleren.';
 
 ------------------------------------------------------------------------
 -- 3. Helper: per-orderregel-attributen voor regel-evaluator
