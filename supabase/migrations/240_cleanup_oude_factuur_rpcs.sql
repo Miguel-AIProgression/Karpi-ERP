@@ -46,7 +46,7 @@ DROP FUNCTION IF EXISTS genereer_factuur_voor_week(INTEGER, TEXT);
 DROP FUNCTION IF EXISTS genereer_factuur(BIGINT[]);
 
 ------------------------------------------------------------------------
--- 2. factuur_queue.type-kolom dropt; zending_id wordt NOT NULL
+-- 2. factuur_queue.type-kolom dropt; zending_id krijgt partial CHECK
 ------------------------------------------------------------------------
 DROP INDEX  IF EXISTS idx_factuur_queue_wekelijks_week;
 ALTER TABLE factuur_queue DROP COLUMN IF EXISTS type;
