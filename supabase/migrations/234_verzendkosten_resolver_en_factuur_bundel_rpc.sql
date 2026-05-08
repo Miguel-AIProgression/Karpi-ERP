@@ -239,3 +239,176 @@ COMMENT ON COLUMN factuur_queue.zending_id IS
   'representeert. Bron-van-waarheid voor de set order_ids — mig 235 '
   'cron leest zending_orders M2M voor de orderregels. Nullable totdat '
   'mig 237 oude (debiteur, week)-rijen drained heeft.';
+
+------------------------------------------------------------------------
+-- 4. genereer_factuur_voor_bundel — bundel-driven factuur-RPC
+------------------------------------------------------------------------
+-- Vervangt mig 232 genereer_factuur_voor_week. Aggregatie-eenheid wijzigt
+-- van (debiteur, week) naar bundel-zending (4-dim sleutel via mig 228).
+-- Eén factuur per bundel; één VERZEND-regel via verzendkosten_voor_bundel.
+--
+-- Volgt mig 227 no-op-guard: faal vroeg als alle regels al gefactureerd
+-- zijn — voorkomt lege headers bij dubbele drain-aanroep.
+
+CREATE OR REPLACE FUNCTION genereer_factuur_voor_bundel(p_zending_id BIGINT)
+RETURNS BIGINT
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_factuur_id           BIGINT;
+  v_factuur_nr           TEXT;
+  v_zending              zendingen%ROWTYPE;
+  v_debiteur             debiteuren%ROWTYPE;
+  v_btw_pct              NUMERIC(5,2);
+  v_betaaltermijn_dagen  INTEGER := 30;
+  v_aantal_te_factureren INTEGER;
+  v_order_ids            BIGINT[];
+  v_subtotaal            NUMERIC(12,2);
+  v_btw_bedrag           NUMERIC(12,2);
+  v_totaal               NUMERIC(12,2);
+  v_volgnr               INTEGER;
+  v_bundel_subtotaal     NUMERIC(12,2);
+  v_is_afhalen           BOOLEAN;
+  v_vk                   RECORD;
+BEGIN
+  IF p_zending_id IS NULL THEN
+    RAISE EXCEPTION 'p_zending_id is verplicht';
+  END IF;
+
+  SELECT * INTO v_zending FROM zendingen WHERE id = p_zending_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Zending % bestaat niet', p_zending_id;
+  END IF;
+
+  -- Orders uit zending_orders M2M (mig 222). Bij 1-op-1-zendingen is de
+  -- backfill al gevuld (zo zijn alle paden uniform).
+  SELECT array_agg(zo.order_id ORDER BY zo.order_id)
+    INTO v_order_ids
+    FROM zending_orders zo
+   WHERE zo.zending_id = p_zending_id;
+
+  IF v_order_ids IS NULL OR array_length(v_order_ids, 1) IS NULL THEN
+    RAISE EXCEPTION 'Zending % heeft geen gekoppelde orders', p_zending_id;
+  END IF;
+
+  -- Single-debiteur-invariant — bundel kruist nooit klant-grens (mig 222).
+  SELECT * INTO v_debiteur FROM debiteuren
+   WHERE debiteur_nr = (SELECT DISTINCT debiteur_nr FROM orders WHERE id = ANY(v_order_ids));
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Geen debiteur voor orders %', v_order_ids;
+  END IF;
+
+  v_btw_pct := COALESCE(v_debiteur.btw_percentage, 21.00);
+  IF v_debiteur.betaalconditie ~ '^\d+' THEN
+    v_betaaltermijn_dagen := (regexp_match(v_debiteur.betaalconditie, '^(\d+)'))[1]::INTEGER;
+  END IF;
+
+  -- Mig 227 no-op-guard.
+  SELECT COUNT(*) INTO v_aantal_te_factureren
+    FROM order_regels orr
+   WHERE orr.order_id = ANY(v_order_ids)
+     AND COALESCE(orr.gefactureerd, 0) < orr.orderaantal
+     AND COALESCE(orr.artikelnr, '') <> 'VERZEND';
+
+  IF v_aantal_te_factureren = 0 THEN
+    RAISE EXCEPTION 'Zending % heeft geen te-factureren regels', p_zending_id
+      USING ERRCODE = 'no_data_found';
+  END IF;
+
+  v_factuur_nr := volgend_nummer('FACT');
+
+  INSERT INTO facturen (
+    factuur_nr, debiteur_nr, factuurdatum, vervaldatum, status,
+    subtotaal, btw_percentage, btw_bedrag, totaal,
+    fact_naam, fact_adres, fact_postcode, fact_plaats, fact_land, btw_nummer
+  ) VALUES (
+    v_factuur_nr, v_debiteur.debiteur_nr, CURRENT_DATE,
+    CURRENT_DATE + v_betaaltermijn_dagen, 'Concept',
+    0, v_btw_pct, 0, 0,
+    COALESCE(v_debiteur.fact_naam, v_debiteur.naam),
+    COALESCE(v_debiteur.fact_adres, v_debiteur.adres),
+    COALESCE(v_debiteur.fact_postcode, v_debiteur.postcode),
+    COALESCE(v_debiteur.fact_plaats, v_debiteur.plaats),
+    v_debiteur.land,
+    v_debiteur.btw_nummer
+  ) RETURNING id INTO v_factuur_id;
+
+  -- Product-regels: identiek aan mig 232 SELECT-shape.
+  INSERT INTO factuur_regels (
+    factuur_id, order_id, order_regel_id, regelnummer,
+    artikelnr, omschrijving, omschrijving_2,
+    uw_referentie, order_nr,
+    aantal, prijs, korting_pct, bedrag, btw_percentage
+  )
+  SELECT
+    v_factuur_id, orr.order_id, orr.id, orr.regelnummer,
+    orr.artikelnr, orr.omschrijving, orr.omschrijving_2,
+    o.klant_referentie, o.order_nr,
+    orr.orderaantal, orr.prijs, COALESCE(orr.korting_pct, 0), orr.bedrag, v_btw_pct
+  FROM order_regels orr
+  JOIN orders o ON o.id = orr.order_id
+  WHERE orr.order_id = ANY(v_order_ids)
+    AND COALESCE(orr.gefactureerd, 0) < orr.orderaantal
+    AND COALESCE(orr.artikelnr, '') <> 'VERZEND'
+  ORDER BY orr.order_id, orr.regelnummer;
+
+  UPDATE order_regels
+     SET gefactureerd = orderaantal
+   WHERE order_id = ANY(v_order_ids)
+     AND COALESCE(gefactureerd, 0) < orderaantal
+     AND COALESCE(artikelnr, '') <> 'VERZEND';
+
+  -- Eén VERZEND-regel: drempel-toets op het bundel-totaal via resolver.
+  SELECT COALESCE(SUM(bedrag), 0)::NUMERIC(12,2)
+    INTO v_bundel_subtotaal
+    FROM factuur_regels WHERE factuur_id = v_factuur_id;
+
+  -- Afhalen-state vandaag: vervoerder_code IS NULL op de zending
+  -- (mig 205 afhalen_skip_vervoerder zorgt dat afhalen-orders geen
+  -- zending krijgen, maar defensief afdekken).
+  v_is_afhalen := (v_zending.vervoerder_code IS NULL);
+
+  SELECT * INTO v_vk
+    FROM verzendkosten_voor_bundel(v_debiteur.debiteur_nr, v_bundel_subtotaal, v_is_afhalen);
+
+  SELECT COALESCE(MAX(regelnummer), 0) INTO v_volgnr
+    FROM factuur_regels WHERE factuur_id = v_factuur_id;
+  v_volgnr := v_volgnr + 1;
+
+  INSERT INTO factuur_regels (
+    factuur_id, order_id, order_regel_id, regelnummer,
+    artikelnr, omschrijving,
+    aantal, prijs, korting_pct, bedrag, btw_percentage
+  ) VALUES (
+    v_factuur_id,
+    v_order_ids[1],                  -- bron-order voor EDI-context
+    NULL,                            -- geen specifieke order_regel
+    v_volgnr,
+    'VERZEND',
+    format('Verzendkosten week %s — %s',
+      COALESCE(v_zending.verzendweek, 'onbekend'), v_vk.reden),
+    1, v_vk.te_betalen, 0, v_vk.te_betalen, v_btw_pct
+  );
+
+  -- Eindtotalen.
+  SELECT COALESCE(SUM(bedrag), 0) INTO v_subtotaal
+    FROM factuur_regels WHERE factuur_id = v_factuur_id;
+  v_btw_bedrag := ROUND(v_subtotaal * v_btw_pct / 100, 2);
+  v_totaal     := v_subtotaal + v_btw_bedrag;
+
+  UPDATE facturen
+     SET subtotaal = v_subtotaal, btw_bedrag = v_btw_bedrag, totaal = v_totaal
+   WHERE id = v_factuur_id;
+
+  RETURN v_factuur_id;
+END;
+$$;
+
+COMMENT ON FUNCTION genereer_factuur_voor_bundel(BIGINT) IS
+  'Mig 234 (ADR-0010): genereert factuur voor één bundel-zending. '
+  'Aggregatie via zending_orders M2M (mig 222). Eén VERZEND-regel via '
+  'verzendkosten_voor_bundel-resolver. Volgt mig 227 no-op-guard. '
+  'Vervangt genereer_factuur_voor_week (mig 232) — die wordt gedropt in mig 237.';
+
+GRANT EXECUTE ON FUNCTION genereer_factuur_voor_bundel(BIGINT)
+  TO authenticated, service_role;
