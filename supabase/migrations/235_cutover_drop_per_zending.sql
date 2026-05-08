@@ -45,10 +45,15 @@ AS $$
 DECLARE
   v_doel_week TEXT := verzendweek_voor_datum((CURRENT_DATE - INTERVAL '7 days')::DATE);
 BEGIN
-  INSERT INTO factuur_queue (debiteur_nr, order_ids, zending_id, verzendweek)
+  -- type='wekelijks' is een legacy-placeholder: factuur_queue.type is
+  -- NOT NULL CHECK (mig 118) en wordt pas in mig 240 gedropt. Tussen
+  -- mig 235 en mig 240 schrijven we daarom een vaste waarde — de
+  -- semantische dimensie is voortaan zending_id, niet type.
+  INSERT INTO factuur_queue (debiteur_nr, order_ids, type, zending_id, verzendweek)
   SELECT
     o.debiteur_nr,
     array_agg(zo.order_id ORDER BY zo.order_id),
+    'wekelijks',
     z.id,
     z.verzendweek
   FROM zendingen z
