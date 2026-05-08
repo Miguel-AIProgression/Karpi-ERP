@@ -35,29 +35,30 @@ beforeEach(() => {
 })
 
 describe('fetchKlantFactuurInstellingen', () => {
-  it('selecteert facturatie-velden uit debiteuren op debiteur_nr', async () => {
+  it('selecteert btw_percentage + email_factuur uit debiteuren op debiteur_nr', async () => {
     nextResponse = {
-      data: { factuurvoorkeur: 'wekelijks', btw_percentage: 21, email_factuur: 'a@b.nl' },
+      data: { btw_percentage: 21, email_factuur: 'a@b.nl' },
       error: null,
     }
     const r = await fetchKlantFactuurInstellingen(123)
     expect(supabaseCalls[0]).toMatchObject({
       op: 'select',
       table: 'debiteuren',
+      cols: 'btw_percentage, email_factuur',
       col: 'debiteur_nr',
       val: 123,
     })
-    expect(r).toEqual({ factuurvoorkeur: 'wekelijks', btw_percentage: 21, email_factuur: 'a@b.nl' })
+    expect(r).toEqual({ btw_percentage: 21, email_factuur: 'a@b.nl' })
   })
 })
 
 describe('updateKlantFactuurInstellingen', () => {
-  it('update alleen de drie facturatie-velden', async () => {
-    await updateKlantFactuurInstellingen(123, { factuurvoorkeur: 'per_zending' })
+  it('update alleen de twee facturatie-velden', async () => {
+    await updateKlantFactuurInstellingen(123, { btw_percentage: 0 })
     expect(supabaseCalls[0]).toMatchObject({
       op: 'update',
       table: 'debiteuren',
-      patch: { factuurvoorkeur: 'per_zending' },
+      patch: { btw_percentage: 0 },
       col: 'debiteur_nr',
       val: 123,
     })

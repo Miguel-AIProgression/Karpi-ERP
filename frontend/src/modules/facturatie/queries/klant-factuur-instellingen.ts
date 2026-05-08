@@ -1,9 +1,6 @@
 import { supabase } from '@/lib/supabase/client'
 
-export type FactuurVoorkeur = 'per_zending' | 'wekelijks'
-
 export interface KlantFactuurInstellingen {
-  factuurvoorkeur: FactuurVoorkeur
   btw_percentage: number
   email_factuur: string | null
 }
@@ -13,7 +10,7 @@ export async function fetchKlantFactuurInstellingen(
 ): Promise<KlantFactuurInstellingen | null> {
   const { data, error } = await supabase
     .from('debiteuren')
-    .select('factuurvoorkeur, btw_percentage, email_factuur')
+    .select('btw_percentage, email_factuur')
     .eq('debiteur_nr', debiteur_nr)
     .single()
   if (error) throw new Error(error.message)
