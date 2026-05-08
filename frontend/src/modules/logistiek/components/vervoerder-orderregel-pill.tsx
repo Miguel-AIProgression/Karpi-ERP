@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronDown, Lock, Loader2, Sparkles, Truck, User } from 'lucide-react'
 import {
   useEffectieveVervoerderPerOrderregel,
@@ -28,10 +29,16 @@ interface Props {
   locked: boolean
 }
 
+const DROPDOWN_BREEDTE = 240 // px — komt overeen met w-60
+
 /**
  * Compacte pill achter een orderregel die toont welke vervoerder uiteindelijk
  * geldt voor díe regel. Klik = dropdown om een override te zetten of te
  * vervallen op de order-default (klant-fallback / verzendregel-evaluator).
+ *
+ * De dropdown wordt via een React-portal naar `document.body` gerenderd zodat
+ * hij niet wordt geknipt door `overflow-hidden` op de uitklap-tabel-wrapper
+ * van de pick-card. Positie wordt fixed berekend uit de button-rect.
  *
  * Bron-iconen:
  *   - Sparkles → regel-evaluator match (automatisch)
@@ -41,8 +48,10 @@ interface Props {
  */
 export function VervoerderOrderregelPill({ orderId, orderregelId, locked }: Props) {
   const [open, setOpen] = useState(false)
-  const wrapperRef = useRef<HTMLDivElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const popoverRef = useRef<HTMLDivElement>(null)
   const [error, setError] = useState<string | null>(null)
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
 
   const { data: regels = [] } = useEffectieveVervoerderPerOrderregel(orderId)
   const { data: vervoerders = [] } = useVervoerders()
@@ -53,13 +62,38 @@ export function VervoerderOrderregelPill({ orderId, orderregelId, locked }: Prop
     [regels, orderregelId],
   )
 
+  // Sluit bij click buiten button + popover.
   useEffect(() => {
     if (!open) return
     function onClick(e: MouseEvent) {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) setOpen(false)
+      const t = e.target as Node
+      if (buttonRef.current?.contains(t)) return
+      if (popoverRef.current?.contains(t)) return
+      setOpen(false)
     }
     document.addEventListener('mousedown', onClick)
     return () => document.removeEventListener('mousedown', onClick)
+  }, [open])
+
+  // Bereken positie zodra dropdown opent + bij scroll/resize. useLayoutEffect
+  // zodat de eerste render meteen op de juiste plek staat (geen flicker).
+  useLayoutEffect(() => {
+    if (!open) return
+    function update() {
+      const rect = buttonRef.current?.getBoundingClientRect()
+      if (!rect) return
+      // Rechts uitlijnen op de button: left = button.right - dropdown.width.
+      const left = Math.max(8, rect.right - DROPDOWN_BREEDTE)
+      const top = rect.bottom + 4
+      setPos({ top, left })
+    }
+    update()
+    window.addEventListener('scroll', update, true)
+    window.addEventListener('resize', update)
+    return () => {
+      window.removeEventListener('scroll', update, true)
+      window.removeEventListener('resize', update)
+    }
   }, [open])
 
   // Hooks-rule: alle hooks moeten boven de early-return staan, anders crasht
@@ -111,9 +145,64 @@ export function VervoerderOrderregelPill({ orderId, orderregelId, locked }: Prop
         ? Sparkles
         : Truck
 
+  const dropdown =
+    open && !locked && regel.bron !== 'afhalen' && pos
+      ? createPortal(
+          <div
+            ref={popoverRef}
+            onClick={(e) => e.stopPropagation()}
+            style={{ position: 'fixed', top: pos.top, left: pos.left, width: DROPDOWN_BREEDTE }}
+            className="z-[100] rounded-[var(--radius-sm)] border border-slate-200 bg-white py-1 text-xs shadow-lg"
+          >
+            <div className="px-3 pt-1.5 pb-1 text-[10px] uppercase tracking-wide text-slate-400">
+              Override voor deze regel
+            </div>
+            {vervoerders.map((v) => {
+              const isHuidig = regel.override_code === v.code
+              const vDef = getVervoerderDef(v.code)
+              return (
+                <button
+                  key={v.code}
+                  onClick={() => handleKies(v.code)}
+                  disabled={!v.actief}
+                  className={`flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 ${
+                    isHuidig ? 'bg-slate-50 font-medium' : ''
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-1.5 w-1.5 rounded-full ${
+                      vDef ? DOT_STYLES[vDef.badgeKleur] : DOT_STYLES.grijs
+                    }`}
+                  />
+                  <span className="flex-1">{v.display_naam}</span>
+                  {!v.actief && <span className="text-[10px] text-slate-400">inactief</span>}
+                </button>
+              )
+            })}
+            <div className="my-1 border-t border-slate-100" />
+            <button
+              onClick={() => handleKies(null)}
+              className={`flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-slate-50 ${
+                regel.override_code === null ? 'bg-slate-50 font-medium' : ''
+              }`}
+            >
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-slate-300" />
+              <span className="flex-1 text-slate-500">Volg order-default</span>
+            </button>
+            {error && (
+              <div className="mt-1 border-t border-rose-100 bg-rose-50 px-3 py-1.5 text-[11px] text-rose-700">
+                {error}
+              </div>
+            )}
+          </div>,
+          document.body,
+        )
+      : null
+
   return (
-    <div className="relative inline-block" ref={wrapperRef}>
+    <>
       <button
+        ref={buttonRef}
         type="button"
         onClick={(e) => {
           e.stopPropagation()
@@ -136,54 +225,7 @@ export function VervoerderOrderregelPill({ orderId, orderregelId, locked }: Prop
         {labelText}
         {!locked && regel.bron !== 'afhalen' && <ChevronDown size={9} className="opacity-60" />}
       </button>
-
-      {open && !locked && regel.bron !== 'afhalen' && (
-        <div
-          onClick={(e) => e.stopPropagation()}
-          className="absolute right-0 top-full z-30 mt-1 w-60 rounded-[var(--radius-sm)] border border-slate-200 bg-white py-1 text-xs shadow-lg"
-        >
-          <div className="px-3 pt-1.5 pb-1 text-[10px] uppercase tracking-wide text-slate-400">
-            Override voor deze regel
-          </div>
-          {vervoerders.map((v) => {
-            const isHuidig = regel.override_code === v.code
-            const vDef = getVervoerderDef(v.code)
-            return (
-              <button
-                key={v.code}
-                onClick={() => handleKies(v.code)}
-                disabled={!v.actief}
-                className={`flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 ${
-                  isHuidig ? 'bg-slate-50 font-medium' : ''
-                }`}
-              >
-                <span
-                  className={`inline-block h-1.5 w-1.5 rounded-full ${
-                    vDef ? DOT_STYLES[vDef.badgeKleur] : DOT_STYLES.grijs
-                  }`}
-                />
-                <span className="flex-1">{v.display_naam}</span>
-                {!v.actief && <span className="text-[10px] text-slate-400">inactief</span>}
-              </button>
-            )
-          })}
-          <div className="my-1 border-t border-slate-100" />
-          <button
-            onClick={() => handleKies(null)}
-            className={`flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-slate-50 ${
-              regel.override_code === null ? 'bg-slate-50 font-medium' : ''
-            }`}
-          >
-            <span className="inline-block h-1.5 w-1.5 rounded-full bg-slate-300" />
-            <span className="flex-1 text-slate-500">Volg order-default</span>
-          </button>
-          {error && (
-            <div className="mt-1 border-t border-rose-100 bg-rose-50 px-3 py-1.5 text-[11px] text-rose-700">
-              {error}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+      {dropdown}
+    </>
   )
 }

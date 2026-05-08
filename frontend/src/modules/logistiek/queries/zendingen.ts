@@ -32,6 +32,8 @@ export interface ZendingAanmaakResult {
 
 export interface ZendingPrintOrderRegel {
   id: number
+  /** Mig 221: bron-order voor groepering in pakbon bij bundel-zendingen. */
+  order_id: number
   regelnummer: number | null
   /** Bron-artikelnr op de orderregel. Nodig om VERZEND-regels te filteren bij
    *  oude zendingen waar `zending_regels.artikelnr` leeg is gebleven. */
@@ -224,10 +226,16 @@ export async function fetchZendingPrintSet(zending_nr: string): Promise<ZendingP
         ),
         vertegenwoordigers ( code, naam )
       ),
+      zending_orders (
+        order_id,
+        bundel_order:orders!zending_orders_order_id_fkey (
+          id, order_nr, klant_referentie, week
+        )
+      ),
       zending_regels (
         id, order_regel_id, artikelnr, rol_id, aantal,
         order_regels (
-          id, regelnummer, artikelnr, omschrijving, omschrijving_2, orderaantal, te_leveren,
+          id, order_id, regelnummer, artikelnr, omschrijving, omschrijving_2, orderaantal, te_leveren,
           gewicht_kg, is_maatwerk, maatwerk_lengte_cm, maatwerk_breedte_cm,
           maatwerk_afwerking, maatwerk_kwaliteit_code, maatwerk_kleur_code,
           maatwerk_oppervlak_m2,
@@ -243,7 +251,33 @@ export async function fetchZendingPrintSet(zending_nr: string): Promise<ZendingP
     .single()
 
   if (error) throw toError(error, 'Verzendset ophalen mislukt')
-  return data as unknown as ZendingPrintSet
+
+  // Plat de M2M-join om naar `bundel_orders[]`. Voor solo-zendingen geeft de
+  // backfill 1 rij; voor bundels geeft mig 221 N rijen. Sorteer op order_nr
+  // zodat het pakbon-document een stabiele leesvolgorde heeft.
+  const raw = data as unknown as ZendingPrintSet & {
+    zending_orders?: Array<{
+      order_id: number
+      bundel_order: ZendingPrintBundelOrder | null
+    }>
+  }
+  const bundel_orders: ZendingPrintBundelOrder[] = (raw.zending_orders ?? [])
+    .map((row) => row.bundel_order)
+    .filter((o): o is ZendingPrintBundelOrder => o != null)
+    .sort((a, b) => a.order_nr.localeCompare(b.order_nr))
+
+  // Defensieve fallback: ontbreekt M2M (mig 221 niet uitgevoerd?), val terug
+  // op alleen de primaire order zodat de pakbon nog rendert.
+  if (bundel_orders.length === 0 && raw.orders) {
+    bundel_orders.push({
+      id: raw.orders.id,
+      order_nr: raw.orders.order_nr,
+      klant_referentie: raw.orders.klant_referentie,
+      week: raw.orders.week,
+    })
+  }
+
+  return { ...raw, bundel_orders } as ZendingPrintSet
 }
 
 /**
