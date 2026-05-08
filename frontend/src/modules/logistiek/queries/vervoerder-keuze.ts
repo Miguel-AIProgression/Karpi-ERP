@@ -24,7 +24,16 @@ export async function setOrderVervoerderOverride(
     p_order_id: orderId,
     p_vervoerder_code: vervoerderCode,
   })
-  if (error) throw error
+  if (error) {
+    // Wrap PostgrestError → Error met message+details+hint+code samengevoegd, zelfde
+    // patroon als updateOrderregelVervoerderOverride. UI-foutbanner krijgt de echte
+    // reden (RLS-block, FK-violation, restrict_violation) i.p.v. een raw object.
+    const parts = [error.message, error.details, error.hint, error.code]
+      .filter((p): p is string => typeof p === 'string' && p.trim().length > 0)
+    throw new Error(
+      parts.length > 0 ? parts.join(' · ') : 'Vervoerder voor order instellen mislukt',
+    )
+  }
   return (data ?? []) as BulkOverrideResultaat[]
 }
 
@@ -33,8 +42,14 @@ export async function setOrderVervoerderOverride(
  * per-orderregel-uitkomsten. Pure functie — testbaar zonder DB.
  *
  * - Alle regels gelijk (incl. NULL → NULL) → `'uniform'` met die code
- * - Mix van codes (incl. NULL) → `'mix'` met de unieke codes erbij
+ * - Mix van codes (incl. NULL) → `'mix'` met de unieke codes erbij (gesorteerd)
  * - Geen regels → `'leeg'`
+ *
+ * **Let op `bron` bij `'uniform'`:** wordt overgenomen van de eerste regel.
+ * Twee regels met dezelfde `effectief_code` maar verschillende `bron`
+ * (bv. één 'override', één 'regel') leveren `'uniform'` op met de bron van
+ * regel-0 — dat is misleidend maar acceptabel voor V1 omdat de UI alleen het
+ * label-icoon (sparkles voor 'regel', truck voor 'override') ervan afleidt.
  */
 export type OrderVervoerderAggregaat =
   | { soort: 'leeg' }
@@ -49,5 +64,7 @@ export function aggregeerVervoerderKeuzeVoorOrder(
   if (codes.length === 1) {
     return { soort: 'uniform', code: codes[0], bron: perRegel[0].bron }
   }
+  // Deterministische volgorde voor UI-label "Mix · DPD+UPS" — null sorteert achteraan.
+  codes.sort((a, b) => (a ?? '￿').localeCompare(b ?? '￿'))
   return { soort: 'mix', codes }
 }
