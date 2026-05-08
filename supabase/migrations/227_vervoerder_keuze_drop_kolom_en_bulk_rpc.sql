@@ -25,12 +25,23 @@
 -- ============================================================================
 -- 1. Drop kolom + index — met lock_timeout-veiligheidsklep
 -- ============================================================================
+-- SET LOCAL werkt correct: Supabase CLI wraps elke migratie in BEGIN/COMMIT,
+-- dus de scope is de volledige migratie. Bij `psql -f` zonder transactie valt
+-- LOCAL stilletjes terug op SET SESSION — ook veilig (per-connection).
 SET LOCAL lock_timeout = '3s';
 
 DROP INDEX IF EXISTS idx_edi_handelspartner_vervoerder;
 
 ALTER TABLE edi_handelspartner_config
   DROP COLUMN IF EXISTS vervoerder_code;
+
+-- COMMENT op `vervoerders` aanpassen: kolom waar de oorspronkelijke FK heen wees
+-- bestaat niet meer; de FK leeft nu op `order_regels.vervoerder_code` en
+-- `zendingen.vervoerder_code`.
+COMMENT ON TABLE vervoerders IS
+  'Beschikbare vervoerders. `code` wordt als FK gebruikt op '
+  '`order_regels.vervoerder_code` (handmatige override per regel, mig 219) en '
+  '`zendingen.vervoerder_code` (gematerialiseerde keuze bij verzendset, mig 176).';
 
 -- ============================================================================
 -- 2. Drop preview-RPC (mig 215) — vervangen door frontend-aggregatie
