@@ -56,7 +56,6 @@ RETURNS TABLE (
 ) AS $$
 DECLARE
   v_afhalen          BOOLEAN;
-  v_debiteur_nr      INTEGER;
   v_regel            RECORD;
   v_attr             RECORD;
   v_match_regel      RECORD;
@@ -69,8 +68,8 @@ BEGIN
     RAISE EXCEPTION 'Order % bestaat niet', p_order_id;
   END IF;
 
-  SELECT o.afhalen, o.debiteur_nr
-    INTO v_afhalen, v_debiteur_nr
+  SELECT o.afhalen
+    INTO v_afhalen
     FROM orders o WHERE o.id = p_order_id;
 
   -- Afhalen-orders: geen vervoerder, ongeacht override of evaluator.
