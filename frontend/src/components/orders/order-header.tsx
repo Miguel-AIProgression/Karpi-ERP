@@ -7,7 +7,6 @@ import { useMarkeerGeannuleerd } from '@/modules/orders-lifecycle'
 import type { OrderDetail } from '@/lib/supabase/queries/orders'
 
 const EINDSTATUSSEN = ['Verzonden', 'Geannuleerd'] as const
-type EindStatus = (typeof EINDSTATUSSEN)[number]
 
 interface OrderHeaderProps {
   order: OrderDetail

@@ -24,6 +24,7 @@ function makeOrder(overrides: Partial<PickShipOrder> = {}): PickShipOrder {
     totaal_m2: 0,
     totaal_gewicht_kg: 0,
     aantal_regels: 0,
+    actieve_pickronde: null,
     ...overrides,
   }
 }
