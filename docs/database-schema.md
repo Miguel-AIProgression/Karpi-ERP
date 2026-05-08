@@ -364,6 +364,29 @@ Harde koppeling orderregel ↔ voorraad/inkooporder-regel. Bron-van-waarheid voo
 
 ---
 
+### order_events
+Typed audit-log van `orders.status`-overgangen. Geschreven door `_apply_transitie` binnen Order-lifecycle Module (mig 218, ADR-0006). Append-only.
+
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| id | BIGSERIAL PK | |
+| order_id | BIGINT FK → orders | CASCADE DELETE |
+| event_type | order_event_type | aangemaakt / pickronde_voltooid / wacht_status_herberekend / geannuleerd |
+| status_voor | order_status NULL | NULL voor backfill + 'aangemaakt'-events |
+| status_na | order_status | Nooit NULL |
+| actor_medewerker_id | BIGINT FK → medewerkers | XOR met actor_auth_user_id |
+| actor_auth_user_id | UUID FK → auth.users | XOR met actor_medewerker_id |
+| reden | TEXT | Vrije tekst, vereist bij `markeer_geannuleerd` |
+| metadata | JSONB | bv. `{cleanup: true}` of `{backfill: true}` |
+| created_at | TIMESTAMPTZ | DEFAULT now() |
+
+CHECK constraint `order_events_actor_xor`: niet beide actor-velden tegelijk gevuld. Indexen: `(order_id, created_at DESC)` en `(event_type, created_at DESC)`.
+
+#### order_event_type (enum)
+`aangemaakt | pickronde_voltooid | wacht_status_herberekend | geannuleerd`
+
+---
+
 ### order_regels
 Productregels per order. artikelnr nullable voor service-items.
 | Kolom | Type | Toelichting |
