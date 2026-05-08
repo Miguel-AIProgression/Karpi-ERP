@@ -56,3 +56,21 @@ export { MaatwerkLevertijdHint } from './components/maatwerk-levertijd-hint'
 export { KwaliteitFirstSelector } from './components/kwaliteit-first-selector'
 export { KwaliteitKleurSelector } from './components/kwaliteit-kleur-selector'
 export { VormAfmetingSelector } from './components/vorm-afmeting-selector'
+
+export { VormFormDialog } from './components/vorm-form-dialog'
+export { AfwerkingFormDialog } from './components/afwerking-form-dialog'
+export { AfwerkingKleurKoppelingen } from './components/afwerking-kleur-koppelingen'
+export { AfwerkingKleurenSubmenu } from './components/afwerking-kleuren-submenu'
+
+export {
+  useAlleVormen,
+  useUpsertVorm,
+  useDeleteVorm,
+  useAlleAfwerkingen,
+  useTypeBewerkingen,
+  useUpsertAfwerking,
+  useDeleteAfwerking,
+} from './hooks/use-maatwerk-instellingen'
+
+export { VormenInstellingenPage } from './pages/vormen-instellingen'
+export { AfwerkingenInstellingenPage } from './pages/afwerkingen-instellingen'
