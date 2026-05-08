@@ -137,7 +137,7 @@ Handmatige pre-cutover-validatie blijft beschikbaar via `/edi/berichten`: echte 
 
 ## Logistiek-module
 
-Karpi verzendt met **drie vervoerders**: HST (REST API), Rhenus (EDI) en Verhoek (EDI). Dit document beschrijft de end-state vanaf migraties 169–173, waarin de **HST-koppeling** is opgeleverd; de twee EDI-vervoerders volgen in latere plans en gebruiken straks de bestaande `edi_berichten`-tabel met `berichttype='verzendbericht'`. Per debiteur wordt vastgelegd welke vervoerder gebruikt wordt via `edi_handelspartner_config.vervoerder_code` (FK → `vervoerders.code`).
+Karpi verzendt met **drie vervoerders**: HST (REST API), Rhenus (EDI) en Verhoek (EDI). Dit document beschrijft de end-state vanaf migraties 169–173, waarin de **HST-koppeling** is opgeleverd; de twee EDI-vervoerders volgen in latere plans en gebruiken straks de bestaande `edi_berichten`-tabel met `berichttype='verzendbericht'`. Vervoerder-keuze leeft sinds [ADR-0008](adr/0008-vervoerder-keuze-als-deep-module.md) per orderregel — bron-van-waarheid is `order_regels.vervoerder_code` (override) + `vervoerder_selectie_regels` (regel-engine), met ladder `override → regel → geen`. Geen klant-fallback meer.
 
 ### Flow
 
@@ -161,7 +161,11 @@ Karpi verzendt met **drie vervoerders**: HST (REST API), Rhenus (EDI) en Verhoek
                                                               │   vervoerder(zending_id)       │  ◀── single switch-point
                                                               │                                │
                                                               │ leest vervoerder_code uit      │
-                                                              │ edi_handelspartner_config en   │
+                                                              │ zendingen.vervoerder_code      │
+                                                              │ (gematerialiseerd door         │
+                                                              │ start_pickronden_voor_order op │
+                                                              │ basis van per-orderregel-      │
+                                                              │ resolver, ADR-0008) en         │
                                                               │ dispatcht naar adapter-RPC:    │
                                                               │                                │
                                                               │   'hst_api'                    │
@@ -193,7 +197,7 @@ Karpi verzendt met **drie vervoerders**: HST (REST API), Rhenus (EDI) en Verhoek
 
 ### Pick & Ship verzendset
 
-Vanaf `/pick-ship` kan een magazijnmedewerker op een volledig pickbare order de actie **Verzendset** starten. De frontend roept `create_zending_voor_order(p_order_id)` aan; de database kiest daarna op zendingniveau de vervoerder via `selecteer_vervoerder_voor_zending()` (V1: precies één actieve vervoerder) en opent `/logistiek/:zending_nr/printset`. Die printset bevat per colli een verzendsticker met GS1-128/SSCC-barcode en vervoerderbadge, plus een A4-pakbon met orderregels, aantallen, afleveradres en colli/gewicht-samenvatting. De zending-trigger blijft de bron voor automatische dispatch naar de adapter; de printset is de magazijn-output voor de fysieke zending.
+Vanaf `/pick-ship` kan een magazijnmedewerker op een volledig pickbare order de actie **Verzendset** starten. De frontend roept `start_pickronden_voor_order(p_order_id, p_picker_id)` aan (mig 220); die groepeert orderregels op effectieve vervoerder uit `effectieve_vervoerder_per_orderregel` (mig 219+221+225, ladder `override → regel → geen`) en maakt **per unieke vervoerder één zending** — een order met `[UPS, DPD]`-regels splitst dus in twee zendingen. Vanaf de pick-card kan de operator de pill `VervoerderInlineSelect` gebruiken om alle regels van een order in één klik te overrulen via `set_orderregel_vervoerder_override_voor_order` (mig 227, bulk-RPC). De `/logistiek/:zending_nr/printset` opent met de gematerialiseerde `zendingen.vervoerder_code` per zending. Die printset bevat per colli een verzendsticker met GS1-128/SSCC-barcode en vervoerderbadge, plus een A4-pakbon met orderregels, aantallen, afleveradres en colli/gewicht-samenvatting. De zending-trigger blijft de bron voor automatische dispatch naar de adapter; de printset is de magazijn-output voor de fysieke zending.
 
 ### Belangrijkste design-besluiten
 
@@ -206,6 +210,22 @@ Vanaf `/pick-ship` kan een magazijnmedewerker op een volledig pickbare order de 
 - **Cron-frequentie:** edge function `hst-send` draait elke minuut via pg_cron (mig 173).
 
 Voor implementatiedetails (taak-volgorde, fixtures, payload-shape, retry-strategieën): zie [`docs/superpowers/plans/2026-05-01-logistiek-hst-api-koppeling.md`](superpowers/plans/2026-05-01-logistiek-hst-api-koppeling.md).
+
+### Vervoerder-Keuze als deep Module ([ADR-0008](adr/0008-vervoerder-keuze-als-deep-module.md))
+
+Vóór de refactor leefde "welke vervoerder geldt voor X" in vier tabellen (`vervoerders.actief`, `vervoerder_selectie_regels`, `edi_handelspartner_config.vervoerder_code`, `order_regels.vervoerder_code`) met drie verschillende fallback-volgordes verspreid over `preview_vervoerder_voor_order` (mig 215), `effectieve_vervoerder_per_orderregel` (mig 219+221) en `selecteer_vervoerder_voor_zending` (mig 210). Plus een vierde ladder in de UI-pill. Bug-symptoom: gebruikers konden DPD kiezen op een order zonder zichtbaar effect (silent failure in upsert naar de misnoemde EDI-tabel + incomplete cache-invalidatie).
+
+**Sinds mig 224/225/227 één seam, één ladder.**
+
+- **Bron-van-waarheid: orderregel.** `order_regels.vervoerder_code` (override) + `vervoerder_selectie_regels` (regel-engine). Klant-fallback bestaat niet meer als concept.
+- **Ladder:** `override → regel-evaluator → geen`. Order-niveau is een afgeleide aggregatie (`'uniform'` met code / `'mix'` met breakdown / `'leeg'`).
+- **Read-RPC:** `effectieve_vervoerder_per_orderregel(p_order_id)` returnt `(orderregel_id, override_code, evaluator_code, evaluator_service, effectief_code, effectief_service, bron, is_locked, uitleg)`. Bron-domein: `{override, regel, geen, afhalen}`.
+- **Write-RPCs:** `update order_regels set vervoerder_code = …` (single-regel, lock-trigger uit mig 219 blokkeert wijziging zodra een open zending naar de regel verwijst) en `set_orderregel_vervoerder_override_voor_order(p_order_id, p_vervoerder_code)` (bulk, mig 227 — vangt `restrict_violation` per regel zodat geblokkeerde regels typed teruggegeven worden, niet als exception).
+- **Frontend-Module:** `modules/logistiek` exporteert via barrel `useVervoerderKeuzeVoorOrder` (afgeleide aggregatie, cache-deelt met per-regel-key) en `useSetOrderVervoerderOverride` (bulk-RPC + 6-key invalidation). De pill `VervoerderInlineSelect` schrijft via deze hook met inline foutbanner (geen toast-library nodig). De `VervoerderOrderregelPill` op detail-niveau gebruikt single-regel-write.
+- **Materialisatie op zending:** `start_pickronden_voor_order` (mig 220) leest `effectieve_vervoerder_per_orderregel`, groepeert op effectief_code en maakt per unieke code één zending — daarom kan een order met multi-vervoerder splitsen in N zendingen. `selecteer_vervoerder_voor_zending` (mig 210) is intussen vervoerder-blind; krijgt z'n input van de RPC hierboven, niet meer van een eigen ladder.
+- **Eenmalige data-migratie (mig 224):** bestaande klant-fallbacks zijn auto-vertaald naar `vervoerder_selectie_regels` met conditie `{debiteur_nrs: [X]}` en prio 9000. Operator beheert ze daarna via `/verzendregels`. De klant-detail-tab "Vervoerder" is verwijderd — geen UX-affordance meer voor het oude concept.
+
+**Migratie-keten:** mig 224 (data-migratie naar regels) → mig 225 (ladder versimpelen, `is_locked` behouden) → mig 227 (DROP COLUMN `edi_handelspartner_config.vervoerder_code` + drop preview-RPC + bulk-override-RPC).
 
 ### Vervoerder-instellingen + roadmap
 
