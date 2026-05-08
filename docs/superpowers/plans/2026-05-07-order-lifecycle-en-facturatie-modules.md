@@ -914,6 +914,21 @@ git add docs/superpowers/plans/2026-05-07-order-lifecycle-en-facturatie-modules.
 git commit -m "docs(order-lifecycle): data-audit uitkomst — bepaalt CHECK-strategie voor mig 218 task 1.10"
 ```
 
+## Data-audit uitkomst (2026-05-08, na mig 218 apply)
+
+Smoke-test backfill (na mig 218):
+
+| Metric | Waarde |
+|---|---|
+| `totaal_orders` | 9 |
+| `backfill_aangemaakt` | 9 |
+| `backfill_pickronde_voltooid` | 0 |
+| `verwacht_pickronde_voltooid` | 0 |
+
+Backfill cleanly: 1-op-1 match tussen orders en `aangemaakt`-events. Geen verzonden orders in dataset (klopt — pickronde-factuur-keten was vóór mig 217+218 niet rond).
+
+Status-distributie (`SELECT status, COUNT(*) FROM orders GROUP BY status`) niet expliciet gerapporteerd; gegeven de kleine dataset (9 orders) is de risicobalans voor Task 1.10 verschoven naar **pragmatisch**: CHECK verbiedt alleen `'Klaar voor verzending'`, andere legacy-statussen (`In productie`, `In snijplan`, `Deels gereed`, `Wacht op picken`) blijven toegestaan in de enum. Strict-pad blijft kandidaat voor vervolg-iteratie zodra de productie-data alleen de canonieke 5 statussen bevat.
+
 ---
 
 ### Task 1.10: Migratie 218 — CHECK-constraint op `orders.status` (conditioneel op Task 1.9)
