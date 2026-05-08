@@ -427,6 +427,7 @@ Productregels per order. artikelnr nullable voor service-items.
 | maatwerk_kwaliteit_code | TEXT | Kwaliteitscode (voor groepering zonder artikelnr) |
 | maatwerk_kleur_code | TEXT | Kleurcode |
 | productie_groep | TEXT | Groepering voor snijplanning (kwaliteit+kleur) |
+| vervoerder_code | TEXT FK → vervoerders(code) | Mig 219: per-regel override van order-default vervoerder. NULL = gebruik `effectieve_vervoerder_per_orderregel`-fallback (regel-evaluator → klant-fallback). Wijzigen geblokkeerd door trigger `trg_lock_orderregel_vervoerder` zodra een open zending bestaat. |
 | UK: (order_id, regelnummer) | | |
 
 ---
@@ -1192,6 +1193,9 @@ Mig 174, aangepast in mig 176. Read-only view die de `/logistiek/vervoerders`-ov
 | `markeer_hst_fout(p_id, p_error, p_request_payload, p_response_payload, p_response_http_code, p_max_retries DEFAULT 3) → VOID` | HST-adapter: incrementeert `retry_count`. Bij `>=` max_retries → status `Fout`, anders terug naar `Wachtrij`. Migratie 171. |
 | `create_or_get_magazijn_locatie(p_code TEXT, p_omschrijving TEXT DEFAULT NULL, p_type TEXT DEFAULT 'rek') → BIGINT` | Idempotent: vindt-of-maakt `magazijn_locaties.id` voor `code` (UPPER+TRIM). Wordt gebruikt door `MagazijnLocatieEdit` (rol-locatie zetten) en `boek_ontvangst`. Migratie 169. |
 | `set_locatie_voor_orderregel(p_order_regel_id INTEGER, p_code TEXT) → BIGINT` | **Atomair**: vindt-of-maakt `magazijn_locaties`-rij voor `code` én zet `snijplannen.locatie = code` voor alle `Ingepakt`-rijen van de orderregel. Vervangt twee opeenvolgende RPC-calls (`createOrGetMagazijnLocatie + UPDATE snijplannen`) in `useUpdateMaatwerkLocatie` — voorkomt dangling `magazijn_locaties`-rijen wanneer de tweede call faalt. Returnt `magazijn_locaties.id`. Migratie 0183 (ADR-0002). |
+| `effectieve_vervoerder_per_orderregel(p_order_id BIGINT) → TABLE(...)` | **Per-orderregel-resolver (mig 219).** Returnt voor elke pickbare regel: `override_code`, `evaluator_code`/`evaluator_service`, `klant_fallback_code`, `effectief_code`/`effectief_service` en `bron` (`override` / `regel` / `klant_fallback` / `geen` / `afhalen`). Bron-precedentie: override > regel > klant_fallback > geen. Globaal-actief blijft een UI-fallback. Gebruikt door `start_pickronden_voor_order` (mig 220) voor groepering en door pick-card UI voor per-regel pill. STABLE. |
+| `evalueer_orderregel_attributes(p_orderregel_id BIGINT) → TABLE(...)` | **Per-regel attributen voor regel-evaluator (mig 219).** Symmetrisch met `evalueer_zending_attributes` (mig 210), maar `kleinste_zijde_cm` en `gewicht_kg` zijn per regel zodat de evaluator per regel kan beslissen. Land/debiteur/inkoopgroep blijven order-niveau. STABLE. |
+| `start_pickronden_voor_order(p_order_id BIGINT, p_picker_id BIGINT) → TABLE(zending_id, zending_nr, vervoerder_code, aantal_regels, is_nieuw)` | **Splits-aware pickronde-starter (mig 220).** Voor élke unieke effectieve vervoerder maakt 1 zending aan (regels uit groep, vervoerder direct gezet bij INSERT). Idempotent op (order, vervoerder): bestaande Picken-zendingen worden hergebruikt. Eindstatus-guard uit mig 218 blijft van kracht. `start_pickronde` (oude single-zending wrapper) returnt nu het eerste zending_id van deze RPC voor backward compat. |
 
 ### Triggers op order_regels (maatwerk)
 

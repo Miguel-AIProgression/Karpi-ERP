@@ -6,6 +6,7 @@
 //
 // De pagina beslist welke orders bij deze sectie horen en óf de land-toggle
 // aan staat — hier alleen het rangschikken + renderen.
+import { Layers } from 'lucide-react'
 import { OrderPickCard } from './order-pick-card'
 import { BulkVerzendsetButton } from '@/modules/logistiek'
 import {
@@ -112,21 +113,35 @@ export function PickWeekSectie({
 
 /**
  * Render-strategie voor één klant-cluster: bij één order toon je gewoon de
- * card; bij 2+ orders pak je ze in een lichte wrapper met klantnaam + telling
- * + bulk-stickers-knop, zodat de magazijnier in één klik de hele klant kan
- * afhandelen.
+ * card; bij 2+ orders pak je ze in een herkenbare bundel-wrapper. Visueel
+ * onderscheid in één oogopslag via:
+ *  - dikke linker-accent-streep in terracotta (huiskleur)
+ *  - "Bundel" badge + Layers-icoon in de kop
+ *  - prominente klantnaam + telling-pill (groter dan losse-order-tekst)
+ *  - subtiele terracotta-tint achtergrond rondom alle gebundelde cards
  */
 function KlantClusterBlok({ cluster }: { cluster: KlantCluster }) {
   if (cluster.orders.length === 1) {
     return <OrderPickCard order={cluster.orders[0]} />
   }
   return (
-    <div className="rounded-[var(--radius)] border border-slate-200 bg-slate-50/60 p-2 space-y-2">
-      <div className="flex items-center justify-between gap-2 px-2 pt-1">
-        <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
-          <span>{cluster.klant_naam}</span>
-          <span className="font-normal text-slate-400">
-            ({cluster.orders.length} orders)
+    <div className="relative rounded-[var(--radius)] border-2 border-terracotta-400 bg-terracotta-100/60 pl-4 pr-2 pt-2 pb-2 space-y-2 shadow-sm">
+      {/* Linker accent-streep — duidelijke bundel-aanduiding bij snelle scan */}
+      <div
+        aria-hidden
+        className="absolute left-0 top-0 bottom-0 w-1.5 rounded-l-[var(--radius)] bg-terracotta-500"
+      />
+      <div className="flex items-center justify-between gap-2 px-1 pt-0.5">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className="inline-flex items-center gap-1 rounded-full bg-terracotta-500 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+            <Layers size={11} />
+            Bundel
+          </span>
+          <span className="text-sm font-semibold text-terracotta-600 truncate">
+            {cluster.klant_naam}
+          </span>
+          <span className="inline-flex items-center rounded-full bg-white border border-terracotta-400 px-2 py-0.5 text-xs font-semibold text-terracotta-600 whitespace-nowrap">
+            {cluster.orders.length} orders
           </span>
         </div>
         <BulkVerzendsetButton

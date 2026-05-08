@@ -101,3 +101,45 @@ export async function deleteVerzendregel(id: number): Promise<void> {
 
   if (error) throw error
 }
+
+/**
+ * Preview welke vervoerder de regel-evaluator zou kiezen voor een order
+ * (mig 215). Roept RPC `preview_vervoerder_voor_order(p_order_id)` aan.
+ *
+ * Returnt `null` voor `gekozen_vervoerder_code` als geen regel matcht of als
+ * de order op afhalen staat — `keuze_uitleg.reden` geeft de specifieke reden.
+ */
+export interface VervoerderPreview {
+  gekozen_vervoerder_code: string | null
+  gekozen_service_code: string | null
+  keuze_uitleg: {
+    strategie?: string
+    order_id?: number
+    land?: string | null
+    kleinste_zijde_cm?: number | null
+    totaal_gewicht_kg?: number | null
+    debiteur_nr?: number | null
+    inkoopgroep?: string | null
+    match_regel_id?: number
+    match_prio?: number
+    match_conditie?: VerzendregelConditie
+    match_notitie?: string | null
+    reden?: 'afhalen' | 'geen_matchende_regel'
+    [k: string]: unknown
+  } | null
+}
+
+export async function previewVervoerderVoorOrder(
+  orderId: number,
+): Promise<VervoerderPreview> {
+  const { data, error } = await supabase.rpc('preview_vervoerder_voor_order', {
+    p_order_id: orderId,
+  })
+  if (error) throw error
+  // RPC returnt SETOF — Supabase JS geeft een array terug.
+  const row = Array.isArray(data) ? data[0] : data
+  if (!row) {
+    return { gekozen_vervoerder_code: null, gekozen_service_code: null, keuze_uitleg: null }
+  }
+  return row as VervoerderPreview
+}

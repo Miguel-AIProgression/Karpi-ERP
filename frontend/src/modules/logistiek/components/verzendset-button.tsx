@@ -80,9 +80,16 @@ export function VerzendsetButton({ order }: VerzendsetButtonProps) {
     setError(null)
     saveLastPicker(pickerId)
     try {
-      const zending = await createMutation.mutateAsync({ orderId: order.order_id, pickerId })
+      const zendingen = await createMutation.mutateAsync({ orderId: order.order_id, pickerId })
       setShowPickerPopover(false)
-      navigate(`/logistiek/${zending.zending_nr}/printset`)
+      if (zendingen.length === 1) {
+        navigate(`/logistiek/${zendingen[0].zending_nr}/printset`)
+      } else {
+        // Multi-vervoerder: order is gesplitst in N zendingen — open bulk-printset
+        // zodat alle stickers/pakbonnen in één flow geprint worden.
+        const qs = encodeURIComponent(zendingen.map((z) => z.zending_nr).join(','))
+        navigate(`/logistiek/printset/bulk?zendingen=${qs}`)
+      }
     } catch (err) {
       setError(readErrorMessage(err))
     }

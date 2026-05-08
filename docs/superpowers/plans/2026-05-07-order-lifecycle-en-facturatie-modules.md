@@ -75,7 +75,7 @@
 - Modify: alle bestanden die `@/lib/supabase/queries/facturen`, `@/hooks/use-facturen`, `@/components/facturatie/*` of `@/pages/facturatie/*` importeren — find-and-replace
 
 **Database:**
-- Create: `supabase/migrations/219_facturatie_event_listener.sql` — drop oude trigger, nieuwe trigger op `order_events`, optioneel `factuur_queue.bron_event_id`-kolom.
+- Create: `supabase/migrations/221_facturatie_event_listener.sql` — drop oude trigger, nieuwe trigger op `order_events`, optioneel `factuur_queue.bron_event_id`-kolom.
 
 **Documenten:**
 - Modify: `docs/changelog.md` — entries voor verhuizing + mig 219
@@ -1729,15 +1729,17 @@ git commit -m "refactor(facturatie): order-facturen importeert via @/modules/fac
 
 ---
 
-### Task 2.10: Migratie 219 — drop oude trigger + nieuwe trigger op `order_events`
+### Task 2.10: Migratie 221 — drop oude trigger + nieuwe trigger op `order_events`
+
+> **Mig-nummer-noot (2026-05-08):** plan-spec sprak oorspronkelijk van mig 219, maar tussentijds heeft de gebruiker mig 219+220 in gebruik genomen voor andere features (vervoerder-override, pickronden-per-vervoerder). Mig **221** is daardoor het eerstvolgende vrije nummer voor deze trigger-migratie.
 
 **Files:**
-- Create: `supabase/migrations/219_facturatie_event_listener.sql`
+- Create: `supabase/migrations/221_facturatie_event_listener.sql`
 
 - [ ] **Step 1: Schrijf migratie**
 
 ```sql
--- Migratie 219: Facturatie luistert op order_events ipv orders.status (ADR-0007)
+-- Migratie 221: Facturatie luistert op order_events ipv orders.status (ADR-0007)
 --
 -- Vervangt mig 118-trigger trg_enqueue_factuur die op orders.status='Verzonden'
 -- vuurde. Met ADR-0006 wordt dat veld via _apply_transitie geschreven, dat ook
@@ -1749,7 +1751,7 @@ ALTER TABLE factuur_queue
   ADD COLUMN IF NOT EXISTS bron_event_id BIGINT REFERENCES order_events(id);
 
 COMMENT ON COLUMN factuur_queue.bron_event_id IS
-  'Mig 219 (ADR-0007): order_events-rij die deze factuur heeft getriggerd. NULL voor wekelijkse verzamelfacturen + legacy.';
+  'Mig 221 (ADR-0007): order_events-rij die deze factuur heeft getriggerd. NULL voor wekelijkse verzamelfacturen + legacy.';
 
 -- 2. Drop oude trigger
 DROP TRIGGER IF EXISTS trg_enqueue_factuur ON orders;
@@ -1830,7 +1832,7 @@ DELETE FROM order_events WHERE order_id = <order_id> AND event_type = 'pickronde
 - [ ] **Step 5: Commit**
 
 ```bash
-git add supabase/migrations/219_facturatie_event_listener.sql
+git add supabase/migrations/221_facturatie_event_listener.sql
 git commit -m "feat(facturatie): mig 219 trigger op order_events ipv orders.status (ADR-0007)"
 ```
 
@@ -1849,7 +1851,7 @@ git commit -m "feat(facturatie): mig 219 trigger op order_events ipv orders.stat
 
 - Frontend `modules/facturatie/` — verhuist pages, components, hook, queries.
 - Nieuwe queries/hook `useKlantFactuurInstellingen` — Module bezit klant-factuurvoorkeur-concept.
-- Mig 219: trigger luistert op order_events.event_type='pickronde_voltooid' i.p.v. orders.status; factuur_queue.bron_event_id traceert oorzaak.
+- Mig 221: trigger luistert op order_events.event_type='pickronde_voltooid' i.p.v. orders.status; factuur_queue.bron_event_id traceert oorzaak.
 ```
 
 - [ ] **Step 2: Update `architectuur.md` — Module-graf + facturatie-flow-sectie**

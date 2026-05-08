@@ -12,7 +12,11 @@ import {
   Scale,
 } from 'lucide-react'
 import { LocatieEdit } from './locatie-edit'
-import { VerzendsetButton, VervoerderInlineSelect } from '@/modules/logistiek'
+import {
+  VerzendsetButton,
+  VervoerderInlineSelect,
+  VervoerderOrderregelPill,
+} from '@/modules/logistiek'
 import { cn } from '@/lib/utils/cn'
 import { ORDER_STATUS_COLORS } from '@/lib/utils/constants'
 import { iso2NaarVlag, landNaarIso2 } from '@/lib/utils/land-vlag'
@@ -55,23 +59,26 @@ function bepaalOrderType(regels: PickShipRegel[]): OrderType | null {
   return heeftMaatwerk ? 'maatwerk' : 'std'
 }
 
-const ORDER_TYPE_BADGE: Record<OrderType, { label: string; bg: string; text: string; title: string }> = {
+// Tinten in plaats van een type-badge: de hele card krijgt een achtergrond
+// zodat de magazijnier in één oogopslag std vs. maatwerk vs. combi kan
+// onderscheiden zonder extra label-ruis. Bewust de 100/300-stap (i.p.v. 50/200)
+// zodat std echt los staat van witte achtergrond — eerdere lichte tinten waren
+// op het overzichtsscherm nauwelijks te zien. De hover-kleur blijft binnen
+// hetzelfde tint-thema, anders flikkert hij grijs bij mouseover.
+const ORDER_TYPE_TINT: Record<OrderType, { card: string; row: string; title: string }> = {
   maatwerk: {
-    label: 'Maatwerk',
-    bg: 'bg-orange-100',
-    text: 'text-orange-700',
+    card: 'bg-orange-100 border-orange-300',
+    row: 'hover:bg-orange-200/70',
     title: 'Alle regels zijn maatwerk (op maat gesneden)',
   },
   std: {
-    label: 'STD',
-    bg: 'bg-blue-100',
-    text: 'text-blue-700',
+    card: 'bg-sky-100 border-sky-300',
+    row: 'hover:bg-sky-200/70',
     title: 'Alle regels zijn standaard tapijt (vaste maten / stuks)',
   },
   combi: {
-    label: 'Combi',
-    bg: 'bg-violet-100',
-    text: 'text-violet-700',
+    card: 'bg-violet-100 border-violet-300',
+    row: 'hover:bg-violet-200/70',
     title: 'Order bevat zowel maatwerk- als standaard-regels',
   },
 }
@@ -95,10 +102,16 @@ export function OrderPickCard({ order }: Props) {
   const heeftGewicht = order.totaal_gewicht_kg > 0
   const heeftM2 = order.totaal_m2 > 0
   const orderType = bepaalOrderType(order.regels)
-  const typeBadge = orderType ? ORDER_TYPE_BADGE[orderType] : null
+  const tint = orderType ? ORDER_TYPE_TINT[orderType] : null
 
   return (
-    <div className="bg-white rounded-[var(--radius)] border border-slate-200">
+    <div
+      className={cn(
+        'rounded-[var(--radius)] border',
+        tint ? tint.card : 'bg-white border-slate-200'
+      )}
+      title={tint?.title}
+    >
       {/* Compacte 1-regel pakbon-rij */}
       <div
         role="button"
@@ -111,7 +124,8 @@ export function OrderPickCard({ order }: Props) {
           }
         }}
         className={cn(
-          'flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50/60 cursor-pointer select-none rounded-t-[var(--radius)]',
+          'flex items-center gap-3 px-3 py-2.5 cursor-pointer select-none rounded-t-[var(--radius)]',
+          tint ? tint.row : 'hover:bg-slate-50/60',
           !open && 'rounded-b-[var(--radius)]'
         )}
       >
@@ -140,18 +154,6 @@ export function OrderPickCard({ order }: Props) {
             {order.status}
           </span>
           <span className="text-sm text-slate-700 truncate">{order.klant_naam}</span>
-          {typeBadge && (
-            <span
-              className={cn(
-                'inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap',
-                typeBadge.bg,
-                typeBadge.text
-              )}
-              title={typeBadge.title}
-            >
-              {typeBadge.label}
-            </span>
-          )}
           <span className="text-xs text-slate-400 whitespace-nowrap">
             {order.aantal_regels} regel{order.aantal_regels === 1 ? '' : 's'}
           </span>
@@ -257,6 +259,7 @@ export function OrderPickCard({ order }: Props) {
                 <th className="py-1.5 px-3 font-medium">Type · Maat</th>
                 <th className="py-1.5 px-3 font-medium">Status</th>
                 <th className="py-1.5 px-3 font-medium">Locatie</th>
+                <th className="py-1.5 px-3 font-medium">Vervoerder</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -310,6 +313,17 @@ export function OrderPickCard({ order }: Props) {
                       <LocatieEdit regel={r} />
                     ) : (
                       <span className="text-slate-300 text-xs">—</span>
+                    )}
+                  </td>
+                  <td className="py-2 px-3">
+                    {order.afhalen ? (
+                      <span className="text-slate-300 text-xs">—</span>
+                    ) : (
+                      <VervoerderOrderregelPill
+                        orderId={order.order_id}
+                        orderregelId={r.order_regel_id}
+                        locked={order.actieve_pickronde !== null}
+                      />
                     )}
                   </td>
                 </tr>

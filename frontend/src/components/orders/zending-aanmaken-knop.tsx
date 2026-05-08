@@ -85,9 +85,14 @@ export function ZendingAanmakenKnop({ order }: ZendingAanmakenKnopProps) {
     setFeedback(null)
     saveLastPicker(pickerId)
     try {
-      const zending = await createMutation.mutateAsync({ orderId: order.id, pickerId })
+      const zendingen = await createMutation.mutateAsync({ orderId: order.id, pickerId })
       setShowPickerPopover(false)
-      navigate(`/logistiek/${zending.zending_nr}/printset`)
+      if (zendingen.length === 1) {
+        navigate(`/logistiek/${zendingen[0].zending_nr}/printset`)
+      } else {
+        const qs = encodeURIComponent(zendingen.map((z) => z.zending_nr).join(','))
+        navigate(`/logistiek/printset/bulk?zendingen=${qs}`)
+      }
     } catch (err) {
       setFeedback({
         type: 'error',

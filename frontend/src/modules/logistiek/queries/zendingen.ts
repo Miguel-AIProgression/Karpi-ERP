@@ -25,6 +25,9 @@ export interface ZendingenFilters {
 export interface ZendingAanmaakResult {
   id: number
   zending_nr: string
+  vervoerder_code: string | null
+  aantal_regels: number
+  is_nieuw: boolean
 }
 
 export interface ZendingPrintOrderRegel {
@@ -63,6 +66,20 @@ export interface ZendingPrintRegel {
   rol_id: number | null
   aantal: number | null
   order_regels?: ZendingPrintOrderRegel | null
+}
+
+/**
+ * Mig 221: een gebundelde zending bevat orders uit `zending_orders` M2M. Voor
+ * de pakbon hebben we per extra order alleen de identificerende velden nodig
+ * (order_nr + uw-referentie + week) — het gros van het document komt uit de
+ * primaire order (factuuradres, vertegenwoordiger, etc., gelijk over orders
+ * van dezelfde debiteur).
+ */
+export interface ZendingPrintBundelOrder {
+  id: number
+  order_nr: string
+  klant_referentie: string | null
+  week: string | null
 }
 
 export interface ZendingPrintSet {
@@ -117,6 +134,12 @@ export interface ZendingPrintSet {
       naam: string | null
     } | null
   }
+  /**
+   * Mig 221: alle orders die aan deze zending hangen — ook de primaire
+   * `zending.orders`. Voor solo-zendingen 1 element; voor bundels ≥2.
+   * Bron: `zending_orders` M2M (backfill heeft bestaande 1-op-1 al gevuld).
+   */
+  bundel_orders: ZendingPrintBundelOrder[]
   zending_regels: ZendingPrintRegel[]
 }
 
@@ -223,28 +246,84 @@ export async function fetchZendingPrintSet(zending_nr: string): Promise<ZendingP
   return data as unknown as ZendingPrintSet
 }
 
-export async function createZendingVoorOrder(
+/**
+ * Start een Pickronde voor een order — sinds mig 220 maakt dit N zendingen
+ * aan, één per unieke effectieve vervoerder uit
+ * `effectieve_vervoerder_per_orderregel`. Voor single-vervoerder-orders is
+ * `result.length === 1` en gedraagt het zich als de oude `create_zending_voor_order`.
+ */
+export async function startPickrondenVoorOrder(
   orderId: number,
   pickerId: number,
-): Promise<ZendingAanmaakResult> {
-  const { data, error } = await supabase.rpc('create_zending_voor_order', {
+): Promise<ZendingAanmaakResult[]> {
+  const { data, error } = await supabase.rpc('start_pickronden_voor_order', {
     p_order_id: orderId,
     p_picker_id: pickerId,
   })
-  if (error) throw toError(error, 'Zending aanmaken mislukt')
+  if (error) throw toError(error, 'Pickronde starten mislukt')
 
-  const zendingId = readZendingId(data)
-  if (!zendingId) throw new Error('Zending aangemaakt, maar response bevat geen zending-id.')
+  const rows = (data ?? []) as Array<{
+    zending_id: number | string
+    zending_nr: string
+    vervoerder_code: string | null
+    aantal_regels: number
+    is_nieuw: boolean
+  }>
 
-  const { data: zending, error: zErr } = await supabase
-    .from('zendingen')
-    .select('id, zending_nr')
-    .eq('id', zendingId)
-    .single()
-  if (zErr) throw toError(zErr, 'Aangemaakte zending ophalen mislukt')
-  if (!zending?.zending_nr) throw new Error('Zending aangemaakt, maar zending_nr ontbreekt.')
+  if (rows.length === 0) {
+    throw new Error('Pickronde gestart maar geen zendingen aangemaakt')
+  }
 
-  return { id: Number(zending.id), zending_nr: zending.zending_nr }
+  return rows.map((r) => ({
+    id: Number(r.zending_id),
+    zending_nr: r.zending_nr,
+    vervoerder_code: r.vervoerder_code,
+    aantal_regels: r.aantal_regels,
+    is_nieuw: r.is_nieuw,
+  }))
+}
+
+/**
+ * Mig 221: bundel-RPC voor meerdere orders met identiek afleveradres binnen
+ * één debiteur. Groepeert regels (over alle orders) op effectieve vervoerder
+ * en levert 1 zending per groep — gekoppeld aan alle betrokken orders via de
+ * nieuwe `zending_orders` M2M-tabel. Voor 1 order delegeert de RPC zelf naar
+ * `start_pickronden_voor_order`, dus de caller hoeft geen onderscheid te maken.
+ */
+export async function startPickrondenBundel(
+  orderIds: number[],
+  pickerId: number,
+): Promise<Array<ZendingAanmaakResult & { aantal_orders: number }>> {
+  if (orderIds.length === 0) {
+    throw new Error('startPickrondenBundel: geen orders meegegeven')
+  }
+  const { data, error } = await supabase.rpc('start_pickronden_bundel', {
+    p_order_ids: orderIds,
+    p_picker_id: pickerId,
+  })
+  if (error) throw toError(error, 'Bundel-pickronde starten mislukt')
+
+  const rows = (data ?? []) as Array<{
+    zending_id: number | string
+    zending_nr: string
+    vervoerder_code: string | null
+    aantal_regels: number
+    aantal_orders: number
+    is_nieuw: boolean
+  }>
+
+  if (rows.length === 0) {
+    throw new Error('Bundel-pickronde gestart maar geen zendingen aangemaakt')
+  }
+
+  return rows.map((r) => ({
+    id: Number(r.zending_id),
+    zending_nr: r.zending_nr,
+    vervoerder_code: r.vervoerder_code,
+    aantal_regels: r.aantal_regels,
+    aantal_orders: r.aantal_orders,
+    is_nieuw: r.is_nieuw,
+  }))
 }
 
 function toError(error: unknown, fallback: string): Error {
@@ -256,18 +335,6 @@ function toError(error: unknown, fallback: string): Error {
     if (parts.length > 0) return new Error(`${fallback}: ${parts.join(' ')}`)
   }
   return new Error(`${fallback}: ${String(error)}`)
-}
-
-function readZendingId(data: unknown): number | null {
-  if (typeof data === 'number') return data
-  if (typeof data === 'string' && data.trim()) return Number(data)
-  if (data && typeof data === 'object') {
-    const obj = data as Record<string, unknown>
-    const raw = obj.zending_id ?? obj.id
-    if (typeof raw === 'number') return raw
-    if (typeof raw === 'string' && raw.trim()) return Number(raw)
-  }
-  return null
 }
 
 /**

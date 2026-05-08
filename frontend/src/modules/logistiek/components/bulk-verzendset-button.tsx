@@ -13,11 +13,20 @@
 // Mig 217: één picker per bundel — alle zendingen in deze batch krijgen
 // dezelfde picker_id (= de operator die op het knopje drukt). Bij shift-
 // overgang kan de operator op /logistiek/{nr}/printset alsnog wisselen.
-import { useState, useEffect, useRef } from 'react'
+//
+// Mig 221: orders binnen het cluster worden eerst gegroepeerd op (genormali-
+// seerd afleveradres × effectieve vervoerder). Adres-bundels (≥2 orders met
+// identieke combinatie) gaan via `startPickrondenBundel` (1 zending per
+// vervoerder, gedeeld over orders); solo's gaan via `startPickrondenVoorOrder`
+// (eventuele per-regel-vervoerder-splits binnen die order). Zo krijgt een B2B-
+// klant met centraal magazijn 1 pakbon i.p.v. N losse.
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Loader2, Printer, X } from 'lucide-react'
-import { createZendingVoorOrder } from '../queries/zendingen'
+import { startPickrondenBundel, startPickrondenVoorOrder } from '../queries/zendingen'
 import { useVervoerders } from '../hooks/use-vervoerders'
+import { useVervoerderPerOrder } from '../hooks/use-vervoerder-per-order'
+import { clusterOpAdresEnVervoerder } from '@/modules/magazijn'
 import { PickerDropdown } from '@/components/orders/picker-dropdown'
 import { useQueryClient } from '@tanstack/react-query'
 import { cn } from '@/lib/utils/cn'
@@ -78,13 +87,35 @@ export function BulkVerzendsetButton({ orders, context }: BulkVerzendsetButtonPr
     return () => document.removeEventListener('mousedown', handler)
   }, [showPickerPopover])
 
-  const pickbaar = orders.filter(isPickbaar)
+  const pickbaar = useMemo(() => orders.filter(isPickbaar), [orders])
   const heeftAfhalen = pickbaar.some((o) => o.afhalen)
   const heeftVerzend = pickbaar.some((o) => !o.afhalen)
   // Vervoerder-eis geldt alleen als er minstens één verzend-order in de groep
   // zit. Pure afhaal-bundel hoeft niet door verzendregels gerouteerd te worden.
   const heeftActieveVervoerder = vervoerders.some((v) => v.actief)
   const vervoerderOk = !heeftVerzend || heeftActieveVervoerder
+
+  // Cache-deelt met pick-overview's eigen useVervoerderPerOrder via dezelfde
+  // queryKeys ('logistiek/vervoerder-preview/<id>' + 'logistiek/vervoerder-
+  // config-batch/<debs>'). De cluster-helper gebruikt die map om identieke
+  // (adres × vervoerder)-paren te bundelen vóór de RPC-aanroepen.
+  const minimaalVoorVervoerder = useMemo(
+    () =>
+      pickbaar.map((o) => ({
+        order_id: o.order_id,
+        debiteur_nr: o.debiteur_nr,
+        afhalen: o.afhalen,
+      })),
+    [pickbaar],
+  )
+  const { map: vervoerderMap } = useVervoerderPerOrder(minimaalVoorVervoerder)
+
+  // Clusters: bundels (≥2 orders) komen eerst, daarna solo's.
+  const clusters = useMemo(
+    () => clusterOpAdresEnVervoerder(pickbaar, vervoerderMap),
+    [pickbaar, vervoerderMap],
+  )
+  const aantalBundels = clusters.filter((c) => c.isBundel).length
 
   const aantal = pickbaar.length
   // Caller (cluster/land-header) bepaalt of het zinvol is deze knop te
@@ -94,17 +125,23 @@ export function BulkVerzendsetButton({ orders, context }: BulkVerzendsetButtonPr
   const niksTeDoen = aantal === 0
   const disabled = bezig || !vervoerderOk || niksTeDoen
 
+  // Tooltip kort: extra zin als er bundels gedetecteerd zijn (mig 221).
+  const bundelHint =
+    aantalBundels > 0
+      ? ` Hiervan ${aantalBundels === 1 ? 'wordt 1 bundel-pakbon' : `worden ${aantalBundels} bundel-pakbonnen`} gemaakt (gelijk afleveradres + vervoerder).`
+      : ''
+
   const tooltip = !vervoerderOk
     ? 'Activeer eerst minstens één vervoerder bij Logistiek > Vervoerders'
     : niksTeDoen
       ? 'Geen pickbare orders in deze groep — eerst voorraad/snijden/confectie afronden'
       : aantalOverig > 0
-        ? `Maak ${aantal} zending${aantal === 1 ? '' : 'en'} aan${context ? ` ${context}` : ''} en print alles in één bundel (${aantalOverig} order${aantalOverig === 1 ? '' : 's'} overgeslagen — nog niet pickbaar)`
+        ? `Maak ${aantal} zending${aantal === 1 ? '' : 'en'} aan${context ? ` ${context}` : ''} en print alles in één bundel (${aantalOverig} order${aantalOverig === 1 ? '' : 's'} overgeslagen — nog niet pickbaar).${bundelHint}`
         : heeftAfhalen && heeftVerzend
-          ? `Bundel ${aantal} zendingen${context ? ` ${context}` : ''} — verzend-orders krijgen stickers + pakbon, afhalen alleen pakbon, in één print-job`
+          ? `Bundel ${aantal} zendingen${context ? ` ${context}` : ''} — verzend-orders krijgen stickers + pakbon, afhalen alleen pakbon, in één print-job.${bundelHint}`
           : heeftAfhalen
-            ? `Bundel ${aantal} afhaal-pakbon${aantal === 1 ? '' : 'nen'}${context ? ` ${context}` : ''} in één print-job (geen stickers — orders zijn afhalen)`
-            : `Bundel ${aantal} verzendset${aantal === 1 ? '' : 'ten'}${context ? ` ${context}` : ''}: stickers + pakbonnen in één print-job`
+            ? `Bundel ${aantal} afhaal-pakbon${aantal === 1 ? '' : 'nen'}${context ? ` ${context}` : ''} in één print-job (geen stickers — orders zijn afhalen).${bundelHint}`
+            : `Bundel ${aantal} verzendset${aantal === 1 ? '' : 'ten'}${context ? ` ${context}` : ''}: stickers + pakbonnen in één print-job.${bundelHint}`
 
   function openPickerPopover() {
     setError(null)
@@ -112,7 +149,7 @@ export function BulkVerzendsetButton({ orders, context }: BulkVerzendsetButtonPr
   }
 
   async function handleStart() {
-    console.debug('[BulkVerzendset] handleStart triggered', { pickerId, pickbaar: pickbaar.length })
+    console.debug('[BulkVerzendset] handleStart triggered', { pickerId, clusters: clusters.length, bundels: aantalBundels })
     if (!pickerId) {
       setError('Kies eerst een picker')
       return
@@ -120,21 +157,29 @@ export function BulkVerzendsetButton({ orders, context }: BulkVerzendsetButtonPr
     setError(null)
     setBezig(true)
     saveLastPicker(pickerId)
-    setVoortgang({ klaar: 0, totaal: aantal })
+    setVoortgang({ klaar: 0, totaal: clusters.length })
     const zendingNrs: string[] = []
 
     try {
-      // Sequentieel: elke zending krijgt zijn eigen RPC-call. De RPC
-      // (`start_pickronde`) is niet idempotent op grote schaal — parallel
-      // uitvoeren kan nummer-collisies geven en maakt fouten lastiger te
-      // diagnosticeren. Stap-voor-stap is OK: typisch 2-10 zendingen.
-      for (let i = 0; i < pickbaar.length; i++) {
-        const order = pickbaar[i]
-        console.debug('[BulkVerzendset] creating zending', { orderId: order.order_id, pickerId, index: i + 1, total: pickbaar.length })
-        const zending = await createZendingVoorOrder(order.order_id, pickerId)
-        console.debug('[BulkVerzendset] zending created', { zending_nr: zending.zending_nr })
-        zendingNrs.push(zending.zending_nr)
-        setVoortgang({ klaar: i + 1, totaal: aantal })
+      // Sequentieel: elke cluster krijgt zijn eigen RPC-call. De RPC's zijn
+      // niet idempotent op grote schaal — parallel uitvoeren kan nummer-
+      // collisies geven en maakt fouten lastiger te diagnosticeren. Per
+      // cluster: ≥2 orders → bundel-RPC (mig 221), 1 order → solo-RPC die
+      // intern weer kan splitsen op per-regel-vervoerder (mig 220).
+      for (let i = 0; i < clusters.length; i++) {
+        const cl = clusters[i]
+        const orderIds = cl.orders.map((o) => o.order_id)
+        console.debug('[BulkVerzendset] processing cluster', { sleutel: cl.sleutel, isBundel: cl.isBundel, orders: orderIds })
+        const zendingen = cl.isBundel
+          ? await startPickrondenBundel(orderIds, pickerId)
+          : await startPickrondenVoorOrder(orderIds[0], pickerId)
+        console.debug('[BulkVerzendset] cluster created', {
+          sleutel: cl.sleutel,
+          aantal: zendingen.length,
+          nrs: zendingen.map((z) => z.zending_nr),
+        })
+        zendingNrs.push(...zendingen.map((z) => z.zending_nr))
+        setVoortgang({ klaar: i + 1, totaal: clusters.length })
       }
       // Invalideer pick-ship + zendingen-overzicht in één keer ná de batch.
       qc.invalidateQueries({ queryKey: ['logistiek', 'zendingen'] })
@@ -148,11 +193,11 @@ export function BulkVerzendsetButton({ orders, context }: BulkVerzendsetButtonPr
       // Bij partial fail: laat aangemaakte zendingen staan (geen rollback
       // nodig — magazijnier kan ze los afhandelen). Toon waar we vastliepen.
       console.error('[BulkVerzendset] handleStart failed', err)
-      const klaar = zendingNrs.length
+      const klaarClusters = voortgang?.klaar ?? 0
       const fout = err instanceof Error ? err.message : String(err)
       setError(
-        klaar > 0
-          ? `Vastgelopen na ${klaar}/${aantal}: ${fout}. Reeds gemaakte zendingen staan in /logistiek.`
+        klaarClusters > 0
+          ? `Vastgelopen na ${klaarClusters}/${clusters.length} groep(en): ${fout}. Reeds gemaakte zendingen staan in /logistiek.`
           : `Bulk-aanmaken mislukt: ${fout}`,
       )
     } finally {
@@ -205,6 +250,13 @@ export function BulkVerzendsetButton({ orders, context }: BulkVerzendsetButtonPr
             Alle zendingen in deze bundel krijgen dezelfde picker. Op de printset-pagina
             kun je per zending alsnog wisselen voor een shift-overgang.
           </p>
+          {aantalBundels > 0 && (
+            <p className="mt-1 text-[11px] text-terracotta-700">
+              {aantalBundels === 1
+                ? '1 adres-bundel gedetecteerd: orders met identiek afleveradres + vervoerder krijgen 1 gezamenlijke pakbon.'
+                : `${aantalBundels} adres-bundels gedetecteerd: orders met identiek afleveradres + vervoerder krijgen elk 1 gezamenlijke pakbon.`}
+            </p>
+          )}
           {error && (
             <div className="mt-2 rounded-[var(--radius-sm)] border border-rose-100 bg-rose-50 px-2 py-1.5 text-[11px] text-rose-700">
               {error}
@@ -212,7 +264,7 @@ export function BulkVerzendsetButton({ orders, context }: BulkVerzendsetButtonPr
           )}
           {bezig && voortgang && (
             <div className="mt-2 text-[11px] text-slate-600">
-              Bezig… {voortgang.klaar}/{voortgang.totaal} zendingen aangemaakt
+              Bezig… {voortgang.klaar}/{voortgang.totaal} groep(en) verwerkt
             </div>
           )}
           <div className="mt-3 flex items-center justify-end gap-2">
