@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.factuur-pdf]
 verify_jwt = false
+
+[functions.factuur-verzenden]
+verify_jwt = false

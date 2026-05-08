@@ -8,7 +8,9 @@
 // aan staat — hier alleen het rangschikken + renderen.
 import { Layers } from 'lucide-react'
 import { OrderPickCard } from './order-pick-card'
+import { VoorgesteldeBundelInfo } from './voorgestelde-bundel-info'
 import { BulkVerzendsetButton } from '@/modules/logistiek'
+import type { VoorgesteldeBundel } from '@/modules/logistiek/queries/voorgestelde-bundels'
 import {
   clusterOrdersOpKlant,
   groepeerOrdersOpLand,
@@ -28,6 +30,11 @@ interface Props {
   status: PickStatus
   /** Toggle: split orders eerst op land vóór de klant-clustering. */
   groepeerOpLand: boolean
+  /** Voorgestelde-bundels voor déze verzendweek. Per cluster matchen we op
+   *  order-id om de drempel-progressbar + besparing-badge te tonen. Zonder
+   *  match (bv. solo-orders, weken zonder bundeling) toont KlantClusterBlok
+   *  alleen de orders zoals voorheen. */
+  voorgesteldeBundels: VoorgesteldeBundel[]
 }
 
 export function PickWeekSectie({
@@ -36,7 +43,17 @@ export function PickWeekSectie({
   verzendWeek,
   status,
   groepeerOpLand,
+  voorgesteldeBundels,
 }: Props) {
+  // Index op eerste order_id van de bundel — robuust tegen verschillen in
+  // groepering (een cluster valt nooit ruimer dan een bundel; cluster ⊆ bundel
+  // qua order-set, want bundel splitst nóg verder op vervoerder + adres).
+  // Voor de UI volstaat het om "is er een bundel waar deze cluster bij hoort"
+  // te beantwoorden via een lookup op het eerste cluster-order-id.
+  const bundelByOrderId = new Map<number, VoorgesteldeBundel>()
+  for (const b of voorgesteldeBundels) {
+    for (const oid of b.order_ids) bundelByOrderId.set(oid, b)
+  }
   const achterstallig = status === 'achterstallig'
   const kopLabel =
     pickWeek !== null ? `Te picken in week ${pickWeek}` : 'Geen pick-datum'
@@ -97,12 +114,19 @@ export function PickWeekSectie({
                   />
                 </div>
               )}
-              {groep.clusters.map((cluster) => (
-                <KlantClusterBlok
-                  key={`${groep.iso2 ?? 'none'}-${cluster.debiteur_nr}`}
-                  cluster={cluster}
-                />
-              ))}
+              {groep.clusters.map((cluster) => {
+                const eersteId = cluster.orders[0]?.order_id
+                const bundel = eersteId !== undefined
+                  ? bundelByOrderId.get(eersteId) ?? null
+                  : null
+                return (
+                  <KlantClusterBlok
+                    key={`${groep.iso2 ?? 'none'}-${cluster.debiteur_nr}`}
+                    cluster={cluster}
+                    bundel={bundel}
+                  />
+                )
+              })}
             </div>
           )
         })}
@@ -120,7 +144,13 @@ export function PickWeekSectie({
  *  - prominente klantnaam + telling-pill (groter dan losse-order-tekst)
  *  - subtiele terracotta-tint achtergrond rondom alle gebundelde cards
  */
-function KlantClusterBlok({ cluster }: { cluster: KlantCluster }) {
+function KlantClusterBlok({
+  cluster,
+  bundel,
+}: {
+  cluster: KlantCluster
+  bundel: VoorgesteldeBundel | null
+}) {
   if (cluster.orders.length === 1) {
     return <OrderPickCard order={cluster.orders[0]} />
   }
@@ -149,6 +179,9 @@ function KlantClusterBlok({ cluster }: { cluster: KlantCluster }) {
           context={`voor ${cluster.klant_naam}`}
         />
       </div>
+      {bundel && bundel.aantal_orders >= 2 && (
+        <VoorgesteldeBundelInfo bundel={bundel} />
+      )}
       <div className="space-y-2">
         {cluster.orders.map((o) => (
           <OrderPickCard key={o.order_id} order={o} />

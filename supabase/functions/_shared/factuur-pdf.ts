@@ -183,6 +183,46 @@ function padLabel(label: string, breedte: number): string {
   return label + ' '.repeat(breedte - label.length)
 }
 
+/**
+ * Map een vol landnaam naar de 2-letter ISO-code zoals op het Karpi-briefpapier.
+ * Voor onbekende waarden returnt de input zelf (zodat een al-gestelde "NL" werkt).
+ */
+function naarLandCode(land: string): string {
+  const m: Record<string, string> = {
+    'nederland': 'NL',
+    'duitsland': 'DE',
+    'belgie': 'BE',
+    'belgië': 'BE',
+    'frankrijk': 'FR',
+    'verenigd koninkrijk': 'GB',
+    'oostenrijk': 'AT',
+    'zwitserland': 'CH',
+    'italië': 'IT',
+    'italie': 'IT',
+    'spanje': 'ES',
+    'denemarken': 'DK',
+    'zweden': 'SE',
+    'noorwegen': 'NO',
+    'polen': 'PL',
+  }
+  const key = land.trim().toLowerCase()
+  return m[key] ?? land
+}
+
+/**
+ * Truncate `text` zodat het binnen `maxWidth` past in `font`/`size`.
+ * Voegt een ellips toe als getrunceerd wordt.
+ */
+function truncateNaarBreedte(text: string, maxWidth: number, font: PDFFont, size: number): string {
+  if (font.widthOfTextAtSize(text, size) <= maxWidth) return text
+  const ellips = '…'
+  let s = text
+  while (s.length > 1 && font.widthOfTextAtSize(s + ellips, size) > maxWidth) {
+    s = s.slice(0, -1)
+  }
+  return s + ellips
+}
+
 // ---------------------------------------------------------------------------
 // Low-level draw helpers
 // ---------------------------------------------------------------------------
@@ -236,40 +276,51 @@ function drawPageHeader(
   bold: PDFFont,
   logoImage: { width: number; height: number; draw: (x: number, y: number, w: number, h: number) => void } | null,
 ) {
-  // Logo gecentreerd (boven HEADER_LINE_Y)
+  // Logo gecentreerd. Iets kleiner dan eerst (18mm) zodat de rechter-tekst
+  // ernaast past zonder over het logo te lopen.
   if (logoImage) {
     const logoH = 18 * MM
     const logoW = (logoImage.width / logoImage.height) * logoH
     const logoX = (PAGE_W - logoW) / 2
-    const logoY = PAGE_H - 10 * MM - logoH
+    const logoY = PAGE_H - 8 * MM - logoH
     logoImage.draw(logoX, logoY, logoW, logoH)
   }
 
-  // KARPI BV (rechtsboven, oranje)
-  const x = PAGE_W - 80 * MM
+  // Rechter tekst-blok: KARPI BV + adres + tel + email, ALLEMAAL rechts uitgelijnd
+  // op de pagina-rechtermarge. Zo loopt geen enkele regel over het logo heen,
+  // ongeacht regel-lengte.
+  const rightX = PAGE_W - MARGIN_R
+  const karpiY = PAGE_H - 11 * MM      // op hoogte van top "KARPI" letters
+  const adresY = PAGE_H - 15 * MM
+  const telY   = PAGE_H - 19 * MM
+  const emailY = PAGE_H - 23 * MM
+
+  // KARPI BV in oranje, 10pt bold — rechts uitgelijnd
+  const karpiSize = 10
+  const karpiW = bold.widthOfTextAtSize(bedrijf.bedrijfsnaam, karpiSize)
   page.drawText(bedrijf.bedrijfsnaam, {
-    x,
-    y: HEADER_COMPANY_Y,
-    size: 8,
+    x: rightX - karpiW,
+    y: karpiY,
+    size: karpiSize,
     font: bold,
     color: rgb(KARPI_ORANJE.r, KARPI_ORANJE.g, KARPI_ORANJE.b),
   })
 
-  // Adres + contact (zwart, 7pt regular)
-  const y2 = HEADER_COMPANY_Y - LINE_H
-  const y3 = y2 - LINE_H
-  const y4 = y3 - LINE_H
-
-  drawText(page, `${bedrijf.adres}, ${bedrijf.postcode} ${bedrijf.plaats} (${bedrijf.land})`, x, y2, regular, 7)
-
+  // Adres + contact (zwart, 6pt regular zodat tekst+logo passen). Single-spaced
+  // separators om regels compacter te krijgen, zoals het Karpi-template.
+  const SIZE = 6
+  drawTextRight(
+    page,
+    `${bedrijf.adres}, ${bedrijf.postcode} ${bedrijf.plaats} (${naarLandCode(bedrijf.land)})`,
+    rightX, adresY, regular, SIZE,
+  )
   const telFax = bedrijf.fax
-    ? `t ${bedrijf.telefoon}  |  f ${bedrijf.fax}`
+    ? `t ${bedrijf.telefoon} | f ${bedrijf.fax}`
     : `t ${bedrijf.telefoon}`
-  drawText(page, telFax, x, y3, regular, 7)
-  drawText(page, `e ${bedrijf.email}  |  i ${bedrijf.website}`, x, y4, regular, 7)
+  drawTextRight(page, telFax, rightX, telY, regular, SIZE)
+  drawTextRight(page, `e ${bedrijf.email} | i ${bedrijf.website}`, rightX, emailY, regular, SIZE)
 
-  // "FACTUUR" links (klein, bold). De zware horizontale rule uit de oude layout
-  // is in het Karpi-template vervangen door de gouden lijn IN het logo.
+  // "FACTUUR" links (klein, bold). Zit onder het logo.
   drawText(page, 'FACTUUR', MARGIN_L, HEADER_TITLE_Y, bold, 9)
 }
 
@@ -317,6 +368,9 @@ function drawTableHeader(
   regular: PDFFont,
   bold: PDFFont,
 ): number {
+  // Streep BOVEN de header-labels (zoals in het Karpi-template)
+  drawHLine(page, y + LINE_H - 1 * MM)
+
   const SIZE = 9
   drawText(page, 'Artikel',       COL_ARTIKEL,        y, bold, SIZE)
   drawTextRight(page, 'Aantal',   COL_AANTAL + COL_AANTAL_W, y, bold, SIZE)
@@ -325,6 +379,7 @@ function drawTableHeader(
   drawTextRight(page, 'Prijs',    COL_PRIJS,          y, bold, SIZE)
   drawTextRight(page, 'Bedrag',   COL_BEDRAG,         y, bold, SIZE)
 
+  // Streep ONDER de header-labels
   const lineY = y - 1 * MM
   drawHLine(page, lineY)
 
@@ -597,12 +652,14 @@ export async function genereerFactuurPDF(input: FactuurPDFInput): Promise<Uint8A
       const rowCount = 1 + extraRegels.length
       ensureRoom(rowCount * (LINE_H / MM))
 
-      // Main regel line (9pt)
+      // Main regel line (9pt). Omschrijving krijgt max-breedte tussen Omschr-kolom en Prijs-kolom
+      // (met 2mm marge) om overlap met prijs-getal te voorkomen.
       const SIZE = 9
+      const OMSCHR_MAX_W = COL_PRIJS - regular.widthOfTextAtSize(formatBedrag(r.prijs), SIZE) - COL_OMSCHR - 2 * MM
       drawText(page, r.artikelnr, COL_ARTIKEL, cursorY, regular, SIZE)
       drawTextRight(page, String(r.aantal), COL_AANTAL + COL_AANTAL_W, cursorY, regular, SIZE)
       drawText(page, r.eenheid, COL_EH, cursorY, regular, SIZE)
-      drawText(page, r.omschrijving, COL_OMSCHR, cursorY, regular, SIZE)
+      drawText(page, truncateNaarBreedte(r.omschrijving, OMSCHR_MAX_W, regular, SIZE), COL_OMSCHR, cursorY, regular, SIZE)
       drawTextRight(page, formatBedrag(r.prijs), COL_PRIJS, cursorY, regular, SIZE)
       drawTextRight(page, formatBedrag(r.bedrag), COL_BEDRAG, cursorY, regular, SIZE)
 
@@ -610,9 +667,11 @@ export async function genereerFactuurPDF(input: FactuurPDFInput): Promise<Uint8A
       cursorY -= LINE_H
 
       // Vervolgregels (BANGKOK KLEUR ..., Band: ..., Uw model:..., MEERWERKKOSTEN ...)
+      // Hebben de volle Omschrijving-breedte tot aan Bedrag-kolom omdat er geen prijs/bedrag op die regels staat.
+      const EXTRA_MAX_W = COL_BEDRAG - COL_OMSCHR - 2 * MM
       for (const extra of extraRegels) {
         ensureRoom(LINE_H / MM)
-        drawText(page, extra, COL_OMSCHR, cursorY, regular, SIZE)
+        drawText(page, truncateNaarBreedte(extra, EXTRA_MAX_W, regular, SIZE), COL_OMSCHR, cursorY, regular, SIZE)
         cursorY -= LINE_H
       }
     }

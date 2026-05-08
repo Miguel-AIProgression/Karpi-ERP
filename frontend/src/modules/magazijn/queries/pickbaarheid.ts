@@ -81,6 +81,21 @@ export async function fetchPickShipOrders(
   if (alleen_pickbaar) {
     result = result.filter((o) => o.regels.some((r) => r.is_pickbaar))
   }
+  // Pickbaarheidsfilter: een order verschijnt pas in Pick & Ship zodra al haar
+  // regels gepickt kunnen worden. Reden voor onpickbaar maakt niet uit —
+  // 'wacht op snijden', 'wacht op inkoop', 'wacht op confectie/inpak', of
+  // helemaal geen regels (header-only). Uitzondering: klanten met
+  // `deelleveringen_toegestaan=true` zien een order al wél zodra ≥1 regel
+  // pickbaar is; de operator stuurt dan een deellevering. Orders zonder
+  // enkele pickbare regel verdwijnen altijd, ook bij deelleveringen.
+  result = result.filter((o) => {
+    if (o.regels.length === 0) return false
+    const allesPickbaar = o.regels.every((r) => r.is_pickbaar)
+    if (allesPickbaar) return true
+    const header = headerMap.get(o.order_id)
+    if (!header?.deelleveringen_toegestaan) return false
+    return o.regels.some((r) => r.is_pickbaar)
+  })
   if (search) result = filterPickShipOrders(result, search)
   if (bucket) result = result.filter((o) => o.bucket === bucket)
   result.sort(comparePickShipOrders)
@@ -101,26 +116,39 @@ async function fetchOpenOrderHeaders(): Promise<OrderHeaderRij[]> {
 
   if (error) throw error
 
-  const ordersBase = (ordersRaw ?? []) as unknown as Array<Omit<OrderHeaderRij, 'klant_naam'>>
+  const ordersBase = (ordersRaw ?? []) as unknown as Array<
+    Omit<OrderHeaderRij, 'klant_naam' | 'deelleveringen_toegestaan'>
+  >
   const debiteurNrs = Array.from(new Set(ordersBase.map((o) => o.debiteur_nr)))
-  const naamMap = new Map<number, string>()
+  const klantMap = new Map<number, { naam: string; deelleveringen_toegestaan: boolean }>()
 
   if (debiteurNrs.length > 0) {
     const { data: debs, error: derr } = await supabase
       .from('debiteuren')
-      .select('debiteur_nr, naam')
+      .select('debiteur_nr, naam, deelleveringen_toegestaan')
       .in('debiteur_nr', debiteurNrs)
     if (derr) throw derr
 
-    for (const d of (debs ?? []) as Array<{ debiteur_nr: number; naam: string }>) {
-      naamMap.set(d.debiteur_nr, d.naam)
+    for (const d of (debs ?? []) as Array<{
+      debiteur_nr: number
+      naam: string
+      deelleveringen_toegestaan: boolean | null
+    }>) {
+      klantMap.set(d.debiteur_nr, {
+        naam: d.naam,
+        deelleveringen_toegestaan: d.deelleveringen_toegestaan ?? false,
+      })
     }
   }
 
-  return ordersBase.map((o) => ({
-    ...o,
-    klant_naam: naamMap.get(o.debiteur_nr) ?? null,
-  }))
+  return ordersBase.map((o) => {
+    const klant = klantMap.get(o.debiteur_nr)
+    return {
+      ...o,
+      klant_naam: klant?.naam ?? null,
+      deelleveringen_toegestaan: klant?.deelleveringen_toegestaan ?? false,
+    }
+  })
 }
 
 async function fetchPickbaarheidRegels(orderIds: number[]): Promise<PickbaarheidRij[]> {

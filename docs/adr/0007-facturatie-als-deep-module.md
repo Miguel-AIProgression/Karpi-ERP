@@ -83,7 +83,7 @@ CREATE TRIGGER trg_enqueue_factuur_op_event AFTER INSERT ON order_events
 Twee voordelen die de extra migratie rechtvaardigen:
 
 1. **Oorzaak in audit-trail**: elk `factuur_queue`-record kan via FK naar `order_events.id` traceren waarom het is aangemaakt (welke pickronde, welke picker).
-2. **Uitbreidbaar**: per-zending-facturatie (`debiteuren.factuurvoorkeur='per_zending'` is in mig 118 voorzien maar nooit geactiveerd) wordt later één extra `WHEN`-tak op een toekomstig `event_type='zending_klaar'` — zonder de trigger-procedure-handtekening te raken.
+2. ~~**Uitbreidbaar**: per-zending-facturatie (`debiteuren.factuurvoorkeur='per_zending'` is in mig 118 voorzien maar nooit geactiveerd) wordt later één extra `WHEN`-tak op een toekomstig `event_type='zending_klaar'` — zonder de trigger-procedure-handtekening te raken.~~ — *Vervallen per [ADR-0010](0010-factuur-volgt-bundel-zending.md)*: `per_zending` is gedropt en factuur volgt de bundel-zending. De event-driven trigger op `order_events` blijft staan voor audit-traceerbaarheid (punt 1 hieronder), maar de "uitbreidbaarheid"-claim was load-bearing op een dood pad.
 
 ### Module-eigenaarschap
 
@@ -134,7 +134,7 @@ Geen barrel-export van `lib/queries/`-helpers — die blijven intern.
   - Geen wijziging aan implementatie-plan [`2026-04-22-facturatie-module.md`](../superpowers/plans/2026-04-22-facturatie-module.md) — dat blijft historisch correct voor V1-bouw.
 
 - **Open kandidaten op de backlog**:
-  - Per-zending-facturatie activeren (extra `WHEN`-tak op event_type='zending_klaar' — vereist nieuwe event-type in `order_event_type`-enum + zending-Module-RPC die het schrijft).
+  - ~~Per-zending-facturatie activeren (extra `WHEN`-tak op event_type='zending_klaar' — vereist nieuwe event-type in `order_event_type`-enum + zending-Module-RPC die het schrijft).~~ **Gesloten per [ADR-0010](0010-factuur-volgt-bundel-zending.md)** (2026-05-08): `per_zending` is gedropt; factuur volgt de bundel-zending.
   - Aparte tabel `klant_factuur_instellingen` als de set instellingen voorbij 4-5 velden groeit (BTW per land, factuur-templates, etc.).
   - Credit-nota's, herinneringen, aanmaningen — buiten V1 (zoals oude plan-doc al vastlegt).
   - Status-strings typed via Postgres-enums + generated TS-types (#4 uit architectuur-review) — orthogonaal aan deze ADR.

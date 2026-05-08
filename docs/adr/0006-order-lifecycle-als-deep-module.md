@@ -147,5 +147,5 @@ Volgt ADR-0001/0002:
 
 - **Open kandidaten op de backlog** (niet in deze ADR):
   - Status-hertekening (`Tekort` met reden) — eigen ADR + UI-traject.
-  - Per-zending-facturatie (`debiteuren.factuurvoorkeur='per_zending'` activeren) — kan via een tweede event-type `zending_klaar_voor_verzending` zonder ADR-0006 te raken.
+  - ~~Per-zending-facturatie (`debiteuren.factuurvoorkeur='per_zending'` activeren) — kan via een tweede event-type `zending_klaar_voor_verzending` zonder ADR-0006 te raken.~~ **Gesloten per [ADR-0010](0010-factuur-volgt-bundel-zending.md)** (2026-05-08): `per_zending` is gedropt; factuur volgt de bundel-zending in de wekelijkse cron. Geen tweede event-type op `order_events` nodig.
   - Facturatie als eigen Module (kandidaat #1 uit de architectuur-review) — apart traject; deze ADR opent de ruimte door de keten-trigger nu schoon te isoleren.

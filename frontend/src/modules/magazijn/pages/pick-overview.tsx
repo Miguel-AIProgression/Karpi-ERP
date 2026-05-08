@@ -11,6 +11,7 @@ import {
 } from '@/modules/logistiek'
 import { fetchEffectieveVervoerderPerOrderregel } from '@/modules/logistiek/queries/orderregel-vervoerder'
 import { aggregeerVervoerderKeuzeVoorOrder } from '@/modules/logistiek/queries/vervoerder-keuze'
+import { useVoorgesteldeBundels } from '@/modules/logistiek/queries/voorgestelde-bundels'
 import type { ResolvedVervoerder } from '../lib/bundel-cluster'
 import { cn } from '@/lib/utils/cn'
 import { genereerWeekTabs } from '../lib/buckets'
@@ -82,6 +83,20 @@ export function MagazijnOverviewPage() {
       return !r.afhalen && r.code === vervoerderFilter
     })
   }, [gefilterd, vervoerderFilter, vervoerderMap])
+
+  // Voorgestelde-bundels (mig 229): pure SQL-view die per (debiteur × adres ×
+  // vervoerder × verzendweek) de open-orders aggregeert met drempel-toets en
+  // besparing-indicator. Eén fetch over alle weken — staleTime via hook.
+  const { data: voorgesteldeBundels = [] } = useVoorgesteldeBundels()
+  const bundelsPerWeek = useMemo(() => {
+    const m = new Map<string, typeof voorgesteldeBundels>()
+    for (const b of voorgesteldeBundels) {
+      const lijst = m.get(b.jaar_week) ?? []
+      lijst.push(b)
+      m.set(b.jaar_week, lijst)
+    }
+    return m
+  }, [voorgesteldeBundels])
 
   // Groepeer binnen het actieve filter per verzendweek (gesorteerd op sleutel).
   // Voor wk_1 kunnen er meerdere groepen zijn (achterstallig + huidige + +1);
@@ -248,6 +263,7 @@ export function MagazijnOverviewPage() {
               verzendWeek={groep.verzendWeek}
               status={groep.status}
               groepeerOpLand={groepeerOpLand}
+              voorgesteldeBundels={bundelsPerWeek.get(groep.sleutel) ?? []}
             />
           ))}
         </div>

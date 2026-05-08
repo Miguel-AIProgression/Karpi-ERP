@@ -45,6 +45,11 @@ export interface OrderHeaderRij {
   afl_land: string | null
   afleverdatum: string | null
   afhalen: boolean
+  /** Klant-policy uit `debiteuren.deelleveringen_toegestaan`. Bepaalt of een
+   *  order met ≥1 'Wacht op snijden'-regel toch in Pick & Ship verschijnt
+   *  (deellevering van de pickbare regels), of pas zichtbaar wordt zodra
+   *  alle regels gepickt kunnen worden. */
+  deelleveringen_toegestaan: boolean
 }
 
 export function initPickShipOrders(

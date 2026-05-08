@@ -79,7 +79,7 @@ export async function fetchPickProblemen(): Promise<PickProbleemRij[]> {
       zending_id,
       zendingen!inner (
         zending_nr, status,
-        orders!inner (
+        orders!zendingen_order_id_fkey!inner (
           order_nr,
           debiteuren:debiteuren!orders_debiteur_nr_fkey ( naam )
         )

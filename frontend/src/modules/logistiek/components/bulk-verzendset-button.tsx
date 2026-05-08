@@ -199,6 +199,9 @@ export function BulkVerzendsetButton({ orders, context }: BulkVerzendsetButtonPr
       // Invalideer pick-ship + zendingen-overzicht in één keer ná de batch.
       qc.invalidateQueries({ queryKey: ['logistiek', 'zendingen'] })
       qc.invalidateQueries({ queryKey: ['pick-ship'] })
+      // Mig 229: orders die nu in een actieve zending zitten verdwijnen uit
+      // voorgestelde-bundels-view; refetch de live preview.
+      qc.invalidateQueries({ queryKey: ['voorgestelde-bundels'] })
 
       setShowPickerPopover(false)
       const qs = encodeURIComponent(zendingNrs.join(','))
