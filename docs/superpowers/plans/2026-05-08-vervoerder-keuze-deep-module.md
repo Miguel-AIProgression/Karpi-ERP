@@ -712,9 +712,11 @@ git commit -m "feat(vervoerder-keuze): mig 227 — drop klant-fallback-kolom, bu
 
 - [ ] **Stap 1: Verwijder `klant_fallback_code` uit interface en `klant_fallback` uit bron-union**
 
+> **Behoud `is_locked: boolean`** — dat veld is in mig 221 aan de RPC toegevoegd en wordt door mig 225 behouden. Niet weghalen.
+
 Edit:
 ```typescript
-// orderregel-vervoerder.ts:9-24
+// orderregel-vervoerder.ts (ca. regel 9-26)
 export interface OrderregelVervoerder {
   orderregel_id: number
   override_code: string | null
@@ -723,11 +725,12 @@ export interface OrderregelVervoerder {
   effectief_code: string | null
   effectief_service: string | null
   bron: 'override' | 'regel' | 'geen' | 'afhalen'
+  is_locked: boolean
   uitleg: Record<string, unknown> | null
 }
 ```
 
-(Verwijder regel `klant_fallback_code: string | null`, en `'klant_fallback'` uit de bron-union.)
+Wijzigingen t.o.v. huidige versie: regel `klant_fallback_code: string | null` verwijderen, en `'klant_fallback'` uit de bron-union halen. **`is_locked: boolean` moet blijven staan.**
 
 - [ ] **Stap 2: TypeCheck draaien**
 
