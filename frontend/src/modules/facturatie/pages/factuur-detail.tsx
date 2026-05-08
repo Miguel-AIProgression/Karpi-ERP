@@ -3,7 +3,7 @@ import { ArrowLeft, Download, CheckCircle, ExternalLink } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { useState } from 'react'
-import { useFactuurDetail, useMarkeerBetaald } from '@/hooks/use-facturen'
+import { useFactuurDetail, useMarkeerBetaald } from '../hooks/use-facturen'
 import { getFactuurPdfSignedUrl, renderFactuurPdfBlobUrl } from '@/lib/supabase/queries/facturen'
 import { formatCurrency, formatDate } from '@/lib/utils/formatters'
 

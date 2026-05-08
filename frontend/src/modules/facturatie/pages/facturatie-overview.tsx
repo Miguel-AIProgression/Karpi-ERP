@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { Search } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { FactuurLijst } from '@/modules/facturatie'
-import { useFacturen } from '@/hooks/use-facturen'
+import { useFacturen } from '../hooks/use-facturen'
 import type { FactuurStatus } from '@/lib/supabase/queries/facturen'
 
 const ALLE_STATUSSEN: FactuurStatus[] = [

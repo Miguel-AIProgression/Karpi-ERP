@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { useFacturen } from '@/hooks/use-facturen'
+import { useFacturen } from '../hooks/use-facturen'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { formatCurrency, formatDate } from '@/lib/utils/formatters'
 import type { FactuurListItem } from '@/lib/supabase/queries/facturen'

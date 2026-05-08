@@ -13,3 +13,6 @@ export { FacturatieOverviewPage } from './pages/facturatie-overview'
 
 // Components
 export { FactuurLijst } from './components/factuur-lijst'
+
+// Hooks
+export * from './hooks/use-facturen'
