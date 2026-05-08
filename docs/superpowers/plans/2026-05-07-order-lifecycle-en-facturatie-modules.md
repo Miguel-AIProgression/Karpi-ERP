@@ -994,7 +994,17 @@ git commit -m "feat(order-lifecycle): mig 218 CHECK-constraint orders.status —
 
 ---
 
-### Task 1.11: Sentinel-filters opschonen in 6 RPCs
+### Task 1.11: Sentinel-filters opschonen in 6 RPCs — DEFERRED
+
+**Status (2026-05-08):** uitgesteld naar vervolg-iteratie. Reden:
+
+Pragmatisch pad in Task 1.10 zet `CHECK (status <> 'Klaar voor verzending')` op `orders.status`. Daardoor zijn de bestaande sentinel-filters in mig 153 (`sync_order_afleverdatum_met_claims`), mig 185 (gewicht-recalc-triggers) en mig 186 (eenmalige backfill) **bewijsbaar dood maar niet schadelijk** — de string komt simpelweg nooit voor in de data.
+
+Risico-balans: het ophalen + kopiëren + bewerken van 4+ RPC-bodies in mig 218 introduceert een serieus regressie-risico (subtiele body-kopie-bugs, gewicht-trigger-cascade die niet meer vuurt, etc.) terwijl de winst beperkt is tot leesbaarheid.
+
+Strict-pad uitvoering — wanneer productie-data alleen de canonieke 5 statussen bevat — is het natuurlijke moment voor deze cleanup. Tot dan blijven de filters defensief consistent.
+
+
 
 **Files:**
 - Modify: `supabase/migrations/218_order_lifecycle_module.sql` (append CREATE OR REPLACE per RPC)
