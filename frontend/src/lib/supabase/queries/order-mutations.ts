@@ -23,6 +23,8 @@ export interface OrderFormData {
   lever_modus?: 'deelleveringen' | 'in_een_keer' | null
   /** Klant haalt zelf af → UI onderdrukt automatische verzendkosten-regel; logistiek slaat vervoerder over. Mig 204. */
   afhalen?: boolean
+  /** ADR 0014: 'week' = ergens binnen de leverweek (B2B-default), 'datum' = exact die afleverdatum (B2C). Mig 244. */
+  lever_type?: 'week' | 'datum'
 }
 
 export interface OrderRegelFormData {
@@ -160,6 +162,7 @@ export async function createOrder(
     afl_land: order.afl_land || null,
     lever_modus: order.lever_modus ?? null,
     afhalen: order.afhalen ?? false,
+    lever_type: order.lever_type ?? 'week',
   }
 
   const p_regels = regels.map((r, i) => ({
@@ -322,12 +325,12 @@ export async function fetchKlantArtikelnummer(debiteurNr: number, artikelnr: str
 export async function fetchClientCommercialData(debiteurNr: number) {
   const { data, error } = await supabase
     .from('debiteuren')
-    .select('prijslijst_nr, korting_pct, gratis_verzending, verzendkosten, verzend_drempel, standaard_maat_werkdagen, maatwerk_weken, deelleveringen_toegestaan')
+    .select('prijslijst_nr, korting_pct, gratis_verzending, verzendkosten, verzend_drempel, standaard_maat_werkdagen, maatwerk_weken, deelleveringen_toegestaan, default_lever_type')
     .eq('debiteur_nr', debiteurNr)
     .single()
 
   if (error) throw error
-  return data as { prijslijst_nr: string | null; korting_pct: number; gratis_verzending: boolean; verzendkosten: number; verzend_drempel: number; standaard_maat_werkdagen: number | null; maatwerk_weken: number | null; deelleveringen_toegestaan: boolean }
+  return data as { prijslijst_nr: string | null; korting_pct: number; gratis_verzending: boolean; verzendkosten: number; verzend_drempel: number; standaard_maat_werkdagen: number | null; maatwerk_weken: number | null; deelleveringen_toegestaan: boolean; default_lever_type: 'week' | 'datum' }
 }
 
 /** Update only the afwerking (+ optional band_kleur) on a single order_regel — used for locked orders where

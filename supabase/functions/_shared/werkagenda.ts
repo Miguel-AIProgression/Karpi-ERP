@@ -36,6 +36,26 @@ function isWerkdag(d: Date, w: Werktijden): boolean {
   return w.werkdagen.includes(isoWeekdag(d))
 }
 
+/**
+ * Trek N werkdagen af van een ISO-datum-string (YYYY-MM-DD). Werkt in UTC zoals
+ * de rest van werkagenda. Voor dag-orders (ADR 0014): kritieke snij-deadline
+ * = werkdagMinN(afleverdatum, dag_order_snij_buffer_werkdagen).
+ *
+ * N=0 retourneert input. Max 60 iteraties veiligheidsrem.
+ */
+export function werkdagMinN(iso: string, n: number, w: Werktijden): string {
+  const d = new Date(`${iso}T00:00:00Z`)
+  if (isNaN(d.getTime())) return iso
+  let resterend = n
+  let stappen = 0
+  while (resterend > 0 && stappen < 60) {
+    d.setUTCDate(d.getUTCDate() - 1)
+    stappen += 1
+    if (isWerkdag(d, w)) resterend -= 1
+  }
+  return d.toISOString().slice(0, 10)
+}
+
 /** Eerste moment vanaf `vanaf` dat binnen werktijd valt. */
 export function volgendeWerkminuut(vanaf: Date, w: Werktijden): Date {
   const d = new Date(vanaf.getTime())

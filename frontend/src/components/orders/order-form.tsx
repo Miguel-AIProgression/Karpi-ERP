@@ -810,7 +810,7 @@ function Field({ label, value, onChange, type = 'text' }: {
 }
 
 /**
- * Lever-datum-input (ADR 0012 / mig 244). Twee modi:
+ * Lever-datum-input (ADR 0014 / mig 244). Twee modi:
  *   - 'week' (B2B-default): ISO-week-picker. `afleverdatum` = vrijdag van de gekozen
  *     week. Bundel-/factuur-/pick-flow ongewijzigd.
  *   - 'datum' (B2C): date-picker. `afleverdatum` = exact die dag. Pick & Ship laat

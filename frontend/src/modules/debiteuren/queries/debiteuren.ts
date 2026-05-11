@@ -58,6 +58,8 @@ export interface DebiteurDetail {
   standaard_maat_werkdagen: number | null
   maatwerk_weken: number | null
   deelleveringen_toegestaan: boolean
+  /** ADR 0014 / mig 244: standaard lever_type bij orderaanmaak ('week' B2B-default, 'datum' B2C). */
+  default_lever_type: 'week' | 'datum'
   btw_percentage: number
   inkoopgroep_code: string | null
   inkoopgroep_naam?: string | null

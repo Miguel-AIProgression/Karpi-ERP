@@ -22,6 +22,17 @@ import { ORDER_STATUS_COLORS } from '@/lib/utils/constants'
 import { iso2NaarVlag, landNaarIso2 } from '@/lib/utils/land-vlag'
 import type { PickShipOrder, PickShipRegel, PickShipWachtOp } from '../lib/types'
 
+/** Compacte NL-dag-badge "wo 14-05" voor dag-orders (ADR 0014). */
+function formatDagBadge(iso: string): string {
+  const d = new Date(`${iso}T00:00:00`)
+  if (isNaN(d.getTime())) return iso
+  const dagen = ['zo', 'ma', 'di', 'wo', 'do', 'vr', 'za']
+  const dag = dagen[d.getDay()]
+  const dd = String(d.getDate()).padStart(2, '0')
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  return `${dag} ${dd}-${mm}`
+}
+
 const WACHT_OP_LABEL: Record<NonNullable<PickShipWachtOp>, string> = {
   snijden: 'Wacht op snijden',
   confectie: 'Wacht op confectie',
@@ -196,14 +207,24 @@ export function OrderPickCard({ order }: Props) {
           </span>
         </div>
 
-        {/* Verzendweek */}
-        <div
-          className="hidden sm:inline-flex items-center gap-1 text-xs text-slate-600 whitespace-nowrap"
-          title="Verzendweek — orders worden verzonden in de week ván de afleverdatum"
-        >
-          <CalendarDays size={12} className="text-slate-400" />
-          {order.verzend_week_kort}
-        </div>
+        {/* Verzendweek / Leverdatum (ADR 0014 — dag-orders krijgen prominente datum-badge) */}
+        {order.lever_type === 'datum' && order.afleverdatum ? (
+          <div
+            className="hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[var(--radius-sm)] bg-terracotta-50 text-terracotta-700 text-xs font-medium whitespace-nowrap"
+            title="Levering op specifieke dag — verschijnt 1 werkdag vóór afleverdatum in Pick & Ship"
+          >
+            <CalendarDays size={12} />
+            {formatDagBadge(order.afleverdatum)}
+          </div>
+        ) : (
+          <div
+            className="hidden sm:inline-flex items-center gap-1 text-xs text-slate-600 whitespace-nowrap"
+            title="Verzendweek — orders worden verzonden in de week ván de afleverdatum"
+          >
+            <CalendarDays size={12} className="text-slate-400" />
+            {order.verzend_week_kort}
+          </div>
+        )}
 
         {/* Vervoerder-selector */}
         <div onClick={(e) => e.stopPropagation()} className="flex-shrink-0">

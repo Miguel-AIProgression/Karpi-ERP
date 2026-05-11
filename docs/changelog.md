@@ -1,5 +1,42 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-11 — ADR-0014: Leveren op leverdatum naast leverweek (`lever_type`)
+
+Karpi levert in ~90% van de orders per leverweek (B2B): vervoerder haalt op in de afgesproken week, klant ontvangt een week later. Met de groei van B2C (Floorpassion-webshop, particulier maatwerk) komt er behoefte aan **levering op een specifieke dag**. Onder de motorkap werkt het systeem al op `orders.afleverdatum` (DATE); deze release voegt het intentie-vlag `lever_type` toe zodat de UX, pick-horizon en snij-prioriteit zich naar B2C kunnen voegen zonder bundel-/factuur-flow te raken.
+
+**Ingrepen:**
+
+- **Mig 244** [`244_lever_type_dag_of_week.sql`](../supabase/migrations/244_lever_type_dag_of_week.sql): nieuw ENUM `lever_type` ('week' | 'datum'). Kolom `orders.lever_type` (NOT NULL DEFAULT 'week') voor per-order intentie en `debiteuren.default_lever_type` voor klant-default. Seed `app_config.productie_planning.dag_order_snij_buffer_werkdagen=2` + helper-functie `dag_order_snij_buffer_werkdagen()` (zelfde patroon als `confectie_buffer_minuten()` uit mig 103). View `orders_list` herbouwd zodat OrdersTable `lever_type` kan lezen.
+
+- **Mig 245** [`245_order_rpcs_lever_type.sql`](../supabase/migrations/245_order_rpcs_lever_type.sql): `create_order_with_lines` + `update_order_with_lines` lezen `lever_type` uit `p_order`/`p_header`. Achterwaarts compatibel — EDI-import, Floorpassion-webshop en bestaande callers krijgen impliciet 'week' als de key ontbreekt.
+
+- **Order-form toggle** (`LeverDatumField` in [`order-form.tsx`](../frontend/src/components/orders/order-form.tsx)): segmented "Per week / Op datum" boven de afleverdatum-input. Default = `client.default_lever_type`. Bij 'datum' verschijnt een date-picker; bij 'week' blijft de native week-picker. `applyAfleverdatum` blijft de week-snapshot zetten zodat bundel-sleutel ongewijzigd werkt. `OrderFormData.lever_type` toegevoegd; `createOrder` stuurt 'week' default.
+
+- **Klant-default** ([`debiteur-detail.tsx`](../frontend/src/modules/debiteuren/pages/debiteur-detail.tsx)): segmented toggle "Standaard levering" op de info-tab via nieuwe `leverTypeMutation`. B2C-klanten kunnen permanent op 'datum' staan.
+
+- **Pick & Ship-horizon** ([`pickbaarheid.ts`](../frontend/src/modules/magazijn/queries/pickbaarheid.ts)): dag-orders verschijnen pas vanaf `werkdagMinN(afleverdatum, 1)` in Pick & Ship. Voorkomt dat de magazijnier een dag-belofte te vroeg pickt en wegzet (waarna de pickdag gemist kan worden). Week-orders blijven direct zichtbaar zodra pickbaar — bundeling tussen week en dag werkt door operator-keuze bij `start_pickronden_bundel`. Nieuwe helper `werkdagMinN` in [`bereken-agenda.ts`](../frontend/src/lib/utils/bereken-agenda.ts) en parallel in [`werkagenda.ts`](../supabase/functions/_shared/werkagenda.ts) voor edge-pad.
+
+- **Snij-/levertijd-resolver** ([`check-levertijd/index.ts`](../supabase/functions/check-levertijd/index.ts)): request-contract accepteert `lever_type`. Voor dag-orders schuift de capaciteits-startweek (`snijWeekVoorLever`) naar `werkdagMinN(gewenste_leverdatum, dag_order_snij_buffer_werkdagen)` — d.w.z. de planning rekent vanaf de strikere kritieke deadline (2 werkdagen vóór afleverdatum) i.p.v. de kalender-`logistieke_buffer_dagen`. `LevertijdConfig.dag_order_snij_buffer_werkdagen` toegevoegd; `fetchConfig` leest 'm uit `app_config.productie_planning`.
+
+- **Visuele badges**:
+  - Order-detail header ([`order-header.tsx`](../frontend/src/components/orders/order-header.tsx)): dag-orders krijgen het label "Leverdatum" + een terracotta "📅 Specifieke dag"-chip met de geformatteerde dag. Week-orders behouden de huidige "Wk N · YYYY"-weergave.
+  - Pick & Ship-card ([`order-pick-card.tsx`](../frontend/src/modules/magazijn/components/order-pick-card.tsx)): terracotta-chip "do 14-05" voor dag-orders i.p.v. de "Wk N"-tag.
+  - Orders-overzicht ([`orders-table.tsx`](../frontend/src/components/orders/orders-table.tsx)): in de "Verzendweek"-kolom rendert een dag-badge voor dag-orders.
+
+- **Niet in deze release (V2-backlog)**: tijdslot per dag, IO-sync-blokkade voor dag-orders (mig 153 schuift nu nog dag-orders vooruit als IO-claims later vallen — visuele badge maakt dit zichtbaar), klant-portaal voor B2C-zelfkeuze, push naar Lightspeed eCom van werkelijke leverdag.
+
+**Beslissingen** (uit overleg, vastgelegd in [ADR-0014](adr/0014-leveren-op-leverdatum-naast-leverweek.md)):
+
+- **Bundeling**: dag- en week-orders mengen wél op de bestaande 4D bundel-sleutel — operator beslist bij `start_pickronden_bundel` of beide samen vertrekken.
+- **Pick-horizon**: 1 werkdag vóór afleverdatum.
+- **Snij-prioriteit**: ja, 2 werkdagen strikter dan week-orders, configureerbaar via `app_config.productie_planning.dag_order_snij_buffer_werkdagen`.
+
+**Files**: nieuw `supabase/migrations/{244_lever_type_dag_of_week,245_order_rpcs_lever_type}.sql`; nieuw `docs/adr/0014-leveren-op-leverdatum-naast-leverweek.md`. Geüpdatet `frontend/src/components/orders/{order-form,order-header,orders-table}.tsx`, `frontend/src/lib/supabase/queries/{order-mutations,orders}.ts`, `frontend/src/lib/utils/bereken-agenda.ts`, `frontend/src/components/orders/client-selector.tsx`, `frontend/src/pages/orders/order-edit.tsx`, `frontend/src/modules/debiteuren/{queries/debiteuren,pages/debiteur-detail}.tsx`, `frontend/src/modules/magazijn/{queries/{pickbaarheid,pick-ship-transform},lib/types,components/order-pick-card}.{ts,tsx}`, `supabase/functions/{check-levertijd/index,_shared/{levertijd-types,werkagenda}}.ts`, `docs/data-woordenboek.md`. Contract-test `magazijn-pickbaarheid.contract.test.ts` bijgewerkt voor nieuwe `lever_type`-veld in mock-headers.
+
+**Cross-cut behoud**: bundel-sleutel (`bundel_sleutel`, `verzendweek_voor_datum`) en `voorgestelde_zending_bundels`-view ongewijzigd. Wekelijkse-factuur-cron (mig 231-232) ongewijzigd — dag-orders vallen vanzelf in de ISO-week van hun afleverdatum. IO-sync `herwaardeer_order_status` (mig 153) gedraagt zich gelijk voor beide types in V1.
+
+**Verificatie**: handmatige test e2e — week-order op wk 21, dag-order met afleverdatum vandaag+3. Verifieer pickbaarheidsfilter, snij-startweek, visuele badges in Pick & Ship + orders-overzicht + order-detail.
+
 ## 2026-05-11 — ADR-0013 uitgevoerd: Snijplanning-Module #10 + cross-Module cache-invalidation seam
 
 Architectuur-skill `/improve-codebase-architecture` losgelaten op de "snijplanning verschijnt niet onder Klaar voor confectie"-bug. Symptoom-fix vs structurele frictie: één regel cache-invalidation toevoegen lost vandaag op, maar het patroon achter het probleem (13 mutation-hooks die handgecodeerd consumer-query-keys opsommen, producer kent consumer) is een fout-magneet. Grilling-sessie koos **solo `modules/snijplanning/`** (geen geneste `planning/`), **medium scope** (logica-laag, components/pages blijven fysiek), en **Module-owned `cache.ts`-helpers** als seam (geen event-bus, geen centrale registry).

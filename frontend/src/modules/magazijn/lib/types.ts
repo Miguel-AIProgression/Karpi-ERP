@@ -54,6 +54,10 @@ export interface PickShipOrder {
   /** TRUE = klant haalt zelf af. UI toont afhalen-tag i.p.v. vervoerder en het
    *  knop-label wordt "Markeer afgehaald" — geen verzendstickers. Mig 204/205. */
   afhalen: boolean
+  /** ADR 0014 / mig 244: 'datum' = specifieke leverdag-belofte; 'week' = ergens
+   *  binnen de leverweek. Bepaalt of Pick & Ship een datum-badge toont en of de
+   *  order pas vlak voor afleverdatum naar boven komt. */
+  lever_type: 'week' | 'datum'
   bucket: BucketKey
   /** Sorteersleutel voor groepering, format "YYYY-Www" (bv. "2026-W19").
    *  Orders zonder afleverdatum krijgen "9999-W99" zodat ze achteraan komen.

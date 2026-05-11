@@ -132,6 +132,8 @@ function makeOrderHeader(overrides: Partial<{
     afl_naam: 'Klantnaam BV',
     afl_plaats: 'Amsterdam',
     afleverdatum: '2026-05-12',
+    afhalen: false,
+    lever_type: 'week' as const,
     ...overrides,
   }
 }

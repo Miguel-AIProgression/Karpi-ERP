@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase/client'
 import { SHIPPING_PRODUCT_ID } from '@/lib/constants/shipping'
+import { werkdagMinN } from '@/lib/utils/bereken-agenda'
 import type { BucketKey, PickShipOrder } from '../lib/types'
 import {
   chunks,
@@ -10,6 +11,11 @@ import {
   type OrderHeaderRij,
   type PickbaarheidRij,
 } from './pick-ship-transform'
+
+/** ISO YYYY-MM-DD voor een Date, in lokale tijd. */
+function isoLokaal(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 interface FallbackOrderRegelRij {
   id: number
@@ -88,11 +94,21 @@ export async function fetchPickShipOrders(
   // `deelleveringen_toegestaan=true` zien een order al wél zodra ≥1 regel
   // pickbaar is; de operator stuurt dan een deellevering. Orders zonder
   // enkele pickbare regel verdwijnen altijd, ook bij deelleveringen.
+  //
+  // Dag-orders (ADR 0014 / mig 244 lever_type='datum'): extra horizon-check.
+  // Order verschijnt pas vanaf werkdagMinN(afleverdatum, 1) — d.w.z. 1 werkdag
+  // vóór de afleverdatum. Voorkomt dat een dag-belofte te vroeg gepickt en
+  // weggezet wordt waardoor 'm op de echte pickdag vergeten kan worden.
+  const vandaagIso = isoLokaal(vandaag)
   result = result.filter((o) => {
     if (o.regels.length === 0) return false
     const allesPickbaar = o.regels.every((r) => r.is_pickbaar)
-    if (allesPickbaar) return true
     const header = headerMap.get(o.order_id)
+    if (header?.lever_type === 'datum' && header.afleverdatum) {
+      const horizon = werkdagMinN(header.afleverdatum, 1)
+      if (vandaagIso < horizon) return false
+    }
+    if (allesPickbaar) return true
     if (!header?.deelleveringen_toegestaan) return false
     return o.regels.some((r) => r.is_pickbaar)
   })
@@ -107,7 +123,7 @@ async function fetchOpenOrderHeaders(): Promise<OrderHeaderRij[]> {
     .from('orders')
     .select(
       'id, order_nr, status, debiteur_nr, afl_naam, afl_adres, afl_postcode, ' +
-        'afl_plaats, afl_land, afleverdatum, afhalen'
+        'afl_plaats, afl_land, afleverdatum, afhalen, lever_type'
     )
     .neq('status', 'Verzonden')
     .neq('status', 'Geannuleerd')

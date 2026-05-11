@@ -25,6 +25,8 @@ export interface SelectedClient {
   standaard_maat_werkdagen: number | null
   maatwerk_weken: number | null
   deelleveringen_toegestaan: boolean
+  /** ADR 0014 / mig 244: standaard lever_type bij orderaanmaak ('week' of 'datum'). */
+  default_lever_type: 'week' | 'datum'
 }
 
 interface ClientSelectorProps {
@@ -50,7 +52,7 @@ export function ClientSelector({ value, onChange, disabled }: ClientSelectorProp
       // (mig 189 dropte de oude TEXT-kolom op debiteuren).
       let query = supabase
         .from('debiteuren')
-        .select('debiteur_nr, naam, adres, postcode, plaats, land, fact_naam, fact_adres, fact_postcode, fact_plaats, vertegenw_code, prijslijst_nr, korting_pct, betaler, inkoopgroepen(naam), gratis_verzending, standaard_maat_werkdagen, maatwerk_weken, deelleveringen_toegestaan')
+        .select('debiteur_nr, naam, adres, postcode, plaats, land, fact_naam, fact_adres, fact_postcode, fact_plaats, vertegenw_code, prijslijst_nr, korting_pct, betaler, inkoopgroepen(naam), gratis_verzending, standaard_maat_werkdagen, maatwerk_weken, deelleveringen_toegestaan, default_lever_type')
         .eq('status', 'Actief')
         .limit(10)
 
@@ -95,7 +97,7 @@ export function ClientSelector({ value, onChange, disabled }: ClientSelectorProp
       <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-[var(--radius-sm)] border border-slate-200">
         <div className="flex-1">
           <span className="font-medium">{value.naam}</span>
-          <span className="text-xs text-slate-400 ml-2">#{value.debiteur_nr}</span>
+          <span className="text-sm text-slate-700 font-medium ml-2">#{value.debiteur_nr}</span>
         </div>
         <button
           type="button"
@@ -112,7 +114,7 @@ export function ClientSelector({ value, onChange, disabled }: ClientSelectorProp
     return (
       <div className="p-3 bg-slate-100 rounded-[var(--radius-sm)] border border-slate-200">
         <span className="font-medium">{value.naam}</span>
-        <span className="text-xs text-slate-400 ml-2">#{value.debiteur_nr}</span>
+        <span className="text-sm text-slate-700 font-medium ml-2">#{value.debiteur_nr}</span>
       </div>
     )
   }

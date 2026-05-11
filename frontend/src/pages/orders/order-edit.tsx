@@ -108,6 +108,7 @@ export function OrderEditPage() {
     standaard_maat_werkdagen: clientData?.standaard_maat_werkdagen ?? null,
     maatwerk_weken: clientData?.maatwerk_weken ?? null,
     deelleveringen_toegestaan: clientData?.deelleveringen_toegestaan ?? false,
+    default_lever_type: clientData?.default_lever_type ?? 'week',
   }
 
   // Groepeer handmatige keuzes per orderregel-id
@@ -135,9 +136,18 @@ export function OrderEditPage() {
     maatwerk_vorm: r.maatwerk_vorm ?? undefined,
     maatwerk_lengte_cm: r.maatwerk_lengte_cm ?? undefined,
     maatwerk_breedte_cm: r.maatwerk_breedte_cm ?? undefined,
+    maatwerk_diameter_cm: r.maatwerk_diameter_cm ?? undefined,
     maatwerk_afwerking: r.maatwerk_afwerking ?? undefined,
     maatwerk_band_kleur: r.maatwerk_band_kleur ?? undefined,
     maatwerk_instructies: r.maatwerk_instructies ?? undefined,
+    // Prijs-onderdelen — nodig zodat OrderLineEditor de breakdown-zin
+    // ("X m² × €Y/m² + €Z vorm + €A afwerking") in de bewerk-flow toont
+    // én bij vorm-/afmetingswijziging opnieuw kan herrekenen (de guard in
+    // updateLine vereist een gevulde maatwerk_m2_prijs).
+    maatwerk_m2_prijs: r.maatwerk_m2_prijs ?? undefined,
+    maatwerk_oppervlak_m2: r.maatwerk_oppervlak_m2 ?? undefined,
+    maatwerk_vorm_toeslag: r.maatwerk_vorm_toeslag ?? undefined,
+    maatwerk_afwerking_prijs: r.maatwerk_afwerking_prijs ?? undefined,
     // Handmatige uitwisselbaar-claims gerehydrateerd
     uitwisselbaar_keuzes: keuzesPerRegel.get(r.id) ?? [],
   }))

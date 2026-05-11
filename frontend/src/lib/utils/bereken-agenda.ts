@@ -68,6 +68,32 @@ function isWerkdag(d: Date, werkdagen: number[], vrij?: FeestdagVrij[]): boolean
   return true
 }
 
+/**
+ * Trek N werkdagen af van een ISO-datum. Een werkdag = dag die in `werkdagen`
+ * staat én niet in `vrij` (feestdagen/vakantie). Voor dag-orders (ADR 0014):
+ * een leverbelofte op vrijdag heeft pick-horizon = werkdagMinN(vrijdag, 1) = donderdag.
+ *
+ * Mag N=0 — retourneert dan de input-datum (genormaliseerd op middernacht).
+ * Telt terug; max 60 stappen om infinite loop bij absurde feestdag-input te voorkomen.
+ */
+export function werkdagMinN(
+  iso: string,
+  n: number,
+  w: Werktijden = STANDAARD_WERKTIJDEN,
+): string {
+  const start = new Date(`${iso}T00:00:00`)
+  if (isNaN(start.getTime())) return iso
+  const d = new Date(start)
+  let resterend = n
+  let stappen = 0
+  while (resterend > 0 && stappen < 60) {
+    d.setDate(d.getDate() - 1)
+    stappen += 1
+    if (isWerkdag(d, w.werkdagen, w.vrij)) resterend -= 1
+  }
+  return isoDatum(d)
+}
+
 /** Zoek volgend moment dat een werkminuut beschikbaar is (na dit moment). */
 export function volgendeWerkminuut(vanaf: Date, w: Werktijden): Date {
   const d = new Date(vanaf)
