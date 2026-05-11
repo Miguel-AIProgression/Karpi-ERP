@@ -19,8 +19,15 @@
 -- Bundel-sleutel, factuur-cron en IO-sync ongewijzigd: lever_type is leesbaar
 -- voor consumers maar wijzigt geen bestaande regels.
 
+-- Migratie is idempotent: herhaalde runs slaan reeds-bestaande objecten over.
+-- Postgres CREATE TYPE heeft geen native IF NOT EXISTS, vandaar de DO-block.
+
 -- 1) ENUM
-CREATE TYPE lever_type AS ENUM ('week', 'datum');
+DO $$ BEGIN
+  CREATE TYPE lever_type AS ENUM ('week', 'datum');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
 
 COMMENT ON TYPE lever_type IS
   'Intentie van order-levering: "week" = ergens binnen de leverweek (B2B-default), '
@@ -28,7 +35,7 @@ COMMENT ON TYPE lever_type IS
 
 -- 2) Orders-kolom
 ALTER TABLE orders
-  ADD COLUMN lever_type lever_type NOT NULL DEFAULT 'week';
+  ADD COLUMN IF NOT EXISTS lever_type lever_type NOT NULL DEFAULT 'week';
 
 COMMENT ON COLUMN orders.lever_type IS
   'ADR 0014: "week" = standaard B2B-flow (verschijnt direct in Pick & Ship, snij-buffer = logistieke_buffer_dagen). '
@@ -36,7 +43,7 @@ COMMENT ON COLUMN orders.lever_type IS
 
 -- 3) Debiteuren-default
 ALTER TABLE debiteuren
-  ADD COLUMN default_lever_type lever_type NOT NULL DEFAULT 'week';
+  ADD COLUMN IF NOT EXISTS default_lever_type lever_type NOT NULL DEFAULT 'week';
 
 COMMENT ON COLUMN debiteuren.default_lever_type IS
   'Voorgevulde lever_type bij orderaanmaak. B2C-klanten kunnen standaard op "datum" staan; '
