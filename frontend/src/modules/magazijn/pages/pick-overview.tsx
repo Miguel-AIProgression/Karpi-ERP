@@ -3,6 +3,7 @@ import { Globe, Search, Package, CalendarCheck, CalendarClock } from 'lucide-rea
 import { useQueries } from '@tanstack/react-query'
 import { PageHeader } from '@/components/layout/page-header'
 import { PickProblemenBanner } from '../components/pick-problemen-banner'
+import { PickDagOrdersSectie } from '../components/pick-dag-orders-sectie'
 import { PickWeekSectie } from '../components/pick-week-sectie'
 import { usePickShipOrders, usePickShipStats } from '../hooks/use-pick-ship'
 import {
@@ -12,7 +13,7 @@ import {
 import { fetchEffectieveVervoerderPerOrderregel } from '@/modules/logistiek/queries/orderregel-vervoerder'
 import { aggregeerVervoerderKeuzeVoorOrder } from '@/modules/logistiek/queries/vervoerder-keuze'
 import { useVoorgesteldeBundels } from '@/modules/logistiek/queries/voorgestelde-bundels'
-import type { ResolvedVervoerder } from '../lib/bundel-cluster'
+import type { ResolvedVervoerder } from '@/modules/logistiek/lib/resolved-vervoerder'
 import { cn } from '@/lib/utils/cn'
 import { genereerWeekTabs } from '../lib/buckets'
 import { type BucketKey, type PickShipOrder } from '../lib/types'
@@ -98,9 +99,23 @@ export function MagazijnOverviewPage() {
     return m
   }, [voorgesteldeBundels])
 
+  // Dag-orders (`lever_type='datum'`, ADR 0014) krijgen een eigen sectie
+  // bovenaan: ze hebben een specifieke afleverdag-belofte en moeten niet
+  // tussen de week-buckets verdwijnen. Week-orders blijven in de bestaande
+  // verzendweek-groepen.
+  const dagOrders = useMemo(
+    () => naVervoerderFilter.filter((o) => o.lever_type === 'datum'),
+    [naVervoerderFilter],
+  )
+  const weekOrders = useMemo(
+    () => naVervoerderFilter.filter((o) => o.lever_type !== 'datum'),
+    [naVervoerderFilter],
+  )
+
   // Groepeer binnen het actieve filter per verzendweek (gesorteerd op sleutel).
   // Voor wk_1 kunnen er meerdere groepen zijn (achterstallig + huidige + +1);
   // voor wk_2..wk_5 hoort er normaal precies één verzendweek-groep te zijn.
+  // Alleen week-orders — dag-orders zitten in de aparte top-sectie hierboven.
   const perWeek = useMemo(() => {
     type Groep = {
       sleutel: string
@@ -110,7 +125,7 @@ export function MagazijnOverviewPage() {
       status: PickStatus
     }
     const map = new Map<string, Groep>()
-    for (const o of naVervoerderFilter) {
+    for (const o of weekOrders) {
       const bestaand = map.get(o.verzend_week_sleutel)
       if (bestaand) {
         bestaand.orders.push(o)
@@ -127,7 +142,7 @@ export function MagazijnOverviewPage() {
       }
     }
     return Array.from(map.values()).sort((a, b) => a.sleutel.localeCompare(b.sleutel))
-  }, [naVervoerderFilter, vandaagDate])
+  }, [weekOrders, vandaagDate])
 
   const statCards = [
     {
@@ -249,12 +264,23 @@ export function MagazijnOverviewPage() {
         <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-12 text-center text-slate-400">
           Pick & Ship laden...
         </div>
-      ) : perWeek.length === 0 ? (
+      ) : dagOrders.length === 0 && perWeek.length === 0 ? (
         <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-12 text-center text-slate-400">
           Geen open orders
         </div>
       ) : (
         <div className="space-y-6">
+          {dagOrders.length > 0 && (
+            <PickDagOrdersSectie
+              orders={dagOrders}
+              groepeerOpLand={groepeerOpLand}
+              voorgesteldeBundels={voorgesteldeBundels.filter((b) =>
+                b.order_ids.some((oid) =>
+                  dagOrders.some((o) => o.order_id === oid),
+                ),
+              )}
+            />
+          )}
           {perWeek.map((groep) => (
             <PickWeekSectie
               key={groep.sleutel}

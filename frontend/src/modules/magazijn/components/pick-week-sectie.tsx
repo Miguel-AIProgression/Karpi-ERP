@@ -6,15 +6,12 @@
 //
 // De pagina beslist welke orders bij deze sectie horen en óf de land-toggle
 // aan staat — hier alleen het rangschikken + renderen.
-import { Layers } from 'lucide-react'
-import { OrderPickCard } from './order-pick-card'
-import { VoorgesteldeBundelInfo } from './voorgestelde-bundel-info'
-import { BulkVerzendsetButton } from '@/modules/logistiek'
+import { KlantClusterBlok } from './klant-cluster-blok'
+import { StartPickrondesButton } from '@/modules/logistiek'
 import type { VoorgesteldeBundel } from '@/modules/logistiek/queries/voorgestelde-bundels'
 import {
   clusterOrdersOpKlant,
   groepeerOrdersOpLand,
-  type KlantCluster,
   type LandGroep,
 } from '../lib/groeperen'
 import type { PickShipOrder } from '../lib/types'
@@ -58,6 +55,18 @@ export function PickWeekSectie({
     for (const oid of b.order_ids) {
       bundelByOrderId.set(oid, b)
       sleutelByOrderId.set(oid, b.sleutel)
+    }
+  }
+  // Orders met een lopende pickronde vallen uit `voorgestelde_zending_bundels`
+  // (mig 229 filtert actieve zendingen weg). Voor visuele continuïteit pre- en
+  // post-pickronde-start clusteren we ze opnieuw via hun zending_id — alle
+  // orders die in dezelfde bundel-zending zitten delen per definitie dezelfde
+  // 4D-sleutel. Overschrijft de voorgestelde-sleutel als beide bestaan; geen
+  // probleem want zodra een order in pickronde zit is de voorgestelde-info
+  // stale.
+  for (const o of orders) {
+    if (o.actieve_pickronde) {
+      sleutelByOrderId.set(o.order_id, `actief:${o.actieve_pickronde.zending_id}`)
     }
   }
   const achterstallig = status === 'achterstallig'
@@ -114,7 +123,7 @@ export function PickWeekSectie({
                       ({ordersInLand.length})
                     </span>
                   </h4>
-                  <BulkVerzendsetButton
+                  <StartPickrondesButton
                     orders={ordersInLand}
                     context={`voor ${groep.iso2 ?? 'onbekend land'}`}
                   />
@@ -141,58 +150,3 @@ export function PickWeekSectie({
   )
 }
 
-/**
- * Render-strategie voor één klant-cluster: bij één order toon je gewoon de
- * card; bij 2+ orders pak je ze in een herkenbare bundel-wrapper. Visueel
- * onderscheid in één oogopslag via:
- *  - dikke linker-accent-streep in terracotta (huiskleur)
- *  - "Bundel" badge + Layers-icoon in de kop
- *  - prominente klantnaam + telling-pill (groter dan losse-order-tekst)
- *  - subtiele terracotta-tint achtergrond rondom alle gebundelde cards
- */
-function KlantClusterBlok({
-  cluster,
-  bundel,
-}: {
-  cluster: KlantCluster
-  bundel: VoorgesteldeBundel | null
-}) {
-  if (cluster.orders.length === 1) {
-    return <OrderPickCard order={cluster.orders[0]} />
-  }
-  return (
-    <div className="relative rounded-[var(--radius)] border-2 border-terracotta-400 bg-terracotta-100/60 pl-4 pr-2 pt-2 pb-2 space-y-2 shadow-sm">
-      {/* Linker accent-streep — duidelijke bundel-aanduiding bij snelle scan */}
-      <div
-        aria-hidden
-        className="absolute left-0 top-0 bottom-0 w-1.5 rounded-l-[var(--radius)] bg-terracotta-500"
-      />
-      <div className="flex items-center justify-between gap-2 px-1 pt-0.5">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <span className="inline-flex items-center gap-1 rounded-full bg-terracotta-500 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
-            <Layers size={11} />
-            Bundel
-          </span>
-          <span className="text-sm font-semibold text-terracotta-600 truncate">
-            {cluster.klant_naam}
-          </span>
-          <span className="inline-flex items-center rounded-full bg-white border border-terracotta-400 px-2 py-0.5 text-xs font-semibold text-terracotta-600 whitespace-nowrap">
-            {cluster.orders.length} orders
-          </span>
-        </div>
-        <BulkVerzendsetButton
-          orders={cluster.orders}
-          context={`voor ${cluster.klant_naam}`}
-        />
-      </div>
-      {bundel && bundel.aantal_orders >= 2 && (
-        <VoorgesteldeBundelInfo bundel={bundel} />
-      )}
-      <div className="space-y-2">
-        {cluster.orders.map((o) => (
-          <OrderPickCard key={o.order_id} order={o} />
-        ))}
-      </div>
-    </div>
-  )
-}

@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 import { LocatieEdit } from './locatie-edit'
 import {
-  VerzendsetButton,
+  StartPickrondesButton,
   VervoerderInlineSelect,
   VervoerderOrderregelPill,
 } from '@/modules/logistiek'
@@ -253,7 +253,7 @@ export function OrderPickCard({ order }: Props) {
                 : 'In pickronde'}
             </Link>
           ) : (
-            <VerzendsetButton order={order} />
+            <StartPickrondesButton orders={[order]} variant="compact" />
           )}
         </div>
       </div>

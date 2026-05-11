@@ -2,7 +2,15 @@ import { useRef } from 'react'
 import { Trash2 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { formatCurrency } from '@/lib/utils/formatters'
-import { berekenPrijsOppervlakM2, KwaliteitFirstSelector } from '@/modules/maatwerk'
+import {
+  berekenPrijsOppervlakM2,
+  berekenOmtrekMeter,
+  fetchVormen,
+  fetchAfwerkingTypes,
+  KwaliteitFirstSelector,
+  type MaatwerkVormRow,
+  type AfwerkingTypeRow,
+} from '@/modules/maatwerk'
 import { AFWERKING_OPTIES } from '@/lib/utils/constants'
 import { UitwisselbaarTekortHint } from './uitwisselbaar-tekort-hint'
 import { getVormDisplay } from '@/lib/utils/vorm-labels'
@@ -40,12 +48,17 @@ const inputClass = 'w-full text-right bg-transparent border border-slate-200 rou
 const selectClass = 'bg-transparent border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-terracotta-400/30'
 
 function MaatwerkLineRow({
-  line, index, updateLine, removeLine,
+  line, index, updateLine, removeLine, vormen,
 }: {
   line: OrderRegelFormData
   index: number
   updateLine: (i: number, u: Partial<OrderRegelFormData>) => void
   removeLine: (i: number) => void
+  /** DB-vormen uit `maatwerk_vormen` — geeft naam + toeslag zodat de dropdown
+   *  "(+€ 75,00)" achter elke vorm kan tonen, identiek aan de aanmaak-flow in
+   *  KwaliteitFirstSelector. Lege array tot de query retourneert; in dat geval
+   *  valt de render terug op de statische 5 fallback-vormen zonder toeslag. */
+  vormen: MaatwerkVormRow[]
 }) {
   const isVasteMaatRegel = !line.is_maatwerk
     && line.artikelnr
@@ -319,10 +332,16 @@ function MaatwerkLineRow({
                   onChange={(e) => updateLine(index, { maatwerk_vorm: e.target.value })}
                   className={selectClass}
                 >
-                  {['rechthoek', 'rond', 'ovaal', 'organisch_a', 'organisch_b_sp'].map(code => {
-                    const display = getVormDisplay(code)
-                    return <option key={code} value={code}>{display.label}</option>
-                  })}
+                  {vormen.length === 0
+                    ? ['rechthoek', 'rond', 'ovaal', 'organisch_a', 'organisch_b_sp'].map(code => {
+                        const display = getVormDisplay(code)
+                        return <option key={code} value={code}>{display.label}</option>
+                      })
+                    : vormen.map((v) => (
+                        <option key={v.code} value={v.code}>
+                          {v.naam}{v.toeslag > 0 ? ` (+${formatCurrency(v.toeslag)})` : ''}
+                        </option>
+                      ))}
                 </select>
               </label>
 
@@ -391,6 +410,22 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr,
   const keyCounter = useRef(0)
   const lineKeys = useRef<Map<number, string>>(new Map())
 
+  // Lookups voor maatwerk — nodig om bij vorm/afwerking/afmeting-wijziging de
+  // gekoppelde toeslag (`maatwerk_vormen.toeslag`, mig 190) en
+  // afwerking-prijs (omtrek × `afwerking_types.prijs_per_meter`, mig 193)
+  // opnieuw af te leiden. Vormen-dropdown toont "(+€ 75,00)"-suffix zoals
+  // KwaliteitFirstSelector dat in de aanmaak-flow ook doet.
+  const { data: vormen = [] } = useQuery({
+    queryKey: ['maatwerk-vormen'],
+    queryFn: fetchVormen,
+    staleTime: 60_000,
+  })
+  const { data: afwerkingen = [] } = useQuery({
+    queryKey: ['afwerking-types'],
+    queryFn: fetchAfwerkingTypes,
+    staleTime: 60_000,
+  })
+
   const getKey = (index: number): string => {
     if (!lineKeys.current.has(index)) {
       lineKeys.current.set(index, `line-${keyCounter.current++}`)
@@ -403,18 +438,36 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr,
       if (i !== index) return l
       const merged = { ...l, ...updates }
 
-      // Herbereken m²-prijs bij maatwerk wanneer afmetingen/vorm veranderen
+      // Herbereken m²-prijs bij maatwerk wanneer afmetingen/vorm/afwerking
+      // veranderen. Vorm-toeslag + afwerking-prijs worden opnieuw uit de
+      // lookups afgeleid — alleen `merged.maatwerk_vorm_toeslag` gebruiken
+      // zou de oude waarde bevriezen (bug t/m mig 244).
       if (merged.is_maatwerk && merged.maatwerk_m2_prijs) {
+        const vormCode = merged.maatwerk_vorm ?? 'rechthoek'
         const oppervlak = berekenPrijsOppervlakM2(
-          merged.maatwerk_vorm ?? 'rechthoek',
+          vormCode,
           merged.maatwerk_lengte_cm,
           merged.maatwerk_breedte_cm,
           merged.maatwerk_diameter_cm,
         )
+        const omtrek = berekenOmtrekMeter(
+          vormCode,
+          merged.maatwerk_lengte_cm,
+          merged.maatwerk_breedte_cm,
+          merged.maatwerk_diameter_cm,
+        )
+        const vormToeslag = vormen.find((v) => v.code === vormCode)?.toeslag ?? 0
+        const afwerking: AfwerkingTypeRow | undefined = merged.maatwerk_afwerking
+          ? afwerkingen.find((a) => a.code === merged.maatwerk_afwerking)
+          : undefined
+        const afwerkingPrijs = afwerking ? omtrek * (afwerking.prijs_per_meter ?? 0) : 0
+
         merged.maatwerk_oppervlak_m2 = oppervlak
+        merged.maatwerk_vorm_toeslag = vormToeslag
+        merged.maatwerk_afwerking_prijs = afwerkingPrijs
         merged.prijs = oppervlak * merged.maatwerk_m2_prijs
-          + (merged.maatwerk_vorm_toeslag ?? 0)
-          + (merged.maatwerk_afwerking_prijs ?? 0)
+          + vormToeslag
+          + afwerkingPrijs
       }
 
       merged.bedrag = calcBedrag(merged)
@@ -558,6 +611,7 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr,
                   index={i}
                   updateLine={updateLine}
                   removeLine={removeLine}
+                  vormen={vormen}
                 />
               ))}
             </tbody>

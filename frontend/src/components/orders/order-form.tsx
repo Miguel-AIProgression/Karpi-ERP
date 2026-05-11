@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ClientSelector, type SelectedClient } from './client-selector'
 import { AddressSelector } from './address-selector'
+import { InvoiceAddressEditor, type FactuurAdres, type FactuurContact } from './invoice-address-editor'
 import { OrderLineEditor } from './order-line-editor'
 import { LevertijdSuggestie } from './levertijd-suggestie'
 import { LeverModusDialog, type LeverModusTekort } from './lever-modus-dialog'
@@ -211,6 +212,39 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
       afl_plaats: addr.plaats,
       afl_land: addr.land,
     }))
+  }
+
+  const handleFactuurAdresChange = (addr: FactuurAdres) => {
+    setHeader((h) => ({
+      ...h,
+      fact_naam: addr.naam,
+      fact_adres: addr.adres,
+      fact_postcode: addr.postcode,
+      fact_plaats: addr.plaats,
+      fact_land: addr.land,
+    }))
+  }
+
+  const handleFactuurAdresSavedAsDefault = (addr: FactuurAdres, contact: FactuurContact) => {
+    // Sync de in-memory client zodat een volgende order in dezelfde sessie
+    // ook het nieuwe adres + e-mails pakt (en het klant-detailscherm in andere
+    // tabs eveneens fris is na de invalidate hieronder).
+    setClient((c) => c ? {
+      ...c,
+      fact_naam: addr.naam,
+      fact_adres: addr.adres,
+      fact_postcode: addr.postcode,
+      fact_plaats: addr.plaats,
+      email_factuur: contact.email_factuur || null,
+      email_overig: contact.email_overig || null,
+    } : c)
+    // Klant-detailpagina cachet onder ['klanten', debiteur_nr] én
+    // ['klant-factuur-instellingen', debiteur_nr] — beide refreshen.
+    if (client?.debiteur_nr) {
+      queryClient.invalidateQueries({ queryKey: ['klanten', client.debiteur_nr] })
+      queryClient.invalidateQueries({ queryKey: ['klant-factuur-instellingen', client.debiteur_nr] })
+      queryClient.invalidateQueries({ queryKey: ['client-commercial', client.debiteur_nr] })
+    }
   }
 
   // Price + customer-specific data lookup when article is added.
@@ -680,9 +714,24 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
           Order wordt door de klant opgehaald — er wordt geen afleveradres gebruikt en geen verzendkosten in rekening gebracht.
         </div>
       ) : (
-        header.afl_naam && (
+        client && header.afl_naam && (
           <div className="grid grid-cols-2 gap-4">
-            <AddressPreview title="Factuuradres" naam={header.fact_naam} adres={header.fact_adres} postcode={header.fact_postcode} plaats={header.fact_plaats} />
+            <InvoiceAddressEditor
+              debiteurNr={client.debiteur_nr}
+              currentAdres={{
+                naam: header.fact_naam ?? '',
+                adres: header.fact_adres ?? '',
+                postcode: header.fact_postcode ?? '',
+                plaats: header.fact_plaats ?? '',
+                land: header.fact_land ?? 'NL',
+              }}
+              currentContact={{
+                email_factuur: client.email_factuur ?? '',
+                email_overig: client.email_overig ?? '',
+              }}
+              onAdresChange={handleFactuurAdresChange}
+              onSavedAsDefault={handleFactuurAdresSavedAsDefault}
+            />
             <AddressPreview title="Afleveradres" naam={header.afl_naam} adres={header.afl_adres} postcode={header.afl_postcode} plaats={header.afl_plaats} />
           </div>
         )
@@ -817,8 +866,8 @@ function Field({ label, value, onChange, type = 'text' }: {
  *     de order pas 1 werkdag vóór die dag verschijnen; snij-planning krijgt 'm
  *     2 werkdagen eerder kritiek.
  *
- * Toggle bovenaan; week-picker gebruikt HTML5 `<input type="week">` voor native
- * ISO-week-picker met correct gedrag rond jaarwisseling.
+ * Toggle onder de input; week-picker gebruikt HTML5 `<input type="week">` voor
+ * native ISO-week-picker met correct gedrag rond jaarwisseling.
  */
 function LeverDatumField({
   leverType,
@@ -851,26 +900,6 @@ function LeverDatumField({
             Vandaag: <span className="font-medium text-slate-700">Wk {huidigeWeek.week} · {huidigeWeek.jaar}</span>
           </span>
         )}
-      </div>
-      <div className="flex items-center gap-1 mb-2 p-0.5 bg-slate-100 rounded-[var(--radius-sm)] w-fit">
-        <button
-          type="button"
-          onClick={() => onLeverTypeChange('week')}
-          className={`px-3 py-1 text-xs font-medium rounded-[calc(var(--radius-sm)-2px)] transition ${
-            isWeek ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          Per week
-        </button>
-        <button
-          type="button"
-          onClick={() => onLeverTypeChange('datum')}
-          className={`px-3 py-1 text-xs font-medium rounded-[calc(var(--radius-sm)-2px)] transition ${
-            !isWeek ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          Op datum
-        </button>
       </div>
       {isWeek ? (
         <input
@@ -905,8 +934,28 @@ function LeverDatumField({
           className="w-full px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
         />
       )}
+      <div className="flex items-center gap-1 mt-2 p-0.5 bg-slate-100 rounded-[var(--radius-sm)] w-fit">
+        <button
+          type="button"
+          onClick={() => onLeverTypeChange('week')}
+          className={`px-3 py-1 text-xs font-medium rounded-[calc(var(--radius-sm)-2px)] transition ${
+            isWeek ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          Per week
+        </button>
+        <button
+          type="button"
+          onClick={() => onLeverTypeChange('datum')}
+          className={`px-3 py-1 text-xs font-medium rounded-[calc(var(--radius-sm)-2px)] transition ${
+            !isWeek ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          Op datum
+        </button>
+      </div>
       {info && (
-        <p className="mt-1 text-xs text-slate-500">
+        <p className="mt-2 text-xs text-slate-500">
           {isWeek ? (
             <>
               Wk {info.week} · {info.jaar}

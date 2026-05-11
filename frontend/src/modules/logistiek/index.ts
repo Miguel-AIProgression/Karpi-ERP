@@ -17,7 +17,7 @@ export {
   fetchZendingen,
   fetchZendingMetTransportorders,
   fetchZendingPrintSet,
-  startPickrondenVoorOrder,
+  startPickrondes,
   verstuurZendingOpnieuw,
   type ZendingAanmaakResult,
   type ZendingPrintSet,
@@ -34,7 +34,7 @@ export {
   useZendingen,
   useZending,
   useZendingPrintSet,
-  useCreateZendingVoorOrder,
+  useStartPickrondes,
   useVerstuurZendingOpnieuw,
 } from './hooks/use-zendingen'
 
@@ -54,8 +54,9 @@ export {
   VervoerderFilterButton,
   type VervoerderFilterValue,
 } from './components/vervoerder-filter-button'
-// useVervoerderPerOrder + ResolvedVervoerder verwijderd in ADR-0008;
-// ResolvedVervoerder leeft nu in @/modules/magazijn (bundel-cluster.ts)
+// Mig 248 (ADR-0012): ResolvedVervoerder is verhuisd van magazijn/bundel-cluster
+// naar logistiek/lib/resolved-vervoerder (bundel-cluster is gedropt).
+export type { ResolvedVervoerder } from './lib/resolved-vervoerder'
 export {
   useEffectieveVervoerderPerOrderregel,
   useUpdateOrderregelVervoerderOverride,
@@ -68,8 +69,7 @@ export {
   type OrderVervoerderAggregaat,
 } from './hooks/use-vervoerder-keuze'
 export { ZendingStatusBadge } from './components/zending-status-badge'
-export { VerzendsetButton } from './components/verzendset-button'
-export { BulkVerzendsetButton } from './components/bulk-verzendset-button'
+export { StartPickrondesButton } from './components/start-pickrondes-button'
 
 // Fase A — vervoerder-instellingen (mig 174)
 export {

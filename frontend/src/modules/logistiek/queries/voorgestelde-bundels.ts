@@ -8,7 +8,7 @@
 // afleverdatum-wijziging, pickronde-start). Zie de invalidate-aanroepen in:
 //   · `vervoerder-orderregel-pill.tsx`
 //   · `order-form.tsx` (afleverdatum-mutation)
-//   · `zendingen.ts` (startPickrondenBundel onSuccess)
+//   · `use-zendingen.ts` (useStartPickrondes onSuccess, mig 248)
 
 import { useQuery, type UseQueryOptions } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase/client'

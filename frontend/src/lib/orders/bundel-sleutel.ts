@@ -14,7 +14,7 @@
 // **Single source of truth**: deze functie en de SQL-versie in mig 228 moeten
 // identieke output geven. Bij wijzigingen beide kanten tegelijk landen,
 // anders divergeren UI-clustering en DB-validatie (waardoor de UI een bundel
-// laat zien die `start_pickronden_bundel` zou afwijzen).
+// laat zien die `start_pickronden` (mig 248) zou afwijzen).
 
 import { verzendWeekIsoString } from './verzendweek'
 import { normaliseerAdresKey } from './normaliseer-adres'

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { cn } from '@/lib/utils/cn'
 import { useLevertijdCheck } from '@/hooks/use-levertijd-check'
-import type { CheckLevertijdResponse, LevertijdScenario, SpoedDetails } from '@/lib/supabase/queries/levertijd'
+import type { CheckLevertijdResponse, LevertijdScenario } from '@/lib/supabase/queries/levertijd'
 
 interface LevertijdSuggestieProps {
   kwaliteitCode?: string | null
@@ -13,6 +13,8 @@ interface LevertijdSuggestieProps {
   debiteurNr?: number | null
   fallbackDatum?: string | null
   onNeemOver?: (leverDatum: string, week: number) => void
+  // Spoed-UI is voor nu uitgeschakeld (zie changelog 2026-05-11). Props blijven
+  // optioneel in de signatuur zodat call-sites niet hoeven mee te bewegen.
   spoedActief?: boolean
   onSpoedToggle?: (actief: boolean, leverDatum: string | null, week: number | null, toeslag: number) => void
 }
@@ -34,7 +36,6 @@ export function LevertijdSuggestie(props: LevertijdSuggestieProps) {
   const {
     kwaliteitCode, kleurCode, lengteCm, breedteCm, vorm,
     gewensteLeverdatum, debiteurNr, fallbackDatum, onNeemOver,
-    spoedActief, onSpoedToggle,
   } = props
   const [showDetails, setShowDetails] = useState(false)
 
@@ -104,6 +105,25 @@ export function LevertijdSuggestie(props: LevertijdSuggestieProps) {
 
         <p className="text-xs text-slate-600 leading-relaxed">{data.onderbouwing}</p>
 
+        {data.details.eerder_haalbaar && (
+          <div className="flex items-center justify-between gap-2 rounded-[var(--radius-sm)] bg-emerald-50 border border-emerald-100 px-2.5 py-1.5">
+            <div className="text-xs text-emerald-800">
+              <span className="font-medium">Eerder haalbaar:</span>{' '}
+              <span>{formatDatumNL(data.details.eerder_haalbaar.lever_datum)}</span>
+              <span className="text-emerald-600"> — snijden in week {data.details.eerder_haalbaar.snij_week}</span>
+            </div>
+            {onNeemOver && (
+              <button
+                type="button"
+                onClick={() => onNeemOver(data.details.eerder_haalbaar!.lever_datum, isoWeekUit(data.details.eerder_haalbaar!.lever_datum))}
+                className="shrink-0 text-xs text-emerald-700 hover:text-emerald-800 hover:underline"
+              >
+                Neem over
+              </button>
+            )}
+          </div>
+        )}
+
         <button
           type="button"
           onClick={() => setShowDetails((v) => !v)}
@@ -120,60 +140,23 @@ export function LevertijdSuggestie(props: LevertijdSuggestieProps) {
           ⚡ Gewenste datum binnen 2 dagen — bel productie voor handmatige inplanning.
         </div>
       )}
-
-      {data.spoed && (
-        <SpoedToggle
-          spoed={data.spoed}
-          actief={spoedActief ?? false}
-          onChange={(actief) => onSpoedToggle?.(
-            actief,
-            data.spoed!.lever_datum,
-            data.spoed!.week,
-            data.spoed!.toeslag_bedrag,
-          )}
-        />
-      )}
     </div>
   )
 }
 
-function SpoedToggle({ spoed, actief, onChange }: {
-  spoed: SpoedDetails
-  actief: boolean
-  onChange: (a: boolean) => void
-}) {
-  if (!spoed.beschikbaar) {
-    // Geen ruimte = bestaande backlog loopt al achter (rollen die te laat
-    // gesneden worden) OF beide weken zijn vol qua capaciteit.
-    const backlogAchter = spoed.week_restruimte_uren.deze === 0 && spoed.week_restruimte_uren.volgende === 0
-    const reden = backlogAchter
-      ? 'planner zit al achter (rollen op de planning worden te laat gesneden)'
-      : `beide weken zijn vol (rest deze week: ${spoed.week_restruimte_uren.deze}u, volgende: ${spoed.week_restruimte_uren.volgende}u)`
-    return (
-      <div className="px-3 py-2 bg-slate-50 border-t border-slate-100 text-xs text-slate-500">
-        🚀 Spoed niet mogelijk — {reden}.
-      </div>
-    )
-  }
-  return (
-    <label className="flex items-start gap-2 px-3 py-2 bg-amber-50 border-t border-amber-100 cursor-pointer hover:bg-amber-100 transition-colors">
-      <input
-        type="checkbox"
-        checked={actief}
-        onChange={(e) => onChange(e.target.checked)}
-        className="mt-0.5 rounded border-amber-400 text-amber-600 focus:ring-amber-400/30"
-      />
-      <div className="text-xs">
-        <div className="font-medium text-amber-900">
-          🚀 Met spoed leveren — {formatDatumNL(spoed.lever_datum)} (+€{spoed.toeslag_bedrag})
-        </div>
-        <div className="text-amber-700 mt-0.5">
-          Snijden in {spoed.scenario === 'spoed_deze_week' ? 'deze week' : 'volgende week'}.
-          Voegt SPOEDTOESLAG-regel toe aan de order.
-        </div>
-      </div>
-    </label>
-  )
+// ISO-weeknummer voor een YYYY-MM-DD datum (UTC). Spiegelt
+// `isoWeekJaar` uit de edge function maar geeft alleen het weeknummer terug —
+// nodig om `onNeemOver(datum, week)` consistent te kunnen aanroepen vanuit de
+// eerder-haalbaar-hint.
+function isoWeekUit(iso: string): number {
+  const [y, m, d] = iso.split('-').map(Number)
+  const utc = new Date(Date.UTC(y, m - 1, d))
+  const dayNr = (utc.getUTCDay() + 6) % 7  // ma=0..zo=6
+  utc.setUTCDate(utc.getUTCDate() - dayNr + 3)
+  const firstThursday = new Date(Date.UTC(utc.getUTCFullYear(), 0, 4))
+  const firstThursdayDayNr = (firstThursday.getUTCDay() + 6) % 7
+  firstThursday.setUTCDate(firstThursday.getUTCDate() - firstThursdayDayNr + 3)
+  return 1 + Math.round((utc.getTime() - firstThursday.getTime()) / (7 * 86_400_000))
 }
 
 function DetailsPanel({ data }: { data: CheckLevertijdResponse }) {
