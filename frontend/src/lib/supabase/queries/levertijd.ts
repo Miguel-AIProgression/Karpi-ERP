@@ -41,12 +41,19 @@ export interface BacklogDetails {
   drempel_m2: number
 }
 
+export interface EerderHaalbaarDetails {
+  lever_datum: string
+  snij_week: number
+  snij_jaar: number
+}
+
 export interface LevertijdDetails {
   match_rol?: MatchRolDetails
   capaciteit?: CapaciteitDetails
   backlog?: BacklogDetails
   spoed?: boolean
   logistieke_buffer_dagen: number
+  eerder_haalbaar?: EerderHaalbaarDetails
 }
 
 export interface SpoedDetails {

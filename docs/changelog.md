@@ -1,5 +1,62 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-11 — Hotfix: `voltooi_confectie` gooit `column "status" is of type snijplan_status but expression is of type text`
+
+**Symptoom:** in de Confectielijst gaf "Afronden" met checkbox Ingepakt aan een Supabase-fout `column "status" is of type snijplan_status but expression is of type text` — de modal hing op het inboeken, het stuk verscheen niet in Pick & Ship.
+
+**Root cause:** [mig 247](../supabase/migrations/247_voltooi_confectie_ingepakt_status.sql) herdefinieerde `voltooi_confectie` met een CASE-expressie waarvan de drie THEN-takken naakte string-literals waren (`'Ingepakt'` / `'In confectie'` / `'Gesneden'`). PostgreSQL leidt het resultaattype van zo'n CASE af als `text`, en past **geen** impliciete cast meer toe op het UPDATE-target — net zoals bij een directe `SET enumcol = 'text'`. PL/pgSQL parst de body lazy bij aanroep, dus de migratie zelf slaagde; de fout kwam pas bij de eerste echte call uit de Confectielijst. Dezelfde structuur in oudere `voltooi_confectie`-versies (mig 101 in git history) was puur geluk — daar zaten de literals óók al fout, maar bij vroegere PG-versies kwam de impliciete coercie er nog mee weg.
+
+**Fix:** [mig 250](../supabase/migrations/250_voltooi_confectie_enum_cast_fix.sql) — elke THEN-tak van de CASE krijgt een expliciete `::snijplan_status`-cast, idem voor de `status IN (...)`-clause. Signatuur en gedrag ongewijzigd, alleen typing. `CREATE OR REPLACE` overschrijft mig 247.
+
+**Let op — duplicate mig 245:** in de staging area stond `245_voltooi_confectie_ingepakt_status.sql` met identieke (foute) inhoud als mig 247. Naast 245 staat ook 245_order_rpcs_lever_type.sql gecommit — nummerconflict. Mig 245 (de confectie-duplicate) is nu obsolete door mig 250; aanrader om hem te unstagen + verwijderen om dubbele uitvoer te voorkomen.
+
+**Verificatie:** open `/confectie`, kies een stuk met status `Gesneden` of `In confectie` → "Afronden" → check `Ingepakt` aan + locatie ingevuld → "Opslaan" → modal sluit zonder foutmelding → stuk verdwijnt uit Confectielijst en verschijnt in `/pick-ship` onder de juiste order.
+
+## 2026-05-11 — Levertijd-suggestie: "eerder haalbaar"-hint + spoed-UI uit
+
+Twee veranderingen aan de real-time levertijd-suggestie op `/orders/aanmaken`:
+
+**1. Dode imports `check-levertijd` opgelost (hotfix)** — De suggestie toonde voor élke maatwerk-regel "Real-time levertijd-check niet beschikbaar. Indicatie: …", óók bij voldoende voorraad. De fallback-datum kwam door via `bepaalOrderAfleverdatum`, dus de UI bleef bruikbaar, maar de operator zag nooit het scenario-badge.
+
+Root cause: [check-levertijd/index.ts](../supabase/functions/check-levertijd/index.ts) importeerde `fetchUitwisselbarePairs` (Engels) en `fetchUitwisselbareCodes` uit [_shared/db-helpers.ts](../supabase/functions/_shared/db-helpers.ts). Beide functies bestonden niet meer — in commit `ce6136e` (mig 138 `uitwisselbare_paren_canoniek`) vervangen door één Nederlandse `fetchUitwisselbareParen`. De andere consumers (`auto-plan-groep`, `optimaliseer-snijplan`) waren wél meegenomen, alleen de levertijd-functie niet. Deno faalde dus al bij module-load → élke invoke 500'de → `useQuery` zette `error` → fallback-strook.
+
+Fix: import vervangen + `fetchUitwisselbareCodes`-fallback geschrapt (self-row is gegarandeerd in de canonieke RPC). Omdat `fetchUitwisselbareParen` genormaliseerde kleur-codes teruggeeft, vouwen we elke paar nog uit met `getKleurVariants` voordat we de rollen-OR-clause bouwen — anders missen we rollen waarvan `kleur_code` nog "12.0" is i.p.v. "12".
+
+**2. "Eerder haalbaar"-hint + spoed-toggle uit de UI** — Vervolg-vraag van de operator: bij lege planning toonde de suggestie alsnog 4 weken vooruit (de standaard `maatwerk_weken=4`-belofte), terwijl het systeem zelf wist dat het sneller kon — alleen werd dat alleen aangeboden via de spoed-toggle met €50 toeslag. Beleid: standaard 4 weken blijft, maar laat zien wanneer het zonder toeslag eerder zou kunnen zodat verkoop dat met de klant kan communiceren.
+
+Implementatie: de edge function draait nu een tweede [`capaciteitsCheck`](../supabase/functions/_shared/levertijd-capacity.ts) vanaf de huidige ISO-week parallel aan de gewenste-aligned check. [`resolveScenario`](../supabase/functions/_shared/levertijd-resolver.ts) zet `details.eerder_haalbaar = { lever_datum, snij_week, snij_jaar }` alléén wanneer die strikt eerder is dan de gewenste-aligned `lever_datum` — anders zou de hint identiek zijn aan het hoofd-voorstel en alleen ruis voor de operator. [`LevertijdSuggestie`](../frontend/src/components/orders/levertijd-suggestie.tsx) rendert de hint als groene strook met "Neem over"-knop. De spoed-toggle (`SpoedToggle`-helper) is uit de JSX gehaald; de `spoed_*`-config en `evalueerSpoed`-call in de edge function blijven staan zodat de toggle later weer aan kan zonder backend-werk. De urgent-banner (gewenste binnen 2 dagen → "bel productie") blijft als veiligheid.
+
+**Verificatie:** open `/orders/aanmaken`, klant + maatwerk-regel met lege planning. Hoofdregel toont nog 4 weken vooruit (standaard-belofte); daaronder groene strook "Eerder haalbaar: 18-05-2026 — snijden in week 21" met knop om die datum over te nemen. Géén spoed-toggle meer onderaan de card.
+
+## 2026-05-11 — Order-aanmaken: factuuradres + factuur/orderbev-e-mail inline wijzigbaar
+
+Op de order-aanmaken/bewerken-pagina was het factuuradres tot nu toe alleen read-only zichtbaar en de e-mailadressen voor facturen / orderbevestigingen alleen via de aparte klant-detailpagina te bewerken. Voor klanten waar deze velden in de praktijk regelmatig wijzigen (verhuizing, nieuwe administratie-contactpersoon) een onnodige omweg.
+
+**Implementatie:** nieuw component [`InvoiceAddressEditor`](../frontend/src/components/orders/invoice-address-editor.tsx) vervangt de read-only `AddressPreview` voor factuuradres. "Wijzig"-knop opent een inline edit-form met:
+- **Adres-velden** (naam/adres/postcode/plaats/land) — kunnen óf alleen voor déze order óf ook als nieuwe debiteur-default opgeslagen worden;
+- **Contact-velden**: e-mail facturen (`debiteuren.email_factuur`, gebruikt door [`factuur-verzenden`](../supabase/functions/factuur-verzenden/index.ts)) en e-mail orderbevestiging (`debiteuren.email_overig`). Deze hebben géén per-order snapshot — ze worden alleen op de debiteur opgeslagen;
+- **Checkbox "Wijzigingen ook op klantpagina opslaan"** — **standaard aan**, zodat de natuurlijke flow is dat een wijziging in het orderformulier ook de debiteur bijwerkt.
+
+Bij Apply + checkbox aan: `UPDATE debiteuren SET fact_*, email_factuur, email_overig` — daarna lokale `client`-state én React Query-caches `['klanten', debiteur_nr]`, `['klant-factuur-instellingen', debiteur_nr]`, `['client-commercial', debiteur_nr]` geïnvalideerd zodat de Facturering-tab, header-email en commerciële instellingen overal vers zijn. Bij checkbox uit: alleen `header.fact_*` lokaal gemuteerd (e-mails worden genegeerd want geen per-order snapshot — wordt expliciet als amber hint getoond).
+
+**Koppeling klantpagina:** factuur-email wordt op de klant-detail al getoond via [`klant-facturering-tab.tsx`](../frontend/src/modules/debiteuren/components/klant-facturering-tab.tsx) (gebruikt dezelfde `email_factuur`-kolom + dezelfde query-key) en in de header van [`debiteur-detail.tsx`](../frontend/src/modules/debiteuren/pages/debiteur-detail.tsx); orderbev-email staat daar onder "Email (overig)". Dezelfde kolommen, dezelfde write-pad, dus single source of truth.
+
+**Files:** nieuw [`frontend/src/components/orders/invoice-address-editor.tsx`](../frontend/src/components/orders/invoice-address-editor.tsx). Gewijzigd [`frontend/src/components/orders/order-form.tsx`](../frontend/src/components/orders/order-form.tsx), [`frontend/src/components/orders/client-selector.tsx`](../frontend/src/components/orders/client-selector.tsx) (SelectedClient + query met `email_factuur`/`email_overig`), [`frontend/src/lib/supabase/queries/order-mutations.ts`](../frontend/src/lib/supabase/queries/order-mutations.ts) (`fetchClientCommercialData` haalt e-mails mee voor edit-flow), [`frontend/src/pages/orders/order-edit.tsx`](../frontend/src/pages/orders/order-edit.tsx).
+
+**Verificatie:** open `/orders/aanmaken`, kies een klant → factuuradres-card toont nu adres + factuur-email + orderbev-email + "Wijzig"-knop → wijzig één veld → checkbox staat **standaard aan** → "Opslaan + toepassen" → open `/klanten/{nr}` in nieuw tabblad → wijziging zichtbaar in header (factuur-email) én op Facturering-tab → maak tweede order voor dezelfde klant → editor toont meteen nieuwe waardes.
+
+## 2026-05-11 — Bugfix: `voltooi_snijplan_rol` gooit `lengte_voor_cm does not exist` bij aangebroken rol
+
+**Symptoom:** in het Rol-snij-dialoog ("Rol afsluiten") gooide de RPC `42703: column "lengte_voor_cm" of relation "voorraad_mutaties" does not exist` zodra de operator een rol als **aangebroken** (volle breedte, verkort) wilde achterhouden. De hele transactie rolde terug → snijplannen bleven op `Snijden`, de rol bleef op `snijden`, geen reststuk en geen grondstofkosten-toerekening.
+
+**Root cause:** migratie 090 schreef `INSERT INTO voorraad_mutaties (rol_id, type, lengte_voor_cm, lengte_na_cm, reden, medewerker) VALUES (..., 'aangebroken', ...)`. Die kolommen zijn nooit in de echte tabel (mig 032) terechtgekomen — en `'aangebroken'` zat niet in het type-CHECK. Migratie 246 herdefinieerde de functie maar wijzigde alleen `DELETE → TRUNCATE` voor de temp-table; de foute INSERT bleef staan. Identiek probleem werd in mig 136 al opgelost voor `boek_ontvangst`, maar voor `voltooi_snijplan_rol` was dat blijven liggen omdat de aangebroken-branch alleen geraakt wordt als de magazijnier "behoud rol (aangebroken, volle breedte)" kiest.
+
+**Fix — Mig 251** [`251_voltooi_snijplan_rol_voorraad_mutaties_schema_fix.sql`](../supabase/migrations/251_voltooi_snijplan_rol_voorraad_mutaties_schema_fix.sql): `CREATE OR REPLACE FUNCTION voltooi_snijplan_rol(...)` met INSERT op de werkelijke `voorraad_mutaties`-kolommen — `type='correctie'` (bestaande toegestane waarde, semantisch een rol-lengte-correctie), `lengte_cm` = nieuwe rol-lengte, `breedte_cm` = onveranderde breedte, `notitie` = vrije tekst met van/naar-waarden voor audit-trail, `referentie_id=rol_id`/`referentie_type='rol_aangebroken'`, `aangemaakt_door=p_gesneden_door`. Rest van de functie (snijplan-status, reststukken-JSONB-flow, grondstofkosten-toerekening) identiek aan mig 246 inclusief TRUNCATE-fix.
+
+**Verificatie**: rol opnieuw afsluiten via Rol-snij-dialoog met "behoud rol (aangebroken)" — snijplannen moeten naar `Gesneden` springen, rol moet `beschikbaar` worden met verkorte lengte, en de mutatie zichtbaar in `voorraad_mutaties` met type=`correctie` + `notitie` "Rol aangebroken na snijden: van X cm naar Y cm".
+
+**Files**: nieuw `supabase/migrations/251_voltooi_snijplan_rol_voorraad_mutaties_schema_fix.sql`. Geen frontend-changes.
+
 ## 2026-05-11 — ADR-0014: Leveren op leverdatum naast leverweek (`lever_type`)
 
 Karpi levert in ~90% van de orders per leverweek (B2B): vervoerder haalt op in de afgesproken week, klant ontvangt een week later. Met de groei van B2C (Floorpassion-webshop, particulier maatwerk) komt er behoefte aan **levering op een specifieke dag**. Onder de motorkap werkt het systeem al op `orders.afleverdatum` (DATE); deze release voegt het intentie-vlag `lever_type` toe zodat de UX, pick-horizon en snij-prioriteit zich naar B2C kunnen voegen zonder bundel-/factuur-flow te raken.
@@ -74,13 +131,13 @@ Architectuur-rapport op 2026-05-11 (3 problemen gerapporteerd door operator op /
 
 Diagnose via de `/improve-codebase-architecture`-skill: problemen 2+3 zijn één symptoom — de Bundel-Zending heeft geen Module-cohesie en geen entity-levenscyclus. Solo- en bundel-flow zitten in twee aparte RPC's met verschillende bundel-semantiek; UI-clustering gebeurt op 3D (in `bundel-cluster.ts`) bovenop een correcte SQL-view die op 4D groepeert. Probleem 1 is een orthogonale pure bug: prefix-mismatch in query-key-invalidation.
 
-**ADR-0012** ([`docs/adr/0012-bundel-zending-als-deep-module.md`](adr/0012-bundel-zending-als-deep-module.md)) — accepted 2026-05-11. Beslissing: één RPC `start_pickronden(order_ids[], picker_id, force_solo_ids[])` (mig 245) vervangt `start_pickronden_voor_order` (mig 220) en `start_pickronden_bundel` (mig 222). 4D-uitbreiding default-on (auto-bundeling op `voorgestelde_zending_bundels`); `force_solo_ids` als opt-out-escape. Bundel-eenheid blijft order, `zending_orders` M2M blijft canoniek (mig 242 onveranderd) — geen nieuwe `zending_regels`-tabel. Pre-pickronde split via dialog-checkbox; tijdens-pick split blijft de bestaande niet-gevonden-flow op colli-niveau. Frontend: één `<StartPickrondesButton>` + `<StartPickrondesDialog>` vervangt `<BulkVerzendsetButton>` en `<VerzendsetButton>`; [`bundel-cluster.ts`](../frontend/src/modules/magazijn/lib/bundel-cluster.ts) (140 regels schaduw-clustering) wordt verwijderd.
+**ADR-0012** ([`docs/adr/0012-bundel-zending-als-deep-module.md`](adr/0012-bundel-zending-als-deep-module.md)) — accepted 2026-05-11. Beslissing: één RPC `start_pickronden(order_ids[], picker_id, force_solo_ids[])` (mig 248) vervangt `start_pickronden_voor_order` (mig 220) en `start_pickronden_bundel` (mig 222). 4D-uitbreiding default-on (auto-bundeling op `voorgestelde_zending_bundels`); `force_solo_ids` als opt-out-escape. Bundel-eenheid blijft order, `zending_orders` M2M blijft canoniek (mig 242 onveranderd) — geen nieuwe `zending_regels`-tabel. Pre-pickronde split via dialog-checkbox; tijdens-pick split blijft de bestaande niet-gevonden-flow op colli-niveau. Frontend: één `<StartPickrondesButton>` + `<StartPickrondesDialog>` vervangt `<BulkVerzendsetButton>` en `<VerzendsetButton>`; [`bundel-cluster.ts`](../frontend/src/modules/magazijn/lib/bundel-cluster.ts) (140 regels schaduw-clustering) wordt verwijderd.
 
-**One-line fix** (deze commit, los van mig 245/246): [`use-pickronde.ts:64`](../frontend/src/modules/magazijn/hooks/use-pickronde.ts#L64) — `queryKey: ['zendingen']` → `['logistiek', 'zendingen']`. `useVoltooiPickronde` invalideerde de verkeerde prefix; React Query's prefix-match faalde stil zodat de /logistiek-lijst pas op de volgende 30s-poll-tick refreshde. Verlost de gerapporteerde 10s-lag direct, zonder migratie of UI-refactor.
+**One-line fix** (deze commit, los van mig 248/249): [`use-pickronde.ts:64`](../frontend/src/modules/magazijn/hooks/use-pickronde.ts#L64) — `queryKey: ['zendingen']` → `['logistiek', 'zendingen']`. `useVoltooiPickronde` invalideerde de verkeerde prefix; React Query's prefix-match faalde stil zodat de /logistiek-lijst pas op de volgende 30s-poll-tick refreshde. Verlost de gerapporteerde 10s-lag direct, zonder migratie of UI-refactor.
 
 **Woordenboek**: nieuwe term **Bundel-Zending** met 4D-sleutel-definitie en M2M-relatie tot `zending_orders`. Bestaande **Zending**-entry uitgebreid met verwijzing naar Bundel-Zending en de canonieke membership-bron.
 
-**Implementatie van mig 245/246 + frontend-refactor**: volgt in een tweede commit zodra ADR-0012 gereviewd is.
+**Implementatie van mig 248/249 + frontend-refactor**: volgt in deze commit (zie hieronder).
 
 ## 2026-05-11 — Fix: vorm-toeslag zichtbaar in order-bewerken (breakdown + dropdown)
 

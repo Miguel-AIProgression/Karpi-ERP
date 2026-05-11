@@ -45,12 +45,24 @@ export interface BacklogDetails {
   drempel_m2: number
 }
 
+export interface EerderHaalbaarDetails {
+  lever_datum: string   // ISO YYYY-MM-DD
+  snij_week: number
+  snij_jaar: number
+}
+
 export interface LevertijdDetails {
   match_rol?: MatchRolDetails
   capaciteit?: CapaciteitDetails
   backlog?: BacklogDetails
   spoed?: boolean
   logistieke_buffer_dagen: number
+  /**
+   * Absolute vroegst haalbare leverdatum zonder spoed-toeslag, op basis van
+   * de huidige planning. Alleen aanwezig wanneer strikt eerder dan de
+   * gewenste-aligned `lever_datum` — anders zou de hint ruis zijn.
+   */
+  eerder_haalbaar?: EerderHaalbaarDetails
 }
 
 export interface CheckLevertijdResponse {

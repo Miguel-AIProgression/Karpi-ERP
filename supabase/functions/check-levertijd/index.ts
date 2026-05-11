@@ -10,8 +10,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import {
-  fetchUitwisselbarePairs,
-  fetchUitwisselbareCodes,
+  fetchUitwisselbareParen,
   getKleurVariants,
 } from '../_shared/db-helpers.ts'
 import {
@@ -24,6 +23,7 @@ import {
   capaciteitsCheck,
   snijWeekVoorLever,
   backlogIsVoldoende,
+  isoWeekJaar,
 } from '../_shared/levertijd-capacity.ts'
 import { resolveScenario } from '../_shared/levertijd-resolver.ts'
 import {
@@ -282,14 +282,24 @@ serve(async (req) => {
     }
 
     // ---- Config + uitwisselbaarheid parallel ----
-    const [cfg, uitwisselbarePairs] = await Promise.all([
+    // `fetchUitwisselbareParen` (mig 138) geeft genormaliseerde kleur-codes
+    // terug — voor de rollen-OR-clause moeten we per paar nog beide kleur-
+    // varianten ("12" + "12.0") uitvouwen, anders missen we rollen waarvan
+    // de kleur_code nog niet gemigreerd is.
+    const [cfg, uitwisselbareParen] = await Promise.all([
       fetchConfig(supabase),
-      fetchUitwisselbarePairs(supabase, kwaliteit_code, kleur_code),
+      fetchUitwisselbareParen(supabase, kwaliteit_code, kleur_code),
     ])
 
-    const uitwisselbareCodes = uitwisselbarePairs.length > 0
-      ? Array.from(new Set(uitwisselbarePairs.map((p) => p.kwaliteit_code)))
-      : await fetchUitwisselbareCodes(supabase, kwaliteit_code)
+    const uitwisselbarePairs = uitwisselbareParen.flatMap((p) =>
+      getKleurVariants(p.kleur_code).map((kl) => ({
+        kwaliteit_code: p.kwaliteit_code,
+        kleur_code: kl,
+      })),
+    )
+    const uitwisselbareCodes = Array.from(
+      new Set(uitwisselbareParen.map((p) => p.kwaliteit_code)),
+    )
     const kleurVariants = getKleurVariants(kleur_code)
 
     const minSide = Math.min(lengte_cm, breedte_cm)
@@ -360,25 +370,30 @@ serve(async (req) => {
     // strikere kritieke deadline (afleverdatum − dag_order_snij_buffer_werkdagen),
     // zodat de snijplanning vroeg genoeg start. Week-orders blijven op de
     // bestaande kalenderbuffer-flow staan.
+    //
+    // Twee parallelle checks volgen hieronder:
+    //  • `capaciteit`   — startend vanaf gewenste-aligned snij-week (belofte
+    //    naar klant op basis van `maatwerk_weken`).
+    //  • `capaciteitNu` — startend vanaf huidige ISO-week; "eerder haalbaar"-hint.
     const baseLeverDatum = gewenste_leverdatum ?? defaultGewensteDatum(cfg.maatwerk_weken)
     const startDatum = lever_type === 'datum' && gewenste_leverdatum
       ? werkdagMinN(gewenste_leverdatum, cfg.dag_order_snij_buffer_werkdagen, STANDAARD_WERKTIJDEN)
       : baseLeverDatum
     const snij = snijWeekVoorLever(startDatum)
-    const capaciteit = await capaciteitsCheck({
-      start_week: snij.week,
-      start_jaar: snij.jaar,
-      cfg,
-      fetchBezetting: async (week, jaar) => {
-        const { data } = await supabase
-          .from('snijplannen')
-          .select('id, rol_id')
-          .eq('planning_week', week)
-          .eq('planning_jaar', jaar)
-          .neq('status', 'Geannuleerd')
-        return (data ?? []) as Array<{ id: number; rol_id: number | null }>
-      },
-    })
+    const nu = isoWeekJaar(new Date())
+    const fetchBezetting = async (week: number, jaar: number) => {
+      const { data } = await supabase
+        .from('snijplannen')
+        .select('id, rol_id')
+        .eq('planning_week', week)
+        .eq('planning_jaar', jaar)
+        .neq('status', 'Geannuleerd')
+      return (data ?? []) as Array<{ id: number; rol_id: number | null }>
+    }
+    const [capaciteit, capaciteitNu] = await Promise.all([
+      capaciteitsCheck({ start_week: snij.week, start_jaar: snij.jaar, cfg, fetchBezetting }),
+      capaciteitsCheck({ start_week: nu.week, start_jaar: nu.jaar, cfg, fetchBezetting }),
+    ])
 
     const backlog = backlogIsVoldoende(backlogRaw, nieuwStukM2, cfg.backlog_minimum_m2)
 
@@ -391,6 +406,7 @@ serve(async (req) => {
       gewenste_leverdatum,
       nieuw_stuk_m2: nieuwStukM2,
       geen_rol_passend: geenRolPassend,
+      capaciteit_nu: capaciteitNu,
     })
 
     // ---- Stap 4: Spoed-evaluatie (altijd, voor UI-toggle) ----
