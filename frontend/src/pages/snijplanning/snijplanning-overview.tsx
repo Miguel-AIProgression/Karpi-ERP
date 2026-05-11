@@ -1,7 +1,8 @@
-import { useState, useMemo, Fragment } from 'react'
+import { useState, useMemo, useCallback, Fragment } from 'react'
 import { Search, Scissors, Calendar, CheckCircle2, AlertTriangle, List } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { GroepAccordion } from '@/components/snijplanning/groep-accordion'
+import { RolUitvoerModal } from '@/components/snijplanning/rol-uitvoer-modal'
 import { AutoPlanningConfig } from '@/components/snijplanning/auto-planning-config'
 import { AgendaWeergave } from '@/components/snijplanning/agenda-weergave'
 import { cn } from '@/lib/utils/cn'
@@ -54,6 +55,14 @@ export function SnijplanningOverviewPage() {
   const [status, setStatus] = useState('Te snijden')
   const [search, setSearch] = useState('')
   const [sortMode, setSortMode] = useState<SortMode>('leverdatum')
+  // Modal-state op page-niveau zodat de RolUitvoerModal niet unmounted bij
+  // rerenders/refetches van de GroepAccordion (TanStack Query invalidate na
+  // start_snijden_rol → groepenlijst re-render). Voorheen leefde activeRolId
+  // op GroepAccordion-niveau; bij een snelle filter/sort/data-shuffle van de
+  // groepenlijst kon dat de modal direct na openen weer sluiten.
+  const [activeRolId, setActiveRolId] = useState<number | null>(null)
+  const handleStartRol = useCallback((rolId: number) => setActiveRolId(rolId), [])
+  const handleCloseModal = useCallback(() => setActiveRolId(null), [])
   const { data: planningConfig } = usePlanningConfig()
 
   // Planning horizon: `weken_vooruit` uit Productie Instellingen is de
@@ -186,6 +195,12 @@ export function SnijplanningOverviewPage() {
       </div>
 
       {tab === 'agenda' ? <AgendaWeergave /> : <LijstWeergave />}
+
+      <RolUitvoerModal
+        rolId={activeRolId}
+        open={activeRolId !== null}
+        onClose={handleCloseModal}
+      />
     </>
   )
 
@@ -320,6 +335,7 @@ export function SnijplanningOverviewPage() {
               totDatum={totDatum}
               defaultOpen={idx === 0}
               tekortAnalyse={tekortAnalyseMap?.get(`${g.kwaliteit_code}_${kleurKey}`) ?? null}
+              onStartRol={handleStartRol}
             />
             )
           })}
@@ -356,6 +372,7 @@ export function SnijplanningOverviewPage() {
                       totDatum={totDatum}
                       defaultOpen={kIdx === 0 && gIdx === 0}
                       tekortAnalyse={tekortAnalyseMap?.get(`${g.kwaliteit_code}_${kleurKey}`) ?? null}
+                      onStartRol={handleStartRol}
                     />
                     )
                   })}

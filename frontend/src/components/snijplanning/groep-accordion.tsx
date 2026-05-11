@@ -1,7 +1,6 @@
 import { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronDown, ChevronRight, Printer, Scissors, Loader2, RotateCcw } from 'lucide-react'
-import { RolUitvoerModal } from './rol-uitvoer-modal'
 import { formatDate } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
 import { AFWERKING_MAP } from '@/lib/utils/constants'
@@ -24,6 +23,9 @@ interface GroepAccordionProps {
   /** 'te-snijden' toont alleen stukken met rol; 'tekort' toont alleen stukken zonder rol. */
   modus?: 'te-snijden' | 'tekort'
   tekortAnalyse?: TekortAnalyseRow | null
+  /** Opent de RolUitvoerModal op page-niveau (state leeft daar zodat de modal
+   *  niet unmounted bij refetches/rerenders binnen deze accordion). */
+  onStartRol: (rolId: number) => void
 }
 
 export function GroepAccordion({
@@ -36,6 +38,7 @@ export function GroepAccordion({
   defaultOpen = false,
   modus = 'te-snijden',
   tekortAnalyse = null,
+  onStartRol,
 }: GroepAccordionProps) {
   const [toonExtraRollen, setToonExtraRollen] = useState(false)
   const kleurCodeZonderDecimaal = kleurCode.replace(/\.0$/, '')
@@ -44,7 +47,6 @@ export function GroepAccordion({
   const [genError, setGenError] = useState<string | null>(null)
   const [voorstelResult, setVoorstelResult] = useState<SnijvoorstelResponse | null>(null)
   const [showPlan, setShowPlan] = useState(false)
-  const [activeRolId, setActiveRolId] = useState<number | null>(null)
   const [startError, setStartError] = useState<string | null>(null)
   const genereer = useGenereerSnijvoorstel(); void genereer
   const autoplan = useTriggerAutoplan()
@@ -136,13 +138,13 @@ export function GroepAccordion({
     return min === 0 ? `${uren} uur` : `${uren} uur ${min} min`
   }
 
-  // Opent alleen de rol-uitvoer-modal. De modal roept zelf `start_snijden_rol`
-  // aan via useEffect (promoot Gepland-stukken op de rol naar Snijden +
-  // zet snijden_gestart_op). De legacy `start_productie_rol` flow (stukken
-  // naar 'In productie') wordt niet meer gebruikt.
+  // Opent de rol-uitvoer-modal via de page-level handler. De modal roept zelf
+  // `start_snijden_rol` aan via useEffect (promoot Gepland-stukken op de rol
+  // naar Snijden + zet snijden_gestart_op). De legacy `start_productie_rol`
+  // flow (stukken naar 'In productie') wordt niet meer gebruikt.
   const handleStartRol = (rolId: number) => {
     setStartError(null)
-    setActiveRolId(rolId)
+    onStartRol(rolId)
   }
 
   return (
@@ -352,13 +354,6 @@ export function GroepAccordion({
             </>
           )}
         </div>
-
-      {/* Rol-uitvoer modal */}
-      <RolUitvoerModal
-        rolId={activeRolId}
-        open={activeRolId !== null}
-        onClose={() => setActiveRolId(null)}
-      />
 
       {/* Snijvoorstel modal */}
       {modalData && (voorstelResult || showPlan) && (
