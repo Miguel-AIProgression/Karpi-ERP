@@ -45,14 +45,20 @@ export function PickWeekSectie({
   groepeerOpLand,
   voorgesteldeBundels,
 }: Props) {
-  // Index op eerste order_id van de bundel — robuust tegen verschillen in
-  // groepering (een cluster valt nooit ruimer dan een bundel; cluster ⊆ bundel
-  // qua order-set, want bundel splitst nóg verder op vervoerder + adres).
-  // Voor de UI volstaat het om "is er een bundel waar deze cluster bij hoort"
-  // te beantwoorden via een lookup op het eerste cluster-order-id.
+  // Twee indexen op de bundel-rijen:
+  //   · bundelByOrderId  → snelle lookup per order voor decoratie (truck +
+  //     adres-strip + besparing-badge in de KlantClusterBlok).
+  //   · sleutelByOrderId → drijft de clustering: orders met dezelfde 4D-
+  //     bundel-sleutel komen in één visuele cluster, andere orders blijven
+  //     gescheiden — ook binnen dezelfde klant. Zo verdwijnt de misleidende
+  //     "BUNDEL X 2 orders"-header bij verschillende vervoerders.
   const bundelByOrderId = new Map<number, VoorgesteldeBundel>()
+  const sleutelByOrderId = new Map<number, string>()
   for (const b of voorgesteldeBundels) {
-    for (const oid of b.order_ids) bundelByOrderId.set(oid, b)
+    for (const oid of b.order_ids) {
+      bundelByOrderId.set(oid, b)
+      sleutelByOrderId.set(oid, b.sleutel)
+    }
   }
   const achterstallig = status === 'achterstallig'
   const kopLabel =
@@ -62,8 +68,8 @@ export function PickWeekSectie({
   // Beide paden eindigen in dezelfde KlantCluster[]-shape, zodat de render-
   // loop er niets van merkt.
   const groepen: LandGroep[] = groepeerOpLand
-    ? groepeerOrdersOpLand(orders)
-    : [{ iso2: null, vlag: null, clusters: clusterOrdersOpKlant(orders) }]
+    ? groepeerOrdersOpLand(orders, sleutelByOrderId)
+    : [{ iso2: null, vlag: null, clusters: clusterOrdersOpKlant(orders, sleutelByOrderId) }]
 
   return (
     <section>

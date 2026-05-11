@@ -1,6 +1,9 @@
 // Compacte bundel-info-strip die boven of onder een KlantCluster wordt
-// gerenderd: toont vervoerder + adres-snippet + drempel-progressbar +
-// besparing-badge.
+// gerenderd: toont vervoerder + adres-snippet + besparing-badge.
+//
+// Geen drempel-progressbar — dat is factuur-/commerciële informatie die
+// voor de order-pickers niet relevant is. De bundel-info hier dient puur
+// om te bevestigen "deze orders gaan straks samen via X naar Y".
 //
 // Bron: `voorgestelde_zending_bundels`-view (mig 229), gefetcht via
 // `useVoorgesteldeBundels` op week-niveau in pick-overview. Per cluster wordt
@@ -8,7 +11,6 @@
 // het component niets (clusters die geen voorgestelde-bundel hebben — bv.
 // orders zonder afleverdatum — blijven 'gewoon' getoond).
 import { Truck, TrendingDown } from 'lucide-react'
-import { DrempelProgressBar } from './drempel-progressbar'
 import { formatCurrency } from '@/lib/utils/formatters'
 import type { VoorgesteldeBundel } from '@/modules/logistiek/queries/voorgestelde-bundels'
 
@@ -24,7 +26,7 @@ export function VoorgesteldeBundelInfo({ bundel }: Props) {
       : bundel.vervoerder_code
 
   return (
-    <div className="rounded-md border border-terracotta-300/60 bg-white/80 px-3 py-2 space-y-1.5">
+    <div className="rounded-md border border-terracotta-300/60 bg-white/80 px-3 py-2">
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
         <div className="flex flex-wrap items-center gap-2 text-slate-600 min-w-0">
           <span className="inline-flex items-center gap-1 font-medium text-slate-800">
@@ -46,13 +48,6 @@ export function VoorgesteldeBundelInfo({ bundel }: Props) {
           </span>
         )}
       </div>
-      <DrempelProgressBar
-        subtotaal={bundel.bundel_subtotaal_excl}
-        drempel={bundel.klant_drempel}
-        drempelGehaald={bundel.drempel_gehaald}
-        gratisVerzending={bundel.gratis_verzending}
-        verzendkosten={bundel.klant_verzendkosten}
-      />
     </div>
   )
 }
