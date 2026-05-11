@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Scissors, X, AlertTriangle } from 'lucide-react'
-import { useBatchUpdateSnijplanStatus } from '@/hooks/use-snijplanning'
+import { useBatchUpdateSnijplanStatus } from '@/modules/snijplanning'
 import type { SnijplanRow } from '@/lib/types/productie'
 
 interface SnijBevestigingModalProps {

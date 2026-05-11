@@ -57,7 +57,7 @@ export interface FreeRect {
  *
  * Pas je deze waarden aan, wijzig dan óók:
  *   - supabase/functions/_shared/compute-reststukken.ts
- *   - frontend/src/lib/utils/compute-reststukken.ts
+ *   - frontend/src/modules/snijplanning/lib/compute-reststukken.ts
  *   - scripts/vergelijk-snijalgoritmes.mjs (benchmark)
  */
 export const RESTSTUK_MIN_SHORT = 50

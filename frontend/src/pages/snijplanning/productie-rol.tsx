@@ -5,10 +5,13 @@ import { PageHeader } from '@/components/layout/page-header'
 import { SnijVisualisatie } from '@/components/snijplanning/snij-visualisatie'
 import { StickerLayout } from '@/components/snijplanning/sticker-layout'
 import { ReststukStickerLayout } from '@/components/snijplanning/reststuk-sticker-layout'
-import { useRolSnijstukken, useVoltooiSnijplanRol } from '@/hooks/use-snijplanning'
-import type { ReststukResult } from '@/hooks/use-snijplanning'
-import { mapSnijplannenToStukken } from '@/lib/utils/snijplan-mapping'
-import { computeReststukkenFromStukken } from '@/lib/utils/compute-reststukken'
+import {
+  useRolSnijstukken,
+  useVoltooiSnijplanRol,
+  mapSnijplannenToStukken,
+  computeReststukkenFromStukken,
+  type ReststukResult,
+} from '@/modules/snijplanning'
 import { cn } from '@/lib/utils/cn'
 import { AFWERKING_MAP } from '@/lib/utils/constants'
 

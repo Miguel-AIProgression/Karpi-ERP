@@ -1,5 +1,66 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-11 — ADR-0013 uitgevoerd: Snijplanning-Module #10 + cross-Module cache-invalidation seam
+
+Architectuur-skill `/improve-codebase-architecture` losgelaten op de "snijplanning verschijnt niet onder Klaar voor confectie"-bug. Symptoom-fix vs structurele frictie: één regel cache-invalidation toevoegen lost vandaag op, maar het patroon achter het probleem (13 mutation-hooks die handgecodeerd consumer-query-keys opsommen, producer kent consumer) is een fout-magneet. Grilling-sessie koos **solo `modules/snijplanning/`** (geen geneste `planning/`), **medium scope** (logica-laag, components/pages blijven fysiek), en **Module-owned `cache.ts`-helpers** als seam (geen event-bus, geen centrale registry).
+
+**Ingrepen in één PR:**
+
+- **Snijplanning-Module #10** ([ADR-0013](adr/0013-snijplanning-module-en-cache-invalidation-seam.md)): nieuwe folder `frontend/src/modules/snijplanning/` met `queries/` (4 files), `hooks/` (use-snijplanning), `lib/` (compute-reststukken, snijplan-mapping, snij-volgorde/derive + types + test), `cache.ts` en `index.ts`. ±2.3k regels verhuisd. Runtime-components in `components/snijplanning/` en pages in `pages/snijplanning/` blijven fysiek en consumeren via barrel. 16 caller-files geüpdatet naar `@/modules/snijplanning`. Auto-plan-trigger raw-functies (`triggerAutoplan`, `fetchAutoplanningConfig`) expliciet als advanced-caller-export omdat order-form ze inline aanroept in een save-chain buiten React Query.
+
+- **Cross-Module cache-invalidation seam** (ADR-0013, Ingreep 2): elke Module exporteert één publieke `invalidateNa<Domein>Mutatie(qc)`-helper via z'n `cache.ts`. `modules/snijplanning/cache.ts` met `invalidateNaSnijplanMutatie` (snijplanning + snijvoorstel + rollen + productie-dashboard); nieuwe `modules/confectie/cache.ts` met `invalidateNaConfectieMutatie` (confectie + confectie-planning + confectie-werktijden). De 13 mutation-hooks in `use-snijplanning.ts` roepen voortaan `invalidateNaSnijplanMutatie(qc)` aan; status-mutaties + `useVoltooiSnijplanRol` + `useCreateSnijplan` + `useBatchUpdateSnijplanStatus` + `useUpdateSnijplanStatus` roepen óók `invalidateNaConfectieMutatie(qc)` aan. Confectie's `useAfrondConfectie` en de 3 scan-hooks idem op hun eigen helper. `useOpboekenItem` in `use-scanstation.ts` raakt zowel snijplanning als confectie. Verzamelt zo kandidaat #2 (querykeys-centralisatie) uit het 2026-05-11 architectuur-rapport — orthogonaal aan ADR-0012 Bundel-Zending dat de prefix-mismatch in `useVoltooiPickronde` één-regel-fixte.
+
+- **Start/Afrond-knoppen op Confectielijst**: nieuwe `useStartConfectie` hook in `modules/confectie`; per rij op `/confectie` (Lijst-tab) een "Start"-knop (`Gesneden` → `In confectie` via `start_confectie`-RPC) en "Afronden"-knop (opent `AfrondModal` voor zowel `Gesneden` als `In confectie`). Operator kan vanuit deze lijst de volledige confectie-flow afhandelen tot Pick & Ship-overdracht zonder over te schakelen naar scanstation.
+
+- **Bug-fix vandaag** (mig 246-tijdvak): `useVoltooiSnijplanRol` invalidate't nu óók `['confectie', 'planning-forward']` via de Confectie-helper. Na "Rol afsluiten" verschijnt een gesneden stuk meteen onder "Klaar voor confectie" — geen 30s staleTime-wacht meer.
+
+- **Mig 246** `voltooi_snijplan_rol` TRUNCATE i.p.v. DELETE-zonder-WHERE (pg_safeupdate-21000-fix op temp-table `_reststuk_out`). Symptoom was "Rol afsluiten" → error 21000.
+
+- **Mig 247** `voltooi_confectie` zet `p_ingepakt=true` voortaan status='Ingepakt' i.p.v. dead-end status='Gereed'. Reden: `confectie_planning_forward`-WHERE-clause kent geen 'Gereed', en `orderregel_pickbaarheid` (mig 170) filtert op `status='Ingepakt'`. De oude RPC liet stukken in 'Gereed'-purgatory: weg uit confectie-views, niet in Pick & Ship. Scanstation-pad (`opboekenItem` UPDATE → 'Ingepakt') blijft werken voor stukken die niet via de modal worden voltooid. AfrondModal-copy bijgewerkt naar "verschijnt direct in Pick & Ship (status Ingepakt)".
+
+- **ESLint regressie-regel**: 7 nieuwe `no-restricted-imports`-entries voor `@/hooks/use-snijplanning`, `@/lib/supabase/queries/{snijplanning,snijplanning-mutations,snijvoorstel,auto-planning}`, `@/lib/utils/{compute-reststukken,snijplan-mapping}` + pattern voor `@/lib/snij-volgorde/*` — alle met ADR-0013-verwijzing.
+
+- **Architectuur.md**: `modules/planning/`-belofte (regel 29) expliciet ingetrokken; Confectie-Module #9 en Snijplanning-Module #10 als zustermodules toegevoegd; slot-pattern-paragraaf bijgewerkt.
+
+**Files**: nieuw `modules/snijplanning/{cache, index}.ts`, `queries/{snijplanning, snijplanning-mutations, snijvoorstel, auto-planning}.ts`, `hooks/use-snijplanning.ts`, `lib/{compute-reststukken, snijplan-mapping}.ts`, `lib/snij-volgorde/{derive, types}.ts`, `lib/snij-volgorde/__tests__/derive.test.ts`; nieuw `modules/confectie/cache.ts`; nieuw `docs/adr/0013-snijplanning-module-en-cache-invalidation-seam.md`; nieuwe `supabase/migrations/246_voltooi_snijplan_rol_truncate_temp.sql` + `247_voltooi_confectie_ingepakt_status.sql`. Geüpdatet `modules/confectie/index.ts`, `modules/confectie/hooks/{use-confectie, use-confectie-planning}.ts`, `hooks/use-scanstation.ts`, `components/confectie/afrond-modal.tsx`, `pages/confectie/confectie-overview.tsx`, `components/orders/order-form.tsx` (1-line import), `eslint.config.js`, `docs/architectuur.md`, en 11 callers in `components/{rollen, snijplanning}/` en `pages/snijplanning/`. Verwijderd 10 oude bestanden + lege folder `lib/snij-volgorde/`.
+
+**Cross-cut behoud**: SQL-views (`snijplanning_overzicht`, `confectie_planning_forward`, `productie_dashboard`) ongewijzigd. RPC's `start_confectie`, `voltooi_confectie` (mig 247 hotfix), `voltooi_snijplan_rol` (mig 246 hotfix) blijven backend-eigendom. `productie_dashboard` blijft cross-cut tussen Snijplanning- en Confectie-Module — beide invalideren de key direct (kandidaat voor toekomstige `modules/productie/`-Module op de backlog).
+
+**Verificatie**: `npx tsc --noEmit` schoon. `npx vitest run` — snij-volgorde tests 19/19 groen post-verhuizing.
+
+## 2026-05-11 — ADR-0012: Bundel-Zending als deep Module + one-line query-key fix
+
+Architectuur-rapport op 2026-05-11 (3 problemen gerapporteerd door operator op /logistiek):
+1. Na voltooien pickronde duurt ~10 sec voor de zending zichtbaar is in /logistiek.
+2. ZEND-2026-0010 (ORD-2026-2046, FLOORPASSION 3572AC Verhoek) en ZEND-2026-0006 (ORD-2026-2042 Verhoek-deel, zelfde klant/adres/week) zijn twee losse zendingen geworden waar het systeem onder [ADR-0010](adr/0010-factuur-volgt-bundel-zending.md) één bundel-zending had moeten vormen.
+3. Twee facturen op 11-05-2026 (FACT-2026-0010 + FACT-2026-0011) voor wat één bundel-factuur had moeten zijn.
+
+Diagnose via de `/improve-codebase-architecture`-skill: problemen 2+3 zijn één symptoom — de Bundel-Zending heeft geen Module-cohesie en geen entity-levenscyclus. Solo- en bundel-flow zitten in twee aparte RPC's met verschillende bundel-semantiek; UI-clustering gebeurt op 3D (in `bundel-cluster.ts`) bovenop een correcte SQL-view die op 4D groepeert. Probleem 1 is een orthogonale pure bug: prefix-mismatch in query-key-invalidation.
+
+**ADR-0012** ([`docs/adr/0012-bundel-zending-als-deep-module.md`](adr/0012-bundel-zending-als-deep-module.md)) — accepted 2026-05-11. Beslissing: één RPC `start_pickronden(order_ids[], picker_id, force_solo_ids[])` (mig 245) vervangt `start_pickronden_voor_order` (mig 220) en `start_pickronden_bundel` (mig 222). 4D-uitbreiding default-on (auto-bundeling op `voorgestelde_zending_bundels`); `force_solo_ids` als opt-out-escape. Bundel-eenheid blijft order, `zending_orders` M2M blijft canoniek (mig 242 onveranderd) — geen nieuwe `zending_regels`-tabel. Pre-pickronde split via dialog-checkbox; tijdens-pick split blijft de bestaande niet-gevonden-flow op colli-niveau. Frontend: één `<StartPickrondesButton>` + `<StartPickrondesDialog>` vervangt `<BulkVerzendsetButton>` en `<VerzendsetButton>`; [`bundel-cluster.ts`](../frontend/src/modules/magazijn/lib/bundel-cluster.ts) (140 regels schaduw-clustering) wordt verwijderd.
+
+**One-line fix** (deze commit, los van mig 245/246): [`use-pickronde.ts:64`](../frontend/src/modules/magazijn/hooks/use-pickronde.ts#L64) — `queryKey: ['zendingen']` → `['logistiek', 'zendingen']`. `useVoltooiPickronde` invalideerde de verkeerde prefix; React Query's prefix-match faalde stil zodat de /logistiek-lijst pas op de volgende 30s-poll-tick refreshde. Verlost de gerapporteerde 10s-lag direct, zonder migratie of UI-refactor.
+
+**Woordenboek**: nieuwe term **Bundel-Zending** met 4D-sleutel-definitie en M2M-relatie tot `zending_orders`. Bestaande **Zending**-entry uitgebreid met verwijzing naar Bundel-Zending en de canonieke membership-bron.
+
+**Implementatie van mig 245/246 + frontend-refactor**: volgt in een tweede commit zodra ADR-0012 gereviewd is.
+
+## 2026-05-11 — Fix: vorm-toeslag zichtbaar in order-bewerken (breakdown + dropdown)
+
+Bij het aanmaken van een maatwerk-orderregel toonde de paarse maatwerk-strip twee dingen die in de bewerk-flow ontbraken:
+1. De breakdown-zin rechts (`12,00 m² × € 34,99/m² + € 75,00 vorm + € … afwerking`).
+2. De vorm-dropdown met `(+€ 75,00)`-suffix per vorm met een toeslag.
+
+**Root causes:**
+- (1) [`fetchOrderRegels`](../frontend/src/lib/supabase/queries/orders.ts) selecteerde alleen de "structuur"-velden (`maatwerk_vorm`, `maatwerk_lengte_cm`, `maatwerk_breedte_cm`, `maatwerk_afwerking`, …), niet de prijs-onderdelen (`maatwerk_m2_prijs`, `maatwerk_oppervlak_m2`, `maatwerk_vorm_toeslag`, `maatwerk_afwerking_prijs`, `maatwerk_diameter_cm`). Daardoor was `line.maatwerk_m2_prijs` `undefined` in de form-state en sloeg de guard `{line.maatwerk_m2_prijs != null && line.maatwerk_m2_prijs > 0 && …}` rond de breakdown-zin over.
+- (2) [OrderLineEditor](../frontend/src/components/orders/order-line-editor.tsx) liet in de bewerk-flow alleen een statische fallback-lijst van 5 vorm-codes in de `<select>` zien (uit [`vorm-labels`](../frontend/src/lib/utils/vorm-labels.ts)) zonder DB-data. Daardoor verschenen Pebble/Ellips/Afgeronde Hoeken niet en miste élke optie de toeslag-suffix.
+
+**Fix:**
+- (1) Velden toegevoegd aan de `OrderRegel`-interface, de SELECT in `fetchOrderRegels`, de `toRegel`-mapping én de `regelData`-mapping in [order-edit.tsx](../frontend/src/pages/orders/order-edit.tsx). DB-kolommen bestonden al sinds mig 188/193.
+- (2) [OrderLineEditor](../frontend/src/components/orders/order-line-editor.tsx) haalt nu `maatwerk_vormen` op via `fetchVormen` (cache `['maatwerk-vormen']`, staleTime 60s) en rendert de dropdown identiek aan [`VormAfmetingSelector`](../frontend/src/modules/maatwerk/components/vorm-afmeting-selector.tsx): `{v.naam}{v.toeslag > 0 ? ' (+€…)' : ''}`. De statische 5-codes blijven als fallback voor de eerste render vóór de query terugkomt.
+
+**Verificatie:** open bestaande maatwerk-order → bewerken → paarse strip toont breakdown direct én vorm-dropdown toont "Ovaal (+€ 75,00)", "Pebble (+€ 75,00)", etc. — identiek aan de aanmaak-flow.
+
 ## 2026-05-11 — Hotfix mig 243: kwaliteit/kleur-fallback in `confectie_planning_forward`
 
 Op /confectie toonde de kolom "Kwaliteit / Kleur" leeg voor sommige (vaak handmatig aangemaakte) maatwerk-orders, terwijl de orderregel duidelijk aan een product hangt met die info (bv. ORD-2026-2040: CISC 11 SANDRO via artikelnr 1771008). Andere orders met dezelfde kwaliteit (CISC 16 / CISC 24) toonden de code wél.

@@ -4,10 +4,12 @@ import { ArrowLeft, Scissors, Printer, ChevronDown, ChevronRight } from 'lucide-
 import { PageHeader } from '@/components/layout/page-header'
 import { SnijVisualisatie } from '@/components/snijplanning/snij-visualisatie'
 import { RolUitvoerModal } from '@/components/snijplanning/rol-uitvoer-modal'
-import { computeReststukkenFromStukken } from '@/lib/utils/compute-reststukken'
-import { useSnijplannenVoorGroep } from '@/hooks/use-snijplanning'
+import {
+  computeReststukkenFromStukken,
+  mapSnijplannenToStukken,
+  useSnijplannenVoorGroep,
+} from '@/modules/snijplanning'
 import { usePlanningConfig } from '@/hooks/use-planning-config'
-import { mapSnijplannenToStukken } from '@/lib/utils/snijplan-mapping'
 import { cn } from '@/lib/utils/cn'
 import { AFWERKING_MAP } from '@/lib/utils/constants'
 import type { SnijplanRow } from '@/lib/types/productie'

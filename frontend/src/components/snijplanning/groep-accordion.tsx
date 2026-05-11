@@ -5,12 +5,20 @@ import { formatDate } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
 import { AFWERKING_MAP } from '@/lib/utils/constants'
 import { getVormDisplay } from '@/lib/utils/vorm-labels'
-import { useSnijplannenVoorGroep, useGenereerSnijvoorstel, useGoedgekeurdVoorstel, useTriggerAutoplan, useRolLocaties } from '@/hooks/use-snijplanning'
+import {
+  useSnijplannenVoorGroep,
+  useGenereerSnijvoorstel,
+  useGoedgekeurdVoorstel,
+  useTriggerAutoplan,
+  useRolLocaties,
+  buildPlanFromStukken,
+  groepeerStukkenPerRol,
+  type RolGroep,
+  type TekortAnalyseRow,
+} from '@/modules/snijplanning'
 import { usePlanningConfig } from '@/hooks/use-planning-config'
 import { SnijvoorstelModal } from './snijvoorstel-modal'
-import { buildPlanFromStukken, groepeerStukkenPerRol, type RolGroep } from '@/lib/utils/snijplan-mapping'
 import type { SnijplanRow, SnijvoorstelResponse } from '@/lib/types/productie'
-import type { TekortAnalyseRow } from '@/lib/supabase/queries/snijplanning'
 
 interface GroepAccordionProps {
   kwaliteitCode: string

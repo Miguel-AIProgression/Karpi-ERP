@@ -12,6 +12,7 @@ import {
   scanConfectieGereed,
 } from '../queries/confectie-mutations'
 import type { ConfectieStatus } from '@/lib/types/productie'
+import { invalidateNaConfectieMutatie } from '../cache'
 
 export function useConfectieOrders(params: {
   status?: string
@@ -56,7 +57,7 @@ export function useUpdateConfectieStatus() {
     mutationFn: ({ id, status }: { id: number; status: ConfectieStatus }) =>
       updateConfectieStatus(id, status),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['confectie'] })
+      invalidateNaConfectieMutatie(qc)
       qc.invalidateQueries({ queryKey: ['productie', 'dashboard'] })
     },
   })
@@ -68,7 +69,7 @@ export function useScanConfectieStart() {
     mutationFn: ({ id, medewerker }: { id: number; medewerker: string }) =>
       scanConfectieStart(id, medewerker),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['confectie'] })
+      invalidateNaConfectieMutatie(qc)
       qc.invalidateQueries({ queryKey: ['productie', 'dashboard'] })
     },
   })
@@ -80,7 +81,7 @@ export function useScanConfectieGereed() {
     mutationFn: ({ id, medewerker }: { id: number; medewerker: string }) =>
       scanConfectieGereed(id, medewerker),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['confectie'] })
+      invalidateNaConfectieMutatie(qc)
       qc.invalidateQueries({ queryKey: ['productie', 'dashboard'] })
     },
   })

@@ -5,8 +5,7 @@ import { PageHeader } from '@/components/layout/page-header'
 import { RolHeaderCard } from '@/components/snijplanning/rol-header-card'
 import { SnijstukkenTabel } from '@/components/snijplanning/snijstukken-tabel'
 import { SnijVisualisatie } from '@/components/snijplanning/snij-visualisatie'
-import { useRolSnijstukken } from '@/hooks/use-snijplanning'
-import { computeReststukkenFromStukken } from '@/lib/utils/compute-reststukken'
+import { useRolSnijstukken, computeReststukkenFromStukken } from '@/modules/snijplanning'
 import type { SnijplanRow, SnijRolVoorstel, SnijStuk } from '@/lib/types/productie'
 
 /** Map flat SnijplanRow[] from the query into a SnijRolVoorstel for the UI */

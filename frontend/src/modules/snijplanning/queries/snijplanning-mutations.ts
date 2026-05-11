@@ -1,4 +1,4 @@
-import { supabase } from '../client'
+import { supabase } from '@/lib/supabase/client'
 import type { SnijplanStatus } from '@/lib/types/productie'
 
 export interface SnijplanFormData {
@@ -83,6 +83,7 @@ export async function assignRolToSnijplan(snijplanId: number, rolId: number) {
 
 /** Approve snijvoorstel: keur_snijvoorstel_goed zet status op 'Gepland' en
  *  wijst rol toe. No-op helper voor backwards-compat. */
-export async function approveSnijvoorstel(_snijplanIds: number[]) {
+export async function approveSnijvoorstel(_snijplanIds: number[]): Promise<void> {
   // Status wordt gezet door keur_snijvoorstel_goed RPC (migratie 086).
+  void _snijplanIds
 }
