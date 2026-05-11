@@ -1,4 +1,4 @@
-import type { ConfectiePlanningForwardRow } from '@/lib/supabase/queries/confectie-planning'
+import type { ConfectiePlanningForwardRow } from '../queries/confectie-planning'
 
 const GEEN_LANE = '__geen_lane__' as const
 

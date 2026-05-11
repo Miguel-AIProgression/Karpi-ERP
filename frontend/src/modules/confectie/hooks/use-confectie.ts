@@ -4,13 +4,13 @@ import {
   fetchConfectieStatusCounts,
   fetchConfectieDetail,
   fetchConfectieByScancode,
-} from '@/lib/supabase/queries/confectie'
-import type { ConfectieSortField, SortDirection } from '@/lib/supabase/queries/confectie'
+} from '../queries/confectie'
+import type { ConfectieSortField, SortDirection } from '../queries/confectie'
 import {
   updateConfectieStatus,
   scanConfectieStart,
   scanConfectieGereed,
-} from '@/lib/supabase/queries/confectie-mutations'
+} from '../queries/confectie-mutations'
 import type { ConfectieStatus } from '@/lib/types/productie'
 
 export function useConfectieOrders(params: {

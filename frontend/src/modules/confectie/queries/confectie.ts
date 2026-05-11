@@ -1,4 +1,4 @@
-import { supabase } from '../client'
+import { supabase } from '@/lib/supabase/client'
 import { sanitizeSearch } from '@/lib/utils/sanitize'
 import type { ConfectieRow } from '@/lib/types/productie'
 
@@ -54,21 +54,15 @@ export async function fetchConfectieOrders(params: {
   return { confecties: (data ?? []) as ConfectieRow[], totalCount: count ?? 0 }
 }
 
-/** Fetch status counts for confectie tabs */
+/** Fetch status counts for confectie tabs.
+ *  Always uses RPC (one COUNT(*) GROUP BY query in plaats van full table-scan + JS Map). */
 export async function fetchConfectieStatusCounts(): Promise<ConfectieStatusCount[]> {
-  const { data, error } = await supabase
-    .from('confectie_overzicht')
-    .select('status')
-
+  const { data, error } = await supabase.rpc('confectie_status_counts')
   if (error) throw error
-
-  const counts = new Map<string, number>()
-  for (const row of data ?? []) {
-    const s = (row as { status: string }).status
-    counts.set(s, (counts.get(s) ?? 0) + 1)
-  }
-
-  return Array.from(counts.entries()).map(([status, aantal]) => ({ status, aantal }))
+  return ((data ?? []) as { status: string; aantal: number }[]).map((r) => ({
+    status: r.status,
+    aantal: Number(r.aantal),
+  }))
 }
 
 /** Fetch single confectie detail */

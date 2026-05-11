@@ -1,7 +1,10 @@
 import { useState } from 'react'
 import { Clock } from 'lucide-react'
-import { useConfectieWerktijden, useUpdateConfectieWerktijd } from '@/hooks/use-confectie-planning'
-import type { ConfectieWerktijd } from '@/lib/supabase/queries/confectie-planning'
+import {
+  useConfectieWerktijden,
+  useUpdateConfectieWerktijd,
+  type ConfectieWerktijd,
+} from '@/modules/confectie'
 
 export function ConfectieTijdenConfig() {
   const [open, setOpen] = useState(false)
