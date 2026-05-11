@@ -1,6 +1,6 @@
 import { supabase } from '../client'
 import { sanitizeSearch } from '@/lib/utils/sanitize'
-import { fetchKlanteigenNamenMap } from './klanteigen-namen'
+import { fetchKlanteigenNamenMap } from '@/modules/debiteuren'
 
 export interface OrderRow {
   id: number

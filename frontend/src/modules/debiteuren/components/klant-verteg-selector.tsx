@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Check, Pencil, Search, X } from 'lucide-react'
-import { useVertegenwoordigers } from '@/hooks/use-klanten'
+import { useVertegenwoordigers } from '@/hooks/use-medewerkers'
 import { useSetKlantVerteg } from '@/hooks/use-vertegenwoordigers'
 
 interface Props {

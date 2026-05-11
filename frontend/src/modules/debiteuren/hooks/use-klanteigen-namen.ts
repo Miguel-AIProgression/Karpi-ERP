@@ -7,7 +7,7 @@ import {
   updateKlanteigenNaam,
   upsertKlanteigenNaam,
   type KlanteigenInsert,
-} from '@/lib/supabase/queries/klanteigen-namen'
+} from '../queries/klanteigen-namen'
 
 export function useKlanteigenVoorKlant(debiteurNr: number | undefined) {
   return useQuery({
@@ -35,7 +35,6 @@ export function useKwaliteitCodes() {
 
 function invalidate(qc: ReturnType<typeof useQueryClient>, row: KlanteigenInsert) {
   qc.invalidateQueries({ queryKey: ['klanteigen-namen'] })
-  // Order-flow leest klant-eigen-naam ook in — invalideer betroffen orders
   if (row.debiteur_nr) {
     qc.invalidateQueries({ queryKey: ['klanten', row.debiteur_nr] })
   }

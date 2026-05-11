@@ -7,15 +7,16 @@ import { PageHeader } from '@/components/layout/page-header'
 import { InfoField } from '@/components/ui/info-field'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { formatCurrency } from '@/lib/utils/formatters'
-import { useKlantDetail, useAfleveradressen } from '@/hooks/use-klanten'
+import { useDebiteurDetail, useAfleveradressen } from '../hooks/use-debiteuren'
 import { useOrders } from '@/hooks/use-orders'
-import { KlanteigenNamenTab } from '@/components/klanten/klanteigen-namen-tab'
-import { KlantArtikelnummersTab } from '@/components/klanten/klant-artikelnummers-tab'
-import { KlantPrijslijstTab } from '@/components/klanten/klant-prijslijst-tab'
-import { KlantPrijslijstSelector } from '@/components/klanten/klant-prijslijst-selector'
-import { KlantVertegSelector } from '@/components/klanten/klant-verteg-selector'
-import { KlantFactureringTab } from '@/components/klanten/klant-facturering-tab'
-import { KlantEditDialog } from '@/components/klanten/klant-edit-dialog'
+import { KlanteigenNamenTab } from '../components/klanteigen-namen-tab'
+import { KlantArtikelnummersTab } from '../components/klant-artikelnummers-tab'
+import { KlantPrijslijstTab } from '../components/klant-prijslijst-tab'
+import { KlantPrijslijstSelector } from '../components/klant-prijslijst-selector'
+import { KlantVertegSelector } from '../components/klant-verteg-selector'
+import { KlantFactureringTab } from '../components/klant-facturering-tab'
+import { DebiteurEditDialog } from '../components/debiteur-edit-dialog'
+import { AfleveradressenTab } from '../components/afleveradressen-tab'
 import { EdiTag, KlantEdiTab } from '@/modules/edi'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
@@ -33,7 +34,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'edi', label: 'EDI' },
 ]
 
-export function KlantDetailPage() {
+export function DebiteurDetailPage() {
   const { id } = useParams<{ id: string }>()
   const debiteurNr = Number(id)
   const [activeTab, setActiveTab] = useState<Tab>('info')
@@ -41,7 +42,7 @@ export function KlantDetailPage() {
   const [showEdit, setShowEdit] = useState(false)
 
   const queryClient = useQueryClient()
-  const { data: klant, isLoading } = useKlantDetail(debiteurNr)
+  const { data: klant, isLoading } = useDebiteurDetail(debiteurNr)
   const { data: adressen } = useAfleveradressen(debiteurNr)
   const { data: ordersData } = useOrders({ debiteurNr, pageSize: 1000 })
 
@@ -529,7 +530,7 @@ export function KlantDetailPage() {
       {/* Tab content */}
       <div className="bg-white rounded-[var(--radius)] border border-slate-200">
         {activeTab === 'info' && <InfoTab klant={klant} />}
-        {activeTab === 'adressen' && <AdressenTab adressen={adressen} />}
+        {activeTab === 'adressen' && <AfleveradressenTab adressen={adressen} />}
         {activeTab === 'orders' && <OrdersTab orders={ordersData?.orders} totalCount={ordersData?.totalCount} />}
         {activeTab === 'facturering' && klant && (
           <KlantFactureringTab
@@ -545,7 +546,7 @@ export function KlantDetailPage() {
 
       {/* Klant bewerken modal */}
       {showEdit && klant && (
-        <KlantEditDialog klant={klant} onClose={() => setShowEdit(false)} />
+        <DebiteurEditDialog debiteur={klant} onClose={() => setShowEdit(false)} />
       )}
 
       {/* Logo lightbox */}
@@ -573,7 +574,7 @@ export function KlantDetailPage() {
   )
 }
 
-function InfoTab({ klant }: { klant: NonNullable<ReturnType<typeof useKlantDetail>['data']> }) {
+function InfoTab({ klant }: { klant: NonNullable<ReturnType<typeof useDebiteurDetail>['data']> }) {
   return (
     <div className="p-5 grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
       <KlantVertegSelector
@@ -606,23 +607,6 @@ function InfoTab({ klant }: { klant: NonNullable<ReturnType<typeof useKlantDetai
       <InfoField label="Fax" value={klant.fax} />
       <InfoField label="GLN" value={klant.gln_bedrijf} />
       <InfoField label="Land" value={klant.land} />
-    </div>
-  )
-}
-
-function AdressenTab({ adressen }: { adressen?: { id: number; adres_nr: number; naam: string | null; adres: string | null; postcode: string | null; plaats: string | null }[] }) {
-  if (!adressen || adressen.length === 0) {
-    return <div className="p-5 text-sm text-slate-400">Geen afleveradressen</div>
-  }
-  return (
-    <div className="divide-y divide-slate-50">
-      {adressen.map((a) => (
-        <div key={a.id} className="px-5 py-3 text-sm">
-          <span className="text-slate-400 mr-2">#{a.adres_nr}</span>
-          <span className="font-medium">{a.naam}</span>
-          {a.adres && <span className="text-slate-500"> — {a.adres}, {a.postcode} {a.plaats}</span>}
-        </div>
-      ))}
     </div>
   )
 }

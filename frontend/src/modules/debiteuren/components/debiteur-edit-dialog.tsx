@@ -2,12 +2,12 @@ import { useState, type FormEvent } from 'react'
 import { X } from 'lucide-react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase/client'
-import type { KlantDetail } from '@/lib/supabase/queries/klanten'
+import type { DebiteurDetail } from '../queries/debiteuren'
 import { useActieveBetaalcondities } from '@/hooks/use-betaalcondities'
 import { formatBetaalconditie } from '@/lib/supabase/queries/betaalcondities'
 
 interface Props {
-  klant: KlantDetail
+  debiteur: DebiteurDetail
   onClose: () => void
 }
 
@@ -26,17 +26,16 @@ type FormState = {
   btw_nummer: string
   gln_bedrijf: string
   korting_pct: string
-  betaalconditie_code: string  // '' = geen / vrije tekst behouden
+  betaalconditie_code: string
 }
 
-/** Haal de leidende code uit "{code} - {naam}" — leeg als format niet matcht. */
 function extractBetaalconditieCode(raw: string | null): string {
   if (!raw) return ''
   const m = raw.match(/^\s*([^\s-][^-]*?)\s*-/)
   return m ? m[1].trim() : ''
 }
 
-const toForm = (k: KlantDetail): FormState => ({
+const toForm = (k: DebiteurDetail): FormState => ({
   naam: k.naam ?? '',
   status: k.status ?? 'Actief',
   adres: k.adres ?? '',
@@ -51,14 +50,12 @@ const toForm = (k: KlantDetail): FormState => ({
   betaalconditie_code: extractBetaalconditieCode(k.betaalconditie),
 })
 
-export function KlantEditDialog({ klant, onClose }: Props) {
+export function DebiteurEditDialog({ debiteur, onClose }: Props) {
   const qc = useQueryClient()
-  const [form, setForm] = useState<FormState>(toForm(klant))
+  const [form, setForm] = useState<FormState>(toForm(debiteur))
   const [error, setError] = useState<string | null>(null)
   const { data: condities } = useActieveBetaalcondities()
 
-  // Als de huidige betaalconditie niet (meer) in de actieve lijst staat,
-  // toon hem alsnog als optie zodat we niet stilletjes data wegspoelen.
   const currentCode = form.betaalconditie_code
   const knownCodes = new Set((condities ?? []).map((c) => c.code))
   const hasOrphanCurrent = currentCode !== '' && !knownCodes.has(currentCode)
@@ -81,14 +78,10 @@ export function KlantEditDialog({ klant, onClose }: Props) {
         throw new Error('Korting moet tussen 0 en 100 liggen')
       }
 
-      // Betaalconditie: vertaal de gekozen code terug naar het "{code} - {naam}"
-      // formaat dat in de DB staat en dat de factuur-RPC parseert. Als de
-      // huidige code niet in de lijst zit (orphan) houden we de oorspronkelijke
-      // tekst aan; bij een lege keuze wordt het veld leeggemaakt.
-      let betaalconditieValue: string | null = klant.betaalconditie ?? null
+      let betaalconditieValue: string | null = debiteur.betaalconditie ?? null
       if (form.betaalconditie_code === '') {
         betaalconditieValue = null
-      } else if (form.betaalconditie_code !== extractBetaalconditieCode(klant.betaalconditie)) {
+      } else if (form.betaalconditie_code !== extractBetaalconditieCode(debiteur.betaalconditie)) {
         const picked = (condities ?? []).find((c) => c.code === form.betaalconditie_code)
         if (picked) betaalconditieValue = `${picked.code} - ${picked.naam}`
       }
@@ -111,16 +104,16 @@ export function KlantEditDialog({ klant, onClose }: Props) {
       const { error } = await supabase
         .from('debiteuren')
         .update(patch)
-        .eq('debiteur_nr', klant.debiteur_nr)
+        .eq('debiteur_nr', debiteur.debiteur_nr)
       if (error) throw error
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['klanten'] })
-      qc.invalidateQueries({ queryKey: ['klanten', klant.debiteur_nr] })
+      qc.invalidateQueries({ queryKey: ['klanten', debiteur.debiteur_nr] })
       onClose()
     },
     onError: (err: unknown) => {
-      console.error('[KlantEditDialog]', err)
+      console.error('[DebiteurEditDialog]', err)
       const e = err as { message?: unknown; details?: unknown; hint?: unknown; code?: unknown } | null
       const parts = [
         typeof e?.message === 'string' ? e.message : null,
@@ -144,7 +137,7 @@ export function KlantEditDialog({ klant, onClose }: Props) {
         <header className="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
           <div>
             <h2 className="font-medium text-lg">Klant bewerken</h2>
-            <p className="text-xs text-slate-400">#{klant.debiteur_nr} — {klant.naam}</p>
+            <p className="text-xs text-slate-400">#{debiteur.debiteur_nr} — {debiteur.naam}</p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700">
             <X size={18} />
@@ -235,7 +228,7 @@ export function KlantEditDialog({ klant, onClose }: Props) {
                   <option value="">— Geen —</option>
                   {hasOrphanCurrent && (
                     <option value={currentCode}>
-                      {klant.betaalconditie} (niet in lijst)
+                      {debiteur.betaalconditie} (niet in lijst)
                     </option>
                   )}
                   {(condities ?? []).map((c) => (

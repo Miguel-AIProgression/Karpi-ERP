@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { Search } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { KlantCard } from '@/components/klanten/klant-card'
-import { useKlanten, useVertegenwoordigers } from '@/hooks/use-klanten'
+import { DebiteurCard } from '../components/debiteur-card'
+import { useDebiteuren } from '../hooks/use-debiteuren'
+import { useVertegenwoordigers } from '@/hooks/use-medewerkers'
 import { useInkoopgroepen } from '@/hooks/use-inkoopgroepen'
 
 const PAGE_SIZE = 50
 
-export function KlantenOverviewPage() {
+export function DebiteurenOverviewPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('Actief')
   const [vertegFilter, setVertegFilter] = useState<string>('')
@@ -15,7 +16,7 @@ export function KlantenOverviewPage() {
   const [inkoopgroepFilter, setInkoopgroepFilter] = useState<string>('')
   const [pageSize, setPageSize] = useState(PAGE_SIZE)
 
-  const { data, isLoading } = useKlanten({
+  const { data, isLoading } = useDebiteuren({
     search,
     status: statusFilter,
     vertegenw_code: vertegFilter || undefined,
@@ -26,9 +27,9 @@ export function KlantenOverviewPage() {
   const { data: vertegenwoordigers } = useVertegenwoordigers()
   const { data: inkoopgroepen } = useInkoopgroepen()
 
-  const klanten = data?.klanten ?? []
+  const debiteuren = data?.debiteuren ?? []
   const totalCount = data?.totalCount ?? 0
-  const hasMore = klanten.length < totalCount
+  const hasMore = debiteuren.length < totalCount
 
   function handleFilterChange(setter: (v: string) => void, value: string) {
     setter(value)
@@ -97,15 +98,15 @@ export function KlantenOverviewPage() {
       </div>
 
       {/* Grid */}
-      {isLoading && klanten.length === 0 ? (
+      {isLoading && debiteuren.length === 0 ? (
         <div className="text-slate-400">Klanten laden...</div>
-      ) : klanten.length === 0 ? (
+      ) : debiteuren.length === 0 ? (
         <div className="text-slate-400">Geen klanten gevonden</div>
       ) : (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {klanten.map((klant) => (
-              <KlantCard key={klant.debiteur_nr} klant={klant} />
+            {debiteuren.map((debiteur) => (
+              <DebiteurCard key={debiteur.debiteur_nr} debiteur={debiteur} />
             ))}
           </div>
           {hasMore && (
@@ -115,7 +116,7 @@ export function KlantenOverviewPage() {
                 disabled={isLoading}
                 className="px-6 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50"
               >
-                {isLoading ? 'Laden...' : `Meer laden (${klanten.length} van ${totalCount})`}
+                {isLoading ? 'Laden...' : `Meer laden (${debiteuren.length} van ${totalCount})`}
               </button>
             </div>
           )}

@@ -1,19 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  fetchKlanten,
-  fetchKlantDetail,
+  fetchDebiteuren,
+  fetchDebiteurDetail,
   fetchAfleveradressen,
-  fetchKlantArtikelnummers,
-  fetchKlantPrijslijst,
   fetchKoppelbareDebiteurenMetPrijslijst,
+} from '../queries/debiteuren'
+import { fetchKlantArtikelnummers } from '../queries/klant-artikelnummers'
+import {
+  fetchKlantPrijslijst,
   fetchPrijslijstHeadersList,
-  fetchVertegenwoordigers,
   setKlantPrijslijst,
   setKlantenPrijslijst,
-  fetchKleurenVoorKwaliteit,
-} from '@/lib/supabase/queries/klanten'
+} from '../queries/debiteur-prijslijst'
 
-export function useKlanten(params: {
+export function useDebiteuren(params: {
   search?: string
   status?: string
   tier?: string
@@ -25,14 +25,14 @@ export function useKlanten(params: {
 }) {
   return useQuery({
     queryKey: ['klanten', params],
-    queryFn: () => fetchKlanten(params),
+    queryFn: () => fetchDebiteuren(params),
   })
 }
 
-export function useKlantDetail(debiteurNr: number) {
+export function useDebiteurDetail(debiteurNr: number) {
   return useQuery({
     queryKey: ['klanten', debiteurNr],
-    queryFn: () => fetchKlantDetail(debiteurNr),
+    queryFn: () => fetchDebiteurDetail(debiteurNr),
     enabled: debiteurNr > 0,
   })
 }
@@ -42,14 +42,6 @@ export function useAfleveradressen(debiteurNr: number) {
     queryKey: ['klanten', debiteurNr, 'afleveradressen'],
     queryFn: () => fetchAfleveradressen(debiteurNr),
     enabled: debiteurNr > 0,
-  })
-}
-
-export function useKleurenVoorKwaliteit(kwaliteitCode: string | null) {
-  return useQuery({
-    queryKey: ['kleuren-voor-kwaliteit', kwaliteitCode],
-    queryFn: () => fetchKleurenVoorKwaliteit(kwaliteitCode!),
-    enabled: !!kwaliteitCode,
   })
 }
 
@@ -66,13 +58,6 @@ export function useKlantPrijslijst(debiteurNr: number) {
     queryKey: ['klanten', debiteurNr, 'prijslijst'],
     queryFn: () => fetchKlantPrijslijst(debiteurNr),
     enabled: debiteurNr > 0,
-  })
-}
-
-export function useVertegenwoordigers() {
-  return useQuery({
-    queryKey: ['vertegenwoordigers'],
-    queryFn: fetchVertegenwoordigers,
   })
 }
 

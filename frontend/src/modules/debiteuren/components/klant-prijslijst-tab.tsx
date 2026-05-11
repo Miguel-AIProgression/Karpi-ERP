@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Search } from 'lucide-react'
-import { useKlantPrijslijst } from '@/hooks/use-klanten'
+import { useKlantPrijslijst } from '../hooks/use-debiteuren'
 import { formatCurrency } from '@/lib/utils/formatters'
 
 interface Props {

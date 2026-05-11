@@ -1,14 +1,13 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { Search, Pencil, Trash2, Plus, X, Check } from 'lucide-react'
-import { useKleurenVoorKwaliteit } from '@/hooks/use-klanten'
+import { useKleurenVoorKwaliteit, useKwaliteiten } from '@/hooks/use-producten'
 import {
   useKlanteigenVoorKlant,
   useUpsertKlanteigenNaam,
   useUpdateKlanteigenNaam,
   useDeleteKlanteigenNaam,
-} from '@/hooks/use-klanteigen-namen'
-import { useKwaliteiten } from '@/hooks/use-producten'
-import type { KlanteigenVoorKlantRow } from '@/lib/supabase/queries/klanteigen-namen'
+} from '../hooks/use-klanteigen-namen'
+import type { KlanteigenVoorKlantRow } from '../queries/klanteigen-namen'
 
 interface Props {
   debiteurNr: number

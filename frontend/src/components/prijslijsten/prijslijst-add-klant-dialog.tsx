@@ -3,7 +3,7 @@ import { X, Search, Check } from 'lucide-react'
 import {
   useKoppelbareDebiteurenMetPrijslijst,
   useSetKlantenPrijslijst,
-} from '@/hooks/use-klanten'
+} from '@/modules/debiteuren'
 
 interface Props {
   prijslijstNr: string

@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { X } from 'lucide-react'
-import { useUpsertKlanteigenNaam, useKwaliteitCodes } from '@/hooks/use-klanteigen-namen'
+import { useUpsertKlanteigenNaam, useKwaliteitCodes } from '../hooks/use-klanteigen-namen'
 
 interface InitialValues {
   id?: number | null

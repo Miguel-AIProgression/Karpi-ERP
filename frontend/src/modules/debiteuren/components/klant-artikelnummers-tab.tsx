@@ -1,4 +1,4 @@
-import { useKlantArtikelnummers } from '@/hooks/use-klanten'
+import { useKlantArtikelnummers } from '../hooks/use-debiteuren'
 
 interface Props {
   debiteurNr: number

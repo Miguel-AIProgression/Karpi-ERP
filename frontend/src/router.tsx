@@ -6,8 +6,7 @@ import { OrdersOverviewPage } from '@/pages/orders/orders-overview'
 import { OrderDetailPage } from '@/pages/orders/order-detail'
 import { OrderCreatePage } from '@/pages/orders/order-create'
 import { OrderEditPage } from '@/pages/orders/order-edit'
-import { KlantenOverviewPage } from '@/pages/klanten/klanten-overview'
-import { KlantDetailPage } from '@/pages/klanten/klant-detail'
+import { DebiteurenOverviewPage, DebiteurDetailPage } from '@/modules/debiteuren'
 import { InkoopgroepenOverviewPage } from '@/pages/inkoopgroepen/inkoopgroepen-overview'
 import { InkoopgroepDetailPage } from '@/pages/inkoopgroepen/inkoopgroep-detail'
 import { ProductenOverviewPage } from '@/pages/producten/producten-overview'
@@ -65,9 +64,9 @@ export const router = createBrowserRouter([
       { path: 'orders/:id', element: <OrderDetailPage /> },
       { path: 'orders/:id/bewerken', element: <OrderEditPage /> },
 
-      // Klanten (V1)
-      { path: 'klanten', element: <KlantenOverviewPage /> },
-      { path: 'klanten/:id', element: <KlantDetailPage /> },
+      // Klanten (V1) — Debiteur-Module per ADR-0011 (folder DB-aligned, route blijft 'klanten')
+      { path: 'klanten', element: <DebiteurenOverviewPage /> },
+      { path: 'klanten/:id', element: <DebiteurDetailPage /> },
 
       // Inkoopgroepen
       { path: 'inkoopgroepen', element: <InkoopgroepenOverviewPage /> },

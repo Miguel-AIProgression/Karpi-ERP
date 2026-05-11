@@ -1,7 +1,7 @@
 import { useMemo, useState, useRef, useEffect } from 'react'
 import { Search, Check, X, Pencil } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { usePrijslijstHeadersList, useSetKlantPrijslijst } from '@/hooks/use-klanten'
+import { usePrijslijstHeadersList, useSetKlantPrijslijst } from '../hooks/use-debiteuren'
 
 interface Props {
   debiteurNr: number

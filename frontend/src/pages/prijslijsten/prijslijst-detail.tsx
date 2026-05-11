@@ -13,7 +13,7 @@ import {
   useRemovePrijslijstRegel,
   useDeletePrijslijst,
 } from '@/hooks/use-prijslijsten'
-import { useSetKlantPrijslijst } from '@/hooks/use-klanten'
+import { useSetKlantPrijslijst } from '@/modules/debiteuren'
 import { PrijslijstAddKlantDialog } from '@/components/prijslijsten/prijslijst-add-klant-dialog'
 import { PrijslijstAddProductDialog } from '@/components/prijslijsten/prijslijst-add-product-dialog'
 

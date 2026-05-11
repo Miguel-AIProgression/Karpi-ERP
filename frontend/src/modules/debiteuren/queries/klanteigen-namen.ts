@@ -1,4 +1,4 @@
-import { supabase } from '../client'
+import { supabase } from '@/lib/supabase/client'
 
 /**
  * Klant-eigen kwaliteit-aliassen op debiteur- en inkoopgroep-niveau.
@@ -6,6 +6,11 @@ import { supabase } from '../client'
  * Elke rij in `klanteigen_namen` hoort precies bij één van beide niveaus
  * (XOR-constraint, mig 200). De resolutie-volgorde tijdens lookup is
  * klant > inkoopgroep, en per niveau (kwaliteit + kleur) > (kwaliteit, NULL).
+ *
+ * SQL-RPC `resolve_klanteigen_naam` is single source of truth — geen
+ * TS-spiegel van de fallback-logica. Frontend-display gaat via slot-component
+ * `<KlantBenaming/>`; backend-callers (factuur-RPC, EDI-builder) consumeren
+ * de RPC direct.
  */
 
 export interface KlanteigenRow {
@@ -20,20 +25,15 @@ export interface KlanteigenRow {
   bron: string | null
 }
 
-/** Verrijkt met overerving-info voor de klant-tab. */
 export interface KlanteigenVoorKlantRow {
-  /** id van de bestaande klant-regel; NULL bij overgeërfde inkoopgroep-aliassen. */
   id: number | null
-  /** id van de onderliggende inkoopgroep-regel als bron_niveau = 'inkoopgroep'. NULL bij klant-rijen. */
   inkoopgroep_row_id: number | null
   kwaliteit_code: string
   kleur_code: string | null
   benaming: string
   omschrijving: string | null
   leverancier: string | null
-  /** 'klant' = eigen regel, 'inkoopgroep' = overerving via debiteuren.inkoopgroep_code. */
   bron_niveau: 'klant' | 'inkoopgroep'
-  /** Inkoopgroep-code als bron_niveau = 'inkoopgroep', anders NULL. */
   inkoopgroep_code: string | null
 }
 
@@ -46,15 +46,9 @@ export interface KlanteigenVoorInkoopgroepRow {
   leverancier: string | null
 }
 
-/**
- * Haalt alle aliassen op die voor een debiteur gelden — eigen + overerving.
- * Klant-niveau-rijen krijgen `bron_niveau='klant'`; inkoopgroep-rijen die nog
- * niet door een eigen regel zijn overschreven krijgen `bron_niveau='inkoopgroep'`.
- */
 export async function fetchKlanteigenVoorKlant(
   debiteurNr: number,
 ): Promise<KlanteigenVoorKlantRow[]> {
-  // 1) Klant-rijen
   const { data: klantData, error: e1 } = await supabase
     .from('klanteigen_namen')
     .select('id, kwaliteit_code, kleur_code, benaming, omschrijving, leverancier')
@@ -74,7 +68,6 @@ export async function fetchKlanteigenVoorKlant(
     inkoopgroep_code: null,
   }))
 
-  // 2) Inkoopgroep-rijen die door deze debiteur worden geërfd
   const { data: deb, error: eDeb } = await supabase
     .from('debiteuren')
     .select('inkoopgroep_code')
@@ -90,8 +83,6 @@ export async function fetchKlanteigenVoorKlant(
     .eq('inkoopgroep_code', groepCode)
   if (e2) throw e2
 
-  // Filter overgeërfde rijen weg waar de klant zelf al een eigen regel heeft
-  // op (kwaliteit_code, kleur_code) — die override telt.
   const klantKey = (k: string, c: string | null) => `${k}__${c ?? ''}`
   const overschreven = new Set(klantRijen.map((r) => klantKey(r.kwaliteit_code, r.kleur_code)))
 
@@ -128,12 +119,9 @@ export async function fetchKlanteigenVoorInkoopgroep(
 
 /**
  * Resolver: één klant-eigen naam met fallback klant+kleur > klant+NULL >
- * inkoopgroep+kleur > inkoopgroep+NULL > NULL. Gebruikt RPC
- * `resolve_klanteigen_naam` (mig 199) zodat de prioriteit server-side wordt
- * afgehandeld en consistent blijft met het overzicht.
- *
- * Imperatief aangeroepen vanuit de order-form bij artikel-selectie — niet
- * via React Query omdat de waarde direct in form-state moet landen.
+ * inkoopgroep+kleur > inkoopgroep+NULL > NULL. Imperatief aanroepbaar voor
+ * niet-render-callers (bv. order-form artikel-selectie). Render-callers
+ * gebruiken `<KlantBenaming/>` slot-component.
  */
 export async function fetchKlanteigenNaam(
   debiteurNr: number,
@@ -152,11 +140,9 @@ export async function fetchKlanteigenNaam(
 }
 
 /**
- * Resolver-batch: alle klant-eigen namen die voor een debiteur gelden
- * (klant-niveau + overerving via inkoopgroep), als Map met key
- * `${kwaliteit_code}_${kleur_code ?? ''}`. Klant > inkoopgroep per
- * (kwaliteit, kleur)-paar. Gebruikt door de orders-laag bij regel-rendering
- * om in één round-trip alle aliassen op te halen.
+ * Resolver-batch: alle klant-eigen namen voor een debiteur als Map met
+ * key `${kwaliteit_code}_${kleur_code ?? ''}`. Gebruikt door orders-laag
+ * bij regel-rendering om in één round-trip alle aliassen op te halen.
  */
 export async function fetchKlanteigenNamenMap(
   debiteurNr: number,
@@ -210,7 +196,6 @@ export async function deleteKlanteigenNaam(id: number): Promise<void> {
   if (error) throw error
 }
 
-/** Lijst kwaliteits-codes voor de "+ alias toevoegen"-dialog. */
 export async function fetchKwaliteitCodes(): Promise<{ code: string; omschrijving: string | null }[]> {
   const all: { code: string; omschrijving: string | null }[] = []
   const pageSize = 1000

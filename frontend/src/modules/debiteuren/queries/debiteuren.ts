@@ -1,7 +1,7 @@
-import { supabase } from '../client'
+import { supabase } from '@/lib/supabase/client'
 import { sanitizeSearch } from '@/lib/utils/sanitize'
 
-export interface KlantRow {
+export interface DebiteurRow {
   debiteur_nr: number
   naam: string
   status: string
@@ -21,7 +21,7 @@ export interface KlantRow {
   prijslijst_naam: string | null
 }
 
-export interface KlantDetail {
+export interface DebiteurDetail {
   debiteur_nr: number
   naam: string
   status: string
@@ -65,14 +65,6 @@ export interface KlantDetail {
   edi_test_modus: boolean
 }
 
-export interface KlantArtikelnummer {
-  id: number
-  artikelnr: string
-  klant_artikel: string
-  omschrijving: string | null
-  product_omschrijving?: string | null
-}
-
 export interface Afleveradres {
   id: number
   adres_nr: number
@@ -86,8 +78,7 @@ export interface Afleveradres {
   gln_afleveradres: string | null
 }
 
-/** Fetch klanten with YTD omzet (via view) */
-export async function fetchKlanten(params: {
+export async function fetchDebiteuren(params: {
   search?: string
   status?: string
   tier?: string
@@ -99,8 +90,6 @@ export async function fetchKlanten(params: {
 }) {
   const { search, status, tier, vertegenw_code, edi_filter, inkoopgroep_code, page = 0, pageSize = 50 } = params
 
-  // Lichte query: alle actieve EDI-debiteurs (in productie ~39 rijen). Klein dataset,
-  // extra roundtrip is sub-50ms. V2: hijs naar de view klant_omzet_ytd.
   const { data: ediRows, error: ediErr } = await supabase
     .from('edi_handelspartner_config')
     .select('debiteur_nr, test_modus')
@@ -131,16 +120,14 @@ export async function fetchKlanten(params: {
 
   if (edi_filter === 'edi') {
     if (ediMap.size === 0) {
-      return { klanten: [], totalCount: 0 }
+      return { debiteuren: [], totalCount: 0 }
     }
     query = query.in('debiteur_nr', Array.from(ediMap.keys()))
   } else if (edi_filter === 'niet_edi' && ediMap.size > 0) {
-    // PostgREST not.in syntax: ?col=not.in.(1,2,3)
     query = query.not('debiteur_nr', 'in', `(${Array.from(ediMap.keys()).join(',')})`)
   }
 
   if (inkoopgroep_code) {
-    // klant_omzet_ytd-view heeft geen inkoopgroep-kolom → eerst leden ophalen
     const { data: leden, error: ledenErr } = await supabase
       .from('debiteuren')
       .select('debiteur_nr')
@@ -148,7 +135,7 @@ export async function fetchKlanten(params: {
     if (ledenErr) throw ledenErr
     const ledenNrs = (leden ?? []).map((r) => r.debiteur_nr as number)
     if (ledenNrs.length === 0) {
-      return { klanten: [], totalCount: 0 }
+      return { debiteuren: [], totalCount: 0 }
     }
     query = query.in('debiteur_nr', ledenNrs)
   }
@@ -156,8 +143,6 @@ export async function fetchKlanten(params: {
   const { data, error, count } = await query
   if (error) throw error
 
-  // Haal prijslijst-mapping op voor de teruggegeven debiteurs (klant_omzet_ytd-view
-  // bevat dit niet). Alleen voor de zichtbare batch — ~50 rijen, dus klein.
   const debNrs = (data ?? []).map((r) => r.debiteur_nr as number)
   const prijslijstMap = new Map<number, { nr: string | null; naam: string | null }>()
   if (debNrs.length > 0) {
@@ -176,11 +161,11 @@ export async function fetchKlanten(params: {
     }
   }
 
-  const klanten = (data ?? []).map((row: Record<string, unknown>) => {
+  const debiteuren = (data ?? []).map((row: Record<string, unknown>) => {
     const debNr = row.debiteur_nr as number
     const prijs = prijslijstMap.get(debNr)
     return {
-      ...(row as Omit<KlantRow, 'edi_actief' | 'edi_test_modus' | 'prijslijst_nr' | 'prijslijst_naam'>),
+      ...(row as Omit<DebiteurRow, 'edi_actief' | 'edi_test_modus' | 'prijslijst_nr' | 'prijslijst_naam'>),
       edi_actief: ediMap.has(debNr),
       edi_test_modus: ediMap.get(debNr) ?? false,
       prijslijst_nr: prijs?.nr ?? null,
@@ -188,11 +173,10 @@ export async function fetchKlanten(params: {
     }
   })
 
-  return { klanten, totalCount: count ?? 0 }
+  return { debiteuren, totalCount: count ?? 0 }
 }
 
-/** Fetch single klant with vertegenwoordiger naam */
-export async function fetchKlantDetail(debiteurNr: number): Promise<KlantDetail> {
+export async function fetchDebiteurDetail(debiteurNr: number): Promise<DebiteurDetail> {
   const ytdFrom = new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10)
 
   const [klantRes, omzetRes, ediRes] = await Promise.all([
@@ -234,39 +218,20 @@ export async function fetchKlantDetail(debiteurNr: number): Promise<KlantDetail>
     omzet_ytd: omzetYtd,
     edi_actief: ediRes.data?.transus_actief ?? false,
     edi_test_modus: ediRes.data?.test_modus ?? false,
-  } as KlantDetail
+  } as DebiteurDetail
 }
 
-/** Lightweight list van prijslijst-headers voor dropdown / search-pickers. */
-export async function fetchPrijslijstHeadersList() {
+export async function fetchAfleveradressen(debiteurNr: number): Promise<Afleveradres[]> {
   const { data, error } = await supabase
-    .from('prijslijst_headers')
-    .select('nr, naam, actief')
-    .order('nr')
-  if (error) throw error
-  return (data ?? []) as { nr: string; naam: string; actief: boolean }[]
-}
-
-/** Update de prijslijst-koppeling van één debiteur. */
-export async function setKlantPrijslijst(debiteurNr: number, prijslijstNr: string | null) {
-  const { error } = await supabase
-    .from('debiteuren')
-    .update({ prijslijst_nr: prijslijstNr })
+    .from('afleveradressen')
+    .select('id, adres_nr, naam, adres, postcode, plaats, land, telefoon, email, gln_afleveradres')
     .eq('debiteur_nr', debiteurNr)
+    .order('adres_nr')
+
   if (error) throw error
+  return (data ?? []) as Afleveradres[]
 }
 
-/** Bulk-update prijslijst-koppeling op meerdere debiteuren tegelijk. */
-export async function setKlantenPrijslijst(debiteurNrs: number[], prijslijstNr: string | null) {
-  if (debiteurNrs.length === 0) return
-  const { error } = await supabase
-    .from('debiteuren')
-    .update({ prijslijst_nr: prijslijstNr })
-    .in('debiteur_nr', debiteurNrs)
-  if (error) throw error
-}
-
-/** Lichtgewicht lijst van actieve debiteurs voor klant-pickers (met huidige prijslijst). */
 export async function fetchKoppelbareDebiteurenMetPrijslijst() {
   const all: { debiteur_nr: number; naam: string; plaats: string | null; prijslijst_nr: string | null }[] = []
   const pageSize = 1000
@@ -285,105 +250,4 @@ export async function fetchKoppelbareDebiteurenMetPrijslijst() {
     from += pageSize
   }
   return all
-}
-
-/** Fetch afleveradressen for a klant */
-export async function fetchAfleveradressen(debiteurNr: number): Promise<Afleveradres[]> {
-  const { data, error } = await supabase
-    .from('afleveradressen')
-    .select('id, adres_nr, naam, adres, postcode, plaats, land, telefoon, email, gln_afleveradres')
-    .eq('debiteur_nr', debiteurNr)
-    .order('adres_nr')
-
-  if (error) throw error
-  return (data ?? []) as Afleveradres[]
-}
-
-/** Available kleur_codes for a kwaliteit (across all active products) */
-export async function fetchKleurenVoorKwaliteit(kwaliteitCode: string): Promise<string[]> {
-  const { data, error } = await supabase
-    .from('producten')
-    .select('kleur_code')
-    .eq('kwaliteit_code', kwaliteitCode)
-    .eq('actief', true)
-    .not('kleur_code', 'is', null)
-  if (error) throw error
-  const set = new Set<string>()
-  for (const row of (data ?? []) as { kleur_code: string }[]) {
-    set.add(row.kleur_code)
-  }
-  return Array.from(set).sort((a, b) => a.localeCompare(b))
-}
-
-/** Fetch klant artikelnummers (customer-specific article numbers) for a klant */
-export async function fetchKlantArtikelnummers(debiteurNr: number): Promise<KlantArtikelnummer[]> {
-  const { data, error } = await supabase
-    .from('klant_artikelnummers')
-    .select('id, artikelnr, klant_artikel, omschrijving, producten(omschrijving)')
-    .eq('debiteur_nr', debiteurNr)
-    .order('artikelnr')
-
-  if (error) throw error
-
-  return (data ?? []).map((row: Record<string, unknown>) => {
-    const product = row.producten as { omschrijving: string } | null
-    return {
-      id: row.id as number,
-      artikelnr: row.artikelnr as string,
-      klant_artikel: row.klant_artikel as string,
-      omschrijving: row.omschrijving as string | null,
-      product_omschrijving: product?.omschrijving ?? null,
-    }
-  })
-}
-
-export interface PrijslijstRegel {
-  artikelnr: string
-  omschrijving: string | null
-  omschrijving_2: string | null
-  prijs: number
-  gewicht: number | null
-}
-
-/** Fetch prijslijst regels for a klant (via debiteuren.prijslijst_nr) */
-export async function fetchKlantPrijslijst(debiteurNr: number): Promise<PrijslijstRegel[]> {
-  // First get the klant's prijslijst_nr
-  const { data: klant, error: klantError } = await supabase
-    .from('debiteuren')
-    .select('prijslijst_nr')
-    .eq('debiteur_nr', debiteurNr)
-    .single()
-
-  if (klantError) throw klantError
-  if (!klant?.prijslijst_nr) return []
-
-  // Paginate to fetch all rows (Supabase default limit is 1000)
-  const allRows: PrijslijstRegel[] = []
-  const pageSize = 1000
-  let offset = 0
-  while (true) {
-    const { data, error } = await supabase
-      .from('prijslijst_regels')
-      .select('artikelnr, omschrijving, omschrijving_2, prijs, gewicht')
-      .eq('prijslijst_nr', klant.prijslijst_nr)
-      .order('artikelnr')
-      .range(offset, offset + pageSize - 1)
-
-    if (error) throw error
-    allRows.push(...((data ?? []) as PrijslijstRegel[]))
-    if (!data || data.length < pageSize) break
-    offset += pageSize
-  }
-  return allRows
-}
-
-/** Fetch all vertegenwoordigers (for filter dropdown) */
-export async function fetchVertegenwoordigers() {
-  const { data, error } = await supabase
-    .from('vertegenwoordigers')
-    .select('code, naam')
-    .order('naam')
-
-  if (error) throw error
-  return (data ?? []) as { code: string; naam: string }[]
 }
