@@ -61,7 +61,10 @@ export function useVoltooiPickronde() {
       voltooiPickronde(zendingId, pickerId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['pickronde'] })
-      qc.invalidateQueries({ queryKey: ['zendingen'] })
+      // ADR-0012: useZendingen gebruikt prefix ['logistiek', 'zendingen'];
+      // ['zendingen'] zonder de logistiek-prefix matcht niets in React Query's
+      // prefix-match en liet de /logistiek-lijst tot 30s wachten op de poll-tick.
+      qc.invalidateQueries({ queryKey: ['logistiek', 'zendingen'] })
       qc.invalidateQueries({ queryKey: ['pick-ship'] })
       // Factuur-keten kan vuren na voltooi (mig 217 sluit orders.status='Verzonden')
       qc.invalidateQueries({ queryKey: ['orders'] })

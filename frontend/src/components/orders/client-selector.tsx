@@ -14,6 +14,8 @@ export interface SelectedClient {
   fact_adres: string | null
   fact_postcode: string | null
   fact_plaats: string | null
+  email_factuur: string | null
+  email_overig: string | null
   vertegenw_code: string | null
   prijslijst_nr: string | null
   korting_pct: number
@@ -52,7 +54,7 @@ export function ClientSelector({ value, onChange, disabled }: ClientSelectorProp
       // (mig 189 dropte de oude TEXT-kolom op debiteuren).
       let query = supabase
         .from('debiteuren')
-        .select('debiteur_nr, naam, adres, postcode, plaats, land, fact_naam, fact_adres, fact_postcode, fact_plaats, vertegenw_code, prijslijst_nr, korting_pct, betaler, inkoopgroepen(naam), gratis_verzending, standaard_maat_werkdagen, maatwerk_weken, deelleveringen_toegestaan, default_lever_type')
+        .select('debiteur_nr, naam, adres, postcode, plaats, land, fact_naam, fact_adres, fact_postcode, fact_plaats, email_factuur, email_overig, vertegenw_code, prijslijst_nr, korting_pct, betaler, inkoopgroepen(naam), gratis_verzending, standaard_maat_werkdagen, maatwerk_weken, deelleveringen_toegestaan, default_lever_type')
         .eq('status', 'Actief')
         .limit(10)
 
@@ -95,9 +97,11 @@ export function ClientSelector({ value, onChange, disabled }: ClientSelectorProp
   if (value && !disabled) {
     return (
       <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-[var(--radius-sm)] border border-slate-200">
-        <div className="flex-1">
+        <div className="flex-1 flex items-center gap-3">
           <span className="font-medium">{value.naam}</span>
-          <span className="text-sm text-slate-700 font-medium ml-2">#{value.debiteur_nr}</span>
+          <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-terracotta-50 text-terracotta-700 border border-terracotta-200 text-sm font-semibold tabular-nums">
+            #{value.debiteur_nr}
+          </span>
         </div>
         <button
           type="button"
@@ -112,9 +116,11 @@ export function ClientSelector({ value, onChange, disabled }: ClientSelectorProp
 
   if (disabled && value) {
     return (
-      <div className="p-3 bg-slate-100 rounded-[var(--radius-sm)] border border-slate-200">
+      <div className="flex items-center gap-3 p-3 bg-slate-100 rounded-[var(--radius-sm)] border border-slate-200">
         <span className="font-medium">{value.naam}</span>
-        <span className="text-sm text-slate-700 font-medium ml-2">#{value.debiteur_nr}</span>
+        <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-terracotta-50 text-terracotta-700 border border-terracotta-200 text-sm font-semibold tabular-nums">
+          #{value.debiteur_nr}
+        </span>
       </div>
     )
   }

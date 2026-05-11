@@ -1,6 +1,6 @@
 import { useQueries, useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  startPickrondenVoorOrder,
+  startPickrondes,
   fetchZendingen,
   fetchZendingMetTransportorders,
   fetchZendingPrintSet,
@@ -66,20 +66,30 @@ export function useZendingPrintSets(zending_nrs: string[]) {
 }
 
 /**
- * Sinds mig 220 returnt deze mutation een **array** ZendingAanmaakResult — één
- * per unieke effectieve vervoerder. Voor single-vervoerder-orders is dat 1
- * element en gedraagt het zich zoals voorheen. UI-callers moeten op `length`
- * checken om wel/niet naar bulk-printset te navigeren.
+ * Mig 248 (ADR-0012): canonieke mutation voor pickronde-start. Vervangt
+ * de gedropte `useCreateZendingVoorOrder` (mig 249). Returnt een array met één rij per aangemaakte
+ * zending — voor bundels één rij per vervoerder-groep, voor solo één rij per
+ * vervoerder van de order. Caller navigeert na succes naar
+ * `/logistiek/printset/bulk?zendingen=<nrs>`.
  */
-export function useCreateZendingVoorOrder() {
+export function useStartPickrondes() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ orderId, pickerId }: { orderId: number; pickerId: number }) =>
-      startPickrondenVoorOrder(orderId, pickerId),
+    mutationFn: ({
+      orderIds,
+      pickerId,
+      forceSoloIds,
+    }: {
+      orderIds: number[]
+      pickerId: number
+      forceSoloIds?: number[]
+    }) => startPickrondes(orderIds, pickerId, forceSoloIds ?? []),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['logistiek', 'zendingen'] })
       qc.invalidateQueries({ queryKey: ['pick-ship'] })
       qc.invalidateQueries({ queryKey: ['logistiek', 'orderregel-vervoerder'] })
+      // Mig 229: actieve zendingen vallen uit voorgestelde-bundels-view.
+      qc.invalidateQueries({ queryKey: ['voorgestelde-bundels'] })
     },
   })
 }

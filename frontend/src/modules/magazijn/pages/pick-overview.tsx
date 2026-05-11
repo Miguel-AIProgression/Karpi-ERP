@@ -3,6 +3,7 @@ import { Globe, Search, Package, CalendarCheck, CalendarClock } from 'lucide-rea
 import { useQueries } from '@tanstack/react-query'
 import { PageHeader } from '@/components/layout/page-header'
 import { PickProblemenBanner } from '../components/pick-problemen-banner'
+import { PickDagOrdersSectie } from '../components/pick-dag-orders-sectie'
 import { PickWeekSectie } from '../components/pick-week-sectie'
 import { usePickShipOrders, usePickShipStats } from '../hooks/use-pick-ship'
 import {
@@ -12,7 +13,7 @@ import {
 import { fetchEffectieveVervoerderPerOrderregel } from '@/modules/logistiek/queries/orderregel-vervoerder'
 import { aggregeerVervoerderKeuzeVoorOrder } from '@/modules/logistiek/queries/vervoerder-keuze'
 import { useVoorgesteldeBundels } from '@/modules/logistiek/queries/voorgestelde-bundels'
-import type { ResolvedVervoerder } from '../lib/bundel-cluster'
+import type { ResolvedVervoerder } from '@/modules/logistiek/lib/resolved-vervoerder'
 import { cn } from '@/lib/utils/cn'
 import { genereerWeekTabs } from '../lib/buckets'
 import { type BucketKey, type PickShipOrder } from '../lib/types'

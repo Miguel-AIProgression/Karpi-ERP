@@ -40,8 +40,8 @@ export type {
   MarkeerNietGevondenArgs,
 } from './queries/pickronde'
 
-// Bundel-clustering — pure helper voor `BulkVerzendsetButton`. Logistiek heeft
-// 'm nodig om binnen een klant-cluster orders met identiek afleveradres +
-// vervoerder samen in 1 bundel-zending te starten (mig 219).
-export { clusterOpAdresEnVervoerder } from './lib/bundel-cluster'
-export type { BundelCluster, ResolvedVervoerder } from './lib/bundel-cluster'
+// Mig 248 (ADR-0012): `bundel-cluster.ts` is verwijderd. Frontend-clustering
+// gebeurt vóór de RPC-call alleen nog SQL-side via `voorgestelde_zending_bundels`
+// (mig 229) — de RPC `start_pickronden` doet zelf de 4D-uitbreiding en
+// groepering. Externe consumers van deze module hoeven geen vervoerder-resolutie
+// meer te kennen vóór ze pickrondes starten.

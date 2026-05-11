@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Truck, Loader2, X } from 'lucide-react'
-import { useCreateZendingVoorOrder, useVervoerdersFull } from '@/modules/logistiek'
+import { useStartPickrondes, useVervoerdersFull } from '@/modules/logistiek'
 import { PickerDropdown } from '@/components/orders/picker-dropdown'
 
 const LAST_PICKER_KEY = 'rugflow.last-picker-id'
@@ -44,7 +44,7 @@ interface ZendingAanmakenKnopProps {
 export function ZendingAanmakenKnop({ order }: ZendingAanmakenKnopProps) {
   const navigate = useNavigate()
   const { data: vervoerders = [], isLoading: vervoerdersLoading } = useVervoerdersFull()
-  const createMutation = useCreateZendingVoorOrder()
+  const createMutation = useStartPickrondes()
   const [busy, setBusy] = useState(false)
   const [feedback, setFeedback] = useState<{ type: 'error'; msg: string } | null>(null)
   const [showPickerPopover, setShowPickerPopover] = useState(false)
@@ -85,7 +85,7 @@ export function ZendingAanmakenKnop({ order }: ZendingAanmakenKnopProps) {
     setFeedback(null)
     saveLastPicker(pickerId)
     try {
-      const zendingen = await createMutation.mutateAsync({ orderId: order.id, pickerId })
+      const zendingen = await createMutation.mutateAsync({ orderIds: [order.id], pickerId })
       setShowPickerPopover(false)
       if (zendingen.length === 1) {
         navigate(`/logistiek/${zendingen[0].zending_nr}/printset`)

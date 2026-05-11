@@ -1,6 +1,6 @@
 // Bulk-printset-pagina: rendert N zendingen achter elkaar zodat één klik op
 // "Print" het hele stapeltje in de browser-printdialog produceert. Wordt
-// aangeroepen door <BulkVerzendsetButton> via querystring `?zendingen=Z1,Z2`.
+// aangeroepen door <StartPickrondesButton> via querystring `?zendingen=Z1,Z2`.
 //
 // Per zending krijg je dezelfde labels + pakbon als op de single-zending
 // printset-pagina (gedeelde helpers in `lib/printset.ts`). Het label-formaat

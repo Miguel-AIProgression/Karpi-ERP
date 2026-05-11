@@ -281,61 +281,35 @@ export async function fetchZendingPrintSet(zending_nr: string): Promise<ZendingP
 }
 
 /**
- * Start een Pickronde voor een order — sinds mig 220 maakt dit N zendingen
- * aan, één per unieke effectieve vervoerder uit
- * `effectieve_vervoerder_per_orderregel`. Voor single-vervoerder-orders is
- * `result.length === 1` en gedraagt het zich als de oude `create_zending_voor_order`.
+ * Mig 248 (ADR-0012): canonieke RPC voor pickronde-start. Vervangt
+ * de gedropte `startPickrondenVoorOrder` (mig 220) en `startPickrondenBundel` (mig 222).
+ *
+ * - 4D-uitbreiding default-on: orders met dezelfde 4D-bundel-sleutel uit
+ *   `voorgestelde_zending_bundels` worden automatisch toegevoegd, ook als de
+ *   caller maar één order meegeeft.
+ * - `forceSoloIds`: orders die de operator expliciet *niet* in de bundel wil —
+ *   krijgen elk een eigen zending zonder bundel-partners. Moet een subset van
+ *   `orderIds` zijn; andere ids worden genegeerd.
+ * - Multi-vervoerder-orders splitsen automatisch over meerdere zendingen
+ *   (mig 220-gedrag blijft intact via per-orderregel-vervoerder-resolutie).
+ *
+ * Returns: één rij per aangemaakte zending. Voor de operator-UI navigeer je
+ * doorgaans naar `/logistiek/printset/bulk?zendingen=<comma-separated nrs>`.
  */
-export async function startPickrondenVoorOrder(
-  orderId: number,
-  pickerId: number,
-): Promise<ZendingAanmaakResult[]> {
-  const { data, error } = await supabase.rpc('start_pickronden_voor_order', {
-    p_order_id: orderId,
-    p_picker_id: pickerId,
-  })
-  if (error) throw toError(error, 'Pickronde starten mislukt')
-
-  const rows = (data ?? []) as Array<{
-    zending_id: number | string
-    zending_nr: string
-    vervoerder_code: string | null
-    aantal_regels: number
-    is_nieuw: boolean
-  }>
-
-  if (rows.length === 0) {
-    throw new Error('Pickronde gestart maar geen zendingen aangemaakt')
-  }
-
-  return rows.map((r) => ({
-    id: Number(r.zending_id),
-    zending_nr: r.zending_nr,
-    vervoerder_code: r.vervoerder_code,
-    aantal_regels: r.aantal_regels,
-    is_nieuw: r.is_nieuw,
-  }))
-}
-
-/**
- * Mig 222: bundel-RPC voor meerdere orders met identiek afleveradres binnen
- * één debiteur. Groepeert regels (over alle orders) op effectieve vervoerder
- * en levert 1 zending per groep — gekoppeld aan alle betrokken orders via de
- * nieuwe `zending_orders` M2M-tabel. Voor 1 order delegeert de RPC zelf naar
- * `start_pickronden_voor_order`, dus de caller hoeft geen onderscheid te maken.
- */
-export async function startPickrondenBundel(
+export async function startPickrondes(
   orderIds: number[],
   pickerId: number,
+  forceSoloIds: number[] = [],
 ): Promise<Array<ZendingAanmaakResult & { aantal_orders: number }>> {
   if (orderIds.length === 0) {
-    throw new Error('startPickrondenBundel: geen orders meegegeven')
+    throw new Error('startPickrondes: geen orders meegegeven')
   }
-  const { data, error } = await supabase.rpc('start_pickronden_bundel', {
+  const { data, error } = await supabase.rpc('start_pickronden', {
     p_order_ids: orderIds,
     p_picker_id: pickerId,
+    p_force_solo_ids: forceSoloIds,
   })
-  if (error) throw toError(error, 'Bundel-pickronde starten mislukt')
+  if (error) throw toError(error, 'Pickronde starten mislukt')
 
   const rows = (data ?? []) as Array<{
     zending_id: number | string
@@ -347,7 +321,7 @@ export async function startPickrondenBundel(
   }>
 
   if (rows.length === 0) {
-    throw new Error('Bundel-pickronde gestart maar geen zendingen aangemaakt')
+    throw new Error('Pickronde gestart maar geen zendingen aangemaakt')
   }
 
   return rows.map((r) => ({
