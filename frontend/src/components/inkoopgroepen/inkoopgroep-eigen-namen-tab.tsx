@@ -3,9 +3,9 @@ import { Plus, Pencil, Trash2 } from 'lucide-react'
 import {
   useDeleteKlanteigenNaam,
   useKlanteigenVoorInkoopgroep,
-} from '@/hooks/use-klanteigen-namen'
-import { KlanteigenNaamDialog } from '@/components/klanten/klanteigen-naam-dialog'
-import type { KlanteigenVoorInkoopgroepRow } from '@/lib/supabase/queries/klanteigen-namen'
+} from '@/modules/debiteuren/hooks/use-klanteigen-namen'
+import { KlanteigenNaamDialog } from '@/modules/debiteuren/components/klanteigen-naam-dialog'
+import type { KlanteigenVoorInkoopgroepRow } from '@/modules/debiteuren'
 
 interface Props {
   inkoopgroepCode: string

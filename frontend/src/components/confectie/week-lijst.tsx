@@ -1,9 +1,8 @@
 import { Link } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2, Circle } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
-import { confectieDeadline } from '@/lib/utils/confectie-deadline'
+import { confectieDeadline, type ConfectiePlanningForwardRow } from '@/modules/confectie'
 import { AFWERKING_MAP } from '@/lib/utils/constants'
-import type { ConfectiePlanningForwardRow } from '@/lib/supabase/queries/confectie-planning'
 
 const MAAND_KORT = ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec']
 

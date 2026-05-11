@@ -5,15 +5,16 @@ import { PageHeader } from '@/components/layout/page-header'
 import { AfrondModal } from '@/components/confectie/afrond-modal'
 import { WeekSelector, type HorizonWeken } from '@/components/confectie/week-selector'
 import { WeekLijst } from '@/components/confectie/week-lijst'
-import { isoWeekKey } from '@/lib/utils/confectie-forward-planner'
-import { useConfectiePlanningForward, useConfectieWerktijden } from '@/hooks/use-confectie-planning'
+import {
+  isoWeekKey,
+  useConfectiePlanningForward,
+  useConfectieWerktijden,
+  type ConfectiePlanningRow,
+  type ConfectiePlanningForwardRow,
+  type ConfectieWerktijd,
+} from '@/modules/confectie'
 import { formatDate } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
-import type {
-  ConfectiePlanningRow,
-  ConfectiePlanningForwardRow,
-  ConfectieWerktijd,
-} from '@/lib/supabase/queries/confectie-planning'
 
 export function ConfectiePlanningPage() {
   const [horizon, setHorizon] = useState<HorizonWeken>(4)

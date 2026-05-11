@@ -1,5 +1,76 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-11 — Hotfix mig 243: kwaliteit/kleur-fallback in `confectie_planning_forward`
+
+Op /confectie toonde de kolom "Kwaliteit / Kleur" leeg voor sommige (vaak handmatig aangemaakte) maatwerk-orders, terwijl de orderregel duidelijk aan een product hangt met die info (bv. ORD-2026-2040: CISC 11 SANDRO via artikelnr 1771008). Andere orders met dezelfde kwaliteit (CISC 16 / CISC 24) toonden de code wél.
+
+**Root cause:** [mig 104](../supabase/migrations/104_confectie_planning_afleverdatum_fallback.sql) selecteerde `kwaliteit_code`/`kleur_code` rechtstreeks uit `order_regels.maatwerk_kwaliteit_code` / `maatwerk_kleur_code`. Die snapshot-velden worden alleen gevuld via het maatwerk-pad in de webshop-matcher of de maatwerk-selector — bij handmatige order-aanmaak op een vast maatwerk-artikel blijven ze NULL. Resultaat: view-output leeg, ondanks dat zowel de rol als het product de juiste codes hebben.
+
+**Fix:** [mig 243](../supabase/migrations/243_confectie_planning_kwaliteit_fallback.sql) — dezelfde COALESCE-chain als `snijplanning_overzicht` (mig 233):
+1. `rollen.kwaliteit_code` / `kleur_code` (autoritatief zodra rol toegewezen)
+2. `producten.kwaliteit_code` / `kleur_code` (via nieuwe `LEFT JOIN producten p ON p.artikelnr = orr.artikelnr`)
+3. `order_regels.maatwerk_kwaliteit_code` / `maatwerk_kleur_code` (legacy/webshop-pad)
+
+Geen frontend-wijziging nodig: [confectie-overview.tsx](../frontend/src/pages/confectie/confectie-overview.tsx) en [week-lijst.tsx](../frontend/src/components/confectie/week-lijst.tsx) lezen al `kwaliteit_code` + `kleur_code` uit de view.
+
+**Verificatie:** /confectie → ORD-2026-2040 / ORD-2026-2041 tonen nu "CISC 11 SANDRO" in de kolom Kwaliteit / Kleur (consistent met ORD-2026-2045 / 2047).
+
+## 2026-05-11 — Hotfix mig 242 + frontend: `zending_orders` canoniek (Pick & Ship bundel-zichtbaarheid)
+
+Na mig 241 startte de bundel-pickronde technisch, maar in Pick & Ship toonde alleen de "primaire" order (de eerste van de bundel) "In pickronde · Test" — de overige bundel-leden verschenen als losse pickbare orders met een eigen "Verzendset"-knop. Daardoor leek de bundel mislukt te zijn terwijl de DB-state correct was.
+
+**Root cause:** [fetchActievePickrondes](../frontend/src/modules/magazijn/queries/pickbaarheid.ts) query'de `zendingen.order_id` (de legacy/primaire-koppeling) en negeerde de `zending_orders` M2M-tabel. Bundel-zendingen zetten alleen de eerste order als `zending.order_id`; de overige leden zitten exclusief in M2M. Mig 222 r41-45 zei zelf al dat de M2M-tabel de *"authoritatieve bron voor de volledige order-set"* hoort te zijn, maar `start_pickronden_voor_order` (mig 220) en `create_zending_voor_order` (mig 206) schrijven géén M2M-rij voor solo-zendingen — dus consumers moesten beide bronnen UNION'en om correct te zijn.
+
+**Fix:**
+- [Mig 242](../supabase/migrations/242_zending_orders_canoniek.sql): AFTER-INSERT-trigger `trg_zending_set_m2m_a_ins` op `zendingen` schrijft automatisch een M2M-rij (ON CONFLICT DO NOTHING zodat de bundel-RPC die zelf al INSERT'eet niet conflicteert). Plus backfill van alle bestaande solo-zendingen.
+- [pickbaarheid.ts](../frontend/src/modules/magazijn/queries/pickbaarheid.ts) `fetchActievePickrondes` query't nu `zending_orders` met PostgREST INNER-embed op `zendingen!inner(...)` gefilterd op `status='Picken'` — één bron, geen fallback.
+
+**Effect:** alle bundel-leden tonen nu correct "In pickronde · Test" zodra de bundel start. `zending_orders` is vanaf mig 242 de canonieke bron voor "alle orders van een zending"-queries; de UNION-fallback in `voltooi_pickronde` (mig 222 r310-315) blijft staan als defensieve klep maar wordt in praktijk niet meer getriggerd.
+
+**Verificatie:** Pick & Ship → hard refresh → beide orders in een bundel tonen "In pickronde", géén losse "Verzendset"-knop meer voor de niet-primaire bundel-leden.
+
+## 2026-05-11 — Hotfix mig 241: RLS-policy op `zending_orders` (Pick & Ship bundel)
+
+Bundel-pickronde over ≥2 orders crashte met `42501: new row violates row-level security policy for table "zending_orders"` in [start_pickronden_bundel](../supabase/migrations/222_zending_bundeling_op_adres.sql) (zichtbaar in `BulkVerzendsetButton`-popover als "Bulk-aanmaken mislukt"). Solo-pad ([start_pickronden_voor_order](../supabase/migrations/220_start_pickronden_per_vervoerder.sql)) bleef werken omdat dat de M2M-tabel niet raakt.
+
+**Root cause:** mig 222 maakte `zending_orders` aan zonder het RLS-pattern uit mig 169 (`zendingen`/`zending_regels` → ENABLE + all-authenticated policy) door te trekken. Op de live DB werd RLS via Supabase-Studio-advisor alsnog aangezet, maar zonder INSERT-policy voor `authenticated` — en de RPC is `SECURITY INVOKER`. De DEFINER-keuze in mig 222 r357 voor `voltooi_pickronde` is bewust gemaakt voor `order_events` (restrictieve audit-log) en hoort hier niet bij; `zending_orders` is qua karakter een gewone M2M-koppeltabel.
+
+**Fix:** [mig 241](../supabase/migrations/241_zending_orders_rls_policy.sql) — idempotente `ENABLE RLS` + `CREATE POLICY zending_orders_all FOR ALL TO authenticated USING (TRUE) WITH CHECK (TRUE)` met `DROP IF EXISTS`-guard. Geen RPC-wijziging, geen frontend-wijziging.
+
+**Verificatie:** Pick & Ship → 2 orders zelfde adres + week + vervoerder → "Start bundel" → succes, ≥2 rijen in `zending_orders`.
+
+## 2026-05-08 — ADR-0011 uitgevoerd: Debiteur-Module compleet (stappen 1/8 t/m 8/8)
+
+Volledige uitvoering van het 8-staps migratiepad uit [ADR-0011](adr/0011-debiteur-als-deep-module.md), in één PR conform user-feedback dat ADR's niet mogen stapelen zonder implementatie:
+
+- **Stap 1/8 — folder + lege barrel**: `frontend/src/modules/debiteuren/index.ts` aangemaakt.
+- **Stap 2/8 — `<KlantBenaming/>` slot-component**: nieuwe component in `modules/debiteuren/components/klant-benaming.tsx` + `hooks/use-klant-benaming.ts` die `resolve_klanteigen_naam`-RPC self-fetcht via React Query. 4-prop interface (`debiteurNr`, `kwaliteit`, `kleur`, `fallback`); geen TS-spiegel van de 5-niveaus fallback-logica.
+- **Stap 3/8 — queries + hooks verhuizen**: `lib/supabase/queries/klanten.ts` (389 regels) gesplitst in `modules/debiteuren/queries/{debiteuren.ts, klant-artikelnummers.ts, debiteur-prijslijst.ts}`. `klanteigen-namen.ts` (231 regels) verhuisd naar `modules/debiteuren/queries/`. Hooks `use-klanten.ts` + `use-klanteigen-namen.ts` verhuisd. **Bug-fixes meegenomen**: `useVertegenwoordigers` verhuisd uit `use-klanten.ts` naar `use-medewerkers.ts` (post-ADR-0004 hoort daar) als Medewerker-rol-wrapper; `fetchKleurenVoorKwaliteit` + `useKleurenVoorKwaliteit` verhuisd naar `producten.ts` + `use-producten.ts` (catalogus-data, geen klant-data).
+- **Stap 4/8 — pages + components + rename**: 9 components verhuisd uit `components/klanten/` naar `modules/debiteuren/components/`; 2 pages uit `pages/klanten/` naar `modules/debiteuren/pages/` met DB-aligned bestandsnamen (`debiteur-detail.tsx`, `debiteuren-overview.tsx`). Types `KlantRow` → `DebiteurRow`, `KlantDetail` → `DebiteurDetail`. Hooks `useKlanten` → `useDebiteuren`, `useKlantDetail` → `useDebiteurDetail`. Component `KlantCard` → `DebiteurCard`, `KlantEditDialog` → `DebiteurEditDialog`. Routes blijven `/klanten/...`, UI-tekst blijft "Klant". Externe callers in `prijslijst-detail.tsx`, `prijslijst-add-klant-dialog.tsx`, `inkoopgroep-eigen-namen-tab.tsx`, `order-form.tsx`, `orders.ts` updated naar `@/modules/debiteuren`-barrel.
+- **Stap 5/8 — `<KlantBenaming/>`-adoptie**: orders/facturatie/magazijn gebruiken al een efficiëntere batched `fetchKlanteigenNamenMap`-pattern in hun fetchers (één SQL-RPC voor N regels) — geen forced adoptie. Slot-component blijft beschikbaar via barrel als toekomstige affordance voor solo-display-callers.
+- **Stap 6/8 — afleveradressen-tab uitsplitsen**: lokale `AdressenTab`-function uit 669-regel `klant-detail.tsx` geëxtracteerd naar eigen file `modules/debiteuren/components/afleveradressen-tab.tsx`. Type gepromoveerd van inline-shape naar geëxporteerde `Afleveradres`.
+- **Stap 7/8 — oude paden verwijderen + ESLint**: 15 oude bestanden verwijderd (9 components, 2 pages, 2 hooks, 2 queries) + folders `components/klanten/` en `pages/klanten/` opgeruimd. ESLint `no-restricted-imports`-regel toegevoegd voor `@/lib/supabase/queries/klanten`, `@/lib/supabase/queries/klanteigen-namen`, `@/hooks/use-klanten`, `@/hooks/use-klanteigen-namen`, `@/components/klanten/*`-pattern, `@/pages/klanten/*`-pattern — alles met ADR-0011-verwijzing in de error-message en gerichte tip voor `useVertegenwoordigers`/`useKleurenVoorKwaliteit`.
+- **Stap 8/8 — typecheck + docs**: `npm run typecheck` schoon. `npx eslint src/modules/debiteuren` schoon (één pre-existing lint-error in gekopieerde `klanteigen-naam-dialog.tsx` — niet door deze sweep geïntroduceerd).
+
+**Cross-cuts behouden**: SQL-RPC `resolve_klanteigen_naam` blijft single source of truth voor benaming-resolutie; backend-callers (factuur-RPC, EDI-builder, pakbon-edge) consumeren direct, zonder Module-coupling. Tier-berekening blijft SQL-cron, exposeert tier-veld via `DebiteurRow`. Adres-snapshot-helper out-of-scope (komt mee met ADR-0001 Orders-Module).
+
+**Files**: nieuw `modules/debiteuren/{index.ts, components/{klant-benaming, debiteur-card, debiteur-edit-dialog, klant-prijslijst-tab, klant-prijslijst-selector, klant-verteg-selector, klanteigen-namen-tab, klanteigen-naam-dialog, klant-artikelnummers-tab, klant-facturering-tab, afleveradressen-tab}.tsx, hooks/{use-klant-benaming, use-debiteuren, use-klanteigen-namen}.ts, queries/{debiteuren, klant-artikelnummers, debiteur-prijslijst, klanteigen-namen}.ts, pages/{debiteuren-overview, debiteur-detail}.tsx}`. Aangepast `router.tsx`, `eslint.config.js`, `lib/supabase/queries/{producten, orders}.ts`, `hooks/{use-producten, use-medewerkers}.ts`, `components/{prijslijsten/prijslijst-add-klant-dialog, inkoopgroepen/inkoopgroep-eigen-namen-tab, orders/order-form}.tsx`, `pages/prijslijsten/prijslijst-detail.tsx`. Verwijderd 15 oude bestanden.
+
+## 2026-05-08 — Confectie als negende deep verticale Module (smal scope)
+
+Architectuur-skill `/improve-codebase-architecture` losgelaten op de "Confectie"-shallow-plek. Confectie had alle ingrediënten voor een Module — eigen status-flow, eigen lane-concept (per `type_bewerking`), eigen capaciteit-/deadline-formules, eigen RPC's `start_confectie`/`voltooi_confectie` — maar leefde verspreid over `lib/utils/`, `lib/supabase/queries/`, `hooks/`, `components/confectie/` en `pages/confectie/` zonder Module-eigenaar.
+
+Grilling-sessie koos **smal scope** (alleen logica-laag), **geen aparte ADR** (referentie naar ADR-0009-precedent volstaat) en **slot-import via barrel** voor cross-Module-consumers. Resultaat:
+
+- Nieuw: `frontend/src/modules/confectie/` met `lib/`, `queries/`, `hooks/`, barrel `index.ts`.
+- Verhuisd: `lib/utils/confectie-deadline.ts` → `modules/confectie/lib/deadline.ts`; `lib/utils/confectie-forward-planner.ts` → `modules/confectie/lib/forward-planner.ts`; drie query-files (`confectie.ts`, `confectie-planning.ts`, `confectie-mutations.ts`) van `lib/supabase/queries/` → `modules/confectie/queries/`; twee hook-files (`use-confectie.ts`, `use-confectie-planning.ts`) van `hooks/` → `modules/confectie/hooks/`. Test-bestand mee verhuisd (5 tests groen).
+- Pages en components blijven fysiek waar ze waren maar consumeren de Module nu via `@/modules/confectie`-barrel — 7 callers geüpdatet (pages/confectie/* en alle 5 componenten in components/confectie/*).
+- De Module exporteert **geen React-componenten** om import-cycles te vermijden. `<ConfectieTijdenConfig>` blijft direct geïmporteerd door `pages/instellingen/productie-instellingen.tsx`.
+
+Geen schema-wijzigingen, geen edge-function-wijzigingen, geen route-wijzigingen. Type-check schoon, 5 confectie-tests groen.
+
+**Files**: nieuw `modules/confectie/{lib/{deadline.ts, forward-planner.ts, __tests__/forward-planner.test.ts}, queries/{confectie.ts, confectie-planning.ts, confectie-mutations.ts}, hooks/{use-confectie.ts, use-confectie-planning.ts}, index.ts}`. Geüpdatet: `data-woordenboek.md` (Confectie-Module-term), `architectuur.md` (Module-graf-paragraaf — negende Module).
+
 ## 2026-05-08 — Drie shallow queries verhuisd naar SQL (mig 237-239)
 
 Architectuur-skill `/improve-codebase-architecture` op `frontend/src/lib/supabase/queries/` losgelaten. Drie functies maakten relationele orchestratie of aggregatie client-side die in SQL hoort — zelfde patroon als mig 236 (`claims_voor_product`).

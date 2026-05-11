@@ -30,13 +30,18 @@ function makeOrder(overrides: Partial<PickShipOrder> = {}): PickShipOrder {
 }
 
 describe('clusterOrdersOpKlant', () => {
-  it('clustert opeenvolgende orders met dezelfde debiteur_nr', () => {
+  it('clustert orders die dezelfde bundel-sleutel delen', () => {
     const orders = [
       makeOrder({ order_id: 1, order_nr: 'ORD-001', debiteur_nr: 100, klant_naam: 'Klant A' }),
       makeOrder({ order_id: 2, order_nr: 'ORD-002', debiteur_nr: 100, klant_naam: 'Klant A' }),
       makeOrder({ order_id: 3, order_nr: 'ORD-003', debiteur_nr: 200, klant_naam: 'Klant B' }),
     ]
-    const clusters = clusterOrdersOpKlant(orders)
+    const sleutel = new Map<number, string>([
+      [1, 'D100|VVERH|W2026-W20|Aabc'],
+      [2, 'D100|VVERH|W2026-W20|Aabc'],
+      [3, 'D200|VHST|W2026-W20|Axyz'],
+    ])
+    const clusters = clusterOrdersOpKlant(orders, sleutel)
     expect(clusters).toHaveLength(2)
     expect(clusters[0].debiteur_nr).toBe(100)
     expect(clusters[0].orders).toHaveLength(2)
@@ -44,13 +49,63 @@ describe('clusterOrdersOpKlant', () => {
     expect(clusters[1].orders).toHaveLength(1)
   })
 
-  it('sorteert alfabetisch op klant_naam zodat zelfde-klant orders altijd adjacent zijn', () => {
+  it('splitst zelfde-klant orders met verschillende bundel-sleutels in losse clusters', () => {
+    // Twee FLOORPASSION-orders met verschillende vervoerders → 2 bundels →
+    // 2 visuele clusters (geen gezamenlijke BUNDEL-header).
+    const orders = [
+      makeOrder({ order_id: 1, order_nr: 'ORD-2046', debiteur_nr: 100, klant_naam: 'FLOORPASSION' }),
+      makeOrder({ order_id: 2, order_nr: 'ORD-2048', debiteur_nr: 100, klant_naam: 'FLOORPASSION' }),
+    ]
+    const sleutel = new Map<number, string>([
+      [1, 'D100|VVERH|W2026-W20|Aabc'],
+      [2, 'D100|VHST|W2026-W20|Aabc'],
+    ])
+    const clusters = clusterOrdersOpKlant(orders, sleutel)
+    expect(clusters).toHaveLength(2)
+    expect(clusters[0].orders).toHaveLength(1)
+    expect(clusters[1].orders).toHaveLength(1)
+  })
+
+  it('zonder bundel-map valt elke order in een eigen solo-cluster', () => {
+    const orders = [
+      makeOrder({ order_id: 1, order_nr: 'ORD-001', debiteur_nr: 100, klant_naam: 'Klant A' }),
+      makeOrder({ order_id: 2, order_nr: 'ORD-002', debiteur_nr: 100, klant_naam: 'Klant A' }),
+    ]
+    const clusters = clusterOrdersOpKlant(orders)
+    expect(clusters).toHaveLength(2)
+    expect(clusters[0].orders).toHaveLength(1)
+    expect(clusters[1].orders).toHaveLength(1)
+  })
+
+  it('orders zonder bundel-entry krijgen een solo-cluster, andere bundelen wel', () => {
+    const orders = [
+      makeOrder({ order_id: 1, order_nr: 'ORD-001', debiteur_nr: 100, klant_naam: 'Klant A' }),
+      makeOrder({ order_id: 2, order_nr: 'ORD-002', debiteur_nr: 100, klant_naam: 'Klant A' }),
+      makeOrder({ order_id: 3, order_nr: 'ORD-003', debiteur_nr: 100, klant_naam: 'Klant A' }),
+    ]
+    const sleutel = new Map<number, string>([
+      [1, 'D100|VVERH|W2026-W20|Aabc'],
+      [2, 'D100|VVERH|W2026-W20|Aabc'],
+      // order 3 mist (bv. geen afleverdatum) → solo-fallback.
+    ])
+    const clusters = clusterOrdersOpKlant(orders, sleutel)
+    expect(clusters).toHaveLength(2)
+    expect(clusters[0].orders.map((o) => o.order_id)).toEqual([1, 2])
+    expect(clusters[1].orders.map((o) => o.order_id)).toEqual([3])
+  })
+
+  it('sorteert alfabetisch op klant_naam zodat zelfde-klant clusters adjacent zijn', () => {
     const orders = [
       makeOrder({ order_id: 1, order_nr: 'ORD-001', debiteur_nr: 200, klant_naam: 'Beta' }),
       makeOrder({ order_id: 2, order_nr: 'ORD-002', debiteur_nr: 100, klant_naam: 'Alpha' }),
       makeOrder({ order_id: 3, order_nr: 'ORD-003', debiteur_nr: 200, klant_naam: 'Beta' }),
     ]
-    const clusters = clusterOrdersOpKlant(orders)
+    const sleutel = new Map<number, string>([
+      [1, 'D200|VVERH|W2026-W20|Axyz'],
+      [3, 'D200|VVERH|W2026-W20|Axyz'],
+      [2, 'D100|VHST|W2026-W20|Aabc'],
+    ])
+    const clusters = clusterOrdersOpKlant(orders, sleutel)
     expect(clusters).toHaveLength(2)
     expect(clusters[0].klant_naam).toBe('Alpha')
     expect(clusters[1].klant_naam).toBe('Beta')
@@ -62,7 +117,11 @@ describe('clusterOrdersOpKlant', () => {
       makeOrder({ order_id: 1, order_nr: 'ORD-2026-0099', debiteur_nr: 100, klant_naam: 'Klant A' }),
       makeOrder({ order_id: 2, order_nr: 'ORD-2026-0001', debiteur_nr: 100, klant_naam: 'Klant A' }),
     ]
-    const clusters = clusterOrdersOpKlant(orders)
+    const sleutel = new Map<number, string>([
+      [1, 'D100|VVERH|W2026-W20|Aabc'],
+      [2, 'D100|VVERH|W2026-W20|Aabc'],
+    ])
+    const clusters = clusterOrdersOpKlant(orders, sleutel)
     expect(clusters[0].orders[0].order_nr).toBe('ORD-2026-0001')
     expect(clusters[0].orders[1].order_nr).toBe('ORD-2026-0099')
   })
@@ -73,17 +132,23 @@ describe('clusterOrdersOpKlant', () => {
 })
 
 describe('groepeerOrdersOpLand', () => {
-  it('splitst per ISO-2-land en clustert binnen elk land op klant', () => {
+  it('splitst per ISO-2-land en clustert binnen elk land op bundel-sleutel', () => {
     const orders = [
       makeOrder({ order_id: 1, afl_land: 'NL', debiteur_nr: 100, klant_naam: 'NL Klant' }),
       makeOrder({ order_id: 2, afl_land: 'DE', debiteur_nr: 200, klant_naam: 'DE Klant 1' }),
       makeOrder({ order_id: 3, afl_land: 'DE', debiteur_nr: 200, klant_naam: 'DE Klant 1' }),
       makeOrder({ order_id: 4, afl_land: 'BE', debiteur_nr: 300, klant_naam: 'BE Klant' }),
     ]
-    const groepen = groepeerOrdersOpLand(orders)
+    const sleutel = new Map<number, string>([
+      [1, 'D100|VVERH|W2026-W20|Anl'],
+      [2, 'D200|VDPD|W2026-W20|Ade'],
+      [3, 'D200|VDPD|W2026-W20|Ade'],
+      [4, 'D300|VHST|W2026-W20|Abe'],
+    ])
+    const groepen = groepeerOrdersOpLand(orders, sleutel)
     // Alfabetisch: BE, DE, NL
     expect(groepen.map((g) => g.iso2)).toEqual(['BE', 'DE', 'NL'])
-    expect(groepen[1].clusters).toHaveLength(1) // DE: één klant met 2 orders
+    expect(groepen[1].clusters).toHaveLength(1) // DE: één bundel met 2 orders
     expect(groepen[1].clusters[0].orders).toHaveLength(2)
   })
 

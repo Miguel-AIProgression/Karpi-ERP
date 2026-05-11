@@ -1,9 +1,8 @@
 import { Link } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
-import { confectieDeadline } from '@/lib/utils/confectie-deadline'
+import { confectieDeadline, type ConfectiePlanningRow } from '@/modules/confectie'
 import type { LaneBlok } from '@/lib/utils/bereken-agenda'
-import type { ConfectiePlanningRow } from '@/lib/supabase/queries/confectie-planning'
 
 function fmtDagKort(d: Date): string {
   return `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}`

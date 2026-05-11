@@ -1,7 +1,7 @@
 import { ConfectieBlokCard } from './confectie-blok-card'
 import { CapaciteitBalk } from './capaciteit-balk'
 import type { LaneBlok } from '@/lib/utils/bereken-agenda'
-import type { ConfectiePlanningRow } from '@/lib/supabase/queries/confectie-planning'
+import type { ConfectiePlanningRow } from '@/modules/confectie'
 
 interface Props {
   typeBewerking: string

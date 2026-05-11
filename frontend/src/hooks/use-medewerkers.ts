@@ -16,6 +16,23 @@ export function useMedewerkers(rol?: MedewerkerRol) {
   })
 }
 
+/**
+ * Vertegenwoordigers als smalle `{code, naam}`-shape voor selector-dropdowns
+ * en filter-pickers. Verhuisd uit `use-klanten.ts` per ADR-0011 — woont
+ * post-ADR-0004 hier omdat vertegenwoordiger een rol op een Medewerker is.
+ */
+export function useVertegenwoordigers() {
+  return useQuery({
+    queryKey: ['vertegenwoordigers'],
+    queryFn: async () => {
+      const meds = await fetchMedewerkers('vertegenwoordiger')
+      return meds
+        .filter((m) => m.code !== null)
+        .map((m) => ({ code: m.code as string, naam: m.naam }))
+    },
+  })
+}
+
 export function useCreatePicker() {
   const qc = useQueryClient()
   return useMutation({

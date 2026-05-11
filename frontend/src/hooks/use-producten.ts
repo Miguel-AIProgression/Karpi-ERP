@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { fetchProducten, fetchProductDetail, fetchRollenVoorProduct, fetchReserveringenVoorProduct, fetchClaimsVoorProduct, updateProductType, updateProductLocatie, fetchUitwisselbareGroepen, fetchKwaliteiten, fetchLeveranciers, createProduct, updateProduct, fetchNextArtikelnr, type ProductType, type ProductSortField, type SortDirection, type ProductFormData } from '@/lib/supabase/queries/producten'
+import { fetchProducten, fetchProductDetail, fetchRollenVoorProduct, fetchReserveringenVoorProduct, fetchClaimsVoorProduct, updateProductType, updateProductLocatie, fetchUitwisselbareGroepen, fetchKwaliteiten, fetchKleurenVoorKwaliteit, fetchLeveranciers, createProduct, updateProduct, fetchNextArtikelnr, type ProductType, type ProductSortField, type SortDirection, type ProductFormData } from '@/lib/supabase/queries/producten'
 import { fetchEquivalenteProducten } from '@/lib/supabase/queries/product-equivalents'
 
 export function useProducten(params: { search?: string; page?: number; pageSize?: number; productType?: ProductType | 'alle'; kwaliteitCode?: string | null; sortBy?: ProductSortField; sortDir?: SortDirection }) {
@@ -54,6 +54,14 @@ export function useKwaliteiten() {
     queryKey: ['kwaliteiten'],
     queryFn: fetchKwaliteiten,
     staleTime: 10 * 60 * 1000,
+  })
+}
+
+export function useKleurenVoorKwaliteit(kwaliteitCode: string | null) {
+  return useQuery({
+    queryKey: ['kleuren-voor-kwaliteit', kwaliteitCode],
+    queryFn: () => fetchKleurenVoorKwaliteit(kwaliteitCode!),
+    enabled: !!kwaliteitCode,
   })
 }
 

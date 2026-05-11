@@ -254,6 +254,22 @@ export async function fetchKwaliteiten(): Promise<{ code: string; omschrijving: 
   return data ?? []
 }
 
+/** Beschikbare kleur_codes voor een kwaliteit (op basis van actieve producten). */
+export async function fetchKleurenVoorKwaliteit(kwaliteitCode: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('producten')
+    .select('kleur_code')
+    .eq('kwaliteit_code', kwaliteitCode)
+    .eq('actief', true)
+    .not('kleur_code', 'is', null)
+  if (error) throw error
+  const set = new Set<string>()
+  for (const row of (data ?? []) as { kleur_code: string }[]) {
+    set.add(row.kleur_code)
+  }
+  return Array.from(set).sort((a, b) => a.localeCompare(b))
+}
+
 /** Update product type */
 export async function updateProductType(artikelnr: string, productType: ProductType) {
   const { error } = await supabase
