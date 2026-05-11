@@ -540,6 +540,10 @@ M2M tussen zendingen en orders. Sinds migratie 222 (zending-bundeling op aflever
 
 **PK:** (zending_id, order_id). **Index:** `zending_orders_order_id_idx` (order_id).
 
+**RLS:** ENABLED met all-authenticated policy `zending_orders_all` (mig 241) — spiegel van `zending_regels_all`/`zendingen_all` uit mig 169. Hotfix voor 42501 in `start_pickronden_bundel` bij bundels ≥2 orders: tabel was in mig 222 zonder RLS-policy uitgerold, op live DB werd RLS via Studio-advisor aangezet zonder INSERT-policy voor `authenticated`.
+
+**Canoniciteit (mig 242):** AFTER-INSERT-trigger `trg_zending_set_m2m_a_ins` op `zendingen` schrijft automatisch een M2M-rij in deze tabel (ON CONFLICT DO NOTHING). Daardoor heeft élke zending — solo via `start_pickronden_voor_order` / `create_zending_voor_order`, of bundel via `start_pickronden_bundel` — minstens 1 rij hier. Backfill van mig 242 vulde alle solo-zendingen die sinds mig 222 zonder M2M-rij waren gemaakt. Consumers (frontend pickbaarheid-query, `voltooi_pickronde`-fallback, factuur-cron) kunnen vanaf nu puur via `zending_orders` queryen zonder UNION-fallback op `zendingen.order_id`.
+
 **Producer:** `start_pickronden_bundel(order_ids[], picker_id)` (mig 222) — multi-order bundel-pickronde, valideert zelfde debiteur + identiek genormaliseerd afleveradres + geen lopende/eindstatus-zendingen, groepeert regels op effectieve vervoerder uit mig 219, maakt 1 zending per groep gekoppeld aan alle betrokken orders. Bij 1 order delegeert naar `start_pickronden_voor_order` (mig 220) zodat callers één code-pad hebben.
 
 **Consumer:** `voltooi_pickronde` (mig 222) leest betrokken orders uit deze tabel en flipt élke order via `markeer_verzonden` zodra dit de laatste open zending is — sluitstuk factuur-keten (ADR-0005) blijft kloppend voor zowel solo- als bundel-zendingen.
@@ -1167,7 +1171,7 @@ Centrale audit-/queue-tabel voor alle EDI-berichten via Transus (in én uit) (mi
 | snijplanning_overzicht | Snijplannen met order-, klant- en rolgegevens voor de planningsweergave. `snij_lengte_cm`/`snij_breedte_cm` zijn **nominale (bestelde) maten**. Migratie 143 voegt `marge_cm` toe (single-source via `stuk_snij_marge_cm()` migratie 126; ZO +6, rond/ovaal +5, max bij combi) en `geroteerd` toe — beide nodig voor de SnijVolgorde-transformer ([frontend/src/lib/snij-volgorde/derive.ts](../frontend/src/lib/snij-volgorde/derive.ts)) die de rol-uitvoer modal voedt. Fysieke snij-maat = bestelde + marge. |
 | confectie_overzicht | Confectie-orders met scan- en voortgangsstatus |
 | confectie_planning_overzicht | Confectie-orders (status Wacht op materiaal / In productie) met klant, order, maatwerk-afmetingen en strekkende meter voor planningsweergave |
-| confectie_planning_forward | Vooruitkijkende confectie-planning — alle open maatwerk-snijplannen (Gepland..In confectie/Ingepakt) met afgeleide type_bewerking + confectie_startdatum + backward-compat aliassen |
+| confectie_planning_forward | Vooruitkijkende confectie-planning — alle open maatwerk-snijplannen (Gepland..In confectie/Ingepakt) met afgeleide type_bewerking + confectie_startdatum + backward-compat aliassen. Kwaliteit/kleur valt terug van rol → product → maatwerk-snapshot (mig 243) |
 | productie_dashboard | Aggregaties voor het productie-dashboard: aantallen per status, capaciteit, doorlooptijd |
 | leveranciers_overzicht | Per leverancier: openstaande orders/meters + eerstvolgende verwachte levering. Basis voor Leveranciers-overzichtspagina. Migratie 127. |
 | inkooporders_overzicht | Per inkooporder: leveranciersnaam + aantal regels + totaal besteld/geleverd/te_leveren. Basis voor Inkooporders-overzichtspagina. Migratie 127. |
