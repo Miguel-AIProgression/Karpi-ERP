@@ -216,9 +216,12 @@ async function fetchFallbackOrderRegels(orderIds: number[]): Promise<Pickbaarhei
  */
 /**
  * Per order: de actieve Pickronde (zending in 'Picken'-status), inclusief
- * picker-naam. Twee aparte queries (zendingen → medewerkers) ipv FK-embed,
- * omdat PostgREST schema-cache na mig 217 niet altijd direct de FK kent.
- * Robuuster + makkelijker te debuggen. Mig 217.
+ * picker-naam. Bron is `zending_orders` M2M (mig 222, canoniek vanaf mig 242
+ * dankzij AFTER-INSERT-trigger + backfill) — niet `zendingen.order_id`, want
+ * bij bundel-zendingen verwijst die alleen naar de "primaire" order en zouden
+ * de overige bundel-leden ten onrechte als "niet in pickronde" gelden.
+ * Twee aparte queries (zending_orders → medewerkers) ipv geneste FK-embed,
+ * consistent met de pré-mig-242 stijl en eenvoudiger te debuggen.
  */
 async function fetchActievePickrondes(
   orderIds: number[]
@@ -226,7 +229,8 @@ async function fetchActievePickrondes(
   const map = new Map<number, import('../lib/types').ActievePickronde>()
   if (orderIds.length === 0) return map
 
-  // Stap 1: zendingen in Picken-status ophalen
+  // Stap 1: koppelingen + zending-details ophalen via zending_orders M2M.
+  // INNER-embed filtert non-Picken-zendingen al SQL-zijde weg.
   const zendingen: Array<{
     id: number
     zending_nr: string
@@ -236,21 +240,25 @@ async function fetchActievePickrondes(
 
   for (const ids of chunks(orderIds, 100)) {
     const { data, error } = await supabase
-      .from('zendingen')
-      .select('id, zending_nr, order_id, picker_id, status')
+      .from('zending_orders')
+      .select('order_id, zendingen!inner(id, zending_nr, picker_id, status)')
       .in('order_id', ids)
-      .eq('status', 'Picken')
+      .eq('zendingen.status', 'Picken')
     if (error) {
-      console.error('[pickbaarheid] fetchActievePickrondes zendingen-query error', error)
+      console.error('[pickbaarheid] fetchActievePickrondes zending_orders-query error', error)
       throw error
     }
     for (const row of (data ?? []) as Array<{
-      id: number
-      zending_nr: string
       order_id: number
-      picker_id: number | null
+      zendingen: { id: number; zending_nr: string; picker_id: number | null; status: string } | null
     }>) {
-      zendingen.push(row)
+      if (!row.zendingen) continue
+      zendingen.push({
+        id: row.zendingen.id,
+        zending_nr: row.zendingen.zending_nr,
+        order_id: row.order_id,
+        picker_id: row.zendingen.picker_id,
+      })
     }
   }
 
