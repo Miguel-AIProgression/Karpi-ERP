@@ -248,16 +248,25 @@ async function fetchActievePickrondes(
       console.error('[pickbaarheid] fetchActievePickrondes zending_orders-query error', error)
       throw error
     }
-    for (const row of (data ?? []) as Array<{
+    // PostgREST-cast via `unknown`: gegenereerde Supabase-types modelleren het
+    // FK-embed als array (`{...}[]`), maar runtime levert single object terug
+    // omdat zending_orders → zendingen via FK een N:1-relatie is. Defensief
+    // tegen beide vormen.
+    const rows = (data ?? []) as unknown as Array<{
       order_id: number
-      zendingen: { id: number; zending_nr: string; picker_id: number | null; status: string } | null
-    }>) {
-      if (!row.zendingen) continue
+      zendingen:
+        | { id: number; zending_nr: string; picker_id: number | null; status: string }
+        | Array<{ id: number; zending_nr: string; picker_id: number | null; status: string }>
+        | null
+    }>
+    for (const row of rows) {
+      const z = Array.isArray(row.zendingen) ? row.zendingen[0] : row.zendingen
+      if (!z) continue
       zendingen.push({
-        id: row.zendingen.id,
-        zending_nr: row.zendingen.zending_nr,
+        id: z.id,
+        zending_nr: z.zending_nr,
         order_id: row.order_id,
-        picker_id: row.zendingen.picker_id,
+        picker_id: z.picker_id,
       })
     }
   }
