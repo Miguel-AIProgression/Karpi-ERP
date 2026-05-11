@@ -1,6 +1,7 @@
-// Bereken bruikbare reststukken uit een snijplan-layout.
-// Frontend-kopie van supabase/functions/_shared/compute-reststukken.ts
-// (Deno-specifieke imports kunnen niet in Vite-bundle; logica is identiek.)
+// Bereken bruikbare reststukken uit een snijplan-layout. Bezit van de
+// Snijplanning-Module (ADR-0013). Frontend-kopie van
+// supabase/functions/_shared/compute-reststukken.ts
+// (Deno-specifieke imports kunnen niet in Vite-bundle; logica is identiek).
 //
 // Strategie: free-rect subtraction + greedy disjoint cover. Zie edge-kant voor
 // achtergrond. De oudere shelf-based benadering miste interne gaps; deze

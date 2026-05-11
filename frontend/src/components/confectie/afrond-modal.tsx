@@ -96,7 +96,7 @@ export function AfrondModal({ stuk, onClose }: Props) {
               <div className="flex items-center gap-1.5 text-sm font-medium text-slate-900">
                 <Package size={15} className="text-terracotta-600" /> Ingepakt
               </div>
-              <p className="text-xs text-slate-500 mt-0.5">Klaar voor verzending — stuk verdwijnt uit de planning (status <span className="font-medium">Gereed</span>).</p>
+              <p className="text-xs text-slate-500 mt-0.5">Klaar voor verzending — stuk verschijnt direct in Pick &amp; Ship (status <span className="font-medium">Ingepakt</span>).</p>
             </div>
           </label>
 

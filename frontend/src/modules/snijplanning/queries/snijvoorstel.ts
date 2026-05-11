@@ -1,6 +1,6 @@
-import { supabase } from '../client'
+import { supabase } from '@/lib/supabase/client'
 import type { SnijvoorstelResponse, SnijvoorstelRow, SnijvoorstelPlaatsingRow, RolStatus, ReststukRect } from '@/lib/types/productie'
-import { computeReststukken } from '@/lib/utils/compute-reststukken'
+import { computeReststukken } from '../lib/compute-reststukken'
 
 /** Call the Edge Function to generate a cutting proposal */
 export async function generateSnijvoorstel(
@@ -183,7 +183,7 @@ export async function fetchBeschikbareCapaciteit(kwaliteitCode: string, kleurCod
 
   // 4. For in_snijplan rolls, calculate remaining length from snijplannen positions
   const inPlanRolIds = (rollen ?? []).filter(r => r.status === 'in_snijplan').map(r => r.id)
-  let usedLengthMap = new Map<number, number>()
+  const usedLengthMap = new Map<number, number>()
 
   if (inPlanRolIds.length > 0) {
     const { data: plannen } = await supabase

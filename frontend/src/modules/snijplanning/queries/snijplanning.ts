@@ -1,4 +1,4 @@
-import { supabase } from '../client'
+import { supabase } from '@/lib/supabase/client'
 import { sanitizeSearch } from '@/lib/utils/sanitize'
 import type { SnijplanRow, ProductieDashboard } from '@/lib/types/productie'
 

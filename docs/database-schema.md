@@ -155,6 +155,7 @@ Klanten/afnemers. PK = debiteur_nr uit het oude systeem.
 | standaard_maat_werkdagen | INTEGER | Override levertermijn voor standaard-maat karpetten (dagen). NULL = globale default. |
 | maatwerk_weken | INTEGER | Override levertermijn voor maatwerk karpetten (weken). NULL = globale default. |
 | deelleveringen_toegestaan | BOOLEAN DEFAULT false | Als TRUE: gemengde orders worden bij aanmaken gesplitst in 2 orders (standaard + maatwerk). |
+| default_lever_type | lever_type ENUM NOT NULL DEFAULT 'week' | ADR 0014 / mig 244. Voorgevulde `orders.lever_type` bij orderaanmaak. B2C-debiteuren (Floorpassion, particulieren) kunnen standaard op `'datum'` staan. Gebruiker kan per order overschrijven via segmented toggle in order-form. |
 | inkoopgroep_code | TEXT FK → inkoopgroepen.code | Inkooporganisatie waaronder de klant inkoopt (1 groep per debiteur). ON UPDATE CASCADE, ON DELETE SET NULL. Vervangt losse TEXT-kolom in mig 189. |
 | betaler | INTEGER FK → debiteuren (self-ref) | Betalende partij |
 | btw_nummer | TEXT | |
@@ -332,6 +333,7 @@ Orderheaders. Adressen zijn snapshots (niet FK naar afleveradressen).
 | heeft_unmatched_regels | BOOLEAN DEFAULT false | TRUE als ≥1 order_regel een NULL artikelnr heeft. Automatisch gesynchroniseerd door trigger op order_regels (migratie 094). |
 | lever_modus | TEXT | NULL / 'deelleveringen' / 'in_een_keer'. Per-order keuze hoe om te gaan met (deels) wachten op inkoop. Default uit `debiteuren.deelleveringen_toegestaan`, gevuld via `LeverModusDialog` bij opslaan als ≥1 regel tekort heeft. NULL voor orders zonder tekort. Migratie 144. |
 | afhalen | BOOLEAN NOT NULL DEFAULT false | TRUE = klant haalt zelf op. UI in `OrderForm` onderdrukt automatische verzendkosten-regel; logistiek/zending overslaat vervoerder-stap. Migratie 204. |
+| lever_type | lever_type ENUM NOT NULL DEFAULT 'week' | ADR 0014 / mig 244. `'week'` = order-belofte op leverweek (B2B-default, ~90%); `'datum'` = exact die afleverdatum (B2C). Bepaalt Pick & Ship-horizon (`werkdagMinN(afleverdatum, 1)` voor dag-orders) en snij-prioriteit (`werkdagMinN(afleverdatum, dag_order_snij_buffer_werkdagen)` voor dag-orders i.p.v. `logistieke_buffer_dagen` voor week-orders). Default per klant in `debiteuren.default_lever_type`. |
 | verzonden_at | TIMESTAMPTZ | Mig 217 (ADR-0005). Moment waarop `voltooi_pickronde` de laatste open zending sloot en `orders.status='Verzonden'` zette. Triggert factuur-queue (mig 118). NULL voor orders die nog niet verzonden zijn. |
 
 ---
@@ -1155,6 +1157,7 @@ Centrale audit-/queue-tabel voor alle EDI-berichten via Transus (in én uit) (mi
 | edi_orderbev_format | transus_xml, fixed_width (mig 161) |
 | edi_transus_test_status | niet_getest, goedgekeurd, afgekeurd (mig 161) |
 | hst_transportorder_status | Wachtrij, Bezig, Verstuurd, Fout, Geannuleerd (mig 171) |
+| lever_type | week, datum (mig 244 — ADR 0014) |
 
 ---
 

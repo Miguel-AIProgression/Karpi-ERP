@@ -95,19 +95,34 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
           <p className="font-medium">{formatDate(order.orderdatum)}</p>
         </div>
         <div>
-          <span className="text-slate-500">Verzendweek</span>
-          <p className="font-medium">
-            {verzendweek ? (
-              <>
-                Wk {verzendweek.week} · {verzendweek.jaar}
-                {relatief && (
-                  <span className="ml-1 text-xs font-normal text-slate-400">({relatief})</span>
-                )}
-              </>
-            ) : (
-              '—'
-            )}
-          </p>
+          <span className="text-slate-500">
+            {order.lever_type === 'datum' ? 'Leverdatum' : 'Verzendweek'}
+          </span>
+          {order.lever_type === 'datum' && order.afleverdatum ? (
+            <p className="font-medium flex items-center gap-1.5">
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[var(--radius-sm)] bg-terracotta-50 text-terracotta-700 text-xs font-medium">
+                <span aria-hidden>📅</span>
+                Specifieke dag
+              </span>
+              <span>{formatDate(order.afleverdatum)}</span>
+              {relatief && (
+                <span className="text-xs font-normal text-slate-400">({relatief})</span>
+              )}
+            </p>
+          ) : (
+            <p className="font-medium">
+              {verzendweek ? (
+                <>
+                  Wk {verzendweek.week} · {verzendweek.jaar}
+                  {relatief && (
+                    <span className="ml-1 text-xs font-normal text-slate-400">({relatief})</span>
+                  )}
+                </>
+              ) : (
+                '—'
+              )}
+            </p>
+          )}
         </div>
         <div>
           <span className="text-slate-500">Vertegenwoordiger</span>

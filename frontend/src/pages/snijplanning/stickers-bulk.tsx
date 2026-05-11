@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { PageHeader } from '@/components/layout/page-header'
 import { StickerLayout } from '@/components/snijplanning/sticker-layout'
 import { ReststukStickerLayout } from '@/components/snijplanning/reststuk-sticker-layout'
-import { useSnijplannenVoorGroep, useRolSnijstukken } from '@/hooks/use-snijplanning'
+import { useSnijplannenVoorGroep, useRolSnijstukken } from '@/modules/snijplanning'
 import { supabase } from '@/lib/supabase/client'
 
 interface ReststukRol {

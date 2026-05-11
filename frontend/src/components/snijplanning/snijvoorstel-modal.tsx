@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { X, Zap, CheckCircle2, XCircle, Loader2, AlertTriangle, CalendarClock } from 'lucide-react'
-import { useSnijplannenVoorGroep, useKeurSnijvoorstelGoed, useVerwerpSnijvoorstel } from '@/hooks/use-snijplanning'
+import { useSnijplannenVoorGroep, useKeurSnijvoorstelGoed, useVerwerpSnijvoorstel } from '@/modules/snijplanning'
 import { SnijVisualisatie } from './snij-visualisatie'
 import type { SnijvoorstelResponse, SnijvoorstelPlaatsing, SnijplanRow, SnijStuk } from '@/lib/types/productie'
 

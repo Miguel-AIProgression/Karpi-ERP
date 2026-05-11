@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { cn } from '@/lib/utils/cn'
 import { ROL_STATUS_COLORS, ROL_TYPE_COLORS, ROL_TYPE_LABELS } from '@/lib/utils/constants'
 import { useReserveringenVoorProduct } from '@/hooks/use-producten'
-import { useRolSnijstukken } from '@/hooks/use-snijplanning'
+import { useRolSnijstukken } from '@/modules/snijplanning'
 import type { RolRow } from '@/lib/types/productie'
 import type {
   BesteldInkoop,

@@ -15,6 +15,7 @@ function makeOrder(overrides: Partial<PickShipOrder> = {}): PickShipOrder {
     afl_plaats: null,
     afl_land: 'NL',
     afleverdatum: '2026-05-12',
+    lever_type: 'week',
     afhalen: false,
     bucket: 'wk_1',
     verzend_week_sleutel: '2026-W20',

@@ -1,13 +1,16 @@
 import { useMemo, Fragment, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Factory, Scissors } from 'lucide-react'
+import { Factory, Scissors, Play, CheckCircle2, Loader2 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import {
   confectieDeadline,
   useConfectiePlanningForward,
+  useStartConfectie,
   type ConfectiePlanningForwardRow,
+  type ConfectiePlanningRow,
 } from '@/modules/confectie'
 import { ConfectieTabs } from './confectie-planning'
+import { AfrondModal } from '@/components/confectie/afrond-modal'
 import { cn } from '@/lib/utils/cn'
 import { AlertTriangle } from 'lucide-react'
 import { AFWERKING_MAP, AFWERKING_OPTIES, SNIJPLAN_STATUS_COLORS } from '@/lib/utils/constants'
@@ -32,6 +35,7 @@ const KLAAR_STATUSSEN = ['Gesneden', 'In confectie']
 export function ConfectieOverviewPage() {
   const { data: alleStukken, isLoading } = useConfectiePlanningForward()
   const [filter, setFilter] = useState<'klaar' | 'alles'>('klaar')
+  const [afrondStuk, setAfrondStuk] = useState<ConfectiePlanningForwardRow | null>(null)
 
   // Filter op status
   const stukken = useMemo(() => {
@@ -149,11 +153,17 @@ export function ConfectieOverviewPage() {
                         <th className="py-2 px-4">Deadline</th>
                         <th className="py-2 px-4">Locatie</th>
                         <th className="py-2 px-4">Status</th>
+                        <th className="py-2 px-4 text-right">Actie</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {rows.map((s) => (
-                        <ConfectieRij key={s.snijplan_id} stuk={s as unknown as SnijplanRow} />
+                        <ConfectieRij
+                          key={s.snijplan_id}
+                          stuk={s as unknown as SnijplanRow}
+                          stukRaw={s}
+                          onAfronden={() => setAfrondStuk(s)}
+                        />
                       ))}
                     </tbody>
                   </table>
@@ -163,11 +173,29 @@ export function ConfectieOverviewPage() {
           })}
         </div>
       )}
+
+      {afrondStuk && (
+        <AfrondModal
+          stuk={afrondStuk as unknown as ConfectiePlanningRow}
+          onClose={() => setAfrondStuk(null)}
+        />
+      )}
     </>
   )
 }
 
-function ConfectieRij({ stuk }: { stuk: SnijplanRow }) {
+function ConfectieRij({
+  stuk,
+  stukRaw,
+  onAfronden,
+}: {
+  stuk: SnijplanRow
+  stukRaw: ConfectiePlanningForwardRow
+  onAfronden: () => void
+}) {
+  const startConfectie = useStartConfectie()
+  const isGesneden = stuk.status === 'Gesneden'
+  const isInConfectie = stuk.status === 'In confectie'
   return (
     <tr className="hover:bg-slate-50">
       <td className="py-2.5 px-4 font-medium tabular-nums">
@@ -241,6 +269,35 @@ function ConfectieRij({ stuk }: { stuk: SnijplanRow }) {
         )}>
           {stuk.status}
         </span>
+      </td>
+      <td className="py-2.5 px-4 text-right">
+        <div className="inline-flex items-center gap-2">
+          {isGesneden && (
+            <button
+              onClick={() => startConfectie.mutate(stukRaw.snijplan_id)}
+              disabled={startConfectie.isPending}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-[var(--radius-sm)] bg-white border border-slate-200 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              title="Markeer als 'In confectie' — start het werk aan dit stuk"
+            >
+              {startConfectie.isPending && startConfectie.variables === stukRaw.snijplan_id ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <Play size={12} />
+              )}
+              Start
+            </button>
+          )}
+          {(isGesneden || isInConfectie) && (
+            <button
+              onClick={onAfronden}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-[var(--radius-sm)] bg-terracotta-500 text-white text-xs font-medium hover:bg-terracotta-600"
+              title="Afronden + ingepakt + locatie — naar Pick & Ship"
+            >
+              <CheckCircle2 size={12} />
+              Afronden
+            </button>
+          )}
+        </div>
       </td>
     </tr>
   )

@@ -2,7 +2,7 @@ import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, Printer } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { StickerLayout } from '@/components/snijplanning/sticker-layout'
-import { useSnijplanDetail } from '@/hooks/use-snijplanning'
+import { useSnijplanDetail } from '@/modules/snijplanning'
 
 export function StickerPrintPage() {
   const { id } = useParams<{ id: string }>()

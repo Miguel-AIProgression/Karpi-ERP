@@ -12,16 +12,16 @@ import {
   fetchRolLocaties,
   fetchTekortAnalyse,
   fetchSnijplanningKpis,
-} from '@/lib/supabase/queries/snijplanning'
-import type { SnijplanSortField, SortDirection, TekortAnalyseRow } from '@/lib/supabase/queries/snijplanning'
+} from '../queries/snijplanning'
+import type { SnijplanSortField, SortDirection, TekortAnalyseRow } from '../queries/snijplanning'
 import {
   createSnijplan,
   updateSnijplanStatus,
   batchUpdateSnijplanStatus,
   assignRolToSnijplan,
   approveSnijvoorstel,
-} from '@/lib/supabase/queries/snijplanning-mutations'
-import type { SnijplanFormData } from '@/lib/supabase/queries/snijplanning-mutations'
+} from '../queries/snijplanning-mutations'
+import type { SnijplanFormData } from '../queries/snijplanning-mutations'
 import {
   generateSnijvoorstel,
   fetchSnijvoorstel,
@@ -33,16 +33,18 @@ import {
   startSnijdenRol,
   pauzeerSnijdenRol,
   type ReststukResult,
-} from '@/lib/supabase/queries/snijvoorstel'
+} from '../queries/snijvoorstel'
 import {
   fetchAutoplanningConfig,
   updateAutoplanningConfig,
   triggerAutoplan,
   startProductieRol,
-} from '@/lib/supabase/queries/auto-planning'
-import type { AutoPlanningConfig } from '@/lib/supabase/queries/auto-planning'
+} from '../queries/auto-planning'
+import type { AutoPlanningConfig } from '../queries/auto-planning'
 import { berekenTotDatum } from '@/components/snijplanning/week-filter'
 import { fetchPlanningConfig } from '@/lib/supabase/queries/planning-config'
+import { invalidateNaSnijplanMutatie } from '../cache'
+import { invalidateNaConfectieMutatie } from '@/modules/confectie'
 
 export function useSnijplanningPool(params: {
   status?: string
@@ -176,8 +178,8 @@ export function useCreateSnijplan() {
   return useMutation({
     mutationFn: (data: CreateSnijplanData) => createSnijplan(data),
     onSuccess: async (_result, variables) => {
-      qc.invalidateQueries({ queryKey: ['snijplanning'] })
-      qc.invalidateQueries({ queryKey: ['productie', 'dashboard'] })
+      invalidateNaSnijplanMutatie(qc)
+      invalidateNaConfectieMutatie(qc)
 
       // Auto-plan trigger: als auto-planning aan staat, trigger heroptimalisatie.
       // De horizon komt uit planningConfig.weken_vooruit (single source of truth).
@@ -205,8 +207,8 @@ export function useUpdateSnijplanStatus() {
     mutationFn: ({ id, status }: { id: number; status: Parameters<typeof updateSnijplanStatus>[1] }) =>
       updateSnijplanStatus(id, status),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['snijplanning'] })
-      qc.invalidateQueries({ queryKey: ['productie', 'dashboard'] })
+      invalidateNaSnijplanMutatie(qc)
+      invalidateNaConfectieMutatie(qc)
     },
   })
 }
@@ -217,8 +219,8 @@ export function useBatchUpdateSnijplanStatus() {
     mutationFn: ({ ids, status }: { ids: number[]; status: Parameters<typeof batchUpdateSnijplanStatus>[1] }) =>
       batchUpdateSnijplanStatus(ids, status),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['snijplanning'] })
-      qc.invalidateQueries({ queryKey: ['productie', 'dashboard'] })
+      invalidateNaSnijplanMutatie(qc)
+      invalidateNaConfectieMutatie(qc)
     },
   })
 }
@@ -229,7 +231,7 @@ export function useAssignRol() {
     mutationFn: ({ snijplanId, rolId }: { snijplanId: number; rolId: number }) =>
       assignRolToSnijplan(snijplanId, rolId),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['snijplanning'] })
+      invalidateNaSnijplanMutatie(qc)
     },
   })
 }
@@ -239,8 +241,7 @@ export function useApproveSnijvoorstel() {
   return useMutation({
     mutationFn: (snijplanIds: number[]) => approveSnijvoorstel(snijplanIds),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['snijplanning'] })
-      qc.invalidateQueries({ queryKey: ['productie', 'dashboard'] })
+      invalidateNaSnijplanMutatie(qc)
     },
   })
 }
@@ -251,8 +252,7 @@ export function useGenereerSnijvoorstel() {
     mutationFn: ({ kwaliteitCode, kleurCode, totDatum }: { kwaliteitCode: string; kleurCode: string; totDatum?: string | null }) =>
       generateSnijvoorstel(kwaliteitCode, kleurCode, totDatum),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['snijplanning'] })
-      qc.invalidateQueries({ queryKey: ['productie', 'dashboard'] })
+      invalidateNaSnijplanMutatie(qc)
     },
   })
 }
@@ -286,9 +286,7 @@ export function useKeurSnijvoorstelGoed() {
   return useMutation({
     mutationFn: (voorstelId: number) => approveVoorstelOptimalisatie(voorstelId),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['snijplanning'] })
-      qc.invalidateQueries({ queryKey: ['snijvoorstel'] })
-      qc.invalidateQueries({ queryKey: ['productie', 'dashboard'] })
+      invalidateNaSnijplanMutatie(qc)
     },
   })
 }
@@ -298,21 +296,29 @@ export function useVerwerpSnijvoorstel() {
   return useMutation({
     mutationFn: (voorstelId: number) => rejectSnijvoorstel(voorstelId),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['snijvoorstel'] })
-      qc.invalidateQueries({ queryKey: ['snijplanning'] })
+      invalidateNaSnijplanMutatie(qc)
     },
   })
 }
 
+/**
+ * Sluit een rol af: zet `snijplannen.status='Gesneden'` voor gekozen stukken,
+ * maakt reststuk-rollen, kort optioneel de originele rol in (aangebroken),
+ * rekent grondstofkosten toe. Roept de SQL-RPC `voltooi_snijplan_rol` aan.
+ *
+ * **Cross-Module invalidatie:** Confectie-views (`confectie_planning_forward`)
+ * lezen `snijplannen.status` direct; zonder `invalidateNaConfectieMutatie` blijven
+ * stukken na "Rol afsluiten" stale onder "Klaar voor confectie" tot staleTime
+ * verstrijkt. ADR-0013 (mig 246-tijdvak hotfix).
+ */
 export function useVoltooiSnijplanRol() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ rolId, gesnedenDoor, overrideRestLengte, reststukken, snijplanIds, aangebrokenLengte }: { rolId: number; gesnedenDoor?: string; overrideRestLengte?: number | null; reststukken?: import('@/lib/types/productie').ReststukRect[]; snijplanIds?: number[]; aangebrokenLengte?: number | null }) =>
       voltooiSnijplanRol(rolId, gesnedenDoor, overrideRestLengte, reststukken, snijplanIds, aangebrokenLengte),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['snijplanning'] })
-      qc.invalidateQueries({ queryKey: ['productie', 'dashboard'] })
-      qc.invalidateQueries({ queryKey: ['rollen'] })
+      invalidateNaSnijplanMutatie(qc)
+      invalidateNaConfectieMutatie(qc)
     },
   })
 }
@@ -323,8 +329,7 @@ export function useStartSnijdenRol() {
     mutationFn: ({ rolId, gebruiker }: { rolId: number; gebruiker?: string | null }) =>
       startSnijdenRol(rolId, gebruiker),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['rollen'] })
-      qc.invalidateQueries({ queryKey: ['snijplanning'] })
+      invalidateNaSnijplanMutatie(qc)
     },
   })
 }
@@ -334,8 +339,7 @@ export function usePauzeerSnijdenRol() {
   return useMutation({
     mutationFn: ({ rolId }: { rolId: number }) => pauzeerSnijdenRol(rolId),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['rollen'] })
-      qc.invalidateQueries({ queryKey: ['snijplanning'] })
+      invalidateNaSnijplanMutatie(qc)
     },
   })
 }
@@ -373,9 +377,7 @@ export function useTriggerAutoplan() {
       totDatum?: string | null
     }) => triggerAutoplan(kwaliteitCode, kleurCode, totDatum),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['snijplanning'] })
-      qc.invalidateQueries({ queryKey: ['snijvoorstel'] })
-      qc.invalidateQueries({ queryKey: ['productie', 'dashboard'] })
+      invalidateNaSnijplanMutatie(qc)
     },
   })
 }
@@ -385,8 +387,7 @@ export function useStartProductieRol() {
   return useMutation({
     mutationFn: (rolId: number) => startProductieRol(rolId),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['snijplanning'] })
-      qc.invalidateQueries({ queryKey: ['productie', 'dashboard'] })
+      invalidateNaSnijplanMutatie(qc)
     },
   })
 }

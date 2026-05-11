@@ -112,16 +112,26 @@ export function OrdersTable({ orders, isLoading, sortBy, sortDir, onSort, factur
                 {formatDate(order.orderdatum)}
               </td>
               <td className="px-4 py-3 whitespace-nowrap">
-                {(() => {
-                  const w = verzendWeekVoor(order.afleverdatum)
-                  return w ? (
-                    <span className="text-slate-900 font-medium" title={formatDate(order.afleverdatum)}>
-                      Wk {w.week} · {w.jaar}
-                    </span>
-                  ) : (
-                    <span className="text-slate-300">—</span>
-                  )
-                })()}
+                {order.lever_type === 'datum' && order.afleverdatum ? (
+                  <span
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[var(--radius-sm)] bg-terracotta-50 text-terracotta-700 text-xs font-medium"
+                    title={`Specifieke leverdag: ${formatDate(order.afleverdatum)}`}
+                  >
+                    <span aria-hidden>📅</span>
+                    {formatDate(order.afleverdatum)}
+                  </span>
+                ) : (
+                  (() => {
+                    const w = verzendWeekVoor(order.afleverdatum)
+                    return w ? (
+                      <span className="text-slate-900 font-medium" title={formatDate(order.afleverdatum)}>
+                        Wk {w.week} · {w.jaar}
+                      </span>
+                    ) : (
+                      <span className="text-slate-300">—</span>
+                    )
+                  })()
+                )}
               </td>
               <td className="px-4 py-3">
                 <Link

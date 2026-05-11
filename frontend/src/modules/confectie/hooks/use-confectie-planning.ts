@@ -4,10 +4,12 @@ import {
   fetchConfectiePlanning,
   fetchConfectiePlanningForward,
   fetchConfectieWerktijden,
+  startConfectie,
   updateConfectieWerktijd,
   type AfrondConfectieInput,
   type ConfectieWerktijd,
 } from '../queries/confectie-planning'
+import { invalidateNaConfectieMutatie } from '../cache'
 
 export function useConfectiePlanning() {
   return useQuery({
@@ -28,7 +30,25 @@ export function useAfrondConfectie() {
   return useMutation({
     mutationFn: (input: AfrondConfectieInput) => afrondConfectie(input),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['confectie-planning'] })
+      invalidateNaConfectieMutatie(qc)
+      // Snijplanning leest niet rechtstreeks confectie-status, maar `snijplannen.status`
+      // flipt naar 'Ingepakt'/'In confectie' via de RPC — dus snijplanning-views moeten
+      // ook refreshen. Producer-Module-import zou hier cycle creëren; inline blijft.
+      qc.invalidateQueries({ queryKey: ['snijplanning'] })
+      // Magazijn-pickbaarheid leest `snijplannen.status='Ingepakt'` (mig 170) —
+      // wanneer voltooi_confectie p_ingepakt=true zet, moet Pick & Ship het stuk
+      // direct kunnen ophalen zonder hard refresh.
+      qc.invalidateQueries({ queryKey: ['magazijn'] })
+    },
+  })
+}
+
+export function useStartConfectie() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (snijplanId: number) => startConfectie(snijplanId),
+    onSuccess: () => {
+      invalidateNaConfectieMutatie(qc)
       qc.invalidateQueries({ queryKey: ['snijplanning'] })
     },
   })

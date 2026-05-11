@@ -19,6 +19,8 @@ export interface OrderRow {
   heeft_unmatched_regels?: boolean
   bron_systeem?: string | null
   bron_shop?: string | null
+  /** ADR 0014 / mig 244 — overzicht toont 'Wk X · YYYY' bij 'week', dag-badge bij 'datum'. */
+  lever_type?: 'week' | 'datum'
 }
 
 export interface OrderDetail extends OrderRow {
@@ -43,6 +45,10 @@ export interface OrderDetail extends OrderRow {
   vertegenw_naam?: string
   lever_modus: 'deelleveringen' | 'in_een_keer' | null
   afhalen: boolean
+  /** ADR 0014 / mig 244: 'week' = ergens binnen de leverweek (B2B-default);
+   *  'datum' = specifieke leverdag-belofte (B2C, prominentere weergave + striktere
+   *  pick-horizon + snij-prioriteit). */
+  lever_type: 'week' | 'datum'
   verzonden_at: string | null
 }
 
@@ -79,9 +85,14 @@ export interface OrderRegel {
   maatwerk_vorm?: string | null
   maatwerk_lengte_cm?: number | null
   maatwerk_breedte_cm?: number | null
+  maatwerk_diameter_cm?: number | null
   maatwerk_afwerking?: string | null
   maatwerk_band_kleur?: string | null
   maatwerk_instructies?: string | null
+  maatwerk_m2_prijs?: number | null
+  maatwerk_oppervlak_m2?: number | null
+  maatwerk_vorm_toeslag?: number | null
+  maatwerk_afwerking_prijs?: number | null
   // Productie tracking
   snijplannen?: OrderRegelSnijplan[]
 }
@@ -226,7 +237,7 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
 
   const { data, error } = await supabase
     .from('order_regels')
-    .select('id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2, orderaantal, te_leveren, backorder, prijs, korting_pct, bedrag, gewicht_kg, vrije_voorraad, fysiek_artikelnr, omstickeren, is_maatwerk, maatwerk_vorm, maatwerk_lengte_cm, maatwerk_breedte_cm, maatwerk_afwerking, maatwerk_band_kleur, maatwerk_instructies, producten!order_regels_artikelnr_fkey(kwaliteit_code, kleur_code)')
+    .select('id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2, orderaantal, te_leveren, backorder, prijs, korting_pct, bedrag, gewicht_kg, vrije_voorraad, fysiek_artikelnr, omstickeren, is_maatwerk, maatwerk_vorm, maatwerk_lengte_cm, maatwerk_breedte_cm, maatwerk_diameter_cm, maatwerk_afwerking, maatwerk_band_kleur, maatwerk_instructies, maatwerk_m2_prijs, maatwerk_oppervlak_m2, maatwerk_vorm_toeslag, maatwerk_afwerking_prijs, producten!order_regels_artikelnr_fkey(kwaliteit_code, kleur_code)')
     .eq('order_id', orderId)
     .order('regelnummer')
 
@@ -281,9 +292,14 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
       maatwerk_vorm: row.maatwerk_vorm ?? null,
       maatwerk_lengte_cm: row.maatwerk_lengte_cm ?? null,
       maatwerk_breedte_cm: row.maatwerk_breedte_cm ?? null,
+      maatwerk_diameter_cm: row.maatwerk_diameter_cm ?? null,
       maatwerk_afwerking: row.maatwerk_afwerking ?? null,
       maatwerk_band_kleur: row.maatwerk_band_kleur ?? null,
       maatwerk_instructies: row.maatwerk_instructies ?? null,
+      maatwerk_m2_prijs: row.maatwerk_m2_prijs ?? null,
+      maatwerk_oppervlak_m2: row.maatwerk_oppervlak_m2 ?? null,
+      maatwerk_vorm_toeslag: row.maatwerk_vorm_toeslag ?? null,
+      maatwerk_afwerking_prijs: row.maatwerk_afwerking_prijs ?? null,
     }
   }
 

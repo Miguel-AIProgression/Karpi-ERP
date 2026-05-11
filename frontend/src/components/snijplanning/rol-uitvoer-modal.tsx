@@ -17,22 +17,35 @@ import {
   useStartSnijdenRol,
   usePauzeerSnijdenRol,
   useVoltooiSnijplanRol,
-} from '@/hooks/use-snijplanning'
+  mapSnijplannenToStukken,
+  computeReststukkenAngebrokenAfval,
+  buildSnijVolgorde,
+  type PlacementInput,
+  type KnifeOperation,
+  type Rij,
+} from '@/modules/snijplanning'
 import { useRolDetail } from '@/hooks/use-rollen'
 import { ReststukStickerLayout } from './reststuk-sticker-layout'
-import { mapSnijplannenToStukken } from '@/lib/utils/snijplan-mapping'
-import {
-  computeReststukkenAngebrokenAfval,
-} from '@/lib/utils/compute-reststukken'
 import { cn } from '@/lib/utils/cn'
 import { AFWERKING_MAP } from '@/lib/utils/constants'
-import { buildSnijVolgorde, type PlacementInput } from '@/lib/snij-volgorde/derive'
-import type { KnifeOperation, Rij } from '@/lib/snij-volgorde/types'
 
 interface RolUitvoerModalProps {
   rolId: number | null
   open: boolean
   onClose: () => void
+}
+
+// Supabase PostgrestError is geen Error-instance, dus `err instanceof Error`
+// faalt; we extraheren message/details/hint/code zodat de echte DB-fout in de
+// UI verschijnt i.p.v. "Onbekende fout".
+function extractErrorMessage(err: unknown, fallback = 'Onbekende fout'): string {
+  if (err instanceof Error) return err.message
+  if (err && typeof err === 'object') {
+    const e = err as { message?: string; details?: string; hint?: string; code?: string }
+    const parts = [e.message, e.details, e.hint].filter(Boolean)
+    if (parts.length > 0) return e.code ? `${parts.join(' — ')} (${e.code})` : parts.join(' — ')
+  }
+  return fallback
 }
 
 // ---------------------------------------------------------------------------
@@ -403,7 +416,7 @@ export function RolUitvoerModal({ rolId, open, onClose }: RolUitvoerModalProps) 
           )
           setTimeout(() => onClose(), 1200)
         },
-        onError: (err) => setError(err instanceof Error ? err.message : 'Onbekende fout'),
+        onError: (err) => setError(extractErrorMessage(err)),
       },
     )
   }
@@ -447,7 +460,7 @@ export function RolUitvoerModal({ rolId, open, onClose }: RolUitvoerModalProps) 
       setStartedRolId(null)
       onClose()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Fout bij pauzeren')
+      setError(extractErrorMessage(err, 'Fout bij pauzeren'))
     }
   }
 

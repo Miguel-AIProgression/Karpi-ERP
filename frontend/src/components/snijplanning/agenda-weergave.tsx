@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { AlertTriangle, Calendar } from 'lucide-react'
-import { useAlleSnijden } from '@/hooks/use-snijplanning'
+import { useAlleSnijden } from '@/modules/snijplanning'
 import { usePlanningConfig } from '@/hooks/use-planning-config'
 import { berekenTotDatum } from '@/components/snijplanning/week-filter'
 import { berekenAgenda, type RolBlok, type Werktijden } from '@/lib/utils/bereken-agenda'

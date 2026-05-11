@@ -29,6 +29,7 @@ import { resolveScenario } from '../_shared/levertijd-resolver.ts'
 import {
   berekenSnijAgenda,
   STANDAARD_WERKTIJDEN,
+  werkdagMinN,
   type RolAgendaInput,
 } from '../_shared/werkagenda.ts'
 import { evalueerSpoed } from '../_shared/spoed-check.ts'
@@ -67,6 +68,7 @@ const DEFAULT_CONFIG: LevertijdConfig = {
   spoed_buffer_uren: 4,
   spoed_toeslag_bedrag: 50,
   spoed_product_id: 'SPOEDTOESLAG',
+  dag_order_snij_buffer_werkdagen: 2,
 }
 
 async function fetchConfig(supabase: SupabaseClient): Promise<LevertijdConfig> {
@@ -88,6 +90,7 @@ async function fetchConfig(supabase: SupabaseClient): Promise<LevertijdConfig> {
       if (typeof w.spoed_buffer_uren === 'number') cfg.spoed_buffer_uren = w.spoed_buffer_uren
       if (typeof w.spoed_toeslag_bedrag === 'number') cfg.spoed_toeslag_bedrag = w.spoed_toeslag_bedrag
       if (typeof w.spoed_product_id === 'string') cfg.spoed_product_id = w.spoed_product_id
+      if (typeof w.dag_order_snij_buffer_werkdagen === 'number') cfg.dag_order_snij_buffer_werkdagen = w.dag_order_snij_buffer_werkdagen
     } else if (row.sleutel === 'order_config') {
       const w = row.waarde
       if (typeof w.maatwerk_weken === 'number') cfg.maatwerk_weken = w.maatwerk_weken
@@ -268,6 +271,7 @@ serve(async (req) => {
   try {
     const body: CheckLevertijdRequest = await req.json()
     const { kwaliteit_code, kleur_code, lengte_cm, breedte_cm, vorm, gewenste_leverdatum } = body
+    const lever_type: 'week' | 'datum' = body.lever_type === 'datum' ? 'datum' : 'week'
 
     // ---- Validatie ----
     if (!kwaliteit_code || !kleur_code) {
@@ -352,7 +356,14 @@ serve(async (req) => {
     const match = kiesBesteMatch({ kandidaten, logistieke_buffer_dagen: cfg.logistieke_buffer_dagen })
 
     // ---- Stap 2: Capaciteit voor nieuwe rol ----
-    const startDatum = gewenste_leverdatum ?? defaultGewensteDatum(cfg.maatwerk_weken)
+    // ADR 0014: voor dag-orders rekenen we de capaciteits-startweek vanaf de
+    // strikere kritieke deadline (afleverdatum − dag_order_snij_buffer_werkdagen),
+    // zodat de snijplanning vroeg genoeg start. Week-orders blijven op de
+    // bestaande kalenderbuffer-flow staan.
+    const baseLeverDatum = gewenste_leverdatum ?? defaultGewensteDatum(cfg.maatwerk_weken)
+    const startDatum = lever_type === 'datum' && gewenste_leverdatum
+      ? werkdagMinN(gewenste_leverdatum, cfg.dag_order_snij_buffer_werkdagen, STANDAARD_WERKTIJDEN)
+      : baseLeverDatum
     const snij = snijWeekVoorLever(startDatum)
     const capaciteit = await capaciteitsCheck({
       start_week: snij.week,

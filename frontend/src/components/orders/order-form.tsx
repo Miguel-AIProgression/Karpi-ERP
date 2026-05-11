@@ -13,7 +13,7 @@ import type { OrderFormData, OrderRegelFormData, PrijsBron, PrijsBreakdown } fro
 import { fetchKlanteigenNaam } from '@/modules/debiteuren'
 import { supabase } from '@/lib/supabase/client'
 import { fetchOrderConfig } from '@/lib/supabase/queries/order-config'
-import { triggerAutoplan, fetchAutoplanningConfig } from '@/lib/supabase/queries/auto-planning'
+import { triggerAutoplan, fetchAutoplanningConfig } from '@/modules/snijplanning'
 import { berekenMaatwerkAfleverdatumViaSeam } from '@/modules/maatwerk'
 import {
   verzendWeekIsoString,
@@ -154,6 +154,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
         afl_postcode: c.postcode ?? undefined,
         afl_plaats: c.plaats ?? undefined,
         afl_land: c.land ?? 'NL',
+        lever_type: h.lever_type ?? c.default_lever_type ?? 'week',
       }))
       applyAfleverdatum(regels, c)
 
@@ -588,8 +589,13 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
       {/* Header fields */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Field label="Klant referentie" value={header.klant_referentie} onChange={(v) => setHeader({ ...header, klant_referentie: v })} />
-        <VerzendweekField
+        <LeverDatumField
+          leverType={header.lever_type ?? 'week'}
           afleverdatum={header.afleverdatum}
+          onLeverTypeChange={(nieuw) => {
+            setAfleverdatumOverridden(true)
+            setHeader((h) => ({ ...h, lever_type: nieuw }))
+          }}
           onChange={(nieuweDatum, weekNr) => {
             setAfleverdatumOverridden(true)
             setHeader({ ...header, afleverdatum: nieuweDatum, week: weekNr })
@@ -804,62 +810,117 @@ function Field({ label, value, onChange, type = 'text' }: {
 }
 
 /**
- * Verzendweek-input. Karpi communiceert leverbeloftes als ISO-week (niet als
- * specifieke dag) — de onderliggende `orders.afleverdatum` blijft een DATE
- * (vrijdag van de gekozen week), zodat bestaande logica (mig 153 IO-claim sync,
- * pick & ship bucket, levertijd-berekening) ongewijzigd blijft.
+ * Lever-datum-input (ADR 0014 / mig 244). Twee modi:
+ *   - 'week' (B2B-default): ISO-week-picker. `afleverdatum` = vrijdag van de gekozen
+ *     week. Bundel-/factuur-/pick-flow ongewijzigd.
+ *   - 'datum' (B2C): date-picker. `afleverdatum` = exact die dag. Pick & Ship laat
+ *     de order pas 1 werkdag vóór die dag verschijnen; snij-planning krijgt 'm
+ *     2 werkdagen eerder kritiek.
  *
- * Gebruikt HTML5 `<input type="week">` voor native ISO-week-picker mét correct
- * gedrag rond jaarwisseling.
+ * Toggle bovenaan; week-picker gebruikt HTML5 `<input type="week">` voor native
+ * ISO-week-picker met correct gedrag rond jaarwisseling.
  */
-function VerzendweekField({
+function LeverDatumField({
+  leverType,
   afleverdatum,
+  onLeverTypeChange,
   onChange,
 }: {
+  leverType: 'week' | 'datum'
   afleverdatum?: string
+  onLeverTypeChange: (nieuw: 'week' | 'datum') => void
   onChange: (nieuweDatum: string | undefined, weekNr: string | undefined) => void
 }) {
   const weekString = verzendWeekIsoString(afleverdatum ?? null)
   const info = verzendWeekVoor(afleverdatum ?? null)
   const vandaagDate = new Date()
-  // ISO-formaat in lokale tijd — voorkomt off-by-one rond middernacht UTC.
   const vandaagIso =
     `${vandaagDate.getFullYear()}-${String(vandaagDate.getMonth() + 1).padStart(2, '0')}-` +
     String(vandaagDate.getDate()).padStart(2, '0')
   const huidigeWeek = verzendWeekVoor(vandaagIso)
   const relatief = verzendWeekRelatief(afleverdatum ?? null, vandaagDate)
+  const isWeek = leverType === 'week'
   return (
     <div>
       <div className="flex items-baseline justify-between mb-1">
-        <label className="block text-sm font-medium text-slate-700">Verzendweek</label>
+        <label className="block text-sm font-medium text-slate-700">
+          {isWeek ? 'Verzendweek' : 'Leverdatum'}
+        </label>
         {huidigeWeek && (
           <span className="text-xs text-slate-500">
             Vandaag: <span className="font-medium text-slate-700">Wk {huidigeWeek.week} · {huidigeWeek.jaar}</span>
           </span>
         )}
       </div>
-      <input
-        type="week"
-        value={weekString}
-        onChange={(e) => {
-          const value = e.target.value
-          if (!value) {
-            onChange(undefined, undefined)
-            return
-          }
-          const nieuweDatum = verzendWeekStringToDatum(value)
-          if (!nieuweDatum) return
-          const week = verzendWeekVoor(nieuweDatum)
-          onChange(nieuweDatum, week ? String(week.week) : undefined)
-        }}
-        className="w-full px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
-      />
+      <div className="flex items-center gap-1 mb-2 p-0.5 bg-slate-100 rounded-[var(--radius-sm)] w-fit">
+        <button
+          type="button"
+          onClick={() => onLeverTypeChange('week')}
+          className={`px-3 py-1 text-xs font-medium rounded-[calc(var(--radius-sm)-2px)] transition ${
+            isWeek ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          Per week
+        </button>
+        <button
+          type="button"
+          onClick={() => onLeverTypeChange('datum')}
+          className={`px-3 py-1 text-xs font-medium rounded-[calc(var(--radius-sm)-2px)] transition ${
+            !isWeek ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          Op datum
+        </button>
+      </div>
+      {isWeek ? (
+        <input
+          type="week"
+          value={weekString}
+          onChange={(e) => {
+            const value = e.target.value
+            if (!value) {
+              onChange(undefined, undefined)
+              return
+            }
+            const nieuweDatum = verzendWeekStringToDatum(value)
+            if (!nieuweDatum) return
+            const week = verzendWeekVoor(nieuweDatum)
+            onChange(nieuweDatum, week ? String(week.week) : undefined)
+          }}
+          className="w-full px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
+        />
+      ) : (
+        <input
+          type="date"
+          value={afleverdatum ?? ''}
+          onChange={(e) => {
+            const value = e.target.value
+            if (!value) {
+              onChange(undefined, undefined)
+              return
+            }
+            const week = verzendWeekVoor(value)
+            onChange(value, week ? String(week.week) : undefined)
+          }}
+          className="w-full px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
+        />
+      )}
       {info && (
         <p className="mt-1 text-xs text-slate-500">
-          Wk {info.week} · {info.jaar}
-          {relatief && <span className="text-slate-400"> ({relatief})</span>}
-          {' — gepickt in week '}
-          {info.week - 1 || 52}
+          {isWeek ? (
+            <>
+              Wk {info.week} · {info.jaar}
+              {relatief && <span className="text-slate-400"> ({relatief})</span>}
+              {' — gepickt in week '}
+              {info.week - 1 || 52}
+            </>
+          ) : (
+            <>
+              Levering op specifieke dag — Wk {info.week} · {info.jaar}
+              {relatief && <span className="text-slate-400"> ({relatief})</span>}
+              {' — verschijnt in Pick & Ship 1 werkdag vóór levering'}
+            </>
+          )}
         </p>
       )}
     </div>

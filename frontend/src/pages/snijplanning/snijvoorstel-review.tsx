@@ -8,7 +8,7 @@ import {
   useSnijplannenVoorGroep,
   useKeurSnijvoorstelGoed,
   useVerwerpSnijvoorstel,
-} from '@/hooks/use-snijplanning'
+} from '@/modules/snijplanning'
 import { usePlanningConfig } from '@/hooks/use-planning-config'
 import type {
   SnijvoorstelResponse,

@@ -1,4 +1,4 @@
-import { supabase } from '../client'
+import { supabase } from '@/lib/supabase/client'
 
 export interface AutoPlanningConfig {
   enabled: boolean

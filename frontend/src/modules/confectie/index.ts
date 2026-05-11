@@ -18,6 +18,7 @@ export {
   useConfectiePlanning,
   useConfectieWerktijden,
   useAfrondConfectie,
+  useStartConfectie,
   useUpdateConfectieWerktijd,
   useConfectiePlanningForward,
 } from './hooks/use-confectie-planning'
@@ -54,3 +55,6 @@ export {
   bezettingPerWeek,
 } from './lib/forward-planner'
 export type { Bezetting, LaneWerktijd } from './lib/forward-planner'
+
+// Cache seam (cross-Module invalidation — ADR-0012)
+export { invalidateNaConfectieMutatie } from './cache'

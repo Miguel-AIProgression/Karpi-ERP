@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Zap, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
-import { useAutoplanningConfig, useUpdateAutoplanningConfig } from '@/hooks/use-snijplanning'
+import { useAutoplanningConfig, useUpdateAutoplanningConfig } from '@/modules/snijplanning'
 
 export function AutoPlanningConfig() {
   const { data: config, isLoading } = useAutoplanningConfig()

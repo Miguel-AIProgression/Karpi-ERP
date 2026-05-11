@@ -6,6 +6,8 @@ import {
   opboekenItem,
 } from '@/lib/supabase/queries/scanstation'
 import type { ScanActie } from '@/lib/types/productie'
+import { invalidateNaSnijplanMutatie } from '@/modules/snijplanning'
+import { invalidateNaConfectieMutatie } from '@/modules/confectie'
 
 export function useLookupScancode() {
   return useMutation({
@@ -34,8 +36,8 @@ export function useOpboekenItem() {
     mutationFn: (snijplanId: number) => opboekenItem(snijplanId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['scanstation'] })
-      qc.invalidateQueries({ queryKey: ['snijplanning'] })
-      qc.invalidateQueries({ queryKey: ['productie', 'dashboard'] })
+      invalidateNaSnijplanMutatie(qc)
+      invalidateNaConfectieMutatie(qc)
     },
   })
 }

@@ -151,6 +151,20 @@ export function DebiteurDetailPage() {
     onError: showError('Deelleveringen'),
   })
 
+  const leverTypeMutation = useMutation({
+    mutationFn: async (nieuw: 'week' | 'datum') => {
+      const { error } = await supabase
+        .from('debiteuren')
+        .update({ default_lever_type: nieuw })
+        .eq('debiteur_nr', debiteurNr)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['klanten', debiteurNr] })
+    },
+    onError: showError('Standaard lever-type'),
+  })
+
   const verzendDrempelMutation = useMutation({
     mutationFn: async (newValue: number) => {
       const { error } = await supabase
@@ -501,6 +515,37 @@ export function DebiteurDetailPage() {
               <span className="text-slate-700">
                 {klant.deelleveringen_toegestaan ? 'Aan' : 'Uit'}
               </span>
+            </div>
+          </div>
+
+          {/* Standaard lever-type (segmented) — ADR 0014 / mig 244 */}
+          <div>
+            <div className="text-xs text-slate-400 mb-1">Standaard levering</div>
+            <div className="inline-flex items-center gap-1 p-0.5 bg-slate-100 rounded-[var(--radius-sm)]">
+              <button
+                type="button"
+                onClick={() => leverTypeMutation.mutate('week')}
+                disabled={leverTypeMutation.isPending || klant.default_lever_type === 'week'}
+                className={`px-3 py-1 text-xs font-medium rounded-[calc(var(--radius-sm)-2px)] transition disabled:cursor-default ${
+                  klant.default_lever_type === 'week'
+                    ? 'bg-white text-slate-800 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Per week
+              </button>
+              <button
+                type="button"
+                onClick={() => leverTypeMutation.mutate('datum')}
+                disabled={leverTypeMutation.isPending || klant.default_lever_type === 'datum'}
+                className={`px-3 py-1 text-xs font-medium rounded-[calc(var(--radius-sm)-2px)] transition disabled:cursor-default ${
+                  klant.default_lever_type === 'datum'
+                    ? 'bg-white text-slate-800 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Op datum
+              </button>
             </div>
           </div>
           </div>

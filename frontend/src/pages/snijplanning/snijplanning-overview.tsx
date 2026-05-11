@@ -6,7 +6,7 @@ import { RolUitvoerModal } from '@/components/snijplanning/rol-uitvoer-modal'
 import { AutoPlanningConfig } from '@/components/snijplanning/auto-planning-config'
 import { AgendaWeergave } from '@/components/snijplanning/agenda-weergave'
 import { cn } from '@/lib/utils/cn'
-import { useSnijplanningGroepen, useTekortAnalyse, useSnijplanningKpis } from '@/hooks/use-snijplanning'
+import { useSnijplanningGroepen, useTekortAnalyse, useSnijplanningKpis } from '@/modules/snijplanning'
 import { usePlanningConfig } from '@/hooks/use-planning-config'
 import { berekenTotDatum } from '@/components/snijplanning/week-filter'
 

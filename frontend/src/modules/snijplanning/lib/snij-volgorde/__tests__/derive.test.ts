@@ -11,7 +11,7 @@
 //   * ZO-marge (synthetisch) — rechthoek met ZO-afwerking, +6 cm marge.
 
 import { describe, it, expect } from 'vitest'
-import { buildSnijVolgorde, type PlacementInput } from './derive'
+import { buildSnijVolgorde, type PlacementInput } from '../derive'
 
 const EMPTY_REST = {
   reststukken: [],

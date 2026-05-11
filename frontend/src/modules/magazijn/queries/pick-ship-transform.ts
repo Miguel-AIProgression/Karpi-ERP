@@ -50,6 +50,9 @@ export interface OrderHeaderRij {
    *  (deellevering van de pickbare regels), of pas zichtbaar wordt zodra
    *  alle regels gepickt kunnen worden. */
   deelleveringen_toegestaan: boolean
+  /** ADR 0014 / mig 244: 'datum' = pick-horizon = 1 werkdag vóór afleverdatum;
+   *  'week' = direct zichtbaar zodra pickbaar. */
+  lever_type: 'week' | 'datum'
 }
 
 export function initPickShipOrders(
@@ -72,6 +75,7 @@ export function initPickShipOrders(
       afl_land: h.afl_land,
       afleverdatum: h.afleverdatum,
       afhalen: h.afhalen,
+      lever_type: h.lever_type,
       bucket: bucketVoor(h.afleverdatum, vandaag),
       verzend_week_sleutel: verzendWeekSleutel(h.afleverdatum),
       verzend_week_label: verzendWeekLabel(h.afleverdatum),

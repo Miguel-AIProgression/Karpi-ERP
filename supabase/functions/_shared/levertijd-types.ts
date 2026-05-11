@@ -13,6 +13,9 @@ export interface CheckLevertijdRequest {
   vorm?: 'rechthoek' | 'rond' | string
   gewenste_leverdatum?: string | null  // ISO YYYY-MM-DD
   debiteur_nr?: number | null
+  /** ADR 0014: 'datum' = strikere snij-deadline (= leverdatum − dag_order_snij_buffer_werkdagen).
+   *  Default 'week' = bestaande logistieke_buffer_dagen-pad. */
+  lever_type?: 'week' | 'datum'
 }
 
 export type LevertijdScenario =
@@ -87,6 +90,8 @@ export interface LevertijdConfig {
   spoed_buffer_uren: number             // bv. 4 (min vrije uren per week voor spoed)
   spoed_toeslag_bedrag: number          // bv. 50 (€ vast bedrag)
   spoed_product_id: string              // bv. 'SPOEDTOESLAG'
+  /** ADR 0014 / mig 244: snij-buffer voor dag-orders (werkdagen vóór afleverdatum). */
+  dag_order_snij_buffer_werkdagen: number  // bv. 2
 }
 
 // Snijplan-record gebruikt door reconstructShelves (één plaatsing op een rol).
