@@ -98,7 +98,6 @@ export function StartPickrondesButton({
   const pickbareOrders = useMemo(() => orders.filter(isPickbaar), [orders])
   const aantal = pickbareOrders.length
   const aantalOverig = orders.length - aantal
-  const heeftAfhalen = pickbareOrders.some((o) => o.afhalen)
   const heeftVerzend = pickbareOrders.some((o) => !o.afhalen)
   const heeftActieveVervoerder = vervoerders.some((v) => v.actief)
   const vervoerderOk = !heeftVerzend || heeftActieveVervoerder

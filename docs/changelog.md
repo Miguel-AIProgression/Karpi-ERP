@@ -1,5 +1,15 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-11 — Pick & Ship: dag-orders als aparte top-sectie
+
+Op de Pick & Ship-overview verdwenen dag-orders (`lever_type='datum'`, ADR-0014) tussen de week-orders binnen dezelfde verzendweek-groep. Bijvoorbeeld ORD-2026-2052 met afleverdatum "di 12-05" stond gemengd met de twee Floorpassion-week-orders in dezelfde Week 20-bucket — het kalender-badge op de card was de enige aanwijzing dat het om een specifieke leverdag ging. Voor de magazijnier maakt dat onderscheid juist het verschil: dag-orders hebben een harde afleverdag-belofte en moeten daadwerkelijk vandaag of morgen de deur uit.
+
+**Implementatie:** nieuwe component [`PickDagOrdersSectie`](../frontend/src/modules/magazijn/components/pick-dag-orders-sectie.tsx) rendert dag-orders in een eigen terracotta-omkaderde sectie bovenaan de overview, gesorteerd op afleverdatum ASC. De `KlantClusterBlok` is geëxtraheerd naar [eigen bestand](../frontend/src/modules/magazijn/components/klant-cluster-blok.tsx) en wordt door zowel `PickWeekSectie` als de nieuwe dag-sectie hergebruikt — bundel-clustering, land-groepering en pickronde-start-knop werken identiek voor beide. In [`pick-overview.tsx`](../frontend/src/modules/magazijn/pages/pick-overview.tsx) wordt het na-vervoerder-filter gesplitst in `dagOrders` / `weekOrders`; de bestaande `perWeek`-groepering ontvangt alleen nog week-orders.
+
+**Effect:** dag-orders staan visueel boven aan met urgent-terracotta kop "Op leverdatum"; de week-buckets eronder zijn nu zuiver week-orders. Dag-orders die binnen dezelfde 4D-bundel-sleutel vallen (debiteur × adres × vervoerder × ISO-week) clusteren onverminderd door — een bundel-zending met gemengde dag/week-orders is fysiek nog steeds één rit.
+
+**Verificatie:** open `/pick-ship` met minimaal één order met `lever_type='datum'` waarvan de pick-horizon is geraakt (≤1 werkdag vóór afleverdatum). De order verschijnt boven aan in een terracotta-omkaderde "Op leverdatum"-sectie; week-orders staan in hun eigen "Te picken in week N · Verzendweek M"-secties eronder. Dag-orders met dezelfde adres+vervoerder+ISO-week bundelen normaal samen.
+
 ## 2026-05-11 — Hotfix: `voltooi_confectie` gooit `column "status" is of type snijplan_status but expression is of type text`
 
 **Symptoom:** in de Confectielijst gaf "Afronden" met checkbox Ingepakt aan een Supabase-fout `column "status" is of type snijplan_status but expression is of type text` — de modal hing op het inboeken, het stuk verscheen niet in Pick & Ship.
