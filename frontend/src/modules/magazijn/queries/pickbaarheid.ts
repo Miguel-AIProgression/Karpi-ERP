@@ -264,7 +264,7 @@ async function fetchActievePickrondes(
       console.error('[pickbaarheid] fetchActievePickrondes zending_orders-query error', error)
       throw error
     }
-    for (const row of (data ?? []) as Array<{
+    for (const row of (data ?? []) as unknown as Array<{
       order_id: number
       zendingen: { id: number; zending_nr: string; picker_id: number | null; status: string } | null
     }>) {
