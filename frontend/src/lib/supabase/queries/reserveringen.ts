@@ -85,42 +85,18 @@ export interface HandmatigeKeuzePerRegel {
 /**
  * Haalt alle actieve, handmatige uitwisselbaar-claims voor een order op,
  * gegroepeerd per orderregel — gebruikt om edit-mode te hydrateren met de
- * bestaande gebruiker-keuzes.
+ * bestaande gebruiker-keuzes. Eén RPC-call (mig 239) ipv 3 sequentiële queries.
  */
 export async function fetchHandmatigeKeuzesVoorOrder(orderId: number): Promise<HandmatigeKeuzePerRegel[]> {
-  const { data: regels } = await supabase
-    .from('order_regels')
-    .select('id')
-    .eq('order_id', orderId)
-  const regelIds = ((regels ?? []) as { id: number }[]).map(r => r.id)
-  if (regelIds.length === 0) return []
-
-  const { data: claims, error } = await supabase
-    .from('order_reserveringen')
-    .select('order_regel_id, fysiek_artikelnr, aantal')
-    .eq('status', 'actief')
-    .eq('is_handmatig', true)
-    .in('order_regel_id', regelIds)
+  const { data, error } = await supabase.rpc('handmatige_keuzes_voor_order', {
+    p_order_id: orderId,
+  })
   if (error) throw error
-
-  const claimRows = ((claims ?? []) as { order_regel_id: number; fysiek_artikelnr: string | null; aantal: number }[])
-    .filter(c => !!c.fysiek_artikelnr)
-  if (claimRows.length === 0) return []
-
-  const artikelnrs = [...new Set(claimRows.map(c => c.fysiek_artikelnr as string))]
-  const { data: producten } = await supabase
-    .from('producten')
-    .select('artikelnr, omschrijving')
-    .in('artikelnr', artikelnrs)
-  const omschrijvingMap = new Map<string, string>(
-    ((producten ?? []) as { artikelnr: string; omschrijving: string }[]).map(p => [p.artikelnr, p.omschrijving]),
-  )
-
-  return claimRows.map(c => ({
-    order_regel_id: c.order_regel_id,
-    artikelnr: c.fysiek_artikelnr as string,
-    aantal: c.aantal,
-    omschrijving: omschrijvingMap.get(c.fysiek_artikelnr as string) ?? c.fysiek_artikelnr as string,
+  return ((data ?? []) as HandmatigeKeuzePerRegel[]).map(r => ({
+    order_regel_id: r.order_regel_id,
+    artikelnr: r.artikelnr,
+    aantal: r.aantal,
+    omschrijving: r.omschrijving,
   }))
 }
 
