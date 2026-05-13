@@ -99,12 +99,11 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
             {order.lever_type === 'datum' ? 'Leverdatum' : 'Verzendweek'}
           </span>
           {order.lever_type === 'datum' && order.afleverdatum ? (
-            <p className="font-medium flex items-center gap-1.5">
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[var(--radius-sm)] bg-terracotta-50 text-terracotta-700 text-xs font-medium">
-                <span aria-hidden>📅</span>
+            <p className="flex items-center gap-1.5">
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded-[var(--radius-sm)] bg-terracotta-50 text-terracotta-700 text-xs font-semibold">
                 Specifieke dag
               </span>
-              <span>{formatDate(order.afleverdatum)}</span>
+              <span className="font-semibold text-terracotta-700">{formatDate(order.afleverdatum)}</span>
               {relatief && (
                 <span className="text-xs font-normal text-slate-400">({relatief})</span>
               )}

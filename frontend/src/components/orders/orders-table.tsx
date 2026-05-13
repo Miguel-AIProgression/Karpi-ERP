@@ -1,12 +1,12 @@
-import { Fragment, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowUp, ArrowDown, ArrowUpDown, AlertCircle, Package, ChevronRight, ChevronDown } from 'lucide-react'
+import { ArrowUp, ArrowDown, ArrowUpDown, AlertCircle } from 'lucide-react'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { formatCurrency, formatDate } from '@/lib/utils/formatters'
 import { verzendWeekVoor } from '@/lib/orders/verzendweek'
+import { cn } from '@/lib/utils/cn'
 import type { OrderRow, OrderSortField, SortDirection } from '@/lib/supabase/queries/orders'
 import type { FactuurVoorOrder } from '@/modules/facturatie'
-import { useBundelGroupedOrders, type OrdersListItem } from './use-bundel-grouped-orders'
+import { useBundelGroupedOrders } from './use-bundel-grouped-orders'
 
 interface OrdersTableProps {
   orders: OrderRow[]
@@ -95,10 +95,9 @@ function VerzendweekCel({ order }: { order: OrderRow }) {
   if (order.lever_type === 'datum' && order.afleverdatum) {
     return (
       <span
-        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[var(--radius-sm)] bg-terracotta-50 text-terracotta-700 text-xs font-medium"
+        className="font-semibold text-terracotta-700"
         title={`Specifieke leverdag: ${formatDate(order.afleverdatum)}`}
       >
-        <span aria-hidden>📅</span>
         {formatDate(order.afleverdatum)}
       </span>
     )
@@ -113,21 +112,50 @@ function VerzendweekCel({ order }: { order: OrderRow }) {
   )
 }
 
-function OrderRowCells({ order, indent = false, facturenPerOrder }: {
+interface BundelContext {
+  zendingNr: string
+  positie: 'enkele' | 'eerste' | 'midden' | 'laatste'
+  anderOrderNrs: string[]
+}
+
+function OrderTr({ order, bundel, facturenPerOrder }: {
   order: OrderRow
-  indent?: boolean
+  bundel: BundelContext | null
   facturenPerOrder?: Map<number, FactuurVoorOrder[]>
 }) {
+  // Bundel-styling: dunne linker-border in terracotta voor alle bundel-orders.
+  // Eerste/laatste krijgen iets meer ademruimte; midden-orders sluiten aan.
+  const rowClass = cn(
+    'border-b border-slate-50 hover:bg-slate-50 transition-colors',
+    bundel && 'bg-terracotta-50/30 hover:bg-terracotta-50/50',
+  )
+
+  // Eerste cel krijgt linker-accent zodra de order in een bundel zit.
+  const firstCellClass = cn(
+    'px-4 py-3',
+    bundel && 'border-l-[3px] border-terracotta-300',
+  )
+
+  const toonBundelChip = bundel && (bundel.positie === 'eerste' || bundel.positie === 'enkele')
+
   return (
-    <>
-      <td className={`px-4 py-3 ${indent ? 'pl-10 border-l-2 border-terracotta-200' : ''}`}>
-        <div className="flex items-center gap-2">
+    <tr className={rowClass}>
+      <td className={firstCellClass}>
+        <div className="flex items-center gap-2 flex-wrap">
           <Link
             to={`/orders/${order.id}`}
             className="text-terracotta-500 hover:underline font-medium"
           >
             {order.order_nr}
           </Link>
+          {toonBundelChip && bundel && (
+            <span
+              className="inline-flex items-center px-1.5 py-0.5 rounded-[var(--radius-sm)] bg-terracotta-100 text-terracotta-700 text-[11px] font-medium"
+              title={`Gebundeld verzonden in ${bundel.zendingNr}${bundel.anderOrderNrs.length > 0 ? ` · samen met ${bundel.anderOrderNrs.join(', ')}` : ''}`}
+            >
+              {bundel.zendingNr}
+            </span>
+          )}
           {order.heeft_unmatched_regels && (
             <span
               className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-800 px-2 py-0.5 text-xs font-medium"
@@ -176,87 +204,12 @@ function OrderRowCells({ order, indent = false, facturenPerOrder }: {
       <td className="px-4 py-3 whitespace-nowrap">
         <FactuurCel orderId={order.id} facturenPerOrder={facturenPerOrder} />
       </td>
-    </>
-  )
-}
-
-function BundelHeaderRow({ item, isExpanded, onToggle, facturenPerOrder }: {
-  item: Extract<OrdersListItem, { kind: 'bundel' }>
-  isExpanded: boolean
-  onToggle: () => void
-  facturenPerOrder?: Map<number, FactuurVoorOrder[]>
-}) {
-  const totaalBedrag = item.orders.reduce((sum, o) => sum + (Number(o.totaal_bedrag) || 0), 0)
-  const totaalRegels = item.orders.reduce((sum, o) => sum + (o.aantal_regels || 0), 0)
-  // Eerste order met factuur — alle orders in een bundel delen typisch
-  // dezelfde factuur (ADR-0010 §"Factuur volgt bundel-zending").
-  const eersteMetFactuur = item.orders.find((o) =>
-    (facturenPerOrder?.get(o.id)?.length ?? 0) > 0
-  )
-  const debiteurNaam = item.orders[0]?.klant_naam ?? '—'
-  const debiteurNr = item.orders[0]?.debiteur_nr
-
-  return (
-    <tr
-      onClick={onToggle}
-      className="border-b border-slate-100 bg-terracotta-50/60 hover:bg-terracotta-50 cursor-pointer transition-colors"
-    >
-      <td className="px-4 py-2.5" colSpan={4}>
-        <div className="flex items-center gap-2 text-sm">
-          {isExpanded
-            ? <ChevronDown size={16} className="text-terracotta-600" />
-            : <ChevronRight size={16} className="text-terracotta-600" />
-          }
-          <Package size={14} className="text-terracotta-600" />
-          <span className="font-medium text-terracotta-800">Bundel {item.zending_nr}</span>
-          <span className="text-slate-500">·</span>
-          <span className="text-slate-600">{item.orders.length} orders</span>
-          <span className="text-slate-400">·</span>
-          <span className="text-slate-600">{debiteurNaam}</span>
-          {debiteurNr && (
-            <span className="text-xs text-slate-400">#{debiteurNr}</span>
-          )}
-        </div>
-      </td>
-      <td className="px-4 py-2.5 text-slate-500 text-xs">
-        Gezamenlijke zending
-      </td>
-      <td className="px-4 py-2.5 text-right text-slate-600 text-sm">
-        {totaalRegels}
-      </td>
-      <td className="px-4 py-2.5 text-right font-medium text-sm">
-        {formatCurrency(totaalBedrag)}
-      </td>
-      <td className="px-4 py-2.5">
-        {/* Status van de bundel: pak de status van de eerste order; bundels
-            zijn in praktijk altijd synchroon (start_pickronden + voltooi_pickronde
-            transitioneren ze samen). */}
-        <StatusBadge status={item.orders[0].status} />
-      </td>
-      <td className="px-4 py-2.5 whitespace-nowrap">
-        {eersteMetFactuur && (
-          <FactuurCel
-            orderId={eersteMetFactuur.id}
-            facturenPerOrder={facturenPerOrder}
-          />
-        )}
-      </td>
     </tr>
   )
 }
 
 export function OrdersTable({ orders, isLoading, sortBy, sortDir, onSort, facturenPerOrder }: OrdersTableProps) {
   const grouped = useBundelGroupedOrders(orders)
-  const [expanded, setExpanded] = useState<Set<string>>(new Set())
-
-  const toggle = (zendingNr: string) => {
-    setExpanded((prev) => {
-      const next = new Set(prev)
-      if (next.has(zendingNr)) next.delete(zendingNr)
-      else next.add(zendingNr)
-      return next
-    })
-  }
 
   if (isLoading) {
     return (
@@ -293,37 +246,38 @@ export function OrdersTable({ orders, isLoading, sortBy, sortDir, onSort, factur
           </tr>
         </thead>
         <tbody>
-          {grouped.map((item) => {
+          {grouped.flatMap((item) => {
             if (item.kind === 'solo') {
-              return (
-                <tr
+              return [
+                <OrderTr
                   key={`order-${item.order.id}`}
-                  className="border-b border-slate-50 hover:bg-slate-50 transition-colors"
-                >
-                  <OrderRowCells order={item.order} facturenPerOrder={facturenPerOrder} />
-                </tr>
-              )
+                  order={item.order}
+                  bundel={null}
+                  facturenPerOrder={facturenPerOrder}
+                />,
+              ]
             }
-
-            const isOpen = expanded.has(item.zending_nr)
-            return (
-              <Fragment key={`bundel-${item.zending_nr}`}>
-                <BundelHeaderRow
-                  item={item}
-                  isExpanded={isOpen}
-                  onToggle={() => toggle(item.zending_nr)}
+            return item.orders.map((order, idx) => {
+              const positie =
+                item.orders.length === 1
+                  ? 'enkele'
+                  : idx === 0
+                    ? 'eerste'
+                    : idx === item.orders.length - 1
+                      ? 'laatste'
+                      : 'midden'
+              const anderOrderNrs = item.orders
+                .filter((o) => o.id !== order.id)
+                .map((o) => o.order_nr)
+              return (
+                <OrderTr
+                  key={`order-${order.id}`}
+                  order={order}
+                  bundel={{ zendingNr: item.zending_nr, positie, anderOrderNrs }}
                   facturenPerOrder={facturenPerOrder}
                 />
-                {isOpen && item.orders.map((order) => (
-                  <tr
-                    key={`order-${order.id}`}
-                    className="border-b border-slate-50 hover:bg-slate-50 bg-terracotta-50/20 transition-colors"
-                  >
-                    <OrderRowCells order={order} indent facturenPerOrder={facturenPerOrder} />
-                  </tr>
-                ))}
-              </Fragment>
-            )
+              )
+            })
           })}
         </tbody>
       </table>
