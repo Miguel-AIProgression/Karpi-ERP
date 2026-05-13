@@ -4,6 +4,7 @@ import { StatusBadge } from '@/components/ui/status-badge'
 import { formatDate, formatCurrency } from '@/lib/utils/formatters'
 import { verzendWeekVoor, verzendWeekRelatief } from '@/lib/orders/verzendweek'
 import { useMarkeerGeannuleerd } from '@/modules/orders-lifecycle'
+import { LevertijdStatusBadge } from '@/modules/levertijd'
 import type { OrderDetail } from '@/lib/supabase/queries/orders'
 
 const EINDSTATUSSEN = ['Verzonden', 'Geannuleerd'] as const
@@ -37,6 +38,7 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
               {order.order_nr}
             </h2>
             <StatusBadge status={order.status} />
+            <LevertijdStatusBadge orderId={order.id} />
             {order.status === 'Verzonden' && order.verzonden_at && (
               <span
                 className="text-xs text-slate-500"
