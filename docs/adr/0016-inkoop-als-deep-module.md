@@ -126,6 +126,8 @@ import { InkoopRegelSamenvatting } from '@/modules/inkoop'
 />
 ```
 
+**Amendement (na implementatie, 2026-05-13)**: tijdens Task 8 is bewust afgeweken van de prop-injection-variant hierboven. `regel-claim-detail.tsx` importeert nu direct uit `@/modules/inkoop` — hetzelfde patroon als `<KlantBenaming>` (Debiteur-Module) en `<VervoerderTag>` (Logistiek-Module) die óók direct via barrel worden geconsumeerd. Reden: consistentie met de twee bestaande slot-precedenten weegt zwaarder dan het theoretische import-cycle-bezwaar, omdat de cycle Reservering↔Inkoop alleen op runtime-niveau via barrels loopt (Vite/Rollup behandelen dit zonder fout) en data-shapes blijven gescheiden — Reservering kent alleen `ioRegelId: number` als prop, niet Inkoop's interne types. De prop-injection-variant blijft een geldige optie voor toekomstige slots waar de runtime-cycle daadwerkelijk problematisch wordt; voor `<InkoopRegelSamenvatting>` is direct-import pragmatischer.
+
 Reservering blijft import-vrij van Inkoop. Cycle vermeden; depth bewaard.
 
 ### Ingreep 4 — Lint-script, ESLint-regel, Python-import TODO
