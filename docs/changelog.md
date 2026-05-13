@@ -1,5 +1,19 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-13 — ADR-0020: Levertijd als deep Module (capaciteit-seam owner + status-label)
+
+**Waarom:** Levertijd-logica zit verspreid over ~1400 regels in drie runtimes (frontend TS, Deno-edge, SQL-view) zonder unieke eigenaar. Vijf interface-ingangen, twee runtime-spiegels van werkagenda-rekenkunde, en geen seam-erkenning vergelijkbaar met snij-marge (ADR-0013). Aanleiding: Karpi wil aan de voorkant van het order-intake-proces aan de klant kunnen communiceren dat de levertijd afwijkt van standaard (eerder als haast, later als planning vol), getoetst tegen actuele snij-planning.
+
+**Wat:**
+- [ADR-0020](adr/0020-levertijd-als-deep-module.md) — beslissing: Levertijd-Module wordt **capaciteit-seam owner**, niet eigenaar van de leverbelofte zelf. SQL-Module met smal publiek interface (analoog aan Gewicht-resolver, mig 184-186): twee RPC's `levertijd_fit_check` en `levertijd_snelste_haalbaar`.
+- Scope-onderscheid Reservering vs Levertijd: Reservering blijft eigenaar van `order_regel_levertijd`-view + `sync_order_afleverdatum_met_claims` (IO-claim-driven leverweek + afleverdatum-schuif); Levertijd bezit de capaciteit-/planning-driven haalbaarheids-vraag.
+- Order-niveau label: nieuw `orders.levertijd_status` enum (`standaard | eerder_dan_standaard | later_dan_standaard`) + bevroren snapshot `orders.standaard_afleverdatum_berekend`. Label geschreven bij commit én via trigger op `orders.afleverdatum`-change zodat IO-vertraging automatisch het label flipt.
+- UX: `<LevertijdStatusBadge>`-slot naast ordernummer (order-list + order-detail header), live fit-check in order-form, "Snelste haalbare overnemen"-knop op operator-aanvraag.
+- Confectie-capaciteit-check expliciet V2-backlog; bevroren leverbelofte-tabel + EDI-update-flow ook V2.
+- data-woordenboek bijgewerkt met 4 nieuwe terms (Levertijd-Module, Levertijd-status, Levertijd-fit-check, Levertijd-snelste-haalbaar) + Reservering-entry verhelderd waar "later Levertijd-Module" achterhaald was.
+
+**Wat is in deze commit:** ADR-0020 + [10-stappen-plan](superpowers/plans/2026-05-13-levertijd-als-deep-module.md) + stap 1 als [mig 276](../supabase/migrations/276_levertijd_status_kolom_en_trigger.sql) — twee nieuwe kolommen op `orders` (`levertijd_status` enum + `standaard_afleverdatum_berekend` DATE), BEFORE-trigger `trg_levertijd_status_recalc()` die het label automatisch deriveert uit afleverdatum vs snapshot, en forward-looking backfill voor bestaande orders met afleverdatum. ASSERT-blok verifieert trigger-aanmaak + backfill-volledigheid. Vervolgstappen 2-10 (RPC-skeleton, Module-skelet, hook-migratie, badge, order-form-integratie, Deno → SQL capaciteit-match, werkagenda-spiegel-cleanup) in opvolgende commits per stap.
+
 ## 2026-05-13 — Factuur-PDF: lange omschrijving wrapt over 2 regels (geen ellips-afkapping meer)
 
 **Waarom:** Op FACT-2026-0019 vielen de admin-pseudo-omschrijvingen weg met "Drempelkorting verzen…" en "Bundelkorting verzen…" — de Omschrijving-kolom is ~26 chars breed (Courier 9pt), de SQL-format-strings uit mig 264/268 leveren 40+ chars. Truncate met ellips maakte de regel betekenisloos op de factuur die de klant ziet.
