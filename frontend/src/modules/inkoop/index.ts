@@ -8,20 +8,32 @@
 // conform Snijplanning- en Reservering-precedent.
 
 // ---------------------------------------------------------------------------
-// Hooks (queries) — komen in Stap 3
+// Hooks (queries) — Stap 3
 // ---------------------------------------------------------------------------
-// export {
-//   useInkooporders,
-//   useInkooporder,
-//   useInkooporderRegels,
-//   useInkoopRegelSamenvatting,
-// } from './hooks/use-inkooporders'
-// export {
-//   useLeveranciers,
-//   useLeverancier,
-//   useLeverancierStats,
-// } from './hooks/use-leveranciers'
-// export { useBoekOntvangst } from './hooks/use-boek-ontvangst'
+export {
+  useInkooporders,
+  useInkooporderDetail,
+  useInkooporderStats,
+  useInkooporderRegelContext,
+  useOpenstaandeInkoopregelsVoorArtikel,
+  useRollenVoorStickers,
+  useRollenVoorArtikel,
+  useCreateInkooporder,
+  useUpdateInkooporderStatus,
+} from './hooks/use-inkooporders'
+export {
+  useLeveranciersOverzicht,
+  useLeverancierDetail,
+  useCreateLeverancier,
+  useUpdateLeverancier,
+  useToggleLeverancierActief,
+} from './hooks/use-leveranciers'
+export {
+  useBoekOntvangst,
+  type BoekOntvangstStuksInput,
+  type BoekOntvangstRollenInput,
+  type BoekOntvangstInput,
+} from './hooks/use-boek-ontvangst'
 
 // ---------------------------------------------------------------------------
 // Cache seam (cross-Module invalidation — ADR-0016, Ingreep 4)
