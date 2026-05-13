@@ -3,6 +3,7 @@ import { Receipt } from 'lucide-react'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { useFacturenVoorOrder } from '@/modules/facturatie'
 import { formatCurrency, formatDate } from '@/lib/utils/formatters'
+import { BundelKortingBanner } from './bundel-korting-banner'
 
 interface OrderFacturenProps {
   orderId: number
@@ -41,6 +42,11 @@ export function OrderFacturen({ orderId }: OrderFacturenProps) {
                   {formatCurrency(f.totaal)}
                 </span>
               </Link>
+              <BundelKortingBanner
+                orderId={orderId}
+                factuurId={f.id}
+                factuurNr={f.factuur_nr}
+              />
             </li>
           ))}
         </ul>
