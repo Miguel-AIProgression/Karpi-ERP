@@ -9,7 +9,7 @@ import { invalidateNaInkoopMutatie } from '../cache'
 /**
  * RPC-wrapper voor de ontvangst-flow.
  *
- * In Task 4 (mig 257) worden de onderliggende RPCs hernoemd naar
+ * In Task 4 (mig 271) worden de onderliggende RPCs hernoemd naar
  * `boek_inkooporder_ontvangst_stuks` (stuks-pad) en `_rollen` (rollen-pad);
  * de queries-functies `boekOntvangst` / `boekVoorraadOntvangst` blijven
  * voorlopig de OUDE RPC-namen (`boek_ontvangst` / `boek_voorraad_ontvangst`)

@@ -1,6 +1,6 @@
 // frontend/src/modules/inkoop/lib/__tests__/boek-ontvangst-contract.test.ts
 //
-// Contract-tests voor de Inkoop-Module ontvangst-RPC-wrappers (ADR-0016, mig 257).
+// Contract-tests voor de Inkoop-Module ontvangst-RPC-wrappers (ADR-0016, mig 271).
 //
 // Patroon overgenomen van magazijn/__tests__/pickronde.contract.test.ts:
 // we mocken `@/lib/supabase/client` en verifieren dat de TS-wrappers de juiste
@@ -19,7 +19,7 @@
 //     forwarding. Deze gedrag-tests vereisen seed-data + rollback-mechanisme
 //     en runnen pas tegen een test-DB.
 //
-// LET OP — huidige codestate (mig 257 + Task 4 hooks):
+// LET OP — huidige codestate (mig 271 + Task 4 hooks):
 //   De queries-functies `boekOntvangst` / `boekVoorraadOntvangst` roepen
 //   nog steeds de OUDE RPC-namen aan (`boek_ontvangst` / `boek_voorraad_
 //   ontvangst`) omdat die als DEPRECATED thin wrappers blijven werken.

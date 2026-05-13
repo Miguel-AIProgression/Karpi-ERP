@@ -31,7 +31,7 @@ ALLOWED_MIGRATION_PATHS=(
   'supabase/migrations/136_boek_ontvangst_voorraad_mutaties_schema_fix.sql'
   'supabase/migrations/148_boek_voorraad_ontvangst_consumeer_claims.sql'
   'supabase/migrations/254_reservering_module_split.sql'
-  'supabase/migrations/257_inkoop_module_rename_ontvangst_rpcs.sql'
+  'supabase/migrations/271_inkoop_module_rename_ontvangst_rpcs.sql'
 )
 
 # Python-import-paden die initial-bulk-create doen.

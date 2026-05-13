@@ -15,7 +15,7 @@ HEAD: c323459
 | Andere lint-scripts | OK | `lint-no-direct-orders-status-update.sh` en `lint-no-direct-order-reserveringen-write.sh` beide OK |
 | Git state | OK | Working tree clean; 13 commits sinds main (Tasks 1-12 + review-fixes) |
 | Module-folder volledigheid | OK | 9 components (1 meer dan spec — `voorraad-ontvangst-dialog.tsx` extra), 5 pages, 3 hooks, 2 queries, 1 test |
-| Mig 257 aanwezig op disk | OK | `supabase/migrations/257_inkoop_module_rename_ontvangst_rpcs.sql` (299 regels) |
+| Mig 271 aanwezig op disk | OK | `supabase/migrations/271_inkoop_module_rename_ontvangst_rpcs.sql` (299 regels) |
 | Docs (ADR + architectuur + woordenboek + changelog) | OK | ADR-0016 bestaat, alle drie docs hebben Inkoop-Module-referenties (changelog regel 3, woordenboek regel 133, architectuur regels 119-122/279-282) |
 
 ### Detail-noten
@@ -26,7 +26,7 @@ HEAD: c323459
 
 ## User-action items (handmatig verifieren)
 
-- [ ] **Mig 257 toepassen op productie-DB**: open Supabase Dashboard -> SQL Editor -> plak inhoud van `supabase/migrations/257_inkoop_module_rename_ontvangst_rpcs.sql` -> Run. Verifieer 0 errors. Run smoke-test SQL onderaan de migratie.
+- [ ] **Mig 271 toepassen op productie-DB**: open Supabase Dashboard -> SQL Editor -> plak inhoud van `supabase/migrations/271_inkoop_module_rename_ontvangst_rpcs.sql` -> Run. Verifieer 0 errors. Run smoke-test SQL onderaan de migratie.
 - [ ] **Smoke-test in browser**:
   - `/inkoop` — overzicht laadt, filters werken, "Nieuwe inkooporder"-knop opent dialog
   - `/inkoop/:id` — detail laadt, "Ontvangst boeken" opent dialog. Boek stuks-ontvangst -> `producten.voorraad` opgehoogd, een IO-claim -> `geleverd`, nieuwe voorraad-claim, order-status reageert

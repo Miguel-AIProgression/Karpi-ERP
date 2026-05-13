@@ -55,7 +55,7 @@ frontend/src/modules/inkoop/
     ├── leveranciers-overview.tsx                   ← verhuizing van pages/leveranciers/
     └── leverancier-detail.tsx                      ← verhuizing van pages/leveranciers/
 
-supabase/migrations/257_inkoop_module_rename_ontvangst_rpcs.sql   ← big-bang RPC-splitsing
+supabase/migrations/271_inkoop_module_rename_ontvangst_rpcs.sql   ← big-bang RPC-splitsing
 
 scripts/lint-no-direct-inkooporder-regel-write.sh   ← regressie-guard
 
@@ -106,7 +106,7 @@ cd ../karpi-inkoop
 ls supabase/migrations/ | sort -V | tail -8     # verifieer dat 254 + 255 op main staan en 257 vrij is
 ```
 
-Verwacht: laatste migratie 256. **Heads-up**: op main bestaan momenteel **twee** bestanden met prefix `256_` (`256_bundelkorting_2_regel_vorm.sql` en `256_reservering_trigger_verzonden_release.sql`) — de nummerings-volgorde is hier al eens gekruist. Mig 257 is op het moment van schrijven nog vrij; als 257 in de tussentijd ook bezet is, pak het eerstvolgende vrije nummer en pas overal in dit document aan (Task 4 paden, lint-script whitelist, docs in Task 12).
+Verwacht: laatste migratie 256. **Heads-up**: op main bestaan momenteel **twee** bestanden met prefix `256_` (`256_bundelkorting_2_regel_vorm.sql` en `256_reservering_trigger_verzonden_release.sql`) — de nummerings-volgorde is hier al eens gekruist. Mig 271 is op het moment van schrijven nog vrij; als 257 in de tussentijd ook bezet is, pak het eerstvolgende vrije nummer en pas overal in dit document aan (Task 4 paden, lint-script whitelist, docs in Task 12).
 
 - [ ] **Step 2: Schrijf ADR-0016**
 
@@ -204,7 +204,7 @@ import { invalidateNaReserveringsmutatie } from '@/modules/reserveringen'
  * Roep aan na elke succesvolle Inkoop-mutatie (create, update, boek-ontvangst).
  * Invalidate-keys volgen het query-key-schema in modules/inkoop/queries/.
  * Bij ontvangst-mutaties chain'en we Reservering's invalidatie omdat
- * boek_io_ontvangst_claims aan de server-zijde claims muteert (mig 257).
+ * boek_io_ontvangst_claims aan de server-zijde claims muteert (mig 271).
  */
 export function invalidateNaInkoopMutatie(
   qc: QueryClient,
@@ -478,7 +478,7 @@ export interface BoekOntvangstRollenInput {
 }
 
 /**
- * RPC-wrapper voor de gesplitste ontvangst-flow (mig 257).
+ * RPC-wrapper voor de gesplitste ontvangst-flow (mig 271).
  * Switched op input-shape: stuks-input → boek_inkooporder_ontvangst_stuks,
  * rollen-input → boek_inkooporder_ontvangst_rollen.
  */
@@ -554,10 +554,10 @@ git commit -m "feat(inkoop): hooks-laag + useBoekOntvangst-wrapper"
 
 ---
 
-## Task 4: SQL-migratie 257 — RPC-renames (pure-rename pattern)
+## Task 4: SQL-migratie 271 — RPC-renames (pure-rename pattern)
 
 **Files:**
-- Create: `supabase/migrations/257_inkoop_module_rename_ontvangst_rpcs.sql`
+- Create: `supabase/migrations/271_inkoop_module_rename_ontvangst_rpcs.sql`
 
 **Strategie**: pure rename — geen body-herschrijving, geen nieuwe logica. Mig 254 heeft `boek_voorraad_ontvangst` al omgezet naar `PERFORM boek_io_ontvangst_claims(...)`; deze migratie hernoemt alleen de twee Inkoop-eigen RPC's naar hun nieuwe Module-aligned namen en zet de oude namen om naar DEPRECATED thin wrappers. **Geen wijziging aan `boek_io_ontvangst_claims`** — die is sinds mig 254 Reservering's bezit met signature `(p_io_regel_id BIGINT, p_aantal_ontvangen INT)`.
 
@@ -586,12 +586,12 @@ Noteer de exacte parameter-lijst en body — die plak je 1-op-1 onder de nieuwe 
 
 - [ ] **Step 3: Schrijf migratie**
 
-- [ ] **Step 3: Schrijf migratie 257 — pure rename**
+- [ ] **Step 3: Schrijf migratie 271 — pure rename**
 
 Skelet (vul de twee `-- KOPIE` blokken aan met de body's uit Step 2):
 
 ```sql
--- Migratie 257: Inkoop-Module — hernoem ontvangst-RPCs naar Module-aligned namen
+-- Migratie 271: Inkoop-Module — hernoem ontvangst-RPCs naar Module-aligned namen
 --
 -- Strategie (ADR-0016): pure rename. De business-logic blijft identiek aan
 -- de huidige boek_voorraad_ontvangst (mig 254-versie) en boek_ontvangst
@@ -794,7 +794,7 @@ COMMENT ON FUNCTION boek_io_ontvangst_claims(BIGINT, INTEGER) IS
   'in claim_volgorde-volgorde, schuif consumed-deel naar voorraad-claim op '
   'dezelfde orderregel, en recompute claims + wacht-status + afleverdatum per '
   'geraakte order. Aangeroepen door Inkoop-Module RPCs (boek_inkooporder_ '
-  'ontvangst_stuks). Mig 257 + ADR-0016.';
+  'ontvangst_stuks). Mig 271 + ADR-0016.';
 
 -- ============================================================
 -- 2. Inkoop bezit: boek_inkooporder_ontvangst_stuks
@@ -869,7 +869,7 @@ COMMENT ON FUNCTION boek_inkooporder_ontvangst_stuks(BIGINT, INTEGER, TEXT) IS
   'Verhoogt producten.voorraad (geparkeerd: eigenaar wordt Voorraad-Module), '
   'werkt regel + IO-status bij, en delegeert claim-consume aan '
   'boek_io_ontvangst_claims (Reservering). Vervangt mig 148 boek_voorraad_'
-  'ontvangst. Mig 257 + ADR-0016.';
+  'ontvangst. Mig 271 + ADR-0016.';
 
 -- ============================================================
 -- 3. Inkoop bezit: boek_inkooporder_ontvangst_rollen
@@ -965,7 +965,7 @@ COMMENT ON FUNCTION boek_inkooporder_ontvangst_rollen(BIGINT, JSONB, TEXT) IS
   'Inkoop-Module: boek rollen-ontvangst op een eenheid=m IO-regel. Maakt '
   'rollen + voorraad_mutaties aan (geparkeerd: eigenaar wordt Voorraad-Module), '
   'werkt regel + IO-status bij. Geen claim-consume (claims zijn alleen op '
-  'eenheid=stuks). Vervangt mig 133-136 boek_ontvangst. Mig 257 + ADR-0016.';
+  'eenheid=stuks). Vervangt mig 133-136 boek_ontvangst. Mig 271 + ADR-0016.';
 
 -- ============================================================
 -- 4. Backward-compat thin wrappers (DEPRECATED, 1 release lang)
@@ -1011,7 +1011,7 @@ Karpi heeft geen CLI-toegang (zie [reference_karpi_supabase_mcp.md](C:/Users/mig
 Volg de handmatige flow:
 
 1. Open Supabase Dashboard → SQL Editor.
-2. Plak de inhoud van `257_inkoop_module_rename_ontvangst_rpcs.sql`.
+2. Plak de inhoud van `271_inkoop_module_rename_ontvangst_rpcs.sql`.
 3. Run. Verifieer 0 errors.
 4. Run `SELECT routine_name FROM information_schema.routines WHERE routine_schema='public' AND routine_name LIKE 'boek_inkooporder%';` — verwacht 2 rijen.
 5. Run `SELECT routine_name FROM information_schema.routines WHERE routine_schema='public' AND routine_name IN ('boek_voorraad_ontvangst','boek_ontvangst');` — verwacht 2 rijen (oude namen blijven bestaan als DEPRECATED wrappers).
@@ -1037,8 +1037,8 @@ SELECT ir.id, ir.regelnummer, ir.artikelnr, ir.te_leveren_m,
 - [ ] **Step 6: Commit**
 
 ```bash
-git add supabase/migrations/257_inkoop_module_rename_ontvangst_rpcs.sql
-git commit -m "feat(inkoop): mig 257 RPC-rename — boek_inkooporder_ontvangst_{stuks,rollen} wrappers"
+git add supabase/migrations/271_inkoop_module_rename_ontvangst_rpcs.sql
+git commit -m "feat(inkoop): mig 271 RPC-rename — boek_inkooporder_ontvangst_{stuks,rollen} wrappers"
 ```
 
 ---
@@ -1160,9 +1160,9 @@ cd frontend && pnpm vitest run modules/inkoop/lib/__tests__/boek-ontvangst-contr
 
 Verwacht: FAIL (test-setup mist seed-data óf RPC's bestaan nog niet als migratie nog niet draaide).
 
-- [ ] **Step 4: Run test — verifieer PASS na mig 257**
+- [ ] **Step 4: Run test — verifieer PASS na mig 271**
 
-Voer mig 257 (Task 4) opnieuw uit op test-database als nodig. Run de test:
+Voer mig 271 (Task 4) opnieuw uit op test-database als nodig. Run de test:
 
 ```bash
 cd frontend && pnpm vitest run modules/inkoop/lib/__tests__/boek-ontvangst-contract.test.ts
@@ -1772,7 +1772,7 @@ De **elfde domein-module is `modules/inkoop/`** ([ADR-0016](adr/0016-inkoop-als-
 — bezit inkooporders, leveranciers en de ontvangst-flow. Medium scope:
 logica-laag (queries/hooks/mutations) + components + pages.
 
-Publieke RPCs (mig 257): `boek_inkooporder_ontvangst_stuks` voor het stuks-pad,
+Publieke RPCs (mig 271): `boek_inkooporder_ontvangst_stuks` voor het stuks-pad,
 `boek_inkooporder_ontvangst_rollen` voor het rollen-pad. Beide delegeren claim-
 consume aan Reservering's `boek_io_ontvangst_claims` (Inkoop is vervoerder van
 de event; Reservering bezit de state-mutatie). Oude RPC-namen `boek_voorraad_
@@ -1809,7 +1809,7 @@ trigger `trg_sync_besteld_inkoop`).
 ## 2026-05-13 — Inkoop-Module (ADR-0016)
 
 - Elfde deep verticale Module: `modules/inkoop/` met queries, hooks, components, pages.
-- Mig 257: RPC-splitsing `boek_inkooporder_ontvangst_{stuks,rollen}` (Inkoop) +
+- Mig 271: RPC-splitsing `boek_inkooporder_ontvangst_{stuks,rollen}` (Inkoop) +
   `boek_io_ontvangst_claims` (Reservering). Sluit ADR-0015 open backlog af.
 - Slot `<InkoopRegelSamenvatting>` geconsumeerd door Reservering's `RegelClaimDetail`.
 - Python `import_inkoopoverzicht.py` gebruikt voortaan de RPC i.p.v. directe
@@ -1915,7 +1915,7 @@ git branch -d feat/inkoop-deep-module
 |--------|-----------|
 | Mig 254 + 255 (ADR-0015) nog niet op main → `boek_io_ontvangst_claims`, `herwaardeer_claims_voor_order` etc. bestaan niet | Prerequisite-check in Prerequisites + Task 1 Step 1. Stop indien niet aanwezig. |
 | Migratie-nummer 257 inmiddels bezet door ander werk | Run `ls supabase/migrations/ \| sort -V \| tail -3` in Task 4 Step 1. Pas overal het nummer aan. |
-| `boek_io_ontvangst_claims` per ongeluk herdefiniëren in mig 257 | Plan-tekst zegt expliciet: **niet aanraken**. PostgreSQL geeft sowieso "cannot change name of input parameter"-error bij `p_aantal_ontvangen → p_ontvangen_aantal`. |
+| `boek_io_ontvangst_claims` per ongeluk herdefiniëren in mig 271 | Plan-tekst zegt expliciet: **niet aanraken**. PostgreSQL geeft sowieso "cannot change name of input parameter"-error bij `p_aantal_ontvangen → p_ontvangen_aantal`. |
 | `boek_ontvangst` heeft méér overload-signatures dan in mig 135 | Step 2 grept alle definities en kiest de hoogst-genummerde. Bouw één wrapper per overload als er meerdere zijn. |
 | Backward-compat wrappers worden vergeten te verwijderen | Issue/TODO in `changelog.md` + DEPRECATED-comment in SQL. Vervolg-migratie 258+ of later. |
 | Contract-test vereist seed-data die niet bestaat | Task 5 markeert de hele suite als skippable via `beforeAll`-guard. Niet een blocker voor merge, wel voor volledige TDD-loop. |
@@ -1926,4 +1926,4 @@ git branch -d feat/inkoop-deep-module
 
 1. **`boek_ontvangst` parameter-shape**: lees mig 133-136 volledig vóór Task 4 om de wrapper-skeleton correct te bouwen.
 2. **Vitest-DB**: heeft het project een test-DB seed-strategy? Anders contract-test als optioneel skipbaar markeren.
-3. **TypeScript Supabase-types**: zijn er auto-gegenereerde types die geüpdate moeten worden na mig 257? Check `frontend/src/lib/supabase/types.ts` of vergelijkbaar.
+3. **TypeScript Supabase-types**: zijn er auto-gegenereerde types die geüpdate moeten worden na mig 271? Check `frontend/src/lib/supabase/types.ts` of vergelijkbaar.

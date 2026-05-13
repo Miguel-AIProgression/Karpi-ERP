@@ -64,9 +64,9 @@ De Module bezit **niet**:
 - **Inkoopgroepen** — ondanks de naam een klant-attribuut (mig 189: `debiteuren.inkoopgroep_code`). Hoort thuis in Debiteur-Module (kandidaat #5)
 - **`besteld_per_kwaliteit_kleur`-view** (mig 137) — read-only aggregaat dat Voorraadpositie consumeert; eigenaar wordt Voorraad/Producten-Module zodra die bestaat
 
-### Ingreep 2 — Mig 257: pure RPC-rename, naming-symmetrie
+### Ingreep 2 — Mig 271: pure RPC-rename, naming-symmetrie
 
-`boek_voorraad_ontvangst` en `boek_ontvangst` hebben asymmetrische namen — de eerste klinkt als een voorraad-RPC, de tweede generiek. Beide zijn IO-ontvangst-paden. Hernoem in mig 257:
+`boek_voorraad_ontvangst` en `boek_ontvangst` hebben asymmetrische namen — de eerste klinkt als een voorraad-RPC, de tweede generiek. Beide zijn IO-ontvangst-paden. Hernoem in mig 271:
 
 ```sql
 -- Stuks-pad (vaste maten):
@@ -83,7 +83,7 @@ Backward compat: de oude namen blijven bestaan als **DEPRECATED thin wrappers** 
 ```sql
 CREATE OR REPLACE FUNCTION boek_voorraad_ontvangst(...)
 RETURNS ... AS $$
-  -- DEPRECATED (mig 257, ADR-0016): gebruik boek_inkooporder_ontvangst_stuks.
+  -- DEPRECATED (mig 271, ADR-0016): gebruik boek_inkooporder_ontvangst_stuks.
   -- Verwijderen in vervolg-migratie na 1 release.
   SELECT boek_inkooporder_ontvangst_stuks(...);
 $$ LANGUAGE sql;
@@ -132,7 +132,7 @@ Reservering blijft import-vrij van Inkoop. Cycle vermeden; depth bewaard.
 
 ### Ingreep 4 — Lint-script, ESLint-regel, Python-import TODO
 
-- `scripts/lint-no-direct-inkooporder-write.sh` — scant `supabase/migrations/` en `supabase/functions/` op `INSERT INTO inkooporders`, `UPDATE inkooporders`, `DELETE FROM inkooporders` (idem voor `inkooporder_regels` en `leveranciers`) buiten een whitelist (mig 127-148, 254-255, nieuwe split-mig 257).
+- `scripts/lint-no-direct-inkooporder-write.sh` — scant `supabase/migrations/` en `supabase/functions/` op `INSERT INTO inkooporders`, `UPDATE inkooporders`, `DELETE FROM inkooporders` (idem voor `inkooporder_regels` en `leveranciers`) buiten een whitelist (mig 127-148, 254-255, nieuwe split-mig 271).
 - ESLint `no-restricted-imports` regel voor oude paden (`@/lib/supabase/queries/inkooporders`, `@/lib/supabase/queries/leveranciers`, `@/components/inkooporders/*`, `@/pages/inkooporders/*`, `@/pages/leveranciers/*`) met ADR-0016-verwijzing.
 - `import/import_inkoopoverzicht.py` krijgt een TODO-banner: dit script omzeilt RLS met de service-role-key (gebruiker-keuze 2026-05-13: geen RLS-bypass meer). Vervolg-werk: vervang door `create_inkooporder`-RPC die de Python-import via PostgREST gebruikt met respect voor RLS. Niet meegenomen in dit ADR's stappen — eigen vervolg-issue.
 
@@ -185,7 +185,7 @@ frontend/src/modules/inkoop/
     └── leverancier-detail.tsx            ← van pages/leveranciers/
 ```
 
-## SQL-ingreep — Mig 257 (pure rename)
+## SQL-ingreep — Mig 271 (pure rename)
 
 Pattern conform ADR-0015 / mig 254:
 
@@ -203,7 +203,7 @@ Conform "Na ADR direct stap 1/N committen": **ADR + Stap 1 (Module-skelet) in é
 1. **Stap 1 — Module-skelet + cache + barrel** (deze commit)
 2. **Stap 2 — Queries verhuizen** (inkooporders.ts gesplitst ≤300L, leveranciers.ts; re-export shim)
 3. **Stap 3 — Hooks introduceren** (queries naar `useQuery`-wrappers)
-4. **Stap 4 — Mig 257 rename** + back-compat thin wrappers
+4. **Stap 4 — Mig 271 rename** + back-compat thin wrappers
 5. **Stap 5 — `useBoekOntvangst`** met mode-discriminator + contract-test-skelet
 6. **Stap 6 — Components verhuizen** (6 components van `components/inkooporders/` naar `modules/inkoop/components/`)
 7. **Stap 7 — `InkoopRegelSamenvatting`-slot** + Reservering's `RegelClaimDetail` prop aanvullen
@@ -228,7 +228,7 @@ Conform "Na ADR direct stap 1/N committen": **ADR + Stap 1 (Module-skelet) in é
 
 - **Reservering importeert direct uit `@/modules/inkoop` voor IO-meta** — afgewezen. Creëert module-cycle Reservering ↔ Inkoop (Inkoop heeft Reservering's `boek_io_ontvangst_claims` als depend-on, plus consumeert Reservering's `useClaimsVoorIORegel` op de IO-detail-page). Slot-pattern lost dit elegant op — kosten is één extra prop in `RegelClaimDetail`, baten is acycliciteit.
 
-- **Eén ontvangst-RPC met `mode`-parameter (stuks/rollen) ipv twee gerenamede** — afgewezen voor mig 257. Body-merge vereist parameter-set-unificatie (`p_rolnummer` is rollen-only, `p_aantal` is stuks-only), wat een echte body-herschrijving is. Rename in mig 257, body-merge eventueel later wanneer er een duidelijke trigger is.
+- **Eén ontvangst-RPC met `mode`-parameter (stuks/rollen) ipv twee gerenamede** — afgewezen voor mig 271. Body-merge vereist parameter-set-unificatie (`p_rolnummer` is rollen-only, `p_aantal` is stuks-only), wat een echte body-herschrijving is. Rename in mig 271, body-merge eventueel later wanneer er een duidelijke trigger is.
 
 ## Open backlog
 
