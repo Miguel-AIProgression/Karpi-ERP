@@ -5,8 +5,6 @@ import type { OrderRow } from '@/lib/supabase/queries/orders'
 
 function makeOrder(over: Partial<OrderRow> & { id: number; order_nr: string }): OrderRow {
   return {
-    id: over.id,
-    order_nr: over.order_nr,
     oud_order_nr: null,
     debiteur_nr: 260000,
     klant_referentie: null,
