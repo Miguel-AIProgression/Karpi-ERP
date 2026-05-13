@@ -142,7 +142,7 @@ Reservering blijft import-vrij van Inkoop. Cycle vermeden; depth bewaard.
 
 **Hooks (mutations):** `useCreateInkooporder`, `useUpdateInkooporder`, `useBoekOntvangst` (één hook met `mode: 'stuks' | 'rollen'`-discriminator, achterliggende RPC kiezen).
 
-**Cache:** `invalidateNaInkoopMutatie(qc, { isOntvangst? })` — chain'd naar `invalidateNaReserveringsmutatie` bij ontvangst-mutaties.
+**Cache:** `invalidateNaInkoopMutatie(qc, { isOntvangst? })` — chain'd naar `invalidateNaReserveringsmutatie` bij ontvangst-mutaties. Divergeert bewust van Snijplanning's pattern (waar de caller zelf Confectie's helper aanroept): bij ontvangst is de server-side claim-mutatie deterministisch (`PERFORM boek_io_ontvangst_claims` in mig 254), dus de auto-chain hoort bij Inkoop's interface en niet bij elke caller.
 
 **Components:** `InkooporderFormDialog`, `InkooporderStatusBadge`, `OntvangstBoekenDialog`, `IORegelClaimsPopover`, `VoorraadOntvangstDialog`, `RolStickerLayout`, `LeverancierStatsCard`, `InkoopRegelSamenvatting`.
 
@@ -210,7 +210,7 @@ Conform "Na ADR direct stap 1/N committen": **ADR + Stap 1 (Module-skelet) in é
 10. **Stap 10 — Lint-script + ESLint-regel**
 11. **Stap 11 — TODO-banner op `import/import_inkoopoverzicht.py`**
 12. **Stap 12 — Oude bestanden verwijderen** na verificatie
-13. **Stap 13 — Docs** (`architectuur.md` Module-graf-paragraaf — elfde Module; `data-woordenboek.md` Inkoop-Module-term; `changelog.md`)
+13. **Stap 13 — Docs** (`architectuur.md` Module-graf-paragraaf — twaalfde Module; `data-woordenboek.md` Inkoop-Module-term; `changelog.md`)
 
 ## Overwogen alternatieven
 

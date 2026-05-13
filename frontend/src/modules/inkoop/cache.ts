@@ -27,9 +27,13 @@ export function invalidateNaInkoopMutatie(
   opties: { isOntvangst?: boolean } = {},
 ): void {
   qc.invalidateQueries({ queryKey: ['inkooporders'] })
-  qc.invalidateQueries({ queryKey: ['inkooporder-regels'] })
+  qc.invalidateQueries({ queryKey: ['inkooporder-regels'] }) // future: query-key wordt geactiveerd in Task 3
   qc.invalidateQueries({ queryKey: ['leveranciers'] })
-  qc.invalidateQueries({ queryKey: ['producten'] }) // wegens besteld_inkoop-cache
+  // `producten` is óók de cache-sleutel voor Reservering's `gereserveerd`-veld;
+  // bij `isOntvangst: true` wordt 'm via de chain-aanroep opnieuw geïnvalideerd
+  // (idempotent; React Query dedupliceert binnen één tick). De eerste invalidate
+  // hier is nodig voor non-ontvangst-mutaties (besteld_inkoop-cache).
+  qc.invalidateQueries({ queryKey: ['producten'] })
 
   if (opties.isOntvangst) {
     invalidateNaReserveringsmutatie(qc)
