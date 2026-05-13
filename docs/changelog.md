@@ -1,14 +1,22 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-13 — Snijden: handmatige override van reststuk-maten en aangebroken-lengte
+
+In het "Rol snijden"-menu ([RolUitvoerModal](../frontend/src/components/snijplanning/rol-uitvoer-modal.tsx)) waren de reststuk- en aangebroken-rol-afmetingen tot nu toe puur de auto-berekende waarden uit [`computeReststukkenAngebrokenAfval`](../frontend/src/modules/snijplanning/lib/compute-reststukken.ts). Bij een menselijke fout op de guillotine (bv. lengte-mes net iets te kort gezet) kwam de werkelijke voorraad daardoor niet meer overeen met wat het systeem registreerde.
+
+**Implementatie:** de breedte- en lengte-velden in de reststuk-rijen en het lengte-veld in de aangebroken-rol-rij zijn nu inline `<input type="number">` met smalle emerald/blue rand, default gevuld met de auto-berekende maat. Een wijziging wordt opgeslagen in lokale state (`reststukOverrides` per letter R1/R2/…, `aangebrokenLengteOverride`) en gevoed terug in `buildSnijVolgorde` — zo blijven de tabel, de sticker-preview (`printReststukSticker`) en de bulk-stickers (sessionStorage in `printBulk`) één single source of truth. Bij `Rol afsluiten` wordt de override-versie doorgegeven aan RPC [`voltooi_snijplan_rol`](../supabase/migrations/251_voltooi_snijplan_rol_voorraad_mutaties_schema_fix.sql). Een reset-link verschijnt naast elke gewijzigde rij. Inline-waarschuwingen: ⚠ wanneer reststuk onder 70×140 cm zakt (wordt afval) of aangebroken-lengte onder 100 cm (rol gaat naar `gesneden` i.p.v. aangebroken). RPC zelf hoefde niet aangepast — die accepteerde al `breedte_cm`/`lengte_cm` per rect in JSONB en `p_aangebroken_lengte` als int.
+
 ## 2026-05-13 — Reservering-Module als deep Module ([ADR-0015](adr/0015-reservering-als-deep-module.md))
 
 Reservering / allocator-logica is geëxtraheerd als elfde deep Module onder `frontend/src/modules/reserveringen/`, naast Orders-lifecycle, Facturatie en Snijplanning. Eigendomsgrens: allocator (`herallocateer_orderregel`), handmatige uitwisselbaar-claims, IO-claim-release op annulering, `producten.gereserveerd`-cache via trigger en de TS-spiegel `berekenRegelDekking` met SQL-contract via de nieuwe `simuleer_dekking()`-RPC.
 
 **Backend-split mig 254:** god-orchestratie `herwaardeer_order_status` wordt thin wrapper boven drie expliciete aanroepen — `herwaardeer_claims_voor_order` (Reservering-Module), `herbereken_wacht_status` (Order-lifecycle-Module, mig 218) en tijdelijk `sync_order_afleverdatum_met_claims` (Reservering, blijft hier tot de Levertijd-Module bestaat). Nieuwe Module-eigen RPCs: `herwaardeer_claims_voor_order`, `simuleer_dekking`, `boek_io_ontvangst_claims`.
 
-**Backend mig 255:** trigger op `orders.status` vervangen door listener op `order_events`-INSERT — symmetrie met de Facturatie-Module ([ADR-0007](adr/0007-facturatie-als-deep-module.md)). Eén bron-van-waarheid voor status-overgangen blijft `_apply_transitie` in Order-lifecycle.
+**Backend mig 255:** trigger op `orders.status` vervangen door listener op `order_events`-INSERT met `event_type IN ('geannuleerd', 'pickronde_voltooid')` — symmetrie met de Facturatie-Module ([ADR-0007](adr/0007-facturatie-als-deep-module.md)). Eén bron-van-waarheid voor status-overgangen blijft `_apply_transitie` in Order-lifecycle.
 
-**Frontend-verhuizing:** queries, hooks, lib en vier components (reserveringen-overzicht, claim-uitsplitsing, uitwisselbaar-tekort-hint en handmatige-claim-editor) verhuisd naar de Module-folder met re-export shims op de oude paden tot caller-cleanup is afgerond. Cache-seam: `invalidateNaReserveringsmutatie(qc)` via `cache.ts`. Lint: `scripts/lint-no-direct-order-reserveringen-write.sh` voorkomt directe `order_reserveringen`-writes buiten de Module.
+**Backend mig 256 (review-fix):** trigger-WHEN-conditie uitgebreid met `'pickronde_voltooid'` plus eenmalige back-fill. Mig 255 luisterde initieel alleen op `'geannuleerd'`, waardoor claims na verzending `status='actief'` bleven en `voorraad_beschikbaar_voor_artikel` (mig 154) ze ten onrechte meetelde. Oude mig 146-trigger releasete claims óók bij Verzonden-transities — dekking hiermee hersteld.
+
+**Frontend-verhuizing:** queries, hooks, lib en vier components (reserveringen-overzicht, claim-uitsplitsing, uitwisselbaar-tekort-hint en handmatige-claim-editor) verhuisd naar de Module-folder. Caller-cleanup compleet (geen shims meer). Cache-seam: `invalidateNaReserveringsmutatie(qc)` via `cache.ts` — aangeroepen vanuit order-form save-flow zodat uitwisselbaar-mutaties geen stale UI achterlaten. Lint: `scripts/lint-no-direct-order-reserveringen-write.sh` voorkomt directe `order_reserveringen`-writes buiten de Module.
 
 ## 2026-05-13 — Zendingen-overzicht: bundel-orders zichtbaar in lijst
 

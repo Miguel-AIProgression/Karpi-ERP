@@ -98,7 +98,9 @@ Het oude `herwaardeer_order_status` blijft als **thin wrapper** met deprecation-
 
 ### Ingreep 3 — Trigger op `order_events` i.p.v. `orders.status`
 
-Vervang `trg_order_status_herallocateer` (op `orders` UPDATE WHERE status changed) door een listener op `order_events` INSERT met `WHEN (NEW.event_type = 'geannuleerd')`. Past bij ADR-0006-event-pattern (Facturatie luistert óók op `order_events`).
+Vervang `trg_order_status_herallocateer` (op `orders` UPDATE WHERE status changed) door een listener op `order_events` INSERT met `WHEN (NEW.event_type IN ('geannuleerd', 'pickronde_voltooid'))`. Past bij ADR-0006-event-pattern (Facturatie luistert óók op `order_events`).
+
+> **Review-correctie (mig 256, 2026-05-13):** initieel luisterde mig 255 alleen op `'geannuleerd'`. Daardoor bleven claims `status='actief'` na verzending, waardoor `voorraad_beschikbaar_voor_artikel` (mig 154) Verzonden-claims ten onrechte meetelde. Mig 256 breidt de trigger uit naar `'pickronde_voltooid'` met eenmalige back-fill voor reeds-Verzonden orders. De oude mig 146-trigger reageerde óók op Verzonden-transities — die dekking is hiermee hersteld.
 
 Effect: geen directe trigger meer op `orders.status` buiten Order-lifecycle's eigen `_apply_transitie`. Lint-script `scripts/lint-no-direct-orders-status-update.sh` blijft groen; symmetrie met Facturatie-Module.
 

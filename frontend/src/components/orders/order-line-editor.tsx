@@ -12,13 +12,12 @@ import {
   type AfwerkingTypeRow,
 } from '@/modules/maatwerk'
 import { AFWERKING_OPTIES } from '@/lib/utils/constants'
-import { UitwisselbaarTekortHint } from '@/modules/reserveringen'
+import { UitwisselbaarTekortHint, berekenRegelDekking } from '@/modules/reserveringen'
 import { getVormDisplay } from '@/lib/utils/vorm-labels'
 import type { SelectedArticle, SubstitutionInfo } from './article-selector'
 import type { OrderRegelFormData, PrijsBron, PrijsBreakdown } from '@/lib/supabase/queries/order-mutations'
 import { SHIPPING_PRODUCT_ID } from '@/lib/constants/shipping'
 import { formatPrijsBron } from '@/lib/utils/prijs-bron'
-import { berekenRegelDekking } from '@/modules/reserveringen'
 import { fetchEquivalenteProducten } from '@/lib/supabase/queries/product-equivalents'
 
 interface OrderLineEditorProps {

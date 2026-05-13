@@ -7,7 +7,7 @@ import { InvoiceAddressEditor, type FactuurAdres, type FactuurContact } from './
 import { OrderLineEditor } from './order-line-editor'
 import { LevertijdSuggestie } from './levertijd-suggestie'
 import { LeverModusDialog, type LeverModusTekort } from './lever-modus-dialog'
-import { berekenRegelDekking, type LeverModus } from '@/modules/reserveringen'
+import { berekenRegelDekking, invalidateNaReserveringsmutatie, type LeverModus } from '@/modules/reserveringen'
 import { createOrder, updateOrderWithLines, deleteOrder, resolveOrderlinePrice, fetchKlantArtikelnummer, setUitwisselbaarClaims } from '@/lib/supabase/queries/order-mutations'
 import type { OrderFormData, OrderRegelFormData, PrijsBron, PrijsBreakdown } from '@/lib/supabase/queries/order-mutations'
 import { fetchKlanteigenNaam } from '@/modules/debiteuren'
@@ -513,6 +513,11 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
     },
     onSuccess: async (data) => {
       queryClient.invalidateQueries({ queryKey: ['orders'] })
+      // Reservering-Module (ADR-0015): persistUitwisselbaarKeuzes roept
+      // set_uitwisselbaar_claims-RPC aan; allocator-triggers muteren
+      // order_reserveringen op aantal-wijzigingen. Refresh claim/levertijd/
+      // handmatige-keuzes + producten.gereserveerd-afgeleide queries.
+      invalidateNaReserveringsmutatie(queryClient)
       // Snijplanning is mogelijk gewijzigd door triggerAutoplanForMaatwerk
       queryClient.invalidateQueries({ queryKey: ['snijplanning'] })
       queryClient.invalidateQueries({ queryKey: ['snijvoorstel'] })

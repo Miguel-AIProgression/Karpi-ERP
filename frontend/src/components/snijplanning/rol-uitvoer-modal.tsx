@@ -263,6 +263,16 @@ export function RolUitvoerModal({ rolId, open, onClose }: RolUitvoerModalProps) 
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [startedRolId, setStartedRolId] = useState<number | null>(null)
+  // Handmatige overrides voor reststuk-maten en aangebroken-rol-lengte. Auto-
+  // berekening uit `computeReststukkenAngebrokenAfval` blijft het uitgangspunt;
+  // de operator kan in de tabel een kleinere maat invoeren als er bij het
+  // snijden iets is misgegaan, zodat de voorraad-administratie klopt. Key voor
+  // reststukken = de letter ("R1", "R2", …) uit `snijVolgorde.reststukken`,
+  // die in sort-volgorde (y_cm, x_cm) wordt toegekend door `buildSnijVolgorde`.
+  const [reststukOverrides, setReststukOverrides] = useState<
+    Record<string, { breedte_cm?: number; lengte_cm?: number }>
+  >({})
+  const [aangebrokenLengteOverride, setAangebrokenLengteOverride] = useState<number | null>(null)
 
   useEffect(() => {
     if (!open || !rolId) return
@@ -279,6 +289,8 @@ export function RolUitvoerModal({ rolId, open, onClose }: RolUitvoerModalProps) 
       setError(null)
       setSuccess(null)
       setStartedRolId(null)
+      setReststukOverrides({})
+      setAangebrokenLengteOverride(null)
     }
   }, [open])
 
@@ -324,6 +336,31 @@ export function RolUitvoerModal({ rolId, open, onClose }: RolUitvoerModalProps) 
     [rolLengte, rolBreedte, afgevinkteSnijStukken, rolDetail?.rol_type],
   )
 
+  // Reststuk-rects met handmatige overrides toegepast (in sort-volgorde
+  // y_cm, x_cm — gelijk aan `toReststukMarkers` zodat letters R1, R2, …
+  // stabiel matchen tussen UI en RPC-input).
+  const reststukRectsEffectief = useMemo(() => {
+    return [...reststukRects]
+      .sort((a, b) => a.y_cm - b.y_cm || a.x_cm - b.x_cm)
+      .map((r, i) => {
+        const letter = `R${i + 1}`
+        const ov = reststukOverrides[letter]
+        return {
+          ...r,
+          breedte_cm: ov?.breedte_cm ?? r.breedte_cm,
+          lengte_cm: ov?.lengte_cm ?? r.lengte_cm,
+        }
+      })
+  }, [reststukRects, reststukOverrides])
+
+  const aangebrokenEffectief = useMemo(() => {
+    if (!aangebrokenEnd) return null
+    return {
+      ...aangebrokenEnd,
+      lengte_cm: aangebrokenLengteOverride ?? aangebrokenEnd.lengte_cm,
+    }
+  }, [aangebrokenEnd, aangebrokenLengteOverride])
+
   // Afgevinkte SnijplanRow's voor de "rol afsluiten"-flow.
   const afgevinkteRows = useMemo(
     () => teSnijden.filter((r) => checkedIds.has(r.id)),
@@ -361,11 +398,11 @@ export function RolUitvoerModal({ rolId, open, onClose }: RolUitvoerModalProps) 
       rol_breedte_cm: rolBreedte,
       rol_lengte_cm: rolLengte,
       placements,
-      reststukken: reststukRects,
-      aangebrokenEnd,
+      reststukken: reststukRectsEffectief,
+      aangebrokenEnd: aangebrokenEffectief,
       afval: afvalRects,
     })
-  }, [teSnijden, rolnummer, rolBreedte, rolLengte, reststukRects, aangebrokenEnd, afvalRects])
+  }, [teSnijden, rolnummer, rolBreedte, rolLengte, reststukRectsEffectief, aangebrokenEffectief, afvalRects])
 
   if (!open || !rolId) return null
 
@@ -396,14 +433,16 @@ export function RolUitvoerModal({ rolId, open, onClose }: RolUitvoerModalProps) 
     }
 
     const aangebrokenLengte =
-      aangebrokenEnd && aangebrokenEnd.lengte_cm >= 100 ? aangebrokenEnd.lengte_cm : null
+      aangebrokenEffectief && aangebrokenEffectief.lengte_cm >= 100
+        ? aangebrokenEffectief.lengte_cm
+        : null
 
     setError(null)
     voltooiRol.mutate(
       {
         rolId,
         snijplanIds: afgevinkt,
-        reststukken: reststukRects,
+        reststukken: reststukRectsEffectief,
         aangebrokenLengte,
       },
       {
@@ -423,18 +462,17 @@ export function RolUitvoerModal({ rolId, open, onClose }: RolUitvoerModalProps) 
 
   const printBulk = () => {
     // Geef reststuk-preview data mee via sessionStorage zodat stickers-bulk
-    // ook de (nog niet in DB bestaande) reststukken kan renderen.
-    if (rolId && reststukRects.length > 0) {
-      const previews = reststukRects
-        .slice()
-        .sort((a, b) => a.y_cm - b.y_cm || a.x_cm - b.x_cm)
-        .map((r, i) => ({
-          rolnummer: `${rolnummer}-R${i + 1}`,
-          kwaliteit_code: kwaliteit,
-          kleur_code: kleur,
-          lengte_cm: r.lengte_cm,
-          breedte_cm: r.breedte_cm,
-        }))
+    // ook de (nog niet in DB bestaande) reststukken kan renderen. Gebruik de
+    // effective (override-toegepaste) maten, niet de auto-berekende — anders
+    // print je een sticker met de verkeerde maat.
+    if (rolId && reststukRectsEffectief.length > 0) {
+      const previews = reststukRectsEffectief.map((r, i) => ({
+        rolnummer: `${rolnummer}-R${i + 1}`,
+        kwaliteit_code: kwaliteit,
+        kleur_code: kleur,
+        lengte_cm: r.lengte_cm,
+        breedte_cm: r.breedte_cm,
+      }))
       sessionStorage.setItem(`reststuk-preview-${rolId}`, JSON.stringify(previews))
     } else if (rolId) {
       sessionStorage.removeItem(`reststuk-preview-${rolId}`)
@@ -545,47 +583,144 @@ export function RolUitvoerModal({ rolId, open, onClose }: RolUitvoerModalProps) 
                         })}
                       </Fragment>
                     ))}
-                    {snijVolgorde.reststukken.map((r) => (
-                      <tr key={`rest-${r.letter}`} className="bg-emerald-50/40">
-                        <td className="py-2 pl-2 pr-2 text-center">
-                          <Package size={14} className="text-emerald-600 inline" />
-                        </td>
-                        <td className="py-2 pr-3 font-medium text-emerald-800">
-                          <span className="text-xs text-emerald-700 font-semibold mr-1">{r.letter}</span>
-                          {r.breedte_cm} × {r.lengte_cm} cm
-                        </td>
-                        <td className="py-2 pr-3 text-xs text-emerald-700" colSpan={2}>
-                          → voorraad ({r.rolnummer_volledig})
-                        </td>
-                        <td className="py-2 pr-3 text-xs text-slate-400">Reststuk</td>
-                        <td className="py-2 pr-3">
-                          <button
-                            onClick={() =>
-                              printReststukSticker({
-                                rolnummer,
-                                index: parseInt(r.letter.slice(1), 10),
-                                kwaliteit,
-                                kleur,
-                                lengte_cm: r.lengte_cm,
-                                breedte_cm: r.breedte_cm,
-                              })
-                            }
-                            className="inline-flex items-center gap-1 text-xs text-emerald-600 hover:underline"
-                          >
-                            <Printer size={12} />
-                            Preview sticker
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {snijVolgorde.reststukken.map((r) => {
+                      const ov = reststukOverrides[r.letter]
+                      const isOverridden =
+                        (ov?.breedte_cm !== undefined && ov.breedte_cm !== r.breedte_cm) ||
+                        (ov?.lengte_cm !== undefined && ov.lengte_cm !== r.lengte_cm) ||
+                        ov?.breedte_cm !== undefined ||
+                        ov?.lengte_cm !== undefined
+                      const minTeKlein =
+                        Math.min(r.breedte_cm, r.lengte_cm) < 70 ||
+                        Math.max(r.breedte_cm, r.lengte_cm) < 140
+                      return (
+                        <tr key={`rest-${r.letter}`} className="bg-emerald-50/40">
+                          <td className="py-2 pl-2 pr-2 text-center">
+                            <Package size={14} className="text-emerald-600 inline" />
+                          </td>
+                          <td className="py-2 pr-3 font-medium text-emerald-800">
+                            <span className="text-xs text-emerald-700 font-semibold mr-1">
+                              {r.letter}
+                            </span>
+                            <input
+                              type="number"
+                              min={1}
+                              value={r.breedte_cm}
+                              onChange={(e) => {
+                                const v = parseInt(e.target.value, 10)
+                                setReststukOverrides((prev) => ({
+                                  ...prev,
+                                  [r.letter]: {
+                                    ...prev[r.letter],
+                                    breedte_cm: Number.isFinite(v) ? v : undefined,
+                                  },
+                                }))
+                              }}
+                              className="w-14 px-1 py-0.5 text-sm text-right rounded border border-emerald-200 bg-white focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                              title="Breedte aanpassen"
+                            />
+                            <span className="mx-1">×</span>
+                            <input
+                              type="number"
+                              min={1}
+                              value={r.lengte_cm}
+                              onChange={(e) => {
+                                const v = parseInt(e.target.value, 10)
+                                setReststukOverrides((prev) => ({
+                                  ...prev,
+                                  [r.letter]: {
+                                    ...prev[r.letter],
+                                    lengte_cm: Number.isFinite(v) ? v : undefined,
+                                  },
+                                }))
+                              }}
+                              className="w-16 px-1 py-0.5 text-sm text-right rounded border border-emerald-200 bg-white focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                              title="Lengte aanpassen"
+                            />
+                            <span className="ml-1 text-xs text-emerald-700">cm</span>
+                            {isOverridden && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setReststukOverrides((prev) => {
+                                    const next = { ...prev }
+                                    delete next[r.letter]
+                                    return next
+                                  })
+                                }
+                                className="ml-2 text-[10px] text-slate-500 hover:text-slate-700 underline"
+                                title="Terug naar auto-berekende maten"
+                              >
+                                reset
+                              </button>
+                            )}
+                          </td>
+                          <td className="py-2 pr-3 text-xs text-emerald-700" colSpan={2}>
+                            → voorraad ({r.rolnummer_volledig})
+                            {minTeKlein && (
+                              <div className="text-[11px] text-amber-700 mt-0.5">
+                                ⚠ wordt afval (min. 70×140 cm voor reststuk-sticker)
+                              </div>
+                            )}
+                          </td>
+                          <td className="py-2 pr-3 text-xs text-slate-400">Reststuk</td>
+                          <td className="py-2 pr-3">
+                            <button
+                              onClick={() =>
+                                printReststukSticker({
+                                  rolnummer,
+                                  index: parseInt(r.letter.slice(1), 10),
+                                  kwaliteit,
+                                  kleur,
+                                  lengte_cm: r.lengte_cm,
+                                  breedte_cm: r.breedte_cm,
+                                })
+                              }
+                              className="inline-flex items-center gap-1 text-xs text-emerald-600 hover:underline"
+                            >
+                              <Printer size={12} />
+                              Preview sticker
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
                     {snijVolgorde.aangebroken_rest && (
                       <tr className="bg-blue-50/50">
                         <td className="py-2 pl-2 pr-2 text-center">
                           <Package size={14} className="text-blue-600 inline" />
                         </td>
                         <td className="py-2 pr-3 font-medium text-blue-800">
-                          {snijVolgorde.aangebroken_rest.breedte_cm} ×{' '}
-                          {snijVolgorde.aangebroken_rest.lengte_cm} cm
+                          <span className="text-slate-500">
+                            {snijVolgorde.aangebroken_rest.breedte_cm} ×{' '}
+                          </span>
+                          <input
+                            type="number"
+                            min={1}
+                            value={snijVolgorde.aangebroken_rest.lengte_cm}
+                            onChange={(e) => {
+                              const v = parseInt(e.target.value, 10)
+                              setAangebrokenLengteOverride(Number.isFinite(v) ? v : null)
+                            }}
+                            className="w-16 px-1 py-0.5 text-sm text-right rounded border border-blue-200 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+                            title="Lengte van aangebroken rol aanpassen"
+                          />
+                          <span className="ml-1 text-xs text-blue-700">cm</span>
+                          {aangebrokenLengteOverride !== null && (
+                            <button
+                              type="button"
+                              onClick={() => setAangebrokenLengteOverride(null)}
+                              className="ml-2 text-[10px] text-slate-500 hover:text-slate-700 underline"
+                              title="Terug naar auto-berekende lengte"
+                            >
+                              reset
+                            </button>
+                          )}
+                          {snijVolgorde.aangebroken_rest.lengte_cm < 100 && (
+                            <div className="text-[11px] text-amber-700 mt-0.5">
+                              ⚠ &lt; 100 cm — rol wordt afgesloten als <em>gesneden</em>, niet aangebroken
+                            </div>
+                          )}
                         </td>
                         <td className="py-2 pr-3 text-xs text-blue-700" colSpan={2}>
                           → behoud rol {rolnummer} (aangebroken, volle breedte)

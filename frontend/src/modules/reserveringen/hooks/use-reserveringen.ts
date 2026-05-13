@@ -5,7 +5,7 @@ import {
   fetchClaimsVoorOrderRegel,
   fetchClaimsVoorIORegel,
   fetchHandmatigeKeuzesVoorOrder,
-} from '@/modules/reserveringen/queries/reserveringen'
+} from '../queries/reserveringen'
 
 export function useLevertijdVoorOrder(orderId?: number) {
   return useQuery({
