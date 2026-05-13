@@ -1,13 +1,9 @@
 import { useState, type FormEvent } from 'react'
 import { Plus, Printer, Trash2, X } from 'lucide-react'
-import { useQuery } from '@tanstack/react-query'
-import { useBoekOntvangst } from '@/hooks/use-inkooporders'
 import { useAuth } from '@/hooks/use-auth'
-import {
-  fetchRollenVoorArtikel,
-  type InkooporderRegel,
-  type OntvangstRol,
-} from '@/lib/supabase/queries/inkooporders'
+import { useBoekOntvangst } from '../hooks/use-boek-ontvangst'
+import { useRollenVoorArtikel } from '../hooks/use-inkooporders'
+import type { InkooporderRegel, OntvangstRol } from '../queries/inkooporders'
 
 interface Props {
   regel: InkooporderRegel
@@ -37,11 +33,9 @@ export function OntvangstBoekenDialog({ regel, inkooporderNr, breedteCm, onClose
   const [error, setError] = useState<string | null>(null)
   const [toegekend, setToegekend] = useState<Array<{ rol_id: number; rolnummer: string }> | null>(null)
 
-  const { data: huidigeRollen = [], isLoading: rollenLaden } = useQuery({
-    queryKey: ['rollen-voor-artikel', regel.artikelnr],
-    queryFn: () => fetchRollenVoorArtikel(regel.artikelnr!),
-    enabled: !!regel.artikelnr,
-  })
+  const { data: huidigeRollen = [], isLoading: rollenLaden } = useRollenVoorArtikel(
+    regel.artikelnr ?? undefined,
+  )
 
   const boek = useBoekOntvangst()
 
@@ -92,11 +86,14 @@ export function OntvangstBoekenDialog({ regel, inkooporderNr, breedteCm, onClose
 
     try {
       const result = await boek.mutateAsync({
-        regelId: regel.id,
+        ioRegelId: regel.id,
         rollen: payload,
         medewerker: medewerker ?? undefined,
       })
-      setToegekend(result)
+      // Discriminator: rollen-pad geeft { kind: 'rollen', rollen: [...] } terug
+      if (result.kind === 'rollen') {
+        setToegekend(result.rollen)
+      }
     } catch (err) {
       console.error('boek_ontvangst RPC error:', err)
       const e = err as { message?: string; details?: string; hint?: string; code?: string }

@@ -5,13 +5,13 @@ import { PageHeader } from '@/components/layout/page-header'
 import {
   useInkooporderDetail,
   useUpdateInkooporderStatus,
-} from '@/hooks/use-inkooporders'
-import { InkooporderStatusBadge } from '@/components/inkooporders/inkooporder-status-badge'
-import { OntvangstBoekenDialog } from '@/components/inkooporders/ontvangst-boeken-dialog'
-import { VoorraadOntvangstDialog } from '@/components/inkooporders/voorraad-ontvangst-dialog'
-import { IORegelClaimsPopover } from '@/components/inkooporders/io-regel-claims-popover'
+  InkooporderStatusBadge,
+  OntvangstBoekenDialog,
+  VoorraadOntvangstDialog,
+  IORegelClaimsPopover,
+  type InkooporderRegel,
+} from '@/modules/inkoop'
 import { DocumentenCompact } from '@/components/documenten/documenten-compact'
-import type { InkooporderRegel } from '@/lib/supabase/queries/inkooporders'
 
 function formatAantal(value: number): string {
   return value.toLocaleString('nl-NL', { minimumFractionDigits: 0, maximumFractionDigits: 1 })

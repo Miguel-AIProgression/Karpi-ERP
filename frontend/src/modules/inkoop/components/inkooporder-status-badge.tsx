@@ -1,4 +1,4 @@
-import type { InkooporderStatus } from '@/lib/supabase/queries/inkooporders'
+import type { InkooporderStatus } from '../queries/inkooporders'
 
 const STYLES: Record<InkooporderStatus, string> = {
   Concept: 'bg-slate-100 text-slate-600',

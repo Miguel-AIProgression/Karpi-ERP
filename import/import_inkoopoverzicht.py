@@ -10,6 +10,14 @@ Schrijf wijzigingen:          python import_inkoopoverzicht.py --apply
 Met custom pad:              python import_inkoopoverzicht.py --file /pad/naar/Inkoopoverzicht.xlsx
 """
 
+# TODO(ADR-0016, open backlog): dit script doet bulk-insert in
+# inkooporder_regels via service-role-key. Initial-imports passen niet binnen
+# boek_inkooporder_ontvangst_{stuks,rollen} (die zijn voor ontvangst-boekingen
+# op bestaande regels, niet voor regel-creatie). Volgende stap: introduceer
+# een `create_inkooporder(p_payload JSONB)`-RPC in een vervolg-migratie zodat
+# ook deze flow door de Inkoop-Module-laag gaat. Tot dan: pad expliciet
+# gewhitelist in scripts/lint-no-direct-inkooporder-regel-write.sh (Task 10).
+
 import argparse
 import re
 import sys

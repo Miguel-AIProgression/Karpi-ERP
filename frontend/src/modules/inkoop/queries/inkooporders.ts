@@ -1,4 +1,4 @@
-import { supabase } from '../client'
+import { supabase } from '@/lib/supabase/client'
 
 export type InkooporderStatus =
   | 'Concept'
@@ -432,7 +432,7 @@ export interface HuidigeRol {
 
 export async function fetchRollenVoorStickers(
   rol_ids: number[],
-): Promise<Array<import('../../../components/inkooporders/rol-sticker-layout').RolStickerData>> {
+): Promise<Array<import('../components/rol-sticker-layout').RolStickerData>> {
   if (rol_ids.length === 0) return []
   const { data, error } = await supabase
     .from('rollen')
@@ -540,4 +540,66 @@ export async function fetchRollenVoorArtikel(artikelnr: string): Promise<Huidige
     .order('rolnummer', { ascending: true })
   if (error) throw error
   return (data ?? []) as HuidigeRol[]
+}
+
+/**
+ * Compacte samenvatting van een inkooporder-regel inclusief parent-IO en leverancier.
+ * Bron voor het `<InkoopRegelSamenvatting>`-slot dat Reservering's `<RegelClaimDetail>`
+ * kan inhangen — slot self-fetcht zodat de consumer alleen `ioRegelId` doorgeeft.
+ */
+export interface InkoopRegelSamenvatting {
+  io_regel_id: number
+  inkooporder_nr: string
+  inkooporder_status: string
+  leverancier_naam: string | null
+  verwacht_datum: string | null
+  te_leveren_m: number
+  eenheid: string
+}
+
+export async function fetchInkoopRegelSamenvatting(
+  ioRegelId: number,
+): Promise<InkoopRegelSamenvatting | null> {
+  const { data, error } = await supabase
+    .from('inkooporder_regels')
+    .select(
+      `id, te_leveren_m, eenheid,
+       inkooporders!inner (
+         inkooporder_nr, status, verwacht_datum,
+         leveranciers!inkooporders_leverancier_id_fkey ( naam )
+       )`,
+    )
+    .eq('id', ioRegelId)
+    .single()
+
+  if (error || !data) return null
+
+  // Supabase kan inkooporders/leveranciers als object OF array terugleveren afhankelijk
+  // van FK-config. Defensief beide vormen afhandelen.
+  type LevShape = { naam: string | null } | Array<{ naam: string | null }> | null
+  type IoShape = {
+    inkooporder_nr: string | null
+    status: string | null
+    verwacht_datum: string | null
+    leveranciers: LevShape
+  }
+  const raw = data as unknown as {
+    id: number
+    te_leveren_m: number | null
+    eenheid: string | null
+    inkooporders: IoShape | IoShape[] | null
+  }
+  const io = Array.isArray(raw.inkooporders) ? raw.inkooporders[0] ?? null : raw.inkooporders
+  const lev = io?.leveranciers ?? null
+  const leverancierNaam = Array.isArray(lev) ? lev[0]?.naam ?? null : lev?.naam ?? null
+
+  return {
+    io_regel_id: raw.id,
+    inkooporder_nr: io?.inkooporder_nr ?? '',
+    inkooporder_status: io?.status ?? '',
+    leverancier_naam: leverancierNaam,
+    verwacht_datum: io?.verwacht_datum ?? null,
+    te_leveren_m: Number(raw.te_leveren_m ?? 0),
+    eenheid: raw.eenheid ?? 'm',
+  }
 }

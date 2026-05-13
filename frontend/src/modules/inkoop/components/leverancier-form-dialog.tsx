@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { X } from 'lucide-react'
-import { useCreateLeverancier, useUpdateLeverancier } from '@/hooks/use-leveranciers'
-import type { LeverancierDetail, LeverancierFormData } from '@/lib/supabase/queries/leveranciers'
+import { useCreateLeverancier, useUpdateLeverancier } from '../hooks/use-leveranciers'
+import type { LeverancierDetail, LeverancierFormData } from '../queries/leveranciers'
 
 interface Props {
   leverancier?: LeverancierDetail

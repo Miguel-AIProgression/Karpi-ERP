@@ -7,7 +7,7 @@ import { berekenProductGewichtKg } from '@/lib/utils/gewicht'
 import { cn } from '@/lib/utils/cn'
 import { useQuery } from '@tanstack/react-query'
 import { useProductDetail, useRollenVoorProduct, useClaimsVoorProduct, useEquivalenteProducten } from '@/hooks/use-producten'
-import { useOpenstaandeInkoopVoorArtikel } from '@/hooks/use-inkooporders'
+import { useOpenstaandeInkoopregelsVoorArtikel } from '@/modules/inkoop'
 import { useVoorraadpositie } from '@/modules/voorraadpositie'
 import { ProductTypeBadge } from './producten-overview'
 import { GewichtBronBadge } from '@/components/kwaliteiten/gewicht-bron-badge'
@@ -41,10 +41,10 @@ export function ProductDetailPage() {
   const { data: rollen } = useRollenVoorProduct(artikelnr)
   const { data: claims } = useClaimsVoorProduct(artikelnr)
   const { data: equivalenten } = useEquivalenteProducten(artikelnr)
-  const { data: inkoopregels } = useOpenstaandeInkoopVoorArtikel(artikelnr)
+  const { data: inkoopregels } = useOpenstaandeInkoopregelsVoorArtikel(artikelnr)
   // Voorraadpositie-Module seam (T001 tracer-bullet, mig 179) — levert
   // de aggregate "Openstaande inkooporders"-totaal m¹ via voorraadpositie.besteld.
-  // De per-IO-regel-detail blijft uit useOpenstaandeInkoopVoorArtikel komen
+  // De per-IO-regel-detail blijft uit useOpenstaandeInkoopregelsVoorArtikel komen
   // (aggregate kent geen regel-niveau leverancier/status/leverweek).
   const { data: voorraadpositie } = useVoorraadpositie(
     product?.kwaliteit_code ?? '',

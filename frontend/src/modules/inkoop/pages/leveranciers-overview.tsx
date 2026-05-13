@@ -2,8 +2,7 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Building2, Plus, Search } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { useLeveranciersOverzicht } from '@/hooks/use-leveranciers'
-import { LeverancierFormDialog } from '@/components/leveranciers/leverancier-form-dialog'
+import { useLeveranciersOverzicht, LeverancierFormDialog } from '@/modules/inkoop'
 
 function formatMeters(value: number): string {
   return value.toLocaleString('nl-NL', { minimumFractionDigits: 0, maximumFractionDigits: 1 })
