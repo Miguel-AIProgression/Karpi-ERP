@@ -396,6 +396,7 @@ function KlantenTab({
   onAdd: () => void
 }) {
   const [removeBusy, setRemoveBusy] = useState<number | null>(null)
+  const [zoek, setZoek] = useState('')
   const setMutation = useSetKlantPrijslijst()
 
   const handleRemove = async (debiteurNr: number, naam: string) => {
@@ -408,32 +409,60 @@ function KlantenTab({
     }
   }
 
+  const filtered = useMemo(() => {
+    if (!zoek.trim()) return klanten
+    const q = zoek.trim().toLowerCase()
+    return klanten.filter(
+      (k) =>
+        k.naam.toLowerCase().includes(q) ||
+        String(k.debiteur_nr).includes(q) ||
+        k.plaats?.toLowerCase().includes(q),
+    )
+  }, [klanten, zoek])
+
   return (
     <>
-      <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between gap-2">
+      <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between gap-4">
         <div className="flex items-center gap-2">
           <Users size={14} className="text-slate-400" />
           <span className="text-xs text-slate-400">
-            {klanten.length} klant{klanten.length !== 1 ? 'en' : ''} gebruik
-            {klanten.length === 1 ? 't' : 'en'} deze prijslijst
+            {zoek.trim()
+              ? `${filtered.length} van ${klanten.length} klant${klanten.length !== 1 ? 'en' : ''}`
+              : `${klanten.length} klant${klanten.length !== 1 ? 'en' : ''} gebruik${klanten.length === 1 ? 't' : 'en'} deze prijslijst`}
           </span>
         </div>
-        <button
-          onClick={onAdd}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-[var(--radius-sm)] bg-terracotta-500 text-white font-medium hover:bg-terracotta-600"
-        >
-          <Plus size={14} />
-          Klant toevoegen
-        </button>
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Zoek op naam, debiteur-nr of plaats..."
+              value={zoek}
+              onChange={(e) => setZoek(e.target.value)}
+              className="pl-8 pr-3 py-1.5 text-sm border border-slate-200 rounded-[var(--radius-sm)] w-64 focus:outline-none focus:ring-1 focus:ring-terracotta-300 focus:border-terracotta-300"
+            />
+          </div>
+          <button
+            onClick={onAdd}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-[var(--radius-sm)] bg-terracotta-500 text-white font-medium hover:bg-terracotta-600"
+          >
+            <Plus size={14} />
+            Klant toevoegen
+          </button>
+        </div>
       </div>
 
       {klanten.length === 0 ? (
         <div className="p-5 text-sm text-slate-400">
           Nog geen klanten op prijslijst {prijslijstNr}
         </div>
+      ) : filtered.length === 0 ? (
+        <div className="px-5 py-8 text-center text-sm text-slate-400">
+          Geen klanten gevonden voor "{zoek}"
+        </div>
       ) : (
         <div className="divide-y divide-slate-50">
-          {klanten.map((k) => (
+          {filtered.map((k) => (
             <div
               key={k.debiteur_nr}
               className="group flex items-center justify-between px-5 py-3 text-sm hover:bg-slate-50"
