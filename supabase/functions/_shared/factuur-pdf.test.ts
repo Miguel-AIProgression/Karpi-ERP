@@ -149,6 +149,37 @@ Deno.test('genereerFactuurPDF: afwijkend afleveradres-blok rendert', async () =>
   assert(bytes.length > 500, 'PDF met afleveradres-blok moet renderen')
 })
 
+Deno.test('genereerFactuurPDF: lange korting-omschrijving wrapt naar 2e regel (geen ellips-afkapping)', async () => {
+  const input: FactuurPDFInput = {
+    ...MINIMAL_INPUT,
+    regels: [
+      {
+        order_nr: 'ORD-2026-2057',
+        uw_referentie: '',
+        artikelnr: 'DREMPELKORTING',
+        aantal: 1,
+        eenheid: 'St',
+        // 40-tekens omschrijving — past niet naast de prijs in Courier 9pt
+        omschrijving: 'Drempelkorting verzending — vanaf €35.00',
+        prijs: -35,
+        bedrag: -35,
+      },
+      {
+        order_nr: 'ORD-2026-2058',
+        uw_referentie: '',
+        artikelnr: 'BUNDELKORTING',
+        aantal: 1,
+        eenheid: 'St',
+        omschrijving: 'Bundelkorting verzending (gebundeld 2 orders)',
+        prijs: -35,
+        bedrag: -35,
+      },
+    ],
+  }
+  const bytes = await genereerFactuurPDF(input)
+  assert(bytes.length > 500, 'PDF met gewrapte korting-omschrijvingen moet renderen')
+})
+
 Deno.test('genereerFactuurPDF: dubbele bankregel + 3-talige voorwaarden-footer', async () => {
   const input: FactuurPDFInput = {
     ...MINIMAL_INPUT,

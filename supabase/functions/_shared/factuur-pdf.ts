@@ -223,6 +223,49 @@ function truncateNaarBreedte(text: string, maxWidth: number, font: PDFFont, size
   return s + ellips
 }
 
+/**
+ * Splits een lange omschrijving over een hoofdregel + 0..n vervolgregels.
+ * - Hoofdregel: max `firstMaxWidth` (smaller, omdat naast Prijs/Bedrag-kolom).
+ * - Vervolgregels: max `restMaxWidth` (breder, omdat geen prijs ernaast staat).
+ * Wraps op woordgrens. Als zelfs het eerste woord niet past, valt terug op truncate
+ * met ellips zodat de regel nooit overlapt met Prijs.
+ */
+function splitOmschrijvingOverRegels(
+  text: string,
+  firstMaxWidth: number,
+  restMaxWidth: number,
+  font: PDFFont,
+  size: number,
+): { eerste: string; vervolg: string[] } {
+  if (font.widthOfTextAtSize(text, size) <= firstMaxWidth) {
+    return { eerste: text, vervolg: [] }
+  }
+  const woorden = text.split(' ')
+  let eerste = ''
+  let i = 0
+  for (; i < woorden.length; i++) {
+    const kandidaat = eerste.length === 0 ? woorden[i] : `${eerste} ${woorden[i]}`
+    if (font.widthOfTextAtSize(kandidaat, size) > firstMaxWidth) break
+    eerste = kandidaat
+  }
+  if (eerste.length === 0) {
+    return { eerste: truncateNaarBreedte(text, firstMaxWidth, font, size), vervolg: [] }
+  }
+  const vervolg: string[] = []
+  let regel = ''
+  for (const w of woorden.slice(i)) {
+    const kandidaat = regel.length === 0 ? w : `${regel} ${w}`
+    if (font.widthOfTextAtSize(kandidaat, size) > restMaxWidth && regel.length > 0) {
+      vervolg.push(regel)
+      regel = w
+    } else {
+      regel = kandidaat
+    }
+  }
+  if (regel.length > 0) vervolg.push(regel)
+  return { eerste, vervolg }
+}
+
 // ---------------------------------------------------------------------------
 // Low-level draw helpers
 // ---------------------------------------------------------------------------
@@ -648,27 +691,39 @@ export async function genereerFactuurPDF(input: FactuurPDFInput): Promise<Uint8A
 
     // Draw each regel in the group
     for (const r of groepRegels) {
-      const extraRegels = r.omschrijving_2 ? r.omschrijving_2.split('\n').filter(s => s.length > 0) : []
-      const rowCount = 1 + extraRegels.length
-      ensureRoom(rowCount * (LINE_H / MM))
-
-      // Main regel line (9pt). Omschrijving krijgt max-breedte tussen Omschr-kolom en Prijs-kolom
-      // (met 2mm marge) om overlap met prijs-getal te voorkomen.
       const SIZE = 9
       const OMSCHR_MAX_W = COL_PRIJS - regular.widthOfTextAtSize(formatBedrag(r.prijs), SIZE) - COL_OMSCHR - 2 * MM
+      const EXTRA_MAX_W = COL_BEDRAG - COL_OMSCHR - 2 * MM
+
+      // Wrap lange omschrijving over hoofdregel + 0..n vervolgregels.
+      // Voorbeeld: "Drempelkorting verzending — vanaf €35.00" past niet naast de prijs,
+      // dus de staart komt op een tweede regel onder de hoofdregel.
+      const { eerste: omschrijvingEerste, vervolg: omschrijvingVervolg } =
+        splitOmschrijvingOverRegels(r.omschrijving, OMSCHR_MAX_W, EXTRA_MAX_W, regular, SIZE)
+
+      const extraRegels = r.omschrijving_2 ? r.omschrijving_2.split('\n').filter(s => s.length > 0) : []
+      const rowCount = 1 + omschrijvingVervolg.length + extraRegels.length
+      ensureRoom(rowCount * (LINE_H / MM))
+
+      // Hoofdregel (artikelnr + aantal + eh + omschrijving-eerste + prijs + bedrag)
       drawText(page, r.artikelnr, COL_ARTIKEL, cursorY, regular, SIZE)
       drawTextRight(page, String(r.aantal), COL_AANTAL + COL_AANTAL_W, cursorY, regular, SIZE)
       drawText(page, r.eenheid, COL_EH, cursorY, regular, SIZE)
-      drawText(page, truncateNaarBreedte(r.omschrijving, OMSCHR_MAX_W, regular, SIZE), COL_OMSCHR, cursorY, regular, SIZE)
+      drawText(page, omschrijvingEerste, COL_OMSCHR, cursorY, regular, SIZE)
       drawTextRight(page, formatBedrag(r.prijs), COL_PRIJS, cursorY, regular, SIZE)
       drawTextRight(page, formatBedrag(r.bedrag), COL_BEDRAG, cursorY, regular, SIZE)
 
       paginaTotaal += r.bedrag
       cursorY -= LINE_H
 
-      // Vervolgregels (BANGKOK KLEUR ..., Band: ..., Uw model:..., MEERWERKKOSTEN ...)
-      // Hebben de volle Omschrijving-breedte tot aan Bedrag-kolom omdat er geen prijs/bedrag op die regels staat.
-      const EXTRA_MAX_W = COL_BEDRAG - COL_OMSCHR - 2 * MM
+      // Wrap-vervolg van omschrijving — volle breedte tot Bedrag-kolom (geen prijs/bedrag naast)
+      for (const regel of omschrijvingVervolg) {
+        ensureRoom(LINE_H / MM)
+        drawText(page, regel, COL_OMSCHR, cursorY, regular, SIZE)
+        cursorY -= LINE_H
+      }
+
+      // Vervolgregels uit omschrijving_2 (BANGKOK KLEUR ..., Band: ..., Uw model:..., MEERWERKKOSTEN ...)
       for (const extra of extraRegels) {
         ensureRoom(LINE_H / MM)
         drawText(page, truncateNaarBreedte(extra, EXTRA_MAX_W, regular, SIZE), COL_OMSCHR, cursorY, regular, SIZE)

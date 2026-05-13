@@ -616,10 +616,15 @@ export function RolUitvoerModal({ rolId, open, onClose }: RolUitvoerModalProps) 
                                   },
                                 }))
                               }}
-                              className="w-14 px-1 py-0.5 text-sm text-right rounded border border-emerald-200 bg-white focus:outline-none focus:ring-1 focus:ring-emerald-400"
-                              title="Breedte aanpassen"
+                              className={cn(
+                                'w-11 px-0.5 py-0 bg-transparent border-0 border-b border-dashed border-transparent text-right tabular-nums appearance-none',
+                                '[-moz-appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none',
+                                'hover:border-emerald-300 focus:border-emerald-400 focus:outline-none',
+                                ov?.breedte_cm !== undefined && 'border-emerald-400',
+                              )}
+                              title="Klik om breedte aan te passen"
                             />
-                            <span className="mx-1">×</span>
+                            <span className="mx-0.5">×</span>
                             <input
                               type="number"
                               min={1}
@@ -634,10 +639,15 @@ export function RolUitvoerModal({ rolId, open, onClose }: RolUitvoerModalProps) 
                                   },
                                 }))
                               }}
-                              className="w-16 px-1 py-0.5 text-sm text-right rounded border border-emerald-200 bg-white focus:outline-none focus:ring-1 focus:ring-emerald-400"
-                              title="Lengte aanpassen"
+                              className={cn(
+                                'w-12 px-0.5 py-0 bg-transparent border-0 border-b border-dashed border-transparent text-right tabular-nums appearance-none',
+                                '[-moz-appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none',
+                                'hover:border-emerald-300 focus:border-emerald-400 focus:outline-none',
+                                ov?.lengte_cm !== undefined && 'border-emerald-400',
+                              )}
+                              title="Klik om lengte aan te passen"
                             />
-                            <span className="ml-1 text-xs text-emerald-700">cm</span>
+                            <span className="ml-1">cm</span>
                             {isOverridden && (
                               <button
                                 type="button"
@@ -702,10 +712,15 @@ export function RolUitvoerModal({ rolId, open, onClose }: RolUitvoerModalProps) 
                               const v = parseInt(e.target.value, 10)
                               setAangebrokenLengteOverride(Number.isFinite(v) ? v : null)
                             }}
-                            className="w-16 px-1 py-0.5 text-sm text-right rounded border border-blue-200 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
-                            title="Lengte van aangebroken rol aanpassen"
+                            className={cn(
+                              'w-12 px-0.5 py-0 bg-transparent border-0 border-b border-dashed border-transparent text-right tabular-nums appearance-none',
+                              '[-moz-appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none',
+                              'hover:border-blue-300 focus:border-blue-400 focus:outline-none',
+                              aangebrokenLengteOverride !== null && 'border-blue-400',
+                            )}
+                            title="Klik om lengte van aangebroken rol aan te passen"
                           />
-                          <span className="ml-1 text-xs text-blue-700">cm</span>
+                          <span className="ml-1">cm</span>
                           {aangebrokenLengteOverride !== null && (
                             <button
                               type="button"

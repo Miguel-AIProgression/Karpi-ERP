@@ -29,6 +29,7 @@ interface ZendingRegelRow {
     id: number
     order_id: number
     regelnummer: number | null
+    artikelnr: string | null
     omschrijving: string | null
   } | null
 }
@@ -269,27 +270,21 @@ function RegelTabel({
       <table className="w-full text-sm">
         <thead className="bg-slate-50 text-xs text-slate-500 uppercase tracking-wider">
           <tr>
-            <th className="px-3 py-2 text-left font-medium">Regel</th>
+            <th className="px-3 py-2 text-right font-medium w-20">Aantal</th>
             <th className="px-3 py-2 text-left font-medium">Artikelnr</th>
             <th className="px-3 py-2 text-left font-medium">Omschrijving</th>
-            <th className="px-3 py-2 text-left font-medium">Rol-id</th>
-            <th className="px-3 py-2 text-right font-medium">Aantal</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
           {regels.map((r) => (
             <tr key={r.id}>
-              <td className="px-3 py-2 text-slate-600">
-                {r.order_regels?.regelnummer ?? r.order_regel_id ?? '—'}
-              </td>
+              <td className="px-3 py-2 text-right text-slate-700">{r.aantal}</td>
               <td className="px-3 py-2 text-slate-700 font-mono text-xs">
-                {r.artikelnr ?? '—'}
+                {r.artikelnr ?? r.order_regels?.artikelnr ?? '—'}
               </td>
               <td className="px-3 py-2 text-slate-600">
                 {r.order_regels?.omschrijving ?? '—'}
               </td>
-              <td className="px-3 py-2 text-slate-600">{r.rol_id ?? '—'}</td>
-              <td className="px-3 py-2 text-right text-slate-700">{r.aantal}</td>
             </tr>
           ))}
         </tbody>

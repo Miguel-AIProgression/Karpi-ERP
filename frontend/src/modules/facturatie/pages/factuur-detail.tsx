@@ -2,9 +2,9 @@ import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, Download, CheckCircle, ExternalLink } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { StatusBadge } from '@/components/ui/status-badge'
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { useFactuurDetail, useMarkeerBetaald } from '../hooks/use-facturen'
-import { getFactuurPdfSignedUrl, renderFactuurPdfBlobUrl } from '../queries/facturen'
+import { getFactuurPdfSignedUrl, renderFactuurPdfBlobUrl, type FactuurRegel } from '../queries/facturen'
 import { formatCurrency, formatDate } from '@/lib/utils/formatters'
 
 export function FactuurDetailPage() {
@@ -194,7 +194,7 @@ export function FactuurDetailPage() {
         </div>
       </div>
 
-      {/* Regels-tabel */}
+      {/* Regels-tabel — gegroepeerd per order, gelijk aan PDF */}
       <div className="bg-white rounded-[var(--radius)] border border-slate-200 mb-6">
         <div className="p-5 border-b border-slate-100">
           <h2 className="text-sm font-semibold text-slate-700">Factuurregels</h2>
@@ -204,8 +204,6 @@ export function FactuurDetailPage() {
             <thead>
               <tr className="border-b border-slate-100 text-left">
                 <th className="px-5 py-3 font-medium text-slate-500 w-10">#</th>
-                <th className="px-5 py-3 font-medium text-slate-500">Order</th>
-                <th className="px-5 py-3 font-medium text-slate-500">Uw ref.</th>
                 <th className="px-5 py-3 font-medium text-slate-500">Artikel</th>
                 <th className="px-5 py-3 font-medium text-slate-500">Omschrijving</th>
                 <th className="px-5 py-3 font-medium text-slate-500 text-right">Aantal</th>
@@ -213,47 +211,72 @@ export function FactuurDetailPage() {
                 <th className="px-5 py-3 font-medium text-slate-500 text-right">Bedrag</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody>
               {regels.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-5 py-6 text-center text-sm text-slate-400">
+                  <td colSpan={6} className="px-5 py-6 text-center text-sm text-slate-400">
                     Geen regels
                   </td>
                 </tr>
               ) : (
-                regels.map((r) => (
-                  <tr key={r.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-5 py-3 text-slate-400">{r.regelnummer}</td>
-                    <td className="px-5 py-3 font-mono text-xs">
-                      {r.order_id ? (
-                        <Link
-                          to={`/orders/${r.order_id}`}
-                          className="text-terracotta-500 hover:text-terracotta-600 hover:underline"
-                        >
-                          {r.order_nr ?? `#${r.order_id}`}
-                        </Link>
-                      ) : (
-                        <span className="text-slate-600">{r.order_nr ?? '—'}</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3 text-slate-600">{r.uw_referentie ?? '—'}</td>
-                    <td className="px-5 py-3 font-mono text-xs text-slate-600">
-                      {r.artikelnr ?? '—'}
-                    </td>
-                    <td className="px-5 py-3 text-slate-700">
-                      {r.omschrijving ?? '—'}
-                      {r.omschrijving_2 && (
-                        <span className="block text-xs text-slate-400">{r.omschrijving_2}</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3 text-right text-slate-700">{r.aantal}</td>
-                    <td className="px-5 py-3 text-right text-slate-700 whitespace-nowrap">
-                      {formatCurrency(r.prijs)}
-                    </td>
-                    <td className="px-5 py-3 text-right font-medium text-slate-800 whitespace-nowrap">
-                      {formatCurrency(r.bedrag)}
-                    </td>
-                  </tr>
+                groepeerPerOrder(regels).map((groep) => (
+                  <Fragment key={groep.order_id ?? `geen-order-${groep.order_nr ?? 'x'}`}>
+                    <tr className="bg-slate-50 border-y border-slate-200">
+                      <td colSpan={6} className="px-5 py-2.5">
+                        <div className="flex items-center gap-3 text-xs">
+                          <span className="font-semibold text-slate-500 uppercase tracking-wider">
+                            Order
+                          </span>
+                          {groep.order_id ? (
+                            <Link
+                              to={`/orders/${groep.order_id}`}
+                              className="font-mono font-medium text-terracotta-500 hover:text-terracotta-600 hover:underline"
+                            >
+                              {groep.order_nr ?? `#${groep.order_id}`}
+                            </Link>
+                          ) : (
+                            <span className="font-mono font-medium text-slate-700">
+                              {groep.order_nr ?? '—'}
+                            </span>
+                          )}
+                          {groep.uw_referentie && (
+                            <>
+                              <span className="text-slate-300">•</span>
+                              <span className="text-slate-500">Uw ref.</span>
+                              <span className="text-slate-700">{groep.uw_referentie}</span>
+                            </>
+                          )}
+                          <span className="ml-auto text-slate-500">
+                            Subtotaal{' '}
+                            <span className="font-medium text-slate-700">
+                              {formatCurrency(groep.subtotaal)}
+                            </span>
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                    {groep.regels.map((r) => (
+                      <tr key={r.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                        <td className="px-5 py-3 text-slate-400">{r.regelnummer}</td>
+                        <td className="px-5 py-3 font-mono text-xs text-slate-600">
+                          {r.artikelnr ?? '—'}
+                        </td>
+                        <td className="px-5 py-3 text-slate-700">
+                          {r.omschrijving ?? '—'}
+                          {r.omschrijving_2 && (
+                            <span className="block text-xs text-slate-400">{r.omschrijving_2}</span>
+                          )}
+                        </td>
+                        <td className="px-5 py-3 text-right text-slate-700">{r.aantal}</td>
+                        <td className="px-5 py-3 text-right text-slate-700 whitespace-nowrap">
+                          {formatCurrency(r.prijs)}
+                        </td>
+                        <td className="px-5 py-3 text-right font-medium text-slate-800 whitespace-nowrap">
+                          {formatCurrency(r.bedrag)}
+                        </td>
+                      </tr>
+                    ))}
+                  </Fragment>
                 ))
               )}
             </tbody>
@@ -290,4 +313,33 @@ export function FactuurDetailPage() {
       )}
     </>
   )
+}
+
+interface FactuurRegelGroep {
+  order_id: number | null
+  order_nr: string | null
+  uw_referentie: string | null
+  regels: FactuurRegel[]
+  subtotaal: number
+}
+
+function groepeerPerOrder(regels: FactuurRegel[]): FactuurRegelGroep[] {
+  const groepen = new Map<string, FactuurRegelGroep>()
+  for (const r of regels) {
+    const key = r.order_id != null ? `id-${r.order_id}` : `nr-${r.order_nr ?? 'leeg'}`
+    let groep = groepen.get(key)
+    if (!groep) {
+      groep = {
+        order_id: r.order_id ?? null,
+        order_nr: r.order_nr,
+        uw_referentie: r.uw_referentie,
+        regels: [],
+        subtotaal: 0,
+      }
+      groepen.set(key, groep)
+    }
+    groep.regels.push(r)
+    groep.subtotaal += Number(r.bedrag)
+  }
+  return Array.from(groepen.values())
 }

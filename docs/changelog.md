@@ -1,5 +1,17 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-13 — Factuur-PDF: lange omschrijving wrapt over 2 regels (geen ellips-afkapping meer)
+
+**Waarom:** Op FACT-2026-0019 vielen de admin-pseudo-omschrijvingen weg met "Drempelkorting verzen…" en "Bundelkorting verzen…" — de Omschrijving-kolom is ~26 chars breed (Courier 9pt), de SQL-format-strings uit mig 264/268 leveren 40+ chars. Truncate met ellips maakte de regel betekenisloos op de factuur die de klant ziet.
+
+**Wat:**
+- [`factuur-pdf.ts`](supabase/functions/_shared/factuur-pdf.ts) — nieuwe helper `splitOmschrijvingOverRegels(text, firstMaxWidth, restMaxWidth, ...)`. Hoofdregel krijgt zoveel woorden als passen naast de Prijs-kolom; rest komt als extra wrap-regel(s) onder de hoofdregel op de bredere `EXTRA_MAX_W` (volle ruimte tot Bedrag-kolom). Wraps op woordgrens; valt terug op truncate-met-ellips alleen als zelfs het eerste woord niet past.
+- Render-lus past `rowCount` aan zodat `ensureRoom` ook de wrap-regels meetelt — geen overflow op pagina-grens.
+- `omschrijving_2`-regels (BANGKOK KLEUR / Band: / Uw model: …) blijven verschijnen ná de wrap-regels van de hoofd-omschrijving.
+- Test toegevoegd voor `DREMPELKORTING` + `BUNDELKORTING` met realistische 40+ char strings.
+
+**Niet gewijzigd:** kolombreedtes blijven gelijk (Prijs-positie ongewijzigd) — bestaande compacte rendering voor korte omschrijvingen ziet er identiek uit. Generieke fix: elke toekomstige korting / toeslag / admin-pseudo met lange omschrijving wrapt automatisch.
+
 ## 2026-05-13 — Mig 274 + ADR-0019: snijplan-rij = 1 fysiek maatwerk-stuk
 
 **Waarom:** Op ORD-2026-2067 (5× maatwerk BILA 14 200×230) toonde de snij-modal slechts 1 stuk te snijden i.p.v. 5. Root cause: `auto_maak_snijplan()` (mig 110) maakte sinds dag 1 exact één snijplan-rij aan per orderregel, ongeacht `orderaantal`. Bug bleef onzichtbaar omdat maatwerk in de praktijk vrijwel altijd `orderaantal=1` had.

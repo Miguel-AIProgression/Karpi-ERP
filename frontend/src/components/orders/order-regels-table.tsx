@@ -15,11 +15,12 @@ function formatMaat(regel: OrderRegel): string {
   return `${l}×${b} cm`
 }
 
-function SnijplanStatusBadge({ status }: { status: string }) {
+function SnijplanStatusBadge({ status, suffix }: { status: string; suffix?: string | null }) {
   const colors = SNIJPLAN_STATUS_COLORS[status] ?? { bg: 'bg-slate-100', text: 'text-slate-600' }
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${colors.bg} ${colors.text}`}>
       {status}
+      {suffix && <span className="font-mono opacity-80">· {suffix}</span>}
     </span>
   )
 }
@@ -252,18 +253,17 @@ function RegelRow({ regel, levertijd, claims, isEindstatus }: RegelRowProps) {
                 <span className="text-slate-500 italic">{regel.maatwerk_instructies}</span>
               )}
 
-              {/* Productie status */}
+              {/* Productie status — info-only (geen klik; was kapotte
+                  /productie/snijplanning route). Ingepakt-badge bevat de
+                  magazijn-locatie in dezelfde pill ("Ingepakt · A-13"). */}
               {regel.snijplannen && regel.snijplannen.length > 0 && (
-                <span className="ml-auto flex items-center gap-2">
+                <span className="ml-auto flex items-center gap-2 flex-wrap">
                   {regel.snijplannen.map((sp) => (
-                    <Link
+                    <SnijplanStatusBadge
                       key={sp.id}
-                      to="/productie/snijplanning"
-                      className="inline-flex items-center gap-1.5 hover:opacity-80"
-                      title={`Snijplan ${sp.snijplan_nr}`}
-                    >
-                      <SnijplanStatusBadge status={sp.status} />
-                    </Link>
+                      status={sp.status}
+                      suffix={sp.status === 'Ingepakt' ? sp.locatie : null}
+                    />
                   ))}
                 </span>
               )}

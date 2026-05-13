@@ -328,6 +328,19 @@ function MaatwerkLineRow({
                 </select>
               </label>
 
+              {(line.maatwerk_afwerking === 'B' || line.maatwerk_afwerking === 'SB') && (
+                <label className="flex items-center gap-1.5">
+                  <span className="text-slate-500">Bandkleur</span>
+                  <input
+                    type="text"
+                    value={line.maatwerk_band_kleur ?? ''}
+                    onChange={(e) => updateLine(index, { maatwerk_band_kleur: e.target.value || undefined })}
+                    className={selectClass + ' w-24'}
+                    placeholder="bijv. zwart"
+                  />
+                </label>
+              )}
+
               <label className="flex items-center gap-1.5">
                 <span className="text-slate-500">Vorm</span>
                 <select
@@ -369,19 +382,6 @@ function MaatwerkLineRow({
                   min={1}
                 />
               </label>
-
-              {(line.maatwerk_afwerking === 'B' || line.maatwerk_afwerking === 'SB') && (
-                <label className="flex items-center gap-1.5">
-                  <span className="text-slate-500">Bandkleur</span>
-                  <input
-                    type="text"
-                    value={line.maatwerk_band_kleur ?? ''}
-                    onChange={(e) => updateLine(index, { maatwerk_band_kleur: e.target.value || undefined })}
-                    className={selectClass + ' w-24'}
-                    placeholder="bijv. zwart"
-                  />
-                </label>
-              )}
 
               <label className="flex items-center gap-1.5">
                 <span className="text-slate-500">Instructies</span>

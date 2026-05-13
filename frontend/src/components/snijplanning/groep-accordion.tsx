@@ -20,6 +20,23 @@ import { usePlanningConfig } from '@/hooks/use-planning-config'
 import { SnijvoorstelModal } from './snijvoorstel-modal'
 import type { SnijplanRow, SnijvoorstelResponse } from '@/lib/types/productie'
 
+// Vaste kolombreedtes zodat álle stukken-tabellen (per rol-sectie én tekort)
+// onderling uitlijnen ongeacht inhoud. Klant = flex-rest.
+function StukkenColgroup({ withStatus }: { withStatus: boolean }) {
+  return (
+    <colgroup>
+      <col className="w-[120px]" />
+      <col className="w-[170px]" />
+      <col />
+      <col className="w-[130px]" />
+      <col className="w-[120px]" />
+      <col className="w-[100px]" />
+      {withStatus && <col className="w-[100px]" />}
+      <col className="w-[44px]" />
+    </colgroup>
+  )
+}
+
 interface GroepAccordionProps {
   kwaliteitCode: string
   kleurCode: string
@@ -286,7 +303,8 @@ export function GroepAccordion({
                       </button>
                     )}
                   </div>
-                  <table className="w-full text-sm">
+                  <table className="w-full text-sm table-fixed">
+                    <StukkenColgroup withStatus={false} />
                     <thead>
                       <tr className="border-b border-amber-200 text-left text-xs text-slate-500 uppercase bg-white">
                         <th className="py-2 pl-3 pr-3">Maat</th>
@@ -295,7 +313,7 @@ export function GroepAccordion({
                         <th className="py-2 pr-3">Order</th>
                         <th className="py-2 pr-3">Leverdatum</th>
                         <th className="py-2 pr-3">Afwerking</th>
-                        <th className="py-2 pr-3 w-8"></th>
+                        <th className="py-2 pr-3"></th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-amber-100 bg-white">
@@ -471,7 +489,8 @@ function RolSectie({ rol, locatieMap, kwaliteitCode, kleurLabel, geschatteTijd, 
       {/* Expanded: stukken-tabel */}
       {open && (
         <div className="border-t border-slate-100 px-3 py-2">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm table-fixed">
+            <StukkenColgroup withStatus={true} />
             <thead>
               <tr className="border-b border-slate-200 text-left text-xs text-slate-500 uppercase">
                 <th className="py-2 pr-3">Maat</th>
@@ -481,7 +500,7 @@ function RolSectie({ rol, locatieMap, kwaliteitCode, kleurLabel, geschatteTijd, 
                 <th className="py-2 pr-3">Leverdatum</th>
                 <th className="py-2 pr-3">Afwerking</th>
                 <th className="py-2 pr-3">Status</th>
-                <th className="py-2 pr-3 w-8"></th>
+                <th className="py-2 pr-3"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">

@@ -61,6 +61,7 @@ export interface OrderRegelSnijplan {
   snijplan_nr: string
   status: string
   scancode: string
+  locatie: string | null
 }
 
 export interface OrderRegel {
@@ -359,7 +360,7 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
   if (maatwerkRegelIds.length > 0) {
     const { data: snijplanData } = await supabase
       .from('snijplannen')
-      .select('id, snijplan_nr, status, scancode, order_regel_id')
+      .select('id, snijplan_nr, status, scancode, locatie, order_regel_id')
       .in('order_regel_id', maatwerkRegelIds)
       .order('snijplan_nr')
 
@@ -373,6 +374,7 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
           snijplan_nr: sp.snijplan_nr,
           status: sp.status,
           scancode: sp.scancode,
+          locatie: (sp as { locatie?: string | null }).locatie ?? null,
         })
       }
       for (const regel of baseRegels) {

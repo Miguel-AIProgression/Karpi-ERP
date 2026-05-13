@@ -65,7 +65,7 @@ export function OrderDetailPage() {
 
       <OrderHeader order={order} locked={computeOrderLock(regels) === 'full'} />
       <OrderAddresses order={order} />
-      <OrderRegelsTable regels={regels ?? []} isLoading={regelsLoading} levertijden={levertijden} claims={claims} />
+      <OrderRegelsTable regels={regels ?? []} isLoading={regelsLoading} levertijden={levertijden} claims={claims} orderStatus={order.status} />
       <OrderFacturen orderId={order.id} />
     </>
   )

@@ -221,7 +221,7 @@ export async function fetchZendingMetTransportorders(zending_nr: string) {
       zending_regels (
         *,
         order_regels (
-          id, order_id, regelnummer, omschrijving
+          id, order_id, regelnummer, artikelnr, omschrijving
         )
       ),
       hst_transportorders ( * )
