@@ -1,5 +1,129 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-13 — Mig 269: order-status + levertijd-view skippen admin-pseudo's
+
+**Waarom:** Op ORD-2026-2063 toonde het orderdetail "Wacht op voorraad" op
+order-niveau én een rode "Wacht op nieuwe inkoop"-badge op de VERZEND-regel,
+terwijl de enige product-regel ruim uit voorraad was geclaimd.
+
+**Root-cause:** asymmetrie in admin-pseudo-filtering tussen lagen. Mig 263/266
+filteren `VERZEND` / `BUNDELKORTING` / `DREMPELKORTING` uit de allocator-keten
+(geen claims), maar:
+
+- `herbereken_wacht_status` (mig 218) ziet de VERZEND-orderregel (`te_leveren=1`,
+  geen claim) als tekort → zet de hele order op `Wacht op voorraad`.
+- View `order_regel_levertijd` (mig 156) doet dezelfde rekensom op regel-niveau
+  → toont `wacht_op_nieuwe_inkoop` op een service-regel.
+
+Pas zichtbaar geworden ná mig 263/266 + 265: vóór die fixes werd er voor VERZEND
+soms tóch een claim gemaakt (of crashte de keten); nu blijft de claim consistent
+afwezig.
+
+**Wat:**
+
+- **Mig 269** patcht `herbereken_wacht_status` en view `order_regel_levertijd`
+  om VERZEND/BUNDELKORTING/DREMPELKORTING expliciet over te slaan — exact
+  hetzelfde filterpatroon als mig 263/266. Idempotent (`CREATE OR REPLACE`).
+- **Retroactief-script** `scripts/retroactief-mig-269-herbereken-wacht-status.sql`
+  roept `herbereken_wacht_status` aan voor alle non-eind-orders zodat orders
+  die nu ten onrechte `Wacht op voorraad` of `Wacht op inkoop` zijn, terugvallen
+  naar `Nieuw`. Geen schade bij orders die wél een echt tekort hebben — de
+  RPC is idempotent en no-op als status al klopt.
+
+**Verificatie ná deploy:**
+- ORD-2026-2063: `status='Nieuw'`, regel 1 levertijd_status=`voorraad`,
+  VERZEND-regel verschijnt niet meer in `order_regel_levertijd`.
+- `RAISE NOTICE`-output in het retroactief-script laat zien hoeveel orders
+  van `Wacht op voorraad`/`Wacht op inkoop` → `Nieuw` schuiven.
+
+## 2026-05-13 — Recursie-fix admin-orderregels + heractivatie orderregel-mirror
+
+**Waarom:** Sinds mig 261/264 crashte INSERT van een orderregel met
+`artikelnr ∈ ('VERZEND','BUNDELKORTING','DREMPELKORTING')` op een
+`stack depth limit exceeded`. Daardoor stond de orderregel-spiegel van de
+bundel-korting (mig 264) uit en bleef `SUM(orderregels per order)` groter
+dan het factuur-totaal (zie [vervolg-plan](superpowers/plans/2026-05-13-vervolg-orderregel-mirror-recursiebug.md),
+FACT-2026-0019 discrepantie € 70).
+
+**Wat:**
+
+- **Mig 265** voegt de drie pseudo-producten (`VERZEND`, `BUNDELKORTING`,
+  `DREMPELKORTING`) idempotent toe aan `producten`. Tot nu toe waren ze
+  handmatig ingevoegd op de live DB; bij een fresh deploy crashte de eerste
+  bundel-factuur op de FK-constraint.
+- **Mig 266** patcht `trg_orderregel_herallocateer` (mig 146) met een
+  admin-artikelnr-skip. Admin-pseudo-producten hebben geen voorraad/IO-
+  allocatie en triggerden via `herallocateer_orderregel` →
+  `herwaardeer_order_status` → `herwaardeer_claims_voor_order` → loop alle
+  niet-admin regels → `herallocateer_orderregel` een N²-recursie. Mig 263
+  filterde admin-regels al binnen de loop; mig 266 sluit het tweede pad
+  (trigger-A bij admin-INSERT) symmetrisch af.
+- **Mig 264 re-deploy** herintroduceert de orderregel-spiegel in
+  `genereer_factuur_voor_bundel` (1e order = `DREMPELKORTING` bij
+  `gratis_drempel`, overige = `BUNDELKORTING` van −verzendkosten).
+- **Retroactief-script** `scripts/retroactief-orderregels-fact-2026-0019.sql`
+  haalt ORD-2026-2057/2058 alsnog op de juiste regel-stand.
+
+**Mig 267 — root-cause fix:** mig 263 + 266 dekken alleen admin-INSERTs.
+Bij een gewone product-INSERT (bv. via "Nieuwe order"-UI) crashte het
+systeem alsnog op `stack depth limit exceeded`, want de cyclus
+`herallocateer_orderregel → herwaardeer_order_status → herwaardeer_claims_voor_order
+→ herallocateer_orderregel` blijft draaien zodra een product-regel zichzelf
+in de loop tegenkomt. De werkelijke root-cause: mig 254 voegde `PERFORM
+herwaardeer_claims_voor_order(p_order_id)` toe aan de
+`herwaardeer_order_status`-wrapper. Vóór mig 254 (mig 218-versie) deed die
+wrapper géén claim-loop — alleen status-bepaling + afleverdatum-sync.
+Mig 267 herstelt de mig-218-versie. Beide bestaande callers
+(`herallocateer_orderregel` + `boek_io_ontvangst_claims`) doen het claim-werk
+zélf en hebben de wrapper-loop niet nodig. `herwaardeer_claims_voor_order`
+blijft beschikbaar als publieke RPC voor explicit-loop-callers.
+
+**Mig 268 — korting-factuur-regels gespreid per order:** vóór mig 268 misten
+BUNDELKORTING/DREMPELKORTING op factuur-niveau zowel `order_nr` als
+`uw_referentie`. Daardoor viel de UI terug op `#<order_id>` en groepeerde de
+PDF-template ze onder een lege "Ons Ordernummer :"-sectie. Daarnaast was
+BUNDELKORTING op de factuur gekoppeld aan `v_order_ids[1]` terwijl de
+orderregel-mirror BUNDELKORTING op `v_order_ids[2..]` plaatst — factuur en
+order spraken elkaar tegen. Mig 268 spreidt de korting symmetrisch met de
+orderregel-mirror (DREMPEL op order[1], BUNDEL per order[2..N]) en vult
+`order_nr` + `uw_referentie` via lookup naar `orders`. PDF groepeert nu
+automatisch onder de juiste "Ons Ordernummer"-sectie.
+
+**Code-review pickups (in mig 268 + scripts, vóór deploy):**
+
+- Orderregel-mirror gesplitst in twee aparte IFs zodat **N=1 + `gratis_drempel`**
+  óók een DREMPELKORTING-orderregel krijgt. Vóór de fix gold de DREMPEL-tak
+  alleen binnen `v_aantal_verzend_regels > 1` waardoor single-order zending
+  boven drempel wel een DREMPEL-factuurregel kreeg maar geen orderregel
+  (discrepantie + verzendkosten).
+- Retroactief-script `retroactief-fact-2026-0019-korting-order-koppeling.sql`
+  pakt nu `FOR UPDATE` op de factuur-SELECT zodat de Concept-guard niet
+  geraced kan worden door een status-flip.
+- Verifieer-script gebruikt `strpos(...) > 0` i.p.v. POSIX-`~`-regex
+  (laatste matcht geen newlines binnen `pg_get_functiondef`-output).
+- Mig 264 header-comment gemarkeerd als "vervangen door mig 268".
+- Mig 263 + 266 COMMENT-strings genuanceerd: sinds mig 267 zijn de
+  admin-filters strikt redundant, maar blijven als defensieve guard.
+
+**Deploy-volgorde:**
+
+1. Mig 265 — pseudo-producten
+2. Mig 266 — trigger A admin-skip
+3. Mig 267 — wrapper-revert (breekt de productregel-cyclus)
+4. Mig 268 — korting-factuur-regels per order gespreid
+5. `scripts/retroactief-orderregels-fact-2026-0019.sql` — orderregel-mirror
+   voor bestaande FACT-2026-0019 (`BEGIN/COMMIT`)
+6. `scripts/retroactief-fact-2026-0019-korting-order-koppeling.sql` —
+   fix order_id/order_nr/uw_referentie op bestaande korting-factuur-regels
+7. Sanity: `SELECT order_nr, SUM(bedrag) FROM order_regels orr JOIN orders o
+   ON o.id=orr.order_id WHERE o.id IN (...ORD-2057, ORD-2058...) GROUP BY 1;`
+   moet matchen met factuur-totaal per order.
+8. UI-smoke: nieuwe order aanmaken via "Nieuwe order"-UI — moet zonder
+   stack-depth-error opslaan.
+9. PDF-smoke: open FACT-2026-0019.pdf — BUNDELKORTING moet onder
+   "Ons Ordernummer : ORD-2026-2058" staan, DREMPELKORTING onder
+   "Ons Ordernummer : ORD-2026-2057".
+
 ## 2026-05-13 — Order-fase zichtbaar in orders-overzicht (ADR-0016)
 
 **Waarom:** "Nieuw" was een vergaarbak-status — orders bleven daarop hangen

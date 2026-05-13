@@ -40,6 +40,9 @@ COMMENT ON FUNCTION herwaardeer_claims_voor_order(BIGINT) IS
   'triggert per regel herallocateer_orderregel. Schrijft GEEN orders.status en GEEN '
   'orders.afleverdatum — callers chainen expliciet herbereken_wacht_status '
   '(Order-lifecycle, mig 218) en sync_order_afleverdatum_met_claims (Levertijd-TODO, mig 153). '
-  'Mig 263: admin-orderregels uitgesloten om recursie via herwaardeer_order_status te voorkomen.';
+  'Het admin-filter (mig 263) is sinds mig 267 (wrapper-revert) strikt redundant — '
+  'de cyclus die hier werd doorbroken bestaat niet meer. Filter blijft staan als '
+  'defensieve guard mocht een latere caller herwaardeer_claims_voor_order weer '
+  'vanuit een triggerketen aanroepen.';
 
 NOTIFY pgrst, 'reload schema';

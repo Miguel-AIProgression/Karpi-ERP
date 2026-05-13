@@ -1,5 +1,11 @@
 -- Migratie 264: orderregel-spiegel gespreid over bundle-orders
 --
+-- ⚠️ VERVANGEN DOOR MIG 268 — niet opnieuw runnen op een DB waar mig 268
+-- al toegepast is. Mig 264 plaatste BUNDELKORTING-factuurregel op order[1]
+-- terwijl de orderregel-mirror BUNDEL op order[2..N] zette (inconsistent),
+-- en miste `order_nr` + `uw_referentie` op de korting-factuurregels.
+-- Mig 268 herstelt symmetrie en vult de order-koppeling.
+--
 -- Mig 262 hield de orderregel-mirror uit (recursie-bug). Mig 263 fixte
 -- de claim-keten. Mig 264 herintroduceert de orderregel-mirror, maar nu
 -- gespreid: 1e order krijgt DREMPELKORTING (alleen scenario A), overige
