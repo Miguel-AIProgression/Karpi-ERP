@@ -117,12 +117,13 @@ export async function fetchOrders(params: {
   status?: string
   search?: string
   debiteurNr?: number
+  debiteurNrs?: number[]
   page?: number
   pageSize?: number
   sortBy?: OrderSortField
   sortDir?: SortDirection
 }) {
-  const { status, search, debiteurNr, page = 0, pageSize = 50, sortBy = 'orderdatum', sortDir = 'desc' } = params
+  const { status, search, debiteurNr, debiteurNrs, page = 0, pageSize = 50, sortBy = 'orderdatum', sortDir = 'desc' } = params
 
   let query = supabase
     .from('orders_list')
@@ -152,7 +153,9 @@ export async function fetchOrders(params: {
     query = query.eq('status', status)
   }
 
-  if (debiteurNr) {
+  if (debiteurNrs && debiteurNrs.length > 0) {
+    query = query.in('debiteur_nr', debiteurNrs)
+  } else if (debiteurNr) {
     query = query.eq('debiteur_nr', debiteurNr)
   }
 
@@ -198,6 +201,34 @@ export async function fetchStatusCounts(): Promise<StatusCount[]> {
   }
 
   return counts
+}
+
+export interface OrderKlantOptie {
+  debiteur_nr: number
+  klant_naam: string
+}
+
+/** Distinct (debiteur, naam) over alle orders — voedt het klant-filter op de
+ * orders-overview. Lichtgewicht select (geen `count`), JS-dedupe omdat
+ * PostgREST geen DISTINCT ondersteunt. Range ruim bemeten op de huidige
+ * order-volumes; vervang door een DB-view als dit knelt. */
+export async function fetchOrderKlantOpties(): Promise<OrderKlantOptie[]> {
+  const { data, error } = await supabase
+    .from('orders_list')
+    .select('debiteur_nr, klant_naam')
+    .range(0, 9999)
+
+  if (error) throw error
+
+  const map = new Map<number, string>()
+  for (const r of (data ?? []) as { debiteur_nr: number; klant_naam: string | null }[]) {
+    if (!map.has(r.debiteur_nr)) {
+      map.set(r.debiteur_nr, r.klant_naam ?? `Debiteur ${r.debiteur_nr}`)
+    }
+  }
+  return Array.from(map, ([debiteur_nr, klant_naam]) => ({ debiteur_nr, klant_naam })).sort(
+    (a, b) => a.klant_naam.localeCompare(b.klant_naam, 'nl', { sensitivity: 'base' }),
+  )
 }
 
 /** Fetch single order with details */

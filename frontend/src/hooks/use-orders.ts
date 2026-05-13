@@ -4,6 +4,7 @@ import {
   fetchStatusCounts,
   fetchOrderDetail,
   fetchOrderRegels,
+  fetchOrderKlantOpties,
 } from '@/lib/supabase/queries/orders'
 import type { OrderSortField, SortDirection } from '@/lib/supabase/queries/orders'
 
@@ -11,6 +12,7 @@ export function useOrders(params: {
   status?: string
   search?: string
   debiteurNr?: number
+  debiteurNrs?: number[]
   page?: number
   pageSize?: number
   sortBy?: OrderSortField
@@ -26,6 +28,14 @@ export function useStatusCounts() {
   return useQuery({
     queryKey: ['orders', 'status-counts'],
     queryFn: fetchStatusCounts,
+  })
+}
+
+export function useOrderKlantOpties() {
+  return useQuery({
+    queryKey: ['orders', 'klant-opties'],
+    queryFn: fetchOrderKlantOpties,
+    staleTime: 60_000,
   })
 }
 

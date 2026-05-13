@@ -1,5 +1,17 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-13 — Orders-overview: klant-filter (multi-select op naam + debiteur-nr) + universele checkbox-stijl
+
+**Waarom:** Op de orders-overzichtspagina kon je alleen via de vrije-tekst-zoekbalk filteren op klant — geen overzicht van welke klanten orders hebben en geen multi-select. De facturen-pagina had dit patroon al via `MultiSelectDropdown`; orders nu uniform mee. Tegelijk renderde de custom-styled `<span>`-checkbox in `MultiSelectDropdown` als ronde bolletjes — niet matchend met de native HTML-checkboxes elders in de app.
+
+**Wat:**
+- [`orders.ts`](../frontend/src/lib/supabase/queries/orders.ts): `fetchOrders` accepteert nu `debiteurNrs: number[]` (via `.in('debiteur_nr', …)`); bestaande `debiteurNr` (single) blijft als fallback. Nieuwe query `fetchOrderKlantOpties` haalt distinct `(debiteur_nr, klant_naam)` op uit `orders_list` (JS-dedupe, range 0-9999 — vervang door DB-view als dat knelt).
+- [`use-orders.ts`](../frontend/src/hooks/use-orders.ts): nieuwe hook `useOrderKlantOpties` (60s staleTime).
+- [`orders-overview.tsx`](../frontend/src/pages/orders/orders-overview.tsx): `MultiSelectDropdown` naast de zoekbalk. Optie-label is `"NAAM (#nr)"` zodat de ingebouwde zoekbalk én op klantnaam én op debiteur-nummer matcht. Selectie reset paginering naar 0.
+- [`multi-select-dropdown.tsx`](../frontend/src/components/ui/multi-select-dropdown.tsx): custom `<span>`+`Check`-icoon vervangen door native `<input type="checkbox">` met de app-conventie-styling (`rounded border-slate-300 text-terracotta-500 focus:ring-terracotta-400/30`). `pointer-events-none` + `tabIndex={-1}` zodat de omhullende button alle clicks/focus afhandelt. Werkt automatisch door op alle gebruikers van het component (orders-overview, facturatie-overview).
+
+**Niet gewijzigd:** PostgREST `or()` met klant-naam in de zoekbalk blijft bestaan — dat is vrije-tekst-zoek over `order_nr / klant_referentie / klant_naam`. De multi-select is een orthogonale, expliciete klant-filter.
+
 ## 2026-05-13 — ADR-0020: Levertijd als deep Module (capaciteit-seam owner + status-label)
 
 **Waarom:** Levertijd-logica zit verspreid over ~1400 regels in drie runtimes (frontend TS, Deno-edge, SQL-view) zonder unieke eigenaar. Vijf interface-ingangen, twee runtime-spiegels van werkagenda-rekenkunde, en geen seam-erkenning vergelijkbaar met snij-marge (ADR-0013). Aanleiding: Karpi wil aan de voorkant van het order-intake-proces aan de klant kunnen communiceren dat de levertijd afwijkt van standaard (eerder als haast, later als planning vol), getoetst tegen actuele snij-planning.

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Check, ChevronDown, X } from 'lucide-react'
+import { ChevronDown, X } from 'lucide-react'
 
 export interface MultiSelectOption {
   value: string
@@ -130,15 +130,13 @@ export function MultiSelectDropdown({
                   onClick={() => toggle(o.value)}
                   className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-slate-50 text-left"
                 >
-                  <span
-                    className={`inline-flex items-center justify-center w-4 h-4 rounded border ${
-                      aan
-                        ? 'bg-terracotta-500 border-terracotta-500 text-white'
-                        : 'border-slate-300 bg-white'
-                    }`}
-                  >
-                    {aan && <Check size={12} strokeWidth={3} />}
-                  </span>
+                  <input
+                    type="checkbox"
+                    checked={aan}
+                    onChange={() => {}}
+                    tabIndex={-1}
+                    className="h-4 w-4 rounded border-slate-300 text-terracotta-500 focus:ring-terracotta-400/30 pointer-events-none flex-shrink-0"
+                  />
                   <span className="truncate text-slate-700">{o.label}</span>
                 </button>
               )

@@ -1,16 +1,18 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Plus, Search } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
+import { MultiSelectDropdown } from '@/components/ui/multi-select-dropdown'
 import { StatusTabs } from '@/components/orders/status-tabs'
 import { OrdersTable } from '@/components/orders/orders-table'
-import { useOrders, useStatusCounts } from '@/hooks/use-orders'
+import { useOrders, useStatusCounts, useOrderKlantOpties } from '@/hooks/use-orders'
 import { useFacturenVoorOrders } from '@/modules/facturatie'
 import type { OrderSortField, SortDirection } from '@/lib/supabase/queries/orders'
 
 export function OrdersOverviewPage() {
   const [status, setStatus] = useState('Alle')
   const [search, setSearch] = useState('')
+  const [klantSelectie, setKlantSelectie] = useState<string[]>([])
   const [page, setPage] = useState(0)
   const [sortBy, setSortBy] = useState<OrderSortField>('orderdatum')
   const [sortDir, setSortDir] = useState<SortDirection>('desc')
@@ -25,8 +27,26 @@ export function OrdersOverviewPage() {
     setPage(0)
   }
 
-  const { data, isLoading } = useOrders({ status, search, page, sortBy, sortDir })
+  const debiteurNrs = useMemo(
+    () => klantSelectie.map((v) => Number(v)).filter((n) => Number.isFinite(n)),
+    [klantSelectie],
+  )
+
+  const { data, isLoading } = useOrders({ status, search, debiteurNrs, page, sortBy, sortDir })
   const { data: statusCounts } = useStatusCounts()
+  const { data: klantOptiesData } = useOrderKlantOpties()
+
+  // Klant-opties komen uit feitelijke order-data — debiteur_nr (als string,
+  // matcht het MultiSelect-API) wordt als value gebruikt zodat de ingebouwde
+  // zoekbalk én op naam én op debiteur-nummer matcht.
+  const klantOpties = useMemo(
+    () =>
+      (klantOptiesData ?? []).map((k) => ({
+        value: String(k.debiteur_nr),
+        label: `${k.klant_naam} (#${k.debiteur_nr})`,
+      })),
+    [klantOptiesData],
+  )
 
   const orders = data?.orders ?? []
   const totalCount = data?.totalCount ?? 0
@@ -51,18 +71,31 @@ export function OrdersOverviewPage() {
         }
       />
 
-      {/* Search */}
-      <div className="relative w-80 mb-4">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value)
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <div className="relative w-80">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value)
+              setPage(0)
+            }}
+            placeholder="Zoek op order, klant, referentie..."
+            className="w-full pl-10 pr-4 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
+          />
+        </div>
+
+        <MultiSelectDropdown
+          placeholder="Alle klanten"
+          options={klantOpties}
+          selected={klantSelectie}
+          onChange={(next) => {
+            setKlantSelectie(next)
             setPage(0)
           }}
-          placeholder="Zoek op order, klant, referentie..."
-          className="w-full pl-10 pr-4 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
+          zoekbaar
         />
       </div>
 
