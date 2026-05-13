@@ -2,9 +2,7 @@ import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ArrowLeft, Building2, Pencil } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { useLeverancierDetail } from '@/hooks/use-leveranciers'
-import { LeverancierFormDialog } from '@/components/leveranciers/leverancier-form-dialog'
-import { LeverancierStatsCard } from '@/modules/inkoop'
+import { useLeverancierDetail, LeverancierFormDialog, LeverancierStatsCard } from '@/modules/inkoop'
 
 export function LeverancierDetailPage() {
   const { id } = useParams()

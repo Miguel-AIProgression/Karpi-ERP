@@ -56,6 +56,9 @@ export type { RolStickerData } from './components/rol-sticker-layout'
 export { LeverancierStatsCard } from './components/leverancier-stats-card'
 export { InkoopRegelSamenvatting } from './components/inkoop-regel-samenvatting'
 
+// Components — verhuisd in Stap 11 (cleanup)
+export { LeverancierFormDialog } from './components/leverancier-form-dialog'
+
 // ---------------------------------------------------------------------------
 // Types — verhuisd vanuit lib/supabase/queries (Stap 2)
 // ---------------------------------------------------------------------------

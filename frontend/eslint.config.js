@@ -45,6 +45,8 @@ export default defineConfig([
           { name: '@/components/orders/levertijd-badge', message: 'Gebruik components uit @/modules/reserveringen (ADR-0015).' },
           { name: '@/lib/supabase/queries/inkooporders', message: 'Importeer uit @/modules/inkoop (ADR-0016).' },
           { name: '@/lib/supabase/queries/leveranciers', message: 'Importeer uit @/modules/inkoop (ADR-0016).' },
+          { name: '@/hooks/use-inkooporders', message: 'Importeer uit @/modules/inkoop (ADR-0016).' },
+          { name: '@/hooks/use-leveranciers', message: 'Importeer uit @/modules/inkoop (ADR-0016).' },
         ],
         patterns: [
           { group: ['@/components/klanten/*'], message: 'Gebruik @/modules/debiteuren (ADR-0011).' },
@@ -53,6 +55,7 @@ export default defineConfig([
           { group: ['@/components/inkooporders/*'], message: 'Components zijn verhuisd naar @/modules/inkoop (ADR-0016).' },
           { group: ['@/pages/inkooporders/*'], message: 'Pages zijn verhuisd naar @/modules/inkoop/pages (ADR-0016).' },
           { group: ['@/pages/leveranciers/*'], message: 'Pages zijn verhuisd naar @/modules/inkoop/pages (ADR-0016).' },
+          { group: ['@/components/leveranciers/*'], message: 'Components zijn verhuisd naar @/modules/inkoop (ADR-0016).' },
         ],
       }],
     },
