@@ -64,6 +64,7 @@ export async function fetchFacturen(params?: { debiteurNr?: number }): Promise<F
       'id, factuur_nr, debiteur_nr, factuurdatum, vervaldatum, status, totaal, verstuurd_op, pdf_storage_path, debiteuren(naam)',
     )
     .order('factuurdatum', { ascending: false })
+    .order('factuur_nr', { ascending: false })
   if (params?.debiteurNr) q = q.eq('debiteur_nr', params.debiteurNr)
   const { data, error } = await q
   if (error) throw error
