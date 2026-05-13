@@ -50,7 +50,10 @@ export function ArticleSelector({ onSelect }: ArticleSelectorProps) {
           .from('producten')
           .select('artikelnr, karpi_code, omschrijving, verkoopprijs, gewicht_kg, vrije_voorraad, besteld_inkoop, kwaliteit_code, kleur_code, product_type')
           .eq('actief', true)
-          .neq('artikelnr', 'VERZEND') as any,
+          // ADR-0018 / mig 272: server-side filter via is_pseudo i.p.v.
+          // hardcoded artikelnr-check. Verbergt alle admin-pseudo's
+          // (VERZEND/BUNDELKORTING/DREMPELKORTING) uit de dropdown.
+          .eq('is_pseudo', false) as any,
         search
       )
       const { data } = await query.order('omschrijving').limit(500)

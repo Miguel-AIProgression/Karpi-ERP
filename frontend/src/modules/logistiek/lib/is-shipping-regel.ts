@@ -10,6 +10,12 @@ import type { ZendingPrintRegel } from '../queries/zendingen'
  * de `zending_regels.artikelnr`-snapshot ooit leeg is gebleven). Sinds mig 206
  * bestaan VERZEND-regels überhaupt niet meer in nieuwe zendingen, maar
  * historische data moet alsnog correct gerenderd worden.
+ *
+ * SCOPE (ADR-0018): dit predikaat checkt SPECIFIEK de VERZEND-zending-regel —
+ * niet alle admin-pseudo's. BUNDELKORTING en DREMPELKORTING bestaan niet op
+ * zending-regels (factuur-only sinds mig 262). Voor generieke admin-pseudo-
+ * skip op orderregels: gebruik `isAdminPseudo(regel)` uit
+ * `@/lib/orders/admin-pseudo`.
  */
 export function isShippingRegel(regel: ZendingPrintRegel): boolean {
   if (regel.artikelnr === SHIPPING_PRODUCT_ID) return true

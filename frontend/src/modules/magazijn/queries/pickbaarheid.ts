@@ -176,6 +176,10 @@ async function fetchPickbaarheidRegels(orderIds: number[]): Promise<Pickbaarheid
         'maatwerk_kwaliteit_code, maatwerk_kleur_code, totaal_stuks, ' +
         'pickbaar_stuks, is_pickbaar, bron, fysieke_locatie, wacht_op'
     )
+    // Specifieke VERZEND-skip voor pakbon-/pick-listing: verzendkosten zijn
+    // factuurregels, geen fysiek collo. Andere admin-pseudo's (BUNDELKORTING/
+    // DREMPELKORTING) bestaan niet als orderregel in productie (mig 262).
+    // Voor generieke admin-pseudo-skip: zie ADR-0018 / isAdminPseudo(regel).
     .neq('artikelnr', SHIPPING_PRODUCT_ID)
 
   if (!error) return (data ?? []) as unknown as PickbaarheidRij[]
@@ -196,6 +200,7 @@ async function fetchFallbackOrderRegels(orderIds: number[]): Promise<Pickbaarhei
           'maatwerk_kwaliteit_code, maatwerk_kleur_code'
       )
       .in('order_id', ids)
+      // Specifieke VERZEND-skip — zie pakbon-listing-comment hierboven (ADR-0018).
       .neq('artikelnr', SHIPPING_PRODUCT_ID)
       .order('regelnummer', { ascending: true })
 
@@ -325,6 +330,7 @@ async function fetchTotaalGewichtPerOrder(orderIds: number[]): Promise<Map<numbe
       .from('order_regels')
       .select('order_id, gewicht_kg, orderaantal, artikelnr')
       .in('order_id', ids)
+      // VERZEND telt niet in zending-gewicht (factuurregel, geen collo). ADR-0018.
       .neq('artikelnr', SHIPPING_PRODUCT_ID)
     if (error) throw error
     for (const row of (data ?? []) as Array<{

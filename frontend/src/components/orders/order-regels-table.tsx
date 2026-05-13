@@ -5,6 +5,7 @@ import { SNIJPLAN_STATUS_COLORS, AFWERKING_MAP } from '@/lib/utils/constants'
 import { getVormDisplay } from '@/lib/utils/vorm-labels'
 import { isoWeekFromString } from '@/lib/utils/iso-week'
 import type { OrderRegel } from '@/lib/supabase/queries/orders'
+import { isAdminPseudo } from '@/lib/orders/admin-pseudo'
 import { LevertijdBadge, type OrderRegelLevertijd, type OrderClaim } from '@/modules/reserveringen'
 
 function formatMaat(regel: OrderRegel): string {
@@ -23,9 +24,13 @@ function SnijplanStatusBadge({ status }: { status: string }) {
   )
 }
 
-// Admin-pseudo-orderregels (mig 263 / 266 / 269): geen voorraad/IO-allocatie,
-// dus geen claim-uitsplitsing of "wacht op nieuwe inkoop"-sub-rij.
-const ADMIN_PSEUDO_ARTIKELNRS = new Set(['VERZEND', 'BUNDELKORTING', 'DREMPELKORTING'])
+// Admin-pseudo-detectie via isAdminPseudo(regel) — ADR-0018 / mig 272-273.
+// OrderRegel.is_pseudo wordt uit producten.is_pseudo gemapt door fetchOrderRegels.
+
+// Eindstatussen (mig 270): claims zijn al gereleased door mig 259-trigger, dus
+// `te_leveren − Σ actieve claims` levert ten onrechte tekort op. Render geen
+// claim-uitsplitsing / wacht-rij. Symmetrisch met view `order_regel_levertijd`.
+const EINDSTATUS_ORDERS = new Set(['Verzonden', 'Geannuleerd'])
 
 interface SubRow {
   key: string
@@ -147,14 +152,16 @@ interface RegelRowProps {
   regel: OrderRegel
   levertijd?: OrderRegelLevertijd
   claims: OrderClaim[]
+  isEindstatus: boolean
 }
 
-function RegelRow({ regel, levertijd, claims }: RegelRowProps) {
+function RegelRow({ regel, levertijd, claims, isEindstatus }: RegelRowProps) {
   const afwerkingInfo = regel.maatwerk_afwerking ? AFWERKING_MAP[regel.maatwerk_afwerking] : null
   const maat = formatMaat(regel)
   const subRows = !regel.is_maatwerk
     && regel.te_leveren > 0
-    && !ADMIN_PSEUDO_ARTIKELNRS.has(regel.artikelnr ?? '')
+    && !isAdminPseudo(regel)
+    && !isEindstatus
     ? buildSubRows(regel, claims)
     : []
 
@@ -279,9 +286,11 @@ interface OrderRegelsTableProps {
   isLoading: boolean
   levertijden?: OrderRegelLevertijd[]
   claims?: OrderClaim[]
+  orderStatus?: string
 }
 
-export function OrderRegelsTable({ regels, isLoading, levertijden, claims }: OrderRegelsTableProps) {
+export function OrderRegelsTable({ regels, isLoading, levertijden, claims, orderStatus }: OrderRegelsTableProps) {
+  const isEindstatus = EINDSTATUS_ORDERS.has(orderStatus ?? '')
   const levertijdMap = new Map<number, OrderRegelLevertijd>(
     (levertijden ?? []).map(l => [l.order_regel_id, l]),
   )
@@ -333,6 +342,7 @@ export function OrderRegelsTable({ regels, isLoading, levertijden, claims }: Ord
                 regel={regel}
                 levertijd={levertijdMap.get(regel.id)}
                 claims={claimsMap.get(regel.id) ?? []}
+                isEindstatus={isEindstatus}
               />
             ))}
           </tbody>

@@ -49,6 +49,9 @@ export function applyShippingLogic(
       prijs: kosten,
       korting_pct: 0,
       bedrag: kosten,
+      // ADR-0018: VERZEND is admin-pseudo (mig 272). Display-only flag zodat
+      // isAdminPseudo(regel) in dekking-preview/afleverdatum/etc. werkt.
+      is_pseudo: true,
     }
     return [...regels, shippingLine]
   }

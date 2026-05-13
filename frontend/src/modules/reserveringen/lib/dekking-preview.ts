@@ -1,5 +1,5 @@
 import type { OrderRegelFormData } from '@/lib/supabase/queries/order-mutations'
-import { SHIPPING_PRODUCT_ID } from '@/lib/constants/shipping'
+import { isAdminPseudo } from '@/lib/orders/admin-pseudo'
 
 export interface RegelDekking {
   /** Stuks direct uit eigen voorraad. */
@@ -22,7 +22,7 @@ export interface RegelDekking {
 export function berekenRegelDekking(line: OrderRegelFormData): RegelDekking {
   const isVasteMaat = !line.is_maatwerk
     && !!line.artikelnr
-    && line.artikelnr !== SHIPPING_PRODUCT_ID
+    && !isAdminPseudo(line)  // ADR-0018 (was: !== SHIPPING_PRODUCT_ID)
   if (!isVasteMaat) {
     return { direct: 0, uitwisselbaar: 0, ioTekort: 0 }
   }

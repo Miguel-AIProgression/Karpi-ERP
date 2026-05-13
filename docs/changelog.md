@@ -1,5 +1,33 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-13 — Mig 274 + ADR-0019: snijplan-rij = 1 fysiek maatwerk-stuk
+
+**Waarom:** Op ORD-2026-2067 (5× maatwerk BILA 14 200×230) toonde de snij-modal slechts 1 stuk te snijden i.p.v. 5. Root cause: `auto_maak_snijplan()` (mig 110) maakte sinds dag 1 exact één snijplan-rij aan per orderregel, ongeacht `orderaantal`. Bug bleef onzichtbaar omdat maatwerk in de praktijk vrijwel altijd `orderaantal=1` had.
+
+**Wat:**
+- [ADR-0019](adr/0019-snijplan-per-fysiek-stuk-niet-per-orderregel.md) — beslissing: één snijplan-rij = één fysiek stuk = één sticker. Maatwerk-regel met `orderaantal=N` seed N snijplan-rijen.
+- `auto_maak_snijplan()` — FOR-loop over orderaantal, `volgend_nummer('SNIJ')` per iteratie zodat snijplan_nr uniek blijft.
+- `auto_sync_snijplan_maten()` — sync álle snijplannen van de regel (geen `LIMIT 1` meer). Snijplannen met rol of voorbij Snijden blijven onaangeroerd, met WARNING-log voor handmatige actie.
+- Backfill: maatwerk-regels in non-eindstatus orders met aantal_snijplannen < orderaantal worden aangevuld in `Wacht`-status. ORD-2026-2067 krijgt 4 extra snijplannen die door de eerstvolgende optimalisatie-run op rollen geplaatst worden.
+
+**Bekende beperking:** UPDATE-trigger luistert niet op orderaantal-mutaties; latere wijziging van orderaantal vereist handmatige release-en-hersnijden. Acceptabel voor V1 — zeldzame mutatie.
+
+## 2026-05-13 — Mig 272 + Mig 273 + ADR-0018: Admin-pseudo-orderregel als data-driven concept
+
+**Waarom:** De claim-keten-recursiebug van eerder vandaag (mig 263 → 266 → 269 als driedubbele fix) bewees dat 15+ hardcoded `('VERZEND', 'BUNDELKORTING', 'DREMPELKORTING')`-string-lijsten in SQL én FE een onhoudbare regressie-bron zijn. Nieuwe admin-pseudo toevoegen vereiste een grep-en-pray over 20 plekken. CLAUDE.md had inmiddels een hele bedrijfsregel die zei "drie plekken moeten ze identiek filteren".
+
+**Wat:**
+- [ADR-0018](adr/0018-admin-pseudo-orderregel-als-data-driven-concept.md) — beslissing: data-gedreven via `producten.is_pseudo`, geen TS-spiegel met hardcoded lijst, boolean reist mee in queries.
+- Mig 272: `producten.is_pseudo BOOLEAN` + `is_admin_pseudo(text) STABLE PARALLEL SAFE`-helper + backfill voor de 3 bestaande pseudo's + partial index. ASSERT-blok verifieert backfill (=3 rijen) + helper-gedrag.
+- Mig 273: callsite-rewrites — `herwaardeer_claims_voor_order` (was 263), `trg_orderregel_herallocateer` (was 266), `herbereken_wacht_status` + view `order_regel_levertijd` (was 269+270). Pure refactor; ASSERT-blok bewijst gedragsidentiteit.
+- FE: `lib/orders/admin-pseudo.ts` + `isAdminPseudo(regel)`-helper (accepteert form-data shape én query-resultaten met `producten ( is_pseudo )`-join). 8 unit-tests groen.
+- FE-callsites omgezet: `dekking-preview.ts`, `order-afleverdatum.ts`, `article-selector.tsx` (server-side `.eq('is_pseudo', false)`), `order-regels-table.tsx` (vervangt eigen `ADMIN_PSEUDO_ARTIKELNRS`-Set). `OrderRegelFormData.is_pseudo` toegevoegd; `applyShippingLogic` zet de flag op de geconstrueerde VERZEND-regel. `OrderRegel` interface uitgebreid; `fetchOrderRegels` joint en mapt `producten.is_pseudo`.
+- Scope-comments op `SHIPPING_PRODUCT_ID`, `is-shipping-regel.ts`, `pickbaarheid.ts` (3 callsites) en `facturen.ts` banner-detect — die blijven specifiek per-artikelnr omdat ze TOE-VOEG- of per-type-display-semantiek bedienen, niet generieke skip.
+- `scripts/lint-no-hardcoded-admin-pseudo-strings.sh` — voorkomt regressie op nieuwe hardcoded strings buiten whitelist.
+- CLAUDE.md bedrijfsregel "Admin-pseudo-orderregels symmetrisch overslaan" vereenvoudigd: nieuwe admin-pseudo = pure `UPDATE producten SET is_pseudo=TRUE`, geen code-edit.
+
+**Resultaat:** Toekomstige 4e/5e admin-pseudo (bv. `STAAL`, `MONSTER`, `ADMINFEE`) = pure DB-INSERT zonder redeploy. De N²-recursiebug-klasse van vanochtend is categorisch uitgesloten — er is geen string-lijst meer om uit te breiden.
+
 ## 2026-05-13 — Mig 270: Verzonden-orders niet meer in levertijd-view + sub-rij
 
 **Waarom:** Op ORD-2026-2057 (status `Verzonden`, regel 5× SANDRO 771110005)

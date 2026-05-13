@@ -57,6 +57,9 @@ De `kwaliteit_code` (3-4 letters uit de karpi_code) is de spil tussen producten,
 ### Gewicht-bron op kwaliteit-niveau (mig 184–186, 2026-05-06)
 Density (`gewicht_per_m2_kg`) leeft uitsluitend op `kwaliteiten` — geen kleur-, geen artikelnr-override. `producten.gewicht_kg` en `order_regels.gewicht_kg` zijn **gederiveerde caches**, onderhouden door triggers (`trg_kwaliteit_gewicht_recalc` → `trg_product_gewicht_recalc`). Cascade raakt alleen open orders; verzonden orders blijven historisch correct via `zendingen.totaal_gewicht_kg`-snapshot. Bij NULL kwaliteit-density valt de cache terug op legacy `producten.gewicht_kg` met flag `gewicht_uit_kwaliteit=false` — zichtbaar via `<GewichtBronBadge>` op product-detail. Voor maatwerk-vormen geldt **bbox-oppervlak** voor zowel prijs als gewicht (rond = `diameter²`). Resolver-functies `gewicht_per_m2_voor_kwaliteit`, `bereken_product_gewicht_kg`, `bereken_orderregel_gewicht_kg` zijn de smalle publieke API; alle gewicht-callers gaan voortaan hierdoor (geen verspreide `oppervlak × density`-formules meer).
 
+### Admin-pseudo-orderregel als data-driven concept (ADR-0018, mig 272-273, 2026-05-13)
+VERZEND/BUNDELKORTING/DREMPELKORTING zijn administratieve orderregels zonder voorraad-/IO-/levertijd-keten. Eén boolean (`producten.is_pseudo`) is de bron-van-waarheid; SQL-helper `is_admin_pseudo()` en TS-helper `isAdminPseudo(regel)` vervangen 15+ hardcoded string-lijsten. Toekomstige admin-pseudo's = pure DB-INSERT. `SHIPPING_PRODUCT_ID='VERZEND'` blijft als constant voor de unieke toe-voeg-semantiek (`applyShippingLogic`), niet voor skip-detectie. Lint-script + ESLint-regel voorkomen regressie naar hardcoded strings.
+
 ### Gedenormaliseerde zoeksleutel
 `zoeksleutel` = kwaliteit_code + "_" + kleur_code staat zowel op producten als rollen. Dit is bewuste denormalisatie voor snelle zoekqueries.
 

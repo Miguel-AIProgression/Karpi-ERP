@@ -135,6 +135,7 @@ export const regelDekkingFixtures: RegelDekkingFixture[] = [
     name: `shipping-product (${SHIPPING_PRODUCT_ID}) — altijd nul`,
     input: regel({
       artikelnr: SHIPPING_PRODUCT_ID,
+      is_pseudo: true,  // mig 272 / ADR-0018: admin-pseudo-flag uit producten.is_pseudo
       te_leveren: 1,
       vrije_voorraad: 99,
     }),

@@ -46,6 +46,7 @@ describe('berekenRegelDekking — expliciete edge cases', () => {
       te_leveren: 1,
       korting_pct: 0,
       artikelnr: SHIPPING_PRODUCT_ID,
+      is_pseudo: true,  // mig 272 / ADR-0018: admin-pseudo-flag uit producten.is_pseudo
       vrije_voorraad: 999,
       uitwisselbaar_keuzes: [{ artikelnr: 'EQ-VERZEND', aantal: 5 }],
     })

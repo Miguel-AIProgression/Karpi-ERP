@@ -92,6 +92,15 @@ export interface OrderRegelFormData {
    */
   prijs_bron?: PrijsBron
   prijs_breakdown?: PrijsBreakdown
+  /**
+   * Display-only: admin-pseudo-flag van het gekoppelde product (mig 272,
+   * ADR-0018). TRUE voor VERZEND/BUNDELKORTING/DREMPELKORTING — gevuld bij
+   * artikel-selectie of bij form-load uit `producten.is_pseudo`. Gebruikt
+   * door `isAdminPseudo(regel)` om dekking-preview, afleverdatum-filter
+   * etc. te skippen. Wordt niet gepersisteerd; de DB leest het via JOIN
+   * uit `producten.is_pseudo`.
+   */
+  is_pseudo?: boolean
 }
 
 /** Bronlabel voor de orderregel-prijs zoals geretourneerd door `bereken_orderregel_prijs` (mig 191, mig 253). */

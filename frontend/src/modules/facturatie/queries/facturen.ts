@@ -211,6 +211,11 @@ export async function fetchBundelInfoVoorFactuur(
     bedrag: number | string
   }>
 
+  // SCOPE (ADR-0018): factuur-niveau identificatie is per-type, niet generieke
+  // pseudo-skip. De banner-tekst onderscheidt expliciet welke korting actief is
+  // (BUNDELKORTING-tegenboeking vs. DREMPELKORTING-cadeau), dus specifieke
+  // artikelnr-matches blijven hier juist. Voor generieke "is admin-pseudo?":
+  // gebruik isAdminPseudo(regel) uit `@/lib/orders/admin-pseudo`.
   const productRegels = rows.filter(
     (r) =>
       r.artikelnr !== 'VERZEND' &&
