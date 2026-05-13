@@ -101,6 +101,17 @@ export async function fetchHandmatigeKeuzesVoorOrder(orderId: number): Promise<H
 }
 
 export async function fetchClaimsVoorOrderRegel(orderRegelId: number): Promise<OrderClaim[]> {
+  // Orderregel-artikelnr eerst, om omsticker te detecteren (claim.fysiek_artikelnr
+  // != regel.artikelnr). Code-review ADR-0015: dit was eerder hardcoded null,
+  // waardoor RegelClaimDetail-popover minder context toonde dan de order-niveau
+  // claim-uitsplitsing in OrderRegelsTable.
+  const { data: regel } = await supabase
+    .from('order_regels')
+    .select('artikelnr')
+    .eq('id', orderRegelId)
+    .single()
+  const regelArtikelnr = regel?.artikelnr ?? null
+
   const { data, error } = await supabase
     .from('order_reserveringen')
     .select(`
@@ -117,8 +128,31 @@ export async function fetchClaimsVoorOrderRegel(orderRegelId: number): Promise<O
   if (error) throw error
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return ((data ?? []) as any[]).map(row => {
+  const claimRows = (data ?? []) as any[]
+  if (claimRows.length === 0) return []
+
+  // Omsticker-bronnen: fysiek_artikelnr afwijkt van orderregel-artikelnr.
+  // Batch product-lookup zodat we ook hier omschrijving + locatie hebben.
+  const omstickerArtikelnrs = [...new Set(
+    claimRows
+      .filter(r => r.fysiek_artikelnr && r.fysiek_artikelnr !== regelArtikelnr)
+      .map(r => r.fysiek_artikelnr as string),
+  )]
+  const productMap = new Map<string, { omschrijving: string; locatie: string | null }>()
+  if (omstickerArtikelnrs.length > 0) {
+    const { data: producten } = await supabase
+      .from('producten')
+      .select('artikelnr, omschrijving, locatie')
+      .in('artikelnr', omstickerArtikelnrs)
+    for (const p of (producten ?? []) as { artikelnr: string; omschrijving: string; locatie: string | null }[]) {
+      productMap.set(p.artikelnr, { omschrijving: p.omschrijving, locatie: p.locatie })
+    }
+  }
+
+  return claimRows.map(row => {
     const io = row.inkooporder_regels?.inkooporders
+    const isOmsticker = row.fysiek_artikelnr && row.fysiek_artikelnr !== regelArtikelnr
+    const fysiekInfo = isOmsticker ? productMap.get(row.fysiek_artikelnr) : null
     return {
       id: row.id,
       order_regel_id: row.order_regel_id,
@@ -132,8 +166,8 @@ export async function fetchClaimsVoorOrderRegel(orderRegelId: number): Promise<O
       claim_volgorde: row.claim_volgorde,
       fysiek_artikelnr: row.fysiek_artikelnr ?? null,
       is_handmatig: !!row.is_handmatig,
-      fysiek_omschrijving: null,
-      fysiek_locatie: null,
+      fysiek_omschrijving: fysiekInfo?.omschrijving ?? null,
+      fysiek_locatie: fysiekInfo?.locatie ?? null,
     }
   })
 }
