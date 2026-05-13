@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { Loader2 } from 'lucide-react'
 import { useClaimsVoorOrderRegel } from '../hooks/use-reserveringen'
 import { isoWeekFromString } from '@/lib/utils/iso-week'
-import { InkoopRegelSamenvatting } from '@/modules/inkoop'
+import { InkoopRegelSamenvatting, usePrefetchInkoopRegelSamenvattingen } from '@/modules/inkoop'
 
 interface Props {
   orderRegelId: number
@@ -14,6 +14,18 @@ export function RegelClaimDetail({ orderRegelId, children }: Props) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const { data, isLoading } = useClaimsVoorOrderRegel(open ? orderRegelId : undefined)
+
+  // Batch-prefetch alle IO-claim-samenvattingen in één RPC zodra de claims-lijst
+  // binnen is — voorkomt N+1 round-trips bij multi-IO-claim orderregels.
+  // Individuele <InkoopRegelSamenvatting>-slots lezen daarna uit warme cache.
+  const ioRegelIds = useMemo(
+    () =>
+      (data ?? [])
+        .filter(c => c.bron === 'inkooporder_regel' && c.inkooporder_regel_id !== null)
+        .map(c => c.inkooporder_regel_id as number),
+    [data],
+  )
+  usePrefetchInkoopRegelSamenvattingen(ioRegelIds)
 
   useEffect(() => {
     if (!open) return

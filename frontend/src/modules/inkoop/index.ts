@@ -16,6 +16,7 @@ export {
   useInkooporderStats,
   useInkooporderRegelContext,
   useInkoopRegelSamenvatting,
+  usePrefetchInkoopRegelSamenvattingen,
   useOpenstaandeInkoopregelsVoorArtikel,
   useRollenVoorStickers,
   useRollenVoorArtikel,

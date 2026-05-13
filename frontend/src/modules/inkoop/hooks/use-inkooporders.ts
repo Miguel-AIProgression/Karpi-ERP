@@ -1,7 +1,9 @@
+import { useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   createInkooporder,
   fetchInkoopRegelSamenvatting,
+  fetchInkoopRegelSamenvattingen,
   fetchInkooporderDetail,
   fetchInkooporderRegelContext,
   fetchInkooporders,
@@ -91,6 +93,35 @@ export function useInkoopRegelSamenvatting(ioRegelId: number | undefined) {
     enabled: ioRegelId !== undefined,
     staleTime: 30_000,
   })
+}
+
+/**
+ * Pre-fetch hook voor cross-Module-callers (bv. Reservering's RegelClaimDetail)
+ * die meerdere IO-claim-slots tegelijk willen renderen. Doet één batch-fetch
+ * en zet de individuele query-caches via `setQueryData` — de individuele
+ * `useInkoopRegelSamenvatting`-hooks lezen daarna uit warme cache zonder
+ * eigen round-trip (binnen 30s staleTime).
+ *
+ * Caller geeft alleen ID's door — kent geen queryKey-vorm van Inkoop's cache.
+ */
+export function usePrefetchInkoopRegelSamenvattingen(ioRegelIds: number[]) {
+  const qc = useQueryClient()
+  const idsKey = [...ioRegelIds].sort((a, b) => a - b).join(',')
+
+  useEffect(() => {
+    if (ioRegelIds.length === 0) return
+    let cancelled = false
+    fetchInkoopRegelSamenvattingen(ioRegelIds).then(results => {
+      if (cancelled) return
+      for (const r of results) {
+        qc.setQueryData(['inkooporders', 'regel-samenvatting', r.io_regel_id], r)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idsKey, qc])
 }
 
 export function useCreateInkooporder() {

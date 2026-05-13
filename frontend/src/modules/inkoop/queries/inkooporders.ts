@@ -557,38 +557,23 @@ export interface InkoopRegelSamenvatting {
   eenheid: string
 }
 
-export async function fetchInkoopRegelSamenvatting(
-  ioRegelId: number,
-): Promise<InkoopRegelSamenvatting | null> {
-  const { data, error } = await supabase
-    .from('inkooporder_regels')
-    .select(
-      `id, te_leveren_m, eenheid,
-       inkooporders!inner (
-         inkooporder_nr, status, verwacht_datum,
-         leveranciers!inkooporders_leverancier_id_fkey ( naam )
-       )`,
-    )
-    .eq('id', ioRegelId)
-    .single()
+// Supabase kan inkooporders/leveranciers als object OF array terugleveren afhankelijk
+// van FK-config. Defensief beide vormen afhandelen.
+type LevShape = { naam: string | null } | Array<{ naam: string | null }> | null
+type IoShape = {
+  inkooporder_nr: string | null
+  status: string | null
+  verwacht_datum: string | null
+  leveranciers: LevShape
+}
+type RegelSamenvattingRow = {
+  id: number
+  te_leveren_m: number | null
+  eenheid: string | null
+  inkooporders: IoShape | IoShape[] | null
+}
 
-  if (error || !data) return null
-
-  // Supabase kan inkooporders/leveranciers als object OF array terugleveren afhankelijk
-  // van FK-config. Defensief beide vormen afhandelen.
-  type LevShape = { naam: string | null } | Array<{ naam: string | null }> | null
-  type IoShape = {
-    inkooporder_nr: string | null
-    status: string | null
-    verwacht_datum: string | null
-    leveranciers: LevShape
-  }
-  const raw = data as unknown as {
-    id: number
-    te_leveren_m: number | null
-    eenheid: string | null
-    inkooporders: IoShape | IoShape[] | null
-  }
+function normaliseerInkoopRegelSamenvatting(raw: RegelSamenvattingRow): InkoopRegelSamenvatting {
   const io = Array.isArray(raw.inkooporders) ? raw.inkooporders[0] ?? null : raw.inkooporders
   const lev = io?.leveranciers ?? null
   const leverancierNaam = Array.isArray(lev) ? lev[0]?.naam ?? null : lev?.naam ?? null
@@ -602,4 +587,41 @@ export async function fetchInkoopRegelSamenvatting(
     te_leveren_m: Number(raw.te_leveren_m ?? 0),
     eenheid: raw.eenheid ?? 'm',
   }
+}
+
+const SAMENVATTING_SELECT = `id, te_leveren_m, eenheid,
+   inkooporders!inner (
+     inkooporder_nr, status, verwacht_datum,
+     leveranciers!inkooporders_leverancier_id_fkey ( naam )
+   )`
+
+export async function fetchInkoopRegelSamenvatting(
+  ioRegelId: number,
+): Promise<InkoopRegelSamenvatting | null> {
+  const { data, error } = await supabase
+    .from('inkooporder_regels')
+    .select(SAMENVATTING_SELECT)
+    .eq('id', ioRegelId)
+    .single()
+
+  if (error || !data) return null
+  return normaliseerInkoopRegelSamenvatting(data as unknown as RegelSamenvattingRow)
+}
+
+/**
+ * Batch-variant: één RPC met `.in('id', ioRegelIds)` voor meerdere regels tegelijk.
+ * Bedoeld voor cross-Module-callers (bv. Reservering's RegelClaimDetail) die in één
+ * popover meerdere IO-claim-rijen renderen — voorkomt N+1 round-trips.
+ */
+export async function fetchInkoopRegelSamenvattingen(
+  ioRegelIds: number[],
+): Promise<InkoopRegelSamenvatting[]> {
+  if (ioRegelIds.length === 0) return []
+  const { data, error } = await supabase
+    .from('inkooporder_regels')
+    .select(SAMENVATTING_SELECT)
+    .in('id', ioRegelIds)
+
+  if (error || !data) return []
+  return (data as unknown as RegelSamenvattingRow[]).map(normaliseerInkoopRegelSamenvatting)
 }
