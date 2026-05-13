@@ -1,5 +1,18 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-13 — Inkoop-Module als deep Module ([ADR-0016](adr/0016-inkoop-als-deep-module.md))
+
+Inkooporders, leveranciers en de ontvangst-flow zijn geëxtraheerd als twaalfde deep verticale Module onder `frontend/src/modules/inkoop/` — naast Reservering (ADR-0015), Snijplanning, Facturatie, Debiteur en de eerdere tien.
+
+- **Twaalfde deep verticale Module**: `modules/inkoop/` met queries, hooks, components, pages. Medium scope (logica-laag + UI). Routes blijven `/inkoop` en `/leveranciers` voor bookmark-compat (precedent: Debiteur-Module met `/klanten`-routes).
+- **Mig 257**: pure rename `boek_voorraad_ontvangst → boek_inkooporder_ontvangst_stuks`, `boek_ontvangst → boek_inkooporder_ontvangst_rollen`. Bodies identiek. Oude namen blijven DEPRECATED thin wrappers (1 release; verwijderen in vervolg-migratie). `boek_io_ontvangst_claims` (Reservering, mig 254) onaangeraakt — stuks-pad delegeert claim-consume daaraan.
+- **Slot-component** `<InkoopRegelSamenvatting>` (regel + parent-IO + leverancier in één call) geconsumeerd door Reservering's `RegelClaimDetail` — cross-Module zonder hooks-import, patroon analoog aan `<KlantBenaming>` (ADR-0011) en `<VervoerderTag>` (ADR-0008).
+- **Python `import_inkoopoverzicht.py`**: TODO-banner verwijst naar `create_inkooporder`-RPC backlog; pad expliciet gewhitelist in lint-script.
+- **Lint-script** `scripts/lint-no-direct-inkooporder-regel-write.sh` + **ESLint** `no-restricted-imports` beschermen Module-boundary tegen directe `inkooporder_regels`-writes en directe imports buiten de Module.
+- **Cleanup**: 4 legacy files verwijderd (toplevel hooks + shims), incl. duplicate `useBoekOntvangst` met afwijkende invalidation-keys.
+- **Backward-compat thin wrappers** `boek_voorraad_ontvangst` / `boek_ontvangst` staan op deprecation; verwijderen in vervolg-migratie.
+- **Open backlog**: rol-creatie + `voorraad_mutaties`-INSERT verhuist naar toekomstige Voorraad/Producten-Module; inkoopgroepen-pages (klant-attribuut, ondanks de naam) verhuist naar Debiteur-Module; `create_inkooporder`-RPC vervangt initial-bulk-create Python-flow.
+
 ## 2026-05-13 — Bundel-korting zichtbaarheid
 
 **Waarom:** Bij bundeling van zendingen werd de verzendkosten-besparing
