@@ -1,6 +1,6 @@
 // Inkoop-Module — bezit inkooporders, inkooporder_regels, leveranciers,
 // ontvangst-RPC's (stuks + rollen) en de claim-popover/rol-sticker-runtime.
-// Medium scope (ADR-0016): logica-laag + 6 components + 5 pages leven hier.
+// Medium scope (ADR-0017): logica-laag + 6 components + 5 pages leven hier.
 // Cross-Module-imports gaan via deze barrel; directe imports uit subfolders
 // worden door ESLint geblokkeerd (zie Stap 10 van het migratiepad).
 //
@@ -37,7 +37,7 @@ export {
 } from './hooks/use-boek-ontvangst'
 
 // ---------------------------------------------------------------------------
-// Cache seam (cross-Module invalidation — ADR-0016, Ingreep 4)
+// Cache seam (cross-Module invalidation — ADR-0017, Ingreep 4)
 // ---------------------------------------------------------------------------
 export { invalidateNaInkoopMutatie } from './cache'
 

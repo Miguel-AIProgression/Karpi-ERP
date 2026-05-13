@@ -16,7 +16,7 @@ HEAD: c323459
 | Git state | OK | Working tree clean; 13 commits sinds main (Tasks 1-12 + review-fixes) |
 | Module-folder volledigheid | OK | 9 components (1 meer dan spec — `voorraad-ontvangst-dialog.tsx` extra), 5 pages, 3 hooks, 2 queries, 1 test |
 | Mig 271 aanwezig op disk | OK | `supabase/migrations/271_inkoop_module_rename_ontvangst_rpcs.sql` (299 regels) |
-| Docs (ADR + architectuur + woordenboek + changelog) | OK | ADR-0016 bestaat, alle drie docs hebben Inkoop-Module-referenties (changelog regel 3, woordenboek regel 133, architectuur regels 119-122/279-282) |
+| Docs (ADR + architectuur + woordenboek + changelog) | OK | ADR-0017 bestaat, alle drie docs hebben Inkoop-Module-referenties (changelog regel 3, woordenboek regel 133, architectuur regels 119-122/279-282) |
 
 ### Detail-noten
 
@@ -64,7 +64,7 @@ HEAD: c323459
 ## Open backlog (vervolg-werk)
 
 - [ ] **Backward-compat thin wrappers verwijderen** (in nieuwe migratie, na 1 release): `boek_voorraad_ontvangst` + `boek_ontvangst` -> DROP
-- [ ] **Rol-creatie + voorraad_mutaties verhuizen** naar toekomstige Voorraad/Producten-Module (ADR-0016 open backlog item)
+- [ ] **Rol-creatie + voorraad_mutaties verhuizen** naar toekomstige Voorraad/Producten-Module (ADR-0017 open backlog item)
 - [ ] **Inkoopgroepen-pages** verhuizen naar Debiteur-Module (klant-attribuut, niet Inkoop-domein)
 - [ ] **`create_inkooporder`-RPC** invoeren zodat Python-import-script niet langer directe table-writes doet (vervang het door RPC-aanroep)
 - [ ] **EDI-DESADV** koppeling voor inkomende ontvangst-bevestigingen

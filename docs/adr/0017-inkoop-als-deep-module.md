@@ -83,7 +83,7 @@ Backward compat: de oude namen blijven bestaan als **DEPRECATED thin wrappers** 
 ```sql
 CREATE OR REPLACE FUNCTION boek_voorraad_ontvangst(...)
 RETURNS ... AS $$
-  -- DEPRECATED (mig 271, ADR-0016): gebruik boek_inkooporder_ontvangst_stuks.
+  -- DEPRECATED (mig 271, ADR-0017): gebruik boek_inkooporder_ontvangst_stuks.
   -- Verwijderen in vervolg-migratie na 1 release.
   SELECT boek_inkooporder_ontvangst_stuks(...);
 $$ LANGUAGE sql;
@@ -133,7 +133,7 @@ Reservering blijft import-vrij van Inkoop. Cycle vermeden; depth bewaard.
 ### Ingreep 4 — Lint-script, ESLint-regel, Python-import TODO
 
 - `scripts/lint-no-direct-inkooporder-write.sh` — scant `supabase/migrations/` en `supabase/functions/` op `INSERT INTO inkooporders`, `UPDATE inkooporders`, `DELETE FROM inkooporders` (idem voor `inkooporder_regels` en `leveranciers`) buiten een whitelist (mig 127-148, 254-255, nieuwe split-mig 271).
-- ESLint `no-restricted-imports` regel voor oude paden (`@/lib/supabase/queries/inkooporders`, `@/lib/supabase/queries/leveranciers`, `@/components/inkooporders/*`, `@/pages/inkooporders/*`, `@/pages/leveranciers/*`) met ADR-0016-verwijzing.
+- ESLint `no-restricted-imports` regel voor oude paden (`@/lib/supabase/queries/inkooporders`, `@/lib/supabase/queries/leveranciers`, `@/components/inkooporders/*`, `@/pages/inkooporders/*`, `@/pages/leveranciers/*`) met ADR-0017-verwijzing.
 - `import/import_inkoopoverzicht.py` krijgt een TODO-banner: dit script omzeilt RLS met de service-role-key (gebruiker-keuze 2026-05-13: geen RLS-bypass meer). Vervolg-werk: vervang door `create_inkooporder`-RPC die de Python-import via PostgREST gebruikt met respect voor RLS. Niet meegenomen in dit ADR's stappen — eigen vervolg-issue.
 
 ## Module-Interface (publieke barrel)

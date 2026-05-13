@@ -1,6 +1,6 @@
 -- Migratie 271: Inkoop-Module — hernoem ontvangst-RPCs naar Module-aligned namen
 --
--- Strategie (ADR-0016): pure rename. Business-logic blijft identiek aan
+-- Strategie (ADR-0017): pure rename. Business-logic blijft identiek aan
 -- de huidige boek_voorraad_ontvangst (mig 254-versie) en boek_ontvangst
 -- (laatste definitie in mig 136). We hernoemen alleen:
 --
@@ -16,7 +16,7 @@
 --   door boek_inkooporder_ontvangst_stuks via PERFORM; signature blijft
 --   (p_io_regel_id BIGINT, p_aantal_ontvangen INT).
 -- - Voorraad-bump op producten, rollen-INSERT, voorraad_mutaties-INSERT blijven
---   binnen de hernoemde RPCs geparkeerd (zie ADR-0016 open backlog: verhuist
+--   binnen de hernoemde RPCs geparkeerd (zie ADR-0017 open backlog: verhuist
 --   naar toekomstige Voorraad/Producten-Module).
 
 -- ============================================================
@@ -88,7 +88,7 @@ $$ LANGUAGE plpgsql;
 COMMENT ON FUNCTION boek_inkooporder_ontvangst_stuks(BIGINT, INTEGER, TEXT) IS
   'Inkoop-Module: boek stuks-ontvangst op een eenheid=stuks IO-regel. '
   'Body identiek aan boek_voorraad_ontvangst (mig 254). Delegeert claim-'
-  'consume aan Reservering via PERFORM boek_io_ontvangst_claims. ADR-0016, mig 271.';
+  'consume aan Reservering via PERFORM boek_io_ontvangst_claims. ADR-0017, mig 271.';
 
 GRANT EXECUTE ON FUNCTION boek_inkooporder_ontvangst_stuks(BIGINT, INTEGER, TEXT) TO authenticated;
 
@@ -216,7 +216,7 @@ $$ LANGUAGE plpgsql;
 COMMENT ON FUNCTION boek_inkooporder_ontvangst_rollen(BIGINT, JSONB, TEXT) IS
   'Inkoop-Module: boek rollen-ontvangst op een eenheid=m IO-regel. Body '
   'identiek aan boek_ontvangst (mig 136, laatste in 127/133/135/136-keten). '
-  'Geen claim-consume (claims zijn alleen op eenheid=stuks). ADR-0016, mig 271.';
+  'Geen claim-consume (claims zijn alleen op eenheid=stuks). ADR-0017, mig 271.';
 
 GRANT EXECUTE ON FUNCTION boek_inkooporder_ontvangst_rollen(BIGINT, JSONB, TEXT) TO authenticated;
 
@@ -236,7 +236,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 COMMENT ON FUNCTION boek_voorraad_ontvangst(BIGINT, INTEGER, TEXT) IS
-  'DEPRECATED (ADR-0016, mig 271): thin wrapper rondom '
+  'DEPRECATED (ADR-0017, mig 271): thin wrapper rondom '
   'boek_inkooporder_ontvangst_stuks. Verwijderen in vervolg-migratie '
   'nadat callers zijn omgezet.';
 
@@ -251,7 +251,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 COMMENT ON FUNCTION boek_ontvangst(BIGINT, JSONB, TEXT) IS
-  'DEPRECATED (ADR-0016, mig 271): thin wrapper rondom '
+  'DEPRECATED (ADR-0017, mig 271): thin wrapper rondom '
   'boek_inkooporder_ontvangst_rollen. Verwijderen in vervolg-migratie '
   'nadat callers zijn omgezet.';
 
@@ -290,7 +290,7 @@ NOTIFY pgrst, 'reload schema';
 
 DO $$
 BEGIN
-  RAISE NOTICE 'Migratie 271 toegepast: Inkoop-Module RPC-rename (ADR-0016).';
+  RAISE NOTICE 'Migratie 271 toegepast: Inkoop-Module RPC-rename (ADR-0017).';
   RAISE NOTICE '  + boek_inkooporder_ontvangst_stuks (NIEUW, body identiek aan boek_voorraad_ontvangst mig 254)';
   RAISE NOTICE '  + boek_inkooporder_ontvangst_rollen (NIEUW, body identiek aan boek_ontvangst mig 136)';
   RAISE NOTICE '  ~ boek_voorraad_ontvangst (DEPRECATED thin wrapper)';

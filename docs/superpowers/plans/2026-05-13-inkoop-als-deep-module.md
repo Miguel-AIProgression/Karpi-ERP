@@ -27,7 +27,7 @@
 ### Nieuwe bestanden
 
 ```
-docs/adr/0016-inkoop-als-deep-module.md             ← architectuur-beslissing
+docs/adr/0017-inkoop-als-deep-module.md             ← architectuur-beslissing
 
 frontend/src/modules/inkoop/
 ├── index.ts                                        ← publieke barrel
@@ -90,10 +90,10 @@ frontend/src/lib/supabase/queries/leveranciers.ts   ← na shim-fase
 
 ---
 
-## Task 1: ADR-0016 + Module-skelet (één commit, per feedback-memory)
+## Task 1: ADR-0017 + Module-skelet (één commit, per feedback-memory)
 
 **Files:**
-- Create: `docs/adr/0016-inkoop-als-deep-module.md`
+- Create: `docs/adr/0017-inkoop-als-deep-module.md`
 - Create: `frontend/src/modules/inkoop/index.ts`
 - Create: `frontend/src/modules/inkoop/cache.ts`
 
@@ -108,7 +108,7 @@ ls supabase/migrations/ | sort -V | tail -8     # verifieer dat 254 + 255 op mai
 
 Verwacht: laatste migratie 256. **Heads-up**: op main bestaan momenteel **twee** bestanden met prefix `256_` (`256_bundelkorting_2_regel_vorm.sql` en `256_reservering_trigger_verzonden_release.sql`) — de nummerings-volgorde is hier al eens gekruist. Mig 271 is op het moment van schrijven nog vrij; als 257 in de tussentijd ook bezet is, pak het eerstvolgende vrije nummer en pas overal in dit document aan (Task 4 paden, lint-script whitelist, docs in Task 12).
 
-- [ ] **Step 2: Schrijf ADR-0016**
+- [ ] **Step 2: Schrijf ADR-0017**
 
 Schrijf het ADR in dezelfde stijl als [ADR-0015](../adr/0015-reservering-als-deep-module.md). Verplichte secties:
 
@@ -224,10 +224,10 @@ export function invalidateNaInkoopMutatie(
 - [ ] **Step 5: Commit ADR + skelet**
 
 ```bash
-git add docs/adr/0016-inkoop-als-deep-module.md \
+git add docs/adr/0017-inkoop-als-deep-module.md \
         frontend/src/modules/inkoop/index.ts \
         frontend/src/modules/inkoop/cache.ts
-git commit -m "feat(inkoop): ADR-0016 + Module-skelet (cache + barrel)
+git commit -m "feat(inkoop): ADR-0017 + Module-skelet (cache + barrel)
 
 Hef Inkoop op tot elfde deep verticale Module. Skelet + invalidate-helper
 landen samen met ADR — eerst code, dan stappen 2-13."
@@ -593,7 +593,7 @@ Skelet (vul de twee `-- KOPIE` blokken aan met de body's uit Step 2):
 ```sql
 -- Migratie 271: Inkoop-Module — hernoem ontvangst-RPCs naar Module-aligned namen
 --
--- Strategie (ADR-0016): pure rename. De business-logic blijft identiek aan
+-- Strategie (ADR-0017): pure rename. De business-logic blijft identiek aan
 -- de huidige boek_voorraad_ontvangst (mig 254-versie) en boek_ontvangst
 -- (laatste mig in de 133/135/136/251-keten). We hernoemen alleen:
 --
@@ -611,7 +611,7 @@ Skelet (vul de twee `-- KOPIE` blokken aan met de body's uit Step 2):
 --   signature (zou een PostgreSQL-error geven en is Module-boundary-violation).
 -- - Voorraad-bump op producten en rollen-INSERT + voorraad_mutaties-INSERT
 --   blijven binnen de Inkoop-RPCs geparkeerd; eigendom verhuist naar een
---   toekomstige Voorraad/Producten-Module (zie ADR-0016 open backlog).
+--   toekomstige Voorraad/Producten-Module (zie ADR-0017 open backlog).
 
 -- ============================================================
 -- 1. boek_inkooporder_ontvangst_stuks — nieuwe Module-aligned naam
@@ -633,7 +633,7 @@ $$;
 COMMENT ON FUNCTION boek_inkooporder_ontvangst_stuks(BIGINT, INTEGER, TEXT) IS
   'Inkoop-Module: boek stuks-ontvangst op een eenheid=stuks IO-regel. '
   'Body identiek aan boek_voorraad_ontvangst (mig 254). Delegeert claim-'
-  'consume aan Reservering via PERFORM boek_io_ontvangst_claims. ADR-0016.';
+  'consume aan Reservering via PERFORM boek_io_ontvangst_claims. ADR-0017.';
 
 -- ============================================================
 -- 2. boek_inkooporder_ontvangst_rollen — nieuwe Module-aligned naam
@@ -653,7 +653,7 @@ $$;
 COMMENT ON FUNCTION boek_inkooporder_ontvangst_rollen(/* signature */) IS
   'Inkoop-Module: boek rollen-ontvangst op een eenheid=m IO-regel. Body '
   'identiek aan boek_ontvangst (laatste mig in de 133/135/136/251-keten). '
-  'Geen claim-consume (claims zijn alleen op eenheid=stuks). ADR-0016.';
+  'Geen claim-consume (claims zijn alleen op eenheid=stuks). ADR-0017.';
 
 -- ============================================================
 -- 3. DEPRECATED thin wrappers — 1 release lang
@@ -675,7 +675,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION boek_voorraad_ontvangst(BIGINT, INTEGER, TEXT) IS
-  'DEPRECATED (ADR-0016): thin wrapper rondom boek_inkooporder_ontvangst_stuks. '
+  'DEPRECATED (ADR-0017): thin wrapper rondom boek_inkooporder_ontvangst_stuks. '
   'Verwijderen in vervolg-migratie nadat callers zijn omgezet.';
 
 -- Wrapper voor boek_ontvangst — vul parameter-lijst aan op basis van Step 2:
@@ -691,7 +691,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION boek_ontvangst(/* signature */) IS
-  'DEPRECATED (ADR-0016): thin wrapper rondom boek_inkooporder_ontvangst_rollen. '
+  'DEPRECATED (ADR-0017): thin wrapper rondom boek_inkooporder_ontvangst_rollen. '
   'Verwijderen in vervolg-migratie nadat callers zijn omgezet.';
 
 -- ============================================================
@@ -794,7 +794,7 @@ COMMENT ON FUNCTION boek_io_ontvangst_claims(BIGINT, INTEGER) IS
   'in claim_volgorde-volgorde, schuif consumed-deel naar voorraad-claim op '
   'dezelfde orderregel, en recompute claims + wacht-status + afleverdatum per '
   'geraakte order. Aangeroepen door Inkoop-Module RPCs (boek_inkooporder_ '
-  'ontvangst_stuks). Mig 271 + ADR-0016.';
+  'ontvangst_stuks). Mig 271 + ADR-0017.';
 
 -- ============================================================
 -- 2. Inkoop bezit: boek_inkooporder_ontvangst_stuks
@@ -869,7 +869,7 @@ COMMENT ON FUNCTION boek_inkooporder_ontvangst_stuks(BIGINT, INTEGER, TEXT) IS
   'Verhoogt producten.voorraad (geparkeerd: eigenaar wordt Voorraad-Module), '
   'werkt regel + IO-status bij, en delegeert claim-consume aan '
   'boek_io_ontvangst_claims (Reservering). Vervangt mig 148 boek_voorraad_'
-  'ontvangst. Mig 271 + ADR-0016.';
+  'ontvangst. Mig 271 + ADR-0017.';
 
 -- ============================================================
 -- 3. Inkoop bezit: boek_inkooporder_ontvangst_rollen
@@ -965,7 +965,7 @@ COMMENT ON FUNCTION boek_inkooporder_ontvangst_rollen(BIGINT, JSONB, TEXT) IS
   'Inkoop-Module: boek rollen-ontvangst op een eenheid=m IO-regel. Maakt '
   'rollen + voorraad_mutaties aan (geparkeerd: eigenaar wordt Voorraad-Module), '
   'werkt regel + IO-status bij. Geen claim-consume (claims zijn alleen op '
-  'eenheid=stuks). Vervangt mig 133-136 boek_ontvangst. Mig 271 + ADR-0016.';
+  'eenheid=stuks). Vervangt mig 133-136 boek_ontvangst. Mig 271 + ADR-0017.';
 
 -- ============================================================
 -- 4. Backward-compat thin wrappers (DEPRECATED, 1 release lang)
@@ -986,7 +986,7 @@ $$;
 COMMENT ON FUNCTION boek_voorraad_ontvangst(BIGINT, INTEGER, TEXT) IS
   'DEPRECATED — thin wrapper rondom boek_inkooporder_ontvangst_stuks. '
   'Wordt verwijderd in een volgende migratie nadat alle callers (Python-'
-  'import, frontend-dialog) zijn omgezet. ADR-0016.';
+  'import, frontend-dialog) zijn omgezet. ADR-0017.';
 
 -- Voor boek_ontvangst: lees mig 135 voor de werkelijke parameter-shape en
 -- bouw de thin wrapper analoog. Niet alle callers gaan via dezelfde naam;
@@ -1530,14 +1530,14 @@ git commit -m "feat(inkoop): RegelClaimDetail consumeert InkoopRegelSamenvatting
 **Files:**
 - Modify: `import/import_inkoopoverzicht.py` (alleen comment-banner)
 
-**Context**: het script doet vandaag enkel **initial bulk-create** van inkooporder-headers en -regels uit `Inkoopoverzicht.xlsx`. Het roept géén `boek_voorraad_ontvangst` of `boek_ontvangst` aan (geverifieerd via `grep -n "boek_" import/import_inkoopoverzicht.py` — geen treffers). Er is dus niets te converteren naar de nieuwe RPC's. De gebruiker's keuze "geen RLS-bypass meer" zou een vervolg-vraag triggeren: maak een `create_inkooporder` RPC zodat ook initial-bulk-create via de Module-laag loopt. Dat is **out-of-scope voor ADR-0016** en wordt op de open-backlog gezet.
+**Context**: het script doet vandaag enkel **initial bulk-create** van inkooporder-headers en -regels uit `Inkoopoverzicht.xlsx`. Het roept géén `boek_voorraad_ontvangst` of `boek_ontvangst` aan (geverifieerd via `grep -n "boek_" import/import_inkoopoverzicht.py` — geen treffers). Er is dus niets te converteren naar de nieuwe RPC's. De gebruiker's keuze "geen RLS-bypass meer" zou een vervolg-vraag triggeren: maak een `create_inkooporder` RPC zodat ook initial-bulk-create via de Module-laag loopt. Dat is **out-of-scope voor ADR-0017** en wordt op de open-backlog gezet.
 
 - [ ] **Step 1: Voeg TODO-banner aan script toe**
 
 Aan het begin van `import/import_inkoopoverzicht.py`, na de bestaande docstring:
 
 ```python
-# TODO(ADR-0016, open backlog): dit script doet bulk-insert in
+# TODO(ADR-0017, open backlog): dit script doet bulk-insert in
 # inkooporder_regels via service-role-key. Initial-imports passen niet binnen
 # boek_inkooporder_ontvangst_{stuks,rollen} (die zijn voor ontvangst-boekingen
 # op bestaande regels, niet voor regel-creatie). Volgende stap: introduceer
@@ -1578,7 +1578,7 @@ set -euo pipefail
 #   136 — boek_ontvangst voorraad_mutaties schema fix
 #   148 — boek_voorraad_ontvangst claim-consume
 #   254 — boek_voorraad_ontvangst → PERFORM boek_io_ontvangst_claims (ADR-0015)
-#   257 — RPC-rename naar boek_inkooporder_ontvangst_{stuks,rollen} (ADR-0016)
+#   257 — RPC-rename naar boek_inkooporder_ontvangst_{stuks,rollen} (ADR-0017)
 WHITELIST_PATTERN='supabase/migrations/(127|131|133|135|136|148|254|257)_'
 
 # Python-import-paden die initial-bulk-create doen (Task 9 backlog: vervang
@@ -1628,7 +1628,7 @@ if [[ "$GUILTY" -eq 1 ]]; then
   echo ""
   echo "Inkoop-Module is de enige writer van inkooporder_regels en"
   echo "inkooporders.status. Gebruik boek_inkooporder_ontvangst_{stuks,rollen}"
-  echo "of via @/modules/inkoop barrel-hooks. Zie ADR-0016."
+  echo "of via @/modules/inkoop barrel-hooks. Zie ADR-0017."
   exit 1
 fi
 
@@ -1658,15 +1658,15 @@ Open ESLint config en voeg toe (volg het patroon uit ADR-0015 voor Reservering):
   patterns: [
     {
       group: ['@/lib/supabase/queries/inkooporders', '@/lib/supabase/queries/leveranciers'],
-      message: 'Importeer uit "@/modules/inkoop" (zie ADR-0016).',
+      message: 'Importeer uit "@/modules/inkoop" (zie ADR-0017).',
     },
     {
       group: ['@/components/inkooporders/*'],
-      message: 'Components zijn verhuisd naar "@/modules/inkoop" (zie ADR-0016).',
+      message: 'Components zijn verhuisd naar "@/modules/inkoop" (zie ADR-0017).',
     },
     {
       group: ['@/pages/inkooporders/*', '@/pages/leveranciers/*'],
-      message: 'Pages zijn verhuisd naar "@/modules/inkoop/pages" (zie ADR-0016).',
+      message: 'Pages zijn verhuisd naar "@/modules/inkoop/pages" (zie ADR-0017).',
     },
   ],
 }],
@@ -1768,7 +1768,7 @@ git commit -m "chore(inkoop): verwijder deprecation-shims, alle imports via barr
 Open de Module-graaf-paragraaf (rond regel 29). Voeg toe als **elfde domein-Module** met dezelfde stijl als Reservering's intro:
 
 ```markdown
-De **elfde domein-module is `modules/inkoop/`** ([ADR-0016](adr/0016-inkoop-als-deep-module.md))
+De **elfde domein-module is `modules/inkoop/`** ([ADR-0017](adr/0017-inkoop-als-deep-module.md))
 — bezit inkooporders, leveranciers en de ontvangst-flow. Medium scope:
 logica-laag (queries/hooks/mutations) + components + pages.
 
@@ -1795,7 +1795,7 @@ inkoop-domein) verhuist naar Debiteur-Module.
 Voeg toe in de Module-termen-sectie:
 
 ```markdown
-**Inkoop-Module** (ADR-0016, 2026-05-13) — Eigenaar van het Inkooporder-concept,
+**Inkoop-Module** (ADR-0017, 2026-05-13) — Eigenaar van het Inkooporder-concept,
 Leverancier-master-data en de ontvangst-flow. Bron-van-waarheid: tabellen
 `inkooporders`, `inkooporder_regels`, `leveranciers`. Publieke RPCs:
 `boek_inkooporder_ontvangst_stuks`, `boek_inkooporder_ontvangst_rollen`.
@@ -1806,7 +1806,7 @@ trigger `trg_sync_besteld_inkoop`).
 - [ ] **Step 3: `changelog.md` — entry voor 2026-05-13**
 
 ```markdown
-## 2026-05-13 — Inkoop-Module (ADR-0016)
+## 2026-05-13 — Inkoop-Module (ADR-0017)
 
 - Elfde deep verticale Module: `modules/inkoop/` met queries, hooks, components, pages.
 - Mig 271: RPC-splitsing `boek_inkooporder_ontvangst_{stuks,rollen}` (Inkoop) +
@@ -1823,7 +1823,7 @@ trigger `trg_sync_besteld_inkoop`).
 
 ```bash
 git add docs/architectuur.md docs/data-woordenboek.md docs/changelog.md
-git commit -m "docs(inkoop): ADR-0016 in architectuur.md, woordenboek + changelog"
+git commit -m "docs(inkoop): ADR-0017 in architectuur.md, woordenboek + changelog"
 ```
 
 ---

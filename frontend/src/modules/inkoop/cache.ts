@@ -2,7 +2,7 @@ import type { QueryClient } from '@tanstack/react-query'
 import { invalidateNaReserveringsmutatie } from '@/modules/reserveringen'
 
 /**
- * Cross-Module cache-invalidation seam (ADR-0016, Ingreep 4).
+ * Cross-Module cache-invalidation seam (ADR-0017, Ingreep 4).
  *
  * Roep deze helper aan in elke mutation die `inkooporders`-, `inkooporder_regels`-
  * of `leveranciers`-rijen muteert (create, update, ontvangst boeken, annulering).

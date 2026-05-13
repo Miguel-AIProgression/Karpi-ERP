@@ -4,7 +4,7 @@
 # UPDATE op inkooporders.status voorkomt buiten de Inkoop-Module
 # allowlist en de Python-bulk-import.
 #
-# ADR-0016: schrijfacties op inkooporder_regels en inkooporders.status
+# ADR-0017: schrijfacties op inkooporder_regels en inkooporders.status
 # lopen via de Inkoop-Module (RPC's boek_inkooporder_ontvangst_stuks /
 # boek_inkooporder_ontvangst_rollen / boek_io_ontvangst_claims).
 # Directe schrijfacties zijn alleen toegestaan in Module-eigen migraties.
@@ -22,7 +22,7 @@ set -euo pipefail
 #   136 — boek_ontvangst voorraad_mutaties schema fix
 #   148 — boek_voorraad_ontvangst claim-consume
 #   254 — boek_voorraad_ontvangst -> PERFORM boek_io_ontvangst_claims (ADR-0015)
-#   257 — RPC-rename naar boek_inkooporder_ontvangst_{stuks,rollen} (ADR-0016)
+#   257 — RPC-rename naar boek_inkooporder_ontvangst_{stuks,rollen} (ADR-0017)
 ALLOWED_MIGRATION_PATHS=(
   'supabase/migrations/127_inkooporders_leveranciers.sql'
   'supabase/migrations/131_inkoop_dubbele_fks_opruimen.sql'
@@ -35,7 +35,7 @@ ALLOWED_MIGRATION_PATHS=(
 )
 
 # Python-import-paden die initial-bulk-create doen.
-# Backlog: vervang door create_inkooporder-RPC in vervolg-werk (zie ADR-0016).
+# Backlog: vervang door create_inkooporder-RPC in vervolg-werk (zie ADR-0017).
 ALLOWED_PYTHON_PATHS=(
   'import/import_inkoopoverzicht.py'
 )
@@ -61,7 +61,7 @@ while IFS=: read -r file line rest; do
     if [[ "$file" == *"$path"* ]]; then allowed=1; break; fi
   done
   if [ "$allowed" -eq 0 ]; then
-    echo "FAIL: $file:$line — directe schrijf op inkooporder_regels / inkooporders.status verboden (ADR-0016). Gebruik RPC's uit de Inkoop-Module (boek_inkooporder_ontvangst_stuks / boek_inkooporder_ontvangst_rollen)."
+    echo "FAIL: $file:$line — directe schrijf op inkooporder_regels / inkooporders.status verboden (ADR-0017). Gebruik RPC's uit de Inkoop-Module (boek_inkooporder_ontvangst_stuks / boek_inkooporder_ontvangst_rollen)."
     echo "      $rest"
     failed=1
   fi
@@ -75,7 +75,7 @@ function_matches=$(grep -rEn --include='*.ts' "$EDGE_PATTERN" \
 
 while IFS=: read -r file line rest; do
   [ -z "$file" ] && continue
-  echo "FAIL: $file:$line — directe schrijf op inkooporder_regels in edge function verboden (ADR-0016). Roep de Inkoop-Module RPC aan."
+  echo "FAIL: $file:$line — directe schrijf op inkooporder_regels in edge function verboden (ADR-0017). Roep de Inkoop-Module RPC aan."
   echo "      $rest"
   failed=1
 done <<< "$function_matches"
@@ -93,7 +93,7 @@ while IFS=: read -r file line rest; do
     if [[ "$file" == *"$path"* ]]; then allowed=1; break; fi
   done
   if [ "$allowed" -eq 0 ]; then
-    echo "FAIL: $file:$line — directe table-write op inkooporder_regels in Python verboden (ADR-0016). Gebruik de Inkoop-Module RPC via supabase.rpc(...)."
+    echo "FAIL: $file:$line — directe table-write op inkooporder_regels in Python verboden (ADR-0017). Gebruik de Inkoop-Module RPC via supabase.rpc(...)."
     echo "      $rest"
     failed=1
   fi
@@ -113,7 +113,7 @@ while IFS=: read -r file line rest; do
     if [[ "$file" == *"$path"* ]]; then allowed=1; break; fi
   done
   if [ "$allowed" -eq 0 ]; then
-    echo "FAIL: $file:$line — directe schrijf op inkooporder_regels in frontend verboden (ADR-0016). Gebruik hooks/queries uit @/modules/inkoop."
+    echo "FAIL: $file:$line — directe schrijf op inkooporder_regels in frontend verboden (ADR-0017). Gebruik hooks/queries uit @/modules/inkoop."
     echo "      $rest"
     failed=1
   fi
@@ -123,7 +123,7 @@ if [ "$failed" -eq 1 ]; then
   echo ""
   echo "Inkoop-Module is de enige writer van inkooporder_regels en"
   echo "inkooporders.status. Gebruik boek_inkooporder_ontvangst_{stuks,rollen}"
-  echo "of importeer via @/modules/inkoop. Zie ADR-0016."
+  echo "of importeer via @/modules/inkoop. Zie ADR-0017."
   exit 1
 fi
 

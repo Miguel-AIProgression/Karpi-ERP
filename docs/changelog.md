@@ -1,5 +1,38 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-13 — Mig 270: Verzonden-orders niet meer in levertijd-view + sub-rij
+
+**Waarom:** Op ORD-2026-2057 (status `Verzonden`, regel 5× SANDRO 771110005)
+toonde het orderdetail tegelijk een rode "Wacht op inkoop"-badge op de regel én
+een sub-rij "Wacht op nieuwe inkoop 5". Logisch tegenstrijdig — een verzonden
+order kan niet wachten op inkoop.
+
+**Root-cause:** zelfde klasse defect als mig 269 (admin-pseudo-asymmetrie),
+andere conditie. View `order_regel_levertijd` rekent `levertijd_status` puur
+uit `te_leveren − aantal_voorraad − aantal_io > 0`, en de frontend
+`buildSubRows` rendert een synthetische "Wacht op nieuwe inkoop"-rij op
+dezelfde rekensom. Bij Verzonden/Geannuleerd zet mig 259 alle actieve claims
+op `released` (correct), dus `aantal_voorraad=0, aantal_io=0`, tekort =
+`te_leveren`. Beide locaties checkten niet of de order in eindstatus zit.
+
+**Wat:**
+
+- **Mig 270** sluit orders in eindstatus (`Verzonden`, `Geannuleerd`) uit van
+  view `order_regel_levertijd` via een extra WHERE-clausule, symmetrisch met
+  het admin-pseudo-filter dat mig 269 toevoegde. Frontend rendert de
+  levertijd-cel daardoor als '—'. Idempotent (DROP + CREATE).
+- **Frontend** `order-regels-table.tsx`: nieuwe prop `orderStatus`. Bij
+  eindstatus wordt `buildSubRows` overgeslagen — geen claim-uitsplitsing en
+  geen "Wacht op nieuwe inkoop"-rij meer voor verzonden / geannuleerde orders.
+  `order-detail.tsx` geeft `order.status` door.
+
+**Verificatie ná deploy:**
+- ORD-2026-2057: regel 1 levertijd-cel toont '—' i.p.v. "Wacht op inkoop";
+  geen sub-rij meer.
+- Diagnostic-script `scripts/diagnose-ord-2026-2057.sql` (§6) telt hoeveel
+  andere Verzonden/Geannuleerd-orders historisch hetzelfde symptoom hadden
+  (pure read — schiet nu leeg ná deploy).
+
 ## 2026-05-13 — Mig 269: order-status + levertijd-view skippen admin-pseudo's
 
 **Waarom:** Op ORD-2026-2063 toonde het orderdetail "Wacht op voorraad" op
@@ -180,7 +213,7 @@ transactie omdat Postgres `ADD VALUE` + gebruik niet in één tx toestaat.
 **Niet in scope (V2-backlog):** voorgestelde-bundels in overzicht; betaalstatus
 op order-niveau; `Nieuw`-default in `create_webshop_order` opruimen.
 
-## 2026-05-13 — Inkoop-Module als deep Module ([ADR-0016](adr/0016-inkoop-als-deep-module.md))
+## 2026-05-13 — Inkoop-Module als deep Module ([ADR-0017](adr/0017-inkoop-als-deep-module.md))
 
 Inkooporders, leveranciers en de ontvangst-flow zijn geëxtraheerd als twaalfde deep verticale Module onder `frontend/src/modules/inkoop/` — naast Reservering (ADR-0015), Snijplanning, Facturatie, Debiteur en de eerdere tien.
 

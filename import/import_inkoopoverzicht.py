@@ -10,7 +10,7 @@ Schrijf wijzigingen:          python import_inkoopoverzicht.py --apply
 Met custom pad:              python import_inkoopoverzicht.py --file /pad/naar/Inkoopoverzicht.xlsx
 """
 
-# TODO(ADR-0016, open backlog): dit script doet bulk-insert in
+# TODO(ADR-0017, open backlog): dit script doet bulk-insert in
 # inkooporder_regels via service-role-key. Initial-imports passen niet binnen
 # boek_inkooporder_ontvangst_{stuks,rollen} (die zijn voor ontvangst-boekingen
 # op bestaande regels, niet voor regel-creatie). Volgende stap: introduceer

@@ -1,6 +1,6 @@
 // frontend/src/modules/inkoop/lib/__tests__/boek-ontvangst-contract.test.ts
 //
-// Contract-tests voor de Inkoop-Module ontvangst-RPC-wrappers (ADR-0016, mig 271).
+// Contract-tests voor de Inkoop-Module ontvangst-RPC-wrappers (ADR-0017, mig 271).
 //
 // Patroon overgenomen van magazijn/__tests__/pickronde.contract.test.ts:
 // we mocken `@/lib/supabase/client` en verifieren dat de TS-wrappers de juiste
