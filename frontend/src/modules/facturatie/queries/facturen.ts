@@ -184,3 +184,50 @@ export async function zetFactuurOpBetaald(id: number): Promise<void> {
     .from('facturen').update({ status: 'Betaald' }).eq('id', id)
   if (error) throw error
 }
+
+export interface BundelInfoVoorFactuur {
+  isBundel: boolean
+  heeftDrempelKorting: boolean
+  verzendkostenBedrag: number
+  andereOrders: Array<{ id: number; nr: string }>
+}
+
+export async function fetchBundelInfoVoorFactuur(
+  factuurId: number,
+): Promise<BundelInfoVoorFactuur> {
+  const { data, error } = await supabase
+    .from('factuur_regels')
+    .select('order_id, order_nr, artikelnr, bedrag')
+    .eq('factuur_id', factuurId)
+  if (error) throw error
+
+  const rows = (data ?? []) as Array<{
+    order_id: number
+    order_nr: string | null
+    artikelnr: string | null
+    bedrag: number
+  }>
+
+  const productRegels = rows.filter(
+    (r) => r.artikelnr !== 'VERZEND' && r.artikelnr !== 'BUNDELKORTING',
+  )
+  const heeftDrempelKorting = rows.some((r) => r.artikelnr === 'BUNDELKORTING')
+  const verzendRegel = rows.find((r) => r.artikelnr === 'VERZEND')
+
+  const ordersMap = new Map<number, string>()
+  for (const r of productRegels) {
+    if (!ordersMap.has(r.order_id)) {
+      ordersMap.set(r.order_id, r.order_nr ?? `#${r.order_id}`)
+    }
+  }
+
+  const orders = Array.from(ordersMap, ([id, nr]) => ({ id, nr }))
+  const isBundel = orders.length > 1
+
+  return {
+    isBundel,
+    heeftDrempelKorting,
+    verzendkostenBedrag: verzendRegel ? Math.abs(Number(verzendRegel.bedrag)) : 0,
+    andereOrders: isBundel ? orders : [],
+  }
+}
