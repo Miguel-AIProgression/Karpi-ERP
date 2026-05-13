@@ -41,15 +41,24 @@ export { invalidateNaInkoopMutatie } from './cache'
 // export { InkoopRegelSamenvatting } from './components/inkoop-regel-samenvatting'
 
 // ---------------------------------------------------------------------------
-// Types — komen mee met queries-verhuizing in Stap 2
+// Types — verhuisd vanuit lib/supabase/queries (Stap 2)
 // ---------------------------------------------------------------------------
-// export type {
-//   Inkooporder,
-//   InkooporderRegel,
-//   InkooporderStatus,
-//   OntvangstResultaat,
-//   BoekOntvangstStuksInput,
-//   BoekOntvangstRollenInput,
-//   InkoopRegelSamenvatting,
-// } from './queries/inkooporders'
-// export type { Leverancier } from './queries/leveranciers'
+export type {
+  InkooporderStatus,
+  InkooporderOverzichtRow,
+  InkooporderDetail,
+  RegelEenheid,
+  InkooporderRegel,
+  InkooporderFilters,
+  InkooporderFormData,
+  InkooporderRegelInput,
+  RegelContext,
+  OntvangstRol,
+  HuidigeRol,
+  OpenstaandeInkoopRegel,
+} from './queries/inkooporders'
+export type {
+  LeverancierOverzichtRow,
+  LeverancierDetail,
+  LeverancierFormData,
+} from './queries/leveranciers'
