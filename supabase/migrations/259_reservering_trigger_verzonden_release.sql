@@ -1,4 +1,4 @@
--- Migratie 256: Reservering-trigger reageert ook op 'pickronde_voltooid' (ADR-0015 review-fix)
+-- Migratie 259: Reservering-trigger reageert ook op 'pickronde_voltooid' (ADR-0015 review-fix)
 --
 -- Mig 255 luisterde alleen op 'geannuleerd'. Effect: na verzending bleven
 -- claims `status='actief'`. herbereken_product_reservering (mig 154 r.234-235)
@@ -47,7 +47,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION trg_order_events_reservering_release() IS
-  'Mig 255+256 (ADR-0015): Reservering-Module event-listener. Releaset alle actieve '
+  'Mig 255+259 (ADR-0015): Reservering-Module event-listener. Releaset alle actieve '
   'claims (bron=voorraad én bron=inkooporder_regel, inclusief handmatige) van '
   'orderregels van een order wanneer een terminal event in order_events verschijnt '
   '(geannuleerd of pickronde_voltooid=Verzonden). Symmetrisch met '
@@ -65,7 +65,7 @@ CREATE TRIGGER trg_order_events_reservering_release
   EXECUTE FUNCTION trg_order_events_reservering_release();
 
 COMMENT ON TRIGGER trg_order_events_reservering_release ON order_events IS
-  'Mig 255+256 (ADR-0015 stap 7): vuurt op terminale order-events. Vervangt het '
+  'Mig 255+259 (ADR-0015 stap 7): vuurt op terminale order-events. Vervangt het '
   'gedrag van de oude mig 146-trigger trg_order_status_herallocateer die bij '
   'Verzonden- én Geannuleerd-status claims releasete.';
 
@@ -102,9 +102,9 @@ BEGIN
        AND o.status = 'Verzonden';
 
     GET DIAGNOSTICS v_na = ROW_COUNT;
-    RAISE NOTICE 'Mig 256 back-fill: % actieve claim(s) van Verzonden orders gereleased (was: %).', v_na, v_voor;
+    RAISE NOTICE 'Mig 259 back-fill: % actieve claim(s) van Verzonden orders gereleased (was: %).', v_na, v_voor;
   ELSE
-    RAISE NOTICE 'Mig 256 back-fill: 0 actieve claims op Verzonden orders — OK.';
+    RAISE NOTICE 'Mig 259 back-fill: 0 actieve claims op Verzonden orders — OK.';
   END IF;
 END $$;
 
