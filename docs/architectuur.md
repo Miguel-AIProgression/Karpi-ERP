@@ -414,6 +414,16 @@ Recovery (elke 5 minuten):
 
 **Klant-instellingen**: `debiteuren.btw_percentage` (21.00 standaard; 0 voor EU-intracom/export), `debiteuren.email_factuur`, `debiteuren.verzendkosten`, `debiteuren.verzend_drempel`, `debiteuren.gratis_verzending`. Bewerkbaar in klant-detail → tab "Facturering". `factuurvoorkeur` is gedropt per ADR-0009.
 
+### BUNDELKORTING-artikelnr (mig 256)
+
+Bij `gratis_drempel`-status splitst de factuur in 2 regels:
+- `VERZEND` met volle verzendkosten (positief)
+- `BUNDELKORTING` met tegenboeking (negatief)
+
+Bron-van-waarheid voor "factuur is bundel-factuur" is `factuur_regels`:
+factuur met >1 distinct `order_id` op product-regels (exclusief
+VERZEND/BUNDELKORTING). Frontend detecteert via `fetchBundelInfoVoorFactuur`.
+
 ## Inkoop-reserveringen (2026-04-29, mig 144–152)
 
 Bij order-aanmaak worden vaste-maat-orderregels automatisch gealloceerd over voorraad + openstaande inkoop. Bron-van-waarheid: tabel [`order_reserveringen`](../supabase/migrations/144_order_reserveringen_basis.sql) met rijen voor zowel voorraadclaims als IO-claims.

@@ -1,5 +1,29 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-13 — Bundel-korting zichtbaarheid
+
+**Waarom:** Bij bundeling van zendingen werd de verzendkosten-besparing
+niet zichtbaar voor de klant — factuur toonde alleen € 0 of stilzwijgend
+1 i.p.v. 2 verzend-regels. Behoefte: communiceer als service.
+
+**Wat:**
+- Mig 256: `genereer_factuur_voor_bundel` splitst bij drempel-gehaald in
+  2 factuurregels: `VERZEND € X` + `BUNDELKORTING −€ X` (D2-vorm).
+  BTW: zelfde % met negatief bedrag. Saldo blijft € 0.
+- Nieuw artikelnr-conventie: `BUNDELKORTING` voor de tegenboeking.
+- Frontend: `BundelKortingBanner` in `OrderFacturen` toont per factuur
+  een groene info-strip met scenario-specifieke tekst:
+  - A (drempel-korting): "Verzendkosten weggestreept op FACT-X"
+  - B (multi-order zonder drempel): "1× i.p.v. 2× — bespaart € X"
+- Banner verschijnt pas vanaf factuur-bestaan (W3-besluit) — niet bij
+  voorgestelde bundels die nog kunnen veranderen.
+- Legacy verstuurde facturen met dubbele VERZEND-regels: niets doen
+  (E1). Script `check-legacy-dubbele-verzendkosten.sql` produceert
+  feitenlijst voor naslag.
+
+**Deployment-volgorde:** mig 252 → mig 256 → feitenlijst → merge-script
+→ frontend.
+
 ## 2026-05-13 — Snijden: handmatige override van reststuk-maten en aangebroken-lengte
 
 In het "Rol snijden"-menu ([RolUitvoerModal](../frontend/src/components/snijplanning/rol-uitvoer-modal.tsx)) waren de reststuk- en aangebroken-rol-afmetingen tot nu toe puur de auto-berekende waarden uit [`computeReststukkenAngebrokenAfval`](../frontend/src/modules/snijplanning/lib/compute-reststukken.ts). Bij een menselijke fout op de guillotine (bv. lengte-mes net iets te kort gezet) kwam de werkelijke voorraad daardoor niet meer overeen met wat het systeem registreerde.
