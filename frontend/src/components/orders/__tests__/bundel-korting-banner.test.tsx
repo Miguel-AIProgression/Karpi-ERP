@@ -25,7 +25,9 @@ describe('BundelKortingBanner', () => {
       data: {
         isBundel: false,
         heeftDrempelKorting: false,
-        verzendkostenBedrag: 35,
+        verzendkostenTotaal: 35,
+        bundelKortingBedrag: 0,
+        drempelKortingBedrag: 0,
         andereOrders: [],
       },
       isLoading: false,
@@ -34,12 +36,14 @@ describe('BundelKortingBanner', () => {
     expect(container.textContent).toBe('')
   })
 
-  it('rendert scenario A: drempel-korting met "weggestreept"-framing', () => {
+  it('rendert scenario A: drempel-korting met "weggestreept"-framing (verzendkostenTotaal)', () => {
     mockedHook.mockReturnValue({
       data: {
         isBundel: true,
         heeftDrempelKorting: true,
-        verzendkostenBedrag: 35,
+        verzendkostenTotaal: 70, // 2 × 35
+        bundelKortingBedrag: 35,
+        drempelKortingBedrag: 35,
         andereOrders: [
           { id: 100, nr: 'ORD-2026-2057' },
           { id: 101, nr: 'ORD-2026-2058' },
@@ -51,16 +55,19 @@ describe('BundelKortingBanner', () => {
     expect(getByText(/Bundel-korting toegepast/i)).toBeTruthy()
     expect(getByText(/ORD-2026-2058/)).toBeTruthy()
     expect(getByText(/weggestreept/i)).toBeTruthy()
-    expect(getByText(/€\s*35/)).toBeTruthy()
+    // V2: totaal aan verzendkosten = 70 (N × verzendkosten), niet 35.
+    expect(getByText(/€\s*70/)).toBeTruthy()
     expect(getByText(/FACT-2026-0017/)).toBeTruthy()
   })
 
-  it('rendert scenario B: bundel zonder drempel-korting', () => {
+  it('rendert scenario B: bundel zonder drempel-korting (bespaart = bundelKortingBedrag)', () => {
     mockedHook.mockReturnValue({
       data: {
         isBundel: true,
         heeftDrempelKorting: false,
-        verzendkostenBedrag: 35,
+        verzendkostenTotaal: 70,
+        bundelKortingBedrag: 35,
+        drempelKortingBedrag: 0,
         andereOrders: [
           { id: 100, nr: 'ORD-2026-2057' },
           { id: 101, nr: 'ORD-2026-2058' },
@@ -72,6 +79,7 @@ describe('BundelKortingBanner', () => {
     expect(getByText(/Gebundelde zending/i)).toBeTruthy()
     expect(getByText(/i\.p\.v\./)).toBeTruthy()
     expect(getByText(/bespaart/i)).toBeTruthy()
+    expect(getByText(/€\s*35/)).toBeTruthy()
   })
 
   it('rendert scenario B met juiste besparing voor 3-order bundle', () => {
@@ -79,7 +87,9 @@ describe('BundelKortingBanner', () => {
       data: {
         isBundel: true,
         heeftDrempelKorting: false,
-        verzendkostenBedrag: 35,
+        verzendkostenTotaal: 105, // 3 × 35
+        bundelKortingBedrag: 70, // (3-1) × 35
+        drempelKortingBedrag: 0,
         andereOrders: [
           { id: 100, nr: 'ORD-2026-0100' },
           { id: 101, nr: 'ORD-2026-0101' },
@@ -89,8 +99,9 @@ describe('BundelKortingBanner', () => {
       isLoading: false,
     } as any)
     const { getByText } = renderBanner(100, 1, 'FACT-2026-0019')
-    // 3-order bundle: andere.length = 2, bespaart 2 × 35 = 70
+    // 3-order bundle: andere.length = 2, "i.p.v. 3×" (totaal aantal orders)
     expect(getByText(/i\.p\.v\. 3×/)).toBeTruthy()
+    // V2: bespaart leest direct bundelKortingBedrag = 70
     expect(getByText(/bespaart €\s*70/)).toBeTruthy()
   })
 })

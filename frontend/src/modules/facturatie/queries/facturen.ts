@@ -188,7 +188,9 @@ export async function zetFactuurOpBetaald(id: number): Promise<void> {
 export interface BundelInfoVoorFactuur {
   isBundel: boolean
   heeftDrempelKorting: boolean
-  verzendkostenBedrag: number
+  verzendkostenTotaal: number
+  bundelKortingBedrag: number
+  drempelKortingBedrag: number
   andereOrders: Array<{ id: number; nr: string }>
 }
 
@@ -209,10 +211,14 @@ export async function fetchBundelInfoVoorFactuur(
   }>
 
   const productRegels = rows.filter(
-    (r) => r.artikelnr !== 'VERZEND' && r.artikelnr !== 'BUNDELKORTING',
+    (r) =>
+      r.artikelnr !== 'VERZEND' &&
+      r.artikelnr !== 'BUNDELKORTING' &&
+      r.artikelnr !== 'DREMPELKORTING',
   )
-  const heeftDrempelKorting = rows.some((r) => r.artikelnr === 'BUNDELKORTING')
-  const verzendRegel = rows.find((r) => r.artikelnr === 'VERZEND')
+  const verzendRegels = rows.filter((r) => r.artikelnr === 'VERZEND')
+  const bundelKortingRegel = rows.find((r) => r.artikelnr === 'BUNDELKORTING')
+  const drempelKortingRegel = rows.find((r) => r.artikelnr === 'DREMPELKORTING')
 
   const ordersMap = new Map<number, string>()
   for (const r of productRegels) {
@@ -220,19 +226,27 @@ export async function fetchBundelInfoVoorFactuur(
       ordersMap.set(r.order_id, r.order_nr ?? `#${r.order_id}`)
     }
   }
-
-  const aantalVerzendRegels = rows.filter((r) => r.artikelnr === 'VERZEND').length
   const orders = Array.from(ordersMap, ([id, nr]) => ({ id, nr }))
-  // Banner mag alleen renderen op mig-256-gevormde facturen.
-  // Legacy multi-order facturen met >1 VERZEND-regel waren via de oude
-  // genereer_factuur(order_ids[])-RPC gemaakt en bevatten geen besparing;
-  // de banner zou daar misleidend "1× i.p.v. 2×" tonen.
-  const isBundel = orders.length > 1 && aantalVerzendRegels <= 1
+
+  // Banner mag alleen renderen op mig-261-gevormde facturen (V2-layout):
+  // >1 product-order EN BUNDELKORTING-regel aanwezig. Legacy multi-order
+  // facturen zonder BUNDELKORTING bevatten geen besparing.
+  const isBundel = orders.length > 1 && Boolean(bundelKortingRegel)
+  const heeftDrempelKorting = Boolean(drempelKortingRegel)
 
   return {
     isBundel,
     heeftDrempelKorting,
-    verzendkostenBedrag: verzendRegel ? Math.abs(Number(verzendRegel.bedrag)) : 0,
+    verzendkostenTotaal: verzendRegels.reduce(
+      (sum, r) => sum + Math.abs(Number(r.bedrag)),
+      0,
+    ),
+    bundelKortingBedrag: bundelKortingRegel
+      ? Math.abs(Number(bundelKortingRegel.bedrag))
+      : 0,
+    drempelKortingBedrag: drempelKortingRegel
+      ? Math.abs(Number(drempelKortingRegel.bedrag))
+      : 0,
     andereOrders: isBundel ? orders : [],
   }
 }

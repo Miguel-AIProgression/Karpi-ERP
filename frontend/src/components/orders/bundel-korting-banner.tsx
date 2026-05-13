@@ -23,7 +23,6 @@ export function BundelKortingBanner({
   if (andere.length === 0) return null
 
   const titel = info.heeftDrempelKorting ? 'Bundel-korting toegepast' : 'Gebundelde zending'
-  const kostenLabel = formatCurrency(info.verzendkostenBedrag)
   const factuurLink = (
     <Link
       to={`/facturatie/${factuurId}`}
@@ -55,11 +54,11 @@ export function BundelKortingBanner({
         .{' '}
         {info.heeftDrempelKorting ? (
           <>
-            Verzendkosten ({kostenLabel}) weggestreept op {factuurLink}.
+            Verzendkosten ({formatCurrency(info.verzendkostenTotaal)}) weggestreept op {factuurLink}.
           </>
         ) : (
           <>
-            1× verzendkosten i.p.v. {andere.length + 1}× — bespaart {formatCurrency(andere.length * info.verzendkostenBedrag)} op {factuurLink}.
+            1× verzendkosten i.p.v. {andere.length + 1}× — bespaart {formatCurrency(info.bundelKortingBedrag)} op {factuurLink}.
           </>
         )}
       </div>
