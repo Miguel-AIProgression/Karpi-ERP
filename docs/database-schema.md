@@ -373,7 +373,7 @@ Typed audit-log van `orders.status`-overgangen. Geschreven door `_apply_transiti
 |-------|------|-------------|
 | id | BIGSERIAL PK | |
 | order_id | BIGINT FK → orders | CASCADE DELETE |
-| event_type | order_event_type | aangemaakt / pickronde_voltooid / wacht_status_herberekend / geannuleerd |
+| event_type | order_event_type | aangemaakt / pickronde_gestart (mig 257) / pickronde_voltooid / deels_verzonden (mig 257) / wacht_status_herberekend / geannuleerd / backfill_fase_normalisatie |
 | status_voor | order_status NULL | NULL voor backfill + 'aangemaakt'-events |
 | status_na | order_status | Nooit NULL |
 | actor_medewerker_id | BIGINT FK → medewerkers | XOR met actor_auth_user_id |
@@ -385,7 +385,9 @@ Typed audit-log van `orders.status`-overgangen. Geschreven door `_apply_transiti
 CHECK constraint `order_events_actor_xor`: niet beide actor-velden tegelijk gevuld. Indexen: `(order_id, created_at DESC)` en `(event_type, created_at DESC)`.
 
 #### order_event_type (enum)
-`aangemaakt | pickronde_voltooid | wacht_status_herberekend | geannuleerd`
+`aangemaakt | pickronde_gestart | pickronde_voltooid | deels_verzonden | wacht_status_herberekend | geannuleerd`
+
+Sinds mig 257 (ADR-0016): `pickronde_gestart` (geschreven door `markeer_pickronde_gestart` als ≥1 zending in `Picken` overgaat) en `deels_verzonden` (geschreven door `markeer_deels_verzonden` wanneer niet-laatste zending in een multi-zending order wordt voltooid). Factuur-trigger `enqueue_factuur_voor_event` (mig 223) filtert strict op `event_type='pickronde_voltooid'` — nieuwe types triggeren géén factuur.
 
 ---
 
@@ -1145,7 +1147,7 @@ Centrale audit-/queue-tabel voor alle EDI-berichten via Transus (in én uit) (mi
 
 | Enum | Waarden |
 |------|---------|
-| order_status | Nieuw, Actie vereist, Wacht op picken, Wacht op voorraad, **Wacht op inkoop** (mig 144), In snijplan, In productie, Deels gereed, Klaar voor verzending, Verzonden, Geannuleerd |
+| order_status | **Klaar voor picken** (mig 257, ADR-0016), **Wacht op maatwerk** (mig 257), Wacht op voorraad, **Wacht op inkoop** (mig 144), **In pickronde** (mig 257), **Deels verzonden** (mig 257), Verzonden, Geannuleerd. Legacy (niet meer geschreven post-mig 258): Nieuw, Actie vereist, Wacht op picken, In snijplan, In productie, Deels gereed, Klaar voor verzending. |
 | zending_status | Gepland, Picken, Ingepakt, Klaar voor verzending, Onderweg, Afgeleverd (mig 169) |
 | factuur_status | Concept, Verstuurd, Betaald, Herinnering, Aanmaning, Gecrediteerd |
 | factuurvoorkeur | per_zending, wekelijks |

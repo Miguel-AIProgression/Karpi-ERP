@@ -1,5 +1,61 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-13 — Order-fase zichtbaar in orders-overzicht (ADR-0016)
+
+**Waarom:** "Nieuw" was een vergaarbak-status — orders bleven daarop hangen
+terwijl ze allang in pickronde / wacht-op-maatwerk / deels-verzonden zaten.
+Daarnaast: orders die in dezelfde zending waren gebundeld (4D-bundel-sleutel,
+ADR-0010) toonden hun bundel-verband nergens in het overzicht, ook al deelden
+ze één factuur. Tenslotte was de factuur-stand (Verstuurd/Betaald/Aanmaning)
+alleen zichtbaar nadat je doorklikte.
+
+**Wat:**
+
+- **ADR-0016** legt de beslissing vast: order_status uitbreiden i.p.v.
+  UI-afgeleid; bundel-zichtbaarheid via M2M; factuur-status als badge.
+- **Mig 257** voegt 4 nieuwe waarden toe aan `order_status` ENUM:
+  `Klaar voor picken`, `Wacht op maatwerk`, `In pickronde`, `Deels verzonden`.
+  Twee nieuwe `order_event_type`-waarden: `pickronde_gestart`, `deels_verzonden`
+  + `backfill_fase_normalisatie` voor audit.
+- **Mig 258** voegt commands `markeer_pickronde_gestart` en
+  `markeer_deels_verzonden` toe (ADR-0006-contract via `_apply_transitie`),
+  breidt `herbereken_wacht_status` uit met maatwerk-detectie (snijplannen
+  status≠'Ingepakt' → 'Wacht op maatwerk'), splitst `voltooi_pickronde` tussen
+  laatste-zending (→ Verzonden) en niet-laatste (→ Deels verzonden), en hookt
+  `start_pickronden` in op `markeer_pickronde_gestart`. Backfill classificeert
+  bestaande 'Nieuw'-orders volgens 4-stappen-prioriteit.
+- **Mig 259** breidt `orders_list` view uit met 3 bundel-kolommen
+  (`bundel_zending_id`, `bundel_zending_nr`, `bundel_order_count`) gebaseerd
+  op `zending_orders` M2M.
+- **Frontend:**
+  - Nieuwe hook [`useBundelGroupedOrders`](../frontend/src/components/orders/use-bundel-grouped-orders.ts)
+    groepeert orders met dezelfde `bundel_zending_nr` als accordion-rij.
+  - [`OrdersTable`](../frontend/src/components/orders/orders-table.tsx) rendert
+    bundel-header (terracotta tint + chevron + Package-icoon + truck-label
+    "Bundel ZEND-... · N orders · KLANT") met expand naar individuele orders.
+  - Factuur-cel toont mini-`StatusBadge` naast factuurnr (Verstuurd/Betaald/
+    Aanmaning-kleuren); bij multi-factuur wint hoogste actie-prioriteit
+    (Aanmaning > Herinnering > Verstuurd > Concept > Betaald > Gecrediteerd).
+  - [`StatusTabs`](../frontend/src/components/orders/status-tabs.tsx) ruimt
+    legacy spook-statussen op (In snijplan, In productie, Deels gereed, Klaar
+    voor verzending) en toont de nieuwe fase-tabs. 'Klaar voor picken'-tab
+    combineert backwards-compat met legacy 'Nieuw'.
+  - 'Actie vereist'-tab is nu union van Wacht op voorraad ∪ Wacht op inkoop ∪
+    heeft_unmatched_regels.
+
+**Deployment-volgorde (hard):** mig 257 commit → mig 258 commit → mig 259 →
+frontend-merge. ENUM-uitbreiding moet vóór de RPC-update in een aparte
+transactie omdat Postgres `ADD VALUE` + gebruik niet in één tx toestaat.
+
+**Verificatie:**
+- Hook-test (4 cases) + bestaande bundel-korting + facturatie-tests groen.
+- TypeScript check zonder errors.
+- SQL-contract na backfill (handmatig na deploy): `SELECT COUNT(*) FROM orders
+  WHERE status='Nieuw'` → 0; `'In pickronde'`-count = open zendingen via M2M.
+
+**Niet in scope (V2-backlog):** voorgestelde-bundels in overzicht; betaalstatus
+op order-niveau; `Nieuw`-default in `create_webshop_order` opruimen.
+
 ## 2026-05-13 — Bundel-korting zichtbaarheid
 
 **Waarom:** Bij bundeling van zendingen werd de verzendkosten-besparing

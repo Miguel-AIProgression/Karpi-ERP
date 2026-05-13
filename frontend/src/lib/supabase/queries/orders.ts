@@ -21,6 +21,10 @@ export interface OrderRow {
   bron_shop?: string | null
   /** ADR 0014 / mig 244 — overzicht toont 'Wk X · YYYY' bij 'week', dag-badge bij 'datum'. */
   lever_type?: 'week' | 'datum'
+  /** ADR-0016 / mig 259 — bundel-info uit zending_orders M2M. NULL voor solo-orders. */
+  bundel_zending_id?: number | null
+  bundel_zending_nr?: string | null
+  bundel_order_count?: number | null
 }
 
 export interface OrderDetail extends OrderRow {
@@ -129,9 +133,18 @@ export async function fetchOrders(params: {
     .range(page * pageSize, (page + 1) * pageSize - 1)
 
   if (status === 'Actie vereist') {
-    // Combineert de 'Actie vereist' order-status met webshop-orders
-    // waarvoor ≥1 regel geen artikelnr heeft (heeft_unmatched_regels).
-    query = query.or('status.eq.Actie vereist,heeft_unmatched_regels.eq.true')
+    // Union: 'Wacht op voorraad' / 'Wacht op inkoop' (blocking-fases uit
+    // ADR-0016) + webshop-orders met ≥1 regel zonder artikelnr-koppeling.
+    // Legacy 'Actie vereist' status (mig 144 timeframe) wordt ook nog
+    // herkend voor historische data.
+    query = query.or(
+      'status.eq.Wacht op voorraad,status.eq.Wacht op inkoop,status.eq.Actie vereist,heeft_unmatched_regels.eq.true'
+    )
+  } else if (status === 'Klaar voor picken') {
+    // ADR-0016 backwards-compat: pre-mig-258 orders staan nog op 'Nieuw'
+    // tot de backfill is gedraaid. Tab toont beide zodat geen orders
+    // verdwijnen tijdens de rollout.
+    query = query.or('status.eq.Klaar voor picken,status.eq.Nieuw')
   } else if (status && status !== 'Alle') {
     query = query.eq('status', status)
   }

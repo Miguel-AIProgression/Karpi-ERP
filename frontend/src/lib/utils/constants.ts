@@ -1,15 +1,24 @@
-/** Order status → badge color mapping */
+/** Order status → badge color mapping
+ *  Canonieke statussen na ADR-0016 (mig 257-258). Legacy waarden behouden
+ *  voor backwards-compat met historische orders. */
 export const ORDER_STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-  'Nieuw': { bg: 'bg-blue-100', text: 'text-blue-700' },
-  'Actie vereist': { bg: 'bg-rose-100', text: 'text-rose-700' },
-  'Wacht op picken': { bg: 'bg-amber-100', text: 'text-amber-700' },
-  'Wacht op voorraad': { bg: 'bg-amber-100', text: 'text-amber-700' },
-  'In snijplan': { bg: 'bg-purple-100', text: 'text-purple-700' },
-  'In productie': { bg: 'bg-indigo-100', text: 'text-indigo-700' },
-  'Deels gereed': { bg: 'bg-cyan-100', text: 'text-cyan-700' },
+  // Canoniek (ADR-0016)
+  'Klaar voor picken':     { bg: 'bg-blue-100',    text: 'text-blue-700' },
+  'Wacht op voorraad':     { bg: 'bg-amber-100',   text: 'text-amber-700' },
+  'Wacht op inkoop':       { bg: 'bg-orange-100',  text: 'text-orange-700' },
+  'Wacht op maatwerk':     { bg: 'bg-purple-100',  text: 'text-purple-700' },
+  'In pickronde':          { bg: 'bg-indigo-100',  text: 'text-indigo-700' },
+  'Deels verzonden':       { bg: 'bg-cyan-100',    text: 'text-cyan-700' },
+  'Verzonden':             { bg: 'bg-green-100',   text: 'text-green-700' },
+  'Geannuleerd':           { bg: 'bg-gray-100',    text: 'text-gray-500' },
+  // Legacy — niet meer geschreven post-mig-258, maar bestaande data kan ze nog hebben
+  'Nieuw':                 { bg: 'bg-blue-100',    text: 'text-blue-700' },
+  'Actie vereist':         { bg: 'bg-rose-100',    text: 'text-rose-700' },
+  'Wacht op picken':       { bg: 'bg-amber-100',   text: 'text-amber-700' },
+  'In snijplan':           { bg: 'bg-purple-100',  text: 'text-purple-700' },
+  'In productie':          { bg: 'bg-indigo-100',  text: 'text-indigo-700' },
+  'Deels gereed':          { bg: 'bg-cyan-100',    text: 'text-cyan-700' },
   'Klaar voor verzending': { bg: 'bg-emerald-100', text: 'text-emerald-700' },
-  'Verzonden': { bg: 'bg-green-100', text: 'text-green-700' },
-  'Geannuleerd': { bg: 'bg-gray-100', text: 'text-gray-500' },
 }
 
 /** Tier badge colors */
