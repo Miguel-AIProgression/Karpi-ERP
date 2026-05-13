@@ -5,6 +5,7 @@ import {
   fetchFacturenVoorOrder,
   fetchFacturenVoorOrders,
   zetFactuurOpBetaald,
+  fetchBundelInfoVoorFactuur,
 } from '../queries/facturen'
 
 export function useFacturen(debiteurNr?: number) {
@@ -44,5 +45,14 @@ export function useMarkeerBetaald() {
   return useMutation({
     mutationFn: zetFactuurOpBetaald,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['facturen'] }),
+  })
+}
+
+export function useBundelInfoVoorFactuur(factuurId: number | null | undefined) {
+  return useQuery({
+    queryKey: ['bundel-info-factuur', factuurId],
+    queryFn: () => fetchBundelInfoVoorFactuur(factuurId as number),
+    enabled: Boolean(factuurId),
+    staleTime: 60_000,
   })
 }
