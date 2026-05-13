@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   createInkooporder,
+  fetchInkoopRegelSamenvatting,
   fetchInkooporderDetail,
   fetchInkooporderRegelContext,
   fetchInkooporders,
@@ -80,6 +81,15 @@ export function useRollenVoorArtikel(artikelnr: string | undefined) {
     queryKey: ['inkooporders', 'rollen-per-artikel', artikelnr],
     queryFn: () => fetchRollenVoorArtikel(artikelnr!),
     enabled: !!artikelnr,
+  })
+}
+
+export function useInkoopRegelSamenvatting(ioRegelId: number | undefined) {
+  return useQuery({
+    queryKey: ['inkooporders', 'regel-samenvatting', ioRegelId],
+    queryFn: () => fetchInkoopRegelSamenvatting(ioRegelId!),
+    enabled: ioRegelId !== undefined,
+    staleTime: 30_000,
   })
 }
 

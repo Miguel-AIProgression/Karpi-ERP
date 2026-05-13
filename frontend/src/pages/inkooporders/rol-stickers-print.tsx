@@ -1,10 +1,8 @@
 import { useMemo } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Printer } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { RolStickerLayout } from '@/components/inkooporders/rol-sticker-layout'
-import { fetchRollenVoorStickers } from '@/lib/supabase/queries/inkooporders'
+import { RolStickerLayout, useRollenVoorStickers } from '@/modules/inkoop'
 
 export function RolStickersPrintPage() {
   const [searchParams] = useSearchParams()
@@ -16,11 +14,7 @@ export function RolStickersPrintPage() {
       .filter((n) => Number.isFinite(n) && n > 0)
   }, [searchParams])
 
-  const { data: rollen, isLoading, error } = useQuery({
-    queryKey: ['rol-stickers', ids],
-    queryFn: () => fetchRollenVoorStickers(ids),
-    enabled: ids.length > 0,
-  })
+  const { data: rollen, isLoading, error } = useRollenVoorStickers(ids)
 
   if (ids.length === 0) {
     return (

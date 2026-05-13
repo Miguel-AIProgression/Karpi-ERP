@@ -1,9 +1,12 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Plus, Trash2, X } from 'lucide-react'
-import { useCreateInkooporder } from '@/hooks/use-inkooporders'
-import { useLeveranciersOverzicht } from '@/hooks/use-leveranciers'
-import type { InkooporderFormData, InkooporderRegelInput } from '@/lib/supabase/queries/inkooporders'
+import { useCreateInkooporder } from '../hooks/use-inkooporders'
+import { useLeveranciersOverzicht } from '../hooks/use-leveranciers'
+import type {
+  InkooporderFormData,
+  InkooporderRegelInput,
+} from '../queries/inkooporders'
 
 interface Props {
   onClose: () => void

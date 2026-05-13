@@ -15,6 +15,7 @@ export {
   useInkooporderDetail,
   useInkooporderStats,
   useInkooporderRegelContext,
+  useInkoopRegelSamenvatting,
   useOpenstaandeInkoopregelsVoorArtikel,
   useRollenVoorStickers,
   useRollenVoorArtikel,
@@ -41,16 +42,19 @@ export {
 export { invalidateNaInkoopMutatie } from './cache'
 
 // ---------------------------------------------------------------------------
-// Components — komen in Stap 6 / 7 / 9
+// Components — verhuisd in Stap 6 (pages volgen in Stap 7)
 // ---------------------------------------------------------------------------
-// export { InkooporderFormDialog } from './components/inkooporder-form-dialog'
-// export { InkooporderStatusBadge } from './components/inkooporder-status-badge'
-// export { OntvangstBoekenDialog } from './components/ontvangst-boeken-dialog'
-// export { IORegelClaimsPopover } from './components/io-regel-claims-popover'
-// export { VoorraadOntvangstDialog } from './components/voorraad-ontvangst-dialog'
-// export { RolStickerLayout } from './components/rol-sticker-layout'
-// export { LeverancierStatsCard } from './components/leverancier-stats-card'
-// export { InkoopRegelSamenvatting } from './components/inkoop-regel-samenvatting'
+export { InkooporderFormDialog } from './components/inkooporder-form-dialog'
+export { InkooporderStatusBadge } from './components/inkooporder-status-badge'
+export { OntvangstBoekenDialog } from './components/ontvangst-boeken-dialog'
+export { IORegelClaimsPopover } from './components/io-regel-claims-popover'
+export { VoorraadOntvangstDialog } from './components/voorraad-ontvangst-dialog'
+export { RolStickerLayout } from './components/rol-sticker-layout'
+export type { RolStickerData } from './components/rol-sticker-layout'
+
+// Components — nieuw in Stap 6
+export { LeverancierStatsCard } from './components/leverancier-stats-card'
+export { InkoopRegelSamenvatting } from './components/inkoop-regel-samenvatting'
 
 // ---------------------------------------------------------------------------
 // Types — verhuisd vanuit lib/supabase/queries (Stap 2)
@@ -69,6 +73,10 @@ export type {
   HuidigeRol,
   OpenstaandeInkoopRegel,
 } from './queries/inkooporders'
+// Type heet hetzelfde als de slot-component; export onder een alias zodat
+// consumers naar wens de Component (default-naam) of de Data-shape kunnen
+// importeren zonder naam-conflict.
+export type { InkoopRegelSamenvatting as InkoopRegelSamenvattingData } from './queries/inkooporders'
 export type {
   LeverancierOverzichtRow,
   LeverancierDetail,

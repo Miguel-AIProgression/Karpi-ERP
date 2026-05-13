@@ -12,11 +12,14 @@ import {
   Search,
 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { useInkooporders, useInkooporderStats } from '@/hooks/use-inkooporders'
-import { useLeveranciersOverzicht } from '@/hooks/use-leveranciers'
-import { InkooporderStatusBadge } from '@/components/inkooporders/inkooporder-status-badge'
-import { InkooporderFormDialog } from '@/components/inkooporders/inkooporder-form-dialog'
-import type { InkooporderStatus } from '@/lib/supabase/queries/inkooporders'
+import {
+  useInkooporders,
+  useInkooporderStats,
+  useLeveranciersOverzicht,
+  InkooporderStatusBadge,
+  InkooporderFormDialog,
+  type InkooporderStatus,
+} from '@/modules/inkoop'
 
 const STATUSSEN: (InkooporderStatus | 'alle')[] = [
   'alle',

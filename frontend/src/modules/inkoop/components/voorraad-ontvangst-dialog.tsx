@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { X } from 'lucide-react'
-import { useBoekVoorraadOntvangst } from '@/hooks/use-inkooporders'
-import type { InkooporderRegel } from '@/lib/supabase/queries/inkooporders'
+import { useBoekOntvangst } from '../hooks/use-boek-ontvangst'
+import type { InkooporderRegel } from '../queries/inkooporders'
 
 interface Props {
   regel: InkooporderRegel
@@ -18,7 +18,7 @@ export function VoorraadOntvangstDialog({ regel, inkooporderNr, onClose }: Props
   const [medewerker, setMedewerker] = useState('')
   const [error, setError] = useState<string | null>(null)
 
-  const boek = useBoekVoorraadOntvangst()
+  const boek = useBoekOntvangst()
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -34,7 +34,7 @@ export function VoorraadOntvangstDialog({ regel, inkooporderNr, onClose }: Props
     }
     try {
       await boek.mutateAsync({
-        regelId: regel.id,
+        ioRegelId: regel.id,
         aantal: Math.floor(n),
         medewerker: medewerker || undefined,
       })

@@ -3,28 +3,13 @@ import { Link, useParams } from 'react-router-dom'
 import { ArrowLeft, Building2, Pencil } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { useLeverancierDetail } from '@/hooks/use-leveranciers'
-import { useInkooporders } from '@/hooks/use-inkooporders'
 import { LeverancierFormDialog } from '@/components/leveranciers/leverancier-form-dialog'
-import { InkooporderStatusBadge } from '@/components/inkooporders/inkooporder-status-badge'
-
-function formatDatum(iso: string | null): string {
-  if (!iso) return '-'
-  const d = new Date(iso)
-  return d.toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric' })
-}
-
-function formatMeters(value: number): string {
-  return value.toLocaleString('nl-NL', { minimumFractionDigits: 0, maximumFractionDigits: 1 })
-}
+import { LeverancierStatsCard } from '@/modules/inkoop'
 
 export function LeverancierDetailPage() {
   const { id } = useParams()
   const leverancierId = id ? Number(id) : undefined
   const { data: leverancier, isLoading } = useLeverancierDetail(leverancierId)
-  const { data: orders = [] } = useInkooporders({
-    leverancier_id: leverancierId,
-    alleen_open: true,
-  })
   const [editOpen, setEditOpen] = useState(false)
 
   if (isLoading) {
@@ -80,51 +65,7 @@ export function LeverancierDetailPage() {
           </dl>
         </section>
 
-        <section className="bg-white rounded-[var(--radius)] border border-slate-200 p-5">
-          <h2 className="font-medium mb-4">Openstaande inkooporders ({orders.length})</h2>
-          {orders.length === 0 ? (
-            <p className="text-sm text-slate-400">Geen openstaande orders</p>
-          ) : (
-            <table className="w-full text-sm">
-              <thead className="text-slate-500">
-                <tr>
-                  <th className="text-left pb-2 font-medium">Ordernr</th>
-                  <th className="text-left pb-2 font-medium">Leverweek</th>
-                  <th className="text-right pb-2 font-medium">Openstaand</th>
-                  <th className="text-left pb-2 font-medium">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {orders.map((o) => (
-                  <tr key={o.id}>
-                    <td className="py-2">
-                      <Link
-                        to={`/inkoop/${o.id}`}
-                        className="text-terracotta-600 hover:text-terracotta-700"
-                      >
-                        {o.inkooporder_nr}
-                      </Link>
-                      {o.oud_inkooporder_nr && (
-                        <span className="ml-2 text-xs text-slate-400">
-                          ({o.oud_inkooporder_nr})
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-2 text-slate-600">
-                      {o.leverweek ?? formatDatum(o.verwacht_datum)}
-                    </td>
-                    <td className="py-2 text-right tabular-nums">
-                      {formatMeters(o.totaal_te_leveren_m)}
-                    </td>
-                    <td className="py-2">
-                      <InkooporderStatusBadge status={o.status} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </section>
+        {leverancierId !== undefined && <LeverancierStatsCard leverancierId={leverancierId} />}
       </div>
 
       {editOpen && (
