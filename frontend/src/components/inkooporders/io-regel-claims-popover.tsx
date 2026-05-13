@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Loader2 } from 'lucide-react'
-import { useClaimsVoorIORegel } from '@/hooks/use-reserveringen'
+import { useClaimsVoorIORegel } from '@/modules/reserveringen'
 
 interface Props {
   ioRegelId: number

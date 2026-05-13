@@ -14,6 +14,10 @@ export interface RegelDekking {
  * Bron-van-waarheid voor het berekenen van bron-splitsing per orderregel.
  * Gebruik in BEIDE inline-tekst (line-editor) en tekort-detectie (order-form)
  * zodat de getallen altijd consistent zijn.
+ *
+ * TS-spiegel van de server-side `simuleer_dekking`-RPC (ADR-0015, Ingreep 4).
+ * Contract-test in `__tests__/dekking-preview.test.ts` borgt gelijkheid met de
+ * fixtures die SQL én TS delen.
  */
 export function berekenRegelDekking(line: OrderRegelFormData): RegelDekking {
   const isVasteMaat = !line.is_maatwerk

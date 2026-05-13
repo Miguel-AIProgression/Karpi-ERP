@@ -4,7 +4,8 @@ import {
   fetchClaimsVoorOrder,
   fetchClaimsVoorOrderRegel,
   fetchClaimsVoorIORegel,
-} from '@/lib/supabase/queries/reserveringen'
+  fetchHandmatigeKeuzesVoorOrder,
+} from '@/modules/reserveringen/queries/reserveringen'
 
 export function useLevertijdVoorOrder(orderId?: number) {
   return useQuery({
@@ -35,5 +36,13 @@ export function useClaimsVoorIORegel(ioRegelId?: number) {
     queryKey: ['io-regel-claims', ioRegelId],
     queryFn: () => fetchClaimsVoorIORegel(ioRegelId!),
     enabled: !!ioRegelId,
+  })
+}
+
+export function useHandmatigeKeuzesVoorOrder(orderId?: number) {
+  return useQuery({
+    queryKey: ['handmatige-keuzes', orderId],
+    queryFn: () => fetchHandmatigeKeuzesVoorOrder(orderId!),
+    enabled: !!orderId,
   })
 }

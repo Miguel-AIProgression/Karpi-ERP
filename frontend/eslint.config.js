@@ -36,6 +36,13 @@ export default defineConfig([
           { name: '@/lib/supabase/queries/auto-planning', message: 'Gebruik @/modules/snijplanning (ADR-0013).' },
           { name: '@/lib/utils/compute-reststukken', message: 'Gebruik @/modules/snijplanning (ADR-0013).' },
           { name: '@/lib/utils/snijplan-mapping', message: 'Gebruik @/modules/snijplanning (ADR-0013).' },
+          { name: '@/lib/supabase/queries/reserveringen', message: 'Importeer via @/modules/reserveringen (ADR-0015).' },
+          { name: '@/lib/utils/regel-dekking', message: 'Gebruik berekenRegelDekking uit @/modules/reserveringen (ADR-0015).' },
+          { name: '@/hooks/use-reserveringen', message: 'Gebruik hooks uit @/modules/reserveringen (ADR-0015).' },
+          { name: '@/components/orders/regel-claim-detail', message: 'Gebruik components uit @/modules/reserveringen (ADR-0015).' },
+          { name: '@/components/orders/substitution-picker', message: 'Gebruik components uit @/modules/reserveringen (ADR-0015).' },
+          { name: '@/components/orders/uitwisselbaar-tekort-hint', message: 'Gebruik components uit @/modules/reserveringen (ADR-0015).' },
+          { name: '@/components/orders/levertijd-badge', message: 'Gebruik components uit @/modules/reserveringen (ADR-0015).' },
         ],
         patterns: [
           { group: ['@/components/klanten/*'], message: 'Gebruik @/modules/debiteuren (ADR-0011).' },

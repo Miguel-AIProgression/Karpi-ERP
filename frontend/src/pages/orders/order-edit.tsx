@@ -5,7 +5,7 @@ import { PageHeader } from '@/components/layout/page-header'
 import { OrderForm } from '@/components/orders/order-form'
 import { useOrderDetail, useOrderRegels } from '@/hooks/use-orders'
 import { fetchClientCommercialData } from '@/lib/supabase/queries/order-mutations'
-import { fetchHandmatigeKeuzesVoorOrder } from '@/lib/supabase/queries/reserveringen'
+import { useHandmatigeKeuzesVoorOrder } from '@/modules/reserveringen'
 import { computeOrderLock } from '@/lib/utils/order-lock'
 import { AfwerkingOnlyEditor } from '@/components/orders/afwerking-only-editor'
 import { DocumentenCompact } from '@/components/documenten/documenten-compact'
@@ -27,11 +27,7 @@ export function OrderEditPage() {
   })
 
   // Bestaande handmatige uitwisselbaar-claims om de form-state te hydrateren
-  const { data: handmatigeKeuzes } = useQuery({
-    queryKey: ['handmatige-keuzes', orderId],
-    queryFn: () => fetchHandmatigeKeuzesVoorOrder(orderId),
-    enabled: !!orderId,
-  })
+  const { data: handmatigeKeuzes } = useHandmatigeKeuzesVoorOrder(orderId)
 
   if (orderLoading || regelsLoading) {
     return <PageHeader title="Order laden..." />

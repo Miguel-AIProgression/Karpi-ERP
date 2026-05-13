@@ -20,7 +20,7 @@ import {
   type KleurOptie,
 } from '@/modules/maatwerk'
 import { VormAfmetingSelector, type VormAfmetingData } from './vorm-afmeting-selector'
-import { SubstitutionPicker } from '@/components/orders/substitution-picker'
+import { SubstitutionPicker } from '@/modules/reserveringen'
 import { berekenGewichtKg } from '@/lib/utils/gewicht'
 import { formatCurrency } from '@/lib/utils/formatters'
 import type { SelectedArticle, SubstitutionInfo } from '@/components/orders/article-selector'

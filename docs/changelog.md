@@ -1,5 +1,37 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-13 — Reservering-Module als deep Module ([ADR-0015](adr/0015-reservering-als-deep-module.md))
+
+Reservering / allocator-logica is geëxtraheerd als elfde deep Module onder `frontend/src/modules/reserveringen/`, naast Orders-lifecycle, Facturatie en Snijplanning. Eigendomsgrens: allocator (`herallocateer_orderregel`), handmatige uitwisselbaar-claims, IO-claim-release op annulering, `producten.gereserveerd`-cache via trigger en de TS-spiegel `berekenRegelDekking` met SQL-contract via de nieuwe `simuleer_dekking()`-RPC.
+
+**Backend-split mig 254:** god-orchestratie `herwaardeer_order_status` wordt thin wrapper boven drie expliciete aanroepen — `herwaardeer_claims_voor_order` (Reservering-Module), `herbereken_wacht_status` (Order-lifecycle-Module, mig 218) en tijdelijk `sync_order_afleverdatum_met_claims` (Reservering, blijft hier tot de Levertijd-Module bestaat). Nieuwe Module-eigen RPCs: `herwaardeer_claims_voor_order`, `simuleer_dekking`, `boek_io_ontvangst_claims`.
+
+**Backend mig 255:** trigger op `orders.status` vervangen door listener op `order_events`-INSERT — symmetrie met de Facturatie-Module ([ADR-0007](adr/0007-facturatie-als-deep-module.md)). Eén bron-van-waarheid voor status-overgangen blijft `_apply_transitie` in Order-lifecycle.
+
+**Frontend-verhuizing:** queries, hooks, lib en vier components (reserveringen-overzicht, claim-uitsplitsing, uitwisselbaar-tekort-hint en handmatige-claim-editor) verhuisd naar de Module-folder met re-export shims op de oude paden tot caller-cleanup is afgerond. Cache-seam: `invalidateNaReserveringsmutatie(qc)` via `cache.ts`. Lint: `scripts/lint-no-direct-order-reserveringen-write.sh` voorkomt directe `order_reserveringen`-writes buiten de Module.
+
+## 2026-05-13 — Zendingen-overzicht: bundel-orders zichtbaar in lijst
+
+Op `/logistiek` (zendingen-overzicht) toonde elke rij alleen de primaire `orders.order_nr` van de zending. Bij een gebundelde zending (mig 222, 4D-bundel-sleutel) — bijvoorbeeld ZEND-2026-0014 met 2 orders — was vanuit de lijst niet te zien dat er meer dan één order in de zending zat; je moest doorklikken naar de detail om dat te ontdekken.
+
+**Implementatie:** [`fetchZendingen`](../frontend/src/modules/logistiek/queries/zendingen.ts) haalt nu de M2M `zending_orders` mee (zelfde join als `fetchZendingMetTransportorders`/`fetchZendingPrintSet`). De Order-kolom in [`zendingen-overzicht.tsx`](../frontend/src/modules/logistiek/pages/zendingen-overzicht.tsx) stackt alle order_nrs verticaal (gesorteerd alfabetisch) en toont eronder een lichte `Bundel · N orders`-label zodra het er meer dan één zijn. Fallback op de primaire `orders.order_nr` als de M2M leeg is (oude rijen vóór backfill).
+
+**Verificatie:** open `/logistiek`, zoek een bundel-zending (ZEND-2026-0014 op screenshot van 13-05 bevat ORD-2026-2057 + 1 extra). Beide order_nrs verschijnen in de Order-kolom, met "Bundel · 2 orders"-label eronder. Solo-zendingen ongewijzigd (geen label).
+
+## 2026-05-11 — Prijs-resolver: vaste-maat verkoopprijs vóór m²-fallback
+
+Bij ORD-2026-2056 (klant JANSEN TOTAAL WONEN, artikel 771110006 DUTCHZ 3601 SEINE — een vaste-maat voorraadartikel 200×290 cm) berekende [`bereken_orderregel_prijs`](../supabase/migrations/191_bereken_orderregel_prijs.sql) (mig 191) een prijs van €202,94 via route 3 (`maatwerk_artikel_m2`): 5,80 m² × €34,99/m² uit het generieke MAATWERK-broertje 771119998. Logisch voor échte maatwerk-producten, onhandig voor vaste maten — de eigen `producten.verkoopprijs` werd genegeerd zolang de klant-prijslijst geen expliciete regel had voor het artikel.
+
+**Implementatie:** [mig 253](../supabase/migrations/253_bereken_orderregel_prijs_vaste_maten.sql) voegt route **1b `product_vaste_verkoopprijs`** toe direct na route 1 (`prijslijst_vast`) en vóór de m²-fallbacks. Activeert alleen voor producten die zelf GEEN maatwerk-artikel zijn — detectie via `omschrijving`/`karpi_code NOT LIKE '%MAATWERK%'` (spiegelt de detectie in route 3) — én een `verkoopprijs > 0` hebben. Maatwerk-producten zelf doorlopen onveranderd routes 2-6.
+
+**Frontend:** `PrijsBron`-type in [`order-mutations.ts`](../frontend/src/lib/supabase/queries/order-mutations.ts) uitgebreid met `'product_vaste_verkoopprijs'`. In [`prijs-bron.ts`](../frontend/src/lib/utils/prijs-bron.ts) gemarkeerd als "schone" bron (lege label, emerald-kleur — tooltip legt uit dat het uit de producten-tabel komt). In [`order-line-editor.tsx`](../frontend/src/components/orders/order-line-editor.tsx) toegevoegd aan de hint-uitsluitingsset (geen ruis-regel onder de prijs-input) en aan `origineelHeeftPrijs` (anders triggert de omsticker-substitutie-flow onnodig).
+
+**Impact-check:** [`scripts/check-impact-mig-253.sql`](../scripts/check-impact-mig-253.sql) — twee blokken: (1) per artikel het verschil tussen huidige fallback-prijs en eigen verkoopprijs voor regels uit de laatste 90 dagen; (2) verdeling van unieke (artikel × prijslijst) over bron-routes. Run dit vóór mig 253 toe te passen om te zien welke kant prijzen op bewegen (klant betaalt meer/minder) en hoeveel artikelen het raakt.
+
+**Backward-compatible:** bestaande orderregel-prijzen zijn al opgeslagen — deze RPC bepaalt enkel nieuwe prijzen bij order-aanmaak of artikel-wissel. Bestaande klant-prijslijst-vast-entries (route 1) behouden hun voorrang.
+
+**Verificatie:** na deploy `SELECT bereken_orderregel_prijs('771110006', (SELECT prijslijst_nr FROM debiteuren WHERE debiteur_nr = 403900))` — verwacht `bron='product_vaste_verkoopprijs'` met de eigen `producten.verkoopprijs` (i.p.v. €202,94). Open `/orders/aanmaken`, voeg 771110006 toe voor JANSEN TOTAAL WONEN: prijs-veld vult zich met de eigen verkoopprijs, géén oranje "m² uit maatwerk-artikel"-hint meer onder het input.
+
 ## 2026-05-11 — Pick & Ship: dag-orders als aparte top-sectie
 
 Op de Pick & Ship-overview verdwenen dag-orders (`lever_type='datum'`, ADR-0014) tussen de week-orders binnen dezelfde verzendweek-groep. Bijvoorbeeld ORD-2026-2052 met afleverdatum "di 12-05" stond gemengd met de twee Floorpassion-week-orders in dezelfde Week 20-bucket — het kalender-badge op de card was de enige aanwijzing dat het om een specifieke leverdag ging. Voor de magazijnier maakt dat onderscheid juist het verschil: dag-orders hebben een harde afleverdag-belofte en moeten daadwerkelijk vandaag of morgen de deur uit.

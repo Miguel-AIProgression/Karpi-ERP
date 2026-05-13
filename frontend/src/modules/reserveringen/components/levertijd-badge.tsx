@@ -1,4 +1,4 @@
-import type { OrderRegelLevertijd, LevertijdStatus } from '@/lib/supabase/queries/reserveringen'
+import type { OrderRegelLevertijd, LevertijdStatus } from '@/modules/reserveringen/queries/reserveringen'
 
 const STYLE: Record<LevertijdStatus, string> = {
   voorraad: 'bg-emerald-50 text-emerald-700',

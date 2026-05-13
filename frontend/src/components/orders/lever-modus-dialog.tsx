@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { X } from 'lucide-react'
-import type { LeverModus } from '@/lib/supabase/queries/reserveringen'
+import type { LeverModus } from '@/modules/reserveringen'
 
 export interface LeverModusTekort {
   regelnummer: number

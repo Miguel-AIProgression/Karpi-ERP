@@ -12,13 +12,13 @@ import {
   type AfwerkingTypeRow,
 } from '@/modules/maatwerk'
 import { AFWERKING_OPTIES } from '@/lib/utils/constants'
-import { UitwisselbaarTekortHint } from './uitwisselbaar-tekort-hint'
+import { UitwisselbaarTekortHint } from '@/modules/reserveringen'
 import { getVormDisplay } from '@/lib/utils/vorm-labels'
 import type { SelectedArticle, SubstitutionInfo } from './article-selector'
 import type { OrderRegelFormData, PrijsBron, PrijsBreakdown } from '@/lib/supabase/queries/order-mutations'
 import { SHIPPING_PRODUCT_ID } from '@/lib/constants/shipping'
 import { formatPrijsBron } from '@/lib/utils/prijs-bron'
-import { berekenRegelDekking } from '@/lib/utils/regel-dekking'
+import { berekenRegelDekking } from '@/modules/reserveringen'
 import { fetchEquivalenteProducten } from '@/lib/supabase/queries/product-equivalents'
 
 interface OrderLineEditorProps {
@@ -261,8 +261,12 @@ function MaatwerkLineRow({
             className={inputClass}
             step="0.01"
           />
-          {/* Mig 191: prijs-bron + breakdown — vervangt "Niet uit prijslijst" */}
-          {!line.is_maatwerk && line.prijs_bron && line.prijs_bron !== 'prijslijst_vast' && (() => {
+          {/* Mig 191/253: prijs-bron + breakdown — geen hint bij "schone" bronnen */}
+          {!line.is_maatwerk
+            && line.prijs_bron
+            && line.prijs_bron !== 'prijslijst_vast'
+            && line.prijs_bron !== 'product_vaste_verkoopprijs'
+            && (() => {
             const fmt = formatPrijsBron(line.prijs_bron, line.prijs_breakdown ?? {})
             return (
               <div className={`text-xs ${fmt.kleur} mt-0.5`} title={fmt.tooltip}>
@@ -502,6 +506,7 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr,
     // Als origineel niets oplevert (geen prijslijst, geen m²-fallback),
     // val terug op vervanger (omsticker-flow)
     const origineelHeeftPrijs = prijs_bron === 'prijslijst_vast'
+      || prijs_bron === 'product_vaste_verkoopprijs'
       || prijs_bron === 'prijslijst_m2'
       || prijs_bron === 'maatwerk_artikel_m2'
       || prijs_bron === 'kwaliteit_m2'

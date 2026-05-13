@@ -7,7 +7,7 @@ import { OrderRegelsTable } from '@/components/orders/order-regels-table'
 import { OrderFacturen } from '@/components/orders/order-facturen'
 import { ZendingAanmakenKnop } from '@/components/orders/zending-aanmaken-knop'
 import { useOrderDetail, useOrderRegels } from '@/hooks/use-orders'
-import { useLevertijdVoorOrder, useClaimsVoorOrder } from '@/hooks/use-reserveringen'
+import { useLevertijdVoorOrder, useClaimsVoorOrder } from '@/modules/reserveringen'
 import { computeOrderLock } from '@/lib/utils/order-lock'
 import { DocumentenCompact } from '@/components/documenten/documenten-compact'
 

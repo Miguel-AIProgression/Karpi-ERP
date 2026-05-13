@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Search } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
 import { sanitizeSearch, applyProductSearch, filterProductsWordBoundary } from '@/lib/utils/sanitize'
-import { SubstitutionPicker } from './substitution-picker'
+import { SubstitutionPicker } from '@/modules/reserveringen'
 
 export interface SelectedArticle {
   artikelnr: string
