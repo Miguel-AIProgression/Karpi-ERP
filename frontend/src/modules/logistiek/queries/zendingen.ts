@@ -165,6 +165,12 @@ export async function fetchZendingen(filters: ZendingenFilters = {}) {
           debiteur_nr, naam
         )
       ),
+      zending_orders (
+        order_id,
+        bundel_order:orders!zending_orders_order_id_fkey (
+          id, order_nr
+        )
+      ),
       hst_transportorders (
         id, status, extern_transport_order_id, extern_tracking_number, sent_at
       )
@@ -186,6 +192,10 @@ export async function fetchZendingen(filters: ZendingenFilters = {}) {
 
 /**
  * Detail-query: één zending met alle gekoppelde data.
+ *
+ * Mig 222: bij gebundelde zendingen hangen er meerdere orders aan via
+ * `zending_orders`. We joinen die M2M expliciet zodat de detail-UI alle
+ * bron-orders kan tonen, niet alleen de primaire FK uit `zendingen.order_id`.
  */
 export async function fetchZendingMetTransportorders(zending_nr: string) {
   return await supabase
@@ -199,7 +209,21 @@ export async function fetchZendingMetTransportorders(zending_nr: string) {
           *
         )
       ),
-      zending_regels ( * ),
+      zending_orders (
+        order_id,
+        bundel_order:orders!zending_orders_order_id_fkey (
+          id, order_nr, debiteur_nr,
+          debiteuren:debiteuren!orders_debiteur_nr_fkey (
+            debiteur_nr, naam
+          )
+        )
+      ),
+      zending_regels (
+        *,
+        order_regels (
+          id, order_id, regelnummer, omschrijving
+        )
+      ),
       hst_transportorders ( * )
     `,
     )

@@ -23,12 +23,13 @@ function fmtM2(n: number | undefined): string {
 /**
  * Vertaalt het resultaat van `bereken_orderregel_prijs` (mig 191) naar een
  * Nederlandstalige hint + tooltip voor de orderregel-prijs-cel. Mapping:
- *   prijslijst_vast       → geen hint (standaard pad, prijs is "schoon")
- *   prijslijst_m2         → m² × prijs uit klant-prijslijst (+ vormtoeslag)
- *   maatwerk_artikel_m2   → m² × verkoopprijs maatwerk-artikel (+ vormtoeslag)
- *   kwaliteit_m2          → m² × generieke kwaliteits-m²-prijs (+ vormtoeslag)
- *   product_verkoopprijs  → standaard verkoopprijs van het product
- *   geen / onbekend       → ⚠ geen prijs te bepalen
+ *   prijslijst_vast              → geen hint (standaard pad, prijs is "schoon")
+ *   product_vaste_verkoopprijs   → geen hint (mig 253 — vaste-maat artikel, eigen prijs, schoon)
+ *   prijslijst_m2                → m² × prijs uit klant-prijslijst (+ vormtoeslag)
+ *   maatwerk_artikel_m2          → m² × verkoopprijs maatwerk-artikel (+ vormtoeslag)
+ *   kwaliteit_m2                 → m² × generieke kwaliteits-m²-prijs (+ vormtoeslag)
+ *   product_verkoopprijs         → standaard verkoopprijs van het product
+ *   geen / onbekend              → ⚠ geen prijs te bepalen
  */
 export function formatPrijsBron(bron: PrijsBron, b: PrijsBreakdown): PrijsBronFormatted {
   const vormLabel = b.vorm_code ? getVormDisplay(b.vorm_code).label : 'Rechthoek'
@@ -41,6 +42,14 @@ export function formatPrijsBron(bron: PrijsBron, b: PrijsBreakdown): PrijsBronFo
   switch (bron) {
     case 'prijslijst_vast':
       return { label: '', tooltip: 'Prijs uit klant-prijslijst', kleur: 'text-emerald-600' }
+
+    case 'product_vaste_verkoopprijs':
+      return {
+        label: '',
+        tooltip: 'Vaste-maat artikel — eigen verkoopprijs uit producten-tabel '
+          + '(geen klant-prijslijst-regel, mig 253)',
+        kleur: 'text-emerald-600',
+      }
 
     case 'prijslijst_m2':
       return {

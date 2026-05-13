@@ -51,11 +51,78 @@ interface ZendingRow {
       naam: string
     } | null
   }
+  zending_orders?: Array<{
+    order_id: number
+    bundel_order: { id: number; order_nr: string } | null
+  }>
   hst_transportorders: { id: number; status: string }[]
 }
 
+const BUNDEL_PREVIEW_AANTAL = 2
+
 function pickVervoerderCode(row: ZendingRow): string | null {
   return row.vervoerder_code ?? null
+}
+
+interface BundelOrderRef {
+  id: number
+  order_nr: string
+}
+
+function BundelOrdersCell({ orders }: { orders: BundelOrderRef[] }) {
+  const [uitgevouwen, setUitgevouwen] = useState(false)
+
+  if (orders.length === 0) return <>—</>
+
+  const zichtbaar =
+    orders.length <= BUNDEL_PREVIEW_AANTAL || uitgevouwen
+      ? orders
+      : orders.slice(0, BUNDEL_PREVIEW_AANTAL)
+  const verborgen = orders.length - zichtbaar.length
+
+  return (
+    <div className="flex flex-col gap-0.5">
+      {zichtbaar.map((o) => (
+        <Link
+          key={o.id}
+          to={`/orders/${o.id}`}
+          onClick={(e) => e.stopPropagation()}
+          className="text-slate-600 hover:text-terracotta-600 hover:underline w-fit"
+        >
+          {o.order_nr}
+        </Link>
+      ))}
+      {verborgen > 0 && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            setUitgevouwen(true)
+          }}
+          className="text-[11px] font-medium text-slate-500 hover:text-terracotta-600 hover:underline w-fit"
+        >
+          + nog {verborgen} {verborgen === 1 ? 'order' : 'orders'}
+        </button>
+      )}
+      {orders.length > BUNDEL_PREVIEW_AANTAL && uitgevouwen && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            setUitgevouwen(false)
+          }}
+          className="text-[11px] font-medium text-slate-400 hover:text-slate-600 hover:underline w-fit"
+        >
+          inklappen
+        </button>
+      )}
+      {orders.length > 1 && (
+        <span className="text-[10px] uppercase tracking-wide text-slate-400">
+          Bundel · {orders.length} orders
+        </span>
+      )}
+    </div>
+  )
 }
 
 export function ZendingenOverzichtPage() {
@@ -172,14 +239,29 @@ export function ZendingenOverzichtPage() {
               {gefilterd.map((z) => {
                 const code = pickVervoerderCode(z)
                 const heeftFout = (z.hst_transportorders ?? []).some((t) => t.status === 'Fout')
+                // Mig 222: bundel-zendingen hebben meerdere orders via `zending_orders`.
+                // Backfill heeft solo-zendingen ook in M2M gezet; fallback op primaire
+                // `orders` als de M2M leeg is.
+                const bundelOrders: BundelOrderRef[] = (z.zending_orders ?? [])
+                  .map((row) => row.bundel_order)
+                  .filter((o): o is BundelOrderRef => o != null)
+                  .sort((a, b) => a.order_nr.localeCompare(b.order_nr))
+                const orders: BundelOrderRef[] =
+                  bundelOrders.length > 0
+                    ? bundelOrders
+                    : z.orders
+                      ? [{ id: z.orders.id, order_nr: z.orders.order_nr }]
+                      : []
                 return (
                   <tr
                     key={z.id}
                     onClick={() => navigate(`/logistiek/${z.zending_nr}`)}
-                    className="hover:bg-slate-50 cursor-pointer"
+                    className="hover:bg-slate-50 cursor-pointer align-top"
                   >
                     <td className="px-4 py-3 font-medium text-terracotta-600">{z.zending_nr}</td>
-                    <td className="px-4 py-3 text-slate-600">{z.orders?.order_nr ?? '—'}</td>
+                    <td className="px-4 py-3">
+                      <BundelOrdersCell orders={orders} />
+                    </td>
                     <td className="px-4 py-3 text-slate-700">
                       {z.orders?.debiteuren?.naam ?? <span className="text-slate-400">—</span>}
                     </td>

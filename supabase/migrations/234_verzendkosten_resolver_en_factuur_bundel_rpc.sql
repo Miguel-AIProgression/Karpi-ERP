@@ -201,7 +201,10 @@ SELECT
   d.gratis_verzending,
   -- Drempel-toets via resolver — single source of truth (ADR-0010).
   (vk.status <> 'betaald')                                 AS drempel_gehaald,
-  vk.te_betalen                                            AS te_betalen_verzendkosten,
+  -- Expliciete cast naar NUMERIC(8,2) behoudt de typmod uit mig 229. Zonder
+  -- cast verliest de LATERAL-functie-return zijn precisie/scale en faalt
+  -- CREATE OR REPLACE VIEW met "cannot change data type of view column".
+  vk.te_betalen::NUMERIC(8,2)                              AS te_betalen_verzendkosten,
   -- Besparing blijft inline: scenario-vergelijking met solo-wereld.
   CASE
     WHEN g.is_afhalen OR d.gratis_verzending THEN 0

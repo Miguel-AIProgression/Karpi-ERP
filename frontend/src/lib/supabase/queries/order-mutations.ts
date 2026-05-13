@@ -94,9 +94,10 @@ export interface OrderRegelFormData {
   prijs_breakdown?: PrijsBreakdown
 }
 
-/** Bronlabel voor de orderregel-prijs zoals geretourneerd door `bereken_orderregel_prijs` (mig 191). */
+/** Bronlabel voor de orderregel-prijs zoals geretourneerd door `bereken_orderregel_prijs` (mig 191, mig 253). */
 export type PrijsBron =
   | 'prijslijst_vast'
+  | 'product_vaste_verkoopprijs'
   | 'prijslijst_m2'
   | 'maatwerk_artikel_m2'
   | 'kwaliteit_m2'

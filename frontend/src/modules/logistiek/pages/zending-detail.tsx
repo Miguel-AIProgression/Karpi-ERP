@@ -9,12 +9,28 @@ import {
   type HstTransportorderRow,
 } from '@/modules/logistiek/components/hst-transportorder-card'
 
+interface BundelOrder {
+  id: number
+  order_nr: string
+  debiteur_nr: number
+  debiteuren?: {
+    debiteur_nr: number
+    naam: string
+  } | null
+}
+
 interface ZendingRegelRow {
   id: number
   order_regel_id: number | null
   artikelnr: string | null
   rol_id: number | null
   aantal: number
+  order_regels?: {
+    id: number
+    order_id: number
+    regelnummer: number | null
+    omschrijving: string | null
+  } | null
 }
 
 interface ZendingDetailShape {
@@ -33,15 +49,11 @@ interface ZendingDetailShape {
   totaal_gewicht_kg: number | null
   opmerkingen: string | null
   created_at: string
-  orders: {
-    id: number
-    order_nr: string
-    debiteur_nr: number
-    debiteuren?: {
-      debiteur_nr: number
-      naam: string
-    } | null
-  }
+  orders: BundelOrder
+  zending_orders?: Array<{
+    order_id: number
+    bundel_order: BundelOrder | null
+  }>
   zending_regels: ZendingRegelRow[]
   hst_transportorders: HstTransportorderRow[]
 }
@@ -55,6 +67,29 @@ export function ZendingDetailPage() {
   if (!zending) return <div className="p-8 text-rose-600">Zending niet gevonden.</div>
 
   const z = zending as unknown as ZendingDetailShape
+
+  // Mig 222: bundel-orders uit M2M `zending_orders`. Voor solo-zendingen zit
+  // de primaire order ook in de M2M (backfill); fallback op `z.orders` als de
+  // M2M leeg blijkt zodat oude rijen nog renderen.
+  const bundelOrdersRaw = (z.zending_orders ?? [])
+    .map((row) => row.bundel_order)
+    .filter((o): o is BundelOrder => o != null)
+  const bundelOrders: BundelOrder[] =
+    bundelOrdersRaw.length > 0 ? bundelOrdersRaw : z.orders ? [z.orders] : []
+  const bundelOrdersGesorteerd = [...bundelOrders].sort((a, b) =>
+    a.order_nr.localeCompare(b.order_nr),
+  )
+  const isBundel = bundelOrdersGesorteerd.length > 1
+
+  // Groepeer regels op bron-order via order_regels.order_id. Onbekende order
+  // (legacy of corrupte rij) komt onder een aparte sleutel `null`.
+  const regelsPerOrder = new Map<number | null, ZendingRegelRow[]>()
+  for (const r of z.zending_regels ?? []) {
+    const orderId = r.order_regels?.order_id ?? null
+    const bestaand = regelsPerOrder.get(orderId) ?? []
+    bestaand.push(r)
+    regelsPerOrder.set(orderId, bestaand)
+  }
 
   return (
     <>
@@ -76,13 +111,18 @@ export function ZendingDetailPage() {
           </span>
         }
         description={
-          z.orders ? (
-            <>
-              Order&nbsp;
-              <Link to={`/orders/${z.orders.id}`} className="text-terracotta-600 hover:underline">
-                {z.orders.order_nr}
-              </Link>
-            </>
+          bundelOrdersGesorteerd.length > 0 ? (
+            <span className="flex flex-wrap items-center gap-x-1 gap-y-0.5">
+              <span>{isBundel ? `Bundel van ${bundelOrdersGesorteerd.length} orders:` : 'Order'}</span>
+              {bundelOrdersGesorteerd.map((o, i) => (
+                <span key={o.id} className="inline-flex items-center">
+                  <Link to={`/orders/${o.id}`} className="text-terracotta-600 hover:underline">
+                    {o.order_nr}
+                  </Link>
+                  {i < bundelOrdersGesorteerd.length - 1 ? <span>,</span> : null}
+                </span>
+              ))}
+            </span>
           ) : null
         }
       />
@@ -109,52 +149,81 @@ export function ZendingDetailPage() {
         </div>
       </Section>
 
-      {/* Sectie 2 — order-koppeling */}
-      <Section titel="Order">
-        {z.orders ? (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-            <Field label="Ordernummer">
-              <Link to={`/orders/${z.orders.id}`} className="text-terracotta-600 hover:underline">
-                {z.orders.order_nr}
-              </Link>
-            </Field>
-            <Field label="Klant">
-              <Link to={`/klanten/${z.orders.debiteur_nr}`} className="text-terracotta-600 hover:underline">
-                {z.orders.debiteuren?.naam ?? `#${z.orders.debiteur_nr}`}
-              </Link>
-            </Field>
-            <Field label="Debiteur-nr">{z.orders.debiteur_nr}</Field>
-          </div>
-        ) : (
+      {/* Sectie 2 — order-koppeling (mig 222: kan een bundel zijn). */}
+      <Section titel={isBundel ? `Orders (${bundelOrdersGesorteerd.length})` : 'Order'}>
+        {bundelOrdersGesorteerd.length === 0 ? (
           <div className="text-sm text-slate-400">Geen order gekoppeld.</div>
-        )}
-      </Section>
-
-      {/* Sectie 3 — regels */}
-      <Section titel={`Zending-regels (${z.zending_regels?.length ?? 0})`}>
-        {!z.zending_regels || z.zending_regels.length === 0 ? (
-          <div className="text-sm text-slate-400">Geen regels.</div>
         ) : (
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs text-slate-500 uppercase tracking-wider">
               <tr>
-                <th className="px-3 py-2 text-left font-medium">Order-regel</th>
-                <th className="px-3 py-2 text-left font-medium">Artikelnr</th>
-                <th className="px-3 py-2 text-left font-medium">Rol-id</th>
-                <th className="px-3 py-2 text-right font-medium">Aantal</th>
+                <th className="px-3 py-2 text-left font-medium">Ordernummer</th>
+                <th className="px-3 py-2 text-left font-medium">Klant</th>
+                <th className="px-3 py-2 text-left font-medium">Debiteur-nr</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {z.zending_regels.map((r) => (
-                <tr key={r.id}>
-                  <td className="px-3 py-2 text-slate-600">{r.order_regel_id ?? '—'}</td>
-                  <td className="px-3 py-2 text-slate-700 font-mono text-xs">{r.artikelnr ?? '—'}</td>
-                  <td className="px-3 py-2 text-slate-600">{r.rol_id ?? '—'}</td>
-                  <td className="px-3 py-2 text-right text-slate-700">{r.aantal}</td>
+              {bundelOrdersGesorteerd.map((o) => (
+                <tr key={o.id}>
+                  <td className="px-3 py-2">
+                    <Link to={`/orders/${o.id}`} className="text-terracotta-600 hover:underline">
+                      {o.order_nr}
+                    </Link>
+                  </td>
+                  <td className="px-3 py-2">
+                    <Link to={`/klanten/${o.debiteur_nr}`} className="text-terracotta-600 hover:underline">
+                      {o.debiteuren?.naam ?? `#${o.debiteur_nr}`}
+                    </Link>
+                  </td>
+                  <td className="px-3 py-2 text-slate-600">{o.debiteur_nr}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+        )}
+      </Section>
+
+      {/* Sectie 3 — regels, gegroepeerd per bron-order bij bundels. */}
+      <Section titel={`Zending-regels (${z.zending_regels?.length ?? 0})`}>
+        {!z.zending_regels || z.zending_regels.length === 0 ? (
+          <div className="text-sm text-slate-400">Geen regels.</div>
+        ) : (
+          <div className="space-y-4">
+            {bundelOrdersGesorteerd.map((o) => {
+              const regels = regelsPerOrder.get(o.id) ?? []
+              if (regels.length === 0 && !isBundel) {
+                // Solo-zending zonder order-match — val terug op alle regels.
+                return (
+                  <RegelTabel key={o.id} titel={null} regels={z.zending_regels} />
+                )
+              }
+              if (regels.length === 0) return null
+              return (
+                <div key={o.id}>
+                  {isBundel && (
+                    <div className="text-xs font-semibold text-slate-600 mb-1.5">
+                      <Link to={`/orders/${o.id}`} className="text-terracotta-600 hover:underline">
+                        {o.order_nr}
+                      </Link>
+                    </div>
+                  )}
+                  <RegelTabel titel={null} regels={regels} />
+                </div>
+              )
+            })}
+            {(() => {
+              const wezen = regelsPerOrder.get(null) ?? []
+              if (wezen.length === 0) return null
+              return (
+                <div>
+                  <div className="text-xs font-semibold text-amber-600 mb-1.5">
+                    Regels zonder bron-order
+                  </div>
+                  <RegelTabel titel={null} regels={wezen} />
+                </div>
+              )
+            })()}
+          </div>
         )}
       </Section>
 
@@ -184,6 +253,48 @@ export function ZendingDetailPage() {
         )}
       </Section>
     </>
+  )
+}
+
+function RegelTabel({
+  titel,
+  regels,
+}: {
+  titel: string | null
+  regels: ZendingRegelRow[]
+}) {
+  return (
+    <div>
+      {titel && <div className="text-xs font-semibold text-slate-600 mb-1.5">{titel}</div>}
+      <table className="w-full text-sm">
+        <thead className="bg-slate-50 text-xs text-slate-500 uppercase tracking-wider">
+          <tr>
+            <th className="px-3 py-2 text-left font-medium">Regel</th>
+            <th className="px-3 py-2 text-left font-medium">Artikelnr</th>
+            <th className="px-3 py-2 text-left font-medium">Omschrijving</th>
+            <th className="px-3 py-2 text-left font-medium">Rol-id</th>
+            <th className="px-3 py-2 text-right font-medium">Aantal</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {regels.map((r) => (
+            <tr key={r.id}>
+              <td className="px-3 py-2 text-slate-600">
+                {r.order_regels?.regelnummer ?? r.order_regel_id ?? '—'}
+              </td>
+              <td className="px-3 py-2 text-slate-700 font-mono text-xs">
+                {r.artikelnr ?? '—'}
+              </td>
+              <td className="px-3 py-2 text-slate-600">
+                {r.order_regels?.omschrijving ?? '—'}
+              </td>
+              <td className="px-3 py-2 text-slate-600">{r.rol_id ?? '—'}</td>
+              <td className="px-3 py-2 text-right text-slate-700">{r.aantal}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
 

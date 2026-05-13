@@ -8,7 +8,8 @@
 //
 // Twee modi op dezelfde wrapper:
 //  - **voorgesteld** (pre-pickronde): toont `VoorgesteldeBundelInfo` (truck
-//    + adres + besparing) en de `StartPickrondesButton` om de bundel te starten.
+//    + adres — geen bespaar-info, dat is factuur-domein) en de
+//    `StartPickrondesButton` om de bundel te starten.
 //  - **gestart** (post-pickronde): alle orders delen dezelfde
 //    `actieve_pickronde.zending_id`; toont `ActieveBundelInfo` (zending-nr +
 //    adres) en verbergt de start-knop omdat de zending al loopt.
@@ -62,7 +63,6 @@ export function KlantClusterBlok({ cluster, bundel }: Props) {
           <StartPickrondesButton
             orders={cluster.orders}
             context={`voor ${cluster.klant_naam}`}
-            voorgesteldeBundel={bundel}
           />
         )}
       </div>

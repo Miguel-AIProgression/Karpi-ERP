@@ -87,6 +87,12 @@ export function useSetOrderVervoerderOverride() {
       qc.invalidateQueries({ queryKey: ['logistiek', 'zending'] })
       qc.invalidateQueries({ queryKey: ['logistiek', 'zendingen'] })
       qc.invalidateQueries({ queryKey: ['pick-ship'] })
+      // Mig 229 / ADR-0012: vervoerder is een dimensie van de 4D-bundel-sleutel.
+      // Wijziging betekent dat orders kunnen schuiven tussen voorgestelde-bundels
+      // in de Pick & Ship live preview. Zonder deze invalidate ziet de operator
+      // de nieuwe bundel-card pas na de 60s staleTime — dat veroorzaakt
+      // "ik koppelde de vervoerder maar zie geen bundel"-verwarring.
+      qc.invalidateQueries({ queryKey: ['voorgestelde-bundels'] })
     },
   })
 }

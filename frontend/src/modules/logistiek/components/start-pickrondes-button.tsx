@@ -12,20 +12,22 @@
 //
 // Voor solo (1 order): checkbox niet beschikbaar — er valt niks te bundelen.
 // Voor bundel (≥2 orders): elke checkbox uitvinken = die order solo via
-// p_force_solo_ids; aangevinkt = bundel-mee. Voor `voorgesteldeBundel` met
-// besparing-info: tonen we de besparing als pijl in de dialog-kop.
+// p_force_solo_ids; aangevinkt = bundel-mee.
+//
+// **Geen bespaar-info in dit component.** Verzendkosten-besparing is factuur-
+// /commerciële context die niet thuishoort in de pick-flow — de operator pickt
+// fysiek wat samen reist, niet wat samen factureert. Zie `voorgestelde_zending_bundels`
+// view voor de berekening; consumers zijn factuur-/dashboard-modules.
 //
 // Mig 217 — picker-dropdown met `last-picker-id`-recall via localStorage.
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Loader2, Printer, PackageCheck, TrendingDown, X } from 'lucide-react'
+import { Loader2, Printer, PackageCheck, X } from 'lucide-react'
 import { useStartPickrondes } from '../hooks/use-zendingen'
 import { useVervoerders } from '../hooks/use-vervoerders'
 import { PickerDropdown } from '@/components/orders/picker-dropdown'
-import { formatCurrency } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
 import type { PickShipOrder } from '@/modules/magazijn'
-import type { VoorgesteldeBundel } from '../queries/voorgestelde-bundels'
 
 interface StartPickrondesButtonProps {
   /** Orders die de operator wil starten. Voor solo: één order; voor bundel: ≥2. */
@@ -34,8 +36,6 @@ interface StartPickrondesButtonProps {
   context?: string
   /** Compact = op order-card (klein, slate-900). Prominent = op cluster-card (terracotta). */
   variant?: 'compact' | 'prominent'
-  /** Voorgestelde bundel uit `voorgestelde_zending_bundels` — drijft de besparing-display. */
-  voorgesteldeBundel?: VoorgesteldeBundel | null
 }
 
 const LAST_PICKER_KEY = 'rugflow.last-picker-id'
@@ -67,7 +67,6 @@ export function StartPickrondesButton({
   orders,
   context,
   variant = 'prominent',
-  voorgesteldeBundel = null,
 }: StartPickrondesButtonProps) {
   const navigate = useNavigate()
   const mutation = useStartPickrondes()
@@ -117,11 +116,7 @@ export function StartPickrondesButton({
       : isBundel
         ? `Bundel ${aantal} zendingen${context ? ` ${context}` : ''}${
             aantalOverig > 0 ? ` (${aantalOverig} overgeslagen — nog niet pickbaar)` : ''
-          }. ${
-            voorgesteldeBundel && voorgesteldeBundel.bundel_besparing > 0
-              ? `Bespaart ${formatCurrency(voorgesteldeBundel.bundel_besparing)} verzendkosten.`
-              : 'Operator kan in de dialog orders uit de bundel halen.'
-          }`
+          } — operator kan in de dialog orders uit de bundel halen.`
         : pickbareOrders[0]?.afhalen
           ? 'Start afhaal-pickronde (geen verzendstickers)'
           : 'Start pickronde — kies eerst de picker, daarna print stickers en pakbon'
@@ -230,15 +225,6 @@ export function StartPickrondesButton({
               <X size={14} />
             </button>
           </div>
-
-          {isBundel && voorgesteldeBundel && voorgesteldeBundel.bundel_besparing > 0 && (
-            <div className="mb-2 flex items-center gap-1.5 rounded-md bg-teal-50 px-2 py-1.5 text-[11px] font-medium text-teal-700">
-              <TrendingDown size={12} aria-hidden />
-              <span>
-                Bundel-zending bespaart {formatCurrency(voorgesteldeBundel.bundel_besparing)} verzendkosten — anders {orders.length}× los.
-              </span>
-            </div>
-          )}
 
           {isBundel && (
             <div className="mb-3 max-h-48 overflow-y-auto rounded border border-slate-200">
