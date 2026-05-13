@@ -66,4 +66,13 @@ describe('fetchBundelInfoVoorFactuur', () => {
     expect(info.verzendkostenBedrag).toBe(35)
     expect(info.andereOrders).toHaveLength(2)
   })
+
+  it('handelt data=null correct (geen crash, isBundel=false)', async () => {
+    nextResponse = { data: null, error: null }
+    const info = await fetchBundelInfoVoorFactuur(999)
+    expect(info.isBundel).toBe(false)
+    expect(info.heeftDrempelKorting).toBe(false)
+    expect(info.verzendkostenBedrag).toBe(0)
+    expect(info.andereOrders).toEqual([])
+  })
 })

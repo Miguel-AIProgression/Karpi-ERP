@@ -205,7 +205,7 @@ export async function fetchBundelInfoVoorFactuur(
     order_id: number
     order_nr: string | null
     artikelnr: string | null
-    bedrag: number
+    bedrag: number | string
   }>
 
   const productRegels = rows.filter(
