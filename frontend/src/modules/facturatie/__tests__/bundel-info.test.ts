@@ -75,4 +75,19 @@ describe('fetchBundelInfoVoorFactuur', () => {
     expect(info.verzendkostenBedrag).toBe(0)
     expect(info.andereOrders).toEqual([])
   })
+
+  it('detecteert legacy 2×VERZEND als GEEN bundel (mig-256-strict)', async () => {
+    nextResponse = {
+      data: [
+        { order_id: 100, order_nr: 'ORD-2026-0100', artikelnr: 'SANDRO', bedrag: 200 },
+        { order_id: 101, order_nr: 'ORD-2026-0101', artikelnr: 'SANDRO', bedrag: 300 },
+        { order_id: 100, order_nr: 'ORD-2026-0100', artikelnr: 'VERZEND', bedrag: 35 },
+        { order_id: 101, order_nr: 'ORD-2026-0101', artikelnr: 'VERZEND', bedrag: 35 },
+      ],
+      error: null,
+    }
+    const info = await fetchBundelInfoVoorFactuur(1)
+    expect(info.isBundel).toBe(false)
+    expect(info.andereOrders).toEqual([])
+  })
 })

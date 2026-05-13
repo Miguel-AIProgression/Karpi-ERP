@@ -73,4 +73,24 @@ describe('BundelKortingBanner', () => {
     expect(getByText(/i\.p\.v\./)).toBeTruthy()
     expect(getByText(/bespaart/i)).toBeTruthy()
   })
+
+  it('rendert scenario B met juiste besparing voor 3-order bundle', () => {
+    mockedHook.mockReturnValue({
+      data: {
+        isBundel: true,
+        heeftDrempelKorting: false,
+        verzendkostenBedrag: 35,
+        andereOrders: [
+          { id: 100, nr: 'ORD-2026-0100' },
+          { id: 101, nr: 'ORD-2026-0101' },
+          { id: 102, nr: 'ORD-2026-0102' },
+        ],
+      },
+      isLoading: false,
+    } as any)
+    const { getByText } = renderBanner(100, 1, 'FACT-2026-0019')
+    // 3-order bundle: andere.length = 2, bespaart 2 × 35 = 70
+    expect(getByText(/i\.p\.v\. 3×/)).toBeTruthy()
+    expect(getByText(/bespaart €\s*70/)).toBeTruthy()
+  })
 })

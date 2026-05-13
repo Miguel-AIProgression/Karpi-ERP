@@ -59,7 +59,7 @@ export function BundelKortingBanner({
           </>
         ) : (
           <>
-            1× verzendkosten i.p.v. {andere.length + 1}× — bespaart {kostenLabel} op {factuurLink}.
+            1× verzendkosten i.p.v. {andere.length + 1}× — bespaart {formatCurrency(andere.length * info.verzendkostenBedrag)} op {factuurLink}.
           </>
         )}
       </div>

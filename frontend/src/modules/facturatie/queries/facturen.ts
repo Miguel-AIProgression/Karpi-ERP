@@ -221,8 +221,13 @@ export async function fetchBundelInfoVoorFactuur(
     }
   }
 
+  const aantalVerzendRegels = rows.filter((r) => r.artikelnr === 'VERZEND').length
   const orders = Array.from(ordersMap, ([id, nr]) => ({ id, nr }))
-  const isBundel = orders.length > 1
+  // Banner mag alleen renderen op mig-256-gevormde facturen.
+  // Legacy multi-order facturen met >1 VERZEND-regel waren via de oude
+  // genereer_factuur(order_ids[])-RPC gemaakt en bevatten geen besparing;
+  // de banner zou daar misleidend "1× i.p.v. 2×" tonen.
+  const isBundel = orders.length > 1 && aantalVerzendRegels <= 1
 
   return {
     isBundel,
