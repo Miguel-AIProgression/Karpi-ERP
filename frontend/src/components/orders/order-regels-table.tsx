@@ -23,6 +23,10 @@ function SnijplanStatusBadge({ status }: { status: string }) {
   )
 }
 
+// Admin-pseudo-orderregels (mig 263 / 266 / 269): geen voorraad/IO-allocatie,
+// dus geen claim-uitsplitsing of "wacht op nieuwe inkoop"-sub-rij.
+const ADMIN_PSEUDO_ARTIKELNRS = new Set(['VERZEND', 'BUNDELKORTING', 'DREMPELKORTING'])
+
 interface SubRow {
   key: string
   label: React.ReactNode
@@ -148,7 +152,9 @@ interface RegelRowProps {
 function RegelRow({ regel, levertijd, claims }: RegelRowProps) {
   const afwerkingInfo = regel.maatwerk_afwerking ? AFWERKING_MAP[regel.maatwerk_afwerking] : null
   const maat = formatMaat(regel)
-  const subRows = !regel.is_maatwerk && regel.te_leveren > 0
+  const subRows = !regel.is_maatwerk
+    && regel.te_leveren > 0
+    && !ADMIN_PSEUDO_ARTIKELNRS.has(regel.artikelnr ?? '')
     ? buildSubRows(regel, claims)
     : []
 
