@@ -125,4 +125,61 @@ BEGIN
   RAISE NOTICE 'TASK3 TESTS GESLAAGD';
 END $$;
 
+DO $$
+DECLARE
+  v_rol_id BIGINT;
+  v_audit  RECORD;
+BEGIN
+  -- 1. Beschikbare rol mag verwijderd; auditregel blijft (rol_id behouden).
+  SELECT rol_id INTO v_rol_id FROM rol_handmatig_toevoegen(
+    'TESTROLCRUD01','volle_rol'::rol_type, 1000, 400, NULL,
+    NULL, NULL, 'seed voor verwijderen', 'tester');
+  PERFORM rol_verwijderen(v_rol_id, 'fysiek verlies', 'tester');
+  ASSERT NOT EXISTS (SELECT 1 FROM rollen WHERE id = v_rol_id),
+    'rol niet verwijderd';
+  SELECT * INTO v_audit FROM rol_mutaties
+  WHERE rol_id = v_rol_id AND actie = 'verwijderen';
+  ASSERT v_audit.id IS NOT NULL, 'geen auditregel voor verwijderen';
+  ASSERT v_audit.oud_json IS NOT NULL, 'oud_json ontbreekt bij verwijderen';
+  RAISE NOTICE 'verwijderen-beschikbaar+audit: OK';
+
+  -- 2. Gereserveerde rol geweigerd.
+  SELECT rol_id INTO v_rol_id FROM rol_handmatig_toevoegen(
+    'TESTROLCRUD01','volle_rol'::rol_type, 1000, 400, NULL,
+    NULL, NULL, 'seed gereserveerd', 'tester');
+  UPDATE rollen SET status = 'gereserveerd' WHERE id = v_rol_id;
+  BEGIN
+    PERFORM rol_verwijderen(v_rol_id, 'mag niet', 'tester');
+    RAISE EXCEPTION 'verwijderen gereserveerde rol had geweigerd moeten worden';
+  EXCEPTION WHEN OTHERS THEN
+    ASSERT SQLERRM LIKE '%gereserveerd%' OR SQLERRM LIKE '%niet verwijderd%',
+      'verkeerde fout: ' || SQLERRM;
+  END;
+  RAISE NOTICE 'verwijderen-gereserveerd-geweigerd: OK';
+
+  -- 3. Los reststuk (status reststuk) zonder snijplan mag verwijderd.
+  SELECT rol_id INTO v_rol_id FROM rol_handmatig_toevoegen(
+    'TESTROLCRUD01','reststuk'::rol_type, 80, 400, NULL,
+    NULL, NULL, 'seed reststuk', 'tester');
+  UPDATE rollen SET status = 'reststuk' WHERE id = v_rol_id;
+  PERFORM rol_verwijderen(v_rol_id, 'reststuk opgeruimd', 'tester');
+  ASSERT NOT EXISTS (SELECT 1 FROM rollen WHERE id = v_rol_id),
+    'los reststuk niet verwijderd';
+  RAISE NOTICE 'verwijderen-los-reststuk: OK';
+
+  -- 4. Lege reden geweigerd.
+  SELECT rol_id INTO v_rol_id FROM rol_handmatig_toevoegen(
+    'TESTROLCRUD01','volle_rol'::rol_type, 500, 400, NULL,
+    NULL, NULL, 'seed lege reden', 'tester');
+  BEGIN
+    PERFORM rol_verwijderen(v_rol_id, '  ', 'tester');
+    RAISE EXCEPTION 'lege reden had geweigerd moeten worden';
+  EXCEPTION WHEN OTHERS THEN
+    ASSERT SQLERRM LIKE '%reden%', 'verkeerde fout: ' || SQLERRM;
+  END;
+  RAISE NOTICE 'verwijderen-lege-reden-geweigerd: OK';
+
+  RAISE NOTICE 'ALLE TESTS GESLAAGD';
+END $$;
+
 ROLLBACK;
