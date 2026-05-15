@@ -1,8 +1,15 @@
 # Ontwerp — Handmatige rol-/reststuk-CRUD op de Rollen & Reststukken-pagina
 
 **Datum:** 2026-05-15
-**Status:** Goedgekeurd ontwerp — klaar voor implementatieplan
+**Status:** Geïmplementeerd 2026-05-15 (mig 290-293)
 **Aanpak:** A (Postgres RPC-laag + audit-tabel)
+
+> **Implementatie-noot:** ADR-nummer 0023 bleek bij uitvoering al bezet
+> (order-annulering); de daadwerkelijke ADR is **0024**
+> (`docs/adr/0024-handmatige-rol-crud-rpc-laag.md`). Verwijzingen naar
+> "ADR-0023" hieronder lezen als 0024. Migratie 290 deelt het nummer met
+> `290_order_annulering_release_snijplannen.sql` — beide moeten toegepast
+> worden (zelfde dubbel-nummer-conventie als mig 289 in deze repo).
 
 > **Herziening 2026-05-15:** de oorspronkelijke aanname dat `producten.voorraad`
 > meegekoppeld moest worden bleek onjuist voor rol-artikelen (zie "Voorraad-model"
