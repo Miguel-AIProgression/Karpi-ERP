@@ -1236,6 +1236,7 @@ export function OrderCreatePage() {
   }
 
   async function handleParse(doc: BufferedDoc) {
+    if (parsingId) return // geen parallelle parses (race + dubbele betaalde LLM-call)
     setParseFout(null)
     setParsingId(doc.id)
     try {
