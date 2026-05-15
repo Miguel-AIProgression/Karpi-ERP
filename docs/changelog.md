@@ -1,16 +1,25 @@
 # Changelog — RugFlow ERP
 
-## 2026-05-13 — Orders-overview: klant-filter (multi-select op naam + debiteur-nr) + universele checkbox-stijl
+## 2026-05-13 — Levertijd-Module geïmplementeerd (stap 2-10, ADR-0020)
 
-**Waarom:** Op de orders-overzichtspagina kon je alleen via de vrije-tekst-zoekbalk filteren op klant — geen overzicht van welke klanten orders hebben en geen multi-select. De facturen-pagina had dit patroon al via `MultiSelectDropdown`; orders nu uniform mee. Tegelijk renderde de custom-styled `<span>`-checkbox in `MultiSelectDropdown` als ronde bolletjes — niet matchend met de native HTML-checkboxes elders in de app.
+**Waarom:** De architectuur-beslissing uit [ADR-0020](adr/0020-levertijd-als-deep-module.md) (Levertijd als deep capaciteit-seam-owner-Module) is nu volledig uitgevoerd — het 10-stappen-plan is afgerond. Verspreide levertijd-logica heeft één eigenaar; het order-niveau-label `levertijd_status` is end-to-end live.
 
 **Wat:**
-- [`orders.ts`](../frontend/src/lib/supabase/queries/orders.ts): `fetchOrders` accepteert nu `debiteurNrs: number[]` (via `.in('debiteur_nr', …)`); bestaande `debiteurNr` (single) blijft als fallback. Nieuwe query `fetchOrderKlantOpties` haalt distinct `(debiteur_nr, klant_naam)` op uit `orders_list` (JS-dedupe, range 0-9999 — vervang door DB-view als dat knelt).
-- [`use-orders.ts`](../frontend/src/hooks/use-orders.ts): nieuwe hook `useOrderKlantOpties` (60s staleTime).
-- [`orders-overview.tsx`](../frontend/src/pages/orders/orders-overview.tsx): `MultiSelectDropdown` naast de zoekbalk. Optie-label is `"NAAM (#nr)"` zodat de ingebouwde zoekbalk én op klantnaam én op debiteur-nummer matcht. Selectie reset paginering naar 0.
-- [`multi-select-dropdown.tsx`](../frontend/src/components/ui/multi-select-dropdown.tsx): custom `<span>`+`Check`-icoon vervangen door native `<input type="checkbox">` met de app-conventie-styling (`rounded border-slate-300 text-terracotta-500 focus:ring-terracotta-400/30`). `pointer-events-none` + `tabIndex={-1}` zodat de omhullende button alle clicks/focus afhandelt. Werkt automatisch door op alle gebruikers van het component (orders-overview, facturatie-overview).
+- [mig 277](../supabase/migrations/277_levertijd_rpc_skeleton.sql) — publieke RPC's `levertijd_fit_check(p_regel_ids[], p_gewenste_week)` + `levertijd_snelste_haalbaar(p_regel_ids[])`. Voorraad-pad realistisch (consumeert Reservering's `order_regel_levertijd`-view + uitwisselbaar-dekking); maatwerk eerst als stub.
+- [mig 278](../supabase/migrations/278_levertijd_maatwerk_capaciteit.sql) — maatwerk capaciteit-match op **week-niveau** (optie B): match tegen open snijplannen + `app_config.productie_planning`-config (capaciteit per week, wisseltijd, logistieke buffer). Géén `productie_groep`-segmentering in V1.
+- [mig 279](../supabase/migrations/279_werkagenda_sql_functions.sql) — werkagenda als SQL-ground-truth: `werkdag_min_n` / `werkdag_plus_n` / `werkagenda_kalender`.
+- Frontend-Module [`modules/levertijd/`](../frontend/src/modules/levertijd/): barrel `index.ts`, `cache.ts`, `types.ts`, `queries/`, hooks (`useFitCheck` debounced, `useSnelsteHaalbaar`, `useLevertijdStatus`, `useNeemSnelsteOver`) en components ([`LevertijdStatusBadge`](../frontend/src/modules/levertijd/components/levertijd-status-badge.tsx), [`LevertijdFitIndicator`](../frontend/src/modules/levertijd/components/levertijd-fit-indicator.tsx), [`SnelsteHaalbaarKnop`](../frontend/src/modules/levertijd/components/snelste-haalbaar-knop.tsx)).
+- Integratie: live fit-check + "Snelste haalbare overnemen"-knop in [`order-form.tsx`](../frontend/src/components/orders/order-form.tsx); `<LevertijdStatusBadge>`-slot in de order-detail-header.
+- Werkagenda-spiegel-borging: [`bereken-agenda.ts`](../frontend/src/lib/utils/bereken-agenda.ts) en [`_shared/werkagenda.ts`](../supabase/functions/_shared/werkagenda.ts) geannoteerd als *synchronous-only mirror* van de SQL-ground-truth (alleen voor rekenwerk dat geen DB-roundtrip mag triggeren).
+- architectuur.md: Levertijd toegevoegd als dertiende domein-module in de Module-grafiek.
 
-**Niet gewijzigd:** PostgREST `or()` met klant-naam in de zoekbalk blijft bestaan — dat is vrije-tekst-zoek over `order_nr / klant_referentie / klant_naam`. De multi-select is een orthogonale, expliciete klant-filter.
+**Niet gewijzigd / V2-backlog:**
+- Confectie-capaciteit-check (interface bereid voor uitbreiding, nog niet aangesloten).
+- `productie_groep`-segmentering van de maatwerk-capaciteit (V1 = week-niveau totaal).
+- FFDH-passt-check binnen de capaciteit-match.
+- `lever_type`-dag-buffer blijft canoniek in edge `check-levertijd` — Levertijd-Module raakt dat pad niet.
+- Bevroren leverbelofte-tabel + EDI/factuur/pakbon-consumers van het `levertijd_status`-label.
+- Orders-overview-badge-integratie uitgesteld i.v.m. parallel werk aan de orders-overzichtspagina (klant-filter); detail-header + order-form zijn wél live.
 
 ## 2026-05-13 — ADR-0020: Levertijd als deep Module (capaciteit-seam owner + status-label)
 

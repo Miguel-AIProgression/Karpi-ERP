@@ -47,6 +47,7 @@ export default defineConfig([
           { name: '@/lib/supabase/queries/leveranciers', message: 'Importeer uit @/modules/inkoop (ADR-0016).' },
           { name: '@/hooks/use-inkooporders', message: 'Importeer uit @/modules/inkoop (ADR-0016).' },
           { name: '@/hooks/use-leveranciers', message: 'Importeer uit @/modules/inkoop (ADR-0016).' },
+          { name: '@/hooks/use-levertijd-check', message: 'use-levertijd-check is DEPRECATED (ADR-0020). Gebruik useFitCheck uit @/modules/levertijd.' },
         ],
         patterns: [
           { group: ['@/components/klanten/*'], message: 'Gebruik @/modules/debiteuren (ADR-0011).' },
@@ -56,6 +57,30 @@ export default defineConfig([
           { group: ['@/pages/inkooporders/*'], message: 'Pages zijn verhuisd naar @/modules/inkoop/pages (ADR-0016).' },
           { group: ['@/pages/leveranciers/*'], message: 'Pages zijn verhuisd naar @/modules/inkoop/pages (ADR-0016).' },
           { group: ['@/components/leveranciers/*'], message: 'Components zijn verhuisd naar @/modules/inkoop (ADR-0016).' },
+        ],
+      }],
+    },
+  },
+  // ADR-0020 / Levertijd-Module stap 9 — severity-uitzondering.
+  //
+  // De org-brede no-restricted-imports staat op 'error' (sterke afschrikking
+  // voor NIEUWE code die de DEPRECATED shim @/hooks/use-levertijd-check
+  // importeert). Maar de shim zelf en z'n enige huidige back-compat-caller
+  // bestaan bewust nog 1 release; die zouden de CI rood maken op 'error'.
+  // Daarom hier 1 vervolg-config-object dat — alléén voor die twee bekende
+  // bestanden — no-restricted-imports op 'warn' zet (flat-config: laatste
+  // matchende rule-declaratie wint per bestand). Deze twee bestanden
+  // importeren geen enkel ander restricted Module-pad (geverifieerd), dus de
+  // ADR-0015/0016-handhaving elders blijft onverminderd op 'error'.
+  {
+    files: [
+      'src/hooks/use-levertijd-check.ts',
+      'src/components/orders/levertijd-suggestie.tsx',
+    ],
+    rules: {
+      'no-restricted-imports': ['warn', {
+        paths: [
+          { name: '@/hooks/use-levertijd-check', message: 'use-levertijd-check is DEPRECATED (ADR-0020). Gebruik useFitCheck uit @/modules/levertijd.' },
         ],
       }],
     },
