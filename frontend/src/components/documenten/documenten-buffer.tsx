@@ -8,6 +8,7 @@ import {
   X,
   ExternalLink,
   Eye,
+  Sparkles,
 } from 'lucide-react'
 
 export interface BufferedDoc {
@@ -21,13 +22,17 @@ interface Props {
   onChange: (docs: BufferedDoc[]) => void
   title?: string
   className?: string
+  /** Indien gezet: toont per PDF-rij een "Order uitvullen"-knop. */
+  onParse?: (doc: BufferedDoc) => void
+  /** id van de doc die nu geparsed wordt (spinner-state). */
+  parsingId?: string | null
 }
 
 const ACCEPT =
   '.pdf,.jpg,.jpeg,.png,.webp,.xls,.xlsx,.doc,.docx,.txt,application/pdf,image/jpeg,image/png,image/webp'
 const MAX_BYTES = 25 * 1024 * 1024
 
-export function DocumentenBuffer({ docs, onChange, title = 'Documenten', className }: Props) {
+export function DocumentenBuffer({ docs, onChange, title = 'Documenten', className, onParse, parsingId }: Props) {
   const fileInput = useRef<HTMLInputElement>(null)
   const [error, setError] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
@@ -381,6 +386,18 @@ export function DocumentenBuffer({ docs, onChange, title = 'Documenten', classNa
                   />
                 </div>
                 <span className="text-xs text-slate-500 shrink-0">{formatBytes(d.file.size)}</span>
+                {onParse && (d.file.type === 'application/pdf' || d.file.name.toLowerCase().endsWith('.pdf')) && (
+                  <button
+                    type="button"
+                    onClick={() => onParse(d)}
+                    disabled={parsingId === d.id}
+                    className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-terracotta-50 text-terracotta-700 hover:bg-terracotta-100 rounded disabled:opacity-50 shrink-0"
+                    title="Vul de order automatisch uit dit document"
+                  >
+                    <Sparkles size={13} />
+                    {parsingId === d.id ? 'Bezig…' : 'Order uitvullen'}
+                  </button>
+                )}
                 {canPreview(d.file) && (
                   <button
                     type="button"
