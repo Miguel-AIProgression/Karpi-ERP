@@ -18,6 +18,7 @@ import {
   fetchUitwisselbareParen,
   fetchBeschikbareRollen,
   fetchBezettePlaatsingen,
+  buildFifoOptions,
   saveVoorstel,
 } from '../_shared/db-helpers.ts'
 
@@ -167,15 +168,18 @@ serve(async (req) => {
         ? cfgWaarde.max_reststuk_verspilling_pct
         : 15
 
-    // ---- Step 5: best-of-both packing ----
+    // ---- Step 4b: FIFO-magazijnleeftijd-opties (ADR-0021) ----
+    const fifo = await buildFifoOptions(supabase)
+
+    // ---- Step 5: best-of-both packing (FIFO-bewust) ----
     const pieceVormMap = new Map<number, string | null>(
       pieces.map((p) => [p.id, p.maatwerk_vorm]),
     )
-    const { rollResults, nietGeplaatst, samenvatting } = packAcrossRolls(
+    const { rollResults, nietGeplaatst, samenvatting, fifoMetrics } = packAcrossRolls(
       pieces,
       rollen,
       pieceVormMap,
-      { bezetteMap, maxReststukVerspillingPct },
+      { bezetteMap, maxReststukVerspillingPct, fifo },
     )
 
     if (rollResults.length === 0) {
@@ -212,14 +216,21 @@ serve(async (req) => {
       totaalM2Afval: samenvatting.totaal_m2_afval,
       afvalPercentage: samenvatting.gemiddeld_afval_pct,
       aangemaakt_door: 'systeem',
+      fifo: fifoMetrics,
     }, plaatsingen)
 
-    // ---- Step 7: Auto-approve via existing RPC ----
-    const { error: keurError } = await supabase.rpc(
-      'keur_snijvoorstel_goed',
-      { p_voorstel_id: voorstel_id },
-    )
-    if (keurError) throw keurError
+    // ---- Step 7: Auto-approve — behalve bij rode FIFO-badge (ADR-0021) ----
+    // Een rode badge betekent dat de leeftijd-voorkeur fors extra snijafval
+    // kost. Die afweging laten we niet automatisch goedkeuren: het voorstel
+    // blijft 'concept' voor handmatige beoordeling. Geel/grijs gaat normaal door.
+    const fifoCarveOut = fifoMetrics?.badge === 'rood'
+    if (!fifoCarveOut) {
+      const { error: keurError } = await supabase.rpc(
+        'keur_snijvoorstel_goed',
+        { p_voorstel_id: voorstel_id },
+      )
+      if (keurError) throw keurError
+    }
 
     // ---- Step 8: shelf-mes-validator (zacht: alleen rapporteren) ----
     const shelfWaarschuwingen = validateShelfMesLimiet(
@@ -244,10 +255,15 @@ serve(async (req) => {
         voorstel_id,
         voorstel_nr,
         released: releaseCount ?? 0,
+        auto_approved: !fifoCarveOut,
+        ...(fifoCarveOut
+          ? { reason: 'Rode FIFO-badge — voorstel blijft concept voor handmatige beoordeling.' }
+          : {}),
         samenvatting: {
           ...samenvatting,
           shelf_waarschuwingen: shelfWaarschuwingen,
         },
+        fifo: fifoMetrics ?? null,
         niet_geplaatst: nietGeplaatst,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },

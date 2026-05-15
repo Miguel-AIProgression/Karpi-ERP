@@ -4,6 +4,7 @@ import { ArrowLeft, CheckCircle2, XCircle, AlertTriangle, Loader2 } from 'lucide
 import { PageHeader } from '@/components/layout/page-header'
 import { RolHeaderCard } from '@/components/snijplanning/rol-header-card'
 import { SnijVisualisatie } from '@/components/snijplanning/snij-visualisatie'
+import { FifoBadge } from '@/components/snijplanning/fifo-badge'
 import {
   useSnijplannenVoorGroep,
   useKeurSnijvoorstelGoed,
@@ -161,7 +162,10 @@ export function SnijvoorstelReviewPage() {
         </Link>
       </div>
 
-      <PageHeader title={`Snijvoorstel -- ${voorstelResponse.voorstel_nr}`} />
+      <div className="flex items-center justify-between">
+        <PageHeader title={`Snijvoorstel -- ${voorstelResponse.voorstel_nr}`} />
+        <FifoBadge fifo={voorstelResponse.fifo} />
+      </div>
 
       {/* Summary card */}
       <SummaryCard samenvatting={sam} planningConfig={planningConfig} />

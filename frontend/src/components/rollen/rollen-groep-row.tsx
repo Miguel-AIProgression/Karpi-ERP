@@ -222,8 +222,19 @@ function RolDetails({ rolId, artikelnr, rolOppervlak }: { rolId: number; artikel
   )
 }
 
+function formatBinnenSinds(d: string | null): string {
+  if (!d) return 'onbekend'
+  const dt = new Date(d)
+  if (Number.isNaN(dt.getTime())) return 'onbekend'
+  return dt.toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric' })
+}
+
 function RolTabel({ rollen }: { rollen: RolRow[] }) {
   const [expandedRolId, setExpandedRolId] = useState<number | null>(null)
+
+  // De RPC levert rollen oudste-eerst (in_magazijn_sinds ASC NULLS FIRST).
+  // De eerste rol mét bekende datum is dus de eerstvolgende voor FIFO-snijden.
+  const eersteFifoRolId = rollen.find((r) => r.in_magazijn_sinds)?.id ?? null
 
   return (
     <table className="w-full text-sm">
@@ -232,6 +243,7 @@ function RolTabel({ rollen }: { rollen: RolRow[] }) {
           <th className="py-2 px-3 font-medium">Rolnummer</th>
           <th className="py-2 px-3 font-medium">Afmetingen</th>
           <th className="py-2 px-3 font-medium text-right">Oppervlak</th>
+          <th className="py-2 px-3 font-medium">Binnen sinds</th>
           <th className="py-2 px-3 font-medium">Status</th>
           <th className="py-2 px-3 font-medium">Locatie</th>
         </tr>
@@ -240,6 +252,7 @@ function RolTabel({ rollen }: { rollen: RolRow[] }) {
         {rollen.map((rol) => {
           const colors = ROL_STATUS_COLORS[rol.status] ?? { bg: 'bg-gray-100', text: 'text-gray-600' }
           const isExpanded = expandedRolId === rol.id
+          const isEersteFifo = rol.id === eersteFifoRolId
           return (
             <>
               <tr
@@ -252,6 +265,19 @@ function RolTabel({ rollen }: { rollen: RolRow[] }) {
                   {rol.lengte_cm} &times; {rol.breedte_cm} cm
                 </td>
                 <td className="py-2 px-3 text-right">{Number(rol.oppervlak_m2).toFixed(1)} m&sup2;</td>
+                <td className="py-2 px-3 text-slate-600 whitespace-nowrap">
+                  <span className={cn(!rol.in_magazijn_sinds && 'text-slate-400 italic')}>
+                    {formatBinnenSinds(rol.in_magazijn_sinds)}
+                  </span>
+                  {isEersteFifo && (
+                    <span
+                      className="ml-2 text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-emerald-50 text-emerald-600"
+                      title="Komt als eerste aan de beurt bij het snijden (oudst binnengekomen)"
+                    >
+                      1e binnen
+                    </span>
+                  )}
+                </td>
                 <td className="py-2 px-3">
                   <div className="flex items-center gap-1 flex-wrap">
                     <span className={cn('text-xs px-2 py-0.5 rounded-full', colors.bg, colors.text)}>
@@ -274,7 +300,7 @@ function RolTabel({ rollen }: { rollen: RolRow[] }) {
               </tr>
               {isExpanded && (
                 <tr key={`${rol.id}-details`}>
-                  <td colSpan={5} className="p-0">
+                  <td colSpan={6} className="p-0">
                     <RolDetails rolId={rol.id} artikelnr={rol.artikelnr} rolOppervlak={rol.oppervlak_m2} />
                   </td>
                 </tr>

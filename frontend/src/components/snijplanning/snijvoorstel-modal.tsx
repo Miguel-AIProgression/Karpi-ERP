@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { X, Zap, CheckCircle2, XCircle, Loader2, AlertTriangle } from 'lucide-react'
 import { useSnijplannenVoorGroep, useKeurSnijvoorstelGoed, useVerwerpSnijvoorstel } from '@/modules/snijplanning'
 import { SnijVisualisatie } from './snij-visualisatie'
+import { FifoBadge } from './fifo-badge'
 import type { SnijvoorstelResponse, SnijvoorstelPlaatsing, SnijplanRow, SnijStuk } from '@/lib/types/productie'
 
 // ---------------------------------------------------------------------------
@@ -94,6 +95,7 @@ export function SnijvoorstelModal({ voorstel, kwaliteitCode, kleurCode, onClose,
             <span className="text-xs text-slate-500">
               {sam.geplaatst}/{sam.totaal_stukken} stuks · {sam.totaal_rollen} rollen · {sam.gemiddeld_afval_pct}% afval
             </span>
+            <FifoBadge fifo={voorstel.fifo} />
             <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
               <X size={16} />
             </button>

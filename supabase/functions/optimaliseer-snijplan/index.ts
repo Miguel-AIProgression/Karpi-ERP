@@ -15,6 +15,7 @@ import {
   fetchStukken,
   fetchUitwisselbareParen,
   fetchBeschikbareRollen,
+  buildFifoOptions,
   saveVoorstel,
 } from '../_shared/db-helpers.ts'
 
@@ -103,8 +104,12 @@ serve(async (req) => {
       pieces.map((p) => [p.id, p.maatwerk_vorm]),
     )
 
-    // ---- Step 3: best-of-both packing across rolls ----
-    const { rollResults, nietGeplaatst, samenvatting } = packAcrossRolls(pieces, rollen, pieceVormMap)
+    // ---- Step 2b: FIFO-magazijnleeftijd-opties (ADR-0021) ----
+    const fifo = await buildFifoOptions(supabase)
+
+    // ---- Step 3: best-of-both packing across rolls (FIFO-bewust) ----
+    const { rollResults, nietGeplaatst, samenvatting, fifoMetrics } =
+      packAcrossRolls(pieces, rollen, pieceVormMap, { fifo })
 
     // ---- Step 4: Save to database ----
     const plaatsingen = rollResults.flatMap((r) =>
@@ -127,6 +132,7 @@ serve(async (req) => {
       totaalM2Gebruikt: samenvatting.totaal_m2_gebruikt,
       totaalM2Afval: samenvatting.totaal_m2_afval,
       afvalPercentage: samenvatting.gemiddeld_afval_pct,
+      fifo: fifoMetrics,
     }, plaatsingen)
 
     // ---- Step 5: Verrijk elke rol met bruikbare reststukken ----
@@ -163,6 +169,7 @@ serve(async (req) => {
         ...samenvatting,
         shelf_waarschuwingen: shelfWaarschuwingen,
       },
+      fifo: fifoMetrics ?? null,
     }
 
     return new Response(JSON.stringify(result), {

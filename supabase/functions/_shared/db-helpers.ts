@@ -2,7 +2,7 @@
 // Used by: optimaliseer-snijplan, auto-plan-groep, check-levertijd
 
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import type { SnijplanPiece, Roll, Placement } from './ffdh-packing.ts'
+import type { SnijplanPiece, Roll, Placement, FifoMetrics, FifoOptions } from './ffdh-packing.ts'
 
 // ---------------------------------------------------------------------------
 // Kleur-code variants — DB heeft historisch zowel "12" als "12.0" gangbaar
@@ -148,7 +148,7 @@ export async function fetchBeschikbareRollen(
 
   const { data: rollen, error } = await supabase
     .from('rollen')
-    .select('id, rolnummer, lengte_cm, breedte_cm, status, oppervlak_m2, kwaliteit_code, snijden_gestart_op')
+    .select('id, rolnummer, lengte_cm, breedte_cm, status, oppervlak_m2, kwaliteit_code, snijden_gestart_op, in_magazijn_sinds')
     .in('status', ['beschikbaar', 'reststuk', 'in_snijplan'])
     .or(orClause)
 
@@ -179,7 +179,64 @@ export async function fetchBeschikbareRollen(
       sort_priority: (r.status as string) === 'reststuk' ? 1 : 2,
       is_exact: (r.kwaliteit_code as string) === kwaliteitCode,
       has_existing_placements: (r.status as string) === 'in_snijplan',
+      in_magazijn_sinds: (r.in_magazijn_sinds as string | null) ?? null,
     }))
+}
+
+// ---------------------------------------------------------------------------
+// C1: rol-ids die al voor een ander (goedgekeurd) snijvoorstel gereserveerd
+// zijn. De FIFO-voorkeur mag deze niet als nieuwe aansnijding naar voren halen
+// (geen verdringing). ADR-0021.
+// ---------------------------------------------------------------------------
+
+/**
+ * Bouw de FIFO-opties (ADR-0021) uit app_config.snijplanning + vandaag +
+ * gereserveerde rol-ids. Defaults spiegelen mig 283.
+ */
+export async function buildFifoOptions(
+  supabase: SupabaseClient,
+): Promise<FifoOptions> {
+  const { data } = await supabase
+    .from('app_config')
+    .select('waarde')
+    .eq('sleutel', 'snijplanning')
+    .maybeSingle()
+  const w = (data?.waarde ?? {}) as Record<string, unknown>
+  const num = (k: string, def: number) =>
+    typeof w[k] === 'number' ? (w[k] as number) : def
+
+  const gereserveerdeRolIds = await fetchGereserveerdeRolIds(supabase)
+  const modus = w.modus === 'geavanceerd' ? 'geavanceerd' : 'simpel'
+
+  return {
+    modus,
+    drempelDagen: num('drempel_dagen', 90),
+    hardeBovengrensDagen: num('harde_bovengrens_dagen', 180),
+    alpha: num('alpha', 0.05),
+    vandaag: new Date().toISOString().slice(0, 10),
+    badgeGeelM2: num('badge_geel_m2', 5),
+    badgeGeelPct: num('badge_geel_pct', 25),
+    badgeRoodM2: num('badge_rood_m2', 10),
+    badgeRoodPct: num('badge_rood_pct', 50),
+    gereserveerdeRolIds,
+  }
+}
+
+export async function fetchGereserveerdeRolIds(
+  supabase: SupabaseClient,
+): Promise<Set<number>> {
+  const { data, error } = await supabase
+    .from('snijvoorstel_plaatsingen')
+    .select('rol_id, snijvoorstellen!inner(status)')
+    .eq('snijvoorstellen.status', 'goedgekeurd')
+
+  if (error) throw error
+
+  const ids = new Set<number>()
+  for (const row of (data ?? []) as Array<{ rol_id: number | null }>) {
+    if (row.rol_id != null) ids.add(row.rol_id)
+  }
+  return ids
 }
 
 // ---------------------------------------------------------------------------
@@ -263,6 +320,8 @@ export interface SaveVoorstelOptions {
   totaalM2Afval: number
   afvalPercentage: number
   aangemaakt_door?: string
+  /** FIFO-badge & vergelijkingsmetrics (ADR-0021, mig 284). */
+  fifo?: FifoMetrics
 }
 
 /**
@@ -313,6 +372,21 @@ export async function saveVoorstel(
         afval_percentage: options.afvalPercentage,
         status: 'concept',
         ...(options.aangemaakt_door ? { aangemaakt_door: options.aangemaakt_door } : {}),
+        ...(options.fifo
+          ? {
+              fifo_badge: options.fifo.badge,
+              extra_afval_m2: options.fifo.extra_afval_m2,
+              extra_afval_pct: options.fifo.extra_afval_pct,
+              oudste_rol_dagen: options.fifo.oudste_rol_dagen,
+              efficient_oudste_rol_dagen: options.fifo.efficient_oudste_rol_dagen,
+              rolwissels: options.fifo.rolwissels,
+              efficient_rolwissels: options.fifo.efficient_rolwissels,
+              fifo_rationale: {
+                reden: options.fifo.reden,
+                rollen: options.fifo.rationale,
+              },
+            }
+          : {}),
       })
       .select('id')
       .single()

@@ -99,6 +99,8 @@ function mapRol(raw: unknown): RolRow | null {
         : toNumber(r.oorsprong_rol_id),
     reststuk_datum:
       typeof r.reststuk_datum === 'string' ? r.reststuk_datum : null,
+    in_magazijn_sinds:
+      typeof r.in_magazijn_sinds === 'string' ? r.in_magazijn_sinds : null,
   }
 }
 

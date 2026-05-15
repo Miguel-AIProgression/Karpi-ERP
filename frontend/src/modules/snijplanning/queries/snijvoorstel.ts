@@ -144,6 +144,24 @@ export async function fetchGoedgekeurdVoorstel(
       totaal_m2_gebruikt: voorstel.totaal_m2_gebruikt,
       totaal_m2_afval: voorstel.totaal_m2_afval,
     },
+    fifo: mapFifo(voorstel as SnijvoorstelRow),
+  }
+}
+
+/** Herleid de FIFO-metrics uit een snijvoorstellen-rij (ADR-0021).
+ *  NULL badge (pre-mig 284 voorstel) → geen fifo-blok. */
+export function mapFifo(row: SnijvoorstelRow): SnijvoorstelResponse['fifo'] {
+  if (!row.fifo_badge) return null
+  return {
+    badge: row.fifo_badge,
+    extra_afval_m2: row.extra_afval_m2 ?? 0,
+    extra_afval_pct: row.extra_afval_pct ?? 0,
+    oudste_rol_dagen: row.oudste_rol_dagen ?? 0,
+    efficient_oudste_rol_dagen: row.efficient_oudste_rol_dagen ?? 0,
+    rolwissels: row.rolwissels ?? 0,
+    efficient_rolwissels: row.efficient_rolwissels ?? 0,
+    rationale: row.fifo_rationale?.rollen ?? [],
+    reden: row.fifo_rationale?.reden ?? '',
   }
 }
 

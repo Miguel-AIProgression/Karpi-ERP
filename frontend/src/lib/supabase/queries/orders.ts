@@ -144,11 +144,6 @@ export async function fetchOrders(params: {
     query = query.or(
       'status.eq.Wacht op voorraad,status.eq.Wacht op inkoop,status.eq.Actie vereist,heeft_unmatched_regels.eq.true'
     )
-  } else if (status === 'Klaar voor picken') {
-    // ADR-0016 backwards-compat: pre-mig-258 orders staan nog op 'Nieuw'
-    // tot de backfill is gedraaid. Tab toont beide zodat geen orders
-    // verdwijnen tijdens de rollout.
-    query = query.or('status.eq.Klaar voor picken,status.eq.Nieuw')
   } else if (status && status !== 'Alle') {
     query = query.eq('status', status)
   }

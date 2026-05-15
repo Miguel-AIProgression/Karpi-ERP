@@ -1,10 +1,20 @@
 import { supabase } from '../client'
 
+// Alle statussen behalve eindstatussen ('Verzonden' / 'Geannuleerd'). Bevat de
+// canonieke ADR-0016-statussen + legacy waarden die in historische data nog
+// kunnen voorkomen ('Nieuw' tot mig-275-backfill, 'Actie vereist', productie-
+// statussen uit mig 218 pragmatisch pad).
 const ACTIVE_ORDER_STATUSES = [
+  'Klaar voor picken',
+  'Wacht op voorraad',
+  'Wacht op inkoop',
+  'Wacht op maatwerk',
+  'In pickronde',
+  'Deels verzonden',
+  // Legacy / pragmatisch pad
   'Nieuw',
   'Actie vereist',
   'Wacht op picken',
-  'Wacht op voorraad',
   'In snijplan',
   'In productie',
   'Deels gereed',

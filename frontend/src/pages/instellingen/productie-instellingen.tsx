@@ -7,6 +7,12 @@ import { ConfectieTijdenConfig } from '@/components/confectie/confectie-tijden-c
 import { WerktijdenConfig, useWerktijden } from '@/components/werkagenda/werktijden-config'
 import { VrijeDagenConfig } from '@/components/werkagenda/vrije-dagen-config'
 import { fetchOrderConfig, updateOrderConfig } from '@/lib/supabase/queries/order-config'
+import {
+  fetchSnijplanningFifoConfig,
+  updateSnijplanningFifoConfig,
+  DEFAULT_FIFO_CONFIG,
+  type SnijplanningFifoConfig,
+} from '@/lib/supabase/queries/snijplanning-fifo-config'
 import type { PlanningConfig } from '@/lib/types/productie'
 
 export function ProductieInstellingenPage() {
@@ -39,6 +45,33 @@ export function ProductieInstellingenPage() {
       setTimeout(() => setOrderCfgSaved(false), 3000)
     },
   })
+
+  // FIFO-magazijnleeftijd-criteria (ADR-0021) — los app_config-record.
+  const { data: fifoConfig } = useQuery({
+    queryKey: ['snijplanning-fifo-config'],
+    queryFn: fetchSnijplanningFifoConfig,
+  })
+  const [fifoForm, setFifoForm] = useState<SnijplanningFifoConfig>(DEFAULT_FIFO_CONFIG)
+  const [fifoSaved, setFifoSaved] = useState(false)
+  useEffect(() => {
+    if (fifoConfig) setFifoForm(fifoConfig)
+  }, [fifoConfig])
+  const fifoDirty =
+    !!fifoConfig &&
+    (Object.keys(fifoForm) as Array<keyof SnijplanningFifoConfig>).some(
+      (k) => fifoForm[k] !== fifoConfig[k],
+    )
+  const fifoMutation = useMutation({
+    mutationFn: () => updateSnijplanningFifoConfig(fifoForm),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['snijplanning-fifo-config'] })
+      setFifoSaved(true)
+      setTimeout(() => setFifoSaved(false), 3000)
+    },
+  })
+  function updateFifo<K extends keyof SnijplanningFifoConfig>(key: K, value: number) {
+    setFifoForm((prev) => ({ ...prev, [key]: value }))
+  }
 
   useEffect(() => {
     if (config && !form) setForm(config)
@@ -187,6 +220,154 @@ export function ProductieInstellingenPage() {
             <p className="mt-1 text-xs text-slate-400">
               Reststukken met meer verspilling dan dit percentage worden niet gesuggereerd
             </p>
+          </div>
+        </div>
+
+        {/* Card: FIFO-magazijnleeftijd (ADR-0021) */}
+        <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-6">
+          <div className="flex items-center gap-2 mb-1">
+            <Clock size={18} className="text-slate-500" />
+            <h2 className="text-lg font-semibold text-slate-900">FIFO-magazijnleeftijd</h2>
+          </div>
+          <p className="text-xs text-slate-400 mb-4">
+            Oudere rollen krijgen voorrang bij het snijden om kleurverschil te voorkomen.
+          </p>
+
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-slate-700 mb-1">Modus</label>
+            <div className="flex gap-3">
+              {([
+                ['simpel', 'Eenvoudig'],
+                ['geavanceerd', 'Geavanceerd'],
+              ] as const).map(([m, label]) => (
+                <button
+                  key={m}
+                  onClick={() => setFifoForm((prev) => ({ ...prev, modus: m }))}
+                  className={`px-4 py-2 rounded-[var(--radius-sm)] text-sm font-medium transition-colors ${
+                    fifoForm.modus === m
+                      ? 'bg-terracotta-500 text-white'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-slate-400">
+              {fifoForm.modus === 'simpel'
+                ? 'Eenvoudig (huidig): altijd de oudst-binnengekomen rol eerst. Geen extra snijverlies, geen badge, geen handmatige goedkeuring. De geavanceerde afweging hieronder staat dan uit.'
+                : 'Geavanceerd: weegt magazijnleeftijd tegen snijverlies, toont een badge en houdt rode voorstellen tegen voor handmatige goedkeuring. Pas live zetten als de rol-data op orde is.'}
+            </p>
+          </div>
+
+          <div
+            className={
+              fifoForm.modus === 'simpel'
+                ? 'opacity-50 pointer-events-none select-none'
+                : ''
+            }
+            aria-disabled={fifoForm.modus === 'simpel'}
+          >
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Drempel (dagen)
+              </label>
+              <input
+                type="number" min={0} step={1}
+                value={fifoForm.drempel_dagen}
+                onChange={(e) => updateFifo('drempel_dagen', Number(e.target.value))}
+                className="w-32 px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
+              />
+              <p className="mt-1 text-xs text-slate-400">Leeftijd telt pas mee boven deze grens. Default: 90.</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Harde bovengrens (dagen)
+              </label>
+              <input
+                type="number" min={0} step={1}
+                value={fifoForm.harde_bovengrens_dagen}
+                onChange={(e) => updateFifo('harde_bovengrens_dagen', Number(e.target.value))}
+                className="w-32 px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
+              />
+              <p className="mt-1 text-xs text-slate-400">Daarboven absolute snij-voorrang. Default: 180.</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Alpha (m² per dag boven drempel)
+              </label>
+              <input
+                type="number" min={0} step={0.01}
+                value={fifoForm.alpha}
+                onChange={(e) => updateFifo('alpha', Number(e.target.value))}
+                className="w-32 px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
+              />
+              <p className="mt-1 text-xs text-slate-400">
+                Hoeveel extra snijafval (m²) acceptabel is per dag dat een rol ouder is dan de drempel. Default: 0,05.
+              </p>
+            </div>
+          </div>
+          <div className="mt-4">
+            <p className="text-sm font-medium text-slate-700 mb-2">Badge-drempels (extra afval t.o.v. efficiëntst)</p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">Geel vanaf (m²)</label>
+                <input
+                  type="number" min={0} step={0.5}
+                  value={fifoForm.badge_geel_m2}
+                  onChange={(e) => updateFifo('badge_geel_m2', Number(e.target.value))}
+                  className="w-full px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">Geel vanaf (%)</label>
+                <input
+                  type="number" min={0} step={1}
+                  value={fifoForm.badge_geel_pct}
+                  onChange={(e) => updateFifo('badge_geel_pct', Number(e.target.value))}
+                  className="w-full px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">Rood vanaf (m²)</label>
+                <input
+                  type="number" min={0} step={0.5}
+                  value={fifoForm.badge_rood_m2}
+                  onChange={(e) => updateFifo('badge_rood_m2', Number(e.target.value))}
+                  className="w-full px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">Rood vanaf (%)</label>
+                <input
+                  type="number" min={0} step={1}
+                  value={fifoForm.badge_rood_pct}
+                  onChange={(e) => updateFifo('badge_rood_pct', Number(e.target.value))}
+                  className="w-full px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
+                />
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-slate-400">
+              Een rode badge wordt niet automatisch goedgekeurd — het voorstel blijft concept voor handmatige beoordeling.
+            </p>
+          </div>
+          </div>
+          <div className="mt-4 flex items-center gap-3">
+            <button
+              onClick={() => fifoMutation.mutate()}
+              disabled={fifoMutation.isPending || !fifoDirty}
+              className="flex items-center gap-2 px-3 py-2 rounded-[var(--radius-sm)] bg-terracotta-500 text-white text-sm font-medium hover:bg-terracotta-600 transition-colors disabled:opacity-50"
+            >
+              {fifoSaved ? <CheckCircle2 size={14} /> : <Save size={14} />}
+              {fifoMutation.isPending ? 'Opslaan...' : fifoSaved ? 'Opgeslagen!' : 'Opslaan'}
+            </button>
+            {fifoMutation.isError && (
+              <p className="text-xs text-red-600">
+                Fout: {(fifoMutation.error as Error).message}
+              </p>
+            )}
+            <p className="text-xs text-slate-400">Direct actief — geen deploy nodig.</p>
           </div>
         </div>
 

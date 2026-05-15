@@ -4,6 +4,7 @@
     "allow": [
       "mcp__claude_ai_Supabase__deploy_edge_function",
       "Bash(git fetch:*)",
+      "Bash(git push:*)",
       "Bash(supabase functions *)"
     ],
     "deny": []

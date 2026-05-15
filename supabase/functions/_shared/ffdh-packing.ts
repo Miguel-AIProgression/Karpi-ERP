@@ -26,6 +26,10 @@ export interface Roll {
   sort_priority: number // 1=reststuk, 2=beschikbaar
   is_exact: boolean     // true = exact kwaliteit match, false = uitwisselbaar
   has_existing_placements?: boolean // true als rol al Snijden-stukken heeft (nog niet in productie)
+  /** ISO-datum (YYYY-MM-DD) waarop dit materiaal het magazijn binnenkwam.
+   *  Erft door reststukken van de moederrol (mig 280-282, ADR-0021).
+   *  NULL = onbekend → packer behandelt als "heel oud" (FIFO-voorrang). */
+  in_magazijn_sinds?: string | null
 }
 
 export interface Shelf {
@@ -384,10 +388,61 @@ export interface PackingSummary {
   totaal_m2_afval: number
 }
 
+/**
+ * FIFO-magazijnleeftijd-parameters (ADR-0021). Bron: app_config.snijplanning.
+ * Alle drempels online tunebaar zonder code-deploy.
+ */
+export interface FifoOptions {
+  /** Bedrijfsmodus (ADR-0021).
+   *  - 'simpel' (default, huidige live-gedrag): strikt FIFO — altijd de
+   *    oudst-binnengekomen rol eerst, géén kost-afweging, géén badge, géén
+   *    auto-approve-carve-out. De geavanceerde laag blijft in code aanwezig
+   *    maar inactief tot de interne data op orde is.
+   *  - 'geavanceerd': volledige leeftijd-vs-snijverlies-kostfunctie + badge
+   *    + rode-badge-carve-out. */
+  modus: 'simpel' | 'geavanceerd'
+  /** Leeftijd telt pas mee bóven deze grens (dagen). */
+  drempelDagen: number
+  /** Daarboven absolute snij-voorrang binnen C1/C2 (dagen). */
+  hardeBovengrensDagen: number
+  /** m²-afval-equivalent per dag bóven de drempel. */
+  alpha: number
+  /** Vandaag als ISO-datum (YYYY-MM-DD) — expliciet voor testbaarheid. */
+  vandaag: string
+  /** Badge-drempels (extra afval t.o.v. de pure-efficiency-variant). */
+  badgeGeelM2: number
+  badgeGeelPct: number
+  badgeRoodM2: number
+  badgeRoodPct: number
+  /** C1 — rol-ids die al gereserveerd zijn voor een ander snijvoorstel.
+   *  De FIFO-voorkeur mag zo'n rol niet als nieuwe aansnijding naar voren
+   *  halen (geen verdringing). */
+  gereserveerdeRolIds?: Set<number>
+}
+
+/** Uitkomst van de leeftijd-vs-efficiency-vergelijking (ADR-0021). */
+export interface FifoMetrics {
+  badge: 'grijs' | 'geel' | 'rood'
+  extra_afval_m2: number
+  extra_afval_pct: number
+  oudste_rol_dagen: number
+  efficient_oudste_rol_dagen: number
+  rolwissels: number
+  efficient_rolwissels: number
+  rationale: Array<{
+    rol_id: number
+    rolnummer: string
+    leeftijd_dagen: number
+  }>
+  reden: string
+}
+
 export interface PackingResult {
   rollResults: RollResult[]
   nietGeplaatst: UnplacedPiece[]
   samenvatting: PackingSummary
+  /** Alleen gevuld als PackOptions.fifo is meegegeven (ADR-0021). */
+  fifoMetrics?: FifoMetrics
 }
 
 export interface PackOptions {
@@ -397,6 +452,9 @@ export interface PackOptions {
    *  Als afval > max_pct na packing, wordt de reststuk-rol verworpen
    *  (stukken gaan terug in de pool voor een andere rol). */
   maxReststukVerspillingPct?: number
+  /** FIFO-magazijnleeftijd-afweging (ADR-0021). Afwezig = legacy-gedrag
+   *  ongewijzigd (leeftijd speelt niet mee). */
+  fifo?: FifoOptions
 }
 
 /**

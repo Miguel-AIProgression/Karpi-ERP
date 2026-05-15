@@ -29,6 +29,8 @@ import type {
   PackOptions,
   PackingResult,
   Shelf,
+  FifoOptions,
+  FifoMetrics,
 } from './ffdh-packing.ts'
 import {
   calcRollStats,
@@ -733,6 +735,219 @@ function compareResults(a: PackingResult, b: PackingResult): number {
   return a.samenvatting.gemiddeld_afval_pct - b.samenvatting.gemiddeld_afval_pct
 }
 
+// ---------------------------------------------------------------------------
+// FIFO-magazijnleeftijd (ADR-0021)
+// ---------------------------------------------------------------------------
+//
+// Kleurverschil tussen tapijtrollen van dezelfde kwaliteit+kleur ontstaat puur
+// door fysieke veroudering in het magazijn. We willen oude voorraad bij
+// voorkeur eerst wegsnijden — en zijn bereid daarvoor wat extra snijverlies te
+// accepteren — maar nooit ten koste van andere orders:
+//   C1 — geen verdringing van rollen die al voor een ander voorstel gereserveerd
+//        zijn (alleen gap-fill in dezelfde groep blijft toegestaan).
+//   C2 — geen stuk mét afleverdatum laten vallen dat de pure-efficiency-variant
+//        wél tijdig plaatste (conservatieve V1: val terug op efficiency).
+//
+// De afweging is een KOSTFUNCTIE per packing-resultaat:
+//   kost = totaal_m2_afval − Σ_{gebruikte oude rol} α·max(0, leeftijd − drempel)
+//                          − OVER_CAP_BONUS · #(gebruikte rollen ≥ bovengrens)
+// Lager = beter. Een oude rol verbruiken verlaagt de kost, dus het systeem
+// accepteert tot ~α·overschrijding m² extra afval om hem eruit te snijden.
+// ---------------------------------------------------------------------------
+
+const FIFO_ONBEKEND_LEEFTIJD = 99999
+/** Rollen ≥ harde bovengrens krijgen absolute voorrang (binnen C1/C2): een
+ *  bonus die elk realistisch afval-verschil overstijgt maar klein genoeg is
+ *  om niet-geplaatste stukken (apart, eerst vergeleken) nooit te overrulen. */
+const OVER_CAP_BONUS = 1e6
+
+function rolLeeftijdDagen(
+  inMagazijnSinds: string | null | undefined,
+  vandaag: string,
+): number {
+  if (!inMagazijnSinds) return FIFO_ONBEKEND_LEEFTIJD
+  const a = Date.parse(`${inMagazijnSinds}T00:00:00Z`)
+  const b = Date.parse(`${vandaag}T00:00:00Z`)
+  if (Number.isNaN(a) || Number.isNaN(b)) return FIFO_ONBEKEND_LEEFTIJD
+  return Math.max(0, Math.floor((b - a) / 86_400_000))
+}
+
+/** C1: mag de FIFO-voorkeur deze rol naar voren halen? Een rol die al voor een
+ *  ander voorstel gereserveerd is mag niet verdrongen worden — tenzij het een
+ *  bestaande-plaatsingen-rol is (gap-fill binnen dezelfde groep, geen
+ *  verdringing). */
+function fifoPromotable(roll: Roll, fifo: FifoOptions): boolean {
+  if (!fifo.gereserveerdeRolIds || !fifo.gereserveerdeRolIds.has(roll.id)) {
+    return true
+  }
+  return roll.has_existing_placements === true
+}
+
+/** Rol-sortering met FIFO-voorrang binnen elke priority-tier: over-bovengrens
+ *  eerst, dan oudste eerst, dan kleinste oppervlak (legacy-tiebreak). Niet-
+ *  promotabele rollen (C1) doen niet mee aan de leeftijd-voorrang. */
+function makeSortRollsFifo(fifo: FifoOptions): (rolls: Roll[]) => Roll[] {
+  return (rolls: Roll[]) =>
+    [...rolls].sort((a, b) => {
+      if (a.is_exact !== b.is_exact) return a.is_exact ? -1 : 1
+      const aExisting = a.has_existing_placements ? 1 : 0
+      const bExisting = b.has_existing_placements ? 1 : 0
+      if (aExisting !== bExisting) return bExisting - aExisting
+      if (a.sort_priority !== b.sort_priority) return a.sort_priority - b.sort_priority
+      const aAge = fifoPromotable(a, fifo)
+        ? rolLeeftijdDagen(a.in_magazijn_sinds, fifo.vandaag)
+        : -1
+      const bAge = fifoPromotable(b, fifo)
+        ? rolLeeftijdDagen(b.in_magazijn_sinds, fifo.vandaag)
+        : -1
+      const aOver = aAge >= fifo.hardeBovengrensDagen ? 1 : 0
+      const bOver = bAge >= fifo.hardeBovengrensDagen ? 1 : 0
+      if (aOver !== bOver) return bOver - aOver
+      if (aAge !== bAge) return bAge - aAge
+      return a.lengte_cm * a.breedte_cm - b.lengte_cm * b.breedte_cm
+    })
+}
+
+/** Totale kost van een resultaat incl. leeftijd-reward. Lager = beter. */
+function resultTotalCost(
+  result: PackingResult,
+  fifo: FifoOptions,
+  rollById: Map<number, Roll>,
+): number {
+  let cost = result.samenvatting.totaal_m2_afval
+  for (const rr of result.rollResults) {
+    const roll = rollById.get(rr.rol_id)
+    if (!roll || !fifoPromotable(roll, fifo)) continue
+    const age = rolLeeftijdDagen(roll.in_magazijn_sinds, fifo.vandaag)
+    cost -= fifo.alpha * Math.max(0, age - fifo.drempelDagen)
+    if (age >= fifo.hardeBovengrensDagen) cost -= OVER_CAP_BONUS
+  }
+  return cost
+}
+
+/** Vergelijk resultaten mét leeftijd-kost. Negatief = `a` beter.
+ *  Niet-geplaatst blijft altijd het zwaarst (C2-bodem in de orde). */
+function compareResultsWithCost(
+  a: PackingResult,
+  b: PackingResult,
+  fifo: FifoOptions,
+  rollById: Map<number, Roll>,
+): number {
+  if (a.samenvatting.niet_geplaatst !== b.samenvatting.niet_geplaatst) {
+    return a.samenvatting.niet_geplaatst - b.samenvatting.niet_geplaatst
+  }
+  const ca = resultTotalCost(a, fifo, rollById)
+  const cb = resultTotalCost(b, fifo, rollById)
+  if (Math.abs(ca - cb) > 1e-6) return ca - cb
+  if (a.samenvatting.totaal_rollen !== b.samenvatting.totaal_rollen) {
+    return a.samenvatting.totaal_rollen - b.samenvatting.totaal_rollen
+  }
+  if (Math.abs(a.samenvatting.totaal_m2_gebruikt - b.samenvatting.totaal_m2_gebruikt) > 0.01) {
+    return a.samenvatting.totaal_m2_gebruikt - b.samenvatting.totaal_m2_gebruikt
+  }
+  return a.samenvatting.gemiddeld_afval_pct - b.samenvatting.gemiddeld_afval_pct
+}
+
+function maxLeeftijdGebruikt(
+  result: PackingResult,
+  fifo: FifoOptions,
+  rollById: Map<number, Roll>,
+): number {
+  let max = 0
+  for (const rr of result.rollResults) {
+    const roll = rollById.get(rr.rol_id)
+    if (!roll) continue
+    const age = rolLeeftijdDagen(roll.in_magazijn_sinds, fifo.vandaag)
+    if (age > max && age !== FIFO_ONBEKEND_LEEFTIJD) max = age
+    else if (age === FIFO_ONBEKEND_LEEFTIJD && max < FIFO_ONBEKEND_LEEFTIJD) max = age
+  }
+  return max
+}
+
+function geplaatsteIds(result: PackingResult): Set<number> {
+  const s = new Set<number>()
+  for (const rr of result.rollResults) {
+    for (const p of rr.plaatsingen) s.add(p.snijplan_id)
+  }
+  return s
+}
+
+function buildFifoMetrics(
+  chosen: PackingResult,
+  eff: PackingResult,
+  fifo: FifoOptions,
+  rollById: Map<number, Roll>,
+  reden: string,
+): FifoMetrics {
+  const extraRaw = chosen.samenvatting.totaal_m2_afval - eff.samenvatting.totaal_m2_afval
+  const extra = Math.max(0, Math.round(extraRaw * 100) / 100)
+  const base = eff.samenvatting.totaal_m2_afval
+  const extraPct = base > 0
+    ? Math.round((extra / base) * 1000) / 10
+    : (extra > 0 ? 100 : 0)
+
+  let badge: 'grijs' | 'geel' | 'rood' = 'grijs'
+  if (extra >= fifo.badgeRoodM2 || extraPct >= fifo.badgeRoodPct) badge = 'rood'
+  else if (extra >= fifo.badgeGeelM2 || extraPct >= fifo.badgeGeelPct) badge = 'geel'
+
+  const rationale: FifoMetrics['rationale'] = []
+  for (const rr of chosen.rollResults) {
+    const roll = rollById.get(rr.rol_id)
+    if (!roll) continue
+    const age = rolLeeftijdDagen(roll.in_magazijn_sinds, fifo.vandaag)
+    if (age > fifo.drempelDagen) {
+      rationale.push({ rol_id: rr.rol_id, rolnummer: rr.rolnummer, leeftijd_dagen: age })
+    }
+  }
+  rationale.sort((x, y) => y.leeftijd_dagen - x.leeftijd_dagen)
+
+  return {
+    badge,
+    extra_afval_m2: extra,
+    extra_afval_pct: extraPct,
+    oudste_rol_dagen: maxLeeftijdGebruikt(chosen, fifo, rollById),
+    efficient_oudste_rol_dagen: maxLeeftijdGebruikt(eff, fifo, rollById),
+    rolwissels: chosen.samenvatting.totaal_rollen,
+    efficient_rolwissels: eff.samenvatting.totaal_rollen,
+    rationale,
+    reden,
+  }
+}
+
+function leegResultaat(pieces: SnijplanPiece[]): PackingResult {
+  return {
+    rollResults: [],
+    nietGeplaatst: pieces.map((p) => ({
+      snijplan_id: p.id,
+      reden: 'Geen strategie beschikbaar',
+    })),
+    samenvatting: {
+      totaal_stukken: pieces.length,
+      geplaatst: 0,
+      niet_geplaatst: pieces.length,
+      totaal_rollen: 0,
+      gemiddeld_afval_pct: 0,
+      totaal_m2_gebruikt: 0,
+      totaal_m2_afval: 0,
+    },
+  }
+}
+
+/** Beste resultaat over de legacy-strategieën (pure efficiency, geen leeftijd). */
+function besteEfficiency(
+  sortedPieces: SnijplanPiece[],
+  rolls: Roll[],
+  pieceVormMap: Map<number, string | null>,
+  options: PackOptions,
+): PackingResult {
+  let best: PackingResult | null = null
+  for (const sortFn of [sortRolls, sortRollsLargestFirst]) {
+    const result = runGreedyPass(sortedPieces, sortFn(rolls), pieceVormMap, options)
+    if (best === null || compareResults(result, best) < 0) best = result
+  }
+  return best ?? leegResultaat(sortedPieces)
+}
+
 /**
  * Pack stukken over meerdere rollen met **multi-strategy lookahead**: draai de
  * greedy packer met verschillende rol-volgordes en kies de globaal beste
@@ -740,15 +955,20 @@ function compareResults(a: PackingResult, b: PackingResult): number {
  * aangebroken, daarna alsnog grote rol gebruikt" — met look-ahead zien we dat
  * een enkele grote rol soms volstaat en slaan die kleine rol over.
  *
- * Strategieën (minimaal 2 passes, max 2):
+ * Strategieën:
  *   - **default** (sortRolls): priority → reststuk → exact → klein-eerst.
- *     Goed voor opmaken van reststuk-voorraad en standaard-gedrag.
- *   - **largest-first** (sortRollsLargestFirst): binnen dezelfde priority-tier
- *     grootste rol eerst. Goed voor bundelen op één grote rol om extra
- *     aanbrekingen te voorkomen.
+ *   - **largest-first** (sortRollsLargestFirst): binnen tier grootste eerst.
+ *   - **fifo** (alleen als options.fifo): binnen tier oudste/over-bovengrens
+ *     eerst (ADR-0021).
  *
- * Selectie via `compareResults`: eerst minste niet-geplaatst, dan minste
- * rollen, dan minste materiaalgebruik, dan laagste afval.
+ * Zonder `options.fifo` is het gedrag identiek aan vóór mig 280-284 (selectie
+ * via `compareResults`). Mét `options.fifo`:
+ *   - Short-circuit: geen enkele promotabele rol ouder dan de drempel →
+ *     legacy-pad, badge 'grijs', 0 extra afval (dekt het ~90% verse-voorraad-
+ *     geval zonder extra rekenwerk).
+ *   - Anders: kies het leeftijd-slimme resultaat via `compareResultsWithCost`,
+ *     bereken óók de pure-efficiency-variant voor de badge, en val bij een
+ *     C2-deadlineschade conservatief terug op efficiency.
  */
 export function packAcrossRolls(
   pieces: SnijplanPiece[],
@@ -757,47 +977,97 @@ export function packAcrossRolls(
   options: PackOptions = {},
 ): PackingResult {
   const sortedPieces = sortPieces(pieces)
+  const fifo = options.fifo
 
+  // ---- Legacy-pad (ongewijzigd gedrag) ----
+  if (!fifo) {
+    let best: PackingResult | null = null
+    for (const sortFn of [sortRolls, sortRollsLargestFirst]) {
+      const result = runGreedyPass(sortedPieces, sortFn(rolls), pieceVormMap, options)
+      if (best === null || compareResults(result, best) < 0) best = result
+    }
+    const out = best ?? leegResultaat(pieces)
+    out.samenvatting.totaal_stukken = pieces.length
+    return out
+  }
+
+  // ---- Simpel-modus (huidig live-gedrag): strikt FIFO ----
+  // Altijd de oudst-binnengekomen rol eerst (binnen de bestaande priority-
+  // tiers en C1: geen verdringing van gereserveerde rollen). Géén kost-
+  // afweging, géén badge, géén carve-out — die geavanceerde laag staat hier
+  // bewust uit tot de interne data op orde is. fifoMetrics blijft leeg zodat
+  // de UI niets toont en auto-plan-groep gewoon auto-approved.
+  if (fifo.modus !== 'geavanceerd') {
+    const fifoSorted = makeSortRollsFifo(fifo)(rolls)
+    const result = runGreedyPass(sortedPieces, fifoSorted, pieceVormMap, options)
+    result.samenvatting.totaal_stukken = pieces.length
+    return result
+  }
+
+  const rollById = new Map<number, Roll>(rolls.map((r) => [r.id, r]))
+
+  // ---- Short-circuit: niets oud genoeg → legacy + grijze badge ----
+  const ietsOud = rolls.some(
+    (r) =>
+      fifoPromotable(r, fifo) &&
+      rolLeeftijdDagen(r.in_magazijn_sinds, fifo.vandaag) > fifo.drempelDagen,
+  )
+  if (!ietsOud) {
+    const eff = besteEfficiency(sortedPieces, rolls, pieceVormMap, options)
+    eff.samenvatting.totaal_stukken = pieces.length
+    eff.fifoMetrics = buildFifoMetrics(
+      eff, eff, fifo, rollById,
+      'Geen rol ouder dan de drempel — leeftijd speelde niet mee.',
+    )
+    return eff
+  }
+
+  // ---- Leeftijd-slim resultaat over alle 3 strategieën ----
   const strategies: Array<(r: Roll[]) => Roll[]> = [
     sortRolls,
     sortRollsLargestFirst,
+    makeSortRollsFifo(fifo),
   ]
-
-  let best: PackingResult | null = null
+  let ageBest: PackingResult | null = null
   for (const sortFn of strategies) {
-    const sortedRolls = sortFn(rolls)
-    const result = runGreedyPass(sortedPieces, sortedRolls, pieceVormMap, options)
-    if (best === null || compareResults(result, best) < 0) {
-      best = result
+    const result = runGreedyPass(sortedPieces, sortFn(rolls), pieceVormMap, options)
+    if (ageBest === null || compareResultsWithCost(result, ageBest, fifo, rollById) < 0) {
+      ageBest = result
     }
   }
+  ageBest = ageBest ?? leegResultaat(pieces)
 
-  // Niet-bereikbaar: sortedPieces is never null en beide strategies retourneren.
-  // Maar TS eist de narrow — bij 0 strategieën zouden we hier komen.
-  if (best === null) {
-    return {
-      rollResults: [],
-      nietGeplaatst: pieces.map((p) => ({
-        snijplan_id: p.id,
-        reden: 'Geen strategie beschikbaar',
-      })),
-      samenvatting: {
-        totaal_stukken: pieces.length,
-        geplaatst: 0,
-        niet_geplaatst: pieces.length,
-        totaal_rollen: 0,
-        gemiddeld_afval_pct: 0,
-        totaal_m2_gebruikt: 0,
-        totaal_m2_afval: 0,
-      },
-    }
+  // ---- Pure-efficiency-variant voor de badge ----
+  const eff = besteEfficiency(sortedPieces, rolls, pieceVormMap, options)
+
+  // ---- C2: laat de leeftijdskeuze geen gedateerd stuk vallen dat efficiency
+  //          wél tijdig plaatste → conservatief terugvallen op efficiency. ----
+  const afleverById = new Map<number, string | null>(
+    pieces.map((p) => [p.id, p.afleverdatum]),
+  )
+  const effGeplaatst = geplaatsteIds(eff)
+  const c2Schade = ageBest.nietGeplaatst.some(
+    (np) =>
+      afleverById.get(np.snijplan_id) != null &&
+      effGeplaatst.has(np.snijplan_id),
+  )
+
+  if (c2Schade) {
+    eff.samenvatting.totaal_stukken = pieces.length
+    eff.fifoMetrics = buildFifoMetrics(
+      eff, eff, fifo, rollById,
+      'Leeftijd-voorkeur teruggedraaid: zou een order met afleverdatum te laat maken (C2).',
+    )
+    return eff
   }
 
-  // Corrigeer totaal_stukken: runGreedyPass gebruikt sortedPieces.length wat
-  // gelijk is aan pieces.length (geen filter tussenin), maar expliciet zetten
-  // beschermt tegen toekomstige pieces-deduplicatie.
-  best.samenvatting.totaal_stukken = pieces.length
-  return best
+  ageBest.samenvatting.totaal_stukken = pieces.length
+  const metrics = buildFifoMetrics(
+    ageBest, eff, fifo, rollById,
+    ageBest.fifoMetrics ? '' : 'Oudere voorraad bij voorkeur weggesneden (FIFO).',
+  )
+  ageBest.fifoMetrics = metrics
+  return ageBest
 }
 
 // ---------------------------------------------------------------------------

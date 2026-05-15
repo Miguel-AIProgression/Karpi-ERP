@@ -192,6 +192,9 @@ export interface RolRow {
   locatie: string | null
   oorsprong_rol_id: number | null
   reststuk_datum: string | null
+  /** Datum waarop dit materiaal het magazijn binnenkwam (ADR-0021, mig 280).
+   *  Reststukken erven dit van de moederrol. NULL = onbekend (heel oud). */
+  in_magazijn_sinds: string | null
 }
 
 export interface UitwisselbarePartner {
@@ -276,12 +279,28 @@ export interface SnijvoorstelNietGeplaatst {
   reden: string
 }
 
+/** FIFO-magazijnleeftijd-badge & vergelijkingsmetrics (ADR-0021, mig 284). */
+export type FifoBadge = 'grijs' | 'geel' | 'rood'
+
+export interface SnijvoorstelFifo {
+  badge: FifoBadge
+  extra_afval_m2: number
+  extra_afval_pct: number
+  oudste_rol_dagen: number
+  efficient_oudste_rol_dagen: number
+  rolwissels: number
+  efficient_rolwissels: number
+  rationale: Array<{ rol_id: number; rolnummer: string; leeftijd_dagen: number }>
+  reden: string
+}
+
 export interface SnijvoorstelResponse {
   voorstel_id: number
   voorstel_nr: string
   rollen: SnijvoorstelRol[]
   niet_geplaatst: SnijvoorstelNietGeplaatst[]
   samenvatting: SnijvoorstelSamenvatting
+  fifo?: SnijvoorstelFifo | null
 }
 
 export type SnijvoorstelStatus = 'concept' | 'goedgekeurd' | 'verworpen'
@@ -299,6 +318,18 @@ export interface SnijvoorstelRow {
   afval_percentage: number
   aangemaakt_door: string | null
   created_at: string
+  // FIFO-magazijnleeftijd (ADR-0021, mig 284) — NULL voor pre-mig voorstellen.
+  fifo_badge: FifoBadge | null
+  extra_afval_m2: number | null
+  extra_afval_pct: number | null
+  oudste_rol_dagen: number | null
+  efficient_oudste_rol_dagen: number | null
+  rolwissels: number | null
+  efficient_rolwissels: number | null
+  fifo_rationale: {
+    reden: string
+    rollen: Array<{ rol_id: number; rolnummer: string; leeftijd_dagen: number }>
+  } | null
 }
 
 export interface SnijvoorstelPlaatsingRow {
