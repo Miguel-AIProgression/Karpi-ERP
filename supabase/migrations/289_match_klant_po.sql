@@ -89,7 +89,7 @@ BEGIN
       IF v_kwaliteit IS NULL THEN
         SELECT k.code INTO v_kwaliteit
         FROM kwaliteiten k
-        WHERE lower(trim(k.naam)) = lower(trim(v_regel->>'kwaliteit_tekst'))
+        WHERE lower(trim(k.omschrijving)) = lower(trim(v_regel->>'kwaliteit_tekst'))
         LIMIT 1;
       END IF;
     END IF;
