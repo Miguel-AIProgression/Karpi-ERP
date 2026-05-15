@@ -68,4 +68,61 @@ BEGIN
   RAISE NOTICE 'TASK2 TESTS GESLAAGD';
 END $$;
 
+DO $$
+DECLARE
+  v_rol_id BIGINT;
+  v_opp_voor NUMERIC;
+  v_opp_na   NUMERIC;
+  v_audit  RECORD;
+BEGIN
+  SELECT rol_id INTO v_rol_id FROM rol_handmatig_toevoegen(
+    'TESTROLCRUD01','volle_rol'::rol_type, 1000, 400, NULL,
+    NULL, NULL, 'seed voor bewerken', 'tester');
+  SELECT oppervlak_m2 INTO v_opp_voor FROM rollen WHERE id = v_rol_id;
+
+  -- 1. Afmeting wijzigen herberekent oppervlak + auditregel met delta.
+  PERFORM rol_handmatig_bewerken(v_rol_id, 1200, 400, NULL, 'beschikbaar',
+    'meting gecorrigeerd', 'tester');
+  SELECT oppervlak_m2 INTO v_opp_na FROM rollen WHERE id = v_rol_id;
+  ASSERT v_opp_na = ROUND(1200*400/10000.0,2), 'oppervlak na bewerken onjuist';
+  SELECT * INTO v_audit FROM rol_mutaties
+  WHERE rol_id = v_rol_id AND actie = 'bewerken';
+  ASSERT v_audit.oppervlak_delta_m2 = v_opp_na - v_opp_voor, 'bewerk-delta onjuist';
+  ASSERT v_audit.oud_json IS NOT NULL AND v_audit.nieuw_json IS NOT NULL,
+    'oud/nieuw_json ontbreekt';
+  RAISE NOTICE 'bewerken-afmeting+audit: OK';
+
+  -- 2. Negatieve delta (kleiner maken).
+  PERFORM rol_handmatig_bewerken(v_rol_id, 800, 400, NULL, 'beschikbaar',
+    'krimp', 'tester');
+  ASSERT (SELECT oppervlak_m2 FROM rollen WHERE id = v_rol_id)
+       = ROUND(800*400/10000.0,2), 'negatieve delta onjuist';
+  RAISE NOTICE 'bewerken-negatieve-delta: OK';
+
+  -- 3. Status naar in_snijplan geweigerd.
+  BEGIN
+    PERFORM rol_handmatig_bewerken(v_rol_id, 800, 400, NULL, 'in_snijplan',
+      'mag niet', 'tester');
+    RAISE EXCEPTION 'status in_snijplan had geweigerd moeten worden';
+  EXCEPTION WHEN OTHERS THEN
+    ASSERT SQLERRM LIKE '%in_snijplan%' OR SQLERRM LIKE '%status%',
+      'verkeerde fout: ' || SQLERRM;
+  END;
+  RAISE NOTICE 'bewerken-status-geweigerd: OK';
+
+  -- 4. Bewerken van een gereserveerde rol geweigerd.
+  UPDATE rollen SET status = 'gereserveerd' WHERE id = v_rol_id;
+  BEGIN
+    PERFORM rol_handmatig_bewerken(v_rol_id, 900, 400, NULL, 'beschikbaar',
+      'mag niet', 'tester');
+    RAISE EXCEPTION 'bewerken gereserveerde rol had geweigerd moeten worden';
+  EXCEPTION WHEN OTHERS THEN
+    ASSERT SQLERRM LIKE '%gereserveerd%' OR SQLERRM LIKE '%snijplan%'
+        OR SQLERRM LIKE '%niet bewerk%', 'verkeerde fout: ' || SQLERRM;
+  END;
+  RAISE NOTICE 'bewerken-gereserveerde-rol-geweigerd: OK';
+
+  RAISE NOTICE 'TASK3 TESTS GESLAAGD';
+END $$;
+
 ROLLBACK;
