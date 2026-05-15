@@ -650,14 +650,27 @@ describe('mapMatchNaarPrefill', () => {
     expect(p.header.klant_referentie).toBe('06092093')
   })
 
-  it('parset leverweek "29-2026" naar week', () => {
-    const p = mapMatchNaarPrefill(baseMatch)
+  it('parset leverweek "29-2026" naar week + afleverdatum', () => {
+    const p = mapMatchNaarPrefill(baseMatch) // leverdatum_tekst = '29-2026'
     expect(p.header.week).toBe('29')
+    expect(p.header.afleverdatum).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(p.header.afleverdatum).toBe(verzendWeekStringToDatum('2026-W29'))
+    expect(p.samenvatting.weekBekend).toBe(true)
+  })
+
+  // Correctie I1: "wk 29" zonder jaar zet géén afleverdatum (geen trustworthy datum)
+  it('laat week + afleverdatum leeg bij "wk 29" zonder jaar', () => {
+    const p = mapMatchNaarPrefill({ ...baseMatch, leverdatum_tekst: 'wk 29' })
+    expect(p.header.week).toBeUndefined()
+    expect(p.header.afleverdatum).toBeUndefined()
+    expect(p.samenvatting.weekBekend).toBe(false)
   })
 
   it('laat week leeg bij niet-weekteksten', () => {
     const p = mapMatchNaarPrefill({ ...baseMatch, leverdatum_tekst: 'zo snel mogelijk' })
     expect(p.header.week).toBeUndefined()
+    expect(p.header.afleverdatum).toBeUndefined()
+    expect(p.samenvatting.weekBekend).toBe(false)
   })
 
   it('vult afleveradres als concept (altijd)', () => {
@@ -773,22 +786,37 @@ export interface PoPrefill {
  * "NN-YYYY"/"YYYY-NN"-vorm (scheiding `-` of `/`). Geen match -> null
  * (conform "alleen zeker voorvullen": liever leeg dan een foute week).
  * ISO 8601 lange jaren hebben max week 53.
+ *
+ * Returns { week, jaar } where jaar is null when no 4-digit year was found.
+ * A week without a year cannot safely be converted to a date, so only
+ * { week, jaar: number } triggers header.afleverdatum prefill.
  */
-function geldigeWeek(n: number): string | null {
-  return Number.isInteger(n) && n >= 1 && n <= 53 ? String(n) : null
+function geldigeWeekNr(n: number): number | null {
+  return Number.isInteger(n) && n >= 1 && n <= 53 ? n : null
 }
-function parseWeek(tekst: string | null): string | null {
+function parseWeek(tekst: string | null): { week: number; jaar: number | null } | null {
   if (!tekst) return null
   const t = tekst.toLowerCase()
   // 1. Expliciete week-context ("wk"/"week"/"leverweek", optioneel punt).
   const ctx = t.match(/\b(?:lever)?w(?:ee)?k\.?\s*(\d{1,2})\b/)
-  if (ctx) return geldigeWeek(Number(ctx[1]))
+  if (ctx) {
+    const week = geldigeWeekNr(Number(ctx[1]))
+    if (week === null) return null
+    // Capture a 4-digit year 20xx if present anywhere in the string.
+    const jaarMatch = t.match(/\b(20\d{2})\b/)
+    const jaar = jaarMatch ? Number(jaarMatch[1]) : null
+    return { week, jaar }
+  }
   // 2. Kale NN-YYYY / YYYY-NN (separator - of /).
   const m =
     t.match(/\b(\d{1,2})\s*[-/]\s*(20\d{2})\b/) ||
     t.match(/\b(20\d{2})\s*[-/]\s*(\d{1,2})\b/)
   if (!m) return null
-  return geldigeWeek(Number(m[2].length === 4 ? m[1] : m[2]))
+  const rawWeek = m[2].length === 4 ? m[1] : m[2]
+  const rawJaar = m[2].length === 4 ? m[2] : m[1]
+  const week = geldigeWeekNr(Number(rawWeek))
+  if (week === null) return null
+  return { week, jaar: Number(rawJaar) }
 }
 
 export function mapMatchNaarPrefill(match: PoMatchResultaat): PoPrefill {
@@ -796,8 +824,19 @@ export function mapMatchNaarPrefill(match: PoMatchResultaat): PoPrefill {
 
   if (match.klant_referentie) header.klant_referentie = match.klant_referentie
 
-  const week = parseWeek(match.leverdatum_tekst)
-  if (week) header.week = week
+  const wk = parseWeek(match.leverdatum_tekst)
+  let afleverdatumSet = false
+  if (wk && wk.jaar != null) {
+    const isoWeek = `${wk.jaar}-W${String(wk.week).padStart(2, '0')}`
+    const afleverdatum = verzendWeekStringToDatum(isoWeek)
+    if (afleverdatum != null) {
+      header.afleverdatum = afleverdatum
+      header.week = String(wk.week)
+      afleverdatumSet = true
+    }
+  }
+  // If wk exists but jaar is null, or verzendWeekStringToDatum returned null:
+  // set neither header.week nor header.afleverdatum (can't produce a trustworthy date).
 
   // Afleveradres is altijd vrije tekst -> als concept voorvullen.
   if (match.afleveradres) {
@@ -858,7 +897,7 @@ export function mapMatchNaarPrefill(match: PoMatchResultaat): PoPrefill {
       debiteurNr: match.debiteur.debiteur_nr,
       regelsGematcht: gematcht,
       regelsConcept: concept,
-      weekBekend: !!week,
+      weekBekend: afleverdatumSet,
       spoed: match.spoed,
     },
   }
@@ -1320,6 +1359,8 @@ export function OrderCreatePage() {
 
 Run: `grep -n "initialData?\|orderId: number\|mode === 'create'\|deleteOrder(initialData" frontend/src/components/orders/order-form.tsx | head`
 Expected: `initialData` is optioneel en wordt in create-mode alleen gelezen voor `client/header/regels` (regels 61-63). `deleteOrder(initialData!.orderId)` en `initialData!.orderId` worden alleen in de edit-tak (`mode === 'edit'`) bereikt. `orderId: 0` is daardoor veilig als sentinel in create-mode. Als deze aanname niet klopt: stop en meld het — dan is een kleine guard in `order-form.tsx` nodig (`mode === 'create'` mag `initialData.orderId` nooit gebruiken).
+
+**Correctie (code-review I1, 2026-05-15):** `mapMatchNaarPrefill` leidt `header.afleverdatum` af via `verzendWeekStringToDatum` (alleen wanneer het jaar bekend is). Om te voorkomen dat `applyAfleverdatum` in `order-form.tsx` de voorgevulde afleverdatum overschrijft, is `afleverdatumOverridden` uitgebreid: initieel `() => !!initialData?.header?.afleverdatum` (was `mode === 'edit' && ...`). Een prefilled afleverdatum wordt daarmee als expliciet behandeld — `applyAfleverdatum` slaat over. `order-create.tsx` is de enige create-mode-aanroep van `<OrderForm>`; hij geeft alleen `initialData` door wanneer `prefill` gevuld is (PO-parse-pad). Geen andere create-mode-aanroeper geeft `initialData` met `afleverdatum` door.
 
 - [ ] **Step 3: Type-check + lint + run tests**
 

@@ -1,4 +1,5 @@
 import type { OrderFormData, OrderRegelFormData } from '@/lib/supabase/queries/order-mutations'
+import { verzendWeekStringToDatum } from '@/lib/orders/verzendweek'
 
 /** Eén regel zoals match_klant_po die teruggeeft. */
 export interface PoMatchRegel {
@@ -55,22 +56,35 @@ export interface PoPrefill {
  * "NN-YYYY"/"YYYY-NN"-vorm (scheiding `-` of `/`). Geen match -> null
  * (conform "alleen zeker voorvullen": liever leeg dan een foute week).
  * ISO 8601 lange jaren hebben max week 53.
+ *
+ * Returns { week, jaar } where jaar is null when no 4-digit year was found.
  */
-function geldigeWeek(n: number): string | null {
-  return Number.isInteger(n) && n >= 1 && n <= 53 ? String(n) : null
+function geldigeWeekNr(n: number): number | null {
+  return Number.isInteger(n) && n >= 1 && n <= 53 ? n : null
 }
-function parseWeek(tekst: string | null): string | null {
+function parseWeek(tekst: string | null): { week: number; jaar: number | null } | null {
   if (!tekst) return null
   const t = tekst.toLowerCase()
   // 1. Expliciete week-context ("wk"/"week"/"leverweek", optioneel punt).
   const ctx = t.match(/\b(?:lever)?w(?:ee)?k\.?\s*(\d{1,2})\b/)
-  if (ctx) return geldigeWeek(Number(ctx[1]))
+  if (ctx) {
+    const week = geldigeWeekNr(Number(ctx[1]))
+    if (week === null) return null
+    // Capture a 4-digit year 20xx if present anywhere in the string.
+    const jaarMatch = t.match(/\b(20\d{2})\b/)
+    const jaar = jaarMatch ? Number(jaarMatch[1]) : null
+    return { week, jaar }
+  }
   // 2. Kale NN-YYYY / YYYY-NN (separator - of /).
   const m =
     t.match(/\b(\d{1,2})\s*[-/]\s*(20\d{2})\b/) ||
     t.match(/\b(20\d{2})\s*[-/]\s*(\d{1,2})\b/)
   if (!m) return null
-  return geldigeWeek(Number(m[2].length === 4 ? m[1] : m[2]))
+  const rawWeek = m[2].length === 4 ? m[1] : m[2]
+  const rawJaar = m[2].length === 4 ? m[2] : m[1]
+  const week = geldigeWeekNr(Number(rawWeek))
+  if (week === null) return null
+  return { week, jaar: Number(rawJaar) }
 }
 
 export function mapMatchNaarPrefill(match: PoMatchResultaat): PoPrefill {
@@ -78,8 +92,19 @@ export function mapMatchNaarPrefill(match: PoMatchResultaat): PoPrefill {
 
   if (match.klant_referentie) header.klant_referentie = match.klant_referentie
 
-  const week = parseWeek(match.leverdatum_tekst)
-  if (week) header.week = week
+  const wk = parseWeek(match.leverdatum_tekst)
+  let afleverdatumSet = false
+  if (wk && wk.jaar != null) {
+    const isoWeek = `${wk.jaar}-W${String(wk.week).padStart(2, '0')}`
+    const afleverdatum = verzendWeekStringToDatum(isoWeek)
+    if (afleverdatum != null) {
+      header.afleverdatum = afleverdatum
+      header.week = String(wk.week)
+      afleverdatumSet = true
+    }
+  }
+  // If wk exists but jaar is null, or verzendWeekStringToDatum returned null:
+  // set neither header.week nor header.afleverdatum (can't produce a trustworthy date).
 
   // Afleveradres is altijd vrije tekst -> als concept voorvullen.
   if (match.afleveradres) {
@@ -140,7 +165,7 @@ export function mapMatchNaarPrefill(match: PoMatchResultaat): PoPrefill {
       debiteurNr: match.debiteur.debiteur_nr,
       regelsGematcht: gematcht,
       regelsConcept: concept,
-      weekBekend: !!week,
+      weekBekend: afleverdatumSet,
       spoed: match.spoed,
     },
   }

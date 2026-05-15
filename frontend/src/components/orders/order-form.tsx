@@ -66,7 +66,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
     initialData?.client?.deelleveringen_toegestaan ?? false
   )
   const [afleverdatumOverridden, setAfleverdatumOverridden] = useState<boolean>(
-    () => mode === 'edit' && !!initialData?.header?.afleverdatum
+    () => !!initialData?.header?.afleverdatum
   )
   const [spoedActief, setSpoedActief] = useState<boolean>(
     () => mode === 'edit' && (initialData?.regels ?? []).some(r => r.artikelnr === SPOED_PRODUCT_ID)

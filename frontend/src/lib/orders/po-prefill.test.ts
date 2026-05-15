@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { mapMatchNaarPrefill, type PoMatchResultaat } from './po-prefill'
+import { verzendWeekStringToDatum } from './verzendweek'
 
 const baseMatch: PoMatchResultaat = {
   debiteur: { debiteur_nr: null, zeker: false },
@@ -17,14 +18,49 @@ describe('mapMatchNaarPrefill', () => {
     expect(p.header.klant_referentie).toBe('06092093')
   })
 
-  it('parset leverweek "29-2026" naar week', () => {
-    const p = mapMatchNaarPrefill(baseMatch)
+  it('parset leverweek "29-2026" naar week + afleverdatum', () => {
+    const p = mapMatchNaarPrefill(baseMatch) // leverdatum_tekst = '29-2026'
     expect(p.header.week).toBe('29')
+    expect(p.header.afleverdatum).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(p.header.afleverdatum).toBe(verzendWeekStringToDatum('2026-W29'))
+    expect(p.samenvatting.weekBekend).toBe(true)
+  })
+
+  it('parset swap-vorm "2026-29" naar week + afleverdatum', () => {
+    const p = mapMatchNaarPrefill({ ...baseMatch, leverdatum_tekst: 'Leverweek verwacht: 2026-29' })
+    expect(p.header.week).toBe('29')
+    expect(p.header.afleverdatum).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(p.header.afleverdatum).toBe(verzendWeekStringToDatum('2026-W29'))
+    expect(p.samenvatting.weekBekend).toBe(true)
+  })
+
+  it('laat week + afleverdatum leeg bij "wk 29" zonder jaar', () => {
+    const p = mapMatchNaarPrefill({ ...baseMatch, leverdatum_tekst: 'wk 29' })
+    expect(p.header.week).toBeUndefined()
+    expect(p.header.afleverdatum).toBeUndefined()
+    expect(p.samenvatting.weekBekend).toBe(false)
+  })
+
+  it('laat week + afleverdatum leeg bij "week 29" zonder jaar', () => {
+    const p = mapMatchNaarPrefill({ ...baseMatch, leverdatum_tekst: 'week 29' })
+    expect(p.header.week).toBeUndefined()
+    expect(p.header.afleverdatum).toBeUndefined()
+    expect(p.samenvatting.weekBekend).toBe(false)
+  })
+
+  it('parset "leverweek 29 2026" (jaar aanwezig) naar afleverdatum', () => {
+    const p = mapMatchNaarPrefill({ ...baseMatch, leverdatum_tekst: 'leverweek 29 2026' })
+    expect(p.header.week).toBe('29')
+    expect(p.header.afleverdatum).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(p.header.afleverdatum).toBe(verzendWeekStringToDatum('2026-W29'))
+    expect(p.samenvatting.weekBekend).toBe(true)
   })
 
   it('laat week leeg bij niet-weekteksten', () => {
     const p = mapMatchNaarPrefill({ ...baseMatch, leverdatum_tekst: 'zo snel mogelijk' })
     expect(p.header.week).toBeUndefined()
+    expect(p.header.afleverdatum).toBeUndefined()
+    expect(p.samenvatting.weekBekend).toBe(false)
   })
 
   it('vult afleveradres als concept (altijd)', () => {
@@ -65,20 +101,14 @@ describe('mapMatchNaarPrefill', () => {
     expect(p.samenvatting.debiteurZeker).toBe(true)
   })
 
-  it('parset swap-vorm "2026-29" naar week', () => {
-    const p = mapMatchNaarPrefill({ ...baseMatch, leverdatum_tekst: 'Leverweek verwacht: 2026-29' })
-    expect(p.header.week).toBe('29')
-    expect(p.samenvatting.weekBekend).toBe(true)
-  })
-
   it.each([
-    ['wk 29', '29'],
-    ['week 29', '29'],
-    ['leverweek 29 2026', '29'],
     ['week 29/2026', '29'],
     ['05-2026', '5'],
-  ])('parset week-context "%s" -> %s', (tekst, verwacht) => {
-    expect(mapMatchNaarPrefill({ ...baseMatch, leverdatum_tekst: tekst }).header.week).toBe(verwacht)
+  ])('parset week-met-jaar "%s" -> week %s en afleverdatum set', (tekst, verwachtWeek) => {
+    const p = mapMatchNaarPrefill({ ...baseMatch, leverdatum_tekst: tekst })
+    expect(p.header.week).toBe(verwachtWeek)
+    expect(p.header.afleverdatum).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(p.samenvatting.weekBekend).toBe(true)
   })
 
   it.each(['2026', '00-2026', '99-2026', 'werk 12', 'zo snel mogelijk', null])(
@@ -86,6 +116,7 @@ describe('mapMatchNaarPrefill', () => {
     (tekst) => {
       const p = mapMatchNaarPrefill({ ...baseMatch, leverdatum_tekst: tekst as string | null })
       expect(p.header.week).toBeUndefined()
+      expect(p.header.afleverdatum).toBeUndefined()
       expect(p.samenvatting.weekBekend).toBe(false)
     },
   )
