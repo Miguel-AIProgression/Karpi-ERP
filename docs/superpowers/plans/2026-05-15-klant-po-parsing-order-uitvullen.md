@@ -1122,9 +1122,12 @@ interface Props {
 
 export function PoPrefillBanner({ bestandsnaam, samenvatting: s, onClose }: Props) {
   return (
-    <div className="mb-4 rounded-[var(--radius)] border border-terracotta-200 bg-terracotta-50 px-4 py-3">
+    <div
+      role="status"
+      className="mb-4 rounded-[var(--radius)] border border-terracotta-200 bg-terracotta-50 px-4 py-3"
+    >
       <div className="flex items-start gap-3">
-        <CheckCircle2 size={18} className="text-terracotta-600 mt-0.5 shrink-0" />
+        <CheckCircle2 size={18} aria-hidden className="text-terracotta-600 mt-0.5 shrink-0" />
         <div className="flex-1 text-sm text-slate-700">
           <div className="font-medium text-slate-900">
             Order voorgevuld uit “{bestandsnaam}”
@@ -1143,12 +1146,12 @@ export function PoPrefillBanner({ bestandsnaam, samenvatting: s, onClose }: Prop
             <li>Leverweek: {s.weekBekend ? 'overgenomen' : 'onbekend — vul handmatig'}</li>
             {s.spoed && (
               <li className="flex items-center gap-1 text-amber-700 font-medium">
-                <Zap size={13} /> Spoed gedetecteerd — zet de spoed-toggle aan indien nodig
+                <Zap size={13} aria-hidden /> Spoed gedetecteerd — zet de spoed-toggle aan indien nodig
               </li>
             )}
             {!s.debiteurZeker && (
               <li className="flex items-center gap-1 text-amber-700">
-                <AlertTriangle size={13} /> Controleer alle voorgevulde velden vóór opslaan
+                <AlertTriangle size={13} aria-hidden /> Controleer alle voorgevulde velden vóór opslaan
               </li>
             )}
           </ul>
@@ -1158,8 +1161,9 @@ export function PoPrefillBanner({ bestandsnaam, samenvatting: s, onClose }: Prop
           onClick={onClose}
           className="p-1 text-slate-400 hover:text-slate-700 rounded shrink-0"
           title="Sluiten"
+          aria-label="Sluiten"
         >
-          <X size={16} />
+          <X size={16} aria-hidden />
         </button>
       </div>
     </div>
