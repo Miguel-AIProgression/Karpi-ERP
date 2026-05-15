@@ -4,7 +4,7 @@
 
 **Goal:** Eén klik op een gebufferd klant-PO-PDF op de order-aanmaakpagina parseert het document en vult de order-form vooraf met alleen de velden waarvan we zeker zijn.
 
-**Architecture:** Edge function `parse-klant-po` stuurt de PDF naar de Claude API voor vormvrije ruwe-tekst-extractie, roept daarna de deterministische Postgres-RPC `match_klant_po` aan voor de koppeling (debiteur via btw/email/naam, kwaliteit via `resolve_klanteigen_naam`, artikel via `klant_artikelnummers`/`producten`), en geeft per veld een zekerheidslabel terug. De frontend mapt alleen `zeker`-velden naar `OrderForm.initialData` en hermount de form.
+**Architecture:** Edge function `parse-klant-po` stuurt de PDF naar de Claude API voor vormvrije ruwe-tekst-extractie, roept daarna de deterministische Postgres-RPC `match_klant_po` aan voor de koppeling (debiteur via btw/email/naam, kwaliteit via reverse-lookup op `klanteigen_namen.benaming` debiteur-/inkoopgroep-scoped + exacte `kwaliteiten.omschrijving`, artikel via `klant_artikelnummers`/`producten`), en geeft per veld een zekerheidslabel terug. De frontend mapt alleen `zeker`-velden naar `OrderForm.initialData` en hermount de form.
 
 **Tech Stack:** Supabase Edge Function (Deno), Anthropic Messages API (PDF document block + prompt caching), PostgreSQL RPC (PL/pgSQL), React + TanStack Query + vitest, Deno std test.
 
@@ -367,15 +367,21 @@ BEGIN
       IF v_artikelnr IS NOT NULL THEN v_regel_zeker := true; END IF;
     END IF;
 
-    -- 2. Kwaliteit via klanteigen naam (debiteur-scope) of exacte kwaliteitsnaam.
+    -- 2. Kwaliteit via klanteigen naam (reverse lookup benaming -> code),
+    --    debiteur- OF inkoopgroep-scoped (mig 200: XOR debiteur_nr/inkoopgroep_code).
+    --    Precedentie: klant boven inkoopgroep, kleur-specifiek boven kleur-NULL.
+    --    Daarna exacte kwaliteitsnaam.
     IF v_artikelnr IS NULL AND coalesce(v_regel->>'kwaliteit_tekst','') <> '' THEN
       IF v_debiteur_zeker THEN
         SELECT kn.kwaliteit_code INTO v_kwaliteit
         FROM klanteigen_namen kn
-        WHERE kn.debiteur_nr = v_debiteur_nr
+        WHERE (
+              kn.debiteur_nr = v_debiteur_nr
+           OR kn.inkoopgroep_code = (SELECT inkoopgroep_code FROM debiteuren WHERE debiteur_nr = v_debiteur_nr)
+          )
           AND lower(trim(kn.benaming)) = lower(trim(v_regel->>'kwaliteit_tekst'))
           AND (kn.kleur_code IS NULL OR kn.kleur_code = v_kleur)
-        ORDER BY kn.kleur_code NULLS LAST
+        ORDER BY (kn.debiteur_nr IS NOT NULL) DESC, kn.kleur_code NULLS LAST
         LIMIT 1;
       END IF;
       IF v_kwaliteit IS NULL THEN
@@ -436,6 +442,8 @@ GRANT EXECUTE ON FUNCTION match_klant_po(jsonb) TO anon, authenticated, service_
 
 COMMENT ON FUNCTION match_klant_po(jsonb) IS
   'Klant-PO parsing: deterministische koppel-laag. Input = ruwe extractie (po-extract.ts), output = order-velden met per stuk zekerheidslabel. Zie docs/superpowers/specs/2026-05-15-klant-po-parsing-order-uitvullen-design.md';
+
+NOTIFY pgrst, 'reload schema';
 ```
 
 - [ ] **Step 2: Write the self-test SQL script**
@@ -1308,7 +1316,8 @@ Voeg bovenaan de meest recente sectie in `docs/changelog.md` een datumregel `202
 ### 2026-05-15 — Klant-PO parsen en order auto-uitvullen
 - Edge function `parse-klant-po`: Claude-extractie (PDF) + deterministische match-RPC.
 - Migratie 289: RPC `match_klant_po(jsonb)` — debiteur via btw/email/naam, kwaliteit via
-  `resolve_klanteigen_naam`, artikel via `klant_artikelnummers`/`producten`; per veld een
+  reverse-lookup op `klanteigen_namen.benaming` (debiteur-/inkoopgroep-scoped) + exacte
+  `kwaliteiten.omschrijving`, artikel via `klant_artikelnummers`/`producten`; per veld een
   zekerheidslabel. Alleen `zeker`-velden worden in de order-form voorgevuld.
 - UI: "📄 Order uitvullen"-knop per PDF in `DocumentenBuffer` + samenvattingsbanner.
 - Vereist secret `ANTHROPIC_API_KEY` op de edge-functie-omgeving.
@@ -1337,7 +1346,8 @@ Voeg in `docs/database-schema.md` in de functies/RPC-sectie (zoek op `### Functi
 ```markdown
 - `match_klant_po(p_extractie jsonb) → jsonb` (mig 289) — Klant-PO parsing: deterministische
   koppel-laag. Debiteur-match btw → e-maildomein → exacte naam (telkens precies 1 hit = `zeker`);
-  per regel klant-artikelnr → kwaliteit (`resolve_klanteigen_naam`/`kwaliteiten`) + kleur (numeriek
+  per regel klant-artikelnr → kwaliteit (reverse-lookup `klanteigen_namen.benaming`
+  debiteur-/inkoopgroep-scoped, daarna exacte `kwaliteiten.omschrijving`) + kleur (numeriek
   suffix) → catalogus-`producten` of maatwerk-specs. STABLE, geen side-effects.
 ```
 

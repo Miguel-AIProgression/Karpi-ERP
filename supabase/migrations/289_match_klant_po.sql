@@ -75,15 +75,21 @@ BEGIN
       IF v_artikelnr IS NOT NULL THEN v_regel_zeker := true; END IF;
     END IF;
 
-    -- 2. Kwaliteit via klanteigen naam (debiteur-scope) of exacte kwaliteitsnaam.
+    -- 2. Kwaliteit via klanteigen naam (reverse lookup benaming -> code),
+    --    debiteur- OF inkoopgroep-scoped (mig 200: XOR debiteur_nr/inkoopgroep_code).
+    --    Precedentie volgt klanteigen_namen-resolutie: klant boven inkoopgroep,
+    --    kleur-specifiek boven kleur-NULL-fallback. Daarna exacte kwaliteitsnaam.
     IF v_artikelnr IS NULL AND coalesce(v_regel->>'kwaliteit_tekst','') <> '' THEN
       IF v_debiteur_zeker THEN
         SELECT kn.kwaliteit_code INTO v_kwaliteit
         FROM klanteigen_namen kn
-        WHERE kn.debiteur_nr = v_debiteur_nr
+        WHERE (
+              kn.debiteur_nr = v_debiteur_nr
+           OR kn.inkoopgroep_code = (SELECT inkoopgroep_code FROM debiteuren WHERE debiteur_nr = v_debiteur_nr)
+          )
           AND lower(trim(kn.benaming)) = lower(trim(v_regel->>'kwaliteit_tekst'))
           AND (kn.kleur_code IS NULL OR kn.kleur_code = v_kleur)
-        ORDER BY kn.kleur_code NULLS LAST
+        ORDER BY (kn.debiteur_nr IS NOT NULL) DESC, kn.kleur_code NULLS LAST
         LIMIT 1;
       END IF;
       IF v_kwaliteit IS NULL THEN
@@ -144,3 +150,5 @@ GRANT EXECUTE ON FUNCTION match_klant_po(jsonb) TO anon, authenticated, service_
 
 COMMENT ON FUNCTION match_klant_po(jsonb) IS
   'Klant-PO parsing: deterministische koppel-laag. Input = ruwe extractie (po-extract.ts), output = order-velden met per stuk zekerheidslabel. Zie docs/superpowers/specs/2026-05-15-klant-po-parsing-order-uitvullen-design.md';
+
+NOTIFY pgrst, 'reload schema';

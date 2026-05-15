@@ -26,9 +26,10 @@ Room108, De Groot Wonen). Bevindingen:
 | Regel-aanduiding | Zelden Karpi-artikelnr. Meestal kwaliteitnaam (PLUSH/Luxury/Cavaro/Vernon) + kleur (nummer of "Iron Grey 15") + maat (160×230 … 240×340) + soms vorm. |
 
 **Sleutelvondst:** de DB heeft de tabellen om dit deterministisch op te lossen:
-`debiteuren.btw_nummer` + e-mailkolommen; `klanteigen_namen` (+ RPC
-`resolve_klanteigen_naam(debiteur_nr, kwaliteit, kleur)`) mapt klant-kwaliteitnamen →
-`kwaliteit_code`; `klant_artikelnummers` mapt klantcodes → `artikelnr`; `producten`
+`debiteuren.btw_nummer` + e-mailkolommen; `klanteigen_namen` (reverse-lookup op
+`benaming`, debiteur-/inkoopgroep-scoped) + exacte `kwaliteiten.omschrijving` mappen
+klant-kwaliteitnamen → `kwaliteit_code`; `klant_artikelnummers` mapt klantcodes →
+`artikelnr`; `producten`
 (`karpi_code`, `kwaliteit_code`, `kleur_code`, `lengte_cm`, `breedte_cm`, `vorm`) levert
 de catalogusmatch.
 
@@ -107,8 +108,9 @@ voorgevuld in de order-form.**
 - **Per regel:**
   1. `klant_artikelnr` aanwezig → `klant_artikelnummers` (gescoped op gematchte
      debiteur) → `artikelnr` = `zeker`.
-  2. Anders: `kwaliteit_tekst` → `resolve_klanteigen_naam(debiteur, kwaliteit, kleur)`
-     óf exacte `kwaliteiten`-naam → `kwaliteit_code`. Kleurcode = numeriek deel uit
+  2. Anders: `kwaliteit_tekst` → reverse-lookup op `klanteigen_namen.benaming`
+     (debiteur- óf inkoopgroep-scoped) óf exacte `kwaliteiten.omschrijving`
+     → `kwaliteit_code`. Kleurcode = numeriek deel uit
      `kleur_tekst` (bv. "Iron Grey 15" → `15`, "linnen grey 13" → `13`).
   3. Met `(kwaliteit_code, kleur_code, lengte_cm, breedte_cm)`:
      - bestaat catalogus-`producten`-rij → `artikelnr` = `zeker`;
