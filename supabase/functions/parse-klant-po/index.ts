@@ -33,13 +33,19 @@ serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
   )
 
+  // ---- Request-body (malformed body = 400, niet 500) ----
+  let body: { pdf_base64?: string; bestandsnaam?: string }
   try {
-    const body = await req.json() as { pdf_base64?: string; bestandsnaam?: string }
-    if (!body.pdf_base64) {
-      return jsonResponse({ error: 'pdf_base64 is verplicht' }, 400)
-    }
-    const bestandsnaam = body.bestandsnaam ?? 'order.pdf'
+    body = await req.json() as { pdf_base64?: string; bestandsnaam?: string }
+  } catch {
+    return jsonResponse({ error: 'Ongeldige request-body (verwacht JSON)' }, 400)
+  }
+  if (!body.pdf_base64) {
+    return jsonResponse({ error: 'pdf_base64 is verplicht' }, 400)
+  }
+  const bestandsnaam = body.bestandsnaam ?? 'order.pdf'
 
+  try {
     // ---- 1. Claude-extractie ----
     const anthropicReq = buildAnthropicRequest(body.pdf_base64, bestandsnaam)
     const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
@@ -52,11 +58,22 @@ serve(async (req) => {
       body: JSON.stringify(anthropicReq),
     })
     if (!aiRes.ok) {
+      // Upstream-detail loggen voor observability, NIET teruggeven aan de client.
       const detail = await aiRes.text()
-      return jsonResponse({ error: `Claude-extractie mislukt (${aiRes.status})`, detail }, 502)
+      console.error('parse-klant-po anthropic-fout:', aiRes.status, detail)
+      return jsonResponse({ error: `Claude-extractie mislukt (status ${aiRes.status})` }, 502)
     }
-    const aiJson = await aiRes.json()
-    const extractie = parsePoExtractie(aiJson)
+
+    // Niet-JSON of schema-mismatch op een 200 is een upstream-contentfout → 502.
+    let extractie
+    try {
+      const aiJson = await aiRes.json()
+      extractie = parsePoExtractie(aiJson)
+    } catch (parseErr) {
+      const m = parseErr instanceof Error ? parseErr.message : String(parseErr)
+      console.error('parse-klant-po extractie-fout:', m)
+      return jsonResponse({ error: `Claude-respons onbruikbaar: ${m}` }, 502)
+    }
 
     // ---- 2. Deterministische match ----
     const { data: match, error: rpcErr } = await supabase.rpc('match_klant_po', {
