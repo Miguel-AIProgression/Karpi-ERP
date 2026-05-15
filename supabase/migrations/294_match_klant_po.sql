@@ -1,4 +1,4 @@
--- Migratie 289: match_klant_po
+-- Migratie 294: match_klant_po
 -- Deterministische koppel-laag voor klant-PO parsing (ADR-loze utility-RPC).
 -- Input  = ruwe extractie (jsonb) zoals po-extract.ts die produceert.
 -- Output = voorgestelde order-velden; debiteur en elke regel met een eigen
@@ -31,10 +31,12 @@ BEGIN
   END IF;
 
   -- ---- Debiteur: btw > e-maildomein > exacte naam, telkens precies 1 hit ----
+  -- alleen actieve debiteuren (geen archief-false-positives)
   IF v_btw <> '' THEN
     SELECT debiteur_nr INTO v_debiteur_nr
     FROM debiteuren
     WHERE upper(regexp_replace(coalesce(btw_nummer,''), '[^A-Za-z0-9]', '', 'g')) = v_btw
+      AND status = 'Actief'
     LIMIT 2;
     GET DIAGNOSTICS v_cnt = ROW_COUNT;
     IF v_cnt = 1 THEN v_debiteur_zeker := true; ELSE v_debiteur_nr := NULL; END IF;
@@ -43,16 +45,18 @@ BEGIN
   IF NOT v_debiteur_zeker AND v_email_domein IS NOT NULL AND v_email_domein <> '' THEN
     SELECT count(*), min(debiteur_nr) INTO v_cnt, v_debiteur_nr
     FROM debiteuren
-    WHERE lower(coalesce(email_factuur,'')) LIKE '%@'||v_email_domein
-       OR lower(coalesce(email_overig,''))  LIKE '%@'||v_email_domein
-       OR lower(coalesce(email_2,''))       LIKE '%@'||v_email_domein;
+    WHERE status = 'Actief'
+      AND (   lower(coalesce(email_factuur,'')) LIKE '%@'||v_email_domein
+           OR lower(coalesce(email_overig,''))  LIKE '%@'||v_email_domein
+           OR lower(coalesce(email_2,''))       LIKE '%@'||v_email_domein);
     IF v_cnt = 1 THEN v_debiteur_zeker := true; ELSE v_debiteur_nr := NULL; END IF;
   END IF;
 
   IF NOT v_debiteur_zeker AND v_naam_norm <> '' THEN
     SELECT count(*), min(debiteur_nr) INTO v_cnt, v_debiteur_nr
     FROM debiteuren
-    WHERE upper(regexp_replace(coalesce(naam,''), '\s+', ' ', 'g')) = v_naam_norm;
+    WHERE upper(regexp_replace(coalesce(naam,''), '\s+', ' ', 'g')) = v_naam_norm
+      AND status = 'Actief';
     IF v_cnt = 1 THEN v_debiteur_zeker := true; ELSE v_debiteur_nr := NULL; END IF;
   END IF;
 

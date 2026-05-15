@@ -1,5 +1,5 @@
 -- ============================================================
--- Zelf-test voor match_klant_po (mig 289).
+-- Zelf-test voor match_klant_po (mig 294).
 -- Draai in de Supabase SQL-editor (of psql).
 -- Alle wijzigingen worden aan het eind via ROLLBACK weggegooid.
 --

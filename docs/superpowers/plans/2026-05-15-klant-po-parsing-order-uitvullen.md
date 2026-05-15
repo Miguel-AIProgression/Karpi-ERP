@@ -19,7 +19,7 @@
 | `supabase/functions/_shared/po-extract.ts` | Pure extractie-laag: types, system-prompt, request-builder, response-parser/validator (geen netwerk) |
 | `supabase/functions/_shared/po-extract.test.ts` | Deno-tests voor de pure extractie-laag (gemockte Anthropic-JSON) |
 | `supabase/functions/parse-klant-po/index.ts` | Orchestrator: CORS, Anthropic-fetch, `parsePoExtractie`, `match_klant_po`-RPC, response |
-| `supabase/migrations/289_match_klant_po.sql` | RPC `match_klant_po(jsonb) → jsonb`: debiteur- + regelmatch met zekerheidslabels |
+| `supabase/migrations/294_match_klant_po.sql` | RPC `match_klant_po(jsonb) → jsonb`: debiteur- + regelmatch met zekerheidslabels |
 | `scripts/test-match-klant-po.sql` | Zelf-test SQL (seed + asserts + ROLLBACK) voor de match-RPC |
 | `frontend/src/lib/orders/po-prefill.ts` | Pure mapping: match-resultaat → `{ client?, header, regels, samenvatting }`, alleen `zeker` |
 | `frontend/src/lib/orders/po-prefill.test.ts` | Vitest unit-tests voor de mapping (4 voorbeeld-fixtures) |
@@ -34,7 +34,7 @@
 - Edge functions: `serve` uit `https://deno.land/std@0.168.0/http/server.ts`, `createClient` met `SUPABASE_SERVICE_ROLE_KEY`, inline `corsHeaders`, `jsonResponse`-helper — exact zoals `supabase/functions/check-levertijd/index.ts`.
 - Deno-tests: `https://deno.land/std@0.168.0/testing/asserts.ts`, draaien met `deno test`.
 - Frontend-tests: vitest, alleen onder `frontend/src/**/*.{test,spec}.{ts,tsx}`.
-- Migraties zijn doorlopend genummerd; `288` is al bezet (`288_orderregel_pickbaarheid_snijden_rang.sql`). Nieuwe = `289`.
+- Migraties zijn doorlopend genummerd; `288`–`293` zijn bezet (incl. dubbel-genummerde 289/290 uit een parallelle branch). Nieuwe = `294`.
 - Migraties worden **handmatig** toegepast (Supabase MCP heeft geen toegang tot het Karpi-project) — de RPC-test is daarom een SQL-script, geen geautomatiseerde test.
 - Taal: code Engels, UI Nederlands.
 
@@ -277,20 +277,20 @@ git commit -m "feat(po-parsing): pure extractie-laag (prompt + parser) met Deno-
 
 ---
 
-## Task 2: Match-RPC `match_klant_po` (migratie 289)
+## Task 2: Match-RPC `match_klant_po` (migratie 294)
 
 **Files:**
-- Create: `supabase/migrations/289_match_klant_po.sql`
+- Create: `supabase/migrations/294_match_klant_po.sql`
 - Create: `scripts/test-match-klant-po.sql`
 
 De RPC krijgt de ruwe extractie als `jsonb` en geeft per veld een waarde + `zeker` (boolean) terug. Deterministisch, geen LLM.
 
 - [ ] **Step 1: Write the RPC migration**
 
-Create `supabase/migrations/289_match_klant_po.sql`:
+Create `supabase/migrations/294_match_klant_po.sql`:
 
 ```sql
--- Migratie 289: match_klant_po
+-- Migratie 294: match_klant_po
 -- Deterministische koppel-laag voor klant-PO parsing (ADR-loze utility-RPC).
 -- Input  = ruwe extractie (jsonb) zoals po-extract.ts die produceert.
 -- Output = voorgestelde order-velden; debiteur en elke regel met een eigen
@@ -323,10 +323,12 @@ BEGIN
   END IF;
 
   -- ---- Debiteur: btw > e-maildomein > exacte naam, telkens precies 1 hit ----
+  -- alleen actieve debiteuren (geen archief-false-positives)
   IF v_btw <> '' THEN
     SELECT debiteur_nr INTO v_debiteur_nr
     FROM debiteuren
     WHERE upper(regexp_replace(coalesce(btw_nummer,''), '[^A-Za-z0-9]', '', 'g')) = v_btw
+      AND status = 'Actief'
     LIMIT 2;
     GET DIAGNOSTICS v_cnt = ROW_COUNT;
     IF v_cnt = 1 THEN v_debiteur_zeker := true; ELSE v_debiteur_nr := NULL; END IF;
@@ -335,16 +337,18 @@ BEGIN
   IF NOT v_debiteur_zeker AND v_email_domein IS NOT NULL AND v_email_domein <> '' THEN
     SELECT count(*), min(debiteur_nr) INTO v_cnt, v_debiteur_nr
     FROM debiteuren
-    WHERE lower(coalesce(email_factuur,'')) LIKE '%@'||v_email_domein
-       OR lower(coalesce(email_overig,''))  LIKE '%@'||v_email_domein
-       OR lower(coalesce(email_2,''))       LIKE '%@'||v_email_domein;
+    WHERE status = 'Actief'
+      AND (   lower(coalesce(email_factuur,'')) LIKE '%@'||v_email_domein
+           OR lower(coalesce(email_overig,''))  LIKE '%@'||v_email_domein
+           OR lower(coalesce(email_2,''))       LIKE '%@'||v_email_domein);
     IF v_cnt = 1 THEN v_debiteur_zeker := true; ELSE v_debiteur_nr := NULL; END IF;
   END IF;
 
   IF NOT v_debiteur_zeker AND v_naam_norm <> '' THEN
     SELECT count(*), min(debiteur_nr) INTO v_cnt, v_debiteur_nr
     FROM debiteuren
-    WHERE upper(regexp_replace(coalesce(naam,''), '\s+', ' ', 'g')) = v_naam_norm;
+    WHERE upper(regexp_replace(coalesce(naam,''), '\s+', ' ', 'g')) = v_naam_norm
+      AND status = 'Actief';
     IF v_cnt = 1 THEN v_debiteur_zeker := true; ELSE v_debiteur_nr := NULL; END IF;
   END IF;
 
@@ -469,14 +473,14 @@ Create `scripts/test-match-klant-po.sql` (volgt het patroon van `scripts/test-gr
 
 - [ ] **Step 3: Apply migration manually + run self-test**
 
-Pas `supabase/migrations/289_match_klant_po.sql` handmatig toe op het Karpi-project (Supabase SQL-editor — MCP heeft geen toegang). Draai daarna `scripts/test-match-klant-po.sql` in dezelfde editor.
+Pas `supabase/migrations/294_match_klant_po.sql` handmatig toe op het Karpi-project (Supabase SQL-editor — MCP heeft geen toegang). Draai daarna `scripts/test-match-klant-po.sql` in dezelfde editor.
 Expected: laatste melding `ALLE TESTS GESLAAGD`, geen `ASSERT`-fouten.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add supabase/migrations/289_match_klant_po.sql scripts/test-match-klant-po.sql
-git commit -m "feat(po-parsing): match_klant_po RPC (mig 289) + zelf-test SQL"
+git add supabase/migrations/294_match_klant_po.sql scripts/test-match-klant-po.sql
+git commit -m "feat(po-parsing): match_klant_po RPC (mig 294) + zelf-test SQL"
 ```
 
 ---
@@ -1390,7 +1394,7 @@ Voeg bovenaan de meest recente sectie in `docs/changelog.md` een datumregel `202
 ```markdown
 ### 2026-05-15 — Klant-PO parsen en order auto-uitvullen
 - Edge function `parse-klant-po`: Claude-extractie (PDF) + deterministische match-RPC.
-- Migratie 289: RPC `match_klant_po(jsonb)` — debiteur via btw/email/naam, kwaliteit via
+- Migratie 294: RPC `match_klant_po(jsonb)` — debiteur via btw/email/naam (alleen actieve debiteuren), kwaliteit via
   reverse-lookup op `klanteigen_namen.benaming` (debiteur-/inkoopgroep-scoped) + exacte
   `kwaliteiten.omschrijving`, artikel via `klant_artikelnummers`/`producten`; per veld een
   zekerheidslabel. Alleen `zeker`-velden worden in de order-form voorgevuld.
@@ -1407,7 +1411,7 @@ Voeg in `docs/architectuur.md` in de sectie over edge functions (zoek op `check-
 ### parse-klant-po (klant-PO parsing)
 Upload van een klant-PO op de order-aanmaakpagina → edge function `parse-klant-po`.
 Twee-laags: (1) Claude Messages-API extraheert vormvrije ruwe tekst uit de PDF
-(`_shared/po-extract.ts`, pure + getest), (2) RPC `match_klant_po` (mig 289) koppelt
+(`_shared/po-extract.ts`, pure + getest), (2) RPC `match_klant_po` (mig 294) koppelt
 deterministisch tegen `debiteuren`/`klanteigen_namen`/`klant_artikelnummers`/`producten`
 en labelt debiteur + elke regel met `zeker`. De frontend (`@/lib/orders/po-prefill`)
 vult alleen `zeker`-regels/-debiteur voor en hermount `OrderForm` via een `key`. Geen auto-opslag.
@@ -1419,7 +1423,7 @@ Secret: `ANTHROPIC_API_KEY`.
 Voeg in `docs/database-schema.md` in de functies/RPC-sectie (zoek op `### Functies` of een bestaande RPC-opsomming) toe:
 
 ```markdown
-- `match_klant_po(p_extractie jsonb) → jsonb` (mig 289) — Klant-PO parsing: deterministische
+- `match_klant_po(p_extractie jsonb) → jsonb` (mig 294) — Klant-PO parsing: deterministische
   koppel-laag. Debiteur-match btw → e-maildomein → exacte naam (telkens precies 1 hit = `zeker`);
   per regel klant-artikelnr → kwaliteit (reverse-lookup `klanteigen_namen.benaming`
   debiteur-/inkoopgroep-scoped, daarna exacte `kwaliteiten.omschrijving`) + kleur (numeriek
@@ -1445,7 +1449,7 @@ Run: `supabase secrets set ANTHROPIC_API_KEY=sk-ant-...` (of via Supabase Dashbo
 
 - [ ] **Step 2: Deploy de edge function + migratie**
 
-Migratie 289 is in Task 2 al handmatig toegepast. Deploy de functie:
+Migratie 294 is in Task 2 al handmatig toegepast. Deploy de functie:
 Run: `supabase functions deploy parse-klant-po`
 Expected: deploy succesvol, functie verschijnt in de lijst.
 
