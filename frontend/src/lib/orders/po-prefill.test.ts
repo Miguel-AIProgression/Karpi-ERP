@@ -113,7 +113,7 @@ describe('mapMatchNaarPrefill', () => {
     expect(p.regels[0].korting_pct).toBe(7)
     expect('prijs' in p.regels[1]).toBe(false)
     // vorm_tekst wordt bewust niet voorgevuld
-    expect((p.regels[1] as Record<string, unknown>).maatwerk_vorm).toBeUndefined()
+    expect((p.regels[1] as unknown as Record<string, unknown>).maatwerk_vorm).toBeUndefined()
   })
 
   it('default aantal null -> 1 en korting null -> 0 op concept-regel', () => {
