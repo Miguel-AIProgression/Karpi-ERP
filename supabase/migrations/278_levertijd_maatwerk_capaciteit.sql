@@ -146,15 +146,20 @@ BEGIN
   ),
   -- Maatwerk-bezetting per ISO-week (globale pool — productie_groep V2-backlog)
   bezetting_per_week AS (
+    -- S1 (code-review ADR-0020): iso_week_plus = exact dezelfde to_char-bron
+    -- als de weken_iterator (geen format-drift in de join). make_date(jaar,1,4)
+    -- ligt gegarandeerd in ISO-week 1 van dat jaar. planning_week BETWEEN 1
+    -- AND 53 containt garbage-data (week 53 in een 52-weken-jaar zou anders
+    -- stil naar (jaar+1)-W01 lekken → capaciteit-overschatting → vals haalbaar).
     SELECT
-      to_char(make_date(planning_jaar, 1, 4) + ((planning_week - 1) * 7)::INTEGER,
-              'IYYY-"W"IW') AS iso_week,
+      iso_week_plus(make_date(planning_jaar, 1, 4), planning_week - 1) AS iso_week,
       COUNT(*) AS huidig_stuks
     FROM snijplannen
     WHERE status IN ('Wacht', 'Gepland', 'Snijden')
       AND gesneden_datum IS NULL
       AND planning_week IS NOT NULL
       AND planning_jaar IS NOT NULL
+      AND planning_week BETWEEN 1 AND 53
     GROUP BY planning_jaar, planning_week
   ),
   -- 12 weken vooruit-iterator vanaf p_gewenste_week (lex-vergelijk via ISO-string)
@@ -297,15 +302,20 @@ BEGIN
     LEFT JOIN order_regel_levertijd    v    ON v.order_regel_id = i.regel_id
   ),
   bezetting_per_week AS (
+    -- S1 (code-review ADR-0020): iso_week_plus = exact dezelfde to_char-bron
+    -- als de weken_iterator (geen format-drift in de join). make_date(jaar,1,4)
+    -- ligt gegarandeerd in ISO-week 1 van dat jaar. planning_week BETWEEN 1
+    -- AND 53 containt garbage-data (week 53 in een 52-weken-jaar zou anders
+    -- stil naar (jaar+1)-W01 lekken → capaciteit-overschatting → vals haalbaar).
     SELECT
-      to_char(make_date(planning_jaar, 1, 4) + ((planning_week - 1) * 7)::INTEGER,
-              'IYYY-"W"IW') AS iso_week,
+      iso_week_plus(make_date(planning_jaar, 1, 4), planning_week - 1) AS iso_week,
       COUNT(*) AS huidig_stuks
     FROM snijplannen
     WHERE status IN ('Wacht', 'Gepland', 'Snijden')
       AND gesneden_datum IS NULL
       AND planning_week IS NOT NULL
       AND planning_jaar IS NOT NULL
+      AND planning_week BETWEEN 1 AND 53
     GROUP BY planning_jaar, planning_week
   ),
   -- Scan 12 weken vooruit vanaf huidige_week + buffer-werkdagen (≈ kalenderdagen)

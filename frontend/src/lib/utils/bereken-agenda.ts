@@ -13,6 +13,12 @@
 //   2. supabase/functions/_shared/werkagenda.ts (Deno-mirror voor edge)
 //   3. dit bestand (TS-mirror voor UI)
 // Anders divergeren UI-bucketing, edge-berekeningen en SQL-views.
+//
+// Naam↔gedrag-mapping (code-review S2): deze TS `werkdagMinN(d, n)` *trekt* n
+// werkdagen af. De SQL-tegenhanger is `werkdag_min_n(d, n)` = d − n werkdagen
+// (1-op-1), met `werkdag_plus_n(d, n)` = d + n en de canonieke richting-
+// neutrale `werkdag_offset_n(d, ±n)` eronder. Geef nooit een negatieve n aan
+// deze TS-functie mee — gebruik aan SQL-zijde de juiste wrapper i.p.v. teken-flip.
 
 import type { SnijplanRow } from '@/lib/types/productie'
 

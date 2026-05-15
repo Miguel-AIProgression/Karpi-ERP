@@ -14,9 +14,11 @@
 -- en honderden render-toetsen).
 --
 -- Geleverde functies:
---   * werkdag_min_n(p_datum, p_n)     — voeg N werkdagen toe (positief) of trek
---                                       af (negatief). Skipt zaterdag/zondag.
---   * werkdag_plus_n(p_datum, p_n)    — convenience-wrapper rond werkdag_min_n.
+--   * werkdag_offset_n(p_datum, p_n)  — canoniek: positief N = vooruit,
+--                                       negatief N = achteruit. Skipt za/zo.
+--   * werkdag_plus_n(p_datum, p_n)    — N werkdagen vooruit (offset_n(+n)).
+--   * werkdag_min_n(p_datum, p_n)     — N werkdagen achteruit (offset_n(-n));
+--                                       naam == gedrag == TS-mirror werkdagMinN.
 --   * werkagenda_kalender(p_van, p_tot) — SETOF DATE van werkdagen in [van,tot].
 --
 -- ----------------------------------------------------------------------------
@@ -43,14 +45,16 @@
 -- Idempotent: CREATE OR REPLACE voor alle functies.
 
 -- ============================================================================
--- werkdag_min_n: tel N werkdagen op (positief) of af (negatief)
+-- werkdag_offset_n: canonieke richting-neutrale werkdag-verschuiving
 -- ============================================================================
--- Naam komt uit de Deno/TS-mirror waar `werkdagMinN(iso, n)` historisch N
--- *aftrekt* (kritieke deadline = afleverdatum − N werkdagen). De SQL-variant
--- houdt dezelfde naam maar generaliseert: positief N = optellen, negatief N
--- = aftrekken. Aanroepers die "trek N werkdagen af" willen, geven dus −N
--- mee. De stappen-cap (60) is een veiligheidsrem tegen pathologische input.
-CREATE OR REPLACE FUNCTION werkdag_min_n(p_datum DATE, p_n INTEGER)
+-- Positief N = N werkdagen vooruit, negatief N = N werkdagen achteruit.
+-- Dit is de ground-truth-implementatie; werkdag_plus_n / werkdag_min_n zijn
+-- richting-expliciete wrappers zodat naam == gedrag (zie code-review S2,
+-- ADR-0020): de oude `werkdag_min_n` telde bij positief N juist OP, wat
+-- tegengesteld was aan de TS-mirror `werkdagMinN` (die N *aftrekt*). Nu klopt
+-- werkdag_min_n(d, n) == d − n werkdagen, 1-op-1 met de mirror.
+-- Stappen-cap (60) is een veiligheidsrem tegen pathologische input.
+CREATE OR REPLACE FUNCTION werkdag_offset_n(p_datum DATE, p_n INTEGER)
 RETURNS DATE
 LANGUAGE plpgsql
 IMMUTABLE
@@ -82,28 +86,43 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION werkdag_min_n(DATE, INTEGER) IS
-  'Mig 279 (ADR-0020): voegt N werkdagen toe (positief) of trekt af (negatief). '
-  'Skipt zaterdag/zondag. NL-feestdagen worden NIET uitgesloten — consistent '
-  'met Deno-mirror _shared/werkagenda.ts en TS-mirror bereken-agenda.ts. '
-  'SQL is ground-truth; wijzigingen aan werkdag-definitie ook in beide mirrors.';
+COMMENT ON FUNCTION werkdag_offset_n(DATE, INTEGER) IS
+  'Mig 279 (ADR-0020): canonieke werkdag-verschuiving — positief N = vooruit, '
+  'negatief N = achteruit. Skipt zaterdag/zondag. NL-feestdagen worden NIET '
+  'uitgesloten — consistent met Deno-mirror _shared/werkagenda.ts en TS-mirror '
+  'bereken-agenda.ts. SQL is ground-truth; wijzigingen aan werkdag-definitie '
+  'ook in beide mirrors. Gebruik werkdag_plus_n / werkdag_min_n in callers.';
 
 -- ============================================================================
--- werkdag_plus_n: convenience-wrapper (alias met positieve semantiek)
+-- werkdag_plus_n / werkdag_min_n: richting-expliciete wrappers
 -- ============================================================================
+-- werkdag_plus_n(d, n) = d + n werkdagen
+-- werkdag_min_n(d, n)  = d − n werkdagen  (1-op-1 met TS-mirror werkdagMinN)
 CREATE OR REPLACE FUNCTION werkdag_plus_n(p_datum DATE, p_n INTEGER)
 RETURNS DATE
 LANGUAGE sql
 IMMUTABLE
 PARALLEL SAFE
 AS $$
-  SELECT werkdag_min_n(p_datum, p_n);
+  SELECT werkdag_offset_n(p_datum, p_n);
 $$;
 
 COMMENT ON FUNCTION werkdag_plus_n(DATE, INTEGER) IS
-  'Mig 279: convenience-alias van werkdag_min_n. Beide signatures gelijk '
-  '(positief = toevoegen, negatief = aftrekken); apart benoemd voor leesbaarheid '
-  'in callers waar "plus N werkdagen" duidelijker leest dan "min_n met N>0".';
+  'Mig 279: N werkdagen vooruit. Wrapper rond werkdag_offset_n(d, +n).';
+
+CREATE OR REPLACE FUNCTION werkdag_min_n(p_datum DATE, p_n INTEGER)
+RETURNS DATE
+LANGUAGE sql
+IMMUTABLE
+PARALLEL SAFE
+AS $$
+  SELECT werkdag_offset_n(p_datum, -p_n);
+$$;
+
+COMMENT ON FUNCTION werkdag_min_n(DATE, INTEGER) IS
+  'Mig 279: N werkdagen achteruit (d − n werkdagen). Wrapper rond '
+  'werkdag_offset_n(d, -n). Naam == gedrag == TS-mirror werkdagMinN '
+  '(code-review S2, ADR-0020).';
 
 -- ============================================================================
 -- werkagenda_kalender: alle werkdagen in [p_van, p_tot] inclusief
@@ -128,39 +147,48 @@ COMMENT ON FUNCTION werkagenda_kalender(DATE, DATE) IS
 -- ============================================================================
 DO $$
 BEGIN
-  -- Plus-richting: woe 13-05-2026 + 5 werkdagen → do 14, vr 15, (skip za/zo),
-  -- ma 18, di 19, wo 20-05-2026.
-  ASSERT werkdag_min_n('2026-05-13'::DATE, 5) = '2026-05-20'::DATE,
-    format('werkdag_min_n(2026-05-13, +5) verwachtte 2026-05-20, kreeg %s',
+  -- Canoniek vooruit: woe 13-05-2026 + 5 werkdagen → do 14, vr 15,
+  -- (skip za/zo), ma 18, di 19, wo 20-05-2026.
+  ASSERT werkdag_offset_n('2026-05-13'::DATE, 5) = '2026-05-20'::DATE,
+    format('werkdag_offset_n(2026-05-13, +5) verwachtte 2026-05-20, kreeg %s',
+           werkdag_offset_n('2026-05-13'::DATE, 5));
+
+  -- Canoniek achteruit: woe 13-05-2026 − 2 werkdagen → di 12, ma 11-05-2026.
+  ASSERT werkdag_offset_n('2026-05-13'::DATE, -2) = '2026-05-11'::DATE,
+    format('werkdag_offset_n(2026-05-13, -2) verwachtte 2026-05-11, kreeg %s',
+           werkdag_offset_n('2026-05-13'::DATE, -2));
+
+  -- werkdag_plus_n: vrijdag 15-05-2026 + 1 werkdag → maandag 18-05-2026.
+  ASSERT werkdag_plus_n('2026-05-15'::DATE, 1) = '2026-05-18'::DATE,
+    format('werkdag_plus_n(vrij 2026-05-15, 1) verwachtte ma 2026-05-18, kreeg %s',
+           werkdag_plus_n('2026-05-15'::DATE, 1));
+
+  -- werkdag_min_n: maandag 18-05-2026 − 1 werkdag → vrijdag 15-05-2026.
+  -- Naam == gedrag == TS-mirror werkdagMinN (aftrekken).
+  ASSERT werkdag_min_n('2026-05-18'::DATE, 1) = '2026-05-15'::DATE,
+    format('werkdag_min_n(ma 2026-05-18, 1) verwachtte vr 2026-05-15, kreeg %s',
+           werkdag_min_n('2026-05-18'::DATE, 1));
+
+  -- werkdag_min_n 5 werkdagen terug vanaf wo 13-05 → wo 06-05-2026
+  -- (di 12, ma 11, vr 8, do 7, wo 6).
+  ASSERT werkdag_min_n('2026-05-13'::DATE, 5) = '2026-05-06'::DATE,
+    format('werkdag_min_n(2026-05-13, 5) verwachtte 2026-05-06, kreeg %s',
            werkdag_min_n('2026-05-13'::DATE, 5));
 
-  -- Min-richting: woe 13-05-2026 − 2 werkdagen → di 12, ma 11-05-2026.
-  ASSERT werkdag_min_n('2026-05-13'::DATE, -2) = '2026-05-11'::DATE,
-    format('werkdag_min_n(2026-05-13, -2) verwachtte 2026-05-11, kreeg %s',
-           werkdag_min_n('2026-05-13'::DATE, -2));
-
-  -- Weekend-rand: vrijdag 15-05-2026 + 1 werkdag → maandag 18-05-2026.
-  ASSERT werkdag_min_n('2026-05-15'::DATE, 1) = '2026-05-18'::DATE,
-    format('werkdag_min_n(vrij 2026-05-15, +1) verwachtte ma 2026-05-18, kreeg %s',
-           werkdag_min_n('2026-05-15'::DATE, 1));
-
-  -- Maandag − 1 werkdag → vrijdag.
-  ASSERT werkdag_min_n('2026-05-18'::DATE, -1) = '2026-05-15'::DATE,
-    format('werkdag_min_n(ma 2026-05-18, -1) verwachtte vr 2026-05-15, kreeg %s',
-           werkdag_min_n('2026-05-18'::DATE, -1));
-
   -- N=0 → identity.
-  ASSERT werkdag_min_n('2026-05-13'::DATE, 0) = '2026-05-13'::DATE,
-    'werkdag_min_n(date, 0) moet identity zijn';
+  ASSERT werkdag_offset_n('2026-05-13'::DATE, 0) = '2026-05-13'::DATE,
+    'werkdag_offset_n(date, 0) moet identity zijn';
 
   -- NULL-safe.
-  ASSERT werkdag_min_n(NULL, 5) IS NULL, 'werkdag_min_n(NULL, n) moet NULL retourneren';
-  ASSERT werkdag_min_n('2026-05-13'::DATE, NULL) = '2026-05-13'::DATE,
-    'werkdag_min_n(date, NULL) moet input retourneren';
+  ASSERT werkdag_offset_n(NULL, 5) IS NULL, 'werkdag_offset_n(NULL, n) moet NULL retourneren';
+  ASSERT werkdag_offset_n('2026-05-13'::DATE, NULL) = '2026-05-13'::DATE,
+    'werkdag_offset_n(date, NULL) moet input retourneren';
 
-  -- Alias-equivalentie.
-  ASSERT werkdag_plus_n('2026-05-13'::DATE, 5) = werkdag_min_n('2026-05-13'::DATE, 5),
-    'werkdag_plus_n moet equivalent zijn aan werkdag_min_n';
+  -- Wrapper-equivalentie: plus = offset(+n), min = offset(-n).
+  ASSERT werkdag_plus_n('2026-05-13'::DATE, 5) = werkdag_offset_n('2026-05-13'::DATE, 5),
+    'werkdag_plus_n(d, n) moet werkdag_offset_n(d, +n) zijn';
+  ASSERT werkdag_min_n('2026-05-13'::DATE, 5) = werkdag_offset_n('2026-05-13'::DATE, -5),
+    'werkdag_min_n(d, n) moet werkdag_offset_n(d, -n) zijn';
 
   -- Kalender-werkdagen ma 11 t/m vr 15 mei 2026 → exact 5 werkdagen.
   ASSERT (SELECT COUNT(*) FROM werkagenda_kalender('2026-05-11'::DATE, '2026-05-15'::DATE)) = 5,
