@@ -52,6 +52,9 @@ export function ClientSelector({ value, onChange, disabled }: ClientSelectorProp
       const numSearch = Number(search)
       // inkooporganisatie als snapshot-string komt uit FK inkoopgroepen.naam
       // (mig 189 dropte de oude TEXT-kolom op debiteuren).
+      // LET OP: deze select + mapping is gespiegeld in
+      // lib/supabase/queries/po-parsing.ts (fetchSelectedClientVoorPrefill).
+      // Wijzig je de kolomlijst hier, pas 'm daar óók aan.
       let query = supabase
         .from('debiteuren')
         .select('debiteur_nr, naam, adres, postcode, plaats, land, fact_naam, fact_adres, fact_postcode, fact_plaats, email_factuur, email_overig, vertegenw_code, prijslijst_nr, korting_pct, betaler, inkoopgroepen(naam), gratis_verzending, standaard_maat_werkdagen, maatwerk_weken, deelleveringen_toegestaan, default_lever_type')

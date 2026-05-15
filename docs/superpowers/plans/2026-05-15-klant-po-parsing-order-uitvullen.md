@@ -893,16 +893,26 @@ import { supabase } from '../client'
 import type { SelectedClient } from '@/components/orders/client-selector'
 import type { PoMatchResultaat } from '@/lib/orders/po-prefill'
 
-/** File -> base64 (zonder data:-prefix). */
-async function fileToBase64(file: File): Promise<string> {
-  const buf = await file.arrayBuffer()
-  const bytes = new Uint8Array(buf)
-  let bin = ''
-  const chunk = 0x8000
-  for (let i = 0; i < bytes.length; i += chunk) {
-    bin += String.fromCharCode(...bytes.subarray(i, i + chunk))
-  }
-  return btoa(bin)
+// Zelfde plafond als de document-upload (documenten.ts) — DocumentenBuffer
+// hanteert dezelfde grens; hier defensief herhaald met een nette melding.
+const MAX_PDF_BYTES = 25 * 1024 * 1024
+
+/** File -> base64 (zonder data:-prefix) via FileReader (1 native pass). */
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const res = reader.result
+      if (typeof res !== 'string') {
+        reject(new Error('Kon bestand niet lezen'))
+        return
+      }
+      const comma = res.indexOf(',')
+      resolve(comma >= 0 ? res.slice(comma + 1) : res)
+    }
+    reader.onerror = () => reject(reader.error ?? new Error('Kon bestand niet lezen'))
+    reader.readAsDataURL(file)
+  })
 }
 
 export interface ParseKlantPoResultaat {
@@ -910,6 +920,11 @@ export interface ParseKlantPoResultaat {
 }
 
 export async function parseKlantPo(file: File): Promise<ParseKlantPoResultaat> {
+  if (file.size > MAX_PDF_BYTES) {
+    throw new Error(
+      `Bestand is te groot (max 25 MB). Dit bestand: ${(file.size / 1024 / 1024).toFixed(1)} MB`,
+    )
+  }
   const pdf_base64 = await fileToBase64(file)
   const { data, error } = await supabase.functions.invoke('parse-klant-po', {
     body: { pdf_base64, bestandsnaam: file.name },
