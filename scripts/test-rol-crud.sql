@@ -5,6 +5,12 @@ BEGIN;
 
 -- Seed: een rol-product (eenheid m). Hergebruik een bestaand artikel als het
 -- er is; anders minimaal record. We gebruiken een vast test-artikelnr.
+-- producten.kwaliteit_code heeft een FK naar kwaliteiten — eerst de
+-- test-kwaliteit seeden (collectie_id mag NULL).
+INSERT INTO kwaliteiten (code, omschrijving)
+VALUES ('TST', 'TEST KWALITEIT (rol-crud zelftest)')
+ON CONFLICT (code) DO NOTHING;
+
 INSERT INTO producten (artikelnr, karpi_code, omschrijving, verkoopprijs,
                        kwaliteit_code, kleur_code, zoeksleutel, product_type, actief)
 VALUES ('TESTROLCRUD01', 'TESTROLCRUD01', 'TEST ROL CRUD', 10.00,
