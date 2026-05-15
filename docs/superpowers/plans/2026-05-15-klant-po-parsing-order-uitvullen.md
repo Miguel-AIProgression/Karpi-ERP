@@ -302,7 +302,6 @@ LANGUAGE plpgsql
 STABLE
 AS $$
 DECLARE
-  v_afzender        jsonb := p_extractie->'afzender';
   v_btw             text  := upper(regexp_replace(coalesce(p_extractie#>>'{afzender,btw_nummer}',''), '[^A-Za-z0-9]', '', 'g'));
   v_email           text  := lower(trim(coalesce(p_extractie#>>'{afzender,email}','')));
   v_email_domein    text;
@@ -448,64 +447,24 @@ NOTIFY pgrst, 'reload schema';
 
 - [ ] **Step 2: Write the self-test SQL script**
 
-Create `scripts/test-match-klant-po.sql` (volgt het patroon van `scripts/test-grondstofkosten-rpc.sql`: transactie + asserts + ROLLBACK):
+Create `scripts/test-match-klant-po.sql` (volgt het patroon van `scripts/test-grondstofkosten-rpc.sql`: `BEGIN;` → deterministische seed → `DO $$ … ASSERT … $$;` → `ROLLBACK;`). De canonieke inhoud is het bestand zelf — dupliceer het hier niet (DRY; voorkomt plan-drift). Vereisten waaraan het script moet voldoen:
 
-```sql
--- Zelf-test voor match_klant_po. Draai in de Supabase SQL-editor.
--- Verwacht: alle RAISE NOTICE-regels eindigen op "OK". ROLLBACK aan het eind.
-BEGIN;
-
--- Seed een testdebiteur met uniek BTW-nr.
-INSERT INTO debiteuren (debiteur_nr, naam, status, btw_nummer, email_overig, korting_pct, btw_percentage)
-VALUES (999001, 'TESTKLANT PO BV', 'Actief', 'NL999000001B01', 'orders@testklant-po.nl', 0, 21)
-ON CONFLICT (debiteur_nr) DO NOTHING;
-
-DO $$
-DECLARE r jsonb;
-BEGIN
-  -- 1. Debiteur-match op btw -> zeker.
-  r := match_klant_po(jsonb_build_object(
-    'afzender', jsonb_build_object('naam','TESTKLANT PO BV','email',NULL,'btw_nummer','NL 9990 0000 1B01','kvk',NULL,'adres',NULL),
-    'klant_referentie','PO-1','leverdatum_tekst','29-2026','spoed',false,
-    'afleveradres',NULL,'factuuradres',NULL,'regels','[]'::jsonb));
-  ASSERT (r#>>'{debiteur,debiteur_nr}')::int = 999001, 'btw-match faalt';
-  ASSERT (r#>>'{debiteur,zeker}')::boolean = true, 'btw-zeker faalt';
-  RAISE NOTICE 'btw-match: OK';
-
-  -- 2. Debiteur-match op e-maildomein -> zeker.
-  r := match_klant_po(jsonb_build_object(
-    'afzender', jsonb_build_object('naam','onbekend','email','iemand@testklant-po.nl','btw_nummer',NULL,'kvk',NULL,'adres',NULL),
-    'klant_referentie',NULL,'leverdatum_tekst',NULL,'spoed',false,
-    'afleveradres',NULL,'factuuradres',NULL,'regels','[]'::jsonb));
-  ASSERT (r#>>'{debiteur,debiteur_nr}')::int = 999001, 'email-match faalt';
-  RAISE NOTICE 'email-match: OK';
-
-  -- 3. Onbekende afzender -> onzeker, geen debiteur.
-  r := match_klant_po(jsonb_build_object(
-    'afzender', jsonb_build_object('naam','VOLSTREKT ONBEKEND XYZ','email',NULL,'btw_nummer',NULL,'kvk',NULL,'adres',NULL),
-    'klant_referentie',NULL,'leverdatum_tekst',NULL,'spoed',false,
-    'afleveradres',NULL,'factuuradres',NULL,'regels','[]'::jsonb));
-  ASSERT (r#>>'{debiteur,zeker}')::boolean = false, 'onbekend-onzeker faalt';
-  ASSERT (r#>>'{debiteur,debiteur_nr}') IS NULL, 'onbekend moet NULL debiteur geven';
-  RAISE NOTICE 'onbekend-afzender: OK';
-
-  -- 4. Kleurcode-extractie uit "Iron Grey 15".
-  r := match_klant_po(jsonb_build_object(
-    'afzender', jsonb_build_object('naam','TESTKLANT PO BV'),
-    'klant_referentie',NULL,'leverdatum_tekst',NULL,'spoed',false,
-    'afleveradres',NULL,'factuuradres',NULL,
-    'regels', jsonb_build_array(jsonb_build_object(
-      'aantal',1,'ruwe_omschrijving','Cavaro 240x330','kwaliteit_tekst','ONBEKEND_KW',
-      'kleur_tekst','Iron Grey 15','lengte_cm',240,'breedte_cm',330,'vorm_tekst',NULL,
-      'klant_artikelnr',NULL,'prijs',NULL,'korting_pct',NULL))));
-  ASSERT (r#>>'{regels,0,zeker}')::boolean = false, 'onresolvebare kwaliteit moet onzeker zijn';
-  RAISE NOTICE 'kleur-extractie + onzeker-regel: OK';
-
-  RAISE NOTICE 'ALLE TESTS GESLAAGD';
-END $$;
-
-ROLLBACK;
-```
+- **Deterministische seed** (geen `ON CONFLICT DO NOTHING`-masking): expliciete `DELETE` van de testsleutels (child→parent) vóór de inserts. Seed FK-veilig in volgorde `kwaliteiten → producten → debiteuren → klant_artikelnummers/klanteigen_namen`:
+  - `kwaliteiten`: `code='ZZTT'`, `omschrijving='ZZTESTKWAL'`.
+  - `producten`: `artikelnr='ZZTESTPROD1'`, `kwaliteit_code='ZZTT'`, `kleur_code='15'`, `lengte_cm=240`, `breedte_cm=330`, `actief=true`, `product_type='vast'` (+ NOT NULL-kolommen `omschrijving`).
+  - `debiteuren`: 999001 (`TESTKLANT PO BV`, btw `NL999000001B01`, `email_overig='orders@testklant-po.nl'`, `inkoopgroep_code=NULL`); 999002 én 999003 met **dezelfde** btw `NL888000002B02` (uniqueness-gate).
+  - `klant_artikelnummers`: debiteur 999001 → `ZZTESTPROD1`, `klant_artikel='KX-100'`.
+  - `klanteigen_namen`: debiteur 999001, `kwaliteit_code='ZZTT'`, `benaming='TestKwalNaam'`, `kleur_code=NULL`, `bron='test'`.
+- **Tests T1–T8** (elk een `ASSERT` + `RAISE NOTICE … OK`):
+  - T1 btw-normalisatie (`'NL 9990 0000 1B01'`) → debiteur 999001, `zeker=true`.
+  - T2 e-maildomein `iemand@testklant-po.nl` → 999001.
+  - T3 dubbele btw `NL888000002B02` → `zeker=false` **én** `debiteur_nr IS NULL`.
+  - T4 onbekende afzender → `zeker=false`, debiteur NULL.
+  - T5 regel via `klant_artikelnr='KX-100'` → `regels[0].artikelnr='ZZTESTPROD1'`, `zeker=true`.
+  - T6 regel via klanteigen-naam `TestKwalNaam` + `kleur_tekst='Iron Grey 15'` + 240×330 → catalogus-hit `ZZTESTPROD1`, `zeker=true`.
+  - T7 regel via `kwaliteit_tekst='ZZTESTKWAL'` (omschrijving-fallback) + `kleur='15'` + 999×888 (geen product) → `is_maatwerk=true`, `zeker=true`, `maatwerk_kwaliteit_code='ZZTT'`, `maatwerk_kleur_code='15'`.
+  - T8 onoplosbare kwaliteit `'ONBEKEND_KW'` → `regels[0].zeker=false`.
+- Sluit af met `RAISE NOTICE 'ALLE TESTS GESLAAGD';` en `ROLLBACK;`.
 
 - [ ] **Step 3: Apply migration manually + run self-test**
 

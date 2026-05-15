@@ -10,7 +10,6 @@ LANGUAGE plpgsql
 STABLE
 AS $$
 DECLARE
-  v_afzender        jsonb := p_extractie->'afzender';
   v_btw             text  := upper(regexp_replace(coalesce(p_extractie#>>'{afzender,btw_nummer}',''), '[^A-Za-z0-9]', '', 'g'));
   v_email           text  := lower(trim(coalesce(p_extractie#>>'{afzender,email}','')));
   v_email_domein    text;
