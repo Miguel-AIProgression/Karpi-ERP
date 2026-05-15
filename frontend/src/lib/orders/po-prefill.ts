@@ -49,14 +49,28 @@ export interface PoPrefill {
   samenvatting: PoPrefillSamenvatting
 }
 
-/** "29-2026" of "2026-29" -> "29". Anders null. */
+/**
+ * Leverweek uit vrije tekst. Voorkeur: expliciete week-context ("wk 29",
+ * "week 29", "leverweek 29 2026") — hoogste zekerheid. Daarna de kale
+ * "NN-YYYY"/"YYYY-NN"-vorm (scheiding `-` of `/`). Geen match -> null
+ * (conform "alleen zeker voorvullen": liever leeg dan een foute week).
+ * ISO 8601 lange jaren hebben max week 53.
+ */
+function geldigeWeek(n: number): string | null {
+  return Number.isInteger(n) && n >= 1 && n <= 53 ? String(n) : null
+}
 function parseWeek(tekst: string | null): string | null {
   if (!tekst) return null
-  const m = tekst.match(/\b(\d{1,2})\s*-\s*(20\d{2})\b/) || tekst.match(/\b(20\d{2})\s*-\s*(\d{1,2})\b/)
+  const t = tekst.toLowerCase()
+  // 1. Expliciete week-context ("wk"/"week"/"leverweek", optioneel punt).
+  const ctx = t.match(/\b(?:lever)?w(?:ee)?k\.?\s*(\d{1,2})\b/)
+  if (ctx) return geldigeWeek(Number(ctx[1]))
+  // 2. Kale NN-YYYY / YYYY-NN (separator - of /).
+  const m =
+    t.match(/\b(\d{1,2})\s*[-/]\s*(20\d{2})\b/) ||
+    t.match(/\b(20\d{2})\s*[-/]\s*(\d{1,2})\b/)
   if (!m) return null
-  const week = m[2].length === 4 ? m[1] : m[2]
-  const n = Number(week)
-  return n >= 1 && n <= 53 ? String(n) : null
+  return geldigeWeek(Number(m[2].length === 4 ? m[1] : m[2]))
 }
 
 export function mapMatchNaarPrefill(match: PoMatchResultaat): PoPrefill {
@@ -101,6 +115,9 @@ export function mapMatchNaarPrefill(match: PoMatchResultaat): PoPrefill {
     }
     if (r.zeker && r.is_maatwerk) {
       gematcht++
+      // `vorm_tekst` ("Rechthoekig"/"Rond") is bewust NIET voorgevuld: de
+      // ruwe tekst is niet zeker te mappen op een maatwerk-vorm-code en de
+      // form defaultt naar rechthoek — operator kiest vorm zelf.
       return {
         ...basis,
         is_maatwerk: true,
