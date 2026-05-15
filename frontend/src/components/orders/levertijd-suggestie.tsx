@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { cn } from '@/lib/utils/cn'
 import { useLevertijdCheck } from '@/hooks/use-levertijd-check'
+import { verzendWeekVoor } from '@/lib/orders/verzendweek'
 import type { CheckLevertijdResponse, LevertijdScenario } from '@/lib/supabase/queries/levertijd'
 
 interface LevertijdSuggestieProps {
@@ -30,6 +31,20 @@ function formatDatumNL(iso: string | null): string {
   if (!iso) return '—'
   const [y, m, d] = iso.split('-')
   return `${d}-${m}-${y}`
+}
+
+// Karpi communiceert leverbeloftes als verzendweek, niet als specifieke dag
+// (zie data-woordenboek "Verzendweek"). Format consistent met de order-form
+// ("Wk 22 · 2026"). Gebruikt de centrale verzendweek-seam.
+function verzendWeekTekst(iso: string | null): string {
+  const w = verzendWeekVoor(iso)
+  return w ? `Wk ${w.week} · ${w.jaar}` : '—'
+}
+
+// Strip geparenthiseerde datums "(DD-MM-YYYY)" uit de backend-onderbouwing —
+// de week staat er al naast, de exacte dag is niet wat we communiceren.
+function onderbouwingZonderDatums(tekst: string): string {
+  return tekst.replace(/\s*\(\d{2}-\d{2}-\d{4}\)/g, '')
 }
 
 export function LevertijdSuggestie(props: LevertijdSuggestieProps) {
@@ -63,7 +78,7 @@ export function LevertijdSuggestie(props: LevertijdSuggestieProps) {
       <div className="border border-slate-200 rounded-[var(--radius-sm)] p-3 bg-slate-50 text-xs text-slate-500">
         Real-time levertijd-check niet beschikbaar.
         {fallbackDatum && (
-          <span> Indicatie: <span className="font-medium text-slate-700">{formatDatumNL(fallbackDatum)}</span></span>
+          <span> Indicatie: <span className="font-medium text-slate-700">{verzendWeekTekst(fallbackDatum)}</span></span>
         )}
       </div>
     )
@@ -88,28 +103,25 @@ export function LevertijdSuggestie(props: LevertijdSuggestieProps) {
               onClick={() => onNeemOver(data.lever_datum!, data.week)}
               className="text-xs text-terracotta-600 hover:text-terracotta-700 hover:underline"
             >
-              Neem datum over
+              Neem week over
             </button>
           )}
         </div>
 
         <div>
-          <div className="text-xs text-slate-500">Voorgestelde leverdatum</div>
+          <div className="text-xs text-slate-500">Voorgestelde verzendweek</div>
           <div className="text-lg font-semibold text-slate-900">
-            {formatDatumNL(datumLabel)}
-            {data.week > 0 && (
-              <span className="text-sm font-normal text-slate-500 ml-2">— week {data.week}</span>
-            )}
+            {verzendWeekTekst(datumLabel)}
           </div>
         </div>
 
-        <p className="text-xs text-slate-600 leading-relaxed">{data.onderbouwing}</p>
+        <p className="text-xs text-slate-600 leading-relaxed">{onderbouwingZonderDatums(data.onderbouwing)}</p>
 
         {data.details.eerder_haalbaar && (
           <div className="flex items-center justify-between gap-2 rounded-[var(--radius-sm)] bg-emerald-50 border border-emerald-100 px-2.5 py-1.5">
             <div className="text-xs text-emerald-800">
               <span className="font-medium">Eerder haalbaar:</span>{' '}
-              <span>{formatDatumNL(data.details.eerder_haalbaar.lever_datum)}</span>
+              <span>{verzendWeekTekst(data.details.eerder_haalbaar.lever_datum)}</span>
               <span className="text-emerald-600"> — snijden in week {data.details.eerder_haalbaar.snij_week}</span>
             </div>
             {onNeemOver && (
