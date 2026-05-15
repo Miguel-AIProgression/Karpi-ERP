@@ -42,3 +42,27 @@ Deno.test('parsePoExtractie verwerkt JSON in ```json fences', () => {
 Deno.test('parsePoExtractie gooit bij niet-parseerbare respons', () => {
   assertThrows(() => parsePoExtractie({ content: [{ type: 'text', text: 'geen json hier' }] }))
 })
+
+Deno.test('parsePoExtractie maakt regels [] bij niet-array regels', () => {
+  const j = { content: [{ type: 'text', text: JSON.stringify({ afzender: { naam: 'X' }, regels: 'oeps' }) }] }
+  const out = parsePoExtractie(j)
+  assertEquals(out.regels.length, 0)
+})
+
+Deno.test('parsePoExtractie levert all-null regel bij null-rij', () => {
+  const j = { content: [{ type: 'text', text: JSON.stringify({ afzender: {}, regels: [null] }) }] }
+  const out = parsePoExtractie(j)
+  assertEquals(out.regels.length, 1)
+  assertEquals(out.regels[0].aantal, null)
+  assertEquals(out.regels[0].ruwe_omschrijving, null)
+})
+
+Deno.test('parsePoExtractie pakt JSON uit het tweede tekstblok', () => {
+  const j = { content: [{ type: 'text', text: 'voorwoord' }, { type: 'text', text: '{"afzender":{"naam":"Y"},"regels":[]}' }] }
+  const out = parsePoExtractie(j)
+  assertEquals(out.afzender.naam, 'Y')
+})
+
+Deno.test('parsePoExtractie gooit nette fout bij null input', () => {
+  assertThrows(() => parsePoExtractie(null))
+})

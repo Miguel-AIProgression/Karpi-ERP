@@ -107,6 +107,9 @@ function adres(v: unknown): PoAdres | null {
 
 /** Pakt de JSON-tekst uit een Anthropic-respons en valideert tegen het schema. */
 export function parsePoExtractie(anthropicJson: unknown): PoRuwExtractie {
+  if (!anthropicJson || typeof anthropicJson !== 'object') {
+    throw new Error('Lege of ongeldige extractie-respons')
+  }
   const root = anthropicJson as { content?: Array<{ type?: string; text?: string }> }
   const text = (root.content ?? []).filter((c) => c.type === 'text').map((c) => c.text ?? '').join('\n')
   let raw = text.trim()
