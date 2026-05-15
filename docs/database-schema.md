@@ -266,7 +266,8 @@ Individuele fysieke tapijtrol. Elk met uniek rolnummer.
 | status | TEXT | Workflow-status: 'beschikbaar', 'gereserveerd', 'verkocht', 'gesneden', 'reststuk', 'in_snijplan' |
 | rol_type | ENUM rol_type | Fysieke classificatie: 'volle_rol', 'aangebroken', 'reststuk'. Automatisch gezet via trigger o.b.v. `bereken_rol_type()`. Standaard breedte komt uit `kwaliteiten.standaard_breedte_cm` (sinds migratie 086/087), fallback op laatste 3 cijfers artikelnr, daarna 400 cm. Lengte <100cm of breedte <standaard → reststuk; gesneden + std breedte + lengte ≥100cm → aangebroken; anders → volle_rol. |
 | oorsprong_rol_id | BIGINT FK → rollen (self-ref) | Verwijst naar de originele rol waaruit deze rol is gesneden (aangebroken of reststuk) |
-| reststuk_datum | TIMESTAMPTZ | Datum waarop de gesneden rol is aangemaakt |
+| reststuk_datum | TIMESTAMPTZ | Datum waarop de gesneden rol is aangemaakt. Wordt door `boek_inkooporder_ontvangst_rollen` óók op `NOW()` gezet voor volle IO-rollen (niet alleen reststukken). NIET gebruiken als magazijnleeftijd — zie `in_magazijn_sinds`. Blijft bron voor de net-gesneden-reststuk-filter in `voltooi_snijplan_rol` (`reststuk_datum = CURRENT_DATE`). |
+| in_magazijn_sinds | DATE | **Single source of truth voor FIFO-magazijnleeftijd** (ADR-0021, mig 280). Datum waarop dít materiaal fysiek het magazijn binnenkwam. IO-rol → ontvangstdatum (mig 281); reststuk/aangebroken → **erft** van `oorsprong_rol` (reset NIET bij snijden, mig 282); historische/overige → `created_at::date` van het record (mig 287, was sentinel `2000-01-01` in mig 280). Nieuwe rollen zonder expliciete waarde krijgen via trigger `trg_rollen_default_in_magazijn_sinds` `COALESCE(created_at, reststuk_datum, CURRENT_DATE)::date`. NULL → packer behandelt als heel oud. |
 | snijden_gestart_op | TIMESTAMPTZ | Timestamp wanneer medewerker "Start met rol" klikte (via `start_snijden_rol`). Voor tijdanalyse snijduur. Migratie 063. |
 | snijden_voltooid_op | TIMESTAMPTZ | Timestamp wanneer rol werd afgesloten via `voltooi_snijplan_rol`. Migratie 063. |
 | snijden_gestart_door | TEXT | Medewerker die snijden gestart is. Migratie 063. |
@@ -324,7 +325,7 @@ Orderheaders. Adressen zijn snapshots (niet FK naar afleveradressen).
 | betaler | INTEGER FK → debiteuren | |
 | vertegenw_code | TEXT FK → vertegenwoordigers.code | |
 | inkooporganisatie | TEXT | Snapshot van de inkoopgroep-code op moment van aanmaak (orders bewegen niet mee bij wijziging op debiteur). |
-| status | order_status | Default 'Nieuw' |
+| status | order_status | Default `'Klaar voor picken'` (mig 275, was `'Nieuw'`). Schrijfpad uitsluitend via `_apply_transitie` binnen Order-lifecycle Module (mig 218). |
 | compleet_geleverd | BOOLEAN | |
 | aantal_regels, totaal_bedrag, totaal_gewicht | NUMERIC | Berekend door trigger |
 | bron_systeem | TEXT | NULL = handmatig aangemaakt. 'lightspeed' = webshop-integratie (migratie 092). |
@@ -383,6 +384,13 @@ Typed audit-log van `orders.status`-overgangen. Geschreven door `_apply_transiti
 | created_at | TIMESTAMPTZ | DEFAULT now() |
 
 CHECK constraint `order_events_actor_xor`: niet beide actor-velden tegelijk gevuld. Indexen: `(order_id, created_at DESC)` en `(event_type, created_at DESC)`.
+
+**Event-listeners op `order_events` (AFTER INSERT, `WHEN`-gefilterd op `event_type`):** modules reageren ontkoppeld op events i.p.v. direct op `orders.status` (ADR-0006/0015).
+| Trigger | WHEN | Module-effect |
+|---------|------|---------------|
+| `trg_order_events_reservering_release` | `event_type='geannuleerd'` | Mig 255: releaset alle actieve `order_reserveringen` (voorraad + IO) van de order. |
+| `trg_order_events_snijplan_release` | `event_type='geannuleerd'` | Mig 290 (ADR-0023): alle nog-levende snijplannen van de order → `Geannuleerd` (ongeacht voortgang); geraakte rollen die hun laatste actieve snijplan verliezen → `beschikbaar`/`reststuk` (`snijden_gestart_op=NULL`), met `NOT EXISTS`-guard voor gedeelde rollen. |
+| `enqueue_factuur_voor_event` | div. (mig 223) | Facturatie-Module queue-vulling. |
 
 #### order_event_type (enum)
 `aangemaakt | pickronde_gestart | pickronde_voltooid | deels_verzonden | wacht_status_herberekend | geannuleerd`
@@ -760,6 +768,11 @@ Geoptimaliseerde snijvoorstellen per kwaliteit+kleur groep. Gegenereerd door de 
 | totaal_m2_afval | NUMERIC(10,2) | Totaal afval |
 | afval_percentage | NUMERIC(5,2) | Gemiddeld afvalpercentage |
 | aangemaakt_door | TEXT | Gebruiker die voorstel genereerde |
+| fifo_badge | TEXT CHECK | ADR-0021/mig 284: `'grijs'` (leeftijd speelde niet / 0 extra afval), `'geel'` (matig extra afval voor FIFO), `'rood'` (fors → NIET auto-approven in `auto-plan-groep`). NULL voor pre-mig 284 voorstellen **én voor alle voorstellen in `app_config.snijplanning.modus='simpel'`** (mig 285 — geavanceerde laag geparkeerd). |
+| extra_afval_m2, extra_afval_pct | NUMERIC | Extra snijafval van dit leeftijd-slimme voorstel t.o.v. de pure-efficiency-variant. 0 bij grijs/short-circuit. |
+| oudste_rol_dagen, efficient_oudste_rol_dagen | INTEGER | Magazijnleeftijd (dgn) van de oudste gebruikte rol — gekozen vs. efficiëntst. |
+| rolwissels, efficient_rolwissels | INTEGER | Aantal aangesneden rollen — gekozen vs. efficiëntst. |
+| fifo_rationale | JSONB | `{ reden, rollen: [{rol_id, rolnummer, leeftijd_dagen}] }` voor de uitklapbare badge-uitleg. |
 
 ### snijvoorstel_plaatsingen
 Individuele stuk-plaatsingen per rol binnen een snijvoorstel.
@@ -1147,12 +1160,12 @@ Centrale audit-/queue-tabel voor alle EDI-berichten via Transus (in én uit) (mi
 
 | Enum | Waarden |
 |------|---------|
-| order_status | **Klaar voor picken** (mig 257, ADR-0016), **Wacht op maatwerk** (mig 257), Wacht op voorraad, **Wacht op inkoop** (mig 144), **In pickronde** (mig 257), **Deels verzonden** (mig 257), Verzonden, Geannuleerd. Legacy (niet meer geschreven post-mig 258): Nieuw, Actie vereist, Wacht op picken, In snijplan, In productie, Deels gereed, Klaar voor verzending. |
+| order_status | **Klaar voor picken** (mig 257, ADR-0016, default sinds mig 275), **Wacht op maatwerk** (mig 257), Wacht op voorraad, **Wacht op inkoop** (mig 144), **In pickronde** (mig 257), **Deels verzonden** (mig 257), Verzonden, Geannuleerd. Legacy (niet meer geschreven post-mig 275): Nieuw, Actie vereist, Wacht op picken, In snijplan, In productie, Deels gereed, Klaar voor verzending. |
 | zending_status | Gepland, Picken, Ingepakt, Klaar voor verzending, Onderweg, Afgeleverd (mig 169) |
 | factuur_status | Concept, Verstuurd, Betaald, Herinnering, Aanmaning, Gecrediteerd |
 | factuurvoorkeur | per_zending, wekelijks |
 | factuur_queue_status | pending, processing, done, failed |
-| snijplan_status | Gepland, Wacht, Gesneden, In confectie, Ingepakt, In productie, Gereed, Geannuleerd |
+| snijplan_status | Gepland, Wacht, Snijden, Gesneden, In confectie, Ingepakt, In productie, Gereed, Geannuleerd (`Snijden` toegevoegd mig 051, `BEFORE 'Gesneden'`) |
 | inkooporder_status | Concept, Besteld, Deels ontvangen, Ontvangen, Geannuleerd |
 | confectie_status | Wacht op materiaal, In productie, Kwaliteitscontrole, Gereed, Geannuleerd |
 | edi_bericht_status | Wachtrij, Bezig, Verstuurd, Verwerkt, Fout, Geannuleerd (mig 157) |
@@ -1173,7 +1186,7 @@ Centrale audit-/queue-tabel voor alle EDI-berichten via Transus (in én uit) (mi
 | rollen_overzicht | Per kwaliteit/kleur: aantal, oppervlak, waarde |
 | recente_orders | Laatste 50 orders met klantnaam |
 | orders_status_telling | Aantal per order_status |
-| snijplanning_overzicht | Snijplannen met order-, klant- en rolgegevens voor de planningsweergave. `snij_lengte_cm`/`snij_breedte_cm` zijn **nominale (bestelde) maten**. Migratie 143 voegt `marge_cm` toe (single-source via `stuk_snij_marge_cm()` migratie 126; ZO +6, rond/ovaal +5, max bij combi) en `geroteerd` toe — beide nodig voor de SnijVolgorde-transformer ([frontend/src/lib/snij-volgorde/derive.ts](../frontend/src/lib/snij-volgorde/derive.ts)) die de rol-uitvoer modal voedt. Fysieke snij-maat = bestelde + marge. |
+| snijplanning_overzicht | Snijplannen met order-, klant- en rolgegevens voor de planningsweergave. `snij_lengte_cm`/`snij_breedte_cm` zijn **nominale (bestelde) maten**. Migratie 143 voegt `marge_cm` toe (single-source via `stuk_snij_marge_cm()` migratie 126; ZO +6, rond/ovaal +5, max bij combi) en `geroteerd` toe — beide nodig voor de SnijVolgorde-transformer ([frontend/src/lib/snij-volgorde/derive.ts](../frontend/src/lib/snij-volgorde/derive.ts)) die de rol-uitvoer modal voedt. Fysieke snij-maat = bestelde + marge. Mig 290: `WHERE o.status <> 'Geannuleerd'` (defense-in-depth bij ADR-0023; bewust NIET ook `'Verzonden'` — de view voedt ook de fysieke rol-uitvoer + packer). |
 | confectie_overzicht | Confectie-orders met scan- en voortgangsstatus |
 | confectie_planning_overzicht | Confectie-orders (status Wacht op materiaal / In productie) met klant, order, maatwerk-afmetingen en strekkende meter voor planningsweergave |
 | confectie_planning_forward | Vooruitkijkende confectie-planning — alle open maatwerk-snijplannen (Gepland..In confectie/Ingepakt) met afgeleide type_bewerking + confectie_startdatum + backward-compat aliassen. Kwaliteit/kleur valt terug van rol → product → maatwerk-snapshot (mig 243) |

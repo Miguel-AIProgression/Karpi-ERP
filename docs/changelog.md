@@ -1,5 +1,67 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-15 — Order annuleren ruimt nu snijplannen + rollen op
+
+**Waarom:** P. Dobbe annuleerde een order maar de snijplannen bleven op de snijlijst staan en de gereserveerde rollen kwamen niet vrij. Werkvloer-verwachting: een geannuleerde order verdwijnt van de snijlijst en alle stukken/rollen komen vrij.
+
+**Root cause:** `markeer_geannuleerd` ([mig 218](../supabase/migrations/218_order_lifecycle_module.sql)) schrijft een `geannuleerd`-event; daarop reageerde alleen `trg_order_events_reservering_release` ([mig 255](../supabase/migrations/255_reservering_order_events_trigger.sql)) — die releaset `order_reserveringen` (voorraad+IO), maar **niemand cancelt de snijplannen**. Hun status bleef `'Gepland'`/`'Snijden'`, rol bleef `in_snijplan`. Bovendien miste `snijplanning_overzicht` ([mig 233](../supabase/migrations/233_snijplanning_overzicht_placed_kolommen.sql)) een order-status-filter, anders dan de zustersview `orderregel_pickbaarheid` (mig 288, regel 101).
+
+**Wat:** [mig 290](../supabase/migrations/290_order_annulering_release_snijplannen.sql) + [ADR-0023](adr/0023-order-annulering-cascadeert-naar-snijplanning.md) — drie delen: (1) nieuwe Snijplanning-Module event-listener `trg_order_events_snijplan_release` op `order_events` `WHEN event_type='geannuleerd'`, symmetrisch met mig 255 → alle snijplannen van de order naar `Geannuleerd` (ongeacht voortgang, werkvloer-keuze) + geraakte rollen die hun laatste actieve snijplan verliezen → `beschikbaar`/`reststuk` (patroon uit `release_gepland_stukken`, mig 133, inclusief `NOT EXISTS`-guard voor gedeelde rollen); (2) `snijplanning_overzicht` krijgt `WHERE o.status <> 'Geannuleerd'` (defense-in-depth; bewust NIET ook `'Verzonden'` — die view voedt ook de fysieke rol-uitvoer + packer); (3) backfill van bestaande Geannuleerd-orders met levende snijplannen (repareert P. Dobbe's order). Vrijgekomen rollen worden via de bestaande rol-status-trigger (mig 111) automatisch heraangeboden aan auto-plan.
+
+## 2026-05-15 — Confectie-buffer default → 0 minuten
+
+**Waarom:** De 15-min confectie-buffer (mig 103) liet een vers-gesneden stuk 15 min onzichtbaar uit de Confectielijst — verwarrend op de werkvloer. Bedrijfskeuze: gesneden stukken direct beschikbaar voor confectie.
+
+**Wat:** [mig 289](../supabase/migrations/289_confectie_buffer_default_nul.sql) — live `app_config.productie_planning.confectie_buffer_minuten` → `0` én fallback in `confectie_buffer_minuten()` van 15 → 0. View `confectie_planning_forward` ongemoeid (leest de functie dynamisch); buffer-WHERE wordt met 0 inert → Gesneden stukken verschijnen direct. Omkeerbaar via config-waarde.
+
+## 2026-05-15 — Pick & Ship: maatwerk-orders niet meer "tussen wal en schip"
+
+**Waarom:** Maatwerk-orders met meerdere stuks waarvan er nog één op `'Snijden'` stond verdwenen geruisloos uit Pick & Ship — zónder enige `wacht_op`-reden, dus ook nergens zichtbaar als "Wacht op snijden". Voorbeeld: ORD-2026-2067 (regel 1, 5 stuks: 4× `Ingepakt`, 1× `Snijden`) → `is_pickbaar=false` (terecht) maar `wacht_op=NULL` (bug).
+
+**Root cause:** De `slechtste_rang`-CASE in [mig 170](../supabase/migrations/170_orderregel_pickbaarheid_view.sql) miste de status `'Snijden'` (geldige `snijplan_status`, toegevoegd in legacy mig 051 `BEFORE 'Gesneden'`). Een `'Snijden'`-snijplan viel in `ELSE NULL`; `MIN()` negeert NULL's → `slechtste_rang` werd ten onrechte de béste i.p.v. de slechtste status. De invariant ("wacht_op afgeleid van slechtst-presterende snijplan") was kapot voor élke maatwerkregel met een `'Snijden'`-stuk náást gevorderde stukken.
+
+**Wat:** [mig 288](../supabase/migrations/288_orderregel_pickbaarheid_snijden_rang.sql) — `WHEN 'Snijden' THEN 2` toegevoegd aan de rang-CASE (`'snijden'`-bucket, gelijk aan `'Gepland'`). `is_pickbaar` ongewijzigd (leunt op `pickbaar_stuks/totaal_stuks`); alleen `wacht_op` flipt van `NULL` → `'snijden'` voor de getroffen regels, zodat de order zichtbaar "Wacht op snijden" is i.p.v. spoorloos. Verder identiek aan mig 170. Stale enum-doc in [database-schema.md](database-schema.md) (`snijplan_status` miste `Snijden`) meteen meegecorrigeerd.
+
+## 2026-05-15 — in_magazijn_sinds: record-aanmaakdatum i.p.v. sentinel
+
+**Waarom:** Mig 280 gaf historische rollen zonder IO-koppeling de sentinel `2000-01-01`; op de rollen-pagina was dat onbruikbaar. Beter signaal = de aanmaakdatum van het rollen-record in Supabase.
+
+**Wat:** [mig 287](../supabase/migrations/287_in_magazijn_sinds_created_at_default.sql) — backfill: sentinel-rijen → `created_at::date`, daarna reststuk-keten opnieuw geërfd (recursieve CTE). Nieuwe rollen zonder expliciete waarde krijgen via BEFORE INSERT-trigger `trg_rollen_default_in_magazijn_sinds` `COALESCE(created_at, reststuk_datum, CURRENT_DATE)::date`. Defensief: valt terug op `reststuk_datum` als `rollen.created_at` niet bestaat. IO-ontvangst (mig 281) en reststuk-erfgang (mig 282) blijven leidend en passeren de trigger ongemoeid.
+
+## 2026-05-15 — FIFO-snijplanner geparkeerd in modus 'simpel'
+
+**Waarom:** Interne rol-data is nog niet op orde; de volledige leeftijd-kost-afweging zou daardoor nog niet betrouwbaar werken. We zetten de geavanceerde laag bewust "achter de schermen" maar behouden alle code, zodat dit later live kan.
+
+**Wat:**
+- [mig 285](../supabase/migrations/285_snijplanning_fifo_modus_simpel.sql) — `app_config.snijplanning.modus` (default `'simpel'`). `simpel` = strikt oudste-rol-eerst, geen kost-afweging/badge/carve-out (`fifoMetrics` leeg). `geavanceerd` = de volledige ADR-0021-functionaliteit.
+- [mig 286](../supabase/migrations/286_voorraadposities_in_magazijn_sinds.sql) — `voorraadposities`-RPC geeft `in_magazijn_sinds` mee en sorteert de rol-lijst per (kw,kl) **oudste-eerst**.
+- Packer ([`guillotine-packing.ts`](../supabase/functions/_shared/guillotine-packing.ts)): `modus !== 'geavanceerd'` → één strikte FIFO-pass, geen metrics. [`buildFifoOptions`](../supabase/functions/_shared/db-helpers.ts) leest `modus` (default `simpel`).
+- Rollen-overzicht ([`rollen-groep-row.tsx`](../frontend/src/components/rollen/rollen-groep-row.tsx)): kolom **"Binnen sinds"** + groene **"1e binnen"**-markering op de oudst-binnengekomen rol. `RolRow.in_magazijn_sinds` toegevoegd.
+- Instellingen → Productie Instellingen: **modus-toggle** Eenvoudig/Geavanceerd; de geavanceerde criteria zijn zichtbaar maar uitgegrijsd in `simpel`.
+- ADR-0021 amendement + CLAUDE.md-bedrijfsregel bijgewerkt naar de geparkeerde status.
+
+**Beslissing:** gebruiker, 2026-05-15 — eerst data op orde, dan `modus='geavanceerd'`.
+
+## 2026-05-15 — FIFO-magazijnleeftijd in de snijplanner (ADR-0021)
+
+**Waarom:** Kleurverschil tussen tapijtrollen van dezelfde kwaliteit+kleur ontstaat puur door fysieke veroudering in het magazijn. De packer optimaliseerde alleen op snijverlies/rol-zuinigheid, waardoor oude voorraad onbeperkt kon blijven liggen en latere leveringen/herhalbestellingen kleurverschil gaven. Nu weegt de packer magazijnleeftijd mee — oudere rollen bij voorkeur eerst wegsnijden — zonder andere orders te benadelen, en zonder de flow te verzwaren.
+
+**Wat:**
+- [mig 280](../supabase/migrations/280_rollen_in_magazijn_sinds.sql) — `rollen.in_magazijn_sinds DATE` + backfill (IO-rol → ontvangstdatum; reststuk-keten → erft via recursieve CTE van de wortel; historische import → sentinel `2000-01-01`).
+- [mig 281](../supabase/migrations/281_boek_ontvangst_in_magazijn_sinds.sql) — `boek_inkooporder_ontvangst_rollen` vult `in_magazijn_sinds = CURRENT_DATE`. `reststuk_datum` blijft `NOW()` (traceability ongewijzigd).
+- [mig 282](../supabase/migrations/282_voltooi_snijplan_rol_erf_magazijnleeftijd.sql) — nieuwe reststukken erven `in_magazijn_sinds` van de moederrol (klok reset **niet** bij snijden); `reststuk_datum = CURRENT_DATE`-afhankelijkheid voor kostentoerekening ongemoeid.
+- [mig 283](../supabase/migrations/283_app_config_snijplanning_fifo.sql) — `app_config.snijplanning`: `drempel_dagen=90`, `harde_bovengrens_dagen=180`, `alpha=0.05`, badge-drempels (geel +5 m²/+25%, rood +10 m²/+50%) — online tunebaar.
+- [mig 284](../supabase/migrations/284_snijvoorstellen_fifo_metrics.sql) — `snijvoorstellen.fifo_badge` + extra-afval/oudste-rol/rolwissel-metrics + `fifo_rationale` JSONB.
+- Packer ([`_shared/guillotine-packing.ts`](../supabase/functions/_shared/guillotine-packing.ts)): kostfunctie `afval − α·max(0, leeftijd−drempel)` met absolute voorrang ≥180 dgn, derde rol-sorteerstrategie (oudste/over-bovengrens eerst), harde constraints **C1** (geen verdringing van gereserveerde rollen) en **C2** (geen deadline-schade → terugval op efficiency), plus short-circuit voor verse voorraad. Interfaces in [`_shared/ffdh-packing.ts`](../supabase/functions/_shared/ffdh-packing.ts); helpers `buildFifoOptions`/`fetchGereserveerdeRolIds` in [`_shared/db-helpers.ts`](../supabase/functions/_shared/db-helpers.ts).
+- Edge: [`optimaliseer-snijplan`](../supabase/functions/optimaliseer-snijplan/index.ts) + [`auto-plan-groep`](../supabase/functions/auto-plan-groep/index.ts) geven FIFO-opties door en slaan de metrics op. **Auto-approve-carve-out:** een rode badge wordt niet automatisch goedgekeurd — voorstel blijft `concept`.
+- Frontend: subtiele [`FifoBadge`](../frontend/src/components/snijplanning/fifo-badge.tsx) (grijs = onzichtbaar, geel/rood = uitklapbare afweging) in [`snijvoorstel-modal.tsx`](../frontend/src/components/snijplanning/snijvoorstel-modal.tsx) en [`snijvoorstel-review.tsx`](../frontend/src/pages/snijplanning/snijvoorstel-review.tsx); types + `mapFifo` in [`productie.ts`](../frontend/src/lib/types/productie.ts) / [`snijvoorstel.ts`](../frontend/src/modules/snijplanning/queries/snijvoorstel.ts).
+
+**Niet gewijzigd / V2-backlog:**
+- Zonder `PackOptions.fifo` is het packer-gedrag exact als voorheen (bestaande ffdh/guillotine-tests ongewijzigd).
+- C2 is conservatief (val-terug-op-efficiency bij conflict); per-rolwissel-rollback staat op de V2-backlog.
+
+**Beslissing:** gebruiker, 2026-05-15 — grilling-with-docs sessie. Zie [ADR-0021](adr/0021-magazijnleeftijd-fifo-als-kostdimensie-in-snijplanner.md).
+
 ## 2026-05-15 — ADR-0020-amendement: twee bewust gescheiden levertijd-paden
 
 **Waarom:** Bij afronding bleek de plan-aanname "edge `check-levertijd` wordt thin wrapper rond de RPC's" een verkeerde één-vormigheid. `LevertijdSuggestie` draait op een **pre-persist maatwerk-config** (kwaliteit/kleur/maten, géén orderregel-id, rijke scenario-UX); de Module-RPC's werken op **gepersisteerde regel-id's** met smalle output. 1-op-1 migratie is technisch onmogelijk én zou een UX-regressie zijn.
@@ -32,6 +94,38 @@
 - `lever_type`-dag-buffer blijft canoniek in edge `check-levertijd` — Levertijd-Module raakt dat pad niet.
 - Bevroren leverbelofte-tabel + EDI/factuur/pakbon-consumers van het `levertijd_status`-label.
 - Orders-overview-badge-integratie uitgesteld i.v.m. parallel werk aan de orders-overzichtspagina (klant-filter); detail-header + order-form zijn wél live.
+
+## 2026-05-13 — Orders-overview: klant-filter (multi-select op naam + debiteur-nr)
+
+**Waarom:** Op de orders-overzichtspagina kon je alleen via de vrije-tekst-zoekbalk filteren op klant — geen overzicht van welke klanten orders hebben en geen multi-select. De facturen-pagina had dit patroon al via `MultiSelectDropdown`; orders nu uniform mee.
+
+**Wat:**
+- [`orders.ts`](../frontend/src/lib/supabase/queries/orders.ts): `fetchOrders` accepteert nu `debiteurNrs: number[]` (via `.in('debiteur_nr', …)`); bestaande `debiteurNr` (single) blijft als fallback. Nieuwe query `fetchOrderKlantOpties` haalt distinct `(debiteur_nr, klant_naam)` op uit `orders_list` (JS-dedupe, range 0-9999 — vervang door DB-view als dat knelt).
+- [`use-orders.ts`](../frontend/src/hooks/use-orders.ts): nieuwe hook `useOrderKlantOpties` (60s staleTime).
+- [`orders-overview.tsx`](../frontend/src/pages/orders/orders-overview.tsx): `MultiSelectDropdown` naast de zoekbalk. Optie-label is `"NAAM (#nr)"` zodat de ingebouwde zoekbalk én op klantnaam én op debiteur-nummer matcht. Selectie reset paginering naar 0.
+
+**Niet gewijzigd:** PostgREST `or()` met klant-naam in de zoekbalk blijft bestaan — dat is vrije-tekst-zoek over `order_nr / klant_referentie / klant_naam`. De multi-select is een orthogonale, expliciete klant-filter.
+
+## 2026-05-13 — Mig 275: 'Nieuw' deprecate als runtime-status (sluit ADR-0016 af)
+
+**Waarom:** Op orders 2063-2067 verscheen vandaag de badge `Nieuw`, terwijl die status sinds ADR-0016 / mig 257-258 gedeprecateerd is. Geen filter-tab toonde hem, geen workflow gebruikte hem — puur als gevolg van drie samenwerkende regressies:
+- Kolom-DEFAULT van `orders.status` stond nog op `'Nieuw'`.
+- `create_order_with_lines` (mig 245 r. 55) en `edi_create_order` (mig 166 r. 130) schreven expliciet `'Nieuw'`.
+- `herbereken_wacht_status` (mig 273) was back-geport naar de mig-218-vorm waarin `'Nieuw'` weer de default-eindstaat is — de ADR-0016-uitbreidingen (Wacht op maatwerk, Klaar voor picken-target) gingen verloren tijdens het admin-pseudo-filterpatroon uit mig 269/273.
+
+**Wat:**
+- [275_nieuw_status_deprecate_klaar_voor_picken.sql](../supabase/migrations/275_nieuw_status_deprecate_klaar_voor_picken.sql) — vijf wijzigingen in één migratie:
+  1. `ALTER TABLE orders ALTER COLUMN status SET DEFAULT 'Klaar voor picken'`.
+  2. `create_order_with_lines` schrijft `'Klaar voor picken'`.
+  3. `edi_create_order` patcht zijn literal via DO-block (`'Nieuw'` → `'Klaar voor picken'`).
+  4. `herbereken_wacht_status` hersteld met mig-258-takken (Wacht op maatwerk + Klaar voor picken-target), `is_admin_pseudo()`-filter behouden, eindstatus-bescherming uitgebreid met `In pickronde` / `Deels verzonden`.
+  5. Backfill bestaande `'Nieuw'`-orders volgens ADR-0016 §"Backfill" (uitgebreid met IO-claim-tak en admin-pseudo-filter t.o.v. mig 258 §7).
+- UI-cleanup ([status-tabs.tsx](../frontend/src/components/orders/status-tabs.tsx), [orders.ts](../frontend/src/lib/supabase/queries/orders.ts)) — de cosmetische fallback die `'Nieuw'` onder de `'Klaar voor picken'`-tab telde, en de OR-query op dezelfde tab, zijn verwijderd. `ORDER_STATUS_COLORS` behoudt de `'Nieuw'`-mapping voor audit-history.
+- [`vertegenwoordigers.ts`](../frontend/src/lib/supabase/queries/vertegenwoordigers.ts) `ACTIVE_ORDER_STATUSES` uitgebreid met de canonieke ADR-0016-statussen — voorkomt dat order-tellingen per vertegenwoordiger orders missen die nu op `'Klaar voor picken'` / `'Wacht op maatwerk'` / etc. staan.
+
+**Niet gewijzigd:**
+- `'Nieuw'` blijft in het `order_status` ENUM voor audit-history (oude `order_events`-rijen referencen het). De ENUM-waarde verwijderen kan pas na meerdere maanden audit-rollover.
+- `create_webshop_order` (mig 093) zet geen expliciete status — die erft voortaan automatisch de nieuwe kolom-DEFAULT.
 
 ## 2026-05-13 — ADR-0020: Levertijd als deep Module (capaciteit-seam owner + status-label)
 
