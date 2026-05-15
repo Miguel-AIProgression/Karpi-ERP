@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronRight, Loader2, Truck } from 'lucide-react'
+import { ChevronDown, ChevronRight, Loader2, Pencil, Plus, Trash2, Truck } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { cn } from '@/lib/utils/cn'
 import { ROL_STATUS_COLORS, ROL_TYPE_COLORS, ROL_TYPE_LABELS } from '@/lib/utils/constants'
@@ -11,6 +11,15 @@ import type {
   UitwisselbarePartner,
   Voorraadpositie,
 } from '@/modules/voorraadpositie'
+import { RolToevoegenDialog } from './rol-toevoegen-dialog'
+import { RolBewerkenDialog } from './rol-bewerken-dialog'
+import { RolVerwijderenDialog } from './rol-verwijderen-dialog'
+
+// Een rol mag handmatig bewerkt/verwijderd worden zolang hij niet aan een
+// snijplan/claim hangt (mig 292/293). 'reststuk' is bewerkbaar/verwijderbaar.
+function isMuteerbaar(status: string): boolean {
+  return status === 'beschikbaar' || status === 'reststuk'
+}
 
 interface RollenGroepRowProps {
   positie: Voorraadpositie
@@ -231,12 +240,15 @@ function formatBinnenSinds(d: string | null): string {
 
 function RolTabel({ rollen }: { rollen: RolRow[] }) {
   const [expandedRolId, setExpandedRolId] = useState<number | null>(null)
+  const [bewerkRol, setBewerkRol] = useState<RolRow | null>(null)
+  const [verwijderRol, setVerwijderRol] = useState<RolRow | null>(null)
 
   // De RPC levert rollen oudste-eerst (in_magazijn_sinds ASC NULLS FIRST).
   // De eerste rol mét bekende datum is dus de eerstvolgende voor FIFO-snijden.
   const eersteFifoRolId = rollen.find((r) => r.in_magazijn_sinds)?.id ?? null
 
   return (
+    <>
     <table className="w-full text-sm">
       <thead>
         <tr className="text-left text-xs text-slate-500 border-b border-slate-100">
@@ -246,6 +258,7 @@ function RolTabel({ rollen }: { rollen: RolRow[] }) {
           <th className="py-2 px-3 font-medium">Binnen sinds</th>
           <th className="py-2 px-3 font-medium">Status</th>
           <th className="py-2 px-3 font-medium">Locatie</th>
+          <th className="py-2 px-3 font-medium text-right">Acties</th>
         </tr>
       </thead>
       <tbody className="divide-y divide-slate-50">
@@ -297,10 +310,32 @@ function RolTabel({ rollen }: { rollen: RolRow[] }) {
                   </div>
                 </td>
                 <td className="py-2 px-3 text-slate-500">{rol.locatie ?? '—'}</td>
+                <td className="py-2 px-3 text-right whitespace-nowrap">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setBewerkRol(rol) }}
+                    disabled={!isMuteerbaar(rol.status)}
+                    title={isMuteerbaar(rol.status)
+                      ? 'Bewerken'
+                      : `Niet bewerkbaar: status ${rol.status}`}
+                    className="p-1 text-slate-400 hover:text-terracotta-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <Pencil size={14} />
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setVerwijderRol(rol) }}
+                    disabled={!isMuteerbaar(rol.status)}
+                    title={isMuteerbaar(rol.status)
+                      ? 'Verwijderen'
+                      : `Niet verwijderbaar: status ${rol.status}`}
+                    className="p-1 text-slate-400 hover:text-red-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </td>
               </tr>
               {isExpanded && (
                 <tr key={`${rol.id}-details`}>
-                  <td colSpan={6} className="p-0">
+                  <td colSpan={7} className="p-0">
                     <RolDetails rolId={rol.id} artikelnr={rol.artikelnr} rolOppervlak={rol.oppervlak_m2} />
                   </td>
                 </tr>
@@ -310,11 +345,20 @@ function RolTabel({ rollen }: { rollen: RolRow[] }) {
         })}
       </tbody>
     </table>
+    {bewerkRol && (
+      <RolBewerkenDialog rol={bewerkRol} onClose={() => setBewerkRol(null)} />
+    )}
+    {verwijderRol && (
+      <RolVerwijderenDialog rol={verwijderRol} onClose={() => setVerwijderRol(null)} />
+    )}
+    </>
   )
 }
 
 export function RollenGroepRow({ positie }: RollenGroepRowProps) {
   const [open, setOpen] = useState(false)
+  const [toevoegOpen, setToevoegOpen] = useState(false)
+  const artikelnr = positie.rollen[0]?.artikelnr ?? null
 
   // Aggregaten afgeleid uit Voorraadpositie. Lege groepen ('ghost'-paren met
   // alleen besteld) komen door de view-laag op page-niveau hier binnen met
@@ -440,8 +484,25 @@ export function RollenGroepRow({ positie }: RollenGroepRowProps) {
 
       {open && !isEmpty && (
         <div className="border-t border-slate-100 px-2 py-2">
+          {artikelnr && (
+            <div className="flex justify-end px-3 pb-2">
+              <button
+                onClick={() => setToevoegOpen(true)}
+                className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-[var(--radius-sm)] border border-slate-200 text-slate-600 hover:bg-slate-50"
+              >
+                <Plus size={13} /> Rol toevoegen
+              </button>
+            </div>
+          )}
           <RolTabel rollen={positie.rollen} />
         </div>
+      )}
+      {toevoegOpen && artikelnr && (
+        <RolToevoegenDialog
+          artikelnr={artikelnr}
+          productLabel={productLabel}
+          onClose={() => setToevoegOpen(false)}
+        />
       )}
     </div>
   )
