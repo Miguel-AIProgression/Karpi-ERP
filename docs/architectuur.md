@@ -305,6 +305,16 @@ Edge function `check-levertijd` (`supabase/functions/check-levertijd/`) berekent
 
 Frontend: `useLevertijdCheck` hook (TanStack Query, 350 ms debounce, 60 s staleTime) + `<LevertijdSuggestie>` component met scenario-badge, datum, onderbouwing en "Neem datum over"-knop. Geïntegreerd in `order-form.tsx` voor de laatste maatwerk-regel met complete (kwaliteit, kleur, lengte, breedte). Bij edge-function fout valt de UI terug op `berekenAfleverdatum()`.
 
+### Klant-PO parsing (order uitvullen vanuit PDF)
+Edge function `parse-klant-po` (`supabase/functions/parse-klant-po/`) laat medewerkers een klant-inkooporder-PDF uploaden vanuit de `DocumentenBuffer` op de order-aanmaakpagina en vult het order-formulier automatisch voor. De flow bestaat uit twee gescheiden lagen:
+
+1. **Extractie (`_shared/po-extract.ts` — puur, getest):** stuurt de PDF naar de Claude Messages-API en ontvangt ongestructureerde ruwe tekst (debiteurgegevens, regels, aantallen). Geen DB-aanroepen; eenvoudig te unit-testen.
+2. **Deterministische koppeling — RPC `match_klant_po` (mig 289):** matcht de ruwe extractie tegen de database zonder AI-heuristieken. Debiteur via btw → e-maildomein → exacte naam (telkens precies 1 hit = `zeker`, anders geen debiteur). Per regel: kwaliteit via **reverse-lookup op `klanteigen_namen.benaming`** (debiteur-/inkoopgroep-scoped) én exacte `kwaliteiten.omschrijving` — *niet* `resolve_klanteigen_naam` (die resolver werkt in de tegengestelde richting); kleur via numeriek suffix; artikel via `klant_artikelnummers` en `producten`. Elk veld krijgt een `zeker`-label. STABLE, geen side-effects. GRANT anon/authenticated/service_role.
+
+**Frontend (`@/lib/orders/po-prefill`):** vult uitsluitend `zeker`-velden in de `initialData`-structuur. `OrderCreatePage` geeft een nieuwe `key` aan `OrderForm` zodat het formulier hermount met de voorgevulde data — geen auto-opslag, de medewerker controleert en slaat handmatig op. UI-entry: "📄 Order uitvullen"-knop per PDF in `DocumentenBuffer` + samenvattingsbanner.
+
+**Auth:** `parse-klant-po` is gedeployed met `verify_jwt = false` (patroon identiek aan `check-levertijd`). Vereist secret `ANTHROPIC_API_KEY` op de edge-functie-omgeving (handmatig gezet via Supabase Dashboard → Edge Functions → Secrets).
+
 **Auth-noot (Edge-gateway):** `check-levertijd`, `auto-plan-groep` en `optimaliseer-snijplan` zijn gedeployed met `verify_jwt = false` (zie [supabase/config.toml](supabase/config.toml)). De nieuwe `sb_publishable_...` API-keyvorm in de frontend is geen JWT; met de default `verify_jwt=true` zou de Edge-gateway `supabase.functions.invoke()`-calls blokkeren met HTTP 401 `UNAUTHORIZED_INVALID_JWT_FORMAT`. De functies gebruiken intern `SUPABASE_SERVICE_ROLE_KEY` voor DB-toegang en lezen geen user-JWT, dus gateway-check is overbodig. Toggle staat ook aan/uit via Supabase Dashboard → Edge Functions → [naam] → "Enforce JWT Verification".
 
 Configuratie in `app_config.productie_planning`: `logistieke_buffer_dagen` (default 2), `backlog_minimum_m2` (default 12). Performance-doel: < 1.5 s p95.

@@ -1,5 +1,15 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-15 — Klant-PO parsing: order uitvullen vanuit PDF
+
+**Waarom:** Klanten sturen inkooporders als PDF. Medewerkers typten die handmatig over — foutgevoelig en tijdrovend. Nu kan de medewerker een PDF uploaden via `DocumentenBuffer`, waarna het systeem automatisch debiteur, artikelen en aantallen herkent en het order-formulier voorinvult.
+
+**Wat:**
+- **Edge function `parse-klant-po`** (`supabase/functions/parse-klant-po/`) — twee lagen: (1) Claude Messages-API extractie van vormvrije ruwe tekst uit de PDF (`_shared/po-extract.ts`, pure module zonder side-effects); (2) deterministische match-RPC `match_klant_po` (mig 289) koppelt het resultaat aan de database. Vereist secret `ANTHROPIC_API_KEY` op de edge-functie-omgeving.
+- **[mig 289](../supabase/migrations/289_match_klant_po.sql) — RPC `match_klant_po(p_extractie jsonb) → jsonb`:** Debiteur via btw → e-maildomein → exacte naam (telkens precies 1 hit = `zeker`, anders geen debiteur). Per regel: kwaliteit via reverse-lookup op `klanteigen_namen.benaming` (debiteur-/inkoopgroep-scoped) én exacte `kwaliteiten.omschrijving`; kleur via numeriek suffix; artikel via `klant_artikelnummers` of `producten`-lookup. Elk gematcht veld krijgt een `zeker`-label — alleen `zeker`-velden worden voorgevuld.
+- **UI:** "📄 Order uitvullen"-knop per PDF in `DocumentenBuffer` + samenvattingsbanner met confidence-indicatie. `OrderCreatePage` hermount `OrderForm` via een `key` met de voorgevulde `initialData`. Geen auto-opslag.
+- **Spec:** [`docs/superpowers/specs/2026-05-15-klant-po-parsing-order-uitvullen-design.md`](superpowers/specs/2026-05-15-klant-po-parsing-order-uitvullen-design.md).
+
 ## 2026-05-15 — Handmatige rol-/reststuk-CRUD
 - Rollen & Reststukken-pagina: rollen/reststukken toevoegen, bewerken,
   verwijderen via RPC-laag (mig 291-293) + audittabel `rol_mutaties` (mig 290).
