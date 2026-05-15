@@ -32,8 +32,7 @@ BEGIN
   ASSERT v_rol_id IS NOT NULL, 'toevoegen gaf geen rol_id';
   ASSERT v_rolnr LIKE 'CORR-TESTROLCRUD01-%', 'auto-rolnummer onverwacht: ' || v_rolnr;
 
-  SELECT oppervlak_m2, in_magazijn_sinds INTO v_opp, v_audit
-  FROM rollen WHERE id = v_rol_id;
+  SELECT oppervlak_m2 INTO v_opp FROM rollen WHERE id = v_rol_id;
   ASSERT v_opp = ROUND(1500*400/10000.0, 2), 'oppervlak onjuist: ' || v_opp;
   RAISE NOTICE 'toevoegen-basis: OK';
 
