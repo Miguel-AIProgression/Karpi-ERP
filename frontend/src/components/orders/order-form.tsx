@@ -8,7 +8,12 @@ import { OrderLineEditor } from './order-line-editor'
 import { LevertijdSuggestie } from './levertijd-suggestie'
 import { LeverModusDialog, type LeverModusTekort } from './lever-modus-dialog'
 import { berekenRegelDekking, invalidateNaReserveringsmutatie, type LeverModus } from '@/modules/reserveringen'
-import { createOrder, updateOrderWithLines, deleteOrder, resolveOrderlinePrice, fetchKlantArtikelnummer, setUitwisselbaarClaims } from '@/lib/supabase/queries/order-mutations'
+import {
+  LevertijdFitIndicator,
+  SnelsteHaalbaarKnop,
+  useNeemSnelsteOver,
+} from '@/modules/levertijd'
+import { createOrder, updateOrderWithLines, deleteOrder, resolveOrderlinePrice, fetchKlantArtikelnummer, setUitwisselbaarClaims, type LevertijdSnapshotContext } from '@/lib/supabase/queries/order-mutations'
 import type { OrderFormData, OrderRegelFormData, PrijsBron, PrijsBreakdown } from '@/lib/supabase/queries/order-mutations'
 import { fetchKlanteigenNaam } from '@/modules/debiteuren'
 import { supabase } from '@/lib/supabase/client'
@@ -20,6 +25,7 @@ import {
   verzendWeekStringToDatum,
   verzendWeekVoor,
   verzendWeekRelatief,
+  verzendWeekSleutel,
 } from '@/lib/orders/verzendweek'
 import { applyShippingLogic } from '@/lib/orders/verzend-regel'
 import { bepaalOrderAfleverdatum } from '@/lib/orders/order-afleverdatum'
@@ -86,6 +92,23 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
     () => bepaalOrderAfleverdatum(regels, client, orderConfig),
     [regels, client, orderConfig],
   )
+
+  // Levertijd-Module integratie (ADR-0020 stap 6). Bestaande regels met DB-id
+  // zijn de scope voor fit-check + snelste-haalbaar: nieuwe regels in een
+  // create-form hebben nog geen id, dus de RPC's hebben er niets aan totdat
+  // de order opgeslagen is.
+  const persistedRegelIds = useMemo(
+    () =>
+      regels
+        .map((r) => r.id)
+        .filter((id): id is number => typeof id === 'number'),
+    [regels],
+  )
+  const gewensteWeek = useMemo(
+    () => (header.afleverdatum ? verzendWeekSleutel(header.afleverdatum) : ''),
+    [header.afleverdatum],
+  )
+  const neemSnelsteOver = useNeemSnelsteOver()
 
   // Laatste maatwerk-regel met complete kwaliteit + kleur + afmetingen,
   // gebruikt als input voor de real-time levertijd-check.
@@ -386,6 +409,12 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
         : { ...header, afhalen }
       const orderData: OrderFormData = { ...headerWithModus, debiteur_nr: client.debiteur_nr }
 
+      // Levertijd-Module snapshot-context (ADR-0020 / mig 276): geef de klant
+      // mee zodat `createOrder` / `updateOrderWithLines` de klant-standaard
+      // afleverdatum kunnen bepalen en in `orders.standaard_afleverdatum_berekend`
+      // schrijven. Eenmalig bij eerste commit; daarna immutable.
+      const snapshotCtx: LevertijdSnapshotContext = { klant: client }
+
       if (mode === 'create') {
         // Split-order flow: deelleveringen AAN + gemengde order (standaard + maatwerk)
         if (deelleveringen && afleverdatumInfo.heeftGemengd) {
@@ -426,8 +455,8 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
             ? [...maatwerkRegels, shippingRegel]
             : maatwerkRegels
 
-          const a = await createOrder(standaardOrder, regelsA)
-          const b = await createOrder(maatwerkOrder, regelsB)
+          const a = await createOrder(standaardOrder, regelsA, snapshotCtx)
+          const b = await createOrder(maatwerkOrder, regelsB, snapshotCtx)
           await persistUitwisselbaarKeuzes(a.id, regelsA)
           await persistUitwisselbaarKeuzes(b.id, regelsB)
           await triggerAutoplanForMaatwerk(regelsB)
@@ -491,21 +520,21 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
           // De IO-order hangt aan de IO-leverdatum (mig 153 zet afleverdatum vooruit)
           const ioOrder: OrderFormData = { ...orderData, lever_modus: 'in_een_keer' }
 
-          const a = await createOrder(directeOrder, directeRegels)
-          const b = await createOrder(ioOrder, ioRegels)
+          const a = await createOrder(directeOrder, directeRegels, snapshotCtx)
+          const b = await createOrder(ioOrder, ioRegels, snapshotCtx)
           await persistUitwisselbaarKeuzes(a.id, directeRegels)
           await persistUitwisselbaarKeuzes(b.id, ioRegels)
           await triggerAutoplanForMaatwerk(directeRegels)
           return { split: true as const, standaard: a, maatwerk: b }
         }
 
-        const single = await createOrder(orderData, regels)
+        const single = await createOrder(orderData, regels, snapshotCtx)
         await persistUitwisselbaarKeuzes(single.id, regels)
         await triggerAutoplanForMaatwerk(regels)
         return { split: false as const, ...single }
       } else {
         const orderId = initialData!.orderId
-        await updateOrderWithLines(orderId, orderData, regels)
+        await updateOrderWithLines(orderId, orderData, regels, snapshotCtx)
         await persistUitwisselbaarKeuzes(orderId, regels)
         await triggerAutoplanForMaatwerk(regels)
         return { split: false as const, id: orderId, order_nr: '' }
@@ -640,6 +669,43 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
           }}
         />
       </div>
+
+      {/* Levertijd-Module (ADR-0020): inline fit-indicator + "klant heeft haast"-
+          knop, gekoppeld aan de huidige afleverdatum. Read-only waarschuwing —
+          blokkeert de save-flow niet, want commit blijft de operator-keuze. */}
+      {persistedRegelIds.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3">
+          <LevertijdFitIndicator
+            regelIds={persistedRegelIds}
+            gewensteWeek={gewensteWeek}
+          />
+          <SnelsteHaalbaarKnop
+            orderId={initialData?.orderId ?? null}
+            regelIds={persistedRegelIds}
+            onOvernemen={(gekozenWeek) => {
+              const nieuweDatum = verzendWeekStringToDatum(gekozenWeek)
+              if (!nieuweDatum) return
+              const wk = verzendWeekVoor(nieuweDatum)
+              if (mode === 'edit' && initialData?.orderId) {
+                // Edit-mode: persisteer direct via Module-mutation (zet trigger
+                // levertijd_status om naar eerder_/later_dan_standaard).
+                neemSnelsteOver.mutate({
+                  orderId: initialData.orderId,
+                  gekozenWeek,
+                })
+              }
+              // Spiegel altijd ook in de lokale form-state zodat UI direct
+              // synchroon is met de mutation (create-mode heeft alleen dit pad).
+              setAfleverdatumOverridden(true)
+              setHeader((h) => ({
+                ...h,
+                afleverdatum: nieuweDatum,
+                week: wk ? String(wk.week) : h.week,
+              }))
+            }}
+          />
+        </div>
+      )}
 
       {/* Real-time levertijd-suggestie voor maatwerk-regels */}
       {levertijdInput && (

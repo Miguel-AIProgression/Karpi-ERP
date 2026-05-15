@@ -5,6 +5,22 @@
 //
 // Gebruikt UTC-Date math i.p.v. local time (edge runtime ≠ Amsterdam tz);
 // dat klopt voor datum-berekening, alleen het exacte uur wijkt af.
+//
+// ----------------------------------------------------------------------------
+// ADR-0020: synchronous-only mirror — SQL is ground-truth
+// ----------------------------------------------------------------------------
+// Werkdag-rekenkunde (`werkdagMinN` en de minuten-helpers die op werkdagen
+// rusten) leeft sinds mig 279 ook in SQL als `werkdag_min_n`,
+// `werkdag_plus_n` en `werkagenda_kalender`. Die SQL-versie is de canonieke
+// definitie. Deze Deno-module blijft bestaan als **synchrone mirror** voor
+// edge-functions die per-call geen RPC-roundtrip kunnen veroorloven
+// (`check-levertijd` doet honderden agenda-rekensommen per request). Bij elke
+// wijziging aan werkdag-definitie (bv. NL-feestdagen toevoegen) moet je
+// drie plekken tegelijk updaten:
+//   1. supabase/migrations/279_werkagenda_sql_functions.sql (ground-truth)
+//   2. dit bestand (Deno-mirror)
+//   3. frontend/src/lib/utils/bereken-agenda.ts (TS-mirror voor UI-pad)
+// Anders divergeren edge-berekeningen, UI-bucketing en SQL-views.
 
 export interface Werktijden {
   /** ISO werkdagen 1=ma..7=zo */

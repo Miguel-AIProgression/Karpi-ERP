@@ -1,3 +1,19 @@
+// ----------------------------------------------------------------------------
+// ADR-0020: synchronous-only mirror — SQL is ground-truth
+// ----------------------------------------------------------------------------
+// Werkdag-rekenkunde (`werkdagMinN`, `volgendeWerkminuut`, `plusWerkminuten`
+// e.d.) leeft sinds mig 279 ook in SQL als `werkdag_min_n`, `werkdag_plus_n`
+// en `werkagenda_kalender`. Die SQL-versie is de canonieke definitie.
+// Deze TS-module blijft bestaan als **synchrone mirror** voor het UI-pad —
+// Magazijn's `bucketVoor` en andere render-toetsen draaien per render
+// honderden keren; een DB-roundtrip zou onacceptabele latency geven. Bij
+// elke wijziging aan werkdag-definitie (bv. NL-feestdagen toevoegen) moet je
+// drie plekken tegelijk updaten:
+//   1. supabase/migrations/279_werkagenda_sql_functions.sql (ground-truth)
+//   2. supabase/functions/_shared/werkagenda.ts (Deno-mirror voor edge)
+//   3. dit bestand (TS-mirror voor UI)
+// Anders divergeren UI-bucketing, edge-berekeningen en SQL-views.
+
 import type { SnijplanRow } from '@/lib/types/productie'
 
 export interface FeestdagVrij {

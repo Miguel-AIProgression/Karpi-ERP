@@ -45,3 +45,5 @@ export type { LevertijdStatusRow } from './queries/levertijd'
 // Components (slot-components voor consumers — ADR-0020 Ingreep 5)
 // ---------------------------------------------------------------------------
 export { LevertijdStatusBadge } from './components/levertijd-status-badge'
+export { LevertijdFitIndicator } from './components/levertijd-fit-indicator'
+export { SnelsteHaalbaarKnop } from './components/snelste-haalbaar-knop'

@@ -1,4 +1,6 @@
 import { supabase } from '../client'
+import { bepaalOrderAfleverdatum, type KlantLevertermijn } from '@/lib/orders/order-afleverdatum'
+import { fetchOrderConfig } from './order-config'
 
 export interface OrderFormData {
   debiteur_nr: number
@@ -145,10 +147,21 @@ export async function setUitwisselbaarClaims(
   if (error) throw error
 }
 
+/**
+ * Snapshot-context voor het schrijven van `orders.standaard_afleverdatum_berekend`
+ * (Levertijd-Module, ADR-0020 / mig 276). Optioneel — als niet meegegeven, dan
+ * berekenen we via `fetchOrderConfig()` zelf. Wanneer beide ontbreken slaan we
+ * het schrijven over en blijft `levertijd_status = NULL` (legacy-pad).
+ */
+export interface LevertijdSnapshotContext {
+  klant: KlantLevertermijn | null
+}
+
 /** Create order + lines atomically via RPC */
 export async function createOrder(
   order: OrderFormData,
-  regels: OrderRegelFormData[]
+  regels: OrderRegelFormData[],
+  snapshotCtx?: LevertijdSnapshotContext,
 ) {
   const p_order = {
     debiteur_nr: order.debiteur_nr,
@@ -213,14 +226,38 @@ export async function createOrder(
   })
 
   if (error) throw error
-  return data as { id: number; order_nr: string }
+  const created = data as { id: number; order_nr: string }
+
+  // Levertijd-Module snapshot (ADR-0020 / mig 276): bereken de klant-standaard
+  // afleverdatum en schrijf 'm één keer mee zodat de trigger uit mig 276 het
+  // `levertijd_status`-label kan deriven uit afleverdatum vs snapshot.
+  // Bewust een follow-up UPDATE — `create_order_with_lines`-RPC accepteert
+  // het veld niet en uitbreiden van die RPC valt buiten scope (geen DB-changes
+  // in deze stap).
+  if (snapshotCtx) {
+    const info = bepaalOrderAfleverdatum(regels, snapshotCtx.klant, await fetchOrderConfig())
+    if (info.langsteDatum) {
+      const { error: snapErr } = await supabase
+        .from('orders')
+        .update({ standaard_afleverdatum_berekend: info.langsteDatum })
+        .eq('id', created.id)
+      if (snapErr) {
+        // Niet-blokkerend: snapshot ontbreekt ⇒ `levertijd_status` blijft NULL
+        // (= geen badge). Order zelf is succesvol gemaakt.
+        console.warn('[createOrder] kon levertijd-snapshot niet schrijven:', snapErr)
+      }
+    }
+  }
+
+  return created
 }
 
 /** Update order header + replace lines atomically via RPC */
 export async function updateOrderWithLines(
   orderId: number,
   header: Partial<OrderFormData>,
-  regels: OrderRegelFormData[]
+  regels: OrderRegelFormData[],
+  snapshotCtx?: LevertijdSnapshotContext,
 ) {
   const p_regels = regels.map((r, i) => ({
     id: r.id ?? null,
@@ -262,6 +299,30 @@ export async function updateOrderWithLines(
   })
 
   if (error) throw error
+
+  // Levertijd-Module snapshot (ADR-0020 / mig 276): legacy-vul voor orders die
+  // nog géén `standaard_afleverdatum_berekend` hebben (pre-mig 276 of door
+  // create-pad zonder snapshotCtx aangemaakt). Immutable na commit — schrijft
+  // alléén als de huidige waarde NULL is.
+  if (snapshotCtx) {
+    const { data: huidig, error: leesErr } = await supabase
+      .from('orders')
+      .select('standaard_afleverdatum_berekend')
+      .eq('id', orderId)
+      .single()
+    if (!leesErr && huidig && (huidig as { standaard_afleverdatum_berekend: string | null }).standaard_afleverdatum_berekend === null) {
+      const info = bepaalOrderAfleverdatum(regels, snapshotCtx.klant, await fetchOrderConfig())
+      if (info.langsteDatum) {
+        const { error: snapErr } = await supabase
+          .from('orders')
+          .update({ standaard_afleverdatum_berekend: info.langsteDatum })
+          .eq('id', orderId)
+        if (snapErr) {
+          console.warn('[updateOrderWithLines] kon legacy levertijd-snapshot niet zetten:', snapErr)
+        }
+      }
+    }
+  }
 }
 
 /** Delete order, its lines, and recalculate stock reservations via RPC */
