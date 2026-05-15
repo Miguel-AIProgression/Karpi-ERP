@@ -20,3 +20,6 @@ verify_jwt = false
 
 [functions.factuur-verzenden]
 verify_jwt = false
+
+[functions.parse-klant-po]
+verify_jwt = false
