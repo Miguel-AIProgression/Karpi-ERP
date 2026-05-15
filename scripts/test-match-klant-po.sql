@@ -6,7 +6,7 @@
 -- Bewezen gedrag:
 --   T1 btw-normalisatie + unieke hit → zeker=true
 --   T2 e-maildomein-match → debiteur 999001
---   T3 duplicate-btw-gate → zeker=false (uniqueness gate)
+--   T3 duplicate-btw-gate → zeker=false + debiteur_nr NULL (uniqueness gate)
 --   T4 volledig onbekende afzender → zeker=false, debiteur_nr NULL
 --   T5 klant_artikelnr-lookup → artikelnr=ZZTESTPROD1, zeker=true
 --   T6 klanteigen-naam-reverse + catalogus-hit → ZZTESTPROD1, zeker=true
@@ -204,14 +204,12 @@ BEGIN
   RAISE NOTICE 'T2 e-maildomein-match: OK';
 
   -- ----------------------------------------------------------
-  -- T3: duplicate-btw-gate → zeker=false
+  -- T3: duplicate-btw-gate → zeker=false EN debiteur_nr NULL
   --
   -- Bewijs: beide 999002 en 999003 hebben btw='NL888000002B02'.
-  -- LIMIT 2 geeft 2 rijen terug → ROW_COUNT=2 → v_debiteur_zeker blijft false.
-  -- Geen e-mail/naam opgegeven, dus geen verdere fallback.
-  -- Let op: v_debiteur_nr is NOT NULL (postgres vult eerste rij in via
-  -- SELECT ... INTO ... LIMIT 2), maar de functie garandeert alleen zeker=false —
-  -- de caller mag de waarde niet vertrouwen. We testen uitsluitend de gate.
+  -- LIMIT 2 geeft 2 rijen → ROW_COUNT=2 → zeker blijft false EN de btw-branch
+  -- nult v_debiteur_nr (consistent met de e-mail/naam-branches en de spec:
+  -- 0 of >1 hits → geen debiteur).
   -- ----------------------------------------------------------
   r := match_klant_po(jsonb_build_object(
     'afzender', jsonb_build_object(
@@ -230,7 +228,9 @@ BEGIN
   ));
   ASSERT (r#>>'{debiteur,zeker}')::boolean = false,
     'T3 FAIL: duplicate-btw moet zeker=false opleveren';
-  RAISE NOTICE 'T3 duplicate-btw-gate (zeker=false): OK';
+  ASSERT (r#>>'{debiteur,debiteur_nr}') IS NULL,
+    'T3 FAIL: duplicate-btw moet debiteur_nr NULL opleveren';
+  RAISE NOTICE 'T3 duplicate-btw-gate (zeker=false, debiteur_nr NULL): OK';
 
   -- ----------------------------------------------------------
   -- T4: volledig onbekende afzender → zeker=false, debiteur_nr NULL

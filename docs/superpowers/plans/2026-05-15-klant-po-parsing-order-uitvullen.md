@@ -329,7 +329,7 @@ BEGIN
     WHERE upper(regexp_replace(coalesce(btw_nummer,''), '[^A-Za-z0-9]', '', 'g')) = v_btw
     LIMIT 2;
     GET DIAGNOSTICS v_cnt = ROW_COUNT;
-    IF v_cnt = 1 THEN v_debiteur_zeker := true; END IF;
+    IF v_cnt = 1 THEN v_debiteur_zeker := true; ELSE v_debiteur_nr := NULL; END IF;
   END IF;
 
   IF NOT v_debiteur_zeker AND v_email_domein IS NOT NULL AND v_email_domein <> '' THEN
