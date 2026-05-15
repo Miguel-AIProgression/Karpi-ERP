@@ -106,3 +106,78 @@ export async function fetchRolDetail(id: number): Promise<RolRow> {
   if (error) throw error
   return data as RolRow
 }
+
+export interface RolToevoegenInput {
+  artikelnr: string
+  rol_type: RolType
+  lengte_cm: number
+  breedte_cm: number
+  locatie_id: number | null
+  in_magazijn_sinds: string | null
+  rolnummer: string | null
+  reden: string
+  medewerker: string | null
+}
+
+export interface RolBewerkenInput {
+  rol_id: number
+  lengte_cm: number
+  breedte_cm: number
+  locatie_id: number | null
+  status: string
+  reden: string
+  medewerker: string | null
+}
+
+export interface RolVerwijderenInput {
+  rol_id: number
+  reden: string
+  medewerker: string | null
+}
+
+/** Handmatig een rol/reststuk toevoegen (voorraadcorrectie). RPC mig 291. */
+export async function rolToevoegen(
+  i: RolToevoegenInput,
+): Promise<{ rol_id: number; rolnummer: string }> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase.rpc as any)('rol_handmatig_toevoegen', {
+    p_artikelnr: i.artikelnr,
+    p_rol_type: i.rol_type,
+    p_lengte_cm: i.lengte_cm,
+    p_breedte_cm: i.breedte_cm,
+    p_locatie_id: i.locatie_id,
+    p_in_magazijn_sinds: i.in_magazijn_sinds,
+    p_rolnummer: i.rolnummer,
+    p_reden: i.reden,
+    p_medewerker: i.medewerker,
+  })
+  if (error) throw new Error(error.message)
+  const row = Array.isArray(data) ? data[0] : data
+  return row as { rol_id: number; rolnummer: string }
+}
+
+/** Handmatig een rol bewerken (afmeting/locatie/status). RPC mig 292. */
+export async function rolBewerken(i: RolBewerkenInput): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase.rpc as any)('rol_handmatig_bewerken', {
+    p_rol_id: i.rol_id,
+    p_lengte_cm: i.lengte_cm,
+    p_breedte_cm: i.breedte_cm,
+    p_locatie_id: i.locatie_id,
+    p_status: i.status,
+    p_reden: i.reden,
+    p_medewerker: i.medewerker,
+  })
+  if (error) throw new Error(error.message)
+}
+
+/** Handmatig een rol verwijderen (met guard). RPC mig 293. */
+export async function rolVerwijderen(i: RolVerwijderenInput): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase.rpc as any)('rol_verwijderen', {
+    p_rol_id: i.rol_id,
+    p_reden: i.reden,
+    p_medewerker: i.medewerker,
+  })
+  if (error) throw new Error(error.message)
+}
