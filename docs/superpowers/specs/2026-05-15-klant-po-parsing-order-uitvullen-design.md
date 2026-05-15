@@ -51,7 +51,7 @@ formats. A (puur LLM incl. matching) — zekerheidsgrens niet beheersbaar in een
 [edge function: parse-klant-po]   (verify_jwt=false, sb_publishable-patroon)
    1. PDF → Claude API (vision+tekst) → ruwe JSON (vormvrij, geen koppeling)
    2. Deterministische match-laag via Postgres-RPC's
-   3. Return: voorgestelde order-velden + per veld match_zekerheid
+   3. Return: voorgestelde order-velden + per regel/debiteur match_zekerheid
         ▼
 [OrderForm] ← vult ALLEEN velden met zekerheid 'zeker' voor; rest leeg.
               Niets wordt opgeslagen; gebruiker reviewt en slaat zelf op.

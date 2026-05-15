@@ -4,7 +4,7 @@
 
 **Goal:** Eén klik op een gebufferd klant-PO-PDF op de order-aanmaakpagina parseert het document en vult de order-form vooraf met alleen de velden waarvan we zeker zijn.
 
-**Architecture:** Edge function `parse-klant-po` stuurt de PDF naar de Claude API voor vormvrije ruwe-tekst-extractie, roept daarna de deterministische Postgres-RPC `match_klant_po` aan voor de koppeling (debiteur via btw/email/naam, kwaliteit via reverse-lookup op `klanteigen_namen.benaming` debiteur-/inkoopgroep-scoped + exacte `kwaliteiten.omschrijving`, artikel via `klant_artikelnummers`/`producten`), en geeft per veld een zekerheidslabel terug. De frontend mapt alleen `zeker`-velden naar `OrderForm.initialData` en hermount de form.
+**Architecture:** Edge function `parse-klant-po` stuurt de PDF naar de Claude API voor vormvrije ruwe-tekst-extractie, roept daarna de deterministische Postgres-RPC `match_klant_po` aan voor de koppeling (debiteur via btw/email/naam, kwaliteit via reverse-lookup op `klanteigen_namen.benaming` debiteur-/inkoopgroep-scoped + exacte `kwaliteiten.omschrijving`, artikel via `klant_artikelnummers`/`producten`), en geeft per regel + voor de debiteur een zekerheidslabel terug. De frontend mapt alleen `zeker`-regels/-debiteur naar `OrderForm.initialData` en hermount de form.
 
 **Tech Stack:** Supabase Edge Function (Deno), Anthropic Messages API (PDF document block + prompt caching), PostgreSQL RPC (PL/pgSQL), React + TanStack Query + vitest, Deno std test.
 
@@ -293,7 +293,8 @@ Create `supabase/migrations/289_match_klant_po.sql`:
 -- Migratie 289: match_klant_po
 -- Deterministische koppel-laag voor klant-PO parsing (ADR-loze utility-RPC).
 -- Input  = ruwe extractie (jsonb) zoals po-extract.ts die produceert.
--- Output = voorgestelde order-velden met per stuk een zekerheidslabel.
+-- Output = voorgestelde order-velden; debiteur en elke regel met een eigen
+--          zekerheidslabel (`zeker`).
 -- "zeker" = true betekent: frontend mag dit voorvullen.
 
 CREATE OR REPLACE FUNCTION match_klant_po(p_extractie jsonb)
@@ -1367,8 +1368,8 @@ Upload van een klant-PO op de order-aanmaakpagina → edge function `parse-klant
 Twee-laags: (1) Claude Messages-API extraheert vormvrije ruwe tekst uit de PDF
 (`_shared/po-extract.ts`, pure + getest), (2) RPC `match_klant_po` (mig 289) koppelt
 deterministisch tegen `debiteuren`/`klanteigen_namen`/`klant_artikelnummers`/`producten`
-en labelt per veld `zeker`. De frontend (`@/lib/orders/po-prefill`) vult alleen
-`zeker`-velden voor en hermount `OrderForm` via een `key`. Geen auto-opslag.
+en labelt debiteur + elke regel met `zeker`. De frontend (`@/lib/orders/po-prefill`)
+vult alleen `zeker`-regels/-debiteur voor en hermount `OrderForm` via een `key`. Geen auto-opslag.
 Secret: `ANTHROPIC_API_KEY`.
 ```
 

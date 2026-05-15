@@ -1,7 +1,8 @@
 -- Migratie 289: match_klant_po
 -- Deterministische koppel-laag voor klant-PO parsing (ADR-loze utility-RPC).
 -- Input  = ruwe extractie (jsonb) zoals po-extract.ts die produceert.
--- Output = voorgestelde order-velden met per stuk een zekerheidslabel.
+-- Output = voorgestelde order-velden; debiteur en elke regel met een eigen
+--          zekerheidslabel (`zeker`).
 -- "zeker" = true betekent: frontend mag dit voorvullen.
 
 CREATE OR REPLACE FUNCTION match_klant_po(p_extractie jsonb)
