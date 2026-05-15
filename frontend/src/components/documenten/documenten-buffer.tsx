@@ -163,7 +163,7 @@ export function DocumentenBuffer({ docs, onChange, title = 'Documenten', classNa
     }
     const ext = mime.split('/')[1]?.split('+')[0] || 'bin'
     const name = fallbackName.includes('.') ? fallbackName : `${fallbackName}.${ext}`
-    return new File([bytes], name, { type: mime })
+    return new File([bytes as Uint8Array<ArrayBuffer>], name, { type: mime })
   }
 
   function extractDataUrlFromHtml(html: string): { url: string; name: string } | null {
