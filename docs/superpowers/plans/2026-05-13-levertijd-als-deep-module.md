@@ -105,12 +105,12 @@ Levertijd-Module realiseren conform ADR-0020: capaciteit-seam owner met smal SQL
   - Lees `productie_planning`-config (capaciteit_per_week, wisseltijd_minuten, logistieke_buffer_dagen)
   - Match gewenste week tegen bezetting + buffer
   - Voor `snelste_haalbaar`: zoek eerste week met capaciteit-ruimte
-- Edge-function `check-levertijd` wordt thin wrapper rond `levertijd_fit_check` (back-compat voor `berekenMaatwerkAfleverdatumViaSeam`-callers).
-- ASSERT-blok: contract-test fixtures verifiëren dat SQL- en Deno-versie dezelfde antwoorden geven voor 5 representatieve scenarios.
+- ~~Edge-function `check-levertijd` wordt thin wrapper rond `levertijd_fit_check`~~ **VERVALLEN** (Amendement ADR-0020, 2026-05-15): de edge blijft een bewust apart permanent pad voor de pre-persist maatwerk-config-flow. Geen convergentie. RPC's en edge bestaan naast elkaar; beide lezen dezelfde `productie_planning`-config.
+- ASSERT-blok: smoke-test verifieert de SQL-uitkomsten (geen TS↔SQL-pariteit-eis meer, want de edge convergeert niet).
 
 **Acceptatie:**
 - `levertijd_fit_check` op maatwerk-regel geeft realistisch antwoord (niet meer altijd `true`).
-- `check-levertijd`-edge response onveranderd voor bestaande callers.
+- `check-levertijd`-edge response onveranderd voor bestaande callers (edge blijft ongewijzigd — zie Amendement).
 - Contract-test groen.
 
 ### Stap 8 — Werkagenda-spiegel cleanup

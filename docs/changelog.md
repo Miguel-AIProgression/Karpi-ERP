@@ -1,5 +1,17 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-15 — ADR-0020-amendement: twee bewust gescheiden levertijd-paden
+
+**Waarom:** Bij afronding bleek de plan-aanname "edge `check-levertijd` wordt thin wrapper rond de RPC's" een verkeerde één-vormigheid. `LevertijdSuggestie` draait op een **pre-persist maatwerk-config** (kwaliteit/kleur/maten, géén orderregel-id, rijke scenario-UX); de Module-RPC's werken op **gepersisteerde regel-id's** met smalle output. 1-op-1 migratie is technisch onmogelijk én zou een UX-regressie zijn.
+
+**Wat (documentatie + comment-correcties, geen functionele wijziging):**
+- [ADR-0020](adr/0020-levertijd-als-deep-module.md): Amendement-sectie (2026-05-15) — de edge is een **permanent apart pad**, geen afgedankte back-compat. Ingreep 2 / stap 7 "thin wrapper" + backlog "edge verwijderen" vervallen expliciet.
+- [`use-levertijd-check.ts`](../frontend/src/hooks/use-levertijd-check.ts): misleidende "verdwijnt bij stap 6/7"-comment en `@deprecated` op `useLevertijdCheck` vervangen door uitleg dat dit een bewust permanent pad is. De `useFitCheck`-re-export blijft wél migratie-alias (ESLint-regel ongewijzigd).
+- [`data-woordenboek.md`](data-woordenboek.md): Levertijd-Module-entry — "thin RPC-wrapper" vervangen door de twee-paden-beschrijving.
+- Plan-bestand stap 7: thin-wrapper-acceptatiecriterium doorgehaald met amendement-verwijzing.
+
+**Beslissing:** gebruiker, 2026-05-15 — twee paden bewust scheiden. Convergentie (config-based `levertijd_fit_check_config`) blijft mogelijk zonder breaking change maar is niet gepland; alleen bij concrete trigger (edge-runtime uitfaseren).
+
 ## 2026-05-13 — Levertijd-Module geïmplementeerd (stap 2-10, ADR-0020)
 
 **Waarom:** De architectuur-beslissing uit [ADR-0020](adr/0020-levertijd-als-deep-module.md) (Levertijd als deep capaciteit-seam-owner-Module) is nu volledig uitgevoerd — het 10-stappen-plan is afgerond. Verspreide levertijd-logica heeft één eigenaar; het order-niveau-label `levertijd_status` is end-to-end live.

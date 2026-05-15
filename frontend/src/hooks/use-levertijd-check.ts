@@ -1,19 +1,22 @@
-// DEPRECATED — gebruik `useFitCheck` uit `@/modules/levertijd` (ADR-0020, stap 4
-// van het Levertijd-Module-implementatieplan).
+// Dit bestand bevat twee gedaantes met VERSCHILLENDE levensduur — zie het
+// Amendement in docs/adr/0020-levertijd-als-deep-module.md (2026-05-15):
 //
-// Deze hook bestaat in twee gedaantes:
+//   1. `useLevertijdCheck` — wrapt de `check-levertijd` edge function
+//      (kwaliteit/kleur/lengte/breedte/gewenste leverdatum). Dit is de
+//      **permanente** bron voor de pre-persist maatwerk-config-flow van
+//      `LevertijdSuggestie`: tijdens het samenstellen van een maatwerk-regel
+//      is er per definitie nog géén orderregel-id, en de rijke scenario-UX
+//      (scenario-badge, onderbouwing, rol-match, capaciteit, backlog) is een
+//      productvereiste. Dit pad verdwijnt NIET — de Module-RPC's
+//      (`levertijd_fit_check` + `levertijd_snelste_haalbaar`) bedienen een
+//      andere vraag (gepersisteerde regel-id's, smalle output). Bewust twee
+//      paden; geen tech-debt.
 //
-//   1. De originele `useLevertijdCheck` — wrapt de `check-levertijd` edge
-//      function (kwaliteit/kleur/lengte/breedte/gewenste leverdatum) en wordt
-//      nog door `LevertijdSuggestie` gebruikt. Eén release back-compat;
-//      verdwijnt bij stap 6/7 van het plan zodra het order-form pad over is
-//      op de Module's RPC's (`levertijd_fit_check` + `levertijd_snelste_haalbaar`).
-//
-//   2. Een re-export van `useFitCheck` uit `@/modules/levertijd` voor
-//      migrerende callers. Geeft de nieuwe Module-API onder de oude file-naam
-//      zodat search-and-replace per import-pad kan plaatsvinden.
-//
-// Nieuw werk: importeer rechtstreeks uit `@/modules/levertijd`.
+//   2. Een re-export van `useFitCheck` uit `@/modules/levertijd`. DIT deel is
+//      een migratie-alias: nieuw werk importeert rechtstreeks uit
+//      `@/modules/levertijd`, niet via dit pad. De ESLint-no-restricted-
+//      imports-regel bewaakt dat (LevertijdSuggestie is de gedocumenteerde
+//      uitzondering).
 
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -67,11 +70,12 @@ function isReady(args: UseLevertijdCheckArgs): DebouncedArgs | null {
 }
 
 /**
- * @deprecated Gebruik `useFitCheck` uit `@/modules/levertijd` (ADR-0020 +
- *             plan stap 4). Deze hook blijft tijdelijk werken voor
- *             `LevertijdSuggestie` — wordt opgeruimd in stap 6/7 zodra het
- *             order-form pad over is op de SQL-RPC's `levertijd_fit_check`
- *             en `levertijd_snelste_haalbaar` (mig 277).
+ * Permanente bron voor de **pre-persist maatwerk-config-flow** van
+ * `LevertijdSuggestie` (kwaliteit/kleur/maten, géén orderregel-id, rijke
+ * scenario-UX). Bewust géén `@deprecated`: dit is geen migratie-restant maar
+ * een apart, legitiem pad naast de Levertijd-Module-RPC's — zie het
+ * Amendement in ADR-0020 (2026-05-15). Voor gepersisteerde regels:
+ * `useFitCheck` / `useSnelsteHaalbaar` uit `@/modules/levertijd`.
  */
 export function useLevertijdCheck(args: UseLevertijdCheckArgs) {
   const ready = isReady(args)

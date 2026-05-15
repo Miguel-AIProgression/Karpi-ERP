@@ -252,11 +252,29 @@ Conform "Na ADR direct stap 1/N committen": **ADR + Stap 1 (schema + RPC-skeleto
 
 - **Read-only of blocking-modus voor "standaard niet haalbaar"** — uit grilling: (1a) Read-only waarschuwing gekozen. Auto-correct (1b) zou klant verrassen; blocking (1c) past niet bij Floorpassion-koper-flow waar geen operator tussen zit.
 
+## Amendement (2026-05-15) — twee bewust gescheiden levertijd-paden
+
+Tijdens implementatie-afronding bleek de in Ingreep 2 / migratiepad-stap 7 veronderstelde "edge wordt thin wrapper rond de RPC's" een verkeerde aanname over één-vormigheid. Er zijn **twee fundamenteel verschillende levertijd-vragen** met verschillende input en verschillende UX-eisen:
+
+| | Pre-persist maatwerk-config-flow | Gepersisteerde-regel-flow |
+|---|---|---|
+| **Caller** | [`LevertijdSuggestie`](../../frontend/src/components/orders/levertijd-suggestie.tsx) tijdens maatwerk-regel samenstellen | order-form fit-indicator + `<LevertijdStatusBadge>` |
+| **Input** | kwaliteit/kleur/lengte/breedte/vorm — **nog geen orderregel-id** | `regelIds: number[]` — gepersisteerde regels |
+| **Output** | rijk: scenario-badge, onderbouwing, rol-match, capaciteit, backlog, eerder-haalbaar | smal: `{haalbaar, reden, eerstvolgend_haalbaar}` |
+| **Bron** | edge `check-levertijd` (`berekenMaatwerkAfleverdatumViaSeam`) | RPC's `levertijd_fit_check` / `levertijd_snelste_haalbaar` |
+
+**Beslissing (gebruiker, 2026-05-15): de twee paden blijven bewust gescheiden.** De edge `check-levertijd` is **geen** afgedankte back-compat-laag maar de permanente bron voor de pre-persist maatwerk-config-flow (er is daar per definitie geen regel-id, en de rijke scenario-UX is een productvereiste). De Levertijd-Module-RPC's bezitten de gepersisteerde-regel-flow. Beide consumeren dezelfde `productie_planning`-config; de capaciteit-definitie blijft daarmee één concept ook al zijn er twee uitvoeringspaden.
+
+**Gevolg voor eerdere ADR-tekst:** Ingreep 2's "edge wordt thin wrapper", migratiepad-stap 7's "`check-levertijd`-edge wordt thin wrapper", en de regel ``check-levertijd`-edge verwijderen` in de open backlog **vervallen**. De `useLevertijdCheck`-shim is geen tijdelijke migratie-brug meer; alleen de `useFitCheck`-re-export daarin is dat (nieuw werk importeert rechtstreeks uit `@/modules/levertijd`). De ESLint-`no-restricted-imports`-regel blijft staan om nieuw werk naar de Module te leiden — `LevertijdSuggestie`'s gebruik van `useLevertijdCheck` is een bewuste, gedocumenteerde uitzondering, geen tech-debt.
+
+**Convergentie-optie blijft open, niet gepland:** als de pre-persist-flow ooit ook regel-id-loos via SQL moet (config-based `levertijd_fit_check_config(kwaliteit,kleur,maten,week)` + rijkere return), kan dat zonder breaking change op de bestaande RPC's. Niet in scope; alleen oppakken bij een concrete trigger (bv. edge-runtime uitfaseren).
+
 ## Open backlog
 
 - Confectie-capaciteit-check uitbreiden naar `levertijd_fit_check`/`levertijd_snelste_haalbaar` (V2)
 - Bevroren leverbelofte-tabel + EDI ORDRSP-update-flow bij belofte-wijziging (V2)
 - Pakbon-badge, factuur-PDF-vermelding, Floorpassion-confirmatie-email als consumers van `levertijd_status`
 - Capaciteit-slot-reservering bij snelste-haalbaar (V2, alleen bij hoge spoed-aanvraag-volume)
-- `check-levertijd`-edge verwijderen na overgang naar SQL-RPC's (vervolg-release)
-- `_shared/levertijd-*.ts` (Deno) naar SQL migreren als capaciteit-match in PL/pgSQL leesbaar genoeg blijkt
+- Orders-overview-lijst-badge integreren zodra het parallelle klant-filter-werk in `orders-overview.tsx` gemerged is (detail-header + order-form zijn al live)
+- Optioneel/niet-gepland: config-based `levertijd_fit_check_config` zodat de pre-persist maatwerk-flow ook regel-id-loos via SQL kan (zie Amendement) — alleen bij concrete trigger
+- `_shared/levertijd-*.ts` (Deno) naar SQL migreren blijft mogelijk maar is **niet** langer een doel op zich (zie Amendement — de edge blijft een legitiem permanent pad)
