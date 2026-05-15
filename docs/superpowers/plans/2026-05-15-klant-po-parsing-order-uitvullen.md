@@ -1056,14 +1056,28 @@ import {
 
 - [ ] **Step 4: Render the button per PDF row**
 
+Extraheer een module-level helper `isPdf(file)` (naast `formatBytes`) en gebruik
+'m óók in `canPreview` (verwijdert duplicatie + case-gevoeligheid):
+
+```tsx
+function isPdf(file: File): boolean {
+  return (
+    file.type.toLowerCase() === 'application/pdf' ||
+    file.name.toLowerCase().endsWith('.pdf')
+  )
+}
+```
+
 In de `<li>`-map (binnen `docs.map((d) => (...))`), direct vóór de `canPreview(d.file) && (...)`-previewknop, voeg toe:
 
 ```tsx
-{onParse && (d.file.type === 'application/pdf' || d.file.name.toLowerCase().endsWith('.pdf')) && (
+{onParse && isPdf(d.file) && (
   <button
     type="button"
     onClick={() => onParse(d)}
     disabled={parsingId === d.id}
+    aria-busy={parsingId === d.id}
+    aria-label={`Order uitvullen uit ${d.file.name}`}
     className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-terracotta-50 text-terracotta-700 hover:bg-terracotta-100 rounded disabled:opacity-50 shrink-0"
     title="Vul de order automatisch uit dit document"
   >
