@@ -962,6 +962,24 @@ Logboek van alle voorraadwijzigingen (snijden, reststuk, correctie, inkoop).
 
 ---
 
+### rol_mutaties
+Audittrail voor handmatige rol-CRUD (voorraadcorrectie/inventarisatie). Mig 290 (ADR-0024).
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| id | BIGINT PK | `GENERATED ALWAYS AS IDENTITY` |
+| rol_id | BIGINT | **Bewust GEEN FK** — auditregel overleeft een verwijderde rol |
+| rolnummer | TEXT | Snapshot |
+| artikelnr | TEXT | Snapshot |
+| actie | TEXT | CHECK: `'toevoegen'`, `'bewerken'`, `'verwijderen'` |
+| oppervlak_delta_m2 | NUMERIC(10,2) | Effect op de getoonde m²-som (+/−/0), informatief |
+| oud_json | JSONB | Rol-velden vóór mutatie (NULL bij toevoegen) |
+| nieuw_json | JSONB | Rol-velden na mutatie (NULL bij verwijderen) |
+| reden | TEXT NOT NULL | Verplicht |
+| medewerker | TEXT | Doorgegeven vanuit frontend |
+| created_at | TIMESTAMPTZ | `DEFAULT now()` |
+
+---
+
 ### app_config
 Applicatie-instellingen (key-value). Gebruikt voor productie-configuratie en auto-planning.
 | Kolom | Type | Toelichting |
@@ -1287,6 +1305,9 @@ Mig 174, aangepast in mig 176. Read-only view die de `/logistiek/vervoerders`-ov
 | `markeer_hst_fout(p_id, p_error, p_request_payload, p_response_payload, p_response_http_code, p_max_retries DEFAULT 3) → VOID` | HST-adapter: incrementeert `retry_count`. Bij `>=` max_retries → status `Fout`, anders terug naar `Wachtrij`. Migratie 171. |
 | `create_or_get_magazijn_locatie(p_code TEXT, p_omschrijving TEXT DEFAULT NULL, p_type TEXT DEFAULT 'rek') → BIGINT` | Idempotent: vindt-of-maakt `magazijn_locaties.id` voor `code` (UPPER+TRIM). Wordt gebruikt door `MagazijnLocatieEdit` (rol-locatie zetten) en `boek_ontvangst`. Migratie 169. |
 | `set_locatie_voor_orderregel(p_order_regel_id INTEGER, p_code TEXT) → BIGINT` | **Atomair**: vindt-of-maakt `magazijn_locaties`-rij voor `code` én zet `snijplannen.locatie = code` voor alle `Ingepakt`-rijen van de orderregel. Vervangt twee opeenvolgende RPC-calls (`createOrGetMagazijnLocatie + UPDATE snijplannen`) in `useUpdateMaatwerkLocatie` — voorkomt dangling `magazijn_locaties`-rijen wanneer de tweede call faalt. Returnt `magazijn_locaties.id`. Migratie 0183 (ADR-0002). |
+| `rol_handmatig_toevoegen(p_artikelnr TEXT, p_rol_type rol_type, p_lengte_cm INT, p_breedte_cm INT, p_locatie_id BIGINT, p_in_magazijn_sinds DATE, p_rolnummer TEXT, p_reden TEXT, p_medewerker TEXT) → TABLE(rol_id BIGINT, rolnummer TEXT)` | Handmatige rol/reststuk-correctie (voorraadcorrectie/inventarisatie). Geen IO-koppeling, geen producten.voorraad-mutatie. Audit in `rol_mutaties`. Mig 291 (ADR-0024). |
+| `rol_handmatig_bewerken(p_rol_id BIGINT, p_lengte_cm INT, p_breedte_cm INT, p_locatie_id BIGINT, p_status TEXT, p_reden TEXT, p_medewerker TEXT) → VOID` | Corrigeer afmetingen/locatie/status. Weigert mutatie op rollen die aan snijplan/claim hangen. Mig 292 (ADR-0024). |
+| `rol_verwijderen(p_rol_id BIGINT, p_reden TEXT, p_medewerker TEXT) → VOID` | Verwijder rol met guard (alleen beschikbaar of los reststuk, niet in snijplan). Auditregel vooraf. Mig 293 (ADR-0024). |
 | `effectieve_vervoerder_per_orderregel(p_order_id BIGINT) → TABLE(...)` | **Per-orderregel-resolver (mig 219).** Returnt voor elke pickbare regel: `override_code`, `evaluator_code`/`evaluator_service`, `klant_fallback_code`, `effectief_code`/`effectief_service` en `bron` (`override` / `regel` / `klant_fallback` / `geen` / `afhalen`). Bron-precedentie: override > regel > klant_fallback > geen. Globaal-actief blijft een UI-fallback. Gebruikt door `start_pickronden_voor_order` (mig 220) voor groepering en door pick-card UI voor per-regel pill. STABLE. |
 | `evalueer_orderregel_attributes(p_orderregel_id BIGINT) → TABLE(...)` | **Per-regel attributen voor regel-evaluator (mig 219).** Symmetrisch met `evalueer_zending_attributes` (mig 210), maar `kleinste_zijde_cm` en `gewicht_kg` zijn per regel zodat de evaluator per regel kan beslissen. Land/debiteur/inkoopgroep blijven order-niveau. STABLE. |
 | `start_pickronden_voor_order(p_order_id BIGINT, p_picker_id BIGINT) → TABLE(zending_id, zending_nr, vervoerder_code, aantal_regels, is_nieuw)` | **Splits-aware pickronde-starter (mig 220).** Voor élke unieke effectieve vervoerder maakt 1 zending aan (regels uit groep, vervoerder direct gezet bij INSERT). Idempotent op (order, vervoerder): bestaande Picken-zendingen worden hergebruikt. Eindstatus-guard uit mig 218 blijft van kracht. `start_pickronde` (oude single-zending wrapper) returnt nu het eerste zending_id van deze RPC voor backward compat. |

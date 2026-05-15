@@ -1,5 +1,13 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-15 — Handmatige rol-/reststuk-CRUD
+- Rollen & Reststukken-pagina: rollen/reststukken toevoegen, bewerken,
+  verwijderen via RPC-laag (mig 291-293) + audittabel `rol_mutaties` (mig 290).
+- Verwijder-guard: alleen `beschikbaar`/los reststuk, niet in snijplan.
+- **Herziene aanname:** `producten.voorraad` wordt bewust NIET gekoppeld — de
+  pagina is live-correct via `SUM(rollen)`; voor rol-artikelen is
+  `producten.voorraad` legacy/ongelezen (zie ADR-0024).
+
 ## 2026-05-15 — Order annuleren ruimt nu snijplannen + rollen op
 
 **Waarom:** P. Dobbe annuleerde een order maar de snijplannen bleven op de snijlijst staan en de gereserveerde rollen kwamen niet vrij. Werkvloer-verwachting: een geannuleerde order verdwijnt van de snijlijst en alle stukken/rollen komen vrij.

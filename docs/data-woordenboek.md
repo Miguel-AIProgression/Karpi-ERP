@@ -201,3 +201,13 @@ Domeinbegrippen die je moet kennen om dit project te begrijpen.
 | **Medewerker** | Interne identity-rij voor iedereen die in RugFlow een rol vervult (vertegenwoordiger, picker, magazijnchef, …). Eén `medewerkers`-tabel; één persoon = één rij; multi-rol via `rollen medewerker_rol[]`. Geen `auth.users`-koppeling — pickers en kantoor-medewerkers loggen niet individueel in op een shared device, ze kiezen zichzelf uit een dropdown. Ontstond door hernoeming van `vertegenwoordigers` naar `medewerkers` (ADR-0004). De 3-4 letter `code` blijft alleen op vertegenwoordigers (NULL voor pickers). |
 | **Rol (medewerker)** | Tag op een Medewerker die de functie aangeeft. Enum `medewerker_rol`: `'vertegenwoordiger'`, `'picker'` (V1; uitbreidbaar). Multi-rol toegestaan: invaller op het magazijn die ook commercieel werk doet → `rollen={'vertegenwoordiger','picker'}`. Bepaalt zichtbaarheid in de pick-dropdown, klant-koppeling, en welke rol-specifieke satelliet-tabellen meedoen (`vertegenwoordiger_werkdagen` t/m mig 195). |
 | **Picker** | Rol op een Medewerker: persoon die een Pickronde uitvoert. Geen `code`, alleen `id` + `naam`. Geselecteerd via dropdown bij `start_pickronde(p_order_id, p_picker_id)` en bevestigd bij `voltooi_pickronde(p_zending_id, p_picker_id)`. Audit-trail op `zendingen.picker_id` (FK → `medewerkers.id`) en `zending_colli.gepickt_door_id`. Voedt productiviteit-rapportage en de pick-problemen-werklijst (ADR-0003) — magazijnchef weet wie de niet-gevonden-melding heeft gedaan. |
+
+## Voorraad & Magazijn
+
+### Voorraadcorrectie (handmatige rol-mutatie)
+Handmatig toevoegen/bewerken/verwijderen van een rol of reststuk op de Rollen &
+Reststukken-pagina, voor inventarisatie of het rechtzetten van telfouten,
+historische rollen, beginvoorraad of fysiek verlies. Loopt via de RPC's
+`rol_handmatig_toevoegen` / `_bewerken` / `rol_verwijderen` (mig 291-293) en
+wordt gelogd in `rol_mutaties` met verplichte reden. Raakt `producten.voorraad`
+bewust niet (ADR-0024).
