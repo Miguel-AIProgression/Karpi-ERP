@@ -1467,6 +1467,13 @@ Verwacht (acceptatiecriteria uit de spec):
 - Geen onzekere gokjes: niet-herkende kwaliteiten → concept-regel zonder artikelnr, géén fout artikel.
 - Niets opgeslagen tot de gebruiker zelf op opslaan klikt; PDF blijft in de buffer en wordt bij opslaan als orderdocument gekoppeld (bestaande flow).
 - Bij een Claude-/parse-fout: rode melding, form blijft bruikbaar.
+- De Groot: afleverdatum staat gevuld (vrijdag van wk 29) en blijft staan ná het
+  toevoegen/wijzigen van een regel (override-flag werkt — I1).
+- Test expliciet **I2 (bekende V1-beperking)**: na parsen de debiteur in het
+  klantveld opnieuw selecteren ⇒ de uit de PO voorgevulde `afl_*`/`fact_*`
+  worden overschreven door de debiteur-stamgegevens. Acceptabel voor V1; de
+  operator moet het PO-afleveradres dan zo nodig handmatig terugzetten. (Niet
+  blokkerend; opgenomen als bekende beperking in de changelog.)
 
 - [ ] **Step 4: Commit (alleen indien fixes nodig)**
 
