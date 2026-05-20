@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronRight, Loader2, Pencil, Plus, Scissors, Trash2, Truck } from 'lucide-react'
+import { ChevronDown, ChevronRight, Loader2, Pencil, Plus, Trash2, Truck } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { cn } from '@/lib/utils/cn'
 import { ROL_STATUS_COLORS, ROL_TYPE_COLORS, ROL_TYPE_LABELS } from '@/lib/utils/constants'
@@ -81,7 +81,8 @@ function BesteldChip({ info }: { info: BesteldInkoop }) {
  *
  * Verbergt zichzelf wanneer er geen open maatwerk-druk is op de familie
  * (`bruto_maatwerkvraag_m2 === 0`) — dan voegt het cijfer niks toe boven
- * de bestaande voorraad-chips.
+ * de bestaande voorraad-chips. Gerenderd in de RECHTERKOLOM (naast m² /
+ * rollen-count) zodat het een echte KPI is, geen chip onder de partners.
  */
 function VrijChip({
   vrijM2,
@@ -103,10 +104,10 @@ function VrijChip({
   return (
     <span
       title={title}
-      className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium bg-slate-50 text-slate-700 border border-slate-200"
+      className="inline-flex items-center gap-1.5 text-sm px-2.5 py-1 rounded-md bg-slate-50 text-slate-700 border border-slate-200"
     >
-      <Scissors size={11} />
-      Vrij <span className="font-semibold">{vrijLabel} m&sup2;</span>
+      <span className="text-xs text-slate-500">Vrij</span>
+      <span className="font-semibold tabular-nums">{vrijLabel} m&sup2;</span>
     </span>
   )
 }
@@ -479,10 +480,6 @@ export function RollenGroepRow({ positie }: RollenGroepRowProps) {
                   .map((p) => (
                     <PartnerChip key={`${p.kwaliteit_code}|${p.kleur_code}`} partner={p} />
                   ))}
-                <VrijChip
-                  vrijM2={positie.vrij_voor_nieuw_maatwerk_m2}
-                  brutoVraagM2={positie.bruto_maatwerkvraag_m2}
-                />
                 {heeftBesteld && <BesteldChip info={positie.besteld} />}
               </>
             ) : (
@@ -493,10 +490,6 @@ export function RollenGroepRow({ positie }: RollenGroepRowProps) {
                 {positie.partners.map((p) => (
                   <PartnerChip key={`${p.kwaliteit_code}|${p.kleur_code}`} partner={p} />
                 ))}
-                <VrijChip
-                  vrijM2={positie.vrij_voor_nieuw_maatwerk_m2}
-                  brutoVraagM2={positie.bruto_maatwerkvraag_m2}
-                />
                 {heeftBesteld && <BesteldChip info={positie.besteld} />}
               </>
             )}
@@ -504,6 +497,10 @@ export function RollenGroepRow({ positie }: RollenGroepRowProps) {
         </div>
 
         <div className="flex items-center gap-4 shrink-0">
+          <VrijChip
+            vrijM2={positie.vrij_voor_nieuw_maatwerk_m2}
+            brutoVraagM2={positie.bruto_maatwerkvraag_m2}
+          />
           <span className="text-xs text-slate-500">
             {totaalRollen} {totaalRollen === 1 ? 'rol' : 'rollen'}
           </span>

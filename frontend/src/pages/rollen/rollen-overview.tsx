@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import { Search, Plus, Cylinder, Package, Scissors, AlertCircle } from 'lucide-react'
@@ -303,12 +303,29 @@ export function RollenOverviewPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {gesorteerdeGroepen.map((p) => (
-            <RollenGroepRow
-              key={`${p.kwaliteit_code}-${p.kleur_code}`}
-              positie={p}
-            />
-          ))}
+          {gesorteerdeGroepen.map((p, idx) => {
+            // Bij Vrij-asc-sortering: section-divider zodra we van druk-rijen
+            // (bruto-vraag > 0) overgaan naar rijen zonder druk. Scheidt het
+            // "wat moet ik bekijken voor inkoop?"-gebied van browse-gebied.
+            const prev = idx > 0 ? gesorteerdeGroepen[idx - 1] : null
+            const toonDivider =
+              sortMode === 'vrij_asc' &&
+              prev !== null &&
+              prev.bruto_maatwerkvraag_m2 > 0 &&
+              p.bruto_maatwerkvraag_m2 === 0
+            return (
+              <Fragment key={`${p.kwaliteit_code}-${p.kleur_code}`}>
+                {toonDivider && (
+                  <div className="flex items-center gap-3 pt-2 pb-1 text-xs uppercase tracking-wide text-slate-400">
+                    <span className="h-px flex-1 bg-slate-200" />
+                    <span>Geen open maatwerk-druk</span>
+                    <span className="h-px flex-1 bg-slate-200" />
+                  </div>
+                )}
+                <RollenGroepRow positie={p} />
+              </Fragment>
+            )
+          })}
         </div>
       )}
     </>
