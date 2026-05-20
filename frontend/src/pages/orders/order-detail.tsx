@@ -5,6 +5,7 @@ import { OrderHeader } from '@/components/orders/order-header'
 import { OrderAddresses } from '@/components/orders/order-addresses'
 import { OrderRegelsTable } from '@/components/orders/order-regels-table'
 import { OrderFacturen } from '@/components/orders/order-facturen'
+import { OrderEventsTijdlijn } from '@/components/orders/order-events-tijdlijn'
 import { ZendingAanmakenKnop } from '@/components/orders/zending-aanmaken-knop'
 import { useOrderDetail, useOrderRegels } from '@/hooks/use-orders'
 import { useLevertijdVoorOrder, useClaimsVoorOrder } from '@/modules/reserveringen'
@@ -66,6 +67,7 @@ export function OrderDetailPage() {
       <OrderHeader order={order} locked={computeOrderLock(regels) === 'full'} />
       <OrderAddresses order={order} />
       <OrderRegelsTable regels={regels ?? []} isLoading={regelsLoading} levertijden={levertijden} claims={claims} orderStatus={order.status} />
+      <OrderEventsTijdlijn orderId={order.id} />
       <OrderFacturen orderId={order.id} />
     </>
   )

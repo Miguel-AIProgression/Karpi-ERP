@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { ArrowUp, ArrowDown, ArrowUpDown, AlertCircle } from 'lucide-react'
+import { ArrowUp, ArrowDown, ArrowUpDown, AlertCircle, AlertTriangle } from 'lucide-react'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { formatCurrency, formatDate } from '@/lib/utils/formatters'
 import { verzendWeekVoor } from '@/lib/orders/verzendweek'
@@ -163,6 +163,19 @@ function OrderTr({ order, bundel, facturenPerOrder }: {
             >
               <AlertCircle size={12} />
               Actie vereist
+            </span>
+          )}
+          {order.heeft_deadline_conflict_na_swap && (
+            <span
+              className="inline-flex items-center gap-1 rounded-full bg-red-100 text-red-800 px-2 py-0.5 text-xs font-medium"
+              title={`Voorraad is eerder afgestaan aan een urgentere order, en de inkoop waarop deze order daarna gerekend werd is vertraagd — afleverdatum loopt nu uit. Operator-actie: klant bellen / spoedinkoop / voorraad uit ander kanaal.${
+                order.deadline_conflict_na_swap_at
+                  ? ` Laatste signaal: ${formatDate(order.deadline_conflict_na_swap_at)}`
+                  : ''
+              }`}
+            >
+              <AlertTriangle size={12} />
+              Deadline-conflict
             </span>
           )}
         </div>

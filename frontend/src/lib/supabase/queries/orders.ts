@@ -25,6 +25,16 @@ export interface OrderRow {
   bundel_zending_id?: number | null
   bundel_zending_nr?: string | null
   bundel_order_count?: number | null
+  /**
+   * ADR-0027 / Ingreep 5 — TRUE als de order in de laatste 30 dagen een
+   * `order_events`-rij heeft met `event_type='deadline_conflict_na_swap'`.
+   * Wordt in `fetchOrders` per pagina-batch in één extra query opgehaald
+   * (geen N+1) en als vlag op de OrderRow geplakt. UI toont rode chip.
+   * Wanneer `order_events` door RLS niet leesbaar is, blijft de vlag FALSE.
+   */
+  heeft_deadline_conflict_na_swap?: boolean
+  /** Datum van het laatste deadline_conflict_na_swap-event (ISO), voor tooltip. */
+  deadline_conflict_na_swap_at?: string | null
 }
 
 export interface OrderDetail extends OrderRow {
@@ -167,7 +177,52 @@ export async function fetchOrders(params: {
 
   if (error) throw error
 
-  return { orders: (data ?? []) as OrderRow[], totalCount: count ?? 0 }
+  const orders = (data ?? []) as OrderRow[]
+
+  // ADR-0027 / Ingreep 5 — verrijk de pagina-batch met de
+  // `deadline_conflict_na_swap`-vlag in één extra query (geen N+1).
+  // Tijdsvenster: laatste 30 dagen. Bij meerdere events per order pakken
+  // we de meest recente (sorteren op created_at DESC). Faalt deze query
+  // (bv. RLS-blokker), dan loggen we maar laten de orders-lijst staan —
+  // de chip wordt simpelweg niet getoond.
+  if (orders.length > 0) {
+    const orderIds = orders.map((o) => o.id)
+    const sinds = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+    const { data: events, error: eventsError } = await supabase
+      .from('order_events')
+      .select('order_id, created_at')
+      .eq('event_type', 'deadline_conflict_na_swap')
+      .in('order_id', orderIds)
+      .gte('created_at', sinds)
+      .order('created_at', { ascending: false })
+
+    if (eventsError) {
+      // Niet fataal — orders blijven zichtbaar zonder vlag. Bv. RLS-blokker
+      // op order_events SELECT-pad; rapport zou dan een SELECT-policy of
+      // RPC-laag voorstellen.
+      console.warn(
+        '[fetchOrders] kon deadline_conflict_na_swap-events niet ophalen',
+        eventsError,
+      )
+    } else {
+      const laatsteConflictPerOrder = new Map<number, string>()
+      for (const ev of (events ?? []) as { order_id: number; created_at: string }[]) {
+        // ASC false op .order, dus eerste hit per order_id is de meest recente.
+        if (!laatsteConflictPerOrder.has(ev.order_id)) {
+          laatsteConflictPerOrder.set(ev.order_id, ev.created_at)
+        }
+      }
+      for (const o of orders) {
+        const conflictAt = laatsteConflictPerOrder.get(o.id)
+        if (conflictAt) {
+          o.heeft_deadline_conflict_na_swap = true
+          o.deadline_conflict_na_swap_at = conflictAt
+        }
+      }
+    }
+  }
+
+  return { orders, totalCount: count ?? 0 }
 }
 
 /** Fetch status counts for tabs. "Actie vereist" wordt aangevuld met orders

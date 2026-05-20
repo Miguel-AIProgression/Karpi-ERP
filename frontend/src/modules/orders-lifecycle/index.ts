@@ -13,3 +13,13 @@ export {
 } from './queries/transities'
 
 export { useMarkeerGeannuleerd } from './hooks/use-markeer-geannuleerd'
+
+export { useOrderEvents } from './hooks/use-order-events'
+export {
+  fetchOrderEvents,
+  type OrderEvent,
+  type OrderEventType,
+  type ClaimGeswaptWegMetadata,
+  type ClaimGeswaptNaarMetadata,
+  type DeadlineConflictNaSwapMetadata,
+} from './queries/order-events'
