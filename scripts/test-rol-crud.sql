@@ -55,7 +55,7 @@ BEGIN
       100,100,NULL,NULL,NULL,'   ','tester');
     RAISE EXCEPTION 'lege reden had geweigerd moeten worden';
   EXCEPTION WHEN OTHERS THEN
-    ASSERT SQLERRM LIKE '%reden%', 'verkeerde fout bij lege reden: ' || SQLERRM;
+    ASSERT SQLERRM ILIKE '%reden%', 'verkeerde fout bij lege reden: ' || SQLERRM;
   END;
   RAISE NOTICE 'toevoegen-lege-reden-geweigerd: OK';
 
@@ -65,7 +65,7 @@ BEGIN
       100,100,NULL,NULL,NULL,'x','tester');
     RAISE EXCEPTION 'onbekend artikel had geweigerd moeten worden';
   EXCEPTION WHEN OTHERS THEN
-    ASSERT SQLERRM LIKE '%TESTROLCRUD%' OR SQLERRM LIKE '%artikel%',
+    ASSERT SQLERRM ILIKE '%TESTROLCRUD%' OR SQLERRM ILIKE '%artikel%',
       'verkeerde fout bij onbekend artikel: ' || SQLERRM;
   END;
   RAISE NOTICE 'toevoegen-onbekend-artikel-geweigerd: OK';
@@ -110,7 +110,7 @@ BEGIN
       'mag niet', 'tester');
     RAISE EXCEPTION 'status in_snijplan had geweigerd moeten worden';
   EXCEPTION WHEN OTHERS THEN
-    ASSERT SQLERRM LIKE '%in_snijplan%' OR SQLERRM LIKE '%status%',
+    ASSERT SQLERRM ILIKE '%in_snijplan%' OR SQLERRM ILIKE '%status%',
       'verkeerde fout: ' || SQLERRM;
   END;
   RAISE NOTICE 'bewerken-status-geweigerd: OK';
@@ -122,8 +122,8 @@ BEGIN
       'mag niet', 'tester');
     RAISE EXCEPTION 'bewerken gereserveerde rol had geweigerd moeten worden';
   EXCEPTION WHEN OTHERS THEN
-    ASSERT SQLERRM LIKE '%gereserveerd%' OR SQLERRM LIKE '%snijplan%'
-        OR SQLERRM LIKE '%niet bewerk%', 'verkeerde fout: ' || SQLERRM;
+    ASSERT SQLERRM ILIKE '%gereserveerd%' OR SQLERRM ILIKE '%snijplan%'
+        OR SQLERRM ILIKE '%niet bewerk%', 'verkeerde fout: ' || SQLERRM;
   END;
   RAISE NOTICE 'bewerken-gereserveerde-rol-geweigerd: OK';
 
@@ -157,7 +157,7 @@ BEGIN
     PERFORM rol_verwijderen(v_rol_id, 'mag niet', 'tester');
     RAISE EXCEPTION 'verwijderen gereserveerde rol had geweigerd moeten worden';
   EXCEPTION WHEN OTHERS THEN
-    ASSERT SQLERRM LIKE '%gereserveerd%' OR SQLERRM LIKE '%niet verwijderd%',
+    ASSERT SQLERRM ILIKE '%gereserveerd%' OR SQLERRM ILIKE '%niet verwijderd%',
       'verkeerde fout: ' || SQLERRM;
   END;
   RAISE NOTICE 'verwijderen-gereserveerd-geweigerd: OK';
@@ -180,7 +180,7 @@ BEGIN
     PERFORM rol_verwijderen(v_rol_id, '  ', 'tester');
     RAISE EXCEPTION 'lege reden had geweigerd moeten worden';
   EXCEPTION WHEN OTHERS THEN
-    ASSERT SQLERRM LIKE '%reden%', 'verkeerde fout: ' || SQLERRM;
+    ASSERT SQLERRM ILIKE '%reden%', 'verkeerde fout: ' || SQLERRM;
   END;
   RAISE NOTICE 'verwijderen-lege-reden-geweigerd: OK';
 
