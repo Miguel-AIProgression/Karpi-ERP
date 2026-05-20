@@ -60,6 +60,7 @@ export { invalidateNaSnijplanMutatie } from './cache'
 // Query types (voor advanced callers / parameter-shaping)
 // ---------------------------------------------------------------------------
 export type { SnijplanSortField, SortDirection, TekortAnalyseRow, SnijplanStatusCount, SnijGroepSummary, SnijplanningKpis, StickerData } from './queries/snijplanning'
+export { formatVerzendweekShort } from './queries/snijplanning'
 export type { SnijplanFormData } from './queries/snijplanning-mutations'
 export type { AutoPlanningConfig } from './queries/auto-planning'
 

@@ -276,6 +276,19 @@ export interface StickerData {
   poolmateriaal: string | null
   /** EAN-13 (13-digit string). NULL als er geen artikel met EAN bestaat voor (kw, kl). */
   ean_code: string | null
+  /** ISO-verzendweek 'YYYY-Www' (bv. '2026-W20'). NULL bij orders zonder afleverdatum.
+   *  Mig 300; sticker toont 'YYWW' (bv. '2620') via formatVerzendweekShort(). */
+  verzendweek_iso: string | null
+}
+
+/** Format ISO-verzendweek 'YYYY-Www' naar compact sticker-formaat 'YYWW'.
+ *  Bv. '2026-W20' → '2620'. Geeft NULL bij ongeldige input zodat callers
+ *  het veld kunnen weglaten i.p.v. een placeholder te tonen. */
+export function formatVerzendweekShort(iso: string | null | undefined): string | null {
+  if (!iso) return null
+  const m = iso.match(/^(\d{4})-W(\d{2})$/)
+  if (!m) return null
+  return m[1].slice(2) + m[2]
 }
 
 export async function fetchStickerData(snijplanId: number): Promise<StickerData> {

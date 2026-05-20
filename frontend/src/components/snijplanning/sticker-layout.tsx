@@ -1,27 +1,32 @@
 import { useState } from 'react'
 import { Ean13Barcode } from '@/components/ui/ean13-barcode'
-import type { StickerData } from '@/modules/snijplanning'
+import { formatVerzendweekShort, type StickerData } from '@/modules/snijplanning'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 
 /**
- * Klant-facing maatwerk-sticker (mig 295, 148×106 mm landschap).
+ * Klant-facing maatwerk-sticker (mig 295 + 300, 148×106 mm landschap).
  *
  * Komt op het opgerolde maatwerk-tapijt vlak vóór verzending. Bevat
  * alleen wat de eindafnemer ziet: debiteur-logo + 4 product-velden +
- * EAN-13. Geen QR, scancode, klantnaam, vorm of afwerking — die
- * operator-info loopt via de werkbon/scanstation-scherm.
+ * EAN-13 + verzendweek-batch-code. Geen QR, scancode, klantnaam, vorm of
+ * afwerking — die operator-info loopt via de werkbon/scanstation-scherm.
  *
- * Layout (vaste posities):
- *   ┌───────────────────────────────────┐
- *   │           [debiteur-logo]         │
- *   │                                   │
- *   │  Kwaliteit    : LORANDA           │
- *   │  Poolmateriaal: 100% Polypropyleen│ [EAN-13]
- *   │  Kleur        : 13                │
- *   │                                   │
- *   │  Afmeting     : ca. 310 x 225 cm. │
- *   └───────────────────────────────────┘
+ * **Layout: vaste mm-posities via `position: absolute`.** Alle blokken zijn
+ * gepind aan de sticker-randen (8mm marges), zodat een ongewoon groot of
+ * klein debiteur-logo de overige elementen NIET verschuift. Logo-zone heeft
+ * `overflow: hidden` als safety net — een logo dat zijn `max-height` over-
+ * schrijdt wordt geclipped i.p.v. omliggende velden weg te duwen.
+ *
+ *   ┌─ 148mm ───────────────────────────────┐
+ *   │           [debiteur-logo, 26mm]       │
+ *   │                                       │
+ *   │  Kwaliteit    : LORANDA   [EAN-13]    │
+ *   │  Poolmateriaal: 100% PP               │
+ *   │  Kleur        : 13                    │
+ *   │                                       │
+ *   │  Afmeting : ca. 310 x 225 cm.   2620  │
+ *   └───────────────────────────────────────┘
  */
 interface StickerLayoutProps {
   sticker: StickerData
@@ -45,51 +50,106 @@ export function StickerLayout({ sticker, label }: StickerLayoutProps) {
 }
 
 function StickerCard({ sticker }: { sticker: StickerData }) {
+  const verzendweek = formatVerzendweekShort(sticker.verzendweek_iso)
   return (
     <div
-      className="sticker-label bg-white box-border flex flex-col"
+      className="sticker-label bg-white box-border"
       style={{
+        position: 'relative',
         width: '148mm',
         height: '106mm',
-        padding: '5mm 8mm',
         fontFamily: "'Helvetica Neue', Arial, sans-serif",
         color: '#111',
+        overflow: 'hidden',
       }}
     >
-      {/* Header: logo gecentreerd */}
-      <div className="flex items-center justify-center" style={{ height: '26mm' }}>
+      {/* Logo-zone — fixed top center, 26mm hoog. overflow:hidden + max-height op
+          de img garanderen dat een onverwacht groot logo de velden eronder
+          niet wegduwt. */}
+      <div
+        style={{
+          position: 'absolute',
+          top: '5mm',
+          left: 0,
+          right: 0,
+          height: '26mm',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          overflow: 'hidden',
+        }}
+      >
         <KlantLogo debiteurNr={sticker.debiteur_nr} klantNaam={sticker.klant_naam} />
       </div>
 
-      {/* Middenblok: 3 product-velden links, EAN-13 rechts (parallel, top-aligned).
+      {/* Productvelden links — vaste positie 38mm vanaf boven, 8mm van links.
           Poolmateriaal-regel verschijnt altijd (label + ":"); waarde blijft leeg
           als kwaliteiten.poolmateriaal nog NULL is — bewust visueel consistent
           ongeacht of het veld al gevuld is. */}
-      <div className="flex justify-between items-start" style={{ marginTop: '3mm' }}>
-        <div className="flex flex-col gap-[1.5mm]" style={{ fontSize: '11pt' }}>
-          <Veld label="Kwaliteit"     waarde={sticker.kwaliteit_naam} />
-          <Veld label="Poolmateriaal" waarde={sticker.poolmateriaal ?? ''} />
-          <Veld label="Kleur"         waarde={sticker.kleur_code} />
-        </div>
-
-        <div style={{ width: '52mm' }}>
-          {sticker.ean_code ? (
-            <Ean13Barcode
-              value={sticker.ean_code}
-              height={60}
-              className="block"
-              style={{ width: '52mm', height: '22mm' }}
-            />
-          ) : (
-            <div className="text-[8pt] text-slate-400 text-right">geen EAN</div>
-          )}
-        </div>
+      <div
+        style={{
+          position: 'absolute',
+          top: '38mm',
+          left: '8mm',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '1.5mm',
+          fontSize: '11pt',
+        }}
+      >
+        <Veld label="Kwaliteit"     waarde={sticker.kwaliteit_naam} />
+        <Veld label="Poolmateriaal" waarde={sticker.poolmateriaal ?? ''} />
+        <Veld label="Kleur"         waarde={sticker.kleur_code} />
       </div>
 
-      {/* Onderblok: alleen Afmeting, met witruimte ervoor (zoals foto's) */}
-      <div className="flex flex-col gap-[1.5mm]" style={{ marginTop: '8mm', fontSize: '11pt' }}>
+      {/* EAN-13 rechts — vaste positie 38mm vanaf boven, 8mm van rechts. */}
+      <div
+        style={{
+          position: 'absolute',
+          top: '38mm',
+          right: '8mm',
+          width: '52mm',
+        }}
+      >
+        {sticker.ean_code ? (
+          <Ean13Barcode
+            value={sticker.ean_code}
+            height={60}
+            className="block"
+            style={{ width: '52mm', height: '22mm' }}
+          />
+        ) : (
+          <div className="text-[8pt] text-slate-400 text-right">geen EAN</div>
+        )}
+      </div>
+
+      {/* Afmeting linksonder — vaste positie 8mm vanaf onder, 8mm van links. */}
+      <div
+        style={{
+          position: 'absolute',
+          bottom: '8mm',
+          left: '8mm',
+          fontSize: '11pt',
+        }}
+      >
         <Veld label="Afmeting" waarde={formatAfmeting(sticker)} />
       </div>
+
+      {/* Verzendweek rechtsonder — batch-code YYWW (bv. '2620').
+          Weggelaten bij orders zonder afleverdatum (NULL i.p.v. placeholder). */}
+      {verzendweek && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: '8mm',
+            right: '8mm',
+            fontSize: '11pt',
+            letterSpacing: '0.5px',
+          }}
+        >
+          {verzendweek}
+        </div>
+      )}
     </div>
   )
 }
@@ -130,7 +190,7 @@ function KlantLogo({ debiteurNr, klantNaam }: { debiteurNr: number; klantNaam: s
         src={debiteurLogo}
         alt={klantNaam}
         className="object-contain"
-        style={{ maxHeight: '28mm', maxWidth: '100mm' }}
+        style={{ maxHeight: '26mm', maxWidth: '100mm' }}
         onError={() => setPrimaryFailed(true)}
       />
     )
@@ -142,7 +202,7 @@ function KlantLogo({ debiteurNr, klantNaam }: { debiteurNr: number; klantNaam: s
         src={karpiDefault}
         alt="Karpi"
         className="object-contain"
-        style={{ maxHeight: '28mm', maxWidth: '100mm' }}
+        style={{ maxHeight: '26mm', maxWidth: '100mm' }}
         onError={() => setFallbackFailed(true)}
       />
     )
