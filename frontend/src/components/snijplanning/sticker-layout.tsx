@@ -23,9 +23,9 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
  *   │                                       │
  *   │  Kwaliteit    : LORANDA   [EAN-13]    │
  *   │  Poolmateriaal: 100% PP               │
- *   │  Kleur        : 13                    │
+ *   │  Kleur        : 13           : 2620   │
  *   │                                       │
- *   │  Afmeting : ca. 310 x 225 cm.   2620  │
+ *   │  Afmeting : ca. 310 x 225 cm.         │
  *   └───────────────────────────────────────┘
  */
 interface StickerLayoutProps {
@@ -102,26 +102,44 @@ function StickerCard({ sticker }: { sticker: StickerData }) {
         <Veld label="Kleur"         waarde={sticker.kleur_code} />
       </div>
 
-      {/* EAN-13 rechts — vaste positie 38mm vanaf boven, 8mm van rechts. */}
+      {/* EAN-13 rechts — kleiner (~44mm x 14mm) zodat het naast de Kwaliteit/
+          Poolmateriaal-rijen past en de verzendweek-rij vrij blijft. Matched de
+          proportie van de oud-format-stickers (Room108, lifestyle by KARPI). */}
       <div
         style={{
           position: 'absolute',
           top: '38mm',
           right: '8mm',
-          width: '52mm',
+          width: '44mm',
         }}
       >
         {sticker.ean_code ? (
           <Ean13Barcode
             value={sticker.ean_code}
-            height={60}
+            height={45}
             className="block"
-            style={{ width: '52mm', height: '22mm' }}
+            style={{ width: '44mm', height: '14mm' }}
           />
         ) : (
           <div className="text-[8pt] text-slate-400 text-right">geen EAN</div>
         )}
       </div>
+
+      {/* Verzendweek — op de Kleur-rij rechts, met ':' prefix om het oude
+          sticker-formaat te matchen (operator herkent het als de batch-code,
+          niet als een nieuw label). Weggelaten bij orders zonder afleverdatum. */}
+      {verzendweek && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '54mm',
+            right: '8mm',
+            fontSize: '11pt',
+          }}
+        >
+          : {verzendweek}
+        </div>
+      )}
 
       {/* Afmeting linksonder — vaste positie 8mm vanaf onder, 8mm van links. */}
       <div
@@ -134,22 +152,6 @@ function StickerCard({ sticker }: { sticker: StickerData }) {
       >
         <Veld label="Afmeting" waarde={formatAfmeting(sticker)} />
       </div>
-
-      {/* Verzendweek rechtsonder — batch-code YYWW (bv. '2620').
-          Weggelaten bij orders zonder afleverdatum (NULL i.p.v. placeholder). */}
-      {verzendweek && (
-        <div
-          style={{
-            position: 'absolute',
-            bottom: '8mm',
-            right: '8mm',
-            fontSize: '11pt',
-            letterSpacing: '0.5px',
-          }}
-        >
-          {verzendweek}
-        </div>
-      )}
     </div>
   )
 }
