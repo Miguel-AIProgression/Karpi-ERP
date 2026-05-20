@@ -19,13 +19,13 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
  * schrijdt wordt geclipped i.p.v. omliggende velden weg te duwen.
  *
  *   ┌─ 148mm ───────────────────────────────┐
- *   │           [debiteur-logo, 26mm]       │
- *   │                                       │
+ *   │        [debiteur-logo, 20mm]          │
  *   │  Kwaliteit    : LORANDA   [EAN-13]    │
  *   │  Poolmateriaal: 100% PP               │
  *   │  Kleur        : 13           : 2620   │
+ *   │  Afmeting     : ca. 310 x 225 cm.     │
  *   │                                       │
- *   │  Afmeting : ca. 310 x 225 cm.         │
+ *   │              (witruimte)              │
  *   └───────────────────────────────────────┘
  */
 interface StickerLayoutProps {
@@ -63,16 +63,16 @@ function StickerCard({ sticker }: { sticker: StickerData }) {
         overflow: 'hidden',
       }}
     >
-      {/* Logo-zone — fixed top center, 26mm hoog. overflow:hidden + max-height op
+      {/* Logo-zone — fixed top center, 20mm hoog. overflow:hidden + max-height op
           de img garanderen dat een onverwacht groot logo de velden eronder
-          niet wegduwt. */}
+          niet wegduwt. Compacte hoogte matched Room108/lifestyle-proportie. */}
       <div
         style={{
           position: 'absolute',
           top: '5mm',
           left: 0,
           right: 0,
-          height: '26mm',
+          height: '20mm',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -82,18 +82,19 @@ function StickerCard({ sticker }: { sticker: StickerData }) {
         <KlantLogo debiteurNr={sticker.debiteur_nr} klantNaam={sticker.klant_naam} />
       </div>
 
-      {/* Productvelden links — vaste positie 38mm vanaf boven, 8mm van links.
-          Poolmateriaal-regel verschijnt altijd (label + ":"); waarde blijft leeg
-          als kwaliteiten.poolmateriaal nog NULL is — bewust visueel consistent
-          ongeacht of het veld al gevuld is. */}
+      {/* Productvelden links — vaste positie 30mm vanaf boven, 8mm van links.
+          Row-gap 1mm + 11pt regelhoogte geeft ~6mm row pitch (Kwaliteit ~33mm,
+          Poolmateriaal ~39mm, Kleur ~45mm baselines). Poolmateriaal-regel
+          verschijnt altijd; waarde blijft leeg als kwaliteiten.poolmateriaal
+          NULL is. */}
       <div
         style={{
           position: 'absolute',
-          top: '38mm',
+          top: '30mm',
           left: '8mm',
           display: 'flex',
           flexDirection: 'column',
-          gap: '1.5mm',
+          gap: '1mm',
           fontSize: '11pt',
         }}
       >
@@ -102,37 +103,36 @@ function StickerCard({ sticker }: { sticker: StickerData }) {
         <Veld label="Kleur"         waarde={sticker.kleur_code} />
       </div>
 
-      {/* EAN-13 rechts — kleiner (~44mm x 14mm) zodat het naast de Kwaliteit/
-          Poolmateriaal-rijen past en de verzendweek-rij vrij blijft. Matched de
-          proportie van de oud-format-stickers (Room108, lifestyle by KARPI). */}
+      {/* EAN-13 rechts — 38mm x 12mm, top:30mm zodat hij naast Kwaliteit/
+          Poolmateriaal-rijen valt en eindigt rond Kleur-baseline (~42mm).
+          Matched de proportie van Room108/lifestyle-stickers. */}
       <div
         style={{
           position: 'absolute',
-          top: '38mm',
+          top: '30mm',
           right: '8mm',
-          width: '44mm',
+          width: '38mm',
         }}
       >
         {sticker.ean_code ? (
           <Ean13Barcode
             value={sticker.ean_code}
-            height={45}
+            height={40}
             className="block"
-            style={{ width: '44mm', height: '14mm' }}
+            style={{ width: '38mm', height: '12mm' }}
           />
         ) : (
           <div className="text-[8pt] text-slate-400 text-right">geen EAN</div>
         )}
       </div>
 
-      {/* Verzendweek — op de Kleur-rij rechts, met ':' prefix om het oude
-          sticker-formaat te matchen (operator herkent het als de batch-code,
-          niet als een nieuw label). Weggelaten bij orders zonder afleverdatum. */}
+      {/* Verzendweek — op de Kleur-rij rechts (~42mm), ':' prefix matched het
+          oude sticker-formaat. Weggelaten bij orders zonder afleverdatum. */}
       {verzendweek && (
         <div
           style={{
             position: 'absolute',
-            top: '54mm',
+            top: '42mm',
             right: '8mm',
             fontSize: '11pt',
           }}
@@ -141,13 +141,12 @@ function StickerCard({ sticker }: { sticker: StickerData }) {
         </div>
       )}
 
-      {/* Afmeting links — direct onder de Kleur-rij met een kleine luchtbel
-          (Kleur-rij baseline ~54mm, Afmeting op 62mm = ~8mm gap). Onderkant
-          van de sticker blijft bewust witruimte zoals in de oude stickers. */}
+      {/* Afmeting links — ~8mm onder Kleur-baseline op 50mm. Onderkant van de
+          sticker blijft bewust witruimte zoals in de Room108/lifestyle-stickers. */}
       <div
         style={{
           position: 'absolute',
-          top: '62mm',
+          top: '50mm',
           left: '8mm',
           fontSize: '11pt',
         }}
@@ -166,7 +165,7 @@ interface VeldProps {
 function Veld({ label, waarde }: VeldProps) {
   return (
     <div className="flex items-baseline">
-      <span style={{ display: 'inline-block', width: '32mm' }}>{label}</span>
+      <span style={{ display: 'inline-block', width: '26mm' }}>{label}</span>
       <span>: {waarde}</span>
     </div>
   )
@@ -194,7 +193,7 @@ function KlantLogo({ debiteurNr, klantNaam }: { debiteurNr: number; klantNaam: s
         src={debiteurLogo}
         alt={klantNaam}
         className="object-contain"
-        style={{ maxHeight: '26mm', maxWidth: '100mm' }}
+        style={{ maxHeight: '20mm', maxWidth: '90mm' }}
         onError={() => setPrimaryFailed(true)}
       />
     )
@@ -206,7 +205,7 @@ function KlantLogo({ debiteurNr, klantNaam }: { debiteurNr: number; klantNaam: s
         src={karpiDefault}
         alt="Karpi"
         className="object-contain"
-        style={{ maxHeight: '26mm', maxWidth: '100mm' }}
+        style={{ maxHeight: '20mm', maxWidth: '90mm' }}
         onError={() => setFallbackFailed(true)}
       />
     )
