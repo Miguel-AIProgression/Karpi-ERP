@@ -6,10 +6,12 @@ import { ROL_STATUS_COLORS, ROL_TYPE_COLORS, ROL_TYPE_LABELS } from '@/lib/utils
 import { useReserveringenVoorProduct } from '@/hooks/use-producten'
 import { useRolSnijstukken } from '@/modules/snijplanning'
 import type { RolRow } from '@/lib/types/productie'
-import type {
-  BesteldInkoop,
-  UitwisselbarePartner,
-  Voorraadpositie,
+import {
+  useOpenMaatwerkvraagOrders,
+  type BesteldInkoop,
+  type OpenMaatwerkvraagOrder,
+  type UitwisselbarePartner,
+  type Voorraadpositie,
 } from '@/modules/voorraadpositie'
 import { RolToevoegenDialog } from './rol-toevoegen-dialog'
 import { RolBewerkenDialog } from './rol-bewerken-dialog'
@@ -75,6 +77,106 @@ function BesteldChip({ info }: { info: BesteldInkoop }) {
   )
 }
 
+
+/**
+ * Open maatwerk-orders die druk veroorzaken op de uitwisselbare familie.
+ * Lazy gefetcht — alleen geactiveerd als deze sectie daadwerkelijk wordt
+ * gerenderd (= rij is open EN bruto_maatwerkvraag_m2 > 0). ADR-0026 / mig 299.
+ */
+function OpenMaatwerkvraagSectie({
+  kwaliteit_code,
+  kleur_code,
+  brutoMaatwerkvraagM2,
+}: {
+  kwaliteit_code: string
+  kleur_code: string
+  brutoMaatwerkvraagM2: number
+}) {
+  const { data, isLoading } = useOpenMaatwerkvraagOrders(kwaliteit_code, kleur_code)
+
+  if (isLoading) {
+    return (
+      <div className="px-3 pb-3 flex items-center gap-2 text-xs text-slate-400">
+        <Loader2 size={12} className="animate-spin" />
+        Open maatwerk-orders laden...
+      </div>
+    )
+  }
+
+  const orders = data ?? []
+  if (orders.length === 0) return null
+
+  const brutoLabel = brutoMaatwerkvraagM2.toLocaleString('nl-NL', {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  })
+
+  return (
+    <div className="px-3 pb-3">
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-xs font-medium text-slate-500">
+          Open maatwerk-orders ({orders.length} {orders.length === 1 ? 'stuk' : 'stukken'})
+        </p>
+        <p className="text-xs text-slate-500">
+          <span className="font-medium text-slate-700 tabular-nums">{brutoLabel} m²</span>
+          {' bruto-vraag'}
+        </p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-left text-slate-400">
+              <th className="py-1 pr-3 font-medium">Maat</th>
+              <th className="py-1 pr-3 font-medium text-right">m²</th>
+              <th className="py-1 pr-3 font-medium">Kwaliteit · kleur</th>
+              <th className="py-1 pr-3 font-medium">Klant</th>
+              <th className="py-1 pr-3 font-medium">Order</th>
+              <th className="py-1 pr-3 font-medium">Levert</th>
+              <th className="py-1 pr-3 font-medium">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {orders.map((o: OpenMaatwerkvraagOrder) => (
+              <tr key={o.snijplan_id} className="border-t border-slate-100">
+                <td className="py-1.5 pr-3 text-slate-700 font-mono">
+                  {o.snij_breedte_cm}&times;{o.snij_lengte_cm} cm
+                </td>
+                <td className="py-1.5 pr-3 text-right text-slate-600 tabular-nums">
+                  {o.bruto_m2.toLocaleString('nl-NL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+                </td>
+                <td className="py-1.5 pr-3 text-slate-600 font-mono">
+                  {o.besteld_kwaliteit_code} {o.besteld_kleur_code}
+                </td>
+                <td className="py-1.5 pr-3 text-slate-600 truncate max-w-[180px]" title={o.klant_naam}>
+                  {o.klant_naam}
+                </td>
+                <td className="py-1.5 pr-3">
+                  <Link
+                    to={`/orders/${o.order_id}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-terracotta-500 hover:underline font-mono"
+                  >
+                    {o.order_nr}
+                  </Link>
+                </td>
+                <td className="py-1.5 pr-3 text-slate-600 tabular-nums">
+                  {o.afleverdatum
+                    ? new Date(o.afleverdatum).toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit' })
+                    : '—'}
+                </td>
+                <td className="py-1.5 pr-3">
+                  <span className={cn('px-1.5 py-0.5 rounded-full', SNIJPLAN_STATUS_COLORS[o.status] ?? 'bg-gray-100 text-gray-600')}>
+                    {o.status}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
 
 function PartnerChip({ partner }: { partner: UitwisselbarePartner }) {
   const hasStock = partner.m2 > 0
@@ -505,6 +607,13 @@ export function RollenGroepRow({ positie }: RollenGroepRowProps) {
 
       {open && !isEmpty && (
         <div className="border-t border-slate-100 px-2 py-2">
+          {positie.bruto_maatwerkvraag_m2 > 0 && (
+            <OpenMaatwerkvraagSectie
+              kwaliteit_code={positie.kwaliteit_code}
+              kleur_code={positie.kleur_code}
+              brutoMaatwerkvraagM2={positie.bruto_maatwerkvraag_m2}
+            />
+          )}
           {artikelnr && (
             <div className="flex justify-end px-3 pb-2">
               <button

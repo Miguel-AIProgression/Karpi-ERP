@@ -15,6 +15,7 @@ import {
   fetchVoorraadpositie,
   fetchVoorraadposities,
 } from '../queries/voorraadposities'
+import { fetchOpenMaatwerkvraagOrders } from '../queries/maatwerkvraag-orders'
 import type { VoorraadpositieFilter } from '../types'
 
 /** Single-paar — exact (kw, kl). Disabled bij lege strings. */
@@ -42,6 +43,28 @@ export function useVoorraadposities(filter: VoorraadpositieFilter) {
       filter.search ?? null,
     ],
     queryFn: () => fetchVoorraadposities(filter),
+    staleTime: 60_000,
+  })
+}
+
+/**
+ * Open maatwerk-orders die druk veroorzaken op de uitwisselbare familie van
+ * (kw, kl). Voor lazy-fetch vanuit de RollenGroepRow-expand: alleen aanroepen
+ * wanneer de rij is opengeklapt EN er bruto-vraag op de familie staat.
+ * ADR-0026 / mig 299.
+ */
+export function useOpenMaatwerkvraagOrders(
+  kwaliteit_code: string,
+  kleur_code: string,
+  options: { enabled?: boolean } = {},
+) {
+  return useQuery({
+    queryKey: ['open-maatwerkvraag-orders', kwaliteit_code, kleur_code],
+    queryFn: () => fetchOpenMaatwerkvraagOrders(kwaliteit_code, kleur_code),
+    enabled:
+      (options.enabled ?? true) &&
+      kwaliteit_code !== '' &&
+      kleur_code !== '',
     staleTime: 60_000,
   })
 }

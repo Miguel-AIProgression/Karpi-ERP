@@ -25,7 +25,12 @@ export {
   type GhostBesteldRij,
 } from './queries/ghost-besteld'
 export {
+  fetchOpenMaatwerkvraagOrders,
+  type OpenMaatwerkvraagOrder,
+} from './queries/maatwerkvraag-orders'
+export {
   useVoorraadpositie,
   useVoorraadposities,
+  useOpenMaatwerkvraagOrders,
 } from './hooks/use-voorraadpositie'
 export { normaliseerKleurcode } from './lib/normaliseer-kleur'
