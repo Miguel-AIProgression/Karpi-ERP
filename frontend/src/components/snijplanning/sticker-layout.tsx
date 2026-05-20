@@ -141,11 +141,13 @@ function StickerCard({ sticker }: { sticker: StickerData }) {
         </div>
       )}
 
-      {/* Afmeting linksonder — vaste positie 8mm vanaf onder, 8mm van links. */}
+      {/* Afmeting links — direct onder de Kleur-rij met een kleine luchtbel
+          (Kleur-rij baseline ~54mm, Afmeting op 62mm = ~8mm gap). Onderkant
+          van de sticker blijft bewust witruimte zoals in de oude stickers. */}
       <div
         style={{
           position: 'absolute',
-          bottom: '8mm',
+          top: '62mm',
           left: '8mm',
           fontSize: '11pt',
         }}
