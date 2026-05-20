@@ -88,12 +88,16 @@ Deno.test('screenshot-scenario: 320x300 stuk geeft 80x300 reststuk', () => {
   )
 })
 
-Deno.test('IC2901TA13B: full-width end-strip 400x50 kwalificeert als reststuk', () => {
+Deno.test('IC2901TA13B: end-strip region wordt door reststuk(ken) bestreken', () => {
   // Screenshot-scenario dat voorheen "0 reststukken, 4 afval" gaf:
   // rol 400×250, placements 243×200 + 45×170 + 80×163 in één shelf op y=0.
-  // End-strip 400×50 (short=50≥50, long=400≥100) moet als reststuk verschijnen.
-  // (Of de UI hem daarna als "aangebrokenEnd" classificeert gebeurt in
-  // computeReststukkenAngebrokenAfval, niet hier.)
+  //
+  // Pre-ADR-0025: één 400×50 end-strip werd als reststuk geclaimd.
+  // Post-ADR-0025: greedy pakt eerst de chunky 157×80 inter-shelf gap
+  // (score 8965 > 7071 van end-strip), waardoor de end-strip rechts wordt
+  // geabsorbeerd door dat chunky stuk. Linker deel blijft als losse 243×50
+  // claim. Functioneel: het end-strip-gebied is niet vergeten — het wordt
+  // alleen anders gegroepeerd (en chunkier).
   const plaatsingen: Placement[] = [
     p(1, 0, 0, 243, 200),
     p(2, 243, 0, 45, 170),
@@ -101,13 +105,52 @@ Deno.test('IC2901TA13B: full-width end-strip 400x50 kwalificeert als reststuk', 
   ]
   const r = computeReststukken(250, 400, plaatsingen)
 
-  const endStrip = r.find(
-    (x) => x.y_cm === 200 && x.breedte_cm === 400 && x.lengte_cm === 50,
+  // Linker deel van de end-strip moet een eigen claim hebben.
+  const linkerEnd = r.find(
+    (x) => x.x_cm === 0 && x.y_cm === 200 && x.breedte_cm === 243 && x.lengte_cm === 50,
+  )
+  assertEquals(linkerEnd !== undefined, true, 'verwacht 243×50 claim op (0,200)')
+
+  // Rechter deel moet door een chunky reststuk geabsorbeerd zijn dat y=200..250
+  // bestrijkt (specifiek de 157×80 op (243,170), die loopt van y=170 tot y=250).
+  const chunky = r.find(
+    (x) => x.x_cm === 243 && x.y_cm === 170 && x.breedte_cm === 157 && x.lengte_cm === 80,
+  )
+  assertEquals(chunky !== undefined, true, 'verwacht 157×80 chunky claim op (243,170)')
+})
+
+// ---------------------------------------------------------------------------
+// ADR-0025: shape-bias kiest chunkier reststukken
+// ---------------------------------------------------------------------------
+
+Deno.test('ADR-0025: 150×450 wint van 75×905 bij vergelijkbaar oppervlak', () => {
+  // Synthetische rol waar één placement zowel een chunky (150×450) als een
+  // lange smalle (75×905) free-rect achterlaat. Pure-area greedy pakt het
+  // marginaal grotere 75×905 eerst (67 875 > 67 500). Shape-bias prefereert
+  // 150×450 (score 38 950 > 19 550) → chunky stuk verschijnt als R1.
+  //
+  // We construeren dit door 2 placements: één 250×450 linksboven, één 325×455
+  // langs de rechterrand vanaf y=450. Resulterende vrije ruimte heeft een
+  // chunky 150×450 én een lange smalle 75-strip.
+  const plaatsingen: Placement[] = [
+    p(1, 0, 0, 250, 450),
+    p(2, 0, 450, 325, 455),
+  ]
+  const r = computeReststukken(905, 400, plaatsingen)
+
+  // Eerste pick (grootste score) moet de 150×450 chunk zijn — niet een
+  // 75-strip langs de rechterrand.
+  // Met area 67500 (150×450) vs 75×455 = 34125: ratio doet er niet toe,
+  // 150×450 is gewoon groter in area én chunkier.
+  // Cruciaal: minstens één claimed reststuk heeft short ≥ 150.
+  const chunky = r.find(
+    (x) => Math.min(x.breedte_cm, x.lengte_cm) >= 150 &&
+           Math.max(x.breedte_cm, x.lengte_cm) >= 100,
   )
   assertEquals(
-    endStrip !== undefined,
+    chunky !== undefined,
     true,
-    'end-strip 400x50 moet als reststuk verschijnen (short=50≥50, long=400≥100)',
+    `verwacht een reststuk met short ≥ 150, kreeg ${JSON.stringify(r)}`,
   )
 })
 

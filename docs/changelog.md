@@ -1,5 +1,22 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-20 — Shape-bias in reststuk-scoring (ADR-0025)
+
+**Waarom:** Op rol VERR130 C kreeg de operator een 75×905-strip + 75×450 + 95×230 als reststukken — lange smalle latjes die in de praktijk alleen voor staaltjes inzetbaar zijn. Vanuit dezelfde 3 placements (250×450 + 325×225 + 235×235) was een 150×450 chunky stuk mogelijk geweest dat als woon-tapijt verkoopbaar is. Probleem: de packer-scoring én greedy-disjoint-rapportage telden vrije rechthoeken op pure m², dus 150×450 (67 500 cm²) en 75×905 (67 875 cm²) waren voor het algoritme indifferent.
+
+**Wat:**
+- **Shape-biased scoring** `area × √(short/long)` op 3 plekken in lockstep:
+  [_shared/guillotine-packing.ts::reststukScoreCm2](../supabase/functions/_shared/guillotine-packing.ts) (packer-keuze),
+  [_shared/compute-reststukken.ts::greedyDisjointReststukken](../supabase/functions/_shared/compute-reststukken.ts) (backend fysieke reststuk-aanmaak),
+  [frontend/.../snijplanning/lib/compute-reststukken.ts](../frontend/src/modules/snijplanning/lib/compute-reststukken.ts) (modal).
+- 150×450 scoort nu 38 950, 75×905 scoort 19 550 → chunky vorm wint duidelijk; 200×200 vierkant scoort 40 000 → wint van 150×450.
+- Kwalificatie-drempel (`RESTSTUK_MIN_SHORT=50`, `RESTSTUK_MIN_LONG=100`) ongewijzigd: smalle strips blijven reststuk (voor latent staaltjes-gebruik), trekken alleen geen placement-voorkeur meer.
+- Tests: nieuwe `ADR-0025: VERR130 C-scenario` in [guillotine-packing.test.ts](../supabase/functions/_shared/guillotine-packing.test.ts); nieuwe `ADR-0025: 150×450 wint van 75×905` in [compute-reststukken.test.ts](../supabase/functions/_shared/compute-reststukken.test.ts); nieuwe parity-suite voor frontend-spiegel in [frontend/.../__tests__/compute-reststukken.test.ts](../frontend/src/modules/snijplanning/lib/__tests__/compute-reststukken.test.ts). IC2901TA13B-assertion bijgewerkt — pre-bias claimde de end-strip als 1 reststuk (400×50), post-bias als 2 chunkier deelclaims (157×80 + 243×50) — functioneel equivalent, anders gegroepeerd.
+- Domein-vocabulaire: dubbele *Reststuk*-entry in [data-woordenboek.md](data-woordenboek.md) geconsolideerd; *Reststuk-scoring* en *Staaltjes-restant* toegevoegd.
+- Geen DB-migratie nodig — `bereken_rol_type()` trigger en `maak_reststuk()`-RPC blijven ongewijzigd; deze ADR raakt alleen algoritmische scoring, geen data-classificatie.
+- Pre-existing test-failure `REGRESSIE K1756006D` (al vóór deze wijziging rood) niet geadresseerd; valt buiten scope.
+- **ADR:** [docs/adr/0025-shape-bias-in-reststuk-scoring.md](adr/0025-shape-bias-in-reststuk-scoring.md).
+
 ## 2026-05-15 — Klant-PO parsing: order uitvullen vanuit PDF
 
 **Waarom:** Klanten sturen inkooporders als PDF. Medewerkers typten die handmatig over — foutgevoelig en tijdrovend. Nu kan de medewerker een PDF uploaden via `DocumentenBuffer`, waarna het systeem automatisch debiteur, artikelen en aantallen herkent en het order-formulier voorinvult.

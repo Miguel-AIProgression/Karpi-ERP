@@ -415,3 +415,49 @@ Deno.test('computeReststukkenGuillotine: filtert te kleine stukken', () => {
   const rest = computeReststukkenGuillotine(400, 200, plaatsingen, 70, 140)
   assertEquals(rest.length, 0)
 })
+
+// ---------------------------------------------------------------------------
+// ADR-0025: shape-bias in reststuk-scoring (VERR130 C-scenario)
+// ---------------------------------------------------------------------------
+
+Deno.test('ADR-0025: VERR130 C-scenario — 250×450 placement laat 150×450 chunk over', () => {
+  // Real-world rapport: rol VERR130 C, 400 breed × 1500 lang, 3 plaatsingen
+  // (250×450, 325×225, 235×235). De oude pure-area-scoring was indifferent
+  // over wáár de stukken landden binnen elke rij; greedy disjoint koos
+  // vervolgens een 75×905 strip langs de rechterrand als grootste reststuk.
+  // Met shape-bias prefereert het algoritme placements die chunkier
+  // free-rects achterlaten — concreet: 250×450 op (0,0) moet blijven, zodat
+  // er een 150×450 free-rect rechts overblijft die uitstaalbaar is als tapijt.
+  // piece-helper-signatuur: (id, lengte, breedte). `lengte` mapt naar de
+  // X-as (langs rol-breedte) en `breedte` naar de Y-as (langs rol-lengte) —
+  // zie findBestPlacement `orientations` { w: lengte_cm, h: breedte_cm }.
+  // Modal toonde: stuk 1 = 250 langs breedte × 450 langs lengte, dus (250, 450).
+  const pieces = [
+    piece(1, 250, 450),
+    piece(2, 325, 225),
+    piece(3, 235, 235),
+  ]
+  const rolls = [roll(130, 1500, 400, 'beschikbaar')]
+  const { rollResults, nietGeplaatst } = packAcrossRolls(pieces, rolls, new Map())
+  assertEquals(nietGeplaatst.length, 0)
+  assertEquals(rollResults.length, 1)
+  assertEquals(rollResults[0].plaatsingen.length, 3)
+
+  // 250×450-placement moet op x=0 staan zodat de 150-cm-rest aan één kant
+  // bij elkaar blijft (anders ontstaan twee 75-strips of een 100+50-split).
+  const p1 = rollResults[0].plaatsingen.find((p) => p.snijplan_id === 1)!
+  assertEquals(p1.positie_x_cm, 0, `stuk 1 moet op x=0 staan, kreeg ${p1.positie_x_cm}`)
+  assertEquals(p1.positie_y_cm, 0, `stuk 1 moet op y=0 staan, kreeg ${p1.positie_y_cm}`)
+
+  // Controle dat er daadwerkelijk een chunky reststuk overblijft: minstens
+  // één free-rect met short ≥ 150 in de eindstatus.
+  const allPlacements = rollResults[0].plaatsingen
+  const free = computeFreeRects(400, 1500, allPlacements)
+  const chunky = free.find(
+    (r) => Math.min(r.width, r.height) >= 150 && Math.max(r.width, r.height) >= 100,
+  )
+  assert(
+    chunky !== undefined,
+    `verwachtte een free-rect met short ≥ 150; kreeg ${JSON.stringify(free)}`,
+  )
+})

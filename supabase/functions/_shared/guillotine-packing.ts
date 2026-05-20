@@ -88,11 +88,31 @@ function qualifiesAsReststuk(fr: FreeRect): boolean {
   return short >= RESTSTUK_MIN_SHORT && long >= RESTSTUK_MIN_LONG
 }
 
-/** Som van oppervlak (cm²) van vrije rechthoeken die als reststuk kwalificeren. */
-function reststukAreaCm2(freeRects: FreeRect[]): number {
+/**
+ * Shape-biased reststuk-score (ADR-0025).
+ *
+ * `score = area × √(short/long)`. Pure m² is shape-blind: een 150×450
+ * (verkoopbaar als tapijt) en een 75×905 (alleen staaltjes-bruikbaar) krijgen
+ * bij gelijke area dezelfde score, waardoor de packer onbedoeld voor lange
+ * smalle strips kan kiezen. De wortel-weighting straft extreme aspect-ratio's
+ * af zonder kwalificerende strips helemaal weg te schrijven:
+ *
+ *   150×450  → 67500 × √0.333 ≈ 38 950
+ *   75×905   → 67875 × √0.083 ≈ 19 550   ← duidelijk minder voorkeur
+ *   200×200  → 40000 × √1.000 = 40 000   ← klein vierkant wint van lange strip
+ *
+ * De kwalificatie-drempel (`RESTSTUK_MIN_SHORT/LONG`) blijft 50×100 — smalle
+ * strips boven die drempel blijven reststuk, ze trekken alleen geen
+ * placement-voorkeur meer aan. Spiegel-formule in `compute-reststukken.ts`
+ * (backend + frontend) zodat de modal dezelfde keuze maakt als de packer.
+ */
+function reststukScoreCm2(freeRects: FreeRect[]): number {
   let total = 0
   for (const fr of freeRects) {
-    if (qualifiesAsReststuk(fr)) total += fr.width * fr.height
+    if (!qualifiesAsReststuk(fr)) continue
+    const short = Math.min(fr.width, fr.height)
+    const long = Math.max(fr.width, fr.height)
+    total += fr.width * fr.height * Math.sqrt(short / long)
   }
   return total
 }
@@ -251,15 +271,15 @@ interface Candidate {
  *   2. **Binnen safe-klasse: yEnd ↓** — rol-lengte zuinigheid is primair
  *      zolang er voldoende rol overblijft.
  *
- *   3. **Binnen dead-zone: reststuk-m² ↑** — als de rol-rest tóch te kort
+ *   3. **Binnen dead-zone: reststuk-score ↑** — als de rol-rest tóch te kort
  *      wordt (< 100 cm, niet meer aan te breken), dan schakelen we over op
- *      maximale reststuk-waarde. Dit voorkomt dat het algoritme 50 cm rol
- *      verspilt terwijl een iets hogere yEnd een 75×243 reststuk had
- *      opgeleverd. Dit is de kern van user's prioriteiten-hiërarchie:
- *      eerst minimaal rol-verbruik, maar als de rol toch opgaat, dan
- *      reststukken maximaal.
+ *      maximale reststuk-waarde (`reststukScoreCm2`, shape-biased per
+ *      ADR-0025). Dit voorkomt dat het algoritme 50 cm rol verspilt terwijl
+ *      een iets hogere yEnd een 75×243 reststuk had opgeleverd; én het
+ *      prefereert bij gelijke totaal-m² chunkier vormen boven lange smalle
+ *      strips.
  *
- *   4. **Secondary: reststuk ↑ bij gelijk yEnd** — relevante tiebreaker
+ *   4. **Secondary: reststuk-score ↑ bij gelijk yEnd** — relevante tiebreaker
  *      in de safe-klasse waar meerdere placements dezelfde yEnd hebben.
  *
  *   5. **Best Area Fit** — kleinste gekozen free-rect eerst.
@@ -301,7 +321,7 @@ function findBestPlacement(
       const obstacle: FreeRect = { x: fr.x, y: fr.y, width: o.w, height: o.h }
       const trimmed = subtractRect(others, obstacle)
       const newFree = removeDominated([...trimmed, ...splits])
-      const reststukCm2 = reststukAreaCm2(newFree)
+      const reststukCm2 = reststukScoreCm2(newFree)
 
       // Lexicografische vergelijking per zone:
       //   safe-zone: [safe ↓, yEnd ↓, reststuk ↑, freeArea ↓, leftoverShort ↓]
@@ -529,15 +549,14 @@ function sortPieces(pieces: SnijplanPiece[]): SnijplanPiece[] {
  * Primair: meer stukken geplaatst (weegt het zwaarst — niet-geplaatste
  * stukken zijn een systeemfalen, dat overstijgt alle andere criteria).
  * Secundair: minder rol-lengte gebruikt (directe materiaalbesparing).
- * Tertiair: meer bruikbaar reststuk-oppervlak (m² dat als reststuk
- * herbruikbaar blijft i.p.v. afval wordt).
+ * Tertiair: meer bruikbaar reststuk-score (shape-biased per ADR-0025;
+ * eenheid is dimensieloos maar in dezelfde orde-grootte als m² zodat de
+ * onderstaande gewichts-mix logisch blijft).
  * Quartair: lager afval-percentage (interne ruimte-benutting).
  *
- * Reststuk telt met gewicht 100 per m²: dat is ongeveer gelijk aan 1% afval
- * — substantieel genoeg om bij gelijke rol-lengte het plan met meer
- * reststuk-waarde te laten winnen, maar niet zo dominant dat het een extra
- * rol-lengte van 100+ cm rechtvaardigt (want dan snijd je juist meer rol
- * aan om reststuk-waarde te forceren).
+ * Reststuk telt met gewicht 100 per m²: substantieel genoeg om bij gelijke
+ * rol-lengte het plan met meer reststuk-waarde te laten winnen, maar niet
+ * zo dominant dat het een extra rol-lengte van 100+ cm rechtvaardigt.
  */
 function scorePacking(
   placedCount: number,
@@ -618,7 +637,7 @@ function runGreedyPass(
       roll.lengte_cm,
       pieceVormMap,
     )
-    const guilReststukM2 = reststukAreaCm2(
+    const guilReststukM2 = reststukScoreCm2(
       computeFreeRects(roll.breedte_cm, roll.lengte_cm, guilAllPlacements),
     ) / 10000
 
@@ -637,7 +656,7 @@ function runGreedyPass(
       roll.lengte_cm,
       pieceVormMap,
     )
-    const ffdhReststukM2 = reststukAreaCm2(
+    const ffdhReststukM2 = reststukScoreCm2(
       computeFreeRects(roll.breedte_cm, roll.lengte_cm, ffdhAllPlacements),
     ) / 10000
 

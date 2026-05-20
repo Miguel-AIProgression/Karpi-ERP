@@ -124,9 +124,24 @@ function computeMaximalFreeRects(
 }
 
 /**
- * Selecteer een disjoint set reststukken greedy: kies telkens de grootste
- * kwalificerende rechthoek, "claim" die, en gebruik hem als obstacle voor de
- * volgende iteratie. Stopt wanneer geen kwalificerende rechthoek meer over is.
+ * Shape-biased score (ADR-0025): `area × √(short/long)`. Synchroon met
+ * `_shared/guillotine-packing.ts::reststukScoreCm2`. Pure m² is shape-blind —
+ * een 150×450 (verkoopbaar tapijt) en 75×905 (alleen staaltjes-bruikbaar)
+ * scoren bij gelijke area gelijk, waardoor greedy onbedoeld de langste-smalste
+ * strip claimt. De wortel-weighting prefereert chunkier vormen zonder
+ * smalle strips weg te schrijven.
+ */
+function reststukScore(r: FreeRect): number {
+  const short = Math.min(r.width, r.height)
+  const long = Math.max(r.width, r.height)
+  return r.width * r.height * Math.sqrt(short / long)
+}
+
+/**
+ * Selecteer een disjoint set reststukken greedy: kies telkens de
+ * kwalificerende rechthoek met de hoogste shape-biased score, "claim" die,
+ * en gebruik hem als obstacle voor de volgende iteratie. Stopt wanneer geen
+ * kwalificerende rechthoek meer over is.
  */
 function greedyDisjointReststukken(
   rolBreedte: number,
@@ -146,14 +161,13 @@ function greedyDisjointReststukken(
     })
     if (kwalificerend.length === 0) break
 
-    // Grootste area eerst; bij gelijk area: langste zijde eerst (bruikbaarder).
+    // Hoogste score eerst (ADR-0025); bij gelijke score: grootste area als
+    // stabiele tiebreaker (volgt de oude pure-area volgorde voor edge-cases).
     kwalificerend.sort((a, b) => {
-      const areaA = a.width * a.height
-      const areaB = b.width * b.height
-      if (areaB !== areaA) return areaB - areaA
-      const longA = Math.max(a.width, a.height)
-      const longB = Math.max(b.width, b.height)
-      return longB - longA
+      const sa = reststukScore(a)
+      const sb = reststukScore(b)
+      if (sb !== sa) return sb - sa
+      return b.width * b.height - a.width * a.height
     })
     const pick = kwalificerend[0]
     claimed.push(pick)

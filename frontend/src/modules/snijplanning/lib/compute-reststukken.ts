@@ -110,9 +110,22 @@ function computeMaximalFreeRects(
 }
 
 /**
- * Greedy disjoint: kies grootste kwalificerende rechthoek, claim hem,
- * gebruik als obstacle voor volgende iteratie. Voorkomt dat overlappende
- * maximal-rectangles als losse reststukken worden geteld.
+ * Shape-biased score (ADR-0025): `area × √(short/long)`. 1-op-1 spiegel van
+ * `_shared/compute-reststukken.ts::reststukScore` zodat de modal dezelfde
+ * keuze maakt als de backend-RPC die fysieke reststukken aanmaakt.
+ */
+function reststukScore(r: FreeRect): number {
+  const short = Math.min(r.width, r.height)
+  const long = Math.max(r.width, r.height)
+  return r.width * r.height * Math.sqrt(short / long)
+}
+
+/**
+ * Greedy disjoint: kies de hoogste shape-biased score, claim, gebruik als
+ * obstacle voor volgende iteratie. Voorkomt dat overlappende maximal-rectangles
+ * als losse reststukken worden geteld. Sinds ADR-0025 prefereert greedy
+ * chunkier vormen boven lange smalle strips bij vergelijkbare totaal-area —
+ * synchroon met de packer-scoring.
  */
 function greedyDisjointReststukken(
   rolBreedte: number,
@@ -131,12 +144,10 @@ function greedyDisjointReststukken(
     })
     if (kwalificerend.length === 0) break
     kwalificerend.sort((a, b) => {
-      const areaA = a.width * a.height
-      const areaB = b.width * b.height
-      if (areaB !== areaA) return areaB - areaA
-      const longA = Math.max(a.width, a.height)
-      const longB = Math.max(b.width, b.height)
-      return longB - longA
+      const sa = reststukScore(a)
+      const sb = reststukScore(b)
+      if (sb !== sa) return sb - sa
+      return b.width * b.height - a.width * a.height
     })
     const pick = kwalificerend[0]
     claimed.push(pick)
