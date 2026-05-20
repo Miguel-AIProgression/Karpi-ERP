@@ -62,7 +62,10 @@ interface BaseOrderEvent {
   created_at: string
 }
 
-/** Discriminated union — switch op `event_type` voor type-narrowing van `metadata`. */
+/** Discriminated union — switch op `event_type` voor type-narrowing van `metadata`.
+ *  Geen catch-all `event_type: string`-tak: die zou een supertype van de literals zijn
+ *  en narrowing breken (TS infereert `metadata` dan als `Record<string, unknown> | null`
+ *  ook in de specifieke takken). Nieuwe DB-event-types moeten in `OrderEventType`. */
 export type OrderEvent =
   | (BaseOrderEvent & { event_type: 'claim_geswapt_weg'; metadata: ClaimGeswaptWegMetadata })
   | (BaseOrderEvent & { event_type: 'claim_geswapt_naar'; metadata: ClaimGeswaptNaarMetadata })
@@ -74,7 +77,6 @@ export type OrderEvent =
       >
       metadata: Record<string, unknown> | null
     })
-  | (BaseOrderEvent & { event_type: string; metadata: Record<string, unknown> | null })
 
 export async function fetchOrderEvents(orderId: number): Promise<OrderEvent[]> {
   const { data, error } = await supabase
