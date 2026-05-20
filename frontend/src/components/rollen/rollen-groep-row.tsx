@@ -75,42 +75,6 @@ function BesteldChip({ info }: { info: BesteldInkoop }) {
   )
 }
 
-/**
- * Vrij-chip — toont "Vrij voor nieuw maatwerk" per uitwisselbare familie
- * (ADR-0026 / mig 296). V1 = puur inzicht: geen kleurcodering, geen drempel.
- *
- * Verbergt zichzelf wanneer er geen open maatwerk-druk is op de familie
- * (`bruto_maatwerkvraag_m2 === 0`) — dan voegt het cijfer niks toe boven
- * de bestaande voorraad-chips. Gerenderd in de RECHTERKOLOM (naast m² /
- * rollen-count) zodat het een echte KPI is, geen chip onder de partners.
- */
-function VrijChip({
-  vrijM2,
-  brutoVraagM2,
-}: {
-  vrijM2: number
-  brutoVraagM2: number
-}) {
-  if (brutoVraagM2 === 0) return null
-  const vrijLabel = vrijM2.toLocaleString('nl-NL', {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1,
-  })
-  const brutoLabel = brutoVraagM2.toLocaleString('nl-NL', {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1,
-  })
-  const title = `Vrij voor nieuw maatwerk: voorraad − bruto-maatwerkvraag (familie-niveau, V1). Bruto-maatwerkvraag: ${brutoLabel} m²`
-  return (
-    <span
-      title={title}
-      className="inline-flex items-center gap-1.5 text-sm px-2.5 py-1 rounded-md bg-slate-50 text-slate-700 border border-slate-200"
-    >
-      <span className="text-xs text-slate-500">Vrij</span>
-      <span className="font-semibold tabular-nums">{vrijLabel} m&sup2;</span>
-    </span>
-  )
-}
 
 function PartnerChip({ partner }: { partner: UitwisselbarePartner }) {
   const hasStock = partner.m2 > 0
@@ -480,7 +444,6 @@ export function RollenGroepRow({ positie }: RollenGroepRowProps) {
                   .map((p) => (
                     <PartnerChip key={`${p.kwaliteit_code}|${p.kleur_code}`} partner={p} />
                   ))}
-                {heeftBesteld && <BesteldChip info={positie.besteld} />}
               </>
             ) : (
               <>
@@ -490,29 +453,46 @@ export function RollenGroepRow({ positie }: RollenGroepRowProps) {
                 {positie.partners.map((p) => (
                   <PartnerChip key={`${p.kwaliteit_code}|${p.kleur_code}`} partner={p} />
                 ))}
-                {heeftBesteld && <BesteldChip info={positie.besteld} />}
               </>
             )}
           </div>
         </div>
 
         <div className="flex items-center gap-4 shrink-0">
-          <VrijChip
-            vrijM2={positie.vrij_voor_nieuw_maatwerk_m2}
-            brutoVraagM2={positie.bruto_maatwerkvraag_m2}
-          />
+          {heeftBesteld && <BesteldChip info={positie.besteld} />}
           <span className="text-xs text-slate-500">
             {totaalRollen} {totaalRollen === 1 ? 'rol' : 'rollen'}
           </span>
-          <div className="flex items-center gap-2 min-w-[140px]">
-            <span
-              className={cn(
-                'text-sm font-medium whitespace-nowrap',
-                isEmpty ? 'text-slate-400' : 'text-slate-700',
-              )}
-            >
-              {totaalM2.toFixed(1)} m&sup2;
-            </span>
+          <div className="flex items-center gap-2 min-w-[160px] justify-end">
+            {positie.bruto_maatwerkvraag_m2 > 0 ? (
+              <span
+                className="text-sm whitespace-nowrap"
+                title={`Vrij voor nieuw maatwerk: voorraad − bruto-maatwerkvraag (familie-niveau, V1). Bruto-maatwerkvraag: ${positie.bruto_maatwerkvraag_m2.toLocaleString('nl-NL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} m² · Totaal voorraad: ${totaalM2.toFixed(1)} m²`}
+              >
+                <span className="text-xs text-slate-500 mr-1">Vrij</span>
+                <span
+                  className={cn(
+                    'font-semibold tabular-nums',
+                    positie.vrij_voor_nieuw_maatwerk_m2 < 0 ? 'text-slate-700' : 'text-slate-700',
+                  )}
+                >
+                  {positie.vrij_voor_nieuw_maatwerk_m2.toLocaleString('nl-NL', {
+                    minimumFractionDigits: 1,
+                    maximumFractionDigits: 1,
+                  })}{' '}
+                  m&sup2;
+                </span>
+              </span>
+            ) : (
+              <span
+                className={cn(
+                  'text-sm font-medium whitespace-nowrap tabular-nums',
+                  isEmpty ? 'text-slate-400' : 'text-slate-700',
+                )}
+              >
+                {totaalM2.toFixed(1)} m&sup2;
+              </span>
+            )}
             <div className="w-20 h-1.5 bg-slate-100 rounded-full overflow-hidden">
               <div
                 className="h-full bg-emerald-500 rounded-full"
