@@ -5,6 +5,8 @@ import {
   fetchSnijplannenVoorGroep,
   fetchSnijplanningStatusCounts,
   fetchSnijplanDetail,
+  fetchStickerData,
+  fetchStickerDataBulk,
   fetchRolSnijstukken,
   fetchBeschikbareRollen,
   fetchProductieDashboard,
@@ -111,6 +113,25 @@ export function useSnijplanDetail(id: number | null) {
     queryKey: ['snijplanning', id],
     queryFn: () => fetchSnijplanDetail(id!),
     enabled: !!id,
+  })
+}
+
+/** Sticker-data per snijplan voor klant-facing maatwerk-sticker (mig 295). */
+export function useStickerData(id: number | null) {
+  return useQuery({
+    queryKey: ['snijplanning', 'sticker', id],
+    queryFn: () => fetchStickerData(id!),
+    enabled: !!id,
+  })
+}
+
+/** Bulk-variant — 1 query voor N stickers. Sorted ids in queryKey voor cache-stabiliteit. */
+export function useStickerDataBulk(ids: number[]) {
+  const sorted = [...ids].sort((a, b) => a - b)
+  return useQuery({
+    queryKey: ['snijplanning', 'sticker', 'bulk', sorted],
+    queryFn: () => fetchStickerDataBulk(sorted),
+    enabled: sorted.length > 0,
   })
 }
 

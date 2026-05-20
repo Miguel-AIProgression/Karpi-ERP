@@ -7,6 +7,7 @@ import { StickerLayout } from '@/components/snijplanning/sticker-layout'
 import { ReststukStickerLayout } from '@/components/snijplanning/reststuk-sticker-layout'
 import {
   useRolSnijstukken,
+  useStickerDataBulk,
   useVoltooiSnijplanRol,
   mapSnijplannenToStukken,
   computeReststukkenFromStukken,
@@ -290,11 +291,8 @@ export function ProductieRolPage() {
               </button>
             </div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {stukken.slice(0, 4).map((stuk) => (
-              <StickerLayout key={stuk.id} snijplan={stuk} />
-            ))}
-          </div>
+          <StickerPreview snijplanIds={stukken.slice(0, 4).map(s => s.id)} />
+
           {stukken.length > 4 && (
             <p className="text-xs text-slate-400 mt-2">
               + {stukken.length - 4} meer stickers. Klik "Print alle stickers" om alles te printen.
@@ -346,5 +344,24 @@ export function ProductieRolPage() {
         }
       `}</style>
     </>
+  )
+}
+
+/**
+ * Sticker-preview voor de eerste N maatwerk-stickers van een rol.
+ * Fetcht klant-facing sticker-data (mig 295) in bulk en toont ze in een grid.
+ * Echt printen gebeurt via de bulk-print-pagina (`/snijplanning/stickers`).
+ */
+function StickerPreview({ snijplanIds }: { snijplanIds: number[] }) {
+  const { data: stickers = [], isLoading } = useStickerDataBulk(snijplanIds)
+  if (isLoading) {
+    return <div className="text-xs text-slate-400">Stickers laden...</div>
+  }
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {stickers.map((s) => (
+        <StickerLayout key={s.snijplan_id} sticker={s} />
+      ))}
+    </div>
   )
 }

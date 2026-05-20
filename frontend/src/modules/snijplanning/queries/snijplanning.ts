@@ -248,6 +248,59 @@ export async function fetchSnijplanDetail(id: number): Promise<SnijplanRow> {
   return data as SnijplanRow
 }
 
+/**
+ * Sticker-data per snijplan voor de klant-facing maatwerk-sticker (mig 295).
+ *
+ * Bron-van-waarheid: view `snijplan_sticker_data` — bevat klanteigen
+ * kwaliteits-naam, poolmateriaal en EAN-13-resolutie in 1 row. Aparte
+ * fetch (niet in fetchSnijplanDetail) zodat operator-flow geen sticker-
+ * velden meeneemt en de print-pagina precies krijgt wat hij rendert.
+ */
+export interface StickerData {
+  snijplan_id: number
+  snijplan_nr: string
+  scancode: string
+  status: string
+  order_id: number
+  order_nr: string
+  order_regel_id: number
+  debiteur_nr: number
+  klant_naam: string
+  kwaliteit_code: string
+  kleur_code: string
+  lengte_cm: number
+  breedte_cm: number
+  /** Klanteigen of canonieke kwaliteits-display-naam (bv. "LUXURY" / "CHIQUE") */
+  kwaliteit_naam: string
+  /** Tekst bv. "100% Polypropyleen". NULL = niet getoond op sticker. */
+  poolmateriaal: string | null
+  /** EAN-13 (13-digit string). NULL als er geen artikel met EAN bestaat voor (kw, kl). */
+  ean_code: string | null
+}
+
+export async function fetchStickerData(snijplanId: number): Promise<StickerData> {
+  const { data, error } = await supabase
+    .from('snijplan_sticker_data')
+    .select('*')
+    .eq('snijplan_id', snijplanId)
+    .single()
+
+  if (error) throw error
+  return data as StickerData
+}
+
+/** Bulk-variant voor de bulk-print-pagina: 1 query voor N snijplannen. */
+export async function fetchStickerDataBulk(snijplanIds: number[]): Promise<StickerData[]> {
+  if (snijplanIds.length === 0) return []
+  const { data, error } = await supabase
+    .from('snijplan_sticker_data')
+    .select('*')
+    .in('snijplan_id', snijplanIds)
+
+  if (error) throw error
+  return (data ?? []) as StickerData[]
+}
+
 /** Fetch all snijplannen for a specific roll (for the roll cutting proposal view) */
 export async function fetchRolSnijstukken(rolId: number): Promise<SnijplanRow[]> {
   const { data, error } = await supabase

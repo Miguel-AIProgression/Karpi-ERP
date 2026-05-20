@@ -1,146 +1,156 @@
-import { useMemo, useState } from 'react'
-import QRCode from 'qrcode'
-import type { SnijplanRow } from '@/lib/types/productie'
-import { AFWERKING_MAP } from '@/lib/utils/constants'
+import { useState } from 'react'
+import { Ean13Barcode } from '@/components/ui/ean13-barcode'
+import type { StickerData } from '@/modules/snijplanning'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 
+/**
+ * Klant-facing maatwerk-sticker (mig 295, 148×106 mm landschap).
+ *
+ * Komt op het opgerolde maatwerk-tapijt vlak vóór verzending. Bevat
+ * alleen wat de eindafnemer ziet: debiteur-logo + 4 product-velden +
+ * EAN-13. Geen QR, scancode, klantnaam, vorm of afwerking — die
+ * operator-info loopt via de werkbon/scanstation-scherm.
+ *
+ * Layout (vaste posities):
+ *   ┌───────────────────────────────────┐
+ *   │           [debiteur-logo]         │
+ *   │                                   │
+ *   │  Kwaliteit    : LORANDA           │
+ *   │  Poolmateriaal: 100% Polypropyleen│ [EAN-13]
+ *   │  Kleur        : 13                │
+ *   │                                   │
+ *   │  Afmeting     : ca. 310 x 225 cm. │
+ *   └───────────────────────────────────┘
+ */
 interface StickerLayoutProps {
-  snijplan: SnijplanRow
+  sticker: StickerData
+  /** Screen-only hint (bv. "Sticker tapijt" / "Sticker orderdossier"). Verschijnt boven de sticker, niet op print. */
   label?: string
 }
 
-function formatMaat(row: SnijplanRow): string {
-  const b = row.maatwerk_breedte_cm ?? row.snij_breedte_cm
-  const l = row.maatwerk_lengte_cm ?? row.snij_lengte_cm
-  return `ca. ${b} × ${l} cm.`
+function formatAfmeting(s: StickerData): string {
+  return `ca. ${s.lengte_cm} x ${s.breedte_cm} cm.`
 }
 
-function formatVorm(row: SnijplanRow): string {
-  if (!row.maatwerk_vorm) return '-'
-  const labels: Record<string, string> = {
-    rechthoek: 'Rechthoek',
-    rond: 'Rond',
-    ovaal: 'Ovaal',
-  }
-  return labels[row.maatwerk_vorm] ?? row.maatwerk_vorm
+export function StickerLayout({ sticker, label }: StickerLayoutProps) {
+  return (
+    <div className="flex flex-col">
+      {label && (
+        <span className="print:hidden text-xs text-slate-400 mb-1">{label}</span>
+      )}
+      <StickerCard sticker={sticker} />
+    </div>
+  )
 }
 
-function formatAfwerking(row: SnijplanRow): string {
-  if (!row.maatwerk_afwerking) return 'Geen'
-  const info = AFWERKING_MAP[row.maatwerk_afwerking]
-  const base = info ? `${info.code} ${info.label}` : row.maatwerk_afwerking
-  if ((row.maatwerk_afwerking === 'B' || row.maatwerk_afwerking === 'SB') && row.maatwerk_band_kleur) {
-    return `${base} - ${row.maatwerk_band_kleur}`
-  }
-  return base
-}
-
-/** Genereer QR SVG string synchroon — geen flash bij eerste render/print */
-function useQrSvg(text: string): string {
-  return useMemo(() => {
-    if (!text) return ''
-    try {
-      let svg = ''
-      QRCode.toString(text, { type: 'svg', width: 96, margin: 1, errorCorrectionLevel: 'M' },
-        (err, str) => { if (!err && str) svg = str })
-      return svg
-    } catch {
-      return ''
-    }
-  }, [text])
-}
-
-export function StickerLayout({ snijplan, label: _label }: StickerLayoutProps) {
-  const qrSvg = useQrSvg(snijplan.scancode)
-
+function StickerCard({ sticker }: { sticker: StickerData }) {
   return (
     <div
-      className="sticker-label border border-dashed border-slate-300 bg-white box-border p-4 flex flex-col justify-between"
-      style={{ width: '100mm', height: '60mm' }}
+      className="sticker-label bg-white box-border flex flex-col"
+      style={{
+        width: '148mm',
+        height: '106mm',
+        padding: '5mm 8mm',
+        fontFamily: "'Helvetica Neue', Arial, sans-serif",
+        color: '#111',
+      }}
     >
-      {/* Header: Klantlogo */}
-      <div className="flex items-center gap-2 mb-1">
-        <KlantLogo debiteurNr={snijplan.debiteur_nr} klantNaam={snijplan.klant_naam} />
+      {/* Header: logo gecentreerd */}
+      <div className="flex items-center justify-center" style={{ height: '26mm' }}>
+        <KlantLogo debiteurNr={sticker.debiteur_nr} klantNaam={sticker.klant_naam} />
       </div>
 
-      <hr className="border-slate-300 mb-2" />
-
-      {/* Body: info + QR */}
-      <div className="flex justify-between flex-1">
-        {/* Left: Product details */}
-        <div className="flex flex-col gap-0.5 text-[11px] leading-snug">
-          <div className="flex gap-2">
-            <span className="text-terracotta-500 w-16">Kwaliteit</span>
-            <span className="font-semibold">: {snijplan.kwaliteit_code}</span>
-          </div>
-          <div className="flex gap-2">
-            <span className="text-terracotta-500 w-16">Kleur</span>
-            <span className="font-semibold">: {snijplan.kleur_code}</span>
-          </div>
-          <div className="flex gap-2">
-            <span className="text-terracotta-500 w-16">Afmeting</span>
-            <span className="font-semibold">: {formatMaat(snijplan)}</span>
-          </div>
-          {snijplan.maatwerk_vorm && snijplan.maatwerk_vorm !== 'rechthoek' && (
-            <div className="flex gap-2">
-              <span className="text-terracotta-500 w-16">Vorm</span>
-              <span className="font-semibold">: {formatVorm(snijplan)}</span>
-            </div>
-          )}
-          {snijplan.maatwerk_afwerking && (
-            <div className="flex gap-2">
-              <span className="text-terracotta-500 w-16">Afwerking</span>
-              <span className="font-semibold">: {formatAfwerking(snijplan)}</span>
-            </div>
-          )}
-          <div className="flex gap-2">
-            <span className="text-terracotta-500 w-16">Klant</span>
-            <span className="font-semibold">: {snijplan.klant_naam}</span>
-          </div>
+      {/* Middenblok: 3 product-velden links, EAN-13 rechts (parallel, top-aligned).
+          Poolmateriaal-regel verschijnt altijd (label + ":"); waarde blijft leeg
+          als kwaliteiten.poolmateriaal nog NULL is — bewust visueel consistent
+          ongeacht of het veld al gevuld is. */}
+      <div className="flex justify-between items-start" style={{ marginTop: '3mm' }}>
+        <div className="flex flex-col gap-[1.5mm]" style={{ fontSize: '11pt' }}>
+          <Veld label="Kwaliteit"     waarde={sticker.kwaliteit_naam} />
+          <Veld label="Poolmateriaal" waarde={sticker.poolmateriaal ?? ''} />
+          <Veld label="Kleur"         waarde={sticker.kleur_code} />
         </div>
 
-        {/* Right: QR code */}
-        <div className="flex flex-col items-center justify-center">
-          {qrSvg ? (
-            <div className="w-20 h-20" dangerouslySetInnerHTML={{ __html: qrSvg }} />
+        <div style={{ width: '52mm' }}>
+          {sticker.ean_code ? (
+            <Ean13Barcode
+              value={sticker.ean_code}
+              height={60}
+              className="block"
+              style={{ width: '52mm', height: '22mm' }}
+            />
           ) : (
-            <div className="w-20 h-20 bg-slate-100 flex items-center justify-center text-[8px] text-slate-400">
-              QR
-            </div>
+            <div className="text-[8pt] text-slate-400 text-right">geen EAN</div>
           )}
         </div>
       </div>
 
-      {/* Footer: order_nr */}
-      <div className="flex justify-end items-end mt-1 pt-1">
-        <span className="text-xs text-slate-500">{snijplan.order_nr}</span>
+      {/* Onderblok: alleen Afmeting, met witruimte ervoor (zoals foto's) */}
+      <div className="flex flex-col gap-[1.5mm]" style={{ marginTop: '8mm', fontSize: '11pt' }}>
+        <Veld label="Afmeting" waarde={formatAfmeting(sticker)} />
       </div>
     </div>
   )
 }
 
-/** Klantlogo uit Supabase storage; fallback naar klantnaam als tekst */
-function KlantLogo({ debiteurNr, klantNaam }: { debiteurNr: number; klantNaam: string }) {
-  const [failed, setFailed] = useState(false)
-  const logoUrl = SUPABASE_URL
-    ? `${SUPABASE_URL}/storage/v1/object/public/logos/${debiteurNr}.jpg`
-    : null
+interface VeldProps {
+  label: string
+  waarde: string | number
+}
 
-  if (!logoUrl || failed) {
+function Veld({ label, waarde }: VeldProps) {
+  return (
+    <div className="flex items-baseline">
+      <span style={{ display: 'inline-block', width: '32mm' }}>{label}</span>
+      <span>: {waarde}</span>
+    </div>
+  )
+}
+
+/** Debiteur-logo uit Supabase storage; fallback naar Karpi-default logo, daarna naar klantnaam-text. */
+function KlantLogo({ debiteurNr, klantNaam }: { debiteurNr: number; klantNaam: string }) {
+  const [primaryFailed, setPrimaryFailed] = useState(false)
+  const [fallbackFailed, setFallbackFailed] = useState(false)
+
+  if (!SUPABASE_URL) {
     return (
-      <span className="text-sm font-bold tracking-tight uppercase truncate">
+      <span className="text-2xl font-bold uppercase tracking-tight">
         {klantNaam}
       </span>
     )
   }
 
+  const debiteurLogo = `${SUPABASE_URL}/storage/v1/object/public/logos/${debiteurNr}.jpg`
+  const karpiDefault = `${SUPABASE_URL}/storage/v1/object/public/logos/default.jpg`
+
+  if (!primaryFailed) {
+    return (
+      <img
+        src={debiteurLogo}
+        alt={klantNaam}
+        className="object-contain"
+        style={{ maxHeight: '28mm', maxWidth: '100mm' }}
+        onError={() => setPrimaryFailed(true)}
+      />
+    )
+  }
+
+  if (!fallbackFailed) {
+    return (
+      <img
+        src={karpiDefault}
+        alt="Karpi"
+        className="object-contain"
+        style={{ maxHeight: '28mm', maxWidth: '100mm' }}
+        onError={() => setFallbackFailed(true)}
+      />
+    )
+  }
+
   return (
-    <img
-      src={logoUrl}
-      alt={klantNaam}
-      className="h-8 max-w-[60mm] object-contain"
-      onError={() => setFailed(true)}
-    />
+    <span className="text-2xl font-bold uppercase tracking-tight">
+      {klantNaam}
+    </span>
   )
 }

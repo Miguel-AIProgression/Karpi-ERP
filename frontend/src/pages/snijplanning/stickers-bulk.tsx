@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { PageHeader } from '@/components/layout/page-header'
 import { StickerLayout } from '@/components/snijplanning/sticker-layout'
 import { ReststukStickerLayout } from '@/components/snijplanning/reststuk-sticker-layout'
-import { useSnijplannenVoorGroep, useRolSnijstukken } from '@/modules/snijplanning'
+import { useSnijplannenVoorGroep, useRolSnijstukken, useStickerDataBulk } from '@/modules/snijplanning'
 import { supabase } from '@/lib/supabase/client'
 
 interface ReststukRol {
@@ -59,6 +59,11 @@ export function StickersBulkPage() {
   )
   const { data: reststukken = [] } = useReststukkenVoorRollen(rolIdsUitStukken)
 
+  // Sticker-data (klanteigen-naam, poolmateriaal, EAN) per snijplan, mig 295
+  const snijplanIds = stukken.map(s => s.id)
+  const { data: stickers = [] } = useStickerDataBulk(snijplanIds)
+  const stickerById = new Map(stickers.map(s => [s.snijplan_id, s]))
+
   // Preview reststukken uit modal (nog niet in DB — voltooi_snijplan_rol niet gedraaid)
   const previewReststukken = useMemo(() => {
     type PreviewReststuk = { rolnummer: string; kwaliteit_code: string; kleur_code: string; lengte_cm: number; breedte_cm: number }
@@ -107,14 +112,18 @@ export function StickersBulkPage() {
 
       {/* Stickers grid — 2 per stuk + reststukken */}
       <div className="sticker-print-area">
-        {stukken.map((stuk) => (
-          <div key={stuk.id} className="mb-4 print:mb-0">
-            <div className="flex flex-col items-start gap-2 print:gap-0">
-              <StickerLayout snijplan={stuk} label="Sticker tapijt" />
-              <StickerLayout snijplan={stuk} label="Sticker orderdossier" />
+        {stukken.map((stuk) => {
+          const sticker = stickerById.get(stuk.id)
+          if (!sticker) return null
+          return (
+            <div key={stuk.id} className="mb-4 print:mb-0">
+              <div className="flex flex-col items-start gap-2 print:gap-0">
+                <StickerLayout sticker={sticker} label="Sticker tapijt" />
+                <StickerLayout sticker={sticker} label="Sticker orderdossier" />
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
 
         {reststukken.map((r) => (
           <div key={`rest-${r.id}`} className="mb-4 print:mb-0">
@@ -161,7 +170,7 @@ export function StickersBulkPage() {
             border: none;
           }
           @page {
-            size: 100mm 60mm;
+            size: 148mm 106mm;
             margin: 0;
           }
         }

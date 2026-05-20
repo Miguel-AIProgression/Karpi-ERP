@@ -2,12 +2,14 @@ import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, Printer } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { StickerLayout } from '@/components/snijplanning/sticker-layout'
-import { useSnijplanDetail } from '@/modules/snijplanning'
+import { useStickerData } from '@/modules/snijplanning'
 
 export function StickerPrintPage() {
   const { id } = useParams<{ id: string }>()
   const snijplanId = Number(id)
-  const { data: snijplan, isLoading } = useSnijplanDetail(snijplanId)
+  const { data: sticker, isLoading } = useStickerData(
+    Number.isFinite(snijplanId) ? snijplanId : null,
+  )
 
   if (isLoading) {
     return (
@@ -18,7 +20,7 @@ export function StickerPrintPage() {
     )
   }
 
-  if (!snijplan) {
+  if (!sticker) {
     return (
       <div className="print:hidden">
         <PageHeader title="Snijplan niet gevonden" />
@@ -34,8 +36,8 @@ export function StickerPrintPage() {
       {/* Screen-only controls */}
       <div className="print:hidden">
         <PageHeader
-          title={`Stickers — ${snijplan.snijplan_nr}`}
-          description={`${snijplan.kwaliteit_code} ${snijplan.kleur_code} — ${snijplan.klant_naam}`}
+          title={`Stickers — ${sticker.snijplan_nr}`}
+          description={`${sticker.kwaliteit_naam} ${sticker.kleur_code} — ${sticker.klant_naam}`}
           actions={
             <div className="flex items-center gap-3">
               <Link
@@ -57,18 +59,23 @@ export function StickerPrintPage() {
         />
 
         <p className="text-sm text-slate-500 mb-6">
-          Twee identieke stickers: een voor het tapijt, een voor het orderdossier.
+          Twee identieke stickers: één voor het tapijt, één voor het orderdossier.
         </p>
       </div>
 
       {/* Stickers — visible on both screen and print */}
       <div className="sticker-print-area flex flex-col items-start gap-4">
-        <StickerLayout snijplan={snijplan} label="Sticker tapijt" />
-        <StickerLayout snijplan={snijplan} label="Sticker orderdossier" />
+        <StickerLayout sticker={sticker} label="Sticker tapijt" />
+        <StickerLayout sticker={sticker} label="Sticker orderdossier" />
       </div>
 
       {/* Print styles */}
       <style>{`
+        @media screen {
+          .sticker-label {
+            border: 1px dashed #cbd5e1;
+          }
+        }
         @media print {
           /* Hide everything except stickers */
           body * { visibility: hidden; }
@@ -85,7 +92,7 @@ export function StickerPrintPage() {
             border: none;
           }
           @page {
-            size: 100mm 60mm;
+            size: 148mm 106mm;
             margin: 0;
           }
         }
