@@ -71,6 +71,8 @@ function makePositie(overrides: {
       eerstvolgende_m: 0,
       eerstvolgende_m2: 0,
     },
+    bruto_maatwerkvraag_m2: 0,
+    vrij_voor_nieuw_maatwerk_m2: 0,
   }
 }
 

@@ -40,6 +40,10 @@ interface VoorraadposityRpcRow {
   eerstvolgende_verwacht_datum: string | null
   eerstvolgende_m: number | string | null
   eerstvolgende_m2: number | string | null
+  // ADR-0026 (mig 296): planning-projectie per familie. Ontbreken bij oudere
+  // RPC-versies → toNumber() levert 0, dus geen runtime-fout.
+  bruto_maatwerkvraag_m2?: number | string | null
+  vrij_voor_nieuw_maatwerk_m2?: number | string | null
 }
 
 function toNumber(value: unknown): number {
@@ -141,6 +145,8 @@ function mapRow(row: VoorraadposityRpcRow): Voorraadpositie {
     partners: mapPartners(row.partners),
     beste_partner: mapPartner(row.beste_partner),
     besteld: mapBesteld(row),
+    bruto_maatwerkvraag_m2: toNumber(row.bruto_maatwerkvraag_m2),
+    vrij_voor_nieuw_maatwerk_m2: toNumber(row.vrij_voor_nieuw_maatwerk_m2),
   }
 }
 

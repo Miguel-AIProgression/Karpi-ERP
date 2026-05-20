@@ -19,6 +19,29 @@ function formatM2(value: number): string {
 }
 
 /**
+ * Sorteer-modi voor de Rollen-pagina (ADR-0026, UI-stap 1).
+ * `kwaliteit` = default, behoudt de RPC-volgorde (kwaliteit_code ASC).
+ */
+type SortMode = 'kwaliteit' | 'voorraad_desc' | 'vrij_asc' | 'vraag_desc'
+
+const SORT_OPTIES: { value: SortMode; label: string }[] = [
+  { value: 'kwaliteit', label: 'Kwaliteit (A→Z)' },
+  { value: 'voorraad_desc', label: 'Voorraad (hoog → laag)' },
+  { value: 'vrij_asc', label: 'Vrij voor maatwerk (laag → hoog)' },
+  { value: 'vraag_desc', label: 'Bruto-maatwerkvraag (hoog → laag)' },
+]
+
+/**
+ * Stabiele tiebreaker per (kwaliteit_code, kleur_code) zodat de volgorde
+ * binnen elke sort-modus deterministisch is.
+ */
+function tiebreakKwKl(a: Voorraadpositie, b: Voorraadpositie): number {
+  const kw = a.kwaliteit_code.localeCompare(b.kwaliteit_code)
+  if (kw !== 0) return kw
+  return a.kleur_code.localeCompare(b.kleur_code)
+}
+
+/**
  * Construeert een "ghost"-Voorraadpositie voor een (kw, kl) zonder eigen
  * voorraad. Alleen `besteld` is gevuld; `voorraad`/`rollen`/`partners` zijn
  * leeg. RollenGroepRow rendert dit als `isEmpty=true`-rij — dezelfde
@@ -51,6 +74,10 @@ function maakGhostPositie(row: GhostBesteldRij): Voorraadpositie {
       eerstvolgende_m: row.eerstvolgende_m,
       eerstvolgende_m2: row.eerstvolgende_m2,
     },
+    // Ghost-paren hebben geen eigen voorraad en geen open maatwerk-druk —
+    // 0 is per definitie correct (ADR-0026).
+    bruto_maatwerkvraag_m2: 0,
+    vrij_voor_nieuw_maatwerk_m2: 0,
   }
 }
 
@@ -60,6 +87,7 @@ export function RollenOverviewPage() {
   const kleurFilter = params.get('kleur') || undefined
   const hasFilter = !!kwaliteitFilter
   const [search, setSearch] = useState('')
+  const [sortMode, setSortMode] = useState<SortMode>('kwaliteit')
 
   const { data: stats } = useRollenStats()
 
@@ -116,6 +144,36 @@ export function RollenOverviewPage() {
 
     return [...lijst, ...ghosts]
   }, [posities, besteldAggregaten, kwaliteitFilter, kleurFilter, search])
+
+  /**
+   * Sorteer volgens de gekozen modus. Default `kwaliteit` laat de RPC-volgorde
+   * intact (geen breaking change). Andere modi sorteren op de relevante key met
+   * (kwaliteit_code, kleur_code) als tiebreaker voor stabiliteit.
+   */
+  const gesorteerdeGroepen = useMemo<Voorraadpositie[]>(() => {
+    if (sortMode === 'kwaliteit') return groepenMetGhost
+    const out = [...groepenMetGhost]
+    switch (sortMode) {
+      case 'voorraad_desc':
+        out.sort((a, b) => {
+          const diff = b.voorraad.totaal_m2 - a.voorraad.totaal_m2
+          return diff !== 0 ? diff : tiebreakKwKl(a, b)
+        })
+        return out
+      case 'vrij_asc':
+        out.sort((a, b) => {
+          const diff = a.vrij_voor_nieuw_maatwerk_m2 - b.vrij_voor_nieuw_maatwerk_m2
+          return diff !== 0 ? diff : tiebreakKwKl(a, b)
+        })
+        return out
+      case 'vraag_desc':
+        out.sort((a, b) => {
+          const diff = b.bruto_maatwerkvraag_m2 - a.bruto_maatwerkvraag_m2
+          return diff !== 0 ? diff : tiebreakKwKl(a, b)
+        })
+        return out
+    }
+  }, [groepenMetGhost, sortMode])
 
   const statCards = [
     {
@@ -197,9 +255,9 @@ export function RollenOverviewPage() {
         </div>
       )}
 
-      {/* Search */}
+      {/* Search + sorteer-dropdown (ADR-0026) */}
       {!hasFilter && (
-        <div className="flex items-center gap-3 mb-4">
+        <div className="flex items-center gap-3 mb-4 flex-wrap">
           <div className="relative w-96">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
@@ -210,6 +268,20 @@ export function RollenOverviewPage() {
               className="w-full pl-10 pr-4 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
             />
           </div>
+          <label className="flex items-center gap-2 text-sm text-slate-600">
+            <span className="whitespace-nowrap">Sorteren op:</span>
+            <select
+              value={sortMode}
+              onChange={(e) => setSortMode(e.target.value as SortMode)}
+              className="px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
+            >
+              {SORT_OPTIES.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
       )}
 
@@ -218,13 +290,13 @@ export function RollenOverviewPage() {
         <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-12 text-center text-slate-400">
           Rollen laden...
         </div>
-      ) : groepenMetGhost.length === 0 ? (
+      ) : gesorteerdeGroepen.length === 0 ? (
         <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-12 text-center text-slate-400">
           Geen rollen gevonden
         </div>
       ) : (
         <div className="space-y-3">
-          {groepenMetGhost.map((p) => (
+          {gesorteerdeGroepen.map((p) => (
             <RollenGroepRow
               key={`${p.kwaliteit_code}-${p.kleur_code}`}
               positie={p}

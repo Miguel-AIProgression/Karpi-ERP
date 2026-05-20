@@ -52,6 +52,21 @@ export interface Voorraadpositie {
   partners: UitwisselbarePartner[]
   beste_partner: UitwisselbarePartner | null
   besteld: BesteldInkoop
+  /**
+   * Pessimistische projectie van rol-m² die nog uit voorraad gesneden moet worden
+   * voor open maatwerk-snijplannen ({Wacht, Gepland, Snijden}), geaggregeerd op
+   * uitwisselbare familie. Per-stuk: `min(l, b) × kwaliteit.standaard_breedte_cm`.
+   * Géén fysieke toewijzing — pure planning-projectie (ADR-0026, mig 296).
+   */
+  bruto_maatwerkvraag_m2: number
+  /**
+   * Afgeleide KPI per familie. V1-formule (mig 296): `voorraad m² −
+   * bruto_maatwerkvraag_m2`. Claims (`producten.gereserveerd`) worden in V1
+   * niet afgetrokken — die cache is stuks-aantal, niet m². V2-backlog:
+   * conversie aantal × stuk_m² via producten-join. ADR-0026 §V2-backlog #6.
+   * `besteld_inkoop` ook bewust buiten de KPI.
+   */
+  vrij_voor_nieuw_maatwerk_m2: number
 }
 
 /**
