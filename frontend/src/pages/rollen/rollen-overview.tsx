@@ -161,7 +161,14 @@ export function RollenOverviewPage() {
         })
         return out
       case 'vrij_asc':
+        // Families MET bruto-maatwerkvraag eerst (anders staan lege/krappe
+        // families zonder druk bovenaan en zakken de echte signal-rijen weg).
+        // Binnen elke groep oplopend op vrij. ADR-0026: "puur inzicht" — deze
+        // tweesplitsing is sorteer-mechaniek, geen kleurcodering of drempel.
         out.sort((a, b) => {
+          const aDruk = a.bruto_maatwerkvraag_m2 > 0 ? 0 : 1
+          const bDruk = b.bruto_maatwerkvraag_m2 > 0 ? 0 : 1
+          if (aDruk !== bDruk) return aDruk - bDruk
           const diff = a.vrij_voor_nieuw_maatwerk_m2 - b.vrij_voor_nieuw_maatwerk_m2
           return diff !== 0 ? diff : tiebreakKwKl(a, b)
         })
