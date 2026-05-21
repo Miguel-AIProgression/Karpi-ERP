@@ -477,6 +477,11 @@ _Aangemaakt in migratie 117 (2026-04-22)._
 
 ---
 
+### verkoopoverzicht_export (VIEW)
+_Mig 302._ AFAS-compatibele tab-separated factuurexport. Per factuur 1 rij; bundel-facturen (meerdere orders → 1 factuur) krijgen `ordernummers` en `klant_refs` als `; `-gescheiden DISTINCT-aggregaten uit `factuur_regels`. `naam2` afgeleid uit `debiteuren.inkoopgroep_code` (bv. `(INKC02 DECOR UNION)`). Gevoed door de "Verkoopoverzicht"-knop op [`/facturatie`](../frontend/src/modules/facturatie/pages/facturatie-overview.tsx); frontend filtert op status (`Verstuurd/Betaald/Herinnering/Aanmaning`, géén Concept/Gecrediteerd) en datum-range. Output-bestandsnaam: `VERK_OVERZICHT_VAN_{YYYYMMDD}_TOT_{YYYYMMDD}.XLS`. Bytes geëncodeerd als ISO-8859-1 / Windows-1252 voor backward-compat met legacy AFAS-import.
+
+---
+
 ### factuur_queue
 Queue voor asynchrone factuur-generatie + email. Gevuld door trigger (migratie 118) bij
 `orders.status='Verzonden'` (klant met `factuurvoorkeur='per_zending'`) of door pg_cron

@@ -1,9 +1,9 @@
 import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, Download, CheckCircle, ExternalLink } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { StatusBadge } from '@/components/ui/status-badge'
 import { Fragment, useState } from 'react'
 import { useFactuurDetail, useMarkeerBetaald } from '../hooks/use-facturen'
+import { FactuurStatusSelect } from '../components/factuur-status-select'
 import { getFactuurPdfSignedUrl, renderFactuurPdfBlobUrl, type FactuurRegel } from '../queries/facturen'
 import { formatCurrency, formatDate } from '@/lib/utils/formatters'
 
@@ -166,9 +166,9 @@ export function FactuurDetailPage() {
             Factuurgegevens
           </h2>
           <dl className="space-y-2 text-sm">
-            <div className="flex justify-between">
+            <div className="flex justify-between items-center">
               <dt className="text-slate-500">Status</dt>
-              <dd><StatusBadge status={factuur.status} type="factuur" /></dd>
+              <dd><FactuurStatusSelect factuurId={factuur.id} status={factuur.status} /></dd>
             </div>
             <div className="flex justify-between">
               <dt className="text-slate-500">Factuurdatum</dt>

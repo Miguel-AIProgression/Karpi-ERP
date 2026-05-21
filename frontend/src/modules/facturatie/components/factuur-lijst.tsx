@@ -11,6 +11,10 @@ interface FactuurLijstProps {
   compact?: boolean
   /** client-side filter — applied on top of the debiteurNr filter */
   items?: FactuurListItem[]
+  /** Set met geselecteerde factuur-id's; aanwezig = checkbox-kolom tonen. */
+  selectie?: Set<number>
+  onToggle?: (id: number) => void
+  onToggleAlles?: (zichtbareIds: number[], aan: boolean) => void
 }
 
 type SortKey = 'factuur_nr' | 'factuurdatum' | 'klant_naam' | 'status' | 'totaal'
@@ -24,12 +28,20 @@ const DEFAULT_SORT: { key: SortKey; dir: SortDir } = {
   dir: 'desc',
 }
 
-export function FactuurLijst({ debiteurNr, compact = false, items }: FactuurLijstProps) {
+export function FactuurLijst({
+  debiteurNr,
+  compact = false,
+  items,
+  selectie,
+  onToggle,
+  onToggleAlles,
+}: FactuurLijstProps) {
   const { data, isLoading } = useFacturen(debiteurNr)
   const [sort, setSort] = useState(DEFAULT_SORT)
 
   const facturen = items ?? data ?? []
   const showKlant = !debiteurNr
+  const showSelectie = Boolean(selectie && onToggle)
 
   const gesorteerd = useMemo(() => {
     const lijst = [...facturen]
@@ -60,11 +72,33 @@ export function FactuurLijst({ debiteurNr, compact = false, items }: FactuurLijs
     )
   }
 
+  const zichtbareIds = gesorteerd.map((f) => f.id)
+  const allesGeselecteerd =
+    showSelectie &&
+    zichtbareIds.length > 0 &&
+    zichtbareIds.every((id) => selectie!.has(id))
+  const ietsGeselecteerd =
+    showSelectie && !allesGeselecteerd && zichtbareIds.some((id) => selectie!.has(id))
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-slate-200 text-left">
+            {showSelectie && (
+              <th className="pb-3 pr-3 w-8">
+                <input
+                  type="checkbox"
+                  checked={allesGeselecteerd}
+                  ref={(el) => {
+                    if (el) el.indeterminate = ietsGeselecteerd
+                  }}
+                  onChange={(e) => onToggleAlles?.(zichtbareIds, e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-terracotta-500 focus:ring-terracotta-400/30"
+                  aria-label="Selecteer alle zichtbare facturen"
+                />
+              </th>
+            )}
             <SortHeader label="Factuurnr" sortKey="factuur_nr" sort={sort} onClick={klikHeader} />
             <SortHeader label="Datum" sortKey="factuurdatum" sort={sort} onClick={klikHeader} />
             {showKlant && (
@@ -82,35 +116,52 @@ export function FactuurLijst({ debiteurNr, compact = false, items }: FactuurLijs
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
-          {gesorteerd.map((f) => (
-            <tr key={f.id} className="hover:bg-slate-50 transition-colors">
-              <td className={`py-3 pr-4 font-mono text-xs text-slate-700 ${compact ? '' : 'py-3'}`}>
-                {f.factuur_nr}
-              </td>
-              <td className="py-3 pr-4 text-slate-600 whitespace-nowrap">
-                {formatDate(f.factuurdatum)}
-              </td>
-              {showKlant && (
-                <td className="py-3 pr-4 text-slate-700 max-w-[200px] truncate">
-                  {f.klant_naam ?? '—'}
+          {gesorteerd.map((f) => {
+            const aan = showSelectie ? selectie!.has(f.id) : false
+            return (
+              <tr
+                key={f.id}
+                className={`hover:bg-slate-50 transition-colors ${aan ? 'bg-terracotta-50/40' : ''}`}
+              >
+                {showSelectie && (
+                  <td className="py-3 pr-3">
+                    <input
+                      type="checkbox"
+                      checked={aan}
+                      onChange={() => onToggle?.(f.id)}
+                      className="h-4 w-4 rounded border-slate-300 text-terracotta-500 focus:ring-terracotta-400/30"
+                      aria-label={`Selecteer ${f.factuur_nr}`}
+                    />
+                  </td>
+                )}
+                <td className={`py-3 pr-4 font-mono text-xs text-slate-700 ${compact ? '' : 'py-3'}`}>
+                  {f.factuur_nr}
                 </td>
-              )}
-              <td className="py-3 pr-4">
-                <StatusBadge status={f.status} type="factuur" />
-              </td>
-              <td className="py-3 pr-4 text-right font-medium text-slate-700 whitespace-nowrap">
-                {formatCurrency(f.totaal)}
-              </td>
-              <td className="py-3">
-                <Link
-                  to={`/facturatie/${f.id}`}
-                  className="text-xs text-terracotta-500 hover:underline whitespace-nowrap"
-                >
-                  Bekijk
-                </Link>
-              </td>
-            </tr>
-          ))}
+                <td className="py-3 pr-4 text-slate-600 whitespace-nowrap">
+                  {formatDate(f.factuurdatum)}
+                </td>
+                {showKlant && (
+                  <td className="py-3 pr-4 text-slate-700 max-w-[200px] truncate">
+                    {f.klant_naam ?? '—'}
+                  </td>
+                )}
+                <td className="py-3 pr-4">
+                  <StatusBadge status={f.status} type="factuur" />
+                </td>
+                <td className="py-3 pr-4 text-right font-medium text-slate-700 whitespace-nowrap">
+                  {formatCurrency(f.totaal)}
+                </td>
+                <td className="py-3">
+                  <Link
+                    to={`/facturatie/${f.id}`}
+                    className="text-xs text-terracotta-500 hover:underline whitespace-nowrap"
+                  >
+                    Bekijk
+                  </Link>
+                </td>
+              </tr>
+            )
+          })}
         </tbody>
       </table>
     </div>

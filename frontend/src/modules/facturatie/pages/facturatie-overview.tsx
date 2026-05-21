@@ -1,10 +1,12 @@
 import { useState, useMemo } from 'react'
-import { Search } from 'lucide-react'
+import { Search, FileDown } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { MultiSelectDropdown } from '@/components/ui/multi-select-dropdown'
 import { FactuurLijst } from '@/modules/facturatie'
 import { useFacturen } from '../hooks/use-facturen'
 import type { FactuurStatus } from '../queries/facturen'
+import { VerkoopoverzichtExportDialog } from '../components/verkoopoverzicht-export-dialog'
+import { FactuurBulkBalk } from '../components/factuur-bulk-balk'
 
 const ALLE_STATUSSEN: FactuurStatus[] = [
   'Concept',
@@ -21,6 +23,10 @@ export function FacturatieOverviewPage() {
   const [zoekterm, setZoekterm] = useState('')
   const [statusSelectie, setStatusSelectie] = useState<string[]>([])
   const [klantSelectie, setKlantSelectie] = useState<string[]>([])
+  const [datumVan, setDatumVan] = useState('')
+  const [datumTot, setDatumTot] = useState('')
+  const [selectie, setSelectie] = useState<Set<number>>(new Set())
+  const [exportDialogOpen, setExportDialogOpen] = useState(false)
 
   const { data: facturen = [] } = useFacturen()
 
@@ -44,20 +50,65 @@ export function FacturatieOverviewPage() {
     return facturen.filter((f) => {
       const matchStatus = statusSet.size === 0 || statusSet.has(f.status)
       const matchKlant = klantSet.size === 0 || klantSet.has(String(f.debiteur_nr))
+      // Datum-vergelijking op ISO-strings — facturen.factuurdatum is een
+      // ISO-date (YYYY-MM-DD), input-values zijn ook YYYY-MM-DD, dus
+      // lexicale vergelijking = chronologische vergelijking.
+      const matchDatum =
+        (!datumVan || f.factuurdatum >= datumVan) &&
+        (!datumTot || f.factuurdatum <= datumTot)
       const q = zoekterm.trim().toLowerCase()
       const matchZoek =
         !q ||
         f.factuur_nr.toLowerCase().includes(q) ||
         (f.klant_naam ?? '').toLowerCase().includes(q)
-      return matchStatus && matchKlant && matchZoek
+      return matchStatus && matchKlant && matchDatum && matchZoek
     })
-  }, [facturen, zoekterm, statusSelectie, klantSelectie])
+  }, [facturen, zoekterm, statusSelectie, klantSelectie, datumVan, datumTot])
+
+  function toggle(id: number) {
+    setSelectie((huidig) => {
+      const nieuw = new Set(huidig)
+      if (nieuw.has(id)) nieuw.delete(id)
+      else nieuw.add(id)
+      return nieuw
+    })
+  }
+
+  function toggleAlles(zichtbareIds: number[], aan: boolean) {
+    setSelectie((huidig) => {
+      const nieuw = new Set(huidig)
+      if (aan) zichtbareIds.forEach((id) => nieuw.add(id))
+      else zichtbareIds.forEach((id) => nieuw.delete(id))
+      return nieuw
+    })
+  }
+
+  function clearSelectie() {
+    setSelectie(new Set())
+  }
+
+  const geselecteerdeIds = useMemo(() => Array.from(selectie), [selectie])
 
   return (
     <>
       <PageHeader
         title="Facturen"
         description={`${gefilterd.length} facturen`}
+        actions={
+          <button
+            type="button"
+            onClick={() => setExportDialogOpen(true)}
+            className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-[var(--radius-sm)] border border-slate-300 bg-white hover:bg-slate-50 text-slate-700"
+          >
+            <FileDown size={14} />
+            Verkoopoverzicht
+          </button>
+        }
+      />
+
+      <VerkoopoverzichtExportDialog
+        open={exportDialogOpen}
+        onClose={() => setExportDialogOpen(false)}
       />
 
       {/* Filters */}
@@ -87,11 +138,52 @@ export function FacturatieOverviewPage() {
           onChange={setKlantSelectie}
           zoekbaar
         />
+
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-slate-500">Van</label>
+          <input
+            type="date"
+            value={datumVan}
+            onChange={(e) => setDatumVan(e.target.value)}
+            className="py-2 px-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
+          />
+          <label className="text-xs text-slate-500">Tot</label>
+          <input
+            type="date"
+            value={datumTot}
+            onChange={(e) => setDatumTot(e.target.value)}
+            className="py-2 px-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
+          />
+          {(datumVan || datumTot) && (
+            <button
+              type="button"
+              onClick={() => {
+                setDatumVan('')
+                setDatumTot('')
+              }}
+              className="text-xs text-slate-500 hover:text-slate-700"
+            >
+              Wis
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* Bulk-actie-balk */}
+      <FactuurBulkBalk
+        geselecteerdeIds={geselecteerdeIds}
+        onClear={clearSelectie}
+        onKlaar={clearSelectie}
+      />
 
       {/* List */}
       <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-4">
-        <FactuurLijst items={gefilterd} />
+        <FactuurLijst
+          items={gefilterd}
+          selectie={selectie}
+          onToggle={toggle}
+          onToggleAlles={toggleAlles}
+        />
       </div>
     </>
   )

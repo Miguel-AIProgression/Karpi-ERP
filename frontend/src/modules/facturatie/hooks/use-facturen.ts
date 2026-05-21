@@ -5,7 +5,10 @@ import {
   fetchFacturenVoorOrder,
   fetchFacturenVoorOrders,
   zetFactuurOpBetaald,
+  zetFactuurStatus,
+  zetFactuurStatusBulk,
   fetchBundelInfoVoorFactuur,
+  type FactuurStatus,
 } from '../queries/facturen'
 
 export function useFacturen(debiteurNr?: number) {
@@ -44,6 +47,24 @@ export function useMarkeerBetaald() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: zetFactuurOpBetaald,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['facturen'] }),
+  })
+}
+
+export function useZetFactuurStatus() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, status }: { id: number; status: FactuurStatus }) =>
+      zetFactuurStatus(id, status),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['facturen'] }),
+  })
+}
+
+export function useZetFactuurStatusBulk() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ ids, status }: { ids: number[]; status: FactuurStatus }) =>
+      zetFactuurStatusBulk(ids, status),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['facturen'] }),
   })
 }

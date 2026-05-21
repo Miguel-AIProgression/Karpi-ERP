@@ -186,6 +186,22 @@ export async function zetFactuurOpBetaald(id: number): Promise<void> {
   if (error) throw error
 }
 
+export async function zetFactuurStatus(id: number, status: FactuurStatus): Promise<void> {
+  const { error } = await supabase
+    .from('facturen').update({ status }).eq('id', id)
+  if (error) throw error
+}
+
+export async function zetFactuurStatusBulk(
+  ids: number[],
+  status: FactuurStatus,
+): Promise<void> {
+  if (ids.length === 0) return
+  const { error } = await supabase
+    .from('facturen').update({ status }).in('id', ids)
+  if (error) throw error
+}
+
 export interface BundelInfoVoorFactuur {
   isBundel: boolean
   heeftDrempelKorting: boolean

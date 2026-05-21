@@ -1,5 +1,56 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-21 — Bulk-status-wijziging + datum-range-filter op facturen-overzicht
+
+**Waarom:** Na de status-edit per factuur (vorige entry) miste nog de schaal-oplossing: bij maandafsluiting wil je 50 Concept-facturen in één klik op Verstuurd zetten, of een hele week aan facturen op Betaald markeren. Eén-voor-één klikken op detail is dan ondoenlijk. Ook miste een datum-range-filter op het overzicht — handig om eerst de juiste subset te isoleren voordat je bulk-acties uitvoert.
+
+**Wat:**
+- **Datum-range-filter** in [facturatie-overview.tsx](../frontend/src/modules/facturatie/pages/facturatie-overview.tsx): twee `<input type="date">`-velden (Van / Tot) naast de bestaande status- en klant-filters. Vergelijking op ISO-strings (factuurdatum is `DATE`, input-value is `YYYY-MM-DD` → lexicaal = chronologisch). Wis-knop verschijnt zodra ≥1 datum is ingevuld.
+- **Selectie-state** in de overview: `Set<number>` met `toggle` (per rij), `toggleAlles` (zichtbare ids op/uit), `clearSelectie`. `FactuurLijst` accepteert nu optionele `selectie`, `onToggle`, `onToggleAlles`-props; zonder die props blijft het component identiek aan voorheen (backwards-compat voor [klant-detail.tsx](../frontend/src/pages/klanten/klant-detail.tsx) en andere call-sites). Checkbox-kolom verschijnt links; header-checkbox heeft tri-state (uit / indeterminate / aan).
+- **Nieuwe query** `zetFactuurStatusBulk(ids, status)` in [queries/facturen.ts](../frontend/src/modules/facturatie/queries/facturen.ts) — `UPDATE facturen SET status WHERE id IN (...)`. Skip bij lege array zodat een lege Set geen UPDATE-all-rows zonder WHERE riskeert.
+- **Hook** `useZetFactuurStatusBulk` in [hooks/use-facturen.ts](../frontend/src/modules/facturatie/hooks/use-facturen.ts) — zelfde cache-invalidatie als de single-mutatie.
+- **Component** [`FactuurBulkBalk`](../frontend/src/modules/facturatie/components/factuur-bulk-balk.tsx): terracotta-getinte balk die verschijnt zodra selectie > 0. Toont aantal, dropdown met 6 statussen (gekleurde badges), en wis-knop. `window.confirm` vóór de mutatie — laagdrempelig, géén onomkeerbare delete dus geen volle modal nodig. Loading-state vergrendelt de knoppen tijdens save.
+
+**Out of scope:** geen optimistic update (cache wordt na success vol opnieuw opgehaald). Geen "selecteer alles inclusief niet-zichtbare" — bewust: bij actieve datum-filter zou anders je hele archief geraakt kunnen worden. Geen undo — operator moet de transitie zelf terugdraaien als hij fout heeft geklikt.
+
+## 2026-05-21 — Factuur-status handmatig wijzigen op detail-pagina
+
+**Waarom:** De UI bood alleen "Markeer als betaald" (Concept → Betaald). Operators konden geen correctie doen naar Verstuurd / Herinnering / Aanmaning / Gecrediteerd vanuit de UI — die statussen werden uitsluitend gezet door [`factuur-verzenden`](../supabase/functions/factuur-verzenden/index.ts) (Verstuurd na e-mail) of bleven onbereikbaar. Bij een handmatig verstuurde factuur, een credit-correctie of een betalingsherinnering moest de status nu via SQL omgezet worden.
+
+**Wat:**
+- **Nieuwe query** `zetFactuurStatus(id, status)` in [queries/facturen.ts](../frontend/src/modules/facturatie/queries/facturen.ts) — directe `UPDATE facturen SET status=…` (geen RPC nodig; de tabel staat directe updates al toe zoals de bestaande `zetFactuurOpBetaald`-flow uit dezelfde file).
+- **Hook** `useZetFactuurStatus` in [hooks/use-facturen.ts](../frontend/src/modules/facturatie/hooks/use-facturen.ts) — invalideert `['facturen']` zodat overzicht én detail meebewegen.
+- **Component** [`FactuurStatusSelect`](../frontend/src/modules/facturatie/components/factuur-status-select.tsx): klikbare StatusBadge + chevron, opent een popover met alle 6 enum-waardes als gekleurde badges. Buiten-klik sluit, huidige status krijgt een check-icoon, mutatie disable't de knop tijdens save.
+- **Integratie** in [factuur-detail.tsx](../frontend/src/modules/facturatie/pages/factuur-detail.tsx): de status-rij in de Factuurgegevens-card vervangt de read-only `StatusBadge` door `FactuurStatusSelect`. De "Markeer als betaald"-knop in de header blijft staan als snelkoppeling voor de meest gebruikte transitie.
+
+**Out of scope:** geen audit-trail / `order_events`-koppeling — facturen hebben (nog) geen eigen event-log. Geen `verstuurd_op`-automatiek bij handmatig Concept → Verstuurd; die kolom blijft alleen gezet door `factuur-verzenden`.
+
+## 2026-05-21 — Verkoopoverzicht-export (AFAS-import format, mig 302)
+
+**Waarom:** Het oude ERP genereerde een tab-separated `.XLS` met factuur-overzicht per datum-range (filename `VERK_OVERZICHT_VAN_{YYYYMMDD}_TOT_{YYYYMMDD}.XLS`) die ingelezen werd in AFAS voor financiële boekhouding. RugFlow had nog geen equivalent — operator moest terugvallen op het oude systeem voor maandelijkse facturen-exports.
+
+**Wat:**
+- **Migratie 302** ([supabase/migrations/302_verkoopoverzicht_export_view.sql](../supabase/migrations/302_verkoopoverzicht_export_view.sql)): nieuwe view `verkoopoverzicht_export`. Per factuur 1 rij met debiteur-snapshot uit `debiteuren` (niet `facturen.fact_*` — die snapshot kan afwijken van actuele klant-data), gekoppelde ordernummers + klant-referenties (DISTINCT samengevoegd met `; ` voor bundel-facturen die meerdere orders dekken — AFAS-import veld), en factuur-totalen. View bevat álle statussen; frontend-side filter beperkt tot `Verstuurd/Betaald/Herinnering/Aanmaning` (Concept en Gecrediteerd uit). Naam2 wordt afgeleid uit `debiteuren.inkoopgroep_code` (bv. `(INKC02 DECOR UNION)`) voor klanten in een inkoopgroep — vervangt de oude "(ZR-NR ...)"-tags uit het legacy-systeem.
+- **Frontend-builder** ([frontend/src/modules/facturatie/lib/verkoopoverzicht-xls.ts](../frontend/src/modules/facturatie/lib/verkoopoverzicht-xls.ts)): genereert bit-compatibele output — tab-separator, LF line-endings (geen CRLF), ISO-8859-1 encoding via custom byte-mapper (Windows-1252-extensies voor `€` `–` `—` etc.), postcode pad-right naar 7 chars, bedragen Nederlands geformatteerd (puur integer als rond, anders `1234,56`), datum `DD-MM-YYYY`, vervaldatum `Onbekend!`-fallback, land-mapping (`NL` → leeg, `BE` → `België`, etc.).
+- **Query-helper** ([queries/verkoopoverzicht.ts](../frontend/src/modules/facturatie/queries/verkoopoverzicht.ts)): `fetchVerkoopoverzicht(van, tot)` — `BETWEEN`-filter op `factuurdatum`, sorteert op `debiteur_nr ASC`, `factuur_nr ASC`.
+- **Dialog** ([components/verkoopoverzicht-export-dialog.tsx](../frontend/src/modules/facturatie/components/verkoopoverzicht-export-dialog.tsx)): twee date-inputs (default = vandaag), status-indicator (aantal facturen na succesvolle export, foutmelding bij lege range of fout). Triggert browser-download van `.XLS`-blob met `application/vnd.ms-excel`-MIME zodat Excel het direct als sheet opent.
+- **Knop** in [facturatie-overview.tsx](../frontend/src/modules/facturatie/pages/facturatie-overview.tsx): nieuwe action-knop "Verkoopoverzicht" rechts naast de pagina-titel.
+
+**Open backlog:** AFAS-mapping nog niet getest op een real-world import (operator moet 1× een echte file door AFAS heen halen om kolom-mapping te bevestigen). Mogelijk verschilt het AFAS-veld voor "Ordernummer" als concat — fallback is een 1-regel-per-(factuur × order)-modus in een v2 van de export.
+
+## 2026-05-20 — Fix: packer plaatste stukken op al-snijdende rollen (mig 301)
+
+**Waarom:** Op rol VERR130 C lagen 4 maatwerk-stukken op fysiek overlappende posities — Zitmaxx (250×450) op (0,0), Headlam (325×225 geroteerd) óók op (0,0), Floorpassion op (0,225), Gero op (235,225). De UI clusterde ze daardoor terecht in één Rij 1 met messen 235/250/325 en lengte-mes 450, maar de operator kan deze layout fysiek niet snijden. Som van de 4 stukken (276.050 cm²) past niet in een 400×450-vlak (180.000 cm²) — onbetwistbaar bewijs dat de packer iets fout heeft gedaan.
+
+**Root cause:** Een tweede `auto-plan-groep`-run (na toevoeging van Gero) zag VERR130 C als beschikbare rol terwijl Zitmaxx er al fysiek op lag. `fetchBeschikbareRollen` sluit weliswaar rollen met `snijden_gestart_op IS NOT NULL` uit ([db-helpers.ts:161](../supabase/functions/_shared/db-helpers.ts#L161)), maar tussen het promoveren van snijplannen naar `'Snijden'` en het zetten van `rollen.snijden_gestart_op` bestaat een window waarin de rol toch in de pool zit. `fetchBezettePlaatsingen` filtert daarbij alléén op `status='Gepland'` ([db-helpers.ts:281](../supabase/functions/_shared/db-helpers.ts#L281)), dus de packer kreeg een lege bezetteMap voor VERR130 C en plaatste de 3 nieuwe stukken alsof de rol leeg was. Zitmaxx zijn (0,0) bleef onaangeroerd → fysieke overlap.
+
+**Wat:**
+- **Code-fix** in [`fetchBeschikbareRollen`](../supabase/functions/_shared/db-helpers.ts): extra defense-in-depth-guard — rollen met ANY snijplan in `('Snijden', 'Gesneden')` worden hard uit de planning-pool gefilterd, ook als `rollen.snijden_gestart_op` (nog) NULL is. Bestaande filter blijft staan; nieuwe is een additionele zekering tegen status-window-drift. Commentaar bij `fetchBezettePlaatsingen` aangescherpt zodat het verband tussen de twee filters expliciet is.
+- **Migratie 301** ([supabase/migrations/301_herstel_verr130c_overlap.sql](../supabase/migrations/301_herstel_verr130c_overlap.sql)): idempotente data-fix die de 3 niet-Zitmaxx-snijplannen op VERR130 C verplaatst naar hun fysiek-correcte Y-posities (Headlam → y=450, Floorpassion → y=675, Gero → y=675 lane 2). Guard checkt eerst of de bekende foutieve posities nog in de DB staan voordat hij update — operator-edits blijven veilig.
+- **Geen wijziging aan derive.ts / packer-algoritme zelf** — die werken correct gegeven de input; de bug zat in welke rollen de packer aangeboden kreeg.
+
+**Open backlog:** investigeren of `start_snijden_rol` atomair `rollen.snijden_gestart_op` + `snijplannen.status='Snijden'` in één transactie zet (anders blijft de window-race-mogelijkheid bestaan, alleen niet meer schadelijk dankzij de nieuwe guard). Toetsen of er nog meer rollen in productie zijn waarop al overlap is ontstaan: `SELECT rol_id, COUNT(*) FROM snijplannen WHERE status IN ('Snijden','Gesneden') GROUP BY rol_id, positie_x_cm, positie_y_cm HAVING COUNT(*) > 1`.
+
 ## 2026-05-20 — Deadline-bewuste claim-swap (ADR-0027 / mig 297-299)
 
 **Waarom:** Karpi-B2B-klanten communiceren regelmatig "geen haast, lever pas wk 40" terwijl de standaard-leverweek voor dat product wk 1 zou zijn. Vandaag claimde [`herallocateer_orderregel`](../supabase/migrations/154_uitwisselbaar_claims.sql) (mig 154) gulzig voorraad voor zo'n order, waarna een latere urgente order met afleverdatum wk 21 op IO moest wachten en deadline miste. Optimale uitkomst was geweest: late order → IO (past binnen wk 40), urgente order → voorraad. De [[Claim-volgorde-prio]]-invariant ("wie eerst claimt wordt eerst beleverd") krijgt daarom één **gerichte uitzondering**.

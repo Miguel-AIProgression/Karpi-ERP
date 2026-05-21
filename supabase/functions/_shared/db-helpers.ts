@@ -154,11 +154,34 @@ export async function fetchBeschikbareRollen(
 
   if (error) throw error
 
+  // Defense-in-depth: rollen waarop al een snijplan in 'Snijden' of 'Gesneden'
+  // staat zijn fysiek bevroren — operator is bezig of klaar. `snijden_gestart_op`
+  // is de primaire indicator, maar er bestaat een window (en historische data)
+  // waar `snijplannen.status` al doorgeschoven is naar 'Snijden' terwijl
+  // `rollen.snijden_gestart_op` nog NULL is; dan kwam de rol toch in de pool en
+  // pakte de packer er fysiek overlappende stukken bovenop (zie VERR130 C, mei
+  // 2026: 4 snijplannen op (0,0) door tweede planning-run die de eerste niet
+  // zag). Tweede query haalt de rol-IDs op die we hard moeten uitsluiten.
+  const { data: bezigeRolRows, error: bezigError } = await supabase
+    .from('snijplannen')
+    .select('rol_id')
+    .in('status', ['Snijden', 'Gesneden'])
+    .not('rol_id', 'is', null)
+  if (bezigError) throw bezigError
+  const bezigeRolIds = new Set<number>(
+    ((bezigeRolRows ?? []) as Array<{ rol_id: number | null }>)
+      .map((r) => r.rol_id)
+      .filter((id): id is number => id !== null),
+  )
+
   return (rollen ?? [])
     .filter((r: Record<string, unknown>) => {
       // Rollen die al in productie zijn (snijden_gestart_op gezet) blijven buiten
       // de pool — hun cutlist is bevroren.
       if (r.status === 'in_snijplan' && r.snijden_gestart_op !== null) return false
+      // Extra guard (zie comment boven query): rol met Snijden/Gesneden-snijplannen
+      // mag nooit door auto-plan-groep opnieuw gepackt worden.
+      if (bezigeRolIds.has(r.id as number)) return false
       // Placeholder-rollen (PH-*, lengte/breedte = 0) staan in de voorraad als
       // stub voor inkoop-signalering — ze hebben geen fysiek tapijt. Sluit ze
       // uit van de packing-pool, anders blokkeren ze de loop (sort zet ze
@@ -250,7 +273,11 @@ export async function fetchGereserveerdeRolIds(
  *
  * Status 'Gepland' impliceert al dat de rol nog niet fysiek gestart is
  * (na migratie 086). Zodra `start_snijden_rol` wordt aangeroepen promoveren
- * de stukken naar 'Snijden' en verdwijnen ze uit deze set.
+ * de stukken naar 'Snijden' en verdwijnen ze uit deze set — maar dan zou de
+ * rol zelf ook al uit `fetchBeschikbareRollen` gefilterd moeten zijn (zowel
+ * via `snijden_gestart_op` als via de Snijden/Gesneden-rol-ID guard). Als
+ * beide kanten klopt zien we Snijden-stukken hier dus nooit; de explicit
+ * 'Gepland'-filter blijft staan om eventuele state-drift veilig te falen.
  */
 export async function fetchBezettePlaatsingen(
   supabase: SupabaseClient,
