@@ -1,5 +1,48 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-27 — Tapijt-stickers ook bij standaard-artikelen (per-klant opt-in, mig 303)
+
+**Waarom:** Maatwerk-orders krijgen sinds mig 295/300 een klant-facing tapijt-sticker (148×106mm, met logo + kwaliteit + poolmateriaal + kleur + afmeting + EAN + verzendweek) die tijdens het snijden geprint wordt en op het tapijt geplakt wordt vlak vóór verzending. Een aantal klanten wil diezelfde sticker óók op standaard (niet-maatwerk) catalogus-rollen. Tot nu toe was dat niet mogelijk: bij standaard-artikelen liep er geen snijplan-flow, dus ook geen sticker-print.
+
+**Wat:**
+- **Per-klant voorkeur** `debiteuren.tapijt_sticker_bij_standaard BOOLEAN` (default FALSE) in [mig 303](../supabase/migrations/303_tapijt_sticker_bij_standaard.sql). Toggle staat op de debiteur-detail-pagina naast Deelleveringen — operator kan per klant aan/uit zetten.
+- **View `zending_regel_sticker_data`** (mig 303) — spiegelt qua kolom-shape `snijplan_sticker_data` (mig 295/300) maar gevoed uit `zending_regels → order_regels → producten → kwaliteiten` voor niet-maatwerk regels. EXCLUDED: maatwerk-regels (hebben eigen snijplan-sticker), administratieve regels (verzendkosten via `is_admin_pseudo`), en producten zonder kwaliteit_code/kleur_code (toebehoren/ondertapijt). Klanteigen kwaliteits-naam via `resolve_klanteigen_naam` + EAN via `sticker_ean_voor_kw_kl` — identieke resolutie-keten als maatwerk-sticker.
+- **`StickerRenderData`-interface** in [sticker-layout.tsx](../frontend/src/components/snijplanning/sticker-layout.tsx) — minimaal subset (`Pick<StickerData, ...>`) zodat dezelfde `StickerLayout`-component zonder vertakking wordt hergebruikt voor maatwerk- en standaard-stickers. Geen wijziging aan layout, kleur, font of mm-posities — exact zoals nu.
+- **Hooks** `useZendingStickerData` / `useZendingStickerDataBulk` in [use-zending-stickers.ts](../frontend/src/modules/logistiek/hooks/use-zending-stickers.ts). Queries in [zending-stickers.ts](../frontend/src/modules/logistiek/queries/zending-stickers.ts).
+- **Print-pagina's** [`zending-printset.tsx`](../frontend/src/modules/logistiek/pages/zending-printset.tsx) + [`bulk-printset.tsx`](../frontend/src/modules/logistiek/pages/bulk-printset.tsx):
+  - Checkbox "Tapijt-stickers meeprinten (N)" verschijnt bij niet-maatwerk regels; default uit klant-voorkeur.
+  - Aparte knop "Tapijt-stickers" om alleen die te printen (148×106mm, andere papierrol dan Zebra-labels).
+  - "Alles"-knop includeert tapijt-stickers ALS checkbox aanstaat (anders verborgen via CSS).
+  - Nieuwe `@page tapijt-sticker { size: 148mm 106mm; margin: 0 }` regel naast bestaande `shipping-label` (76.2×50.8mm Zebra) en `pakbon` (A4) — drie page-sizes naast elkaar, browser kiest per element via `page:`-property scoped op `.tapijt-stickers .sticker-label`.
+  - Per `zending_regel` `aantal × 2` stickers: Sticker tapijt + Sticker orderdossier, identiek aan de maatwerk-bulk-pagina (`stickers-bulk.tsx`).
+
+**Out of scope:** geen retroactieve sticker-print voor reeds verzonden zendingen — de operator print op het moment van de pickronde. Maatwerk-regels in dezelfde zending krijgen géén dubbele sticker; die lopen via de snijplanning-flow (mig 295). Wijziging in de StickerLayout zelf was bewust niet gewenst ("qua opbouw exact hetzelfde blijven").
+
+## 2026-05-27 — Vervoerder-sticker layout-rebuild + print-bug fix (Zebra 76.2×50.8mm)
+
+**Waarom:** De gebruiker liet een fysieke referentie-sticker (Rhenus) zien naast de huidige browser-print-preview. Twee problemen: (1) de sticker werd over twéé pagina's afgedrukt — onbruikbaar voor de magazijnier; (2) de layout matchte niet met het referentie-ontwerp uit het oude systeem. Bij doorvragen bleek dat de Zebra ZD420-printer op **76.2 × 50.8 mm** (3"×2") rollen staat — onze defaults stonden op 105×60mm, waardoor de inhoud sowieso niet binnen het fysieke label paste.
+
+**Wat:**
+- **Default label-formaat** in [printset.ts](../frontend/src/modules/logistiek/lib/printset.ts) van 105×60mm → **76.2×50.8mm** (Zebra 3"×2"-standaard). Per-vervoerder afwijkende formaten blijven uit `vervoerders.label_breedte_mm/label_hoogte_mm` komen.
+- **Layout-rebuild** in [shipping-label.tsx](../frontend/src/modules/logistiek/components/shipping-label.tsx) — 3 rijen × 2 kolommen die het referentie-ontwerp volgen, compact ingericht op 76.2×50.8mm:
+  - Rij 1: links order-nr + uw-ref op één regel + productnaam prominent (uppercase, vet) | rechts Karpi BV-afzender + zending-nr klein.
+  - Rij 2: links afleveradres in een dik (2px) zwart kader, zonder "AFLEVERADRES"-tag-label | rechts vervoerder-badge gecentreerd in zwart kader.
+  - Rij 3: links Code128-barcode + cijfers eronder | rechts colli `X VAN Y` prominent, daaronder "REFERENTIE" + datum (`DD/MM/YY`) + oud-order-nr in mono-font.
+- **Print-bug fix**: `.shipping-label` in print-CSS van [zending-printset.tsx](../frontend/src/modules/logistiek/pages/zending-printset.tsx) en [bulk-printset.tsx](../frontend/src/modules/logistiek/pages/bulk-printset.tsx) krijgt nu `break-inside: avoid` + `page-break-inside: avoid` (browser-compatibiliteit) + `box-sizing: border-box` + `overflow: hidden`. Voorkomt dat sub-pixel-overflow het label over twee @page-pagina's verspreidt.
+- **Dynamisch label-formaat**: `ShippingLabel` accepteert nu een optionele `labelFormaat`-prop. Beide printset-pagina's geven het uit `labelFormaatVoor(zending)` door, zodat het label-element dezelfde mm-afmetingen krijgt als de `@page shipping-label`-size — voorheen was de div hardcoded 105×60mm ongeacht de vervoerder-instelling.
+- **Datum-formaat** veranderd van `toLocaleDateString('nl-NL')` (`27-5-2026`) naar handmatig `DD/MM/YY` (`27/05/26`) zoals op de referentie.
+
+**Root cause van de split-print-bug:** Chrome's print-dialoog hanteert standaard ~8mm marges op elke zijde, óók als je `@page { margin: 0 }` declareert in CSS. Op een 50.8mm-hoog label geeft dat maar 34.8mm bruikbare ruimte → label breekt over 2 pagina's. De **enige fix** is dat de operator in de print-dialoog onder "Meer instellingen" → "Marges" → **Geen** kiest. Daarom staat er nu een prominente gele waarschuwingsbalk bovenaan de verzendset-pagina met deze instructie.
+
+**Niet-fix CSS-aanpassingen (defense-in-depth, hielpen niet bij de root cause maar wel bij robustness):**
+- Absolute positioning per cel ipv CSS grid in [shipping-label.tsx](../frontend/src/modules/logistiek/components/shipping-label.tsx) — voorkomt dat content overflow de outer container kan duwen.
+- `break-inside: avoid !important` + `page-break-inside: avoid !important` op zowel `.shipping-label` als alle children.
+- `contain: layout paint size` voor browser-hint dat het label een gesloten layout-blok is.
+- Label fysiek 0.5mm kleiner dan @page voor sub-pixel rounding-marge.
+- Page-break TUSSEN labels in plaats van NA elk label (`.shipping-label + .shipping-label { break-before: page }`) — voorkomt een lege vervolgpagina op de Zebra-rol bij solo-zendingen.
+
+**Out of scope:** "OMB"-marker uit de referentie (vermoedelijk Karpi-interne afkorting voor omboeking) — nog niet helder welk veld dat triggert; wordt toegevoegd zodra de bron-data bekend is. Productnaam-logica ongewijzigd: blijft `order_regels.omschrijving` + optioneel `producten.omschrijving` als die afwijkt — past dezelfde regel toe als voorheen, alleen visueel groter weergegeven.
+
 ## 2026-05-21 — Bulk-status-wijziging + datum-range-filter op facturen-overzicht
 
 **Waarom:** Na de status-edit per factuur (vorige entry) miste nog de schaal-oplossing: bij maandafsluiting wil je 50 Concept-facturen in één klik op Verstuurd zetten, of een hele week aan facturen op Betaald markeren. Eén-voor-één klikken op detail is dan ondoenlijk. Ook miste een datum-range-filter op het overzicht — handig om eerst de juiste subset te isoleren voordat je bulk-acties uitvoert.

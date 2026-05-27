@@ -2,6 +2,22 @@ import { useState } from 'react'
 import { Ean13Barcode } from '@/components/ui/ean13-barcode'
 import { formatVerzendweekShort, type StickerData } from '@/modules/snijplanning'
 
+/** Minimaal renderbare sticker-payload. Zowel `StickerData` (maatwerk via
+ *  snijplan_sticker_data) als `ZendingRegelStickerData` (standaard via mig 303)
+ *  voldoen hieraan, zodat StickerLayout zonder vertakking gedeeld is. */
+export type StickerRenderData = Pick<
+  StickerData,
+  | 'debiteur_nr'
+  | 'klant_naam'
+  | 'kwaliteit_naam'
+  | 'poolmateriaal'
+  | 'kleur_code'
+  | 'lengte_cm'
+  | 'breedte_cm'
+  | 'ean_code'
+  | 'verzendweek_iso'
+>
+
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 
 /**
@@ -29,12 +45,12 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
  *   └───────────────────────────────────────┘
  */
 interface StickerLayoutProps {
-  sticker: StickerData
+  sticker: StickerRenderData
   /** Screen-only hint (bv. "Sticker tapijt" / "Sticker orderdossier"). Verschijnt boven de sticker, niet op print. */
   label?: string
 }
 
-function formatAfmeting(s: StickerData): string {
+function formatAfmeting(s: StickerRenderData): string {
   return `ca. ${s.lengte_cm} x ${s.breedte_cm} cm.`
 }
 
@@ -49,7 +65,7 @@ export function StickerLayout({ sticker, label }: StickerLayoutProps) {
   )
 }
 
-function StickerCard({ sticker }: { sticker: StickerData }) {
+function StickerCard({ sticker }: { sticker: StickerRenderData }) {
   const verzendweek = formatVerzendweekShort(sticker.verzendweek_iso)
   return (
     <div

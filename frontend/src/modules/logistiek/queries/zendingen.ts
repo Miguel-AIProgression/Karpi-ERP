@@ -130,6 +130,9 @@ export interface ZendingPrintSet {
     debiteuren?: {
       naam: string | null
       gln_bedrijf: string | null
+      /** Mig 303: per-klant voorkeur om tapijt-stickers ook voor standaard
+       *  (niet-maatwerk) artikelen te printen bij de vervoerderslabels. */
+      tapijt_sticker_bij_standaard: boolean | null
     } | null
     vertegenwoordigers?: {
       code: string
@@ -246,7 +249,7 @@ export async function fetchZendingPrintSet(zending_nr: string): Promise<ZendingP
         fact_naam, fact_adres, fact_postcode, fact_plaats, fact_land,
         afl_naam_2,
         debiteuren:debiteuren!orders_debiteur_nr_fkey (
-          naam, gln_bedrijf
+          naam, gln_bedrijf, tapijt_sticker_bij_standaard
         ),
         vertegenwoordigers ( code, naam )
       ),

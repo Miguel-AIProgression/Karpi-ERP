@@ -60,6 +60,9 @@ export interface DebiteurDetail {
   deelleveringen_toegestaan: boolean
   /** ADR 0014 / mig 244: standaard lever_type bij orderaanmaak ('week' B2B-default, 'datum' B2C). */
   default_lever_type: 'week' | 'datum'
+  /** Mig 303: tapijt-stickers (148×106 mm, klant-facing) ook printen voor
+   *  standaard (niet-maatwerk) artikelen bij de vervoerderslabels. */
+  tapijt_sticker_bij_standaard: boolean
   btw_percentage: number
   inkoopgroep_code: string | null
   inkoopgroep_naam?: string | null

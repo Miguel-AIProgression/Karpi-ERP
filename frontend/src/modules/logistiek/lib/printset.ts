@@ -9,8 +9,11 @@ import type {
   ZendingPrintSet,
 } from '../queries/zendingen'
 
-export const DEFAULT_LABEL_BREEDTE_MM = 105
-export const DEFAULT_LABEL_HOOGTE_MM = 60
+// Zebra-standaard 3"×2" verzendlabel — fysiek formaat op de Karpi-printer
+// (ZD420 met 76.2×50.8mm rollen). Per-vervoerder afwijkende formaten worden
+// uitgelezen uit `vervoerders.label_breedte_mm / label_hoogte_mm`.
+export const DEFAULT_LABEL_BREEDTE_MM = 76.2
+export const DEFAULT_LABEL_HOOGTE_MM = 50.8
 
 export interface LabelFormaat {
   breedteMm: number

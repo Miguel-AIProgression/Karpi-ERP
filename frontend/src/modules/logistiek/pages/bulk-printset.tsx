@@ -15,6 +15,12 @@ import { PakbonDocument } from '@/modules/logistiek/components/pakbon-document'
 import { ShippingLabel } from '@/modules/logistiek/components/shipping-label'
 import { DpdShippingLabel } from '@/modules/logistiek/components/dpd-shipping-label'
 import { useZendingPrintSets } from '@/modules/logistiek/hooks/use-zendingen'
+import { useZendingStickerDataBulk } from '@/modules/logistiek/hooks/use-zending-stickers'
+import {
+  TapijtStickersSectie,
+  totaalAantalTapijtStickers,
+} from '@/modules/logistiek/components/tapijt-stickers-sectie'
+import type { ZendingRegelStickerData } from '@/modules/logistiek/queries/zending-stickers'
 import {
   DEFAULT_LABEL_BREEDTE_MM,
   DEFAULT_LABEL_HOOGTE_MM,
@@ -24,7 +30,7 @@ import {
 } from '@/modules/logistiek/lib/printset'
 import type { ZendingPrintSet } from '@/modules/logistiek/queries/zendingen'
 
-type PrintMode = 'all' | 'labels' | 'pakbon'
+type PrintMode = 'all' | 'labels' | 'pakbon' | 'tapijt-stickers'
 
 function parseZendingNrs(raw: string | null): string[] {
   if (!raw) return []
@@ -36,11 +42,13 @@ function parseZendingNrs(raw: string | null): string[] {
 
 interface ZendingBlokProps {
   zending: ZendingPrintSet
+  tapijtStickers: ZendingRegelStickerData[]
 }
 
-function ZendingBlok({ zending }: ZendingBlokProps) {
+function ZendingBlok({ zending, tapijtStickers }: ZendingBlokProps) {
   const labels = useMemo(() => expandLabels(zending), [zending])
   const vervoerder = vervoerderInfoVoor(zending)
+  const labelFormaat = useMemo(() => labelFormaatVoor(zending), [zending])
   const isPrintType = zending.vervoerders?.type === 'print'
   // Afhaal-zendingen krijgen geen sticker — alleen een pakbon. We gebruiken
   // de orders.afhalen-flag direct (bron-van-waarheid) en niet bv. de
@@ -95,6 +103,7 @@ function ZendingBlok({ zending }: ZendingBlokProps) {
                 colliTotal={labels.length}
                 vervoerderNaam={vervoerder.naam}
                 sscc={label.sscc}
+                labelFormaat={labelFormaat}
               />
             ),
           )}
@@ -106,6 +115,12 @@ function ZendingBlok({ zending }: ZendingBlokProps) {
         vervoerderNaam={isAfhaal ? 'Afhalen' : vervoerder.naam}
         colliTotal={labels.length}
       />
+
+      {/* Mig 303: tapijt-stickers per zending (alleen niet-maatwerk regels).
+          Verbergen / tonen via parent-CSS op `.zending-printset[data-include-
+          tapijt-stickers="false"]` zodat de operator de checkbox per print
+          kan flippen zonder re-render. */}
+      <TapijtStickersSectie stickers={tapijtStickers} />
     </article>
   )
 }
@@ -114,6 +129,33 @@ export function BulkPrintSetPage() {
   const [params] = useSearchParams()
   const zendingNrs = useMemo(() => parseZendingNrs(params.get('zendingen')), [params])
   const { data: zendingen, isLoading, hasError, errors } = useZendingPrintSets(zendingNrs)
+  const zendingIds = useMemo(() => zendingen.map((z) => z.id), [zendingen])
+  const { data: tapijtStickersAll = [] } = useZendingStickerDataBulk(zendingIds)
+  const tapijtStickersByZending = useMemo(() => {
+    const map = new Map<number, ZendingRegelStickerData[]>()
+    for (const s of tapijtStickersAll) {
+      const arr = map.get(s.zending_id) ?? []
+      arr.push(s)
+      map.set(s.zending_id, arr)
+    }
+    return map
+  }, [tapijtStickersAll])
+  const aantalTapijtStickers = totaalAantalTapijtStickers(tapijtStickersAll)
+  const heeftTapijtStickers = aantalTapijtStickers > 0
+
+  // Default uit klant-voorkeur: TRUE als min. 1 zending uit een klant komt
+  // die de voorkeur aan heeft staan. null = nog niet geïnitialiseerd.
+  const [includeTapijtStickers, setIncludeTapijtStickers] = useState<boolean | null>(null)
+  useEffect(() => {
+    if (includeTapijtStickers === null && zendingen.length > 0) {
+      const anyOpt = zendingen.some(
+        (z) => z.orders.debiteuren?.tapijt_sticker_bij_standaard === true,
+      )
+      setIncludeTapijtStickers(anyOpt)
+    }
+  }, [zendingen, includeTapijtStickers])
+  const tapijtStickersMeeprinten = includeTapijtStickers === true && heeftTapijtStickers
+
   const [printMode, setPrintMode] = useState<PrintMode>('all')
 
   useEffect(() => {
@@ -194,6 +236,17 @@ export function BulkPrintSetPage() {
                 <ArrowLeft size={16} />
                 Pick & Ship
               </Link>
+              {heeftTapijtStickers && (
+                <label className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={includeTapijtStickers === true}
+                    onChange={(e) => setIncludeTapijtStickers(e.target.checked)}
+                    className="accent-terracotta-500"
+                  />
+                  Tapijt-stickers meeprinten ({aantalTapijtStickers})
+                </label>
+              )}
               <button
                 onClick={() => print('labels')}
                 className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
@@ -208,6 +261,15 @@ export function BulkPrintSetPage() {
                 <FileText size={16} />
                 Pakbonnen printen
               </button>
+              {heeftTapijtStickers && (
+                <button
+                  onClick={() => print('tapijt-stickers')}
+                  className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                >
+                  <Tags size={16} />
+                  Tapijt-stickers
+                </button>
+              )}
               <button
                 onClick={() => print('all')}
                 className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] bg-terracotta-500 px-3 py-2 text-sm font-medium text-white hover:bg-terracotta-600"
@@ -226,9 +288,17 @@ export function BulkPrintSetPage() {
         )}
       </div>
 
-      <div className="zending-printset space-y-12" data-print-mode={printMode}>
+      <div
+        className="zending-printset space-y-12"
+        data-print-mode={printMode}
+        data-include-tapijt-stickers={tapijtStickersMeeprinten ? 'true' : 'false'}
+      >
         {zendingen.map((z) => (
-          <ZendingBlok key={z.id} zending={z} />
+          <ZendingBlok
+            key={z.id}
+            zending={z}
+            tapijtStickers={tapijtStickersByZending.get(z.id) ?? []}
+          />
         ))}
       </div>
 
@@ -236,6 +306,9 @@ export function BulkPrintSetPage() {
         @media screen {
           .shipping-label,
           .pakbon-page {
+            box-shadow: 0 1px 3px rgb(15 23 42 / 0.12);
+          }
+          .tapijt-stickers .sticker-label {
             box-shadow: 0 1px 3px rgb(15 23 42 / 0.12);
           }
         }
@@ -249,17 +322,40 @@ export function BulkPrintSetPage() {
             inset: 0 auto auto 0;
             background: white;
           }
-          .zending-printset[data-print-mode="labels"] .pakbon-page {
+          .zending-printset[data-print-mode="labels"] .pakbon-page,
+          .zending-printset[data-print-mode="labels"] .tapijt-stickers {
             display: none;
           }
-          .zending-printset[data-print-mode="pakbon"] .shipping-labels {
+          .zending-printset[data-print-mode="pakbon"] .shipping-labels,
+          .zending-printset[data-print-mode="pakbon"] .tapijt-stickers {
             display: none;
           }
+          .zending-printset[data-print-mode="tapijt-stickers"] .shipping-labels,
+          .zending-printset[data-print-mode="tapijt-stickers"] .pakbon-page {
+            display: none;
+          }
+          .zending-printset[data-print-mode="all"][data-include-tapijt-stickers="false"] .tapijt-stickers {
+            display: none;
+          }
+          .shipping-labels { gap: 0 !important; }
           .shipping-label {
             page: shipping-label;
-            break-after: page;
-            margin: 0;
-            border: 0;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            border: 0 !important;
+            box-sizing: border-box !important;
+            overflow: hidden !important;
+            display: block !important;
+          }
+          .shipping-label + .shipping-label {
+            break-before: page !important;
+            page-break-before: always !important;
+          }
+          .shipping-label * {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
           }
           .pakbon-page {
             page: pakbon;
@@ -268,6 +364,18 @@ export function BulkPrintSetPage() {
             border: 0;
             box-shadow: none;
           }
+          .tapijt-stickers { gap: 0 !important; }
+          .tapijt-stickers .sticker-label {
+            page: tapijt-sticker;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+            margin: 0 !important;
+            border: 0 !important;
+          }
+          .tapijt-stickers .sticker-label + .sticker-label {
+            break-before: page !important;
+            page-break-before: always !important;
+          }
           @page shipping-label {
             size: ${labelFormaat?.breedteMm ?? DEFAULT_LABEL_BREEDTE_MM}mm ${labelFormaat?.hoogteMm ?? DEFAULT_LABEL_HOOGTE_MM}mm;
             margin: 0;
@@ -275,6 +383,10 @@ export function BulkPrintSetPage() {
           @page pakbon {
             size: A4;
             margin: 10mm;
+          }
+          @page tapijt-sticker {
+            size: 148mm 106mm;
+            margin: 0;
           }
         }
       `}</style>

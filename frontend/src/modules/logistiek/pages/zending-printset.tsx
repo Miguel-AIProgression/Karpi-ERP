@@ -10,6 +10,11 @@ import { ColliPickVinkjes } from '@/modules/logistiek/components/colli-pick-vink
 import { VoltooiPickrondeKnop } from '@/modules/logistiek/components/voltooi-pickronde-knop'
 import { PickerDropdown } from '@/components/orders/picker-dropdown'
 import { useZendingPrintSet } from '@/modules/logistiek/hooks/use-zendingen'
+import { useZendingStickerData } from '@/modules/logistiek/hooks/use-zending-stickers'
+import {
+  TapijtStickersSectie,
+  totaalAantalTapijtStickers,
+} from '@/modules/logistiek/components/tapijt-stickers-sectie'
 
 const LAST_PICKER_KEY = 'rugflow.last-picker-id'
 
@@ -37,12 +42,17 @@ import {
   vervoerderInfoVoor,
 } from '@/modules/logistiek/lib/printset'
 
-type PrintMode = 'all' | 'labels' | 'pakbon'
+type PrintMode = 'all' | 'labels' | 'pakbon' | 'tapijt-stickers'
 
 export function ZendingPrintSetPage() {
   const { zending_nr } = useParams<{ zending_nr: string }>()
   const { data: zending, isLoading, error } = useZendingPrintSet(zending_nr)
+  const { data: tapijtStickers = [] } = useZendingStickerData(zending?.id)
   const [printMode, setPrintMode] = useState<PrintMode>('all')
+  // Mig 303: klant-voorkeur bepaalt of "Alles" ook tapijt-stickers print.
+  // Operator kan dit per-print overrijden via de checkbox in de actions-balk.
+  // null = nog niet geïnitialiseerd (wachten op zending-data).
+  const [includeTapijtStickers, setIncludeTapijtStickers] = useState<boolean | null>(null)
   // Picker-state: gestart door deze persoon. Pre-fill: zending.picker_id (van
   // start_pickronde) → localStorage last-picker → null. Operator kan wisselen
   // bij shift-overgang. Wordt gepersisteerd zodra hij voltooi/markeer doet.
@@ -65,10 +75,22 @@ export function ZendingPrintSetPage() {
     if (pickerId) saveLastPicker(pickerId)
   }, [pickerId])
 
+  // Default-pre-fill voor de tapijt-sticker-checkbox uit de klant-voorkeur.
+  useEffect(() => {
+    if (zending && includeTapijtStickers === null) {
+      setIncludeTapijtStickers(
+        zending.orders.debiteuren?.tapijt_sticker_bij_standaard === true,
+      )
+    }
+  }, [zending, includeTapijtStickers])
+
   const labels = useMemo(() => (zending ? expandLabels(zending) : []), [zending])
   const vervoerder = zending ? vervoerderInfoVoor(zending) : null
   const labelFormaat = zending ? labelFormaatVoor(zending) : null
   const isPrintType = zending?.vervoerders?.type === 'print'
+  const aantalTapijtStickers = totaalAantalTapijtStickers(tapijtStickers)
+  const heeftTapijtStickers = aantalTapijtStickers > 0
+  const tapijtStickersMeeprinten = includeTapijtStickers === true && heeftTapijtStickers
 
   function print(mode: PrintMode) {
     setPrintMode(mode)
@@ -121,6 +143,17 @@ export function ZendingPrintSetPage() {
                 <ArrowLeft size={16} />
                 Pick & Ship
               </Link>
+              {heeftTapijtStickers && (
+                <label className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={includeTapijtStickers === true}
+                    onChange={(e) => setIncludeTapijtStickers(e.target.checked)}
+                    className="accent-terracotta-500"
+                  />
+                  Tapijt-stickers meeprinten ({aantalTapijtStickers})
+                </label>
+              )}
               <button
                 onClick={() => print('labels')}
                 className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
@@ -135,6 +168,15 @@ export function ZendingPrintSetPage() {
                 <FileText size={16} />
                 Pakbon printen
               </button>
+              {heeftTapijtStickers && (
+                <button
+                  onClick={() => print('tapijt-stickers')}
+                  className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                >
+                  <Tags size={16} />
+                  Tapijt-stickers
+                </button>
+              )}
               <button
                 onClick={() => print('all')}
                 className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] bg-terracotta-500 px-3 py-2 text-sm font-medium text-white hover:bg-terracotta-600"
@@ -145,6 +187,21 @@ export function ZendingPrintSetPage() {
             </div>
           }
         />
+
+        <div className="mb-4 rounded-[var(--radius-sm)] border-2 border-amber-400 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div className="font-semibold mb-1">⚠️ In de print-dialoog (Ctrl+P) — anders breekt het label over 2 pagina's:</div>
+          <ul className="ml-5 list-disc space-y-0.5 text-xs">
+            <li>
+              <strong>Printer:</strong> Vervoerderslabels (Zebra) — of bij PDF-export: <strong>papierformaat = Custom {(labelFormaat?.breedteMm ?? 76.2)}×{(labelFormaat?.hoogteMm ?? 50.8)} mm</strong>
+            </li>
+            <li>
+              <strong>Marges = Geen</strong> (onder "Meer instellingen")
+            </li>
+            <li>
+              <strong>Schaal = 100% / Ware grootte</strong>
+            </li>
+          </ul>
+        </div>
 
         {zending.status === 'Picken' && (
           <div className="mb-4 space-y-3">
@@ -180,7 +237,11 @@ export function ZendingPrintSetPage() {
         )}
       </div>
 
-      <div className="zending-printset space-y-8" data-print-mode={printMode}>
+      <div
+        className="zending-printset space-y-8"
+        data-print-mode={printMode}
+        data-include-tapijt-stickers={tapijtStickersMeeprinten ? 'true' : 'false'}
+      >
         <div className="shipping-labels flex flex-col items-start gap-4">
           {labels.map((label) =>
             isPrintType ? (
@@ -202,6 +263,7 @@ export function ZendingPrintSetPage() {
                 colliTotal={labels.length}
                 vervoerderNaam={vervoerder.naam}
                 sscc={label.sscc}
+                labelFormaat={labelFormaat ?? undefined}
               />
             ),
           )}
@@ -212,12 +274,20 @@ export function ZendingPrintSetPage() {
           vervoerderNaam={vervoerder.naam}
           colliTotal={labels.length}
         />
+
+        {/* Mig 303: optionele tapijt-stickers voor standaard-artikelen.
+            Altijd in DOM zodat de checkbox + CSS-rules zonder re-render
+            kunnen schakelen tussen 'alles met sticker' / 'alles zonder'. */}
+        <TapijtStickersSectie stickers={tapijtStickers} />
       </div>
 
       <style>{`
         @media screen {
           .shipping-label,
           .pakbon-page {
+            box-shadow: 0 1px 3px rgb(15 23 42 / 0.12);
+          }
+          .tapijt-stickers .sticker-label {
             box-shadow: 0 1px 3px rgb(15 23 42 / 0.12);
           }
         }
@@ -231,17 +301,44 @@ export function ZendingPrintSetPage() {
             inset: 0 auto auto 0;
             background: white;
           }
-          .zending-printset[data-print-mode="labels"] .pakbon-page {
+          .zending-printset[data-print-mode="labels"] .pakbon-page,
+          .zending-printset[data-print-mode="labels"] .tapijt-stickers {
             display: none;
           }
-          .zending-printset[data-print-mode="pakbon"] .shipping-labels {
+          .zending-printset[data-print-mode="pakbon"] .shipping-labels,
+          .zending-printset[data-print-mode="pakbon"] .tapijt-stickers {
             display: none;
           }
+          .zending-printset[data-print-mode="tapijt-stickers"] .shipping-labels,
+          .zending-printset[data-print-mode="tapijt-stickers"] .pakbon-page {
+            display: none;
+          }
+          /* In 'all'-modus alleen tapijt-stickers tonen als de checkbox aan
+             staat. Klant zonder voorkeur → checkbox uit → sectie verborgen. */
+          .zending-printset[data-print-mode="all"][data-include-tapijt-stickers="false"] .tapijt-stickers {
+            display: none;
+          }
+          .shipping-labels { gap: 0 !important; }
           .shipping-label {
             page: shipping-label;
-            break-after: page;
-            margin: 0;
-            border: 0;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            border: 0 !important;
+            box-sizing: border-box !important;
+            overflow: hidden !important;
+            display: block !important;
+          }
+          /* Page-break TUSSEN labels, niet ná het laatste — anders ontstaat
+             een lege vervolgpagina op de Zebra-rol. */
+          .shipping-label + .shipping-label {
+            break-before: page !important;
+            page-break-before: always !important;
+          }
+          .shipping-label * {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
           }
           .pakbon-page {
             page: pakbon;
@@ -250,6 +347,21 @@ export function ZendingPrintSetPage() {
             border: 0;
             box-shadow: none;
           }
+          /* Tapijt-stickers — 148×106mm, zelfde page-break-discipline als de
+             maatwerk-bulk-pagina. Scoped via .tapijt-stickers zodat een
+             eventuele andere .sticker-label-render geen page-rule erft. */
+          .tapijt-stickers { gap: 0 !important; }
+          .tapijt-stickers .sticker-label {
+            page: tapijt-sticker;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+            margin: 0 !important;
+            border: 0 !important;
+          }
+          .tapijt-stickers .sticker-label + .sticker-label {
+            break-before: page !important;
+            page-break-before: always !important;
+          }
           @page shipping-label {
             size: ${labelFormaat?.breedteMm ?? DEFAULT_LABEL_BREEDTE_MM}mm ${labelFormaat?.hoogteMm ?? DEFAULT_LABEL_HOOGTE_MM}mm;
             margin: 0;
@@ -257,6 +369,10 @@ export function ZendingPrintSetPage() {
           @page pakbon {
             size: A4;
             margin: 10mm;
+          }
+          @page tapijt-sticker {
+            size: 148mm 106mm;
+            margin: 0;
           }
         }
       `}</style>

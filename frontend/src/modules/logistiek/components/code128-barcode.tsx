@@ -19,6 +19,7 @@ interface Code128BarcodeProps {
   value: string
   height?: number
   className?: string
+  style?: React.CSSProperties
 }
 
 function encodeCode128C(value: string): number[] {
@@ -38,7 +39,7 @@ function encodeCode128C(value: string): number[] {
   return [...codes, checksum, 106]
 }
 
-export function Code128Barcode({ value, height = 54, className }: Code128BarcodeProps) {
+export function Code128Barcode({ value, height = 54, className, style }: Code128BarcodeProps) {
   const codes = encodeCode128C(value)
   let x = 0
   const bars: Array<{ x: number; width: number }> = []
@@ -57,6 +58,7 @@ export function Code128Barcode({ value, height = 54, className }: Code128Barcode
   return (
     <svg
       className={className}
+      style={style}
       viewBox={`0 0 ${x} ${height}`}
       preserveAspectRatio="none"
       role="img"
