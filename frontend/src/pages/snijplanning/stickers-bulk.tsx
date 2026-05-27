@@ -108,49 +108,64 @@ export function StickersBulkPage() {
             </div>
           }
         />
+
+        <div className="mb-4 rounded-[var(--radius-sm)] border-2 border-amber-400 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div className="font-semibold mb-1">⚠️ Print-instellingen (Ctrl+P) — anders ontstaan lege pagina's of valt content tegen de randen:</div>
+          <ul className="ml-5 list-disc space-y-0.5 text-xs">
+            <li>
+              <strong>Papierformaat = Custom 148×106 mm</strong> (de stickerrol)
+            </li>
+            <li>
+              <strong>Marges = Geen</strong> (onder "Meer instellingen")
+            </li>
+            <li>
+              <strong>Schaal = 100% / Ware grootte</strong>
+            </li>
+            <li>
+              Als de oude Edge-dialoog opent: vink <strong>"Laat de app mijn afdrukvoorkeuren wijzigen"</strong> aan.
+            </li>
+          </ul>
+        </div>
       </div>
 
-      {/* Stickers grid — 2 per stuk + reststukken */}
-      <div className="sticker-print-area">
-        {stukken.map((stuk) => {
+      {/* Stickers grid — 2 per stuk + reststukken. Plat-DOM: alle wrappers
+          zijn DIRECTE children van .sticker-print-area zodat `+`-sibling
+          en `:not(:last-of-type)`-selectoren in print-CSS werken voor
+          page-breaks. Screen-spacing via `print:mb-0` op de wrappers. */}
+      <div className="sticker-print-area flex flex-col items-start gap-2 print:gap-0">
+        {stukken.flatMap((stuk) => {
           const sticker = stickerById.get(stuk.id)
-          if (!sticker) return null
-          return (
-            <div key={stuk.id} className="mb-4 print:mb-0">
-              <div className="flex flex-col items-start gap-2 print:gap-0">
-                <StickerLayout sticker={sticker} label="Sticker tapijt" />
-                <StickerLayout sticker={sticker} label="Sticker orderdossier" />
-              </div>
-            </div>
-          )
+          if (!sticker) return []
+          return [
+            <StickerLayout key={`${stuk.id}-tapijt`} sticker={sticker} label="Sticker tapijt" />,
+            <StickerLayout key={`${stuk.id}-dossier`} sticker={sticker} label="Sticker orderdossier" />,
+          ]
         })}
 
         {reststukken.map((r) => (
-          <div key={`rest-${r.id}`} className="mb-4 print:mb-0">
-            <ReststukStickerLayout
-              rolnummer={r.rolnummer}
-              kwaliteit={r.kwaliteit_code}
-              kleur={r.kleur_code}
-              lengte_cm={r.lengte_cm}
-              breedte_cm={r.breedte_cm}
-              datum={r.reststuk_datum
-                ? new Date(r.reststuk_datum).toLocaleDateString('nl-NL')
-                : ''}
-            />
-          </div>
+          <ReststukStickerLayout
+            key={`rest-${r.id}`}
+            rolnummer={r.rolnummer}
+            kwaliteit={r.kwaliteit_code}
+            kleur={r.kleur_code}
+            lengte_cm={r.lengte_cm}
+            breedte_cm={r.breedte_cm}
+            datum={r.reststuk_datum
+              ? new Date(r.reststuk_datum).toLocaleDateString('nl-NL')
+              : ''}
+          />
         ))}
 
         {previewReststukken.map((r, i) => (
-          <div key={`rest-preview-${i}`} className="mb-4 print:mb-0">
-            <ReststukStickerLayout
-              rolnummer={r.rolnummer}
-              kwaliteit={r.kwaliteit_code}
-              kleur={r.kleur_code}
-              lengte_cm={r.lengte_cm}
-              breedte_cm={r.breedte_cm}
-              datum={new Date().toLocaleDateString('nl-NL')}
-            />
-          </div>
+          <ReststukStickerLayout
+            key={`rest-preview-${i}`}
+            rolnummer={r.rolnummer}
+            kwaliteit={r.kwaliteit_code}
+            kleur={r.kleur_code}
+            lengte_cm={r.lengte_cm}
+            breedte_cm={r.breedte_cm}
+            datum={new Date().toLocaleDateString('nl-NL')}
+          />
         ))}
       </div>
 
@@ -163,11 +178,36 @@ export function StickersBulkPage() {
             position: absolute;
             top: 0;
             left: 0;
+            gap: 0 !important;
+          }
+          /* Belt-and-suspenders: ook als tailwind print:hidden zou falen,
+             expliciet de screen-only labels (sub-titels boven elke sticker)
+             weghalen. Zonder dit kost de label-span ~5mm extra wrapper-
+             hoogte → 106mm @page-hoogte overflow → blanco vervolgpagina per
+             sticker (root cause van de "1 gevuld + 1/2 leeg"-bug). */
+          .sticker-print-area .sticker-wrapper > span {
+            display: none !important;
+          }
+          /* Elke direct child = 1 sticker (sticker-wrapper of reststuk-
+             sticker-label). Geen extra margin/padding op print, en niet
+             breken middenin een sticker. */
+          .sticker-print-area > * {
+            margin: 0 !important;
+            padding: 0 !important;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+          /* Page-break TUSSEN stickers, niet ná de laatste (page-break-
+             after op elke sticker veroorzaakte trailing blanco-pagina). */
+          .sticker-print-area > *:not(:last-child) {
+            break-after: page;
+            page-break-after: always;
           }
           .sticker-label {
-            page-break-after: always;
             margin: 0;
             border: none;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
           }
           @page {
             size: 148mm 106mm;

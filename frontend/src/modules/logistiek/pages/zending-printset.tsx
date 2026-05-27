@@ -347,20 +347,31 @@ export function ZendingPrintSetPage() {
             border: 0;
             box-shadow: none;
           }
-          /* Tapijt-stickers — 148×106mm, zelfde page-break-discipline als de
+          /* Tapijt-stickers — 148x106mm, zelfde page-break-discipline als de
              maatwerk-bulk-pagina. Scoped via .tapijt-stickers zodat een
-             eventuele andere .sticker-label-render geen page-rule erft. */
+             eventuele andere .sticker-label-render geen page-rule erft.
+             Page-break loopt PER .sticker-wrapper (StickerLayout-root) i.p.v.
+             per .sticker-label, want die laatste zit diep in wrapper-divs. */
           .tapijt-stickers { gap: 0 !important; }
+          .tapijt-stickers .sticker-wrapper > span {
+            display: none !important;
+          }
+          .tapijt-stickers .sticker-wrapper {
+            margin: 0 !important;
+            padding: 0 !important;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+          .tapijt-stickers .sticker-wrapper:not(:last-child) {
+            break-after: page !important;
+            page-break-after: always !important;
+          }
           .tapijt-stickers .sticker-label {
             page: tapijt-sticker;
             break-inside: avoid !important;
             page-break-inside: avoid !important;
             margin: 0 !important;
             border: 0 !important;
-          }
-          .tapijt-stickers .sticker-label + .sticker-label {
-            break-before: page !important;
-            page-break-before: always !important;
           }
           @page shipping-label {
             size: ${labelFormaat?.breedteMm ?? DEFAULT_LABEL_BREEDTE_MM}mm ${labelFormaat?.hoogteMm ?? DEFAULT_LABEL_HOOGTE_MM}mm;

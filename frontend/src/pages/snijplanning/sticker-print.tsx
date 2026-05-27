@@ -77,7 +77,6 @@ export function StickerPrintPage() {
           }
         }
         @media print {
-          /* Hide everything except stickers */
           body * { visibility: hidden; }
           .sticker-print-area,
           .sticker-print-area * { visibility: visible; }
@@ -85,9 +84,25 @@ export function StickerPrintPage() {
             position: absolute;
             top: 0;
             left: 0;
+            gap: 0 !important;
+          }
+          /* Belt-and-suspenders voor de screen-only sub-titel — anders 5mm
+             extra wrapper-hoogte → overflow op 106mm @page → blanco vervolg-
+             pagina per sticker. */
+          .sticker-print-area .sticker-wrapper > span {
+            display: none !important;
+          }
+          .sticker-print-area > * {
+            margin: 0 !important;
+            padding: 0 !important;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+          .sticker-print-area > *:not(:last-child) {
+            break-after: page !important;
+            page-break-after: always !important;
           }
           .sticker-label {
-            page-break-after: always;
             margin: 0;
             border: none;
           }

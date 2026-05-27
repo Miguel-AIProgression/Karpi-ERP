@@ -55,8 +55,11 @@ function formatAfmeting(s: StickerRenderData): string {
 }
 
 export function StickerLayout({ sticker, label }: StickerLayoutProps) {
+  // `sticker-wrapper`-class biedt callers een schoon doel voor print-CSS
+  // (page-break-between, break-inside: avoid) — anders staat .sticker-label
+  // diep in wrapper-divs en matcht een `+`-selector niet.
   return (
-    <div className="flex flex-col">
+    <div className="sticker-wrapper flex flex-col">
       {label && (
         <span className="print:hidden text-xs text-slate-400 mb-1">{label}</span>
       )}

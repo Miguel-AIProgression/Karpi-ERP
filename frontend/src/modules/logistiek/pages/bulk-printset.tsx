@@ -364,17 +364,31 @@ export function BulkPrintSetPage() {
             border: 0;
             box-shadow: none;
           }
+          /* Tapijt-stickers — page-break per .sticker-wrapper (StickerLayout-
+             root), niet per .sticker-label (die zit diep in wrappers). Belt-
+             and-suspenders display:none op de screen-only sub-titel-span,
+             want anders kost die 5mm extra wrapper-hoogte → 106mm @page-
+             overflow → blanco vervolgpagina per sticker. */
           .tapijt-stickers { gap: 0 !important; }
+          .tapijt-stickers .sticker-wrapper > span {
+            display: none !important;
+          }
+          .tapijt-stickers .sticker-wrapper {
+            margin: 0 !important;
+            padding: 0 !important;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+          .tapijt-stickers .sticker-wrapper:not(:last-child) {
+            break-after: page !important;
+            page-break-after: always !important;
+          }
           .tapijt-stickers .sticker-label {
             page: tapijt-sticker;
             break-inside: avoid !important;
             page-break-inside: avoid !important;
             margin: 0 !important;
             border: 0 !important;
-          }
-          .tapijt-stickers .sticker-label + .sticker-label {
-            break-before: page !important;
-            page-break-before: always !important;
           }
           @page shipping-label {
             size: ${labelFormaat?.breedteMm ?? DEFAULT_LABEL_BREEDTE_MM}mm ${labelFormaat?.hoogteMm ?? DEFAULT_LABEL_HOOGTE_MM}mm;
