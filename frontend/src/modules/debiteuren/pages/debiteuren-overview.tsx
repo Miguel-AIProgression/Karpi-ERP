@@ -1,8 +1,10 @@
 import { useState } from 'react'
-import { Search } from 'lucide-react'
+import { Search, Download } from 'lucide-react'
+import * as XLSX from 'xlsx'
 import { PageHeader } from '@/components/layout/page-header'
 import { DebiteurCard } from '../components/debiteur-card'
-import { useDebiteuren } from '../hooks/use-debiteuren'
+import { useDebiteuren, usePrijslijstHeadersList } from '../hooks/use-debiteuren'
+import { fetchDebiteuren } from '../queries/debiteuren'
 import { useVertegenwoordigers } from '@/hooks/use-medewerkers'
 import { useInkoopgroepen } from '@/hooks/use-inkoopgroepen'
 
@@ -14,7 +16,9 @@ export function DebiteurenOverviewPage() {
   const [vertegFilter, setVertegFilter] = useState<string>('')
   const [ediFilter, setEdiFilter] = useState<'' | 'edi' | 'niet_edi'>('')
   const [inkoopgroepFilter, setInkoopgroepFilter] = useState<string>('')
+  const [prijslijstFilter, setPrijslijstFilter] = useState<string>('')
   const [pageSize, setPageSize] = useState(PAGE_SIZE)
+  const [exporting, setExporting] = useState(false)
 
   const { data, isLoading } = useDebiteuren({
     search,
@@ -22,10 +26,12 @@ export function DebiteurenOverviewPage() {
     vertegenw_code: vertegFilter || undefined,
     edi_filter: ediFilter || undefined,
     inkoopgroep_code: inkoopgroepFilter || undefined,
+    prijslijst_filter: prijslijstFilter || undefined,
     pageSize,
   })
   const { data: vertegenwoordigers } = useVertegenwoordigers()
   const { data: inkoopgroepen } = useInkoopgroepen()
+  const { data: prijslijsten } = usePrijslijstHeadersList()
 
   const debiteuren = data?.debiteuren ?? []
   const totalCount = data?.totalCount ?? 0
@@ -36,6 +42,64 @@ export function DebiteurenOverviewPage() {
     setPageSize(PAGE_SIZE)
   }
 
+  async function handleExport() {
+    setExporting(true)
+    try {
+      // Haal alle gefilterde klanten op (zonder paginering)
+      const result = await fetchDebiteuren({
+        search,
+        status: statusFilter || undefined,
+        vertegenw_code: vertegFilter || undefined,
+        edi_filter: ediFilter || undefined,
+        inkoopgroep_code: inkoopgroepFilter || undefined,
+        prijslijst_filter: prijslijstFilter || undefined,
+        pageSize: 9999,
+      })
+
+      const rows = result.debiteuren.map((d) => ({
+        'Debiteur nr': d.debiteur_nr,
+        'Naam': d.naam,
+        'Plaats': d.plaats ?? '',
+        'Status': d.status,
+        'Vertegenwoordiger': d.vertegenwoordiger_naam ?? '',
+        'Prijslijst nr': d.prijslijst_nr ?? '',
+        'Prijslijst naam': d.prijslijst_naam ?? '',
+        'Inkoopgroep': '',
+        'EDI actief': d.edi_actief ? 'Ja' : 'Nee',
+        'Omzet YTD (€)': d.omzet_ytd,
+        'Orders YTD': d.aantal_orders_ytd,
+      }))
+
+      const ws = XLSX.utils.json_to_sheet(rows)
+
+      // Kolombreedte automatisch op basis van inhoud
+      const colWidths = Object.keys(rows[0] ?? {}).map((key) => ({
+        wch: Math.max(
+          key.length,
+          ...rows.map((r) => String(r[key as keyof typeof r] ?? '').length),
+        ) + 2,
+      }))
+      ws['!cols'] = colWidths
+
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Klanten')
+
+      // Bestandsnaam met datum + actieve filters
+      const datum = new Date().toISOString().slice(0, 10)
+      const filterLabel = prijslijstFilter === 'geen'
+        ? '_geen-prijslijst'
+        : prijslijstFilter
+          ? `_prijslijst-${prijslijstFilter}`
+          : ''
+      const statusLabel = statusFilter ? `_${statusFilter.toLowerCase()}` : ''
+      const filename = `klanten${statusLabel}${filterLabel}_${datum}.xlsx`
+
+      XLSX.writeFile(wb, filename)
+    } finally {
+      setExporting(false)
+    }
+  }
+
   return (
     <>
       <PageHeader
@@ -43,9 +107,9 @@ export function DebiteurenOverviewPage() {
         description={`${data?.totalCount ?? 0} klanten`}
       />
 
-      {/* Filters */}
-      <div className="flex items-center gap-4 mb-6">
-        <div className="relative w-80">
+      {/* Filters + export */}
+      <div className="flex flex-wrap items-center gap-3 mb-6">
+        <div className="relative w-72">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
@@ -95,6 +159,29 @@ export function DebiteurenOverviewPage() {
             </option>
           ))}
         </select>
+        <select
+          value={prijslijstFilter}
+          onChange={(e) => handleFilterChange(setPrijslijstFilter, e.target.value)}
+          className="px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm"
+        >
+          <option value="">Alle prijslijsten</option>
+          <option value="geen">— Niet gekoppeld aan prijslijst</option>
+          {prijslijsten?.map((p) => (
+            <option key={p.nr} value={p.nr}>{p.naam}</option>
+          ))}
+        </select>
+
+        {/* Export-knop — rechts uitlijnen */}
+        <div className="ml-auto">
+          <button
+            onClick={handleExport}
+            disabled={exporting || totalCount === 0}
+            className="flex items-center gap-2 px-4 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50 transition-colors"
+          >
+            <Download size={15} />
+            {exporting ? 'Exporteren...' : `Exporteer${totalCount > 0 ? ` (${totalCount})` : ''}`}
+          </button>
+        </div>
       </div>
 
       {/* Grid */}

@@ -3,6 +3,9 @@ import { supabase } from '../client'
 export interface KwaliteitMetGewicht {
   code: string
   omschrijving: string | null
+  /** Eerste woord van de productnaam binnen deze kwaliteit — gebruikt als
+   *  weergavenaam wanneer kwaliteiten.omschrijving leeg is. */
+  naam_afgeleid: string | null
   collectie_id: number | null
   standaard_breedte_cm: number | null
   gewicht_per_m2_kg: number | null
@@ -27,20 +30,20 @@ export async function fetchKwaliteitenMetGewicht(): Promise<KwaliteitMetGewicht[
     .order('code')
 
   // Producten gepagineerd ophalen tot we alles hebben
-  const fetchAllProducten = async (): Promise<{ kwaliteit_code: string }[]> => {
-    const all: { kwaliteit_code: string }[] = []
+  const fetchAllProducten = async (): Promise<{ kwaliteit_code: string; omschrijving: string | null }[]> => {
+    const all: { kwaliteit_code: string; omschrijving: string | null }[] = []
     let offset = 0
     // eslint-disable-next-line no-constant-condition
     while (true) {
       const { data, error } = await supabase
         .from('producten')
-        .select('kwaliteit_code')
+        .select('kwaliteit_code, omschrijving')
         .eq('actief', true)
         .not('kwaliteit_code', 'is', null)
         .range(offset, offset + PAGE_SIZE - 1)
       if (error) throw error
       if (!data || data.length === 0) break
-      all.push(...(data as { kwaliteit_code: string }[]))
+      all.push(...(data as { kwaliteit_code: string; omschrijving: string | null }[]))
       if (data.length < PAGE_SIZE) break
       offset += PAGE_SIZE
     }
@@ -55,15 +58,22 @@ export async function fetchKwaliteitenMetGewicht(): Promise<KwaliteitMetGewicht[
   if (kwError) throw kwError
 
   const counts = new Map<string, number>()
+  const namenMap = new Map<string, string>()
   for (const row of pcData) {
     const k = row.kwaliteit_code
     if (!k) continue
     counts.set(k, (counts.get(k) ?? 0) + 1)
+    // Eerste woord van de productnaam als afgeleide weergavenaam (bijv. "ABSTRACT" → "Abstract")
+    if (!namenMap.has(k) && row.omschrijving) {
+      const eersteWoord = row.omschrijving.split(' ')[0] ?? ''
+      if (eersteWoord) namenMap.set(k, eersteWoord.charAt(0).toUpperCase() + eersteWoord.slice(1).toLowerCase())
+    }
   }
 
   return (kwData ?? []).map((q) => ({
     code: q.code,
     omschrijving: q.omschrijving,
+    naam_afgeleid: namenMap.get(q.code) ?? null,
     collectie_id: q.collectie_id,
     standaard_breedte_cm: q.standaard_breedte_cm,
     gewicht_per_m2_kg: q.gewicht_per_m2_kg,

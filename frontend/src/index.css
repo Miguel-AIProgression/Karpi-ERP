@@ -65,3 +65,37 @@
 .animate-shake {
   animation: shake 0.4s ease-in-out;
 }
+
+/* Herbruikbare input/select stijl — gebruikt door alle formulieren */
+.input {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--color-slate-800);
+  background-color: #ffffff;
+  border: 1.5px solid var(--color-slate-300);
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.input:hover:not(:disabled) {
+  border-color: var(--color-slate-400);
+}
+.input:focus {
+  border-color: var(--color-terracotta-400);
+  box-shadow: 0 0 0 3px rgb(234 122 75 / 0.15);
+}
+.input:disabled {
+  background-color: var(--color-slate-100);
+  color: var(--color-slate-400);
+  cursor: not-allowed;
+}
+.input.input-error {
+  border-color: var(--color-rose-500);
+  box-shadow: 0 0 0 3px rgb(244 63 94 / 0.12);
+}
+.input.input-warning {
+  border-color: var(--color-amber-500);
+  box-shadow: 0 0 0 3px rgb(245 158 11 / 0.12);
+}

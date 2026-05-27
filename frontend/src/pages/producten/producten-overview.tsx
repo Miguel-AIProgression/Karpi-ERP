@@ -75,7 +75,7 @@ export function ProductenOverviewPage() {
       .filter((q) => q.aantal_producten > 0)
       .filter((q) => {
         if (!term) return true
-        return `${q.code} ${q.omschrijving ?? ''}`.toLowerCase().includes(term)
+        return `${q.code} ${q.omschrijving ?? ''} ${(q as import('@/lib/supabase/queries/kwaliteiten').KwaliteitMetGewicht).naam_afgeleid ?? ''}`.toLowerCase().includes(term)
       })
     return {
       kwaliteiten: matched.length,

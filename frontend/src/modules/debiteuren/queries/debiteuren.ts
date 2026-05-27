@@ -90,10 +90,11 @@ export async function fetchDebiteuren(params: {
   vertegenw_code?: string
   edi_filter?: 'edi' | 'niet_edi'
   inkoopgroep_code?: string
+  prijslijst_filter?: string | 'geen'
   page?: number
   pageSize?: number
 }) {
-  const { search, status, tier, vertegenw_code, edi_filter, inkoopgroep_code, page = 0, pageSize = 50 } = params
+  const { search, status, tier, vertegenw_code, edi_filter, inkoopgroep_code, prijslijst_filter, page = 0, pageSize = 50 } = params
 
   const { data: ediRows, error: ediErr } = await supabase
     .from('edi_handelspartner_config')
@@ -143,6 +144,28 @@ export async function fetchDebiteuren(params: {
       return { debiteuren: [], totalCount: 0 }
     }
     query = query.in('debiteur_nr', ledenNrs)
+  }
+
+  if (prijslijst_filter) {
+    if (prijslijst_filter === 'geen') {
+      const { data: geenPrijsRows, error: geenErr } = await supabase
+        .from('debiteuren')
+        .select('debiteur_nr')
+        .is('prijslijst_nr', null)
+      if (geenErr) throw geenErr
+      const geenNrs = (geenPrijsRows ?? []).map((r) => r.debiteur_nr as number)
+      if (geenNrs.length === 0) return { debiteuren: [], totalCount: 0 }
+      query = query.in('debiteur_nr', geenNrs)
+    } else {
+      const { data: prijsRows, error: prijsErr } = await supabase
+        .from('debiteuren')
+        .select('debiteur_nr')
+        .eq('prijslijst_nr', prijslijst_filter)
+      if (prijsErr) throw prijsErr
+      const prijsNrs = (prijsRows ?? []).map((r) => r.debiteur_nr as number)
+      if (prijsNrs.length === 0) return { debiteuren: [], totalCount: 0 }
+      query = query.in('debiteur_nr', prijsNrs)
+    }
   }
 
   const { data, error, count } = await query

@@ -65,7 +65,7 @@ export function KwaliteitenGroupedView({ search, productType }: Props) {
       .filter((q) => q.aantal_producten > 0)
       .filter((q) => {
         if (!term) return true
-        const haystack = `${q.code} ${q.omschrijving ?? ''}`.toLowerCase()
+        const haystack = `${q.code} ${q.omschrijving ?? ''} ${q.naam_afgeleid ?? ''}`.toLowerCase()
         return haystack.includes(term)
       })
   }, [kwaliteiten, search])
@@ -103,8 +103,7 @@ export function KwaliteitenGroupedView({ search, productType }: Props) {
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-slate-100 bg-slate-50">
-            <th className="text-left px-4 py-3 font-medium text-slate-600 w-[180px]">Kwaliteit</th>
-            <th className="text-left px-4 py-3 font-medium text-slate-600">Omschrijving</th>
+            <th className="text-left px-4 py-3 font-medium text-slate-600">Kwaliteit</th>
             <th className="text-left px-4 py-3 font-medium text-slate-600 w-[150px]">Afwerking</th>
             <th className="text-right px-4 py-3 font-medium text-slate-600 w-[140px]">Gewicht / m²</th>
             <th className="text-right px-4 py-3 font-medium text-slate-600 w-[120px]">Std breedte</th>
@@ -149,9 +148,14 @@ function KwaliteitRow({ q, isExpanded, onToggle, productType, uitwisselbaarCount
             <button className="text-slate-400 hover:text-slate-600 -ml-1 p-0.5">
               {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
             </button>
-            <span className="font-mono text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-medium">
-              {q.code}
-            </span>
+            <div className="flex flex-col gap-0.5">
+              <span className="font-medium text-slate-800 text-sm">
+                {q.omschrijving?.split(' ')[0] ?? q.naam_afgeleid ?? q.code}
+              </span>
+              <span className="font-mono text-[10px] text-slate-400 tracking-wide">
+                {q.code}
+              </span>
+            </div>
             {uitwisselbaarCount > 0 && (
               <span
                 className="inline-flex items-center gap-1 text-xs text-slate-500"
@@ -163,7 +167,6 @@ function KwaliteitRow({ q, isExpanded, onToggle, productType, uitwisselbaarCount
             )}
           </div>
         </td>
-        <td className="px-4 py-3 text-slate-700">{q.omschrijving ?? '—'}</td>
         <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
           {isMaatwerkKwaliteit || standaardAfwerking ? (
             <AfwerkingEditor code={q.code} huidigeAfwerking={standaardAfwerking} afwerkingen={afwerkingen} />

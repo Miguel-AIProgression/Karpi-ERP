@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, AlertTriangle, CheckCircle2, Info } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { useKwaliteiten, useLeveranciers, useCreateProduct, useNextArtikelnr } from '@/hooks/use-producten'
+import { useLeveranciers, useCreateProduct, useNextArtikelnr } from '@/hooks/use-producten'
 import {
   fetchAfwerkingTypes,
   fetchStandaardAfwerking,
@@ -11,6 +11,7 @@ import {
   setStandaardAfwerking,
   setAfwerkingVoorKleur,
 } from '@/modules/maatwerk'
+import { fetchKwaliteitBestaat } from '@/lib/supabase/queries/producten'
 import type { ProductType } from '@/lib/supabase/queries/producten'
 
 const PRODUCT_TYPES: { value: ProductType; label: string }[] = [
@@ -59,10 +60,8 @@ function buildOmschrijving(naam: string, kleurCode: string, breedte: string, len
 }
 
 /**
- * Karpi-code conventie (zie sync_rollen_voorraad.parse_karpi_code):
- *   {KWALITEIT}{KLEUR:2}XX{BREEDTE:3}{LENGTE:3 of "RND"}
- * Voorbeelden: FAMU48XX160230, VELV15XX200RND.
- * Lege string als verplichte velden ontbreken.
+ * Karpi-code conventie: {KWALITEIT}{KLEUR:2}XX{BREEDTE:3}{LENGTE:3}
+ * Voorbeeld: FAMU48XX160230
  */
 function buildKarpiCode(kwaliteit: string, kleur: string, breedte: string, lengte: string) {
   const k = (kwaliteit || '').trim().toUpperCase()
@@ -71,44 +70,52 @@ function buildKarpiCode(kwaliteit: string, kleur: string, breedte: string, lengt
   const klrPad = klr.padStart(2, '0').slice(0, 2)
   const w = String(parseInt(breedte, 10) || 0).padStart(3, '0').slice(-3)
   const lTrim = (lengte || '').trim()
-  const l = lTrim
-    ? String(parseInt(lTrim, 10) || 0).padStart(3, '0').slice(-3)
-    : ''
+  const l = lTrim ? String(parseInt(lTrim, 10) || 0).padStart(3, '0').slice(-3) : ''
   if (!l) return ''
   return `${k}${klrPad}XX${w}${l}`
 }
 
 export function ProductCreatePage() {
   const navigate = useNavigate()
-  const { data: kwaliteiten } = useKwaliteiten()
   const { data: leveranciers } = useLeveranciers()
   const createMutation = useCreateProduct()
 
-  // Familie / header velden
+  // Stamgegevens
   const [naam, setNaam] = useState('')
   const [kwaliteitCode, setKwaliteitCode] = useState('')
+  const [kwaliteitCodeInput, setKwaliteitCodeInput] = useState('')  // ruwe invoer (vóór uppercase)
   const [kleurCode, setKleurCode] = useState('')
   const [leverancierId, setLeverancierId] = useState<string>('')
   const [afwerkingCode, setAfwerkingCode] = useState('')
-  // Nieuw product is initieel inactief: pas zichtbaar in selectors zodra de
-  // eerste inkoop is ontvangen (`Actief` wordt dan handmatig of via boek-ontvangst aangezet).
   const [actief, setActief] = useState(false)
 
   // Varianten
   const [rows, setRows] = useState<VariantRow[]>([newRow()])
-  // Manuele overrides: rij-keys waarin de gebruiker artikelnr/karpi_code zelf heeft
-  // ingevuld → niet meer overschrijven door auto-suggestie.
   const [manualArtikelnr, setManualArtikelnr] = useState<Set<number>>(new Set())
   const [manualKarpi, setManualKarpi] = useState<Set<number>>(new Set())
   const [error, setError] = useState<string | null>(null)
 
-  // Afwerking-types (alleen geladen als kwaliteit gekozen is — pas dan zinvol)
+  // Debounced kwaliteitscode voor duplicate-check
+  const [debouncedKwaliteit, setDebouncedKwaliteit] = useState('')
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedKwaliteit(kwaliteitCode), 400)
+    return () => clearTimeout(timer)
+  }, [kwaliteitCode])
+
+  // Duplicate check
+  const { data: kwaliteitBestaat, isFetching: checkingDuplicate } = useQuery({
+    queryKey: ['kwaliteit-bestaat', debouncedKwaliteit],
+    queryFn: () => fetchKwaliteitBestaat(debouncedKwaliteit),
+    enabled: debouncedKwaliteit.length >= 2,
+  })
+
+  // Afwerking-types
   const { data: afwerkingTypes } = useQuery({
     queryKey: ['afwerking-types'],
     queryFn: fetchAfwerkingTypes,
   })
 
-  // Standaard afwerking voor (kwaliteit, kleur) → vooraf invullen indien bekend
+  // Standaard afwerking ophalen bij kwaliteit/kleur combo
   useEffect(() => {
     let cancelled = false
     if (!kwaliteitCode) {
@@ -122,19 +129,16 @@ export function ProductCreatePage() {
       const code = perKleur ?? (await fetchStandaardAfwerking(kwaliteitCode))
       if (!cancelled) setAfwerkingCode(code ?? '')
     })()
-    return () => {
-      cancelled = true
-    }
+    return () => { cancelled = true }
   }, [kwaliteitCode, kleurCode])
 
-  // Volgend artikelnr ophalen op basis van kwaliteit+kleur prefix
+  // Volgend artikelnr op basis van kwaliteit+kleur
   const { data: nextArtikelnr } = useNextArtikelnr(
     kwaliteitCode || null,
     kleurCode.trim() || null,
   )
 
-  // Auto-fill artikelnr per rij (oplopend vanaf nextArtikelnr) en karpi-code
-  // op basis van kwaliteit/kleur/breedte/lengte. Manuele overrides blijven staan.
+  // Auto-fill artikelnr en karpi-code per rij
   useEffect(() => {
     setRows(rs => rs.map((r, idx) => {
       const next: VariantRow = { ...r }
@@ -152,28 +156,25 @@ export function ProductCreatePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nextArtikelnr, kwaliteitCode, kleurCode])
 
+  function handleKwaliteitInput(raw: string) {
+    const upper = raw.toUpperCase().replace(/[^A-Z0-9]/g, '')
+    setKwaliteitCodeInput(upper)
+    setKwaliteitCode(upper)
+  }
+
   function updateRow(key: number, field: keyof VariantRow, value: string) {
     setRows(rs => rs.map(r => {
       if (r._key !== key) return r
       const next = { ...r, [field]: value }
-      // Bij wijziging breedte/lengte: hergenereer karpi-code (mits niet manueel)
       if ((field === 'breedte' || field === 'lengte') && !manualKarpi.has(key)) {
         next.karpi_code = buildKarpiCode(kwaliteitCode, kleurCode, next.breedte, next.lengte)
       }
       return next
     }))
     if (field === 'artikelnr') {
-      setManualArtikelnr(prev => {
-        const s = new Set(prev)
-        s.add(key)
-        return s
-      })
+      setManualArtikelnr(prev => { const s = new Set(prev); s.add(key); return s })
     } else if (field === 'karpi_code') {
-      setManualKarpi(prev => {
-        const s = new Set(prev)
-        s.add(key)
-        return s
-      })
+      setManualKarpi(prev => { const s = new Set(prev); s.add(key); return s })
     }
   }
 
@@ -190,26 +191,22 @@ export function ProductCreatePage() {
 
   function removeRow(key: number) {
     setRows(rs => rs.filter(r => r._key !== key))
-    setManualArtikelnr(prev => {
-      const s = new Set(prev)
-      s.delete(key)
-      return s
-    })
-    setManualKarpi(prev => {
-      const s = new Set(prev)
-      s.delete(key)
-      return s
-    })
+    setManualArtikelnr(prev => { const s = new Set(prev); s.delete(key); return s })
+    setManualKarpi(prev => { const s = new Set(prev); s.delete(key); return s })
   }
 
   const filledRows = useMemo(() => rows.filter(r => r.artikelnr.trim()), [rows])
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setError(null)
 
     if (filledRows.length === 0) {
       setError('Voeg minimaal één variant toe met een artikelnummer.')
+      return
+    }
+    if (kwaliteitBestaat) {
+      setError(`Kwaliteitscode "${kwaliteitCode}" bestaat al in de database. Gebruik een andere code of koppel het product aan de bestaande kwaliteit via het productdetail-scherm.`)
       return
     }
 
@@ -226,7 +223,6 @@ export function ProductCreatePage() {
           verkoopprijs: r.verkoopprijs ? Number(r.verkoopprijs) : null,
           inkoopprijs: r.inkoopprijs ? Number(r.inkoopprijs) : null,
           gewicht_kg: r.gewicht_kg ? Number(r.gewicht_kg) : null,
-          // Voorraad start altijd op 0 — eerst inkopen + ontvangen vóór actief.
           voorraad: 0,
           locatie: r.locatie.trim() || null,
           leverancier_id: leverancierId ? Number(leverancierId) : null,
@@ -234,8 +230,6 @@ export function ProductCreatePage() {
         })
       }
 
-      // Maatwerk-afwerking opslaan: per kwaliteit+kleur indien beide gezet,
-      // anders op kwaliteit-niveau als default.
       if (afwerkingCode && kwaliteitCode) {
         if (kleurCode.trim()) {
           await setAfwerkingVoorKleur(kwaliteitCode, kleurCode.trim(), afwerkingCode)
@@ -255,7 +249,7 @@ export function ProductCreatePage() {
   return (
     <>
       <div className="mb-4">
-        <Link to="/producten" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700">
+        <Link to="/producten" className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 transition-colors">
           <ArrowLeft size={14} /> Terug naar producten
         </Link>
       </div>
@@ -265,13 +259,15 @@ export function ProductCreatePage() {
       <form onSubmit={handleSubmit} className="mt-6 space-y-6 max-w-6xl">
 
         {/* ── Sectie 1: Stamgegevens ─────────────────────────────── */}
-        <section className="bg-white rounded-[var(--radius)] border border-slate-200">
-          <div className="px-6 py-4 border-b border-slate-100">
-            <h3 className="font-semibold text-slate-800">Stamgegevens</h3>
+        <section className="bg-white rounded-[var(--radius)] border-2 border-slate-200 shadow-sm">
+          <div className="px-6 py-4 border-b-2 border-slate-100 bg-slate-50 rounded-t-[var(--radius)]">
+            <h3 className="font-semibold text-slate-800 text-base">Stamgegevens</h3>
             <p className="text-xs text-slate-500 mt-0.5">Gemeenschappelijk voor alle varianten van dit product</p>
           </div>
-          <div className="p-6 grid grid-cols-2 gap-x-8 gap-y-4">
-            <Field label="Naam *">
+          <div className="p-6 grid grid-cols-2 gap-x-8 gap-y-5">
+
+            {/* Naam */}
+            <Field label="Productnaam *" hint="Bijv. FADED MUSCAT — zonder kleur of maat">
               <input
                 required
                 value={naam}
@@ -280,21 +276,59 @@ export function ProductCreatePage() {
                 placeholder="bijv. FADED MUSCAT"
               />
             </Field>
-            <Field label="Kwaliteitscode">
-              <select
-                value={kwaliteitCode}
-                onChange={e => setKwaliteitCode(e.target.value)}
-                className="input"
-              >
-                <option value="">— geen —</option>
-                {kwaliteiten?.map(k => (
-                  <option key={k.code} value={k.code}>
-                    {k.code}{k.omschrijving ? ` – ${k.omschrijving}` : ''}
-                  </option>
-                ))}
-              </select>
+
+            {/* Kwaliteitscode — nieuw, vrije invoer met duplicate-check */}
+            <Field
+              label="Kwaliteitscode (nieuw)"
+              hint="Dit is de unieke code voor deze kwaliteitslijn — tevens prefix van de Karpi-code"
+            >
+              <div className="relative">
+                <input
+                  value={kwaliteitCodeInput}
+                  onChange={e => handleKwaliteitInput(e.target.value)}
+                  className={`input pr-9 font-mono tracking-wider ${kwaliteitBestaat ? 'input-error' : kwaliteitCode.length >= 2 && !checkingDuplicate && !kwaliteitBestaat ? 'border-emerald-400 focus:border-emerald-400' : ''}`}
+                  placeholder="bijv. FAMU"
+                  maxLength={10}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+                {/* Status icoon rechts in het veld */}
+                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none">
+                  {checkingDuplicate && kwaliteitCode.length >= 2 && (
+                    <span className="inline-block w-4 h-4 border-2 border-slate-300 border-t-terracotta-400 rounded-full animate-spin" />
+                  )}
+                  {!checkingDuplicate && kwaliteitBestaat && (
+                    <AlertTriangle size={16} className="text-rose-500" />
+                  )}
+                  {!checkingDuplicate && kwaliteitCode.length >= 2 && kwaliteitBestaat === false && (
+                    <CheckCircle2 size={16} className="text-emerald-500" />
+                  )}
+                </span>
+              </div>
+
+              {/* Feedback onder het veld */}
+              {!checkingDuplicate && kwaliteitBestaat === true && (
+                <p className="mt-1.5 text-xs text-rose-600 flex items-center gap-1.5">
+                  <AlertTriangle size={12} />
+                  Kwaliteitscode <strong>{kwaliteitCode}</strong> bestaat al in de database. Kies een andere code.
+                </p>
+              )}
+              {!checkingDuplicate && kwaliteitCode.length >= 2 && kwaliteitBestaat === false && (
+                <p className="mt-1.5 text-xs text-emerald-600 flex items-center gap-1.5">
+                  <CheckCircle2 size={12} />
+                  Code beschikbaar — nieuwe kwaliteit wordt aangemaakt.
+                </p>
+              )}
+              {kwaliteitCode.length === 0 && (
+                <p className="mt-1.5 text-xs text-slate-400 flex items-center gap-1.5">
+                  <Info size={12} />
+                  Bijv. FAMU, VELV, OASI — wordt ook de prefix van alle Karpi-codes voor dit product.
+                </p>
+              )}
             </Field>
-            <Field label="Kleurcode">
+
+            {/* Kleurcode */}
+            <Field label="Kleurcode" hint="Cijfer uit het kleurboek van de leverancier, bijv. 48">
               <input
                 value={kleurCode}
                 onChange={e => setKleurCode(e.target.value)}
@@ -302,6 +336,8 @@ export function ProductCreatePage() {
                 placeholder="bijv. 48"
               />
             </Field>
+
+            {/* Leverancier */}
             <Field label="Leverancier">
               <select
                 value={leverancierId}
@@ -314,7 +350,18 @@ export function ProductCreatePage() {
                 ))}
               </select>
             </Field>
-            <Field label="Maatwerk afwerking">
+
+            {/* Maatwerk afwerking */}
+            <Field
+              label="Maatwerk afwerking"
+              hint={
+                kwaliteitCode
+                  ? kleurCode.trim()
+                    ? 'Opgeslagen als afwerking voor deze kwaliteit + kleur.'
+                    : 'Opgeslagen als standaard afwerking voor deze kwaliteit.'
+                  : 'Vul eerst een kwaliteitscode in.'
+              }
+            >
               <select
                 value={afwerkingCode}
                 onChange={e => setAfwerkingCode(e.target.value)}
@@ -323,47 +370,42 @@ export function ProductCreatePage() {
               >
                 <option value="">— geen —</option>
                 {afwerkingTypes?.map(a => (
-                  <option key={a.code} value={a.code}>
-                    {a.code} – {a.naam}
-                  </option>
+                  <option key={a.code} value={a.code}>{a.code} – {a.naam}</option>
                 ))}
               </select>
-              <p className="mt-1 text-xs text-slate-400">
-                {kwaliteitCode
-                  ? kleurCode.trim()
-                    ? 'Wordt opgeslagen als afwerking voor deze kwaliteit + kleur.'
-                    : 'Wordt opgeslagen als standaard afwerking voor deze kwaliteit.'
-                  : 'Kies eerst een kwaliteit.'}
-              </p>
             </Field>
           </div>
-          <div className="px-6 pb-5">
-            <label className="flex items-center gap-3 cursor-pointer w-fit">
+
+          {/* Actief checkbox */}
+          <div className="px-6 pb-5 border-t border-slate-100 pt-4">
+            <label className="flex items-start gap-3 cursor-pointer w-fit">
               <input
                 type="checkbox"
                 checked={actief}
                 onChange={e => setActief(e.target.checked)}
-                className="w-4 h-4 rounded"
+                className="w-4 h-4 mt-0.5 rounded accent-terracotta-500"
               />
-              <span className="text-sm text-slate-700">Actief (zichtbaar in systeem)</span>
+              <div>
+                <span className="text-sm font-medium text-slate-700">Actief (zichtbaar in systeem)</span>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Standaard inactief: nieuw product wordt pas zichtbaar in selectors zodra de eerste inkoop is ontvangen.
+                </p>
+              </div>
             </label>
-            <p className="mt-1 text-xs text-slate-400">
-              Standaard inactief: nieuw product wordt pas zichtbaar in selectors zodra de eerste inkoop is ontvangen.
-            </p>
           </div>
         </section>
 
         {/* ── Sectie 2: Varianten / Maten ────────────────────────── */}
-        <section className="bg-white rounded-[var(--radius)] border border-slate-200">
-          <div className="px-6 py-4 border-b border-slate-100">
-            <h3 className="font-semibold text-slate-800">Varianten / Maten</h3>
+        <section className="bg-white rounded-[var(--radius)] border-2 border-slate-200 shadow-sm">
+          <div className="px-6 py-4 border-b-2 border-slate-100 bg-slate-50 rounded-t-[var(--radius)]">
+            <h3 className="font-semibold text-slate-800 text-base">Varianten / Maten</h3>
             <p className="text-xs text-slate-500 mt-0.5">Elke rij wordt een apart artikel in het systeem</p>
           </div>
           <div className="p-6">
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto rounded-[var(--radius-sm)] border border-slate-200">
               <table className="w-full text-sm border-collapse">
                 <thead>
-                  <tr className="border-b-2 border-slate-200">
+                  <tr className="bg-slate-50 border-b border-slate-200">
                     <Th>Artikelnr *</Th>
                     <Th>Type</Th>
                     <Th>Breedte cm</Th>
@@ -375,12 +417,12 @@ export function ProductCreatePage() {
                     <Th>Gewicht kg</Th>
                     <Th>Voorraad</Th>
                     <Th>Locatie</Th>
-                    <th className="pb-2 w-8"></th>
+                    <th className="pb-2 w-8 px-3"></th>
                   </tr>
                 </thead>
-                <tbody>
-                  {rows.map((r, idx) => (
-                    <tr key={r._key} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                <tbody className="divide-y divide-slate-100">
+                  {rows.map((r) => (
+                    <tr key={r._key} className="hover:bg-slate-50/70 transition-colors">
                       <Td>
                         <input
                           value={r.artikelnr}
@@ -465,8 +507,8 @@ export function ProductCreatePage() {
                           value={0}
                           readOnly
                           disabled
-                          className="input w-20 bg-slate-50 text-slate-400 cursor-not-allowed"
-                          title="Voorraad start op 0 — wordt opgehoogd via boek-ontvangst op de inkooporder"
+                          className="input w-20"
+                          title="Voorraad start op 0 — ophogen via boek-ontvangst op de inkooporder"
                         />
                       </Td>
                       <Td>
@@ -506,30 +548,30 @@ export function ProductCreatePage() {
 
         {/* ── Sectie 3: Preview ──────────────────────────────────── */}
         {naam.trim() && filledRows.length > 0 && (
-          <section className="bg-slate-50 rounded-[var(--radius)] border border-slate-200 p-4">
+          <section className="bg-slate-50 rounded-[var(--radius)] border-2 border-slate-200 p-5">
             <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
               Voorbeeld — zo komen de artikelen in het systeem
             </p>
             <table className="text-sm w-full">
               <thead>
-                <tr className="text-xs text-slate-400">
-                  <th className="text-left font-normal pb-1.5 pr-6">Artikelnr</th>
-                  <th className="text-left font-normal pb-1.5 pr-6">Omschrijving</th>
-                  <th className="text-left font-normal pb-1.5 pr-6">Type</th>
-                  <th className="text-right font-normal pb-1.5">Verkoop</th>
+                <tr className="text-xs text-slate-400 border-b border-slate-200">
+                  <th className="text-left font-normal pb-2 pr-6">Artikelnr</th>
+                  <th className="text-left font-normal pb-2 pr-6">Omschrijving</th>
+                  <th className="text-left font-normal pb-2 pr-6">Type</th>
+                  <th className="text-right font-normal pb-2">Verkoop</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filledRows.map(r => (
                   <tr key={r._key}>
-                    <td className="py-1.5 pr-6 font-mono text-xs text-slate-500">{r.artikelnr}</td>
-                    <td className="py-1.5 pr-6 text-slate-800">
+                    <td className="py-2 pr-6 font-mono text-xs text-slate-500">{r.artikelnr}</td>
+                    <td className="py-2 pr-6 text-slate-800">
                       {buildOmschrijving(naam, kleurCode, r.breedte, r.lengte)}
                     </td>
-                    <td className="py-1.5 pr-6 text-slate-500">
+                    <td className="py-2 pr-6 text-slate-500">
                       {PRODUCT_TYPES.find(t => t.value === r.product_type)?.label ?? '—'}
                     </td>
-                    <td className="py-1.5 text-right text-slate-700">
+                    <td className="py-2 text-right text-slate-700">
                       {r.verkoopprijs ? `€ ${Number(r.verkoopprijs).toFixed(2)}` : '—'}
                     </td>
                   </tr>
@@ -540,16 +582,17 @@ export function ProductCreatePage() {
         )}
 
         {error && (
-          <p className="text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-[var(--radius-sm)] px-4 py-3">
-            {error}
-          </p>
+          <div className="flex items-start gap-3 text-sm text-rose-700 bg-rose-50 border-2 border-rose-200 rounded-[var(--radius-sm)] px-4 py-3">
+            <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+            <span>{error}</span>
+          </div>
         )}
 
         {/* ── Acties ─────────────────────────────────────────────── */}
         <div className="flex items-center gap-3 pb-8">
           <button
             type="submit"
-            disabled={isPending || filledRows.length === 0}
+            disabled={isPending || filledRows.length === 0 || kwaliteitBestaat === true}
             className="px-6 py-2.5 bg-terracotta-500 text-white rounded-[var(--radius-sm)] text-sm font-medium hover:bg-terracotta-600 disabled:opacity-50 transition-colors"
           >
             {isPending
@@ -558,10 +601,16 @@ export function ProductCreatePage() {
           </button>
           <Link
             to="/producten"
-            className="px-6 py-2.5 border border-slate-200 rounded-[var(--radius-sm)] text-sm text-slate-600 hover:bg-slate-50 transition-colors"
+            className="px-6 py-2.5 border-2 border-slate-200 rounded-[var(--radius-sm)] text-sm text-slate-600 hover:bg-slate-50 transition-colors"
           >
             Annuleren
           </Link>
+          {kwaliteitBestaat === true && (
+            <span className="text-xs text-rose-500 flex items-center gap-1.5">
+              <AlertTriangle size={12} />
+              Kies een andere kwaliteitscode om door te gaan.
+            </span>
+          )}
         </div>
 
       </form>
@@ -571,23 +620,26 @@ export function ProductCreatePage() {
 
 /* ── Hulpcomponenten ───────────────────────────────────────── */
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div>
-      <label className="block text-xs font-medium text-slate-500 mb-1.5 uppercase tracking-wide">{label}</label>
+      <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">
+        {label}
+      </label>
       {children}
+      {hint && <p className="mt-1.5 text-xs text-slate-400">{hint}</p>}
     </div>
   )
 }
 
 function Th({ children }: { children: React.ReactNode }) {
   return (
-    <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wide pb-2 pr-3 whitespace-nowrap">
+    <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wide py-2.5 px-3 whitespace-nowrap">
       {children}
     </th>
   )
 }
 
 function Td({ children }: { children: React.ReactNode }) {
-  return <td className="py-1.5 pr-3 align-top">{children}</td>
+  return <td className="py-2 px-3 align-top">{children}</td>
 }

@@ -254,6 +254,18 @@ export async function fetchKwaliteiten(): Promise<{ code: string; omschrijving: 
   return data ?? []
 }
 
+/** Controleer of een kwaliteitscode al bestaat in de database (duplicate-guard). */
+export async function fetchKwaliteitBestaat(code: string): Promise<boolean> {
+  if (!code.trim()) return false
+  const { data, error } = await supabase
+    .from('kwaliteiten')
+    .select('code')
+    .eq('code', code.trim().toUpperCase())
+    .maybeSingle()
+  if (error) throw error
+  return data !== null
+}
+
 /** Beschikbare kleur_codes voor een kwaliteit (op basis van actieve producten). */
 export async function fetchKleurenVoorKwaliteit(kwaliteitCode: string): Promise<string[]> {
   const { data, error } = await supabase

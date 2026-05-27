@@ -20,6 +20,7 @@ export function useDebiteuren(params: {
   vertegenw_code?: string
   edi_filter?: 'edi' | 'niet_edi'
   inkoopgroep_code?: string
+  prijslijst_filter?: string | 'geen'
   page?: number
   pageSize?: number
 }) {
