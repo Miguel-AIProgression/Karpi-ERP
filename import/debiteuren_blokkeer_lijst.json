@@ -1,0 +1,11 @@
+{
+  "_beschrijving": "Debiteuren die verwijderd zijn en nooit meer geïmporteerd mogen worden. Voeg altijd debiteur_nr + reden + datum toe.",
+  "geblokkeerd": [
+    {
+      "debiteur_nr": 862509,
+      "naam": "EINRICHTUNGSPARTNERRING VME GMBH & CO. KG",
+      "reden": "Verwijderd op verzoek",
+      "datum": "2026-05-29"
+    }
+  ]
+}

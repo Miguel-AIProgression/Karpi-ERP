@@ -100,6 +100,7 @@ interface DebiteurFactuurRow {
   vertegenw_code: string | null
   gln_bedrijf: string | null
   btw_nummer: string | null
+  betaler: number | null
   fact_naam: string | null
   fact_adres: string | null
   fact_postcode: string | null
@@ -220,7 +221,7 @@ serve(async () => {
         supabase
           .from('debiteuren')
           .select(
-            'email_factuur, naam, vertegenw_code, gln_bedrijf, btw_nummer, ' +
+            'email_factuur, naam, vertegenw_code, gln_bedrijf, btw_nummer, betaler, ' +
               'fact_naam, fact_adres, fact_postcode, fact_plaats, adres, postcode, plaats, land',
           )
           .eq('debiteur_nr', item.debiteur_nr)
@@ -323,6 +324,17 @@ serve(async () => {
       }
 
       // 7. Verstuur email met factuur-PDF + AV als bijlage, indien ingesteld.
+      // Betaler-email alvast ophalen zodat verstuurd_naar correct wordt gelogd.
+      let betalerEmail: string | null = null
+      if (debiteur.betaler) {
+        const { data: betalerRow } = await supabase
+          .from('debiteuren')
+          .select('email_factuur')
+          .eq('debiteur_nr', debiteur.betaler)
+          .maybeSingle()
+        betalerEmail = betalerRow?.email_factuur ?? null
+      }
+
       if (debiteur.email_factuur) {
         const { data: avBlob, error: avErr } = await supabase.storage
           .from('documenten')
@@ -337,6 +349,12 @@ serve(async () => {
 <p>Met vriendelijke groet,<br/>KARPI BV</p>
       `.trim()
 
+        const attachments = [
+          { filename: `${factuur.factuur_nr}.pdf`, content: pdfBytes },
+          { filename: 'Algemene voorwaarden KARPI BV.pdf', content: avBytes },
+        ]
+
+        // Stuur naar debiteur zelf
         await sendFactuurEmail({
           apiKey: RESEND_API_KEY,
           from: FACTUUR_FROM,
@@ -344,11 +362,21 @@ serve(async () => {
           replyTo: FACTUUR_REPLY_TO,
           subject: `Factuur ${factuur.factuur_nr}`,
           html: emailHtml,
-          attachments: [
-            { filename: `${factuur.factuur_nr}.pdf`, content: pdfBytes },
-            { filename: 'Algemene voorwaarden KARPI BV.pdf', content: avBytes },
-          ],
+          attachments,
         })
+
+        // Stuur kopie naar betaler indien aanwezig en anders dan debiteur
+        if (betalerEmail && betalerEmail !== debiteur.email_factuur) {
+          await sendFactuurEmail({
+            apiKey: RESEND_API_KEY,
+            from: FACTUUR_FROM,
+            to: betalerEmail,
+            replyTo: FACTUUR_REPLY_TO,
+            subject: `Factuur ${factuur.factuur_nr} (kopie voor betaler)`,
+            html: emailHtml,
+            attachments,
+          })
+        }
       }
 
       // 8. Factuur + queue finalisatie
@@ -358,7 +386,7 @@ serve(async () => {
         .update({
           status: 'Verstuurd',
           verstuurd_op: nowIso,
-          verstuurd_naar: debiteur.email_factuur ?? (ediBerichtId ? 'EDI Transus' : null),
+          verstuurd_naar: [debiteur.email_factuur, betalerEmail].filter(Boolean).join(', ') || (ediBerichtId ? 'EDI Transus' : null),
           pdf_storage_path: pdfPath,
         })
         .eq('id', factuurId)
