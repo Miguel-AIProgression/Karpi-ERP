@@ -1,5 +1,92 @@
 # Changelog — RugFlow ERP
 
+## 2026-05-31 — Voorraad-update vaste maten uit nieuwe vrije-voorraadlijst
+
+**Waarom:** Karpi leverde een verse export `Vorraadlijst 29-5-2026.xls` ("Ovz. vrije voorraad — alle artikelen") om de oude test-/importvoorraad te overschrijven met de actuele stand. Afspraak: alleen de **vrije voorraad** meenemen, backorder + reserveringen op 0.
+
+**Wat:** Eenmalig script [`import/update_voorraad_2026_05.py`](../import/update_voorraad_2026_05.py) (dry-run default, `--commit` schrijft).
+- **Scope: alleen `product_type='vast'`.** Staaltje (4.134), rol (798) en overig (2.154) bewust ongemoeid — staaltjes worden in een ander project beheerd; rol-voorraad loopt per individuele rol via de rollen-sync (niet via deze artikel-totalen).
+- **Sleutel:** kolom `Artikelnr` (kol A) → `producten.artikelnr`. **Waarde:** kolom `Vrije voorraad` (kol H) → `voorraad` + `vrije_voorraad`. Kolom D (bruto Voorraad) bewust niet gebruikt; `backorder`/`gereserveerd` niet gelezen maar hard op 0 gezet.
+- **Resultaat (commit):** 17.998 vast geüpdatet · 1.976 rood→0 · 30 niet-in-lijst→0 · **13 nieuwe vaste maten aangemaakt** (incl. ronde kleden `…RND` → `vorm='rond'`, dims uit Karpi-code). Totaal producten 27.077 → **27.090** (+13 netto).
+- **0/negatieve voorraad genegeerd (afspraak):** nieuwe artikelen worden alleen aangemaakt bij vrije voorraad > 0 (eerst 116 aangemaakt, daarna 89 met 0 + 14 met negatieve voorraad verwijderd → 13 over). Bestaande `vast`-producten met negatieve vrije voorraad (oversold in oude data) zijn geclampt naar 0 (468 stuks) — `producten.voorraad` mag niet negatief zijn. Script doet dit nu automatisch (`max(0, vrije_voorraad)` + filter nieuw op >0).
+- **Rode regels (2.917, rood font in de .xls, A–F):** voorraad→0 én weggeschreven naar [`import/voorraad_uitsluiten.csv`](../import/voorraad_uitsluiten.csv) — skip-lijst voor toekomstige imports (Karpi stuurt later een verwijderlijst). Rode-detectie via `xlrd(formatting_info=True)`, fontkleur RGB (255,0,0).
+- **Broadloom-onderscheid:** vaste maat = Karpi-code matcht `^[A-Z]{3,4}\d{2}XX` (XX = scheiding ná kleurcode, incl. `…RND`); broadloom/rol (`…400SYN`, `…300ONG`, jute-runners) heeft geen XX-scheiding en "voorraad" in meters (decimaal). 1.078 nieuwe broadloom-artikelen daarom NIET als stuks aangemaakt, wel gelogd in het rapport.
+- **44 nieuwe artikelen zonder kwaliteit-link** (codes `ASLA`, `IBIA` ontbreken in `kwaliteiten`; `kwaliteit_code` op NULL gelaten — FK-guard). Kunnen later verrijkt worden.
+- **Rapport:** [`import/rapporten/voorraad_update_2026_05.xlsx`](../import/rapporten/voorraad_update_2026_05.xlsx) (samenvatting, nieuw-vast, broadloom-skip, op-0, rood).
+- **Implementatie-noot:** bestaande producten via gegroepeerde `UPDATE … in_(artikelnr)` per voorraadwaarde (geen upsert — die forceert een INSERT en valt op NOT NULL `omschrijving`/`vorm`); nieuwe via `INSERT`. Resterende 133 backorders≠0 zitten allemaal op overgeslagen types (staaltje 113 / overig 16 / rol 4), géén op `vast`.
+
+## 2026-05-31 — Opschoon-script test-data vóór live-gang
+
+**Waarom:** Tot nu toe is met test-orders gewerkt. Vóór de live-gang (echte orders vanaf 2026-06-01) moet de transactionele test-data eruit, terwijl stamdata (klanten, prijslijsten, producten, voorraad, inkoop) blijft staan.
+
+**Wat:** Eenmalig SQL-script [`supabase/scripts/2026-05-31_cleanup_testdata.sql`](../supabase/scripts/2026-05-31_cleanup_testdata.sql) — handmatig in Supabase Studio uit te voeren.
+- **Wist** (kind→ouder, in 1 transactie): orders + order_regels + order_reserveringen + order_events + order_documenten (DB-rijen); facturen + factuur_regels + factuur_queue; snijplannen + snijvoorstellen + snijvoorstel_plaatsingen + snijplan_groep_locks; confectie_orders; zendingen + zending_regels + zending_orders + zending_colli + hst_transportorders; scan_events.
+- **Behoudt:** debiteuren, prijslijsten, producten, rollen (alleen workflow-status gereset → beschikbaar/reststuk, snijden_* gewist), leveranciers + inkooporders, vervoerders, klanteigen_namen, medewerkers, maatwerk-config, app_config, edi_handelspartner_config. Bewust ongemoeid gelaten: samples, edi_berichten (alleen FK-link naar gewiste orders/facturen op NULL), activiteiten_log, voorraad_mutaties, rol_mutaties, storage-buckets.
+- **Voorraad herberekend:** `producten.gereserveerd=0` + `vrije_voorraad=voorraad−backorder` (alle claims weg). `besteld_inkoop` ongemoeid (inkoop blijft).
+- **Nummering gereset** zodat echte data bij `0001` begint: sequences `ord/snij/snijv_2026_seq` via `setval(...,1,false)`; FACT/ZEND/SAMP via verwijderen van de `nummering`-rijen. `R` (rolnummers) + SSCC ongemoeid.
+- **Trigger-veiligheid:** churn-triggers (herallocatie, order-totalen, reservering-sync) op orders/order_regels/order_reserveringen tijdens de delete uit; FK-cascade + RI blijven actief.
+- **Bekende beperking:** echt gesneden test-snijplannen lieten ingekorte moederrollen + reststukken achter die het script NIET terugdraait — bij twijfel verse voorraad-herimport (gedocumenteerd onderaan het script).
+
+## 2026-05-27 — HST-vrachtbrief automatisch aan order gekoppeld (mig 304)
+
+**Waarom:** HST stuurt na een succesvolle POST een base64-PDF mee (`PDFDocument.Contents`, ~14KB) — de vrachtbrief/label. Tot nu toe stripten we die uit `response_payload` om de DB-rij compact te houden, waarmee de PDF effectief weggegooid werd. De gebruiker wil 'm aan de order kunnen koppelen "net als de track en trace": zien op order-detail, downloadbaar.
+
+**Wat:**
+- **[Mig 304](../supabase/migrations/304_hst_vrachtbrief_pdf.sql):**
+  - `hst_transportorders.pdf_path TEXT` + `pdf_uploaded_at TIMESTAMPTZ` — single source of truth voor de PDF-locatie + tijdstip.
+  - `markeer_hst_verstuurd`-signature uitgebreid met `p_pdf_path TEXT DEFAULT NULL, p_pdf_uploaded_at TIMESTAMPTZ DEFAULT NULL` (backwards-compatible).
+  - Trigger `fn_hst_pdf_naar_order_documenten` (AFTER INSERT/UPDATE OF pdf_path) → spiegelt automatisch één rij naar `order_documenten` voor de primaire order van de zending, met `bestandsnaam = 'HST-vrachtbrief-{zending_nr}.pdf'`, `omschrijving = 'HST vrachtbrief — OrderNumber T75...'`. Idempotent via `ON CONFLICT (storage_path) DO NOTHING`.
+- **[`hst-send/index.ts`](../supabase/functions/hst-send/index.ts):** na succesvolle POST decoder de base64-PDF, uploadt naar `order-documenten/hst-vrachtbrieven/{zending_nr}.pdf` (bucket uit mig 178, hergebruik), geeft pad mee aan `markeer_hst_verstuurd`. Helper `uploadPdf` is best-effort — een mislukte upload mag het HST-succes niet ongedaan maken (POST is al gelukt; we loggen en gaan door).
+- **Nul UI-werk**: `<DocumentenCompact kind="order" parentId={order.id} />` op [order-detail.tsx](../frontend/src/pages/orders/order-detail.tsx) leest al `order_documenten` en biedt download via bestaande `getDocumentSignedUrl`-helper. De vrachtbrief verschijnt dus automatisch in de bestaande documenten-widget, naast eventuele user-uploads (klant-PO, etc.).
+
+**Scope-keuze:** V1 koppelt aan **één** order per zending (de primaire — meest voorkomend, 1-op-1). Voor bundle-zendingen (mig 222) ziet alleen de primary order de PDF in DocumentenCompact; andere bundle-orders bereiken 'm via de zending-pagina. Bundle-fan-out = V2-backlog. Reden: `order_documenten.storage_path UNIQUE` blokkeert duplicate-koppeling — die globale uniqueness niet doorbreken voor één edge case.
+
+**Toepassen:** mig 304 handmatig in Supabase Studio + edge function deployen (`npx supabase functions deploy hst-send`).
+
+## 2026-05-27 — HST-koppeling: SSCC-koppeling per colli + depotnummer op shipping-label
+
+**Waarom:** Na de Fase-0 rondreis was duidelijk dat HST onze sticker scant en daar via de barcode aan hun TransportOrder (`OrderNumber=T75...`) moet koppelen. De eerste builder-versie stuurde één aggregate-regel met **lege** `BarCode` — dan kan HST's scanner ons label nergens aan matchen en blijft de Karpi-Zebra-label een losse "papierprint" die niets traceert. Tegelijk eist Thom ten Brinke (HST, 2026-02-26) een **scanbare barcode + depotnummer rechtsboven** op het label.
+
+**Wat:**
+- **Builder per-colli i.p.v. aggregate** ([`payload-builder.ts`](../supabase/functions/hst-send/payload-builder.ts)): één `TransportOrderLines`-entry per `zending_colli`-rij, elk met `Quantity=1`, eigen `Weight`, `GoodsDescription` uit `omschrijving_snapshot` en `BarCode={ BarCode: "00${sscc}" }` (GS1 AI(00) prefix + 18-cijferige SSCC). Top-level `HasBarcode: true` vertelt HST dat wij de labels printen. Fallback naar aggregate-regel + `HasBarcode: false` als er onverwacht geen colli's zijn — defensief, niet de happy path.
+- **Edge function guard** ([`hst-send/index.ts`](../supabase/functions/hst-send/index.ts)): nieuwe `zending_colli`-query vóór `bouwTransportOrderPayload`. Géén colli's → `markeer_hst_fout` met expliciete reden (geen POST gedaan); voorkomt onkoppelbare orders bij HST.
+- **Types uitgebreid** ([`types.ts`](../supabase/functions/hst-send/types.ts)): nieuwe `ZendingColliInput` + optionele `HasBarcode` op `HstTransportOrderPayload`.
+- **Tests bijgewerkt** ([`payload-builder.test.ts`](../supabase/functions/hst-send/payload-builder.test.ts)): per-colli happy path, lege-colli fallback, lege-adres edge case, `splitAdres`. 4/4 groen.
+- **Zebra-label rechtsboven** ([`shipping-label.tsx`](../frontend/src/modules/logistiek/components/shipping-label.tsx)): conditional — toon `zending.track_trace` (HST's OrderNumber, bv. `T75038267000180`) als depotnummer in monospace + bold; alleen voor zendingen die al een track_trace hebben (= HST-zendingen ná markeer_hst_verstuurd). Voor andere vervoerders blijft "7122 LB Aalten" zoals nu.
+
+**Flow-volgorde** (bevestigd, geen migratie nodig): `start_pickronden_unified` (mig 248) → `genereer_zending_colli` (mig 209/213) — colli's bestaan dus altijd vóór de status-flip naar "Klaar voor verzending" en de daaropvolgende HST-trigger. De edge-function guard is defense-in-depth voor edge cases zoals direct-aangemaakte zendingen die de pickronde overslaan.
+
+**Print-volgorde implicatie:** Karpi-Zebra-label hoort **na** de HST-respons geprint te worden zodat het depotnummer ingevuld is. Pickronde-flow doet dat al impliciet (post is een seconde-werk via cron). Bij herprint vóór HST-respons komt er gewoon "7122 LB Aalten" rechtsboven — geen blocker, maar minder optimaal voor de chauffeur.
+
+## 2026-05-27 — HST-koppeling Fase 0 voltooid: live rondreis tegen ACCP geslaagd
+
+**Waarom:** De `hst-send` edge function + payload-builder waren in 2026-05-01 gebouwd op basis van een *placeholder*-payload — een redelijke gok bij gebrek aan de werkelijke HST OpenAPI-shape. Plan-document markeerde Fase 0 (live curl-rondreis tegen ACCP-omgeving) als blokkerend voor verdere uitrol. Op 2026-05-27 leverde Niek Zandvoort (HST) nieuwe ACCP-credentials (`karpi_api_user` / CustomerID `038267`) + een echt voorbeeld-request via mail.
+
+**Wat:**
+- **Live rondreis geslaagd**: POST `https://accp.hstonline.nl/rest/api/v1/TransportOrder` met het door HST aangeleverde voorbeeld-payload → **HTTP 201**, response `{ Success: true, OrderNumber: "T75038267000180", PDFDocument.Contents: <base64-PDF ~14KB> }`. Daarmee zijn endpoint, credentials én happy-path bevestigd.
+- **Werkelijke HST-shape verschilt fundamenteel** van onze placeholder: PascalCase, `TransportOrderLines[]` (per regel `Length/Width/Height/Weight/PackageUnitID`), `ToAddress`/`FromAddress` (met `Street`/`StreetNumber`/`StreetNumberAddition` apart), `ShippingServices[]`, top-level `CustomerID`. Response gebruikt `OrderNumber` als tracking-veld (geen `transportOrderId`/`trackingNumber`).
+- **Verticale slice herschreven** naar werkelijke shape:
+  - [`types.ts`](../supabase/functions/hst-send/types.ts) — `HstTransportOrderPayload`, `HstAddress`, `HstTransportOrderLine`, `HstShippingService`, `HstTransportOrderResponseBody` in PascalCase + optionele velden uit OpenAPI (PickupDate/Douane/WhoNumber/etc.) als toekomst-uitbreiding.
+  - [`payload-builder.ts`](../supabase/functions/hst-send/payload-builder.ts) — bouwt nieuwe shape uit `ZendingInput`/`OrderInput`/`BedrijfInput`. Nieuwe `splitAdres` helper splitst "Tweede Broekdijk 10 A" → `{ Street, StreetNumber, StreetNumberAddition }`. Defaults voor velden die V1 nog niet heeft (pallet-afmetingen, `OrderType=DELIVERY_LARGE`, `ShippingServiceID=FFBL`, `PackageUnitID=SP`, `GoodsDescription=Tapijten`) bovenaan als constant — vervangen zodra Pick & Ship per-zending afmetingen levert.
+  - [`hst-client.ts`](../supabase/functions/hst-send/hst-client.ts) — `OrderNumber`-extractie i.p.v. `transportOrderId`-gok. PDF-base64 wordt **gestript** uit `response_payload` vóór DB-opslag (placeholder met char-length), zodat `hst_transportorders`-rijen compact blijven. Echte PDF (vrachtbrief) opslaan in storage komt in fase 2. Defensief `Success=false` → behandeld als foutpad.
+  - [`payload-builder.test.ts`](../supabase/functions/hst-send/payload-builder.test.ts) — 3 nieuwe Deno-tests (happy path, lege afleveradres-fallback, `splitAdres`-cases). Alle 3 groen.
+  - [`fixtures/`](../supabase/functions/hst-send/fixtures/) — echte HST request-fixture (uit mail-bijlage Niek) + response-fixture (uit live call, PDF base64 weggelaten). README beschrijft bekende enum-waarden (`DELIVERY_LARGE`/`FFBL`/`SP`) + nog uit te voeren negative-paden.
+- **`.env.example`** bevat nu de definitieve ACCP-username + CustomerID als comment.
+
+**Niet meer in dit plan-fase:** tweede live test met onze gegenereerde builder-output is voorbereid (`fixtures/example-karpi-generated-request.json`) maar nog niet uitgevoerd — auto-mode classifier vereist expliciete autorisatie voor herhaalde externe POSTs. Operator kan in 1 minuut zelf draaien (zie plan §Fase 0).
+
+**Vervolg:** Fase 1-onwards uit plan ([`2026-05-01-logistiek-hst-api-koppeling.md`](superpowers/plans/2026-05-01-logistiek-hst-api-koppeling.md)) is grotendeels al gebouwd (mig 169-175, frontend logistiek-module). End-to-end test via UI ("Zending aanmaken" → trigger → cron) kan nu met vertrouwen door tegen ACCP-omgeving.
+
+## 2026-05-27 — Order-regel omschrijving: rijke producten-naam behouden + maatwerk klant-eigen naam-lookup
+
+**Waarom:** Bij het toevoegen van een standaard regel werd de rijke `producten.omschrijving` (bv. `"MARICH Kleur 22 CA: 160x230 cm"`) overschreven door de klant-eigen kwaliteitsnaam (bv. `"GENUA"`), waardoor de afmeting in de form verdween. Tegelijk kregen maatwerk-regels nooit de klant-eigen naam in de blauwe sub-tekst (er was geen `fetchKlanteigenNaam`-lookup in `handleAdd`), terwijl standaard regels die wél toonden — inconsistent gedrag tussen beide flows.
+
+**Wat:**
+- [`order-line-editor.tsx`](../frontend/src/components/orders/order-line-editor.tsx#L535) — `omschrijving` blijft voortaan altijd `article.omschrijving` (rijke producten-naam, met afmeting). De klant-eigen naam staat al in `klant_eigen_naam` (display-only) en wordt apart als blauwe sub-tekst gerenderd op de regel — niet meer overschreven.
+- [`kwaliteit-first-selector.tsx`](../frontend/src/modules/maatwerk/components/kwaliteit-first-selector.tsx) — `handleAdd` is nu `async` en doet `fetchKlanteigenNaam(debiteurNr, kwaliteit_code, kleur_code)` zodat de maatwerk-regel óók een `klant_eigen_naam`-veld krijgt (zelfde blauwe sub-tekst als standaard). Tevens: afmeting (`250x180 cm` of `Ø200 cm`) toegevoegd aan de maatwerk-omschrijving zelf, zodat PDF/EDI consistent zijn met standaard-regels die de afmeting al in `producten.omschrijving` hebben.
+
+**Trade-off:** klant-eigen naam wordt momenteel NIET op `order_regels` opgeslagen (alleen `omschrijving`). De oude override stopte de klant-naam in `omschrijving` zodat PDF/EDI 'm zag — die route is nu weg. Bewust geaccepteerd in deze pass; als PDF/EDI alsnog de klant-naam moet tonen volgt een aparte mig met `klant_eigen_naam_snapshot`-kolom op `order_regels`.
+
 ## 2026-05-27 — Tapijt-stickers ook bij standaard-artikelen (per-klant opt-in, mig 303)
 
 **Waarom:** Maatwerk-orders krijgen sinds mig 295/300 een klant-facing tapijt-sticker (148×106mm, met logo + kwaliteit + poolmateriaal + kleur + afmeting + EAN + verzendweek) die tijdens het snijden geprint wordt en op het tapijt geplakt wordt vlak vóór verzending. Een aantal klanten wil diezelfde sticker óók op standaard (niet-maatwerk) catalogus-rollen. Tot nu toe was dat niet mogelijk: bij standaard-artikelen liep er geen snijplan-flow, dus ook geen sticker-print.
