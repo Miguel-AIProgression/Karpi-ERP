@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { CheckCircle } from 'lucide-react'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { formatDate, formatCurrency } from '@/lib/utils/formatters'
 import { verzendWeekVoor, verzendWeekRelatief } from '@/lib/orders/verzendweek'
 import { useMarkeerGeannuleerd } from '@/modules/orders-lifecycle'
 import { LevertijdStatusBadge } from '@/modules/levertijd'
+import { BevestigOrderDialog } from './bevestig-order-dialog'
 import type { OrderDetail } from '@/lib/supabase/queries/orders'
 
 const EINDSTATUSSEN = ['Verzonden', 'Geannuleerd'] as const
@@ -18,6 +20,7 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
   const verzendweek = verzendWeekVoor(order.afleverdatum)
   const relatief = verzendWeekRelatief(order.afleverdatum)
   const [showAnnuleerConfirm, setShowAnnuleerConfirm] = useState(false)
+  const [showBevestigDialog, setShowBevestigDialog] = useState(false)
   const annuleer = useMarkeerGeannuleerd()
 
   const isEindstatus = (EINDSTATUSSEN as readonly string[]).includes(order.status)
@@ -54,7 +57,25 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
             </p>
           )}
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap justify-end">
+          {/* Bevestig order knop */}
+          {order.bevestigd_at ? (
+            <span
+              className="flex items-center gap-1.5 px-3 py-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-[var(--radius-sm)]"
+              title={`Bevestigd op ${formatDate(order.bevestigd_at)}${order.bevestiging_email ? ` → ${order.bevestiging_email}` : ''}`}
+            >
+              <CheckCircle size={14} />
+              Bevestigd
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowBevestigDialog(true)}
+              className="px-4 py-2 text-sm bg-green-600 text-white rounded-[var(--radius-sm)] hover:bg-green-700 font-medium transition-colors"
+            >
+              Bevestig order
+            </button>
+          )}
           {locked ? (
             <span
               className="px-4 py-2 text-sm border border-slate-200 rounded-[var(--radius-sm)] text-slate-400 cursor-not-allowed bg-slate-50"
@@ -146,6 +167,16 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
           <p className="font-medium">{order.totaal_gewicht ? `${order.totaal_gewicht} kg` : '—'}</p>
         </div>
       </div>
+
+      {/* Bevestig-order dialog */}
+      {showBevestigDialog && (
+        <BevestigOrderDialog
+          orderId={order.id}
+          orderNr={order.order_nr}
+          defaultEmail={(order as any).klant_email ?? null}
+          onClose={() => setShowBevestigDialog(false)}
+        />
+      )}
 
       {/* Annuleer bevestiging */}
       {showAnnuleerConfirm && (

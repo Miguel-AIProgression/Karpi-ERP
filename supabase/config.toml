@@ -23,3 +23,9 @@ verify_jwt = false
 
 [functions.parse-klant-po]
 verify_jwt = false
+
+[functions.sync-webshop-order]
+verify_jwt = false
+
+[functions.sync-shopify-order]
+verify_jwt = false

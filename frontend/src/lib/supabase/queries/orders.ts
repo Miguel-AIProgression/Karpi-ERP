@@ -64,6 +64,10 @@ export interface OrderDetail extends OrderRow {
    *  pick-horizon + snij-prioriteit). */
   lever_type: 'week' | 'datum'
   verzonden_at: string | null
+  bevestigd_at: string | null
+  bevestigd_door: string | null
+  bevestiging_email: string | null
+  klant_email: string | null
 }
 
 export interface OrderRegelSnijplan {
@@ -299,12 +303,13 @@ export async function fetchOrderDetail(id: number): Promise<OrderDetail> {
   if (order.debiteur_nr) {
     const { data: deb } = await supabase
       .from('debiteuren')
-      .select('naam, vertegenw_code')
+      .select('naam, vertegenw_code, email_factuur, email')
       .eq('debiteur_nr', order.debiteur_nr)
       .single()
     if (deb) {
       klant_naam = deb.naam
       klant_vertegenw_code = deb.vertegenw_code
+      ;(order as Record<string, unknown>).klant_email = deb.email_factuur ?? deb.email ?? null
     }
   }
 
@@ -334,7 +339,7 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
 
   const { data, error } = await supabase
     .from('order_regels')
-    .select('id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2, orderaantal, te_leveren, backorder, prijs, korting_pct, bedrag, gewicht_kg, vrije_voorraad, fysiek_artikelnr, omstickeren, is_maatwerk, maatwerk_vorm, maatwerk_lengte_cm, maatwerk_breedte_cm, maatwerk_diameter_cm, maatwerk_afwerking, maatwerk_band_kleur, maatwerk_instructies, maatwerk_m2_prijs, maatwerk_oppervlak_m2, maatwerk_vorm_toeslag, maatwerk_afwerking_prijs, producten!order_regels_artikelnr_fkey(kwaliteit_code, kleur_code, is_pseudo)')
+    .select('id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2, orderaantal, te_leveren, backorder, prijs, korting_pct, bedrag, gewicht_kg, vrije_voorraad, fysiek_artikelnr, omstickeren, is_maatwerk, maatwerk_vorm, maatwerk_lengte_cm, maatwerk_breedte_cm, maatwerk_diameter_cm, maatwerk_afwerking, maatwerk_band_kleur, maatwerk_instructies, maatwerk_m2_prijs, maatwerk_oppervlak_m2, maatwerk_vorm_toeslag, maatwerk_afwerking_prijs, producten!order_regels_artikelnr_fkey(kwaliteit_code, kleur_code, is_pseudo, karpi_code)')
     .eq('order_id', orderId)
     .order('regelnummer')
 
@@ -352,7 +357,7 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
   ): OrderRegel {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const row = r as any
-    const product = row.producten as { kwaliteit_code: string; kleur_code: string | null; is_pseudo: boolean | null } | null
+    const product = row.producten as { kwaliteit_code: string; kleur_code: string | null; is_pseudo: boolean | null; karpi_code: string | null } | null
     const kwalCode = product?.kwaliteit_code ?? null
     const kleurCode = product?.kleur_code ?? null
     const isPseudo = product?.is_pseudo === true
@@ -369,7 +374,7 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
       id: row.id,
       regelnummer: row.regelnummer,
       artikelnr: row.artikelnr,
-      karpi_code: row.karpi_code,
+      karpi_code: row.karpi_code ?? product?.karpi_code ?? null,
       omschrijving: row.omschrijving,
       omschrijving_2: row.omschrijving_2,
       orderaantal: row.orderaantal,

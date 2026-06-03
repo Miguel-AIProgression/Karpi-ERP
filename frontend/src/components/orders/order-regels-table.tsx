@@ -137,7 +137,7 @@ function SubRowTr({ sub }: { sub: SubRow }) {
   return (
     <tr className={`border-b border-slate-50 ${TONE_BG[sub.tone]}`}>
       <td className="px-4 py-1.5"></td>
-      <td colSpan={2} className="px-4 py-1.5 text-xs">
+      <td colSpan={3} className="px-4 py-1.5 text-xs">
         <span className="inline-flex items-center gap-2 pl-3 border-l-2 border-slate-200">
           {sub.label}
         </span>
@@ -181,14 +181,14 @@ function RegelRow({ regel, levertijd, claims, isEindstatus }: RegelRowProps) {
           ) : (
             '—'
           )}
-          {regel.karpi_code && (
-            <span className="block text-xs text-slate-400">{regel.karpi_code}</span>
-          )}
           {regel.klant_artikelnr && (
             <span className="block text-xs text-blue-500" title="Klant artikelnr">
               {regel.klant_artikelnr}
             </span>
           )}
+        </td>
+        <td className="px-4 py-2 font-mono text-xs text-slate-500">
+          {regel.karpi_code ?? '—'}
         </td>
         <td className="px-4 py-2">
           {regel.omschrijving}
@@ -227,7 +227,7 @@ function RegelRow({ regel, levertijd, claims, isEindstatus }: RegelRowProps) {
       </tr>
       {regel.is_maatwerk && (
         <tr className="border-b border-slate-50 bg-purple-50/30">
-          <td colSpan={10} className="px-4 py-2">
+          <td colSpan={11} className="px-4 py-2">
             <div className="flex flex-wrap items-center gap-3 text-xs">
               <span className="inline-flex items-center gap-1 text-purple-600 font-medium">
                 <Scissors size={12} />
@@ -325,6 +325,7 @@ export function OrderRegelsTable({ regels, isLoading, levertijden, claims, order
             <tr className="border-b border-slate-100 bg-slate-50">
               <th className="text-left px-4 py-2 font-medium text-slate-600">#</th>
               <th className="text-left px-4 py-2 font-medium text-slate-600">Artikel</th>
+              <th className="text-left px-4 py-2 font-medium text-slate-600">Karpi code</th>
               <th className="text-left px-4 py-2 font-medium text-slate-600">Omschrijving</th>
               <th className="text-right px-4 py-2 font-medium text-slate-600">Aantal</th>
               <th className="text-right px-4 py-2 font-medium text-slate-600">Te leveren</th>
@@ -348,7 +349,7 @@ export function OrderRegelsTable({ regels, isLoading, levertijden, claims, order
           </tbody>
           <tfoot>
             <tr className="bg-slate-50 font-medium">
-              <td colSpan={9} className="px-4 py-2 text-right text-slate-600">
+              <td colSpan={10} className="px-4 py-2 text-right text-slate-600">
                 Totaal
               </td>
               <td className="px-4 py-2 text-right">
