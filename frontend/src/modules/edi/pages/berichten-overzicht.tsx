@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { Search, ArrowDownCircle, ArrowUpCircle, AlertCircle, Beaker, Trash2, Upload } from 'lucide-react'
+import { Search, ArrowDownCircle, ArrowUpCircle, AlertCircle, Beaker, Trash2, Upload, Link2 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { useEdiBerichten } from '@/modules/edi/hooks/use-edi'
 import { DemoBerichtDialog } from '@/modules/edi/components/demo-bericht-dialog'
@@ -35,6 +35,7 @@ export function EdiBerichtenOverzichtPage() {
   const [richtingFilter, setRichtingFilter] = useState<'alle' | EdiRichting>('alle')
   const [statusFilter, setStatusFilter] = useState<'alle' | EdiBerichtStatus>('alle')
   const [typeFilter, setTypeFilter] = useState<'alle' | EdiBerichtType>('alle')
+  const [alleenTeKoppelen, setAlleenTeKoppelen] = useState(false)
   const [demoOpen, setDemoOpen] = useState(false)
   const [uploadOpen, setUploadOpen] = useState(false)
   const [opruimBusy, setOpruimBusy] = useState(false)
@@ -80,22 +81,26 @@ export function EdiBerichtenOverzichtPage() {
 
   const gefilterd = useMemo(() => {
     const q = zoekterm.trim().toLowerCase()
-    if (!q) return berichten
-    return berichten.filter((b) =>
-      (b.transactie_id ?? '').toLowerCase().includes(q) ||
-      (b.klant_naam ?? '').toLowerCase().includes(q) ||
-      (b.order_nr ?? '').toLowerCase().includes(q) ||
-      (b.factuur_nr ?? '').toLowerCase().includes(q),
-    )
-  }, [berichten, zoekterm])
+    return berichten.filter((b) => {
+      if (alleenTeKoppelen && !isTeKoppelen(b)) return false
+      if (!q) return true
+      return (
+        (b.transactie_id ?? '').toLowerCase().includes(q) ||
+        (b.klant_naam ?? '').toLowerCase().includes(q) ||
+        (b.order_nr ?? '').toLowerCase().includes(q) ||
+        (b.factuur_nr ?? '').toLowerCase().includes(q)
+      )
+    })
+  }, [berichten, zoekterm, alleenTeKoppelen])
 
   const aantalFout = berichten.filter((b) => b.status === 'Fout').length
+  const aantalTeKoppelen = berichten.filter(isTeKoppelen).length
 
   return (
     <>
       <PageHeader
         title="EDI-berichten"
-        description={`${gefilterd.length} berichten${aantalFout ? ` — ${aantalFout} met fout` : ''}`}
+        description={`${gefilterd.length} berichten${aantalFout ? ` — ${aantalFout} met fout` : ''}${aantalTeKoppelen ? ` — ${aantalTeKoppelen} te koppelen` : ''}`}
         actions={
           <div className="flex items-center gap-2">
             <button
@@ -172,6 +177,25 @@ export function EdiBerichtenOverzichtPage() {
             <option key={s} value={s}>{s}</option>
           ))}
         </select>
+
+        <button
+          onClick={() => setAlleenTeKoppelen((v) => !v)}
+          className={cn(
+            'py-2 px-3 rounded-[var(--radius-sm)] border text-sm font-medium inline-flex items-center gap-2',
+            alleenTeKoppelen
+              ? 'border-amber-300 bg-amber-100 text-amber-800'
+              : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50',
+          )}
+          title="Toon alleen inkomende orders die nog aan een debiteur/vestiging gekoppeld moeten worden"
+        >
+          <Link2 size={14} />
+          Te koppelen
+          {aantalTeKoppelen > 0 && (
+            <span className="ml-1 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-white text-[11px] font-semibold">
+              {aantalTeKoppelen}
+            </span>
+          )}
+        </button>
       </div>
 
       {/* Tabel */}
@@ -242,6 +266,15 @@ export function EdiBerichtenOverzichtPage() {
                         {b.status === 'Fout' && <AlertCircle size={12} className="mr-1" />}
                         {b.status}
                       </span>
+                      {isTeKoppelen(b) && (
+                        <Link
+                          to={`/edi/berichten/${b.id}`}
+                          className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-medium hover:bg-amber-200"
+                          title="Nog geen order — koppel debiteur/vestiging"
+                        >
+                          <Link2 size={11} /> Te koppelen
+                        </Link>
+                      )}
                       {b.retry_count > 0 && (
                         <span className="ml-2 text-xs text-slate-500">×{b.retry_count}</span>
                       )}
@@ -258,6 +291,15 @@ export function EdiBerichtenOverzichtPage() {
       </div>
     </>
   )
+}
+
+/**
+ * "Te koppelen" = inkomende order die (nog) geen order werd. Filtert op
+ * order_id IS NULL i.p.v. status, want de poll laat de status soms op 'Verwerkt'
+ * staan terwijl order-creatie faalde (geen GLN-match).
+ */
+function isTeKoppelen(b: { richting: EdiRichting; berichttype: EdiBerichtType; order_id: number | null }): boolean {
+  return b.richting === 'in' && b.berichttype === 'order' && b.order_id == null
 }
 
 function formatDateTime(iso: string): string {

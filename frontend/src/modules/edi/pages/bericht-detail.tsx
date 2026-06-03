@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { useEdiBericht } from '@/modules/edi/hooks/use-edi'
+import { KoppelVestigingWidget } from '@/modules/edi/components/koppel-vestiging-widget'
 import { bevestigOrderViaEdi } from '@/modules/edi/lib/bevestig-helper'
 import { downloadOrderbevAlsXml } from '@/modules/edi/lib/download-orderbev-xml'
 import type { KarpiOrder } from '@/modules/edi/lib/karpi-fixed-width'
@@ -206,18 +207,14 @@ export function EdiBerichtDetailPage() {
         <MetaCell label="Retry">{bericht.retry_count}</MetaCell>
       </div>
 
-      {/* Inkomende order zonder klant-koppeling */}
+      {/* Inkomende order zonder klant-koppeling → bootstrap-koppel-widget */}
       {isInkomendeOrder && !bericht.debiteur_nr && (
-        <div className="mb-6 p-4 rounded-[var(--radius)] border border-amber-200 bg-amber-50">
-          <div className="font-medium text-amber-800 mb-1 flex items-center gap-2">
-            <AlertCircle size={16} /> Geen debiteur gekoppeld
-          </div>
-          <p className="text-xs text-amber-700">
-            De GLN's in dit bericht matchen niet met een bestaande debiteur. Voeg het GLN
-            toe aan de debiteur via Klanten → klant-detail → veld <code>gln_bedrijf</code>,
-            en herhaal de demo. Order-creatie is voor dit bericht overgeslagen.
-          </p>
-        </div>
+        <KoppelVestigingWidget
+          berichtId={bericht.id}
+          glnAfleveradres={headerGln(bericht.payload_parsed, 'gln_afleveradres')}
+          glnBesteller={headerGln(bericht.payload_parsed, 'gln_besteller')}
+          glnGefactureerd={headerGln(bericht.payload_parsed, 'gln_gefactureerd')}
+        />
       )}
 
       {isInkomendeOrder && bericht.debiteur_nr && !heeftOrder && (
@@ -308,6 +305,15 @@ function formatDateTime(iso: string): string {
   const d = new Date(iso)
   return d.toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric' })
     + ' ' + d.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}
+
+function headerGln(
+  payload: Record<string, unknown> | null,
+  veld: 'gln_afleveradres' | 'gln_besteller' | 'gln_gefactureerd',
+): string | null {
+  const header = (payload?.header ?? null) as Record<string, unknown> | null
+  const val = header?.[veld]
+  return typeof val === 'string' && val !== '' ? val : null
 }
 
 function labelType(t: string): string {

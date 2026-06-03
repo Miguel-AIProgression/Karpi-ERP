@@ -213,6 +213,60 @@ export async function fetchEdiPartners(): Promise<EdiPartnerRow[]> {
     )
 }
 
+export interface KoppelDebiteurOptie {
+  debiteur_nr: number
+  naam: string
+  plaats: string | null
+  status: string
+}
+
+/**
+ * Lichte debiteur-zoekopdracht voor de EDI-koppel-widget. Zoekt op naam of
+ * debiteur_nr; alleen actieve debiteuren (centraal-gefactureerde filiaalorders
+ * horen op de actieve hoofd-debiteur, niet op een inactieve AG).
+ */
+export async function fetchDebiteurenVoorKoppeling(zoek: string): Promise<KoppelDebiteurOptie[]> {
+  const term = zoek.trim()
+  let q = supabase
+    .from('debiteuren')
+    .select('debiteur_nr, naam, plaats, status')
+    .eq('status', 'Actief')
+    .order('naam')
+    .limit(25)
+
+  if (term) {
+    const num = Number(term)
+    if (Number.isInteger(num) && num > 0) {
+      q = q.or(`naam.ilike.%${term}%,debiteur_nr.eq.${num}`)
+    } else {
+      q = q.ilike('naam', `%${term}%`)
+    }
+  }
+
+  const { data, error } = await q
+  if (error) throw error
+  return (data ?? []) as KoppelDebiteurOptie[]
+}
+
+/**
+ * Bootstrap-koppeling: koppel een inkomende order met onbekende aflever-GLN aan
+ * een afleveradres. De RPC onthoudt de GLN op het adres en maakt de order aan.
+ * Returnt het order_id.
+ */
+export async function koppelEdiAfleveradres(
+  berichtId: number,
+  debiteurNr: number,
+  afleveradresId: number,
+): Promise<number> {
+  const { data, error } = await supabase.rpc('koppel_edi_afleveradres', {
+    p_bericht_id: berichtId,
+    p_debiteur_nr: debiteurNr,
+    p_afleveradres_id: afleveradresId,
+  })
+  if (error) throw error
+  return data as number
+}
+
 export interface OpruimResult {
   verwijderde_orders: number
   verwijderde_berichten: number

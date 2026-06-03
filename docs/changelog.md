@@ -1,5 +1,16 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-03 — EDI bootstrap-koppeling vestiging (centrale facturatie + filiaal-levering)
+
+**Waarom:** De eerste 4 echte Hornbach-orders na de EDI-cutover (id 17-20) werden geen order — `order_id IS NULL`, *"Geen debiteur gematcht op GLN"*. Oorzaak: centraal gefactureerd aan de **inactieve** hoofd-AG (361214) terwijl besteller/aflever-GLN per order een **NL-vestiging** is die nergens in de data stond. Correcte boeking = actieve NL-debiteur **361208** + de specifieke vestiging.
+
+**Wat (Optie B — bootstrap, vestiging-GLN wordt onthouden → daarna automatisch):**
+- **`matchDebiteur`** ([`transus-poll/index.ts`](../supabase/functions/transus-poll/index.ts)) herordend naar **meest-specifiek-eerst**: aflever-GLN → `afleveradressen`, besteller-GLN → `afleveradressen`, besteller/gefactureerd-GLN → `debiteuren.gln_bedrijf`. **Inactieve debiteuren overgeslagen** (geen Hornbach op 361214). Matching tolerant voor `.0`-import-artefact (`gln` én `gln.0`).
+- **Mig 306** — RPC `koppel_edi_afleveradres(p_bericht_id, p_debiteur_nr, p_afleveradres_id)`: schrijft aflever-GLN naar het gekozen afleveradres (onthouden, guard tegen dubbel-koppelen), zet `edi_berichten.debiteur_nr`, roept `create_edi_order` aan. Idempotent.
+- **Frontend:** gele koppel-widget op bericht-detail ([`koppel-vestiging-widget.tsx`](../frontend/src/modules/edi/components/koppel-vestiging-widget.tsx)) — onbekende GLN's + zoekbare debiteur-select + afleveradres-select → "Koppel vestiging + maak order". Overzicht-filter/-badge **"Te koppelen"** (`order_id IS NULL`, niet op status).
+- **Docs:** bedrijfsregel in CLAUDE.md, §C-actie + dagboekregel in [`edi-logboek.md`](runbooks/edi-logboek.md).
+- Vestiging-mapping (uit Transus-portaal): …208=Nieuwerkerk · …130=Wateringen · …109=Zaandam · …222=Best.
+
 ## 2026-06-03 — Voorraad-update vaste maten uit `Voorraadlijst 01-6-2026.xls` (2e ronde)
 
 **Waarom:** Tweede periodieke vrije-voorraad-update van Karpi (na 29-5). Zelfde afspraken als de 1e ronde, maar met één noodzakelijke correctie op de uitsluitlijst.

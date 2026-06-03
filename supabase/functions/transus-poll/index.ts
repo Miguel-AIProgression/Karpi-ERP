@@ -164,6 +164,7 @@ async function handleMessage(
     supabase,
     parsed.header.gln_gefactureerd,
     parsed.header.gln_besteller,
+    parsed.header.gln_afleveradres,
   );
 
   // Raw payload eerst durabel opslaan (audit-trail) — ongeacht of order-creatie lukt.
@@ -183,7 +184,7 @@ async function handleMessage(
   let orderId: number | null = null;
   let createError: string | null = null;
   if (debiteurNr === null) {
-    createError = 'Geen debiteur gematcht op GLN (gefactureerd/besteller) — order niet aangemaakt';
+    createError = 'Geen debiteur gematcht op GLN (aflever/besteller/gefactureerd) — order niet aangemaakt';
   } else {
     try {
       orderId = await createEdiOrder(supabase, berichtId, parsed, debiteurNr);
@@ -291,21 +292,58 @@ async function confirmAndMark(
   return null;
 }
 
+// Koppel een inkomende order aan een debiteur op basis van de GLN's in de header.
+//
+// Volgorde = meest-specifiek-eerst, zodat centraal-gefactureerde filiaalorders
+// (Hornbach-patroon: gefactureerd = inactieve hoofd-AG, besteller/aflever = de
+// fysieke NL-vestiging) op de juiste actieve debiteur + vestiging landen:
+//   1. aflever-GLN   → afleveradressen.gln_afleveradres  (vestiging "onthouden" via bootstrap)
+//   2. besteller-GLN → afleveradressen.gln_afleveradres
+//   3. besteller-GLN → debiteuren.gln_bedrijf
+//   4. gefactureerd-GLN → debiteuren.gln_bedrijf  (laatste redmiddel)
+// Inactieve debiteuren worden bij de debiteur-lookups overgeslagen — anders zou
+// Hornbach op de inactieve hoofd-debiteur (361214) belanden i.p.v. de actieve NL
+// (361208). Onbekende vestiging-GLN's → null → operator koppelt handmatig via
+// `koppel_edi_afleveradres` (mig 306), waarna stap 1 de volgende order auto-matcht.
 async function matchDebiteur(
   supabase: ReturnType<typeof createClient>,
   glnGefactureerd: string | null,
   glnBesteller: string | null,
+  glnAfleveradres: string | null,
 ): Promise<number | null> {
-  const candidates = [glnGefactureerd, glnBesteller].filter((v): v is string => !!v);
-  for (const gln of candidates) {
+  // GLN's in de DB kunnen een trailing ".0" hebben (Excel-import-artefact);
+  // match daarom tolerant op beide vormen.
+  const variants = (gln: string | null): string[] => (gln ? [gln, `${gln}.0`] : []);
+
+  // 1+2: aflever- en besteller-GLN → specifiek afleveradres
+  for (const gln of [glnAfleveradres, glnBesteller]) {
+    const vs = variants(gln);
+    if (vs.length === 0) continue;
     const { data } = await supabase
-      .from('debiteuren')
+      .from('afleveradressen')
       .select('debiteur_nr')
-      .eq('gln_bedrijf', gln)
+      .in('gln_afleveradres', vs)
+      .order('debiteur_nr')
       .limit(1)
       .maybeSingle();
     if (data?.debiteur_nr) return data.debiteur_nr;
   }
+
+  // 3+4: besteller- en gefactureerd-GLN → debiteur zelf (inactieve overslaan)
+  for (const gln of [glnBesteller, glnGefactureerd]) {
+    const vs = variants(gln);
+    if (vs.length === 0) continue;
+    const { data } = await supabase
+      .from('debiteuren')
+      .select('debiteur_nr')
+      .in('gln_bedrijf', vs)
+      .neq('status', 'Inactief')
+      .order('debiteur_nr')
+      .limit(1)
+      .maybeSingle();
+    if (data?.debiteur_nr) return data.debiteur_nr;
+  }
+
   return null;
 }
 

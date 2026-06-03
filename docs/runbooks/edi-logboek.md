@@ -49,7 +49,9 @@ WHERE status = 'Fout'
 ORDER BY created_at DESC;
 ```
 Per fout: lees `error_msg`. *"Geen debiteur gematcht op GLN"* → vul
-`debiteuren.gln_bedrijf` aan en herverwerk (zie §C). Payload is altijd bewaard in
+`debiteuren.gln_bedrijf` aan en herverwerk (zie §C). Bij **centraal-gefactureerde
+filiaalorders** (Hornbach: order_id leeg ondanks status `Verwerkt`) → gebruik de
+bootstrap-koppeling (§C "filiaalorder koppelen"). Payload is altijd bewaard in
 `payload_raw` — er gaat nooit een order verloren.
 
 ### A4. Inkomende orders per partner (afgelopen 3 dagen)
@@ -88,7 +90,7 @@ ORDER BY created_at;
 | Datum | Wie | Inkomend OK? | Uitgaand OK? | Fouten / bijzonderheden | Actie |
 |-------|-----|--------------|--------------|--------------------------|-------|
 | 2026-06-03 | — | go-live; nog geen echte partner-order | n.v.t. | test-artefact `tx 249117996` = `Fout` (onschuldig) | watch |
-|  |  |  |  |  |  |
+| 2026-06-03 | Claude | 4 echte Hornbach-orders binnen (id 17-20), `order_id IS NULL` "geen debiteur gematcht" | n.v.t. | centraal gefactureerd (361214 inactief) + filiaal-levering; vestiging-GLN onbekend → bootstrap-koppeling gebouwd (mig 306) | koppel 17-20 via §C "filiaalorder koppelen" |
 |  |  |  |  |  |  |
 
 > Vul per dag één regel in. "Inkomend OK?" = A2/A4 groen. "Uitgaand OK?" = A5 leeg
@@ -111,6 +113,30 @@ UPDATE debiteuren SET gln_bedrijf = '<gln-uit-bericht>' WHERE debiteur_nr = <nr>
 SELECT create_edi_order(<bericht_id>, payload_parsed, <debiteur_nr>)
 FROM edi_berichten WHERE id = <bericht_id>;
 ```
+
+### Centraal-gefactureerde filiaalorder koppelen (Hornbach-patroon)
+Sommige ketens factureren centraal maar laten op filiaal afleveren. De inkomende
+order heeft dan: gefactureerd-GLN = de (vaak **inactieve**) hoofd-AG, en
+besteller/aflever-GLN = de **fysieke vestiging**. Die vestiging-GLN's staan
+in eerste instantie nergens, dus de order valt op *"Geen debiteur gematcht op GLN"*.
+
+**Oplossing = bootstrap-koppeling (mig 306, eenmalig per vestiging):**
+1. Open het bericht onder **EDI → bericht-detail** (of filter op **"Te koppelen"** in het overzicht).
+2. In de gele koppel-widget: kies de **actieve** debiteur (Hornbach NL = **361208**,
+   NIET de inactieve AG 361214) en het juiste **afleveradres (vestiging)**.
+3. Klik **"Koppel vestiging + maak order"**. De RPC `koppel_edi_afleveradres`
+   schrijft de aflever-GLN naar `afleveradressen.gln_afleveradres` (= onthouden),
+   zet de debiteur op het bericht en maakt de order aan.
+4. **Vanaf de volgende order** naar diezelfde vestiging matcht `matchDebiteur`
+   automatisch op stap 1 (aflever-GLN → afleveradres) — geen handwerk meer.
+
+> Achtergrond: `matchDebiteur` (transus-poll) matcht meest-specifiek-eerst —
+> aflever-GLN → afleveradres, dan besteller-GLN → afleveradres, dan
+> besteller/gefactureerd-GLN → `debiteuren.gln_bedrijf` (inactieve debiteuren
+> worden overgeslagen). GLN-matching is tolerant voor het `.0`-import-artefact.
+
+Vestiging-GLN's Hornbach NL (cutover-batch, onthouden via stap 3):
+`8717056697208`=Nieuwerkerk · `8717056697130`=Wateringen · `8717056697109`=Zaandam · `8717056697222`=Best.
 
 ### Handmatig één keer pollen (los van de cron)
 ```bash

@@ -5,9 +5,12 @@ import {
   fetchHandelspartnerConfig,
   upsertHandelspartnerConfig,
   fetchEdiPartners,
+  fetchDebiteurenVoorKoppeling,
+  koppelEdiAfleveradres,
   type EdiBerichtenFilters,
   type EdiHandelspartnerConfig,
 } from '@/modules/edi/queries/edi'
+import { fetchAfleveradressen } from '@/modules/debiteuren/queries/debiteuren'
 
 export function useEdiPartners() {
   return useQuery({
@@ -48,6 +51,33 @@ export function useUpsertHandelspartnerConfig() {
       upsertHandelspartnerConfig(cfg),
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ['edi-handelspartner-config', vars.debiteur_nr] })
+    },
+  })
+}
+
+export function useDebiteurenVoorKoppeling(zoek: string) {
+  return useQuery({
+    queryKey: ['edi-koppel-debiteuren', zoek],
+    queryFn: () => fetchDebiteurenVoorKoppeling(zoek),
+    staleTime: 30_000,
+  })
+}
+
+export function useAfleveradressenVoorKoppeling(debiteurNr: number | undefined) {
+  return useQuery({
+    queryKey: ['edi-koppel-afleveradressen', debiteurNr],
+    queryFn: () => fetchAfleveradressen(debiteurNr!),
+    enabled: !!debiteurNr,
+  })
+}
+
+export function useKoppelEdiAfleveradres() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { berichtId: number; debiteurNr: number; afleveradresId: number }) =>
+      koppelEdiAfleveradres(vars.berichtId, vars.debiteurNr, vars.afleveradresId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['edi-berichten'] })
     },
   })
 }
