@@ -529,10 +529,11 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr,
     const newLine: OrderRegelFormData = {
       artikelnr: article.artikelnr,
       karpi_code: article.karpi_code ?? undefined,
-      // Pre-fill met klant-eigen / inkoopgroep-eigen kwaliteitsnaam zodat
-      // PDF/EDI uitgaand de naam toont die de klant in zijn eigen administratie
-      // gebruikt. Generieke product-omschrijving als fallback. Mig 200.
-      omschrijving: klant_eigen_naam ?? article.omschrijving,
+      // Bewaar de rijke product-omschrijving (incl. afmeting zoals
+      // "MARICH Kleur 22 CA: 160x230 cm"). De klant-eigen kwaliteitsnaam
+      // wordt apart als blauwe sub-tekst getoond én blijft beschikbaar in
+      // `klant_eigen_naam` voor PDF/EDI-uitvoer.
+      omschrijving: article.omschrijving,
       orderaantal: 1,
       te_leveren: 1,
       prijs: prijs ?? undefined,

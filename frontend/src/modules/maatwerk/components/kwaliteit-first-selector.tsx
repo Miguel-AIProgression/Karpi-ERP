@@ -27,6 +27,7 @@ import type { SelectedArticle, SubstitutionInfo } from '@/components/orders/arti
 import { lookupPrice } from '@/lib/supabase/queries/order-mutations'
 import type { OrderRegelFormData } from '@/lib/supabase/queries/order-mutations'
 import type { EquivalentProduct } from '@/lib/supabase/queries/product-equivalents'
+import { fetchKlanteigenNaam } from '@/modules/debiteuren'
 
 type Step = 'kwaliteit' | 'maten' | 'op_maat'
 
@@ -404,16 +405,40 @@ export function KwaliteitFirstSelector({
     setStep('op_maat')
   }
 
-  function handleAdd() {
+  async function handleAdd() {
     if (!canAdd || !selectedKleur || !selectedKwaliteit) return
     const totalRollen = selectedKleur.aantal_rollen + selectedKleur.equiv_rollen
+    // Klant-eigen kwaliteitsnaam ophalen zodat de maatwerk-regel óók de
+    // blauwe sub-tekst krijgt, consistent met standaard regels (handleArticleSelected
+    // in order-form). Stilzwijgend falen — naam ontbreken is geen blocker.
+    let klant_eigen_naam: string | undefined
+    if (debiteurNr) {
+      try {
+        const ken = await fetchKlanteigenNaam(
+          debiteurNr,
+          selectedKwaliteit.code,
+          selectedKleur.kleur_code,
+        )
+        klant_eigen_naam = ken?.benaming
+      } catch (e) {
+        console.warn('[maatwerk klant_eigen_naam lookup faalde]', e)
+      }
+    }
+    // Afmeting in de omschrijving zodat PDF/EDI consistent zijn met standaard
+    // regels (die hebben "CA: 160x230 cm" in producten.omschrijving).
+    const afmetingLabel = isDiameter && vormData.diameterCm
+      ? `Ø${vormData.diameterCm} cm`
+      : (vormData.lengteCm && vormData.breedteCm
+        ? `${vormData.lengteCm}x${vormData.breedteCm} cm`
+        : '')
     // Bij swap: factuur toont bestelde kwaliteit; intern wijst fysiek_artikelnr
     // naar de MAATWERK-artikelref van de uitwisselbare kwaliteit zodat snijplan/
     // voorraadreservering op de juiste rol landt (omstickeer-model).
     const line: OrderRegelFormData = {
       artikelnr: selectedKleur.artikelnr ?? undefined,
       karpi_code: selectedKleur.karpi_code ?? `${selectedKwaliteit.code}${selectedKleur.kleur_code}`,
-      omschrijving: `${selectedKwaliteit.omschrijving ?? selectedKwaliteit.code} ${selectedKleur.kleur_label} - Op maat ${selectedVorm?.naam ?? vormData.vormCode}`,
+      omschrijving: `${selectedKwaliteit.omschrijving ?? selectedKwaliteit.code} ${selectedKleur.kleur_label} - Op maat ${selectedVorm?.naam ?? vormData.vormCode}${afmetingLabel ? ` ${afmetingLabel}` : ''}`,
+      klant_eigen_naam,
       orderaantal: 1,
       te_leveren: 1,
       prijs: oppervlakM2 * effectieveM2Prijs + vormToeslag + afwerkingPrijs,
