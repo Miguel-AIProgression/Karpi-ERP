@@ -1,8 +1,13 @@
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Download, CheckCircle, ExternalLink } from 'lucide-react'
+import { ArrowLeft, Download, CheckCircle, ExternalLink, Send } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { Fragment, useState } from 'react'
-import { useFactuurDetail, useMarkeerBetaald } from '../hooks/use-facturen'
+import {
+  useFactuurDetail,
+  useMarkeerBetaald,
+  useEdiFactuurConfig,
+  useVerstuurFactuurViaEdi,
+} from '../hooks/use-facturen'
 import { FactuurStatusSelect } from '../components/factuur-status-select'
 import { getFactuurPdfSignedUrl, renderFactuurPdfBlobUrl, type FactuurRegel } from '../queries/facturen'
 import { formatCurrency, formatDate } from '@/lib/utils/formatters'
@@ -13,8 +18,11 @@ export function FactuurDetailPage() {
 
   const { data, isLoading } = useFactuurDetail(factuurId)
   const markeerBetaald = useMarkeerBetaald()
+  const ediConfig = useEdiFactuurConfig(data?.factuur.debiteur_nr)
+  const verstuurEdi = useVerstuurFactuurViaEdi()
   const [pdfBezig, setPdfBezig] = useState(false)
   const [pdfFout, setPdfFout] = useState<string | null>(null)
+  const [ediMelding, setEdiMelding] = useState<{ type: 'ok' | 'fout'; tekst: string } | null>(null)
 
   if (isLoading) {
     return (
@@ -62,6 +70,32 @@ export function FactuurDetailPage() {
     markeerBetaald.mutate(factuur.id)
   }
 
+  const aantalOrders = new Set(
+    regels.map((r) => r.order_id).filter((v): v is number => v != null),
+  ).size
+  const isPerOrder = aantalOrders === 1
+  const toonEdiKnop = ediConfig.data?.beschikbaar === true
+
+  function handleVerstuurEdi() {
+    setEdiMelding(null)
+    verstuurEdi.mutate(factuur.id, {
+      onSuccess: (res) => {
+        setEdiMelding({
+          type: 'ok',
+          tekst: res.reedsAanwezig
+            ? `Factuur stond al op de EDI-wachtrij (status ${res.status}).`
+            : 'Factuur op de EDI-wachtrij gezet — wordt binnen een minuut verstuurd.',
+        })
+      },
+      onError: (err) => {
+        setEdiMelding({
+          type: 'fout',
+          tekst: err instanceof Error ? err.message : 'Verzenden via EDI mislukt',
+        })
+      },
+    })
+  }
+
   const isBetaald = factuur.status === 'Betaald'
 
   const heeftAdres = Boolean(factuur.fact_adres || factuur.fact_postcode || factuur.fact_plaats)
@@ -106,6 +140,21 @@ export function FactuurDetailPage() {
               <Download size={15} />
               {pdfLabel}
             </button>
+            {toonEdiKnop && (
+              <button
+                onClick={handleVerstuurEdi}
+                disabled={verstuurEdi.isPending || !isPerOrder}
+                title={
+                  isPerOrder
+                    ? 'Zet deze factuur op de uitgaande EDI-wachtrij (Transus INVOIC)'
+                    : 'EDI-factuur ondersteunt in V1 alleen facturen die één order dekken'
+                }
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <Send size={15} />
+                {verstuurEdi.isPending ? 'Versturen…' : 'Verstuur via EDI'}
+              </button>
+            )}
             <button
               onClick={handleMarkeerBetaald}
               disabled={isBetaald || markeerBetaald.isPending}
@@ -117,6 +166,18 @@ export function FactuurDetailPage() {
           </div>
         }
       />
+
+      {ediMelding && (
+        <div
+          className={`mb-4 px-4 py-3 rounded-[var(--radius-sm)] border text-sm ${
+            ediMelding.type === 'ok'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+              : 'border-red-200 bg-red-50 text-red-700'
+          }`}
+        >
+          {ediMelding.tekst}
+        </div>
+      )}
 
       {/* Info-blok */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-6">

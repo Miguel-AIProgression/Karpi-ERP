@@ -8,6 +8,8 @@ import {
   zetFactuurStatus,
   zetFactuurStatusBulk,
   fetchBundelInfoVoorFactuur,
+  fetchEdiFactuurConfig,
+  verstuurFactuurViaEdi,
   type FactuurStatus,
 } from '../queries/facturen'
 
@@ -65,6 +67,23 @@ export function useZetFactuurStatusBulk() {
   return useMutation({
     mutationFn: ({ ids, status }: { ids: number[]; status: FactuurStatus }) =>
       zetFactuurStatusBulk(ids, status),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['facturen'] }),
+  })
+}
+
+export function useEdiFactuurConfig(debiteurNr: number | undefined) {
+  return useQuery({
+    queryKey: ['edi-factuur-config', debiteurNr],
+    queryFn: () => fetchEdiFactuurConfig(debiteurNr!),
+    enabled: !!debiteurNr,
+    staleTime: 5 * 60_000,
+  })
+}
+
+export function useVerstuurFactuurViaEdi() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: verstuurFactuurViaEdi,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['facturen'] }),
   })
 }

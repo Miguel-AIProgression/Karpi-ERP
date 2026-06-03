@@ -145,7 +145,7 @@ Treffers (bv. `MÃ¶bel` i.p.v. `Möbel`) → encoding-fix nodig in
 | Inkomende orders (M10110 → order) | ✅ Live | `transus-poll` maakt orders aan, ackt via M10300 |
 | Cron poll + send (elke minuut) | ✅ Live | mig 305, jobid 8 + 9 |
 | Orderbevestiging uit (M10100) | ✅ Live (handmatig) | Bevestig-knop → TransusXML; BDSK groen bevonden |
-| **Factuur uit (INVOIC)** | 🔧 In aanbouw | Builder klaar; handmatige knop + enqueue-koppeling volgt. ~10 partners met `factuur_uit=true` |
+| **Factuur uit (INVOIC)** | 🔧 Gebouwd, te deployen | Knop "Verstuur via EDI" op factuur-detail (alleen per-order, alleen `factuur_uit && transus_actief`). Edge function `bouw-factuur-edi` moet nog gedeployed worden. ~10 partners met `factuur_uit=true` |
 | Verzendbericht (DESADV) | ⏳ V2-backlog | Alleen Hornbach NL; `zendingen` mist SSCC/gewicht/tracking |
 | Auto-trigger orderbev/factuur | ⏳ V2-backlog | Nu handmatig; auto-trigger + server-side payload op de backlog |
 | Encoding Duitse leestekens | 👀 Watch | Round-trip groen; verifieer bij eerste echte Duitse order (query in §C) |

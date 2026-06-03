@@ -180,6 +180,56 @@ export async function fetchFacturenVoorOrders(
   return out
 }
 
+export interface EdiFactuurConfig {
+  /** Heeft deze debiteur factuur-uit-via-EDI én Transus actief? */
+  beschikbaar: boolean
+}
+
+/**
+ * Bepaalt of voor deze debiteur een EDI-factuur verstuurd mag worden
+ * (edi_handelspartner_config.factuur_uit && transus_actief).
+ */
+export async function fetchEdiFactuurConfig(debiteurNr: number): Promise<EdiFactuurConfig> {
+  const { data, error } = await supabase
+    .from('edi_handelspartner_config')
+    .select('factuur_uit, transus_actief')
+    .eq('debiteur_nr', debiteurNr)
+    .maybeSingle()
+  if (error) throw error
+  const row = data as { factuur_uit: boolean; transus_actief: boolean } | null
+  return { beschikbaar: Boolean(row?.factuur_uit && row?.transus_actief) }
+}
+
+export interface VerstuurFactuurEdiResult {
+  uitgaandId: number
+  reedsAanwezig: boolean
+  status: string
+}
+
+/**
+ * Zet de factuur op de uitgaande EDI-wachtrij via de edge function
+ * `bouw-factuur-edi`. De cron `transus-send` verstuurt hem daarna via M10100.
+ */
+export async function verstuurFactuurViaEdi(factuurId: number): Promise<VerstuurFactuurEdiResult> {
+  const { data, error } = await supabase.functions.invoke('bouw-factuur-edi', {
+    body: { factuur_id: factuurId },
+  })
+  if (error) {
+    // Edge function geeft 4xx met JSON {error}; haal die boodschap eruit.
+    const ctx = (error as { context?: Response }).context
+    if (ctx && typeof ctx.json === 'function') {
+      try {
+        const body = await ctx.json()
+        throw new Error(body?.error ?? error.message)
+      } catch (e) {
+        if (e instanceof Error && e.message) throw e
+      }
+    }
+    throw error
+  }
+  return data as VerstuurFactuurEdiResult
+}
+
 export async function zetFactuurOpBetaald(id: number): Promise<void> {
   const { error } = await supabase
     .from('facturen').update({ status: 'Betaald' }).eq('id', id)

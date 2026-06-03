@@ -1,5 +1,20 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-03 — EDI factuur-uitgaand (INVOIC) + go-live monitoring-logboek
+
+**Waarom:** Na de big-bang EDI-cutover (2026-06-03) restte één functionele gap:
+facturen automatisch via Transus versturen aan de ~10 partners met `factuur_uit=true`.
+De fixed-width INVOIC-builder bestond al; alleen het pad factuur → uitgaande wachtrij ontbrak.
+
+**Wat:** Plan [`docs/superpowers/plans/2026-06-03-edi-factuur-uitgaand.md`](superpowers/plans/2026-06-03-edi-factuur-uitgaand.md).
+- **Scope V1:** alleen per-order facturen (1 order per factuur). Multi-order/weekly volgt later.
+- **Keuzes (met gebruiker):** handmatige knop (géén DB-trigger op `facturen.status` → bestaande facturatie ongemoeid); payload gebouwd in een **edge function** die de bestaande builder hergebruikt (geen frontend-mirror, DRY); `transus-send` blijft dom (stuurt alleen `payload_raw`).
+- **Pure mapper** [`_shared/transus-formats/factuur-mapper.ts`](../supabase/functions/_shared/transus-formats/factuur-mapper.ts) (`FactuurEdiData → KarpiInvoiceInput`) + Deno-test (8 cases groen: BTW-verlegd 0%, `bes_*`-fallback naar invoicee, missing-GTIN-throw, land→ISO-normalisatie, builder-integratie).
+- **Edge function** [`bouw-factuur-edi`](../supabase/functions/bouw-factuur-edi/index.ts): valideert single-order + `factuur_uit && transus_actief`, haalt factuur/order-partijen/GTIN's op, bouwt INVOIC, idempotente insert in `edi_berichten` (`richting='uit', berichttype='factuur'`, UK op `(berichttype, bron_tabel, bron_id)`).
+- **Frontend:** knop "Verstuur via EDI" op factuur-detail — **alleen zichtbaar** voor debiteuren met `edi_handelspartner_config.factuur_uit && transus_actief` (dubbel afgedwongen: UI verbergt + edge function weigert met 422). Knop disabled bij multi-order factuur.
+- **[Logboek](runbooks/edi-logboek.md):** dag-na-dag go-live monitoring met 5 copy-paste health-check-queries.
+- **⚠️ Te deployen:** `bouw-factuur-edi` moet nog naar Supabase gedeployed worden (met JWT-verificatie aan — wordt door de ingelogde frontend aangeroepen, niet door cron).
+
 ## 2026-05-31 — Voorraad-update vaste maten uit nieuwe vrije-voorraadlijst
 
 **Waarom:** Karpi leverde een verse export `Vorraadlijst 29-5-2026.xls` ("Ovz. vrije voorraad — alle artikelen") om de oude test-/importvoorraad te overschrijven met de actuele stand. Afspraak: alleen de **vrije voorraad** meenemen, backorder + reserveringen op 0.
