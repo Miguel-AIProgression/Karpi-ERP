@@ -15,7 +15,7 @@ import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supa
 
 import { bouwTransportOrderPayload } from './payload-builder.ts';
 import { postTransportOrder } from './hst-client.ts';
-import type { BedrijfInput, OrderInput, ZendingInput } from './types.ts';
+import type { BedrijfInput, OrderInput, ZendingColliInput, ZendingInput } from './types.ts';
 
 const MAX_PER_RUN = 25;
 
@@ -166,12 +166,40 @@ async function verwerkRow(
     return;
   }
 
+  // SSCC-colli's: één rij per fysiek pakket (mig 209). Worden bij pickronde-start
+  // gegenereerd (mig 248). Zonder colli's kunnen we HST geen BarCodes meegeven —
+  // dan kan HST's scanner ons label niet aan deze TransportOrder matchen. Liever
+  // niet POSTen + duidelijke fout dan een onkoppelbare order bij HST.
+  const { data: colliRows, error: colliErr } = await supabase
+    .from('zending_colli')
+    .select('colli_nr, sscc, gewicht_kg, omschrijving_snapshot')
+    .eq('zending_id', row.zending_id)
+    .order('colli_nr', { ascending: true });
+  if (colliErr) {
+    await markFout(supabase, row.id, `zending_colli query fout: ${colliErr.message}`);
+    summary.failed += 1;
+    summary.details.push({ id: row.id, zending_id: row.zending_id, status: 'error', error: 'colli_query_fout' });
+    return;
+  }
+  const colli = (colliRows ?? []) as ZendingColliInput[];
+  if (colli.length === 0) {
+    await markFout(
+      supabase,
+      row.id,
+      `Geen zending_colli voor zending ${row.zending_id}. Pickronde moet genereer_zending_colli aanroepen vóórdat de zending op "Klaar voor verzending" gaat — anders kan HST's scanner ons label niet koppelen.`,
+    );
+    summary.failed += 1;
+    summary.details.push({ id: row.id, zending_id: row.zending_id, status: 'error', error: 'geen_colli' });
+    return;
+  }
+
   // 2. Bouw payload (pure functie).
   const payload = bouwTransportOrderPayload({
     zending: zending as ZendingInput,
     order: order as OrderInput,
     bedrijf: bedrijfRow.waarde as BedrijfInput,
     hstCustomerId: secrets.hstCustomerId,
+    colli,
   });
 
   // 3. POST naar HST.
@@ -184,6 +212,21 @@ async function verwerkRow(
 
   // 4. Markeer succes of fout.
   if (result.ok) {
+    // 4a. Upload PDF naar storage als HST 'm meegaf (best-effort: een mislukte
+    // upload mag het HST-succes niet ongedaan maken — POST is al gelukt).
+    let pdfPath: string | null = null;
+    let pdfUploadedAt: string | null = null;
+    if (result.pdfBase64 && zending.zending_nr) {
+      const path = `hst-vrachtbrieven/${zending.zending_nr}.pdf`;
+      const upErr = await uploadPdf(supabase, path, result.pdfBase64);
+      if (upErr) {
+        console.error(`PDF-upload voor zending ${row.zending_id} faalde: ${upErr}`);
+      } else {
+        pdfPath = path;
+        pdfUploadedAt = new Date().toISOString();
+      }
+    }
+
     summary.succeeded += 1;
     summary.details.push({
       id: row.id,
@@ -199,6 +242,8 @@ async function verwerkRow(
       p_request_payload: payload,
       p_response_payload: result.body,
       p_response_http_code: result.httpCode,
+      p_pdf_path: pdfPath,
+      p_pdf_uploaded_at: pdfUploadedAt,
     });
   } else {
     summary.failed += 1;
@@ -230,6 +275,35 @@ async function markFout(
     p_error: error,
     p_max_retries: 3,
   });
+}
+
+// Upload de PDF (base64-string van HST) naar de order-documenten-bucket.
+// Returnt null bij succes of een error-message-string bij falen. Bewust geen
+// throw — een PDF-upload-fout mag het HST-succes niet ongedaan maken.
+async function uploadPdf(
+  supabase: SupabaseClient,
+  path: string,
+  base64: string,
+): Promise<string | null> {
+  try {
+    const bytes = base64ToBytes(base64);
+    const { error } = await supabase.storage
+      .from('order-documenten')
+      .upload(path, bytes, {
+        contentType: 'application/pdf',
+        upsert: true, // overschrijf bij retry / heruitvoer
+      });
+    return error ? error.message : null;
+  } catch (err) {
+    return `decode/upload-exception: ${String(err)}`;
+  }
+}
+
+function base64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
 }
 
 function jsonResp(body: unknown, status: number): Response {

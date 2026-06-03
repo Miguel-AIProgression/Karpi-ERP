@@ -4,12 +4,16 @@
 // in een uniforme HstResponse-shape teruggeven. Geen retry-logica (die zit
 // in `markeer_hst_fout`-RPC), geen DB-toegang.
 //
-// LET OP veld-paden in de respons-extractie: deze zijn een gok tot Fase 0
-// curl-tests de werkelijke HST-respons-shape vastleggen.
+// Response-shape bevestigd via live test 2026-05-27 (HTTP 201):
+//   { Success: true, OrderNumber: "T75038267000180", PDFDocument: { Contents: "<base64>" } }
 //
-// Plan: docs/superpowers/plans/2026-05-01-logistiek-hst-api-koppeling.md (Task 2.3)
+// Plan: docs/superpowers/plans/2026-05-01-logistiek-hst-api-koppeling.md
 
-import type { HstResponse, HstTransportOrderPayload } from './types.ts';
+import type {
+  HstResponse,
+  HstTransportOrderPayload,
+  HstTransportOrderResponseBody,
+} from './types.ts';
 
 export interface PostTransportOrderArgs {
   baseUrl: string;
@@ -38,14 +42,13 @@ export async function postTransportOrder(
       body: JSON.stringify(payload),
     });
   } catch (err) {
-    // Netwerk-fout vóór HTTP-respons: returneer een synthetische 0-respons
-    // zodat de orchestrator markeer_hst_fout kan bellen met retry.
     return {
       ok: false,
       httpCode: 0,
       body: null,
       transportOrderId: null,
       trackingNumber: null,
+      pdfBase64: null,
       errorMsg: `Netwerkfout: ${String(err)}`,
     };
   }
@@ -68,6 +71,27 @@ export async function postTransportOrder(
       body,
       transportOrderId: null,
       trackingNumber: null,
+      pdfBase64: null,
+      errorMsg: extractErrorMsg(body, res.status),
+    };
+  }
+
+  // HST 201-pad: Success-veld + OrderNumber + optionele PDF.
+  // Splits PDF af zodat we 'm niet onnodig in `response_payload` opslaan
+  // (~14KB base64 per zending zou de hst_transportorders-tabel snel laten groeien).
+  const typed = body as Partial<HstTransportOrderResponseBody> | null;
+  const orderNumber = typed?.OrderNumber ?? null;
+  const pdfBase64 = typed?.PDFDocument?.Contents ?? null;
+
+  // Defensief: HST kan in een edge-case 200 sturen met Success=false.
+  if (typed?.Success === false) {
+    return {
+      ok: false,
+      httpCode: res.status,
+      body: stripPdf(body),
+      transportOrderId: null,
+      trackingNumber: null,
+      pdfBase64: null,
       errorMsg: extractErrorMsg(body, res.status),
     };
   }
@@ -75,11 +99,11 @@ export async function postTransportOrder(
   return {
     ok: true,
     httpCode: res.status,
-    body,
-    // LET OP: pas deze veld-paden aan zodra Fase 0 de werkelijke HST-respons
-    // heeft vastgelegd. Mogelijk: `id`, `orderId`, `transportOrder.id`, etc.
-    transportOrderId: extractTransportOrderId(body),
-    trackingNumber: extractTrackingNumber(body),
+    body: stripPdf(body),
+    transportOrderId: orderNumber,
+    // HST levert (nog) geen apart tracking-nummer; OrderNumber dient als tracking-id.
+    trackingNumber: orderNumber,
+    pdfBase64,
     errorMsg: null,
   };
 }
@@ -88,28 +112,20 @@ function stripTrailingSlash(url: string): string {
   return url.endsWith('/') ? url.slice(0, -1) : url;
 }
 
+// Vervangt PDF-base64 door een placeholder zodat de body compact in de
+// audit-tabel kan staan. Het origineel kan later via een storage-flow
+// (fase 2: vrachtbrief opslaan) bewaard worden.
 // deno-lint-ignore no-explicit-any
-function extractTransportOrderId(body: any): string | null {
-  if (!body || typeof body !== 'object') return null;
-  return (
-    body.transportOrderId ??
-    body.transportOrderID ??
-    body.orderId ??
-    body.id ??
-    null
-  );
-}
-
-// deno-lint-ignore no-explicit-any
-function extractTrackingNumber(body: any): string | null {
-  if (!body || typeof body !== 'object') return null;
-  return (
-    body.trackingNumber ??
-    body.trackingNo ??
-    body.tracking ??
-    body.barcode ??
-    null
-  );
+function stripPdf(body: any): any {
+  if (!body || typeof body !== 'object') return body;
+  if (!body.PDFDocument || typeof body.PDFDocument !== 'object') return body;
+  const len = typeof body.PDFDocument.Contents === 'string'
+    ? body.PDFDocument.Contents.length
+    : 0;
+  return {
+    ...body,
+    PDFDocument: { Contents: `<base64 PDF (${len} chars) niet meegeschreven>` },
+  };
 }
 
 // deno-lint-ignore no-explicit-any
@@ -117,7 +133,9 @@ function extractErrorMsg(body: any, status: number): string {
   if (body && typeof body === 'object') {
     return (
       body.message ??
+      body.Message ??
       body.error ??
+      body.Error ??
       body.detail ??
       body.errorMessage ??
       `HTTP ${status}`

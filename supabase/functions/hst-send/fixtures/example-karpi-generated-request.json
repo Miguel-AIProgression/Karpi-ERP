@@ -1,31 +1,30 @@
 {
-  "CustomerReference": "Karpi Test",
-  "TransportInstruction": "Transport instructie",
+  "CustomerID": "038267",
+  "CustomerReference": "ZEND-2026-TEST",
+  "TransportInstruction": "Test vanaf Karpi RugFlow (payload-builder output)",
   "OrderType": "DELIVERY_LARGE",
   "TransportOrderLines": [
     {
       "Quantity": 1,
       "GoodsOnPallet": 0,
-      "GoodsDescription": "Goederenbeschrijving",
+      "GoodsDescription": "Tapijten (ORD-2026-TEST)",
       "ExchangePacking": false,
       "Length": 120,
       "Width": 80,
       "Height": 20,
-      "Weight": 126,
-      "BarCode": {
-        "BarCode": ""
-      },
+      "Weight": 25,
+      "BarCode": { "BarCode": "" },
       "PackageUnitID": "SP"
     }
   ],
   "ShippingServices": [
     {
       "ShippingServiceID": "FFBL",
-      "ExtraInformation": "0111111111"
+      "ExtraInformation": "ORD-2026-TEST"
     }
   ],
   "ToAddress": {
-    "CustomerCode": "NL1",
+    "CustomerCode": "",
     "Name": "Klaarenbeek interieurs",
     "NameAddition": "",
     "Street": "Koningin Wilhelminaweg",
@@ -33,7 +32,7 @@
     "StreetNumberAddition": "",
     "ZipCode": "1111AA",
     "City": "Diemen",
-    "PhoneNumber": "0123456789",
+    "PhoneNumber": "",
     "Email": "",
     "Country": "NL"
   },
@@ -46,9 +45,8 @@
     "StreetNumberAddition": "",
     "ZipCode": "7122LB",
     "City": "Aalten",
-    "PhoneNumber": "",
-    "Email": "",
+    "PhoneNumber": "+31 (0)543-476116",
+    "Email": "info@karpi.nl",
     "Country": "NL"
-  },
-  "CustomerID": "038267"
+  }
 }

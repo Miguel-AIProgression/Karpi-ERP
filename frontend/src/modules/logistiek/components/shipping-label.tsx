@@ -153,7 +153,7 @@ export function ShippingLabel({
         )}
       </div>
 
-      {/* Rij 1 — rechts: Karpi BV afzender */}
+      {/* Rij 1 — rechts: Karpi BV afzender + vervoerder-depotnummer (HST-eis Thom ten Brinke 2026-02-26) */}
       <div
         style={{
           ...cellBase,
@@ -168,7 +168,11 @@ export function ShippingLabel({
         }}
       >
         <div style={{ fontWeight: 600 }}>Karpi BV</div>
-        <div>7122 LB Aalten</div>
+        {zending.track_trace ? (
+          <div style={{ fontWeight: 700, fontFamily: 'monospace' }}>{zending.track_trace}</div>
+        ) : (
+          <div>7122 LB Aalten</div>
+        )}
         <div style={{ fontSize: '5px', color: '#475569' }}>Z {zending.zending_nr}</div>
       </div>
 

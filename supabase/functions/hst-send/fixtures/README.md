@@ -1,56 +1,61 @@
-# HST fixtures — PLACEHOLDER
+# HST fixtures — werkelijke ACCP-rondreis
 
-> **PLACEHOLDER — vervangen na Fase 0 curl-tests met echte HST acceptatie-omgeving.**
+Bron: live curl-test tegen `https://accp.hstonline.nl/rest/api/v1/TransportOrder`
+op **2026-05-27** met de credentials uit de mail van Niek Zandvoort (HST):
 
-De JSON-bestanden in deze map zijn **niet** afkomstig van een echte HST API-call.
-Ze zijn een redelijke gok op basis van wat een typische REST transport-API verwacht
-en worden alleen gebruikt om de payload-builder en zijn unit-test draaiend te krijgen
-voordat Fase 0 (API-discovery met live HST-credentials) is uitgevoerd.
+```
+Username:   karpi_api_user
+CustomerID: 038267
+```
 
-## Wat moet er gebeuren in Fase 0
+## Request
 
-Zie [`docs/superpowers/plans/2026-05-01-logistiek-hst-api-koppeling.md`](../../../../docs/superpowers/plans/2026-05-01-logistiek-hst-api-koppeling.md)
-sectie "Fase 0 — API-discovery", taken 0.1 t/m 0.3:
+[`example-transportorder-request.json`](./example-transportorder-request.json)
+is het door HST aangeleverde voorbeeldbestand (mail-bijlage 2026-05-27). HST
+gebruikt PascalCase, `TransportOrderLines[]`, `ToAddress`/`FromAddress` (met
+`Street`/`StreetNumber` apart), `ShippingServices[]`, en een top-level
+`CustomerID`.
 
-1. **Task 0.1** — OpenAPI/Swagger uit `https://accp.hstonline.nl/restdoc/rest/api/v1#/`
-   ophalen en in `docs/logistiek/hst-api/openapi.json` zetten.
+### Bekende enum-waarden uit het voorbeeld
 
-2. **Task 0.2** — Live curl tegen ACCP:
+- `OrderType`: `"DELIVERY_LARGE"`
+- `PackageUnitID`: `"SP"` (vermoedelijk single-package / stuk)
+- `ShippingServiceID`: `"FFBL"`
 
-   ```bash
-   curl -X POST 'https://accp.hstonline.nl/rest/api/v1/TransportOrder' \
-     -u 'karpi_array1_api_user:<wachtwoord>' \
-     -H 'Content-Type: application/json' \
-     -d @example-transportorder-request.json \
-     -v
-   ```
+Andere waarden (`DELIVERY_SMALL`, alternatieve `ShippingServiceID`s, etc.) zijn
+nog niet bevestigd — vragen bij HST wanneer Karpi meerdere service-niveaus wil
+ontsluiten.
 
-   Sla de **echte** request op als `example-transportorder-request.json`
-   (overschrijf de placeholder) en de **echte** response als
-   `example-transportorder-response.json`.
+## Response
 
-3. **Task 0.3** — Negative-paden documenteren in `docs/logistiek/hst-api/curl-tests.md`.
+[`example-transportorder-response.json`](./example-transportorder-response.json)
+toont de shape; HST gaf bij de live test **HTTP 201** met:
 
-## Effect op deze codebase
+```json
+{
+  "Success": true,
+  "OrderNumber": "T75038267000180",
+  "PDFDocument": { "Contents": "<base64-PDF van ~14KB>" }
+}
+```
 
-Zodra de echte fixture binnen is:
+- `OrderNumber` is het tracking-/transportorder-id dat in het HST-portaal en op
+  de vrachtbrief verschijnt. Wij slaan dit op in
+  `hst_transportorders.extern_transport_order_id` én promoten het naar
+  `zendingen.track_trace`.
+- `PDFDocument.Contents` is base64-PDF (vrachtbrief/label van HST). V1 logt
+  deze NIET in `response_payload` (zou de DB-rij onnodig opblazen); een
+  optionele storage-flow voor het label komt in fase 2.
 
-- `payload-builder.ts` mogelijk aanpassen (veld-namen, package-type-code,
-  country-format) tot `payload-builder.test.ts` opnieuw groen draait.
-- `types.ts` (`HstTransportOrderPayload`) synchroniseren met de werkelijke shape.
-- `hst-client.ts` `transportOrderId`/`trackingNumber`-extractie aanpassen op de
-  daadwerkelijke response-paden.
+## Negative-paden
 
-## Huidige placeholder-shape (om te corrigeren)
+Nog niet systematisch getest. Vervolg-tasks:
 
-**Request** — gok-shape met `customerId`, `referenceNumber`, `customerReference`,
-`pickupDate`, `shipper{name,address,postalCode,city,country,phone,email}`,
-`consignee{name,address,postalCode,city,country}`, `packages[]{type,quantity,weightKg}`,
-`remarks`.
+1. Foute Basic-auth → verwacht 401.
+2. Lege body → verwacht 400.
+3. Verplicht veld weglaten (bv. `CustomerID`) → welke error-shape?
+4. Onbekende `OrderType`-enum-waarde.
 
-**Response** — gok-shape met `transportOrderId`, `trackingNumber`, `status`, `createdAt`.
-
-HST kan andere veld-namen gebruiken (bv. `Address1` i.p.v. `address`,
-`HouseNumber` apart van straatnaam, `Weight` zonder `Kg`-suffix, `OrderId` of
-`Id` i.p.v. `transportOrderId`). Niets aannemen — alles checken tegen de
-OpenAPI-spec uit Task 0.1.
+Documenteer de resultaten in `docs/logistiek/hst-api/curl-tests.md` (wordt
+later aangelegd; nu nog geen bestand omdat we eerst het happy-path live wilden
+zien).
