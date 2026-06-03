@@ -1,8 +1,14 @@
 // Supabase Edge Function: transus-poll
 //
 // Cron-driven inbox poller voor Transus M10110. Slaat inkomende berichten op in
-// `edi_berichten`, parseert Karpi fixed-width ORDERS en bevestigt ontvangst via
-// M10300. V1 maakt nog geen orders aan; handmatige upload doet dat apart.
+// `edi_berichten`, parseert Karpi fixed-width ORDERS, maakt automatisch een order
+// aan via de idempotente RPC `create_edi_order` en bevestigt ontvangst via M10300.
+//
+// Belangrijk: de raw payload wordt ALTIJD eerst durabel opgeslagen (audit-trail)
+// vóór de ack. Mislukt de order-creatie (bv. geen debiteur-match op GLN), dan
+// ackt de poll alsnog met status 0 — het bericht is veilig bewaard en de operator
+// kan `create_edi_order` opnieuw draaien vanuit de opgeslagen payload. Zo gaat er
+// nooit een order verloren door een NAK/redelivery.
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -27,11 +33,13 @@ interface PollResult {
   processed: number;
   ok: number;
   errors: number;
+  orders_created: number;
   empty_queue: boolean;
   details: Array<{
     transactie_id: string;
-    status: 'ok' | 'parse_error' | 'unknown_type';
+    status: 'ok' | 'parse_error' | 'unknown_type' | 'order_error';
     debiteur_nr?: number;
+    order_id?: number;
     error?: string;
   }>;
 }
@@ -61,6 +69,7 @@ serve(async (req) => {
     processed: 0,
     ok: 0,
     errors: 0,
+    orders_created: 0,
     empty_queue: false,
     details: [],
   };
@@ -90,6 +99,7 @@ serve(async (req) => {
     result.details.push(handled);
     if (handled.status === 'ok') result.ok += 1;
     else result.errors += 1;
+    if (handled.order_id) result.orders_created += 1;
 
     await sleep(SLEEP_BETWEEN_CALLS_MS);
   }
@@ -99,8 +109,9 @@ serve(async (req) => {
 
 interface HandleResult {
   transactie_id: string;
-  status: 'ok' | 'parse_error' | 'unknown_type';
+  status: 'ok' | 'parse_error' | 'unknown_type' | 'order_error';
   debiteur_nr?: number;
+  order_id?: number;
   error?: string;
 }
 
@@ -155,6 +166,7 @@ async function handleMessage(
     parsed.header.gln_besteller,
   );
 
+  // Raw payload eerst durabel opslaan (audit-trail) — ongeacht of order-creatie lukt.
   const berichtId = await logInkomend(supabase, {
     p_transactie_id: transactionId,
     p_berichttype: 'order',
@@ -165,17 +177,59 @@ async function handleMessage(
     p_initial_status: 'Verwerkt',
   });
 
+  // Order automatisch aanmaken via idempotente RPC. Geen debiteur-match → niet
+  // aanmaken (zou een order zonder debiteur opleveren); markeer als Fout zodat de
+  // operator de GLN-mapping kan oplossen en `create_edi_order` opnieuw kan draaien.
+  let orderId: number | null = null;
+  let createError: string | null = null;
+  if (debiteurNr === null) {
+    createError = 'Geen debiteur gematcht op GLN (gefactureerd/besteller) — order niet aangemaakt';
+  } else {
+    try {
+      orderId = await createEdiOrder(supabase, berichtId, parsed, debiteurNr);
+    } catch (err) {
+      createError = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  if (createError) {
+    await supabase
+      .from('edi_berichten')
+      .update({ status: 'Fout', error_msg: createError.slice(0, 250) })
+      .eq('id', berichtId);
+  } else if (orderId !== null) {
+    await supabase.from('edi_berichten').update({ order_id: orderId }).eq('id', berichtId);
+  }
+
+  // Ack altijd met status 0: het bericht is veilig opgeslagen. Een interne
+  // order-creatie-fout is geen reden om Transus te laten herleveren (zou duplicaten
+  // geven; create_edi_order is idempotent maar redelivery is onnodig).
   const ackError = await confirmAndMark(supabase, creds, berichtId, transactionId, 0);
   if (ackError) {
     return {
       transactie_id: transactionId,
       status: 'parse_error',
       debiteur_nr: debiteurNr ?? undefined,
+      order_id: orderId ?? undefined,
       error: ackError,
     };
   }
 
-  return { transactie_id: transactionId, status: 'ok', debiteur_nr: debiteurNr ?? undefined };
+  if (createError) {
+    return {
+      transactie_id: transactionId,
+      status: 'order_error',
+      debiteur_nr: debiteurNr ?? undefined,
+      error: createError,
+    };
+  }
+
+  return {
+    transactie_id: transactionId,
+    status: 'ok',
+    debiteur_nr: debiteurNr ?? undefined,
+    order_id: orderId ?? undefined,
+  };
 }
 
 async function logInkomend(
@@ -191,6 +245,21 @@ async function logInkomend(
   },
 ): Promise<number> {
   const { data, error } = await supabase.rpc('log_edi_inkomend', args);
+  if (error) throw error;
+  return data as number;
+}
+
+async function createEdiOrder(
+  supabase: ReturnType<typeof createClient>,
+  berichtId: number,
+  parsed: unknown,
+  debiteurNr: number,
+): Promise<number> {
+  const { data, error } = await supabase.rpc('create_edi_order', {
+    p_inkomend_bericht_id: berichtId,
+    p_payload_parsed: parsed,
+    p_debiteur_nr: debiteurNr,
+  });
   if (error) throw error;
   return data as number;
 }
