@@ -1,5 +1,15 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-03 — Voorraad-update vaste maten uit `Voorraadlijst 01-6-2026.xls` (2e ronde)
+
+**Waarom:** Tweede periodieke vrije-voorraad-update van Karpi (na 29-5). Zelfde afspraken als de 1e ronde, maar met één noodzakelijke correctie op de uitsluitlijst.
+
+**Wat:** Script [`import/update_voorraad_2026_06_01.py`](../import/update_voorraad_2026_06_01.py) (dry-run default, `--commit` schrijft). Gekopieerd van de 29-5-versie met één wijziging.
+- **Uitsluitlijst groeit nu echt (union i.p.v. overschrijven):** de 29-5-versie overschreef [`import/voorraad_uitsluiten.csv`](../import/voorraad_uitsluiten.csv) met alleen de rode regels van die ene lijst. Dat bleek fout: Karpi markeert de "niet meer inladen"-artikelen **progressief, alfabetisch** — de 29-5-lijst had rood A (ABST)→F (FADE), de 1-6-lijst heeft rood E (ETII)→K (KAED). De A–D-regels zijn in het 1-6-bestand niet meer rood. Overschrijven zou 2.905 eerdere uitsluitingen verliezen. Nieuw gedrag: `exclude = bestaande csv ∪ nieuwe rode regels`. Uitsluitlijst gegroeid 2.917 → **5.404** (2.487 nieuw rood toegevoegd).
+- **Resultaat (commit):** 16.107 vast geüpdatet uit lijst · 1.891 uitgesloten→0 · 30 niet-in-lijst→0 · **0 nieuw aangemaakt** (DB al gevuld in 1e ronde; 103 vaste maten met 0/neg en 1.056 broadloom overgeslagen). Totaal 18.028 `vast`-producten herschreven.
+- **Scope ongewijzigd:** alleen `product_type='vast'`. Staaltje (3.691), rol (798), overig (1.807) bewust ongemoeid. Sleutel kol A `Artikelnr`, waarde kol H `Vrije voorraad`; `backorder`/`gereserveerd` op 0; negatieve voorraad geclampt naar 0.
+- **Rapport:** [`import/rapporten/voorraad_update_2026_06_01.xlsx`](../import/rapporten/voorraad_update_2026_06_01.xlsx).
+
 ## 2026-06-03 — EDI factuur-uitgaand (INVOIC) + go-live monitoring-logboek
 
 **Waarom:** Na de big-bang EDI-cutover (2026-06-03) restte één functionele gap:
