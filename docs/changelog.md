@@ -13,6 +13,7 @@ De fixed-width INVOIC-builder bestond al; alleen het pad factuur → uitgaande w
 - **Edge function** [`bouw-factuur-edi`](../supabase/functions/bouw-factuur-edi/index.ts): valideert single-order + `factuur_uit && transus_actief`, haalt factuur/order-partijen/GTIN's op, bouwt INVOIC, idempotente insert in `edi_berichten` (`richting='uit', berichttype='factuur'`, UK op `(berichttype, bron_tabel, bron_id)`).
 - **Frontend:** knop "Verstuur via EDI" op factuur-detail — **alleen zichtbaar** voor debiteuren met `edi_handelspartner_config.factuur_uit && transus_actief` (dubbel afgedwongen: UI verbergt + edge function weigert met 422). Knop disabled bij multi-order factuur.
 - **[Logboek](runbooks/edi-logboek.md):** dag-na-dag go-live monitoring met 5 copy-paste health-check-queries.
+- **Centraal EDI-partners-overzicht** (`/edi/partners`, sidebar "EDI → Handelspartners"): read-only tabel met per partner welke berichten actief zijn (order-in / orderbev / factuur / verzending) + test-modus + actief-status. Aanvulling op de bestaande per-klant EDI-tab (Klant → tab "EDI"), die bewerkbaar blijft. Kolommen leiden labels af uit de berichttype-registry.
 - **⚠️ Te deployen:** `bouw-factuur-edi` moet nog naar Supabase gedeployed worden (met JWT-verificatie aan — wordt door de ingelogde frontend aangeroepen, niet door cron).
 
 ## 2026-05-31 — Voorraad-update vaste maten uit nieuwe vrije-voorraadlijst

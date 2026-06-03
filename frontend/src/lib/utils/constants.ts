@@ -144,6 +144,7 @@ export const NAV_GROUPS = [
     label: 'EDI',
     items: [
       { label: 'Berichten', path: '/edi/berichten', icon: 'Mail' },
+      { label: 'Handelspartners', path: '/edi/partners', icon: 'Building2' },
     ],
   },
   {

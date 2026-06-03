@@ -43,6 +43,7 @@ import { LeveranciersOverviewPage } from '@/modules/inkoop/pages/leveranciers-ov
 import { LeverancierDetailPage } from '@/modules/inkoop/pages/leverancier-detail'
 import { EdiBerichtenOverzichtPage } from '@/modules/edi/pages/berichten-overzicht'
 import { EdiBerichtDetailPage } from '@/modules/edi/pages/bericht-detail'
+import { EdiPartnersOverzichtPage } from '@/modules/edi/pages/partners-overzicht'
 import {
   ZendingenOverzichtPage,
   ZendingDetailPage,
@@ -119,6 +120,7 @@ export const router = createBrowserRouter([
       // EDI / Transus
       { path: 'edi/berichten', element: <EdiBerichtenOverzichtPage /> },
       { path: 'edi/berichten/:id', element: <EdiBerichtDetailPage /> },
+      { path: 'edi/partners', element: <EdiPartnersOverzichtPage /> },
 
       { path: 'instellingen', element: <ProductieInstellingenPage /> },
       { path: 'instellingen/productie', element: <ProductieInstellingenPage /> },

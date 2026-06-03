@@ -172,6 +172,47 @@ export async function upsertHandelspartnerConfig(
   return data as EdiHandelspartnerConfig
 }
 
+export interface EdiPartnerRow {
+  debiteur_nr: number
+  klant_naam: string | null
+  transus_actief: boolean
+  order_in: boolean
+  orderbev_uit: boolean
+  factuur_uit: boolean
+  verzend_uit: boolean
+  test_modus: boolean
+}
+
+/**
+ * Alle EDI-handelspartners (config-rijen) met klantnaam — voor het centrale
+ * overzicht "welke berichten gaan naar welke partner". Actieve partners eerst,
+ * daarna op naam.
+ */
+export async function fetchEdiPartners(): Promise<EdiPartnerRow[]> {
+  const { data, error } = await supabase
+    .from('edi_handelspartner_config')
+    .select(
+      'debiteur_nr, transus_actief, order_in, orderbev_uit, factuur_uit, verzend_uit, test_modus, debiteuren:debiteur_nr(naam)',
+    )
+  if (error) throw error
+  return (data ?? [])
+    .map((r: any) => ({
+      debiteur_nr: r.debiteur_nr,
+      klant_naam: r.debiteuren?.naam ?? null,
+      transus_actief: r.transus_actief,
+      order_in: r.order_in,
+      orderbev_uit: r.orderbev_uit,
+      factuur_uit: r.factuur_uit,
+      verzend_uit: r.verzend_uit,
+      test_modus: r.test_modus,
+    }))
+    .sort(
+      (a, b) =>
+        Number(b.transus_actief) - Number(a.transus_actief) ||
+        (a.klant_naam ?? '').localeCompare(b.klant_naam ?? ''),
+    )
+}
+
 export interface OpruimResult {
   verwijderde_orders: number
   verwijderde_berichten: number

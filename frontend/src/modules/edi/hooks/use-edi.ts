@@ -4,9 +4,18 @@ import {
   fetchEdiBericht,
   fetchHandelspartnerConfig,
   upsertHandelspartnerConfig,
+  fetchEdiPartners,
   type EdiBerichtenFilters,
   type EdiHandelspartnerConfig,
 } from '@/modules/edi/queries/edi'
+
+export function useEdiPartners() {
+  return useQuery({
+    queryKey: ['edi-partners'],
+    queryFn: fetchEdiPartners,
+    staleTime: 60_000,
+  })
+}
 
 export function useEdiBerichten(filters: EdiBerichtenFilters = {}) {
   return useQuery({
