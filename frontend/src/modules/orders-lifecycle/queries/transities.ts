@@ -31,6 +31,15 @@ export async function markeerGeannuleerd(input: MarkeerGeannuleerdInput): Promis
   })
   if (error) throw new Error(error.message)
 }
+export interface BevestigConceptOrderInput { orderId: number }
+
+export async function bevestigConceptOrder(input: BevestigConceptOrderInput): Promise<void> {
+  const { error } = await supabase.rpc('bevestig_concept_order', {
+    p_order_id: input.orderId,
+  })
+  if (error) throw new Error(error.message)
+}
+
 export interface HerberekenWachtStatusInput { orderId: number }
 
 export async function herberekenWachtStatus(input: HerberekenWachtStatusInput): Promise<void> {

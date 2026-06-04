@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CheckCircle } from 'lucide-react'
+import { CheckCircle, Mail } from 'lucide-react'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { formatDate, formatCurrency } from '@/lib/utils/formatters'
 import { verzendWeekVoor, verzendWeekRelatief } from '@/lib/orders/verzendweek'
-import { useMarkeerGeannuleerd } from '@/modules/orders-lifecycle'
+import { useMarkeerGeannuleerd, useBevestigConceptOrder } from '@/modules/orders-lifecycle'
 import { LevertijdStatusBadge } from '@/modules/levertijd'
 import { BevestigOrderDialog } from './bevestig-order-dialog'
 import type { OrderDetail } from '@/lib/supabase/queries/orders'
@@ -22,8 +22,10 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
   const [showAnnuleerConfirm, setShowAnnuleerConfirm] = useState(false)
   const [showBevestigDialog, setShowBevestigDialog] = useState(false)
   const annuleer = useMarkeerGeannuleerd()
+  const bevestigConcept = useBevestigConceptOrder()
 
   const isEindstatus = (EINDSTATUSSEN as readonly string[]).includes(order.status)
+  const isConcept = order.status === 'Concept'
 
   function handleAnnuleer() {
     annuleer.mutate(
@@ -34,6 +36,26 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
 
   return (
     <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-6 mb-6">
+      {/* Concept-banner: e-mail order die nog bevestigd moet worden */}
+      {isConcept && (
+        <div className="flex items-center justify-between gap-4 mb-5 px-4 py-3 bg-amber-50 border border-amber-200 rounded-[var(--radius-sm)]">
+          <div className="flex items-center gap-2 text-sm text-amber-800">
+            <Mail size={16} className="shrink-0" />
+            <span>
+              <strong>Concept-order</strong> — automatisch aangemaakt vanuit e-mail.
+              Controleer de gegevens en bevestig om de order in verwerking te nemen.
+            </span>
+          </div>
+          <button
+            type="button"
+            disabled={bevestigConcept.isPending}
+            onClick={() => bevestigConcept.mutate({ orderId: order.id })}
+            className="shrink-0 px-4 py-1.5 text-sm bg-amber-600 text-white rounded-[var(--radius-sm)] hover:bg-amber-700 font-medium transition-colors disabled:opacity-60"
+          >
+            {bevestigConcept.isPending ? 'Bezig…' : 'Bevestig concept'}
+          </button>
+        </div>
+      )}
       <div className="flex items-start justify-between mb-4">
         <div>
           <div className="flex items-center gap-3 mb-1">
@@ -58,8 +80,8 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
           )}
         </div>
         <div className="flex gap-2 flex-wrap justify-end">
-          {/* Bevestig order knop */}
-          {order.bevestigd_at ? (
+          {/* Bevestig order (e-mailbevestiging) — niet tonen voor concept-orders */}
+          {!isConcept && order.bevestigd_at ? (
             <span
               className="flex items-center gap-1.5 px-3 py-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-[var(--radius-sm)]"
               title={`Bevestigd op ${formatDate(order.bevestigd_at)}${order.bevestiging_email ? ` → ${order.bevestiging_email}` : ''}`}
@@ -67,7 +89,7 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
               <CheckCircle size={14} />
               Bevestigd
             </span>
-          ) : (
+          ) : !isConcept ? (
             <button
               type="button"
               onClick={() => setShowBevestigDialog(true)}
@@ -75,7 +97,7 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
             >
               Bevestig order
             </button>
-          )}
+          ) : null}
           {locked ? (
             <span
               className="px-4 py-2 text-sm border border-slate-200 rounded-[var(--radius-sm)] text-slate-400 cursor-not-allowed bg-slate-50"

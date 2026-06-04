@@ -4,7 +4,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { buildAnthropicRequest, parsePoExtractie } from '../_shared/po-extract.ts'
+import { buildAnthropicRequest, buildAnthropicRequestFromEmail, parsePoExtractie } from '../_shared/po-extract.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -34,20 +34,22 @@ serve(async (req) => {
   )
 
   // ---- Request-body (malformed body = 400, niet 500) ----
-  let body: { pdf_base64?: string; bestandsnaam?: string }
+  let body: { pdf_base64?: string; bestandsnaam?: string; email_body?: string; email_subject?: string }
   try {
-    body = await req.json() as { pdf_base64?: string; bestandsnaam?: string }
+    body = await req.json() as { pdf_base64?: string; bestandsnaam?: string; email_body?: string; email_subject?: string }
   } catch {
     return jsonResponse({ error: 'Ongeldige request-body (verwacht JSON)' }, 400)
   }
-  if (!body.pdf_base64) {
-    return jsonResponse({ error: 'pdf_base64 is verplicht' }, 400)
+  if (!body.pdf_base64 && !body.email_body) {
+    return jsonResponse({ error: 'pdf_base64 of email_body is verplicht' }, 400)
   }
   const bestandsnaam = body.bestandsnaam ?? 'order.pdf'
 
   try {
     // ---- 1. Claude-extractie ----
-    const anthropicReq = buildAnthropicRequest(body.pdf_base64, bestandsnaam)
+    const anthropicReq = body.email_body
+      ? buildAnthropicRequestFromEmail(body.email_body, body.email_subject ?? '', body.pdf_base64)
+      : buildAnthropicRequest(body.pdf_base64!, bestandsnaam)
     const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {

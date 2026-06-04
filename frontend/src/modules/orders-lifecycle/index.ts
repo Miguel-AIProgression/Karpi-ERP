@@ -13,6 +13,7 @@ export {
 } from './queries/transities'
 
 export { useMarkeerGeannuleerd } from './hooks/use-markeer-geannuleerd'
+export { useBevestigConceptOrder } from './hooks/use-bevestig-concept-order'
 
 export { useOrderEvents } from './hooks/use-order-events'
 export {

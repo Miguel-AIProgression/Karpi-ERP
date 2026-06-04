@@ -2,6 +2,8 @@
  *  Canonieke statussen na ADR-0016 (mig 257-258). Legacy waarden behouden
  *  voor backwards-compat met historische orders. */
 export const ORDER_STATUS_COLORS: Record<string, { bg: string; text: string }> = {
+  // Concept — e-mail order wachtend op review
+  'Concept':               { bg: 'bg-amber-100',   text: 'text-amber-700' },
   // Canoniek (ADR-0016)
   'Klaar voor picken':     { bg: 'bg-blue-100',    text: 'text-blue-700' },
   'Wacht op voorraad':     { bg: 'bg-amber-100',   text: 'text-amber-700' },

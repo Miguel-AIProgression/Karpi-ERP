@@ -66,7 +66,7 @@ export interface AnthropicRequest {
   messages: Array<{ role: 'user'; content: unknown[] }>
 }
 
-/** Bouwt de Anthropic Messages-request. Prompt-caching op het vaste system-blok. */
+/** Bouwt de Anthropic Messages-request voor een PDF. Prompt-caching op het vaste system-blok. */
 export function buildAnthropicRequest(pdfBase64: string, bestandsnaam: string): AnthropicRequest {
   return {
     model: MODEL,
@@ -84,6 +84,37 @@ export function buildAnthropicRequest(pdfBase64: string, bestandsnaam: string): 
         ],
       },
     ],
+  }
+}
+
+/**
+ * Bouwt de Anthropic Messages-request voor een plain-text e-mail.
+ * Optioneel een PDF als extra bijlage meegeven.
+ */
+export function buildAnthropicRequestFromEmail(
+  emailBody: string,
+  emailSubject: string,
+  pdfBase64?: string,
+): AnthropicRequest {
+  const userContent: unknown[] = []
+
+  if (pdfBase64) {
+    userContent.push({
+      type: 'document',
+      source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 },
+    })
+  }
+
+  userContent.push({
+    type: 'text',
+    text: `E-mail onderwerp: ${emailSubject}\n\n--- E-mail tekst ---\n${emailBody}\n\nExtraheer de bestelling uit bovenstaande e-mail${pdfBase64 ? ' (en bijgevoegde PDF)' : ''}. Antwoord met alleen het JSON-object.`,
+  })
+
+  return {
+    model: MODEL,
+    max_tokens: MAX_TOKENS,
+    system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+    messages: [{ role: 'user', content: userContent }],
   }
 }
 
