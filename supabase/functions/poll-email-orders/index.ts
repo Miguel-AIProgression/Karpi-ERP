@@ -16,6 +16,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { extractTextFromPdfBytes } from '../_shared/pdf-text-extract.ts'
 
 const SUPABASE_URL         = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -190,10 +191,26 @@ async function verwerkEmail(
     match = await callParseKlantPo(parseBody)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    // PDF ongeldig (bijv. beschadigd bij doorsturen) → opnieuw proberen zonder PDF
+    // PDF ongeldig (bijv. beschadigd bij doorsturen) → tekst extraheren en opnieuw proberen
     if (msg.includes('not valid') || msg.includes('invalid') || (parseBody.pdf_base64 && msg.includes('400'))) {
-      console.warn(`[poll-email-orders] PDF ongeldig, opnieuw proberen zonder PDF voor "${subject}"`)
-      const { pdf_base64: _pdf, ...bodyZonderPdf } = parseBody
+      console.warn(`[poll-email-orders] PDF ongeldig voor "${subject}", tekst extraheren als fallback`)
+      const { pdf_base64, ...bodyZonderPdf } = parseBody
+
+      if (pdf_base64) {
+        try {
+          const pdfBytes = Uint8Array.from(atob(pdf_base64), (c) => c.charCodeAt(0))
+          const pdfTekst = await extractTextFromPdfBytes(pdfBytes)
+          if (pdfTekst.length > 50) {
+            console.log(`[poll-email-orders] ${pdfTekst.length} tekens geëxtraheerd uit PDF`)
+            bodyZonderPdf.email_body =
+              (bodyZonderPdf.email_body ?? '') +
+              '\n\n--- Bijgevoegde PDF (tekstextractie) ---\n' + pdfTekst
+          }
+        } catch (extractErr) {
+          console.warn('[poll-email-orders] PDF-tekstextractie mislukt:', extractErr)
+        }
+      }
+
       match = await callParseKlantPo(bodyZonderPdf)
     } else {
       throw err
