@@ -218,3 +218,6 @@ historische rollen, beginvoorraad of fysiek verlies. Loopt via de RPC's
 `rol_handmatig_toevoegen` / `_bewerken` / `rol_verwijderen` (mig 291-293) en
 wordt gelogd in `rol_mutaties` met verplichte reden. Raakt `producten.voorraad`
 bewust niet (ADR-0024).
+
+### Migratie-blokkering
+**Migratie-blokkering** — eenmalige FIFO-lengtereservering van een nog-niet-gesneden oud-systeem maatwerk-order op een fysieke rol, full-width (volle rolbreedte × min(A,B) cm). Voorkomt dat de overgenomen voorraad dubbel wordt verkocht. Vervalt zodra de order gesneden is (status `vrijgegeven`). Zie ADR-0028 (mig 313–314).

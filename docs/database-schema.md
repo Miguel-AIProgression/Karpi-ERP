@@ -5,7 +5,7 @@
 
 ## Overzicht
 
-43 tabellen, 9 enums, 15 views, 36 functies. Alle tabellen hebben RLS enabled (fase 1: authenticated = volledige toegang).
+44 tabellen, 9 enums, 15 views, 36 functies. Alle tabellen hebben RLS enabled (fase 1: authenticated = volledige toegang).
 
 ---
 
@@ -984,6 +984,43 @@ Audittrail voor handmatige rol-CRUD (voorraadcorrectie/inventarisatie). Mig 290 
 | reden | TEXT NOT NULL | Verplicht |
 | medewerker | TEXT | Doorgegeven vanuit frontend |
 | created_at | TIMESTAMPTZ | `DEFAULT now()` |
+
+---
+
+### migratie_blokkering
+**Tijdelijke** FIFO-lengtereservering van nog-niet-gesneden oud-systeem maatwerk-orders op fysieke rollen (ADR-0028, mig 313). Doel: voorkomen dat de bij migratie overgenomen voorraad dubbel wordt verkocht terwijl de openstaande op-maat-orders nog niet zijn gesneden. Bron-van-waarheid zolang de overgang naar het nieuwe systeem loopt. De tabel is leeg zodra alle geblokkeerde orders zijn gesneden en vrijgegeven.
+
+**Snijmethodiek:** `breedte_nodig_cm = max(A, B)` moet passen binnen `rollen.breedte_cm`; `gereserveerde_lengte_cm = min(A, B)` wordt verbruikt over de volledige rolbreedte. Voor ronde maten (`RND`): diameter geldt voor beide dimensies. FIFO-volgorde: `rollen.in_magazijn_sinds ASC NULLS LAST`. Geen 2D-nesting — bewust pessimistisch (full-width strip).
+
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| id | BIGINT PK | `GENERATED ALWAYS AS IDENTITY` |
+| rol_id | BIGINT NOT NULL FK → rollen(id) | ON DELETE CASCADE |
+| gereserveerde_lengte_cm | INTEGER NOT NULL | CHECK > 0. Lengte (min-zijde van het stuk) die full-width wordt geblokkeerd. |
+| breedte_nodig_cm | INTEGER NOT NULL | CHECK > 0. Max-zijde van het stuk — moet ≤ `rollen.breedte_cm`. |
+| oud_ordernr | TEXT NOT NULL | Ordernummer uit oud systeem (audit-referentie). |
+| oud_orderregel | TEXT NOT NULL | Regelnummer/omschrijving uit oud systeem. |
+| deel_index | INTEGER NOT NULL DEFAULT 1 | 1..Aantal voor regels met `Aantal > 1` (per stuk een eigen blokkering). |
+| kwaliteit_code | TEXT | Kwaliteitscode van het geblokkeerde stuk (informatief, nullable). |
+| kleur_code | TEXT | Kleurcode (informatief, nullable). |
+| status | TEXT NOT NULL DEFAULT 'actief' | CHECK IN (`'actief'`, `'vrijgegeven'`). Actief = blokkeert packer; Vrijgegeven = order is gesneden, blokkering inactief. |
+| aangemaakt_op | TIMESTAMPTZ NOT NULL DEFAULT now() | Tijdstip aanmaak. |
+| vrijgegeven_op | TIMESTAMPTZ | NULL zolang actief; gevuld door release-script. |
+| UK: (oud_ordernr, oud_orderregel, deel_index) | | Voorkomt dubbele blokkering per stuk. |
+
+**Indexen:**
+- `idx_migratie_blokkering_rol_actief` — partial index op `(rol_id)` WHERE `status = 'actief'`; voedt `fetchBezettePlaatsingen`.
+- `idx_migratie_blokkering_order` — op `(oud_ordernr, oud_orderregel)`; voedt release-script lookup.
+
+**RLS:** enabled; `SELECT` voor `authenticated` (read-only policy).
+
+**Packer-injectie (`fetchBezettePlaatsingen`, `supabase/functions/_shared/db-helpers.ts`):** injecteert per getroffen rol één full-width bodem-strip als synthetische `Placement` (`x=0, y=0, lengte_cm=rol.breedte_cm, breedte_cm=gereserveerde_lengte_cm, snijplan_id=−rol_id`) zodat de guillotine-packer er geen nieuw stuk overheen plant. Dit loopt altijd, ook als de kwal/kleur-groep géén rollen met `status='in_snijplan'` heeft. `fetchBeschikbareRollen` is bewust **niet** aangepast (vermijdt dubbele blokkering).
+
+**`voorraadposities` RPC (mig 314, o.b.v. mig 296):** trekt de som van actieve blokkering-m² (`SUM(gereserveerde_lengte_cm × breedte_nodig_cm) / 10000`) af van `eigen_totaal_m2`, vloer op 0 via `GREATEST`. `vrij_voor_nieuw_maatwerk_m2`, `familie_aggr` en `beste_partner` gebruiken bewust de fysieke m² (ongewijzigd).
+
+**Scripts:**
+- `import/reserveer_maatwerk_migratie.py` — eenmalig; alloceert ~1 462 actieve maatwerk-stukken, gesneden-historiek via de union van alle snijlijst-versies met per-sheet header-detect. Standaard dry-run; `--commit` schrijft naar de database.
+- `import/release_migratie_blokkeringen.py` — dagelijks; zet blokkeringen op `'vrijgegeven'` zodra de order in het nieuwe systeem als gesneden is geboekt.
 
 ---
 
