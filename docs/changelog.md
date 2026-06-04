@@ -1,5 +1,13 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-04 — Backfill EDI-orderregelprijzen na klant(her)koppeling (mig 308)
+
+**Waarom:** Een reeks inkomende EDI-orders is aangemaakt vóór de juiste debiteur gekoppeld was (de match faalde eerder op het factuur-GLN). `create_edi_order` (mig 166) prijst regels via `debiteuren.prijslijst_nr` → `prijslijst_regels`, maar omdat de debiteur — en dus de prijslijst — toen onbekend was, bleven de orderregels zonder (juiste) prijs. Ketens zonder product-verkoopprijs (bv. Hornbach-artikelen) → prijs leeg; ketens mét prijslijst (BDSK/XXXLutz, Möbel) → prijslijstprijs niet toegepast. De klantkoppeling staat inmiddels live (mig 306/307), dus `orders.debiteur_nr` wijst nu correct en de prijslijst kan met terugwerkende kracht worden toegepast.
+
+**Wat ([mig 308](../supabase/migrations/308_edi_prijzen_backfill_na_klantkoppeling.sql)):** Eenmalige backfill — dezelfde JOIN als de backfill onderaan mig 166, nu herhaald zodat de net-gekoppelde orders worden meegenomen. Update EDI-orderregels (`bron_systeem='edi'`) waarvan de debiteur een `prijslijst_nr` heeft én er een `prijslijst_regels`-rij voor het artikel bestaat: `prijs` ← prijslijstprijs, `korting_pct` ← `debiteuren.korting_pct`, `bedrag` herberekend. De **prijslijstprijs is leidend**: lege regels worden gevuld én een afwijkende fallback-prijs (uit `producten.verkoopprijs`) wordt gecorrigeerd (`orr.prijs IS DISTINCT FROM pr.prijs`). Regels zonder prijslijstprijs (geen JOIN-match — o.a. Hornbach zonder prijslijst, maatwerk, ongematchte/pseudo-artikelen) blijven ongemoeid.
+
+**Toepassen:** preview-query draaien (zie commit-bericht/PR), daarna mig 308 handmatig uitvoeren in de Supabase SQL-editor. Geen code- of functiewijziging — `create_edi_order` prijst nieuwe orders al correct sinds mig 166; dit is puur een data-backfill.
+
 ## 2026-06-04 — EDI debiteur-GLN-alias: meerdere factuur-GLN's per debiteur (mig 307)
 
 **Waarom:** BDSK/XXXLutz (#600556) is de centrale debiteur voor de hele groep — orders matchen op de gefactureerd-GLN `9007019015989`, de besteller/aflever-GLN's zijn wisselende filiaalcodes. Eén order (klant-PO `8NLMC`, bericht 21) kwam binnen met een **afwijkende gefactureerd-GLN `9007019010007`** (een tweede factuur-entiteit) die nergens in de data stond → `matchDebiteur` faalde en de order bleef liggen. Aflever-GLN onthouden (mig 306) lost dit niet terugkerend op, want het afleveradres wisselt per order; de **factuur-GLN** moet als alias van de debiteur gelden.
