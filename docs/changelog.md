@@ -1,5 +1,15 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-04 — EDI debiteur-GLN-alias: meerdere factuur-GLN's per debiteur (mig 307)
+
+**Waarom:** BDSK/XXXLutz (#600556) is de centrale debiteur voor de hele groep — orders matchen op de gefactureerd-GLN `9007019015989`, de besteller/aflever-GLN's zijn wisselende filiaalcodes. Eén order (klant-PO `8NLMC`, bericht 21) kwam binnen met een **afwijkende gefactureerd-GLN `9007019010007`** (een tweede factuur-entiteit) die nergens in de data stond → `matchDebiteur` faalde en de order bleef liggen. Aflever-GLN onthouden (mig 306) lost dit niet terugkerend op, want het afleveradres wisselt per order; de **factuur-GLN** moet als alias van de debiteur gelden.
+
+**Wat (verticale slice DB → edge → frontend):**
+- **Mig 307** — tabel `debiteur_gln_aliassen` (debiteur_nr, gln UNIQUE, rol `gefactureerd`/`besteller`, reden) + RPC `koppel_edi_debiteur_alias(p_bericht_id, p_debiteur_nr, p_gln, p_reden)`: legt de GLN als alias vast, zet `edi_berichten.debiteur_nr`, roept `create_edi_order` aan (die zonder afleveradres-match terugvalt op het debiteur-adres). Guard: GLN mag niet al aan een andere debiteur (alias of `gln_bedrijf`) hangen.
+- **Edge function** [`transus-poll/matchDebiteur`](../supabase/functions/transus-poll/index.ts): nieuwe **stap 5** — besteller/gefactureerd-GLN → `debiteur_gln_aliassen.gln` (na `debiteuren.gln_bedrijf`, `.0`-tolerant).
+- **Frontend** [`koppel-vestiging-widget.tsx`](../frontend/src/modules/edi/components/koppel-vestiging-widget.tsx): twee koppel-modi via segmented toggle — *"Op vestiging (aflever-GLN)"* (mig 306, ongewijzigd) en *"Op factuur-GLN (centraal)"* (mig 307, alias). Default = factuur-GLN-modus als de aflever-GLN ontbreekt maar er wél een factuur-GLN is. Query `koppelEdiDebiteurAlias` + hook `useKoppelEdiDebiteurAlias`.
+- **Toepassen:** mig 307 draaien + `transus-poll` opnieuw deployen, daarna bericht 21 koppelen op factuur-GLN → BDSK #600556 (order wordt aangemaakt; toekomstige orders met `9007019010007` matchen automatisch).
+
 ## 2026-06-04 — Koppel-widget verrijkt met order-inhoud + prefill
 
 **Waarom:** De bootstrap-koppel-widget toonde alleen de 3 GLN's — te weinig context voor de operator om te bepalen welke debiteur/vestiging erbij hoort. En bij een bericht zónder leesbare order (Transus-testbestand, #16) stond er een leeg koppel-formulier dat nergens toe leidt.

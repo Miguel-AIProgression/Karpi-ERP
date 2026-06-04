@@ -8,6 +8,7 @@ import {
   fetchEdiPartners,
   fetchDebiteurenVoorKoppeling,
   koppelEdiAfleveradres,
+  koppelEdiDebiteurAlias,
   type EdiBerichtenFilters,
   type EdiHandelspartnerConfig,
 } from '@/modules/edi/queries/edi'
@@ -93,6 +94,19 @@ export function useKoppelEdiAfleveradres() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['edi-berichten'] })
       // Banner op orders-overzicht moet meteen meebewegen als er gekoppeld is.
+      qc.invalidateQueries({ queryKey: ['edi-te-koppelen-count'] })
+    },
+  })
+}
+
+/** Koppeling op factuur-GLN (mig 307) — legt de GLN als debiteur-alias vast. */
+export function useKoppelEdiDebiteurAlias() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { berichtId: number; debiteurNr: number; gln: string; reden?: string }) =>
+      koppelEdiDebiteurAlias(vars.berichtId, vars.debiteurNr, vars.gln, vars.reden),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['edi-berichten'] })
       qc.invalidateQueries({ queryKey: ['edi-te-koppelen-count'] })
     },
   })

@@ -300,11 +300,14 @@ async function confirmAndMark(
 //   1. aflever-GLN   → afleveradressen.gln_afleveradres  (vestiging "onthouden" via bootstrap)
 //   2. besteller-GLN → afleveradressen.gln_afleveradres
 //   3. besteller-GLN → debiteuren.gln_bedrijf
-//   4. gefactureerd-GLN → debiteuren.gln_bedrijf  (laatste redmiddel)
+//   4. gefactureerd-GLN → debiteuren.gln_bedrijf
+//   5. besteller/gefactureerd-GLN → debiteur_gln_aliassen.gln  (extra factuur-entiteiten)
 // Inactieve debiteuren worden bij de debiteur-lookups overgeslagen — anders zou
 // Hornbach op de inactieve hoofd-debiteur (361214) belanden i.p.v. de actieve NL
 // (361208). Onbekende vestiging-GLN's → null → operator koppelt handmatig via
-// `koppel_edi_afleveradres` (mig 306), waarna stap 1 de volgende order auto-matcht.
+// `koppel_edi_afleveradres` (mig 306, aflever-GLN op afleveradres) of
+// `koppel_edi_debiteur_alias` (mig 307, factuur-GLN als debiteur-alias), waarna de
+// volgende order auto-matcht.
 async function matchDebiteur(
   supabase: ReturnType<typeof createClient>,
   glnGefactureerd: string | null,
@@ -338,6 +341,21 @@ async function matchDebiteur(
       .select('debiteur_nr')
       .in('gln_bedrijf', vs)
       .neq('status', 'Inactief')
+      .order('debiteur_nr')
+      .limit(1)
+      .maybeSingle();
+    if (data?.debiteur_nr) return data.debiteur_nr;
+  }
+
+  // 5: besteller/gefactureerd-GLN → debiteur-alias (mig 307). Bedient centrale
+  // facturatie met meerdere factuur-entiteiten per debiteur (BDSK/XXXLutz).
+  for (const gln of [glnBesteller, glnGefactureerd]) {
+    const vs = variants(gln);
+    if (vs.length === 0) continue;
+    const { data } = await supabase
+      .from('debiteur_gln_aliassen')
+      .select('debiteur_nr')
+      .in('gln', vs)
       .order('debiteur_nr')
       .limit(1)
       .maybeSingle();

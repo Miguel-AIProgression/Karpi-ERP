@@ -287,6 +287,27 @@ export async function koppelEdiAfleveradres(
   return data as number
 }
 
+/**
+ * Koppeling op factuur-GLN (mig 307): legt een onbekende gefactureerd/besteller-GLN
+ * vast als alias van een debiteur en maakt de order aan. Voor centrale facturatie
+ * met meerdere factuur-entiteiten (BDSK/XXXLutz). Returnt het order_id.
+ */
+export async function koppelEdiDebiteurAlias(
+  berichtId: number,
+  debiteurNr: number,
+  gln: string,
+  reden?: string,
+): Promise<number> {
+  const { data, error } = await supabase.rpc('koppel_edi_debiteur_alias', {
+    p_bericht_id: berichtId,
+    p_debiteur_nr: debiteurNr,
+    p_gln: gln,
+    p_reden: reden ?? null,
+  })
+  if (error) throw error
+  return data as number
+}
+
 export interface OpruimResult {
   verwijderde_orders: number
   verwijderde_berichten: number
