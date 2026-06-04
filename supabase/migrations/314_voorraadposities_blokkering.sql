@@ -9,6 +9,16 @@
 -- Bewust NIET aangepast: vrij_voor_nieuw_maatwerk_m2 / familie_aggr (ADR-0026,
 -- ander concept) en de beste_partner-CASE — die blijven op de fysieke m².
 
+-- Apply-order-guard: deze functie leest migratie_blokkering (mig 313). SQL-functies
+-- checken tabelbestaan niet bij definitie, dus zonder guard zou een mis-geordende
+-- toepassing een stille-kapotte functie opleveren. Fail-fast als 313 nog niet liep.
+DO $$
+BEGIN
+  IF to_regclass('public.migratie_blokkering') IS NULL THEN
+    RAISE EXCEPTION 'Migratie 314 vereist eerst migratie 313 (tabel migratie_blokkering).';
+  END IF;
+END $$;
+
 DROP FUNCTION IF EXISTS voorraadposities(TEXT, TEXT, TEXT);
 
 CREATE OR REPLACE FUNCTION voorraadposities(
@@ -95,15 +105,19 @@ AS $$
   ),
   -- Actieve migratie-blokkering per (kwaliteit, genormaliseerde kleur), in m².
   -- Strip = volle rolbreedte × gereserveerde_lengte_cm; m² = breedte_cm/100 × lengte_cm/100.
+  -- Groeperingssleutel komt uit de ROL (r.kwaliteit_code/r.kleur_code), niet uit
+  -- de gedenormaliseerde mb-kolommen: de breedte komt al van de rol, dus de m²
+  -- hoort onder de kwaliteit/kleur van de rol — correct-by-construction, geen
+  -- afhankelijkheid van mogelijk-afwijkende mb.kwaliteit_code/kleur_code.
   geblokkeerd AS (
     SELECT
-      mb.kwaliteit_code                                  AS kwaliteit_code,
-      regexp_replace(mb.kleur_code, '\.0+$', '')         AS norm_kleur,
+      r.kwaliteit_code                                   AS kwaliteit_code,
+      regexp_replace(r.kleur_code, '\.0+$', '')          AS norm_kleur,
       SUM(r.breedte_cm::NUMERIC / 100 * mb.gereserveerde_lengte_cm::NUMERIC / 100) AS m2
     FROM migratie_blokkering mb
     JOIN rollen r ON r.id = mb.rol_id
     WHERE mb.status = 'actief'
-    GROUP BY mb.kwaliteit_code, regexp_replace(mb.kleur_code, '\.0+$', '')
+    GROUP BY r.kwaliteit_code, regexp_replace(r.kleur_code, '\.0+$', '')
   ),
   partners_raw AS (
     SELECT
@@ -238,6 +252,9 @@ AS $$
     j.volle_rollen              AS eigen_volle_rollen,
     j.aangebroken_rollen        AS eigen_aangebroken_rollen,
     j.reststuk_rollen           AS eigen_reststuk_rollen,
+    -- Ondergrens 0: geblokkeerd m² kan theoretisch hoger zijn dan de fysieke m²
+    -- als het migratiescript de snijplan-aftrek onderschat; dan is 0 correct
+    -- (alle lengte bezet). Root-cause-check: import/rapporten/migratie_ongedekt.csv.
     GREATEST(0, j.eigen_m2 - COALESCE(gb.m2, 0))::NUMERIC AS eigen_totaal_m2,
     j.rollen_json               AS rollen,
     j.partners_json             AS partners,
