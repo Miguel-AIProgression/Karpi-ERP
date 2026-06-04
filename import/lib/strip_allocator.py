@@ -43,8 +43,12 @@ class Blokkering:
     deel_index: int
     gereserveerde_lengte_cm: int
     breedte_nodig_cm: int
-    kwaliteit: str
-    kleur: str
+    kwaliteit: str            # kwaliteit van de ORDER (wat besteld is)
+    kleur: str                # kleur van de order
+    # Kwaliteit/kleur van de ROL waarop geblokkeerd is. Wijkt af van de order
+    # wanneer op een uitwisselbare partner-kwaliteit gereserveerd is (omgestickerd).
+    rol_kwaliteit: str = ""
+    rol_kleur: str = ""
 
 
 @dataclass
@@ -66,11 +70,18 @@ def _fifo_key(rol: Roll):
     return (rol.in_magazijn_sinds or _VER_TOEKOMST, rol.id)
 
 
-def alloceer(pieces: list[Piece], rollen: list[Roll]):
+def alloceer(pieces: list[Piece], rollen: list[Roll], uitwisselbaar=None):
     """Alloceer stukken op rollen. Returns (list[Blokkering], list[Ongedekt]).
 
     Muteert `rollen[*].resterend_cm` in-place. Sorteer-stabiel: FIFO op sinds.
+
+    `uitwisselbaar`: optionele dict (kwaliteit, kleur) -> geordende lijst van
+    (kwaliteit, kleur)-groepen om te proberen. De EIGEN groep hoort eerst te
+    staan, gevolgd door uitwisselbare partner-kwaliteiten (zelfde kleur). Een stuk
+    wordt eerst op de eigen kwaliteit gelegd (FIFO); pas als daar geen passende rol
+    is, op de oudste passende partner-rol. None = geen uitwisseling (alleen eigen).
     """
+    uitwisselbaar = uitwisselbaar or {}
     # Groepeer rollen per (kwaliteit, kleur), FIFO-gesorteerd.
     per_groep: dict[tuple[str, str], list[Roll]] = {}
     for rol in rollen:
@@ -82,11 +93,13 @@ def alloceer(pieces: list[Piece], rollen: list[Roll]):
     ongedekt: list[Ongedekt] = []
 
     for piece in pieces:
+        eigen = (piece.kwaliteit, piece.kleur)
+        groepen = uitwisselbaar.get(eigen) or [eigen]
         for deel in range(1, piece.aantal + 1):
             if not piece.kwaliteit or not piece.kleur:
                 ongedekt.append(_ongedekt(piece, deel, "geen kwal/kleur-parse"))
                 continue
-            kandidaten = per_groep.get((piece.kwaliteit, piece.kleur), [])
+            kandidaten = _kandidaat_rollen(per_groep, groepen)
             if not kandidaten:
                 ongedekt.append(_ongedekt(piece, deel, "geen rol in deze kwal/kleur"))
                 continue
@@ -111,8 +124,23 @@ def alloceer(pieces: list[Piece], rollen: list[Roll]):
                 breedte_nodig_cm=piece.breedte_nodig_cm,
                 kwaliteit=piece.kwaliteit,
                 kleur=piece.kleur,
+                rol_kwaliteit=gekozen.kwaliteit,
+                rol_kleur=gekozen.kleur,
             ))
     return blok, ongedekt
+
+
+def _kandidaat_rollen(per_groep, groepen) -> list[Roll]:
+    """Kandidaat-rollen voor een stuk: eigen groep (FIFO) eerst, dan de partner-
+    groepen samengevoegd en FIFO-gesorteerd (oudste passende partner eerst)."""
+    if not groepen:
+        return []
+    eigen = list(per_groep.get(groepen[0], []))  # al FIFO-gesorteerd
+    rest: list[Roll] = []
+    for g in groepen[1:]:
+        rest.extend(per_groep.get(g, []))
+    rest.sort(key=_fifo_key)
+    return eigen + rest
 
 
 def _kies_rol(kandidaten: list[Roll], piece: Piece) -> Roll | None:

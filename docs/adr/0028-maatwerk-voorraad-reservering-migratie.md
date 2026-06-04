@@ -23,6 +23,19 @@ De packer ziet de blokkering als één virtuele bezette plaatsing onderaan de ro
 geblokkeerde m² af. Een dagelijks release-script zet een blokkering op
 `vrijgegeven` zodra de order in een nieuwere snijlijst-versie als gesneden staat.
 
+**Uitwisselbaarheid (omstickeren):** een order wordt eerst op de eigen kwaliteit
+gereserveerd (FIFO); is daar geen passende rol, dan op de oudste passende
+**uitwisselbare partner-kwaliteit** (zelfde kleur, via `uitwisselbare_paren(kw,kl)`,
+mig 138/140) — net als de handmatige uitwisselbaar-claims in het nieuwe systeem
+(mig 154). De blokkering wijst dan naar de partner-rol; `migratie_blokkering`
+bewaart de order-kwaliteit (audit) terwijl `voorraadposities` de m² op de
+rol-kwaliteit aftrekt en de packer de strip op de partner-rol legt. Dit verhoogde
+de dekking aanzienlijk (van ~54% naar ~69% van de op-maat stuks in de dry-run).
+
+**Kwaliteit/kleur-bron:** de betrouwbare kwaliteit+kleur staat in kolom 0 van
+'Snijden Karpi op kwal' (de artikelcode `<KWAL><KLEUR>MAATWERK`, bv. `LAGO13MAATWERK`),
+NIET in de afgekapte kolom 4 (`VE13`, die in werkelijkheid LAGO13 is).
+
 ## Gevolgen
 - Geen wijziging aan `fetchBeschikbareRollen`: de lengte-aftrek loopt volledig via
   de strip-Placement in `fetchBezettePlaatsingen`. Óók daar lengte aftrekken zou

@@ -70,6 +70,40 @@ def test_alloceer_isoleert_kwal_kleur_groepen():
     assert blok[0].rol_id == 2  # alleen de VELV/24-rol
 
 
+def test_alloceer_uitwisselbaar_valt_terug_op_partner():
+    # Geen eigen rol (VERR17), wel een uitwisselbare partner (LUXR17, zelfde kleur).
+    rollen = [_roll(1, 400, 1500, "2025-01-01", kwal="LUXR", kleur="17")]
+    pieces = [_piece("A", "1", 290, 200, kwal="VERR", kleur="17")]
+    uitw = {("VERR", "17"): [("VERR", "17"), ("LUXR", "17")]}
+    blok, ongedekt = alloceer(pieces, rollen, uitwisselbaar=uitw)
+    assert ongedekt == []
+    assert len(blok) == 1
+    assert blok[0].rol_id == 1
+    assert blok[0].kwaliteit == "VERR"        # order-kwaliteit
+    assert blok[0].rol_kwaliteit == "LUXR"    # rol-kwaliteit (omgestickerd)
+
+
+def test_alloceer_uitwisselbaar_eigen_kwaliteit_eerst():
+    # Eigen rol (jonger) én partner-rol (ouder) -> eigen wint, ook al is partner ouder.
+    rollen = [
+        _roll(1, 400, 1500, "2024-01-01", kwal="LUXR", kleur="17"),  # ouder partner
+        _roll(2, 400, 1500, "2025-01-01", kwal="VERR", kleur="17"),  # jongere eigen
+    ]
+    pieces = [_piece("A", "1", 290, 200, kwal="VERR", kleur="17")]
+    uitw = {("VERR", "17"): [("VERR", "17"), ("LUXR", "17")]}
+    blok, _ = alloceer(pieces, rollen, uitwisselbaar=uitw)
+    assert blok[0].rol_id == 2
+
+
+def test_alloceer_zonder_uitwisselbaar_blijft_exact():
+    # Default (geen uitwisselbaar-map) -> partner-rol wordt NIET gebruikt.
+    rollen = [_roll(1, 400, 1500, "2025-01-01", kwal="LUXR", kleur="17")]
+    pieces = [_piece("A", "1", 290, 200, kwal="VERR", kleur="17")]
+    blok, ongedekt = alloceer(pieces, rollen)
+    assert blok == []
+    assert len(ongedekt) == 1
+
+
 def test_alloceer_full_width_verbruikt_lengte_lineair():
     # 2 stukken van 200 op een rol van 1500 -> beide passen, rol houdt 1100 over.
     rollen = [_roll(1, 400, 1500, "2025-01-01")]

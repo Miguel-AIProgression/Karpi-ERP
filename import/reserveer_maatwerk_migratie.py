@@ -155,15 +155,42 @@ def regels_naar_pieces(regels, gesneden) -> tuple[list[Piece], dict]:
     return pieces, stats
 
 
+def bouw_uitwisselbaar_map(sb, pieces) -> dict:
+    """Map (kwaliteit, kleur) -> [eigen, partner1, ...] via uitwisselbare_paren.
+
+    Eigen groep eerst, daarna de uitwisselbare partner-kwaliteiten (zelfde kleur,
+    `is_zelf=False`). Eén RPC per unieke (kwaliteit, kleur) uit de planning.
+    """
+    uniek = sorted({(p.kwaliteit, p.kleur) for p in pieces if p.kwaliteit and p.kleur})
+    out: dict = {}
+    for kw, kl in uniek:
+        try:
+            data = sb.rpc(
+                "uitwisselbare_paren",
+                {"p_kwaliteit_code": kw, "p_kleur_code": kl},
+            ).execute().data or []
+        except Exception:
+            data = []
+        partners = [
+            ((d["target_kwaliteit_code"] or "").strip(), normaliseer_kleur(d["target_kleur_code"]))
+            for d in data if not d.get("is_zelf")
+        ]
+        out[(kw, kl)] = [(kw, kl)] + [p for p in partners if p != (kw, kl)]
+    return out
+
+
 def schrijf_rapporten(blok, ongedekt):
     RAPPORT_DIR.mkdir(exist_ok=True)
     with (RAPPORT_DIR / "migratie_gedekt.csv").open("w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["rol_id", "oud_ordernr", "oud_orderregel", "deel_index",
-                    "gereserveerde_lengte_cm", "breedte_nodig_cm", "kwaliteit", "kleur"])
+                    "gereserveerde_lengte_cm", "breedte_nodig_cm", "kwaliteit", "kleur",
+                    "rol_kwaliteit", "rol_kleur", "omgestickerd"])
         for b in blok:
+            omgestickerd = (b.kwaliteit, b.kleur) != (b.rol_kwaliteit, b.rol_kleur)
             w.writerow([b.rol_id, b.oud_ordernr, b.oud_orderregel, b.deel_index,
-                        b.gereserveerde_lengte_cm, b.breedte_nodig_cm, b.kwaliteit, b.kleur])
+                        b.gereserveerde_lengte_cm, b.breedte_nodig_cm, b.kwaliteit, b.kleur,
+                        b.rol_kwaliteit, b.rol_kleur, "ja" if omgestickerd else ""])
     with (RAPPORT_DIR / "migratie_ongedekt.csv").open("w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["oud_ordernr", "oud_orderregel", "deel_index", "kwaliteit",
@@ -214,8 +241,13 @@ def main():
     rollen = laad_rollen(sb)
     print("Rollen in pool:", len(rollen))
 
-    blok, ongedekt = alloceer(pieces, rollen)
-    print("Gedekt (blokkeringen):", len(blok))
+    print("Uitwisselbaar-map bouwen (uitwisselbare_paren per kwal/kleur) ...")
+    uitwisselbaar = bouw_uitwisselbaar_map(sb, pieces)
+    print("  unieke kwal/kleur-groepen:", len(uitwisselbaar))
+
+    blok, ongedekt = alloceer(pieces, rollen, uitwisselbaar=uitwisselbaar)
+    omgestickerd = sum(1 for b in blok if (b.kwaliteit, b.kleur) != (b.rol_kwaliteit, b.rol_kleur))
+    print("Gedekt (blokkeringen):", len(blok), f"(waarvan {omgestickerd} op uitwisselbare partner-rol)")
     print("Ongedekt (stuks):", len(ongedekt))
 
     schrijf_rapporten(blok, ongedekt)
