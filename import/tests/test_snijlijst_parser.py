@@ -1,6 +1,7 @@
 from lib.snijlijst_parser import (
     normaliseer_key,
     parse_kwal_kleur,
+    parse_artikelcode_kwal_kleur,
     is_snijden_uit,
     extract_gesneden_uit_rows,
     parse_planning_rij,
@@ -120,6 +121,39 @@ def test_parse_planning_rij_actief_recht():
     assert pr.breedte_nodig_cm == 400
     assert pr.lengte_verbruikt_cm == 175
     assert pr.aantal == 1
+
+
+def test_parse_artikelcode_kwal_kleur():
+    assert parse_artikelcode_kwal_kleur("LAGO13MAATWERK") == ("LAGO", "13")
+    assert parse_artikelcode_kwal_kleur("LUXR12MAATWERK") == ("LUXR", "12")
+    assert parse_artikelcode_kwal_kleur("VERR12MAATWERK") == ("VERR", "12")
+    assert parse_artikelcode_kwal_kleur("AEST13") is None      # geen MAATWERK-suffix
+    assert parse_artikelcode_kwal_kleur("") is None
+    assert parse_artikelcode_kwal_kleur(None) is None
+
+
+def test_parse_planning_rij_artikelcode_kolom0_leidend():
+    # Kolom 0 (LAGO13MAATWERK) is leidend boven de afgekapte kolom 4 ('VE13').
+    rij = [""] * 25
+    rij[0] = "LAGO13MAATWERK"; rij[4] = "VE13"
+    rij[7] = "340"; rij[8] = "250"
+    rij[10] = "26576490"; rij[15] = "1"
+    pr = parse_planning_rij(rij)
+    assert pr.kwaliteit == "LAGO"
+    assert pr.kleur == "13"
+    assert pr.rauwe_kwalkleur == "LAGO13MAATWERK"
+
+
+def test_parse_planning_rij_fallback_kolom4_als_kolom0_geen_maatwerk():
+    # Geen bruikbare kolom-0-artikelcode -> val terug op kolom 4.
+    rij = [""] * 25
+    rij[4] = "AEST14"
+    rij[7] = "400"; rij[8] = "175"
+    rij[10] = "26475680"; rij[15] = "1"
+    pr = parse_planning_rij(rij)
+    assert pr.kwaliteit == "AEST"
+    assert pr.kleur == "14"
+    assert pr.rauwe_kwalkleur == "AEST14"
 
 
 def test_parse_planning_rij_zonder_ordernr_is_none():

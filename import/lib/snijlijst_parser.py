@@ -10,6 +10,11 @@ import re
 from dataclasses import dataclass
 
 # Kolomindexen van tabblad 'Snijden Karpi op kwal' (0-based, data vanaf rij 2).
+# LET OP: kolom 0 (de artikelcode `<KWAL><KLEUR>MAATWERK`, bv. 'LAGO13MAATWERK')
+# is de BETROUWBARE kwaliteit+kleur-bron. Kolom 4 ('VE13', 'VERR12') is een
+# afgekapte/onbetrouwbare code (bv. 'VE13' is in werkelijkheid LAGO13, en 'VERR12'
+# kan zowel VERNON als LUXURY zijn) — die gebruiken we alleen als fallback.
+PL_ARTIKELCODE = 0
 PL_KWALKLEUR = 4
 PL_MAAT1 = 7
 PL_MAAT2 = 8
@@ -19,6 +24,8 @@ PL_RGL = 15
 PL_OPMERKING = 22
 
 _KWALKLEUR_RE = re.compile(r"^([A-Za-z]+)(\d+)$")
+# Artikelcode in kolom 0: <KWAL><KLEUR>MAATWERK, bv. 'LAGO13MAATWERK'.
+_MAATWERK_CODE_RE = re.compile(r"^([A-Za-z]+)(\d+)MAATWERK\b", re.IGNORECASE)
 _SNIJDEN_UIT_RE = re.compile(r"uit\s*\d+\s*x\s*\d+", re.IGNORECASE)
 
 
@@ -48,6 +55,19 @@ def parse_kwal_kleur(code) -> tuple[str, str] | None:
     if not m:
         return None
     return m.group(1), m.group(2)
+
+
+def parse_artikelcode_kwal_kleur(code) -> tuple[str, str] | None:
+    """'LAGO13MAATWERK' -> ('LAGO', '13'). Niet-matchend (leeg, geen MAATWERK) -> None.
+
+    Kolom 0 van 'Snijden Karpi op kwal' bevat de canonieke maatwerk-artikelcode;
+    dit is de betrouwbare kwaliteit+kleur-bron (kolom 4 is afgekapt/onbetrouwbaar).
+    """
+    s = _norm(code)
+    m = _MAATWERK_CODE_RE.match(s)
+    if not m:
+        return None
+    return m.group(1).upper(), m.group(2)
 
 
 def is_snijden_uit(opmerking) -> bool:
@@ -109,7 +129,13 @@ def parse_planning_rij(rij) -> PlanningRegel | None:
         aantal = 1
     if aantal < 1:
         aantal = 1
-    kk = parse_kwal_kleur(rij[PL_KWALKLEUR])
+    # Kwaliteit+kleur: kolom 0 (artikelcode <KWAL><KLEUR>MAATWERK) is leidend; de
+    # afgekapte kolom 4 dient enkel als fallback als kolom 0 niet parse-baar is.
+    kk = parse_artikelcode_kwal_kleur(rij[PL_ARTIKELCODE])
+    rauwe = _norm(rij[PL_ARTIKELCODE])
+    if kk is None:
+        kk = parse_kwal_kleur(rij[PL_KWALKLEUR])
+        rauwe = _norm(rij[PL_KWALKLEUR])
     kwaliteit, kleur = (kk if kk else ("", ""))
     return PlanningRegel(
         oud_ordernr=ordernr,
@@ -120,7 +146,7 @@ def parse_planning_rij(rij) -> PlanningRegel | None:
         lengte_verbruikt_cm=lengte,
         aantal=aantal,
         opmerking=_norm(rij[PL_OPMERKING]),
-        rauwe_kwalkleur=_norm(rij[PL_KWALKLEUR]),
+        rauwe_kwalkleur=rauwe,
     )
 
 
