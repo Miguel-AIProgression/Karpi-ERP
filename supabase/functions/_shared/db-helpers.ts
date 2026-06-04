@@ -342,7 +342,9 @@ export async function fetchBezettePlaatsingen(
   // (NIET 'in_snijplan'), dus de in_snijplan-query hierboven mist ze — aparte
   // query op de hele kwaliteit/kleur-groep. Draait ALTIJD, ook als er geen
   // in_snijplan-rollen zijn (anders zou een groep zonder voorstel-rollen de
-  // blokkering missen).
+  // blokkering missen). Een rol die zowel 'in_snijplan' is als een blokkering
+  // heeft, krijgt bewust beide (echte plaatsing + strip); computeFreeRects
+  // trekt overlappende obstakels correct af (subtractRect), dus geen dubbeltel.
   // ---------------------------------------------------------------------------
   const { data: groepRollen, error: groepError } = await supabase
     .from('rollen')
