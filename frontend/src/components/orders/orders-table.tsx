@@ -91,6 +91,21 @@ function FactuurCel({ orderId, facturenPerOrder }: {
   )
 }
 
+function BronBadge({ bron }: { bron?: string | null }) {
+  if (!bron || bron === 'handmatig') return null
+  const config: Record<string, { label: string; className: string }> = {
+    shopify:    { label: 'Shopify',    className: 'bg-green-100 text-green-700' },
+    edi:        { label: 'EDI',        className: 'bg-blue-100 text-blue-700' },
+    lightspeed: { label: 'Lightspeed', className: 'bg-amber-100 text-amber-700' },
+  }
+  const c = config[bron] ?? { label: bron, className: 'bg-slate-100 text-slate-600' }
+  return (
+    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide ${c.className}`}>
+      {c.label}
+    </span>
+  )
+}
+
 function VerzendweekCel({ order }: { order: OrderRow }) {
   if (order.lever_type === 'datum' && order.afleverdatum) {
     return (
@@ -148,6 +163,7 @@ function OrderTr({ order, bundel, facturenPerOrder }: {
           >
             {order.order_nr}
           </Link>
+          <BronBadge bron={order.bron_systeem} />
           {toonBundelChip && bundel && (
             <span
               className="inline-flex items-center px-1.5 py-0.5 rounded-[var(--radius-sm)] bg-terracotta-100 text-terracotta-700 text-[11px] font-medium"
