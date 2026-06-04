@@ -56,6 +56,20 @@ def test_alloceer_geen_kwal_kleur_match_is_ongedekt():
     assert len(ongedekt) == 1
 
 
+def test_alloceer_isoleert_kwal_kleur_groepen():
+    # Een stuk uit groep (VELV,24) mag NIET op een rol uit groep (AEST,13) landen,
+    # ook al is die rol breed en lang genoeg. Bewijst dat per_groep op (kwal,kleur)
+    # sleutelt en niet enkel op kwaliteit.
+    rollen = [
+        _roll(1, 400, 1500, "2025-01-01", kwal="AEST", kleur="13"),
+        _roll(2, 400, 1500, "2025-01-01", kwal="VELV", kleur="24"),
+    ]
+    blok, ongedekt = alloceer([_piece("A", "1", 290, 200, kwal="VELV", kleur="24")], rollen)
+    assert ongedekt == []
+    assert len(blok) == 1
+    assert blok[0].rol_id == 2  # alleen de VELV/24-rol
+
+
 def test_alloceer_full_width_verbruikt_lengte_lineair():
     # 2 stukken van 200 op een rol van 1500 -> beide passen, rol houdt 1100 over.
     rollen = [_roll(1, 400, 1500, "2025-01-01")]
