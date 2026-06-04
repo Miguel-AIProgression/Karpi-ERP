@@ -1,5 +1,13 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-04 — Fix: order-detail toonde "Klant —" (kapotte `debiteuren.email`-select)
+
+**Waarom:** Na de EDI-instroom (BDSK, Hornbach e.a.) viel op dat order-detail bovenin **Klant —** toonde terwijl de orders-lijst de klant wél toonde en `orders.debiteur_nr` correct gevuld was. Geen koppel-probleem dus — de orders zijn correct aan hun debiteur gekoppeld. Bug trof **alle** order-details (niet EDI-specifiek), maar werd zichtbaar door de berg nieuwe EDI-orders.
+
+**Oorzaak:** [`fetchOrderDetail`](../frontend/src/lib/supabase/queries/orders.ts) haalt de klantnaam via een aparte `debiteuren`-query die kolom **`email`** selecteerde — die kolom bestaat niet (`debiteuren` heeft `email_factuur`, `email_overig`, `email_2`). PostgREST gaf `42703 column debiteuren.email does not exist`; de error werd stil geslikt, `deb` werd `null`, dus `klant_naam` bleef `'—'`. De orders-lijst gebruikt de view `orders_list` (server-side join) en had er geen last van.
+
+**Wat:** `email` → `email_overig` in de select én de `klant_email`-fallback (`email_factuur ?? email_overig ?? null`). Pure frontend-fix, geen migratie / data-reparatie nodig.
+
 ## 2026-06-03 — EDI bootstrap-koppeling vestiging (centrale facturatie + filiaal-levering)
 
 **Waarom:** De eerste 4 echte Hornbach-orders na de EDI-cutover (id 17-20) werden geen order — `order_id IS NULL`, *"Geen debiteur gematcht op GLN"*. Oorzaak: centraal gefactureerd aan de **inactieve** hoofd-AG (361214) terwijl besteller/aflever-GLN per order een **NL-vestiging** is die nergens in de data stond. Correcte boeking = actieve NL-debiteur **361208** + de specifieke vestiging.

@@ -303,13 +303,13 @@ export async function fetchOrderDetail(id: number): Promise<OrderDetail> {
   if (order.debiteur_nr) {
     const { data: deb } = await supabase
       .from('debiteuren')
-      .select('naam, vertegenw_code, email_factuur, email')
+      .select('naam, vertegenw_code, email_factuur, email_overig')
       .eq('debiteur_nr', order.debiteur_nr)
       .single()
     if (deb) {
       klant_naam = deb.naam
       klant_vertegenw_code = deb.vertegenw_code
-      ;(order as Record<string, unknown>).klant_email = deb.email_factuur ?? deb.email ?? null
+      ;(order as Record<string, unknown>).klant_email = deb.email_factuur ?? deb.email_overig ?? null
     }
   }
 
