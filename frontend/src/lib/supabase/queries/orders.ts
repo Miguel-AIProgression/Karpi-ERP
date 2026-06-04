@@ -162,6 +162,15 @@ export async function fetchOrders(params: {
     query = query.or(
       'status.eq.Wacht op voorraad,status.eq.Wacht op inkoop,status.eq.Actie vereist,heeft_unmatched_regels.eq.true'
     )
+  } else if (status === 'Te bevestigen') {
+    // EDI-orders waarvan de leverweek nog bevestigd moet worden (mig 309).
+    // Status-overstijgend: filtert op bron + ontbrekende bevestiging.
+    // Geannuleerde orders uitgesloten: die hoeven geen leverweek-bevestiging
+    // (annuleren vereist geen bevestiging, dus edi_bevestigd_op blijft NULL).
+    query = query
+      .eq('bron_systeem', 'edi')
+      .is('edi_bevestigd_op', null)
+      .neq('status', 'Geannuleerd')
   } else if (status && status !== 'Alle') {
     query = query.eq('status', status)
   }
@@ -238,13 +247,19 @@ export async function fetchOrders(params: {
  * altijd reflecteert wat er in de lijst verschijnt bij selectie.
  */
 export async function fetchStatusCounts(): Promise<StatusCount[]> {
-  const [tellingRes, unmatchedRes] = await Promise.all([
+  const [tellingRes, unmatchedRes, teBevestigenRes] = await Promise.all([
     supabase.from('orders_status_telling').select('status, aantal'),
     supabase
       .from('orders')
       .select('id', { count: 'exact', head: true })
       .eq('heeft_unmatched_regels', true)
       .neq('status', 'Actie vereist'),
+    supabase
+      .from('orders')
+      .select('id', { count: 'exact', head: true })
+      .eq('bron_systeem', 'edi')
+      .is('edi_bevestigd_op', null)
+      .neq('status', 'Geannuleerd'),
   ])
 
   if (tellingRes.error) throw tellingRes.error
@@ -256,6 +271,11 @@ export async function fetchStatusCounts(): Promise<StatusCount[]> {
     const existing = counts.find((c) => c.status === 'Actie vereist')
     if (existing) existing.aantal += extraUnmatched
     else counts.push({ status: 'Actie vereist', aantal: extraUnmatched })
+  }
+
+  const teBevestigen = teBevestigenRes.count ?? 0
+  if (teBevestigen > 0) {
+    counts.push({ status: 'Te bevestigen', aantal: teBevestigen })
   }
 
   return counts

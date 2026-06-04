@@ -6,10 +6,13 @@ import type { StatusCount } from '@/lib/supabase/queries/orders'
 // 'Wacht op maatwerk' onderscheidt maatwerk-blokkade van voorraad-blokkade.
 // 'Actie vereist' is union van Wacht op voorraad ∪ Wacht op inkoop ∪
 // heeft_unmatched_regels (zie fetchOrders).
+// 'Te bevestigen' = EDI-orders met onbevestigde leverweek
+// (bron_systeem='edi' AND edi_bevestigd_op IS NULL); status-overstijgend, net als 'Actie vereist'.
 const ALL_STATUSES = [
   'Alle',
   'Klaar voor picken',
   'Actie vereist',
+  'Te bevestigen',
   'Wacht op voorraad',
   'Wacht op inkoop',
   'Wacht op maatwerk',
