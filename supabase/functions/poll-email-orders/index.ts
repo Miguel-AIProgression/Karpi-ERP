@@ -207,7 +207,23 @@ async function verwerkEmail(
     bron_order_id:   msgId,
   }
 
-  const regels = (match.regels as unknown[] | null) ?? []
+  // Saniteer regels: verplichte velden krijgen een fallback
+  const regels = ((match.regels as Array<Record<string, unknown>> | null) ?? []).map(r => ({
+    artikelnr:              r.artikelnr ?? null,
+    omschrijving:           r.omschrijving ?? (r.ruwe_omschrijving as string | null) ?? '(onbekend artikel)',
+    omschrijving_2:         r.omschrijving_2 ?? null,
+    orderaantal:            (r.orderaantal as number | null) ?? 1,
+    te_leveren:             (r.te_leveren as number | null) ?? (r.orderaantal as number | null) ?? 1,
+    prijs:                  r.prijs ?? null,
+    korting_pct:            r.korting_pct ?? 0,
+    bedrag:                 r.bedrag ?? null,
+    gewicht_kg:             r.gewicht_kg ?? null,
+    is_maatwerk:            r.is_maatwerk ?? false,
+    maatwerk_kwaliteit_code: r.maatwerk_kwaliteit_code ?? null,
+    maatwerk_kleur_code:    r.maatwerk_kleur_code ?? null,
+    maatwerk_lengte_cm:     r.maatwerk_lengte_cm ?? null,
+    maatwerk_breedte_cm:    r.maatwerk_breedte_cm ?? null,
+  }))
 
   const { data: rpcResult, error: rpcErr } = await supabase.rpc('create_webshop_order', {
     p_header:          header,

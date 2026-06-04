@@ -141,3 +141,6 @@ GRANT EXECUTE ON FUNCTION bevestig_concept_order(BIGINT) TO authenticated, servi
 COMMENT ON FUNCTION bevestig_concept_order IS
   'Promoveert een Concept-order naar Klaar voor picken. Triggert daarna herbereken_wacht_status '
   'zodat reserveringen en wacht-op-inkoop/-voorraad-status direct actief worden.';
+
+-- debiteur_nr nullable maken zodat Concept-orders zonder gematche klant aangemaakt kunnen worden
+ALTER TABLE orders ALTER COLUMN debiteur_nr DROP NOT NULL;
