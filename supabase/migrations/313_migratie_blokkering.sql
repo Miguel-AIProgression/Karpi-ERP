@@ -2,7 +2,7 @@
 -- Eenmalige FIFO-lengteblokkering van oud-systeem maatwerk-orders op fysieke rollen.
 -- Zie ADR-0028. Ontkoppeld van order_reserveringen (geen new-system order_regel_id).
 
-CREATE TABLE migratie_blokkering (
+CREATE TABLE IF NOT EXISTS migratie_blokkering (
   id                      BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   rol_id                  BIGINT NOT NULL REFERENCES rollen(id) ON DELETE CASCADE,
   gereserveerde_lengte_cm INTEGER NOT NULL CHECK (gereserveerde_lengte_cm > 0),
@@ -21,12 +21,12 @@ CREATE TABLE migratie_blokkering (
 );
 
 -- Hot path: fetchBezettePlaatsingen sommeert actieve blokkering per rol.
-CREATE INDEX idx_migratie_blokkering_rol_actief
+CREATE INDEX IF NOT EXISTS idx_migratie_blokkering_rol_actief
   ON migratie_blokkering (rol_id)
   WHERE status = 'actief';
 
 -- Release-script zoekt op (ordernr, regel).
-CREATE INDEX idx_migratie_blokkering_order
+CREATE INDEX IF NOT EXISTS idx_migratie_blokkering_order
   ON migratie_blokkering (oud_ordernr, oud_orderregel);
 
 COMMENT ON TABLE migratie_blokkering IS
@@ -37,6 +37,7 @@ ALTER TABLE migratie_blokkering ENABLE ROW LEVEL SECURITY;
 -- Lezen mag voor ingelogde gebruikers (edge-functies gebruiken service-role en
 -- omzeilen RLS sowieso). Schrijven loopt uitsluitend via het service-role
 -- migratiescript → geen INSERT/UPDATE-policy voor 'authenticated'.
+DROP POLICY IF EXISTS migratie_blokkering_select ON migratie_blokkering;
 CREATE POLICY migratie_blokkering_select
   ON migratie_blokkering FOR SELECT
   TO authenticated
