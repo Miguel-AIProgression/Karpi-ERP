@@ -91,6 +91,13 @@ export function buildAnthropicRequest(pdfBase64: string, bestandsnaam: string): 
  * Bouwt de Anthropic Messages-request voor een plain-text e-mail.
  * Optioneel een PDF als extra bijlage meegeven.
  */
+// Max 4 MB base64 (~3 MB binair) — grotere PDFs worden weggelaten om 400-fouten
+// van de Anthropic-API te voorkomen (limiet: 5 MB per document-block).
+const MAX_PDF_BASE64_CHARS = 4 * 1024 * 1024
+
+// Max 30 000 tekens voor de e-mailbody — doorgestuurde mails kunnen zeer lang zijn.
+const MAX_EMAIL_BODY_CHARS = 30_000
+
 export function buildAnthropicRequestFromEmail(
   emailBody: string,
   emailSubject: string,
@@ -98,16 +105,21 @@ export function buildAnthropicRequestFromEmail(
 ): AnthropicRequest {
   const userContent: unknown[] = []
 
-  if (pdfBase64) {
+  const safePdf = pdfBase64 && pdfBase64.length <= MAX_PDF_BASE64_CHARS ? pdfBase64 : undefined
+  const safeBody = emailBody.length > MAX_EMAIL_BODY_CHARS
+    ? emailBody.slice(0, MAX_EMAIL_BODY_CHARS) + '\n[... e-mail ingekort ...]'
+    : emailBody
+
+  if (safePdf) {
     userContent.push({
       type: 'document',
-      source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 },
+      source: { type: 'base64', media_type: 'application/pdf', data: safePdf },
     })
   }
 
   userContent.push({
     type: 'text',
-    text: `E-mail onderwerp: ${emailSubject}\n\n--- E-mail tekst ---\n${emailBody}\n\nExtraheer de bestelling uit bovenstaande e-mail${pdfBase64 ? ' (en bijgevoegde PDF)' : ''}. Antwoord met alleen het JSON-object.`,
+    text: `E-mail onderwerp: ${emailSubject}\n\n--- E-mail tekst ---\n${safeBody}\n\nExtraheer de bestelling uit bovenstaande e-mail${safePdf ? ' (en bijgevoegde PDF)' : ''}. Antwoord met alleen het JSON-object.`,
   })
 
   return {

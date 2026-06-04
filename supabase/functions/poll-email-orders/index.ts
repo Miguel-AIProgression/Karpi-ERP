@@ -167,20 +167,38 @@ async function verwerkEmail(
   }
   if (pdfBase64) parseBody.pdf_base64 = pdfBase64
 
-  const parseRes = await fetch(PARSE_PO_URL, {
-    method:  'POST',
-    headers: {
-      'Content-Type':  'application/json',
-      'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
-      'apikey':        SUPABASE_SERVICE_KEY,
-    },
-    body: JSON.stringify(parseBody),
-  })
-  if (!parseRes.ok) {
-    const err = await parseRes.text()
-    throw new Error(`parse-klant-po fout: ${parseRes.status} ${err.slice(0, 200)}`)
+  async function callParseKlantPo(body: Record<string, string>): Promise<Record<string, unknown>> {
+    const res = await fetch(PARSE_PO_URL, {
+      method:  'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+        'apikey':        SUPABASE_SERVICE_KEY,
+      },
+      body: JSON.stringify(body),
+    })
+    if (!res.ok) {
+      const err = await res.text()
+      throw new Error(`parse-klant-po fout: ${res.status} ${err.slice(0, 2000)}`)
+    }
+    const json = await res.json() as { match: Record<string, unknown> }
+    return json.match
   }
-  const { match } = await parseRes.json() as { match: Record<string, unknown> }
+
+  let match: Record<string, unknown>
+  try {
+    match = await callParseKlantPo(parseBody)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    // PDF ongeldig (bijv. beschadigd bij doorsturen) → opnieuw proberen zonder PDF
+    if (msg.includes('not valid') || msg.includes('invalid') || (parseBody.pdf_base64 && msg.includes('400'))) {
+      console.warn(`[poll-email-orders] PDF ongeldig, opnieuw proberen zonder PDF voor "${subject}"`)
+      const { pdf_base64: _pdf, ...bodyZonderPdf } = parseBody
+      match = await callParseKlantPo(bodyZonderPdf)
+    } else {
+      throw err
+    }
+  }
 
   // 4. Order aanmaken als Concept
   const vandaag     = new Date().toISOString().slice(0, 10)

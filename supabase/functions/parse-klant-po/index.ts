@@ -60,10 +60,9 @@ serve(async (req) => {
       body: JSON.stringify(anthropicReq),
     })
     if (!aiRes.ok) {
-      // Upstream-detail loggen voor observability, NIET teruggeven aan de client.
       const detail = await aiRes.text()
       console.error('parse-klant-po anthropic-fout:', aiRes.status, detail)
-      return jsonResponse({ error: `Claude-extractie mislukt (status ${aiRes.status})` }, 502)
+      return jsonResponse({ error: `Claude-extractie mislukt (status ${aiRes.status})`, detail }, 502)
     }
 
     // Niet-JSON of schema-mismatch op een 200 is een upstream-contentfout → 502.

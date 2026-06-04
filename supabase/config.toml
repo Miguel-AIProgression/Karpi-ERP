@@ -30,5 +30,8 @@ verify_jwt = false
 [functions.sync-shopify-order]
 verify_jwt = false
 
+[functions.poll-email-orders]
+verify_jwt = false
+
 [functions.gebruikers-beheer]
 verify_jwt = false
