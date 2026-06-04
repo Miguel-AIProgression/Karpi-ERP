@@ -218,24 +218,29 @@ async function verwerkEmail(
   }
 
   // 4. Order aanmaken als Concept
+  // match_klant_po geeft geneste objecten: match.debiteur.debiteur_nr, match.afleveradres.naam, etc.
   const vandaag     = new Date().toISOString().slice(0, 10)
   const afleverdatum = match.afleverdatum as string | null ?? vandaag
 
+  const debiteur   = match.debiteur   as { debiteur_nr?: number; zeker?: boolean } | null
+  const afl        = match.afleveradres as { naam?: string; adres?: string; postcode?: string; plaats?: string; land?: string } | null
+  const fact       = match.factuuradres as { naam?: string; adres?: string; postcode?: string; plaats?: string; land?: string } | null
+
   const header = {
-    debiteur_nr:     (match.debiteur_nr as number | null) ?? null,
+    debiteur_nr:     debiteur?.debiteur_nr ?? null,
     klant_referentie: (match.klant_referentie as string | null) ?? subject,
     orderdatum:      vandaag,
     afleverdatum,
-    afl_naam:        (match.afl_naam as string | null) ?? null,
-    afl_adres:       (match.afl_adres as string | null) ?? null,
-    afl_postcode:    (match.afl_postcode as string | null) ?? null,
-    afl_plaats:      (match.afl_plaats as string | null) ?? null,
-    afl_land:        (match.afl_land as string | null) ?? 'NL',
-    fact_naam:       (match.fact_naam as string | null) ?? null,
-    fact_adres:      (match.fact_adres as string | null) ?? null,
-    fact_postcode:   (match.fact_postcode as string | null) ?? null,
-    fact_plaats:     (match.fact_plaats as string | null) ?? null,
-    fact_land:       (match.fact_land as string | null) ?? 'NL',
+    afl_naam:        afl?.naam        ?? null,
+    afl_adres:       afl?.adres       ?? null,
+    afl_postcode:    afl?.postcode    ?? null,
+    afl_plaats:      afl?.plaats      ?? null,
+    afl_land:        afl?.land        ?? 'NL',
+    fact_naam:       fact?.naam       ?? null,
+    fact_adres:      fact?.adres      ?? null,
+    fact_postcode:   fact?.postcode   ?? null,
+    fact_plaats:     fact?.plaats     ?? null,
+    fact_land:       fact?.land       ?? 'NL',
     opmerkingen:     bodyText.slice(0, 8000),
     bron_systeem:    'email',
     bron_shop:       MS_MAILBOX,

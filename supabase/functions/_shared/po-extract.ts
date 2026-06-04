@@ -44,6 +44,8 @@ export interface PoRuwExtractie {
 const MODEL = 'claude-sonnet-4-6'
 const MAX_TOKENS = 4096
 
+const JSON_SCHEMA = `{"afzender":{"naam":string|null,"email":string|null,"btw_nummer":string|null,"kvk":string|null,"adres":string|null},"klant_referentie":string|null,"leverdatum_tekst":string|null,"spoed":boolean,"afleveradres":{"naam":string|null,"adres":string|null,"postcode":string|null,"plaats":string|null,"land":string|null}|null,"factuuradres":{"naam":string|null,"adres":string|null,"postcode":string|null,"plaats":string|null,"land":string|null}|null,"regels":[{"aantal":number|null,"ruwe_omschrijving":string|null,"kwaliteit_tekst":string|null,"kleur_tekst":string|null,"lengte_cm":number|null,"breedte_cm":number|null,"vorm_tekst":string|null,"klant_artikelnr":string|null,"prijs":number|null,"korting_pct":number|null}]}`
+
 const SYSTEM_PROMPT = `Je bent een extractie-engine voor inkooporders/bestelbonnen van een tapijtgroothandel (Karpi).
 Je krijgt één PDF van een klant-bestelling. Haal UITSLUITEND de letterlijk aanwezige gegevens eruit.
 Verzin of koppel NIETS — geen artikelnummers, geen kwaliteitscodes. Laat onbekend = null.
@@ -57,7 +59,26 @@ Belangrijk:
 - Per regel: aantal, ruwe_omschrijving (volledige regeltekst), kwaliteit_tekst (productnaam zoals PLUSH/Luxury/Cavaro/Vernon), kleur_tekst (zoals "13", "Plush 11", "Iron Grey 15"), lengte_cm/breedte_cm uit de maat (bv. 160 x 230 → 160/230), vorm_tekst (Rechthoekig/Rond/...), klant_artikelnr (alleen als de klant een eigen artikelnr noemt), prijs (eenheidsprijs), korting_pct.
 
 Antwoord met UITSLUITEND één JSON-object, exact dit schema, geen uitleg:
-{"afzender":{"naam":string|null,"email":string|null,"btw_nummer":string|null,"kvk":string|null,"adres":string|null},"klant_referentie":string|null,"leverdatum_tekst":string|null,"spoed":boolean,"afleveradres":{"naam":string|null,"adres":string|null,"postcode":string|null,"plaats":string|null,"land":string|null}|null,"factuuradres":{...zelfde...}|null,"regels":[{"aantal":number|null,"ruwe_omschrijving":string|null,"kwaliteit_tekst":string|null,"kleur_tekst":string|null,"lengte_cm":number|null,"breedte_cm":number|null,"vorm_tekst":string|null,"klant_artikelnr":string|null,"prijs":number|null,"korting_pct":number|null}]}`
+${JSON_SCHEMA}`
+
+const EMAIL_SYSTEM_PROMPT = `Je bent een extractie-engine voor bestellingen van klanten van een tapijtgroothandel (Karpi).
+Je krijgt de tekst van een e-mail (en soms een bijgevoegde PDF). Haal UITSLUITEND letterlijk aanwezige gegevens eruit.
+Verzin of koppel NIETS. Laat onbekend = null.
+
+Extractieregels voor e-mails:
+- afzender.email: het e-mailadres na "Van:" of "From:" (of het afzendadres in de e-mailheader). Dit is het e-mailadres van de klant.
+- afzender.naam: bedrijfsnaam van de afzender — staat vaak in de aanhef, ondertekening of e-mailhandtekening.
+- afzender.adres: factuuradres uit de handtekening/footer (straat + huisnr, postcode, plaats).
+- klant_referentie: het ordernummer van de klant — staat vaak in het onderwerp ("Purchase Order 11832" → "11832") of in de tekst ("PO nr:", "bestelnummer:", "order number:"). Neem ook een eventuele commissienaam mee als "<ordernr> | Commissie <naam>".
+- afleveradres: het LEVERADRES waarop geleverd moet worden. Staat soms expliciet vermeld ("Leveradres:", "NIEUW LEVERADRES", "Delivery address:") los van het factuuradres in de handtekening. Neem naam, straat, postcode, plaats over.
+- factuuradres: het factuuradres van de klant — staat vaak in de e-mailhandtekening (naam bedrijf + adresregel + postcode + plaats).
+- leverdatum_tekst: leverweek of -datum ("week 29", "29-2026", "ASAP") of null.
+- spoed: true bij "SPOED", "Urgent", "ASAP", "zo snel mogelijk".
+- regels: de bestelregels met producten. Staan soms in de e-mailtekst, maar vaak alleen in de bijgevoegde PDF. Als de e-mailtekst alleen een begeleidende brief is zonder productregels, geef dan een lege array [].
+- Per regel: aantal, ruwe_omschrijving (volledige regeltekst), kwaliteit_tekst (tapijtnaam zoals Vernon/Cisco/Plush), kleur_tekst, lengte_cm/breedte_cm uit de maat, vorm_tekst, klant_artikelnr, prijs, korting_pct.
+
+Antwoord met UITSLUITEND één JSON-object, exact dit schema, geen uitleg:
+${JSON_SCHEMA}`
 
 export interface AnthropicRequest {
   model: string
@@ -119,13 +140,26 @@ export function buildAnthropicRequestFromEmail(
 
   userContent.push({
     type: 'text',
-    text: `E-mail onderwerp: ${emailSubject}\n\n--- E-mail tekst ---\n${safeBody}\n\nExtraheer de bestelling uit bovenstaande e-mail${safePdf ? ' (en bijgevoegde PDF)' : ''}. Antwoord met alleen het JSON-object.`,
+    text: [
+      `E-mail onderwerp: ${emailSubject}`,
+      ``,
+      `--- E-mail tekst (inclusief headers, handtekening en eventueel doorgestuurd bericht) ---`,
+      safeBody,
+      ``,
+      `Extraheer alle beschikbare bestelgegevens${safePdf ? ' uit de e-mail én de bijgevoegde PDF' : ' uit de e-mail'}.`,
+      `Let extra op:`,
+      `- afzender.email staat na "Van:" of "From:" in de e-mailheader of het doorgestuurde bericht`,
+      `- klant_referentie staat in het onderwerp (bv. "Purchase Order 11832" → "11832") of na "PO nr:", "order number:", etc.`,
+      `- afleveradres: zoek naar "LEVERADRES", "NIEUW LEVERADRES", "Delivery address" of een adres dat expliciet als leveradres benoemd wordt`,
+      `- factuuradres: het adres in de e-mailhandtekening/footer van de klant`,
+      `Antwoord met alleen het JSON-object.`,
+    ].join('\n'),
   })
 
   return {
     model: MODEL,
     max_tokens: MAX_TOKENS,
-    system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+    system: [{ type: 'text', text: EMAIL_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
     messages: [{ role: 'user', content: userContent }],
   }
 }
