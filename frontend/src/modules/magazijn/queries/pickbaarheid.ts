@@ -143,7 +143,14 @@ async function fetchOpenOrderHeaders(): Promise<OrderHeaderRij[]> {
   const ordersBase = (ordersRaw ?? []) as unknown as Array<
     Omit<OrderHeaderRij, 'klant_naam' | 'deelleveringen_toegestaan'>
   >
-  const debiteurNrs = Array.from(new Set(ordersBase.map((o) => o.debiteur_nr)))
+  // Filter NULL/ongeldige debiteur_nrs eruit: orders zonder klant (bv. e-mail-
+  // Concept-orders, ORD-2026-0094/0095) hebben debiteur_nr=NULL. Zonder deze
+  // guard belandt een lege waarde in de `.in('debiteur_nr', [...])`-lijst →
+  // PostgREST 400 "invalid input syntax for type integer" → fetchOpenOrderHeaders
+  // faalt → de hele Pick & Ship-pagina valt leeg ("Geen open orders").
+  const debiteurNrs = Array.from(
+    new Set(ordersBase.map((o) => o.debiteur_nr).filter((nr): nr is number => nr != null))
+  )
   const klantMap = new Map<number, { naam: string; deelleveringen_toegestaan: boolean }>()
 
   if (debiteurNrs.length > 0) {
