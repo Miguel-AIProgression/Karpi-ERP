@@ -159,6 +159,7 @@ export const NAV_GROUPS = [
       { label: 'Afwerkingen', path: '/instellingen/afwerkingen', icon: 'Scissors' },
       { label: 'Betaalcondities', path: '/instellingen/betaalcondities', icon: 'Receipt' },
       { label: 'Medewerkers', path: '/instellingen/medewerkers', icon: 'Users' },
+      { label: 'Gebruikers', path: '/instellingen/gebruikers', icon: 'UserPlus' },
     ],
   },
 ] as const

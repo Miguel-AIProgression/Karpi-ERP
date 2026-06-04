@@ -30,6 +30,8 @@ import { KwaliteitenInstellingenPage } from '@/pages/instellingen/kwaliteiten'
 import { VormenInstellingenPage, AfwerkingenInstellingenPage } from '@/modules/maatwerk'
 import { BetaalconditiesInstellingenPage } from '@/pages/instellingen/betaalcondities'
 import { MedewerkersInstellingenPage } from '@/pages/instellingen/medewerkers'
+import { GebruikersInstellingenPage } from '@/pages/instellingen/gebruikers'
+import { WachtwoordInstellenPage } from '@/pages/wachtwoord-instellen'
 import { ConfectieOverviewPage } from '@/pages/confectie/confectie-overview'
 import { ConfectiePlanningPage } from '@/pages/confectie/confectie-planning'
 import { ScanstationPage } from '@/pages/scanstation/scanstation'
@@ -54,6 +56,8 @@ import {
 } from '@/modules/logistiek'
 
 export const router = createBrowserRouter([
+  // Standalone (zonder app-shell): landingspagina voor invite-/recovery-link.
+  { path: 'wachtwoord-instellen', element: <WachtwoordInstellenPage /> },
   {
     element: <AppLayout />,
     children: [
@@ -130,6 +134,7 @@ export const router = createBrowserRouter([
       { path: 'instellingen/afwerkingen', element: <AfwerkingenInstellingenPage /> },
       { path: 'instellingen/betaalcondities', element: <BetaalconditiesInstellingenPage /> },
       { path: 'instellingen/medewerkers', element: <MedewerkersInstellingenPage /> },
+      { path: 'instellingen/gebruikers', element: <GebruikersInstellingenPage /> },
     ],
   },
 ])
