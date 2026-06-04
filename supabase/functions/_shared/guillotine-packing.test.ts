@@ -461,3 +461,20 @@ Deno.test('ADR-0025: VERR130 C-scenario — 250×450 placement laat 150×450 chu
     `verwachtte een free-rect met short ≥ 150; kreeg ${JSON.stringify(free)}`,
   )
 })
+
+// ---------------------------------------------------------------------------
+// ADR-0028: migratie_blokkering als full-width bodemstrip
+// ---------------------------------------------------------------------------
+
+Deno.test('migratie-strip: full-width bodemstrip laat alleen ruimte erboven', () => {
+  // Rol 400 breed × 1500 lang; strip beslaat 0..400 (X) × 0..300 (Y).
+  // placement(id, x, y, lengte=X-extent, breedte=Y-extent)
+  const strip = placement(-1, 0, 0, 400, 300)
+  const free = computeFreeRects(400, 1500, [strip])
+  // Eén vrije rechthoek: volle breedte, vanaf y=300 tot 1500 (1200 hoog).
+  assertEquals(free.length, 1)
+  assertEquals(free[0].x, 0)
+  assertEquals(free[0].y, 300)
+  assertEquals(free[0].width, 400)
+  assertEquals(free[0].height, 1200)
+})

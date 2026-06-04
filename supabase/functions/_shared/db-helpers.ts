@@ -290,6 +290,8 @@ export async function fetchBezettePlaatsingen(
     .map((p) => `and(kwaliteit_code.eq.${p.kwaliteit_code},kleur_code.eq.${p.kleur_code})`)
     .join(',')
 
+  const map = new Map<number, Placement[]>()
+
   const { data: rolRows, error: rolError } = await supabase
     .from('rollen')
     .select('id')
@@ -299,38 +301,101 @@ export async function fetchBezettePlaatsingen(
   if (rolError) throw rolError
 
   const rolIds = (rolRows ?? []).map((r: { id: number }) => r.id)
-  if (rolIds.length === 0) return new Map()
 
-  const { data, error } = await supabase
-    .from('snijplannen')
-    .select('id, rol_id, positie_x_cm, positie_y_cm, lengte_cm, breedte_cm, geroteerd')
-    .in('rol_id', rolIds)
-    .eq('status', 'Gepland')
-    .not('positie_x_cm', 'is', null)
-    .not('positie_y_cm', 'is', null)
+  // Bestaande, in een voorstel geplande snijplannen op deze rollen.
+  if (rolIds.length > 0) {
+    const { data, error } = await supabase
+      .from('snijplannen')
+      .select('id, rol_id, positie_x_cm, positie_y_cm, lengte_cm, breedte_cm, geroteerd')
+      .in('rol_id', rolIds)
+      .eq('status', 'Gepland')
+      .not('positie_x_cm', 'is', null)
+      .not('positie_y_cm', 'is', null)
+    if (error) throw error
 
-  if (error) throw error
-
-  const map = new Map<number, Placement[]>()
-  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
-    const rolId = row.rol_id as number
-    const geroteerd = (row.geroteerd as boolean) ?? false
-    // snijplannen.lengte_cm/breedte_cm zijn de oorspronkelijke stukmaten.
-    // In tryPlacePiece is de niet-geroteerde orientatie {w: piece.lengte_cm,
-    // h: piece.breedte_cm} → placement.lengte_cm = X (w), placement.breedte_cm
-    // = Y (h). Bij rotatie worden ze omgedraaid.
-    const placement: Placement = {
-      snijplan_id: row.id as number,
-      positie_x_cm: Number(row.positie_x_cm),
-      positie_y_cm: Number(row.positie_y_cm),
-      lengte_cm: geroteerd ? Number(row.breedte_cm) : Number(row.lengte_cm),
-      breedte_cm: geroteerd ? Number(row.lengte_cm) : Number(row.breedte_cm),
-      geroteerd,
+    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+      const rolId = row.rol_id as number
+      const geroteerd = (row.geroteerd as boolean) ?? false
+      // snijplannen.lengte_cm/breedte_cm zijn de oorspronkelijke stukmaten.
+      // In tryPlacePiece is de niet-geroteerde orientatie {w: piece.lengte_cm,
+      // h: piece.breedte_cm} → placement.lengte_cm = X (w), placement.breedte_cm
+      // = Y (h). Bij rotatie worden ze omgedraaid.
+      const placement: Placement = {
+        snijplan_id: row.id as number,
+        positie_x_cm: Number(row.positie_x_cm),
+        positie_y_cm: Number(row.positie_y_cm),
+        lengte_cm: geroteerd ? Number(row.breedte_cm) : Number(row.lengte_cm),
+        breedte_cm: geroteerd ? Number(row.lengte_cm) : Number(row.breedte_cm),
+        geroteerd,
+      }
+      const arr = map.get(rolId) ?? []
+      arr.push(placement)
+      map.set(rolId, arr)
     }
-    const arr = map.get(rolId) ?? []
-    arr.push(placement)
-    map.set(rolId, arr)
   }
+
+  // ---------------------------------------------------------------------------
+  // Migratie-blokkeringen (ADR-0028, mig 313): oud-systeem maatwerk-orders die
+  // nog gesneden moeten worden, beslaan FIFO-lengte op rollen. We injecteren per
+  // geraakte rol één full-width bodemstrip zodat de packer er niet overheen
+  // plant. Let op: deze rollen hebben meestal status 'beschikbaar'/'reststuk'
+  // (NIET 'in_snijplan'), dus de in_snijplan-query hierboven mist ze — aparte
+  // query op de hele kwaliteit/kleur-groep. Draait ALTIJD, ook als er geen
+  // in_snijplan-rollen zijn (anders zou een groep zonder voorstel-rollen de
+  // blokkering missen).
+  // ---------------------------------------------------------------------------
+  const { data: groepRollen, error: groepError } = await supabase
+    .from('rollen')
+    .select('id, breedte_cm, lengte_cm')
+    .in('status', ['beschikbaar', 'reststuk', 'in_snijplan'])
+    .or(orClause)
+  if (groepError) throw groepError
+
+  const rolMeta = new Map<number, { breedte: number; lengte: number }>()
+  for (const r of (groepRollen ?? []) as Array<Record<string, unknown>>) {
+    rolMeta.set(r.id as number, {
+      breedte: Number(r.breedte_cm ?? 0),
+      lengte: Number(r.lengte_cm ?? 0),
+    })
+  }
+
+  const groepRolIds = [...rolMeta.keys()]
+  if (groepRolIds.length > 0) {
+    const { data: blok, error: blokError } = await supabase
+      .from('migratie_blokkering')
+      .select('rol_id, gereserveerde_lengte_cm')
+      .eq('status', 'actief')
+      .in('rol_id', groepRolIds)
+    if (blokError) throw blokError
+
+    const lengtePerRol = new Map<number, number>()
+    for (const b of (blok ?? []) as Array<Record<string, unknown>>) {
+      const rolId = b.rol_id as number
+      lengtePerRol.set(
+        rolId,
+        (lengtePerRol.get(rolId) ?? 0) + Number(b.gereserveerde_lengte_cm),
+      )
+    }
+
+    for (const [rolId, lengte] of lengtePerRol) {
+      const meta = rolMeta.get(rolId)
+      if (!meta || meta.breedte <= 0 || meta.lengte <= 0) continue
+      // Strip nooit groter dan de rol zelf (defensief tegen overgeboekte data).
+      const stripY = Math.min(lengte, meta.lengte)
+      const strip: Placement = {
+        snijplan_id: -rolId, // negatief: geen botsing met echte snijplan-ids
+        positie_x_cm: 0,
+        positie_y_cm: 0,
+        lengte_cm: meta.breedte, // X-extent = volle rolbreedte
+        breedte_cm: stripY, // Y-extent = verbruikte lengte
+        geroteerd: false,
+      }
+      const arr = map.get(rolId) ?? []
+      arr.push(strip)
+      map.set(rolId, arr)
+    }
+  }
+
   return map
 }
 
