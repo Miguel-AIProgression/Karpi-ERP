@@ -6,7 +6,7 @@ import { getVormDisplay } from '@/lib/utils/vorm-labels'
 import { isoWeekFromString } from '@/lib/utils/iso-week'
 import type { OrderRegel } from '@/lib/supabase/queries/orders'
 import { isAdminPseudo } from '@/lib/orders/admin-pseudo'
-import { LevertijdBadge, type OrderRegelLevertijd, type OrderClaim } from '@/modules/reserveringen'
+import { LevertijdBadge, UitwisselbaarToepassenRij, type OrderRegelLevertijd, type OrderClaim } from '@/modules/reserveringen'
 
 function formatMaat(regel: OrderRegel): string {
   const l = regel.maatwerk_lengte_cm
@@ -159,12 +159,14 @@ interface RegelRowProps {
 function RegelRow({ regel, levertijd, claims, isEindstatus }: RegelRowProps) {
   const afwerkingInfo = regel.maatwerk_afwerking ? AFWERKING_MAP[regel.maatwerk_afwerking] : null
   const maat = formatMaat(regel)
-  const subRows = !regel.is_maatwerk
+  const toonSubRows = !regel.is_maatwerk
     && regel.te_leveren > 0
     && !isAdminPseudo(regel)
     && !isEindstatus
-    ? buildSubRows(regel, claims)
-    : []
+  const subRows = toonSubRows ? buildSubRows(regel, claims) : []
+  // Ongedekt deel (te_leveren − Σ actieve claims) — wat nu op nieuwe inkoop wacht.
+  const totaalGeclaimd = claims.reduce((s, c) => s + c.aantal, 0)
+  const tekort = regel.te_leveren - totaalGeclaimd
 
   return (
     <>
@@ -277,6 +279,9 @@ function RegelRow({ regel, levertijd, claims, isEindstatus }: RegelRowProps) {
       {subRows.map((s) => (
         <SubRowTr key={s.key} sub={s} />
       ))}
+      {toonSubRows && tekort > 0 && regel.artikelnr && (
+        <UitwisselbaarToepassenRij regel={regel} tekort={tekort} claims={claims} />
+      )}
     </>
   )
 }

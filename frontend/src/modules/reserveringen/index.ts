@@ -41,6 +41,7 @@ export {
 export { RegelClaimDetail } from './components/regel-claim-detail'
 export { SubstitutionPicker } from './components/substitution-picker'
 export { UitwisselbaarTekortHint } from './components/uitwisselbaar-tekort-hint'
+export { UitwisselbaarToepassenRij } from './components/uitwisselbaar-toepassen-rij'
 export { LevertijdBadge } from './components/levertijd-badge'
 
 // ---------------------------------------------------------------------------

@@ -23,4 +23,5 @@ export function invalidateNaReserveringsmutatie(qc: QueryClient): void {
   qc.invalidateQueries({ queryKey: ['io-regel-claims'] })
   qc.invalidateQueries({ queryKey: ['handmatige-keuzes'] })
   qc.invalidateQueries({ queryKey: ['producten'] }) // wegens gereserveerd-cache
+  qc.invalidateQueries({ queryKey: ['equivalente-producten-summary'] }) // vrije voorraad uitwisselbaar wijzigt bij omsticker-claim
 }
