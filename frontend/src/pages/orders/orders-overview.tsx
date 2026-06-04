@@ -7,6 +7,7 @@ import { StatusTabs } from '@/components/orders/status-tabs'
 import { OrdersTable } from '@/components/orders/orders-table'
 import { useOrders, useStatusCounts, useOrderKlantOpties } from '@/hooks/use-orders'
 import { useFacturenVoorOrders } from '@/modules/facturatie'
+import { EdiTeKoppelenBanner } from '@/modules/edi'
 import type { OrderSortField, SortDirection } from '@/lib/supabase/queries/orders'
 
 export function OrdersOverviewPage() {
@@ -70,6 +71,9 @@ export function OrdersOverviewPage() {
           </Link>
         }
       />
+
+      {/* Safety-net: inkomende EDI-orders die niet aan een klant gekoppeld konden worden */}
+      <EdiTeKoppelenBanner />
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3 mb-4">

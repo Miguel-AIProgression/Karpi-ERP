@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   fetchEdiBerichten,
   fetchEdiBericht,
+  countTeKoppelenEdiOrders,
   fetchHandelspartnerConfig,
   upsertHandelspartnerConfig,
   fetchEdiPartners,
@@ -25,6 +26,19 @@ export function useEdiBerichten(filters: EdiBerichtenFilters = {}) {
     queryKey: ['edi-berichten', filters],
     queryFn: () => fetchEdiBerichten(filters),
     refetchInterval: 30_000, // poll elke 30s zodat nieuwe inkomende berichten zichtbaar worden
+  })
+}
+
+/**
+ * Aantal inkomende EDI-orders die nog gekoppeld moeten worden (order_id IS NULL).
+ * Voedt de waarschuwingsbanner op het orders-overzicht. Pollt mee met de
+ * berichten-lijst (30s) zodat een net-binnengekomen ongematchte order snel opvalt.
+ */
+export function useTeKoppelenEdiCount() {
+  return useQuery({
+    queryKey: ['edi-te-koppelen-count'],
+    queryFn: countTeKoppelenEdiOrders,
+    refetchInterval: 30_000,
   })
 }
 
@@ -78,6 +92,8 @@ export function useKoppelEdiAfleveradres() {
       koppelEdiAfleveradres(vars.berichtId, vars.debiteurNr, vars.afleveradresId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['edi-berichten'] })
+      // Banner op orders-overzicht moet meteen meebewegen als er gekoppeld is.
+      qc.invalidateQueries({ queryKey: ['edi-te-koppelen-count'] })
     },
   })
 }

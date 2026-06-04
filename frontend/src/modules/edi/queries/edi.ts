@@ -105,6 +105,26 @@ export async function fetchEdiBerichten(filters: EdiBerichtenFilters = {}): Prom
   }))
 }
 
+/**
+ * Telt inkomende EDI-orders die (nog) géén order werden — `order_id IS NULL`.
+ *
+ * Safety-net voor het orders-overzicht: zo'n bericht mag nooit alleen in de
+ * EDI-module blijven hangen (operator leeft in Orders). Zelfde definitie als
+ * `isTeKoppelen` in de berichten-overzicht: filtert op `order_id`, NIET op
+ * status — de poll laat de status soms op 'Verwerkt' staan terwijl
+ * order-creatie faalde (geen GLN-match).
+ */
+export async function countTeKoppelenEdiOrders(): Promise<number> {
+  const { count, error } = await supabase
+    .from('edi_berichten')
+    .select('id', { count: 'exact', head: true })
+    .eq('richting', 'in')
+    .eq('berichttype', 'order')
+    .is('order_id', null)
+  if (error) throw error
+  return count ?? 0
+}
+
 export async function fetchEdiBericht(id: number): Promise<EdiBerichtDetail | null> {
   const { data, error } = await supabase
     .from('edi_berichten')

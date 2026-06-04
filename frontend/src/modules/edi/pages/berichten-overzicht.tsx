@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { Search, ArrowDownCircle, ArrowUpCircle, AlertCircle, Beaker, Trash2, Upload, Link2 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
@@ -31,11 +31,13 @@ const TYPE_LABELS: Record<EdiBerichtType, string> = {
 }
 
 export function EdiBerichtenOverzichtPage() {
+  // Banner op het orders-overzicht linkt hierheen met ?teKoppelen=1 → filter direct aan.
+  const [searchParams] = useSearchParams()
   const [zoekterm, setZoekterm] = useState('')
   const [richtingFilter, setRichtingFilter] = useState<'alle' | EdiRichting>('alle')
   const [statusFilter, setStatusFilter] = useState<'alle' | EdiBerichtStatus>('alle')
   const [typeFilter, setTypeFilter] = useState<'alle' | EdiBerichtType>('alle')
-  const [alleenTeKoppelen, setAlleenTeKoppelen] = useState(false)
+  const [alleenTeKoppelen, setAlleenTeKoppelen] = useState(searchParams.get('teKoppelen') === '1')
   const [demoOpen, setDemoOpen] = useState(false)
   const [uploadOpen, setUploadOpen] = useState(false)
   const [opruimBusy, setOpruimBusy] = useState(false)

@@ -32,9 +32,12 @@ export {
 export {
   useEdiBerichten,
   useEdiBericht,
+  useTeKoppelenEdiCount,
   useHandelspartnerConfig,
   useUpsertHandelspartnerConfig,
 } from './hooks/use-edi'
+
+export { EdiTeKoppelenBanner } from './components/te-koppelen-banner'
 
 export { EdiBerichtenOverzichtPage } from './pages/berichten-overzicht'
 export { EdiBerichtDetailPage } from './pages/bericht-detail'

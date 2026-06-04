@@ -1,5 +1,26 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-04 — Safety-net: niet-gekoppelde EDI-orders zichtbaar op orders-overzicht
+
+**Waarom:** Een inkomende EDI-order die niet automatisch aan een klant matcht (geen GLN-match → `order_id IS NULL`) was alleen zichtbaar in de EDI-module. De operator werkt in Orders, dus zo'n gemiste order kon tussen wal en schip vallen — en dat mag nooit (er kan een order verloren gaan).
+
+**Wat:**
+- **Count-query** `countTeKoppelenEdiOrders()` + hook `useTeKoppelenEdiCount()` ([edi.ts](../frontend/src/modules/edi/queries/edi.ts) / [use-edi.ts](../frontend/src/modules/edi/hooks/use-edi.ts)) — lichte `count`-query met dezelfde definitie als de EDI-badge: `richting='in' AND berichttype='order' AND order_id IS NULL` (filtert op `order_id`, niet op status). Pollt 30s mee.
+- **Waarschuwingsbanner** [`EdiTeKoppelenBanner`](../frontend/src/modules/edi/components/te-koppelen-banner.tsx) bovenaan het orders-overzicht — rose alert, alleen zichtbaar bij ≥1 te koppelen order, met aantal + "Koppel nu" → `/edi/berichten?teKoppelen=1`.
+- **Deep-link:** [berichten-overzicht](../frontend/src/modules/edi/pages/berichten-overzicht.tsx) leest `?teKoppelen=1` uit de URL en zet het te-koppelen-filter direct aan.
+- Koppel-mutatie invalideert nu ook `['edi-te-koppelen-count']` zodat de banner meteen verdwijnt na koppelen.
+- Geen migratie/data-wijziging; puur frontend safety-net op bestaande detectie.
+
+## 2026-06-04 — Order-detail: omsticker-hint + "Toepassen"-knop bij uitwisselbare voorraad
+
+**Waarom:** Een vaste-maat-orderregel zonder eigen voorraad maar mét beschikbare **uitwisselbare** voorraad (bv. SEVILLA 526690091 met 0 eigen voorraad, terwijl LAWRENCE 526690115 6 vrij heeft) toonde op het order-detail alleen de rode **"Wacht op nieuwe inkoop"**-sub-rij. Daardoor leek het alsof er geen voorraad was, terwijl de regel via omstickeren wél geleverd kan worden. Omstickeren is bewust een **handmatige keuze** (CLAUDE.md: "uitwisselbaar = handmatige claims"), dus de allocator vult het nooit automatisch — op een al opgeslagen order zonder die keuze ontbreekt elke hint.
+
+**Wat:** Nieuwe component [`UitwisselbaarToepassenRij`](../frontend/src/modules/reserveringen/components/uitwisselbaar-toepassen-rij.tsx), gerenderd als extra sub-rij in [`order-regels-table.tsx`](../frontend/src/components/orders/order-regels-table.tsx) zodra een regel een ongedekt tekort (`te_leveren − Σ actieve claims > 0`) heeft.
+- Haalt live de uitwisselbare voorraad op (`zoek_equivalente_producten`-RPC, gedeelde cache-key met de order-form-hint) en toont groen **"N× leverbaar via omstickeren uit …"**.
+- Knop **"Omstickeren toepassen"** zet de handmatige claim direct via `set_uitwisselbaar_claims` — greedy-gevuld tot het tekort, bestaande handmatige claims behouden — zónder de hele order te hoeven bewerken. Daarna verversen de claims/levertijd en verschijnt de gewone omsticker-sub-rij; de hint verdwijnt.
+- Werkt op **live voorraad**, dus ook voor reeds opgeslagen orders (bestaande + nieuwe).
+- Cache-seam [`invalidateNaReserveringsmutatie`](../frontend/src/modules/reserveringen/cache.ts) invalideert nu ook `['equivalente-producten-summary']` zodat de vrije voorraad van het uitwisselbare bron-product na de claim klopt.
+
 ## 2026-06-04 — Fix: order-detail toonde "Klant —" (kapotte `debiteuren.email`-select)
 
 **Waarom:** Na de EDI-instroom (BDSK, Hornbach e.a.) viel op dat order-detail bovenin **Klant —** toonde terwijl de orders-lijst de klant wél toonde en `orders.debiteur_nr` correct gevuld was. Geen koppel-probleem dus — de orders zijn correct aan hun debiteur gekoppeld. Bug trof **alle** order-details (niet EDI-specifiek), maar werd zichtbaar door de berg nieuwe EDI-orders.
