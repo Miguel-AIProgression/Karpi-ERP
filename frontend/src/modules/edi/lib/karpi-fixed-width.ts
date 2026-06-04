@@ -98,7 +98,7 @@ const ART = {
 // Parser
 // ============================================================================
 
-const KARPI_GLN_DEFAULT = '8715954999998';
+export const KARPI_GLN_DEFAULT = '8715954999998';
 
 /**
  * Parse een ruw fixed-width Order-bericht (zoals geleverd door Transus M10110).

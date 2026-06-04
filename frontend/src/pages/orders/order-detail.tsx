@@ -11,6 +11,8 @@ import { useOrderDetail, useOrderRegels } from '@/hooks/use-orders'
 import { useLevertijdVoorOrder, useClaimsVoorOrder } from '@/modules/reserveringen'
 import { computeOrderLock } from '@/lib/utils/order-lock'
 import { DocumentenCompact } from '@/components/documenten/documenten-compact'
+import { EdiLeverweekBevestigen } from '@/components/orders/edi-leverweek-bevestigen'
+import { isLeverweekTeBevestigen } from '@/lib/orders/edi-leverweek'
 
 export function OrderDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -65,6 +67,16 @@ export function OrderDetailPage() {
       <DocumentenCompact kind="order" parentId={order.id} className="mb-3" />
 
       <OrderHeader order={order} locked={computeOrderLock(regels) === 'full'} />
+
+      {isLeverweekTeBevestigen(order) && (
+        <EdiLeverweekBevestigen
+          orderId={order.id}
+          gewenstIso={order.edi_gewenste_afleverdatum ?? null}
+          afleverdatumIso={order.afleverdatum}
+          orderStatus={order.status}
+        />
+      )}
+
       <OrderAddresses order={order} />
       <OrderRegelsTable regels={regels ?? []} isLoading={regelsLoading} levertijden={levertijden} claims={claims} orderStatus={order.status} />
       <OrderEventsTijdlijn orderId={order.id} />

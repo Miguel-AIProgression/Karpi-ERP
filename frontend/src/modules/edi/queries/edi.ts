@@ -318,3 +318,27 @@ export async function ruimEdiDemoData(): Promise<OpruimResult> {
   if (error) throw error
   return data as OpruimResult
 }
+
+/**
+ * Vindt het inkomende order-bericht dat bij een interne order hoort (mig 158:
+ * edi_berichten.order_id = orders.id). Nodig om vanaf order-detail de
+ * orderbev-bevestiging te kunnen aanroepen (payload_parsed = de partner-order).
+ * Retourneert null voor niet-EDI-orders of als het bron-bericht ontbreekt.
+ */
+export async function fetchInkomendBerichtVoorOrder(
+  orderId: number,
+): Promise<EdiBerichtDetail | null> {
+  const { data, error } = await supabase
+    .from('edi_berichten')
+    .select('id')
+    .eq('order_id', orderId)
+    .eq('richting', 'in')
+    .eq('berichttype', 'order')
+    .order('id', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+  if (error) throw error
+  const row = data as { id: number } | null
+  if (!row) return null
+  return fetchEdiBericht(row.id)
+}

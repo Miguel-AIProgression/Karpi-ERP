@@ -21,13 +21,18 @@ export {
   fetchHandelspartnerConfig,
   upsertHandelspartnerConfig,
   ruimEdiDemoData,
+  fetchInkomendBerichtVoorOrder,
   type EdiBerichtListItem,
   type EdiBerichtenFilters,
   type EdiHandelspartnerConfig,
   type EdiBerichtStatus,
   type EdiRichting,
   type EdiBerichtType,
+  type EdiBerichtDetail,
 } from './queries/edi'
+
+export { bevestigOrderViaEdi } from './lib/bevestig-helper'
+export { KARPI_GLN_DEFAULT } from './lib/karpi-fixed-width'
 
 export {
   useEdiBerichten,
