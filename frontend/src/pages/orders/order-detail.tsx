@@ -68,7 +68,7 @@ export function OrderDetailPage() {
 
       <OrderHeader order={order} locked={computeOrderLock(regels) === 'full'} />
 
-      {isLeverweekTeBevestigen(order) && (
+      {isLeverweekTeBevestigen(order) && order.status !== 'Geannuleerd' && (
         <EdiLeverweekBevestigen
           orderId={order.id}
           gewenstIso={order.edi_gewenste_afleverdatum ?? null}
