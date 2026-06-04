@@ -90,6 +90,21 @@ def test_extract_gesneden_skip_sheet_zonder_gesneden():
     assert extract_gesneden_uit_rows(rows) == set()
 
 
+def test_extract_gesneden_week_layout_positief():
+    # Week-sheet met (a) een 'gesneden'-titelcel op rij 0 die GEEN volledige header
+    # vormt, en (b) de echte header op rij 1 met niet-standaard kolomindexen
+    # (Gesneden=2, Verk.ordernr.=16, Rgl=21). Borgt dat de header-detect deze
+    # layout vindt EN dat de titelcel de sheet niet stil overslaat.
+    titel = [""] * 22
+    titel[8] = "Gesneden regels week 23"
+    header = [""] * 22
+    header[1] = "Niet produceren"; header[2] = "Gesneden"
+    header[16] = "Verk.ordernr.:"; header[21] = "Rgl"
+    data = [""] * 22
+    data[2] = "True"; data[16] = "26570480.0"; data[21] = "3.0"
+    assert extract_gesneden_uit_rows([titel, header, data]) == {("26570480", "3")}
+
+
 def test_parse_planning_rij_actief_recht():
     # 0-based kolommen; index4 kwal+kleur, 7 maat1, 8 maat2, 9 aantal,
     # 10 ordernr, 15 rgl, 22 opmerking.
@@ -100,7 +115,6 @@ def test_parse_planning_rij_actief_recht():
     assert pr is not None
     assert pr.oud_ordernr == "26475680"
     assert pr.oud_orderregel == "1"
-    assert pr.kwaliteit == "AEST14"[:4] or pr.kwaliteit == "AEST"
     assert pr.kwaliteit == "AEST"
     assert pr.kleur == "14"
     assert pr.breedte_nodig_cm == 400

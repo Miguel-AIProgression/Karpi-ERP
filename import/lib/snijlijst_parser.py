@@ -144,7 +144,9 @@ def _vind_kolommen(rows) -> tuple[int, dict] | tuple[None, None]:
                 cols["rgl"] = ci
         if all(k in cols for k in ("gesn", "ordernr", "rgl")):
             return ri, cols
-        return None, None
+        # Onvolledige header in deze rij (bv. 'gesneden' in een titelcel): blijf
+        # de overige kandidaat-rijen scannen i.p.v. de sheet stil over te slaan.
+        continue
     return None, None
 
 
