@@ -649,7 +649,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
         <ClientSelector
           value={client}
           onChange={handleClientChange}
-          disabled={mode === 'edit'}
+          disabled={mode === 'edit' && !!client?.debiteur_nr && initialData?.status !== 'Concept'}
         />
       </div>
 

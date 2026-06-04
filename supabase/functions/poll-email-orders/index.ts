@@ -201,7 +201,7 @@ async function verwerkEmail(
     fact_postcode:   (match.fact_postcode as string | null) ?? null,
     fact_plaats:     (match.fact_plaats as string | null) ?? null,
     fact_land:       (match.fact_land as string | null) ?? 'NL',
-    opmerkingen:     null,
+    opmerkingen:     bodyText.slice(0, 8000),
     bron_systeem:    'email',
     bron_shop:       MS_MAILBOX,
     bron_order_id:   msgId,
@@ -234,7 +234,47 @@ async function verwerkEmail(
 
   const orderNr = Array.isArray(rpcResult) ? rpcResult[0]?.order_nr : null
 
-  // 5. E-mail markeren als gelezen + verplaatsen naar RugFlow-verwerkt
+  // 5. PDF-bijlage uploaden naar Supabase Storage + documenten-record aanmaken
+  if (pdfBase64 && bijlagenRes.value.length > 0) {
+    try {
+      const { data: orderRow } = await supabase
+        .from('orders')
+        .select('id')
+        .eq('bron_systeem', 'email')
+        .eq('bron_order_id', msgId)
+        .single()
+
+      if (orderRow) {
+        const orderId = orderRow.id
+        const origNaam = bijlagenRes.value[0].name as string
+        const sanitized = origNaam.replace(/[^a-zA-Z0-9._-]/g, '_')
+        const uuid = crypto.randomUUID()
+        const storagePath = `orders/${orderId}/${uuid}-${sanitized}`
+        const fileBytes = Uint8Array.from(atob(pdfBase64), (c) => c.charCodeAt(0))
+
+        const { error: uploadErr } = await supabase.storage
+          .from('order-documenten')
+          .upload(storagePath, fileBytes, { contentType: 'application/pdf' })
+
+        if (!uploadErr) {
+          await supabase.from('order_documenten').insert({
+            order_id: orderId,
+            bestandsnaam: origNaam,
+            storage_path: storagePath,
+            mime_type: 'application/pdf',
+            grootte_bytes: fileBytes.length,
+            omschrijving: 'Automatisch bijgevoegd via e-mail import',
+          })
+        } else {
+          console.warn(`[poll-email-orders] PDF upload mislukt voor order ${orderNr}:`, uploadErr.message)
+        }
+      }
+    } catch (e) {
+      console.warn(`[poll-email-orders] PDF koppeling mislukt voor order ${orderNr}:`, e)
+    }
+  }
+
+  // 6. E-mail markeren als gelezen + verplaatsen naar RugFlow-verwerkt
   await graphPatch(token, `/users/${MS_MAILBOX}/messages/${msgId}`, { isRead: true })
   await graphPost(token, `/users/${MS_MAILBOX}/messages/${msgId}/move`, { destinationId: verwerktMapId })
 

@@ -82,7 +82,7 @@ export function OrderEditPage() {
     )
   }
 
-  const client: SelectedClient = {
+  const client: SelectedClient | null = order.debiteur_nr ? {
     debiteur_nr: order.debiteur_nr,
     naam: order.klant_naam ?? '',
     adres: null,
@@ -107,7 +107,7 @@ export function OrderEditPage() {
     maatwerk_weken: clientData?.maatwerk_weken ?? null,
     deelleveringen_toegestaan: clientData?.deelleveringen_toegestaan ?? false,
     default_lever_type: clientData?.default_lever_type ?? 'week',
-  }
+  } : null
 
   // Groepeer handmatige keuzes per orderregel-id
   const keuzesPerRegel = new Map<number, { artikelnr: string; aantal: number; omschrijving?: string }[]>()
