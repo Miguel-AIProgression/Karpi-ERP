@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from pathlib import Path
+from datetime import datetime, timezone
 
 from supabase import create_client
 
@@ -45,10 +45,13 @@ def main():
         print("DRY-RUN — niets gewijzigd. Gebruik --commit.")
         return
 
+    # ISO-timestamp uit Python: PostgREST stuurt de waarde als string door, en
+    # Postgres cast het literal 'now()' NIET naar timestamptz (alleen 'now' wel).
+    nu_iso = datetime.now(timezone.utc).isoformat()
     for i in range(0, len(vrij_ids), 500):
         batch = vrij_ids[i:i + 500]
         sb.table("migratie_blokkering").update(
-            {"status": "vrijgegeven", "vrijgegeven_op": "now()"}
+            {"status": "vrijgegeven", "vrijgegeven_op": nu_iso}
         ).in_("id", batch).execute()
     print("Klaar:", len(vrij_ids), "vrijgegeven.")
 
