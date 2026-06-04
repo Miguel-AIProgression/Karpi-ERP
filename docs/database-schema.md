@@ -336,6 +336,8 @@ Orderheaders. Adressen zijn snapshots (niet FK naar afleveradressen).
 | afhalen | BOOLEAN NOT NULL DEFAULT false | TRUE = klant haalt zelf op. UI in `OrderForm` onderdrukt automatische verzendkosten-regel; logistiek/zending overslaat vervoerder-stap. Migratie 204. |
 | lever_type | lever_type ENUM NOT NULL DEFAULT 'week' | ADR 0014 / mig 244. `'week'` = order-belofte op leverweek (B2B-default, ~90%); `'datum'` = exact die afleverdatum (B2C). Bepaalt Pick & Ship-horizon (`werkdagMinN(afleverdatum, 1)` voor dag-orders) en snij-prioriteit (`werkdagMinN(afleverdatum, dag_order_snij_buffer_werkdagen)` voor dag-orders i.p.v. `logistieke_buffer_dagen` voor week-orders). Default per klant in `debiteuren.default_lever_type`. |
 | verzonden_at | TIMESTAMPTZ | Mig 217 (ADR-0005). Moment waarop `voltooi_pickronde` de laatste open zending sloot en `orders.status='Verzonden'` zette. Triggert factuur-queue (mig 118). NULL voor orders die nog niet verzonden zijn. |
+| edi_bevestigd_op | TIMESTAMPTZ | Mig 158. Tijdstip waarop de operator de EDI-orderbev heeft bevestigd en verstuurd (`bevestigOrderViaEdi`). NULL = leverweek/orderbev nog niet bevestigd ("te bevestigen"). Hergebruikt als gate voor mig 309-310. **Niet te verwarren** met `bevestigd_at` (mig 304 = e-mail-orderbevestiging aan klant). |
+| edi_gewenste_afleverdatum | DATE | EDI-only (mig 309): door de partner gewenste leverdatum (snapshot, verandert nooit). `afleverdatum` mag afwijken zodra de allocator/mig 153 een haalbare datum berekent of de operator bij bevestiging corrigeert. NULL voor niet-EDI of als de partner geen leverdatum meestuurde. |
 
 ---
 

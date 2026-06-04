@@ -1,5 +1,46 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-04 — EDI-leverweek als voorstel + bevestigingsstap (mig 309-310)
+
+- **Probleem:** de door EDI-partners meegestuurde leverweek werd 1-op-1 in `orders.afleverdatum` gezet en de order stroomde direct door naar picken/productie — zonder toets op voorraad/inkoop.
+- **Oplossing:** nieuwe kolom `orders.edi_gewenste_afleverdatum` (snapshot klantwens). EDI-orders zijn "te bevestigen" tot `edi_bevestigd_op` gezet is; zolang geblokkeerd uit Pick & Ship en `snijplanning_overzicht` (NULL-safe gate `(bron_systeem IS DISTINCT FROM 'edi' OR edi_bevestigd_op IS NOT NULL)`, raakt handmatige orders niet). Operator bevestigt de definitieve leverweek op order-detail (paneel `EdiLeverweekBevestigen`), wat `afleverdatum` vastzet en de orderbev (met bevestigde datum) verstuurt. Nieuw overzicht-filter "Te bevestigen" (excl. geannuleerd).
+- **Raakvlak:** alleen EDI-orders; niet-EDI ongewijzigd. Gate hergebruikt mig 158 (`edi_bevestigd_op`), níet de mig 304 e-mail-bevestiging.
+
+## 2026-06-04 — EDI-afleveradres matchte niet door ".0"-GLN-artefact — fix + backfill (mig 312)
+
+**Waarom:** EDI-orders van centrale-facturatie-ketens kregen **allemaal hetzelfde afleveradres** — het debiteur-hoofdadres — terwijl de orders wel degelijk verschillende vestiging-GLN's meesturen. BDSK/XXXLutz (#600556): 39 orders, 37 unieke aflever-GLN's, tóch alle plaatsen = WUERZBURG. Oorzaak in drie lagen: (1) `afleveradressen.gln_afleveradres` is via de Excel-import als **float** ingelezen en mét `.0`-suffix opgeslagen (`9007019005225.0`) — 60 van de 64 GLN-afleveradressen; alleen de 4 handmatig via de koppel-widget ingevoerde Hornbach-adressen (#361208) stonden schoon, daarom werkte Hornbach wél. (2) `create_edi_order` matcht het afleveradres **exact** (`gln_afleveradres = v_gln_afl`), zonder de `.0`-tolerantie die `matchDebiteur` (transus-poll) wél heeft → schone binnenkomende GLN ≠ opgeslagen `.0`-GLN → terugval op hoofdadres. (3) `create_edi_order` is idempotent → bestaande orders werden nooit her-gesnapshot (zelfde mechaniek als de prijzen-backfill mig 308).
+
+**Wat ([mig 312](../supabase/migrations/312_edi_afleveradres_gln_fix.sql)):**
+- **`.0` opgeschoond** uit `afleveradressen.gln_afleveradres` (60 rijen).
+- **`create_edi_order` `.0`-tolerant** gemaakt (`gln_afleveradres IN (v_gln_afl, v_gln_afl || '.0')`) — defense-in-depth tegen een toekomstige her-import.
+- **Adres-backfill** op bestaande EDI-orders die nu matchen (analoog aan mig 308), met `IS DISTINCT FROM`-guard en uitsluiting van orders in een actieve/afgeronde bundel-zending (mig 230-lock). **24 orders** kregen hun juiste vestiging-adres (BDSK ging van 1 → 22 unieke plaatsen; o.a. FELLBACH/STUTTGART, DREIEICH, AUGSBURG, HEILBRONN, BRAUNSCHWEIG, NORDHORN).
+- **Import gehardend** ([`import/supabase_import.py`](../import/supabase_import.py)): nieuwe helper `clean_gln` strip het float-`.0`-artefact bij import van `gln_afleveradres` én `gln_bedrijf`, zodat een her-import het niet opnieuw introduceert.
+
+**Resterende gap (geen bug, data-volledigheid):** 57 EDI-orders staan nog op het hoofdadres omdat hun aflever-GLN **geen** afleveradres matcht — die vestigingen hebben geen GLN op het afleveradres (SB Möbel BOSS #150761: 1 afleveradres, 0 met GLN; FUG MITTE #630861: 24 afleveradressen, 0 met GLN; BDSK: 84 van 134 zonder GLN). Het EDI-bericht draagt enkel een GLN, geen adrestekst, dus het adres is niet uit de order af te leiden. Oplossing per vestiging: GLN koppelen via de koppel-widget (mig 306) of een GLN-aanvulling importeren. NB: voor klanten die feitelijk centraal leveren kán één adres correct zijn — per klant te verifiëren.
+
+**Toepassen:** De data-fixes (opschonen + backfill) zijn **live uitgevoerd** via service-role REST. Mig 312 is het canonieke, idempotente record; de **functie-herdefinitie** (`create_edi_order` `.0`-tolerant) moet nog via `supabase db push` / de SQL-editor toegepast worden — daarna matchen nieuwe orders ook bij een eventueel teruggekeerd `.0`-artefact.
+
+## 2026-06-04 — Hornbach-prijslijst (0251) geladen + koppeling + prijs-backfill (mig 311)
+
+**Waarom:** De Hornbach-prijslijst is lokaal aangeleverd (`prijslijst0251_a hornbach.xlsx`, nieuw exportformaat mét EAN-kolom). Tot nu toe had Hornbach (debiteur **361208**, de enige ACTIEVE Hornbach — 361206/207/209/210/213/214 zijn Inactief) géén `prijslijst_nr` en hadden Hornbach-artikelen geen `producten.verkoopprijs`. Inkomende EDI-orders kregen daardoor orderregels zonder prijs (prijs NULL / bedrag 0). Zelfde situatie als de generieke mig 308-backfill, maar Hornbach kon toen niet mee omdat er nog geen prijslijst bestond.
+
+**Wat:**
+- **Import** ([`import/import_prijslijst_hornbach.py`](../import/import_prijslijst_hornbach.py), dry-run/`--apply`, gemodelleerd op `import_prijslijsten_nieuw.py`): `prijslijst_headers` nr=`0251` naam=`HORNBACH PER 1-4-2026` (geldig_vanaf 2026-04-01) + **1053** `prijslijst_regels` (artikelnr 9-cijferig + EAN + prijs + gewicht). 17 Excel-artikelnrs overgeslagen omdat ze niet in `producten` staan (ASLA99XX-assortie; staan op geen enkele order → geen impact, wel gerapporteerd zodat FK-fouten uitblijven).
+- **Koppeling:** `debiteuren.prijslijst_nr='0251'` op 361208. Vanaf nu prijst `create_edi_order` (mig 159/166) nieuwe Hornbach-orders automatisch correct via de prijslijst.
+- **Backfill** ([mig 311](../supabase/migrations/311_edi_prijzen_backfill_hornbach.sql)): dezelfde JOIN-logica als mig 308, gescoped op `prijslijst_nr='0251'`. De 4 bestaande EDI-orders (6 regels, allemaal prijs NULL) zijn gevuld met de prijslijstprijs (`prijs`/`korting_pct`/`bedrag`). De backfill is al via het import-script uitgevoerd; mig 311 is het canonieke, **idempotente** SQL-record (her-uitvoer = no-op).
+
+**Toepassen:** Import + koppeling + backfill zijn live toegepast via het script (service-role REST). Mig 311 hoeft alleen nog in de Supabase SQL-editor gedraaid te worden als permanent migratie-record (verandert niets meer aan de data). Geen code- of functiewijziging.
+
+## 2026-06-04 — Gebruikersbeheer: inlog-accounts uitnodigen & beheren
+
+**Waarom:** Tot nu toe konden portaal-accounts (Supabase `auth.users`) alleen via het Supabase-dashboard worden aangemaakt. Karpi wil zelf vanuit het portaal collega's kunnen uitnodigen en beheren (o.a. thom, jeannet, anja, marjon, marjolein, regina @karpi.nl).
+
+**Wat (geen DB-tabel — `auth.users` is de bron-van-waarheid via de admin-API):**
+- **Edge function** [`gebruikers-beheer`](../supabase/functions/gebruikers-beheer/index.ts) (service-role) met acties `lijst` / `uitnodigen` / `wachtwoord-reset` / `blokkeren` / `deblokkeren` / `verwijderen`. `verify_jwt = false` op de gateway (publishable-key-vorm is geen JWT) — daarom verifieert de functie **zelf** het bearer-token van de aanroeper: alleen een ingelogde gebruiker mag deze admin-acties uitvoeren. Eigen account kan niet geblokkeerd/verwijderd worden.
+- **Onboarding via uitnodigingsmail:** `inviteUserByEmail` (en `resetPasswordForEmail` voor reset) met `redirectTo` → nieuwe standalone-pagina [`/wachtwoord-instellen`](../frontend/src/pages/wachtwoord-instellen.tsx), waar de gebruiker zelf een wachtwoord kiest (`supabase.auth.updateUser`).
+- **Frontend:** query-laag [`gebruikers.ts`](../frontend/src/lib/supabase/queries/gebruikers.ts) + hooks [`use-gebruikers.ts`](../frontend/src/hooks/use-gebruikers.ts) (TanStack Query), overzichtspagina [`/instellingen/gebruikers`](../frontend/src/pages/instellingen/gebruikers.tsx) met status-badges (Actief / Uitnodiging open / Geblokkeerd), laatste-login en rij-acties, en de [uitnodig-dialog](../frontend/src/components/instellingen/uitnodig-gebruiker-dialog.tsx). Nieuw nav-item "Gebruikers" onder *Systeem*.
+- **Toepassen (handmatig):** `supabase functions deploy gebruikers-beheer`; in Supabase Auth de **SMTP** configureren (anders komen de invite-mails niet aan) en de redirect-URL `…/wachtwoord-instellen` + Site URL toevoegen aan de toegestane redirect-URLs. Daarna de 6 accounts uitnodigen via de pagina.
+
 ## 2026-06-04 — Backfill EDI-orderregelprijzen na klant(her)koppeling (mig 308)
 
 **Waarom:** Een reeks inkomende EDI-orders is aangemaakt vóór de juiste debiteur gekoppeld was (de match faalde eerder op het factuur-GLN). `create_edi_order` (mig 166) prijst regels via `debiteuren.prijslijst_nr` → `prijslijst_regels`, maar omdat de debiteur — en dus de prijslijst — toen onbekend was, bleven de orderregels zonder (juiste) prijs. Ketens zonder product-verkoopprijs (bv. Hornbach-artikelen) → prijs leeg; ketens mét prijslijst (BDSK/XXXLutz, Möbel) → prijslijstprijs niet toegepast. De klantkoppeling staat inmiddels live (mig 306/307), dus `orders.debiteur_nr` wijst nu correct en de prijslijst kan met terugwerkende kracht worden toegepast.
