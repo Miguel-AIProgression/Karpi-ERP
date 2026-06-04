@@ -48,6 +48,31 @@ COMMENT ON TABLE debiteur_gln_aliassen IS
   'BDSK/XXXLutz. matchDebiteur (transus-poll) raadpleegt deze tabel na het '
   'hoofd-GLN. Een GLN is uniek aan één debiteur.';
 
+-- RLS (consistent met edi_handelspartner_config, mig 156: authenticated = volledige
+-- toegang). De edge function gebruikt service_role (bypasst RLS); de frontend leest
+-- niet direct maar via de SECURITY DEFINER-RPC hieronder.
+ALTER TABLE debiteur_gln_aliassen ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS debiteur_gln_aliassen_select ON debiteur_gln_aliassen;
+CREATE POLICY debiteur_gln_aliassen_select
+  ON debiteur_gln_aliassen FOR SELECT
+  TO authenticated USING (TRUE);
+
+DROP POLICY IF EXISTS debiteur_gln_aliassen_insert ON debiteur_gln_aliassen;
+CREATE POLICY debiteur_gln_aliassen_insert
+  ON debiteur_gln_aliassen FOR INSERT
+  TO authenticated WITH CHECK (TRUE);
+
+DROP POLICY IF EXISTS debiteur_gln_aliassen_update ON debiteur_gln_aliassen;
+CREATE POLICY debiteur_gln_aliassen_update
+  ON debiteur_gln_aliassen FOR UPDATE
+  TO authenticated USING (TRUE) WITH CHECK (TRUE);
+
+DROP POLICY IF EXISTS debiteur_gln_aliassen_delete ON debiteur_gln_aliassen;
+CREATE POLICY debiteur_gln_aliassen_delete
+  ON debiteur_gln_aliassen FOR DELETE
+  TO authenticated USING (TRUE);
+
 -- ============================================================================
 -- 2. RPC: koppel een bericht via een (nieuwe) factuur-GLN-alias
 -- ============================================================================
