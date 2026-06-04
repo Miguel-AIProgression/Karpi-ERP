@@ -37,8 +37,23 @@ export async function bevestigOrderViaEdi(
   })
   if (rpcErr) throw rpcErr
 
+  // De orderbev moet de BEVESTIGDE leverdatum dragen (operator kan die op
+  // order-detail hebben gecorrigeerd t.o.v. de EDI-wens — mig 309). Lees de
+  // actuele orders.afleverdatum; valt die weg, dan fallback op de EDI-wens.
+  // De .error MOET hier afgevangen worden: deze read is dragend — stil
+  // terugvallen op de rauwe wens zou de verkeerde datum naar de partner sturen.
+  const { data: orderRow, error: orderReadErr } = await supabase
+    .from('orders')
+    .select('afleverdatum')
+    .eq('id', orderId)
+    .maybeSingle()
+  if (orderReadErr) throw orderReadErr
+  const bevestigdeLeverdatum =
+    (orderRow as { afleverdatum: string | null } | null)?.afleverdatum ??
+    parsedOrder.header.leverdatum
+
   const isTest = options.isTest ?? isTestMessage(parsedOrder.header)
-  const orderbevInput = buildOrderbevInput(parsedOrder, karpiGln, isTest)
+  const orderbevInput = buildOrderbevInput(parsedOrder, karpiGln, isTest, bevestigdeLeverdatum)
 
   const { data: bestaand } = await supabase
     .from('edi_berichten')
@@ -151,10 +166,11 @@ function buildOrderbevInput(
   parsedOrder: KarpiOrder,
   karpiGln: string,
   isTest: boolean,
+  leverdatumOverride?: string | null,
 ): OrderbevInput {
   return {
     ordernummer: parsedOrder.header.ordernummer,
-    leverdatum: parsedOrder.header.leverdatum,
+    leverdatum: leverdatumOverride ?? parsedOrder.header.leverdatum,
     orderdatum: new Date().toISOString().slice(0, 10),
     afnemer_naam: parsedOrder.header.afnemer_naam,
     gln_gefactureerd: parsedOrder.header.gln_gefactureerd ?? '',
