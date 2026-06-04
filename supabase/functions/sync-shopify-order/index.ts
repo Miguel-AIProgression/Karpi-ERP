@@ -285,7 +285,8 @@ serve(async (req) => {
   }
 
   const shopDomain = req.headers.get('x-shopify-shop-domain') ?? 'shopify'
-  const klantReferentie = order.name // "#1001"
+  // Gebruik de klant-notitie als referentie (B2B PO-nummer), anders het Shopify ordernummer
+  const klantReferentie = order.note?.trim() || order.name
 
   const header = {
     debiteur_nr: debiteurMatch.debiteur_nr,

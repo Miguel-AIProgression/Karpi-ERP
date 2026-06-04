@@ -133,9 +133,13 @@ def main():
         orderdatum  = meta["Created at"][:10]
         afleverdatum = werkdagen_plus(orderdatum, 7)
 
+        # Gebruik notitie als referentie (B2B PO-nummer), anders Shopify ordernummer
+        notitie = (meta.get("Notes") or "").strip()
+        klant_referentie = notitie if notitie else naam
+
         header = {
             "debiteur_nr":     debiteur_nr,
-            "klant_referentie": naam,
+            "klant_referentie": klant_referentie,
             "orderdatum":      orderdatum,
             "afleverdatum":    afleverdatum,
             "afl_naam":        afl_naam,
