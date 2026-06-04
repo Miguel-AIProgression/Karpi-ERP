@@ -1,7 +1,6 @@
 import { supabase } from '@/lib/supabase/client'
 import { SHIPPING_PRODUCT_ID } from '@/lib/constants/shipping'
 import { werkdagMinN } from '@/lib/utils/bereken-agenda'
-import { isLeverweekTeBevestigen } from '@/lib/orders/edi-leverweek'
 import type { BucketKey, PickShipOrder } from '../lib/types'
 import {
   chunks,
@@ -103,11 +102,14 @@ export async function fetchPickShipOrders(
   const vandaagIso = isoLokaal(vandaag)
   result = result.filter((o) => {
     const header = headerMap.get(o.order_id)
-    // EDI-orders met onbevestigde leverweek blijven uit Pick & Ship tot een
-    // operator de leverweek bevestigt (mig 309/310). De meegestuurde week is
-    // een klantwens, nog niet getoetst op voorraad/inkoop. Eén bron-van-waarheid
-    // voor de gate: isLeverweekTeBevestigen (gedeeld met order-detail/overzicht).
-    if (header && isLeverweekTeBevestigen(header)) return false
+    // Bewuste keuze (2026-06-04): een onbevestigde EDI-leverweek (mig 309/310)
+    // BLOKKEERT Pick & Ship NIET. De order moet hoe dan ook geleverd worden;
+    // de leverweek-bevestiging is een administratieve toezegging richting de
+    // klant (orderbev draagt de bevestigde week), géén magazijn-poort. De
+    // operator ziet de order dus gewoon als pickbaar; de "Te bevestigen"-chip
+    // op orders-overzicht + de EdiLeverweekBevestigen-widget op order-detail
+    // blijven de bevestiging aansturen. (isLeverweekTeBevestigen wordt hier
+    // daarom NIET meer als filter gebruikt.)
     if (o.regels.length === 0) return false
     const allesPickbaar = o.regels.every((r) => r.is_pickbaar)
     if (header?.lever_type === 'datum' && header.afleverdatum) {

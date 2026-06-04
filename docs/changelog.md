@@ -1,5 +1,29 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-04 — EDI-leverweek-bevestiging niet langer operationeel-blokkerend (mig 316)
+
+**Waarom:** mig 309/310 maakte van de EDI-leverweek een voorstel en blokkeerde
+onbevestigde EDI-orders (`bron_systeem='edi' AND edi_bevestigd_op IS NULL`) uit
+zowel **Pick & Ship** als de **productie-intake** (snijplanning). De backfill van
+mig 309 markeerde alleen orders in een late status of met bestaande orderbev als
+bevestigd — alle ándere openstaande, al-pickbare EDI-orders werden in één klap
+"te bevestigen" en verdwenen uit Pick & Ship. Operationeel gewenst gedrag is
+echter dat zo'n order **hoe dan ook geleverd/geproduceerd** wordt; de
+leverweek-bevestiging is een *administratieve* toezegging richting de klant
+(orderbev draagt de bevestigde week), geen magazijn-/productie-poort.
+
+**Wat:**
+- Frontend ([`pickbaarheid.ts`](../frontend/src/modules/magazijn/queries/pickbaarheid.ts)):
+  de `isLeverweekTeBevestigen`-filter is uit `fetchPickShipOrders` verwijderd —
+  onbevestigde EDI-orders zijn weer gewoon pickbaar.
+- DB ([mig 316](../supabase/migrations/316_snijplanning_overzicht_edi_gate_weg.sql)):
+  `snijplanning_overzicht` teruggedraaid naar de mig 290-vorm (alleen
+  `WHERE o.status <> 'Geannuleerd'`) — onbevestigde EDI-maatwerk gaat weer de
+  productie in.
+- De **"Te bevestigen"-chip** (orders-overzicht) + de `EdiLeverweekBevestigen`-widget
+  (order-detail) blijven bestaan als zichtbare reminder; `isLeverweekTeBevestigen`
+  voedt nog de chip maar wordt niet meer als pickbaarheid-/productie-filter gebruikt.
+
 ## 2026-06-04 — EDI-leverweek als voorstel + bevestigingsstap (mig 309-310)
 
 - **Probleem:** de door EDI-partners meegestuurde leverweek werd 1-op-1 in `orders.afleverdatum` gezet en de order stroomde direct door naar picken/productie — zonder toets op voorraad/inkoop.
