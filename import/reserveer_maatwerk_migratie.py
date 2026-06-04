@@ -55,6 +55,8 @@ def bouw_gesneden_set(versie_paths: list[Path]) -> set[tuple[str, str]]:
 
 
 def laad_planning() -> list:
+    if not PLANNING_FILE.exists():
+        sys.exit(f"Planning-bestand niet gevonden: {PLANNING_FILE}")
     wb = openpyxl.load_workbook(PLANNING_FILE, read_only=True, data_only=True)
     try:
         ws = wb[PLANNING_SHEET]
@@ -103,7 +105,7 @@ def laad_rollen(sb) -> list[Roll]:
         if s["rol_id"] is None:
             continue
         # Y-as-verbruik = breedte_cm (niet-geroteerd) of lengte_cm (geroteerd).
-        y = s["lengte_cm"] if s.get("geroteerd") else s["breedte_cm"]
+        y = s["breedte_cm"] if not s.get("geroteerd") else s["lengte_cm"]
         verbruikt[s["rol_id"]] = verbruikt.get(s["rol_id"], 0) + int(y or 0)
 
     rollen = []
@@ -126,7 +128,10 @@ def laad_rollen(sb) -> list[Roll]:
 
 def regels_naar_pieces(regels, gesneden) -> tuple[list[Piece], dict]:
     """Filter planning-regels en zet ze om naar Piece's. Returns (pieces, stats)."""
-    stats = {"totaal": 0, "snijuit": 0, "gesneden": 0, "actief": 0}
+    # 'actief' telt planning-regels; 'stuks' telt fysieke stukken (regels met
+    # Aantal>1 leveren meerdere strips) zodat de operator dit kan kruisvergelijken
+    # met 'Gedekt (blokkeringen)' in de dry-run.
+    stats = {"totaal": 0, "snijuit": 0, "gesneden": 0, "actief": 0, "stuks": 0}
     pieces = []
     for pr in regels:
         stats["totaal"] += 1
@@ -137,6 +142,7 @@ def regels_naar_pieces(regels, gesneden) -> tuple[list[Piece], dict]:
             stats["gesneden"] += 1
             continue
         stats["actief"] += 1
+        stats["stuks"] += pr.aantal
         pieces.append(Piece(
             oud_ordernr=pr.oud_ordernr,
             oud_orderregel=pr.oud_orderregel,
