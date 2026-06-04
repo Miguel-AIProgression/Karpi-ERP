@@ -17,12 +17,18 @@ from datetime import datetime, timezone
 from supabase import create_client
 
 from config import SUPABASE_URL, SUPABASE_KEY
-from reserveer_maatwerk_migratie import BASE, VERSIE_GLOB, bouw_gesneden_set
+from reserveer_maatwerk_migratie import (
+    BASE,
+    VERSIE_GLOB,
+    _fetch_alle,
+    bouw_gesneden_set,
+)
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--commit", action="store_true")
+    ap.add_argument("--commit", action="store_true",
+                    help="Voer de release daadwerkelijk uit (anders dry-run).")
     args = ap.parse_args()
 
     versie_paths = sorted(BASE.glob(VERSIE_GLOB))
@@ -32,8 +38,12 @@ def main():
     print("Gesneden in snijlijsten:", len(gesneden))
 
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
-    actief = sb.table("migratie_blokkering").select(
-        "id, oud_ordernr, oud_orderregel").eq("status", "actief").execute().data or []
+    # Pagineer: bij de eerste runs staan er ~1462 actieve blokkeringen — meer dan
+    # de supabase-py default van 1000, dus een ongepagineerde fetch zou rijen missen.
+    actief = _fetch_alle(
+        sb, "migratie_blokkering", "id, oud_ordernr, oud_orderregel",
+        lambda q: q.eq("status", "actief"),
+    )
 
     vrij_ids = [
         rij["id"] for rij in actief
