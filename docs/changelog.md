@@ -1,5 +1,14 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-04 — Koppel-widget verrijkt met order-inhoud + prefill
+
+**Waarom:** De bootstrap-koppel-widget toonde alleen de 3 GLN's — te weinig context voor de operator om te bepalen welke debiteur/vestiging erbij hoort. En bij een bericht zónder leesbare order (Transus-testbestand, #16) stond er een leeg koppel-formulier dat nergens toe leidt.
+
+**Wat ([koppel-vestiging-widget.tsx](../frontend/src/modules/edi/components/koppel-vestiging-widget.tsx) + [bericht-detail.tsx](../frontend/src/modules/edi/pages/bericht-detail.tsx)):**
+- **Order-inhoud-blok** uit de payload: afnemer-naam, klant-PO, gewenste leverdatum en de **orderregels** (aantal × artikelcode) — zodat de operator ziet om welke order het gaat.
+- **Debiteur-zoek geprefild** met de afnemer-naam (`naam ilike %…%`), zodat de juiste klant meestal meteen in de lijst staat.
+- **Guard:** koppel-widget alleen bij een echt geparseerde order (`payload_parsed` aanwezig). Berichten zonder order-inhoud krijgen een nette *"Niet koppelbaar — geen order-inhoud"*-melding i.p.v. een leeg formulier.
+
 ## 2026-06-04 — Safety-net: niet-gekoppelde EDI-orders zichtbaar op orders-overzicht
 
 **Waarom:** Een inkomende EDI-order die niet automatisch aan een klant matcht (geen GLN-match → `order_id IS NULL`) was alleen zichtbaar in de EDI-module. De operator werkt in Orders, dus zo'n gemiste order kon tussen wal en schip vallen — en dat mag nooit (er kan een order verloren gaan).

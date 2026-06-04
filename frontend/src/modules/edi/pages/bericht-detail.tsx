@@ -207,14 +207,34 @@ export function EdiBerichtDetailPage() {
         <MetaCell label="Retry">{bericht.retry_count}</MetaCell>
       </div>
 
-      {/* Inkomende order zonder klant-koppeling → bootstrap-koppel-widget */}
-      {isInkomendeOrder && !bericht.debiteur_nr && (
+      {/* Inkomende order zonder klant-koppeling → bootstrap-koppel-widget.
+          Alleen bij een echt geparseerde order; een bericht zonder payload (bv. een
+          Transus-testbestand) kan geen order worden — daarvoor de melding hieronder. */}
+      {isInkomendeOrder && !bericht.debiteur_nr && bericht.payload_parsed && (
         <KoppelVestigingWidget
           berichtId={bericht.id}
           glnAfleveradres={headerGln(bericht.payload_parsed, 'gln_afleveradres')}
           glnBesteller={headerGln(bericht.payload_parsed, 'gln_besteller')}
           glnGefactureerd={headerGln(bericht.payload_parsed, 'gln_gefactureerd')}
+          afnemerNaam={headerStr(bericht.payload_parsed, 'afnemer_naam')}
+          klantPo={headerStr(bericht.payload_parsed, 'ordernummer')}
+          leverdatum={headerStr(bericht.payload_parsed, 'leverdatum')}
+          regels={payloadRegels(bericht.payload_parsed)}
         />
+      )}
+
+      {isInkomendeOrder && !bericht.debiteur_nr && !bericht.payload_parsed && (
+        <div className="mb-6 p-4 rounded-[var(--radius)] border border-slate-200 bg-slate-50">
+          <div className="font-medium text-slate-700 mb-1 flex items-center gap-2">
+            <AlertCircle size={16} /> Niet koppelbaar — geen order-inhoud
+          </div>
+          <p className="text-xs text-slate-600">
+            Dit inkomende bericht bevat geen leesbare order (geen geparseerde regels of
+            GLN's) — meestal een Transus-testbestand of een bericht van een onbekend
+            type. Er kan geen order van gemaakt worden. Je kunt het negeren of opruimen
+            via de EDI-test-data-knop op het berichten-overzicht.
+          </p>
+        </div>
       )}
 
       {isInkomendeOrder && bericht.debiteur_nr && !heeftOrder && (
@@ -311,9 +331,30 @@ function headerGln(
   payload: Record<string, unknown> | null,
   veld: 'gln_afleveradres' | 'gln_besteller' | 'gln_gefactureerd',
 ): string | null {
+  return headerStr(payload, veld)
+}
+
+/** Leest een string-veld uit de payload-header; null bij ontbreken/leeg. */
+function headerStr(payload: Record<string, unknown> | null, veld: string): string | null {
   const header = (payload?.header ?? null) as Record<string, unknown> | null
   const val = header?.[veld]
   return typeof val === 'string' && val !== '' ? val : null
+}
+
+/** Normaliseert de order-regels uit de payload voor de koppel-widget. */
+function payloadRegels(
+  payload: Record<string, unknown> | null,
+): Array<{ regelnummer: number; artikelcode: string | null; aantal: number }> {
+  const regels = payload?.regels
+  if (!Array.isArray(regels)) return []
+  return regels.map((r, i) => {
+    const row = (r ?? {}) as Record<string, unknown>
+    return {
+      regelnummer: typeof row.regelnummer === 'number' ? row.regelnummer : i + 1,
+      artikelcode: typeof row.artikelcode === 'string' && row.artikelcode !== '' ? row.artikelcode : null,
+      aantal: typeof row.aantal === 'number' ? row.aantal : Number(row.aantal) || 0,
+    }
+  })
 }
 
 function labelType(t: string): string {

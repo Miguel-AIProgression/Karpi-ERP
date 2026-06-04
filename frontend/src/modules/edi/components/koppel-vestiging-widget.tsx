@@ -7,28 +7,46 @@ import {
   useKoppelEdiAfleveradres,
 } from '@/modules/edi/hooks/use-edi'
 
+export interface KoppelRegel {
+  regelnummer: number
+  artikelcode: string | null
+  aantal: number
+}
+
 interface Props {
   berichtId: number
   /** GLN's uit de header — getoond zodat de operator ze kan herkennen. */
   glnAfleveradres: string | null
   glnBesteller: string | null
   glnGefactureerd: string | null
+  /** Context uit de payload — helpt de operator herkennen om welke order het gaat. */
+  afnemerNaam: string | null
+  klantPo: string | null
+  leverdatum: string | null
+  regels: KoppelRegel[]
 }
 
 /**
  * Bootstrap-koppeling voor een inkomende order zonder debiteur-match. Toont de
- * onbekende aflever-GLN, laat de operator een (actieve) debiteur + bestaand
- * afleveradres kiezen, en koppelt via de RPC `koppel_edi_afleveradres` — die de
- * GLN op het adres onthoudt en de order aanmaakt. Volgende orders naar diezelfde
- * vestiging matchen daarna automatisch.
+ * order-inhoud (afnemer, klant-PO, regels) + de onbekende aflever-GLN, laat de
+ * operator een (actieve) debiteur + bestaand afleveradres kiezen, en koppelt via
+ * de RPC `koppel_edi_afleveradres` — die de GLN op het adres onthoudt en de order
+ * aanmaakt. Volgende orders naar diezelfde vestiging matchen daarna automatisch.
+ *
+ * De debiteur-zoek wordt geprefild met de afnemer-naam uit de payload zodat de
+ * juiste klant meestal meteen in de lijst staat.
  */
 export function KoppelVestigingWidget({
   berichtId,
   glnAfleveradres,
   glnBesteller,
   glnGefactureerd,
+  afnemerNaam,
+  klantPo,
+  leverdatum,
+  regels,
 }: Props) {
-  const [zoek, setZoek] = useState('')
+  const [zoek, setZoek] = useState(() => afnemerNaam?.trim() ?? '')
   const [debiteurNr, setDebiteurNr] = useState<number | undefined>()
   const [adresId, setAdresId] = useState<number | undefined>()
   const [orderId, setOrderId] = useState<number | null>(null)
@@ -69,6 +87,34 @@ export function KoppelVestigingWidget({
     <div className="mb-6 p-4 rounded-[var(--radius)] border border-amber-200 bg-amber-50">
       <div className="font-medium text-amber-800 mb-2 flex items-center gap-2">
         <AlertCircle size={16} /> Geen debiteur gekoppeld — koppel vestiging
+      </div>
+
+      {/* Order-inhoud uit de payload zodat de operator weet om welke order het gaat */}
+      <div className="mb-3 rounded-[var(--radius-sm)] border border-amber-200 bg-white p-3">
+        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs">
+          <span>
+            <span className="text-slate-500">Afnemer: </span>
+            <span className="font-semibold text-slate-900">{afnemerNaam ?? '—'}</span>
+          </span>
+          <span>
+            <span className="text-slate-500">Klant-PO: </span>
+            <span className="font-mono text-slate-700">{klantPo ?? '—'}</span>
+          </span>
+          <span>
+            <span className="text-slate-500">Gewenste levering: </span>
+            <span className="text-slate-700">{formatDatum(leverdatum)}</span>
+          </span>
+        </div>
+        {regels.length > 0 && (
+          <ul className="mt-2 space-y-0.5 border-t border-slate-100 pt-2 text-xs text-slate-700">
+            {regels.map((r) => (
+              <li key={r.regelnummer} className="flex gap-2">
+                <span className="font-medium tabular-nums">{r.aantal}×</span>
+                <span className="font-mono">{r.artikelcode ?? '—'}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3 text-xs">
@@ -154,6 +200,13 @@ export function KoppelVestigingWidget({
       </div>
     </div>
   )
+}
+
+/** ISO YYYY-MM-DD → DD-MM-YYYY voor de UI; '—' als leeg/ongeldig. */
+function formatDatum(iso: string | null): string {
+  if (!iso) return '—'
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso)
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : iso
 }
 
 function GlnCel({ label, gln, accent }: { label: string; gln: string | null; accent?: boolean }) {
