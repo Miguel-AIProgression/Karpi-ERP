@@ -117,6 +117,10 @@ AS $$
     FROM migratie_blokkering mb
     JOIN rollen r ON r.id = mb.rol_id
     WHERE mb.status = 'actief'
+      -- Zelfde rol-universum als de `eigen`-CTE (waar we van aftrekken): een rol
+      -- die al 'verkocht'/'gesneden' is telt niet meer mee in eigen_totaal_m2, dus
+      -- mag z'n blokkering-m² ook niet van de overige rollen afgetrokken worden.
+      AND r.status NOT IN ('verkocht', 'gesneden')
     GROUP BY r.kwaliteit_code, regexp_replace(r.kleur_code, '\.0+$', '')
   ),
   partners_raw AS (
