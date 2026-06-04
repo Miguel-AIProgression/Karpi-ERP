@@ -67,6 +67,13 @@ export interface Voorraadpositie {
    * `besteld_inkoop` ook bewust buiten de KPI.
    */
   vrij_voor_nieuw_maatwerk_m2: number
+  /**
+   * Actief gereserveerde m² uit de eenmalige maatwerk-migratie
+   * (`migratie_blokkering`, ADR-0028, RPC-veld sinds mig 315). Dit is hetzelfde
+   * bedrag dat al van `voorraad.totaal_m2` is afgetrokken — apart teruggegeven
+   * zodat de UI het als chip kan tonen. 0 op RPC-versies vóór mig 315.
+   */
+  gereserveerd_migratie_m2: number
 }
 
 /**

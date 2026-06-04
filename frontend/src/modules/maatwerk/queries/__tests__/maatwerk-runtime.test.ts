@@ -73,6 +73,7 @@ function makePositie(overrides: {
     },
     bruto_maatwerkvraag_m2: 0,
     vrij_voor_nieuw_maatwerk_m2: 0,
+    gereserveerd_migratie_m2: 0,
   }
 }
 

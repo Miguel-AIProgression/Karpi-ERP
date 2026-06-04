@@ -44,6 +44,9 @@ interface VoorraadposityRpcRow {
   // RPC-versies → toNumber() levert 0, dus geen runtime-fout.
   bruto_maatwerkvraag_m2?: number | string | null
   vrij_voor_nieuw_maatwerk_m2?: number | string | null
+  // Actieve maatwerk-migratie-reservering (ADR-0028, mig 315). Ontbreekt op
+  // RPC-versies vóór mig 315 → toNumber() levert 0.
+  gereserveerd_migratie_m2?: number | string | null
 }
 
 function toNumber(value: unknown): number {
@@ -147,6 +150,7 @@ function mapRow(row: VoorraadposityRpcRow): Voorraadpositie {
     besteld: mapBesteld(row),
     bruto_maatwerkvraag_m2: toNumber(row.bruto_maatwerkvraag_m2),
     vrij_voor_nieuw_maatwerk_m2: toNumber(row.vrij_voor_nieuw_maatwerk_m2),
+    gereserveerd_migratie_m2: toNumber(row.gereserveerd_migratie_m2),
   }
 }
 

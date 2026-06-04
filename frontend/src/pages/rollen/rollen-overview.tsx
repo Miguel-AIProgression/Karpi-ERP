@@ -75,9 +75,10 @@ function maakGhostPositie(row: GhostBesteldRij): Voorraadpositie {
       eerstvolgende_m2: row.eerstvolgende_m2,
     },
     // Ghost-paren hebben geen eigen voorraad en geen open maatwerk-druk —
-    // 0 is per definitie correct (ADR-0026).
+    // 0 is per definitie correct (ADR-0026). Geen eigen rol → geen reservering.
     bruto_maatwerkvraag_m2: 0,
     vrij_voor_nieuw_maatwerk_m2: 0,
+    gereserveerd_migratie_m2: 0,
   }
 }
 

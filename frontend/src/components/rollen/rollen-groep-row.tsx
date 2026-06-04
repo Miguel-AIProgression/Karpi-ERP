@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronRight, Loader2, Pencil, Plus, Trash2, Truck } from 'lucide-react'
+import { ChevronDown, ChevronRight, Loader2, Lock, Pencil, Plus, Trash2, Truck } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { cn } from '@/lib/utils/cn'
 import { ROL_STATUS_COLORS, ROL_TYPE_COLORS, ROL_TYPE_LABELS } from '@/lib/utils/constants'
@@ -175,6 +175,23 @@ function OpenMaatwerkvraagSectie({
         </table>
       </div>
     </div>
+  )
+}
+
+/**
+ * Toont de m² die gereserveerd is voor nog-te-snijden maatwerk-orders uit het
+ * oude systeem (migratie_blokkering, ADR-0028). Dit bedrag is al van de
+ * beschikbare voorraad afgetrokken — de chip maakt het expliciet zichtbaar.
+ */
+function MaatwerkReserveringChip({ m2 }: { m2: number }) {
+  return (
+    <span
+      title={`${m2.toFixed(1)} m² is gereserveerd voor nog-te-snijden maatwerk-orders uit het oude systeem (ADR-0028) en al van de beschikbare voorraad afgetrokken.`}
+      className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium bg-amber-50 text-amber-700 border border-amber-200"
+    >
+      <Lock size={11} />
+      {m2.toFixed(1)} m&sup2; gereserveerd
+    </span>
   )
 }
 
@@ -481,6 +498,10 @@ export function RollenGroepRow({ positie }: RollenGroepRowProps) {
   // alleen wanneer er werkelijk besteld is.
   const heeftBesteld = positie.besteld.besteld_m > 0
 
+  // Maatwerk-migratie-reservering (ADR-0028, mig 315): al van totaal_m2
+  // afgetrokken — als chip getoond zodat het zichtbaar is i.p.v. impliciet.
+  const heeftReservering = positie.gereserveerd_migratie_m2 > 0
+
   const vollePct = totaalRollen > 0
     ? Math.round((positie.voorraad.volle_rollen / totaalRollen) * 100)
     : 0
@@ -561,6 +582,7 @@ export function RollenGroepRow({ positie }: RollenGroepRowProps) {
         </div>
 
         <div className="flex items-center gap-4 shrink-0">
+          {heeftReservering && <MaatwerkReserveringChip m2={positie.gereserveerd_migratie_m2} />}
           {heeftBesteld && <BesteldChip info={positie.besteld} />}
           <span className="text-xs text-slate-500">
             {totaalRollen} {totaalRollen === 1 ? 'rol' : 'rollen'}
