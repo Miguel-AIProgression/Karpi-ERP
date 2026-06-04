@@ -1016,7 +1016,7 @@ Audittrail voor handmatige rol-CRUD (voorraadcorrectie/inventarisatie). Mig 290 
 
 **Packer-injectie (`fetchBezettePlaatsingen`, `supabase/functions/_shared/db-helpers.ts`):** injecteert per getroffen rol één full-width bodem-strip als synthetische `Placement` (`x=0, y=0, lengte_cm=rol.breedte_cm, breedte_cm=gereserveerde_lengte_cm, snijplan_id=−rol_id`) zodat de guillotine-packer er geen nieuw stuk overheen plant. Dit loopt altijd, ook als de kwal/kleur-groep géén rollen met `status='in_snijplan'` heeft. `fetchBeschikbareRollen` is bewust **niet** aangepast (vermijdt dubbele blokkering).
 
-**`voorraadposities` RPC (mig 314, o.b.v. mig 296):** trekt de som van actieve blokkering-m² (`SUM(gereserveerde_lengte_cm × breedte_nodig_cm) / 10000`) af van `eigen_totaal_m2`, vloer op 0 via `GREATEST`. `vrij_voor_nieuw_maatwerk_m2`, `familie_aggr` en `beste_partner` gebruiken bewust de fysieke m² (ongewijzigd).
+**`voorraadposities` RPC (mig 314, o.b.v. mig 296):** trekt de som van actieve blokkering-m² (`SUM(rollen.breedte_cm × gereserveerde_lengte_cm) / 10000` — de strip is altijd de volle rolbreedte) af van `eigen_totaal_m2`, vloer op 0 via `GREATEST`. `vrij_voor_nieuw_maatwerk_m2`, `familie_aggr` en `beste_partner` gebruiken bewust de fysieke m² (ongewijzigd).
 
 **Scripts:**
 - `import/reserveer_maatwerk_migratie.py` — eenmalig; alloceert ~1 462 actieve maatwerk-stukken, gesneden-historiek via de union van alle snijlijst-versies met per-sheet header-detect. Standaard dry-run; `--commit` schrijft naar de database.
