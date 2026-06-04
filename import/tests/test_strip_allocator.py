@@ -136,6 +136,17 @@ def test_alloceer_aantal_maakt_meerdere_delen():
     assert sum(b.gereserveerde_lengte_cm for b in blok) == 600
 
 
+def test_alloceer_deel_index_uniek_per_order_regel():
+    # Twee aparte stukken met dezelfde (ordernr, regel) -> deel_index 1 en 2,
+    # niet beide 1 (anders botst de UNIQUE-constraint bij wegschrijven).
+    rollen = [_roll(1, 400, 1500, "2025-01-01")]
+    pieces = [_piece("A", "5", 290, 200), _piece("A", "5", 290, 150)]
+    blok, ongedekt = alloceer(pieces, rollen)
+    assert ongedekt == []
+    assert len(blok) == 2
+    assert sorted(b.deel_index for b in blok) == [1, 2]
+
+
 def test_alloceer_rond_stuk_full_width():
     rollen = [_roll(1, 400, 1500, "2025-01-01")]
     blok, ongedekt = alloceer([_piece("A", "1", 300, 300)], rollen)

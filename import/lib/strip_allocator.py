@@ -127,6 +127,17 @@ def alloceer(pieces: list[Piece], rollen: list[Roll], uitwisselbaar=None):
                 rol_kwaliteit=gekozen.kwaliteit,
                 rol_kleur=gekozen.kleur,
             ))
+
+    # deel_index uniek maken per (oud_ordernr, oud_orderregel): meerdere
+    # planning-regels of aantal>1 voor dezelfde order+regel zouden anders botsen op
+    # de UNIQUE-constraint (oud_ordernr, oud_orderregel, deel_index). Eén oplopende
+    # teller per order+regel; stabiel bij her-run (zelfde input -> zelfde volgorde).
+    teller: dict[tuple[str, str], int] = {}
+    for b in blok:
+        key = (b.oud_ordernr, b.oud_orderregel)
+        teller[key] = teller.get(key, 0) + 1
+        b.deel_index = teller[key]
+
     return blok, ongedekt
 
 
