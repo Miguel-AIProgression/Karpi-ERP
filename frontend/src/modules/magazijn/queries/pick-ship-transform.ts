@@ -53,6 +53,11 @@ export interface OrderHeaderRij {
   /** ADR 0014 / mig 244: 'datum' = pick-horizon = 1 werkdag vóór afleverdatum;
    *  'week' = direct zichtbaar zodra pickbaar. */
   lever_type: 'week' | 'datum'
+  /** Herkomst van de order; 'edi' = via EDI-poll aangemaakt (mig 156). */
+  bron_systeem: string | null
+  /** EDI (mig 158/309): tijdstip leverweek-bevestiging. NULL = te bevestigen →
+   *  order blijft uit Pick & Ship (zie isLeverweekTeBevestigen). */
+  edi_bevestigd_op: string | null
 }
 
 export function initPickShipOrders(

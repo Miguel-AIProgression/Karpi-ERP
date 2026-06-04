@@ -19,6 +19,10 @@ export interface OrderRow {
   heeft_unmatched_regels?: boolean
   bron_systeem?: string | null
   bron_shop?: string | null
+  /** EDI (mig 158): tijdstip waarop de leverweek/orderbev bevestigd is. NULL = te bevestigen. */
+  edi_bevestigd_op?: string | null
+  /** EDI (mig 309): door de partner gewenste leverdatum (snapshot). NULL voor niet-EDI. */
+  edi_gewenste_afleverdatum?: string | null
   /** ADR 0014 / mig 244 — overzicht toont 'Wk X · YYYY' bij 'week', dag-badge bij 'datum'. */
   lever_type?: 'week' | 'datum'
   /** ADR-0016 / mig 259 — bundel-info uit zending_orders M2M. NULL voor solo-orders. */

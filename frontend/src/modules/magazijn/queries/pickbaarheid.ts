@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase/client'
 import { SHIPPING_PRODUCT_ID } from '@/lib/constants/shipping'
 import { werkdagMinN } from '@/lib/utils/bereken-agenda'
+import { isLeverweekTeBevestigen } from '@/lib/orders/edi-leverweek'
 import type { BucketKey, PickShipOrder } from '../lib/types'
 import {
   chunks,
@@ -101,9 +102,14 @@ export async function fetchPickShipOrders(
   // weggezet wordt waardoor 'm op de echte pickdag vergeten kan worden.
   const vandaagIso = isoLokaal(vandaag)
   result = result.filter((o) => {
+    const header = headerMap.get(o.order_id)
+    // EDI-orders met onbevestigde leverweek blijven uit Pick & Ship tot een
+    // operator de leverweek bevestigt (mig 309/310). De meegestuurde week is
+    // een klantwens, nog niet getoetst op voorraad/inkoop. Eén bron-van-waarheid
+    // voor de gate: isLeverweekTeBevestigen (gedeeld met order-detail/overzicht).
+    if (header && isLeverweekTeBevestigen(header)) return false
     if (o.regels.length === 0) return false
     const allesPickbaar = o.regels.every((r) => r.is_pickbaar)
-    const header = headerMap.get(o.order_id)
     if (header?.lever_type === 'datum' && header.afleverdatum) {
       const horizon = werkdagMinN(header.afleverdatum, 1)
       if (vandaagIso < horizon) return false
@@ -123,7 +129,7 @@ async function fetchOpenOrderHeaders(): Promise<OrderHeaderRij[]> {
     .from('orders')
     .select(
       'id, order_nr, status, debiteur_nr, afl_naam, afl_adres, afl_postcode, ' +
-        'afl_plaats, afl_land, afleverdatum, afhalen, lever_type'
+        'afl_plaats, afl_land, afleverdatum, afhalen, lever_type, bron_systeem, edi_bevestigd_op'
     )
     .neq('status', 'Verzonden')
     .neq('status', 'Geannuleerd')
