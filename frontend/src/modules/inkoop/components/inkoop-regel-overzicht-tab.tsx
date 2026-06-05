@@ -60,34 +60,31 @@ function EtaInlineEdit({ regel }: { regel: OpenRegelOverzichtRow }) {
   })()
 
   return (
-    <div className="flex items-center gap-2">
-      <div className="flex flex-col">
-        <input
-          ref={inputRef}
-          type="date"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          className={`text-sm border rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-slate-400 w-[130px] tabular-nums font-medium
-            ${isAchterstallig ? 'text-red-600 border-red-200' : isDezeWeek ? 'text-emerald-700 border-emerald-200' : 'text-slate-700 border-slate-200'}
-            ${isDirty ? 'bg-amber-50 border-amber-300' : 'bg-transparent'}`}
-        />
-        <div className="text-xs text-slate-400 mt-0.5 pl-1">
-          {isoWeekLabel(value || null)}
-          {!isDirty && regel.eta_bijgewerkt_door && (
-            <span className="ml-1">
-              {regel.eta_bijgewerkt_door === 'leverancier'
-                ? <span className="text-blue-500" title="Bijgewerkt door leverancier">▲</span>
-                : <span className="text-slate-400" title="Bijgewerkt door Karpi">✎</span>}
-            </span>
-          )}
-        </div>
+    <div className="flex flex-col gap-1">
+      <input
+        ref={inputRef}
+        type="date"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        className={`text-sm border rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-slate-400 w-[140px] tabular-nums font-medium
+          ${isAchterstallig ? 'text-red-600 border-red-200' : isDezeWeek ? 'text-emerald-700 border-emerald-200' : 'text-slate-700 border-slate-200'}
+          ${isDirty ? 'bg-amber-50 border-amber-300' : 'bg-transparent'}`}
+      />
+      <div className="text-xs text-slate-400 pl-0.5 flex items-center gap-1">
+        {isoWeekLabel(value || null)}
+        {!isDirty && regel.eta_bijgewerkt_door && (
+          <>
+            {regel.eta_bijgewerkt_door === 'leverancier'
+              ? <span className="text-blue-500" title="Bijgewerkt door leverancier">▲</span>
+              : <span className="text-slate-400" title="Bijgewerkt door Karpi">✎</span>}
+          </>
+        )}
       </div>
-
       {isDirty && (
         <button
           onClick={() => mutation.mutate()}
           disabled={mutation.isPending || !value}
-          className="flex items-center gap-1 px-2 py-1 text-xs font-medium bg-slate-900 text-white rounded hover:bg-slate-700 disabled:opacity-50 whitespace-nowrap"
+          className="flex items-center gap-1 px-2 py-1 text-xs font-medium bg-slate-900 text-white rounded hover:bg-slate-700 disabled:opacity-50 whitespace-nowrap w-fit"
         >
           {mutation.isPending ? (
             <span className="w-3 h-3 border border-white/40 border-t-white rounded-full animate-spin inline-block" />
@@ -97,9 +94,8 @@ function EtaInlineEdit({ regel }: { regel: OpenRegelOverzichtRow }) {
           Opslaan
         </button>
       )}
-
       {mutation.isError && (
-        <span className="text-xs text-red-500">Fout</span>
+        <span className="text-xs text-red-500">Fout bij opslaan</span>
       )}
     </div>
   )
