@@ -35,8 +35,9 @@ def match_debiteur(bedrijf, naam, email):
     ]:
         if not waarde:
             continue
+        kolom = "email_factuur" if zoek == "email" else zoek
         r = sb.table("debiteuren").select("debiteur_nr, naam") \
-              .ilike(zoek, f"%{waarde}%").limit(1).execute()
+              .ilike(kolom, f"%{waarde}%").limit(1).execute()
         if r.data:
             return r.data[0]["debiteur_nr"], r.data[0]["naam"]
     return None, None

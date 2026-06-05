@@ -96,7 +96,7 @@ async function buildRegels(
 
       const lengteProp = findProp(['lengte', 'length'])
       const breedteProp = findProp(['breedte', 'width', 'breed'])
-      const maatProp = findProp(['maat', 'size', 'afmeting'])
+      const maatProp = findProp(['maatwerk', 'maat', 'size', 'afmeting'])
 
       if (lengteProp && breedteProp) {
         maatwerk_lengte_cm = parseFloat(lengteProp) || null

@@ -35,3 +35,9 @@ verify_jwt = false
 
 [functions.gebruikers-beheer]
 verify_jwt = false
+
+[functions.transus-poll]
+verify_jwt = false
+
+[functions.transus-send]
+verify_jwt = false

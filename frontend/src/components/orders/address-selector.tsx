@@ -31,6 +31,7 @@ const NIEUW_OPTION = '__nieuw__'
 
 export function AddressSelector({ debiteurNr, onSelect, disabled = false }: AddressSelectorProps) {
   const [addresses, setAddresses] = useState<Address[]>([])
+  const [selectedId, setSelectedId] = useState<string>('')
   const [selectedGln, setSelectedGln] = useState<string | null>(null)
   const [manualOpen, setManualOpen] = useState(false)
   const [manual, setManual] = useState<AfleverAdres>({ naam: '', adres: '', postcode: '', plaats: '', land: 'NL' })
@@ -39,13 +40,29 @@ export function AddressSelector({ debiteurNr, onSelect, disabled = false }: Addr
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    if (!debiteurNr) { setAddresses([]); setSelectedGln(null); return }
+    if (!debiteurNr) { setAddresses([]); setSelectedId(''); setSelectedGln(null); return }
     supabase
       .from('afleveradressen')
       .select('id, adres_nr, naam, adres, postcode, plaats, land, gln_afleveradres')
       .eq('debiteur_nr', debiteurNr)
       .order('adres_nr')
-      .then(({ data }) => setAddresses((data ?? []) as Address[]))
+      .then(({ data }) => {
+        const addrs = (data ?? []) as Address[]
+        setAddresses(addrs)
+        // Auto-selecteer eerste echte afleveradres (adres_nr > 0); adres_nr 0 is het factuuradres
+        const defaultAddr = addrs.find(a => a.adres_nr > 0)
+        if (defaultAddr) {
+          setSelectedId(String(defaultAddr.id))
+          setSelectedGln(defaultAddr.gln_afleveradres ?? null)
+          onSelect({
+            naam: defaultAddr.naam ?? '',
+            adres: defaultAddr.adres ?? '',
+            postcode: defaultAddr.postcode ?? '',
+            plaats: defaultAddr.plaats ?? '',
+            land: defaultAddr.land ?? 'NL',
+          })
+        }
+      })
   }, [debiteurNr])
 
   if (disabled) return null
@@ -104,13 +121,15 @@ export function AddressSelector({ debiteurNr, onSelect, disabled = false }: Addr
       {!manualOpen && (
         <>
           <select
+            value={selectedId}
             onChange={(e) => {
               const v = e.target.value
               if (v === NIEUW_OPTION) {
                 setManualOpen(true)
-                e.target.value = ''
+                setSelectedId('')
                 return
               }
+              setSelectedId(v)
               const addr = addresses.find(a => a.id === Number(v))
               if (addr) {
                 onSelect({
@@ -127,7 +146,7 @@ export function AddressSelector({ debiteurNr, onSelect, disabled = false }: Addr
             }}
             className="w-full px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm"
           >
-            <option value="">Kies een afleveradres...</option>
+            {!selectedId && <option value="">Kies een afleveradres...</option>}
             {addresses.map((a) => (
               <option key={a.id} value={a.id}>
                 #{a.adres_nr} — {a.naam} — {a.adres}, {a.postcode} {a.plaats}
