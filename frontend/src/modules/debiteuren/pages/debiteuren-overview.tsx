@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Search, Download, Plus } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { PageHeader } from '@/components/layout/page-header'
@@ -12,15 +13,30 @@ import { useInkoopgroepen } from '@/hooks/use-inkoopgroepen'
 const PAGE_SIZE = 50
 
 export function DebiteurenOverviewPage() {
-  const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<string>('Actief')
-  const [vertegFilter, setVertegFilter] = useState<string>('')
-  const [ediFilter, setEdiFilter] = useState<'' | 'edi' | 'niet_edi'>('')
-  const [inkoopgroepFilter, setInkoopgroepFilter] = useState<string>('')
-  const [prijslijstFilter, setPrijslijstFilter] = useState<string>('')
+  const [searchParams, setSearchParams] = useSearchParams()
   const [pageSize, setPageSize] = useState(PAGE_SIZE)
   const [exporting, setExporting] = useState(false)
   const [showAdd, setShowAdd] = useState(false)
+
+  const search = searchParams.get('q') ?? ''
+  const statusFilter = searchParams.get('status') ?? 'Actief'
+  const vertegFilter = searchParams.get('verteg') ?? ''
+  const ediFilter = (searchParams.get('edi') ?? '') as '' | 'edi' | 'niet_edi'
+  const inkoopgroepFilter = searchParams.get('inkoopgroep') ?? ''
+  const prijslijstFilter = searchParams.get('prijslijst') ?? ''
+
+  function setParam(key: string, value: string) {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      if (value) {
+        next.set(key, value)
+      } else {
+        next.delete(key)
+      }
+      return next
+    }, { replace: true })
+    setPageSize(PAGE_SIZE)
+  }
 
   const { data, isLoading } = useDebiteuren({
     search,
@@ -39,15 +55,9 @@ export function DebiteurenOverviewPage() {
   const totalCount = data?.totalCount ?? 0
   const hasMore = debiteuren.length < totalCount
 
-  function handleFilterChange(setter: (v: string) => void, value: string) {
-    setter(value)
-    setPageSize(PAGE_SIZE)
-  }
-
   async function handleExport() {
     setExporting(true)
     try {
-      // Haal alle gefilterde klanten op (zonder paginering)
       const result = await fetchDebiteuren({
         search,
         status: statusFilter || undefined,
@@ -74,7 +84,6 @@ export function DebiteurenOverviewPage() {
 
       const ws = XLSX.utils.json_to_sheet(rows)
 
-      // Kolombreedte automatisch op basis van inhoud
       const colWidths = Object.keys(rows[0] ?? {}).map((key) => ({
         wch: Math.max(
           key.length,
@@ -86,7 +95,6 @@ export function DebiteurenOverviewPage() {
       const wb = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(wb, ws, 'Klanten')
 
-      // Bestandsnaam met datum + actieve filters
       const datum = new Date().toISOString().slice(0, 10)
       const filterLabel = prijslijstFilter === 'geen'
         ? '_geen-prijslijst'
@@ -118,14 +126,14 @@ export function DebiteurenOverviewPage() {
           <input
             type="text"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => setParam('q', e.target.value)}
             placeholder="Zoek op naam of nummer..."
             className="w-full pl-10 pr-4 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
           />
         </div>
         <select
           value={statusFilter}
-          onChange={(e) => handleFilterChange(setStatusFilter, e.target.value)}
+          onChange={(e) => setParam('status', e.target.value)}
           className="px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm"
         >
           <option value="">Alle statussen</option>
@@ -134,7 +142,7 @@ export function DebiteurenOverviewPage() {
         </select>
         <select
           value={vertegFilter}
-          onChange={(e) => handleFilterChange(setVertegFilter, e.target.value)}
+          onChange={(e) => setParam('verteg', e.target.value)}
           className="px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm"
         >
           <option value="">Alle vertegenwoordigers</option>
@@ -144,7 +152,7 @@ export function DebiteurenOverviewPage() {
         </select>
         <select
           value={ediFilter}
-          onChange={(e) => handleFilterChange(setEdiFilter as (v: string) => void, e.target.value)}
+          onChange={(e) => setParam('edi', e.target.value)}
           className="px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm"
         >
           <option value="">Alle EDI-statussen</option>
@@ -153,7 +161,7 @@ export function DebiteurenOverviewPage() {
         </select>
         <select
           value={inkoopgroepFilter}
-          onChange={(e) => handleFilterChange(setInkoopgroepFilter, e.target.value)}
+          onChange={(e) => setParam('inkoopgroep', e.target.value)}
           className="px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm"
         >
           <option value="">Alle inkoopgroepen</option>
@@ -165,7 +173,7 @@ export function DebiteurenOverviewPage() {
         </select>
         <select
           value={prijslijstFilter}
-          onChange={(e) => handleFilterChange(setPrijslijstFilter, e.target.value)}
+          onChange={(e) => setParam('prijslijst', e.target.value)}
           className="px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm"
         >
           <option value="">Alle prijslijsten</option>
