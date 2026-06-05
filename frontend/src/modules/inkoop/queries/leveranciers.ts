@@ -26,6 +26,7 @@ export interface LeverancierDetail {
   actief: boolean
   created_at: string
   updated_at: string
+  portal_email: string | null
 }
 
 export interface LeverancierFormData {
@@ -170,6 +171,26 @@ export async function fetchOpenRegelsVoorLeverancier(leverancierId: number): Pro
     ...(r as OpenRegelRow),
     eenheid: eenheidMap.get((r as { regel_id: number }).regel_id) ?? 'm',
   }))
+}
+
+export async function stellPortalCredentialsIn(
+  leverancierId: number,
+  email: string,
+  wachtwoord: string,
+): Promise<void> {
+  const { error } = await supabase.rpc('stel_portal_credentials_in', {
+    p_leverancier_id: leverancierId,
+    p_email: email,
+    p_wachtwoord: wachtwoord,
+  })
+  if (error) throw error
+}
+
+export async function verwijderPortalToegang(leverancierId: number): Promise<void> {
+  const { error } = await supabase.rpc('verwijder_portal_toegang', {
+    p_leverancier_id: leverancierId,
+  })
+  if (error) throw error
 }
 
 export async function updateRegelEta(

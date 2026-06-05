@@ -55,10 +55,12 @@ import {
   VervoerderDetailPage,
 } from '@/modules/logistiek'
 import { SupplierPortalPage } from '@/pages/portal/supplier-portal'
+import { PortalLoginPage } from '@/pages/portal/portal-login'
 
 export const router = createBrowserRouter([
   // Standalone (zonder app-shell): publieke pagina's zonder auth
   { path: 'wachtwoord-instellen', element: <WachtwoordInstellenPage /> },
+  { path: 'portal/login', element: <PortalLoginPage /> },
   { path: 'portal/:token', element: <SupplierPortalPage /> },
   {
     element: <AppLayout />,

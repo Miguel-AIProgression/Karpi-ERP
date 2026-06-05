@@ -3,8 +3,8 @@
 //
 // Routes:
 //   GET  /?token=<uuid>              → returns leverancier info + all open regels
-//   PATCH /                          → update ETA for one regel
-//     body: { token, regel_id, verwacht_datum, notitie? }
+//   POST /  { email, wachtwoord }    → login; returns { token, leverancier_naam }
+//   PATCH / { token, regel_id, verwacht_datum, notitie? } → update ETA
 //
 // Auth: token in URL param / body (validated server-side in update_regel_eta RPC).
 // No Supabase JWT required — deploy with --no-verify-jwt.
@@ -15,7 +15,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'GET, PATCH, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, PATCH, OPTIONS',
 }
 
 function json(body: unknown, status = 200): Response {
@@ -41,7 +41,6 @@ serve(async (req: Request) => {
     const token = url.searchParams.get('token')
     if (!token) return json({ error: 'token required' }, 400)
 
-    // Resolve leverancier
     const { data: lev, error: levErr } = await supabase
       .from('leveranciers')
       .select('id, naam, woonplaats, contactpersoon')
@@ -51,7 +50,6 @@ serve(async (req: Request) => {
 
     if (levErr || !lev) return json({ error: 'Invalid or expired portal link' }, 404)
 
-    // Fetch all open inkooporder-regels for this leverancier
     const { data: regels, error: regelsErr } = await supabase
       .from('openstaande_inkooporder_regels')
       .select(
@@ -72,7 +70,6 @@ serve(async (req: Request) => {
       return json({ error: 'Failed to load order lines' }, 500)
     }
 
-    // Add eenheid field (not in view yet but needed by frontend)
     const { data: eenheden } = await supabase
       .from('inkooporder_regels')
       .select('id, eenheid')
@@ -92,6 +89,36 @@ serve(async (req: Request) => {
       leverancier: { id: lev.id, naam: lev.naam, woonplaats: lev.woonplaats },
       regels: regelsEnriched,
     })
+  }
+
+  // ── POST: login ────────────────────────────────────────────────────────────
+  if (req.method === 'POST') {
+    let body: Record<string, unknown>
+    try {
+      body = await req.json()
+    } catch {
+      return json({ error: 'Invalid JSON body' }, 400)
+    }
+
+    const { email, wachtwoord } = body as { email?: string; wachtwoord?: string }
+    if (!email || !wachtwoord) return json({ error: 'email and wachtwoord are required' }, 400)
+
+    const { data, error: rpcErr } = await supabase.rpc('portal_login', {
+      p_email: email.trim().toLowerCase(),
+      p_wachtwoord: wachtwoord,
+    })
+
+    if (rpcErr) {
+      console.error('portal_login RPC error', rpcErr)
+      return json({ error: 'Login failed' }, 500)
+    }
+
+    const rows = data as Array<{ portal_token: string; leverancier_naam: string }> | null
+    if (!rows || rows.length === 0) {
+      return json({ error: 'Invalid email or password' }, 401)
+    }
+
+    return json({ token: rows[0].portal_token, leverancier_naam: rows[0].leverancier_naam })
   }
 
   // ── PATCH: update ETA ──────────────────────────────────────────────────────
@@ -114,7 +141,6 @@ serve(async (req: Request) => {
       return json({ error: 'token, regel_id and verwacht_datum are required' }, 400)
     }
 
-    // Validate date format
     if (!/^\d{4}-\d{2}-\d{2}$/.test(verwacht_datum)) {
       return json({ error: 'verwacht_datum must be YYYY-MM-DD' }, 400)
     }
