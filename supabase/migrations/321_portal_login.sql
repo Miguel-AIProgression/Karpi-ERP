@@ -21,7 +21,7 @@ CREATE OR REPLACE FUNCTION portal_login(p_email TEXT, p_wachtwoord TEXT)
 RETURNS TABLE(portal_token UUID, leverancier_naam TEXT)
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
 BEGIN
   RETURN QUERY
@@ -29,7 +29,7 @@ BEGIN
   FROM   leveranciers l
   WHERE  lower(l.portal_email) = lower(trim(p_email))
     AND  l.portal_wachtwoord_hash IS NOT NULL
-    AND  l.portal_wachtwoord_hash = crypt(p_wachtwoord, l.portal_wachtwoord_hash)
+    AND  l.portal_wachtwoord_hash = extensions.crypt(p_wachtwoord, l.portal_wachtwoord_hash)
     AND  l.actief       = TRUE
     AND  l.portal_token IS NOT NULL;
 END;
@@ -51,7 +51,7 @@ BEGIN
   END IF;
   UPDATE leveranciers SET
     portal_email          = lower(trim(p_email)),
-    portal_wachtwoord_hash = crypt(p_wachtwoord, gen_salt('bf', 10))
+    portal_wachtwoord_hash = extensions.crypt(p_wachtwoord, extensions.gen_salt('bf', 10))
   WHERE id = p_leverancier_id;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Leverancier % niet gevonden', p_leverancier_id;
