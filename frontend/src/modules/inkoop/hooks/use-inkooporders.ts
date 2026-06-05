@@ -8,6 +8,7 @@ import {
   fetchInkooporderRegelContext,
   fetchInkooporders,
   fetchInkooporderStats,
+  fetchOpenRegelOverzicht,
   fetchOpenstaandeInkoopregelsVoorArtikel,
   fetchRollenVoorArtikel,
   fetchRollenVoorStickers,
@@ -130,6 +131,14 @@ export function useCreateInkooporder() {
     mutationFn: ({ header, regels }: { header: InkooporderFormData; regels: InkooporderRegelInput[] }) =>
       createInkooporder(header, regels),
     onSuccess: () => invalidateNaInkoopMutatie(qc),
+  })
+}
+
+export function useOpenRegelOverzicht(leverancierId?: number | 'alle') {
+  return useQuery({
+    queryKey: ['inkooporders', 'regel-overzicht', leverancierId ?? 'alle'],
+    queryFn: () => fetchOpenRegelOverzicht(leverancierId),
+    staleTime: 30_000,
   })
 }
 

@@ -1,8 +1,45 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { ArrowLeft, Building2, Pencil } from 'lucide-react'
+import { ArrowLeft, Building2, Pencil, Link2, Check, PackageSearch } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { PageHeader } from '@/components/layout/page-header'
 import { useLeverancierDetail, LeverancierFormDialog, LeverancierStatsCard } from '@/modules/inkoop'
+import { fetchLeverancierPortalToken } from '../queries/leveranciers'
+import { LeverancierOpenRegels } from '../components/leverancier-open-regels'
+
+const PORTAL_BASE_URL = `${window.location.origin}/portal`
+
+function PortalLinkButton({ leverancierId }: { leverancierId: number }) {
+  const [copied, setCopied] = useState(false)
+
+  const { data } = useQuery({
+    queryKey: ['leverancier-portal-token', leverancierId],
+    queryFn: () => fetchLeverancierPortalToken(leverancierId),
+    staleTime: Infinity,
+  })
+
+  const token = data?.portal_token
+  const url = token ? `${PORTAL_BASE_URL}/${token}` : null
+
+  async function handleCopy() {
+    if (!url) return
+    await navigator.clipboard.writeText(url)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <button
+      onClick={handleCopy}
+      disabled={!url}
+      className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-[var(--radius-sm)] text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
+      title={url ?? 'Laden…'}
+    >
+      {copied ? <Check size={16} className="text-green-500" /> : <Link2 size={16} />}
+      {copied ? 'Link gekopieerd!' : 'Kopieer portallink'}
+    </button>
+  )
+}
 
 export function LeverancierDetailPage() {
   const { id } = useParams()
@@ -33,17 +70,22 @@ export function LeverancierDetailPage() {
         title={leverancier.naam}
         description={`Leverancier ${leverancier.leverancier_nr ?? '-'}`}
         actions={
-          <button
-            onClick={() => setEditOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-[var(--radius-sm)] text-sm font-medium hover:bg-slate-50"
-          >
-            <Pencil size={16} />
-            Bewerken
-          </button>
+          <div className="flex gap-2">
+            {leverancierId !== undefined && (
+              <PortalLinkButton leverancierId={leverancierId} />
+            )}
+            <button
+              onClick={() => setEditOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-[var(--radius-sm)] text-sm font-medium hover:bg-slate-50"
+            >
+              <Pencil size={16} />
+              Bewerken
+            </button>
+          </div>
         }
       />
 
-      <div className="grid md:grid-cols-2 gap-5">
+      <div className="grid md:grid-cols-2 gap-5 mb-6">
         <section className="bg-white rounded-[var(--radius)] border border-slate-200 p-5">
           <div className="flex items-center gap-2 mb-4">
             <Building2 size={16} className="text-slate-400" />
@@ -65,6 +107,17 @@ export function LeverancierDetailPage() {
 
         {leverancierId !== undefined && <LeverancierStatsCard leverancierId={leverancierId} />}
       </div>
+
+      {/* Open inkoopregels met ETA-beheer */}
+      {leverancierId !== undefined && (
+        <section className="bg-white rounded-[var(--radius)] border border-slate-200 p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <PackageSearch size={16} className="text-slate-400" />
+            <h2 className="font-medium">Open inkoopregels</h2>
+          </div>
+          <LeverancierOpenRegels leverancierId={leverancierId} />
+        </section>
+      )}
 
       {editOpen && (
         <LeverancierFormDialog leverancier={leverancier} onClose={() => setEditOpen(false)} />

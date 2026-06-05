@@ -531,6 +531,80 @@ export async function fetchOpenstaandeInkoopregelsVoorArtikel(
   }))
 }
 
+export interface OpenRegelOverzichtRow {
+  regel_id: number
+  inkooporder_id: number
+  inkooporder_nr: string
+  order_status: InkooporderStatus
+  besteldatum: string | null
+  leverweek: string | null
+  verwacht_datum: string | null
+  leverancier_id: number | null
+  leverancier_naam: string | null
+  regelnummer: number
+  artikelnr: string | null
+  karpi_code: string | null
+  artikel_omschrijving: string | null
+  product_omschrijving: string | null
+  besteld_m: number
+  geleverd_m: number
+  te_leveren_m: number
+  eenheid: RegelEenheid
+  eta_bijgewerkt_door: 'karpi' | 'leverancier' | null
+  eta_bijgewerkt_op: string | null
+  leverancier_notitie: string | null
+}
+
+export async function fetchOpenRegelOverzicht(
+  leverancierId?: number | 'alle',
+): Promise<OpenRegelOverzichtRow[]> {
+  let q = supabase
+    .from('openstaande_inkooporder_regels')
+    .select(
+      `regel_id, inkooporder_id, inkooporder_nr, order_status,
+       besteldatum, leverweek, verwacht_datum,
+       leverancier_id, leverancier_naam,
+       regelnummer, artikelnr, karpi_code, artikel_omschrijving, product_omschrijving,
+       besteld_m, geleverd_m, te_leveren_m, eenheid,
+       eta_bijgewerkt_door, eta_bijgewerkt_op, leverancier_notitie`,
+    )
+    .order('verwacht_datum', { ascending: true, nullsFirst: false })
+    .order('leverancier_naam', { ascending: true })
+    .order('inkooporder_nr', { ascending: true })
+    .order('regelnummer', { ascending: true })
+
+  if (leverancierId && leverancierId !== 'alle') {
+    q = q.eq('leverancier_id', leverancierId)
+  }
+
+  const { data, error } = await q
+  if (error) throw error
+
+  return ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
+    regel_id: Number(r.regel_id),
+    inkooporder_id: Number(r.inkooporder_id),
+    inkooporder_nr: String(r.inkooporder_nr ?? ''),
+    order_status: r.order_status as InkooporderStatus,
+    besteldatum: (r.besteldatum as string | null) ?? null,
+    leverweek: (r.leverweek as string | null) ?? null,
+    verwacht_datum: (r.verwacht_datum as string | null) ?? null,
+    leverancier_id: r.leverancier_id == null ? null : Number(r.leverancier_id),
+    leverancier_naam: (r.leverancier_naam as string | null) ?? null,
+    regelnummer: Number(r.regelnummer ?? 0),
+    artikelnr: (r.artikelnr as string | null) ?? null,
+    karpi_code: (r.karpi_code as string | null) ?? null,
+    artikel_omschrijving: (r.artikel_omschrijving as string | null) ?? null,
+    product_omschrijving: (r.product_omschrijving as string | null) ?? null,
+    besteld_m: Number(r.besteld_m ?? 0),
+    geleverd_m: Number(r.geleverd_m ?? 0),
+    te_leveren_m: Number(r.te_leveren_m ?? 0),
+    eenheid: (r.eenheid as RegelEenheid) ?? 'm',
+    eta_bijgewerkt_door: (r.eta_bijgewerkt_door as 'karpi' | 'leverancier' | null) ?? null,
+    eta_bijgewerkt_op: (r.eta_bijgewerkt_op as string | null) ?? null,
+    leverancier_notitie: (r.leverancier_notitie as string | null) ?? null,
+  }))
+}
+
 export async function fetchRollenVoorArtikel(artikelnr: string): Promise<HuidigeRol[]> {
   const { data, error } = await supabase
     .from('rollen')

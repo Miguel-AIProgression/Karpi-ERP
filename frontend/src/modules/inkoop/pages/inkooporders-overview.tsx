@@ -7,6 +7,7 @@ import {
   ArrowUpDown,
   CalendarClock,
   ClipboardList,
+  List,
   Package,
   Plus,
   Search,
@@ -20,6 +21,9 @@ import {
   InkooporderFormDialog,
   type InkooporderStatus,
 } from '@/modules/inkoop'
+import { InkoopRegelOverzichtTab } from '../components/inkoop-regel-overzicht-tab'
+
+type ActiveTab = 'orders' | 'regels'
 
 const STATUSSEN: (InkooporderStatus | 'alle')[] = [
   'alle',
@@ -73,6 +77,7 @@ function compareNullable<T>(a: T | null, b: T | null, cmp: (x: T, y: T) => numbe
 
 export function InkooporderOverviewPage() {
   const navigate = useNavigate()
+  const [activeTab, setActiveTab] = useState<ActiveTab>('orders')
   const [status, setStatus] = useState<InkooporderStatus | 'alle'>('alle')
   const [leverancierId, setLeverancierId] = useState<number | 'alle'>('alle')
   const [alleenOpen, setAlleenOpen] = useState(true)
@@ -179,6 +184,36 @@ export function InkooporderOverviewPage() {
         }
       />
 
+      {/* Tabs */}
+      <div className="flex gap-1 mb-5 border-b border-slate-200">
+        <button
+          onClick={() => setActiveTab('orders')}
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+            activeTab === 'orders'
+              ? 'border-terracotta-500 text-terracotta-600'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <ClipboardList size={15} />
+          Inkooporders
+        </button>
+        <button
+          onClick={() => setActiveTab('regels')}
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+            activeTab === 'regels'
+              ? 'border-terracotta-500 text-terracotta-600'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <List size={15} />
+          Regeloverzicht
+        </button>
+      </div>
+
+      {activeTab === 'regels' && <InkoopRegelOverzichtTab />}
+
+      {activeTab === 'orders' && (
+      <>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         {statCards.map((s) => (
           <div key={s.label} className="bg-white rounded-[var(--radius)] border border-slate-200 p-4">
@@ -330,6 +365,9 @@ export function InkooporderOverviewPage() {
       </div>
 
       {formOpen && <InkooporderFormDialog onClose={() => setFormOpen(false)} />}
+      </>
+      )}
+
     </>
   )
 }

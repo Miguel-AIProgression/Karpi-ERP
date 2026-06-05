@@ -22,6 +22,7 @@ export {
   useRollenVoorArtikel,
   useCreateInkooporder,
   useUpdateInkooporderStatus,
+  useOpenRegelOverzicht,
 } from './hooks/use-inkooporders'
 export {
   useLeveranciersOverzicht,
@@ -76,6 +77,7 @@ export type {
   OntvangstRol,
   HuidigeRol,
   OpenstaandeInkoopRegel,
+  OpenRegelOverzichtRow,
 } from './queries/inkooporders'
 // Type heet hetzelfde als de slot-component; export onder een alias zodat
 // consumers naar wens de Component (default-naam) of de Data-shape kunnen
