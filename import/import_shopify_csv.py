@@ -49,9 +49,14 @@ def match_product(sku, naam):
     maatwerk_patroon = re.search(r'(\d+)\s*[xX×]\s*(\d+)', naam)
 
     if sku:
-        # Probeer directe match
+        # Directe artikelnr match
         r = sb.table("producten").select("artikelnr, omschrijving") \
               .eq("artikelnr", sku).limit(1).execute()
+        if r.data:
+            return r.data[0]["artikelnr"], False, None, None, None, None
+        # karpi_code match — vaste maten zoals LUXR17XX160230 staan als karpi_code, niet artikelnr
+        r = sb.table("producten").select("artikelnr") \
+              .eq("karpi_code", sku).limit(1).execute()
         if r.data:
             return r.data[0]["artikelnr"], False, None, None, None, None
 
@@ -144,13 +149,14 @@ def main():
             "orderdatum":      orderdatum,
             "afleverdatum":    afleverdatum,
             "afl_naam":        afl_naam,
-            "afl_naam_2":      bedrijf or None,
+            "afl_naam_2":      bedrijf or debiteur_naam or None,
             "afl_adres":       " ".join(filter(None, [meta.get("Shipping Address1",""), meta.get("Shipping Address2","")])) or None,
             "afl_postcode":    meta.get("Shipping Zip") or None,
             "afl_plaats":      meta.get("Shipping City") or None,
             "afl_land":        meta.get("Shipping Country") or "NL",
             "afl_telefoon":    meta.get("Shipping Phone") or None,
             "fact_naam":       meta.get("Billing Name") or afl_naam,
+            "fact_naam_2":     meta.get("Billing Company") or debiteur_naam or None,
             "fact_adres":      " ".join(filter(None, [meta.get("Billing Address1",""), meta.get("Billing Address2","")])) or None,
             "fact_postcode":   meta.get("Billing Zip") or None,
             "fact_plaats":     meta.get("Billing City") or None,
