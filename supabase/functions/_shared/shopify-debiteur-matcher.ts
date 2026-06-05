@@ -130,10 +130,12 @@ export async function matchDebiteur(
     if (bestaat) return { debiteur_nr: nrUitKlantNote, bron: 'customer_note' }
   }
 
-  // 4. customer tags ("deb-1234", "debiteur-1234", "deb:1234")
+  // 4. customer tags ("deb-1234", "debiteur-1234", "deb:1234", "customer_ID: 1234")
   const tags = (order.customer?.tags ?? '').split(',').map(t => t.trim())
   for (const tag of tags) {
-    const m = tag.match(/^(?:deb|debiteur)[:\-](\d{4,6})$/i)
+    const m =
+      tag.match(/^(?:deb|debiteur)[:\-](\d{4,6})$/i) ??
+      tag.match(/^customer_id[:\s]+(\d{4,6})$/i)
     if (m) {
       const nr = parseInt(m[1], 10)
       const bestaat = await zoekDebiteurOpNummer(supabase, nr)

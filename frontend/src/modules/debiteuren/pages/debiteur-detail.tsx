@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Pencil, X } from 'lucide-react'
+import { useParams, Link, useNavigate } from 'react-router-dom'
+import { ArrowLeft, Pencil, X, Trash2 } from 'lucide-react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase/client'
 import { PageHeader } from '@/components/layout/page-header'
@@ -37,9 +37,12 @@ const TABS: { key: Tab; label: string }[] = [
 export function DebiteurDetailPage() {
   const { id } = useParams<{ id: string }>()
   const debiteurNr = Number(id)
+  const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState<Tab>('info')
   const [showLogo, setShowLogo] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
+  const [showDelete, setShowDelete] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const queryClient = useQueryClient()
   const { data: klant, isLoading } = useDebiteurDetail(debiteurNr)
@@ -194,6 +197,36 @@ export function DebiteurDetailPage() {
     onError: showError('Drempel gratis verzending'),
   })
 
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      // Check op bestaande orders
+      const { count, error: cntErr } = await supabase
+        .from('orders')
+        .select('id', { count: 'exact', head: true })
+        .eq('debiteur_nr', debiteurNr)
+      if (cntErr) throw cntErr
+      if ((count ?? 0) > 0) {
+        throw new Error(
+          `Deze klant heeft ${count} order(s) en kan niet worden verwijderd. Annuleer of verwijder eerst alle orders.`,
+        )
+      }
+
+      const { error } = await supabase
+        .from('debiteuren')
+        .delete()
+        .eq('debiteur_nr', debiteurNr)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['klanten'] })
+      navigate('/klanten')
+    },
+    onError: (err: unknown) => {
+      const e = err as { message?: unknown } | null
+      setDeleteError(typeof e?.message === 'string' ? e.message : 'Onbekende fout — zie console')
+    },
+  })
+
   if (isLoading) {
     return <PageHeader title="Klant laden..." />
   }
@@ -223,15 +256,26 @@ export function DebiteurDetailPage() {
 
       {/* Header card */}
       <div className="relative bg-white rounded-[var(--radius)] border border-slate-200 p-6 mb-6">
-        <button
-          type="button"
-          onClick={() => setShowEdit(true)}
-          aria-label="Klantgegevens bewerken"
-          title="Klantgegevens bewerken"
-          className="absolute top-4 right-4 inline-flex items-center justify-center w-8 h-8 rounded-[var(--radius-sm)] text-slate-400 hover:text-terracotta-600 hover:bg-terracotta-50 transition-colors"
-        >
-          <Pencil size={16} />
-        </button>
+        <div className="absolute top-4 right-4 flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setShowEdit(true)}
+            aria-label="Klantgegevens bewerken"
+            title="Klantgegevens bewerken"
+            className="inline-flex items-center justify-center w-8 h-8 rounded-[var(--radius-sm)] text-slate-400 hover:text-terracotta-600 hover:bg-terracotta-50 transition-colors"
+          >
+            <Pencil size={16} />
+          </button>
+          <button
+            type="button"
+            onClick={() => { setDeleteError(null); setShowDelete(true) }}
+            aria-label="Klant verwijderen"
+            title="Klant verwijderen"
+            className="inline-flex items-center justify-center w-8 h-8 rounded-[var(--radius-sm)] text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+          >
+            <Trash2 size={16} />
+          </button>
+        </div>
         <div className="flex items-start gap-4 mb-4">
           {/* Logo / initialen */}
           {klant.logo_path ? (
@@ -632,6 +676,45 @@ export function DebiteurDetailPage() {
       {/* Klant bewerken modal */}
       {showEdit && klant && (
         <DebiteurEditDialog debiteur={klant} onClose={() => setShowEdit(false)} />
+      )}
+
+      {/* Klant verwijderen — bevestigingsdialoog */}
+      {showDelete && klant && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="bg-white rounded-[var(--radius)] shadow-xl w-full max-w-md">
+            <header className="px-6 py-4 border-b border-slate-200">
+              <h2 className="font-medium text-lg">Klant verwijderen</h2>
+            </header>
+            <div className="px-6 py-5 space-y-3">
+              <p className="text-sm text-slate-700">
+                Weet je zeker dat je <strong>{klant.naam}</strong> (#{klant.debiteur_nr}) wilt verwijderen?
+                Dit kan niet ongedaan worden gemaakt.
+              </p>
+              {deleteError && (
+                <div className="px-3 py-2 bg-rose-50 border border-rose-100 text-sm text-rose-700 rounded-[var(--radius-sm)]">
+                  {deleteError}
+                </div>
+              )}
+            </div>
+            <footer className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowDelete(false)}
+                className="px-4 py-2 text-sm text-slate-600 hover:text-slate-900"
+              >
+                Annuleren
+              </button>
+              <button
+                type="button"
+                onClick={() => deleteMutation.mutate()}
+                disabled={deleteMutation.isPending}
+                className="px-4 py-2 text-sm rounded-[var(--radius-sm)] bg-rose-600 text-white font-medium hover:bg-rose-700 disabled:opacity-50"
+              >
+                {deleteMutation.isPending ? 'Verwijderen...' : 'Definitief verwijderen'}
+              </button>
+            </footer>
+          </div>
+        </div>
       )}
 
       {/* Logo lightbox */}

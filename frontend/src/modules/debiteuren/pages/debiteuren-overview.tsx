@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { Search, Download } from 'lucide-react'
+import { Search, Download, Plus } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { PageHeader } from '@/components/layout/page-header'
 import { DebiteurCard } from '../components/debiteur-card'
+import { DebiteurAddDialog } from '../components/debiteur-add-dialog'
 import { useDebiteuren, usePrijslijstHeadersList } from '../hooks/use-debiteuren'
 import { fetchDebiteuren } from '../queries/debiteuren'
 import { useVertegenwoordigers } from '@/hooks/use-medewerkers'
@@ -19,6 +20,7 @@ export function DebiteurenOverviewPage() {
   const [prijslijstFilter, setPrijslijstFilter] = useState<string>('')
   const [pageSize, setPageSize] = useState(PAGE_SIZE)
   const [exporting, setExporting] = useState(false)
+  const [showAdd, setShowAdd] = useState(false)
 
   const { data, isLoading } = useDebiteuren({
     search,
@@ -107,6 +109,8 @@ export function DebiteurenOverviewPage() {
         description={`${data?.totalCount ?? 0} klanten`}
       />
 
+      {showAdd && <DebiteurAddDialog onClose={() => setShowAdd(false)} />}
+
       {/* Filters + export */}
       <div className="flex flex-wrap items-center gap-3 mb-6">
         <div className="relative w-72">
@@ -171,8 +175,8 @@ export function DebiteurenOverviewPage() {
           ))}
         </select>
 
-        {/* Export-knop — rechts uitlijnen */}
-        <div className="ml-auto">
+        {/* Acties — rechts uitlijnen */}
+        <div className="ml-auto flex items-center gap-2">
           <button
             onClick={handleExport}
             disabled={exporting || totalCount === 0}
@@ -180,6 +184,13 @@ export function DebiteurenOverviewPage() {
           >
             <Download size={15} />
             {exporting ? 'Exporteren...' : `Exporteer${totalCount > 0 ? ` (${totalCount})` : ''}`}
+          </button>
+          <button
+            onClick={() => setShowAdd(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-[var(--radius-sm)] bg-terracotta-500 text-white text-sm font-medium hover:bg-terracotta-600 transition-colors"
+          >
+            <Plus size={15} />
+            Nieuwe klant
           </button>
         </div>
       </div>
