@@ -597,6 +597,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
   const tekortRegels: LeverModusTekort[] = useMemo(
     () => regels
       .map((r, i) => {
+        if (r.artikelnr === SHIPPING_PRODUCT_ID || r.is_pseudo) return null
         const { ioTekort } = berekenRegelDekking(r)
         if (ioTekort <= 0) return null
         return {
