@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { CalendarDays, CheckCircle2, Clock, Package, AlertCircle } from 'lucide-react'
+import { CalendarDays, CheckCircle2, Package, AlertCircle } from 'lucide-react'
 
 const PORTAL_FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/supplier-portal`
 
