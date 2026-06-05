@@ -245,13 +245,14 @@ export function DebiteurDetailPage() {
   return (
     <>
       <div className="mb-4">
-        <Link
-          to="/klanten"
+        <button
+          type="button"
+          onClick={() => navigate(-1)}
           className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700"
         >
           <ArrowLeft size={14} />
           Terug naar klanten
-        </Link>
+        </button>
       </div>
 
       {/* Header card */}
