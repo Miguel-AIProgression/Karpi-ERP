@@ -255,8 +255,22 @@ serve(async (req) => {
 
   const { regels, matched, unmatched } = await buildRegels(supabase, order, debiteurMatch.debiteur_nr)
 
+  // Bedrijfsnaam ophalen zodat adressen altijd bedrijfsnaam tonen ook als Shopify die niet meestuurt
+  const { data: debiteurInfo } = await supabase
+    .from('debiteuren')
+    .select('naam')
+    .eq('debiteur_nr', debiteurMatch.debiteur_nr)
+    .single()
+  const debiteurNaam = debiteurInfo?.naam ?? null
+
   const shipping = extractShopifyShippingAddress(order)
   const billing = extractShopifyBillingAddress(order)
+
+  // Vul bedrijfsnaam in vanuit debiteur als Shopify die niet meestuurt
+  if (debiteurNaam) {
+    if (!shipping.afl_bedrijf) shipping.afl_bedrijf = debiteurNaam
+    if (!billing.fact_bedrijf) billing.fact_bedrijf = debiteurNaam
+  }
 
   // Afleverdatum: Shopify B2B heeft geen standaard leverdatum-veld.
   // Gebruik orderdatum + 5 werkdagen als standaard. Als er een note_attribute

@@ -297,8 +297,8 @@ export async function matchProduct(
           }
         }
 
-        const maat        = `${sizeRaw[1]}x${sizeRaw[2]}`
-        const maatDraaien = `${sizeRaw[2]}x${sizeRaw[1]}`
+        const maat        = `${sizeRaw[0]}x${sizeRaw[1]}`
+        const maatDraaien = `${sizeRaw[1]}x${sizeRaw[0]}`
 
         for (const maatVariant of [maat, maatDraaien]) {
           const { data: product } = await supabase
@@ -311,6 +311,19 @@ export async function matchProduct(
           if (product && product.length > 0) {
             return { artikelnr: product[0].artikelnr, matchedOn: 'alias' }
           }
+        }
+
+        // Probeer karpi_code opbouw: {KWALITEIT}{KLEUR}XX{A}{B} (bijv. LUXR17XX160230).
+        // Vaste-maat artikelen hebben geen 'x' in omschrijving; karpi_code is de bron.
+        const kleurP2 = String(kleur).padStart(2, '0')
+        const a0 = String(sizeRaw[0]).padStart(3, '0')
+        const a1 = String(sizeRaw[1]).padStart(3, '0')
+        for (const kwal of kwaliteitCodes) {
+          const karpiHit = await zoekOpKarpi(supabase, [
+            `${kwal}${kleurP2}XX${a0}${a1}`,
+            `${kwal}${kleurP2}XX${a1}${a0}`,
+          ])
+          if (karpiHit) return { artikelnr: karpiHit, matchedOn: 'parsed_karpi' }
         }
 
         // Maat aanwezig maar geen standaard artikel → maatwerk
