@@ -21,6 +21,15 @@ function formatAantal(n: number): string {
   return n.toLocaleString('nl-NL', { minimumFractionDigits: 0, maximumFractionDigits: 1 })
 }
 
+function formatBijgewerktOp(iso: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  return d.toLocaleString('nl-NL', {
+    day: '2-digit', month: '2-digit', year: '2-digit',
+    hour: '2-digit', minute: '2-digit',
+  })
+}
+
 function isoWeekLabel(iso: string | null): string {
   if (!iso) return ''
   const d = new Date(iso)
@@ -70,14 +79,19 @@ function EtaInlineEdit({ regel }: { regel: OpenRegelOverzichtRow }) {
           ${isAchterstallig ? 'text-red-600 border-red-200' : isDezeWeek ? 'text-emerald-700 border-emerald-200' : 'text-slate-700 border-slate-200'}
           ${isDirty ? 'bg-amber-50 border-amber-300' : 'bg-transparent'}`}
       />
-      <div className="text-xs text-slate-400 pl-0.5 flex items-center gap-1">
-        {isoWeekLabel(value || null)}
-        {!isDirty && regel.eta_bijgewerkt_door && (
-          <>
-            {regel.eta_bijgewerkt_door === 'leverancier'
-              ? <span className="text-blue-500" title="Bijgewerkt door leverancier">▲</span>
-              : <span className="text-slate-400" title="Bijgewerkt door Karpi">✎</span>}
-          </>
+      <div className="text-xs text-slate-400 pl-0.5">
+        <span>{isoWeekLabel(value || null)}</span>
+        {!isDirty && regel.eta_bijgewerkt_door && regel.eta_bijgewerkt_op && (
+          <div className={`mt-0.5 flex items-center gap-0.5 ${regel.eta_bijgewerkt_door === 'leverancier' ? 'text-blue-500' : 'text-slate-400'}`}>
+            <span>{regel.eta_bijgewerkt_door === 'leverancier' ? '▲' : '✎'}</span>
+            <span className="font-medium">
+              {regel.eta_bijgewerkt_door === 'leverancier'
+                ? (regel.leverancier_naam ?? 'Leverancier')
+                : 'Karpi'}
+            </span>
+            <span className="text-slate-300 mx-0.5">·</span>
+            <span>{formatBijgewerktOp(regel.eta_bijgewerkt_op)}</span>
+          </div>
         )}
       </div>
       {isDirty && (
