@@ -62,6 +62,52 @@ function normalizeGewicht(microKg: number | undefined): number | null {
   return Math.round(kg * 100) / 100
 }
 
+// Rauwe-payload-audit (mig 324). Best-effort: logging mag de order-verwerking
+// NOOIT blokkeren — daarom alles in try/catch en falen = warn + doorgaan.
+async function logRawPayload(
+  supabase: ReturnType<typeof createClient>,
+  args: { bron: string; externeId: string | null; contentType: string | null; headers: Record<string, string>; raw: string; json: unknown },
+): Promise<number | null> {
+  try {
+    const { data, error } = await supabase.rpc('log_inkomende_payload', {
+      p_kanaal: 'shopify',
+      p_payload_raw: args.raw,
+      p_bron: args.bron,
+      p_externe_id: args.externeId,
+      p_content_type: args.contentType,
+      p_headers: args.headers,
+      p_payload_json: args.json ?? null,
+    })
+    if (error) {
+      console.warn('[sync-shopify-order] payload-audit insert faalde:', error.message)
+      return null
+    }
+    return typeof data === 'number' ? data : null
+  } catch (e) {
+    console.warn('[sync-shopify-order] payload-audit insert exception:', e)
+    return null
+  }
+}
+
+async function markeerPayload(
+  supabase: ReturnType<typeof createClient>,
+  id: number | null,
+  status: 'verwerkt' | 'fout',
+  opts: { orderId?: number | null; fout?: string | null } = {},
+): Promise<void> {
+  if (!id) return
+  try {
+    await supabase.rpc('markeer_inkomende_payload_verwerkt', {
+      p_id: id,
+      p_status: status,
+      p_order_id: opts.orderId ?? null,
+      p_fout: opts.fout ?? null,
+    })
+  } catch (e) {
+    console.warn('[sync-shopify-order] payload-audit update exception:', e)
+  }
+}
+
 async function buildRegels(
   supabase: ReturnType<typeof createClient>,
   order: ShopifyOrderWebhook,
@@ -229,16 +275,32 @@ serve(async (req) => {
   const orderId = order.id
   if (!orderId) return json({ error: 'Missing order.id' }, 400)
 
+  // Rauwe payload wegschrijven (mig 324) — vóór alle verwerking, zodat zelfs een
+  // latere fout/crash de oorspronkelijke body bewaart. Best-effort.
+  const payloadLogId = await logRawPayload(supabase, {
+    bron: req.headers.get('x-shopify-shop-domain') ?? 'shopify',
+    externeId: String(orderId),
+    contentType: req.headers.get('content-type'),
+    headers: {
+      'x-shopify-topic': req.headers.get('x-shopify-topic') ?? '',
+      'x-shopify-shop-domain': req.headers.get('x-shopify-shop-domain') ?? '',
+      'x-shopify-order-id': req.headers.get('x-shopify-order-id') ?? '',
+    },
+    raw: rawPayload,
+    json: order,
+  })
+
   // Idempotentie-check vóór zware verwerking
   const { data: existing } = await supabase
     .from('orders')
-    .select('order_nr')
+    .select('id, order_nr')
     .eq('bron_systeem', 'shopify')
     .eq('bron_order_id', String(orderId))
     .limit(1)
 
   if (existing && existing.length > 0) {
     console.log(`[sync-shopify-order] order ${orderId} bestaat al als ${existing[0].order_nr}`)
+    await markeerPayload(supabase, payloadLogId, 'verwerkt', { orderId: existing[0].id as number })
     return json({ order_nr: existing[0].order_nr, was_existing: true, matched: 0, unmatched: 0 })
   }
 
@@ -246,6 +308,7 @@ serve(async (req) => {
   const debiteurMatch = await matchDebiteur(supabase, order)
   if (!debiteurMatch) {
     console.error(`[sync-shopify-order] geen debiteur gevonden voor order ${orderId}`)
+    await markeerPayload(supabase, payloadLogId, 'fout', { fout: 'Geen debiteur gevonden' })
     return json({ error: 'Geen debiteur gevonden. Stel SHOPIFY_FALLBACK_DEBITEUR_NR in als catch-all.' }, 422)
   }
 
@@ -329,6 +392,7 @@ serve(async (req) => {
 
   if (error) {
     console.error('[sync-shopify-order] RPC fout:', error)
+    await markeerPayload(supabase, payloadLogId, 'fout', { fout: `create_webshop_order: ${error.message}` })
     return json({ error: error.message }, 500)
   }
 
@@ -338,6 +402,17 @@ serve(async (req) => {
     `debiteur=${debiteurMatch.debiteur_nr}(${debiteurMatch.bron}) ` +
     `matched=${matched} unmatched=${unmatched}`,
   )
+
+  // Audit-rij koppelen aan de aangemaakte order (best-effort id-lookup).
+  const { data: gemaakt } = await supabase
+    .from('orders')
+    .select('id')
+    .eq('bron_systeem', 'shopify')
+    .eq('bron_order_id', String(orderId))
+    .limit(1)
+  await markeerPayload(supabase, payloadLogId, 'verwerkt', {
+    orderId: (gemaakt && gemaakt.length > 0 ? gemaakt[0].id : null) as number | null,
+  })
 
   return json({
     order_nr: result?.order_nr ?? null,
