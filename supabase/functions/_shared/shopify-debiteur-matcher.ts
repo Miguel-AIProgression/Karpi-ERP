@@ -7,31 +7,34 @@
 //   4. Customer tag: "deb-1234" of "debiteur-1234"
 //   5. Shopify B2B: order.company.name → debiteuren.naam (exact, dan ilike)
 //   6. billing_address.company → debiteuren.naam (exact, dan ilike)
-//   7. Klant-email → debiteuren.email_factuur of debiteuren.email
+//   7. Klant-email → debiteuren.email_factuur / email_overig / email_2
 //   8. Env-var SHOPIFY_FALLBACK_DEBITEUR_NR → altijd aanwezig als catch-all
 //
 // Geeft null terug als geen van de strategieën lukt én er geen fallback is.
+//
+// Gebruikt de gedeelde matcher-seam (_shared/debiteur-matcher.ts) voor
+// normalisatie en het "actieve debiteur"-filter. De `zeker`-vlag op het
+// resultaat is false voor fuzzy strategieën (naam-deelmatch/email) zodat een
+// latere "te koppelen"-flow ze kan onderscheiden van harde treffers.
 
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import type { ShopifyOrderWebhook } from './shopify-types.ts'
+import {
+  ACTIEF_OR_FILTER,
+  type DebiteurMatchBron,
+  normaliseerNaam,
+} from './debiteur-matcher.ts'
+
+export type { DebiteurMatchBron }
 
 export interface DebiteurMatchResult {
   debiteur_nr: number
   bron: DebiteurMatchBron
   bedrijfsnaam?: string
+  /** false = fuzzy strategie zonder uniekheids-garantie (naam/email) →
+   *  handmatige bevestiging wenselijk. Expliciet nummer = altijd true. */
+  zeker: boolean
 }
-
-export type DebiteurMatchBron =
-  | 'note_attribute'
-  | 'order_note'
-  | 'customer_note'
-  | 'customer_tag'
-  | 'company_name_exact'
-  | 'company_name_ilike'
-  | 'billing_company_exact'
-  | 'billing_company_ilike'
-  | 'email'
-  | 'fallback'
 
 const DEBITEUR_NR_PATROON = /(?:debiteur(?:nummer)?|deb(?:\.?nr\.?)?)[:\s#\-]*(\d{4,6})/i
 
@@ -39,10 +42,6 @@ function extractDebiteurNrUitTekst(tekst: string | null | undefined): number | n
   if (!tekst) return null
   const m = tekst.match(DEBITEUR_NR_PATROON)
   return m ? parseInt(m[1], 10) : null
-}
-
-function normaliseerNaam(s: string): string {
-  return s.normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
 }
 
 async function zoekDebiteurOpNummer(
@@ -53,15 +52,19 @@ async function zoekDebiteurOpNummer(
     .from('debiteuren')
     .select('debiteur_nr')
     .eq('debiteur_nr', nr)
-    .eq('actief', true)
+    .or(ACTIEF_OR_FILTER)
     .limit(1)
   return (data?.length ?? 0) > 0
 }
 
+/** Bedrijfsnaam-treffer. `exact=true` bij een volledige (case-insensitive)
+ *  naam-match → zeker; `exact=false` bij een unieke deelmatch → fuzzy. */
+type BedrijfsnaamTreffer = { nr: number; exact: boolean }
+
 async function zoekDebiteurOpBedrijfsnaam(
   supabase: SupabaseClient,
   naam: string,
-): Promise<number | null> {
+): Promise<BedrijfsnaamTreffer | null> {
   const normNaam = normaliseerNaam(naam)
   if (!normNaam) return null
 
@@ -70,18 +73,18 @@ async function zoekDebiteurOpBedrijfsnaam(
     .from('debiteuren')
     .select('debiteur_nr')
     .ilike('naam', naam)
-    .eq('actief', true)
+    .or(ACTIEF_OR_FILTER)
     .limit(1)
-  if (exact && exact.length === 1) return exact[0].debiteur_nr
+  if (exact && exact.length === 1) return { nr: exact[0].debiteur_nr, exact: true }
 
-  // Partial match: naam bevat bedrijfsnaam of andersom
+  // Partial match: naam bevat bedrijfsnaam of andersom (uniekheids-gate: >1 = geen match)
   const { data: partial } = await supabase
     .from('debiteuren')
     .select('debiteur_nr, naam')
     .ilike('naam', `%${naam}%`)
-    .eq('actief', true)
+    .or(ACTIEF_OR_FILTER)
     .limit(2)
-  if (partial && partial.length === 1) return partial[0].debiteur_nr
+  if (partial && partial.length === 1) return { nr: partial[0].debiteur_nr, exact: false }
 
   return null
 }
@@ -91,11 +94,12 @@ async function zoekDebiteurOpEmail(
   email: string,
 ): Promise<number | null> {
   if (!email) return null
+  // debiteuren heeft drie e-mailkolommen (geen losse `email`-kolom).
   const { data } = await supabase
     .from('debiteuren')
     .select('debiteur_nr')
-    .or(`email_factuur.ilike.${email},email.ilike.${email}`)
-    .eq('actief', true)
+    .or(`email_factuur.ilike.${email},email_overig.ilike.${email},email_2.ilike.${email}`)
+    .or(ACTIEF_OR_FILTER)
     .limit(1)
   return data && data.length === 1 ? data[0].debiteur_nr : null
 }
@@ -111,7 +115,7 @@ export async function matchDebiteur(
       const nr = parseInt(attr.value, 10)
       if (!isNaN(nr) && nr > 0) {
         const bestaat = await zoekDebiteurOpNummer(supabase, nr)
-        if (bestaat) return { debiteur_nr: nr, bron: 'note_attribute' }
+        if (bestaat) return { debiteur_nr: nr, bron: 'note_attribute', zeker: true }
       }
     }
   }
@@ -120,14 +124,14 @@ export async function matchDebiteur(
   const nrUitNote = extractDebiteurNrUitTekst(order.note)
   if (nrUitNote) {
     const bestaat = await zoekDebiteurOpNummer(supabase, nrUitNote)
-    if (bestaat) return { debiteur_nr: nrUitNote, bron: 'order_note' }
+    if (bestaat) return { debiteur_nr: nrUitNote, bron: 'order_note', zeker: true }
   }
 
   // 3. customer.note
   const nrUitKlantNote = extractDebiteurNrUitTekst(order.customer?.note)
   if (nrUitKlantNote) {
     const bestaat = await zoekDebiteurOpNummer(supabase, nrUitKlantNote)
-    if (bestaat) return { debiteur_nr: nrUitKlantNote, bron: 'customer_note' }
+    if (bestaat) return { debiteur_nr: nrUitKlantNote, bron: 'customer_note', zeker: true }
   }
 
   // 4. customer tags ("deb-1234", "debiteur-1234", "deb:1234", "customer_ID: 1234")
@@ -139,47 +143,49 @@ export async function matchDebiteur(
     if (m) {
       const nr = parseInt(m[1], 10)
       const bestaat = await zoekDebiteurOpNummer(supabase, nr)
-      if (bestaat) return { debiteur_nr: nr, bron: 'customer_tag' }
+      if (bestaat) return { debiteur_nr: nr, bron: 'customer_tag', zeker: true }
     }
   }
 
-  // 5. Shopify B2B company name
+  // 5. Shopify B2B company name (exact = zeker; deelmatch = fuzzy)
   const companyNaam = order.company?.name
   if (companyNaam) {
-    const nr = await zoekDebiteurOpBedrijfsnaam(supabase, companyNaam)
-    if (nr) {
+    const treffer = await zoekDebiteurOpBedrijfsnaam(supabase, companyNaam)
+    if (treffer) {
       return {
-        debiteur_nr: nr,
-        bron: 'company_name_exact',
+        debiteur_nr: treffer.nr,
+        bron: treffer.exact ? 'company_name_exact' : 'company_name_ilike',
         bedrijfsnaam: companyNaam,
+        zeker: treffer.exact,
       }
     }
   }
 
-  // 6. billing_address.company
+  // 6. billing_address.company (exact = zeker; deelmatch = fuzzy)
   const billingBedrijf = order.billing_address?.company
   if (billingBedrijf) {
-    const nr = await zoekDebiteurOpBedrijfsnaam(supabase, billingBedrijf)
-    if (nr) {
+    const treffer = await zoekDebiteurOpBedrijfsnaam(supabase, billingBedrijf)
+    if (treffer) {
       return {
-        debiteur_nr: nr,
-        bron: 'billing_company_exact',
+        debiteur_nr: treffer.nr,
+        bron: treffer.exact ? 'billing_company_exact' : 'billing_company_ilike',
         bedrijfsnaam: billingBedrijf,
+        zeker: treffer.exact,
       }
     }
   }
 
-  // 7. Email
+  // 7. Email (fuzzy → niet zeker)
   const email = order.email ?? order.customer?.email ?? null
   if (email) {
     const nr = await zoekDebiteurOpEmail(supabase, email)
-    if (nr) return { debiteur_nr: nr, bron: 'email' }
+    if (nr) return { debiteur_nr: nr, bron: 'email', zeker: false }
   }
 
   // 8. Fallback debiteur (catch-all voor onbekende klanten)
   const fallback = parseInt(Deno.env.get('SHOPIFY_FALLBACK_DEBITEUR_NR') ?? '', 10)
   if (!isNaN(fallback) && fallback > 0) {
-    return { debiteur_nr: fallback, bron: 'fallback' }
+    return { debiteur_nr: fallback, bron: 'env_fallback', zeker: false }
   }
 
   return null

@@ -25,6 +25,7 @@ import {
   detectBerichttype,
   isTestMessage,
 } from '../_shared/transus-formats/karpi-fixed-width.ts';
+import { matchDebiteurOpGln } from '../_shared/debiteur-matcher.ts';
 
 const MAX_BATCH_PER_INVOCATION = 50;
 const SLEEP_BETWEEN_CALLS_MS = 1100;
@@ -314,55 +315,16 @@ async function matchDebiteur(
   glnBesteller: string | null,
   glnAfleveradres: string | null,
 ): Promise<number | null> {
-  // GLN's in de DB kunnen een trailing ".0" hebben (Excel-import-artefact);
-  // match daarom tolerant op beide vormen.
-  const variants = (gln: string | null): string[] => (gln ? [gln, `${gln}.0`] : []);
-
-  // 1+2: aflever- en besteller-GLN → specifiek afleveradres
-  for (const gln of [glnAfleveradres, glnBesteller]) {
-    const vs = variants(gln);
-    if (vs.length === 0) continue;
-    const { data } = await supabase
-      .from('afleveradressen')
-      .select('debiteur_nr')
-      .in('gln_afleveradres', vs)
-      .order('debiteur_nr')
-      .limit(1)
-      .maybeSingle();
-    if (data?.debiteur_nr) return data.debiteur_nr;
-  }
-
-  // 3+4: besteller- en gefactureerd-GLN → debiteur zelf (inactieve overslaan)
-  for (const gln of [glnBesteller, glnGefactureerd]) {
-    const vs = variants(gln);
-    if (vs.length === 0) continue;
-    const { data } = await supabase
-      .from('debiteuren')
-      .select('debiteur_nr')
-      .in('gln_bedrijf', vs)
-      .neq('status', 'Inactief')
-      .order('debiteur_nr')
-      .limit(1)
-      .maybeSingle();
-    if (data?.debiteur_nr) return data.debiteur_nr;
-  }
-
-  // 5: besteller/gefactureerd-GLN → debiteur-alias (mig 307). Bedient centrale
-  // facturatie met meerdere factuur-entiteiten per debiteur (BDSK/XXXLutz).
-  for (const gln of [glnBesteller, glnGefactureerd]) {
-    const vs = variants(gln);
-    if (vs.length === 0) continue;
-    const { data } = await supabase
-      .from('debiteur_gln_aliassen')
-      .select('debiteur_nr')
-      .in('gln', vs)
-      .order('debiteur_nr')
-      .limit(1)
-      .maybeSingle();
-    if (data?.debiteur_nr) return data.debiteur_nr;
-  }
-
-  return null;
+  // Delegeert naar de gedeelde GLN-ladder (_shared/debiteur-matcher.ts) zodat
+  // alle inbound-kanalen dezelfde matching-seam delen. De GLN-ladder + de
+  // bewuste inactieve-skip (Hornbach) en .0-tolerantie wonen daar. EDI gebruikt
+  // hier alleen het debiteurnummer; de `zeker`-vlag is voor GLN per definitie true.
+  const match = await matchDebiteurOpGln(supabase as never, {
+    aflever: glnAfleveradres,
+    besteller: glnBesteller,
+    gefactureerd: glnGefactureerd,
+  });
+  return match?.debiteur_nr ?? null;
 }
 
 function sleep(ms: number): Promise<void> {

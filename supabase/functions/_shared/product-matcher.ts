@@ -16,6 +16,7 @@
 
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { collectExtraTexts, parseMaatwerkDims, type LightspeedOrderRow } from './lightspeed-client.ts'
+import { normaliseerNaam } from './debiteur-matcher.ts'
 
 export type MatchBron =
   | 'verzend'
@@ -91,11 +92,6 @@ function splitNaamKleur(title: string): { naam: string; kleur: string | null } {
   const anyMatch = t.match(/^(.+?)\s+(\d{1,3})(\s|$|-|,)/)
   if (anyMatch) return { naam: anyMatch[1].trim(), kleur: anyMatch[2] }
   return { naam: t, kleur: null }
-}
-
-/** Strip diacritics en lowercase. "Brüssel" → "brussel". */
-function normaliseerNaam(s: string): string {
-  return s.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
 }
 
 /** Vind aliases waarvan de benaming een prefix van `naam` is (of vice versa),
