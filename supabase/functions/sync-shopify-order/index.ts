@@ -312,6 +312,14 @@ serve(async (req) => {
     bron_systeem: 'shopify',
     bron_shop: shopDomain,
     bron_order_id: String(orderId),
+    // Mig 322: een onzekere fuzzy match (bedrijfsnaam-deelmatch/e-mail) landt
+    // wél als order maar wordt gemarkeerd als "debiteur te bevestigen" zodat de
+    // operator hem via de banner op het orders-overzicht kan corrigeren —
+    // i.p.v. stil op de gegokte debiteur te accepteren. De env-fallback
+    // (verzameldebiteur) is bewust géén fout en wordt door het predicaat
+    // uitgesloten op bron.
+    debiteur_zeker: debiteurMatch.zeker,
+    debiteur_match_bron: debiteurMatch.bron,
   }
 
   const { data, error } = await supabase.rpc('create_webshop_order', {

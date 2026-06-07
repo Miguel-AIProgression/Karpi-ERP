@@ -23,6 +23,10 @@ export interface OrderRow {
   edi_bevestigd_op?: string | null
   /** EDI (mig 309): door de partner gewenste leverdatum (snapshot). NULL voor niet-EDI. */
   edi_gewenste_afleverdatum?: string | null
+  /** Mig 322: FALSE = debiteur via onzekere (fuzzy) strategie geraden → te bevestigen. */
+  debiteur_zeker?: boolean
+  /** Mig 322: welke strategie de debiteur bepaalde (bv. company_name_ilike, env_fallback). */
+  debiteur_match_bron?: string | null
   /** ADR 0014 / mig 244 — overzicht toont 'Wk X · YYYY' bij 'week', dag-badge bij 'datum'. */
   lever_type?: 'week' | 'datum'
   /** ADR-0016 / mig 259 — bundel-info uit zending_orders M2M. NULL voor solo-orders. */
@@ -171,6 +175,18 @@ export async function fetchOrders(params: {
       .eq('bron_systeem', 'edi')
       .is('edi_bevestigd_op', null)
       .neq('status', 'Geannuleerd')
+  } else if (status === 'Debiteur te bevestigen') {
+    // Mig 322: orders waarvan de debiteur via een onzekere fuzzy strategie
+    // geraden is. env_fallback (verzameldebiteur) is bewust géén fout en valt
+    // af. Status-overstijgend; geannuleerde orders uitgesloten. De bron-OR is
+    // NULL-safe: een onzekere order zonder vastgelegde bron telt mee (alleen
+    // expliciet env_fallback valt af) — anders zou hij stil uit beeld vallen,
+    // wat de "geen order verloren"-garantie ondermijnt. Spiegelt de JS-conditie
+    // op order-detail én countTeBevestigenDebiteurOrders.
+    query = query
+      .eq('debiteur_zeker', false)
+      .or('debiteur_match_bron.is.null,debiteur_match_bron.neq.env_fallback')
+      .neq('status', 'Geannuleerd')
   } else if (status && status !== 'Alle') {
     query = query.eq('status', status)
   }
@@ -247,7 +263,7 @@ export async function fetchOrders(params: {
  * altijd reflecteert wat er in de lijst verschijnt bij selectie.
  */
 export async function fetchStatusCounts(): Promise<StatusCount[]> {
-  const [tellingRes, unmatchedRes, teBevestigenRes] = await Promise.all([
+  const [tellingRes, unmatchedRes, teBevestigenRes, debiteurTeBevestigenRes] = await Promise.all([
     supabase.from('orders_status_telling').select('status, aantal'),
     supabase
       .from('orders')
@@ -260,6 +276,7 @@ export async function fetchStatusCounts(): Promise<StatusCount[]> {
       .eq('bron_systeem', 'edi')
       .is('edi_bevestigd_op', null)
       .neq('status', 'Geannuleerd'),
+    countTeBevestigenDebiteurOrders(),
   ])
 
   if (tellingRes.error) throw tellingRes.error
@@ -278,7 +295,32 @@ export async function fetchStatusCounts(): Promise<StatusCount[]> {
     counts.push({ status: 'Te bevestigen', aantal: teBevestigen })
   }
 
+  if (debiteurTeBevestigenRes > 0) {
+    counts.push({ status: 'Debiteur te bevestigen', aantal: debiteurTeBevestigenRes })
+  }
+
   return counts
+}
+
+/**
+ * Aantal orders met een onzekere (fuzzy) debiteur-match die nog bevestigd moet
+ * worden (mig 322). Voedt zowel de status-tab-telling als de waarschuwingsbanner
+ * op het orders-overzicht. env_fallback (verzameldebiteur) is bewust uitgesloten
+ * — dat is de verwachte eindbestemming voor consumenten-webshops, geen fout.
+ * Eén bron-van-waarheid voor het predicaat; pas hier én in fetchOrders
+ * ('Debiteur te bevestigen'-branch) aan als het ooit moet wijzigen.
+ */
+export async function countTeBevestigenDebiteurOrders(): Promise<number> {
+  const { count, error } = await supabase
+    .from('orders')
+    .select('id', { count: 'exact', head: true })
+    .eq('debiteur_zeker', false)
+    // NULL-safe: alleen expliciet env_fallback valt af; een onzekere order
+    // zonder vastgelegde bron telt mee (zie fetchOrders-branch + order-detail).
+    .or('debiteur_match_bron.is.null,debiteur_match_bron.neq.env_fallback')
+    .neq('status', 'Geannuleerd')
+  if (error) throw error
+  return count ?? 0
 }
 
 export interface OrderKlantOptie {

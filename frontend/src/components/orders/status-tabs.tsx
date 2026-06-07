@@ -8,11 +8,14 @@ import type { StatusCount } from '@/lib/supabase/queries/orders'
 // heeft_unmatched_regels (zie fetchOrders).
 // 'Te bevestigen' = EDI-orders met onbevestigde leverweek
 // (bron_systeem='edi' AND edi_bevestigd_op IS NULL); status-overstijgend, net als 'Actie vereist'.
+// 'Debiteur te bevestigen' = orders met onzekere fuzzy debiteur-match (mig 322,
+// debiteur_zeker=false, bron <> env_fallback); ook status-overstijgend.
 const ALL_STATUSES = [
   'Alle',
   'Klaar voor picken',
   'Actie vereist',
   'Te bevestigen',
+  'Debiteur te bevestigen',
   'Wacht op voorraad',
   'Wacht op inkoop',
   'Wacht op maatwerk',

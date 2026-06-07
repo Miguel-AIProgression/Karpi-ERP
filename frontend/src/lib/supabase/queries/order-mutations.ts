@@ -334,6 +334,22 @@ export async function deleteOrder(orderId: number) {
   if (error) throw error
 }
 
+/**
+ * Bevestig de (onzekere) debiteur van een order (mig 322). Zet debiteur_zeker=true
+ * zodat de order uit de "Debiteur te bevestigen"-banner/-filter verdwijnt. Klopt
+ * de gegokte debiteur niet, dan corrigeert de operator hem via order-bewerken
+ * (de debiteur-keuze daar) — dat is een aparte, zwaardere mutatie. Deze actie
+ * legt alleen de bevestiging vast; de match-bron blijft als audit bewaard.
+ */
+export async function bevestigDebiteur(orderId: number) {
+  const { error } = await supabase
+    .from('orders')
+    .update({ debiteur_zeker: true })
+    .eq('id', orderId)
+
+  if (error) throw error
+}
+
 /** Lookup price for an article in a client's price list */
 export async function lookupPrice(prijslijstNr: string, artikelnr: string): Promise<number | null> {
   const { data, error } = await supabase

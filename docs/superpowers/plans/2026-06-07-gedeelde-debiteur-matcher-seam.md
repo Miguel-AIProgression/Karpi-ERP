@@ -1,7 +1,7 @@
 # Verbeterplan: Gedeelde `matchDebiteur`-seam over alle inbound-kanalen
 
 **Datum:** 2026-06-07
-**Status:** Slices 0–3 + docs **geïmplementeerd** (2026-06-07). Slices 4–5 open (V2).
+**Status:** Slices 0–6 **geïmplementeerd** (2026-06-07). Alle slices afgerond.
 **Aanleiding:** Architectuur-review-bevinding #4 — "Debiteur-matching per inbound-kanaal — geen gedeeld seam"
 
 > **Voortgang 2026-06-07:**
@@ -14,11 +14,21 @@
 > - **Slice 2 (✓)** — Shopify-matcher gerepareerd (`actief`→`ACTIEF_OR_FILTER`, `email`→3 kolommen)
 >   + `zeker`-vlag + 6 tests.
 > - **Slice 3 (✓)** — EDI `transus-poll matchDebiteur` delegeert naar `matchDebiteurOpGln`.
+> - **Slice 4 (✓)** — Onzekere fuzzy match landt mét vlag i.p.v. stil/geblokkeerd:
+>   `orders.debiteur_zeker` + `orders.debiteur_match_bron` (mig 322), `create_webshop_order`
+>   + `orders_list` herdefinieerd, `sync-shopify-order` stuurt de vlaggen mee. Amber banner +
+>   status-tab `'Debiteur te bevestigen'` op orders-overzicht + bevestig-widget op order-detail
+>   (`bevestigDebiteur`). **`env_fallback` bewust uitgesloten** (verzameldebiteur =
+>   verwachte eindbestemming — operator-beslissing 2026-06-07).
+> - **Slice 5 (✓)** — `matchDebiteurViaEnv(envKey)` in de seam; Lightspeed/webshop
+>   (`FLOORPASSION_DEBITEUR_NR`) + Shopify-catch-all (`SHOPIFY_FALLBACK_DEBITEUR_NR`) delegeren
+>   ernaar. Geen gedragswijziging; +2 tests.
 > - **Slice 6 (✓)** — changelog + architectuur + CLAUDE.md bijgewerkt.
 > - **Beslissingen (gebruiker, §5):** (1) `status <> 'Inactief'` incl. NULL; (3) gate alleen op
 >   fuzzy; (4) TS-module als seam. (2) Hornbach-skip = generiek `isActieveDebiteur` + GLN-volgorde.
-> - **Open (V2):** Slice 4 (uniforme `zeker:false → te-koppelen`-UX buiten EDI) en Slice 5
->   (env-debiteur-kanalen als env-ladder) — raken frontend + meerdere sync-functies.
+>   (Slice 4) `zeker:false` → aanmaken-met-waarschuwing; env_fallback níét markeren.
+> - **Open (V2):** échte Floorpassion-B2B-matching achter dezelfde ladder; e-mailkanaal op
+>   `debiteur_zeker` aansluiten (nu gedekt door Concept-review mig 308).
 
 ---
 

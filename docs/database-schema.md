@@ -338,6 +338,8 @@ Orderheaders. Adressen zijn snapshots (niet FK naar afleveradressen).
 | verzonden_at | TIMESTAMPTZ | Mig 217 (ADR-0005). Moment waarop `voltooi_pickronde` de laatste open zending sloot en `orders.status='Verzonden'` zette. Triggert factuur-queue (mig 118). NULL voor orders die nog niet verzonden zijn. |
 | edi_bevestigd_op | TIMESTAMPTZ | Mig 158. Tijdstip waarop de operator de EDI-orderbev heeft bevestigd en verstuurd (`bevestigOrderViaEdi`). NULL = leverweek/orderbev nog niet bevestigd ("te bevestigen"). Hergebruikt als gate voor mig 309-310. **Niet te verwarren** met `bevestigd_at` (mig 304 = e-mail-orderbevestiging aan klant). |
 | edi_gewenste_afleverdatum | DATE | EDI-only (mig 309): door de partner gewenste leverdatum (snapshot, verandert nooit). `afleverdatum` mag afwijken zodra de allocator/mig 153 een haalbare datum berekent of de operator bij bevestiging corrigeert. NULL voor niet-EDI of als de partner geen leverdatum meestuurde. |
+| debiteur_zeker | BOOLEAN | Mig 322. FALSE = de debiteur is via een onzekere (fuzzy) strategie geraden en moet handmatig bevestigd worden ("Debiteur te bevestigen"-flow). TRUE (default) = harde treffer of handmatig aangemaakt. Gezet door `create_webshop_order` uit `p_header.debiteur_zeker`. |
+| debiteur_match_bron | TEXT | Mig 322. Welke strategie de debiteur bepaalde (`DebiteurMatchBron` uit `_shared/debiteur-matcher.ts`), bv. `company_name_ilike`, `email`, `env_fallback`. NULL voor handmatig aangemaakte orders. Het "te bevestigen"-predicaat sluit `env_fallback` uit (verzameldebiteur = verwachte eindbestemming). |
 
 ---
 

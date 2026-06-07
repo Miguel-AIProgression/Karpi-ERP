@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/layout/page-header'
 import { MultiSelectDropdown } from '@/components/ui/multi-select-dropdown'
 import { StatusTabs } from '@/components/orders/status-tabs'
 import { OrdersTable } from '@/components/orders/orders-table'
+import { DebiteurTeBevestigenBanner } from '@/components/orders/debiteur-te-bevestigen-banner'
 import { useOrders, useStatusCounts, useOrderKlantOpties } from '@/hooks/use-orders'
 import { useFacturenVoorOrders } from '@/modules/facturatie'
 import { EdiTeKoppelenBanner } from '@/modules/edi'
@@ -74,6 +75,14 @@ export function OrdersOverviewPage() {
 
       {/* Safety-net: inkomende EDI-orders die niet aan een klant gekoppeld konden worden */}
       <EdiTeKoppelenBanner />
+
+      {/* Safety-net: orders met onzekere (fuzzy) debiteur-match — mig 322 */}
+      <DebiteurTeBevestigenBanner
+        onBekijk={() => {
+          setStatus('Debiteur te bevestigen')
+          setPage(0)
+        }}
+      />
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3 mb-4">

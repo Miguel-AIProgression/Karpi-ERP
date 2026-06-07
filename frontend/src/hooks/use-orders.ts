@@ -5,6 +5,7 @@ import {
   fetchOrderDetail,
   fetchOrderRegels,
   fetchOrderKlantOpties,
+  countTeBevestigenDebiteurOrders,
 } from '@/lib/supabase/queries/orders'
 import type { OrderSortField, SortDirection } from '@/lib/supabase/queries/orders'
 
@@ -52,5 +53,17 @@ export function useOrderRegels(orderId: number) {
     queryKey: ['orders', orderId, 'regels'],
     queryFn: () => fetchOrderRegels(orderId),
     enabled: orderId > 0,
+  })
+}
+
+/**
+ * Aantal orders met een onzekere (fuzzy) debiteur-match die nog bevestigd moet
+ * worden (mig 322). Voedt de waarschuwingsbanner op het orders-overzicht.
+ */
+export function useTeBevestigenDebiteurCount() {
+  return useQuery({
+    queryKey: ['orders', 'debiteur-te-bevestigen-count'],
+    queryFn: countTeBevestigenDebiteurOrders,
+    refetchInterval: 60_000,
   })
 }
