@@ -96,6 +96,13 @@ Deze werkafspraken verhogen kwaliteit en snelheid. Geen dogma's — experimentee
 - **Detailleer specs:** verwijder ambiguïteit vóór overdracht. Specificiteit = autonomie.
 - **Daag output uit:** vraag Claude om keuzes te rechtvaardigen ("prove this works", vergelijk main vs branch). Middelmatige fix? Vraag om verse herschrijving ("scrap it, implement the elegant solution").
 
+### Git-workflow (branch-strategie)
+- **Grotere wijzigingen krijgen automatisch een eigen branch.** Begin substantieel werk (nieuwe feature, refactor over meerdere bestanden, migratie, alles met >~1 logische stap of meerdere bestanden) zónder te vragen op een eigen branch — bv. `feat/<korte-naam>`, `refactor/<korte-naam>`, `fix/<korte-naam>`. Commit het werk daar, en **merge pas naar `main` wanneer ik dat expliciet zeg** ("merge maar", "naar main"). Niet automatisch mergen.
+- **Kleine, triviale wijzigingen** (één-regel-fix, typo, docs-tweak) mogen direct op `main` — gebruik je oordeel; bij twijfel: aparte branch.
+- **Reden:** er draaien vaak meerdere Claude-sessies tegelijk in deze working tree. Direct op `main` werken laat sessies elkaars ongecommitte werk overschrijven/oppakken (zie incident 2026-06-07: gedeelde `changelog.md`/`architectuur.md` raakten verstrengeld). Een eigen branch per substantiële taak isoleert het werk tot ik bewust merge.
+- **Merge-moment:** bij "merge naar main" → `git checkout main && git pull --ff-only && git merge <branch>` (of fast-forward), daarna push. Los merge-conflicten op de branch op, niet op `main`.
+- Géén PR's nodig (tenzij ik erom vraag) — branch + merge-op-commando volstaat.
+
 ### Parallelliseren met git worktrees
 - Bij 2+ onafhankelijke taken: gebruik git worktrees zodat elke sessie een eigen werkdirectory heeft.
 - Eventueel een vaste "analyse"-worktree voor log/data-onderzoek zonder de hoofdbranch te vervuilen.
