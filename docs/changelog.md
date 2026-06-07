@@ -1,5 +1,91 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-07 — Maatwerk-herkenning Shopify/mail: vorm-detectie data-driven uit `maatwerk_vormen` + gedeelde dims-parser voor Shopify `properties`
+
+**Waarom:** Order ORD-2026-0118 (Shopify #5580, FLOORPASSION) toonde meerdere
+`[UNMATCHED]`-regels "Lago 13 — Organic gespiegeld / 200 x 290 cm" met status
+"Wacht op nieuwe inkoop" i.p.v. herkenning als maatwerk `LAGO13XXMAATWERK`
+200×290, vorm "organic gespiegeld". Twee samenhangende oorzaken:
+1. `detectVorm()` in [`product-matcher.ts`](../supabase/functions/_shared/product-matcher.ts)
+   gebruikte een hardgecodeerde regex (`/organisch[e]?.../`) die alleen Nederlandse
+   spelling matchte — de live `maatwerk_vormen`-tabel bevat **Engelse** namen
+   ("Organic", "Organic Gespiegeld", "Pebble", "Ellips", "Afgeronde Hoeken",
+   "Cloud"). 6 van de 9 actieve vormen waren dus principieel onherkenbaar.
+2. Shopify line-item `properties` (waar de maatwerk-app de échte afmetingen
+   neerzet, bv. `"Maatwerk: 260x250 rechthoek"` / `"custom-vorm: organic"`)
+   werden opgevangen in een dood veld `_shopifyProperties` dat nergens werd
+   gelezen — en de Shopify-orderprocessor had bovendien zijn eigen, zwakkere
+   bespoke dimensie-parsing i.p.v. de gedeelde `parseMaatwerkDims` die de
+   mail-import al wél correct gebruikte, en gaf `match.maatwerk_vorm` helemaal
+   niet door aan de orderregel.
+
+**Wat:**
+- `detectVorm()` is nu **data-driven**: laadt actieve rijen uit `maatwerk_vormen`
+  (gecached per cold-start), normaliseert via `normaliseerNaam()`
+  (diacritics-/hoofdletter-ongevoelig) en matcht op de langste naam eerst
+  (voorkomt dat "Organic" "Organic Gespiegeld" wegkaapt). `OVAAL_PATROON`/
+  `DURCHMESSER_PATROON` blijven als fallback voor Duitse/niet-tabel-spellingen
+  ("Durchmesser", "rund"). Eén bron-van-waarheid — nieuwe vormen toevoegen aan
+  `maatwerk_vormen` is voldoende, geen code-wijziging nodig.
+- Shopify line-item `properties` lopen nu via een nieuw `extraTexts`-veld op
+  `LightspeedOrderRow` ([`lightspeed-client.ts`](../supabase/functions/_shared/lightspeed-client.ts))
+  → `collectExtraTexts()` neemt ze mee → `parseMaatwerkDims()`/`detectVorm()`
+  zien exact dezelfde tekst-hooiberg als bij mail-orders. `shopifyLineItemToMatcherRow`
+  ([`shopify-types.ts`](../supabase/functions/_shared/shopify-types.ts)) zet elke
+  property om naar `"naam: waarde"` en vervangt het dode `_shopifyProperties`-veld.
+- [`shopify-order-processor.ts`](../supabase/functions/_shared/shopify-order-processor.ts):
+  `buildRegels` hergebruikt nu `parseMaatwerkDims` (in plaats van eigen 27-regelige
+  parsing) en zet `maatwerk_vorm: match.maatwerk_vorm ?? null` op de orderregel —
+  Shopify- en mail-orders lopen nu door identieke matching/parsing-primitieven
+  (`matchProduct`, `parseMaatwerkDims`, `collectExtraTexts`).
+
+**Derde, onderliggende oorzaak (gevonden tijdens verificatie):** de fuzzy
+naam-alias-matching (`klanteigen_namen`) kon de verkeerde kwaliteit kiezen vóórdat
+de expliciete Karpi-SKU ooit werd geraadpleegd. "Lago 13" matchte op klant-alias
+"LAGO SISAL" (→ kwaliteit `ZONK`), terwijl kleur `13` binnen `ZONK` niet eens
+bestaat — en de SKU die Shopify meestuurt (`LAGO13XXMAATWERK`) direct naar de
+echte kwaliteit `LAGO` + kleur `13` wijst (`LAGO13MAATWERK` = artikelnr 553139998
+bestaat al). **Fix:** in `matchProduct` ([`product-matcher.ts`](../supabase/functions/_shared/product-matcher.ts))
+wordt de uit `articleCode`/SKU geparste kwaliteit nu, mits hij ook echt bestaat
+in `kwaliteiten`, vóóraan `kwaliteitCodes` gezet — vóórdat enige kwaliteit-keuze
+plaatsvindt (incl. het vorm-detectiepad dat voorheen blind `kwaliteitCodes[0]`
+gebruikte zonder ooit naar de SKU te kijken). Een expliciete, autoritatieve
+broncode wint nu altijd van een fuzzy naam-gok.
+
+**Vierde bevinding:** Shopify's maatwerk-app laat `line_item.sku` soms leeg en
+levert de Karpi-code dan uitsluitend via een line-item property `"Maatwerk-sku"`
+(bv. `"LAGO13XXMAATWERK"`). Zonder fallback bleef de net toegevoegde SKU-override
+dan alsnog buiten bereik. **Fix:** `shopifyLineItemToMatcherRow` ([`shopify-types.ts`](../supabase/functions/_shared/shopify-types.ts))
+valt terug op die property wanneer `sku` ontbreekt.
+
+**Vijfde bevinding:** variant-namen als "Rechthoek / **Custom**" (zonder
+afmetingen in de regel zelf — vermoedelijk een omissie aan Shopify-zijde bij het
+plaatsen van de order) werden niet als `WUNSCHGROSSE_PATROON`/expliciet-maatwerk
+herkend (de regex eiste "custom **size**"), met als risico dat de regel — nu de
+SKU-override `LAGO` toevoegt aan de kwaliteitskandidaten — zou worden vastgeklikt
+aan een willekeurig vaste-maat LAGO13-artikel i.p.v. als maatwerk-zonder-dims
+weggezet te worden. **Fix:** patroon verbreed naar los woord `\bcustom\b`
+(geverifieerd: geen enkel vaste-maat-artikel bevat "custom" in de omschrijving,
+dus geen vals-positief-risico).
+
+**Resultaat:** "Lago 13 — Organic gespiegeld / 200 x 290 cm" matcht nu op
+kwaliteit **LAGO** (niet ZONK) → maatwerk (geen exacte-maat-match) → vorm
+"organic gespiegeld" → generiek artikel `LAGO13MAATWERK`, dims 200×290.
+Shopify-orders met expliciete `"Maatwerk: 260x250 rechthoek"`-property
+extraheren nu ook hun afmeting (260×250) i.p.v. die te missen. Gedeployed naar
+`sync-shopify-orders-poll` en `import-lightspeed-orders` (beide afhankelijk van
+de gewijzigde `_shared`-bestanden).
+
+**Bestaande order ORD-2026-0118 (Shopify #5580) handmatig gecorrigeerd**
+(idempotentie-check sloeg de al-bestaande order over bij de volgende poll —
+geen automatische herstel mogelijk). Regels 3534-3537 herzien naar kwaliteit
+LAGO/kleur 13 (i.p.v. ZONK), met correcte vorm/dims/artikelnr zoals de
+gefixte matcher ze nu zou opleveren (geverifieerd tegen de ruwe Shopify
+line-item-payload via een tijdelijke debug-functie, nadien verwijderd). De
+bijbehorende triggers (`trg_auto_snijplan` e.a.) creëerden daarop automatisch
+3 snijplannen (status `Gepland`) — exact het gedrag dat bij correcte import
+had moeten optreden.
+
 ## 2026-06-07 — Shopify-orders #5562-#5577 ontbraken: dode webhook → vervangen door zelf-helende polling-sync (mig 323)
 
 **Waarom:** Shopify-orders bleven niet automatisch inladen. Onderzoek wees uit

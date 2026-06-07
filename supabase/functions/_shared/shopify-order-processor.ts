@@ -14,6 +14,7 @@ import {
 } from './shopify-types.ts'
 import { matchDebiteur } from './shopify-debiteur-matcher.ts'
 import { matchProduct, buildOmschrijving } from './product-matcher.ts'
+import { parseMaatwerkDims } from './lightspeed-client.ts'
 import { haalKlantPrijs } from './klant-prijs.ts'
 
 type SupabaseClient = ReturnType<typeof createClient>
@@ -67,32 +68,19 @@ async function buildRegels(
     if (match.artikelnr || match.is_maatwerk) matched++
     else unmatched++
 
+    // Hergebruik dezelfde dims-parser als de mail-import (parseMaatwerkDims) —
+    // die kijkt ook naar `extraTexts` (Shopify line-item properties als
+    // "Maatwerk: 260x250 rechthoek"), niet alleen variant_title/expliciete
+    // lengte+breedte-properties zoals de eerdere bespoke parsing hier deed.
+    // Eén parser voor alle orderbronnen voorkomt dat Shopify-orders dimensies
+    // missen die de mail-import wél correct had herkend.
     let maatwerk_lengte_cm: number | null = null
     let maatwerk_breedte_cm: number | null = null
     if (match.is_maatwerk) {
-      const props = item.properties ?? []
-      const findProp = (names: string[]) =>
-        props.find(p => names.some(n => n.toLowerCase() === p.name.toLowerCase()))?.value ?? null
-
-      const lengteProp = findProp(['lengte', 'length'])
-      const breedteProp = findProp(['breedte', 'width', 'breed'])
-      const maatProp = findProp(['maatwerk', 'maat', 'size', 'afmeting'])
-
-      if (lengteProp && breedteProp) {
-        maatwerk_lengte_cm = parseFloat(lengteProp) || null
-        maatwerk_breedte_cm = parseFloat(breedteProp) || null
-      } else if (maatProp) {
-        const m = maatProp.match(/(\d+)\s*[xX×]\s*(\d+)/)
-        if (m) {
-          maatwerk_lengte_cm = parseInt(m[1], 10)
-          maatwerk_breedte_cm = parseInt(m[2], 10)
-        }
-      } else if (item.variant_title) {
-        const m = item.variant_title.match(/(\d+)\s*[xX×]\s*(\d+)/)
-        if (m) {
-          maatwerk_lengte_cm = parseInt(m[1], 10)
-          maatwerk_breedte_cm = parseInt(m[2], 10)
-        }
+      const dims = parseMaatwerkDims(matcherRow)
+      if (dims) {
+        maatwerk_lengte_cm = dims.lengte
+        maatwerk_breedte_cm = dims.breedte
       }
     }
 
@@ -118,6 +106,7 @@ async function buildRegels(
       is_maatwerk: match.is_maatwerk ?? false,
       maatwerk_kwaliteit_code: match.maatwerk_kwaliteit_code ?? null,
       maatwerk_kleur_code: match.maatwerk_kleur_code ?? null,
+      maatwerk_vorm: match.maatwerk_vorm ?? null,
       maatwerk_lengte_cm,
       maatwerk_breedte_cm,
     })
@@ -139,6 +128,7 @@ async function buildRegels(
         is_maatwerk: false,
         maatwerk_kwaliteit_code: null,
         maatwerk_kleur_code: null,
+        maatwerk_vorm: null,
         maatwerk_lengte_cm: null,
         maatwerk_breedte_cm: null,
       })

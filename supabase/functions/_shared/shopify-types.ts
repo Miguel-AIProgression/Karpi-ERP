@@ -142,6 +142,13 @@ export function shopifyLineItemToMatcherRow(item: ShopifyLineItem) {
   const lengteProp = findProp(['lengte', 'length'])
   const breedteProp = findProp(['breedte', 'width', 'breed'])
 
+  // Shopify's maatwerk-app laat `sku` soms leeg en levert de Karpi-productcode
+  // dan via een line-item property "Maatwerk-sku" (bv. "LAGO13XXMAATWERK").
+  // Die code is autoritatief (zie matchProduct's articleCode-override) — zonder
+  // deze fallback blijft hij onbenut en valt de matcher terug op fuzzy naam-matching.
+  const maatwerkSkuProp = findProp(['maatwerk-sku', 'maatwerk sku'])
+  const sku = item.sku?.trim() || maatwerkSkuProp || null
+
   // Bouw variantTitle op: variant_title als basis, vul aan met dimensies
   let variantTitle = item.variant_title ?? null
   if (!variantTitle && (lengteProp || breedteProp)) {
@@ -151,12 +158,22 @@ export function shopifyLineItemToMatcherRow(item: ShopifyLineItem) {
     variantTitle = dimensieProp
   }
 
+  // Shopify's maatwerk-app levert de échte specificaties vaak als losse
+  // line-item `properties` i.p.v. in variant_title — bijv. een property
+  // genaamd "Maatwerk" met waarde "260x250 rechthoek", of "custom-vorm"
+  // met waarde "organic". `"naam: waarde"` zodat parseMaatwerkDims/detectVorm
+  // (via collectExtraTexts → extraTexts) zowel de sleutel als de inhoud zien
+  // — exact dezelfde parser als voor mail-orders, geen aparte Shopify-logica.
+  const extraTexts = (item.properties ?? [])
+    .filter(p => p.name && p.value)
+    .map(p => `${p.name}: ${p.value}`)
+
   return {
     id: item.id,
     productTitle: item.title,
     variantTitle,
-    articleCode: item.sku ?? null,
-    sku: item.sku ?? null,
+    articleCode: sku,
+    sku,
     ean: null,
     quantityOrdered: item.quantity,
     priceExcl: parseFloat(item.price ?? '0') || 0,
@@ -166,7 +183,6 @@ export function shopifyLineItemToMatcherRow(item: ShopifyLineItem) {
     // Wij converteren hier zelf naar kg zodat de caller dat niet hoeft.
     weight: item.grams != null ? item.grams * 1000 : undefined, // gram → milli-gram (≈ micro-kg ×1000/1000)
     customFields: undefined,
-    // Extra velden voor de maatwerk-dims-parser
-    _shopifyProperties: item.properties ?? [],
+    extraTexts,
   }
 }
