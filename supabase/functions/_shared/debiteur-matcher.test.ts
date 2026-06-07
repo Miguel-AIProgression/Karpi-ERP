@@ -7,6 +7,7 @@ import {
   isActieveDebiteur,
   ACTIEF_OR_FILTER,
   matchDebiteurOpGln,
+  matchDebiteurViaEnv,
 } from './debiteur-matcher.ts'
 
 // ---------------------------------------------------------------------------
@@ -142,6 +143,35 @@ Deno.test('matchDebiteurOpGln: niets gevonden → null', async () => {
     gefactureerd: 'Z',
   })
   assertEquals(m, null)
+})
+
+// ===========================================================================
+// matchDebiteurViaEnv — env-ladder voor vaste (verzamel)debiteur-kanalen
+// ===========================================================================
+Deno.test('matchDebiteurViaEnv: geldige env → env_fallback, zeker:false', () => {
+  Deno.env.set('TEST_DEBITEUR_NR', '91000')
+  try {
+    assertEquals(matchDebiteurViaEnv('TEST_DEBITEUR_NR'), {
+      debiteur_nr: 91000,
+      bron: 'env_fallback',
+      zeker: false,
+    })
+  } finally {
+    Deno.env.delete('TEST_DEBITEUR_NR')
+  }
+})
+
+Deno.test('matchDebiteurViaEnv: ontbrekend/ongeldig → null', () => {
+  Deno.env.delete('TEST_DEBITEUR_NR')
+  assertEquals(matchDebiteurViaEnv('TEST_DEBITEUR_NR'), null)
+  Deno.env.set('TEST_DEBITEUR_NR', '0')
+  try {
+    assertEquals(matchDebiteurViaEnv('TEST_DEBITEUR_NR'), null)
+    Deno.env.set('TEST_DEBITEUR_NR', 'abc')
+    assertEquals(matchDebiteurViaEnv('TEST_DEBITEUR_NR'), null)
+  } finally {
+    Deno.env.delete('TEST_DEBITEUR_NR')
+  }
 })
 
 Deno.test('matchDebiteurOpGln: aflever wint van gefactureerd (volgorde)', async () => {

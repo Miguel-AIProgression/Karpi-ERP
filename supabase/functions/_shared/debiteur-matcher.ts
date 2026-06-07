@@ -80,6 +80,31 @@ export function isActieveDebiteur(status: string | null | undefined): boolean {
  */
 export const ACTIEF_OR_FILTER = 'status.is.null,status.neq.Inactief'
 
+/**
+ * Triviale env-ladder: lees een vaste debiteur uit een env-var. Bedient de
+ * kanalen die (nog) geen echte matching doen maar altijd op één vaste
+ * (verzamel)debiteur landen — Floorpassion-webshop/Lightspeed via
+ * FLOORPASSION_DEBITEUR_NR, Shopify-catch-all via SHOPIFY_FALLBACK_DEBITEUR_NR.
+ *
+ * Geeft `bron:'env_fallback', zeker:false` terug: het is een bewuste
+ * eindbestemming, geen harde klant-treffer. `zeker:false` markeert dat er geen
+ * échte identificatie plaatsvond — maar voor consumenten-webshops (wisselend
+ * afleveradres, vaste verzameldebiteur) is dit het verwáchte resultaat, dus de
+ * "debiteur te bevestigen"-flow (mig 322) sluit `env_fallback` bewust uit.
+ *
+ * Returnt `null` als de env-var ontbreekt/ongeldig is, zodat de caller zelf kan
+ * beslissen of dat een harde configuratiefout is (HTTP 500) of een doorval.
+ *
+ * Géén gedragswijziging t.o.v. de oude inline `parseInt(Deno.env.get(...))` —
+ * alleen het contract uniformeren zodat een toekomstige échte Floorpassion-B2B-
+ * matching achter dezelfde DebiteurMatch-ladder kan zonder nieuw code-pad.
+ */
+export function matchDebiteurViaEnv(envKey: string): DebiteurMatch | null {
+  const nr = parseInt(Deno.env.get(envKey) ?? '', 10)
+  if (isNaN(nr) || nr <= 0) return null
+  return { debiteur_nr: nr, bron: 'env_fallback', zeker: false }
+}
+
 // ===========================================================================
 // Gedeelde strategie-primitieven (kanaal-overstijgend)
 // ===========================================================================

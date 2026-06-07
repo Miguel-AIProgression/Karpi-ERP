@@ -27,6 +27,7 @@ import {
 } from '../_shared/lightspeed-client.ts'
 import { verifyLightspeedSignature } from '../_shared/lightspeed-verify.ts'
 import { matchProduct, buildOmschrijving } from '../_shared/product-matcher.ts'
+import { matchDebiteurViaEnv } from '../_shared/debiteur-matcher.ts'
 import { bepaalAfleverdatumUitOrder } from '../_shared/lightspeed-leverdatum.ts'
 import { haalKlantPrijs } from '../_shared/klant-prijs.ts'
 
@@ -175,8 +176,9 @@ serve(async (req) => {
   const orderId = webhookBody.order?.id
   if (!orderId) return json({ error: 'Missing order.id in webhook' }, 400)
 
-  const debiteurNr = Number(Deno.env.get('FLOORPASSION_DEBITEUR_NR') ?? '')
-  if (!debiteurNr) return json({ error: 'FLOORPASSION_DEBITEUR_NR not configured' }, 500)
+  const debiteurMatch = matchDebiteurViaEnv('FLOORPASSION_DEBITEUR_NR')
+  if (!debiteurMatch) return json({ error: 'FLOORPASSION_DEBITEUR_NR not configured' }, 500)
+  const debiteurNr = debiteurMatch.debiteur_nr!
 
   const supabase = createSupabase(
     Deno.env.get('SUPABASE_URL') ?? '',

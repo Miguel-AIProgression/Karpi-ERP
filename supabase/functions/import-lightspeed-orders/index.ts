@@ -24,6 +24,7 @@ import {
   type LightspeedOrderRow,
 } from '../_shared/lightspeed-client.ts'
 import { matchProduct } from '../_shared/product-matcher.ts'
+import { matchDebiteurViaEnv } from '../_shared/debiteur-matcher.ts'
 import { haalKlantPrijs } from '../_shared/klant-prijs.ts'
 
 const SHOPS: LightspeedShop[] = ['nl', 'de']
@@ -210,8 +211,9 @@ serve(async (req) => {
     return new Response('ok', { headers: { 'Access-Control-Allow-Origin': '*' } })
   }
 
-  const debiteurNr = Number(Deno.env.get('FLOORPASSION_DEBITEUR_NR') ?? '')
-  if (!debiteurNr) return json({ error: 'FLOORPASSION_DEBITEUR_NR not configured' }, 500)
+  const debiteurMatch = matchDebiteurViaEnv('FLOORPASSION_DEBITEUR_NR')
+  if (!debiteurMatch) return json({ error: 'FLOORPASSION_DEBITEUR_NR not configured' }, 500)
+  const debiteurNr = debiteurMatch.debiteur_nr!
 
   const supabase = createSupabase(
     Deno.env.get('SUPABASE_URL') ?? '',

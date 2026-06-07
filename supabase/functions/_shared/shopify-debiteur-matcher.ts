@@ -22,6 +22,7 @@ import type { ShopifyOrderWebhook } from './shopify-types.ts'
 import {
   ACTIEF_OR_FILTER,
   type DebiteurMatchBron,
+  matchDebiteurViaEnv,
   normaliseerNaam,
 } from './debiteur-matcher.ts'
 
@@ -182,10 +183,10 @@ export async function matchDebiteur(
     if (nr) return { debiteur_nr: nr, bron: 'email', zeker: false }
   }
 
-  // 8. Fallback debiteur (catch-all voor onbekende klanten)
-  const fallback = parseInt(Deno.env.get('SHOPIFY_FALLBACK_DEBITEUR_NR') ?? '', 10)
-  if (!isNaN(fallback) && fallback > 0) {
-    return { debiteur_nr: fallback, bron: 'env_fallback', zeker: false }
+  // 8. Fallback debiteur (catch-all voor onbekende klanten) — via gedeelde env-ladder
+  const fallback = matchDebiteurViaEnv('SHOPIFY_FALLBACK_DEBITEUR_NR')
+  if (fallback) {
+    return { debiteur_nr: fallback.debiteur_nr!, bron: fallback.bron, zeker: fallback.zeker }
   }
 
   return null
