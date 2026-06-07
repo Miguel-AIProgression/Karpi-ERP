@@ -43,6 +43,7 @@ export { SubstitutionPicker } from './components/substitution-picker'
 export { UitwisselbaarTekortHint } from './components/uitwisselbaar-tekort-hint'
 export { UitwisselbaarToepassenRij } from './components/uitwisselbaar-toepassen-rij'
 export { LevertijdBadge } from './components/levertijd-badge'
+export { IoLevertijdHint } from './components/io-levertijd-hint'
 
 // ---------------------------------------------------------------------------
 // Cache seam (cross-Module invalidation — ADR-0015, Ingreep 5)

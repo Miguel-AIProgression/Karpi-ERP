@@ -160,6 +160,11 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
     setClient(c)
     setShippingOverridden(false)
     setDeelleveringen(c?.deelleveringen_toegestaan ?? false)
+    // Klant-default 'Afhalen' moet de afhalen-checkbox vooraf aanvinken —
+    // anders moet de operator dezelfde keuze die al op het klantprofiel
+    // staat opnieuw maken bij elke order.
+    const nieuweAfhalen = c?.afleverwijze === 'Afhalen'
+    setAfhalen(nieuweAfhalen)
     if (c) {
       setHeader((h) => ({
         ...h,
@@ -220,7 +225,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
             return updated
           })
         )
-        setRegels(applyShippingLogic(updatedRegels, c, afhalen))
+        setRegels(applyShippingLogic(updatedRegels, c, nieuweAfhalen))
       }
     }
   }

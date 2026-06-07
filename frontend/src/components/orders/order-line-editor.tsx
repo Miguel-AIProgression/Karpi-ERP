@@ -12,7 +12,7 @@ import {
   type AfwerkingTypeRow,
 } from '@/modules/maatwerk'
 import { AFWERKING_OPTIES } from '@/lib/utils/constants'
-import { UitwisselbaarTekortHint, berekenRegelDekking } from '@/modules/reserveringen'
+import { UitwisselbaarTekortHint, IoLevertijdHint, berekenRegelDekking } from '@/modules/reserveringen'
 import { getVormDisplay } from '@/lib/utils/vorm-labels'
 import type { SelectedArticle, SubstitutionInfo } from './article-selector'
 import type { OrderRegelFormData, PrijsBron, PrijsBreakdown } from '@/lib/supabase/queries/order-mutations'
@@ -307,6 +307,9 @@ function MaatwerkLineRow({
               keuzes={line.uitwisselbaar_keuzes ?? []}
               onChange={(keuzes) => updateLine(index, { uitwisselbaar_keuzes: keuzes })}
             />
+            {tekortAantal > 0 && (
+              <IoLevertijdHint artikelnr={line.artikelnr} tekortAantal={tekortAantal} />
+            )}
           </td>
         </tr>
       )}
