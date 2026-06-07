@@ -107,6 +107,7 @@ export function OrderEditPage() {
     maatwerk_weken: clientData?.maatwerk_weken ?? null,
     deelleveringen_toegestaan: clientData?.deelleveringen_toegestaan ?? false,
     default_lever_type: clientData?.default_lever_type ?? 'week',
+    afleverwijze: clientData?.afleverwijze ?? null,
   } : null
 
   // Groepeer handmatige keuzes per orderregel-id
