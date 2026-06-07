@@ -27,7 +27,7 @@ verify_jwt = false
 [functions.sync-webshop-order]
 verify_jwt = false
 
-[functions.sync-shopify-order]
+[functions.sync-shopify-orders-poll]
 verify_jwt = false
 
 [functions.poll-email-orders]

@@ -1218,6 +1218,22 @@ Centrale audit-/queue-tabel voor alle EDI-berichten via Transus (in én uit) (mi
 
 **RPCs:** `log_edi_inkomend`, `markeer_edi_ack`, `create_edi_order`, `match_edi_artikel`, `enqueue_edi_uitgaand`, `claim_volgende_uitgaand`, `markeer_edi_verstuurd`, `markeer_edi_fout`. Sinds migratie 166 gebruikt `create_edi_order` de debiteur-prijslijst (`debiteuren.prijslijst_nr -> prijslijst_regels`) voor orderregelprijzen, met fallback op `producten.verkoopprijs`.
 
+### shopify_sync_runs
+Audit-trail van de geplande Shopify-orderpoll `sync-shopify-orders-poll` (mig 323). Eén rij per cron-tick (elke 10 min); `details` JSONB bevat per-order resultaat (`aangemaakt`/`overgeslagen (bestond al)`/`fout`). Voedt de storingsbanner op het orders-overzicht ([`ShopifySyncStatusBanner`](../frontend/src/components/orders/shopify-sync-status-banner.tsx)) — analoog aan de EDI "Te koppelen"-banner, maar dan voor sync-gezondheid i.p.v. ongekoppelde berichten.
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| id | BIGSERIAL PK | |
+| gestart_op, afgerond_op | TIMESTAMPTZ | Run-lifecycle |
+| status | TEXT CHECK | 'lopend' / 'ok' / 'fout' |
+| shop_domain | TEXT | bv. `karpi-group.myshopify.com` |
+| opgehaald, aangemaakt, overgeslagen, fouten | INTEGER | Tellers per run |
+| watermark_voor, watermark_na | TIMESTAMPTZ | Snapshot van de watermark vóór/na deze run |
+| details | JSONB | Array `{shopify_order, order_nr, actie, fout?}` per verwerkte order |
+| foutmelding | TEXT | Bij fatale fout (bv. Shopify-API 4xx/5xx, ontbrekende secrets) |
+
+### shopify_sync_watermark
+Eén-rij-tabel (`id=1`) met `watermark TIMESTAMPTZ` = de `created_at` van de laatst succesvol verwerkte Shopify-order. Schuift na élke afgehandelde order (incl. skips) progressief vooruit binnen `sync-shopify-orders-poll` — zodat een mid-run timeout geen orders dubbel verwerkt en gemiste runs door de volgende tick zelf-helend worden ingehaald. Default-seed `2026-05-01T00:00:00Z` (ruim vóór de ontbrekende #5562-#5577-gap).
+
 ---
 
 ## Enums

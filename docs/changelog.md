@@ -1,5 +1,43 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-07 — Shopify-orders #5562-#5577 ontbraken: dode webhook → vervangen door zelf-helende polling-sync (mig 323)
+
+**Waarom:** Shopify-orders bleven niet automatisch inladen. Onderzoek wees uit
+dat de `orders/create`-webhook (`sync-shopify-order`) al sinds 15 mei 2026 niet
+meer vuurde (0 invocations) — vermoedelijk verloren bij een shop-domeinwissel
+(`karpi-group.myshopify.com` → `karpi.myshopify.com`) of credential-rotatie.
+Een webhook die stilletjes dood gaat is onzichtbaar totdat iemand toevallig
+ontbrekende orders opmerkt — een fundamenteel fragiel patroon voor een
+geautomatiseerde koppeling.
+
+**Wat:**
+- **Nieuwe architectuur — geplande polling-sync** ([mig 323](../supabase/migrations/323_shopify_polling_sync.sql),
+  [`sync-shopify-orders-poll`](../supabase/functions/sync-shopify-orders-poll/index.ts)):
+  vervangt de webhook volledig door een pg_cron-tick elke 10 minuten die
+  `GET /orders.json?created_at_min=<watermark>&order=created_at asc` bevraagt
+  (cursor-paginering via `Link`-header `page_info`). Zelf-helend via
+  `shopify_sync_watermark` (schuift progressief per order op, ook bij timeouts)
+  en gecapt op `MAX_ORDERS_PER_RUN=25` om ruim binnen de edge-function
+  idle-timeout (150s) te blijven — de rest pakt de volgende tick op. Audit-trail
+  in nieuwe tabel `shopify_sync_runs` (analoog aan `edi_berichten`).
+- **Gedeelde verwerkingslogica** geëxtraheerd naar [`_shared/shopify-order-processor.ts`](../supabase/functions/_shared/shopify-order-processor.ts)
+  (`processShopifyOrder`) — idempotentie-check, debiteur-matching (`matchDebiteur`),
+  orderregels bouwen, adres/afleverdatum afleiden en de `create_webshop_order`-RPC,
+  inclusief de `debiteur_zeker`/`debiteur_match_bron`-snapshot (mig 322) zodat
+  onzeker-gematchte orders ook via de poller in de "te bevestigen"-flow landen.
+  Vervangt en verwijdert de oude webhook-handler (`sync-shopify-order`) en de
+  bijbehorende `shopify-verify.ts` (HMAC-verificatie, nu overbodig).
+- **Monitoring:** nieuwe banner [`ShopifySyncStatusBanner`](../frontend/src/components/orders/shopify-sync-status-banner.tsx)
+  op het orders-overzicht — verschijnt zodra de laatste run `status='fout'` heeft
+  of ouder is dan 3× het verwachte interval (30 min), zodat een stille storing
+  (zoals deze) niet meer maandenlang onopgemerkt blijft.
+
+**Bekend, niet aangepakt in deze wijziging:** de bestaande `poll-email-orders`-cron
+faalt op dit project elke run met `unrecognized configuration parameter
+"app.supabase_url"` (die GUC's bestaan niet hier — mig 323 gebruikt daarom bewust
+het wél-werkende `vault.decrypted_secrets`-patroon i.p.v. `current_setting`). Apart
+issue, niet in scope van deze fix.
+
 ## 2026-06-07 — Consolidatie ISO-week-kern (UTC) + `formatDateTime`
 
 **Waarom:** een code-review markeerde twee duplicatie-clusters. (1) Het ISO-week­nummer
