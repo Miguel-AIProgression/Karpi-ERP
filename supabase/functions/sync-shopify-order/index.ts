@@ -62,14 +62,14 @@ function normalizeGewicht(microKg: number | undefined): number | null {
   return Math.round(kg * 100) / 100
 }
 
-// Rauwe-payload-audit (mig 324). Best-effort: logging mag de order-verwerking
+// Rauwe-payload-audit (mig 324/325). Best-effort: logging mag de order-verwerking
 // NOOIT blokkeren — daarom alles in try/catch en falen = warn + doorgaan.
 async function logRawPayload(
   supabase: ReturnType<typeof createClient>,
   args: { bron: string; externeId: string | null; contentType: string | null; headers: Record<string, string>; raw: string; json: unknown },
 ): Promise<number | null> {
   try {
-    const { data, error } = await supabase.rpc('log_inkomende_payload', {
+    const { data, error } = await supabase.rpc('log_externe_payload', {
       p_kanaal: 'shopify',
       p_payload_raw: args.raw,
       p_bron: args.bron,
@@ -97,7 +97,7 @@ async function markeerPayload(
 ): Promise<void> {
   if (!id) return
   try {
-    await supabase.rpc('markeer_inkomende_payload_verwerkt', {
+    await supabase.rpc('markeer_externe_payload_verwerkt', {
       p_id: id,
       p_status: status,
       p_order_id: opts.orderId ?? null,

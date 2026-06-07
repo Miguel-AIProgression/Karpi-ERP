@@ -1220,29 +1220,31 @@ Centrale audit-/queue-tabel voor alle EDI-berichten via Transus (in én uit) (mi
 
 ---
 
-### inkomende_payloads
-Generieke, append-only audit van **rauwe inkomende berichten** per kanaal (mig 324). Bewaart de letterlijke payload zodat verwerkingsfouten altijd herleidbaar zijn. **Geen verwerkings-queue** — dat blijft `orders` / `edi_berichten`. EDI heeft z'n eigen `edi_berichten.payload_raw`; dit kanaal-onafhankelijke vangnet bedient **Shopify** (slice 1, `sync-shopify-order`) en later e-mail/webshop/lightspeed.
+### externe_payloads
+Generieke, append-only audit van **rauwe externe payloads** per kanaal, **in- én uitgaand** (mig 324 als `inkomende_payloads`, hernoemd in mig 325). Bewaart de letterlijke payload zodat verwerkings-/verzendfouten altijd herleidbaar zijn. **Geen verwerkings-queue** — dat blijft `orders` / `edi_berichten` / `hst_transportorders`. EDI heeft z'n eigen `edi_berichten.payload_raw`; dit kanaal-onafhankelijke vangnet bedient inbound **Shopify** (slice 1, `sync-shopify-order`) en later e-mail/webshop/lightspeed, plus outbound **vervoerders** (HST via `hst-send`, `richting='out'`).
 | Kolom | Type | Toelichting |
 |-------|------|-------------|
 | id | BIGSERIAL PK | |
-| kanaal | TEXT NOT NULL | `'shopify'` / `'edi'` / `'email'` / `'lightspeed'` / `'webshop'` |
-| bron | TEXT | shop-domein / systeem-identifier |
-| externe_id | TEXT | externe order-/transactie-/message-id (traceer). **Geen UNIQUE** — append-only, een resend = extra rij |
-| richting | TEXT NOT NULL DEFAULT 'in' | |
+| kanaal | TEXT NOT NULL | `'shopify'` / `'edi'` / `'email'` / `'lightspeed'` / `'webshop'` / `'hst'` |
+| bron | TEXT | shop-domein / systeem-identifier (bv. `'hst'`) |
+| externe_id | TEXT | externe order-/transactie-/message-id; bij HST de OrderNumber of `zending_nr`. **Geen UNIQUE** — append-only, een resend/retry = extra rij |
+| richting | TEXT NOT NULL DEFAULT 'in' | `'in'` (inbound) / `'out'` (carrier) |
 | content_type | TEXT | bv. `application/json` |
 | headers | JSONB | relevante request-headers |
-| payload_raw | TEXT NOT NULL | letterlijke body — niets gaat verloren |
-| payload_json | JSONB | geparset gemak (NULL bij niet-JSON/parse-fout) |
-| order_id | BIGINT FK → orders ON DELETE SET NULL | gevuld zodra de order bekend is |
-| status | TEXT NOT NULL DEFAULT 'ontvangen' | `'ontvangen'` → `'verwerkt'` / `'fout'` |
+| payload_raw | TEXT NOT NULL | letterlijke body — bij outbound de verstuurde request-JSON |
+| payload_json | JSONB | geparset gemak; bij outbound `{ request, response, http_code, ok, transport_order_id, tracking_number }` |
+| order_id | BIGINT FK → orders ON DELETE SET NULL | gevuld zodra de order bekend is (outbound: direct) |
+| status | TEXT NOT NULL DEFAULT 'ontvangen' | `'ontvangen'` → `'verwerkt'` / `'fout'` (outbound: eindstatus direct) |
 | fout | TEXT | foutbeschrijving bij status `'fout'` |
 | ontvangen_op, verwerkt_op | TIMESTAMPTZ | lifecycle-timestamps |
 
-**Indexen:** `(kanaal, externe_id)`, `(order_id)`, `(ontvangen_op DESC)`, partial `(ontvangen_op DESC) WHERE status='fout'` (snel de probleemgevallen).
+**Indexen:** `(kanaal, externe_id)`, `(order_id)`, `(ontvangen_op DESC)`, partial `(ontvangen_op DESC) WHERE status='fout'` (snel de probleemgevallen), `(richting, kanaal, ontvangen_op DESC)` (carrier-verkeer per richting).
 
-**RPCs:** `log_inkomende_payload(p_kanaal, p_payload_raw, p_bron, p_externe_id, p_content_type, p_headers, p_payload_json) → BIGINT` (logt bij ontvangst, geeft id terug) en `markeer_inkomende_payload_verwerkt(p_id, p_status, p_order_id, p_fout) → VOID` (status/koppeling bijwerken). Beide best-effort — logging mag de order-verwerking nooit blokkeren.
+**RPCs:** `log_externe_payload(p_kanaal, p_payload_raw, p_bron, p_externe_id, p_content_type, p_headers, p_payload_json, p_richting, p_order_id, p_status, p_fout) → BIGINT` (logt, geeft id terug; outbound geeft richting/order_id/eindstatus direct mee) en `markeer_externe_payload_verwerkt(p_id, p_status, p_order_id, p_fout) → VOID` (two-step inbound status/koppeling bijwerken). Beide best-effort — logging mag verwerking/verzending nooit blokkeren. De oude namen `log_inkomende_payload` / `markeer_inkomende_payload_verwerkt` bestaan als **deprecated wrappers** (mig 325) tot de Shopify-functie herdeployed is.
 
-**Diagnose-query:** mislukte Shopify-orders terugzien → `SELECT externe_id, fout, ontvangen_op, payload_json FROM inkomende_payloads WHERE kanaal='shopify' AND status='fout' ORDER BY ontvangen_op DESC;`
+**Diagnose-queries:**
+- Mislukte Shopify-orders → `SELECT externe_id, fout, ontvangen_op, payload_json FROM externe_payloads WHERE kanaal='shopify' AND status='fout' ORDER BY ontvangen_op DESC;`
+- Mislukte HST-verzendingen (incl. volledige retry-historie per order) → `SELECT externe_id, order_id, fout, ontvangen_op, payload_json FROM externe_payloads WHERE kanaal='hst' AND richting='out' AND status='fout' ORDER BY ontvangen_op DESC;`
 
 ---
 

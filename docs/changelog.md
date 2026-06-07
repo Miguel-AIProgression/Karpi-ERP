@@ -1,5 +1,45 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-07 — Carrier-payload-audit: rauwe HST request/response per poging bewaren
+
+**Waarom:** de rauwe payloads van inkomende kanalen (Shopify, EDI) worden al
+bewaard, maar uitgaand vervoerder-verkeer niet volledig. HST slaat z'n
+request/response wél op `hst_transportorders` op, maar dat is **één rij die bij
+elke retry overschreven wordt** (`markeer_hst_fout`, mig 171) — bij succes wordt
+`error_msg` zelfs op NULL gezet. Daardoor verdwijnt de fout-historie van eerdere
+pogingen, juist wat je bij diagnose nodig hebt. Doel: van élke carrier-poping de
+ruwe payload herleidbaar houden, gekoppeld aan de order.
+
+**Wat — mig 325:**
+- Tabel `inkomende_payloads` (mig 324) **hernoemd naar `externe_payloads`** — de
+  tabel had al een `richting`-kolom, de oude naam dekte de uitgaande lading niet.
+  Eén centrale plek voor álle externe payloads (in + uit). Indexen mee hernoemd
+  + nieuwe index `(richting, kanaal, ontvangen_op DESC)`.
+- Neutrale RPC's `log_externe_payload(... p_richting, p_order_id, p_status, p_fout)`
+  + `markeer_externe_payload_verwerkt`. Outbound carrier-calls leggen in één insert
+  richting=`'out'`, `order_id` en de eindstatus vast.
+- Oude namen `log_inkomende_payload` / `markeer_inkomende_payload_verwerkt` blijven
+  als **deprecated wrappers** bestaan zodat de reeds-gedeployde `sync-shopify-order`
+  niet breekt vóór de herdeploy.
+- [`hst-send`](../supabase/functions/hst-send/index.ts): best-effort append-only
+  logging na elke POST — `kanaal='hst'`, `richting='out'`, `order_id` gevuld,
+  `payload_raw` = verstuurde request, `payload_json` = `{ request, response,
+  http_code, ok, transport_order_id, tracking_number }`, status `verwerkt`/`fout`.
+  Elke retry = nieuwe rij → volledige historie bewaard. PDF blijft uit de response
+  gestript (staat in storage). Logging mag het versturen nooit blokkeren.
+- [`sync-shopify-order`](../supabase/functions/sync-shopify-order/index.ts) overgezet
+  naar de neutrale RPC-namen.
+
+**Scope:** alleen HST (enige nu-actieve API-vervoerder). EDI-carriers
+(Rhenus/Verhoek via `transus-send`) volgen zodra ze live gaan; backend-only, een
+diagnose-UI is een aparte vervolgslice.
+
+**Diagnose:** mislukte HST-verzendingen incl. retry-historie →
+`SELECT externe_id, order_id, fout, ontvangen_op, payload_json FROM externe_payloads
+WHERE kanaal='hst' AND richting='out' AND status='fout' ORDER BY ontvangen_op DESC;`
+
+**Migratie:** 325 (handmatig toepassen). **Deploy:** `hst-send` + `sync-shopify-order`.
+
 ## 2026-06-07 — Debiteur-matcher-seam Slices 4–5: "debiteur te bevestigen" + env-ladder
 
 **Waarom:** vervolg op de gedeelde debiteur-matcher-seam (Slices 0–3). Tot nu toe

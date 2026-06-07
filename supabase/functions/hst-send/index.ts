@@ -15,7 +15,7 @@ import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supa
 
 import { bouwTransportOrderPayload } from './payload-builder.ts';
 import { postTransportOrder } from './hst-client.ts';
-import type { BedrijfInput, OrderInput, ZendingColliInput, ZendingInput } from './types.ts';
+import type { BedrijfInput, HstResponse, OrderInput, ZendingColliInput, ZendingInput } from './types.ts';
 
 const MAX_PER_RUN = 25;
 
@@ -210,6 +210,17 @@ async function verwerkRow(
     payload,
   });
 
+  // 3b. Carrier-payload-audit (mig 325). Append-only: één rij per verstuur-poging,
+  // zodat de volledige request/response + fout-historie bewaard blijft naast
+  // hst_transportorders (dat per retry OVERSCHRIJFT). Best-effort — mag het
+  // versturen nooit blokkeren.
+  await logCarrierPayload(supabase, {
+    orderId: (zending as { order_id?: number | null }).order_id ?? null,
+    externeId: result.transportOrderId ?? (zending as { zending_nr?: string | null }).zending_nr ?? null,
+    payload,
+    result,
+  });
+
   // 4. Markeer succes of fout.
   if (result.ok) {
     // 4a. Upload PDF naar storage als HST 'm meegaf (best-effort: een mislukte
@@ -275,6 +286,48 @@ async function markFout(
     p_error: error,
     p_max_retries: 3,
   });
+}
+
+// Best-effort carrier-payload-audit (mig 325) → tabel externe_payloads.
+// Schrijft de letterlijke request én de (PDF-gestripte) response van één
+// HST-poging weg als richting='out', gekoppeld aan order_id. Elke retry levert
+// een nieuwe rij, dus de fout-historie blijft compleet — anders dan op
+// hst_transportorders, dat per poging overschrijft. Logging mag het versturen
+// nooit blokkeren: alles in try/catch, falen = warn + doorgaan.
+async function logCarrierPayload(
+  supabase: SupabaseClient,
+  args: {
+    orderId: number | null;
+    externeId: string | null;
+    payload: unknown;
+    result: HstResponse;
+  },
+): Promise<void> {
+  const { result, payload } = args;
+  try {
+    await supabase.rpc('log_externe_payload', {
+      p_kanaal: 'hst',
+      p_payload_raw: JSON.stringify(payload),
+      p_bron: 'hst',
+      p_externe_id: args.externeId,
+      p_content_type: 'application/json',
+      p_headers: null,
+      p_payload_json: {
+        request: payload,
+        response: result.body,
+        http_code: result.httpCode,
+        ok: result.ok,
+        transport_order_id: result.transportOrderId,
+        tracking_number: result.trackingNumber,
+      },
+      p_richting: 'out',
+      p_order_id: args.orderId,
+      p_status: result.ok ? 'verwerkt' : 'fout',
+      p_fout: result.ok ? null : (result.errorMsg ?? 'onbekende fout'),
+    });
+  } catch (e) {
+    console.warn(`[hst-send] carrier-payload-audit faalde: ${String(e)}`);
+  }
 }
 
 // Upload de PDF (base64-string van HST) naar de order-documenten-bucket.
