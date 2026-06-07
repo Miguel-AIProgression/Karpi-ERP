@@ -1220,6 +1220,32 @@ Centrale audit-/queue-tabel voor alle EDI-berichten via Transus (in én uit) (mi
 
 ---
 
+### inkomende_payloads
+Generieke, append-only audit van **rauwe inkomende berichten** per kanaal (mig 324). Bewaart de letterlijke payload zodat verwerkingsfouten altijd herleidbaar zijn. **Geen verwerkings-queue** — dat blijft `orders` / `edi_berichten`. EDI heeft z'n eigen `edi_berichten.payload_raw`; dit kanaal-onafhankelijke vangnet bedient **Shopify** (slice 1, `sync-shopify-order`) en later e-mail/webshop/lightspeed.
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| id | BIGSERIAL PK | |
+| kanaal | TEXT NOT NULL | `'shopify'` / `'edi'` / `'email'` / `'lightspeed'` / `'webshop'` |
+| bron | TEXT | shop-domein / systeem-identifier |
+| externe_id | TEXT | externe order-/transactie-/message-id (traceer). **Geen UNIQUE** — append-only, een resend = extra rij |
+| richting | TEXT NOT NULL DEFAULT 'in' | |
+| content_type | TEXT | bv. `application/json` |
+| headers | JSONB | relevante request-headers |
+| payload_raw | TEXT NOT NULL | letterlijke body — niets gaat verloren |
+| payload_json | JSONB | geparset gemak (NULL bij niet-JSON/parse-fout) |
+| order_id | BIGINT FK → orders ON DELETE SET NULL | gevuld zodra de order bekend is |
+| status | TEXT NOT NULL DEFAULT 'ontvangen' | `'ontvangen'` → `'verwerkt'` / `'fout'` |
+| fout | TEXT | foutbeschrijving bij status `'fout'` |
+| ontvangen_op, verwerkt_op | TIMESTAMPTZ | lifecycle-timestamps |
+
+**Indexen:** `(kanaal, externe_id)`, `(order_id)`, `(ontvangen_op DESC)`, partial `(ontvangen_op DESC) WHERE status='fout'` (snel de probleemgevallen).
+
+**RPCs:** `log_inkomende_payload(p_kanaal, p_payload_raw, p_bron, p_externe_id, p_content_type, p_headers, p_payload_json) → BIGINT` (logt bij ontvangst, geeft id terug) en `markeer_inkomende_payload_verwerkt(p_id, p_status, p_order_id, p_fout) → VOID` (status/koppeling bijwerken). Beide best-effort — logging mag de order-verwerking nooit blokkeren.
+
+**Diagnose-query:** mislukte Shopify-orders terugzien → `SELECT externe_id, fout, ontvangen_op, payload_json FROM inkomende_payloads WHERE kanaal='shopify' AND status='fout' ORDER BY ontvangen_op DESC;`
+
+---
+
 ## Enums
 
 | Enum | Waarden |
