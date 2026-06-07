@@ -1,5 +1,46 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-07 — Debiteur-matcher-seam Slices 4–5: "debiteur te bevestigen" + env-ladder
+
+**Waarom:** vervolg op de gedeelde debiteur-matcher-seam (Slices 0–3). Tot nu toe
+werd de `zeker`-vlag van een match genegeerd: een onzekere fuzzy treffer
+(bedrijfsnaam-deelmatch / e-mail) landde stil op de gegokte debiteur. Operator-keuze
+(2026-06-07): zo'n order wél aanmaken maar markeren als "debiteur te bevestigen",
+analoog aan de EDI "te koppelen"-flow, zodat geen order ongezien op de verkeerde
+klant blijft staan.
+
+**Wat — Slice 4 (mig 322):**
+- Kolommen `orders.debiteur_zeker BOOLEAN DEFAULT true` + `orders.debiteur_match_bron TEXT`
+  (audit: welke strategie won → locality op "waarom deze debiteur?").
+- `create_webshop_order` (herdefinitie van mig 308) persisteert beide uit `p_header`
+  (backward-compatibele `COALESCE`-default `zeker=TRUE`); `orders_list`-view (herdefinitie
+  van mig 309) exposeert ze.
+- [`sync-shopify-order`](../supabase/functions/sync-shopify-order/index.ts) stuurt
+  `debiteur_zeker` + `debiteur_match_bron` mee i.p.v. `zeker` te negeren.
+- **"Te bevestigen"-predicaat** = `debiteur_zeker=false AND (debiteur_match_bron IS NULL OR
+  debiteur_match_bron <> 'env_fallback') AND status <> 'Geannuleerd'` — NULL-safe (een onzekere
+  order zónder bron telt mee, valt niet stil uit beeld); één bron-van-waarheid:
+  `countTeBevestigenDebiteurOrders` + de `'Debiteur te bevestigen'`-branch in `fetchOrders`
+  + de JS-conditie op order-detail. **`env_fallback` valt bewust af:**
+  de verzameldebiteur is voor consumenten-webshops (wisselend afleveradres) de verwachte
+  eindbestemming, geen fout.
+- UI: amber [`DebiteurTeBevestigenBanner`](../frontend/src/components/orders/debiteur-te-bevestigen-banner.tsx)
+  + status-tab `'Debiteur te bevestigen'` op het orders-overzicht; bevestig-widget
+  [`DebiteurBevestigenWidget`](../frontend/src/components/orders/debiteur-bevestigen-widget.tsx)
+  op order-detail (`bevestigDebiteur` → `debiteur_zeker=true`, of corrigeren via order-bewerken).
+
+**Wat — Slice 5:**
+- `matchDebiteurViaEnv(envKey)` in [`_shared/debiteur-matcher.ts`](../supabase/functions/_shared/debiteur-matcher.ts):
+  Lightspeed/webshop (`FLOORPASSION_DEBITEUR_NR`), Shopify-catch-all
+  (`SHOPIFY_FALLBACK_DEBITEUR_NR`) lopen nu via één helper → `DebiteurMatch{bron:'env_fallback',
+  zeker:false}`. Geen gedragswijziging; uniformeert het contract zodat échte Floorpassion-B2B-
+  matching later achter dezelfde ladder kan.
+
+**Tests:** +4 cases (`matchDebiteurViaEnv` + bestaande seam-suite groen, 18/18).
+**Migratie:** 322 (handmatig toepassen). **Deploy:** `sync-shopify-order`, `sync-webshop-order`,
+`import-lightspeed-orders` opnieuw deployen.
+**Plan:** [`docs/superpowers/plans/2026-06-07-gedeelde-debiteur-matcher-seam.md`](superpowers/plans/2026-06-07-gedeelde-debiteur-matcher-seam.md).
+
 ## 2026-06-07 — Consolidatie ISO-week-kern (UTC) + `formatDateTime`
 
 **Waarom:** een code-review markeerde twee duplicatie-clusters. (1) Het ISO-week­nummer
