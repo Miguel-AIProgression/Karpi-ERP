@@ -9,6 +9,8 @@ import re
 from datetime import date
 from supabase import create_client
 from config import SUPABASE_URL, SUPABASE_KEY
+from lib.supabase_helpers import upsert_batch
+from lib.normalize import clean_value
 
 TODAY = date.today()
 EXCEL_PATH = '../orders-2026.xlsx'
@@ -17,15 +19,7 @@ sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
 def clean(val):
-    if val is None or (isinstance(val, float) and np.isnan(val)):
-        return None
-    if isinstance(val, (np.integer,)):
-        return int(val)
-    if isinstance(val, (np.floating,)):
-        return float(val)
-    if isinstance(val, pd.Timestamp):
-        return val.strftime('%Y-%m-%d')
-    return val
+    return clean_value(val, date_fmt='%Y-%m-%d')
 
 
 def clean_date(val):
@@ -34,14 +28,6 @@ def clean_date(val):
         return None
     s = str(v)[:10]
     return s if re.match(r'^\d{4}-\d{2}-\d{2}$', s) else None
-
-
-def upsert_batch(table, records, batch_size=500):
-    total = len(records)
-    for i in range(0, total, batch_size):
-        batch = records[i:i + batch_size]
-        sb.table(table).insert(batch).execute()
-        print(f"  {table}: {min(i + batch_size, total)}/{total}")
 
 
 # --- Load + parse ---
@@ -132,7 +118,7 @@ for order_nr, group in df.groupby('Order'):
 
 print(f"  {len(order_records)} orders")
 if order_records:
-    upsert_batch("orders", order_records)
+    upsert_batch(sb, "orders", order_records, mode="insert")
 
 # --- Fetch nieuwe order IDs met paginatie ---
 print("Ophalen order IDs...")
@@ -226,6 +212,6 @@ for order_nr, group in df.groupby('Order'):
 
 print(f"  {len(regel_records)} regels")
 if regel_records:
-    upsert_batch("order_regels", regel_records)
+    upsert_batch(sb, "order_regels", regel_records, mode="insert")
 
 print(f"\n✓ Klaar. {len(order_records)} orders en {len(regel_records)} regels geimporteerd.")

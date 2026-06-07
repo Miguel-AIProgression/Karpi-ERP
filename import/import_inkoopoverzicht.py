@@ -29,6 +29,7 @@ import pandas as pd
 from supabase import create_client
 
 from config import SUPABASE_KEY, SUPABASE_URL, BASE_DIR
+from lib.normalize import clean_value as _clean
 
 
 DEFAULT_FILE = BASE_DIR / "Inkoopoverzicht.xlsx"
@@ -45,16 +46,6 @@ MAX_LEVERWEEK_JAAR = 2030
 UITGESLOTEN_LEVERANCIERS = {20010}
 
 
-def _clean(v):
-    if v is None:
-        return None
-    if isinstance(v, float) and np.isnan(v):
-        return None
-    if isinstance(v, (np.integer,)):
-        return int(v)
-    if isinstance(v, (np.floating,)):
-        return float(v)
-    return v
 
 
 def parse_leverweek(leverweek):

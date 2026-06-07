@@ -127,6 +127,36 @@ Gedeelde code in `supabase/functions/_shared/` (packing-algoritmes, DB helpers) 
 /instellingen/productie    Planning instellingen: capaciteit, modus, reststuk verspilling
 ```
 
+## Import scripts (`import/`)
+
+Python 3-scripts (pandas/openpyxl/supabase-py) draaien **los, vanuit de map
+`import/`** als working dir; zo resolven zowel `from config import ...` als de
+gedeelde helpers `from lib.x import y` (geen pakket-installatie nodig).
+
+### Gedeelde helpers in `import/lib/` (2026-06-07)
+Eén bron van waarheid voor de batch- en normalisatie-logica die voorheen
+massaal (14× `upsert_batch`, ~6× numpy-`clean`, 3× `norm`/`clean_gln`)
+gekopieerd stond. Nieuw import-script = **importeren, niet kopiëren**.
+
+- [`lib/supabase_helpers.py`](../import/lib/supabase_helpers.py):
+  `create_supabase_client()`, `upsert_batch(sb, table, records, *, mode="upsert"|"insert", on_conflict=...)`,
+  `insert_batch`, `batch_delete`, `batch_select`. `sb` is altijd de **expliciete
+  eerste parameter** (geen verborgen globale) → testbaar met een mock-client.
+  De `mode="insert"`-tak maakt de oude stille `.insert()`-afwijking in
+  `reimport_orders_2026.py` expliciet i.p.v. verstopt onder de naam "upsert".
+- [`lib/normalize.py`](../import/lib/normalize.py): `norm`,
+  `clean_value(v, *, date_fmt=None|'%Y-%m-%d'|'iso')`,
+  `clean_gln(g, *, strict=False)`. Gedragsverschillen die scripts echt nodig
+  hebben worden via een parameter overbrugd (datum-formaat per script;
+  `strict=True` voor het Transus-adresboek dat álle niet-cijfers uit de GLN
+  strpriped), niet via een geforceerde merge.
+- Bestaande leaf-modules `lib/snijlijst_parser.py` + `lib/strip_allocator.py`
+  blijven naast de nieuwe helpers staan.
+
+Unit-tests in [`import/tests/`](../import/tests/) (`pytest`, `pythonpath=.`):
+`test_supabase_helpers.py` (mock-`sb` bewijst upsert-vs-insert-pad + chunking)
+en `test_normalize.py` (NaN/NaT/numpy + beide date-formats + `clean_gln`-strict).
+
 ## EDI / Transus Flow
 
 Alle EDI-verkeer loopt via `edi_berichten` als audit- en queue-tabel.

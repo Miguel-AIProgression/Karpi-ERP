@@ -4,21 +4,14 @@ import numpy as np
 import re
 from supabase import create_client
 from config import SUPABASE_URL, SUPABASE_KEY
+from lib.supabase_helpers import upsert_batch
+from lib.normalize import clean_value
 
 sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+
 def clean(val):
-    if val is None or (isinstance(val, float) and np.isnan(val)):
-        return None
-    if isinstance(val, (np.integer,)):
-        return int(val)
-    if isinstance(val, (np.floating,)):
-        return float(val)
-    if isinstance(val, pd.Timestamp):
-        return val.strftime('%Y-%m-%d')
-    if isinstance(val, type(pd.NaT)):
-        return None
-    return val
+    return clean_value(val, date_fmt='%Y-%m-%d')
 
 def clean_date(val):
     v = clean(val)
@@ -28,16 +21,6 @@ def clean_date(val):
     if re.match(r'^\d{4}-\d{2}-\d{2}$', s):
         return s
     return None
-
-def upsert_batch(table, records, batch_size=500, on_conflict=None):
-    total = len(records)
-    for i in range(0, total, batch_size):
-        batch = records[i:i+batch_size]
-        kwargs = {}
-        if on_conflict:
-            kwargs['on_conflict'] = on_conflict
-        sb.table(table).upsert(batch, **kwargs).execute()
-        print(f"  {table}: {min(i+batch_size, total)}/{total}")
 
 # Load
 df = pd.read_excel('../Orders per 11-3-2026 (1).xlsx')
@@ -65,7 +48,7 @@ if missing:
             "plaats": clean(first['Fct.Plaats']),
             "land": clean(first['Fact.Land']),
         })
-    upsert_batch("debiteuren", new_debs, on_conflict="debiteur_nr")
+    upsert_batch(sb, "debiteuren", new_debs, on_conflict="debiteur_nr")
     existing_debnrs.update(missing)
 
 # --- Step 2: Get existing data ---
@@ -128,7 +111,7 @@ for order_nr, group in df.groupby('Order'):
 
 print(f"  {len(order_records)} new orders")
 if order_records:
-    upsert_batch("orders", order_records, on_conflict="oud_order_nr")
+    upsert_batch(sb, "orders", order_records, on_conflict="oud_order_nr")
 
 # --- Step 4: Fetch all order IDs ---
 print("Fetching order IDs...")
@@ -194,6 +177,6 @@ for order_nr, group in df.groupby('Order'):
 
 print(f"  {len(regel_records)} new lines")
 if regel_records:
-    upsert_batch("order_regels", regel_records, on_conflict="order_id,regelnummer")
+    upsert_batch(sb, "order_regels", regel_records, on_conflict="order_id,regelnummer")
 
 print("\nDone!")

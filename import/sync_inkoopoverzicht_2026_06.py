@@ -23,6 +23,8 @@ from supabase import create_client
 
 sys.path.insert(0, str(Path(__file__).parent))
 from config import SUPABASE_URL, SUPABASE_KEY, BASE_DIR
+from lib.normalize import clean_value as _clean
+from lib.supabase_helpers import batch_delete, batch_select
 
 sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 
@@ -31,13 +33,6 @@ UITGESLOTEN_LEV = {20010}
 MIN_JAAR   = 2024
 
 # ── helpers ─────────────────────────────────────────────────────────────────
-
-def _clean(v):
-    if v is None: return None
-    if isinstance(v, float) and np.isnan(v): return None
-    if isinstance(v, np.integer): return int(v)
-    if isinstance(v, np.floating): return float(v)
-    return v
 
 def _clean_prijs(v):
     """Converteert '15,6' of '15.6' naar float, geeft None bij lege waarde."""
@@ -80,17 +75,6 @@ def eenheid_voor(ptype, omschr):
     if 'BREED' in s: return 'm'
     if 'CA:' in s or 'CA.' in s: return 'stuks'
     return 'm'
-
-def batch_delete(table, field, ids, size=200):
-    for i in range(0, len(ids), size):
-        sb.table(table).delete().in_(field, ids[i:i+size]).execute()
-
-def batch_select(table, fields, in_field, ids, size=200):
-    rows = []
-    for i in range(0, len(ids), size):
-        res = sb.table(table).select(fields).in_(in_field, ids[i:i+size]).execute()
-        rows.extend(res.data)
-    return rows
 
 # ── laad CSV ────────────────────────────────────────────────────────────────
 
@@ -153,7 +137,7 @@ def stap1_importeer(df, db_alle_nrs, nieuw_nrs):
                    for _, r in levs.iterrows()]
 
     alle_lev_nrs = [p['leverancier_nr'] for p in lev_payload]
-    res = batch_select('leveranciers', 'id,leverancier_nr', 'leverancier_nr', alle_lev_nrs)
+    res = batch_select(sb, 'leveranciers', 'id,leverancier_nr', 'leverancier_nr', alle_lev_nrs)
     lev_map = {r['leverancier_nr']: r['id'] for r in res}
 
     nieuwe_levs = [p for p in lev_payload if p['leverancier_nr'] not in lev_map]
@@ -233,12 +217,12 @@ def stap2_verwijder(te_verwijderen_nrs, db_open):
     io_ids = [db_open[onr]['id'] for onr in te_verwijderen_nrs if onr in db_open]
 
     # IO-regel IDs ophalen
-    io_regel_ids = [r['id'] for r in batch_select('inkooporder_regels','id','inkooporder_id', io_ids)]
+    io_regel_ids = [r['id'] for r in batch_select(sb, 'inkooporder_regels','id','inkooporder_id', io_ids)]
     print(f"  IO-regels te verwijderen: {len(io_regel_ids)}")
 
     # Reserveringen loskoppelen (order_reserveringen.inkooporder_regel_id → NULL)
     if io_regel_ids:
-        rv_rows = batch_select('order_reserveringen','id,order_regel_id','inkooporder_regel_id', io_regel_ids)
+        rv_rows = batch_select(sb, 'order_reserveringen','id,order_regel_id','inkooporder_regel_id', io_regel_ids)
         rv_ids  = [r['id'] for r in rv_rows]
         if rv_ids:
             for i in range(0, len(rv_ids), 200):
@@ -250,12 +234,12 @@ def stap2_verwijder(te_verwijderen_nrs, db_open):
 
     # IO-regels verwijderen
     if io_regel_ids:
-        batch_delete('inkooporder_regels', 'id', io_regel_ids)
+        batch_delete(sb, 'inkooporder_regels', 'id', io_regel_ids)
         print(f"  IO-regels verwijderd: {len(io_regel_ids)}")
 
     # Inkooporders verwijderen
     if io_ids:
-        batch_delete('inkooporders', 'id', io_ids)
+        batch_delete(sb, 'inkooporders', 'id', io_ids)
         print(f"  Inkooporders verwijderd: {len(io_ids)}")
 
     return geraakt_regelids
@@ -360,7 +344,7 @@ def main():
 
     # Te-leveren wijzigingen (per IO-regel)
     db_ids_open = [r['id'] for r in db_rows if r['status'] in ('Besteld','Deels ontvangen')]
-    db_regels = batch_select('inkooporder_regels',
+    db_regels = batch_select(sb, 'inkooporder_regels',
                              'id,inkooporder_id,regelnummer,te_leveren_m',
                              'inkooporder_id', db_ids_open)
     db_id2oud = {r['id']: r['oud_inkooporder_nr'] for r in db_rows}

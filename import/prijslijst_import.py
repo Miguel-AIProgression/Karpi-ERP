@@ -26,6 +26,7 @@ if not SUPABASE_URL or not SUPABASE_KEY:
     sys.exit(1)
 
 sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+from lib.supabase_helpers import upsert_batch
 
 ZIP_PATH = BASE_DIR / "wetransfer_prijslijst_2025-11-19_1107.zip"
 EXTRACT_DIR = BASE_DIR / "supabase" / ".temp" / "prijslijsten" / "wetransfer_prijslijst_2025-11-19_1107"
@@ -33,19 +34,6 @@ EXTRACT_DIR = BASE_DIR / "supabase" / ".temp" / "prijslijsten" / "wetransfer_pri
 # Als True: maak ontbrekende artikelnrs automatisch aan in producten tabel.
 # Als False: sla onbekende artikelnrs over (oude gedrag).
 AUTO_CREATE_MISSING_PRODUCTS = True
-
-
-def upsert_batch(table, records, batch_size=500, on_conflict=None):
-    """Upsert records in batches"""
-    total = len(records)
-    for i in range(0, total, batch_size):
-        batch = records[i:i + batch_size]
-        kwargs = {}
-        if on_conflict:
-            kwargs['on_conflict'] = on_conflict
-        sb.table(table).upsert(batch, **kwargs).execute()
-        print(f"  {table}: {min(i + batch_size, total)}/{total}")
-    print(f"   {table}: {total} rijen")
 
 
 def extract_zip():
@@ -355,7 +343,7 @@ def main():
                 "product_type": ptype,
                 "actief": True,
             })
-        upsert_batch("producten", new_products, on_conflict="artikelnr")
+        upsert_batch(sb, "producten", new_products, on_conflict="artikelnr")
         # Update known set so report is accurate
         known_artikelnrs.update(all_missing_products.keys())
         print(f"  {len(new_products)} producten aangemaakt\n")
@@ -365,10 +353,10 @@ def main():
     # Step 6: Upsert to Supabase
     print("\n5  Upsert naar Supabase...\n")
     print("  --- Prijslijst headers ---")
-    upsert_batch("prijslijst_headers", all_headers, on_conflict="nr")
+    upsert_batch(sb, "prijslijst_headers", all_headers, on_conflict="nr")
     print()
     print("  --- Prijslijst regels ---")
-    upsert_batch("prijslijst_regels", all_regels, on_conflict="prijslijst_nr,artikelnr")
+    upsert_batch(sb, "prijslijst_regels", all_regels, on_conflict="prijslijst_nr,artikelnr")
 
     # Step 6: Report
     print("\n" + "=" * 50)

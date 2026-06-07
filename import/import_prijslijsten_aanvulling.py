@@ -26,12 +26,12 @@ import openpyxl
 from supabase import create_client
 
 from config import BASE_DIR, DEBITEUREN_FILE, SUPABASE_KEY, SUPABASE_URL
+from lib.supabase_helpers import upsert_batch
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 MANIFEST_PATH = BASE_DIR / "import" / "prijslijsten_aanvulling_manifest.json"
 REPORT_DIR = BASE_DIR / "import" / "rapporten"
-BATCH_SIZE = 500
 
 
 def zpad(value: object) -> str:
@@ -166,12 +166,6 @@ def fetch_all(sb, table: str, select_cols: str) -> list[dict]:
         if len(rows) < 1000:
             return all_rows
         offset += 1000
-
-
-def upsert_batch(sb, table: str, records: list[dict], on_conflict: str | None = None) -> None:
-    for i in range(0, len(records), BATCH_SIZE):
-        kwargs = {"on_conflict": on_conflict} if on_conflict else {}
-        sb.table(table).upsert(records[i : i + BATCH_SIZE], **kwargs).execute()
 
 
 def classify_product(omschrijving: str | None) -> str:

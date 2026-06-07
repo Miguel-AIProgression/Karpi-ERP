@@ -22,20 +22,13 @@ sys.path.insert(0, str(Path(__file__).parent))
 from config import SUPABASE_URL, SUPABASE_KEY, BASE_DIR
 
 sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+from lib.supabase_helpers import upsert_batch
 
 FILE          = BASE_DIR / "prijslijst0149_a.xlsx"
 PRIJSLIJST_NR = "0149"
 DEBITEUR_NR   = 361208
 OPEN_STATUSSEN = {'Actief', 'Wacht op voorraad', 'Wacht op inkoop', 'Klaar voor picken',
                   'Klaar voor verzending', 'In behandeling'}
-
-
-def upsert_batch(table, records, batch_size=500, on_conflict=None):
-    for i in range(0, len(records), batch_size):
-        batch = records[i:i + batch_size]
-        kwargs = {"on_conflict": on_conflict} if on_conflict else {}
-        sb.table(table).upsert(batch, **kwargs).execute()
-    print(f"  {table}: {len(records)} rijen")
 
 
 def fetch_all_artikelnrs():
@@ -124,17 +117,17 @@ def main():
     print(f"  {len(regels)} prijslijst-regels | {len(nieuwe_producten)} nieuwe producten\n")
 
     # 1a. Header
-    upsert_batch("prijslijst_headers", [{
+    upsert_batch(sb, "prijslijst_headers", [{
         "nr": PRIJSLIJST_NR, "naam": naam,
         "geldig_vanaf": geldig_vanaf, "actief": True,
     }], on_conflict="nr")
 
     # 1b. Nieuwe producten
     if nieuwe_producten:
-        upsert_batch("producten", nieuwe_producten, on_conflict="artikelnr")
+        upsert_batch(sb, "producten", nieuwe_producten, on_conflict="artikelnr")
 
     # 1c. Prijsregels
-    upsert_batch("prijslijst_regels", regels, on_conflict="prijslijst_nr,artikelnr")
+    upsert_batch(sb, "prijslijst_regels", regels, on_conflict="prijslijst_nr,artikelnr")
 
     # Bouw prijskaart: artikelnr → prijs
     prijskaart = {r["artikelnr"]: r["prijs"] for r in regels}

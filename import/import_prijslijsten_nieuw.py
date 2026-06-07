@@ -29,6 +29,7 @@ import openpyxl
 from supabase import create_client
 
 from config import BASE_DIR, SUPABASE_KEY, SUPABASE_URL
+from lib.supabase_helpers import upsert_batch
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     print("ERROR: Supabase URL/Key niet gevonden. Check import/.env")
@@ -39,7 +40,6 @@ sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 ZIP_PATH = BASE_DIR / "prijslijsten_nieuw.zip"
 DEBITEUREN_FILE = Path.home() / "Desktop" / "binnendienst" / "debadres_alles-4.xlsx"
 TARGET_NRS = {"143", "160", "161", "180", "181", "185", "195", "197", "206", "250"}
-BATCH = 500
 
 
 def zpad(nr: str | int) -> str:
@@ -167,11 +167,6 @@ def fetch_bekende_artikelnrs() -> set[str]:
     return bekend
 
 
-def upsert_batch(table: str, records: list[dict], on_conflict: str) -> None:
-    for i in range(0, len(records), BATCH):
-        sb.table(table).upsert(records[i:i+BATCH], on_conflict=on_conflict).execute()
-
-
 def fetch_huidige(debnrs: list[int]) -> dict[int, str | None]:
     result: dict[int, str | None] = {}
     for i in range(0, len(debnrs), 500):
@@ -235,7 +230,7 @@ def main(apply: bool) -> None:
             if apply:
                 sb.table("prijslijst_headers").upsert(header, on_conflict="nr").execute()
                 if bekende:
-                    upsert_batch("prijslijst_regels", bekende, "prijslijst_nr,artikelnr")
+                    upsert_batch(sb, "prijslijst_regels", bekende, on_conflict="prijslijst_nr,artikelnr")
 
     if apply:
         print(f"\n  → {len(alle_headers)} headers + {totaal_regels} regels opgeslagen, {totaal_skip} overgeslagen")

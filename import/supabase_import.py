@@ -29,18 +29,13 @@ if not SUPABASE_URL or not SUPABASE_KEY:
     sys.exit(1)
 
 sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+from lib.supabase_helpers import upsert_batch
+from lib.normalize import clean_gln, clean_value
+
 
 def clean(val):
     """Convert NaN/NaT to None for JSON serialization"""
-    if val is None or (isinstance(val, float) and np.isnan(val)):
-        return None
-    if isinstance(val, (np.integer,)):
-        return int(val)
-    if isinstance(val, (np.floating,)):
-        return float(val)
-    if isinstance(val, pd.Timestamp):
-        return val.isoformat()
-    return val
+    return clean_value(val, date_fmt='iso')
 
 def to_records(df):
     """Convert DataFrame to list of dicts with clean values"""
@@ -48,18 +43,6 @@ def to_records(df):
     for _, row in df.iterrows():
         records.append({k: clean(v) for k, v in row.items()})
     return records
-
-def upsert_batch(table, records, batch_size=500, on_conflict=None):
-    """Upsert records in batches"""
-    total = len(records)
-    for i in range(0, total, batch_size):
-        batch = records[i:i+batch_size]
-        kwargs = {}
-        if on_conflict:
-            kwargs['on_conflict'] = on_conflict
-        sb.table(table).upsert(batch, **kwargs).execute()
-        print(f"  {table}: {min(i+batch_size, total)}/{total}")
-    print(f"   {table}: {total} rijen")
 
 # --- Load Excel ---
 print(" Excel bestanden laden...")
@@ -85,7 +68,7 @@ print(f"  Prijslijsten: {len(df_prijslijsten)}")
 print("\n1  Vertegenwoordigers...")
 vertw = df_debiteuren['Vertegenwoordiger'].dropna().unique()
 vertw_records = [{"code": str(i+1), "naam": str(v)} for i, v in enumerate(vertw) if str(v).strip()]
-upsert_batch("vertegenwoordigers", vertw_records, on_conflict="code")
+upsert_batch(sb, "vertegenwoordigers", vertw_records, on_conflict="code")
 
 # Build lookup: naam -> code
 vertw_map = {r["naam"]: r["code"] for r in vertw_records}
@@ -100,7 +83,7 @@ alle_kwaliteiten = kwal_producten | kwal_klanteigen
 
 kwal_records = [{"code": str(k)} for k in sorted(alle_kwaliteiten) if str(k).strip()]
 print(f"  {len(kwal_records)} unieke kwaliteitscodes")
-upsert_batch("kwaliteiten", kwal_records, on_conflict="code")
+upsert_batch(sb, "kwaliteiten", kwal_records, on_conflict="code")
 
 # ============================================================
 # STAP 3: Prijslijst headers
@@ -121,7 +104,7 @@ for _, r in df_debiteuren.iterrows():
             pl_header_records[pnr] = {"nr": pnr, "naam": str(r['Prijslijst']).strip()}
 
 pl_records_headers = list(pl_header_records.values())
-upsert_batch("prijslijst_headers", pl_records_headers, on_conflict="nr")
+upsert_batch(sb, "prijslijst_headers", pl_records_headers, on_conflict="nr")
 
 # ============================================================
 # STAP 4: Debiteuren
@@ -161,7 +144,7 @@ for _, r in df_debiteuren.iterrows():
         "korting_pct": float(r['% Deb.kort']) if pd.notna(r['% Deb.kort']) else 0,
         "betaalconditie": clean(r['Conditie']),
         "btw_nummer": clean(r['BTW-nummer']),
-        "gln_bedrijf": clean(r['GLN_bedrijf']),
+        "gln_bedrijf": clean_gln(r['GLN_bedrijf']),
     })
 
 # First insert without betaler (self-reference FK)
@@ -171,7 +154,7 @@ for rec in deb_records:
         betaler_map[rec["debiteur_nr"]] = rec["betaler"]
         rec["betaler"] = None
 
-upsert_batch("debiteuren", deb_records, on_conflict="debiteur_nr")
+upsert_batch(sb, "debiteuren", deb_records, on_conflict="debiteur_nr")
 
 # Then update betaler references
 if betaler_map:
@@ -196,7 +179,7 @@ for _, r in df_afleveradressen.iterrows():
         "adres_nr": int(r['Adresnr']),
         "naam": clean(r['Naam']),
         "naam_2": clean(r['Naam 2']),
-        "gln_afleveradres": clean(r['GLN_afleveradres']),
+        "gln_afleveradres": clean_gln(r['GLN_afleveradres']),
         "adres": clean(r['Adres']),
         "postcode": clean(r['Postcd']),
         "plaats": clean(r['Plaats']),
@@ -208,7 +191,7 @@ for _, r in df_afleveradressen.iterrows():
         "vertegenw_code": None,  # Not in this export
     })
 
-upsert_batch("afleveradressen", afl_records, on_conflict="debiteur_nr,adres_nr")
+upsert_batch(sb, "afleveradressen", afl_records, on_conflict="debiteur_nr,adres_nr")
 
 # ============================================================
 # STAP 6: Producten
@@ -250,7 +233,7 @@ for _, r in df_producten.iterrows():
 
 # Filter out records without artikelnr
 prod_records = [p for p in prod_records if p["artikelnr"]]
-upsert_batch("producten", prod_records, on_conflict="artikelnr")
+upsert_batch(sb, "producten", prod_records, on_conflict="artikelnr")
 
 # ============================================================
 # STAP 7: Rollen
@@ -282,7 +265,7 @@ for rec in rol_records:
         seen_rollen.add(rec["rolnummer"])
         rol_unique.append(rec)
 print(f"  {len(rol_records)} rollen, {len(rol_records) - len(rol_unique)} duplicaten verwijderd")
-upsert_batch("rollen", rol_unique, on_conflict="rolnummer")
+upsert_batch(sb, "rollen", rol_unique, on_conflict="rolnummer")
 
 # ============================================================
 # STAP 8: Prijslijst regels
@@ -307,7 +290,7 @@ for _, r in df_prijslijsten.iterrows():
         "gewicht": float(r['Gewicht']) if pd.notna(r['Gewicht']) else None,
     })
 
-upsert_batch("prijslijst_regels", pl_records, on_conflict="prijslijst_nr,artikelnr")
+upsert_batch(sb, "prijslijst_regels", pl_records, on_conflict="prijslijst_nr,artikelnr")
 
 # ============================================================
 # STAP 9: Klanteigen namen
@@ -347,7 +330,7 @@ for rec in kn_records:
         seen.add(key)
         kn_unique.append(rec)
 
-upsert_batch("klanteigen_namen", kn_unique, on_conflict="debiteur_nr,kwaliteit_code")
+upsert_batch(sb, "klanteigen_namen", kn_unique, on_conflict="debiteur_nr,kwaliteit_code")
 
 # ============================================================
 # STAP 10: Klant artikelnummers
@@ -377,7 +360,7 @@ for rec in ka_records:
         seen.add(key)
         ka_unique.append(rec)
 
-upsert_batch("klant_artikelnummers", ka_unique, on_conflict="debiteur_nr,artikelnr")
+upsert_batch(sb, "klant_artikelnummers", ka_unique, on_conflict="debiteur_nr,artikelnr")
 
 # ============================================================
 # DONE

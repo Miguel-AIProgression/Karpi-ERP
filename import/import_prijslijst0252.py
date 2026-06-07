@@ -11,18 +11,10 @@ from supabase import create_client
 from config import SUPABASE_URL, SUPABASE_KEY, BASE_DIR
 
 sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+from lib.supabase_helpers import upsert_batch
 
 FILE = BASE_DIR / "prijslijst0252_a.xlsx"
 PRIJSLIJST_NR = "0252"
-
-
-def upsert_batch(table, records, batch_size=500, on_conflict=None):
-    total = len(records)
-    for i in range(0, total, batch_size):
-        batch = records[i:i + batch_size]
-        kwargs = {"on_conflict": on_conflict} if on_conflict else {}
-        sb.table(table).upsert(batch, **kwargs).execute()
-    print(f"  {table}: {total} rijen")
 
 
 def fetch_all_artikelnrs():
@@ -118,7 +110,7 @@ def main():
     print(f"  {len(nieuwe_producten)} nieuwe producten aan te maken\n")
 
     # Header upsert
-    upsert_batch("prijslijst_headers", [{
+    upsert_batch(sb, "prijslijst_headers", [{
         "nr": PRIJSLIJST_NR,
         "naam": naam,
         "geldig_vanaf": geldig_vanaf,
@@ -127,10 +119,10 @@ def main():
 
     # Nieuwe producten aanmaken
     if nieuwe_producten:
-        upsert_batch("producten", nieuwe_producten, on_conflict="artikelnr")
+        upsert_batch(sb, "producten", nieuwe_producten, on_conflict="artikelnr")
 
     # Regels upsert
-    upsert_batch("prijslijst_regels", regels, on_conflict="prijslijst_nr,artikelnr")
+    upsert_batch(sb, "prijslijst_regels", regels, on_conflict="prijslijst_nr,artikelnr")
 
     print("\nKlaar.")
 

@@ -1,5 +1,36 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-07 — Gedeelde `import/lib/`-helpers (dedup Python import-scripts)
+
+**Waarom:** de batch-/normalisatie-helpers stonden massaal gekopieerd over de
+import-scripts: `upsert_batch` **14×** (geen enkele uit een gedeelde module),
+de numpy-`clean`/`_clean`-opschoning ~6×, en `norm`/`clean_gln` elk 3×. Naast de
+onderhoudslast school er een **stille gedragsafwijking** in: `reimport_orders_2026.py`
+definieerde een functie genaamd `upsert_batch` die in werkelijkheid `.insert()`
+deed (geen `on_conflict`) — bij her-import van bestaande sleutels een
+unique-conflict i.p.v. update, verstopt onder een naam die "upsert" belooft.
+
+**Wat:**
+- Nieuwe gedeelde modules onder [`import/lib/`](../import/lib/):
+  - [`supabase_helpers.py`](../import/lib/supabase_helpers.py) — `create_supabase_client`,
+    `upsert_batch(sb, …, *, mode="upsert"|"insert", on_conflict=…)`, `insert_batch`,
+    `batch_delete`, `batch_select`. `sb` is expliciete eerste parameter (testbaar).
+  - [`normalize.py`](../import/lib/normalize.py) — `norm`,
+    `clean_value(*, date_fmt=…)`, `clean_gln(*, strict=…)`.
+  - `lib/__init__.py` exporteert de publieke helpers.
+- De `.insert`-afwijker (`reimport_orders_2026.py`) roept nu expliciet
+  `upsert_batch(sb, …, mode="insert")` aan — afwijkend gedrag is **zichtbaar**.
+- Alle 14 lokale `def upsert_batch` verwijderd; scripts importeren uit `lib`
+  (Cluster A/B/C, incl. dode `BATCH`/`BATCH_SIZE`-constanten opgeruimd).
+- Numpy-`clean`/`_clean` (6 scripts), `norm` (3 EDI-scripts) en de Transus-
+  strict-`clean_gln` gemigreerd naar de gedeelde helpers (date-formaat per script
+  via `date_fmt`, Transus via `strict=True`).
+- Unit-tests toegevoegd in [`import/tests/`](../import/tests/): `test_supabase_helpers.py`
+  + `test_normalize.py` (51 tests groen, incl. mock-`sb` upsert/insert-pad).
+- Conventie vastgelegd in [`architectuur.md`](architectuur.md) (sectie "Import scripts").
+
+**Plan:** [`docs/superpowers/plans/2026-06-07-import-lib-gedeelde-helpers.md`](superpowers/plans/2026-06-07-import-lib-gedeelde-helpers.md).
+
 ## 2026-06-04 — EDI-leverweek-bevestiging niet langer operationeel-blokkerend (mig 316)
 
 **Waarom:** mig 309/310 maakte van de EDI-leverweek een voorstel en blokkeerde
