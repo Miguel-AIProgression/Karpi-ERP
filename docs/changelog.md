@@ -1,5 +1,86 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-07 — Carrier-payload-audit: rauwe HST request/response per poging bewaren
+
+**Waarom:** de rauwe payloads van inkomende kanalen (Shopify, EDI) worden al
+bewaard, maar uitgaand vervoerder-verkeer niet volledig. HST slaat z'n
+request/response wél op `hst_transportorders` op, maar dat is **één rij die bij
+elke retry overschreven wordt** (`markeer_hst_fout`, mig 171) — bij succes wordt
+`error_msg` zelfs op NULL gezet. Daardoor verdwijnt de fout-historie van eerdere
+pogingen, juist wat je bij diagnose nodig hebt. Doel: van élke carrier-poping de
+ruwe payload herleidbaar houden, gekoppeld aan de order.
+
+**Wat — mig 325:**
+- Tabel `inkomende_payloads` (mig 324) **hernoemd naar `externe_payloads`** — de
+  tabel had al een `richting`-kolom, de oude naam dekte de uitgaande lading niet.
+  Eén centrale plek voor álle externe payloads (in + uit). Indexen mee hernoemd
+  + nieuwe index `(richting, kanaal, ontvangen_op DESC)`.
+- Neutrale RPC's `log_externe_payload(... p_richting, p_order_id, p_status, p_fout)`
+  + `markeer_externe_payload_verwerkt`. Outbound carrier-calls leggen in één insert
+  richting=`'out'`, `order_id` en de eindstatus vast.
+- Oude namen `log_inkomende_payload` / `markeer_inkomende_payload_verwerkt` blijven
+  als **deprecated wrappers** bestaan zodat de reeds-gedeployde `sync-shopify-order`
+  niet breekt vóór de herdeploy.
+- [`hst-send`](../supabase/functions/hst-send/index.ts): best-effort append-only
+  logging na elke POST — `kanaal='hst'`, `richting='out'`, `order_id` gevuld,
+  `payload_raw` = verstuurde request, `payload_json` = `{ request, response,
+  http_code, ok, transport_order_id, tracking_number }`, status `verwerkt`/`fout`.
+  Elke retry = nieuwe rij → volledige historie bewaard. PDF blijft uit de response
+  gestript (staat in storage). Logging mag het versturen nooit blokkeren.
+- [`sync-shopify-order`](../supabase/functions/sync-shopify-order/index.ts) overgezet
+  naar de neutrale RPC-namen.
+
+**Scope:** alleen HST (enige nu-actieve API-vervoerder). EDI-carriers
+(Rhenus/Verhoek via `transus-send`) volgen zodra ze live gaan; backend-only, een
+diagnose-UI is een aparte vervolgslice.
+
+**Diagnose:** mislukte HST-verzendingen incl. retry-historie →
+`SELECT externe_id, order_id, fout, ontvangen_op, payload_json FROM externe_payloads
+WHERE kanaal='hst' AND richting='out' AND status='fout' ORDER BY ontvangen_op DESC;`
+
+**Migratie:** 325 (handmatig toepassen). **Deploy:** `hst-send` + `sync-shopify-order`.
+
+## 2026-06-07 — Debiteur-matcher-seam Slices 4–5: "debiteur te bevestigen" + env-ladder
+
+**Waarom:** vervolg op de gedeelde debiteur-matcher-seam (Slices 0–3). Tot nu toe
+werd de `zeker`-vlag van een match genegeerd: een onzekere fuzzy treffer
+(bedrijfsnaam-deelmatch / e-mail) landde stil op de gegokte debiteur. Operator-keuze
+(2026-06-07): zo'n order wél aanmaken maar markeren als "debiteur te bevestigen",
+analoog aan de EDI "te koppelen"-flow, zodat geen order ongezien op de verkeerde
+klant blijft staan.
+
+**Wat — Slice 4 (mig 322):**
+- Kolommen `orders.debiteur_zeker BOOLEAN DEFAULT true` + `orders.debiteur_match_bron TEXT`
+  (audit: welke strategie won → locality op "waarom deze debiteur?").
+- `create_webshop_order` (herdefinitie van mig 308) persisteert beide uit `p_header`
+  (backward-compatibele `COALESCE`-default `zeker=TRUE`); `orders_list`-view (herdefinitie
+  van mig 309) exposeert ze.
+- [`sync-shopify-order`](../supabase/functions/sync-shopify-order/index.ts) stuurt
+  `debiteur_zeker` + `debiteur_match_bron` mee i.p.v. `zeker` te negeren.
+- **"Te bevestigen"-predicaat** = `debiteur_zeker=false AND (debiteur_match_bron IS NULL OR
+  debiteur_match_bron <> 'env_fallback') AND status <> 'Geannuleerd'` — NULL-safe (een onzekere
+  order zónder bron telt mee, valt niet stil uit beeld); één bron-van-waarheid:
+  `countTeBevestigenDebiteurOrders` + de `'Debiteur te bevestigen'`-branch in `fetchOrders`
+  + de JS-conditie op order-detail. **`env_fallback` valt bewust af:**
+  de verzameldebiteur is voor consumenten-webshops (wisselend afleveradres) de verwachte
+  eindbestemming, geen fout.
+- UI: amber [`DebiteurTeBevestigenBanner`](../frontend/src/components/orders/debiteur-te-bevestigen-banner.tsx)
+  + status-tab `'Debiteur te bevestigen'` op het orders-overzicht; bevestig-widget
+  [`DebiteurBevestigenWidget`](../frontend/src/components/orders/debiteur-bevestigen-widget.tsx)
+  op order-detail (`bevestigDebiteur` → `debiteur_zeker=true`, of corrigeren via order-bewerken).
+
+**Wat — Slice 5:**
+- `matchDebiteurViaEnv(envKey)` in [`_shared/debiteur-matcher.ts`](../supabase/functions/_shared/debiteur-matcher.ts):
+  Lightspeed/webshop (`FLOORPASSION_DEBITEUR_NR`), Shopify-catch-all
+  (`SHOPIFY_FALLBACK_DEBITEUR_NR`) lopen nu via één helper → `DebiteurMatch{bron:'env_fallback',
+  zeker:false}`. Geen gedragswijziging; uniformeert het contract zodat échte Floorpassion-B2B-
+  matching later achter dezelfde ladder kan.
+
+**Tests:** +4 cases (`matchDebiteurViaEnv` + bestaande seam-suite groen, 18/18).
+**Migratie:** 322 (handmatig toepassen). **Deploy:** `sync-shopify-order`, `sync-webshop-order`,
+`import-lightspeed-orders` opnieuw deployen.
+**Plan:** [`docs/superpowers/plans/2026-06-07-gedeelde-debiteur-matcher-seam.md`](superpowers/plans/2026-06-07-gedeelde-debiteur-matcher-seam.md).
+
 ## 2026-06-07 — Consolidatie ISO-week-kern (UTC) + `formatDateTime`
 
 **Waarom:** een code-review markeerde twee duplicatie-clusters. (1) Het ISO-week­nummer
