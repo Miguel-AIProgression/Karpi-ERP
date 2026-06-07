@@ -4,7 +4,6 @@ Downstream wipe: snijplannen, kleuren, confectie_planning, rol-koppelingen.
 Alleen bedoeld voor testomgevingen.
 """
 import pandas as pd
-import numpy as np
 import re
 from datetime import date
 from supabase import create_client

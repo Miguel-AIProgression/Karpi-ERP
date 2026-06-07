@@ -3,6 +3,7 @@
 // definitie voor alle modules. Hier zit alleen de magazijn-specifieke vraag:
 // in welke verzendweek-tab valt deze order t.o.v. vandaag?
 import { isoMaandag, isoWeek, verzendWeekDiff } from '@/lib/orders/verzendweek'
+import { lokaleDatumAlsUtc } from '@/lib/utils/iso-week'
 import type { BucketKey } from './types'
 
 /**
@@ -20,8 +21,8 @@ export function bucketVoor(
 ): BucketKey {
   if (!afleverdatumIso) return 'later'
 
-  const datum = new Date(afleverdatumIso + 'T00:00:00')
-  const diff = verzendWeekDiff(vandaag, datum)
+  const datum = new Date(afleverdatumIso + 'T00:00:00Z')
+  const diff = verzendWeekDiff(lokaleDatumAlsUtc(vandaag), datum)
   if (diff <= 1) return 'wk_1'
   if (diff === 2) return 'wk_2'
   if (diff === 3) return 'wk_3'
@@ -53,11 +54,11 @@ export interface WeekTabDef {
  */
 export function genereerWeekTabs(vandaag: Date = new Date()): WeekTabDef[] {
   const tabs: WeekTabDef[] = []
-  const ma = isoMaandag(vandaag)
+  const ma = isoMaandag(lokaleDatumAlsUtc(vandaag)) // lokale "vandaag" → UTC-midnacht maandag.
   for (let i = 1; i <= 5; i++) {
     const datum = new Date(ma)
     // i = 1 → huidige pick-week (offset 0); i = 5 → pick-week + 4.
-    datum.setDate(ma.getDate() + 7 * (i - 1))
+    datum.setUTCDate(ma.getUTCDate() + 7 * (i - 1))
     const w = isoWeek(datum)
     tabs.push({
       key: `wk_${i}` as BucketKey,

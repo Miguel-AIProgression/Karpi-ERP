@@ -1,16 +1,11 @@
 import { cn } from '@/lib/utils/cn'
 import { CONFECTIE_STATUS_COLORS, AFWERKING_MAP } from '@/lib/utils/constants'
+import { formatDateTime } from '@/lib/utils/formatters'
 import type { ConfectieRow } from '@/lib/types/productie'
 
 interface ConfectieTabelProps {
   rows: ConfectieRow[]
   isLoading?: boolean
-}
-
-function formatDateTime(iso: string | null): string {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  return `${d.toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit' })} ${d.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}`
 }
 
 function StatusBadge({ status }: { status: string }) {

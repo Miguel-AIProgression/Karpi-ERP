@@ -55,12 +55,6 @@ def upsert_batch(sb, table, records, batch_size=500, on_conflict=None, *,
             print(f"  {table}: {min(i + batch_size, total)}/{total}")
 
 
-def insert_batch(sb, table, records, batch_size=500, *, progress=True):
-    """Alias voor `upsert_batch(..., mode='insert')` — pure insert in batches."""
-    upsert_batch(sb, table, records, batch_size=batch_size,
-                 mode="insert", progress=progress)
-
-
 def batch_delete(sb, table, field, ids, size=200):
     """Verwijder rijen waar `field IN ids`, in chunks (overgenomen uit
     sync_inkoopoverzicht_2026_06.py)."""

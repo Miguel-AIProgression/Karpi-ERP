@@ -8,6 +8,7 @@ import { DemoBerichtDialog } from '@/modules/edi/components/demo-bericht-dialog'
 import { UploadBerichtDialog } from '@/modules/edi/components/upload-bericht-dialog'
 import { ruimEdiDemoData, type EdiBerichtStatus, type EdiRichting, type EdiBerichtType } from '@/modules/edi/queries/edi'
 import { cn } from '@/lib/utils/cn'
+import { formatDateTime } from '@/lib/utils/formatters'
 
 const ALLE_STATUSSEN: EdiBerichtStatus[] = [
   'Wachtrij', 'Bezig', 'Verstuurd', 'Verwerkt', 'Fout', 'Geannuleerd',
@@ -302,10 +303,4 @@ export function EdiBerichtenOverzichtPage() {
  */
 function isTeKoppelen(b: { richting: EdiRichting; berichttype: EdiBerichtType; order_id: number | null }): boolean {
   return b.richting === 'in' && b.berichttype === 'order' && b.order_id == null
-}
-
-function formatDateTime(iso: string): string {
-  const d = new Date(iso)
-  return d.toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric' })
-    + ' ' + d.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })
 }

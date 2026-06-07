@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { CalendarDays, CheckCircle2, Package, AlertCircle } from 'lucide-react'
+import { isoWeekJaarVanIso } from '@/lib/utils/iso-week'
+import { formatDate } from '@/lib/utils/formatters'
 
 const PORTAL_FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/supplier-portal`
 
@@ -57,20 +59,10 @@ async function updateEta(token: string, regel_id: number, verwacht_datum: string
   }
 }
 
-function formatDate(iso: string | null): string {
-  if (!iso) return '—'
-  const [y, m, d] = iso.split('-')
-  return `${d}-${m}-${y}`
-}
-
 function isoWeek(iso: string | null): string {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  d.setHours(0, 0, 0, 0)
-  d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7))
-  const week1 = new Date(d.getFullYear(), 0, 4)
-  const wk = 1 + Math.round(((d.getTime() - week1.getTime()) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7)
-  return `Wk ${wk}, ${d.getFullYear()}`
+  const w = isoWeekJaarVanIso(iso)
+  if (!w) return '—'
+  return `Wk ${w.week}, ${w.jaar}`
 }
 
 function EtaCell({ regel, token }: { regel: PortalRegel; token: string }) {

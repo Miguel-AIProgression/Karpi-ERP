@@ -2,6 +2,7 @@
 // nieuwe stuk nog op past. Hergebruikt FFDH `tryPlacePiece` voor scoring.
 
 import { tryPlacePiece, type Shelf, type SnijplanPiece } from './ffdh-packing.ts'
+import { maandagVanIsoWeek } from './iso-week.ts'
 import type {
   KandidaatRol,
   MatchResult,
@@ -76,16 +77,9 @@ export function rolHeeftPlek(
 // Snij-datum bepalen per rol uit gekoppelde plaatsingen
 // ---------------------------------------------------------------------------
 
-/** Maandag van een ISO-week (1-7 = ma-zo, returnt YYYY-MM-DD). */
+/** Maandag van een ISO-week als YYYY-MM-DD. Delegeert aan de gedeelde kern. */
 export function maandagVanWeek(week: number, jaar: number): string {
-  // ISO-week 1 bevat de eerste donderdag van het jaar.
-  const simpel = new Date(Date.UTC(jaar, 0, 4))
-  const dagvanWeek = simpel.getUTCDay() || 7
-  const eersteMaandag = new Date(simpel)
-  eersteMaandag.setUTCDate(simpel.getUTCDate() - dagvanWeek + 1)
-  const result = new Date(eersteMaandag)
-  result.setUTCDate(eersteMaandag.getUTCDate() + (week - 1) * 7)
-  return result.toISOString().slice(0, 10)
+  return maandagVanIsoWeek(jaar, week).toISOString().slice(0, 10)
 }
 
 /** Volgende werkdag (ma-vr) vanaf een datum (default: vandaag). ISO YYYY-MM-DD. */

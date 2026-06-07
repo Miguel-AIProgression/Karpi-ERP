@@ -15,15 +15,9 @@ import {
   werkminutenTussen,
 } from './werkagenda.ts'
 import { naarWerkdag } from './levertijd-match.ts'
+import { isoWeekJaar, isoWeekMaandag } from './iso-week.ts'
 
 const MIN_PER_WEEKDAG = 510  // 09:00-uur netto (08:00-17:00 minus 30 min pauze)
-
-function isoWeekStart(d: Date): Date {
-  const out = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
-  const dow = out.getUTCDay() || 7
-  out.setUTCDate(out.getUTCDate() - (dow - 1))
-  return out
-}
 
 function plusWeken(d: Date, n: number): Date {
   const out = new Date(d.getTime())
@@ -47,14 +41,6 @@ function bezetWerkminutenInWeek(
   return totaal
 }
 
-function isoWeekEnJaar(d: Date): { week: number; jaar: number } {
-  const tmp = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
-  tmp.setUTCDate(tmp.getUTCDate() + 4 - (tmp.getUTCDay() || 7))
-  const yearStart = new Date(Date.UTC(tmp.getUTCFullYear(), 0, 1))
-  const week = Math.ceil(((tmp.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7)
-  return { week, jaar: tmp.getUTCFullYear() }
-}
-
 export function evalueerSpoed(
   werkagenda: Map<number, RolAgendaSlot>,
   nieuwStukDuurMinuten: number,
@@ -63,7 +49,7 @@ export function evalueerSpoed(
   werktijden: Werktijden = STANDAARD_WERKTIJDEN,
 ): SpoedDetails {
   const buffer = cfg.spoed_buffer_uren * 60
-  const dezeWeek = isoWeekStart(vandaag)
+  const dezeWeek = isoWeekMaandag(vandaag)
   const eindDezeWeek = plusWeken(dezeWeek, 1)
   const volgendeWeek = plusWeken(dezeWeek, 1)
   const eindVolgendeWeek = plusWeken(dezeWeek, 2)
@@ -133,7 +119,7 @@ export function evalueerSpoed(
     const ruw = new Date(`${snij_datum}T00:00:00Z`)
     ruw.setUTCDate(ruw.getUTCDate() + cfg.logistieke_buffer_dagen)
     lever_datum = naarWerkdag(ruw.toISOString().slice(0, 10))
-    const wj = isoWeekEnJaar(new Date(`${lever_datum}T00:00:00Z`))
+    const wj = isoWeekJaar(new Date(`${lever_datum}T00:00:00Z`))
     week = wj.week
     jaar = wj.jaar
   }

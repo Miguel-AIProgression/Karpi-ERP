@@ -9,6 +9,7 @@ import type {
   LevertijdConfig,
 } from './levertijd-types.ts'
 import { maandagVanWeek } from './levertijd-match.ts'
+import { isoWeekJaar } from './iso-week.ts'
 
 const MAX_WEEK_ITERATIES = 6
 
@@ -16,18 +17,10 @@ const MAX_WEEK_ITERATIES = 6
 // ISO-week / datum helpers
 // ---------------------------------------------------------------------------
 
-/** Geef ISO-weeknummer + jaar voor een datum (UTC). */
-export function isoWeekJaar(date: Date): { week: number; jaar: number } {
-  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()))
-  // ISO: donderdag bepaalt het jaar.
-  const dayNr = (d.getUTCDay() + 6) % 7  // ma=0..zo=6
-  d.setUTCDate(d.getUTCDate() - dayNr + 3)
-  const firstThursday = new Date(Date.UTC(d.getUTCFullYear(), 0, 4))
-  const firstThursdayDayNr = (firstThursday.getUTCDay() + 6) % 7
-  firstThursday.setUTCDate(firstThursday.getUTCDate() - firstThursdayDayNr + 3)
-  const week = 1 + Math.round((d.getTime() - firstThursday.getTime()) / (7 * 86_400_000))
-  return { week, jaar: d.getUTCFullYear() }
-}
+// `isoWeekJaar` komt uit de gedeelde UTC-kern (`_shared/iso-week.ts`) en wordt
+// hier doorgegeven zodat bestaande importers (check-levertijd, levertijd-
+// resolver, tests) onveranderd blijven werken.
+export { isoWeekJaar }
 
 /** Snij-week is de week vóór de gewenste leverweek. */
 export function snijWeekVoorLever(leverDatumIso: string): {

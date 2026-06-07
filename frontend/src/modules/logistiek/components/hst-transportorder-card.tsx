@@ -1,5 +1,6 @@
 import { AlertCircle, RefreshCw, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
+import { formatDateTime } from '@/lib/utils/formatters'
 import type { HstTransportorderStatus } from '@/modules/logistiek/queries/zendingen'
 
 const HST_STATUS_KLEUREN: Record<HstTransportorderStatus, { bg: string; text: string }> = {
@@ -129,14 +130,5 @@ function Field({ label, children }: { label: React.ReactNode; children: React.Re
       <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">{label}</div>
       <div className="text-sm text-slate-800">{children}</div>
     </div>
-  )
-}
-
-function formatDateTime(iso: string): string {
-  const d = new Date(iso)
-  return (
-    d.toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric' }) +
-    ' ' +
-    d.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })
   )
 }

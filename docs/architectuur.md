@@ -36,8 +36,12 @@ Wanneer een Module een component uit een andere Module wil renderen zonder bij d
 
 Dit is duurder in queries (elke instance fetcht zelf) maar voorkomt dat seams datamodellen in beide richtingen koppelen.
 
-#### Verzendweek-seam (orderdomein)
-[`lib/orders/verzendweek.ts`](../frontend/src/lib/orders/verzendweek.ts) is de single source of truth voor de mapping `orders.afleverdatum` → ISO-verzendweek. Karpi-context: een afleverdatum 06-05 betekent semantisch "verzonden in week 19", niet "geleverd op 6 mei". Magazijn (pick & ship — week-groepering, achterstallig-detectie), logistiek (zendingen, pakbon-WK-tag) en order-UI consumeren dezelfde helpers (`verzendWeekVoor`, `verzendWeekSleutel`, `verzendWeekLabel` → "Verzendweek 19", `verzendWeekKort` → "Wk 19", `isoWeek`, `isoMaandag`). Verandert ooit de mapping (bv. shift voor specifieke vervoerders, of expliciete `verzenddatum`-kolom), dan gebeurt dat hier en nergens anders.
+#### ISO-week-kern + verzendweek-seam (orderdomein)
+**Twee lagen, sinds 2026-06-07 gescheiden:**
+
+1. **Rekenkern** — [`lib/utils/iso-week.ts`](../frontend/src/lib/utils/iso-week.ts) is de single source of truth voor "welke ISO-week hoort bij deze datum". **UTC-gebaseerd en TZ-onafhankelijk** (strippt de tijdcomponent), zodat een `DATE`-veld rond middernacht/jaargrens nooit een ander weeknummer geeft dan de SQL-referentie `to_char(date,'IW')` (mig 145/228). Exporteert `isoWeekJaar`/`isoWeek`/`isoWeekString`/`isoWeekMaandag`/`maandagVanIsoWeek`/`isoWeekRange` + string-helpers `isoWeekJaarVanIso`/`isoWeekStringVanIso`/`isoWeekFromString`. **Wall-clock "nu"**: de kern leest UTC-componenten, dus een rauwe `new Date()` zou in NL (UTC+1/+2) tussen lokaal 00:00–02:00 op de vóórgaande UTC-dag landen → verkeerde week. Helper `lokaleDatumAlsUtc(d)` verankert de **lokale** kalenderdatum op UTC-midnacht; alle today-vergelijkingen (`pickStatusVoor`, `bucketVoor`, `genereerWeekTabs`, `verzendWeekRelatief`) draaien hun `vandaag` daardoorheen. Edge functions delen geen module-import met de frontend en hebben een **identieke Deno-spiegel** [`_shared/iso-week.ts`](../supabase/functions/_shared/iso-week.ts) (geconsumeerd door `levertijd-capacity`, `spoed-check`, `levertijd-match`, `stuur-orderbevestiging`) — `lokaleDatumAlsUtc` zit daar bewust niet in (edge draait in UTC, lokaal == UTC). Beide kernen worden door eigen test-sets bewaakt (jaargrens, week 53, padding, TZ-robuustheid, SQL-pariteit); houd ze synchroon — SQL is de overkoepelende waarheid. Vóór deze consolidatie bestonden ≥6 frontend- + 3 edge-kopieën, deels op lokale tijd (latente off-by-one op een leverbelofte-veld).
+
+2. **Domein-seam** — [`lib/orders/verzendweek.ts`](../frontend/src/lib/orders/verzendweek.ts) is de single source of truth voor de mapping `orders.afleverdatum` → ISO-verzendweek. Karpi-context: een afleverdatum 06-05 betekent semantisch "verzonden in week 19", niet "geleverd op 6 mei". Magazijn (pick & ship — week-groepering, achterstallig-detectie), logistiek (zendingen, pakbon-WK-tag) en order-UI consumeren dezelfde NL-label-helpers (`verzendWeekVoor`, `verzendWeekSleutel`, `verzendWeekLabel` → "Verzendweek 19", `verzendWeekKort` → "Wk 19", `isoWeek`/`isoMaandag` als domein-alias op de kern). De wéék-berekening zelf delegeert naar laag 1; verandert ooit de mapping (bv. shift voor specifieke vervoerders, of expliciete `verzenddatum`-kolom), dan gebeurt dat hier en nergens anders.
 
 #### Atomic-RPC-pattern voor multi-step state-mutaties
 Wanneer een UI-actie meerdere DB-rijen moet aanpassen (vinden-of-maken + updaten), is twee opeenvolgende client-side calls fragiel: faalt de tweede dan blijft een dangling rij van de eerste achter. Centraliseer in één plpgsql-RPC. Voorbeeld: `set_locatie_voor_orderregel` (mig 0183) bundelt `INSERT magazijn_locaties ON CONFLICT` + `UPDATE snijplannen.locatie` voor `useUpdateMaatwerkLocatie`. Eén RPC = één transactie = atomair. Zie ADR-0002 ("Locatie-mutaties — pragma, geen seam-leak-fix").
@@ -88,6 +92,10 @@ Gedeelde code in `supabase/functions/_shared/` (packing-algoritmes, DB helpers) 
 - Pagina's in `pages/` (route-level, per module een submap)
 - Feature-componenten in `components/{module}/`
 - Gedeelde UI in `components/ui/` (shadcn/ui)
+
+### Gedeelde formatters & datum-helpers
+- [`lib/utils/formatters.ts`](../frontend/src/lib/utils/formatters.ts) is de centrale plek voor NL-presentatie: `formatCurrency`, `formatDate` (DD-MM-YYYY), `formatNumber`, `formatPercentage` en sinds 2026-06-07 **`formatDateTime(iso, { seconds? })`** (DD-MM-YYYY HH:MM, optioneel met seconden, null-safe → "—"). Rol je eigen datum/tijd-formattering niet meer per component — importeer uit hier (voorheen 5 component-lokale kopieën met afwijkende output).
+- Week-uit-datum: zie de ISO-week-kern hierboven ([`lib/utils/iso-week.ts`](../frontend/src/lib/utils/iso-week.ts)), niet inline herberekenen.
 
 ### Routes
 ```
@@ -140,7 +148,7 @@ gekopieerd stond. Nieuw import-script = **importeren, niet kopiëren**.
 
 - [`lib/supabase_helpers.py`](../import/lib/supabase_helpers.py):
   `create_supabase_client()`, `upsert_batch(sb, table, records, *, mode="upsert"|"insert", on_conflict=...)`,
-  `insert_batch`, `batch_delete`, `batch_select`. `sb` is altijd de **expliciete
+  `batch_delete`, `batch_select`. `sb` is altijd de **expliciete
   eerste parameter** (geen verborgen globale) → testbaar met een mock-client.
   De `mode="insert"`-tak maakt de oude stille `.insert()`-afwijking in
   `reimport_orders_2026.py` expliciet i.p.v. verstopt onder de naam "upsert".

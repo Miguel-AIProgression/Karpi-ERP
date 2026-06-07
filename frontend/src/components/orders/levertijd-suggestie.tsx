@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { cn } from '@/lib/utils/cn'
 import { useLevertijdCheck } from '@/hooks/use-levertijd-check'
 import { verzendWeekVoor } from '@/lib/orders/verzendweek'
+import { isoWeekJaarVanIso } from '@/lib/utils/iso-week'
 import type { CheckLevertijdResponse, LevertijdScenario } from '@/lib/supabase/queries/levertijd'
 
 interface LevertijdSuggestieProps {
@@ -156,19 +157,11 @@ export function LevertijdSuggestie(props: LevertijdSuggestieProps) {
   )
 }
 
-// ISO-weeknummer voor een YYYY-MM-DD datum (UTC). Spiegelt
-// `isoWeekJaar` uit de edge function maar geeft alleen het weeknummer terug —
-// nodig om `onNeemOver(datum, week)` consistent te kunnen aanroepen vanuit de
-// eerder-haalbaar-hint.
+// ISO-weeknummer voor een YYYY-MM-DD datum — uit de gedeelde UTC-kern.
+// Geeft alleen het weeknummer terug, nodig om `onNeemOver(datum, week)`
+// consistent te kunnen aanroepen vanuit de eerder-haalbaar-hint.
 function isoWeekUit(iso: string): number {
-  const [y, m, d] = iso.split('-').map(Number)
-  const utc = new Date(Date.UTC(y, m - 1, d))
-  const dayNr = (utc.getUTCDay() + 6) % 7  // ma=0..zo=6
-  utc.setUTCDate(utc.getUTCDate() - dayNr + 3)
-  const firstThursday = new Date(Date.UTC(utc.getUTCFullYear(), 0, 4))
-  const firstThursdayDayNr = (firstThursday.getUTCDay() + 6) % 7
-  firstThursday.setUTCDate(firstThursday.getUTCDate() - firstThursdayDayNr + 3)
-  return 1 + Math.round((utc.getTime() - firstThursday.getTime()) / (7 * 86_400_000))
+  return isoWeekJaarVanIso(iso)?.week ?? 0
 }
 
 function DetailsPanel({ data }: { data: CheckLevertijdResponse }) {

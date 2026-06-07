@@ -12,6 +12,7 @@ import { downloadOrderbevAlsXml } from '@/modules/edi/lib/download-orderbev-xml'
 import type { KarpiOrder } from '@/modules/edi/lib/karpi-fixed-width'
 import type { EdiBerichtStatus, EdiBerichtType } from '@/modules/edi/queries/edi'
 import { cn } from '@/lib/utils/cn'
+import { formatDateTime } from '@/lib/utils/formatters'
 
 const KARPI_GLN_DEFAULT = '8715954999998'
 
@@ -201,9 +202,9 @@ export function EdiBerichtDetailPage() {
           <span className="font-mono text-xs">{bericht.transactie_id ?? '—'}</span>
         </MetaCell>
 
-        <MetaCell label="Aangemaakt">{formatDateTime(bericht.created_at)}</MetaCell>
-        <MetaCell label="Verstuurd">{bericht.sent_at ? formatDateTime(bericht.sent_at) : '—'}</MetaCell>
-        <MetaCell label="Bevestigd">{bericht.acked_at ? formatDateTime(bericht.acked_at) : '—'}</MetaCell>
+        <MetaCell label="Aangemaakt">{formatDateTime(bericht.created_at, { seconds: true })}</MetaCell>
+        <MetaCell label="Verstuurd">{formatDateTime(bericht.sent_at, { seconds: true })}</MetaCell>
+        <MetaCell label="Bevestigd">{formatDateTime(bericht.acked_at, { seconds: true })}</MetaCell>
         <MetaCell label="Retry">{bericht.retry_count}</MetaCell>
       </div>
 
@@ -319,12 +320,6 @@ function MetaCell({ label, children }: { label: string; children: React.ReactNod
       <div className="text-sm text-slate-800">{children}</div>
     </div>
   )
-}
-
-function formatDateTime(iso: string): string {
-  const d = new Date(iso)
-  return d.toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric' })
-    + ' ' + d.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
 function headerGln(

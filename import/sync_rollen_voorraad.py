@@ -5,7 +5,6 @@ Draai standaard in dry-run:  python sync_rollen_voorraad.py
 Schrijf wijzigingen:          python sync_rollen_voorraad.py --apply
 """
 import argparse
-import numpy as np
 import pandas as pd
 from supabase import create_client
 from config import SUPABASE_URL, SUPABASE_KEY, ROLLEN_SYNC_FILE

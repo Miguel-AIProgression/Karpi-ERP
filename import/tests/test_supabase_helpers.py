@@ -7,7 +7,6 @@ import pytest
 
 from lib.supabase_helpers import (
     upsert_batch,
-    insert_batch,
     batch_delete,
     batch_select,
 )
@@ -82,13 +81,6 @@ def test_upsert_batch_zonder_on_conflict_geen_kwargs():
 def test_upsert_batch_insert_mode():
     sb = FakeSB()
     upsert_batch(sb, "t", [{"a": 1}], mode="insert", progress=False)
-    kinds = [e[0] for e in sb.log if e[0] in ("upsert", "insert")]
-    assert kinds == ["insert"]
-
-
-def test_insert_batch_alias():
-    sb = FakeSB()
-    insert_batch(sb, "t", [{"a": 1}], progress=False)
     kinds = [e[0] for e in sb.log if e[0] in ("upsert", "insert")]
     assert kinds == ["insert"]
 

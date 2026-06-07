@@ -13,6 +13,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { genereerOrderbevestigingPDF } from '../_shared/orderbevestiging-pdf.ts'
 import { sendFactuurEmail } from '../_shared/resend-client.ts'
+import { isoWeekJaar } from '../_shared/iso-week.ts'
 
 const SUPABASE_URL        = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -136,15 +137,13 @@ serve(async (req) => {
   } catch { /* logo optioneel */ }
 
   // ── Verzendweek berekenen ──────────────────────────────────────────────────
+  // ISO-week uit de gedeelde UTC-kern — gelijk aan frontend + SQL. Voorheen een
+  // lokale-tijd-berekening die rond middernacht/jaargrens kon afwijken op het
+  // week-label dat de klant op de orderbevestiging ziet.
   function verzendweekLabel(isoDate: string | null): string | null {
     if (!isoDate) return null
-    const d = new Date(isoDate)
-    const dag = d.getDay() === 0 ? 7 : d.getDay()
-    const maandag = new Date(d)
-    maandag.setDate(d.getDate() - dag + 1)
-    const start = new Date(maandag.getFullYear(), 0, 1)
-    const week = Math.ceil(((maandag.getTime() - start.getTime()) / 86400000 + start.getDay() + 1) / 7)
-    return `Wk ${week} · ${maandag.getFullYear()}`
+    const { jaar, week } = isoWeekJaar(new Date(`${isoDate}T00:00:00Z`))
+    return `Wk ${week} · ${jaar}`
   }
 
   // ── PDF genereren ──────────────────────────────────────────────────────────

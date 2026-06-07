@@ -1,5 +1,55 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-07 — Consolidatie ISO-week-kern (UTC) + `formatDateTime`
+
+**Waarom:** een code-review markeerde twee duplicatie-clusters. (1) Het ISO-week­nummer
+werd op ≥6 frontend- en 3 edge-plekken opnieuw uitgevonden, deels op **lokale tijd** —
+een latente timezone-off-by-one rond middernacht/jaargrens op `orders.afleverdatum`
+(een leverbelofte-veld dat de klant te zien krijgt, o.a. op de orderbevestiging).
+(2) `formatDateTime` bestond als 5 component-lokale kopieën met onderling afwijkende
+output, terwijl `formatters.ts` wél `formatDate`/`formatCurrency` had maar geen datum-tijd.
+
+**Wat:**
+- **Frontend week-kern** [`lib/utils/iso-week.ts`](../frontend/src/lib/utils/iso-week.ts)
+  herschreven naar één **UTC-correcte, TZ-onafhankelijke** rekenkern (strippt de
+  tijdcomponent). Nieuwe API: `isoWeekJaar`/`isoWeek`/`isoWeekString`/`isoWeekMaandag`/
+  `maandagVanIsoWeek`/`isoWeekRange` + string-helpers `isoWeekJaarVanIso`/
+  `isoWeekStringVanIso`/`isoWeekFromString` (backwards-compat). Test:
+  [`__tests__/iso-week.test.ts`](../frontend/src/lib/utils/__tests__/iso-week.test.ts)
+  (jaargrens, week 53, padding, TZ-robuustheid, SQL-pariteit — 28 cases, groen onder
+  TZ Tokyo/UTC/LA).
+- **Wall-clock-fix** (uit de code-review): de kern leest UTC-componenten, dus een rauwe
+  `new Date()` zou in NL tussen lokaal 00:00–02:00 op de vóórgaande UTC-dag landen →
+  verkeerde week. Helper `lokaleDatumAlsUtc(d)` verankert de lokale kalenderdatum op
+  UTC-midnacht; `pickStatusVoor`/`bucketVoor`/`genereerWeekTabs`/`verzendWeekRelatief`
+  draaien hun `vandaag` daardoorheen (de oude `verzendweek.isoWeek` deed dit impliciet
+  via `Date.UTC(getFullYear…)`).
+- [`lib/orders/verzendweek.ts`](../frontend/src/lib/orders/verzendweek.ts) **consumeert**
+  de kern (eigen `isoWeek`/`isoMaandag` verwijderd, nu domein-alias); de 80+-case
+  `verzendweek.test.ts` blijft ongewijzigd groen = bewijs dat de kern UTC-correct is.
+- 4 frontend-duplicaten omgezet naar consumenten: `forward-planner.ts` (`isoWeekKey`),
+  `supplier-portal.tsx`, `levertijd-suggestie.tsx` (`isoWeekUit`),
+  `inkoop-regel-overzicht-tab.tsx` (`isoWeekLabel`). `buckets.ts` en `edi-leverweek.ts`
+  meegetrokken naar UTC-consistente datum-constructie (`T00:00:00Z`).
+- **Edge-kern** [`_shared/iso-week.ts`](../supabase/functions/_shared/iso-week.ts) +
+  Deno-test toegevoegd (identieke set). `levertijd-capacity`, `spoed-check`,
+  `levertijd-match` consumeren de kern; `stuur-orderbevestiging` z'n **buggy lokale-tijd**
+  `verzendweekLabel` vervangen door de UTC-kern → week-label op de klant-orderbevestiging
+  nu gelijk aan frontend + SQL. **Handmatig deployen**: `check-levertijd` +
+  `stuur-orderbevestiging`.
+- **`formatDateTime(iso, { seconds? })`** toegevoegd aan
+  [`formatters.ts`](../frontend/src/lib/utils/formatters.ts); 5 kopieën vervangen
+  (`confectie-tabel`, `berichten-overzicht`, `bericht-detail` met seconden,
+  `hst-transportorder-card`, en `supplier-portal`'s lokale `formatDate` → centrale).
+  *Zichtbare normalisatie:* `confectie-tabel` toont nu óók het jaar (DD-MM-YYYY HH:MM),
+  conform de CLAUDE.md-datumconventie.
+- Docs: `data-woordenboek.md` (Verzendweek), `architectuur.md` (ISO-week-kern +
+  gedeelde formatters).
+
+**Plan:** [`docs/superpowers/plans/2026-06-07-iso-week-formatdatetime-consolidatie.md`](superpowers/plans/2026-06-07-iso-week-formatdatetime-consolidatie.md).
+SQL (`verzendweek_voor_datum` mig 228, `iso_week_plus` mig 145) blijft de overkoepelende
+referentie en is **niet** gewijzigd.
+
 ## 2026-06-07 — Gedeelde `import/lib/`-helpers (dedup Python import-scripts)
 
 **Waarom:** de batch-/normalisatie-helpers stonden massaal gekopieerd over de
@@ -13,7 +63,7 @@ unique-conflict i.p.v. update, verstopt onder een naam die "upsert" belooft.
 **Wat:**
 - Nieuwe gedeelde modules onder [`import/lib/`](../import/lib/):
   - [`supabase_helpers.py`](../import/lib/supabase_helpers.py) — `create_supabase_client`,
-    `upsert_batch(sb, …, *, mode="upsert"|"insert", on_conflict=…)`, `insert_batch`,
+    `upsert_batch(sb, …, *, mode="upsert"|"insert", on_conflict=…)`,
     `batch_delete`, `batch_select`. `sb` is expliciete eerste parameter (testbaar).
   - [`normalize.py`](../import/lib/normalize.py) — `norm`,
     `clean_value(*, date_fmt=…)`, `clean_gln(*, strict=…)`.

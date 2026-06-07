@@ -17,6 +17,26 @@ export function formatDate(date: string | null | undefined): string {
   }).format(new Date(date))
 }
 
+/** Format a date + time in NL: 07-06-2026 14:03 (of 14:03:25 met `seconds`). */
+export function formatDateTime(
+  date: string | null | undefined,
+  opts?: { seconds?: boolean }
+): string {
+  if (!date) return '—'
+  const d = new Date(date)
+  const datum = d.toLocaleDateString('nl-NL', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  })
+  const tijd = d.toLocaleTimeString('nl-NL', {
+    hour: '2-digit',
+    minute: '2-digit',
+    ...(opts?.seconds ? { second: '2-digit' } : {}),
+  })
+  return `${datum} ${tijd}`
+}
+
 /** Format a percentage: 21,5% */
 export function formatPercentage(pct: number | null | undefined): string {
   if (pct == null) return '—'

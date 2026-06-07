@@ -1,6 +1,5 @@
 """Import ALL orders: add missing debiteuren first, then orders + lines."""
 import pandas as pd
-import numpy as np
 import re
 from supabase import create_client
 from config import SUPABASE_URL, SUPABASE_KEY

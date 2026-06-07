@@ -1,18 +1,11 @@
+import { isoWeekStringVanIso } from '@/lib/utils/iso-week'
 import type { ConfectiePlanningForwardRow } from '../queries/confectie-planning'
 
 const GEEN_LANE = '__geen_lane__' as const
 
-/** ISO-weeksleutel "YYYY-Www" uit een YYYY-MM-DD datum (canoniek algoritme). */
+/** ISO-weeksleutel "YYYY-Www" uit een YYYY-MM-DD datum (UTC-kern). */
 export function isoWeekKey(iso: string): string {
-  const d = new Date(iso + 'T00:00:00')
-  // Zet d naar de donderdag van diezelfde ISO-week (bepaalt het ISO-jaar)
-  const dow = d.getDay() || 7 // zo=7, ma=1, ... za=6
-  d.setDate(d.getDate() + 4 - dow)
-  const jaar = d.getFullYear()
-  const yearStart = new Date(jaar, 0, 1)
-  const diffDagen = Math.round((d.getTime() - yearStart.getTime()) / 86400000)
-  const week = Math.ceil((diffDagen + 1) / 7)
-  return `${jaar}-W${String(week).padStart(2, '0')}`
+  return isoWeekStringVanIso(iso) ?? ''
 }
 
 export function groepeerPerLaneEnWeek(

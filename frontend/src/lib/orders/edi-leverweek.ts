@@ -40,8 +40,8 @@ export function vergelijkLeverweek(
 ): LeverweekVergelijking {
   if (!gewenstIso || !haalbaarIso) return { relatie: 'onbekend', weken: 0 }
   const diff = verzendWeekDiff(
-    new Date(gewenstIso + 'T00:00:00'),
-    new Date(haalbaarIso + 'T00:00:00'),
+    new Date(gewenstIso + 'T00:00:00Z'),
+    new Date(haalbaarIso + 'T00:00:00Z'),
   )
   if (diff === 0) return { relatie: 'gelijk', weken: 0 }
   if (diff > 0) return { relatie: 'later', weken: diff }

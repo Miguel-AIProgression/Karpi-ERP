@@ -9,31 +9,30 @@
 // Verandert ooit de mapping van afleverdatum → verzendweek (bv. shift van 1 week
 // voor specifieke vervoerders), dan gebeurt dat hier en nergens anders.
 
-/** ISO-week + ISO-jaar (week 1 hoort bij het jaar dat de donderdag bevat). */
-export function isoWeek(d: Date): { jaar: number; week: number } {
-  const x = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
-  const dagNum = x.getUTCDay() || 7 // 1..7 met ma=1, zo=7
-  x.setUTCDate(x.getUTCDate() + 4 - dagNum)
-  const jaarStart = new Date(Date.UTC(x.getUTCFullYear(), 0, 1))
-  const week = Math.ceil(((x.getTime() - jaarStart.getTime()) / 86_400_000 + 1) / 7)
-  return { jaar: x.getUTCFullYear(), week }
-}
+import {
+  isoWeekJaar,
+  isoWeekMaandag,
+  lokaleDatumAlsUtc,
+  type IsoWeekJaar,
+} from '@/lib/utils/iso-week'
 
-/** Geeft maandag van de ISO-week waarin `d` valt (lokale tijd, midnacht). */
-export function isoMaandag(d: Date): Date {
-  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate())
-  const dag = x.getDay() // 0 = zo, 1 = ma, ..., 6 = za
-  const offset = dag === 0 ? -6 : 1 - dag
-  x.setDate(x.getDate() + offset)
-  return x
-}
+// De ISO-week-rekenkern woont in `lib/utils/iso-week.ts` (UTC-correct). Hier
+// blijven alleen de Karpi-domeinhelpers (NL-labels, pick-week-regels). De
+// onderstaande re-exports houden bestaande consumenten (o.a. buckets.ts) en de
+// verzendweek-regressietest werkend zonder eigen weekberekening.
+
+/** ISO-week + ISO-jaar van een Date. Domein-alias voor `isoWeekJaar` (UTC). */
+export const isoWeek = isoWeekJaar
+
+/** Maandag (UTC-midnacht) van de ISO-week waarin `d` valt. Alias voor de kern. */
+export const isoMaandag = isoWeekMaandag
 
 /** Verzendweek voor een order. Mapt 1:1 op de ISO-week van afleverdatum. */
 export function verzendWeekVoor(
   afleverdatumIso: string | null
-): { jaar: number; week: number } | null {
+): IsoWeekJaar | null {
   if (!afleverdatumIso) return null
-  return isoWeek(new Date(afleverdatumIso + 'T00:00:00'))
+  return isoWeekJaar(new Date(afleverdatumIso + 'T00:00:00Z'))
 }
 
 /** Sorteersleutel "YYYY-Www" voor stabiele sortering over jaarwisseling. */
@@ -114,8 +113,8 @@ export function verzendWeekRelatief(
   vandaag: Date = new Date()
 ): string | null {
   if (!afleverdatumIso) return null
-  const doel = new Date(afleverdatumIso + 'T00:00:00')
-  const diff = verzendWeekDiff(vandaag, doel)
+  const doel = new Date(afleverdatumIso + 'T00:00:00Z')
+  const diff = verzendWeekDiff(lokaleDatumAlsUtc(vandaag), doel)
   if (diff < 0) {
     const n = -diff
     return `${n} ${n === 1 ? 'week' : 'weken'} geleden`
@@ -136,9 +135,9 @@ export function pickWeekVoor(
   afleverdatumIso: string | null
 ): { jaar: number; week: number } | null {
   if (!afleverdatumIso) return null
-  const datum = new Date(afleverdatumIso + 'T00:00:00')
+  const datum = new Date(afleverdatumIso + 'T00:00:00Z')
   const ma = isoMaandag(datum)
-  ma.setDate(ma.getDate() - 7)
+  ma.setUTCDate(ma.getUTCDate() - 7)
   return isoWeek(ma)
 }
 
@@ -180,7 +179,7 @@ export function pickStatusVoor(
 ): PickStatus {
   const pick = pickWeekVoor(afleverdatumIso)
   if (!pick) return 'geen_datum'
-  const huidig = isoWeek(vandaag)
+  const huidig = isoWeek(lokaleDatumAlsUtc(vandaag))
   const diff = (pick.jaar - huidig.jaar) * 53 + (pick.week - huidig.week)
   if (diff < 0) return 'achterstallig'
   if (diff === 0) return 'deze_week'
