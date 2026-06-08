@@ -135,6 +135,8 @@ async function fetchOpenOrderHeaders(): Promise<OrderHeaderRij[]> {
     )
     .neq('status', 'Verzonden')
     .neq('status', 'Geannuleerd')
+    // R1: productie-only orders horen niet in Pick & Ship (afhandeling in Basta)
+    .eq('alleen_productie', false)
     .order('afleverdatum', { ascending: true })
     .order('order_nr', { ascending: true })
 

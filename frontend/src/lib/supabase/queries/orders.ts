@@ -76,6 +76,10 @@ export interface OrderDetail extends OrderRow {
   bevestigd_door: string | null
   bevestiging_email: string | null
   klant_email: string | null
+  /** Mig 327 / ADR-0029: TRUE = productie-only order uit Basta (alleen snijden+
+   *  confectie in RugFlow; verzending/facturatie in Basta). Voedt het
+   *  BastaAfhandelingPaneel op order-detail. Voor gewone orders FALSE. */
+  alleen_productie: boolean
 }
 
 export interface OrderRegelSnijplan {
@@ -200,9 +204,14 @@ export async function fetchOrders(params: {
   if (search) {
     const s = sanitizeSearch(search)
     if (s) {
-      query = query.or(
-        `order_nr.ilike.%${s}%,klant_referentie.ilike.%${s}%,klant_naam.ilike.%${s}%`
-      )
+      // Productie-only orders (Basta) zoekbaar op hun oude Basta-ordernummer.
+      // `oud_order_nr` is een BIGINT — exact-match alleen toevoegen bij een
+      // puur-numerieke term, anders gooit PostgREST een typefout op de kolom.
+      const numeriek = /^\d+$/.test(s) ? s : null
+      const orFilter = numeriek
+        ? `order_nr.ilike.%${s}%,klant_referentie.ilike.%${s}%,klant_naam.ilike.%${s}%,oud_order_nr.eq.${numeriek}`
+        : `order_nr.ilike.%${s}%,klant_referentie.ilike.%${s}%,klant_naam.ilike.%${s}%`
+      query = query.or(orFilter)
     }
   }
 

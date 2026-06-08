@@ -15,6 +15,7 @@ import { DocumentenCompact } from '@/components/documenten/documenten-compact'
 import { EdiLeverweekBevestigen } from '@/components/orders/edi-leverweek-bevestigen'
 import { isLeverweekTeBevestigen } from '@/lib/orders/edi-leverweek'
 import { DebiteurBevestigenWidget } from '@/components/orders/debiteur-bevestigen-widget'
+import { BastaAfhandelingPaneel } from '@/components/orders/basta-afhandeling-paneel'
 
 function EmailInhoudPanel({ body }: { body: string }) {
   const [open, setOpen] = useState(false)
@@ -91,6 +92,14 @@ export function OrderDetailPage() {
       />
 
       <DocumentenCompact kind="order" parentId={order.id} className="mb-3" />
+
+      {/* R1: productie-only orders (Basta) tonen bovenaan een afhandeling-hint.
+          Rendert null voor gewone orders (gouden regel). */}
+      <BastaAfhandelingPaneel
+        alleenProductie={order.alleen_productie}
+        oudOrderNr={order.oud_order_nr ?? null}
+        status={order.status}
+      />
 
       <OrderHeader order={order} locked={computeOrderLock(regels) === 'full'} />
 
