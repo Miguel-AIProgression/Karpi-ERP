@@ -140,7 +140,7 @@ Klanten/afnemers. PK = debiteur_nr uit het oude systeem.
 |-------|------|-------------|
 | debiteur_nr | INTEGER PK | Uit oud systeem, ook logo-bestandsnaam |
 | naam | TEXT | Bedrijfsnaam (uppercase) |
-| status | TEXT | 'Actief' of 'Inactief' |
+| status | TEXT **NOT NULL** | 'Actief' of 'Inactief'. **NOT NULL** (live-DB geverifieerd 2026-06-08 — een insert met NULL faalt met 23502). De gedeelde debiteur-matcher behandelt NULL/≠'Inactief' als actief (`ACTIEF_OR_FILTER`); verzameldebiteur 900000 staat op 'Inactief'. |
 | adres, postcode, plaats, land | TEXT | Hoofdadres |
 | telefoon | TEXT | |
 | fact_naam, fact_adres, fact_postcode, fact_plaats | TEXT | Factuuradres |
@@ -448,7 +448,7 @@ Productregels per order. artikelnr nullable voor service-items.
 | maatwerk_diameter_cm | INTEGER | Diameter voor ronde vormen |
 | maatwerk_kwaliteit_code | TEXT | Kwaliteitscode (voor groepering zonder artikelnr) |
 | maatwerk_kleur_code | TEXT | Kleurcode |
-| productie_groep | TEXT | Groepering voor snijplanning (kwaliteit+kleur) |
+| ~~productie_groep~~ | — | **BESTAAT (NOG) NIET** — V2-backlog (zie mig 278: "er bestaat (nog) geen kolom"). Het concept "groepering voor snijplanning (kwaliteit+kleur)" wordt gerealiseerd via `maatwerk_kwaliteit_code` + `maatwerk_kleur_code` (de view `snijplanning_overzicht` COALESCEt die). NIET in INSERTs gebruiken tot de kolom daadwerkelijk wordt toegevoegd. |
 | snijden_uit_standaardmaat | BOOLEAN NOT NULL DEFAULT false | Mig 327 (ADR-0029). TRUE = stuk wordt uit een standaard-maat kleed gesneden, NIET uit een rol → verschijnt wel in snijden + confectie maar verbruikt geen rollengte (`fetchStukken` sluit het uit van rol-packing). Gekopieerd naar `snijplannen` door `auto_maak_snijplan`/`auto_sync_snijplan_maten` (mig 328). Partiële index `idx_order_regels_uit_standaardmaat`. |
 | vervoerder_code | TEXT FK → vervoerders(code) | Mig 219: per-regel override van order-default vervoerder. NULL = gebruik `effectieve_vervoerder_per_orderregel`-fallback (regel-evaluator → klant-fallback). Wijzigen geblokkeerd door trigger `trg_lock_orderregel_vervoerder` zodra een open zending bestaat. |
 | UK: (order_id, regelnummer) | | |
