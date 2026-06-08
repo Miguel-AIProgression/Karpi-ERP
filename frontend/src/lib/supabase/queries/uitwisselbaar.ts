@@ -42,6 +42,7 @@ export async function fetchUitwisselbareGroepen(): Promise<UitwisselbareGroep[]>
       .in('kwaliteit_code', linkedCodes)
       .eq('actief', true)
       .not('kleur_code', 'is', null)
+      .order('artikelnr')
       .range(offset, offset + PAGE_SIZE - 1)
 
     if (error) throw error
@@ -144,6 +145,7 @@ export async function fetchKoppelbareKwaliteiten(): Promise<KoppelbareKwaliteit[
       .in('kwaliteit_code', codes)
       .eq('actief', true)
       .not('kleur_code', 'is', null)
+      .order('artikelnr')
       .range(offset, offset + PAGE_SIZE - 1)
     if (pError) throw pError
     if (!pData || pData.length === 0) break
