@@ -4,7 +4,7 @@ Dry-run default; --commit roept de RPC import_productie_only_order aan.
 Groepeert regels per Basta-ordernr; rapporteert niet-herkende afwerkingscodes.
 """
 from __future__ import annotations
-import argparse, datetime as dt, os, sys
+import argparse, datetime as dt
 from collections import defaultdict
 from openpyxl import load_workbook
 from lib import snijlijst_parser as P
@@ -122,8 +122,11 @@ def main():
         print("DRY-RUN - niets weggeschreven. Draai met --commit om te importeren.")
         return
 
-    from supabase import create_client
-    sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_KEY"])
+    # Projectstandaard: credentials uit import/.env via config.py (service_role,
+    # bypasst RLS) — zelfde patroon als de overige ~13 import-scripts. Geen
+    # handmatige env-vars nodig.
+    from lib.supabase_helpers import create_supabase_client
+    sb = create_supabase_client()
     nieuw = bestaand = 0
     for oud_nr, rs in per_order.items():
         header = {
