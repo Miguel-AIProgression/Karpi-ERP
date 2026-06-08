@@ -129,6 +129,7 @@ BEGIN
       omschrijving,
       orderaantal,
       te_leveren,
+      korting_pct,
       is_maatwerk,
       maatwerk_kwaliteit_code,
       maatwerk_kleur_code,
@@ -146,6 +147,7 @@ BEGIN
       COALESCE(v_regel->>'omschrijving', 'Maatwerk'),
       COALESCE((v_regel->>'orderaantal')::INTEGER, 1),
       COALESCE((v_regel->>'orderaantal')::INTEGER, 1),  -- te_leveren = orderaantal
+      0,                                                -- korting_pct: 0% (vermoedelijk NOT NULL; facturatie loopt in Basta)
       true,
       v_regel->>'maatwerk_kwaliteit_code',
       v_regel->>'maatwerk_kleur_code',

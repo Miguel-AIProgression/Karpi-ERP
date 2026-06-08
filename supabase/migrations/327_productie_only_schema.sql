@@ -91,19 +91,19 @@ CREATE INDEX IF NOT EXISTS idx_order_regels_uit_standaardmaat
 -- STAP 3: Verzameldebiteur "Oud systeem (productie)" — debiteur_nr 900000
 -- ============================================================================
 --
--- Kolom-verificatie (docs/database-schema.md, debiteuren-sectie, 2026-06-08):
---   Verplicht zonder default: debiteur_nr (INTEGER PK) — gevuld: 900000
---   Verplicht zonder default: naam (TEXT) — er staat geen NOT NULL in de doc
---     maar de kolom-definitie impliceert het voor PK-rijen; gevuld: naam opgegeven
---   NOT NULL MÉT default:
---     gratis_verzending BOOLEAN NOT NULL DEFAULT false → default volstaat
---     afleverwijze TEXT DEFAULT 'Bezorgen'              → default volstaat
---     default_lever_type lever_type NOT NULL DEFAULT 'week' → default volstaat
---     btw_percentage NUMERIC(5,2) DEFAULT 21.00         → default volstaat
+-- Kolom-verificatie (live-DB-correctie 2026-06-08):
+--   debiteur_nr (INTEGER PK), naam (TEXT)        → gevuld.
+--   status TEXT NOT NULL ('Actief'|'Inactief')   → de doc vermeldde GEEN NOT NULL,
+--     maar de live-DB handhaaft die wél (insert met status=NULL faalde met 23502).
+--     Wij zetten 'Inactief': een verzameldebiteur is een schrijf-only fallback en
+--     mag nooit een match-target worden voor inkomende orders — de gedeelde
+--     debiteur-matcher sluit status='Inactief' expliciet uit (ACTIEF_OR_FILTER).
+--   NOT NULL MÉT default (geen waarde nodig): gratis_verzending (false),
+--     afleverwijze ('Bezorgen'), default_lever_type ('week'), btw_percentage (21.00),
+--     klasse ('Bronze'), factuurvoorkeur ('per_zending'), verzend_drempel/-kosten.
 --   Alle overige kolommen (adres, postcode, telefoon, email_*, etc.) zijn nullable.
---   Conclusie: minimale INSERT volstaat; geen extra placeholder-waarden nodig.
 INSERT INTO debiteuren (debiteur_nr, naam, plaats, land, status)
-VALUES (900000, 'OUD SYSTEEM (PRODUCTIE)', 'Aalten', 'NL', NULL)
+VALUES (900000, 'OUD SYSTEEM (PRODUCTIE)', 'Aalten', 'NL', 'Inactief')
 ON CONFLICT (debiteur_nr) DO NOTHING;
 
 -- ============================================================================
