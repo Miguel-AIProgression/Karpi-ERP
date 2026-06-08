@@ -1,5 +1,60 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-08 — Productie-only orders uit Basta (Fase A): import + snijden/confectie, buiten facturatie
+
+**Waarom:** Basta (het oude ERP) heeft een backlog nog-niet-gesneden maatwerk-orders.
+Piet-hein wil die digitaal door RugFlow's snij- + confectie-planning laten lopen
+(gestuurd door de packer/auto-planner, zichtbaar op de snijplanning, gereserveerd op de
+rol) — terwijl factureren, verzenden en labels printen in Basta blijven. RugFlow dient
+hier als snij-/confectie-tracker + opzoek-bord (op het Basta-ordernummer). Dit
+**vervangt** [ADR-0028](adr/0028-maatwerk-voorraad-reservering-migratie.md)'s virtuele
+`migratie_blokkering`: na import + planning worden de echte snijplannen de claim op de
+rollengte (één bron van waarheid). Zie [ADR-0029](adr/0029-productie-only-orders-basta.md).
+
+**Wat — migraties 327-331:**
+- **mig 327** (schema): `orders.alleen_productie BOOLEAN NOT NULL DEFAULT false` (de
+  schakelaar) + CHECK `chk_alleen_productie_bron` (`alleen_productie ⇒
+  bron_systeem='oud_systeem'`); enum `order_status` krijgt terminale waarde
+  **`'Maatwerk afgerond'`**; `order_regels.snijden_uit_standaardmaat` + idem op
+  `snijplannen`; partiële indexen; verzameldebiteur **900000 'OUD SYSTEEM (PRODUCTIE)'**;
+  partiële UNIQUE-index `orders_oud_order_nr_uniek` (idempotentie-sleutel).
+- **mig 328**: `auto_maak_snijplan` + `auto_sync_snijplan_maten` kopiëren
+  `snijden_uit_standaardmaat` naar het snijplan (additief — gewone regels → false).
+- **mig 329**: RPC `import_productie_only_order(p_header JSONB, p_regels JSONB)
+  RETURNS TABLE(order_nr TEXT, was_existing BOOLEAN)` — idempotent op `oud_order_nr`;
+  maakt order (status `'In productie'`, `alleen_productie=true`,
+  `bron_systeem='oud_systeem'`, `order_nr='OUD-<nr>'`) + maatwerk-regels (geen
+  artikelnr/prijs). Geen allocator. Verzameldebiteur 900000 als fallback.
+- **mig 330**: `voltooi_confectie` flipt een productie-only order naar
+  `'Maatwerk afgerond'` zodra ALLE snijplannen confectie-afgerond zijn
+  (`confectie_afgerond_op IS NOT NULL`). Strikt geguard op `alleen_productie=true`;
+  gewone orders ongemoeid.
+- **mig 331**: view `snijplanning_overzicht` + 3 kolommen (`alleen_productie`,
+  `oud_order_nr`, `snijden_uit_standaardmaat`); geen filterwijziging.
+
+**Wat — Python import:**
+- `import/lib/afwerking_mapper.py`: mapt Basta's GROF+FIJN-afwerkingscodes naar
+  FK-veilige `afwerking_types.code` (B/SB/FE/SF/LO/VO/ON/ZO). Niet-herkende codes →
+  `B` (breedband) + gerapporteerd in de dry-run; biasband (DA) → `ON` (stickeren) in V1.
+- `import/import_productie_only.py`: parset `totaalplanning_cleaned_v2.xlsx`, groepeert
+  per Basta-ordernr, zet verzendweek (`WW-2026`) om naar de maandag-datum, roept de RPC
+  aan. Dry-run default; `--commit` voert echt uit.
+
+**Wat — frontend:**
+- Pick & Ship-guard: `fetchOpenOrderHeaders` filtert `alleen_productie=false` → een
+  productie-only order verschijnt nooit in Pick & Ship/facturatie/transport.
+- Zoeken op Basta-nr (`oud_order_nr`) in `fetchOrders`.
+- `BastaAfhandelingPaneel` op order-detail: amber signaal "afhandelen in Basta"
+  (labels/verzenden/factureren), met "Maatwerk afgerond"-tekst zodra terminaal.
+- `fetchStukken` (`_shared/db-helpers.ts`): sluit `snijden_uit_standaardmaat=true`-stukken
+  uit van rol-packing (verbruiken geen rollengte, blijven zichtbaar in snijplanning +
+  confectie).
+
+**Gouden regel:** elke wijziging is geguard op `alleen_productie=true` (resp. de
+standaardmaat-vlag); gewone orders blijven byte-voor-byte ongewijzigd.
+
+**Migraties:** 327-331 (handmatig toepassen). **ADR:** [0029](adr/0029-productie-only-orders-basta.md) (vervangt 0028).
+
 ## 2026-06-07 — Carrier-payload-audit: rauwe HST request/response per poging bewaren
 
 **Waarom:** de rauwe payloads van inkomende kanalen (Shopify, EDI) worden al

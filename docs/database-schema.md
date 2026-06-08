@@ -133,6 +133,9 @@ Fysieke locaties in het magazijn.
 
 ### debiteuren
 Klanten/afnemers. PK = debiteur_nr uit het oude systeem.
+
+> **Verzameldebiteur 900000 'OUD SYSTEEM (PRODUCTIE)'** (mig 327, ADR-0029): fallback-debiteur voor productie-only orders uit Basta waarvan het debiteurnummer niet op een bestaande debiteur matcht.
+
 | Kolom | Type | Toelichting |
 |-------|------|-------------|
 | debiteur_nr | INTEGER PK | Uit oud systeem, ook logo-bestandsnaam |
@@ -340,6 +343,9 @@ Orderheaders. Adressen zijn snapshots (niet FK naar afleveradressen).
 | edi_gewenste_afleverdatum | DATE | EDI-only (mig 309): door de partner gewenste leverdatum (snapshot, verandert nooit). `afleverdatum` mag afwijken zodra de allocator/mig 153 een haalbare datum berekent of de operator bij bevestiging corrigeert. NULL voor niet-EDI of als de partner geen leverdatum meestuurde. |
 | debiteur_zeker | BOOLEAN | Mig 322. FALSE = de debiteur is via een onzekere (fuzzy) strategie geraden en moet handmatig bevestigd worden ("Debiteur te bevestigen"-flow). TRUE (default) = harde treffer of handmatig aangemaakt. Gezet door `create_webshop_order` uit `p_header.debiteur_zeker`. |
 | debiteur_match_bron | TEXT | Mig 322. Welke strategie de debiteur bepaalde (`DebiteurMatchBron` uit `_shared/debiteur-matcher.ts`), bv. `company_name_ilike`, `email`, `env_fallback`. NULL voor handmatig aangemaakte orders. Het "te bevestigen"-predicaat sluit `env_fallback` uit (verzameldebiteur = verwachte eindbestemming). |
+| alleen_productie | BOOLEAN NOT NULL DEFAULT false | Mig 327 (ADR-0029). TRUE = productie-only order uit **Basta**: RugFlow doet alleen snijden + confectie, facturatie/verzending/labels blijven in Basta. CHECK `chk_alleen_productie_bron`: `alleen_productie ⇒ bron_systeem='oud_systeem'`. Guards lezen deze vlag (Pick & Ship-uitsluiting, terminale-status-flip). Partiële index `idx_orders_alleen_productie`. |
+
+**Productie-only orders (mig 327, ADR-0029):** `alleen_productie=true`-orders worden uit Basta geïmporteerd via RPC `import_productie_only_order` (status `'In productie'`, `bron_systeem='oud_systeem'`, `order_nr='OUD-<oud_order_nr>'`). Idempotent op `oud_order_nr` (partiële UNIQUE-index `orders_oud_order_nr_uniek`). Ze bereiken de terminale status `'Maatwerk afgerond'` (nooit `'Verzonden'`) en vallen buiten Pick & Ship, facturatie en transport. Debiteur = echte match of verzameldebiteur **900000 'OUD SYSTEEM (PRODUCTIE)'**.
 
 ---
 
@@ -443,6 +449,7 @@ Productregels per order. artikelnr nullable voor service-items.
 | maatwerk_kwaliteit_code | TEXT | Kwaliteitscode (voor groepering zonder artikelnr) |
 | maatwerk_kleur_code | TEXT | Kleurcode |
 | productie_groep | TEXT | Groepering voor snijplanning (kwaliteit+kleur) |
+| snijden_uit_standaardmaat | BOOLEAN NOT NULL DEFAULT false | Mig 327 (ADR-0029). TRUE = stuk wordt uit een standaard-maat kleed gesneden, NIET uit een rol → verschijnt wel in snijden + confectie maar verbruikt geen rollengte (`fetchStukken` sluit het uit van rol-packing). Gekopieerd naar `snijplannen` door `auto_maak_snijplan`/`auto_sync_snijplan_maten` (mig 328). Partiële index `idx_order_regels_uit_standaardmaat`. |
 | vervoerder_code | TEXT FK → vervoerders(code) | Mig 219: per-regel override van order-default vervoerder. NULL = gebruik `effectieve_vervoerder_per_orderregel`-fallback (regel-evaluator → klant-fallback). Wijzigen geblokkeerd door trigger `trg_lock_orderregel_vervoerder` zodra een open zending bestaat. |
 | UK: (order_id, regelnummer) | | |
 
@@ -756,9 +763,10 @@ Tapijt op maat snijden uit rollen.
 | grondstofkosten_m2 | NUMERIC(10,4) | Aan dit stuk toegerekend oppervlak in m² = stuk_m² + aandeel × afval_m². Snapshot. |
 | inkoopprijs_m2 | NUMERIC(10,2) | Snapshot `rol.waarde / rol.oppervlak_m2` op moment van snijden. |
 | opmerkingen | TEXT | |
-| confectie_afgerond_op | TIMESTAMPTZ | Moment waarop confectie klaar is (NULL = nog niet afgerond) |
+| confectie_afgerond_op | TIMESTAMPTZ | Moment waarop confectie klaar is (NULL = nog niet afgerond). Productie-only orders flippen naar `'Maatwerk afgerond'` zodra ÁLLE snijplannen van de order deze gezet hebben (`voltooi_confectie`, mig 330). |
 | ingepakt_op | TIMESTAMPTZ | Moment waarop het stuk is ingepakt voor verzending |
 | locatie | TEXT | Magazijnlocatie waar het ingepakte stuk ligt (vrije tekst bv. "A-12") |
+| snijden_uit_standaardmaat | BOOLEAN NOT NULL DEFAULT false | Mig 327 (ADR-0029). Gekopieerd van `order_regels` door `auto_maak_snijplan`/`auto_sync_snijplan_maten` (mig 328). Uitgesloten van rol-packing (`fetchStukken`) — verbruikt geen rollengte. |
 
 ---
 
@@ -1252,7 +1260,7 @@ Generieke, append-only audit van **rauwe externe payloads** per kanaal, **in- é
 
 | Enum | Waarden |
 |------|---------|
-| order_status | **Klaar voor picken** (mig 257, ADR-0016, default sinds mig 275), **Wacht op maatwerk** (mig 257), Wacht op voorraad, **Wacht op inkoop** (mig 144), **In pickronde** (mig 257), **Deels verzonden** (mig 257), Verzonden, Geannuleerd. Legacy (niet meer geschreven post-mig 275): Nieuw, Actie vereist, Wacht op picken, In snijplan, In productie, Deels gereed, Klaar voor verzending. |
+| order_status | **Klaar voor picken** (mig 257, ADR-0016, default sinds mig 275), **Wacht op maatwerk** (mig 257), Wacht op voorraad, **Wacht op inkoop** (mig 144), **In pickronde** (mig 257), **Deels verzonden** (mig 257), Verzonden, Geannuleerd, **Maatwerk afgerond** (mig 327, ADR-0029 — terminale status uitsluitend voor productie-only orders uit Basta; bereikt zodra alle snijplannen confectie-afgerond zijn; valt buiten Pick & Ship/facturatie/transport). Legacy (niet meer geschreven post-mig 275, behalve `In productie` als import-status voor productie-only orders): Nieuw, Actie vereist, Wacht op picken, In snijplan, In productie, Deels gereed, Klaar voor verzending. |
 | zending_status | Gepland, Picken, Ingepakt, Klaar voor verzending, Onderweg, Afgeleverd (mig 169) |
 | factuur_status | Concept, Verstuurd, Betaald, Herinnering, Aanmaning, Gecrediteerd |
 | factuurvoorkeur | per_zending, wekelijks |
@@ -1278,7 +1286,7 @@ Generieke, append-only audit van **rauwe externe payloads** per kanaal, **in- é
 | rollen_overzicht | Per kwaliteit/kleur: aantal, oppervlak, waarde |
 | recente_orders | Laatste 50 orders met klantnaam |
 | orders_status_telling | Aantal per order_status |
-| snijplanning_overzicht | Snijplannen met order-, klant- en rolgegevens voor de planningsweergave. `snij_lengte_cm`/`snij_breedte_cm` zijn **nominale (bestelde) maten**. Migratie 143 voegt `marge_cm` toe (single-source via `stuk_snij_marge_cm()` migratie 126; ZO +6, rond/ovaal +5, max bij combi) en `geroteerd` toe — beide nodig voor de SnijVolgorde-transformer ([frontend/src/lib/snij-volgorde/derive.ts](../frontend/src/lib/snij-volgorde/derive.ts)) die de rol-uitvoer modal voedt. Fysieke snij-maat = bestelde + marge. Mig 290: `WHERE o.status <> 'Geannuleerd'` (defense-in-depth bij ADR-0023; bewust NIET ook `'Verzonden'` — de view voedt ook de fysieke rol-uitvoer + packer). |
+| snijplanning_overzicht | Snijplannen met order-, klant- en rolgegevens voor de planningsweergave. `snij_lengte_cm`/`snij_breedte_cm` zijn **nominale (bestelde) maten**. Migratie 143 voegt `marge_cm` toe (single-source via `stuk_snij_marge_cm()` migratie 126; ZO +6, rond/ovaal +5, max bij combi) en `geroteerd` toe — beide nodig voor de SnijVolgorde-transformer ([frontend/src/lib/snij-volgorde/derive.ts](../frontend/src/lib/snij-volgorde/derive.ts)) die de rol-uitvoer modal voedt. Fysieke snij-maat = bestelde + marge. Mig 290: `WHERE o.status <> 'Geannuleerd'` (defense-in-depth bij ADR-0023; bewust NIET ook `'Verzonden'` — de view voedt ook de fysieke rol-uitvoer + packer). Mig 331 (ADR-0029): +3 kolommen `alleen_productie`, `oud_order_nr`, `snijden_uit_standaardmaat` zodat productie-only orders (status `In productie`/`Maatwerk afgerond`) zichtbaar blijven; geen filterwijziging. |
 | confectie_overzicht | Confectie-orders met scan- en voortgangsstatus |
 | confectie_planning_overzicht | Confectie-orders (status Wacht op materiaal / In productie) met klant, order, maatwerk-afmetingen en strekkende meter voor planningsweergave |
 | confectie_planning_forward | Vooruitkijkende confectie-planning — alle open maatwerk-snijplannen (Gepland..In confectie/Ingepakt) met afgeleide type_bewerking + confectie_startdatum + backward-compat aliassen. Kwaliteit/kleur valt terug van rol → product → maatwerk-snapshot (mig 243) |
@@ -1335,7 +1343,7 @@ Mig 174, aangepast in mig 176. Read-only view die de `/logistiek/vervoerders`-ov
 | `voltooi_snijplan_rol(p_rol_id BIGINT, p_gesneden_door TEXT, p_override_rest_lengte INTEGER, p_reststukken JSONB, p_snijplan_ids BIGINT[])` | Markeert snijplannen als gesneden + maakt reststukken aan. Met `p_snijplan_ids` gevuld: alleen die IDs → Gesneden; overige `Snijden` stukken op de rol → terug naar `Wacht` (rol_id/positie gereset) voor volgende optimalisatie-run. Zet ook `rollen.snijden_voltooid_op=NOW()`. Reststukken: geef `p_reststukken` JSONB array mee → één rol per rechthoek ≥70×140 cm. Returns: TABLE(reststuk_id, reststuk_rolnummer, reststuk_lengte_cm). (migraties 060, 066) |
 | `start_snijden_rol(p_rol_id BIGINT, p_gebruiker TEXT)` | Idempotent: zet `rollen.snijden_gestart_op=NOW()` en `snijden_gestart_door` als nog niet gevuld. Voor tijdanalyse snijduur. (migratie 064) |
 | `auto_markeer_maatwerk()` | Trigger: markeert nieuwe order_regels automatisch als is_maatwerk=true wanneer product_type='rol' |
-| `auto_maak_snijplan()` | Trigger: maakt automatisch een snijplan aan (status 'Wacht') voor nieuwe maatwerk order_regels |
+| `auto_maak_snijplan()` | Trigger: maakt automatisch een snijplan aan (status 'Wacht') voor nieuwe maatwerk order_regels. Mig 328 (ADR-0029): kopieert `order_regels.snijden_uit_standaardmaat` naar het snijplan (additief — gewone regels → false). |
 | `keur_snijvoorstel_goed(voorstel_id BIGINT)` | Keurt een snijvoorstel goed: wijst rollen toe aan snijplannen, zet status 'Gepland', met concurrency guards |
 | `verwerp_snijvoorstel(voorstel_id BIGINT)` | Verwerpt een concept-snijvoorstel zonder wijzigingen |
 | `kleuren_voor_kwaliteit(p_kwaliteit TEXT)` | Retourneert kleuren met m²-prijs, kostprijs, gewicht en max breedte voor een kwaliteit. **Sinds mig 181: gewicht_per_m2_kg komt uit `kwaliteiten` (één bron-van-waarheid)**; voorheen uit `maatwerk_m2_prijzen` per kleur. |
@@ -1356,7 +1364,8 @@ Mig 174, aangepast in mig 176. Read-only view die de `/logistiek/vervoerders`-ov
 | `acquire_snijplan_lock(kwaliteit TEXT, kleur TEXT)` | Atomisch lock verkrijgen voor auto-planning (5 min staleness timeout) |
 | `release_snijplan_lock(kwaliteit TEXT, kleur TEXT)` | Lock vrijgeven na auto-planning |
 | `start_confectie(p_snijplan_id BIGINT)` | Zet snijplan-status op 'In confectie'. Idempotent. Valideert dat status vooraf Gesneden/In confectie is. |
-| `voltooi_confectie(p_snijplan_id BIGINT, p_afgerond BOOLEAN DEFAULT true, p_ingepakt BOOLEAN DEFAULT false, p_locatie TEXT DEFAULT NULL)` | Rondt confectie af. p_afgerond=false clears + status terug naar Gesneden. p_ingepakt=true zet status Gereed + ingepakt_op. p_locatie="" wist locatie; NULL laat ongemoeid. |
+| `voltooi_confectie(p_snijplan_id BIGINT, p_afgerond BOOLEAN DEFAULT true, p_ingepakt BOOLEAN DEFAULT false, p_locatie TEXT DEFAULT NULL)` | Rondt confectie af. p_afgerond=false clears + status terug naar Gesneden. p_ingepakt=true zet status Gereed + ingepakt_op. p_locatie="" wist locatie; NULL laat ongemoeid. Mig 330 (ADR-0029): na-stap flipt een productie-only order (`alleen_productie=true`) naar `'Maatwerk afgerond'` zodra ÁLLE snijplannen van de order confectie-afgerond zijn (`confectie_afgerond_op IS NOT NULL`). Strikt geguard — gewone orders ongemoeid. |
+| `import_productie_only_order(p_header JSONB, p_regels JSONB) → TABLE(order_nr TEXT, was_existing BOOLEAN)` | Mig 329 (ADR-0029), SECURITY DEFINER. Idempotente import van één Basta-order als productie-only order: maakt `orders`-rij (status `'In productie'`, `alleen_productie=true`, `bron_systeem='oud_systeem'`, `order_nr='OUD-<oud_order_nr>'`) + maatwerk-`order_regels` (`is_maatwerk=true`, geen artikelnr/prijs — facturatie in Basta). Idempotent op `oud_order_nr`: bestaat de order al → `was_existing=true`, niets gemuteerd. Debiteur = echte match of verzameldebiteur **900000**. Géén allocator-aanroep (maatwerk reserveert niet op inkoop); `auto_maak_snijplan` expandeert naar snijplannen. |
 | `update_order_with_lines(p_order_id BIGINT, p_header JSONB, p_regels JSONB)` | Merge-update van order header + regels: UPDATE bestaande regels op `id`, INSERT nieuwe, DELETE regels die uit payload verdwenen zijn. Preserveert `snijplannen.order_regel_id` FK-koppelingen (migratie 074) |
 | `backlog_per_kwaliteit_kleur(p_kwaliteit TEXT, p_kleur TEXT)` | Aggregeert wachtende snijplan-stukken voor real-time levertijd-check: returnt `(totaal_m2, aantal_stukken, vroegste_afleverdatum)`. Match op kleur-varianten (X, X.0). Gebruikt door `check-levertijd` edge function (migratie 080) |
 | `genereer_factuur(p_order_ids BIGINT[])` | Atomair: maakt factuur + regels aan voor 1+ orders van dezelfde debiteur, markeert order_regels.gefactureerd. Retourneert factuur_id. Migratie 119. |
