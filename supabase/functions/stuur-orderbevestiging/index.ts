@@ -23,7 +23,8 @@ const MS_GRAPH_CLIENT_ID  = Deno.env.get('MS_GRAPH_CLIENT_ID')!
 const MS_GRAPH_CLIENT_SECRET = Deno.env.get('MS_GRAPH_CLIENT_SECRET')!
 const FROM_EMAIL          = Deno.env.get('FACTUUR_FROM_EMAIL') ?? Deno.env.get('ORDERBEVESTIGING_FROM_EMAIL')!
 const REPLY_TO            = Deno.env.get('FACTUUR_REPLY_TO') ?? FROM_EMAIL
-const KARPI_LOGO_PATH     = Deno.env.get('KARPI_LOGO_PATH') ?? 'logos/karpi-logo.jpg'
+const KARPI_LOGO_BUCKET   = Deno.env.get('KARPI_LOGO_BUCKET') ?? 'public-assets'
+const KARPI_LOGO_PATH     = Deno.env.get('KARPI_LOGO_PATH') ?? 'karpi-logo.jpg'
 
 // ── Taal van de mail: bepaald door het land van het factuuradres ────────────
 // (orders.fact_land, genormaliseerd via de gedeelde SQL-functie normaliseer_land
@@ -56,7 +57,6 @@ const VERTALINGEN: Record<Taal, {
   subtotaal: string
   btwOver: (percentage: string, bedrag: string) => string
   totaalInclBtw: string
-  betalingsconditie: string
   disclaimer: string
   vragen: (email: string, telefoon: string) => string
   groet: string
@@ -76,7 +76,6 @@ const VERTALINGEN: Record<Taal, {
     subtotaal: 'Totaalbedrag excl. btw',
     btwOver: (pct, bedrag) => `${pct}% btw over ${bedrag}`,
     totaalInclBtw: 'Totaalbedrag incl. btw',
-    betalingsconditie: 'Betalingsconditie',
     disclaimer: 'Een geringe maatafwijking van +/- 3% alsmede een kleurafwijking kan optreden.',
     vragen: (email, tel) => `Heeft u vragen over uw order? Neem dan contact met ons op via <a href="mailto:${email}">${email}</a> of ${tel}.`,
     groet: 'Met vriendelijke groet,',
@@ -96,7 +95,6 @@ const VERTALINGEN: Record<Taal, {
     subtotaal: 'Gesamtbetrag exkl. MwSt.',
     btwOver: (pct, bedrag) => `${pct}% MwSt. auf ${bedrag}`,
     totaalInclBtw: 'Gesamtbetrag inkl. MwSt.',
-    betalingsconditie: 'Zahlungsbedingung',
     disclaimer: 'Geringe Maßabweichungen von +/- 3% sowie Farbabweichungen sind möglich.',
     vragen: (email, tel) => `Haben Sie Fragen zu Ihrer Bestellung? Kontaktieren Sie uns über <a href="mailto:${email}">${email}</a> oder ${tel}.`,
     groet: 'Mit freundlichen Grüßen,',
@@ -116,7 +114,6 @@ const VERTALINGEN: Record<Taal, {
     subtotaal: 'Montant total hors TVA',
     btwOver: (pct, bedrag) => `TVA ${pct}% sur ${bedrag}`,
     totaalInclBtw: 'Montant total TVA comprise',
-    betalingsconditie: 'Condition de paiement',
     disclaimer: 'Un léger écart de mesure de +/- 3 % ainsi qu\'une différence de couleur peuvent survenir.',
     vragen: (email, tel) => `Des questions sur votre commande ? Contactez-nous via <a href="mailto:${email}">${email}</a> ou ${tel}.`,
     groet: 'Cordialement,',
@@ -136,7 +133,6 @@ const VERTALINGEN: Record<Taal, {
     subtotaal: 'Total amount excl. VAT',
     btwOver: (pct, bedrag) => `${pct}% VAT over ${bedrag}`,
     totaalInclBtw: 'Total amount incl. VAT',
-    betalingsconditie: 'Payment terms',
     disclaimer: 'A slight size deviation of +/- 3% as well as a colour variation may occur.',
     vragen: (email, tel) => `Questions about your order? Contact us via <a href="mailto:${email}">${email}</a> or ${tel}.`,
     groet: 'Kind regards,',
@@ -201,15 +197,6 @@ function formatBedrag(v: number): string {
 
 function formatBtwPercentage(pct: number): string {
   return Number(pct).toFixed(2)
-}
-
-// Betaalconditie wordt opgeslagen met een leidende numerieke code, bv.
-// "31 - 30 dagen netto" — voor de klant tonen we alleen de leesbare omschrijving
-// (gelijk aan de PDF-generator, zodat e-mail en bijlage niet uit elkaar lopen).
-function strippedBetaalconditie(raw: string | null): string | null {
-  if (!raw) return null
-  const zonderCode = raw.replace(/^\s*\d+\s*-\s*/, '').trim()
-  return zonderCode || raw
 }
 
 const corsHeaders = {
@@ -348,9 +335,12 @@ serve(async (req) => {
   }
 
   // ── Logo ophalen ───────────────────────────────────────────────────────────
+  // Zelfde bucket/pad-conventie als factuur-pdf: bucket 'public-assets',
+  // bestand 'karpi-logo.jpg' (de oude default 'documenten'/'logos/karpi-logo.jpg'
+  // verwees naar een niet-bestaand object, dus het logo verscheen nooit).
   let logoBytes: Uint8Array | undefined
   try {
-    const { data: logoData } = await supabase.storage.from('documenten').download(KARPI_LOGO_PATH)
+    const { data: logoData } = await supabase.storage.from(KARPI_LOGO_BUCKET).download(KARPI_LOGO_PATH)
     if (logoData) logoBytes = new Uint8Array(await logoData.arrayBuffer())
   } catch { /* logo optioneel */ }
 
@@ -372,9 +362,7 @@ serve(async (req) => {
     order_nr: o.order_nr,
     orderdatum: o.orderdatum,
     debiteur_nr: o.debiteur_nr,
-    vertegenwoordiger: vertegenwoordigerNaam
-      ? `${o.vertegenw_code} ${vertegenwoordigerNaam}`
-      : (o.vertegenw_code ?? null),
+    vertegenwoordiger: vertegenwoordigerNaam,
     klant_referentie: o.klant_referentie ?? null,
     verzendweek: verzendweekLabel(o.afleverdatum),
     afleverdatum: o.afleverdatum ?? null,
@@ -426,8 +414,6 @@ serve(async (req) => {
       </p>`
     : ''
 
-  const betaalconditie = strippedBetaalconditie(deb?.betaalconditie ?? null)
-
   const htmlBody = `
 <div style="font-family: Arial, sans-serif; max-width: 600px; color: #333;">
   <p>${v.aanhef(klantNaam)}</p>
@@ -436,9 +422,8 @@ serve(async (req) => {
     <strong>${v.klantnummer}:</strong> ${o.debiteur_nr}<br>
     <strong>${v.ordernummer}:</strong> ${o.order_nr}<br>
     ${o.klant_referentie ? `<strong>${v.referentie}:</strong> ${o.klant_referentie}<br>` : ''}
-    ${vertegenwoordigerNaam ? `<strong>${v.vertegenwoordiger}:</strong> ${o.vertegenw_code} ${vertegenwoordigerNaam}<br>` : ''}
+    ${vertegenwoordigerNaam ? `<strong>${v.vertegenwoordiger}:</strong> ${vertegenwoordigerNaam}<br>` : ''}
     ${o.afleverdatum ? `<strong>${v.levering}:</strong> ${verzendweekLabel(o.afleverdatum) ?? ''}<br>` : ''}
-    ${betaalconditie ? `<strong>${v.betalingsconditie}:</strong> ${betaalconditie}<br>` : ''}
   </p>
   ${afleveradresHtml}
   <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin: 12px 0;">

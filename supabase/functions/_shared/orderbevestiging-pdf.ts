@@ -111,6 +111,19 @@ function drawText(
   page.drawText(text ?? '', { x, y, font, size, color })
 }
 
+function drawTextRight(
+  page: PDFPage,
+  text: string,
+  rightX: number,
+  y: number,
+  font: PDFFont,
+  size: number,
+  color = rgb(0, 0, 0),
+) {
+  const w = font.widthOfTextAtSize(text ?? '', size)
+  page.drawText(text ?? '', { x: rightX - w, y, font, size, color })
+}
+
 function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): string[] {
   const words = text.split(' ')
   const lines: string[] = []
@@ -139,48 +152,34 @@ export async function genereerOrderbevestigingPDF(input: OrderbevestigingInput):
   const pageH = mm(297)
   const mL = mm(20), mR = mm(20), mT = mm(20)
 
-  const TERRACOTTA = rgb(0.73, 0.29, 0.18)
+  const KARPI_ORANJE = rgb(0.76, 0.53, 0.22)
   const SLATE      = rgb(0.35, 0.40, 0.45)
   const BLACK      = rgb(0, 0, 0)
-  const WHITE      = rgb(1, 1, 1)
-  const LIGHT_GRAY = rgb(0.95, 0.95, 0.95)
 
   let page = doc.addPage([pageW, pageH])
-  let y = pageH - mT
 
-  // ── Logo ──────────────────────────────────────────────────────────────────
-  if (input.logo_bytes) {
-    try {
-      const img = await doc.embedJpg(input.logo_bytes)
-      const logoH = mm(18)
-      const logoW = img.width * (logoH / img.height)
-      page.drawImage(img, { x: mL, y: y - logoH, width: logoW, height: logoH })
-    } catch { /* logo optioneel */ }
+  // ── Merk-header: gecentreerd logo + "KARPI BV" rechtsboven (mirrort factuur-pdf) ──
+  const headerTopY = pageH - mm(8)
+  const logoImg = input.logo_bytes
+    ? await doc.embedJpg(input.logo_bytes).catch(() => null)
+    : null
+  if (logoImg) {
+    const logoH = mm(18)
+    const logoW = logoImg.width * (logoH / logoImg.height)
+    const logoX = (pageW - logoW) / 2
+    page.drawImage(logoImg, { x: logoX, y: headerTopY - logoH, width: logoW, height: logoH })
   }
 
-  // ── Bedrijfsgegevens rechts ───────────────────────────────────────────────
-  const bX = pageW - mR - mm(75)
-  let bY = y
-  drawText(page, input.bedrijf.bedrijfsnaam, bX, bY, fontB, 8, SLATE)
-  bY -= 11
-  drawText(page, input.bedrijf.adres, bX, bY, fontR, 7, SLATE)
-  bY -= 10
-  drawText(page, `${input.bedrijf.postcode}  ${input.bedrijf.plaats}`, bX, bY, fontR, 7, SLATE)
-  bY -= 10
-  drawText(page, `Tel: ${input.bedrijf.telefoon}`, bX, bY, fontR, 7, SLATE)
-  bY -= 10
-  drawText(page, input.bedrijf.email, bX, bY, fontR, 7, SLATE)
-  bY -= 10
-  drawText(page, `KvK: ${input.bedrijf.kvk}   BTW: ${input.bedrijf.btw_nummer}`, bX, bY, fontR, 7, SLATE)
-  bY -= 10
-  drawText(page, `IBAN: ${input.bedrijf.iban}`, bX, bY, fontR, 7, SLATE)
+  const rightX = pageW - mR
+  const karpiSize = 10
+  drawTextRight(page, input.bedrijf.bedrijfsnaam, rightX, pageH - mm(11), fontB, karpiSize, KARPI_ORANJE)
+  drawTextRight(page, `${input.bedrijf.adres}, ${input.bedrijf.postcode} ${input.bedrijf.plaats}`, rightX, pageH - mm(15), fontR, 6, SLATE)
+  drawTextRight(page, `t ${input.bedrijf.telefoon}`, rightX, pageH - mm(19), fontR, 6, SLATE)
+  drawTextRight(page, `e ${input.bedrijf.email} | i ${input.bedrijf.website}`, rightX, pageH - mm(23), fontR, 6, SLATE)
 
-  y -= mm(28)
-
-  // ── Titel ─────────────────────────────────────────────────────────────────
-  page.drawRectangle({ x: mL, y: y - mm(8), width: pageW - mL - mR, height: mm(8), color: TERRACOTTA })
-  drawText(page, 'ORDERBEVESTIGING', mL + 4, y - mm(5.5), fontB, 11, WHITE)
-  y -= mm(12)
+  // ── Documenttype-label (plain, zoals "FACTUUR"/"HERBEVESTIGING" in oude lay-out) ──
+  drawText(page, 'ORDERBEVESTIGING', mL, pageH - mm(30), fontB, 9)
+  let y = pageH - mm(38)
 
   // ── Order info blok ───────────────────────────────────────────────────────
   const col2 = mL + mm(95)
@@ -262,16 +261,17 @@ export async function genereerOrderbevestigingPDF(input: OrderbevestigingInput):
     { label: 'Bedrag',       ...colBedrag,  align: 'right' },
   ]
 
-  page.drawRectangle({ x: mL, y: y - mm(5.5), width: pageW - mL - mR, height: mm(5.5), color: SLATE })
+  page.drawLine({ start: { x: mL, y }, end: { x: pageW - mR, y }, thickness: 0.5, color: BLACK })
   for (const col of colDefs) {
     const txtW = fontB.widthOfTextAtSize(col.label, 7)
     const xPos = col.align === 'right' ? col.x + col.w - txtW : col.x + 2
-    drawText(page, col.label, xPos, y - mm(4), fontB, 7, WHITE)
+    drawText(page, col.label, xPos, y - mm(4), fontB, 7)
   }
-  y -= mm(7)
+  y -= mm(6)
+  page.drawLine({ start: { x: mL, y }, end: { x: pageW - mR, y }, thickness: 0.5, color: BLACK })
+  y -= mm(1)
 
   // ── Regels ────────────────────────────────────────────────────────────────
-  let rowAlt = false
   const ROW_H = mm(6.5)
   const EXTRA_LINE_H = mm(4.5)
 
@@ -296,17 +296,12 @@ export async function genereerOrderbevestigingPDF(input: OrderbevestigingInput):
       y = pageH - mT
     }
 
-    if (rowAlt) {
-      page.drawRectangle({ x: mL, y: y - totalH, width: pageW - mL - mR, height: totalH, color: LIGHT_GRAY })
-    }
-    rowAlt = !rowAlt
-
     const textY = y - mm(4.5)
 
     drawText(page, String(regel.regelnummer), mL + 2, textY, fontR, 7.5)
 
     if (regel.artikelnr && !isVerzend) {
-      drawText(page, regel.artikelnr, colArt.x + 2, textY, fontR, 7, rgb(0.73, 0.29, 0.18))
+      drawText(page, regel.artikelnr, colArt.x + 2, textY, fontR, 7)
     }
 
     if (regel.karpi_code) {
@@ -405,7 +400,7 @@ export async function genereerOrderbevestigingPDF(input: OrderbevestigingInput):
   for (let i = 0; i < pageCount; i++) {
     const p = doc.getPage(i)
     const footerY = mm(10)
-    drawText(p, `${input.bedrijf.bedrijfsnaam} — ${input.bedrijf.website}   |   ${input.bedrijf.iban}   |   BTW: ${input.bedrijf.btw_nummer}`, mL, footerY, fontR, 6.5, SLATE)
+    drawText(p, `${input.bedrijf.bedrijfsnaam}   |   KvK ${input.bedrijf.kvk}   |   BTW ${input.bedrijf.btw_nummer}   |   IBAN ${input.bedrijf.iban}   |   BIC ${input.bedrijf.bic}`, mL, footerY, fontR, 6.5, SLATE)
     if (pageCount > 1) {
       const pgTxt = `Pagina ${i + 1} van ${pageCount}`
       drawText(p, pgTxt, pageW - mR - fontR.widthOfTextAtSize(pgTxt, 6.5), footerY, fontR, 6.5, SLATE)

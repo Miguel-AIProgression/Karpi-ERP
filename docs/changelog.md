@@ -54,6 +54,41 @@ en [`_shared/orderbevestiging-pdf.ts`](../supabase/functions/_shared/orderbevest
 NL, met vertegenwoordiger + regelkorting + betaalconditie) — `bevestigd_at`/
 `bevestigd_door`/`bevestiging_email`-bijwerking nadien teruggedraaid.
 
+### Vervolg dezelfde dag — correcties + PDF-redesign + logo-fix
+
+Na gebruikersfeedback op de eerste versie:
+- **Vertegenwoordiger** toont nu uitsluitend de naam (bv. "Astrid Roth"), niet
+  langer "10 Astrid Roth" — de medewerkerscode wordt niet meer meegestuurd naar
+  e-mail of PDF.
+- **Betalingsconditie** is nu **uitsluitend op de PDF-bijlage** zichtbaar; is
+  volledig verwijderd uit de e-mailtekst (incl. de bijbehorende `betalingsconditie`-
+  sleutel uit de 4-talen-`VERTALINGEN`-dictionary en de orphaned helper in
+  `index.ts` — de enige overgebleven `strippedBetaalconditie` leeft in
+  `_shared/orderbevestiging-pdf.ts`, waar hij ook daadwerkelijk gebruikt wordt).
+- **Logo verscheen nooit op de PDF — root cause gevonden en gefixt:** de oude
+  default `KARPI_LOGO_PATH = 'logos/karpi-logo.jpg'` in combinatie met bucket
+  `'documenten'` verwees naar een niet-bestaand storage-object (geverifieerd via
+  `storage.objects`: het bestand staat op `public-assets/karpi-logo.jpg`, 25KB).
+  De try/catch slikte de downloadfout stil in, dus niemand merkte het. **Fix:**
+  `KARPI_LOGO_BUCKET = 'public-assets'` / `KARPI_LOGO_PATH = 'karpi-logo.jpg'`,
+  zelfde conventie als het al-werkende `factuur-pdf/index.ts`.
+- **PDF-redesign: het oude-systeem-template (`ob26499970.pdf`, "HERBEVESTIGING")
+  nagebootst** in `_shared/orderbevestiging-pdf.ts`. De gekleurde/blokkerige
+  stijl (terracotta titelbalk, slate tabel-headerbalk, zebra-gestreepte rijen)
+  is vervangen door een rustigere, tekstgerichte lay-out die de merk-header van
+  `_shared/factuur-pdf.ts` spiegelt: gecentreerd Karpi-logo bovenaan, "KARPI BV"
+  + adresgegevens rechtsboven in `KARPI_ORANJE` (`rgb(0.76, 0.53, 0.22)` —
+  afgeleid uit de gouden lijnkleur van het logo, dezelfde constante als in de
+  factuur), een platte "ORDERBEVESTIGING"-labelregel (i.p.v. gekleurde balk,
+  analoog aan "FACTUUR"/"HERBEVESTIGING" in het oude template), en een
+  tabel-opmaak met dunne zwarte lijnen i.p.v. gekleurde balken/zebra-striping.
+  Brengt orderbevestiging en factuur visueel in lijn — beide stammen uit
+  dezelfde oude-systeem-"Custom ERP"-templatefamilie.
+
+**Getest:** opnieuw end-to-end testverzending op ORD-2026-0001 naar
+phdobbe@gmail.com (na deploy) — `bevestigd_at`/`bevestigd_door`/
+`bevestiging_email` nadien weer teruggedraaid naar `NULL`.
+
 ## 2026-06-08 — Factuur-/orderbevestigingsmail van Resend naar Microsoft Graph (M365)
 
 **Waarom:** we gaan daadwerkelijk facturen en orderbevestigingen per mail versturen
