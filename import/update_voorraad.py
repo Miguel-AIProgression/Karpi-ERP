@@ -9,7 +9,10 @@ gewoon als argument mee.
 Beslissingen (vastgelegd met Karpi, ongewijzigd):
   - Scope: ALLEEN product_type='vast'. Staaltje/rol/overig NIET aangeraakt.
   - Sleutel: kolom A 'Artikelnr' -> producten.artikelnr (PK).
-  - Waarde:  kolom H 'Vrije voorraad'. Backorder/gereserveerd op 0.
+  - Waarde:  kolom D 'Voorraad' (FYSIEK). Backorder/gereserveerd als baseline
+    op 0; gereserveerd/vrije_voorraad worden voor producten MET open orders
+    daarna hersteld door herallocateer_open_orders.py (RugFlow trekt de orders
+    zelf af -> geen dubbel-aftrekken).
   - MAATWERK-regels (Karpi-code bevat 'MAATWERK') uitgesloten.
   - Rode regels (rood font) = "niet meer inladen". Karpi markeert deze
     PROGRESSIEF ALFABETISCH per lijst, dus de uitsluitlijst is een UNION:
@@ -44,7 +47,7 @@ RAPPORT_DIR = BASE_DIR / "import" / "rapporten"
 
 # Kolom-indices in de .xls (header op rij index 1, data vanaf rij 2)
 COL_ARTNR, COL_KARPI, COL_OMS = 0, 1, 2
-COL_VRIJE_VOORRAAD = 7
+COL_VOORRAAD = 3  # kolom D 'Voorraad' (FYSIEK) — bewust NIET H 'Vrije voorraad' (7)
 
 _QC_RE = re.compile(r"^([A-Z]{3,4})(\d{2})")
 _VAST_RE = re.compile(r"^[A-Z]{3,4}\d{2}XX")
@@ -122,7 +125,7 @@ def lees_lijst(pad: Path):
             "artikelnr": artnr,
             "karpi_code": karpi,
             "omschrijving": str(sh.cell(r, COL_OMS).value).strip(),
-            "vrije_voorraad": num(sh.cell(r, COL_VRIJE_VOORRAAD).value),
+            "voorraad": num(sh.cell(r, COL_VOORRAAD).value),
             "is_red": is_red(r),
             "is_maatwerk": "MAATWERK" in karpi.upper(),
         })
@@ -222,14 +225,14 @@ def main():
         if artnr in exclude_artnr:
             op_0_uitgesloten.append(artnr)
         elif artnr in actief:
-            updates.append((artnr, max(0, actief[artnr]["vrije_voorraad"])))
+            updates.append((artnr, max(0, actief[artnr]["voorraad"])))
         else:
             op_0_niet_in_lijst.append(artnr)
 
     nieuw_alle = [x for a, x in actief.items() if a not in db]
     nieuw_vast_alle = [x for x in nieuw_alle if is_vaste_maat(x["karpi_code"])]
-    nieuw = [x for x in nieuw_vast_alle if x["vrije_voorraad"] > 0]
-    nieuw_vast_leeg = [x for x in nieuw_vast_alle if x["vrije_voorraad"] <= 0]
+    nieuw = [x for x in nieuw_vast_alle if x["voorraad"] > 0]
+    nieuw_vast_leeg = [x for x in nieuw_vast_alle if x["voorraad"] <= 0]
     nieuw_broadloom = [x for x in nieuw_alle if not is_vaste_maat(x["karpi_code"])]
 
     skip_types = {"staaltje": 0, "rol": 0, "overig": 0}
@@ -265,11 +268,11 @@ def main():
     RAPPORT_DIR.mkdir(exist_ok=True)
     df_nieuw = pd.DataFrame([{
         "artikelnr": x["artikelnr"], "karpi_code": x["karpi_code"],
-        "omschrijving": x["omschrijving"], "voorraad": x["vrije_voorraad"],
+        "omschrijving": x["omschrijving"], "voorraad": x["voorraad"],
     } for x in nieuw])
     df_broadloom = pd.DataFrame([{
         "artikelnr": x["artikelnr"], "karpi_code": x["karpi_code"],
-        "omschrijving": x["omschrijving"], "voorraad_meters": x["vrije_voorraad"],
+        "omschrijving": x["omschrijving"], "voorraad_meters": x["voorraad"],
     } for x in nieuw_broadloom])
     df_op0 = pd.DataFrame({"artikelnr": sorted(op_0_niet_in_lijst)})
     df_nieuw_rood = pd.DataFrame([nieuwe_rode[a] for a in nieuw_rood_extra])
@@ -343,7 +346,7 @@ def main():
         rec_new.append({
             "artikelnr": x["artikelnr"], "karpi_code": x["karpi_code"],
             "omschrijving": x["omschrijving"],
-            "voorraad": x["vrije_voorraad"], "vrije_voorraad": x["vrije_voorraad"],
+            "voorraad": x["voorraad"], "vrije_voorraad": x["voorraad"],
             "backorder": 0, "gereserveerd": 0,
             "kwaliteit_code": kwal, "kleur_code": kleur, "zoeksleutel": zoek,
             "lengte_cm": lengte, "breedte_cm": breedte,
@@ -358,6 +361,8 @@ def main():
               f"{', '.join(sorted(set(_afgeleide_codes(k)[0] for k in zonder_kwal)))})")
 
     print("\nKLAAR. DB bijgewerkt.")
+    print("LET OP: draai nu  python herallocateer_open_orders.py --commit")
+    print("        zodat open orders zich opnieuw tegen de nieuwe voorraad reserveren.")
 
 
 if __name__ == "__main__":
