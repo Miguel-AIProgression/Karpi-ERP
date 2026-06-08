@@ -45,6 +45,23 @@ def test_bouw_insert_record_status_en_velden():
     assert "rol_type" not in rec  # wordt door DB-trigger gezet
 
 
+def test_bouw_insert_record_nullt_onbekende_kwaliteit():
+    r = pd.Series({
+        "rolnummer": "GRA10 01", "artikelnr": "999",
+        "karpi_code": "GRA10400SYN", "omschrijving": "GRANDE 10",
+        "lengte_cm": 1000, "breedte_cm": 400, "oppervlak_m2": 40.0,
+        "vvp_m2": 10.0, "waarde": 400.0,
+        "kwaliteit_code": "GRA", "kleur_code": "10", "zoeksleutel": "GRA_10",
+        "in_magazijn_sinds": "2026-06-02",
+    })
+    # GRA niet in geldige kwaliteiten -> kwaliteit_code wordt None (FK-veilig)
+    rec = bouw_insert_record(r, geldige_kwal={"AEST", "BERB"})
+    assert rec["kwaliteit_code"] is None
+    # zonder geldige_kwal-set blijft de waarde ongemoeid
+    rec2 = bouw_insert_record(r)
+    assert rec2["kwaliteit_code"] == "GRA"
+
+
 # ── bepaal_ontbrekende_producten ───────────────────────────────────────────
 
 def test_bepaal_ontbrekende_producten_filtert_en_dedupt():

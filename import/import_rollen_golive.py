@@ -49,7 +49,12 @@ def parse_in_magazijn_sinds(v):
         return None
 
 
-def bouw_insert_record(r):
+def bouw_insert_record(r, geldige_kwal=None):
+    # kwaliteit_code is FK -> kwaliteiten; onbekende code op NULL zodat de insert
+    # niet op rollen_kwaliteit_code_fkey klapt (zelfde guard als maak_rol_producten).
+    kwal = _clean(r["kwaliteit_code"])
+    if geldige_kwal is not None and kwal is not None and kwal not in geldige_kwal:
+        kwal = None
     return {
         "rolnummer": str(r["rolnummer"]),
         "artikelnr": _clean(r["artikelnr"]),
@@ -60,7 +65,7 @@ def bouw_insert_record(r):
         "oppervlak_m2": _clean(r["oppervlak_m2"]),
         "vvp_m2": _clean(r["vvp_m2"]),
         "waarde": _clean(r["waarde"]),
-        "kwaliteit_code": _clean(r["kwaliteit_code"]),
+        "kwaliteit_code": kwal,
         "kleur_code": _clean(r["kleur_code"]),
         "zoeksleutel": _clean(r["zoeksleutel"]),
         "in_magazijn_sinds": r["in_magazijn_sinds"],
@@ -249,7 +254,7 @@ def main():
         print(f"  rol-producten aangemaakt: {len(ontbrekend)}")
 
     if nieuw:
-        records = [bouw_insert_record(r) for r in nieuw]
+        records = [bouw_insert_record(r, geldige_kwal) for r in nieuw]
         for i in range(0, len(records), 500):
             sb.table("rollen").insert(records[i:i + 500]).execute()
             print(f"  insert rollen: {min(i + 500, len(records))}/{len(records)}")
