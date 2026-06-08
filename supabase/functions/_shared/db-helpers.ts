@@ -46,6 +46,11 @@ export async function fetchStukken(
     .is('rol_id', null)
     .eq('kwaliteit_code', kwaliteitCode)
     .in('kleur_code', kleurVariants)
+    // R5 (productie-only): stukken die uit een standaard-maat kleed gesneden
+    // worden verbruiken geen rollengte → niet aan de packer aanbieden. Ze blijven
+    // wel als snijplan bestaan (zichtbaar in snijplanning + confectie). De kolom
+    // komt uit snijplanning_overzicht (mig 331), is BOOLEAN NOT NULL DEFAULT false.
+    .eq('snijden_uit_standaardmaat', false)
 
   if (totDatum) {
     query = query.or(`afleverdatum.lte.${totDatum},afleverdatum.is.null`)
