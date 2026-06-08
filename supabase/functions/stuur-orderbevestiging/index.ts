@@ -6,7 +6,7 @@
 // POST body (JSON):
 //   { order_id: number, email?: string, bevestigd_door?: string }
 //
-// email is optioneel — fallback: debiteuren.email_factuur → debiteuren.email
+// email is optioneel — fallback: debiteuren.email_factuur → email_overig → email_2
 // bevestigd_door is optioneel — naam/email van de medewerker
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
@@ -58,9 +58,9 @@ serve(async (req) => {
     .select(`
       id, order_nr, orderdatum, afleverdatum, klant_referentie,
       debiteur_nr, bevestigd_at,
-      afl_naam, afl_bedrijf, afl_adres, afl_postcode, afl_stad, afl_land,
+      afl_naam, afl_naam_2, afl_adres, afl_postcode, afl_plaats, afl_land,
       fact_naam,
-      debiteuren!orders_debiteur_nr_fkey(naam, email_factuur, email)
+      debiteuren!orders_debiteur_nr_fkey(naam, email_factuur, email_overig, email_2)
     `)
     .eq('id', order_id)
     .single()
@@ -70,13 +70,15 @@ serve(async (req) => {
   const deb = (order as any).debiteuren as {
     naam: string
     email_factuur: string | null
-    email: string | null
+    email_overig: string | null
+    email_2: string | null
   } | null
 
   // E-mail bepalen
   const toEmail = emailOverride
     ?? deb?.email_factuur
-    ?? deb?.email
+    ?? deb?.email_overig
+    ?? deb?.email_2
     ?? null
 
   if (!toEmail) {
@@ -159,10 +161,10 @@ serve(async (req) => {
     verzendweek: verzendweekLabel(o.afleverdatum),
     afleverdatum: o.afleverdatum ?? null,
     klant_naam: deb?.naam ?? o.fact_naam ?? 'Klant',
-    afl_naam: o.afl_naam ?? o.afl_bedrijf ?? null,
+    afl_naam: o.afl_naam ?? o.afl_naam_2 ?? null,
     afl_adres: o.afl_adres ?? null,
     afl_postcode: o.afl_postcode ?? null,
-    afl_stad: o.afl_stad ?? null,
+    afl_stad: o.afl_plaats ?? null,
     afl_land: o.afl_land ?? null,
     regels,
     totaal,
