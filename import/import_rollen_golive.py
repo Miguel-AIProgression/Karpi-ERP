@@ -79,6 +79,8 @@ def bouw_update_record(r):
         "in_magazijn_sinds": r["in_magazijn_sinds"],
         "status": "beschikbaar",
         "snijden_gestart_op": None,
+        "snijden_voltooid_op": None,
+        "snijden_gestart_door": None,
     }
 
 
@@ -223,11 +225,17 @@ def main():
     print(f"  rollen BESTAAND (refresh+reset)    : {len(bestaat)}")
     print(f"  rollen AFVOEREN (-> verkocht)      : {len(afvoeren)}")
 
+    auto_plan_aan = auto_planning_aan(sb)
+    if auto_plan_aan:
+        print("\nLET OP: app_config.snijplanning.auto_planning.enabled staat AAN.")
+        print("        Zet 'enabled' op false voor de --apply-run (anders auto-planning-")
+        print("        storm, mig 100/111), of draai met --force-auto-plan.")
+
     if not args.apply:
         print("\nDRY-RUN: geen DB-wijzigingen. Draai met --apply om te schrijven.")
         return
 
-    if auto_planning_aan(sb) and not args.force_auto_plan:
+    if auto_plan_aan and not args.force_auto_plan:
         raise SystemExit(
             "GESTOPT: app_config.snijplanning.auto_planning.enabled staat AAN.\n"
             "Een bulk-insert/status-reset zou auto-planning triggeren (mig 100/111).\n"

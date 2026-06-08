@@ -21,6 +21,8 @@ SELECT 'VOOR' AS fase, tabel, aantal FROM (
   UNION ALL SELECT 'confectie_orders', COUNT(*) FROM confectie_orders
   UNION ALL SELECT 'snijvoorstel_plaatsingen', COUNT(*) FROM snijvoorstel_plaatsingen
   UNION ALL SELECT 'snijvoorstellen', COUNT(*) FROM snijvoorstellen
+  UNION ALL SELECT 'snijplan_groep_locks', COUNT(*) FROM snijplan_groep_locks
+  UNION ALL SELECT 'scan_events', COUNT(*) FROM scan_events
   UNION ALL SELECT 'rollen_bezet',
        COUNT(*) FROM rollen
        WHERE status IN ('in_snijplan','gesneden','gereserveerd')
@@ -51,6 +53,9 @@ SELECT 'NA' AS fase, tabel, aantal FROM (
   SELECT 'snijplannen' AS tabel, COUNT(*) AS aantal FROM snijplannen
   UNION ALL SELECT 'confectie_orders', COUNT(*) FROM confectie_orders
   UNION ALL SELECT 'snijvoorstel_plaatsingen', COUNT(*) FROM snijvoorstel_plaatsingen
+  UNION ALL SELECT 'snijvoorstellen', COUNT(*) FROM snijvoorstellen
+  UNION ALL SELECT 'snijplan_groep_locks', COUNT(*) FROM snijplan_groep_locks
+  UNION ALL SELECT 'scan_events', COUNT(*) FROM scan_events
   UNION ALL SELECT 'rollen_bezet',
        COUNT(*) FROM rollen
        WHERE status IN ('in_snijplan','gesneden','gereserveerd')
