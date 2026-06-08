@@ -12,6 +12,8 @@ import type { UitwisselbareGroep } from '@/lib/supabase/queries/uitwisselbaar'
 interface Props {
   /** Aanwezig = bewerken van een bestaande groep, afwezig = koppeling toevoegen (nieuw of aan bestaande groep). */
   groep?: UitwisselbareGroep
+  /** Kwaliteitscode die bij openen alvast geselecteerd staat (bv. vanaf product-detail). Alleen relevant zonder `groep`. */
+  voorselectie?: string
   onClose: () => void
 }
 
@@ -36,12 +38,12 @@ function KwaliteitKleurBadges({ kleuren }: { kleuren: string[] }) {
   )
 }
 
-export function UitwisselbaarGroepDialog({ groep, onClose }: Props) {
+export function UitwisselbaarGroepDialog({ groep, voorselectie, onClose }: Props) {
   const isEdit = Boolean(groep)
   const [naam, setNaam] = useState(groep?.collectie_naam ?? '')
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<Set<string>>(
-    () => new Set(groep?.kwaliteiten.map((k) => k.code) ?? []),
+    () => new Set(groep?.kwaliteiten.map((k) => k.code) ?? (voorselectie ? [voorselectie] : [])),
   )
   const [bestemming, setBestemming] = useState<'nieuw' | 'bestaand'>('nieuw')
   const [bestaandeGroepId, setBestaandeGroepId] = useState<number | null>(null)
