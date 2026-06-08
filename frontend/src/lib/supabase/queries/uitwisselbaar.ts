@@ -107,15 +107,16 @@ export async function fetchUitwisselbareGroepen(): Promise<UitwisselbareGroep[]>
   return groepen
 }
 
-/** Eén kwaliteit, met de naam van de groep waarin hij eventueel al zit — voor de koppel-dialoog. */
+/** Eén kwaliteit, met kleuren en de naam van de groep waarin hij eventueel al zit — voor de koppel-dialoog. */
 export interface KoppelbareKwaliteit {
   code: string
   omschrijving: string | null
+  kleuren: string[]
   collectie_id: number | null
   collectie_naam: string | null
 }
 
-/** Alle kwaliteiten + hun huidige groep (indien aanwezig), voor de leden-kiezer in groep-aanmaken/-bewerken. */
+/** Alle kwaliteiten + hun kleuren + huidige groep (indien aanwezig), voor de leden-kiezer in groep-aanmaken/-bewerken. */
 export async function fetchKoppelbareKwaliteiten(): Promise<KoppelbareKwaliteit[]> {
   const { data, error } = await supabase
     .from('kwaliteiten')
@@ -123,17 +124,46 @@ export async function fetchKoppelbareKwaliteiten(): Promise<KoppelbareKwaliteit[
     .order('code')
   if (error) throw error
 
-  return (data ?? []).map((row) => {
-    const r = row as unknown as {
-      code: string
-      omschrijving: string | null
-      collectie_id: number | null
-      collecties: { naam: string } | { naam: string }[] | null
-    }
+  const kwaliteiten = (data ?? []) as unknown as {
+    code: string
+    omschrijving: string | null
+    collectie_id: number | null
+    collecties: { naam: string } | { naam: string }[] | null
+  }[]
+  if (kwaliteiten.length === 0) return []
+
+  // Kleuren per kwaliteit ophalen (gepagineerd, Supabase default limit = 1000)
+  const codes = kwaliteiten.map((k) => k.code)
+  const producten: { kwaliteit_code: string; kleur_code: string }[] = []
+  const PAGE_SIZE = 1000
+  let offset = 0
+  while (true) {
+    const { data: pData, error: pError } = await supabase
+      .from('producten')
+      .select('kwaliteit_code, kleur_code')
+      .in('kwaliteit_code', codes)
+      .eq('actief', true)
+      .not('kleur_code', 'is', null)
+      .range(offset, offset + PAGE_SIZE - 1)
+    if (pError) throw pError
+    if (!pData || pData.length === 0) break
+    producten.push(...(pData as { kwaliteit_code: string; kleur_code: string }[]))
+    if (pData.length < PAGE_SIZE) break
+    offset += PAGE_SIZE
+  }
+
+  const kleurenPerKwaliteit = new Map<string, Set<string>>()
+  for (const p of producten) {
+    if (!kleurenPerKwaliteit.has(p.kwaliteit_code)) kleurenPerKwaliteit.set(p.kwaliteit_code, new Set())
+    kleurenPerKwaliteit.get(p.kwaliteit_code)!.add(p.kleur_code)
+  }
+
+  return kwaliteiten.map((r) => {
     const collectie = Array.isArray(r.collecties) ? r.collecties[0] : r.collecties
     return {
       code: r.code,
       omschrijving: r.omschrijving,
+      kleuren: Array.from(kleurenPerKwaliteit.get(r.code) ?? []).sort(),
       collectie_id: r.collectie_id,
       collectie_naam: collectie?.naam ?? null,
     }

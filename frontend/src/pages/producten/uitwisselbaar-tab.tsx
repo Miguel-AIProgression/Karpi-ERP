@@ -106,7 +106,7 @@ export function UitwisselbaarTab() {
             className="flex items-center gap-2 px-4 py-2 rounded-[var(--radius-sm)] bg-terracotta-500 text-white text-sm font-medium hover:bg-terracotta-600 transition-colors"
           >
             <Plus size={15} />
-            Nieuwe groep
+            Koppeling toevoegen
           </button>
         </div>
       </div>
