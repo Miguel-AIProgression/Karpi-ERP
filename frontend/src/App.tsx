@@ -14,7 +14,7 @@ const queryClient = new QueryClient({
 })
 
 function AuthGate() {
-  const { user, loading, signIn } = useAuth()
+  const { user, loading, signIn, resetPassword } = useAuth()
 
   if (loading) {
     return (
@@ -27,7 +27,7 @@ function AuthGate() {
   }
 
   if (!user) {
-    return <LoginPage onLogin={signIn} />
+    return <LoginPage onLogin={signIn} onResetPassword={resetPassword} />
   }
 
   return <RouterProvider router={router} />
