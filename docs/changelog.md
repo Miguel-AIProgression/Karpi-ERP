@@ -1,5 +1,59 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-08 — Orderbevestiging: ontbrekende velden uit oude PDF toegevoegd (e-mail + bijlage)
+
+**Waarom:** vergelijking van de nieuwe Graph-mail-orderbevestiging met de
+"HERBEVESTIGING"-PDF's van het oude systeem (`ob26485640.pdf`, `ob26499970.pdf`)
+liet zien dat een aantal velden die klanten gewend zijn te zien, ontbraken —
+zowel in de e-mailtekst als op de PDF-bijlage die de klant bewaart.
+
+**Wat — beide in [`stuur-orderbevestiging`](../supabase/functions/stuur-orderbevestiging/index.ts)
+en [`_shared/orderbevestiging-pdf.ts`](../supabase/functions/_shared/orderbevestiging-pdf.ts):**
+- **Vertegenwoordiger** (`orders.vertegenw_code` → `medewerkers.naam`, zelfde
+  resolutieketen als view `klant_omzet_ytd` — NIET de legacy `vertegenwoordigers`-tabel).
+- **"Uw debiteurnr."** ook op de PDF (stond al in de e-mailtekst).
+- Per regel: **eenheid** ("St", hardcoded voor echte productregels — er bestaat
+  geen `eenheid`-kolom op `producten`/`order_regels`, mirrort de oude lay-out),
+  **korting%** (`order_regels.korting_pct`) en een herhaalde **verzendweek**-subregel
+  (bewuste keuze: het order-niveau-week herhalen i.p.v. een nieuwe per-regel
+  IO-claim-berekening optuigen — de oude PDF toonde notabene ook bij de
+  vrachtkosten-regel gewoon dezelfde week).
+- **Orderreferentie** (`klant_referentie`) zichtbaar maken waar aanwezig
+  (bevestigd door gebruiker als betekenis van de mysterieuze derde sub-regel
+  "R26005850 T Groot Bleumink" op de oude PDF).
+- **BTW-uitsplitsing** (`Totaalbedrag excl. btw` → `XX% btw over Y` →
+  `Totaalbedrag incl. btw`) via de gedeelde `berekenFactuurTotalen`-helper, met
+  `btw_percentage = COALESCE(debiteuren.btw_percentage, 21.00)` — **letterlijk
+  dezelfde bron-van-waarheid en default als `genereer_factuur`**, zodat
+  orderbevestiging en factuur niet uit elkaar lopen.
+- **Maatafwijking-disclaimer** (vaste juridische tekst, letterlijk overgenomen:
+  "Een geringe maatafwijking van +/- 3% alsmede een kleurafwijking kan optreden.").
+- **Betalingsconditie** (`debiteuren.betaalconditie`, leidende numerieke code
+  gestript: "31 - 30 dagen netto" → "30 dagen netto").
+- **Afleveradresblok** ook in de e-mailtekst (stond al conditioneel op de PDF,
+  ontbrak in de mailtekst zelf).
+- Alle nieuwe labels vertaald in de bestaande 4-talen-`VERTALINGEN`-dictionary
+  (nl/de/fr/en).
+
+**Bewust niet gedaan (data-gaten, gerapporteerd aan gebruiker):**
+- **Verzendmethode-code** (bv. "VRIJ2"/"HST10") — overbodig naast de al
+  getoonde levertijd, op uitdrukkelijk verzoek weggelaten.
+- **"Leveringsconditie"/"Franco"** — geen velden hiervoor in het schema
+  (`debiteuren.gratis_verzending=false` voor beide referentie-debiteuren,
+  ondanks "Franco" op één van de oude PDF's). Niet te betrouwbaar afleiden →
+  bewust weggelaten i.p.v. gefabriceerd.
+- **Fiscale bevinding (los van deze taak):** debiteuren met
+  `btw_verlegd_intracom=true` (bv. #152004, #150762, #331114) hebben nog steeds
+  `btw_percentage=21.00`, en de bestaande `genereer_factuur`-RPC negeert die
+  vlag volledig — het intra-EU-verleggingsmechanisme lijkt dus nooit
+  geïmplementeerd in de facturatie. Gebruiker koos bewust om de (mogelijk
+  onvolledige) bestaande BTW-logica te spiegelen i.p.v. hier te diveren; dit is
+  een apart fiscaal/compliance-aandachtspunt voor de boekhouding.
+
+**Getest:** end-to-end testverzending op order ORD-2026-0001 (debiteur 150620,
+NL, met vertegenwoordiger + regelkorting + betaalconditie) — `bevestigd_at`/
+`bevestigd_door`/`bevestiging_email`-bijwerking nadien teruggedraaid.
+
 ## 2026-06-08 — Factuur-/orderbevestigingsmail van Resend naar Microsoft Graph (M365)
 
 **Waarom:** we gaan daadwerkelijk facturen en orderbevestigingen per mail versturen

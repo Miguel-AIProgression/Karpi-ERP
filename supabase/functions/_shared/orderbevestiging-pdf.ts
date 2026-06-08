@@ -32,6 +32,7 @@ export interface OrderbevestigingRegel {
   omschrijving_2: string | null
   orderaantal: number
   prijs: number | null
+  korting_pct: number | null
   bedrag: number | null
 }
 
@@ -40,6 +41,8 @@ export interface OrderbevestigingInput {
   logo_bytes?: Uint8Array
   order_nr: string
   orderdatum: string        // YYYY-MM-DD
+  debiteur_nr: number
+  vertegenwoordiger: string | null
   klant_referentie: string | null
   verzendweek: string | null
   afleverdatum: string | null
@@ -50,8 +53,34 @@ export interface OrderbevestigingInput {
   afl_stad: string | null
   afl_land: string | null
   regels: OrderbevestigingRegel[]
+  subtotaal: number
+  btw_percentage: number
+  btw_bedrag: number
   totaal: number
+  betaalconditie: string | null
   opmerkingen?: string | null
+}
+
+// Vaste juridische tekst over maatafwijkingen — letterlijk overgenomen van de
+// orderbevestigingen uit het oude systeem (zie ob26485640.pdf / ob26499970.pdf).
+const MAATAFWIJKING_DISCLAIMER =
+  'Een geringe maatafwijking van +/- 3% alsmede een kleurafwijking kan optreden.'
+
+// Betaalconditie wordt opgeslagen met een leidende numerieke code, bv.
+// "31 - 30 dagen netto" — voor de klant tonen we alleen de leesbare omschrijving.
+function strippedBetaalconditie(raw: string | null): string | null {
+  if (!raw) return null
+  const zonderCode = raw.replace(/^\s*\d+\s*-\s*/, '').trim()
+  return zonderCode || raw
+}
+
+function formatKorting(pct: number | null): string | null {
+  if (pct == null || Number(pct) === 0) return null
+  return `${Number(pct).toFixed(2)}%`
+}
+
+function formatBtwPercentage(pct: number): string {
+  return Number(pct).toFixed(2)
 }
 
 // ─── Hulp ────────────────────────────────────────────────────────────────────
@@ -161,6 +190,14 @@ export async function genereerOrderbevestigingPDF(input: OrderbevestigingInput):
   drawText(page, formatDatum(input.orderdatum), col2 + mm(25), y, fontR, 8)
   y -= 13
 
+  drawText(page, 'Uw debiteurnr.:', mL, y, fontB, 8)
+  drawText(page, String(input.debiteur_nr), mL + mm(35), y, fontR, 8)
+  if (input.vertegenwoordiger) {
+    drawText(page, 'Vertegenwoordiger:', col2, y, fontB, 8)
+    drawText(page, input.vertegenwoordiger, col2 + mm(33), y, fontR, 8)
+  }
+  y -= 13
+
   if (input.klant_referentie) {
     drawText(page, 'Uw referentie:', mL, y, fontB, 8)
     drawText(page, input.klant_referentie, mL + mm(35), y, fontR, 8)
@@ -201,14 +238,28 @@ export async function genereerOrderbevestigingPDF(input: OrderbevestigingInput):
   y -= 6
 
   // ── Tabel header ──────────────────────────────────────────────────────────
+  // Kolombreedtes tellen op tot pageW - mL - mR (170mm) zodat de tabel exact
+  // tussen de marges past.
+  const colNum     = { x: mL,           w: mm(8)  }
+  const colArt     = { x: mL + mm(8),   w: mm(20) }
+  const colKarpi   = { x: mL + mm(28),  w: mm(28) }
+  const colOmsch   = { x: mL + mm(56),  w: mm(54) }
+  const colEh      = { x: mL + mm(110), w: mm(8)  }
+  const colAantal  = { x: mL + mm(118), w: mm(12) }
+  const colPrijs   = { x: mL + mm(130), w: mm(18) }
+  const colKorting = { x: mL + mm(148), w: mm(12) }
+  const colBedrag  = { x: mL + mm(160), w: mm(10) }
+
   const colDefs = [
-    { label: '#',            x: mL,           w: mm(8),  align: 'left'  },
-    { label: 'Artikel',      x: mL + mm(8),   w: mm(22), align: 'left'  },
-    { label: 'Karpi code',   x: mL + mm(30),  w: mm(33), align: 'left'  },
-    { label: 'Omschrijving', x: mL + mm(63),  w: mm(62), align: 'left'  },
-    { label: 'Aantal',       x: mL + mm(125), w: mm(15), align: 'right' },
-    { label: 'Prijs',        x: mL + mm(140), w: mm(22), align: 'right' },
-    { label: 'Bedrag',       x: mL + mm(162), w: mm(8),  align: 'right' },
+    { label: '#',            ...colNum,     align: 'left'  },
+    { label: 'Artikel',      ...colArt,     align: 'left'  },
+    { label: 'Karpi code',   ...colKarpi,   align: 'left'  },
+    { label: 'Omschrijving', ...colOmsch,   align: 'left'  },
+    { label: 'Eh',           ...colEh,      align: 'left'  },
+    { label: 'Aantal',       ...colAantal,  align: 'right' },
+    { label: 'Prijs',        ...colPrijs,   align: 'right' },
+    { label: 'Korting',      ...colKorting, align: 'right' },
+    { label: 'Bedrag',       ...colBedrag,  align: 'right' },
   ]
 
   page.drawRectangle({ x: mL, y: y - mm(5.5), width: pageW - mL - mR, height: mm(5.5), color: SLATE })
@@ -227,10 +278,15 @@ export async function genereerOrderbevestigingPDF(input: OrderbevestigingInput):
   for (const regel of input.regels) {
     // Sla VERZEND-regels niet op als geen bedrag
     const isVerzend = regel.artikelnr === 'VERZEND'
+    // Eenheid "St" (stuks) — alleen voor echte productregels, mirrort de oude
+    // lay-out (vrachtkosten-/admin-regels tonen geen eenheid).
+    const eenheid = regel.artikelnr && !isVerzend ? 'St' : null
+    const kortingTxt = formatKorting(regel.korting_pct)
 
-    const omschrijvingLines = wrapText(regel.omschrijving ?? '', fontR, 7.5, mm(60))
+    const omschrijvingLines = wrapText(regel.omschrijving ?? '', fontR, 7.5, colOmsch.w - mm(2))
+    const subLineCount = (regel.omschrijving_2 ? 1 : 0) + (input.verzendweek ? 1 : 0)
     const totalH = ROW_H + (omschrijvingLines.length > 1 ? (omschrijvingLines.length - 1) * EXTRA_LINE_H : 0)
-      + (regel.omschrijving_2 ? EXTRA_LINE_H : 0)
+      + subLineCount * EXTRA_LINE_H
 
     // Nieuwe pagina indien nodig
     if (y - totalH < mm(30)) {
@@ -250,47 +306,81 @@ export async function genereerOrderbevestigingPDF(input: OrderbevestigingInput):
     drawText(page, String(regel.regelnummer), mL + 2, textY, fontR, 7.5)
 
     if (regel.artikelnr && !isVerzend) {
-      drawText(page, regel.artikelnr, mL + mm(8) + 2, textY, fontR, 7, rgb(0.73, 0.29, 0.18))
+      drawText(page, regel.artikelnr, colArt.x + 2, textY, fontR, 7, rgb(0.73, 0.29, 0.18))
     }
 
     if (regel.karpi_code) {
-      drawText(page, regel.karpi_code, mL + mm(30) + 2, textY, fontR, 7)
+      drawText(page, regel.karpi_code, colKarpi.x + 2, textY, fontR, 7)
     }
 
-    // Omschrijving (multi-line)
-    const omschX = mL + mm(63) + 2
+    // Omschrijving (multi-line) + sub-regels (model/referentie elders, hier: omschrijving_2 + verzendweek)
+    const omschX = colOmsch.x + 2
     omschrijvingLines.forEach((line, i) => {
       drawText(page, line, omschX, textY - i * EXTRA_LINE_H, fontR, 7.5)
     })
+    let subY = textY - omschrijvingLines.length * EXTRA_LINE_H
     if (regel.omschrijving_2) {
-      const sub2Y = textY - omschrijvingLines.length * EXTRA_LINE_H
-      drawText(page, regel.omschrijving_2, omschX, sub2Y, fontR, 6.5, SLATE)
+      drawText(page, regel.omschrijving_2, omschX, subY, fontR, 6.5, SLATE)
+      subY -= EXTRA_LINE_H
+    }
+    if (input.verzendweek) {
+      drawText(page, `Verzendweek: ${input.verzendweek}`, omschX, subY, fontR, 6.5, SLATE)
     }
 
-    drawText(page, String(regel.orderaantal), mL + mm(140) - fontR.widthOfTextAtSize(String(regel.orderaantal), 7.5) - 2, textY, fontR, 7.5)
+    if (eenheid) {
+      drawText(page, eenheid, colEh.x + 2, textY, fontR, 7.5)
+    }
+
+    drawText(page, String(regel.orderaantal), colAantal.x + colAantal.w - fontR.widthOfTextAtSize(String(regel.orderaantal), 7.5) - 2, textY, fontR, 7.5)
 
     if (regel.prijs != null) {
       const prijsTxt = formatBedrag(regel.prijs)
-      drawText(page, prijsTxt, mL + mm(162) - fontR.widthOfTextAtSize(prijsTxt, 7.5) - 2, textY, fontR, 7.5)
+      drawText(page, prijsTxt, colPrijs.x + colPrijs.w - fontR.widthOfTextAtSize(prijsTxt, 7.5) - 2, textY, fontR, 7.5)
+    }
+
+    if (kortingTxt) {
+      drawText(page, kortingTxt, colKorting.x + colKorting.w - fontR.widthOfTextAtSize(kortingTxt, 7.5) - 2, textY, fontR, 7.5)
     }
 
     if (regel.bedrag != null) {
       const bedragTxt = formatBedrag(regel.bedrag)
-      drawText(page, bedragTxt, pageW - mR - fontR.widthOfTextAtSize(bedragTxt, 7.5) - 2, textY, fontR, 7.5)
+      drawText(page, bedragTxt, colBedrag.x + colBedrag.w - fontR.widthOfTextAtSize(bedragTxt, 7.5) - 2, textY, fontR, 7.5)
     }
 
     y -= totalH
   }
 
-  // ── Totaal ────────────────────────────────────────────────────────────────
+  // ── Totaal — BTW-uitsplitsing (excl. → BTW% over X → incl.) ───────────────
   y -= 4
-  page.drawLine({ start: { x: mL + mm(125), y }, end: { x: pageW - mR, y }, thickness: 0.5, color: SLATE })
+  page.drawLine({ start: { x: mL + mm(115), y }, end: { x: pageW - mR, y }, thickness: 0.5, color: SLATE })
   y -= 12
 
-  const totaalTxt = formatBedrag(input.totaal)
-  drawText(page, 'Totaal', mL + mm(125), y, fontB, 9)
-  drawText(page, totaalTxt, pageW - mR - fontB.widthOfTextAtSize(totaalTxt, 9) - 2, y, fontB, 9)
-  y -= 18
+  const totaalLabelX = mL + mm(115)
+  const drawTotaalRegel = (label: string, bedrag: number, font: PDFFont, size: number) => {
+    const txt = formatBedrag(bedrag)
+    drawText(page, label, totaalLabelX, y, font, size)
+    drawText(page, txt, pageW - mR - font.widthOfTextAtSize(txt, size) - 2, y, font, size)
+    y -= size === 9 ? 14 : 11
+  }
+
+  drawTotaalRegel('Totaalbedrag excl. btw', input.subtotaal, fontR, 8)
+  drawTotaalRegel(`${formatBtwPercentage(input.btw_percentage)}% btw over ${formatBedrag(input.subtotaal)}`, input.btw_bedrag, fontR, 8)
+  drawTotaalRegel('Totaalbedrag incl. btw', input.totaal, fontB, 9)
+  y -= 4
+
+  // ── Condities + maatafwijking-disclaimer ──────────────────────────────────
+  const betaalconditie = strippedBetaalconditie(input.betaalconditie)
+  if (betaalconditie) {
+    drawText(page, 'Betalingsconditie:', mL, y, fontB, 8)
+    drawText(page, betaalconditie, mL + mm(38), y, fontR, 8)
+    y -= 11
+  }
+  y -= 4
+  for (const line of wrapText(MAATAFWIJKING_DISCLAIMER, fontR, 7, pageW - mL - mR)) {
+    drawText(page, line, mL, y, fontR, 7, SLATE)
+    y -= 10
+  }
+  y -= 8
 
   // ── Opmerkingen ───────────────────────────────────────────────────────────
   if (input.opmerkingen) {

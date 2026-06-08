@@ -14,6 +14,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { genereerOrderbevestigingPDF } from '../_shared/orderbevestiging-pdf.ts'
 import { sendFactuurEmail } from '../_shared/graph-mail-client.ts'
 import { isoWeekJaar } from '../_shared/iso-week.ts'
+import { berekenFactuurTotalen } from '../_shared/factuur-bedrag.ts'
 
 const SUPABASE_URL        = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -49,7 +50,14 @@ const VERTALINGEN: Record<Taal, {
   referentie: string
   levering: string
   model: string
+  vertegenwoordiger: string
+  afleveradres: string
   totaal: string
+  subtotaal: string
+  btwOver: (percentage: string, bedrag: string) => string
+  totaalInclBtw: string
+  betalingsconditie: string
+  disclaimer: string
   vragen: (email: string, telefoon: string) => string
   groet: string
 }> = {
@@ -62,7 +70,14 @@ const VERTALINGEN: Record<Taal, {
     referentie: 'Uw referentie',
     levering: 'Verwachte levering',
     model: 'Uw model',
+    vertegenwoordiger: 'Uw vertegenwoordiger',
+    afleveradres: 'Afleveradres',
     totaal: 'Totaalbedrag',
+    subtotaal: 'Totaalbedrag excl. btw',
+    btwOver: (pct, bedrag) => `${pct}% btw over ${bedrag}`,
+    totaalInclBtw: 'Totaalbedrag incl. btw',
+    betalingsconditie: 'Betalingsconditie',
+    disclaimer: 'Een geringe maatafwijking van +/- 3% alsmede een kleurafwijking kan optreden.',
     vragen: (email, tel) => `Heeft u vragen over uw order? Neem dan contact met ons op via <a href="mailto:${email}">${email}</a> of ${tel}.`,
     groet: 'Met vriendelijke groet,',
   },
@@ -75,7 +90,14 @@ const VERTALINGEN: Record<Taal, {
     referentie: 'Ihre Referenz',
     levering: 'Voraussichtliche Lieferung',
     model: 'Ihr Modell',
+    vertegenwoordiger: 'Ihr Vertreter',
+    afleveradres: 'Lieferadresse',
     totaal: 'Gesamtbetrag',
+    subtotaal: 'Gesamtbetrag exkl. MwSt.',
+    btwOver: (pct, bedrag) => `${pct}% MwSt. auf ${bedrag}`,
+    totaalInclBtw: 'Gesamtbetrag inkl. MwSt.',
+    betalingsconditie: 'Zahlungsbedingung',
+    disclaimer: 'Geringe Maßabweichungen von +/- 3% sowie Farbabweichungen sind möglich.',
     vragen: (email, tel) => `Haben Sie Fragen zu Ihrer Bestellung? Kontaktieren Sie uns über <a href="mailto:${email}">${email}</a> oder ${tel}.`,
     groet: 'Mit freundlichen Grüßen,',
   },
@@ -88,7 +110,14 @@ const VERTALINGEN: Record<Taal, {
     referentie: 'Votre référence',
     levering: 'Livraison prévue',
     model: 'Votre modèle',
+    vertegenwoordiger: 'Votre représentant',
+    afleveradres: 'Adresse de livraison',
     totaal: 'Montant total',
+    subtotaal: 'Montant total hors TVA',
+    btwOver: (pct, bedrag) => `TVA ${pct}% sur ${bedrag}`,
+    totaalInclBtw: 'Montant total TVA comprise',
+    betalingsconditie: 'Condition de paiement',
+    disclaimer: 'Un léger écart de mesure de +/- 3 % ainsi qu\'une différence de couleur peuvent survenir.',
     vragen: (email, tel) => `Des questions sur votre commande ? Contactez-nous via <a href="mailto:${email}">${email}</a> ou ${tel}.`,
     groet: 'Cordialement,',
   },
@@ -101,7 +130,14 @@ const VERTALINGEN: Record<Taal, {
     referentie: 'Your reference',
     levering: 'Expected delivery',
     model: 'Your model',
+    vertegenwoordiger: 'Your sales representative',
+    afleveradres: 'Delivery address',
     totaal: 'Total amount',
+    subtotaal: 'Total amount excl. VAT',
+    btwOver: (pct, bedrag) => `${pct}% VAT over ${bedrag}`,
+    totaalInclBtw: 'Total amount incl. VAT',
+    betalingsconditie: 'Payment terms',
+    disclaimer: 'A slight size deviation of +/- 3% as well as a colour variation may occur.',
     vragen: (email, tel) => `Questions about your order? Contact us via <a href="mailto:${email}">${email}</a> or ${tel}.`,
     groet: 'Kind regards,',
   },
@@ -163,6 +199,19 @@ function formatBedrag(v: number): string {
   return new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' }).format(v)
 }
 
+function formatBtwPercentage(pct: number): string {
+  return Number(pct).toFixed(2)
+}
+
+// Betaalconditie wordt opgeslagen met een leidende numerieke code, bv.
+// "31 - 30 dagen netto" — voor de klant tonen we alleen de leesbare omschrijving
+// (gelijk aan de PDF-generator, zodat e-mail en bijlage niet uit elkaar lopen).
+function strippedBetaalconditie(raw: string | null): string | null {
+  if (!raw) return null
+  const zonderCode = raw.replace(/^\s*\d+\s*-\s*/, '').trim()
+  return zonderCode || raw
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -196,10 +245,10 @@ serve(async (req) => {
     .from('orders')
     .select(`
       id, order_nr, orderdatum, afleverdatum, klant_referentie,
-      debiteur_nr, bevestigd_at,
+      debiteur_nr, bevestigd_at, vertegenw_code,
       afl_naam, afl_naam_2, afl_adres, afl_postcode, afl_plaats, afl_land,
       fact_naam, fact_land,
-      debiteuren!orders_debiteur_nr_fkey(naam, email_factuur, email_overig, email_2)
+      debiteuren!orders_debiteur_nr_fkey(naam, email_factuur, email_overig, email_2, betaalconditie, btw_percentage)
     `)
     .eq('id', order_id)
     .single()
@@ -211,7 +260,20 @@ serve(async (req) => {
     email_factuur: string | null
     email_overig: string | null
     email_2: string | null
+    betaalconditie: string | null
+    btw_percentage: number | string | null
   } | null
+
+  // Vertegenwoordiger: snapshot op de order (vertegenw_code), opgezocht in medewerkers.
+  let vertegenwoordigerNaam: string | null = null
+  if ((order as any).vertegenw_code) {
+    const { data: medewerker } = await supabase
+      .from('medewerkers')
+      .select('naam')
+      .eq('code', (order as any).vertegenw_code)
+      .maybeSingle()
+    vertegenwoordigerNaam = medewerker?.naam ?? null
+  }
 
   // E-mail bepalen
   const toEmail = emailOverride
@@ -229,7 +291,7 @@ serve(async (req) => {
     .from('order_regels')
     .select(`
       id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2,
-      orderaantal, prijs, bedrag,
+      orderaantal, prijs, korting_pct, bedrag,
       maatwerk_kwaliteit_code, maatwerk_kleur_code,
       producten!order_regels_artikelnr_fkey(karpi_code, kwaliteit_code, kleur_code)
     `)
@@ -246,6 +308,7 @@ serve(async (req) => {
     omschrijving_2: r.omschrijving_2 ?? null,
     orderaantal: r.orderaantal ?? 0,
     prijs: r.prijs ?? null,
+    korting_pct: r.korting_pct ?? null,
     bedrag: r.bedrag ?? null,
     // Resolutieketen gelijk aan view snijplan_sticker_data (mig 295):
     // maatwerk-snapshot wint van het gekoppelde product.
@@ -253,7 +316,14 @@ serve(async (req) => {
     kleur_code: r.maatwerk_kleur_code ?? r.producten?.kleur_code ?? null,
   }))
 
-  const totaal = regels.reduce((s: number, r: any) => s + (r.bedrag ?? 0), 0)
+  // BTW-percentage: zelfde bron-van-waarheid en default als genereer_factuur
+  // (COALESCE(debiteuren.btw_percentage, 21.00)) — zo lopen orderbevestiging en
+  // factuur niet uit elkaar.
+  const btwPercentage = Number(deb?.btw_percentage ?? 21)
+  const { subtotaal, btw_bedrag: btwBedrag, totaal } = berekenFactuurTotalen(
+    regels.map((r) => ({ bedrag: r.bedrag ?? 0 })),
+    btwPercentage,
+  )
 
   // ── Bedrijfsgegevens ───────────────────────────────────────────────────────
   const { data: configRow } = await supabase
@@ -301,6 +371,10 @@ serve(async (req) => {
     logo_bytes: logoBytes,
     order_nr: o.order_nr,
     orderdatum: o.orderdatum,
+    debiteur_nr: o.debiteur_nr,
+    vertegenwoordiger: vertegenwoordigerNaam
+      ? `${o.vertegenw_code} ${vertegenwoordigerNaam}`
+      : (o.vertegenw_code ?? null),
     klant_referentie: o.klant_referentie ?? null,
     verzendweek: verzendweekLabel(o.afleverdatum),
     afleverdatum: o.afleverdatum ?? null,
@@ -311,7 +385,11 @@ serve(async (req) => {
     afl_stad: o.afl_plaats ?? null,
     afl_land: o.afl_land ?? null,
     regels,
+    subtotaal,
+    btw_percentage: btwPercentage,
+    btw_bedrag: btwBedrag,
     totaal,
+    betaalconditie: deb?.betaalconditie ?? null,
   })
 
   // ── E-mail versturen ───────────────────────────────────────────────────────
@@ -339,6 +417,17 @@ serve(async (req) => {
     </tr>`
   }).join('')
 
+  const afleveradresHtml = (o.afl_adres || o.afl_postcode || o.afl_plaats)
+    ? `<p>
+        <strong>${v.afleveradres}:</strong><br>
+        ${o.afl_naam && o.afl_naam !== klantNaam ? `${o.afl_naam}<br>` : ''}
+        ${o.afl_adres ? `${o.afl_adres}<br>` : ''}
+        ${[o.afl_postcode, o.afl_plaats].filter(Boolean).join('  ')}${o.afl_land && o.afl_land.toUpperCase() !== 'NL' ? `<br>${o.afl_land}` : ''}
+      </p>`
+    : ''
+
+  const betaalconditie = strippedBetaalconditie(deb?.betaalconditie ?? null)
+
   const htmlBody = `
 <div style="font-family: Arial, sans-serif; max-width: 600px; color: #333;">
   <p>${v.aanhef(klantNaam)}</p>
@@ -347,16 +436,27 @@ serve(async (req) => {
     <strong>${v.klantnummer}:</strong> ${o.debiteur_nr}<br>
     <strong>${v.ordernummer}:</strong> ${o.order_nr}<br>
     ${o.klant_referentie ? `<strong>${v.referentie}:</strong> ${o.klant_referentie}<br>` : ''}
+    ${vertegenwoordigerNaam ? `<strong>${v.vertegenwoordiger}:</strong> ${o.vertegenw_code} ${vertegenwoordigerNaam}<br>` : ''}
     ${o.afleverdatum ? `<strong>${v.levering}:</strong> ${verzendweekLabel(o.afleverdatum) ?? ''}<br>` : ''}
+    ${betaalconditie ? `<strong>${v.betalingsconditie}:</strong> ${betaalconditie}<br>` : ''}
   </p>
+  ${afleveradresHtml}
   <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin: 12px 0;">
     ${regelsHtml}
     <tr>
-      <td style="padding: 6px 8px; font-weight: bold;">${v.totaal}</td>
-      <td></td>
+      <td style="padding: 6px 8px; text-align: right;" colspan="2">${v.subtotaal}</td>
+      <td style="padding: 6px 8px; text-align: right; white-space: nowrap;">${formatBedrag(subtotaal)}</td>
+    </tr>
+    <tr>
+      <td style="padding: 6px 8px; text-align: right;" colspan="2">${v.btwOver(formatBtwPercentage(btwPercentage), formatBedrag(subtotaal))}</td>
+      <td style="padding: 6px 8px; text-align: right; white-space: nowrap;">${formatBedrag(btwBedrag)}</td>
+    </tr>
+    <tr>
+      <td style="padding: 6px 8px; font-weight: bold; text-align: right;" colspan="2">${v.totaalInclBtw}</td>
       <td style="padding: 6px 8px; text-align: right; font-weight: bold; white-space: nowrap;">${formatBedrag(totaal)}</td>
     </tr>
   </table>
+  <p style="font-size: 11px; color: #888;">${v.disclaimer}</p>
   <p>${v.vragen(bedrijf.email, bedrijf.telefoon)}</p>
   <p>${v.groet}<br><strong>${bedrijf.bedrijfsnaam}</strong></p>
   <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
