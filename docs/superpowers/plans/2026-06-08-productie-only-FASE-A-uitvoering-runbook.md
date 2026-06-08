@@ -44,9 +44,27 @@ ORDER BY ordinal_position;
 --     mig 327 voegt een partiële index toe — redundant maar onschadelijk/idempotent.)
 SELECT indexname, indexdef FROM pg_indexes
 WHERE tablename = 'orders' AND indexdef ILIKE '%oud_order_nr%';
+
+-- (g) ⚠️ NOT-NULL-LANDMIJN-CHECK (toegevoegd na de status-fout op mig 327).
+--     De schema-doc bleek onbetrouwbaar voor NOT NULL (debiteuren.status stond als
+--     gewone TEXT maar is NOT NULL). Deze query toont ELKE NOT-NULL-zonder-default
+--     kolom op de drie tabellen die mig 327/329 INSERTen. Bekend afgedekt:
+--       debiteuren.status (→ 'Inactief' in mig 327), order_regels.korting_pct (→ 0 in mig 329).
+--     Verschijnt hier een kolom die NIET door mig 327/329 wordt gezet (en die de
+--     verzameldebiteur-INSERT of de RPC-INSERT raakt) → meld 'm, dan patch ik de migratie
+--     vóór je 329 draait.
+SELECT table_name, column_name, data_type
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND table_name IN ('debiteuren', 'orders', 'order_regels')
+  AND is_nullable = 'NO'
+  AND column_default IS NULL
+ORDER BY table_name, ordinal_position;
 ```
 
-**Blokkerend alleen als (a) een mapper-code mist.** Dan: meld het, dan passen we de mapper-output aan vóór de import.
+**Blokkerend:** (a) als een mapper-code mist → meld het, mapper-output aanpassen vóór import. (g) als een onafgedekte NOT-NULL-kolom verschijnt → meld het vóór je mig 329 draait.
+
+> **Reeds gefixt na jouw eerste run (commit `f878b03`):** mig 327 zette `debiteuren.status` op NULL → faalde (kolom is NOT NULL). Nu `status='Inactief'` (semantisch juist: verzameldebiteur mag geen match-target zijn; de debiteur-matcher sluit 'Inactief' uit). Ook mig 329's RPC zet nu `korting_pct=0` (vermoedelijk NOT NULL — de productie-RPC `create_webshop_order` COALESCEt 'm ook). **Her-run mig 327** (idempotent: kolommen/enum/indexen worden via `IF NOT EXISTS` overgeslagen, alleen de gefixte debiteur-insert + assertie draaien alsnog).
 
 ---
 
@@ -146,5 +164,5 @@ Noteer in `docs/changelog.md` dat ADR-0028's `migratie_blokkering` vervangen is 
 
 - **ADR-0029** is geschreven (`docs/adr/0029-productie-only-orders-basta.md`); levende docs (changelog + schema-doc) zijn bijgewerkt.
 - **Latent (eindreview Minor-1):** de view `orders_list` projecteert `alleen_productie` nog niet. Geen huidige consumer (order-detail leest het uit tabel `orders`). Voeg `o.alleen_productie` toe aan `orders_list` zodra je een productie-only-badge/-filter op het orders-overzicht wilt.
-- **Optioneel (Minor-3):** verzameldebiteur 900000 heeft `status=NULL` (telt als "actief" in de debiteur-matcher). Onschadelijk (alleen schrijf-fallback), maar `status='Inactief'` is semantisch zuiverder.
+- ~~Minor-3: verzameldebiteur status~~ → **opgelost** (commit `f878b03`): 900000 krijgt `status='Inactief'` (was NULL, wat de NOT-NULL-constraint schond bij de eerste run).
 - **Fase B** (planning-besturing: B1 dagplanning-pin, B2 veilige rol-toewijzing, B3 prioritering, B4 standaardmaat-UI, B5 FP-override, B6 forecasting) en **Fase C** (R8 dag-capaciteitsengine) staan in het hoofdplan en vereisen Piet-hein-besluiten.
