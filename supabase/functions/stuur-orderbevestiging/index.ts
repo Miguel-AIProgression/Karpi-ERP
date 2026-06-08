@@ -12,12 +12,14 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { genereerOrderbevestigingPDF } from '../_shared/orderbevestiging-pdf.ts'
-import { sendFactuurEmail } from '../_shared/resend-client.ts'
+import { sendFactuurEmail } from '../_shared/graph-mail-client.ts'
 import { isoWeekJaar } from '../_shared/iso-week.ts'
 
 const SUPABASE_URL        = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-const RESEND_API_KEY      = Deno.env.get('RESEND_API_KEY')!
+const MS_GRAPH_TENANT_ID  = Deno.env.get('MS_GRAPH_TENANT_ID')!
+const MS_GRAPH_CLIENT_ID  = Deno.env.get('MS_GRAPH_CLIENT_ID')!
+const MS_GRAPH_CLIENT_SECRET = Deno.env.get('MS_GRAPH_CLIENT_SECRET')!
 const FROM_EMAIL          = Deno.env.get('FACTUUR_FROM_EMAIL') ?? Deno.env.get('ORDERBEVESTIGING_FROM_EMAIL')!
 const REPLY_TO            = Deno.env.get('FACTUUR_REPLY_TO') ?? FROM_EMAIL
 const KARPI_LOGO_PATH     = Deno.env.get('KARPI_LOGO_PATH') ?? 'logos/karpi-logo.jpg'
@@ -186,7 +188,9 @@ serve(async (req) => {
 </div>`
 
   await sendFactuurEmail({
-    apiKey: RESEND_API_KEY,
+    tenantId: MS_GRAPH_TENANT_ID,
+    clientId: MS_GRAPH_CLIENT_ID,
+    clientSecret: MS_GRAPH_CLIENT_SECRET,
     from: FROM_EMAIL,
     to: toEmail,
     replyTo: REPLY_TO,

@@ -5,7 +5,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { genereerFactuurPDF } from '../_shared/factuur-pdf.ts'
-import { sendFactuurEmail } from '../_shared/resend-client.ts'
+import { sendFactuurEmail } from '../_shared/graph-mail-client.ts'
 import {
   buildKarpiInvoiceFixedWidth,
   type InvoiceParty,
@@ -14,7 +14,9 @@ import {
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!
+const MS_GRAPH_TENANT_ID = Deno.env.get('MS_GRAPH_TENANT_ID')!
+const MS_GRAPH_CLIENT_ID = Deno.env.get('MS_GRAPH_CLIENT_ID')!
+const MS_GRAPH_CLIENT_SECRET = Deno.env.get('MS_GRAPH_CLIENT_SECRET')!
 const FACTUUR_FROM = Deno.env.get('FACTUUR_FROM_EMAIL')!
 const FACTUUR_REPLY_TO = Deno.env.get('FACTUUR_REPLY_TO') ?? FACTUUR_FROM
 const AV_PATH = Deno.env.get('ALGEMENE_VOORWAARDEN_PATH') ?? 'algemene-voorwaarden-karpi-bv.pdf'
@@ -356,7 +358,9 @@ serve(async () => {
 
         // Stuur naar debiteur zelf
         await sendFactuurEmail({
-          apiKey: RESEND_API_KEY,
+          tenantId: MS_GRAPH_TENANT_ID,
+          clientId: MS_GRAPH_CLIENT_ID,
+          clientSecret: MS_GRAPH_CLIENT_SECRET,
           from: FACTUUR_FROM,
           to: debiteur.email_factuur,
           replyTo: FACTUUR_REPLY_TO,
@@ -368,7 +372,9 @@ serve(async () => {
         // Stuur kopie naar betaler indien aanwezig en anders dan debiteur
         if (betalerEmail && betalerEmail !== debiteur.email_factuur) {
           await sendFactuurEmail({
-            apiKey: RESEND_API_KEY,
+            tenantId: MS_GRAPH_TENANT_ID,
+            clientId: MS_GRAPH_CLIENT_ID,
+            clientSecret: MS_GRAPH_CLIENT_SECRET,
             from: FACTUUR_FROM,
             to: betalerEmail,
             replyTo: FACTUUR_REPLY_TO,

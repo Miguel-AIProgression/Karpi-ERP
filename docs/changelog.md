@@ -1,5 +1,43 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-08 — Factuur-/orderbevestigingsmail van Resend naar Microsoft Graph (M365)
+
+**Waarom:** we gaan daadwerkelijk facturen en orderbevestigingen per mail versturen
+vanuit RugFlow, en wilden eerst checken of de bestaande Resend-koppeling
+betrouwbaar zou werken. Bleek niet: het Resend-verzenddomein `karpi.nl` stond op
+**Failed** — ontbrekend MX-record + falende SPF op het `send`-subdomein, en de
+DNS-provider (netzozeker.nl) liet via het zelfbedieningsformulier geen
+aangepaste naam toe bij recordtype MX (alleen op de domein-apex). In plaats van
+daar achteraan te blijven hobbelen: `karpi.nl` is namelijk **al correct
+geconfigureerd voor Microsoft 365** (de bestaande MX wijst al naar
+`protection.outlook.com`, de SPF bevat al `include:spf.protection.outlook.com`)
+— dus is overstappen op verzenden via het bestaande M365-postvak zowel
+eenvoudiger als betrouwbaarder, zonder enige nieuwe DNS-wijziging.
+
+**Wat:**
+- Nieuwe gedeelde module [`_shared/graph-mail-client.ts`](../supabase/functions/_shared/graph-mail-client.ts)
+  (+ `graph-mail-client.test.ts`) — dunne wrapper rond de **Microsoft Graph
+  `sendMail`-API**, met OAuth2 client-credentials-flow (Entra ID app-registratie,
+  permissie `Mail.Send`, application-type met admin-consent). Spiegelt de oude
+  `sendFactuurEmail(...)`-interface zodat de callers nauwelijks hoefden te wijzigen.
+- [`factuur-verzenden`](../supabase/functions/factuur-verzenden/index.ts) en
+  [`stuur-orderbevestiging`](../supabase/functions/stuur-orderbevestiging/index.ts)
+  roepen nu `sendFactuurEmail` uit `graph-mail-client.ts` aan i.p.v.
+  `resend-client.ts`. Nieuwe env-vars: `MS_GRAPH_TENANT_ID`, `MS_GRAPH_CLIENT_ID`,
+  `MS_GRAPH_CLIENT_SECRET` (vervangen `RESEND_API_KEY`); `FACTUUR_FROM_EMAIL` en
+  `FACTUUR_REPLY_TO` blijven bestaan maar wijzen nu naar een echte M365-mailbox
+  (bv. `facturen@karpi.nl`) — de app-registratie moet `Mail.Send` hebben voor die
+  mailbox.
+- `resend-client.ts` + `resend-client.test.ts` **verwijderd** (geen overige callers).
+
+**Nog te doen (door gebruiker, buiten code-scope):** Entra ID app-registratie
+aanmaken (Azure Portal → App registrations → New registration → API permissions
+→ Microsoft Graph → Application permissions → `Mail.Send` → Grant admin consent
+→ Certificates & secrets → nieuw client secret), en de vier secrets
+(`MS_GRAPH_TENANT_ID`, `MS_GRAPH_CLIENT_ID`, `MS_GRAPH_CLIENT_SECRET`,
+`FACTUUR_FROM_EMAIL`) in Supabase edge-function-secrets zetten/bijwerken vóór
+deploy. `RESEND_API_KEY`/`FACTUUR_REPLY_TO` (oud) kunnen daarna opgeruimd worden.
+
 ## 2026-06-07 — Carrier-payload-audit: rauwe HST request/response per poging bewaren
 
 **Waarom:** de rauwe payloads van inkomende kanalen (Shopify, EDI) worden al
