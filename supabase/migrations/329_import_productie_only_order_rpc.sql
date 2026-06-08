@@ -138,8 +138,7 @@ BEGIN
       maatwerk_afwerking,
       maatwerk_vorm,
       snijden_uit_standaardmaat,
-      maatwerk_instructies,
-      productie_groep
+      maatwerk_instructies
     )
     VALUES (
       v_order_id,
@@ -156,9 +155,10 @@ BEGIN
       NULLIF(v_regel->>'maatwerk_afwerking', ''),       -- FK → afwerking_types; NULL of geldige code
       NULLIF(v_regel->>'maatwerk_vorm', ''),             -- FK → maatwerk_vormen; NULL of geldige code
       COALESCE((v_regel->>'snijden_uit_standaardmaat')::BOOLEAN, false),
-      v_regel->>'maatwerk_instructies',
-      -- productie_groep: kwaliteit + kleur als korte groepeer-sleutel voor de snijplanner.
-      COALESCE(v_regel->>'maatwerk_kwaliteit_code', '') || COALESCE(v_regel->>'maatwerk_kleur_code', '')
+      v_regel->>'maatwerk_instructies'
+      -- NB: GEEN productie_groep — die kolom bestaat (nog) niet op order_regels
+      -- (V2-backlog, zie mig 278). De snijplanner groepeert via
+      -- maatwerk_kwaliteit_code + maatwerk_kleur_code (snijplanning_overzicht COALESCEt die).
     );
   END LOOP;
 
