@@ -1,5 +1,21 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-08 — Basta voorraad-import (rollen + vaste maten)
+
+Eénmalige go-live nulstand + wekelijkse vaste-maten-update vanuit Basta-exports.
+Scripts in `import/`. Uitvoervolgorde (eerst dry-run, dan --apply/--commit):
+
+1. `python snapshot_basta_voorraad.py`                                  (rollback-vangnet, ook vóór snijplannen-wis)
+2. `scripts/2026-06-08_wipe-snijplannen-golive.sql`                     (éénmalig; productie-keten leeg + rollen vrij)
+3. `python import_rollen_golive.py "..\Rollenvoorraad 08-06-2026 (1).xlsx" --apply`
+   - éénmalig; vereist app_config.snijplanning.auto_planning.enabled = false
+4. `python update_voorraad.py "..\Voorraadlijst 08-6-2026 (1).xls" --commit`  (wekelijks)
+5. `python herallocateer_open_orders.py --commit`                       (orders trekken zich af)
+
+Beslissingen: vaste maten uit kolom D (fysiek), niet H; rollen schoon als
+'beschikbaar' (alle reserveringen gewist, **incl. snijplannen** — maatwerk via
+aparte route); ontbrekende rol-producten auto-aangemaakt als product_type='rol'.
+
 ## 2026-06-07 — Carrier-payload-audit: rauwe HST request/response per poging bewaren
 
 **Waarom:** de rauwe payloads van inkomende kanalen (Shopify, EDI) worden al
