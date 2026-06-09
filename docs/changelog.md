@@ -1,5 +1,11 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-09 — Order-intake consolidatie (gefaseerd, slices 0-4)
+
+Plan: [`docs/superpowers/plans/2026-06-09-order-intake-consolidatie-gefaseerd.md`](superpowers/plans/2026-06-09-order-intake-consolidatie-gefaseerd.md). Branch `refactor/order-intake-consolidatie`.
+
+- **Slice 0 — fix:** Lightspeed gewicht-conversie geünificeerd op micro-kg in gedeelde helper [`_shared/order-intake/gewicht.ts`](../supabase/functions/_shared/order-intake/gewicht.ts); `import-lightspeed-orders` deelde foutief door 1.000 (grams-aanname) → factor-1000 te laag gewicht, terwijl `sync-webshop-order` al door 1.000.000 deelde. Eén bron van waarheid + Deno-test.
+
 ## 2026-06-09 — Orders-overzicht: kanaal-filter (EDI, Shopify, handmatig, oud systeem)
 
 **Wat:** MultiSelectDropdown "Alle kanalen" op het orders-overzicht filtert op `bron_systeem`. Handmatig = `NULL` of `'handmatig'`; oud-systeem-orders afzonderlijk uit- of aan te zetten. `BronBadge` uitgebreid met expliciete labels voor `oud_systeem` ("Oud systeem") en `email` ("E-mail").
