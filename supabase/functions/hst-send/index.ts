@@ -15,6 +15,7 @@ import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supa
 
 import { bouwTransportOrderPayload } from './payload-builder.ts';
 import { postTransportOrder } from './hst-client.ts';
+import { valideerVoorVervoerder } from '../_shared/vervoerder-eisen.ts';
 import type { BedrijfInput, HstResponse, OrderInput, ZendingColliInput, ZendingInput } from './types.ts';
 
 const MAX_PER_RUN = 25;
@@ -193,14 +194,37 @@ async function verwerkRow(
     return;
   }
 
+  // Eén getypeerde view op de zending-rij — hergebruikt door zowel de payload-
+  // builder als de pre-flight, zodat er maar één `as ZendingInput`-cast bestaat.
+  const z = zending as ZendingInput;
+
   // 2. Bouw payload (pure functie).
   const payload = bouwTransportOrderPayload({
-    zending: zending as ZendingInput,
+    zending: z,
     order: order as OrderInput,
     bedrijf: bedrijfRow.waarde as BedrijfInput,
     hstCustomerId: secrets.hstCustomerId,
     colli,
   });
+
+  // Pre-flight: kies geen kansloze POST. Faalt een vervoerder-eis → direct als
+  // Fout wegschrijven met heldere reden, zónder HST te bellen.
+  const preflight = valideerVoorVervoerder({
+    vervoerder_code: 'hst_api',
+    afl_land: z.afl_land,
+    afl_telefoon: z.afl_telefoon,
+    afl_naam: z.afl_naam,
+    afl_adres: z.afl_adres,
+    afl_postcode: z.afl_postcode,
+    afl_plaats: z.afl_plaats,
+  });
+  if (!preflight.ok) {
+    const reden = 'Pre-flight: ' + preflight.problemen.map((p) => p.melding).join(' | ');
+    await markFout(supabase, row.id, reden);
+    summary.failed += 1;
+    summary.details.push({ id: row.id, zending_id: row.zending_id, status: 'error', error: 'preflight' });
+    return;
+  }
 
   // 3. POST naar HST.
   const result = await postTransportOrder({
