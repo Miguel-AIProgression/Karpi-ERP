@@ -53,6 +53,7 @@ import {
   BulkPrintSetPage,
   VervoerdersOverzichtPage,
   VervoerderDetailPage,
+  HstMonitorPage,
 } from '@/modules/logistiek'
 import { SupplierPortalPage } from '@/pages/portal/supplier-portal'
 import { PortalLoginPage } from '@/pages/portal/portal-login'
@@ -117,6 +118,7 @@ export const router = createBrowserRouter([
       // als zending_nr de detail-route in).
       { path: 'logistiek/vervoerders', element: <VervoerdersOverzichtPage /> },
       { path: 'logistiek/vervoerders/:code', element: <VervoerderDetailPage /> },
+      { path: 'logistiek/hst-monitor', element: <HstMonitorPage /> },
       { path: 'logistiek/printset/bulk', element: <BulkPrintSetPage /> },
       { path: 'logistiek/:zending_nr/printset', element: <ZendingPrintSetPage /> },
       { path: 'logistiek/:zending_nr', element: <ZendingDetailPage /> },

@@ -2,6 +2,8 @@ import { NavLink } from 'react-router-dom'
 import { cn } from '@/lib/utils/cn'
 import { NAV_GROUPS } from '@/lib/utils/constants'
 import * as Icons from 'lucide-react'
+import { useHstMonitor } from '@/modules/logistiek/hooks/use-hst-monitor'
+import { telHstAandacht } from '@/modules/logistiek/queries/hst-monitor'
 
 type IconName = keyof typeof Icons
 
@@ -12,6 +14,11 @@ function NavIcon({ name }: { name: string }) {
 }
 
 export function Sidebar() {
+  // Proactieve rode badge op de HST-monitor-nav: open fouten + stilstaande cron.
+  // Deelt queryKey ['hst-monitor'] met de monitor-pagina/banner (geen dubbele fetch).
+  const { data: hstM } = useHstMonitor()
+  const hstAandacht = hstM ? telHstAandacht(hstM) : 0
+
   return (
     <aside className="fixed left-0 top-0 bottom-0 w-[var(--sidebar-w)] bg-slate-900 text-slate-300 flex flex-col z-30">
       {/* Logo */}
@@ -44,6 +51,11 @@ export function Sidebar() {
               >
                 <NavIcon name={item.icon} />
                 {item.label}
+                {item.path === '/logistiek/hst-monitor' && hstAandacht > 0 && (
+                  <span className="ml-auto rounded-full bg-rose-600 px-1.5 text-xs font-medium text-white">
+                    {hstAandacht}
+                  </span>
+                )}
               </NavLink>
             ))}
           </div>
