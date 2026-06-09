@@ -29,8 +29,9 @@ AS $$
         AND trim(split_part(p_betaalconditie, '-', 1)) = bc.code
         AND bc.dagen IS NOT NULL
       LIMIT 1),
-    -- Vangnet: vrije tekst met "<n> dagen/tage/days" erin
-    NULLIF((regexp_match(p_betaalconditie, '\b(\d+)\s*(?:dagen|tage|days|tag|day)\b', 'i'))[1], '')::INTEGER,
+    -- Vangnet: vrije tekst met "<n> dagen/tage/days" erin.
+    -- LET OP: PostgreSQL kent \b niet als woordgrens (dat is backspace) -> \y.
+    NULLIF((regexp_match(p_betaalconditie, '\y(\d+)\s*(?:dagen|tage|days|tag|day)\y', 'i'))[1], '')::INTEGER,
     -- Default conform mig 202-comment
     30
   );
