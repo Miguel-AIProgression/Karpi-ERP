@@ -5,7 +5,7 @@
 
 ## Overzicht
 
-44 tabellen, 9 enums, 15 views, 36 functies. Alle tabellen hebben RLS enabled (fase 1: authenticated = volledige toegang).
+44 tabellen, 9 enums, 17 views, 37 functies. Alle tabellen hebben RLS enabled (fase 1: authenticated = volledige toegang).
 
 ---
 
@@ -533,6 +533,7 @@ Fysieke leveringen. Werkelijk aangemaakt sinds migratie 169 — bron-van-waarhei
 | verzenddatum | DATE | |
 | track_trace | TEXT | HST-tracking-nummer of EDI-equivalent — gevuld door adapter na verzending |
 | afl_naam, afl_adres, afl_postcode, afl_plaats, afl_land | TEXT | Adres-snapshot (kopie van orders.afl_*) |
+| afl_telefoon | TEXT | Mig 335 (ADR-0030). Snapshot van het leveringstelefoonnummer — HST "belt vóór aflevering" en stuurt dit mee in `ToAddress.PhoneNumber`. Gevuld door BEFORE-INSERT-trigger `trg_zending_fill_telefoon` (functie `fn_zending_fill_telefoon`): ladder `orders.afl_telefoon` → fallback `debiteuren.telefoon`. Via trigger i.p.v. in `start_pickronden` zodat álle zending-aanmaakroutes het veld vullen. Backfill voor nog-niet-verstuurde zendingen. |
 | totaal_gewicht_kg | NUMERIC | Gevuld door `create_zending_voor_order` vanuit orderregelgewichten; handmatig corrigeerbaar in latere UI. Sinds mig 206 exclusief de pseudo-regel `artikelnr='VERZEND'`. |
 | aantal_colli | INTEGER | Gevuld door `create_zending_voor_order` als som van `order_regels.orderaantal`; gebruikt voor sticker `x VAN y`. Sinds mig 206 exclusief `artikelnr='VERZEND'`. Voor exacte per-stuk identiteit (sticker, SSCC) zie `zending_colli` (mig 209). |
 | service_code | TEXT | Mig 210. Service-variant binnen vervoerder (bv. `'internationaal'` bij DPD), gekozen door `selecteer_vervoerder_voor_zending()`. NULL = vervoerder-default. |
@@ -639,6 +640,7 @@ Lookup-tabel met de beschikbare vervoerders waarmee Karpi werkt (mig 170, uitgeb
 | display_naam | TEXT NOT NULL | UI-label: `'HST'`, `'Rhenus'`, `'Verhoek'`, `'DPD'` |
 | type | TEXT NOT NULL | CHECK in (`'api'`, `'edi'`, `'print'`). Mig 207: `'print'` toegevoegd voor lokale label-printer-flow (DPD via Zebra ZT230). |
 | actief | BOOLEAN NOT NULL | Default FALSE — pas TRUE als koppeling werkt. Switch-RPC `enqueue_zending_naar_vervoerder` weigert met `'vervoerder_inactief'` als FALSE |
+| is_default | BOOLEAN NOT NULL | Mig 336 (ADR-0030). Default FALSE. Markeert dé default-vervoerder; partial unique index `uk_vervoerders_is_default` (op `is_default` WHERE TRUE) garandeert hooguit één TRUE. `hst_api` is geseed als default. Administratieve bron-van-waarheid; het werkende mechanisme is de **catch-all** rij in `vervoerder_selectie_regels` (prio 99999, `{"land":["NL"]}`) die mig 336 toevoegt — gegate op `hst_api.actief=TRUE` (bewust nog FALSE tot cutover). |
 | notities | TEXT | Vrije tekst (bv. "REST API. Auth via Basic.") |
 | api_endpoint | TEXT | Mig 174. Basis-URL van de vervoerder-API (alleen relevant voor `type='api'`, bv. `https://accp.hstonline.nl/rest/api/v1`). Read-only referentie in UI; effectieve endpoint voor edge functions blijft uit env-variabelen komen. |
 | api_customer_id | TEXT | Mig 174. Klant-/account-identifier bij de vervoerder-API (alleen relevant voor `type='api'`). |
@@ -1299,6 +1301,8 @@ Generieke, append-only audit van **rauwe externe payloads** per kanaal, **in- é
 | inkooporder_regel_claim_zicht | Per IO-regel: `aantal_geclaimd` / `aantal_vrij` / `aantal_orderregels` (alleen voor `eenheid='stuks'`-regels relevant). Migratie 150. |
 | uitwisselbaarheid_map1_diff | Diagnostiek (migratie 138): Map1-paren in `kwaliteit_kleur_uitwisselgroepen` die NIET door `uitwisselbare_paren()` afgedekt worden, met `reden`-kolom (input-kw zonder collectie_id, kwaliteiten in andere collecties, kleur-code-mismatch, target ontbreekt in producten/rollen/maatwerk_m2_prijzen). Moet 0 rijen geven voordat Map1 fysiek gedropt mag worden. |
 | vervoerder_stats | Per-vervoerder dashboard-aggregaties (mig 174, aangepast mig 176): `aantal_klanten` (distinct debiteuren uit zendingen), `aantal_zendingen_totaal` + `aantal_zendingen_deze_maand` (uit `zendingen.vervoerder_code`), `hst_aantal_verstuurd` + `hst_aantal_fout` (uit `hst_transportorders`, alleen niet-NULL voor de `hst_api`-rij). Voedt de `/logistiek/vervoerders`-overzichts- en detailpagina's. EDI-equivalent uit `edi_berichten` met `berichttype='verzendbericht'` volgt later. |
+| hst_verzend_monitor | Mig 338 (ADR-0030). Aggregaat (één rij, geen state) over `hst_transportorders`: `verstuurd_vandaag`, `fout_open`, `wachtrij`, `bezig`, `oudste_wachtrij_minuten`, `oudste_bezig_minuten`. De laatste twee = **cron-health-signaal** (hoog = `hst-send`-cron staat stil; UI-drempel 5 min). Voedt de HST-verzendmonitor (`/logistiek/hst-monitor`) + aandacht-banner op Pick & Ship. Tegengif tegen de "silent failure"-klasse. |
+| orders_zonder_vervoerder | Mig 338 (ADR-0030). Niet-afhaal-orders (`afhalen=FALSE`), status NOT IN (`'Geannuleerd'`,`'Verzonden'`,`'Concept'`), met ≥1 regel waarvan `effectieve_vervoerder_per_orderregel(o.id).bron='geen'` (buiten HST-bereik → handmatig kiezen nodig). Voedt de "handmatig vervoerder kiezen"-teller/banner. |
 
 ---
 
@@ -1387,6 +1391,7 @@ Mig 174, aangepast in mig 176. Read-only view die de `/logistiek/vervoerders`-ov
 | `claim_volgende_hst_transportorder() → hst_transportorders` | HST-adapter: pakt oudste `Wachtrij`-rij (`FOR UPDATE SKIP LOCKED`), zet status `Bezig`. Aangeroepen door edge function `hst-send`. Migratie 171. |
 | `markeer_hst_verstuurd(p_id, p_extern_transport_order_id, p_extern_tracking_number, p_request_payload, p_response_payload, p_response_http_code) → VOID` | HST-adapter: na 200-respons. Status → `Verstuurd`; schrijft `track_trace` terug op `zendingen` en promoveert zending-status van `'Klaar voor verzending'` naar `'Onderweg'`. Migratie 171. |
 | `markeer_hst_fout(p_id, p_error, p_request_payload, p_response_payload, p_response_http_code, p_max_retries DEFAULT 3) → VOID` | HST-adapter: incrementeert `retry_count`. Bij `>=` max_retries → status `Fout`, anders terug naar `Wachtrij`. Migratie 171. |
+| `herstel_vastgelopen_hst(p_minuten INTEGER DEFAULT 10) → INTEGER` | **Self-healing reaper** (mig 337, ADR-0030, SECURITY DEFINER, GRANT authenticated). Zet `hst_transportorders`-rijen die >`p_minuten` op status `'Bezig'` hangen terug naar `'Wachtrij'` (beschermt tegen crash/timeout tussen `claim_volgende_hst_transportorder` en de POST). Returnt aantal herstelde rijen. Bovenin elke `hst-send`-run aangeroepen + handmatig. |
 | `create_or_get_magazijn_locatie(p_code TEXT, p_omschrijving TEXT DEFAULT NULL, p_type TEXT DEFAULT 'rek') → BIGINT` | Idempotent: vindt-of-maakt `magazijn_locaties.id` voor `code` (UPPER+TRIM). Wordt gebruikt door `MagazijnLocatieEdit` (rol-locatie zetten) en `boek_ontvangst`. Migratie 169. |
 | `set_locatie_voor_orderregel(p_order_regel_id INTEGER, p_code TEXT) → BIGINT` | **Atomair**: vindt-of-maakt `magazijn_locaties`-rij voor `code` én zet `snijplannen.locatie = code` voor alle `Ingepakt`-rijen van de orderregel. Vervangt twee opeenvolgende RPC-calls (`createOrGetMagazijnLocatie + UPDATE snijplannen`) in `useUpdateMaatwerkLocatie` — voorkomt dangling `magazijn_locaties`-rijen wanneer de tweede call faalt. Returnt `magazijn_locaties.id`. Migratie 0183 (ADR-0002). |
 | `match_klant_po(p_extractie jsonb) → jsonb` | **Klant-PO parsing — deterministische koppellaag** (mig 294). Matcht AI-extractie van een klant-inkooporder-PDF tegen de database. Debiteur: btw → e-maildomein → exacte naam (telkens precies 1 hit = `zeker`, anders geen debiteur; alleen actieve debiteuren). Per regel: kwaliteit via reverse-lookup op `klanteigen_namen.benaming` (debiteur-/inkoopgroep-scoped) + exacte `kwaliteiten.omschrijving`; kleur via numeriek suffix; artikel via `klant_artikelnummers` / `producten`. Debiteur en elke regel dragen een eigen `zeker`-label — de frontend vult alleen `zeker`-regels/-debiteur voor (adres + klant-referentie altijd concept). STABLE, geen side-effects. GRANT anon/authenticated/service_role. |

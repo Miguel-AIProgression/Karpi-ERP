@@ -1,5 +1,78 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-09 — HST-observability + altijd-een-vervoerder (productie-klaar maken HST-koppeling)
+
+**Waarom:** de HST-verzendkoppeling gaat van acceptatie naar productie. Twee gaten
+blokkeerden dat: (1) orders zonder matchende vervoerder-regel bleven stil liggen — HST is
+de enige actieve koppeling maar lag niet als bodem onder NL-orders; (2) de `hst-send`-cron
+kon stilvallen / een transportorder mid-claim op `'Bezig'` laten hangen zonder zichtbaar
+signaal (zelfde klasse als de EDI poll silent failure). Aanleiding bovendien: ACCP-afkeuring
+2026-06-09 "Bellen voor aflevering, geef telefoonnummer op" — HST gaf kaal `"HTTP 400"`
+terug en het leveringstelefoonnummer werd niet meegestuurd. Zie
+[ADR-0030](adr/0030-altijd-een-vervoerder-en-hst-default-carrier.md) (bouwt voort op
+[ADR-0008](adr/0008-vervoerder-keuze-als-deep-module.md)).
+
+**Wat — migraties 335-338 (handmatig toepassen):**
+- **mig 335:** `zendingen.afl_telefoon TEXT` — snapshot leveringstelefoonnummer voor HST
+  (die "belt vóór aflevering"). Gevuld door BEFORE-INSERT-trigger `trg_zending_fill_telefoon`
+  (functie `fn_zending_fill_telefoon`): ladder `orders.afl_telefoon` → fallback
+  `debiteuren.telefoon`. Bewust via trigger zodat álle zending-aanmaakroutes het veld vullen.
+  Inclusief backfill voor nog-niet-verstuurde zendingen.
+- **mig 336:** `vervoerders.is_default BOOLEAN DEFAULT FALSE` (partial unique index
+  `uk_vervoerders_is_default` → hooguit één TRUE) + seed `hst_api` als default + een
+  **catch-all** rij in `vervoerder_selectie_regels` (`vervoerder_code='hst_api'`, prio
+  `99999` = laagste, conditie `{"land":["NL"]}`, notitie "Default-vervoerder binnen NL").
+  Mechanisme: de bestaande ladder in `effectieve_vervoerder_per_orderregel`
+  (`override → regel → geen`, ADR-0008/mig 219) levert nu HST binnen NL via de catch-all;
+  specifieke regels (lagere prio) winnen nog steeds. **Gegate op `hst_api.actief=TRUE`** —
+  staat bewust nog FALSE tot de cutover, dus de default wordt pas dan effectief. Buiten NL
+  blijft `bron='geen'` → "handmatig vervoerder kiezen".
+- **mig 337:** RPC `herstel_vastgelopen_hst(p_minuten INTEGER DEFAULT 10) RETURNS INTEGER`
+  (SECURITY DEFINER, GRANT authenticated) — self-healing reaper: zet `hst_transportorders`-
+  rijen die >`p_minuten` op `'Bezig'` hangen terug naar `'Wachtrij'`. Bovenin elke
+  `hst-send`-run aangeroepen + handmatig.
+- **mig 338:** twee observability-views. `hst_verzend_monitor` (aggregaat, één rij, geen
+  state): `verstuurd_vandaag`, `fout_open`, `wachtrij`, `bezig`, `oudste_wachtrij_minuten`,
+  `oudste_bezig_minuten` — de laatste twee zijn het cron-health-signaal (hoog = verzend-cron
+  staat stil; UI-drempel 5 min). `orders_zonder_vervoerder`: niet-afhaal-orders
+  (`afhalen=FALSE`), status NOT IN (`'Geannuleerd'`,`'Verzonden'`,`'Concept'`), met ≥1 regel
+  waarvan `effectieve_vervoerder_per_orderregel(...).bron='geen'` — voedt de
+  "handmatig vervoerder kiezen"-teller/banner.
+
+**Wat — edge function `hst-send` + gedeelde validator:**
+- Nieuwe pure pre-flight validator [`_shared/vervoerder-eisen.ts`](../supabase/functions/_shared/vervoerder-eisen.ts)
+  (`valideerVoorVervoerder(ctx) → {ok, problemen[]}`, codes `TELEFOON_ONTBREEKT` /
+  `ADRESVELD_LEEG` / `LAND_BUITEN_BEREIK`, const `HST_LANDEN_BEREIK=['NL']`). Aangeroepen als
+  laatste poort in `hst-send` vóór de POST — faalt een eis → rij direct op `Fout` met heldere
+  reden, geen kansloze HST-call. Gespiegeld als frontend-kopie
+  [`frontend/src/lib/orders/vervoerder-eisen.ts`](../frontend/src/lib/orders/vervoerder-eisen.ts)
+  (Deno-edge niet door Vite importeerbaar; seam-patroon zoals `_shared/debiteur-matcher.ts`
+  ↔ frontend `product-matcher`).
+- Bugfix `hst-client.ts` `extractErrorMsg`: leest nu ook HST's PascalCase-veld
+  `ErrorMessage` (operator kreeg eerder kaal `"HTTP 400"`).
+- `payload-builder.ts`: vult `ToAddress.PhoneNumber` uit `zendingen.afl_telefoon`
+  (was hardcoded leeg).
+
+**Wat — frontend (module logistiek):**
+- [`queries/hst-monitor.ts`](../frontend/src/modules/logistiek/queries/hst-monitor.ts)
+  (query's + helpers `cronVermoedelijkStil`, `telHstAandacht`, `countOrdersZonderVervoerder`)
+  en [`hooks/use-hst-monitor.ts`](../frontend/src/modules/logistiek/hooks/use-hst-monitor.ts)
+  (TanStack-hooks, refetchInterval 30s/60s).
+- Nieuwe route `/logistiek/hst-monitor`
+  ([`pages/hst-monitor.tsx`](../frontend/src/modules/logistiek/pages/hst-monitor.tsx)):
+  KPI's, open-fouten-tabel met echte `error_msg` + opnieuw-versturen-knop, cron-health-
+  waarschuwing.
+- [`components/hst-aandacht-banner.tsx`](../frontend/src/modules/logistiek/components/hst-aandacht-banner.tsx):
+  rode/amber banner op Pick & Ship (MagazijnOverviewPage) bij open fouten / stilstaande cron
+  / orders zonder vervoerder, plus nav-link naar de monitor. Spiegelt het
+  `EdiTeKoppelenBanner`-patroon.
+
+**Gevolg:** tweede vervoerder = eigen `vervoerder_selectie_regels` + `is_default`-vlag
+omzetten — geen resolver-edit. Ladder en RPC uit ADR-0008 onaangeraakt; alle wijzigingen
+strikt additief en geguard.
+
+**Migraties:** 335-338 (handmatig). **ADR:** [0030](adr/0030-altijd-een-vervoerder-en-hst-default-carrier.md) (bouwt voort op [0008](adr/0008-vervoerder-keuze-als-deep-module.md)).
+
 ## 2026-06-09 — Orders-overzicht: kanaal-filter (EDI, Shopify, handmatig, oud systeem)
 
 **Wat:** MultiSelectDropdown "Alle kanalen" op het orders-overzicht filtert op `bron_systeem`. Handmatig = `NULL` of `'handmatig'`; oud-systeem-orders afzonderlijk uit- of aan te zetten. `BronBadge` uitgebreid met expliciete labels voor `oud_systeem` ("Oud systeem") en `email` ("E-mail").
