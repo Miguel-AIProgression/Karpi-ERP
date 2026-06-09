@@ -38,7 +38,7 @@ WHERE o.alleen_productie = TRUE
   AND oreg.maatwerk_kwaliteit_code IS NOT NULL
   AND oreg.maatwerk_kwaliteit_code <> ''
   AND normaliseer_kleur_code(oreg.maatwerk_kleur_code) <> ''
-  AND oreg.maatwerk_kwaliteit_code IN (SELECT kwaliteit_code FROM kwaliteiten)
+  AND oreg.maatwerk_kwaliteit_code IN (SELECT code FROM kwaliteiten)  -- kwaliteiten PK = code
 ON CONFLICT (artikelnr) DO NOTHING;
 
 -- ============================================================================
