@@ -130,7 +130,15 @@ export function OrderDetailPage() {
         )}
 
       <OrderAddresses order={order} />
-      <OrderRegelsTable regels={regels ?? []} isLoading={regelsLoading} levertijden={levertijden} claims={claims} orderStatus={order.status} />
+      <OrderRegelsTable
+        regels={regels ?? []}
+        isLoading={regelsLoading}
+        levertijden={levertijden}
+        claims={claims}
+        orderStatus={order.status}
+        orderId={order.id}
+        orderdatum={order.orderdatum}
+      />
       <OrderEventsTijdlijn orderId={order.id} />
       <OrderFacturen orderId={order.id} />
     </>

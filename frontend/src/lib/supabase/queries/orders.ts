@@ -128,6 +128,8 @@ export interface OrderRegel {
   maatwerk_afwerking_prijs?: number | null
   // Productie tracking
   snijplannen?: OrderRegelSnijplan[]
+  /** Handmatige verzendweek-override (mig 334). NULL = auto in frontend. */
+  verzendweek?: string | null
 }
 
 export interface StatusCount {
@@ -425,7 +427,7 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
 
   const { data, error } = await supabase
     .from('order_regels')
-    .select('id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2, orderaantal, te_leveren, backorder, prijs, korting_pct, bedrag, gewicht_kg, vrije_voorraad, fysiek_artikelnr, omstickeren, is_maatwerk, maatwerk_vorm, maatwerk_lengte_cm, maatwerk_breedte_cm, maatwerk_diameter_cm, maatwerk_afwerking, maatwerk_band_kleur, maatwerk_instructies, maatwerk_m2_prijs, maatwerk_oppervlak_m2, maatwerk_vorm_toeslag, maatwerk_afwerking_prijs, producten!order_regels_artikelnr_fkey(kwaliteit_code, kleur_code, is_pseudo, karpi_code)')
+    .select('id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2, orderaantal, te_leveren, backorder, prijs, korting_pct, bedrag, gewicht_kg, vrije_voorraad, fysiek_artikelnr, omstickeren, is_maatwerk, maatwerk_vorm, maatwerk_lengte_cm, maatwerk_breedte_cm, maatwerk_diameter_cm, maatwerk_afwerking, maatwerk_band_kleur, maatwerk_instructies, maatwerk_m2_prijs, maatwerk_oppervlak_m2, maatwerk_vorm_toeslag, maatwerk_afwerking_prijs, verzendweek, producten!order_regels_artikelnr_fkey(kwaliteit_code, kleur_code, is_pseudo, karpi_code)')
     .eq('order_id', orderId)
     .order('regelnummer')
 
@@ -490,6 +492,7 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
       maatwerk_oppervlak_m2: row.maatwerk_oppervlak_m2 ?? null,
       maatwerk_vorm_toeslag: row.maatwerk_vorm_toeslag ?? null,
       maatwerk_afwerking_prijs: row.maatwerk_afwerking_prijs ?? null,
+      verzendweek: row.verzendweek ?? null,
     }
   }
 
@@ -558,4 +561,13 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
   }
 
   return baseRegels
+}
+
+/** Stel handmatige verzendweek in voor een orderregel (mig 334). NULL = reset. */
+export async function setRegelVerzendweek(regelId: number, verzendweek: string | null): Promise<void> {
+  const { error } = await supabase.rpc('set_regel_verzendweek', {
+    p_regel_id: regelId,
+    p_verzendweek: verzendweek,
+  })
+  if (error) throw error
 }
