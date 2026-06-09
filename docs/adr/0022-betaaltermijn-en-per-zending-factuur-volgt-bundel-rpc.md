@@ -1,6 +1,6 @@
 # ADR-0022 — Betaaltermijn uit `betaalcondities`-tabel + per_zending-factuur volgt de bundel-RPC
 
-- **Status:** Voorgesteld
+- **Status:** Geaccepteerd — uitgevoerd 2026-06-09 (mig 340-341). Punt 1 (betaaltermijn-helper) gerealiseerd; verzendkosten-punten zijn door mig 240 achterhaald (genereer_factuur_voor_week gedropt).
 - **Datum:** 2026-05-15
 - **Context-trigger:** Productie-observatie op FACT-2026-0020/0021/0022 (pickronde van 3 carpetten, debiteuren TRENDHOPPER BREDA / JANSEN TOTAAL WONEN / MEUBILEX BV).
 

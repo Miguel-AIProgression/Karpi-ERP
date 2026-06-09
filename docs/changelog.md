@@ -1,5 +1,18 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-09 — Betaaltermijn als bron-van-waarheid (ADR-0022, mig 340-341)
+
+Foute `regexp_match(betaalconditie, '^(\d+)')` in `genereer_factuur_voor_bundel`
+pakte de betaalconditie-**code** (bv. "02") i.p.v. het aantal **dagen** (30) →
+vervaldatum +2 i.p.v. +30 (FACT-2026-0021-klasse). Opgelost met centrale SQL-
+helper `betaaltermijn_dagen(TEXT)` (mig 340) die de code-prefix opzoekt in
+`betaalcondities.dagen` (mig 202/203) met vangnet "<n> dagen" en default 30;
+`genereer_factuur_voor_bundel` consumeert die nu (mig 341). De andere historische
+kopieën (`genereer_factuur`, `genereer_factuur_voor_week`) waren al door mig 240
+gedropt — dit was de laatste live drager. Self-testing migratie borgt de bug-case.
+(Migratienr verschoven van plan-claim 333/334 → 340/341 wegens collisie met
+origin/main, dat inmiddels tot 339 liep.)
+
 ## 2026-06-09 — HST-observability + altijd-een-vervoerder (productie-klaar maken HST-koppeling)
 
 **Waarom:** de HST-verzendkoppeling gaat van acceptatie naar productie. Twee gaten
