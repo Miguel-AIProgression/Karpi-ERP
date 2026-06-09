@@ -97,6 +97,41 @@ def lees_regels(pad):
     return out
 
 
+_IDENT_VELDEN = ("maatwerk_lengte_cm", "maatwerk_breedte_cm", "maatwerk_afwerking",
+                 "maatwerk_vorm", "snijden_uit_standaardmaat",
+                 "maatwerk_kwaliteit_code", "maatwerk_kleur_code")
+
+
+def merge_dubbele_regels(regels):
+    """Voeg bronrijen met hetzelfde regelnummer binnen één order samen.
+
+    `order_regels` heeft UNIQUE(order_id, regelnummer). De Basta-snijlijst kan
+    dezelfde (ordernr, rgl) meerdere keren bevatten voor IDENTIEKE stukken (= aantal):
+    die worden één order_regel met `orderaantal` = som (auto_maak_snijplan maakt er
+    dan N snijplannen van). Duplicaten met hetzelfde rgl maar VERSCHILLENDE
+    maat/afwerking/vorm/kwaliteit/kleur zijn een data-conflict → harde fout (liever
+    stoppen dan stil de verkeerde data importeren). Behoudt de Basta-rgl als
+    regelnummer voor de overige (schone) regels. Volgorde blijft behouden.
+    """
+    per_rgl = {}
+    volgorde = []
+    for r in regels:
+        rgl = r["regelnummer"]
+        if rgl not in per_rgl:
+            per_rgl[rgl] = dict(r)
+            volgorde.append(rgl)
+            continue
+        bestaand = per_rgl[rgl]
+        if any(bestaand.get(k) != r.get(k) for k in _IDENT_VELDEN):
+            raise ValueError(
+                f"Basta-order {r['oud_order_nr']} regel {rgl} komt meerdere keren voor "
+                f"met VERSCHILLENDE maten/afwerking — kan niet automatisch samenvoegen. "
+                f"Controleer de bron handmatig."
+            )
+        bestaand["orderaantal"] = bestaand.get("orderaantal", 1) + r.get("orderaantal", 1)
+    return [per_rgl[rgl] for rgl in volgorde]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--commit", action="store_true")
@@ -108,10 +143,21 @@ def main():
     for r in regels:
         per_order[r["oud_order_nr"]].append(r)
 
+    # Voeg dubbele (ordernr, regelnummer)-bronrijen samen — order_regels heeft
+    # UNIQUE(order_id, regelnummer). Identieke duplicaten → orderaantal opgeteld;
+    # echte conflicten (zelfde rgl, andere maat) → harde fout (zie merge_dubbele_regels).
+    samengevoegd = 0
+    for oud_nr in list(per_order.keys()):
+        voor = len(per_order[oud_nr])
+        per_order[oud_nr] = merge_dubbele_regels(per_order[oud_nr])
+        samengevoegd += voor - len(per_order[oud_nr])
+    regels = [r for rs in per_order.values() for r in rs]
+
     onherkend = [r for r in regels if not r["afwerking_herkend"]]
     uit_std   = [r for r in regels if r["snijden_uit_standaardmaat"]]
     print(f"Regels: {len(regels)} | Orders: {len(per_order)} | "
-          f"uit-standaardmaat: {len(uit_std)} | afwerking-default-gebruikt: {len(onherkend)}")
+          f"uit-standaardmaat: {len(uit_std)} | afwerking-default-gebruikt: {len(onherkend)} | "
+          f"samengevoegde dubbele rgl: {samengevoegd}")
     if onherkend:
         print("  Niet-herkende afwerking (krijgt 'B' default) - controleer:")
         for r in onherkend[:40]:

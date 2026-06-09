@@ -4,8 +4,43 @@ Pint de parser-logica: verzendweek->maandag, vorm-detectie, en de mapping van
 een ruwe planning-rij naar een RPC-regel (afwerking-map + ruwe maten +
 uit-standaardmaat-vlag).
 """
-from import_productie_only import rij_naar_regel, verzendweek_naar_datum, bepaal_vorm
+from import_productie_only import (
+    rij_naar_regel, verzendweek_naar_datum, bepaal_vorm, merge_dubbele_regels,
+)
 import datetime as dt
+import pytest
+
+
+def _regel(rgl, lengte=300, breedte=300, afw="SB", aantal=1):
+    return {
+        "oud_order_nr": 26507370, "regelnummer": rgl,
+        "maatwerk_lengte_cm": lengte, "maatwerk_breedte_cm": breedte,
+        "maatwerk_afwerking": afw, "maatwerk_vorm": "rechthoek",
+        "snijden_uit_standaardmaat": False,
+        "maatwerk_kwaliteit_code": "AEST", "maatwerk_kleur_code": "14",
+        "orderaantal": aantal,
+    }
+
+
+def test_merge_identieke_dubbele_rgl_telt_orderaantal_op():
+    # Twee identieke rijen met hetzelfde rgl -> één regel, orderaantal = som.
+    samengevoegd = merge_dubbele_regels([_regel(2), _regel(2)])
+    assert len(samengevoegd) == 1
+    assert samengevoegd[0]["regelnummer"] == 2
+    assert samengevoegd[0]["orderaantal"] == 2
+
+
+def test_merge_laat_schone_regels_ongemoeid():
+    regels = [_regel(1), _regel(2), _regel(5)]
+    samengevoegd = merge_dubbele_regels(regels)
+    assert [r["regelnummer"] for r in samengevoegd] == [1, 2, 5]
+    assert all(r["orderaantal"] == 1 for r in samengevoegd)
+
+
+def test_merge_conflict_verschillende_maat_faalt_hard():
+    # Zelfde rgl, andere maat -> geen automatische samenvoeging, harde fout.
+    with pytest.raises(ValueError):
+        merge_dubbele_regels([_regel(2, lengte=300), _regel(2, lengte=250)])
 
 
 def test_verzendweek_naar_datum_maandag():
