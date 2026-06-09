@@ -73,7 +73,7 @@ function VerzendweekCell({ regel, orderId, orderdatum, levertijd, bewerkbaar }: 
         />
         <button
           type="button"
-          onClick={(e) => {
+          onClick={() => {
             const inp = inputRef.current
             mutation.mutate(inp?.value || null)
           }}
