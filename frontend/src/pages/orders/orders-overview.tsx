@@ -11,10 +11,20 @@ import { useFacturenVoorOrders } from '@/modules/facturatie'
 import { EdiTeKoppelenBanner } from '@/modules/edi'
 import type { OrderSortField, SortDirection } from '@/lib/supabase/queries/orders'
 
+const KANAAL_OPTIES = [
+  { value: 'handmatig', label: 'Handmatig' },
+  { value: 'edi',       label: 'EDI' },
+  { value: 'shopify',   label: 'Shopify' },
+  { value: 'lightspeed', label: 'Lightspeed' },
+  { value: 'email',     label: 'E-mail' },
+  { value: 'oud_systeem', label: 'Oud systeem' },
+]
+
 export function OrdersOverviewPage() {
   const [status, setStatus] = useState('Alle')
   const [search, setSearch] = useState('')
   const [klantSelectie, setKlantSelectie] = useState<string[]>([])
+  const [bronSelectie, setBronSelectie] = useState<string[]>([])
   const [page, setPage] = useState(0)
   const [sortBy, setSortBy] = useState<OrderSortField>('orderdatum')
   const [sortDir, setSortDir] = useState<SortDirection>('desc')
@@ -34,7 +44,7 @@ export function OrdersOverviewPage() {
     [klantSelectie],
   )
 
-  const { data, isLoading } = useOrders({ status, search, debiteurNrs, page, sortBy, sortDir })
+  const { data, isLoading } = useOrders({ status, search, debiteurNrs, bronSystemen: bronSelectie, page, sortBy, sortDir })
   const { data: statusCounts } = useStatusCounts()
   const { data: klantOptiesData } = useOrderKlantOpties()
 
@@ -109,6 +119,16 @@ export function OrdersOverviewPage() {
             setPage(0)
           }}
           zoekbaar
+        />
+
+        <MultiSelectDropdown
+          placeholder="Alle kanalen"
+          options={KANAAL_OPTIES}
+          selected={bronSelectie}
+          onChange={(next) => {
+            setBronSelectie(next)
+            setPage(0)
+          }}
         />
       </div>
 

@@ -144,12 +144,13 @@ export async function fetchOrders(params: {
   search?: string
   debiteurNr?: number
   debiteurNrs?: number[]
+  bronSystemen?: string[]
   page?: number
   pageSize?: number
   sortBy?: OrderSortField
   sortDir?: SortDirection
 }) {
-  const { status, search, debiteurNr, debiteurNrs, page = 0, pageSize = 50, sortBy = 'orderdatum', sortDir = 'desc' } = params
+  const { status, search, debiteurNr, debiteurNrs, bronSystemen, page = 0, pageSize = 50, sortBy = 'orderdatum', sortDir = 'desc' } = params
 
   let query = supabase
     .from('orders_list')
@@ -213,6 +214,16 @@ export async function fetchOrders(params: {
         : `order_nr.ilike.%${s}%,klant_referentie.ilike.%${s}%,klant_naam.ilike.%${s}%`
       query = query.or(orFilter)
     }
+  }
+
+  if (bronSystemen && bronSystemen.length > 0) {
+    // 'handmatig' is de UI-sleutel voor NULL of expliciet 'handmatig' in de DB.
+    const heeftHandmatig = bronSystemen.includes('handmatig')
+    const overige = bronSystemen.filter((b) => b !== 'handmatig')
+    const orParts: string[] = []
+    if (heeftHandmatig) orParts.push('bron_systeem.is.null', 'bron_systeem.eq.handmatig')
+    for (const b of overige) orParts.push(`bron_systeem.eq.${b}`)
+    query = query.or(orParts.join(','))
   }
 
   const { data, error, count } = await query
