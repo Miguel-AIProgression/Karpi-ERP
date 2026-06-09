@@ -4,7 +4,7 @@ Dry-run default; --commit roept de RPC import_productie_only_order aan.
 Groepeert regels per Basta-ordernr; rapporteert niet-herkende afwerkingscodes.
 """
 from __future__ import annotations
-import argparse, datetime as dt
+import argparse, datetime as dt, re
 from collections import defaultdict
 from openpyxl import load_workbook
 from lib import snijlijst_parser as P
@@ -12,6 +12,26 @@ from lib.afwerking_mapper import map_afwerking_code, is_herkend
 
 BESTAND = "totaalplanning_cleaned_v2.xlsx"
 SHEET   = "Snijden Karpi op kwal"
+
+# Leniente kwaliteit+kleur-extractie uit de kolom-0 artikelcode, als FALLBACK op
+# de strikte `P.parse_artikelcode_kwal_kleur` (die de letterlijke `MAATWERK`-suffix
+# eist). De Basta-snijlijst gebruikt voor een deel van de regels het formaat
+# `<KWAL><KLEUR><rest>` zonder MAATWERK — bv. 'HARM16XX160230', 'GOLD12KC200290',
+# 'GOHA18KH060110'. Karpi-kwaliteitscodes zijn 3-4 letters gevolgd door de kleur;
+# alles ná de eerste cijferreeks is irrelevant voor (kwaliteit, kleur). Zonder deze
+# fallback bleven 85 regels (198 stuks) met LEGE kwaliteit achter en vielen ze in
+# één onplaatsbare ('', '')-snijgroep ("Geen collectie gekoppeld aan kwaliteit").
+# Lokaal gehouden (NIET in de gedeelde snijlijst_parser.py, die voedt ook de
+# ADR-0028-migratie en moet daar bewust strikt blijven).
+_KWAL_KLEUR_LENIENT_RE = re.compile(r"^([A-Za-z]+)(\d+)")
+
+
+def parse_kwal_kleur_lenient(code) -> tuple[str, str] | None:
+    """'HARM16XX160230' -> ('HARM', '16'). Leeg/geen leidende letters+cijfers -> None."""
+    m = _KWAL_KLEUR_LENIENT_RE.match(P._norm(code))
+    if not m:
+        return None
+    return m.group(1).upper(), m.group(2)
 
 
 def verzendweek_naar_datum(s) -> dt.date | None:
@@ -41,7 +61,9 @@ def rij_naar_regel(rij) -> dict | None:
     ordernr = P.normaliseer_key(rij[P.PL_ORDERNR])
     if ordernr is None:
         return None
-    kk = P.parse_artikelcode_kwal_kleur(rij[P.PL_ARTIKELCODE]) or ("", "")
+    kk = (P.parse_artikelcode_kwal_kleur(rij[P.PL_ARTIKELCODE])
+          or parse_kwal_kleur_lenient(rij[P.PL_ARTIKELCODE])
+          or ("", ""))
     grof = rij[14]   # GROF-afwerking (geen constante in snijlijst_parser)
     fijn = rij[6]    # FIJN-afwerking (geen constante in snijlijst_parser)
     omschr = P._norm(rij[1])

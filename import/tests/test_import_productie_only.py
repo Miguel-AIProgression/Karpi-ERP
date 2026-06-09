@@ -6,6 +6,7 @@ uit-standaardmaat-vlag).
 """
 from import_productie_only import (
     rij_naar_regel, verzendweek_naar_datum, bepaal_vorm, merge_dubbele_regels,
+    parse_kwal_kleur_lenient,
 )
 import datetime as dt
 import pytest
@@ -64,6 +65,29 @@ def test_rij_naar_regel_mapt_afwerking_en_maten():
     assert regel["maatwerk_lengte_cm"] == 400 and regel["maatwerk_breedte_cm"] == 175
     assert regel["maatwerk_afwerking"] == "SF"   # GROF=B + FIJN=FESM -> SF
     assert regel["snijden_uit_standaardmaat"] is False
+
+
+@pytest.mark.parametrize("code,verwacht", [
+    ("HARM16XX160230", ("HARM", "16")),   # letters-na-kleur (XX) -> stopt bij X
+    ("GOLD12KC200290", ("GOLD", "12")),
+    ("GOHA18KH060110", ("GOHA", "18")),
+    ("EDGB21R3200290", ("EDGB", "21")),   # R3: regex stopt bij R, kleur = 21
+    ("OFFG18FE160230", ("OFFG", "18")),
+    ("LAGO13MAATWERK", ("LAGO", "13")),   # canonieke vorm valt ook leniant goed uit
+    ("", None),
+    ("KUNSTGRAS", None),                  # geen cijfers
+])
+def test_parse_kwal_kleur_lenient(code, verwacht):
+    assert parse_kwal_kleur_lenient(code) == verwacht
+
+
+def test_rij_naar_regel_lenient_fallback_op_xx_code():
+    # Artikelcode zonder MAATWERK-suffix -> strikte parse faalt -> leniente fallback.
+    rij = ["HARM16XX160230", "HARMONY Kleur 16 CA: 160x230 cm", "", "", "", "", "FE", "160", "230", 10,
+           26513630, "181502", "CONTANTE VERKOPEN", "", "B", 2, 22, "16-2026", "", 26000001, 1, "", ""]
+    regel = rij_naar_regel(rij)
+    assert regel["maatwerk_kwaliteit_code"] == "HARM"
+    assert regel["maatwerk_kleur_code"] == "16"
 
 
 def test_rij_uit_standaardmaat_gevlagd():
