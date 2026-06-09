@@ -1,6 +1,8 @@
 import { supabase } from '../client'
 import { sanitizeSearch } from '@/lib/utils/sanitize'
 import { fetchKlanteigenNamenMap } from '@/modules/debiteuren'
+import { filterDebiteurTeBevestigen } from '@/lib/orders/intake-predicaten'
+import { filterLeverweekTeBevestigen } from '@/lib/orders/edi-leverweek'
 
 export interface OrderRow {
   id: number
@@ -176,10 +178,7 @@ export async function fetchOrders(params: {
     // Status-overstijgend: filtert op bron + ontbrekende bevestiging.
     // Geannuleerde orders uitgesloten: die hoeven geen leverweek-bevestiging
     // (annuleren vereist geen bevestiging, dus edi_bevestigd_op blijft NULL).
-    query = query
-      .eq('bron_systeem', 'edi')
-      .is('edi_bevestigd_op', null)
-      .neq('status', 'Geannuleerd')
+    query = filterLeverweekTeBevestigen(query)
   } else if (status === 'Debiteur te bevestigen') {
     // Mig 322: orders waarvan de debiteur via een onzekere fuzzy strategie
     // geraden is. env_fallback (verzameldebiteur) is bewust géén fout en valt
@@ -188,10 +187,7 @@ export async function fetchOrders(params: {
     // expliciet env_fallback valt af) — anders zou hij stil uit beeld vallen,
     // wat de "geen order verloren"-garantie ondermijnt. Spiegelt de JS-conditie
     // op order-detail én countTeBevestigenDebiteurOrders.
-    query = query
-      .eq('debiteur_zeker', false)
-      .or('debiteur_match_bron.is.null,debiteur_match_bron.neq.env_fallback')
-      .neq('status', 'Geannuleerd')
+    query = filterDebiteurTeBevestigen(query)
   } else if (status && status !== 'Alle') {
     query = query.eq('status', status)
   }
@@ -290,12 +286,9 @@ export async function fetchStatusCounts(): Promise<StatusCount[]> {
       .select('id', { count: 'exact', head: true })
       .eq('heeft_unmatched_regels', true)
       .neq('status', 'Actie vereist'),
-    supabase
-      .from('orders')
-      .select('id', { count: 'exact', head: true })
-      .eq('bron_systeem', 'edi')
-      .is('edi_bevestigd_op', null)
-      .neq('status', 'Geannuleerd'),
+    filterLeverweekTeBevestigen(
+      supabase.from('orders').select('id', { count: 'exact', head: true }),
+    ),
     countTeBevestigenDebiteurOrders(),
   ])
 
@@ -331,14 +324,9 @@ export async function fetchStatusCounts(): Promise<StatusCount[]> {
  * ('Debiteur te bevestigen'-branch) aan als het ooit moet wijzigen.
  */
 export async function countTeBevestigenDebiteurOrders(): Promise<number> {
-  const { count, error } = await supabase
-    .from('orders')
-    .select('id', { count: 'exact', head: true })
-    .eq('debiteur_zeker', false)
-    // NULL-safe: alleen expliciet env_fallback valt af; een onzekere order
-    // zonder vastgelegde bron telt mee (zie fetchOrders-branch + order-detail).
-    .or('debiteur_match_bron.is.null,debiteur_match_bron.neq.env_fallback')
-    .neq('status', 'Geannuleerd')
+  const { count, error } = await filterDebiteurTeBevestigen(
+    supabase.from('orders').select('id', { count: 'exact', head: true }),
+  )
   if (error) throw error
   return count ?? 0
 }
