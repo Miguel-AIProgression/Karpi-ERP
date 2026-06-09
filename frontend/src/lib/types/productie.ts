@@ -1,22 +1,11 @@
 // Types for the maatwerk tapijt productiemodule
 
+// Status-types komen uit de single-source (gespiegeld aan de DB-enums).
+// Zie frontend/src/lib/utils/snijplan-status.ts + de contracttest.
+import type { SnijplanStatus, ConfectieStatus } from '@/lib/utils/snijplan-status'
+export type { SnijplanStatus, ConfectieStatus }
+
 // === Enums as string literals ===
-
-export type SnijplanStatus =
-  | 'Gepland'
-  | 'Snijden'
-  | 'Gesneden'
-  | 'In confectie'
-  | 'Gereed'
-  | 'Ingepakt'
-  | 'Geannuleerd'
-
-export type ConfectieStatus =
-  | 'Wacht op materiaal'
-  | 'In productie'
-  | 'Kwaliteitscontrole'
-  | 'Gereed'
-  | 'Geannuleerd'
 
 export type MaatwerkVorm = string  // Configureerbaar via maatwerk_vormen tabel
 export type MaatwerkAfwerking = 'B' | 'FE' | 'LO' | 'ON' | 'SB' | 'SF' | 'VO' | 'ZO'
