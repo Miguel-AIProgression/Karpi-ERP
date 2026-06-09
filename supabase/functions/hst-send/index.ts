@@ -67,6 +67,18 @@ Deno.serve(async (req) => {
   }
 
   const supabase = createClient(supabaseUrl, serviceKey);
+
+  // Zelfhelend: herstel rijen die in een vorige run vastliepen in 'Bezig'
+  // (crash/timeout vóór markeer-*). Best-effort — mag de run niet blokkeren.
+  try {
+    const { data: hersteld } = await supabase.rpc('herstel_vastgelopen_hst', { p_minuten: 10 });
+    if (hersteld && Number(hersteld) > 0) {
+      console.log(`[hst-send] reaper: ${hersteld} vastgelopen Bezig-rij(en) teruggezet naar Wachtrij`);
+    }
+  } catch (e) {
+    console.warn(`[hst-send] reaper faalde: ${String(e)}`);
+  }
+
   const summary: SendSummary = {
     processed: 0,
     succeeded: 0,
