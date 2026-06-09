@@ -977,7 +977,7 @@ function LeverDatumField({
         )}
       </div>
       <WeekDatumPicker
-        mode={leverType === 'week' ? 'week' : 'date'}
+        mode={leverType}
         waarde={afleverdatum}
         onChange={(nieuweDatum) => {
           const week = verzendWeekVoor(nieuweDatum)
