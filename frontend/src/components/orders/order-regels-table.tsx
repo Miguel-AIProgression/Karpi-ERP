@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { Scissors, ArrowRight, Pencil, X, Check } from 'lucide-react'
 import { useQueryClient, useMutation } from '@tanstack/react-query'
 import { formatCurrency } from '@/lib/utils/formatters'
-import { SNIJPLAN_STATUS_COLORS, AFWERKING_MAP } from '@/lib/utils/constants'
+import { snijplanBadgeClass, AFWERKING_MAP } from '@/lib/utils/constants'
 import { getVormDisplay } from '@/lib/utils/vorm-labels'
 import { isoWeekFromString, isoWeekString } from '@/lib/utils/iso-week'
 import type { OrderRegel } from '@/lib/supabase/queries/orders'
@@ -138,9 +138,8 @@ function formatMaat(regel: OrderRegel): string {
 }
 
 function SnijplanStatusBadge({ status, suffix }: { status: string; suffix?: string | null }) {
-  const colors = (SNIJPLAN_STATUS_COLORS as Record<string, { bg: string; text: string }>)[status] ?? { bg: 'bg-slate-100', text: 'text-slate-600' }
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${colors.bg} ${colors.text}`}>
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${snijplanBadgeClass(status)}`}>
       {status}
       {suffix && <span className="font-mono opacity-80">· {suffix}</span>}
     </span>
