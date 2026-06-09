@@ -7,24 +7,22 @@ WITH bundel_per_order AS (
     zo.order_id,
     z.id          AS zending_id,
     z.zending_nr  AS bundel_zending_nr,
-    aantal_orders AS bundel_order_count
+    cnt.aantal_orders AS bundel_order_count
   FROM zending_orders zo
   JOIN zendingen z ON z.id = zo.zending_id
   JOIN LATERAL (
-    SELECT COUNT(*)::INTEGER AS aantal_orders
-      FROM zending_orders zo2
-     WHERE zo2.zending_id = z.id
+    SELECT count(*)::integer AS aantal_orders
+    FROM zending_orders zo2
+    WHERE zo2.zending_id = z.id
   ) cnt ON cnt.aantal_orders >= 2
-  ORDER BY
-    zo.order_id,
+  ORDER BY zo.order_id, (
     CASE z.status
-      WHEN 'Picken'                  THEN 1
-      WHEN 'Klaar voor verzending'   THEN 2
-      WHEN 'Onderweg'                THEN 3
-      WHEN 'Afgeleverd'              THEN 4
+      WHEN 'Picken'::zending_status               THEN 1
+      WHEN 'Klaar voor verzending'::zending_status THEN 2
+      WHEN 'Onderweg'::zending_status              THEN 3
+      WHEN 'Afgeleverd'::zending_status            THEN 4
       ELSE 5
-    END,
-    z.id
+    END), z.id
 )
 SELECT
   o.id,
@@ -54,9 +52,10 @@ SELECT
   b.zending_id          AS bundel_zending_id,
   b.bundel_zending_nr,
   b.bundel_order_count,
+  -- Mig 326: levertijd-signalering
+  o.levertijd_wijziging_te_bevestigen_sinds,
   -- Mig 335: orderbevestiging-status voor overzichtstabel
-  o.bevestigd_at,
-  o.levertijd_wijziging_te_bevestigen_sinds
+  o.bevestigd_at
 FROM orders o
 LEFT JOIN debiteuren d         ON d.debiteur_nr = o.debiteur_nr
 LEFT JOIN bundel_per_order b   ON b.order_id    = o.id;
