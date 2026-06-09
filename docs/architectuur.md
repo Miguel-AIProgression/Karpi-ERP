@@ -418,6 +418,8 @@ import {
 } from '@/modules/maatwerk';
 ```
 
+**Pure commit-helpers (geëxtraheerd uit `order-form.tsx`):** de geld-rekenende split-/verzend-toewijzing-logica uit `saveMutation.mutationFn` leeft sinds 2026-06-09 als pure, geteste functies in [`lib/orders/split-order.ts`](../frontend/src/lib/orders/split-order.ts) — `wijsVerzendNaarDuurste` (verzendregel naar de duurste sub-order, issue #33) en `splitRegelOpDekking` (per-regel directe/IO-splitsing + proportionele bedrag-herberekening). Géén React/I/O; `order-form` importeert ze. Maakt de berekeningen los testbaar zonder de 1000+ regel-component te mounten.
+
 **Cross-cuts (blijven buiten Module):**
 
 - **SQL `stuk_snij_marge_cm` (mig 126) + view-kolommen op `snijplanning_overzicht` (mig 233)** — gedeelde formule voor +5/+6 cm marges (rond/ovaal/ZO/combi). Sinds mig 233 enige bron-van-waarheid; consumers lezen `marge_cm` (operator) of `placed_lengte_cm`/`placed_breedte_cm` (packer) uit de view. Planning's `check-levertijd`, `auto-plan-groep` en `optimaliseer-snijplan` consumeren de placed-kolommen via `_shared/db-helpers.fetchStukken`; Maatwerk's prijs-formule consumeert de SQL-functie indirect via `bereken_orderregel_prijs`. Twee adapters maken het een echt cross-cut, geen Module-eigendom.
