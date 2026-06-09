@@ -43,6 +43,13 @@ export interface OrderRow {
   heeft_deadline_conflict_na_swap?: boolean
   /** Datum van het laatste deadline_conflict_na_swap-event (ISO), voor tooltip. */
   deadline_conflict_na_swap_at?: string | null
+  /**
+   * Mig 326: tijdstip van de laatst gedetecteerde levertijd-wijziging door een
+   * leverancier/Karpi-ETA-update (sync_order_afleverdatum_eta), nog niet
+   * herbevestigd aan de klant. NULL = niets open. Spiegelt
+   * isLevertijdWijzigingTeBevestigen / het 'Levertijd gewijzigd'-tab-predicaat.
+   */
+  levertijd_wijziging_te_bevestigen_sinds?: string | null
 }
 
 export interface OrderDetail extends OrderRow {
@@ -194,6 +201,15 @@ export async function fetchOrders(params: {
       .eq('debiteur_zeker', false)
       .or('debiteur_match_bron.is.null,debiteur_match_bron.neq.env_fallback')
       .neq('status', 'Geannuleerd')
+  } else if (status === 'Levertijd gewijzigd') {
+    // Mig 326: orders waarvan de levertijd is verschoven (andere ISO-leverweek)
+    // door een leverancier/Karpi-ETA-update op een gekoppelde inkooporderregel,
+    // en die nog niet handmatig aan de klant zijn herbevestigd. Status-overstijgend;
+    // de gate is een enkele nullable timestamp (NULL = niets open) zodat dit met
+    // een simpele .not(...is.null) filterbaar is — spiegelt isLevertijdWijzigingTeBevestigen.
+    query = query
+      .not('levertijd_wijziging_te_bevestigen_sinds', 'is', null)
+      .not('status', 'in', '("Verzonden","Geannuleerd")')
   } else if (status && status !== 'Alle') {
     query = query.eq('status', status)
   }
@@ -285,7 +301,7 @@ export async function fetchOrders(params: {
  * altijd reflecteert wat er in de lijst verschijnt bij selectie.
  */
 export async function fetchStatusCounts(): Promise<StatusCount[]> {
-  const [tellingRes, unmatchedRes, teBevestigenRes, debiteurTeBevestigenRes] = await Promise.all([
+  const [tellingRes, unmatchedRes, teBevestigenRes, debiteurTeBevestigenRes, levertijdGewijzigdRes] = await Promise.all([
     supabase.from('orders_status_telling').select('status, aantal'),
     supabase
       .from('orders')
@@ -299,6 +315,11 @@ export async function fetchStatusCounts(): Promise<StatusCount[]> {
       .is('edi_bevestigd_op', null)
       .neq('status', 'Geannuleerd'),
     countTeBevestigenDebiteurOrders(),
+    supabase
+      .from('orders')
+      .select('id', { count: 'exact', head: true })
+      .not('levertijd_wijziging_te_bevestigen_sinds', 'is', null)
+      .not('status', 'in', '("Verzonden","Geannuleerd")'),
   ])
 
   if (tellingRes.error) throw tellingRes.error
@@ -319,6 +340,11 @@ export async function fetchStatusCounts(): Promise<StatusCount[]> {
 
   if (debiteurTeBevestigenRes > 0) {
     counts.push({ status: 'Debiteur te bevestigen', aantal: debiteurTeBevestigenRes })
+  }
+
+  const levertijdGewijzigd = levertijdGewijzigdRes.count ?? 0
+  if (levertijdGewijzigd > 0) {
+    counts.push({ status: 'Levertijd gewijzigd', aantal: levertijdGewijzigd })
   }
 
   return counts
@@ -570,4 +596,43 @@ export async function setRegelVerzendweek(regelId: number, verzendweek: string |
     p_verzendweek: verzendweek,
   })
   if (error) throw error
+}
+
+/** Metadata-payload bij `order_events.event_type = 'levertijd_gewijzigd_door_eta'` (mig 326). */
+export interface LevertijdWijzigingMetadata {
+  afleverdatum_oud: string | null
+  afleverdatum_nieuw: string | null
+  verzendweek_oud: string | null
+  verzendweek_nieuw: string | null
+  inkooporder_regel_id: number | null
+  eta_bijgewerkt_door: 'karpi' | 'leverancier' | null
+}
+
+export interface LevertijdWijzigingEvent {
+  id: number
+  created_at: string
+  metadata: LevertijdWijzigingMetadata
+}
+
+/**
+ * Haalt het meest recente `levertijd_gewijzigd_door_eta`-event voor een order op
+ * (mig 326) — voedt de detailweergave (oud/nieuw-week, oorzaak) in
+ * `LevertijdWijzigingBanner`. Spiegelt `fetchInkomendBerichtVoorOrder`.
+ */
+export async function fetchLaatsteLevertijdWijziging(
+  orderId: number,
+): Promise<LevertijdWijzigingEvent | null> {
+  const { data, error } = await supabase
+    .from('order_events')
+    .select('id, created_at, metadata')
+    .eq('order_id', orderId)
+    .eq('event_type', 'levertijd_gewijzigd_door_eta')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) throw error
+  if (!data) return null
+
+  return data as unknown as LevertijdWijzigingEvent
 }

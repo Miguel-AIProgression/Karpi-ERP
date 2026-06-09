@@ -16,6 +16,8 @@ import { EdiLeverweekBevestigen } from '@/components/orders/edi-leverweek-bevest
 import { isLeverweekTeBevestigen } from '@/lib/orders/edi-leverweek'
 import { DebiteurBevestigenWidget } from '@/components/orders/debiteur-bevestigen-widget'
 import { BastaAfhandelingPaneel } from '@/components/orders/basta-afhandeling-paneel'
+import { LevertijdWijzigingBanner } from '@/components/orders/levertijd-wijziging-banner'
+import { isLevertijdWijzigingTeBevestigen } from '@/lib/orders/levertijd-wijziging'
 
 function EmailInhoudPanel({ body }: { body: string }) {
   const [open, setOpen] = useState(false)
@@ -113,6 +115,13 @@ export function OrderDetailPage() {
           gewenstIso={order.edi_gewenste_afleverdatum ?? null}
           afleverdatumIso={order.afleverdatum}
           orderStatus={order.status}
+        />
+      )}
+
+      {isLevertijdWijzigingTeBevestigen(order) && order.status !== 'Geannuleerd' && (
+        <LevertijdWijzigingBanner
+          orderId={order.id}
+          teBevestigenSinds={order.levertijd_wijziging_te_bevestigen_sinds!}
         />
       )}
 

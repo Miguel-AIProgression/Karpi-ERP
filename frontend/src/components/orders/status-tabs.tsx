@@ -10,12 +10,16 @@ import type { StatusCount } from '@/lib/supabase/queries/orders'
 // (bron_systeem='edi' AND edi_bevestigd_op IS NULL); status-overstijgend, net als 'Actie vereist'.
 // 'Debiteur te bevestigen' = orders met onzekere fuzzy debiteur-match (mig 322,
 // debiteur_zeker=false, bron <> env_fallback); ook status-overstijgend.
+// 'Levertijd gewijzigd' = orders waarvan de leverweek is verschoven door een
+// leverancier/Karpi-ETA-update op een gekoppelde inkooporderregel (mig 326,
+// levertijd_wijziging_te_bevestigen_sinds IS NOT NULL); ook status-overstijgend.
 const ALL_STATUSES = [
   'Alle',
   'Klaar voor picken',
   'Actie vereist',
   'Te bevestigen',
   'Debiteur te bevestigen',
+  'Levertijd gewijzigd',
   'Wacht op voorraad',
   'Wacht op inkoop',
   'Wacht op maatwerk',
