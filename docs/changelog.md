@@ -5,6 +5,7 @@
 Plan: [`docs/superpowers/plans/2026-06-09-order-intake-consolidatie-gefaseerd.md`](superpowers/plans/2026-06-09-order-intake-consolidatie-gefaseerd.md). Branch `refactor/order-intake-consolidatie`.
 
 - **Slice 0 — fix:** Lightspeed gewicht-conversie geünificeerd op micro-kg in gedeelde helper [`_shared/order-intake/gewicht.ts`](../supabase/functions/_shared/order-intake/gewicht.ts); `import-lightspeed-orders` deelde foutief door 1.000 (grams-aanname) → factor-1000 te laag gewicht, terwijl `sync-webshop-order` al door 1.000.000 deelde. Eén bron van waarheid + Deno-test.
+- **Slice 1 — docs:** `architectuur.md` + ADR-0001 in lijn gebracht met de realiteit (`modules/orders/` bestaat niet; order-code leeft bewust verspreid over `components/orders/`, `lib/orders/`, `lib/supabase/queries/orders.ts`, `modules/orders-lifecycle/`).
 
 ## 2026-06-09 — Orders-overzicht: kanaal-filter (EDI, Shopify, handmatig, oud systeem)
 

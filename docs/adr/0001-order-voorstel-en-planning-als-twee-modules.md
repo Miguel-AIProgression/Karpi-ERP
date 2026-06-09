@@ -20,6 +20,21 @@ We splitsen dit in **twee deep verticale Modules** met een expliciete seam ertus
 
 De **seam** is een pure TS-functie-contract: `simuleerLevertijd(maatwerkRegels) → scenario`. Cross-Module-aanroep gaat via een shared TS-helper die door beide edge-functies geïmporteerd wordt — niet via god-Module en niet via HTTP-tussenstap.
 
+## Implementatie-status (bijgewerkt 2026-06-09)
+
+**Niet uitgevoerd.** Noch `modules/orders/` noch `modules/planning/` is gebouwd; de
+edge functions `orders-bouw-voorstel`/`planning-simuleer-levertijd` en de RPC
+`bouw_order_voorstel` bestaan niet. De `modules/planning/`-helft is formeel
+ingetrokken door [ADR-0013](0013-snijplanning-module-en-cache-invalidation-seam.md).
+De `modules/orders/`-helft blijft een open belofte, maar is **bewust niet
+ingepland**: de order-intake/-voorstel-code werkt verspreid over
+`components/orders/`, `lib/orders/`, `lib/supabase/queries/orders.ts` en
+`modules/orders-lifecycle/`. Een mapverhuizing levert geen functionele waarde en
+vereist eerst de in "Consequenties" genoemde regressie-fixtureset (~20 order-cases),
+die niet bestaat. Latere ADR's (0006/0009/0011/0018) die "zodra ADR-0001 uitgevoerd
+is" noemen, moeten gelezen worden als "tot nader order: directe import uit
+`lib/`/`components/`".
+
 ## Overwogen alternatieven
 
 - **God-Module die zowel Orders als Planning bevat** — afgewezen omdat het exact het probleem is dat we willen oplossen (verspreide kennis, "kleine wijziging → bug elders"). Diepte is goed, breedte is niet hetzelfde.
