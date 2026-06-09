@@ -1,5 +1,9 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-09 — Orders-overzicht: kanaal-filter (EDI, Shopify, handmatig, oud systeem)
+
+**Wat:** MultiSelectDropdown "Alle kanalen" op het orders-overzicht filtert op `bron_systeem`. Handmatig = `NULL` of `'handmatig'`; oud-systeem-orders afzonderlijk uit- of aan te zetten. `BronBadge` uitgebreid met expliciete labels voor `oud_systeem` ("Oud systeem") en `email` ("E-mail").
+
 ## 2026-06-08 — Productie-only orders uit Basta (Fase A): import + snijden/confectie, buiten facturatie
 
 **Waarom:** Basta (het oude ERP) heeft een backlog nog-niet-gesneden maatwerk-orders.
@@ -54,6 +58,133 @@ rollengte (één bron van waarheid). Zie [ADR-0029](adr/0029-productie-only-orde
 standaardmaat-vlag); gewone orders blijven byte-voor-byte ongewijzigd.
 
 **Migraties:** 327-331 (handmatig toepassen). **ADR:** [0029](adr/0029-productie-only-orders-basta.md) (vervangt 0028).
+
+## 2026-06-08 — Orderbevestiging: ontbrekende velden uit oude PDF toegevoegd (e-mail + bijlage)
+
+**Waarom:** vergelijking van de nieuwe Graph-mail-orderbevestiging met de
+"HERBEVESTIGING"-PDF's van het oude systeem (`ob26485640.pdf`, `ob26499970.pdf`)
+liet zien dat een aantal velden die klanten gewend zijn te zien, ontbraken —
+zowel in de e-mailtekst als op de PDF-bijlage die de klant bewaart.
+
+**Wat — beide in [`stuur-orderbevestiging`](../supabase/functions/stuur-orderbevestiging/index.ts)
+en [`_shared/orderbevestiging-pdf.ts`](../supabase/functions/_shared/orderbevestiging-pdf.ts):**
+- **Vertegenwoordiger** (`orders.vertegenw_code` → `medewerkers.naam`, zelfde
+  resolutieketen als view `klant_omzet_ytd` — NIET de legacy `vertegenwoordigers`-tabel).
+- **"Uw debiteurnr."** ook op de PDF (stond al in de e-mailtekst).
+- Per regel: **eenheid** ("St", hardcoded voor echte productregels — er bestaat
+  geen `eenheid`-kolom op `producten`/`order_regels`, mirrort de oude lay-out),
+  **korting%** (`order_regels.korting_pct`) en een herhaalde **verzendweek**-subregel
+  (bewuste keuze: het order-niveau-week herhalen i.p.v. een nieuwe per-regel
+  IO-claim-berekening optuigen — de oude PDF toonde notabene ook bij de
+  vrachtkosten-regel gewoon dezelfde week).
+- **Orderreferentie** (`klant_referentie`) zichtbaar maken waar aanwezig
+  (bevestigd door gebruiker als betekenis van de mysterieuze derde sub-regel
+  "R26005850 T Groot Bleumink" op de oude PDF).
+- **BTW-uitsplitsing** (`Totaalbedrag excl. btw` → `XX% btw over Y` →
+  `Totaalbedrag incl. btw`) via de gedeelde `berekenFactuurTotalen`-helper, met
+  `btw_percentage = COALESCE(debiteuren.btw_percentage, 21.00)` — **letterlijk
+  dezelfde bron-van-waarheid en default als `genereer_factuur`**, zodat
+  orderbevestiging en factuur niet uit elkaar lopen.
+- **Maatafwijking-disclaimer** (vaste juridische tekst, letterlijk overgenomen:
+  "Een geringe maatafwijking van +/- 3% alsmede een kleurafwijking kan optreden.").
+- **Betalingsconditie** (`debiteuren.betaalconditie`, leidende numerieke code
+  gestript: "31 - 30 dagen netto" → "30 dagen netto").
+- **Afleveradresblok** ook in de e-mailtekst (stond al conditioneel op de PDF,
+  ontbrak in de mailtekst zelf).
+- Alle nieuwe labels vertaald in de bestaande 4-talen-`VERTALINGEN`-dictionary
+  (nl/de/fr/en).
+
+**Bewust niet gedaan (data-gaten, gerapporteerd aan gebruiker):**
+- **Verzendmethode-code** (bv. "VRIJ2"/"HST10") — overbodig naast de al
+  getoonde levertijd, op uitdrukkelijk verzoek weggelaten.
+- **"Leveringsconditie"/"Franco"** — geen velden hiervoor in het schema
+  (`debiteuren.gratis_verzending=false` voor beide referentie-debiteuren,
+  ondanks "Franco" op één van de oude PDF's). Niet te betrouwbaar afleiden →
+  bewust weggelaten i.p.v. gefabriceerd.
+- **Fiscale bevinding (los van deze taak):** debiteuren met
+  `btw_verlegd_intracom=true` (bv. #152004, #150762, #331114) hebben nog steeds
+  `btw_percentage=21.00`, en de bestaande `genereer_factuur`-RPC negeert die
+  vlag volledig — het intra-EU-verleggingsmechanisme lijkt dus nooit
+  geïmplementeerd in de facturatie. Gebruiker koos bewust om de (mogelijk
+  onvolledige) bestaande BTW-logica te spiegelen i.p.v. hier te diveren; dit is
+  een apart fiscaal/compliance-aandachtspunt voor de boekhouding.
+
+**Getest:** end-to-end testverzending op order ORD-2026-0001 (debiteur 150620,
+NL, met vertegenwoordiger + regelkorting + betaalconditie) — `bevestigd_at`/
+`bevestigd_door`/`bevestiging_email`-bijwerking nadien teruggedraaid.
+
+### Vervolg dezelfde dag — correcties + PDF-redesign + logo-fix
+
+Na gebruikersfeedback op de eerste versie:
+- **Vertegenwoordiger** toont nu uitsluitend de naam (bv. "Astrid Roth"), niet
+  langer "10 Astrid Roth" — de medewerkerscode wordt niet meer meegestuurd naar
+  e-mail of PDF.
+- **Betalingsconditie** is nu **uitsluitend op de PDF-bijlage** zichtbaar; is
+  volledig verwijderd uit de e-mailtekst (incl. de bijbehorende `betalingsconditie`-
+  sleutel uit de 4-talen-`VERTALINGEN`-dictionary en de orphaned helper in
+  `index.ts` — de enige overgebleven `strippedBetaalconditie` leeft in
+  `_shared/orderbevestiging-pdf.ts`, waar hij ook daadwerkelijk gebruikt wordt).
+- **Logo verscheen nooit op de PDF — root cause gevonden en gefixt:** de oude
+  default `KARPI_LOGO_PATH = 'logos/karpi-logo.jpg'` in combinatie met bucket
+  `'documenten'` verwees naar een niet-bestaand storage-object (geverifieerd via
+  `storage.objects`: het bestand staat op `public-assets/karpi-logo.jpg`, 25KB).
+  De try/catch slikte de downloadfout stil in, dus niemand merkte het. **Fix:**
+  `KARPI_LOGO_BUCKET = 'public-assets'` / `KARPI_LOGO_PATH = 'karpi-logo.jpg'`,
+  zelfde conventie als het al-werkende `factuur-pdf/index.ts`.
+- **PDF-redesign: het oude-systeem-template (`ob26499970.pdf`, "HERBEVESTIGING")
+  nagebootst** in `_shared/orderbevestiging-pdf.ts`. De gekleurde/blokkerige
+  stijl (terracotta titelbalk, slate tabel-headerbalk, zebra-gestreepte rijen)
+  is vervangen door een rustigere, tekstgerichte lay-out die de merk-header van
+  `_shared/factuur-pdf.ts` spiegelt: gecentreerd Karpi-logo bovenaan, "KARPI BV"
+  + adresgegevens rechtsboven in `KARPI_ORANJE` (`rgb(0.76, 0.53, 0.22)` —
+  afgeleid uit de gouden lijnkleur van het logo, dezelfde constante als in de
+  factuur), een platte "ORDERBEVESTIGING"-labelregel (i.p.v. gekleurde balk,
+  analoog aan "FACTUUR"/"HERBEVESTIGING" in het oude template), en een
+  tabel-opmaak met dunne zwarte lijnen i.p.v. gekleurde balken/zebra-striping.
+  Brengt orderbevestiging en factuur visueel in lijn — beide stammen uit
+  dezelfde oude-systeem-"Custom ERP"-templatefamilie.
+
+**Getest:** opnieuw end-to-end testverzending op ORD-2026-0001 naar
+phdobbe@gmail.com (na deploy) — `bevestigd_at`/`bevestigd_door`/
+`bevestiging_email` nadien weer teruggedraaid naar `NULL`.
+
+## 2026-06-08 — Factuur-/orderbevestigingsmail van Resend naar Microsoft Graph (M365)
+
+**Waarom:** we gaan daadwerkelijk facturen en orderbevestigingen per mail versturen
+vanuit RugFlow, en wilden eerst checken of de bestaande Resend-koppeling
+betrouwbaar zou werken. Bleek niet: het Resend-verzenddomein `karpi.nl` stond op
+**Failed** — ontbrekend MX-record + falende SPF op het `send`-subdomein, en de
+DNS-provider (netzozeker.nl) liet via het zelfbedieningsformulier geen
+aangepaste naam toe bij recordtype MX (alleen op de domein-apex). In plaats van
+daar achteraan te blijven hobbelen: `karpi.nl` is namelijk **al correct
+geconfigureerd voor Microsoft 365** (de bestaande MX wijst al naar
+`protection.outlook.com`, de SPF bevat al `include:spf.protection.outlook.com`)
+— dus is overstappen op verzenden via het bestaande M365-postvak zowel
+eenvoudiger als betrouwbaarder, zonder enige nieuwe DNS-wijziging.
+
+**Wat:**
+- Nieuwe gedeelde module [`_shared/graph-mail-client.ts`](../supabase/functions/_shared/graph-mail-client.ts)
+  (+ `graph-mail-client.test.ts`) — dunne wrapper rond de **Microsoft Graph
+  `sendMail`-API**, met OAuth2 client-credentials-flow (Entra ID app-registratie,
+  permissie `Mail.Send`, application-type met admin-consent). Spiegelt de oude
+  `sendFactuurEmail(...)`-interface zodat de callers nauwelijks hoefden te wijzigen.
+- [`factuur-verzenden`](../supabase/functions/factuur-verzenden/index.ts) en
+  [`stuur-orderbevestiging`](../supabase/functions/stuur-orderbevestiging/index.ts)
+  roepen nu `sendFactuurEmail` uit `graph-mail-client.ts` aan i.p.v.
+  `resend-client.ts`. Nieuwe env-vars: `MS_GRAPH_TENANT_ID`, `MS_GRAPH_CLIENT_ID`,
+  `MS_GRAPH_CLIENT_SECRET` (vervangen `RESEND_API_KEY`); `FACTUUR_FROM_EMAIL` en
+  `FACTUUR_REPLY_TO` blijven bestaan maar wijzen nu naar een echte M365-mailbox
+  (bv. `facturen@karpi.nl`) — de app-registratie moet `Mail.Send` hebben voor die
+  mailbox.
+- `resend-client.ts` + `resend-client.test.ts` **verwijderd** (geen overige callers).
+
+**Nog te doen (door gebruiker, buiten code-scope):** Entra ID app-registratie
+aanmaken (Azure Portal → App registrations → New registration → API permissions
+→ Microsoft Graph → Application permissions → `Mail.Send` → Grant admin consent
+→ Certificates & secrets → nieuw client secret), en de vier secrets
+(`MS_GRAPH_TENANT_ID`, `MS_GRAPH_CLIENT_ID`, `MS_GRAPH_CLIENT_SECRET`,
+`FACTUUR_FROM_EMAIL`) in Supabase edge-function-secrets zetten/bijwerken vóór
+deploy. `RESEND_API_KEY`/`FACTUUR_REPLY_TO` (oud) kunnen daarna opgeruimd worden.
 
 ## 2026-06-07 — Carrier-payload-audit: rauwe HST request/response per poging bewaren
 
