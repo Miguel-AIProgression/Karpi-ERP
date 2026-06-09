@@ -6,6 +6,7 @@ Plan: [`docs/superpowers/plans/2026-06-09-order-intake-consolidatie-gefaseerd.md
 
 - **Slice 0 — fix:** Lightspeed gewicht-conversie geünificeerd op micro-kg in gedeelde helper [`_shared/order-intake/gewicht.ts`](../supabase/functions/_shared/order-intake/gewicht.ts); `import-lightspeed-orders` deelde foutief door 1.000 (grams-aanname) → factor-1000 te laag gewicht, terwijl `sync-webshop-order` al door 1.000.000 deelde. Eén bron van waarheid + Deno-test.
 - **Slice 1 — docs:** `architectuur.md` + ADR-0001 in lijn gebracht met de realiteit (`modules/orders/` bestaat niet; order-code leeft bewust verspreid over `components/orders/`, `lib/orders/`, `lib/supabase/queries/orders.ts`, `modules/orders-lifecycle/`).
+- **Slice 2 — refactor:** drie intake-predicaten (Te koppelen / Te bevestigen / Debiteur te bevestigen) gecentraliseerd in pure helpers + filterhelpers ([`intake-predicaten.ts`](../frontend/src/lib/orders/intake-predicaten.ts), [`edi-leverweek.ts`](../frontend/src/lib/orders/edi-leverweek.ts) `filterLeverweekTeBevestigen`, [`modules/edi/lib/te-koppelen.ts`](../frontend/src/modules/edi/lib/te-koppelen.ts)); inline-kopieën in `fetchOrders`/`fetchStatusCounts`/`countTeBevestigenDebiteurOrders`/order-detail/`berichten-overzicht`/`countTeKoppelenEdiOrders` verwijderd. Filterhelpers casten intern i.p.v. zelf-refererende generic (vermijdt TS2589 op de Supabase-builder).
 
 ## 2026-06-09 — Orders-overzicht: kanaal-filter (EDI, Shopify, handmatig, oud systeem)
 
