@@ -41,3 +41,6 @@ verify_jwt = false
 
 [functions.transus-send]
 verify_jwt = false
+
+[functions.hst-send]
+verify_jwt = false

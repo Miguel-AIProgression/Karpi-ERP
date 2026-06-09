@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { ArrowUp, ArrowDown, ArrowUpDown, AlertCircle, AlertTriangle } from 'lucide-react'
+import { ArrowUp, ArrowDown, ArrowUpDown, AlertCircle, AlertTriangle, CheckCircle } from 'lucide-react'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { formatCurrency, formatDate } from '@/lib/utils/formatters'
 import { verzendWeekVoor } from '@/lib/orders/verzendweek'
@@ -230,7 +230,15 @@ function OrderTr({ order, bundel, facturenPerOrder }: {
         {formatCurrency(order.totaal_bedrag)}
       </td>
       <td className="px-4 py-3">
-        <StatusBadge status={order.status} />
+        <div className="flex flex-col gap-1">
+          <StatusBadge status={order.status} />
+          {order.bevestigd_at && (
+            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-green-700">
+              <CheckCircle size={10} />
+              Bevestigd
+            </span>
+          )}
+        </div>
       </td>
       <td className="px-4 py-3 whitespace-nowrap">
         <FactuurCel orderId={order.id} facturenPerOrder={facturenPerOrder} />

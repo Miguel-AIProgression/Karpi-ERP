@@ -3,6 +3,7 @@ import { Globe, Search, Package, CalendarCheck, CalendarClock } from 'lucide-rea
 import { useQueries } from '@tanstack/react-query'
 import { PageHeader } from '@/components/layout/page-header'
 import { PickProblemenBanner } from '../components/pick-problemen-banner'
+import { HstAandachtBanner } from '@/modules/logistiek'
 import { PickDagOrdersSectie } from '../components/pick-dag-orders-sectie'
 import { PickWeekSectie } from '../components/pick-week-sectie'
 import { usePickShipOrders, usePickShipStats } from '../hooks/use-pick-ship'
@@ -187,6 +188,7 @@ export function MagazijnOverviewPage() {
       />
 
       <PickProblemenBanner />
+      <HstAandachtBanner />
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
         {statCards.map((s) => (

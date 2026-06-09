@@ -9,6 +9,92 @@ Plan: [`docs/superpowers/plans/2026-06-09-order-intake-consolidatie-gefaseerd.md
 - **Slice 2 — refactor:** drie intake-predicaten (Te koppelen / Te bevestigen / Debiteur te bevestigen) gecentraliseerd in pure helpers + filterhelpers ([`intake-predicaten.ts`](../frontend/src/lib/orders/intake-predicaten.ts), [`edi-leverweek.ts`](../frontend/src/lib/orders/edi-leverweek.ts) `filterLeverweekTeBevestigen`, [`modules/edi/lib/te-koppelen.ts`](../frontend/src/modules/edi/lib/te-koppelen.ts)); inline-kopieën in `fetchOrders`/`fetchStatusCounts`/`countTeBevestigenDebiteurOrders`/order-detail/`berichten-overzicht`/`countTeKoppelenEdiOrders` verwijderd. Filterhelpers casten intern i.p.v. zelf-refererende generic (vermijdt TS2589 op de Supabase-builder).
 - **Slice 3 — refactor:** split-/verzend-toewijzing-logica uit [`order-form.tsx`](../frontend/src/components/orders/order-form.tsx) `saveMutation.mutationFn` geëxtraheerd naar geteste pure helpers [`lib/orders/split-order.ts`](../frontend/src/lib/orders/split-order.ts) (`wijsVerzendNaarDuurste` + `splitRegelOpDekking`). Geld-rekenende logica (maatwerk-split + IO-split, eerder 2× gedupliceerd) nu los testbaar; gedrag ongewijzigd.
 - **Slice 4 — refactor:** gedeeld `IntakeRegel`-type ([`_shared/order-intake/types.ts`](../supabase/functions/_shared/order-intake/types.ts)) + gededupliceerde Lightspeed-regelbouw ([`_shared/order-intake/lightspeed-regels.ts`](../supabase/functions/_shared/order-intake/lightspeed-regels.ts) `buildLightspeedRegels` + pure `toIntakeRegel`); de twee near-duplicate `buildRegels` in `sync-webshop-order` en `import-lightspeed-orders` zijn vervangen. `sync-shopify-order` kreeg het eerder ontbrekende `maatwerk_vorm`-veld en emit nu `IntakeRegel[]`. EDI (SQL-pad `create_edi_order`) valt bewust buiten dit type.
+## 2026-06-09 — Betaaltermijn als bron-van-waarheid (ADR-0022, mig 340-341)
+
+Foute `regexp_match(betaalconditie, '^(\d+)')` in `genereer_factuur_voor_bundel`
+pakte de betaalconditie-**code** (bv. "02") i.p.v. het aantal **dagen** (30) →
+vervaldatum +2 i.p.v. +30 (FACT-2026-0021-klasse). Opgelost met centrale SQL-
+helper `betaaltermijn_dagen(TEXT)` (mig 340) die de code-prefix opzoekt in
+`betaalcondities.dagen` (mig 202/203) met vangnet "<n> dagen" en default 30;
+`genereer_factuur_voor_bundel` consumeert die nu (mig 341). De andere historische
+kopieën (`genereer_factuur`, `genereer_factuur_voor_week`) waren al door mig 240
+gedropt — dit was de laatste live drager. Self-testing migratie borgt de bug-case.
+(Migratienr verschoven van plan-claim 333/334 → 340/341 wegens collisie met
+origin/main, dat inmiddels tot 339 liep.)
+
+## 2026-06-09 — HST-observability + altijd-een-vervoerder (productie-klaar maken HST-koppeling)
+
+**Waarom:** de HST-verzendkoppeling gaat van acceptatie naar productie. Twee gaten
+blokkeerden dat: (1) orders zonder matchende vervoerder-regel bleven stil liggen — HST is
+de enige actieve koppeling maar lag niet als bodem onder NL-orders; (2) de `hst-send`-cron
+kon stilvallen / een transportorder mid-claim op `'Bezig'` laten hangen zonder zichtbaar
+signaal (zelfde klasse als de EDI poll silent failure). Aanleiding bovendien: ACCP-afkeuring
+2026-06-09 "Bellen voor aflevering, geef telefoonnummer op" — HST gaf kaal `"HTTP 400"`
+terug en het leveringstelefoonnummer werd niet meegestuurd. Zie
+[ADR-0030](adr/0030-altijd-een-vervoerder-en-hst-default-carrier.md) (bouwt voort op
+[ADR-0008](adr/0008-vervoerder-keuze-als-deep-module.md)).
+
+**Wat — migraties 336-339 (handmatig toepassen):**
+- **mig 336:** `vervoerders.is_default BOOLEAN DEFAULT FALSE` (partial unique index
+  `uk_vervoerders_is_default` → hooguit één TRUE) + seed `hst_api` als default + een
+  **catch-all** rij in `vervoerder_selectie_regels` (`vervoerder_code='hst_api'`, prio
+  `99999` = laagste, conditie `{"land":["NL"]}`, notitie "Default-vervoerder binnen NL").
+  Mechanisme: de bestaande ladder in `effectieve_vervoerder_per_orderregel`
+  (`override → regel → geen`, ADR-0008/mig 219) levert nu HST binnen NL via de catch-all;
+  specifieke regels (lagere prio) winnen nog steeds. **Gegate op `hst_api.actief=TRUE`** —
+  staat bewust nog FALSE tot de cutover, dus de default wordt pas dan effectief. Buiten NL
+  blijft `bron='geen'` → "handmatig vervoerder kiezen".
+- **mig 337:** RPC `herstel_vastgelopen_hst(p_minuten INTEGER DEFAULT 10) RETURNS INTEGER`
+  (SECURITY DEFINER, GRANT authenticated) — self-healing reaper: zet `hst_transportorders`-
+  rijen die >`p_minuten` op `'Bezig'` hangen terug naar `'Wachtrij'`. Bovenin elke
+  `hst-send`-run aangeroepen + handmatig.
+- **mig 338:** twee observability-views. `hst_verzend_monitor` (aggregaat, één rij, geen
+  state): `verstuurd_vandaag`, `fout_open`, `wachtrij`, `bezig`, `oudste_wachtrij_minuten`,
+  `oudste_bezig_minuten` — de laatste twee zijn het cron-health-signaal (hoog = verzend-cron
+  staat stil; UI-drempel 5 min). `orders_zonder_vervoerder`: niet-afhaal-orders
+  (`afhalen=FALSE`), status NOT IN (`'Geannuleerd'`,`'Verzonden'`,`'Concept'`), met ≥1 regel
+  waarvan `effectieve_vervoerder_per_orderregel(...).bron='geen'` — voedt de
+  "handmatig vervoerder kiezen"-teller/banner.
+- **mig 339:** `zendingen.afl_telefoon TEXT` — snapshot leveringstelefoonnummer voor HST
+  (die "belt vóór aflevering"). Gevuld door BEFORE-INSERT-trigger `trg_zending_fill_telefoon`
+  (functie `fn_zending_fill_telefoon`): ladder `orders.afl_telefoon` → fallback
+  `debiteuren.telefoon`. Bewust via trigger zodat álle zending-aanmaakroutes het veld vullen.
+  Inclusief backfill voor nog-niet-verstuurde zendingen. (Hernummerd van 335 → 339 bij merge
+  naar main wegens collisie met `335_orders_list_bevestigd_at.sql`.)
+
+**Wat — edge function `hst-send` + gedeelde validator:**
+- Nieuwe pure pre-flight validator [`_shared/vervoerder-eisen.ts`](../supabase/functions/_shared/vervoerder-eisen.ts)
+  (`valideerVoorVervoerder(ctx) → {ok, problemen[]}`, codes `TELEFOON_ONTBREEKT` /
+  `ADRESVELD_LEEG` / `LAND_BUITEN_BEREIK`, const `HST_LANDEN_BEREIK=['NL']`). Aangeroepen als
+  laatste poort in `hst-send` vóór de POST — faalt een eis → rij direct op `Fout` met heldere
+  reden, geen kansloze HST-call. Gespiegeld als frontend-kopie
+  [`frontend/src/lib/orders/vervoerder-eisen.ts`](../frontend/src/lib/orders/vervoerder-eisen.ts)
+  (Deno-edge niet door Vite importeerbaar; seam-patroon zoals `_shared/debiteur-matcher.ts`
+  ↔ frontend `product-matcher`).
+- Bugfix `hst-client.ts` `extractErrorMsg`: leest nu ook HST's PascalCase-veld
+  `ErrorMessage` (operator kreeg eerder kaal `"HTTP 400"`).
+- `payload-builder.ts`: vult `ToAddress.PhoneNumber` uit `zendingen.afl_telefoon`
+  (was hardcoded leeg).
+
+**Wat — frontend (module logistiek):**
+- [`queries/hst-monitor.ts`](../frontend/src/modules/logistiek/queries/hst-monitor.ts)
+  (query's + helpers `cronVermoedelijkStil`, `telHstAandacht`, `countOrdersZonderVervoerder`)
+  en [`hooks/use-hst-monitor.ts`](../frontend/src/modules/logistiek/hooks/use-hst-monitor.ts)
+  (TanStack-hooks, refetchInterval 30s/60s).
+- Nieuwe route `/logistiek/hst-monitor`
+  ([`pages/hst-monitor.tsx`](../frontend/src/modules/logistiek/pages/hst-monitor.tsx)):
+  KPI's, open-fouten-tabel met echte `error_msg` + opnieuw-versturen-knop, cron-health-
+  waarschuwing.
+- [`components/hst-aandacht-banner.tsx`](../frontend/src/modules/logistiek/components/hst-aandacht-banner.tsx):
+  rode/amber banner op Pick & Ship (MagazijnOverviewPage) bij open fouten / stilstaande cron
+  / orders zonder vervoerder, plus nav-link naar de monitor. Spiegelt het
+  `EdiTeKoppelenBanner`-patroon.
+
+**Gevolg:** tweede vervoerder = eigen `vervoerder_selectie_regels` + `is_default`-vlag
+omzetten — geen resolver-edit. Ladder en RPC uit ADR-0008 onaangeraakt; alle wijzigingen
+strikt additief en geguard.
+
+**Migraties:** 336-339 (handmatig). **ADR:** [0030](adr/0030-altijd-een-vervoerder-en-hst-default-carrier.md) (bouwt voort op [0008](adr/0008-vervoerder-keuze-als-deep-module.md)).
 
 ## 2026-06-09 — Orders-overzicht: kanaal-filter (EDI, Shopify, handmatig, oud systeem)
 
@@ -157,6 +243,69 @@ Na gebruikersfeedback op de eerste versie:
 **Getest:** opnieuw end-to-end testverzending op ORD-2026-0001 naar
 phdobbe@gmail.com (na deploy) — `bevestigd_at`/`bevestigd_door`/
 `bevestiging_email` nadien weer teruggedraaid naar `NULL`.
+
+## 2026-06-08 — Signalering levertijd-wijziging door leverancier-ETA-update (mig 326)
+
+**Waarom:** sinds mig 318/319 kunnen leveranciers (supplier-portal) en Karpi
+intern de ETA op een inkooporderregel aanpassen — `update_regel_eta`
+propageert dat al **direct en stil** naar lopende klantorders:
+`herallocateer_orderregel` herberekent de claims en de bidirectionele
+`sync_order_afleverdatum_eta` (mig 319) verschuift `orders.afleverdatum` zowel
+naar voren als naar achteren. Operationeel correct, maar onzichtbaar — een
+order kon twee weken later gaan leveren zonder dat iemand het zag of de klant
+daarover werd geïnformeerd. Gebruiker wilde dit zichtbaar: een overzicht +
+per-order signalering, met een **handmatige** "herbevestigd aan klant"-afvinking
+(geen automatische mail/EDI-bericht — dat regelt de operator zelf en legt het
+hier vast als audit-trail).
+
+**Wat:**
+- `order_event_type` uitgebreid met `'levertijd_gewijzigd_door_eta'` (patroon
+  mig 297: `ALTER TYPE ... ADD VALUE` vóór de functies die 'm gebruiken).
+- Nieuwe nullable gate-kolom `orders.levertijd_wijziging_te_bevestigen_sinds`
+  (TIMESTAMPTZ, NULL = niets open). Bewust **één** kolom i.p.v. een
+  gemeld_op/bevestigd_op-paar (zoals `edi_gewenste_afleverdatum`/
+  `edi_bevestigd_op`): die EDI-gate is eenmalig (vast bij order-aanmaak),
+  terwijl deze gate herhaaldelijk open/dicht moet — en PostgREST kan niet
+  filteren op kolom-vs-kolom-vergelijkingen (`bevestigd_op < gemeld_op`). Eén
+  nulbare "open sinds"-timestamp is zowel het filterbare gate-predicaat
+  (`IS NOT NULL`) als de weergavewaarde ineen.
+- `sync_order_afleverdatum_eta` (mig 319) uitgebreid met detectie: vergelijkt
+  de oude vs. nieuwe `afleverdatum` op **ISO-leverweek**
+  (`verzendweek_voor_datum`, mig 228 — kleine dag-schuiven binnen dezelfde week
+  triggeren bewust geen melding, mirrort EDI-leverweek/bundel-conventies). Bij
+  een leverweek-verschuiving: logt een `levertijd_gewijzigd_door_eta`
+  `order_events`-rij (met `afleverdatum_oud/nieuw`, `verzendweek_oud/nieuw`,
+  `inkooporder_regel_id`, `eta_bijgewerkt_door`) en zet de gate op `now()`.
+  Signaleert bij **elke** ETA-gedreven wijziging, ongeacht of de leverancier
+  (portal) of Karpi intern de ETA aanpaste — de impact op de klant is gelijk.
+  **Subtiele bug onderweg gefixt:** de "voor"-snapshot moet vóór
+  `herallocateer_orderregel` worden gelezen — dat pad triggert zelf al
+  `herwaardeer_order_status → sync_order_afleverdatum_met_claims`
+  (forward-only), die de `afleverdatum` bij een latere ETA al naar de nieuwe
+  waarde kan hebben geschoven vóórdat de detectie draait (oud == nieuw, geen
+  melding; of bij een terugdraai: verkeerde "voor"-waarde). Opgelost met een
+  expliciete `p_oude_afleverdatum`-parameter die `update_regel_eta` vult met
+  de pré-allocatie-snapshot.
+- Nieuwe RPC `markeer_levertijd_herbevestigd(order_id)` — idempotente
+  gate-clearer (zet de kolom terug op NULL), mirrort `markeer_order_edi_bevestigd`
+  (mig 158). Puur administratief, geen geautomatiseerde communicatie.
+- `orders_list`-view: kolom toegevoegd zodat overzicht en detail erop kunnen
+  filteren/conditioneren.
+- Frontend: helper [`levertijd-wijziging.ts`](../frontend/src/lib/orders/levertijd-wijziging.ts)
+  (`isLevertijdWijzigingTeBevestigen`, mirrort `edi-leverweek.ts`), nieuwe
+  status-overstijgende tab **"Levertijd gewijzigd"** op het orders-overzicht
+  (`levertijd_wijziging_te_bevestigen_sinds IS NOT NULL AND status NOT IN
+  ('Verzonden','Geannuleerd')` — dit is het gevraagde *overzicht*), amber
+  [`LevertijdWijzigingBanner`](../frontend/src/components/orders/levertijd-wijziging-banner.tsx)
+  op order-detail (toont was-wk → wordt-wk + oorzaak, knop
+  "Herbevestigd aan klant ✓"), en query
+  `fetchLaatsteLevertijdWijziging` (mirrort `fetchInkomendBerichtVoorOrder`)
+  voor de banner-detailweergave.
+- Niet in scope (bewust, evt. latere iteratie): geen automatische
+  klant-notificatie bij herbevestigen; geen inline oud→nieuw-badge in de
+  orders-tabelrijen (de tab-filter zelf vormt het overzicht, volledige
+  vergelijking staat op order-detail).
+- Plan: `/Users/pd/.claude/plans/melodic-churning-haven.md` (lokaal, niet in git).
 
 ## 2026-06-08 — Factuur-/orderbevestigingsmail van Resend naar Microsoft Graph (M365)
 

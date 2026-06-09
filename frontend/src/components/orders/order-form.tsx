@@ -21,12 +21,12 @@ import { fetchOrderConfig } from '@/lib/supabase/queries/order-config'
 import { triggerAutoplan, fetchAutoplanningConfig } from '@/modules/snijplanning'
 import { berekenMaatwerkAfleverdatumViaSeam } from '@/modules/maatwerk'
 import {
-  verzendWeekIsoString,
-  verzendWeekStringToDatum,
   verzendWeekVoor,
   verzendWeekRelatief,
   verzendWeekSleutel,
+  verzendWeekStringToDatum,
 } from '@/lib/orders/verzendweek'
+import { WeekDatumPicker } from './week-datum-picker'
 import { applyShippingLogic } from '@/lib/orders/verzend-regel'
 import { bepaalOrderAfleverdatum } from '@/lib/orders/order-afleverdatum'
 import { SHIPPING_PRODUCT_ID } from '@/lib/constants/shipping'
@@ -927,7 +927,6 @@ function LeverDatumField({
   onLeverTypeChange: (nieuw: 'week' | 'datum') => void
   onChange: (nieuweDatum: string | undefined, weekNr: string | undefined) => void
 }) {
-  const weekString = verzendWeekIsoString(afleverdatum ?? null)
   const info = verzendWeekVoor(afleverdatum ?? null)
   const vandaagDate = new Date()
   const vandaagIso =
@@ -948,39 +947,14 @@ function LeverDatumField({
           </span>
         )}
       </div>
-      {isWeek ? (
-        <input
-          type="week"
-          value={weekString}
-          onChange={(e) => {
-            const value = e.target.value
-            if (!value) {
-              onChange(undefined, undefined)
-              return
-            }
-            const nieuweDatum = verzendWeekStringToDatum(value)
-            if (!nieuweDatum) return
-            const week = verzendWeekVoor(nieuweDatum)
-            onChange(nieuweDatum, week ? String(week.week) : undefined)
-          }}
-          className="w-full px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
-        />
-      ) : (
-        <input
-          type="date"
-          value={afleverdatum ?? ''}
-          onChange={(e) => {
-            const value = e.target.value
-            if (!value) {
-              onChange(undefined, undefined)
-              return
-            }
-            const week = verzendWeekVoor(value)
-            onChange(value, week ? String(week.week) : undefined)
-          }}
-          className="w-full px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
-        />
-      )}
+      <WeekDatumPicker
+        mode={leverType}
+        waarde={afleverdatum}
+        onChange={(nieuweDatum) => {
+          const week = verzendWeekVoor(nieuweDatum)
+          onChange(nieuweDatum, week ? String(week.week) : undefined)
+        }}
+      />
       <div className="flex items-center gap-1 mt-2 p-0.5 bg-slate-100 rounded-[var(--radius-sm)] w-fit">
         <button
           type="button"

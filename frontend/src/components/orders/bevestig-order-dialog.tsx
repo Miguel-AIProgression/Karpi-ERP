@@ -7,6 +7,7 @@ interface BevestigOrderDialogProps {
   orderId: number
   orderNr: string
   defaultEmail: string | null
+  isHerversturing?: boolean
   onClose: () => void
 }
 
@@ -40,7 +41,7 @@ async function stuurOrderbevestiging(params: {
   return json as { order_nr: string; verstuurd_naar: string; bevestigd_at: string }
 }
 
-export function BevestigOrderDialog({ orderId, orderNr, defaultEmail, onClose }: BevestigOrderDialogProps) {
+export function BevestigOrderDialog({ orderId, orderNr, defaultEmail, isHerversturing = false, onClose }: BevestigOrderDialogProps) {
   const [email, setEmail] = useState(defaultEmail ?? '')
   const qc = useQueryClient()
 
@@ -85,10 +86,15 @@ export function BevestigOrderDialog({ orderId, orderNr, defaultEmail, onClose }:
           <>
             <div className="flex items-center gap-2 mb-1">
               <Mail size={18} className="text-terracotta-500" />
-              <h3 className="text-lg font-semibold text-slate-900">Orderbevestiging versturen</h3>
+              <h3 className="text-lg font-semibold text-slate-900">
+                {isHerversturing ? 'Orderbevestiging opnieuw versturen' : 'Orderbevestiging versturen'}
+              </h3>
             </div>
             <p className="text-sm text-slate-500 mb-5">
-              Er wordt een PDF-orderbevestiging van <strong>{orderNr}</strong> gegenereerd en per e-mail verstuurd.
+              {isHerversturing
+                ? <>Er wordt een nieuwe PDF-orderbevestiging van <strong>{orderNr}</strong> gegenereerd en per e-mail verstuurd. Het vorige e-mailadres is vooringevuld.</>
+                : <>Er wordt een PDF-orderbevestiging van <strong>{orderNr}</strong> gegenereerd en per e-mail verstuurd.</>
+              }
             </p>
 
             <div className="mb-5">

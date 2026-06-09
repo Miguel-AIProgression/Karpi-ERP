@@ -17,6 +17,8 @@ import { isLeverweekTeBevestigen } from '@/lib/orders/edi-leverweek'
 import { isDebiteurTeBevestigen } from '@/lib/orders/intake-predicaten'
 import { DebiteurBevestigenWidget } from '@/components/orders/debiteur-bevestigen-widget'
 import { BastaAfhandelingPaneel } from '@/components/orders/basta-afhandeling-paneel'
+import { LevertijdWijzigingBanner } from '@/components/orders/levertijd-wijziging-banner'
+import { isLevertijdWijzigingTeBevestigen } from '@/lib/orders/levertijd-wijziging'
 
 function EmailInhoudPanel({ body }: { body: string }) {
   const [open, setOpen] = useState(false)
@@ -117,6 +119,13 @@ export function OrderDetailPage() {
         />
       )}
 
+      {isLevertijdWijzigingTeBevestigen(order) && order.status !== 'Geannuleerd' && (
+        <LevertijdWijzigingBanner
+          orderId={order.id}
+          teBevestigenSinds={order.levertijd_wijziging_te_bevestigen_sinds!}
+        />
+      )}
+
       {/* Mig 322: onzekere (fuzzy) debiteur-match → bevestigen of corrigeren.
           env_fallback (verzameldebiteur) is bewust geen fout en valt af. */}
       {isDebiteurTeBevestigen(order) && (
@@ -129,7 +138,15 @@ export function OrderDetailPage() {
         )}
 
       <OrderAddresses order={order} />
-      <OrderRegelsTable regels={regels ?? []} isLoading={regelsLoading} levertijden={levertijden} claims={claims} orderStatus={order.status} />
+      <OrderRegelsTable
+        regels={regels ?? []}
+        isLoading={regelsLoading}
+        levertijden={levertijden}
+        claims={claims}
+        orderStatus={order.status}
+        orderId={order.id}
+        orderdatum={order.orderdatum}
+      />
       <OrderEventsTijdlijn orderId={order.id} />
       <OrderFacturen orderId={order.id} />
     </>
