@@ -148,6 +148,69 @@ Na gebruikersfeedback op de eerste versie:
 phdobbe@gmail.com (na deploy) — `bevestigd_at`/`bevestigd_door`/
 `bevestiging_email` nadien weer teruggedraaid naar `NULL`.
 
+## 2026-06-08 — Signalering levertijd-wijziging door leverancier-ETA-update (mig 326)
+
+**Waarom:** sinds mig 318/319 kunnen leveranciers (supplier-portal) en Karpi
+intern de ETA op een inkooporderregel aanpassen — `update_regel_eta`
+propageert dat al **direct en stil** naar lopende klantorders:
+`herallocateer_orderregel` herberekent de claims en de bidirectionele
+`sync_order_afleverdatum_eta` (mig 319) verschuift `orders.afleverdatum` zowel
+naar voren als naar achteren. Operationeel correct, maar onzichtbaar — een
+order kon twee weken later gaan leveren zonder dat iemand het zag of de klant
+daarover werd geïnformeerd. Gebruiker wilde dit zichtbaar: een overzicht +
+per-order signalering, met een **handmatige** "herbevestigd aan klant"-afvinking
+(geen automatische mail/EDI-bericht — dat regelt de operator zelf en legt het
+hier vast als audit-trail).
+
+**Wat:**
+- `order_event_type` uitgebreid met `'levertijd_gewijzigd_door_eta'` (patroon
+  mig 297: `ALTER TYPE ... ADD VALUE` vóór de functies die 'm gebruiken).
+- Nieuwe nullable gate-kolom `orders.levertijd_wijziging_te_bevestigen_sinds`
+  (TIMESTAMPTZ, NULL = niets open). Bewust **één** kolom i.p.v. een
+  gemeld_op/bevestigd_op-paar (zoals `edi_gewenste_afleverdatum`/
+  `edi_bevestigd_op`): die EDI-gate is eenmalig (vast bij order-aanmaak),
+  terwijl deze gate herhaaldelijk open/dicht moet — en PostgREST kan niet
+  filteren op kolom-vs-kolom-vergelijkingen (`bevestigd_op < gemeld_op`). Eén
+  nulbare "open sinds"-timestamp is zowel het filterbare gate-predicaat
+  (`IS NOT NULL`) als de weergavewaarde ineen.
+- `sync_order_afleverdatum_eta` (mig 319) uitgebreid met detectie: vergelijkt
+  de oude vs. nieuwe `afleverdatum` op **ISO-leverweek**
+  (`verzendweek_voor_datum`, mig 228 — kleine dag-schuiven binnen dezelfde week
+  triggeren bewust geen melding, mirrort EDI-leverweek/bundel-conventies). Bij
+  een leverweek-verschuiving: logt een `levertijd_gewijzigd_door_eta`
+  `order_events`-rij (met `afleverdatum_oud/nieuw`, `verzendweek_oud/nieuw`,
+  `inkooporder_regel_id`, `eta_bijgewerkt_door`) en zet de gate op `now()`.
+  Signaleert bij **elke** ETA-gedreven wijziging, ongeacht of de leverancier
+  (portal) of Karpi intern de ETA aanpaste — de impact op de klant is gelijk.
+  **Subtiele bug onderweg gefixt:** de "voor"-snapshot moet vóór
+  `herallocateer_orderregel` worden gelezen — dat pad triggert zelf al
+  `herwaardeer_order_status → sync_order_afleverdatum_met_claims`
+  (forward-only), die de `afleverdatum` bij een latere ETA al naar de nieuwe
+  waarde kan hebben geschoven vóórdat de detectie draait (oud == nieuw, geen
+  melding; of bij een terugdraai: verkeerde "voor"-waarde). Opgelost met een
+  expliciete `p_oude_afleverdatum`-parameter die `update_regel_eta` vult met
+  de pré-allocatie-snapshot.
+- Nieuwe RPC `markeer_levertijd_herbevestigd(order_id)` — idempotente
+  gate-clearer (zet de kolom terug op NULL), mirrort `markeer_order_edi_bevestigd`
+  (mig 158). Puur administratief, geen geautomatiseerde communicatie.
+- `orders_list`-view: kolom toegevoegd zodat overzicht en detail erop kunnen
+  filteren/conditioneren.
+- Frontend: helper [`levertijd-wijziging.ts`](../frontend/src/lib/orders/levertijd-wijziging.ts)
+  (`isLevertijdWijzigingTeBevestigen`, mirrort `edi-leverweek.ts`), nieuwe
+  status-overstijgende tab **"Levertijd gewijzigd"** op het orders-overzicht
+  (`levertijd_wijziging_te_bevestigen_sinds IS NOT NULL AND status NOT IN
+  ('Verzonden','Geannuleerd')` — dit is het gevraagde *overzicht*), amber
+  [`LevertijdWijzigingBanner`](../frontend/src/components/orders/levertijd-wijziging-banner.tsx)
+  op order-detail (toont was-wk → wordt-wk + oorzaak, knop
+  "Herbevestigd aan klant ✓"), en query
+  `fetchLaatsteLevertijdWijziging` (mirrort `fetchInkomendBerichtVoorOrder`)
+  voor de banner-detailweergave.
+- Niet in scope (bewust, evt. latere iteratie): geen automatische
+  klant-notificatie bij herbevestigen; geen inline oud→nieuw-badge in de
+  orders-tabelrijen (de tab-filter zelf vormt het overzicht, volledige
+  vergelijking staat op order-detail).
+- Plan: `/Users/pd/.claude/plans/melodic-churning-haven.md` (lokaal, niet in git).
+
 ## 2026-06-08 — Factuur-/orderbevestigingsmail van Resend naar Microsoft Graph (M365)
 
 **Waarom:** we gaan daadwerkelijk facturen en orderbevestigingen per mail versturen
