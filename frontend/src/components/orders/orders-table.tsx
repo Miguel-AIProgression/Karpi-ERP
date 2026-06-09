@@ -94,9 +94,11 @@ function FactuurCel({ orderId, facturenPerOrder }: {
 function BronBadge({ bron }: { bron?: string | null }) {
   if (!bron || bron === 'handmatig') return null
   const config: Record<string, { label: string; className: string }> = {
-    shopify:    { label: 'Shopify',    className: 'bg-green-100 text-green-700' },
-    edi:        { label: 'EDI',        className: 'bg-blue-100 text-blue-700' },
-    lightspeed: { label: 'Lightspeed', className: 'bg-amber-100 text-amber-700' },
+    shopify:     { label: 'Shopify',     className: 'bg-green-100 text-green-700' },
+    edi:         { label: 'EDI',         className: 'bg-blue-100 text-blue-700' },
+    lightspeed:  { label: 'Lightspeed',  className: 'bg-amber-100 text-amber-700' },
+    email:       { label: 'E-mail',      className: 'bg-purple-100 text-purple-700' },
+    oud_systeem: { label: 'Oud systeem', className: 'bg-slate-100 text-slate-500' },
   }
   const c = config[bron] ?? { label: bron, className: 'bg-slate-100 text-slate-600' }
   return (
