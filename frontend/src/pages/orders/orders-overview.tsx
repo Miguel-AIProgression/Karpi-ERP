@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Plus, Search } from 'lucide-react'
+import { Plus, Search, Download } from 'lucide-react'
+import { exporterenNaarExcel } from '@/lib/orders/export-orders'
 import { PageHeader } from '@/components/layout/page-header'
 import { MultiSelectDropdown } from '@/components/ui/multi-select-dropdown'
 import { StatusTabs } from '@/components/orders/status-tabs'
@@ -28,6 +29,7 @@ export function OrdersOverviewPage() {
   const [page, setPage] = useState(0)
   const [sortBy, setSortBy] = useState<OrderSortField>('orderdatum')
   const [sortDir, setSortDir] = useState<SortDirection>('desc')
+  const [exportBezig, setExportBezig] = useState(false)
 
   const handleSort = (field: OrderSortField) => {
     if (sortBy === field) {
@@ -43,6 +45,15 @@ export function OrdersOverviewPage() {
     () => klantSelectie.map((v) => Number(v)).filter((n) => Number.isFinite(n)),
     [klantSelectie],
   )
+
+  async function handleExport() {
+    setExportBezig(true)
+    try {
+      await exporterenNaarExcel({ status, search, debiteurNrs, bronSystemen: bronSelectie, sortBy, sortDir })
+    } finally {
+      setExportBezig(false)
+    }
+  }
 
   const { data, isLoading } = useOrders({ status, search, debiteurNrs, bronSystemen: bronSelectie, page, sortBy, sortDir })
   const { data: statusCounts } = useStatusCounts()
@@ -130,6 +141,16 @@ export function OrdersOverviewPage() {
             setPage(0)
           }}
         />
+
+        <button
+          onClick={handleExport}
+          disabled={exportBezig || totalCount === 0}
+          className="ml-auto flex items-center gap-1.5 px-3 py-2 text-sm border border-slate-200 rounded-[var(--radius-sm)] hover:bg-slate-50 disabled:opacity-40 transition-colors"
+          title="Exporteer gefilterde orders naar Excel"
+        >
+          <Download size={15} />
+          {exportBezig ? 'Exporteren…' : `Excel (${totalCount})`}
+        </button>
       </div>
 
       {/* Status tabs */}
