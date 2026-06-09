@@ -138,7 +138,7 @@ function formatMaat(regel: OrderRegel): string {
 }
 
 function SnijplanStatusBadge({ status, suffix }: { status: string; suffix?: string | null }) {
-  const colors = SNIJPLAN_STATUS_COLORS[status] ?? { bg: 'bg-slate-100', text: 'text-slate-600' }
+  const colors = (SNIJPLAN_STATUS_COLORS as Record<string, { bg: string; text: string }>)[status] ?? { bg: 'bg-slate-100', text: 'text-slate-600' }
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${colors.bg} ${colors.text}`}>
       {status}

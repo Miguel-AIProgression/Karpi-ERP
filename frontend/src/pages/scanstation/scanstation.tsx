@@ -159,7 +159,7 @@ export function ScanstationPage() {
               </thead>
               <tbody>
                 {openstaandItems.map((item) => {
-                  const colors = SNIJPLAN_STATUS_COLORS[item.status] ?? { bg: 'bg-gray-100', text: 'text-gray-600' }
+                  const colors = (SNIJPLAN_STATUS_COLORS as Record<string, { bg: string; text: string }>)[item.status] ?? { bg: 'bg-gray-100', text: 'text-gray-600' }
                   return (
                     <tr
                       key={`${item.type}-${item.id}`}

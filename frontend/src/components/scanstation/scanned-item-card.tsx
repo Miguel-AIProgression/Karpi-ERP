@@ -14,8 +14,8 @@ const INPAK_READY_STATUSES = ['Gesneden', 'In confectie', 'Gereed']
 
 function getStatusColors(item: ScannedItem) {
   const colors = item.type === 'snijplan'
-    ? SNIJPLAN_STATUS_COLORS[item.status]
-    : CONFECTIE_STATUS_COLORS[item.status]
+    ? (SNIJPLAN_STATUS_COLORS as Record<string, { bg: string; text: string }>)[item.status]
+    : (CONFECTIE_STATUS_COLORS as Record<string, { bg: string; text: string }>)[item.status]
   return colors ?? { bg: 'bg-gray-100', text: 'text-gray-600' }
 }
 
