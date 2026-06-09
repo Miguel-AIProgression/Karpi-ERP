@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase/client'
 import { sanitizeSearch } from '@/lib/utils/sanitize'
 import type { SnijplanRow, ProductieDashboard } from '@/lib/types/productie'
+import { TE_SNIJDEN } from '@/lib/utils/snijplan-status'
 
 export interface SnijplanStatusCount {
   status: string
@@ -55,7 +56,7 @@ export async function fetchSnijplanningGroepen(
         .from('snijplanning_overzicht')
         .select('kwaliteit_code, kleur_code')
         .or(`order_nr.ilike.%${s}%,klant_naam.ilike.%${s}%`)
-        .in('status', ['Gepland', 'Snijden'])
+        .in('status', [...TE_SNIJDEN])
 
       const orderMatchKeys = new Set(
         (matchingRows ?? []).map(
@@ -89,7 +90,7 @@ export async function fetchSnijplannenVoorGroep(
     .select('*')
     .eq('kwaliteit_code', kwaliteitCode)
     .in('kleur_code', kleurVariants)
-    .in('status', ['Gepland', 'Snijden'])
+    .in('status', [...TE_SNIJDEN])
     .order('afleverdatum', { ascending: true, nullsFirst: false })
 
   if (totDatum) {
@@ -118,7 +119,7 @@ export async function fetchAlleSnijden(totDatum?: string | null): Promise<Snijpl
   let query = supabase
     .from('snijplanning_overzicht')
     .select('*')
-    .in('status', ['Gepland', 'Snijden'])
+    .in('status', [...TE_SNIJDEN])
     .order('afleverdatum', { ascending: true, nullsFirst: false })
 
   // Filter op planning-horizon: alléén orders met afleverdatum <= totDatum.

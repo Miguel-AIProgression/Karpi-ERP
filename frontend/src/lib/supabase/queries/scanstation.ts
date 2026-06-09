@@ -1,5 +1,6 @@
 import { supabase } from '../client'
 import type { ScannedItem, ScanActie } from '@/lib/types/productie'
+import { INPAK_KANDIDAAT } from '@/lib/utils/snijplan-status'
 
 /** Lookup a scancode in snijplannen first, then confectie_orders */
 export async function lookupScancode(scancode: string): Promise<ScannedItem | null> {
@@ -73,7 +74,7 @@ export async function fetchOpenstaandItems() {
   const { data, error } = await supabase
     .from('snijplanning_overzicht')
     .select('id, scancode, status, kwaliteit_code, kleur_code, snij_lengte_cm, snij_breedte_cm, klant_naam, order_nr, maatwerk_afwerking, product_omschrijving')
-    .in('status', ['Gesneden', 'In confectie', 'Gereed'])
+    .in('status', [...INPAK_KANDIDAAT])
     .order('order_nr', { ascending: true })
 
   if (error) throw error
