@@ -18,15 +18,11 @@ import {
   createClient as createLightspeed,
   extractShippingAddress,
   extractBillingAddress,
-  parseMaatwerkDims,
   type LightspeedShop,
   type LightspeedOrder,
-  type LightspeedOrderRow,
 } from '../_shared/lightspeed-client.ts'
-import { matchProduct } from '../_shared/product-matcher.ts'
 import { matchDebiteurViaEnv } from '../_shared/debiteur-matcher.ts'
-import { haalKlantPrijs } from '../_shared/klant-prijs.ts'
-import { kgVanLightspeedGewicht } from '../_shared/order-intake/gewicht.ts'
+import { buildLightspeedRegels } from '../_shared/order-intake/lightspeed-regels.ts'
 
 const SHOPS: LightspeedShop[] = ['nl', 'de']
 const PAGE_LIMIT = 250
@@ -45,72 +41,6 @@ function bronShopFor(shop: LightspeedShop): string {
 // Vandaag in ISO formaat (YYYY-MM-DD) als startdatum voor import
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10)
-}
-
-async function buildRegels(
-  supabase: ReturnType<typeof createSupabase>,
-  rows: LightspeedOrderRow[],
-  debiteurNr: number,
-): Promise<{ regels: unknown[]; matched: number; unmatched: number }> {
-  const regels: unknown[] = []
-  let matched = 0
-  let unmatched = 0
-
-  for (const row of rows) {
-    const match = await matchProduct(supabase, row, debiteurNr)
-
-    // Staaltjes (Gratis Muster) worden niet ingeladen — Karpi factureert ze niet aan Floorpassion
-    if (match.unmatchedReden === 'muster') continue
-
-    const omschrijvingBase = [row.productTitle, row.variantTitle].filter(Boolean).join(' — ')
-    const isHerkend = match.artikelnr != null || match.is_maatwerk
-    const omschrijving = isHerkend
-      ? omschrijvingBase
-      : `[UNMATCHED] ${omschrijvingBase || row.articleCode || row.sku || 'onbekend'}`
-
-    if (isHerkend) matched++
-    else unmatched++
-
-    let maatwerk_lengte_cm: number | null = null
-    let maatwerk_breedte_cm: number | null = null
-    if (match.is_maatwerk) {
-      const dims = parseMaatwerkDims(row)
-      if (dims) {
-        maatwerk_lengte_cm = dims.lengte
-        maatwerk_breedte_cm = dims.breedte
-      }
-    }
-
-    // Klantprijs uit prijslijst (NIET de consumentprijs van Lightspeed)
-    const aantal = row.quantityOrdered ?? 1
-    const klantPrijs = await haalKlantPrijs(supabase, debiteurNr, match.artikelnr, {
-      is_maatwerk: match.is_maatwerk,
-      lengte_cm: maatwerk_lengte_cm,
-      breedte_cm: maatwerk_breedte_cm,
-    })
-    const prijs = klantPrijs.prijs
-    const bedrag = prijs != null ? Math.round(prijs * aantal * 100) / 100 : null
-
-    regels.push({
-      artikelnr: match.artikelnr,
-      omschrijving,
-      omschrijving_2: row.variantTitle ?? null,
-      orderaantal: aantal,
-      te_leveren: aantal,
-      prijs,
-      korting_pct: 0,
-      bedrag,
-      gewicht_kg: kgVanLightspeedGewicht(row.weight),
-      is_maatwerk: match.is_maatwerk ?? false,
-      maatwerk_kwaliteit_code: match.maatwerk_kwaliteit_code ?? null,
-      maatwerk_kleur_code: match.maatwerk_kleur_code ?? null,
-      maatwerk_vorm: match.maatwerk_vorm ?? null,
-      maatwerk_lengte_cm,
-      maatwerk_breedte_cm,
-    })
-  }
-
-  return { regels, matched, unmatched }
 }
 
 async function importShop(
@@ -144,7 +74,7 @@ async function importShop(
 
       try {
         const rows = await client.getOrderProducts(order.id)
-        const { regels, matched, unmatched } = await buildRegels(supabase, rows, debiteurNr)
+        const { regels, matched, unmatched } = await buildLightspeedRegels(supabase, rows, debiteurNr)
 
         const shipping = extractShippingAddress(order)
         const billing = extractBillingAddress(order)
