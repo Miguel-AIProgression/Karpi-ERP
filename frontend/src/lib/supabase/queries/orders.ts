@@ -43,6 +43,10 @@ export interface OrderRow {
   heeft_deadline_conflict_na_swap?: boolean
   /** Datum van het laatste deadline_conflict_na_swap-event (ISO), voor tooltip. */
   deadline_conflict_na_swap_at?: string | null
+  /** Mig 326: signalering bij ETA-verschuiving — NULL = niets open. */
+  levertijd_wijziging_te_bevestigen_sinds?: string | null
+  /** Mig 335: tijdstip waarop de orderbevestiging per e-mail is verstuurd. NULL = nog niet bevestigd. */
+  bevestigd_at?: string | null
 }
 
 export interface OrderDetail extends OrderRow {

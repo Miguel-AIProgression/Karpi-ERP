@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CheckCircle, Mail } from 'lucide-react'
+import { CheckCircle, Mail, RotateCcw } from 'lucide-react'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { formatDate, formatCurrency } from '@/lib/utils/formatters'
 import { verzendWeekVoor, verzendWeekRelatief } from '@/lib/orders/verzendweek'
@@ -82,15 +82,24 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
         <div className="flex gap-2 flex-wrap justify-end">
           {/* Bevestig order (e-mailbevestiging) — niet tonen voor concept-orders */}
           {!isConcept && order.bevestigd_at ? (
-            <button
-              type="button"
-              onClick={() => setShowBevestigDialog(true)}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-[var(--radius-sm)] hover:bg-green-100 transition-colors"
-              title={`Bevestigd op ${formatDate(order.bevestigd_at)}${order.bevestiging_email ? ` → ${order.bevestiging_email}` : ''} — klik om opnieuw te versturen`}
-            >
-              <CheckCircle size={14} />
-              Bevestigd
-            </button>
+            <>
+              <span
+                className="flex items-center gap-1.5 px-3 py-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-[var(--radius-sm)]"
+                title={`Bevestigd op ${formatDate(order.bevestigd_at)}${order.bevestiging_email ? ` → ${order.bevestiging_email}` : ''}`}
+              >
+                <CheckCircle size={14} />
+                Bevestigd
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowBevestigDialog(true)}
+                className="flex items-center gap-1.5 px-3 py-2 text-sm border border-slate-200 text-slate-600 rounded-[var(--radius-sm)] hover:bg-slate-50 transition-colors"
+                title="Orderbevestiging opnieuw versturen"
+              >
+                <RotateCcw size={14} />
+                Opnieuw versturen
+              </button>
+            </>
           ) : !isConcept ? (
             <button
               type="button"
