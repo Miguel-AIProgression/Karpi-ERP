@@ -42,16 +42,17 @@ import type {
   RolMatchKandidaat,
 } from '../_shared/levertijd-types.ts'
 import type { SnijplanPiece } from '../_shared/ffdh-packing.ts'
+import { TE_SNIJDEN } from '../_shared/snijplan-status.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// Na migratie 086 bestaan 'Gepland' (nog niet gestart) en 'Snijden' (fysiek
-// onder het mes) naast elkaar. Beide tellen als "in pipeline" voor capaciteit
-// en levertijd-berekening — pas bij status 'Gesneden' is de rol klaar.
-const PLANNING_STATUS_IN_PIPELINE = ['Gepland', 'Snijden']
+// TE_SNIJDEN omvat Gepland + Snijden — snijplannen nog niet afgerond.
+// Beide tellen als "in pipeline" voor capaciteit en levertijd-berekening;
+// pas bij Gesneden is de rol klaar. Bron: snijplan-status.ts (TE_SNIJDEN).
+const PLANNING_STATUS_IN_PIPELINE = [...TE_SNIJDEN]
 
 // ---------------------------------------------------------------------------
 // Config-fetch
