@@ -33,6 +33,7 @@ Deno.test('bouwTransportOrderPayload — per-colli regels met SSCC-BarCode', () 
       afl_postcode: '1111AA',
       afl_plaats: 'Diemen',
       afl_land: 'NL',
+      afl_telefoon: '0612345678',
       totaal_gewicht_kg: 126,
       aantal_colli: 2,
       opmerkingen: 'Transport instructie',
@@ -100,6 +101,7 @@ Deno.test('bouwTransportOrderPayload — fallback naar aggregate-regel zonder co
       afl_postcode: '1111AA',
       afl_plaats: 'Diemen',
       afl_land: 'NL',
+      afl_telefoon: null,
       totaal_gewicht_kg: 50,
       aantal_colli: 2,
       opmerkingen: null,
@@ -127,6 +129,7 @@ Deno.test('bouwTransportOrderPayload — vult lege strings bij ontbrekend afleve
       afl_postcode: null,
       afl_plaats: null,
       afl_land: null,
+      afl_telefoon: null,
       totaal_gewicht_kg: null,
       aantal_colli: null,
       opmerkingen: 'Spoed',
@@ -152,6 +155,25 @@ Deno.test('bouwTransportOrderPayload — vult lege strings bij ontbrekend afleve
   assertEquals(result.TransportOrderLines[0].Weight, 1); // default als gewicht ontbreekt
   assertEquals(result.TransportOrderLines[0].BarCode, { BarCode: '00087159540000000034' });
   assertEquals(result.TransportInstruction, 'Spoed');
+});
+
+Deno.test('bouwTransportOrderPayload zet ToAddress.PhoneNumber uit afl_telefoon', () => {
+  const payload = bouwTransportOrderPayload({
+    zending: {
+      zending_nr: 'ZEND-2026-9999', afl_naam: 'Klant', afl_adres: 'Teststraat 1',
+      afl_postcode: '1111AA', afl_plaats: 'Diemen', afl_land: 'NL',
+      afl_telefoon: '0612345678', totaal_gewicht_kg: 5, aantal_colli: 1,
+      opmerkingen: null, verzenddatum: '2026-06-09',
+    },
+    order: { order_nr: 'ORD-2026-9999' },
+    bedrijf: {
+      bedrijfsnaam: 'Karpi B.V.', adres: 'Tweede Broekdijk 10', postcode: '7122LB',
+      plaats: 'Aalten', land: 'NL', telefoon: '0543476116', email: 'info@karpi.nl',
+    },
+    hstCustomerId: '038267',
+    colli: [{ colli_nr: 1, sscc: '087159540000000632', gewicht_kg: 5, omschrijving_snapshot: 'Tapijt' }],
+  });
+  assertEquals(payload.ToAddress.PhoneNumber, '0612345678');
 });
 
 Deno.test('splitAdres — straat + nummer + toevoeging', () => {

@@ -120,7 +120,7 @@ function bouwAddressUitZending(zending: ZendingInput): HstAddress {
     StreetNumberAddition: addition,
     ZipCode: normalizeZip(zending.afl_postcode ?? ''),
     City: zending.afl_plaats ?? '',
-    PhoneNumber: '',
+    PhoneNumber: zending.afl_telefoon ?? '',
     Email: '',
     Country: normalizeCountry(zending.afl_land ?? ''),
   };
