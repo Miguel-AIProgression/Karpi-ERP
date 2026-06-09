@@ -31,6 +31,7 @@ import {
 import { matchDebiteur } from '../_shared/shopify-debiteur-matcher.ts'
 import { matchProduct, buildOmschrijving } from '../_shared/product-matcher.ts'
 import { haalKlantPrijs } from '../_shared/klant-prijs.ts'
+import type { IntakeRegel } from '../_shared/order-intake/types.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -112,8 +113,8 @@ async function buildRegels(
   supabase: ReturnType<typeof createClient>,
   order: ShopifyOrderWebhook,
   debiteurNr: number,
-): Promise<{ regels: unknown[]; matched: number; unmatched: number }> {
-  const regels: unknown[] = []
+): Promise<{ regels: IntakeRegel[]; matched: number; unmatched: number }> {
+  const regels: IntakeRegel[] = []
   let matched = 0
   let unmatched = 0
 
@@ -185,6 +186,7 @@ async function buildRegels(
       is_maatwerk: match.is_maatwerk ?? false,
       maatwerk_kwaliteit_code: match.maatwerk_kwaliteit_code ?? null,
       maatwerk_kleur_code: match.maatwerk_kleur_code ?? null,
+      maatwerk_vorm: match.maatwerk_vorm ?? null,
       maatwerk_lengte_cm,
       maatwerk_breedte_cm,
     })
@@ -207,6 +209,7 @@ async function buildRegels(
         is_maatwerk: false,
         maatwerk_kwaliteit_code: null,
         maatwerk_kleur_code: null,
+        maatwerk_vorm: null,
         maatwerk_lengte_cm: null,
         maatwerk_breedte_cm: null,
       })
