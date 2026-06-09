@@ -85,7 +85,7 @@ de frontend `product-matcher`-spiegel.
   (operator kreeg eerder kaal `"HTTP 400"`).
 - `payload-builder.ts` vult `ToAddress.PhoneNumber` uit `zendingen.afl_telefoon`
   (was hardcoded leeg).
-- Nieuwe kolom `zendingen.afl_telefoon` (mig 335) — snapshot van het leveringstelefoon-
+- Nieuwe kolom `zendingen.afl_telefoon` (mig 339) — snapshot van het leveringstelefoon-
   nummer, gevuld door BEFORE-INSERT-trigger `trg_zending_fill_telefoon`
   (ladder `orders.afl_telefoon` → fallback `debiteuren.telefoon`), bewust via trigger zodat
   álle zending-aanmaakroutes het veld vullen.
@@ -124,10 +124,11 @@ de frontend `product-matcher`-spiegel.
 
 ## Referenties
 
-- Migraties: **335** (`zendingen.afl_telefoon` + trigger `fn_zending_fill_telefoon` +
-  backfill), **336** (`vervoerders.is_default` + catch-all selectie-regel, gegate op
+- Migraties: **336** (`vervoerders.is_default` + catch-all selectie-regel, gegate op
   `hst_api.actief`), **337** (reaper `herstel_vastgelopen_hst`), **338** (views
-  `hst_verzend_monitor` + `orders_zonder_vervoerder`). Handmatig toepassen.
+  `hst_verzend_monitor` + `orders_zonder_vervoerder`), **339** (`zendingen.afl_telefoon`
+  + trigger `fn_zending_fill_telefoon` + backfill — hernummerd van 335 wegens collisie met
+  `335_orders_list_bevestigd_at.sql` op main). Handmatig toepassen.
 - Edge: [`supabase/functions/_shared/vervoerder-eisen.ts`](../../supabase/functions/_shared/vervoerder-eisen.ts),
   [`supabase/functions/hst-send/`](../../supabase/functions/hst-send/) (`hst-client.ts`,
   `payload-builder.ts`).

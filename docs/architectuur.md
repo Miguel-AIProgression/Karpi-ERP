@@ -255,7 +255,7 @@ Voor implementatiedetails (taak-volgorde, fixtures, payload-shape, retry-strateg
 
 ### HST-observability + altijd-een-vervoerder ([ADR-0030](adr/0030-altijd-een-vervoerder-en-hst-default-carrier.md))
 
-Bij het productie-klaar maken van de HST-koppeling (mig 335-338) zijn twee gaten gedicht — additief bovenop de vervoerder-ladder uit ADR-0008, zonder de resolver te wijzigen.
+Bij het productie-klaar maken van de HST-koppeling (mig 336-339) zijn twee gaten gedicht — additief bovenop de vervoerder-ladder uit ADR-0008, zonder de resolver te wijzigen.
 
 **Altijd een vervoerder (default-carrier).** HST is de enige actieve koppeling, dus is `hst_api` de **default binnen NL** via een **catch-all** rij in `vervoerder_selectie_regels` (prio `99999` = laagste, conditie `{"land":["NL"]}`, notitie "Default-vervoerder binnen NL"). De bestaande ladder `override → regel → geen` levert HST nu als bodem; specifieke regels (lagere prio) winnen nog steeds — geen resolver-edit. De expliciete administratieve bron-van-waarheid is `vervoerders.is_default` (partial unique index `uk_vervoerders_is_default` → hooguit één TRUE). De catch-all-INSERT is **gegate op `hst_api.actief=TRUE`** — bewust nog FALSE tot de cutover, dus de default wordt pas dan effectief. Orders waarvan een regel buiten het HST-bereik valt blijven `bron='geen'` → "handmatig vervoerder kiezen" (nu expliciet zichtbaar i.p.v. stille terugval). Een tweede vervoerder = eigen regels + `is_default` omzetten, geen code-edit.
 
@@ -269,7 +269,7 @@ Bij het productie-klaar maken van de HST-koppeling (mig 335-338) zijn twee gaten
 
 **Frontend.** Module `logistiek`: query's + helpers (`cronVermoedelijkStil`, `telHstAandacht`, `countOrdersZonderVervoerder`) in [`queries/hst-monitor.ts`](../frontend/src/modules/logistiek/queries/hst-monitor.ts), TanStack-hooks (refetchInterval 30s/60s) in [`hooks/use-hst-monitor.ts`](../frontend/src/modules/logistiek/hooks/use-hst-monitor.ts), de HST-verzendmonitor op route `/logistiek/hst-monitor` ([`pages/hst-monitor.tsx`](../frontend/src/modules/logistiek/pages/hst-monitor.tsx) — KPI's, open-fouten-tabel met echte `error_msg` + opnieuw-versturen-knop, cron-health-waarschuwing), en de rode/amber [`HstAandachtBanner`](../frontend/src/modules/logistiek/components/hst-aandacht-banner.tsx) op Pick & Ship (spiegelt het `EdiTeKoppelenBanner`-patroon).
 
-**HST-edge-bugfixes.** `hst-client.ts` `extractErrorMsg` leest nu ook HST's PascalCase-veld `ErrorMessage` (operator kreeg eerder kaal `"HTTP 400"`); `payload-builder.ts` vult `ToAddress.PhoneNumber` uit het nieuwe snapshot `zendingen.afl_telefoon` (mig 335, was hardcoded leeg). Aanleiding: ACCP-afkeuring 2026-06-09 "Bellen voor aflevering, geef telefoonnummer op".
+**HST-edge-bugfixes.** `hst-client.ts` `extractErrorMsg` leest nu ook HST's PascalCase-veld `ErrorMessage` (operator kreeg eerder kaal `"HTTP 400"`); `payload-builder.ts` vult `ToAddress.PhoneNumber` uit het nieuwe snapshot `zendingen.afl_telefoon` (mig 339, was hardcoded leeg). Aanleiding: ACCP-afkeuring 2026-06-09 "Bellen voor aflevering, geef telefoonnummer op".
 
 ### Vervoerder-Keuze als deep Module ([ADR-0008](adr/0008-vervoerder-keuze-als-deep-module.md))
 

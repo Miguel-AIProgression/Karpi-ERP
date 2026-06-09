@@ -12,12 +12,7 @@ terug en het leveringstelefoonnummer werd niet meegestuurd. Zie
 [ADR-0030](adr/0030-altijd-een-vervoerder-en-hst-default-carrier.md) (bouwt voort op
 [ADR-0008](adr/0008-vervoerder-keuze-als-deep-module.md)).
 
-**Wat — migraties 335-338 (handmatig toepassen):**
-- **mig 335:** `zendingen.afl_telefoon TEXT` — snapshot leveringstelefoonnummer voor HST
-  (die "belt vóór aflevering"). Gevuld door BEFORE-INSERT-trigger `trg_zending_fill_telefoon`
-  (functie `fn_zending_fill_telefoon`): ladder `orders.afl_telefoon` → fallback
-  `debiteuren.telefoon`. Bewust via trigger zodat álle zending-aanmaakroutes het veld vullen.
-  Inclusief backfill voor nog-niet-verstuurde zendingen.
+**Wat — migraties 336-339 (handmatig toepassen):**
 - **mig 336:** `vervoerders.is_default BOOLEAN DEFAULT FALSE` (partial unique index
   `uk_vervoerders_is_default` → hooguit één TRUE) + seed `hst_api` als default + een
   **catch-all** rij in `vervoerder_selectie_regels` (`vervoerder_code='hst_api'`, prio
@@ -38,6 +33,12 @@ terug en het leveringstelefoonnummer werd niet meegestuurd. Zie
   (`afhalen=FALSE`), status NOT IN (`'Geannuleerd'`,`'Verzonden'`,`'Concept'`), met ≥1 regel
   waarvan `effectieve_vervoerder_per_orderregel(...).bron='geen'` — voedt de
   "handmatig vervoerder kiezen"-teller/banner.
+- **mig 339:** `zendingen.afl_telefoon TEXT` — snapshot leveringstelefoonnummer voor HST
+  (die "belt vóór aflevering"). Gevuld door BEFORE-INSERT-trigger `trg_zending_fill_telefoon`
+  (functie `fn_zending_fill_telefoon`): ladder `orders.afl_telefoon` → fallback
+  `debiteuren.telefoon`. Bewust via trigger zodat álle zending-aanmaakroutes het veld vullen.
+  Inclusief backfill voor nog-niet-verstuurde zendingen. (Hernummerd van 335 → 339 bij merge
+  naar main wegens collisie met `335_orders_list_bevestigd_at.sql`.)
 
 **Wat — edge function `hst-send` + gedeelde validator:**
 - Nieuwe pure pre-flight validator [`_shared/vervoerder-eisen.ts`](../supabase/functions/_shared/vervoerder-eisen.ts)
@@ -71,7 +72,7 @@ terug en het leveringstelefoonnummer werd niet meegestuurd. Zie
 omzetten — geen resolver-edit. Ladder en RPC uit ADR-0008 onaangeraakt; alle wijzigingen
 strikt additief en geguard.
 
-**Migraties:** 335-338 (handmatig). **ADR:** [0030](adr/0030-altijd-een-vervoerder-en-hst-default-carrier.md) (bouwt voort op [0008](adr/0008-vervoerder-keuze-als-deep-module.md)).
+**Migraties:** 336-339 (handmatig). **ADR:** [0030](adr/0030-altijd-een-vervoerder-en-hst-default-carrier.md) (bouwt voort op [0008](adr/0008-vervoerder-keuze-als-deep-module.md)).
 
 ## 2026-06-09 — Orders-overzicht: kanaal-filter (EDI, Shopify, handmatig, oud systeem)
 

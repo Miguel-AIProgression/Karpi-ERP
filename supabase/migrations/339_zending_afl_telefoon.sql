@@ -1,4 +1,6 @@
--- Migratie 335: zendingen.afl_telefoon (leveringscontact voor HST) + vul-trigger
+-- Migratie 339: zendingen.afl_telefoon (leveringscontact voor HST) + vul-trigger
+-- (hernummerd van 335 → 339 bij merge naar main: origin/main nam parallel ook 335
+--  in beslag met 335_orders_list_bevestigd_at.sql)
 --
 -- HST eist een telefoonnummer voor "bellen voor aflevering". De payload-builder
 -- stuurde dit veld altijd leeg → ACCP-afkeuring 2026-06-09. We snapshotten het
