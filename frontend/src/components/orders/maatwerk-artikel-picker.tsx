@@ -30,7 +30,9 @@ export function MaatwerkArtikelPicker({ onSelect }: { onSelect: (a: MaatwerkArti
   const [search, setSearch] = useState('')
   const [results, setResults] = useState<ProductRow[]>([])
   const [open, setOpen] = useState(false)
-  const [coords, setCoords] = useState<{ top: number; left: number; width: number } | null>(null)
+  const [coords, setCoords] = useState<
+    { left: number; width: number; openUp: boolean; top: number; bottom: number; maxHeight: number } | null
+  >(null)
   const wrapRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -58,7 +60,23 @@ export function MaatwerkArtikelPicker({ onSelect }: { onSelect: (a: MaatwerkArti
     if (!open) return
     const update = () => {
       const r = inputRef.current?.getBoundingClientRect()
-      if (r) setCoords({ top: r.bottom + 4, left: r.left, width: Math.max(r.width, 320) })
+      if (!r) return
+      const margin = 8
+      const width = Math.max(r.width, 320)
+      const spaceBelow = window.innerHeight - r.bottom - margin
+      const spaceAbove = r.top - margin
+      // Klap omhoog als er onder te weinig ruimte is én boven meer plek is.
+      const openUp = spaceBelow < 220 && spaceAbove > spaceBelow
+      const maxHeight = Math.max(140, Math.min(320, openUp ? spaceAbove : spaceBelow))
+      const left = Math.max(margin, Math.min(r.left, window.innerWidth - width - margin))
+      setCoords({
+        left,
+        width,
+        openUp,
+        top: r.bottom + 4,
+        bottom: window.innerHeight - r.top + 4,
+        maxHeight,
+      })
     }
     update()
     window.addEventListener('scroll', update, true)
@@ -97,8 +115,15 @@ export function MaatwerkArtikelPicker({ onSelect }: { onSelect: (a: MaatwerkArti
       {open && coords && search.length >= 2 && createPortal(
         <div
           ref={dropdownRef}
-          style={{ position: 'fixed', top: coords.top, left: coords.left, width: coords.width, zIndex: 9999 }}
-          className="bg-white border border-slate-200 rounded shadow-lg max-h-60 overflow-y-auto"
+          style={{
+            position: 'fixed',
+            left: coords.left,
+            width: coords.width,
+            maxHeight: coords.maxHeight,
+            zIndex: 9999,
+            ...(coords.openUp ? { bottom: coords.bottom } : { top: coords.top }),
+          }}
+          className="bg-white border border-slate-200 rounded shadow-lg overflow-y-auto"
         >
           {results.length === 0 ? (
             <div className="p-2 text-xs text-slate-400">Geen artikelen gevonden</div>
