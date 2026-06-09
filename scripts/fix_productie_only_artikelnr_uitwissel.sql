@@ -11,37 +11,43 @@
 -- zodat alleen regels overblijven die via een partner gedekt moeten worden.
 --
 -- GEVOLG voor de snijplanning (bewust/correct): een nog-ongeplande VERR 17-regel
--- toont na koppeling onder LUXR 17 (snijplanning_overzicht COALESCEt
--- p.kwaliteit_code vóór oreg.maatwerk_kwaliteit_code). Dat klopt met het fysieke
--- model "1 type rol" -- al GEPLANDE stukken stonden al onder de rol-kwaliteit (r.*),
--- dit maakt de ongeplande consistent. De order-omschrijving blijft "VERNON ..."
--- (oreg.omschrijving ongewijzigd); alleen Artikel/Karpi-code wijst naar de echte rol.
+-- toont na koppeling onder LUXR 17 (snijplanning_overzicht COALESCEt p.kwaliteit_code
+-- vóór oreg.maatwerk_kwaliteit_code). Dat klopt met het fysieke model "1 type rol" --
+-- al GEPLANDE stukken stonden al onder de rol-kwaliteit (r.*). De order-omschrijving
+-- blijft "VERNON ..." (oreg.omschrijving ongewijzigd); alleen Artikel/Karpi-code wijst
+-- naar de echte rol.
 --
--- is_zelf DESC: mocht de eigen kwaliteit toch een rol-product hebben dan wint die
--- (zou al gekoppeld zijn in stap 2). Idempotent: raakt alleen artikelnr IS NULL.
+-- NB: de match wordt in een CTE (SELECT) berekend -- daar mág de gecorreleerde
+-- subquery naar oreg verwijzen. In de UPDATE zelf kan de doeltabel niet vanuit een
+-- LATERAL in FROM gerefereerd worden (PostgreSQL 42P10). is_zelf DESC: eigen kwaliteit
+-- wint indien die toch een rol-product heeft. Idempotent: raakt alleen artikelnr IS NULL.
 
+WITH te_koppelen AS (
+  SELECT oreg.id AS regel_id,
+         (SELECT p.artikelnr
+            FROM uitwisselbare_paren(oreg.maatwerk_kwaliteit_code, oreg.maatwerk_kleur_code) up
+            JOIN producten p
+              ON p.product_type   = 'rol'
+             AND p.kwaliteit_code = up.target_kwaliteit_code
+             AND normaliseer_kleur_code(p.kleur_code) = up.target_kleur_code
+           ORDER BY up.is_zelf DESC,
+                    p.actief   DESC NULLS LAST,
+                    p.voorraad DESC NULLS LAST,
+                    p.artikelnr
+           LIMIT 1) AS nieuw_artikelnr
+  FROM order_regels oreg
+  JOIN orders o ON o.id = oreg.order_id
+  WHERE o.alleen_productie = TRUE
+    AND oreg.is_maatwerk   = TRUE
+    AND oreg.artikelnr IS NULL
+    AND oreg.maatwerk_kwaliteit_code IS NOT NULL
+    AND oreg.maatwerk_kwaliteit_code <> ''
+)
 UPDATE order_regels oreg
-   SET artikelnr = sub.artikelnr
-  FROM orders o
-  JOIN LATERAL (
-    SELECT p.artikelnr
-      FROM uitwisselbare_paren(oreg.maatwerk_kwaliteit_code, oreg.maatwerk_kleur_code) up
-      JOIN producten p
-        ON p.product_type   = 'rol'
-       AND p.kwaliteit_code = up.target_kwaliteit_code
-       AND normaliseer_kleur_code(p.kleur_code) = up.target_kleur_code
-     ORDER BY up.is_zelf DESC,
-              p.actief   DESC NULLS LAST,
-              p.voorraad DESC NULLS LAST,
-              p.artikelnr
-     LIMIT 1
-  ) sub ON TRUE
- WHERE oreg.order_id      = o.id
-   AND o.alleen_productie = TRUE
-   AND oreg.is_maatwerk   = TRUE
-   AND oreg.artikelnr IS NULL
-   AND oreg.maatwerk_kwaliteit_code IS NOT NULL
-   AND oreg.maatwerk_kwaliteit_code <> '';
+   SET artikelnr = tk.nieuw_artikelnr
+  FROM te_koppelen tk
+ WHERE oreg.id = tk.regel_id
+   AND tk.nieuw_artikelnr IS NOT NULL;
 
 NOTIFY pgrst, 'reload schema';
 
