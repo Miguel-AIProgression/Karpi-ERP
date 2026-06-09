@@ -24,6 +24,7 @@ import {
   verzendWeekVoor,
   verzendWeekRelatief,
   verzendWeekSleutel,
+  verzendWeekStringToDatum,
 } from '@/lib/orders/verzendweek'
 import { WeekDatumPicker } from './week-datum-picker'
 import { applyShippingLogic } from '@/lib/orders/verzend-regel'
@@ -976,7 +977,7 @@ function LeverDatumField({
         )}
       </div>
       <WeekDatumPicker
-        mode={leverType}
+        mode={leverType === 'week' ? 'week' : 'date'}
         waarde={afleverdatum}
         onChange={(nieuweDatum) => {
           const week = verzendWeekVoor(nieuweDatum)
