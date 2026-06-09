@@ -131,7 +131,7 @@ async function verwerkRow(
     .from('zendingen')
     .select(
       'zending_nr, order_id, afl_naam, afl_adres, afl_postcode, afl_plaats, afl_land, ' +
-        'totaal_gewicht_kg, aantal_colli, opmerkingen, verzenddatum',
+        'afl_telefoon, totaal_gewicht_kg, aantal_colli, opmerkingen, verzenddatum',
     )
     .eq('id', row.zending_id)
     .single();
