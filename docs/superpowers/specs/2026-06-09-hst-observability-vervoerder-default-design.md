@@ -35,7 +35,7 @@ correct verzonden worden en bij HST aankomen, en fouten snel naar voren komen.
 | Default-bereik | **Alleen waar HST geldig is.** Buiten bereik → expliciete "handmatig vervoerder kiezen"-vlag, niet stil blijven liggen. |
 | Alerting-reik | **In-app**: monitoring-overzicht + rode badge/banner. Géén e-mail/push. |
 | Vervoerder-regels | **Pre-flight**: vooraf controleren tegen HST's eisen i.p.v. reactief op afkeuring. |
-| HST-landenbereik | **NL only** (catch-all-conditie `{landen:['NL']}`, uitbreidbaar). |
+| HST-landenbereik | **NL only** (catch-all-conditie `{land:['NL']}` — evaluator-sleutel is `land`, TEXT[]; uitbreidbaar). |
 | Telefoon-fallback | `zending.afl_telefoon` → fallback `debiteuren.telefoon` → anders pre-flight-vlag. |
 
 ## Architectuur — twee pijlers, één raakvlak
@@ -63,7 +63,8 @@ om te verzenden* (pijler B / UI) als of `hst-send` mag POSTen (pijler A / edge).
    code='hst_api'`. Toekomst-proof: bij een 2e vervoerder zet je de vlag om, geen
    code-edit. Partial unique index zodat er hooguit één default tegelijk is.
 2. **`vervoerder_selectie_regels`** — één **catch-all HST-regel**: laagste
-   prioriteit (`prio = 99999`), `conditie = {"landen":["NL"]}`, `vervoerder_code =
+   prioriteit (`prio = 99999`), `conditie = {"land":["NL"]}` (evaluator-sleutel
+   `land`, TEXT[] — mig 208), `vervoerder_code =
    'hst_api'`, `actief = TRUE`, notitie "Default-vervoerder binnen NL". Dit ís de
    "default binnen bereik".
 3. **`zendingen.afl_telefoon TEXT`** — snapshot, gevuld bij zending-aanmaak vanuit
