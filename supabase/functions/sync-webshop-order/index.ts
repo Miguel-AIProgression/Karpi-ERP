@@ -30,6 +30,7 @@ import { matchProduct, buildOmschrijving } from '../_shared/product-matcher.ts'
 import { matchDebiteurViaEnv } from '../_shared/debiteur-matcher.ts'
 import { bepaalAfleverdatumUitOrder } from '../_shared/lightspeed-leverdatum.ts'
 import { haalKlantPrijs } from '../_shared/klant-prijs.ts'
+import { kgVanLightspeedGewicht } from '../_shared/order-intake/gewicht.ts'
 
 // Fallback als de debiteur geen `maatwerk_weken` heeft ingesteld. Floorpassion
 // staat op 2; nieuwe verzameldebiteuren zonder configuratie krijgen hetzelfde
@@ -61,15 +62,6 @@ function secretFor(shop: LightspeedShop): string | null {
 
 function bronShopFor(shop: LightspeedShop): string {
   return shop === 'nl' ? 'floorpassion_nl' : 'floorpassion_de'
-}
-
-// Lightspeed levert gewicht in micro-kg (int, schaalfactor 1e6).
-// 4210000 → 4.21 kg. Conversie naar kg + begrenzing op NUMERIC(8,2).
-function normalizeGewicht(raw: number | undefined): number | null {
-  if (raw == null || Number.isNaN(raw)) return null
-  const kg = raw / 1_000_000
-  if (kg >= 1_000_000 || kg < 0) return null
-  return Math.round(kg * 100) / 100
 }
 
 async function buildRegels(
@@ -124,7 +116,7 @@ async function buildRegels(
       prijs,
       korting_pct: 0,
       bedrag,
-      gewicht_kg: normalizeGewicht(row.weight),
+      gewicht_kg: kgVanLightspeedGewicht(row.weight),
       is_maatwerk: match.is_maatwerk ?? false,
       maatwerk_kwaliteit_code: match.maatwerk_kwaliteit_code ?? null,
       maatwerk_kleur_code: match.maatwerk_kleur_code ?? null,

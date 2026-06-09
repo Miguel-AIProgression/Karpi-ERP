@@ -26,6 +26,7 @@ import {
 import { matchProduct } from '../_shared/product-matcher.ts'
 import { matchDebiteurViaEnv } from '../_shared/debiteur-matcher.ts'
 import { haalKlantPrijs } from '../_shared/klant-prijs.ts'
+import { kgVanLightspeedGewicht } from '../_shared/order-intake/gewicht.ts'
 
 const SHOPS: LightspeedShop[] = ['nl', 'de']
 const PAGE_LIMIT = 250
@@ -39,13 +40,6 @@ function json(body: unknown, status = 200): Response {
 
 function bronShopFor(shop: LightspeedShop): string {
   return shop === 'nl' ? 'floorpassion_nl' : 'floorpassion_de'
-}
-
-function normalizeGewicht(raw: number | undefined): number | null {
-  if (raw == null || Number.isNaN(raw)) return null
-  const kg = raw / 1_000  // Lightspeed weight is in grams
-  if (kg >= 1_000_000 || kg < 0) return null
-  return Math.round(kg * 100) / 100
 }
 
 // Vandaag in ISO formaat (YYYY-MM-DD) als startdatum voor import
@@ -106,7 +100,7 @@ async function buildRegels(
       prijs,
       korting_pct: 0,
       bedrag,
-      gewicht_kg: normalizeGewicht(row.weight),
+      gewicht_kg: kgVanLightspeedGewicht(row.weight),
       is_maatwerk: match.is_maatwerk ?? false,
       maatwerk_kwaliteit_code: match.maatwerk_kwaliteit_code ?? null,
       maatwerk_kleur_code: match.maatwerk_kleur_code ?? null,
