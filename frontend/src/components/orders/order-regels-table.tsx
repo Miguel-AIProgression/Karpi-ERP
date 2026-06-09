@@ -1,12 +1,134 @@
+import { useState, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { Scissors, ArrowRight } from 'lucide-react'
+import { Scissors, ArrowRight, Pencil, X, Check } from 'lucide-react'
+import { useQueryClient, useMutation } from '@tanstack/react-query'
 import { formatCurrency } from '@/lib/utils/formatters'
 import { SNIJPLAN_STATUS_COLORS, AFWERKING_MAP } from '@/lib/utils/constants'
 import { getVormDisplay } from '@/lib/utils/vorm-labels'
-import { isoWeekFromString } from '@/lib/utils/iso-week'
+import { isoWeekFromString, isoWeekString } from '@/lib/utils/iso-week'
 import type { OrderRegel } from '@/lib/supabase/queries/orders'
+import { setRegelVerzendweek } from '@/lib/supabase/queries/orders'
 import { isAdminPseudo } from '@/lib/orders/admin-pseudo'
 import { LevertijdBadge, UitwisselbaarToepassenRij, type OrderRegelLevertijd, type OrderClaim } from '@/modules/reserveringen'
+
+function formatVerzendweek(w: string): string {
+  const m = w.match(/^(\d{4})-W(\d{2})$/)
+  if (!m) return w
+  return `Wk ${parseInt(m[2])} · ${m[1]}`
+}
+
+function volgendeWeekVanDatum(iso: string): string {
+  const d = new Date(iso + 'T00:00:00Z')
+  d.setUTCDate(d.getUTCDate() + 7)
+  return isoWeekString(d)
+}
+
+interface VerzendweekCellProps {
+  regel: OrderRegel
+  orderId: number
+  orderdatum: string
+  levertijd?: OrderRegelLevertijd
+  bewerkbaar: boolean
+}
+
+function VerzendweekCell({ regel, orderId, orderdatum, levertijd, bewerkbaar }: VerzendweekCellProps) {
+  const queryClient = useQueryClient()
+  const [editing, setEditing] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const autoWeek: string | null = (() => {
+    if (levertijd?.levertijd_status === 'voorraad') return volgendeWeekVanDatum(orderdatum)
+    if (levertijd?.verwachte_leverweek) return levertijd.verwachte_leverweek
+    return null
+  })()
+
+  const displayed = regel.verzendweek ?? autoWeek
+  const isOverride = !!regel.verzendweek
+
+  const mutation = useMutation({
+    mutationFn: (w: string | null) => setRegelVerzendweek(regel.id, w),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['order-regels', orderId] })
+      setEditing(false)
+    },
+  })
+
+  useEffect(() => {
+    if (editing) inputRef.current?.focus()
+  }, [editing])
+
+  if (editing) {
+    const initValue = regel.verzendweek ?? autoWeek ?? ''
+    return (
+      <span className="inline-flex items-center gap-1">
+        <input
+          ref={inputRef}
+          type="week"
+          defaultValue={initValue}
+          className="border border-slate-300 rounded px-1 py-0.5 text-xs w-36 focus:outline-none focus:ring-1 focus:ring-terracotta-400"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') mutation.mutate((e.target as HTMLInputElement).value || null)
+            if (e.key === 'Escape') setEditing(false)
+          }}
+        />
+        <button
+          type="button"
+          onClick={(e) => {
+            const inp = inputRef.current
+            mutation.mutate(inp?.value || null)
+          }}
+          className="text-green-600 hover:text-green-700"
+          title="Opslaan"
+        >
+          <Check size={13} />
+        </button>
+        <button
+          type="button"
+          onClick={() => setEditing(false)}
+          className="text-slate-400 hover:text-slate-600"
+          title="Annuleren"
+        >
+          <X size={13} />
+        </button>
+      </span>
+    )
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1 group">
+      {displayed ? (
+        <span
+          className={`text-xs ${isOverride ? 'font-medium text-slate-700' : 'text-slate-400 italic'}`}
+          title={isOverride ? 'Handmatig ingesteld' : 'Automatisch berekend'}
+        >
+          {formatVerzendweek(displayed)}
+        </span>
+      ) : (
+        <span className="text-xs text-slate-300">—</span>
+      )}
+      {bewerkbaar && (
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-terracotta-500"
+          title="Verzendweek aanpassen"
+        >
+          <Pencil size={11} />
+        </button>
+      )}
+      {isOverride && bewerkbaar && (
+        <button
+          type="button"
+          onClick={() => mutation.mutate(null)}
+          className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-300 hover:text-rose-400"
+          title="Reset naar auto"
+        >
+          <X size={11} />
+        </button>
+      )}
+    </span>
+  )
+}
 
 function formatMaat(regel: OrderRegel): string {
   const l = regel.maatwerk_lengte_cm
@@ -151,12 +273,14 @@ function SubRowTr({ sub }: { sub: SubRow }) {
 
 interface RegelRowProps {
   regel: OrderRegel
+  orderId: number
+  orderdatum: string
   levertijd?: OrderRegelLevertijd
   claims: OrderClaim[]
   isEindstatus: boolean
 }
 
-function RegelRow({ regel, levertijd, claims, isEindstatus }: RegelRowProps) {
+function RegelRow({ regel, orderId, orderdatum, levertijd, claims, isEindstatus }: RegelRowProps) {
   const afwerkingInfo = regel.maatwerk_afwerking ? AFWERKING_MAP[regel.maatwerk_afwerking] : null
   const maat = formatMaat(regel)
   const toonSubRows = !regel.is_maatwerk
@@ -217,6 +341,17 @@ function RegelRow({ regel, levertijd, claims, isEindstatus }: RegelRowProps) {
             <LevertijdBadge levertijd={levertijd} />
           ) : (
             <span className="text-xs text-slate-300">—</span>
+          )}
+          {!regel.is_maatwerk && !isAdminPseudo(regel) && (
+            <div className="mt-1">
+              <VerzendweekCell
+                regel={regel}
+                orderId={orderId}
+                orderdatum={orderdatum}
+                levertijd={levertijd}
+                bewerkbaar={!isEindstatus}
+              />
+            </div>
           )}
         </td>
         <td className="px-4 py-2 text-right">{formatCurrency(regel.prijs)}</td>
@@ -292,9 +427,11 @@ interface OrderRegelsTableProps {
   levertijden?: OrderRegelLevertijd[]
   claims?: OrderClaim[]
   orderStatus?: string
+  orderId: number
+  orderdatum: string
 }
 
-export function OrderRegelsTable({ regels, isLoading, levertijden, claims, orderStatus }: OrderRegelsTableProps) {
+export function OrderRegelsTable({ regels, isLoading, levertijden, claims, orderStatus, orderId, orderdatum }: OrderRegelsTableProps) {
   const isEindstatus = EINDSTATUS_ORDERS.has(orderStatus ?? '')
   const levertijdMap = new Map<number, OrderRegelLevertijd>(
     (levertijden ?? []).map(l => [l.order_regel_id, l]),
@@ -346,6 +483,8 @@ export function OrderRegelsTable({ regels, isLoading, levertijden, claims, order
               <RegelRow
                 key={regel.id}
                 regel={regel}
+                orderId={orderId}
+                orderdatum={orderdatum}
                 levertijd={levertijdMap.get(regel.id)}
                 claims={claimsMap.get(regel.id) ?? []}
                 isEindstatus={isEindstatus}

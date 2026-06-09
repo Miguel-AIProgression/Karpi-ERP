@@ -142,6 +142,11 @@ export function shopifyLineItemToMatcherRow(item: ShopifyLineItem) {
   const lengteProp = findProp(['lengte', 'length'])
   const breedteProp = findProp(['breedte', 'width', 'breed'])
 
+  // Shopify "Selections"-producten (configurator-pricing) hebben geen item.sku maar
+  // wel een "Maatwerk-sku" property met de echte productcode.
+  const maatverkSku = findProp(['maatwerk-sku', 'maatwerk_sku'])
+  const effectiveSku = item.sku ?? maatverkSku ?? null
+
   // Bouw variantTitle op: variant_title als basis, vul aan met dimensies
   let variantTitle = item.variant_title ?? null
   if (!variantTitle && (lengteProp || breedteProp)) {
@@ -155,8 +160,8 @@ export function shopifyLineItemToMatcherRow(item: ShopifyLineItem) {
     id: item.id,
     productTitle: item.title,
     variantTitle,
-    articleCode: item.sku ?? null,
-    sku: item.sku ?? null,
+    articleCode: effectiveSku,
+    sku: effectiveSku,
     ean: null,
     quantityOrdered: item.quantity,
     priceExcl: parseFloat(item.price ?? '0') || 0,

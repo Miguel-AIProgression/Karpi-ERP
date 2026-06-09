@@ -236,7 +236,10 @@ export async function matchProduct(
     // gekozen, dat is een snijplan-opdracht). Nooit doorvallen naar
     // "eerste hit op kwaliteit+kleur" want dat matcht willekeurig.
     const titleBlobEarly = `${row.productTitle ?? ''} ${row.variantTitle ?? ''}`
-    const isExplicietMaatwerk = WUNSCHGROSSE_PATROON.test(titleBlobEarly) || DURCHMESSER_PATROON.test(titleBlobEarly)
+    // Shopify Selections: articleCode eindigt op "MAATWERK" = altijd maatwerk
+    const isExplicietMaatwerk = WUNSCHGROSSE_PATROON.test(titleBlobEarly)
+      || DURCHMESSER_PATROON.test(titleBlobEarly)
+      || /MAATWERK$/i.test(row.articleCode ?? '')
 
     const { data: aliasRows } = await supabase
       .from('klanteigen_namen')
@@ -363,7 +366,19 @@ export async function matchProduct(
 
   // karpi_code match
   const karpiHit = await zoekOpKarpi(supabase, codes)
-  if (karpiHit) return { artikelnr: karpiHit, matchedOn: 'karpi_code' }
+  if (karpiHit) {
+    const maatverkCode = codes.find(c => /MAATWERK$/i.test(c))
+    const artcode = maatverkCode ? parseArticleCode(maatverkCode) : null
+    return {
+      artikelnr: karpiHit,
+      matchedOn: 'karpi_code',
+      ...(maatverkCode ? {
+        is_maatwerk: true,
+        maatwerk_kwaliteit_code: artcode?.kwaliteit ?? null,
+        maatwerk_kleur_code: artcode?.kleur ?? null,
+      } : {}),
+    }
+  }
 
   // artikelnr match
   if (codes.length > 0) {
@@ -372,7 +387,19 @@ export async function matchProduct(
       .select('artikelnr')
       .in('artikelnr', codes)
       .limit(1)
-    if (data && data.length > 0) return { artikelnr: data[0].artikelnr, matchedOn: 'artikelnr' }
+    if (data && data.length > 0) {
+      const maatverkCode = codes.find(c => /MAATWERK$/i.test(c))
+      const artcode = maatverkCode ? parseArticleCode(maatverkCode) : null
+      return {
+        artikelnr: data[0].artikelnr,
+        matchedOn: 'artikelnr',
+        ...(maatverkCode ? {
+          is_maatwerk: true,
+          maatwerk_kwaliteit_code: artcode?.kwaliteit ?? null,
+          maatwerk_kleur_code: artcode?.kleur ?? null,
+        } : {}),
+      }
+    }
   }
 
   // ean_code
