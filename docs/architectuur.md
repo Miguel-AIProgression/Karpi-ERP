@@ -371,6 +371,14 @@ Edge function `sync-webshop-order` (`supabase/functions/sync-webshop-order/index
 
 Credentials per shop in `supabase/functions/.env` (gitignored): `LIGHTSPEED_{NL,DE}_API_{KEY,SECRET}`, `LIGHTSPEED_{NL,DE}_CLUSTER_URL`, `FLOORPASSION_DEBITEUR_NR`. Deploy edge function met `--no-verify-jwt` (webhooks hebben geen Supabase JWT). Webhook-registratie via `scripts/register-lightspeed-webhooks.mjs`. Unmatched producten krijgen `[UNMATCHED]`-prefix in `omschrijving` + NULL `artikelnr` — order wordt niet geblokkeerd maar gemarkeerd voor handmatige review. Fase 2 (voorraad-sync, levertijden terug naar webshop) is nog niet in scope.
 
+### Gedeelde order-intake-seam (inbound → orderregels)
+De drie Deno-webhook-kanalen (Shopify, Lightspeed-webhook, Lightspeed-cron) bouwen hun orderregels via gedeelde helpers in [`_shared/order-intake/`](../supabase/functions/_shared/order-intake/) (2026-06-09):
+- **`gewicht.ts`** — `kgVanLightspeedGewicht(raw)`: één gewicht-normalisatie (micro-kg → kg, NUMERIC(8,2)-begrenzing). Loste een factor-1000-bug op: de webhook deelde door 1e6, de cron foutief door 1e3 op identieke brondata.
+- **`types.ts`** — `IntakeRegel`, het gedeelde regel-shape (vervangt het ad-hoc `regels: unknown[]` per kanaal); komt 1-op-1 overeen met de kolommen die `create_webshop_order(p_regels)` verwacht.
+- **`lightspeed-regels.ts`** — `buildLightspeedRegels(supabase, rows, debiteurNr)` + pure `toIntakeRegel(...)`: één regelbouw voor beide Lightspeed-paden (waren near-duplicate `buildRegels`, dreven uiteen op gewicht-conversie, `maatwerk_vorm` en omschrijving-opbouw).
+
+**EDI valt bewust buiten deze seam**: dat kanaal bouwt zijn regels in SQL (`create_edi_order`), niet in een Deno-adapter. De gedeelde SQL-insert-kern (de drie insert-RPC's laten convergeren) is een apart vervolgbeslispunt, nog niet ingepland.
+
 ### Gedeelde debiteur-matcher-seam (inbound → `debiteur_nr`)
 Alle inbound-kanalen (EDI, Shopify, e-mail, webshop/Lightspeed) mappen een binnenkomende order naar een `debiteur_nr` via één gedeelde module [`_shared/debiteur-matcher.ts`](../supabase/functions/_shared/debiteur-matcher.ts), spiegelbeeld van `product-matcher.ts`. Result-interface `DebiteurMatch{debiteur_nr, bron, zeker}`. Bouwstenen (één implementatie, getest): `normaliseerNaam`, `glnVarianten` (`.0`-tolerant), `isActieveDebiteur`/`ACTIEF_OR_FILTER` (= `status <> 'Inactief'` mét NULL meegerekend), `matchDebiteurOpGln` (5-staps GLN-ladder voor EDI), en `matchDebiteurViaEnv(envKey)` voor de vaste-verzameldebiteur-kanalen.
 
