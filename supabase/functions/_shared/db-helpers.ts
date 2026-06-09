@@ -3,6 +3,7 @@
 
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import type { SnijplanPiece, Roll, Placement, FifoMetrics, FifoOptions } from './ffdh-packing.ts'
+import { ROL_FYSIEK_BEZET } from './snijplan-status.ts'
 
 // ---------------------------------------------------------------------------
 // Kleur-code variants — DB heeft historisch zowel "12" als "12.0" gangbaar
@@ -170,7 +171,7 @@ export async function fetchBeschikbareRollen(
   const { data: bezigeRolRows, error: bezigError } = await supabase
     .from('snijplannen')
     .select('rol_id')
-    .in('status', ['Snijden', 'Gesneden'])
+    .in('status', [...ROL_FYSIEK_BEZET])
     .not('rol_id', 'is', null)
   if (bezigError) throw bezigError
   const bezigeRolIds = new Set<number>(
