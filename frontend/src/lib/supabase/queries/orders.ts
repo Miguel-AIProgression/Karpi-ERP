@@ -50,6 +50,8 @@ export interface OrderRow {
    * isLevertijdWijzigingTeBevestigen / het 'Levertijd gewijzigd'-tab-predicaat.
    */
   levertijd_wijziging_te_bevestigen_sinds?: string | null
+  /** Mig 335: tijdstip waarop de orderbevestiging per e-mail is verstuurd. NULL = nog niet bevestigd. */
+  bevestigd_at?: string | null
 }
 
 export interface OrderDetail extends OrderRow {

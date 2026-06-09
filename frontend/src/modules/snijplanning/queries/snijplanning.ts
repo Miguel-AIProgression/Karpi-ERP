@@ -49,10 +49,26 @@ export async function fetchSnijplanningGroepen(
   if (search) {
     const s = sanitizeSearch(search)?.toLowerCase()
     if (s) {
+      // Zoek via order_nr / klant_naam in snijplanning_overzicht — haal unieke
+      // (kwaliteit_code, kleur_code) paren op die bij die zoekterm horen.
+      const { data: matchingRows } = await supabase
+        .from('snijplanning_overzicht')
+        .select('kwaliteit_code, kleur_code')
+        .or(`order_nr.ilike.%${s}%,klant_naam.ilike.%${s}%`)
+        .in('status', ['Gepland', 'Snijden'])
+
+      const orderMatchKeys = new Set(
+        (matchingRows ?? []).map(
+          (r: { kwaliteit_code: string; kleur_code: string }) =>
+            `${r.kwaliteit_code}_${r.kleur_code}`,
+        ),
+      )
+
       results = results.filter(
         (g) =>
           g.kwaliteit_code.toLowerCase().includes(s) ||
-          g.kleur_code.toLowerCase().includes(s)
+          g.kleur_code.toLowerCase().includes(s) ||
+          orderMatchKeys.has(`${g.kwaliteit_code}_${g.kleur_code}`),
       )
     }
   }

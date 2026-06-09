@@ -228,7 +228,7 @@ export function SnijplanningOverviewPage() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Zoek op kwaliteit, kleur..."
+            placeholder="Zoek op kwaliteit, kleur, ordernummer..."
             className="w-full pl-10 pr-4 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
           />
         </div>

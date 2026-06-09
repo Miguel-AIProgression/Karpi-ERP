@@ -43,7 +43,7 @@ function datumAlsIso(dag: Date): string {
   return dag.toISOString().slice(0, 10)
 }
 
-function formatDisplay(mode: 'week' | 'date', waarde?: string): string {
+function formatDisplay(mode: 'week' | 'datum', waarde?: string): string {
   if (!waarde) return ''
   const d = new Date(waarde + 'T00:00:00Z')
   if (mode === 'week') {
@@ -62,7 +62,7 @@ const MAAND_NAMEN = [
 const DAG_HEADERS = ['Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za', 'Zo']
 
 interface WeekDatumPickerProps {
-  mode: 'week' | 'date'
+  mode: 'week' | 'datum'
   waarde?: string
   onChange: (datum: string) => void
   className?: string
@@ -212,7 +212,7 @@ export function WeekDatumPicker({ mode, waarde, onChange, className }: WeekDatum
                       const dagIso = datumAlsIso(dag)
                       const inMaand = dag.getUTCFullYear() === viewJaar && dag.getUTCMonth() === viewMaand
                       const isVandaag = dagIso === vandaagIso
-                      const isDagGeselecteerd = mode === 'date' && dagIso === waarde
+                      const isDagGeselecteerd = mode === 'datum' && dagIso === waarde
                       const isInGeselecteerdeWeek = mode === 'week' && rijGeselecteerd
                       const isLaatsteInRij = j === 6
 
@@ -231,7 +231,7 @@ export function WeekDatumPicker({ mode, waarde, onChange, className }: WeekDatum
                         cellClass += 'text-slate-700'
                       }
 
-                      if (mode === 'date' && !isDagGeselecteerd) {
+                      if (mode === 'datum' && !isDagGeselecteerd) {
                         cellClass += ' cursor-pointer hover:bg-slate-100 rounded-full'
                       }
 
@@ -239,7 +239,7 @@ export function WeekDatumPicker({ mode, waarde, onChange, className }: WeekDatum
                         <td
                           key={j}
                           className={cellClass}
-                          onClick={mode === 'date' ? (e) => { e.stopPropagation(); handleDagKlik(dag) } : undefined}
+                          onClick={mode === 'datum' ? (e) => { e.stopPropagation(); handleDagKlik(dag) } : undefined}
                         >
                           {dag.getUTCDate()}
                         </td>
