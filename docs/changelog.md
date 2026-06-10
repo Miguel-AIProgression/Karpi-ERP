@@ -1,5 +1,34 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-10 — In-app feedback/bug-meldtool (mig 342)
+
+**Waarom:** RugFlow gaat live bij de gebruikers; zij gaan tegen bugs/onvolkomenheden
+aanlopen en moeten die laagdrempelig kunnen melden zonder de context te verliezen —
+net als de feedback-popup in de LocoBrands-omgeving.
+
+**Wat — frontend (branch `feat/feedback-bug-tool`):**
+- **Zwevende `FeedbackWidget`** ([`feedback-widget.tsx`](../frontend/src/components/feedback/feedback-widget.tsx))
+  rechtsonder op elke pagina (gerenderd in [`app-layout.tsx`](../frontend/src/components/layout/app-layout.tsx)).
+  Modal met titel, omschrijving, urgentie en optionele screenshot/bijlage; legt
+  **automatisch de huidige pagina-URL** (`window.location.href`) en de **ingelogde melder**
+  (auth.users id + e-mail-snapshot) vast.
+- **Gebruikersmenu rechtsboven** ([`top-bar.tsx`](../frontend/src/components/layout/top-bar.tsx)):
+  het kale logout-icoon is vervangen door een uitklapmenu (avatar + chevron) met
+  "Mijn meldingen" / (beheerder) "Alle meldingen" en "Uitloggen".
+- **Meldingen-pagina** `/meldingen` ([`bug-meldingen.tsx`](../frontend/src/pages/feedback/bug-meldingen.tsx)):
+  gebruiker ziet eigen meldingen, **Miguel (beheerder) ziet alle**. Beheerder zet
+  `Open` ↔ `Verwerkt` (verwerken + terugzetten); de **melder accepteert** een verwerkte
+  melding (`Verwerkt` → `Geaccepteerd`). Bijlage opent via signed URL.
+
+**Wat — database (mig 342, handmatig toepassen):**
+- Tabel `bug_meldingen` + enums `bug_melding_status` (Open/Verwerkt/Geaccepteerd) en
+  `bug_urgentie` (Laag/Middel/Hoog). RLS: melder ziet eigen rijen, beheerder ziet alles
+  (`is_bug_beheerder()` = Miguels e-mail uit JWT, gespiegeld in
+  [`frontend/src/lib/bug/beheerder.ts`](../frontend/src/lib/bug/beheerder.ts)).
+- Storage-bucket `bug-bijlagen` (privé, 10 MB, afbeeldingen + PDF).
+- SECURITY DEFINER-RPC `set_bug_status(p_id, p_status)` dwingt de transitie-rechten af
+  en stempelt `verwerkt_op`/`geaccepteerd_op`.
+
 ## 2026-06-09 — Order-intake consolidatie (gefaseerd, slices 0-4)
 
 Plan: [`docs/superpowers/plans/2026-06-09-order-intake-consolidatie-gefaseerd.md`](superpowers/plans/2026-06-09-order-intake-consolidatie-gefaseerd.md). Branch `refactor/order-intake-consolidatie`.

@@ -1419,3 +1419,10 @@ Mig 174, aangepast in mig 176. Read-only view die de `/logistiek/vervoerders`-ov
 | facturen | Verstuurde factuur-PDFs ({debiteur_nr}/FACT-YYYY-NNNN.pdf) | Privé, frontend leest via signed URL (10 min); uploads via service role |
 | documenten | Algemene documenten (algemene-voorwaarden-karpi-bv.pdf) | Publiek lezen, uploads via service role |
 | order-documenten | Bijlagen bij orders en inkooporders. Paden `orders/{id}/...` en `inkooporders/{id}/...`. Max 25 MB; alleen PDF/JPG/PNG/WebP/Excel/Word/TXT toegestaan. | Privé, authenticated SELECT/INSERT/UPDATE/DELETE; frontend leest via signed URL |
+| bug-bijlagen | Screenshots/bijlagen bij bug-meldingen (mig 342). Paden `{auth_uid}/{uuid}-{naam}`. Max 10 MB; afbeeldingen + PDF. | Privé, authenticated SELECT/INSERT; frontend leest via signed URL |
+
+## Bug-meldtool (mig 342)
+
+| Tabel | Doel |
+|-------|------|
+| `bug_meldingen` | In-app feedback/bug-meldingen. Kolommen o.a. `titel`, `omschrijving`, `urgentie` (enum `bug_urgentie`), `pagina_url`, `status` (enum `bug_melding_status`: Open→Verwerkt→Geaccepteerd), `bijlage_path`, `gemeld_door` (→auth.users), `gemeld_door_email`, `verwerkt_op`, `geaccepteerd_op`. RLS: melder ziet eigen rijen, beheerder (`is_bug_beheerder()`) ziet alles. Statuswissel via SECURITY DEFINER-RPC `set_bug_status(p_id, p_status)`. |
