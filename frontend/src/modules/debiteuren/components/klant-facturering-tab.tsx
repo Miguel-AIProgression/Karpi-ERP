@@ -4,6 +4,7 @@ import {
   useUpdateKlantFactuurInstellingen,
 } from '@/modules/facturatie'
 import { FactuurLijst } from '@/modules/facturatie'
+import { parseEmailRecipients } from '@/lib/email-recipients'
 
 interface Props {
   debiteurNr: number
@@ -15,6 +16,7 @@ export function KlantFactureringTab({ debiteurNr, btwNummer }: Props) {
   const updateMut = useUpdateKlantFactuurInstellingen()
 
   const [editEmail, setEditEmail] = useState(false)
+  const [emailError, setEmailError] = useState<string | null>(null)
 
   const patch = (p: Parameters<typeof updateMut.mutate>[0]['patch']) =>
     updateMut.mutate({ debiteur_nr: debiteurNr, patch: p })
@@ -34,36 +36,51 @@ export function KlantFactureringTab({ debiteurNr, btwNummer }: Props) {
           <form
             onSubmit={(e) => {
               e.preventDefault()
-              const raw = (e.currentTarget.elements.namedItem('email_factuur') as HTMLInputElement).value.trim()
+              const raw = (e.currentTarget.elements.namedItem('email_factuur') as HTMLInputElement).value
+              const { normalized, invalid } = parseEmailRecipients(raw)
+              if (invalid.length > 0) {
+                setEmailError(`Ongeldig e-mailadres: ${invalid.join(', ')}`)
+                return
+              }
+              setEmailError(null)
               updateMut.mutate(
-                { debiteur_nr: debiteurNr, patch: { email_factuur: raw === '' ? null : raw } },
+                { debiteur_nr: debiteurNr, patch: { email_factuur: normalized === '' ? null : normalized } },
                 { onSuccess: () => setEditEmail(false) },
               )
             }}
-            className="flex items-center gap-2"
+            className="flex flex-col gap-1"
           >
-            <input
-              name="email_factuur"
-              type="email"
-              defaultValue={emailFactuur ?? ''}
-              autoFocus
-              placeholder="bv. invoice@klant.com"
-              className="w-72 rounded-[var(--radius-sm)] border border-slate-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30"
-            />
-            <button
-              type="submit"
-              disabled={updateMut.isPending}
-              className="text-xs px-2 py-1 rounded bg-terracotta-500 text-white font-medium hover:bg-terracotta-600 disabled:opacity-50"
-            >
-              {updateMut.isPending ? 'Opslaan...' : 'Opslaan'}
-            </button>
-            <button
-              type="button"
-              onClick={() => setEditEmail(false)}
-              className="text-xs text-slate-500 hover:text-slate-700"
-            >
-              Annuleren
-            </button>
+            <div className="flex items-center gap-2">
+              {/* type="text" i.p.v. "email": de browser-validatie van type="email"
+                  weigert meerdere adressen. We valideren zelf via parseEmailRecipients. */}
+              <input
+                name="email_factuur"
+                type="text"
+                defaultValue={emailFactuur ?? ''}
+                autoFocus
+                onChange={() => emailError && setEmailError(null)}
+                placeholder="bv. invoice@klant.com, factuur@klant.com"
+                className="w-96 rounded-[var(--radius-sm)] border border-slate-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30"
+              />
+              <button
+                type="submit"
+                disabled={updateMut.isPending}
+                className="text-xs px-2 py-1 rounded bg-terracotta-500 text-white font-medium hover:bg-terracotta-600 disabled:opacity-50"
+              >
+                {updateMut.isPending ? 'Opslaan...' : 'Opslaan'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEmailError(null)
+                  setEditEmail(false)
+                }}
+                className="text-xs text-slate-500 hover:text-slate-700"
+              >
+                Annuleren
+              </button>
+            </div>
+            {emailError && <p className="text-xs text-red-600">{emailError}</p>}
           </form>
         ) : (
           <div className="flex items-center gap-2 text-sm">
@@ -80,7 +97,7 @@ export function KlantFactureringTab({ debiteurNr, btwNummer }: Props) {
           </div>
         )}
         <p className="mt-1 text-xs text-slate-400">
-          Eén ontvanger per klant — wordt gebruikt door <code className="px-1 bg-slate-100 rounded">factuur-verzenden</code>.
+          Eén of meerdere ontvangers (scheiden met komma) — worden gebruikt door <code className="px-1 bg-slate-100 rounded">factuur-verzenden</code>.
         </p>
       </section>
 

@@ -53,6 +53,65 @@ regel-codes). Eigenaar-besluit: een handmatige op-maat-regel koppelt het
   product_type rol of vast is; auto-derive via `buildKarpiCode` blijft.
   Optioneel voor overig/staaltje.
 
+## 2026-06-10 — Meerdere factuur-e-mailadressen per debiteur
+
+Bugfix (branch `fix/meerdere-factuur-emails`): een operator kon op het
+Facturering-tabblad geen tweede factuur-e-mailadres invullen — het veld was
+`<input type="email">`, waarvan de browservalidatie meerdere adressen (spatie na
+`@`) weigert. `debiteuren.email_factuur` is en blijft één TEXT-kolom; de adressen
+worden nu komma-gescheiden opgeslagen (conventie `, `, zoals `verstuurd_naar`).
+
+- **Frontend:** [`klant-facturering-tab.tsx`](frontend/src/modules/debiteuren/components/klant-facturering-tab.tsx)
+  gebruikt nu `type="text"` + eigen validatie via nieuwe pure helper
+  [`email-recipients.ts`](frontend/src/lib/email-recipients.ts)
+  (`parseEmailRecipients` splitst op komma/puntkomma/whitespace, valideert elk
+  adres, normaliseert naar `, `-gescheiden string; ongeldige adressen → inline
+  foutmelding). Add-/edit-dialogs (`debiteur-add-dialog`, `debiteur-edit-dialog`)
+  idem op `type="text"` gezet voor consistentie.
+- **Edge function:** [`graph-mail-client.ts`](supabase/functions/_shared/graph-mail-client.ts)
+  splitst `to` via gespiegelde helper [`_shared/email-list.ts`](supabase/functions/_shared/email-list.ts)
+  (`splitEmailRecipients`) naar losse `toRecipients` — anders zou Microsoft Graph
+  de komma-string als één ongeldig adres afkeuren. Seam-patroon zoals
+  `_shared/debiteur-matcher.ts` ↔ frontend `product-matcher` (Deno-edge niet door
+  Vite importeerbaar). Geldt automatisch ook voor de betaler-kopie en
+  orderbevestiging.
+- Tests: `email-recipients.test.ts` (vitest, 5×) + extra Deno-test in
+  `graph-mail-client.test.ts` (multi-recipient split).
+
+## 2026-06-10 — Order-status follow-ups: EDI-'Nieuw'-regressie hersteld (mig 357) + enum-TS-single-source
+
+> **Nummering/dedup:** het plan claimde mig 353/354. Drie collisies met
+> parallelle sessies: 353 = dropshipment, 354 = de B3-fix die op main al
+> gedaan bleek, 355/356 = afleverdatum-sync + maatwerk-backfill. De EDI-mig
+> van deze branch is hernummerd naar **357** (in de DB toegepast als "mig
+> 355" — NOTICE-teksten dragen het oude nummer; inhoud identiek).
+
+Restpunten uit de order-status-consolidatie (branch
+`worktree-order-status-followups`):
+
+- **B3 bleek parallel al gesloten** (mig 354 op main, zelfde
+  `_apply_transitie`-aanpak — daar ook ontdekt dat de mig 308-INSERT crashte op
+  de niet-bestaande kolom `actor`). Deze branch draagt alleen de
+  lint-whitelist-notitie-update bij ("follow-up open" → "vervangen door mig
+  354"). NB: de live functie draagt de variant van deze branch (extra
+  `metadata.actor` + `search_path`-pin) — functioneel gelijk aan mig 354.
+- **EDI-'Nieuw'-regressie hersteld (mig 357):** mig 309/312 hadden de mig
+  275-patch ongedaan gemaakt waardoor EDI-orders sinds dien op de dode status
+  `'Nieuw'` landden (zelf-helend zodra een orderregel-trigger
+  `herbereken_wacht_status` aanroept, maar header-only/niet-getriggerde orders
+  blijven hangen). Mig 357 herdefinieert schoon (volledige body = mig 312, één
+  literal gewijzigd — geen `pg_get_functiondef`+`REPLACE`-truc meer) en
+  backfillt hangende `'Nieuw'`-EDI-orders door de ladder (schade-query
+  2026-06-10: **0** hangende orders — het zelf-helende orderregel-trigger-pad
+  had alles al gecorrigeerd; de backfill is een no-op-vangnet).
+- **`order_status` TS-single-source:**
+  [`_shared/order-lifecycle/order-status.ts`](../supabase/functions/_shared/order-lifecycle/order-status.ts)
+  (canoniek+legacy, set-semantiek) ⇄ golden-fixture ⇄ mig 350-assert, met een
+  Vitest-contracttest die `ORDER_STATUS_COLORS` als eerste spiegel automatiseert
+  (dekte al alle 17 waarden) en `satisfies`-typing op de
+  `derive-status.ts`-lijsten (inhoud ongewijzigd).
+
+
 ## 2026-06-10 — Maatwerk altijd aan een productcode (matcher + mig 356)
 
 **Waarom:** eigenaar-melding n.a.v. ORD-2026-0166 — maatwerk-orderregels uit

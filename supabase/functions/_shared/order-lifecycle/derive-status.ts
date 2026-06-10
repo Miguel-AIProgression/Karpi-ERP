@@ -6,7 +6,9 @@
 // LET OP: géén Deno-only imports (npm:/jsr:/https://) toevoegen — dit bestand wordt
 // direct door frontend-Vitest geïmporteerd (eerste cross-root import; bewust afwijkend
 // van het kopie-seam-patroon van bv. vervoerder-eisen.ts, dat kan omdat dit bestand
-// import-vrij is).
+// alleen relatieve, import-vrije imports heeft).
+
+import type { OrderStatus } from './order-status'
 
 export type OrderWachtStatus = string  // bewust géén literal-union: order_status-enum-snapshot (Fase 1-stijl) is een aparte vervolgstap, buiten scope
 
@@ -18,11 +20,11 @@ const EINDSTATUS_OF_PICKRONDE: ReadonlySet<string> = new Set([
   // definitie maatwerk=true (snijplannen eindigen op confectie-afgerond,
   // niet 'Ingepakt'), dus zonder deze guard zou tak 4 ze terugzetten.
   'Maatwerk afgerond',
-])
+] as const satisfies readonly OrderStatus[])
 
 const HERBEREKENBARE_WACHT: ReadonlySet<string> = new Set([
   'Wacht op inkoop', 'Wacht op voorraad', 'Wacht op maatwerk', 'Nieuw',
-])
+] as const satisfies readonly OrderStatus[])
 
 export interface WachtStatusInput {
   huidig: OrderWachtStatus
