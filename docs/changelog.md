@@ -1,5 +1,41 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-10 — Order-lifecycle-hardening: doc + 4 fixes (mig 346-349)
+
+**Waarom:** sparring-sessie over codestructuur en bug-archetypen vóór de go-lives
+van volgende week (verzending standaardmaten + maatwerk-productie). Onderzoek
+(4 Explore-agents + handverificatie) leverde `docs/order-lifecycle.md` op — het
+levende statusmodel-document (statussen, transities, gates, intake-matrix,
+productie-/magazijnpad, RPC→laatste-migratie-tabel) — plus 12 getriageerde
+bevindingen (§11 aldaar).
+
+**Wat (branch `fix/order-lifecycle-hardening`):**
+- **Nieuw levend document** `docs/order-lifecycle.md` — toetssteen voor elke
+  flow-wijziging.
+- **B2 (mig 346+347):** `voltooi_confectie` schrijft de terminale
+  'Maatwerk afgerond'-flip nu via `_apply_transitie` met nieuw event-type
+  `maatwerk_afgerond` (was directe UPDATE zonder audit-event, mig 330).
+- **B1-vangnet (mig 348):** `match_edi_artikel` stap 3 (eerste-token-match)
+  weigert wanneer de artikelcode-suffix een maat-patroon (`155x230`) of
+  vorm-woord (`rund`/`rond`/`ovaal`) bevat — maat-informatie kan niet meer
+  stilzwijgend gedropt worden; regel landt als ongematcht ('Actie vereist').
+  Echte EDI-maatwerk-parsing = V2, eerst corpus verzamelen.
+- **B4:** `import-lightspeed-orders` (cron-pad) bepaalt nu de afleverdatum via
+  dezelfde `bepaalAfleverdatumUitOrder`-helper als het webhook-pad (was hard
+  `NULL` → orders zonder deadline). **Redeploy nodig.**
+- **B5 (mig 349):** snapshot-assert op de `order_status`-enum (set-vergelijking,
+  mirror van mig 344) — enum wijzigen zonder de spiegels bij te werken faalt
+  voortaan hard.
+- **B11:** lint `lint-no-direct-orders-status-update.sh` scant nu ook
+  `migrations/3*.sql`+ (mig 308/330 glipten door de oude `2*.sql`-scope;
+  als bevroren historie ge-allowlist).
+- **B12:** `ORDER_STATUS_COLORS` kende `'Maatwerk afgerond'` niet (badge zonder
+  kleur) — toegevoegd.
+
+Migraties 346→349 handmatig en **in volgorde** in de SQL Editor draaien (346
+apart vóór 347 — nieuwe enum-waarde mag niet in dezelfde transactie gebruikt
+worden). Open follow-ups: B3/B7-B10 in `docs/order-lifecycle.md` §11C.
+
 ## 2026-06-10 — Productie-only orders uit "zonder vervoerder"-teller (mig 345)
 
 De banner "1165 order(s) zonder vervoerder" op Pick & Ship bestond voor 1066 stuks

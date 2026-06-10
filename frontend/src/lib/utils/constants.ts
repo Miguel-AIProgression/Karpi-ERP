@@ -15,6 +15,8 @@ export const ORDER_STATUS_COLORS: Record<string, { bg: string; text: string }> =
   'Deels verzonden':       { bg: 'bg-cyan-100',    text: 'text-cyan-700' },
   'Verzonden':             { bg: 'bg-green-100',   text: 'text-green-700' },
   'Geannuleerd':           { bg: 'bg-gray-100',    text: 'text-gray-500' },
+  // Terminaal voor productie-only orders (ADR-0029, mig 327/330)
+  'Maatwerk afgerond':     { bg: 'bg-teal-100',    text: 'text-teal-700' },
   // Legacy — niet meer geschreven post-mig-258, maar bestaande data kan ze nog hebben
   'Nieuw':                 { bg: 'bg-blue-100',    text: 'text-blue-700' },
   'Actie vereist':         { bg: 'bg-rose-100',    text: 'text-rose-700' },
