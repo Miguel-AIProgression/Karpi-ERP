@@ -83,8 +83,8 @@ Afgedwongen door [`scripts/lint-no-direct-orders-status-update.sh`](../scripts/l
 | `create_order_with_lines` | **mig 275** (status `'Klaar voor picken'`) | 152, 245 |
 | `create_edi_order` | **mig 312** | 158, 159, 166, 309, 275 (string-patch) |
 | `match_edi_artikel` | **mig 348** (maat-suffix-guard) | 159, 162 |
-| `create_webshop_order` | **mig 322** (`debiteur_zeker`) | 085, 092, 308, 343 |
-| `herbereken_wacht_status` | **mig 275** | 218, 258, 267 |
+| `create_webshop_order` | **mig 343** (`maatwerk_vorm`) | 085, 086, 087, 092, 093, 308, 322 |
+| `herbereken_wacht_status` | **mig 350** (`Maatwerk afgerond` no-touch) | 218, 258, 267, 275 |
 | `voltooi_confectie` | **mig 347** (`_apply_transitie`) | 101, 247, 250, 330 |
 | `voltooi_pickronde` | mig 218 + bundel-aware (mig 222/242) | 217 |
 | `start_pickronden` (unified) | **mig 248** | 220, 222 |
@@ -95,8 +95,9 @@ Volgorde, eerste match wint:
 
 1. **No-touch**: huidig ∈ {`Verzonden`, `Geannuleerd`, `Klaar voor verzending`,
    `In productie`, `In snijplan`, `Deels gereed`, `Wacht op picken`,
-   `In pickronde`, `Deels verzonden`} → return. (`Maatwerk afgerond` staat niet in
-   die lijst — gedekt doordat de mig 347-na-stap zelf de eindcheck doet.)
+   `In pickronde`, `Deels verzonden`, `Maatwerk afgerond` (sinds mig 350)} → return.
+   `Maatwerk afgerond` ontbrak t/m mig 275 (ouder dan mig 327) — regressie-pad
+   naar `Wacht op maatwerk` bij elke orderregel-touch; zie bevinding B13.
 2. ≥1 actieve claim `bron='inkooporder_regel'` → `Wacht op inkoop`
 3. ≥1 niet-maatwerk, niet-admin-pseudo regel met `te_leveren > SUM(claims)` → `Wacht op voorraad`
 4. ≥1 maatwerk-regel zonder snijplan `'Ingepakt'` → `Wacht op maatwerk`
@@ -223,6 +224,10 @@ Status-legenda: ✅ = gefixt op branch `fix/order-lifecycle-hardening` (mig 346-
   (`155x230`) of vorm-woord (`rund`/`rond`/`ovaal`) bevat → regel landt als
   ongematcht in de bestaande 'Actie vereist'-flow, operator beoordeelt. **Echte
   EDI-maatwerk-parsing = V2** zodra de geweigerde regels een corpus vormen.
+  *Bekende gaten in de guard (bewust, eerst corpus):* suffix met alléén een getal
+  (`"526650046 160"`), vorm-woord aan getal geplakt (`"RUND160"`), `155*230`,
+  `Ø 160`, Engels `round`. Vóór de cutover: corpus-query op historische
+  `edi_berichten`-payloads om refusal-volume en gemiste varianten te kwantificeren.
 - **B2 — `Maatwerk afgerond` zonder order_event.** ✅ — mig 346 (event-type
   `maatwerk_afgerond`) + mig 347 (`voltooi_confectie` via `_apply_transitie`).
 - **B4 — Lightspeed-cron landt orders zonder afleverdatum.** ✅ —
@@ -242,6 +247,14 @@ Status-legenda: ✅ = gefixt op branch `fix/order-lifecycle-hardening` (mig 346-
   ook `3*.sql`+ (308/330 expliciet ge-allowlist als bevroren historie).
 - **B12 — `ORDER_STATUS_COLORS` miste `'Maatwerk afgerond'`.** ✅ — badge viel
   terug op niets; teal toegevoegd.
+- **B13 — `Maatwerk afgerond` regresseerde naar `Wacht op maatwerk`.** ✅ — de
+  no-touch-lijst van `herbereken_wacht_status` (mig 275, ouder dan mig 327) kende
+  de terminale status niet: elke orderregel-touch op een afgeronde productie-only
+  order zette hem terug (maatwerk-tak vindt snijplannen zonder `'Ingepakt'` —
+  productie-only eindigt bewust op confectie-afgerond). Mig 350 voegt de status
+  toe aan de guard. Gevonden in de code-review van deze branch. **Let op:** het
+  parallelle "order-status single-source"-plan moet `'Maatwerk afgerond'` ook in
+  `derive_wacht_status` opnemen (notitie in dat plan gezet).
 
 ### C. Opruimen/V2
 
@@ -257,6 +270,10 @@ Status-legenda: ✅ = gefixt op branch `fix/order-lifecycle-hardening` (mig 346-
   kanaal). Gevolg voor levertijd-berekening van externe orders met tekort onderzoeken.
 - **B9 — `order_events` draagt geen intake-kanaal-metadata** — audit ziet niet via
   welk kanaal een order ontstond (alleen `orders.bron_systeem`). Nice-to-have.
+- **B14 — `sync_order_afleverdatum_met_claims` (mig 298) mist `'Maatwerk afgerond'`**
+  in zijn eindstatus-lijst (`Verzonden`/`Geannuleerd`/`Klaar voor verzending`).
+  Laag risico: maatwerk reserveert niet op IO in V1, dus de functie no-op't op
+  productie-only orders. Meenemen bij de eerstvolgende herdefinitie.
 - **B10 — Legacy statussen** (`Nieuw`, `Actie vereist`, `In snijplan`, `Deels gereed`,
   `Wacht op picken`) staan nog in de enum; `In productie` is hergebruikt door
   productie-only (mig 329). Opruim-/hernoem-kandidaat zodra productie-only een

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/lint-no-direct-orders-status-update.sh
 # Faalt als 'UPDATE orders SET status' voorkomt in nieuwe code.
-# Scope: frontend/ TS/TSX + supabase/migrations/2*.sql (Module-tijdperk).
+# Scope: frontend/ TS/TSX + supabase/migrations/2*.sql en hoger (3xx, 4xx, ...).
 # Legacy migraties 145/153/217 zijn historisch en niet meer bewerkt.
 #
 # ADR-0006: orders.status mag alleen worden geschreven via de

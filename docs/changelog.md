@@ -1,6 +1,6 @@
 # Changelog — RugFlow ERP
 
-## 2026-06-10 — Order-lifecycle-hardening: doc + 4 fixes (mig 346-349)
+## 2026-06-10 — Order-lifecycle-hardening: doc + 5 fixes (mig 346-350)
 
 **Waarom:** sparring-sessie over codestructuur en bug-archetypen vóór de go-lives
 van volgende week (verzending standaardmaten + maatwerk-productie). Onderzoek
@@ -31,10 +31,17 @@ bevindingen (§11 aldaar).
   als bevroren historie ge-allowlist).
 - **B12:** `ORDER_STATUS_COLORS` kende `'Maatwerk afgerond'` niet (badge zonder
   kleur) — toegevoegd.
+- **B13 (mig 350, uit de code-review van deze branch):** `'Maatwerk afgerond'`
+  ontbrak in de no-touch-lijst van `herbereken_wacht_status` (mig 275 is ouder
+  dan mig 327) → een afgeronde productie-only order viel bij elke
+  orderregel-touch terug naar `'Wacht op maatwerk'`, definitief. Toegevoegd aan
+  de eindstatus-guard; SECURITY DEFINER + search_path expliciet herzet
+  (218_z-les). Notitie gezet in het parallelle "order-status single-source"-plan
+  zodat `derive_wacht_status` de waarde ook meeneemt.
 
-Migraties 346→349 handmatig en **in volgorde** in de SQL Editor draaien (346
+Migraties 346→350 handmatig en **in volgorde** in de SQL Editor draaien (346
 apart vóór 347 — nieuwe enum-waarde mag niet in dezelfde transactie gebruikt
-worden). Open follow-ups: B3/B7-B10 in `docs/order-lifecycle.md` §11C.
+worden). Open follow-ups: B3/B7-B10/B14 in `docs/order-lifecycle.md` §11C.
 
 ## 2026-06-10 — Productie-only orders uit "zonder vervoerder"-teller (mig 345)
 

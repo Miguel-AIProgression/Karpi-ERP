@@ -14,6 +14,16 @@
 
 **Huidige runtime-ladder:** `herbereken_wacht_status(p_order_id BIGINT)` — laatste definitie in [`supabase/migrations/275_nieuw_status_deprecate_klaar_voor_picken.sql`](../../../supabase/migrations/275_nieuw_status_deprecate_klaar_voor_picken.sql) r214-293. Keten van herdefinities: mig 218 → 258 → 269 → 273 → **275 (live)**. De exacte huidige body staat hieronder in Task 1 verbatim.
 
+> **⚠️ UPDATE 2026-06-10 (branch `fix/order-lifecycle-hardening`, mig 350):** de
+> no-touch-lijst hieronder is NIET meer de mig 275-vorm. Mig 350 voegt
+> `'Maatwerk afgerond'` toe aan de eindstatus-guard (regressie-bug B13: een
+> afgeronde productie-only order viel bij elke orderregel-touch terug naar
+> `'Wacht op maatwerk'`). Neem die waarde dus óók op in `derive_wacht_status`
+> stap 1, en gebruik mig 350 (niet 275) als verbatim begin-vorm voor
+> `herbereken_wacht_status`. Mig 350 zet bovendien expliciet SECURITY DEFINER
+> + search_path terug ná de CREATE OR REPLACE (218_z-les). Zie
+> `docs/order-lifecycle.md` §4 + §11/B13.
+
 **De ladder-logica (mig 275, eerste match wint):**
 1. `v_huidig ∈ {Verzonden, Geannuleerd, Klaar voor verzending, In productie, In snijplan, Deels gereed, Wacht op picken, In pickronde, Deels verzonden}` → **no-op** (commands/legacy beheren die).
 2. ≥1 actieve IO-claim → `Wacht op inkoop`
