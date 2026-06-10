@@ -1,6 +1,23 @@
 # Changelog — RugFlow ERP
 
-## 2026-06-10 — HST-verzendmonitor verhuisd naar tab op vervoerderpagina
+## 2026-06-10 — create_webshop_order persisteert maatwerk_vorm (mig 343)
+
+**Waarom:** slice 4 van het order-intake-plan (2026-06-09) liet Shopify én beide
+Lightspeed-paden `maatwerk_vorm` meesturen in de regel-JSON, maar de regel-INSERT
+in `create_webshop_order` (mig 322) kende die sleutel niet. JSONB geeft geen fout
+op onbekende sleutels → het veld stierf geruisloos in de RPC en webshop-maatwerk
+landde met `maatwerk_vorm = NULL`, waardoor het auto-snijplan van een rechthoek
+uitging. Gevonden tijdens het order-aanmaak-verdiepingsonderzoek (architectuur-
+review 2026-06-10).
+
+**Wat (branch `fix/webshop-maatwerk-vorm`, mig 343):**
+- `create_webshop_order` insert nu `maatwerk_vorm`, **gevalideerd** tegen
+  `maatwerk_vormen(code)`: onbekende/lege code → NULL (order blijft landen, zoals
+  nu), bekende code → gepersisteerd. Body verder byte-voor-byte mig 322;
+  signatuur ongewijzigd.
+- Zelf-testende migratie: asserteert dat de live definitie de lookup bevat én dat
+  de drie codes die de TS-kant emit (`rond`/`ovaal`/`organisch_a`,
+  `product-matcher.ts detectVorm`) in `maatwerk_vormen` bestaan.
 
 **Waarom:** de monitor is HST-specifieke informatie en hoort bij de vervoerder zelf,
 niet als los menu-item in de sidebar.
