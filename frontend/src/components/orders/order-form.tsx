@@ -30,6 +30,7 @@ import { WeekDatumPicker } from './week-datum-picker'
 import { applyShippingLogic } from '@/lib/orders/verzend-regel'
 import { bepaalOrderAfleverdatum } from '@/lib/orders/order-afleverdatum'
 import { SHIPPING_PRODUCT_ID } from '@/lib/constants/shipping'
+import { wijsVerzendNaarDuurste, splitRegelOpDekking } from '@/lib/orders/split-order'
 import { SPOED_PRODUCT_ID, SPOED_FALLBACK_BEDRAG } from '@/lib/constants/spoed'
 
 function getISOWeek(dateStr: string): number {
@@ -448,17 +449,12 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
             week: echteMaatwerkDatum ? String(getISOWeek(echteMaatwerkDatum)) : orderData.week,
           }
 
-          // Issue #33: verzendkosten naar de duurste sub-order (eerder altijd
-          // standaard-deel — onlogisch als maatwerk-deel waardevoller is).
-          const totaalStandaard = standaardRegels.reduce((s, r) => s + (r.bedrag ?? 0), 0)
-          const totaalMaatwerk = maatwerkRegels.reduce((s, r) => s + (r.bedrag ?? 0), 0)
-          const verzendNaarMaatwerk = totaalMaatwerk > totaalStandaard
-          const regelsA = !verzendNaarMaatwerk && shippingRegel
-            ? [...standaardRegels, shippingRegel]
-            : standaardRegels
-          const regelsB = verzendNaarMaatwerk && shippingRegel
-            ? [...maatwerkRegels, shippingRegel]
-            : maatwerkRegels
+          // Issue #33: verzendkosten naar de duurste sub-order (pure helper).
+          const { deelA: regelsA, deelB: regelsB } = wijsVerzendNaarDuurste(
+            standaardRegels,
+            maatwerkRegels,
+            shippingRegel,
+          )
 
           const a = await createOrder(standaardOrder, regelsA, snapshotCtx)
           const b = await createOrder(maatwerkOrder, regelsB, snapshotCtx)
@@ -484,42 +480,17 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
               shippingRegel = r  // pas later toewijzen aan duurste deel (issue #33)
               continue
             }
-            const d = berekenRegelDekking(r)
-            const directDeel = d.direct + d.uitwisselbaar
-
-            if (d.ioTekort === 0) {
-              directeRegels.push(r)
-            } else if (directDeel === 0) {
-              // Volledig op IO
-              ioRegels.push({ ...r, uitwisselbaar_keuzes: [] })
-            } else {
-              // Per-regel splitsing
-              const prijs = r.prijs ?? 0
-              const korting = (r.korting_pct ?? 0) / 100
-              directeRegels.push({
-                ...r,
-                orderaantal: directDeel,
-                te_leveren: directDeel,
-                bedrag: Math.round(prijs * directDeel * (1 - korting) * 100) / 100,
-              })
-              ioRegels.push({
-                ...r,
-                id: undefined,
-                orderaantal: d.ioTekort,
-                te_leveren: d.ioTekort,
-                uitwisselbaar_keuzes: [],
-                bedrag: Math.round(prijs * d.ioTekort * (1 - korting) * 100) / 100,
-              })
-            }
+            const { directeRegel, ioRegel } = splitRegelOpDekking(r, berekenRegelDekking(r))
+            if (directeRegel) directeRegels.push(directeRegel)
+            if (ioRegel) ioRegels.push(ioRegel)
           }
 
-          // Issue #33: verzendkosten naar duurste sub-order (i.p.v. altijd directe).
-          if (shippingRegel) {
-            const totaalDirect = directeRegels.reduce((s, r) => s + (r.bedrag ?? 0), 0)
-            const totaalIo = ioRegels.reduce((s, r) => s + (r.bedrag ?? 0), 0)
-            if (totaalIo > totaalDirect) ioRegels.push(shippingRegel)
-            else directeRegels.push(shippingRegel)
-          }
+          // Issue #33: verzendkosten naar duurste sub-order (pure helper).
+          const verdeeld = wijsVerzendNaarDuurste(directeRegels, ioRegels, shippingRegel)
+          directeRegels.length = 0
+          directeRegels.push(...verdeeld.deelA)
+          ioRegels.length = 0
+          ioRegels.push(...verdeeld.deelB)
 
           const directeOrder: OrderFormData = { ...orderData, lever_modus: 'in_een_keer' }
           // De IO-order hangt aan de IO-leverdatum (mig 153 zet afleverdatum vooruit)

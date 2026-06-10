@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase/client'
+import { filterTeKoppelen } from '@/modules/edi/lib/te-koppelen'
 
 export type EdiBerichtStatus = 'Wachtrij' | 'Bezig' | 'Verstuurd' | 'Verwerkt' | 'Fout' | 'Geannuleerd'
 export type EdiRichting = 'in' | 'uit'
@@ -115,12 +116,9 @@ export async function fetchEdiBerichten(filters: EdiBerichtenFilters = {}): Prom
  * order-creatie faalde (geen GLN-match).
  */
 export async function countTeKoppelenEdiOrders(): Promise<number> {
-  const { count, error } = await supabase
-    .from('edi_berichten')
-    .select('id', { count: 'exact', head: true })
-    .eq('richting', 'in')
-    .eq('berichttype', 'order')
-    .is('order_id', null)
+  const { count, error } = await filterTeKoppelen(
+    supabase.from('edi_berichten').select('id', { count: 'exact', head: true }),
+  )
   if (error) throw error
   return count ?? 0
 }

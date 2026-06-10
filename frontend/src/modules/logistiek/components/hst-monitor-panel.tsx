@@ -1,10 +1,13 @@
 import { Link } from 'react-router-dom'
-import { PageHeader } from '@/components/layout/page-header'
 import { useHstMonitor, useHstFouten } from '@/modules/logistiek/hooks/use-hst-monitor'
 import { cronVermoedelijkStil } from '@/modules/logistiek/queries/hst-monitor'
 import { useVerstuurZendingOpnieuw } from '@/modules/logistiek/hooks/use-zendingen'
 
-export function HstMonitorPage() {
+/**
+ * Live status van de HST-koppeling: KPI's + open fouten met retry-knop.
+ * Wordt getoond als tab "Verzendmonitor" op de vervoerder-detailpagina van HST.
+ */
+export function HstMonitorPanel() {
   const { data: m, isLoading } = useHstMonitor()
   const { data: fouten = [] } = useHstFouten()
   const retry = useVerstuurZendingOpnieuw()
@@ -15,8 +18,6 @@ export function HstMonitorPage() {
 
   return (
     <>
-      <PageHeader title="HST-verzendmonitor" description="Live status van de HST-koppeling." />
-
       {cronStil && (
         <div className="mb-4 rounded-[var(--radius-sm)] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
           <span className="font-semibold">Let op:</span> de wachtrij loopt op

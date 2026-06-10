@@ -20,16 +20,14 @@ import {
   createClient as createLightspeed,
   extractShippingAddress,
   extractBillingAddress,
-  parseMaatwerkDims,
   type LightspeedShop,
   type LightspeedOrder,
   type LightspeedOrderRow,
 } from '../_shared/lightspeed-client.ts'
 import { verifyLightspeedSignature } from '../_shared/lightspeed-verify.ts'
-import { matchProduct, buildOmschrijving } from '../_shared/product-matcher.ts'
 import { matchDebiteurViaEnv } from '../_shared/debiteur-matcher.ts'
 import { bepaalAfleverdatumUitOrder } from '../_shared/lightspeed-leverdatum.ts'
-import { haalKlantPrijs } from '../_shared/klant-prijs.ts'
+import { buildLightspeedRegels } from '../_shared/order-intake/lightspeed-regels.ts'
 
 // Fallback als de debiteur geen `maatwerk_weken` heeft ingesteld. Floorpassion
 // staat op 2; nieuwe verzameldebiteuren zonder configuratie krijgen hetzelfde
@@ -61,79 +59,6 @@ function secretFor(shop: LightspeedShop): string | null {
 
 function bronShopFor(shop: LightspeedShop): string {
   return shop === 'nl' ? 'floorpassion_nl' : 'floorpassion_de'
-}
-
-// Lightspeed levert gewicht in micro-kg (int, schaalfactor 1e6).
-// 4210000 → 4.21 kg. Conversie naar kg + begrenzing op NUMERIC(8,2).
-function normalizeGewicht(raw: number | undefined): number | null {
-  if (raw == null || Number.isNaN(raw)) return null
-  const kg = raw / 1_000_000
-  if (kg >= 1_000_000 || kg < 0) return null
-  return Math.round(kg * 100) / 100
-}
-
-async function buildRegels(
-  supabase: ReturnType<typeof createSupabase>,
-  rows: LightspeedOrderRow[],
-  debiteurNr: number,
-): Promise<{ regels: unknown[]; matched: number; unmatched: number }> {
-  const regels: unknown[] = []
-  let matched = 0
-  let unmatched = 0
-
-  for (const row of rows) {
-    const match = await matchProduct(supabase, row, debiteurNr)
-
-    // Staaltjes (Gratis Muster) worden niet ingeladen — Karpi factureert ze niet aan Floorpassion
-    if (match.unmatchedReden === 'muster') continue
-
-    const omschrijving = buildOmschrijving(row, match)
-
-    if (match.artikelnr || match.is_maatwerk) matched++
-    else unmatched++
-
-    let maatwerk_lengte_cm: number | null = null
-    let maatwerk_breedte_cm: number | null = null
-    if (match.is_maatwerk) {
-      const dims = parseMaatwerkDims(row)
-      if (dims) {
-        maatwerk_lengte_cm = dims.lengte
-        maatwerk_breedte_cm = dims.breedte
-      }
-    }
-
-    // Klantprijs uit prijslijst van de debiteur. Lightspeed's priceIncl is de
-    // CONSUMENT-prijs (die mag niet naar Karpi). Fallback: verkoopprijs van
-    // het product. Als álles leeg blijft → prijs=null (order ongewijzigd naar
-    // DB; medewerker moet handmatig een prijs zetten).
-    const aantal = row.quantityOrdered ?? 1
-    const klantPrijs = await haalKlantPrijs(supabase, debiteurNr, match.artikelnr, {
-      is_maatwerk: match.is_maatwerk,
-      lengte_cm: maatwerk_lengte_cm,
-      breedte_cm: maatwerk_breedte_cm,
-    })
-    const prijs = klantPrijs.prijs
-    const bedrag = prijs != null ? Math.round(prijs * aantal * 100) / 100 : null
-
-    regels.push({
-      artikelnr: match.artikelnr,
-      omschrijving,
-      omschrijving_2: row.variantTitle ?? null,
-      orderaantal: aantal,
-      te_leveren: aantal,
-      prijs,
-      korting_pct: 0,
-      bedrag,
-      gewicht_kg: normalizeGewicht(row.weight),
-      is_maatwerk: match.is_maatwerk ?? false,
-      maatwerk_kwaliteit_code: match.maatwerk_kwaliteit_code ?? null,
-      maatwerk_kleur_code: match.maatwerk_kleur_code ?? null,
-      maatwerk_lengte_cm,
-      maatwerk_breedte_cm,
-    })
-  }
-
-  return { regels, matched, unmatched }
 }
 
 async function fetchCompleteOrder(
@@ -207,7 +132,7 @@ serve(async (req) => {
     }
 
     const { order, rows } = await fetchCompleteOrder(shop, orderId)
-    const { regels, matched, unmatched } = await buildRegels(supabase, rows, debiteurNr)
+    const { regels, matched, unmatched } = await buildLightspeedRegels(supabase, rows, debiteurNr)
 
     const shipping = extractShippingAddress(order)
     const billing = extractBillingAddress(order)

@@ -7,6 +7,7 @@ import { useEdiBerichten } from '@/modules/edi/hooks/use-edi'
 import { DemoBerichtDialog } from '@/modules/edi/components/demo-bericht-dialog'
 import { UploadBerichtDialog } from '@/modules/edi/components/upload-bericht-dialog'
 import { ruimEdiDemoData, type EdiBerichtStatus, type EdiRichting, type EdiBerichtType } from '@/modules/edi/queries/edi'
+import { isTeKoppelen } from '@/modules/edi/lib/te-koppelen'
 import { cn } from '@/lib/utils/cn'
 import { formatDateTime } from '@/lib/utils/formatters'
 
@@ -294,13 +295,4 @@ export function EdiBerichtenOverzichtPage() {
       </div>
     </>
   )
-}
-
-/**
- * "Te koppelen" = inkomende order die (nog) geen order werd. Filtert op
- * order_id IS NULL i.p.v. status, want de poll laat de status soms op 'Verwerkt'
- * staan terwijl order-creatie faalde (geen GLN-match).
- */
-function isTeKoppelen(b: { richting: EdiRichting; berichttype: EdiBerichtType; order_id: number | null }): boolean {
-  return b.richting === 'in' && b.berichttype === 'order' && b.order_id == null
 }

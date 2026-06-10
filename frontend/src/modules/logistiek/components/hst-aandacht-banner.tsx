@@ -24,7 +24,7 @@ export function HstAandachtBanner() {
             <span className="font-semibold">{m?.fout_open ?? 0} HST-verzendfout(en)</span>
             {m && (m.oudste_wachtrij_minuten > 5 || m.oudste_bezig_minuten > 5) ? ' — en de verzend-cron loopt achter.' : ' — bekijk en verstuur opnieuw.'}
           </div>
-          <Link to="/logistiek/hst-monitor" className="shrink-0 rounded-[var(--radius-sm)] bg-rose-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-rose-700">
+          <Link to="/logistiek/vervoerders/hst_api/monitor" className="shrink-0 rounded-[var(--radius-sm)] bg-rose-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-rose-700">
             Bekijk
           </Link>
         </div>

@@ -14,6 +14,7 @@ import { computeOrderLock } from '@/lib/utils/order-lock'
 import { DocumentenCompact } from '@/components/documenten/documenten-compact'
 import { EdiLeverweekBevestigen } from '@/components/orders/edi-leverweek-bevestigen'
 import { isLeverweekTeBevestigen } from '@/lib/orders/edi-leverweek'
+import { isDebiteurTeBevestigen } from '@/lib/orders/intake-predicaten'
 import { DebiteurBevestigenWidget } from '@/components/orders/debiteur-bevestigen-widget'
 import { BastaAfhandelingPaneel } from '@/components/orders/basta-afhandeling-paneel'
 import { LevertijdWijzigingBanner } from '@/components/orders/levertijd-wijziging-banner'
@@ -127,9 +128,7 @@ export function OrderDetailPage() {
 
       {/* Mig 322: onzekere (fuzzy) debiteur-match → bevestigen of corrigeren.
           env_fallback (verzameldebiteur) is bewust geen fout en valt af. */}
-      {order.debiteur_zeker === false &&
-        order.debiteur_match_bron !== 'env_fallback' &&
-        order.status !== 'Geannuleerd' && (
+      {isDebiteurTeBevestigen(order) && (
           <DebiteurBevestigenWidget
             orderId={order.id}
             klantNaam={order.klant_naam ?? `Debiteur ${order.debiteur_nr}`}

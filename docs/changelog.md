@@ -15,6 +15,79 @@ semantische groepen (incl. een gemiste edge-function `check-levertijd`, gevangen
 Geen gedragsverandering — `confectie_orders` is leeg en `snijplannen` staat volledig op
 `Gepland`. Migratie 344 nog handmatig in de SQL Editor te draaien.
 
+## 2026-06-10 — create_webshop_order persisteert maatwerk_vorm (mig 343)
+
+**Waarom:** slice 4 van het order-intake-plan (2026-06-09) liet Shopify én beide
+Lightspeed-paden `maatwerk_vorm` meesturen in de regel-JSON, maar de regel-INSERT
+in `create_webshop_order` (mig 322) kende die sleutel niet. JSONB geeft geen fout
+op onbekende sleutels → het veld stierf geruisloos in de RPC en webshop-maatwerk
+landde met `maatwerk_vorm = NULL`, waardoor het auto-snijplan van een rechthoek
+uitging. Gevonden tijdens het order-aanmaak-verdiepingsonderzoek (architectuur-
+review 2026-06-10).
+
+**Wat (branch `fix/webshop-maatwerk-vorm`, mig 343):**
+- `create_webshop_order` insert nu `maatwerk_vorm`, **gevalideerd** tegen
+  `maatwerk_vormen(code)`: onbekende/lege code → NULL (order blijft landen, zoals
+  nu), bekende code → gepersisteerd. Body verder byte-voor-byte mig 322;
+  signatuur ongewijzigd.
+- Zelf-testende migratie: asserteert dat de live definitie de lookup bevat én dat
+  de drie codes die de TS-kant emit (`rond`/`ovaal`/`organisch_a`,
+  `product-matcher.ts detectVorm`) in `maatwerk_vormen` bestaan.
+
+**Waarom:** de monitor is HST-specifieke informatie en hoort bij de vervoerder zelf,
+niet als los menu-item in de sidebar.
+
+**Wat (branch `refactor/hst-monitor-onder-vervoerder`, frontend-only):**
+- Monitor-inhoud (KPI's, open-fouten-tabel + retry, cron-health-waarschuwing) verplaatst
+  van `pages/hst-monitor.tsx` (verwijderd) naar
+  [`components/hst-monitor-panel.tsx`](../frontend/src/modules/logistiek/components/hst-monitor-panel.tsx).
+- [`vervoerder-detail.tsx`](../frontend/src/modules/logistiek/pages/vervoerder-detail.tsx) kreeg
+  tabs **Gegevens / Verzendmonitor** — alleen zichtbaar voor `hst_api`; de monitor-tab toont
+  een rode `telHstAandacht`-badge. Nieuwe route `logistiek/vervoerders/:code/monitor`
+  (zelfde component, tab via `useLocation`).
+- Menu-item "HST-monitor" verwijderd uit `constants.ts`; de rode aandacht-badge in de
+  sidebar zit nu op het nav-item **Logistiek**.
+- Oude route `/logistiek/hst-monitor` redirect naar `/logistiek/vervoerders/hst_api/monitor`
+  (bookmarks/muscle memory); `HstAandachtBanner` op Pick & Ship linkt direct naar de tab.
+
+## 2026-06-10 — In-app feedback/bug-meldtool (mig 342)
+
+**Waarom:** RugFlow gaat live bij de gebruikers; zij gaan tegen bugs/onvolkomenheden
+aanlopen en moeten die laagdrempelig kunnen melden zonder de context te verliezen —
+net als de feedback-popup in de LocoBrands-omgeving.
+
+**Wat — frontend (branch `feat/feedback-bug-tool`):**
+- **Zwevende `FeedbackWidget`** ([`feedback-widget.tsx`](../frontend/src/components/feedback/feedback-widget.tsx))
+  rechtsonder op elke pagina (gerenderd in [`app-layout.tsx`](../frontend/src/components/layout/app-layout.tsx)).
+  Modal met titel, omschrijving, urgentie en optionele screenshot/bijlage; legt
+  **automatisch de huidige pagina-URL** (`window.location.href`) en de **ingelogde melder**
+  (auth.users id + e-mail-snapshot) vast.
+- **Gebruikersmenu rechtsboven** ([`top-bar.tsx`](../frontend/src/components/layout/top-bar.tsx)):
+  het kale logout-icoon is vervangen door een uitklapmenu (avatar + chevron) met
+  "Mijn meldingen" / (beheerder) "Alle meldingen" en "Uitloggen".
+- **Meldingen-pagina** `/meldingen` ([`bug-meldingen.tsx`](../frontend/src/pages/feedback/bug-meldingen.tsx)):
+  gebruiker ziet eigen meldingen, **Miguel (beheerder) ziet alle**. Beheerder zet
+  `Open` ↔ `Verwerkt` (verwerken + terugzetten); de **melder accepteert** een verwerkte
+  melding (`Verwerkt` → `Geaccepteerd`). Bijlage opent via signed URL.
+
+**Wat — database (mig 342, handmatig toepassen):**
+- Tabel `bug_meldingen` + enums `bug_melding_status` (Open/Verwerkt/Geaccepteerd) en
+  `bug_urgentie` (Laag/Middel/Hoog). RLS: melder ziet eigen rijen, beheerder ziet alles
+  (`is_bug_beheerder()` = Miguels e-mail uit JWT, gespiegeld in
+  [`frontend/src/lib/bug/beheerder.ts`](../frontend/src/lib/bug/beheerder.ts)).
+- Storage-bucket `bug-bijlagen` (privé, 10 MB, afbeeldingen + PDF).
+- SECURITY DEFINER-RPC `set_bug_status(p_id, p_status)` dwingt de transitie-rechten af
+  en stempelt `verwerkt_op`/`geaccepteerd_op`.
+
+## 2026-06-09 — Order-intake consolidatie (gefaseerd, slices 0-4)
+
+Plan: [`docs/superpowers/plans/2026-06-09-order-intake-consolidatie-gefaseerd.md`](superpowers/plans/2026-06-09-order-intake-consolidatie-gefaseerd.md). Branch `refactor/order-intake-consolidatie`.
+
+- **Slice 0 — fix:** Lightspeed gewicht-conversie geünificeerd op micro-kg in gedeelde helper [`_shared/order-intake/gewicht.ts`](../supabase/functions/_shared/order-intake/gewicht.ts); `import-lightspeed-orders` deelde foutief door 1.000 (grams-aanname) → factor-1000 te laag gewicht, terwijl `sync-webshop-order` al door 1.000.000 deelde. Eén bron van waarheid + Deno-test.
+- **Slice 1 — docs:** `architectuur.md` + ADR-0001 in lijn gebracht met de realiteit (`modules/orders/` bestaat niet; order-code leeft bewust verspreid over `components/orders/`, `lib/orders/`, `lib/supabase/queries/orders.ts`, `modules/orders-lifecycle/`).
+- **Slice 2 — refactor:** drie intake-predicaten (Te koppelen / Te bevestigen / Debiteur te bevestigen) gecentraliseerd in pure helpers + filterhelpers ([`intake-predicaten.ts`](../frontend/src/lib/orders/intake-predicaten.ts), [`edi-leverweek.ts`](../frontend/src/lib/orders/edi-leverweek.ts) `filterLeverweekTeBevestigen`, [`modules/edi/lib/te-koppelen.ts`](../frontend/src/modules/edi/lib/te-koppelen.ts)); inline-kopieën in `fetchOrders`/`fetchStatusCounts`/`countTeBevestigenDebiteurOrders`/order-detail/`berichten-overzicht`/`countTeKoppelenEdiOrders` verwijderd. Filterhelpers casten intern i.p.v. zelf-refererende generic (vermijdt TS2589 op de Supabase-builder).
+- **Slice 3 — refactor:** split-/verzend-toewijzing-logica uit [`order-form.tsx`](../frontend/src/components/orders/order-form.tsx) `saveMutation.mutationFn` geëxtraheerd naar geteste pure helpers [`lib/orders/split-order.ts`](../frontend/src/lib/orders/split-order.ts) (`wijsVerzendNaarDuurste` + `splitRegelOpDekking`). Geld-rekenende logica (maatwerk-split + IO-split, eerder 2× gedupliceerd) nu los testbaar; gedrag ongewijzigd.
+- **Slice 4 — refactor:** gedeeld `IntakeRegel`-type ([`_shared/order-intake/types.ts`](../supabase/functions/_shared/order-intake/types.ts)) + gededupliceerde Lightspeed-regelbouw ([`_shared/order-intake/lightspeed-regels.ts`](../supabase/functions/_shared/order-intake/lightspeed-regels.ts) `buildLightspeedRegels` + pure `toIntakeRegel`); de twee near-duplicate `buildRegels` in `sync-webshop-order` en `import-lightspeed-orders` zijn vervangen. `sync-shopify-order` kreeg het eerder ontbrekende `maatwerk_vorm`-veld en emit nu `IntakeRegel[]`. EDI (SQL-pad `create_edi_order`) valt bewust buiten dit type.
 ## 2026-06-09 — Betaaltermijn als bron-van-waarheid (ADR-0022, mig 340-341)
 
 Foute `regexp_match(betaalconditie, '^(\d+)')` in `genereer_factuur_voor_bundel`
