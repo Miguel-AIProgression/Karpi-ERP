@@ -1,4 +1,4 @@
--- Migratie 353: maatwerk-artikel-koppeling — backfill karpi_code + herstel 3 orderregels
+-- Migratie 354: maatwerk-artikel-koppeling — backfill karpi_code + herstel 3 orderregels
 --
 -- Aanleiding (eigenaar-melding n.a.v. ORD-2026-0166): maatwerk-orderregels uit
 -- Shopify/Lightspeed landden soms ZONDER artikelnr, terwijl de catalogus per
@@ -53,12 +53,12 @@ BEGIN
       AND i.indisunique
       AND a.attname = 'karpi_code'
   ) INTO v_unique_idx;
-  RAISE NOTICE 'Mig 353a: unique index op producten.karpi_code aanwezig: %', v_unique_idx;
+  RAISE NOTICE 'Mig 354a: unique index op producten.karpi_code aanwezig: %', v_unique_idx;
 
   -- Strikt omschrijving-patroon (spiegelt mig 106) — alleen de échte
   -- generieke `{KWAL}{KLEUR}MAATWERK`-artikelen, geen vrije-tekst-treffers.
-  DROP TABLE IF EXISTS _mig353_kandidaten;
-  CREATE TEMP TABLE _mig353_kandidaten ON COMMIT DROP AS
+  DROP TABLE IF EXISTS _mig354_kandidaten;
+  CREATE TEMP TABLE _mig354_kandidaten ON COMMIT DROP AS
   SELECT artikelnr, kwaliteit_code || kleur_code || 'MAATWERK' AS nieuwe_code
   FROM producten
   WHERE (karpi_code IS NULL OR karpi_code = '')
@@ -66,16 +66,16 @@ BEGIN
     AND kwaliteit_code IS NOT NULL AND kleur_code IS NOT NULL
     AND is_pseudo = FALSE;
 
-  SELECT COUNT(*) INTO v_kandidaten FROM _mig353_kandidaten;
+  SELECT COUNT(*) INTO v_kandidaten FROM _mig354_kandidaten;
 
   -- Skip-voorbeeld VÓÓR de update bepalen: na de update zou de EXISTS-check
   -- ook de zojuist gevulde rijen zelf matchen en alles als "geskipt" tonen.
   SELECT string_agg(s.artikelnr || '->' || s.nieuwe_code, ', ') INTO v_skip_voorbeeld
   FROM (
     SELECT k.artikelnr, k.nieuwe_code
-    FROM _mig353_kandidaten k
+    FROM _mig354_kandidaten k
     WHERE EXISTS (SELECT 1 FROM producten p2 WHERE p2.karpi_code = k.nieuwe_code)
-       OR (SELECT COUNT(*) FROM _mig353_kandidaten k2 WHERE k2.nieuwe_code = k.nieuwe_code) > 1
+       OR (SELECT COUNT(*) FROM _mig354_kandidaten k2 WHERE k2.nieuwe_code = k.nieuwe_code) > 1
     LIMIT 20
   ) s;
 
@@ -84,18 +84,18 @@ BEGIN
   -- dezelfde kwaliteit+kleur zouden anders dezelfde code krijgen).
   UPDATE producten p
   SET karpi_code = k.nieuwe_code
-  FROM _mig353_kandidaten k
+  FROM _mig354_kandidaten k
   WHERE p.artikelnr = k.artikelnr
     AND NOT EXISTS (SELECT 1 FROM producten p2 WHERE p2.karpi_code = k.nieuwe_code)
-    AND (SELECT COUNT(*) FROM _mig353_kandidaten k2 WHERE k2.nieuwe_code = k.nieuwe_code) = 1;
+    AND (SELECT COUNT(*) FROM _mig354_kandidaten k2 WHERE k2.nieuwe_code = k.nieuwe_code) = 1;
   GET DIAGNOSTICS v_updated = ROW_COUNT;
 
   v_geskipt := v_kandidaten - v_updated;
-  RAISE NOTICE 'Mig 353a: % kandidaten, % karpi_codes backfilled, % geskipt (duplicaat-guard)',
+  RAISE NOTICE 'Mig 354a: % kandidaten, % karpi_codes backfilled, % geskipt (duplicaat-guard)',
     v_kandidaten, v_updated, v_geskipt;
 
   IF v_geskipt > 0 THEN
-    RAISE NOTICE 'Mig 353a: geskipte codes (max 20): %', v_skip_voorbeeld;
+    RAISE NOTICE 'Mig 354a: geskipte codes (max 20): %', v_skip_voorbeeld;
   END IF;
 END $$;
 
@@ -110,7 +110,7 @@ DECLARE
 BEGIN
   SELECT o.id INTO v_order_id FROM orders o WHERE o.order_nr = 'ORD-2026-0118';
   IF v_order_id IS NULL THEN
-    RAISE NOTICE 'Mig 353b: ORD-2026-0118 niet gevonden — skip (niets te herstellen op deze omgeving)';
+    RAISE NOTICE 'Mig 354b: ORD-2026-0118 niet gevonden — skip (niets te herstellen op deze omgeving)';
     RETURN;
   END IF;
 
@@ -119,7 +119,7 @@ BEGIN
   FROM producten p WHERE p.omschrijving ILIKE 'LAGO13MAATWERK'
   ORDER BY p.artikelnr LIMIT 1;
   IF v_artikelnr IS NULL THEN
-    RAISE NOTICE 'Mig 353b: product LAGO13MAATWERK niet gevonden — skip artikelnr-herstel ORD-2026-0118';
+    RAISE NOTICE 'Mig 354b: product LAGO13MAATWERK niet gevonden — skip artikelnr-herstel ORD-2026-0118';
     RETURN;
   END IF;
 
@@ -130,7 +130,7 @@ BEGIN
     AND r.is_maatwerk
     AND r.artikelnr IS NULL;
   GET DIAGNOSTICS v_updated = ROW_COUNT;
-  RAISE NOTICE 'Mig 353b: ORD-2026-0118 — % regel(s) gekoppeld aan % (LAGO13MAATWERK)', v_updated, v_artikelnr;
+  RAISE NOTICE 'Mig 354b: ORD-2026-0118 — % regel(s) gekoppeld aan % (LAGO13MAATWERK)', v_updated, v_artikelnr;
 END $$;
 
 -- ============================================================================
@@ -145,7 +145,7 @@ DECLARE
 BEGIN
   SELECT o.id INTO v_order_id FROM orders o WHERE o.order_nr = 'ORD-2026-0098';
   IF v_order_id IS NULL THEN
-    RAISE NOTICE 'Mig 353c: ORD-2026-0098 niet gevonden — skip (niets te herstellen op deze omgeving)';
+    RAISE NOTICE 'Mig 354c: ORD-2026-0098 niet gevonden — skip (niets te herstellen op deze omgeving)';
     RETURN;
   END IF;
 
@@ -157,7 +157,7 @@ BEGIN
     AND r.regelnummer = 1
     AND r.maatwerk_kwaliteit_code = 'LUXR17';
   GET DIAGNOSTICS v_updated = ROW_COUNT;
-  RAISE NOTICE 'Mig 353c: ORD-2026-0098 regel 1 — kwaliteit-split toegepast op % rij(en) (0 = al gefixt)', v_updated;
+  RAISE NOTICE 'Mig 354c: ORD-2026-0098 regel 1 — kwaliteit-split toegepast op % rij(en) (0 = al gefixt)', v_updated;
 
   -- Zelf-test op de conditie die deze migratie zelf controleert: na de update
   -- mag de samengeplakte code niet meer bestaan op deze regel.
@@ -167,7 +167,7 @@ BEGIN
     AND r.regelnummer = 1
     AND r.maatwerk_kwaliteit_code = 'LUXR17';
   IF v_fout_kwal > 0 THEN
-    RAISE EXCEPTION 'FAAL mig 353c: kwaliteit-split niet geland — ORD-2026-0098 regel 1 heeft nog LUXR17';
+    RAISE EXCEPTION 'FAAL mig 354c: kwaliteit-split niet geland — ORD-2026-0098 regel 1 heeft nog LUXR17';
   END IF;
 
   -- Artikelnr via lookup; product kan ontbreken → NOTICE + skip (geen fail).
@@ -176,7 +176,7 @@ BEGIN
   FROM producten p WHERE p.omschrijving ILIKE 'LUXR17MAATWERK'
   ORDER BY p.artikelnr LIMIT 1;
   IF v_artikelnr IS NULL THEN
-    RAISE NOTICE 'Mig 353c: product LUXR17MAATWERK niet gevonden — artikelnr blijft NULL op ORD-2026-0098 regel 1';
+    RAISE NOTICE 'Mig 354c: product LUXR17MAATWERK niet gevonden — artikelnr blijft NULL op ORD-2026-0098 regel 1';
     RETURN;
   END IF;
 
@@ -187,7 +187,7 @@ BEGIN
     AND r.is_maatwerk
     AND r.artikelnr IS NULL;
   GET DIAGNOSTICS v_updated = ROW_COUNT;
-  RAISE NOTICE 'Mig 353c: ORD-2026-0098 regel 1 — % regel(s) gekoppeld aan % (LUXR17MAATWERK)', v_updated, v_artikelnr;
+  RAISE NOTICE 'Mig 354c: ORD-2026-0098 regel 1 — % regel(s) gekoppeld aan % (LUXR17MAATWERK)', v_updated, v_artikelnr;
 END $$;
 
 -- ============================================================================
@@ -209,9 +209,9 @@ BEGIN
     AND r.artikelnr IS NULL;
 
   IF v_rest = 0 THEN
-    RAISE NOTICE 'Mig 353: zelf-test OK — geen maatwerk-regels zonder artikelnr meer op ORD-2026-0098/0118';
+    RAISE NOTICE 'Mig 354: zelf-test OK — geen maatwerk-regels zonder artikelnr meer op ORD-2026-0098/0118';
   ELSE
-    RAISE NOTICE 'Mig 353: LET OP — nog % maatwerk-regel(s) zonder artikelnr: % (zie skip-NOTICEs hierboven)', v_rest, v_detail;
+    RAISE NOTICE 'Mig 354: LET OP — nog % maatwerk-regel(s) zonder artikelnr: % (zie skip-NOTICEs hierboven)', v_rest, v_detail;
   END IF;
 END $$;
 

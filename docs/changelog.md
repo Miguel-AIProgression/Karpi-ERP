@@ -1,6 +1,6 @@
 # Changelog — RugFlow ERP
 
-## 2026-06-10 — Maatwerk altijd aan een productcode (matcher + mig 353)
+## 2026-06-10 — Maatwerk altijd aan een productcode (matcher + mig 354)
 
 **Waarom:** eigenaar-melding n.a.v. ORD-2026-0166 — maatwerk-orderregels uit
 Shopify/Lightspeed landden soms zonder `artikelnr`, terwijl facturatie en EDI
@@ -34,7 +34,7 @@ ORD-2026-0098 regel 1). Maatwerk moet altijd aan het generieke
   `kwaliteit_code` (mig 098 anticipeert WLP1/WLP4) nooit kapotgesplitst
   wordt; pas bij een miss splitst `splitsKwaliteitKleur` de samengeplakte
   vorm (`^[A-Z]{2,6}\d{1,3}$`, LUXR17 → LUXR + 17).
-- **Mig 353** (`353_maatwerk_artikel_koppeling_backfill.sql`): (a) backfill
+- **Mig 354** (`354_maatwerk_artikel_koppeling_backfill.sql` — initieel 353, hernummerd wegens collisie met `353_dropshipment_producten` op main): (a) backfill
   `producten.karpi_code = kwaliteit_code || kleur_code || 'MAATWERK'`
   (catalogus-conventie, consistent met bestaande rijen als ALDO17MAATWERK;
   doel: catalogus-consistentie + document-/EDI-weergave — factuur-verzenden
