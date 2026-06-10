@@ -19,8 +19,9 @@ Drie restpunten uit de order-status-consolidatie (branch
   `herbereken_wacht_status` aanroept, maar header-only/niet-getriggerde orders
   blijven hangen). Mig 355 herdefinieert schoon (volledige body = mig 312, één
   literal gewijzigd — geen `pg_get_functiondef`+`REPLACE`-truc meer) en
-  backfillt hangende `'Nieuw'`-EDI-orders door de ladder (aantal: __ — invullen
-  uit de mig 355-NOTICE bij toepassen).
+  backfillt hangende `'Nieuw'`-EDI-orders door de ladder (schade-query
+  2026-06-10: **0** hangende orders — het zelf-helende orderregel-trigger-pad
+  had alles al gecorrigeerd; de backfill is een no-op-vangnet).
 - **`order_status` TS-single-source:**
   [`_shared/order-lifecycle/order-status.ts`](../supabase/functions/_shared/order-lifecycle/order-status.ts)
   (canoniek+legacy, set-semantiek) ⇄ golden-fixture ⇄ mig 350-assert, met een
