@@ -152,8 +152,15 @@ function parseArticleCode(code: string | null | undefined): { kwaliteit: string 
  * import-scripts) levert soms zo'n samengeplakte code; ongesplitst doorgeven
  * maakt maatwerk-records met kwaliteit 'LUXR17' en kleur NULL waar geen
  * artikel of snijplan op kan matchen (incident ORD-2026-0098 regel 1).
- * Schone codes (geen cijfer-staart) passeren ongewijzigd; een al bekende
- * kleur wint altijd van de afgesplitste staart.
+ * Codes zonder cijfer-staart passeren ongewijzigd; een al bekende kleur wint
+ * altijd van de afgesplitste staart.
+ *
+ * LET OP — valkuil: deze helper kan een vervuilde samenplakking NIET
+ * onderscheiden van een legitieme kwaliteit_code die zelf op een cijfer
+ * eindigt (mig 098 anticipeert bv. WLP1/WLP4 — "WLP1" zou hier onterecht in
+ * WLP + 1 splitsen). Callers mogen daarom nooit blind splitsen: probeer
+ * eerst de ONgesplitste code en splits alleen bij een miss — zie
+ * `resolveMaatwerkArtikel` (unsplit-first).
  */
 export function splitsKwaliteitKleur(
   kwaliteit: string | null,
@@ -202,6 +209,37 @@ async function zoekMaatwerkProduct(
     .ilike('omschrijving', pattern)
     .limit(1)
   return data && data.length > 0 ? data[0].artikelnr : null
+}
+
+/**
+ * Resolve het generieke maatwerk-artikel voor een (mogelijk vervuilde)
+ * kwaliteit-kandidaat — unsplit-first. Probeert ALTIJD eerst de ongesplitste
+ * code (`{RAW}{KLEUR}MAATWERK`): een legitieme kwaliteit_code met
+ * cijfer-staart (mig 098 anticipeert WLP1/WLP4) moet kunnen winnen en mag
+ * nooit kapotgesplitst worden. Pas bij een miss wordt de samengeplakte vorm
+ * gesplitst (LUXR17 → LUXR + 17, `splitsKwaliteitKleur`) en opnieuw gezocht.
+ * Bij een unsplit-hit blijven kwaliteit/kleur dus ongesplitst; bij dubbele
+ * miss gelden de gesplitste waarden met artikelnr null (zelfde shape als het
+ * oude gedrag).
+ */
+async function resolveMaatwerkArtikel(
+  supabase: SupabaseClient,
+  rawKwaliteit: string | null,
+  kleur: string | null,
+): Promise<{ artikelnr: string | null; kwaliteit: string | null; kleur: string | null }> {
+  if (rawKwaliteit && kleur) {
+    const hit = await zoekMaatwerkProduct(supabase, rawKwaliteit, kleur)
+    if (hit) return { artikelnr: hit, kwaliteit: rawKwaliteit, kleur }
+  }
+  const gesplitst = splitsKwaliteitKleur(rawKwaliteit, kleur)
+  // Alleen opnieuw zoeken als de split daadwerkelijk iets veranderde — anders
+  // is het exact dezelfde (al gemiste of onmogelijke) lookup.
+  const artikelnr =
+    gesplitst.kwaliteit && gesplitst.kleur &&
+    !(gesplitst.kwaliteit === rawKwaliteit && gesplitst.kleur === kleur)
+      ? await zoekMaatwerkProduct(supabase, gesplitst.kwaliteit, gesplitst.kleur)
+      : null
+  return { artikelnr, kwaliteit: gesplitst.kwaliteit, kleur: gesplitst.kleur }
 }
 
 async function zoekViaParsing(supabase: SupabaseClient, row: LightspeedOrderRow): Promise<string | null> {
@@ -286,16 +324,13 @@ export async function matchProduct(
         const ruweKwaliteit = artcode.kwaliteit && kwaliteitCodes.includes(artcode.kwaliteit)
           ? artcode.kwaliteit
           : kwaliteitCodes[0]
-        // Samengeplakte alias-codes ("LUXR17") splitsen vóór gebruik (ORD-2026-0098)
-        const gekozen = splitsKwaliteitKleur(ruweKwaliteit, kleur)
         // Koppel aan generiek maatwerk-artikel `{KWALITEIT}{KLEUR}MAATWERK`
         // zodat voorraad/facturatie een artikelnr heeft; dims zitten in
-        // maatwerk_lengte/breedte_cm.
-        const maatwerkArtikelnr = gekozen.kwaliteit && gekozen.kleur
-          ? await zoekMaatwerkProduct(supabase, gekozen.kwaliteit, gekozen.kleur)
-          : null
+        // maatwerk_lengte/breedte_cm. Unsplit-first: pas bij een miss wordt
+        // een samengeplakte alias-code ("LUXR17") gesplitst (ORD-2026-0098).
+        const gekozen = await resolveMaatwerkArtikel(supabase, ruweKwaliteit, kleur)
         return {
-          artikelnr: maatwerkArtikelnr,
+          artikelnr: gekozen.artikelnr,
           matchedOn: 'maatwerk',
           unmatchedReden: DURCHMESSER_PATROON.test(titleBlobEarly) ? 'durchmesser' : 'wunschgrosse',
           is_maatwerk: true,
@@ -314,12 +349,10 @@ export async function matchProduct(
           // (en EDI — die lezen artikelnr) een productcode hebben; de vorm
           // + dims blijven in de maatwerk_*-velden de uniekheid bewaren.
           // Niet gevonden → artikelnr null, exact het oude gedrag.
-          const vormKwal = splitsKwaliteitKleur(kwaliteitCodes[0], kleur)
-          const vormArtikelnr = vormKwal.kwaliteit && vormKwal.kleur
-            ? await zoekMaatwerkProduct(supabase, vormKwal.kwaliteit, vormKwal.kleur)
-            : null
+          // Unsplit-first; split alleen bij miss (ORD-2026-0098).
+          const vormKwal = await resolveMaatwerkArtikel(supabase, kwaliteitCodes[0], kleur)
           return {
-            artikelnr: vormArtikelnr,
+            artikelnr: vormKwal.artikelnr,
             matchedOn: 'maatwerk',
             is_maatwerk: true,
             maatwerk_kwaliteit_code: vormKwal.kwaliteit,
@@ -362,13 +395,11 @@ export async function matchProduct(
         const ruweKwaliteit2 = artcode2.kwaliteit && kwaliteitCodes.includes(artcode2.kwaliteit)
           ? artcode2.kwaliteit
           : kwaliteitCodes[0]
-        // Samengeplakte alias-codes ("LUXR17") splitsen vóór gebruik (ORD-2026-0098)
-        const gekozen2 = splitsKwaliteitKleur(ruweKwaliteit2, kleur)
-        const maatwerkArtikelnr2 = gekozen2.kwaliteit && gekozen2.kleur
-          ? await zoekMaatwerkProduct(supabase, gekozen2.kwaliteit, gekozen2.kleur)
-          : null
+        // Unsplit-first: samengeplakte alias-codes ("LUXR17") pas splitsen
+        // bij een miss (ORD-2026-0098).
+        const gekozen2 = await resolveMaatwerkArtikel(supabase, ruweKwaliteit2, kleur)
         return {
-          artikelnr: maatwerkArtikelnr2,
+          artikelnr: gekozen2.artikelnr,
           matchedOn: 'maatwerk',
           is_maatwerk: true,
           maatwerk_kwaliteit_code: gekozen2.kwaliteit,
@@ -480,22 +511,19 @@ export async function matchProduct(
       const hits = matchAliasesViaPrefix(naam, (aliasRows ?? []) as Array<{ benaming: string; kwaliteit_code: string }>)
       if (hits.length > 0) kwaliteit = hits[0].kwaliteit_code
     }
-    // Samengeplakte kwaliteit-kandidaat ("LUXR17") splitsen vóór gebruik —
-    // dit was de bron van ORD-2026-0098 regel 1 (kwaliteit 'LUXR17', kleur
-    // NULL, geen artikelnr). De afgesplitste kleur is alleen fallback als
-    // titel én articleCode geen kleur leveren.
-    const gesplitst = splitsKwaliteitKleur(kwaliteit, kleurUitTitel ?? artcode.kleur)
-    const finaleKleur = gesplitst.kleur
-    const maatwerkArtikelnr3 = gesplitst.kwaliteit && finaleKleur
-      ? await zoekMaatwerkProduct(supabase, gesplitst.kwaliteit, finaleKleur)
-      : null
+    // Unsplit-first: een samengeplakte kwaliteit-kandidaat ("LUXR17") wordt
+    // pas gesplitst als de ongesplitste lookup mist — dit was de bron van
+    // ORD-2026-0098 regel 1 (kwaliteit 'LUXR17', kleur NULL, geen artikelnr).
+    // De afgesplitste kleur is alleen fallback als titel én articleCode geen
+    // kleur leveren.
+    const gesplitst = await resolveMaatwerkArtikel(supabase, kwaliteit, kleurUitTitel ?? artcode.kleur)
     return {
-      artikelnr: maatwerkArtikelnr3,
+      artikelnr: gesplitst.artikelnr,
       matchedOn: 'maatwerk',
       unmatchedReden,
       is_maatwerk: true,
       maatwerk_kwaliteit_code: gesplitst.kwaliteit,
-      maatwerk_kleur_code: finaleKleur,
+      maatwerk_kleur_code: gesplitst.kleur,
     }
   }
   return { artikelnr: null, matchedOn: 'geen', unmatchedReden }

@@ -5,7 +5,10 @@
 //   1. vorm-pad koppelt nu het generieke {KWAL}{KLEUR}MAATWERK-artikel
 //      (ORD-2026-0118 regel 1+2 landde met artikelnr NULL);
 //   2. samengeplakte kwaliteit-kandidaten ("LUXR17") worden gesplitst in
-//      kwaliteit + kleur vóór gebruik (ORD-2026-0098 regel 1).
+//      kwaliteit + kleur vóór gebruik (ORD-2026-0098 regel 1);
+//   3. unsplit-first: de ONgesplitste kwaliteit wordt altijd eerst geprobeerd
+//      zodat een legitieme cijfer-eindigende kwaliteit_code (mig 098: WLP1/
+//      WLP4) nooit kapotgesplitst wordt — split alleen bij miss.
 
 import { assertEquals, assert } from 'https://deno.land/std@0.168.0/testing/asserts.ts'
 import { matchProduct, splitsKwaliteitKleur } from './product-matcher.ts'
@@ -171,6 +174,65 @@ Deno.test('LUXR17 zonder bestaand maatwerk-artikel: split blijft, artikelnr null
   assertEquals(m.maatwerk_kwaliteit_code, 'LUXR')
   assertEquals(m.maatwerk_kleur_code, '17')
   assertEquals(m.artikelnr, null)
+})
+
+// ===========================================================================
+// Unsplit-first (Fix 4): ongesplitste kwaliteit wint van de split
+// ===========================================================================
+Deno.test('unsplit-first: WLP1-hit wint — kwaliteit blijft ongesplitst', async () => {
+  // Legitieme cijfer-eindigende kwaliteit_code (mig 098 anticipeert WLP1/WLP4):
+  // de ongesplitste lookup WLP113MAATWERK moet hitten en de split (WLP + 1 →
+  // WLP13MAATWERK) mag dan NIET meer geprobeerd worden.
+  const { client, calls } = mockSupabase(({ table, ops }) => {
+    if (table === 'klanteigen_namen') return [{ benaming: 'Wool Line', kwaliteit_code: 'WLP1' }]
+    if (table === 'producten') {
+      const il = ops.find((o) => o.op === 'ilike')
+      if (il && il.args[1] === 'WLP113MAATWERK') return [{ artikelnr: '888139998' }]
+    }
+    return []
+  })
+  const m = await matchProduct(client as never, row({
+    productTitle: 'Wool Line 13',
+    variantTitle: 'Op maat',
+  }), 260000)
+
+  assertEquals(m.artikelnr, '888139998')
+  assertEquals(m.is_maatwerk, true)
+  // Kwaliteit blijft de ongesplitste code — split mag een unsplit-hit nooit overschrijven
+  assertEquals(m.maatwerk_kwaliteit_code, 'WLP1')
+  assertEquals(m.maatwerk_kleur_code, '13')
+  const patterns = ilikeArgs(calls, 'producten').map((a) => a[1])
+  assert(patterns.includes('WLP113MAATWERK'))
+  assert(!patterns.includes('WLP13MAATWERK'), 'split-lookup mag niet draaien na unsplit-hit')
+})
+
+Deno.test('unsplit-first: unsplit miss + split hit → gesplitste waarden gebruikt', async () => {
+  // Vervuilde alias-code 'LUXR17' met bekende kleur '13' uit de titel:
+  // eerst LUXR1713MAATWERK (miss), dan split LUXR + 13 → LUXR13MAATWERK (hit).
+  const { client, calls } = mockSupabase(({ table, ops }) => {
+    if (table === 'klanteigen_namen') return [{ benaming: 'Luxury', kwaliteit_code: 'LUXR17' }]
+    if (table === 'producten') {
+      const il = ops.find((o) => o.op === 'ilike')
+      if (il && il.args[1] === 'LUXR13MAATWERK') return [{ artikelnr: '490139998' }]
+    }
+    return []
+  })
+  const m = await matchProduct(client as never, row({
+    productTitle: 'Luxury 13',
+    variantTitle: 'Op maat',
+  }), 661007)
+
+  assertEquals(m.artikelnr, '490139998')
+  assertEquals(m.maatwerk_kwaliteit_code, 'LUXR')
+  assertEquals(m.maatwerk_kleur_code, '13')
+  const patterns = ilikeArgs(calls, 'producten').map((a) => a[1])
+  // Beide lookups gedaan, ongesplitst eerst
+  assertEquals(patterns.indexOf('LUXR1713MAATWERK') >= 0, true)
+  assertEquals(patterns.indexOf('LUXR13MAATWERK') >= 0, true)
+  assert(
+    patterns.indexOf('LUXR1713MAATWERK') < patterns.indexOf('LUXR13MAATWERK'),
+    'ongesplitste lookup moet vóór de gesplitste draaien',
+  )
 })
 
 // ===========================================================================

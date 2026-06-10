@@ -54,11 +54,16 @@ def match_product(sku, naam):
               .eq("artikelnr", sku).limit(1).execute()
         if r.data:
             return r.data[0]["artikelnr"], False, None, None, None, None
-        # karpi_code match — vaste maten zoals LUXR17XX160230 staan als karpi_code, niet artikelnr
-        r = sb.table("producten").select("artikelnr") \
-              .eq("karpi_code", sku).limit(1).execute()
-        if r.data:
-            return r.data[0]["artikelnr"], False, None, None, None, None
+        # karpi_code match — vaste maten zoals LUXR17XX160230 staan als karpi_code, niet artikelnr.
+        # MAATWERK-SKU's (bv. LAGO13MAATWERK) hier overslaan: sinds mig 353 staat
+        # die code óók als karpi_code op het generieke maatwerk-artikel — een
+        # match hier zou is_maatwerk=False zonder dims teruggeven. Die SKU's
+        # vallen door naar de maatwerk-tak hieronder.
+        if not sku.upper().endswith("MAATWERK"):
+            r = sb.table("producten").select("artikelnr") \
+                  .eq("karpi_code", sku).limit(1).execute()
+            if r.data:
+                return r.data[0]["artikelnr"], False, None, None, None, None
 
     if maatwerk_patroon:
         # Detecteer kwaliteitscode + kleur uit SKU
@@ -72,6 +77,10 @@ def match_product(sku, naam):
             # r'^([A-Z]+\d*)' plakte ze aaneen ("LUXR17") en liet kleur op None,
             # waardoor het maatwerk-record nergens op kon matchen
             # (incident ORD-2026-0098 regel 1, "Luxury 17 taupe").
+            # Regex-randgevallen (geaccepteerd — dit is een backfill-tool):
+            # een SKU met alléén letters levert nu géén kwaliteit meer op, en
+            # prefixen langer dan 6 letters matchen niet meer (de oude regex
+            # pakte die nog wel).
             m = re.match(r'^([A-Z]{2,6})(\d{1,3})', sku)
             if m:
                 kwal_code  = m.group(1)

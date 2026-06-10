@@ -7,11 +7,14 @@
 -- lezen artikelnr — maatwerk moet dus altijd aan een productcode hangen.
 --
 -- Drie onderdelen:
---   (a) Backfill `producten.karpi_code` op generieke MAATWERK-artikelen
---       (oud-systeem-import zette die nooit; daardoor miste óók de
---       karpi_code-matchstap in product-matcher.ts). Met dubbel-guard:
---       waarden die al ergens als karpi_code bestaan of binnen de
---       kandidaten-set dubbel zouden worden, worden geskipt + NOTICE.
+--   (a) Backfill `producten.karpi_code` op generieke MAATWERK-artikelen met
+--       de catalogus-conventie `{KWAL}{KLEUR}MAATWERK` (zoals bestaande
+--       catalogus-rijen ALDO17MAATWERK e.d.; mig 108/109 toetsen op
+--       `karpi_code ILIKE '%MAATWERK%'`). Doel: catalogus-consistentie +
+--       document-/EDI-weergave (factuur-verzenden leest karpi_code).
+--       Oud-systeem-import zette die nooit. Met dubbel-guard: waarden die
+--       al ergens als karpi_code bestaan of binnen de kandidaten-set dubbel
+--       zouden worden, worden geskipt + NOTICE.
 --   (b) Herstel ORD-2026-0118 regel 1+2 (LAGO/13, vorm organisch_b_sp,
 --       artikelnr NULL door het vorm-pad dat vóór deze fix-package bewust
 --       null teruggaf) → artikelnr van product 'LAGO13MAATWERK' (lookup).
@@ -25,6 +28,8 @@
 -- Geen aannames over row counts: ontbrekende orders/producten → NOTICE+skip.
 -- RAISE EXCEPTION alleen voor condities die deze migratie zelf controleert
 -- (de kwaliteit-split die niet zou landen).
+
+BEGIN;
 
 -- ============================================================================
 -- (a) Backfill karpi_code op generieke maatwerk-artikelen
@@ -50,12 +55,14 @@ BEGIN
   ) INTO v_unique_idx;
   RAISE NOTICE 'Mig 353a: unique index op producten.karpi_code aanwezig: %', v_unique_idx;
 
+  -- Strikt omschrijving-patroon (spiegelt mig 106) — alleen de échte
+  -- generieke `{KWAL}{KLEUR}MAATWERK`-artikelen, geen vrije-tekst-treffers.
   DROP TABLE IF EXISTS _mig353_kandidaten;
   CREATE TEMP TABLE _mig353_kandidaten ON COMMIT DROP AS
-  SELECT artikelnr, kwaliteit_code || kleur_code AS nieuwe_code
+  SELECT artikelnr, kwaliteit_code || kleur_code || 'MAATWERK' AS nieuwe_code
   FROM producten
   WHERE (karpi_code IS NULL OR karpi_code = '')
-    AND omschrijving ILIKE '%MAATWERK'
+    AND omschrijving ~ '^[A-Z]+[0-9]+MAATWERK$'
     AND kwaliteit_code IS NOT NULL AND kleur_code IS NOT NULL
     AND is_pseudo = FALSE;
 
@@ -107,8 +114,10 @@ BEGIN
     RETURN;
   END IF;
 
+  -- ORDER BY artikelnr: deterministisch onder dubbele omschrijvingen.
   SELECT p.artikelnr INTO v_artikelnr
-  FROM producten p WHERE p.omschrijving ILIKE 'LAGO13MAATWERK' LIMIT 1;
+  FROM producten p WHERE p.omschrijving ILIKE 'LAGO13MAATWERK'
+  ORDER BY p.artikelnr LIMIT 1;
   IF v_artikelnr IS NULL THEN
     RAISE NOTICE 'Mig 353b: product LAGO13MAATWERK niet gevonden — skip artikelnr-herstel ORD-2026-0118';
     RETURN;
@@ -162,8 +171,10 @@ BEGIN
   END IF;
 
   -- Artikelnr via lookup; product kan ontbreken → NOTICE + skip (geen fail).
+  -- ORDER BY artikelnr: deterministisch onder dubbele omschrijvingen.
   SELECT p.artikelnr INTO v_artikelnr
-  FROM producten p WHERE p.omschrijving ILIKE 'LUXR17MAATWERK' LIMIT 1;
+  FROM producten p WHERE p.omschrijving ILIKE 'LUXR17MAATWERK'
+  ORDER BY p.artikelnr LIMIT 1;
   IF v_artikelnr IS NULL THEN
     RAISE NOTICE 'Mig 353c: product LUXR17MAATWERK niet gevonden — artikelnr blijft NULL op ORD-2026-0098 regel 1';
     RETURN;
@@ -203,3 +214,5 @@ BEGIN
     RAISE NOTICE 'Mig 353: LET OP — nog % maatwerk-regel(s) zonder artikelnr: % (zie skip-NOTICEs hierboven)', v_rest, v_detail;
   END IF;
 END $$;
+
+COMMIT;
