@@ -232,7 +232,7 @@ serve(async (req) => {
     .from('orders')
     .select(`
       id, order_nr, orderdatum, afleverdatum, klant_referentie,
-      debiteur_nr, bevestigd_at, vertegenw_code,
+      debiteur_nr, bevestigd_at, vertegenw_code, afhalen,
       afl_naam, afl_naam_2, afl_adres, afl_postcode, afl_plaats, afl_land,
       fact_naam, fact_land,
       debiteuren!orders_debiteur_nr_fkey(naam, email_factuur, email_overig, email_2, betaalconditie, btw_percentage)
@@ -367,6 +367,7 @@ serve(async (req) => {
     verzendweek: verzendweekLabel(o.afleverdatum),
     afleverdatum: o.afleverdatum ?? null,
     klant_naam: deb?.naam ?? o.fact_naam ?? 'Klant',
+    afhalen: o.afhalen === true,
     afl_naam: o.afl_naam ?? o.afl_naam_2 ?? null,
     afl_adres: o.afl_adres ?? null,
     afl_postcode: o.afl_postcode ?? null,
@@ -405,14 +406,21 @@ serve(async (req) => {
     </tr>`
   }).join('')
 
-  const afleveradresHtml = (o.afl_adres || o.afl_postcode || o.afl_plaats)
+  const afleveradresHtml = o.afhalen
     ? `<p>
-        <strong>${v.afleveradres}:</strong><br>
-        ${o.afl_naam && o.afl_naam !== klantNaam ? `${o.afl_naam}<br>` : ''}
-        ${o.afl_adres ? `${o.afl_adres}<br>` : ''}
-        ${[o.afl_postcode, o.afl_plaats].filter(Boolean).join('  ')}${o.afl_land && o.afl_land.toUpperCase() !== 'NL' ? `<br>${o.afl_land}` : ''}
+        <strong>Afhalen:</strong><br>
+        ${bedrijf.bedrijfsnaam}<br>
+        ${bedrijf.adres}<br>
+        ${bedrijf.postcode}  ${bedrijf.plaats}
       </p>`
-    : ''
+    : (o.afl_adres || o.afl_postcode || o.afl_plaats)
+      ? `<p>
+          <strong>${v.afleveradres}:</strong><br>
+          ${o.afl_naam && o.afl_naam !== klantNaam ? `${o.afl_naam}<br>` : ''}
+          ${o.afl_adres ? `${o.afl_adres}<br>` : ''}
+          ${[o.afl_postcode, o.afl_plaats].filter(Boolean).join('  ')}${o.afl_land && o.afl_land.toUpperCase() !== 'NL' ? `<br>${o.afl_land}` : ''}
+        </p>`
+      : ''
 
   const htmlBody = `
 <div style="font-family: Arial, sans-serif; max-width: 600px; color: #333;">

@@ -47,6 +47,7 @@ export interface OrderbevestigingInput {
   verzendweek: string | null
   afleverdatum: string | null
   klant_naam: string
+  afhalen?: boolean
   afl_naam: string | null
   afl_adres: string | null
   afl_postcode: string | null
@@ -211,26 +212,34 @@ export async function genereerOrderbevestigingPDF(input: OrderbevestigingInput):
   y -= 18
 
   // ── Adresblok ─────────────────────────────────────────────────────────────
+  // Bij afhalen tonen we Karpi's eigen adres als afhaallocatie.
+  const isAfhalen = input.afhalen === true
+  const aflNaam    = isAfhalen ? input.bedrijf.bedrijfsnaam : input.afl_naam
+  const aflAdres   = isAfhalen ? input.bedrijf.adres        : input.afl_adres
+  const aflPost    = isAfhalen ? input.bedrijf.postcode      : input.afl_postcode
+  const aflStad    = isAfhalen ? input.bedrijf.plaats        : input.afl_stad
+  const aflLand    = isAfhalen ? null                        : input.afl_land
+
   drawText(page, 'Klant', mL, y, fontB, 8, SLATE)
-  drawText(page, 'Afleveradres', col2, y, fontB, 8, SLATE)
+  drawText(page, isAfhalen ? 'Afhalen' : 'Afleveradres', col2, y, fontB, 8, SLATE)
   y -= 12
 
   drawText(page, input.klant_naam, mL, y, fontB, 8)
-  if (input.afl_naam && input.afl_naam !== input.klant_naam) {
-    drawText(page, input.afl_naam, col2, y, fontB, 8)
+  if (aflNaam && aflNaam !== input.klant_naam) {
+    drawText(page, aflNaam, col2, y, fontB, 8)
   }
   y -= 11
 
-  if (input.afl_adres) {
-    drawText(page, input.afl_adres, col2, y, fontR, 8)
+  if (aflAdres) {
+    drawText(page, aflAdres, col2, y, fontR, 8)
     y -= 10
   }
-  if (input.afl_postcode || input.afl_stad) {
-    drawText(page, [input.afl_postcode, input.afl_stad].filter(Boolean).join('  '), col2, y, fontR, 8)
+  if (aflPost || aflStad) {
+    drawText(page, [aflPost, aflStad].filter(Boolean).join('  '), col2, y, fontR, 8)
     y -= 10
   }
-  if (input.afl_land && input.afl_land.toUpperCase() !== 'NL') {
-    drawText(page, input.afl_land, col2, y, fontR, 8)
+  if (aflLand && aflLand.toUpperCase() !== 'NL') {
+    drawText(page, aflLand, col2, y, fontR, 8)
     y -= 10
   }
 

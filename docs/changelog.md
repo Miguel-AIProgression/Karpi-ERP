@@ -6,6 +6,95 @@
 - **Waarom:** plan 2026-06-10 order-intake-verdieping — de Order-commit (CONTEXT.md) testbaar maken als gedrags-anker vóór de Fase 2 Order-landing-kern (SQL). Strikt gedragsbehoud; verbeteringen (form-idempotency, uniform 'aangemaakt'-event) zijn expliciete Fase 2-beslispunten.
 - **Niet gewijzigd:** RPC-laag (`create_order_with_lines`), edit-flow, `split-order.ts`-helpers.
 
+## 2026-06-10 — Order-lifecycle-hardening: doc + 6 fixes (mig 347-352)
+
+> **Hernummering:** deze migraties zijn op 2026-06-10 initieel toegepast als
+> 346-350 en daarna hernummerd naar 347-351 wegens collisie met
+> `346_derive_wacht_status_single_source` (parallel gemerged). De
+> NOTICE-teksten in de DB-historie dragen de oude nummers. Mig 352 verenigt
+> daarnaast de twee sporen (zie onderaan).
+
+**Waarom:** sparring-sessie over codestructuur en bug-archetypen vóór de go-lives
+van volgende week (verzending standaardmaten + maatwerk-productie). Onderzoek
+(4 Explore-agents + handverificatie) leverde `docs/order-lifecycle.md` op — het
+levende statusmodel-document (statussen, transities, gates, intake-matrix,
+productie-/magazijnpad, RPC→laatste-migratie-tabel) — plus 12 getriageerde
+bevindingen (§11 aldaar).
+
+**Wat (branch `fix/order-lifecycle-hardening`):**
+- **Nieuw levend document** `docs/order-lifecycle.md` — toetssteen voor elke
+  flow-wijziging.
+- **B2 (mig 347+348):** `voltooi_confectie` schrijft de terminale
+  'Maatwerk afgerond'-flip nu via `_apply_transitie` met nieuw event-type
+  `maatwerk_afgerond` (was directe UPDATE zonder audit-event, mig 330).
+- **B1-vangnet (mig 349):** `match_edi_artikel` stap 3 (eerste-token-match)
+  weigert wanneer de artikelcode-suffix een maat-patroon (`155x230`) of
+  vorm-woord (`rund`/`rond`/`ovaal`) bevat — maat-informatie kan niet meer
+  stilzwijgend gedropt worden; regel landt als ongematcht ('Actie vereist').
+  Echte EDI-maatwerk-parsing = V2, eerst corpus verzamelen.
+- **B4:** `import-lightspeed-orders` (cron-pad) bepaalt nu de afleverdatum via
+  dezelfde `bepaalAfleverdatumUitOrder`-helper als het webhook-pad (was hard
+  `NULL` → orders zonder deadline). **Redeploy nodig.**
+- **B5 (mig 350):** snapshot-assert op de `order_status`-enum (set-vergelijking,
+  mirror van mig 344) — enum wijzigen zonder de spiegels bij te werken faalt
+  voortaan hard.
+- **B11:** lint `lint-no-direct-orders-status-update.sh` scant nu ook
+  `migrations/3*.sql`+ (mig 308/330 glipten door de oude `2*.sql`-scope;
+  als bevroren historie ge-allowlist).
+- **B12:** `ORDER_STATUS_COLORS` kende `'Maatwerk afgerond'` niet (badge zonder
+  kleur) — toegevoegd.
+- **B13 (mig 351, uit de code-review van deze branch):** `'Maatwerk afgerond'`
+  ontbrak in de no-touch-lijst van `herbereken_wacht_status` (mig 275 is ouder
+  dan mig 327) → een afgeronde productie-only order viel bij elke
+  orderregel-touch terug naar `'Wacht op maatwerk'`, definitief. Toegevoegd aan
+  de eindstatus-guard; SECURITY DEFINER + search_path expliciet herzet
+  (218_z-les).
+- **Mig 352 — samenloop met "order-status single-source" (mig 346) verenigd:**
+  mig 346 (parallel gemerged én mogelijk al toegepast) delegeert de ladder aan
+  de pure `derive_wacht_status`, maar diens guard miste `'Maatwerk afgerond'`
+  óók (de truthtable pinde alleen de all-false-combinatie — met `maatwerk=true`,
+  per definitie waar voor afgeronde productie-only orders, vuurde tak 4 alsnog).
+  Mijn mig 351 (toegepast ná hun 346) herstelde tijdelijk de inline vorm en
+  maakte de delegatie in de DB ongedaan. Mig 352 verenigt: `derive_wacht_status`
+  mét de status in de guard + uitgebreide truthtable (échte B13-case), her-
+  delegerende `herbereken_wacht_status`, SECURITY DEFINER herzet, en de
+  TS-spiegel `derive-status.ts` + `derive-status.golden.json` zijn mee
+  bijgewerkt (Vitest-contracttest dekt de nieuwe case).
+
+Mig 347-351 zijn al toegepast (als 346-350, zie hernummering-noot);
+**alleen mig 352 moet nog in de SQL Editor gedraaid worden.** Open follow-ups:
+B3/B7-B10/B14 in `docs/order-lifecycle.md` §11C.
+
+## 2026-06-10 — Order-status-ladder als single-source (Fase 2, ADR-0006)
+
+De beslissingsladder die `orders.status` kiest stond inline in de PL/pgSQL-runtime
+`herbereken_wacht_status` en was sinds mig 218 vijfmaal herschreven; bij mig 269/273
+vielen de ADR-0016-takken (`Wacht op maatwerk`/`Klaar voor picken`) geruisloos weg
+(orders 2063-2067 bleven op dode status `Nieuw`, mig 275 herstelde met de hand, geen
+test ving het). Geconsolideerd naar één pure functie `derive_wacht_status(huidig, io,
+tekort, maatwerk)` (SQL, mig 346) + TS-spiegel `deriveWachtStatus`
+([`_shared/order-lifecycle/derive-status.ts`](../supabase/functions/_shared/order-lifecycle/derive-status.ts),
+ADR-0006-belofte ingelost). Twee ankers binden ze: een golden-fixture-truthtable van
+21 cases (Vitest-contracttest, TS ≡ fixture; alle 9 guard-statussen gepind, incl.
+`Concept`/`Maatwerk afgerond` als huidig gedrag) en een zelf-testende migratie
+(SQL ≡ dezelfde combinaties, incl. de regressie-cases). `herbereken_wacht_status`
+verzamelt nog steeds de claim-/snijplan-state en delegeert nu de beslissing — gedrag
+identiek aan mig 275 (bewuste trade-off: de drie EXISTS-queries draaien nu ook voor
+eindstatus-orders; mig 275 returnde eerder vroeg). De toegepaste backfills
+(mig 258/275) zijn bevroren history en blijven ongemoeid. Migratie 346 nog handmatig
+in de SQL Editor te draaien.
+
+Genoteerde follow-ups (buiten scope): schone herdefinitie van `edi_create_order`
+(de pg_get_functiondef+REPLACE-patch uit mig 275 r164-197); `order_status`-enum als
+TS-single-source (Fase 1-stijl); `herbereken_wacht_status` verloor sinds mig 258
+stilzwijgend het SECURITY DEFINER + search_path uit mig 218_z (CREATE OR REPLACE
+reset die attributen) — bewust besluit nodig of her-pinnen gewenst is (aparte
+migratie); lint-script `lint-no-direct-orders-status-update.sh` scant alleen
+`2*.sql`-migraties, glob verbreden naar 3xx. *(Update later die dag: de
+SECURITY-DEFINER-her-pin, de lint-glob-verbreding én de `Maatwerk afgerond`-gap
+in de guard zijn opgepakt in de order-lifecycle-hardening-branch, mig 351/352 —
+zie entry hierboven.)*
+
 ## 2026-06-10 — Productie-only orders uit "zonder vervoerder"-teller (mig 345)
 
 De banner "1165 order(s) zonder vervoerder" op Pick & Ship bestond voor 1066 stuks
