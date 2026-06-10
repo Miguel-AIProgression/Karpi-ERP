@@ -1,4 +1,6 @@
--- Migratie 349: snapshot-assert op de order_status-enum (bevinding B5)
+-- Migratie 350: snapshot-assert op de order_status-enum (bevinding B5)
+-- (NB: op 2026-06-10 toegepast als "mig 349", vóór hernummering wegens
+--  collisie met 346_derive_wacht_status_single_source op main.)
 --
 -- Zelfde vangnet als mig 344 voor snijplan_status/confectie_status, nu voor
 -- order_status: faalt zodra iemand een waarde toevoegt/verwijdert zonder de
@@ -45,5 +47,5 @@ BEGIN
     RAISE EXCEPTION E'order_status enum <> snapshot (set-vergelijking).\nDB      = %\nsnapshot = %\nSync de snapshot + ORDER_STATUS_COLORS + docs/order-lifecycle.md §2.',
       v_db, v_verwacht;
   END IF;
-  RAISE NOTICE 'Mig 349: order_status matcht de snapshot (% waarden)', array_length(v_db, 1);
+  RAISE NOTICE 'Mig 350: order_status matcht de snapshot (% waarden)', array_length(v_db, 1);
 END $$;

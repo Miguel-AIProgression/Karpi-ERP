@@ -1,4 +1,6 @@
--- Migratie 347: voltooi_confectie — 'Maatwerk afgerond' via _apply_transitie
+-- Migratie 348: voltooi_confectie — 'Maatwerk afgerond' via _apply_transitie
+-- (NB: op 2026-06-10 toegepast als "mig 347", vóór hernummering wegens
+--  collisie met 346_derive_wacht_status_single_source op main.)
 --
 -- PROBLEEM (bevinding B2, docs/order-lifecycle.md §11): mig 330 schreef de
 -- terminale transitie naar 'Maatwerk afgerond' met een directe status-UPDATE
@@ -14,7 +16,7 @@
 -- en SECURITY DEFINER (218_z), dus de werkvloer-rol hoeft geen rechten op
 -- order_events te hebben. voltooi_confectie zelf blijft INVOKER (zoals mig 330).
 --
--- VEREIST: mig 346 (enum-waarde 'maatwerk_afgerond') is al — in een eerdere,
+-- VEREIST: mig 347 (enum-waarde 'maatwerk_afgerond') is al — in een eerdere,
 -- eigen transactie — toegepast.
 --
 -- Idempotent via CREATE OR REPLACE.
@@ -62,7 +64,7 @@ BEGIN
 
   -- NA-STAP (productie-only): order naar 'Maatwerk afgerond' als ALLE snijplannen
   -- van de order confectie-afgerond zijn. Strikt geguard op alleen_productie.
-  -- Mig 347: via _apply_transitie (ADR-0006) zodat de transitie een
+  -- Mig 348: via _apply_transitie (ADR-0006) zodat de transitie een
   -- order_events-rij krijgt; was directe UPDATE (mig 330).
   IF v_eff_afgerond THEN
     SELECT orr.order_id INTO v_order_id
@@ -93,7 +95,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION voltooi_confectie(BIGINT, BOOLEAN, BOOLEAN, TEXT) IS
-  'Rondt confectie af. p_afgerond=true → confectie_afgerond_op=NOW(); false → clear + status terug naar Gesneden. p_ingepakt=true → status Ingepakt + ingepakt_op=NOW() (impliceert afgerond, maakt direct pickbaar via mig 170). p_locatie="" → clear locatie; NULL → ongemoeid. Mig 247: ingepakt-pad zet Ingepakt i.p.v. Gereed. Mig 250: expliciete ::snijplan_status casts op CASE-takken zodat de UPDATE niet faalt op type-coercie. Idempotent. Mig 330: na-stap flipt productie-only orders (alleen_productie=true) naar terminale status ''Maatwerk afgerond'' zodra alle snijplannen van de order confectie-afgerond zijn. Mig 347: die flip loopt via _apply_transitie (ADR-0006) → order_events-rij ''maatwerk_afgerond''. Strikt geguard: gewone orders ongemoeid.';
+  'Rondt confectie af. p_afgerond=true → confectie_afgerond_op=NOW(); false → clear + status terug naar Gesneden. p_ingepakt=true → status Ingepakt + ingepakt_op=NOW() (impliceert afgerond, maakt direct pickbaar via mig 170). p_locatie="" → clear locatie; NULL → ongemoeid. Mig 247: ingepakt-pad zet Ingepakt i.p.v. Gereed. Mig 250: expliciete ::snijplan_status casts op CASE-takken zodat de UPDATE niet faalt op type-coercie. Idempotent. Mig 330: na-stap flipt productie-only orders (alleen_productie=true) naar terminale status ''Maatwerk afgerond'' zodra alle snijplannen van de order confectie-afgerond zijn. Mig 348: die flip loopt via _apply_transitie (ADR-0006) → order_events-rij ''maatwerk_afgerond''. Strikt geguard: gewone orders ongemoeid.';
 
 -- Zelf-test: de definitie gebruikt _apply_transitie en bevat geen directe
 -- UPDATE op orders meer.
@@ -102,15 +104,15 @@ DECLARE
   v_def TEXT := pg_get_functiondef('voltooi_confectie(BIGINT, BOOLEAN, BOOLEAN, TEXT)'::regprocedure);
 BEGIN
   IF v_def NOT LIKE '%_apply_transitie%' THEN
-    RAISE EXCEPTION 'Mig 347: voltooi_confectie roept _apply_transitie niet aan';
+    RAISE EXCEPTION 'Mig 348: voltooi_confectie roept _apply_transitie niet aan';
   END IF;
   IF v_def NOT LIKE '%maatwerk_afgerond%' THEN
-    RAISE EXCEPTION 'Mig 347: voltooi_confectie gebruikt event-type maatwerk_afgerond niet';
+    RAISE EXCEPTION 'Mig 348: voltooi_confectie gebruikt event-type maatwerk_afgerond niet';
   END IF;
   IF v_def ~* 'UPDATE\s+orders\s+SET' THEN
-    RAISE EXCEPTION 'Mig 347: voltooi_confectie bevat nog een directe UPDATE orders SET';
+    RAISE EXCEPTION 'Mig 348: voltooi_confectie bevat nog een directe UPDATE orders SET';
   END IF;
-  RAISE NOTICE 'Mig 347: alle asserties geslaagd — Maatwerk afgerond loopt via _apply_transitie';
+  RAISE NOTICE 'Mig 348: alle asserties geslaagd — Maatwerk afgerond loopt via _apply_transitie';
 END $$;
 
 NOTIFY pgrst, 'reload schema';

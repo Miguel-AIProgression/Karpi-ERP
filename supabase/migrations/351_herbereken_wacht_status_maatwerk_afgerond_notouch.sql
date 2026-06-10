@@ -1,6 +1,8 @@
--- Migratie 350: 'Maatwerk afgerond' in de no-touch-lijst van herbereken_wacht_status
+-- Migratie 351: 'Maatwerk afgerond' in de no-touch-lijst van herbereken_wacht_status
+-- (NB: op 2026-06-10 toegepast als "mig 350", vóór hernummering wegens
+--  collisie met 346_derive_wacht_status_single_source op main.)
 --
--- PROBLEEM (bevinding B13, gevonden in code-review van mig 346-349): de
+-- PROBLEEM (bevinding B13, gevonden in code-review van mig 347-350): de
 -- terminale status 'Maatwerk afgerond' (mig 327/330, productie-only orders)
 -- ontbrak in de no-touch-lijst van herbereken_wacht_status (mig 275 — ouder
 -- dan mig 327, dus de waarde bestond toen nog niet). Regressie-pad: elke
@@ -14,9 +16,11 @@
 -- FIX: body byte-voor-byte mig 275 r214-293, met 'Maatwerk afgerond'
 -- toegevoegd aan de eindstatus-guard.
 --
--- LET OP voor het parallelle "order-status single-source"-plan (2026-06-10):
--- de pure derive_wacht_status-functie moet deze waarde óók in zijn
--- no-touch-tak opnemen — zie notitie in dat plan.
+-- LET OP: het parallelle "order-status single-source"-werk (mig 346 op main)
+-- delegeert herbereken_wacht_status aan de pure derive_wacht_status — die de
+-- B13-guard NIET had. Deze migratie (toegepast ná hun 346) herstelde tijdelijk
+-- de inline vorm; mig 352 verenigt beide: delegatie hersteld mét 'Maatwerk
+-- afgerond' in de pure functie. Eindtoestand = mig 352.
 --
 -- Follow-up (B14, bewust niet hier): sync_order_afleverdatum_met_claims
 -- (mig 298) mist 'Maatwerk afgerond' eveneens in zijn eindstatus-lijst;
@@ -41,7 +45,7 @@ BEGIN
   -- (markeer_verzonden, markeer_geannuleerd, markeer_pickronde_gestart,
   -- markeer_deels_verzonden, voltooi_confectie-na-stap). Recompute raakt ze
   -- niet aan. Legacy productie-statussen blijven ook ongemoeid voor
-  -- pragmatisch pad (mig 218). Mig 350: + 'Maatwerk afgerond' (terminaal,
+  -- pragmatisch pad (mig 218). Mig 351: + 'Maatwerk afgerond' (terminaal,
   -- productie-only — ontbrak omdat mig 275 ouder is dan mig 327).
   IF v_huidig IN (
     'Verzonden', 'Geannuleerd', 'Klaar voor verzending',
@@ -111,10 +115,10 @@ $$;
 GRANT EXECUTE ON FUNCTION herbereken_wacht_status(BIGINT) TO authenticated;
 
 COMMENT ON FUNCTION herbereken_wacht_status IS
-  'Mig 218 + 258 (ADR-0016) + 272/273 (ADR-0018) + 275 + 350: leest claim-state + '
+  'Mig 218 + 258 (ADR-0016) + 272/273 (ADR-0018) + 275 + 351: leest claim-state + '
   'snijplannen + admin-pseudo-flag, kiest Wacht op inkoop / Wacht op voorraad / '
   'Wacht op maatwerk / Klaar voor picken, schrijft via _apply_transitie. '
-  'Eindstatussen (incl. Maatwerk afgerond, mig 350) + pickronde-fases '
+  'Eindstatussen (incl. Maatwerk afgerond, mig 351) + pickronde-fases '
   '(In pickronde, Deels verzonden) en legacy productie-statussen worden niet '
   'aangeraakt. Admin-pseudo-orderregels (is_admin_pseudo) tellen NIET mee voor '
   'tekort-detectie.';
@@ -131,12 +135,12 @@ DECLARE
   v_def TEXT := pg_get_functiondef('herbereken_wacht_status(BIGINT)'::regprocedure);
 BEGIN
   IF v_def NOT LIKE '%''Maatwerk afgerond''%' THEN
-    RAISE EXCEPTION 'Mig 350: no-touch-lijst mist Maatwerk afgerond';
+    RAISE EXCEPTION 'Mig 351: no-touch-lijst mist Maatwerk afgerond';
   END IF;
   IF v_def NOT LIKE '%SECURITY DEFINER%' THEN
-    RAISE EXCEPTION 'Mig 350: SECURITY DEFINER ontbreekt (218_z-attribuut weggevallen)';
+    RAISE EXCEPTION 'Mig 351: SECURITY DEFINER ontbreekt (218_z-attribuut weggevallen)';
   END IF;
-  RAISE NOTICE 'Mig 350: alle asserties geslaagd — Maatwerk afgerond is no-touch';
+  RAISE NOTICE 'Mig 351: alle asserties geslaagd — Maatwerk afgerond is no-touch';
 END $$;
 
 NOTIFY pgrst, 'reload schema';

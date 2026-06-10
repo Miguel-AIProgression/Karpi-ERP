@@ -27,7 +27,7 @@ handmatig (order-form)         ↕ Wacht op inkoop          Ingepakt)           
 
 ## 2. Order-statussen
 
-Enum `order_status` (snapshot geborgd door mig 349). Drie categorieën:
+Enum `order_status` (snapshot geborgd door mig 350). Drie categorieën:
 
 | Status | Categorie | Sinds | Betekenis / eigenaar |
 |---|---|---|---|
@@ -66,13 +66,13 @@ Afgedwongen door [`scripts/lint-no-direct-orders-status-update.sh`](../scripts/l
 | `markeer_pickronde_gestart` | → `In pickronde` | no-op op pickronde-fases; faalt op eindstatus | mig 258 |
 | `markeer_deels_verzonden` | → `Deels verzonden` | idem | mig 258 |
 | `herbereken_wacht_status` | → Wacht-op-X / `Klaar voor picken` | zie §4 | mig 275 (laatste) |
-| `voltooi_confectie` (na-stap) | → `Maatwerk afgerond` | alleen `alleen_productie=true` + alle snijplannen afgerond | mig 347 |
+| `voltooi_confectie` (na-stap) | → `Maatwerk afgerond` | alleen `alleen_productie=true` + alle snijplannen afgerond | mig 348 |
 
 ### 3.2 Bekende uitzonderingen op het ene schrijfpad ⚠️
 
 | Plek | Wat | Status |
 |---|---|---|
-| [`330_voltooi_confectie_maatwerk_afgerond.sql:80`](../supabase/migrations/330_voltooi_confectie_maatwerk_afgerond.sql) | directe `UPDATE orders SET status='Maatwerk afgerond'` | **Opgelost in mig 347** (via `_apply_transitie` + event `maatwerk_afgerond`) |
+| [`330_voltooi_confectie_maatwerk_afgerond.sql:80`](../supabase/migrations/330_voltooi_confectie_maatwerk_afgerond.sql) | directe `UPDATE orders SET status='Maatwerk afgerond'` | **Opgelost in mig 348** (via `_apply_transitie` + event `maatwerk_afgerond`) |
 | [`308_concept_order_status.sql:126`](../supabase/migrations/308_concept_order_status.sql) | `bevestig_concept_order`: directe `UPDATE` + eigen events-INSERT | Open (bevinding B3) |
 | `import_productie_only_order` (mig 329) | directe INSERT met status `'In productie'` | bewust: legacy-status, `herbereken` raakt hem niet aan |
 
@@ -82,10 +82,11 @@ Afgedwongen door [`scripts/lint-no-direct-orders-status-update.sh`](../scripts/l
 |---|---|---|
 | `create_order_with_lines` | **mig 275** (status `'Klaar voor picken'`) | 152, 245 |
 | `create_edi_order` | **mig 312** | 158, 159, 166, 309, 275 (string-patch) |
-| `match_edi_artikel` | **mig 348** (maat-suffix-guard) | 159, 162 |
+| `match_edi_artikel` | **mig 349** (maat-suffix-guard) | 159, 162 |
 | `create_webshop_order` | **mig 343** (`maatwerk_vorm`) | 085, 086, 087, 092, 093, 308, 322 |
-| `herbereken_wacht_status` | **mig 350** (`Maatwerk afgerond` no-touch) | 218, 258, 267, 275 |
-| `voltooi_confectie` | **mig 347** (`_apply_transitie`) | 101, 247, 250, 330 |
+| `herbereken_wacht_status` | **mig 352** (delegatie naar `derive_wacht_status` mét `Maatwerk afgerond`) | 218, 258, 267, 275, 346, 351 |
+| `derive_wacht_status` (pure ladder) | **mig 352** (`Maatwerk afgerond` no-touch) | 346 |
+| `voltooi_confectie` | **mig 348** (`_apply_transitie`) | 101, 247, 250, 330 |
 | `voltooi_pickronde` | mig 218 + bundel-aware (mig 222/242) | 217 |
 | `start_pickronden` (unified) | **mig 248** | 220, 222 |
 
@@ -95,7 +96,7 @@ Volgorde, eerste match wint:
 
 1. **No-touch**: huidig ∈ {`Verzonden`, `Geannuleerd`, `Klaar voor verzending`,
    `In productie`, `In snijplan`, `Deels gereed`, `Wacht op picken`,
-   `In pickronde`, `Deels verzonden`, `Maatwerk afgerond` (sinds mig 350)} → return.
+   `In pickronde`, `Deels verzonden`, `Maatwerk afgerond` (sinds mig 351)} → return.
    `Maatwerk afgerond` ontbrak t/m mig 275 (ouder dan mig 327) — regressie-pad
    naar `Wacht op maatwerk` bij elke orderregel-touch; zie bevinding B13.
 2. ≥1 actieve claim `bron='inkooporder_regel'` → `Wacht op inkoop`
@@ -105,14 +106,18 @@ Volgorde, eerste match wint:
 6. Anders → no-op
 
 Admin-pseudo-regels (`producten.is_pseudo`, ADR-0018) tellen nergens mee.
-*Een parallel plan (2026-06-10, "order-status single-source") extraheert deze
-ladder naar een pure `derive_wacht_status`-functie + TS-spiegel — gedrags-identiek.*
+**Single-source sinds mig 346/352:** de beslislogica leeft in de pure functie
+`derive_wacht_status` (SQL, mig 346 + B13-fix in mig 352) met TS-spiegel
+[`derive-status.ts`](../supabase/functions/_shared/order-lifecycle/derive-status.ts)
+en golden-fixture; `herbereken_wacht_status` verzamelt alleen nog de state en
+delegeert. Wijzig de ladder dus in `derive_wacht_status` + TS-spiegel + golden,
+nooit meer inline.
 
 ## 5. `order_events` — types en listeners
 
 **Event-types** (mig 218 + 257 + 346): `aangemaakt`, `wacht_status_herberekend`,
 `pickronde_gestart`, `deels_verzonden`, `pickronde_voltooid`, `geannuleerd`,
-`backfill_fase_normalisatie`, `maatwerk_afgerond` (mig 346), plus domein-events
+`backfill_fase_normalisatie`, `maatwerk_afgerond` (mig 347), plus domein-events
 `claim_geswapt` (ADR-0027) en `levertijd_gewijzigd_door_eta` (mig 326).
 
 **Listeners (triggers op `order_events`):**
@@ -150,7 +155,7 @@ verschillend ontworpen (zie CLAUDE.md, mig 326-toelichting). Alle predicaten heb
 | Debiteur-matching | UI-selector | GLN-ladder ([`debiteur-matcher.ts`](../supabase/functions/_shared/debiteur-matcher.ts)) | fuzzy-ladder + fallback | env `FLOORPASSION_DEBITEUR_NR` | idem | `match_klant_po` |
 | Afleverdatum | UI (`bepaalOrderAfleverdatum`) | partner-header (+ snapshot) | note-attr of +7d | uit shipmentTitle | idem (sinds B4-fix; was NULL) | parse of vandaag |
 | `lever_modus`/`lever_type` | UI-dialog/toggle | NULL → defaults | NULL | NULL | NULL | NULL |
-| Maatwerk-regels | ja | **nee — vangnet mig 348 (B1)** | ja | ja | ja | onduidelijk |
+| Maatwerk-regels | ja | **nee — vangnet mig 349 (B1)** | ja | ja | ja | onduidelijk |
 | Allocator + snijplan-trigger | direct (INSERT-triggers mig 146/274) | direct | direct | direct | direct | **pas na bevestiging** |
 
 Na elke landing: INSERT-trigger op `order_regels` → `herallocateer_orderregel` →
@@ -170,14 +175,14 @@ Gesneden → In confectie → Gereed → Ingepakt`, plus `Geannuleerd`.
 | → `Snijden` | snijstart (scanstation); zet ook `rollen.snijden_gestart_op` |
 | `Snijden` → `Gesneden` | `voltooi_snijplan_rol` (rol → `gesneden` of `beschikbaar` bij aangebroken) |
 | `Gesneden` → `In confectie` | `start_confectie` |
-| → `Gereed`/`Ingepakt` | `voltooi_confectie` (mig 347; zet `confectie_afgerond_op`) |
+| → `Gereed`/`Ingepakt` | `voltooi_confectie` (mig 348; zet `confectie_afgerond_op`) |
 | any → `Geannuleerd` | order-annulerings-cascade (mig 290) |
 
 Koppeling naar de order: maatwerk-regel is pickbaar ⇔ alle snijplannen `'Ingepakt'`;
 tot die tijd houdt regel 4 van §4 de order op `Wacht op maatwerk`. Voor productie-only
 orders flipt `voltooi_confectie` de order naar `Maatwerk afgerond` zodra alle
 snijplannen `confectie_afgerond_op` hebben (inpak-stap niet vereist) — via
-`_apply_transitie` met event `maatwerk_afgerond` (mig 346/347).
+`_apply_transitie` met event `maatwerk_afgerond` (mig 347/348).
 
 **Dubbele bezet-guard (mig 301, VERR130-incident):** planning-pool sluit rollen uit op
 `snijden_gestart_op IS NOT NULL` **én** op ANY snijplan in `Snijden`/`Gesneden` —
@@ -210,17 +215,19 @@ beide nodig vanwege het window tussen status-promotie en rol-vlag.
   `snijplanning_overzicht` filtert `Geannuleerd` (mig 290, her-asserted mig 316).
 - **`Maatwerk afgerond`**: alleen productie-only; geen factuur, geen transport,
   geen annulerings-cascade. Magazijnier zoekt op Basta-nummer en handelt daar af.
-  Sinds mig 347 met `order_events`-audit (`maatwerk_afgerond`).
+  Sinds mig 348 met `order_events`-audit (`maatwerk_afgerond`).
 
 ## 11. Bevindingen (2026-06-10) — getriageerd
 
-Status-legenda: ✅ = gefixt op branch `fix/order-lifecycle-hardening` (mig 346-349).
+Status-legenda: ✅ = gefixt op branch `fix/order-lifecycle-hardening` (mig 348-352;
+op 2026-06-10 initieel toegepast als 346-350, hernummerd wegens collisie met
+`346_derive_wacht_status_single_source` op main).
 
 ### A. Go-live-relevant (verzending + maatwerk volgende week)
 
 - **B1 — EDI kan geen maatwerk landen.** ✅ *vangnet* — het Transus-formaat draagt
   maat/vorm alleen als tekst-suffix in de artikelcode; de token-match dropte die
-  stilzwijgend. Mig 348 weigert een token-match wanneer de suffix een maat-patroon
+  stilzwijgend. Mig 349 weigert een token-match wanneer de suffix een maat-patroon
   (`155x230`) of vorm-woord (`rund`/`rond`/`ovaal`) bevat → regel landt als
   ongematcht in de bestaande 'Actie vereist'-flow, operator beoordeelt. **Echte
   EDI-maatwerk-parsing = V2** zodra de geweigerde regels een corpus vormen.
@@ -228,15 +235,15 @@ Status-legenda: ✅ = gefixt op branch `fix/order-lifecycle-hardening` (mig 346-
   (`"526650046 160"`), vorm-woord aan getal geplakt (`"RUND160"`), `155*230`,
   `Ø 160`, Engels `round`. Vóór de cutover: corpus-query op historische
   `edi_berichten`-payloads om refusal-volume en gemiste varianten te kwantificeren.
-- **B2 — `Maatwerk afgerond` zonder order_event.** ✅ — mig 346 (event-type
-  `maatwerk_afgerond`) + mig 347 (`voltooi_confectie` via `_apply_transitie`).
+- **B2 — `Maatwerk afgerond` zonder order_event.** ✅ — mig 347 (event-type
+  `maatwerk_afgerond`) + mig 348 (`voltooi_confectie` via `_apply_transitie`).
 - **B4 — Lightspeed-cron landt orders zonder afleverdatum.** ✅ —
   `import-lightspeed-orders` gebruikt nu dezelfde `bepaalAfleverdatumUitOrder` +
   `maatwerk_weken`-fallback als het webhook-pad. **Redeploy edge function nodig.**
 
 ### B. Contract-borging
 
-- **B5 — Order-status-enum-snapshot-assert.** ✅ — mig 349 (set-vergelijking;
+- **B5 — Order-status-enum-snapshot-assert.** ✅ — mig 350 (set-vergelijking;
   basis-enum-volgorde is niet uit de repo-historie af te leiden). Spiegels die bij
   een enum-wijziging mee moeten: snapshot, `ORDER_STATUS_COLORS`, dit document §2.
 - **B6 — Transitie-contract-tests**: guards van §3.1 vastleggen. Bestaat deels
@@ -251,10 +258,14 @@ Status-legenda: ✅ = gefixt op branch `fix/order-lifecycle-hardening` (mig 346-
   no-touch-lijst van `herbereken_wacht_status` (mig 275, ouder dan mig 327) kende
   de terminale status niet: elke orderregel-touch op een afgeronde productie-only
   order zette hem terug (maatwerk-tak vindt snijplannen zonder `'Ingepakt'` —
-  productie-only eindigt bewust op confectie-afgerond). Mig 350 voegt de status
-  toe aan de guard. Gevonden in de code-review van deze branch. **Let op:** het
-  parallelle "order-status single-source"-plan moet `'Maatwerk afgerond'` ook in
-  `derive_wacht_status` opnemen (notitie in dat plan gezet).
+  productie-only eindigt bewust op confectie-afgerond). Mig 351 voegde de status
+  toe aan de inline guard (gevonden in de code-review van deze branch).
+  **Samenloop met "order-status single-source" (mig 346 op main):** diens pure
+  `derive_wacht_status` had dezelfde gap (de truthtable pinde alleen de
+  all-false-combinatie; met `maatwerk=true` — per definitie waar voor afgeronde
+  productie-only orders — vuurde tak 4 alsnog). Mig 352 verenigt beide:
+  delegatie hersteld mét `'Maatwerk afgerond'` in de pure functie, TS-spiegel
+  en golden-fixture mee, truthtable uitgebreid met de echte B13-case.
 
 ### C. Opruimen/V2
 

@@ -1,6 +1,12 @@
 # Changelog — RugFlow ERP
 
-## 2026-06-10 — Order-lifecycle-hardening: doc + 5 fixes (mig 346-350)
+## 2026-06-10 — Order-lifecycle-hardening: doc + 6 fixes (mig 347-352)
+
+> **Hernummering:** deze migraties zijn op 2026-06-10 initieel toegepast als
+> 346-350 en daarna hernummerd naar 347-351 wegens collisie met
+> `346_derive_wacht_status_single_source` (parallel gemerged). De
+> NOTICE-teksten in de DB-historie dragen de oude nummers. Mig 352 verenigt
+> daarnaast de twee sporen (zie onderaan).
 
 **Waarom:** sparring-sessie over codestructuur en bug-archetypen vóór de go-lives
 van volgende week (verzending standaardmaten + maatwerk-productie). Onderzoek
@@ -12,10 +18,10 @@ bevindingen (§11 aldaar).
 **Wat (branch `fix/order-lifecycle-hardening`):**
 - **Nieuw levend document** `docs/order-lifecycle.md` — toetssteen voor elke
   flow-wijziging.
-- **B2 (mig 346+347):** `voltooi_confectie` schrijft de terminale
+- **B2 (mig 347+348):** `voltooi_confectie` schrijft de terminale
   'Maatwerk afgerond'-flip nu via `_apply_transitie` met nieuw event-type
   `maatwerk_afgerond` (was directe UPDATE zonder audit-event, mig 330).
-- **B1-vangnet (mig 348):** `match_edi_artikel` stap 3 (eerste-token-match)
+- **B1-vangnet (mig 349):** `match_edi_artikel` stap 3 (eerste-token-match)
   weigert wanneer de artikelcode-suffix een maat-patroon (`155x230`) of
   vorm-woord (`rund`/`rond`/`ovaal`) bevat — maat-informatie kan niet meer
   stilzwijgend gedropt worden; regel landt als ongematcht ('Actie vereist').
@@ -23,7 +29,7 @@ bevindingen (§11 aldaar).
 - **B4:** `import-lightspeed-orders` (cron-pad) bepaalt nu de afleverdatum via
   dezelfde `bepaalAfleverdatumUitOrder`-helper als het webhook-pad (was hard
   `NULL` → orders zonder deadline). **Redeploy nodig.**
-- **B5 (mig 349):** snapshot-assert op de `order_status`-enum (set-vergelijking,
+- **B5 (mig 350):** snapshot-assert op de `order_status`-enum (set-vergelijking,
   mirror van mig 344) — enum wijzigen zonder de spiegels bij te werken faalt
   voortaan hard.
 - **B11:** lint `lint-no-direct-orders-status-update.sh` scant nu ook
@@ -31,17 +37,27 @@ bevindingen (§11 aldaar).
   als bevroren historie ge-allowlist).
 - **B12:** `ORDER_STATUS_COLORS` kende `'Maatwerk afgerond'` niet (badge zonder
   kleur) — toegevoegd.
-- **B13 (mig 350, uit de code-review van deze branch):** `'Maatwerk afgerond'`
+- **B13 (mig 351, uit de code-review van deze branch):** `'Maatwerk afgerond'`
   ontbrak in de no-touch-lijst van `herbereken_wacht_status` (mig 275 is ouder
   dan mig 327) → een afgeronde productie-only order viel bij elke
   orderregel-touch terug naar `'Wacht op maatwerk'`, definitief. Toegevoegd aan
   de eindstatus-guard; SECURITY DEFINER + search_path expliciet herzet
-  (218_z-les). Notitie gezet in het parallelle "order-status single-source"-plan
-  zodat `derive_wacht_status` de waarde ook meeneemt.
+  (218_z-les).
+- **Mig 352 — samenloop met "order-status single-source" (mig 346) verenigd:**
+  mig 346 (parallel gemerged én mogelijk al toegepast) delegeert de ladder aan
+  de pure `derive_wacht_status`, maar diens guard miste `'Maatwerk afgerond'`
+  óók (de truthtable pinde alleen de all-false-combinatie — met `maatwerk=true`,
+  per definitie waar voor afgeronde productie-only orders, vuurde tak 4 alsnog).
+  Mijn mig 351 (toegepast ná hun 346) herstelde tijdelijk de inline vorm en
+  maakte de delegatie in de DB ongedaan. Mig 352 verenigt: `derive_wacht_status`
+  mét de status in de guard + uitgebreide truthtable (échte B13-case), her-
+  delegerende `herbereken_wacht_status`, SECURITY DEFINER herzet, en de
+  TS-spiegel `derive-status.ts` + `derive-status.golden.json` zijn mee
+  bijgewerkt (Vitest-contracttest dekt de nieuwe case).
 
-Migraties 346→350 handmatig en **in volgorde** in de SQL Editor draaien (346
-apart vóór 347 — nieuwe enum-waarde mag niet in dezelfde transactie gebruikt
-worden). Open follow-ups: B3/B7-B10/B14 in `docs/order-lifecycle.md` §11C.
+Mig 347-351 zijn al toegepast (als 346-350, zie hernummering-noot);
+**alleen mig 352 moet nog in de SQL Editor gedraaid worden.** Open follow-ups:
+B3/B7-B10/B14 in `docs/order-lifecycle.md` §11C.
 
 ## 2026-06-10 — Productie-only orders uit "zonder vervoerder"-teller (mig 345)
 
