@@ -59,6 +59,36 @@ Mig 347-351 zijn al toegepast (als 346-350, zie hernummering-noot);
 **alleen mig 352 moet nog in de SQL Editor gedraaid worden.** Open follow-ups:
 B3/B7-B10/B14 in `docs/order-lifecycle.md` §11C.
 
+## 2026-06-10 — Order-status-ladder als single-source (Fase 2, ADR-0006)
+
+De beslissingsladder die `orders.status` kiest stond inline in de PL/pgSQL-runtime
+`herbereken_wacht_status` en was sinds mig 218 vijfmaal herschreven; bij mig 269/273
+vielen de ADR-0016-takken (`Wacht op maatwerk`/`Klaar voor picken`) geruisloos weg
+(orders 2063-2067 bleven op dode status `Nieuw`, mig 275 herstelde met de hand, geen
+test ving het). Geconsolideerd naar één pure functie `derive_wacht_status(huidig, io,
+tekort, maatwerk)` (SQL, mig 346) + TS-spiegel `deriveWachtStatus`
+([`_shared/order-lifecycle/derive-status.ts`](../supabase/functions/_shared/order-lifecycle/derive-status.ts),
+ADR-0006-belofte ingelost). Twee ankers binden ze: een golden-fixture-truthtable van
+21 cases (Vitest-contracttest, TS ≡ fixture; alle 9 guard-statussen gepind, incl.
+`Concept`/`Maatwerk afgerond` als huidig gedrag) en een zelf-testende migratie
+(SQL ≡ dezelfde combinaties, incl. de regressie-cases). `herbereken_wacht_status`
+verzamelt nog steeds de claim-/snijplan-state en delegeert nu de beslissing — gedrag
+identiek aan mig 275 (bewuste trade-off: de drie EXISTS-queries draaien nu ook voor
+eindstatus-orders; mig 275 returnde eerder vroeg). De toegepaste backfills
+(mig 258/275) zijn bevroren history en blijven ongemoeid. Migratie 346 nog handmatig
+in de SQL Editor te draaien.
+
+Genoteerde follow-ups (buiten scope): schone herdefinitie van `edi_create_order`
+(de pg_get_functiondef+REPLACE-patch uit mig 275 r164-197); `order_status`-enum als
+TS-single-source (Fase 1-stijl); `herbereken_wacht_status` verloor sinds mig 258
+stilzwijgend het SECURITY DEFINER + search_path uit mig 218_z (CREATE OR REPLACE
+reset die attributen) — bewust besluit nodig of her-pinnen gewenst is (aparte
+migratie); lint-script `lint-no-direct-orders-status-update.sh` scant alleen
+`2*.sql`-migraties, glob verbreden naar 3xx. *(Update later die dag: de
+SECURITY-DEFINER-her-pin, de lint-glob-verbreding én de `Maatwerk afgerond`-gap
+in de guard zijn opgepakt in de order-lifecycle-hardening-branch, mig 351/352 —
+zie entry hierboven.)*
+
 ## 2026-06-10 — Productie-only orders uit "zonder vervoerder"-teller (mig 345)
 
 De banner "1165 order(s) zonder vervoerder" op Pick & Ship bestond voor 1066 stuks
