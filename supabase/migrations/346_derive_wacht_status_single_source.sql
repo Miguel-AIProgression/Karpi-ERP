@@ -68,6 +68,10 @@ DECLARE
 BEGIN
   SELECT status INTO v_huidig FROM orders WHERE id = p_order_id;
 
+  -- Bewuste trade-off t.o.v. mig 275: die returnde vroeg voor eindstatussen vóór
+  -- de EXISTS-queries; nu draaien die altijd (goedkoop, geïndexeerd) en beslist
+  -- derive_wacht_status — resultaatgedrag identiek.
+
   -- 1) Inkoop-claim
   SELECT EXISTS (
     SELECT 1 FROM order_reserveringen r
@@ -137,10 +141,16 @@ BEGIN
       ('Nieuw'::order_status,            true,  false, false, 'Wacht op inkoop'::order_status),
       ('Nieuw'::order_status,            false, true,  false, 'Wacht op voorraad'::order_status),
       ('Nieuw'::order_status,            true,  true,  true,  'Wacht op inkoop'::order_status),   -- prioriteit io > tekort > maatwerk
+      ('Nieuw'::order_status,            false, true,  true,  'Wacht op voorraad'::order_status), -- tekort > maatwerk prioriteit
       ('Wacht op maatwerk'::order_status,false, false, false, 'Klaar voor picken'::order_status), -- maatwerk opgelost
+      ('Wacht op voorraad'::order_status,false, false, false, 'Klaar voor picken'::order_status), -- wacht-staat opgelost
       ('Wacht op inkoop'::order_status,  true,  false, false, 'Wacht op inkoop'::order_status),   -- her-apply zelfde status
       ('Klaar voor picken'::order_status,false, false, false, NULL::order_status),                -- no-op
+      ('Concept'::order_status,          true,  false, false, 'Wacht op inkoop'::order_status),   -- 'Concept' (mig 308) niet in guard-lijst: gedrag identiek aan mig 275, hier gepind
+      ('Maatwerk afgerond'::order_status,false, false, false, NULL::order_status),                -- 'Maatwerk afgerond' (mig 327): niet in guard- of wacht-lijst -> no-op
       ('Verzonden'::order_status,        true,  true,  true,  NULL::order_status),                -- eindstatus-guard wint
+      ('In productie'::order_status,     true,  true,  false, NULL::order_status),                -- eindstatus-guard
+      ('Klaar voor verzending'::order_status, false, true, false, NULL::order_status),            -- eindstatus-guard
       ('In pickronde'::order_status,     true,  false, false, NULL::order_status),
       ('Geannuleerd'::order_status,      false, false, false, NULL::order_status)
     ) AS t(huidig, io, tekort, maatwerk, verwacht)
