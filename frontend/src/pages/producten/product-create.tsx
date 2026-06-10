@@ -205,7 +205,7 @@ export function ProductCreatePage() {
       setError('Voeg minimaal één variant toe met een artikelnummer.')
       return
     }
-    // Mig 358: karpi_code is verplicht voor rol/vast (DB-trigger weigert
+    // Mig 359: karpi_code is verplicht voor rol/vast (DB-trigger weigert
     // anders). Optioneel voor overig/staaltje (banden/calibra/staaltjes).
     const zonderKarpi = filledRows.filter(
       r => (r.product_type === 'rol' || r.product_type === 'vast') && !r.karpi_code.trim()

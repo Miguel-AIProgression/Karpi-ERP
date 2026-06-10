@@ -1,4 +1,4 @@
--- Migratie 357: generiek herstel — maatwerk-orderregels zonder artikelnr
+-- Migratie 358: generiek herstel — maatwerk-orderregels zonder artikelnr
 --
 -- Vervolg op mig 356 (die herstelde 3 specifieke productie-regels). Aanleiding:
 -- eigenaar-besluit n.a.v. bug phdobbe (ORD-2026-0166, ORD-2026-0188) — ook
@@ -15,7 +15,10 @@
 -- gevuld zijn, wordt gekoppeld aan het generieke MAATWERK-artikel met EXACT
 -- dezelfde kwaliteit+kleur (omschrijving-patroon `^[A-Z]+[0-9]+MAATWERK$`,
 -- spiegelt mig 106/356a). Geen uitwissel- of andere-kleur-fallback: alleen
--- een exacte match mag de facturatie-artikelnr leveren.
+-- een exacte match mag de facturatie-artikelnr leveren. De kandidaat-set is
+-- bovendien beperkt tot actieve, niet-pseudo producten (`actief = TRUE AND
+-- NOT is_pseudo`) — consistent met de frontend-helper
+-- `fetchMaatwerkArtikelExact` en de mig 356a-kandidatenset.
 --
 -- Daarnaast: regel-karpi_code wordt op de catalogus-karpi_code gezet wanneer
 -- die NULL is of gelijk aan de kale `{KWAL}{KLEUR}`-concat (de oude
@@ -68,6 +71,8 @@ BEGIN
     WHERE p.kwaliteit_code = r.kwal
       AND regexp_replace(p.kleur_code, '\.0$', '') = v_kleur_norm
       AND p.omschrijving ~ '^[A-Z]+[0-9]+MAATWERK$'
+      AND p.actief = TRUE
+      AND COALESCE(p.is_pseudo, FALSE) = FALSE
     ORDER BY p.artikelnr
     LIMIT 1;
 
@@ -97,10 +102,10 @@ BEGIN
     v_gekoppeld := v_gekoppeld + 1;
   END LOOP;
 
-  RAISE NOTICE 'Mig 357: % regel(s) gekoppeld, % zonder passend MAATWERK-product, % geskipt (kwaliteit/kleur ontbreekt)',
+  RAISE NOTICE 'Mig 358: % regel(s) gekoppeld, % zonder passend MAATWERK-product, % geskipt (kwaliteit/kleur ontbreekt)',
     v_gekoppeld, v_geen_product, v_geskipt_codes;
   IF v_geen_product > 0 THEN
-    RAISE NOTICE 'Mig 357: geen product gevonden voor (max 20): %', v_geen_detail;
+    RAISE NOTICE 'Mig 358: geen product gevonden voor (max 20): %', v_geen_detail;
   END IF;
 END $$;
 
@@ -126,9 +131,9 @@ BEGIN
     AND COALESCE(o.alleen_productie, FALSE) = FALSE;
 
   IF v_rest = 0 THEN
-    RAISE NOTICE 'Mig 357: zelf-test OK — geen open maatwerk-regels zonder artikelnr meer (excl. productie-only)';
+    RAISE NOTICE 'Mig 358: zelf-test OK — geen open maatwerk-regels zonder artikelnr meer (excl. productie-only)';
   ELSE
-    RAISE NOTICE 'Mig 357: LET OP — nog % open maatwerk-regel(s) zonder artikelnr: % (zie skip-NOTICEs hierboven)',
+    RAISE NOTICE 'Mig 358: LET OP — nog % open maatwerk-regel(s) zonder artikelnr: % (zie skip-NOTICEs hierboven)',
       v_rest, v_detail;
   END IF;
 END $$;

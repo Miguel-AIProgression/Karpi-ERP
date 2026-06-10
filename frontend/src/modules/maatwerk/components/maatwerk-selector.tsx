@@ -1,4 +1,4 @@
-import { useReducer, useMemo } from 'react'
+import { useReducer, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Plus } from 'lucide-react'
 import {
@@ -140,6 +140,9 @@ interface MaatwerkSelectorProps {
 
 export function MaatwerkSelector({ defaultKorting, onAdd }: MaatwerkSelectorProps) {
   const [state, dispatch] = useReducer(reducer, initialState)
+  // Double-submit-guard: handleAdd is async (artikel-lookup) — zonder guard
+  // voegt een dubbele klik dezelfde regel twee keer toe.
+  const [adding, setAdding] = useState(false)
 
   // Queries
   const { data: vormen = [] } = useQuery({
@@ -198,8 +201,16 @@ export function MaatwerkSelector({ defaultKorting, onAdd }: MaatwerkSelectorProp
     oppervlakM2 > 0
 
   async function handleAdd() {
-    if (!canAdd) return
+    if (!canAdd || adding) return
+    setAdding(true)
+    try {
+      await doAdd()
+    } finally {
+      setAdding(false)
+    }
+  }
 
+  async function doAdd() {
     const totalRollen = state.aantalRollen + state.equivRollen
 
     // Eigenaar-besluit (bug phdobbe, ORD-2026-0188): de regel koppelt het
@@ -314,7 +325,7 @@ export function MaatwerkSelector({ defaultKorting, onAdd }: MaatwerkSelectorProp
 
             <button
               type="button"
-              disabled={!canAdd}
+              disabled={!canAdd || adding}
               onClick={handleAdd}
               className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-purple-600 rounded-[var(--radius-sm)] hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >

@@ -1,6 +1,6 @@
 # Changelog — RugFlow ERP
 
-## 2026-06-10 — Maatwerk-form koppelt MAATWERK-artikel + karpi_code-borging (mig 357-358)
+## 2026-06-10 — Maatwerk-form koppelt MAATWERK-artikel + karpi_code-borging (mig 358-359)
 
 **Waarom:** sluitstuk van de "maatwerk zonder artikelnr"-saga (zie entry
 hieronder, mig 356). Bug-melding phdobbe: ook **handmatige** op-maat-regels
@@ -28,7 +28,7 @@ regel-codes). Eigenaar-besluit: een handmatige op-maat-regel koppelt het
   signaleert via `heeft_unmatched_regels`, mig 094); karpi_code = die van het
   gekoppelde product, fallback oud gedrag. Swap/omsticker-logica
   (`fysiek_artikelnr` via equiv) onaangeroerd.
-- **Mig 357** (`357_herstel_maatwerk_regels_zonder_artikel.sql`): generiek
+- **Mig 358** (`358_herstel_maatwerk_regels_zonder_artikel.sql`): generiek
   herstel van bestaande artikel-loze maatwerk-regels in open orders (status
   niet Verzonden/Geannuleerd), **exclusief** `alleen_productie`-orders
   (ADR-0029: productie-only blijft bewust artikel-loos). Match op exact
@@ -36,18 +36,18 @@ regel-codes). Eigenaar-besluit: een handmatige op-maat-regel koppelt het
   `^[A-Z]+[0-9]+MAATWERK$`; regel-karpi_code mee-gefixt als die NULL of de
   kale concat was. NOTICE-tellingen + informatieve zelf-test (restant-count,
   geen EXCEPTION — onbekende data).
-- **Mig 358** (`358_producten_karpi_code_borging.sql`): trigger
+- **Mig 359** (`359_producten_karpi_code_borging.sql`): trigger
   `trg_producten_karpi_code_guard` (BEFORE INSERT OR UPDATE OF karpi_code,
   product_type, omschrijving) borgt de invariant: rol/vast én
   MAATWERK-patroon-producten dragen een karpi_code. MAATWERK-patroon →
   auto-afleiden `{KWAL}{KLEUR}MAATWERK`; rol/vast → EXCEPTION (SQLSTATE
-  `KA358`, geen stille afleiding — maat-info onbetrouwbaar). **Vrijgesteld:**
+  `KA359`, geen stille afleiding — maat-info onbetrouwbaar). **Vrijgesteld:**
   `is_pseudo`, overig/staaltje buiten het MAATWERK-patroon (banden/calibra/
   staaltjes, eigenaar-besluit). **Legacy-veilig:** dubbele guard (UPDATE OF
   kolomlijst + IS DISTINCT FROM-check) zodat de dagelijkse voorraad-imports
   (`update_voorraad*.py`, UPDATEn alleen voorraad-kolommen) op legacy rijen
   met NULL karpi_code blijven werken. Zelf-test: trigger-existence +
-  subtransactie-insert die op KA358 moet falen + informatieve legacy-count.
+  subtransactie-insert die op KA359 moet falen + informatieve legacy-count.
 - **UI-borging:** Karpi-code-veld verplicht (HTML `required` + submit-guard
   met NL-melding) in `product-create.tsx` en `product-form.tsx` zodra
   product_type rol of vast is; auto-derive via `buildKarpiCode` blijft.

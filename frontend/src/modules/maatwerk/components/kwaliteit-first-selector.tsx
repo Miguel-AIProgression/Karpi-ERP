@@ -80,6 +80,9 @@ export function KwaliteitFirstSelector({
   const [pendingArticle, setPendingArticle] = useState<SelectedArticle | null>(null)
   const [klantM2Prijs, setKlantM2Prijs] = useState<number | null>(null)
   const [standaardBandKleurId, setStandaardBandKleurId] = useState<number | null>(null)
+  // Double-submit-guard: handleAdd is async (artikel- + klantnaam-lookup) —
+  // zonder guard voegt een dubbele klik dezelfde regel twee keer toe.
+  const [adding, setAdding] = useState(false)
 
   // Op maat state
   const [vormData, setVormData] = useState<VormAfmetingData>({
@@ -407,7 +410,16 @@ export function KwaliteitFirstSelector({
   }
 
   async function handleAdd() {
-    if (!canAdd || !selectedKleur || !selectedKwaliteit) return
+    if (!canAdd || adding || !selectedKleur || !selectedKwaliteit) return
+    setAdding(true)
+    try {
+      await doAdd(selectedKleur, selectedKwaliteit)
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  async function doAdd(selectedKleur: KleurOptie, selectedKwaliteit: KwaliteitOptie) {
     const totalRollen = selectedKleur.aantal_rollen + selectedKleur.equiv_rollen
     // Klant-eigen kwaliteitsnaam ophalen zodat de maatwerk-regel óók de
     // blauwe sub-tekst krijgt, consistent met standaard regels (handleArticleSelected
@@ -812,7 +824,7 @@ export function KwaliteitFirstSelector({
             </div>
             <button
               type="button"
-              disabled={!canAdd}
+              disabled={!canAdd || adding}
               onClick={handleAdd}
               className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-purple-600 rounded-[var(--radius-sm)] hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >

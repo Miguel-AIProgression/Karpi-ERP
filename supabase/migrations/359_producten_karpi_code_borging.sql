@@ -1,7 +1,7 @@
--- Migratie 358: karpi_code-borging op producten (trigger-guard)
+-- Migratie 359: karpi_code-borging op producten (trigger-guard)
 --
 -- Invariant (eigenaar-besluit, sluitstuk van de maatwerk-zonder-artikelnr-saga,
--- mig 356/357): nieuwe of bewerkte producten van de bewaakte klassen dragen
+-- mig 356/358): nieuwe of bewerkte producten van de bewaakte klassen dragen
 -- altijd een karpi_code.
 --
 -- Bewaakte klassen:
@@ -56,7 +56,11 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  v_is_maatwerk_patroon := NEW.omschrijving ~ '^[A-Z]+[0-9]+MAATWERK$';
+  -- NULL-veilig: NEW.omschrijving kan NULL zijn; zonder COALESCE zou de
+  -- regex NULL opleveren en zou de overig/staaltje/NULL-vrijstelling in
+  -- stap (3) via NULL-propagatie overgeslagen worden (NOT NULL = NULL →
+  -- branch niet genomen → onterecht KA359 voor een vrijgesteld product).
+  v_is_maatwerk_patroon := COALESCE(NEW.omschrijving, '') ~ '^[A-Z]+[0-9]+MAATWERK$';
 
   -- (3) Buiten scope: overig/staaltje (of type NULL) zonder MAATWERK-patroon.
   IF NOT v_is_maatwerk_patroon
@@ -70,6 +74,13 @@ BEGIN
   END IF;
 
   -- (5) MAATWERK-patroon: afleiden volgens catalogus-conventie (mig 356a).
+  --     N.B.: mig 356a weigerde een afgeleide code die al op een ANDER
+  --     product stond (duplicaat-guard in de backfill); deze trigger kent
+  --     die weigering bewust NIET en wijst de afgeleide code gewoon toe.
+  --     Acceptabel omdat (a) er geen unique constraint op karpi_code staat,
+  --     en (b) een botsing alleen kan ontstaan bij dezelfde
+  --     kwaliteit+kleur-combinatie — data die dan sowieso al ambigu is en
+  --     beter handmatig opgeschoond wordt dan hier hard geblokkeerd.
   IF v_is_maatwerk_patroon THEN
     IF NEW.kwaliteit_code IS NOT NULL AND btrim(NEW.kwaliteit_code) <> ''
        AND NEW.kleur_code IS NOT NULL AND btrim(NEW.kleur_code) <> '' THEN
@@ -78,13 +89,13 @@ BEGIN
     END IF;
     RAISE EXCEPTION 'Karpi-code is verplicht voor MAATWERK-artikel % en kan niet afgeleid worden: vul kwaliteit- en kleurcode (of de Karpi-code zelf) in.',
       NEW.artikelnr
-      USING ERRCODE = 'KA358';
+      USING ERRCODE = 'KA359';
   END IF;
 
   -- (6) rol/vast zonder karpi_code: hard weigeren, geen stille afleiding.
   RAISE EXCEPTION 'Karpi-code is verplicht voor producten van type ''%'' (artikelnr %): vul de Karpi-code in.',
     NEW.product_type, NEW.artikelnr
-    USING ERRCODE = 'KA358';
+    USING ERRCODE = 'KA359';
 END;
 $$;
 
@@ -112,27 +123,27 @@ BEGIN
       AND t.tgname = 'trg_producten_karpi_code_guard'
       AND NOT t.tgisinternal
   ) THEN
-    RAISE EXCEPTION 'FAAL mig 358: trigger trg_producten_karpi_code_guard niet gevonden op producten';
+    RAISE EXCEPTION 'FAAL mig 359: trigger trg_producten_karpi_code_guard niet gevonden op producten';
   END IF;
-  RAISE NOTICE 'Mig 358: zelf-test (1) OK — trigger bestaat';
+  RAISE NOTICE 'Mig 359: zelf-test (1) OK — trigger bestaat';
 
   -- (2) Subtransactie: dummy `vast`-product zonder karpi_code moet falen
-  --     met onze eigen SQLSTATE 'KA358'. Elke andere fout = migratie-fout.
+  --     met onze eigen SQLSTATE 'KA359'. Elke andere fout = migratie-fout.
   BEGIN
     INSERT INTO producten (artikelnr, omschrijving, product_type, actief)
-    VALUES ('_MIG358_GUARDTEST', 'MIG358 GUARD TESTPRODUCT', 'vast', FALSE);
+    VALUES ('_MIG359_GUARDTEST', 'MIG359 GUARD TESTPRODUCT', 'vast', FALSE);
     -- Hier komen = guard heeft NIET gevuurd: opruimen en falen.
-    DELETE FROM producten WHERE artikelnr = '_MIG358_GUARDTEST';
+    DELETE FROM producten WHERE artikelnr = '_MIG359_GUARDTEST';
   EXCEPTION
-    WHEN SQLSTATE 'KA358' THEN
+    WHEN SQLSTATE 'KA359' THEN
       v_guard_ok := TRUE;  -- verwachte weigering; subtransactie is teruggerold
     WHEN OTHERS THEN
-      RAISE EXCEPTION 'FAAL mig 358: testinsert faalde met onverwachte fout (%, SQLSTATE %)', SQLERRM, SQLSTATE;
+      RAISE EXCEPTION 'FAAL mig 359: testinsert faalde met onverwachte fout (%, SQLSTATE %)', SQLERRM, SQLSTATE;
   END;
   IF NOT v_guard_ok THEN
-    RAISE EXCEPTION 'FAAL mig 358: guard weigerde het vast-testproduct zonder karpi_code NIET';
+    RAISE EXCEPTION 'FAAL mig 359: guard weigerde het vast-testproduct zonder karpi_code NIET';
   END IF;
-  RAISE NOTICE 'Mig 358: zelf-test (2) OK — vast-product zonder karpi_code geweigerd (KA358)';
+  RAISE NOTICE 'Mig 359: zelf-test (2) OK — vast-product zonder karpi_code geweigerd (KA359)';
 
   -- (3) Informatief: resterende legacy rol/vast-rijen zonder karpi_code
   --     (na mig 356 + handmatige fixes verwacht ~0-4). Geen EXCEPTION —
@@ -143,7 +154,7 @@ BEGIN
   WHERE product_type IN ('rol', 'vast')
     AND COALESCE(is_pseudo, FALSE) = FALSE
     AND (karpi_code IS NULL OR btrim(karpi_code) = '');
-  RAISE NOTICE 'Mig 358: zelf-test (3) — % legacy rol/vast-rij(en) zonder karpi_code (informatief)', v_legacy_null;
+  RAISE NOTICE 'Mig 359: zelf-test (3) — % legacy rol/vast-rij(en) zonder karpi_code (informatief)', v_legacy_null;
 END $$;
 
 COMMIT;

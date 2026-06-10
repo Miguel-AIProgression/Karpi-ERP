@@ -45,7 +45,7 @@ export function ProductFormPage({ product }: ProductFormProps) {
   const set = (field: keyof ProductFormData, value: unknown) =>
     setForm(f => ({ ...f, [field]: value }))
 
-  // Mig 358: karpi_code is verplicht voor rol/vast (DB-trigger weigert anders).
+  // Mig 359: karpi_code is verplicht voor rol/vast (DB-trigger weigert anders).
   const karpiVerplicht = form.product_type === 'rol' || form.product_type === 'vast'
 
   async function handleSubmit(e: React.FormEvent) {
