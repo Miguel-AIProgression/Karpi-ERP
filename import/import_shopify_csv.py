@@ -61,21 +61,29 @@ def match_product(sku, naam):
             return r.data[0]["artikelnr"], False, None, None, None, None
 
     if maatwerk_patroon:
-        # Detecteer kwaliteitscode uit SKU of naam
+        # Detecteer kwaliteitscode + kleur uit SKU
         breedte = int(maatwerk_patroon.group(1))
         lengte  = int(maatwerk_patroon.group(2))
-        kwal_code = None
+        kwal_code  = None
+        kleur_code = None
         if sku:
-            # SKU bijv. VERR68XX200290 → kwaliteit VERR68 of VERR
-            m = re.match(r'^([A-Z]+\d*)', sku)
+            # SKU bijv. VERR68XX200290 of LUXR17MAATWERK → kwaliteit VERR/LUXR,
+            # kleur 68/17. NB: kwaliteit en kleur APART splitsen — de oude regex
+            # r'^([A-Z]+\d*)' plakte ze aaneen ("LUXR17") en liet kleur op None,
+            # waardoor het maatwerk-record nergens op kon matchen
+            # (incident ORD-2026-0098 regel 1, "Luxury 17 taupe").
+            m = re.match(r'^([A-Z]{2,6})(\d{1,3})', sku)
             if m:
-                kwal_code = m.group(1)
-                # Zoek maatwerk-artikel voor deze kwaliteit
+                kwal_code  = m.group(1)
+                kleur_code = m.group(2)
+                # Zoek generiek maatwerk-artikel: omschrijving = {KWAL}{KLEUR}MAATWERK
+                # (de oude lookup zocht in `artikelnr` — daar staat een numerieke
+                # code, dus die vond nooit iets).
                 r = sb.table("producten").select("artikelnr") \
-                      .ilike("artikelnr", f"%{kwal_code}%MAATWERK%").limit(1).execute()
+                      .ilike("omschrijving", f"{kwal_code}{kleur_code}MAATWERK").limit(1).execute()
                 if r.data:
-                    return r.data[0]["artikelnr"], True, kwal_code, None, lengte, breedte
-        return None, True, kwal_code, None, lengte, breedte
+                    return r.data[0]["artikelnr"], True, kwal_code, kleur_code, lengte, breedte
+        return None, True, kwal_code, kleur_code, lengte, breedte
 
     # Zoek op omschrijving (eerste woorden)
     woorden = naam.split()[:3]
