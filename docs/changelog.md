@@ -1,5 +1,34 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-10 — Lifecycle-follow-ups: kapotte Concept-bevestiging + guard-completering (mig 353-354)
+
+Vervolg op de hardening-branch (zie entry hieronder); branch
+`fix/order-lifecycle-followups`.
+
+- **B3 (mig 353) — `bevestig_concept_order` was kapot sinds mig 308:** de
+  events-INSERT gebruikte de niet-bestaande kolom `actor` (en miste het
+  verplichte `status_na`) → de RPC crashte bij élke bevestiging van een
+  Concept-order (e-mail-kanaal) en de status-flip rolde mee terug. In de UI
+  bedraad maar kon nooit succesvol draaien. Nu via `_apply_transitie`
+  (ADR-0006): correcte event-rij, zelfde guards, zelfde herbereken-keten.
+- **B14 (mig 354):** `'Maatwerk afgerond'` toegevoegd aan de eindstatus-guard
+  van `sync_order_afleverdatum_met_claims` (zelfde klasse als B13: status-
+  lijsten ouder dan mig 327). Risico was laag (maatwerk reserveert niet op IO
+  in V1), guard nu compleet.
+- **B8 — onderzocht, geen acute bug:** `lever_type` heeft `NOT NULL DEFAULT
+  'week'` (non-issue); `lever_modus=NULL` bij externe orders met tekort is
+  veilig voor de afleverdatum-sync (NULL = `'in_een_keer'`), maar (a) de
+  levertijd-views tonen dan de eerste i.p.v. laatste IO-week en (b)
+  zending-splitsen weigert tot de operator via order-bewerken een modus kiest.
+  Aanbeveling (geen losse fix): bij landing defaulten uit
+  `debiteuren.deelleveringen_toegestaan` — input voor de Order-landing-kern
+  (Fase 2). Details: `docs/order-lifecycle.md` §11C/B8.
+
+Mig 353 en 354 handmatig in de SQL Editor draaien (volgorde vrij, los van
+elkaar). Smoke-test na 353: een Concept-order bevestigen op order-detail →
+status flipt naar Klaar voor picken én er verschijnt een `aangemaakt`-rij in
+order_events.
+
 ## 2026-06-10 — Order-lifecycle-hardening: doc + 6 fixes (mig 347-352)
 
 > **Hernummering:** deze migraties zijn op 2026-06-10 initieel toegepast als
