@@ -15,7 +15,7 @@ ALLOWED_PATHS=(
   'supabase/migrations/218_order_lifecycle_module.sql'
   'supabase/migrations/218_z_order_lifecycle_security_definer.sql'
   # Historisch (toegepaste migraties, bevroren — runtime inmiddels vervangen):
-  # 308: bevestig_concept_order directe UPDATE (bevinding B3, follow-up open)
+  # 308: bevestig_concept_order directe UPDATE — runtime vervangen door mig 354 (_apply_transitie)
   # 330: voltooi_confectie directe UPDATE — vervangen door mig 347 (_apply_transitie)
   'supabase/migrations/308_concept_order_status.sql'
   'supabase/migrations/330_voltooi_confectie_maatwerk_afgerond.sql'
