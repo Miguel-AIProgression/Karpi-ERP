@@ -10,3 +10,6 @@ export type SnijplanStatus = (typeof SNIJPLAN_STATUSSEN)[number]
 
 /** Rol fysiek bevroren: operator is bezig of klaar — niet opnieuw packen. */
 export const ROL_FYSIEK_BEZET = ['Snijden', 'Gesneden'] as const satisfies readonly SnijplanStatus[]
+
+/** Snijplannen die nog gesneden moeten worden — voedt de snijplanning-pool. */
+export const TE_SNIJDEN = ['Gepland', 'Snijden'] as const satisfies readonly SnijplanStatus[]
