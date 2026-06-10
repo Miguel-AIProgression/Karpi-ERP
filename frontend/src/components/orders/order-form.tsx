@@ -30,7 +30,7 @@ import { WeekDatumPicker } from './week-datum-picker'
 import { applyShippingLogic } from '@/lib/orders/verzend-regel'
 import { bepaalOrderAfleverdatum } from '@/lib/orders/order-afleverdatum'
 import { SHIPPING_PRODUCT_ID } from '@/lib/constants/shipping'
-import { wijsVerzendNaarDuurste, splitRegelOpDekking } from '@/lib/orders/split-order'
+import { bouwOrderCommit, isGemengdeSplit } from '@/lib/orders/order-commit'
 import { SPOED_PRODUCT_ID, SPOED_FALLBACK_BEDRAG } from '@/lib/constants/spoed'
 import { applyDropshipmentLogic, detecteerDropshipKeuze } from '@/lib/orders/dropshipment-regel'
 import { DropshipmentSelector } from './dropshipment-selector'
@@ -440,92 +440,48 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
       const snapshotCtx: LevertijdSnapshotContext = { klant: client }
 
       if (mode === 'create') {
-        // Split-order flow: deelleveringen AAN + gemengde order (standaard + maatwerk)
-        if (deelleveringen && afleverdatumInfo.heeftGemengd) {
-          const shippingRegel = regels.find(r => r.artikelnr === SHIPPING_PRODUCT_ID)
-          const standaardRegels = regels.filter(r => r.artikelnr !== SHIPPING_PRODUCT_ID && !r.is_maatwerk)
-          const maatwerkRegels = regels.filter(r => r.artikelnr !== SHIPPING_PRODUCT_ID && r.is_maatwerk)
+        // Order-commit (CONTEXT.md): pure planning van de create-flow.
+        // Enige I/O vóór het plan is de maatwerk-seam-datum (issue #33) —
+        // alleen opgehaald wanneer de gemengde split daadwerkelijk speelt,
+        // exact zoals de oude inline-branch deed.
+        const echteMaatwerkDatum = isGemengdeSplit(deelleveringen, afleverdatumInfo.heeftGemengd)
+          ? await berekenMaatwerkAfleverdatumViaSeam({
+              maatwerkRegels: regels.filter(r => r.artikelnr !== SHIPPING_PRODUCT_ID && r.is_maatwerk),
+              debiteurNr: client.debiteur_nr,
+              fallbackDatum: afleverdatumInfo.maatwerkDatum,
+              gewensteLeverdatum: header.afleverdatum ?? null,
+            })
+          : null
 
-          // Issue #33: maatwerk-afleverdatum via echte planning-seam (check-levertijd)
-          // i.p.v. de statische maatwerk_weken-config — die laatste levert "1 week
-          // later" terwijl de echte capaciteit 15 weken kan zijn.
-          const echteMaatwerkDatum = await berekenMaatwerkAfleverdatumViaSeam({
-            maatwerkRegels,
-            debiteurNr: client.debiteur_nr,
-            fallbackDatum: afleverdatumInfo.maatwerkDatum,
-            gewensteLeverdatum: header.afleverdatum ?? null,
-          })
+        const plan = bouwOrderCommit({
+          regels,
+          header,
+          debiteurNr: client.debiteur_nr,
+          afhalen,
+          deelleveringen,
+          overrideLeverModus,
+          afleverdatumInfo,
+          echteMaatwerkDatum,
+        })
 
-          const standaardOrder: OrderFormData = {
-            ...orderData,
-            afleverdatum: afleverdatumInfo.standaardDatum ?? orderData.afleverdatum,
-            week: afleverdatumInfo.standaardDatum ? String(getISOWeek(afleverdatumInfo.standaardDatum)) : orderData.week,
+        // Side-effects in dezelfde volgorde als vóór de extractie:
+        // alle orders aanmaken → claims persisteren → autoplan.
+        const created: Awaited<ReturnType<typeof createOrder>>[] = []
+        for (const o of plan.orders) {
+          created.push(await createOrder(o.header, o.regels, snapshotCtx))
+        }
+        for (let i = 0; i < plan.orders.length; i++) {
+          await persistUitwisselbaarKeuzes(created[i].id, plan.orders[i].regels)
+        }
+        for (let i = 0; i < plan.orders.length; i++) {
+          if (plan.orders[i].triggerAutoplan) {
+            await triggerAutoplanForMaatwerk(plan.orders[i].regels)
           }
-          const maatwerkOrder: OrderFormData = {
-            ...orderData,
-            afleverdatum: echteMaatwerkDatum ?? orderData.afleverdatum,
-            week: echteMaatwerkDatum ? String(getISOWeek(echteMaatwerkDatum)) : orderData.week,
-          }
-
-          // Issue #33: verzendkosten naar de duurste sub-order (pure helper).
-          const { deelA: regelsA, deelB: regelsB } = wijsVerzendNaarDuurste(
-            standaardRegels,
-            maatwerkRegels,
-            shippingRegel,
-          )
-
-          const a = await createOrder(standaardOrder, regelsA, snapshotCtx)
-          const b = await createOrder(maatwerkOrder, regelsB, snapshotCtx)
-          await persistUitwisselbaarKeuzes(a.id, regelsA)
-          await persistUitwisselbaarKeuzes(b.id, regelsB)
-          await triggerAutoplanForMaatwerk(regelsB)
-          return { split: true as const, standaard: a, maatwerk: b }
         }
 
-        // IO-split flow: lever_modus=deelleveringen + ≥1 regel met IO-tekort.
-        // Splits in 2 orders: directe levering (voorraad + uitwisselbaar, mét verzend)
-        // en IO-deel (zonder verzend, één zending op laatste IO-leverdatum).
-        const effectieveModus = overrideLeverModus ?? headerWithModus.lever_modus
-        const heeftIoTekort = regels.some(r => berekenRegelDekking(r).ioTekort > 0)
-
-        if (effectieveModus === 'deelleveringen' && heeftIoTekort) {
-          const directeRegels: OrderRegelFormData[] = []
-          const ioRegels: OrderRegelFormData[] = []
-          let shippingRegel: OrderRegelFormData | null = null
-
-          for (const r of regels) {
-            if (r.artikelnr === SHIPPING_PRODUCT_ID) {
-              shippingRegel = r  // pas later toewijzen aan duurste deel (issue #33)
-              continue
-            }
-            const { directeRegel, ioRegel } = splitRegelOpDekking(r, berekenRegelDekking(r))
-            if (directeRegel) directeRegels.push(directeRegel)
-            if (ioRegel) ioRegels.push(ioRegel)
-          }
-
-          // Issue #33: verzendkosten naar duurste sub-order (pure helper).
-          const verdeeld = wijsVerzendNaarDuurste(directeRegels, ioRegels, shippingRegel)
-          directeRegels.length = 0
-          directeRegels.push(...verdeeld.deelA)
-          ioRegels.length = 0
-          ioRegels.push(...verdeeld.deelB)
-
-          const directeOrder: OrderFormData = { ...orderData, lever_modus: 'in_een_keer' }
-          // De IO-order hangt aan de IO-leverdatum (mig 153 zet afleverdatum vooruit)
-          const ioOrder: OrderFormData = { ...orderData, lever_modus: 'in_een_keer' }
-
-          const a = await createOrder(directeOrder, directeRegels, snapshotCtx)
-          const b = await createOrder(ioOrder, ioRegels, snapshotCtx)
-          await persistUitwisselbaarKeuzes(a.id, directeRegels)
-          await persistUitwisselbaarKeuzes(b.id, ioRegels)
-          await triggerAutoplanForMaatwerk(directeRegels)
-          return { split: true as const, standaard: a, maatwerk: b }
-        }
-
-        const single = await createOrder(orderData, regels, snapshotCtx)
-        await persistUitwisselbaarKeuzes(single.id, regels)
-        await triggerAutoplanForMaatwerk(regels)
-        return { split: false as const, ...single }
+        return plan.gesplitst
+          ? { split: true as const, standaard: created[0], maatwerk: created[1] }
+          : { split: false as const, ...created[0] }
       } else {
         const orderId = initialData!.orderId
         await updateOrderWithLines(orderId, orderData, regels, snapshotCtx)

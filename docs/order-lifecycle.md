@@ -91,6 +91,7 @@ Afgedwongen door [`scripts/lint-no-direct-orders-status-update.sh`](../scripts/l
 | `voltooi_confectie` | **mig 348** (`_apply_transitie`) | 101, 247, 250, 330 |
 | `voltooi_pickronde` | mig 218 + bundel-aware (mig 222/242) | 217 |
 | `start_pickronden` (unified) | **mig 248** | 220, 222 |
+| `sync_order_afleverdatum_met_claims` | **mig 355** (`Maatwerk afgerond` eindstatus) | 153, 298 |
 
 ## 4. `herbereken_wacht_status` — beslislogica (mig 275)
 
@@ -282,16 +283,26 @@ op 2026-06-10 initieel toegepast als 346-350, hernummerd wegens collisie met
   `'Nieuw'`-literal terug (de patch zat niet in een leesbaar bronbestand).
   **Regressie hersteld in mig 357** via een schone, volledige herdefinitie +
   backfill; het REPLACE-patroon niet herhalen.
-- **B8 — `lever_modus`/`lever_type` blijven NULL bij alle externe kanalen.** Voor
-  `lever_type` is er een debiteur-default; `lever_modus` blijft NULL ook als een
-  externe order tekort heeft (de `LeverModusDialog` bestaat alleen in het handmatige
-  kanaal). Gevolg voor levertijd-berekening van externe orders met tekort onderzoeken.
+- **B8 — `lever_modus` NULL bij externe kanalen.** ✅ *onderzocht (2026-06-10),
+  geen acute bug.* `lever_type` is non-issue: kolom is `NOT NULL DEFAULT 'week'`
+  (mig 244) — externe orders zijn week-orders (conservatief; of B2C-webshoporders
+  `'datum'` verdienen is een designvraag voor de landing-kern). `lever_modus`
+  blijft wél NULL bij externe orders met tekort; drie consumenten, drie uitkomsten:
+  (1) `bereken_late_claim_afleverdatum` (mig 153) behandelt NULL expliciet als
+  `'in_een_keer'` → afleverdatum-sync veilig; (2) levertijd-views (mig 150/156)
+  vallen bij NULL in de ELSE-tak → tonen de **eerste** IO-week terwijl de
+  header-afleverdatum naar de **laatste** sync't — optimistische weergave;
+  (3) zending-**splitsen** (`markeer_colli_niet_gevonden 'splits'`, mig 211/217)
+  weigert op NULL (`IS DISTINCT FROM 'deelleveringen'`) — herstelbaar: order
+  bewerken triggert de `LeverModusDialog` bij tekort. **Aanbeveling:** bij landing
+  defaulten uit `debiteuren.deelleveringen_toegestaan` — input voor stap B van de
+  Order-landing-kern (Fase 2-plan), niet als losse fix.
 - **B9 — `order_events` draagt geen intake-kanaal-metadata** — audit ziet niet via
   welk kanaal een order ontstond (alleen `orders.bron_systeem`). Nice-to-have.
-- **B14 — `sync_order_afleverdatum_met_claims` (mig 298) mist `'Maatwerk afgerond'`**
-  in zijn eindstatus-lijst (`Verzonden`/`Geannuleerd`/`Klaar voor verzending`).
-  Laag risico: maatwerk reserveert niet op IO in V1, dus de functie no-op't op
-  productie-only orders. Meenemen bij de eerstvolgende herdefinitie.
+- **B14 — `sync_order_afleverdatum_met_claims` mist `'Maatwerk afgerond'`.** ✅
+  (mig 355, toegepast als 354) — eindstatus-guard compleet gemaakt; zelfde klasse als B13 (elke
+  status-lijst ouder dan mig 327 moet de terminale status expliciet kennen).
+  Risico was al laag (maatwerk reserveert niet op IO in V1 → no-op).
 - **B10 — Legacy statussen** (`Nieuw`, `Actie vereist`, `In snijplan`, `Deels gereed`,
   `Wacht op picken`) staan nog in de enum; `In productie` is hergebruikt door
   productie-only (mig 329). Opruim-/hernoem-kandidaat zodra productie-only een

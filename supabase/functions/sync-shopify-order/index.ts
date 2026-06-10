@@ -165,11 +165,16 @@ async function buildRegels(
     }
 
     const aantal = item.quantity
-    const klantPrijs = await haalKlantPrijs(supabase, debiteurNr, match.artikelnr, {
-      is_maatwerk: match.is_maatwerk,
-      lengte_cm: maatwerk_lengte_cm,
-      breedte_cm: maatwerk_breedte_cm,
-    })
+    // vorm-maatwerk: artikelnr-koppeling (mig 353) mag geen auto-pricing
+    // activeren — TS-prijspad kent geen vormtoeslag; operator prijst
+    // (zie €0,00-orders-werkitem).
+    const klantPrijs: { prijs: number | null } = match.is_maatwerk && match.maatwerk_vorm
+      ? { prijs: null }
+      : await haalKlantPrijs(supabase, debiteurNr, match.artikelnr, {
+          is_maatwerk: match.is_maatwerk,
+          lengte_cm: maatwerk_lengte_cm,
+          breedte_cm: maatwerk_breedte_cm,
+        })
     const prijs = klantPrijs.prijs
     const bedrag = prijs != null ? Math.round(prijs * aantal * 100) / 100 : null
 

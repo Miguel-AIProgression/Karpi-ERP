@@ -33,6 +33,107 @@ Restpunten uit de order-status-consolidatie (branch
   (dekte al alle 17 waarden) en `satisfies`-typing op de
   `derive-status.ts`-lijsten (inhoud ongewijzigd).
 
+
+## 2026-06-10 — Maatwerk altijd aan een productcode (matcher + mig 356)
+
+**Waarom:** eigenaar-melding n.a.v. ORD-2026-0166 — maatwerk-orderregels uit
+Shopify/Lightspeed landden soms zonder `artikelnr`, terwijl facturatie en EDI
+het artikelnr lezen. Productie-bewijs: 3 regels (ORD-2026-0118 regel 1+2,
+ORD-2026-0098 regel 1). Maatwerk moet altijd aan het generieke
+`{KWAL}{KLEUR}MAATWERK`-artikel hangen (bv. LAGO13MAATWERK = 553139998).
+
+**Wat (branch `fix/maatwerk-artikel-koppeling`):**
+- **product-matcher vorm-pad:** niet-rechthoekig maatwerk (organisch/ovaal/
+  rond) probeert nu óók `zoekMaatwerkProduct` en koppelt het generieke
+  maatwerk-artikel; niet gevonden → `artikelnr: null`, exact het oude gedrag.
+  Vorm + dims blijven in de `maatwerk_*`-velden. **Bewust géén auto-pricing
+  voor vorm-regels:** de artikelnr-koppeling mag `haalKlantPrijs` niet
+  activeren — het TS-prijspad kent de €75-vormtoeslag niet en kan een
+  per-m²-verkoopprijs als regelprijs teruggeven. Vorm-maatwerk houdt dus
+  `prijs NULL` zoals vóór de fix (operator prijst; zie €0,00-orders-
+  werkitem), afgedwongen op beide call-sites (`sync-shopify-order` +
+  `order-intake/lightspeed-regels.ts`). Rechthoek-maatwerk dat al vóór deze
+  branch een artikelnr kreeg prijst exact als op main. **Redeploy nodig**
+  voor `sync-shopify-order` / `import-lightspeed-orders` (gebeurt bij merge).
+- **LUXR17-parse-fix:** ORD-2026-0098 regel 1 kreeg `maatwerk_kwaliteit_code
+  = 'LUXR17'` (kwaliteit+kleur aaneengeplakt) met kleur NULL. Root cause:
+  `import/import_shopify_csv.py` `match_product` — regex `^([A-Z]+\d*)`
+  splitste de kleur niet af én zocht het MAATWERK-artikel in kolom
+  `artikelnr` i.p.v. `omschrijving` (vond dus nooit iets). Gefixt — met
+  geaccepteerde regex-randgevallen (letters-only SKU levert geen kwaliteit
+  meer op, >6-letter-prefixen matchen niet meer; backfill-tool). In
+  `product-matcher.ts` lopen alle vier maatwerk-return-paden nu via
+  `resolveMaatwerkArtikel` — **unsplit-first**: de ONgesplitste kwaliteit
+  wordt altijd eerst geprobeerd zodat een legitieme cijfer-eindigende
+  `kwaliteit_code` (mig 098 anticipeert WLP1/WLP4) nooit kapotgesplitst
+  wordt; pas bij een miss splitst `splitsKwaliteitKleur` de samengeplakte
+  vorm (`^[A-Z]{2,6}\d{1,3}$`, LUXR17 → LUXR + 17).
+- **Mig 356** (`356_maatwerk_artikel_koppeling_backfill.sql` — initieel 353, tweemaal hernummerd wegens collisies met `353_dropshipment_producten` en `354/355` (lifecycle-follow-ups) op main): (a) backfill
+  `producten.karpi_code = kwaliteit_code || kleur_code || 'MAATWERK'`
+  (catalogus-conventie, consistent met bestaande rijen als ALDO17MAATWERK;
+  doel: catalogus-consistentie + document-/EDI-weergave — factuur-verzenden
+  leest karpi_code) op generieke MAATWERK-artikelen met strikt
+  omschrijving-patroon `^[A-Z]+[0-9]+MAATWERK$` (spiegelt mig 106),
+  duplicaat-guard + NOTICE-skips; (b) herstel ORD-2026-0118 regel 1+2 →
+  LAGO13MAATWERK-artikelnr; (c) herstel ORD-2026-0098 regel 1 → kwaliteit
+  `LUXR`/kleur `17` + LUXR17MAATWERK-artikelnr. In expliciete
+  `BEGIN;`/`COMMIT;` (huisstijl herstel-migraties 096/098), lookups
+  deterministisch (`ORDER BY artikelnr` bij `LIMIT 1`), idempotent,
+  lookup-gedreven (geen hardcoded artikelnrs), ontbrekende orders/producten
+  → NOTICE+skip. Consequentie in `import_shopify_csv.py`: SKU's eindigend
+  op `MAATWERK` slaan de karpi_code-equality-stap over (die zou na de
+  backfill `is_maatwerk=False` zonder dims teruggeven) en vallen door naar
+  de maatwerk-tak.
+- **Tests:** `product-matcher.test.ts` (9, mock-patroon van
+  `debiteur-matcher.test.ts`; incl. unsplit-first-pinning: (a) unsplit-hit
+  wint en kwaliteit blijft ongesplitst, (b) unsplit-miss → split-hit
+  gebruikt gesplitste waarden); `_shared`-suite 231 groen, enige faler is
+  de bekende pre-existing `guillotine-packing.test.ts` REGRESSIE K1756006D.
+
+**Bewust buiten scope:** karpi_code-borging via trigger/constraint op
+`producten` (wacht op besluit banden/calibra-uitzondering); dubbele
+"Selections"-regels in `sync-shopify-order` `buildRegels` (apart werkitem
+met payload-bewijs).
+
+## 2026-06-10 — Lifecycle-follow-ups: kapotte Concept-bevestiging + guard-completering (mig 354-355)
+
+Vervolg op de hardening-branch (zie entry hieronder); branch
+`fix/order-lifecycle-followups`.
+
+> **Hernummering (zelfde patroon als 347-352):** toegepast als 353/354,
+> hernummerd naar 354/355 wegens collisie met `353_dropshipment_producten`
+> op main. DB-NOTICEs dragen de oude nummers.
+
+- **B3 (mig 354) — `bevestig_concept_order` was kapot sinds mig 308:** de
+  events-INSERT gebruikte de niet-bestaande kolom `actor` (en miste het
+  verplichte `status_na`) → de RPC crashte bij élke bevestiging van een
+  Concept-order (e-mail-kanaal) en de status-flip rolde mee terug. In de UI
+  bedraad maar kon nooit succesvol draaien. Nu via `_apply_transitie`
+  (ADR-0006): correcte event-rij, zelfde guards, zelfde herbereken-keten.
+- **B14 (mig 355):** `'Maatwerk afgerond'` toegevoegd aan de eindstatus-guard
+  van `sync_order_afleverdatum_met_claims` (zelfde klasse als B13: status-
+  lijsten ouder dan mig 327). Risico was laag (maatwerk reserveert niet op IO
+  in V1), guard nu compleet.
+- **B8 — onderzocht, geen acute bug:** `lever_type` heeft `NOT NULL DEFAULT
+  'week'` (non-issue); `lever_modus=NULL` bij externe orders met tekort is
+  veilig voor de afleverdatum-sync (NULL = `'in_een_keer'`), maar (a) de
+  levertijd-views tonen dan de eerste i.p.v. laatste IO-week en (b)
+  zending-splitsen weigert tot de operator via order-bewerken een modus kiest.
+  Aanbeveling (geen losse fix): bij landing defaulten uit
+  `debiteuren.deelleveringen_toegestaan` — input voor de Order-landing-kern
+  (Fase 2). Details: `docs/order-lifecycle.md` §11C/B8.
+
+Beide migraties zijn op 2026-06-10 toegepast (als 353/354) en de
+Concept-bevestiging is end-to-end getest met testorder ORD-2026-0201:
+status flipte naar Klaar voor picken mét correcte `aangemaakt`-rij in
+order_events (eerste succesvolle run van deze flow ooit).
+
+## 2026-06-10 — Order-commit-pipeline: create-flow als pure functie (Fase 1 order-intake-verdieping)
+
+- **Wat:** de create-flow-orkestratie uit `saveMutation.mutationFn` (order-form.tsx) is geëxtraheerd naar pure functie `bouwOrderCommit(input) → OrderCommitPlan` in `frontend/src/lib/orders/order-commit.ts`. Golden fixtures (8 scenario's, `__tests__/order-commit.fixtures.ts`) pinnen het bestaande gedrag: gemengde standaard/maatwerk-split, IO-tekort-split (sub-orders 'in_een_keer'), in_een_keer-met-tekort (géén split), verzend-naar-duurste met tie→deel A, admin-pseudo-skip, en de spoed-regel-eigenaardigheid (telt als IO-tekort, verhuist naar IO-deel).
+- **Waarom:** plan 2026-06-10 order-intake-verdieping — de Order-commit (CONTEXT.md) testbaar maken als gedrags-anker vóór de Fase 2 Order-landing-kern (SQL). Strikt gedragsbehoud; verbeteringen (form-idempotency, uniform 'aangemaakt'-event) zijn expliciete Fase 2-beslispunten.
+- **Niet gewijzigd:** RPC-laag (`create_order_with_lines`), edit-flow, `split-order.ts`-helpers.
+
 ## 2026-06-10 — Order-lifecycle-hardening: doc + 6 fixes (mig 347-352)
 
 > **Hernummering:** deze migraties zijn op 2026-06-10 initieel toegepast als
