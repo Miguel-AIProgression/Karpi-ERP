@@ -1,6 +1,6 @@
 // Deno-spiegel van frontend/src/lib/utils/snijplan-status.ts. Tot de Fase 3-
 // shim Deno↔Vite koppelt, houden we beide handmatig synchroon; de waarden
-// worden geankerd door supabase/migrations/342 (enum) en de Deno-test hiernaast.
+// worden geankerd door supabase/migrations/344 (enum) en de Deno-test hiernaast.
 
 export const SNIJPLAN_STATUSSEN = [
   'Wacht', 'Gepland', 'In productie', 'Snijden', 'Gesneden',

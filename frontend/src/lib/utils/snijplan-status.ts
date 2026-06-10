@@ -1,7 +1,7 @@
 // Single source of truth voor snijplan-/confectie-status (spiegelt DB-enums).
 // Toets-anker: status-enums.contract.test.ts (TS ≡ snapshot) +
-// supabase/migrations/342 (snapshot ≡ DB). Wijzig je een DB-enum, werk dan
-// status-enums.golden.json + deze arrays + mig 342 samen bij.
+// supabase/migrations/344 (snapshot ≡ DB). Wijzig je een DB-enum, werk dan
+// status-enums.golden.json + deze arrays + mig 344 samen bij.
 
 export const SNIJPLAN_STATUSSEN = [
   'Wacht',

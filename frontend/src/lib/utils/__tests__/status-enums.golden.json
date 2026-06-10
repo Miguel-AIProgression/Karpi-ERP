@@ -1,5 +1,5 @@
 {
-  "_bron": "live DB enum_range() — 2026-06-09; regenereer via supabase/migrations/342_assert_status_enum_snapshot.sql-query",
+  "_bron": "live DB enum_range() — 2026-06-09; regenereer via supabase/migrations/344_assert_status_enum_snapshot.sql-query",
   "snijplan_status": [
     "Wacht",
     "Gepland",

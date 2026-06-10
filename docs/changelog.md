@@ -8,12 +8,12 @@ Geconsolideerd naar één single-source (`frontend/src/lib/utils/snijplan-status
 enum-arrays + afgeleide types + semantische groepen (`TE_SNIJDEN`, `ROL_FYSIEK_BEZET`,
 `INPAK_KANDIDAAT`, `CONFECTIE_INSTROOM`), met Deno-spiegel `_shared/snijplan-status.ts`.
 Drie ankers binden TS aan SQL: Vitest-contracttest (TS ≡ golden snapshot), zelf-testende
-migratie 342 (snapshot ≡ DB-enum), en lint-script tegen losse status-strings. Kleurmaps zijn
+migratie 344 (snapshot ≡ DB-enum), en lint-script tegen losse status-strings. Kleurmaps zijn
 nu `Record<SnijplanStatus,…>` (compiler dwingt volledigheid); de divergerende kopie in
 `rollen-groep-row.tsx` is weg. ~13 bestanden omgezet van magic-string-arrays naar de
 semantische groepen (incl. een gemiste edge-function `check-levertijd`, gevangen door de lint).
 Geen gedragsverandering — `confectie_orders` is leeg en `snijplannen` staat volledig op
-`Gepland`. Migratie 342 nog handmatig in de SQL Editor te draaien.
+`Gepland`. Migratie 344 nog handmatig in de SQL Editor te draaien.
 
 ## 2026-06-09 — Betaaltermijn als bron-van-waarheid (ADR-0022, mig 340-341)
 
