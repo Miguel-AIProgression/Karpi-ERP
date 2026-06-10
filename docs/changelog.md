@@ -1,5 +1,20 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-10 — Snijplan-status enum-seam (Fase 1 TS↔SQL-consolidatie)
+
+`SnijplanStatus` (TS) miste `'Wacht'`+`'In productie'` t.o.v. de DB-enum
+`snijplan_status` en er bestonden twee divergerende `SNIJPLAN_STATUS_COLORS`-maps.
+Geconsolideerd naar één single-source (`frontend/src/lib/utils/snijplan-status.ts`):
+enum-arrays + afgeleide types + semantische groepen (`TE_SNIJDEN`, `ROL_FYSIEK_BEZET`,
+`INPAK_KANDIDAAT`, `CONFECTIE_INSTROOM`), met Deno-spiegel `_shared/snijplan-status.ts`.
+Drie ankers binden TS aan SQL: Vitest-contracttest (TS ≡ golden snapshot), zelf-testende
+migratie 342 (snapshot ≡ DB-enum), en lint-script tegen losse status-strings. Kleurmaps zijn
+nu `Record<SnijplanStatus,…>` (compiler dwingt volledigheid); de divergerende kopie in
+`rollen-groep-row.tsx` is weg. ~13 bestanden omgezet van magic-string-arrays naar de
+semantische groepen (incl. een gemiste edge-function `check-levertijd`, gevangen door de lint).
+Geen gedragsverandering — `confectie_orders` is leeg en `snijplannen` staat volledig op
+`Gepland`. Migratie 342 nog handmatig in de SQL Editor te draaien.
+
 ## 2026-06-09 — Betaaltermijn als bron-van-waarheid (ADR-0022, mig 340-341)
 
 Foute `regexp_match(betaalconditie, '^(\d+)')` in `genereer_factuur_voor_bundel`
