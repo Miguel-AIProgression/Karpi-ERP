@@ -1,5 +1,16 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-10 — Productie-only orders uit "zonder vervoerder"-teller (mig 345)
+
+De banner "1165 order(s) zonder vervoerder" op Pick & Ship bestond voor 1066 stuks
+uit Basta productie-only orders (`alleen_productie=TRUE`, bron `oud_systeem`,
+ADR-0029) — daar doet RugFlow alleen snijden + confectie en blijft verzending in
+Basta, dus een vervoerder kiezen is niet aan de orde. De `alleen_productie`-guard
+uit mig 327 ontbrak in de view `orders_zonder_vervoerder` (mig 338). Mig 345 voegt
+`AND NOT o.alleen_productie` toe; de teller toont nu de 99 échte gevallen (vrijwel
+allemaal Duitse EDI-orders buiten HST-bereik). Geen frontend-wijziging — banner en
+teller lezen de view.
+
 ## 2026-06-10 — Snijplan-status enum-seam (Fase 1 TS↔SQL-consolidatie)
 
 `SnijplanStatus` (TS) miste `'Wacht'`+`'In productie'` t.o.v. de DB-enum
