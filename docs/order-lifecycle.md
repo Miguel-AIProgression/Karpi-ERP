@@ -41,7 +41,7 @@ Enum `order_status` (snapshot geborgd door mig 350). Drie categorieën:
 | `Verzonden` | **terminaal** | base | Laatste open zending voltooid |
 | `Geannuleerd` | **terminaal** | base | `markeer_geannuleerd` + event-cascade (§5) |
 | `Maatwerk afgerond` | **terminaal** | mig 327 | Alleen productie-only; alle snijplannen geconfectioneerd |
-| `Nieuw` | legacy | base | **Deprecated sinds mig 275** — mig 309/312 schreven hem per ongeluk weer bij EDI-intake (regressie); definitief gestopt in mig 355 |
+| `Nieuw` | legacy | base | **Deprecated sinds mig 275** — mig 309/312 schreven hem per ongeluk weer bij EDI-intake (regressie); definitief gestopt in mig 357 |
 | `Klaar voor verzending` | legacy | — | Opgeruimd in mig 218 (CHECK-constraint blokkeert) |
 | `In productie` | legacy* | — | *Hergebruikt als initiële status van productie-only import (mig 329) |
 | `Actie vereist`, `In snijplan`, `Deels gereed`, `Wacht op picken` | legacy | — | Getolereerd, nooit geschreven |
@@ -67,14 +67,14 @@ Afgedwongen door [`scripts/lint-no-direct-orders-status-update.sh`](../scripts/l
 | `markeer_deels_verzonden` | → `Deels verzonden` | idem | mig 258 |
 | `herbereken_wacht_status` | → Wacht-op-X / `Klaar voor picken` | zie §4 | mig 275 (laatste) |
 | `voltooi_confectie` (na-stap) | → `Maatwerk afgerond` | alleen `alleen_productie=true` + alle snijplannen afgerond | mig 348 |
-| `bevestig_concept_order` | `Concept` → `Klaar voor picken` | faalt buiten `Concept` | mig 354 |
+| `bevestig_concept_order` | `Concept` → `Klaar voor picken` | faalt als status ≠ `Concept` | mig 354 |
 
 ### 3.2 Bekende uitzonderingen op het ene schrijfpad ⚠️
 
 | Plek | Wat | Status |
 |---|---|---|
 | [`330_voltooi_confectie_maatwerk_afgerond.sql:80`](../supabase/migrations/330_voltooi_confectie_maatwerk_afgerond.sql) | directe `UPDATE orders SET status='Maatwerk afgerond'` | **Opgelost in mig 348** (via `_apply_transitie` + event `maatwerk_afgerond`) |
-| [`308_concept_order_status.sql:126`](../supabase/migrations/308_concept_order_status.sql) | `bevestig_concept_order`: directe `UPDATE` + eigen events-INSERT | **Opgelost in mig 354** (via `_apply_transitie`, bevinding B3) |
+| [`308_concept_order_status.sql:126`](../supabase/migrations/308_concept_order_status.sql) | `bevestig_concept_order`: directe `UPDATE` + events-INSERT op **niet-bestaande kolom `actor`** (crashte bij elke bevestiging) | **Opgelost in mig 354** (via `_apply_transitie`; bevinding B3) |
 | `import_productie_only_order` (mig 329) | directe INSERT met status `'In productie'` | bewust: legacy-status, `herbereken` raakt hem niet aan |
 
 ### 3.3 RPC → actuele definitie (hoogst-genummerde migratie wint)
@@ -82,8 +82,8 @@ Afgedwongen door [`scripts/lint-no-direct-orders-status-update.sh`](../scripts/l
 | RPC | Laatste definitie | Eerdere versies |
 |---|---|---|
 | `create_order_with_lines` | **mig 275** (status `'Klaar voor picken'`) | 152, 245 |
-| `create_edi_order` | **mig 355** (status `'Klaar voor picken'` definitief) | 158, 159, 166, 275 (string-patch), 309, 312 |
-| `bevestig_concept_order` | **mig 354** (`_apply_transitie`) | 308 |
+| `create_edi_order` | **mig 357** (status `'Klaar voor picken'` definitief) | 158, 159, 166, 275 (string-patch), 309, 312 |
+| `bevestig_concept_order` | **mig 354** (via `_apply_transitie`; 308-versie crashte) | 308 |
 | `match_edi_artikel` | **mig 349** (maat-suffix-guard) | 159, 162 |
 | `create_webshop_order` | **mig 343** (`maatwerk_vorm`) | 085, 086, 087, 092, 093, 308, 322 |
 | `herbereken_wacht_status` | **mig 352** (delegatie naar `derive_wacht_status` mét `Maatwerk afgerond`) | 218, 258, 267, 275, 346, 351 |
@@ -152,7 +152,7 @@ verschillend ontworpen (zie CLAUDE.md, mig 326-toelichting). Alle predicaten heb
 | | Handmatig | EDI | Shopify | Lightspeed webhook | Lightspeed cron | E-mail |
 |---|---|---|---|---|---|---|
 | RPC | `create_order_with_lines` | `create_edi_order` | `create_webshop_order` | `create_webshop_order` | `create_webshop_order` | `create_webshop_order` |
-| Initiële status | Klaar voor picken | Klaar voor picken (sinds mig 355; mig 309/312-regressie zette `'Nieuw'`) | Klaar voor picken | Klaar voor picken | Klaar voor picken | **Concept** |
+| Initiële status | Klaar voor picken | Klaar voor picken (sinds mig 357; mig 309/312-regressie zette `'Nieuw'`) | Klaar voor picken | Klaar voor picken | Klaar voor picken | **Concept** |
 | Idempotency | geen (UI) | `(edi, TransactionID)` | `(shopify, order_id)` | `(lightspeed, order_id)` | idem | `(email, message_id)` |
 | Debiteur-matching | UI-selector | GLN-ladder ([`debiteur-matcher.ts`](../supabase/functions/_shared/debiteur-matcher.ts)) | fuzzy-ladder + fallback | env `FLOORPASSION_DEBITEUR_NR` | idem | `match_klant_po` |
 | Afleverdatum | UI (`bepaalOrderAfleverdatum`) | partner-header (+ snapshot) | note-attr of +7d | uit shipmentTitle | idem (sinds B4-fix; was NULL) | parse of vandaag |
@@ -271,14 +271,16 @@ op 2026-06-10 initieel toegepast als 346-350, hernummerd wegens collisie met
 
 ### C. Opruimen/V2
 
-- **B3 — `bevestig_concept_order` buiten `_apply_transitie`** (mig 308:126):
-  **opgelost in mig 354** — schrijft nu via `_apply_transitie` (event krijgt
-  `status_voor`/`status_na`; `current_user` in `metadata.actor`), gedrag verder
-  identiek.
+- **B3 — `bevestig_concept_order` was kapot.** ✅ (mig 354, toegepast als 353) — bij nadere inspectie
+  géén opruimwerk maar een echte bug: de mig 308-versie deed een events-INSERT op
+  de niet-bestaande kolom `actor` (en miste het verplichte `status_na`) → de RPC
+  crashte bij élke Concept-bevestiging, transactie rolde terug. De flow is in de
+  UI bedraad (`use-bevestig-concept-order`) maar kon dus nooit succesvol draaien.
+  Nu via `_apply_transitie` (event `aangemaakt`, metadata `bron`).
 - **B7 — mig 275 patcht `create_edi_order` via string-`REPLACE()`** — fragiel patroon;
   precies wat misging: mig 309/312 herdefinieerden de functie mét de oude
   `'Nieuw'`-literal terug (de patch zat niet in een leesbaar bronbestand).
-  **Regressie hersteld in mig 355** via een schone, volledige herdefinitie +
+  **Regressie hersteld in mig 357** via een schone, volledige herdefinitie +
   backfill; het REPLACE-patroon niet herhalen.
 - **B8 — `lever_modus`/`lever_type` blijven NULL bij alle externe kanalen.** Voor
   `lever_type` is er een debiteur-default; `lever_modus` blijft NULL ook als een

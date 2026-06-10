@@ -1,23 +1,27 @@
 # Changelog — RugFlow ERP
 
-## 2026-06-10 — Order-status follow-ups: B3 gesloten, EDI-'Nieuw'-regressie hersteld, enum-TS-single-source (mig 354-355)
+## 2026-06-10 — Order-status follow-ups: EDI-'Nieuw'-regressie hersteld (mig 357) + enum-TS-single-source
 
-> **Nummering:** het plan claimde mig 353/354, maar 353 was inmiddels ingepikt
-> door `353_dropshipment_producten` (parallelle sessie) — gebumpt naar 354/355.
+> **Nummering/dedup:** het plan claimde mig 353/354. Drie collisies met
+> parallelle sessies: 353 = dropshipment, 354 = de B3-fix die op main al
+> gedaan bleek, 355/356 = afleverdatum-sync + maatwerk-backfill. De EDI-mig
+> van deze branch is hernummerd naar **357** (in de DB toegepast als "mig
+> 355" — NOTICE-teksten dragen het oude nummer; inhoud identiek).
 
-Drie restpunten uit de order-status-consolidatie (branch
+Restpunten uit de order-status-consolidatie (branch
 `worktree-order-status-followups`):
 
-- **B3 gesloten (mig 354):** `bevestig_concept_order` schrijft via
-  `_apply_transitie` i.p.v. directe UPDATE + handmatige event-INSERT (bevinding
-  B3 uit de lint-verbreding). Gedrag identiek (zelfde Concept-guard, doelstatus,
-  `herbereken`-vervolgaanroep); het event krijgt nu `status_voor`/`status_na`,
-  `current_user` verhuist naar `metadata.actor`.
-- **EDI-'Nieuw'-regressie hersteld (mig 355):** mig 309/312 hadden de mig
+- **B3 bleek parallel al gesloten** (mig 354 op main, zelfde
+  `_apply_transitie`-aanpak — daar ook ontdekt dat de mig 308-INSERT crashte op
+  de niet-bestaande kolom `actor`). Deze branch draagt alleen de
+  lint-whitelist-notitie-update bij ("follow-up open" → "vervangen door mig
+  354"). NB: de live functie draagt de variant van deze branch (extra
+  `metadata.actor` + `search_path`-pin) — functioneel gelijk aan mig 354.
+- **EDI-'Nieuw'-regressie hersteld (mig 357):** mig 309/312 hadden de mig
   275-patch ongedaan gemaakt waardoor EDI-orders sinds dien op de dode status
   `'Nieuw'` landden (zelf-helend zodra een orderregel-trigger
   `herbereken_wacht_status` aanroept, maar header-only/niet-getriggerde orders
-  blijven hangen). Mig 355 herdefinieert schoon (volledige body = mig 312, één
+  blijven hangen). Mig 357 herdefinieert schoon (volledige body = mig 312, één
   literal gewijzigd — geen `pg_get_functiondef`+`REPLACE`-truc meer) en
   backfillt hangende `'Nieuw'`-EDI-orders door de ladder (schade-query
   2026-06-10: **0** hangende orders — het zelf-helende orderregel-trigger-pad

@@ -1,4 +1,7 @@
--- Migratie 355: schone herdefinitie create_edi_order — status 'Klaar voor picken'
+-- Migratie 357: schone herdefinitie create_edi_order — status 'Klaar voor picken'
+-- (NB: op 2026-06-10 toegepast als "mig 355", vóór hernummering wegens collisie
+--  met 355_sync_afleverdatum_maatwerk_afgerond_eindstatus op main — de NOTICE-teksten in de
+--  DB-historie dragen het oude nummer. Inhoud identiek, geen her-run nodig.)
 --
 -- Regressie: mig 275 patchte de status-literal 'Nieuw' -> 'Klaar voor picken'
 -- via pg_get_functiondef+REPLACE; mig 309 en 312 herdefinieerden de functie
@@ -126,7 +129,7 @@ BEGIN
     NULLIF(v_header->>'afnemer_naam', ''), NULL, NULL, NULL, NULL,
     v_afl_naam, v_afl_adres, v_afl_postcode, v_afl_plaats, COALESCE(v_afl_land, 'NL'),
     v_gln_gefact, v_gln_best, v_gln_afl,
-    'edi', v_transactie_id, 'Klaar voor picken'  -- mig 275-intentie hersteld (mig 355)
+    'edi', v_transactie_id, 'Klaar voor picken'  -- mig 275-intentie hersteld (mig 357)
   )
   RETURNING id INTO v_order_id;
 
@@ -190,7 +193,7 @@ COMMENT ON FUNCTION create_edi_order IS
   '→ prijslijst_regels; fallback op producten.verkoopprijs. Sinds mig 309 vult de '
   'functie OOK edi_gewenste_afleverdatum. Sinds mig 312 is de afleveradres-lookup '
   '".0"-tolerant (Excel-float-artefact in gln_afleveradres) zodat de vestiging-match '
-  'niet terugvalt op het debiteur-hoofdadres. Mig 355: status-literal definitief '
+  'niet terugvalt op het debiteur-hoofdadres. Mig 357: status-literal definitief '
   'Klaar voor picken (regressie mig 309/312 hersteld).';
 
 -- Zelf-test: de dode literal is weg, de juiste staat erin.
@@ -199,12 +202,12 @@ DECLARE
   v_def TEXT := pg_get_functiondef('create_edi_order(bigint, jsonb, integer)'::regprocedure);
 BEGIN
   IF v_def LIKE $marker$%'edi', v_transactie_id, 'Nieuw'%$marker$ THEN
-    RAISE EXCEPTION 'Mig 355: create_edi_order bevat nog de dode status-literal Nieuw';
+    RAISE EXCEPTION 'Mig 357: create_edi_order bevat nog de dode status-literal Nieuw';
   END IF;
   IF v_def NOT LIKE $marker$%'edi', v_transactie_id, 'Klaar voor picken'%$marker$ THEN
-    RAISE EXCEPTION 'Mig 355: create_edi_order bevat de Klaar voor picken-literal niet';
+    RAISE EXCEPTION 'Mig 357: create_edi_order bevat de Klaar voor picken-literal niet';
   END IF;
-  RAISE NOTICE 'Mig 355: create_edi_order zet Klaar voor picken';
+  RAISE NOTICE 'Mig 357: create_edi_order zet Klaar voor picken';
 END $$;
 
 -- Eenmalige backfill: haal hangende 'Nieuw'-EDI-orders door de ladder
@@ -221,7 +224,7 @@ BEGIN
     PERFORM herbereken_wacht_status(v_id);
     v_n := v_n + 1;
   END LOOP;
-  RAISE NOTICE 'Mig 355: % hangende Nieuw-EDI-order(s) herberekend', v_n;
+  RAISE NOTICE 'Mig 357: % hangende Nieuw-EDI-order(s) herberekend', v_n;
 END $$;
 
 NOTIFY pgrst, 'reload schema';
