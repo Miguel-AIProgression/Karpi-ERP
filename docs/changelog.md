@@ -33,6 +33,12 @@ Concept-bevestiging is end-to-end getest met testorder ORD-2026-0201:
 status flipte naar Klaar voor picken mét correcte `aangemaakt`-rij in
 order_events (eerste succesvolle run van deze flow ooit).
 
+## 2026-06-10 — Order-commit-pipeline: create-flow als pure functie (Fase 1 order-intake-verdieping)
+
+- **Wat:** de create-flow-orkestratie uit `saveMutation.mutationFn` (order-form.tsx) is geëxtraheerd naar pure functie `bouwOrderCommit(input) → OrderCommitPlan` in `frontend/src/lib/orders/order-commit.ts`. Golden fixtures (8 scenario's, `__tests__/order-commit.fixtures.ts`) pinnen het bestaande gedrag: gemengde standaard/maatwerk-split, IO-tekort-split (sub-orders 'in_een_keer'), in_een_keer-met-tekort (géén split), verzend-naar-duurste met tie→deel A, admin-pseudo-skip, en de spoed-regel-eigenaardigheid (telt als IO-tekort, verhuist naar IO-deel).
+- **Waarom:** plan 2026-06-10 order-intake-verdieping — de Order-commit (CONTEXT.md) testbaar maken als gedrags-anker vóór de Fase 2 Order-landing-kern (SQL). Strikt gedragsbehoud; verbeteringen (form-idempotency, uniform 'aangemaakt'-event) zijn expliciete Fase 2-beslispunten.
+- **Niet gewijzigd:** RPC-laag (`create_order_with_lines`), edit-flow, `split-order.ts`-helpers.
+
 ## 2026-06-10 — Order-lifecycle-hardening: doc + 6 fixes (mig 347-352)
 
 > **Hernummering:** deze migraties zijn op 2026-06-10 initieel toegepast als
