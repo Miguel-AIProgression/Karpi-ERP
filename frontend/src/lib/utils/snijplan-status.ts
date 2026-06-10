@@ -39,5 +39,8 @@ export const INPAK_KANDIDAAT = ['Gesneden', 'In confectie', 'Gereed'] as const s
 /** Stukken die de confectie-pijplijn instromen. */
 export const CONFECTIE_INSTROOM = ['Gesneden', 'In confectie'] as const satisfies readonly SnijplanStatus[]
 
+/** Auto-planner bronpool: nog in te plannen (Gepland) + legacy Wacht-rijen (mig 069). */
+export const PLANBAAR = ['Gepland', 'Wacht'] as const satisfies readonly SnijplanStatus[]
+
 export const isSnijplanStatus = (s: string): s is SnijplanStatus =>
   (SNIJPLAN_STATUSSEN as readonly string[]).includes(s)

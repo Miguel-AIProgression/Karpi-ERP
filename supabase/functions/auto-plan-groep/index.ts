@@ -21,6 +21,7 @@ import {
   buildFifoOptions,
   saveVoorstel,
 } from '../_shared/db-helpers.ts'
+import { PLANBAAR } from '../_shared/snijplan-status.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -113,7 +114,7 @@ serve(async (req) => {
     const pieces = await fetchStukken(supabase, {
       kwaliteitCode: kwaliteit_code,
       kleurCode: kleur_code,
-      statuses: ['Gepland', 'Wacht'],
+      statuses: [...PLANBAAR],
       totDatum: tot_datum,
     })
 

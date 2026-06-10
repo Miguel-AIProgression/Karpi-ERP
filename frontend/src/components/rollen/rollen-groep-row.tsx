@@ -217,7 +217,6 @@ function PartnerChip({ partner }: { partner: UitwisselbarePartner }) {
   )
 }
 
-
 function RolDetails({ rolId, artikelnr, rolOppervlak }: { rolId: number; artikelnr: string; rolOppervlak: number }) {
   const { data: snijstukken, isLoading: snijLoading } = useRolSnijstukken(rolId)
   const { data: reserveringen, isLoading: resLoading } = useReserveringenVoorProduct(artikelnr)

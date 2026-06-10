@@ -13,11 +13,11 @@ const asSet = (xs: readonly string[]) => new Set(xs)
 
 describe('status-enum contract: TS ≡ DB-snapshot', () => {
   it('SNIJPLAN_STATUSSEN dekt exact snijplan_status', () => {
-    expect(asSet(SNIJPLAN_STATUSSEN)).toEqual(asSet(golden.snijplan_status))
+    expect([...SNIJPLAN_STATUSSEN]).toEqual(golden.snijplan_status)
   })
 
   it('CONFECTIE_STATUSSEN dekt exact confectie_status', () => {
-    expect(asSet(CONFECTIE_STATUSSEN)).toEqual(asSet(golden.confectie_status))
+    expect([...CONFECTIE_STATUSSEN]).toEqual(golden.confectie_status)
   })
 
   it('geen dubbele waarden binnen een enum-array', () => {

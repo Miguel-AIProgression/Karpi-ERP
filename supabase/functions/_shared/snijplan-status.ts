@@ -13,3 +13,6 @@ export const ROL_FYSIEK_BEZET = ['Snijden', 'Gesneden'] as const satisfies reado
 
 /** Snijplannen die nog gesneden moeten worden — voedt de snijplanning-pool. */
 export const TE_SNIJDEN = ['Gepland', 'Snijden'] as const satisfies readonly SnijplanStatus[]
+
+/** Auto-planner bronpool: nog in te plannen (Gepland) + legacy Wacht-rijen (mig 069). */
+export const PLANBAAR = ['Gepland', 'Wacht'] as const satisfies readonly SnijplanStatus[]

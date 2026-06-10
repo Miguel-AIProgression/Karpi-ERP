@@ -9,7 +9,7 @@ set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
 # Twee aaneengesloten quoted statussen in een array-context.
-PATTERN="\[[^]]*'(Gepland|Snijden|Gesneden|In confectie|Ingepakt)'[^]]*'(Gepland|Snijden|Gesneden|In confectie|Ingepakt)'"
+PATTERN="\[[^]]*'(Wacht|Gepland|In productie|Snijden|Gesneden|In confectie|Gereed|Ingepakt|Geannuleerd)'[^]]*'(Wacht|Gepland|In productie|Snijden|Gesneden|In confectie|Gereed|Ingepakt|Geannuleerd)'"
 
 WHITELIST_RE=(
   "frontend/src/lib/utils/snijplan-status\.ts"
