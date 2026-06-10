@@ -15,10 +15,12 @@
   --color-slate-50: #f8fafc;
 
   /* Terracotta (primary accent) */
+  --color-terracotta-700: #9a3412;
   --color-terracotta-600: #c2410c;
   --color-terracotta-500: #d4572a;
   --color-terracotta-400: #ea7a4b;
   --color-terracotta-100: #fff1eb;
+  --color-terracotta-50:  #fff5f0;
 
   /* Status / UI colors — volledige hex-palette zodat oklch-fallback nooit nodig is
      op oudere Chrome (pre-111) of andere browsers zonder oklch-ondersteuning */
