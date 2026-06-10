@@ -311,4 +311,30 @@ export const ORDER_COMMIT_GOLDENS: OrderCommitGolden[] = [
       ],
     },
   },
+  {
+    naam: 'h-in-een-keer-met-tekort-geen-split',
+    toelichting:
+      'overrideLeverModus=in_een_keer + IO-tekort → GEEN split (alleen deelleveringen splitst); ' +
+      '1 order waarvan de header de override-modus draagt; regels ongewijzigd.',
+    input: {
+      regels: [TEKORT_KLEIN],
+      header: HEADER,
+      debiteurNr: DEBITEUR_NR,
+      afhalen: false,
+      deelleveringen: false,
+      overrideLeverModus: 'in_een_keer',
+      afleverdatumInfo: STANDAARD_INFO,
+      echteMaatwerkDatum: null,
+    },
+    verwacht: {
+      gesplitst: false,
+      orders: [
+        {
+          header: { ...ORDER_DATA, lever_modus: 'in_een_keer' },
+          regels: [TEKORT_KLEIN],
+          triggerAutoplan: true,
+        },
+      ],
+    },
+  },
 ]

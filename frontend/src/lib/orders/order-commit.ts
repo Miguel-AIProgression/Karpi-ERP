@@ -9,6 +9,8 @@
 import type { OrderFormData, OrderRegelFormData } from '@/lib/supabase/queries/order-mutations'
 import type { LeverModus } from '@/modules/reserveringen'
 import type { AfleverdatumResult } from '@/lib/utils/afleverdatum'
+// Bewust het diepe pad, niet de barrel '@/modules/reserveringen': die trekt
+// React-componenten + Supabase-client de (test-)runtime-graph in.
 import { berekenRegelDekking } from '@/modules/reserveringen/lib/dekking-preview'
 import { wijsVerzendNaarDuurste, splitRegelOpDekking } from './split-order'
 import { verzendWeekVoor } from './verzendweek'

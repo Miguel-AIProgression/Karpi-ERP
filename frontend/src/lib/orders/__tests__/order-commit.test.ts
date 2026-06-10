@@ -5,9 +5,13 @@ import { ORDER_COMMIT_GOLDENS } from './order-commit.fixtures'
 describe('bouwOrderCommit — golden fixtures (gedragsbehoud create-flow)', () => {
   for (const golden of ORDER_COMMIT_GOLDENS) {
     it(golden.naam, () => {
+      // Clone vooraf: input en verwacht delen bewust object-referenties,
+      // dus zonder snapshot zou een in-place mutatie onzichtbaar blijven.
+      const inputSnapshot = structuredClone(golden.input)
       // toEqual (niet toStrictEqual): de oude code zet bewust `id: undefined`
       // op IO-regels uit een gemengde dekking-split; fixtures laten die key weg.
       expect(bouwOrderCommit(golden.input)).toEqual(golden.verwacht)
+      expect(golden.input).toEqual(inputSnapshot)
     })
   }
 })
@@ -22,13 +26,6 @@ describe('isGemengdeSplit', () => {
 })
 
 describe('bouwOrderCommit — structuurgaranties', () => {
-  it('muteert de input niet (pure functie)', () => {
-    const golden = ORDER_COMMIT_GOLDENS[1] // IO-split: het meest mutatie-gevoelige pad
-    const kopie = structuredClone(golden.input)
-    bouwOrderCommit(golden.input)
-    expect(golden.input).toEqual(kopie)
-  })
-
   it('gesplitst=true impliceert exact 2 orders, gesplitst=false exact 1', () => {
     for (const golden of ORDER_COMMIT_GOLDENS) {
       const plan = bouwOrderCommit(golden.input)
