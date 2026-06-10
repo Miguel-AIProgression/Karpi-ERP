@@ -190,7 +190,8 @@ export function DebiteurEditDialog({ debiteur, onClose }: Props) {
               </div>
               <div>
                 <label className="block text-xs text-slate-500 mb-1">E-mail factuur</label>
-                <input type="email" value={form.email_factuur} onChange={update('email_factuur')} className={inputClasses} />
+                {/* type="text": één of meerdere adressen (komma-gescheiden) — type="email" weigert meerdere. */}
+                <input type="text" value={form.email_factuur} onChange={update('email_factuur')} placeholder="factuur@klant.nl, kopie@klant.nl" className={inputClasses} />
               </div>
             </div>
           </div>

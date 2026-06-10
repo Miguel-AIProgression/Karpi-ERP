@@ -1,5 +1,30 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-10 — Meerdere factuur-e-mailadressen per debiteur
+
+Bugfix (branch `fix/meerdere-factuur-emails`): een operator kon op het
+Facturering-tabblad geen tweede factuur-e-mailadres invullen — het veld was
+`<input type="email">`, waarvan de browservalidatie meerdere adressen (spatie na
+`@`) weigert. `debiteuren.email_factuur` is en blijft één TEXT-kolom; de adressen
+worden nu komma-gescheiden opgeslagen (conventie `, `, zoals `verstuurd_naar`).
+
+- **Frontend:** [`klant-facturering-tab.tsx`](frontend/src/modules/debiteuren/components/klant-facturering-tab.tsx)
+  gebruikt nu `type="text"` + eigen validatie via nieuwe pure helper
+  [`email-recipients.ts`](frontend/src/lib/email-recipients.ts)
+  (`parseEmailRecipients` splitst op komma/puntkomma/whitespace, valideert elk
+  adres, normaliseert naar `, `-gescheiden string; ongeldige adressen → inline
+  foutmelding). Add-/edit-dialogs (`debiteur-add-dialog`, `debiteur-edit-dialog`)
+  idem op `type="text"` gezet voor consistentie.
+- **Edge function:** [`graph-mail-client.ts`](supabase/functions/_shared/graph-mail-client.ts)
+  splitst `to` via gespiegelde helper [`_shared/email-list.ts`](supabase/functions/_shared/email-list.ts)
+  (`splitEmailRecipients`) naar losse `toRecipients` — anders zou Microsoft Graph
+  de komma-string als één ongeldig adres afkeuren. Seam-patroon zoals
+  `_shared/debiteur-matcher.ts` ↔ frontend `product-matcher` (Deno-edge niet door
+  Vite importeerbaar). Geldt automatisch ook voor de betaler-kopie en
+  orderbevestiging.
+- Tests: `email-recipients.test.ts` (vitest, 5×) + extra Deno-test in
+  `graph-mail-client.test.ts` (multi-recipient split).
+
 ## 2026-06-10 — Order-status follow-ups: EDI-'Nieuw'-regressie hersteld (mig 357) + enum-TS-single-source
 
 > **Nummering/dedup:** het plan claimde mig 353/354. Drie collisies met

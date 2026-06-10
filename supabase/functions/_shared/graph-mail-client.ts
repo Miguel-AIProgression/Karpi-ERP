@@ -5,6 +5,8 @@
 // (API-permissie Mail.Send, application-type, met admin-consent).
 // `fetch` is injecteerbaar voor tests.
 
+import { splitEmailRecipients } from './email-list.ts'
+
 export interface GraphMailAttachment {
   filename: string
   content: Uint8Array
@@ -17,6 +19,7 @@ export interface GraphMailSendInput {
   clientSecret: string
   /** Mailbox waar vandaan verstuurd wordt, bv. 'facturen@karpi.nl'. De app-registratie moet Mail.Send hebben voor deze mailbox. */
   from: string
+  /** Eén of meerdere ontvangers, komma-/puntkomma-/spatie-gescheiden. */
   to: string
   replyTo?: string
   subject: string
@@ -63,10 +66,13 @@ export async function sendFactuurEmail(
 ): Promise<GraphMailSendResult> {
   const token = await getAccessToken(input, fetchImpl)
 
+  const recipients = splitEmailRecipients(input.to)
+  if (recipients.length === 0) throw new Error('Geen geldige ontvanger in `to`')
+
   const message = {
     subject: input.subject,
     body: { contentType: 'HTML', content: input.html },
-    toRecipients: [{ emailAddress: { address: input.to } }],
+    toRecipients: recipients.map((address) => ({ emailAddress: { address } })),
     replyTo: input.replyTo ? [{ emailAddress: { address: input.replyTo } }] : undefined,
     attachments: input.attachments.map((a) => ({
       '@odata.type': '#microsoft.graph.fileAttachment',

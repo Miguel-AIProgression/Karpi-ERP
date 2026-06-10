@@ -81,3 +81,21 @@ Deno.test('sendFactuurEmail: body bevat base64-encoded attachments en juiste str
   assertEquals(parsed.message.toRecipients[0].emailAddress.address, 'klant@example.nl')
   assertEquals(parsed.message.replyTo[0].emailAddress.address, 'administratie@karpi.nl')
 })
+
+Deno.test('sendFactuurEmail: meerdere komma-gescheiden ontvangers → losse toRecipients', async () => {
+  let capturedBody: string | undefined
+  const fetchMock = async (url: string | URL, init?: RequestInit) => {
+    if (url.toString().includes('/oauth2/')) {
+      return new Response(JSON.stringify({ access_token: 'tok-123', expires_in: 3600 }), { status: 200 })
+    }
+    capturedBody = init?.body as string
+    return new Response('', { status: 202 })
+  }
+  await sendFactuurEmail({ ...baseInput, to: 'a@x.nl, b@y.nl; c@z.nl' }, fetchMock)
+  const parsed = JSON.parse(capturedBody ?? '{}')
+  assertEquals(parsed.message.toRecipients.map((r: { emailAddress: { address: string } }) => r.emailAddress.address), [
+    'a@x.nl',
+    'b@y.nl',
+    'c@z.nl',
+  ])
+})
