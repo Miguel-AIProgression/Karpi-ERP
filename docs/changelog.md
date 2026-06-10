@@ -1,5 +1,33 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-10 — Order-status follow-ups: B3 gesloten, EDI-'Nieuw'-regressie hersteld, enum-TS-single-source (mig 354-355)
+
+> **Nummering:** het plan claimde mig 353/354, maar 353 was inmiddels ingepikt
+> door `353_dropshipment_producten` (parallelle sessie) — gebumpt naar 354/355.
+
+Drie restpunten uit de order-status-consolidatie (branch
+`worktree-order-status-followups`):
+
+- **B3 gesloten (mig 354):** `bevestig_concept_order` schrijft via
+  `_apply_transitie` i.p.v. directe UPDATE + handmatige event-INSERT (bevinding
+  B3 uit de lint-verbreding). Gedrag identiek (zelfde Concept-guard, doelstatus,
+  `herbereken`-vervolgaanroep); het event krijgt nu `status_voor`/`status_na`,
+  `current_user` verhuist naar `metadata.actor`.
+- **EDI-'Nieuw'-regressie hersteld (mig 355):** mig 309/312 hadden de mig
+  275-patch ongedaan gemaakt waardoor EDI-orders sinds dien op de dode status
+  `'Nieuw'` landden (zelf-helend zodra een orderregel-trigger
+  `herbereken_wacht_status` aanroept, maar header-only/niet-getriggerde orders
+  blijven hangen). Mig 355 herdefinieert schoon (volledige body = mig 312, één
+  literal gewijzigd — geen `pg_get_functiondef`+`REPLACE`-truc meer) en
+  backfillt hangende `'Nieuw'`-EDI-orders door de ladder (aantal: __ — invullen
+  uit de mig 355-NOTICE bij toepassen).
+- **`order_status` TS-single-source:**
+  [`_shared/order-lifecycle/order-status.ts`](../supabase/functions/_shared/order-lifecycle/order-status.ts)
+  (canoniek+legacy, set-semantiek) ⇄ golden-fixture ⇄ mig 350-assert, met een
+  Vitest-contracttest die `ORDER_STATUS_COLORS` als eerste spiegel automatiseert
+  (dekte al alle 17 waarden) en `satisfies`-typing op de
+  `derive-status.ts`-lijsten (inhoud ongewijzigd).
+
 ## 2026-06-10 — Order-lifecycle-hardening: doc + 6 fixes (mig 347-352)
 
 > **Hernummering:** deze migraties zijn op 2026-06-10 initieel toegepast als
