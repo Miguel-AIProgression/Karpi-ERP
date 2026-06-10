@@ -17,6 +17,7 @@ export {
   fetchKoppelingenVoorKleurLabel,
   fetchKwaliteiten,
   fetchMaatwerkArtikelNr,
+  fetchMaatwerkArtikelExact,
   fetchStandaardBandKleur,
   fetchBandDefaultsVoorKwaliteit,
   fetchKwaliteitM2Prijs,
@@ -27,6 +28,7 @@ export {
 } from './queries/maatwerk-runtime'
 
 export type {
+  MaatwerkArtikelExact,
   MaatwerkVormRow,
   AfwerkingTypeRow,
   BandLabelKoppeling,

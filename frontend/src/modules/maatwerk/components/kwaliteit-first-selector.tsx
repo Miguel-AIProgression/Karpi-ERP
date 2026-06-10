@@ -12,6 +12,7 @@ import {
   fetchStandaardBandKleur,
   fetchStandaardMatenVoorKwaliteit,
   fetchMaatwerkArtikelNr,
+  fetchMaatwerkArtikelExact,
   fetchKwaliteitM2Prijs,
   berekenPrijsOppervlakM2,
   berekenMaatwerkPrijs,
@@ -431,12 +432,32 @@ export function KwaliteitFirstSelector({
       : (vormData.lengteCm && vormData.breedteCm
         ? `${vormData.lengteCm}x${vormData.breedteCm} cm`
         : '')
+    // Eigenaar-besluit (bug phdobbe, ORD-2026-0188): de regel koppelt het
+    // generieke MAATWERK-artikel van EXACT (kwaliteit, kleur) — conventie
+    // `{KWAL}{KLEUR}MAATWERK`. `selectedKleur.artikelnr` is het ROL-product
+    // uit `kleuren_voor_kwaliteit` (NULL als er geen rol-product bestaat),
+    // waardoor regels zonder artikelnr konden landen (ORD-2026-0166/0188).
+    // Fallback: rol-product is nog altijd beter dan helemaal niets.
+    let maatwerkArtikel: Awaited<ReturnType<typeof fetchMaatwerkArtikelExact>> = null
+    try {
+      maatwerkArtikel = await fetchMaatwerkArtikelExact(selectedKwaliteit.code, selectedKleur.kleur_code)
+    } catch (e) {
+      console.warn('[maatwerk artikel lookup faalde]', e)
+    }
+    const lineArtikelnr = maatwerkArtikel?.artikelnr ?? selectedKleur.artikelnr ?? undefined
+    if (!lineArtikelnr) {
+      // Niet-blokkerend: regel mag door, orders-overzicht signaleert via
+      // heeft_unmatched_regels (mig 094) "actie vereist".
+      console.warn(
+        `[maatwerk] Geen MAATWERK-artikel gevonden voor ${selectedKwaliteit.code}/${selectedKleur.kleur_code} — regel wordt zonder artikelnr toegevoegd`,
+      )
+    }
     // Bij swap: factuur toont bestelde kwaliteit; intern wijst fysiek_artikelnr
     // naar de MAATWERK-artikelref van de uitwisselbare kwaliteit zodat snijplan/
     // voorraadreservering op de juiste rol landt (omstickeer-model).
     const line: OrderRegelFormData = {
-      artikelnr: selectedKleur.artikelnr ?? undefined,
-      karpi_code: selectedKleur.karpi_code ?? `${selectedKwaliteit.code}${selectedKleur.kleur_code}`,
+      artikelnr: lineArtikelnr,
+      karpi_code: maatwerkArtikel?.karpi_code ?? selectedKleur.karpi_code ?? `${selectedKwaliteit.code}${selectedKleur.kleur_code}`,
       omschrijving: `${selectedKwaliteit.omschrijving ?? selectedKwaliteit.code} ${selectedKleur.kleur_label} - Op maat ${selectedVorm?.naam ?? vormData.vormCode}${afmetingLabel ? ` ${afmetingLabel}` : ''}`,
       klant_eigen_naam,
       orderaantal: 1,

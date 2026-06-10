@@ -15,6 +15,7 @@ import {
   fetchAfwerkingTypes,
   fetchStandaardAfwerking,
   fetchStandaardBandKleur,
+  fetchMaatwerkArtikelExact,
   berekenPrijsOppervlakM2,
   berekenMaatwerkPrijs,
   berekenOmtrekMeter,
@@ -196,14 +197,34 @@ export function MaatwerkSelector({ defaultKorting, onAdd }: MaatwerkSelectorProp
     state.verkoopprijsM2 > 0 &&
     oppervlakM2 > 0
 
-  function handleAdd() {
+  async function handleAdd() {
     if (!canAdd) return
 
     const totalRollen = state.aantalRollen + state.equivRollen
 
+    // Eigenaar-besluit (bug phdobbe, ORD-2026-0188): de regel koppelt het
+    // generieke MAATWERK-artikel van EXACT (kwaliteit, kleur) — conventie
+    // `{KWAL}{KLEUR}MAATWERK`. `state.artikelnr` is het ROL-product (NULL als
+    // dat niet bestaat), waardoor regels zonder artikelnr konden landen.
+    // Fallback: rol-product is nog altijd beter dan helemaal niets.
+    let maatwerkArtikel: Awaited<ReturnType<typeof fetchMaatwerkArtikelExact>> = null
+    try {
+      maatwerkArtikel = await fetchMaatwerkArtikelExact(state.kwaliteitCode, state.kleurCode)
+    } catch (e) {
+      console.warn('[maatwerk artikel lookup faalde]', e)
+    }
+    const lineArtikelnr = maatwerkArtikel?.artikelnr ?? state.artikelnr ?? undefined
+    if (!lineArtikelnr) {
+      // Niet-blokkerend: regel mag door, orders-overzicht signaleert via
+      // heeft_unmatched_regels (mig 094) "actie vereist".
+      console.warn(
+        `[maatwerk] Geen MAATWERK-artikel gevonden voor ${state.kwaliteitCode}/${state.kleurCode} — regel wordt zonder artikelnr toegevoegd`,
+      )
+    }
+
     const line: OrderRegelFormData = {
-      artikelnr: state.artikelnr ?? undefined,
-      karpi_code: state.karpiCode ?? `${state.kwaliteitCode}${state.kleurCode}`,
+      artikelnr: lineArtikelnr,
+      karpi_code: maatwerkArtikel?.karpi_code ?? state.karpiCode ?? `${state.kwaliteitCode}${state.kleurCode}`,
       omschrijving: `${state.kwaliteitNaam} ${state.kleurLabel} - Op maat ${selectedVorm?.naam ?? state.vormCode}`,
       orderaantal: 1,
       te_leveren: 1,
