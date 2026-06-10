@@ -1,0 +1,12 @@
+{
+  "_bron": "order_status-enum — set-anker met mig 350 (assert) en order-status.ts. Set-semantiek: volgorde niet betekenis-dragend (basis-CREATE TYPE pre-migratie-tijdperk).",
+  "canoniek": [
+    "Concept", "Klaar voor picken", "Wacht op voorraad", "Wacht op inkoop",
+    "Wacht op maatwerk", "In pickronde", "Deels verzonden", "Verzonden",
+    "Geannuleerd", "Maatwerk afgerond"
+  ],
+  "legacy": [
+    "Nieuw", "Actie vereist", "Wacht op picken", "In snijplan",
+    "In productie", "Deels gereed", "Klaar voor verzending"
+  ]
+}
