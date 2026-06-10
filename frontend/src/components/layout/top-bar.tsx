@@ -1,17 +1,22 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { Search, LogOut, ChevronDown, Bug } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { Search, LogOut, ChevronDown, Bug, Bell } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
 import { isBugBeheerder } from '@/lib/bug/beheerder'
+import { useBugMeldingen, isVerwerktOngezien } from '@/hooks/use-bug-meldingen'
 
 export function TopBar() {
   const { user, signOut } = useAuth()
+  const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
   const name = user?.user_metadata?.name ?? user?.email?.split('@')[0] ?? 'User'
   const initials = name.split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2)
   const beheerder = isBugBeheerder(user)
+
+  const { data: meldingen = [] } = useBugMeldingen()
+  const verwerktOngezien = meldingen.filter((m) => isVerwerktOngezien(m, user?.id)).length
 
   useEffect(() => {
     function onClick(e: MouseEvent) {
@@ -33,8 +38,28 @@ export function TopBar() {
         />
       </div>
 
-      {/* User-menu */}
-      <div className="relative" ref={menuRef}>
+      <div className="flex items-center gap-1">
+        {/* Meldingen-belletje met teller voor verwerkte-maar-ongeziene meldingen */}
+        <button
+          onClick={() => navigate('/meldingen')}
+          className="relative rounded-[var(--radius-sm)] p-2 text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-600"
+          title={
+            verwerktOngezien > 0
+              ? `${verwerktOngezien} verwerkte melding${verwerktOngezien === 1 ? '' : 'en'} — bekijk de toelichting`
+              : 'Mijn meldingen'
+          }
+          aria-label="Meldingen"
+        >
+          <Bell size={18} />
+          {verwerktOngezien > 0 && (
+            <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-semibold leading-none text-white">
+              {verwerktOngezien > 9 ? '9+' : verwerktOngezien}
+            </span>
+          )}
+        </button>
+
+        {/* User-menu */}
+        <div className="relative" ref={menuRef}>
         <button
           onClick={() => setMenuOpen((v) => !v)}
           className="flex items-center gap-2 rounded-[var(--radius-sm)] px-1.5 py-1 transition-colors hover:bg-slate-50"
@@ -74,6 +99,7 @@ export function TopBar() {
             </button>
           </div>
         )}
+        </div>
       </div>
     </header>
   )

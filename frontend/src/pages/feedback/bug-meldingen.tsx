@@ -1,9 +1,14 @@
-import { useState } from 'react'
-import { Paperclip } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Paperclip, Wrench, FlaskConical } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { useAuth } from '@/hooks/use-auth'
 import { isBugBeheerder } from '@/lib/bug/beheerder'
-import { useBugMeldingen, useSetBugStatus } from '@/hooks/use-bug-meldingen'
+import {
+  useBugMeldingen,
+  useSetBugStatus,
+  useMarkeerVerwerktGezien,
+  isVerwerktOngezien,
+} from '@/hooks/use-bug-meldingen'
 import {
   getBugBijlageSignedUrl,
   type BugMelding,
@@ -41,6 +46,17 @@ export function BugMeldingenPage() {
   const beheerder = isBugBeheerder(user)
   const { data: meldingen = [], isLoading } = useBugMeldingen()
   const [toonAfgerond, setToonAfgerond] = useState(false)
+  const markeerGezien = useMarkeerVerwerktGezien()
+
+  // Bij het openen van de pagina: markeer eigen verwerkte meldingen als gezien
+  // (dooft de teller rechtsboven). Eén keer, zodra er iets ongeziens binnen is.
+  const heeftOngezien = meldingen.some((m) => isVerwerktOngezien(m, user?.id))
+  useEffect(() => {
+    if (heeftOngezien && !markeerGezien.isPending) {
+      markeerGezien.mutate()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [heeftOngezien])
 
   const zichtbaar = toonAfgerond
     ? meldingen
@@ -94,10 +110,16 @@ function MeldingKaart({
   isMelder: boolean
 }) {
   const setStatus = useSetBugStatus()
+  const [verwerkFormOpen, setVerwerkFormOpen] = useState(false)
 
-  function zet(status: BugMeldingStatus) {
-    setStatus.mutate({ id: melding.id, status })
+  function zet(status: BugMeldingStatus, notitie?: { opgelost?: string; testen?: string }) {
+    setStatus.mutate(
+      { id: melding.id, status, notitie },
+      { onSuccess: () => setVerwerkFormOpen(false) },
+    )
   }
+
+  const heeftNotitie = melding.verwerkt_opgelost || melding.verwerkt_testen
 
   return (
     <div className="rounded-[var(--radius)] border border-slate-200 bg-white p-4">
@@ -131,7 +153,7 @@ function MeldingKaart({
 
         <div className="flex shrink-0 flex-col items-end gap-2">
           {beheerder && melding.status === 'Open' && (
-            <ActieKnop onClick={() => zet('Verwerkt')} disabled={setStatus.isPending}>
+            <ActieKnop onClick={() => setVerwerkFormOpen((v) => !v)} disabled={setStatus.isPending}>
               Markeer verwerkt
             </ActieKnop>
           )}
@@ -146,6 +168,86 @@ function MeldingKaart({
             </ActieKnop>
           )}
         </div>
+      </div>
+
+      {/* Verwerk-formulier: toelichting wat is opgelost + hoe te testen */}
+      {verwerkFormOpen && (
+        <VerwerkForm
+          pending={setStatus.isPending}
+          onAnnuleer={() => setVerwerkFormOpen(false)}
+          onVerwerk={(notitie) => zet('Verwerkt', notitie)}
+        />
+      )}
+
+      {/* Verwerkings-toelichting: zichtbaar voor melder én beheerder zodra verwerkt */}
+      {heeftNotitie && (melding.status === 'Verwerkt' || melding.status === 'Geaccepteerd') && (
+        <div className="mt-3 space-y-2 rounded-[var(--radius-sm)] border border-emerald-100 bg-emerald-50/60 p-3">
+          {melding.verwerkt_opgelost && (
+            <div className="flex gap-2 text-sm">
+              <Wrench size={14} className="mt-0.5 shrink-0 text-emerald-600" />
+              <div>
+                <span className="font-medium text-emerald-800">Wat is opgelost</span>
+                <p className="whitespace-pre-wrap text-emerald-900/80">{melding.verwerkt_opgelost}</p>
+              </div>
+            </div>
+          )}
+          {melding.verwerkt_testen && (
+            <div className="flex gap-2 text-sm">
+              <FlaskConical size={14} className="mt-0.5 shrink-0 text-emerald-600" />
+              <div>
+                <span className="font-medium text-emerald-800">Hoe te testen</span>
+                <p className="whitespace-pre-wrap text-emerald-900/80">{melding.verwerkt_testen}</p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function VerwerkForm({
+  pending,
+  onVerwerk,
+  onAnnuleer,
+}: {
+  pending: boolean
+  onVerwerk: (notitie: { opgelost?: string; testen?: string }) => void
+  onAnnuleer: () => void
+}) {
+  const [opgelost, setOpgelost] = useState('')
+  const [testen, setTesten] = useState('')
+
+  return (
+    <div className="mt-3 space-y-3 rounded-[var(--radius-sm)] border border-slate-200 bg-slate-50 p-3">
+      <div>
+        <label className="mb-1 block text-xs font-medium text-slate-600">Wat is opgelost?</label>
+        <textarea
+          autoFocus
+          rows={3}
+          value={opgelost}
+          onChange={(e) => setOpgelost(e.target.value)}
+          placeholder="Korte uitleg van wat er aangepast is…"
+          className="w-full rounded-[var(--radius-sm)] border border-slate-200 px-3 py-2 text-sm focus:border-terracotta-400 focus:outline-none focus:ring-2 focus:ring-terracotta-400/30"
+        />
+      </div>
+      <div>
+        <label className="mb-1 block text-xs font-medium text-slate-600">Hoe te testen?</label>
+        <textarea
+          rows={3}
+          value={testen}
+          onChange={(e) => setTesten(e.target.value)}
+          placeholder="Stappen waarmee de melder kan controleren dat het werkt…"
+          className="w-full rounded-[var(--radius-sm)] border border-slate-200 px-3 py-2 text-sm focus:border-terracotta-400 focus:outline-none focus:ring-2 focus:ring-terracotta-400/30"
+        />
+      </div>
+      <div className="flex justify-end gap-2">
+        <ActieKnop variant="ghost" onClick={onAnnuleer} disabled={pending}>
+          Annuleren
+        </ActieKnop>
+        <ActieKnop onClick={() => onVerwerk({ opgelost, testen })} disabled={pending}>
+          Verwerkt melden
+        </ActieKnop>
       </div>
     </div>
   )

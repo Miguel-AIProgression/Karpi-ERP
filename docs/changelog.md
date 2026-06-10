@@ -1,5 +1,47 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-10 — Bug-meldingen: verwerkingsnotitie + "verwerkt"-belletje voor de melder (mig 360)
+
+**Waarom:** bij het op 'Verwerkt' zetten van een gemelde bug (mig 342) kon de
+beheerder geen toelichting meegeven — de melder (bv. phdobbe) zag alleen een
+statuswissel, niet *wat* er gedaan is of *hoe* het te testen. En de melder
+kreeg nergens een signaal dat zijn melding behandeld was. Beide gevraagd door
+Miguel n.a.v. het verwerken van een echte melding.
+
+**Wat (branch `feat/bug-melding-verwerkt-notitie`):**
+- **Mig 360** (`360_bug_melding_verwerkt_notitie.sql`):
+  - Nieuwe kolommen op `bug_meldingen`: `verwerkt_opgelost` + `verwerkt_testen`
+    (toelichting bij verwerken) en `verwerkt_gezien_op` (gezien-stempel melder).
+  - `set_bug_status` herzien naar `(p_id, p_status, p_opgelost, p_testen)`
+    (DROP + CREATE — extra params met default). Bij `Verwerkt`: schrijft de
+    notitie (leeg→NULL via `NULLIF(btrim())`) en **reset `verwerkt_gezien_op`**
+    (her-verwerking attendeert de melder opnieuw). `Open` wist notitie +
+    stempel; `Geaccepteerd` impliceert gezien (`verwerkt_gezien_op = now()`),
+    notitie blijft staan. Autorisatie ongewijzigd. Frontend roept de RPC met
+    alleen `p_id`/`p_status` aan → defaults vangen dat op.
+  - Nieuwe RPC `markeer_verwerkt_gezien()` (SECURITY DEFINER, scoped op
+    `auth.uid()`): stempelt eigen `Verwerkt`-meldingen als gezien, retourneert
+    het aantal. Dooft het belletje.
+- **Frontend:** `BugMelding`-interface + `SELECT_COLS` uitgebreid;
+  `setBugStatus(id, status, notitie?)` + `markeerVerwerktGezien()`
+  ([`bug-meldingen.ts`](../frontend/src/lib/supabase/queries/bug-meldingen.ts));
+  hooks `useSetBugStatus` (accepteert notitie), `useMarkeerVerwerktGezien` +
+  helper `isVerwerktOngezien`
+  ([`use-bug-meldingen.ts`](../frontend/src/hooks/use-bug-meldingen.ts)).
+  - **Meldingen-pagina:** "Markeer verwerkt" opent een inline formulier met
+    twee velden (*Wat is opgelost?* / *Hoe te testen?*); de toelichting verschijnt
+    daarna als groen blok onder de melding (zichtbaar voor melder én beheerder).
+    Bij openen van de pagina markeert de melder zijn ongeziene verwerkte
+    meldingen als gezien.
+  - **Topbar:** belletje (`Bell`) rechtsboven met rode teller = aantal eigen
+    `Verwerkt`-maar-ongeziene meldingen; klik → `/meldingen`
+    ([`top-bar.tsx`](../frontend/src/components/layout/top-bar.tsx)).
+- **Nummering:** mig 358/359 waren al gereserveerd door de ongemergede branch
+  `fix/maatwerk-form-artikel` (changelog-entry hieronder) → deze migratie kreeg
+  **360**. Vóór merge opnieuw verifiëren (collisie-recept in geheugen).
+
+**Toepassen:** mig 360 handmatig in Supabase draaien (MCP heeft geen toegang).
+
 ## 2026-06-10 — Maatwerk-form koppelt MAATWERK-artikel + karpi_code-borging (mig 358-359)
 
 **Waarom:** sluitstuk van de "maatwerk zonder artikelnr"-saga (zie entry

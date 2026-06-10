@@ -16,6 +16,9 @@ export interface BugMelding {
   created_at: string
   updated_at: string
   verwerkt_op: string | null
+  verwerkt_opgelost: string | null
+  verwerkt_testen: string | null
+  verwerkt_gezien_op: string | null
   geaccepteerd_op: string | null
 }
 
@@ -23,7 +26,7 @@ const BUCKET = 'bug-bijlagen'
 const MAX_BYTES = 10 * 1024 * 1024
 
 const SELECT_COLS =
-  'id, titel, omschrijving, urgentie, pagina_url, status, bijlage_path, gemeld_door, gemeld_door_email, created_at, updated_at, verwerkt_op, geaccepteerd_op'
+  'id, titel, omschrijving, urgentie, pagina_url, status, bijlage_path, gemeld_door, gemeld_door_email, created_at, updated_at, verwerkt_op, verwerkt_opgelost, verwerkt_testen, verwerkt_gezien_op, geaccepteerd_op'
 
 function sanitize(name: string): string {
   return name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120)
@@ -91,10 +94,32 @@ export async function fetchBugMeldingen(): Promise<BugMelding[]> {
   return (data ?? []) as BugMelding[]
 }
 
-export async function setBugStatus(id: number, status: BugMeldingStatus): Promise<BugMelding> {
-  const { data, error } = await supabase.rpc('set_bug_status', { p_id: id, p_status: status })
+/** Notitie-velden die de beheerder optioneel meegeeft bij het verwerken. */
+export interface VerwerktNotitie {
+  opgelost?: string
+  testen?: string
+}
+
+export async function setBugStatus(
+  id: number,
+  status: BugMeldingStatus,
+  notitie?: VerwerktNotitie,
+): Promise<BugMelding> {
+  const { data, error } = await supabase.rpc('set_bug_status', {
+    p_id: id,
+    p_status: status,
+    p_opgelost: notitie?.opgelost?.trim() || null,
+    p_testen: notitie?.testen?.trim() || null,
+  })
   if (error) throw error
   return data as BugMelding
+}
+
+/** Markeert alle eigen Verwerkt-meldingen als gezien; dooft de teller rechtsboven. */
+export async function markeerVerwerktGezien(): Promise<number> {
+  const { data, error } = await supabase.rpc('markeer_verwerkt_gezien')
+  if (error) throw error
+  return (data as number) ?? 0
 }
 
 export async function getBugBijlageSignedUrl(path: string): Promise<string> {
