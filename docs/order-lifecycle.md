@@ -67,14 +67,14 @@ Afgedwongen door [`scripts/lint-no-direct-orders-status-update.sh`](../scripts/l
 | `markeer_deels_verzonden` | → `Deels verzonden` | idem | mig 258 |
 | `herbereken_wacht_status` | → Wacht-op-X / `Klaar voor picken` | zie §4 | mig 275 (laatste) |
 | `voltooi_confectie` (na-stap) | → `Maatwerk afgerond` | alleen `alleen_productie=true` + alle snijplannen afgerond | mig 348 |
-| `bevestig_concept_order` | `Concept` → `Klaar voor picken` | faalt als status ≠ `Concept` | mig 353 |
+| `bevestig_concept_order` | `Concept` → `Klaar voor picken` | faalt als status ≠ `Concept` | mig 354 |
 
 ### 3.2 Bekende uitzonderingen op het ene schrijfpad ⚠️
 
 | Plek | Wat | Status |
 |---|---|---|
 | [`330_voltooi_confectie_maatwerk_afgerond.sql:80`](../supabase/migrations/330_voltooi_confectie_maatwerk_afgerond.sql) | directe `UPDATE orders SET status='Maatwerk afgerond'` | **Opgelost in mig 348** (via `_apply_transitie` + event `maatwerk_afgerond`) |
-| [`308_concept_order_status.sql:126`](../supabase/migrations/308_concept_order_status.sql) | `bevestig_concept_order`: directe `UPDATE` + events-INSERT op **niet-bestaande kolom `actor`** (crashte bij elke bevestiging) | **Opgelost in mig 353** (via `_apply_transitie`; bevinding B3) |
+| [`308_concept_order_status.sql:126`](../supabase/migrations/308_concept_order_status.sql) | `bevestig_concept_order`: directe `UPDATE` + events-INSERT op **niet-bestaande kolom `actor`** (crashte bij elke bevestiging) | **Opgelost in mig 354** (via `_apply_transitie`; bevinding B3) |
 | `import_productie_only_order` (mig 329) | directe INSERT met status `'In productie'` | bewust: legacy-status, `herbereken` raakt hem niet aan |
 
 ### 3.3 RPC → actuele definitie (hoogst-genummerde migratie wint)
@@ -90,8 +90,8 @@ Afgedwongen door [`scripts/lint-no-direct-orders-status-update.sh`](../scripts/l
 | `voltooi_confectie` | **mig 348** (`_apply_transitie`) | 101, 247, 250, 330 |
 | `voltooi_pickronde` | mig 218 + bundel-aware (mig 222/242) | 217 |
 | `start_pickronden` (unified) | **mig 248** | 220, 222 |
-| `bevestig_concept_order` | **mig 353** (via `_apply_transitie`; 308-versie crashte) | 308 |
-| `sync_order_afleverdatum_met_claims` | **mig 354** (`Maatwerk afgerond` eindstatus) | 153, 298 |
+| `bevestig_concept_order` | **mig 354** (via `_apply_transitie`; 308-versie crashte) | 308 |
+| `sync_order_afleverdatum_met_claims` | **mig 355** (`Maatwerk afgerond` eindstatus) | 153, 298 |
 
 ## 4. `herbereken_wacht_status` — beslislogica (mig 275)
 
@@ -272,7 +272,7 @@ op 2026-06-10 initieel toegepast als 346-350, hernummerd wegens collisie met
 
 ### C. Opruimen/V2
 
-- **B3 — `bevestig_concept_order` was kapot.** ✅ (mig 353) — bij nadere inspectie
+- **B3 — `bevestig_concept_order` was kapot.** ✅ (mig 354, toegepast als 353) — bij nadere inspectie
   géén opruimwerk maar een echte bug: de mig 308-versie deed een events-INSERT op
   de niet-bestaande kolom `actor` (en miste het verplichte `status_na`) → de RPC
   crashte bij élke Concept-bevestiging, transactie rolde terug. De flow is in de
@@ -297,7 +297,7 @@ op 2026-06-10 initieel toegepast als 346-350, hernummerd wegens collisie met
 - **B9 — `order_events` draagt geen intake-kanaal-metadata** — audit ziet niet via
   welk kanaal een order ontstond (alleen `orders.bron_systeem`). Nice-to-have.
 - **B14 — `sync_order_afleverdatum_met_claims` mist `'Maatwerk afgerond'`.** ✅
-  (mig 354) — eindstatus-guard compleet gemaakt; zelfde klasse als B13 (elke
+  (mig 355, toegepast als 354) — eindstatus-guard compleet gemaakt; zelfde klasse als B13 (elke
   status-lijst ouder dan mig 327 moet de terminale status expliciet kennen).
   Risico was al laag (maatwerk reserveert niet op IO in V1 → no-op).
 - **B10 — Legacy statussen** (`Nieuw`, `Actie vereist`, `In snijplan`, `Deels gereed`,

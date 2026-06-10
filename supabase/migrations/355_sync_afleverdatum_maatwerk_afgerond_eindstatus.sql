@@ -1,4 +1,6 @@
--- Migratie 354: 'Maatwerk afgerond' in de eindstatus-guard van sync_order_afleverdatum_met_claims
+-- Migratie 355: 'Maatwerk afgerond' in de eindstatus-guard van sync_order_afleverdatum_met_claims
+-- (NB: op 2026-06-10 toegepast als "mig 354", vóór hernummering wegens
+--  collisie met 353_dropshipment_producten op main.)
 --
 -- PROBLEEM (bevinding B14, docs/order-lifecycle.md §11C): de eindstatus-lijst
 -- van sync_order_afleverdatum_met_claims (mig 153 → 298) kent 'Maatwerk
@@ -32,7 +34,7 @@ BEGIN
 
   v_oude := v_huidige;
 
-  -- Eindstatussen niet aanraken (mig 354: + 'Maatwerk afgerond', mig 327)
+  -- Eindstatussen niet aanraken (mig 355: + 'Maatwerk afgerond', mig 327)
   IF v_status IN ('Verzonden', 'Geannuleerd', 'Klaar voor verzending', 'Maatwerk afgerond') THEN
     RETURN;
   END IF;
@@ -95,10 +97,10 @@ $$ LANGUAGE plpgsql;
 COMMENT ON FUNCTION sync_order_afleverdatum_met_claims IS
   'Update orders.afleverdatum + week naar de laatste IO-claim-leverdatum als '
   'die later is dan de huidige afleverdatum. Schuift alleen vooruit, nooit terug. '
-  'Eindstatussen blijven ongewijzigd (mig 354: + Maatwerk afgerond). '
+  'Eindstatussen blijven ongewijzigd (mig 355: +Maatwerk afgerond). '
   'Sinds mig 298 (ADR-0027 Ingreep 5): emit `deadline_conflict_na_swap`-event '
   'als afleverdatum > standaard_afleverdatum_berekend EN order heeft eerder '
-  'een claim_geswapt_weg-event gehad. Dedup 24u-venster. Migratie 153→297→298→354.';
+  'een claim_geswapt_weg-event gehad. Dedup 24u-venster. Migratie 153→297→298→355.';
 
 -- Zelf-test: de eindstatus-guard kent de terminale productie-only-status.
 DO $$
@@ -106,9 +108,9 @@ DECLARE
   v_def TEXT := pg_get_functiondef('sync_order_afleverdatum_met_claims(BIGINT)'::regprocedure);
 BEGIN
   IF v_def NOT LIKE '%''Maatwerk afgerond''%' THEN
-    RAISE EXCEPTION 'Mig 354: eindstatus-guard mist Maatwerk afgerond';
+    RAISE EXCEPTION 'Mig 355: eindstatus-guard mist Maatwerk afgerond';
   END IF;
-  RAISE NOTICE 'Mig 354: alle asserties geslaagd — Maatwerk afgerond in de eindstatus-guard';
+  RAISE NOTICE 'Mig 355: alle asserties geslaagd — Maatwerk afgerond in de eindstatus-guard';
 END $$;
 
 NOTIFY pgrst, 'reload schema';

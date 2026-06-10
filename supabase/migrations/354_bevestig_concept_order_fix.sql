@@ -1,4 +1,7 @@
--- Migratie 353: bevestig_concept_order — kapotte event-INSERT gefixt, via _apply_transitie
+-- Migratie 354: bevestig_concept_order — kapotte event-INSERT gefixt, via _apply_transitie
+-- (NB: op 2026-06-10 toegepast als "mig 353", vóór hernummering wegens
+--  collisie met 353_dropshipment_producten op main — de NOTICE-teksten in de
+--  DB-historie dragen het oude nummer.)
 --
 -- PROBLEEM (bevinding B3, docs/order-lifecycle.md §11C — bij nadere inspectie
 -- een ECHTE BUG, niet alleen opruimwerk): de mig 308-versie deed
@@ -62,7 +65,7 @@ GRANT EXECUTE ON FUNCTION bevestig_concept_order(BIGINT) TO authenticated, servi
 
 COMMENT ON FUNCTION bevestig_concept_order IS
   'Promoveert een Concept-order naar Klaar voor picken via _apply_transitie '
-  '(mig 353; de mig 308-versie crashte op een event-INSERT met niet-bestaande '
+  '(mig 354; de mig 308-versie crashte op een event-INSERT met niet-bestaande '
   'kolom actor). Triggert daarna herbereken_wacht_status zodat reserveringen '
   'en wacht-op-inkoop/-voorraad-status direct actief worden.';
 
@@ -73,15 +76,15 @@ DECLARE
   v_def TEXT := pg_get_functiondef('bevestig_concept_order(BIGINT)'::regprocedure);
 BEGIN
   IF v_def ~* 'INSERT\s+INTO\s+order_events' THEN
-    RAISE EXCEPTION 'Mig 353: bevestig_concept_order bevat nog een handmatige order_events-INSERT';
+    RAISE EXCEPTION 'Mig 354: bevestig_concept_order bevat nog een handmatige order_events-INSERT';
   END IF;
   IF v_def ~* 'UPDATE\s+orders\s+SET' THEN
-    RAISE EXCEPTION 'Mig 353: bevestig_concept_order bevat nog een directe status-UPDATE';
+    RAISE EXCEPTION 'Mig 354: bevestig_concept_order bevat nog een directe status-UPDATE';
   END IF;
   IF v_def NOT LIKE '%_apply_transitie%' THEN
-    RAISE EXCEPTION 'Mig 353: bevestig_concept_order delegeert niet aan _apply_transitie';
+    RAISE EXCEPTION 'Mig 354: bevestig_concept_order delegeert niet aan _apply_transitie';
   END IF;
-  RAISE NOTICE 'Mig 353: alle asserties geslaagd — Concept-bevestiging loopt via _apply_transitie';
+  RAISE NOTICE 'Mig 354: alle asserties geslaagd — Concept-bevestiging loopt via _apply_transitie';
 END $$;
 
 NOTIFY pgrst, 'reload schema';
