@@ -32,6 +32,9 @@ import { bepaalOrderAfleverdatum } from '@/lib/orders/order-afleverdatum'
 import { SHIPPING_PRODUCT_ID } from '@/lib/constants/shipping'
 import { wijsVerzendNaarDuurste, splitRegelOpDekking } from '@/lib/orders/split-order'
 import { SPOED_PRODUCT_ID, SPOED_FALLBACK_BEDRAG } from '@/lib/constants/spoed'
+import { applyDropshipmentLogic, detecteerDropshipKeuze } from '@/lib/orders/dropshipment-regel'
+import { DropshipmentSelector } from './dropshipment-selector'
+import type { DropshipmentKeuze } from '@/lib/constants/dropshipment'
 
 function getISOWeek(dateStr: string): number {
   return verzendWeekVoor(dateStr)?.week ?? 0
@@ -74,6 +77,9 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
   )
   const [leverModusDialogOpen, setLeverModusDialogOpen] = useState(false)
   const [afhalen, setAfhalen] = useState<boolean>(initialData?.header?.afhalen ?? false)
+  const [dropshipKeuze, setDropshipKeuze] = useState<DropshipmentKeuze>(
+    () => detecteerDropshipKeuze(initialData?.regels ?? [])
+  )
 
   // In edit-modus laadt clientData asynchroon na de eerste render.
   // Sync de prijslijst en korting zodra die beschikbaar komen.
@@ -154,6 +160,18 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
     setAfhalen(nieuw)
     setShippingOverridden(false)
     setRegels((current) => applyShippingLogic(current, client, nieuw))
+  }
+
+  function handleDropshipChange(keuze: DropshipmentKeuze) {
+    setDropshipKeuze(keuze)
+    setShippingOverridden(keuze !== 'nee')
+    setRegels((current) => {
+      const metDropship = applyDropshipmentLogic(current, keuze)
+      if (keuze === 'nee') {
+        return applyShippingLogic(metDropship, client, afhalen)
+      }
+      return metDropship
+    })
   }
 
   // Auto-fill addresses when client is selected + reprice existing lines
@@ -782,6 +800,14 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
             <AddressPreview title="Afleveradres" naam={header.afl_naam} adres={header.afl_adres} postcode={header.afl_postcode} plaats={header.afl_plaats} />
           </div>
         )
+      )}
+
+      {/* Dropshipment */}
+      {client && !afhalen && (
+        <DropshipmentSelector
+          value={dropshipKeuze}
+          onChange={handleDropshipChange}
+        />
       )}
 
       {/* Order lines */}
