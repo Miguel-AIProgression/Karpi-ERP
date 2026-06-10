@@ -57,6 +57,7 @@ import {
 } from '@/modules/logistiek'
 import { SupplierPortalPage } from '@/pages/portal/supplier-portal'
 import { PortalLoginPage } from '@/pages/portal/portal-login'
+import { BugMeldingenPage } from '@/pages/feedback/bug-meldingen'
 
 export const router = createBrowserRouter([
   // Standalone (zonder app-shell): publieke pagina's zonder auth
@@ -67,6 +68,9 @@ export const router = createBrowserRouter([
     element: <AppLayout />,
     children: [
       { index: true, element: <DashboardPage /> },
+
+      // Feedback / bug-meldingen (bereikbaar via gebruikersmenu rechtsboven)
+      { path: 'meldingen', element: <BugMeldingenPage /> },
 
       // Orders (V1)
       { path: 'orders', element: <OrdersOverviewPage /> },
