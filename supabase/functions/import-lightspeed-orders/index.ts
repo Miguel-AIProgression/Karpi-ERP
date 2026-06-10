@@ -23,9 +23,11 @@ import {
 } from '../_shared/lightspeed-client.ts'
 import { matchDebiteurViaEnv } from '../_shared/debiteur-matcher.ts'
 import { buildLightspeedRegels } from '../_shared/order-intake/lightspeed-regels.ts'
+import { bepaalAfleverdatumUitOrder } from '../_shared/lightspeed-leverdatum.ts'
 
 const SHOPS: LightspeedShop[] = ['nl', 'de']
 const PAGE_LIMIT = 250
+const DEFAULT_WEBSHOP_MAATWERK_WEKEN = 2
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -56,6 +58,18 @@ async function importShop(
   let skipped = 0
   let errors = 0
 
+  // Fallback-weken voor de afleverdatum-bepaling, zelfde bron als
+  // sync-webshop-order: debiteuren.maatwerk_weken (Floorpassion=2).
+  const { data: debRow } = await supabase
+    .from('debiteuren')
+    .select('maatwerk_weken')
+    .eq('debiteur_nr', debiteurNr)
+    .maybeSingle<{ maatwerk_weken: number | null }>()
+  const maatwerkWeken =
+    typeof debRow?.maatwerk_weken === 'number' && debRow.maatwerk_weken > 0
+      ? debRow.maatwerk_weken
+      : DEFAULT_WEBSHOP_MAATWERK_WEKEN
+
   while (true) {
     const { count, orders } = await client.listOrders({
       paymentStatus: 'paid',
@@ -79,11 +93,16 @@ async function importShop(
         const shipping = extractShippingAddress(order)
         const billing = extractBillingAddress(order)
 
+        // Afleverdatum bepalen zoals het webhook-pad (sync-webshop-order) dat
+        // doet — was hier hard NULL (bevinding B4, docs/order-lifecycle.md §11)
+        // waardoor cron-orders zonder deadline in de planning belandden.
+        const leverInfo = bepaalAfleverdatumUitOrder(order, maatwerkWeken)
+
         const header = {
           debiteur_nr: debiteurNr,
           klant_referentie: `Floorpassion #${order.number}`,
           orderdatum: order.createdAt ? order.createdAt.slice(0, 10) : null,
-          afleverdatum: null,
+          afleverdatum: leverInfo.afleverdatum,
           ...shipping,
           ...billing,
           afl_email: order.email ?? null,
@@ -110,7 +129,8 @@ async function importShop(
 
         console.log(
           `[import-lightspeed] shop=${shop} order=${order.id} → ${result?.order_nr} ` +
-          `existing=${wasExisting} matched=${matched} unmatched=${unmatched}`,
+          `existing=${wasExisting} matched=${matched} unmatched=${unmatched} ` +
+          `afleverdatum=${leverInfo.afleverdatum} (bron=${leverInfo.bron})`,
         )
 
         if (wasExisting) skipped++
