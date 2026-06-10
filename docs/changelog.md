@@ -1,5 +1,43 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-10 — Maatwerk altijd aan een productcode (matcher + mig 353)
+
+**Waarom:** eigenaar-melding n.a.v. ORD-2026-0166 — maatwerk-orderregels uit
+Shopify/Lightspeed landden soms zonder `artikelnr`, terwijl facturatie en EDI
+het artikelnr lezen. Productie-bewijs: 3 regels (ORD-2026-0118 regel 1+2,
+ORD-2026-0098 regel 1). Maatwerk moet altijd aan het generieke
+`{KWAL}{KLEUR}MAATWERK`-artikel hangen (bv. LAGO13MAATWERK = 553139998).
+
+**Wat (branch `fix/maatwerk-artikel-koppeling`):**
+- **product-matcher vorm-pad:** niet-rechthoekig maatwerk (organisch/ovaal/
+  rond) probeert nu óók `zoekMaatwerkProduct` en koppelt het generieke
+  maatwerk-artikel; niet gevonden → `artikelnr: null`, exact het oude gedrag.
+  Vorm + dims blijven in de `maatwerk_*`-velden. **Redeploy nodig** voor
+  `sync-shopify-order` / `import-lightspeed-orders` (gebeurt bij merge).
+- **LUXR17-parse-fix:** ORD-2026-0098 regel 1 kreeg `maatwerk_kwaliteit_code
+  = 'LUXR17'` (kwaliteit+kleur aaneengeplakt) met kleur NULL. Root cause:
+  `import/import_shopify_csv.py` `match_product` — regex `^([A-Z]+\d*)`
+  splitste de kleur niet af én zocht het MAATWERK-artikel in kolom
+  `artikelnr` i.p.v. `omschrijving` (vond dus nooit iets). Gefixt; daarnaast
+  defensieve `splitsKwaliteitKleur`-guard in `product-matcher.ts` op alle
+  vier maatwerk-return-paden (een samengeplakte kwaliteit-kandidaat
+  `^[A-Z]{2,6}\d{1,3}$` wordt gesplitst vóór gebruik).
+- **Mig 353** (`353_maatwerk_artikel_koppeling_backfill.sql`): (a) backfill
+  `producten.karpi_code = kwaliteit_code || kleur_code` op generieke
+  MAATWERK-artikelen (oud-systeem-import liet die NULL, waardoor ook de
+  karpi_code-matchstap miste) met duplicaat-guard + NOTICE-skips; (b) herstel
+  ORD-2026-0118 regel 1+2 → LAGO13MAATWERK-artikelnr; (c) herstel
+  ORD-2026-0098 regel 1 → kwaliteit `LUXR`/kleur `17` + LUXR17MAATWERK-
+  artikelnr. Idempotent, lookup-gedreven (geen hardcoded artikelnrs),
+  ontbrekende orders/producten → NOTICE+skip.
+- **Tests:** `product-matcher.test.ts` (7 nieuw, mock-patroon van
+  `debiteur-matcher.test.ts`); volledige matcher-suite 25/25 groen.
+
+**Bewust buiten scope:** karpi_code-borging via trigger/constraint op
+`producten` (wacht op besluit banden/calibra-uitzondering); dubbele
+"Selections"-regels in `sync-shopify-order` `buildRegels` (apart werkitem
+met payload-bewijs).
+
 ## 2026-06-10 — Order-lifecycle-hardening: doc + 6 fixes (mig 347-352)
 
 > **Hernummering:** deze migraties zijn op 2026-06-10 initieel toegepast als
