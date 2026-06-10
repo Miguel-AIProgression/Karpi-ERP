@@ -3,8 +3,12 @@
 // SQL-functie; de gedeelde golden-fixture (derive-status.golden.json) borgt dat
 // via de Vitest-contracttest, de mig-346-DO-assertie borgt de SQL-kant.
 // ADR-0006: dit is de beloofde pure state-machine-functie.
+// LET OP: géén Deno-only imports (npm:/jsr:/https://) toevoegen — dit bestand wordt
+// direct door frontend-Vitest geïmporteerd (eerste cross-root import; bewust afwijkend
+// van het kopie-seam-patroon van bv. vervoerder-eisen.ts, dat kan omdat dit bestand
+// import-vrij is).
 
-export type OrderWachtStatus = string  // order_status enum-waarde (DB-canoniek)
+export type OrderWachtStatus = string  // bewust géén literal-union: order_status-enum-snapshot (Fase 1-stijl) is een aparte vervolgstap, buiten scope
 
 const EINDSTATUS_OF_PICKRONDE: ReadonlySet<string> = new Set([
   'Verzonden', 'Geannuleerd', 'Klaar voor verzending',

@@ -151,6 +151,10 @@ BEGIN
       ('Verzonden'::order_status,        true,  true,  true,  NULL::order_status),                -- eindstatus-guard wint
       ('In productie'::order_status,     true,  true,  false, NULL::order_status),                -- eindstatus-guard
       ('Klaar voor verzending'::order_status, false, true, false, NULL::order_status),            -- eindstatus-guard
+      ('In snijplan'::order_status,      false, true,  false, NULL::order_status),               -- eindstatus-guard
+      ('Deels gereed'::order_status,     true,  false, false, NULL::order_status),               -- eindstatus-guard
+      ('Wacht op picken'::order_status,  false, false, true,  NULL::order_status),               -- eindstatus-guard
+      ('Deels verzonden'::order_status,  true,  true,  true,  NULL::order_status),               -- eindstatus-guard
       ('In pickronde'::order_status,     true,  false, false, NULL::order_status),
       ('Geannuleerd'::order_status,      false, false, false, NULL::order_status)
     ) AS t(huidig, io, tekort, maatwerk, verwacht)

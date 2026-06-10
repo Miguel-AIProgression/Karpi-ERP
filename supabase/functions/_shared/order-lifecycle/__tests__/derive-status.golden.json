@@ -16,6 +16,10 @@
     { "huidig": "Verzonden",          "io": true,  "tekort": true,  "maatwerk": true,  "verwacht": null },
     { "huidig": "In productie",       "io": true,  "tekort": true,  "maatwerk": false, "verwacht": null },
     { "huidig": "Klaar voor verzending", "io": false, "tekort": true, "maatwerk": false, "verwacht": null },
+    { "huidig": "In snijplan",        "io": false, "tekort": true,  "maatwerk": false, "verwacht": null },
+    { "huidig": "Deels gereed",       "io": true,  "tekort": false, "maatwerk": false, "verwacht": null },
+    { "huidig": "Wacht op picken",    "io": false, "tekort": false, "maatwerk": true,  "verwacht": null },
+    { "huidig": "Deels verzonden",    "io": true,  "tekort": true,  "maatwerk": true,  "verwacht": null },
     { "huidig": "In pickronde",       "io": true,  "tekort": false, "maatwerk": false, "verwacht": null },
     { "huidig": "Geannuleerd",        "io": false, "tekort": false, "maatwerk": false, "verwacht": null }
   ]
