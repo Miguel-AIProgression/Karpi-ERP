@@ -64,11 +64,16 @@ export async function buildLightspeedRegels(
 
     const dims = match.is_maatwerk ? parseMaatwerkDims(row) : null
     const aantal = row.quantityOrdered ?? 1
-    const klantPrijs = await haalKlantPrijs(supabase, debiteurNr, match.artikelnr, {
-      is_maatwerk: match.is_maatwerk,
-      lengte_cm: dims?.lengte ?? null,
-      breedte_cm: dims?.breedte ?? null,
-    })
+    // vorm-maatwerk: artikelnr-koppeling (mig 353) mag geen auto-pricing
+    // activeren — TS-prijspad kent geen vormtoeslag; operator prijst
+    // (zie €0,00-orders-werkitem).
+    const klantPrijs: { prijs: number | null } = match.is_maatwerk && match.maatwerk_vorm
+      ? { prijs: null }
+      : await haalKlantPrijs(supabase, debiteurNr, match.artikelnr, {
+          is_maatwerk: match.is_maatwerk,
+          lengte_cm: dims?.lengte ?? null,
+          breedte_cm: dims?.breedte ?? null,
+        })
 
     regels.push(
       toIntakeRegel({
