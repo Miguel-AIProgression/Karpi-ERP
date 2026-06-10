@@ -1,5 +1,58 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-10 — Maatwerk-form koppelt MAATWERK-artikel + karpi_code-borging (mig 357-358)
+
+**Waarom:** sluitstuk van de "maatwerk zonder artikelnr"-saga (zie entry
+hieronder, mig 356). Bug-melding phdobbe: ook **handmatige** op-maat-regels
+uit het orderformulier landden zonder `artikelnr` (productie: ORD-2026-0166,
+ORD-2026-0188). Root cause: `kwaliteit-first-selector` bouwde de regel met
+`selectedKleur.artikelnr` — dat is het **ROL-product**-artikelnr uit RPC
+`kleuren_voor_kwaliteit`, NULL als er geen rol-product bestaat — en een kale
+`{KWAL}{KLEUR}`-concat als karpi_code-fallback (de "VERR14"-achtige
+regel-codes). Eigenaar-besluit: een handmatige op-maat-regel koppelt het
+**generieke MAATWERK-artikel** van (kwaliteit, kleur) — conventie
+`{KWAL}{KLEUR}MAATWERK`, zelfde als het Shopify-intake-pad sinds mig 356.
+
+**Wat (branch `fix/maatwerk-form-artikel`):**
+- **Form-fix:** nieuwe smalle helper `fetchMaatwerkArtikelExact` in
+  `maatwerk-runtime.ts` — alleen de exact-match-strategieën 1-3 van
+  `fetchMaatwerkArtikelNr` (zelfde kwaliteit+kleur, `.0`-tolerant, actief),
+  selecteert óók `karpi_code`. **Bewust géén strategie 4/5** (uitwisselbare
+  kwaliteit / andere kleur): die leveren een artikel van een ANDERE
+  kleur/kwaliteit — acceptabel voor `fysiek_artikelnr`/omsticker, niet voor
+  de facturatie-`artikelnr`. `fetchMaatwerkArtikelNr` zelf ongewijzigd
+  (bestaande callers intact). Beide op-maat-builders
+  (`kwaliteit-first-selector.tsx` + `maatwerk-selector.tsx`) koppelen nu:
+  artikelnr = exact MAATWERK-artikel, fallback rol-product (beter dan niets),
+  anders undefined + `console.warn` (niet-blokkerend — orders-overzicht
+  signaleert via `heeft_unmatched_regels`, mig 094); karpi_code = die van het
+  gekoppelde product, fallback oud gedrag. Swap/omsticker-logica
+  (`fysiek_artikelnr` via equiv) onaangeroerd.
+- **Mig 357** (`357_herstel_maatwerk_regels_zonder_artikel.sql`): generiek
+  herstel van bestaande artikel-loze maatwerk-regels in open orders (status
+  niet Verzonden/Geannuleerd), **exclusief** `alleen_productie`-orders
+  (ADR-0029: productie-only blijft bewust artikel-loos). Match op exact
+  kwaliteit+kleur (`.0`-tolerant in beide richtingen) + omschrijving-patroon
+  `^[A-Z]+[0-9]+MAATWERK$`; regel-karpi_code mee-gefixt als die NULL of de
+  kale concat was. NOTICE-tellingen + informatieve zelf-test (restant-count,
+  geen EXCEPTION — onbekende data).
+- **Mig 358** (`358_producten_karpi_code_borging.sql`): trigger
+  `trg_producten_karpi_code_guard` (BEFORE INSERT OR UPDATE OF karpi_code,
+  product_type, omschrijving) borgt de invariant: rol/vast én
+  MAATWERK-patroon-producten dragen een karpi_code. MAATWERK-patroon →
+  auto-afleiden `{KWAL}{KLEUR}MAATWERK`; rol/vast → EXCEPTION (SQLSTATE
+  `KA358`, geen stille afleiding — maat-info onbetrouwbaar). **Vrijgesteld:**
+  `is_pseudo`, overig/staaltje buiten het MAATWERK-patroon (banden/calibra/
+  staaltjes, eigenaar-besluit). **Legacy-veilig:** dubbele guard (UPDATE OF
+  kolomlijst + IS DISTINCT FROM-check) zodat de dagelijkse voorraad-imports
+  (`update_voorraad*.py`, UPDATEn alleen voorraad-kolommen) op legacy rijen
+  met NULL karpi_code blijven werken. Zelf-test: trigger-existence +
+  subtransactie-insert die op KA358 moet falen + informatieve legacy-count.
+- **UI-borging:** Karpi-code-veld verplicht (HTML `required` + submit-guard
+  met NL-melding) in `product-create.tsx` en `product-form.tsx` zodra
+  product_type rol of vast is; auto-derive via `buildKarpiCode` blijft.
+  Optioneel voor overig/staaltje.
+
 ## 2026-06-10 — Maatwerk altijd aan een productcode (matcher + mig 356)
 
 **Waarom:** eigenaar-melding n.a.v. ORD-2026-0166 — maatwerk-orderregels uit
