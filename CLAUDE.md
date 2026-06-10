@@ -33,6 +33,7 @@ Na elke wijziging aan database, frontend of structuur: werk de relevante docs bi
 - **architectuur.md** → bij nieuwe patterns, routes, of technische beslissingen
 - **data-woordenboek.md** → bij nieuwe domeinbegrippen
 - **changelog.md** → bij elke significante wijziging (datum + wat + waarom)
+- **order-lifecycle.md** → bij elke wijziging aan order-statussen, transities, gates, intake-kanalen of de productie-/magazijnflow (statusmodel + RPC→laatste-migratie-tabel + bevindingen-triage)
 
 ## Database kernconcepten
 - 37 tabellen, 7 enums, 14 views, 24 functies — zie `docs/database-schema.md`
