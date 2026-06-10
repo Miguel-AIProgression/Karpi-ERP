@@ -14,8 +14,9 @@ function NavIcon({ name }: { name: string }) {
 }
 
 export function Sidebar() {
-  // Proactieve rode badge op de HST-monitor-nav: open fouten + stilstaande cron.
-  // Deelt queryKey ['hst-monitor'] met de monitor-pagina/banner (geen dubbele fetch).
+  // Proactieve rode badge op Logistiek: open HST-fouten + stilstaande cron.
+  // De monitor zelf is een tab op /logistiek/vervoerders/hst_api/monitor.
+  // Deelt queryKey ['hst-monitor'] met het monitor-panel/banner (geen dubbele fetch).
   const { data: hstM } = useHstMonitor()
   const hstAandacht = hstM ? telHstAandacht(hstM) : 0
 
@@ -51,7 +52,7 @@ export function Sidebar() {
               >
                 <NavIcon name={item.icon} />
                 {item.label}
-                {item.path === '/logistiek/hst-monitor' && hstAandacht > 0 && (
+                {item.path === '/logistiek' && hstAandacht > 0 && (
                   <span className="ml-auto rounded-full bg-rose-600 px-1.5 text-xs font-medium text-white">
                     {hstAandacht}
                   </span>

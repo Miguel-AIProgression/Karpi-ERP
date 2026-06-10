@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, NavLink, useLocation, useParams } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import {
@@ -11,6 +11,9 @@ import {
 import { useVervoerderForm } from '@/modules/logistiek/hooks/use-vervoerder-form'
 import { VervoerderStatsCard } from '@/modules/logistiek/components/vervoerder-stats-card'
 import { VervoerderRecenteZendingenTable } from '@/modules/logistiek/components/vervoerder-recente-zendingen-table'
+import { HstMonitorPanel } from '@/modules/logistiek/components/hst-monitor-panel'
+import { useHstMonitor } from '@/modules/logistiek/hooks/use-hst-monitor'
+import { telHstAandacht } from '@/modules/logistiek/queries/hst-monitor'
 import type { VervoerderType } from '@/modules/logistiek/queries/vervoerders'
 
 export function VervoerderDetailPage() {
@@ -19,6 +22,14 @@ export function VervoerderDetailPage() {
   const { data: alleStats = [] } = useVervoerderStats()
   const { data: recenteZendingen = [] } = useRecenteZendingenVervoerder(code, 10)
   const updateMut = useUpdateVervoerder()
+
+  // Verzendmonitor is HST-specifiek (view hst_verzend_monitor) en verschijnt
+  // alleen als tab op de hst_api-vervoerder. Route: /logistiek/vervoerders/hst_api/monitor
+  const heeftMonitor = code === 'hst_api'
+  const { pathname } = useLocation()
+  const monitorActief = heeftMonitor && pathname.endsWith('/monitor')
+  const { data: hstM } = useHstMonitor()
+  const hstAandacht = heeftMonitor && hstM ? telHstAandacht(hstM) : 0
 
   const stats = useMemo(
     () => alleStats.find((s) => s.code === code) ?? null,
@@ -77,6 +88,24 @@ export function VervoerderDetailPage() {
         }
       />
 
+      {heeftMonitor && (
+        <div className="mb-6 flex items-center gap-1 border-b border-slate-200">
+          <TabLink to={`/logistiek/vervoerders/${code}`}>Gegevens</TabLink>
+          <TabLink to={`/logistiek/vervoerders/${code}/monitor`}>
+            Verzendmonitor
+            {hstAandacht > 0 && (
+              <span className="ml-2 rounded-full bg-rose-600 px-1.5 text-xs font-medium text-white">
+                {hstAandacht}
+              </span>
+            )}
+          </TabLink>
+        </div>
+      )}
+
+      {monitorActief ? (
+        <HstMonitorPanel />
+      ) : (
+        <>
       {/* Sectie 1 — Instellingen */}
       <Section titel="Instellingen">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -275,7 +304,27 @@ export function VervoerderDetailPage() {
       <Section titel={`Recente zendingen (${recenteZendingen.length})`}>
         <VervoerderRecenteZendingenTable zendingen={recenteZendingen} />
       </Section>
+        </>
+      )}
     </>
+  )
+}
+
+function TabLink({ to, children }: { to: string; children: React.ReactNode }) {
+  return (
+    <NavLink
+      to={to}
+      end
+      className={({ isActive }) =>
+        `inline-flex items-center px-4 py-2 -mb-px border-b-2 text-sm font-medium transition-colors ${
+          isActive
+            ? 'border-terracotta-500 text-terracotta-700'
+            : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+        }`
+      }
+    >
+      {children}
+    </NavLink>
   )
 }
 

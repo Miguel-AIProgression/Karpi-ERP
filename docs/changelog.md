@@ -1,5 +1,23 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-10 — HST-verzendmonitor verhuisd naar tab op vervoerderpagina
+
+**Waarom:** de monitor is HST-specifieke informatie en hoort bij de vervoerder zelf,
+niet als los menu-item in de sidebar.
+
+**Wat (branch `refactor/hst-monitor-onder-vervoerder`, frontend-only):**
+- Monitor-inhoud (KPI's, open-fouten-tabel + retry, cron-health-waarschuwing) verplaatst
+  van `pages/hst-monitor.tsx` (verwijderd) naar
+  [`components/hst-monitor-panel.tsx`](../frontend/src/modules/logistiek/components/hst-monitor-panel.tsx).
+- [`vervoerder-detail.tsx`](../frontend/src/modules/logistiek/pages/vervoerder-detail.tsx) kreeg
+  tabs **Gegevens / Verzendmonitor** — alleen zichtbaar voor `hst_api`; de monitor-tab toont
+  een rode `telHstAandacht`-badge. Nieuwe route `logistiek/vervoerders/:code/monitor`
+  (zelfde component, tab via `useLocation`).
+- Menu-item "HST-monitor" verwijderd uit `constants.ts`; de rode aandacht-badge in de
+  sidebar zit nu op het nav-item **Logistiek**.
+- Oude route `/logistiek/hst-monitor` redirect naar `/logistiek/vervoerders/hst_api/monitor`
+  (bookmarks/muscle memory); `HstAandachtBanner` op Pick & Ship linkt direct naar de tab.
+
 ## 2026-06-10 — In-app feedback/bug-meldtool (mig 342)
 
 **Waarom:** RugFlow gaat live bij de gebruikers; zij gaan tegen bugs/onvolkomenheden
