@@ -24,7 +24,8 @@ export function KlantFactureringTab({ debiteurNr, btwNummer }: Props) {
   if (!instellingen) return null
 
   const { email_factuur: emailFactuur, btw_percentage: btwPercentage } = instellingen
-  const btwWaarschuwing = btwPercentage === 0 && !btwNummer
+  const verlegd = instellingen.btw_verlegd_intracom === true
+  const btwWaarschuwing = (btwPercentage === 0 || verlegd) && !btwNummer
 
   return (
     <div className="space-y-6">
@@ -102,6 +103,32 @@ export function KlantFactureringTab({ debiteurNr, btwNummer }: Props) {
       </section>
 
       <section>
+        <h3 className="text-sm font-semibold text-slate-700 mb-2">BTW verlegd (intracommunautair)</h3>
+        <label className="flex items-center gap-2 text-sm text-slate-600">
+          <input
+            type="checkbox"
+            checked={verlegd}
+            disabled={updateMut.isPending}
+            onChange={(e) => patch({ btw_verlegd_intracom: e.currentTarget.checked })}
+            className="h-4 w-4 rounded border-slate-300 accent-terracotta-500"
+          />
+          <span>BTW verleggen naar afnemer (EU B2B) — factuur en orderbevestiging rekenen 0%</span>
+        </label>
+        {verlegd && (
+          <p className="mt-1 text-xs text-slate-400">
+            Effectief tarief: <strong>0%</strong> met vermelding &ldquo;BTW verlegd&rdquo; op de factuur.
+            Het BTW-percentage hieronder is het NL-tarief en wordt genegeerd zolang verlegd aan staat.
+          </p>
+        )}
+        {btwWaarschuwing && (
+          <p className="mt-2 text-xs text-amber-700">
+            Let op: {verlegd ? 'BTW verlegd' : '0% BTW'} zonder btw-nummer. Intracommunautaire
+            verlegging vereist een geldig btw-nummer bij de afnemer — vul dat in op de Info-tab.
+          </p>
+        )}
+      </section>
+
+      <section>
         <h3 className="text-sm font-semibold text-slate-700 mb-2">BTW-percentage</h3>
         <div className="flex items-center gap-2">
           <input
@@ -123,12 +150,6 @@ export function KlantFactureringTab({ debiteurNr, btwNummer }: Props) {
           <button type="button" onClick={() => patch({ btw_percentage: 0 })}
             className="text-xs px-2 py-1 rounded bg-slate-100 hover:bg-slate-200">0% EU/export</button>
         </div>
-        {btwWaarschuwing && (
-          <p className="mt-2 text-xs text-amber-700">
-            Let op: 0% BTW zonder btw-nummer. Intracommunautaire verlegging vereist een
-            geldig btw-nummer bij de afnemer — vul dat in op de Info-tab.
-          </p>
-        )}
       </section>
 
       <section>
