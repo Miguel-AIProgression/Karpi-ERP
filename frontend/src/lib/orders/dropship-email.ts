@@ -5,7 +5,7 @@
 // track & trace richting de vervoerder, mig 365) moet dan het adres van de
 // CONSUMENT zijn en wijkt per definitie af van het factuur-/debiteur-adres
 // (mail Marjon, Sales Support, 11-06-2026). SQL-spiegel: is_dropship_order +
-// dropship-guard in fn_zending_fill_email (mig 368).
+// dropship-guard in fn_zending_fill_email (mig 370).
 
 export type DropshipEmailProbleem =
   | 'ontbreekt'           // geen afl_email → consument krijgt geen track & trace

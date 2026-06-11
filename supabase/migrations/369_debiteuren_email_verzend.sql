@@ -20,7 +20,7 @@
 -- checkbox "Opslaan als vast verzend-e-mailadres voor deze klant" in het
 -- orderformulier (delivery-address-editor) en via de klantpagina.
 --
--- Dropshipment-uitzondering (mig 368) blijft: bij dropship-orders defaultet
+-- Dropshipment-uitzondering (mig 370, live uitgevoerd als "368") blijft: bij dropship-orders defaultet
 -- het formulier helemaal niet vanuit de debiteur — ook niet uit dit veld.
 --
 -- Idempotent.
@@ -31,6 +31,6 @@ COMMENT ON COLUMN debiteuren.email_verzend IS
   'Klant-niveau e-mailadres voor verzending/track & trace (mig 369). Default '
   'voor orders.afl_email bij orderaanmaak: afleveradressen.email → dit veld → '
   'email_overig. Nooit het factuur-adres; bij dropshipment-orders geheel geen '
-  'debiteur-default (mig 368).';
+  'debiteur-default (mig 370, live uitgevoerd als "368").';
 
 NOTIFY pgrst, 'reload schema';

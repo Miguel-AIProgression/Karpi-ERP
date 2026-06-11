@@ -1,4 +1,7 @@
--- Migratie 368: dropshipment-herkenning + guard op het track & trace-e-mailadres
+-- Migratie 370: dropshipment-herkenning + guard op het track & trace-e-mailadres
+-- (hernummerd van 368 → 370 vóór merge: origin/main nam parallel 368 in
+--  beslag met 368_intake_email_snapshots.sql. Inhoudelijk identiek aan wat
+--  op 11-06-2026 als "368" live is uitgevoerd in de SQL-editor.)
 --
 -- Aanleiding (mail Marjon, Sales Support, 11-06-2026): bij een dropshipment-
 -- order levert Karpi rechtstreeks aan de consument namens de debiteur (winkel).
@@ -32,7 +35,7 @@
 ALTER TABLE producten ADD COLUMN IF NOT EXISTS is_dropship BOOLEAN NOT NULL DEFAULT FALSE;
 
 COMMENT ON COLUMN producten.is_dropship IS
-  'Dropshipment-kostenregel (mig 368): order met zo''n regel wordt rechtstreeks '
+  'Dropshipment-kostenregel (mig 370): order met zo''n regel wordt rechtstreeks '
   'aan de consument geleverd. afl_email moet dan het consument-adres zijn, '
   'nooit het factuur-/debiteur-adres. Zie is_dropship_order().';
 
@@ -56,7 +59,7 @@ $$ LANGUAGE sql STABLE;
 
 COMMENT ON FUNCTION is_dropship_order(BIGINT) IS
   'TRUE als de order een dropshipment-kostenregel bevat (producten.is_dropship, '
-  'mig 368). SQL-spiegel van TS detecteerDropshipKeuze.';
+  'mig 370). SQL-spiegel van TS detecteerDropshipKeuze.';
 
 -- ── 3. Dropship-guard in de zending-e-mail-trigger (herdefinitie mig 365) ────
 
@@ -81,7 +84,7 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  -- Dropshipment-guard (mig 368): een factuur-/debiteur-adres mag nooit als
+  -- Dropshipment-guard (mig 370): een factuur-/debiteur-adres mag nooit als
   -- T&T-adres bij de vervoerder belanden — de consument is de ontvanger.
   -- Liever geen T&T-mail dan een T&T naar de winkel.
   IF is_dropship_order(NEW.order_id) THEN
@@ -107,7 +110,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 COMMENT ON FUNCTION fn_zending_fill_email() IS
-  'Vult zendingen.afl_email uit orders.afl_email (mig 365). Sinds mig 368 met '
+  'Vult zendingen.afl_email uit orders.afl_email (mig 365). Sinds mig 370 met '
   'dropship-guard: bij dropshipment-orders wordt een afl_email dat gelijk is '
   'aan het factuur-/debiteur-e-mailadres NIET gekopieerd.';
 

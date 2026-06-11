@@ -14,7 +14,7 @@ e-mail voor dit afleveradres"); dit voegt de ontbrekende klant-niveau-laag toe.
 - **Default-ladder `orders.afl_email`** bij orderaanmaak/adreskeuze
   ([`order-form.tsx`](../frontend/src/components/orders/order-form.tsx)):
   `afleveradressen.email` → `email_verzend` → `email_overig`. Dropshipment
-  blijft uitgezonderd (geen enkele debiteur-default, mig 368); `email_verzend`
+  blijft uitgezonderd (geen enkele debiteur-default, mig 370); `email_verzend`
   telt daar mee in de verboden-set.
 - **Checkbox in [`delivery-address-editor.tsx`](../frontend/src/components/orders/delivery-address-editor.tsx)**
   heet nu "Opslaan als vast verzend-e-mailadres voor deze klant" en schrijft
@@ -30,7 +30,10 @@ Automatisch vullen vanuit Basta is geparkeerd: het adres staat daar niet op een
 consequente plek (bevestigd door Piet-Hein/Marjon). Typecheck + suite groen
 (op de bekende pre-existing pickbaarheid-contracttest na).
 
-## 2026-06-11 — Dropshipment: track & trace-e-mail mag nooit het factuur-adres zijn (mig 368, branch `fix/dropship-afl-email`)
+## 2026-06-11 — Dropshipment: track & trace-e-mail mag nooit het factuur-adres zijn (mig 370, branch `fix/dropship-afl-email`)
+
+*(Mig in de repo hernummerd van 368 → 370 vóór merge — origin/main nam parallel
+368 in beslag met `368_intake_email_snapshots.sql`. Live uitgevoerd als "368".)*
 
 **Melding Marjon (sales support):** "Het mailadres van de dropshipment voor de
 track and trace is NIET hetzelfde als de factuur. Dus dat moet anders zijn."
@@ -41,7 +44,7 @@ adres richting vervoerder, mig 364/365) echter uit `debiteuren.email_overig`,
 en backfill mig 367 deed hetzelfde op bestaande orders → de winkel kreeg de
 track & trace, de consument niets.
 
-**Herkenning als data (mig 368):** nieuw `producten.is_dropship` (TRUE op
+**Herkenning als data (mig 370):** nieuw `producten.is_dropship` (TRUE op
 DROPSHIP-KLEIN/GROOT) + SQL-predicaat `is_dropship_order(order_id)` — spiegelt
 TS `detecteerDropshipKeuze`. Nieuw dropship-artikel = `UPDATE producten`.
 

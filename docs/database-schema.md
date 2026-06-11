@@ -145,7 +145,7 @@ Klanten/afnemers. PK = debiteur_nr uit het oude systeem.
 | telefoon | TEXT | |
 | fact_naam, fact_adres, fact_postcode, fact_plaats | TEXT | Factuuradres |
 | email_factuur, email_overig, email_2 | TEXT | |
-| email_verzend | TEXT | Mig 369. Klant-niveau verzend-/T&T-e-mailadres (voorstel Piet-Hein 11-06-2026). Default-ladder voor `orders.afl_email` bij orderaanmaak: `afleveradressen.email` → dit veld → `email_overig`. Gevuld via checkbox "Opslaan als vast verzend-e-mailadres voor deze klant" in het orderformulier of via klant-bewerken. Géén backfill — runtime-fallback. Bij dropshipment-orders geen enkele debiteur-default (mig 368). |
+| email_verzend | TEXT | Mig 369. Klant-niveau verzend-/T&T-e-mailadres (voorstel Piet-Hein 11-06-2026). Default-ladder voor `orders.afl_email` bij orderaanmaak: `afleveradressen.email` → dit veld → `email_overig`. Gevuld via checkbox "Opslaan als vast verzend-e-mailadres voor deze klant" in het orderformulier of via klant-bewerken. Géén backfill — runtime-fallback. Bij dropshipment-orders geen enkele debiteur-default (mig 370). |
 | fax | TEXT | |
 | vertegenw_code | TEXT FK → vertegenwoordigers.code | |
 | route, rayon, rayon_naam | TEXT | |
@@ -250,7 +250,7 @@ Artikelen uit het oude systeem.
 | product_type | TEXT | 'vast' (CA:NNNxNNN >= 1m²), 'staaltje' (CA:NNNxNNN < 1m²), 'rol' (BREED), 'overig' |
 | locatie | TEXT | Magazijnlocatie (bijv. "A.01.L", "C.04.H"). Bron: Locaties123.xls |
 | actief | BOOLEAN | Default true |
-| is_dropship | BOOLEAN | Default false. TRUE op dropshipment-kostenregels (DROPSHIP-KLEIN/GROOT, mig 368): order met zo'n regel gaat rechtstreeks naar de consument — `afl_email` moet dan het consument-adres zijn, nooit het factuur-/debiteur-adres. Predicaat: `is_dropship_order(order_id)`; guard in `fn_zending_fill_email`. |
+| is_dropship | BOOLEAN | Default false. TRUE op dropshipment-kostenregels (DROPSHIP-KLEIN/GROOT, mig 370): order met zo'n regel gaat rechtstreeks naar de consument — `afl_email` moet dan het consument-adres zijn, nooit het factuur-/debiteur-adres. Predicaat: `is_dropship_order(order_id)`; guard in `fn_zending_fill_email`. |
 
 ---
 
@@ -536,7 +536,7 @@ Fysieke leveringen. Werkelijk aangemaakt sinds migratie 169 — bron-van-waarhei
 | track_trace | TEXT | HST-tracking-nummer of EDI-equivalent — gevuld door adapter na verzending |
 | afl_naam, afl_adres, afl_postcode, afl_plaats, afl_land | TEXT | Adres-snapshot (kopie van orders.afl_*) |
 | afl_telefoon | TEXT | Mig 339 (ADR-0030). Snapshot van het leveringstelefoonnummer — HST "belt vóór aflevering" en stuurt dit mee in `ToAddress.PhoneNumber`. Gevuld door BEFORE-INSERT-trigger `trg_zending_fill_telefoon` (functie `fn_zending_fill_telefoon`): ladder `orders.afl_telefoon` → fallback `debiteuren.telefoon`. Via trigger i.p.v. in `start_pickronden` zodat álle zending-aanmaakroutes het veld vullen. Backfill voor nog-niet-verstuurde zendingen. |
-| afl_email | TEXT | Mig 365. Snapshot van het **aflever**-e-mailadres voor track & trace door de vervoerder — hst-send stuurt dit mee in `ToAddress.Email`. Gevuld door BEFORE-INSERT-trigger `trg_zending_fill_email` uit `orders.afl_email` (mig 084, sinds mig 364 door het order-formulier gevuld vanuit `afleveradressen.email`). **Bewust géén fallback naar factuur-e-mailadressen** (`debiteuren.email_factuur` e.d.) — de klant moet wél de T&T krijgen maar niet de factuur (mail Piet-Hein/Marjon 11-06-2026). Leeg = geen T&T-mail. Backfill voor nog-niet-verstuurde zendingen. **Dropship-guard (mig 368):** bij dropshipment-orders (`is_dropship_order`) kopieert de trigger het order-afl_email NIET als het gelijk is aan het factuur-/debiteur-e-mailadres — T&T moet daar naar de consument. |
+| afl_email | TEXT | Mig 365. Snapshot van het **aflever**-e-mailadres voor track & trace door de vervoerder — hst-send stuurt dit mee in `ToAddress.Email`. Gevuld door BEFORE-INSERT-trigger `trg_zending_fill_email` uit `orders.afl_email` (mig 084, sinds mig 364 door het order-formulier gevuld vanuit `afleveradressen.email`). **Bewust géén fallback naar factuur-e-mailadressen** (`debiteuren.email_factuur` e.d.) — de klant moet wél de T&T krijgen maar niet de factuur (mail Piet-Hein/Marjon 11-06-2026). Leeg = geen T&T-mail. Backfill voor nog-niet-verstuurde zendingen. **Dropship-guard (mig 370):** bij dropshipment-orders (`is_dropship_order`) kopieert de trigger het order-afl_email NIET als het gelijk is aan het factuur-/debiteur-e-mailadres — T&T moet daar naar de consument. |
 | totaal_gewicht_kg | NUMERIC | Gevuld door `create_zending_voor_order` vanuit orderregelgewichten; handmatig corrigeerbaar in latere UI. Sinds mig 206 exclusief de pseudo-regel `artikelnr='VERZEND'`. |
 | aantal_colli | INTEGER | Gevuld door `create_zending_voor_order` als som van `order_regels.orderaantal`; gebruikt voor sticker `x VAN y`. Sinds mig 206 exclusief `artikelnr='VERZEND'`. Voor exacte per-stuk identiteit (sticker, SSCC) zie `zending_colli` (mig 209). |
 | service_code | TEXT | Mig 210. Service-variant binnen vervoerder (bv. `'internationaal'` bij DPD), gekozen door `selecteer_vervoerder_voor_zending()`. NULL = vervoerder-default. |
