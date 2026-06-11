@@ -1,5 +1,38 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-11 — Voorraad-0-artikel toevoegen aan order: keuze prominent + levertijd vooraf zichtbaar (branch `fix/voorraad-0-artikel-toevoegen-ux`)
+
+**Melding Marjon (sales support):** "Als een artikel geen voorraad heeft kan ik
+hem niet aanklikken… Daarnaast kan ik ook niet zien wanneer het artikel weer
+binnenkomt met welke levertijd." (voorbeeld LAGO13 240x340, art. 553130045 —
+vrije voorraad 0, wél 20× besteld op inkoop.)
+
+**Diagnose:** het pad bestond al (klik op voorraad-0-maat → `SubstitutionPicker`
+→ "Toch toevoegen zonder voorraad" → allocator claimt op IO, mig 144-152), maar
+was in de praktijk onvindbaar:
+1. Het paneel rendert **onder** de volledige maten-lijst (LAGO kleur 13 = 16+
+   rijen) — buiten beeld, klik leek niets te doen.
+2. Alle 4 equivalenten (ROVE/GLOR/KAES/LAVA 13 240x340) hadden óók voorraad 0
+   → elke rij in het paneel disabled/grijs — "ik kan hem niet aanklikken".
+3. De ontsnappingsroute was een klein onderstreept linkje; de IO-levertijd
+   (`IoLevertijdHint`) verscheen pas ná het toevoegen van de regel.
+
+**Fix** (frontend-only, geen DB-wijziging):
+- [`substitution-picker.tsx`](../frontend/src/modules/reserveringen/components/substitution-picker.tsx):
+  nieuwe `InkoopVerwachtHint` toont direct in het paneel hoeveel er besteld is
+  en de eerstvolgende verwachte leverweek (zelfde bron + FIFO-volgorde als
+  `IoLevertijdHint`: `useOpenstaandeInkoopregelsVoorArtikel`, `verwacht_datum
+  ASC`); "Toch toevoegen" is nu een prominente amber knop i.p.v. een linkje;
+  equivalenten tonen ook hun `besteld_inkoop`; optionele `onCancel`-sluitknop.
+- [`kwaliteit-first-selector.tsx`](../frontend/src/modules/maatwerk/components/kwaliteit-first-selector.tsx):
+  zodra een voorraad-0-maat is aangeklikt verbergen de kleurchips + maten-lijst
+  zich en staat het keuzepaneel direct in beeld (annuleren = terug naar lijst).
+- [`article-selector.tsx`](../frontend/src/components/orders/article-selector.tsx):
+  zelfde `onCancel`-route.
+
+De daadwerkelijke claim blijft server-side (`herallocateer_orderregel`); dit is
+puur de zichtbaarheid van een bestaand pad. Typecheck groen.
+
 ## 2026-06-11 — Zendingen + track & trace zichtbaar op order-detail (branch `feat/zending-herprint-ingang`)
 
 De track & trace-code van een zending was alleen op de Zendingen-pagina te

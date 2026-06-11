@@ -158,6 +158,7 @@ export function ArticleSelector({ onSelect }: ArticleSelectorProps) {
               onSelect(pendingArticle)
               setPendingArticle(null)
             }}
+            onCancel={() => setPendingArticle(null)}
           />
         </div>
       )}
