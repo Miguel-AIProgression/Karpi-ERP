@@ -1,12 +1,16 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { CheckCircle, Mail, RotateCcw } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { formatDate, formatCurrency } from '@/lib/utils/formatters'
 import { verzendWeekVoor, verzendWeekRelatief } from '@/lib/orders/verzendweek'
 import { useMarkeerGeannuleerd, useBevestigConceptOrder } from '@/modules/orders-lifecycle'
 import { LevertijdStatusBadge } from '@/modules/levertijd'
 import { BevestigOrderDialog } from './bevestig-order-dialog'
+import { BevestigOrderEdiDialog } from './bevestig-order-edi-dialog'
+import { bepaalBevestigingKanaal, isOrderBevestigd } from '@/lib/orders/bevestiging-kanaal'
+import { fetchHandelspartnerConfig } from '@/modules/edi'
 import type { OrderDetail } from '@/lib/supabase/queries/orders'
 
 const EINDSTATUSSEN = ['Verzonden', 'Geannuleerd'] as const
@@ -26,6 +30,19 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
 
   const isEindstatus = (EINDSTATUSSEN as readonly string[]).includes(order.status)
   const isConcept = order.status === 'Concept'
+
+  const isEdiOrder = order.bron_systeem === 'edi'
+  const { data: ediConfig } = useQuery({
+    queryKey: ['edi-handelspartner-config', order.debiteur_nr],
+    queryFn: () => fetchHandelspartnerConfig(order.debiteur_nr),
+    enabled: isEdiOrder,
+    staleTime: 60_000,
+  })
+  const kanaal = bepaalBevestigingKanaal(
+    order.bron_systeem,
+    ediConfig ? { transus_actief: ediConfig.transus_actief, orderbev_uit: ediConfig.orderbev_uit } : null,
+  )
+  const bevestigd = isOrderBevestigd(order)
 
   function handleAnnuleer() {
     annuleer.mutate(
@@ -80,25 +97,31 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
           )}
         </div>
         <div className="flex gap-2 flex-wrap justify-end">
-          {/* Bevestig order (e-mailbevestiging) — niet tonen voor concept-orders */}
-          {!isConcept && order.bevestigd_at ? (
+          {/* Bevestig order — niet tonen voor concept-orders */}
+          {!isConcept && bevestigd ? (
             <>
               <span
                 className="flex items-center gap-1.5 px-3 py-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-[var(--radius-sm)]"
-                title={`Bevestigd op ${formatDate(order.bevestigd_at)}${order.bevestiging_email ? ` → ${order.bevestiging_email}` : ''}`}
+                title={
+                  isEdiOrder
+                    ? `Bevestigd via EDI op ${formatDate(order.edi_bevestigd_op!)}`
+                    : `Bevestigd op ${formatDate(order.bevestigd_at!)}${order.bevestiging_email ? ` → ${order.bevestiging_email}` : ''}`
+                }
               >
                 <CheckCircle size={14} />
                 Bevestigd
               </span>
-              <button
-                type="button"
-                onClick={() => setShowBevestigDialog(true)}
-                className="flex items-center gap-1.5 px-3 py-2 text-sm border border-slate-200 text-slate-600 rounded-[var(--radius-sm)] hover:bg-slate-50 transition-colors"
-                title="Orderbevestiging opnieuw versturen"
-              >
-                <RotateCcw size={14} />
-                Opnieuw versturen
-              </button>
+              {!isEdiOrder && (
+                <button
+                  type="button"
+                  onClick={() => setShowBevestigDialog(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm border border-slate-200 text-slate-600 rounded-[var(--radius-sm)] hover:bg-slate-50 transition-colors"
+                  title="Orderbevestiging opnieuw versturen"
+                >
+                  <RotateCcw size={14} />
+                  Opnieuw versturen
+                </button>
+              )}
             </>
           ) : !isConcept ? (
             <button
@@ -201,8 +224,8 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
         </div>
       </div>
 
-      {/* Bevestig-order dialog */}
-      {showBevestigDialog && (
+      {/* Bevestig-order dialog — dispatcht op kanaal */}
+      {showBevestigDialog && (kanaal === 'email' ? (
         <BevestigOrderDialog
           orderId={order.id}
           orderNr={order.order_nr}
@@ -210,7 +233,17 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
           isHerversturing={!!order.bevestigd_at}
           onClose={() => setShowBevestigDialog(false)}
         />
-      )}
+      ) : (
+        <BevestigOrderEdiDialog
+          orderId={order.id}
+          orderNr={order.order_nr}
+          debiteurNr={order.debiteur_nr}
+          gewenstIso={order.edi_gewenste_afleverdatum ?? null}
+          afleverdatumIso={order.afleverdatum}
+          orderStatus={order.status}
+          onClose={() => setShowBevestigDialog(false)}
+        />
+      ))}
 
       {/* Annuleer bevestiging */}
       {showAnnuleerConfirm && (
