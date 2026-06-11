@@ -1,5 +1,11 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-11 — Factuur: e-mail onderdrukt bij actieve EDI-INVOIC (slice 2)
+
+**Wat:** mail-gate `!ediFactuurActief` toegevoegd aan het e-mailblok in `factuur-verzenden` (stap 7); `verstuurd_naar` logt nu `'EDI Transus'` i.p.v. een e-mailadres dat nooit gemaild is. De `logVerstuurdeEmails`-aanroepen zitten al binnen het gated blok — geen aparte aanpassing nodig. De PDF blijft altijd in storage.
+
+**Waarom:** debiteuren met `edi_handelspartner_config.transus_actief && factuur_uit` kregen de factuur zowel via EDI-INVOIC (stap 6) als per e-mail (stap 7) — dubbel kanaal in strijd met de partner-afspraak "EDI-only". `verstuurd_naar` registreerde vervolgens het e-mailadres alsof er gemaild was.
+
 ## 2026-06-11 — Universele bevestig-knop: kanaal-dispatch EDI vs e-mail
 
 **Aanleiding:** EDI-orders kregen nul orderbevestigingen na de EDI-cutover van 3 juni — de "Bevestig order"-knop stuurde altijd e-mail, ook bij EDI-orders. Bovendien werd de `orderbev_uit`-toggle in `edi_handelspartner_config` nergens gecheckt, waardoor partners die géén orderbev willen (SB Möbel BOSS 150761, Hammer 330955) er toch een kregen. Ontwerp-besluit: EDI-orders krijgen nooit e-mail; het kanaal hangt aan de order (`bron_systeem`), niet aan de klant.
