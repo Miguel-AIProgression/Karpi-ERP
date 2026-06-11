@@ -69,6 +69,38 @@ Pure helper: [`dropship-email.ts`](../frontend/src/lib/orders/dropship-email.ts)
 (`dropshipAflEmailProbleem`, case-/whitespace-ongevoelig) + unit tests.
 Typecheck groen; suite groen op de bekende pre-existing pickbaarheid-test na.
 
+## 2026-06-11 — Orderbevestiging-PDF in de taal van de klant (branch `feat/orderbevestiging-pdf-taal`)
+
+**Melding Marjon (via Miguel):** orderbevestiging ORD-2026-0348 (Knutzen Wohnen,
+DE) — de begeleidende e-mail was correct Duits, maar de PDF-bijlage stond
+volledig in het Nederlands.
+
+**Oorzaak:** `stuur-orderbevestiging` bepaalde de taal (uit `orders.fact_land`
+via `normaliseer_land` → `bepaalTaal`) pas ná de PDF-generatie en gebruikte die
+alleen voor de mail-HTML; [`_shared/orderbevestiging-pdf.ts`](../supabase/functions/_shared/orderbevestiging-pdf.ts)
+had alle labels hardcoded in het Nederlands.
+
+**Fix:**
+- Nieuwe gedeelde module [`_shared/orderbevestiging-taal.ts`](../supabase/functions/_shared/orderbevestiging-taal.ts):
+  `Taal`-type, `bepaalTaal` (DE/AT→de, FR→fr, NL/BE→nl, rest→en) en
+  `vertaalOmschrijving` (hele-woord-woordenboek + frase "Op maat" → "Nach Maß"/
+  "Sur mesure"/"Custom size") verhuisd uit de edge function — één taalbron voor
+  mail én PDF.
+- `genereerOrderbevestigingPDF` accepteert `taal?: Taal` (default `'nl'`) en
+  vertaalt álle vaste teksten: documenttitel, info-labels, adresblok-koppen,
+  tabelkolommen, eenheid, totaalregels, betalingsconditie, maatafwijking-
+  disclaimer, opmerkingen, groet en paginanummering. Label→waarde-offsets zijn
+  dynamisch (minimaal de oude NL-breedte) zodat langere vertalingen (bv. FR
+  "Date de livraison:") niet overlappen.
+- `stuur-orderbevestiging` bepaalt de taal nu vóór de PDF-generatie, vertaalt
+  regel-omschrijvingen één keer (`regelsVertaald`, zelfde tekst op PDF en in
+  mail) en geeft `taal` door aan de PDF. Mail-restje "Afhalen:" was ook nog
+  hardcoded NL en is meertalig gemaakt.
+
+Smoke-test: PDF gegenereerd in alle 4 talen (diakrieten Ä/ß/é/· renderen
+correct door WinAnsi); pre-existing 2 typefouten in `resolveKlantEigenNamen`
+(esm.sh supabase-js type-drift) staan los van deze wijziging.
+
 ## 2026-06-11 — Feedback-knop verplaatst naar de TopBar
 
 De zwevende feedback-knop rechtsonder overlapte pagina-knoppen, zoals de

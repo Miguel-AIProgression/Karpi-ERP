@@ -12,6 +12,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { genereerOrderbevestigingPDF } from '../_shared/orderbevestiging-pdf.ts'
+import { type Taal, bepaalTaal, vertaalOmschrijving } from '../_shared/orderbevestiging-taal.ts'
 import { sendFactuurEmail } from '../_shared/graph-mail-client.ts'
 import { isoWeekJaar } from '../_shared/iso-week.ts'
 import { berekenFactuurTotalen } from '../_shared/factuur-bedrag.ts'
@@ -26,22 +27,10 @@ const REPLY_TO            = Deno.env.get('FACTUUR_REPLY_TO') ?? FROM_EMAIL
 const KARPI_LOGO_BUCKET   = Deno.env.get('KARPI_LOGO_BUCKET') ?? 'public-assets'
 const KARPI_LOGO_PATH     = Deno.env.get('KARPI_LOGO_PATH') ?? 'karpi-logo.jpg'
 
-// ── Taal van de mail: bepaald door het land van het factuuradres ────────────
-// (orders.fact_land, genormaliseerd via de gedeelde SQL-functie normaliseer_land
-// — single source of truth, ook gebruikt in de vervoerder-regelevaluator mig 214).
-type Taal = 'nl' | 'de' | 'fr' | 'en'
-
-function bepaalTaal(landIso2: string | null): Taal {
-  switch (landIso2) {
-    case 'DE':
-    case 'AT': return 'de'
-    case 'FR': return 'fr'
-    case 'NL':
-    case 'BE': return 'nl'
-    default:   return 'en'
-  }
-}
-
+// ── Taal van mail + PDF: bepaald door het land van het factuuradres ─────────
+// Taal-type, landmapping en regel-woordvertaling komen uit de gedeelde module
+// _shared/orderbevestiging-taal.ts (ook gebruikt door orderbevestiging-pdf.ts).
+// Hieronder alleen de mail-specifieke teksten.
 const VERTALINGEN: Record<Taal, {
   onderwerp: string
   aanhef: (naam: string) => string
@@ -53,6 +42,7 @@ const VERTALINGEN: Record<Taal, {
   model: string
   vertegenwoordiger: string
   afleveradres: string
+  afhalen: string
   totaal: string
   subtotaal: string
   btwOver: (percentage: string, bedrag: string) => string
@@ -72,6 +62,7 @@ const VERTALINGEN: Record<Taal, {
     model: 'Uw model',
     vertegenwoordiger: 'Uw vertegenwoordiger',
     afleveradres: 'Afleveradres',
+    afhalen: 'Afhalen',
     totaal: 'Totaalbedrag',
     subtotaal: 'Totaalbedrag excl. btw',
     btwOver: (pct, bedrag) => `${pct}% btw over ${bedrag}`,
@@ -91,6 +82,7 @@ const VERTALINGEN: Record<Taal, {
     model: 'Ihr Modell',
     vertegenwoordiger: 'Ihr Vertreter',
     afleveradres: 'Lieferadresse',
+    afhalen: 'Abholung',
     totaal: 'Gesamtbetrag',
     subtotaal: 'Gesamtbetrag exkl. MwSt.',
     btwOver: (pct, bedrag) => `${pct}% MwSt. auf ${bedrag}`,
@@ -110,6 +102,7 @@ const VERTALINGEN: Record<Taal, {
     model: 'Votre modèle',
     vertegenwoordiger: 'Votre représentant',
     afleveradres: 'Adresse de livraison',
+    afhalen: 'Enlèvement',
     totaal: 'Montant total',
     subtotaal: 'Montant total hors TVA',
     btwOver: (pct, bedrag) => `TVA ${pct}% sur ${bedrag}`,
@@ -129,6 +122,7 @@ const VERTALINGEN: Record<Taal, {
     model: 'Your model',
     vertegenwoordiger: 'Your sales representative',
     afleveradres: 'Delivery address',
+    afhalen: 'Pickup',
     totaal: 'Total amount',
     subtotaal: 'Total amount excl. VAT',
     btwOver: (pct, bedrag) => `${pct}% VAT over ${bedrag}`,
@@ -162,31 +156,6 @@ async function resolveKlantEigenNamen(
       p_kleur_code: p.kleur_code,
     })
     if (data) resultaat.set(sleutel, data as string)
-  }
-  return resultaat
-}
-
-// ── Beperkte woord-vertaling voor orderregel-omschrijvingen ─────────────────
-// Omschrijvingen zijn brondata (snapshot-tekst, ook letterlijk op de PDF) en
-// soms al in de doeltaal opgesteld (bv. EDI-orders van Duitse partners bevatten
-// al "Farbe"). Een woordenboek met hele-woord-matching is hierop veilig: het
-// raakt alleen herkenbare NL-vaktermen en laat al-vertaalde tekst ongemoeid.
-const REGEL_WOORDVERTALINGEN: Record<Exclude<Taal, 'nl'>, Record<string, string>> = {
-  de: { Kleur: 'Farbe', Rond: 'Rund', Rechthoek: 'Rechteck', Ovaal: 'Oval', Karpet: 'Teppich' },
-  fr: { Kleur: 'Couleur', Rond: 'Rond', Rechthoek: 'Rectangle', Ovaal: 'Ovale', Karpet: 'Tapis' },
-  en: { Kleur: 'Colour', Rond: 'Round', Rechthoek: 'Rectangle', Ovaal: 'Oval', Karpet: 'Rug' },
-}
-
-function vertaalOmschrijving(tekst: string, taal: Taal): string {
-  if (taal === 'nl') return tekst
-  const woordenboek = REGEL_WOORDVERTALINGEN[taal]
-  let resultaat = tekst
-  for (const [nl, vertaling] of Object.entries(woordenboek)) {
-    resultaat = resultaat.replace(new RegExp(`\\b${nl}\\b`, 'gi'), (match) => {
-      if (match === match.toUpperCase()) return vertaling.toUpperCase()
-      if (match[0] === match[0].toUpperCase()) return vertaling[0].toUpperCase() + vertaling.slice(1).toLowerCase()
-      return vertaling.toLowerCase()
-    })
   }
   return resultaat
 }
@@ -354,8 +323,28 @@ serve(async (req) => {
     return `Wk ${week} · ${jaar}`
   }
 
-  // ── PDF genereren ──────────────────────────────────────────────────────────
+  // ── Taal bepalen: land van het factuuradres ────────────────────────────────
+  // Genormaliseerd via de gedeelde SQL-functie normaliseer_land, zodat
+  // 'DEUTSCHLAND'/'Germany'/'DE' allemaal naar dezelfde Duitse vertaling
+  // resolven. Geldt voor mail én PDF-bijlage (zelfde taal, zelfde bewoording).
   const o = order as any
+  let factLandIso2: string | null = null
+  if (o.fact_land) {
+    const { data: landData } = await supabase.rpc('normaliseer_land', { p_land: o.fact_land })
+    factLandIso2 = (landData as string | null) ?? null
+  }
+  const taal = bepaalTaal(factLandIso2)
+  const v = VERTALINGEN[taal]
+
+  // Regel-omschrijvingen één keer woord-vertaald — dezelfde tekst op PDF en in
+  // de mail (kwaliteit-/kleurcodes blijven onaangeroerd voor klanteigen-namen).
+  const regelsVertaald = regels.map((r) => ({
+    ...r,
+    omschrijving: vertaalOmschrijving(r.omschrijving, taal),
+    omschrijving_2: r.omschrijving_2 ? vertaalOmschrijving(r.omschrijving_2, taal) : null,
+  }))
+
+  // ── PDF genereren ──────────────────────────────────────────────────────────
   const pdfBytes = await genereerOrderbevestigingPDF({
     bedrijf,
     logo_bytes: logoBytes,
@@ -373,34 +362,24 @@ serve(async (req) => {
     afl_postcode: o.afl_postcode ?? null,
     afl_stad: o.afl_plaats ?? null,
     afl_land: o.afl_land ?? null,
-    regels,
+    regels: regelsVertaald,
     subtotaal,
     btw_percentage: btwPercentage,
     btw_bedrag: btwBedrag,
     totaal,
     betaalconditie: deb?.betaalconditie ?? null,
+    taal,
   })
 
   // ── E-mail versturen ───────────────────────────────────────────────────────
-  // Taal van de mail volgt het land van het factuuradres (genormaliseerd via
-  // de gedeelde SQL-functie, zodat 'DEUTSCHLAND'/'Germany'/'DE' allemaal naar
-  // dezelfde Duitse vertaling resolven).
-  let factLandIso2: string | null = null
-  if (o.fact_land) {
-    const { data: landData } = await supabase.rpc('normaliseer_land', { p_land: o.fact_land })
-    factLandIso2 = (landData as string | null) ?? null
-  }
-  const taal = bepaalTaal(factLandIso2)
-  const v = VERTALINGEN[taal]
   const klantNaam = deb?.naam ?? o.fact_naam ?? 'Klant'
 
   const klantEigenNamen = await resolveKlantEigenNamen(supabase, o.debiteur_nr, regels)
 
-  const regelsHtml = regels.map((r) => {
+  const regelsHtml = regelsVertaald.map((r) => {
     const model = r.kwaliteit_code ? klantEigenNamen.get(`${r.kwaliteit_code}|${r.kleur_code ?? ''}`) ?? null : null
-    const omschrijving = vertaalOmschrijving(r.omschrijving, taal)
     return `<tr>
-      <td style="padding: 4px 8px; border-bottom: 1px solid #eee;">${omschrijving}${model ? `<br><span style="color:#888; font-size: 11px;">${v.model}: ${model}</span>` : ''}</td>
+      <td style="padding: 4px 8px; border-bottom: 1px solid #eee;">${r.omschrijving}${model ? `<br><span style="color:#888; font-size: 11px;">${v.model}: ${model}</span>` : ''}</td>
       <td style="padding: 4px 8px; border-bottom: 1px solid #eee; text-align: right;">${r.orderaantal}</td>
       <td style="padding: 4px 8px; border-bottom: 1px solid #eee; text-align: right; white-space: nowrap;">${r.bedrag != null ? formatBedrag(r.bedrag) : ''}</td>
     </tr>`
@@ -408,7 +387,7 @@ serve(async (req) => {
 
   const afleveradresHtml = o.afhalen
     ? `<p>
-        <strong>Afhalen:</strong><br>
+        <strong>${v.afhalen}:</strong><br>
         ${bedrijf.bedrijfsnaam}<br>
         ${bedrijf.adres}<br>
         ${bedrijf.postcode}  ${bedrijf.plaats}
