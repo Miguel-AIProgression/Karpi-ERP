@@ -1,5 +1,56 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-11 — Shopify-plaats-bug + verzendset-herprint + verzendfout-signalering (branch `feat/zending-herprint-ingang`)
+
+**Aanleiding (incident 11-06):** twee pickrondes (ZEND-2026-0001/0002) werden
+foutief voltooid. De HST-transportorders strandden allebei op de pre-flight
+"Naam, adres, postcode of plaats is leeg" — en dat bleek géén invoerfout maar
+een **structurele Shopify-intake-bug**: 20 van de 26 Shopify-orders sinds mei
+misten `afl_plaats`. Daarnaast bleken de facturen al automatisch gemaild
+(per_zending-keten deed exact wat hij moest doen) en was er geen weg terug
+naar Pick & Ship zonder handwerk.
+
+**Root cause Shopify-plaats:** `extractShopifyShippingAddress`
+([`_shared/shopify-types.ts`](../supabase/functions/_shared/shopify-types.ts))
+leverde sleutel `afl_stad` (en `afl_bedrijf`/`fact_stad`), maar
+`create_webshop_order` (mig 343) leest `p_header->>'afl_plaats'` /
+`afl_naam_2` / `fact_plaats` — de JSONB-RPC dropt onbekende sleutels
+geruisloos (zelfde bugklasse als het maatwerk_vorm-incident, mig 343).
+**Fix:** sleutels hernoemd naar wat de RPC kent; zelfde fix in
+`scripts/import-shopify-orders.mjs`; nieuwe contract-test
+[`shopify-types.test.ts`](../supabase/functions/_shared/shopify-types.test.ts)
+pint de geproduceerde sleutels vast op de RPC-kolomlijst (4 tests groen).
+⚠️ **`sync-shopify-order` moet opnieuw gedeployed worden** voordat de fix
+live is (neemt meteen de mig 325-RPC-hernoeming mee).
+
+**Data-repair (eenmalig, met akkoord):** 17 NL-orders kregen `afl_plaats`
+terug via de PDOK Locatieserver (BAG, postcode+huisnummer), incl. de
+zending-snapshots ZEND-2026-0001 (Lijnden), -0002 ('s-Gravenhage), -0003
+(Bennebroek). Niet hersteld: ORD-2026-0097 (geen adres), 0108/0123 (BE,
+Willebroek — handmatig).
+
+**Incident-terugdraai:** beide orders terug naar 'Klaar voor picken'
+(verzonden_at NULL), zendingen terug naar 'Picken', Fout-transportorders op
+'Geannuleerd'. Omdat `voltooi_pickronde` de voorraad-claims op `released` had
+gezet (en `orderregel_pickbaarheid.is_pickbaar` op actieve claims leunt),
+zijn de regels opnieuw gealloceerd via `herallocateer_orderregel` — orders
+weer zichtbaar in Pick & Ship. Facturen FACT-2026-0001/0002 waren al gemaild
+en blijven bewust staan (besluit Miguel): bedragen kloppen, de
+`gefactureerd`-guard (mig 227) voorkomt een dubbele factuur bij de echte
+verzending.
+
+**Frontend (3 wijzigingen):**
+- **Verzendset-herprint:** de printset-pagina (`/logistiek/:zending_nr/printset`)
+  was alleen bereikbaar via de Pick & Ship-flow — pakbon/sticker vergeten
+  printen = geen weg terug. Nu: "Verzendset printen"-knop op zending-detail +
+  printer-icoon per rij op het zendingen-overzicht.
+- **[`VerzendFoutBanner`](../frontend/src/components/orders/verzend-fout-banner.tsx)**
+  op order-detail: een order kan "Verzonden" tonen terwijl de transportorder
+  naar de vervoerder daarna faalde (voltooi_pickronde flipt de status vóór de
+  HST-call). Rose banner met zending-link + foutreden zodra een zending een
+  open HST-fout heeft (Fout-rij zonder actieve/geslaagde opvolger). Helper
+  `bepaalOpenVerzendFouten` is puur en testbaar.
+
 ## 2026-06-11 — HST-verzendlabel op 3"×6"-rol + thermische scherpte-fixes (mig 361)
 
 **Waarom:** het verzendlabel op de Pick & Ship-verzendset stond hard op
