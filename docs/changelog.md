@@ -1,5 +1,48 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-11 — Orderbevestiging pakte factuur-e-mailadres + order-bewerken wiste e-mail-snapshots (branch `fix/orderbevestiging-email-ladder`)
+
+**Melding Marjon (klant 803741, ORD-2026-0349/0350):** "als ik de order wil
+bevestigen pakt hij het factuuradres (zr-pdf@einrichtungspartnerring.com)…
+Voor mijn gevoel heb ik het wel veranderd naar orderbevestiging@trendhopperbreda.nl."
+Diagnose via `verstuurde_emails`-log: haar handmatige correcties kwamen wél
+goed aan, maar er zaten vier losse fouten achter:
+
+1. **Order-bewerken wiste `fact_email`/`afl_email`** —
+   [`order-edit.tsx`](../frontend/src/pages/orders/order-edit.tsx) gaf beide
+   mig 364-snapshots niet mee in de initiële header, waarna
+   `update_order_with_lines` ze op NULL zette (zelfde incidentklasse als
+   mig 343/368: nieuw veld niet in álle paden). ORD-2026-0350 verloor zo zijn
+   factuur-e-mailadres. Fix: velden meegeven in de edit-header.
+2. **Edit-mode kende de klant-e-mails niet** — het sync-effect in
+   [`order-form.tsx`](../frontend/src/components/orders/order-form.tsx) nam
+   alleen `prijslijst_nr`/`korting_pct` over uit het asynchroon geladen
+   `clientData`; bij een adreswissel viel de `afl_email`-ladder daardoor terug
+   op de stale form-waarde. Fix: ook `email_factuur`/`email_overig`/
+   `email_verzend` syncen.
+3. **Bevestig-dialog prefillde het factuuradres** — de ladder was
+   `bevestiging_email ?? klant_email` waarbij `klant_email` =
+   `email_factuur ?? email_overig`. Nieuw veld `klant_email_orderbev`
+   (`email_overig ?? email_factuur`) in
+   [`orders.ts`](../frontend/src/lib/supabase/queries/orders.ts) voedt de
+   prefill in [`order-header.tsx`](../frontend/src/components/orders/order-header.tsx);
+   `klant_email` zelf blijft ongewijzigd (voedt de dropship-check). Bewust ook
+   geen `afl_email` in deze ladder: bij dropship is dat het consument-adres.
+   Edge function [`stuur-orderbevestiging`](../supabase/functions/stuur-orderbevestiging/index.ts)
+   kreeg dezelfde flip in de fallback (`email_overig` eerst) — die fallback
+   vuurt alleen als de dialog leeg verstuurd wordt.
+4. **`AddressSelector` auto-selecteerde bij mount óók in edit-mode** het
+   eerste afleveradres en overschreef daarmee het opgeslagen order-adres
+   (incl. `afl_email`) nog vóór de gebruiker iets deed. Nieuwe prop
+   `autoSelect` (FALSE in edit-mode) in
+   [`address-selector.tsx`](../frontend/src/components/orders/address-selector.tsx).
+
+**Data-hotfix (live):** ORD-2026-0350 `afl_email` →
+orderbevestiging@trendhopperbreda.nl, `fact_email` → zr-pdf@… hersteld;
+`afleveradressen` id 6805 (ETTENSEBAAN, het factuuradres) droeg het
+factuur-e-mailadres als adres-e-mail → geleegd zodat de ladder voortaan op
+klant-niveau (`email_verzend`/`email_overig`) uitvalt.
+
 ## 2026-06-11 — Klant-niveau verzend-e-mailadres `debiteuren.email_verzend` (mig 369, branch `fix/dropship-afl-email`)
 
 **Voorstel Piet-Hein (akkoord Marjon):** per klant een apart e-mailadres voor

@@ -6,7 +6,9 @@
 // POST body (JSON):
 //   { order_id: number, email?: string, bevestigd_door?: string }
 //
-// email is optioneel — fallback: debiteuren.email_factuur → email_overig → email_2
+// email is optioneel — fallback: debiteuren.email_overig → email_factuur → email_2
+// (overig eerst: de orderbevestiging hoort naar het algemene/orderbevestiging-
+// adres, niet naar het factuuradres — melding Marjon 11-06-2026)
 // bevestigd_door is optioneel — naam/email van de medewerker
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
@@ -231,15 +233,15 @@ serve(async (req) => {
     vertegenwoordigerNaam = medewerker?.naam ?? null
   }
 
-  // E-mail bepalen
+  // E-mail bepalen — overig vóór factuur (zelfde ladder als de dialog-prefill)
   const toEmail = emailOverride
-    ?? deb?.email_factuur
     ?? deb?.email_overig
+    ?? deb?.email_factuur
     ?? deb?.email_2
     ?? null
 
   if (!toEmail) {
-    return json({ error: 'Geen e-mailadres beschikbaar voor deze klant. Vul email_factuur in op de klantkaart of geef een e-mailadres op.' }, 422)
+    return json({ error: 'Geen e-mailadres beschikbaar voor deze klant. Vul een e-mailadres (overig of factuur) in op de klantkaart of geef een e-mailadres op.' }, 422)
   }
 
   // ── Orderregels ophalen ────────────────────────────────────────────────────

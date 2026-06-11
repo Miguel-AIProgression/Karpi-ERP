@@ -30,11 +30,15 @@ interface AddressSelectorProps {
   onSelect: (addr: AfleverAdres) => void
   /** Wanneer afhalen aanstaat → tonen we adres-keuze niet (Karpi-locatie is dan het adres). */
   disabled?: boolean
+  /** FALSE in edit-modus: het auto-selecteren van het eerste afleveradres bij
+   *  mount zou daar het opgeslagen order-adres (incl. afl_email) overschrijven
+   *  nog vóór de gebruiker iets doet (incident ORD-2026-0350, 11-06-2026). */
+  autoSelect?: boolean
 }
 
 const NIEUW_OPTION = '__nieuw__'
 
-export function AddressSelector({ debiteurNr, onSelect, disabled = false }: AddressSelectorProps) {
+export function AddressSelector({ debiteurNr, onSelect, disabled = false, autoSelect = true }: AddressSelectorProps) {
   const [addresses, setAddresses] = useState<Address[]>([])
   const [selectedId, setSelectedId] = useState<string>('')
   const [selectedGln, setSelectedGln] = useState<string | null>(null)
@@ -56,7 +60,7 @@ export function AddressSelector({ debiteurNr, onSelect, disabled = false }: Addr
         setAddresses(addrs)
         // Auto-selecteer eerste echte afleveradres (adres_nr > 0); adres_nr 0 is het factuuradres
         const defaultAddr = addrs.find(a => a.adres_nr > 0)
-        if (defaultAddr) {
+        if (autoSelect && defaultAddr) {
           setSelectedId(String(defaultAddr.id))
           setSelectedGln(defaultAddr.gln_afleveradres ?? null)
           onSelect({
