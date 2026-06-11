@@ -24,7 +24,7 @@ Spec: [`2026-06-11-order-email-tijdlijn-design.md`](superpowers/specs/2026-06-11
   taalafhankelijke onderwerp en de HTML-body.
 - Frontend: sectie **"E-mails"** op order-detail
   ([`order-emails.tsx`](../frontend/src/components/orders/order-emails.tsx),
-  verbergt zichzelf zolang er niets verstuurd is) — tijdlijn met datum/tijd,
+  lege staat "Nog geen e-mails verstuurd" zolang er niets is) — tijdlijn met datum/tijd,
   soort-badge en klikbaar onderwerp. Klik opent
   [`order-email-dialog.tsx`](../frontend/src/components/orders/order-email-dialog.tsx):
   ontvangers, body in **sandboxed iframe** (`sandbox=""` — mail-HTML kan nooit
