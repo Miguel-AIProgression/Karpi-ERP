@@ -16,8 +16,8 @@ Nieuwe tabel `verstuurde_emails` — één rij per verstuurde mail **per order**
 | kolom | type | toelichting |
 |---|---|---|
 | `id` | BIGSERIAL PK | |
-| `order_id` | INTEGER NOT NULL FK orders ON DELETE CASCADE | tijdlijn-sleutel |
-| `factuur_id` | INTEGER NULL FK facturen ON DELETE SET NULL | alleen bij soort 'factuur' |
+| `order_id` | BIGINT NOT NULL FK orders ON DELETE CASCADE | tijdlijn-sleutel |
+| `factuur_id` | BIGINT NULL FK facturen ON DELETE SET NULL | alleen bij soort 'factuur' |
 | `soort` | TEXT CHECK ('factuur','orderbevestiging') | uitbreidbaar via migratie |
 | `onderwerp` | TEXT NOT NULL | letterlijke mail-subject |
 | `verzonden_aan` | TEXT NOT NULL | komma-gescheiden ontvangers |

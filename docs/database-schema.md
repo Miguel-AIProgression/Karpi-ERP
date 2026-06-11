@@ -1264,8 +1264,8 @@ Log van **daadwerkelijk verstuurde e-mails per order** (mig 365) — voedt de se
 | Kolom | Type | Toelichting |
 |-------|------|-------------|
 | id | BIGSERIAL PK | |
-| order_id | INTEGER NOT NULL FK → orders ON DELETE CASCADE | tijdlijn-sleutel |
-| factuur_id | INTEGER FK → facturen ON DELETE SET NULL | alleen bij soort `'factuur'` |
+| order_id | BIGINT NOT NULL FK → orders ON DELETE CASCADE | tijdlijn-sleutel |
+| factuur_id | BIGINT FK → facturen ON DELETE SET NULL | alleen bij soort `'factuur'` |
 | soort | TEXT CHECK | `'factuur'` / `'orderbevestiging'` |
 | onderwerp | TEXT NOT NULL | letterlijke mail-subject |
 | verzonden_aan | TEXT NOT NULL | komma-gescheiden ontvangers |

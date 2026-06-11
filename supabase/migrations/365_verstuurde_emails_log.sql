@@ -17,8 +17,8 @@
 
 CREATE TABLE verstuurde_emails (
   id            BIGSERIAL PRIMARY KEY,
-  order_id      INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-  factuur_id    INTEGER REFERENCES facturen(id) ON DELETE SET NULL,
+  order_id      BIGINT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  factuur_id    BIGINT REFERENCES facturen(id) ON DELETE SET NULL,
   soort         TEXT NOT NULL CHECK (soort IN ('factuur', 'orderbevestiging')),
   onderwerp     TEXT NOT NULL,
   verzonden_aan TEXT NOT NULL,
