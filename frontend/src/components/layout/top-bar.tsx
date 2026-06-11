@@ -4,6 +4,7 @@ import { Search, LogOut, ChevronDown, Bug, Bell } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
 import { isBugBeheerder } from '@/lib/bug/beheerder'
 import { useBugMeldingen, isVerwerktOngezien } from '@/hooks/use-bug-meldingen'
+import { FeedbackWidget } from '@/components/feedback/feedback-widget'
 
 export function TopBar() {
   const { user, signOut } = useAuth()
@@ -39,6 +40,11 @@ export function TopBar() {
       </div>
 
       <div className="flex items-center gap-1">
+        {/* Feedback/bug melden — in de balk zodat hij geen pagina-knoppen overlapt */}
+        <div className="mr-2">
+          <FeedbackWidget />
+        </div>
+
         {/* Meldingen-belletje met teller voor verwerkte-maar-ongeziene meldingen */}
         <button
           onClick={() => navigate('/meldingen')}
