@@ -151,26 +151,6 @@ export function VervoerderDetailPage() {
                   className={inputClass}
                 />
               </Field>
-              <Field label="Label-breedte (mm)">
-                <input
-                  type="number"
-                  min={1}
-                  value={form.label_breedte_mm}
-                  onChange={(e) => update('label_breedte_mm', e.target.value)}
-                  placeholder="80"
-                  className={inputClass}
-                />
-              </Field>
-              <Field label="Label-hoogte (mm)">
-                <input
-                  type="number"
-                  min={1}
-                  value={form.label_hoogte_mm}
-                  onChange={(e) => update('label_hoogte_mm', e.target.value)}
-                  placeholder="150"
-                  className={inputClass}
-                />
-              </Field>
               <Field label="Service-codes (komma-gescheiden)">
                 <input
                   type="text"
@@ -182,6 +162,31 @@ export function VervoerderDetailPage() {
               </Field>
             </>
           )}
+          {/* Label-formaat geldt voor alle typen — ook HST (api) rendert het
+              verzendlabel in RugFlow. Moet matchen met de fysieke rol in de
+              Zebra én het driver-papierformaat (mig 361: HST 76,2×152,4). */}
+          <Field label="Verzendlabel-breedte (mm)">
+            <input
+              type="number"
+              min={1}
+              step={0.1}
+              value={form.label_breedte_mm}
+              onChange={(e) => update('label_breedte_mm', e.target.value)}
+              placeholder="76.2"
+              className={inputClass}
+            />
+          </Field>
+          <Field label="Verzendlabel-hoogte (mm)">
+            <input
+              type="number"
+              min={1}
+              step={0.1}
+              value={form.label_hoogte_mm}
+              onChange={(e) => update('label_hoogte_mm', e.target.value)}
+              placeholder="152.4"
+              className={inputClass}
+            />
+          </Field>
           <Field label="Account-nummer">
             <input
               type="text"
