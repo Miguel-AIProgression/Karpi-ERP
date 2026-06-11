@@ -80,8 +80,10 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
           )}
         </div>
         <div className="flex gap-2 flex-wrap justify-end">
-          {/* Bevestig order (e-mailbevestiging) — niet tonen voor concept-orders */}
-          {!isConcept && order.bevestigd_at ? (
+          {/* Bevestig order (e-mailbevestiging) — niet tonen voor concept-orders,
+              en niet voor productie-only orders: orderbevestiging + facturatie
+              loopt voor die orders via Basta, niet via RugFlow (ADR-0029). */}
+          {order.alleen_productie ? null : !isConcept && order.bevestigd_at ? (
             <>
               <span
                 className="flex items-center gap-1.5 px-3 py-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-[var(--radius-sm)]"
