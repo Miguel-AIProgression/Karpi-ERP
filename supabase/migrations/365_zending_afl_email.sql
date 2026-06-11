@@ -1,7 +1,9 @@
--- Migratie 362: zendingen.afl_email (track & trace-contact voor de vervoerder) + vul-trigger
+-- Migratie 365: zendingen.afl_email (track & trace-contact voor de vervoerder) + vul-trigger
+-- (hernummerd van 362 → 365 vóór merge: origin/main nam parallel 362-364 in
+--  beslag, waaronder 364_order_email_snapshots.sql dat orders.afl_email vult)
 --
 -- Aanleiding (mail Piet-Hein/Marjon 11-06-2026): het order-formulier vult sinds
--- kort automatisch een apart e-mailadres voor factuur én aflevering. Het
+-- mig 364 automatisch een apart e-mailadres voor factuur én aflevering. Het
 -- aflever-e-mailadres (orders.afl_email, mig 084) is bedoeld voor track & trace
 -- richting de klant — de vervoerder mag dáár naartoe mailen, NIET naar het
 -- factuur-adres. We snapshotten het op de zending zodat hst-send (en toekomstige

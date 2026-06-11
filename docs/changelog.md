@@ -1,15 +1,15 @@
 # Changelog — RugFlow ERP
 
-## 2026-06-11 — Aflever-e-mailadres mee naar vervoerder voor track & trace (mig 362)
+## 2026-06-11 — Aflever-e-mailadres mee naar vervoerder voor track & trace (mig 365)
 
-**Waarom:** mail Piet-Hein/Marjon 11-06-2026 — het order-formulier vult nu
-automatisch aparte e-mailadressen voor factuur en aflevering. Het
+**Waarom:** mail Piet-Hein/Marjon 11-06-2026 — het order-formulier vult sinds
+mig 364 automatisch aparte e-mailadressen voor factuur en aflevering. Het
 aflever-e-mailadres is bedoeld voor track & trace: de vervoerder mag dáár
 naartoe mailen, het factuur-adres nooit (klant krijgt wél T&T, niet de factuur).
 HST stuurde `ToAddress.Email` tot nu toe altijd leeg.
 
 **Wat (branch `feat/zending-afl-email-tnt`):**
-- Mig 362: `zendingen.afl_email` (snapshot) + BEFORE-INSERT-trigger
+- Mig 365: `zendingen.afl_email` (snapshot) + BEFORE-INSERT-trigger
   `trg_zending_fill_email` uit `orders.afl_email` — zelfde patroon als
   `afl_telefoon` (mig 339), maar **bewust zonder fallback** naar
   factuur-e-mailadressen. Backfill voor nog-niet-verstuurde zendingen.
@@ -175,7 +175,6 @@ alleen dan het volledige etiket vullend.
   **Liggend** bij breed formaat (HST).
 - **Driver:** terug naar **liggend** (zoals Miguels oorspronkelijke instelling),
   7,62×15,24, marges/schaal-instructies ongewijzigd.
->>>>>>> origin/main
 
 ## 2026-06-11 — HST-verzendlabel op 3"×6"-rol + thermische scherpte-fixes (mig 361)
 
