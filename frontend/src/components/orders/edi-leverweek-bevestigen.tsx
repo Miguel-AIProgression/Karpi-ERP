@@ -31,7 +31,7 @@ interface Props {
 export function EdiLeverweekBevestigen({ orderId, debiteurNr, gewenstIso, afleverdatumIso, orderStatus }: Props) {
   const [weekStr, setWeekStr] = useState(verzendWeekIsoString(afleverdatumIso || gewenstIso))
 
-  const { kanaal, bericht, isLoading, busy, error, bevestig } = useBevestigEdiOrder(orderId, debiteurNr)
+  const { kanaal, bericht, isLoading, configError, busy, error, bevestig } = useBevestigEdiOrder(orderId, debiteurNr)
 
   const gekozenDatum = verzendWeekStringToDatum(weekStr)
   const vergelijking = vergelijkLeverweek(gewenstIso, gekozenDatum)
@@ -97,17 +97,25 @@ export function EdiLeverweekBevestigen({ orderId, debiteurNr, gewenstIso, afleve
 
         <button
           onClick={handleBevestig}
-          disabled={busy || isLoading || !gekozenDatum || (kanaal === 'edi' && !bericht)}
+          disabled={busy || isLoading || configError || !gekozenDatum || (kanaal === 'edi' && !bericht)}
           className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] bg-terracotta-500 px-4 py-2 text-sm font-medium text-white hover:bg-terracotta-600 disabled:opacity-50"
           title="Zet de leverweek vast en verstuur de orderbevestiging. Hierna komt de order vrij voor picken/productie."
         >
           {busy ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-          {kanaal === 'edi'
-            ? 'Bevestig leverweek + verstuur orderbev'
-            : 'Bevestig leverweek (geen EDI-orderbev — uitgeschakeld voor deze partner)'}
+          {isLoading
+            ? 'Bevestig leverweek'
+            : kanaal === 'edi'
+              ? 'Bevestig leverweek + verstuur orderbev'
+              : 'Bevestig leverweek (geen actieve EDI-orderbevestiging voor deze partner)'}
         </button>
 
-        {kanaal === 'edi' && !isLoading && !bericht && (
+        {configError && (
+          <span className="text-sm text-rose-600">
+            Partnerconfig kon niet geladen worden — probeer opnieuw of bevestig via de EDI-module.
+          </span>
+        )}
+
+        {!configError && kanaal === 'edi' && !isLoading && !bericht && (
           <span className="text-sm text-rose-600">
             Geen bron-EDI-bericht gevonden — bevestigen kan alleen via de EDI-module.
           </span>

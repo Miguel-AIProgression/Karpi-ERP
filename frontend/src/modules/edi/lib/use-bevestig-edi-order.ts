@@ -29,7 +29,7 @@ export function useBevestigEdiOrder(orderId: number, debiteurNr: number) {
     staleTime: Infinity,
   })
 
-  const { data: config, isLoading: configLoading } = useQuery({
+  const { data: config, isLoading: configLoading, isError: configError } = useQuery({
     queryKey: ['edi-handelspartner-config', debiteurNr],
     queryFn: () => fetchHandelspartnerConfig(debiteurNr),
     staleTime: 60_000,
@@ -92,6 +92,7 @@ export function useBevestigEdiOrder(orderId: number, debiteurNr: number) {
     kanaal,
     bericht,
     isLoading: berichtLoading || configLoading,
+    configError,
     busy,
     error,
     bevestig,

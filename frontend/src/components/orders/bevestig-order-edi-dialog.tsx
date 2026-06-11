@@ -35,7 +35,7 @@ export function BevestigOrderEdiDialog({
 }: Props) {
   const [weekStr, setWeekStr] = useState(verzendWeekIsoString(afleverdatumIso || gewenstIso))
   const [klaar, setKlaar] = useState(false)
-  const { kanaal, bericht, isLoading, busy, error, bevestig } = useBevestigEdiOrder(orderId, debiteurNr)
+  const { kanaal, bericht, isLoading, configError, busy, error, bevestig } = useBevestigEdiOrder(orderId, debiteurNr)
 
   const gekozenDatum = verzendWeekStringToDatum(weekStr)
   const vergelijking = vergelijkLeverweek(gewenstIso, gekozenDatum)
@@ -66,8 +66,8 @@ export function BevestigOrderEdiDialog({
                   </>
                 ) : (
                   <>
-                    <strong>{orderNr}</strong> is administratief bevestigd. Deze partner ontvangt
-                    geen EDI-orderbevestiging (uitgeschakeld in de EDI-config).
+                    <strong>{orderNr}</strong> is administratief bevestigd. Er is geen actieve
+                    EDI-orderbevestiging voor deze partner.
                   </>
                 )}
               </p>
@@ -86,15 +86,17 @@ export function BevestigOrderEdiDialog({
               <h3 className="text-lg font-semibold text-slate-900">Order bevestigen (EDI)</h3>
             </div>
             <p className="text-sm text-slate-500 mb-4">
-              {kanaal === 'edi' ? (
+              {isLoading ? (
+                <>Partnerconfiguratie laden…</>
+              ) : kanaal === 'edi' ? (
                 <>
                   De bevestiging van <strong>{orderNr}</strong> gaat via EDI (Transus) naar de
                   partner — niet per e-mail.
                 </>
               ) : (
                 <>
-                  Deze partner ontvangt geen EDI-orderbevestiging (uitgeschakeld). De order wordt
-                  alleen administratief bevestigd; er gaat géén bericht en géén e-mail uit.
+                  Er is geen actieve EDI-orderbevestiging voor deze partner. De order wordt alleen
+                  administratief bevestigd; er gaat géén bericht en géén e-mail uit.
                 </>
               )}
             </p>
@@ -141,7 +143,12 @@ export function BevestigOrderEdiDialog({
               />
             </label>
 
-            {kanaal === 'edi' && !isLoading && !bericht && (
+            {configError && (
+              <p className="mb-3 text-sm text-rose-600">
+                Partnerconfig kon niet geladen worden — probeer opnieuw of bevestig via de EDI-module.
+              </p>
+            )}
+            {!configError && kanaal === 'edi' && !isLoading && !bericht && (
               <p className="mb-3 text-sm text-rose-600">
                 Geen bron-EDI-bericht gevonden — bevestigen kan alleen via de EDI-module.
               </p>
@@ -158,11 +165,15 @@ export function BevestigOrderEdiDialog({
               </button>
               <button
                 onClick={handleBevestig}
-                disabled={busy || isLoading || !gekozenDatum || (kanaal === 'edi' && !bericht)}
+                disabled={busy || isLoading || configError || !gekozenDatum || (kanaal === 'edi' && !bericht)}
                 className="flex items-center gap-2 px-4 py-2 text-sm bg-terracotta-500 text-white rounded-[var(--radius-sm)] hover:bg-terracotta-600 disabled:opacity-50 font-medium"
               >
                 {busy && <Loader2 size={14} className="animate-spin" />}
-                {kanaal === 'edi' ? 'Bevestig + verstuur via EDI' : 'Bevestig (zonder bericht)'}
+                {isLoading
+                  ? 'Bevestig order'
+                  : kanaal === 'edi'
+                    ? 'Bevestig + verstuur via EDI'
+                    : 'Bevestig (zonder bericht)'}
               </button>
             </div>
           </>
