@@ -18,7 +18,9 @@ INSERT INTO vervoerders (code, display_naam, type, actief, notities) VALUES
 ON CONFLICT (code) DO NOTHING;
 
 -- 3. Placeholder edi_partner_b ('Verhoek', type edi, mig 170) opruimen.
---    Guarded: blijft staan als er tóch ergens een FK naar wijst.
+--    Guarded tegen NO ACTION-FK's (zendingen, edi_handelspartner_config);
+--    let op: selectie-regels cascaden en orderregel-overrides worden NULL —
+--    acceptabel voor deze altijd-inactieve placeholder.
 DO $$
 BEGIN
   BEGIN

@@ -276,12 +276,17 @@ COMMENT ON FUNCTION enqueue_zending_naar_vervoerder IS
 -- ============================================================================
 CREATE OR REPLACE VIEW verhoek_verzend_monitor AS
 SELECT
-  (SELECT COUNT(*)::INT FROM verhoek_transportorders WHERE status = 'Verstuurd' AND sent_at::date = CURRENT_DATE) AS verstuurd_vandaag,
-  (SELECT COUNT(*)::INT FROM verhoek_transportorders WHERE status = 'Fout')     AS fout_open,
-  (SELECT COUNT(*)::INT FROM verhoek_transportorders WHERE status = 'Wachtrij') AS wachtrij,
-  (SELECT COUNT(*)::INT FROM verhoek_transportorders WHERE status = 'Bezig')    AS bezig,
-  (SELECT (EXTRACT(EPOCH FROM (now() - MIN(created_at))) / 60)::INT FROM verhoek_transportorders WHERE status = 'Wachtrij') AS oudste_wachtrij_minuten,
-  (SELECT (EXTRACT(EPOCH FROM (now() - MIN(updated_at))) / 60)::INT FROM verhoek_transportorders WHERE status = 'Bezig')    AS oudste_bezig_minuten;
+  COUNT(*) FILTER (WHERE status = 'Verstuurd' AND sent_at::date = CURRENT_DATE)::INT AS verstuurd_vandaag,
+  COUNT(*) FILTER (WHERE status = 'Fout')::INT                                       AS fout_open,
+  COUNT(*) FILTER (WHERE status = 'Wachtrij')::INT                                   AS wachtrij,
+  COUNT(*) FILTER (WHERE status = 'Bezig')::INT                                      AS bezig,
+  COALESCE(
+    EXTRACT(EPOCH FROM (now() - MIN(created_at) FILTER (WHERE status = 'Wachtrij'))) / 60,
+    0)::INT                                                                           AS oudste_wachtrij_minuten,
+  COALESCE(
+    EXTRACT(EPOCH FROM (now() - MIN(updated_at) FILTER (WHERE status = 'Bezig'))) / 60,
+    0)::INT                                                                           AS oudste_bezig_minuten
+FROM verhoek_transportorders;
 
 COMMENT ON VIEW verhoek_verzend_monitor IS
   'Cron-health Verhoek-verzending (spiegel hst_verzend_monitor, mig 338). '
