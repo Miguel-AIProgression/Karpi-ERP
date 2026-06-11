@@ -16,6 +16,7 @@ import { type Taal, bepaalTaal, vertaalOmschrijving } from '../_shared/orderbeve
 import { sendFactuurEmail } from '../_shared/graph-mail-client.ts'
 import { isoWeekJaar } from '../_shared/iso-week.ts'
 import { berekenFactuurTotalen } from '../_shared/factuur-bedrag.ts'
+import { effectiefBtwPct, isBtwVerlegd } from '../_shared/btw.ts'
 
 const SUPABASE_URL        = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -46,6 +47,7 @@ const VERTALINGEN: Record<Taal, {
   totaal: string
   subtotaal: string
   btwOver: (percentage: string, bedrag: string) => string
+  btwVerlegd: string
   totaalInclBtw: string
   disclaimer: string
   vragen: (email: string, telefoon: string) => string
@@ -66,6 +68,7 @@ const VERTALINGEN: Record<Taal, {
     totaal: 'Totaalbedrag',
     subtotaal: 'Totaalbedrag excl. btw',
     btwOver: (pct, bedrag) => `${pct}% btw over ${bedrag}`,
+    btwVerlegd: 'BTW verlegd',
     totaalInclBtw: 'Totaalbedrag incl. btw',
     disclaimer: 'Een geringe maatafwijking van +/- 3% alsmede een kleurafwijking kan optreden.',
     vragen: (email, tel) => `Heeft u vragen over uw order? Neem dan contact met ons op via <a href="mailto:${email}">${email}</a> of ${tel}.`,
@@ -86,6 +89,7 @@ const VERTALINGEN: Record<Taal, {
     totaal: 'Gesamtbetrag',
     subtotaal: 'Gesamtbetrag exkl. MwSt.',
     btwOver: (pct, bedrag) => `${pct}% MwSt. auf ${bedrag}`,
+    btwVerlegd: 'Steuerschuldnerschaft des Leistungsempfängers (Reverse Charge)',
     totaalInclBtw: 'Gesamtbetrag inkl. MwSt.',
     disclaimer: 'Geringe Maßabweichungen von +/- 3% sowie Farbabweichungen sind möglich.',
     vragen: (email, tel) => `Haben Sie Fragen zu Ihrer Bestellung? Kontaktieren Sie uns über <a href="mailto:${email}">${email}</a> oder ${tel}.`,
@@ -106,6 +110,7 @@ const VERTALINGEN: Record<Taal, {
     totaal: 'Montant total',
     subtotaal: 'Montant total hors TVA',
     btwOver: (pct, bedrag) => `TVA ${pct}% sur ${bedrag}`,
+    btwVerlegd: 'Autoliquidation de la TVA',
     totaalInclBtw: 'Montant total TVA comprise',
     disclaimer: 'Un léger écart de mesure de +/- 3 % ainsi qu\'une différence de couleur peuvent survenir.',
     vragen: (email, tel) => `Des questions sur votre commande ? Contactez-nous via <a href="mailto:${email}">${email}</a> ou ${tel}.`,
@@ -126,6 +131,7 @@ const VERTALINGEN: Record<Taal, {
     totaal: 'Total amount',
     subtotaal: 'Total amount excl. VAT',
     btwOver: (pct, bedrag) => `${pct}% VAT over ${bedrag}`,
+    btwVerlegd: 'VAT reverse charged',
     totaalInclBtw: 'Total amount incl. VAT',
     disclaimer: 'A slight size deviation of +/- 3% as well as a colour variation may occur.',
     vragen: (email, tel) => `Questions about your order? Contact us via <a href="mailto:${email}">${email}</a> or ${tel}.`,
@@ -204,7 +210,7 @@ serve(async (req) => {
       debiteur_nr, bevestigd_at, vertegenw_code, afhalen,
       afl_naam, afl_naam_2, afl_adres, afl_postcode, afl_plaats, afl_land,
       fact_naam, fact_land,
-      debiteuren!orders_debiteur_nr_fkey(naam, email_factuur, email_overig, email_2, betaalconditie, btw_percentage)
+      debiteuren!orders_debiteur_nr_fkey(naam, email_factuur, email_overig, email_2, betaalconditie, btw_percentage, btw_verlegd_intracom)
     `)
     .eq('id', order_id)
     .single()
@@ -218,6 +224,7 @@ serve(async (req) => {
     email_2: string | null
     betaalconditie: string | null
     btw_percentage: number | string | null
+    btw_verlegd_intracom: boolean | null
   } | null
 
   // Vertegenwoordiger: snapshot op de order (vertegenw_code), opgezocht in medewerkers.
@@ -272,10 +279,11 @@ serve(async (req) => {
     kleur_code: r.maatwerk_kleur_code ?? r.producten?.kleur_code ?? null,
   }))
 
-  // BTW-percentage: zelfde bron-van-waarheid en default als genereer_factuur
-  // (COALESCE(debiteuren.btw_percentage, 21.00)) — zo lopen orderbevestiging en
-  // factuur niet uit elkaar.
-  const btwPercentage = Number(deb?.btw_percentage ?? 21)
+  // BTW: zelfde bron-van-waarheid als genereer_factuur_voor_bundel (mig 371) —
+  // verlegd-vlag wint, anders debiteuren.btw_percentage met fallback 21. Zo
+  // lopen orderbevestiging en factuur niet uit elkaar.
+  const btwVerlegd = isBtwVerlegd(deb)
+  const btwPercentage = effectiefBtwPct(deb)
   const { subtotaal, btw_bedrag: btwBedrag, totaal } = berekenFactuurTotalen(
     regels.map((r) => ({ bedrag: r.bedrag ?? 0 })),
     btwPercentage,
@@ -365,6 +373,7 @@ serve(async (req) => {
     regels: regelsVertaald,
     subtotaal,
     btw_percentage: btwPercentage,
+    btw_verlegd: btwVerlegd,
     btw_bedrag: btwBedrag,
     totaal,
     betaalconditie: deb?.betaalconditie ?? null,
@@ -420,8 +429,8 @@ serve(async (req) => {
       <td style="padding: 6px 8px; text-align: right; white-space: nowrap;">${formatBedrag(subtotaal)}</td>
     </tr>
     <tr>
-      <td style="padding: 6px 8px; text-align: right;" colspan="2">${v.btwOver(formatBtwPercentage(btwPercentage), formatBedrag(subtotaal))}</td>
-      <td style="padding: 6px 8px; text-align: right; white-space: nowrap;">${formatBedrag(btwBedrag)}</td>
+      <td style="padding: 6px 8px; text-align: right;" colspan="2">${btwVerlegd ? v.btwVerlegd : v.btwOver(formatBtwPercentage(btwPercentage), formatBedrag(subtotaal))}</td>
+      <td style="padding: 6px 8px; text-align: right; white-space: nowrap;">${btwVerlegd ? '' : formatBedrag(btwBedrag)}</td>
     </tr>
     <tr>
       <td style="padding: 6px 8px; font-weight: bold; text-align: right;" colspan="2">${v.totaalInclBtw}</td>
