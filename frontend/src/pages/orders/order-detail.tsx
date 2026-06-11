@@ -19,6 +19,7 @@ import { DebiteurBevestigenWidget } from '@/components/orders/debiteur-bevestige
 import { BastaAfhandelingPaneel } from '@/components/orders/basta-afhandeling-paneel'
 import { LevertijdWijzigingBanner } from '@/components/orders/levertijd-wijziging-banner'
 import { VerzendFoutBanner } from '@/components/orders/verzend-fout-banner'
+import { OrderZendingen } from '@/components/orders/order-zendingen'
 import { isLevertijdWijzigingTeBevestigen } from '@/lib/orders/levertijd-wijziging'
 
 function EmailInhoudPanel({ body }: { body: string }) {
@@ -152,6 +153,7 @@ export function OrderDetailPage() {
         orderId={order.id}
         orderdatum={order.orderdatum}
       />
+      <OrderZendingen orderId={order.id} />
       <OrderEventsTijdlijn orderId={order.id} />
       <OrderFacturen orderId={order.id} />
     </>

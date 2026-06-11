@@ -1,5 +1,18 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-11 — Zendingen + track & trace zichtbaar op order-detail (branch `feat/zending-herprint-ingang`)
+
+De track & trace-code van een zending was alleen op de Zendingen-pagina te
+zien; op de order zelf stond wel het verzenddocument maar niet de T&T-code.
+Nieuw blok **Zendingen** op order-detail
+([`order-zendingen.tsx`](../frontend/src/components/orders/order-zendingen.tsx),
+stijl gespiegeld aan het Facturatie-blok): per zending het zending-nr (link
+naar zending-detail), status-badge, vervoerder-tag, verzenddatum en de
+track & trace-code uit `zendingen.track_trace` met kopieerknop. Zolang de
+vervoerder nog geen code teruggaf staat er "nog geen track & trace"; zonder
+zendingen rendert het blok niets (gouden regel). Orders-per-zending lopen via
+de M2M `zending_orders` (mig 222), dus bundel-zendingen tonen ook correct.
+
 ## 2026-06-11 — HST-adresparser robuust voor werkelijke webshop-adressen (branch `feat/zending-herprint-ingang`)
 
 **Incident ZEND-2026-0002 (vervolg op de Shopify-plaats-fix verderop):** HST
