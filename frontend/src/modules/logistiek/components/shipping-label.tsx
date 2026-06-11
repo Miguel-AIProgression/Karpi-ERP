@@ -65,11 +65,19 @@ function ShippingLabelCompact({
   const fz = (px: number) => `${Math.round(px * s * 10) / 10}px`
   const dik = (px: number) => `${Math.max(px, Math.round(px * s))}px`
 
-  const colRechtsMm = breedteMm * (COL_RECHTS_MM / (DEFAULT_LABEL_BREEDTE_MM - 0.5))
+  // Ingebouwde witmarge rondom, zoals de oude WC-referentie-stickers (print
+  // staat ~4mm van de stickerrand). Maakt het label meteen robuust tegen
+  // hairline-overflow: het grid is kleiner dan de pagina, dus de print-engine
+  // heeft nooit reden om naar een tweede pagina te breken.
+  const margeMm = 2.5 * s
+  const binnenBreedteMm = breedteMm - 2 * margeMm
+  const binnenHoogteMm = hoogteMm - 2 * margeMm
+
+  const colRechtsMm = binnenBreedteMm * (COL_RECHTS_MM / (DEFAULT_LABEL_BREEDTE_MM - 0.5))
   const rij1Mm = RIJ1_MM * s
   const rij3Mm = RIJ3_MM * s
-  const colLinksMm = breedteMm - colRechtsMm
-  const rij2Mm = hoogteMm - rij1Mm - rij3Mm
+  const colLinksMm = binnenBreedteMm - colRechtsMm
+  const rij2Mm = binnenHoogteMm - rij1Mm - rij3Mm
   // Beschikbare breedte voor de barcode (linkerkolom minus padding) — de
   // barcode kiest daarbinnen zelf een dot-aligned module-breedte.
   const barcodeFitMm = colLinksMm - 2 * s
@@ -95,8 +103,10 @@ function ShippingLabelCompact({
         display: 'block',
         contain: 'layout paint size',
         color: '#000',
+        padding: `${margeMm}mm`,
       }}
     >
+      <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       {/* Rij 1 — links: order/uw-ref + productnaam */}
       <div
         style={{
@@ -193,7 +203,7 @@ function ShippingLabelCompact({
             fontSize: fz(8),
             fontWeight: 700,
             textTransform: 'uppercase',
-            lineHeight: 1.25,
+            lineHeight: 1.6,
             boxSizing: 'border-box',
             overflow: 'hidden',
           }}
@@ -329,6 +339,7 @@ function ShippingLabelCompact({
             <span>{ref}</span>
           </div>
         </div>
+      </div>
       </div>
     </div>
   )
