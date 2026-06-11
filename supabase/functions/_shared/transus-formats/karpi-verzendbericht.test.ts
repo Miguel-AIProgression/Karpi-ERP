@@ -26,3 +26,12 @@ Deno.test('valideerVerzendberichtInput gooit bij ontbrekende GLN of lege regels'
   assertThrows(() => valideerVerzendberichtInput({ ...basis, recipientGln: '' }));
   assertThrows(() => valideerVerzendberichtInput({ ...basis, regels: [] }));
 });
+
+Deno.test('valideerVerzendberichtInput gooit bij lege leverdatum', () => {
+  assertThrows(() => valideerVerzendberichtInput({ ...basis, leverdatum: '' }));
+});
+
+Deno.test('valideerVerzendberichtInput gooit bij lege zendingNr of verzenddatum', () => {
+  assertThrows(() => valideerVerzendberichtInput({ ...basis, zendingNr: '' }));
+  assertThrows(() => valideerVerzendberichtInput({ ...basis, verzenddatum: '' }));
+});

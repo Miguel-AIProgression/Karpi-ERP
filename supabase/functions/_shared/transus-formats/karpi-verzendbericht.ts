@@ -93,6 +93,15 @@ export interface VerzendberichtInput {
  * Gooit een Error bij ontbrekende verplichte velden.
  */
 export function valideerVerzendberichtInput(input: VerzendberichtInput): undefined {
+  if (!input.zendingNr) {
+    throw new Error('VerzendberichtInput: zendingNr is verplicht');
+  }
+  if (!input.verzenddatum) {
+    throw new Error('VerzendberichtInput: verzenddatum (ISO YYYY-MM-DD) is verplicht');
+  }
+  if (!input.leverdatum) {
+    throw new Error('VerzendberichtInput: leverdatum (orders.afleverdatum) is verplicht');
+  }
   if (!input.senderGln) {
     throw new Error('VerzendberichtInput: senderGln (Karpi-GLN NAD+SU) is verplicht');
   }

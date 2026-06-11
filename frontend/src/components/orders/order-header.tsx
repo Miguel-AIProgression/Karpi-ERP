@@ -116,8 +116,10 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
                 <CheckCircle size={14} />
                 Bevestigd
               </span>
-              {/* Opnieuw versturen: tonen voor alle e-mail-kanalen (ook EDI-orders zonder EDI-orderbev) */}
-              {!(isEdiOrder && kanaal === 'edi') && (
+              {/* Opnieuw versturen: tonen voor alle e-mail-kanalen (ook EDI-orders zonder EDI-orderbev).
+                  Voor EDI-orders alleen renderen zodra de config geladen is — anders wisselt
+                  het kanaal nog van 'email' naar 'edi' terwijl de config binnenkomt (race). */}
+              {(!isEdiOrder || ediConfigResolved) && !(isEdiOrder && kanaal === 'edi') && (
                 <button
                   type="button"
                   onClick={() => setShowBevestigDialog(true)}
@@ -243,7 +245,7 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
         <BevestigOrderDialog
           orderId={order.id}
           orderNr={order.order_nr}
-          defaultEmail={order.bevestiging_email ?? (order as any).klant_email ?? null}
+          defaultEmail={order.bevestiging_email ?? order.klant_email ?? null}
           isHerversturing={!!order.bevestigd_at}
           sluitEdiGate={isEdiOrder}
           onClose={() => setShowBevestigDialog(false)}

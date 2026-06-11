@@ -29,6 +29,11 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const KARPI_GLN_FALLBACK = '8715954999998'
 
+// Sweep-venster: historische orders niet alsnog DESADV'en bij activatie.
+// De cron draait */15 min — 7 dagen is ruim voldoende. Gerichte POST {order_id}
+// omzeilt het venster bewust (geen lower-bound in verwerkOrder).
+const SWEEP_VENSTER_DAGEN = 7
+
 const CORS_HEADERS = {
   'access-control-allow-origin': '*',
   'access-control-allow-headers': 'authorization, x-client-info, apikey, content-type',
@@ -49,11 +54,18 @@ serve(async (req) => {
   const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE)
 
   let orderId = 0
+  let rawOrderId: unknown = undefined
   try {
     const body = await req.json()
-    orderId = Number(body?.order_id ?? 0)
+    rawOrderId = body?.order_id
+    orderId = Number(rawOrderId ?? 0)
   } catch {
     // geen body of geen order_id → sweep-modus
+  }
+
+  // M1: aanwezige maar ongeldige order_id → 400 (geen stille fallback naar sweep)
+  if (rawOrderId !== undefined && rawOrderId !== null && !(Number.isFinite(orderId) && orderId > 0)) {
+    return json(400, { error: `Ongeldig order_id: ${JSON.stringify(rawOrderId)} (verwacht positief geheel getal)` })
   }
 
   if (Number.isFinite(orderId) && orderId > 0) {
@@ -107,13 +119,16 @@ async function zoekKandidaten(
 
   const debiteurNrs = (configs as Array<{ debiteur_nr: number }>).map((c) => c.debiteur_nr)
 
-  // Stap 2: verzonden EDI-orders van deze debiteuren
+  // Stap 2: verzonden EDI-orders van deze debiteuren binnen het sweep-venster
+  // (historische orders niet alsnog DESADV'en bij activatie; gerichte POST omzeilt dit)
+  const sweepVanaf = new Date(Date.now() - SWEEP_VENSTER_DAGEN * 24 * 60 * 60 * 1000).toISOString()
   const { data: orders, error: ordErr } = await sb
     .from('orders')
     .select('id')
     .eq('status', 'Verzonden')
     .eq('bron_systeem', 'edi')
     .in('debiteur_nr', debiteurNrs)
+    .gte('verzonden_at', sweepVanaf)
   if (ordErr) return { ok: false, ids: [], error: ordErr.message }
   if (!orders || orders.length === 0) return { ok: true, ids: [] }
 
@@ -143,7 +158,7 @@ async function zoekKandidaten(
 
 interface VerwerkResult {
   order_id: number
-  status: 'wachtrij' | 'al_aanwezig' | 'overgeslagen' | 'fout'
+  status: 'wachtrij' | 'al_aanwezig' | 'overgeslagen' | 'skip_geen_fysieke_regels' | 'fout'
   uitgaandId?: number
   error?: string
 }
@@ -208,14 +223,15 @@ async function verwerkOrder(sb: any, orderId: number): Promise<VerwerkResult> {
     // 6. GTIN's ophalen voor de orderregels
     const { data: regelRows, error: regelErr } = await sb
       .from('order_regels')
-      .select('id, regelnummer, artikelnr, omschrijving, orderaantal, producten(ean_code)')
+      .select('id, regelnummer, artikelnr, omschrijving, orderaantal, producten(ean_code, is_pseudo)')
       .eq('order_id', orderId)
       .gt('orderaantal', 0)
       .order('regelnummer')
     if (regelErr) return { order_id: orderId, status: 'fout', error: `Fetch regels: ${regelErr.message}` }
 
+    // Fysiek document — admin-pseudo/VERZEND-regels horen er niet op (ADR-0018)
     const regels = ((regelRows ?? []) as OrderRegelRow[])
-      .filter((r) => Number(r.orderaantal) > 0)
+      .filter((r) => Number(r.orderaantal) > 0 && !r.producten?.is_pseudo)
       .map((r, idx) => ({
         regelnummer: r.regelnummer ?? idx + 1,
         gtin: r.producten?.ean_code ?? null,
@@ -225,14 +241,14 @@ async function verwerkOrder(sb: any, orderId: number): Promise<VerwerkResult> {
       }))
 
     if (regels.length === 0) {
-      return { order_id: orderId, status: 'overgeslagen', error: 'Order heeft geen regels met aantal > 0' }
+      return { order_id: orderId, status: 'skip_geen_fysieke_regels' as const }
     }
 
     // 7. Bouw VerzendberichtInput
     const input: VerzendberichtInput = {
       zendingNr: zending?.zending_nr ?? order.order_nr,
       verzenddatum: zending?.verzenddatum ?? new Date().toISOString().slice(0, 10),
-      leverdatum: order.afleverdatum,
+      leverdatum: order.afleverdatum ?? '',
       orderNumberBuyer,
       orderNumberSupplier: order.order_nr,
       senderGln,
@@ -264,12 +280,11 @@ async function verwerkOrder(sb: any, orderId: number): Promise<VerwerkResult> {
     try {
       payloadRaw = buildKarpiVerzendbericht(input)
     } catch (e) {
-      // Task 12 is nog niet klaar — sla de structuur op als payload_parsed zodat
-      // de infrastructuur klaar staat; payload_raw blijft leeg totdat de builder werkt.
+      // Builder gooit — format nog niet gevalideerd (Taak 12-STOP).
+      // Geen insert in edi_berichten: geen payload_raw beschikbaar.
+      // Resultaat: per-order error-result in de response; sweep probeert volgende
+      // keer opnieuw zodra de builder wél werkt.
       const errorMsg = e instanceof Error ? e.message : String(e)
-
-      // Schrijf als 'Fout' zodat de sweep de order volgende keer opnieuw probeert
-      // zodra de builder wél werkt. Geen insert in Wachtrij zonder payload_raw.
       return { order_id: orderId, status: 'fout', error: errorMsg }
     }
 
@@ -346,5 +361,5 @@ interface OrderRegelRow {
   artikelnr: string | null
   omschrijving: string | null
   orderaantal: number | string
-  producten: { ean_code: string | null } | null
+  producten: { ean_code: string | null; is_pseudo: boolean | null } | null
 }
