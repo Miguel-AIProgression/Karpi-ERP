@@ -1,5 +1,15 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-11 — Feedback-knop verplaatst naar de TopBar
+
+De zwevende feedback-knop rechtsonder overlapte pagina-knoppen, zoals de
+"Volgende"-paginering op het orders-overzicht. De knop staat nu permanent in
+de bovenbalk naast het meldingen-belletje, in dezelfde donkere pill-stijl
+zodat hij opvallend blijft. [`FeedbackWidget`](../frontend/src/components/feedback/feedback-widget.tsx)
+wordt voortaan gerenderd in [`top-bar.tsx`](../frontend/src/components/layout/top-bar.tsx)
+i.p.v. los in `AppLayout`; dialog en gedrag (pagina-URL, urgentie, bijlage)
+ongewijzigd.
+
 ## 2026-06-11 — Zendingen + track & trace zichtbaar op order-detail (branch `feat/zending-herprint-ingang`)
 
 De track & trace-code van een zending was alleen op de Zendingen-pagina te
@@ -111,6 +121,25 @@ terug via de PDOK Locatieserver (BAG, postcode+huisnummer), incl. de
 zending-snapshots ZEND-2026-0001 (Lijnden), -0002 ('s-Gravenhage), -0003
 (Bennebroek). Niet hersteld: ORD-2026-0097 (geen adres), 0108/0123 (BE,
 Willebroek — handmatig).
+
+**Nazorg (11-06 middag, met akkoord):** dezelfde sleutel-drop raakte ook
+`fact_plaats` — gemeld doordat ORD-2026-0107 een factuuradres zonder stad
+toonde. Alle 22 getroffen Shopify-orders zijn gevuld vanuit **interne**
+bronnen (debiteur-factuuradres/-postcode of het identieke afleveradres —
+géén externe lookup; script `scripts/_tmp_repair_fact_plaats.mjs`), incl.
+de twee BE-orders 0108/0123 (Willebroek via debiteur-postcode). Daarnaast is
+`sync-shopify-order` gedeployed (was nog v8 van 10-06, vóór de fix) — de
+sleutel-fix is nu pas écht live; nieuwe Shopify-orders krijgen zowel
+`afl_plaats` als `fact_plaats`.
+
+**Poll-pad ook gedicht (11-06 middag):** Shopify-orders komen feitelijk
+binnen via `sync-shopify-orders-poll` (branch `feat/shopify-polling-sync`,
+mig 323 — vervangt de fragiele webhook; code stond alléén op die branch,
+niet op main). Die bundelde een **oude** kopie van `shopify-types.ts` mét de
+`afl_stad`/`fact_stad`-bug — de webhook-fix dekte dit pad dus niet. Fix
+geport naar die branch (commit 292d488: types + contract-test van main,
+`shopify-order-processor.ts` op `afl_naam_2`) en `sync-shopify-orders-poll`
+v13 gedeployed. Beide Shopify-intake-paden zijn nu sleutel-correct.
 
 **Incident-terugdraai:** beide orders terug naar 'Klaar voor picken'
 (verzonden_at NULL), zendingen terug naar 'Picken', Fout-transportorders op
