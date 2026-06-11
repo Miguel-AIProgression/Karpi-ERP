@@ -296,6 +296,12 @@ export function ZendingPrintSetPage() {
         }
 
         @media print {
+          /* Lege vervolg-pagina's voorkomen: de app-layout (min-h-screen +
+             main-marges) is in print onzichtbaar maar neemt wél ruimte in,
+             waardoor de Zebra een leeg etiket uitvoert. */
+          html, body { height: auto !important; }
+          .min-h-screen { min-height: 0 !important; }
+          main { margin: 0 !important; padding: 0 !important; }
           body * { visibility: hidden; }
           .zending-printset,
           .zending-printset * { visibility: visible; }

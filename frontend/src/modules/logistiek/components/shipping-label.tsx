@@ -278,8 +278,9 @@ function ShippingLabelCompact({
             marginTop: `${0.3 * s}mm`,
             textAlign: 'center',
             fontFamily: 'monospace',
-            fontSize: fz(6),
-            letterSpacing: '0.05em',
+            fontSize: fz(9),
+            fontWeight: 600,
+            letterSpacing: '0.12em',
             lineHeight: 1,
           }}
         >
