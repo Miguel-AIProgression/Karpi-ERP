@@ -70,7 +70,10 @@ function ShippingLabelCompact({
   // hairline-overflow: het grid is kleiner dan de pagina, dus de print-engine
   // heeft nooit reden om naar een tweede pagina te breken.
   const margeMm = 2.5 * s
-  const binnenBreedteMm = breedteMm - 2 * margeMm
+  // De Zebra snijdt links een paar mm af (fysieke printkop-offset op de rol)
+  // — extra linkermarge schuift het hele ontwerp van de rand af.
+  const extraLinksMm = 4
+  const binnenBreedteMm = breedteMm - 2 * margeMm - extraLinksMm
   const binnenHoogteMm = hoogteMm - 2 * margeMm
 
   const colRechtsMm = binnenBreedteMm * (COL_RECHTS_MM / (DEFAULT_LABEL_BREEDTE_MM - 0.5))
@@ -103,7 +106,7 @@ function ShippingLabelCompact({
         display: 'block',
         contain: 'layout paint size',
         color: '#000',
-        padding: `${margeMm}mm`,
+        padding: `${margeMm}mm ${margeMm}mm ${margeMm}mm ${margeMm + extraLinksMm}mm`,
       }}
     >
       <div style={{ position: 'relative', width: '100%', height: '100%' }}>
