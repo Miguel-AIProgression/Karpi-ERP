@@ -18,10 +18,10 @@ interface InvoiceAddressEditorProps {
   debiteurNr: number | null
   currentAdres: FactuurAdres
   currentContact: FactuurContact
+  /** Per-order snapshot van het factuuradres-email (mig 364). */
+  factEmail: string
   onAdresChange: (addr: FactuurAdres) => void
-  /** Aangeroepen na succesvol opslaan op de debiteur — laat de pagina de
-   *  in-memory client-state syncen zodat een volgende order ook het nieuwe
-   *  adres + e-mailadressen pakt. */
+  onEmailChange: (email: string) => void
   onSavedAsDefault?: (addr: FactuurAdres, contact: FactuurContact) => void
 }
 
@@ -29,22 +29,23 @@ export function InvoiceAddressEditor({
   debiteurNr,
   currentAdres,
   currentContact,
+  factEmail,
   onAdresChange,
+  onEmailChange,
   onSavedAsDefault,
 }: InvoiceAddressEditorProps) {
   const [editing, setEditing] = useState(false)
   const [draftAdres, setDraftAdres] = useState<FactuurAdres>(currentAdres)
-  const [draftContact, setDraftContact] = useState<FactuurContact>(currentContact)
-  // Default aan: wijzigingen schrijven we standaard naar de klantpagina.
-  // E-mailadressen hebben sowieso geen per-order snapshot — uitvinken betekent
-  // dat alleen het adres lokaal blijft en e-mails niet worden opgeslagen.
+  const [draftEmail, setDraftEmail] = useState(factEmail)
+  const [saveEmail, setSaveEmail] = useState(true)
   const [persist, setPersist] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   function openEdit() {
     setDraftAdres(currentAdres)
-    setDraftContact(currentContact)
+    setDraftEmail(factEmail)
+    setSaveEmail(true)
     setPersist(true)
     setError(null)
     setEditing(true)
@@ -64,33 +65,36 @@ export function InvoiceAddressEditor({
       plaats: draftAdres.plaats.trim(),
       land: draftAdres.land.trim() || 'NL',
     }
-    const normContact: FactuurContact = {
-      email_factuur: draftContact.email_factuur.trim(),
-      email_overig: draftContact.email_overig.trim(),
-    }
+    const normEmail = draftEmail.trim()
 
     if (persist && debiteurNr) {
       setSaving(true)
+      const update: Record<string, unknown> = {
+        fact_naam: normAdres.naam,
+        fact_adres: normAdres.adres,
+        fact_postcode: normAdres.postcode || null,
+        fact_plaats: normAdres.plaats,
+      }
+      if (saveEmail) {
+        update.email_factuur = normEmail || null
+      }
       const { error: updErr } = await supabase
         .from('debiteuren')
-        .update({
-          fact_naam: normAdres.naam,
-          fact_adres: normAdres.adres,
-          fact_postcode: normAdres.postcode || null,
-          fact_plaats: normAdres.plaats,
-          email_factuur: normContact.email_factuur || null,
-          email_overig: normContact.email_overig || null,
-        })
+        .update(update)
         .eq('debiteur_nr', debiteurNr)
       setSaving(false)
       if (updErr) {
         setError(updErr.message || 'Opslaan op klantpagina mislukt')
         return
       }
-      onSavedAsDefault?.(normAdres, normContact)
+      onSavedAsDefault?.(normAdres, {
+        email_factuur: saveEmail ? normEmail : currentContact.email_factuur,
+        email_overig: currentContact.email_overig,
+      })
     }
 
     onAdresChange(normAdres)
+    onEmailChange(normEmail)
     setEditing(false)
   }
 
@@ -111,6 +115,12 @@ export function InvoiceAddressEditor({
           {currentAdres.naam && <p className="font-medium">{currentAdres.naam}</p>}
           {currentAdres.adres && <p>{currentAdres.adres}</p>}
           <p>{[currentAdres.postcode, currentAdres.plaats].filter(Boolean).join(' ')}</p>
+          {factEmail && (
+            <p className="mt-1 text-slate-500 text-xs">{factEmail}</p>
+          )}
+          {!factEmail && (
+            <p className="mt-1 text-slate-400 text-xs italic">Geen e-mailadres</p>
+          )}
         </div>
       </div>
     )
@@ -119,7 +129,7 @@ export function InvoiceAddressEditor({
   return (
     <div className="border border-slate-200 rounded-[var(--radius-sm)] p-3 bg-slate-50 space-y-2">
       <div className="flex items-center justify-between">
-        <p className="text-xs font-medium text-slate-600">Factuuradres + contact wijzigen</p>
+        <p className="text-xs font-medium text-slate-600">Factuuradres wijzigen</p>
         <button
           type="button"
           onClick={() => { setEditing(false); setError(null) }}
@@ -135,42 +145,34 @@ export function InvoiceAddressEditor({
         <ManualField label="Plaats" value={draftAdres.plaats} onChange={(v) => setDraftAdres(d => ({ ...d, plaats: v }))} />
         <ManualField label="Land" value={draftAdres.land} onChange={(v) => setDraftAdres(d => ({ ...d, land: v }))} />
       </div>
-      <div className="pt-2 mt-2 border-t border-slate-200">
-        <div className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">
-          Contact (alleen op klantpagina, geen per-order snapshot)
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-          <ManualField
-            label="E-mail facturen"
-            type="email"
-            value={draftContact.email_factuur}
-            onChange={(v) => setDraftContact(c => ({ ...c, email_factuur: v }))}
+      <div className="pt-2 mt-2 border-t border-slate-200 space-y-2">
+        <ManualField
+          label="E-mail factuuradres"
+          type="email"
+          value={draftEmail}
+          onChange={setDraftEmail}
+        />
+        <label className="inline-flex items-center gap-2 text-xs text-slate-700">
+          <input
+            type="checkbox"
+            checked={saveEmail}
+            onChange={(e) => setSaveEmail(e.target.checked)}
+            className="rounded border-slate-300 text-terracotta-500 focus:ring-terracotta-400/30"
+            disabled={!debiteurNr || !persist}
           />
-          <ManualField
-            label="E-mail orderbevestiging"
-            type="email"
-            value={draftContact.email_overig}
-            onChange={(v) => setDraftContact(c => ({ ...c, email_overig: v }))}
-          />
-        </div>
+          Opslaan als vast factuurmailadres op klantpagina
+        </label>
       </div>
       <label className="inline-flex items-center gap-2 text-xs text-slate-700 mt-1">
         <input
           type="checkbox"
           checked={persist}
-          onChange={(e) => setPersist(e.target.checked)}
+          onChange={(e) => { setPersist(e.target.checked); if (!e.target.checked) setSaveEmail(false) }}
           className="rounded border-slate-300 text-terracotta-500 focus:ring-terracotta-400/30"
           disabled={!debiteurNr}
         />
-        Wijzigingen ook op klantpagina opslaan (standaard voor toekomstige orders)
+        Adreswijziging ook op klantpagina opslaan
       </label>
-      {!persist && (
-        <p className="text-[11px] text-amber-700">
-          Vinkje uit: adres-wijziging geldt alleen voor deze order. E-mailadressen
-          worden dan <strong>niet</strong> opgeslagen (die hebben geen per-order
-          snapshot).
-        </p>
-      )}
       {error && <p className="text-xs text-rose-600">{error}</p>}
       <div className="flex items-center gap-2">
         <button
