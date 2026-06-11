@@ -1,5 +1,29 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-11 — HST-adresparser robuust voor werkelijke webshop-adressen (branch `feat/zending-herprint-ingang`)
+
+**Incident ZEND-2026-0002 (vervolg op de Shopify-plaats-fix verderop):** HST
+weigerde de transportorder twee keer met HTTP 400. (1) `splitAdres` kon
+"Saturnusstraat 60 (Unit 30)" niet splitsen — de oude regex eiste een
+toevoeging die met een letter begint, dus haakjes/blokhaken/reeksen
+("(Unit 30)", "[001]", "1-5", allemaal échte adressen in de orders-tabel)
+lieten `StreetNumber` leeg → HST 400 "Afleveradres niet aanwezig/compleet".
+(2) Na die fix bleek HST een **max van 5 tekens** op `StreetNumberAddition`
+te hanteren → "Unit 30" opnieuw 400.
+
+**Structurele fix** ([`payload-builder.ts`](../supabase/functions/hst-send/payload-builder.ts), hst-send opnieuw gedeployed):
+- `splitAdres` haalt (…)- en […]-delen eruit als toevoeging, negeert komma's,
+  en pakt het eerste losstaande cijfer-token als huisnummer — een adres mét
+  nummer kan nooit meer een lege `StreetNumber` opleveren.
+- Nieuw `verdeelToevoeging`: toevoeging ≤5 tekens → `StreetNumberAddition`
+  ("G", "001", "-5"); langer → `NameAddition` (HST's extra adresregel,
+  "Unit 30"). Limiet als constante `HST_STREET_NUMBER_ADDITION_MAX`.
+- 4 nieuwe Deno-tests met de letterlijke incident-adressen (8 totaal groen).
+
+**Resultaat:** ZEND-2026-0002 alsnog verstuurd — HTTP 201, transportorder
+T75038267000183, tracking op de zending, status "Onderweg", vrachtbrief-PDF
+in storage. ZEND-2026-0001 (T75038267000181) en -0003 waren al goed.
+
 ## 2026-06-11 — Fix: blanco pagina tussen tapijt-stickers in de printset
 
 Bij het printen van tapijt-stickers via Pick & Ship (zowel
