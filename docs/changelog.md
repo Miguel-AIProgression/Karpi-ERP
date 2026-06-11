@@ -1,9 +1,11 @@
 # Changelog — RugFlow ERP
 
-## 2026-06-11 — Backfill fact_email + afl_email op bestaande open orders (mig 366)
+## 2026-06-11 — Backfill fact_email + afl_email op bestaande open orders (mig 367)
 
 Mig 364 vult de e-mail-snapshots alleen bij nieuwe orders; bestaande orders
-stonden leeg (geen factuur-e-mail, geen T&T). Mig 366 backfillt open orders
+stonden leeg (geen factuur-e-mail, geen T&T). Mig 367 (live uitgevoerd
+11-06-2026; in de repo hernummerd van 366 wegens collisie met
+`366_verstuurde_emails_log.sql`) backfillt open orders
 met dezelfde ladder als het orderformulier: `fact_email` uit
 `debiteuren.email_factuur` → `email_overig`; `afl_email` uit het op
 adres-snapshot gematchte `afleveradressen.email` (`_normaliseer_afleveradres`,

@@ -1,4 +1,7 @@
--- Migratie 366: backfill fact_email + afl_email op bestaande open orders
+-- Migratie 367: backfill fact_email + afl_email op bestaande open orders
+-- (hernummerd van 366 → 367 vóór merge: origin/main nam parallel 366 in
+--  beslag met 366_verstuurde_emails_log.sql. Inhoudelijk identiek aan wat
+--  op 11-06-2026 als "366" live is uitgevoerd in de SQL-editor.)
 --
 -- Mig 364 vult beide e-mail-snapshots alleen bij NIEUWE orders (via de
 -- order-RPC's); orders van vóór die migratie staan leeg — geen factuur-e-mail
