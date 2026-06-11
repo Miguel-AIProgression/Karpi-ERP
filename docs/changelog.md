@@ -1,5 +1,106 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-11 — Klant-niveau verzend-e-mailadres `debiteuren.email_verzend` (mig 369, branch `fix/dropship-afl-email`)
+
+**Voorstel Piet-Hein (akkoord Marjon):** per klant een apart e-mailadres voor
+het verzendadres, los van het algemene adres — in Basta stond dit noodgedwongen
+bij de "openingstijden" omdat het echte e-mailveld anders ook de factuur kreeg.
+Het grootste deel van zijn voorstel bestond al (mig 364: `afleveradressen.email`,
+automatische overname bij orderaanmaak, per order aanpasbaar, "opslaan als vast
+e-mail voor dit afleveradres"); dit voegt de ontbrekende klant-niveau-laag toe.
+
+- **Mig 369:** `debiteuren.email_verzend TEXT`. Bewust géén backfill uit
+  `email_overig` — de fallback zit runtime in de ladder.
+- **Default-ladder `orders.afl_email`** bij orderaanmaak/adreskeuze
+  ([`order-form.tsx`](../frontend/src/components/orders/order-form.tsx)):
+  `afleveradressen.email` → `email_verzend` → `email_overig`. Dropshipment
+  blijft uitgezonderd (geen enkele debiteur-default, mig 370); `email_verzend`
+  telt daar mee in de verboden-set.
+- **Checkbox in [`delivery-address-editor.tsx`](../frontend/src/components/orders/delivery-address-editor.tsx)**
+  heet nu "Opslaan als vast verzend-e-mailadres voor deze klant" en schrijft
+  naar `email_verzend` (was: `email_overig` — dat algemene veld voedt ook
+  andere flows). Zo wordt het bestand organisch correct ("dan staat dit
+  naarmate van tijd goed").
+- **Klantpagina:** veld zichtbaar op klant-detail + bewerkbaar in
+  [`debiteur-edit-dialog.tsx`](../frontend/src/modules/debiteuren/components/debiteur-edit-dialog.tsx).
+- Mee-gefetcht in `ClientSelector`, `fetchSelectedClientVoorPrefill`
+  (gespiegelde kolomlijst) en `fetchClientCommercialData` (edit-mode).
+
+Automatisch vullen vanuit Basta is geparkeerd: het adres staat daar niet op een
+consequente plek (bevestigd door Piet-Hein/Marjon). Typecheck + suite groen
+(op de bekende pre-existing pickbaarheid-contracttest na).
+
+## 2026-06-11 — Dropshipment: track & trace-e-mail mag nooit het factuur-adres zijn (mig 370, branch `fix/dropship-afl-email`)
+
+*(Mig in de repo hernummerd van 368 → 370 vóór merge — origin/main nam parallel
+368 in beslag met `368_intake_email_snapshots.sql`. Live uitgevoerd als "368".)*
+
+**Melding Marjon (sales support):** "Het mailadres van de dropshipment voor de
+track and trace is NIET hetzelfde als de factuur. Dus dat moet anders zijn."
+
+**Diagnose:** bij een dropshipment-order levert Karpi rechtstreeks aan de
+consument namens de winkel. Het orderformulier defaultte `afl_email` (= T&T-
+adres richting vervoerder, mig 364/365) echter uit `debiteuren.email_overig`,
+en backfill mig 367 deed hetzelfde op bestaande orders → de winkel kreeg de
+track & trace, de consument niets.
+
+**Herkenning als data (mig 370):** nieuw `producten.is_dropship` (TRUE op
+DROPSHIP-KLEIN/GROOT) + SQL-predicaat `is_dropship_order(order_id)` — spiegelt
+TS `detecteerDropshipKeuze`. Nieuw dropship-artikel = `UPDATE producten`.
+
+**Fix in vier lagen:**
+1. **Orderformulier** ([`order-form.tsx`](../frontend/src/components/orders/order-form.tsx)):
+   bij dropship-keuze wordt een gedefault afl_email (= debiteur-/factuur-adres)
+   leeggemaakt; klant-selectie en afleveradres-keuze defaulten niet meer naar
+   de debiteur-e-mail zolang dropship actief is; opslaan blokkeert als
+   afl_email gelijk is aan het factuur-/debiteur-adres (leeg = toegestaan,
+   alleen amber hint — geen T&T is beter dan T&T naar de winkel).
+2. **UI-hints:** rose/amber meldingen in
+   [`delivery-address-editor.tsx`](../frontend/src/components/orders/delivery-address-editor.tsx)
+   en op order-detail ([`order-addresses.tsx`](../frontend/src/components/orders/order-addresses.tsx)).
+3. **Trigger-guard (defense-in-depth):** `fn_zending_fill_email` (mig 365)
+   kopieert bij dropship-orders het order-afl_email NIET naar de zending als
+   het gelijk is aan het factuur-/debiteur-adres.
+4. **Data-fix:** open dropship-orders + nog niet verstuurde zendingen waar
+   afl_email het factuur-/debiteur-adres was → NULL (operator vult het
+   consument-adres aan; rose hint wijst erop).
+
+Pure helper: [`dropship-email.ts`](../frontend/src/lib/orders/dropship-email.ts)
+(`dropshipAflEmailProbleem`, case-/whitespace-ongevoelig) + unit tests.
+Typecheck groen; suite groen op de bekende pre-existing pickbaarheid-test na.
+
+## 2026-06-11 — Orderbevestiging-PDF in de taal van de klant (branch `feat/orderbevestiging-pdf-taal`)
+
+**Melding Marjon (via Miguel):** orderbevestiging ORD-2026-0348 (Knutzen Wohnen,
+DE) — de begeleidende e-mail was correct Duits, maar de PDF-bijlage stond
+volledig in het Nederlands.
+
+**Oorzaak:** `stuur-orderbevestiging` bepaalde de taal (uit `orders.fact_land`
+via `normaliseer_land` → `bepaalTaal`) pas ná de PDF-generatie en gebruikte die
+alleen voor de mail-HTML; [`_shared/orderbevestiging-pdf.ts`](../supabase/functions/_shared/orderbevestiging-pdf.ts)
+had alle labels hardcoded in het Nederlands.
+
+**Fix:**
+- Nieuwe gedeelde module [`_shared/orderbevestiging-taal.ts`](../supabase/functions/_shared/orderbevestiging-taal.ts):
+  `Taal`-type, `bepaalTaal` (DE/AT→de, FR→fr, NL/BE→nl, rest→en) en
+  `vertaalOmschrijving` (hele-woord-woordenboek + frase "Op maat" → "Nach Maß"/
+  "Sur mesure"/"Custom size") verhuisd uit de edge function — één taalbron voor
+  mail én PDF.
+- `genereerOrderbevestigingPDF` accepteert `taal?: Taal` (default `'nl'`) en
+  vertaalt álle vaste teksten: documenttitel, info-labels, adresblok-koppen,
+  tabelkolommen, eenheid, totaalregels, betalingsconditie, maatafwijking-
+  disclaimer, opmerkingen, groet en paginanummering. Label→waarde-offsets zijn
+  dynamisch (minimaal de oude NL-breedte) zodat langere vertalingen (bv. FR
+  "Date de livraison:") niet overlappen.
+- `stuur-orderbevestiging` bepaalt de taal nu vóór de PDF-generatie, vertaalt
+  regel-omschrijvingen één keer (`regelsVertaald`, zelfde tekst op PDF en in
+  mail) en geeft `taal` door aan de PDF. Mail-restje "Afhalen:" was ook nog
+  hardcoded NL en is meertalig gemaakt.
+
+Smoke-test: PDF gegenereerd in alle 4 talen (diakrieten Ä/ß/é/· renderen
+correct door WinAnsi); pre-existing 2 typefouten in `resolveKlantEigenNamen`
+(esm.sh supabase-js type-drift) staan los van deze wijziging.
+
 ## 2026-06-11 — Feedback-knop verplaatst naar de TopBar
 
 De zwevende feedback-knop rechtsonder overlapte pagina-knoppen, zoals de
@@ -163,7 +264,6 @@ HST stuurde `ToAddress.Email` tot nu toe altijd leeg.
   `payload-builder.test.ts` (6/6 groen).
 - Toekomstige vervoerder-koppelingen lezen hetzelfde snapshot-veld; of T&T-mail
   "mag" is dan een keuze per adapter, niet per order.
->>>>>>> origin/main
 
 ## 2026-06-11 — Zendingen + track & trace zichtbaar op order-detail (branch `feat/zending-herprint-ingang`)
 

@@ -39,6 +39,8 @@ export interface DebiteurDetail {
   email_factuur: string | null
   email_overig: string | null
   email_2: string | null
+  /** Klant-niveau verzend-/T&T-e-mailadres (mig 369). Default voor orders.afl_email vóór email_overig. */
+  email_verzend: string | null
   fax: string | null
   vertegenw_code: string | null
   vertegenwoordiger_naam?: string | null
