@@ -31,7 +31,7 @@ export {
   type EdiBerichtDetail,
 } from './queries/edi'
 
-export { bevestigOrderViaEdi } from './lib/bevestig-helper'
+export { bevestigOrderViaEdi, bevestigOrderZonderEdiBericht } from './lib/bevestig-helper'
 export { KARPI_GLN_DEFAULT } from './lib/karpi-fixed-width'
 
 export {

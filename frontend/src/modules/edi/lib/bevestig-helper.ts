@@ -211,3 +211,17 @@ async function bepaalVolgendeOrderResponseSeq(orderId: number): Promise<number> 
   const row = (data?.[0] ?? null) as { order_response_seq: number | null } | null
   return (row?.order_response_seq ?? 0) + 1
 }
+
+/**
+ * Bevestig een EDI-order administratief ZONDER orderbev te versturen — voor
+ * partners met orderbev_uit=false (kanaal 'edi_stil'). Zet alleen de
+ * edi_bevestigd_op-gate via de idempotente RPC; er gaat geen bericht en
+ * géén e-mail uit (EDI-orders mailen we nooit).
+ */
+export async function bevestigOrderZonderEdiBericht(orderId: number): Promise<string> {
+  const { data, error } = await supabase.rpc('markeer_order_edi_bevestigd', {
+    p_order_id: orderId,
+  })
+  if (error) throw error
+  return data as string
+}
