@@ -1,5 +1,30 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-11 — Pakbon-layout naar oud Lieferschein-ontwerp
+
+**Waarom:** de pakbon uit Pick & Ship moet qua layout lijken op het oude
+Karpi Lieferschein-document (foto-voorbeeld KIBEK, 5 juni) — de vertrouwde
+vorm voor magazijn én ontvangers. Goedgekeurd via visual-companion-mockup;
+spec: [`2026-06-11-pakbon-lieferschein-layout-design.md`](superpowers/specs/2026-06-11-pakbon-lieferschein-layout-design.md).
+
+**Wat (branch `feat/pakbon-lieferschein-layout`):**
+- [`pakbon-document.tsx`](../frontend/src/modules/logistiek/components/pakbon-document.tsx)
+  volledig herschikt: gecentreerd KARPI GROUP-logo, grote titel "Pakbon" met
+  pakbonnr/datum ernaast, **afleveradres als hoofd-adresblok** (+ telefoon
+  uit `zendingen.afl_telefoon`, mig 339), factuuradres verhuisd naar de body
+  ("Factuuradres:", zoals "Rechnungsadresse"), referentieblok met
+  `Order/Debiteur` + `Routecode` (uit `debiteuren.route`, legacy-import;
+  regel verdwijnt als leeg), tabelkolommen **Rgl./Artikel/Omschrijving/
+  Besteld/Geleverd** (eenheid inline), hoofdregel = Karpi-omschrijving met
+  sub-regel "Uw naam: …" bij afwijkende klantnaam, **Kolli + Gewicht**
+  i.p.v. Totaal m², vaste NL-disclaimer (maat-/kleurafwijking) boven de footer.
+- "Leveringscond." uit het oude document bewust weggelaten — geen betrouwbaar
+  veld in het schema (eerdere beslissing rond "Franco").
+- Bundel-gedrag (mig 222) ongewijzigd: sub-kop per bron-order, bundel-lijst
+  in het referentieblok.
+- [`zendingen.ts`](../frontend/src/modules/logistiek/queries/zendingen.ts):
+  `fetchZendingPrintSet` selecteert nu ook `afl_telefoon` en `debiteuren.route`.
+
 ## 2026-06-11 — Fix: blanco pagina tussen tapijt-stickers in de printset
 
 Bij het printen van tapijt-stickers via Pick & Ship (zowel
