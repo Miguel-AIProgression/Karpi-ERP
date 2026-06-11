@@ -28,6 +28,7 @@ interface VerhoekTransportOrderRow {
   debiteur_nr: number | null;
   status: string;
   is_test: boolean;
+  bestandsnaam: string | null;
 }
 
 interface SendSummary {
@@ -93,7 +94,11 @@ Deno.serve(async (req) => {
 
   const summary: SendSummary = { processed: 0, succeeded: 0, failed: 0, empty_queue: false, dry_run: dryRun, details: [] };
 
+  const runStart = Date.now();
   for (let i = 0; i < MAX_PER_RUN; i++) {
+    // Tijdsbudget (review-I2): ruim binnen de edge-wall-clock blijven; de
+    // rest van de wachtrij pakt de volgende cron-run (elke minuut) op.
+    if (Date.now() - runStart > 60_000) break;
     const { data: claimed, error: claimErr } = await supabase.rpc('claim_volgende_verhoek_transportorder');
     if (claimErr) return jsonResp({ error: `claim-rpc fout: ${claimErr.message}` }, 500);
     const row = claimed as VerhoekTransportOrderRow | null;
@@ -108,7 +113,8 @@ Deno.serve(async (req) => {
     } catch (err) {
       summary.failed += 1;
       summary.details.push({ id: row.id, zending_id: row.zending_id, status: 'error', error: String(err) });
-      await supabase.rpc('markeer_verhoek_fout', { p_id: row.id, p_error: `Onverwachte exception: ${String(err)}`, p_max_retries: 3 });
+      const { error: catchMarkErr } = await supabase.rpc('markeer_verhoek_fout', { p_id: row.id, p_error: `Onverwachte exception: ${String(err)}`, p_max_retries: 3 });
+      if (catchMarkErr) console.error(`[verhoek-send] markeer_verhoek_fout faalde voor rij ${row.id}: ${catchMarkErr.message}`);
     }
   }
 
@@ -203,7 +209,22 @@ async function verwerkRow(
     return markFoutMetSummary(supabase, row, summary, 'Pre-flight: ' + redenen.join(' | '));
   }
 
-  // 3. XML bouwen + afleveren (of dry-run).
+  // 3. Bestandsnaam bepalen — Verhoeks dedup-sleutel (DataEntry verwerkt per
+  //    bestand). Eenmalig genereren en vóór de upload persisteren: een retry
+  //    na een geslaagde-maar-niet-gemarkeerde upload hergebruikt dezelfde
+  //    naam, zodat Verhoek geen tweede transportorder aanmaakt (review-I1).
+  const bestandsnaam = row.bestandsnaam ?? bouwVerhoekBestandsnaam(z.zending_nr, new Date());
+  if (!row.bestandsnaam) {
+    const { error: naamErr } = await supabase
+      .from('verhoek_transportorders')
+      .update({ bestandsnaam })
+      .eq('id', row.id);
+    if (naamErr) {
+      return markFoutMetSummary(supabase, row, summary, `bestandsnaam persisteren faalde: ${naamErr.message}`);
+    }
+  }
+
+  // 3b. XML bouwen + afleveren (of dry-run).
   const xml = bouwVerhoekXml({
     zending: z,
     order: { order_nr: order.order_nr },
@@ -211,12 +232,11 @@ async function verwerkRow(
     opties: ctx.opties,
     colli,
   });
-  const bestandsnaam = bouwVerhoekBestandsnaam(z.zending_nr, new Date());
   const result = ctx.dryRun
     ? { ok: true, remotePad: 'DRY_RUN — niet geüpload', errorMsg: null }
     : await uploadXmlViaSftp(ctx.sftpConfig!, bestandsnaam, xml);
 
-  // 3b. Audit (mig 325-patroon): één externe_payloads-rij per poging,
+  // 3c. Audit (mig 325-patroon): één externe_payloads-rij per poging,
   //     best-effort — mag het versturen nooit blokkeren.
   try {
     await supabase.rpc('log_externe_payload', {
@@ -252,22 +272,24 @@ async function verwerkRow(
 
     summary.succeeded += 1;
     summary.details.push({ id: row.id, zending_id: row.zending_id, status: 'sent', bestandsnaam });
-    await supabase.rpc('markeer_verhoek_verstuurd', {
+    const { error: markOkErr } = await supabase.rpc('markeer_verhoek_verstuurd', {
       p_id: row.id,
       p_bestandsnaam: bestandsnaam,
       p_xml_storage_path: storagePath,
       p_track_trace_id: (z.afl_email ?? '').trim() !== '' ? z.zending_nr : null,
       p_request_xml: xml,
     });
+    if (markOkErr) console.error(`[verhoek-send] markeer_verhoek_verstuurd faalde voor rij ${row.id}: ${markOkErr.message}`);
   } else {
     summary.failed += 1;
     summary.details.push({ id: row.id, zending_id: row.zending_id, status: 'error', error: result.errorMsg ?? 'onbekende fout' });
-    await supabase.rpc('markeer_verhoek_fout', {
+    const { error: markFoutErr } = await supabase.rpc('markeer_verhoek_fout', {
       p_id: row.id,
       p_error: result.errorMsg ?? 'onbekende fout',
       p_request_xml: xml,
       p_max_retries: 3,
     });
+    if (markFoutErr) console.error(`[verhoek-send] markeer_verhoek_fout faalde voor rij ${row.id}: ${markFoutErr.message}`);
   }
 }
 
@@ -279,7 +301,8 @@ async function markFoutMetSummary(
 ): Promise<void> {
   summary.failed += 1;
   summary.details.push({ id: row.id, zending_id: row.zending_id, status: 'error', error });
-  await supabase.rpc('markeer_verhoek_fout', { p_id: row.id, p_error: error, p_max_retries: 3 });
+  const { error: markErr } = await supabase.rpc('markeer_verhoek_fout', { p_id: row.id, p_error: error, p_max_retries: 3 });
+  if (markErr) console.error(`[verhoek-send] markeer_verhoek_fout faalde voor rij ${row.id}: ${markErr.message}`);
 }
 
 function jsonResp(body: unknown, status: number): Response {
