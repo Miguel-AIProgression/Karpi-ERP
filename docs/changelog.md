@@ -1,5 +1,19 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-11 — Backfill fact_email + afl_email op bestaande open orders (mig 366)
+
+Mig 364 vult de e-mail-snapshots alleen bij nieuwe orders; bestaande orders
+stonden leeg (geen factuur-e-mail, geen T&T). Mig 366 backfillt open orders
+met dezelfde ladder als het orderformulier: `fact_email` uit
+`debiteuren.email_factuur` → `email_overig`; `afl_email` uit het op
+adres-snapshot gematchte `afleveradressen.email` (`_normaliseer_afleveradres`,
+mig 222; laagste `adres_nr` wint) → fallback `debiteuren.email_overig`.
+Guards: alleen lege velden, eindstatussen overgeslagen, en
+`env_fallback`-orders (verzameldebiteur/consumenten-webshop) uitgesloten —
+daar zou de debiteur-e-mail een verkéérd T&T-adres zijn. Sluit af met een
+herhaling van de mig 365-zending-backfill zodat nog-niet-verstuurde
+zendingen het gevulde adres als snapshot meekrijgen.
+
 ## 2026-06-11 — T&T- en factuur-e-mail expliciet gelabeld op order-detail + in adres-editor
 
 **Waarom:** vervolg op de T&T-e-mail-keten (mig 364/365 hieronder) — op de
