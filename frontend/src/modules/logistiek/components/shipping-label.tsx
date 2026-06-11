@@ -131,7 +131,7 @@ function ShippingLabelCompact({
         </div>
         <div
           style={{
-            fontSize: fz(8),
+            fontSize: fz(10),
             fontWeight: 700,
             textTransform: 'uppercase',
             lineHeight: 1.1,
@@ -239,12 +239,13 @@ function ShippingLabelCompact({
       >
         <div
           style={{
-            border: `${dik(2)} solid #000`,
-            padding: `${0.5 * s}mm ${s}mm`,
-            fontSize: fz(8),
+            border: `${dik(3)} solid #000`,
+            padding: `${s}mm ${2 * s}mm`,
+            fontSize: fz(13),
             fontWeight: 700,
             textAlign: 'center',
             lineHeight: 1.1,
+            letterSpacing: '0.03em',
             maxWidth: '100%',
             whiteSpace: 'nowrap',
             overflow: 'hidden',

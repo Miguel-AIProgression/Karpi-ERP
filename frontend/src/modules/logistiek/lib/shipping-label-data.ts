@@ -13,7 +13,12 @@ export function productNamen(regel: ZendingPrintRegel | null): RegelNamen {
   if (!orderRegel) {
     return { klantNaam: regel?.artikelnr ?? 'Artikel', karpiNaam: null }
   }
-  const klantNaam = [orderRegel.omschrijving, orderRegel.omschrijving_2].filter(Boolean).join(' ')
+  // Ontdubbel: omschrijving_2 herhaalt vaak (een deel van) omschrijving
+  // (bv. "RUBI 15 — RECHTHOEK / 240 X 330 CM" + "RECHTHOEK / 240 X 330 CM").
+  const o1 = (orderRegel.omschrijving ?? '').trim()
+  const o2 = (orderRegel.omschrijving_2 ?? '').trim()
+  const o2IsDubbel = o2 !== '' && o1.toLowerCase().includes(o2.toLowerCase())
+  const klantNaam = [o1, o2IsDubbel ? '' : o2].filter(Boolean).join(' ')
   const karpiNaam = orderRegel.producten?.omschrijving ?? null
   return { klantNaam: klantNaam || (regel?.artikelnr ?? 'Artikel'), karpiNaam }
 }
