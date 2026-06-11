@@ -1,4 +1,6 @@
--- Migratie 365: verstuurde_emails — e-mailtijdlijn per order
+-- Migratie 366: verstuurde_emails — e-mailtijdlijn per order
+-- (hernummerd van 365 → 366 vóór merge: origin/main nam 365 parallel in
+--  beslag met 365_zending_afl_email.sql)
 --
 -- Eén rij per daadwerkelijk verstuurde e-mail per order (facturen +
 -- orderbevestigingen). Gevuld door edge functions `factuur-verzenden` en
@@ -28,11 +30,11 @@ CREATE TABLE verstuurde_emails (
 );
 
 COMMENT ON TABLE verstuurde_emails IS
-  'Log van daadwerkelijk verstuurde e-mails per order (mig 365). '
+  'Log van daadwerkelijk verstuurde e-mails per order (mig 366). '
   'Geschreven door edge functions factuur-verzenden en stuur-orderbevestiging '
   'na een geslaagde Graph-send. Voedt de e-mailtijdlijn op order-detail.';
 COMMENT ON COLUMN verstuurde_emails.html IS
-  'Volledige mail-body (HTML). NULL = inhoud niet bewaard (backfill van vóór mig 365).';
+  'Volledige mail-body (HTML). NULL = inhoud niet bewaard (backfill van vóór mig 366).';
 COMMENT ON COLUMN verstuurde_emails.bijlagen IS
   'Array van {filename, bucket, path} — verwijzingen naar Supabase storage voor klikbare bijlagen.';
 
@@ -96,7 +98,7 @@ WHERE f.verstuurd_op IS NOT NULL
 
 -- 2. Eerder verstuurde orderbevestigingen → rij uit orders.bevestigd_at.
 --    Onderwerp is een NL-reconstructie (de taal van destijds is niet bewaard);
---    body en PDF werden vóór mig 365 niet bewaard.
+--    body en PDF werden vóór mig 366 niet bewaard.
 INSERT INTO verstuurde_emails (order_id, soort, onderwerp, verzonden_aan, verzonden_op, html, bijlagen)
 SELECT
   o.id,

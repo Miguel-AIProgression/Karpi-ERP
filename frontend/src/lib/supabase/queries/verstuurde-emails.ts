@@ -14,7 +14,7 @@ export interface VerstuurdeEmail {
   onderwerp: string
   verzonden_aan: string
   verzonden_op: string
-  /** NULL = inhoud niet bewaard (mail verstuurd vóór mig 365). */
+  /** NULL = inhoud niet bewaard (mail verstuurd vóór mig 366). */
   html: string | null
   bijlagen: EmailBijlage[]
 }

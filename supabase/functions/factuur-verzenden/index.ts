@@ -356,7 +356,7 @@ serve(async () => {
           { filename: 'Algemene voorwaarden KARPI BV.pdf', content: avBytes },
         ]
 
-        // Mig 365: bijlage-verwijzingen voor de e-mailtijdlijn — beide bestanden
+        // Mig 366: bijlage-verwijzingen voor de e-mailtijdlijn — beide bestanden
         // staan (straks) in storage zodat de dialog ze via signed URL kan openen.
         const bijlagenMeta = [
           { filename: `${factuur.factuur_nr}.pdf`, bucket: 'facturen', path: pdfPath },
@@ -460,7 +460,7 @@ serve(async () => {
   )
 })
 
-// Mig 365: e-mailtijdlijn — één log-rij per betrokken order (bundel-factuur
+// Mig 366: e-mailtijdlijn — één log-rij per betrokken order (bundel-factuur
 // dekt meerdere orders). Best-effort: de mail is al verstuurd, logging mag de
 // factuur-flow nooit laten falen.
 async function logVerstuurdeEmails(

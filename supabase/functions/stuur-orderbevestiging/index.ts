@@ -474,7 +474,7 @@ serve(async (req) => {
     }],
   })
 
-  // ── Mig 365: PDF bewaren + e-mailtijdlijn-rij ──────────────────────────────
+  // ── Mig 366: PDF bewaren + e-mailtijdlijn-rij ──────────────────────────────
   // Best-effort: de bevestiging is al verstuurd, dit mag de flow niet laten
   // falen. PDF naar bucket `orderbevestigingen` (upsert bij hersturen) zodat
   // de tijdlijn-dialog hem via een signed URL kan openen.

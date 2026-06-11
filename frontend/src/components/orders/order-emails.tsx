@@ -12,7 +12,7 @@ interface Props {
 
 /**
  * Tijdlijn van alle voor deze order verstuurde e-mails (facturen +
- * orderbevestigingen, mig 365). Klik op het onderwerp opent de volledige
+ * orderbevestigingen, mig 366). Klik op het onderwerp opent de volledige
  * mail in een dialog. Toont een lege staat zolang er niets verstuurd is —
  * zelfde conventie als de Facturatie-sectie ernaast.
  */

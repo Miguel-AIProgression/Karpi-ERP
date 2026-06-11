@@ -9,7 +9,7 @@ verstuurde mails (facturen + orderbevestigingen). Per mail: datum/tijd, soort-ba
 het onderwerp; klik opent een in-app dialog met ontvanger(s), de volledige mail-inhoud
 en klikbare bijlagen.
 
-## Datamodel (mig 362)
+## Datamodel (mig 366 — tijdens implementatie 2× hernummerd wegens parallelle sessies)
 
 Nieuwe tabel `verstuurde_emails` — één rij per verstuurde mail **per order**:
 

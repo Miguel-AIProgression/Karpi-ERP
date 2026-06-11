@@ -1,6 +1,6 @@
 # Changelog — RugFlow ERP
 
-## 2026-06-11 — E-mailtijdlijn op order-detail (mig 365)
+## 2026-06-11 — E-mailtijdlijn op order-detail (mig 366)
 
 **Waarom:** facturen en orderbevestigingen worden sinds 8 juni daadwerkelijk
 gemaild via Microsoft Graph, maar nergens in RugFlow was per order te zien
@@ -8,7 +8,7 @@ wélke mails verstuurd zijn. Operators moesten daarvoor het M365-postvak in.
 Spec: [`2026-06-11-order-email-tijdlijn-design.md`](superpowers/specs/2026-06-11-order-email-tijdlijn-design.md).
 
 **Wat (branch `feat/order-email-tijdlijn`):**
-- **Mig 365** — nieuwe tabel `verstuurde_emails` (rij per verstuurde mail per
+- **Mig 366** — nieuwe tabel `verstuurde_emails` (rij per verstuurde mail per
   order: soort, onderwerp, ontvangers, html-body, bijlage-verwijzingen JSONB),
   nieuwe private bucket `orderbevestigingen`, en backfill van eerder
   verstuurde facturen (uit `facturen.verstuurd_op/verstuurd_naar`, rij per

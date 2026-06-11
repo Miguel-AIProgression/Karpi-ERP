@@ -1260,7 +1260,7 @@ Generieke, append-only audit van **rauwe externe payloads** per kanaal, **in- é
 ---
 
 ### verstuurde_emails
-Log van **daadwerkelijk verstuurde e-mails per order** (mig 365) — voedt de sectie "E-mails" (tijdlijn) op order-detail. Geschreven door edge functions [`factuur-verzenden`](../supabase/functions/factuur-verzenden/index.ts) en [`stuur-orderbevestiging`](../supabase/functions/stuur-orderbevestiging/index.ts) **ná** een geslaagde Microsoft Graph-send; logging is best-effort en blokkeert het mailen nooit. Een bundel-factuur over meerdere orders krijgt één rij per order; de betaler-kopie is een eigen rij. **Niet te verwarren** met `externe_payloads` (raw-payload-diagnose-vangnet) — dit is de nette, klikbare weergave-log voor operators.
+Log van **daadwerkelijk verstuurde e-mails per order** (mig 366) — voedt de sectie "E-mails" (tijdlijn) op order-detail. Geschreven door edge functions [`factuur-verzenden`](../supabase/functions/factuur-verzenden/index.ts) en [`stuur-orderbevestiging`](../supabase/functions/stuur-orderbevestiging/index.ts) **ná** een geslaagde Microsoft Graph-send; logging is best-effort en blokkeert het mailen nooit. Een bundel-factuur over meerdere orders krijgt één rij per order; de betaler-kopie is een eigen rij. **Niet te verwarren** met `externe_payloads` (raw-payload-diagnose-vangnet) — dit is de nette, klikbare weergave-log voor operators.
 | Kolom | Type | Toelichting |
 |-------|------|-------------|
 | id | BIGSERIAL PK | |
@@ -1270,10 +1270,10 @@ Log van **daadwerkelijk verstuurde e-mails per order** (mig 365) — voedt de se
 | onderwerp | TEXT NOT NULL | letterlijke mail-subject |
 | verzonden_aan | TEXT NOT NULL | komma-gescheiden ontvangers |
 | verzonden_op | TIMESTAMPTZ DEFAULT now() | |
-| html | TEXT | volledige mail-body; **NULL = inhoud niet bewaard** (backfill van vóór mig 365) |
+| html | TEXT | volledige mail-body; **NULL = inhoud niet bewaard** (backfill van vóór mig 366) |
 | bijlagen | JSONB DEFAULT '[]' | `[{filename, bucket, path}]` → klikbaar via signed URL in de dialog |
 
-**Index:** `(order_id)`. **RLS:** SELECT voor authenticated; géén insert/update/delete-policies — schrijven uitsluitend via service-role. Backfill in mig 365 reconstrueert eerdere mails uit `facturen.verstuurd_op/verstuurd_naar` (rij per order, EDI-only overgeslagen) en `orders.bevestigd_at/bevestiging_email` (html NULL, geen PDF). Frontend: [`order-emails.tsx`](../frontend/src/components/orders/order-emails.tsx) + [`order-email-dialog.tsx`](../frontend/src/components/orders/order-email-dialog.tsx) (body in **sandboxed iframe**), query [`verstuurde-emails.ts`](../frontend/src/lib/supabase/queries/verstuurde-emails.ts).
+**Index:** `(order_id)`. **RLS:** SELECT voor authenticated; géén insert/update/delete-policies — schrijven uitsluitend via service-role. Backfill in mig 366 reconstrueert eerdere mails uit `facturen.verstuurd_op/verstuurd_naar` (rij per order, EDI-only overgeslagen) en `orders.bevestigd_at/bevestiging_email` (html NULL, geen PDF). Frontend: [`order-emails.tsx`](../frontend/src/components/orders/order-emails.tsx) + [`order-email-dialog.tsx`](../frontend/src/components/orders/order-email-dialog.tsx) (body in **sandboxed iframe**), query [`verstuurde-emails.ts`](../frontend/src/lib/supabase/queries/verstuurde-emails.ts).
 
 ---
 
@@ -1438,7 +1438,7 @@ Mig 174, aangepast in mig 176. Read-only view die de `/logistiek/vervoerders`-ov
 | documenten | Algemene documenten (algemene-voorwaarden-karpi-bv.pdf) | Publiek lezen, uploads via service role |
 | order-documenten | Bijlagen bij orders en inkooporders. Paden `orders/{id}/...` en `inkooporders/{id}/...`. Max 25 MB; alleen PDF/JPG/PNG/WebP/Excel/Word/TXT toegestaan. | Privé, authenticated SELECT/INSERT/UPDATE/DELETE; frontend leest via signed URL |
 | bug-bijlagen | Screenshots/bijlagen bij bug-meldingen (mig 342). Paden `{auth_uid}/{uuid}-{naam}`. Max 10 MB; afbeeldingen + PDF. | Privé, authenticated SELECT/INSERT; frontend leest via signed URL |
-| orderbevestigingen | Verstuurde orderbevestiging-PDFs ({order_id}/Orderbevestiging-{order_nr}.pdf, mig 365 — upsert bij hersturen). Bijlage-bron voor de e-mailtijdlijn op order-detail. | Privé, frontend leest via signed URL (10 min); uploads via service role |
+| orderbevestigingen | Verstuurde orderbevestiging-PDFs ({order_id}/Orderbevestiging-{order_nr}.pdf, mig 366 — upsert bij hersturen). Bijlage-bron voor de e-mailtijdlijn op order-detail. | Privé, frontend leest via signed URL (10 min); uploads via service role |
 
 ## Bug-meldtool (mig 342)
 
