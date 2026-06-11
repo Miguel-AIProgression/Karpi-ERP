@@ -189,7 +189,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
         const probleem = dropshipAflEmailProbleem({
           aflEmail: h.afl_email,
           factEmail: h.fact_email,
-          debiteurEmails: [client?.email_factuur, client?.email_overig],
+          debiteurEmails: [client?.email_factuur, client?.email_overig, client?.email_verzend],
         })
         return isBlokkerendDropshipEmailProbleem(probleem)
           ? { ...h, afl_email: undefined }
@@ -227,8 +227,11 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
         afl_plaats: c.plaats ?? undefined,
         afl_land: c.land ?? 'NL',
         // Dropshipment: afl_email is het consument-adres — nooit defaulten
-        // naar het e-mailadres van de debiteur (winkel).
-        afl_email: dropshipKeuze !== 'nee' ? h.afl_email : (c.email_overig || undefined),
+        // naar het e-mailadres van de debiteur (winkel). Anders ladder
+        // klant-verzendadres (mig 369) → algemeen adres.
+        afl_email: dropshipKeuze !== 'nee'
+          ? h.afl_email
+          : (c.email_verzend || c.email_overig || undefined),
         lever_type: h.lever_type ?? c.default_lever_type ?? 'week',
       }))
       applyAfleverdatum(regels, c)
@@ -287,9 +290,12 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
       afl_plaats: addr.plaats,
       afl_land: addr.land,
       // Als het afleveradres een eigen email heeft, gebruik die; anders val
-      // terug op klant-email — behalve bij dropshipment (consument-adres).
+      // terug op klant-verzendadres (mig 369) → algemeen adres — behalve bij
+      // dropshipment (consument-adres).
       afl_email: addr.email ??
-        (dropshipKeuze !== 'nee' ? h.afl_email : (client?.email_overig ?? h.afl_email)),
+        (dropshipKeuze !== 'nee'
+          ? h.afl_email
+          : (client?.email_verzend ?? client?.email_overig ?? h.afl_email)),
     }))
   }
 
@@ -473,7 +479,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
         : dropshipAflEmailProbleem({
             aflEmail: header.afl_email,
             factEmail: header.fact_email,
-            debiteurEmails: [client?.email_factuur, client?.email_overig],
+            debiteurEmails: [client?.email_factuur, client?.email_overig, client?.email_verzend],
           }),
     [dropshipKeuze, header.afl_email, header.fact_email, client],
   )

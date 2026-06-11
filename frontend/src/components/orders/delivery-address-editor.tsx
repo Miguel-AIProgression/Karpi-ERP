@@ -56,9 +56,11 @@ export function DeliveryAddressEditor({
         if (e) throw e
       }
       if (saveToDebiteur && debiteurNr) {
+        // Klant-niveau verzend-/T&T-adres (mig 369) — bewust niet email_overig:
+        // dat algemene veld voedt ook andere flows (voorstel Piet-Hein 11-06).
         const { error: e } = await supabase
           .from('debiteuren')
-          .update({ email_overig: normEmail || null })
+          .update({ email_verzend: normEmail || null })
           .eq('debiteur_nr', debiteurNr)
         if (e) throw e
       }
@@ -163,7 +165,7 @@ export function DeliveryAddressEditor({
             disabled={!debiteurNr}
             className="rounded border-slate-300 text-terracotta-500 focus:ring-terracotta-400/30"
           />
-          Opslaan als algemeen mailadres op klantpagina
+          Opslaan als vast verzend-e-mailadres voor deze klant
         </label>
       </div>
       {error && <p className="text-xs text-rose-600">{error}</p>}

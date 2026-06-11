@@ -23,6 +23,7 @@ type FormState = {
   land: string
   telefoon: string
   email_factuur: string
+  email_verzend: string
   btw_nummer: string
   gln_bedrijf: string
   korting_pct: string
@@ -44,6 +45,7 @@ const toForm = (k: DebiteurDetail): FormState => ({
   land: k.land ?? '',
   telefoon: k.telefoon ?? '',
   email_factuur: k.email_factuur ?? '',
+  email_verzend: k.email_verzend ?? '',
   btw_nummer: k.btw_nummer ?? '',
   gln_bedrijf: k.gln_bedrijf ?? '',
   korting_pct: k.korting_pct != null ? String(k.korting_pct) : '',
@@ -95,6 +97,7 @@ export function DebiteurEditDialog({ debiteur, onClose }: Props) {
         land: trimOrNull(form.land),
         telefoon: trimOrNull(form.telefoon),
         email_factuur: trimOrNull(form.email_factuur),
+        email_verzend: trimOrNull(form.email_verzend),
         btw_nummer: trimOrNull(form.btw_nummer),
         gln_bedrijf: trimOrNull(form.gln_bedrijf),
         korting_pct: kortingNum,
@@ -192,6 +195,13 @@ export function DebiteurEditDialog({ debiteur, onClose }: Props) {
                 <label className="block text-xs text-slate-500 mb-1">E-mail factuur</label>
                 {/* type="text": één of meerdere adressen (komma-gescheiden) — type="email" weigert meerdere. */}
                 <input type="text" value={form.email_factuur} onChange={update('email_factuur')} placeholder="factuur@klant.nl, kopie@klant.nl" className={inputClasses} />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs text-slate-500 mb-1">E-mail verzending (track &amp; trace)</label>
+                <input type="email" value={form.email_verzend} onChange={update('email_verzend')} placeholder="magazijn@klant.nl" className={inputClasses} />
+                <p className="text-xs text-slate-400 mt-1">
+                  Standaard T&amp;T-adres voor nieuwe orders. Leeg = algemeen e-mailadres wordt gebruikt.
+                </p>
               </div>
             </div>
           </div>

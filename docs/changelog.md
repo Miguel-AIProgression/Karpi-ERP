@@ -1,5 +1,35 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-11 — Klant-niveau verzend-e-mailadres `debiteuren.email_verzend` (mig 369, branch `fix/dropship-afl-email`)
+
+**Voorstel Piet-Hein (akkoord Marjon):** per klant een apart e-mailadres voor
+het verzendadres, los van het algemene adres — in Basta stond dit noodgedwongen
+bij de "openingstijden" omdat het echte e-mailveld anders ook de factuur kreeg.
+Het grootste deel van zijn voorstel bestond al (mig 364: `afleveradressen.email`,
+automatische overname bij orderaanmaak, per order aanpasbaar, "opslaan als vast
+e-mail voor dit afleveradres"); dit voegt de ontbrekende klant-niveau-laag toe.
+
+- **Mig 369:** `debiteuren.email_verzend TEXT`. Bewust géén backfill uit
+  `email_overig` — de fallback zit runtime in de ladder.
+- **Default-ladder `orders.afl_email`** bij orderaanmaak/adreskeuze
+  ([`order-form.tsx`](../frontend/src/components/orders/order-form.tsx)):
+  `afleveradressen.email` → `email_verzend` → `email_overig`. Dropshipment
+  blijft uitgezonderd (geen enkele debiteur-default, mig 368); `email_verzend`
+  telt daar mee in de verboden-set.
+- **Checkbox in [`delivery-address-editor.tsx`](../frontend/src/components/orders/delivery-address-editor.tsx)**
+  heet nu "Opslaan als vast verzend-e-mailadres voor deze klant" en schrijft
+  naar `email_verzend` (was: `email_overig` — dat algemene veld voedt ook
+  andere flows). Zo wordt het bestand organisch correct ("dan staat dit
+  naarmate van tijd goed").
+- **Klantpagina:** veld zichtbaar op klant-detail + bewerkbaar in
+  [`debiteur-edit-dialog.tsx`](../frontend/src/modules/debiteuren/components/debiteur-edit-dialog.tsx).
+- Mee-gefetcht in `ClientSelector`, `fetchSelectedClientVoorPrefill`
+  (gespiegelde kolomlijst) en `fetchClientCommercialData` (edit-mode).
+
+Automatisch vullen vanuit Basta is geparkeerd: het adres staat daar niet op een
+consequente plek (bevestigd door Piet-Hein/Marjon). Typecheck + suite groen
+(op de bekende pre-existing pickbaarheid-contracttest na).
+
 ## 2026-06-11 — Dropshipment: track & trace-e-mail mag nooit het factuur-adres zijn (mig 368, branch `fix/dropship-afl-email`)
 
 **Melding Marjon (sales support):** "Het mailadres van de dropshipment voor de

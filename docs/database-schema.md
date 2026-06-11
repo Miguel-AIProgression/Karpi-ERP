@@ -145,6 +145,7 @@ Klanten/afnemers. PK = debiteur_nr uit het oude systeem.
 | telefoon | TEXT | |
 | fact_naam, fact_adres, fact_postcode, fact_plaats | TEXT | Factuuradres |
 | email_factuur, email_overig, email_2 | TEXT | |
+| email_verzend | TEXT | Mig 369. Klant-niveau verzend-/T&T-e-mailadres (voorstel Piet-Hein 11-06-2026). Default-ladder voor `orders.afl_email` bij orderaanmaak: `afleveradressen.email` → dit veld → `email_overig`. Gevuld via checkbox "Opslaan als vast verzend-e-mailadres voor deze klant" in het orderformulier of via klant-bewerken. Géén backfill — runtime-fallback. Bij dropshipment-orders geen enkele debiteur-default (mig 368). |
 | fax | TEXT | |
 | vertegenw_code | TEXT FK → vertegenwoordigers.code | |
 | route, rayon, rayon_naam | TEXT | |
