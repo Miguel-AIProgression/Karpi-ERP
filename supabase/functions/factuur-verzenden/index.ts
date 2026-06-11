@@ -356,6 +356,14 @@ serve(async () => {
           { filename: 'Algemene voorwaarden KARPI BV.pdf', content: avBytes },
         ]
 
+        // Mig 365: bijlage-verwijzingen voor de e-mailtijdlijn — beide bestanden
+        // staan (straks) in storage zodat de dialog ze via signed URL kan openen.
+        const bijlagenMeta = [
+          { filename: `${factuur.factuur_nr}.pdf`, bucket: 'facturen', path: pdfPath },
+          { filename: 'Algemene voorwaarden KARPI BV.pdf', bucket: 'documenten', path: AV_PATH },
+        ]
+        const orderIdsVoorLog = uniqueNumbers(regels.map((r) => Number(r.order_id)))
+
         // Stuur naar debiteur zelf
         await sendFactuurEmail({
           tenantId: MS_GRAPH_TENANT_ID,
@@ -367,6 +375,15 @@ serve(async () => {
           subject: `Factuur ${factuur.factuur_nr}`,
           html: emailHtml,
           attachments,
+        })
+
+        await logVerstuurdeEmails(supabase, {
+          orderIds: orderIdsVoorLog,
+          factuurId,
+          onderwerp: `Factuur ${factuur.factuur_nr}`,
+          verzondenAan: debiteur.email_factuur,
+          html: emailHtml,
+          bijlagen: bijlagenMeta,
         })
 
         // Stuur kopie naar betaler indien aanwezig en anders dan debiteur
@@ -381,6 +398,15 @@ serve(async () => {
             subject: `Factuur ${factuur.factuur_nr} (kopie voor betaler)`,
             html: emailHtml,
             attachments,
+          })
+
+          await logVerstuurdeEmails(supabase, {
+            orderIds: orderIdsVoorLog,
+            factuurId,
+            onderwerp: `Factuur ${factuur.factuur_nr} (kopie voor betaler)`,
+            verzondenAan: betalerEmail,
+            html: emailHtml,
+            bijlagen: bijlagenMeta,
           })
         }
       }
@@ -433,6 +459,39 @@ serve(async () => {
     { headers: { 'content-type': 'application/json' } },
   )
 })
+
+// Mig 365: e-mailtijdlijn — één log-rij per betrokken order (bundel-factuur
+// dekt meerdere orders). Best-effort: de mail is al verstuurd, logging mag de
+// factuur-flow nooit laten falen.
+async function logVerstuurdeEmails(
+  supabase: ReturnType<typeof createClient>,
+  input: {
+    orderIds: number[]
+    factuurId: number
+    onderwerp: string
+    verzondenAan: string
+    html: string
+    bijlagen: Array<{ filename: string; bucket: string; path: string }>
+  },
+): Promise<void> {
+  try {
+    if (input.orderIds.length === 0) return
+    const { error } = await supabase.from('verstuurde_emails').insert(
+      input.orderIds.map((orderId) => ({
+        order_id: orderId,
+        factuur_id: input.factuurId,
+        soort: 'factuur',
+        onderwerp: input.onderwerp,
+        verzonden_aan: input.verzondenAan,
+        html: input.html,
+        bijlagen: input.bijlagen,
+      })),
+    )
+    if (error) console.warn(`[factuur-verzenden] e-mail-log mislukt: ${error.message}`)
+  } catch (err) {
+    console.warn(`[factuur-verzenden] e-mail-log mislukt: ${err}`)
+  }
+}
 
 async function fetchEdiConfig(
   supabase: ReturnType<typeof createClient>,

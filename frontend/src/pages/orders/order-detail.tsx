@@ -7,6 +7,7 @@ import { OrderAddresses } from '@/components/orders/order-addresses'
 import { OrderRegelsTable } from '@/components/orders/order-regels-table'
 import { OrderFacturen } from '@/components/orders/order-facturen'
 import { OrderEventsTijdlijn } from '@/components/orders/order-events-tijdlijn'
+import { OrderEmails } from '@/components/orders/order-emails'
 import { ZendingAanmakenKnop } from '@/components/orders/zending-aanmaken-knop'
 import { useOrderDetail, useOrderRegels } from '@/hooks/use-orders'
 import { useLevertijdVoorOrder, useClaimsVoorOrder } from '@/modules/reserveringen'
@@ -149,6 +150,7 @@ export function OrderDetailPage() {
       />
       <OrderEventsTijdlijn orderId={order.id} />
       <OrderFacturen orderId={order.id} />
+      <OrderEmails orderId={order.id} />
     </>
   )
 }

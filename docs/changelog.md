@@ -1,5 +1,37 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-11 — E-mailtijdlijn op order-detail (mig 365)
+
+**Waarom:** facturen en orderbevestigingen worden sinds 8 juni daadwerkelijk
+gemaild via Microsoft Graph, maar nergens in RugFlow was per order te zien
+wélke mails verstuurd zijn. Operators moesten daarvoor het M365-postvak in.
+Spec: [`2026-06-11-order-email-tijdlijn-design.md`](superpowers/specs/2026-06-11-order-email-tijdlijn-design.md).
+
+**Wat (branch `feat/order-email-tijdlijn`):**
+- **Mig 365** — nieuwe tabel `verstuurde_emails` (rij per verstuurde mail per
+  order: soort, onderwerp, ontvangers, html-body, bijlage-verwijzingen JSONB),
+  nieuwe private bucket `orderbevestigingen`, en backfill van eerder
+  verstuurde facturen (uit `facturen.verstuurd_op/verstuurd_naar`, rij per
+  order via `factuur_regels`, EDI-only overgeslagen) en orderbevestigingen
+  (uit `orders.bevestigd_at/bevestiging_email`) — zonder body (`html` NULL =
+  "inhoud niet bewaard").
+- [`factuur-verzenden`](../supabase/functions/factuur-verzenden/index.ts):
+  na elke geslaagde Graph-send een log-rij per betrokken order (bundel-aware;
+  betaler-kopie = eigen rij). Best-effort — logging blokkeert het mailen nooit.
+- [`stuur-orderbevestiging`](../supabase/functions/stuur-orderbevestiging/index.ts):
+  de PDF wordt voortaan ook bewaard in bucket `orderbevestigingen`
+  (`{order_id}/Orderbevestiging-{order_nr}.pdf`, upsert) + log-rij met het
+  taalafhankelijke onderwerp en de HTML-body.
+- Frontend: sectie **"E-mails"** op order-detail
+  ([`order-emails.tsx`](../frontend/src/components/orders/order-emails.tsx),
+  verbergt zichzelf zolang er niets verstuurd is) — tijdlijn met datum/tijd,
+  soort-badge en klikbaar onderwerp. Klik opent
+  [`order-email-dialog.tsx`](../frontend/src/components/orders/order-email-dialog.tsx):
+  ontvangers, body in **sandboxed iframe** (`sandbox=""` — mail-HTML kan nooit
+  scripts draaien in RugFlow) en bijlage-knoppen via signed URL (10 min).
+  Query [`verstuurde-emails.ts`](../frontend/src/lib/supabase/queries/verstuurde-emails.ts)
+  + hook `useEmailsVoorOrder`.
+
 ## 2026-06-11 — Pakbon-layout naar oud Lieferschein-ontwerp
 
 **Waarom:** de pakbon uit Pick & Ship moet qua layout lijken op het oude
