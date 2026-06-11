@@ -1,5 +1,16 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-11 — Communicatie-tijdlijn: EDI-berichten naast e-mails op order-detail (slice 3)
+
+**Wat:** de "E-mails"-sectie op order-detail heet nu "Communicatie" en toont in één gecombineerde tijdlijn zowel verstuurde e-mails als uitgaande EDI-berichten (`edi_berichten richting='uit'`). EDI-items tonen type (orderbev/factuur/verzendbericht), live status (Wachtrij/Verstuurd/Fout met kleurcodering) en een directe link naar het EDI-bericht-detail (`/edi/berichten/:id`). E-mail-items renderen exact als voorheen (klik opent dialog).
+
+**Technisch:**
+- Pure merge-helper `communicatie-tijdlijn.ts` (`bouwCommunicatieTijdlijn`) — testbaar zonder Supabase, bewust géén logica in de component.
+- Nieuwe query `fetchUitgaandeEdiBerichtenVoorOrder` (`@/modules/edi`) — haalt `id, berichttype, status, is_test, sent_at, created_at` op; geen payload-velden (zwaar).
+- `order-emails.tsx` laadt via `useQuery` de EDI-berichten parallel aan de bestaande e-mailhook; wacht op beide `isLoading`-flags voor render.
+
+**Ontwerp-keuze (géén dubbel-loggen):** `verstuurde_emails` en `edi_berichten` blijven elk hun eigen bron-van-waarheid; de merge is puur presentatie. EDI-facturen die via `edi_handelspartner_config` gestuurd worden, verschijnen als EDI-rij — niet als e-mailrij — conform de slice-2-gate.
+
 ## 2026-06-11 — Factuur: e-mail onderdrukt bij actieve EDI-INVOIC (slice 2)
 
 **Wat:** mail-gate `!ediFactuurActief` toegevoegd aan het e-mailblok in `factuur-verzenden` (stap 7); `verstuurd_naar` logt nu `'EDI Transus'` i.p.v. een e-mailadres dat nooit gemaild is. De `logVerstuurdeEmails`-aanroepen zitten al binnen het gated blok — geen aparte aanpassing nodig. De PDF blijft altijd in storage.
