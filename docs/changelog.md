@@ -1,5 +1,25 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-11 — Aflever-e-mailadres mee naar vervoerder voor track & trace (mig 362)
+
+**Waarom:** mail Piet-Hein/Marjon 11-06-2026 — het order-formulier vult nu
+automatisch aparte e-mailadressen voor factuur en aflevering. Het
+aflever-e-mailadres is bedoeld voor track & trace: de vervoerder mag dáár
+naartoe mailen, het factuur-adres nooit (klant krijgt wél T&T, niet de factuur).
+HST stuurde `ToAddress.Email` tot nu toe altijd leeg.
+
+**Wat (branch `feat/zending-afl-email-tnt`):**
+- Mig 362: `zendingen.afl_email` (snapshot) + BEFORE-INSERT-trigger
+  `trg_zending_fill_email` uit `orders.afl_email` — zelfde patroon als
+  `afl_telefoon` (mig 339), maar **bewust zonder fallback** naar
+  factuur-e-mailadressen. Backfill voor nog-niet-verstuurde zendingen.
+- [`hst-send`](../supabase/functions/hst-send/index.ts): select + `ZendingInput`
+  uitgebreid met `afl_email`; [`payload-builder.ts`](../supabase/functions/hst-send/payload-builder.ts)
+  vult `ToAddress.Email` ermee (leeg blijft leeg). Test toegevoegd in
+  `payload-builder.test.ts` (6/6 groen).
+- Toekomstige vervoerder-koppelingen lezen hetzelfde snapshot-veld; of T&T-mail
+  "mag" is dan een keuze per adapter, niet per order.
+
 ## 2026-06-11 — Zendingen + track & trace zichtbaar op order-detail (branch `feat/zending-herprint-ingang`)
 
 De track & trace-code van een zending was alleen op de Zendingen-pagina te
@@ -82,7 +102,6 @@ in de print-CSS van beide pagina's:
    overflowen → blanco vervolgpagina. Sticker print nu op 146×104mm
    (onderkant is toch witruimte, visueel geen verschil).
 
-<<<<<<< HEAD
 ## 2026-06-11 — Shopify-plaats-bug + verzendset-herprint + verzendfout-signalering (branch `feat/zending-herprint-ingang`)
 
 **Aanleiding (incident 11-06):** twee pickrondes (ZEND-2026-0001/0002) werden
@@ -133,7 +152,7 @@ verzending.
   HST-call). Rose banner met zending-link + foutreden zodra een zending een
   open HST-fout heeft (Fout-rij zonder actieve/geslaagde opvolger). Helper
   `bepaalOpenVerzendFouten` is puur en testbaar.
-=======
+
 ## 2026-06-11 — HST-verzendlabel tóch liggend op de 3"×6"-rol (mig 362)
 
 **Waarom:** mig 361 (hieronder) introduceerde een staand 3×6-ontwerp, maar

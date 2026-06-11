@@ -139,7 +139,9 @@ function bouwAddressUitZending(zending: ZendingInput): HstAddress {
     ZipCode: normalizeZip(zending.afl_postcode ?? ''),
     City: zending.afl_plaats ?? '',
     PhoneNumber: zending.afl_telefoon ?? '',
-    Email: '',
+    // Aflever-e-mailadres = track & trace-contact (mig 362). Bewust nooit een
+    // factuur-adres — de klant moet wél de T&T krijgen maar niet de factuur.
+    Email: zending.afl_email ?? '',
     Country: normalizeCountry(zending.afl_land ?? ''),
   };
 }
