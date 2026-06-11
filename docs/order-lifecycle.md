@@ -90,7 +90,7 @@ Afgedwongen door [`scripts/lint-no-direct-orders-status-update.sh`](../scripts/l
 | `derive_wacht_status` (pure ladder) | **mig 352** (`Maatwerk afgerond` no-touch) | 346 |
 | `voltooi_confectie` | **mig 348** (`_apply_transitie`) | 101, 247, 250, 330 |
 | `voltooi_pickronde` | mig 218 + bundel-aware (mig 222/242) | 217 |
-| `start_pickronden` (unified) | **mig 248** | 220, 222 |
+| `start_pickronden` (unified) | **mig 373** (geen-vervoerder-guard) | 220, 222, 248, 258 |
 | `sync_order_afleverdatum_met_claims` | **mig 355** (`Maatwerk afgerond` eindstatus) | 153, 298 |
 
 ## 4. `herbereken_wacht_status` — beslislogica (mig 275)
@@ -197,9 +197,18 @@ beide nodig vanwege het window tussen status-promotie en rol-vlag.
    order zichtbaar in Pick & Ship als álle regels pickbaar (of ≥1 bij
    `deelleveringen_toegestaan`). Uitgesloten: productie-only (`alleen_productie=false`-filter),
    dag-orders buiten horizon (`werkdagMinN(afleverdatum, 1)`), header-only orders.
-2. **Pickronde-start** (`start_pickronden`, mig 248): 4D-bundel-expansie
+   Sinds 2026-06-11 worden de pickbaarheids-regels **gechunkt per order_id**
+   opgehaald — een kale GET op `orderregel_pickbaarheid` liep tegen de
+   PostgREST max-rows-cap (1000) aan waardoor orders stilletjes verdwenen.
+   Een order **zonder effectieve vervoerder blijft wél zichtbaar** maar kan
+   geen pickronde starten (zie stap 2).
+2. **Pickronde-start** (`start_pickronden`, mig 248 → guard mig 373): 4D-bundel-expansie
    (debiteur × adres × vervoerder × verzendweek), één zending per bundel
-   (status `'Picken'`), order → `In pickronde`.
+   (status `'Picken'`), order → `In pickronde`. **Geen-vervoerder-guard (mig 373):**
+   een niet-afhaal-order met ≥1 regel `bron='geen'` weigert met
+   "Geen vervoerder mogelijk" — frontend-spiegel in `StartPickrondesButton`
+   (disabled knop met zelfde label). Escape-hatch: vervoerder-override op de
+   orderregel.
 3. **`voltooi_pickronde`** (bundel-aware via `zending_orders`): zending →
    `'Klaar voor verzending'`; laatste open zending van de order → `markeer_verzonden`
    → `Verzonden`; anders → `Deels verzonden`.

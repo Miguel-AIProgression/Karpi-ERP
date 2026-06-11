@@ -22,9 +22,11 @@
 // Mig 217 — picker-dropdown met `last-picker-id`-recall via localStorage.
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQueries } from '@tanstack/react-query'
 import { Loader2, Printer, PackageCheck, X } from 'lucide-react'
 import { useStartPickrondes } from '../hooks/use-zendingen'
 import { useVervoerders } from '../hooks/use-vervoerders'
+import { fetchEffectieveVervoerderPerOrderregel } from '../queries/orderregel-vervoerder'
 import { PickerDropdown } from '@/components/orders/picker-dropdown'
 import { cn } from '@/lib/utils/cn'
 import type { PickShipOrder } from '@/modules/magazijn'
@@ -94,8 +96,39 @@ export function StartPickrondesButton({
     return () => document.removeEventListener('mousedown', handler)
   }, [showPopover])
 
-  const pickbareOrders = useMemo(() => orders.filter(isPickbaar), [orders])
+  // Per-order vervoerder-resolutie: een niet-afhaal-order met ≥1 regel
+  // bron='geen' (geen matchende actieve vervoerder, bv. DE/BE vóór de
+  // Rhenus/DPD-cutover) mag géén pickronde starten — de zending zou zonder
+  // vervoerder ontstaan. Zelfde queryKey als de VervoerderTag op de pick-card,
+  // dus dit is vrijwel altijd een cache-hit. Server-side gespiegeld in
+  // start_pickronden (mig 373).
+  const verzendOrders = useMemo(() => orders.filter((o) => !o.afhalen), [orders])
+  const vervoerderQueries = useQueries({
+    queries: verzendOrders.map((o) => ({
+      queryKey: ['logistiek', 'orderregel-vervoerder', o.order_id],
+      queryFn: () => fetchEffectieveVervoerderPerOrderregel(o.order_id),
+      staleTime: 30_000,
+    })),
+  })
+  const geenVervoerderIds = useMemo(() => {
+    const set = new Set<number>()
+    verzendOrders.forEach((o, i) => {
+      const regels = vervoerderQueries[i]?.data
+      if (regels?.some((r) => r.bron === 'geen')) set.add(o.order_id)
+    })
+    return set
+  }, [verzendOrders, vervoerderQueries])
+  const vervoerderResolutieLaadt = vervoerderQueries.some((q) => q.isLoading)
+
+  const pickbareOrders = useMemo(
+    () => orders.filter((o) => isPickbaar(o) && !geenVervoerderIds.has(o.order_id)),
+    [orders, geenVervoerderIds],
+  )
   const aantal = pickbareOrders.length
+  const aantalGeblokkeerd = useMemo(
+    () => orders.filter((o) => isPickbaar(o) && geenVervoerderIds.has(o.order_id)).length,
+    [orders, geenVervoerderIds],
+  )
   const aantalOverig = orders.length - aantal
   const heeftVerzend = pickbareOrders.some((o) => !o.afhalen)
   const heeftActieveVervoerder = vervoerders.some((v) => v.actief)
@@ -103,7 +136,8 @@ export function StartPickrondesButton({
   const isBundel = pickbareOrders.length >= 2
 
   const niksTeDoen = aantal === 0
-  const disabled = mutation.isPending || !vervoerderOk || niksTeDoen
+  const alleenGeblokkeerd = niksTeDoen && aantalGeblokkeerd > 0
+  const disabled = mutation.isPending || !vervoerderOk || niksTeDoen || vervoerderResolutieLaadt
 
   const aantalInBundel = isBundel ? aantal - forceSoloIds.size : 0
   const aantalSolo = isBundel ? forceSoloIds.size : aantal
@@ -111,15 +145,17 @@ export function StartPickrondesButton({
   // Tooltip-tekst — context-aware.
   const tooltip = !vervoerderOk
     ? 'Activeer eerst minstens één vervoerder bij Logistiek > Vervoerders'
-    : niksTeDoen
-      ? 'Geen pickbare orders in deze groep — eerst voorraad/snijden/confectie afronden'
-      : isBundel
-        ? `Bundel ${aantal} zendingen${context ? ` ${context}` : ''}${
-            aantalOverig > 0 ? ` (${aantalOverig} overgeslagen — nog niet pickbaar)` : ''
-          } — operator kan in de dialog orders uit de bundel halen.`
-        : pickbareOrders[0]?.afhalen
-          ? 'Start afhaal-pickronde (geen verzendstickers)'
-          : 'Start pickronde — kies eerst de picker, daarna print stickers en pakbon'
+    : alleenGeblokkeerd
+      ? 'Geen vervoerder mogelijk voor dit afleverland — activeer de vervoerder (Logistiek > Vervoerders) of kies handmatig een vervoerder op de order'
+      : niksTeDoen
+        ? 'Geen pickbare orders in deze groep — eerst voorraad/snijden/confectie afronden'
+        : isBundel
+          ? `Bundel ${aantal} zendingen${context ? ` ${context}` : ''}${
+              aantalOverig > 0 ? ` (${aantalOverig} overgeslagen — nog niet pickbaar of geen vervoerder)` : ''
+            } — operator kan in de dialog orders uit de bundel halen.`
+          : pickbareOrders[0]?.afhalen
+            ? 'Start afhaal-pickronde (geen verzendstickers)'
+            : 'Start pickronde — kies eerst de picker, daarna print stickers en pakbon'
 
   function openPopover() {
     setError(null)
@@ -202,7 +238,7 @@ export function StartPickrondesButton({
         className={buttonClass}
       >
         {knopIcon}
-        {niksTeDoen ? 'Niets pickbaar' : knopLabel}
+        {alleenGeblokkeerd ? 'Geen vervoerder mogelijk' : niksTeDoen ? 'Niets pickbaar' : knopLabel}
       </button>
       {error && <div className="max-w-72 text-right text-[11px] text-rose-600">{error}</div>}
 

@@ -1,5 +1,40 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-11 — Pick & Ship toonde maar 91 van ~236 pickbare orders (PostgREST-cap) + pick-start geblokkeerd zonder vervoerder (mig 373, branch `fix/pick-ship-zonder-vervoerder`)
+
+**Verzoek Miguel (vervolg op mig 372):** "Zet ze [orders zonder vervoerder]
+wel allemaal tussen de pick lijst, maar blokkeer het starten van het picken
+door 'geen vervoerder mogelijk'." Bij het onderzoek bleek een **echte bug**
+de orders te verbergen — niet de vervoerder-status:
+
+1. **PostgREST max-rows-cap (1000) at orders stilletjes op.**
+   `fetchPickbaarheidRegels` ([`pickbaarheid.ts`](../frontend/src/modules/magazijn/queries/pickbaarheid.ts))
+   haalde de héle `orderregel_pickbaarheid`-view op zonder `order_id`-filter.
+   De view heeft inmiddels 2068 rijen (EDI-instroom juni); de kale GET gaf er
+   maar 1000 terug. Orders waarvan de regels buiten die eerste 1000 vielen
+   kregen `regels.length === 0` → het pickbaarheidsfilter gooide ze weg.
+   Resultaat: 91 zichtbaar van ~236 pickbare orders, zonder enige fout.
+   **Fix:** gechunkt ophalen per `order_id` (100 per chunk, zelfde patroon als
+   de fallback). Incidentklasse om te onthouden: een PostgREST-GET zonder
+   filter op een groeiende view is een tijdbom — de cap knipt geruisloos.
+2. **Pick-start zonder vervoerder geblokkeerd, dubbel:**
+   - **Frontend** ([`start-pickrondes-button.tsx`](../frontend/src/modules/logistiek/components/start-pickrondes-button.tsx)):
+     per order de effectieve vervoerder geresolved (zelfde queryKey als de
+     pick-card-tag → cache-hit); orders met ≥1 regel `bron='geen'` tellen
+     niet mee als startbaar. Solo-kaart toont disabled knop **"Geen
+     vervoerder mogelijk"**; bundel-tooltip telt ze als overgeslagen.
+   - **Server** (mig 373): `start_pickronden` (body = mig 258 + guard)
+     weigert elke niet-afhaal-order met ≥1 regel `bron='geen'` met dezelfde
+     melding. Voorkomt zendingen met `vervoerder_code=NULL` die na voltooien
+     nergens heen kunnen. Escape-hatch: vervoerder-override op de orderregel
+     (bron wordt 'override') voor bewuste uitzonderingen.
+
+Met de cap-fix verschijnen de ~159 DE/BE-orders (zie mig 372-entry) nu wél in
+Pick & Ship; hun Verzendset-knop is geblokkeerd totdat Rhenus/DPD geactiveerd
+zijn (Rhenus gepland deze week) of een handmatige vervoerder gekozen is.
+
+**Toepassen:** mig 373 in de Supabase SQL-editor draaien.
+
 ## 2026-06-11 — "196 orders zonder vervoerder"-banner geduid: uitsplitsing per land + scope-uitleg (mig 372, branch `fix/zonder-vervoerder-banner`)
 
 **Melding Miguel:** de amber banner op Pick & Ship zei "196 order(s) zonder
