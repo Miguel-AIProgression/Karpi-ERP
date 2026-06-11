@@ -47,3 +47,6 @@ verify_jwt = false
 
 [functions.hst-send]
 verify_jwt = false
+
+[functions.bouw-verzendbericht-edi]
+verify_jwt = false
