@@ -8,7 +8,8 @@ const inputClasses =
   'w-full px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400'
 
 /**
- * Zwevende feedback/bug-knop rechtsonder, op elke pagina (gerenderd in AppLayout).
+ * Feedback/bug-knop in de TopBar, op elke pagina. Stond eerst zwevend rechtsonder,
+ * maar overlapte daar pagina-knoppen (zoals "Volgende" op het orders-overzicht).
  * Legt automatisch de huidige pagina-URL vast; melder komt uit de sessie.
  */
 export function FeedbackWidget() {
@@ -22,10 +23,10 @@ export function FeedbackWidget() {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="fixed bottom-5 right-5 z-40 flex items-center gap-2 rounded-full bg-slate-900 px-4 py-3 text-sm font-medium text-white shadow-lg transition-colors hover:bg-slate-800"
+        className="flex items-center gap-2 rounded-full bg-slate-900 px-3.5 py-1.5 text-sm font-medium text-white transition-colors hover:bg-slate-800"
         title="Feedback of bug melden"
       >
-        <MessageSquarePlus size={18} />
+        <MessageSquarePlus size={16} />
         <span className="hidden sm:block">Feedback</span>
       </button>
 
