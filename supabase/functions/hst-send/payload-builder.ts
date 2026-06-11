@@ -109,32 +109,53 @@ function bouwAggregateLine(zending: ZendingInput, order: OrderInput): HstTranspo
   };
 }
 
+// HST keurt een StreetNumberAddition >5 tekens af met HTTP 400 (live-fout
+// ZEND-2026-0002: '"Unit 30" overschrijdt het maximum van 5 karakters').
+const HST_STREET_NUMBER_ADDITION_MAX = 5;
+
+// Korte toevoeging ('G', '001', '-5') → StreetNumberAddition; langere
+// ('Unit 30', 'Gebouw B') → NameAddition, HST's vrije extra adresregel.
+export function verdeelToevoeging(addition: string): {
+  streetNumberAddition: string;
+  nameAddition: string;
+} {
+  const trimmed = (addition ?? '').trim();
+  if (trimmed.length <= HST_STREET_NUMBER_ADDITION_MAX) {
+    return { streetNumberAddition: trimmed, nameAddition: '' };
+  }
+  return { streetNumberAddition: '', nameAddition: trimmed };
+}
+
 function bouwAddressUitZending(zending: ZendingInput): HstAddress {
   const { street, number, addition } = splitAdres(zending.afl_adres ?? '');
+  const toevoeging = verdeelToevoeging(addition);
   return {
     CustomerCode: '',
     Name: zending.afl_naam ?? '',
-    NameAddition: '',
+    NameAddition: toevoeging.nameAddition,
     Street: street,
     StreetNumber: number,
-    StreetNumberAddition: addition,
+    StreetNumberAddition: toevoeging.streetNumberAddition,
     ZipCode: normalizeZip(zending.afl_postcode ?? ''),
     City: zending.afl_plaats ?? '',
     PhoneNumber: zending.afl_telefoon ?? '',
-    Email: '',
+    // Aflever-e-mailadres = track & trace-contact (mig 365). Bewust nooit een
+    // factuur-adres — de klant moet wél de T&T krijgen maar niet de factuur.
+    Email: zending.afl_email ?? '',
     Country: normalizeCountry(zending.afl_land ?? ''),
   };
 }
 
 function bouwAddressUitBedrijf(bedrijf: BedrijfInput): HstAddress {
   const { street, number, addition } = splitAdres(bedrijf.adres);
+  const toevoeging = verdeelToevoeging(addition);
   return {
     CustomerCode: '',
     Name: bedrijf.bedrijfsnaam,
-    NameAddition: '',
+    NameAddition: toevoeging.nameAddition,
     Street: street,
     StreetNumber: number,
-    StreetNumberAddition: addition,
+    StreetNumberAddition: toevoeging.streetNumberAddition,
     ZipCode: normalizeZip(bedrijf.postcode),
     City: bedrijf.plaats,
     PhoneNumber: bedrijf.telefoon,
@@ -144,19 +165,43 @@ function bouwAddressUitBedrijf(bedrijf: BedrijfInput): HstAddress {
 }
 
 // Splitst "Tweede Broekdijk 10 A" → { street: "Tweede Broekdijk", number: "10", addition: "A" }
-// HST wil straat, nummer en toevoeging in aparte velden.
+// HST wil straat, nummer en toevoeging in aparte velden. Een lege StreetNumber
+// keurt HST af met HTTP 400 "Afleveradres niet aanwezig/compleet" — de parser
+// moet dus ook werkelijke webshop-invoer aankunnen (incident ZEND-2026-0002,
+// 11-06-2026: "Saturnusstraat 60 (Unit 30)" → StreetNumber leeg → 400):
+//   "Saturnusstraat 60 (Unit 30)"  → 60, "Unit 30"   (haakjes/blokhaken → toevoeging)
+//   "Biltstraat 35 [001]"          → 35, "001"
+//   "westeresch 1-5"               → 1,  "-5"        (reeks blijft reconstrueerbaar)
+//   "Koeweistraat, 6"              → 6               (komma's genegeerd)
+//   "Raasdorperweg 181G"           → 181, "G"
 export function splitAdres(adres: string): { street: string; number: string; addition: string } {
-  const trimmed = (adres ?? '').trim();
+  let trimmed = (adres ?? '').trim();
   if (!trimmed) return { street: '', number: '', addition: '' };
-  // Match: <straatnaam (letters/spaties/punten)> <nummer (cijfers)><optioneel toevoeging (letters/streep/spatie+letters)>
-  const m = trimmed.match(/^(.+?)\s+(\d+)\s*([A-Za-z][A-Za-z0-9\-\s]*)?$/);
+
+  // (…)- en […]-delen zijn toevoegingen (unit/etage/filiaalcode), geen straat.
+  const extras: string[] = [];
+  trimmed = trimmed
+    .replace(/[([]([^)\]]*)[)\]]/g, (_geheel, inner: string) => {
+      if (inner.trim()) extras.push(inner.trim());
+      return ' ';
+    })
+    .replace(/,/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Eerste losstaand cijfer-token ná de straatnaam = huisnummer; de rest
+  // (letters, "-5", "A", "3hoog") is toevoeging — wat het ook is, het mag
+  // nooit meer tot een lege StreetNumber leiden zolang er een nummer in
+  // het adres staat.
+  const m = trimmed.match(/^(.+?)\s+(\d+)\s*(.*)$/);
   if (!m) {
-    return { street: trimmed, number: '', addition: '' };
+    return { street: trimmed, number: '', addition: extras.join(' ') };
   }
+  const addition = [m[3]?.trim(), ...extras].filter(Boolean).join(' ');
   return {
     street: m[1].trim(),
     number: m[2].trim(),
-    addition: (m[3] ?? '').trim(),
+    addition,
   };
 }
 

@@ -283,10 +283,10 @@ function adresUit(a) {
   if (!a) return {}
   return {
     afl_naam:     [a.first_name, a.last_name].filter(Boolean).join(' ') || a.name || a.company || null,
-    afl_bedrijf:  a.company ?? null,
+    afl_naam_2:   a.company ?? null,
     afl_adres:    [a.address1, a.address2].filter(Boolean).join(' ') || null,
     afl_postcode: a.zip ?? null,
-    afl_stad:     a.city ?? null,
+    afl_plaats:   a.city ?? null,
     afl_land:     a.country_code ?? null,
   }
 }
@@ -295,10 +295,9 @@ function factuuradrseUit(a) {
   if (!a) return {}
   return {
     fact_naam:     [a.first_name, a.last_name].filter(Boolean).join(' ') || a.name || a.company || null,
-    fact_bedrijf:  a.company ?? null,
     fact_adres:    [a.address1, a.address2].filter(Boolean).join(' ') || null,
     fact_postcode: a.zip ?? null,
-    fact_stad:     a.city ?? null,
+    fact_plaats:   a.city ?? null,
     fact_land:     a.country_code ?? null,
   }
 }

@@ -1,5 +1,5 @@
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Printer } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { useZending, useVerstuurZendingOpnieuw } from '@/modules/logistiek/hooks/use-zendingen'
 import { ZendingStatusBadge } from '@/modules/logistiek/components/zending-status-badge'
@@ -110,6 +110,15 @@ export function ZendingDetailPage() {
             <ZendingStatusBadge status={z.status} />
             <VervoerderTag code={z.vervoerder_code} showLeeg />
           </span>
+        }
+        actions={
+          <Link
+            to={`/logistiek/${z.zending_nr}/printset`}
+            className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
+          >
+            <Printer size={16} />
+            Verzendset printen
+          </Link>
         }
         description={
           bundelOrdersGesorteerd.length > 0 ? (

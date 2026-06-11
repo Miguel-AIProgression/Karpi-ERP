@@ -337,10 +337,11 @@ serve(async (req) => {
   const shipping = extractShopifyShippingAddress(order)
   const billing = extractShopifyBillingAddress(order)
 
-  // Vul bedrijfsnaam in vanuit debiteur als Shopify die niet meestuurt
+  // Vul bedrijfsnaam in vanuit debiteur als Shopify die niet meestuurt.
+  // afl_naam_2 = tweede adresregel in create_webshop_order (mig 343); een
+  // fact-bedrijfsveld kent de RPC niet — fact_naam valt al terug op company.
   if (debiteurNaam) {
-    if (!shipping.afl_bedrijf) shipping.afl_bedrijf = debiteurNaam
-    if (!billing.fact_bedrijf) billing.fact_bedrijf = debiteurNaam
+    if (!shipping.afl_naam_2) shipping.afl_naam_2 = debiteurNaam
   }
 
   // Afleverdatum: Shopify B2B heeft geen standaard leverdatum-veld.

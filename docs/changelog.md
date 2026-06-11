@@ -32,6 +32,63 @@ Spec: [`2026-06-11-order-email-tijdlijn-design.md`](superpowers/specs/2026-06-11
   Query [`verstuurde-emails.ts`](../frontend/src/lib/supabase/queries/verstuurde-emails.ts)
   + hook `useEmailsVoorOrder`.
 
+## 2026-06-11 — Aflever-e-mailadres mee naar vervoerder voor track & trace (mig 365)
+
+**Waarom:** mail Piet-Hein/Marjon 11-06-2026 — het order-formulier vult sinds
+mig 364 automatisch aparte e-mailadressen voor factuur en aflevering. Het
+aflever-e-mailadres is bedoeld voor track & trace: de vervoerder mag dáár
+naartoe mailen, het factuur-adres nooit (klant krijgt wél T&T, niet de factuur).
+HST stuurde `ToAddress.Email` tot nu toe altijd leeg.
+
+**Wat (branch `feat/zending-afl-email-tnt`):**
+- Mig 365: `zendingen.afl_email` (snapshot) + BEFORE-INSERT-trigger
+  `trg_zending_fill_email` uit `orders.afl_email` — zelfde patroon als
+  `afl_telefoon` (mig 339), maar **bewust zonder fallback** naar
+  factuur-e-mailadressen. Backfill voor nog-niet-verstuurde zendingen.
+- [`hst-send`](../supabase/functions/hst-send/index.ts): select + `ZendingInput`
+  uitgebreid met `afl_email`; [`payload-builder.ts`](../supabase/functions/hst-send/payload-builder.ts)
+  vult `ToAddress.Email` ermee (leeg blijft leeg). Test toegevoegd in
+  `payload-builder.test.ts` (6/6 groen).
+- Toekomstige vervoerder-koppelingen lezen hetzelfde snapshot-veld; of T&T-mail
+  "mag" is dan een keuze per adapter, niet per order.
+
+## 2026-06-11 — Zendingen + track & trace zichtbaar op order-detail (branch `feat/zending-herprint-ingang`)
+
+De track & trace-code van een zending was alleen op de Zendingen-pagina te
+zien; op de order zelf stond wel het verzenddocument maar niet de T&T-code.
+Nieuw blok **Zendingen** op order-detail
+([`order-zendingen.tsx`](../frontend/src/components/orders/order-zendingen.tsx),
+stijl gespiegeld aan het Facturatie-blok): per zending het zending-nr (link
+naar zending-detail), status-badge, vervoerder-tag, verzenddatum en de
+track & trace-code uit `zendingen.track_trace` met kopieerknop. Zolang de
+vervoerder nog geen code teruggaf staat er "nog geen track & trace"; zonder
+zendingen rendert het blok niets (gouden regel). Orders-per-zending lopen via
+de M2M `zending_orders` (mig 222), dus bundel-zendingen tonen ook correct.
+
+## 2026-06-11 — HST-adresparser robuust voor werkelijke webshop-adressen (branch `feat/zending-herprint-ingang`)
+
+**Incident ZEND-2026-0002 (vervolg op de Shopify-plaats-fix verderop):** HST
+weigerde de transportorder twee keer met HTTP 400. (1) `splitAdres` kon
+"Saturnusstraat 60 (Unit 30)" niet splitsen — de oude regex eiste een
+toevoeging die met een letter begint, dus haakjes/blokhaken/reeksen
+("(Unit 30)", "[001]", "1-5", allemaal échte adressen in de orders-tabel)
+lieten `StreetNumber` leeg → HST 400 "Afleveradres niet aanwezig/compleet".
+(2) Na die fix bleek HST een **max van 5 tekens** op `StreetNumberAddition`
+te hanteren → "Unit 30" opnieuw 400.
+
+**Structurele fix** ([`payload-builder.ts`](../supabase/functions/hst-send/payload-builder.ts), hst-send opnieuw gedeployed):
+- `splitAdres` haalt (…)- en […]-delen eruit als toevoeging, negeert komma's,
+  en pakt het eerste losstaande cijfer-token als huisnummer — een adres mét
+  nummer kan nooit meer een lege `StreetNumber` opleveren.
+- Nieuw `verdeelToevoeging`: toevoeging ≤5 tekens → `StreetNumberAddition`
+  ("G", "001", "-5"); langer → `NameAddition` (HST's extra adresregel,
+  "Unit 30"). Limiet als constante `HST_STREET_NUMBER_ADDITION_MAX`.
+- 4 nieuwe Deno-tests met de letterlijke incident-adressen (8 totaal groen).
+
+**Resultaat:** ZEND-2026-0002 alsnog verstuurd — HTTP 201, transportorder
+T75038267000183, tracking op de zending, status "Onderweg", vrachtbrief-PDF
+in storage. ZEND-2026-0001 (T75038267000181) en -0003 waren al goed.
+
 ## 2026-06-11 — Pakbon-layout naar oud Lieferschein-ontwerp
 
 **Waarom:** de pakbon uit Pick & Ship moet qua layout lijken op het oude
@@ -76,6 +133,57 @@ in de print-CSS van beide pagina's:
    sub-pixel-afronding of een onbedrukbare printerrand laat zo'n sticker
    overflowen → blanco vervolgpagina. Sticker print nu op 146×104mm
    (onderkant is toch witruimte, visueel geen verschil).
+
+## 2026-06-11 — Shopify-plaats-bug + verzendset-herprint + verzendfout-signalering (branch `feat/zending-herprint-ingang`)
+
+**Aanleiding (incident 11-06):** twee pickrondes (ZEND-2026-0001/0002) werden
+foutief voltooid. De HST-transportorders strandden allebei op de pre-flight
+"Naam, adres, postcode of plaats is leeg" — en dat bleek géén invoerfout maar
+een **structurele Shopify-intake-bug**: 20 van de 26 Shopify-orders sinds mei
+misten `afl_plaats`. Daarnaast bleken de facturen al automatisch gemaild
+(per_zending-keten deed exact wat hij moest doen) en was er geen weg terug
+naar Pick & Ship zonder handwerk.
+
+**Root cause Shopify-plaats:** `extractShopifyShippingAddress`
+([`_shared/shopify-types.ts`](../supabase/functions/_shared/shopify-types.ts))
+leverde sleutel `afl_stad` (en `afl_bedrijf`/`fact_stad`), maar
+`create_webshop_order` (mig 343) leest `p_header->>'afl_plaats'` /
+`afl_naam_2` / `fact_plaats` — de JSONB-RPC dropt onbekende sleutels
+geruisloos (zelfde bugklasse als het maatwerk_vorm-incident, mig 343).
+**Fix:** sleutels hernoemd naar wat de RPC kent; zelfde fix in
+`scripts/import-shopify-orders.mjs`; nieuwe contract-test
+[`shopify-types.test.ts`](../supabase/functions/_shared/shopify-types.test.ts)
+pint de geproduceerde sleutels vast op de RPC-kolomlijst (4 tests groen).
+⚠️ **`sync-shopify-order` moet opnieuw gedeployed worden** voordat de fix
+live is (neemt meteen de mig 325-RPC-hernoeming mee).
+
+**Data-repair (eenmalig, met akkoord):** 17 NL-orders kregen `afl_plaats`
+terug via de PDOK Locatieserver (BAG, postcode+huisnummer), incl. de
+zending-snapshots ZEND-2026-0001 (Lijnden), -0002 ('s-Gravenhage), -0003
+(Bennebroek). Niet hersteld: ORD-2026-0097 (geen adres), 0108/0123 (BE,
+Willebroek — handmatig).
+
+**Incident-terugdraai:** beide orders terug naar 'Klaar voor picken'
+(verzonden_at NULL), zendingen terug naar 'Picken', Fout-transportorders op
+'Geannuleerd'. Omdat `voltooi_pickronde` de voorraad-claims op `released` had
+gezet (en `orderregel_pickbaarheid.is_pickbaar` op actieve claims leunt),
+zijn de regels opnieuw gealloceerd via `herallocateer_orderregel` — orders
+weer zichtbaar in Pick & Ship. Facturen FACT-2026-0001/0002 waren al gemaild
+en blijven bewust staan (besluit Miguel): bedragen kloppen, de
+`gefactureerd`-guard (mig 227) voorkomt een dubbele factuur bij de echte
+verzending.
+
+**Frontend (3 wijzigingen):**
+- **Verzendset-herprint:** de printset-pagina (`/logistiek/:zending_nr/printset`)
+  was alleen bereikbaar via de Pick & Ship-flow — pakbon/sticker vergeten
+  printen = geen weg terug. Nu: "Verzendset printen"-knop op zending-detail +
+  printer-icoon per rij op het zendingen-overzicht.
+- **[`VerzendFoutBanner`](../frontend/src/components/orders/verzend-fout-banner.tsx)**
+  op order-detail: een order kan "Verzonden" tonen terwijl de transportorder
+  naar de vervoerder daarna faalde (voltooi_pickronde flipt de status vóór de
+  HST-call). Rose banner met zending-link + foutreden zodra een zending een
+  open HST-fout heeft (Fout-rij zonder actieve/geslaagde opvolger). Helper
+  `bepaalOpenVerzendFouten` is puur en testbaar.
 
 ## 2026-06-11 — HST-verzendlabel tóch liggend op de 3"×6"-rol (mig 362)
 

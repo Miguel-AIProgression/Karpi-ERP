@@ -95,16 +95,25 @@ export interface ShopifyOrderWebhook {
   company?: { id: number; name: string; location?: { id: number; name?: string } } | null
 }
 
-/** Zet een Shopify-adres om naar de veldnamen die `create_webshop_order` verwacht. */
+/**
+ * Zet een Shopify-adres om naar de veldnamen die `create_webshop_order` verwacht.
+ * LET OP: de RPC leest p_header via `->>'sleutel'` en dropt onbekende sleutels
+ * geruisloos (zie reference_jsonb_rpc_sleutel_drop) — sleutelnamen hier moeten
+ * dus exact matchen met de kolomlijst in de RPC (mig 343): afl_naam, afl_naam_2,
+ * afl_adres, afl_postcode, afl_plaats, afl_land, afl_email, afl_telefoon,
+ * fact_naam, fact_adres, fact_postcode, fact_plaats, fact_land.
+ * Incident 11-06-2026: `afl_stad` werd gedropt → 20 orders zonder afl_plaats
+ * → HST pre-flight "plaats is leeg".
+ */
 export function extractShopifyShippingAddress(order: ShopifyOrderWebhook): Record<string, string | null> {
   const a = order.shipping_address ?? order.billing_address
   if (!a) return {}
   return {
     afl_naam: [a.first_name, a.last_name].filter(Boolean).join(' ') || a.name || a.company || null,
-    afl_bedrijf: a.company ?? null,
+    afl_naam_2: a.company ?? null,
     afl_adres: [a.address1, a.address2].filter(Boolean).join(' ') || null,
     afl_postcode: a.zip ?? null,
-    afl_stad: a.city ?? null,
+    afl_plaats: a.city ?? null,
     afl_land: a.country_code ?? a.country ?? null,
     afl_telefoon: a.phone ?? null,
   }
@@ -115,10 +124,9 @@ export function extractShopifyBillingAddress(order: ShopifyOrderWebhook): Record
   if (!a) return {}
   return {
     fact_naam: [a.first_name, a.last_name].filter(Boolean).join(' ') || a.name || a.company || null,
-    fact_bedrijf: a.company ?? null,
     fact_adres: [a.address1, a.address2].filter(Boolean).join(' ') || null,
     fact_postcode: a.zip ?? null,
-    fact_stad: a.city ?? null,
+    fact_plaats: a.city ?? null,
     fact_land: a.country_code ?? a.country ?? null,
   }
 }
