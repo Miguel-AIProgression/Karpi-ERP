@@ -15,7 +15,7 @@
 **Belangrijke context:**
 - Alleen `genereer_factuur_voor_bundel` (laatste definitie mig 341) is live; `genereer_factuur`/`genereer_factuur_voor_week` zijn gedropt door mig 240. De legacy-fallback-paden in `factuur-verzenden` die ernaar verwijzen blijven buiten scope (kunnen alleen al falen).
 - EDI (`_shared/transus-formats/factuur-mapper.ts`, `download-orderbev-xml.ts`) checkt de verlegd-vlag al en blijft ongewijzigd. `bouw-factuur-edi` leest `factuur_regels.btw_percentage` — die wordt vanzelf 0 bij verlegd, consistent.
-- Migratienummer **369** is gebaseerd op laatste = 368 op origin/main d.d. 2026-06-11. **Her-verifieer vlak vóór commit** (`ls supabase/migrations | sort | tail -3`) — nummer-collisies bij parallelle branches zijn eerder voorgekomen; schuif zo nodig op en pas alle verwijzingen (bestandsnaam + commentaar + docs) aan.
+- Migratienummer: het plan rekende oorspronkelijk op **369** (gebaseerd op laatste = 368 op origin/main d.d. 2026-06-11), maar bij implementatie waren 369/370 inmiddels bezet (`369_debiteuren_email_verzend` / `370_dropship_guard`) → de migratie is **371** geworden; alle verwijzingen hieronder zijn daarop bijgewerkt. **Her-verifieer vlak vóór commit** (`ls supabase/migrations | sort | tail -3`) — nummer-collisies bij parallelle branches zijn eerder voorgekomen; schuif zo nodig op en pas alle verwijzingen (bestandsnaam + commentaar + docs) aan.
 - Deno-tests draaien met `npx deno test <pad> --no-check` (conventie uit eerdere plannen). Frontend: `cd frontend && npx vitest run <pad>` en `npm run typecheck`.
 - PowerShell 5.1-valkuil: tekstwijzigingen ALTIJD via de Edit-tool, nooit via `Get-Content`/`-replace` (mojibake op BOM-loos UTF-8).
 
@@ -27,7 +27,7 @@
 - Create: `supabase/functions/_shared/btw.ts`
 - Test: `supabase/functions/_shared/btw.test.ts`
 
-- [ ] **Step 1: Schrijf de failing test**
+- [x] **Step 1: Schrijf de failing test**
 
 ```ts
 // supabase/functions/_shared/btw.test.ts
@@ -69,17 +69,17 @@ Deno.test('isBtwVerlegd: alleen expliciet TRUE telt', () => {
 })
 ```
 
-- [ ] **Step 2: Run de test — verwacht FAIL**
+- [x] **Step 2: Run de test — verwacht FAIL**
 
 Run: `npx deno test supabase/functions/_shared/btw.test.ts --no-check`
 Expected: FAIL — module `./btw.ts` bestaat niet.
 
-- [ ] **Step 3: Schrijf de implementatie**
+- [x] **Step 3: Schrijf de implementatie**
 
 ```ts
 // supabase/functions/_shared/btw.ts
 // Eén bron-van-waarheid voor het effectieve BTW-percentage van een debiteur.
-// Spiegelt de SQL-helper `effectief_btw_pct` (mig 369) — seam-patroon zoals
+// Spiegelt de SQL-helper `effectief_btw_pct` (mig 371) — seam-patroon zoals
 // _shared/debiteur-matcher.ts. De verlegd-vlag (intracommunautaire B2B-levering)
 // wint altijd van het per-debiteur percentage; `btw_percentage` blijft het
 // NL-tarief en wordt bij verlegd genegeerd.
@@ -101,12 +101,12 @@ export function effectiefBtwPct(deb: BtwDebiteur | null | undefined): number {
 }
 ```
 
-- [ ] **Step 4: Run de test — verwacht PASS**
+- [x] **Step 4: Run de test — verwacht PASS**
 
 Run: `npx deno test supabase/functions/_shared/btw.test.ts --no-check`
 Expected: 7 passed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add supabase/functions/_shared/btw.ts supabase/functions/_shared/btw.test.ts
@@ -115,22 +115,22 @@ git commit -m "feat(facturatie): TS-helper effectiefBtwPct/isBtwVerlegd (BTW ver
 
 ---
 
-### Task 2: Migratie 369 — SQL-helper + `facturen.btw_verlegd` + RPC
+### Task 2: Migratie 371 — SQL-helper + `facturen.btw_verlegd` + RPC
 
 **Files:**
-- Create: `supabase/migrations/369_btw_verlegd_facturatie.sql`
+- Create: `supabase/migrations/371_btw_verlegd_facturatie.sql`
 
-- [ ] **Step 1: Her-verifieer het migratienummer**
+- [x] **Step 1: Her-verifieer het migratienummer**
 
 Run: `git fetch origin main --quiet; git show origin/main --stat --oneline -- supabase/migrations | head -5` en `ls supabase/migrations | sort | tail -3`
-Expected: hoogste bestaande nummer 368 → dit bestand wordt 369. Bij collisie: hernummer en pas alle vermeldingen in deze plan-taak + docs aan.
+Expected: hoogste bestaande nummer 368 → dit bestand wordt het eerstvolgende vrije nummer. Bij collisie: hernummer en pas alle vermeldingen in deze plan-taak + docs aan. *(Uitkomst bij uitvoering: 369/370 bleken bezet door email_verzend/dropship-guard → dit bestand is 371 geworden.)*
 
-- [ ] **Step 2: Schrijf de migratie**
+- [x] **Step 2: Schrijf de migratie**
 
 De RPC-body is een exacte kopie van mig 341 met **drie wijzigingen**: (1) declaratie `v_btw_verlegd`, (2) `v_btw_pct` via de helper + vlag-snapshot, (3) `btw_verlegd` in de facturen-INSERT. Al het overige (kortingen, drempel, verzendkosten, betaaltermijn) blijft byte-voor-byte gelijk — kopieer uit `supabase/migrations/341_genereer_factuur_voor_bundel_betaaltermijn_helper.sql`.
 
 ```sql
--- Migratie 369: BTW verlegd intracommunautair in de facturatie-keten
+-- Migratie 371: BTW verlegd intracommunautair in de facturatie-keten
 --
 -- Aanleiding: verzoek Marjon (2026-06-11) — Duitse klanten kregen 21% BTW op
 -- facturen, terwijl debiteuren.btw_verlegd_intracom (mig 164) al correct op
@@ -161,7 +161,7 @@ AS $$
 $$;
 
 COMMENT ON FUNCTION effectief_btw_pct(BOOLEAN, NUMERIC) IS
-  'Mig 369: effectief BTW-percentage voor een debiteur. Verlegd (intracom) '
+  'Mig 371: effectief BTW-percentage voor een debiteur. Verlegd (intracom) '
   'wint altijd: 0%. Anders het per-debiteur percentage met fallback 21. '
   'Gespiegeld in supabase/functions/_shared/btw.ts (effectiefBtwPct).';
 
@@ -169,7 +169,7 @@ COMMENT ON FUNCTION effectief_btw_pct(BOOLEAN, NUMERIC) IS
 ALTER TABLE facturen ADD COLUMN IF NOT EXISTS btw_verlegd BOOLEAN NOT NULL DEFAULT FALSE;
 
 COMMENT ON COLUMN facturen.btw_verlegd IS
-  'Mig 369: snapshot van debiteuren.btw_verlegd_intracom op factuur-aanmaak. '
+  'Mig 371: snapshot van debiteuren.btw_verlegd_intracom op factuur-aanmaak. '
   'TRUE → 0% BTW met wettelijke vermelding "BTW verlegd" op de PDF.';
 
 -- 3. RPC --------------------------------------------------------------------
@@ -233,25 +233,25 @@ END;
 $$;
 
 COMMENT ON FUNCTION genereer_factuur_voor_bundel(BIGINT) IS
-  'Mig 369: BTW verlegd intracom — v_btw_pct via effectief_btw_pct() en '
+  'Mig 371: BTW verlegd intracom — v_btw_pct via effectief_btw_pct() en '
   'btw_verlegd-snapshot op de factuur. Body verder identiek aan mig 341 '
   '(V2-layout, kortingen gespreid, betaaltermijn_dagen-helper).';
 
 NOTIFY pgrst, 'reload schema';
 ```
 
-**LET OP:** de `[REGELS x-y]`-markers zijn instructies aan jou, geen literale inhoud — vervang ze door de letterlijke blokken uit mig 341 zodat de functie compleet en draaibaar is. Verifieer dat het eindresultaat dezelfde regelstructuur heeft als mig 341 plus exact de drie genoemde wijzigingen (diff mig 341 ↔ 369 moet klein en leesbaar zijn).
+**LET OP:** de `[REGELS x-y]`-markers zijn instructies aan jou, geen literale inhoud — vervang ze door de letterlijke blokken uit mig 341 zodat de functie compleet en draaibaar is. Verifieer dat het eindresultaat dezelfde regelstructuur heeft als mig 341 plus exact de drie genoemde wijzigingen (diff mig 341 ↔ 371 moet klein en leesbaar zijn).
 
-- [ ] **Step 3: Syntax-sanity**
+- [x] **Step 3: Syntax-sanity**
 
-Run (alleen lezen, geen DB): controleer met `git diff --no-index supabase/migrations/341_genereer_factuur_voor_bundel_betaaltermijn_helper.sql supabase/migrations/369_btw_verlegd_facturatie.sql` dat het RPC-deel alleen de drie bedoelde afwijkingen heeft.
+Run (alleen lezen, geen DB): controleer met `git diff --no-index supabase/migrations/341_genereer_factuur_voor_bundel_betaaltermijn_helper.sql supabase/migrations/371_btw_verlegd_facturatie.sql` dat het RPC-deel alleen de drie bedoelde afwijkingen heeft.
 Expected: verschillen beperkt tot header-commentaar, helper + kolom-blok, `v_btw_verlegd`-declaratie/-toewijzing, facturen-INSERT en COMMENT.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
-git add supabase/migrations/369_btw_verlegd_facturatie.sql
-git commit -m "feat(facturatie): mig 369 — effectief_btw_pct, facturen.btw_verlegd, RPC verlegd-aware"
+git add supabase/migrations/371_btw_verlegd_facturatie.sql
+git commit -m "feat(facturatie): mig 371 — effectief_btw_pct, facturen.btw_verlegd, RPC verlegd-aware"
 ```
 
 **NB:** de migratie wordt pas op de live DB toegepast in Task 10 (handmatig, projectconventie — `supabase db push` is verboden terrein).
@@ -264,7 +264,7 @@ git commit -m "feat(facturatie): mig 369 — effectief_btw_pct, facturen.btw_ver
 - Modify: `supabase/functions/_shared/factuur-pdf.ts` (interface `FactuurHeader` regel ~61-76, functie `drawBtwBlok` regel ~436-489)
 - Test: `supabase/functions/_shared/factuur-pdf.test.ts`
 
-- [ ] **Step 1: Schrijf de failing test (onderaan het bestaande testbestand toevoegen)**
+- [x] **Step 1: Schrijf de failing test (onderaan het bestaande testbestand toevoegen)**
 
 ```ts
 Deno.test('genereerFactuurPDF: BTW verlegd — vermelding i.p.v. BTW-regel', async () => {
@@ -300,17 +300,17 @@ Deno.test('genereerFactuurPDF: BTW verlegd zonder btw-nummer afnemer rendert ook
 })
 ```
 
-- [ ] **Step 2: Run — verwacht FAIL (type-error op onbekende velden is bij `--no-check` géén fail, dus draai deze test mét check)**
+- [x] **Step 2: Run — verwacht FAIL (type-error op onbekende velden is bij `--no-check` géén fail, dus draai deze test mét check)**
 
 Run: `npx deno test supabase/functions/_shared/factuur-pdf.test.ts --no-check`
 Expected: tests draaien; omdat `--no-check` types negeert kunnen ze al slagen op rendering. Dat is acceptabel — de echte verificatie is Step 4 + de type-check in Step 5.
 
-- [ ] **Step 3: Implementeer**
+- [x] **Step 3: Implementeer**
 
 In `FactuurHeader` (na `totaal_gewicht_kg?: number`):
 
 ```ts
-  // Mig 369: intracommunautaire verlegging. TRUE → geen BTW-regel maar de
+  // Mig 371: intracommunautaire verlegging. TRUE → geen BTW-regel maar de
   // wettelijke vermelding "BTW verlegd" + btw-nummer van de afnemer.
   btw_verlegd?: boolean
   btw_nummer_afnemer?: string | null
@@ -359,12 +359,12 @@ In `drawBtwBlok`, vervang het blok vanaf `// Header row: labels` t/m de values-r
 
 Let op: de oorspronkelijke `const SIZE = 10` stond ná de values-header — die declaratie is nu naar boven getrokken; verwijder de oude regel zodat er geen dubbele declaratie ontstaat. De afsluitende `y -= LINE_H`-regels en `Betalingscond.`-regel blijven ongewijzigd ná het if/else-blok.
 
-- [ ] **Step 4: Run alle factuur-pdf-tests**
+- [x] **Step 4: Run alle factuur-pdf-tests**
 
 Run: `npx deno test supabase/functions/_shared/factuur-pdf.test.ts --no-check`
 Expected: alle tests (8 bestaand + 2 nieuw) PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add supabase/functions/_shared/factuur-pdf.ts supabase/functions/_shared/factuur-pdf.test.ts
@@ -378,7 +378,7 @@ git commit -m "feat(facturatie): factuur-PDF toont 'BTW verlegd' + btw-nr afneme
 **Files:**
 - Modify: `supabase/functions/factuur-verzenden/index.ts` (interface `FactuurRow` regel ~44-59, PDF-bouw regel ~278-291)
 
-- [ ] **Step 1: Breid `FactuurRow` uit** — voeg ná `totaal: number | string` toe:
+- [x] **Step 1: Breid `FactuurRow` uit** — voeg ná `totaal: number | string` toe:
 
 ```ts
   btw_verlegd: boolean | null
@@ -386,14 +386,14 @@ git commit -m "feat(facturatie): factuur-PDF toont 'BTW verlegd' + btw-nr afneme
 
 (De fetch is `select('*')` — geen query-wijziging nodig; `btw_nummer` zit al in de interface.)
 
-- [ ] **Step 2: Geef de velden door in de PDF-bouw** — in het `factuur:`-object (na `totaal: Number(factuur.totaal),`):
+- [x] **Step 2: Geef de velden door in de PDF-bouw** — in het `factuur:`-object (na `totaal: Number(factuur.totaal),`):
 
 ```ts
           btw_verlegd: factuur.btw_verlegd === true,
           btw_nummer_afnemer: factuur.btw_nummer ?? null,
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add supabase/functions/factuur-verzenden/index.ts
@@ -407,7 +407,7 @@ git commit -m "feat(facturatie): factuur-verzenden geeft btw_verlegd-snapshot do
 **Files:**
 - Modify: `supabase/functions/factuur-pdf/index.ts` (interface `FactuurRow` regel ~13-26, PDF-bouw regel ~318-333)
 
-- [ ] **Step 1: Breid `FactuurRow` uit** — voeg ná `totaal: number | string` toe:
+- [x] **Step 1: Breid `FactuurRow` uit** — voeg ná `totaal: number | string` toe:
 
 ```ts
   btw_nummer: string | null
@@ -416,14 +416,14 @@ git commit -m "feat(facturatie): factuur-verzenden geeft btw_verlegd-snapshot do
 
 (Fetch is `select('*')` op regel ~125 — geen query-wijziging.)
 
-- [ ] **Step 2: Geef door in het `factuur:`-object** (na `totaal_gewicht_kg: ...`):
+- [x] **Step 2: Geef door in het `factuur:`-object** (na `totaal_gewicht_kg: ...`):
 
 ```ts
         btw_verlegd: factuur.btw_verlegd === true,
         btw_nummer_afnemer: factuur.btw_nummer ?? null,
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add supabase/functions/factuur-pdf/index.ts
@@ -438,13 +438,13 @@ git commit -m "feat(facturatie): factuur-pdf preview rendert BTW-verlegd-vermeld
 - Modify: `supabase/functions/stuur-orderbevestiging/index.ts` (import-blok regel ~17, `VERTALINGEN`-type+4 talen regel ~45-140, debiteuren-select regel ~238, deb-type regel ~251, BTW-berekening regel ~306-313, PDF-aanroep regel ~359-382, HTML-tabel regel ~443-446)
 - Modify: `supabase/functions/_shared/orderbevestiging-pdf.ts` (input-interface regel ~57-60, totaalblok regel ~370-372)
 
-- [ ] **Step 1: Import de helper** (bij de bestaande `_shared`-imports):
+- [x] **Step 1: Import de helper** (bij de bestaande `_shared`-imports):
 
 ```ts
 import { effectiefBtwPct, isBtwVerlegd } from '../_shared/btw.ts'
 ```
 
-- [ ] **Step 2: Select + type uitbreiden**
+- [x] **Step 2: Select + type uitbreiden**
 
 Regel ~238, voeg `btw_verlegd_intracom` toe aan de embedded debiteuren-select:
 
@@ -458,10 +458,10 @@ In het deb-type (regel ~251, naast `btw_percentage: number | string | null`):
     btw_verlegd_intracom: boolean | null
 ```
 
-- [ ] **Step 3: Vervang de BTW-berekening** (regels ~306-313):
+- [x] **Step 3: Vervang de BTW-berekening** (regels ~306-313):
 
 ```ts
-  // BTW: zelfde bron-van-waarheid als genereer_factuur_voor_bundel (mig 369) —
+  // BTW: zelfde bron-van-waarheid als genereer_factuur_voor_bundel (mig 371) —
   // verlegd-vlag wint, anders debiteuren.btw_percentage met fallback 21. Zo
   // lopen orderbevestiging en factuur niet uit elkaar.
   const btwVerlegd = isBtwVerlegd(deb)
@@ -472,7 +472,7 @@ In het deb-type (regel ~251, naast `btw_percentage: number | string | null`):
   )
 ```
 
-- [ ] **Step 4: `btwVerlegd`-vertaling toevoegen**
+- [x] **Step 4: `btwVerlegd`-vertaling toevoegen**
 
 In het `VERTALINGEN`-type (na `btwOver: ...`):
 
@@ -493,7 +493,7 @@ Per taal (na de `btwOver`-regel):
     btwVerlegd: 'VAT reverse charged',
 ```
 
-- [ ] **Step 5: HTML-rij conditioneel maken** (regels ~443-446):
+- [x] **Step 5: HTML-rij conditioneel maken** (regels ~443-446):
 
 ```ts
     <tr>
@@ -502,13 +502,13 @@ Per taal (na de `btwOver`-regel):
     </tr>
 ```
 
-- [ ] **Step 6: PDF-aanroep uitbreiden** — in de `genereerOrderbevestigingPDF({...})`-call (na `btw_percentage: btwPercentage,`):
+- [x] **Step 6: PDF-aanroep uitbreiden** — in de `genereerOrderbevestigingPDF({...})`-call (na `btw_percentage: btwPercentage,`):
 
 ```ts
     btw_verlegd: btwVerlegd,
 ```
 
-- [ ] **Step 7: `orderbevestiging-pdf.ts` aanpassen**
+- [x] **Step 7: `orderbevestiging-pdf.ts` aanpassen**
 
 Input-interface (na `btw_percentage: number`):
 
@@ -530,12 +530,12 @@ Totaalblok (regel ~370-372) — vervang de drie `drawTotaalRegel`-regels door:
   drawTotaalRegel('Totaalbedrag incl. btw', input.totaal, fontB, 9)
 ```
 
-- [ ] **Step 8: Draai bestaande deno-tests als regressiecheck**
+- [x] **Step 8: Draai bestaande deno-tests als regressiecheck**
 
 Run: `npx deno test supabase/functions/_shared/ --no-check`
 Expected: alles PASS (geen bestaande test raakt deze interface verplicht).
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add supabase/functions/stuur-orderbevestiging/index.ts supabase/functions/_shared/orderbevestiging-pdf.ts
@@ -551,7 +551,7 @@ git commit -m "feat(orders): orderbevestiging (mail + PDF) toont BTW verlegd voo
 - Modify: `frontend/src/modules/debiteuren/components/klant-facturering-tab.tsx`
 - Test: `frontend/src/modules/facturatie/__tests__/klant-factuur-instellingen.contract.test.ts`
 
-- [ ] **Step 1: Pas de contract-test aan (failing first)** — vervang de bestaande fetch-test door:
+- [x] **Step 1: Pas de contract-test aan (failing first)** — vervang de bestaande fetch-test door:
 
 ```ts
 describe('fetchKlantFactuurInstellingen', () => {
@@ -588,12 +588,12 @@ En voeg in de update-describe een test toe:
   })
 ```
 
-- [ ] **Step 2: Run — verwacht FAIL**
+- [x] **Step 2: Run — verwacht FAIL**
 
 Run: `cd frontend; npx vitest run src/modules/facturatie/__tests__/klant-factuur-instellingen.contract.test.ts`
 Expected: FAIL op `cols`-mismatch.
 
-- [ ] **Step 3: Query uitbreiden** — in `klant-factuur-instellingen.ts`:
+- [x] **Step 3: Query uitbreiden** — in `klant-factuur-instellingen.ts`:
 
 ```ts
 export interface KlantFactuurInstellingen {
@@ -609,12 +609,12 @@ en de select:
     .select('btw_percentage, btw_verlegd_intracom, email_factuur')
 ```
 
-- [ ] **Step 4: Run — verwacht PASS**
+- [x] **Step 4: Run — verwacht PASS**
 
 Run: `cd frontend; npx vitest run src/modules/facturatie/__tests__/klant-factuur-instellingen.contract.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: UI-toggle + waarschuwing in `klant-facturering-tab.tsx`**
+- [x] **Step 5: UI-toggle + waarschuwing in `klant-facturering-tab.tsx`**
 
 Destructuring (regel ~26-27) wordt:
 
@@ -659,12 +659,12 @@ Voeg een nieuwe sectie toe **vóór** de bestaande "BTW-percentage"-sectie:
         )}
 ```
 
-- [ ] **Step 6: Typecheck + volledige frontend-tests**
+- [x] **Step 6: Typecheck + volledige frontend-tests**
 
 Run: `cd frontend; npm run typecheck; npx vitest run`
 Expected: typecheck schoon; alle tests PASS behalve de **bekende pre-existing failure** `magazijn-pickbaarheid.contract.test.ts` (7/7, faalt ook op main — negeren).
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add frontend/src/modules/facturatie/queries/klant-factuur-instellingen.ts frontend/src/modules/facturatie/__tests__/klant-factuur-instellingen.contract.test.ts frontend/src/modules/debiteuren/components/klant-facturering-tab.tsx
@@ -678,12 +678,12 @@ git commit -m "feat(debiteuren): BTW-verlegd-toggle + waarschuwing op klant-fact
 **Files:**
 - Create: `import/check_verlegd_zonder_btw_nummer.py`
 
-- [ ] **Step 1: Schrijf het script**
+- [x] **Step 1: Schrijf het script**
 
 ```python
 """Overzicht voor sales: actieve verlegd-debiteuren zonder btw-nummer.
 
-BTW verleggen (intracommunautair, mig 369) vereist formeel een geldig
+BTW verleggen (intracommunautair, mig 371) vereist formeel een geldig
 btw-nummer van de afnemer. Dit script print de actieve debiteuren met
 btw_verlegd_intracom=TRUE waar dat nummer ontbreekt, zodat sales ze kan
 aanvullen op de Info-tab van de klant.
@@ -715,14 +715,14 @@ if __name__ == '__main__':
     main()
 ```
 
-- [ ] **Step 2: Draai het script**
+- [x] **Step 2: Draai het script**
 
 LET OP: `import/config.py` leest een `.env` die **alleen in de hoofd-tree** staat (`C:\Users\migue\Documents\Karpi ERP\import`), niet in de worktree. Kopieer het script tijdelijk daarheen of draai het vanuit de hoofd-tree met expliciet pad.
 
 Run: `cd "C:\Users\migue\Documents\Karpi ERP\import"; python "C:\Users\migue\Documents\Karpi ERP\.claude\worktrees\btw-verlegd-intracom\import\check_verlegd_zonder_btw_nummer.py"` — werkt niet direct omdat `config` via cwd geïmporteerd wordt; eenvoudigst: kopieer het bestand naar de hoofd-tree-`import/`, draai daar, verwijder de kopie.
 Expected: ~19 rijen (17 DE + 1 BE + 1 DK, peildatum 2026-06-11). Bewaar de output voor in het eindrapport (dit lijstje gaat naar Marjon).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add import/check_verlegd_zonder_btw_nummer.py
@@ -742,13 +742,13 @@ git commit -m "chore(debiteuren): script lijstje verlegd-debiteuren zonder btw-n
 - [ ] **Step 1: database-schema.md** — bij de `facturen`-tabel de kolom toevoegen:
 
 ```markdown
-| btw_verlegd | BOOLEAN | NOT NULL DEFAULT FALSE | Mig 369: snapshot van debiteuren.btw_verlegd_intracom op factuur-aanmaak. TRUE → 0% BTW + vermelding "BTW verlegd" op PDF. |
+| btw_verlegd | BOOLEAN | NOT NULL DEFAULT FALSE | Mig 371: snapshot van debiteuren.btw_verlegd_intracom op factuur-aanmaak. TRUE → 0% BTW + vermelding "BTW verlegd" op PDF. |
 ```
 
 En bij de functies-lijst:
 
 ```markdown
-- `effectief_btw_pct(p_verlegd BOOLEAN, p_btw_percentage NUMERIC) → NUMERIC` — mig 369: verlegd → 0, anders COALESCE(pct, 21). Gespiegeld in `supabase/functions/_shared/btw.ts`.
+- `effectief_btw_pct(p_verlegd BOOLEAN, p_btw_percentage NUMERIC) → NUMERIC` — mig 371: verlegd → 0, anders COALESCE(pct, 21). Gespiegeld in `supabase/functions/_shared/btw.ts`.
 ```
 
 Volg de bestaande opmaak van het document (kijk hoe andere kolommen/functies er staan en sluit daarbij aan).
@@ -756,14 +756,14 @@ Volg de bestaande opmaak van het document (kijk hoe andere kolommen/functies er 
 - [ ] **Step 2: changelog.md** — entry toevoegen volgens bestaand formaat (datum 2026-06-11):
 
 ```markdown
-## 2026-06-11 — BTW verlegd intracommunautair (mig 369)
+## 2026-06-11 — BTW verlegd intracommunautair (mig 371)
 Duitse (en alle EU-verlegd-)klanten kregen 21% BTW op factuur en orderbevestiging terwijl `debiteuren.btw_verlegd_intracom` al correct stond (verzoek Marjon). De vlag is nu bron van waarheid: SQL-helper `effectief_btw_pct` + TS-seam `_shared/btw.ts`, snapshot `facturen.btw_verlegd`, factuur-PDF en orderbevestiging (mail + PDF, 4-talig) tonen "BTW verlegd" + btw-nr afnemer i.p.v. een BTW-regel. UI: verlegd-toggle op klant-facturering-tab. Geen data-update nodig; bestaande facturen (3) waren niet fout.
 ```
 
 - [ ] **Step 3: CLAUDE.md** — bullet toevoegen aan "Bedrijfsregels":
 
 ```markdown
-- **BTW verlegd intracommunautair (mig 369):** `debiteuren.btw_verlegd_intracom` (mig 164, staat correct bij alle DE/EU-debiteuren) is bron van waarheid voor het BTW-tarief: verlegd → 0%, anders `debiteuren.btw_percentage` (NL-tarief, blijft 21). Centrale regel: SQL `effectief_btw_pct(verlegd, pct)` ↔ TS [`_shared/btw.ts`](supabase/functions/_shared/btw.ts) (`effectiefBtwPct`/`isBtwVerlegd`, seam-patroon debiteur-matcher). `genereer_factuur_voor_bundel` (enige live factuur-RPC, mig 240 dropte de rest) schrijft snapshot `facturen.btw_verlegd`; factuur-PDF + orderbevestiging (mail + PDF) tonen dan "BTW verlegd — btw-nr afnemer: X" i.p.v. een BTW-regel. Ontbrekend btw-nummer blokkeert NIET (bewuste keuze) — amber waarschuwing op klant-facturering-tab + script `import/check_verlegd_zonder_btw_nummer.py`. EDI-factuur-mapper checkte de vlag al (ongewijzigd). `debiteuren.btw_percentage` op 0 zetten is NIET meer de route voor EU-klanten — gebruik de verlegd-toggle.
+- **BTW verlegd intracommunautair (mig 371):** `debiteuren.btw_verlegd_intracom` (mig 164, staat correct bij alle DE/EU-debiteuren) is bron van waarheid voor het BTW-tarief: verlegd → 0%, anders `debiteuren.btw_percentage` (NL-tarief, blijft 21). Centrale regel: SQL `effectief_btw_pct(verlegd, pct)` ↔ TS [`_shared/btw.ts`](supabase/functions/_shared/btw.ts) (`effectiefBtwPct`/`isBtwVerlegd`, seam-patroon debiteur-matcher). `genereer_factuur_voor_bundel` (enige live factuur-RPC, mig 240 dropte de rest) schrijft snapshot `facturen.btw_verlegd`; factuur-PDF + orderbevestiging (mail + PDF) tonen dan "BTW verlegd — btw-nr afnemer: X" i.p.v. een BTW-regel. Ontbrekend btw-nummer blokkeert NIET (bewuste keuze) — amber waarschuwing op klant-facturering-tab + script `import/check_verlegd_zonder_btw_nummer.py`. EDI-factuur-mapper checkte de vlag al (ongewijzigd). `debiteuren.btw_percentage` op 0 zetten is NIET meer de route voor EU-klanten — gebruik de verlegd-toggle.
 ```
 
 - [ ] **Step 4: data-woordenboek.md** — begrip toevoegen volgens bestaand formaat:
@@ -777,7 +777,7 @@ Bij B2B-levering aan een afnemer in een ander EU-land wordt de BTW "verlegd" naa
 
 ```bash
 git add docs/database-schema.md docs/changelog.md CLAUDE.md docs/data-woordenboek.md
-git commit -m "docs: BTW verlegd intracommunautair (mig 369) — schema, changelog, bedrijfsregel, woordenboek"
+git commit -m "docs: BTW verlegd intracommunautair (mig 371) — schema, changelog, bedrijfsregel, woordenboek"
 ```
 
 ---
@@ -802,7 +802,7 @@ git push -u origin feat/btw-verlegd-intracom
 - [ ] **Step 3: Rapporteer aan Miguel** — met daarin:
   1. Het lijstje uit Task 8 (verlegd-debiteuren zonder btw-nummer) voor Marjon.
   2. De uitrol-volgorde ná zijn merge-akkoord (NIET zelf uitvoeren zonder akkoord):
-     - **Eerst** migratie 369 handmatig toepassen (Supabase SQL editor / dashboard — projectconventie, `db push` niet gebruiken). De kolom moet bestaan vóór de functions deployen.
+     - **Eerst** migratie 371 handmatig toepassen (Supabase SQL editor / dashboard — projectconventie, `db push` niet gebruiken). De kolom moet bestaan vóór de functions deployen.
      - **Dan** edge functions deployen: `supabase functions deploy factuur-verzenden --project-ref wqzeevfobwauxkalagtn`, idem `factuur-pdf` en `stuur-orderbevestiging`.
      - Frontend gaat mee met de reguliere build na merge.
   3. Verificatie-recept na uitrol: maak voor een Duitse test-debiteur een factuur-preview (factuur-pdf function) en een orderbevestiging; check "BTW verlegd" + totaal == subtotaal; check NL-klant ongewijzigd 21%.

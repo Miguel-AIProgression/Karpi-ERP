@@ -471,6 +471,7 @@ _Aangemaakt in migratie 117 (2026-04-22). Gepatcht in mig 125: `order_id` op hea
 | subtotaal, btw_percentage, btw_bedrag, totaal | NUMERIC | |
 | fact_naam, fact_adres, fact_postcode, fact_plaats, fact_land | TEXT | Snapshot |
 | btw_nummer | TEXT | Snapshot van klant-BTW-nummer (mig 125) |
+| btw_verlegd | BOOLEAN NOT NULL DEFAULT FALSE | Mig 371: snapshot van `debiteuren.btw_verlegd_intracom` op factuur-aanmaak. TRUE → 0% BTW + vermelding "BTW verlegd" op PDF. |
 | opmerkingen | TEXT | |
 | pdf_storage_path | TEXT | Pad in bucket 'facturen' ({debiteur_nr}/FACT-YYYY-NNNN.pdf) |
 | verstuurd_op | TIMESTAMPTZ | Wanneer email verzonden |
@@ -1395,6 +1396,7 @@ Mig 174, aangepast in mig 176. Read-only view die de `/logistiek/vervoerders`-ov
 | `update_order_with_lines(p_order_id BIGINT, p_header JSONB, p_regels JSONB)` | Merge-update van order header + regels: UPDATE bestaande regels op `id`, INSERT nieuwe, DELETE regels die uit payload verdwenen zijn. Preserveert `snijplannen.order_regel_id` FK-koppelingen (migratie 074) |
 | `backlog_per_kwaliteit_kleur(p_kwaliteit TEXT, p_kleur TEXT)` | Aggregeert wachtende snijplan-stukken voor real-time levertijd-check: returnt `(totaal_m2, aantal_stukken, vroegste_afleverdatum)`. Match op kleur-varianten (X, X.0). Gebruikt door `check-levertijd` edge function (migratie 080) |
 | `genereer_factuur(p_order_ids BIGINT[])` | Atomair: maakt factuur + regels aan voor 1+ orders van dezelfde debiteur, markeert order_regels.gefactureerd. Retourneert factuur_id. Migratie 119. |
+| `effectief_btw_pct(p_verlegd BOOLEAN, p_btw_percentage NUMERIC) → NUMERIC` | Mig 371: effectief BTW-percentage voor een debiteur — verlegd → 0, anders `COALESCE(pct, 21)`. IMMUTABLE. Gebruikt door `genereer_factuur_voor_bundel`; gespiegeld in `supabase/functions/_shared/btw.ts` (`effectiefBtwPct`). |
 | `enqueue_factuur_bij_verzonden()` | Trigger: bij orders.status → 'Verzonden' vult factuur_queue voor per_zending-klanten. Migratie 118. |
 | `enqueue_wekelijkse_verzamelfacturen()` | Verzamelt niet-gefactureerde Verzonden-orders per wekelijks-klant in de queue. Maandag 05:00 UTC via pg_cron. Migratie 122. |
 | `recover_stuck_factuur_queue()` | Zet queue-items >10 min in 'processing' terug op 'pending'. Elke 5 min via pg_cron. Migratie 121. |
