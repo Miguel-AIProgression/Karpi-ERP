@@ -1,5 +1,47 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-11 — "196 orders zonder vervoerder"-banner geduid: uitsplitsing per land + scope-uitleg (mig 372, branch `fix/zonder-vervoerder-banner`)
+
+**Melding Miguel:** de amber banner op Pick & Ship zei "196 order(s) zonder
+vervoerder" terwijl het scherm maar 91 orders toonde — "volgens mij gaat er
+iets fout". **Diagnose: de telling klopt, de presentatie misleidde.** De view
+`orders_zonder_vervoerder` (mig 338/345) telt bewust álle open orders (ook
+`Wacht op voorraad/inkoop/maatwerk`, die Pick & Ship verbergt). De 196 waren
+op dat moment: 183× DE + 13× BE (179 EDI-orders, instroom 3–11 juni), 0× NL.
+Oorzaak dat ze geen vervoerder krijgen: alle DE/BE-vervoerders
+(`dpd`/`edi_partner_a`/`edi_partner_b`) staan tot hun cutover op
+`actief=false` — de resolver (mig 225) slaat regels van inactieve vervoerders
+over, en alleen `hst_api` (NL) is live. Dat is conform ADR-0030, maar de
+banner ("kies handmatig") suggereerde een handmatige actie op 196 orders.
+
+**Belangrijke non-bug:** `afl_land='DEUTSCHLAND'`/`'BELGIË'` (vol uitgeschreven,
+102 orders) leek een match-probleem maar is het niet — `matcht_regel`
+normaliseert sinds mig 214 beide zijden via `normaliseer_land`. Bewust **niet**
+gebackfilld naar ISO-codes: `trg_lock_zending_bundel_sleutel` blokkeert
+afl_*-mutaties op orders in actieve bundels, en gemengde spelling zou juist
+de adres-bundeling (mig 222, exacte string-match) tussen oude en nieuwe orders
+breken.
+
+**Fix (mig 372 + frontend):**
+- View krijgt twee extra kolommen: `status` (TEXT) en `afl_land_norm`
+  (via `normaliseer_land`). Scope bewust ongewijzigd.
+- [`hst-monitor.ts`](../frontend/src/modules/logistiek/queries/hst-monitor.ts):
+  `countOrdersZonderVervoerder` → `fetchOrdersZonderVervoerder` + pure
+  aggregator `vatZonderVervoerderSamen` (totaal, per-land, waarvan klaar voor
+  picken). `select('*')` zodat de frontend ook op de pre-mig-372-view blijft
+  werken (dan zonder status-uitsplitsing).
+- [`hst-aandacht-banner.tsx`](../frontend/src/modules/logistiek/components/hst-aandacht-banner.tsx):
+  toont nu "X open order(s) zonder vervoerder — 183× DE, 13× BE · waarvan 159
+  klaar voor picken", legt uit dat over álle open orders geteld wordt, en linkt
+  naar `/logistiek/vervoerders`.
+
+**Open beslispunt (Miguel):** DE/BE-verzending — DPD/Rhenus activeren (dan
+lossen de bestaande selectie-regels het gros op) of deze orders blijven
+handmatig bedienen. Tot die keuze blijft de banner deze aantallen tonen.
+
+**Toepassen:** mig 372 in de Supabase SQL-editor draaien (idempotent,
+alleen view + comment).
+
 ## 2026-06-11 — BTW verlegd intracommunautair (mig 371)
 Duitse (en alle EU-verlegd-)klanten kregen 21% BTW op factuur en orderbevestiging terwijl `debiteuren.btw_verlegd_intracom` al correct stond (verzoek Marjon). De vlag is nu bron van waarheid: SQL-helper `effectief_btw_pct` + TS-seam `_shared/btw.ts`, snapshot `facturen.btw_verlegd`, factuur-PDF en orderbevestiging (mail + PDF, 4-talig) tonen "BTW verlegd" + btw-nr afnemer i.p.v. een BTW-regel. UI: verlegd-toggle op klant-facturering-tab. Geen data-update nodig; bestaande facturen (3) waren niet fout.
 
