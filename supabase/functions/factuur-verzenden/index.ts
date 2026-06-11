@@ -337,7 +337,10 @@ serve(async () => {
         betalerEmail = betalerRow?.email_factuur ?? null
       }
 
-      if (debiteur.email_factuur) {
+      // EDI-partners krijgen de factuur uitsluitend via Transus (afspraak
+      // 2026-06-11: EDI nooit óók per e-mail). De PDF blijft in storage en
+      // de INVOIC is in stap 6 al op de wachtrij gezet.
+      if (!ediFactuurActief && debiteur.email_factuur) {
         const { data: avBlob, error: avErr } = await supabase.storage
           .from('documenten')
           .download(AV_PATH)
@@ -418,7 +421,9 @@ serve(async () => {
         .update({
           status: 'Verstuurd',
           verstuurd_op: nowIso,
-          verstuurd_naar: [debiteur.email_factuur, betalerEmail].filter(Boolean).join(', ') || (ediBerichtId ? 'EDI Transus' : null),
+          verstuurd_naar: ediBerichtId
+            ? 'EDI Transus'
+            : [debiteur.email_factuur, betalerEmail].filter(Boolean).join(', ') || null,
           pdf_storage_path: pdfPath,
         })
         .eq('id', factuurId)
