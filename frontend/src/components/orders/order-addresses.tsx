@@ -31,12 +31,14 @@ export function OrderAddresses({ order }: OrderAddressesProps) {
               plaats={order.fact_plaats}
               land={order.fact_land}
             />
-            {order.fact_email && (
-              <div className="mt-3 pt-3 border-t border-slate-100 text-sm">
-                <span className="text-slate-400 block mb-0.5">Factuur per e-mail naar</span>
+            <div className="mt-3 pt-3 border-t border-slate-100 text-sm">
+              <span className="text-slate-400 block mb-0.5">Factuur per e-mail naar</span>
+              {order.fact_email ? (
                 <span className="text-slate-700">{order.fact_email}</span>
-              </div>
-            )}
+              ) : (
+                <span className="text-amber-600">Geen factuur-e-mailadres bekend</span>
+              )}
+            </div>
           </div>
         )}
         {hasAflever && (
