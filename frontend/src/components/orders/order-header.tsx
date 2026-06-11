@@ -110,7 +110,7 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
                 title={
                   isEdiOrder && kanaal === 'edi' && order.edi_bevestigd_op
                     ? `Bevestigd via EDI op ${formatDate(order.edi_bevestigd_op)}`
-                    : `Bevestigd op ${formatDate(order.bevestigd_at!)}${order.bevestiging_email ? ` → ${order.bevestiging_email}` : ''}`
+                    : `Bevestigd op ${formatDate(order.bevestigd_at ?? order.edi_bevestigd_op)}${order.bevestiging_email ? ` → ${order.bevestiging_email}` : ''}`
                 }
               >
                 <CheckCircle size={14} />

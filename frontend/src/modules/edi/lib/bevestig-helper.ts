@@ -213,10 +213,12 @@ async function bepaalVolgendeOrderResponseSeq(orderId: number): Promise<number> 
 }
 
 /**
- * Bevestig een EDI-order administratief ZONDER orderbev te versturen — voor
- * partners met orderbev_uit=false (kanaal 'edi_stil'). Zet alleen de
- * edi_bevestigd_op-gate via de idempotente RPC; er gaat geen bericht en
- * géén e-mail uit (EDI-orders mailen we nooit).
+ * Sluit de edi_bevestigd_op-gate van een EDI-order via de idempotente RPC,
+ * zonder zelf een bericht te versturen. Twee gebruikers (besluit 11-06):
+ * het amber leverweek-paneel bij email-kanaal partners (administratieve
+ * leverweek-vastlegging; de orderbev zelf gaat per e-mail via de universele
+ * knop) en BevestigOrderDialog's sluitEdiGate (gate sluiten ná een
+ * succesvolle orderbev-mail, zodat chip + paneel verdwijnen).
  */
 export async function bevestigOrderZonderEdiBericht(orderId: number): Promise<string> {
   const { data, error } = await supabase.rpc('markeer_order_edi_bevestigd', {
