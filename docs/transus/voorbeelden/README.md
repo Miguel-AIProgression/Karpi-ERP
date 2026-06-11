@@ -27,6 +27,14 @@ Drie real-world berichten gedownload uit Transus Online op 2026-04-29, gebruikt 
 | `factuur-uit-bdsk-168849861.txt` | Karpi-fixed-width INVOIC-bron. Factuurnr 26040215, 1 regel à €59,46 BTW-vrijgesteld. |
 | `edifact-output-invoic-bdsk-168849861.edi` | EDIFACT D96A INVOIC zoals BDSK het ontvangt voor bericht-ID 168849861. |
 
+### Uitgaand verzendbericht / pakbon (DESADV) — ONTBREEKT NOG
+
+| Bestand | Inhoud |
+|---|---|
+| *(ontbreekt)* | Karpi-fixed-width DESADV-bron van Hornbach of BDSK — **Taak 12-STOP**. Zonder dit voorbeeld kan `buildKarpiVerzendbericht` niet geïmplementeerd worden. |
+
+**Hoe te downloaden (Miguel):** Transus Online → Handelspartners → kies Hornbach NL (361208) of BDSK (600556) → proces "Pakbon/Verzendbericht versturen" → Bekijken en testen → selecteer een eerder verstuurd bericht → bestand downloaden. Bewaar als `verzendbericht-uit-<partner>-<berichtid>.<ext>` (bijv. `verzendbericht-uit-bdsk-169012345.txt`). Voeg het ook toe als fixture in `karpi-verzendbericht.test.ts`. Zie `docs/transus/demo-rondreis.md` voor het validatierecept in de Testen-tab.
+
 ## Gebruik in tests
 
 Deze bestanden worden geladen door `supabase/functions/_shared/transus-formats/karpi-fixed-width.test.ts`

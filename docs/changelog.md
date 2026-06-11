@@ -1,5 +1,23 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-11 — DESADV-verzendbevestiging via EDI: infra klaar, format wacht op Transus-voorbeeld (slice 4)
+
+**Wat:** de infra voor automatisch versturen van DESADV-verzendberichten (verzendbericht/pakbon) via Transus is gebouwd. De format-builder gooit bewust een fout totdat het Transus-format gevalideerd is — Miguel moet eerst een historisch voorbeeld downloaden uit Transus Online (Taak 12-STOP).
+
+**Gebouwd:**
+- `supabase/functions/_shared/transus-formats/karpi-verzendbericht.ts` (+test): bevroren input-interface `VerzendberichtInput` + `valideerVerzendberichtInput`; `buildKarpiVerzendbericht` gooit bewust een `Error('DESADV-format nog niet gevalideerd')` tot Taak 12 afgerond is.
+- Edge function `supabase/functions/bouw-verzendbericht-edi/index.ts` (spiegelt `bouw-factuur-edi`): POST `{order_id}` (gericht) of `{}` (sweep over `status='Verzonden' AND bron_systeem='edi'` met partners waarbij `verzend_uit && transus_actief`, minus al-bestaande verzendberichten). Idempotent op `(richting='uit', berichttype='verzendbericht', bron_tabel='orders', bron_id)`. Klant-PO uit `orders.klant_referentie`; zending via `zending_orders → zendingen(zending_nr, verzenddatum, track_trace)`; GTIN uit `producten.ean_code`; GLN's uit order-snapshots. Verstuurd door bestaande cron `transus-send` (mig 305).
+- `supabase/config.toml`: `[functions.bouw-verzendbericht-edi] verify_jwt = false`.
+- `supabase/migrations/372_verzendbericht_edi_cron.sql`: pg_cron-sweep elke 15 min — **NOG NIET TOEGEPAST** (builder gooit tot format-validatie klaar is).
+- Verschijnt automatisch in de Communicatie-tijdlijn op order-detail (slice 3, label 'Verzendbevestiging') — geen extra UI nodig.
+- Partners die hierop wachten: Hornbach NL (361208) en BDSK (600556) — `verzend_uit` staat daar al aan.
+
+**Activatievolgorde (mens-stappen, in deze volgorde):**
+1. **Taak 12:** Miguel downloadt een historisch verzendbericht/pakbon-voorbeeld uit Transus Online (Handelspartners → proces "Pakbon/Verzendbericht versturen" → Bekijken en testen → bestand downloaden, bij voorkeur BDSK of Hornbach), plaatst het in `docs/transus/voorbeelden/`, daarna wordt het format gereverse-engineered + fixture-test + `buildKarpiVerzendbericht` geïmplementeerd, en gevalideerd in Transus' Testen-tab (recept `docs/transus/demo-rondreis.md`).
+2. **Deploy:** `supabase functions deploy bouw-verzendbericht-edi --project-ref wqzeevfobwauxkalagtn`.
+3. **Gerichte test:** POST met één order_id van een verzonden Hornbach/BDSK-order; wachtrij-rij controleren; `transus-send` laten versturen; ontvangst bij partner verifiëren.
+4. **Migratie 372 toepassen** (cron aan).
+
 ## 2026-06-11 — Communicatie-tijdlijn: EDI-berichten naast e-mails op order-detail (slice 3)
 
 **Wat:** de "E-mails"-sectie op order-detail heet nu "Communicatie" en toont in één gecombineerde tijdlijn zowel verstuurde e-mails als uitgaande EDI-berichten (`edi_berichten richting='uit'`). EDI-items tonen type (orderbev/factuur/verzendbericht), live status (Wachtrij/Verstuurd/Fout met kleurcodering) en een directe link naar het EDI-bericht-detail (`/edi/berichten/:id`). E-mail-items renderen exact als voorheen (klik opent dialog).

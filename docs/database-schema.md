@@ -1230,6 +1230,8 @@ Centrale audit-/queue-tabel voor alle EDI-berichten via Transus (in én uit) (mi
 
 **RPCs:** `log_edi_inkomend`, `markeer_edi_ack`, `create_edi_order`, `match_edi_artikel`, `enqueue_edi_uitgaand`, `claim_volgende_uitgaand`, `markeer_edi_verstuurd`, `markeer_edi_fout`. Sinds migratie 166 gebruikt `create_edi_order` de debiteur-prijslijst (`debiteuren.prijslijst_nr -> prijslijst_regels`) voor orderregelprijzen, met fallback op `producten.verkoopprijs`. Sinds mig 368 vult `create_edi_order` ook de e-mail-snapshots: `fact_email` (`email_factuur` → `email_overig`) en `afl_email` (e-mail van het GLN-gematchte afleveradres → `email_overig`); `create_webshop_order` idem, waarbij expliciete `p_header`-waarden winnen en `env_fallback`-orders worden overgeslagen.
 
+**Cron `verzendbericht-edi-sweep`** (mig 372, */15 min — **NOG NIET TOEGEPAST**): roept edge function `bouw-verzendbericht-edi` aan als sweep over orders met `status='Verzonden' AND bron_systeem='edi'` bij partners met `verzend_uit && transus_actief`, minus al-bestaande `berichttype='verzendbericht'`-rijen (idempotent). De format-builder `_shared/transus-formats/karpi-verzendbericht.ts` gooit bewust een fout totdat het Transus-DESADV-format gevalideerd is (Taak 12-STOP). Migratie pas toepassen na: Taak 12 (voorbeeld downloaden + format bouwen + Transus Testen-tab validatie) → deploy → gerichte test. Verstuurd door bestaande cron `transus-send` (mig 305).
+
 ---
 
 ### externe_payloads
