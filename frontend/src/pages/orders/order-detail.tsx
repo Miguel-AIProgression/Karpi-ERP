@@ -18,6 +18,7 @@ import { isDebiteurTeBevestigen } from '@/lib/orders/intake-predicaten'
 import { DebiteurBevestigenWidget } from '@/components/orders/debiteur-bevestigen-widget'
 import { BastaAfhandelingPaneel } from '@/components/orders/basta-afhandeling-paneel'
 import { LevertijdWijzigingBanner } from '@/components/orders/levertijd-wijziging-banner'
+import { VerzendFoutBanner } from '@/components/orders/verzend-fout-banner'
 import { isLevertijdWijzigingTeBevestigen } from '@/lib/orders/levertijd-wijziging'
 
 function EmailInhoudPanel({ body }: { body: string }) {
@@ -105,6 +106,10 @@ export function OrderDetailPage() {
       />
 
       <OrderHeader order={order} locked={computeOrderLock(regels) === 'full'} />
+
+      {/* Open HST-verzendfout: order kan al "Verzonden" tonen terwijl de
+          transportorder naar de vervoerder faalde. Rendert null zonder fout. */}
+      {order.status !== 'Geannuleerd' && <VerzendFoutBanner orderId={order.id} />}
 
       {order.bron_systeem === 'email' && order.opmerkingen && (
         <EmailInhoudPanel body={order.opmerkingen} />
