@@ -240,6 +240,10 @@ serve(async () => {
       const debiteur = debiteurRes.data as DebiteurFactuurRow
       const ediConfig = await fetchEdiConfig(supabase, item.debiteur_nr)
       const ediFactuurActief = !!(ediConfig?.transus_actief && ediConfig.factuur_uit)
+      // In test_modus blijft de e-mail het echte kanaal: de INVOIC gaat als
+      // test de wachtrij op, maar de partner moet de factuur nog gewoon per
+      // mail krijgen. Mail onderdrukken kan pas bij een live EDI-kanaal.
+      const ediMailOnderdrukt = ediFactuurActief && !ediConfig?.test_modus
 
       if (!debiteur.email_factuur && !ediFactuurActief) {
         throw new Error(`Debiteur ${item.debiteur_nr} heeft geen email_factuur`)
@@ -337,10 +341,11 @@ serve(async () => {
         betalerEmail = betalerRow?.email_factuur ?? null
       }
 
-      // EDI-partners krijgen de factuur uitsluitend via Transus (afspraak
-      // 2026-06-11: EDI nooit óók per e-mail). De PDF blijft in storage en
-      // de INVOIC is in stap 6 al op de wachtrij gezet.
-      if (!ediFactuurActief && debiteur.email_factuur) {
+      // EDI-partners krijgen de factuur uitsluitend via Transus zodra het kanaal
+      // live is (ediMailOnderdrukt=true). In test_modus staat de INVOIC op de
+      // testqueue maar is e-mail het echte kanaal — de PDF gaat dan gewoon mee.
+      // De PDF blijft altijd in storage; de INVOIC is in stap 6 al gezet.
+      if (!ediMailOnderdrukt && debiteur.email_factuur) {
         const { data: avBlob, error: avErr } = await supabase.storage
           .from('documenten')
           .download(AV_PATH)
@@ -421,9 +426,9 @@ serve(async () => {
         .update({
           status: 'Verstuurd',
           verstuurd_op: nowIso,
-          verstuurd_naar: ediBerichtId
+          verstuurd_naar: ediMailOnderdrukt
             ? 'EDI Transus'
-            : [debiteur.email_factuur, betalerEmail].filter(Boolean).join(', ') || null,
+            : [debiteur.email_factuur, betalerEmail].filter(Boolean).join(', ') || (ediBerichtId ? 'EDI Transus' : null),
           pdf_storage_path: pdfPath,
         })
         .eq('id', factuurId)

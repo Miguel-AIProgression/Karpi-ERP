@@ -10,6 +10,7 @@
 - `order-emails.tsx` laadt via `useQuery` de EDI-berichten parallel aan de bestaande e-mailhook; wacht op beide `isLoading`-flags voor render.
 
 **Ontwerp-keuze (géén dubbel-loggen):** `verstuurde_emails` en `edi_berichten` blijven elk hun eigen bron-van-waarheid; de merge is puur presentatie. EDI-facturen die via `edi_handelspartner_config` gestuurd worden, verschijnen als EDI-rij — niet als e-mailrij — conform de slice-2-gate.
+- **Bekende beperking bundel-facturen:** de EDI-INVOIC hangt aan één order (`edi_berichten.order_id` = eerste order van de bundel); op de tijdlijn van de overige bundel-orders is de factuur niet zichtbaar (de e-mail-variant logde wél per order). Eventuele match op `factuur_id` staat op de backlog.
 
 ## 2026-06-11 — Factuur: e-mail onderdrukt bij actieve EDI-INVOIC (slice 2)
 

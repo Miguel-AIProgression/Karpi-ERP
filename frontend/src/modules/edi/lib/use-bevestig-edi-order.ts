@@ -80,6 +80,7 @@ export function useBevestigEdiOrder(orderId: number, debiteurNr: number) {
       qc.invalidateQueries({ queryKey: ['orders', 'status-counts'] })
       qc.invalidateQueries({ queryKey: ['edi-berichten'] })
       qc.invalidateQueries({ queryKey: ['edi-inkomend-voor-order', orderId] })
+      qc.invalidateQueries({ queryKey: ['edi-uitgaand-voor-order', orderId] })
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
       throw err

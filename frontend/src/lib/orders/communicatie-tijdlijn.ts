@@ -61,5 +61,7 @@ export function bouwCommunicatieTijdlijn(
     email: null,
     ediBerichtId: b.id,
   }))
-  return [...emailItems, ...ediItems].sort((a, b) => b.tijdstip.localeCompare(a.tijdstip))
+  return [...emailItems, ...ediItems].sort(
+    (a, b) => Date.parse(b.tijdstip) - Date.parse(a.tijdstip),
+  )
 }
