@@ -27,11 +27,11 @@ formaat 1-op-1 aan op hun server; Verhoek vertaalt niets.
    `app_config` sleutel `'verhoek'` (per run gelezen); SFTP-credentials +
    `VERHOEK_DRY_RUN` als secrets. Fase 1 deployt de hele keten met
    `VERHOEK_DRY_RUN=true` (geen upload, wél XML/audit/storage); go-live =
-   secrets + config-UPDATE + `actief=TRUE` — gén redeploy.
+   secrets + config-UPDATE + `actief=TRUE` — géén redeploy.
 4. **1 zending = 1 XML-bestand** (`Karpi_<timestamp>_<zending_nr>.xml`).
    `Referentie` = `zending_nr`, `ScanCode` = label-barcode (`'00'+SSCC`,
    prefix configureerbaar), `Gewicht` in decagram, `Lengte`/`Breedte` in hele
-   cm — verplicht per Verhoek; ontbreken ⇒ rij op Fout mét reden, gén upload.
+   cm — verplicht per Verhoek; ontbreken ⇒ rij op Fout mét reden, géén upload.
 5. SFTP vanuit de edge runtime wordt vooraf bewezen met een spike tegen een
    publieke test-SFTP-server (geen Verhoek-credentials nodig). Faalt de
    runtime ⇒ fallback: n8n-SFTP-workflow of Python-worker leegt dezelfde
