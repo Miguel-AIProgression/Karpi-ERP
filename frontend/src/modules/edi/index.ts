@@ -33,6 +33,7 @@ export {
 
 export { bevestigOrderViaEdi, bevestigOrderZonderEdiBericht } from './lib/bevestig-helper'
 export { KARPI_GLN_DEFAULT } from './lib/karpi-fixed-width'
+export { useBevestigEdiOrder } from './lib/use-bevestig-edi-order'
 
 export {
   useEdiBerichten,
