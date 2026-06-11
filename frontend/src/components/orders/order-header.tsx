@@ -203,12 +203,15 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
         </div>
       </div>
 
-      {/* Bevestig-order dialog */}
+      {/* Bevestig-order dialog. defaultEmail-ladder: eerder gebruikt adres →
+          orderbev-adres van de klant (email_overig → email_factuur). NIET
+          klant_email (factuur-eerst) en NIET afl_email (bij dropship het
+          consument-adres). */}
       {showBevestigDialog && (
         <BevestigOrderDialog
           orderId={order.id}
           orderNr={order.order_nr}
-          defaultEmail={order.bevestiging_email ?? (order as any).klant_email ?? null}
+          defaultEmail={order.bevestiging_email ?? (order as any).klant_email_orderbev ?? null}
           isHerversturing={!!order.bevestigd_at}
           onClose={() => setShowBevestigDialog(false)}
         />
