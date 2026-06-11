@@ -40,3 +40,22 @@ Deno.test('valideerVoorVervoerder: niet-HST vervoerder wordt overgeslagen', () =
   const r = valideerVoorVervoerder({ ...basis, vervoerder_code: 'edi_partner_a', afl_telefoon: null });
   assertEquals(r.ok, true); // alleen HST-regels in v1
 });
+
+Deno.test('verhoek_sftp: lege adresvelden geven ADRESVELD_LEEG', () => {
+  const r = valideerVoorVervoerder({
+    vervoerder_code: 'verhoek_sftp',
+    afl_land: 'NL', afl_telefoon: null,
+    afl_naam: 'Klant', afl_adres: '', afl_postcode: '7122 LB', afl_plaats: 'Aalten',
+  });
+  assertEquals(r.ok, false);
+  assertEquals(r.problemen[0].code, 'ADRESVELD_LEEG');
+});
+
+Deno.test('verhoek_sftp: compleet adres is ok (telefoon niet verplicht)', () => {
+  const r = valideerVoorVervoerder({
+    vervoerder_code: 'verhoek_sftp',
+    afl_land: 'DE', afl_telefoon: null,
+    afl_naam: 'Klant', afl_adres: 'Hauptstr. 1', afl_postcode: '48683', afl_plaats: 'Ahaus',
+  });
+  assertEquals(r.ok, true);
+});

@@ -43,9 +43,25 @@ function telefoonGeldig(tel: string | null | undefined): boolean {
 export function valideerVoorVervoerder(ctx: VerzendContext): VerzendValidatie {
   const problemen: VerzendProbleem[] = []
 
-  // V1: alleen HST heeft eisen. Andere vervoerders → geen pre-flight (ok).
-  if (ctx.vervoerder_code !== 'hst_api') {
+  // V1: HST en Verhoek hebben eisen. Andere vervoerders → geen pre-flight (ok).
+  if (ctx.vervoerder_code !== 'hst_api' && ctx.vervoerder_code !== 'verhoek_sftp') {
     return { ok: true, problemen }
+  }
+
+  // Verhoek (ADR-0031): adresvelden verplicht (komen op de vrachtbrief/CMR).
+  // Telefoon niet verplicht (geen TelefonischAdvies in V1); geen land-check —
+  // pilot routeert uitsluitend via handmatige override. Colli-eisen
+  // (lengte/breedte/gewicht) leven in verhoek-send/xml-builder.ts
+  // (valideerVerhoekColli) — die kennen colli-data, deze seam niet.
+  if (ctx.vervoerder_code === 'verhoek_sftp') {
+    if (leeg(ctx.afl_naam) || leeg(ctx.afl_adres) || leeg(ctx.afl_postcode) || leeg(ctx.afl_plaats)) {
+      problemen.push({
+        code: 'ADRESVELD_LEEG',
+        veld: 'afl_adres',
+        melding: 'Naam, adres, postcode of plaats is leeg.',
+      })
+    }
+    return { ok: problemen.length === 0, problemen }
   }
 
   if (!telefoonGeldig(ctx.afl_telefoon)) {
