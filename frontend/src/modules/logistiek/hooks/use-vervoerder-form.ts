@@ -61,11 +61,13 @@ function fromVervoerder(v: Vervoerder): VervoerderFormState {
   }
 }
 
-function parsePositiveInt(value: string): number | null {
-  const trimmed = value.trim()
+// Label-maten zijn fractioneel (inch-rollen: 76.2, 152.4) — 1 decimaal,
+// komma-invoer toegestaan. Spiegelt NUMERIC(5,1) uit mig 361.
+function parsePositiveMm(value: string): number | null {
+  const trimmed = value.trim().replace(',', '.')
   if (trimmed === '') return null
   const n = Number(trimmed)
-  return Number.isFinite(n) && n > 0 ? Math.round(n) : null
+  return Number.isFinite(n) && n > 0 ? Math.round(n * 10) / 10 : null
 }
 
 function parseServiceCodes(value: string): string[] | null {
@@ -113,8 +115,11 @@ export function useVervoerderForm(vervoerder: Vervoerder | null | undefined) {
     notities: emptyToNull(form.notities),
     printer_naam: type === 'print' ? emptyToNull(form.printer_naam) : null,
     printer_ip: type === 'print' ? emptyToNull(form.printer_ip) : null,
-    label_breedte_mm: type === 'print' ? parsePositiveInt(form.label_breedte_mm) : null,
-    label_hoogte_mm: type === 'print' ? parsePositiveInt(form.label_hoogte_mm) : null,
+    // Label-formaat geldt voor ÁLLE typen — ook HST (type 'api') rendert het
+    // verzendlabel in RugFlow (mig 361: 76,2×152,4). Vóór deze fix wiste een
+    // save op een niet-print-vervoerder het formaat stilletjes naar NULL.
+    label_breedte_mm: parsePositiveMm(form.label_breedte_mm),
+    label_hoogte_mm: parsePositiveMm(form.label_hoogte_mm),
     service_codes: type === 'print' ? parseServiceCodes(form.service_codes) : null,
   })
 

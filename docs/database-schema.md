@@ -651,7 +651,7 @@ Lookup-tabel met de beschikbare vervoerders waarmee Karpi werkt (mig 170, uitgeb
 | tarief_notities | TEXT | Mig 174. Vrije-tekst tariefafspraken voor V1 (bv. "NL t/m 30 kg €9,50, BE +€2"). Gestructureerde `vervoerder_tarieven`-tabel komt in Fase B. |
 | printer_naam | TEXT | Mig 207. Windows-printernaam voor `type='print'`. Browser-print-dialoog stuurt PDF hier naartoe. |
 | printer_ip | TEXT | Mig 207. Optioneel IP voor directe ZPL-push (TCP 9100). V1 niet gebruikt — alleen voor toekomstige native ZPL-flow. |
-| label_breedte_mm, label_hoogte_mm | INTEGER | Mig 207. Label-formaat in mm (bv. 80×150 voor DPD/Zebra). Gelezen door printset-page voor `@page`-CSS. |
+| label_breedte_mm, label_hoogte_mm | NUMERIC(5,1) | Mig 207, NUMERIC sinds mig 361 (inch-rollen zijn fractioneel in mm). Verzendlabel-formaat voor álle typen — ook HST (`hst_api` = 76.2×152.4, 3"×6"). Gelezen door printset-page voor `@page`-CSS; NULL → frontend-default 76.2×50.8. |
 | service_codes | TEXT[] | Mig 207. Service-varianten die deze vervoerder ondersteunt, bv. `{'srv','classic','predict','internationaal'}` voor DPD. Verzendregels kiezen er één. |
 | created_at, updated_at | TIMESTAMPTZ | Auto via `set_vervoerders_updated_at()` |
 

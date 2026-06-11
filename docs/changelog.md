@@ -1,5 +1,41 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-11 — HST-verzendlabel op 3"×6"-rol + thermische scherpte-fixes (mig 361)
+
+**Waarom:** het verzendlabel op de Pick & Ship-verzendset stond hard op
+76,2×50,8 mm (3"×2", oude ZD420-aanname) terwijl de fysieke rol in de Zebra
+ZT231 76,2×152,4 mm (3"×6") is — het label vulde maar een derde van het etiket
+en stond 90° gedraaid. Daarnaast oogde de print wazig: grijstinten en een
+gestretchte barcode worden op een 203dpi thermische printer geditherd.
+Betreft alléén het verzendlabel — pakbon (A4) en tapijt-stickers (148×106,
+eigen printers) hebben hun eigen `@page`-regels en zijn ongewijzigd.
+
+**Wat (branch `fix/hst-verzendlabel-3x6`):**
+- **Mig 361** (`361_vervoerder_label_formaat_hst_3x6.sql`):
+  `vervoerders.label_breedte_mm/label_hoogte_mm` van INTEGER → **NUMERIC(5,1)**
+  (inch-rollen zijn fractioneel in mm) + `hst_api` op **76.2×152.4**. De
+  bestaande per-vervoerder-formaat-keten (`labelFormaatVoor`, mig 207) pakt
+  dit automatisch op in `@page shipping-label` én de instructie-banner.
+- **Nieuw staand labelontwerp** [`shipping-label-tall.tsx`](../frontend/src/modules/logistiek/components/shipping-label-tall.tsx):
+  `ShippingLabel` dispatcht op vorm — hoogte > breedte → gestapeld 3×6-ontwerp
+  (afzender+vervoerder / order+product / groot adresblok / colli+referentie /
+  grote SSCC-barcode), anders het bestaande compacte 3-rijen-grid (fallback
+  voor vervoerders zonder formaat). Gedeelde data-helpers geëxtraheerd naar
+  [`shipping-label-data.ts`](../frontend/src/modules/logistiek/lib/shipping-label-data.ts).
+- **Thermische scherpte:** alle grijstinten (#475569/#64748b/#111) → puur
+  `#000` (grijs = dither = wazig op thermisch); `Code128Barcode` kreeg een
+  `moduleMm`-prop — het 3×6-label rendert op 0.375mm/module = exact 3 dots
+  per module op 203dpi, dus balken op hele printer-dots.
+- **Bugfix vervoerder-form:** een save op een niet-print-vervoerder (HST is
+  type `api`) wiste `label_*_mm` stilletjes naar NULL
+  ([`use-vervoerder-form.ts`](../frontend/src/modules/logistiek/hooks/use-vervoerder-form.ts)).
+  Label-formaat wordt nu voor álle typen bewaard, accepteert 1 decimaal
+  (komma of punt) en de velden staan op de detailpagina buiten het
+  print-only-blok.
+- **Driver-instelling (handmatig, ZDesigner ZT231):** papierformaat 7,62×15,24
+  cm **staand** (was liggend), snelheid omlaag (≤7,6 cm/s), densiteit ~20+,
+  Rasteren/dithering uit.
+
 ## 2026-06-10 — Bug-meldingen: verwerkingsnotitie + "verwerkt"-belletje voor de melder (mig 360)
 
 **Waarom:** bij het op 'Verwerkt' zetten van een gemelde bug (mig 342) kon de
