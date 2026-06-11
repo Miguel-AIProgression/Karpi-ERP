@@ -13,14 +13,14 @@ interface Props {
 /**
  * Tijdlijn van alle voor deze order verstuurde e-mails (facturen +
  * orderbevestigingen, mig 365). Klik op het onderwerp opent de volledige
- * mail in een dialog. Verbergt zichzelf zolang er niets verstuurd is —
- * zelfde gouden regel als de Claim-historie-sectie.
+ * mail in een dialog. Toont een lege staat zolang er niets verstuurd is —
+ * zelfde conventie als de Facturatie-sectie ernaast.
  */
 export function OrderEmails({ orderId }: Props) {
   const { data: emails, isLoading } = useEmailsVoorOrder(orderId)
   const [openEmail, setOpenEmail] = useState<VerstuurdeEmail | null>(null)
 
-  if (isLoading || !emails || emails.length === 0) return null
+  if (isLoading) return null
 
   return (
     <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-5 mb-6">
@@ -31,6 +31,9 @@ export function OrderEmails({ orderId }: Props) {
         </h2>
       </div>
 
+      {!emails || emails.length === 0 ? (
+        <p className="text-sm text-slate-400 italic">Nog geen e-mails verstuurd</p>
+      ) : (
       <ul className="divide-y divide-slate-100">
         {emails.map((email) => (
           <li key={email.id}>
@@ -52,6 +55,7 @@ export function OrderEmails({ orderId }: Props) {
           </li>
         ))}
       </ul>
+      )}
 
       {openEmail && <OrderEmailDialog email={openEmail} onClose={() => setOpenEmail(null)} />}
     </div>
