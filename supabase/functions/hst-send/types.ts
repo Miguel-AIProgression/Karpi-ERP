@@ -23,6 +23,7 @@ export interface ZendingInput {
   afl_plaats: string | null;
   afl_land: string | null;
   afl_telefoon: string | null;
+  afl_email: string | null;
   totaal_gewicht_kg: number | null;
   aantal_colli: number | null;
   opmerkingen: string | null;
