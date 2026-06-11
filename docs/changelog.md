@@ -1,5 +1,25 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-11 — Fix: blanco pagina tussen tapijt-stickers in de printset
+
+Bij het printen van tapijt-stickers via Pick & Ship (zowel
+[`zending-printset.tsx`](../frontend/src/modules/logistiek/pages/zending-printset.tsx)
+als [`bulk-printset.tsx`](../frontend/src/modules/logistiek/pages/bulk-printset.tsx))
+kwam tussen elke sticker een witte pagina mee. Twee oorzaken, beide gefixt
+in de print-CSS van beide pagina's:
+
+1. **Page-naam-mismatch:** `page: tapijt-sticker` stond alleen op het
+   geneste `.sticker-label`, terwijl de forced page-break op de buitenste
+   `.sticker-wrapper` zit. De wrapper viel daardoor op de *default* page —
+   Chromium wisselt dan bij elke stickergrens van page-naam en injecteert
+   een blanco tussenpagina. `page:` staat nu óók op de wrapper. (De
+   maatwerk-bulkpagina `stickers-bulk.tsx` heeft één naamloze `@page` en
+   had dit probleem dus niet.)
+2. **Exacte fit:** de sticker was precies 148×106mm op een 148×106mm-page;
+   sub-pixel-afronding of een onbedrukbare printerrand laat zo'n sticker
+   overflowen → blanco vervolgpagina. Sticker print nu op 146×104mm
+   (onderkant is toch witruimte, visueel geen verschil).
+
 ## 2026-06-11 — Shopify-plaats-bug + verzendset-herprint + verzendfout-signalering (branch `feat/zending-herprint-ingang`)
 
 **Aanleiding (incident 11-06):** twee pickrondes (ZEND-2026-0001/0002) werden
