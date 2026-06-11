@@ -31,6 +31,12 @@ export function OrderAddresses({ order }: OrderAddressesProps) {
               plaats={order.fact_plaats}
               land={order.fact_land}
             />
+            {order.fact_email && (
+              <div className="mt-3 pt-3 border-t border-slate-100 text-sm">
+                <span className="text-slate-400 block mb-0.5">Factuur per e-mail naar</span>
+                <span className="text-slate-700">{order.fact_email}</span>
+              </div>
+            )}
           </div>
         )}
         {hasAflever && (
@@ -43,9 +49,20 @@ export function OrderAddresses({ order }: OrderAddressesProps) {
               postcode={order.afl_postcode}
               plaats={order.afl_plaats}
               land={order.afl_land}
-              email={order.afl_email}
               telefoon={order.afl_telefoon}
             />
+            {!order.afhalen && (
+              <div className="mt-3 pt-3 border-t border-slate-100 text-sm">
+                <span className="text-slate-400 block mb-0.5">Track &amp; trace naar</span>
+                {order.afl_email ? (
+                  <span className="text-slate-700">{order.afl_email}</span>
+                ) : (
+                  <span className="text-amber-600">
+                    Geen e-mailadres ingevuld — klant ontvangt geen track &amp; trace van de vervoerder
+                  </span>
+                )}
+              </div>
+            )}
             {order.opmerkingen && (
               <div className="mt-3 pt-3 border-t border-slate-100 text-sm text-slate-600">
                 <span className="text-slate-400 block mb-0.5">Opmerking</span>
@@ -66,7 +83,6 @@ function AddressBlock(props: {
   postcode?: string | null
   plaats?: string | null
   land?: string | null
-  email?: string | null
   telefoon?: string | null
 }) {
   return (
@@ -76,8 +92,7 @@ function AddressBlock(props: {
       {props.adres && <p>{props.adres}</p>}
       <p>{[props.postcode, props.plaats].filter(Boolean).join(' ')}</p>
       {props.land && props.land !== 'NL' && <p>{props.land}</p>}
-      {props.email && <p className="text-slate-500 mt-1">{props.email}</p>}
-      {props.telefoon && <p className="text-slate-500">{props.telefoon}</p>}
+      {props.telefoon && <p className="text-slate-500 mt-1">{props.telefoon}</p>}
     </div>
   )
 }

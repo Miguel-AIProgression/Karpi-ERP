@@ -1,5 +1,28 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-11 — T&T- en factuur-e-mail expliciet gelabeld op order-detail + in adres-editor
+
+**Waarom:** vervolg op de T&T-e-mail-keten (mig 364/365 hieronder) — op de
+orderpagina stond het aflever-e-mailadres als kale grijze regel; nergens was
+zichtbaar dat de vervoerder dáár de track & trace naartoe stuurt en het
+factuur-adres nooit gebruikt.
+
+**Wat:**
+- [`order-addresses.tsx`](../frontend/src/components/orders/order-addresses.tsx):
+  Afleveradres-blok kreeg een gelabelde regel **"Track & trace naar"** (verborgen
+  bij afhaal-orders); leeg veld toont een amber hint "Geen e-mailadres ingevuld —
+  klant ontvangt geen track & trace van de vervoerder". Factuuradres-blok toont
+  `fact_email` (mig 364) als **"Factuur per e-mail naar"**.
+- [`delivery-address-editor.tsx`](../frontend/src/components/orders/delivery-address-editor.tsx)
+  (orderformulier): e-mailregel gemarkeerd met "· track & trace", lege staat in
+  amber, en uitleg onder het invoerveld dat de vervoerder de T&T naar dit adres
+  stuurt — niet naar het factuur-adres.
+- `OrderDetail`-interface uitgebreid met `fact_email` (fetch was al `select('*')`).
+
+De gevraagde gedragingen bestonden al: factuur-e-mail default vanuit
+`debiteuren.email_factuur` en wijzigbare aflever-e-mail per order (mig 364,
+orderformulier) — deze wijziging maakt de bestemming ervan zichtbaar.
+
 ## 2026-06-11 — E-mailtijdlijn op order-detail (mig 366)
 
 **Waarom:** facturen en orderbevestigingen worden sinds 8 juni daadwerkelijk

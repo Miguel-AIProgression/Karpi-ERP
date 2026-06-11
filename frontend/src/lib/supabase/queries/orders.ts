@@ -63,6 +63,7 @@ export interface OrderDetail extends OrderRow {
   fact_postcode: string | null
   fact_plaats: string | null
   fact_land: string | null
+  fact_email: string | null
   afl_naam: string | null
   afl_naam_2: string | null
   afl_adres: string | null
