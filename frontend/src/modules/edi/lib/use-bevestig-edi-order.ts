@@ -1,10 +1,18 @@
 // Gedeelde bevestig-flow voor EDI-orders: gebruikt door het amber
 // leverweek-paneel op order-detail én de universele BevestigOrderEdiDialog.
 //
-// Bepaalt zelf het kanaal ('edi' = ORDRSP versturen, 'edi_stil' = alleen
-// administratief bevestigen) op basis van edi_handelspartner_config — de
-// orderbev_uit-toggle werd vóór dit plan nergens gecheckt, waardoor ook
-// partners die geen orderbev willen (SB Möbel BOSS, Hammer) er één kregen.
+// Bepaalt zelf het kanaal ('edi' = ORDRSP versturen, 'email' = partner wil
+// geen EDI-orderbev → bevestiging gaat per e-mail via de universele knop)
+// op basis van edi_handelspartner_config.
+//
+// Taakverdeling bij kanaal 'email':
+//   - Deze hook doet het administratieve deel van de leverweek-bevestiging:
+//     afleverdatum vastzetten + edi_bevestigd_op-gate sluiten via
+//     bevestigOrderZonderEdiBericht (zodat het "Te bevestigen"-chip verdwijnt).
+//   - De daadwerkelijke orderbev-e-mail gaat via de universele "Bevestig order"-
+//     knop in order-header.tsx (BevestigOrderDialog met sluitEdiGate=true).
+//   - Besluit 2026-06-11 (Miguel): per documenttype — wat de partner niet via
+//     EDI wil, gaat automatisch per e-mail.
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase/client'
@@ -69,7 +77,11 @@ export function useBevestigEdiOrder(orderId: number, debiteurNr: number) {
           { isTest: bericht.is_test ?? false },
         )
       } else {
-        // 'edi_stil': partner wil/kan geen orderbev — alleen de gate zetten.
+        // kanaal 'email': partner wil geen EDI-orderbev. Zet de leverweek-gate
+        // administratief (edi_bevestigd_op) zodat het "Te bevestigen"-chip
+        // sluit. De orderbev-e-mail gaat via de universele "Bevestig order"-knop
+        // (BevestigOrderDialog met sluitEdiGate=true) — die handelt het mail-pad
+        // af nadat de operator het e-mailadres bevestigt.
         await bevestigOrderZonderEdiBericht(orderId)
       }
 

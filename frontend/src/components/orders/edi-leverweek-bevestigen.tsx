@@ -106,12 +106,18 @@ export function EdiLeverweekBevestigen({ orderId, debiteurNr, gewenstIso, afleve
             ? 'Bevestig leverweek'
             : kanaal === 'edi'
               ? 'Bevestig leverweek + verstuur orderbev'
-              : 'Bevestig leverweek (geen actieve EDI-orderbevestiging voor deze partner)'}
+              : 'Bevestig leverweek (orderbevestiging gaat per e-mail)'}
         </button>
 
         {configError && (
           <span className="text-sm text-rose-600">
             Partnerconfig kon niet geladen worden — probeer opnieuw of bevestig via de EDI-module.
+          </span>
+        )}
+
+        {!configError && !isLoading && kanaal === 'email' && (
+          <span className="text-sm text-slate-500">
+            Deze partner ontvangt de orderbevestiging per e-mail — verstuur die via de knop "Bevestig order".
           </span>
         )}
 

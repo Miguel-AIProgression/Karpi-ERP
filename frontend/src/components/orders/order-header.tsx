@@ -32,7 +32,7 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
   const isConcept = order.status === 'Concept'
 
   const isEdiOrder = order.bron_systeem === 'edi'
-  const { data: ediConfig } = useQuery({
+  const { data: ediConfig, isLoading: ediConfigLoading, isError: ediConfigError } = useQuery({
     queryKey: ['edi-handelspartner-config', order.debiteur_nr],
     queryFn: () => fetchHandelspartnerConfig(order.debiteur_nr),
     enabled: isEdiOrder,
@@ -42,7 +42,12 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
     order.bron_systeem,
     ediConfig ? { transus_actief: ediConfig.transus_actief, orderbev_uit: ediConfig.orderbev_uit } : null,
   )
-  const bevestigd = isOrderBevestigd(order)
+  // Config is resolved wanneer het niet loading en niet error is (ook als ediConfig null is —
+  // dan is de query klaar maar geen config gevonden → kanaal = 'email').
+  const ediConfigResolved = isEdiOrder ? (!ediConfigLoading && !ediConfigError) : true
+  const bevestigd = ediConfigResolved
+    ? isOrderBevestigd(order, isEdiOrder ? kanaal : undefined)
+    : isOrderBevestigd(order)
 
   function handleAnnuleer() {
     annuleer.mutate(
@@ -103,15 +108,16 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
               <span
                 className="flex items-center gap-1.5 px-3 py-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-[var(--radius-sm)]"
                 title={
-                  isEdiOrder
-                    ? `Bevestigd via EDI op ${formatDate(order.edi_bevestigd_op!)}`
+                  isEdiOrder && kanaal === 'edi' && order.edi_bevestigd_op
+                    ? `Bevestigd via EDI op ${formatDate(order.edi_bevestigd_op)}`
                     : `Bevestigd op ${formatDate(order.bevestigd_at!)}${order.bevestiging_email ? ` → ${order.bevestiging_email}` : ''}`
                 }
               >
                 <CheckCircle size={14} />
                 Bevestigd
               </span>
-              {!isEdiOrder && (
+              {/* Opnieuw versturen: tonen voor alle e-mail-kanalen (ook EDI-orders zonder EDI-orderbev) */}
+              {!(isEdiOrder && kanaal === 'edi') && (
                 <button
                   type="button"
                   onClick={() => setShowBevestigDialog(true)}
@@ -127,7 +133,15 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
             <button
               type="button"
               onClick={() => setShowBevestigDialog(true)}
-              className="px-4 py-2 text-sm bg-green-600 text-white rounded-[var(--radius-sm)] hover:bg-green-700 font-medium transition-colors"
+              disabled={isEdiOrder && (ediConfigLoading || ediConfigError)}
+              title={
+                isEdiOrder && ediConfigLoading
+                  ? 'EDI-partnerconfig laden…'
+                  : isEdiOrder && ediConfigError
+                    ? 'Partnerconfig kon niet geladen worden'
+                    : undefined
+              }
+              className="px-4 py-2 text-sm bg-green-600 text-white rounded-[var(--radius-sm)] hover:bg-green-700 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Bevestig order
             </button>
@@ -231,6 +245,7 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
           orderNr={order.order_nr}
           defaultEmail={order.bevestiging_email ?? (order as any).klant_email ?? null}
           isHerversturing={!!order.bevestigd_at}
+          sluitEdiGate={isEdiOrder}
           onClose={() => setShowBevestigDialog(false)}
         />
       ) : (

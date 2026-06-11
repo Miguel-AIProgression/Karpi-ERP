@@ -19,10 +19,10 @@ interface Props {
 }
 
 /**
- * EDI-variant van de universele "Bevestig order"-knop. Geen e-mailveld:
- * een EDI-order wordt nooit per mail bevestigd. Bij kanaal 'edi' gaat een
- * ORDRSP op de Transus-wachtrij; bij 'edi_stil' (partner zonder orderbev_uit)
- * wordt alleen de edi_bevestigd_op-gate gezet.
+ * EDI-variant van de universele "Bevestig order"-knop. Alleen bereikbaar
+ * wanneer kanaal='edi' (partner met transus_actief && orderbev_uit). Geen
+ * e-mailveld: de ORDRSP gaat via Transus. Partners zonder actieve EDI-orderbev
+ * landen op de e-mail-dialog (BevestigOrderDialog met sluitEdiGate=true).
  */
 export function BevestigOrderEdiDialog({
   orderId,
@@ -35,7 +35,7 @@ export function BevestigOrderEdiDialog({
 }: Props) {
   const [weekStr, setWeekStr] = useState(verzendWeekIsoString(afleverdatumIso || gewenstIso))
   const [klaar, setKlaar] = useState(false)
-  const { kanaal, bericht, isLoading, configError, busy, error, bevestig } = useBevestigEdiOrder(orderId, debiteurNr)
+  const { bericht, isLoading, configError, busy, error, bevestig } = useBevestigEdiOrder(orderId, debiteurNr)
 
   const gekozenDatum = verzendWeekStringToDatum(weekStr)
   const vergelijking = vergelijkLeverweek(gewenstIso, gekozenDatum)
@@ -59,17 +59,8 @@ export function BevestigOrderEdiDialog({
               <Check className="text-green-500" size={40} />
               <h3 className="text-lg font-semibold text-slate-900">Order bevestigd</h3>
               <p className="text-sm text-slate-600 text-center">
-                {kanaal === 'edi' ? (
-                  <>
-                    De orderbevestiging van <strong>{orderNr}</strong> staat op de EDI-wachtrij en
-                    wordt binnen een minuut via Transus verstuurd.
-                  </>
-                ) : (
-                  <>
-                    <strong>{orderNr}</strong> is administratief bevestigd. Er is geen actieve
-                    EDI-orderbevestiging voor deze partner.
-                  </>
-                )}
+                De orderbevestiging van <strong>{orderNr}</strong> staat op de EDI-wachtrij en
+                wordt binnen een minuut via Transus verstuurd.
               </p>
             </div>
             <button
@@ -88,15 +79,10 @@ export function BevestigOrderEdiDialog({
             <p className="text-sm text-slate-500 mb-4">
               {isLoading ? (
                 <>Partnerconfiguratie laden…</>
-              ) : kanaal === 'edi' ? (
+              ) : (
                 <>
                   De bevestiging van <strong>{orderNr}</strong> gaat via EDI (Transus) naar de
                   partner — niet per e-mail.
-                </>
-              ) : (
-                <>
-                  Er is geen actieve EDI-orderbevestiging voor deze partner. De order wordt alleen
-                  administratief bevestigd; er gaat géén bericht en géén e-mail uit.
                 </>
               )}
             </p>
@@ -148,7 +134,7 @@ export function BevestigOrderEdiDialog({
                 Partnerconfig kon niet geladen worden — probeer opnieuw of bevestig via de EDI-module.
               </p>
             )}
-            {!configError && kanaal === 'edi' && !isLoading && !bericht && (
+            {!configError && !isLoading && !bericht && (
               <p className="mb-3 text-sm text-rose-600">
                 Geen bron-EDI-bericht gevonden — bevestigen kan alleen via de EDI-module.
               </p>
@@ -165,15 +151,11 @@ export function BevestigOrderEdiDialog({
               </button>
               <button
                 onClick={handleBevestig}
-                disabled={busy || isLoading || configError || !gekozenDatum || (kanaal === 'edi' && !bericht)}
+                disabled={busy || isLoading || configError || !gekozenDatum || !bericht}
                 className="flex items-center gap-2 px-4 py-2 text-sm bg-terracotta-500 text-white rounded-[var(--radius-sm)] hover:bg-terracotta-600 disabled:opacity-50 font-medium"
               >
                 {busy && <Loader2 size={14} className="animate-spin" />}
-                {isLoading
-                  ? 'Bevestig order'
-                  : kanaal === 'edi'
-                    ? 'Bevestig + verstuur via EDI'
-                    : 'Bevestig (zonder bericht)'}
+                {isLoading ? 'Bevestig order' : 'Bevestig + verstuur via EDI'}
               </button>
             </div>
           </>

@@ -2,12 +2,20 @@ import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase/client'
 import { CheckCircle, Mail, Loader2 } from 'lucide-react'
+import { bevestigOrderZonderEdiBericht } from '@/modules/edi'
 
 interface BevestigOrderDialogProps {
   orderId: number
   orderNr: string
   defaultEmail: string | null
   isHerversturing?: boolean
+  /**
+   * True als dit een EDI-order is die via e-mail bevestigd wordt (partner zonder
+   * actieve EDI-orderbev — besluit 11-06). Na succesvolle verzending wordt ook de
+   * EDI-leverweek-gate (edi_bevestigd_op) gesloten zodat het "Te bevestigen"-chip
+   * en het amber paneel verdwijnen.
+   */
+  sluitEdiGate?: boolean
   onClose: () => void
 }
 
@@ -41,7 +49,7 @@ async function stuurOrderbevestiging(params: {
   return json as { order_nr: string; verstuurd_naar: string; bevestigd_at: string }
 }
 
-export function BevestigOrderDialog({ orderId, orderNr, defaultEmail, isHerversturing = false, onClose }: BevestigOrderDialogProps) {
+export function BevestigOrderDialog({ orderId, orderNr, defaultEmail, isHerversturing = false, sluitEdiGate = false, onClose }: BevestigOrderDialogProps) {
   const [email, setEmail] = useState(defaultEmail ?? '')
   const qc = useQueryClient()
 
@@ -54,9 +62,23 @@ export function BevestigOrderDialog({ orderId, orderNr, defaultEmail, isHerverst
         bevestigdDoor: user?.email ?? user?.id ?? 'onbekend',
       })
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       qc.invalidateQueries({ queryKey: ['order', orderId] })
       qc.invalidateQueries({ queryKey: ['orders'] })
+
+      // Bij een EDI-order die via e-mail bevestigd wordt: sluit ook de EDI-
+      // leverweek-gate (edi_bevestigd_op) zodat het "Te bevestigen"-chip en
+      // het amber paneel verdwijnen. Best-effort: fout breekt succes-UX niet.
+      if (sluitEdiGate) {
+        try {
+          await bevestigOrderZonderEdiBericht(orderId)
+          qc.invalidateQueries({ queryKey: ['edi-berichten'] })
+          qc.invalidateQueries({ queryKey: ['edi-inkomend-voor-order', orderId] })
+          qc.invalidateQueries({ queryKey: ['edi-uitgaand-voor-order', orderId] })
+        } catch (gateErr) {
+          console.warn('[BevestigOrderDialog] edi-gate sluiten mislukt (niet-blokkerend):', gateErr)
+        }
+      }
     },
   })
 
