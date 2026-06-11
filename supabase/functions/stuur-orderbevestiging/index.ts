@@ -456,6 +456,9 @@ serve(async (req) => {
   <p style="font-size: 11px; color: #999;">${bedrijf.adres}, ${bedrijf.postcode} ${bedrijf.plaats} | ${bedrijf.website} | KvK: ${bedrijf.kvk}</p>
 </div>`
 
+  const onderwerp = `${v.onderwerp} ${klantNaam} ${o.order_nr}`
+  const pdfFilename = `Orderbevestiging-${o.order_nr}.pdf`
+
   await sendFactuurEmail({
     tenantId: MS_GRAPH_TENANT_ID,
     clientId: MS_GRAPH_CLIENT_ID,
@@ -463,13 +466,37 @@ serve(async (req) => {
     from: FROM_EMAIL,
     to: toEmail,
     replyTo: REPLY_TO,
-    subject: `${v.onderwerp} ${klantNaam} ${o.order_nr}`,
+    subject: onderwerp,
     html: htmlBody,
     attachments: [{
-      filename: `Orderbevestiging-${o.order_nr}.pdf`,
+      filename: pdfFilename,
       content: pdfBytes,
     }],
   })
+
+  // ── Mig 366: PDF bewaren + e-mailtijdlijn-rij ──────────────────────────────
+  // Best-effort: de bevestiging is al verstuurd, dit mag de flow niet laten
+  // falen. PDF naar bucket `orderbevestigingen` (upsert bij hersturen) zodat
+  // de tijdlijn-dialog hem via een signed URL kan openen.
+  try {
+    const pdfPath = `${o.id}/${pdfFilename}`
+    const { error: uploadErr } = await supabase.storage
+      .from('orderbevestigingen')
+      .upload(pdfPath, pdfBytes, { contentType: 'application/pdf', upsert: true })
+    if (uploadErr) console.warn(`[stuur-orderbevestiging] PDF-upload mislukt: ${uploadErr.message}`)
+
+    const { error: logErr } = await supabase.from('verstuurde_emails').insert({
+      order_id: o.id,
+      soort: 'orderbevestiging',
+      onderwerp,
+      verzonden_aan: toEmail,
+      html: htmlBody,
+      bijlagen: uploadErr ? [] : [{ filename: pdfFilename, bucket: 'orderbevestigingen', path: pdfPath }],
+    })
+    if (logErr) console.warn(`[stuur-orderbevestiging] e-mail-log mislukt: ${logErr.message}`)
+  } catch (err) {
+    console.warn(`[stuur-orderbevestiging] e-mail-log mislukt: ${err}`)
+  }
 
   // ── Order markeren als bevestigd ───────────────────────────────────────────
   const now = new Date().toISOString()

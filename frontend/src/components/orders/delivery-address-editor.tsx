@@ -83,10 +83,14 @@ export function DeliveryAddressEditor({
           {adres && <p>{adres}</p>}
           <p>{[postcode, plaats].filter(Boolean).join(' ')}</p>
           {aflEmail && (
-            <p className="mt-1 text-slate-500 text-xs">{aflEmail}</p>
+            <p className="mt-1 text-slate-500 text-xs">
+              {aflEmail} <span className="text-slate-400">· track &amp; trace</span>
+            </p>
           )}
           {!aflEmail && (
-            <p className="mt-1 text-slate-400 text-xs italic">Geen e-mailadres</p>
+            <p className="mt-1 text-amber-600 text-xs italic">
+              Geen e-mailadres — klant ontvangt geen track &amp; trace
+            </p>
           )}
         </div>
       </div>
@@ -118,6 +122,9 @@ export function DeliveryAddressEditor({
           className="w-full px-2 py-1.5 rounded-[var(--radius-sm)] border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
           placeholder="leveradres@bedrijf.nl"
         />
+        <p className="mt-1 text-[11px] text-slate-400">
+          De vervoerder stuurt de track &amp; trace naar dit e-mailadres — niet naar het factuur-adres.
+        </p>
       </div>
       <div className="space-y-1">
         {afleveradresId && (

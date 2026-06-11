@@ -10,6 +10,161 @@ wordt voortaan gerenderd in [`top-bar.tsx`](../frontend/src/components/layout/to
 i.p.v. los in `AppLayout`; dialog en gedrag (pagina-URL, urgentie, bijlage)
 ongewijzigd.
 
+## 2026-06-11 — EDI/webshop-intake vult e-mail-snapshots (mig 368, branch `fix/intake-email-snapshots`)
+
+**Melding Miguel:** order ORD-2026-0332 (HEADLAM) toont "Geen factuur-e-mailadres
+bekend" terwijl de Facturering-tab van de klant wél `inkoop@headlam.nl` heeft.
+
+**Diagnose (twee oorzaken):**
+1. **HEADLAM-orders 0332/0333:** `orders.fact_email` is een per-order snapshot
+   bij aanmaak (mig 364). De orders zijn om 13:04/13:09 ingevoerd, precies in
+   het venster waarin het factuur-e-mailadres op de klant werd gewijzigd van
+   `invoices@` naar `inkoop@headlam.nl` en tijdelijk leeg stond (0331 om 13:00
+   had nog `invoices@`, 0335 om 13:15 had `inkoop@`). Later invullen op de
+   klant werkt niet terug op bestaande orders — by design.
+2. **Structureel gat:** mig 364 paste alleen de orderformulier-RPC's aan;
+   `create_edi_order` en `create_webshop_order` (Shopify/Lightspeed/e-mail)
+   vullen `fact_email`/`afl_email` niet. De eenmalige backfill (mig 367) ving
+   bestaande orders, maar elke intake daarná landde leeg — bewijs:
+   Hornbach-EDI-order ORD-2026-0334 (13:15, ná backfill) leeg terwijl de
+   debiteur beide adressen heeft. Zelfde incidentklasse als mig 343
+   (JSONB-sleutel-drop: nieuw veld niet in álle intake-paden).
+
+**Fix (mig 368):** beide intake-RPC's passen dezelfde ladder toe als het
+orderformulier: `fact_email` = `debiteuren.email_factuur` → `email_overig`;
+`afl_email` = afleveradres-e-mail (EDI: de GLN-gematchte vestiging) →
+`email_overig`. In `create_webshop_order` winnen expliciete `p_header`-waarden
+(consument-e-mail uit de payload) en slaat de ladder `env_fallback`-orders
+over (verzameldebiteur ≠ klant, mirrort mig 367-guard). De migratie sluit af
+met een idempotente her-run van de mig 367-backfill die o.a. ORD-2026-0332/0333
+en de lege EDI/Shopify-orders van 11-06 alsnog vult. Zelf-test bewaakt ook de
+regressie-guards van mig 357 (status-literal) en mig 343 (maatwerk_vorm).
+
+## 2026-06-11 — Voorraad-0-artikel toevoegen aan order: keuze prominent + levertijd vooraf zichtbaar (branch `fix/voorraad-0-artikel-toevoegen-ux`)
+
+**Melding Marjon (sales support):** "Als een artikel geen voorraad heeft kan ik
+hem niet aanklikken… Daarnaast kan ik ook niet zien wanneer het artikel weer
+binnenkomt met welke levertijd." (voorbeeld LAGO13 240x340, art. 553130045 —
+vrije voorraad 0, wél 20× besteld op inkoop.)
+
+**Diagnose:** het pad bestond al (klik op voorraad-0-maat → `SubstitutionPicker`
+→ "Toch toevoegen zonder voorraad" → allocator claimt op IO, mig 144-152), maar
+was in de praktijk onvindbaar:
+1. Het paneel rendert **onder** de volledige maten-lijst (LAGO kleur 13 = 16+
+   rijen) — buiten beeld, klik leek niets te doen.
+2. Alle 4 equivalenten (ROVE/GLOR/KAES/LAVA 13 240x340) hadden óók voorraad 0
+   → elke rij in het paneel disabled/grijs — "ik kan hem niet aanklikken".
+3. De ontsnappingsroute was een klein onderstreept linkje; de IO-levertijd
+   (`IoLevertijdHint`) verscheen pas ná het toevoegen van de regel.
+
+**Fix** (frontend-only, geen DB-wijziging):
+- [`substitution-picker.tsx`](../frontend/src/modules/reserveringen/components/substitution-picker.tsx):
+  nieuwe `InkoopVerwachtHint` toont direct in het paneel hoeveel er besteld is
+  en de eerstvolgende verwachte leverweek (zelfde bron + FIFO-volgorde als
+  `IoLevertijdHint`: `useOpenstaandeInkoopregelsVoorArtikel`, `verwacht_datum
+  ASC`); "Toch toevoegen" is nu een prominente amber knop i.p.v. een linkje;
+  equivalenten tonen ook hun `besteld_inkoop`; optionele `onCancel`-sluitknop.
+- [`kwaliteit-first-selector.tsx`](../frontend/src/modules/maatwerk/components/kwaliteit-first-selector.tsx):
+  zodra een voorraad-0-maat is aangeklikt verbergen de kleurchips + maten-lijst
+  zich en staat het keuzepaneel direct in beeld (annuleren = terug naar lijst).
+- [`article-selector.tsx`](../frontend/src/components/orders/article-selector.tsx):
+  zelfde `onCancel`-route.
+
+De daadwerkelijke claim blijft server-side (`herallocateer_orderregel`); dit is
+puur de zichtbaarheid van een bestaand pad. Typecheck groen.
+
+## 2026-06-11 — Backfill fact_email + afl_email op bestaande open orders (mig 367)
+
+Mig 364 vult de e-mail-snapshots alleen bij nieuwe orders; bestaande orders
+stonden leeg (geen factuur-e-mail, geen T&T). Mig 367 (live uitgevoerd
+11-06-2026; in de repo hernummerd van 366 wegens collisie met
+`366_verstuurde_emails_log.sql`) backfillt open orders
+met dezelfde ladder als het orderformulier: `fact_email` uit
+`debiteuren.email_factuur` → `email_overig`; `afl_email` uit het op
+adres-snapshot gematchte `afleveradressen.email` (`_normaliseer_afleveradres`,
+mig 222; laagste `adres_nr` wint) → fallback `debiteuren.email_overig`.
+Guards: alleen lege velden, eindstatussen overgeslagen, en
+`env_fallback`-orders (verzameldebiteur/consumenten-webshop) uitgesloten —
+daar zou de debiteur-e-mail een verkéérd T&T-adres zijn. Sluit af met een
+herhaling van de mig 365-zending-backfill zodat nog-niet-verstuurde
+zendingen het gevulde adres als snapshot meekrijgen.
+
+## 2026-06-11 — T&T- en factuur-e-mail expliciet gelabeld op order-detail + in adres-editor
+
+**Waarom:** vervolg op de T&T-e-mail-keten (mig 364/365 hieronder) — op de
+orderpagina stond het aflever-e-mailadres als kale grijze regel; nergens was
+zichtbaar dat de vervoerder dáár de track & trace naartoe stuurt en het
+factuur-adres nooit gebruikt.
+
+**Wat:**
+- [`order-addresses.tsx`](../frontend/src/components/orders/order-addresses.tsx):
+  Afleveradres-blok kreeg een gelabelde regel **"Track & trace naar"** (verborgen
+  bij afhaal-orders); leeg veld toont een amber hint "Geen e-mailadres ingevuld —
+  klant ontvangt geen track & trace van de vervoerder". Factuuradres-blok toont
+  `fact_email` (mig 364) als **"Factuur per e-mail naar"**.
+- [`delivery-address-editor.tsx`](../frontend/src/components/orders/delivery-address-editor.tsx)
+  (orderformulier): e-mailregel gemarkeerd met "· track & trace", lege staat in
+  amber, en uitleg onder het invoerveld dat de vervoerder de T&T naar dit adres
+  stuurt — niet naar het factuur-adres.
+- `OrderDetail`-interface uitgebreid met `fact_email` (fetch was al `select('*')`).
+
+De gevraagde gedragingen bestonden al: factuur-e-mail default vanuit
+`debiteuren.email_factuur` en wijzigbare aflever-e-mail per order (mig 364,
+orderformulier) — deze wijziging maakt de bestemming ervan zichtbaar.
+
+## 2026-06-11 — E-mailtijdlijn op order-detail (mig 366)
+
+**Waarom:** facturen en orderbevestigingen worden sinds 8 juni daadwerkelijk
+gemaild via Microsoft Graph, maar nergens in RugFlow was per order te zien
+wélke mails verstuurd zijn. Operators moesten daarvoor het M365-postvak in.
+Spec: [`2026-06-11-order-email-tijdlijn-design.md`](superpowers/specs/2026-06-11-order-email-tijdlijn-design.md).
+
+**Wat (branch `feat/order-email-tijdlijn`):**
+- **Mig 366** — nieuwe tabel `verstuurde_emails` (rij per verstuurde mail per
+  order: soort, onderwerp, ontvangers, html-body, bijlage-verwijzingen JSONB),
+  nieuwe private bucket `orderbevestigingen`, en backfill van eerder
+  verstuurde facturen (uit `facturen.verstuurd_op/verstuurd_naar`, rij per
+  order via `factuur_regels`, EDI-only overgeslagen) en orderbevestigingen
+  (uit `orders.bevestigd_at/bevestiging_email`) — zonder body (`html` NULL =
+  "inhoud niet bewaard").
+- [`factuur-verzenden`](../supabase/functions/factuur-verzenden/index.ts):
+  na elke geslaagde Graph-send een log-rij per betrokken order (bundel-aware;
+  betaler-kopie = eigen rij). Best-effort — logging blokkeert het mailen nooit.
+- [`stuur-orderbevestiging`](../supabase/functions/stuur-orderbevestiging/index.ts):
+  de PDF wordt voortaan ook bewaard in bucket `orderbevestigingen`
+  (`{order_id}/Orderbevestiging-{order_nr}.pdf`, upsert) + log-rij met het
+  taalafhankelijke onderwerp en de HTML-body.
+- Frontend: sectie **"E-mails"** op order-detail
+  ([`order-emails.tsx`](../frontend/src/components/orders/order-emails.tsx),
+  lege staat "Nog geen e-mails verstuurd" zolang er niets is) — tijdlijn met datum/tijd,
+  soort-badge en klikbaar onderwerp. Klik opent
+  [`order-email-dialog.tsx`](../frontend/src/components/orders/order-email-dialog.tsx):
+  ontvangers, body in **sandboxed iframe** (`sandbox=""` — mail-HTML kan nooit
+  scripts draaien in RugFlow) en bijlage-knoppen via signed URL (10 min).
+  Query [`verstuurde-emails.ts`](../frontend/src/lib/supabase/queries/verstuurde-emails.ts)
+  + hook `useEmailsVoorOrder`.
+
+## 2026-06-11 — Aflever-e-mailadres mee naar vervoerder voor track & trace (mig 365)
+
+**Waarom:** mail Piet-Hein/Marjon 11-06-2026 — het order-formulier vult sinds
+mig 364 automatisch aparte e-mailadressen voor factuur en aflevering. Het
+aflever-e-mailadres is bedoeld voor track & trace: de vervoerder mag dáár
+naartoe mailen, het factuur-adres nooit (klant krijgt wél T&T, niet de factuur).
+HST stuurde `ToAddress.Email` tot nu toe altijd leeg.
+
+**Wat (branch `feat/zending-afl-email-tnt`):**
+- Mig 365: `zendingen.afl_email` (snapshot) + BEFORE-INSERT-trigger
+  `trg_zending_fill_email` uit `orders.afl_email` — zelfde patroon als
+  `afl_telefoon` (mig 339), maar **bewust zonder fallback** naar
+  factuur-e-mailadressen. Backfill voor nog-niet-verstuurde zendingen.
+- [`hst-send`](../supabase/functions/hst-send/index.ts): select + `ZendingInput`
+  uitgebreid met `afl_email`; [`payload-builder.ts`](../supabase/functions/hst-send/payload-builder.ts)
+  vult `ToAddress.Email` ermee (leeg blijft leeg). Test toegevoegd in
+  `payload-builder.test.ts` (6/6 groen).
+- Toekomstige vervoerder-koppelingen lezen hetzelfde snapshot-veld; of T&T-mail
+  "mag" is dan een keuze per adapter, niet per order.
+>>>>>>> origin/main
+
 ## 2026-06-11 — Zendingen + track & trace zichtbaar op order-detail (branch `feat/zending-herprint-ingang`)
 
 De track & trace-code van een zending was alleen op de Zendingen-pagina te
@@ -92,7 +247,6 @@ in de print-CSS van beide pagina's:
    overflowen → blanco vervolgpagina. Sticker print nu op 146×104mm
    (onderkant is toch witruimte, visueel geen verschil).
 
-<<<<<<< HEAD
 ## 2026-06-11 — Shopify-plaats-bug + verzendset-herprint + verzendfout-signalering (branch `feat/zending-herprint-ingang`)
 
 **Aanleiding (incident 11-06):** twee pickrondes (ZEND-2026-0001/0002) werden
@@ -162,7 +316,7 @@ verzending.
   HST-call). Rose banner met zending-link + foutreden zodra een zending een
   open HST-fout heeft (Fout-rij zonder actieve/geslaagde opvolger). Helper
   `bepaalOpenVerzendFouten` is puur en testbaar.
-=======
+
 ## 2026-06-11 — HST-verzendlabel tóch liggend op de 3"×6"-rol (mig 362)
 
 **Waarom:** mig 361 (hieronder) introduceerde een staand 3×6-ontwerp, maar
@@ -185,7 +339,6 @@ alleen dan het volledige etiket vullend.
   **Liggend** bij breed formaat (HST).
 - **Driver:** terug naar **liggend** (zoals Miguels oorspronkelijke instelling),
   7,62×15,24, marges/schaal-instructies ongewijzigd.
->>>>>>> origin/main
 
 ## 2026-06-11 — HST-verzendlabel op 3"×6"-rol + thermische scherpte-fixes (mig 361)
 

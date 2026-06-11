@@ -598,8 +598,9 @@ export function KwaliteitFirstSelector({
           </span>
         </div>
 
-        {/* Kleurfilter (chips) */}
-        {beschikbareKleuren.length > 1 && (
+        {/* Kleurfilter (chips) — verborgen zodra de voorraad-0-keuze open staat,
+            zodat de SubstitutionPicker niet onder een lange maten-lijst verdwijnt. */}
+        {!pendingArticle && beschikbareKleuren.length > 1 && (
           <div className="flex flex-wrap gap-1.5">
             <button
               type="button"
@@ -629,8 +630,8 @@ export function KwaliteitFirstSelector({
           </div>
         )}
 
-        {/* Maten lijst */}
-        {matenLoading ? (
+        {/* Maten lijst — idem verborgen zolang pendingArticle open staat */}
+        {!pendingArticle && (matenLoading ? (
           <div className="text-sm text-slate-400 py-2">Laden...</div>
         ) : (
           <div className="border border-slate-200 rounded-[var(--radius-sm)] divide-y divide-slate-100 overflow-hidden">
@@ -722,9 +723,10 @@ export function KwaliteitFirstSelector({
               )
             })()}
           </div>
-        )}
+        ))}
 
-        {/* Substitution picker bij geen voorraad */}
+        {/* Substitution picker bij geen voorraad — vervangt de maten-lijst
+            zodat de keuze (omstickeren / toch toevoegen) direct in beeld staat. */}
         {pendingArticle && (
           <SubstitutionPicker
             artikelnr={pendingArticle.artikelnr}
@@ -735,6 +737,7 @@ export function KwaliteitFirstSelector({
               setPendingArticle(null)
               handleReset()
             }}
+            onCancel={() => setPendingArticle(null)}
           />
         )}
       </div>

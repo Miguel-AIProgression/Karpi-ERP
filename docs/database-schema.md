@@ -534,6 +534,7 @@ Fysieke leveringen. Werkelijk aangemaakt sinds migratie 169 — bron-van-waarhei
 | track_trace | TEXT | HST-tracking-nummer of EDI-equivalent — gevuld door adapter na verzending |
 | afl_naam, afl_adres, afl_postcode, afl_plaats, afl_land | TEXT | Adres-snapshot (kopie van orders.afl_*) |
 | afl_telefoon | TEXT | Mig 339 (ADR-0030). Snapshot van het leveringstelefoonnummer — HST "belt vóór aflevering" en stuurt dit mee in `ToAddress.PhoneNumber`. Gevuld door BEFORE-INSERT-trigger `trg_zending_fill_telefoon` (functie `fn_zending_fill_telefoon`): ladder `orders.afl_telefoon` → fallback `debiteuren.telefoon`. Via trigger i.p.v. in `start_pickronden` zodat álle zending-aanmaakroutes het veld vullen. Backfill voor nog-niet-verstuurde zendingen. |
+| afl_email | TEXT | Mig 365. Snapshot van het **aflever**-e-mailadres voor track & trace door de vervoerder — hst-send stuurt dit mee in `ToAddress.Email`. Gevuld door BEFORE-INSERT-trigger `trg_zending_fill_email` uit `orders.afl_email` (mig 084, sinds mig 364 door het order-formulier gevuld vanuit `afleveradressen.email`). **Bewust géén fallback naar factuur-e-mailadressen** (`debiteuren.email_factuur` e.d.) — de klant moet wél de T&T krijgen maar niet de factuur (mail Piet-Hein/Marjon 11-06-2026). Leeg = geen T&T-mail. Backfill voor nog-niet-verstuurde zendingen. |
 | totaal_gewicht_kg | NUMERIC | Gevuld door `create_zending_voor_order` vanuit orderregelgewichten; handmatig corrigeerbaar in latere UI. Sinds mig 206 exclusief de pseudo-regel `artikelnr='VERZEND'`. |
 | aantal_colli | INTEGER | Gevuld door `create_zending_voor_order` als som van `order_regels.orderaantal`; gebruikt voor sticker `x VAN y`. Sinds mig 206 exclusief `artikelnr='VERZEND'`. Voor exacte per-stuk identiteit (sticker, SSCC) zie `zending_colli` (mig 209). |
 | service_code | TEXT | Mig 210. Service-variant binnen vervoerder (bv. `'internationaal'` bij DPD), gekozen door `selecteer_vervoerder_voor_zending()`. NULL = vervoerder-default. |
@@ -1227,7 +1228,7 @@ Centrale audit-/queue-tabel voor alle EDI-berichten via Transus (in én uit) (mi
 - `uk_edi_berichten_transactie_id` — UNIQUE op `transactie_id` (idempotentie inkomend)
 - `uk_edi_berichten_uitgaand_actief` — UNIQUE op `(berichttype, bron_tabel, bron_id)` waar `richting='uit' AND status NOT IN ('Fout','Geannuleerd')` (voorkomt dubbele triggers)
 
-**RPCs:** `log_edi_inkomend`, `markeer_edi_ack`, `create_edi_order`, `match_edi_artikel`, `enqueue_edi_uitgaand`, `claim_volgende_uitgaand`, `markeer_edi_verstuurd`, `markeer_edi_fout`. Sinds migratie 166 gebruikt `create_edi_order` de debiteur-prijslijst (`debiteuren.prijslijst_nr -> prijslijst_regels`) voor orderregelprijzen, met fallback op `producten.verkoopprijs`.
+**RPCs:** `log_edi_inkomend`, `markeer_edi_ack`, `create_edi_order`, `match_edi_artikel`, `enqueue_edi_uitgaand`, `claim_volgende_uitgaand`, `markeer_edi_verstuurd`, `markeer_edi_fout`. Sinds migratie 166 gebruikt `create_edi_order` de debiteur-prijslijst (`debiteuren.prijslijst_nr -> prijslijst_regels`) voor orderregelprijzen, met fallback op `producten.verkoopprijs`. Sinds mig 368 vult `create_edi_order` ook de e-mail-snapshots: `fact_email` (`email_factuur` → `email_overig`) en `afl_email` (e-mail van het GLN-gematchte afleveradres → `email_overig`); `create_webshop_order` idem, waarbij expliciete `p_header`-waarden winnen en `env_fallback`-orders worden overgeslagen.
 
 ---
 
@@ -1256,6 +1257,24 @@ Generieke, append-only audit van **rauwe externe payloads** per kanaal, **in- é
 **Diagnose-queries:**
 - Mislukte Shopify-orders → `SELECT externe_id, fout, ontvangen_op, payload_json FROM externe_payloads WHERE kanaal='shopify' AND status='fout' ORDER BY ontvangen_op DESC;`
 - Mislukte HST-verzendingen (incl. volledige retry-historie per order) → `SELECT externe_id, order_id, fout, ontvangen_op, payload_json FROM externe_payloads WHERE kanaal='hst' AND richting='out' AND status='fout' ORDER BY ontvangen_op DESC;`
+
+---
+
+### verstuurde_emails
+Log van **daadwerkelijk verstuurde e-mails per order** (mig 366) — voedt de sectie "E-mails" (tijdlijn) op order-detail. Geschreven door edge functions [`factuur-verzenden`](../supabase/functions/factuur-verzenden/index.ts) en [`stuur-orderbevestiging`](../supabase/functions/stuur-orderbevestiging/index.ts) **ná** een geslaagde Microsoft Graph-send; logging is best-effort en blokkeert het mailen nooit. Een bundel-factuur over meerdere orders krijgt één rij per order; de betaler-kopie is een eigen rij. **Niet te verwarren** met `externe_payloads` (raw-payload-diagnose-vangnet) — dit is de nette, klikbare weergave-log voor operators.
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| id | BIGSERIAL PK | |
+| order_id | BIGINT NOT NULL FK → orders ON DELETE CASCADE | tijdlijn-sleutel |
+| factuur_id | BIGINT FK → facturen ON DELETE SET NULL | alleen bij soort `'factuur'` |
+| soort | TEXT CHECK | `'factuur'` / `'orderbevestiging'` |
+| onderwerp | TEXT NOT NULL | letterlijke mail-subject |
+| verzonden_aan | TEXT NOT NULL | komma-gescheiden ontvangers |
+| verzonden_op | TIMESTAMPTZ DEFAULT now() | |
+| html | TEXT | volledige mail-body; **NULL = inhoud niet bewaard** (backfill van vóór mig 366) |
+| bijlagen | JSONB DEFAULT '[]' | `[{filename, bucket, path}]` → klikbaar via signed URL in de dialog |
+
+**Index:** `(order_id)`. **RLS:** SELECT voor authenticated; géén insert/update/delete-policies — schrijven uitsluitend via service-role. Backfill in mig 366 reconstrueert eerdere mails uit `facturen.verstuurd_op/verstuurd_naar` (rij per order, EDI-only overgeslagen) en `orders.bevestigd_at/bevestiging_email` (html NULL, geen PDF). Frontend: [`order-emails.tsx`](../frontend/src/components/orders/order-emails.tsx) + [`order-email-dialog.tsx`](../frontend/src/components/orders/order-email-dialog.tsx) (body in **sandboxed iframe**), query [`verstuurde-emails.ts`](../frontend/src/lib/supabase/queries/verstuurde-emails.ts).
 
 ---
 
@@ -1420,6 +1439,7 @@ Mig 174, aangepast in mig 176. Read-only view die de `/logistiek/vervoerders`-ov
 | documenten | Algemene documenten (algemene-voorwaarden-karpi-bv.pdf) | Publiek lezen, uploads via service role |
 | order-documenten | Bijlagen bij orders en inkooporders. Paden `orders/{id}/...` en `inkooporders/{id}/...`. Max 25 MB; alleen PDF/JPG/PNG/WebP/Excel/Word/TXT toegestaan. | Privé, authenticated SELECT/INSERT/UPDATE/DELETE; frontend leest via signed URL |
 | bug-bijlagen | Screenshots/bijlagen bij bug-meldingen (mig 342). Paden `{auth_uid}/{uuid}-{naam}`. Max 10 MB; afbeeldingen + PDF. | Privé, authenticated SELECT/INSERT; frontend leest via signed URL |
+| orderbevestigingen | Verstuurde orderbevestiging-PDFs ({order_id}/Orderbevestiging-{order_nr}.pdf, mig 366 — upsert bij hersturen). Bijlage-bron voor de e-mailtijdlijn op order-detail. | Privé, frontend leest via signed URL (10 min); uploads via service role |
 
 ## Bug-meldtool (mig 342)
 

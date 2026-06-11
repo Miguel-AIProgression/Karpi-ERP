@@ -34,6 +34,7 @@ Deno.test('bouwTransportOrderPayload — per-colli regels met SSCC-BarCode', () 
       afl_plaats: 'Diemen',
       afl_land: 'NL',
       afl_telefoon: '0612345678',
+      afl_email: 'klant@voorbeeld.nl',
       totaal_gewicht_kg: 126,
       aantal_colli: 2,
       opmerkingen: 'Transport instructie',
@@ -102,6 +103,7 @@ Deno.test('bouwTransportOrderPayload — fallback naar aggregate-regel zonder co
       afl_plaats: 'Diemen',
       afl_land: 'NL',
       afl_telefoon: null,
+      afl_email: null,
       totaal_gewicht_kg: 50,
       aantal_colli: 2,
       opmerkingen: null,
@@ -130,6 +132,7 @@ Deno.test('bouwTransportOrderPayload — vult lege strings bij ontbrekend afleve
       afl_plaats: null,
       afl_land: null,
       afl_telefoon: null,
+      afl_email: null,
       totaal_gewicht_kg: null,
       aantal_colli: null,
       opmerkingen: 'Spoed',
@@ -162,7 +165,7 @@ Deno.test('bouwTransportOrderPayload zet ToAddress.PhoneNumber uit afl_telefoon'
     zending: {
       zending_nr: 'ZEND-2026-9999', afl_naam: 'Klant', afl_adres: 'Teststraat 1',
       afl_postcode: '1111AA', afl_plaats: 'Diemen', afl_land: 'NL',
-      afl_telefoon: '0612345678', totaal_gewicht_kg: 5, aantal_colli: 1,
+      afl_telefoon: '0612345678', afl_email: null, totaal_gewicht_kg: 5, aantal_colli: 1,
       opmerkingen: null, verzenddatum: '2026-06-09',
     },
     order: { order_nr: 'ORD-2026-9999' },
@@ -174,6 +177,37 @@ Deno.test('bouwTransportOrderPayload zet ToAddress.PhoneNumber uit afl_telefoon'
     colli: [{ colli_nr: 1, sscc: '087159540000000632', gewicht_kg: 5, omschrijving_snapshot: 'Tapijt' }],
   });
   assertEquals(payload.ToAddress.PhoneNumber, '0612345678');
+});
+
+// T&T-scheiding (mail Piet-Hein/Marjon 11-06-2026): het aflever-e-mailadres
+// gaat mee naar de vervoerder voor track & trace; een leeg afl_email blijft
+// leeg (nooit stilletjes een factuur-adres invullen).
+Deno.test('bouwTransportOrderPayload zet ToAddress.Email uit afl_email', () => {
+  const basisZending = {
+    zending_nr: 'ZEND-2026-9998', afl_naam: 'Klant', afl_adres: 'Teststraat 1',
+    afl_postcode: '1111AA', afl_plaats: 'Diemen', afl_land: 'NL',
+    afl_telefoon: '0612345678', totaal_gewicht_kg: 5, aantal_colli: 1,
+    opmerkingen: null, verzenddatum: '2026-06-11',
+  };
+  const colli = [{ colli_nr: 1, sscc: '087159540000000632', gewicht_kg: 5, omschrijving_snapshot: 'Tapijt' }];
+
+  const metEmail = bouwTransportOrderPayload({
+    zending: { ...basisZending, afl_email: 'ontvanger@klant.nl' },
+    order: { order_nr: 'ORD-2026-9998' },
+    bedrijf: KARPI_BEDRIJF,
+    hstCustomerId: '038267',
+    colli,
+  });
+  assertEquals(metEmail.ToAddress.Email, 'ontvanger@klant.nl');
+
+  const zonderEmail = bouwTransportOrderPayload({
+    zending: { ...basisZending, afl_email: null },
+    order: { order_nr: 'ORD-2026-9998' },
+    bedrijf: KARPI_BEDRIJF,
+    hstCustomerId: '038267',
+    colli,
+  });
+  assertEquals(zonderEmail.ToAddress.Email, '');
 });
 
 Deno.test('splitAdres — straat + nummer + toevoeging', () => {
@@ -243,7 +277,7 @@ Deno.test('bouwTransportOrderPayload — lange toevoeging landt in NameAddition'
       afl_naam: 'Jeanette van Duffelen',
       afl_adres: 'Saturnusstraat 60 (Unit 30)',
       afl_postcode: '2516 AH', afl_plaats: "'s-Gravenhage", afl_land: 'NL',
-      afl_telefoon: '06-57996440',
+      afl_telefoon: '06-57996440', afl_email: null,
       totaal_gewicht_kg: 10, aantal_colli: 1, opmerkingen: null, verzenddatum: '2026-06-11',
     },
     order: { order_nr: 'ORD-2026-0110' },
