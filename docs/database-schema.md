@@ -1228,7 +1228,7 @@ Centrale audit-/queue-tabel voor alle EDI-berichten via Transus (in én uit) (mi
 - `uk_edi_berichten_transactie_id` — UNIQUE op `transactie_id` (idempotentie inkomend)
 - `uk_edi_berichten_uitgaand_actief` — UNIQUE op `(berichttype, bron_tabel, bron_id)` waar `richting='uit' AND status NOT IN ('Fout','Geannuleerd')` (voorkomt dubbele triggers)
 
-**RPCs:** `log_edi_inkomend`, `markeer_edi_ack`, `create_edi_order`, `match_edi_artikel`, `enqueue_edi_uitgaand`, `claim_volgende_uitgaand`, `markeer_edi_verstuurd`, `markeer_edi_fout`. Sinds migratie 166 gebruikt `create_edi_order` de debiteur-prijslijst (`debiteuren.prijslijst_nr -> prijslijst_regels`) voor orderregelprijzen, met fallback op `producten.verkoopprijs`.
+**RPCs:** `log_edi_inkomend`, `markeer_edi_ack`, `create_edi_order`, `match_edi_artikel`, `enqueue_edi_uitgaand`, `claim_volgende_uitgaand`, `markeer_edi_verstuurd`, `markeer_edi_fout`. Sinds migratie 166 gebruikt `create_edi_order` de debiteur-prijslijst (`debiteuren.prijslijst_nr -> prijslijst_regels`) voor orderregelprijzen, met fallback op `producten.verkoopprijs`. Sinds mig 368 vult `create_edi_order` ook de e-mail-snapshots: `fact_email` (`email_factuur` → `email_overig`) en `afl_email` (e-mail van het GLN-gematchte afleveradres → `email_overig`); `create_webshop_order` idem, waarbij expliciete `p_header`-waarden winnen en `env_fallback`-orders worden overgeslagen.
 
 ---
 

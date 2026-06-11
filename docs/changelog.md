@@ -1,5 +1,35 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-11 — EDI/webshop-intake vult e-mail-snapshots (mig 368, branch `fix/intake-email-snapshots`)
+
+**Melding Miguel:** order ORD-2026-0332 (HEADLAM) toont "Geen factuur-e-mailadres
+bekend" terwijl de Facturering-tab van de klant wél `inkoop@headlam.nl` heeft.
+
+**Diagnose (twee oorzaken):**
+1. **HEADLAM-orders 0332/0333:** `orders.fact_email` is een per-order snapshot
+   bij aanmaak (mig 364). De orders zijn om 13:04/13:09 ingevoerd, precies in
+   het venster waarin het factuur-e-mailadres op de klant werd gewijzigd van
+   `invoices@` naar `inkoop@headlam.nl` en tijdelijk leeg stond (0331 om 13:00
+   had nog `invoices@`, 0335 om 13:15 had `inkoop@`). Later invullen op de
+   klant werkt niet terug op bestaande orders — by design.
+2. **Structureel gat:** mig 364 paste alleen de orderformulier-RPC's aan;
+   `create_edi_order` en `create_webshop_order` (Shopify/Lightspeed/e-mail)
+   vullen `fact_email`/`afl_email` niet. De eenmalige backfill (mig 367) ving
+   bestaande orders, maar elke intake daarná landde leeg — bewijs:
+   Hornbach-EDI-order ORD-2026-0334 (13:15, ná backfill) leeg terwijl de
+   debiteur beide adressen heeft. Zelfde incidentklasse als mig 343
+   (JSONB-sleutel-drop: nieuw veld niet in álle intake-paden).
+
+**Fix (mig 368):** beide intake-RPC's passen dezelfde ladder toe als het
+orderformulier: `fact_email` = `debiteuren.email_factuur` → `email_overig`;
+`afl_email` = afleveradres-e-mail (EDI: de GLN-gematchte vestiging) →
+`email_overig`. In `create_webshop_order` winnen expliciete `p_header`-waarden
+(consument-e-mail uit de payload) en slaat de ladder `env_fallback`-orders
+over (verzameldebiteur ≠ klant, mirrort mig 367-guard). De migratie sluit af
+met een idempotente her-run van de mig 367-backfill die o.a. ORD-2026-0332/0333
+en de lege EDI/Shopify-orders van 11-06 alsnog vult. Zelf-test bewaakt ook de
+regressie-guards van mig 357 (status-literal) en mig 343 (maatwerk_vorm).
+
 ## 2026-06-11 — Voorraad-0-artikel toevoegen aan order: keuze prominent + levertijd vooraf zichtbaar (branch `fix/voorraad-0-artikel-toevoegen-ux`)
 
 **Melding Marjon (sales support):** "Als een artikel geen voorraad heeft kan ik
