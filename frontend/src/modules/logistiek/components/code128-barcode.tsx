@@ -27,6 +27,12 @@ interface Code128BarcodeProps {
    * container (oude gedrag).
    */
   moduleMm?: number
+  /**
+   * Maximaal beschikbare breedte in mm: de barcode kiest zelf de grootste
+   * dot-aligned module-breedte (veelvoud van 0.125mm) die erin past.
+   * Wint van `moduleMm` als beide gezet zijn.
+   */
+  fitMm?: number
 }
 
 function encodeCode128C(value: string): number[] {
@@ -46,7 +52,14 @@ function encodeCode128C(value: string): number[] {
   return [...codes, checksum, 106]
 }
 
-export function Code128Barcode({ value, height = 54, className, style, moduleMm }: Code128BarcodeProps) {
+export function Code128Barcode({
+  value,
+  height = 54,
+  className,
+  style,
+  moduleMm,
+  fitMm,
+}: Code128BarcodeProps) {
   const codes = encodeCode128C(value)
   let x = 0
   const bars: Array<{ x: number; width: number }> = []
@@ -65,7 +78,12 @@ export function Code128Barcode({ value, height = 54, className, style, moduleMm 
   return (
     <svg
       className={className}
-      style={moduleMm ? { ...style, width: `${x * moduleMm}mm` } : style}
+      style={(() => {
+        const effectiefModuleMm = fitMm
+          ? Math.max(0.125, Math.floor(fitMm / x / 0.125) * 0.125)
+          : moduleMm
+        return effectiefModuleMm ? { ...style, width: `${x * effectiefModuleMm}mm` } : style
+      })()}
       viewBox={`0 0 ${x} ${height}`}
       preserveAspectRatio="none"
       role="img"

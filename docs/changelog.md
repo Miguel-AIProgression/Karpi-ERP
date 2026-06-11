@@ -37,6 +37,31 @@ te hanteren → "Unit 30" opnieuw 400.
 T75038267000183, tracking op de zending, status "Onderweg", vrachtbrief-PDF
 in storage. ZEND-2026-0001 (T75038267000181) en -0003 waren al goed.
 
+## 2026-06-11 — Pakbon-layout naar oud Lieferschein-ontwerp
+
+**Waarom:** de pakbon uit Pick & Ship moet qua layout lijken op het oude
+Karpi Lieferschein-document (foto-voorbeeld KIBEK, 5 juni) — de vertrouwde
+vorm voor magazijn én ontvangers. Goedgekeurd via visual-companion-mockup;
+spec: [`2026-06-11-pakbon-lieferschein-layout-design.md`](superpowers/specs/2026-06-11-pakbon-lieferschein-layout-design.md).
+
+**Wat (branch `feat/pakbon-lieferschein-layout`):**
+- [`pakbon-document.tsx`](../frontend/src/modules/logistiek/components/pakbon-document.tsx)
+  volledig herschikt: gecentreerd KARPI GROUP-logo, grote titel "Pakbon" met
+  pakbonnr/datum ernaast, **afleveradres als hoofd-adresblok** (+ telefoon
+  uit `zendingen.afl_telefoon`, mig 339), factuuradres verhuisd naar de body
+  ("Factuuradres:", zoals "Rechnungsadresse"), referentieblok met
+  `Order/Debiteur` + `Routecode` (uit `debiteuren.route`, legacy-import;
+  regel verdwijnt als leeg), tabelkolommen **Rgl./Artikel/Omschrijving/
+  Besteld/Geleverd** (eenheid inline), hoofdregel = Karpi-omschrijving met
+  sub-regel "Uw naam: …" bij afwijkende klantnaam, **Kolli + Gewicht**
+  i.p.v. Totaal m², vaste NL-disclaimer (maat-/kleurafwijking) boven de footer.
+- "Leveringscond." uit het oude document bewust weggelaten — geen betrouwbaar
+  veld in het schema (eerdere beslissing rond "Franco").
+- Bundel-gedrag (mig 222) ongewijzigd: sub-kop per bron-order, bundel-lijst
+  in het referentieblok.
+- [`zendingen.ts`](../frontend/src/modules/logistiek/queries/zendingen.ts):
+  `fetchZendingPrintSet` selecteert nu ook `afl_telefoon` en `debiteuren.route`.
+
 ## 2026-06-11 — Fix: blanco pagina tussen tapijt-stickers in de printset
 
 Bij het printen van tapijt-stickers via Pick & Ship (zowel
@@ -57,6 +82,7 @@ in de print-CSS van beide pagina's:
    overflowen → blanco vervolgpagina. Sticker print nu op 146×104mm
    (onderkant is toch witruimte, visueel geen verschil).
 
+<<<<<<< HEAD
 ## 2026-06-11 — Shopify-plaats-bug + verzendset-herprint + verzendfout-signalering (branch `feat/zending-herprint-ingang`)
 
 **Aanleiding (incident 11-06):** twee pickrondes (ZEND-2026-0001/0002) werden
@@ -107,6 +133,30 @@ verzending.
   HST-call). Rose banner met zending-link + foutreden zodra een zending een
   open HST-fout heeft (Fout-rij zonder actieve/geslaagde opvolger). Helper
   `bepaalOpenVerzendFouten` is puur en testbaar.
+=======
+## 2026-06-11 — HST-verzendlabel tóch liggend op de 3"×6"-rol (mig 362)
+
+**Waarom:** mig 361 (hieronder) introduceerde een staand 3×6-ontwerp, maar
+Miguel wil expliciet het vertrouwde **liggende** ontwerp (zoals de oude
+3"×2"-labels uit Windows Connect kwamen: tekst dwars op de uitvoer-richting),
+alleen dan het volledige etiket vullend.
+
+**Wat (branch `fix/hst-label-liggend`):**
+- **Mig 362**: `hst_api` van 76.2×152.4 naar **152.4×76.2** (breedte×hoogte
+  van de print-página; de fysieke rol blijft 76,2 breed — de ZDesigner-driver
+  op **liggend** roteert het beeld op het etiket, exact de oude WC-flow).
+- **Compact label schaalt mee** ([shipping-label.tsx](../frontend/src/modules/logistiek/components/shipping-label.tsx)):
+  schaalfactor `s = hoogte/50.8` (1.5 op de 3×6) op rij-hoogtes, kolommen,
+  paddings, fonts en kaderdiktes; adresblok centreert verticaal. Het staande
+  ontwerp (`shipping-label-tall`) blijft bestaan voor portrait-formaten.
+- **Barcode `fitMm`-prop** ([code128-barcode.tsx](../frontend/src/modules/logistiek/components/code128-barcode.tsx)):
+  kiest zelf de grootste dot-aligned module-breedte (veelvoud 0.125mm =
+  1 dot op 203dpi) die in de beschikbare ruimte past — groot én scanbaar.
+- Banner-instructie oriëntatie is nu dynamisch: Staand bij hoog formaat,
+  **Liggend** bij breed formaat (HST).
+- **Driver:** terug naar **liggend** (zoals Miguels oorspronkelijke instelling),
+  7,62×15,24, marges/schaal-instructies ongewijzigd.
+>>>>>>> origin/main
 
 ## 2026-06-11 — HST-verzendlabel op 3"×6"-rol + thermische scherpte-fixes (mig 361)
 

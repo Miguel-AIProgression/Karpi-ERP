@@ -97,6 +97,8 @@ export interface ZendingPrintSet {
   afl_postcode: string | null
   afl_plaats: string | null
   afl_land: string | null
+  /** Mig 339: leveringstelefoonnummer-snapshot — pakbon toont 'm onder het afleveradres. */
+  afl_telefoon: string | null
   aantal_colli: number | null
   totaal_gewicht_kg: number | null
   opmerkingen: string | null
@@ -133,6 +135,8 @@ export interface ZendingPrintSet {
       /** Mig 303: per-klant voorkeur om tapijt-stickers ook voor standaard
        *  (niet-maatwerk) artikelen te printen bij de vervoerderslabels. */
       tapijt_sticker_bij_standaard: boolean | null
+      /** Legacy routecode uit de debiteuren-import — pakbon toont 'm als "Routecode". */
+      route: string | null
     } | null
     vertegenwoordigers?: {
       code: string
@@ -240,7 +244,7 @@ export async function fetchZendingPrintSet(zending_nr: string): Promise<ZendingP
     .select(
       `
       id, zending_nr, status, vervoerder_code, service_code, verzenddatum, track_trace,
-      afl_naam, afl_adres, afl_postcode, afl_plaats, afl_land,
+      afl_naam, afl_adres, afl_postcode, afl_plaats, afl_land, afl_telefoon,
       aantal_colli, totaal_gewicht_kg, opmerkingen, created_at,
       vervoerders ( code, display_naam, type, actief, label_breedte_mm, label_hoogte_mm ),
       orders!zendingen_order_id_fkey!inner (
@@ -249,7 +253,7 @@ export async function fetchZendingPrintSet(zending_nr: string): Promise<ZendingP
         fact_naam, fact_adres, fact_postcode, fact_plaats, fact_land,
         afl_naam_2,
         debiteuren:debiteuren!orders_debiteur_nr_fkey (
-          naam, gln_bedrijf, tapijt_sticker_bij_standaard
+          naam, gln_bedrijf, tapijt_sticker_bij_standaard, route
         ),
         vertegenwoordigers ( code, naam )
       ),

@@ -195,7 +195,7 @@ export function ZendingPrintSetPage() {
               <strong>Printer:</strong> Vervoerderslabels (Zebra) — of bij PDF-export: <strong>papierformaat = Custom {(labelFormaat?.breedteMm ?? 76.2)}×{(labelFormaat?.hoogteMm ?? 50.8)} mm</strong>
             </li>
             <li>
-              <strong>Oriëntatie = Staand</strong> — ook in de Zebra-driver (Voorkeursinstellingen → Papierformaat); bij liggend knipt het label in {(labelFormaat?.hoogteMm ?? 50.8) > (labelFormaat?.breedteMm ?? 76.2) ? 'drie' : 'twee'} stukken
+              <strong>Oriëntatie = {(labelFormaat?.hoogteMm ?? 50.8) > (labelFormaat?.breedteMm ?? 76.2) ? 'Staand' : 'Liggend'}</strong> — ook in de Zebra-driver (Voorkeursinstellingen → Papierformaat); verkeerde oriëntatie knipt het label in stukken
             </li>
             <li>
               <strong>Marges = Geen</strong> (onder "Meer instellingen")
@@ -296,6 +296,12 @@ export function ZendingPrintSetPage() {
         }
 
         @media print {
+          /* Lege vervolg-pagina's voorkomen: de app-layout (min-h-screen +
+             main-marges) is in print onzichtbaar maar neemt wél ruimte in,
+             waardoor de Zebra een leeg etiket uitvoert. */
+          html, body { height: auto !important; }
+          .min-h-screen { min-height: 0 !important; }
+          main { margin: 0 !important; padding: 0 !important; }
           body * { visibility: hidden; }
           .zending-printset,
           .zending-printset * { visibility: visible; }

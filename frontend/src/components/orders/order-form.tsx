@@ -3,7 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ClientSelector, type SelectedClient } from './client-selector'
 import { AddressSelector } from './address-selector'
+import type { AfleverAdres } from './address-selector'
 import { InvoiceAddressEditor, type FactuurAdres, type FactuurContact } from './invoice-address-editor'
+import { DeliveryAddressEditor } from './delivery-address-editor'
 import { OrderLineEditor } from './order-line-editor'
 import { LevertijdSuggestie } from './levertijd-suggestie'
 import { LeverModusDialog, type LeverModusTekort } from './lever-modus-dialog'
@@ -80,6 +82,8 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
   const [dropshipKeuze, setDropshipKeuze] = useState<DropshipmentKeuze>(
     () => detecteerDropshipKeuze(initialData?.regels ?? [])
   )
+  // UI-only: id van het geselecteerde afleveradressen-record (voor "opslaan als permanent").
+  const [selectedAfleveradresId, setSelectedAfleveradresId] = useState<number | undefined>(undefined)
 
   // In edit-modus laadt clientData asynchroon na de eerste render.
   // Sync de prijslijst en korting zodra die beschikbaar komen.
@@ -196,11 +200,13 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
         fact_postcode: c.fact_postcode ?? c.postcode ?? undefined,
         fact_plaats: c.fact_plaats ?? c.plaats ?? undefined,
         fact_land: c.land ?? 'NL',
+        fact_email: c.email_factuur || c.email_overig || undefined,
         afl_naam: c.naam,
         afl_adres: c.adres ?? undefined,
         afl_postcode: c.postcode ?? undefined,
         afl_plaats: c.plaats ?? undefined,
         afl_land: c.land ?? 'NL',
+        afl_email: c.email_overig || undefined,
         lever_type: h.lever_type ?? c.default_lever_type ?? 'week',
       }))
       applyAfleverdatum(regels, c)
@@ -249,7 +255,8 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
     }
   }
 
-  const handleAddressSelect = (addr: { naam: string; adres: string; postcode: string; plaats: string; land: string }) => {
+  const handleAddressSelect = (addr: AfleverAdres) => {
+    setSelectedAfleveradresId(addr.afleveradresId)
     setHeader((h) => ({
       ...h,
       afl_naam: addr.naam,
@@ -257,6 +264,8 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
       afl_postcode: addr.postcode,
       afl_plaats: addr.plaats,
       afl_land: addr.land,
+      // Als het afleveradres een eigen email heeft, gebruik die; anders val terug op klant-email
+      afl_email: addr.email ?? client?.email_overig ?? h.afl_email,
     }))
   }
 
@@ -269,6 +278,14 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
       fact_plaats: addr.plaats,
       fact_land: addr.land,
     }))
+  }
+
+  const handleFactuurEmailChange = (email: string) => {
+    setHeader((h) => ({ ...h, fact_email: email || undefined }))
+  }
+
+  const handleAflEmailChange = (email: string) => {
+    setHeader((h) => ({ ...h, afl_email: email || undefined }))
   }
 
   const handleFactuurAdresSavedAsDefault = (addr: FactuurAdres, contact: FactuurContact) => {
@@ -750,10 +767,21 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
                 email_factuur: client.email_factuur ?? '',
                 email_overig: client.email_overig ?? '',
               }}
+              factEmail={header.fact_email ?? ''}
               onAdresChange={handleFactuurAdresChange}
+              onEmailChange={handleFactuurEmailChange}
               onSavedAsDefault={handleFactuurAdresSavedAsDefault}
             />
-            <AddressPreview title="Afleveradres" naam={header.afl_naam} adres={header.afl_adres} postcode={header.afl_postcode} plaats={header.afl_plaats} />
+            <DeliveryAddressEditor
+              naam={header.afl_naam}
+              adres={header.afl_adres}
+              postcode={header.afl_postcode}
+              plaats={header.afl_plaats}
+              aflEmail={header.afl_email ?? ''}
+              afleveradresId={selectedAfleveradresId}
+              debiteurNr={client.debiteur_nr}
+              onEmailChange={handleAflEmailChange}
+            />
           </div>
         )
       )}
@@ -979,17 +1007,3 @@ function LeverDatumField({
   )
 }
 
-function AddressPreview({ title, naam, adres, postcode, plaats }: {
-  title: string; naam?: string; adres?: string; postcode?: string; plaats?: string
-}) {
-  return (
-    <div className="bg-slate-50 rounded-[var(--radius-sm)] p-4">
-      <div className="text-xs font-medium text-slate-500 mb-1">{title}</div>
-      <div className="text-sm">
-        {naam && <p className="font-medium">{naam}</p>}
-        {adres && <p>{adres}</p>}
-        <p>{[postcode, plaats].filter(Boolean).join(' ')}</p>
-      </div>
-    </div>
-  )
-}
