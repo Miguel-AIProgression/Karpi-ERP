@@ -41,7 +41,12 @@ goed aan, maar er zaten vier losse fouten achter:
 orderbevestiging@trendhopperbreda.nl, `fact_email` → zr-pdf@… hersteld;
 `afleveradressen` id 6805 (ETTENSEBAAN, het factuuradres) droeg het
 factuur-e-mailadres als adres-e-mail → geleegd zodat de ladder voortaan op
-klant-niveau (`email_verzend`/`email_overig`) uitvalt.
+klant-niveau (`email_verzend`/`email_overig`) uitvalt. Naveeg (zelfde dag,
+mig 367/368-ladder, alleen-vullen-waar-leeg): ook ORD-2026-0152/0305/0343/
+0347/0352 hadden door de edit-bug lege snapshots → hersteld en geverifieerd.
+De ~46 overige open orders met lege snapshots zijn klanten zónder enig
+e-mailadres op de klantkaart — daar is niets te vullen (conform de
+migratie-backfill); script: `scripts/_tmp_hotfix_orderbev_email.mjs`.
 
 ## 2026-06-11 — Klant-niveau verzend-e-mailadres `debiteuren.email_verzend` (mig 369, branch `fix/dropship-afl-email`)
 
