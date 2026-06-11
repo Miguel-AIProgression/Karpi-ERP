@@ -1,5 +1,10 @@
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase/client'
+import {
+  DROPSHIP_EMAIL_MELDING,
+  isBlokkerendDropshipEmailProbleem,
+  type DropshipEmailProbleem,
+} from '@/lib/orders/dropship-email'
 
 interface DeliveryAddressEditorProps {
   naam?: string
@@ -12,12 +17,14 @@ interface DeliveryAddressEditorProps {
   afleveradresId?: number
   debiteurNr: number | null
   onEmailChange: (email: string) => void
+  /** Alleen gevuld bij dropshipment-orders: toets van het T&T-adres (dropship-email.ts). */
+  dropshipEmailProbleem?: DropshipEmailProbleem | null
 }
 
 export function DeliveryAddressEditor({
   naam, adres, postcode, plaats,
   aflEmail, afleveradresId, debiteurNr,
-  onEmailChange,
+  onEmailChange, dropshipEmailProbleem,
 }: DeliveryAddressEditorProps) {
   const [editing, setEditing] = useState(false)
   const [draftEmail, setDraftEmail] = useState(aflEmail)
@@ -87,9 +94,19 @@ export function DeliveryAddressEditor({
               {aflEmail} <span className="text-slate-400">· track &amp; trace</span>
             </p>
           )}
-          {!aflEmail && (
+          {!aflEmail && dropshipEmailProbleem !== 'ontbreekt' && (
             <p className="mt-1 text-amber-600 text-xs italic">
               Geen e-mailadres — klant ontvangt geen track &amp; trace
+            </p>
+          )}
+          {dropshipEmailProbleem === 'ontbreekt' && (
+            <p className="mt-1 text-amber-600 text-xs">
+              {DROPSHIP_EMAIL_MELDING.ontbreekt}
+            </p>
+          )}
+          {isBlokkerendDropshipEmailProbleem(dropshipEmailProbleem ?? null) && (
+            <p className="mt-1 text-rose-600 text-xs">
+              {DROPSHIP_EMAIL_MELDING[dropshipEmailProbleem!]}
             </p>
           )}
         </div>

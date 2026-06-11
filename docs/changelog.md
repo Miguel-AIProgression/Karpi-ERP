@@ -1,5 +1,41 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-11 — Dropshipment: track & trace-e-mail mag nooit het factuur-adres zijn (mig 368, branch `fix/dropship-afl-email`)
+
+**Melding Marjon (sales support):** "Het mailadres van de dropshipment voor de
+track and trace is NIET hetzelfde als de factuur. Dus dat moet anders zijn."
+
+**Diagnose:** bij een dropshipment-order levert Karpi rechtstreeks aan de
+consument namens de winkel. Het orderformulier defaultte `afl_email` (= T&T-
+adres richting vervoerder, mig 364/365) echter uit `debiteuren.email_overig`,
+en backfill mig 367 deed hetzelfde op bestaande orders → de winkel kreeg de
+track & trace, de consument niets.
+
+**Herkenning als data (mig 368):** nieuw `producten.is_dropship` (TRUE op
+DROPSHIP-KLEIN/GROOT) + SQL-predicaat `is_dropship_order(order_id)` — spiegelt
+TS `detecteerDropshipKeuze`. Nieuw dropship-artikel = `UPDATE producten`.
+
+**Fix in vier lagen:**
+1. **Orderformulier** ([`order-form.tsx`](../frontend/src/components/orders/order-form.tsx)):
+   bij dropship-keuze wordt een gedefault afl_email (= debiteur-/factuur-adres)
+   leeggemaakt; klant-selectie en afleveradres-keuze defaulten niet meer naar
+   de debiteur-e-mail zolang dropship actief is; opslaan blokkeert als
+   afl_email gelijk is aan het factuur-/debiteur-adres (leeg = toegestaan,
+   alleen amber hint — geen T&T is beter dan T&T naar de winkel).
+2. **UI-hints:** rose/amber meldingen in
+   [`delivery-address-editor.tsx`](../frontend/src/components/orders/delivery-address-editor.tsx)
+   en op order-detail ([`order-addresses.tsx`](../frontend/src/components/orders/order-addresses.tsx)).
+3. **Trigger-guard (defense-in-depth):** `fn_zending_fill_email` (mig 365)
+   kopieert bij dropship-orders het order-afl_email NIET naar de zending als
+   het gelijk is aan het factuur-/debiteur-adres.
+4. **Data-fix:** open dropship-orders + nog niet verstuurde zendingen waar
+   afl_email het factuur-/debiteur-adres was → NULL (operator vult het
+   consument-adres aan; rose hint wijst erop).
+
+Pure helper: [`dropship-email.ts`](../frontend/src/lib/orders/dropship-email.ts)
+(`dropshipAflEmailProbleem`, case-/whitespace-ongevoelig) + unit tests.
+Typecheck groen; suite groen op de bekende pre-existing pickbaarheid-test na.
+
 ## 2026-06-11 — Voorraad-0-artikel toevoegen aan order: keuze prominent + levertijd vooraf zichtbaar (branch `fix/voorraad-0-artikel-toevoegen-ux`)
 
 **Melding Marjon (sales support):** "Als een artikel geen voorraad heeft kan ik
