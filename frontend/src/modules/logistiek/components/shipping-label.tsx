@@ -58,13 +58,14 @@ function ShippingLabelCompact({
   const ref = String(order.oud_order_nr ?? order.id).padStart(6, '0')
 
   // Schaalfactor t.o.v. het basis-ontwerp: 1.0 op een 3"×2"-rol, 1.5 op de
-  // volle 3"×6" liggend. Hoogte is leidend — de extra breedte gaat naar de
-  // linkerkolom (adres/product/barcode krijgen meer ruimte).
+  // volle 3"×6" liggend. Hoogte stuurt rijen en fonts; de rechterkolom blijft
+  // proportioneel aan de BREEDTE zodat de verhoudingen van het origineel
+  // behouden blijven (anders oogt de linkerkolom uitgerekt).
   const s = hoogteMm / (DEFAULT_LABEL_HOOGTE_MM - 0.5)
   const fz = (px: number) => `${Math.round(px * s * 10) / 10}px`
   const dik = (px: number) => `${Math.max(px, Math.round(px * s))}px`
 
-  const colRechtsMm = COL_RECHTS_MM * s
+  const colRechtsMm = breedteMm * (COL_RECHTS_MM / (DEFAULT_LABEL_BREEDTE_MM - 0.5))
   const rij1Mm = RIJ1_MM * s
   const rij3Mm = RIJ3_MM * s
   const colLinksMm = breedteMm - colRechtsMm
@@ -195,9 +196,6 @@ function ShippingLabelCompact({
             lineHeight: 1.25,
             boxSizing: 'border-box',
             overflow: 'hidden',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
           }}
         >
           <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
