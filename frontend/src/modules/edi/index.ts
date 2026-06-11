@@ -22,6 +22,7 @@ export {
   upsertHandelspartnerConfig,
   ruimEdiDemoData,
   fetchInkomendBerichtVoorOrder,
+  fetchUitgaandeEdiBerichtenVoorOrder,
   type EdiBerichtListItem,
   type EdiBerichtenFilters,
   type EdiHandelspartnerConfig,
@@ -29,6 +30,7 @@ export {
   type EdiRichting,
   type EdiBerichtType,
   type EdiBerichtDetail,
+  type EdiUitgaandTijdlijnItem,
 } from './queries/edi'
 
 export { bevestigOrderViaEdi, bevestigOrderZonderEdiBericht } from './lib/bevestig-helper'
