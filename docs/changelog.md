@@ -1,5 +1,15 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-11 — Universele bevestig-knop: kanaal-dispatch EDI vs e-mail
+
+**Aanleiding:** EDI-orders kregen nul orderbevestigingen na de EDI-cutover van 3 juni — de "Bevestig order"-knop stuurde altijd e-mail, ook bij EDI-orders. Bovendien werd de `orderbev_uit`-toggle in `edi_handelspartner_config` nergens gecheckt, waardoor partners die géén orderbev willen (SB Möbel BOSS 150761, Hammer 330955) er toch een kregen. Ontwerp-besluit: EDI-orders krijgen nooit e-mail; het kanaal hangt aan de order (`bron_systeem`), niet aan de klant.
+
+- **`bepaalBevestigingKanaal` + `isOrderBevestigd`** ([`bevestiging-kanaal.ts`](../frontend/src/lib/orders/bevestiging-kanaal.ts)): pure dispatcher — `bron_systeem='edi'` + `transus_actief && orderbev_uit` → `'edi'`; `bron_systeem='edi'` anders → `'edi_stil'`; overige orders → `'email'`. Één bevestigd-predicaat: EDI-orders via gate `edi_bevestigd_op` (mig 158), gewone orders via `bevestigd_at` (mig 304).
+- **`bevestigOrderZonderEdiBericht`** ([`bevestig-helper.ts`](../frontend/src/modules/edi/lib/bevestig-helper.ts)): kanaal `edi_stil` — zet uitsluitend de `edi_bevestigd_op`-gate via RPC `markeer_order_edi_bevestigd`, geen ORDRSP, geen e-mail.
+- **Gedeelde hook `useBevestigEdiOrder`** ([`use-bevestig-edi-order.ts`](../frontend/src/modules/edi/lib/use-bevestig-edi-order.ts)): gedeeld door het amber leverweek-paneel (`edi-leverweek-bevestigen.tsx`) én de nieuwe `BevestigOrderEdiDialog`; laadt `edi_handelspartner_config` en bepaalt het kanaal.
+- **`BevestigOrderEdiDialog`** ([`bevestig-order-edi-dialog.tsx`](../frontend/src/components/orders/bevestig-order-edi-dialog.tsx)): EDI-variant — leverweek kiezen, geen e-mailveld; bij `edi` → ORDRSP op `edi_berichten`-wachtrij → `transus-send`; bij `edi_stil` → alleen administratief.
+- **Kanaal-dispatch in `order-header.tsx`**: groene knop opent bij `bron_systeem='edi'` de EDI-dialog, anders de e-maildialog; badge via `isOrderBevestigd`; "Opnieuw versturen" alleen voor niet-EDI.
+
 ## 2026-06-11 — Klant-niveau verzend-e-mailadres `debiteuren.email_verzend` (mig 369, branch `fix/dropship-afl-email`)
 
 **Voorstel Piet-Hein (akkoord Marjon):** per klant een apart e-mailadres voor

@@ -148,6 +148,28 @@ Eenmalige gates (EDI-leverweek, debiteur) vs. herhaalbare gate (levertijd) — b
 verschillend ontworpen (zie CLAUDE.md, mig 326-toelichting). Alle predicaten hebben
 één bron-van-waarheid-helper; inline duplicaten zijn opgeruimd (intake-consolidatie slice 2).
 
+## 6a. Orderbevestiging — kanaal-dispatch (plan 2026-06-11)
+
+De "Bevestig order"-knop in [`order-header.tsx`](../frontend/src/components/orders/order-header.tsx)
+dispatcht op `bron_systeem` en partnerconfig via `bepaalBevestigingKanaal` in
+[`bevestiging-kanaal.ts`](../frontend/src/lib/orders/bevestiging-kanaal.ts):
+
+| `bron_systeem` | Partnerconfig | Kanaal | Wat gebeurt er |
+|---|---|---|---|
+| ≠ `'edi'` | n.v.t. | `email` | PDF-orderbevestiging via `stuur-orderbevestiging` (gate `bevestigd_at`, mig 304) |
+| `'edi'` | `transus_actief && orderbev_uit` | `edi` | ORDRSP op `edi_berichten`-wachtrij → `transus-send` (gate `edi_bevestigd_op`, mig 158) |
+| `'edi'` | anders | `edi_stil` | Alleen gate `edi_bevestigd_op` zetten via RPC `markeer_order_edi_bevestigd` — géén bericht, géén mail |
+
+**Twee bevestigings-gates — onderscheid:**
+- `bevestigd_at` (mig 304): e-mail-orderbevestiging voor niet-EDI-orders. Telt ook voor "Opnieuw versturen".
+- `edi_bevestigd_op` (mig 158): EDI-leverweek-bevestiging. Dezelfde gate dekt zowel de leverweek-flow (`EdiLeverweekBevestigen`) als de universele bevestig-knop (`BevestigOrderEdiDialog`).
+
+**Eén bevestigd-predicaat:** `isOrderBevestigd(order)` in [`bevestiging-kanaal.ts`](../frontend/src/lib/orders/bevestiging-kanaal.ts) — leest `edi_bevestigd_op` voor EDI-orders en `bevestigd_at` voor de rest. Alle UI-badges en guards gebruiken dit predicaat.
+
+**EDI-orders krijgen nooit e-mail.** Ook niet als de klant telefonisch bestelt en de order handmatig aangemaakt is met `bron_systeem='edi'` — het kanaal hangt aan de order, niet aan de klant. Een EDI-klant die via een ander kanaal bestelt krijgt een e-mail via het bijbehorende kanaal.
+
+**Gedeelde flow `useBevestigEdiOrder`** ([`use-bevestig-edi-order.ts`](../frontend/src/modules/edi/lib/use-bevestig-edi-order.ts)): laadt `edi_handelspartner_config`, bepaalt het kanaal en roept `bevestigOrderZonderEdiBericht` (kanaal `edi_stil`, [`bevestig-helper.ts`](../frontend/src/modules/edi/lib/bevestig-helper.ts)) of `bevestigOrderViaEdi` (kanaal `edi`) aan.
+
 ## 7. Intake-kanalen — verschillen-matrix
 
 | | Handmatig | EDI | Shopify | Lightspeed webhook | Lightspeed cron | E-mail |
