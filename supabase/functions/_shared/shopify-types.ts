@@ -95,16 +95,25 @@ export interface ShopifyOrderWebhook {
   company?: { id: number; name: string; location?: { id: number; name?: string } } | null
 }
 
-/** Zet een Shopify-adres om naar de veldnamen die `create_webshop_order` verwacht. */
+/**
+ * Zet een Shopify-adres om naar de veldnamen die `create_webshop_order` verwacht.
+ * LET OP: de RPC leest p_header via `->>'sleutel'` en dropt onbekende sleutels
+ * geruisloos (zie reference_jsonb_rpc_sleutel_drop) — sleutelnamen hier moeten
+ * dus exact matchen met de kolomlijst in de RPC (mig 343): afl_naam, afl_naam_2,
+ * afl_adres, afl_postcode, afl_plaats, afl_land, afl_email, afl_telefoon,
+ * fact_naam, fact_adres, fact_postcode, fact_plaats, fact_land.
+ * Incident 11-06-2026: `afl_stad` werd gedropt → 20 orders zonder afl_plaats
+ * → HST pre-flight "plaats is leeg".
+ */
 export function extractShopifyShippingAddress(order: ShopifyOrderWebhook): Record<string, string | null> {
   const a = order.shipping_address ?? order.billing_address
   if (!a) return {}
   return {
     afl_naam: [a.first_name, a.last_name].filter(Boolean).join(' ') || a.name || a.company || null,
-    afl_bedrijf: a.company ?? null,
+    afl_naam_2: a.company ?? null,
     afl_adres: [a.address1, a.address2].filter(Boolean).join(' ') || null,
     afl_postcode: a.zip ?? null,
-    afl_stad: a.city ?? null,
+    afl_plaats: a.city ?? null,
     afl_land: a.country_code ?? a.country ?? null,
     afl_telefoon: a.phone ?? null,
   }
@@ -115,10 +124,9 @@ export function extractShopifyBillingAddress(order: ShopifyOrderWebhook): Record
   if (!a) return {}
   return {
     fact_naam: [a.first_name, a.last_name].filter(Boolean).join(' ') || a.name || a.company || null,
-    fact_bedrijf: a.company ?? null,
     fact_adres: [a.address1, a.address2].filter(Boolean).join(' ') || null,
     fact_postcode: a.zip ?? null,
-    fact_stad: a.city ?? null,
+    fact_plaats: a.city ?? null,
     fact_land: a.country_code ?? a.country ?? null,
   }
 }
@@ -142,12 +150,10 @@ export function shopifyLineItemToMatcherRow(item: ShopifyLineItem) {
   const lengteProp = findProp(['lengte', 'length'])
   const breedteProp = findProp(['breedte', 'width', 'breed'])
 
-  // Shopify's maatwerk-app laat `sku` soms leeg en levert de Karpi-productcode
-  // dan via een line-item property "Maatwerk-sku" (bv. "LAGO13XXMAATWERK").
-  // Die code is autoritatief (zie matchProduct's articleCode-override) — zonder
-  // deze fallback blijft hij onbenut en valt de matcher terug op fuzzy naam-matching.
-  const maatwerkSkuProp = findProp(['maatwerk-sku', 'maatwerk sku'])
-  const sku = item.sku?.trim() || maatwerkSkuProp || null
+  // Shopify "Selections"-producten (configurator-pricing) hebben geen item.sku maar
+  // wel een "Maatwerk-sku" property met de echte productcode.
+  const maatverkSku = findProp(['maatwerk-sku', 'maatwerk_sku'])
+  const effectiveSku = item.sku ?? maatverkSku ?? null
 
   // Bouw variantTitle op: variant_title als basis, vul aan met dimensies
   let variantTitle = item.variant_title ?? null
@@ -158,22 +164,12 @@ export function shopifyLineItemToMatcherRow(item: ShopifyLineItem) {
     variantTitle = dimensieProp
   }
 
-  // Shopify's maatwerk-app levert de échte specificaties vaak als losse
-  // line-item `properties` i.p.v. in variant_title — bijv. een property
-  // genaamd "Maatwerk" met waarde "260x250 rechthoek", of "custom-vorm"
-  // met waarde "organic". `"naam: waarde"` zodat parseMaatwerkDims/detectVorm
-  // (via collectExtraTexts → extraTexts) zowel de sleutel als de inhoud zien
-  // — exact dezelfde parser als voor mail-orders, geen aparte Shopify-logica.
-  const extraTexts = (item.properties ?? [])
-    .filter(p => p.name && p.value)
-    .map(p => `${p.name}: ${p.value}`)
-
   return {
     id: item.id,
     productTitle: item.title,
     variantTitle,
-    articleCode: sku,
-    sku,
+    articleCode: effectiveSku,
+    sku: effectiveSku,
     ean: null,
     quantityOrdered: item.quantity,
     priceExcl: parseFloat(item.price ?? '0') || 0,
@@ -183,6 +179,7 @@ export function shopifyLineItemToMatcherRow(item: ShopifyLineItem) {
     // Wij converteren hier zelf naar kg zodat de caller dat niet hoeft.
     weight: item.grams != null ? item.grams * 1000 : undefined, // gram → milli-gram (≈ micro-kg ×1000/1000)
     customFields: undefined,
-    extraTexts,
+    // Extra velden voor de maatwerk-dims-parser
+    _shopifyProperties: item.properties ?? [],
   }
 }
