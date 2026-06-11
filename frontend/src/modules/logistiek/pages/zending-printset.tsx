@@ -195,7 +195,7 @@ export function ZendingPrintSetPage() {
               <strong>Printer:</strong> Vervoerderslabels (Zebra) — of bij PDF-export: <strong>papierformaat = Custom {(labelFormaat?.breedteMm ?? 76.2)}×{(labelFormaat?.hoogteMm ?? 50.8)} mm</strong>
             </li>
             <li>
-              <strong>Oriëntatie = Staand</strong> — ook in de Zebra-driver (Voorkeursinstellingen → Papierformaat); bij liggend knipt het label in {(labelFormaat?.hoogteMm ?? 50.8) > (labelFormaat?.breedteMm ?? 76.2) ? 'drie' : 'twee'} stukken
+              <strong>Oriëntatie = {(labelFormaat?.hoogteMm ?? 50.8) > (labelFormaat?.breedteMm ?? 76.2) ? 'Staand' : 'Liggend'}</strong> — ook in de Zebra-driver (Voorkeursinstellingen → Papierformaat); verkeerde oriëntatie knipt het label in stukken
             </li>
             <li>
               <strong>Marges = Geen</strong> (onder "Meer instellingen")

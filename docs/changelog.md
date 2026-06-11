@@ -1,5 +1,28 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-11 — HST-verzendlabel tóch liggend op de 3"×6"-rol (mig 362)
+
+**Waarom:** mig 361 (hieronder) introduceerde een staand 3×6-ontwerp, maar
+Miguel wil expliciet het vertrouwde **liggende** ontwerp (zoals de oude
+3"×2"-labels uit Windows Connect kwamen: tekst dwars op de uitvoer-richting),
+alleen dan het volledige etiket vullend.
+
+**Wat (branch `fix/hst-label-liggend`):**
+- **Mig 362**: `hst_api` van 76.2×152.4 naar **152.4×76.2** (breedte×hoogte
+  van de print-página; de fysieke rol blijft 76,2 breed — de ZDesigner-driver
+  op **liggend** roteert het beeld op het etiket, exact de oude WC-flow).
+- **Compact label schaalt mee** ([shipping-label.tsx](../frontend/src/modules/logistiek/components/shipping-label.tsx)):
+  schaalfactor `s = hoogte/50.8` (1.5 op de 3×6) op rij-hoogtes, kolommen,
+  paddings, fonts en kaderdiktes; adresblok centreert verticaal. Het staande
+  ontwerp (`shipping-label-tall`) blijft bestaan voor portrait-formaten.
+- **Barcode `fitMm`-prop** ([code128-barcode.tsx](../frontend/src/modules/logistiek/components/code128-barcode.tsx)):
+  kiest zelf de grootste dot-aligned module-breedte (veelvoud 0.125mm =
+  1 dot op 203dpi) die in de beschikbare ruimte past — groot én scanbaar.
+- Banner-instructie oriëntatie is nu dynamisch: Staand bij hoog formaat,
+  **Liggend** bij breed formaat (HST).
+- **Driver:** terug naar **liggend** (zoals Miguels oorspronkelijke instelling),
+  7,62×15,24, marges/schaal-instructies ongewijzigd.
+
 ## 2026-06-11 — HST-verzendlabel op 3"×6"-rol + thermische scherpte-fixes (mig 361)
 
 **Waarom:** het verzendlabel op de Pick & Ship-verzendset stond hard op
