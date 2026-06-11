@@ -8,10 +8,9 @@
 
 Elke debiteur heeft `debiteuren.btw_percentage` (NUMERIC, default 21.00) en sinds mig 164 een vlag `debiteuren.btw_verlegd_intracom` (BOOLEAN). De vlag staat correct op TRUE bij alle Duitse debiteuren (556 totaal, 134 actief) én bij andere EU-klanten (o.a. 67 actieve Belgische). Maar de facturatie-keten kijkt alléén naar `btw_percentage`, dat bij **iedereen** op 21 staat:
 
-- `genereer_factuur` (laatste definitie: mig 227)
-- `genereer_factuur_voor_week` (mig 232)
-- `genereer_factuur_voor_bundel` (mig 341)
-- `stuur-orderbevestiging` edge function (`Number(deb?.btw_percentage ?? 21)`)
+- `genereer_factuur_voor_bundel` (mig 341) — **de enige live factuur-RPC**: `genereer_factuur` (mig 227) en `genereer_factuur_voor_week` (mig 232) zijn door **mig 240 gedropt**; `factuur-verzenden` heeft nog legacy-fallback-paden naar die gedropte functies, maar die kunnen alleen falen en blijven buiten scope.
+- `stuur-orderbevestiging` edge function (`Number(deb?.btw_percentage ?? 21)`) — voedt zowel de HTML-mail als de PDF-bijlage (`_shared/orderbevestiging-pdf.ts`).
+- `factuur-pdf` edge function (real-time preview/download van een factuur) rendert `facturen.btw_percentage` via dezelfde `_shared/factuur-pdf.ts`.
 
 De EDI-INVOIC-mapper (`_shared/transus-formats/factuur-mapper.ts`) en de orderbev-XML-download kijken wél al naar de verlegd-vlag en sturen 0%. Er is dus een bestaande inconsistentie: EDI-factuur zegt 0%, de opgeslagen factuur + PDF zeggen 21%.
 
@@ -38,22 +37,22 @@ Eén regel, op twee plekken gespiegeld (seam-patroon zoals `_shared/debiteur-mat
 
 ### 2. Snapshot op factuur
 
-Nieuwe kolom `facturen.btw_verlegd BOOLEAN NOT NULL DEFAULT FALSE`. De drie RPC's vullen die uit `debiteuren.btw_verlegd_intracom` op factuur-aanmaak-moment (zelfde snapshot-principe als `facturen.btw_nummer`, mig 125). De PDF weet daardoor achteraf dat 0% "verlegd" betekent.
+Nieuwe kolom `facturen.btw_verlegd BOOLEAN NOT NULL DEFAULT FALSE`. De RPC vult die uit `debiteuren.btw_verlegd_intracom` op factuur-aanmaak-moment (zelfde snapshot-principe als `facturen.btw_nummer`, mig 125). De PDF weet daardoor achteraf dat 0% "verlegd" betekent.
 
-### 3. Factuur-RPC's
+### 3. Factuur-RPC
 
-De **laatste** definities aanpassen (mig 227, 232, 341 — niet de oudere versies):
+Alleen `genereer_factuur_voor_bundel` aanpassen (laatste definitie: mig 341; de andere RPC's bestaan sinds mig 240 niet meer):
 - `v_btw_pct := effectief_btw_pct(v_debiteur.btw_verlegd_intracom, v_debiteur.btw_percentage);`
 - `INSERT INTO facturen (..., btw_verlegd)` meenemen.
 - Verder ongewijzigd: `btw_bedrag = ROUND(subtotaal × pct / 100, 2)` werkt vanzelf (0%→€0), no-op-guards en korting-/verzendkosten-logica blijven intact.
 
 ### 4. Factuur-PDF (`_shared/factuur-pdf.ts`)
 
-`FactuurData` krijgt `btw_verlegd: boolean`. In `drawBtwBlok` (regel ~433): bij `btw_verlegd` géén BTW-%/BTWbedrag-kolommen maar de regel **"BTW verlegd — btw-nr afnemer: {factuur.btw_nummer}"** (bij ontbrekend nummer alleen "BTW verlegd"). Totaal = subtotaal.
+`FactuurHeader` krijgt `btw_verlegd?: boolean` en `btw_nummer_afnemer?: string | null`. In `drawBtwBlok` (regel ~436): bij `btw_verlegd` géén BTW-%/BTWbedrag-waarden maar de regel **"BTW verlegd — btw-nr afnemer: {btw_nummer_afnemer}"** (bij ontbrekend nummer alleen "BTW verlegd"). Totaal = subtotaal. Beide callers vullen de nieuwe velden uit de factuur-rij: `factuur-verzenden` (stap "Bouw PDF") én de `factuur-pdf` preview-function.
 
-### 5. Orderbevestiging-email (`stuur-orderbevestiging`)
+### 5. Orderbevestiging-email + -PDF (`stuur-orderbevestiging`, `_shared/orderbevestiging-pdf.ts`)
 
-Gebruikt de TS-helper i.p.v. `deb?.btw_percentage ?? 21`. Bij verlegd toont de bevestiging "BTW verlegd" in plaats van een 21%-regel.
+Gebruikt de TS-helper i.p.v. `deb?.btw_percentage ?? 21` (debiteuren-select uitbreiden met `btw_verlegd_intracom`). Bij verlegd tonen zowel de HTML-mail als de PDF-bijlage "BTW verlegd" in plaats van een 21%-regel — nieuwe `btwVerlegd`-sleutel in het 4-talige `VERTALINGEN`-object (nl/de/fr/en; de: "Steuerschuldnerschaft des Leistungsempfängers (Reverse Charge)").
 
 ### 6. Klant-detail UI (`klant-facturering-tab.tsx`)
 
