@@ -1007,17 +1007,3 @@ function LeverDatumField({
   )
 }
 
-function AddressPreview({ title, naam, adres, postcode, plaats }: {
-  title: string; naam?: string; adres?: string; postcode?: string; plaats?: string
-}) {
-  return (
-    <div className="bg-slate-50 rounded-[var(--radius-sm)] p-4">
-      <div className="text-xs font-medium text-slate-500 mb-1">{title}</div>
-      <div className="text-sm">
-        {naam && <p className="font-medium">{naam}</p>}
-        {adres && <p>{adres}</p>}
-        <p>{[postcode, plaats].filter(Boolean).join(' ')}</p>
-      </div>
-    </div>
-  )
-}
