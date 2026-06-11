@@ -277,7 +277,7 @@ Deno.test('bouwTransportOrderPayload — lange toevoeging landt in NameAddition'
       afl_naam: 'Jeanette van Duffelen',
       afl_adres: 'Saturnusstraat 60 (Unit 30)',
       afl_postcode: '2516 AH', afl_plaats: "'s-Gravenhage", afl_land: 'NL',
-      afl_telefoon: '06-57996440',
+      afl_telefoon: '06-57996440', afl_email: null,
       totaal_gewicht_kg: 10, aantal_colli: 1, opmerkingen: null, verzenddatum: '2026-06-11',
     },
     order: { order_nr: 'ORD-2026-0110' },
