@@ -359,7 +359,12 @@ export function ZendingPrintSetPage() {
           .tapijt-stickers .sticker-wrapper > span {
             display: none !important;
           }
+          /* page: MOET ook op .sticker-wrapper (de box met de forced
+             break) — stond hij alleen op het geneste .sticker-label, dan
+             wisselt de page-naam (default ↔ tapijt-sticker) bij elke
+             wrapper-grens en injecteert Chromium een blanco tussenpagina. */
           .tapijt-stickers .sticker-wrapper {
+            page: tapijt-sticker;
             margin: 0 !important;
             padding: 0 !important;
             break-inside: avoid !important;
@@ -369,8 +374,14 @@ export function ZendingPrintSetPage() {
             break-after: page !important;
             page-break-after: always !important;
           }
+          /* 2mm kleiner dan de 148x106-page: een exact passende sticker
+             overflowt bij sub-pixel-afronding of een onbedrukbare
+             printerrand → blanco vervolgpagina per sticker. Onderkant van
+             de sticker is witruimte, dus visueel geen verschil. */
           .tapijt-stickers .sticker-label {
             page: tapijt-sticker;
+            width: 146mm !important;
+            height: 104mm !important;
             break-inside: avoid !important;
             page-break-inside: avoid !important;
             margin: 0 !important;
