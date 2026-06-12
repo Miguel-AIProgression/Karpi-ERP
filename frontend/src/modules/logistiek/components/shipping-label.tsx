@@ -14,7 +14,10 @@ export interface ShippingLabelProps {
   colliIndex: number
   colliTotal: number
   vervoerderNaam: string
-  sscc: string
+  /** SSCC uit `zending_colli` (= de bij de vervoerder aangemelde barcode).
+   * null → label rendert zonder barcode; er mag nooit een niet-aangemelde
+   * barcode geprint worden. */
+  sscc: string | null
   labelFormaat?: LabelFormaat
 }
 
@@ -54,7 +57,7 @@ function ShippingLabelCompact({
   const toonKarpi = namen.karpiNaam && namen.karpiNaam !== namen.klantNaam
   const maat = productMaat(regel)
   const land = zending.afl_land ?? 'NL'
-  const barcodeValue = `00${sscc}`
+  const barcodeValue = sscc ? `00${sscc}` : null
   const ref = String(order.oud_order_nr ?? order.id).padStart(6, '0')
 
   // Schaalfactor t.o.v. het basis-ontwerp: 1.0 op een 3"×2"-rol, 1.5 op de
@@ -276,20 +279,32 @@ function ShippingLabelCompact({
           justifyContent: 'center',
         }}
       >
-        <Code128Barcode value={barcodeValue} fitMm={barcodeFitMm} style={{ height: `${8 * s}mm` }} />
-        <div
-          style={{
-            marginTop: `${0.3 * s}mm`,
-            textAlign: 'center',
-            fontFamily: 'monospace',
-            fontSize: fz(9),
-            fontWeight: 600,
-            letterSpacing: '0.12em',
-            lineHeight: 1,
-          }}
-        >
-          {barcodeValue}
-        </div>
+        {barcodeValue ? (
+          <>
+            <Code128Barcode
+              value={barcodeValue}
+              fitMm={barcodeFitMm}
+              style={{ height: `${8 * s}mm` }}
+            />
+            <div
+              style={{
+                marginTop: `${0.3 * s}mm`,
+                textAlign: 'center',
+                fontFamily: 'monospace',
+                fontSize: fz(9),
+                fontWeight: 600,
+                letterSpacing: '0.12em',
+                lineHeight: 1,
+              }}
+            >
+              {barcodeValue}
+            </div>
+          </>
+        ) : (
+          <div style={{ fontSize: fz(7), textAlign: 'center' }}>
+            Geen colli-barcode geregistreerd
+          </div>
+        )}
       </div>
 
       {/* Rij 3 — rechts: colli + REFERENTIE + datum/ref */}

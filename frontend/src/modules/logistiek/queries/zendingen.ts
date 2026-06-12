@@ -84,6 +84,19 @@ export interface ZendingPrintBundelOrder {
   week: string | null
 }
 
+/**
+ * Eén fysieke colli uit `zending_colli` (mig 209). De `sscc` hier is exact de
+ * barcode die `hst-send` als `BarCode` bij de vervoerder aanmeldt — geprinte
+ * labels MOETEN deze waarde tonen en mogen nooit zelf een SSCC genereren
+ * (HST-overlossing-incident 12-06-2026: label en aanmelding liepen uiteen).
+ */
+export interface ZendingPrintColli {
+  id: number
+  colli_nr: number
+  sscc: string
+  order_regel_id: number | null
+}
+
 export interface ZendingPrintSet {
   id: number
   zending_nr: string
@@ -150,6 +163,7 @@ export interface ZendingPrintSet {
    */
   bundel_orders: ZendingPrintBundelOrder[]
   zending_regels: ZendingPrintRegel[]
+  zending_colli: ZendingPrintColli[]
 }
 
 /**
@@ -275,7 +289,8 @@ export async function fetchZendingPrintSet(zending_nr: string): Promise<ZendingP
             lengte_cm, breedte_cm, vorm
           )
         )
-      )
+      ),
+      zending_colli ( id, colli_nr, sscc, order_regel_id )
     `,
     )
     .eq('zending_nr', zending_nr)
