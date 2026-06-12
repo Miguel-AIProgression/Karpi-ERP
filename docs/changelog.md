@@ -9,6 +9,33 @@ re-export-shims: `vervoerder-eisen` (frontend-kopie was dead code),
 Waarom: handmatige kopieën = dezelfde incident-klasse als het SSCC-incident
 (12-06); `snijplan-status` was al gedivergeerd. Vite dev-server kreeg
 `server.fs.allow: ['..']`. Conventie vastgelegd in CLAUDE.md + ADR-0033.
+De parallel uitgevoerde werkagenda-kernel-consolidatie (zie hieronder) volgt
+hetzelfde patroon — `werkagenda`/`bereken-agenda` was in ADR-0033 nog als
+"buiten scope" gemarkeerd maar is dezelfde dag alsnog geconsolideerd.
+
+## 2026-06-12 — Werkagenda-config centraal (mig 384, fase 2)
+
+Werktijden + vrije dagen verhuisd van per-browser-localStorage naar
+`app_config 'werkagenda'`. UI (productie-instellingen, snijplanning-agenda),
+`check-levertijd`/`spoed-check` (edge) en de Pick & Ship-dag-order-horizon
+lezen nu dezelfde kalender — een feestdag invoeren landt één keer en telt
+overal. `volgendeWerkdag`/`naarWerkdag` (levertijd-match) lopen nu ook via
+kernel-`isWerkdag` i.p.v. hardcoded za/zo. Eenmalige best-effort-overname van
+bestaande localStorage-instellingen (alleen als de DB-rij nog default is).
+
+## 2026-06-12 — Werkagenda: één bron (kernel-consolidatie, mig 383)
+
+De werkdag-/werkagenda-rekenkunde leefde op drie plekken: SQL (mig 279 — nul
+callers, dode code), Deno `_shared/werkagenda.ts` (UTC, geen feestdagen) en
+frontend `bereken-agenda.ts` (lokale tijd, wél feestdagen) — met al-uiteengelopen
+interfaces, ~24u verschil in `teLaat`-semantiek en andere sortering.
+Geconsolideerd: `_shared/werkagenda.ts` is nu de enige implementatie (rijke
+interface met 'HH:mm' + `vrij`-feestdagen); de frontend importeert de kernel
+direct (derive-status-patroon, vite `server.fs.allow`); golden fixture
+`werkagenda.golden.json` wordt door Deno én Vitest getoetst; de dode SQL is
+gedropt (mig 383). `teLaat` is geünificeerd op strikt (00:00-deadline) — de
+UI-agenda en check-levertijd geven nu dezelfde vlag. Sorterings-verschil
+berekenAgenda↔berekenSnijAgenda blijft bewust staan (B6, kernel-header).
 
 ## 2026-06-12 — Rhenus als transporteur: GS1-XML via SFTP (ADR-0032, mig 379-382) — gebouwd, rondreis geslaagd
 

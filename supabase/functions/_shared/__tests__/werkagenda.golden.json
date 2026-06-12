@@ -1,0 +1,13 @@
+{
+  "comment": "Golden truthtable voor werkdagMinN — getoetst door Deno (werkagenda.golden.test.ts) én Vitest (frontend werkagenda.contract.test.ts). Eén implementatie: _shared/werkagenda.ts (plan 2026-06-12-werkagenda-een-bron).",
+  "cases": [
+    { "naam": "weekend-skip: ma -1 -> vr", "iso": "2026-05-18", "n": 1, "verwacht": "2026-05-15" },
+    { "naam": "5 terug over weekend (ex-mig-279-assert)", "iso": "2026-05-13", "n": 5, "verwacht": "2026-05-06" },
+    { "naam": "N=0 identity", "iso": "2026-05-13", "n": 0, "verwacht": "2026-05-13" },
+    { "naam": "jaargrens zonder feestdag: vr 2 jan -1 -> do 1 jan", "iso": "2026-01-02", "n": 1, "verwacht": "2026-01-01" },
+    { "naam": "jaargrens met nieuwjaarsdag vrij -> wo 31 dec", "iso": "2026-01-02", "n": 1, "vrij": ["2026-01-01"], "verwacht": "2025-12-31" },
+    { "naam": "Koningsdag 2026 (ma 27-04) vrij: di -1 -> vr", "iso": "2026-04-28", "n": 1, "vrij": ["2026-04-27"], "verwacht": "2026-04-24" },
+    { "naam": "4-daagse werkweek (vr geen werkdag): ma -1 -> do", "iso": "2026-05-18", "n": 1, "werkdagen": [1, 2, 3, 4], "verwacht": "2026-05-14" },
+    { "naam": "ongeldige datum -> input terug", "iso": "geen-datum", "n": 3, "verwacht": "geen-datum" }
+  ]
+}
