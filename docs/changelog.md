@@ -1,5 +1,29 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-11 — Verhoek-transporteur Fase 1: AA2.0-XML via SFTP (ADR-0031, mig 371-373)
+
+**Aanleiding:** Verhoek Europe (tweede vervoerder naast HST) levert niet via Transus-EDI maar via hun eigen XML-formaat "XMLstandardVerhoekEuropeAA20" (AA2.0) over SFTP. Mig 170's placeholder `edi_partner_b` (type `'edi'`) was daarvoor niet geschikt.
+
+**Wat er gebouwd is (code compleet, wacht op apply/deploy/rondreis):**
+
+- **Mig 371** — Nieuw vervoerder-type `'sftp'` (CHECK-constraint uitgebreid); nieuwe vervoerder-rij `verhoek_sftp` (`actief=FALSE` tot rondreis-test geslaagd); `edi_partner_b`-placeholder guarded verwijderd; runtime-config `app_config` sleutel `'verhoek'` (opdrachtgever_nummer, scancode_met_00_prefix, verpakkingseenheid, levering, soort_levering) — antwoorden van Verhoek = SQL-UPDATE, géén redeploy.
+- **Mig 372** — Adapter-tabel `verhoek_transportorders` + enum `verhoek_transportorder_status` (Wachtrij/Bezig/Verstuurd/Fout/Geannuleerd) + 5 RPC's (`enqueue_verhoek_transportorder`, `claim_volgende_verhoek_transportorder`, `markeer_verhoek_verstuurd`, `markeer_verhoek_fout`, `herstel_vastgelopen_verhoek`); view `verhoek_verzend_monitor` (cron-health-signaal analoog aan `hst_verzend_monitor`); `WHEN 'sftp'`-tak in `enqueue_zending_naar_vervoerder`.
+- **Mig 373** — pg_cron `verhoek-send-elke-minuut` (hergebruikt vault-secret `cron_token`).
+- **Edge function `verhoek-send`** — orchestrator-loop (claim → valideer → bouw XML → upload SFTP → markeer); pure `xml-builder.ts` (AA2.0, ScanCode = label-barcode `'00'+SSCC`, Gewicht in decagram, Lengte/Breedte in hele cm); `sftp-client.ts` (Deno WebAssembly SFTP via rebex); pre-flight via `vervoerder-eisen.ts`-seam (ontbrekende colli-data → rij op `Fout` met `Pre-flight:`-reden, geen upload); audit via `externe_payloads` kanaal `'verhoek'` + XML-kopie in storage `order-documenten/verhoek-xml/`. Bestandsnaam `Karpi_<timestamp>_<zending_nr>.xml` is de dedup-sleutel bij Verhoek en wordt persisteerd vóór de SFTP-upload zodat retries dezelfde naam hergebruiken.
+- **Edge function `verhoek-sftp-spike`** — standalone rebex-runtime-spike tegen publieke test-SFTP-server; faalt de runtime → fallback n8n/Python-worker leegt dezelfde wachtrij.
+- **`_shared/adres-split.ts`** — `splitAdres`/`normalizeCountry` geëxtraheerd uit `hst-send` (gedragsneutraal); `hst-send` importeert voortaan uit de seam.
+- **`_shared/vervoerder-eisen.ts`** — `verhoek_sftp`-tak toegevoegd (adresvelden verplicht; telefoon/land niet verplicht voor Verhoek); `valideerVerhoekColli` in `xml-builder.ts` valideert SSCC, lengte/breedte cm, gewicht_kg → decagram.
+
+**Status:** Code compleet + getest (unit tests groen). De volgende acties staan open en worden door Miguel uitgevoerd:
+1. Mig 371/372/373 apply'en op de live database.
+2. Edge functions `verhoek-send` en `verhoek-sftp-spike` deployen.
+3. Rebex-runtime-spike draaien (publieke test-SFTP).
+4. Interne dry-run-rondreis: `VERHOEK_DRY_RUN=true` (default aan), geen echte SFTP-upload.
+
+**Bekende datagap:** `zending_colli.gewicht_kg` is NULL bij bestaande zendingen → preflight `valideerVerhoekColli` faalt op gewicht. Moet gevuld worden vóór de pilot (bestaande zendingen handmatig of via script; nieuwe zendingen via gewicht-resolver).
+
+---
+
 ## 2026-06-11 — Universele bevestig-knop: kanaal-dispatch EDI vs e-mail
 
 **Aanleiding:** EDI-orders kregen nul orderbevestigingen na de EDI-cutover van 3 juni — de "Bevestig order"-knop stuurde altijd e-mail, ook bij EDI-orders. Bovendien werd de `orderbev_uit`-toggle in `edi_handelspartner_config` nergens gecheckt, waardoor partners die géén orderbev willen (SB Möbel BOSS 150761, Hammer 330955) er toch een kregen. Ontwerp-besluit: EDI-orders krijgen nooit e-mail; het kanaal hangt aan de order (`bron_systeem`), niet aan de klant.

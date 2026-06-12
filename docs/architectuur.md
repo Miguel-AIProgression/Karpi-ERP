@@ -271,6 +271,32 @@ Bij het productie-klaar maken van de HST-koppeling (mig 336-339) zijn twee gaten
 
 **HST-edge-bugfixes.** `hst-client.ts` `extractErrorMsg` leest nu ook HST's PascalCase-veld `ErrorMessage` (operator kreeg eerder kaal `"HTTP 400"`); `payload-builder.ts` vult `ToAddress.PhoneNumber` uit het nieuwe snapshot `zendingen.afl_telefoon` (mig 339, was hardcoded leeg). Aanleiding: ACCP-afkeuring 2026-06-09 "Bellen voor aflevering, geef telefoonnummer op".
 
+### Verhoek-koppeling: AA2.0-XML via SFTP ([ADR-0031](adr/0031-verhoek-xml-sftp-adapter.md), mig 371-373)
+
+Verhoek Europe is de tweede vervoerder naast HST. Hun protocol — eigen XML-formaat "XMLstandardVerhoekEuropeAA20" (AA2.0) over SFTP — past niet in het Transus-EDI-pad. De adapter is gebouwd als **verticale spiegel van de HST-adapter**, met maximaal hergebruik van bestaande seams en bewust gespiegeld (nog niet gegeneraliseerd) omdat HST live en stabiel is.
+
+**Maximaal hergebruik:**
+- `_shared/adres-split.ts` — `splitAdres`/`normalizeCountry` geëxtraheerd uit `hst-send/payload-builder.ts` (gedragsneutraal, hst-send importeert voortaan uit de seam; gaat mee bij de eerstvolgende hst-deploy).
+- `_shared/vervoerder-eisen.ts` — `verhoek_sftp`-tak toegevoegd naast de bestaande HST-tak; dezelfde `valideerVoorVervoerder(ctx)`-signatuur, andere eisen (adresvelden verplicht; telefoon/land niet verplicht voor Verhoek).
+- `enqueue_zending_naar_vervoerder` — switch-RPC-tak `WHEN 'sftp' → enqueue_verhoek_transportorder` (mig 372); geen wijziging aan resolver of trigger.
+- `externe_payloads` — audit-vangnet kanaal `'verhoek'` (best-effort, mag verwerking niet blokkeren).
+- Storage-bucket `order-documenten/verhoek-xml/` — XML-kopie naast de `hst`-bucket (ADR-0030-patroon).
+- Cron-vault-secret `cron_token` — hergebruikt door `verhoek-send-elke-minuut` (mig 373).
+
+**Gespiegeld (niet gegeneraliseerd):**
+- Adapter-tabel `verhoek_transportorders` + enum `verhoek_transportorder_status` + 5 RPC's — identieke structuur als `hst_transportorders`/`hst_transportorder_status`, eigen per-vervoerder-tabel (verticaal patroon, ADR-0031 motivatie).
+- Edge function `verhoek-send` — orchestrator-loop (claim → preflight → XML → SFTP-upload → markeer); structuur identiek aan `hst-send` maar protocol volledig anders (XML over SFTP vs. JSON over REST).
+- Monitor-view `verhoek_verzend_monitor` — structuur identiek aan `hst_verzend_monitor` (mig 338).
+- **Derde vervoerder = moment van generaliseren** (ADR-0031, gevolgen). Nu bewust gespiegeld — abstractie halverwege zou HST destabiliseren.
+
+**Dry-run-mechanisme + config-gedreven go-live.** Alle onbekenden van Verhoek (opdrachtgevernummer, ScanCode-prefix, Levering/SoortLevering-codes, Verpakkingseenheid) leven in `app_config` sleutel `'verhoek'` — antwoorden van Verhoek = SQL-UPDATE, géén redeploy. Secrets `VERHOEK_SFTP_*` + `VERHOEK_DRY_RUN` (default `true` = geen SFTP-upload, wél XML/audit/storage). Go-live = secrets invullen + `app_config.verhoek.opdrachtgever_nummer` zetten + `verhoek_sftp.actief=TRUE` — géén code-deploy.
+
+**Colli-preflight.** `verhoek-send/xml-builder.ts` `valideerVerhoekColli` controleert per colli of SSCC, lengte/breedte (cm) en gewicht_kg gevuld zijn. Ontbrekende velden → rij op `Fout` met `Pre-flight:`-reden, geen upload. Bekende datagap: `zending_colli.gewicht_kg` is NULL bij bestaande zendingen — moet gevuld worden vóór de pilot.
+
+**Bestandsnaam als dedup-sleutel.** `Karpi_<timestamp>_<zending_nr>.xml` wordt gepersisteerd in `verhoek_transportorders.bestandsnaam` vóór de SFTP-upload, zodat retries dezelfde naam hergebruiken. Bij Verhoek is de bestandsnaam de verwerkingssleutel (DataEntry deduplicatie).
+
+**Status Fase 1 (2026-06-11):** code compleet + unit-getest. Mig 371/372/373 apply'en, edge functions deployen, rebex-runtime-spike draaien en dry-run-rondreis uitvoeren staan open (wordt door Miguel gedaan).
+
 ### Vervoerder-Keuze als deep Module ([ADR-0008](adr/0008-vervoerder-keuze-als-deep-module.md))
 
 Vóór de refactor leefde "welke vervoerder geldt voor X" in vier tabellen (`vervoerders.actief`, `vervoerder_selectie_regels`, `edi_handelspartner_config.vervoerder_code`, `order_regels.vervoerder_code`) met drie verschillende fallback-volgordes verspreid over `preview_vervoerder_voor_order` (mig 215), `effectieve_vervoerder_per_orderregel` (mig 219+221) en `selecteer_vervoerder_voor_zending` (mig 210). Plus een vierde ladder in de UI-pill. Bug-symptoom: gebruikers konden DPD kiezen op een order zonder zichtbaar effect (silent failure in upsert naar de misnoemde EDI-tabel + incomplete cache-invalidatie).

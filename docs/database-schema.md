@@ -639,9 +639,9 @@ Mig 232. Genereert wekelijkse verzamelfactuur voor `(debiteur_nr, jaar_week)`. A
 Lookup-tabel met de beschikbare vervoerders waarmee Karpi werkt (mig 170, uitgebreid mig 174). Routing-keuze, géén berichten — daadwerkelijk verkeer per vervoerder loopt via een **adapter-tabel** (HST → `hst_transportorders`; EDI-vervoerders → `edi_berichten` met `berichttype='verzendbericht'`). Gezaaid met 3 rijen: `hst_api`, `edi_partner_a` (Rhenus, placeholder), `edi_partner_b` (Verhoek, placeholder). Alleen de HST-koppeling is in dit plan actief; EDI-koppelingen volgen in aparte plans en hun rij staat default `actief=FALSE`. Migratie 174 voegt instellingen-, contact- en tarief-kolommen toe als basis voor de `/logistiek/vervoerders`-UI (vrije-tekst tarieven in V1; gestructureerde tariefmatrix volgt in Fase B — zie roadmap in [`docs/superpowers/plans/2026-05-01-logistiek-vervoerder-instellingen.md`](superpowers/plans/2026-05-01-logistiek-vervoerder-instellingen.md)).
 | Kolom | Type | Toelichting |
 |-------|------|-------------|
-| code | TEXT PK | `'hst_api'`, `'edi_partner_a'`, `'edi_partner_b'`, `'dpd'` — wordt als FK gebruikt op `zendingen.vervoerder_code` |
+| code | TEXT PK | `'hst_api'`, `'edi_partner_a'`, `'verhoek_sftp'`, `'dpd'` — wordt als FK gebruikt op `zendingen.vervoerder_code`. `edi_partner_b` (mig 170-placeholder voor Verhoek) is guarded verwijderd in mig 371 (vervangen door `verhoek_sftp`). |
 | display_naam | TEXT NOT NULL | UI-label: `'HST'`, `'Rhenus'`, `'Verhoek'`, `'DPD'` |
-| type | TEXT NOT NULL | CHECK in (`'api'`, `'edi'`, `'print'`). Mig 207: `'print'` toegevoegd voor lokale label-printer-flow (DPD via Zebra ZT230). |
+| type | TEXT NOT NULL | CHECK in (`'api'`, `'edi'`, `'print'`, `'sftp'`). Mig 207: `'print'` toegevoegd voor lokale label-printer-flow (DPD via Zebra ZT230). Mig 371 (ADR-0031): `'sftp'` toegevoegd voor Verhoek AA2.0-XML via SFTP. De `'edi'`-tak blijft voor evt. toekomstige EDI-vervoerders (Rhenus). |
 | actief | BOOLEAN NOT NULL | Default FALSE — pas TRUE als koppeling werkt. Switch-RPC `enqueue_zending_naar_vervoerder` weigert met `'vervoerder_inactief'` als FALSE |
 | is_default | BOOLEAN NOT NULL | Mig 336 (ADR-0030). Default FALSE. Markeert dé default-vervoerder; partial unique index `uk_vervoerders_is_default` (op `is_default` WHERE TRUE) garandeert hooguit één TRUE. `hst_api` is geseed als default. Administratieve bron-van-waarheid; het werkende mechanisme is de **catch-all** rij in `vervoerder_selectie_regels` (prio 99999, `{"land":["NL"]}`) die mig 336 toevoegt — gegate op `hst_api.actief=TRUE` (bewust nog FALSE tot cutover). |
 | notities | TEXT | Vrije tekst (bv. "REST API. Auth via Basic.") |
@@ -743,6 +743,42 @@ Eén rij per fysieke colli binnen een zending (mig 209). Bron-van-waarheid voor 
 - `claim_volgende_hst_transportorder() → hst_transportorders` — pakt oudste `Wachtrij`-rij via `FOR UPDATE SKIP LOCKED`, zet status `Bezig`. Aangeroepen door edge function `hst-send` per cron-tick.
 - `markeer_hst_verstuurd(p_id, p_extern_transport_order_id, p_extern_tracking_number, p_request_payload, p_response_payload, p_response_http_code) → VOID` — na 200-respons: status `Verstuurd`, schrijft `track_trace` terug op `zendingen` en zet zending-status van `'Klaar voor verzending'` naar `'Onderweg'`.
 - `markeer_hst_fout(p_id, p_error, p_request_payload, p_response_payload, p_response_http_code, p_max_retries DEFAULT 3) → VOID` — verhoogt `retry_count`; bij `>=` max → status `Fout`, anders terug naar `Wachtrij`.
+
+---
+
+### verhoek_transportorders
+**Verhoek-adapter-tabel** (mig 372, ADR-0031) — één rij per XML-bestand dat via SFTP naar Verhoek is/wordt verstuurd. Spiegelt `hst_transportorders`; bewust verticaal per vervoerder (zie ADR-0031). Audit-historie van pogingen: `externe_payloads` kanaal `'verhoek'`; XML-kopie in storage `order-documenten/verhoek-xml/`.
+
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| id | BIGSERIAL PK | |
+| zending_id | BIGINT FK → zendingen | NOT NULL, ON DELETE CASCADE |
+| debiteur_nr | INTEGER FK → debiteuren | Snapshot voor query-gemak |
+| status | verhoek_transportorder_status NOT NULL | Default `'Wachtrij'` |
+| bestandsnaam | TEXT | `Karpi_<timestamp>_<zending_nr>.xml` — de dedup-sleutel bij Verhoek; wordt vóór upload gepersisteerd zodat retries dezelfde naam hergebruiken |
+| xml_storage_path | TEXT | Pad in storage-bucket `order-documenten/verhoek-xml/` |
+| track_trace_id | TEXT | Door ons gegenereerd (= `zending_nr`), historisch uniek |
+| request_xml | TEXT | Laatste verstuurde XML |
+| retry_count | INTEGER NOT NULL | Default 0; max 3 (configureerbaar in `markeer_verhoek_fout`) |
+| error_msg | TEXT | Laatste foutomschrijving |
+| is_test | BOOLEAN NOT NULL | Default FALSE |
+| created_at, sent_at, updated_at | TIMESTAMPTZ | Lifecycle-timestamps |
+
+**Enum `verhoek_transportorder_status`:** `'Wachtrij' | 'Bezig' | 'Verstuurd' | 'Fout' | 'Geannuleerd'`
+
+**Indexen:**
+- `idx_verhoek_to_status` (status) — voor cron-claim-query
+- `idx_verhoek_to_zending` (zending_id)
+- `uk_verhoek_to_zending_actief` — UNIQUE op `zending_id` waar `status NOT IN ('Fout', 'Geannuleerd')` (idempotentie: één actieve transportorder per zending)
+
+**Triggers:** `trg_verhoek_to_updated_at` via `set_verhoek_to_updated_at()`.
+
+**RPCs (Verhoek-adapter):**
+- `enqueue_verhoek_transportorder(p_zending_id BIGINT, p_debiteur_nr INTEGER, p_is_test BOOLEAN DEFAULT FALSE) → BIGINT` — adapter-RPC, idempotent (no-op bij bestaande actieve rij). Wordt aangeroepen door `enqueue_zending_naar_vervoerder` als `vervoerder_code='verhoek_sftp'`. Mig 372.
+- `claim_volgende_verhoek_transportorder() → verhoek_transportorders` — pakt oudste `Wachtrij`-rij via `FOR UPDATE SKIP LOCKED`, zet status `Bezig`. Aangeroepen door edge function `verhoek-send` per cron-tick. Mig 372.
+- `markeer_verhoek_verstuurd(p_id, p_bestandsnaam, p_xml_storage_path, p_track_trace_id, p_request_xml) → VOID` — na geslaagde SFTP-upload: status `Verstuurd`, schrijft `track_trace` terug op `zendingen` en zet zending-status van `'Klaar voor verzending'` naar `'Onderweg'`. Mig 372.
+- `markeer_verhoek_fout(p_id, p_error, p_request_xml DEFAULT NULL, p_max_retries DEFAULT 3) → VOID` — verhoogt `retry_count`; bij `>=` max → status `Fout`, anders terug naar `Wachtrij`. Mig 372.
+- `herstel_vastgelopen_verhoek(p_minuten INTEGER DEFAULT 10) → INTEGER` — **self-healing reaper** (mig 372, SECURITY DEFINER). Zet `verhoek_transportorders`-rijen die >`p_minuten` op `'Bezig'` hangen terug naar `'Wachtrij'`. Bovenin elke `verhoek-send`-run + handmatig.
 
 ---
 
@@ -1069,6 +1105,15 @@ Applicatie-instellingen (key-value). Gebruikt voor productie-configuratie en aut
 | standaard_maat_werkdagen | number | 5 | Globale levertermijn voor standaard-maat (kalenderdagen); per klant overschrijfbaar via `debiteuren.standaard_maat_werkdagen` |
 | maatwerk_weken | number | 4 | Globale levertermijn voor maatwerk (weken); per klant overschrijfbaar via `debiteuren.maatwerk_weken` |
 
+**verhoek waarde-structuur** (mig 371, ADR-0031 — gelezen per run door `verhoek-send`; antwoorden van Verhoek = SQL-UPDATE, géén redeploy):
+| Veld | Type | Default | Toelichting |
+|------|------|---------|-------------|
+| opdrachtgever_nummer | string | `''` | Karpi-klantnummer bij Verhoek. Leeg = `verhoek-send` weigert niet-dry-run verzending. |
+| scancode_met_00_prefix | boolean | `true` | ScanCode (label-barcode) = `'00'` + SSCC als TRUE, anders kaal SSCC. |
+| verpakkingseenheid | string | `'Rol'` | Vrije tekst in AA2.0-XML `<Verpakkingseenheid>`. |
+| levering | string | `'1'` | AA2.0-XML `<Levering>` code. |
+| soort_levering | string | `'1'` | AA2.0-XML `<SoortLevering>` code. |
+
 ---
 
 ### snijplan_groep_locks
@@ -1323,6 +1368,7 @@ Log van **daadwerkelijk verstuurde e-mails per order** (mig 366) — voedt de se
 | uitwisselbaarheid_map1_diff | Diagnostiek (migratie 138): Map1-paren in `kwaliteit_kleur_uitwisselgroepen` die NIET door `uitwisselbare_paren()` afgedekt worden, met `reden`-kolom (input-kw zonder collectie_id, kwaliteiten in andere collecties, kleur-code-mismatch, target ontbreekt in producten/rollen/maatwerk_m2_prijzen). Moet 0 rijen geven voordat Map1 fysiek gedropt mag worden. |
 | vervoerder_stats | Per-vervoerder dashboard-aggregaties (mig 174, aangepast mig 176): `aantal_klanten` (distinct debiteuren uit zendingen), `aantal_zendingen_totaal` + `aantal_zendingen_deze_maand` (uit `zendingen.vervoerder_code`), `hst_aantal_verstuurd` + `hst_aantal_fout` (uit `hst_transportorders`, alleen niet-NULL voor de `hst_api`-rij). Voedt de `/logistiek/vervoerders`-overzichts- en detailpagina's. EDI-equivalent uit `edi_berichten` met `berichttype='verzendbericht'` volgt later. |
 | hst_verzend_monitor | Mig 338 (ADR-0030). Aggregaat (één rij, geen state) over `hst_transportorders`: `verstuurd_vandaag`, `fout_open`, `wachtrij`, `bezig`, `oudste_wachtrij_minuten`, `oudste_bezig_minuten`. De laatste twee = **cron-health-signaal** (hoog = `hst-send`-cron staat stil; UI-drempel 5 min). Voedt de HST-verzendmonitor (tab op `/logistiek/vervoerders/hst_api/monitor`) + aandacht-banner op Pick & Ship. Tegengif tegen de "silent failure"-klasse. |
+| verhoek_verzend_monitor | Mig 372 (ADR-0031). Aggregaat (één rij, geen state) over `verhoek_transportorders`: `verstuurd_vandaag`, `fout_open`, `wachtrij`, `bezig`, `oudste_wachtrij_minuten`, `oudste_bezig_minuten`. Spiegelt `hst_verzend_monitor`. `oudste_wachtrij_minuten` = cron-health-signaal voor `verhoek-send`. Frontend-paneel volgt in een later plan. |
 | orders_zonder_vervoerder | Mig 338 (ADR-0030) + 345. Niet-afhaal-orders (`afhalen=FALSE`), niet productie-only (`NOT alleen_productie` — verzending blijft in Basta, ADR-0029; guard toegevoegd in mig 345), status NOT IN (`'Geannuleerd'`,`'Verzonden'`,`'Concept'`), met ≥1 regel waarvan `effectieve_vervoerder_per_orderregel(o.id).bron='geen'` (buiten HST-bereik → handmatig kiezen nodig). Voedt de "handmatig vervoerder kiezen"-teller/banner. |
 
 ---
@@ -1407,12 +1453,17 @@ Mig 174, aangepast in mig 176. Read-only view die de `/logistiek/vervoerders`-ov
 | `boek_voorraad_ontvangst(p_regel_id BIGINT, p_aantal INTEGER, p_medewerker TEXT)` | Voor vaste producten (eenheid='stuks'): verhoogt `producten.voorraad` met p_aantal en werkt regel + order-status bij. Sinds migratie 148: consumeert IO-claims in `claim_volgorde`-volgorde en verschuift ze naar voorraad-claims op dezelfde orderregel; roept `herwaardeer_order_status` aan per geraakte order. |
 | `create_zending_voor_order(p_order_id BIGINT) → BIGINT` | Maakt één `zendingen`-rij + bijbehorende `zending_regels` voor één order. Adres-snapshot uit `orders.afl_*`, één zending_regel per `order_regels`-rij met `orderaantal > 0`; migratie 177 vult `zending_regels.aantal`, `zendingen.aantal_colli` en `zendingen.totaal_gewicht_kg` vanuit `orderaantal`/`gewicht_kg` voor Pick & Ship stickers en pakbon. Idempotent: returnt bestaande actieve zending als die er al is (alle statussen behalve `Afgeleverd`) en enqueue't opnieuw als status `'Klaar voor verzending'` is. Status direct op `'Klaar voor verzending'` zodat de zending-trigger meteen vuurt. Aangeroepen vanuit order-detail en Pick & Ship Verzendset. Migratie 172, aangescherpt in 177. |
 | `selecteer_vervoerder_voor_zending(p_zending_id BIGINT) → TABLE(gekozen_vervoerder_code, keuze_uitleg)` | Centrale vervoerderselector (mig 176). V1 kiest alleen als precies één vervoerder actief is. Bij 0 actieve of meerdere actieve vervoerders zonder criteria geeft de functie NULL + JSON-uitleg terug. Latere uitbreiding: voorwaarden, zones en tarieven per zending. |
-| `enqueue_zending_naar_vervoerder(p_zending_id BIGINT) → TEXT` | **Single switch-point voor multi-vervoerder dispatch** — enige plek in de codebase waar op `vervoerder_code` wordt geswitcht. Leest `zendingen.vervoerder_code` of vult die via `selecteer_vervoerder_voor_zending()` en dispatcht naar de juiste adapter-RPC: `'hst_api'` → `enqueue_hst_transportorder`; toekomstige `'edi_partner_a/b'` → `enqueue_edi_verzendbericht` (op `edi_berichten`). Returnt textuele status (`enqueued_hst` / `geen_actieve_vervoerder` / `meerdere_actieve_vervoerders_geen_criteria` / `vervoerder_inactief` / `no_adapter_voor_<code>`) — alleen voor logging/debugging, niet voor caller-control-flow. Migratie 172, aangepast in 176. |
+| `enqueue_zending_naar_vervoerder(p_zending_id BIGINT) → TEXT` | **Single switch-point voor multi-vervoerder dispatch** — enige plek in de codebase waar op `vervoerder_code` wordt geswitcht. Leest `zendingen.vervoerder_code` of vult die via `selecteer_vervoerder_voor_zending()` en dispatcht naar de juiste adapter-RPC op basis van `vervoerders.type`: `type='api'` + `'hst_api'` → `enqueue_hst_transportorder`; `type='sftp'` + `'verhoek_sftp'` → `enqueue_verhoek_transportorder` (mig 372, ADR-0031); `type='print'` → `genereer_zending_colli`; `type='edi'` → nog geen adapter-RPC. Returnt textuele status (`enqueued_hst` / `enqueued_verhoek` / `vervoerder_inactief` / `no_adapter_voor_<code>` / …) — alleen voor logging/debugging, niet voor caller-control-flow. Migratie 172, aangepast in 176 + 372. |
 | `enqueue_hst_transportorder(p_zending_id BIGINT, p_debiteur_nr INTEGER, p_is_test BOOLEAN) → BIGINT` | HST-adapter: plaatst transportorder op wachtrij in `hst_transportorders`. Idempotent via `uk_hst_to_zending_actief`. Migratie 171. |
 | `claim_volgende_hst_transportorder() → hst_transportorders` | HST-adapter: pakt oudste `Wachtrij`-rij (`FOR UPDATE SKIP LOCKED`), zet status `Bezig`. Aangeroepen door edge function `hst-send`. Migratie 171. |
 | `markeer_hst_verstuurd(p_id, p_extern_transport_order_id, p_extern_tracking_number, p_request_payload, p_response_payload, p_response_http_code) → VOID` | HST-adapter: na 200-respons. Status → `Verstuurd`; schrijft `track_trace` terug op `zendingen` en promoveert zending-status van `'Klaar voor verzending'` naar `'Onderweg'`. Migratie 171. |
 | `markeer_hst_fout(p_id, p_error, p_request_payload, p_response_payload, p_response_http_code, p_max_retries DEFAULT 3) → VOID` | HST-adapter: incrementeert `retry_count`. Bij `>=` max_retries → status `Fout`, anders terug naar `Wachtrij`. Migratie 171. |
 | `herstel_vastgelopen_hst(p_minuten INTEGER DEFAULT 10) → INTEGER` | **Self-healing reaper** (mig 337, ADR-0030, SECURITY DEFINER, GRANT authenticated). Zet `hst_transportorders`-rijen die >`p_minuten` op status `'Bezig'` hangen terug naar `'Wachtrij'` (beschermt tegen crash/timeout tussen `claim_volgende_hst_transportorder` en de POST). Returnt aantal herstelde rijen. Bovenin elke `hst-send`-run aangeroepen + handmatig. |
+| `enqueue_verhoek_transportorder(p_zending_id BIGINT, p_debiteur_nr INTEGER, p_is_test BOOLEAN DEFAULT FALSE) → BIGINT` | Verhoek-adapter: plaatst transportorder op wachtrij in `verhoek_transportorders`. Idempotent via `uk_verhoek_to_zending_actief`. Mig 372 (ADR-0031). |
+| `claim_volgende_verhoek_transportorder() → verhoek_transportorders` | Verhoek-adapter: pakt oudste `Wachtrij`-rij (`FOR UPDATE SKIP LOCKED`), zet status `Bezig`. Aangeroepen door edge function `verhoek-send`. Mig 372. |
+| `markeer_verhoek_verstuurd(p_id, p_bestandsnaam, p_xml_storage_path, p_track_trace_id, p_request_xml) → VOID` | Verhoek-adapter: na geslaagde SFTP-upload. Status → `Verstuurd`; schrijft `track_trace` terug op `zendingen` en promoveert zending-status van `'Klaar voor verzending'` naar `'Onderweg'`. Mig 372. |
+| `markeer_verhoek_fout(p_id, p_error, p_request_xml DEFAULT NULL, p_max_retries DEFAULT 3) → VOID` | Verhoek-adapter: incrementeert `retry_count`. Bij `>=` max_retries → status `Fout`, anders terug naar `Wachtrij`. Mig 372. |
+| `herstel_vastgelopen_verhoek(p_minuten INTEGER DEFAULT 10) → INTEGER` | **Self-healing reaper** (mig 372, ADR-0031, SECURITY DEFINER, GRANT authenticated). Spiegelt `herstel_vastgelopen_hst`. Bovenin elke `verhoek-send`-run + handmatig. |
 | `create_or_get_magazijn_locatie(p_code TEXT, p_omschrijving TEXT DEFAULT NULL, p_type TEXT DEFAULT 'rek') → BIGINT` | Idempotent: vindt-of-maakt `magazijn_locaties.id` voor `code` (UPPER+TRIM). Wordt gebruikt door `MagazijnLocatieEdit` (rol-locatie zetten) en `boek_ontvangst`. Migratie 169. |
 | `set_locatie_voor_orderregel(p_order_regel_id INTEGER, p_code TEXT) → BIGINT` | **Atomair**: vindt-of-maakt `magazijn_locaties`-rij voor `code` én zet `snijplannen.locatie = code` voor alle `Ingepakt`-rijen van de orderregel. Vervangt twee opeenvolgende RPC-calls (`createOrGetMagazijnLocatie + UPDATE snijplannen`) in `useUpdateMaatwerkLocatie` — voorkomt dangling `magazijn_locaties`-rijen wanneer de tweede call faalt. Returnt `magazijn_locaties.id`. Migratie 0183 (ADR-0002). |
 | `match_klant_po(p_extractie jsonb) → jsonb` | **Klant-PO parsing — deterministische koppellaag** (mig 294). Matcht AI-extractie van een klant-inkooporder-PDF tegen de database. Debiteur: btw → e-maildomein → exacte naam (telkens precies 1 hit = `zeker`, anders geen debiteur; alleen actieve debiteuren). Per regel: kwaliteit via reverse-lookup op `klanteigen_namen.benaming` (debiteur-/inkoopgroep-scoped) + exacte `kwaliteiten.omschrijving`; kleur via numeriek suffix; artikel via `klant_artikelnummers` / `producten`. Debiteur en elke regel dragen een eigen `zeker`-label — de frontend vult alleen `zeker`-regels/-debiteur voor (adres + klant-referentie altijd concept). STABLE, geen side-effects. GRANT anon/authenticated/service_role. |
