@@ -640,9 +640,9 @@ Mig 232. Genereert wekelijkse verzamelfactuur voor `(debiteur_nr, jaar_week)`. A
 Lookup-tabel met de beschikbare vervoerders waarmee Karpi werkt (mig 170, uitgebreid mig 174). Routing-keuze, géén berichten — daadwerkelijk verkeer per vervoerder loopt via een **adapter-tabel** (HST → `hst_transportorders`; EDI-vervoerders → `edi_berichten` met `berichttype='verzendbericht'`). Gezaaid met 3 rijen: `hst_api`, `edi_partner_a` (Rhenus, placeholder), `edi_partner_b` (Verhoek, placeholder). Alleen de HST-koppeling is in dit plan actief; EDI-koppelingen volgen in aparte plans en hun rij staat default `actief=FALSE`. Migratie 174 voegt instellingen-, contact- en tarief-kolommen toe als basis voor de `/logistiek/vervoerders`-UI (vrije-tekst tarieven in V1; gestructureerde tariefmatrix volgt in Fase B — zie roadmap in [`docs/superpowers/plans/2026-05-01-logistiek-vervoerder-instellingen.md`](superpowers/plans/2026-05-01-logistiek-vervoerder-instellingen.md)).
 | Kolom | Type | Toelichting |
 |-------|------|-------------|
-| code | TEXT PK | `'hst_api'`, `'edi_partner_a'`, `'verhoek_sftp'`, `'dpd'` — wordt als FK gebruikt op `zendingen.vervoerder_code`. `edi_partner_b` (mig 170-placeholder voor Verhoek) is guarded verwijderd in mig 374 (vervangen door `verhoek_sftp`). |
+| code | TEXT PK | `'hst_api'`, `'verhoek_sftp'`, `'rhenus_sftp'`, `'dpd'` — wordt als FK gebruikt op `zendingen.vervoerder_code`. De mig 170-placeholders zijn guarded verwijderd ná het omhangen van hun selectie-regels: `edi_partner_b` → `verhoek_sftp` (mig 374, ADR-0031) en `edi_partner_a` → `rhenus_sftp` (mig 378, ADR-0032). |
 | display_naam | TEXT NOT NULL | UI-label: `'HST'`, `'Rhenus'`, `'Verhoek'`, `'DPD'` |
-| type | TEXT NOT NULL | CHECK in (`'api'`, `'edi'`, `'print'`, `'sftp'`). Mig 207: `'print'` toegevoegd voor lokale label-printer-flow (DPD via Zebra ZT230). Mig 374 (ADR-0031): `'sftp'` toegevoegd voor Verhoek AA2.0-XML via SFTP. De `'edi'`-tak blijft voor evt. toekomstige EDI-vervoerders (Rhenus). |
+| type | TEXT NOT NULL | CHECK in (`'api'`, `'edi'`, `'print'`, `'sftp'`). Mig 207: `'print'` toegevoegd voor lokale label-printer-flow (DPD via Zebra ZT230). Mig 374 (ADR-0031): `'sftp'` toegevoegd voor Verhoek AA2.0-XML via SFTP; Rhenus (mig 378, ADR-0032) gebruikt hetzelfde type. De `'edi'`-tak heeft sinds mig 378 geen kandidaten meer maar blijft voor evt. toekomstige échte EDI-vervoerders. |
 | actief | BOOLEAN NOT NULL | Default FALSE — pas TRUE als koppeling werkt. Switch-RPC `enqueue_zending_naar_vervoerder` weigert met `'vervoerder_inactief'` als FALSE |
 | is_default | BOOLEAN NOT NULL | Mig 336 (ADR-0030). Default FALSE. Markeert dé default-vervoerder; partial unique index `uk_vervoerders_is_default` (op `is_default` WHERE TRUE) garandeert hooguit één TRUE. `hst_api` is geseed als default. Administratieve bron-van-waarheid; het werkende mechanisme is de **catch-all** rij in `vervoerder_selectie_regels` (prio 99999, `{"land":["NL"]}`) die mig 336 toevoegt — gegate op `hst_api.actief=TRUE` (bewust nog FALSE tot cutover). |
 | notities | TEXT | Vrije tekst (bv. "REST API. Auth via Basic.") |
@@ -780,6 +780,40 @@ Eén rij per fysieke colli binnen een zending (mig 209). Bron-van-waarheid voor 
 - `markeer_verhoek_verstuurd(p_id, p_bestandsnaam, p_xml_storage_path, p_track_trace_id, p_request_xml) → VOID` — na geslaagde SFTP-upload: status `Verstuurd`, schrijft `track_trace` terug op `zendingen` en zet zending-status van `'Klaar voor verzending'` naar `'Onderweg'`. Mig 375.
 - `markeer_verhoek_fout(p_id, p_error, p_request_xml DEFAULT NULL, p_max_retries DEFAULT 3) → VOID` — verhoogt `retry_count`; bij `>=` max → status `Fout`, anders terug naar `Wachtrij`. Mig 375.
 - `herstel_vastgelopen_verhoek(p_minuten INTEGER DEFAULT 10) → INTEGER` — **self-healing reaper** (mig 375, SECURITY DEFINER). Zet `verhoek_transportorders`-rijen die >`p_minuten` op `'Bezig'` hangen terug naar `'Wachtrij'`. Bovenin elke `verhoek-send`-run + handmatig.
+
+---
+
+### rhenus_transportorders
+**Rhenus-adapter-tabel** (mig 379, ADR-0032) — één rij per GS1 TransportInstruction-XML-bestand (RHE 3.1) dat via SFTP naar Rhenus is/wordt verstuurd. Spiegelt `verhoek_transportorders`, met één verschil: **geen `track_trace_id`** — het RHE-formaat kent geen T&T-slot (statusterugkoppeling via Rhenus' /out-map = V2-backlog). Audit-historie van pogingen: `externe_payloads` kanaal `'rhenus'`; XML-kopie in storage `order-documenten/rhenus-xml/`.
+
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| id | BIGSERIAL PK | |
+| zending_id | BIGINT FK → zendingen | NOT NULL, ON DELETE CASCADE |
+| debiteur_nr | INTEGER FK → debiteuren | Snapshot voor query-gemak |
+| status | rhenus_transportorder_status NOT NULL | Default `'Wachtrij'` |
+| bestandsnaam | TEXT | `RHE_<timestamp>_<zending_nr>.xml` — vóór upload gepersisteerd zodat retries dezelfde naam hergebruiken (geen dubbele transportorder bij Rhenus) |
+| xml_storage_path | TEXT | Pad in storage-bucket `order-documenten/rhenus-xml/` |
+| request_xml | TEXT | Laatste verstuurde XML |
+| retry_count | INTEGER NOT NULL | Default 0; max 3 (configureerbaar in `markeer_rhenus_fout`) |
+| error_msg | TEXT | Laatste foutomschrijving |
+| is_test | BOOLEAN NOT NULL | Default FALSE |
+| created_at, sent_at, updated_at | TIMESTAMPTZ | Lifecycle-timestamps |
+
+**Enum `rhenus_transportorder_status`:** `'Wachtrij' | 'Bezig' | 'Verstuurd' | 'Fout' | 'Geannuleerd'`
+
+**Indexen:** `idx_rhenus_to_status`, `idx_rhenus_to_zending`, `uk_rhenus_to_zending_actief` (UNIQUE op `zending_id` waar `status NOT IN ('Fout','Geannuleerd')`).
+
+**Triggers:** `trg_rhenus_to_updated_at` via `set_rhenus_to_updated_at()`.
+
+**RPCs (Rhenus-adapter, alle mig 379):**
+- `enqueue_rhenus_transportorder(p_zending_id, p_debiteur_nr, p_is_test DEFAULT FALSE) → BIGINT` — idempotent; aangeroepen door `enqueue_zending_naar_vervoerder` als `vervoerder_code='rhenus_sftp'`.
+- `claim_volgende_rhenus_transportorder() → rhenus_transportorders` — oudste `Wachtrij`-rij via `FOR UPDATE SKIP LOCKED` → `Bezig`. Aangeroepen door edge function `rhenus-send` per cron-tick.
+- `markeer_rhenus_verstuurd(p_id, p_bestandsnaam, p_xml_storage_path, p_request_xml) → VOID` — status `Verstuurd` + zending-status `'Klaar voor verzending'` → `'Onderweg'` (géén track_trace — geen T&T-slot in het formaat).
+- `markeer_rhenus_fout(p_id, p_error, p_request_xml DEFAULT NULL, p_max_retries DEFAULT 3) → VOID` — retry-teller; bij `>=` max → `Fout`, anders terug naar `Wachtrij`.
+- `herstel_vastgelopen_rhenus(p_minuten DEFAULT 10) → INTEGER` — self-healing reaper (spiegel `herstel_vastgelopen_verhoek`).
+
+**Monitor-view:** `rhenus_verzend_monitor` (spiegel `verhoek_verzend_monitor`): verstuurd_vandaag / fout_open / wachtrij / bezig / oudste_wachtrij_minuten / oudste_bezig_minuten.
 
 ---
 

@@ -1,5 +1,24 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-12 — Rhenus als transporteur: GS1-XML via SFTP gebouwd (ADR-0032, mig 378-380, Fase 1)
+
+**Aanleiding:** mails Rhenus → Piet-Hein (12-06): SFTP-gegevens compleet (`sedi.de.rhenus.com`, user `Karpi`, /in-map + testmap; wachtwoord apart gemaild — alleen als secret, nooit in de repo) én een foutmelding over legacy-bericht `0455395` (`totalPackageQuantity=0` zonder item-segmenten → error bij Rhenus; daar handmatig hersteld). Rhenus-cutover staat gepland voor week 24 (= deze week).
+
+**Gebouwd (branch `feat/rhenus-transporteur`, gestapeld op `feat/verhoek-transporteur`):**
+- **ADR-0032:** Rhenus via GS1 TransportInstruction-XML ("RHE" 3.1, SBDH) over SFTP — derde vervoerder-adapter naar het Verhoek-patroon. Legacy-referentie-excerpt + toelichting in `docs/rhenus/voorbeelden/`.
+- **Mig 374-amendement (cascade-fix):** de live DB bleek selectie-regels te hebben die naar de placeholders wijzen (Verhoek NL ≥27 kg / DE ≥30 kg; Rhenus DE ≤30 kg + debiteur-pins). De guarded `DELETE edi_partner_b` in mig 374 cascadeert naar die regels → ze zouden bij apply stilletjes verdwijnen. Fix: regels eerst omhangen naar `verhoek_sftp`, dán de delete. **Apply mig 374 dus vanaf deze branch.**
+- **Mig 378:** vervoerder `rhenus_sftp` (type `'sftp'`, `actief=FALSE`), selectie-regels `edi_partner_a`→`rhenus_sftp` omgehangen, placeholder guarded verwijderd, `app_config 'rhenus'` geseed (`sscc_met_00_prefix`/`package_type_code`/`bestandsnaam_prefix`).
+- **Mig 379:** `rhenus_transportorders` + enum + 5 RPC's + reaper + `rhenus_verzend_monitor`; dispatch-case `WHEN 'rhenus_sftp'` in de `'sftp'`-tak van `enqueue_zending_naar_vervoerder`.
+- **Mig 380:** cron `rhenus-send-elke-minuut` (veilig: lege wachtrij zolang inactief + dry-run-default).
+- **`_shared/sftp-client.ts`:** verplaatst uit `verhoek-send` (pure move; verhoek-send/spike importeren uit de seam). Orchestrator-loop bewust opnieuw gespiegeld — generalisatie over 3 adapters = backlog (cutover-week).
+- **`rhenus-send`:** pure `xml-builder.ts` (12 unit-tests; kg-formattering legacy-conform, escaping, planned-dates met trailing `T`, Freetext `Order <nr> Ref <klant_referentie>`) + orchestrator met dry-run-default, bestandsnaam-dedup vóór upload, audit via `externe_payloads` kanaal `'rhenus'`, XML-kopie in `rhenus-xml/`. **0-colli driedubbel geblokkeerd** (validator + preflight + builder-throw — incident 0455395 kan uit ons systeem niet meer ontstaan).
+- **`vervoerder-eisen`-seam:** `rhenus_sftp` deelt de SFTP-eisen (adresvelden verplicht; telefoon/land niet) — shared + frontend-spiegel + tests.
+- **`rhenus-sftp-spike`** (wegwerp): verbindings-/upload-test met de `RHENUS_SFTP_*`-secrets; uploadt met `.xml.test`-extensie zodat een per ongeluk op /in gerichte spike niet als echte instructie verwerkt wordt.
+
+**Verificatie:** 32 deno-tests groen (rhenus + verhoek + shared), `deno check` op alle nieuwe entrypoints, frontend `npm run typecheck` groen.
+
+**Open (Fase 2, Miguel — checklist in het plan):** migraties 374-380 apply'en vanaf deze branch, deploys, `RHENUS_SFTP_*`-secrets, rondreis (eerst testmap, dan /in), `actief=TRUE` (= cutover: omgehangen selectie-regels gaan direct routeren). Geen heraanlevering van bericht 0455395 nodig (door Rhenus handmatig verwerkt).
+
 ## 2026-06-12 — DESADV-verzendbevestiging LIVE: format gevalideerd + cron actief (slice 4 afgerond)
 
 **Activatie voltooid (12-06):** format-builder byte-identiek gevalideerd tegen écht Hornbach-bericht 172390327 (bronbestand + EDIFACT-paar in `docs/transus/voorbeelden/`, kolomkaart in `karpi-verzendbericht.ts`); test-renders van orders ORD-2026-0334 (Hornbach) en ORD-2026-0232 (BDSK, 10 regels) door Miguel goedgekeurd in Transus' Testen-tab; `bouw-verzendbericht-edi` gedeployed (`--no-verify-jwt`, auth via `?token=` zoals transus-send); **migratie 377 toegepast — cron `verzendbericht-edi-sweep` draait (jobid 12, */15 min)**. Er waren op activatiemoment 0 verzonden EDI-orders; de eerste echte verzending van een Hornbach/BDSK-order produceert automatisch de eerste DESADV (zichtbaar in de Communicatie-tijdlijn + EDI-module). **Bugfix tijdens activatie:** kale PostgREST-embeds `debiteuren(naam)` en `producten(ean_code)` gaven PGRST201 (dubbele FK-relaties: `betaler`-FK resp. `fysiek_artikelnr`-FK mig 154) — expliciete FK-hints toegevoegd; DESADV toont het originele artikel (omsticker intern, zelfde regel als factuur).

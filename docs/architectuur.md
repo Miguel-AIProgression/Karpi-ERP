@@ -295,7 +295,21 @@ Verhoek Europe is de tweede vervoerder naast HST. Hun protocol — eigen XML-for
 
 **Bestandsnaam als dedup-sleutel.** `Karpi_<timestamp>_<zending_nr>.xml` wordt gepersisteerd in `verhoek_transportorders.bestandsnaam` vóór de SFTP-upload, zodat retries dezelfde naam hergebruiken. Bij Verhoek is de bestandsnaam de verwerkingssleutel (DataEntry deduplicatie).
 
-**Status Fase 1 (2026-06-11):** code compleet + unit-getest. Mig 374/375/376 apply'en, edge functions deployen, rebex-runtime-spike draaien en dry-run-rondreis uitvoeren staan open (wordt door Miguel gedaan).
+**Status Fase 1 (2026-06-11):** code compleet + unit-getest. Mig 374/375/376 apply'en, edge functions deployen, rebex-runtime-spike draaien en dry-run-rondreis uitvoeren staan open (wordt door Miguel gedaan). **Let op (12-06):** mig 374 is op de Rhenus-branch geamendeerd (selectie-regels omhangen vóór de placeholder-delete) — apply vanaf die branch.
+
+### Rhenus-koppeling: GS1 TransportInstruction-XML via SFTP ([ADR-0032](adr/0032-rhenus-gs1-xml-sftp-adapter.md), mig 378-380)
+
+Rhenus is de derde vervoerder en de tweede op het SFTP-patroon. Protocol: GS1 TransportInstruction-XML (standaard "RHE", TypeVersion 3.1, SBDH-header) — exact het formaat dat het oude systeem aanleverde (legacy-referentie: [docs/rhenus/voorbeelden/](rhenus/voorbeelden/)). Anders dan bij Verhoek waren bij de bouw **alle SFTP-gegevens al bekend** (mails Rhenus 12-06-2026: `sedi.de.rhenus.com`, /in-map; wachtwoord alleen als secret, niet in de repo).
+
+**Hergebruik bovenop de Verhoek-seams:** `_shared/sftp-client.ts` (verplaatst uit `verhoek-send` — pure file-move, beide adapters importeren hem), `_shared/vervoerder-eisen.ts` (`rhenus_sftp` deelt de SFTP-tak: adresvelden verplicht, telefoon/land niet), dispatch-case `WHEN 'rhenus_sftp'` in de bestaande `'sftp'`-tak (mig 379), `externe_payloads` kanaal `'rhenus'`, storage `order-documenten/rhenus-xml/`, cron-vault-token (mig 380, `rhenus-send-elke-minuut`). De orchestrator-loop is opnieuw **gespiegeld, niet geabstraheerd** — ADR-0031 markeerde de derde vervoerder als generalisatie-moment, maar dat is bewust uitgesteld (cutover-week); alleen de sftp-client is gegeneraliseerd. Expliciet backlog-item.
+
+**Formaat-verschillen t.o.v. Verhoek:** gewichten in **kg met decimalen** (geen decagram), adres als één regel (`streetAddressOne` — geen `splitAdres`), `<sscc>` = AI(00)+SSCC (20 cijfers, config-vlag), geen T&T-slot in het bericht. Config in `app_config` sleutel `'rhenus'` (`sscc_met_00_prefix`, `package_type_code` default `'RLEN'`, `bestandsnaam_prefix` `'RHE'`) — per run gelezen.
+
+**0-colli-guard (incident 0455395, mail Rhenus 12-06-2026):** een legacy-bericht met `totalPackageQuantity=0` zonder item-segmenten viel bij Rhenus in error — hun mapping verplicht ≥1 `transportInstructionShipmentItem`. Drie lagen voorkomen herhaling: `valideerRhenusColli` geeft op 0 colli een `aantal`-probleem (rij → `Fout` met reden), de orchestrator-preflight blokkeert de upload, en `bouwRhenusXml` gooit als laatste poort.
+
+**Cutover-betekenis van `actief=TRUE`:** mig 378 hangt de live selectie-regels van placeholder `edi_partner_a` om naar `rhenus_sftp` (DE ≤30 kg kleinste zijde ≥131 + debiteur-pins 99001/640505). Zodra de vervoerder actief gaat (week 24-afspraak), routeren die regels DE-zendingen automatisch via Rhenus — geen extra regel- of code-werk. Go-live-checklist: zie Fase 2 in het [plan](superpowers/plans/2026-06-12-rhenus-transporteur-gs1-xml-sftp.md).
+
+**Status Fase 1 (2026-06-12):** code compleet + unit-getest (12 builder-tests, eisen-seam-tests, deno check, frontend typecheck). Open voor Miguel: migraties apply'en (374-380, vanaf de Rhenus-branch), `rhenus-send`/`rhenus-sftp-spike` deployen, `RHENUS_SFTP_*`-secrets zetten, rondreis (eerst testmap, dan /in), `actief=TRUE`.
 
 ### Vervoerder-Keuze als deep Module ([ADR-0008](adr/0008-vervoerder-keuze-als-deep-module.md))
 
