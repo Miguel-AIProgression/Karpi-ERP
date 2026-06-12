@@ -53,3 +53,6 @@ verify_jwt = false
 
 [functions.verhoek-sftp-spike]
 verify_jwt = false
+
+[functions.bouw-verzendbericht-edi]
+verify_jwt = false

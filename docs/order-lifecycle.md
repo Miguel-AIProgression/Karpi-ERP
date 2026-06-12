@@ -148,7 +148,7 @@ Eenmalige gates (EDI-leverweek, debiteur) vs. herhaalbare gate (levertijd) — b
 verschillend ontworpen (zie CLAUDE.md, mig 326-toelichting). Alle predicaten hebben
 één bron-van-waarheid-helper; inline duplicaten zijn opgeruimd (intake-consolidatie slice 2).
 
-## 6a. Orderbevestiging — kanaal-dispatch (plan 2026-06-11)
+## 6a. Orderbevestiging — kanaal-dispatch (besluit 2026-06-11)
 
 De "Bevestig order"-knop in [`order-header.tsx`](../frontend/src/components/orders/order-header.tsx)
 dispatcht op `bron_systeem` en partnerconfig via `bepaalBevestigingKanaal` in
@@ -158,17 +158,22 @@ dispatcht op `bron_systeem` en partnerconfig via `bepaalBevestigingKanaal` in
 |---|---|---|---|
 | ≠ `'edi'` | n.v.t. | `email` | PDF-orderbevestiging via `stuur-orderbevestiging` (gate `bevestigd_at`, mig 304) |
 | `'edi'` | `transus_actief && orderbev_uit` | `edi` | ORDRSP op `edi_berichten`-wachtrij → `transus-send` (gate `edi_bevestigd_op`, mig 158) |
-| `'edi'` | anders | `edi_stil` | Alleen gate `edi_bevestigd_op` zetten via RPC `markeer_order_edi_bevestigd` — géén bericht, géén mail |
+| `'edi'` | anders (config null / toggles uit) | `email` | PDF-orderbevestiging per e-mail (gate `bevestigd_at`); na verzenden wordt ook `edi_bevestigd_op` gezet (`sluitEdiGate=true`) zodat de leverweek-gate sluit |
+
+**Per documenttype:** wat de partner niet via EDI wil ontvangen, gaat automatisch per e-mail
+(besluit 11-06, Miguel). De "EDI nooit via mail"-regel geldt per documenttype, niet per klant
+of order. Kanaal `'edi_stil'` bestaat niet meer.
 
 **Twee bevestigings-gates — onderscheid:**
-- `bevestigd_at` (mig 304): e-mail-orderbevestiging voor niet-EDI-orders. Telt ook voor "Opnieuw versturen".
-- `edi_bevestigd_op` (mig 158): EDI-leverweek-bevestiging. Dezelfde gate dekt zowel de leverweek-flow (`EdiLeverweekBevestigen`) als de universele bevestig-knop (`BevestigOrderEdiDialog`).
+- `bevestigd_at` (mig 304): e-mail-orderbevestiging. Telt ook voor "Opnieuw versturen". Bij EDI-orders via email-kanaal: is de gate van de daadwerkelijke bevestiging.
+- `edi_bevestigd_op` (mig 158): EDI-leverweek-gate. Dekt de leverweek-flow (`EdiLeverweekBevestigen`) én de ORDRSP-flow (`BevestigOrderEdiDialog`). Bij email-kanaal EDI-orders: wordt `best-effort` gesloten ná de mail, zodat het "Te bevestigen"-chip verdwijnt.
 
-**Eén bevestigd-predicaat:** `isOrderBevestigd(order)` in [`bevestiging-kanaal.ts`](../frontend/src/lib/orders/bevestiging-kanaal.ts) — leest `edi_bevestigd_op` voor EDI-orders en `bevestigd_at` voor de rest. Alle UI-badges en guards gebruiken dit predicaat.
+**Eén bevestigd-predicaat:** `isOrderBevestigd(order, kanaal?)` in [`bevestiging-kanaal.ts`](../frontend/src/lib/orders/bevestiging-kanaal.ts):
+- Met `kanaal='edi'` → `edi_bevestigd_op`
+- Met `kanaal='email'` → `bevestigd_at` (ook voor EDI-orders — edi_bevestigd_op alleen is niet genoeg, de mail moet ook verstuurd zijn)
+- Zonder kanaal → oud fallback-gedrag (EDI → `edi_bevestigd_op`, anders → `bevestigd_at`)
 
-**EDI-orders krijgen nooit e-mail.** Ook niet als de klant telefonisch bestelt en de order handmatig aangemaakt is met `bron_systeem='edi'` — het kanaal hangt aan de order, niet aan de klant. Een EDI-klant die via een ander kanaal bestelt krijgt een e-mail via het bijbehorende kanaal.
-
-**Gedeelde flow `useBevestigEdiOrder`** ([`use-bevestig-edi-order.ts`](../frontend/src/modules/edi/lib/use-bevestig-edi-order.ts)): laadt `edi_handelspartner_config`, bepaalt het kanaal en roept `bevestigOrderZonderEdiBericht` (kanaal `edi_stil`, [`bevestig-helper.ts`](../frontend/src/modules/edi/lib/bevestig-helper.ts)) of `bevestigOrderViaEdi` (kanaal `edi`) aan.
+**Gedeelde flow `useBevestigEdiOrder`** ([`use-bevestig-edi-order.ts`](../frontend/src/modules/edi/lib/use-bevestig-edi-order.ts)): laadt `edi_handelspartner_config`, bepaalt het kanaal en roept bij `kanaal='edi'` `bevestigOrderViaEdi` aan of bij `kanaal='email'` alleen `bevestigOrderZonderEdiBericht` (administratieve leverweek-vastlegging; de orderbev-mail gaat via de universele "Bevestig order"-knop).
 
 ## 7. Intake-kanalen — verschillen-matrix
 

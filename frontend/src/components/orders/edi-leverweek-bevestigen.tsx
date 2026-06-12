@@ -1,22 +1,18 @@
 import { useState } from 'react'
-import { useQueryClient, useQuery } from '@tanstack/react-query'
 import { CalendarClock, Loader2, Check, AlertTriangle } from 'lucide-react'
-import { supabase } from '@/lib/supabase/client'
 import {
   verzendWeekKort,
   verzendWeekIsoString,
   verzendWeekStringToDatum,
 } from '@/lib/orders/verzendweek'
 import { vergelijkLeverweek } from '@/lib/orders/edi-leverweek'
-import {
-  fetchInkomendBerichtVoorOrder,
-  bevestigOrderViaEdi,
-  KARPI_GLN_DEFAULT,
-} from '@/modules/edi'
-import type { KarpiOrder } from '@/modules/edi/lib/karpi-fixed-width'
+import { useBevestigEdiOrder } from '@/modules/edi'
 
 interface Props {
   orderId: number
+  /** Debiteur-nr van de order — nodig om de EDI-partnerconfig op te halen
+   *  (orderbev_uit-toggle). */
+  debiteurNr: number
   /** EDI-gewenste leverdatum (klant) — orders.edi_gewenste_afleverdatum (ISO). */
   gewenstIso: string | null
   /** Huidige (haalbare) afleverdatum — orders.afleverdatum (ISO). */
@@ -32,55 +28,20 @@ interface Props {
  * uitgaande wachtrij (edi_bevestigd_op), waarna de order vrijkomt voor
  * picken/productie.
  */
-export function EdiLeverweekBevestigen({ orderId, gewenstIso, afleverdatumIso, orderStatus }: Props) {
-  const qc = useQueryClient()
+export function EdiLeverweekBevestigen({ orderId, debiteurNr, gewenstIso, afleverdatumIso, orderStatus }: Props) {
   const [weekStr, setWeekStr] = useState(verzendWeekIsoString(afleverdatumIso || gewenstIso))
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
-  const { data: bericht, isLoading } = useQuery({
-    queryKey: ['edi-inkomend-voor-order', orderId],
-    queryFn: () => fetchInkomendBerichtVoorOrder(orderId),
-    // Het inkomende EDI-bericht is onveranderlijk na aanmaak — geen refetch op
-    // window-focus nodig.
-    staleTime: Infinity,
-  })
+  const { kanaal, bericht, isLoading, configError, busy, error, bevestig } = useBevestigEdiOrder(orderId, debiteurNr)
 
   const gekozenDatum = verzendWeekStringToDatum(weekStr)
   const vergelijking = vergelijkLeverweek(gewenstIso, gekozenDatum)
 
   async function handleBevestig() {
-    if (!bericht?.payload_parsed || !gekozenDatum) return
-    setBusy(true)
-    setError(null)
+    if (!gekozenDatum) return
     try {
-      // 1. Zet de bevestigde afleverdatum vast (operator-keuze).
-      const { error: updErr } = await supabase
-        .from('orders')
-        .update({ afleverdatum: gekozenDatum })
-        .eq('id', orderId)
-      if (updErr) throw updErr
-
-      // 2. Bevestig via EDI: zet edi_bevestigd_op + plaats orderbev op wachtrij.
-      //    bevestigOrderViaEdi leest de zojuist-vastgezette afleverdatum (Task 6).
-      await bevestigOrderViaEdi(
-        orderId,
-        bericht.id,
-        bericht.payload_parsed as unknown as KarpiOrder,
-        KARPI_GLN_DEFAULT,
-        { isTest: bericht.is_test ?? false },
-      )
-
-      // 3. Verfris order-detail + overzicht + tellingen.
-      qc.invalidateQueries({ queryKey: ['orders', orderId] })
-      qc.invalidateQueries({ queryKey: ['orders'] })
-      qc.invalidateQueries({ queryKey: ['orders', 'status-counts'] })
-      qc.invalidateQueries({ queryKey: ['edi-berichten'] })
-      qc.invalidateQueries({ queryKey: ['edi-inkomend-voor-order', orderId] })
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setBusy(false)
+      await bevestig(gekozenDatum)
+    } catch {
+      // error-state wordt door de hook gezet
     }
   }
 
@@ -136,15 +97,31 @@ export function EdiLeverweekBevestigen({ orderId, gewenstIso, afleverdatumIso, o
 
         <button
           onClick={handleBevestig}
-          disabled={busy || isLoading || !bericht || !gekozenDatum}
+          disabled={busy || isLoading || configError || !gekozenDatum || (kanaal === 'edi' && !bericht)}
           className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] bg-terracotta-500 px-4 py-2 text-sm font-medium text-white hover:bg-terracotta-600 disabled:opacity-50"
           title="Zet de leverweek vast en verstuur de orderbevestiging. Hierna komt de order vrij voor picken/productie."
         >
           {busy ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-          Bevestig leverweek + verstuur orderbev
+          {isLoading
+            ? 'Bevestig leverweek'
+            : kanaal === 'edi'
+              ? 'Bevestig leverweek + verstuur orderbev'
+              : 'Bevestig leverweek (orderbevestiging gaat per e-mail)'}
         </button>
 
-        {!isLoading && !bericht && (
+        {configError && (
+          <span className="text-sm text-rose-600">
+            Partnerconfig kon niet geladen worden — probeer opnieuw of bevestig via de EDI-module.
+          </span>
+        )}
+
+        {!configError && !isLoading && kanaal === 'email' && (
+          <span className="text-sm text-slate-500">
+            Deze partner ontvangt de orderbevestiging per e-mail — verstuur die via de knop "Bevestig order".
+          </span>
+        )}
+
+        {!configError && kanaal === 'edi' && !isLoading && !bericht && (
           <span className="text-sm text-rose-600">
             Geen bron-EDI-bericht gevonden — bevestigen kan alleen via de EDI-module.
           </span>

@@ -1,5 +1,58 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-12 — DESADV-verzendbevestiging LIVE: format gevalideerd + cron actief (slice 4 afgerond)
+
+**Activatie voltooid (12-06):** format-builder byte-identiek gevalideerd tegen écht Hornbach-bericht 172390327 (bronbestand + EDIFACT-paar in `docs/transus/voorbeelden/`, kolomkaart in `karpi-verzendbericht.ts`); test-renders van orders ORD-2026-0334 (Hornbach) en ORD-2026-0232 (BDSK, 10 regels) door Miguel goedgekeurd in Transus' Testen-tab; `bouw-verzendbericht-edi` gedeployed (`--no-verify-jwt`, auth via `?token=` zoals transus-send); **migratie 377 toegepast — cron `verzendbericht-edi-sweep` draait (jobid 12, */15 min)**. Er waren op activatiemoment 0 verzonden EDI-orders; de eerste echte verzending van een Hornbach/BDSK-order produceert automatisch de eerste DESADV (zichtbaar in de Communicatie-tijdlijn + EDI-module). **Bugfix tijdens activatie:** kale PostgREST-embeds `debiteuren(naam)` en `producten(ean_code)` gaven PGRST201 (dubbele FK-relaties: `betaler`-FK resp. `fysiek_artikelnr`-FK mig 154) — expliciete FK-hints toegevoegd; DESADV toont het originele artikel (omsticker intern, zelfde regel als factuur).
+
+## 2026-06-11 — DESADV-verzendbevestiging via EDI: infra gebouwd (slice 4)
+
+**Wat:** de infra voor automatisch versturen van DESADV-verzendberichten (verzendbericht/pakbon) via Transus is gebouwd. De format-builder gooide bewust een fout totdat het Transus-format gevalideerd was (Taak 12-STOP — opgelost op 12-06, zie entry hierboven).
+
+**Gebouwd:**
+- `supabase/functions/_shared/transus-formats/karpi-verzendbericht.ts` (+test): bevroren input-interface `VerzendberichtInput` + `valideerVerzendberichtInput`; `buildKarpiVerzendbericht` gooit bewust een `Error('DESADV-format nog niet gevalideerd')` tot Taak 12 afgerond is.
+- Edge function `supabase/functions/bouw-verzendbericht-edi/index.ts` (spiegelt `bouw-factuur-edi`): POST `{order_id}` (gericht) of `{}` (sweep over `status='Verzonden' AND bron_systeem='edi'` met partners waarbij `verzend_uit && transus_actief`, minus al-bestaande verzendberichten). Sweep-venster: alleen `verzonden_at >= now() - 7 dagen` — historische orders worden bij activatie niet alsnog verzonden; gerichte POST omzeilt het venster bewust. Idempotent op `(richting='uit', berichttype='verzendbericht', bron_tabel='orders', bron_id)`. Klant-PO uit `orders.klant_referentie`; zending via `zending_orders → zendingen(zending_nr, verzenddatum, track_trace)`; GTIN uit `producten.ean_code` (admin-pseudo/VERZEND-regels gefilterd — fysiek document); GLN's uit order-snapshots. Verstuurd door bestaande cron `transus-send` (mig 305).
+- `supabase/config.toml`: `[functions.bouw-verzendbericht-edi] verify_jwt = false`.
+- `supabase/migrations/377_verzendbericht_edi_cron.sql`: pg_cron-sweep elke 15 min — **NOG NIET TOEGEPAST** (builder gooit tot format-validatie klaar is). (Driemaal hernummerd: 372→373→374→377 wegens collisies met origin/main en `feat/verhoek-transporteur` (374-376).)
+- Verschijnt automatisch in de Communicatie-tijdlijn op order-detail (slice 3, label 'Verzendbevestiging') — geen extra UI nodig.
+- Partners die hierop wachten: Hornbach NL (361208) en BDSK (600556) — `verzend_uit` staat daar al aan.
+
+**Activatievolgorde (mens-stappen, in deze volgorde):**
+1. **Taak 12:** Miguel downloadt een historisch verzendbericht/pakbon-voorbeeld uit Transus Online (Handelspartners → proces "Pakbon/Verzendbericht versturen" → Bekijken en testen → bestand downloaden, bij voorkeur BDSK of Hornbach), plaatst het in `docs/transus/voorbeelden/`, daarna wordt het format gereverse-engineered + fixture-test + `buildKarpiVerzendbericht` geïmplementeerd, en gevalideerd in Transus' Testen-tab (recept `docs/transus/demo-rondreis.md`).
+2. **Deploy:** `supabase functions deploy bouw-verzendbericht-edi --project-ref wqzeevfobwauxkalagtn`.
+3. **Gerichte test:** POST met één order_id van een verzonden Hornbach/BDSK-order; wachtrij-rij controleren; `transus-send` laten versturen; ontvangst bij partner verifiëren.
+4. **Migratie 377 toepassen** (cron aan).
+
+## 2026-06-11 — Communicatie-tijdlijn: EDI-berichten naast e-mails op order-detail (slice 3)
+
+**Wat:** de "E-mails"-sectie op order-detail heet nu "Communicatie" en toont in één gecombineerde tijdlijn zowel verstuurde e-mails als uitgaande EDI-berichten (`edi_berichten richting='uit'`). EDI-items tonen type (orderbev/factuur/verzendbericht), live status (Wachtrij/Verstuurd/Fout met kleurcodering) en een directe link naar het EDI-bericht-detail (`/edi/berichten/:id`). E-mail-items renderen exact als voorheen (klik opent dialog).
+
+**Technisch:**
+- Pure merge-helper `communicatie-tijdlijn.ts` (`bouwCommunicatieTijdlijn`) — testbaar zonder Supabase, bewust géén logica in de component.
+- Nieuwe query `fetchUitgaandeEdiBerichtenVoorOrder` (`@/modules/edi`) — haalt `id, berichttype, status, is_test, sent_at, created_at` op; geen payload-velden (zwaar).
+- `order-emails.tsx` laadt via `useQuery` de EDI-berichten parallel aan de bestaande e-mailhook; wacht op beide `isLoading`-flags voor render.
+
+**Ontwerp-keuze (géén dubbel-loggen):** `verstuurde_emails` en `edi_berichten` blijven elk hun eigen bron-van-waarheid; de merge is puur presentatie. EDI-facturen die via `edi_handelspartner_config` gestuurd worden, verschijnen als EDI-rij — niet als e-mailrij — conform de slice-2-gate.
+- **Bekende beperking bundel-facturen:** de EDI-INVOIC hangt aan één order (`edi_berichten.order_id` = eerste order van de bundel); op de tijdlijn van de overige bundel-orders is de factuur niet zichtbaar (de e-mail-variant logde wél per order). Eventuele match op `factuur_id` staat op de backlog.
+
+## 2026-06-11 — Factuur: e-mail onderdrukt bij actieve EDI-INVOIC (slice 2)
+
+**Wat:** mail-gate `!ediFactuurActief` toegevoegd aan het e-mailblok in `factuur-verzenden` (stap 7); `verstuurd_naar` logt nu `'EDI Transus'` i.p.v. een e-mailadres dat nooit gemaild is. De `logVerstuurdeEmails`-aanroepen zitten al binnen het gated blok — geen aparte aanpassing nodig. De PDF blijft altijd in storage.
+
+**Waarom:** debiteuren met `edi_handelspartner_config.transus_actief && factuur_uit` kregen de factuur zowel via EDI-INVOIC (stap 6) als per e-mail (stap 7) — dubbel kanaal in strijd met de partner-afspraak "EDI-only". `verstuurd_naar` registreerde vervolgens het e-mailadres alsof er gemaild was.
+
+## 2026-06-11 — Universele bevestig-knop: kanaal-dispatch EDI vs e-mail
+
+**Aanleiding:** EDI-orders kregen nul orderbevestigingen na de EDI-cutover van 3 juni — de "Bevestig order"-knop stuurde altijd e-mail, ook bij EDI-orders. Bovendien werd de `orderbev_uit`-toggle in `edi_handelspartner_config` nergens gecheckt, waardoor partners die géén orderbev willen (SB Möbel BOSS 150761, Hammer 330955) er toch een kregen. Ontwerp-besluit (bijgesteld dezelfde dag, zie onderaan deze entry): het kanaal hangt aan de order (`bron_systeem`) én per documenttype aan de partnerconfig — wat de partner via EDI wil, gaat via EDI; al het andere gewoon per e-mail.
+
+- **`bepaalBevestigingKanaal` + `isOrderBevestigd`** ([`bevestiging-kanaal.ts`](../frontend/src/lib/orders/bevestiging-kanaal.ts)): pure dispatcher — `bron_systeem='edi'` + `transus_actief && orderbev_uit` → `'edi'`; alle andere orders (ook EDI-orders zonder actieve EDI-orderbev) → `'email'`. Optioneel `kanaal`-param in `isOrderBevestigd`: met `'edi'` → `edi_bevestigd_op`; met `'email'` → `bevestigd_at`; zonder → oud fallback-gedrag.
+- **`bevestigOrderZonderEdiBericht`** ([`bevestig-helper.ts`](../frontend/src/modules/edi/lib/bevestig-helper.ts)): zet de `edi_bevestigd_op`-gate via RPC `markeer_order_edi_bevestigd` — hergebruikt voor het administratieve deel van de leverweek-bevestiging bij email-kanaal EDI-orders.
+- **Gedeelde hook `useBevestigEdiOrder`** ([`use-bevestig-edi-order.ts`](../frontend/src/modules/edi/lib/use-bevestig-edi-order.ts)): gedeeld door het amber leverweek-paneel (`edi-leverweek-bevestigen.tsx`) én de nieuwe `BevestigOrderEdiDialog`; laadt `edi_handelspartner_config` en bepaalt het kanaal.
+- **`BevestigOrderEdiDialog`** ([`bevestig-order-edi-dialog.tsx`](../frontend/src/components/orders/bevestig-order-edi-dialog.tsx)): uitsluitend bereikbaar bij kanaal `'edi'` — leverweek kiezen, geen e-mailveld; ORDRSP op `edi_berichten`-wachtrij → `transus-send`.
+- **Kanaal-dispatch in `order-header.tsx`**: groene knop opent bij kanaal `'edi'` de EDI-dialog, bij kanaal `'email'` de e-maildialog (ook voor EDI-orders zonder actieve EDI-orderbev); "Opnieuw versturen" ook voor email-kanaal EDI-orders; button disabled tijdens config-laden.
+- **`BevestigOrderDialog` met `sluitEdiGate`** ([`bevestig-order-dialog.tsx`](../frontend/src/components/orders/bevestig-order-dialog.tsx)): nieuwe optionele prop — na succesvolle mail sluit ook de `edi_bevestigd_op`-gate (best-effort) zodat het "Te bevestigen"-chip en het amber paneel verdwijnen.
+
+**Bijgesteld besluit (11-06, Miguel):** wat een partner niet via EDI wil ontvangen, gaat automatisch per e-mail — kanaal `'edi_stil'` vervangen door `'email'`-fallback; na succesvolle mail sluit ook de EDI-leverweek-gate.
+
 ## 2026-06-12 — Pick & Ship: geblokkeerde orders naar eigen sectie ónder de week-secties (branch `fix/pick-geblokkeerd-onderaan`)
 
 **Correctie op de sorteer-fix van vanochtend (zie entry hieronder):** de

@@ -211,3 +211,19 @@ async function bepaalVolgendeOrderResponseSeq(orderId: number): Promise<number> 
   const row = (data?.[0] ?? null) as { order_response_seq: number | null } | null
   return (row?.order_response_seq ?? 0) + 1
 }
+
+/**
+ * Sluit de edi_bevestigd_op-gate van een EDI-order via de idempotente RPC,
+ * zonder zelf een bericht te versturen. Twee gebruikers (besluit 11-06):
+ * het amber leverweek-paneel bij email-kanaal partners (administratieve
+ * leverweek-vastlegging; de orderbev zelf gaat per e-mail via de universele
+ * knop) en BevestigOrderDialog's sluitEdiGate (gate sluiten ná een
+ * succesvolle orderbev-mail, zodat chip + paneel verdwijnen).
+ */
+export async function bevestigOrderZonderEdiBericht(orderId: number): Promise<string> {
+  const { data, error } = await supabase.rpc('markeer_order_edi_bevestigd', {
+    p_order_id: orderId,
+  })
+  if (error) throw error
+  return data as string
+}

@@ -122,6 +122,7 @@ export function OrderDetailPage() {
       {isLeverweekTeBevestigen(order) && order.status !== 'Geannuleerd' && (
         <EdiLeverweekBevestigen
           orderId={order.id}
+          debiteurNr={order.debiteur_nr}
           gewenstIso={order.edi_gewenste_afleverdatum ?? null}
           afleverdatumIso={order.afleverdatum}
           orderStatus={order.status}

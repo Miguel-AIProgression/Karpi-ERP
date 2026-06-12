@@ -318,6 +318,33 @@ export async function ruimEdiDemoData(): Promise<OpruimResult> {
 }
 
 /**
+ * Uitgaande EDI-berichten van een order, voor de Communicatie-tijdlijn op
+ * order-detail. Bewust geen payload-velden (zwaar); de tijdlijn linkt door
+ * naar het EDI-bericht-detail voor de volledige inhoud.
+ */
+export interface EdiUitgaandTijdlijnItem {
+  id: number
+  berichttype: string
+  status: string
+  is_test: boolean
+  sent_at: string | null
+  created_at: string
+}
+
+export async function fetchUitgaandeEdiBerichtenVoorOrder(
+  orderId: number,
+): Promise<EdiUitgaandTijdlijnItem[]> {
+  const { data, error } = await supabase
+    .from('edi_berichten')
+    .select('id, berichttype, status, is_test, sent_at, created_at')
+    .eq('order_id', orderId)
+    .eq('richting', 'uit')
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  return (data ?? []) as EdiUitgaandTijdlijnItem[]
+}
+
+/**
  * Vindt het inkomende order-bericht dat bij een interne order hoort (mig 158:
  * edi_berichten.order_id = orders.id). Nodig om vanaf order-detail de
  * orderbev-bevestiging te kunnen aanroepen (payload_parsed = de partner-order).
