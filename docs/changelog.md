@@ -53,6 +53,41 @@
 
 **Bijgesteld besluit (11-06, Miguel):** wat een partner niet via EDI wil ontvangen, gaat automatisch per e-mail — kanaal `'edi_stil'` vervangen door `'email'`-fallback; na succesvolle mail sluit ook de EDI-leverweek-gate.
 
+## 2026-06-12 — Pick & Ship: geblokkeerde orders naar eigen sectie ónder de week-secties (branch `fix/pick-geblokkeerd-onderaan`)
+
+**Correctie op de sorteer-fix van vanochtend (zie entry hieronder):** de
+binnen-sectie-sortering loste het probleem niet op — de "Geen vervoerder
+mogelijk"-orders hebben oude verzendweken en vormden dus **complete
+"Achterstallig"-secties die als geheel bovenaan de tab stonden**. Miguel:
+"alle die niet verzonden kunnen worden staan bovenaan in de week."
+
+**Fix:** geblokkeerde orders gaan helemaal niet meer de week-/dag-secties in.
+[`pick-overview.tsx`](../frontend/src/modules/magazijn/pages/pick-overview.tsx)
+splitst `naVervoerderFilter` in startbaar vs. geblokkeerd (predicaat ongewijzigd:
+≥1 regel `bron='geen'`, niet-afhalen); de week-secties tonen alleen startbare
+orders en nieuwe component
+[`PickGeblokkeerdSectie`](../frontend/src/modules/magazijn/components/pick-geblokkeerd-sectie.tsx)
+(amber, Ban-icoon, zelfde klant-clustering + land-toggle) rendert de
+geblokkeerde orders als laatste sectie. Week-sectie-tellingen tellen ze niet
+meer mee; de week-tab-badges (stats) wél — ze zitten nog in de tab. Zodra een
+vervoerder geactiveerd of een override gezet is verhuist de order vanzelf
+terug naar zijn week-sectie. De sorteer-props op PickWeekSectie/
+PickDagOrdersSectie (vanochtend) zijn weer verwijderd; de
+`geblokkeerdeOrderIds`-parameter op de `groeperen.ts`-helpers blijft (getest,
+defense-in-depth). Puur UI — geen DB-wijziging.
+
+**Verzoek Miguel:** orders die gepickt kunnen worden moeten boven de
+"Geen vervoerder mogelijk"-orders staan. `clusterOrdersOpKlant` /
+`groepeerOrdersOpLand` ([`groeperen.ts`](../frontend/src/modules/magazijn/lib/groeperen.ts))
+accepteren nu een optionele `geblokkeerdeOrderIds`-set als primaire sorteersleutel
+(geblokkeerd → achteraan, daarbinnen ongewijzigd alfabetisch op klant + order_nr;
+binnen een bundel-cluster zakken geblokkeerde orders ook naar onder).
+[`pick-overview.tsx`](../frontend/src/modules/magazijn/pages/pick-overview.tsx)
+voedt de set uit de al aanwezige per-order vervoerder-queries (zelfde predicaat
+als `StartPickrondesButton` + mig 373-guard: ≥1 regel `bron='geen'`, niet-afhalen)
+en geeft hem door aan beide secties (week + dag-orders). Puur UI-sortering —
+geen DB-wijziging. Tests: 3 nieuwe cases in `groeperen.test.ts`.
+
 ## 2026-06-11 — Pick & Ship toonde maar 91 van ~236 pickbare orders (PostgREST-cap) + pick-start geblokkeerd zonder vervoerder (mig 373, branch `fix/pick-ship-zonder-vervoerder`)
 
 **Verzoek Miguel (vervolg op mig 372):** "Zet ze [orders zonder vervoerder]
