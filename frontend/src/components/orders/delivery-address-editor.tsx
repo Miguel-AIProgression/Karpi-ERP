@@ -1,5 +1,10 @@
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase/client'
+import {
+  DROPSHIP_EMAIL_MELDING,
+  isBlokkerendDropshipEmailProbleem,
+  type DropshipEmailProbleem,
+} from '@/lib/orders/dropship-email'
 
 interface DeliveryAddressEditorProps {
   naam?: string
@@ -12,12 +17,14 @@ interface DeliveryAddressEditorProps {
   afleveradresId?: number
   debiteurNr: number | null
   onEmailChange: (email: string) => void
+  /** Alleen gevuld bij dropshipment-orders: toets van het T&T-adres (dropship-email.ts). */
+  dropshipEmailProbleem?: DropshipEmailProbleem | null
 }
 
 export function DeliveryAddressEditor({
   naam, adres, postcode, plaats,
   aflEmail, afleveradresId, debiteurNr,
-  onEmailChange,
+  onEmailChange, dropshipEmailProbleem,
 }: DeliveryAddressEditorProps) {
   const [editing, setEditing] = useState(false)
   const [draftEmail, setDraftEmail] = useState(aflEmail)
@@ -49,9 +56,11 @@ export function DeliveryAddressEditor({
         if (e) throw e
       }
       if (saveToDebiteur && debiteurNr) {
+        // Klant-niveau verzend-/T&T-adres (mig 369) — bewust niet email_overig:
+        // dat algemene veld voedt ook andere flows (voorstel Piet-Hein 11-06).
         const { error: e } = await supabase
           .from('debiteuren')
-          .update({ email_overig: normEmail || null })
+          .update({ email_verzend: normEmail || null })
           .eq('debiteur_nr', debiteurNr)
         if (e) throw e
       }
@@ -87,9 +96,19 @@ export function DeliveryAddressEditor({
               {aflEmail} <span className="text-slate-400">· track &amp; trace</span>
             </p>
           )}
-          {!aflEmail && (
+          {!aflEmail && dropshipEmailProbleem !== 'ontbreekt' && (
             <p className="mt-1 text-amber-600 text-xs italic">
               Geen e-mailadres — klant ontvangt geen track &amp; trace
+            </p>
+          )}
+          {dropshipEmailProbleem === 'ontbreekt' && (
+            <p className="mt-1 text-amber-600 text-xs">
+              {DROPSHIP_EMAIL_MELDING.ontbreekt}
+            </p>
+          )}
+          {isBlokkerendDropshipEmailProbleem(dropshipEmailProbleem ?? null) && (
+            <p className="mt-1 text-rose-600 text-xs">
+              {DROPSHIP_EMAIL_MELDING[dropshipEmailProbleem!]}
             </p>
           )}
         </div>
@@ -146,7 +165,7 @@ export function DeliveryAddressEditor({
             disabled={!debiteurNr}
             className="rounded border-slate-300 text-terracotta-500 focus:ring-terracotta-400/30"
           />
-          Opslaan als algemeen mailadres op klantpagina
+          Opslaan als vast verzend-e-mailadres voor deze klant
         </label>
       </div>
       {error && <p className="text-xs text-rose-600">{error}</p>}

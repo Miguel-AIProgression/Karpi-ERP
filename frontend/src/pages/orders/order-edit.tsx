@@ -95,6 +95,7 @@ export function OrderEditPage() {
     fact_plaats: order.fact_plaats,
     email_factuur: clientData?.email_factuur ?? null,
     email_overig: clientData?.email_overig ?? null,
+    email_verzend: clientData?.email_verzend ?? null,
     vertegenw_code: order.vertegenw_code,
     prijslijst_nr: clientData?.prijslijst_nr ?? null,
     korting_pct: clientData?.korting_pct ?? 0,
@@ -185,6 +186,11 @@ export function OrderEditPage() {
             fact_postcode: order.fact_postcode ?? undefined,
             fact_plaats: order.fact_plaats ?? undefined,
             fact_land: order.fact_land ?? undefined,
+            // E-mail-snapshots (mig 364) meegeven — anders wist elke
+            // bewerking fact_email/afl_email (update-RPC zet ontbrekende
+            // sleutels op NULL; incident ORD-2026-0350, 11-06-2026).
+            fact_email: order.fact_email ?? undefined,
+            afl_email: order.afl_email ?? undefined,
             afl_naam: order.afl_naam ?? undefined,
             afl_naam_2: order.afl_naam_2 ?? undefined,
             afl_adres: order.afl_adres ?? undefined,

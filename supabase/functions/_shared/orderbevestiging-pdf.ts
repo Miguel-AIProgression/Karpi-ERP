@@ -9,6 +9,7 @@ import {
   StandardFonts,
   rgb,
 } from 'https://esm.sh/pdf-lib@1.17.1'
+import type { Taal } from './orderbevestiging-taal.ts'
 
 export interface OrderbevestigingBedrijf {
   bedrijfsnaam: string
@@ -56,16 +57,142 @@ export interface OrderbevestigingInput {
   regels: OrderbevestigingRegel[]
   subtotaal: number
   btw_percentage: number
+  // Mig 371: intracommunautaire verlegging — TRUE → vermelding i.p.v. BTW-regel.
+  btw_verlegd?: boolean
   btw_bedrag: number
   totaal: number
   betaalconditie: string | null
   opmerkingen?: string | null
+  // Documenttaal — volgt het land van het factuuradres (zelfde bron als de
+  // begeleidende e-mail in stuur-orderbevestiging). Default 'nl'.
+  taal?: Taal
 }
 
-// Vaste juridische tekst over maatafwijkingen — letterlijk overgenomen van de
-// orderbevestigingen uit het oude systeem (zie ob26485640.pdf / ob26499970.pdf).
-const MAATAFWIJKING_DISCLAIMER =
-  'Een geringe maatafwijking van +/- 3% alsmede een kleurafwijking kan optreden.'
+// Alle vaste teksten op de PDF, per documenttaal. De NL-disclaimer is letterlijk
+// overgenomen van de orderbevestigingen uit het oude systeem (ob26485640.pdf /
+// ob26499970.pdf); de vertalingen spiegelen de e-mail-VERTALINGEN in
+// stuur-orderbevestiging zodat mail en bijlage dezelfde bewoording dragen.
+const PDF_VERTALINGEN: Record<Taal, {
+  titel: string
+  ordernummer: string
+  datum: string
+  debiteurnr: string
+  vertegenwoordiger: string
+  referentie: string
+  verzendweek: string
+  afleverdatum: string
+  klant: string
+  afhalen: string
+  afleveradres: string
+  kolommen: { artikel: string; karpiCode: string; omschrijving: string; eh: string; aantal: string; prijs: string; korting: string; bedrag: string }
+  eenheidStuks: string
+  subtotaal: string
+  btwOver: (pct: string, bedrag: string) => string
+  btwVerlegd: string
+  totaalInclBtw: string
+  betalingsconditie: string
+  disclaimer: string
+  opmerkingen: string
+  groet: string
+  pagina: (nr: number, totaal: number) => string
+}> = {
+  nl: {
+    titel: 'ORDERBEVESTIGING',
+    ordernummer: 'Ordernummer:',
+    datum: 'Datum:',
+    debiteurnr: 'Uw debiteurnr.:',
+    vertegenwoordiger: 'Vertegenwoordiger:',
+    referentie: 'Uw referentie:',
+    verzendweek: 'Verzendweek:',
+    afleverdatum: 'Afleverdatum:',
+    klant: 'Klant',
+    afhalen: 'Afhalen',
+    afleveradres: 'Afleveradres',
+    kolommen: { artikel: 'Artikel', karpiCode: 'Karpi code', omschrijving: 'Omschrijving', eh: 'Eh', aantal: 'Aantal', prijs: 'Prijs', korting: 'Korting', bedrag: 'Bedrag' },
+    eenheidStuks: 'St',
+    subtotaal: 'Totaalbedrag excl. btw',
+    btwOver: (pct, bedrag) => `${pct}% btw over ${bedrag}`,
+    btwVerlegd: 'BTW verlegd',
+    totaalInclBtw: 'Totaalbedrag incl. btw',
+    betalingsconditie: 'Betalingsconditie:',
+    disclaimer: 'Een geringe maatafwijking van +/- 3% alsmede een kleurafwijking kan optreden.',
+    opmerkingen: 'Opmerkingen:',
+    groet: 'Met vriendelijke groet,',
+    pagina: (nr, totaal) => `Pagina ${nr} van ${totaal}`,
+  },
+  de: {
+    titel: 'AUFTRAGSBESTÄTIGUNG',
+    ordernummer: 'Auftragsnummer:',
+    datum: 'Datum:',
+    debiteurnr: 'Ihre Kundennr.:',
+    vertegenwoordiger: 'Vertreter:',
+    referentie: 'Ihre Referenz:',
+    verzendweek: 'Versandwoche:',
+    afleverdatum: 'Lieferdatum:',
+    klant: 'Kunde',
+    afhalen: 'Abholung',
+    afleveradres: 'Lieferadresse',
+    kolommen: { artikel: 'Artikel', karpiCode: 'Karpi-Code', omschrijving: 'Beschreibung', eh: 'Einh.', aantal: 'Menge', prijs: 'Preis', korting: 'Rabatt', bedrag: 'Betrag' },
+    eenheidStuks: 'St',
+    subtotaal: 'Gesamtbetrag exkl. MwSt.',
+    btwOver: (pct, bedrag) => `${pct}% MwSt. auf ${bedrag}`,
+    btwVerlegd: 'Steuerschuldnerschaft des Leistungsempfängers (Reverse Charge)',
+    totaalInclBtw: 'Gesamtbetrag inkl. MwSt.',
+    betalingsconditie: 'Zahlungsbedingung:',
+    disclaimer: 'Geringe Maßabweichungen von +/- 3% sowie Farbabweichungen sind möglich.',
+    opmerkingen: 'Anmerkungen:',
+    groet: 'Mit freundlichen Grüßen,',
+    pagina: (nr, totaal) => `Seite ${nr} von ${totaal}`,
+  },
+  fr: {
+    titel: 'CONFIRMATION DE COMMANDE',
+    ordernummer: 'N° de commande:',
+    datum: 'Date:',
+    debiteurnr: 'Votre n° client:',
+    vertegenwoordiger: 'Représentant:',
+    referentie: 'Votre référence:',
+    verzendweek: 'Sem. d\'envoi:',
+    afleverdatum: 'Date de livraison:',
+    klant: 'Client',
+    afhalen: 'Enlèvement',
+    afleveradres: 'Adresse de livraison',
+    kolommen: { artikel: 'Article', karpiCode: 'Code Karpi', omschrijving: 'Désignation', eh: 'Un.', aantal: 'Qté', prijs: 'Prix', korting: 'Remise', bedrag: 'Montant' },
+    eenheidStuks: 'pc',
+    subtotaal: 'Montant total hors TVA',
+    btwOver: (pct, bedrag) => `TVA ${pct}% sur ${bedrag}`,
+    btwVerlegd: 'Autoliquidation de la TVA',
+    totaalInclBtw: 'Montant total TVA comprise',
+    betalingsconditie: 'Conditions de paiement:',
+    disclaimer: 'Un léger écart de mesure de +/- 3 % ainsi qu\'une différence de couleur peuvent survenir.',
+    opmerkingen: 'Remarques:',
+    groet: 'Cordialement,',
+    pagina: (nr, totaal) => `Page ${nr} sur ${totaal}`,
+  },
+  en: {
+    titel: 'ORDER CONFIRMATION',
+    ordernummer: 'Order number:',
+    datum: 'Date:',
+    debiteurnr: 'Your customer no.:',
+    vertegenwoordiger: 'Representative:',
+    referentie: 'Your reference:',
+    verzendweek: 'Shipping week:',
+    afleverdatum: 'Delivery date:',
+    klant: 'Customer',
+    afhalen: 'Pickup',
+    afleveradres: 'Delivery address',
+    kolommen: { artikel: 'Item', karpiCode: 'Karpi code', omschrijving: 'Description', eh: 'Unit', aantal: 'Qty', prijs: 'Price', korting: 'Discount', bedrag: 'Amount' },
+    eenheidStuks: 'pcs',
+    subtotaal: 'Total amount excl. VAT',
+    btwOver: (pct, bedrag) => `${pct}% VAT over ${bedrag}`,
+    btwVerlegd: 'VAT reverse charged',
+    totaalInclBtw: 'Total amount incl. VAT',
+    betalingsconditie: 'Payment terms:',
+    disclaimer: 'A slight size deviation of +/- 3% as well as a colour variation may occur.',
+    opmerkingen: 'Remarks:',
+    groet: 'Kind regards,',
+    pagina: (nr, totaal) => `Page ${nr} of ${totaal}`,
+  },
+}
 
 // Betaalconditie wordt opgeslagen met een leidende numerieke code, bv.
 // "31 - 30 dagen netto" — voor de klant tonen we alleen de leesbare omschrijving.
@@ -145,6 +272,7 @@ function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): 
 // ─── Hoofd-generator ─────────────────────────────────────────────────────────
 
 export async function genereerOrderbevestigingPDF(input: OrderbevestigingInput): Promise<Uint8Array> {
+  const t = PDF_VERTALINGEN[input.taal ?? 'nl']
   const doc = await PDFDocument.create()
   const fontR  = await doc.embedFont(StandardFonts.Helvetica)
   const fontB  = await doc.embedFont(StandardFonts.HelveticaBold)
@@ -179,35 +307,35 @@ export async function genereerOrderbevestigingPDF(input: OrderbevestigingInput):
   drawTextRight(page, `e ${input.bedrijf.email} | i ${input.bedrijf.website}`, rightX, pageH - mm(23), fontR, 6, SLATE)
 
   // ── Documenttype-label (plain, zoals "FACTUUR"/"HERBEVESTIGING" in oude lay-out) ──
-  drawText(page, 'ORDERBEVESTIGING', mL, pageH - mm(30), fontB, 9)
+  drawText(page, t.titel, mL, pageH - mm(30), fontB, 9)
   let y = pageH - mm(38)
 
   // ── Order info blok ───────────────────────────────────────────────────────
+  // Waarde-offset per label berekend (minimaal de oude NL-kolombreedte) zodat
+  // langere vertaalde labels (bv. FR "Date de livraison:") nooit overlappen.
+  const labelWaarde = (label: string, waarde: string, x: number, minOffset: number) => {
+    drawText(page, label, x, y, fontB, 8)
+    const offset = Math.max(minOffset, fontB.widthOfTextAtSize(label, 8) + mm(3))
+    drawText(page, waarde, x + offset, y, fontR, 8)
+  }
   const col2 = mL + mm(95)
-  drawText(page, 'Ordernummer:', mL, y, fontB, 8)
-  drawText(page, input.order_nr, mL + mm(35), y, fontR, 8)
-  drawText(page, 'Datum:', col2, y, fontB, 8)
-  drawText(page, formatDatum(input.orderdatum), col2 + mm(25), y, fontR, 8)
+  labelWaarde(t.ordernummer, input.order_nr, mL, mm(35))
+  labelWaarde(t.datum, formatDatum(input.orderdatum), col2, mm(25))
   y -= 13
 
-  drawText(page, 'Uw debiteurnr.:', mL, y, fontB, 8)
-  drawText(page, String(input.debiteur_nr), mL + mm(35), y, fontR, 8)
+  labelWaarde(t.debiteurnr, String(input.debiteur_nr), mL, mm(35))
   if (input.vertegenwoordiger) {
-    drawText(page, 'Vertegenwoordiger:', col2, y, fontB, 8)
-    drawText(page, input.vertegenwoordiger, col2 + mm(33), y, fontR, 8)
+    labelWaarde(t.vertegenwoordiger, input.vertegenwoordiger, col2, mm(33))
   }
   y -= 13
 
   if (input.klant_referentie) {
-    drawText(page, 'Uw referentie:', mL, y, fontB, 8)
-    drawText(page, input.klant_referentie, mL + mm(35), y, fontR, 8)
+    labelWaarde(t.referentie, input.klant_referentie, mL, mm(35))
   }
   if (input.verzendweek) {
-    drawText(page, 'Verzendweek:', col2, y, fontB, 8)
-    drawText(page, input.verzendweek, col2 + mm(25), y, fontR, 8)
+    labelWaarde(t.verzendweek, input.verzendweek, col2, mm(25))
   } else if (input.afleverdatum) {
-    drawText(page, 'Afleverdatum:', col2, y, fontB, 8)
-    drawText(page, formatDatum(input.afleverdatum), col2 + mm(25), y, fontR, 8)
+    labelWaarde(t.afleverdatum, formatDatum(input.afleverdatum), col2, mm(25))
   }
   y -= 18
 
@@ -220,8 +348,8 @@ export async function genereerOrderbevestigingPDF(input: OrderbevestigingInput):
   const aflStad    = isAfhalen ? input.bedrijf.plaats        : input.afl_stad
   const aflLand    = isAfhalen ? null                        : input.afl_land
 
-  drawText(page, 'Klant', mL, y, fontB, 8, SLATE)
-  drawText(page, isAfhalen ? 'Afhalen' : 'Afleveradres', col2, y, fontB, 8, SLATE)
+  drawText(page, t.klant, mL, y, fontB, 8, SLATE)
+  drawText(page, isAfhalen ? t.afhalen : t.afleveradres, col2, y, fontB, 8, SLATE)
   y -= 12
 
   drawText(page, input.klant_naam, mL, y, fontB, 8)
@@ -259,15 +387,15 @@ export async function genereerOrderbevestigingPDF(input: OrderbevestigingInput):
   const colBedrag  = { x: mL + mm(160), w: mm(10) }
 
   const colDefs = [
-    { label: '#',            ...colNum,     align: 'left'  },
-    { label: 'Artikel',      ...colArt,     align: 'left'  },
-    { label: 'Karpi code',   ...colKarpi,   align: 'left'  },
-    { label: 'Omschrijving', ...colOmsch,   align: 'left'  },
-    { label: 'Eh',           ...colEh,      align: 'left'  },
-    { label: 'Aantal',       ...colAantal,  align: 'right' },
-    { label: 'Prijs',        ...colPrijs,   align: 'right' },
-    { label: 'Korting',      ...colKorting, align: 'right' },
-    { label: 'Bedrag',       ...colBedrag,  align: 'right' },
+    { label: '#',                    ...colNum,     align: 'left'  },
+    { label: t.kolommen.artikel,     ...colArt,     align: 'left'  },
+    { label: t.kolommen.karpiCode,   ...colKarpi,   align: 'left'  },
+    { label: t.kolommen.omschrijving, ...colOmsch,  align: 'left'  },
+    { label: t.kolommen.eh,          ...colEh,      align: 'left'  },
+    { label: t.kolommen.aantal,      ...colAantal,  align: 'right' },
+    { label: t.kolommen.prijs,       ...colPrijs,   align: 'right' },
+    { label: t.kolommen.korting,     ...colKorting, align: 'right' },
+    { label: t.kolommen.bedrag,      ...colBedrag,  align: 'right' },
   ]
 
   page.drawLine({ start: { x: mL, y }, end: { x: pageW - mR, y }, thickness: 0.5, color: BLACK })
@@ -287,9 +415,9 @@ export async function genereerOrderbevestigingPDF(input: OrderbevestigingInput):
   for (const regel of input.regels) {
     // Sla VERZEND-regels niet op als geen bedrag
     const isVerzend = regel.artikelnr === 'VERZEND'
-    // Eenheid "St" (stuks) — alleen voor echte productregels, mirrort de oude
+    // Eenheid (stuks) — alleen voor echte productregels, mirrort de oude
     // lay-out (vrachtkosten-/admin-regels tonen geen eenheid).
-    const eenheid = regel.artikelnr && !isVerzend ? 'St' : null
+    const eenheid = regel.artikelnr && !isVerzend ? t.eenheidStuks : null
     const kortingTxt = formatKorting(regel.korting_pct)
 
     const omschrijvingLines = wrapText(regel.omschrijving ?? '', fontR, 7.5, colOmsch.w - mm(2))
@@ -328,7 +456,7 @@ export async function genereerOrderbevestigingPDF(input: OrderbevestigingInput):
       subY -= EXTRA_LINE_H
     }
     if (input.verzendweek) {
-      drawText(page, `Verzendweek: ${input.verzendweek}`, omschX, subY, fontR, 6.5, SLATE)
+      drawText(page, `${t.verzendweek} ${input.verzendweek}`, omschX, subY, fontR, 6.5, SLATE)
     }
 
     if (eenheid) {
@@ -367,20 +495,30 @@ export async function genereerOrderbevestigingPDF(input: OrderbevestigingInput):
     y -= size === 9 ? 14 : 11
   }
 
-  drawTotaalRegel('Totaalbedrag excl. btw', input.subtotaal, fontR, 8)
-  drawTotaalRegel(`${formatBtwPercentage(input.btw_percentage)}% btw over ${formatBedrag(input.subtotaal)}`, input.btw_bedrag, fontR, 8)
-  drawTotaalRegel('Totaalbedrag incl. btw', input.totaal, fontB, 9)
+  drawTotaalRegel(t.subtotaal, input.subtotaal, fontR, 8)
+  if (input.btw_verlegd) {
+    // Intracommunautaire verlegging: wettelijke vermelding i.p.v. BTW-regel.
+    // Rechts uitgelijnd op dezelfde rechterrand als de bedragen (geen bedrag
+    // erachter) — de Duitse tekst is te lang om vanaf totaalLabelX te passen,
+    // en er staat verder niets op deze regel, dus hij mag naar links uitlopen.
+    drawText(page, t.btwVerlegd, pageW - mR - fontR.widthOfTextAtSize(t.btwVerlegd, 8) - 2, y, fontR, 8)
+    y -= 11
+  } else {
+    drawTotaalRegel(t.btwOver(formatBtwPercentage(input.btw_percentage), formatBedrag(input.subtotaal)), input.btw_bedrag, fontR, 8)
+  }
+  drawTotaalRegel(t.totaalInclBtw, input.totaal, fontB, 9)
   y -= 4
 
   // ── Condities + maatafwijking-disclaimer ──────────────────────────────────
   const betaalconditie = strippedBetaalconditie(input.betaalconditie)
   if (betaalconditie) {
-    drawText(page, 'Betalingsconditie:', mL, y, fontB, 8)
-    drawText(page, betaalconditie, mL + mm(38), y, fontR, 8)
+    drawText(page, t.betalingsconditie, mL, y, fontB, 8)
+    const condOffset = Math.max(mm(38), fontB.widthOfTextAtSize(t.betalingsconditie, 8) + mm(3))
+    drawText(page, betaalconditie, mL + condOffset, y, fontR, 8)
     y -= 11
   }
   y -= 4
-  for (const line of wrapText(MAATAFWIJKING_DISCLAIMER, fontR, 7, pageW - mL - mR)) {
+  for (const line of wrapText(t.disclaimer, fontR, 7, pageW - mL - mR)) {
     drawText(page, line, mL, y, fontR, 7, SLATE)
     y -= 10
   }
@@ -388,7 +526,7 @@ export async function genereerOrderbevestigingPDF(input: OrderbevestigingInput):
 
   // ── Opmerkingen ───────────────────────────────────────────────────────────
   if (input.opmerkingen) {
-    drawText(page, 'Opmerkingen:', mL, y, fontB, 8)
+    drawText(page, t.opmerkingen, mL, y, fontB, 8)
     y -= 11
     const lines = wrapText(input.opmerkingen, fontR, 8, pageW - mL - mR)
     for (const line of lines) {
@@ -400,7 +538,7 @@ export async function genereerOrderbevestigingPDF(input: OrderbevestigingInput):
 
   // ── Slottekst ─────────────────────────────────────────────────────────────
   y -= 4
-  drawText(page, 'Met vriendelijke groet,', mL, y, fontR, 8)
+  drawText(page, t.groet, mL, y, fontR, 8)
   y -= 11
   drawText(page, input.bedrijf.bedrijfsnaam, mL, y, fontB, 8)
 
@@ -411,7 +549,7 @@ export async function genereerOrderbevestigingPDF(input: OrderbevestigingInput):
     const footerY = mm(10)
     drawText(p, `${input.bedrijf.bedrijfsnaam}   |   KvK ${input.bedrijf.kvk}   |   BTW ${input.bedrijf.btw_nummer}   |   IBAN ${input.bedrijf.iban}   |   BIC ${input.bedrijf.bic}`, mL, footerY, fontR, 6.5, SLATE)
     if (pageCount > 1) {
-      const pgTxt = `Pagina ${i + 1} van ${pageCount}`
+      const pgTxt = t.pagina(i + 1, pageCount)
       drawText(p, pgTxt, pageW - mR - fontR.widthOfTextAtSize(pgTxt, 6.5), footerY, fontR, 6.5, SLATE)
     }
   }

@@ -10,12 +10,15 @@ import {
 
 export const DROPSHIP_IDS = [DROPSHIP_KLEIN_ID, DROPSHIP_GROOT_ID] as const
 
-export function isDropshipRegel(r: OrderRegelFormData): boolean {
+/** Minimale shape zodat zowel form-regels als query-resultaten getoetst kunnen worden. */
+type MetArtikelnr = { artikelnr?: string | null }
+
+export function isDropshipRegel(r: MetArtikelnr): boolean {
   return r.artikelnr === DROPSHIP_KLEIN_ID || r.artikelnr === DROPSHIP_GROOT_ID
 }
 
 /** Detecteert de huidige dropshipment-keuze uit de regellijst. */
-export function detecteerDropshipKeuze(regels: OrderRegelFormData[]): DropshipmentKeuze {
+export function detecteerDropshipKeuze(regels: MetArtikelnr[]): DropshipmentKeuze {
   if (regels.some((r) => r.artikelnr === DROPSHIP_KLEIN_ID)) return 'klein'
   if (regels.some((r) => r.artikelnr === DROPSHIP_GROOT_ID)) return 'groot'
   return 'nee'

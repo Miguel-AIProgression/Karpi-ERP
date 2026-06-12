@@ -145,6 +145,7 @@ Klanten/afnemers. PK = debiteur_nr uit het oude systeem.
 | telefoon | TEXT | |
 | fact_naam, fact_adres, fact_postcode, fact_plaats | TEXT | Factuuradres |
 | email_factuur, email_overig, email_2 | TEXT | |
+| email_verzend | TEXT | Mig 369. Klant-niveau verzend-/T&T-e-mailadres (voorstel Piet-Hein 11-06-2026). Default-ladder voor `orders.afl_email` bij orderaanmaak: `afleveradressen.email` → dit veld → `email_overig`. Gevuld via checkbox "Opslaan als vast verzend-e-mailadres voor deze klant" in het orderformulier of via klant-bewerken. Géén backfill — runtime-fallback. Bij dropshipment-orders geen enkele debiteur-default (mig 370). |
 | fax | TEXT | |
 | vertegenw_code | TEXT FK → vertegenwoordigers.code | |
 | route, rayon, rayon_naam | TEXT | |
@@ -249,6 +250,7 @@ Artikelen uit het oude systeem.
 | product_type | TEXT | 'vast' (CA:NNNxNNN >= 1m²), 'staaltje' (CA:NNNxNNN < 1m²), 'rol' (BREED), 'overig' |
 | locatie | TEXT | Magazijnlocatie (bijv. "A.01.L", "C.04.H"). Bron: Locaties123.xls |
 | actief | BOOLEAN | Default true |
+| is_dropship | BOOLEAN | Default false. TRUE op dropshipment-kostenregels (DROPSHIP-KLEIN/GROOT, mig 370): order met zo'n regel gaat rechtstreeks naar de consument — `afl_email` moet dan het consument-adres zijn, nooit het factuur-/debiteur-adres. Predicaat: `is_dropship_order(order_id)`; guard in `fn_zending_fill_email`. |
 
 ---
 
@@ -469,6 +471,7 @@ _Aangemaakt in migratie 117 (2026-04-22). Gepatcht in mig 125: `order_id` op hea
 | subtotaal, btw_percentage, btw_bedrag, totaal | NUMERIC | |
 | fact_naam, fact_adres, fact_postcode, fact_plaats, fact_land | TEXT | Snapshot |
 | btw_nummer | TEXT | Snapshot van klant-BTW-nummer (mig 125) |
+| btw_verlegd | BOOLEAN NOT NULL DEFAULT FALSE | Mig 371: snapshot van `debiteuren.btw_verlegd_intracom` op factuur-aanmaak. TRUE → 0% BTW + vermelding "BTW verlegd" op PDF. |
 | opmerkingen | TEXT | |
 | pdf_storage_path | TEXT | Pad in bucket 'facturen' ({debiteur_nr}/FACT-YYYY-NNNN.pdf) |
 | verstuurd_op | TIMESTAMPTZ | Wanneer email verzonden |
@@ -534,7 +537,7 @@ Fysieke leveringen. Werkelijk aangemaakt sinds migratie 169 — bron-van-waarhei
 | track_trace | TEXT | HST-tracking-nummer of EDI-equivalent — gevuld door adapter na verzending |
 | afl_naam, afl_adres, afl_postcode, afl_plaats, afl_land | TEXT | Adres-snapshot (kopie van orders.afl_*) |
 | afl_telefoon | TEXT | Mig 339 (ADR-0030). Snapshot van het leveringstelefoonnummer — HST "belt vóór aflevering" en stuurt dit mee in `ToAddress.PhoneNumber`. Gevuld door BEFORE-INSERT-trigger `trg_zending_fill_telefoon` (functie `fn_zending_fill_telefoon`): ladder `orders.afl_telefoon` → fallback `debiteuren.telefoon`. Via trigger i.p.v. in `start_pickronden` zodat álle zending-aanmaakroutes het veld vullen. Backfill voor nog-niet-verstuurde zendingen. |
-| afl_email | TEXT | Mig 365. Snapshot van het **aflever**-e-mailadres voor track & trace door de vervoerder — hst-send stuurt dit mee in `ToAddress.Email`. Gevuld door BEFORE-INSERT-trigger `trg_zending_fill_email` uit `orders.afl_email` (mig 084, sinds mig 364 door het order-formulier gevuld vanuit `afleveradressen.email`). **Bewust géén fallback naar factuur-e-mailadressen** (`debiteuren.email_factuur` e.d.) — de klant moet wél de T&T krijgen maar niet de factuur (mail Piet-Hein/Marjon 11-06-2026). Leeg = geen T&T-mail. Backfill voor nog-niet-verstuurde zendingen. |
+| afl_email | TEXT | Mig 365. Snapshot van het **aflever**-e-mailadres voor track & trace door de vervoerder — hst-send stuurt dit mee in `ToAddress.Email`. Gevuld door BEFORE-INSERT-trigger `trg_zending_fill_email` uit `orders.afl_email` (mig 084, sinds mig 364 door het order-formulier gevuld vanuit `afleveradressen.email`). **Bewust géén fallback naar factuur-e-mailadressen** (`debiteuren.email_factuur` e.d.) — de klant moet wél de T&T krijgen maar niet de factuur (mail Piet-Hein/Marjon 11-06-2026). Leeg = geen T&T-mail. Backfill voor nog-niet-verstuurde zendingen. **Dropship-guard (mig 370):** bij dropshipment-orders (`is_dropship_order`) kopieert de trigger het order-afl_email NIET als het gelijk is aan het factuur-/debiteur-e-mailadres — T&T moet daar naar de consument. |
 | totaal_gewicht_kg | NUMERIC | Gevuld door `create_zending_voor_order` vanuit orderregelgewichten; handmatig corrigeerbaar in latere UI. Sinds mig 206 exclusief de pseudo-regel `artikelnr='VERZEND'`. |
 | aantal_colli | INTEGER | Gevuld door `create_zending_voor_order` als som van `order_regels.orderaantal`; gebruikt voor sticker `x VAN y`. Sinds mig 206 exclusief `artikelnr='VERZEND'`. Voor exacte per-stuk identiteit (sticker, SSCC) zie `zending_colli` (mig 209). |
 | service_code | TEXT | Mig 210. Service-variant binnen vervoerder (bv. `'internationaal'` bij DPD), gekozen door `selecteer_vervoerder_voor_zending()`. NULL = vervoerder-default. |
@@ -1323,7 +1326,7 @@ Log van **daadwerkelijk verstuurde e-mails per order** (mig 366) — voedt de se
 | uitwisselbaarheid_map1_diff | Diagnostiek (migratie 138): Map1-paren in `kwaliteit_kleur_uitwisselgroepen` die NIET door `uitwisselbare_paren()` afgedekt worden, met `reden`-kolom (input-kw zonder collectie_id, kwaliteiten in andere collecties, kleur-code-mismatch, target ontbreekt in producten/rollen/maatwerk_m2_prijzen). Moet 0 rijen geven voordat Map1 fysiek gedropt mag worden. |
 | vervoerder_stats | Per-vervoerder dashboard-aggregaties (mig 174, aangepast mig 176): `aantal_klanten` (distinct debiteuren uit zendingen), `aantal_zendingen_totaal` + `aantal_zendingen_deze_maand` (uit `zendingen.vervoerder_code`), `hst_aantal_verstuurd` + `hst_aantal_fout` (uit `hst_transportorders`, alleen niet-NULL voor de `hst_api`-rij). Voedt de `/logistiek/vervoerders`-overzichts- en detailpagina's. EDI-equivalent uit `edi_berichten` met `berichttype='verzendbericht'` volgt later. |
 | hst_verzend_monitor | Mig 338 (ADR-0030). Aggregaat (één rij, geen state) over `hst_transportorders`: `verstuurd_vandaag`, `fout_open`, `wachtrij`, `bezig`, `oudste_wachtrij_minuten`, `oudste_bezig_minuten`. De laatste twee = **cron-health-signaal** (hoog = `hst-send`-cron staat stil; UI-drempel 5 min). Voedt de HST-verzendmonitor (tab op `/logistiek/vervoerders/hst_api/monitor`) + aandacht-banner op Pick & Ship. Tegengif tegen de "silent failure"-klasse. |
-| orders_zonder_vervoerder | Mig 338 (ADR-0030) + 345. Niet-afhaal-orders (`afhalen=FALSE`), niet productie-only (`NOT alleen_productie` — verzending blijft in Basta, ADR-0029; guard toegevoegd in mig 345), status NOT IN (`'Geannuleerd'`,`'Verzonden'`,`'Concept'`), met ≥1 regel waarvan `effectieve_vervoerder_per_orderregel(o.id).bron='geen'` (buiten HST-bereik → handmatig kiezen nodig). Voedt de "handmatig vervoerder kiezen"-teller/banner. |
+| orders_zonder_vervoerder | Mig 338 (ADR-0030) + 345 + 372. Niet-afhaal-orders (`afhalen=FALSE`), niet productie-only (`NOT alleen_productie` — verzending blijft in Basta, ADR-0029; guard toegevoegd in mig 345), status NOT IN (`'Geannuleerd'`,`'Verzonden'`,`'Concept'`), met ≥1 regel waarvan `effectieve_vervoerder_per_orderregel(o.id).bron='geen'` (geen matchende **actieve** vervoerder → handmatig kiezen nodig). Telt dus álle open orders, óók wat Pick & Ship (nog) niet toont. Sinds mig 372 ook `status` (TEXT) en `afl_land_norm` (`normaliseer_land`, mig 214) zodat de banner per land kan uitsplitsen + "waarvan klaar voor picken" toont. Voedt de "handmatig vervoerder kiezen"-teller/banner. |
 
 ---
 
@@ -1395,6 +1398,7 @@ Mig 174, aangepast in mig 176. Read-only view die de `/logistiek/vervoerders`-ov
 | `update_order_with_lines(p_order_id BIGINT, p_header JSONB, p_regels JSONB)` | Merge-update van order header + regels: UPDATE bestaande regels op `id`, INSERT nieuwe, DELETE regels die uit payload verdwenen zijn. Preserveert `snijplannen.order_regel_id` FK-koppelingen (migratie 074) |
 | `backlog_per_kwaliteit_kleur(p_kwaliteit TEXT, p_kleur TEXT)` | Aggregeert wachtende snijplan-stukken voor real-time levertijd-check: returnt `(totaal_m2, aantal_stukken, vroegste_afleverdatum)`. Match op kleur-varianten (X, X.0). Gebruikt door `check-levertijd` edge function (migratie 080) |
 | `genereer_factuur(p_order_ids BIGINT[])` | Atomair: maakt factuur + regels aan voor 1+ orders van dezelfde debiteur, markeert order_regels.gefactureerd. Retourneert factuur_id. Migratie 119. |
+| `effectief_btw_pct(p_verlegd BOOLEAN, p_btw_percentage NUMERIC) → NUMERIC` | Mig 371: effectief BTW-percentage voor een debiteur — verlegd → 0, anders `COALESCE(pct, 21)`. IMMUTABLE. Gebruikt door `genereer_factuur_voor_bundel`; gespiegeld in `supabase/functions/_shared/btw.ts` (`effectiefBtwPct`). |
 | `enqueue_factuur_bij_verzonden()` | Trigger: bij orders.status → 'Verzonden' vult factuur_queue voor per_zending-klanten. Migratie 118. |
 | `enqueue_wekelijkse_verzamelfacturen()` | Verzamelt niet-gefactureerde Verzonden-orders per wekelijks-klant in de queue. Maandag 05:00 UTC via pg_cron. Migratie 122. |
 | `recover_stuck_factuur_queue()` | Zet queue-items >10 min in 'processing' terug op 'pending'. Elke 5 min via pg_cron. Migratie 121. |

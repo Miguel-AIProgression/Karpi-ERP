@@ -16,6 +16,8 @@ export interface SelectedClient {
   fact_plaats: string | null
   email_factuur: string | null
   email_overig: string | null
+  /** Klant-niveau verzend-/T&T-e-mailadres (mig 369). Default-ladder afl_email: afleveradres → dit veld → email_overig. */
+  email_verzend: string | null
   vertegenw_code: string | null
   prijslijst_nr: string | null
   korting_pct: number
@@ -59,7 +61,7 @@ export function ClientSelector({ value, onChange, disabled }: ClientSelectorProp
       // Wijzig je de kolomlijst hier, pas 'm daar óók aan.
       let query = supabase
         .from('debiteuren')
-        .select('debiteur_nr, naam, adres, postcode, plaats, land, fact_naam, fact_adres, fact_postcode, fact_plaats, email_factuur, email_overig, vertegenw_code, prijslijst_nr, korting_pct, betaler, inkoopgroepen(naam), gratis_verzending, standaard_maat_werkdagen, maatwerk_weken, deelleveringen_toegestaan, default_lever_type, afleverwijze')
+        .select('debiteur_nr, naam, adres, postcode, plaats, land, fact_naam, fact_adres, fact_postcode, fact_plaats, email_factuur, email_overig, email_verzend, vertegenw_code, prijslijst_nr, korting_pct, betaler, inkoopgroepen(naam), gratis_verzending, standaard_maat_werkdagen, maatwerk_weken, deelleveringen_toegestaan, default_lever_type, afleverwijze')
         .eq('status', 'Actief')
         .limit(10)
 

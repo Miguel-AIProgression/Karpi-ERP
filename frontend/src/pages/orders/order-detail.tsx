@@ -22,6 +22,8 @@ import { LevertijdWijzigingBanner } from '@/components/orders/levertijd-wijzigin
 import { VerzendFoutBanner } from '@/components/orders/verzend-fout-banner'
 import { OrderZendingen } from '@/components/orders/order-zendingen'
 import { isLevertijdWijzigingTeBevestigen } from '@/lib/orders/levertijd-wijziging'
+import { detecteerDropshipKeuze } from '@/lib/orders/dropshipment-regel'
+import { dropshipAflEmailProbleem } from '@/lib/orders/dropship-email'
 
 function EmailInhoudPanel({ body }: { body: string }) {
   const [open, setOpen] = useState(false)
@@ -145,7 +147,18 @@ export function OrderDetailPage() {
           />
         )}
 
-      <OrderAddresses order={order} />
+      <OrderAddresses
+        order={order}
+        dropshipEmailProbleem={
+          detecteerDropshipKeuze(regels ?? []) !== 'nee'
+            ? dropshipAflEmailProbleem({
+                aflEmail: order.afl_email,
+                factEmail: order.fact_email,
+                debiteurEmails: [order.klant_email],
+              })
+            : null
+        }
+      />
       <OrderRegelsTable
         regels={regels ?? []}
         isLoading={regelsLoading}

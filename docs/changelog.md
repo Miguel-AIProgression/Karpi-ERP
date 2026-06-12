@@ -49,6 +49,245 @@
 
 **Bijgesteld besluit (11-06, Miguel):** wat een partner niet via EDI wil ontvangen, gaat automatisch per e-mail — kanaal `'edi_stil'` vervangen door `'email'`-fallback; na succesvolle mail sluit ook de EDI-leverweek-gate.
 
+## 2026-06-11 — Pick & Ship toonde maar 91 van ~236 pickbare orders (PostgREST-cap) + pick-start geblokkeerd zonder vervoerder (mig 373, branch `fix/pick-ship-zonder-vervoerder`)
+
+**Verzoek Miguel (vervolg op mig 372):** "Zet ze [orders zonder vervoerder]
+wel allemaal tussen de pick lijst, maar blokkeer het starten van het picken
+door 'geen vervoerder mogelijk'." Bij het onderzoek bleek een **echte bug**
+de orders te verbergen — niet de vervoerder-status:
+
+1. **PostgREST max-rows-cap (1000) at orders stilletjes op.**
+   `fetchPickbaarheidRegels` ([`pickbaarheid.ts`](../frontend/src/modules/magazijn/queries/pickbaarheid.ts))
+   haalde de héle `orderregel_pickbaarheid`-view op zonder `order_id`-filter.
+   De view heeft inmiddels 2068 rijen (EDI-instroom juni); de kale GET gaf er
+   maar 1000 terug. Orders waarvan de regels buiten die eerste 1000 vielen
+   kregen `regels.length === 0` → het pickbaarheidsfilter gooide ze weg.
+   Resultaat: 91 zichtbaar van ~236 pickbare orders, zonder enige fout.
+   **Fix:** gechunkt ophalen per `order_id` (100 per chunk, zelfde patroon als
+   de fallback). Incidentklasse om te onthouden: een PostgREST-GET zonder
+   filter op een groeiende view is een tijdbom — de cap knipt geruisloos.
+2. **Pick-start zonder vervoerder geblokkeerd, dubbel:**
+   - **Frontend** ([`start-pickrondes-button.tsx`](../frontend/src/modules/logistiek/components/start-pickrondes-button.tsx)):
+     per order de effectieve vervoerder geresolved (zelfde queryKey als de
+     pick-card-tag → cache-hit); orders met ≥1 regel `bron='geen'` tellen
+     niet mee als startbaar. Solo-kaart toont disabled knop **"Geen
+     vervoerder mogelijk"**; bundel-tooltip telt ze als overgeslagen.
+   - **Server** (mig 373): `start_pickronden` (body = mig 258 + guard)
+     weigert elke niet-afhaal-order met ≥1 regel `bron='geen'` met dezelfde
+     melding. Voorkomt zendingen met `vervoerder_code=NULL` die na voltooien
+     nergens heen kunnen. Escape-hatch: vervoerder-override op de orderregel
+     (bron wordt 'override') voor bewuste uitzonderingen.
+
+Met de cap-fix verschijnen de ~159 DE/BE-orders (zie mig 372-entry) nu wél in
+Pick & Ship; hun Verzendset-knop is geblokkeerd totdat Rhenus/DPD geactiveerd
+zijn (Rhenus gepland deze week) of een handmatige vervoerder gekozen is.
+
+**Toepassen:** mig 373 in de Supabase SQL-editor draaien.
+
+## 2026-06-11 — "196 orders zonder vervoerder"-banner geduid: uitsplitsing per land + scope-uitleg (mig 372, branch `fix/zonder-vervoerder-banner`)
+
+**Melding Miguel:** de amber banner op Pick & Ship zei "196 order(s) zonder
+vervoerder" terwijl het scherm maar 91 orders toonde — "volgens mij gaat er
+iets fout". **Diagnose: de telling klopt, de presentatie misleidde.** De view
+`orders_zonder_vervoerder` (mig 338/345) telt bewust álle open orders (ook
+`Wacht op voorraad/inkoop/maatwerk`, die Pick & Ship verbergt). De 196 waren
+op dat moment: 183× DE + 13× BE (179 EDI-orders, instroom 3–11 juni), 0× NL.
+Oorzaak dat ze geen vervoerder krijgen: alle DE/BE-vervoerders
+(`dpd`/`edi_partner_a`/`edi_partner_b`) staan tot hun cutover op
+`actief=false` — de resolver (mig 225) slaat regels van inactieve vervoerders
+over, en alleen `hst_api` (NL) is live. Dat is conform ADR-0030, maar de
+banner ("kies handmatig") suggereerde een handmatige actie op 196 orders.
+
+**Belangrijke non-bug:** `afl_land='DEUTSCHLAND'`/`'BELGIË'` (vol uitgeschreven,
+102 orders) leek een match-probleem maar is het niet — `matcht_regel`
+normaliseert sinds mig 214 beide zijden via `normaliseer_land`. Bewust **niet**
+gebackfilld naar ISO-codes: `trg_lock_zending_bundel_sleutel` blokkeert
+afl_*-mutaties op orders in actieve bundels, en gemengde spelling zou juist
+de adres-bundeling (mig 222, exacte string-match) tussen oude en nieuwe orders
+breken.
+
+**Fix (mig 372 + frontend):**
+- View krijgt twee extra kolommen: `status` (TEXT) en `afl_land_norm`
+  (via `normaliseer_land`). Scope bewust ongewijzigd.
+- [`hst-monitor.ts`](../frontend/src/modules/logistiek/queries/hst-monitor.ts):
+  `countOrdersZonderVervoerder` → `fetchOrdersZonderVervoerder` + pure
+  aggregator `vatZonderVervoerderSamen` (totaal, per-land, waarvan klaar voor
+  picken). `select('*')` zodat de frontend ook op de pre-mig-372-view blijft
+  werken (dan zonder status-uitsplitsing).
+- [`hst-aandacht-banner.tsx`](../frontend/src/modules/logistiek/components/hst-aandacht-banner.tsx):
+  toont nu "X open order(s) zonder vervoerder — 183× DE, 13× BE · waarvan 159
+  klaar voor picken", legt uit dat over álle open orders geteld wordt, en linkt
+  naar `/logistiek/vervoerders`.
+
+**Open beslispunt (Miguel):** DE/BE-verzending — DPD/Rhenus activeren (dan
+lossen de bestaande selectie-regels het gros op) of deze orders blijven
+handmatig bedienen. Tot die keuze blijft de banner deze aantallen tonen.
+
+**Toepassen:** mig 372 in de Supabase SQL-editor draaien (idempotent,
+alleen view + comment).
+
+## 2026-06-11 — BTW verlegd intracommunautair (mig 371)
+Duitse (en alle EU-verlegd-)klanten kregen 21% BTW op factuur en orderbevestiging terwijl `debiteuren.btw_verlegd_intracom` al correct stond (verzoek Marjon). De vlag is nu bron van waarheid: SQL-helper `effectief_btw_pct` + TS-seam `_shared/btw.ts`, snapshot `facturen.btw_verlegd`, factuur-PDF en orderbevestiging (mail + PDF, 4-talig) tonen "BTW verlegd" + btw-nr afnemer i.p.v. een BTW-regel. UI: verlegd-toggle op klant-facturering-tab. Geen data-update nodig; bestaande facturen (3) waren niet fout.
+
+## 2026-06-11 — Orderbevestiging pakte factuur-e-mailadres + order-bewerken wiste e-mail-snapshots (branch `fix/orderbevestiging-email-ladder`)
+
+**Melding Marjon (klant 803741, ORD-2026-0349/0350):** "als ik de order wil
+bevestigen pakt hij het factuuradres (zr-pdf@einrichtungspartnerring.com)…
+Voor mijn gevoel heb ik het wel veranderd naar orderbevestiging@trendhopperbreda.nl."
+Diagnose via `verstuurde_emails`-log: haar handmatige correcties kwamen wél
+goed aan, maar er zaten vier losse fouten achter:
+
+1. **Order-bewerken wiste `fact_email`/`afl_email`** —
+   [`order-edit.tsx`](../frontend/src/pages/orders/order-edit.tsx) gaf beide
+   mig 364-snapshots niet mee in de initiële header, waarna
+   `update_order_with_lines` ze op NULL zette (zelfde incidentklasse als
+   mig 343/368: nieuw veld niet in álle paden). ORD-2026-0350 verloor zo zijn
+   factuur-e-mailadres. Fix: velden meegeven in de edit-header.
+2. **Edit-mode kende de klant-e-mails niet** — het sync-effect in
+   [`order-form.tsx`](../frontend/src/components/orders/order-form.tsx) nam
+   alleen `prijslijst_nr`/`korting_pct` over uit het asynchroon geladen
+   `clientData`; bij een adreswissel viel de `afl_email`-ladder daardoor terug
+   op de stale form-waarde. Fix: ook `email_factuur`/`email_overig`/
+   `email_verzend` syncen.
+3. **Bevestig-dialog prefillde het factuuradres** — de ladder was
+   `bevestiging_email ?? klant_email` waarbij `klant_email` =
+   `email_factuur ?? email_overig`. Nieuw veld `klant_email_orderbev`
+   (`email_overig ?? email_factuur`) in
+   [`orders.ts`](../frontend/src/lib/supabase/queries/orders.ts) voedt de
+   prefill in [`order-header.tsx`](../frontend/src/components/orders/order-header.tsx);
+   `klant_email` zelf blijft ongewijzigd (voedt de dropship-check). Bewust ook
+   geen `afl_email` in deze ladder: bij dropship is dat het consument-adres.
+   Edge function [`stuur-orderbevestiging`](../supabase/functions/stuur-orderbevestiging/index.ts)
+   kreeg dezelfde flip in de fallback (`email_overig` eerst) — die fallback
+   vuurt alleen als de dialog leeg verstuurd wordt.
+4. **`AddressSelector` auto-selecteerde bij mount óók in edit-mode** het
+   eerste afleveradres en overschreef daarmee het opgeslagen order-adres
+   (incl. `afl_email`) nog vóór de gebruiker iets deed. Nieuwe prop
+   `autoSelect` (FALSE in edit-mode) in
+   [`address-selector.tsx`](../frontend/src/components/orders/address-selector.tsx).
+
+**Data-hotfix (live):** ORD-2026-0350 `afl_email` →
+orderbevestiging@trendhopperbreda.nl, `fact_email` → zr-pdf@… hersteld;
+`afleveradressen` id 6805 (ETTENSEBAAN, het factuuradres) droeg het
+factuur-e-mailadres als adres-e-mail → geleegd zodat de ladder voortaan op
+klant-niveau (`email_verzend`/`email_overig`) uitvalt. Naveeg (zelfde dag,
+mig 367/368-ladder, alleen-vullen-waar-leeg): ook ORD-2026-0152/0305/0343/
+0347/0352 hadden door de edit-bug lege snapshots → hersteld en geverifieerd.
+De ~46 overige open orders met lege snapshots zijn klanten zónder enig
+e-mailadres op de klantkaart — daar is niets te vullen (conform de
+migratie-backfill); script: `scripts/_tmp_hotfix_orderbev_email.mjs`.
+
+## 2026-06-11 — Klant-niveau verzend-e-mailadres `debiteuren.email_verzend` (mig 369, branch `fix/dropship-afl-email`)
+
+**Voorstel Piet-Hein (akkoord Marjon):** per klant een apart e-mailadres voor
+het verzendadres, los van het algemene adres — in Basta stond dit noodgedwongen
+bij de "openingstijden" omdat het echte e-mailveld anders ook de factuur kreeg.
+Het grootste deel van zijn voorstel bestond al (mig 364: `afleveradressen.email`,
+automatische overname bij orderaanmaak, per order aanpasbaar, "opslaan als vast
+e-mail voor dit afleveradres"); dit voegt de ontbrekende klant-niveau-laag toe.
+
+- **Mig 369:** `debiteuren.email_verzend TEXT`. Bewust géén backfill uit
+  `email_overig` — de fallback zit runtime in de ladder.
+- **Default-ladder `orders.afl_email`** bij orderaanmaak/adreskeuze
+  ([`order-form.tsx`](../frontend/src/components/orders/order-form.tsx)):
+  `afleveradressen.email` → `email_verzend` → `email_overig`. Dropshipment
+  blijft uitgezonderd (geen enkele debiteur-default, mig 370); `email_verzend`
+  telt daar mee in de verboden-set.
+- **Checkbox in [`delivery-address-editor.tsx`](../frontend/src/components/orders/delivery-address-editor.tsx)**
+  heet nu "Opslaan als vast verzend-e-mailadres voor deze klant" en schrijft
+  naar `email_verzend` (was: `email_overig` — dat algemene veld voedt ook
+  andere flows). Zo wordt het bestand organisch correct ("dan staat dit
+  naarmate van tijd goed").
+- **Klantpagina:** veld zichtbaar op klant-detail + bewerkbaar in
+  [`debiteur-edit-dialog.tsx`](../frontend/src/modules/debiteuren/components/debiteur-edit-dialog.tsx).
+- Mee-gefetcht in `ClientSelector`, `fetchSelectedClientVoorPrefill`
+  (gespiegelde kolomlijst) en `fetchClientCommercialData` (edit-mode).
+
+Automatisch vullen vanuit Basta is geparkeerd: het adres staat daar niet op een
+consequente plek (bevestigd door Piet-Hein/Marjon). Typecheck + suite groen
+(op de bekende pre-existing pickbaarheid-contracttest na).
+
+## 2026-06-11 — Dropshipment: track & trace-e-mail mag nooit het factuur-adres zijn (mig 370, branch `fix/dropship-afl-email`)
+
+*(Mig in de repo hernummerd van 368 → 370 vóór merge — origin/main nam parallel
+368 in beslag met `368_intake_email_snapshots.sql`. Live uitgevoerd als "368".)*
+
+**Melding Marjon (sales support):** "Het mailadres van de dropshipment voor de
+track and trace is NIET hetzelfde als de factuur. Dus dat moet anders zijn."
+
+**Diagnose:** bij een dropshipment-order levert Karpi rechtstreeks aan de
+consument namens de winkel. Het orderformulier defaultte `afl_email` (= T&T-
+adres richting vervoerder, mig 364/365) echter uit `debiteuren.email_overig`,
+en backfill mig 367 deed hetzelfde op bestaande orders → de winkel kreeg de
+track & trace, de consument niets.
+
+**Herkenning als data (mig 370):** nieuw `producten.is_dropship` (TRUE op
+DROPSHIP-KLEIN/GROOT) + SQL-predicaat `is_dropship_order(order_id)` — spiegelt
+TS `detecteerDropshipKeuze`. Nieuw dropship-artikel = `UPDATE producten`.
+
+**Fix in vier lagen:**
+1. **Orderformulier** ([`order-form.tsx`](../frontend/src/components/orders/order-form.tsx)):
+   bij dropship-keuze wordt een gedefault afl_email (= debiteur-/factuur-adres)
+   leeggemaakt; klant-selectie en afleveradres-keuze defaulten niet meer naar
+   de debiteur-e-mail zolang dropship actief is; opslaan blokkeert als
+   afl_email gelijk is aan het factuur-/debiteur-adres (leeg = toegestaan,
+   alleen amber hint — geen T&T is beter dan T&T naar de winkel).
+2. **UI-hints:** rose/amber meldingen in
+   [`delivery-address-editor.tsx`](../frontend/src/components/orders/delivery-address-editor.tsx)
+   en op order-detail ([`order-addresses.tsx`](../frontend/src/components/orders/order-addresses.tsx)).
+3. **Trigger-guard (defense-in-depth):** `fn_zending_fill_email` (mig 365)
+   kopieert bij dropship-orders het order-afl_email NIET naar de zending als
+   het gelijk is aan het factuur-/debiteur-adres.
+4. **Data-fix:** open dropship-orders + nog niet verstuurde zendingen waar
+   afl_email het factuur-/debiteur-adres was → NULL (operator vult het
+   consument-adres aan; rose hint wijst erop).
+
+Pure helper: [`dropship-email.ts`](../frontend/src/lib/orders/dropship-email.ts)
+(`dropshipAflEmailProbleem`, case-/whitespace-ongevoelig) + unit tests.
+Typecheck groen; suite groen op de bekende pre-existing pickbaarheid-test na.
+
+## 2026-06-11 — Orderbevestiging-PDF in de taal van de klant (branch `feat/orderbevestiging-pdf-taal`)
+
+**Melding Marjon (via Miguel):** orderbevestiging ORD-2026-0348 (Knutzen Wohnen,
+DE) — de begeleidende e-mail was correct Duits, maar de PDF-bijlage stond
+volledig in het Nederlands.
+
+**Oorzaak:** `stuur-orderbevestiging` bepaalde de taal (uit `orders.fact_land`
+via `normaliseer_land` → `bepaalTaal`) pas ná de PDF-generatie en gebruikte die
+alleen voor de mail-HTML; [`_shared/orderbevestiging-pdf.ts`](../supabase/functions/_shared/orderbevestiging-pdf.ts)
+had alle labels hardcoded in het Nederlands.
+
+**Fix:**
+- Nieuwe gedeelde module [`_shared/orderbevestiging-taal.ts`](../supabase/functions/_shared/orderbevestiging-taal.ts):
+  `Taal`-type, `bepaalTaal` (DE/AT→de, FR→fr, NL/BE→nl, rest→en) en
+  `vertaalOmschrijving` (hele-woord-woordenboek + frase "Op maat" → "Nach Maß"/
+  "Sur mesure"/"Custom size") verhuisd uit de edge function — één taalbron voor
+  mail én PDF.
+- `genereerOrderbevestigingPDF` accepteert `taal?: Taal` (default `'nl'`) en
+  vertaalt álle vaste teksten: documenttitel, info-labels, adresblok-koppen,
+  tabelkolommen, eenheid, totaalregels, betalingsconditie, maatafwijking-
+  disclaimer, opmerkingen, groet en paginanummering. Label→waarde-offsets zijn
+  dynamisch (minimaal de oude NL-breedte) zodat langere vertalingen (bv. FR
+  "Date de livraison:") niet overlappen.
+- `stuur-orderbevestiging` bepaalt de taal nu vóór de PDF-generatie, vertaalt
+  regel-omschrijvingen één keer (`regelsVertaald`, zelfde tekst op PDF en in
+  mail) en geeft `taal` door aan de PDF. Mail-restje "Afhalen:" was ook nog
+  hardcoded NL en is meertalig gemaakt.
+
+Smoke-test: PDF gegenereerd in alle 4 talen (diakrieten Ä/ß/é/· renderen
+correct door WinAnsi); pre-existing 2 typefouten in `resolveKlantEigenNamen`
+(esm.sh supabase-js type-drift) staan los van deze wijziging.
+
+## 2026-06-11 — Feedback-knop verplaatst naar de TopBar
+
+De zwevende feedback-knop rechtsonder overlapte pagina-knoppen, zoals de
+"Volgende"-paginering op het orders-overzicht. De knop staat nu permanent in
+de bovenbalk naast het meldingen-belletje, in dezelfde donkere pill-stijl
+zodat hij opvallend blijft. [`FeedbackWidget`](../frontend/src/components/feedback/feedback-widget.tsx)
+wordt voortaan gerenderd in [`top-bar.tsx`](../frontend/src/components/layout/top-bar.tsx)
+i.p.v. los in `AppLayout`; dialog en gedrag (pagina-URL, urgentie, bijlage)
+ongewijzigd.
+
 ## 2026-06-11 — EDI/webshop-intake vult e-mail-snapshots (mig 368, branch `fix/intake-email-snapshots`)
 
 **Melding Miguel:** order ORD-2026-0332 (HEADLAM) toont "Geen factuur-e-mailadres
@@ -313,6 +552,25 @@ terug via de PDOK Locatieserver (BAG, postcode+huisnummer), incl. de
 zending-snapshots ZEND-2026-0001 (Lijnden), -0002 ('s-Gravenhage), -0003
 (Bennebroek). Niet hersteld: ORD-2026-0097 (geen adres), 0108/0123 (BE,
 Willebroek — handmatig).
+
+**Nazorg (11-06 middag, met akkoord):** dezelfde sleutel-drop raakte ook
+`fact_plaats` — gemeld doordat ORD-2026-0107 een factuuradres zonder stad
+toonde. Alle 22 getroffen Shopify-orders zijn gevuld vanuit **interne**
+bronnen (debiteur-factuuradres/-postcode of het identieke afleveradres —
+géén externe lookup; script `scripts/_tmp_repair_fact_plaats.mjs`), incl.
+de twee BE-orders 0108/0123 (Willebroek via debiteur-postcode). Daarnaast is
+`sync-shopify-order` gedeployed (was nog v8 van 10-06, vóór de fix) — de
+sleutel-fix is nu pas écht live; nieuwe Shopify-orders krijgen zowel
+`afl_plaats` als `fact_plaats`.
+
+**Poll-pad ook gedicht (11-06 middag):** Shopify-orders komen feitelijk
+binnen via `sync-shopify-orders-poll` (branch `feat/shopify-polling-sync`,
+mig 323 — vervangt de fragiele webhook; code stond alléén op die branch,
+niet op main). Die bundelde een **oude** kopie van `shopify-types.ts` mét de
+`afl_stad`/`fact_stad`-bug — de webhook-fix dekte dit pad dus niet. Fix
+geport naar die branch (commit 292d488: types + contract-test van main,
+`shopify-order-processor.ts` op `afl_naam_2`) en `sync-shopify-orders-poll`
+v13 gedeployed. Beide Shopify-intake-paden zijn nu sleutel-correct.
 
 **Incident-terugdraai:** beide orders terug naar 'Klaar voor picken'
 (verzonden_at NULL), zendingen terug naar 'Picken', Fout-transportorders op

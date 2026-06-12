@@ -56,6 +56,7 @@ interface FactuurRow {
   btw_percentage: number | string
   btw_bedrag: number | string
   totaal: number | string
+  btw_verlegd: boolean | null
 }
 
 interface FactuurRegelRow {
@@ -292,6 +293,8 @@ serve(async () => {
           btw_percentage: Number(factuur.btw_percentage),
           btw_bedrag: Number(factuur.btw_bedrag),
           totaal: Number(factuur.totaal),
+          btw_verlegd: factuur.btw_verlegd === true,
+          btw_nummer_afnemer: factuur.btw_nummer ?? null,
         },
         regels: regels.map((r) => ({
           order_nr: r.order_nr ?? '',

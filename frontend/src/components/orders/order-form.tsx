@@ -35,6 +35,11 @@ import { SHIPPING_PRODUCT_ID } from '@/lib/constants/shipping'
 import { bouwOrderCommit, isGemengdeSplit } from '@/lib/orders/order-commit'
 import { SPOED_PRODUCT_ID, SPOED_FALLBACK_BEDRAG } from '@/lib/constants/spoed'
 import { applyDropshipmentLogic, detecteerDropshipKeuze } from '@/lib/orders/dropshipment-regel'
+import {
+  DROPSHIP_EMAIL_MELDING,
+  dropshipAflEmailProbleem,
+  isBlokkerendDropshipEmailProbleem,
+} from '@/lib/orders/dropship-email'
 import { DropshipmentSelector } from './dropshipment-selector'
 import type { DropshipmentKeuze } from '@/lib/constants/dropshipment'
 
@@ -86,16 +91,38 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
   const [selectedAfleveradresId, setSelectedAfleveradresId] = useState<number | undefined>(undefined)
 
   // In edit-modus laadt clientData asynchroon na de eerste render.
-  // Sync de prijslijst en korting zodra die beschikbaar komen.
+  // Sync de prijslijst, korting én klant-e-mailadressen zodra die beschikbaar
+  // komen — zonder de e-mails valt de afl_email-ladder bij een adreswissel
+  // terug op de stale form-waarde (incident ORD-2026-0350, 11-06-2026).
   useEffect(() => {
     if (mode !== 'edit' || !initialData?.client) return
     const incoming = initialData.client
     setClient((prev) => {
       if (!prev) return incoming
-      if (prev.prijslijst_nr === incoming.prijslijst_nr && prev.korting_pct === incoming.korting_pct) return prev
-      return { ...prev, prijslijst_nr: incoming.prijslijst_nr, korting_pct: incoming.korting_pct }
+      if (
+        prev.prijslijst_nr === incoming.prijslijst_nr &&
+        prev.korting_pct === incoming.korting_pct &&
+        prev.email_factuur === incoming.email_factuur &&
+        prev.email_overig === incoming.email_overig &&
+        prev.email_verzend === incoming.email_verzend
+      ) return prev
+      return {
+        ...prev,
+        prijslijst_nr: incoming.prijslijst_nr,
+        korting_pct: incoming.korting_pct,
+        email_factuur: incoming.email_factuur,
+        email_overig: incoming.email_overig,
+        email_verzend: incoming.email_verzend,
+      }
     })
-  }, [mode, initialData?.client?.prijslijst_nr, initialData?.client?.korting_pct])
+  }, [
+    mode,
+    initialData?.client?.prijslijst_nr,
+    initialData?.client?.korting_pct,
+    initialData?.client?.email_factuur,
+    initialData?.client?.email_overig,
+    initialData?.client?.email_verzend,
+  ])
 
   const { data: orderConfig } = useQuery({ queryKey: ['order-config'], queryFn: fetchOrderConfig })
 
@@ -176,6 +203,21 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
       }
       return metDropship
     })
+    if (keuze !== 'nee') {
+      // Het bij klant-selectie gedefaulte aflever-e-mailadres is de debiteur
+      // zelf — bij dropshipment per definitie fout (T&T moet naar de
+      // consument). Leegmaken zodat de operator het consument-adres invult.
+      setHeader((h) => {
+        const probleem = dropshipAflEmailProbleem({
+          aflEmail: h.afl_email,
+          factEmail: h.fact_email,
+          debiteurEmails: [client?.email_factuur, client?.email_overig, client?.email_verzend],
+        })
+        return isBlokkerendDropshipEmailProbleem(probleem)
+          ? { ...h, afl_email: undefined }
+          : h
+      })
+    }
   }
 
   // Auto-fill addresses when client is selected + reprice existing lines
@@ -206,7 +248,12 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
         afl_postcode: c.postcode ?? undefined,
         afl_plaats: c.plaats ?? undefined,
         afl_land: c.land ?? 'NL',
-        afl_email: c.email_overig || undefined,
+        // Dropshipment: afl_email is het consument-adres — nooit defaulten
+        // naar het e-mailadres van de debiteur (winkel). Anders ladder
+        // klant-verzendadres (mig 369) → algemeen adres.
+        afl_email: dropshipKeuze !== 'nee'
+          ? h.afl_email
+          : (c.email_verzend || c.email_overig || undefined),
         lever_type: h.lever_type ?? c.default_lever_type ?? 'week',
       }))
       applyAfleverdatum(regels, c)
@@ -264,8 +311,13 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
       afl_postcode: addr.postcode,
       afl_plaats: addr.plaats,
       afl_land: addr.land,
-      // Als het afleveradres een eigen email heeft, gebruik die; anders val terug op klant-email
-      afl_email: addr.email ?? client?.email_overig ?? h.afl_email,
+      // Als het afleveradres een eigen email heeft, gebruik die; anders val
+      // terug op klant-verzendadres (mig 369) → algemeen adres — behalve bij
+      // dropshipment (consument-adres).
+      afl_email: addr.email ??
+        (dropshipKeuze !== 'nee'
+          ? h.afl_email
+          : (client?.email_verzend ?? client?.email_overig ?? h.afl_email)),
     }))
   }
 
@@ -440,10 +492,27 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
     }
   }
 
+  // Dropshipment-e-mail-toets: T&T (afl_email) moet naar de consument, nooit
+  // naar het factuur-/debiteur-adres. 'ontbreekt' is alleen een hint.
+  const dropshipEmailProbleem = useMemo(
+    () =>
+      dropshipKeuze === 'nee'
+        ? null
+        : dropshipAflEmailProbleem({
+            aflEmail: header.afl_email,
+            factEmail: header.fact_email,
+            debiteurEmails: [client?.email_factuur, client?.email_overig, client?.email_verzend],
+          }),
+    [dropshipKeuze, header.afl_email, header.fact_email, client],
+  )
+
   const saveMutation = useMutation({
     mutationFn: async (overrideLeverModus?: LeverModus) => {
       if (!client) throw new Error('Selecteer een klant')
       if (regels.filter(r => r.artikelnr !== SHIPPING_PRODUCT_ID).length === 0) throw new Error('Voeg minstens één orderregel toe')
+      if (isBlokkerendDropshipEmailProbleem(dropshipEmailProbleem)) {
+        throw new Error(DROPSHIP_EMAIL_MELDING[dropshipEmailProbleem])
+      }
 
       const headerWithModus: Partial<OrderFormData> = overrideLeverModus
         ? { ...header, lever_modus: overrideLeverModus, afhalen }
@@ -742,6 +811,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
             debiteurNr={client.debiteur_nr}
             onSelect={handleAddressSelect}
             disabled={afhalen}
+            autoSelect={mode === 'create'}
           />
         </div>
       )}
@@ -781,6 +851,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
               afleveradresId={selectedAfleveradresId}
               debiteurNr={client.debiteur_nr}
               onEmailChange={handleAflEmailChange}
+              dropshipEmailProbleem={dropshipEmailProbleem}
             />
           </div>
         )

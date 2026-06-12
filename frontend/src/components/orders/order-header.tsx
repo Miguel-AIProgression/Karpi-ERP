@@ -102,8 +102,10 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
           )}
         </div>
         <div className="flex gap-2 flex-wrap justify-end">
-          {/* Bevestig order — niet tonen voor concept-orders */}
-          {!isConcept && bevestigd ? (
+          {/* Bevestig order — niet tonen voor concept-orders, en niet voor
+              productie-only orders: orderbevestiging + facturatie loopt voor
+              die orders via Basta, niet via RugFlow (ADR-0029). */}
+          {order.alleen_productie ? null : !isConcept && bevestigd ? (
             <>
               <span
                 className="flex items-center gap-1.5 px-3 py-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-[var(--radius-sm)]"
@@ -240,12 +242,15 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
         </div>
       </div>
 
-      {/* Bevestig-order dialog — dispatcht op kanaal */}
+      {/* Bevestig-order dialog — dispatcht op kanaal. defaultEmail-ladder:
+          eerder gebruikt adres → orderbev-adres van de klant (email_overig →
+          email_factuur). NIET klant_email (factuur-eerst) en NIET afl_email
+          (bij dropship het consument-adres). */}
       {showBevestigDialog && (kanaal === 'email' ? (
         <BevestigOrderDialog
           orderId={order.id}
           orderNr={order.order_nr}
-          defaultEmail={order.bevestiging_email ?? order.klant_email ?? null}
+          defaultEmail={order.bevestiging_email ?? (order as any).klant_email_orderbev ?? null}
           isHerversturing={!!order.bevestigd_at}
           sluitEdiGate={isEdiOrder}
           onClose={() => setShowBevestigDialog(false)}

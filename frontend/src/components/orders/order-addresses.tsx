@@ -1,10 +1,16 @@
 import type { OrderDetail } from '@/lib/supabase/queries/orders'
+import {
+  DROPSHIP_EMAIL_MELDING,
+  type DropshipEmailProbleem,
+} from '@/lib/orders/dropship-email'
 
 interface OrderAddressesProps {
   order: OrderDetail
+  /** Alleen gevuld bij dropshipment-orders: toets van het T&T-adres (dropship-email.ts). */
+  dropshipEmailProbleem?: DropshipEmailProbleem | null
 }
 
-export function OrderAddresses({ order }: OrderAddressesProps) {
+export function OrderAddresses({ order, dropshipEmailProbleem }: OrderAddressesProps) {
   const hasFactuur = order.fact_naam || order.fact_adres
   const hasAflever = order.afl_naam || order.afl_adres
 
@@ -58,10 +64,18 @@ export function OrderAddresses({ order }: OrderAddressesProps) {
                 <span className="text-slate-400 block mb-0.5">Track &amp; trace naar</span>
                 {order.afl_email ? (
                   <span className="text-slate-700">{order.afl_email}</span>
+                ) : dropshipEmailProbleem === 'ontbreekt' ? (
+                  <span className="text-amber-600">{DROPSHIP_EMAIL_MELDING.ontbreekt}</span>
                 ) : (
                   <span className="text-amber-600">
                     Geen e-mailadres ingevuld — klant ontvangt geen track &amp; trace van de vervoerder
                   </span>
+                )}
+                {(dropshipEmailProbleem === 'gelijk_aan_factuur' ||
+                  dropshipEmailProbleem === 'gelijk_aan_debiteur') && (
+                  <p className="mt-1 text-rose-600 text-xs">
+                    {DROPSHIP_EMAIL_MELDING[dropshipEmailProbleem]} Pas aan via order bewerken.
+                  </p>
                 )}
               </div>
             )}
