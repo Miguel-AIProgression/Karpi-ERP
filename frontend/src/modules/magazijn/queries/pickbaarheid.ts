@@ -53,9 +53,8 @@ export async function fetchPickShipOrders(
   }
 
   for (const r of regels) {
-    const h = headerMap.get(r.order_id)
     const order = perOrder.get(r.order_id)
-    if (!h || !order) continue
+    if (!order) continue
 
     const karpiNaam = r.artikelnr ? karpiNamen.get(r.artikelnr) ?? null : null
     const regel = mapPickbaarheidRegel(r, karpiNaam)
@@ -106,7 +105,7 @@ async function fetchOpenOrderHeaders(): Promise<OrderHeaderRij[]> {
     .from('orders')
     .select(
       'id, order_nr, status, debiteur_nr, afl_naam, afl_adres, afl_postcode, ' +
-        'afl_plaats, afl_land, afleverdatum, afhalen, lever_type, bron_systeem, edi_bevestigd_op'
+        'afl_plaats, afl_land, afleverdatum, afhalen, lever_type'
     )
     .neq('status', 'Verzonden')
     .neq('status', 'Geannuleerd')

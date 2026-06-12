@@ -2,7 +2,7 @@
 //
 // Doel: bewaakt het publieke `fetchPickShipOrders`-contract — de view
 // `orderregel_pickbaarheid` is de enige bron; ontbreekt ze → hard falen
-// (geen stille fallback). Zeven scenario's gedekt:
+// (geen stille fallback). Acht scenario's gedekt:
 //   1. View aanwezig met N pickbaarheid-regels (gewicht via view-kolom)
 //   2. View aanwezig zonder regels (lege array) → order uitgefilterd
 //   3. View-query faalt (PGRST205) → fout propageert, geen stille fallback
@@ -10,6 +10,7 @@
 //   5. Onpickbare regel + klant zonder deelleveringen → uitgefilterd
 //   6. Alle regels wacht_op=snijden + deelleveringen=true → uitgefilterd
 //   7. Wacht_op=inkoop + klant zonder deelleveringen → uitgefilterd
+//   8. Dag-order (lever_type=datum): buiten horizon onzichtbaar, erbinnen zichtbaar
 //
 // Mig 383 is een deploy-voorwaarde: de view vervangt zowel de oude
 // PGRST205-fallback op order_regels als de aparte gewicht-query.
@@ -92,6 +93,7 @@ function makeOrderHeader(overrides: Partial<{
   afl_naam: string | null
   afl_plaats: string | null
   afleverdatum: string | null
+  lever_type: 'week' | 'datum'
 }> = {}) {
   return {
     id: 100,
@@ -369,5 +371,37 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 
     expect(result).toHaveLength(0)
+  })
+
+  it('scenario 8: dag-order (lever_type=datum) blijft buiten horizon, verschijnt erbinnen', async () => {
+    // ADR 0014 / mig 244: de dag-order-horizon is de enige client-side
+    // filterlogica die na mig 383 overblijft (hangt af van `vandaag`).
+    // Een dag-order met afleverdatum di 2026-05-12 verschijnt pas vanaf
+    // werkdagMinN(2026-05-12, 1) = ma 2026-05-11.
+    const maakQueues = () => {
+      queueResponse('orders', {
+        data: [makeOrderHeader({ id: 100, lever_type: 'datum' as const, afleverdatum: '2026-05-12' })],
+        error: null,
+      })
+      queueResponse('debiteuren', { data: [makeDebiteur(5001, 'Klantnaam BV')], error: null })
+      queueResponse('orderregel_pickbaarheid', {
+        data: [makePickbaarheidRow({ order_regel_id: 1, order_id: 100, is_pickbaar: true })],
+        error: null,
+      })
+      queueResponse('producten', { data: [], error: null })
+      queueResponse('order_pickbaarheid', { data: [makeOrderPickbaarheidRow()], error: null })
+      queueResponse('zending_orders', { data: [], error: null })
+    }
+
+    // Vrijdag 8 mei = vóór de horizon (ma 11 mei) → onzichtbaar.
+    maakQueues()
+    const teVroeg = await fetchPickShipOrders({ vandaag: new Date('2026-05-08T12:00:00Z') })
+    expect(teVroeg).toHaveLength(0)
+
+    // Maandag 11 mei = op de horizon → zichtbaar.
+    resetQueues()
+    maakQueues()
+    const opHorizon = await fetchPickShipOrders({ vandaag: new Date('2026-05-11T12:00:00Z') })
+    expect(opHorizon).toHaveLength(1)
   })
 })
