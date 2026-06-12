@@ -17,7 +17,6 @@ function isoLokaal(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-
 export interface PickShipParams {
   bucket?: BucketKey
   search?: string
@@ -304,7 +303,6 @@ async function fetchKarpiNamenVoorArtikelen(
   }
   return map
 }
-
 
 export async function fetchPickShipStats(vandaag: Date = new Date()): Promise<PickShipStats> {
   const orders = await fetchPickShipOrders({ vandaag })
