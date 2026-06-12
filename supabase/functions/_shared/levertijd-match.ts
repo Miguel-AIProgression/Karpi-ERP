@@ -3,6 +3,7 @@
 
 import { tryPlacePiece, type Shelf, type SnijplanPiece } from './ffdh-packing.ts'
 import { maandagVanIsoWeek } from './iso-week.ts'
+import { isWerkdag, isoDatum, STANDAARD_WERKTIJDEN, type Werktijden } from './werkagenda.ts'
 import type {
   KandidaatRol,
   MatchResult,
@@ -82,14 +83,15 @@ export function maandagVanWeek(week: number, jaar: number): string {
   return maandagVanIsoWeek(jaar, week).toISOString().slice(0, 10)
 }
 
-/** Volgende werkdag (ma-vr) vanaf een datum (default: vandaag). ISO YYYY-MM-DD. */
-export function volgendeWerkdag(vanaf: Date = new Date()): string {
-  const d = new Date(Date.UTC(vanaf.getUTCFullYear(), vanaf.getUTCMonth(), vanaf.getUTCDate()))
-  d.setUTCDate(d.getUTCDate() + 1)
-  while (d.getUTCDay() === 0 || d.getUTCDay() === 6) {
-    d.setUTCDate(d.getUTCDate() + 1)
+/** Volgende werkdag vanaf een datum (default: vandaag). ISO YYYY-MM-DD.
+ *  Respecteert feestdagen/vrije dagen uit de werkagenda-config. */
+export function volgendeWerkdag(vanaf: Date = new Date(), w: Werktijden = STANDAARD_WERKTIJDEN): string {
+  const d = new Date(vanaf.getFullYear(), vanaf.getMonth(), vanaf.getDate())
+  for (let i = 0; i < 60; i++) {
+    d.setDate(d.getDate() + 1)
+    if (isWerkdag(d, w)) break
   }
-  return d.toISOString().slice(0, 10)
+  return isoDatum(d)
 }
 
 /**
@@ -143,22 +145,24 @@ export function plusKalenderDagen(isoDate: string, dagen: number): string {
 }
 
 /**
- * Schuif een datum naar de eerstvolgende werkdag (ma-vr).
+ * Schuif een datum naar de eerstvolgende werkdag.
  * Als de input al een werkdag is, blijft die ongewijzigd.
  * Levering kan alleen op werkdagen plaatsvinden — gebruik dit na het optellen
  * van logistieke buffer-dagen voor lever_datum.
+ * Respecteert feestdagen/vrije dagen uit de werkagenda-config.
  */
-export function naarWerkdag(isoDate: string): string {
-  const d = new Date(`${isoDate}T00:00:00Z`)
-  while (d.getUTCDay() === 0 || d.getUTCDay() === 6) {
-    d.setUTCDate(d.getUTCDate() + 1)
+export function naarWerkdag(isoDate: string, w: Werktijden = STANDAARD_WERKTIJDEN): string {
+  const d = new Date(`${isoDate}T00:00:00`)
+  if (isNaN(d.getTime())) return isoDate
+  for (let i = 0; i < 60 && !isWerkdag(d, w); i++) {
+    d.setDate(d.getDate() + 1)
   }
-  return d.toISOString().slice(0, 10)
+  return isoDatum(d)
 }
 
 /** Snelle helper: snij + buffer kalenderdagen, daarna naar werkdag. */
-export function leverdatumVoorSnijDatum(snijDatum: string, bufferDagen: number): string {
-  return naarWerkdag(plusKalenderDagen(snijDatum, bufferDagen))
+export function leverdatumVoorSnijDatum(snijDatum: string, bufferDagen: number, w: Werktijden = STANDAARD_WERKTIJDEN): string {
+  return naarWerkdag(plusKalenderDagen(snijDatum, bufferDagen), w)
 }
 
 export interface KiesBesteMatchInput {

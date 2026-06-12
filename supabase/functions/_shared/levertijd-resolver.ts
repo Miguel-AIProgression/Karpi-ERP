@@ -114,7 +114,7 @@ export function resolveScenario(input: ResolveScenarioInput): CheckLevertijdResp
 
   // Scenario 4: Geen rol breed/lang genoeg in voorraad → wacht op orders
   if (geen_rol_passend) {
-    const vroegst = naarWerkdag(plusKalenderDagen(toIsoDate(vandaag), cfg.maatwerk_weken * 7))
+    const vroegst = naarWerkdag(plusKalenderDagen(toIsoDate(vandaag), cfg.maatwerk_weken * 7), cfg.werktijden)
     const { week, jaar } = isoWeekJaar(new Date(`${vroegst}T00:00:00Z`))
     return {
       scenario: 'wacht_op_orders',
@@ -145,7 +145,7 @@ export function resolveScenario(input: ResolveScenarioInput): CheckLevertijdResp
     const snijMaandag = maandagVanWeek(cap.week, cap.jaar)
     // 5 werkdagen na snij-maandag → vrijdag dezelfde week + buffer
     const snijVrijdag = plusKalenderDagen(snijMaandag, 4)
-    return leverdatumVoorSnijDatum(snijVrijdag, cfg.logistieke_buffer_dagen)
+    return leverdatumVoorSnijDatum(snijVrijdag, cfg.logistieke_buffer_dagen, cfg.werktijden)
   }
 
   const snijMaandag = maandagVanWeek(capaciteit.week, capaciteit.jaar)

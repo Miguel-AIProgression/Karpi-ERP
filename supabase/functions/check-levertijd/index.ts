@@ -31,6 +31,7 @@ import {
   STANDAARD_WERKTIJDEN,
   werkdagMinN,
   type RolAgendaInput,
+  type Werktijden,
 } from '../_shared/werkagenda.ts'
 import { evalueerSpoed } from '../_shared/spoed-check.ts'
 import type {
@@ -70,13 +71,14 @@ const DEFAULT_CONFIG: LevertijdConfig = {
   spoed_toeslag_bedrag: 50,
   spoed_product_id: 'SPOEDTOESLAG',
   dag_order_snij_buffer_werkdagen: 2,
+  werktijden: STANDAARD_WERKTIJDEN,
 }
 
 async function fetchConfig(supabase: SupabaseClient): Promise<LevertijdConfig> {
   const { data } = await supabase
     .from('app_config')
     .select('sleutel, waarde')
-    .in('sleutel', ['productie_planning', 'order_config'])
+    .in('sleutel', ['productie_planning', 'order_config', 'werkagenda'])
 
   const cfg: LevertijdConfig = { ...DEFAULT_CONFIG }
   for (const row of (data ?? []) as Array<{ sleutel: string; waarde: Record<string, unknown> }>) {
@@ -95,6 +97,8 @@ async function fetchConfig(supabase: SupabaseClient): Promise<LevertijdConfig> {
     } else if (row.sleutel === 'order_config') {
       const w = row.waarde
       if (typeof w.maatwerk_weken === 'number') cfg.maatwerk_weken = w.maatwerk_weken
+    } else if (row.sleutel === 'werkagenda') {
+      cfg.werktijden = { ...STANDAARD_WERKTIJDEN, ...(row.waarde as Partial<Werktijden>) }
     }
   }
   return cfg
@@ -327,7 +331,7 @@ serve(async (req) => {
     // Sorteert intern op vroegste afleverdatum + plant sequentieel binnen werktijden.
     // De `logistieke_buffer_dagen` bepaalt of een rol als `teLaat` wordt gemarkeerd
     // (snij-eind moet ≥ buffer dagen vóór leverdatum vallen).
-    const werkagenda = berekenSnijAgenda(agendaInput, STANDAARD_WERKTIJDEN, new Date(), cfg.logistieke_buffer_dagen)
+    const werkagenda = berekenSnijAgenda(agendaInput, cfg.werktijden, new Date(), cfg.logistieke_buffer_dagen)
 
     const geenRolPassend = rollen.length === 0
 
@@ -378,7 +382,7 @@ serve(async (req) => {
     //  • `capaciteitNu` — startend vanaf huidige ISO-week; "eerder haalbaar"-hint.
     const baseLeverDatum = gewenste_leverdatum ?? defaultGewensteDatum(cfg.maatwerk_weken)
     const startDatum = lever_type === 'datum' && gewenste_leverdatum
-      ? werkdagMinN(gewenste_leverdatum, cfg.dag_order_snij_buffer_werkdagen, STANDAARD_WERKTIJDEN)
+      ? werkdagMinN(gewenste_leverdatum, cfg.dag_order_snij_buffer_werkdagen, cfg.werktijden)
       : baseLeverDatum
     const snij = snijWeekVoorLever(startDatum)
     const nu = isoWeekJaar(new Date())
@@ -412,7 +416,7 @@ serve(async (req) => {
 
     // ---- Stap 4: Spoed-evaluatie (altijd, voor UI-toggle) ----
     const nieuwStukDuur = cfg.wisseltijd_minuten + cfg.snijtijd_minuten
-    response.spoed = evalueerSpoed(werkagenda, nieuwStukDuur, cfg, new Date())
+    response.spoed = evalueerSpoed(werkagenda, nieuwStukDuur, cfg, new Date(), cfg.werktijden)
 
     return jsonResponse(response, 200)
   } catch (err) {

@@ -4,6 +4,7 @@ import { assertEquals, assert } from 'https://deno.land/std@0.168.0/testing/asse
 import { evalueerSpoed } from './spoed-check.ts'
 import type { LevertijdConfig } from './levertijd-types.ts'
 import type { RolAgendaSlot } from './werkagenda.ts'
+import { STANDAARD_WERKTIJDEN } from './werkagenda.ts'
 
 const lokaal = (j: number, m: number, d: number, u = 0, min = 0) => new Date(j, m - 1, d, u, min)
 
@@ -12,7 +13,8 @@ function defaultConfig(overrides: Partial<LevertijdConfig> = {}): LevertijdConfi
     logistieke_buffer_dagen: 2, backlog_minimum_m2: 12, capaciteit_per_week: 450,
     capaciteit_marge_pct: 0, wisseltijd_minuten: 15, snijtijd_minuten: 5,
     maatwerk_weken: 4, spoed_buffer_uren: 4, spoed_toeslag_bedrag: 50,
-    spoed_product_id: 'SPOEDTOESLAG',
+    spoed_product_id: 'SPOEDTOESLAG', dag_order_snij_buffer_werkdagen: 2,
+    werktijden: STANDAARD_WERKTIJDEN,
     ...overrides,
   }
 }

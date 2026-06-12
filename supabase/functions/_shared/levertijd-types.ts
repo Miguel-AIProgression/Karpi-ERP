@@ -1,6 +1,9 @@
 // Shared types voor real-time levertijd-check.
 // Gebruikt door: check-levertijd edge function + frontend hook/component.
 
+import type { Werktijden } from './werkagenda.ts'
+export type { Werktijden }
+
 // ---------------------------------------------------------------------------
 // Public API contract (request/response)
 // ---------------------------------------------------------------------------
@@ -104,6 +107,8 @@ export interface LevertijdConfig {
   spoed_product_id: string              // bv. 'SPOEDTOESLAG'
   /** ADR 0014 / mig 244: snij-buffer voor dag-orders (werkdagen vóór afleverdatum). */
   dag_order_snij_buffer_werkdagen: number  // bv. 2
+  /** Werkagenda (app_config 'werkagenda', mig 384) — werkdagen/tijden/vrije dagen */
+  werktijden: Werktijden
 }
 
 // Snijplan-record gebruikt door reconstructShelves (één plaatsing op een rol).
