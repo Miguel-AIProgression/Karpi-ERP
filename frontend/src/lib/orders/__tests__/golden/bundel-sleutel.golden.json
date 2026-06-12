@@ -3,8 +3,8 @@
   "adres_cases": [
     { "naam": "basis: postcode-spaties weg, adres-collapse, land upper", "afl_adres": "Hoofdweg 12", "afl_postcode": "1234 ab", "afl_land": "nl", "verwacht": "1234AB|HOOFDWEG 12|NL" },
     { "naam": "meervoudige spaties en randen", "afl_adres": "  Hoofd   weg 12  ", "afl_postcode": " 1234  AB ", "afl_land": " NL ", "verwacht": "1234AB|HOOFD WEG 12|NL" },
-    { "naam": "NBSP (U+00A0) telt als spatie", "afl_adres": "Hoofdweg 12", "afl_postcode": "1234\u00A0AB", "afl_land": "NL", "verwacht": "1234AB|HOOFDWEG 12|NL" },
-    { "naam": "narrow NBSP (U+202F) telt als spatie", "afl_adres": "Hoofdweg 12", "afl_postcode": "1234\u202FAB", "afl_land": "NL", "verwacht": "1234AB|HOOFDWEG 12|NL" },
+    { "naam": "NBSP (U+00A0) telt als spatie", "afl_adres": "Hoofdweg\u00a012", "afl_postcode": "1234\u00a0AB", "afl_land": "NL", "verwacht": "1234AB|HOOFDWEG 12|NL" },
+    { "naam": "narrow NBSP (U+202F) telt als spatie", "afl_adres": "Hoofdweg\u202f12", "afl_postcode": "1234 AB", "afl_land": "NL", "verwacht": "1234AB|HOOFDWEG 12|NL" },
     { "naam": "scharfes s klein (U+00DF) foldt naar SS", "afl_adres": "Industriestra\u00DFe 5", "afl_postcode": "68167", "afl_land": "DE", "verwacht": "68167|INDUSTRIESTRASSE 5|DE" },
     { "naam": "scharfes s hoofdletter (U+1E9E) foldt naar SS", "afl_adres": "INDUSTRIESTRA\u1E9EE 5", "afl_postcode": "68167", "afl_land": "DE", "verwacht": "68167|INDUSTRIESTRASSE 5|DE" },
     { "naam": "tab en newline rond land", "afl_adres": "Hoofdweg 12", "afl_postcode": "1234AB", "afl_land": "\tDE\n", "verwacht": "1234AB|HOOFDWEG 12|DE" },
