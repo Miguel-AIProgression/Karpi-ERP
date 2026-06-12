@@ -234,7 +234,7 @@ def main():
     print(f"  {len(known_artikelnrs)} bekende artikelnrs in producten")
 
     # Collect all unknown artikelnrs across all files first (for auto-create)
-    all_missing_products = {}  # artikelnr -> {omschrijving, omschrijving_2, prijs, gewicht}
+    all_missing_products = {}  # artikelnr -> {omschrijving, omschrijving_2, prijs}
 
     # Step 4: Process each file
     all_headers = []
@@ -281,11 +281,6 @@ def main():
                             "omschrijving": row["omschrijving"],
                             "omschrijving_2": row["omschrijving_2"],
                             "verkoopprijs": row["prijs"],
-                            # Mig 383: prijslijst-kolom F "Gewicht" is kg/m² (density),
-                            # geen stukgewicht — niet meer naar producten.gewicht_kg
-                            # schrijven. Eerlijke NULL; resolver/trigger vullen zodra
-                            # maat + kwaliteit bekend zijn.
-                            "gewicht_kg": None,
                         }
                 else:
                     continue  # Skip om FK-fouten te voorkomen
@@ -340,7 +335,9 @@ def main():
                 "artikelnr": artikelnr,
                 "omschrijving": info["omschrijving"] or "Onbekend product",
                 "verkoopprijs": info["verkoopprijs"],
-                "gewicht_kg": None,  # zie comment hierboven (mig 383)
+                # Mig 383: prijslijst-kolom F is density (kg/m²), geen stukgewicht —
+                # bewust NULL; de self-healing trigger vult het zodra maat+kwaliteit bekend zijn.
+                "gewicht_kg": None,
                 "voorraad": 0,
                 "gereserveerd": 0,
                 "vrije_voorraad": 0,
