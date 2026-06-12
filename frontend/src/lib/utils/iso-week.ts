@@ -8,6 +8,9 @@
  * en wall-clock/"YYYY-MM-DD"-parsing die op UTC-midnacht verankert zodat de
  * lokale tijdzone het weeknummer nooit verschuift (edge draait in UTC en
  * heeft die verankering niet nodig).
+ *
+ * CONTRACT (kern): functies lezen UTC-componenten — wall-clock "nu"? Eerst
+ * door `lokaleDatumAlsUtc` halen, anders schuift de ISO-week rond middernacht.
  */
 
 import { isoWeekJaar, isoWeekString, maandagVanIsoWeek } from '../../../../supabase/functions/_shared/iso-week'

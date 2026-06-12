@@ -1,5 +1,15 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-12 — Seam-consolidatie: cross-root imports i.p.v. kopieën (ADR-0033)
+Vier handmatig-gesynchroniseerde kopieparen tussen `supabase/functions/_shared/`
+en `frontend/src/` vervangen door één bron in `_shared/` + dunne frontend
+re-export-shims: `vervoerder-eisen` (frontend-kopie was dead code),
+`iso-week` (kern gedeeld, frontend-extensies lokaal), `snijplan-status`
+(frontend-superset → `_shared`) en `email-list`/`email-recipients`.
+Waarom: handmatige kopieën = dezelfde incident-klasse als het SSCC-incident
+(12-06); `snijplan-status` was al gedivergeerd. Vite dev-server kreeg
+`server.fs.allow: ['..']`. Conventie vastgelegd in CLAUDE.md + ADR-0033.
+
 ## 2026-06-12 — Rhenus als transporteur: GS1-XML via SFTP (ADR-0032, mig 379-382) — gebouwd, rondreis geslaagd
 
 > **Hernummering:** de Rhenus-migraties zijn vlak vóór de merge hernummerd van 378-381 naar **379-382** (origin/main bleek een eigen 378 te hebben — `klant_omzet_ytd_prijslijst`). In de live DB zijn ze onder de óúde bestandsnamen toegepast; inhoudelijk identiek.
