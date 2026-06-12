@@ -13,6 +13,10 @@ De parallel uitgevoerde werkagenda-kernel-consolidatie (zie hieronder) volgt
 hetzelfde patroon — `werkagenda`/`bereken-agenda` was in ADR-0033 nog als
 "buiten scope" gemarkeerd maar is dezelfde dag alsnog geconsolideerd.
 
+## 2026-06-12 — Bundel-sleutel SQL↔TS-contract met golden fixtures (mig 385)
+
+De bundel-sleutel-familie (`_normaliseer_afleveradres`/`bundel_sleutel`/`verzendweek_voor_datum` ↔ `normaliseer-adres.ts`/`bundel-sleutel.ts`/`verzendweek.ts`) werd alleen door comments in lockstep gehouden. Nu: één golden-fixture-bestand (`frontend/src/lib/orders/__tests__/golden/bundel-sleutel.golden.json`, 21 cases) met twee consumenten — Vitest-contracttest `bundel-sleutel.contract.test.ts` (TS) en `assert_bundel_sleutel_contract()` (SQL, zelf-testende migratie 385, incl. vorm-guard tegen stil-slagende lege case-arrays); een sync-test bewijst dat het `$golden$`-blok in de laatste `*_bundel_sleutel_contract*.sql`-migratie gelijk is aan de JSON. Probe op de live DB (12-06): NBSP en kleine-ß gaven op deze locale toevallig al TS-identieke output, maar hoofdletter-ẞ (U+1E9E) divergeerde bevestigd — en het gedrag was sowieso locale-afhankelijk. `_normaliseer_afleveradres` v2 (mig 385) en `normaliseerAdresKey` (ß/ẞ→ss-fold) zijn nu deterministisch JS-identiek (expliciete whitespace-klasse + chr(223)/chr(7838)-fold). Steekproef: 20 van 1427 open orders dragen zo'n teken in `afl_adres` (DE-straatnamen); sleutels worden nergens gepersisteerd, dus geen datamigratie. Conventie: wijziging aan een van de zes functies = golden bijwerken + nieuwe `*_bundel_sleutel_contract*.sql` met assert-aanroep (sync-test wordt anders rood). Toegepast in de SQL Editor op 12-06 onder werknummer 383 (hernummerd naar 385 wegens collisie met de werkagenda-migraties); na-verificatie via live probe geslaagd, incl. de ẞ-case.
+
 ## 2026-06-12 — Werkagenda-config centraal (mig 384, fase 2)
 
 Werktijden + vrije dagen verhuisd van per-browser-localStorage naar
