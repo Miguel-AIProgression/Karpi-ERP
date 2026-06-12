@@ -1,6 +1,27 @@
 # Changelog — RugFlow ERP
 
-## 2026-06-12 — Pick & Ship: startbare orders sorteren boven geblokkeerde (branch `fix/pick-sortering-geblokkeerd`)
+## 2026-06-12 — Pick & Ship: geblokkeerde orders naar eigen sectie ónder de week-secties (branch `fix/pick-geblokkeerd-onderaan`)
+
+**Correctie op de sorteer-fix van vanochtend (zie entry hieronder):** de
+binnen-sectie-sortering loste het probleem niet op — de "Geen vervoerder
+mogelijk"-orders hebben oude verzendweken en vormden dus **complete
+"Achterstallig"-secties die als geheel bovenaan de tab stonden**. Miguel:
+"alle die niet verzonden kunnen worden staan bovenaan in de week."
+
+**Fix:** geblokkeerde orders gaan helemaal niet meer de week-/dag-secties in.
+[`pick-overview.tsx`](../frontend/src/modules/magazijn/pages/pick-overview.tsx)
+splitst `naVervoerderFilter` in startbaar vs. geblokkeerd (predicaat ongewijzigd:
+≥1 regel `bron='geen'`, niet-afhalen); de week-secties tonen alleen startbare
+orders en nieuwe component
+[`PickGeblokkeerdSectie`](../frontend/src/modules/magazijn/components/pick-geblokkeerd-sectie.tsx)
+(amber, Ban-icoon, zelfde klant-clustering + land-toggle) rendert de
+geblokkeerde orders als laatste sectie. Week-sectie-tellingen tellen ze niet
+meer mee; de week-tab-badges (stats) wél — ze zitten nog in de tab. Zodra een
+vervoerder geactiveerd of een override gezet is verhuist de order vanzelf
+terug naar zijn week-sectie. De sorteer-props op PickWeekSectie/
+PickDagOrdersSectie (vanochtend) zijn weer verwijderd; de
+`geblokkeerdeOrderIds`-parameter op de `groeperen.ts`-helpers blijft (getest,
+defense-in-depth). Puur UI — geen DB-wijziging.
 
 **Verzoek Miguel:** orders die gepickt kunnen worden moeten boven de
 "Geen vervoerder mogelijk"-orders staan. `clusterOrdersOpKlant` /

@@ -29,16 +29,12 @@ interface Props {
   orders: PickShipOrder[]
   groepeerOpLand: boolean
   voorgesteldeBundels: VoorgesteldeBundel[]
-  /** Order-ids die niet startbaar zijn ("Geen vervoerder mogelijk") —
-   *  sorteren onder de startbare orders binnen deze sectie. */
-  geblokkeerdeOrderIds?: Set<number>
 }
 
 export function PickDagOrdersSectie({
   orders,
   groepeerOpLand,
   voorgesteldeBundels,
-  geblokkeerdeOrderIds,
 }: Props) {
   const bundelByOrderId = new Map<number, VoorgesteldeBundel>()
   const sleutelByOrderId = new Map<number, string>()
@@ -63,8 +59,8 @@ export function PickDagOrdersSectie({
   })
 
   const groepen: LandGroep[] = groepeerOpLand
-    ? groepeerOrdersOpLand(gesort, sleutelByOrderId, geblokkeerdeOrderIds)
-    : [{ iso2: null, vlag: null, clusters: clusterOrdersOpKlant(gesort, sleutelByOrderId, geblokkeerdeOrderIds) }]
+    ? groepeerOrdersOpLand(gesort, sleutelByOrderId)
+    : [{ iso2: null, vlag: null, clusters: clusterOrdersOpKlant(gesort, sleutelByOrderId) }]
 
   return (
     <section className="rounded-[var(--radius)] border-2 border-terracotta-400 bg-terracotta-50/40 p-3">

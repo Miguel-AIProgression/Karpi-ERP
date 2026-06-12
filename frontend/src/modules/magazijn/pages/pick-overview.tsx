@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/layout/page-header'
 import { PickProblemenBanner } from '../components/pick-problemen-banner'
 import { HstAandachtBanner } from '@/modules/logistiek'
 import { PickDagOrdersSectie } from '../components/pick-dag-orders-sectie'
+import { PickGeblokkeerdSectie } from '../components/pick-geblokkeerd-sectie'
 import { PickWeekSectie } from '../components/pick-week-sectie'
 import { usePickShipOrders, usePickShipStats } from '../hooks/use-pick-ship'
 import {
@@ -113,17 +114,30 @@ export function MagazijnOverviewPage() {
     return m
   }, [voorgesteldeBundels])
 
+  // Geblokkeerde orders ("Geen vervoerder mogelijk") gaan niet de week-secties
+  // in maar naar een eigen sectie ónder alles (verzoek Miguel 2026-06-12):
+  // hun oude verzendweken zetten ze anders als "Achterstallig"-koppen bovenaan
+  // de tab, terwijl de magazijnier er niets mee kan tot de vervoerder-cutover.
+  const geblokkeerdeOrders = useMemo(
+    () => naVervoerderFilter.filter((o) => geblokkeerdeOrderIds.has(o.order_id)),
+    [naVervoerderFilter, geblokkeerdeOrderIds],
+  )
+  const startbareOrders = useMemo(
+    () => naVervoerderFilter.filter((o) => !geblokkeerdeOrderIds.has(o.order_id)),
+    [naVervoerderFilter, geblokkeerdeOrderIds],
+  )
+
   // Dag-orders (`lever_type='datum'`, ADR 0014) krijgen een eigen sectie
   // bovenaan: ze hebben een specifieke afleverdag-belofte en moeten niet
   // tussen de week-buckets verdwijnen. Week-orders blijven in de bestaande
   // verzendweek-groepen.
   const dagOrders = useMemo(
-    () => naVervoerderFilter.filter((o) => o.lever_type === 'datum'),
-    [naVervoerderFilter],
+    () => startbareOrders.filter((o) => o.lever_type === 'datum'),
+    [startbareOrders],
   )
   const weekOrders = useMemo(
-    () => naVervoerderFilter.filter((o) => o.lever_type !== 'datum'),
-    [naVervoerderFilter],
+    () => startbareOrders.filter((o) => o.lever_type !== 'datum'),
+    [startbareOrders],
   )
 
   // Groepeer binnen het actieve filter per verzendweek (gesorteerd op sleutel).
@@ -279,7 +293,7 @@ export function MagazijnOverviewPage() {
         <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-12 text-center text-slate-400">
           Pick & Ship laden...
         </div>
-      ) : dagOrders.length === 0 && perWeek.length === 0 ? (
+      ) : dagOrders.length === 0 && perWeek.length === 0 && geblokkeerdeOrders.length === 0 ? (
         <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-12 text-center text-slate-400">
           Geen open orders
         </div>
@@ -294,7 +308,6 @@ export function MagazijnOverviewPage() {
                   dagOrders.some((o) => o.order_id === oid),
                 ),
               )}
-              geblokkeerdeOrderIds={geblokkeerdeOrderIds}
             />
           )}
           {perWeek.map((groep) => (
@@ -306,9 +319,12 @@ export function MagazijnOverviewPage() {
               status={groep.status}
               groepeerOpLand={groepeerOpLand}
               voorgesteldeBundels={bundelsPerWeek.get(groep.sleutel) ?? []}
-              geblokkeerdeOrderIds={geblokkeerdeOrderIds}
             />
           ))}
+          <PickGeblokkeerdSectie
+            orders={geblokkeerdeOrders}
+            groepeerOpLand={groepeerOpLand}
+          />
         </div>
       )}
     </>
