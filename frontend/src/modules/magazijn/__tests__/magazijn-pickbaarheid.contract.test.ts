@@ -37,6 +37,9 @@ function buildChain(table: string) {
     limit: () => chain,
     update: () => chain,
     insert: () => chain,
+    // maybeSingle() retourneert hetzelfde thenable (single-rij-semantiek) —
+    // de response uit de queue wordt in de then()-handler geserveerd.
+    maybeSingle: () => chain,
     then: (
       resolve: (value: SupabaseResponse) => void,
       reject: (reason: unknown) => void
@@ -178,6 +181,9 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
       }),
     ]
 
+    // app_config 'werkagenda' — parallel opgehaald door fetchWerkagendaConfig (mig 384).
+    // Lege DB-rij = standaard werktijden (maandag–vrijdag, geen feestdagen).
+    queueResponse('app_config', { data: null, error: null })
     queueResponse('orders', { data: headers, error: null })
     queueResponse('debiteuren', { data: debiteuren, error: null })
     queueResponse('orderregel_pickbaarheid', { data: regels, error: null })
@@ -221,6 +227,7 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     const headers = [makeOrderHeader({ id: 100 })]
     const debiteuren = [makeDebiteur(5001, 'Klantnaam BV')]
 
+    queueResponse('app_config', { data: null, error: null })
     queueResponse('orders', { data: headers, error: null })
     queueResponse('debiteuren', { data: debiteuren, error: null })
     queueResponse('orderregel_pickbaarheid', { data: [], error: null })
@@ -256,6 +263,7 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
       },
     ]
 
+    queueResponse('app_config', { data: null, error: null })
     queueResponse('orders', { data: headers, error: null })
     queueResponse('debiteuren', { data: debiteuren, error: null })
     queueResponse('orderregel_pickbaarheid', {
@@ -298,6 +306,7 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
       }),
     ]
 
+    queueResponse('app_config', { data: null, error: null })
     queueResponse('orders', { data: headers, error: null })
     queueResponse('debiteuren', { data: debiteuren, error: null })
     queueResponse('orderregel_pickbaarheid', { data: regels, error: null })
@@ -326,6 +335,7 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
       }),
     ]
 
+    queueResponse('app_config', { data: null, error: null })
     queueResponse('orders', { data: headers, error: null })
     queueResponse('debiteuren', { data: debiteuren, error: null })
     queueResponse('orderregel_pickbaarheid', { data: regels, error: null })
@@ -345,6 +355,7 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     const headers = [makeOrderHeader({ id: 999, order_nr: 'ORD-2026-0099' })]
     const debiteuren = [makeDebiteur(5001, 'Klantnaam BV')]
 
+    queueResponse('app_config', { data: null, error: null })
     queueResponse('orders', { data: headers, error: null })
     queueResponse('debiteuren', { data: debiteuren, error: null })
     queueResponse('orderregel_pickbaarheid', { data: [], error: null })
@@ -372,6 +383,7 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
       }),
     ]
 
+    queueResponse('app_config', { data: null, error: null })
     queueResponse('orders', { data: headers, error: null })
     queueResponse('debiteuren', { data: debiteuren, error: null })
     queueResponse('orderregel_pickbaarheid', { data: regels, error: null })

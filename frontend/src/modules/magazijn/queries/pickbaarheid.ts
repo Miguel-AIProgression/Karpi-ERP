@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase/client'
 import { SHIPPING_PRODUCT_ID } from '@/lib/constants/shipping'
 import { werkdagMinN } from '@/lib/utils/bereken-agenda'
+import { fetchWerkagendaConfig } from '@/lib/supabase/queries/werkagenda'
 import type { BucketKey, PickShipOrder } from '../lib/types'
 import {
   chunks,
@@ -51,7 +52,10 @@ export async function fetchPickShipOrders(
 ): Promise<PickShipOrder[]> {
   const { search, bucket, vandaag = new Date(), alleen_pickbaar = false } = params
 
-  const headers = await fetchOpenOrderHeaders()
+  const [headers, werktijden] = await Promise.all([
+    fetchOpenOrderHeaders(),
+    fetchWerkagendaConfig(),
+  ])
   if (headers.length === 0) return []
 
   const perOrder = initPickShipOrders(headers, vandaag)
@@ -113,7 +117,9 @@ export async function fetchPickShipOrders(
     if (o.regels.length === 0) return false
     const allesPickbaar = o.regels.every((r) => r.is_pickbaar)
     if (header?.lever_type === 'datum' && header.afleverdatum) {
-      const horizon = werkdagMinN(header.afleverdatum, 1)
+      // Horizon telt met de centrale werkagenda (feestdagen) — valt een vrije dag vóór de
+      // afleverdatum, dan verschijnt de dag-order een werkdag eerder.
+      const horizon = werkdagMinN(header.afleverdatum, 1, werktijden)
       if (vandaagIso < horizon) return false
     }
     if (allesPickbaar) return true

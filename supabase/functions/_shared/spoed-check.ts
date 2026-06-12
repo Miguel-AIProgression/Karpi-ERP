@@ -118,7 +118,7 @@ export function evalueerSpoed(
   if (snij_datum) {
     const ruw = new Date(`${snij_datum}T00:00:00Z`)
     ruw.setUTCDate(ruw.getUTCDate() + cfg.logistieke_buffer_dagen)
-    lever_datum = naarWerkdag(ruw.toISOString().slice(0, 10))
+    lever_datum = naarWerkdag(ruw.toISOString().slice(0, 10), werktijden)
     const wj = isoWeekJaar(new Date(`${lever_datum}T00:00:00Z`))
     week = wj.week
     jaar = wj.jaar
