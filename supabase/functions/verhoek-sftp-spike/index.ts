@@ -3,7 +3,7 @@
 // demo-server) — geen Verhoek-credentials nodig. Met VERHOEK_SFTP_*-secrets
 // gezet test hij Verhoeks server (Fase 2, incl. upload als ?upload=1).
 // Verwijderen ná Fase 2. Auth: CRON_TOKEN-header.
-import { testSftpVerbinding, uploadXmlViaSftp } from '../verhoek-send/sftp-client.ts';
+import { testSftpVerbinding, uploadXmlViaSftp } from '../_shared/sftp-client.ts';
 
 Deno.serve(async (req) => {
   const expected = Deno.env.get('CRON_TOKEN');

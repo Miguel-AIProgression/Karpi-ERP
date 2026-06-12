@@ -15,7 +15,7 @@
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 import { bouwVerhoekBestandsnaam, bouwVerhoekXml, valideerVerhoekColli } from './xml-builder.ts';
-import { type SftpConfig, uploadXmlViaSftp } from './sftp-client.ts';
+import { type SftpConfig, uploadXmlViaSftp } from '../_shared/sftp-client.ts';
 import { valideerVoorVervoerder } from '../_shared/vervoerder-eisen.ts';
 import { DEFAULT_VERHOEK_OPTIES } from './types.ts';
 import type { BedrijfInput, VerhoekColliInput, VerhoekOpties, ZendingInput } from './types.ts';

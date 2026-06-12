@@ -1,8 +1,9 @@
-// Dunne SFTP-wrapper voor verhoek-send. Bewust geïsoleerd: als de spike
-// uitwijst dat ssh2 niet draait in de edge runtime, is dít de enige module
-// die vervangen wordt (fallback: n8n-SFTP-workflow of Python-worker die
-// dezelfde verhoek_transportorders-wachtrij leegt).
-// Plan: docs/superpowers/plans/2026-06-11-verhoek-transporteur-xml-sftp.md (Taak 9)
+// Dunne SFTP-wrapper voor de sftp-vervoerder-adapters (verhoek-send,
+// rhenus-send). Bewust geïsoleerd: als de runtime ssh2 niet draait, is dít de
+// enige module die vervangen wordt (fallback: n8n-SFTP-workflow of
+// Python-worker die dezelfde adapter-wachtrijen leegt).
+// Geëxtraheerd uit verhoek-send (ADR-0031 Taak 9) → _shared bij de komst van
+// Rhenus als tweede SFTP-vervoerder (ADR-0032). Gedrag ongewijzigd.
 
 import { Buffer } from 'node:buffer';
 import SftpClient from 'npm:ssh2-sftp-client@11';
