@@ -10,9 +10,9 @@
 //
 // Auth: ?token=<CRON_TOKEN> (zelfde patroon als transus-send/transus-poll, mig 305).
 //
-// De payload-builder (`buildKarpiVerzendbericht`) gooit bewust een fout totdat
-// het Transus DESADV-formaat is gereverse-engineerd (Task 12). Elke sweep
-// produceert daardoor error-results — dat is by design totdat Task 12 klaar is.
+// De payload-builder (`buildKarpiVerzendbericht`) is gevalideerd byte-identiek
+// tegen Transus-voorbeeld 172390327 (Hornbach NL, 2026-06-11) — zie de
+// kolomkaart in _shared/transus-formats/karpi-verzendbericht.ts.
 //
 // Plan: docs/superpowers/plans/2026-06-11-universele-communicatie-knoppen.md (slice 4)
 // Spiegelt: supabase/functions/bouw-factuur-edi/index.ts
@@ -21,7 +21,6 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import {
   buildKarpiVerzendbericht,
-  valideerVerzendberichtInput,
   type VerzendberichtInput,
 } from '../_shared/transus-formats/karpi-verzendbericht.ts'
 
@@ -172,7 +171,8 @@ async function verwerkOrder(sb: any, orderId: number): Promise<VerwerkResult> {
       .select(
         'id, order_nr, orderdatum, afleverdatum, klant_referentie, status, bron_systeem, ' +
           'debiteur_nr, ' +
-          'besteller_gln, factuuradres_gln, afleveradres_gln',
+          'besteller_gln, factuuradres_gln, afleveradres_gln, ' +
+          'debiteuren(naam)',
       )
       .eq('id', orderId)
       .maybeSingle()
@@ -208,7 +208,9 @@ async function verwerkOrder(sb: any, orderId: number): Promise<VerwerkResult> {
     }
 
     // 4. Zending ophalen via zending_orders → zendingen
-    //    kolommen: zending_nr, verzenddatum, track_trace
+    //    kolommen: zending_nr, verzenddatum
+    //    (track_trace heeft géén slot in het fixed-width DESADV-format — zie
+    //    kolomkaart in karpi-verzendbericht.ts)
     const zending = await haalZendingOp(sb, orderId)
 
     // 5. Karpi-GLN uit app_config bedrijfsgegevens
@@ -245,17 +247,19 @@ async function verwerkOrder(sb: any, orderId: number): Promise<VerwerkResult> {
     }
 
     // 7. Bouw VerzendberichtInput
+    //    recipientGln (UNB-routering) = factuuradres_gln — spiegelt factuur-mapper.ts
+    const partnerNaam = (order.debiteuren as { naam: string | null } | null)?.naam ?? null
     const input: VerzendberichtInput = {
       zendingNr: zending?.zending_nr ?? order.order_nr,
       verzenddatum: zending?.verzenddatum ?? new Date().toISOString().slice(0, 10),
       leverdatum: order.afleverdatum ?? '',
       orderNumberBuyer,
       orderNumberSupplier: order.order_nr,
+      partnerNaam,
       senderGln,
       recipientGln: order.factuuradres_gln ?? '',
       buyerGln: order.besteller_gln ?? '',
       deliveryPartyGln: order.afleveradres_gln ?? '',
-      trackingNummer: zending?.track_trace ?? null,
       isTestMessage: cfg.test_modus ?? false,
       regels,
     }
@@ -275,15 +279,15 @@ async function verwerkOrder(sb: any, orderId: number): Promise<VerwerkResult> {
       return { order_id: orderId, status: 'al_aanwezig', uitgaandId: bestaand.id }
     }
 
-    // 9. Bouw bericht (gooit bewust tot Task 12 klaar is)
+    // 9. Bouw bericht (gooit bij validatiefouten, bv. regel zonder GTIN)
     let payloadRaw: string
     try {
       payloadRaw = buildKarpiVerzendbericht(input)
     } catch (e) {
-      // Builder gooit — format nog niet gevalideerd (Taak 12-STOP).
-      // Geen insert in edi_berichten: geen payload_raw beschikbaar.
-      // Resultaat: per-order error-result in de response; sweep probeert volgende
-      // keer opnieuw zodra de builder wél werkt.
+      // Validatiefout (ontbrekende GLN/GTIN/datum) — geen insert in
+      // edi_berichten: geen payload_raw beschikbaar. Resultaat: per-order
+      // error-result in de response; sweep probeert het volgende keer opnieuw
+      // zodra de data compleet is.
       const errorMsg = e instanceof Error ? e.message : String(e)
       return { order_id: orderId, status: 'fout', error: errorMsg }
     }
@@ -320,7 +324,6 @@ async function verwerkOrder(sb: any, orderId: number): Promise<VerwerkResult> {
 interface ZendingData {
   zending_nr: string
   verzenddatum: string | null
-  track_trace: string | null
 }
 
 /**
@@ -332,7 +335,7 @@ async function haalZendingOp(sb: any, orderId: number): Promise<ZendingData | nu
   try {
     const { data, error } = await sb
       .from('zending_orders')
-      .select('zendingen(zending_nr, verzenddatum, track_trace)')
+      .select('zendingen(zending_nr, verzenddatum)')
       .eq('order_id', orderId)
       .limit(1)
       .maybeSingle()
