@@ -69,9 +69,9 @@ export interface PickShipOrder {
   verzend_week_kort: string
   regels: PickShipRegel[]
   totaal_m2: number
-  /** Som van `order_regels.gewicht_kg × orderaantal` (kg). 0 als gewicht nog onbekend.
-   *  Indicatief op Pick & Ship; definitieve waarde wordt door
-   *  `create_zending_voor_order` op de zending gezet. */
+  /** Som van `gewicht_kg × orderaantal` over de view-regels (mig 383) (kg).
+   *  0 als gewicht nog onbekend. Indicatief op Pick & Ship; definitieve waarde
+   *  wordt door `create_zending_voor_order` op de zending gezet. */
   totaal_gewicht_kg: number
   aantal_regels: number
   /** Mig 383: order-niveau-predicaat uit view `order_pickbaarheid`. Bron voor

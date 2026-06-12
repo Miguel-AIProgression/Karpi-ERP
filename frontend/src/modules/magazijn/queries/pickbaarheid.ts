@@ -1,5 +1,4 @@
 import { supabase } from '@/lib/supabase/client'
-import { SHIPPING_PRODUCT_ID } from '@/lib/constants/shipping'
 import { werkdagMinN } from '@/lib/utils/bereken-agenda'
 import type { BucketKey, PickShipOrder } from '../lib/types'
 import {
@@ -18,19 +17,6 @@ function isoLokaal(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-interface FallbackOrderRegelRij {
-  id: number
-  order_id: number
-  regelnummer: number
-  artikelnr: string | null
-  is_maatwerk: boolean | null
-  orderaantal: number | null
-  maatwerk_lengte_cm: number | null
-  maatwerk_breedte_cm: number | null
-  omschrijving: string | null
-  maatwerk_kwaliteit_code: string | null
-  maatwerk_kleur_code: string | null
-}
 
 export interface PickShipParams {
   bucket?: BucketKey
@@ -60,7 +46,6 @@ export async function fetchPickShipOrders(
   const regels = await fetchPickbaarheidRegels(headers.map((h) => h.id))
   const karpiNamen = await fetchKarpiNamenVoorArtikelen(regels.map((r) => r.artikelnr))
   const orderPickbaarheid = await fetchOrderPickbaarheid(headers.map((h) => h.id))
-  const gewichtPerOrder = await fetchTotaalGewichtPerOrder(headers.map((h) => h.id))
   const actievePickrondes = await fetchActievePickrondes(headers.map((h) => h.id))
 
   for (const [orderId, ronde] of actievePickrondes) {
@@ -77,12 +62,9 @@ export async function fetchPickShipOrders(
     const regel = mapPickbaarheidRegel(r, karpiNaam)
     order.regels.push(regel)
     order.totaal_m2 = Math.round((order.totaal_m2 + regel.m2) * 100) / 100
+    order.totaal_gewicht_kg =
+      Math.round((order.totaal_gewicht_kg + (r.gewicht_kg ?? 0) * (r.orderaantal ?? 0)) * 100) / 100
     order.aantal_regels = order.regels.length
-  }
-
-  for (const [orderId, kg] of gewichtPerOrder) {
-    const order = perOrder.get(orderId)
-    if (order) order.totaal_gewicht_kg = kg
   }
 
   for (const [orderId, opb] of orderPickbaarheid) {
@@ -178,71 +160,16 @@ async function fetchPickbaarheidRegels(orderIds: number[]): Promise<Pickbaarheid
         'order_regel_id, order_id, regelnummer, artikelnr, is_maatwerk, ' +
           'orderaantal, maatwerk_lengte_cm, maatwerk_breedte_cm, omschrijving, ' +
           'maatwerk_kwaliteit_code, maatwerk_kleur_code, totaal_stuks, ' +
-          'pickbaar_stuks, is_pickbaar, bron, fysieke_locatie, wacht_op'
+          'pickbaar_stuks, is_pickbaar, bron, fysieke_locatie, wacht_op, gewicht_kg'
       )
       .in('order_id', ids)
-      // Specifieke VERZEND-skip voor pakbon-/pick-listing: verzendkosten zijn
-      // factuurregels, geen fysiek collo. Andere admin-pseudo's (BUNDELKORTING/
-      // DREMPELKORTING) bestaan niet als orderregel in productie (mig 262).
-      // Voor generieke admin-pseudo-skip: zie ADR-0018 / isAdminPseudo(regel).
-      .neq('artikelnr', SHIPPING_PRODUCT_ID)
 
-    if (error) {
-      if (isMissingPickbaarheidViewError(error)) return fetchFallbackOrderRegels(orderIds)
-      throw error
-    }
+    if (error) throw error
     rows.push(...((data ?? []) as unknown as PickbaarheidRij[]))
   }
   return rows
 }
 
-async function fetchFallbackOrderRegels(orderIds: number[]): Promise<PickbaarheidRij[]> {
-  const rows: FallbackOrderRegelRij[] = []
-
-  for (const ids of chunks(orderIds, 100)) {
-    const { data, error } = await supabase
-      .from('order_regels')
-      .select(
-        'id, order_id, regelnummer, artikelnr, is_maatwerk, orderaantal, ' +
-          'maatwerk_lengte_cm, maatwerk_breedte_cm, omschrijving, ' +
-          'maatwerk_kwaliteit_code, maatwerk_kleur_code'
-      )
-      .in('order_id', ids)
-      // Specifieke VERZEND-skip — zie pakbon-listing-comment hierboven (ADR-0018).
-      .neq('artikelnr', SHIPPING_PRODUCT_ID)
-      .order('regelnummer', { ascending: true })
-
-    if (error) throw error
-    rows.push(...((data ?? []) as unknown as FallbackOrderRegelRij[]))
-  }
-
-  return rows.map((r) => ({
-    order_regel_id: r.id,
-    order_id: r.order_id,
-    regelnummer: r.regelnummer,
-    artikelnr: r.artikelnr,
-    is_maatwerk: r.is_maatwerk ?? false,
-    orderaantal: r.orderaantal ?? 0,
-    maatwerk_lengte_cm: r.maatwerk_lengte_cm,
-    maatwerk_breedte_cm: r.maatwerk_breedte_cm,
-    omschrijving: r.omschrijving,
-    maatwerk_kwaliteit_code: r.maatwerk_kwaliteit_code,
-    maatwerk_kleur_code: r.maatwerk_kleur_code,
-    totaal_stuks: null,
-    pickbaar_stuks: null,
-    is_pickbaar: false,
-    bron: null,
-    fysieke_locatie: null,
-    wacht_op: null,
-  }))
-}
-
-/**
- * Som `gewicht_kg × orderaantal` per order. Pseudo-regel `VERZEND` wordt
- * uitgesloten — die is een factuurregel, geen fysiek collo (zie mig 206).
- * Wordt indicatief getoond op Pick & Ship; definitief gewicht wordt later door
- * `create_zending_voor_order` op de zending gezet.
- */
 /**
  * Per order: de actieve Pickronde (zending in 'Picken'-status), inclusief
  * picker-naam. Bron is `zending_orders` M2M (mig 222, canoniek vanaf mig 242
@@ -333,6 +260,8 @@ async function fetchOrderPickbaarheid(
   orderIds: number[]
 ): Promise<Map<number, OrderPickbaarheidRij>> {
   const map = new Map<number, OrderPickbaarheidRij>()
+  // Gechunkt per order_id — zelfde PostgREST-max-rows-cap-reden als fetchPickbaarheidRegels
+  // (1 rij per order, maar >1000 open orders is realistisch met EDI-instroom).
   for (const ids of chunks(orderIds, 100)) {
     const { data, error } = await supabase
       .from('order_pickbaarheid')
@@ -346,32 +275,6 @@ async function fetchOrderPickbaarheid(
       map.set(row.order_id, row)
     }
   }
-  return map
-}
-
-async function fetchTotaalGewichtPerOrder(orderIds: number[]): Promise<Map<number, number>> {
-  const map = new Map<number, number>()
-  if (orderIds.length === 0) return map
-
-  for (const ids of chunks(orderIds, 100)) {
-    const { data, error } = await supabase
-      .from('order_regels')
-      .select('order_id, gewicht_kg, orderaantal, artikelnr')
-      .in('order_id', ids)
-      // VERZEND telt niet in zending-gewicht (factuurregel, geen collo). ADR-0018.
-      .neq('artikelnr', SHIPPING_PRODUCT_ID)
-    if (error) throw error
-    for (const row of (data ?? []) as Array<{
-      order_id: number
-      gewicht_kg: number | null
-      orderaantal: number | null
-    }>) {
-      const kg = (row.gewicht_kg ?? 0) * (row.orderaantal ?? 0)
-      map.set(row.order_id, (map.get(row.order_id) ?? 0) + kg)
-    }
-  }
-
-  for (const [k, v] of map) map.set(k, Math.round(v * 100) / 100)
   return map
 }
 
@@ -402,12 +305,6 @@ async function fetchKarpiNamenVoorArtikelen(
   return map
 }
 
-function isMissingPickbaarheidViewError(error: { code?: string; message?: string }): boolean {
-  return (
-    error.code === 'PGRST205' ||
-    (error.message ?? '').includes("Could not find the table 'public.orderregel_pickbaarheid'")
-  )
-}
 
 export async function fetchPickShipStats(vandaag: Date = new Date()): Promise<PickShipStats> {
   const orders = await fetchPickShipOrders({ vandaag })

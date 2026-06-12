@@ -1,12 +1,18 @@
 // Provider-side contract test: magazijn-module pickbaarheid-seam.
 //
-// Doel: bewaakt het publieke `fetchPickShipOrders`-contract — caller moet niet
-// hoeven weten of `orderregel_pickbaarheid` view bestaat (fallback op
-// `order_regels`). Vier scenario's gedekt:
-//   1. View aanwezig met N pickbaarheid-regels
-//   2. View aanwezig zonder regels (lege array)
-//   3. View ontbreekt → fallback op order_regels
-//   4. Order zonder regels (header-only)
+// Doel: bewaakt het publieke `fetchPickShipOrders`-contract — de view
+// `orderregel_pickbaarheid` is de enige bron; ontbreekt ze → hard falen
+// (geen stille fallback). Zeven scenario's gedekt:
+//   1. View aanwezig met N pickbaarheid-regels (gewicht via view-kolom)
+//   2. View aanwezig zonder regels (lege array) → order uitgefilterd
+//   3. View-query faalt (PGRST205) → fout propageert, geen stille fallback
+//   4. Order zonder regels (header-only) → uitgefilterd
+//   5. Onpickbare regel + klant zonder deelleveringen → uitgefilterd
+//   6. Alle regels wacht_op=snijden + deelleveringen=true → uitgefilterd
+//   7. Wacht_op=inkoop + klant zonder deelleveringen → uitgefilterd
+//
+// Mig 383 is een deploy-voorwaarde: de view vervangt zowel de oude
+// PGRST205-fallback op order_regels als de aparte gewicht-query.
 //
 // Geen mocking-framework voor de data — alleen factory-fixtures via een
 // dunne fake-Supabase-client. Vi.mock wordt alleen gebruikt om de
@@ -49,6 +55,7 @@ interface PickbaarheidRowFixture {
   bron: 'snijplan' | 'rol' | 'producten_default' | null
   fysieke_locatie: string | null
   wacht_op: 'snijden' | 'confectie' | 'inpak' | 'inkoop' | null
+  gewicht_kg: number | null
 }
 
 function makePickbaarheidRow(
@@ -72,6 +79,7 @@ function makePickbaarheidRow(
     bron: 'rol',
     fysieke_locatie: 'A-12',
     wacht_op: null,
+    gewicht_kg: 4.5,
     ...overrides,
   }
 }
@@ -156,6 +164,7 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
         is_pickbaar: false,
         bron: 'snijplan',
         wacht_op: 'snijden',
+        gewicht_kg: 7.0,
       }),
     ]
 
@@ -164,15 +173,6 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     queueResponse('orderregel_pickbaarheid', { data: regels, error: null })
     queueResponse('producten', {
       data: [{ artikelnr: 'P-001', omschrijving: 'KARPI SANDRO 200x140' }],
-      error: null,
-    })
-    // Gewicht-aggregaat (nieuwe Pick & Ship-kolom): som van
-    // gewicht_kg × orderaantal per order, gevoed uit order_regels.
-    queueResponse('order_regels', {
-      data: [
-        { order_id: 100, gewicht_kg: 4.5, orderaantal: 2, artikelnr: 'P-001' },
-        { order_id: 100, gewicht_kg: 7.0, orderaantal: 1, artikelnr: null },
-      ],
       error: null,
     })
     // Mig 242: actieve Pickrondes per order via zending_orders M2M. Leeg = geen lopende pickronde.
@@ -216,7 +216,6 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     queueResponse('orders', { data: headers, error: null })
     queueResponse('debiteuren', { data: debiteuren, error: null })
     queueResponse('orderregel_pickbaarheid', { data: [], error: null })
-    queueResponse('order_regels', { data: [], error: null })
     queueResponse('zending_orders', { data: [], error: null })
     // Mig 383: geen regels → geen rij in order_pickbaarheid → order onzichtbaar.
     queueResponse('order_pickbaarheid', { data: [], error: null })
@@ -226,52 +225,19 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     expect(result).toHaveLength(0)
   })
 
-  it('scenario 3: view ontbreekt (PGRST205) — fallback op order_regels, geen pickbaarheid bekend', async () => {
-    // Wanneer de pickbaarheid-view ontbreekt valt de query terug op
-    // `order_regels` zonder pickbaarheids-info; alle regels staan default op
-    // `is_pickbaar=false`. Het pickbaarheidsfilter laat de order daardoor
-    // weg — veiliger dan iets tonen waarvan de staat onbekend is. Dit is een
-    // dev/legacy-pad, niet de productie-flow.
-    const headers = [makeOrderHeader({ id: 100 })]
-    const debiteuren = [makeDebiteur(5001, 'Klantnaam BV')]
-    const fallbackRegels = [
-      {
-        id: 11,
-        order_id: 100,
-        regelnummer: 1,
-        artikelnr: 'P-001',
-        is_maatwerk: false,
-        orderaantal: 3,
-        maatwerk_lengte_cm: null,
-        maatwerk_breedte_cm: null,
-        omschrijving: 'Fallback regel',
-        maatwerk_kwaliteit_code: null,
-        maatwerk_kleur_code: null,
-      },
-    ]
-
-    queueResponse('orders', { data: headers, error: null })
-    queueResponse('debiteuren', { data: debiteuren, error: null })
+  it('scenario 3: view-query faalt → fout propageert (geen stille fallback meer)', async () => {
+    // De PGRST205-fallback op order_regels is verwijderd (mig 383 is een
+    // deploy-voorwaarde). Een ontbrekende view moet hard en zichtbaar falen,
+    // niet stil een lege Pick & Ship opleveren.
+    queueResponse('orders', { data: [makeOrderHeader({ id: 100 })], error: null })
+    queueResponse('debiteuren', { data: [makeDebiteur(5001, 'Klantnaam BV')], error: null })
     queueResponse('orderregel_pickbaarheid', {
       data: null,
       error: { code: 'PGRST205', message: "Could not find the table 'public.orderregel_pickbaarheid'" },
     })
-    queueResponse('order_regels', { data: fallbackRegels, error: null })
-    queueResponse('producten', { data: [], error: null })
-    queueResponse('zending_orders', { data: [], error: null })
-    queueResponse('order_regels', { data: [], error: null })
-    // Scenario 3 (fallback-pad): order_pickbaarheid-view bestond al niet, dus
-    // ook de order_pickbaarheid-view-query levert leeg op (of bestaat niet).
-    // Leeg response: de FIFO-queue wordt geconsumeerd zonder effect op resultaat.
-    queueResponse('order_pickbaarheid', { data: [], error: null })
-
-    const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
-
-    // Fallback-regels staan op is_pickbaar=false en de klant zonder
-    // deelleveringen ziet de order niet. Dit is het correcte gedrag voor
-    // een productie-omgeving zonder pickbaarheid-view (ongebruikelijk maar
-    // veilig: liever niets tonen dan onbekende staat).
-    expect(result).toHaveLength(0)
+    await expect(
+      fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
+    ).rejects.toMatchObject({ code: 'PGRST205' })
   })
 
   it('scenario 5: order met onpickbare regel + klant zonder deelleveringen → uitgefilterd', async () => {
@@ -300,7 +266,6 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     queueResponse('debiteuren', { data: debiteuren, error: null })
     queueResponse('orderregel_pickbaarheid', { data: regels, error: null })
     queueResponse('producten', { data: [], error: null })
-    queueResponse('order_regels', { data: [], error: null })
     queueResponse('zending_orders', { data: [], error: null })
     // Mig 383: gemengd zonder deelleveringen → pick_ship_zichtbaar=false.
     queueResponse('order_pickbaarheid', {
@@ -336,7 +301,6 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     queueResponse('debiteuren', { data: debiteuren, error: null })
     queueResponse('orderregel_pickbaarheid', { data: regels, error: null })
     queueResponse('producten', { data: [], error: null })
-    queueResponse('order_regels', { data: [], error: null })
     queueResponse('zending_orders', { data: [], error: null })
     // Mig 383: alle regels wachten + deelleveringen=true → maar geen pickbare
     // regel aanwezig → pick_ship_zichtbaar=false.
@@ -363,7 +327,6 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     queueResponse('orders', { data: headers, error: null })
     queueResponse('debiteuren', { data: debiteuren, error: null })
     queueResponse('orderregel_pickbaarheid', { data: [], error: null })
-    queueResponse('order_regels', { data: [], error: null })
     queueResponse('zending_orders', { data: [], error: null })
     // Mig 383: geen regels → geen rij in order_pickbaarheid → order onzichtbaar.
     queueResponse('order_pickbaarheid', { data: [], error: null })
@@ -393,7 +356,6 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     queueResponse('debiteuren', { data: debiteuren, error: null })
     queueResponse('orderregel_pickbaarheid', { data: regels, error: null })
     queueResponse('producten', { data: [], error: null })
-    queueResponse('order_regels', { data: [], error: null })
     queueResponse('zending_orders', { data: [], error: null })
     // Mig 383: wacht op inkoop, geen deelleveringen → pick_ship_zichtbaar=false.
     queueResponse('order_pickbaarheid', {

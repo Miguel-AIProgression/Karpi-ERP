@@ -80,6 +80,7 @@ function makePickbaarheidRow(
     bron: 'rol' as const,
     fysieke_locatie: 'A-12',
     wacht_op: null,
+    gewicht_kg: 4.5,
     ...overrides,
   }
 }
@@ -137,13 +138,6 @@ describe('Pick & Ship R1-guard — productie-only orders worden uitgefilterd', (
     queueResponse('orderregel_pickbaarheid', { data: regels, error: null })
     queueResponse('producten', {
       data: [{ artikelnr: 'P-001', omschrijving: 'KARPI SANDRO 200x140' }],
-      error: null,
-    })
-    queueResponse('order_regels', {
-      data: [
-        { order_id: 100, gewicht_kg: 4.5, orderaantal: 2, artikelnr: 'P-001' },
-        { order_id: 200, gewicht_kg: 4.5, orderaantal: 2, artikelnr: 'P-001' },
-      ],
       error: null,
     })
     // Mig 222: actieve pickrondes via zending_orders M2M. Lege array = geen lopende ronde.

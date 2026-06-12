@@ -42,6 +42,9 @@ export interface PickbaarheidRij {
   bron: PickShipBron
   fysieke_locatie: string | null
   wacht_op: PickShipWachtOp
+  /** Mig 383: gewicht per stuk uit order_regels, via de view — vervangt de
+   *  aparte gewicht-query. */
+  gewicht_kg: number | null
 }
 
 export interface OrderHeaderRij {
