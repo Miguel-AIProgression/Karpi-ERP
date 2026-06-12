@@ -1,59 +1,34 @@
 // ----------------------------------------------------------------------------
-// ADR-0020: synchronous-only mirror — SQL is ground-truth
+// Dunne UI-laag bovenop de werkagenda-KERNEL — géén eigen rekenkunde meer.
 // ----------------------------------------------------------------------------
-// Werkdag-rekenkunde (`werkdagMinN`, `volgendeWerkminuut`, `plusWerkminuten`
-// e.d.) leeft sinds mig 279 ook in SQL als `werkdag_min_n`, `werkdag_plus_n`
-// en `werkagenda_kalender`. Die SQL-versie is de canonieke definitie.
-// Deze TS-module blijft bestaan als **synchrone mirror** voor het UI-pad —
-// Magazijn's `bucketVoor` en andere render-toetsen draaien per render
-// honderden keren; een DB-roundtrip zou onacceptabele latency geven. Bij
-// elke wijziging aan werkdag-definitie (bv. NL-feestdagen toevoegen) moet je
-// drie plekken tegelijk updaten:
-//   1. supabase/migrations/279_werkagenda_sql_functions.sql (ground-truth)
-//   2. supabase/functions/_shared/werkagenda.ts (Deno-mirror voor edge)
-//   3. dit bestand (TS-mirror voor UI)
-// Anders divergeren UI-bucketing, edge-berekeningen en SQL-views.
+// De werkdag-/werkminuten-rekenkunde leeft sinds plan 2026-06-12-werkagenda-
+// een-bron uitsluitend in supabase/functions/_shared/werkagenda.ts en wordt
+// hier direct geïmporteerd (patroon: derive-status; vite server.fs.allow
+// staat de cross-root-import toe). Contract: werkagenda.golden.json, getoetst
+// in __tests__/werkagenda.contract.test.ts (Vitest) én Deno-kant.
 //
-// Naam↔gedrag-mapping (code-review S2): deze TS `werkdagMinN(d, n)` *trekt* n
-// werkdagen af. De SQL-tegenhanger is `werkdag_min_n(d, n)` = d − n werkdagen
-// (1-op-1), met `werkdag_plus_n(d, n)` = d + n en de canonieke richting-
-// neutrale `werkdag_offset_n(d, ±n)` eronder. Geef nooit een negatieve n aan
-// deze TS-functie mee — gebruik aan SQL-zijde de juiste wrapper i.p.v. teken-flip.
+// Wat hier WEL leeft: de UI-specifieke groepering/sortering van snijplan-
+// stukken (berekenAgenda — sort in sync met de Lijst-weergave) en de
+// generieke lanes-planner (berekenLanes, confectie).
 
 import type { SnijplanRow } from '@/lib/types/productie'
+import {
+  type Werktijden,
+  volgendeWerkminuut,
+  plusWerkminuten,
+  isoDatum,
+} from '../../../../supabase/functions/_shared/werkagenda'
 
-export interface FeestdagVrij {
-  datum: string
-  naam?: string
-}
-
-export interface Werktijden {
-  /** Werkdagen 1-7 (1=ma, 7=zo) */
-  werkdagen: number[]
-  /** Starttijd HH:mm */
-  start: string
-  /** Eindtijd HH:mm */
-  eind: string
-  /** Pauzestart HH:mm (leeg = geen pauze) */
-  pauzeStart: string
-  /** Pauze-eind HH:mm */
-  pauzeEind: string
-  /** Dagen die geblokkeerd zijn (feestdagen, vakantie). ISO YYYY-MM-DD. */
-  vrij: FeestdagVrij[]
-}
-
-export const STANDAARD_WERKTIJDEN: Werktijden = {
-  werkdagen: [1, 2, 3, 4, 5],
-  start: '08:00',
-  eind: '17:00',
-  pauzeStart: '12:00',
-  pauzeEind: '12:30',
-  vrij: [],
-}
-
-function isoDatum(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
+export type { Werktijden, FeestdagVrij } from '../../../../supabase/functions/_shared/werkagenda'
+export {
+  STANDAARD_WERKTIJDEN,
+  isoDatum,
+  isWerkdag,
+  werkdagMinN,
+  volgendeWerkminuut,
+  plusWerkminuten,
+  werkminutenTussen,
+} from '../../../../supabase/functions/_shared/werkagenda'
 
 export interface RolBlok {
   rolId: number
@@ -69,151 +44,8 @@ export interface RolBlok {
   eind: Date
   /** Duur in minuten */
   duurMinuten: number
-  /** True als eind > vroegste leverdatum */
+  /** True als eind > 00:00 van (leverdatum − buffer) — strikt, zoals check-levertijd (B4) */
   teLaat: boolean
-}
-
-function parseHHmm(tijd: string): { uren: number; minuten: number } {
-  const [h, m] = tijd.split(':').map(Number)
-  return { uren: h || 0, minuten: m || 0 }
-}
-
-function isWerkdag(d: Date, werkdagen: number[], vrij?: FeestdagVrij[]): boolean {
-  // JS: 0=zo, 1=ma ... 6=za → omzetten naar 1=ma .. 7=zo
-  const js = d.getDay()
-  const iso = js === 0 ? 7 : js
-  if (!werkdagen.includes(iso)) return false
-  if (vrij && vrij.length) {
-    const iso10 = isoDatum(d)
-    if (vrij.some((v) => v.datum === iso10)) return false
-  }
-  return true
-}
-
-/**
- * Trek N werkdagen af van een ISO-datum. Een werkdag = dag die in `werkdagen`
- * staat én niet in `vrij` (feestdagen/vakantie). Voor dag-orders (ADR 0014):
- * een leverbelofte op vrijdag heeft pick-horizon = werkdagMinN(vrijdag, 1) = donderdag.
- *
- * Mag N=0 — retourneert dan de input-datum (genormaliseerd op middernacht).
- * Telt terug; max 60 stappen om infinite loop bij absurde feestdag-input te voorkomen.
- */
-export function werkdagMinN(
-  iso: string,
-  n: number,
-  w: Werktijden = STANDAARD_WERKTIJDEN,
-): string {
-  const start = new Date(`${iso}T00:00:00`)
-  if (isNaN(start.getTime())) return iso
-  const d = new Date(start)
-  let resterend = n
-  let stappen = 0
-  while (resterend > 0 && stappen < 60) {
-    d.setDate(d.getDate() - 1)
-    stappen += 1
-    if (isWerkdag(d, w.werkdagen, w.vrij)) resterend -= 1
-  }
-  return isoDatum(d)
-}
-
-/** Zoek volgend moment dat een werkminuut beschikbaar is (na dit moment). */
-export function volgendeWerkminuut(vanaf: Date, w: Werktijden): Date {
-  const d = new Date(vanaf)
-  const { uren: sU, minuten: sM } = parseHHmm(w.start)
-  const { uren: eU, minuten: eM } = parseHHmm(w.eind)
-  const pStart = parseHHmm(w.pauzeStart)
-  const pEind = parseHHmm(w.pauzeEind)
-
-  const heeftPauze = w.pauzeStart && w.pauzeEind && w.pauzeStart !== w.pauzeEind
-
-  for (let i = 0; i < 365; i++) {
-    if (isWerkdag(d, w.werkdagen, w.vrij)) {
-      const startDag = new Date(d); startDag.setHours(sU, sM, 0, 0)
-      const eindDag = new Date(d); eindDag.setHours(eU, eM, 0, 0)
-      if (d < startDag) d.setTime(startDag.getTime())
-      if (d < eindDag) {
-        if (heeftPauze) {
-          const pS = new Date(d); pS.setHours(pStart.uren, pStart.minuten, 0, 0)
-          const pE = new Date(d); pE.setHours(pEind.uren, pEind.minuten, 0, 0)
-          if (d >= pS && d < pE) d.setTime(pE.getTime())
-        }
-        return d
-      }
-    }
-    // Naar volgende dag 00:00
-    d.setDate(d.getDate() + 1)
-    d.setHours(0, 0, 0, 0)
-  }
-  return d
-}
-
-/** Totaal aantal werkminuten in het halfopen interval [van, tot). */
-export function werkminutenTussen(van: Date, tot: Date, w: Werktijden): number {
-  if (tot <= van) return 0
-  const { uren: sU, minuten: sM } = parseHHmm(w.start)
-  const { uren: eU, minuten: eM } = parseHHmm(w.eind)
-  const pStart = parseHHmm(w.pauzeStart)
-  const pEind = parseHHmm(w.pauzeEind)
-  const heeftPauze = w.pauzeStart && w.pauzeEind && w.pauzeStart !== w.pauzeEind
-  const pauzeMin = heeftPauze ? (pEind.uren * 60 + pEind.minuten) - (pStart.uren * 60 + pStart.minuten) : 0
-
-  let totaal = 0
-  const d = new Date(van); d.setHours(0, 0, 0, 0)
-  const einde = new Date(tot)
-  for (let i = 0; i < 400 && d <= einde; i++) {
-    if (isWerkdag(d, w.werkdagen, w.vrij)) {
-      const dagStart = new Date(d); dagStart.setHours(sU, sM, 0, 0)
-      const dagEind = new Date(d); dagEind.setHours(eU, eM, 0, 0)
-      const blokStart = van > dagStart ? van : dagStart
-      const blokEind = einde < dagEind ? einde : dagEind
-      if (blokEind > blokStart) {
-        let mins = Math.floor((blokEind.getTime() - blokStart.getTime()) / 60000)
-        if (heeftPauze) {
-          const pS = new Date(d); pS.setHours(pStart.uren, pStart.minuten, 0, 0)
-          const pE = new Date(d); pE.setHours(pEind.uren, pEind.minuten, 0, 0)
-          const overlapStart = blokStart > pS ? blokStart : pS
-          const overlapEind = blokEind < pE ? blokEind : pE
-          if (overlapEind > overlapStart) {
-            mins -= Math.floor((overlapEind.getTime() - overlapStart.getTime()) / 60000)
-          }
-          // Fallback als van/tot pauze volledig overspant terwijl blok dat doet
-          if (mins < 0) mins = 0
-          void pauzeMin
-        }
-        totaal += mins
-      }
-    }
-    d.setDate(d.getDate() + 1)
-  }
-  return totaal
-}
-
-/** Voeg N werkminuten toe aan een tijdstip, rekening houdend met werktijden + pauze. */
-export function plusWerkminuten(start: Date, minuten: number, w: Werktijden): Date {
-  let huidig = volgendeWerkminuut(start, w)
-  let resterend = minuten
-  const { uren: eU, minuten: eM } = parseHHmm(w.eind)
-  const pStart = parseHHmm(w.pauzeStart)
-  const heeftPauze = w.pauzeStart && w.pauzeEind && w.pauzeStart !== w.pauzeEind
-
-  while (resterend > 0) {
-    const eindDag = new Date(huidig); eindDag.setHours(eU, eM, 0, 0)
-    let blokEind = eindDag
-
-    if (heeftPauze) {
-      const pS = new Date(huidig); pS.setHours(pStart.uren, pStart.minuten, 0, 0)
-      if (huidig < pS && pS < eindDag) blokEind = pS
-    }
-
-    const beschikbaar = Math.floor((blokEind.getTime() - huidig.getTime()) / 60000)
-    if (resterend <= beschikbaar) {
-      return new Date(huidig.getTime() + resterend * 60000)
-    }
-    resterend -= beschikbaar
-    // Spring naar volgend werkmoment na dit blok
-    huidig = volgendeWerkminuut(new Date(blokEind.getTime() + 1), w)
-  }
-  return huidig
 }
 
 export interface PlanningConfigLite {
@@ -267,7 +99,10 @@ export function berekenAgenda(
   // als 'vandaag' voor de sort — wens is zsm snijden, dus niet achteraan
   // stoppen. Tie-break daaronder geeft rollen mét deadline voorrang bij
   // gelijke datum, zodat we nooit een afspraak verdringen.
-  const vandaagIso = new Date().toISOString().slice(0, 10)
+  //
+  // NB: dit wijkt bewust af van de kernel-`berekenSnijAgenda` (B6) — zie de
+  // header van _shared/werkagenda.ts.
+  const vandaagIso = isoDatum(new Date())
   const groepen = Array.from(map.values()).sort((a, b) => {
     const aD = a.vroegsteLeverdatum ?? vandaagIso
     const bD = b.vroegsteLeverdatum ?? vandaagIso
@@ -290,11 +125,13 @@ export function berekenAgenda(
       + g.stukken.length * planningConfig.snijtijd_minuten
     const start = volgendeWerkminuut(cursor, werktijden)
     const eind = plusWerkminuten(start, duur, werktijden)
-    // Te laat = snij-eind valt minder dan `snijLeverBufferDagen` voor leverdatum.
-    // Anders is er geen tijd voor de logistieke afhandeling (afwerking + verzending).
+    // teLaat strikt (B4): deadline = 00:00 van (leverdatum − buffer), zodat er
+    // minimaal `buffer` volle kalenderdagen tussen snij-eind en lever zitten.
+    // Identiek aan kernel-berekenSnijAgenda → UI en check-levertijd zeggen
+    // nu hetzelfde.
     let teLaat = false
     if (g.vroegsteLeverdatum) {
-      const deadline = new Date(g.vroegsteLeverdatum + 'T23:59:59')
+      const deadline = new Date(g.vroegsteLeverdatum + 'T00:00:00')
       deadline.setDate(deadline.getDate() - snijLeverBufferDagen)
       teLaat = eind > deadline
     }

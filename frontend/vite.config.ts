@@ -10,6 +10,13 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  server: {
+    fs: {
+      // bereken-agenda.ts importeert de werkagenda-kernel uit
+      // supabase/functions/_shared/ (één bron, plan 2026-06-12).
+      allow: [path.resolve(__dirname, '..')],
+    },
+  },
   test: {
     environment: 'jsdom',
     globals: true,
