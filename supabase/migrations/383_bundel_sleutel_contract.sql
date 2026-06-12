@@ -40,6 +40,9 @@
 -- contract-migratie).
 --
 -- Idempotent: CREATE OR REPLACE; de assert-aanroep is read-only.
+-- Volledige paste in de SQL Editor = atomair (impliciete transactie);
+-- sectie-gewijs draaien laat bij een rode assert de al-gedraaide secties
+-- staan (acceptabel: idempotent, fix-forward).
 
 ------------------------------------------------------------------------
 -- 1. _normaliseer_afleveradres v2: JS-pariteit, locale-onafhankelijk
@@ -52,6 +55,8 @@
 -- chr(223) = scharfes s klein, chr(7838) = hoofdletter-variant; de fold
 -- naar 'ss' gebeurt VOOR upper() omdat upper() de hoofdletter-variant
 -- niet aankan (zie probe hierboven).
+-- LET OP: de whitespace-klasse staat 4x in deze functie-body (postcode,
+-- adres, land 2x) -- wijzig altijd alle vier tegelijk.
 CREATE OR REPLACE FUNCTION _normaliseer_afleveradres(
   p_adres    TEXT,
   p_postcode TEXT,
@@ -98,7 +103,18 @@ DECLARE
   v_uit  TEXT;
   v_verw TEXT;
   v_n    INTEGER := 0;
+  v_key  TEXT;
 BEGIN
+  -- Vorm-guard: een getypo'de sleutel of lege array zou anders stil slagen
+  -- (jsonb_array_elements over NULL levert nul rijen) -- en deze assert is
+  -- bij een handmatige SQL Editor-apply de laatste verdedigingslinie.
+  FOREACH v_key IN ARRAY ARRAY['adres_cases', 'week_cases', 'sleutel_cases'] LOOP
+    IF jsonb_typeof(p_golden->v_key) IS DISTINCT FROM 'array'
+       OR jsonb_array_length(p_golden->v_key) = 0 THEN
+      RAISE EXCEPTION 'bundel-sleutel-contract: "%" ontbreekt, is geen array of is leeg', v_key;
+    END IF;
+  END LOOP;
+
   FOR f IN SELECT value FROM jsonb_array_elements(p_golden->'adres_cases') LOOP
     v_uit  := _normaliseer_afleveradres(f->>'afl_adres', f->>'afl_postcode', f->>'afl_land');
     v_verw := f->>'verwacht';
@@ -123,6 +139,8 @@ BEGIN
     v_uit := bundel_sleutel(
       (f->>'debiteur_nr')::integer,
       _normaliseer_afleveradres(f->>'afl_adres', f->>'afl_postcode', f->>'afl_land'),
+      -- Spiegelt de AFHAAL-glue uit mig 229 (voorgestelde_zending_bundels)
+      -- en TS bundelSleutelVoorOrder; drift daar valt buiten dit contract.
       CASE WHEN COALESCE((f->>'afhalen')::boolean, FALSE)
            THEN 'AFHAAL' ELSE f->>'vervoerder_code' END,
       verzendweek_voor_datum((f->>'afleverdatum')::date)
