@@ -1,5 +1,6 @@
 import type { OrderRegelFormData } from '@/lib/supabase/queries/order-mutations'
 import { SHIPPING_PRODUCT_ID, SHIPPING_THRESHOLD, SHIPPING_COST } from '@/lib/constants/shipping'
+import { heeftDropshipRegel } from './dropshipment-regel'
 
 /** Smal contract voor verzend-regel-bepaling — subset van SelectedClient. */
 export interface KlantVerzendInfo {
@@ -10,8 +11,10 @@ export interface KlantVerzendInfo {
 
 /**
  * Voegt de automatische VERZEND-regel toe, verwijdert hem, of laat hem
- * staan op basis van drie regels:
+ * staan op basis van vier regels:
  *
+ * 0. Dropship-regel aanwezig (flag-based, mig 370) → VERZEND-regel altijd
+ *    weg; de dropship-kostenregel ís de verzendcomponent van de order.
  * 1. `afhalen=true` → VERZEND-regel altijd weg; klant haalt zelf op.
  * 2. Subtotaal < klant-drempel én klant heeft geen `gratis_verzending` →
  *    VERZEND-regel toevoegen op klant-tarief (of fallback naar constants).
@@ -27,7 +30,7 @@ export function applyShippingLogic(
   client: KlantVerzendInfo | null,
   afhalen: boolean,
 ): OrderRegelFormData[] {
-  if (afhalen) {
+  if (heeftDropshipRegel(regels) || afhalen) {
     return regels.filter((l) => l.artikelnr !== SHIPPING_PRODUCT_ID)
   }
 

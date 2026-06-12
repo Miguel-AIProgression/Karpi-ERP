@@ -16,6 +16,21 @@
 
 ---
 
+## 2026-06-12 — VERZEND-guard in `applyShippingLogic` bij dropship-orders
+
+**Wat:** `applyShippingLogic` ([`verzend-regel.ts`](../frontend/src/lib/orders/verzend-regel.ts))
+kreeg regel 0: bevat de regellijst een dropship-kostenregel (`heeftDropshipRegel`,
+flag-based) → VERZEND-regel altijd verwijderen/weigeren. Nieuwe testfile
+`verzend-regel.test.ts` (9 tests) legt ook de bestaande drempel-/afhalen-/
+idempotentie-regels vast.
+
+**Waarom:** pre-existing bug (gevonden in de review van de dropship-detectie-
+refactor): een klantwissel op een dropship-order reset `shippingOverridden`
+en paste verzendlogica onverkort toe, en in edit-mode triggerde elke
+regel-mutatie hetzelfde pad — de klant kreeg dan VERZEND-kosten náást de
+dropship-kostenregel. De guard in de pure functie dekt alle vier de
+call-sites in `order-form.tsx` tegelijk.
+
 ## 2026-06-12 — Seam-consolidatie: cross-root imports i.p.v. kopieën (ADR-0033)
 Vier handmatig-gesynchroniseerde kopieparen tussen `supabase/functions/_shared/`
 en `frontend/src/` vervangen door één bron in `_shared/` + dunne frontend
