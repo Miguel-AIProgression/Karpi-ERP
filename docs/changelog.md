@@ -1,5 +1,19 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-12 — Werkagenda: één bron (kernel-consolidatie, mig 383)
+
+De werkdag-/werkagenda-rekenkunde leefde op drie plekken: SQL (mig 279 — nul
+callers, dode code), Deno `_shared/werkagenda.ts` (UTC, geen feestdagen) en
+frontend `bereken-agenda.ts` (lokale tijd, wél feestdagen) — met al-uiteengelopen
+interfaces, ~24u verschil in `teLaat`-semantiek en andere sortering.
+Geconsolideerd: `_shared/werkagenda.ts` is nu de enige implementatie (rijke
+interface met 'HH:mm' + `vrij`-feestdagen); de frontend importeert de kernel
+direct (derive-status-patroon, vite `server.fs.allow`); golden fixture
+`werkagenda.golden.json` wordt door Deno én Vitest getoetst; de dode SQL is
+gedropt (mig 383). `teLaat` is geünificeerd op strikt (00:00-deadline) — de
+UI-agenda en check-levertijd geven nu dezelfde vlag. Sorterings-verschil
+berekenAgenda↔berekenSnijAgenda blijft bewust staan (B6, kernel-header).
+
 ## 2026-06-12 — Rhenus als transporteur: GS1-XML via SFTP (ADR-0032, mig 379-382) — gebouwd, rondreis geslaagd
 
 > **Hernummering:** de Rhenus-migraties zijn vlak vóór de merge hernummerd van 378-381 naar **379-382** (origin/main bleek een eigen 378 te hebben — `klant_omzet_ytd_prijslijst`). In de live DB zijn ze onder de óúde bestandsnamen toegepast; inhoudelijk identiek.
