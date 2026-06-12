@@ -1,8 +1,8 @@
 // Gedeelde pre-flight validator: kent de eisen van de logistieke partijen vóór
 // verzending. V1 dekt alleen HST (enige actieve API-vervoerder). Puur — geen
-// DB/secrets — zodat zowel de edge function (laatste poort) als de frontend
-// (waarschuwingsvlag) dezelfde uitkomst gebruiken. Spiegelt de seam-aanpak van
-// _shared/debiteur-matcher.ts.
+// DB/secrets — zodat zowel de edge functions (laatste poort) als de frontend
+// (waarschuwingsvlag, via re-export-shim frontend/src/lib/orders/
+// vervoerder-eisen.ts, ADR-0033) dezelfde uitkomst gebruiken.
 
 export interface VerzendContext {
   vervoerder_code: string;
