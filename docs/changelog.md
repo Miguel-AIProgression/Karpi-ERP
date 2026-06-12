@@ -1,5 +1,19 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-12 — Pickbaarheid single-source (mig 383)
+
+**Wat:** order-niveau-pickbaarheidslogica verplaatst van TypeScript naar SQL; TS-laag filtert alleen nog de dag-order-horizon (ADR 0014, hangt af van `vandaag`).
+
+**Gebouwd (branch `refactor/pickbaarheid-single-source`):**
+- **Mig 383 — `orderregel_pickbaarheid` v4:** (a) generieke admin-pseudo-skip `AND NOT is_admin_pseudo(oreg.artikelnr)` (ADR-0018) — vervangt de VERZEND-specifieke `.neq()`-skip in TS én fixt de **latente dropship-blokkade** (DROPSHIP-KLEIN/-GROOT-regels uit mig 353/370 kregen nooit een voorraad-claim maar stonden als `wacht_op='inkoop'` in de view, waardoor dropship-orders nooit de "alles pickbaar"-drempel haalden); (b) nieuwe kolom `gewicht_kg` — maakt de aparte `fetchTotaalGewichtPerOrder`-query overbodig. Maatwerk-gewicht telt nu correct mee in het indicatieve ordergewicht (de oude `.neq('artikelnr','VERZEND')`-query sloot NULL-`artikelnr`-rijen per ongeluk uit — PostgREST three-valued logic).
+- **Mig 383 — nieuwe view `order_pickbaarheid`:** per order `totaal_regels`, `pickbare_regels`, `alle_regels_pickbaar`, `heeft_pickbare_regel`, `deelleveringen_toegestaan`, `pick_ship_zichtbaar`. Geen rij = geen (niet-pseudo) regels = niets te picken.
+- **Frontend `fetchPickShipOrders`** ([`pickbaarheid.ts`](../frontend/src/modules/magazijn/queries/pickbaarheid.ts)): consumeert `order_pickbaarheid.pick_ship_zichtbaar`; de 3× VERZEND-skip, de aparte gewicht-query (`fetchTotaalGewichtPerOrder`) en de PGRST205-fallback (`fetchFallbackOrderRegels`) zijn verwijderd. `StartPickrondesButton.isPickbaar` leest `order.alle_regels_pickbaar` (view-veld) i.p.v. client-side `every()`.
+- **Stale contracttest gerepareerd:** `magazijn-pickbaarheid.contract.test.ts` mockte `zendingen` i.p.v. `zending_orders` (7/7 rood op main). Gedeelde testhelper `__tests__/helpers/fake-supabase.ts`; 8 scenario's inclusief hard-fail bij ontbrekende view en dag-horizon.
+
+**Deploy-voorwaarde:** mig 383 moet op de live DB staan vóór de frontend van deze branch deployt — er is geen fallback meer (`fetchPickShipOrders` faalt hard bij ontbrekende view).
+
+---
+
 ## 2026-06-12 — Rhenus als transporteur: GS1-XML via SFTP (ADR-0032, mig 379-382) — gebouwd, rondreis geslaagd
 
 > **Hernummering:** de Rhenus-migraties zijn vlak vóór de merge hernummerd van 378-381 naar **379-382** (origin/main bleek een eigen 378 te hebben — `klant_omzet_ytd_prijslijst`). In de live DB zijn ze onder de óúde bestandsnamen toegepast; inhoudelijk identiek.
