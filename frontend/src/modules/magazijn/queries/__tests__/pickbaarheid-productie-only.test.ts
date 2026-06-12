@@ -50,6 +50,9 @@ function buildChain(table: string) {
     limit: () => chain,
     update: () => chain,
     insert: () => chain,
+    // maybeSingle() retourneert hetzelfde thenable (single-rij-semantiek) —
+    // de response uit de queue wordt in de then()-handler geserveerd.
+    maybeSingle: () => chain,
     then: (
       resolve: (value: SupabaseResponse) => void,
       reject: (reason: unknown) => void
@@ -160,6 +163,8 @@ beforeEach(() => {
 
 describe('Pick & Ship R1-guard — productie-only orders worden uitgefilterd', () => {
   it('past .eq(alleen_productie, false) toe op de orders-querychain', async () => {
+    // app_config 'werkagenda' — parallel opgehaald door fetchWerkagendaConfig (mig 384).
+    queueResponse('app_config', { data: null, error: null })
     queueResponse('orders', { data: [], error: null })
 
     await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
@@ -196,6 +201,8 @@ describe('Pick & Ship R1-guard — productie-only orders worden uitgefilterd', (
       }),
     ]
 
+    // app_config 'werkagenda' — parallel opgehaald door fetchWerkagendaConfig (mig 384).
+    queueResponse('app_config', { data: null, error: null })
     queueResponse('orders', { data: headers, error: null })
     queueResponse('debiteuren', { data: debiteuren, error: null })
     queueResponse('orderregel_pickbaarheid', { data: regels, error: null })
