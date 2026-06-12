@@ -57,6 +57,8 @@ export interface OrderbevestigingInput {
   regels: OrderbevestigingRegel[]
   subtotaal: number
   btw_percentage: number
+  // Mig 371: intracommunautaire verlegging — TRUE → vermelding i.p.v. BTW-regel.
+  btw_verlegd?: boolean
   btw_bedrag: number
   totaal: number
   betaalconditie: string | null
@@ -86,6 +88,7 @@ const PDF_VERTALINGEN: Record<Taal, {
   eenheidStuks: string
   subtotaal: string
   btwOver: (pct: string, bedrag: string) => string
+  btwVerlegd: string
   totaalInclBtw: string
   betalingsconditie: string
   disclaimer: string
@@ -109,6 +112,7 @@ const PDF_VERTALINGEN: Record<Taal, {
     eenheidStuks: 'St',
     subtotaal: 'Totaalbedrag excl. btw',
     btwOver: (pct, bedrag) => `${pct}% btw over ${bedrag}`,
+    btwVerlegd: 'BTW verlegd',
     totaalInclBtw: 'Totaalbedrag incl. btw',
     betalingsconditie: 'Betalingsconditie:',
     disclaimer: 'Een geringe maatafwijking van +/- 3% alsmede een kleurafwijking kan optreden.',
@@ -132,6 +136,7 @@ const PDF_VERTALINGEN: Record<Taal, {
     eenheidStuks: 'St',
     subtotaal: 'Gesamtbetrag exkl. MwSt.',
     btwOver: (pct, bedrag) => `${pct}% MwSt. auf ${bedrag}`,
+    btwVerlegd: 'Steuerschuldnerschaft des Leistungsempfängers (Reverse Charge)',
     totaalInclBtw: 'Gesamtbetrag inkl. MwSt.',
     betalingsconditie: 'Zahlungsbedingung:',
     disclaimer: 'Geringe Maßabweichungen von +/- 3% sowie Farbabweichungen sind möglich.',
@@ -155,6 +160,7 @@ const PDF_VERTALINGEN: Record<Taal, {
     eenheidStuks: 'pc',
     subtotaal: 'Montant total hors TVA',
     btwOver: (pct, bedrag) => `TVA ${pct}% sur ${bedrag}`,
+    btwVerlegd: 'Autoliquidation de la TVA',
     totaalInclBtw: 'Montant total TVA comprise',
     betalingsconditie: 'Conditions de paiement:',
     disclaimer: 'Un léger écart de mesure de +/- 3 % ainsi qu\'une différence de couleur peuvent survenir.',
@@ -178,6 +184,7 @@ const PDF_VERTALINGEN: Record<Taal, {
     eenheidStuks: 'pcs',
     subtotaal: 'Total amount excl. VAT',
     btwOver: (pct, bedrag) => `${pct}% VAT over ${bedrag}`,
+    btwVerlegd: 'VAT reverse charged',
     totaalInclBtw: 'Total amount incl. VAT',
     betalingsconditie: 'Payment terms:',
     disclaimer: 'A slight size deviation of +/- 3% as well as a colour variation may occur.',
@@ -489,7 +496,16 @@ export async function genereerOrderbevestigingPDF(input: OrderbevestigingInput):
   }
 
   drawTotaalRegel(t.subtotaal, input.subtotaal, fontR, 8)
-  drawTotaalRegel(t.btwOver(formatBtwPercentage(input.btw_percentage), formatBedrag(input.subtotaal)), input.btw_bedrag, fontR, 8)
+  if (input.btw_verlegd) {
+    // Intracommunautaire verlegging: wettelijke vermelding i.p.v. BTW-regel.
+    // Rechts uitgelijnd op dezelfde rechterrand als de bedragen (geen bedrag
+    // erachter) — de Duitse tekst is te lang om vanaf totaalLabelX te passen,
+    // en er staat verder niets op deze regel, dus hij mag naar links uitlopen.
+    drawText(page, t.btwVerlegd, pageW - mR - fontR.widthOfTextAtSize(t.btwVerlegd, 8) - 2, y, fontR, 8)
+    y -= 11
+  } else {
+    drawTotaalRegel(t.btwOver(formatBtwPercentage(input.btw_percentage), formatBedrag(input.subtotaal)), input.btw_bedrag, fontR, 8)
+  }
   drawTotaalRegel(t.totaalInclBtw, input.totaal, fontB, 9)
   y -= 4
 

@@ -88,6 +88,11 @@ export interface OrderDetail extends OrderRow {
   bevestigd_door: string | null
   bevestiging_email: string | null
   klant_email: string | null
+  /** Default-ontvanger voor de orderbevestiging: email_overig → email_factuur.
+   *  Bewust ANDERSOM dan klant_email (factuur-eerst, voedt o.a. de dropship-
+   *  check): de bevestiging hoort naar het algemene/orderbevestiging-adres,
+   *  niet naar het factuuradres (melding Marjon 11-06-2026, klant 803741). */
+  klant_email_orderbev: string | null
   /** Mig 327 / ADR-0029: TRUE = productie-only order uit Basta (alleen snijden+
    *  confectie in RugFlow; verzending/facturatie in Basta). Voedt het
    *  BastaAfhandelingPaneel op order-detail. Voor gewone orders FALSE. */
@@ -415,6 +420,7 @@ export async function fetchOrderDetail(id: number): Promise<OrderDetail> {
       klant_naam = deb.naam
       klant_vertegenw_code = deb.vertegenw_code
       ;(order as Record<string, unknown>).klant_email = deb.email_factuur ?? deb.email_overig ?? null
+      ;(order as Record<string, unknown>).klant_email_orderbev = deb.email_overig ?? deb.email_factuur ?? null
     }
   }
 

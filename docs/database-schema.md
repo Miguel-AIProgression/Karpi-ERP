@@ -471,6 +471,7 @@ _Aangemaakt in migratie 117 (2026-04-22). Gepatcht in mig 125: `order_id` op hea
 | subtotaal, btw_percentage, btw_bedrag, totaal | NUMERIC | |
 | fact_naam, fact_adres, fact_postcode, fact_plaats, fact_land | TEXT | Snapshot |
 | btw_nummer | TEXT | Snapshot van klant-BTW-nummer (mig 125) |
+| btw_verlegd | BOOLEAN NOT NULL DEFAULT FALSE | Mig 371: snapshot van `debiteuren.btw_verlegd_intracom` op factuur-aanmaak. TRUE → 0% BTW + vermelding "BTW verlegd" op PDF. |
 | opmerkingen | TEXT | |
 | pdf_storage_path | TEXT | Pad in bucket 'facturen' ({debiteur_nr}/FACT-YYYY-NNNN.pdf) |
 | verstuurd_op | TIMESTAMPTZ | Wanneer email verzonden |
@@ -1369,7 +1370,7 @@ Log van **daadwerkelijk verstuurde e-mails per order** (mig 366) — voedt de se
 | vervoerder_stats | Per-vervoerder dashboard-aggregaties (mig 174, aangepast mig 176): `aantal_klanten` (distinct debiteuren uit zendingen), `aantal_zendingen_totaal` + `aantal_zendingen_deze_maand` (uit `zendingen.vervoerder_code`), `hst_aantal_verstuurd` + `hst_aantal_fout` (uit `hst_transportorders`, alleen niet-NULL voor de `hst_api`-rij). Voedt de `/logistiek/vervoerders`-overzichts- en detailpagina's. EDI-equivalent uit `edi_berichten` met `berichttype='verzendbericht'` volgt later. |
 | hst_verzend_monitor | Mig 338 (ADR-0030). Aggregaat (één rij, geen state) over `hst_transportorders`: `verstuurd_vandaag`, `fout_open`, `wachtrij`, `bezig`, `oudste_wachtrij_minuten`, `oudste_bezig_minuten`. De laatste twee = **cron-health-signaal** (hoog = `hst-send`-cron staat stil; UI-drempel 5 min). Voedt de HST-verzendmonitor (tab op `/logistiek/vervoerders/hst_api/monitor`) + aandacht-banner op Pick & Ship. Tegengif tegen de "silent failure"-klasse. |
 | verhoek_verzend_monitor | Mig 375 (ADR-0031). Aggregaat (één rij, geen state) over `verhoek_transportorders`: `verstuurd_vandaag`, `fout_open`, `wachtrij`, `bezig`, `oudste_wachtrij_minuten`, `oudste_bezig_minuten`. Spiegelt `hst_verzend_monitor`. `oudste_wachtrij_minuten` = cron-health-signaal voor `verhoek-send`. Frontend-paneel volgt in een later plan. |
-| orders_zonder_vervoerder | Mig 338 (ADR-0030) + 345. Niet-afhaal-orders (`afhalen=FALSE`), niet productie-only (`NOT alleen_productie` — verzending blijft in Basta, ADR-0029; guard toegevoegd in mig 345), status NOT IN (`'Geannuleerd'`,`'Verzonden'`,`'Concept'`), met ≥1 regel waarvan `effectieve_vervoerder_per_orderregel(o.id).bron='geen'` (buiten HST-bereik → handmatig kiezen nodig). Voedt de "handmatig vervoerder kiezen"-teller/banner. |
+| orders_zonder_vervoerder | Mig 338 (ADR-0030) + 345 + 372. Niet-afhaal-orders (`afhalen=FALSE`), niet productie-only (`NOT alleen_productie` — verzending blijft in Basta, ADR-0029; guard toegevoegd in mig 345), status NOT IN (`'Geannuleerd'`,`'Verzonden'`,`'Concept'`), met ≥1 regel waarvan `effectieve_vervoerder_per_orderregel(o.id).bron='geen'` (geen matchende **actieve** vervoerder → handmatig kiezen nodig). Telt dus álle open orders, óók wat Pick & Ship (nog) niet toont. Sinds mig 372 ook `status` (TEXT) en `afl_land_norm` (`normaliseer_land`, mig 214) zodat de banner per land kan uitsplitsen + "waarvan klaar voor picken" toont. Voedt de "handmatig vervoerder kiezen"-teller/banner. |
 
 ---
 
@@ -1441,6 +1442,7 @@ Mig 174, aangepast in mig 176. Read-only view die de `/logistiek/vervoerders`-ov
 | `update_order_with_lines(p_order_id BIGINT, p_header JSONB, p_regels JSONB)` | Merge-update van order header + regels: UPDATE bestaande regels op `id`, INSERT nieuwe, DELETE regels die uit payload verdwenen zijn. Preserveert `snijplannen.order_regel_id` FK-koppelingen (migratie 074) |
 | `backlog_per_kwaliteit_kleur(p_kwaliteit TEXT, p_kleur TEXT)` | Aggregeert wachtende snijplan-stukken voor real-time levertijd-check: returnt `(totaal_m2, aantal_stukken, vroegste_afleverdatum)`. Match op kleur-varianten (X, X.0). Gebruikt door `check-levertijd` edge function (migratie 080) |
 | `genereer_factuur(p_order_ids BIGINT[])` | Atomair: maakt factuur + regels aan voor 1+ orders van dezelfde debiteur, markeert order_regels.gefactureerd. Retourneert factuur_id. Migratie 119. |
+| `effectief_btw_pct(p_verlegd BOOLEAN, p_btw_percentage NUMERIC) → NUMERIC` | Mig 371: effectief BTW-percentage voor een debiteur — verlegd → 0, anders `COALESCE(pct, 21)`. IMMUTABLE. Gebruikt door `genereer_factuur_voor_bundel`; gespiegeld in `supabase/functions/_shared/btw.ts` (`effectiefBtwPct`). |
 | `enqueue_factuur_bij_verzonden()` | Trigger: bij orders.status → 'Verzonden' vult factuur_queue voor per_zending-klanten. Migratie 118. |
 | `enqueue_wekelijkse_verzamelfacturen()` | Verzamelt niet-gefactureerde Verzonden-orders per wekelijks-klant in de queue. Maandag 05:00 UTC via pg_cron. Migratie 122. |
 | `recover_stuck_factuur_queue()` | Zet queue-items >10 min in 'processing' terug op 'pending'. Elke 5 min via pg_cron. Migratie 121. |

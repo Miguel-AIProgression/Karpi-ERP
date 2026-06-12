@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { AlertTriangle, Truck } from 'lucide-react'
-import { useHstMonitor, useOrdersZonderVervoerderCount } from '@/modules/logistiek/hooks/use-hst-monitor'
+import { useHstMonitor, useOrdersZonderVervoerder } from '@/modules/logistiek/hooks/use-hst-monitor'
 import { telHstAandacht } from '@/modules/logistiek/queries/hst-monitor'
 
 /**
@@ -10,10 +10,12 @@ import { telHstAandacht } from '@/modules/logistiek/queries/hst-monitor'
  */
 export function HstAandachtBanner() {
   const { data: m } = useHstMonitor()
-  const { data: zonderVervoerder = 0 } = useOrdersZonderVervoerderCount()
+  const { data: zv } = useOrdersZonderVervoerder()
   const aandacht = m ? telHstAandacht(m) : 0
 
-  if (aandacht === 0 && zonderVervoerder === 0) return null
+  if (aandacht === 0 && (zv?.totaal ?? 0) === 0) return null
+
+  const perLandTekst = zv?.perLand.map((l) => `${l.aantal}× ${l.land}`).join(', ')
 
   return (
     <div className="mb-4 space-y-2">
@@ -29,12 +31,25 @@ export function HstAandachtBanner() {
           </Link>
         </div>
       )}
-      {zonderVervoerder > 0 && (
+      {zv && zv.totaal > 0 && (
         <div className="flex items-center gap-3 rounded-[var(--radius-sm)] border border-amber-200 bg-amber-50 px-4 py-3">
           <Truck size={18} className="shrink-0 text-amber-600" />
           <div className="flex-1 text-sm text-amber-800">
-            <span className="font-semibold">{zonderVervoerder} order(s) zonder vervoerder</span> — buiten HST-bereik; kies handmatig een vervoerder.
+            <span className="font-semibold">{zv.totaal} open order(s) zonder vervoerder</span>
+            {perLandTekst ? <> — {perLandTekst}</> : null}
+            {zv.klaarVoorPicken !== null ? <> · waarvan {zv.klaarVoorPicken} klaar voor picken</> : null}
+            <div className="mt-0.5 text-xs text-amber-700">
+              Geteld over álle open orders, ook orders die hier (nog) niet zichtbaar zijn. Voor deze landen matcht
+              geen actieve vervoerder — kies handmatig een vervoerder op de order, of activeer de vervoerder voor
+              dat land.
+            </div>
           </div>
+          <Link
+            to="/logistiek/vervoerders"
+            className="shrink-0 rounded-[var(--radius-sm)] bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700"
+          >
+            Vervoerders
+          </Link>
         </div>
       )}
     </div>

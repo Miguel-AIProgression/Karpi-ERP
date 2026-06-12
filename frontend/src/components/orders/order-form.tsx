@@ -91,16 +91,38 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
   const [selectedAfleveradresId, setSelectedAfleveradresId] = useState<number | undefined>(undefined)
 
   // In edit-modus laadt clientData asynchroon na de eerste render.
-  // Sync de prijslijst en korting zodra die beschikbaar komen.
+  // Sync de prijslijst, korting én klant-e-mailadressen zodra die beschikbaar
+  // komen — zonder de e-mails valt de afl_email-ladder bij een adreswissel
+  // terug op de stale form-waarde (incident ORD-2026-0350, 11-06-2026).
   useEffect(() => {
     if (mode !== 'edit' || !initialData?.client) return
     const incoming = initialData.client
     setClient((prev) => {
       if (!prev) return incoming
-      if (prev.prijslijst_nr === incoming.prijslijst_nr && prev.korting_pct === incoming.korting_pct) return prev
-      return { ...prev, prijslijst_nr: incoming.prijslijst_nr, korting_pct: incoming.korting_pct }
+      if (
+        prev.prijslijst_nr === incoming.prijslijst_nr &&
+        prev.korting_pct === incoming.korting_pct &&
+        prev.email_factuur === incoming.email_factuur &&
+        prev.email_overig === incoming.email_overig &&
+        prev.email_verzend === incoming.email_verzend
+      ) return prev
+      return {
+        ...prev,
+        prijslijst_nr: incoming.prijslijst_nr,
+        korting_pct: incoming.korting_pct,
+        email_factuur: incoming.email_factuur,
+        email_overig: incoming.email_overig,
+        email_verzend: incoming.email_verzend,
+      }
     })
-  }, [mode, initialData?.client?.prijslijst_nr, initialData?.client?.korting_pct])
+  }, [
+    mode,
+    initialData?.client?.prijslijst_nr,
+    initialData?.client?.korting_pct,
+    initialData?.client?.email_factuur,
+    initialData?.client?.email_overig,
+    initialData?.client?.email_verzend,
+  ])
 
   const { data: orderConfig } = useQuery({ queryKey: ['order-config'], queryFn: fetchOrderConfig })
 
@@ -789,6 +811,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
             debiteurNr={client.debiteur_nr}
             onSelect={handleAddressSelect}
             disabled={afhalen}
+            autoSelect={mode === 'create'}
           />
         </div>
       )}

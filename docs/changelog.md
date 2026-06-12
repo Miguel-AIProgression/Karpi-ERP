@@ -1,5 +1,168 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-12 — Pick & Ship: geblokkeerde orders naar eigen sectie ónder de week-secties (branch `fix/pick-geblokkeerd-onderaan`)
+
+**Correctie op de sorteer-fix van vanochtend (zie entry hieronder):** de
+binnen-sectie-sortering loste het probleem niet op — de "Geen vervoerder
+mogelijk"-orders hebben oude verzendweken en vormden dus **complete
+"Achterstallig"-secties die als geheel bovenaan de tab stonden**. Miguel:
+"alle die niet verzonden kunnen worden staan bovenaan in de week."
+
+**Fix:** geblokkeerde orders gaan helemaal niet meer de week-/dag-secties in.
+[`pick-overview.tsx`](../frontend/src/modules/magazijn/pages/pick-overview.tsx)
+splitst `naVervoerderFilter` in startbaar vs. geblokkeerd (predicaat ongewijzigd:
+≥1 regel `bron='geen'`, niet-afhalen); de week-secties tonen alleen startbare
+orders en nieuwe component
+[`PickGeblokkeerdSectie`](../frontend/src/modules/magazijn/components/pick-geblokkeerd-sectie.tsx)
+(amber, Ban-icoon, zelfde klant-clustering + land-toggle) rendert de
+geblokkeerde orders als laatste sectie. Week-sectie-tellingen tellen ze niet
+meer mee; de week-tab-badges (stats) wél — ze zitten nog in de tab. Zodra een
+vervoerder geactiveerd of een override gezet is verhuist de order vanzelf
+terug naar zijn week-sectie. De sorteer-props op PickWeekSectie/
+PickDagOrdersSectie (vanochtend) zijn weer verwijderd; de
+`geblokkeerdeOrderIds`-parameter op de `groeperen.ts`-helpers blijft (getest,
+defense-in-depth). Puur UI — geen DB-wijziging.
+
+**Verzoek Miguel:** orders die gepickt kunnen worden moeten boven de
+"Geen vervoerder mogelijk"-orders staan. `clusterOrdersOpKlant` /
+`groepeerOrdersOpLand` ([`groeperen.ts`](../frontend/src/modules/magazijn/lib/groeperen.ts))
+accepteren nu een optionele `geblokkeerdeOrderIds`-set als primaire sorteersleutel
+(geblokkeerd → achteraan, daarbinnen ongewijzigd alfabetisch op klant + order_nr;
+binnen een bundel-cluster zakken geblokkeerde orders ook naar onder).
+[`pick-overview.tsx`](../frontend/src/modules/magazijn/pages/pick-overview.tsx)
+voedt de set uit de al aanwezige per-order vervoerder-queries (zelfde predicaat
+als `StartPickrondesButton` + mig 373-guard: ≥1 regel `bron='geen'`, niet-afhalen)
+en geeft hem door aan beide secties (week + dag-orders). Puur UI-sortering —
+geen DB-wijziging. Tests: 3 nieuwe cases in `groeperen.test.ts`.
+
+## 2026-06-11 — Pick & Ship toonde maar 91 van ~236 pickbare orders (PostgREST-cap) + pick-start geblokkeerd zonder vervoerder (mig 373, branch `fix/pick-ship-zonder-vervoerder`)
+
+**Verzoek Miguel (vervolg op mig 372):** "Zet ze [orders zonder vervoerder]
+wel allemaal tussen de pick lijst, maar blokkeer het starten van het picken
+door 'geen vervoerder mogelijk'." Bij het onderzoek bleek een **echte bug**
+de orders te verbergen — niet de vervoerder-status:
+
+1. **PostgREST max-rows-cap (1000) at orders stilletjes op.**
+   `fetchPickbaarheidRegels` ([`pickbaarheid.ts`](../frontend/src/modules/magazijn/queries/pickbaarheid.ts))
+   haalde de héle `orderregel_pickbaarheid`-view op zonder `order_id`-filter.
+   De view heeft inmiddels 2068 rijen (EDI-instroom juni); de kale GET gaf er
+   maar 1000 terug. Orders waarvan de regels buiten die eerste 1000 vielen
+   kregen `regels.length === 0` → het pickbaarheidsfilter gooide ze weg.
+   Resultaat: 91 zichtbaar van ~236 pickbare orders, zonder enige fout.
+   **Fix:** gechunkt ophalen per `order_id` (100 per chunk, zelfde patroon als
+   de fallback). Incidentklasse om te onthouden: een PostgREST-GET zonder
+   filter op een groeiende view is een tijdbom — de cap knipt geruisloos.
+2. **Pick-start zonder vervoerder geblokkeerd, dubbel:**
+   - **Frontend** ([`start-pickrondes-button.tsx`](../frontend/src/modules/logistiek/components/start-pickrondes-button.tsx)):
+     per order de effectieve vervoerder geresolved (zelfde queryKey als de
+     pick-card-tag → cache-hit); orders met ≥1 regel `bron='geen'` tellen
+     niet mee als startbaar. Solo-kaart toont disabled knop **"Geen
+     vervoerder mogelijk"**; bundel-tooltip telt ze als overgeslagen.
+   - **Server** (mig 373): `start_pickronden` (body = mig 258 + guard)
+     weigert elke niet-afhaal-order met ≥1 regel `bron='geen'` met dezelfde
+     melding. Voorkomt zendingen met `vervoerder_code=NULL` die na voltooien
+     nergens heen kunnen. Escape-hatch: vervoerder-override op de orderregel
+     (bron wordt 'override') voor bewuste uitzonderingen.
+
+Met de cap-fix verschijnen de ~159 DE/BE-orders (zie mig 372-entry) nu wél in
+Pick & Ship; hun Verzendset-knop is geblokkeerd totdat Rhenus/DPD geactiveerd
+zijn (Rhenus gepland deze week) of een handmatige vervoerder gekozen is.
+
+**Toepassen:** mig 373 in de Supabase SQL-editor draaien.
+
+## 2026-06-11 — "196 orders zonder vervoerder"-banner geduid: uitsplitsing per land + scope-uitleg (mig 372, branch `fix/zonder-vervoerder-banner`)
+
+**Melding Miguel:** de amber banner op Pick & Ship zei "196 order(s) zonder
+vervoerder" terwijl het scherm maar 91 orders toonde — "volgens mij gaat er
+iets fout". **Diagnose: de telling klopt, de presentatie misleidde.** De view
+`orders_zonder_vervoerder` (mig 338/345) telt bewust álle open orders (ook
+`Wacht op voorraad/inkoop/maatwerk`, die Pick & Ship verbergt). De 196 waren
+op dat moment: 183× DE + 13× BE (179 EDI-orders, instroom 3–11 juni), 0× NL.
+Oorzaak dat ze geen vervoerder krijgen: alle DE/BE-vervoerders
+(`dpd`/`edi_partner_a`/`edi_partner_b`) staan tot hun cutover op
+`actief=false` — de resolver (mig 225) slaat regels van inactieve vervoerders
+over, en alleen `hst_api` (NL) is live. Dat is conform ADR-0030, maar de
+banner ("kies handmatig") suggereerde een handmatige actie op 196 orders.
+
+**Belangrijke non-bug:** `afl_land='DEUTSCHLAND'`/`'BELGIË'` (vol uitgeschreven,
+102 orders) leek een match-probleem maar is het niet — `matcht_regel`
+normaliseert sinds mig 214 beide zijden via `normaliseer_land`. Bewust **niet**
+gebackfilld naar ISO-codes: `trg_lock_zending_bundel_sleutel` blokkeert
+afl_*-mutaties op orders in actieve bundels, en gemengde spelling zou juist
+de adres-bundeling (mig 222, exacte string-match) tussen oude en nieuwe orders
+breken.
+
+**Fix (mig 372 + frontend):**
+- View krijgt twee extra kolommen: `status` (TEXT) en `afl_land_norm`
+  (via `normaliseer_land`). Scope bewust ongewijzigd.
+- [`hst-monitor.ts`](../frontend/src/modules/logistiek/queries/hst-monitor.ts):
+  `countOrdersZonderVervoerder` → `fetchOrdersZonderVervoerder` + pure
+  aggregator `vatZonderVervoerderSamen` (totaal, per-land, waarvan klaar voor
+  picken). `select('*')` zodat de frontend ook op de pre-mig-372-view blijft
+  werken (dan zonder status-uitsplitsing).
+- [`hst-aandacht-banner.tsx`](../frontend/src/modules/logistiek/components/hst-aandacht-banner.tsx):
+  toont nu "X open order(s) zonder vervoerder — 183× DE, 13× BE · waarvan 159
+  klaar voor picken", legt uit dat over álle open orders geteld wordt, en linkt
+  naar `/logistiek/vervoerders`.
+
+**Open beslispunt (Miguel):** DE/BE-verzending — DPD/Rhenus activeren (dan
+lossen de bestaande selectie-regels het gros op) of deze orders blijven
+handmatig bedienen. Tot die keuze blijft de banner deze aantallen tonen.
+
+**Toepassen:** mig 372 in de Supabase SQL-editor draaien (idempotent,
+alleen view + comment).
+
+## 2026-06-11 — BTW verlegd intracommunautair (mig 371)
+Duitse (en alle EU-verlegd-)klanten kregen 21% BTW op factuur en orderbevestiging terwijl `debiteuren.btw_verlegd_intracom` al correct stond (verzoek Marjon). De vlag is nu bron van waarheid: SQL-helper `effectief_btw_pct` + TS-seam `_shared/btw.ts`, snapshot `facturen.btw_verlegd`, factuur-PDF en orderbevestiging (mail + PDF, 4-talig) tonen "BTW verlegd" + btw-nr afnemer i.p.v. een BTW-regel. UI: verlegd-toggle op klant-facturering-tab. Geen data-update nodig; bestaande facturen (3) waren niet fout.
+
+## 2026-06-11 — Orderbevestiging pakte factuur-e-mailadres + order-bewerken wiste e-mail-snapshots (branch `fix/orderbevestiging-email-ladder`)
+
+**Melding Marjon (klant 803741, ORD-2026-0349/0350):** "als ik de order wil
+bevestigen pakt hij het factuuradres (zr-pdf@einrichtungspartnerring.com)…
+Voor mijn gevoel heb ik het wel veranderd naar orderbevestiging@trendhopperbreda.nl."
+Diagnose via `verstuurde_emails`-log: haar handmatige correcties kwamen wél
+goed aan, maar er zaten vier losse fouten achter:
+
+1. **Order-bewerken wiste `fact_email`/`afl_email`** —
+   [`order-edit.tsx`](../frontend/src/pages/orders/order-edit.tsx) gaf beide
+   mig 364-snapshots niet mee in de initiële header, waarna
+   `update_order_with_lines` ze op NULL zette (zelfde incidentklasse als
+   mig 343/368: nieuw veld niet in álle paden). ORD-2026-0350 verloor zo zijn
+   factuur-e-mailadres. Fix: velden meegeven in de edit-header.
+2. **Edit-mode kende de klant-e-mails niet** — het sync-effect in
+   [`order-form.tsx`](../frontend/src/components/orders/order-form.tsx) nam
+   alleen `prijslijst_nr`/`korting_pct` over uit het asynchroon geladen
+   `clientData`; bij een adreswissel viel de `afl_email`-ladder daardoor terug
+   op de stale form-waarde. Fix: ook `email_factuur`/`email_overig`/
+   `email_verzend` syncen.
+3. **Bevestig-dialog prefillde het factuuradres** — de ladder was
+   `bevestiging_email ?? klant_email` waarbij `klant_email` =
+   `email_factuur ?? email_overig`. Nieuw veld `klant_email_orderbev`
+   (`email_overig ?? email_factuur`) in
+   [`orders.ts`](../frontend/src/lib/supabase/queries/orders.ts) voedt de
+   prefill in [`order-header.tsx`](../frontend/src/components/orders/order-header.tsx);
+   `klant_email` zelf blijft ongewijzigd (voedt de dropship-check). Bewust ook
+   geen `afl_email` in deze ladder: bij dropship is dat het consument-adres.
+   Edge function [`stuur-orderbevestiging`](../supabase/functions/stuur-orderbevestiging/index.ts)
+   kreeg dezelfde flip in de fallback (`email_overig` eerst) — die fallback
+   vuurt alleen als de dialog leeg verstuurd wordt.
+4. **`AddressSelector` auto-selecteerde bij mount óók in edit-mode** het
+   eerste afleveradres en overschreef daarmee het opgeslagen order-adres
+   (incl. `afl_email`) nog vóór de gebruiker iets deed. Nieuwe prop
+   `autoSelect` (FALSE in edit-mode) in
+   [`address-selector.tsx`](../frontend/src/components/orders/address-selector.tsx).
+
+**Data-hotfix (live):** ORD-2026-0350 `afl_email` →
+orderbevestiging@trendhopperbreda.nl, `fact_email` → zr-pdf@… hersteld;
+`afleveradressen` id 6805 (ETTENSEBAAN, het factuuradres) droeg het
+factuur-e-mailadres als adres-e-mail → geleegd zodat de ladder voortaan op
+klant-niveau (`email_verzend`/`email_overig`) uitvalt. Naveeg (zelfde dag,
+mig 367/368-ladder, alleen-vullen-waar-leeg): ook ORD-2026-0152/0305/0343/
+0347/0352 hadden door de edit-bug lege snapshots → hersteld en geverifieerd.
+De ~46 overige open orders met lege snapshots zijn klanten zónder enig
+e-mailadres op de klantkaart — daar is niets te vullen (conform de
+migratie-backfill); script: `scripts/_tmp_hotfix_orderbev_email.mjs`.
+
 ## 2026-06-11 — Verhoek-transporteur Fase 1: AA2.0-XML via SFTP (ADR-0031, mig 374-376)
 
 **Aanleiding:** Verhoek Europe (tweede vervoerder naast HST) levert niet via Transus-EDI maar via hun eigen XML-formaat "XMLstandardVerhoekEuropeAA20" (AA2.0) over SFTP. Mig 170's placeholder `edi_partner_b` (type `'edi'`) was daarvoor niet geschikt.

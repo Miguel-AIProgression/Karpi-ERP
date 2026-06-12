@@ -73,6 +73,10 @@ export interface FactuurHeader {
   totaal: number
   totaal_m2?: number
   totaal_gewicht_kg?: number
+  // Mig 371: intracommunautaire verlegging. TRUE → geen BTW-regel maar de
+  // wettelijke vermelding "BTW verlegd" + btw-nummer van de afnemer.
+  btw_verlegd?: boolean
+  btw_nummer_afnemer?: string | null
 }
 
 export interface FactuurAfleveradres {
@@ -463,21 +467,41 @@ function drawBtwBlok(
 
   // Header row: labels
   const SIZE_BOLD = 9
-  drawText(page, 'Grondsl.', MARGIN_L, y, bold, SIZE_BOLD)
-  drawText(page, 'BTW %', MARGIN_L + 30 * MM, y, bold, SIZE_BOLD)
-  drawText(page, 'BTWbedrag', MARGIN_L + 50 * MM, y, bold, SIZE_BOLD)
-  drawTextRight(page, 'Te Betalen', COL_BEDRAG, y, bold, SIZE_BOLD)
-
-  y -= 1 * MM
-  drawHLine(page, y)
-  y -= LINE_H
-
-  // Values row
   const SIZE = 10
-  drawText(page, formatBedrag(factuur.subtotaal), MARGIN_L, y, regular, SIZE)
-  drawText(page, `${factuur.btw_percentage}`, MARGIN_L + 30 * MM, y, regular, SIZE)
-  drawText(page, formatBedrag(factuur.btw_bedrag), MARGIN_L + 50 * MM, y, regular, SIZE)
-  drawTextRight(page, `${formatBedrag(factuur.totaal)} EUR`, COL_BEDRAG, y, regular, SIZE)
+  if (factuur.btw_verlegd) {
+    // Mig 371: intracommunautaire verlegging — geen BTW-kolommen, wel de
+    // wettelijk vereiste vermelding "BTW verlegd" + btw-nummer van de afnemer.
+    drawText(page, 'Grondsl.', MARGIN_L, y, bold, SIZE_BOLD)
+    drawTextRight(page, 'Te Betalen', COL_BEDRAG, y, bold, SIZE_BOLD)
+
+    y -= 1 * MM
+    drawHLine(page, y)
+    y -= LINE_H
+
+    drawText(page, formatBedrag(factuur.subtotaal), MARGIN_L, y, regular, SIZE)
+    drawTextRight(page, `${formatBedrag(factuur.totaal)} EUR`, COL_BEDRAG, y, regular, SIZE)
+    y -= LINE_H
+
+    const verlegdTekst = factuur.btw_nummer_afnemer
+      ? `BTW verlegd — btw-nr afnemer: ${factuur.btw_nummer_afnemer}`
+      : 'BTW verlegd'
+    drawText(page, verlegdTekst, MARGIN_L, y, bold, SIZE_BOLD)
+  } else {
+    drawText(page, 'Grondsl.', MARGIN_L, y, bold, SIZE_BOLD)
+    drawText(page, 'BTW %', MARGIN_L + 30 * MM, y, bold, SIZE_BOLD)
+    drawText(page, 'BTWbedrag', MARGIN_L + 50 * MM, y, bold, SIZE_BOLD)
+    drawTextRight(page, 'Te Betalen', COL_BEDRAG, y, bold, SIZE_BOLD)
+
+    y -= 1 * MM
+    drawHLine(page, y)
+    y -= LINE_H
+
+    // Values row
+    drawText(page, formatBedrag(factuur.subtotaal), MARGIN_L, y, regular, SIZE)
+    drawText(page, `${factuur.btw_percentage}`, MARGIN_L + 30 * MM, y, regular, SIZE)
+    drawText(page, formatBedrag(factuur.btw_bedrag), MARGIN_L + 50 * MM, y, regular, SIZE)
+    drawTextRight(page, `${formatBedrag(factuur.totaal)} EUR`, COL_BEDRAG, y, regular, SIZE)
+  }
 
   y -= LINE_H  // blank line
   y -= LINE_H

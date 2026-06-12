@@ -185,24 +185,35 @@ async function fetchOpenOrderHeaders(): Promise<OrderHeaderRij[]> {
 }
 
 async function fetchPickbaarheidRegels(orderIds: number[]): Promise<PickbaarheidRij[]> {
-  const { data, error } = await supabase
-    .from('orderregel_pickbaarheid')
-    .select(
-      'order_regel_id, order_id, regelnummer, artikelnr, is_maatwerk, ' +
-        'orderaantal, maatwerk_lengte_cm, maatwerk_breedte_cm, omschrijving, ' +
-        'maatwerk_kwaliteit_code, maatwerk_kleur_code, totaal_stuks, ' +
-        'pickbaar_stuks, is_pickbaar, bron, fysieke_locatie, wacht_op'
-    )
-    // Specifieke VERZEND-skip voor pakbon-/pick-listing: verzendkosten zijn
-    // factuurregels, geen fysiek collo. Andere admin-pseudo's (BUNDELKORTING/
-    // DREMPELKORTING) bestaan niet als orderregel in productie (mig 262).
-    // Voor generieke admin-pseudo-skip: zie ADR-0018 / isAdminPseudo(regel).
-    .neq('artikelnr', SHIPPING_PRODUCT_ID)
+  // Gechunkt op order_id — een kale GET op de hele view loopt tegen de
+  // PostgREST max-rows-cap (1000 rijen) aan. Met >1000 view-rijen (EDI-instroom
+  // juni 2026: 2068) kregen orders buiten de eerste 1000 rijen géén regels,
+  // waardoor `regels.length === 0` ze stilletjes uit Pick & Ship filterde
+  // (91 zichtbaar van ~236 pickbare orders).
+  const rows: PickbaarheidRij[] = []
+  for (const ids of chunks(orderIds, 100)) {
+    const { data, error } = await supabase
+      .from('orderregel_pickbaarheid')
+      .select(
+        'order_regel_id, order_id, regelnummer, artikelnr, is_maatwerk, ' +
+          'orderaantal, maatwerk_lengte_cm, maatwerk_breedte_cm, omschrijving, ' +
+          'maatwerk_kwaliteit_code, maatwerk_kleur_code, totaal_stuks, ' +
+          'pickbaar_stuks, is_pickbaar, bron, fysieke_locatie, wacht_op'
+      )
+      .in('order_id', ids)
+      // Specifieke VERZEND-skip voor pakbon-/pick-listing: verzendkosten zijn
+      // factuurregels, geen fysiek collo. Andere admin-pseudo's (BUNDELKORTING/
+      // DREMPELKORTING) bestaan niet als orderregel in productie (mig 262).
+      // Voor generieke admin-pseudo-skip: zie ADR-0018 / isAdminPseudo(regel).
+      .neq('artikelnr', SHIPPING_PRODUCT_ID)
 
-  if (!error) return (data ?? []) as unknown as PickbaarheidRij[]
-  if (!isMissingPickbaarheidViewError(error)) throw error
-
-  return fetchFallbackOrderRegels(orderIds)
+    if (error) {
+      if (isMissingPickbaarheidViewError(error)) return fetchFallbackOrderRegels(orderIds)
+      throw error
+    }
+    rows.push(...((data ?? []) as unknown as PickbaarheidRij[]))
+  }
+  return rows
 }
 
 async function fetchFallbackOrderRegels(orderIds: number[]): Promise<PickbaarheidRij[]> {

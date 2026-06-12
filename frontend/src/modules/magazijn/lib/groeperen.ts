@@ -33,14 +33,21 @@ export interface LandGroep {
  * moet dat ook zo tonen, anders suggereert de BUNDEL-header een gezamenlijke
  * verzending die er niet komt.
  *
- * Sortering blijft op `(klant_naam, order_nr)` zodat clusters van dezelfde
- * klant visueel naast elkaar blijven staan, ook als ze niet bundelen.
+ * Sortering: startbare orders boven geblokkeerde (`geblokkeerdeOrderIds`,
+ * bv. "Geen vervoerder mogelijk" — verzoek Miguel 2026-06-12), daarbinnen
+ * op `(klant_naam, order_nr)` zodat clusters van dezelfde klant visueel
+ * naast elkaar blijven staan. Een cluster sorteert op zijn eerste (meest
+ * startbare) order — volledig geblokkeerde clusters zakken dus naar onder.
  */
 export function clusterOrdersOpKlant(
   orders: PickShipOrder[],
   bundelSleutelByOrderId?: Map<number, string>,
+  geblokkeerdeOrderIds?: Set<number>,
 ): KlantCluster[] {
   const gesort = [...orders].sort((a, b) => {
+    const ga = geblokkeerdeOrderIds?.has(a.order_id) ? 1 : 0
+    const gb = geblokkeerdeOrderIds?.has(b.order_id) ? 1 : 0
+    if (ga !== gb) return ga - gb
     const k = a.klant_naam.localeCompare(b.klant_naam)
     if (k !== 0) return k
     return a.order_nr.localeCompare(b.order_nr)
@@ -78,6 +85,7 @@ export function clusterOrdersOpKlant(
 export function groepeerOrdersOpLand(
   orders: PickShipOrder[],
   bundelSleutelByOrderId?: Map<number, string>,
+  geblokkeerdeOrderIds?: Set<number>,
 ): LandGroep[] {
   const map = new Map<string, PickShipOrder[]>()
   const ONBEKEND_KEY = '￿XX' // Sleutel die altijd achteraan sorteert.
@@ -94,7 +102,7 @@ export function groepeerOrdersOpLand(
       return {
         iso2,
         vlag: iso2 ? iso2NaarVlag(iso2) : null,
-        clusters: clusterOrdersOpKlant(map.get(key)!, bundelSleutelByOrderId),
+        clusters: clusterOrdersOpKlant(map.get(key)!, bundelSleutelByOrderId, geblokkeerdeOrderIds),
       }
     })
 }
