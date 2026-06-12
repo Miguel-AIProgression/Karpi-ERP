@@ -12,54 +12,15 @@
 // dunne fake-Supabase-client. Vi.mock wordt alleen gebruikt om de
 // supabase-client-import te vervangen, conform planning-seam.contract.test.ts.
 
-import { describe, it, expect, beforeEach } from 'vitest'
-
-// ---------------------------------------------------------------------------
-// Fake Supabase-client met queue-based response per tabel
-// ---------------------------------------------------------------------------
-
-type SupabaseResponse = { data: unknown; error: { code?: string; message?: string } | null }
-
-const responses: Record<string, SupabaseResponse[]> = {}
-
-function queueResponse(table: string, response: SupabaseResponse) {
-  if (!responses[table]) responses[table] = []
-  responses[table].push(response)
-}
-
-function buildChain(table: string) {
-  const chain = {
-    select: () => chain,
-    eq: () => chain,
-    neq: () => chain,
-    in: () => chain,
-    order: () => chain,
-    limit: () => chain,
-    update: () => chain,
-    insert: () => chain,
-    then: (
-      resolve: (value: SupabaseResponse) => void,
-      reject: (reason: unknown) => void
-    ) => {
-      const next = responses[table]?.shift()
-      if (!next) {
-        reject(new Error(`Geen response voor tabel "${table}" in test-queue`))
-        return
-      }
-      resolve(next)
-    },
-  }
-  return chain
-}
-
-const fakeSupabase = {
-  from: (table: string) => buildChain(table),
-  rpc: () => Promise.resolve({ data: 0, error: null }),
-}
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import {
+  fakeSupabase,
+  queueResponse,
+  resetQueues,
+} from './helpers/fake-supabase'
 
 // vi.mock moet voor de import van de query staan. We gebruiken de hoist-truc
 // via een module-init function.
-import { vi } from 'vitest'
 vi.mock('@/lib/supabase/client', () => ({ supabase: fakeSupabase }))
 
 // Pas hierna de query importeren — die pakt nu de fake.
@@ -134,6 +95,7 @@ function makeOrderHeader(overrides: Partial<{
     afleverdatum: '2026-05-12',
     afhalen: false,
     lever_type: 'week' as const,
+    alleen_productie: false,   // R1-guard-veld (mig 345); helper filtert hierop
     ...overrides,
   }
 }
@@ -150,9 +112,7 @@ function makeDebiteur(
 // Tests
 // ---------------------------------------------------------------------------
 
-beforeEach(() => {
-  for (const k of Object.keys(responses)) delete responses[k]
-})
+beforeEach(() => resetQueues())
 
 describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
   it('scenario 1: view aanwezig met N regels — orders krijgen pickbaarheid uit view', async () => {
@@ -194,8 +154,8 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
       ],
       error: null,
     })
-    // Mig 217: actieve Pickrondes per order. Lege array = geen lopende pickronde.
-    queueResponse('zendingen', { data: [], error: null })
+    // Mig 242: actieve Pickrondes per order via zending_orders M2M. Leeg = geen lopende pickronde.
+    queueResponse('zending_orders', { data: [], error: null })
 
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 
@@ -225,7 +185,7 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     queueResponse('debiteuren', { data: debiteuren, error: null })
     queueResponse('orderregel_pickbaarheid', { data: [], error: null })
     queueResponse('order_regels', { data: [], error: null })
-    queueResponse('zendingen', { data: [], error: null })
+    queueResponse('zending_orders', { data: [], error: null })
 
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 
@@ -264,7 +224,7 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     })
     queueResponse('order_regels', { data: fallbackRegels, error: null })
     queueResponse('producten', { data: [], error: null })
-    queueResponse('zendingen', { data: [], error: null })
+    queueResponse('zending_orders', { data: [], error: null })
     queueResponse('order_regels', { data: [], error: null })
 
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
@@ -303,7 +263,7 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     queueResponse('orderregel_pickbaarheid', { data: regels, error: null })
     queueResponse('producten', { data: [], error: null })
     queueResponse('order_regels', { data: [], error: null })
-    queueResponse('zendingen', { data: [], error: null })
+    queueResponse('zending_orders', { data: [], error: null })
 
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 
@@ -331,7 +291,7 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     queueResponse('orderregel_pickbaarheid', { data: regels, error: null })
     queueResponse('producten', { data: [], error: null })
     queueResponse('order_regels', { data: [], error: null })
-    queueResponse('zendingen', { data: [], error: null })
+    queueResponse('zending_orders', { data: [], error: null })
 
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 
@@ -349,7 +309,7 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     queueResponse('debiteuren', { data: debiteuren, error: null })
     queueResponse('orderregel_pickbaarheid', { data: [], error: null })
     queueResponse('order_regels', { data: [], error: null })
-    queueResponse('zendingen', { data: [], error: null })
+    queueResponse('zending_orders', { data: [], error: null })
 
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 
@@ -377,7 +337,7 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     queueResponse('orderregel_pickbaarheid', { data: regels, error: null })
     queueResponse('producten', { data: [], error: null })
     queueResponse('order_regels', { data: [], error: null })
-    queueResponse('zendingen', { data: [], error: null })
+    queueResponse('zending_orders', { data: [], error: null })
 
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 
