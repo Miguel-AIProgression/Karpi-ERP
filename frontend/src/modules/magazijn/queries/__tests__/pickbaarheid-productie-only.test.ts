@@ -148,6 +148,20 @@ describe('Pick & Ship R1-guard — productie-only orders worden uitgefilterd', (
     })
     // Mig 222: actieve pickrondes via zending_orders M2M. Lege array = geen lopende ronde.
     queueResponse('zending_orders', { data: [], error: null })
+    // Mig 383: order-niveau-predicaat uit view order_pickbaarheid. Alleen order
+    // 100 — order 200 is door de R1-guard al SQL-zijde weggefilterd.
+    queueResponse('order_pickbaarheid', {
+      data: [{
+        order_id: 100,
+        totaal_regels: 1,
+        pickbare_regels: 1,
+        alle_regels_pickbaar: true,
+        heeft_pickbare_regel: true,
+        deelleveringen_toegestaan: false,
+        pick_ship_zichtbaar: true,
+      }],
+      error: null,
+    })
 
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 

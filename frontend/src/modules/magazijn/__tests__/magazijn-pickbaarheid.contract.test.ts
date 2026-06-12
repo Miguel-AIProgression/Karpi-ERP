@@ -108,6 +108,27 @@ function makeDebiteur(
   return { debiteur_nr, naam, deelleveringen_toegestaan }
 }
 
+function makeOrderPickbaarheidRow(overrides: Partial<{
+  order_id: number
+  totaal_regels: number
+  pickbare_regels: number
+  alle_regels_pickbaar: boolean
+  heeft_pickbare_regel: boolean
+  deelleveringen_toegestaan: boolean
+  pick_ship_zichtbaar: boolean
+}> = {}) {
+  return {
+    order_id: 100,
+    totaal_regels: 1,
+    pickbare_regels: 1,
+    alle_regels_pickbaar: true,
+    heeft_pickbare_regel: true,
+    deelleveringen_toegestaan: false,
+    pick_ship_zichtbaar: true,
+    ...overrides,
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -156,6 +177,15 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     })
     // Mig 242: actieve Pickrondes per order via zending_orders M2M. Leeg = geen lopende pickronde.
     queueResponse('zending_orders', { data: [], error: null })
+    // Mig 383: order-niveau-predicaat uit view order_pickbaarheid. Gemengde order:
+    // 1 pickbaar + 1 wacht-op-snijden, deelleveringen=true → zichtbaar via deellevering.
+    queueResponse('order_pickbaarheid', {
+      data: [makeOrderPickbaarheidRow({
+        totaal_regels: 2, pickbare_regels: 1, alle_regels_pickbaar: false,
+        heeft_pickbare_regel: true, deelleveringen_toegestaan: true, pick_ship_zichtbaar: true,
+      })],
+      error: null,
+    })
 
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 
@@ -172,6 +202,8 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     expect(order.regels[1].wacht_op).toBe('snijden')
     // Totaal gewicht = 4.5×2 + 7.0×1 = 16.0 kg
     expect(order.totaal_gewicht_kg).toBe(16)
+    // Mig 383: order-niveau-predicaat vanuit view — niet client-side herleid.
+    expect(order.alle_regels_pickbaar).toBe(false)
   })
 
   it('scenario 2: view aanwezig zonder regels — header-only orders worden uitgefilterd', async () => {
@@ -186,6 +218,8 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     queueResponse('orderregel_pickbaarheid', { data: [], error: null })
     queueResponse('order_regels', { data: [], error: null })
     queueResponse('zending_orders', { data: [], error: null })
+    // Mig 383: geen regels → geen rij in order_pickbaarheid → order onzichtbaar.
+    queueResponse('order_pickbaarheid', { data: [], error: null })
 
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 
@@ -226,6 +260,10 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     queueResponse('producten', { data: [], error: null })
     queueResponse('zending_orders', { data: [], error: null })
     queueResponse('order_regels', { data: [], error: null })
+    // Scenario 3 (fallback-pad): order_pickbaarheid-view bestond al niet, dus
+    // ook de order_pickbaarheid-view-query levert leeg op (of bestaat niet).
+    // Leeg response: de FIFO-queue wordt geconsumeerd zonder effect op resultaat.
+    queueResponse('order_pickbaarheid', { data: [], error: null })
 
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 
@@ -264,6 +302,14 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     queueResponse('producten', { data: [], error: null })
     queueResponse('order_regels', { data: [], error: null })
     queueResponse('zending_orders', { data: [], error: null })
+    // Mig 383: gemengd zonder deelleveringen → pick_ship_zichtbaar=false.
+    queueResponse('order_pickbaarheid', {
+      data: [makeOrderPickbaarheidRow({
+        totaal_regels: 2, pickbare_regels: 1, alle_regels_pickbaar: false,
+        heeft_pickbare_regel: true, deelleveringen_toegestaan: false, pick_ship_zichtbaar: false,
+      })],
+      error: null,
+    })
 
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 
@@ -292,6 +338,15 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     queueResponse('producten', { data: [], error: null })
     queueResponse('order_regels', { data: [], error: null })
     queueResponse('zending_orders', { data: [], error: null })
+    // Mig 383: alle regels wachten + deelleveringen=true → maar geen pickbare
+    // regel aanwezig → pick_ship_zichtbaar=false.
+    queueResponse('order_pickbaarheid', {
+      data: [makeOrderPickbaarheidRow({
+        totaal_regels: 1, pickbare_regels: 0, alle_regels_pickbaar: false,
+        heeft_pickbare_regel: false, deelleveringen_toegestaan: true, pick_ship_zichtbaar: false,
+      })],
+      error: null,
+    })
 
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 
@@ -310,6 +365,8 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     queueResponse('orderregel_pickbaarheid', { data: [], error: null })
     queueResponse('order_regels', { data: [], error: null })
     queueResponse('zending_orders', { data: [], error: null })
+    // Mig 383: geen regels → geen rij in order_pickbaarheid → order onzichtbaar.
+    queueResponse('order_pickbaarheid', { data: [], error: null })
 
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 
@@ -338,6 +395,14 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     queueResponse('producten', { data: [], error: null })
     queueResponse('order_regels', { data: [], error: null })
     queueResponse('zending_orders', { data: [], error: null })
+    // Mig 383: wacht op inkoop, geen deelleveringen → pick_ship_zichtbaar=false.
+    queueResponse('order_pickbaarheid', {
+      data: [makeOrderPickbaarheidRow({
+        totaal_regels: 1, pickbare_regels: 0, alle_regels_pickbaar: false,
+        heeft_pickbare_regel: false, deelleveringen_toegestaan: false, pick_ship_zichtbaar: false,
+      })],
+      error: null,
+    })
 
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 

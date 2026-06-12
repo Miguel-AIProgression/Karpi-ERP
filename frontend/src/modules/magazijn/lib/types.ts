@@ -74,6 +74,9 @@ export interface PickShipOrder {
    *  `create_zending_voor_order` op de zending gezet. */
   totaal_gewicht_kg: number
   aantal_regels: number
+  /** Mig 383: order-niveau-predicaat uit view `order_pickbaarheid`. Bron voor
+   *  de pick-start-knop (StartPickrondesButton) — niet client-side herleiden. */
+  alle_regels_pickbaar: boolean
   /** Mig 217: lopende Pickronde voor deze order (zending in status='Picken').
    *  Aanwezig zodra `start_pickronde` is aangeroepen, weg na voltooi.
    *  Drijft de "in progress"-staat op de pick-card. */

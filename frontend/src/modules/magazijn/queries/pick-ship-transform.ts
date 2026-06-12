@@ -12,6 +12,18 @@ import type {
   PickShipWachtOp,
 } from '../lib/types'
 
+/** Rij uit view `order_pickbaarheid` (mig 383): het order-niveau-predicaat.
+ *  Geen rij voor een order = geen (niet-pseudo) regels = niets te picken. */
+export interface OrderPickbaarheidRij {
+  order_id: number
+  totaal_regels: number
+  pickbare_regels: number
+  alle_regels_pickbaar: boolean
+  heeft_pickbare_regel: boolean
+  deelleveringen_toegestaan: boolean
+  pick_ship_zichtbaar: boolean
+}
+
 export interface PickbaarheidRij {
   order_regel_id: number
   order_id: number
@@ -45,11 +57,6 @@ export interface OrderHeaderRij {
   afl_land: string | null
   afleverdatum: string | null
   afhalen: boolean
-  /** Klant-policy uit `debiteuren.deelleveringen_toegestaan`. Bepaalt of een
-   *  order met ≥1 'Wacht op snijden'-regel toch in Pick & Ship verschijnt
-   *  (deellevering van de pickbare regels), of pas zichtbaar wordt zodra
-   *  alle regels gepickt kunnen worden. */
-  deelleveringen_toegestaan: boolean
   /** ADR 0014 / mig 244: 'datum' = pick-horizon = 1 werkdag vóór afleverdatum;
    *  'week' = direct zichtbaar zodra pickbaar. */
   lever_type: 'week' | 'datum'
@@ -89,6 +96,7 @@ export function initPickShipOrders(
       totaal_m2: 0,
       totaal_gewicht_kg: 0,
       aantal_regels: 0,
+      alle_regels_pickbaar: false,
       actieve_pickronde: null,
     })
   }
