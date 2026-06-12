@@ -32,6 +32,9 @@ interface Props {
    *  match (bv. solo-orders, weken zonder bundeling) toont KlantClusterBlok
    *  alleen de orders zoals voorheen. */
   voorgesteldeBundels: VoorgesteldeBundel[]
+  /** Order-ids die niet startbaar zijn ("Geen vervoerder mogelijk") —
+   *  sorteren onder de startbare orders binnen deze sectie. */
+  geblokkeerdeOrderIds?: Set<number>
 }
 
 export function PickWeekSectie({
@@ -41,6 +44,7 @@ export function PickWeekSectie({
   status,
   groepeerOpLand,
   voorgesteldeBundels,
+  geblokkeerdeOrderIds,
 }: Props) {
   // Twee indexen op de bundel-rijen:
   //   · bundelByOrderId  → snelle lookup per order voor decoratie (truck +
@@ -77,8 +81,8 @@ export function PickWeekSectie({
   // Beide paden eindigen in dezelfde KlantCluster[]-shape, zodat de render-
   // loop er niets van merkt.
   const groepen: LandGroep[] = groepeerOpLand
-    ? groepeerOrdersOpLand(orders, sleutelByOrderId)
-    : [{ iso2: null, vlag: null, clusters: clusterOrdersOpKlant(orders, sleutelByOrderId) }]
+    ? groepeerOrdersOpLand(orders, sleutelByOrderId, geblokkeerdeOrderIds)
+    : [{ iso2: null, vlag: null, clusters: clusterOrdersOpKlant(orders, sleutelByOrderId, geblokkeerdeOrderIds) }]
 
   return (
     <section>

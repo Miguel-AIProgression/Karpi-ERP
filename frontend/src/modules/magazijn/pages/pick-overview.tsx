@@ -75,6 +75,19 @@ export function MagazijnOverviewPage() {
     return m
   }, [gefilterd, perOrderQueries])
 
+  // Niet-startbare orders ("Geen vervoerder mogelijk", zelfde predicaat als
+  // StartPickrondesButton + de mig 373-guard): ≥1 regel bron='geen' op een
+  // niet-afhaal-order. Deze sorteren ónder de startbare orders in elke sectie.
+  const geblokkeerdeOrderIds = useMemo(() => {
+    const s = new Set<number>()
+    gefilterd.forEach((o, i) => {
+      if (o.afhalen) return
+      const regels = perOrderQueries[i]?.data
+      if (regels?.some((r) => r.bron === 'geen')) s.add(o.order_id)
+    })
+    return s
+  }, [gefilterd, perOrderQueries])
+
   const naVervoerderFilter = useMemo(() => {
     if (vervoerderFilter === 'all') return gefilterd
     return gefilterd.filter((o) => {
@@ -281,6 +294,7 @@ export function MagazijnOverviewPage() {
                   dagOrders.some((o) => o.order_id === oid),
                 ),
               )}
+              geblokkeerdeOrderIds={geblokkeerdeOrderIds}
             />
           )}
           {perWeek.map((groep) => (
@@ -292,6 +306,7 @@ export function MagazijnOverviewPage() {
               status={groep.status}
               groepeerOpLand={groepeerOpLand}
               voorgesteldeBundels={bundelsPerWeek.get(groep.sleutel) ?? []}
+              geblokkeerdeOrderIds={geblokkeerdeOrderIds}
             />
           ))}
         </div>

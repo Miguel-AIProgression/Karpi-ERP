@@ -1,5 +1,19 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-12 — Pick & Ship: startbare orders sorteren boven geblokkeerde (branch `fix/pick-sortering-geblokkeerd`)
+
+**Verzoek Miguel:** orders die gepickt kunnen worden moeten boven de
+"Geen vervoerder mogelijk"-orders staan. `clusterOrdersOpKlant` /
+`groepeerOrdersOpLand` ([`groeperen.ts`](../frontend/src/modules/magazijn/lib/groeperen.ts))
+accepteren nu een optionele `geblokkeerdeOrderIds`-set als primaire sorteersleutel
+(geblokkeerd → achteraan, daarbinnen ongewijzigd alfabetisch op klant + order_nr;
+binnen een bundel-cluster zakken geblokkeerde orders ook naar onder).
+[`pick-overview.tsx`](../frontend/src/modules/magazijn/pages/pick-overview.tsx)
+voedt de set uit de al aanwezige per-order vervoerder-queries (zelfde predicaat
+als `StartPickrondesButton` + mig 373-guard: ≥1 regel `bron='geen'`, niet-afhalen)
+en geeft hem door aan beide secties (week + dag-orders). Puur UI-sortering —
+geen DB-wijziging. Tests: 3 nieuwe cases in `groeperen.test.ts`.
+
 ## 2026-06-11 — Pick & Ship toonde maar 91 van ~236 pickbare orders (PostgREST-cap) + pick-start geblokkeerd zonder vervoerder (mig 373, branch `fix/pick-ship-zonder-vervoerder`)
 
 **Verzoek Miguel (vervolg op mig 372):** "Zet ze [orders zonder vervoerder]
