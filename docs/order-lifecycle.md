@@ -228,8 +228,10 @@ beide nodig vanwege het window tussen status-promotie en rol-vlag.
    `orderregel_pickbaarheid` — er is geen VERZEND-specifieke TS-skip meer.
    De enige resterende client-side filterlogica is de dag-order-horizon
    (`werkdagMinN(afleverdatum, 1)`, ADR 0014) — die hangt af van `vandaag`.
-   Productie-only orders (`alleen_productie=TRUE`) bereiken de view niet (status-guard in
-   `orderregel_pickbaarheid`: open orders only). **Chunk-per-order_id (fix 2026-06-11):**
+   Productie-only orders (`alleen_productie=TRUE`) staan wél in de view (die filtert alleen
+   op order-status) maar worden uit Pick & Ship geweerd door de TS-headerquery
+   (`.eq('alleen_productie', false)` in `fetchOpenOrderHeaders`, R1-guard mig 345 —
+   gepind in `pickbaarheid-productie-only.test.ts`). **Chunk-per-order_id (fix 2026-06-11):**
    een kale GET op `orderregel_pickbaarheid` liep tegen de PostgREST max-rows-cap (1000)
    aan waardoor orders stilletjes verdwenen; dit is per-order opgelost in de query-laag.
    **Deploy-voorwaarde (mig 383):** de view `order_pickbaarheid` moet op de live DB staan
