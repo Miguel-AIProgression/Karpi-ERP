@@ -4,19 +4,23 @@ import { assertEquals, assert } from 'https://deno.land/std@0.168.0/testing/asse
 import { evalueerSpoed } from './spoed-check.ts'
 import type { LevertijdConfig } from './levertijd-types.ts'
 import type { RolAgendaSlot } from './werkagenda.ts'
+import { STANDAARD_WERKTIJDEN } from './werkagenda.ts'
+
+const lokaal = (j: number, m: number, d: number, u = 0, min = 0) => new Date(j, m - 1, d, u, min)
 
 function defaultConfig(overrides: Partial<LevertijdConfig> = {}): LevertijdConfig {
   return {
     logistieke_buffer_dagen: 2, backlog_minimum_m2: 12, capaciteit_per_week: 450,
     capaciteit_marge_pct: 0, wisseltijd_minuten: 15, snijtijd_minuten: 5,
     maatwerk_weken: 4, spoed_buffer_uren: 4, spoed_toeslag_bedrag: 50,
-    spoed_product_id: 'SPOEDTOESLAG',
+    spoed_product_id: 'SPOEDTOESLAG', dag_order_snij_buffer_werkdagen: 2,
+    werktijden: STANDAARD_WERKTIJDEN,
     ...overrides,
   }
 }
 
 // 16 april 2026 = donderdag, ISO-week 16
-const VANDAAG = new Date('2026-04-16T08:00:00Z')
+const VANDAAG = lokaal(2026, 4, 16, 8, 0)
 
 Deno.test('evalueerSpoed: lege werkagenda → spoed deze week beschikbaar', () => {
   const result = evalueerSpoed(new Map(), 30, defaultConfig(), VANDAAG)
@@ -29,8 +33,8 @@ Deno.test('evalueerSpoed: backlog vult deze week vol → spoed volgende week', (
   // Backlog overspant ma 13 t/m vr 17 apr (volledig deze week beslagen)
   const fakeAgenda = new Map<number, RolAgendaSlot>()
   fakeAgenda.set(1, {
-    start: new Date('2026-04-13T08:00:00Z'),
-    eind: new Date('2026-04-17T17:00:00Z'),
+    start: lokaal(2026, 4, 13, 8, 0),
+    eind: lokaal(2026, 4, 17, 17, 0),
     klaarDatum: '2026-04-17',
     teLaat: false,
   })
@@ -43,8 +47,8 @@ Deno.test('evalueerSpoed: backlog tot ma+di volgende week → past nog (4u buffe
   // Volledig deze week + ma+di volgende week beslagen
   const fakeAgenda = new Map<number, RolAgendaSlot>()
   fakeAgenda.set(1, {
-    start: new Date('2026-04-13T08:00:00Z'),
-    eind: new Date('2026-04-21T17:00:00Z'),  // di einde van werkdag
+    start: lokaal(2026, 4, 13, 8, 0),
+    eind: lokaal(2026, 4, 21, 17, 0),  // di einde van werkdag
     klaarDatum: '2026-04-21',
     teLaat: false,
   })
@@ -57,8 +61,8 @@ Deno.test('evalueerSpoed: backlog tot ma+di volgende week → past nog (4u buffe
 Deno.test('evalueerSpoed: beide weken vol → niet beschikbaar', () => {
   const fakeAgenda = new Map<number, RolAgendaSlot>()
   fakeAgenda.set(1, {
-    start: new Date('2026-04-13T08:00:00Z'),
-    eind: new Date('2026-04-24T17:00:00Z'),  // hele 2 weken beslagen
+    start: lokaal(2026, 4, 13, 8, 0),
+    eind: lokaal(2026, 4, 24, 17, 0),  // hele 2 weken beslagen
     klaarDatum: '2026-04-24',
     teLaat: false,
   })
@@ -70,8 +74,8 @@ Deno.test('evalueerSpoed: beide weken vol → niet beschikbaar', () => {
 Deno.test('evalueerSpoed: nieuwStuk groter dan week-restruimte → schuift door', () => {
   const fakeAgenda = new Map<number, RolAgendaSlot>()
   fakeAgenda.set(1, {
-    start: new Date('2026-04-13T08:00:00Z'),
-    eind: new Date('2026-04-17T15:00:00Z'),  // bijna vol (~2u over - 4u buffer = -2u)
+    start: lokaal(2026, 4, 13, 8, 0),
+    eind: lokaal(2026, 4, 17, 15, 0),  // bijna vol (~2u over - 4u buffer = -2u)
     klaarDatum: '2026-04-17',
     teLaat: false,
   })
@@ -95,8 +99,8 @@ Deno.test('evalueerSpoed: toeslag_bedrag uit cfg', () => {
 Deno.test('evalueerSpoed: week_restruimte_uren correct gerapporteerd', () => {
   const fakeAgenda = new Map<number, RolAgendaSlot>()
   fakeAgenda.set(1, {
-    start: new Date('2026-04-13T08:00:00Z'),
-    eind: new Date('2026-04-15T17:00:00Z'),  // ma-wo (3 × 510 min = 1530 beslag)
+    start: lokaal(2026, 4, 13, 8, 0),
+    eind: lokaal(2026, 4, 15, 17, 0),  // ma-wo (3 × 510 min = 1530 beslag)
     klaarDatum: '2026-04-15',
     teLaat: false,
   })
@@ -111,8 +115,8 @@ Deno.test('evalueerSpoed: bestaande rol al te laat (snij = lever) → spoed niet
   const fakeAgenda = new Map<number, RolAgendaSlot>()
   // Stuk moet 20-04 geleverd, maar wordt pas 20-04 gesneden (geen buffer) → te laat
   fakeAgenda.set(1, {
-    start: new Date('2026-04-20T08:00:00Z'),
-    eind: new Date('2026-04-20T17:00:00Z'),
+    start: lokaal(2026, 4, 20, 8, 0),
+    eind: lokaal(2026, 4, 20, 17, 0),
     klaarDatum: '2026-04-20',
     teLaat: true,
   })
@@ -124,8 +128,8 @@ Deno.test('evalueerSpoed: bestaande rol al te laat (snij = lever) → spoed niet
 Deno.test('evalueerSpoed: backlog op tijd (genoeg buffer) → spoed wel beschikbaar', () => {
   const fakeAgenda = new Map<number, RolAgendaSlot>()
   fakeAgenda.set(1, {
-    start: new Date('2026-04-13T08:00:00Z'),
-    eind: new Date('2026-04-15T17:00:00Z'),  // wo gesneden, ruim voor leverdatum
+    start: lokaal(2026, 4, 13, 8, 0),
+    eind: lokaal(2026, 4, 15, 17, 0),  // wo gesneden, ruim voor leverdatum
     klaarDatum: '2026-04-15',
     teLaat: false,
   })
@@ -136,8 +140,8 @@ Deno.test('evalueerSpoed: backlog op tijd (genoeg buffer) → spoed wel beschikb
 Deno.test('evalueerSpoed: hogere buffer → vroege weken sneller "vol"', () => {
   const fakeAgenda = new Map<number, RolAgendaSlot>()
   fakeAgenda.set(1, {
-    start: new Date('2026-04-13T08:00:00Z'),
-    eind: new Date('2026-04-17T13:00:00Z'),  // 4 dagen + 4u (4×510 + 240 = 2280 min beslag)
+    start: lokaal(2026, 4, 13, 8, 0),
+    eind: lokaal(2026, 4, 17, 13, 0),  // 4 dagen + 4u (4×510 + 240 = 2280 min beslag)
     klaarDatum: '2026-04-17',
     teLaat: false,
   })

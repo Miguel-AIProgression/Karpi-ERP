@@ -1,31 +1,57 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Settings } from 'lucide-react'
 import { STANDAARD_WERKTIJDEN, type Werktijden } from '@/lib/utils/bereken-agenda'
 import { cn } from '@/lib/utils/cn'
+import { fetchWerkagendaConfig, saveWerkagendaConfig } from '@/lib/supabase/queries/werkagenda'
 
 const STORAGE_KEY = 'karpi.werkagenda.werktijden'
+// Eenmalige localStorage→DB-overname mag maar één keer per pagina-sessie
+// draaien, ook al mounten meerdere componenten deze hook tegelijk.
+let adoptieGedaan = false
 const LEGACY_STORAGE_KEY = 'karpi.snijagenda.werktijden'
 const DAG_LABELS = ['Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za', 'Zo']
 
 export function useWerktijden(): [Werktijden, (w: Werktijden) => void] {
-  const [werktijden, setWerktijden] = useState<Werktijden>(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY)
-      if (raw) return { ...STANDAARD_WERKTIJDEN, ...JSON.parse(raw) }
-      // Backwards-compat: migreer oude key naar nieuwe key
-      const legacy = localStorage.getItem(LEGACY_STORAGE_KEY)
-      if (legacy) {
-        try { localStorage.setItem(STORAGE_KEY, legacy) } catch { /* ignore */ }
-        try { localStorage.removeItem(LEGACY_STORAGE_KEY) } catch { /* ignore */ }
-        return { ...STANDAARD_WERKTIJDEN, ...JSON.parse(legacy) }
-      }
-    } catch { /* ignore */ }
-    return STANDAARD_WERKTIJDEN
+  const queryClient = useQueryClient()
+  const { data } = useQuery({
+    queryKey: ['werkagenda-config'],
+    queryFn: fetchWerkagendaConfig,
   })
+  const mutation = useMutation({
+    mutationFn: saveWerkagendaConfig,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['werkagenda-config'] }),
+    // Bij een mislukte save de optimistische cache-waarde terugdraaien naar
+    // de server-waarheid — anders lijkt een niet-opgeslagen wijziging bewaard.
+    onError: () => queryClient.invalidateQueries({ queryKey: ['werkagenda-config'] }),
+  })
+
+  const setWerktijden = useCallback((w: Werktijden) => {
+    // Optimistisch zodat de agenda direct herrekent; mutatie persisteert.
+    queryClient.setQueryData(['werkagenda-config'], w)
+    mutation.mutate(w)
+  }, [queryClient, mutation.mutate]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Eenmalige overname van de oude per-browser localStorage-config: alleen
+  // als de DB-rij nog exact de default is (= nooit centraal aangepast) nemen
+  // we de lokale instellingen over; daarna verdwijnt de localStorage-key.
   useEffect(() => {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(werktijden)) } catch { /* ignore */ }
-  }, [werktijden])
-  return [werktijden, setWerktijden]
+    if (!data || adoptieGedaan) return
+    adoptieGedaan = true
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY)
+      if (raw) {
+        const lokaal = { ...STANDAARD_WERKTIJDEN, ...JSON.parse(raw) } as Werktijden
+        const dbIsDefault = JSON.stringify(data) === JSON.stringify(STANDAARD_WERKTIJDEN)
+        const lokaalAfwijkend = JSON.stringify(lokaal) !== JSON.stringify(STANDAARD_WERKTIJDEN)
+        if (dbIsDefault && lokaalAfwijkend) setWerktijden(lokaal)
+      }
+      localStorage.removeItem(STORAGE_KEY)
+      localStorage.removeItem(LEGACY_STORAGE_KEY)
+    } catch { /* ignore */ }
+  }, [data, setWerktijden])
+
+  return [data ?? STANDAARD_WERKTIJDEN, setWerktijden]
 }
 
 interface Props {

@@ -1149,6 +1149,16 @@ Applicatie-instellingen (key-value). Gebruikt voor productie-configuratie en aut
 | levering | string | `'1'` | AA2.0-XML `<Levering>` code. |
 | soort_levering | string | `'1'` | AA2.0-XML `<SoortLevering>` code. |
 
+**werkagenda waarde-structuur** (mig 384 — één bron voor UI, edge-functions en Pick & Ship; gelezen via `fetchWerkagendaConfig()` + `_shared/werkagenda.ts`):
+| Veld | Type | Default | Toelichting |
+|------|------|---------|-------------|
+| werkdagen | number[] | `[1,2,3,4,5]` | ISO-weekdagnummers (1=ma … 7=zo) waarop er gewerkt wordt. |
+| start | 'HH:mm' | `'08:00'` | Start werktijd (lokale tijd). |
+| eind | 'HH:mm' | `'17:00'` | Einde werktijd. |
+| pauzeStart | 'HH:mm' | `'12:00'` | Begin middagpauze. |
+| pauzeEind | 'HH:mm' | `'12:30'` | Einde middagpauze. |
+| vrij | `{datum: string, naam?: string}[]` | `[]` | Lijst van vrije dagen (feestdagen/bedrijfsvakantie) in ISO-datumformaat. Gelezen door UI (productie-instellingen, snijplanning-agenda), `check-levertijd`/`spoed-check` (edge) en de Pick & Ship-dag-order-horizon (`werkdagMinN`). |
+
 ---
 
 ### snijplan_groep_locks

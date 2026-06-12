@@ -22,7 +22,7 @@ Vijf instanties van de stelling zijn onderzocht (5 onderzoeks-agents), tegen elk
 | 4 | **Packing-geometrie** (Productie) | "3× gekopieerd, 4-plek-lockstep" | 4 plekken, **allen TS** (geen SQL — bewust V2-uitstel). Benchmark-port (`vergelijk-snijalgoritmes.mjs`, géén productiepad) al gedivergeerd (mist ADR-0025 `√(short/long)`-bias). 2 onderhouden reststuk-kopieën nog synchroon (parity-tests bestaan). Bundeling haalbaar. **Botst met in-flight branch `feat/organische-vormen-maatwerk` (347 regels packer-churn).** | **B — bouw seam (gated)** |
 | 5A | **Bundel-sleutel** TS+SQL | mirror zonder afdwinging | Bevestigd, functioneel synchroon, geen bewezen bug, geen test. Goedkope golden-fixture-demo. | **B — laag-prio** |
 | 5B | **Verzendkosten** "4 niveaus" | "bewezen divergentie, meest urgent" | **Correctie/framing-fout: de divergerende `genereer_factuur_voor_week` (mig 232) is gedropt door mig 240. De resolver `verzendkosten_voor_bundel` (mig 234) is al de enige live bron.** De "divergentie" zit in dode code. | **C — buiten scope** |
-| 5C | **Werkagenda** "triple mirror" | 3 kopieën | **Correctie: SQL-ground-truth (mig 279) heeft NUL callers = dode code.** Feitelijk 2 levende TS-runtimes (UI + Deno) met al-uiteengelopen interfaces. | **C — dode SQL schrappen** |
+| 5C | **Werkagenda** "triple mirror" | 3 kopieën | **Correctie: SQL-ground-truth (mig 279) heeft NUL callers = dode code.** Feitelijk 2 levende TS-runtimes (UI + Deno) met al-uiteengelopen interfaces. **Uitgevoerd 2026-06-12** — zie plan 2026-06-12-werkagenda-een-bron.md (kernel-consolidatie + mig 383). | **C — dode SQL schrappen** |
 | 5D | **vrije_voorraad** "3×" | 3 kopieën | **Correctie: formule 2× in SQL (mig 149→154, 154 is live), TS consumeert alleen.** Cosmetisch. | **C — meeliften** |
 
 ### Sleutelbesluiten die de fasering sturen
@@ -380,7 +380,7 @@ Onderstaande fasen zijn **afzonderlijke subsystemen**. Conform de writing-plans 
 **Omvang:** Groot.
 
 ### Losse opruimingen (emmer C — meeliften, geen eigen fase)
-- **Werkagenda dode SQL (mig 279):** `DROP FUNCTION werkdag_min_n / werkdag_offset_n / werkdag_plus_n / werkagenda_kalender` — eerst caller-count bevestigen (`grep` buiten mig 279 = 0). Verlaagt "triple mirror" gratis naar 2 levende TS-runtimes. Triviale losse migratie.
+- **Werkagenda dode SQL (mig 279):** `DROP FUNCTION werkdag_min_n / werkdag_offset_n / werkdag_plus_n / werkagenda_kalender` — eerst caller-count bevestigen (`grep` buiten mig 279 = 0). Verlaagt "triple mirror" gratis naar 2 levende TS-runtimes. Triviale losse migratie. **Uitgevoerd 2026-06-12 (mig 383, plan 2026-06-12-werkagenda-een-bron).**
 - **Bundel-sleutel golden-fixture (5A): ✅ uitgevoerd 2026-06-12** (mig 385 + `bundel-sleutel.contract.test.ts`, zie plan `2026-06-12-bundel-sleutel-sql-ts-contract.md`). Bonus: hoofdletter-ẞ (U+1E9E) bleek op de live DB daadwerkelijk te divergeren en NBSP/ß-gedrag was locale-afhankelijk — de "geen bewezen bug"-inschatting was te optimistisch voor DE-adressen; v2 is nu deterministisch JS-identiek.
 - **vrije_voorraad (5D):** alleen meeliften als een reserverings-/voorraad-migratie het bestand tóch opent (helper `bereken_vrije_voorraad(voorraad, gereserveerd, backorder)`); geen eigen werk.
 
