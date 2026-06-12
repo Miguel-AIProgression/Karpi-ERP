@@ -1,18 +1,44 @@
 # Changelog — RugFlow ERP
 
-## 2026-06-12 — Pickbaarheid single-source (mig 383)
+## 2026-06-12 — Pickbaarheid single-source (mig 385)
+
+> **Hernummering:** deze migratie is vlak vóór de merge hernummerd van 383 naar **385** (origin/main claimde 383/384 intussen via het werkagenda-traject). In de live DB is hij op 12-06 onder het óúde nummer toegepast; inhoudelijk identiek.
 
 **Wat:** order-niveau-pickbaarheidslogica verplaatst van TypeScript naar SQL; TS-laag filtert alleen nog de dag-order-horizon (ADR 0014, hangt af van `vandaag`).
 
 **Gebouwd (branch `refactor/pickbaarheid-single-source`):**
-- **Mig 383 — `orderregel_pickbaarheid` v4:** (a) generieke admin-pseudo-skip `AND NOT is_admin_pseudo(oreg.artikelnr)` (ADR-0018) — vervangt de VERZEND-specifieke `.neq()`-skip in TS én fixt de **latente dropship-blokkade** (DROPSHIP-KLEIN/-GROOT-regels uit mig 353/370 kregen nooit een voorraad-claim maar stonden als `wacht_op='inkoop'` in de view, waardoor dropship-orders nooit de "alles pickbaar"-drempel haalden); (b) nieuwe kolom `gewicht_kg` — maakt de aparte `fetchTotaalGewichtPerOrder`-query overbodig. Maatwerk-gewicht telt nu correct mee in het indicatieve ordergewicht (de oude `.neq('artikelnr','VERZEND')`-query sloot NULL-`artikelnr`-rijen per ongeluk uit — PostgREST three-valued logic).
-- **Mig 383 — nieuwe view `order_pickbaarheid`:** per order `totaal_regels`, `pickbare_regels`, `alle_regels_pickbaar`, `heeft_pickbare_regel`, `deelleveringen_toegestaan`, `pick_ship_zichtbaar`. Geen rij = geen (niet-pseudo) regels = niets te picken.
+- **Mig 385 — `orderregel_pickbaarheid` v4:** (a) generieke admin-pseudo-skip `AND NOT is_admin_pseudo(oreg.artikelnr)` (ADR-0018) — vervangt de VERZEND-specifieke `.neq()`-skip in TS én fixt de **latente dropship-blokkade** (DROPSHIP-KLEIN/-GROOT-regels uit mig 353/370 kregen nooit een voorraad-claim maar stonden als `wacht_op='inkoop'` in de view, waardoor dropship-orders nooit de "alles pickbaar"-drempel haalden); (b) nieuwe kolom `gewicht_kg` — maakt de aparte `fetchTotaalGewichtPerOrder`-query overbodig. Maatwerk-gewicht telt nu correct mee in het indicatieve ordergewicht (de oude `.neq('artikelnr','VERZEND')`-query sloot NULL-`artikelnr`-rijen per ongeluk uit — PostgREST three-valued logic).
+- **Mig 385 — nieuwe view `order_pickbaarheid`:** per order `totaal_regels`, `pickbare_regels`, `alle_regels_pickbaar`, `heeft_pickbare_regel`, `deelleveringen_toegestaan`, `pick_ship_zichtbaar`. Geen rij = geen (niet-pseudo) regels = niets te picken.
 - **Frontend `fetchPickShipOrders`** ([`pickbaarheid.ts`](../frontend/src/modules/magazijn/queries/pickbaarheid.ts)): consumeert `order_pickbaarheid.pick_ship_zichtbaar`; de 3× VERZEND-skip, de aparte gewicht-query (`fetchTotaalGewichtPerOrder`) en de PGRST205-fallback (`fetchFallbackOrderRegels`) zijn verwijderd. `StartPickrondesButton.isPickbaar` leest `order.alle_regels_pickbaar` (view-veld) i.p.v. client-side `every()`.
 - **Stale contracttest gerepareerd:** `magazijn-pickbaarheid.contract.test.ts` mockte `zendingen` i.p.v. `zending_orders` (7/7 rood op main). Gedeelde testhelper `__tests__/helpers/fake-supabase.ts`; 8 scenario's inclusief hard-fail bij ontbrekende view en dag-horizon.
 
-**Deploy-voorwaarde:** mig 383 moet op de live DB staan vóór de frontend van deze branch deployt — er is geen fallback meer (`fetchPickShipOrders` faalt hard bij ontbrekende view).
+**Deploy-voorwaarde:** mig 385 moet op de live DB staan vóór de frontend van deze branch deployt — er is geen fallback meer (`fetchPickShipOrders` faalt hard bij ontbrekende view). (Toegepast 12-06, vóór de merge.)
 
 ---
+
+## 2026-06-12 — Werkagenda-config centraal (mig 384, fase 2)
+
+Werktijden + vrije dagen verhuisd van per-browser-localStorage naar
+`app_config 'werkagenda'`. UI (productie-instellingen, snijplanning-agenda),
+`check-levertijd`/`spoed-check` (edge) en de Pick & Ship-dag-order-horizon
+lezen nu dezelfde kalender — een feestdag invoeren landt één keer en telt
+overal. `volgendeWerkdag`/`naarWerkdag` (levertijd-match) lopen nu ook via
+kernel-`isWerkdag` i.p.v. hardcoded za/zo. Eenmalige best-effort-overname van
+bestaande localStorage-instellingen (alleen als de DB-rij nog default is).
+
+## 2026-06-12 — Werkagenda: één bron (kernel-consolidatie, mig 383)
+
+De werkdag-/werkagenda-rekenkunde leefde op drie plekken: SQL (mig 279 — nul
+callers, dode code), Deno `_shared/werkagenda.ts` (UTC, geen feestdagen) en
+frontend `bereken-agenda.ts` (lokale tijd, wél feestdagen) — met al-uiteengelopen
+interfaces, ~24u verschil in `teLaat`-semantiek en andere sortering.
+Geconsolideerd: `_shared/werkagenda.ts` is nu de enige implementatie (rijke
+interface met 'HH:mm' + `vrij`-feestdagen); de frontend importeert de kernel
+direct (derive-status-patroon, vite `server.fs.allow`); golden fixture
+`werkagenda.golden.json` wordt door Deno én Vitest getoetst; de dode SQL is
+gedropt (mig 383). `teLaat` is geünificeerd op strikt (00:00-deadline) — de
+UI-agenda en check-levertijd geven nu dezelfde vlag. Sorterings-verschil
+berekenAgenda↔berekenSnijAgenda blijft bewust staan (B6, kernel-header).
 
 ## 2026-06-12 — Rhenus als transporteur: GS1-XML via SFTP (ADR-0032, mig 379-382) — gebouwd, rondreis geslaagd
 

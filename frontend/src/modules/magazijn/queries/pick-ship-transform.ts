@@ -12,7 +12,7 @@ import type {
   PickShipWachtOp,
 } from '../lib/types'
 
-/** Rij uit view `order_pickbaarheid` (mig 383): het order-niveau-predicaat.
+/** Rij uit view `order_pickbaarheid` (mig 385): het order-niveau-predicaat.
  *  Geen rij voor een order = geen (niet-pseudo) regels = niets te picken. */
 export interface OrderPickbaarheidRij {
   order_id: number
@@ -42,7 +42,7 @@ export interface PickbaarheidRij {
   bron: PickShipBron
   fysieke_locatie: string | null
   wacht_op: PickShipWachtOp
-  /** Mig 383: gewicht per stuk uit order_regels, via de view — vervangt de
+  /** Mig 385: gewicht per stuk uit order_regels, via de view — vervangt de
    *  aparte gewicht-query. */
   gewicht_kg: number | null
 }

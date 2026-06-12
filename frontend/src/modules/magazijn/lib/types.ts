@@ -69,12 +69,12 @@ export interface PickShipOrder {
   verzend_week_kort: string
   regels: PickShipRegel[]
   totaal_m2: number
-  /** Som van `gewicht_kg × orderaantal` over de view-regels (mig 383) (kg).
+  /** Som van `gewicht_kg × orderaantal` over de view-regels (mig 385) (kg).
    *  0 als gewicht nog onbekend. Indicatief op Pick & Ship; definitieve waarde
    *  wordt door `create_zending_voor_order` op de zending gezet. */
   totaal_gewicht_kg: number
   aantal_regels: number
-  /** Mig 383: order-niveau-predicaat uit view `order_pickbaarheid`. Bron voor
+  /** Mig 385: order-niveau-predicaat uit view `order_pickbaarheid`. Bron voor
    *  de pick-start-knop (StartPickrondesButton) — niet client-side herleiden. */
   alle_regels_pickbaar: boolean
   /** Mig 217: lopende Pickronde voor deze order (zending in status='Picken').

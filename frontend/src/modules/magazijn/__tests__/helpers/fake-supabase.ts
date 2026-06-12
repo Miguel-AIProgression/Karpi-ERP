@@ -45,6 +45,9 @@ function buildChain(table: string) {
     limit: () => chain,
     update: () => chain,
     insert: () => chain,
+    // maybeSingle() retourneert hetzelfde thenable (single-rij-semantiek) —
+    // de response uit de queue wordt in de then()-handler geserveerd.
+    maybeSingle: () => chain,
     then: (
       resolve: (value: SupabaseResponse) => void,
       reject: (reason: unknown) => void

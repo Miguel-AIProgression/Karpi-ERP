@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase/client'
 import { werkdagMinN } from '@/lib/utils/bereken-agenda'
+import { fetchWerkagendaConfig } from '@/lib/supabase/queries/werkagenda'
 import type { BucketKey, PickShipOrder } from '../lib/types'
 import {
   chunks,
@@ -37,7 +38,10 @@ export async function fetchPickShipOrders(
 ): Promise<PickShipOrder[]> {
   const { search, bucket, vandaag = new Date(), alleen_pickbaar = false } = params
 
-  const headers = await fetchOpenOrderHeaders()
+  const [headers, werktijden] = await Promise.all([
+    fetchOpenOrderHeaders(),
+    fetchWerkagendaConfig(),
+  ])
   if (headers.length === 0) return []
 
   const perOrder = initPickShipOrders(headers, vandaag)
@@ -76,7 +80,7 @@ export async function fetchPickShipOrders(
   }
   // Pickbaarheids-gate: het order-niveau-predicaat (alle regels pickbaar, of
   // ≥1 pickbare regel als de klant deelleveringen toestaat, en überhaupt
-  // regels) komt sinds mig 383 volledig uit view `order_pickbaarheid`
+  // regels) komt sinds mig 385 volledig uit view `order_pickbaarheid`
   // (pick_ship_zichtbaar) — de view skipt ook admin-pseudo-regels (ADR-0018).
   // TS filtert hier alleen nog. Enige client-side uitzondering: de dag-order-
   // horizon (ADR 0014 / mig 244), omdat die van `vandaag` afhangt — een
@@ -89,7 +93,9 @@ export async function fetchPickShipOrders(
     if (!opb) return false // geen (niet-pseudo) regels → niets te picken
     const header = headerMap.get(o.order_id)
     if (header?.lever_type === 'datum' && header.afleverdatum) {
-      const horizon = werkdagMinN(header.afleverdatum, 1)
+      // Horizon telt met de centrale werkagenda (feestdagen) — valt een vrije dag vóór de
+      // afleverdatum, dan verschijnt de dag-order een werkdag eerder.
+      const horizon = werkdagMinN(header.afleverdatum, 1, werktijden)
       if (vandaagIso < horizon) return false
     }
     return opb.pick_ship_zichtbaar

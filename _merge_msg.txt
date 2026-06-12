@@ -1,0 +1,7 @@
+Merge origin/main (werkagenda 383/384) in pickbaarheid-branch; hernummer onze migratie naar 385
+
+- order_pickbaarheid/orderregel_pickbaarheid-migratie: 383 -> 385 (main claimde 383/384); in live DB 12-06 onder oud nummer toegepast, inhoudelijk identiek
+- werkagenda-integratie: fetchWerkagendaConfig parallel + werktijden-param in dag-horizon (auto-merge), app_config-queue in alle 8 contracttest-scenario's, maybeSingle in gedeelde fake-supabase-helper
+- alle "mig 383"-verwijzingen van dit traject bijgewerkt naar 385 (docs, comments, tests)
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>

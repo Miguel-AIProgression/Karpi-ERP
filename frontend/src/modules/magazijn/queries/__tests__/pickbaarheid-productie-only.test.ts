@@ -97,6 +97,8 @@ beforeEach(() => resetQueues())
 
 describe('Pick & Ship R1-guard — productie-only orders worden uitgefilterd', () => {
   it('past .eq(alleen_productie, false) toe op de orders-querychain', async () => {
+    // app_config 'werkagenda' — parallel opgehaald door fetchWerkagendaConfig (mig 384).
+    queueResponse('app_config', { data: null, error: null })
     queueResponse('orders', { data: [], error: null })
 
     await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
@@ -133,6 +135,8 @@ describe('Pick & Ship R1-guard — productie-only orders worden uitgefilterd', (
       }),
     ]
 
+    // app_config 'werkagenda' — parallel opgehaald door fetchWerkagendaConfig (mig 384).
+    queueResponse('app_config', { data: null, error: null })
     queueResponse('orders', { data: headers, error: null })
     queueResponse('debiteuren', { data: debiteuren, error: null })
     queueResponse('orderregel_pickbaarheid', { data: regels, error: null })
@@ -142,7 +146,7 @@ describe('Pick & Ship R1-guard — productie-only orders worden uitgefilterd', (
     })
     // Mig 222: actieve pickrondes via zending_orders M2M. Lege array = geen lopende ronde.
     queueResponse('zending_orders', { data: [], error: null })
-    // Mig 383: order-niveau-predicaat uit view order_pickbaarheid. Alleen order
+    // Mig 385: order-niveau-predicaat uit view order_pickbaarheid. Alleen order
     // 100 — order 200 is door de R1-guard al SQL-zijde weggefilterd.
     queueResponse('order_pickbaarheid', {
       data: [{
