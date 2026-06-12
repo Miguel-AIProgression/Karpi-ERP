@@ -56,21 +56,34 @@ describe('sync: golden ≡ $golden$-blok in de contract-migratie', () => {
   const hier = dirname(fileURLToPath(import.meta.url))
   const migrationsDir = resolve(hier, '../../../../../supabase/migrations')
 
+  // _lees_mij is documentatie, geen contract-data.
+  const stripLeesMij = ({ _lees_mij, ...rest }: Record<string, unknown>) =>
+    (void _lees_mij, rest)
+
   it('laatste *_bundel_sleutel_contract*.sql draagt exact dezelfde fixtures', () => {
     const kandidaten = readdirSync(migrationsDir)
-      .filter((f) => f.includes('bundel_sleutel_contract'))
+      .filter((f) => f.endsWith('.sql') && f.includes('bundel_sleutel_contract'))
       .sort()
     expect(
       kandidaten.length,
       'geen contract-migratie gevonden — is mig 383 al aangemaakt (Task 3)?'
     ).toBeGreaterThan(0)
     const sql = readFileSync(join(migrationsDir, kandidaten.at(-1)!), 'utf8')
-    const m = sql.match(/\$golden\$([\s\S]*?)\$golden\$/)
-    expect(m, 'migratie mist het $golden$…$golden$-blok').not.toBeNull()
+    // Anker op de echte aanroep (laatste match), zodat losse $golden$-
+    // vermeldingen in migratie-comments de extractie niet kunnen vervuilen.
+    const matches = [
+      ...sql.matchAll(
+        /assert_bundel_sleutel_contract\(\s*\$golden\$([\s\S]*?)\$golden\$::jsonb\)/g
+      ),
+    ]
+    const m = matches.at(-1)
+    expect(
+      m,
+      'migratie mist de assert_bundel_sleutel_contract($golden$…$golden$::jsonb)-aanroep'
+    ).toBeDefined()
     const inMigratie = JSON.parse(m![1])
-    // _lees_mij is documentatie, geen contract-data.
-    const { _lees_mij: _a, ...goldenData } = golden as Record<string, unknown>
-    const { _lees_mij: _b, ...migratieData } = inMigratie
-    expect(migratieData).toEqual(goldenData)
+    expect(stripLeesMij(inMigratie)).toEqual(
+      stripLeesMij(golden as Record<string, unknown>)
+    )
   })
 })
