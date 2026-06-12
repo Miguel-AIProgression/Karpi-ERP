@@ -18,9 +18,17 @@ INSERT INTO vervoerders (code, display_naam, type, actief, notities) VALUES
 ON CONFLICT (code) DO NOTHING;
 
 -- 3. Placeholder edi_partner_b ('Verhoek', type edi, mig 170) opruimen.
---    Guarded tegen NO ACTION-FK's (zendingen, edi_handelspartner_config);
---    let op: selectie-regels cascaden en orderregel-overrides worden NULL —
---    acceptabel voor deze altijd-inactieve placeholder.
+--    Guarded tegen NO ACTION-FK's (zendingen, edi_handelspartner_config).
+--
+--    AMENDEMENT 12-06 (ADR-0032): de live DB heeft inmiddels échte
+--    selectie-regels die naar edi_partner_b wijzen (NL >=27kg / DE >=30kg,
+--    kleinste zijde >=131). De FK op vervoerder_selectie_regels cascadeert
+--    bij DELETE — zonder omhangen zouden die productie-regels stilletjes
+--    verdwijnen. Eerst omhangen naar verhoek_sftp, dán pas de delete.
+UPDATE vervoerder_selectie_regels
+   SET vervoerder_code = 'verhoek_sftp'
+ WHERE vervoerder_code = 'edi_partner_b';
+
 DO $$
 BEGIN
   BEGIN
