@@ -16,68 +16,12 @@
 // bestand mockt `zending_orders` correct en staat daar los van.
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-
-// ---------------------------------------------------------------------------
-// Fake Supabase-client met queue-based response per tabel + filter-registratie
-// ---------------------------------------------------------------------------
-
-type SupabaseResponse = { data: unknown; error: { code?: string; message?: string } | null }
-
-const responses: Record<string, SupabaseResponse[]> = {}
-
-/** Verzamelt per tabel de toegepaste `.eq(column, value)`-filters. */
-const appliedEqFilters: Record<string, Array<[string, unknown]>> = {}
-
-function queueResponse(table: string, response: SupabaseResponse) {
-  if (!responses[table]) responses[table] = []
-  responses[table].push(response)
-}
-
-function buildChain(table: string) {
-  const eqFilters: Array<[string, unknown]> = []
-
-  const chain = {
-    select: () => chain,
-    eq: (column: string, value: unknown) => {
-      eqFilters.push([column, value])
-      if (!appliedEqFilters[table]) appliedEqFilters[table] = []
-      appliedEqFilters[table].push([column, value])
-      return chain
-    },
-    neq: () => chain,
-    in: () => chain,
-    order: () => chain,
-    limit: () => chain,
-    update: () => chain,
-    insert: () => chain,
-    then: (
-      resolve: (value: SupabaseResponse) => void,
-      reject: (reason: unknown) => void
-    ) => {
-      const next = responses[table]?.shift()
-      if (!next) {
-        reject(new Error(`Geen response voor tabel "${table}" in test-queue`))
-        return
-      }
-      // Simuleer PostgREST-zijde filtering voor de `.eq(...)`-filters op een
-      // array-resultaat, zodat de R1-guard daadwerkelijk effect heeft.
-      if (next.error === null && Array.isArray(next.data) && eqFilters.length > 0) {
-        const filtered = (next.data as Array<Record<string, unknown>>).filter((row) =>
-          eqFilters.every(([col, val]) => row[col] === val)
-        )
-        resolve({ data: filtered, error: null })
-        return
-      }
-      resolve(next)
-    },
-  }
-  return chain
-}
-
-const fakeSupabase = {
-  from: (table: string) => buildChain(table),
-  rpc: () => Promise.resolve({ data: 0, error: null }),
-}
+import {
+  fakeSupabase,
+  queueResponse,
+  resetQueues,
+  appliedEqFilters,
+} from '../../__tests__/helpers/fake-supabase'
 
 vi.mock('@/lib/supabase/client', () => ({ supabase: fakeSupabase }))
 
@@ -109,7 +53,7 @@ function makeOrderHeader(
     afleverdatum: '2026-05-12',
     afhalen: false,
     lever_type: 'week' as const,
-    alleen_productie: false,
+    alleen_productie: false,   // R1-guard-veld (mig 345); helper filtert hierop
     ...overrides,
   }
 }
@@ -153,10 +97,7 @@ function makeDebiteur(debiteur_nr: number, naam: string, deelleveringen_toegesta
 // Tests
 // ---------------------------------------------------------------------------
 
-beforeEach(() => {
-  for (const k of Object.keys(responses)) delete responses[k]
-  for (const k of Object.keys(appliedEqFilters)) delete appliedEqFilters[k]
-})
+beforeEach(() => resetQueues())
 
 describe('Pick & Ship R1-guard — productie-only orders worden uitgefilterd', () => {
   it('past .eq(alleen_productie, false) toe op de orders-querychain', async () => {
