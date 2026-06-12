@@ -6,6 +6,7 @@ import {
   STANDAARD_WERKTIJDEN,
   volgendeWerkminuut,
   plusWerkminuten,
+  werkminutenTussen,
   berekenSnijAgenda,
   isoDatum,
   type RolAgendaInput,
@@ -66,6 +67,42 @@ Deno.test('plusWerkminuten: vrije vrijdag → werk schuift naar maandag', () => 
   const w = { ...STANDAARD_WERKTIJDEN, vrij: [{ datum: '2026-04-17' }] }
   // Donderdag 16:00 + 120 min: 60 do (→17:00), vr is vrij → 60 ma → ma 09:00
   assertEquals(klok(plusWerkminuten(lokaal(2026, 4, 16, 16, 0), 120, w)), '2026-04-20 09:00')
+})
+
+// ---------------------------------------------------------------------------
+// werkminutenTussen
+// ---------------------------------------------------------------------------
+
+Deno.test('werkminutenTussen: round-trip met plusWerkminuten over de pauze heen', () => {
+  // 10:00 + 300 werkminuten kruist de pauze (12:00-12:30) → eind 15:30.
+  const start = lokaal(2026, 4, 16, 10, 0)
+  const eind = plusWerkminuten(start, 300, STANDAARD_WERKTIJDEN)
+  assertEquals(klok(eind), '2026-04-16 15:30')
+  assertEquals(werkminutenTussen(start, eind, STANDAARD_WERKTIJDEN), 300)
+})
+
+Deno.test('werkminutenTussen: weekend tussen van en tot telt niet mee', () => {
+  // vr 16:00 → ma 09:00 = 60 (vr) + 60 (ma) werkminuten.
+  assertEquals(
+    werkminutenTussen(lokaal(2026, 4, 17, 16, 0), lokaal(2026, 4, 20, 9, 0), STANDAARD_WERKTIJDEN),
+    120,
+  )
+})
+
+Deno.test('werkminutenTussen: tot <= van → 0', () => {
+  assertEquals(werkminutenTussen(DO_8u, DO_8u, STANDAARD_WERKTIJDEN), 0)
+})
+
+Deno.test('parseHHmm-guard: onparseerbare werktijd gooit (geen stille 00:00)', () => {
+  const kapot = { ...STANDAARD_WERKTIJDEN, start: 'acht uur' }
+  let gegooid = false
+  try {
+    volgendeWerkminuut(DO_8u, kapot)
+  } catch (e) {
+    gegooid = true
+    assert(String(e).includes('ongeldige HH:mm-tijd'))
+  }
+  assert(gegooid, 'verwachtte een throw op ongeldige start-tijd')
 })
 
 // ---------------------------------------------------------------------------

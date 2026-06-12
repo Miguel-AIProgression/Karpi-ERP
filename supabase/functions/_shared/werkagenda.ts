@@ -64,8 +64,13 @@ export function isoDatum(d: Date): string {
 }
 
 function parseHHmm(tijd: string): { uren: number; minuten: number } {
-  const [h, m] = tijd.split(':').map(Number)
-  return { uren: h || 0, minuten: m || 0 }
+  // Lege string is legaal voor pauze-velden (heeftPauze guard schakelt de
+  // pauze dan uit); een gevulde maar onparseerbare tijd is een config-fout
+  // die NIET stil op 00:00 mag landen (app_config-gedreven sinds mig 384).
+  if (!tijd) return { uren: 0, minuten: 0 }
+  const m = /^(\d{1,2}):(\d{2})$/.exec(tijd)
+  if (!m) throw new Error(`werkagenda: ongeldige HH:mm-tijd '${tijd}'`)
+  return { uren: Number(m[1]), minuten: Number(m[2]) }
 }
 
 function heeftPauze(w: Werktijden): boolean {
@@ -191,6 +196,8 @@ export function plusWerkminuten(start: Date, minuten: number, w: Werktijden): Da
     if (resterend <= beschikbaar) {
       return new Date(huidig.getTime() + resterend * 60_000)
     }
+    // beschikbaar kan 0 zijn (huidig exact op blokEind); de +1ms-nudge
+    // hieronder duwt volgendeWerkminuut dan voorbij de grens — geen hang.
     resterend -= beschikbaar
     huidig = volgendeWerkminuut(new Date(blokEind.getTime() + 1), w)
   }
