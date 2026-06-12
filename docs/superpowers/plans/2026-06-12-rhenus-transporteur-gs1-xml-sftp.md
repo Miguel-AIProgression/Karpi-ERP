@@ -1,5 +1,7 @@
 # Rhenus als transporteur (GS1 TransportInstruction-XML via SFTP) — Implementation Plan
 
+> **Hernummering (12-06, vlak vóór merge):** de Rhenus-migraties heten in de repo definitief **379-382** (origin/main bleek een eigen 378 te hebben). Waar dit plan 378/379/380 zegt, lees 379/380/381; de bucket-mime-fix uit de rondreis werd 382. In de live DB zijn ze onder de oude nummers toegepast — inhoudelijk identiek.
+
 **Goal:** Rhenus als derde vervoerder (na HST en Verhoek): per zending een GS1
 TransportInstruction-XML (standaard "RHE", TypeVersion 3.1) genereren en via
 SFTP afleveren op Rhenus' server. Anders dan bij Verhoek zijn **alle
@@ -142,9 +144,10 @@ tijdens de rondreis) + `RHENUS_DRY_RUN` (default **true**).
 docs/adr/0032-rhenus-gs1-xml-sftp-adapter.md                ← nieuw (Taak 2)
 docs/rhenus/voorbeelden/RHE260521001-excerpt.xml + README   ← nieuw (Taak 1)
 supabase/migrations/374_vervoerder_verhoek_sftp.sql         ← AMENDEMENT (Taak 2: regels omhangen vóór delete)
-supabase/migrations/378_vervoerder_rhenus_sftp.sql          ← nieuw (Taak 3)
-supabase/migrations/379_rhenus_transportorders.sql          ← nieuw (Taak 6)
-supabase/migrations/380_rhenus_send_cron.sql                ← nieuw (Taak 9)
+supabase/migrations/379_vervoerder_rhenus_sftp.sql          ← nieuw (Taak 3)
+supabase/migrations/380_rhenus_transportorders.sql          ← nieuw (Taak 6)
+supabase/migrations/381_rhenus_send_cron.sql                ← nieuw (Taak 9)
+supabase/migrations/382_order_documenten_xml_mime.sql       ← nieuw (bevinding rondreis)
 supabase/functions/_shared/sftp-client.ts                   ← verplaatst uit verhoek-send (Taak 4)
 supabase/functions/_shared/vervoerder-eisen.ts(.test.ts)    ← wijzigen (Taak 7)
 frontend/src/lib/orders/vervoerder-eisen.ts                 ← wijzigen (Taak 7, spiegel)

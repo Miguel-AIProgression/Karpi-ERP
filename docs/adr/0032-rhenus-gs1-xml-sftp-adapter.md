@@ -58,7 +58,9 @@ zónder `transportInstructionShipmentItem`-segmenten (entityIdentification
 - `vervoerders.type='edi'` heeft geen kandidaten meer; de tak in de
   dispatch-RPC blijft bestaan voor evt. toekomstige échte EDI-carriers.
 - Statusterugkoppeling via Rhenus' /out-map: V2-backlog.
-- Apply-volgorde: mig 374 (geamendeerd!) t/m 380 vanaf déze branch — niet de
-  oude mig 374-versie van de Verhoek-branch gebruiken.
+- Apply-volgorde: mig 374 (geamendeerd!) t/m 382 vanaf déze branch — niet de
+  oude mig 374-versie van de Verhoek-branch gebruiken. (De Rhenus-migraties
+  zijn vlak vóór de merge hernummerd 378-381 → 379-382 wegens collisie met
+  main's 378; in de live DB onder de oude nummers toegepast.)
 
 Plan: docs/superpowers/plans/2026-06-12-rhenus-transporteur-gs1-xml-sftp.md

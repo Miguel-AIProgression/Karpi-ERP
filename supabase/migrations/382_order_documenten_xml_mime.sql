@@ -1,5 +1,6 @@
--- Migratie 381: application/xml + text/xml toestaan in bucket order-documenten
+-- Migratie 382: application/xml + text/xml toestaan in bucket order-documenten
 -- Plan: docs/superpowers/plans/2026-06-12-rhenus-transporteur-gs1-xml-sftp.md
+-- NB hernummering 12-06: in de live DB gedraaid onder de naam 381_*.
 --
 -- Gevonden tijdens de Rhenus-dry-run-rondreis (12-06): de XML-kopie naar
 -- storage (rhenus-xml/ en verhoek-xml/, best-effort in rhenus-send en

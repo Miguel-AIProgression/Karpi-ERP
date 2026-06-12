@@ -23,8 +23,8 @@ const STATUS_PILLEN: StatusFilter[] = [
 const VERVOERDER_PILLEN: { key: VervoerderFilter; label: string }[] = [
   { key: 'alle', label: 'Alle' },
   { key: 'hst_api', label: 'HST' },
-  { key: 'edi_partner_a', label: 'Rhenus' },
-  { key: 'edi_partner_b', label: 'Verhoek' },
+  { key: 'rhenus_sftp', label: 'Rhenus' },
+  { key: 'verhoek_sftp', label: 'Verhoek' },
   { key: 'geen', label: 'Geen' },
 ]
 

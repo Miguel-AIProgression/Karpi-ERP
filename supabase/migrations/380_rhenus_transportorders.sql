@@ -1,10 +1,13 @@
--- Migratie 379: rhenus_transportorders + RPC's + rhenus-dispatch + monitor
+-- Migratie 380: rhenus_transportorders + RPC's + rhenus-dispatch + monitor
 -- Plan: docs/superpowers/plans/2026-06-12-rhenus-transporteur-gs1-xml-sftp.md
 -- ADR-0032. Spiegelt het Verhoek-adapterpatroon (mig 375 <- 171/337/338).
 -- Verschil met Verhoek: geen track_trace_id — het RHE-formaat kent geen
 -- T&T-slot (statusterugkoppeling via Rhenus' /out-map staat op de V2-backlog).
 --
--- Idempotent. Vereist mig 375 (sftp-tak in de dispatch) en mig 378 (vervoerder).
+-- NB hernummering 12-06: in de live DB gedraaid onder de naam 379_* (vóór de
+-- merge bleek origin/main een eigen 378 te hebben).
+--
+-- Idempotent. Vereist mig 375 (sftp-tak in de dispatch) en mig 379 (vervoerder).
 
 -- ============================================================================
 -- 1. Status-enum + tabel
@@ -271,7 +274,7 @@ GRANT EXECUTE ON FUNCTION enqueue_zending_naar_vervoerder(BIGINT) TO authenticat
 
 COMMENT ON FUNCTION enqueue_zending_naar_vervoerder IS
   'SWITCH-POINT: dispatcht een zending naar de adapter van de gekozen vervoerder. '
-  'Sinds mig 379: rhenus_sftp-case in de sftp-tak (ADR-0032), naast verhoek_sftp '
+  'Sinds mig 380: rhenus_sftp-case in de sftp-tak (ADR-0032), naast verhoek_sftp '
   '(mig 375, ADR-0031). Verder identiek aan mig 210 (regel-evaluator, print-tak, '
   'afhalen-skip).';
 

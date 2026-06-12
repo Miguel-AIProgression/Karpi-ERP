@@ -79,13 +79,13 @@ Deno.serve(async (req) => {
 
   const supabase = createClient(supabaseUrl, serviceKey);
 
-  // Runtime-config (mig 378): per run gelezen, dus een config-UPDATE werkt
+  // Runtime-config (mig 379): per run gelezen, dus een config-UPDATE werkt
   // zonder redeploy.
   const { data: cfgRow } = await supabase
     .from('app_config').select('waarde').eq('sleutel', 'rhenus').single();
   const opties: RhenusOpties = { ...DEFAULT_RHENUS_OPTIES, ...((cfgRow?.waarde ?? {}) as Partial<RhenusOpties>) };
 
-  // Zelfhelend (mig 379-reaper): herstel rijen die vastliepen in 'Bezig'.
+  // Zelfhelend (mig 380-reaper): herstel rijen die vastliepen in 'Bezig'.
   try {
     const { data: hersteld } = await supabase.rpc('herstel_vastgelopen_rhenus', { p_minuten: 10 });
     if (hersteld && Number(hersteld) > 0) {

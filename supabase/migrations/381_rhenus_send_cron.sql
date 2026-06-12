@@ -1,6 +1,7 @@
--- Migratie 380: pg_cron schedule voor de rhenus-send edge function
+-- Migratie 381: pg_cron schedule voor de rhenus-send edge function
 -- Plan: docs/superpowers/plans/2026-06-12-rhenus-transporteur-gs1-xml-sftp.md
 -- Spiegelt mig 376 (verhoek-send). Vault-secret 'cron_token' bestaat al.
+-- NB hernummering 12-06: in de live DB gedraaid onder de naam 380_*.
 -- Veilig om direct te draaien: de wachtrij blijft leeg zolang rhenus_sftp
 -- actief=FALSE is, en zelfs gevuld is het dry-run (RHENUS_DRY_RUN default).
 --

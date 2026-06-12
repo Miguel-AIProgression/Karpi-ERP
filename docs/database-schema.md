@@ -640,9 +640,9 @@ Mig 232. Genereert wekelijkse verzamelfactuur voor `(debiteur_nr, jaar_week)`. A
 Lookup-tabel met de beschikbare vervoerders waarmee Karpi werkt (mig 170, uitgebreid mig 174). Routing-keuze, géén berichten — daadwerkelijk verkeer per vervoerder loopt via een **adapter-tabel** (HST → `hst_transportorders`; EDI-vervoerders → `edi_berichten` met `berichttype='verzendbericht'`). Gezaaid met 3 rijen: `hst_api`, `edi_partner_a` (Rhenus, placeholder), `edi_partner_b` (Verhoek, placeholder). Alleen de HST-koppeling is in dit plan actief; EDI-koppelingen volgen in aparte plans en hun rij staat default `actief=FALSE`. Migratie 174 voegt instellingen-, contact- en tarief-kolommen toe als basis voor de `/logistiek/vervoerders`-UI (vrije-tekst tarieven in V1; gestructureerde tariefmatrix volgt in Fase B — zie roadmap in [`docs/superpowers/plans/2026-05-01-logistiek-vervoerder-instellingen.md`](superpowers/plans/2026-05-01-logistiek-vervoerder-instellingen.md)).
 | Kolom | Type | Toelichting |
 |-------|------|-------------|
-| code | TEXT PK | `'hst_api'`, `'verhoek_sftp'`, `'rhenus_sftp'`, `'dpd'` — wordt als FK gebruikt op `zendingen.vervoerder_code`. De mig 170-placeholders zijn guarded verwijderd ná het omhangen van hun selectie-regels: `edi_partner_b` → `verhoek_sftp` (mig 374, ADR-0031) en `edi_partner_a` → `rhenus_sftp` (mig 378, ADR-0032). |
+| code | TEXT PK | `'hst_api'`, `'verhoek_sftp'`, `'rhenus_sftp'`, `'dpd'` — wordt als FK gebruikt op `zendingen.vervoerder_code`. De mig 170-placeholders zijn guarded verwijderd ná het omhangen van hun selectie-regels: `edi_partner_b` → `verhoek_sftp` (mig 374, ADR-0031) en `edi_partner_a` → `rhenus_sftp` (mig 379, ADR-0032). |
 | display_naam | TEXT NOT NULL | UI-label: `'HST'`, `'Rhenus'`, `'Verhoek'`, `'DPD'` |
-| type | TEXT NOT NULL | CHECK in (`'api'`, `'edi'`, `'print'`, `'sftp'`). Mig 207: `'print'` toegevoegd voor lokale label-printer-flow (DPD via Zebra ZT230). Mig 374 (ADR-0031): `'sftp'` toegevoegd voor Verhoek AA2.0-XML via SFTP; Rhenus (mig 378, ADR-0032) gebruikt hetzelfde type. De `'edi'`-tak heeft sinds mig 378 geen kandidaten meer maar blijft voor evt. toekomstige échte EDI-vervoerders. |
+| type | TEXT NOT NULL | CHECK in (`'api'`, `'edi'`, `'print'`, `'sftp'`). Mig 207: `'print'` toegevoegd voor lokale label-printer-flow (DPD via Zebra ZT230). Mig 374 (ADR-0031): `'sftp'` toegevoegd voor Verhoek AA2.0-XML via SFTP; Rhenus (mig 379, ADR-0032) gebruikt hetzelfde type. De `'edi'`-tak heeft sinds mig 379 geen kandidaten meer maar blijft voor evt. toekomstige échte EDI-vervoerders. |
 | actief | BOOLEAN NOT NULL | Default FALSE — pas TRUE als koppeling werkt. Switch-RPC `enqueue_zending_naar_vervoerder` weigert met `'vervoerder_inactief'` als FALSE |
 | is_default | BOOLEAN NOT NULL | Mig 336 (ADR-0030). Default FALSE. Markeert dé default-vervoerder; partial unique index `uk_vervoerders_is_default` (op `is_default` WHERE TRUE) garandeert hooguit één TRUE. `hst_api` is geseed als default. Administratieve bron-van-waarheid; het werkende mechanisme is de **catch-all** rij in `vervoerder_selectie_regels` (prio 99999, `{"land":["NL"]}`) die mig 336 toevoegt — gegate op `hst_api.actief=TRUE` (bewust nog FALSE tot cutover). |
 | notities | TEXT | Vrije tekst (bv. "REST API. Auth via Basic.") |
@@ -784,7 +784,7 @@ Eén rij per fysieke colli binnen een zending (mig 209). Bron-van-waarheid voor 
 ---
 
 ### rhenus_transportorders
-**Rhenus-adapter-tabel** (mig 379, ADR-0032) — één rij per GS1 TransportInstruction-XML-bestand (RHE 3.1) dat via SFTP naar Rhenus is/wordt verstuurd. Spiegelt `verhoek_transportorders`, met één verschil: **geen `track_trace_id`** — het RHE-formaat kent geen T&T-slot (statusterugkoppeling via Rhenus' /out-map = V2-backlog). Audit-historie van pogingen: `externe_payloads` kanaal `'rhenus'`; XML-kopie in storage `order-documenten/rhenus-xml/`.
+**Rhenus-adapter-tabel** (mig 380, ADR-0032) — één rij per GS1 TransportInstruction-XML-bestand (RHE 3.1) dat via SFTP naar Rhenus is/wordt verstuurd. Spiegelt `verhoek_transportorders`, met één verschil: **geen `track_trace_id`** — het RHE-formaat kent geen T&T-slot (statusterugkoppeling via Rhenus' /out-map = V2-backlog). Audit-historie van pogingen: `externe_payloads` kanaal `'rhenus'`; XML-kopie in storage `order-documenten/rhenus-xml/`.
 
 | Kolom | Type | Toelichting |
 |-------|------|-------------|
@@ -806,7 +806,7 @@ Eén rij per fysieke colli binnen een zending (mig 209). Bron-van-waarheid voor 
 
 **Triggers:** `trg_rhenus_to_updated_at` via `set_rhenus_to_updated_at()`.
 
-**RPCs (Rhenus-adapter, alle mig 379):**
+**RPCs (Rhenus-adapter, alle mig 380):**
 - `enqueue_rhenus_transportorder(p_zending_id, p_debiteur_nr, p_is_test DEFAULT FALSE) → BIGINT` — idempotent; aangeroepen door `enqueue_zending_naar_vervoerder` als `vervoerder_code='rhenus_sftp'`.
 - `claim_volgende_rhenus_transportorder() → rhenus_transportorders` — oudste `Wachtrij`-rij via `FOR UPDATE SKIP LOCKED` → `Bezig`. Aangeroepen door edge function `rhenus-send` per cron-tick.
 - `markeer_rhenus_verstuurd(p_id, p_bestandsnaam, p_xml_storage_path, p_request_xml) → VOID` — status `Verstuurd` + zending-status `'Klaar voor verzending'` → `'Onderweg'` (géén track_trace — geen T&T-slot in het formaat).

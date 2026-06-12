@@ -47,7 +47,7 @@ export interface ColliProbleem {
   melding: string;
 }
 
-// Runtime-config uit app_config sleutel 'rhenus' (mig 378). Wijziging =
+// Runtime-config uit app_config sleutel 'rhenus' (mig 379). Wijziging =
 // SQL-UPDATE op dat record, geen redeploy (ADR-0032).
 export interface RhenusOpties {
   /** true = <sscc> is de volledige label-waarde 00+SSCC (20 cijfers, zoals

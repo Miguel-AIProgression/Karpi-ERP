@@ -1,6 +1,9 @@
--- Migratie 378: vervoerder rhenus_sftp + selectie-regel-omhang + app_config 'rhenus'
+-- Migratie 379: vervoerder rhenus_sftp + selectie-regel-omhang + app_config 'rhenus'
 -- Plan: docs/superpowers/plans/2026-06-12-rhenus-transporteur-gs1-xml-sftp.md
 -- ADR-0032: Rhenus via GS1 TransportInstruction-XML over SFTP (niet Transus-EDI).
+--
+-- NB hernummering 12-06: in de live DB gedraaid onder de naam 378_* (vóór de
+-- merge bleek origin/main een eigen 378 te hebben — klant_omzet_ytd).
 --
 -- Idempotent. Vereist mig 374 (vervoerders_type_check kent 'sftp').
 
