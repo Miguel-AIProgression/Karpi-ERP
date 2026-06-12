@@ -1,7 +1,9 @@
-// ISO 8601 week-kern voor edge functions (Deno) — UTC-gebaseerd, TZ-onafhankelijk.
+// ISO 8601 week-kern — UTC-gebaseerd, TZ-onafhankelijk.
 //
-// Deno-spiegel van `frontend/src/lib/utils/iso-week.ts`. Houd beide kernen
-// identiek. De overkoepelende waarheid blijft SQL:
+// Single source of truth (ADR-0033): de frontend re-exporteert deze kern
+// cross-root via `frontend/src/lib/utils/iso-week.ts` (die er frontend-only
+// helpers aan toevoegt, o.a. `lokaleDatumAlsUtc` — edge draait in UTC en heeft
+// die niet nodig). De overkoepelende waarheid blijft SQL:
 // `to_char(date,'IYYY') || '-W' || to_char(date,'IW')` (mig 145/228).
 //
 // CONTRACT: alle functies lezen de UTC-componenten van de Date en strippen de
