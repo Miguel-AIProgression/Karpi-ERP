@@ -23,6 +23,19 @@
 
 **Nog open (na Rhenus' format-akkoord):** `RHENUS_SFTP_REMOTE_DIR=/in` (Piet-Hein) + `UPDATE vervoerders SET actief=TRUE WHERE code='rhenus_sftp'` = cutover. **Vóór echte verzending:** gewicht-datagap (`zending_colli.gewicht_kg` vrijwel overal 0) oplossen — preflight blokkeert terecht. Geen heraanlevering van bericht 0455395 nodig (door Rhenus handmatig verwerkt).
 
+## 2026-06-12 — Verzendlabel-SSCC uit `zending_colli`: label = HST-aanmelding (overlossing-incident)
+
+**Incident:** HST meldde 3 karpetten (ZEND-2026-0001/0002/0003) als "overlossing — geen data" ondanks geslaagde transportorder-aanmeldingen (T75038267000181/182/183, HTTP 201). Oorzaak: twee onafhankelijke SSCC-generatoren. De geprinte labels kregen hun barcode van de client-side `generateSscc(zendingId, colliIndex)` (`lib/sscc.ts`, 1 mei), terwijl `hst-send` de DB-SSCC's uit `zending_colli` (sequence `genereer_sscc()`, mig 209, 7 mei) aanmeldde met `HasBarcode: true` — twee bronnen die nooit gekoppeld zijn geweest. HST scant het label → onbekende barcode → geen match.
+
+**Fix (frontend-only, geen migratie):**
+- `fetchZendingPrintSet` fetcht `zending_colli (id, colli_nr, sscc, order_regel_id)` mee; nieuw interface `ZendingPrintColli`.
+- `expandLabels` (`lib/printset.ts`) bouwt labels uit de colli-rijen (gesorteerd op `colli_nr`, regel-koppeling via `order_regel_id`) — de SSCC komt verbatim uit de DB, exact dezelfde rijen als de HST-aanmelding. Legacy-zendingen zonder colli-rijen krijgen labels zónder barcode (`sscc: null`): een niet-aangemelde barcode mag nooit geprint worden.
+- Client-side generator `lib/sscc.ts` verwijderd — de fout-klasse kan niet terugkomen.
+- Label-componenten (`shipping-label`, `shipping-label-tall`, `dpd-shipping-label`) accepteren `sscc: string | null` en tonen "Geen colli-barcode geregistreerd" bij null.
+- Vangnet: `lib/printset.test.ts`, incl. expliciete regressietest dat de oude generator-waarde (zending 28/colli 1 → `…2810`) nooit meer kan verschijnen.
+
+**Operationeel (lopende zendingen):** HST koppelt de drie karpetten handmatig via de mapping label-barcode → T&T: `00087159540000002612` → T75038267000181 (Clark, Lijnden), `00087159540000002711` → T75038267000183 (Van Duffelen, 's-Gravenhage), `00087159540000002810` → T75038267000182 (Ten Velde, Bennebroek).
+
 ## 2026-06-12 — DESADV-verzendbevestiging LIVE: format gevalideerd + cron actief (slice 4 afgerond)
 
 **Activatie voltooid (12-06):** format-builder byte-identiek gevalideerd tegen écht Hornbach-bericht 172390327 (bronbestand + EDIFACT-paar in `docs/transus/voorbeelden/`, kolomkaart in `karpi-verzendbericht.ts`); test-renders van orders ORD-2026-0334 (Hornbach) en ORD-2026-0232 (BDSK, 10 regels) door Miguel goedgekeurd in Transus' Testen-tab; `bouw-verzendbericht-edi` gedeployed (`--no-verify-jwt`, auth via `?token=` zoals transus-send); **migratie 377 toegepast — cron `verzendbericht-edi-sweep` draait (jobid 12, */15 min)**. Er waren op activatiemoment 0 verzonden EDI-orders; de eerste echte verzending van een Hornbach/BDSK-order produceert automatisch de eerste DESADV (zichtbaar in de Communicatie-tijdlijn + EDI-module). **Bugfix tijdens activatie:** kale PostgREST-embeds `debiteuren(naam)` en `producten(ean_code)` gaven PGRST201 (dubbele FK-relaties: `betaler`-FK resp. `fysiek_artikelnr`-FK mig 154) — expliciete FK-hints toegevoegd; DESADV toont het originele artikel (omsticker intern, zelfde regel als factuur).

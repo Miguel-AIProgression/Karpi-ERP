@@ -32,7 +32,7 @@ export function ShippingLabelTall({
   const toonKarpi = namen.karpiNaam && namen.karpiNaam !== namen.klantNaam
   const maat = productMaat(regel)
   const land = zending.afl_land ?? 'NL'
-  const barcodeValue = `00${sscc}`
+  const barcodeValue = sscc ? `00${sscc}` : null
   const ref = String(order.oud_order_nr ?? order.id).padStart(6, '0')
 
   const rijBarcodeMm = hoogteMm - RIJ_AFZENDER_MM - RIJ_ORDER_MM - RIJ_ADRES_MM - RIJ_COLLI_MM
@@ -247,23 +247,31 @@ export function ShippingLabelTall({
           justifyContent: 'center',
         }}
       >
-        <Code128Barcode
-          value={barcodeValue}
-          moduleMm={BARCODE_MODULE_MM}
-          style={{ height: `${Math.max(rijBarcodeMm - 12, 16)}mm` }}
-        />
-        <div
-          style={{
-            marginTop: '1.5mm',
-            textAlign: 'center',
-            fontFamily: 'monospace',
-            fontSize: '12px',
-            letterSpacing: '0.1em',
-            lineHeight: 1,
-          }}
-        >
-          {barcodeValue}
-        </div>
+        {barcodeValue ? (
+          <>
+            <Code128Barcode
+              value={barcodeValue}
+              moduleMm={BARCODE_MODULE_MM}
+              style={{ height: `${Math.max(rijBarcodeMm - 12, 16)}mm` }}
+            />
+            <div
+              style={{
+                marginTop: '1.5mm',
+                textAlign: 'center',
+                fontFamily: 'monospace',
+                fontSize: '12px',
+                letterSpacing: '0.1em',
+                lineHeight: 1,
+              }}
+            >
+              {barcodeValue}
+            </div>
+          </>
+        ) : (
+          <div style={{ fontSize: '10px', textAlign: 'center' }}>
+            Geen colli-barcode geregistreerd
+          </div>
+        )}
       </div>
     </div>
   )

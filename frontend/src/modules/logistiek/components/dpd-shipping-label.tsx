@@ -7,7 +7,8 @@ interface Props {
   colliIndex: number
   colliTotal: number
   serviceCode: string | null
-  sscc: string
+  /** SSCC uit `zending_colli` — null = geen colli-registratie, geen barcode. */
+  sscc: string | null
 }
 
 function omschrijvingVoorRegel(regel: ZendingPrintRegel | null): string {
@@ -57,7 +58,7 @@ export function DpdShippingLabel({
   const order = zending.orders
   const omschrijving = omschrijvingVoorRegel(regel)
   const land = zending.afl_land ?? 'NL'
-  const barcodeValue = `00${sscc}` // SSCC-AI(00) prefix
+  const barcodeValue = sscc ? `00${sscc}` : null // SSCC-AI(00) prefix
   const datum = formatLabelDatum(zending.verzenddatum ?? zending.created_at)
   const referentie = String(zending.id).padStart(7, '0')
   const serviceLabel = (serviceCode ?? 'SRV').toUpperCase()
@@ -109,10 +110,16 @@ export function DpdShippingLabel({
 
         {/* BARCODE — neemt veel verticale ruimte */}
         <div className="border border-black p-2">
-          <Code128Barcode value={barcodeValue} className="h-16 w-full" />
-          <div className="mt-1 text-center font-mono text-[9px] tracking-wider">
-            {barcodeValue}
-          </div>
+          {barcodeValue ? (
+            <>
+              <Code128Barcode value={barcodeValue} className="h-16 w-full" />
+              <div className="mt-1 text-center font-mono text-[9px] tracking-wider">
+                {barcodeValue}
+              </div>
+            </>
+          ) : (
+            <div className="py-6 text-center text-[9px]">Geen colli-barcode geregistreerd</div>
+          )}
         </div>
 
         {/* FOOTER: datum + referentie */}
