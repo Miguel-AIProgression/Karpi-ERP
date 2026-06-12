@@ -12,9 +12,11 @@ export default defineConfig({
   },
   server: {
     fs: {
-      // bereken-agenda.ts importeert de werkagenda-kernel uit
-      // supabase/functions/_shared/ (één bron, plan 2026-06-12).
-      allow: [path.resolve(__dirname, '..')],
+      // Cross-root imports uit supabase/functions/_shared (ADR-0033): de
+      // dev-server serveert anders geen bestanden buiten frontend/ — nodig
+      // voor de re-export-shims én de werkagenda-kernel. '..' = de repo-root;
+      // build en Vitest hebben dit niet nodig.
+      allow: ['..'],
     },
   },
   test: {
