@@ -1,4 +1,4 @@
--- Migratie 373: cron-sweep voor uitgaande EDI-verzendberichten (DESADV)
+-- Migratie 374: cron-sweep voor uitgaande EDI-verzendberichten (DESADV)
 -- Plan: docs/superpowers/plans/2026-06-11-universele-communicatie-knoppen.md (slice 4)
 --
 -- Elke 15 minuten: bouw-verzendbericht-edi sweep't verzonden EDI-orders van
