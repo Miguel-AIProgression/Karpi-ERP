@@ -43,17 +43,18 @@ function telefoonGeldig(tel: string | null | undefined): boolean {
 export function valideerVoorVervoerder(ctx: VerzendContext): VerzendValidatie {
   const problemen: VerzendProbleem[] = []
 
-  // V1: HST en Verhoek hebben eisen. Andere vervoerders → geen pre-flight (ok).
-  if (ctx.vervoerder_code !== 'hst_api' && ctx.vervoerder_code !== 'verhoek_sftp') {
+  // V1: HST, Verhoek en Rhenus hebben eisen. Andere vervoerders → geen pre-flight (ok).
+  if (!['hst_api', 'verhoek_sftp', 'rhenus_sftp'].includes(ctx.vervoerder_code)) {
     return { ok: true, problemen }
   }
 
-  // Verhoek (ADR-0031): adresvelden verplicht (komen op de vrachtbrief/CMR).
-  // Telefoon niet verplicht (geen TelefonischAdvies in V1); geen land-check —
-  // pilot routeert uitsluitend via handmatige override. Colli-eisen
-  // (lengte/breedte/gewicht) leven in verhoek-send/xml-builder.ts
-  // (valideerVerhoekColli) — die kennen colli-data, deze seam niet.
-  if (ctx.vervoerder_code === 'verhoek_sftp') {
+  // SFTP-vervoerders (Verhoek ADR-0031, Rhenus ADR-0032): adresvelden
+  // verplicht (komen op de vrachtbrief/CMR). Telefoon niet verplicht; geen
+  // land-check — routering bepaalt het bereik (selectie-regels/override).
+  // Colli-eisen (gewicht/dims/0-colli) leven in de resp. xml-builders
+  // (valideerVerhoekColli/valideerRhenusColli) — die kennen colli-data,
+  // deze seam niet.
+  if (ctx.vervoerder_code === 'verhoek_sftp' || ctx.vervoerder_code === 'rhenus_sftp') {
     if (leeg(ctx.afl_naam) || leeg(ctx.afl_adres) || leeg(ctx.afl_postcode) || leeg(ctx.afl_plaats)) {
       problemen.push({
         code: 'ADRESVELD_LEEG',

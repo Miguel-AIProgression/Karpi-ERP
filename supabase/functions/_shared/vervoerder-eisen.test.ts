@@ -59,3 +59,22 @@ Deno.test('verhoek_sftp: compleet adres is ok (telefoon niet verplicht)', () => 
   });
   assertEquals(r.ok, true);
 });
+
+Deno.test('rhenus_sftp: lege adresvelden geven ADRESVELD_LEEG', () => {
+  const r = valideerVoorVervoerder({
+    vervoerder_code: 'rhenus_sftp',
+    afl_land: 'DE', afl_telefoon: null,
+    afl_naam: '', afl_adres: 'Industriestrasse 5', afl_postcode: '96114', afl_plaats: 'Hirschaid',
+  });
+  assertEquals(r.ok, false);
+  assertEquals(r.problemen[0].code, 'ADRESVELD_LEEG');
+});
+
+Deno.test('rhenus_sftp: compleet adres is ok (telefoon/land niet verplicht)', () => {
+  const r = valideerVoorVervoerder({
+    vervoerder_code: 'rhenus_sftp',
+    afl_land: 'DE', afl_telefoon: null,
+    afl_naam: 'XXXLutz', afl_adres: 'Industriestrasse 5', afl_postcode: '96114', afl_plaats: 'Hirschaid',
+  });
+  assertEquals(r.ok, true);
+});

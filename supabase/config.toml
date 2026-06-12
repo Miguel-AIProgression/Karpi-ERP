@@ -56,3 +56,9 @@ verify_jwt = false
 
 [functions.bouw-verzendbericht-edi]
 verify_jwt = false
+
+[functions.rhenus-send]
+verify_jwt = false
+
+[functions.rhenus-sftp-spike]
+verify_jwt = false
