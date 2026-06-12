@@ -34,7 +34,7 @@ import { bepaalOrderAfleverdatum } from '@/lib/orders/order-afleverdatum'
 import { SHIPPING_PRODUCT_ID } from '@/lib/constants/shipping'
 import { bouwOrderCommit, isGemengdeSplit } from '@/lib/orders/order-commit'
 import { SPOED_PRODUCT_ID, SPOED_FALLBACK_BEDRAG } from '@/lib/constants/spoed'
-import { applyDropshipmentLogic, detecteerDropshipKeuze } from '@/lib/orders/dropshipment-regel'
+import { applyDropshipmentLogic, detecteerDropshipKeuze, heeftDropshipRegel } from '@/lib/orders/dropshipment-regel'
 import {
   DROPSHIP_EMAIL_MELDING,
   dropshipAflEmailProbleem,
@@ -86,6 +86,16 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
   const [afhalen, setAfhalen] = useState<boolean>(initialData?.header?.afhalen ?? false)
   const [dropshipKeuze, setDropshipKeuze] = useState<DropshipmentKeuze>(
     () => detecteerDropshipKeuze(initialData?.regels ?? [])
+  )
+  // Dropship-detectie is flag-based (producten.is_dropship, mig 370) zodat
+  // ook een dropship-artikel buiten de selector-keuzes (klein/groot) de
+  // e-mail-validatie en afl_email-defaults activeert. dropshipKeuze blijft
+  // puur selector-state. De selector-toggle muteert keuze + regels in
+  // dezelfde handler; uiteenlopen kan alleen door flag-only artikelen,
+  // en dan wint de OR terecht.
+  const isDropshipOrder = useMemo(
+    () => dropshipKeuze !== 'nee' || heeftDropshipRegel(regels),
+    [dropshipKeuze, regels],
   )
   // UI-only: id van het geselecteerde afleveradressen-record (voor "opslaan als permanent").
   const [selectedAfleveradresId, setSelectedAfleveradresId] = useState<number | undefined>(undefined)
@@ -251,7 +261,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
         // Dropshipment: afl_email is het consument-adres — nooit defaulten
         // naar het e-mailadres van de debiteur (winkel). Anders ladder
         // klant-verzendadres (mig 369) → algemeen adres.
-        afl_email: dropshipKeuze !== 'nee'
+        afl_email: isDropshipOrder
           ? h.afl_email
           : (c.email_verzend || c.email_overig || undefined),
         lever_type: h.lever_type ?? c.default_lever_type ?? 'week',
@@ -315,7 +325,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
       // terug op klant-verzendadres (mig 369) → algemeen adres — behalve bij
       // dropshipment (consument-adres).
       afl_email: addr.email ??
-        (dropshipKeuze !== 'nee'
+        (isDropshipOrder
           ? h.afl_email
           : (client?.email_verzend ?? client?.email_overig ?? h.afl_email)),
     }))
@@ -496,14 +506,14 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
   // naar het factuur-/debiteur-adres. 'ontbreekt' is alleen een hint.
   const dropshipEmailProbleem = useMemo(
     () =>
-      dropshipKeuze === 'nee'
+      !isDropshipOrder
         ? null
         : dropshipAflEmailProbleem({
             aflEmail: header.afl_email,
             factEmail: header.fact_email,
             debiteurEmails: [client?.email_factuur, client?.email_overig, client?.email_verzend],
           }),
-    [dropshipKeuze, header.afl_email, header.fact_email, client],
+    [isDropshipOrder, header.afl_email, header.fact_email, client],
   )
 
   const saveMutation = useMutation({

@@ -22,7 +22,7 @@ import { LevertijdWijzigingBanner } from '@/components/orders/levertijd-wijzigin
 import { VerzendFoutBanner } from '@/components/orders/verzend-fout-banner'
 import { OrderZendingen } from '@/components/orders/order-zendingen'
 import { isLevertijdWijzigingTeBevestigen } from '@/lib/orders/levertijd-wijziging'
-import { detecteerDropshipKeuze } from '@/lib/orders/dropshipment-regel'
+import { heeftDropshipRegel } from '@/lib/orders/dropshipment-regel'
 import { dropshipAflEmailProbleem } from '@/lib/orders/dropship-email'
 
 function EmailInhoudPanel({ body }: { body: string }) {
@@ -150,7 +150,7 @@ export function OrderDetailPage() {
       <OrderAddresses
         order={order}
         dropshipEmailProbleem={
-          detecteerDropshipKeuze(regels ?? []) !== 'nee'
+          heeftDropshipRegel(regels ?? [])
             ? dropshipAflEmailProbleem({
                 aflEmail: order.afl_email,
                 factEmail: order.fact_email,

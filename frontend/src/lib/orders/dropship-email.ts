@@ -19,7 +19,7 @@ function norm(email: string | null | undefined): string {
 /**
  * Toetst het aflever-e-mailadres van een dropshipment-order.
  * Retourneert null als het adres in orde is. Alleen aanroepen wanneer de
- * order daadwerkelijk dropshipment is (detecteerDropshipKeuze !== 'nee').
+ * order daadwerkelijk dropshipment is (`heeftDropshipRegel`, flag-based).
  */
 export function dropshipAflEmailProbleem(opts: {
   aflEmail: string | null | undefined
