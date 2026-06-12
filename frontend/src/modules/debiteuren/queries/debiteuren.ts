@@ -140,6 +140,7 @@ export async function fetchDebiteuren(params: {
       .from('debiteuren')
       .select('debiteur_nr')
       .eq('inkoopgroep_code', inkoopgroep_code)
+      .limit(9999)
     if (ledenErr) throw ledenErr
     const ledenNrs = (leden ?? []).map((r) => r.debiteur_nr as number)
     if (ledenNrs.length === 0) {
@@ -154,6 +155,7 @@ export async function fetchDebiteuren(params: {
         .from('debiteuren')
         .select('debiteur_nr')
         .is('prijslijst_nr', null)
+        .limit(9999)
       if (geenErr) throw geenErr
       const geenNrs = (geenPrijsRows ?? []).map((r) => r.debiteur_nr as number)
       if (geenNrs.length === 0) return { debiteuren: [], totalCount: 0 }
@@ -163,6 +165,7 @@ export async function fetchDebiteuren(params: {
         .from('debiteuren')
         .select('debiteur_nr')
         .eq('prijslijst_nr', prijslijst_filter)
+        .limit(9999)
       if (prijsErr) throw prijsErr
       const prijsNrs = (prijsRows ?? []).map((r) => r.debiteur_nr as number)
       if (prijsNrs.length === 0) return { debiteuren: [], totalCount: 0 }
