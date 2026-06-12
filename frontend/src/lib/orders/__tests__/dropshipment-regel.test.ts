@@ -39,7 +39,7 @@ describe('isDropshipRegel (flag-based, mig 370 / ADR-0018)', () => {
     expect(isDropshipRegel({ producten: { is_dropship: null } })).toBe(false)
   })
 
-  it('true wanneer top-level FALSE maar producten.is_dropship TRUE (OR — beide shapes tellen)', () => {
+  it('true zodra één van beide shapes TRUE is (OR, beide richtingen)', () => {
     expect(isDropshipRegel({ is_dropship: false, producten: { is_dropship: true } })).toBe(true)
     expect(isDropshipRegel({ is_dropship: true, producten: { is_dropship: false } })).toBe(true)
   })

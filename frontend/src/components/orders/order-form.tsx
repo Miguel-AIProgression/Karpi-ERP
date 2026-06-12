@@ -90,8 +90,9 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
   // Dropship-detectie is flag-based (producten.is_dropship, mig 370) zodat
   // ook een dropship-artikel buiten de selector-keuzes (klein/groot) de
   // e-mail-validatie en afl_email-defaults activeert. dropshipKeuze blijft
-  // puur selector-state. Beide bronnen samen: de selector-toggle muteert
-  // keuze + regels in dezelfde handler, dus ze lopen nooit uiteen.
+  // puur selector-state. De selector-toggle muteert keuze + regels in
+  // dezelfde handler; uiteenlopen kan alleen door flag-only artikelen,
+  // en dan wint de OR terecht.
   const isDropshipOrder = useMemo(
     () => dropshipKeuze !== 'nee' || heeftDropshipRegel(regels),
     [dropshipKeuze, regels],

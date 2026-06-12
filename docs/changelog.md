@@ -1,5 +1,19 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-12 — Dropship-detectie in TS data-driven (ADR-0018-patroon)
+
+**Wat:** `isDropshipRegel`/`heeftDropshipRegel` lezen nu `producten.is_dropship`
+(mig 370) via de query-join (`fetchOrderRegels`) en form-data, i.p.v. hardcoded
+`DROPSHIP-KLEIN`/`DROPSHIP-GROOT` te matchen. `detecteerDropshipKeuze` blijft
+artikelnr-based maar voedt uitsluitend de selector-toggle. De order-edit-mapping
+draagt voortaan `is_pseudo` + `is_dropship` over naar form-data (pre-existing gap).
+Ongebruikte export `DROPSHIP_IDS` verwijderd.
+
+**Waarom:** een derde dropship-artikel werkte server-side wél (e-mail-guard
+mig 370) maar was onzichtbaar voor form-validatie en order-detail-hint — exact
+de pre-ADR-0018-bug-klasse (mig 263→269). Nu: nieuw dropship-artikel =
+`UPDATE producten SET is_dropship=TRUE`, nul code-edits.
+
 ## 2026-06-12 — Rhenus als transporteur: GS1-XML via SFTP (ADR-0032, mig 379-382) — gebouwd, rondreis geslaagd
 
 > **Hernummering:** de Rhenus-migraties zijn vlak vóór de merge hernummerd van 378-381 naar **379-382** (origin/main bleek een eigen 378 te hebben — `klant_omzet_ytd_prijslijst`). In de live DB zijn ze onder de óúde bestandsnamen toegepast; inhoudelijk identiek.
