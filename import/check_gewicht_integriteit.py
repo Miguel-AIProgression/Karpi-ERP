@@ -45,6 +45,9 @@ def verwacht_gewicht(p, density):
 
 
 def main():
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        print("ERROR: Supabase URL/Key ontbreekt (import/.env)")
+        sys.exit(1)
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
     fouten = 0
 
