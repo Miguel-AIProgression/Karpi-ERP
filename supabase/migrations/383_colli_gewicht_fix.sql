@@ -30,6 +30,9 @@
 --       KvV-orders; zending_colli van niet-verzonden zendingen.
 --
 -- Idempotent: CREATE OR REPLACE + herhaalbare set-based UPDATEs.
+-- Run-advies: buiten piekuren draaien — §5a houdt row-locks op producten/
+-- order_regels vast tot commit; bij een deadlock met de allocator is de
+-- migratie veilig opnieuw te draaien (idempotent).
 
 -- ============================================================================
 -- §1. bereken_orderregel_gewicht_kg — vast-pad via live resolver
@@ -93,7 +96,9 @@ RETURNS TRIGGER AS $$
 DECLARE
   v_density NUMERIC;
 BEGIN
-  IF NEW.product_type NOT IN ('vast', 'staaltje') THEN
+  -- NULL-veilig: NOT IN evalueert bij NULL naar NULL (valt dóór) — een
+  -- type-loos product mag nooit stil een gederiveerd gewicht krijgen.
+  IF NEW.product_type IS NULL OR NEW.product_type NOT IN ('vast', 'staaltje') THEN
     RETURN NEW;
   END IF;
   IF NEW.lengte_cm IS NULL OR NEW.breedte_cm IS NULL
