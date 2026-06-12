@@ -1,7 +1,7 @@
 // Adres-normalisatie voor zending-bundeling — single source of truth.
 //
 // Spiegelt 1-op-1 de SQL-functie `_normaliseer_afleveradres(adres, postcode,
-// land)` (mig 222, gehard in mig 383). Het contract wordt afgedwongen door
+// land)` (mig 222, gehard in mig 385). Het contract wordt afgedwongen door
 // golden fixtures (__tests__/golden/bundel-sleutel.golden.json): de Vitest-
 // contracttest toetst deze module, `assert_bundel_sleutel_contract()` toetst
 // de SQL-kant met exact dezelfde cases. Wijzig je gedrag → golden bijwerken

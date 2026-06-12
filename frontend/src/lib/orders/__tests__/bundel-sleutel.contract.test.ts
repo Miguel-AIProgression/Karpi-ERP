@@ -66,7 +66,7 @@ describe('sync: golden ≡ $golden$-blok in de contract-migratie', () => {
       .sort()
     expect(
       kandidaten.length,
-      'geen contract-migratie gevonden — is mig 383 al aangemaakt (Task 3)?'
+      'geen contract-migratie gevonden — is mig 385 al aangemaakt (Task 3)?'
     ).toBeGreaterThan(0)
     const sql = readFileSync(join(migrationsDir, kandidaten.at(-1)!), 'utf8')
     // Anker op de echte aanroep (laatste match), zodat losse $golden$-

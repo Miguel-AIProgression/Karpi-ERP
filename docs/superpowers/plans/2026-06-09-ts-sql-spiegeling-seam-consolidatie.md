@@ -381,7 +381,7 @@ Onderstaande fasen zijn **afzonderlijke subsystemen**. Conform de writing-plans 
 
 ### Losse opruimingen (emmer C — meeliften, geen eigen fase)
 - **Werkagenda dode SQL (mig 279):** `DROP FUNCTION werkdag_min_n / werkdag_offset_n / werkdag_plus_n / werkagenda_kalender` — eerst caller-count bevestigen (`grep` buiten mig 279 = 0). Verlaagt "triple mirror" gratis naar 2 levende TS-runtimes. Triviale losse migratie.
-- **Bundel-sleutel golden-fixture (5A): ✅ uitgevoerd 2026-06-12** (mig 383 + `bundel-sleutel.contract.test.ts`, zie plan `2026-06-12-bundel-sleutel-sql-ts-contract.md`). Bonus: hoofdletter-ẞ (U+1E9E) bleek op de live DB daadwerkelijk te divergeren en NBSP/ß-gedrag was locale-afhankelijk — de "geen bewezen bug"-inschatting was te optimistisch voor DE-adressen; v2 is nu deterministisch JS-identiek.
+- **Bundel-sleutel golden-fixture (5A): ✅ uitgevoerd 2026-06-12** (mig 385 + `bundel-sleutel.contract.test.ts`, zie plan `2026-06-12-bundel-sleutel-sql-ts-contract.md`). Bonus: hoofdletter-ẞ (U+1E9E) bleek op de live DB daadwerkelijk te divergeren en NBSP/ß-gedrag was locale-afhankelijk — de "geen bewezen bug"-inschatting was te optimistisch voor DE-adressen; v2 is nu deterministisch JS-identiek.
 - **vrije_voorraad (5D):** alleen meeliften als een reserverings-/voorraad-migratie het bestand tóch opent (helper `bereken_vrije_voorraad(voorraad, gereserveerd, backorder)`); geen eigen werk.
 
 ### Expliciet buiten scope

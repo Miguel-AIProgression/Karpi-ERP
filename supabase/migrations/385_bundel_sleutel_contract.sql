@@ -1,4 +1,9 @@
--- Migratie 383: bundel-sleutel-contract -- SQL == TS via golden fixtures
+-- Migratie 385: bundel-sleutel-contract -- SQL == TS via golden fixtures
+--
+-- NB nummering: in de live DB is dit bestand op 2026-06-12 toegepast onder
+-- werknummer 383 (voor de hernummering wegens collisie met de werkagenda-
+-- migraties 383/384 op main). Inhoud identiek; opnieuw draaien is veilig
+-- (idempotent) en ververst alleen de COMMENT ON-teksten naar mig 385.
 --
 -- Probleem
 -- --------
@@ -84,7 +89,7 @@ LANGUAGE sql IMMUTABLE AS $$
 $$;
 
 COMMENT ON FUNCTION _normaliseer_afleveradres(TEXT, TEXT, TEXT) IS
-  'Mig 222, gehard in mig 383: match-key voor afleveradres-vergelijking '
+  'Mig 222, gehard in mig 385: match-key voor afleveradres-vergelijking '
   '(postcode|adres|land, uppercase, JS-identieke whitespace-klasse, ss-fold '
   'via chr(223)/chr(7838)). Contract: golden fixtures in frontend/src/lib/'
   'orders/__tests__/golden/bundel-sleutel.golden.json, afgedwongen door '
@@ -157,7 +162,7 @@ BEGIN
 END $fn$;
 
 COMMENT ON FUNCTION assert_bundel_sleutel_contract(JSONB) IS
-  'Mig 383: toetst _normaliseer_afleveradres + verzendweek_voor_datum + '
+  'Mig 385: toetst _normaliseer_afleveradres + verzendweek_voor_datum + '
   'bundel_sleutel tegen de golden fixtures (RAISE EXCEPTION bij mismatch). '
   'Aanroepen aan het eind van elke migratie die een van de drie wijzigt.';
 
