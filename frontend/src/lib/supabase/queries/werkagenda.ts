@@ -15,9 +15,13 @@ export async function fetchWerkagendaConfig(): Promise<Werktijden> {
 }
 
 export async function saveWerkagendaConfig(w: Werktijden): Promise<void> {
+  // Upsert: een ontbrekende rij (mig 384 nog niet gedraaid / per ongeluk
+  // verwijderd) mag een save nooit stil laten verdwijnen.
   const { error } = await supabase
     .from('app_config')
-    .update({ waarde: w as unknown as Record<string, unknown> })
-    .eq('sleutel', 'werkagenda')
+    .upsert(
+      { sleutel: 'werkagenda', waarde: w as unknown as Record<string, unknown> },
+      { onConflict: 'sleutel' },
+    )
   if (error) throw error
 }

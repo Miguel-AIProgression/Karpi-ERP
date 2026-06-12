@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Settings } from 'lucide-react'
 import { STANDAARD_WERKTIJDEN, type Werktijden } from '@/lib/utils/bereken-agenda'
@@ -6,6 +6,9 @@ import { cn } from '@/lib/utils/cn'
 import { fetchWerkagendaConfig, saveWerkagendaConfig } from '@/lib/supabase/queries/werkagenda'
 
 const STORAGE_KEY = 'karpi.werkagenda.werktijden'
+// Eenmalige localStorage→DB-overname mag maar één keer per pagina-sessie
+// draaien, ook al mounten meerdere componenten deze hook tegelijk.
+let adoptieGedaan = false
 const LEGACY_STORAGE_KEY = 'karpi.snijagenda.werktijden'
 const DAG_LABELS = ['Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za', 'Zo']
 
@@ -14,7 +17,6 @@ export function useWerktijden(): [Werktijden, (w: Werktijden) => void] {
   const { data } = useQuery({
     queryKey: ['werkagenda-config'],
     queryFn: fetchWerkagendaConfig,
-    staleTime: 60_000,
   })
   const mutation = useMutation({
     mutationFn: saveWerkagendaConfig,
@@ -24,19 +26,18 @@ export function useWerktijden(): [Werktijden, (w: Werktijden) => void] {
     onError: () => queryClient.invalidateQueries({ queryKey: ['werkagenda-config'] }),
   })
 
-  const setWerktijden = (w: Werktijden) => {
+  const setWerktijden = useCallback((w: Werktijden) => {
     // Optimistisch zodat de agenda direct herrekent; mutatie persisteert.
     queryClient.setQueryData(['werkagenda-config'], w)
     mutation.mutate(w)
-  }
+  }, [queryClient, mutation.mutate]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Eenmalige overname van de oude per-browser localStorage-config: alleen
   // als de DB-rij nog exact de default is (= nooit centraal aangepast) nemen
   // we de lokale instellingen over; daarna verdwijnt de localStorage-key.
-  const adoptie = useRef(false)
   useEffect(() => {
-    if (!data || adoptie.current) return
-    adoptie.current = true
+    if (!data || adoptieGedaan) return
+    adoptieGedaan = true
     try {
       const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY)
       if (raw) {
@@ -48,8 +49,7 @@ export function useWerktijden(): [Werktijden, (w: Werktijden) => void] {
       localStorage.removeItem(STORAGE_KEY)
       localStorage.removeItem(LEGACY_STORAGE_KEY)
     } catch { /* ignore */ }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data])
+  }, [data, setWerktijden])
 
   return [data ?? STANDAARD_WERKTIJDEN, setWerktijden]
 }
