@@ -1,0 +1,30 @@
+{
+  "_lees_mij": "Canon voor de bundel-sleutel-familie. Twee consumenten: bundel-sleutel.contract.test.ts (TS, Vitest) en assert_bundel_sleutel_contract() in de laatste *_bundel_sleutel_contract*.sql-migratie (SQL). Wijzig je dit bestand, dan MOET er een nieuwe contract-migratie komen met hetzelfde JSON-blok - de sync-test in bundel-sleutel.contract.test.ts dwingt dat af.",
+  "adres_cases": [
+    { "naam": "basis: postcode-spaties weg, adres-collapse, land upper", "afl_adres": "Hoofdweg 12", "afl_postcode": "1234 ab", "afl_land": "nl", "verwacht": "1234AB|HOOFDWEG 12|NL" },
+    { "naam": "meervoudige spaties en randen", "afl_adres": "  Hoofd   weg 12  ", "afl_postcode": " 1234  AB ", "afl_land": " NL ", "verwacht": "1234AB|HOOFD WEG 12|NL" },
+    { "naam": "NBSP (U+00A0) telt als spatie", "afl_adres": "Hoofdweg\u00a012", "afl_postcode": "1234\u00a0AB", "afl_land": "NL", "verwacht": "1234AB|HOOFDWEG 12|NL" },
+    { "naam": "narrow NBSP (U+202F) telt als spatie", "afl_adres": "Hoofdweg\u202f12", "afl_postcode": "1234 AB", "afl_land": "NL", "verwacht": "1234AB|HOOFDWEG 12|NL" },
+    { "naam": "scharfes s klein (U+00DF) foldt naar SS", "afl_adres": "Industriestra\u00DFe 5", "afl_postcode": "68167", "afl_land": "DE", "verwacht": "68167|INDUSTRIESTRASSE 5|DE" },
+    { "naam": "scharfes s hoofdletter (U+1E9E) foldt naar SS", "afl_adres": "INDUSTRIESTRA\u1E9EE 5", "afl_postcode": "68167", "afl_land": "DE", "verwacht": "68167|INDUSTRIESTRASSE 5|DE" },
+    { "naam": "tab en newline rond land", "afl_adres": "Hoofdweg 12", "afl_postcode": "1234AB", "afl_land": "\tDE\n", "verwacht": "1234AB|HOOFDWEG 12|DE" },
+    { "naam": "alles null geeft vraagtekens", "afl_adres": null, "afl_postcode": null, "afl_land": null, "verwacht": "?|?|?" },
+    { "naam": "lege strings geven vraagtekens", "afl_adres": "", "afl_postcode": "", "afl_land": "", "verwacht": "?|?|?" },
+    { "naam": "alleen-whitespace adres geeft vraagteken", "afl_adres": "   ", "afl_postcode": "1234AB", "afl_land": "NL", "verwacht": "1234AB|?|NL" }
+  ],
+  "week_cases": [
+    { "naam": "midden in het jaar", "datum": "2026-05-06", "verwacht": "2026-W19" },
+    { "naam": "zero-padding week 1", "datum": "2027-01-04", "verwacht": "2027-W01" },
+    { "naam": "zondag hoort bij de voorgaande ISO-week", "datum": "2026-12-27", "verwacht": "2026-W52" },
+    { "naam": "2026 heeft een week 53", "datum": "2026-12-31", "verwacht": "2026-W53" },
+    { "naam": "1 jan 2026 valt in week 1 van eigen jaar", "datum": "2026-01-01", "verwacht": "2026-W01" },
+    { "naam": "1 jan 2027 hoort bij ISO-jaar 2026 (W53)", "datum": "2027-01-01", "verwacht": "2026-W53" }
+  ],
+  "sleutel_cases": [
+    { "naam": "vol: NL-order met HST", "debiteur_nr": 361208, "afl_adres": "Hoofdweg 12", "afl_postcode": "1234 AB", "afl_land": "NL", "afleverdatum": "2026-05-06", "vervoerder_code": "hst_api", "afhalen": false, "verwacht": "D361208|Vhst_api|W2026-W19|A1234AB|HOOFDWEG 12|NL" },
+    { "naam": "geen vervoerder valt terug op GEEN", "debiteur_nr": 361208, "afl_adres": "Hoofdweg 12", "afl_postcode": "1234 AB", "afl_land": "NL", "afleverdatum": "2026-05-06", "vervoerder_code": null, "afhalen": false, "verwacht": "D361208|VGEEN|W2026-W19|A1234AB|HOOFDWEG 12|NL" },
+    { "naam": "afhalen wint van vervoerder", "debiteur_nr": 361208, "afl_adres": "Hoofdweg 12", "afl_postcode": "1234 AB", "afl_land": "NL", "afleverdatum": "2026-05-06", "vervoerder_code": "hst_api", "afhalen": true, "verwacht": "D361208|VAFHAAL|W2026-W19|A1234AB|HOOFDWEG 12|NL" },
+    { "naam": "geen afleverdatum valt terug op WGEEN", "debiteur_nr": 600556, "afl_adres": "Hoofdweg 12", "afl_postcode": "1234 AB", "afl_land": "NL", "afleverdatum": null, "vervoerder_code": "hst_api", "afhalen": false, "verwacht": "D600556|Vhst_api|WGEEN|A1234AB|HOOFDWEG 12|NL" },
+    { "naam": "DE-bundel met ss-fold en week 53", "debiteur_nr": 600556, "afl_adres": "Industriestra\u00DFe 5", "afl_postcode": "68167", "afl_land": "de", "afleverdatum": "2026-12-31", "vervoerder_code": "rhenus_sftp", "afhalen": false, "verwacht": "D600556|Vrhenus_sftp|W2026-W53|A68167|INDUSTRIESTRASSE 5|DE" }
+  ]
+}

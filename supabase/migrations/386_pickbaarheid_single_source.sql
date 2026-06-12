@@ -1,8 +1,9 @@
--- Migratie 385: pickbaarheid single-source (consolidatie-review 2026-06-12)
+-- Migratie 386: pickbaarheid single-source (consolidatie-review 2026-06-12)
 --
--- NB: vlak vóór de merge hernummerd van 383 naar 385 (origin/main claimde
--- 383/384 intussen via het werkagenda-traject). Op 12-06 in de live DB
--- toegepast onder het oude nummer; inhoudelijk identiek.
+-- NB: vlak vóór de merge tweemaal hernummerd, 383 → 385 → 386 (origin/main
+-- claimde intussen 383/384 via het werkagenda-traject en 385 via het
+-- bundel-sleutel-contract). Op 12-06 in de live DB toegepast onder
+-- werknummer 383; inhoudelijk identiek.
 --
 -- Probleem: de pickbaarheids-afleiding leefde op drie plekken — de view
 -- orderregel_pickbaarheid (regel-niveau, mig 170/288), fetchPickShipOrders
@@ -124,7 +125,7 @@ WHERE o.status NOT IN ('Verzonden', 'Geannuleerd')
 COMMENT ON VIEW orderregel_pickbaarheid IS
   'Per orderregel: is_pickbaar, fysieke_locatie, bron (snijplan|rol|producten_default), '
   'wacht_op (snijden|confectie|inpak|inkoop|null), gewicht_kg. Verenigt maatwerk- en '
-  'standaard-paden. Mig 170; mig 288: ''Snijden''-rang; mig 385: admin-pseudo-regels '
+  'standaard-paden. Mig 170; mig 288: ''Snijden''-rang; mig 386: admin-pseudo-regels '
   '(ADR-0018, o.a. VERZEND en DROPSHIP-*) uitgesloten + gewicht_kg toegevoegd — '
   'single source voor Pick & Ship, de TS-laag leidt niets meer af.';
 
@@ -149,7 +150,7 @@ LEFT JOIN debiteuren d ON d.debiteur_nr = o.debiteur_nr
 GROUP BY op.order_id, d.deelleveringen_toegestaan;
 
 COMMENT ON VIEW order_pickbaarheid IS
-  'Order-niveau-pickbaarheid (mig 385), aggregaat over orderregel_pickbaarheid. '
+  'Order-niveau-pickbaarheid (mig 386), aggregaat over orderregel_pickbaarheid. '
   'pick_ship_zichtbaar = alle regels pickbaar OF (deelleveringen toegestaan EN '
   '>=1 pickbaar). Geen rij = geen (niet-pseudo) regels = niets te picken. '
   'Single source voor het Pick & Ship-orderfilter en de pick-start-knop; '

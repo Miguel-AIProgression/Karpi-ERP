@@ -2,6 +2,8 @@
 
 **Status:** Geaccepteerd — 2026-06-09
 
+> **Noot (2026-06-12):** de hieronder genoemde frontend-kopie van `vervoerder-eisen.ts` is vervangen door een re-export-shim (cross-root import) — zie ADR-0033.
+
 > **Bouwt voort op [ADR-0008](0008-vervoerder-keuze-als-deep-module.md)** — de
 > per-orderregel-ladder `override → regel → geen` blijft de bron-van-waarheid. Deze ADR
 > sluit het `geen`-gat (orders die op niets matchen) zonder de ladder of de resolver-RPC

@@ -1,20 +1,51 @@
 # Changelog — RugFlow ERP
 
-## 2026-06-12 — Pickbaarheid single-source (mig 385)
+## 2026-06-12 — Pickbaarheid single-source (mig 386)
 
-> **Hernummering:** deze migratie is vlak vóór de merge hernummerd van 383 naar **385** (origin/main claimde 383/384 intussen via het werkagenda-traject). In de live DB is hij op 12-06 onder het óúde nummer toegepast; inhoudelijk identiek.
+> **Hernummering (2×):** deze migratie is vlak vóór de merge hernummerd van 383 → 385 → **386** (origin/main claimde intussen 383/384 via het werkagenda-traject en 385 via het bundel-sleutel-contract). In de live DB is hij op 12-06 onder werknummer 383 toegepast; inhoudelijk identiek.
 
 **Wat:** order-niveau-pickbaarheidslogica verplaatst van TypeScript naar SQL; TS-laag filtert alleen nog de dag-order-horizon (ADR 0014, hangt af van `vandaag`).
 
 **Gebouwd (branch `refactor/pickbaarheid-single-source`):**
-- **Mig 385 — `orderregel_pickbaarheid` v4:** (a) generieke admin-pseudo-skip `AND NOT is_admin_pseudo(oreg.artikelnr)` (ADR-0018) — vervangt de VERZEND-specifieke `.neq()`-skip in TS én fixt de **latente dropship-blokkade** (DROPSHIP-KLEIN/-GROOT-regels uit mig 353/370 kregen nooit een voorraad-claim maar stonden als `wacht_op='inkoop'` in de view, waardoor dropship-orders nooit de "alles pickbaar"-drempel haalden); (b) nieuwe kolom `gewicht_kg` — maakt de aparte `fetchTotaalGewichtPerOrder`-query overbodig. Maatwerk-gewicht telt nu correct mee in het indicatieve ordergewicht (de oude `.neq('artikelnr','VERZEND')`-query sloot NULL-`artikelnr`-rijen per ongeluk uit — PostgREST three-valued logic).
-- **Mig 385 — nieuwe view `order_pickbaarheid`:** per order `totaal_regels`, `pickbare_regels`, `alle_regels_pickbaar`, `heeft_pickbare_regel`, `deelleveringen_toegestaan`, `pick_ship_zichtbaar`. Geen rij = geen (niet-pseudo) regels = niets te picken.
+- **Mig 386 — `orderregel_pickbaarheid` v4:** (a) generieke admin-pseudo-skip `AND NOT is_admin_pseudo(oreg.artikelnr)` (ADR-0018) — vervangt de VERZEND-specifieke `.neq()`-skip in TS én fixt de **latente dropship-blokkade** (DROPSHIP-KLEIN/-GROOT-regels uit mig 353/370 kregen nooit een voorraad-claim maar stonden als `wacht_op='inkoop'` in de view, waardoor dropship-orders nooit de "alles pickbaar"-drempel haalden); (b) nieuwe kolom `gewicht_kg` — maakt de aparte `fetchTotaalGewichtPerOrder`-query overbodig. Maatwerk-gewicht telt nu correct mee in het indicatieve ordergewicht (de oude `.neq('artikelnr','VERZEND')`-query sloot NULL-`artikelnr`-rijen per ongeluk uit — PostgREST three-valued logic).
+- **Mig 386 — nieuwe view `order_pickbaarheid`:** per order `totaal_regels`, `pickbare_regels`, `alle_regels_pickbaar`, `heeft_pickbare_regel`, `deelleveringen_toegestaan`, `pick_ship_zichtbaar`. Geen rij = geen (niet-pseudo) regels = niets te picken.
 - **Frontend `fetchPickShipOrders`** ([`pickbaarheid.ts`](../frontend/src/modules/magazijn/queries/pickbaarheid.ts)): consumeert `order_pickbaarheid.pick_ship_zichtbaar`; de 3× VERZEND-skip, de aparte gewicht-query (`fetchTotaalGewichtPerOrder`) en de PGRST205-fallback (`fetchFallbackOrderRegels`) zijn verwijderd. `StartPickrondesButton.isPickbaar` leest `order.alle_regels_pickbaar` (view-veld) i.p.v. client-side `every()`.
 - **Stale contracttest gerepareerd:** `magazijn-pickbaarheid.contract.test.ts` mockte `zendingen` i.p.v. `zending_orders` (7/7 rood op main). Gedeelde testhelper `__tests__/helpers/fake-supabase.ts`; 8 scenario's inclusief hard-fail bij ontbrekende view en dag-horizon.
 
-**Deploy-voorwaarde:** mig 385 moet op de live DB staan vóór de frontend van deze branch deployt — er is geen fallback meer (`fetchPickShipOrders` faalt hard bij ontbrekende view). (Toegepast 12-06, vóór de merge.)
+**Deploy-voorwaarde:** mig 386 moet op de live DB staan vóór de frontend van deze branch deployt — er is geen fallback meer (`fetchPickShipOrders` faalt hard bij ontbrekende view). (Toegepast 12-06, vóór de merge.)
 
 ---
+
+## 2026-06-12 — Seam-consolidatie: cross-root imports i.p.v. kopieën (ADR-0033)
+Vier handmatig-gesynchroniseerde kopieparen tussen `supabase/functions/_shared/`
+en `frontend/src/` vervangen door één bron in `_shared/` + dunne frontend
+re-export-shims: `vervoerder-eisen` (frontend-kopie was dead code),
+`iso-week` (kern gedeeld, frontend-extensies lokaal), `snijplan-status`
+(frontend-superset → `_shared`) en `email-list`/`email-recipients`.
+Waarom: handmatige kopieën = dezelfde incident-klasse als het SSCC-incident
+(12-06); `snijplan-status` was al gedivergeerd. Vite dev-server kreeg
+`server.fs.allow: ['..']`. Conventie vastgelegd in CLAUDE.md + ADR-0033.
+De parallel uitgevoerde werkagenda-kernel-consolidatie (zie hieronder) volgt
+hetzelfde patroon — `werkagenda`/`bereken-agenda` was in ADR-0033 nog als
+"buiten scope" gemarkeerd maar is dezelfde dag alsnog geconsolideerd.
+
+## 2026-06-12 — Dropship-detectie in TS data-driven (ADR-0018-patroon)
+
+**Wat:** `isDropshipRegel`/`heeftDropshipRegel` lezen nu `producten.is_dropship`
+(mig 370) via de query-join (`fetchOrderRegels`) en form-data, i.p.v. hardcoded
+`DROPSHIP-KLEIN`/`DROPSHIP-GROOT` te matchen. `detecteerDropshipKeuze` blijft
+artikelnr-based maar voedt uitsluitend de selector-toggle. De order-edit-mapping
+draagt voortaan `is_pseudo` + `is_dropship` over naar form-data (pre-existing gap).
+Ongebruikte export `DROPSHIP_IDS` verwijderd.
+
+**Waarom:** een derde dropship-artikel werkte server-side wél (e-mail-guard
+mig 370) maar was onzichtbaar voor form-validatie en order-detail-hint — exact
+de pre-ADR-0018-bug-klasse (mig 263→269). Nu: nieuw dropship-artikel =
+`UPDATE producten SET is_dropship=TRUE`, nul code-edits.
+
+## 2026-06-12 — Bundel-sleutel SQL↔TS-contract met golden fixtures (mig 385)
+
+De bundel-sleutel-familie (`_normaliseer_afleveradres`/`bundel_sleutel`/`verzendweek_voor_datum` ↔ `normaliseer-adres.ts`/`bundel-sleutel.ts`/`verzendweek.ts`) werd alleen door comments in lockstep gehouden. Nu: één golden-fixture-bestand (`frontend/src/lib/orders/__tests__/golden/bundel-sleutel.golden.json`, 21 cases) met twee consumenten — Vitest-contracttest `bundel-sleutel.contract.test.ts` (TS) en `assert_bundel_sleutel_contract()` (SQL, zelf-testende migratie 385, incl. vorm-guard tegen stil-slagende lege case-arrays); een sync-test bewijst dat het `$golden$`-blok in de laatste `*_bundel_sleutel_contract*.sql`-migratie gelijk is aan de JSON. Probe op de live DB (12-06): NBSP en kleine-ß gaven op deze locale toevallig al TS-identieke output, maar hoofdletter-ẞ (U+1E9E) divergeerde bevestigd — en het gedrag was sowieso locale-afhankelijk. `_normaliseer_afleveradres` v2 (mig 385) en `normaliseerAdresKey` (ß/ẞ→ss-fold) zijn nu deterministisch JS-identiek (expliciete whitespace-klasse + chr(223)/chr(7838)-fold). Steekproef: 20 van 1427 open orders dragen zo'n teken in `afl_adres` (DE-straatnamen); sleutels worden nergens gepersisteerd, dus geen datamigratie. Conventie: wijziging aan een van de zes functies = golden bijwerken + nieuwe `*_bundel_sleutel_contract*.sql` met assert-aanroep (sync-test wordt anders rood). Toegepast in de SQL Editor op 12-06 onder werknummer 383 (hernummerd naar 385 wegens collisie met de werkagenda-migraties); na-verificatie via live probe geslaagd, incl. de ẞ-case.
 
 ## 2026-06-12 — Werkagenda-config centraal (mig 384, fase 2)
 

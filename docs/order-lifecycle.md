@@ -222,7 +222,7 @@ beide nodig vanwege het window tussen status-promotie en rol-vlag.
 
 1. **Pickbaarheid** ([`pickbaarheid.ts`](../frontend/src/modules/magazijn/queries/pickbaarheid.ts)):
    order zichtbaar in Pick & Ship op basis van `order_pickbaarheid.pick_ship_zichtbaar`
-   (view, mig 385 — single source). Predikaat: alle regels pickbaar OR (`deelleveringen_toegestaan`
+   (view, mig 386 — single source). Predikaat: alle regels pickbaar OR (`deelleveringen_toegestaan`
    AND ≥1 pickbaar). Geen rij in de view = geen (niet-pseudo) regels = niets te picken.
    Admin-pseudo-regels (ADR-0018, incl. VERZEND en DROPSHIP-*) zijn generiek uitgesloten in
    `orderregel_pickbaarheid` — er is geen VERZEND-specifieke TS-skip meer.
@@ -234,7 +234,7 @@ beide nodig vanwege het window tussen status-promotie en rol-vlag.
    gepind in `pickbaarheid-productie-only.test.ts`). **Chunk-per-order_id (fix 2026-06-11):**
    een kale GET op `orderregel_pickbaarheid` liep tegen de PostgREST max-rows-cap (1000)
    aan waardoor orders stilletjes verdwenen; dit is per-order opgelost in de query-laag.
-   **Deploy-voorwaarde (mig 385):** de view `order_pickbaarheid` moet op de live DB staan
+   **Deploy-voorwaarde (mig 386):** de view `order_pickbaarheid` moet op de live DB staan
    vóór de frontend deployt — er is geen PGRST205-fallback meer.
    Een order **zonder effectieve vervoerder blijft wél zichtbaar** maar kan
    geen pickronde starten (zie stap 2).

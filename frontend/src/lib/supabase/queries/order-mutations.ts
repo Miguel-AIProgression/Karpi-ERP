@@ -107,6 +107,15 @@ export interface OrderRegelFormData {
    * uit `producten.is_pseudo`.
    */
   is_pseudo?: boolean
+  /**
+   * Display-only: dropshipment-vlag van het gekoppelde product (mig 370,
+   * ADR-0018-patroon). Gevuld door `applyDropshipmentLogic` (create) of de
+   * order-edit-mapping (edit) uit `producten.is_dropship`. Gebruikt door
+   * `isDropshipRegel`/`heeftDropshipRegel` voor de e-mail-validatie en
+   * afl_email-defaults. Wordt niet gepersisteerd; de DB leest het via JOIN
+   * (`is_dropship_order()`).
+   */
+  is_dropship?: boolean
 }
 
 /** Bronlabel voor de orderregel-prijs zoals geretourneerd door `bereken_orderregel_prijs` (mig 191, mig 253). */

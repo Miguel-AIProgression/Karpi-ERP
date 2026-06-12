@@ -4,9 +4,9 @@
 // via de Vitest-contracttest, de mig-352-DO-assertie borgt de SQL-kant.
 // ADR-0006: dit is de beloofde pure state-machine-functie.
 // LET OP: géén Deno-only imports (npm:/jsr:/https://) toevoegen — dit bestand wordt
-// direct door frontend-Vitest geïmporteerd (eerste cross-root import; bewust afwijkend
-// van het kopie-seam-patroon van bv. vervoerder-eisen.ts, dat kan omdat dit bestand
-// alleen relatieve, import-vrije imports heeft).
+// direct door frontend-Vitest geïmporteerd. Wordt door frontend-contracttests
+// rechtstreeks cross-root geïmporteerd — sinds ADR-0033 de standaard voor
+// gedeelde pure modules (alleen relatieve, Deno-vrije imports).
 
 import type { OrderStatus } from './order-status'
 
