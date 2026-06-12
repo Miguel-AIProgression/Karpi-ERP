@@ -19,6 +19,9 @@ export function useWerktijden(): [Werktijden, (w: Werktijden) => void] {
   const mutation = useMutation({
     mutationFn: saveWerkagendaConfig,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['werkagenda-config'] }),
+    // Bij een mislukte save de optimistische cache-waarde terugdraaien naar
+    // de server-waarheid — anders lijkt een niet-opgeslagen wijziging bewaard.
+    onError: () => queryClient.invalidateQueries({ queryKey: ['werkagenda-config'] }),
   })
 
   const setWerktijden = (w: Werktijden) => {
