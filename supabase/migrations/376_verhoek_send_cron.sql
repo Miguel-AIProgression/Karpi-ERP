@@ -1,4 +1,4 @@
--- Migratie 373: pg_cron schedule voor de verhoek-send edge function
+-- Migratie 376: pg_cron schedule voor de verhoek-send edge function
 -- Plan: docs/superpowers/plans/2026-06-11-verhoek-transporteur-xml-sftp.md
 -- Spiegelt mig 173 (hst-send). Vault-secret 'cron_token' bestaat al.
 --

@@ -271,17 +271,17 @@ Bij het productie-klaar maken van de HST-koppeling (mig 336-339) zijn twee gaten
 
 **HST-edge-bugfixes.** `hst-client.ts` `extractErrorMsg` leest nu ook HST's PascalCase-veld `ErrorMessage` (operator kreeg eerder kaal `"HTTP 400"`); `payload-builder.ts` vult `ToAddress.PhoneNumber` uit het nieuwe snapshot `zendingen.afl_telefoon` (mig 339, was hardcoded leeg). Aanleiding: ACCP-afkeuring 2026-06-09 "Bellen voor aflevering, geef telefoonnummer op".
 
-### Verhoek-koppeling: AA2.0-XML via SFTP ([ADR-0031](adr/0031-verhoek-xml-sftp-adapter.md), mig 371-373)
+### Verhoek-koppeling: AA2.0-XML via SFTP ([ADR-0031](adr/0031-verhoek-xml-sftp-adapter.md), mig 374-376)
 
 Verhoek Europe is de tweede vervoerder naast HST. Hun protocol — eigen XML-formaat "XMLstandardVerhoekEuropeAA20" (AA2.0) over SFTP — past niet in het Transus-EDI-pad. De adapter is gebouwd als **verticale spiegel van de HST-adapter**, met maximaal hergebruik van bestaande seams en bewust gespiegeld (nog niet gegeneraliseerd) omdat HST live en stabiel is.
 
 **Maximaal hergebruik:**
 - `_shared/adres-split.ts` — `splitAdres`/`normalizeCountry` geëxtraheerd uit `hst-send/payload-builder.ts` (gedragsneutraal, hst-send importeert voortaan uit de seam; gaat mee bij de eerstvolgende hst-deploy).
 - `_shared/vervoerder-eisen.ts` — `verhoek_sftp`-tak toegevoegd naast de bestaande HST-tak; dezelfde `valideerVoorVervoerder(ctx)`-signatuur, andere eisen (adresvelden verplicht; telefoon/land niet verplicht voor Verhoek).
-- `enqueue_zending_naar_vervoerder` — switch-RPC-tak `WHEN 'sftp' → enqueue_verhoek_transportorder` (mig 372); geen wijziging aan resolver of trigger.
+- `enqueue_zending_naar_vervoerder` — switch-RPC-tak `WHEN 'sftp' → enqueue_verhoek_transportorder` (mig 375); geen wijziging aan resolver of trigger.
 - `externe_payloads` — audit-vangnet kanaal `'verhoek'` (best-effort, mag verwerking niet blokkeren).
-- Storage-bucket `order-documenten/verhoek-xml/` — XML-kopie naast de `hst`-bucket (ADR-0030-patroon).
-- Cron-vault-secret `cron_token` — hergebruikt door `verhoek-send-elke-minuut` (mig 373).
+- Storage-bucket `order-documenten/verhoek-xml/` — XML-kopie in dezelfde bucket `order-documenten`, pad `verhoek-xml/` naast `hst-vrachtbrieven/` (ADR-0030-patroon).
+- Cron-vault-secret `cron_token` — hergebruikt door `verhoek-send-elke-minuut` (mig 376).
 
 **Gespiegeld (niet gegeneraliseerd):**
 - Adapter-tabel `verhoek_transportorders` + enum `verhoek_transportorder_status` + 5 RPC's — identieke structuur als `hst_transportorders`/`hst_transportorder_status`, eigen per-vervoerder-tabel (verticaal patroon, ADR-0031 motivatie).
@@ -295,7 +295,7 @@ Verhoek Europe is de tweede vervoerder naast HST. Hun protocol — eigen XML-for
 
 **Bestandsnaam als dedup-sleutel.** `Karpi_<timestamp>_<zending_nr>.xml` wordt gepersisteerd in `verhoek_transportorders.bestandsnaam` vóór de SFTP-upload, zodat retries dezelfde naam hergebruiken. Bij Verhoek is de bestandsnaam de verwerkingssleutel (DataEntry deduplicatie).
 
-**Status Fase 1 (2026-06-11):** code compleet + unit-getest. Mig 371/372/373 apply'en, edge functions deployen, rebex-runtime-spike draaien en dry-run-rondreis uitvoeren staan open (wordt door Miguel gedaan).
+**Status Fase 1 (2026-06-11):** code compleet + unit-getest. Mig 374/375/376 apply'en, edge functions deployen, rebex-runtime-spike draaien en dry-run-rondreis uitvoeren staan open (wordt door Miguel gedaan).
 
 ### Vervoerder-Keuze als deep Module ([ADR-0008](adr/0008-vervoerder-keuze-als-deep-module.md))
 

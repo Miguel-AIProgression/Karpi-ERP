@@ -1,4 +1,4 @@
--- Migratie 371: vervoerder verhoek_sftp + type 'sftp' + app_config 'verhoek'
+-- Migratie 374: vervoerder verhoek_sftp + type 'sftp' + app_config 'verhoek'
 -- Plan: docs/superpowers/plans/2026-06-11-verhoek-transporteur-xml-sftp.md
 -- ADR-0031: Verhoek via eigen AA2.0-XML over SFTP (niet Transus-EDI).
 --

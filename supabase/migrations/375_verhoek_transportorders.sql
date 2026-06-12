@@ -1,4 +1,4 @@
--- Migratie 372: verhoek_transportorders + RPC's + sftp-dispatch + monitor
+-- Migratie 375: verhoek_transportorders + RPC's + sftp-dispatch + monitor
 -- Plan: docs/superpowers/plans/2026-06-11-verhoek-transporteur-xml-sftp.md
 -- ADR-0031. Spiegelt het HST-adapterpatroon (mig 171/337/338).
 --
@@ -268,7 +268,7 @@ GRANT EXECUTE ON FUNCTION enqueue_zending_naar_vervoerder(BIGINT) TO authenticat
 
 COMMENT ON FUNCTION enqueue_zending_naar_vervoerder IS
   'SWITCH-POINT: dispatcht een zending naar de adapter van de gekozen vervoerder. '
-  'Sinds mig 372: type=''sftp''-tak voor verhoek_sftp (ADR-0031). Verder identiek '
+  'Sinds mig 375: type=''sftp''-tak voor verhoek_sftp (ADR-0031). Verder identiek '
   'aan mig 210 (regel-evaluator, print-tak, afhalen-skip).';
 
 -- ============================================================================

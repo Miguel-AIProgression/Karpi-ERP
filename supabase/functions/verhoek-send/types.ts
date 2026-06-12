@@ -49,7 +49,7 @@ export interface ColliProbleem {
   melding: string;
 }
 
-// Runtime-config uit app_config sleutel 'verhoek' (mig 371). Antwoorden van
+// Runtime-config uit app_config sleutel 'verhoek' (mig 374). Antwoorden van
 // Verhoek = SQL-UPDATE op dat record, geen redeploy (ADR-0031).
 export interface VerhoekOpties {
   /** Karpi's klantnummer bij Verhoek. '' = nog onbekend (vraag 1 testmail). */

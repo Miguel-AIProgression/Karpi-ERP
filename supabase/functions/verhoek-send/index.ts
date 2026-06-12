@@ -76,13 +76,13 @@ Deno.serve(async (req) => {
 
   const supabase = createClient(supabaseUrl, serviceKey);
 
-  // Runtime-config (mig 371): antwoorden van Verhoek landen hier — per run
+  // Runtime-config (mig 374): antwoorden van Verhoek landen hier — per run
   // gelezen, dus een config-UPDATE werkt zonder redeploy.
   const { data: cfgRow } = await supabase
     .from('app_config').select('waarde').eq('sleutel', 'verhoek').single();
   const opties: VerhoekOpties = { ...DEFAULT_VERHOEK_OPTIES, ...((cfgRow?.waarde ?? {}) as Partial<VerhoekOpties>) };
 
-  // Zelfhelend (mig 372-reaper): herstel rijen die vastliepen in 'Bezig'.
+  // Zelfhelend (mig 375-reaper): herstel rijen die vastliepen in 'Bezig'.
   try {
     const { data: hersteld } = await supabase.rpc('herstel_vastgelopen_verhoek', { p_minuten: 10 });
     if (hersteld && Number(hersteld) > 0) {
