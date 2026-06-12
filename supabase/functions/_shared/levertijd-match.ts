@@ -168,10 +168,12 @@ export function leverdatumVoorSnijDatum(snijDatum: string, bufferDagen: number, 
 export interface KiesBesteMatchInput {
   kandidaten: RolMatchKandidaat[]
   logistieke_buffer_dagen: number
+  /** Werkagenda voor de lever_datum-berekening (app_config 'werkagenda'); default ma-vr. */
+  werktijden?: Werktijden
 }
 
 export function kiesBesteMatch(input: KiesBesteMatchInput): MatchResult {
-  const { kandidaten, logistieke_buffer_dagen } = input
+  const { kandidaten, logistieke_buffer_dagen, werktijden } = input
   if (kandidaten.length === 0) {
     return { gevonden: false, reden: 'geen_plek_op_bestaande_rollen' }
   }
@@ -188,7 +190,7 @@ export function kiesBesteMatch(input: KiesBesteMatchInput): MatchResult {
     rol_id: best.rol.id,
     rolnummer: best.rol.rolnummer,
     snij_datum: best.snij_datum,
-    lever_datum: leverdatumVoorSnijDatum(best.snij_datum, logistieke_buffer_dagen),
+    lever_datum: leverdatumVoorSnijDatum(best.snij_datum, logistieke_buffer_dagen, werktijden),
     kwaliteit_match: best.is_exact ? 'exact' : 'uitwisselbaar',
   }
 }

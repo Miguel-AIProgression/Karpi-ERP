@@ -368,7 +368,7 @@ serve(async (req) => {
       })
     }
 
-    const match = kiesBesteMatch({ kandidaten, logistieke_buffer_dagen: cfg.logistieke_buffer_dagen })
+    const match = kiesBesteMatch({ kandidaten, logistieke_buffer_dagen: cfg.logistieke_buffer_dagen, werktijden: cfg.werktijden })
 
     // ---- Stap 2: Capaciteit voor nieuwe rol ----
     // ADR 0014: voor dag-orders rekenen we de capaciteits-startweek vanaf de
