@@ -1,19 +1,14 @@
 // R1-guard-test: productie-only orders (orders.alleen_productie=true, uit Basta)
 // mogen NOOIT in Pick & Ship verschijnen — die worden in Basta afgehandeld.
 //
-// Het mock-patroon volgt magazijn-pickbaarheid.contract.test.ts (queue-based
-// fake-Supabase per tabel), met twee gerichte uitbreidingen die de R1-guard
-// daadwerkelijk kunnen verifiëren:
+// Mock via de gedeelde helper `__tests__/helpers/fake-supabase` (queue-based
+// fake-Supabase per tabel), die de R1-guard daadwerkelijk kan verifiëren:
 //   1. De `orders`-chain registreert de toegepaste `.eq(...)`-filters zodat we
 //      kunnen asserten dàt `.eq('alleen_productie', false)` in de querychain zit
 //      (TDD-anker: zonder de guard uit deeltaak 1 ontbreekt deze filter).
 //   2. De `orders`-chain past die `.eq`-filters ook echt toe op de fixture-data,
 //      zodat een order met `alleen_productie=true` er — net als bij PostgREST —
 //      uitgefilterd wordt en `fetchPickShipOrders` 'm niet teruggeeft.
-//
-// LET OP (projectgeheugen): de bestaande magazijn-pickbaarheid.contract.test.ts
-// faalt pre-existing op main (mockt `zendingen` i.p.v. `zending_orders`). Dit
-// bestand mockt `zending_orders` correct en staat daar los van.
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import {

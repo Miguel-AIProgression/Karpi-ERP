@@ -4,7 +4,9 @@
 // past ze toe op array-data (PostgREST-simulatie). Embedded-resource-filters
 // (kolomnaam met punt, bv. 'zendingen.status') worden NIET client-side
 // toegepast — PostgREST filtert die server-side binnen de embed; de fixture
-// moet zelf al gefilterde rijen aanleveren.
+// moet zelf al gefilterde rijen aanleveren. Alleen `.eq` wordt gesimuleerd:
+// `.neq`/`.in`/`.order`/`.limit` zijn no-ops — fixtures moeten dus al
+// aanleveren wat die filters zouden opleveren.
 
 export type SupabaseResponse = {
   data: unknown
