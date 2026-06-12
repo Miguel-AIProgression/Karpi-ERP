@@ -1,0 +1,272 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Excerpt uit legacy RHE260521001.xml (21-05-2026) - zie README.md.
+     3 representatieve blokken: pallets (9453355), rollen (0454510) en het
+     0-colli-foutgeval (0455395, mail Rhenus 12-06-2026). -->
+<transport_instruction:transportInstructionMessage xmlns:transport_instruction="urn:gs1:ecom:transport_instruction:xsd:3" xmlns:sh="http://www.unece.org/cefact/namespaces/StandardBusinessDocumentHeader" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="urn:gs1:ecom:transport_instruction:xsd:3 ../Schemas/gs1/ecom/TransportInstruction.xsd">
+<sh:StandardBusinessDocumentHeader>
+<sh:HeaderVersion></sh:HeaderVersion>
+<sh:Sender>
+<sh:Identifier Authority="KARPI"/>
+</sh:Sender>
+<sh:Receiver>
+<sh:Identifier Authority="RHENUS"/>
+</sh:Receiver>
+<sh:DocumentIdentification>
+<sh:Standard>RHE</sh:Standard>
+<sh:TypeVersion>3.1</sh:TypeVersion>
+<sh:InstanceIdentifier>8715954999998</sh:InstanceIdentifier>
+<sh:Type>Transport Instruction Message</sh:Type>
+<sh:CreationDateAndTime>2026-05-21T15:02:39.000Z</sh:CreationDateAndTime>
+</sh:DocumentIdentification>
+</sh:StandardBusinessDocumentHeader>
+<transportInstruction>
+<creationDateTime>2026-05-21T15:02:39.001Z</creationDateTime>
+<documentStatusCode>ORIGINAL</documentStatusCode>
+<transportInstructionIdentification>
+<entityIdentification>9453355</entityIdentification>
+</transportInstructionIdentification>
+<transportInstructionFunction>SHIPMENT</transportInstructionFunction>
+<transportInstructionShipment>
+<receiver>
+<address>
+<city>ALBLASSERDAM</city>
+<countryCode>NL</countryCode>
+<name>HORNBACH BOUWMARKT</name>
+<postalCode>2952BG</postalCode>
+<streetAddressOne>KELVINRING 60</streetAddressOne>
+</address>
+<contact>
+<TelNumber></TelNumber>
+</contact>
+</receiver>
+<shipper>
+<address>
+<city>AALTEN</city>
+<countryCode>NL</countryCode>
+<name>KARPI B.V></name>
+<postalCode>7122LB</postalCode>
+<streetAddressOne>Tweede Broekdijk 10</streetAddressOne>
+</address>
+</shipper>
+<carrier>
+<additionalPartyIdentification additionalPartyIdentificationTypeCode="requested carrier">Rhenus</additionalPartyIdentification>
+</carrier>
+<transportCargoCharacteristics>
+<cargoTypeDescription languageCode="EN"></cargoTypeDescription>
+<totalGrossWeight measurementUnitCode="KGM">290.88</totalGrossWeight>
+<totalPackageQuantity>2</totalPackageQuantity>
+</transportCargoCharacteristics>
+<plannedDelivery>
+<logisticEventDateTime>
+<date>2026-05-21T</date>
+</logisticEventDateTime>
+</plannedDelivery>
+<plannedCollection>
+<logisticEventDateTime>
+<date>2026-05-21T</date>
+</logisticEventDateTime>
+</plannedCollection>
+<packageTotal>
+<totalPackageQuantity>2</totalPackageQuantity>
+</packageTotal>
+<transportReference>
+<entityIdentification>9453355</entityIdentification>
+<creationDateTime>2026-05-21T15:02:39.001Z</creationDateTime>
+<Freetext>Order 26529590 Ref EDI-order  7180358125</Freetext>
+</transportReference>
+<transportInstructionShipmentItem>
+<lineItemNumber>1</lineItemNumber>
+<logisticUnit>
+<sscc>00987159544533550018</sscc>
+<Weight>145.44</Weight>
+<packageTypeCode>PLTS</packageTypeCode>
+<dimension>
+<depth measurementUnitCode="CMS">80</depth>
+<width measurementUnitCode="CMS">120</width>
+</dimension>
+</logisticUnit>
+</transportInstructionShipmentItem>
+<transportInstructionShipmentItem>
+<lineItemNumber>2</lineItemNumber>
+<logisticUnit>
+<sscc>00987159544533550023</sscc>
+<Weight>145.44</Weight>
+<packageTypeCode>PLTS</packageTypeCode>
+<dimension>
+<depth measurementUnitCode="CMS">80</depth>
+<width measurementUnitCode="CMS">120</width>
+</dimension>
+</logisticUnit>
+</transportInstructionShipmentItem>
+</transportInstructionShipment>
+</transportInstruction>
+<transportInstruction>
+<creationDateTime>2026-05-21T15:02:39.001Z</creationDateTime>
+<documentStatusCode>ORIGINAL</documentStatusCode>
+<transportInstructionIdentification>
+<entityIdentification>0454510</entityIdentification>
+</transportInstructionIdentification>
+<transportInstructionFunction>SHIPMENT</transportInstructionFunction>
+<transportInstructionShipment>
+<receiver>
+<address>
+<city>HAMBURG  EICHTAL </city>
+<countryCode>DE</countryCode>
+<name>KNUTZEN WOHNEN GMBH</name>
+<postalCode>22047</postalCode>
+<streetAddressOne>WALDDOERFER STR. 285</streetAddressOne>
+</address>
+<contact>
+<TelNumber></TelNumber>
+</contact>
+</receiver>
+<shipper>
+<address>
+<city>AALTEN</city>
+<countryCode>NL</countryCode>
+<name>KARPI B.V></name>
+<postalCode>7122LB</postalCode>
+<streetAddressOne>Tweede Broekdijk 10</streetAddressOne>
+</address>
+</shipper>
+<carrier>
+<additionalPartyIdentification additionalPartyIdentificationTypeCode="requested carrier">Rhenus</additionalPartyIdentification>
+</carrier>
+<transportCargoCharacteristics>
+<cargoTypeDescription languageCode="EN"></cargoTypeDescription>
+<totalGrossWeight measurementUnitCode="KGM">63.49</totalGrossWeight>
+<totalPackageQuantity>5</totalPackageQuantity>
+</transportCargoCharacteristics>
+<plannedDelivery>
+<logisticEventDateTime>
+<date>2026-05-21T</date>
+</logisticEventDateTime>
+</plannedDelivery>
+<plannedCollection>
+<logisticEventDateTime>
+<date>2026-05-21T</date>
+</logisticEventDateTime>
+</plannedCollection>
+<packageTotal>
+<totalPackageQuantity>5</totalPackageQuantity>
+</packageTotal>
+<transportReference>
+<entityIdentification>0454510</entityIdentification>
+<creationDateTime>2026-05-21T15:02:39.001Z</creationDateTime>
+<Freetext>Orders 26517270 26531060 26536050  etc</Freetext>
+</transportReference>
+<transportInstructionShipmentItem>
+<lineItemNumber>1</lineItemNumber>
+<logisticUnit>
+<sscc>00087159544545100018</sscc>
+<Weight>19.8</Weight>
+<packageTypeCode>RLEN</packageTypeCode>
+<dimension>
+<depth measurementUnitCode="CMS">240</depth>
+</dimension>
+</logisticUnit>
+</transportInstructionShipmentItem>
+<transportInstructionShipmentItem>
+<lineItemNumber>1</lineItemNumber>
+<logisticUnit>
+<sscc>00087159544545110014</sscc>
+<Weight>10.5</Weight>
+<packageTypeCode>RLEN</packageTypeCode>
+<dimension>
+<depth measurementUnitCode="CMS">250</depth>
+</dimension>
+</logisticUnit>
+</transportInstructionShipmentItem>
+<transportInstructionShipmentItem>
+<lineItemNumber>1</lineItemNumber>
+<logisticUnit>
+<sscc>00087159544545120019</sscc>
+<Weight>5.12</Weight>
+<packageTypeCode>RLEN</packageTypeCode>
+<dimension>
+<depth measurementUnitCode="CMS">75</depth>
+</dimension>
+</logisticUnit>
+</transportInstructionShipmentItem>
+<transportInstructionShipmentItem>
+<lineItemNumber>2</lineItemNumber>
+<logisticUnit>
+<sscc>00087159544545120021</sscc>
+<Weight>5.12</Weight>
+<packageTypeCode>RLEN</packageTypeCode>
+<dimension>
+<depth measurementUnitCode="CMS">75</depth>
+</dimension>
+</logisticUnit>
+</transportInstructionShipmentItem>
+<transportInstructionShipmentItem>
+<lineItemNumber>1</lineItemNumber>
+<logisticUnit>
+<sscc>00087159544545130015</sscc>
+<Weight>22.95</Weight>
+<packageTypeCode>RLEN</packageTypeCode>
+<dimension>
+<depth measurementUnitCode="CMS">250</depth>
+</dimension>
+</logisticUnit>
+</transportInstructionShipmentItem>
+</transportInstructionShipment>
+</transportInstruction>
+<transportInstruction>
+<creationDateTime>2026-05-21T15:02:39.001Z</creationDateTime>
+<documentStatusCode>ORIGINAL</documentStatusCode>
+<transportInstructionIdentification>
+<entityIdentification>0455395</entityIdentification>
+</transportInstructionIdentification>
+<transportInstructionFunction>SHIPMENT</transportInstructionFunction>
+<transportInstructionShipment>
+<receiver>
+<address>
+<city>DRUTEN</city>
+<countryCode>NL</countryCode>
+<name>VAN DE KAMP TRANSPORT T.B.V. DE PROJECTGROEP</name>
+<postalCode>6651KR</postalCode>
+<streetAddressOne>INDUSTRIEWEG 16</streetAddressOne>
+</address>
+<contact>
+<TelNumber>0487-516544</TelNumber>
+</contact>
+</receiver>
+<shipper>
+<address>
+<city>AALTEN</city>
+<countryCode>NL</countryCode>
+<name>KARPI B.V></name>
+<postalCode>7122LB</postalCode>
+<streetAddressOne>Tweede Broekdijk 10</streetAddressOne>
+</address>
+</shipper>
+<carrier>
+<additionalPartyIdentification additionalPartyIdentificationTypeCode="requested carrier">Rhenus</additionalPartyIdentification>
+</carrier>
+<transportCargoCharacteristics>
+<cargoTypeDescription languageCode="EN"></cargoTypeDescription>
+<totalGrossWeight measurementUnitCode="KGM">0</totalGrossWeight>
+<totalPackageQuantity>0</totalPackageQuantity>
+</transportCargoCharacteristics>
+<plannedDelivery>
+<logisticEventDateTime>
+<date>2026-05-21T</date>
+</logisticEventDateTime>
+</plannedDelivery>
+<plannedCollection>
+<logisticEventDateTime>
+<date>2026-05-21T</date>
+</logisticEventDateTime>
+</plannedCollection>
+<packageTotal>
+<totalPackageQuantity>0</totalPackageQuantity>
+</packageTotal>
+<transportReference>
+<entityIdentification>0455395</entityIdentification>
+<creationDateTime>2026-05-21T15:02:39.001Z</creationDateTime>
+<Freetext>Order 26535960 Ref B2026-1295 DPG3165 GX PROJECT</Freetext>
+</transportReference>
+</transportInstructionShipment>
+</transportInstruction>
+</transport_instruction:transportInstructionMessage>
