@@ -281,7 +281,11 @@ def main():
                             "omschrijving": row["omschrijving"],
                             "omschrijving_2": row["omschrijving_2"],
                             "verkoopprijs": row["prijs"],
-                            "gewicht_kg": row["gewicht"],
+                            # Mig 383: prijslijst-kolom F "Gewicht" is kg/m² (density),
+                            # geen stukgewicht — niet meer naar producten.gewicht_kg
+                            # schrijven. Eerlijke NULL; resolver/trigger vullen zodra
+                            # maat + kwaliteit bekend zijn.
+                            "gewicht_kg": None,
                         }
                 else:
                     continue  # Skip om FK-fouten te voorkomen
@@ -336,7 +340,7 @@ def main():
                 "artikelnr": artikelnr,
                 "omschrijving": info["omschrijving"] or "Onbekend product",
                 "verkoopprijs": info["verkoopprijs"],
-                "gewicht_kg": info["gewicht_kg"],
+                "gewicht_kg": None,  # zie comment hierboven (mig 383)
                 "voorraad": 0,
                 "gereserveerd": 0,
                 "vrije_voorraad": 0,
