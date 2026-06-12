@@ -38,6 +38,10 @@ describe('isDropshipRegel (flag-based, mig 370 / ADR-0018)', () => {
   it('false als is_dropship null is (pre-mig-370 rijen)', () => {
     expect(isDropshipRegel({ producten: { is_dropship: null } })).toBe(false)
   })
+
+  it('true wanneer top-level FALSE maar producten.is_dropship TRUE (query-resultaat wint)', () => {
+    expect(isDropshipRegel({ is_dropship: false, producten: { is_dropship: true } })).toBe(true)
+  })
 })
 
 describe('heeftDropshipRegel (TS-spiegel van SQL is_dropship_order)', () => {
@@ -116,5 +120,21 @@ describe('applyDropshipmentLogic', () => {
 
   it("'nee' laat gewone regels ongemoeid", () => {
     expect(applyDropshipmentLogic([tapijt], 'nee')).toEqual([tapijt])
+  })
+
+  it("'klein' verwijdert een bestaande VERZEND-regel (dropship vervangt verzendkosten)", () => {
+    const verzend: OrderRegelFormData = {
+      artikelnr: 'VERZEND',
+      omschrijving: 'Verzendkosten',
+      orderaantal: 1,
+      te_leveren: 1,
+      prijs: 12.5,
+      korting_pct: 0,
+      bedrag: 12.5,
+      is_pseudo: true,
+    }
+    const result = applyDropshipmentLogic([tapijt, verzend], 'klein')
+    expect(result.some((r) => r.artikelnr === 'VERZEND')).toBe(false)
+    expect(result.some((r) => r.artikelnr === 'DROPSHIP-KLEIN')).toBe(true)
   })
 })

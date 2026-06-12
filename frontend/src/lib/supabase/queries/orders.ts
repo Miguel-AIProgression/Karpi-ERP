@@ -126,6 +126,8 @@ export interface OrderRegel {
   klant_artikelnr?: string | null
   /** Admin-pseudo-flag (mig 272 / ADR-0018) — gemapt uit producten.is_pseudo via join. */
   is_pseudo?: boolean
+  /** Dropshipment-vlag (mig 370 / ADR-0018) — gemapt uit producten.is_dropship via join. */
+  is_dropship?: boolean
   // Substitutie
   fysiek_artikelnr?: string | null
   omstickeren?: boolean
@@ -450,7 +452,7 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
 
   const { data, error } = await supabase
     .from('order_regels')
-    .select('id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2, orderaantal, te_leveren, backorder, prijs, korting_pct, bedrag, gewicht_kg, vrije_voorraad, fysiek_artikelnr, omstickeren, is_maatwerk, maatwerk_vorm, maatwerk_lengte_cm, maatwerk_breedte_cm, maatwerk_diameter_cm, maatwerk_afwerking, maatwerk_band_kleur, maatwerk_instructies, maatwerk_m2_prijs, maatwerk_oppervlak_m2, maatwerk_vorm_toeslag, maatwerk_afwerking_prijs, verzendweek, producten!order_regels_artikelnr_fkey(kwaliteit_code, kleur_code, is_pseudo, karpi_code)')
+    .select('id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2, orderaantal, te_leveren, backorder, prijs, korting_pct, bedrag, gewicht_kg, vrije_voorraad, fysiek_artikelnr, omstickeren, is_maatwerk, maatwerk_vorm, maatwerk_lengte_cm, maatwerk_breedte_cm, maatwerk_diameter_cm, maatwerk_afwerking, maatwerk_band_kleur, maatwerk_instructies, maatwerk_m2_prijs, maatwerk_oppervlak_m2, maatwerk_vorm_toeslag, maatwerk_afwerking_prijs, verzendweek, producten!order_regels_artikelnr_fkey(kwaliteit_code, kleur_code, is_pseudo, is_dropship, karpi_code)')
     .eq('order_id', orderId)
     .order('regelnummer')
 
@@ -468,10 +470,11 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
   ): OrderRegel {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const row = r as any
-    const product = row.producten as { kwaliteit_code: string; kleur_code: string | null; is_pseudo: boolean | null; karpi_code: string | null } | null
+    const product = row.producten as { kwaliteit_code: string; kleur_code: string | null; is_pseudo: boolean | null; is_dropship: boolean | null; karpi_code: string | null } | null
     const kwalCode = product?.kwaliteit_code ?? null
     const kleurCode = product?.kleur_code ?? null
     const isPseudo = product?.is_pseudo === true
+    const isDropship = product?.is_dropship === true
 
     let klantEigenNaam: string | null = null
     if (kwalCode && eigenNaamMap) {
@@ -499,6 +502,7 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
       klant_eigen_naam: klantEigenNaam,
       klant_artikelnr: row.artikelnr && klantArtMap ? klantArtMap.get(row.artikelnr) ?? null : null,
       is_pseudo: isPseudo,  // mig 272 / ADR-0018: admin-pseudo-flag uit producten.is_pseudo
+      is_dropship: isDropship,  // mig 370 / ADR-0018: dropship-vlag uit producten.is_dropship
       fysiek_artikelnr: row.fysiek_artikelnr ?? null,
       omstickeren: row.omstickeren ?? false,
       fysiek_omschrijving: row.fysiek_artikelnr && fysiekOmschMap
