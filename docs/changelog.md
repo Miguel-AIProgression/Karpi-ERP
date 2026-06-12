@@ -37,7 +37,6 @@ direct (derive-status-patroon, vite `server.fs.allow`); golden fixture
 gedropt (mig 383). `teLaat` is geünificeerd op strikt (00:00-deadline) — de
 UI-agenda en check-levertijd geven nu dezelfde vlag. Sorterings-verschil
 berekenAgenda↔berekenSnijAgenda blijft bewust staan (B6, kernel-header).
->>>>>>> origin/main
 
 ## 2026-06-12 — Rhenus als transporteur: GS1-XML via SFTP (ADR-0032, mig 379-382) — gebouwd, rondreis geslaagd
 
