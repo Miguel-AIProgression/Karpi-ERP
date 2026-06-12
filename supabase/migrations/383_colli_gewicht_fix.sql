@@ -61,7 +61,7 @@ BEGIN
   END IF;
 
   IF v_artikelnr IS NOT NULL THEN
-    -- Mig 383: LIVE berekening (vorm-aware, mig 188) i.p.v. copy van de
+    -- Mig 383: LIVE berekening (vorm-aware, mig 188/192) i.p.v. copy van de
     -- producten.gewicht_kg-cache — de cache bleek vervuilbaar (density-bug).
     -- bereken_product_gewicht_kg valt zelf al terug op legacy-gewicht als
     -- maat/density ontbreken. NULLIF: 0 is geen gewicht.
@@ -106,7 +106,7 @@ BEGIN
     RETURN NEW;
   END IF;
   IF NEW.vorm = 'rond' THEN
-    NEW.gewicht_kg := ROUND(PI() * POWER(NEW.lengte_cm::NUMERIC / 200.0, 2) * v_density, 2);
+    NEW.gewicht_kg := ROUND(PI()::NUMERIC * POWER(NEW.lengte_cm::NUMERIC / 200.0, 2) * v_density, 2);
   ELSE
     NEW.gewicht_kg := ROUND((NEW.lengte_cm::NUMERIC * NEW.breedte_cm::NUMERIC / 10000.0) * v_density, 2);
   END IF;
@@ -271,7 +271,7 @@ COMMENT ON FUNCTION evalueer_orderregel_attributes(BIGINT) IS
 UPDATE producten p
 SET
   gewicht_kg = CASE p.vorm
-    WHEN 'rond' THEN ROUND(PI() * POWER(p.lengte_cm::NUMERIC / 200.0, 2) * q.gewicht_per_m2_kg, 2)
+    WHEN 'rond' THEN ROUND(PI()::NUMERIC * POWER(p.lengte_cm::NUMERIC / 200.0, 2) * q.gewicht_per_m2_kg, 2)
     ELSE             ROUND((p.lengte_cm::NUMERIC * p.breedte_cm::NUMERIC / 10000.0) * q.gewicht_per_m2_kg, 2)
   END,
   gewicht_uit_kwaliteit = true
@@ -337,7 +337,7 @@ BEGIN
     AND q.gewicht_per_m2_kg > 0
     AND p.gewicht_kg = q.gewicht_per_m2_kg
     AND ABS(p.gewicht_kg - CASE p.vorm
-          WHEN 'rond' THEN ROUND(PI() * POWER(p.lengte_cm::NUMERIC / 200.0, 2) * q.gewicht_per_m2_kg, 2)
+          WHEN 'rond' THEN ROUND(PI()::NUMERIC * POWER(p.lengte_cm::NUMERIC / 200.0, 2) * q.gewicht_per_m2_kg, 2)
           ELSE             ROUND((p.lengte_cm::NUMERIC * p.breedte_cm::NUMERIC / 10000.0) * q.gewicht_per_m2_kg, 2)
         END) >= 0.05;
 
