@@ -172,7 +172,9 @@ async function verwerkOrder(sb: any, orderId: number): Promise<VerwerkResult> {
         'id, order_nr, orderdatum, afleverdatum, klant_referentie, status, bron_systeem, ' +
           'debiteur_nr, ' +
           'besteller_gln, factuuradres_gln, afleveradres_gln, ' +
-          'debiteuren(naam)',
+          // expliciete FK-hint: orders↔debiteuren heeft twee relaties
+          // (debiteur_nr én betaler) — kale 'debiteuren' geeft PGRST201
+          'debiteuren!orders_debiteur_nr_fkey(naam)',
       )
       .eq('id', orderId)
       .maybeSingle()
@@ -225,7 +227,11 @@ async function verwerkOrder(sb: any, orderId: number): Promise<VerwerkResult> {
     // 6. GTIN's ophalen voor de orderregels
     const { data: regelRows, error: regelErr } = await sb
       .from('order_regels')
-      .select('id, regelnummer, artikelnr, omschrijving, orderaantal, producten(ean_code, is_pseudo)')
+      // expliciete FK-hint: order_regels↔producten heeft twee relaties
+      // (artikelnr én fysiek_artikelnr, mig 154) — kale 'producten' geeft
+      // PGRST201. DESADV toont het ORIGINELE artikel (omsticker is intern,
+      // zelfde regel als de factuur).
+      .select('id, regelnummer, artikelnr, omschrijving, orderaantal, producten!order_regels_artikelnr_fkey(ean_code, is_pseudo)')
       .eq('order_id', orderId)
       .gt('orderaantal', 0)
       .order('regelnummer')
