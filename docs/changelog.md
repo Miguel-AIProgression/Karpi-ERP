@@ -1,5 +1,42 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-13 — Rauwe-payload-audit verbreed naar álle externe kanalen + unified view (mig 387)
+
+**Waarom:** één centrale "black box recorder" zodat bij een bug ("waarom kreeg
+deze order geen adres?", "is deze factuur-mail/dit EDI-bericht verstuurd?") het
+originele in-/uitgaande bericht direct terug te vinden is. Aanleiding:
+ORD-2026-0097 (Shopify) printte een leeg verzendlabel doordat de inkomende
+payload nergens bewaard was. Vóór vandaag logden alleen carriers (HST/Rhenus/
+Verhoek, uitgaand) en Shopify-poll (inkomend) naar `externe_payloads`; EDI zat
+al volledig in `edi_berichten`.
+
+**Wat:**
+- Gedeelde seam [`_shared/externe-payload-audit.ts`](../supabase/functions/_shared/externe-payload-audit.ts)
+  (ADR-0033, best-effort — gooit nooit, loggen mag verwerking/verzending nooit
+  blokkeren; unittest 8 groen). Two-step `ontvangen`→`verwerkt`/`fout` voor
+  inbound, one-step met eindstatus voor outbound.
+- **Inbound** (`richting='in'`): `import-lightspeed-orders` ('lightspeed'),
+  `sync-webshop-order` ('webshop'), `poll-email-orders` ('email'),
+  `parse-klant-po` ('klant_po'), `supplier-portal` ('supplier_portal', alleen
+  de ETA-PATCH — GET/login niet).
+- **Outbound** (`richting='out'`, PDF-bytes gestript — alleen metadata):
+  `stuur-orderbevestiging` ('orderbevestiging'), `factuur-verzenden` ('factuur',
+  uitsluitend de e-mail-tak; de EDI-INVOIC blijft in `edi_berichten`).
+- **Mig 387** — unified view `alle_externe_berichten` = `externe_payloads`
+  UNION `edi_berichten`, genormaliseerd (audit_tabel, kanaal, richting,
+  berichttype, externe_id, status, order_id, debiteur_nr, payload_raw/json,
+  fout, aangemaakt_op/afgerond_op). Eén SELECT doorzoekt nu álle berichten.
+  EDI niet gedupliceerd (blijft in `edi_berichten`).
+- Alle 7 functies live gedeployed (na live-diff veiligheidscheck: 6/7 live==main;
+  `factuur-verzenden` had niet-gemergede `normalizeCountry`-seam-drift uit de
+  Verhoek/Rhenus-branch — logging daar herbaseerd op de live-versie zodat de
+  refactor niet teruggedraaid werd). `verify_jwt=false` voor lightspeed +
+  supplier-portal in config.toml gepind.
+
+**Nog handmatig:** mig 387 (de view) moet op de live DB toegepast worden (MCP
+heeft geen DDL-rechten, `db push` is hier onveilig) — de logging zelf werkt al
+zonder de view, want `externe_payloads` bestaat al.
+
 ## 2026-06-12 — Pickbaarheid single-source (mig 386)
 
 > **Hernummering (2×):** deze migratie is vlak vóór de merge hernummerd van 383 → 385 → **386** (origin/main claimde intussen 383/384 via het werkagenda-traject en 385 via het bundel-sleutel-contract). In de live DB is hij op 12-06 onder werknummer 383 toegepast; inhoudelijk identiek.
