@@ -1,5 +1,38 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-13 — Vervoerder-capability-seam: één descriptor-registry (ADR-0034)
+
+**Waarom:** de vervoerder-*keuze* was al data-driven (ADR-0008/0030), maar de
+*eisen en eigenschappen* van elke vervoerder — landbereik, verplichte preflight-
+velden, default-afmetingen, protocoltak, batch-limiet — stonden hardcoded en
+verspreid over 6+ plekken (o.a. `HST_LANDEN_BEREIK`, een carrier-code-array 2×,
+per-carrier `if`-takken, `DEFAULT_LENGTH/WIDTH/HEIGHT/WEIGHT`, twee bijna-
+identieke `valideerXColli`-functies, `MAX_PER_RUN` 3×). Een vierde vervoerder
+raakte 4–5 bestanden. Klassieke ontbrekende deep module (deepening-kandidaat #1
+uit de SSCC-analogen-audit).
+
+**Wat (gedragsneutrale refactor, 3 slices):**
+- **Nieuw:** pure registry [`_shared/vervoerders/capabilities.ts`](../supabase/functions/_shared/vervoerders/capabilities.ts)
+  — één `VerzendCapability` per carrier (protocol/landbereik/preflight-eisen/
+  default-afmetingen/maxPerRun). Frontend-deelbaar via de bestaande shim (ADR-0033).
+- **Slice 1:** `valideerVoorVervoerder` (`_shared/vervoerder-eisen.ts`) leest de
+  eisen declaratief uit de descriptor i.p.v. `if code === `-takken; de dubbele
+  carrier-code-array is weg. `HST_LANDEN_BEREIK` blijft als alias.
+- **Slice 2:** HST `DEFAULT_*`-afmetingen en de drie `MAX_PER_RUN` komen uit de
+  descriptor (zelfde getallen — byte-identieke payloads).
+- **Slice 3:** generieke [`_shared/vervoerders/colli.ts`](../supabase/functions/_shared/vervoerders/colli.ts)
+  `valideerColli(colli, cap, meldingen)` vervangt de iteratie-structuur van
+  `valideerVerhoekColli`/`valideerRhenusColli`; de carriers leveren alleen nog de
+  (ongewijzigde) meldingstekst. De subtiele verschillen blijven exact: Verhoek
+  eist breedte, Rhenus niet maar wél ≥1 colli (incident 0455395).
+- **ADR-0034** + plan `docs/superpowers/plans/2026-06-13-vervoerder-capability-seam.md`.
+- **Tests:** 5 nieuwe (capabilities + colli) + alle bestaande preflight/xml/payload-
+  tests groen (49 Deno-tests). Geen DB-migratie. Buiten scope: format-builders,
+  orchestrator-loop-skeleton (sibling-seam), `vervoerders.type`-correctie + SQL↔TS-
+  contracttest (slice 4, optioneel).
+- **Pre-merge:** `cd frontend && npm run typecheck` (shim trekt `capabilities.ts`
+  cross-root mee; `allowImportingTsExtensions` staat aan).
+
 ## 2026-06-13 — Rauwe-payload-audit verbreed naar álle externe kanalen + unified view (mig 392)
 
 **Waarom:** één centrale "black box recorder" zodat bij een bug ("waarom kreeg

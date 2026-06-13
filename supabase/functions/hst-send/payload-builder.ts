@@ -10,6 +10,7 @@
 // Plan: docs/superpowers/plans/2026-05-01-logistiek-hst-api-koppeling.md
 
 import { normalizeCountry, splitAdres } from '../_shared/adres-split.ts';
+import { capabilityVoor } from '../_shared/vervoerders/capabilities.ts';
 export { splitAdres };
 
 import type {
@@ -29,11 +30,14 @@ const DEFAULT_SHIPPING_SERVICE_ID = 'FFBL';
 const DEFAULT_PACKAGE_UNIT_ID = 'SP';
 const DEFAULT_GOODS_DESCRIPTION = 'Tapijten';
 // Standaard pallet-achtige afmetingen (cm). Bewust niet 0 — HST verwerpt soms
-// 0-waarden. Vervangen door werkelijke meting zodra Pick & Ship die levert.
-const DEFAULT_LENGTH_CM = 120;
-const DEFAULT_WIDTH_CM = 80;
-const DEFAULT_HEIGHT_CM = 20;
-const DEFAULT_WEIGHT_KG = 1;
+// 0-waarden. Bron-van-waarheid = de HST-capability-descriptor (ADR-0034);
+// vervangen door werkelijke meting zodra Pick & Ship die levert.
+const HST_DEFAULT_AFMETINGEN = capabilityVoor('hst_api')?.defaultAfmetingen ??
+  { lengteCm: 120, breedteCm: 80, hoogteCm: 20, gewichtKg: 1 };
+const DEFAULT_LENGTH_CM = HST_DEFAULT_AFMETINGEN.lengteCm;
+const DEFAULT_WIDTH_CM = HST_DEFAULT_AFMETINGEN.breedteCm;
+const DEFAULT_HEIGHT_CM = HST_DEFAULT_AFMETINGEN.hoogteCm;
+const DEFAULT_WEIGHT_KG = HST_DEFAULT_AFMETINGEN.gewichtKg;
 
 export interface BouwTransportOrderArgs {
   zending: ZendingInput;

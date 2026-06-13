@@ -1,8 +1,12 @@
-// Gedeelde pre-flight validator: kent de eisen van de logistieke partijen vóór
-// verzending. V1 dekt alleen HST (enige actieve API-vervoerder). Puur — geen
+// Gedeelde pre-flight validator: kent de adres-/contact-eisen van de logistieke
+// partijen vóór verzending. Sinds ADR-0034 leest deze de eisen declaratief uit
+// de capability-registry (`vervoerders/capabilities.ts`) i.p.v. per-carrier
+// `if`-takken te dragen — één plek voegt een vervoerder toe. Puur — geen
 // DB/secrets — zodat zowel de edge functions (laatste poort) als de frontend
-// (toekomstige waarschuwingsvlag, via re-export-shim frontend/src/lib/orders/
+// (waarschuwingsvlag, via re-export-shim frontend/src/lib/orders/
 // vervoerder-eisen.ts, ADR-0033) dezelfde uitkomst gebruiken.
+
+import { capabilityVoor } from './vervoerders/capabilities.ts';
 
 export interface VerzendContext {
   vervoerder_code: string;
@@ -25,9 +29,9 @@ export interface VerzendValidatie {
   problemen: VerzendProbleem[];
 }
 
-// HST bedient in V1 alleen NL. Uitbreiden = land toevoegen (en de catch-all-regel
-// in mig 336 meegroeien). Centrale lijst zodat UI en edge gelijk lopen.
-export const HST_LANDEN_BEREIK = ['NL'];
+// HST bedient in V1 alleen NL. Bron-van-waarheid is nu de capability-registry;
+// deze export blijft als alias voor bestaande consumers/tests.
+export const HST_LANDEN_BEREIK = capabilityVoor('hst_api')?.landbereik ?? ['NL'];
 
 function leeg(s: string | null | undefined): boolean {
   return !s || s.trim().length === 0;
@@ -41,30 +45,18 @@ function telefoonGeldig(tel: string | null | undefined): boolean {
 
 export function valideerVoorVervoerder(ctx: VerzendContext): VerzendValidatie {
   const problemen: VerzendProbleem[] = [];
+  const cap = capabilityVoor(ctx.vervoerder_code);
 
-  // V1: HST, Verhoek en Rhenus hebben eisen. Andere vervoerders → geen pre-flight (ok).
-  if (!['hst_api', 'verhoek_sftp', 'rhenus_sftp'].includes(ctx.vervoerder_code)) {
+  // Onbekende vervoerder → geen capability-profiel → geen pre-flight (ok).
+  if (!cap) {
     return { ok: true, problemen };
   }
 
-  // SFTP-vervoerders (Verhoek ADR-0031, Rhenus ADR-0032): adresvelden
-  // verplicht (komen op de vrachtbrief/CMR). Telefoon niet verplicht; geen
-  // land-check — routering bepaalt het bereik (selectie-regels/override).
-  // Colli-eisen (gewicht/dims/0-colli) leven in de resp. xml-builders
-  // (valideerVerhoekColli/valideerRhenusColli) — die kennen colli-data,
-  // deze seam niet.
-  if (ctx.vervoerder_code === 'verhoek_sftp' || ctx.vervoerder_code === 'rhenus_sftp') {
-    if (leeg(ctx.afl_naam) || leeg(ctx.afl_adres) || leeg(ctx.afl_postcode) || leeg(ctx.afl_plaats)) {
-      problemen.push({
-        code: 'ADRESVELD_LEEG',
-        veld: 'afl_adres',
-        melding: 'Naam, adres, postcode of plaats is leeg.',
-      });
-    }
-    return { ok: problemen.length === 0, problemen };
-  }
+  const { preflight, landbereik } = cap;
 
-  if (!telefoonGeldig(ctx.afl_telefoon)) {
+  // Volgorde (telefoon → adres → land) bewaard t.o.v. de oude `if`-takken:
+  // consumers/tests lezen `problemen[0]`.
+  if (preflight.vereistTelefoon && !telefoonGeldig(ctx.afl_telefoon)) {
     problemen.push({
       code: 'TELEFOON_ONTBREEKT',
       veld: 'afl_telefoon',
@@ -72,7 +64,10 @@ export function valideerVoorVervoerder(ctx: VerzendContext): VerzendValidatie {
     });
   }
 
-  if (leeg(ctx.afl_naam) || leeg(ctx.afl_adres) || leeg(ctx.afl_postcode) || leeg(ctx.afl_plaats)) {
+  if (
+    preflight.vereistAdresvelden &&
+    (leeg(ctx.afl_naam) || leeg(ctx.afl_adres) || leeg(ctx.afl_postcode) || leeg(ctx.afl_plaats))
+  ) {
     problemen.push({
       code: 'ADRESVELD_LEEG',
       veld: 'afl_adres',
@@ -80,13 +75,15 @@ export function valideerVoorVervoerder(ctx: VerzendContext): VerzendValidatie {
     });
   }
 
-  const land = (ctx.afl_land ?? '').trim().toUpperCase();
-  if (!HST_LANDEN_BEREIK.includes(land)) {
-    problemen.push({
-      code: 'LAND_BUITEN_BEREIK',
-      veld: 'afl_land',
-      melding: `HST bedient ${land || '(leeg)'} niet — kies handmatig een vervoerder.`,
-    });
+  if (preflight.vereistLandInBereik) {
+    const land = (ctx.afl_land ?? '').trim().toUpperCase();
+    if (!(landbereik ?? []).includes(land)) {
+      problemen.push({
+        code: 'LAND_BUITEN_BEREIK',
+        veld: 'afl_land',
+        melding: `HST bedient ${land || '(leeg)'} niet — kies handmatig een vervoerder.`,
+      });
+    }
   }
 
   return { ok: problemen.length === 0, problemen };

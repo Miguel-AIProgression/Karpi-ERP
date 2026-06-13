@@ -17,10 +17,11 @@ import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supa
 import { bouwVerhoekBestandsnaam, bouwVerhoekXml, valideerVerhoekColli } from './xml-builder.ts';
 import { type SftpConfig, uploadXmlViaSftp } from '../_shared/sftp-client.ts';
 import { valideerVoorVervoerder } from '../_shared/vervoerder-eisen.ts';
+import { capabilityVoor } from '../_shared/vervoerders/capabilities.ts';
 import { DEFAULT_VERHOEK_OPTIES } from './types.ts';
 import type { BedrijfInput, VerhoekColliInput, VerhoekOpties, ZendingInput } from './types.ts';
 
-const MAX_PER_RUN = 25;
+const MAX_PER_RUN = capabilityVoor('verhoek_sftp')?.maxPerRun ?? 25;
 
 interface VerhoekTransportOrderRow {
   id: number;
