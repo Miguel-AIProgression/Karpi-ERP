@@ -1,5 +1,19 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-13 — Colli-data single-source: omschrijving + label-metadata + gewicht-totaal (mig 388-389)
+
+> **Migratienummers:** branch-repo-nummers 388/389 (origin/main stond bij branchen op 386; twee parallelle branches claimden elk een 387). Vlak vóór merge herverifiëren. Achtergrond: [`docs/superpowers/plans/2026-06-13-sscc-analogen-audit.md`](superpowers/plans/2026-06-13-sscc-analogen-audit.md).
+
+Vervolg op de SSCC-fix (12-06): het "SSCC-patroon" (één canonieke, bevroren bron) doorgetrokken naar de resterende afgeleide colli-data, zodat verzendlabel, pakbon, DPD-label en vervoerder-payload niet meer uiteenlopen voor hetzelfde collo.
+
+**A1 — omschrijving (mig 388):** label/pakbon/DPD leidden de productomschrijving LIVE af uit `order_regels`/`producten`, met **drie verschillende ontdubbel-varianten** (label substring-match, pakbon geen, DPD eigen logica), terwijl HST/Verhoek de bevroren `zending_colli.omschrijving_snapshot` lezen → na een productnaamwijziging drie verschillende teksten. Nu: nieuwe kolom `zending_colli.klant_omschrijving_snapshot` (ontdubbelde klant-omschrijving) + de bestaande `omschrijving_snapshot` (Karpi-product + maat); de print-laag leest uitsluitend die snapshots, met live-fallback alleen voor legacy-zendingen zonder colli. De ontdubbeling verhuisde van 3 TS-varianten naar één SQL-helper `compose_klant_omschrijving` (spiegelt `productNamen`). `genereer_zending_colli` herschreven als **superset** van de mig 387-gewicht-versie (gewicht-ladder + nieuwe snapshot blijven samen overeind).
+
+**D/E — label-metadata (mig 388, frontend):** label-datum komt uit `zendingen.verzenddatum` (gedeelde `labelDatumKort`) i.p.v. de printdatum (`datumKort` verwijderd) — een herprint toont nu exact wat de vervoerder kreeg; alle labelformaten gebruiken dezelfde order-referentie (`labelReferentie`) — het DPD-label gebruikte voorheen `zending.id`, wat niet matchte met compact/tall.
+
+**A2 — gewicht-totaal (mig 389):** trigger `trg_sync_zending_totaal_gewicht` houdt `zendingen.totaal_gewicht_kg = SUM(zending_colli.gewicht_kg)`, zodat het HST-fallback-pad hetzelfde totaal stuurt als het per-colli-pad en als wat Rhenus/Verhoek sommeren. Raakt alléén de afgeleide som — niet de gewicht-DATA-keten (`zending_colli.gewicht_kg`, producten-cache) van mig 387 (aparte sessie). **Volgorde-eis:** mig 389 ná mig 387 draaien.
+
+Vangnet: `printset.test.ts` uitgebreid (snapshot wint van live; legacy-fallback; datum/referentie). Buiten scope (gedocumenteerd in de audit): colli-afmetingen (HST hardcodet nog 120×80×20), adres-split (by-design), GTIN-in-EDI (laag risico).
+
 ## 2026-06-12 — Pickbaarheid single-source (mig 386)
 
 > **Hernummering (2×):** deze migratie is vlak vóór de merge hernummerd van 383 → 385 → **386** (origin/main claimde intussen 383/384 via het werkagenda-traject en 385 via het bundel-sleutel-contract). In de live DB is hij op 12-06 onder werknummer 383 toegepast; inhoudelijk identiek.
