@@ -1,6 +1,8 @@
--- Migratie 383: colli-gewicht-fix — resolver-verdieping + self-healing cache + backfill
--- (in de live DB draait dit als 382 — zelfde repo/DB-offset als mig 379-382,
---  zie de hernummer-notitie in die headers)
+-- Migratie 387: colli-gewicht-fix — resolver-verdieping + self-healing cache + backfill
+-- (repo-nr 387 na hernummering vanaf 383 wegens collisie met main's
+--  383_drop_ongebruikte_werkagenda_sql.sql; main stond bij merge op 386. Het
+--  live-DB-werknummer wordt bij apply bepaald — de repo↔live-offset is voor de
+--  38x-reeks niet constant; idempotent, dus opnieuw draaien is veilig.)
 --
 -- Aanleiding (Rhenus/Verhoek-cutover, handoff 12-06): de SFTP-preflights
 -- verplichten gewicht_kg > 0 per colli, maar zending_colli.gewicht_kg stond
@@ -64,7 +66,7 @@ BEGIN
   END IF;
 
   IF v_artikelnr IS NOT NULL THEN
-    -- Mig 383: LIVE berekening (vorm-aware, mig 188/192) i.p.v. copy van de
+    -- Mig 387: LIVE berekening (vorm-aware, mig 188/192) i.p.v. copy van de
     -- producten.gewicht_kg-cache — de cache bleek vervuilbaar (density-bug).
     -- bereken_product_gewicht_kg valt zelf al terug op legacy-gewicht als
     -- maat/density ontbreken. NULLIF: 0 is geen gewicht.
@@ -79,9 +81,9 @@ $$ LANGUAGE plpgsql STABLE;
 
 COMMENT ON FUNCTION bereken_orderregel_gewicht_kg IS
   'Gewicht-resolver — gewicht (kg/stuk) voor een orderregel. Maatwerk: '
-  'oppervlak × kwaliteit-density. Vast: sinds mig 383 LIVE via '
+  'oppervlak × kwaliteit-density. Vast: sinds mig 387 LIVE via '
   'bereken_product_gewicht_kg (vorm-aware) i.p.v. cache-copy. '
-  'Service-items zonder artikelnr → NULL. Mig 185/383.';
+  'Service-items zonder artikelnr → NULL. Mig 185/387.';
 
 -- ============================================================================
 -- §2. Self-healing cache: BEFORE-trigger op producten
@@ -128,7 +130,7 @@ CREATE TRIGGER trg_producten_gewicht_derive
   EXECUTE FUNCTION producten_gewicht_derive();
 
 COMMENT ON TRIGGER trg_producten_gewicht_derive ON producten IS
-  'Mig 383: self-healing gederiveerde cache. Voor vast/staaltje met complete '
+  'Mig 387: self-healing gederiveerde cache. Voor vast/staaltje met complete '
   'data (maat + kwaliteit-density) wordt gewicht_kg ALTIJD herleid — een '
   'handmatige/import-waarde wordt bewust overschreven. Gewicht corrigeren = '
   'kwaliteiten.gewicht_per_m2_kg aanpassen (cascadeert via mig 185/188-trigger). '
@@ -192,7 +194,7 @@ BEGIN
         r.order_regel_id,
         r.rol_id,
         genereer_sscc(),
-        -- Mig 383 gewicht-ladder: regel-cache (respecteert eventuele
+        -- Mig 387 gewicht-ladder: regel-cache (respecteert eventuele
         -- handmatige correctie; 0 = ontbreekt) → live resolver (vorm-aware,
         -- ook maatwerk) → product-cache als laatste vangnet.
         COALESCE(
@@ -220,7 +222,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 GRANT EXECUTE ON FUNCTION genereer_zending_colli(BIGINT) TO authenticated;
 
 COMMENT ON FUNCTION genereer_zending_colli(BIGINT) IS
-  'Mig 383: gewicht-ladder NULLIF(regel,0) → bereken_orderregel_gewicht_kg '
+  'Mig 387: gewicht-ladder NULLIF(regel,0) → bereken_orderregel_gewicht_kg '
   '(live, vorm-aware) → NULLIF(product-cache,0). Verder identiek aan mig 213: '
   'maakt zending_colli-rijen (1 colli per stuk), idempotent, SSCC + '
   'omschrijving-snapshot per colli.';
@@ -244,7 +246,7 @@ BEGIN
       COALESCE(ore.maatwerk_lengte_cm,  p.lengte_cm),
       COALESCE(ore.maatwerk_breedte_cm, p.breedte_cm)
     )::INTEGER AS kleinste_zijde_cm,
-    -- Mig 383: NULLIF(0) — een 0-gewicht-cache mag de ladder niet
+    -- Mig 387: NULLIF(0) — een 0-gewicht-cache mag de ladder niet
     -- kortsluiten (34 orderregels stonden op exact 0).
     (COALESCE(NULLIF(ore.gewicht_kg, 0), NULLIF(p.gewicht_kg, 0), 0)
        * GREATEST(COALESCE(ore.orderaantal, 0), 0))::NUMERIC AS totaal_gewicht_kg,
@@ -261,7 +263,7 @@ $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
 GRANT EXECUTE ON FUNCTION evalueer_orderregel_attributes(BIGINT) TO authenticated;
 
 COMMENT ON FUNCTION evalueer_orderregel_attributes(BIGINT) IS
-  'Mig 219 + 383: per-orderregel attributen voor regel-evaluator. Sinds 383 '
+  'Mig 219 + 387: per-orderregel attributen voor regel-evaluator. Sinds 387 '
   'met NULLIF(0) op beide gewicht-bronnen (0-cache mocht de COALESCE niet '
   'kortsluiten).';
 
@@ -352,8 +354,8 @@ BEGIN
   WHERE z.status NOT IN ('Onderweg', 'Afgeleverd')
     AND (zc.gewicht_kg IS NULL OR zc.gewicht_kg = 0);
 
-  RAISE NOTICE 'Mig 383 verifier: density-als-gewicht resterend: % (verwacht 0)', v_dens_rest;
-  RAISE NOTICE 'Mig 383 verifier: niet-verzonden colli zonder gewicht: % (verwacht 0, of colli van regels zonder berekenbaar gewicht)', v_colli_leeg;
+  RAISE NOTICE 'Mig 387 verifier: density-als-gewicht resterend: % (verwacht 0)', v_dens_rest;
+  RAISE NOTICE 'Mig 387 verifier: niet-verzonden colli zonder gewicht: % (verwacht 0, of colli van regels zonder berekenbaar gewicht)', v_colli_leeg;
 END $$;
 
 NOTIFY pgrst, 'reload schema';

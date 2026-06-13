@@ -335,7 +335,7 @@ def main():
                 "artikelnr": artikelnr,
                 "omschrijving": info["omschrijving"] or "Onbekend product",
                 "verkoopprijs": info["verkoopprijs"],
-                # Mig 383: prijslijst-kolom F is density (kg/m²), geen stukgewicht —
+                # Mig 387: prijslijst-kolom F is density (kg/m²), geen stukgewicht —
                 # bewust NULL; de self-healing trigger vult het zodra maat+kwaliteit bekend zijn.
                 "gewicht_kg": None,
                 "voorraad": 0,
