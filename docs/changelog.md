@@ -1,5 +1,36 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-13 — Rauwe Shopify-payload-audit op het live poll-pad (`externe_payloads`)
+
+**Waarom:** ORD-2026-0097 (Shopify #5575) printte een verzendlabel met een
+**leeg afleveradres-kader**. Diagnose: Shopify stuurde voor die order géén
+`shipping_address` én géén `billing_address` mee →
+[`extractShopifyShippingAddress`](../supabase/functions/_shared/shopify-types.ts)
+gaf `{}` → `afl_naam=""`, `afl_adres/postcode/plaats=null` op order + zending →
+leeg kader. De order bleek een seed-import-artefact (`bron_order_id=""`, terwijl
+elke live-order een echt Shopify-id heeft). **Maar de echte les:** de payload was
+achteraf niet te reconstrueren, want de **live Shopify-intake (poll-functie)
+bewaarde de rauwe payload nergens** — alleen de webhook-functie deed dat, en die
+draait niet live (0 `shopify`-rijen in `externe_payloads`; alleen HST/Rhenus
+uitgaand).
+
+**Wat:**
+- `processShopifyOrder` ([`_shared/shopify-order-processor.ts`](../supabase/functions/_shared/shopify-order-processor.ts))
+  logt nu per **daadwerkelijk verwerkte** order de letterlijke payload via de
+  bestaande mig 324/325-RPC's, two-step status `ontvangen` → `verwerkt`/`fout`
+  (met `order_id` resp. foutreden). Loggen gebeurt **na** de idempotentie-check,
+  zodat de 10-min-cron geen dubbele audit-rijen maakt voor al-verwerkte orders.
+- RPC-helpers geëxtraheerd naar gedeelde seam
+  [`_shared/externe-payload-audit.ts`](../supabase/functions/_shared/externe-payload-audit.ts)
+  (ADR-0033, geen duplicatie van de webhook-kopie), **best-effort** (gooit nooit
+  — loggen mag verwerking niet blokkeren), met unit-tests
+  (`externe-payload-audit.test.ts`, 7 groen).
+- Deployed: `sync-shopify-orders-poll` (branch `feat/shopify-polling-sync`).
+
+**Nog open:** het label van ORD-2026-0097 zelf (adres-snapshot vullen) + de
+structurele intake-fallback naar het debiteur-adres bij een adresloze
+Shopify-order + label-renderer bestand maken tegen lege strings.
+
 ## 2026-06-07 — Maatwerk-herkenning Shopify/mail: vorm-detectie data-driven uit `maatwerk_vormen` + gedeelde dims-parser voor Shopify `properties`
 
 **Waarom:** Order ORD-2026-0118 (Shopify #5580, FLOORPASSION) toonde meerdere
