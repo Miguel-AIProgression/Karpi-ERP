@@ -1,6 +1,7 @@
 // frontend/src/modules/magazijn/hooks/use-pickronde.ts
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  annuleerPickronde,
   fetchColliVoorZending,
   fetchPickProblemen,
   markeerColliNietGevonden,
@@ -50,6 +51,22 @@ export function useMarkeerColliNietGevonden() {
         qc.invalidateQueries({ queryKey: ['zendingen'] })
         qc.invalidateQueries({ queryKey: ['pick-ship'] })
       }
+    },
+  })
+}
+
+export function useAnnuleerPickronde() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ zendingId, reden }: { zendingId: number; reden?: string | null }) =>
+      annuleerPickronde(zendingId, reden),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['pickronde'] })
+      qc.invalidateQueries({ queryKey: ['logistiek', 'zendingen'] })
+      qc.invalidateQueries({ queryKey: ['pick-ship'] })
+      qc.invalidateQueries({ queryKey: ['orders'] })
+      // Order valt terug uit de actieve bundel → preview herevalueren (mig 229).
+      qc.invalidateQueries({ queryKey: ['voorgestelde-bundels'] })
     },
   })
 }

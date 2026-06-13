@@ -8,6 +8,7 @@ import { DpdShippingLabel } from '@/modules/logistiek/components/dpd-shipping-la
 import { VervoerderTag } from '@/modules/logistiek/components/vervoerder-tag'
 import { ColliPickVinkjes } from '@/modules/logistiek/components/colli-pick-vinkjes'
 import { VoltooiPickrondeKnop } from '@/modules/logistiek/components/voltooi-pickronde-knop'
+import { AnnuleerPickrondeKnop } from '@/modules/logistiek/components/annuleer-pickronde-knop'
 import { PickerDropdown } from '@/components/orders/picker-dropdown'
 import { useZendingPrintSet } from '@/modules/logistiek/hooks/use-zendingen'
 import { useZendingStickerData } from '@/modules/logistiek/hooks/use-zending-stickers'
@@ -240,7 +241,8 @@ export function ZendingPrintSetPage() {
               }
               pickerId={pickerId}
             />
-            <div className="flex justify-end">
+            <div className="flex items-center justify-between gap-3">
+              <AnnuleerPickrondeKnop zendingId={zending.id} zendingStatus={zending.status} />
               <VoltooiPickrondeKnop
                 zendingId={zending.id}
                 zendingStatus={zending.status}

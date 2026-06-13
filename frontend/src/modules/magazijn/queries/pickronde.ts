@@ -43,6 +43,21 @@ export async function voltooiPickronde(
   return Number(data)
 }
 
+// Mig 395: draait een nog-niet-gepickte pickronde terug. Verwijdert de zending
+// en zet de betrokken order(s) terug naar 'Klaar voor picken'. Backend weigert
+// als er al gepickt is of de zending niet meer status 'Picken' heeft.
+export async function annuleerPickronde(
+  zendingId: number,
+  reden?: string | null,
+): Promise<number> {
+  const { data, error } = await supabase.rpc('annuleer_pickronde', {
+    p_zending_id: zendingId,
+    p_reden: reden ?? null,
+  })
+  if (error) throw toError(error, 'Pickronde terugdraaien mislukt')
+  return Number(data)
+}
+
 // Colli-fetch voor de pick-vinkjes-UI.
 export interface PickColliRij {
   id: number

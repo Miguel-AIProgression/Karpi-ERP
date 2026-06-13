@@ -21,6 +21,7 @@ export {
   useStartPickronde,
   useMarkeerColliNietGevonden,
   useVoltooiPickronde,
+  useAnnuleerPickronde,
 } from './hooks/use-pickronde'
 
 // Types — VervoerderSelectieStatus zit niet meer hier; magazijn weet niets
