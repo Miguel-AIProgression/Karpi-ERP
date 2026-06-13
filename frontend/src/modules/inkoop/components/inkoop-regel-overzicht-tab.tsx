@@ -22,14 +22,6 @@ function formatAantal(n: number): string {
   return n.toLocaleString('nl-NL', { minimumFractionDigits: 0, maximumFractionDigits: 1 })
 }
 
-function formatBijgewerktOp(iso: string | null): string {
-  if (!iso) return ''
-  const d = new Date(iso)
-  return d.toLocaleString('nl-NL', {
-    day: '2-digit', month: '2-digit', year: '2-digit',
-    hour: '2-digit', minute: '2-digit',
-  })
-}
 
 function isoWeekLabel(iso: string | null): string {
   const w = isoWeekJaarVanIso(iso)
