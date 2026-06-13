@@ -1,5 +1,11 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-13 — Intake-gates sluiten productie-only orders uit (mig 394)
+
+> **Direct na de mig 392-393-backfill op de live DB.** Apply na 393.
+
+De backfill van mig 392-393 flagde ~200 productie-only orders (`alleen_productie=true`, OUD-*-nummers uit Basta, status "In productie") op zowel adres als prijs — terecht qua data (ze hebben geen afleveradres/prijs in RugFlow) maar onbedoeld: ze worden volledig in Basta afgehandeld (ADR-0029) en bereiken hier nooit Pick & Ship of facturatie, dus de gates zijn betekenisloos en domineerden beide nieuwe tabs als ruis. Mig 394 sluit `alleen_productie=true` uit in beide gate-triggers (`fn_orders_afl_adres_gate` + `fn_order_regels_prijs_gate`) en wist de onterechte flags via een correctie-backfill. Discriminator = de vlag, niet de status (vangt 'In productie' én 'Maatwerk afgerond'); consistent met `orders_zonder_vervoerder` (mig 345) en de Pick & Ship-query. Echte ORD-gevallen (0097/0108/0123 adres; diverse prijs) blijven terecht geflagd.
+
 ## 2026-06-13 — Intake-gates: afleveradres & prijs blokkeren doorstroming (mig 392-393)
 
 > **Migratienummers:** repo-nrs **392/393** (geverifieerd tegen origin/main vlak vóór start: 390/391 = colli-data, al gemerged). Nog niet op de live DB toegepast — apply 392 vóór 393 (393 breidt `_valideer_intake_gates` uit die 392 aanmaakt). **Deploy-volgorde:** migraties vóór de frontend (Pick & Ship-query + `orders_list` lezen de nieuwe kolommen). Branch: `feat/intake-gates-adres-en-prijs`.

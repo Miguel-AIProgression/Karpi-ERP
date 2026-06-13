@@ -153,7 +153,9 @@ verschillend ontworpen (zie CLAUDE.md, mig 326-toelichting). Alle predicaten heb
 De intake-gates afleveradres (mig 392) & prijs (mig 393) zijn de enige **blokkerende**
 kolom-gates: ze delen de server-side poort `_valideer_intake_gates(order_ids[])` die
 `start_pickronden` aanroept ná de bundel-uitbreiding. Detectie zit in DB-triggers (single
-source) zodat álle intake-kanalen gedekt zijn, niet per kanaal.
+source) zodat álle intake-kanalen gedekt zijn, niet per kanaal. **Productie-only orders
+(`alleen_productie=true`, Basta) zijn uitgesloten van beide gates (mig 394)** — verzending
+en facturatie lopen daar via Basta, dus de gates zijn voor hen betekenisloos.
 
 ## 6a. Orderbevestiging — kanaal-dispatch (besluit 2026-06-11)
 
