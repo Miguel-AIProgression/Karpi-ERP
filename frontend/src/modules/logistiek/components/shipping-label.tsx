@@ -1,6 +1,11 @@
 import { Code128Barcode } from './code128-barcode'
 import { ShippingLabelTall } from './shipping-label-tall'
-import { datumKort, productMaat, productNamen } from '@/modules/logistiek/lib/shipping-label-data'
+import {
+  labelDatumKort,
+  labelReferentie,
+  productMaat,
+  productNamen,
+} from '@/modules/logistiek/lib/shipping-label-data'
 import {
   DEFAULT_LABEL_BREEDTE_MM,
   DEFAULT_LABEL_HOOGTE_MM,
@@ -18,6 +23,10 @@ export interface ShippingLabelProps {
    * null → label rendert zonder barcode; er mag nooit een niet-aangemelde
    * barcode geprint worden. */
   sscc: string | null
+  /** Mig 209/388: bevroren omschrijving-snapshots uit `zending_colli` — single
+   * source, gelijk aan wat de vervoerder krijgt. null → val terug op live `regel`. */
+  omschrijvingSnapshot: string | null
+  klantOmschrijvingSnapshot: string | null
   labelFormaat?: LabelFormaat
 }
 
@@ -49,16 +58,19 @@ function ShippingLabelCompact({
   colliTotal,
   vervoerderNaam,
   sscc,
+  omschrijvingSnapshot,
+  klantOmschrijvingSnapshot,
   breedteMm,
   hoogteMm,
 }: ShippingLabelProps & { breedteMm: number; hoogteMm: number }) {
   const order = zending.orders
-  const namen = productNamen(regel)
+  const snapshot = { omschrijvingSnapshot, klantOmschrijvingSnapshot }
+  const namen = productNamen(regel, snapshot)
   const toonKarpi = namen.karpiNaam && namen.karpiNaam !== namen.klantNaam
-  const maat = productMaat(regel)
+  const maat = productMaat(regel, snapshot)
   const land = zending.afl_land ?? 'NL'
   const barcodeValue = sscc ? `00${sscc}` : null
-  const ref = String(order.oud_order_nr ?? order.id).padStart(6, '0')
+  const ref = labelReferentie(order)
 
   // Schaalfactor t.o.v. het basis-ontwerp: 1.0 op een 3"×2"-rol, 1.5 op de
   // volle 3"×6" liggend. Hoogte stuurt rijen en fonts; de rechterkolom blijft
@@ -355,7 +367,7 @@ function ShippingLabelCompact({
               lineHeight: 1.1,
             }}
           >
-            <span>{datumKort()}</span>
+            <span>{labelDatumKort(zending)}</span>
             <span>{ref}</span>
           </div>
         </div>

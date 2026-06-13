@@ -24,7 +24,10 @@ import type {
   RhenusOpties,
 } from './types.ts';
 
-// Zelfde GLN als het Transus-EDI-kanaal (CLAUDE.md: Karpi-GLN).
+// Fallback-GLN als app_config bedrijfsgegevens.gln_eigen ontbreekt — zelfde
+// patroon als de andere outbound-kanalen (bouw-verzendbericht-edi, bouw-factuur-
+// edi, factuur-verzenden). Bron-van-waarheid blijft app_config (CLAUDE.md:
+// Karpi-GLN); de orchestrator geeft gln_eigen door via BedrijfInput.
 export const KARPI_GLN = '8715954999998';
 
 // kg → string met max 2 decimalen, trailing nullen gestript ('19.8', '5',
@@ -171,7 +174,7 @@ export function bouwRhenusXml(args: BouwRhenusXmlArgs): string {
     '<sh:DocumentIdentification>',
     '<sh:Standard>RHE</sh:Standard>',
     '<sh:TypeVersion>3.1</sh:TypeVersion>',
-    `<sh:InstanceIdentifier>${KARPI_GLN}</sh:InstanceIdentifier>`,
+    `<sh:InstanceIdentifier>${bedrijf.gln_eigen ?? KARPI_GLN}</sh:InstanceIdentifier>`,
     '<sh:Type>Transport Instruction Message</sh:Type>',
     `<sh:CreationDateAndTime>${tijdstip}</sh:CreationDateAndTime>`,
     '</sh:DocumentIdentification>',

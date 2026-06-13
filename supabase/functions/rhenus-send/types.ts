@@ -28,6 +28,10 @@ export interface BedrijfInput {
   land: string;
   telefoon: string;
   email: string;
+  /** Karpi's eigen GLN (afzender in de SBDH). Bron: app_config
+   *  bedrijfsgegevens.gln_eigen (mig 156). Ontbreekt → KARPI_GLN-fallback in
+   *  xml-builder, zoals alle andere outbound-kanalen. */
+  gln_eigen?: string;
 }
 
 // Eén colli. lengte_cm → dimension/depth (legacy stuurt voor rollen alleen

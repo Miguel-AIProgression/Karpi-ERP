@@ -1,6 +1,6 @@
 # Changelog — RugFlow ERP
 
-## 2026-06-13 — Rauwe-payload-audit verbreed naar álle externe kanalen + unified view (mig 387)
+## 2026-06-13 — Rauwe-payload-audit verbreed naar álle externe kanalen + unified view (mig 392)
 
 **Waarom:** één centrale "black box recorder" zodat bij een bug ("waarom kreeg
 deze order geen adres?", "is deze factuur-mail/dit EDI-bericht verstuurd?") het
@@ -22,7 +22,7 @@ al volledig in `edi_berichten`.
 - **Outbound** (`richting='out'`, PDF-bytes gestript — alleen metadata):
   `stuur-orderbevestiging` ('orderbevestiging'), `factuur-verzenden` ('factuur',
   uitsluitend de e-mail-tak; de EDI-INVOIC blijft in `edi_berichten`).
-- **Mig 387** — unified view `alle_externe_berichten` = `externe_payloads`
+- **Mig 392** — unified view `alle_externe_berichten` = `externe_payloads`
   UNION `edi_berichten`, genormaliseerd (audit_tabel, kanaal, richting,
   berichttype, externe_id, status, order_id, debiteur_nr, payload_raw/json,
   fout, aangemaakt_op/afgerond_op). Eén SELECT doorzoekt nu álle berichten.
@@ -33,9 +33,48 @@ al volledig in `edi_berichten`.
   refactor niet teruggedraaid werd). `verify_jwt=false` voor lightspeed +
   supplier-portal in config.toml gepind.
 
-**Nog handmatig:** mig 387 (de view) moet op de live DB toegepast worden (MCP
-heeft geen DDL-rechten, `db push` is hier onveilig) — de logging zelf werkt al
-zonder de view, want `externe_payloads` bestaat al.
+**Status:** mig 392 (de view) is op 13-06 handmatig op de live DB toegepast
+(MCP heeft geen DDL-rechten); geverifieerd via `alle_externe_berichten`. De
+logging draait live op alle 7 functies (na live-diff veiligheidscheck +
+redeploy). Repo-nr 387→392 hernummerd vlak vóór merge (origin/main claimde
+intussen 387-391).
+
+## 2026-06-13 — Colli-data single-source: omschrijving + label-metadata + gewicht-totaal (mig 390-391)
+
+> **Migratienummers:** repo-nrs **390/391** (vlak vóór merge hernummerd 388/389 → 390/391 — origin/main claimde intussen 388 `maatwerk_vorm_contour` + 389 `normaliseer_land_contract`; mig 387-gewicht stond al op main). In de live DB op 13-06 toegepast onder werknummers 388/389; idempotent, inhoudelijk identiek. Achtergrond: [`docs/superpowers/plans/2026-06-13-sscc-analogen-audit.md`](superpowers/plans/2026-06-13-sscc-analogen-audit.md).
+
+Vervolg op de SSCC-fix (12-06): het "SSCC-patroon" (één canonieke, bevroren bron) doorgetrokken naar de resterende afgeleide colli-data, zodat verzendlabel, pakbon, DPD-label en vervoerder-payload niet meer uiteenlopen voor hetzelfde collo.
+
+**A1 — omschrijving (mig 390):** label/pakbon/DPD leidden de productomschrijving LIVE af uit `order_regels`/`producten`, met **drie verschillende ontdubbel-varianten** (label substring-match, pakbon geen, DPD eigen logica), terwijl HST/Verhoek de bevroren `zending_colli.omschrijving_snapshot` lezen → na een productnaamwijziging drie verschillende teksten. Nu: nieuwe kolom `zending_colli.klant_omschrijving_snapshot` (ontdubbelde klant-omschrijving) + de bestaande `omschrijving_snapshot` (Karpi-product + maat); de print-laag leest uitsluitend die snapshots, met live-fallback alleen voor legacy-zendingen zonder colli. De ontdubbeling verhuisde van 3 TS-varianten naar één SQL-helper `compose_klant_omschrijving` (spiegelt `productNamen`). `genereer_zending_colli` herschreven als **superset** van de mig 387-gewicht-versie (gewicht-ladder + nieuwe snapshot blijven samen overeind).
+
+**D/E — label-metadata (mig 390, frontend):** label-datum komt uit `zendingen.verzenddatum` (gedeelde `labelDatumKort`) i.p.v. de printdatum (`datumKort` verwijderd) — een herprint toont nu exact wat de vervoerder kreeg; alle labelformaten gebruiken dezelfde order-referentie (`labelReferentie`) — het DPD-label gebruikte voorheen `zending.id`, wat niet matchte met compact/tall.
+
+**A2 — gewicht-totaal (mig 391):** trigger `trg_sync_zending_totaal_gewicht` houdt `zendingen.totaal_gewicht_kg = SUM(zending_colli.gewicht_kg)`, zodat het HST-fallback-pad hetzelfde totaal stuurt als het per-colli-pad en als wat Rhenus/Verhoek sommeren. Raakt alléén de afgeleide som — niet de gewicht-DATA-keten (`zending_colli.gewicht_kg`, producten-cache) van mig 387 (aparte sessie). **Volgorde-eis:** mig 391 ná mig 387 draaien.
+
+Vangnet: `printset.test.ts` uitgebreid (snapshot wint van live; legacy-fallback; datum/referentie). Buiten scope (gedocumenteerd in de audit): colli-afmetingen (HST hardcodet nog 120×80×20), adres-split (by-design), GTIN-in-EDI (laag risico).
+
+## 2026-06-13 — Config-constanten naar single source (tech-debt categorie C, mig 389)
+
+> **Nummering:** deze migratie is hernummerd 387 → 388 → **389** vlak vóór de merge (origin/main claimde 387 via de colli-gewicht-fix en 388 via de maatwerk-vorm-contour-fix). In de live DB is de assert op 13-06 al uitgevoerd (nul mismatches); de inhoud is idempotent.
+
+**Wat:** drie hardcoded constanten die naast hun DB-/config-bron leefden teruggebracht tot één bron. Branch `fix/config-constanten-single-source`. Plan: [`docs/superpowers/plans/2026-06-13-config-constanten-single-source.md`](superpowers/plans/2026-06-13-config-constanten-single-source.md).
+
+- **Probleem 7 — `normalizeCountry` (landnaam→ISO-2):** 5 divergerende varianten geconsolideerd. `factuur-verzenden` kende alleen NL/DE en viel terug op `slice(0,2)` → **Oostenrijk→`OO`, Zwitserland→`ZW`, Spanje→`SP`, Polen→`PO`, Engeland→`EN`** op de elektronische factuur. De seam [`_shared/adres-split.ts`](../supabase/functions/_shared/adres-split.ts) `normalizeCountry` (lenient) + nieuwe `landNaarIso2Strikt` (null-contract) spiegelt nu de SQL-bron `normaliseer_land` (mig 214) één-op-één. `factuur-verzenden`, `factuur-mapper.ts`, `factuur-pdf.ts` en de frontend `land-vlag.ts` (cross-root re-export, ADR-0033) lozen hun lokale kopie. **Mig 389** `assert_normaliseer_land_contract()` + Vitest `normaliseer-land.contract.test.ts` borgen de SQL↔TS-pariteit via golden fixtures (patroon mig 385). Conventie: wijzig je `normaliseer_land`/de seam → golden bijwerken + nieuwe `*_normaliseer_land_contract*.sql`.
+- **Probleem 5 — Karpi-GLN (Rhenus):** `rhenus-send/xml-builder.ts` was het énige outbound-kanaal dat de SBDH-afzender-GLN niet uit `app_config.bedrijfsgegevens.gln_eigen` las. `BedrijfInput` kreeg optioneel `gln_eigen` (orchestrator cast de app_config-waarde al direct → stroomt mee zonder fetch-wijziging); builder gebruikt `bedrijf.gln_eigen ?? KARPI_GLN` (fallback-patroon zoals de andere kanalen). GS1-prefix `8715954` in mig 209 (SSCC) is een ander concept → buiten scope.
+- **Probleem 6 — dropship-prijs:** `DROPSHIP_KLEIN_PRIJS`/`GROOT_PRIJS` stonden hardcoded naast `producten.verkoopprijs` (de DB werd al eens los gecorrigeerd, mig 363: 27,50→35,00). Prijs komt nu uit `producten.verkoopprijs` via `fetchDropshipPrijzen`/`useDropshipPrijzen`; `applyDropshipmentLogic(regels, keuze, prijzen?)` krijgt de prijs als parameter. De selector blokkeert klein/groot tot de prijs geladen is — nooit stil een €0-regel. De id-constanten (`DROPSHIP_*_ID`) blijven identifiers (ADR-0018).
+- **Probleem 8 — BTW-21-fallback:** geverifieerd ruis (geen actie): alle `COALESCE(..., 21.00)`-treffers staan in dode/vervangen migraties; de enige live factuur-RPC `genereer_factuur_voor_bundel` (mig 371) gebruikt al `effectief_btw_pct()`.
+
+**Deploy-voorwaarde:** mig 389 toepassen (read-only assert; valideert dat de live `normaliseer_land` de golden volgt) + edge functions `factuur-verzenden`, `rhenus-send` (en `bouw-factuur-edi` via de gedeelde mapper) herdeployen ná merge.
+
+---
+
+## 2026-06-12 — Colli-gewicht-fix: resolver-verdieping + self-healing producten-cache (mig 387)
+
+**Aanleiding:** de Rhenus/Verhoek-SFTP-preflights verplichten `gewicht_kg > 0` per colli, maar `zending_colli.gewicht_kg` stond op 0. Diagnose: ~26% van de vaste producten met complete maat+density had de **density (kg/m²) als stukgewicht** in de `producten.gewicht_kg`-cache (bv. 548120001, 200×290 cm: cache 2,5 kg, werkelijk 14,5 kg; volledige meting: 1.022 density-als-gewicht + 1.430 anders fout op 21.746 meetbare producten). Oorzaak-keten: oorspronkelijke import schreef de Excel-kolom "Gewicht" (kg/m²) naar `gewicht_kg`; mig 185-backfill dekte alleen wat toen compleet was; de mig 188 §6 self-update-backfill was een stille no-op (`SET x = x` passeert de `WHEN OLD IS DISTINCT FROM NEW`-trigger niet); en er bestond geen herreken-trigger aan de product-kant. Dezelfde rotte bronnen voedden ook de vervoerder-selectie (`evalueer_orderregel_attributes`, o.a. de Rhenus-regel "DE ≤30 kg").
+
+**Fix (mig 387):** (1) `bereken_orderregel_gewicht_kg` rekent vast-producten live via `bereken_product_gewicht_kg` (vorm-aware) i.p.v. cache-copy; (2) BEFORE-trigger `trg_producten_gewicht_derive` maakt de cache self-healing — vervuiling door imports/UI is categorisch onmogelijk geworden (gewicht corrigeren = density op de kwaliteit aanpassen); (3) `genereer_zending_colli` gewicht-ladder met `NULLIF(0)`; (4) `evalueer_orderregel_attributes` NULLIF(0)-defensie; (5) backfill producten (vorm-aware, `PI()::NUMERIC` — mig 192-les) + open orderregels (vast én maatwerk, incl. 'Klaar voor verzending') + niet-verzonden colli. Import-hygiëne: `prijslijst_import.py` schrijft kolom F niet meer naar `gewicht_kg` bij auto-create. Verificatie: `import/check_gewicht_integriteit.py` (read-only, exit 1 bij fouten — baseline 12-06: 2.452 fouten). Run-advies: migratie buiten piekuren draaien (row-locks op producten/order_regels; idempotent her-runbaar).
+
+---
 
 ## 2026-06-12 — Pickbaarheid single-source (mig 386)
 

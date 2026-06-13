@@ -95,6 +95,12 @@ export interface ZendingPrintColli {
   colli_nr: number
   sscc: string
   order_regel_id: number | null
+  /** Mig 209: bevroren Karpi-product + maat ("Egyptische Wol 240x330 cm").
+   *  Exact wat HST/Verhoek als GoodsDescription/Omschrijving meekrijgen. */
+  omschrijving_snapshot: string | null
+  /** Mig 388: bevroren, ontdubbelde klant-omschrijving (order_regels.omschrijving
+   *  + _2). Single source voor de klant-naam op label/pakbon — niet meer live. */
+  klant_omschrijving_snapshot: string | null
 }
 
 export interface ZendingPrintSet {
@@ -290,7 +296,7 @@ export async function fetchZendingPrintSet(zending_nr: string): Promise<ZendingP
           )
         )
       ),
-      zending_colli ( id, colli_nr, sscc, order_regel_id )
+      zending_colli ( id, colli_nr, sscc, order_regel_id, omschrijving_snapshot, klant_omschrijving_snapshot )
     `,
     )
     .eq('zending_nr', zending_nr)

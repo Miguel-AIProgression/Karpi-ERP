@@ -26,6 +26,13 @@ export interface LabelItem {
    * `hst-send` bij de vervoerder aanmeldt. `null` = zending zonder
    * colli-registratie (legacy): het label print dan géén barcode. */
   sscc: string | null
+  /** Mig 209: bevroren Karpi-product + maat ("Egyptische Wol 240x330 cm").
+   * Single source — gelijk aan wat de vervoerder krijgt. `null` = legacy-colli
+   * (val terug op de live `regel`). */
+  omschrijvingSnapshot: string | null
+  /** Mig 388: bevroren, ontdubbelde klant-omschrijving. `null` = legacy of
+   * geen klant-omschrijving (val terug op de live `regel`). */
+  klantOmschrijvingSnapshot: string | null
 }
 
 export interface VervoerderInfo {
@@ -81,6 +88,8 @@ export function expandLabels(zending: ZendingPrintSet): LabelItem[] {
         (c.order_regel_id != null ? regelPerOrderRegel.get(c.order_regel_id) : null) ?? null,
       index: index + 1,
       sscc: c.sscc,
+      omschrijvingSnapshot: c.omschrijving_snapshot,
+      klantOmschrijvingSnapshot: c.klant_omschrijving_snapshot,
     }))
   }
 
@@ -99,5 +108,9 @@ export function expandLabels(zending: ZendingPrintSet): LabelItem[] {
     ...item,
     index: index + 1,
     sscc: null,
+    // Legacy-zending zonder colli-registratie: geen snapshot → val terug op
+    // de live `regel` in de label-/pakbon-component.
+    omschrijvingSnapshot: null,
+    klantOmschrijvingSnapshot: null,
   }))
 }
