@@ -105,6 +105,10 @@ function bouwAggregateLine(zending: ZendingInput, order: OrderInput): HstTranspo
     ExchangePacking: false,
     Length: DEFAULT_LENGTH_CM,
     Width: DEFAULT_WIDTH_CM,
+    // Fallback-pad (geen colli-rijen). Sinds mig 389 is
+    // zendingen.totaal_gewicht_kg een trigger-afgeleide van
+    // SUM(zending_colli.gewicht_kg), dus dit totaal is consistent met het
+    // per-colli-pad en met wat Rhenus/Verhoek sommeren (audit A2).
     Height: DEFAULT_HEIGHT_CM,
     Weight: zending.totaal_gewicht_kg ?? DEFAULT_WEIGHT_KG,
     BarCode: { BarCode: '' },
