@@ -1,65 +1,33 @@
 // Provider-side contract test: magazijn-module pickbaarheid-seam.
 //
-// Doel: bewaakt het publieke `fetchPickShipOrders`-contract — caller moet niet
-// hoeven weten of `orderregel_pickbaarheid` view bestaat (fallback op
-// `order_regels`). Vier scenario's gedekt:
-//   1. View aanwezig met N pickbaarheid-regels
-//   2. View aanwezig zonder regels (lege array)
-//   3. View ontbreekt → fallback op order_regels
-//   4. Order zonder regels (header-only)
+// Doel: bewaakt het publieke `fetchPickShipOrders`-contract — de view
+// `orderregel_pickbaarheid` is de enige bron; ontbreekt ze → hard falen
+// (geen stille fallback). Acht scenario's gedekt:
+//   1. View aanwezig met N pickbaarheid-regels (gewicht via view-kolom)
+//   2. View aanwezig zonder regels (lege array) → order uitgefilterd
+//   3. View-query faalt (PGRST205) → fout propageert, geen stille fallback
+//   4. Order zonder regels (header-only) → uitgefilterd
+//   5. Onpickbare regel + klant zonder deelleveringen → uitgefilterd
+//   6. Alle regels wacht_op=snijden + deelleveringen=true → uitgefilterd
+//   7. Wacht_op=inkoop + klant zonder deelleveringen → uitgefilterd
+//   8. Dag-order (lever_type=datum): buiten horizon onzichtbaar, erbinnen zichtbaar
+//
+// Mig 386 is een deploy-voorwaarde: de view vervangt zowel de oude
+// PGRST205-fallback op order_regels als de aparte gewicht-query.
 //
 // Geen mocking-framework voor de data — alleen factory-fixtures via een
 // dunne fake-Supabase-client. Vi.mock wordt alleen gebruikt om de
 // supabase-client-import te vervangen, conform planning-seam.contract.test.ts.
 
-import { describe, it, expect, beforeEach } from 'vitest'
-
-// ---------------------------------------------------------------------------
-// Fake Supabase-client met queue-based response per tabel
-// ---------------------------------------------------------------------------
-
-type SupabaseResponse = { data: unknown; error: { code?: string; message?: string } | null }
-
-const responses: Record<string, SupabaseResponse[]> = {}
-
-function queueResponse(table: string, response: SupabaseResponse) {
-  if (!responses[table]) responses[table] = []
-  responses[table].push(response)
-}
-
-function buildChain(table: string) {
-  const chain = {
-    select: () => chain,
-    eq: () => chain,
-    neq: () => chain,
-    in: () => chain,
-    order: () => chain,
-    limit: () => chain,
-    update: () => chain,
-    insert: () => chain,
-    then: (
-      resolve: (value: SupabaseResponse) => void,
-      reject: (reason: unknown) => void
-    ) => {
-      const next = responses[table]?.shift()
-      if (!next) {
-        reject(new Error(`Geen response voor tabel "${table}" in test-queue`))
-        return
-      }
-      resolve(next)
-    },
-  }
-  return chain
-}
-
-const fakeSupabase = {
-  from: (table: string) => buildChain(table),
-  rpc: () => Promise.resolve({ data: 0, error: null }),
-}
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import {
+  fakeSupabase,
+  queueResponse,
+  resetQueues,
+} from './helpers/fake-supabase'
 
 // vi.mock moet voor de import van de query staan. We gebruiken de hoist-truc
 // via een module-init function.
-import { vi } from 'vitest'
 vi.mock('@/lib/supabase/client', () => ({ supabase: fakeSupabase }))
 
 // Pas hierna de query importeren — die pakt nu de fake.
@@ -88,6 +56,7 @@ interface PickbaarheidRowFixture {
   bron: 'snijplan' | 'rol' | 'producten_default' | null
   fysieke_locatie: string | null
   wacht_op: 'snijden' | 'confectie' | 'inpak' | 'inkoop' | null
+  gewicht_kg: number | null
 }
 
 function makePickbaarheidRow(
@@ -111,6 +80,7 @@ function makePickbaarheidRow(
     bron: 'rol',
     fysieke_locatie: 'A-12',
     wacht_op: null,
+    gewicht_kg: 4.5,
     ...overrides,
   }
 }
@@ -123,6 +93,7 @@ function makeOrderHeader(overrides: Partial<{
   afl_naam: string | null
   afl_plaats: string | null
   afleverdatum: string | null
+  lever_type: 'week' | 'datum'
 }> = {}) {
   return {
     id: 100,
@@ -134,6 +105,7 @@ function makeOrderHeader(overrides: Partial<{
     afleverdatum: '2026-05-12',
     afhalen: false,
     lever_type: 'week' as const,
+    alleen_productie: false,   // R1-guard-veld (mig 345); helper filtert hierop
     ...overrides,
   }
 }
@@ -146,13 +118,32 @@ function makeDebiteur(
   return { debiteur_nr, naam, deelleveringen_toegestaan }
 }
 
+function makeOrderPickbaarheidRow(overrides: Partial<{
+  order_id: number
+  totaal_regels: number
+  pickbare_regels: number
+  alle_regels_pickbaar: boolean
+  heeft_pickbare_regel: boolean
+  deelleveringen_toegestaan: boolean
+  pick_ship_zichtbaar: boolean
+}> = {}) {
+  return {
+    order_id: 100,
+    totaal_regels: 1,
+    pickbare_regels: 1,
+    alle_regels_pickbaar: true,
+    heeft_pickbare_regel: true,
+    deelleveringen_toegestaan: false,
+    pick_ship_zichtbaar: true,
+    ...overrides,
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
-beforeEach(() => {
-  for (const k of Object.keys(responses)) delete responses[k]
-})
+beforeEach(() => resetQueues())
 
 describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
   it('scenario 1: view aanwezig met N regels — orders krijgen pickbaarheid uit view', async () => {
@@ -175,9 +166,13 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
         is_pickbaar: false,
         bron: 'snijplan',
         wacht_op: 'snijden',
+        gewicht_kg: 7.0,
       }),
     ]
 
+    // app_config 'werkagenda' — parallel opgehaald door fetchWerkagendaConfig (mig 384).
+    // Lege DB-rij = standaard werktijden (maandag–vrijdag, geen feestdagen).
+    queueResponse('app_config', { data: null, error: null })
     queueResponse('orders', { data: headers, error: null })
     queueResponse('debiteuren', { data: debiteuren, error: null })
     queueResponse('orderregel_pickbaarheid', { data: regels, error: null })
@@ -185,17 +180,17 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
       data: [{ artikelnr: 'P-001', omschrijving: 'KARPI SANDRO 200x140' }],
       error: null,
     })
-    // Gewicht-aggregaat (nieuwe Pick & Ship-kolom): som van
-    // gewicht_kg × orderaantal per order, gevoed uit order_regels.
-    queueResponse('order_regels', {
-      data: [
-        { order_id: 100, gewicht_kg: 4.5, orderaantal: 2, artikelnr: 'P-001' },
-        { order_id: 100, gewicht_kg: 7.0, orderaantal: 1, artikelnr: null },
-      ],
+    // Mig 242: actieve Pickrondes per order via zending_orders M2M. Leeg = geen lopende pickronde.
+    queueResponse('zending_orders', { data: [], error: null })
+    // Mig 386: order-niveau-predicaat uit view order_pickbaarheid. Gemengde order:
+    // 1 pickbaar + 1 wacht-op-snijden, deelleveringen=true → zichtbaar via deellevering.
+    queueResponse('order_pickbaarheid', {
+      data: [makeOrderPickbaarheidRow({
+        totaal_regels: 2, pickbare_regels: 1, alle_regels_pickbaar: false,
+        heeft_pickbare_regel: true, deelleveringen_toegestaan: true, pick_ship_zichtbaar: true,
+      })],
       error: null,
     })
-    // Mig 217: actieve Pickrondes per order. Lege array = geen lopende pickronde.
-    queueResponse('zendingen', { data: [], error: null })
 
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 
@@ -212,6 +207,8 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     expect(order.regels[1].wacht_op).toBe('snijden')
     // Totaal gewicht = 4.5×2 + 7.0×1 = 16.0 kg
     expect(order.totaal_gewicht_kg).toBe(16)
+    // Mig 386: order-niveau-predicaat vanuit view — niet client-side herleid.
+    expect(order.alle_regels_pickbaar).toBe(false)
   })
 
   it('scenario 2: view aanwezig zonder regels — header-only orders worden uitgefilterd', async () => {
@@ -221,59 +218,33 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     const headers = [makeOrderHeader({ id: 100 })]
     const debiteuren = [makeDebiteur(5001, 'Klantnaam BV')]
 
+    queueResponse('app_config', { data: null, error: null })
     queueResponse('orders', { data: headers, error: null })
     queueResponse('debiteuren', { data: debiteuren, error: null })
     queueResponse('orderregel_pickbaarheid', { data: [], error: null })
-    queueResponse('order_regels', { data: [], error: null })
-    queueResponse('zendingen', { data: [], error: null })
+    queueResponse('zending_orders', { data: [], error: null })
+    // Mig 386: geen regels → geen rij in order_pickbaarheid → order onzichtbaar.
+    queueResponse('order_pickbaarheid', { data: [], error: null })
 
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 
     expect(result).toHaveLength(0)
   })
 
-  it('scenario 3: view ontbreekt (PGRST205) — fallback op order_regels, geen pickbaarheid bekend', async () => {
-    // Wanneer de pickbaarheid-view ontbreekt valt de query terug op
-    // `order_regels` zonder pickbaarheids-info; alle regels staan default op
-    // `is_pickbaar=false`. Het pickbaarheidsfilter laat de order daardoor
-    // weg — veiliger dan iets tonen waarvan de staat onbekend is. Dit is een
-    // dev/legacy-pad, niet de productie-flow.
-    const headers = [makeOrderHeader({ id: 100 })]
-    const debiteuren = [makeDebiteur(5001, 'Klantnaam BV')]
-    const fallbackRegels = [
-      {
-        id: 11,
-        order_id: 100,
-        regelnummer: 1,
-        artikelnr: 'P-001',
-        is_maatwerk: false,
-        orderaantal: 3,
-        maatwerk_lengte_cm: null,
-        maatwerk_breedte_cm: null,
-        omschrijving: 'Fallback regel',
-        maatwerk_kwaliteit_code: null,
-        maatwerk_kleur_code: null,
-      },
-    ]
-
-    queueResponse('orders', { data: headers, error: null })
-    queueResponse('debiteuren', { data: debiteuren, error: null })
+  it('scenario 3: view-query faalt → fout propageert (geen stille fallback meer)', async () => {
+    // De PGRST205-fallback op order_regels is verwijderd (mig 386 is een
+    // deploy-voorwaarde). Een ontbrekende view moet hard en zichtbaar falen,
+    // niet stil een lege Pick & Ship opleveren.
+    queueResponse('app_config', { data: null, error: null })
+    queueResponse('orders', { data: [makeOrderHeader({ id: 100 })], error: null })
+    queueResponse('debiteuren', { data: [makeDebiteur(5001, 'Klantnaam BV')], error: null })
     queueResponse('orderregel_pickbaarheid', {
       data: null,
       error: { code: 'PGRST205', message: "Could not find the table 'public.orderregel_pickbaarheid'" },
     })
-    queueResponse('order_regels', { data: fallbackRegels, error: null })
-    queueResponse('producten', { data: [], error: null })
-    queueResponse('zendingen', { data: [], error: null })
-    queueResponse('order_regels', { data: [], error: null })
-
-    const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
-
-    // Fallback-regels staan op is_pickbaar=false en de klant zonder
-    // deelleveringen ziet de order niet. Dit is het correcte gedrag voor
-    // een productie-omgeving zonder pickbaarheid-view (ongebruikelijk maar
-    // veilig: liever niets tonen dan onbekende staat).
-    expect(result).toHaveLength(0)
+    await expect(
+      fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
+    ).rejects.toMatchObject({ code: 'PGRST205' })
   })
 
   it('scenario 5: order met onpickbare regel + klant zonder deelleveringen → uitgefilterd', async () => {
@@ -298,12 +269,20 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
       }),
     ]
 
+    queueResponse('app_config', { data: null, error: null })
     queueResponse('orders', { data: headers, error: null })
     queueResponse('debiteuren', { data: debiteuren, error: null })
     queueResponse('orderregel_pickbaarheid', { data: regels, error: null })
     queueResponse('producten', { data: [], error: null })
-    queueResponse('order_regels', { data: [], error: null })
-    queueResponse('zendingen', { data: [], error: null })
+    queueResponse('zending_orders', { data: [], error: null })
+    // Mig 386: gemengd zonder deelleveringen → pick_ship_zichtbaar=false.
+    queueResponse('order_pickbaarheid', {
+      data: [makeOrderPickbaarheidRow({
+        totaal_regels: 2, pickbare_regels: 1, alle_regels_pickbaar: false,
+        heeft_pickbare_regel: true, deelleveringen_toegestaan: false, pick_ship_zichtbaar: false,
+      })],
+      error: null,
+    })
 
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 
@@ -326,12 +305,21 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
       }),
     ]
 
+    queueResponse('app_config', { data: null, error: null })
     queueResponse('orders', { data: headers, error: null })
     queueResponse('debiteuren', { data: debiteuren, error: null })
     queueResponse('orderregel_pickbaarheid', { data: regels, error: null })
     queueResponse('producten', { data: [], error: null })
-    queueResponse('order_regels', { data: [], error: null })
-    queueResponse('zendingen', { data: [], error: null })
+    queueResponse('zending_orders', { data: [], error: null })
+    // Mig 386: alle regels wachten + deelleveringen=true → maar geen pickbare
+    // regel aanwezig → pick_ship_zichtbaar=false.
+    queueResponse('order_pickbaarheid', {
+      data: [makeOrderPickbaarheidRow({
+        totaal_regels: 1, pickbare_regels: 0, alle_regels_pickbaar: false,
+        heeft_pickbare_regel: false, deelleveringen_toegestaan: true, pick_ship_zichtbaar: false,
+      })],
+      error: null,
+    })
 
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 
@@ -345,11 +333,13 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     const headers = [makeOrderHeader({ id: 999, order_nr: 'ORD-2026-0099' })]
     const debiteuren = [makeDebiteur(5001, 'Klantnaam BV')]
 
+    queueResponse('app_config', { data: null, error: null })
     queueResponse('orders', { data: headers, error: null })
     queueResponse('debiteuren', { data: debiteuren, error: null })
     queueResponse('orderregel_pickbaarheid', { data: [], error: null })
-    queueResponse('order_regels', { data: [], error: null })
-    queueResponse('zendingen', { data: [], error: null })
+    queueResponse('zending_orders', { data: [], error: null })
+    // Mig 386: geen regels → geen rij in order_pickbaarheid → order onzichtbaar.
+    queueResponse('order_pickbaarheid', { data: [], error: null })
 
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 
@@ -372,15 +362,58 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
       }),
     ]
 
+    queueResponse('app_config', { data: null, error: null })
     queueResponse('orders', { data: headers, error: null })
     queueResponse('debiteuren', { data: debiteuren, error: null })
     queueResponse('orderregel_pickbaarheid', { data: regels, error: null })
     queueResponse('producten', { data: [], error: null })
-    queueResponse('order_regels', { data: [], error: null })
-    queueResponse('zendingen', { data: [], error: null })
+    queueResponse('zending_orders', { data: [], error: null })
+    // Mig 386: wacht op inkoop, geen deelleveringen → pick_ship_zichtbaar=false.
+    queueResponse('order_pickbaarheid', {
+      data: [makeOrderPickbaarheidRow({
+        totaal_regels: 1, pickbare_regels: 0, alle_regels_pickbaar: false,
+        heeft_pickbare_regel: false, deelleveringen_toegestaan: false, pick_ship_zichtbaar: false,
+      })],
+      error: null,
+    })
 
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 
     expect(result).toHaveLength(0)
+  })
+
+  it('scenario 8: dag-order (lever_type=datum) blijft buiten horizon, verschijnt erbinnen', async () => {
+    // ADR 0014 / mig 244: de dag-order-horizon is de enige client-side
+    // filterlogica die na mig 386 overblijft (hangt af van `vandaag`).
+    // Een dag-order met afleverdatum di 2026-05-12 verschijnt pas vanaf
+    // werkdagMinN(2026-05-12, 1) = ma 2026-05-11.
+    const maakQueues = () => {
+      // app_config 'werkagenda' — parallel opgehaald door fetchWerkagendaConfig
+      // (mig 384). Lege rij = standaard werktijden (ma-vr, geen feestdagen).
+      queueResponse('app_config', { data: null, error: null })
+      queueResponse('orders', {
+        data: [makeOrderHeader({ id: 100, lever_type: 'datum' as const, afleverdatum: '2026-05-12' })],
+        error: null,
+      })
+      queueResponse('debiteuren', { data: [makeDebiteur(5001, 'Klantnaam BV')], error: null })
+      queueResponse('orderregel_pickbaarheid', {
+        data: [makePickbaarheidRow({ order_regel_id: 1, order_id: 100, is_pickbaar: true })],
+        error: null,
+      })
+      queueResponse('producten', { data: [], error: null })
+      queueResponse('order_pickbaarheid', { data: [makeOrderPickbaarheidRow()], error: null })
+      queueResponse('zending_orders', { data: [], error: null })
+    }
+
+    // Vrijdag 8 mei = vóór de horizon (ma 11 mei) → onzichtbaar.
+    maakQueues()
+    const teVroeg = await fetchPickShipOrders({ vandaag: new Date('2026-05-08T12:00:00Z') })
+    expect(teVroeg).toHaveLength(0)
+
+    // Maandag 11 mei = op de horizon → zichtbaar.
+    resetQueues()
+    maakQueues()
+    const opHorizon = await fetchPickShipOrders({ vandaag: new Date('2026-05-11T12:00:00Z') })
+    expect(opHorizon).toHaveLength(1)
   })
 })

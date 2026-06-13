@@ -60,9 +60,10 @@ function saveLastPicker(id: number) {
 }
 
 function isPickbaar(o: PickShipOrder): boolean {
-  if (o.regels.length === 0) return false
   if (o.actieve_pickronde) return false
-  return o.regels.every((r) => r.is_pickbaar)
+  // Order-niveau-predicaat uit view `order_pickbaarheid` (mig 386) — niet
+  // client-side herleiden uit regels. False dekt ook "geen regels".
+  return o.alle_regels_pickbaar
 }
 
 export function StartPickrondesButton({

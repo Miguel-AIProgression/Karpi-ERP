@@ -5,6 +5,91 @@
 **Aanleiding:** de Rhenus/Verhoek-SFTP-preflights verplichten `gewicht_kg > 0` per colli, maar `zending_colli.gewicht_kg` stond op 0. Diagnose: ~26% van de vaste producten met complete maat+density had de **density (kg/m²) als stukgewicht** in de `producten.gewicht_kg`-cache (bv. 548120001, 200×290 cm: cache 2,5 kg, werkelijk 14,5 kg; volledige meting: 1.022 density-als-gewicht + 1.430 anders fout op 21.746 meetbare producten). Oorzaak-keten: oorspronkelijke import schreef de Excel-kolom "Gewicht" (kg/m²) naar `gewicht_kg`; mig 185-backfill dekte alleen wat toen compleet was; de mig 188 §6 self-update-backfill was een stille no-op (`SET x = x` passeert de `WHEN OLD IS DISTINCT FROM NEW`-trigger niet); en er bestond geen herreken-trigger aan de product-kant. Dezelfde rotte bronnen voedden ook de vervoerder-selectie (`evalueer_orderregel_attributes`, o.a. de Rhenus-regel "DE ≤30 kg").
 
 **Fix (mig 387):** (1) `bereken_orderregel_gewicht_kg` rekent vast-producten live via `bereken_product_gewicht_kg` (vorm-aware) i.p.v. cache-copy; (2) BEFORE-trigger `trg_producten_gewicht_derive` maakt de cache self-healing — vervuiling door imports/UI is categorisch onmogelijk geworden (gewicht corrigeren = density op de kwaliteit aanpassen); (3) `genereer_zending_colli` gewicht-ladder met `NULLIF(0)`; (4) `evalueer_orderregel_attributes` NULLIF(0)-defensie; (5) backfill producten (vorm-aware, `PI()::NUMERIC` — mig 192-les) + open orderregels (vast én maatwerk, incl. 'Klaar voor verzending') + niet-verzonden colli. Import-hygiëne: `prijslijst_import.py` schrijft kolom F niet meer naar `gewicht_kg` bij auto-create. Verificatie: `import/check_gewicht_integriteit.py` (read-only, exit 1 bij fouten — baseline 12-06: 2.452 fouten). Run-advies: migratie buiten piekuren draaien (row-locks op producten/order_regels; idempotent her-runbaar).
+## 2026-06-12 — Pickbaarheid single-source (mig 386)
+
+> **Hernummering (2×):** deze migratie is vlak vóór de merge hernummerd van 383 → 385 → **386** (origin/main claimde intussen 383/384 via het werkagenda-traject en 385 via het bundel-sleutel-contract). In de live DB is hij op 12-06 onder werknummer 383 toegepast; inhoudelijk identiek.
+
+**Wat:** order-niveau-pickbaarheidslogica verplaatst van TypeScript naar SQL; TS-laag filtert alleen nog de dag-order-horizon (ADR 0014, hangt af van `vandaag`).
+
+**Gebouwd (branch `refactor/pickbaarheid-single-source`):**
+- **Mig 386 — `orderregel_pickbaarheid` v4:** (a) generieke admin-pseudo-skip `AND NOT is_admin_pseudo(oreg.artikelnr)` (ADR-0018) — vervangt de VERZEND-specifieke `.neq()`-skip in TS én fixt de **latente dropship-blokkade** (DROPSHIP-KLEIN/-GROOT-regels uit mig 353/370 kregen nooit een voorraad-claim maar stonden als `wacht_op='inkoop'` in de view, waardoor dropship-orders nooit de "alles pickbaar"-drempel haalden); (b) nieuwe kolom `gewicht_kg` — maakt de aparte `fetchTotaalGewichtPerOrder`-query overbodig. Maatwerk-gewicht telt nu correct mee in het indicatieve ordergewicht (de oude `.neq('artikelnr','VERZEND')`-query sloot NULL-`artikelnr`-rijen per ongeluk uit — PostgREST three-valued logic).
+- **Mig 386 — nieuwe view `order_pickbaarheid`:** per order `totaal_regels`, `pickbare_regels`, `alle_regels_pickbaar`, `heeft_pickbare_regel`, `deelleveringen_toegestaan`, `pick_ship_zichtbaar`. Geen rij = geen (niet-pseudo) regels = niets te picken.
+- **Frontend `fetchPickShipOrders`** ([`pickbaarheid.ts`](../frontend/src/modules/magazijn/queries/pickbaarheid.ts)): consumeert `order_pickbaarheid.pick_ship_zichtbaar`; de 3× VERZEND-skip, de aparte gewicht-query (`fetchTotaalGewichtPerOrder`) en de PGRST205-fallback (`fetchFallbackOrderRegels`) zijn verwijderd. `StartPickrondesButton.isPickbaar` leest `order.alle_regels_pickbaar` (view-veld) i.p.v. client-side `every()`.
+- **Stale contracttest gerepareerd:** `magazijn-pickbaarheid.contract.test.ts` mockte `zendingen` i.p.v. `zending_orders` (7/7 rood op main). Gedeelde testhelper `__tests__/helpers/fake-supabase.ts`; 8 scenario's inclusief hard-fail bij ontbrekende view en dag-horizon.
+
+**Deploy-voorwaarde:** mig 386 moet op de live DB staan vóór de frontend van deze branch deployt — er is geen fallback meer (`fetchPickShipOrders` faalt hard bij ontbrekende view). (Toegepast 12-06, vóór de merge.)
+
+---
+
+## 2026-06-12 — VERZEND-guard in `applyShippingLogic` bij dropship-orders
+
+**Wat:** `applyShippingLogic` ([`verzend-regel.ts`](../frontend/src/lib/orders/verzend-regel.ts))
+kreeg regel 0: bevat de regellijst een dropship-kostenregel (`heeftDropshipRegel`,
+flag-based) → VERZEND-regel altijd verwijderen/weigeren. Nieuwe testfile
+`verzend-regel.test.ts` (9 tests) legt ook de bestaande drempel-/afhalen-/
+idempotentie-regels vast.
+
+**Waarom:** pre-existing bug (gevonden in de review van de dropship-detectie-
+refactor): een klantwissel op een dropship-order reset `shippingOverridden`
+en paste verzendlogica onverkort toe, en in edit-mode triggerde elke
+regel-mutatie hetzelfde pad — de klant kreeg dan VERZEND-kosten náást de
+dropship-kostenregel. De guard in de pure functie dekt alle vier de
+call-sites in `order-form.tsx` tegelijk.
+
+## 2026-06-12 — Seam-consolidatie: cross-root imports i.p.v. kopieën (ADR-0033)
+Vier handmatig-gesynchroniseerde kopieparen tussen `supabase/functions/_shared/`
+en `frontend/src/` vervangen door één bron in `_shared/` + dunne frontend
+re-export-shims: `vervoerder-eisen` (frontend-kopie was dead code),
+`iso-week` (kern gedeeld, frontend-extensies lokaal), `snijplan-status`
+(frontend-superset → `_shared`) en `email-list`/`email-recipients`.
+Waarom: handmatige kopieën = dezelfde incident-klasse als het SSCC-incident
+(12-06); `snijplan-status` was al gedivergeerd. Vite dev-server kreeg
+`server.fs.allow: ['..']`. Conventie vastgelegd in CLAUDE.md + ADR-0033.
+De parallel uitgevoerde werkagenda-kernel-consolidatie (zie hieronder) volgt
+hetzelfde patroon — `werkagenda`/`bereken-agenda` was in ADR-0033 nog als
+"buiten scope" gemarkeerd maar is dezelfde dag alsnog geconsolideerd.
+
+## 2026-06-12 — Dropship-detectie in TS data-driven (ADR-0018-patroon)
+
+**Wat:** `isDropshipRegel`/`heeftDropshipRegel` lezen nu `producten.is_dropship`
+(mig 370) via de query-join (`fetchOrderRegels`) en form-data, i.p.v. hardcoded
+`DROPSHIP-KLEIN`/`DROPSHIP-GROOT` te matchen. `detecteerDropshipKeuze` blijft
+artikelnr-based maar voedt uitsluitend de selector-toggle. De order-edit-mapping
+draagt voortaan `is_pseudo` + `is_dropship` over naar form-data (pre-existing gap).
+Ongebruikte export `DROPSHIP_IDS` verwijderd.
+
+**Waarom:** een derde dropship-artikel werkte server-side wél (e-mail-guard
+mig 370) maar was onzichtbaar voor form-validatie en order-detail-hint — exact
+de pre-ADR-0018-bug-klasse (mig 263→269). Nu: nieuw dropship-artikel =
+`UPDATE producten SET is_dropship=TRUE`, nul code-edits.
+
+## 2026-06-12 — Bundel-sleutel SQL↔TS-contract met golden fixtures (mig 385)
+
+De bundel-sleutel-familie (`_normaliseer_afleveradres`/`bundel_sleutel`/`verzendweek_voor_datum` ↔ `normaliseer-adres.ts`/`bundel-sleutel.ts`/`verzendweek.ts`) werd alleen door comments in lockstep gehouden. Nu: één golden-fixture-bestand (`frontend/src/lib/orders/__tests__/golden/bundel-sleutel.golden.json`, 21 cases) met twee consumenten — Vitest-contracttest `bundel-sleutel.contract.test.ts` (TS) en `assert_bundel_sleutel_contract()` (SQL, zelf-testende migratie 385, incl. vorm-guard tegen stil-slagende lege case-arrays); een sync-test bewijst dat het `$golden$`-blok in de laatste `*_bundel_sleutel_contract*.sql`-migratie gelijk is aan de JSON. Probe op de live DB (12-06): NBSP en kleine-ß gaven op deze locale toevallig al TS-identieke output, maar hoofdletter-ẞ (U+1E9E) divergeerde bevestigd — en het gedrag was sowieso locale-afhankelijk. `_normaliseer_afleveradres` v2 (mig 385) en `normaliseerAdresKey` (ß/ẞ→ss-fold) zijn nu deterministisch JS-identiek (expliciete whitespace-klasse + chr(223)/chr(7838)-fold). Steekproef: 20 van 1427 open orders dragen zo'n teken in `afl_adres` (DE-straatnamen); sleutels worden nergens gepersisteerd, dus geen datamigratie. Conventie: wijziging aan een van de zes functies = golden bijwerken + nieuwe `*_bundel_sleutel_contract*.sql` met assert-aanroep (sync-test wordt anders rood). Toegepast in de SQL Editor op 12-06 onder werknummer 383 (hernummerd naar 385 wegens collisie met de werkagenda-migraties); na-verificatie via live probe geslaagd, incl. de ẞ-case.
+
+## 2026-06-12 — Werkagenda-config centraal (mig 384, fase 2)
+
+Werktijden + vrije dagen verhuisd van per-browser-localStorage naar
+`app_config 'werkagenda'`. UI (productie-instellingen, snijplanning-agenda),
+`check-levertijd`/`spoed-check` (edge) en de Pick & Ship-dag-order-horizon
+lezen nu dezelfde kalender — een feestdag invoeren landt één keer en telt
+overal. `volgendeWerkdag`/`naarWerkdag` (levertijd-match) lopen nu ook via
+kernel-`isWerkdag` i.p.v. hardcoded za/zo. Eenmalige best-effort-overname van
+bestaande localStorage-instellingen (alleen als de DB-rij nog default is).
+
+## 2026-06-12 — Werkagenda: één bron (kernel-consolidatie, mig 383)
+
+De werkdag-/werkagenda-rekenkunde leefde op drie plekken: SQL (mig 279 — nul
+callers, dode code), Deno `_shared/werkagenda.ts` (UTC, geen feestdagen) en
+frontend `bereken-agenda.ts` (lokale tijd, wél feestdagen) — met al-uiteengelopen
+interfaces, ~24u verschil in `teLaat`-semantiek en andere sortering.
+Geconsolideerd: `_shared/werkagenda.ts` is nu de enige implementatie (rijke
+interface met 'HH:mm' + `vrij`-feestdagen); de frontend importeert de kernel
+direct (derive-status-patroon, vite `server.fs.allow`); golden fixture
+`werkagenda.golden.json` wordt door Deno én Vitest getoetst; de dode SQL is
+gedropt (mig 383). `teLaat` is geünificeerd op strikt (00:00-deadline) — de
+UI-agenda en check-levertijd geven nu dezelfde vlag. Sorterings-verschil
+berekenAgenda↔berekenSnijAgenda blijft bewust staan (B6, kernel-header).
 
 ## 2026-06-12 — Rhenus als transporteur: GS1-XML via SFTP (ADR-0032, mig 379-382) — gebouwd, rondreis geslaagd
 

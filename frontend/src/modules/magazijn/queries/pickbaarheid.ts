@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase/client'
-import { SHIPPING_PRODUCT_ID } from '@/lib/constants/shipping'
 import { werkdagMinN } from '@/lib/utils/bereken-agenda'
+import { fetchWerkagendaConfig } from '@/lib/supabase/queries/werkagenda'
 import type { BucketKey, PickShipOrder } from '../lib/types'
 import {
   chunks,
@@ -9,26 +9,13 @@ import {
   initPickShipOrders,
   mapPickbaarheidRegel,
   type OrderHeaderRij,
+  type OrderPickbaarheidRij,
   type PickbaarheidRij,
 } from './pick-ship-transform'
 
 /** ISO YYYY-MM-DD voor een Date, in lokale tijd. */
 function isoLokaal(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
-interface FallbackOrderRegelRij {
-  id: number
-  order_id: number
-  regelnummer: number
-  artikelnr: string | null
-  is_maatwerk: boolean | null
-  orderaantal: number | null
-  maatwerk_lengte_cm: number | null
-  maatwerk_breedte_cm: number | null
-  omschrijving: string | null
-  maatwerk_kwaliteit_code: string | null
-  maatwerk_kleur_code: string | null
 }
 
 export interface PickShipParams {
@@ -51,14 +38,17 @@ export async function fetchPickShipOrders(
 ): Promise<PickShipOrder[]> {
   const { search, bucket, vandaag = new Date(), alleen_pickbaar = false } = params
 
-  const headers = await fetchOpenOrderHeaders()
+  const [headers, werktijden] = await Promise.all([
+    fetchOpenOrderHeaders(),
+    fetchWerkagendaConfig(),
+  ])
   if (headers.length === 0) return []
 
   const perOrder = initPickShipOrders(headers, vandaag)
   const headerMap = new Map(headers.map((h) => [h.id, h]))
   const regels = await fetchPickbaarheidRegels(headers.map((h) => h.id))
   const karpiNamen = await fetchKarpiNamenVoorArtikelen(regels.map((r) => r.artikelnr))
-  const gewichtPerOrder = await fetchTotaalGewichtPerOrder(headers.map((h) => h.id))
+  const orderPickbaarheid = await fetchOrderPickbaarheid(headers.map((h) => h.id))
   const actievePickrondes = await fetchActievePickrondes(headers.map((h) => h.id))
 
   for (const [orderId, ronde] of actievePickrondes) {
@@ -67,58 +57,48 @@ export async function fetchPickShipOrders(
   }
 
   for (const r of regels) {
-    const h = headerMap.get(r.order_id)
     const order = perOrder.get(r.order_id)
-    if (!h || !order) continue
+    if (!order) continue
 
     const karpiNaam = r.artikelnr ? karpiNamen.get(r.artikelnr) ?? null : null
     const regel = mapPickbaarheidRegel(r, karpiNaam)
     order.regels.push(regel)
     order.totaal_m2 = Math.round((order.totaal_m2 + regel.m2) * 100) / 100
+    order.totaal_gewicht_kg =
+      Math.round((order.totaal_gewicht_kg + (r.gewicht_kg ?? 0) * (r.orderaantal ?? 0)) * 100) / 100
     order.aantal_regels = order.regels.length
   }
 
-  for (const [orderId, kg] of gewichtPerOrder) {
+  for (const [orderId, opb] of orderPickbaarheid) {
     const order = perOrder.get(orderId)
-    if (order) order.totaal_gewicht_kg = kg
+    if (order) order.alle_regels_pickbaar = opb.alle_regels_pickbaar
   }
 
   let result = Array.from(perOrder.values())
   if (alleen_pickbaar) {
-    result = result.filter((o) => o.regels.some((r) => r.is_pickbaar))
+    result = result.filter((o) => orderPickbaarheid.get(o.order_id)?.heeft_pickbare_regel ?? false)
   }
-  // Pickbaarheidsfilter: een order verschijnt pas in Pick & Ship zodra al haar
-  // regels gepickt kunnen worden. Reden voor onpickbaar maakt niet uit —
-  // 'wacht op snijden', 'wacht op inkoop', 'wacht op confectie/inpak', of
-  // helemaal geen regels (header-only). Uitzondering: klanten met
-  // `deelleveringen_toegestaan=true` zien een order al wél zodra ≥1 regel
-  // pickbaar is; de operator stuurt dan een deellevering. Orders zonder
-  // enkele pickbare regel verdwijnen altijd, ook bij deelleveringen.
-  //
-  // Dag-orders (ADR 0014 / mig 244 lever_type='datum'): extra horizon-check.
-  // Order verschijnt pas vanaf werkdagMinN(afleverdatum, 1) — d.w.z. 1 werkdag
-  // vóór de afleverdatum. Voorkomt dat een dag-belofte te vroeg gepickt en
-  // weggezet wordt waardoor 'm op de echte pickdag vergeten kan worden.
+  // Pickbaarheids-gate: het order-niveau-predicaat (alle regels pickbaar, of
+  // ≥1 pickbare regel als de klant deelleveringen toestaat, en überhaupt
+  // regels) komt sinds mig 386 volledig uit view `order_pickbaarheid`
+  // (pick_ship_zichtbaar) — de view skipt ook admin-pseudo-regels (ADR-0018).
+  // TS filtert hier alleen nog. Enige client-side uitzondering: de dag-order-
+  // horizon (ADR 0014 / mig 244), omdat die van `vandaag` afhangt — een
+  // dag-order verschijnt pas vanaf werkdagMinN(afleverdatum, 1).
+  // NB de bewuste keuze van 2026-06-04 blijft staan: een onbevestigde
+  // EDI-leverweek (mig 309/316) blokkeert Pick & Ship NIET.
   const vandaagIso = isoLokaal(vandaag)
   result = result.filter((o) => {
+    const opb = orderPickbaarheid.get(o.order_id)
+    if (!opb) return false // geen (niet-pseudo) regels → niets te picken
     const header = headerMap.get(o.order_id)
-    // Bewuste keuze (2026-06-04): een onbevestigde EDI-leverweek (mig 309/310)
-    // BLOKKEERT Pick & Ship NIET. De order moet hoe dan ook geleverd worden;
-    // de leverweek-bevestiging is een administratieve toezegging richting de
-    // klant (orderbev draagt de bevestigde week), géén magazijn-poort. De
-    // operator ziet de order dus gewoon als pickbaar; de "Te bevestigen"-chip
-    // op orders-overzicht + de EdiLeverweekBevestigen-widget op order-detail
-    // blijven de bevestiging aansturen. (isLeverweekTeBevestigen wordt hier
-    // daarom NIET meer als filter gebruikt.)
-    if (o.regels.length === 0) return false
-    const allesPickbaar = o.regels.every((r) => r.is_pickbaar)
     if (header?.lever_type === 'datum' && header.afleverdatum) {
-      const horizon = werkdagMinN(header.afleverdatum, 1)
+      // Horizon telt met de centrale werkagenda (feestdagen) — valt een vrije dag vóór de
+      // afleverdatum, dan verschijnt de dag-order een werkdag eerder.
+      const horizon = werkdagMinN(header.afleverdatum, 1, werktijden)
       if (vandaagIso < horizon) return false
     }
-    if (allesPickbaar) return true
-    if (!header?.deelleveringen_toegestaan) return false
-    return o.regels.some((r) => r.is_pickbaar)
+    return opb.pick_ship_zichtbaar
   })
   if (search) result = filterPickShipOrders(result, search)
   if (bucket) result = result.filter((o) => o.bucket === bucket)
@@ -131,7 +111,7 @@ async function fetchOpenOrderHeaders(): Promise<OrderHeaderRij[]> {
     .from('orders')
     .select(
       'id, order_nr, status, debiteur_nr, afl_naam, afl_adres, afl_postcode, ' +
-        'afl_plaats, afl_land, afleverdatum, afhalen, lever_type, bron_systeem, edi_bevestigd_op'
+        'afl_plaats, afl_land, afleverdatum, afhalen, lever_type'
     )
     .neq('status', 'Verzonden')
     .neq('status', 'Geannuleerd')
@@ -142,9 +122,7 @@ async function fetchOpenOrderHeaders(): Promise<OrderHeaderRij[]> {
 
   if (error) throw error
 
-  const ordersBase = (ordersRaw ?? []) as unknown as Array<
-    Omit<OrderHeaderRij, 'klant_naam' | 'deelleveringen_toegestaan'>
-  >
+  const ordersBase = (ordersRaw ?? []) as unknown as Array<Omit<OrderHeaderRij, 'klant_naam'>>
   // Filter NULL/ongeldige debiteur_nrs eruit: orders zonder klant (bv. e-mail-
   // Concept-orders, ORD-2026-0094/0095) hebben debiteur_nr=NULL. Zonder deze
   // guard belandt een lege waarde in de `.in('debiteur_nr', [...])`-lijst →
@@ -153,35 +131,23 @@ async function fetchOpenOrderHeaders(): Promise<OrderHeaderRij[]> {
   const debiteurNrs = Array.from(
     new Set(ordersBase.map((o) => o.debiteur_nr).filter((nr): nr is number => nr != null))
   )
-  const klantMap = new Map<number, { naam: string; deelleveringen_toegestaan: boolean }>()
+  const klantMap = new Map<number, string>()
 
   if (debiteurNrs.length > 0) {
     const { data: debs, error: derr } = await supabase
       .from('debiteuren')
-      .select('debiteur_nr, naam, deelleveringen_toegestaan')
+      .select('debiteur_nr, naam')
       .in('debiteur_nr', debiteurNrs)
     if (derr) throw derr
-
-    for (const d of (debs ?? []) as Array<{
-      debiteur_nr: number
-      naam: string
-      deelleveringen_toegestaan: boolean | null
-    }>) {
-      klantMap.set(d.debiteur_nr, {
-        naam: d.naam,
-        deelleveringen_toegestaan: d.deelleveringen_toegestaan ?? false,
-      })
+    for (const d of (debs ?? []) as Array<{ debiteur_nr: number; naam: string }>) {
+      klantMap.set(d.debiteur_nr, d.naam)
     }
   }
 
-  return ordersBase.map((o) => {
-    const klant = klantMap.get(o.debiteur_nr)
-    return {
-      ...o,
-      klant_naam: klant?.naam ?? null,
-      deelleveringen_toegestaan: klant?.deelleveringen_toegestaan ?? false,
-    }
-  })
+  return ordersBase.map((o) => ({
+    ...o,
+    klant_naam: klantMap.get(o.debiteur_nr) ?? null,
+  }))
 }
 
 async function fetchPickbaarheidRegels(orderIds: number[]): Promise<PickbaarheidRij[]> {
@@ -198,71 +164,16 @@ async function fetchPickbaarheidRegels(orderIds: number[]): Promise<Pickbaarheid
         'order_regel_id, order_id, regelnummer, artikelnr, is_maatwerk, ' +
           'orderaantal, maatwerk_lengte_cm, maatwerk_breedte_cm, omschrijving, ' +
           'maatwerk_kwaliteit_code, maatwerk_kleur_code, totaal_stuks, ' +
-          'pickbaar_stuks, is_pickbaar, bron, fysieke_locatie, wacht_op'
+          'pickbaar_stuks, is_pickbaar, bron, fysieke_locatie, wacht_op, gewicht_kg'
       )
       .in('order_id', ids)
-      // Specifieke VERZEND-skip voor pakbon-/pick-listing: verzendkosten zijn
-      // factuurregels, geen fysiek collo. Andere admin-pseudo's (BUNDELKORTING/
-      // DREMPELKORTING) bestaan niet als orderregel in productie (mig 262).
-      // Voor generieke admin-pseudo-skip: zie ADR-0018 / isAdminPseudo(regel).
-      .neq('artikelnr', SHIPPING_PRODUCT_ID)
 
-    if (error) {
-      if (isMissingPickbaarheidViewError(error)) return fetchFallbackOrderRegels(orderIds)
-      throw error
-    }
+    if (error) throw error
     rows.push(...((data ?? []) as unknown as PickbaarheidRij[]))
   }
   return rows
 }
 
-async function fetchFallbackOrderRegels(orderIds: number[]): Promise<PickbaarheidRij[]> {
-  const rows: FallbackOrderRegelRij[] = []
-
-  for (const ids of chunks(orderIds, 100)) {
-    const { data, error } = await supabase
-      .from('order_regels')
-      .select(
-        'id, order_id, regelnummer, artikelnr, is_maatwerk, orderaantal, ' +
-          'maatwerk_lengte_cm, maatwerk_breedte_cm, omschrijving, ' +
-          'maatwerk_kwaliteit_code, maatwerk_kleur_code'
-      )
-      .in('order_id', ids)
-      // Specifieke VERZEND-skip — zie pakbon-listing-comment hierboven (ADR-0018).
-      .neq('artikelnr', SHIPPING_PRODUCT_ID)
-      .order('regelnummer', { ascending: true })
-
-    if (error) throw error
-    rows.push(...((data ?? []) as unknown as FallbackOrderRegelRij[]))
-  }
-
-  return rows.map((r) => ({
-    order_regel_id: r.id,
-    order_id: r.order_id,
-    regelnummer: r.regelnummer,
-    artikelnr: r.artikelnr,
-    is_maatwerk: r.is_maatwerk ?? false,
-    orderaantal: r.orderaantal ?? 0,
-    maatwerk_lengte_cm: r.maatwerk_lengte_cm,
-    maatwerk_breedte_cm: r.maatwerk_breedte_cm,
-    omschrijving: r.omschrijving,
-    maatwerk_kwaliteit_code: r.maatwerk_kwaliteit_code,
-    maatwerk_kleur_code: r.maatwerk_kleur_code,
-    totaal_stuks: null,
-    pickbaar_stuks: null,
-    is_pickbaar: false,
-    bron: null,
-    fysieke_locatie: null,
-    wacht_op: null,
-  }))
-}
-
-/**
- * Som `gewicht_kg × orderaantal` per order. Pseudo-regel `VERZEND` wordt
- * uitgesloten — die is een factuurregel, geen fysiek collo (zie mig 206).
- * Wordt indicatief getoond op Pick & Ship; definitief gewicht wordt later door
- * `create_zending_voor_order` op de zending gezet.
- */
 /**
  * Per order: de actieve Pickronde (zending in 'Picken'-status), inclusief
  * picker-naam. Bron is `zending_orders` M2M (mig 222, canoniek vanaf mig 242
@@ -349,29 +260,25 @@ async function fetchActievePickrondes(
   return map
 }
 
-async function fetchTotaalGewichtPerOrder(orderIds: number[]): Promise<Map<number, number>> {
-  const map = new Map<number, number>()
-  if (orderIds.length === 0) return map
-
+async function fetchOrderPickbaarheid(
+  orderIds: number[]
+): Promise<Map<number, OrderPickbaarheidRij>> {
+  const map = new Map<number, OrderPickbaarheidRij>()
+  // Gechunkt per order_id — zelfde PostgREST-max-rows-cap-reden als fetchPickbaarheidRegels
+  // (1 rij per order, maar >1000 open orders is realistisch met EDI-instroom).
   for (const ids of chunks(orderIds, 100)) {
     const { data, error } = await supabase
-      .from('order_regels')
-      .select('order_id, gewicht_kg, orderaantal, artikelnr')
+      .from('order_pickbaarheid')
+      .select(
+        'order_id, totaal_regels, pickbare_regels, alle_regels_pickbaar, ' +
+          'heeft_pickbare_regel, deelleveringen_toegestaan, pick_ship_zichtbaar'
+      )
       .in('order_id', ids)
-      // VERZEND telt niet in zending-gewicht (factuurregel, geen collo). ADR-0018.
-      .neq('artikelnr', SHIPPING_PRODUCT_ID)
     if (error) throw error
-    for (const row of (data ?? []) as Array<{
-      order_id: number
-      gewicht_kg: number | null
-      orderaantal: number | null
-    }>) {
-      const kg = (row.gewicht_kg ?? 0) * (row.orderaantal ?? 0)
-      map.set(row.order_id, (map.get(row.order_id) ?? 0) + kg)
+    for (const row of (data ?? []) as unknown as OrderPickbaarheidRij[]) {
+      map.set(row.order_id, row)
     }
   }
-
-  for (const [k, v] of map) map.set(k, Math.round(v * 100) / 100)
   return map
 }
 
@@ -400,13 +307,6 @@ async function fetchKarpiNamenVoorArtikelen(
     }
   }
   return map
-}
-
-function isMissingPickbaarheidViewError(error: { code?: string; message?: string }): boolean {
-  return (
-    error.code === 'PGRST205' ||
-    (error.message ?? '').includes("Could not find the table 'public.orderregel_pickbaarheid'")
-  )
 }
 
 export async function fetchPickShipStats(vandaag: Date = new Date()): Promise<PickShipStats> {

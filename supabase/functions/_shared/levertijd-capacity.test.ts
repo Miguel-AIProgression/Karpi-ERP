@@ -10,6 +10,7 @@ import {
   backlogIsVoldoende,
 } from './levertijd-capacity.ts'
 import type { BezettingsRow, LevertijdConfig } from './levertijd-types.ts'
+import { STANDAARD_WERKTIJDEN } from './werkagenda.ts'
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -24,6 +25,11 @@ function defaultConfig(overrides: Partial<LevertijdConfig> = {}): LevertijdConfi
     wisseltijd_minuten: 15,
     snijtijd_minuten: 5,
     maatwerk_weken: 4,
+    spoed_buffer_uren: 4,
+    spoed_toeslag_bedrag: 50,
+    spoed_product_id: 'SPOEDTOESLAG',
+    dag_order_snij_buffer_werkdagen: 2,
+    werktijden: STANDAARD_WERKTIJDEN,
     ...overrides,
   }
 }

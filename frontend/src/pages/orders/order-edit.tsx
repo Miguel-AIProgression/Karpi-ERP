@@ -131,6 +131,12 @@ export function OrderEditPage() {
     korting_pct: r.korting_pct,
     bedrag: r.bedrag ?? undefined,
     gewicht_kg: r.gewicht_kg ?? undefined,
+    // Display-only product-vlaggen (ADR-0018-patroon) — zonder deze ziet
+    // flag-based detectie (isDropshipRegel/isAdminPseudo) geladen regels
+    // niet in de bewerk-flow. is_pseudo was een pre-existing gap (de
+    // tekort-bepaling in order-form leest r.is_pseudo, dat hier nooit gevuld werd).
+    is_pseudo: r.is_pseudo,
+    is_dropship: r.is_dropship,
     // Maatwerk
     is_maatwerk: r.is_maatwerk ?? false,
     maatwerk_vorm: r.maatwerk_vorm ?? undefined,

@@ -582,7 +582,7 @@ M2M tussen zendingen en orders. Sinds migratie 222 (zending-bundeling op aflever
 
 **Consumer:** `voltooi_pickronde` (mig 222) leest betrokken orders uit deze tabel en flipt élke order via `markeer_verzonden` zodra dit de laatste open zending is — sluitstuk factuur-keten (ADR-0005) blijft kloppend voor zowel solo- als bundel-zendingen.
 
-**Helper:** `_normaliseer_afleveradres(adres, postcode, land)` (mig 222) — TRIM + UPPER + whitespace-normalisatie. Wordt door de bundel-RPC gebruikt om de adres-invariant SQL-side te bewaken; de frontend (`bundel-cluster.ts`) dupliceert dezelfde logica om identiek te clusteren vóór de RPC-aanroep.
+**Helper:** `_normaliseer_afleveradres(adres, postcode, land)` (mig 222) — TRIM + UPPER + whitespace-normalisatie; gehard in mig 385: JS-identieke whitespace-klasse + ß/ẞ→ss-fold (chr(223)/chr(7838)); contract via golden fixtures (`bundel-sleutel.golden.json`) + `assert_bundel_sleutel_contract`. Wordt door de bundel-RPC gebruikt om de adres-invariant SQL-side te bewaken; de frontend (`bundel-cluster.ts`) dupliceert dezelfde logica om identiek te clusteren vóór de RPC-aanroep.
 
 **Lock-trigger:** `trg_lock_zending_bundel_sleutel` (mig 230, BEFORE UPDATE OF afleverdatum/afl_*/debiteur_nr ON orders) — blokkeert mutatie van bundel-sleutel-dimensies zodra de order in een actieve bundel-zending zit (status `Klaar voor verzending`+). Voorkomt divergentie tussen pakbon-snapshot, wekelijkse factuur-week en werkelijke order-data. Gooit `restrict_violation`. Picken-status mag wel muteren: operator kan dan bewust splitsen door pickronde te annuleren.
 
@@ -1149,6 +1149,16 @@ Applicatie-instellingen (key-value). Gebruikt voor productie-configuratie en aut
 | levering | string | `'1'` | AA2.0-XML `<Levering>` code. |
 | soort_levering | string | `'1'` | AA2.0-XML `<SoortLevering>` code. |
 
+**werkagenda waarde-structuur** (mig 384 — één bron voor UI, edge-functions en Pick & Ship; gelezen via `fetchWerkagendaConfig()` + `_shared/werkagenda.ts`):
+| Veld | Type | Default | Toelichting |
+|------|------|---------|-------------|
+| werkdagen | number[] | `[1,2,3,4,5]` | ISO-weekdagnummers (1=ma … 7=zo) waarop er gewerkt wordt. |
+| start | 'HH:mm' | `'08:00'` | Start werktijd (lokale tijd). |
+| eind | 'HH:mm' | `'17:00'` | Einde werktijd. |
+| pauzeStart | 'HH:mm' | `'12:00'` | Begin middagpauze. |
+| pauzeEind | 'HH:mm' | `'12:30'` | Einde middagpauze. |
+| vrij | `{datum: string, naam?: string}[]` | `[]` | Lijst van vrije dagen (feestdagen/bedrijfsvakantie) in ISO-datumformaat. Gelezen door UI (productie-instellingen, snijplanning-agenda), `check-levertijd`/`spoed-check` (edge) en de Pick & Ship-dag-order-horizon (`werkdagMinN`). |
+
 ---
 
 ### snijplan_groep_locks
@@ -1407,6 +1417,8 @@ Log van **daadwerkelijk verstuurde e-mails per order** (mig 366) — voedt de se
 | hst_verzend_monitor | Mig 338 (ADR-0030). Aggregaat (één rij, geen state) over `hst_transportorders`: `verstuurd_vandaag`, `fout_open`, `wachtrij`, `bezig`, `oudste_wachtrij_minuten`, `oudste_bezig_minuten`. De laatste twee = **cron-health-signaal** (hoog = `hst-send`-cron staat stil; UI-drempel 5 min). Voedt de HST-verzendmonitor (tab op `/logistiek/vervoerders/hst_api/monitor`) + aandacht-banner op Pick & Ship. Tegengif tegen de "silent failure"-klasse. |
 | verhoek_verzend_monitor | Mig 375 (ADR-0031). Aggregaat (één rij, geen state) over `verhoek_transportorders`: `verstuurd_vandaag`, `fout_open`, `wachtrij`, `bezig`, `oudste_wachtrij_minuten`, `oudste_bezig_minuten`. Spiegelt `hst_verzend_monitor`. `oudste_wachtrij_minuten` = cron-health-signaal voor `verhoek-send`. Frontend-paneel volgt in een later plan. |
 | orders_zonder_vervoerder | Mig 338 (ADR-0030) + 345 + 372. Niet-afhaal-orders (`afhalen=FALSE`), niet productie-only (`NOT alleen_productie` — verzending blijft in Basta, ADR-0029; guard toegevoegd in mig 345), status NOT IN (`'Geannuleerd'`,`'Verzonden'`,`'Concept'`), met ≥1 regel waarvan `effectieve_vervoerder_per_orderregel(o.id).bron='geen'` (geen matchende **actieve** vervoerder → handmatig kiezen nodig). Telt dus álle open orders, óók wat Pick & Ship (nog) niet toont. Sinds mig 372 ook `status` (TEXT) en `afl_land_norm` (`normaliseer_land`, mig 214) zodat de banner per land kan uitsplitsen + "waarvan klaar voor picken" toont. Voedt de "handmatig vervoerder kiezen"-teller/banner. |
+| orderregel_pickbaarheid | Mig 170; mig 288: `'Snijden'`-rang-fix; **mig 386 (v4):** (a) generieke admin-pseudo-skip `AND NOT is_admin_pseudo(oreg.artikelnr)` (ADR-0018) — vervangt de VERZEND-specifieke TS-skip én fixt de latente dropship-blokkade (DROPSHIP-KLEIN/-GROOT-regels kregen geen claim → stonden als `wacht_op='inkoop'` → dropship-orders werden nooit "alles pickbaar"); (b) nieuwe kolom `gewicht_kg` (uit `order_regels`) zodat de aparte gewicht-query in TS vervalt. Per orderregel (open orders, niet-pseudo): `order_regel_id`, `order_id`, `regelnummer`, `artikelnr`, `is_maatwerk`, `orderaantal`, maatwerk-afmetingen, `is_pickbaar`, `bron` (`snijplan`\|`rol`\|`producten_default`\|NULL), `fysieke_locatie`, `wacht_op` (`snijden`\|`confectie`\|`inpak`\|`inkoop`\|NULL), `gewicht_kg`. Single source voor Pick & Ship; de TS-laag leidt niets meer af. |
+| order_pickbaarheid | **Mig 386** (hernummerd van 383 via 385; in de live DB op 12-06 onder werknummer 383 toegepast). Aggregaat per order over `orderregel_pickbaarheid`. Kolommen: `order_id`, `totaal_regels` (INT), `pickbare_regels` (INT), `alle_regels_pickbaar` (BOOL), `heeft_pickbare_regel` (BOOL), `deelleveringen_toegestaan` (BOOL, uit `debiteuren`), `pick_ship_zichtbaar` (BOOL = `alle_regels_pickbaar` OR (`deelleveringen_toegestaan` AND `heeft_pickbare_regel`)). **Geen rij** = order heeft geen (niet-pseudo) regels = niets te picken. Single source voor het Pick & Ship-orderfilter ([`fetchPickShipOrders`](../frontend/src/modules/magazijn/queries/pickbaarheid.ts)) en de pick-start-knop (`StartPickrondesButton.alle_regels_pickbaar`); alleen de dag-order-horizon (ADR 0014) blijft client-side. **Deploy-voorwaarde:** mig 386 moet op de live DB staan vóór de frontend van deze branch deployt — er is geen fallback meer. |
 
 ---
 
@@ -1512,6 +1524,7 @@ Mig 174, aangepast in mig 176. Read-only view die de `/logistiek/vervoerders`-ov
 | `effectieve_vervoerder_per_orderregel(p_order_id BIGINT) → TABLE(...)` | **Per-orderregel-resolver (mig 219).** Returnt voor elke pickbare regel: `override_code`, `evaluator_code`/`evaluator_service`, `klant_fallback_code`, `effectief_code`/`effectief_service` en `bron` (`override` / `regel` / `klant_fallback` / `geen` / `afhalen`). Bron-precedentie: override > regel > klant_fallback > geen. Globaal-actief blijft een UI-fallback. Gebruikt door `start_pickronden_voor_order` (mig 220) voor groepering en door pick-card UI voor per-regel pill. STABLE. |
 | `evalueer_orderregel_attributes(p_orderregel_id BIGINT) → TABLE(...)` | **Per-regel attributen voor regel-evaluator (mig 219).** Symmetrisch met `evalueer_zending_attributes` (mig 210), maar `kleinste_zijde_cm` en `gewicht_kg` zijn per regel zodat de evaluator per regel kan beslissen. Land/debiteur/inkoopgroep blijven order-niveau. STABLE. |
 | `start_pickronden_voor_order(p_order_id BIGINT, p_picker_id BIGINT) → TABLE(zending_id, zending_nr, vervoerder_code, aantal_regels, is_nieuw)` | **Splits-aware pickronde-starter (mig 220).** Voor élke unieke effectieve vervoerder maakt 1 zending aan (regels uit groep, vervoerder direct gezet bij INSERT). Idempotent op (order, vervoerder): bestaande Picken-zendingen worden hergebruikt. Eindstatus-guard uit mig 218 blijft van kracht. `start_pickronde` (oude single-zending wrapper) returnt nu het eerste zending_id van deze RPC voor backward compat. |
+| `assert_bundel_sleutel_contract(JSONB) → void` | Mig 385 (in DB toegepast als 383 op 12-06): toetst `_normaliseer_afleveradres` + `verzendweek_voor_datum` + `bundel_sleutel` tegen de golden fixtures (RAISE EXCEPTION bij mismatch, vorm-guard tegen lege arrays); aanroepen aan het eind van elke migratie die een van de drie wijzigt (`*_bundel_sleutel_contract*.sql`-conventie). |
 
 ### Triggers op order_regels (maatwerk)
 

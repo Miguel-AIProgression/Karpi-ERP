@@ -10,6 +10,15 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  server: {
+    fs: {
+      // Cross-root imports uit supabase/functions/_shared (ADR-0033): de
+      // dev-server serveert anders geen bestanden buiten frontend/ — nodig
+      // voor de re-export-shims én de werkagenda-kernel. '..' = de repo-root;
+      // build en Vitest hebben dit niet nodig.
+      allow: ['..'],
+    },
+  },
   test: {
     environment: 'jsdom',
     globals: true,

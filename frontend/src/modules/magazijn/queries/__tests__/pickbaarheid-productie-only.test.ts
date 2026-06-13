@@ -1,83 +1,22 @@
 // R1-guard-test: productie-only orders (orders.alleen_productie=true, uit Basta)
 // mogen NOOIT in Pick & Ship verschijnen — die worden in Basta afgehandeld.
 //
-// Het mock-patroon volgt magazijn-pickbaarheid.contract.test.ts (queue-based
-// fake-Supabase per tabel), met twee gerichte uitbreidingen die de R1-guard
-// daadwerkelijk kunnen verifiëren:
+// Mock via de gedeelde helper `__tests__/helpers/fake-supabase` (queue-based
+// fake-Supabase per tabel), die de R1-guard daadwerkelijk kan verifiëren:
 //   1. De `orders`-chain registreert de toegepaste `.eq(...)`-filters zodat we
 //      kunnen asserten dàt `.eq('alleen_productie', false)` in de querychain zit
 //      (TDD-anker: zonder de guard uit deeltaak 1 ontbreekt deze filter).
 //   2. De `orders`-chain past die `.eq`-filters ook echt toe op de fixture-data,
 //      zodat een order met `alleen_productie=true` er — net als bij PostgREST —
 //      uitgefilterd wordt en `fetchPickShipOrders` 'm niet teruggeeft.
-//
-// LET OP (projectgeheugen): de bestaande magazijn-pickbaarheid.contract.test.ts
-// faalt pre-existing op main (mockt `zendingen` i.p.v. `zending_orders`). Dit
-// bestand mockt `zending_orders` correct en staat daar los van.
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-
-// ---------------------------------------------------------------------------
-// Fake Supabase-client met queue-based response per tabel + filter-registratie
-// ---------------------------------------------------------------------------
-
-type SupabaseResponse = { data: unknown; error: { code?: string; message?: string } | null }
-
-const responses: Record<string, SupabaseResponse[]> = {}
-
-/** Verzamelt per tabel de toegepaste `.eq(column, value)`-filters. */
-const appliedEqFilters: Record<string, Array<[string, unknown]>> = {}
-
-function queueResponse(table: string, response: SupabaseResponse) {
-  if (!responses[table]) responses[table] = []
-  responses[table].push(response)
-}
-
-function buildChain(table: string) {
-  const eqFilters: Array<[string, unknown]> = []
-
-  const chain = {
-    select: () => chain,
-    eq: (column: string, value: unknown) => {
-      eqFilters.push([column, value])
-      if (!appliedEqFilters[table]) appliedEqFilters[table] = []
-      appliedEqFilters[table].push([column, value])
-      return chain
-    },
-    neq: () => chain,
-    in: () => chain,
-    order: () => chain,
-    limit: () => chain,
-    update: () => chain,
-    insert: () => chain,
-    then: (
-      resolve: (value: SupabaseResponse) => void,
-      reject: (reason: unknown) => void
-    ) => {
-      const next = responses[table]?.shift()
-      if (!next) {
-        reject(new Error(`Geen response voor tabel "${table}" in test-queue`))
-        return
-      }
-      // Simuleer PostgREST-zijde filtering voor de `.eq(...)`-filters op een
-      // array-resultaat, zodat de R1-guard daadwerkelijk effect heeft.
-      if (next.error === null && Array.isArray(next.data) && eqFilters.length > 0) {
-        const filtered = (next.data as Array<Record<string, unknown>>).filter((row) =>
-          eqFilters.every(([col, val]) => row[col] === val)
-        )
-        resolve({ data: filtered, error: null })
-        return
-      }
-      resolve(next)
-    },
-  }
-  return chain
-}
-
-const fakeSupabase = {
-  from: (table: string) => buildChain(table),
-  rpc: () => Promise.resolve({ data: 0, error: null }),
-}
+import {
+  fakeSupabase,
+  queueResponse,
+  resetQueues,
+  appliedEqFilters,
+} from '../../__tests__/helpers/fake-supabase'
 
 vi.mock('@/lib/supabase/client', () => ({ supabase: fakeSupabase }))
 
@@ -109,7 +48,7 @@ function makeOrderHeader(
     afleverdatum: '2026-05-12',
     afhalen: false,
     lever_type: 'week' as const,
-    alleen_productie: false,
+    alleen_productie: false,   // R1-guard-veld (mig 345); helper filtert hierop
     ...overrides,
   }
 }
@@ -141,6 +80,7 @@ function makePickbaarheidRow(
     bron: 'rol' as const,
     fysieke_locatie: 'A-12',
     wacht_op: null,
+    gewicht_kg: 4.5,
     ...overrides,
   }
 }
@@ -153,13 +93,12 @@ function makeDebiteur(debiteur_nr: number, naam: string, deelleveringen_toegesta
 // Tests
 // ---------------------------------------------------------------------------
 
-beforeEach(() => {
-  for (const k of Object.keys(responses)) delete responses[k]
-  for (const k of Object.keys(appliedEqFilters)) delete appliedEqFilters[k]
-})
+beforeEach(() => resetQueues())
 
 describe('Pick & Ship R1-guard — productie-only orders worden uitgefilterd', () => {
   it('past .eq(alleen_productie, false) toe op de orders-querychain', async () => {
+    // app_config 'werkagenda' — parallel opgehaald door fetchWerkagendaConfig (mig 384).
+    queueResponse('app_config', { data: null, error: null })
     queueResponse('orders', { data: [], error: null })
 
     await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
@@ -196,6 +135,8 @@ describe('Pick & Ship R1-guard — productie-only orders worden uitgefilterd', (
       }),
     ]
 
+    // app_config 'werkagenda' — parallel opgehaald door fetchWerkagendaConfig (mig 384).
+    queueResponse('app_config', { data: null, error: null })
     queueResponse('orders', { data: headers, error: null })
     queueResponse('debiteuren', { data: debiteuren, error: null })
     queueResponse('orderregel_pickbaarheid', { data: regels, error: null })
@@ -203,15 +144,22 @@ describe('Pick & Ship R1-guard — productie-only orders worden uitgefilterd', (
       data: [{ artikelnr: 'P-001', omschrijving: 'KARPI SANDRO 200x140' }],
       error: null,
     })
-    queueResponse('order_regels', {
-      data: [
-        { order_id: 100, gewicht_kg: 4.5, orderaantal: 2, artikelnr: 'P-001' },
-        { order_id: 200, gewicht_kg: 4.5, orderaantal: 2, artikelnr: 'P-001' },
-      ],
-      error: null,
-    })
     // Mig 222: actieve pickrondes via zending_orders M2M. Lege array = geen lopende ronde.
     queueResponse('zending_orders', { data: [], error: null })
+    // Mig 386: order-niveau-predicaat uit view order_pickbaarheid. Alleen order
+    // 100 — order 200 is door de R1-guard al SQL-zijde weggefilterd.
+    queueResponse('order_pickbaarheid', {
+      data: [{
+        order_id: 100,
+        totaal_regels: 1,
+        pickbare_regels: 1,
+        alle_regels_pickbaar: true,
+        heeft_pickbare_regel: true,
+        deelleveringen_toegestaan: false,
+        pick_ship_zichtbaar: true,
+      }],
+      error: null,
+    })
 
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 
