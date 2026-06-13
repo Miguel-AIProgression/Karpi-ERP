@@ -1,5 +1,19 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-13 — Intake-gates: afleveradres & prijs blokkeren doorstroming (mig 392-393)
+
+> **Migratienummers:** repo-nrs **392/393** (geverifieerd tegen origin/main vlak vóór start: 390/391 = colli-data, al gemerged). Nog niet op de live DB toegepast — apply 392 vóór 393 (393 breidt `_valideer_intake_gates` uit die 392 aanmaakt). **Deploy-volgorde:** migraties vóór de frontend (Pick & Ship-query + `orders_list` lezen de nieuwe kolommen). Branch: `feat/intake-gates-adres-en-prijs`.
+
+Twee data-integriteit-poorten die voorkomen dat een order met **onvolledig afleveradres** of **ontbrekende prijs (€0)** stilletjes naar de werkvloer/facturatie doorstroomt. Aanleiding: ORD-2026-0097 belandde zonder afleveradres in Pick & Ship → verzendlabels zonder adres; en Shopify-orders kwamen soms zonder prijs binnen. Beide gaten zaten in álle intake-kanalen (EDI, Shopify/webshop, e-mail, handmatig) omdat geen enkel kanaal de afl_*-snapshots of prijzen valideerde.
+
+Beide volgen het bestaande nullable-timestamp-gate-patroon (mig 326): kolom op `orders`, detectie in een DB-trigger (single source), predicaat-helper in `frontend/src/lib/orders/`, status-tab op het overzicht + banner op order-detail.
+
+**Feature A — afleveradres (mig 392):** kolom `orders.afl_adres_incompleet_sinds`, BEFORE-trigger `trg_orders_afl_adres_gate` (incompleet = niet-afhaal-order, status ≠ Verzonden/Geannuleerd, één van naam/adres/postcode/plaats leeg-na-trim). Wist zichzelf zodra compleet — geen handmatige bevestiging. Helper [`afleveradres-gate.ts`](../frontend/src/lib/orders/afleveradres-gate.ts) (`isAfleveradresIncompleet` + filter + pure `isAfleveradresCompleet` voor de form). Rode banner `AfleveradresIncompleetBanner` + status-tab "Afleveradres ontbreekt" + order-form blokkeert opslaan. `alleen_productie` bewust niet uitgesloten (keuze Miguel), maar raakt Pick & Ship niet (die filtert `alleen_productie=false`).
+
+**Feature B — prijs (mig 393):** kolom `orders.prijs_ontbreekt_sinds`, AFTER-trigger `trg_order_regels_prijs_gate` op `order_regels` (€0/NULL op een normale regel: NOT `is_admin_pseudo`, artikelnr ≠ VERZEND, `korting_pct` < 100 — admin-pseudo/VERZEND/100%-korting zijn legitiem €0). `UPDATE OF prijs,korting_pct,artikelnr` zodat allocatie-updates niet vuren. RPC `markeer_prijs_geaccepteerd` (operator accepteert €0 bewust, audit `order_events` `'prijs_geaccepteerd'`) óf prijscorrectie wist de gate. Helper [`prijs-ontbreekt.ts`](../frontend/src/lib/orders/prijs-ontbreekt.ts). Amber banner `PrijsOntbreektBanner` (corrigeer / bevestig) + status-tab "Prijs ontbreekt".
+
+**Hard-block (beide):** gedeelde poort `_valideer_intake_gates(order_ids[])` die `start_pickronden` aanroept ná de bundel-uitbreiding — mig 392 voegde de aanroep + adres-check toe, mig 393 breidde de poort uit met de prijs-check (`start_pickronden` zelf maar één keer herschreven, body = mig 373 + één PERFORM). Frontend-spiegel: `StartPickrondesButton` disablet met reden ("Afleveradres ontbreekt"/"Prijs ontbreekt"). Backfill: beide migraties flaggen bestaande open orders retroactief. Tests: `afleveradres-gate.test.ts` + `prijs-ontbreekt.test.ts` (11 nieuwe asserts); typecheck schoon, 311 magazijn/orders-tests groen.
+
 ## 2026-06-13 — Colli-data single-source: omschrijving + label-metadata + gewicht-totaal (mig 390-391)
 
 > **Migratienummers:** repo-nrs **390/391** (vlak vóór merge hernummerd 388/389 → 390/391 — origin/main claimde intussen 388 `maatwerk_vorm_contour` + 389 `normaliseer_land_contract`; mig 387-gewicht stond al op main). In de live DB op 13-06 toegepast onder werknummers 388/389; idempotent, inhoudelijk identiek. Achtergrond: [`docs/superpowers/plans/2026-06-13-sscc-analogen-audit.md`](superpowers/plans/2026-06-13-sscc-analogen-audit.md).

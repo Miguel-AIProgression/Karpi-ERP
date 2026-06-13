@@ -40,6 +40,7 @@ import {
   dropshipAflEmailProbleem,
   isBlokkerendDropshipEmailProbleem,
 } from '@/lib/orders/dropship-email'
+import { isAfleveradresCompleet, ontbrekendeAfleveradresVelden } from '@/lib/orders/afleveradres-gate'
 import { DropshipmentSelector } from './dropshipment-selector'
 import type { DropshipmentKeuze } from '@/lib/constants/dropshipment'
 import { useDropshipPrijzen } from '@/hooks/use-dropship-prijzen'
@@ -532,6 +533,16 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
       if (regels.filter(r => r.artikelnr !== SHIPPING_PRODUCT_ID).length === 0) throw new Error('Voeg minstens één orderregel toe')
       if (isBlokkerendDropshipEmailProbleem(dropshipEmailProbleem)) {
         throw new Error(DROPSHIP_EMAIL_MELDING[dropshipEmailProbleem])
+      }
+      // Mig 392: een verzendorder (niet-afhaal) moet een compleet afleveradres
+      // hebben — anders printen de labels zonder adres en blokkeert de
+      // pickronde-start alsnog server-side. Direct feedback i.p.v. later in de
+      // 'Afleveradres ontbreekt'-tab. Afhaal-orders hebben geen adres nodig.
+      if (!isAfleveradresCompleet(header, afhalen)) {
+        const ontbreekt = ontbrekendeAfleveradresVelden(header)
+        throw new Error(
+          `Afleveradres onvolledig — vul ${ontbreekt.join(', ')} in (of vink "Afhalen" aan).`,
+        )
       }
 
       const headerWithModus: Partial<OrderFormData> = overrideLeverModus
