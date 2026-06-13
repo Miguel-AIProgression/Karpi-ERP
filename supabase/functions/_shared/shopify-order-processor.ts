@@ -16,6 +16,7 @@ import { matchDebiteur } from './shopify-debiteur-matcher.ts'
 import { matchProduct, buildOmschrijving } from './product-matcher.ts'
 import { parseMaatwerkDims } from './lightspeed-client.ts'
 import { haalKlantPrijs } from './klant-prijs.ts'
+import { logExternePayload, markeerExternePayload } from './externe-payload-audit.ts'
 
 type SupabaseClient = ReturnType<typeof createClient>
 
@@ -192,8 +193,23 @@ export async function processShopifyOrder(
     }
   }
 
+  // Rauwe-payload-audit (mig 324/325): bewaar de letterlijke Shopify-order zodat
+  // een latere intake-fout (ontbrekend adres, mismatch) reconstrueerbaar is.
+  // Pas NA de idempotentie-check zodat de poll-cron niet elke ronde een dubbele
+  // audit-rij voor een al-verwerkte order maakt. Best-effort: blokkeert nooit.
+  const payloadLogId = await logExternePayload(supabase, {
+    kanaal: 'shopify',
+    raw: JSON.stringify(order),
+    bron: shopDomain,
+    externeId: String(orderId),
+    json: order,
+  })
+
   const debiteurMatch = await matchDebiteur(supabase, order)
   if (!debiteurMatch) {
+    await markeerExternePayload(supabase, payloadLogId, 'fout', {
+      fout: 'Geen debiteur gevonden',
+    })
     return {
       order_nr: null,
       was_existing: false,
@@ -251,10 +267,19 @@ export async function processShopifyOrder(
   })
 
   if (error) {
+    await markeerExternePayload(supabase, payloadLogId, 'fout', {
+      fout: `create_webshop_order: ${error.message}`,
+    })
     throw new Error(`create_webshop_order: ${error.message}`)
   }
 
   const result = Array.isArray(data) && data.length > 0 ? data[0] : null
+
+  // `data` is door de niet-gegenereerde RPC-typing als `never` getypt (zie de
+  // pre-existing typecheck-ruis in dit bestand); lees het nieuwe order-id via
+  // een lokale cast zodat de audit-koppeling werkt zonder een extra type-fout.
+  const nieuwOrderId = (result as { id?: number } | null)?.id ?? null
+  await markeerExternePayload(supabase, payloadLogId, 'verwerkt', { orderId: nieuwOrderId })
 
   return {
     order_nr: result?.order_nr ?? null,
