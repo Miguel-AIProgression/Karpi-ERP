@@ -1,9 +1,9 @@
--- Migratie 388: landnaam→ISO-2-contract — SQL == TS via golden fixtures
+-- Migratie 389: landnaam→ISO-2-contract — SQL == TS via golden fixtures
 --
--- NB nummering: hernummerd van 387 → 388 vlak vóór de merge (origin/main
--- claimde 387 via de colli-gewicht-fix). De inhoud is idempotent; op de live DB
--- is dit op 2026-06-13 al uitgevoerd (assert gaf nul mismatches) — opnieuw
--- draaien is veilig.
+-- NB nummering: hernummerd 387 → 388 → 389 vlak vóór de merge (origin/main
+-- claimde 387 via de colli-gewicht-fix en 388 via de maatwerk-vorm-contour-fix).
+-- De inhoud is idempotent; op de live DB is dit op 2026-06-13 al uitgevoerd
+-- (assert gaf nul mismatches) — opnieuw draaien is veilig.
 --
 -- Probleem
 -- --------
@@ -64,7 +64,7 @@ BEGIN
 END $fn$;
 
 COMMENT ON FUNCTION assert_normaliseer_land_contract(JSONB) IS
-  'Mig 388: toetst normaliseer_land (mig 214) tegen de golden fixtures '
+  'Mig 389: toetst normaliseer_land (mig 214) tegen de golden fixtures '
   '(RAISE EXCEPTION bij mismatch). Aanroepen aan het eind van elke migratie '
   'die normaliseer_land wijzigt. TS-spiegel: adres-split.ts (normalizeCountry / '
   'landNaarIso2Strikt) + normaliseer-land.contract.test.ts.';
