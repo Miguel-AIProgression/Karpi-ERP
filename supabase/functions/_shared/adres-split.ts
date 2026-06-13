@@ -43,15 +43,69 @@ export function splitAdres(adres: string): { street: string; number: string; add
   };
 }
 
-export function normalizeCountry(land: string): string {
-  const trimmed = (land ?? '').trim();
-  if (!trimmed) return '';
-  const upper = trimmed.toUpperCase();
-  if (upper === 'NEDERLAND' || upper === 'THE NETHERLANDS' || upper === 'HOLLAND') {
-    return 'NL';
-  }
-  if (upper === 'DUITSLAND' || upper === 'GERMANY') return 'DE';
-  if (upper === 'BELGIE' || upper === 'BELGIË' || upper === 'BELGIUM') return 'BE';
-  if (upper === 'FRANKRIJK' || upper === 'FRANCE') return 'FR';
-  return upper;
+// Landnaam → ISO-2-code. Spiegelt de SQL-bron normaliseer_land (mig 214) één-op-
+// één. De SQL↔TS-pariteit is geborgd door de golden-contracttest:
+//   frontend/src/lib/orders/__tests__/golden/normaliseer-land.golden.json
+//   + assert_normaliseer_land_contract() in de laatste
+//     *_normaliseer_land_contract*.sql-migratie (SQL)
+//   + normaliseer-land.contract.test.ts (TS, Vitest).
+// Wie deze tabel wijzigt: golden bijwerken + nieuwe contract-migratie, anders
+// wordt de contracttest rood. De sleutels zijn de POST-normalisatie-vorm
+// (uppercase, diakriet-vrij, whitespace-genormaliseerd) — zie schoonLand.
+const LAND_NAAR_ISO2: Record<string, string> = {
+  NEDERLAND: 'NL', HOLLAND: 'NL', NETHERLANDS: 'NL', 'THE NETHERLANDS': 'NL',
+  BELGIE: 'BE', BELGIUM: 'BE', BELGIQUE: 'BE',
+  DUITSLAND: 'DE', GERMANY: 'DE', DEUTSCHLAND: 'DE',
+  FRANKRIJK: 'FR', FRANCE: 'FR',
+  LUXEMBURG: 'LU', LUXEMBOURG: 'LU',
+  OOSTENRIJK: 'AT', AUSTRIA: 'AT', OSTERREICH: 'AT',
+  ZWITSERLAND: 'CH', SWITZERLAND: 'CH', SCHWEIZ: 'CH',
+  ITALIE: 'IT', ITALY: 'IT', ITALIA: 'IT',
+  SPANJE: 'ES', SPAIN: 'ES', ESPANA: 'ES',
+  POLEN: 'PL', POLAND: 'PL', POLSKA: 'PL',
+  TSJECHIE: 'CZ', 'CZECH REPUBLIC': 'CZ', CZECHIA: 'CZ',
+  DENEMARKEN: 'DK', DENMARK: 'DK', DANMARK: 'DK',
+  ZWEDEN: 'SE', SWEDEN: 'SE', SVERIGE: 'SE',
+  NOORWEGEN: 'NO', NORWAY: 'NO', NORGE: 'NO',
+  ENGELAND: 'GB', GROOTBRITTANNIE: 'GB', 'GROOT-BRITTANNIE': 'GB', UK: 'GB', 'UNITED KINGDOM': 'GB',
+  IERLAND: 'IE', IRELAND: 'IE',
+};
+
+// Trim → uppercase → diakritieken strippen → whitespace-runs naar één spatie.
+// Exact de voorbewerking van normaliseer_land (mig 214) zodat 'BELGIË',
+// 'Österreich' en 'United  Kingdom' op dezelfde sleutel uitkomen.
+function schoonLand(land: string): string {
+  return land
+    .trim()
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/\s+/g, ' ');
+}
+
+/**
+ * Strikt: bekende landnaam of ISO-2-code → ISO-2; onbekend → null.
+ * Voor de frontend-vlag-emoji, die een expliciet null-contract verwacht
+ * (een onbekend land = geen vlag, geen rare passthrough-code).
+ */
+export function landNaarIso2Strikt(land: string | null | undefined): string | null {
+  if (!land) return null;
+  const schoon = schoonLand(land);
+  if (!schoon) return null;
+  if (/^[A-Z]{2}$/.test(schoon)) return schoon; // al een ISO-2-code
+  return LAND_NAAR_ISO2[schoon] ?? null;
+}
+
+/**
+ * Lenient: zoals landNaarIso2Strikt, maar een ONBEKEND land komt uppercased
+ * (diakriet-vrij, whitespace-genormaliseerd) terug i.p.v. null — exotische
+ * landen blijven zo bruikbaar in vrachtbrief-/EDI-velden. Lege input → ''.
+ * Spiegelt normaliseer_land (mig 214), op de leeg→'' i.p.v. NULL-conventie na.
+ * Dit is de variant die HST/Verhoek/Rhenus + de factuur-paden gebruiken.
+ */
+export function normalizeCountry(land: string | null | undefined): string {
+  if (!land) return '';
+  const schoon = schoonLand(land);
+  if (!schoon) return '';
+  return landNaarIso2Strikt(schoon) ?? schoon;
 }

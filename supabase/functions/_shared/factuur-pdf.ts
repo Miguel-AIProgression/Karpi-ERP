@@ -10,6 +10,7 @@ import {
   StandardFonts,
   rgb,
 } from 'https://esm.sh/pdf-lib@1.17.1'
+import { normalizeCountry } from './adres-split.ts'
 
 // ---------------------------------------------------------------------------
 // Types (exported — re-used by factuur-verzenden edge function)
@@ -187,31 +188,6 @@ function padLabel(label: string, breedte: number): string {
   return label + ' '.repeat(breedte - label.length)
 }
 
-/**
- * Map een vol landnaam naar de 2-letter ISO-code zoals op het Karpi-briefpapier.
- * Voor onbekende waarden returnt de input zelf (zodat een al-gestelde "NL" werkt).
- */
-function naarLandCode(land: string): string {
-  const m: Record<string, string> = {
-    'nederland': 'NL',
-    'duitsland': 'DE',
-    'belgie': 'BE',
-    'belgië': 'BE',
-    'frankrijk': 'FR',
-    'verenigd koninkrijk': 'GB',
-    'oostenrijk': 'AT',
-    'zwitserland': 'CH',
-    'italië': 'IT',
-    'italie': 'IT',
-    'spanje': 'ES',
-    'denemarken': 'DK',
-    'zweden': 'SE',
-    'noorwegen': 'NO',
-    'polen': 'PL',
-  }
-  const key = land.trim().toLowerCase()
-  return m[key] ?? land
-}
 
 /**
  * Truncate `text` zodat het binnen `maxWidth` past in `font`/`size`.
@@ -358,7 +334,7 @@ function drawPageHeader(
   const SIZE = 6
   drawTextRight(
     page,
-    `${bedrijf.adres}, ${bedrijf.postcode} ${bedrijf.plaats} (${naarLandCode(bedrijf.land)})`,
+    `${bedrijf.adres}, ${bedrijf.postcode} ${bedrijf.plaats} (${normalizeCountry(bedrijf.land)})`,
     rightX, adresY, regular, SIZE,
   )
   const telFax = bedrijf.fax
