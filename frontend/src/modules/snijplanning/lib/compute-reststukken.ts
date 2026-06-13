@@ -8,9 +8,16 @@
 // versie matcht wat het placement-algoritme "ziet" als reststuk-m².
 
 import type { ReststukRect, SnijvoorstelPlaatsing, SnijStuk } from '@/lib/types/productie'
+// Reststuk-/aanbreek-drempels: één bron (ADR-0033) in
+// supabase/functions/_shared/reststuk-config.ts. Cross-root import + re-export
+// zodat de barrel (index.ts) ze ongewijzigd blijft exporteren.
+import {
+  RESTSTUK_MIN_SHORT,
+  RESTSTUK_MIN_LONG,
+  AANGEBROKEN_MIN_LENGTE,
+} from '../../../../../supabase/functions/_shared/reststuk-config'
 
-export const RESTSTUK_MIN_SHORT = 50
-export const RESTSTUK_MIN_LONG = 100
+export { RESTSTUK_MIN_SHORT, RESTSTUK_MIN_LONG, AANGEBROKEN_MIN_LENGTE }
 
 function qualifies(r: ReststukRect, minShort: number, minLong: number): boolean {
   const short = Math.min(r.breedte_cm, r.lengte_cm)
@@ -254,14 +261,12 @@ export function computeReststukkenEnAfvalFromStukken(
   return computeReststukkenEnAfval(rolLengte, rolBreedte, plaatsingen, minShort, minLong)
 }
 
-/**
- * Minimale lengte voor een bruikbare aangebroken rol. Full-width end-strips
- * korter dan deze waarde zijn niet aan te breken (want het volgende snijplan
- * zou er geen zinvol stuk uit kunnen halen) — die worden daarom als reststuk
- * geclassificeerd zolang ze voldoen aan RESTSTUK_MIN_SHORT × RESTSTUK_MIN_LONG,
- * en anders als afval. Synchroon met `rol-uitvoer-modal.tsx` (aangebrokenLengte).
- */
-export const AANGEBROKEN_MIN_LENGTE = 100
+// AANGEBROKEN_MIN_LENGTE (boven geïmporteerd uit _shared/reststuk-config.ts,
+// ADR-0033): minimale lengte (cm) voor een bruikbare aangebroken rol. Full-width
+// end-strips korter dan deze waarde zijn niet aan te breken (het volgende
+// snijplan zou er geen zinvol stuk uit kunnen halen) — die worden als reststuk
+// geclassificeerd zolang ze voldoen aan RESTSTUK_MIN_SHORT × RESTSTUK_MIN_LONG,
+// en anders als afval. Synchroon met `rol-uitvoer-modal.tsx` (aangebrokenLengte).
 
 /**
  * Splitst de analyse verder: end-of-roll strip met volle breedte wordt als

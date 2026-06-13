@@ -53,6 +53,33 @@ Beide volgen het bestaande nullable-timestamp-gate-patroon (mig 326): kolom op `
 
 **Hard-block (beide):** gedeelde poort `_valideer_intake_gates(order_ids[])` die `start_pickronden` aanroept ná de bundel-uitbreiding — mig 395 voegde de aanroep + adres-check toe, mig 396 breidde de poort uit met de prijs-check (`start_pickronden` zelf maar één keer herschreven, body = mig 373 + één PERFORM). Frontend-spiegel: `StartPickrondesButton` disablet met reden ("Afleveradres ontbreekt"/"Prijs ontbreekt"). Backfill: beide migraties flaggen bestaande open orders retroactief. Tests: `afleveradres-gate.test.ts` + `prijs-ontbreekt.test.ts` (11 nieuwe asserts); typecheck schoon, 311 magazijn/orders-tests groen.
 
+## 2026-06-13 — Reststuk-/aanbreek-drempels geconsolideerd naar één bron (ADR-0033)
+
+**Waarom:** `RESTSTUK_MIN_SHORT=50`, `RESTSTUK_MIN_LONG=100`,
+`AANGEBROKEN_MIN_LENGTE=100` (en de dode export `ROND_SNIJ_MARGE=5`) stonden
+hand-gesynct in 4 bestanden met een "wijzig je dit, wijzig dan óók die 3
+andere"-comment — klassieke shallow-spread. Deletion-test: verwijder de drempels
+en ze komen identiek terug in elke kopie. Techdebt-bevinding uit de
+architecture-improvement-scan.
+
+**Wat:**
+- Nieuw `supabase/functions/_shared/reststuk-config.ts` = single source van de
+  drempels (ADR-0033). Bewust GEEN `app_config`-seam (anders dan de
+  runtime-tunebare FIFO-parameters, ADR-0021): dit zijn geometrie-drempels
+  gekoppeld aan ADR-0025 (shape-bias), wijzigen = recompile/deploy.
+- `_shared/guillotine-packing.ts` + `_shared/compute-reststukken.ts` importeren
+  + re-exporteren uit de nieuwe module (bestaande importeurs ongewijzigd).
+- Frontend `modules/snijplanning/lib/compute-reststukken.ts` importeert
+  cross-root + re-exporteert via de barrel (ADR-0033 shim-patroon).
+- `scripts/vergelijk-snijalgoritmes.mjs` (standalone Node-benchmark, geen
+  TS-loader) houdt bewust een eigen kopie met expliciete verwijzing naar de bron.
+- `ROND_SNIJ_MARGE` verhuisd naar de bron en gemarkeerd als gereserveerd/ongebruikt
+  (nog niet door het packer-algoritme geconsumeerd; documenteert de
+  rond-snij-bedrijfsregel op één plek).
+
+**Verificatie:** frontend `tsc -b` groen, `deno check` op de 3 modules groen,
+6 packer-tests (guillotine-fifo) + 22 frontend snijplanning-tests groen.
+
 ## 2026-06-13 — Rauwe-payload-audit verbreed naar álle externe kanalen + unified view (mig 392)
 
 **Waarom:** één centrale "black box recorder" zodat bij een bug ("waarom kreeg
