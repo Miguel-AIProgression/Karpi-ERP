@@ -119,10 +119,7 @@ function NietGevondenDialog({
   const splitsAllowed = leverModus === 'deelleveringen'
 
   async function submit(modus: NietGevondenModus) {
-    if (!pickerId) {
-      setError('Kies eerst een picker bovenaan')
-      return
-    }
+    // Picker optioneel (mig 394): niet langer geblokkeerd op lege picker.
     setError(null)
     try {
       await mutate.mutateAsync({ colliId: colli.id, modus, opmerking: opmerking || null, pickerId })

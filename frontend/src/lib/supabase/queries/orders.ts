@@ -3,6 +3,8 @@ import { sanitizeSearch } from '@/lib/utils/sanitize'
 import { fetchKlanteigenNamenMap } from '@/modules/debiteuren'
 import { filterDebiteurTeBevestigen } from '@/lib/orders/intake-predicaten'
 import { filterLeverweekTeBevestigen } from '@/lib/orders/edi-leverweek'
+import { filterAfleveradresIncompleet } from '@/lib/orders/afleveradres-gate'
+import { filterPrijsOntbreekt } from '@/lib/orders/prijs-ontbreekt'
 
 export interface OrderRow {
   id: number
@@ -54,6 +56,19 @@ export interface OrderRow {
   levertijd_wijziging_te_bevestigen_sinds?: string | null
   /** Mig 335: tijdstip waarop de orderbevestiging per e-mail is verstuurd. NULL = nog niet bevestigd. */
   bevestigd_at?: string | null
+  /**
+   * Mig 395: tijdstip waarop gedetecteerd is dat het afleveradres-snapshot
+   * onvolledig is (niet-afhaal-order, naam/adres/postcode/plaats leeg). NULL =
+   * compleet. Spiegelt isAfleveradresIncompleet / het 'Afleveradres ontbreekt'-tab.
+   */
+  afl_adres_incompleet_sinds?: string | null
+  /**
+   * Mig 396: tijdstip waarop gedetecteerd is dat ≥1 normale regel (niet pseudo,
+   * niet VERZEND, korting < 100%) een prijs van €0/NULL heeft. NULL = geen
+   * ontbrekende prijs of bewust geaccepteerd. Spiegelt isPrijsOntbreekt / het
+   * 'Prijs ontbreekt'-tab.
+   */
+  prijs_ontbreekt_sinds?: string | null
 }
 
 export interface OrderDetail extends OrderRow {
@@ -216,6 +231,18 @@ export async function fetchOrders(params: {
     query = query
       .not('levertijd_wijziging_te_bevestigen_sinds', 'is', null)
       .not('status', 'in', '("Verzonden","Geannuleerd")')
+  } else if (status === 'Afleveradres ontbreekt') {
+    // Mig 395: orders met een onvolledig afleveradres-snapshot dat eerst
+    // aangevuld moet worden (geen labels zonder adres). Status-overstijgend;
+    // de gate is een enkele nullable timestamp (NULL = compleet). Spiegelt
+    // isAfleveradresIncompleet en de DB-trigger fn_orders_afl_adres_gate.
+    query = filterAfleveradresIncompleet(query)
+  } else if (status === 'Prijs ontbreekt') {
+    // Mig 396: orders met ≥1 regel zonder prijs (€0/NULL) die gecorrigeerd of
+    // bewust bevestigd moet worden. Status-overstijgend; nullable timestamp
+    // (NULL = geen probleem / geaccepteerd). Spiegelt isPrijsOntbreekt en de
+    // DB-trigger fn_order_regels_prijs_gate.
+    query = filterPrijsOntbreekt(query)
   } else if (status && status !== 'Alle') {
     query = query.eq('status', status)
   }
@@ -307,7 +334,15 @@ export async function fetchOrders(params: {
  * altijd reflecteert wat er in de lijst verschijnt bij selectie.
  */
 export async function fetchStatusCounts(): Promise<StatusCount[]> {
-  const [tellingRes, unmatchedRes, teBevestigenRes, debiteurTeBevestigenRes, levertijdGewijzigdRes] = await Promise.all([
+  const [
+    tellingRes,
+    unmatchedRes,
+    teBevestigenRes,
+    debiteurTeBevestigenRes,
+    levertijdGewijzigdRes,
+    aflAdresOntbreektRes,
+    prijsOntbreektRes,
+  ] = await Promise.all([
     supabase.from('orders_status_telling').select('status, aantal'),
     supabase
       .from('orders')
@@ -323,6 +358,12 @@ export async function fetchStatusCounts(): Promise<StatusCount[]> {
       .select('id', { count: 'exact', head: true })
       .not('levertijd_wijziging_te_bevestigen_sinds', 'is', null)
       .not('status', 'in', '("Verzonden","Geannuleerd")'),
+    filterAfleveradresIncompleet(
+      supabase.from('orders').select('id', { count: 'exact', head: true }),
+    ),
+    filterPrijsOntbreekt(
+      supabase.from('orders').select('id', { count: 'exact', head: true }),
+    ),
   ])
 
   if (tellingRes.error) throw tellingRes.error
@@ -348,6 +389,16 @@ export async function fetchStatusCounts(): Promise<StatusCount[]> {
   const levertijdGewijzigd = levertijdGewijzigdRes.count ?? 0
   if (levertijdGewijzigd > 0) {
     counts.push({ status: 'Levertijd gewijzigd', aantal: levertijdGewijzigd })
+  }
+
+  const aflAdresOntbreekt = aflAdresOntbreektRes.count ?? 0
+  if (aflAdresOntbreekt > 0) {
+    counts.push({ status: 'Afleveradres ontbreekt', aantal: aflAdresOntbreekt })
+  }
+
+  const prijsOntbreekt = prijsOntbreektRes.count ?? 0
+  if (prijsOntbreekt > 0) {
+    counts.push({ status: 'Prijs ontbreekt', aantal: prijsOntbreekt })
   }
 
   return counts

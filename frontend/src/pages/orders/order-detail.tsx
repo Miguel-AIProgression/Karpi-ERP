@@ -22,6 +22,10 @@ import { LevertijdWijzigingBanner } from '@/components/orders/levertijd-wijzigin
 import { VerzendFoutBanner } from '@/components/orders/verzend-fout-banner'
 import { OrderZendingen } from '@/components/orders/order-zendingen'
 import { isLevertijdWijzigingTeBevestigen } from '@/lib/orders/levertijd-wijziging'
+import { isAfleveradresIncompleet } from '@/lib/orders/afleveradres-gate'
+import { AfleveradresIncompleetBanner } from '@/components/orders/afleveradres-incompleet-banner'
+import { isPrijsOntbreekt } from '@/lib/orders/prijs-ontbreekt'
+import { PrijsOntbreektBanner } from '@/components/orders/prijs-ontbreekt-banner'
 import { heeftDropshipRegel } from '@/lib/orders/dropshipment-regel'
 import { dropshipAflEmailProbleem } from '@/lib/orders/dropship-email'
 
@@ -114,6 +118,25 @@ export function OrderDetailPage() {
       {/* Open HST-verzendfout: order kan al "Verzonden" tonen terwijl de
           transportorder naar de vervoerder faalde. Rendert null zonder fout. */}
       {order.status !== 'Geannuleerd' && <VerzendFoutBanner orderId={order.id} />}
+
+      {/* Mig 392: onvolledig afleveradres — harde blokkade voor Pick & Ship. */}
+      {isAfleveradresIncompleet(order) && (
+        <AfleveradresIncompleetBanner
+          orderId={order.id}
+          afl_naam={order.afl_naam}
+          afl_adres={order.afl_adres}
+          afl_postcode={order.afl_postcode}
+          afl_plaats={order.afl_plaats}
+        />
+      )}
+
+      {/* Mig 393: ontbrekende prijs (€0) — harde blokkade tot corrigeren/bevestigen. */}
+      {isPrijsOntbreekt(order) && (
+        <PrijsOntbreektBanner
+          orderId={order.id}
+          teBevestigenSinds={order.prijs_ontbreekt_sinds!}
+        />
+      )}
 
       {order.bron_systeem === 'email' && order.opmerkingen && (
         <EmailInhoudPanel body={order.opmerkingen} />

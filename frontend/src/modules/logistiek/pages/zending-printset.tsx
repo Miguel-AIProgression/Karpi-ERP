@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { ArrowLeft, FileText, Printer, Tags } from 'lucide-react'
+import { ArrowLeft, FileText, Tags } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { PakbonDocument } from '@/modules/logistiek/components/pakbon-document'
 import { ShippingLabel } from '@/modules/logistiek/components/shipping-label'
@@ -143,17 +143,6 @@ export function ZendingPrintSetPage() {
                 <ArrowLeft size={16} />
                 Pick & Ship
               </Link>
-              {heeftTapijtStickers && (
-                <label className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={includeTapijtStickers === true}
-                    onChange={(e) => setIncludeTapijtStickers(e.target.checked)}
-                    className="accent-terracotta-500"
-                  />
-                  Tapijt-stickers meeprinten ({aantalTapijtStickers})
-                </label>
-              )}
               <button
                 onClick={() => print('labels')}
                 className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
@@ -177,13 +166,6 @@ export function ZendingPrintSetPage() {
                   Tapijt-stickers
                 </button>
               )}
-              <button
-                onClick={() => print('all')}
-                className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] bg-terracotta-500 px-3 py-2 text-sm font-medium text-white hover:bg-terracotta-600"
-              >
-                <Printer size={16} />
-                Alles
-              </button>
             </div>
           }
         />
@@ -196,9 +178,8 @@ export function ZendingPrintSetPage() {
                 <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-800 text-[11px] font-semibold text-white">1</span>
                 <span>
                   <strong>Print de labels en de pakbon.</strong> Klik rechtsboven op{' '}
-                  <strong>Stickers printen</strong> en <strong>Pakbon printen</strong> (of in één keer
-                  op <strong>Alles</strong>). Plak op elke colli (elk pak / elke rol) het
-                  bijbehorende label.
+                  <strong>Stickers printen</strong> en <strong>Pakbon printen</strong> — elk gaat naar
+                  zijn eigen printer. Plak op elke colli (elk pak / elke rol) het bijbehorende label.
                   <span className="mt-1 block rounded bg-white px-2 py-1.5 text-xs text-slate-500 ring-1 ring-slate-200">
                     Print-instellingen (venster Ctrl+P), anders breekt het label over 2 pagina's:
                     printer = <strong>Vervoerderslabels (Zebra)</strong> — of bij PDF papierformaat{' '}
@@ -219,8 +200,9 @@ export function ZendingPrintSetPage() {
               <li className="flex gap-2.5">
                 <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-800 text-[11px] font-semibold text-white">3</span>
                 <span>
-                  <strong>Kies wie gepickt heeft en klik op de groene knop "Voltooi pickronde".</strong>{' '}
-                  Daarna gaat alles vanzelf: de order wordt <em>Verzonden</em>, de factuur volgt, en de
+                  <strong>Klik op de groene knop "Voltooi pickronde".</strong>{' '}
+                  Een picker kiezen mag, maar hoeft niet. Daarna gaat alles vanzelf: de order wordt{' '}
+                  <em>Verzonden</em>, de factuur volgt, en de
                   zending wordt automatisch bij de vervoerder aangemeld. Je hoeft hier verder niets te
                   doen — de track &amp; trace komt binnen zodra de vervoerder reageert.
                 </span>
@@ -239,11 +221,11 @@ export function ZendingPrintSetPage() {
           <div className="mb-4 space-y-3">
             <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-4">
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Picker (verplicht voor voltooi + niet-gevonden audit)
+                Picker (optioneel)
               </label>
               <p className="text-xs text-slate-500 mb-2">
-                Wie verzamelt deze order? Default: degene die de pickronde startte.
-                Mag gewijzigd worden bij shift-overgang.
+                Wie verzamelt deze order? Optioneel — alleen voor de audit-trail. Default:
+                degene die de pickronde startte. Mag gewijzigd worden bij shift-overgang.
               </p>
               <PickerDropdown
                 value={pickerId}

@@ -111,7 +111,8 @@ async function fetchOpenOrderHeaders(): Promise<OrderHeaderRij[]> {
     .from('orders')
     .select(
       'id, order_nr, status, debiteur_nr, afl_naam, afl_adres, afl_postcode, ' +
-        'afl_plaats, afl_land, afleverdatum, afhalen, lever_type'
+        'afl_plaats, afl_land, afleverdatum, afhalen, lever_type, ' +
+        'afl_adres_incompleet_sinds, prijs_ontbreekt_sinds'
     )
     .neq('status', 'Verzonden')
     .neq('status', 'Geannuleerd')

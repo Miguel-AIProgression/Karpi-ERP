@@ -33,6 +33,26 @@ uit de SSCC-analogen-audit).
 - **Pre-merge:** `cd frontend && npm run typecheck` (shim trekt `capabilities.ts`
   cross-root mee; `allowImportingTsExtensions` staat aan).
 
+## 2026-06-13 — Intake-gates sluiten productie-only orders uit (mig 397)
+
+> **Migratienummer:** repo-nr **397** (oorspronkelijk 394; hernummerd 395-397 — zie de noot bij de 395-396-entry). **Nog NIET op de live DB toegepast** — als enige van deze drie nog te draaien (395/396 stonden er al onder hun oude werknummers 392/393).
+
+De backfill van mig 395-396 flagde ~200 productie-only orders (`alleen_productie=true`, OUD-*-nummers uit Basta, status "In productie") op zowel adres als prijs — terecht qua data (ze hebben geen afleveradres/prijs in RugFlow) maar onbedoeld: ze worden volledig in Basta afgehandeld (ADR-0029) en bereiken hier nooit Pick & Ship of facturatie, dus de gates zijn betekenisloos en domineerden beide nieuwe tabs als ruis. Mig 397 sluit `alleen_productie=true` uit in beide gate-triggers (`fn_orders_afl_adres_gate` + `fn_order_regels_prijs_gate`) en wist de onterechte flags via een correctie-backfill. Discriminator = de vlag, niet de status (vangt 'In productie' én 'Maatwerk afgerond'); consistent met `orders_zonder_vervoerder` (mig 345) en de Pick & Ship-query. Echte ORD-gevallen (0097/0108/0123 adres; diverse prijs) blijven terecht geflagd.
+
+## 2026-06-13 — Intake-gates: afleveradres & prijs blokkeren doorstroming (mig 395-396)
+
+> **Migratienummers:** repo-nrs **395/396** — oorspronkelijk geschreven als 392/393 en in die vorm op de live DB gedraaid (13-06), maar vlak daarna hernummerd naar 395/396 omdat origin/main intussen 392 (`alle_externe_berichten_view`), 393 (`shopify_polling_sync`) én 394 (`picker_optioneel`) had geclaimd. De **inhoud staat dus al op de live DB** (idempotent: `ADD COLUMN IF NOT EXISTS` + `CREATE OR REPLACE` + backfill); de hernummering is puur een repo-bestandsnaam-correctie om merge-collisie te voorkomen. Apply-volgorde indien opnieuw gedraaid: 395 vóór 396 (396 breidt `_valideer_intake_gates` uit die 395 aanmaakt), dan 397. **Deploy-volgorde:** migraties vóór de frontend (Pick & Ship-query + `orders_list` lezen de nieuwe kolommen). Branch: `feat/intake-gates-adres-en-prijs` (geïsoleerde worktree).
+
+Twee data-integriteit-poorten die voorkomen dat een order met **onvolledig afleveradres** of **ontbrekende prijs (€0)** stilletjes naar de werkvloer/facturatie doorstroomt. Aanleiding: ORD-2026-0097 belandde zonder afleveradres in Pick & Ship → verzendlabels zonder adres; en Shopify-orders kwamen soms zonder prijs binnen. Beide gaten zaten in álle intake-kanalen (EDI, Shopify/webshop, e-mail, handmatig) omdat geen enkel kanaal de afl_*-snapshots of prijzen valideerde.
+
+Beide volgen het bestaande nullable-timestamp-gate-patroon (mig 326): kolom op `orders`, detectie in een DB-trigger (single source), predicaat-helper in `frontend/src/lib/orders/`, status-tab op het overzicht + banner op order-detail.
+
+**Feature A — afleveradres (mig 395):** kolom `orders.afl_adres_incompleet_sinds`, BEFORE-trigger `trg_orders_afl_adres_gate` (incompleet = niet-afhaal-order, status ≠ Verzonden/Geannuleerd, één van naam/adres/postcode/plaats leeg-na-trim). Wist zichzelf zodra compleet — geen handmatige bevestiging. Helper [`afleveradres-gate.ts`](../frontend/src/lib/orders/afleveradres-gate.ts) (`isAfleveradresIncompleet` + filter + pure `isAfleveradresCompleet` voor de form). Rode banner `AfleveradresIncompleetBanner` + status-tab "Afleveradres ontbreekt" + order-form blokkeert opslaan. `alleen_productie` bewust niet uitgesloten (keuze Miguel), maar raakt Pick & Ship niet (die filtert `alleen_productie=false`).
+
+**Feature B — prijs (mig 396):** kolom `orders.prijs_ontbreekt_sinds`, AFTER-trigger `trg_order_regels_prijs_gate` op `order_regels` (€0/NULL op een normale regel: NOT `is_admin_pseudo`, artikelnr ≠ VERZEND, `korting_pct` < 100 — admin-pseudo/VERZEND/100%-korting zijn legitiem €0). `UPDATE OF prijs,korting_pct,artikelnr` zodat allocatie-updates niet vuren. RPC `markeer_prijs_geaccepteerd` (operator accepteert €0 bewust, audit `order_events` `'prijs_geaccepteerd'`) óf prijscorrectie wist de gate. Helper [`prijs-ontbreekt.ts`](../frontend/src/lib/orders/prijs-ontbreekt.ts). Amber banner `PrijsOntbreektBanner` (corrigeer / bevestig) + status-tab "Prijs ontbreekt".
+
+**Hard-block (beide):** gedeelde poort `_valideer_intake_gates(order_ids[])` die `start_pickronden` aanroept ná de bundel-uitbreiding — mig 395 voegde de aanroep + adres-check toe, mig 396 breidde de poort uit met de prijs-check (`start_pickronden` zelf maar één keer herschreven, body = mig 373 + één PERFORM). Frontend-spiegel: `StartPickrondesButton` disablet met reden ("Afleveradres ontbreekt"/"Prijs ontbreekt"). Backfill: beide migraties flaggen bestaande open orders retroactief. Tests: `afleveradres-gate.test.ts` + `prijs-ontbreekt.test.ts` (11 nieuwe asserts); typecheck schoon, 311 magazijn/orders-tests groen.
+
 ## 2026-06-13 — Rauwe-payload-audit verbreed naar álle externe kanalen + unified view (mig 392)
 
 **Waarom:** één centrale "black box recorder" zodat bij een bug ("waarom kreeg

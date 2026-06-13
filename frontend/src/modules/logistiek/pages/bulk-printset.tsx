@@ -9,7 +9,7 @@
 // en dus hetzelfde label-formaat.
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, FileText, Printer, Tags } from 'lucide-react'
+import { ArrowLeft, FileText, Tags } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { PakbonDocument } from '@/modules/logistiek/components/pakbon-document'
 import { ShippingLabel } from '@/modules/logistiek/components/shipping-label'
@@ -228,8 +228,8 @@ export function BulkPrintSetPage() {
           title={`Bulk-verzendset (${zendingen.length} zending${zendingen.length === 1 ? '' : 'en'})`}
           description={
             afhaalZendingen.length > 0
-              ? `${verzendZendingen.length} verzend (${totaalColli} colli) + ${afhaalZendingen.length} afhalen — alles in één print-job`
-              : `${totaalColli} colli totaal · alles in één print-job`
+              ? `${verzendZendingen.length} verzend (${totaalColli} colli) + ${afhaalZendingen.length} afhalen — stickers en pakbonnen elk als één stapel`
+              : `${totaalColli} colli totaal · stickers en pakbonnen elk als één stapel`
           }
           actions={
             <div className="flex flex-wrap items-center gap-2">
@@ -240,17 +240,6 @@ export function BulkPrintSetPage() {
                 <ArrowLeft size={16} />
                 Pick & Ship
               </Link>
-              {heeftTapijtStickers && (
-                <label className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={includeTapijtStickers === true}
-                    onChange={(e) => setIncludeTapijtStickers(e.target.checked)}
-                    className="accent-terracotta-500"
-                  />
-                  Tapijt-stickers meeprinten ({aantalTapijtStickers})
-                </label>
-              )}
               <button
                 onClick={() => print('labels')}
                 className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
@@ -274,13 +263,6 @@ export function BulkPrintSetPage() {
                   Tapijt-stickers
                 </button>
               )}
-              <button
-                onClick={() => print('all')}
-                className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] bg-terracotta-500 px-3 py-2 text-sm font-medium text-white hover:bg-terracotta-600"
-              >
-                <Printer size={16} />
-                Alles
-              </button>
             </div>
           }
         />
