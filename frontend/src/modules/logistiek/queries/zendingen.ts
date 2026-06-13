@@ -350,7 +350,7 @@ export async function fetchZendingPrintSet(zending_nr: string): Promise<ZendingP
  */
 export async function startPickrondes(
   orderIds: number[],
-  pickerId: number,
+  pickerId: number | null,
   forceSoloIds: number[] = [],
 ): Promise<Array<ZendingAanmaakResult & { aantal_orders: number }>> {
   if (orderIds.length === 0) {

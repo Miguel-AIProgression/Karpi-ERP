@@ -57,7 +57,7 @@ export function useMarkeerColliNietGevonden() {
 export function useVoltooiPickronde() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ zendingId, pickerId }: { zendingId: number; pickerId: number }) =>
+    mutationFn: ({ zendingId, pickerId }: { zendingId: number; pickerId: number | null }) =>
       voltooiPickronde(zendingId, pickerId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['pickronde'] })

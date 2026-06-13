@@ -156,7 +156,7 @@ export function StartPickrondesButton({
             } — operator kan in de dialog orders uit de bundel halen.`
           : pickbareOrders[0]?.afhalen
             ? 'Start afhaal-pickronde (geen verzendstickers)'
-            : 'Start pickronde — kies eerst de picker, daarna print stickers en pakbon'
+            : 'Start pickronde — print daarna stickers en pakbon (picker kiezen is optioneel)'
 
   function openPopover() {
     setError(null)
@@ -176,12 +176,9 @@ export function StartPickrondesButton({
   }
 
   async function handleStart() {
-    if (!pickerId) {
-      setError('Kies eerst een picker')
-      return
-    }
+    // Picker optioneel (mig 394): niet langer geblokkeerd op lege picker.
     setError(null)
-    saveLastPicker(pickerId)
+    if (pickerId) saveLastPicker(pickerId)
     try {
       const zendingen = await mutation.mutateAsync({
         orderIds: pickbareOrders.map((o) => o.order_id),
@@ -325,7 +322,7 @@ export function StartPickrondesButton({
             <button
               type="button"
               onClick={handleStart}
-              disabled={!pickerId || mutation.isPending}
+              disabled={mutation.isPending}
               className={cn(
                 'inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-45',
                 variant === 'compact'
