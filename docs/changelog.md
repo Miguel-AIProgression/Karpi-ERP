@@ -1,5 +1,18 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-13 — Config-constanten naar single source (tech-debt categorie C, mig 387)
+
+**Wat:** drie hardcoded constanten die naast hun DB-/config-bron leefden teruggebracht tot één bron. Branch `fix/config-constanten-single-source`. Plan: [`docs/superpowers/plans/2026-06-13-config-constanten-single-source.md`](superpowers/plans/2026-06-13-config-constanten-single-source.md).
+
+- **Probleem 7 — `normalizeCountry` (landnaam→ISO-2):** 5 divergerende varianten geconsolideerd. `factuur-verzenden` kende alleen NL/DE en viel terug op `slice(0,2)` → **Oostenrijk→`OO`, Zwitserland→`ZW`, Spanje→`SP`, Polen→`PO`, Engeland→`EN`** op de elektronische factuur. De seam [`_shared/adres-split.ts`](../supabase/functions/_shared/adres-split.ts) `normalizeCountry` (lenient) + nieuwe `landNaarIso2Strikt` (null-contract) spiegelt nu de SQL-bron `normaliseer_land` (mig 214) één-op-één. `factuur-verzenden`, `factuur-mapper.ts`, `factuur-pdf.ts` en de frontend `land-vlag.ts` (cross-root re-export, ADR-0033) lozen hun lokale kopie. **Mig 387** `assert_normaliseer_land_contract()` + Vitest `normaliseer-land.contract.test.ts` borgen de SQL↔TS-pariteit via golden fixtures (patroon mig 385). Conventie: wijzig je `normaliseer_land`/de seam → golden bijwerken + nieuwe `*_normaliseer_land_contract*.sql`.
+- **Probleem 5 — Karpi-GLN (Rhenus):** `rhenus-send/xml-builder.ts` was het énige outbound-kanaal dat de SBDH-afzender-GLN niet uit `app_config.bedrijfsgegevens.gln_eigen` las. `BedrijfInput` kreeg optioneel `gln_eigen` (orchestrator cast de app_config-waarde al direct → stroomt mee zonder fetch-wijziging); builder gebruikt `bedrijf.gln_eigen ?? KARPI_GLN` (fallback-patroon zoals de andere kanalen). GS1-prefix `8715954` in mig 209 (SSCC) is een ander concept → buiten scope.
+- **Probleem 6 — dropship-prijs:** `DROPSHIP_KLEIN_PRIJS`/`GROOT_PRIJS` stonden hardcoded naast `producten.verkoopprijs` (de DB werd al eens los gecorrigeerd, mig 363: 27,50→35,00). Prijs komt nu uit `producten.verkoopprijs` via `fetchDropshipPrijzen`/`useDropshipPrijzen`; `applyDropshipmentLogic(regels, keuze, prijzen?)` krijgt de prijs als parameter. De selector blokkeert klein/groot tot de prijs geladen is — nooit stil een €0-regel. De id-constanten (`DROPSHIP_*_ID`) blijven identifiers (ADR-0018).
+- **Probleem 8 — BTW-21-fallback:** geverifieerd ruis (geen actie): alle `COALESCE(..., 21.00)`-treffers staan in dode/vervangen migraties; de enige live factuur-RPC `genereer_factuur_voor_bundel` (mig 371) gebruikt al `effectief_btw_pct()`.
+
+**Deploy-voorwaarde:** mig 387 toepassen (read-only assert; valideert dat de live `normaliseer_land` de golden volgt) + edge functions `factuur-verzenden`, `rhenus-send` (en `bouw-factuur-edi` via de gedeelde mapper) herdeployen ná merge.
+
+---
+
 ## 2026-06-12 — Pickbaarheid single-source (mig 386)
 
 > **Hernummering (2×):** deze migratie is vlak vóór de merge hernummerd van 383 → 385 → **386** (origin/main claimde intussen 383/384 via het werkagenda-traject en 385 via het bundel-sleutel-contract). In de live DB is hij op 12-06 onder werknummer 383 toegepast; inhoudelijk identiek.
