@@ -1,4 +1,4 @@
--- Mig 387 — Unified diagnose-view over álle externe berichten (in + uit).
+-- Mig 392 — Unified diagnose-view over álle externe berichten (in + uit).
 --
 -- WAAROM: bij een bug ("waarom kreeg deze order geen adres?", "is dit EDI-bericht
 -- verstuurd?") wil je in ÉÉN query het originele bericht vinden, ongeacht kanaal.
@@ -51,7 +51,7 @@ SELECT
 FROM edi_berichten eb;
 
 COMMENT ON VIEW alle_externe_berichten IS
-  'Mig 387: unified diagnose-view over externe_payloads (niet-EDI) + edi_berichten '
+  'Mig 392: unified diagnose-view over externe_payloads (niet-EDI) + edi_berichten '
   '(EDI). Eén bron om bij bugs het originele in-/uitgaande bericht te vinden. '
   'Filter op kanaal/richting/externe_id/order_id/status. Geen opslag — read-only.';
 
