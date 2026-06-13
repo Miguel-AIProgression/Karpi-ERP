@@ -2,62 +2,15 @@
 //
 // Karpi's afleveradressen slaan `land` op als ISO-2-code ('NL', 'BE', 'DE', …)
 // maar legacy-data en handmatige invoer kunnen volledige landnamen bevatten
-// ('Nederland', 'Belgium', 'Frankrijk', …). Deze util normaliseert beide naar
-// een ISO-2-code en levert het bijbehorende vlag-emoji (regional-indicator).
+// ('Nederland', 'Belgium', 'Frankrijk', …). De naam→ISO-2-mapping leeft in de
+// gedeelde seam supabase/functions/_shared/adres-split.ts (ADR-0033) — één bron
+// voor edge (vrachtbrief/EDI) én frontend. Hier alleen de frontend-only vlag-
+// rendering en de reverse ISO-2→naam-weergave.
 
-const NAAM_NAAR_ISO2: Record<string, string> = {
-  NEDERLAND: 'NL',
-  HOLLAND: 'NL',
-  NETHERLANDS: 'NL',
-  BELGIE: 'BE',
-  BELGIUM: 'BE',
-  DUITSLAND: 'DE',
-  GERMANY: 'DE',
-  DEUTSCHLAND: 'DE',
-  FRANKRIJK: 'FR',
-  FRANCE: 'FR',
-  LUXEMBURG: 'LU',
-  LUXEMBOURG: 'LU',
-  OOSTENRIJK: 'AT',
-  AUSTRIA: 'AT',
-  ZWITSERLAND: 'CH',
-  SWITZERLAND: 'CH',
-  ITALIE: 'IT',
-  ITALY: 'IT',
-  SPANJE: 'ES',
-  SPAIN: 'ES',
-  POLEN: 'PL',
-  POLAND: 'PL',
-  TSJECHIE: 'CZ',
-  DENEMARKEN: 'DK',
-  DENMARK: 'DK',
-  ZWEDEN: 'SE',
-  SWEDEN: 'SE',
-  NOORWEGEN: 'NO',
-  NORWAY: 'NO',
-  ENGELAND: 'GB',
-  GROOTBRITTANNIE: 'GB',
-  UK: 'GB',
-  'UNITED KINGDOM': 'GB',
-}
-
-/** Vraag de ISO-2-code op voor `land`. Geeft null bij onbekende waarde. */
-export function landNaarIso2(land: string | null | undefined): string | null {
-  if (!land) return null
-  const trimmed = land.trim()
-  if (!trimmed) return null
-
-  if (trimmed.length === 2 && /^[A-Za-z]{2}$/.test(trimmed)) {
-    return trimmed.toUpperCase()
-  }
-
-  // Diakritieken strippen ("BELGIË" → "BELGIE") zodat invoer-varianten matchen.
-  const key = trimmed
-    .toUpperCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-  return NAAM_NAAR_ISO2[key] ?? null
-}
+// Strikte variant (onbekend → null) — exact het oude null-contract dat de
+// vlag-logica hieronder nodig heeft.
+export { landNaarIso2Strikt as landNaarIso2 } from '../../../../supabase/functions/_shared/adres-split'
+import { landNaarIso2Strikt } from '../../../../supabase/functions/_shared/adres-split'
 
 /** Render een ISO-2-code als regional-indicator vlag-emoji. */
 export function iso2NaarVlag(iso2: string | null): string | null {
@@ -71,7 +24,7 @@ export function iso2NaarVlag(iso2: string | null): string | null {
 
 /** Combinatie: land-string → vlag-emoji (of null als onbekend). */
 export function landNaarVlag(land: string | null | undefined): string | null {
-  return iso2NaarVlag(landNaarIso2(land))
+  return iso2NaarVlag(landNaarIso2Strikt(land))
 }
 
 // Reverse-mapping voor weergave: ISO-2 → Nederlandse landnaam. Beperkte set

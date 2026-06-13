@@ -75,6 +75,10 @@ describe('detecteerDropshipKeuze (selector-state, bewust artikelnr-based)', () =
 })
 
 describe('applyDropshipmentLogic', () => {
+  // Prijzen komen sinds 2026-06-13 uit producten.verkoopprijs (DropshipPrijzen),
+  // niet meer uit hardcoded constanten.
+  const PRIJZEN = { klein: 35.0, groot: 47.5 }
+
   const tapijt: OrderRegelFormData = {
     artikelnr: 'ABC123',
     omschrijving: 'Tapijt 200x300',
@@ -86,7 +90,7 @@ describe('applyDropshipmentLogic', () => {
   }
 
   it("voegt bij 'klein' een regel toe met is_dropship=true én is_pseudo=true", () => {
-    const result = applyDropshipmentLogic([tapijt], 'klein')
+    const result = applyDropshipmentLogic([tapijt], 'klein', PRIJZEN)
     const dropship = result.find((r) => r.artikelnr === 'DROPSHIP-KLEIN')
     expect(dropship).toBeDefined()
     expect(dropship!.is_dropship).toBe(true)
@@ -94,9 +98,18 @@ describe('applyDropshipmentLogic', () => {
     expect(dropship!.prijs).toBe(35.0)
   })
 
+  it("gebruikt de DB-prijs uit DropshipPrijzen (niet een hardcoded constante)", () => {
+    const result = applyDropshipmentLogic([tapijt], 'klein', { klein: 39.95, groot: 49.95 })
+    expect(result.find((r) => r.artikelnr === 'DROPSHIP-KLEIN')!.prijs).toBe(39.95)
+  })
+
+  it("gooit als prijzen ontbreken voor 'klein'/'groot' (vangnet)", () => {
+    expect(() => applyDropshipmentLogic([tapijt], 'klein')).toThrow()
+  })
+
   it("'groot' vervangt een bestaande klein-regel (flag-based verwijdering)", () => {
-    const metKlein = applyDropshipmentLogic([tapijt], 'klein')
-    const result = applyDropshipmentLogic(metKlein, 'groot')
+    const metKlein = applyDropshipmentLogic([tapijt], 'klein', PRIJZEN)
+    const result = applyDropshipmentLogic(metKlein, 'groot', PRIJZEN)
     expect(result.some((r) => r.artikelnr === 'DROPSHIP-KLEIN')).toBe(false)
     const groot = result.find((r) => r.artikelnr === 'DROPSHIP-GROOT')
     expect(groot).toBeDefined()
@@ -134,7 +147,7 @@ describe('applyDropshipmentLogic', () => {
       bedrag: 12.5,
       is_pseudo: true,
     }
-    const result = applyDropshipmentLogic([tapijt, verzend], 'klein')
+    const result = applyDropshipmentLogic([tapijt, verzend], 'klein', PRIJZEN)
     expect(result.some((r) => r.artikelnr === 'VERZEND')).toBe(false)
     expect(result.some((r) => r.artikelnr === 'DROPSHIP-KLEIN')).toBe(true)
   })

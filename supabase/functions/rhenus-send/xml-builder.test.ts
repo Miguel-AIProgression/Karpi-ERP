@@ -87,6 +87,13 @@ Deno.test('bouwRhenusXml: SBDH-header + kernvelden (legacy-conform)', () => {
   assertStringIncludes(xml, '<transportInstructionFunction>SHIPMENT</transportInstructionFunction>');
 });
 
+Deno.test('bouwRhenusXml: GLN uit bedrijfsgegevens.gln_eigen overschrijft de fallback', () => {
+  const args = fixtureArgs();
+  args.bedrijf = { ...args.bedrijf, gln_eigen: '8715954000001' };
+  const xml = bouwRhenusXml(args);
+  assertStringIncludes(xml, '<sh:InstanceIdentifier>8715954000001</sh:InstanceIdentifier>');
+});
+
 Deno.test('bouwRhenusXml: receiver/shipper/carrier + escaping + landnormalisatie', () => {
   const xml = bouwRhenusXml(fixtureArgs());
   // Escaping: '&' en '<>' in ontvangernaam mogen de XML niet breken
