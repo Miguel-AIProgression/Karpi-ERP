@@ -43,11 +43,8 @@ export interface VerhoekColliInput {
   breedte_cm: number | null;
 }
 
-export interface ColliProbleem {
-  colli_nr: number;
-  veld: 'lengte_cm' | 'breedte_cm' | 'gewicht_kg' | 'sscc';
-  melding: string;
-}
+// Colli-preflight-probleem: gedeelde shape (ADR-0034, _shared/vervoerders/colli.ts).
+export type { ColliProbleem } from '../_shared/vervoerders/colli.ts';
 
 // Runtime-config uit app_config sleutel 'verhoek' (mig 374). Antwoorden van
 // Verhoek = SQL-UPDATE op dat record, geen redeploy (ADR-0031).

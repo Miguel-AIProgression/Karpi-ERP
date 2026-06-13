@@ -1,5 +1,85 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-13 — Vervoerder-capability-seam: één descriptor-registry (ADR-0034)
+
+**Waarom:** de vervoerder-*keuze* was al data-driven (ADR-0008/0030), maar de
+*eisen en eigenschappen* van elke vervoerder — landbereik, verplichte preflight-
+velden, default-afmetingen, protocoltak, batch-limiet — stonden hardcoded en
+verspreid over 6+ plekken (o.a. `HST_LANDEN_BEREIK`, een carrier-code-array 2×,
+per-carrier `if`-takken, `DEFAULT_LENGTH/WIDTH/HEIGHT/WEIGHT`, twee bijna-
+identieke `valideerXColli`-functies, `MAX_PER_RUN` 3×). Een vierde vervoerder
+raakte 4–5 bestanden. Klassieke ontbrekende deep module (deepening-kandidaat #1
+uit de SSCC-analogen-audit).
+
+**Wat (gedragsneutrale refactor, 3 slices):**
+- **Nieuw:** pure registry [`_shared/vervoerders/capabilities.ts`](../supabase/functions/_shared/vervoerders/capabilities.ts)
+  — één `VerzendCapability` per carrier (protocol/landbereik/preflight-eisen/
+  default-afmetingen/maxPerRun). Frontend-deelbaar via de bestaande shim (ADR-0033).
+- **Slice 1:** `valideerVoorVervoerder` (`_shared/vervoerder-eisen.ts`) leest de
+  eisen declaratief uit de descriptor i.p.v. `if code === `-takken; de dubbele
+  carrier-code-array is weg. `HST_LANDEN_BEREIK` blijft als alias.
+- **Slice 2:** HST `DEFAULT_*`-afmetingen en de drie `MAX_PER_RUN` komen uit de
+  descriptor (zelfde getallen — byte-identieke payloads).
+- **Slice 3:** generieke [`_shared/vervoerders/colli.ts`](../supabase/functions/_shared/vervoerders/colli.ts)
+  `valideerColli(colli, cap, meldingen)` vervangt de iteratie-structuur van
+  `valideerVerhoekColli`/`valideerRhenusColli`; de carriers leveren alleen nog de
+  (ongewijzigde) meldingstekst. De subtiele verschillen blijven exact: Verhoek
+  eist breedte, Rhenus niet maar wél ≥1 colli (incident 0455395).
+- **ADR-0034** + plan `docs/superpowers/plans/2026-06-13-vervoerder-capability-seam.md`.
+- **Tests:** 5 nieuwe (capabilities + colli) + alle bestaande preflight/xml/payload-
+  tests groen (49 Deno-tests). Geen DB-migratie. Buiten scope: format-builders,
+  orchestrator-loop-skeleton (sibling-seam), `vervoerders.type`-correctie + SQL↔TS-
+  contracttest (slice 4, optioneel).
+- **Pre-merge:** `cd frontend && npm run typecheck` (shim trekt `capabilities.ts`
+  cross-root mee; `allowImportingTsExtensions` staat aan).
+
+## 2026-06-13 — Intake-gates sluiten productie-only orders uit (mig 397)
+
+> **Migratienummer:** repo-nr **397** (oorspronkelijk 394; hernummerd 395-397 — zie de noot bij de 395-396-entry). **Nog NIET op de live DB toegepast** — als enige van deze drie nog te draaien (395/396 stonden er al onder hun oude werknummers 392/393).
+
+De backfill van mig 395-396 flagde ~200 productie-only orders (`alleen_productie=true`, OUD-*-nummers uit Basta, status "In productie") op zowel adres als prijs — terecht qua data (ze hebben geen afleveradres/prijs in RugFlow) maar onbedoeld: ze worden volledig in Basta afgehandeld (ADR-0029) en bereiken hier nooit Pick & Ship of facturatie, dus de gates zijn betekenisloos en domineerden beide nieuwe tabs als ruis. Mig 397 sluit `alleen_productie=true` uit in beide gate-triggers (`fn_orders_afl_adres_gate` + `fn_order_regels_prijs_gate`) en wist de onterechte flags via een correctie-backfill. Discriminator = de vlag, niet de status (vangt 'In productie' én 'Maatwerk afgerond'); consistent met `orders_zonder_vervoerder` (mig 345) en de Pick & Ship-query. Echte ORD-gevallen (0097/0108/0123 adres; diverse prijs) blijven terecht geflagd.
+
+## 2026-06-13 — Intake-gates: afleveradres & prijs blokkeren doorstroming (mig 395-396)
+
+> **Migratienummers:** repo-nrs **395/396** — oorspronkelijk geschreven als 392/393 en in die vorm op de live DB gedraaid (13-06), maar vlak daarna hernummerd naar 395/396 omdat origin/main intussen 392 (`alle_externe_berichten_view`), 393 (`shopify_polling_sync`) én 394 (`picker_optioneel`) had geclaimd. De **inhoud staat dus al op de live DB** (idempotent: `ADD COLUMN IF NOT EXISTS` + `CREATE OR REPLACE` + backfill); de hernummering is puur een repo-bestandsnaam-correctie om merge-collisie te voorkomen. Apply-volgorde indien opnieuw gedraaid: 395 vóór 396 (396 breidt `_valideer_intake_gates` uit die 395 aanmaakt), dan 397. **Deploy-volgorde:** migraties vóór de frontend (Pick & Ship-query + `orders_list` lezen de nieuwe kolommen). Branch: `feat/intake-gates-adres-en-prijs` (geïsoleerde worktree).
+
+Twee data-integriteit-poorten die voorkomen dat een order met **onvolledig afleveradres** of **ontbrekende prijs (€0)** stilletjes naar de werkvloer/facturatie doorstroomt. Aanleiding: ORD-2026-0097 belandde zonder afleveradres in Pick & Ship → verzendlabels zonder adres; en Shopify-orders kwamen soms zonder prijs binnen. Beide gaten zaten in álle intake-kanalen (EDI, Shopify/webshop, e-mail, handmatig) omdat geen enkel kanaal de afl_*-snapshots of prijzen valideerde.
+
+Beide volgen het bestaande nullable-timestamp-gate-patroon (mig 326): kolom op `orders`, detectie in een DB-trigger (single source), predicaat-helper in `frontend/src/lib/orders/`, status-tab op het overzicht + banner op order-detail.
+
+**Feature A — afleveradres (mig 395):** kolom `orders.afl_adres_incompleet_sinds`, BEFORE-trigger `trg_orders_afl_adres_gate` (incompleet = niet-afhaal-order, status ≠ Verzonden/Geannuleerd, één van naam/adres/postcode/plaats leeg-na-trim). Wist zichzelf zodra compleet — geen handmatige bevestiging. Helper [`afleveradres-gate.ts`](../frontend/src/lib/orders/afleveradres-gate.ts) (`isAfleveradresIncompleet` + filter + pure `isAfleveradresCompleet` voor de form). Rode banner `AfleveradresIncompleetBanner` + status-tab "Afleveradres ontbreekt" + order-form blokkeert opslaan. `alleen_productie` bewust niet uitgesloten (keuze Miguel), maar raakt Pick & Ship niet (die filtert `alleen_productie=false`).
+
+**Feature B — prijs (mig 396):** kolom `orders.prijs_ontbreekt_sinds`, AFTER-trigger `trg_order_regels_prijs_gate` op `order_regels` (€0/NULL op een normale regel: NOT `is_admin_pseudo`, artikelnr ≠ VERZEND, `korting_pct` < 100 — admin-pseudo/VERZEND/100%-korting zijn legitiem €0). `UPDATE OF prijs,korting_pct,artikelnr` zodat allocatie-updates niet vuren. RPC `markeer_prijs_geaccepteerd` (operator accepteert €0 bewust, audit `order_events` `'prijs_geaccepteerd'`) óf prijscorrectie wist de gate. Helper [`prijs-ontbreekt.ts`](../frontend/src/lib/orders/prijs-ontbreekt.ts). Amber banner `PrijsOntbreektBanner` (corrigeer / bevestig) + status-tab "Prijs ontbreekt".
+
+**Hard-block (beide):** gedeelde poort `_valideer_intake_gates(order_ids[])` die `start_pickronden` aanroept ná de bundel-uitbreiding — mig 395 voegde de aanroep + adres-check toe, mig 396 breidde de poort uit met de prijs-check (`start_pickronden` zelf maar één keer herschreven, body = mig 373 + één PERFORM). Frontend-spiegel: `StartPickrondesButton` disablet met reden ("Afleveradres ontbreekt"/"Prijs ontbreekt"). Backfill: beide migraties flaggen bestaande open orders retroactief. Tests: `afleveradres-gate.test.ts` + `prijs-ontbreekt.test.ts` (11 nieuwe asserts); typecheck schoon, 311 magazijn/orders-tests groen.
+
+## 2026-06-13 — Reststuk-/aanbreek-drempels geconsolideerd naar één bron (ADR-0033)
+
+**Waarom:** `RESTSTUK_MIN_SHORT=50`, `RESTSTUK_MIN_LONG=100`,
+`AANGEBROKEN_MIN_LENGTE=100` (en de dode export `ROND_SNIJ_MARGE=5`) stonden
+hand-gesynct in 4 bestanden met een "wijzig je dit, wijzig dan óók die 3
+andere"-comment — klassieke shallow-spread. Deletion-test: verwijder de drempels
+en ze komen identiek terug in elke kopie. Techdebt-bevinding uit de
+architecture-improvement-scan.
+
+**Wat:**
+- Nieuw `supabase/functions/_shared/reststuk-config.ts` = single source van de
+  drempels (ADR-0033). Bewust GEEN `app_config`-seam (anders dan de
+  runtime-tunebare FIFO-parameters, ADR-0021): dit zijn geometrie-drempels
+  gekoppeld aan ADR-0025 (shape-bias), wijzigen = recompile/deploy.
+- `_shared/guillotine-packing.ts` + `_shared/compute-reststukken.ts` importeren
+  + re-exporteren uit de nieuwe module (bestaande importeurs ongewijzigd).
+- Frontend `modules/snijplanning/lib/compute-reststukken.ts` importeert
+  cross-root + re-exporteert via de barrel (ADR-0033 shim-patroon).
+- `scripts/vergelijk-snijalgoritmes.mjs` (standalone Node-benchmark, geen
+  TS-loader) houdt bewust een eigen kopie met expliciete verwijzing naar de bron.
+- `ROND_SNIJ_MARGE` verhuisd naar de bron en gemarkeerd als gereserveerd/ongebruikt
+  (nog niet door het packer-algoritme geconsumeerd; documenteert de
+  rond-snij-bedrijfsregel op één plek).
+
+**Verificatie:** frontend `tsc -b` groen, `deno check` op de 3 modules groen,
+6 packer-tests (guillotine-fifo) + 22 frontend snijplanning-tests groen.
+
 ## 2026-06-13 — Rauwe-payload-audit verbreed naar álle externe kanalen + unified view (mig 392)
 
 **Waarom:** één centrale "black box recorder" zodat bij een bug ("waarom kreeg

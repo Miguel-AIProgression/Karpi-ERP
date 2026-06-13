@@ -23,8 +23,10 @@ export interface ReststukRect {
   lengte_cm: number   // afmeting langs Y
 }
 
-export const RESTSTUK_MIN_SHORT = 50
-export const RESTSTUK_MIN_LONG = 100
+// Reststuk-drempels: één bron (ADR-0033). Re-export zodat bestaande importeurs
+// van deze module ongewijzigd blijven werken.
+import { RESTSTUK_MIN_SHORT, RESTSTUK_MIN_LONG } from './reststuk-config.ts'
+export { RESTSTUK_MIN_SHORT, RESTSTUK_MIN_LONG } from './reststuk-config.ts'
 
 function qualifies(r: ReststukRect, minShort: number, minLong: number): boolean {
   const short = Math.min(r.breedte_cm, r.lengte_cm)

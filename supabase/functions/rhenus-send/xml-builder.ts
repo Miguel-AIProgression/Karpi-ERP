@@ -17,9 +17,10 @@
 // Plan: docs/superpowers/plans/2026-06-12-rhenus-transporteur-gs1-xml-sftp.md
 
 import { normalizeCountry } from '../_shared/adres-split.ts';
+import { capabilityVoor } from '../_shared/vervoerders/capabilities.ts';
+import { type ColliMeldingen, type ColliProbleem, valideerColli } from '../_shared/vervoerders/colli.ts';
 import type {
   BouwRhenusXmlArgs,
-  ColliProbleem,
   RhenusColliInput,
   RhenusOpties,
 } from './types.ts';
@@ -44,31 +45,27 @@ export function bouwRhenusBestandsnaam(prefix: string, zendingNr: string, nu: Da
   return `${prefix}_${ts}_${zendingNr}.xml`;
 }
 
-// Rhenus-verplichte velden. Ontbreekt iets → de orchestrator zet de rij op
-// Fout mét deze meldingen, zónder upload (kansloze-poging-principe ADR-0030).
+// Rhenus-verplichte velden (≥1 colli + sscc/gewicht/lengte per colli) staan in
+// de capability-descriptor (ADR-0034); deze wrapper levert alleen de Rhenus-
+// specifieke meldingstekst (incl. de 0-colli-melding, incident 0455395).
+// Ontbreekt iets → de orchestrator zet de rij op Fout mét deze meldingen,
+// zónder upload (kansloze-poging-principe ADR-0030).
+const RHENUS_COLLI_MELDINGEN: ColliMeldingen = {
+  geenColli: 'Zending zonder colli — Rhenus verplicht >=1 transportInstructionShipmentItem ' +
+    '(bericht valt anders bij hen in error, incident 0455395). ' +
+    'Pickronde moet genereer_zending_colli aanroepen.',
+  perVeld: {
+    sscc: (n) => `Colli ${n}: SSCC ontbreekt (sscc-tag is verplicht).`,
+    gewicht_kg: (n) => `Colli ${n}: gewicht (kg) ontbreekt — verplicht voor Rhenus-planning.`,
+    lengte_cm: (n) => `Colli ${n}: lengte (cm) ontbreekt — verplicht voor Rhenus-planning (dimension/depth).`,
+    // Breedte is bij Rhenus niet verplicht (legacy geeft rollen geen width);
+    // staat niet in colliVelden, dus deze bouwer wordt nooit aangeroepen.
+    breedte_cm: (n) => `Colli ${n}: breedte (cm) ontbreekt.`,
+  },
+};
+
 export function valideerRhenusColli(colli: RhenusColliInput[]): ColliProbleem[] {
-  if (colli.length === 0) {
-    return [{
-      colli_nr: 0,
-      veld: 'aantal',
-      melding: 'Zending zonder colli — Rhenus verplicht >=1 transportInstructionShipmentItem ' +
-        '(bericht valt anders bij hen in error, incident 0455395). ' +
-        'Pickronde moet genereer_zending_colli aanroepen.',
-    }];
-  }
-  const problemen: ColliProbleem[] = [];
-  for (const c of colli) {
-    if (!c.sscc || c.sscc.trim() === '') {
-      problemen.push({ colli_nr: c.colli_nr, veld: 'sscc', melding: `Colli ${c.colli_nr}: SSCC ontbreekt (sscc-tag is verplicht).` });
-    }
-    if (!c.gewicht_kg || c.gewicht_kg <= 0) {
-      problemen.push({ colli_nr: c.colli_nr, veld: 'gewicht_kg', melding: `Colli ${c.colli_nr}: gewicht (kg) ontbreekt — verplicht voor Rhenus-planning.` });
-    }
-    if (!c.lengte_cm || c.lengte_cm <= 0) {
-      problemen.push({ colli_nr: c.colli_nr, veld: 'lengte_cm', melding: `Colli ${c.colli_nr}: lengte (cm) ontbreekt — verplicht voor Rhenus-planning (dimension/depth).` });
-    }
-  }
-  return problemen;
+  return valideerColli(colli, capabilityVoor('rhenus_sftp')!, RHENUS_COLLI_MELDINGEN);
 }
 
 function esc(s: string): string {

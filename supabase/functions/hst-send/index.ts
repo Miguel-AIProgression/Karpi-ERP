@@ -16,9 +16,10 @@ import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supa
 import { bouwTransportOrderPayload } from './payload-builder.ts';
 import { postTransportOrder } from './hst-client.ts';
 import { valideerVoorVervoerder } from '../_shared/vervoerder-eisen.ts';
+import { capabilityVoor } from '../_shared/vervoerders/capabilities.ts';
 import type { BedrijfInput, HstResponse, OrderInput, ZendingColliInput, ZendingInput } from './types.ts';
 
-const MAX_PER_RUN = 25;
+const MAX_PER_RUN = capabilityVoor('hst_api')?.maxPerRun ?? 25;
 
 interface SendSummary {
   processed: number;

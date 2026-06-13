@@ -45,11 +45,8 @@ export interface RhenusColliInput {
   breedte_cm: number | null;
 }
 
-export interface ColliProbleem {
-  colli_nr: number;
-  veld: 'aantal' | 'sscc' | 'gewicht_kg' | 'lengte_cm';
-  melding: string;
-}
+// Colli-preflight-probleem: gedeelde shape (ADR-0034, _shared/vervoerders/colli.ts).
+export type { ColliProbleem } from '../_shared/vervoerders/colli.ts';
 
 // Runtime-config uit app_config sleutel 'rhenus' (mig 379). Wijziging =
 // SQL-UPDATE op dat record, geen redeploy (ADR-0032).

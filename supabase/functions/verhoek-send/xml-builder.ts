@@ -12,10 +12,11 @@
 // Plan: docs/superpowers/plans/2026-06-11-verhoek-transporteur-xml-sftp.md
 
 import { normalizeCountry, splitAdres } from '../_shared/adres-split.ts';
+import { capabilityVoor } from '../_shared/vervoerders/capabilities.ts';
+import { type ColliMeldingen, type ColliProbleem, valideerColli } from '../_shared/vervoerders/colli.ts';
 import type {
   BedrijfInput,
   BouwVerhoekXmlArgs,
-  ColliProbleem,
   VerhoekColliInput,
   VerhoekOpties,
   ZendingInput,
@@ -32,26 +33,22 @@ export function bouwVerhoekBestandsnaam(zendingNr: string, nu: Date): string {
   return `Karpi_${ts}_${zendingNr}.xml`;
 }
 
-// Verhoek-verplichte velden per colli. Ontbreekt iets → de orchestrator zet
-// de rij op Fout mét deze meldingen, zónder upload (kansloze-poging-principe
-// uit ADR-0030).
+// Verhoek-verplichte velden per colli (sscc/lengte/breedte/gewicht) staan in de
+// capability-descriptor (ADR-0034); deze wrapper levert alleen de Verhoek-
+// specifieke meldingstekst. Ontbreekt iets → de orchestrator zet de rij op Fout
+// mét deze meldingen, zónder upload (kansloze-poging-principe ADR-0030).
+const VERHOEK_COLLI_MELDINGEN: ColliMeldingen = {
+  geenColli: '', // Verhoek eist geen ≥1-colli (vereistColli=false) — ongebruikt.
+  perVeld: {
+    sscc: (n) => `Colli ${n}: SSCC ontbreekt (ScanCode is verplicht).`,
+    lengte_cm: (n) => `Colli ${n}: lengte (cm) ontbreekt — verplicht voor Verhoek-planning.`,
+    breedte_cm: (n) => `Colli ${n}: breedte (cm) ontbreekt — verplicht voor Verhoek-planning.`,
+    gewicht_kg: (n) => `Colli ${n}: gewicht (kg) ontbreekt — verplicht voor Verhoek-planning.`,
+  },
+};
+
 export function valideerVerhoekColli(colli: VerhoekColliInput[]): ColliProbleem[] {
-  const problemen: ColliProbleem[] = [];
-  for (const c of colli) {
-    if (!c.sscc || c.sscc.trim() === '') {
-      problemen.push({ colli_nr: c.colli_nr, veld: 'sscc', melding: `Colli ${c.colli_nr}: SSCC ontbreekt (ScanCode is verplicht).` });
-    }
-    if (!c.lengte_cm || c.lengte_cm <= 0) {
-      problemen.push({ colli_nr: c.colli_nr, veld: 'lengte_cm', melding: `Colli ${c.colli_nr}: lengte (cm) ontbreekt — verplicht voor Verhoek-planning.` });
-    }
-    if (!c.breedte_cm || c.breedte_cm <= 0) {
-      problemen.push({ colli_nr: c.colli_nr, veld: 'breedte_cm', melding: `Colli ${c.colli_nr}: breedte (cm) ontbreekt — verplicht voor Verhoek-planning.` });
-    }
-    if (!c.gewicht_kg || c.gewicht_kg <= 0) {
-      problemen.push({ colli_nr: c.colli_nr, veld: 'gewicht_kg', melding: `Colli ${c.colli_nr}: gewicht (kg) ontbreekt — verplicht voor Verhoek-planning.` });
-    }
-  }
-  return problemen;
+  return valideerColli(colli, capabilityVoor('verhoek_sftp')!, VERHOEK_COLLI_MELDINGEN);
 }
 
 function esc(s: string): string {

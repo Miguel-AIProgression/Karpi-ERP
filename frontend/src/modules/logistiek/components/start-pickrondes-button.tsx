@@ -121,15 +121,51 @@ export function StartPickrondesButton({
   }, [verzendOrders, vervoerderQueries])
   const vervoerderResolutieLaadt = vervoerderQueries.some((q) => q.isLoading)
 
+  // Intake-gates (mig 395/396): orders met een onvolledig afleveradres of een
+  // ontbrekende prijs (€0) mogen geen pickronde starten — labels zonder adres
+  // resp. ongeprijsde regels. Server-side gespiegeld in start_pickronden (via
+  // _valideer_intake_gates). De Pick & Ship-query haalt alleen open orders op,
+  // dus de timestamp-kolommen != null volstaan.
+  const aflAdresGeblokkeerdIds = useMemo(() => {
+    const set = new Set<number>()
+    orders.forEach((o) => {
+      if (o.afl_adres_incompleet_sinds) set.add(o.order_id)
+    })
+    return set
+  }, [orders])
+  const prijsGeblokkeerdIds = useMemo(() => {
+    const set = new Set<number>()
+    orders.forEach((o) => {
+      if (o.prijs_ontbreekt_sinds) set.add(o.order_id)
+    })
+    return set
+  }, [orders])
+
   const pickbareOrders = useMemo(
-    () => orders.filter((o) => isPickbaar(o) && !geenVervoerderIds.has(o.order_id)),
-    [orders, geenVervoerderIds],
+    () =>
+      orders.filter(
+        (o) =>
+          isPickbaar(o) &&
+          !geenVervoerderIds.has(o.order_id) &&
+          !aflAdresGeblokkeerdIds.has(o.order_id) &&
+          !prijsGeblokkeerdIds.has(o.order_id),
+      ),
+    [orders, geenVervoerderIds, aflAdresGeblokkeerdIds, prijsGeblokkeerdIds],
   )
   const aantal = pickbareOrders.length
-  const aantalGeblokkeerd = useMemo(
+  const aantalGeenVervoerder = useMemo(
     () => orders.filter((o) => isPickbaar(o) && geenVervoerderIds.has(o.order_id)).length,
     [orders, geenVervoerderIds],
   )
+  const aantalAflAdres = useMemo(
+    () => orders.filter((o) => isPickbaar(o) && aflAdresGeblokkeerdIds.has(o.order_id)).length,
+    [orders, aflAdresGeblokkeerdIds],
+  )
+  const aantalPrijs = useMemo(
+    () => orders.filter((o) => isPickbaar(o) && prijsGeblokkeerdIds.has(o.order_id)).length,
+    [orders, prijsGeblokkeerdIds],
+  )
+  const aantalGeblokkeerd = aantalGeenVervoerder + aantalAflAdres + aantalPrijs
   const aantalOverig = orders.length - aantal
   const heeftVerzend = pickbareOrders.some((o) => !o.afhalen)
   const heeftActieveVervoerder = vervoerders.some((v) => v.actief)
@@ -138,6 +174,10 @@ export function StartPickrondesButton({
 
   const niksTeDoen = aantal === 0
   const alleenGeblokkeerd = niksTeDoen && aantalGeblokkeerd > 0
+  // Data-fouten op de order (mig 395/396) krijgen voorrang in de melding boven
+  // "nog geen vervoerder voor dit land". Adres vóór prijs.
+  const alleenAflAdres = alleenGeblokkeerd && aantalAflAdres > 0
+  const alleenPrijs = alleenGeblokkeerd && aantalAflAdres === 0 && aantalPrijs > 0
   const disabled = mutation.isPending || !vervoerderOk || niksTeDoen || vervoerderResolutieLaadt
 
   const aantalInBundel = isBundel ? aantal - forceSoloIds.size : 0
@@ -146,7 +186,11 @@ export function StartPickrondesButton({
   // Tooltip-tekst — context-aware.
   const tooltip = !vervoerderOk
     ? 'Activeer eerst minstens één vervoerder bij Logistiek > Vervoerders'
-    : alleenGeblokkeerd
+    : alleenAflAdres
+      ? 'Afleveradres ontbreekt — vul het verzendadres aan op de order voordat je een pickronde start'
+      : alleenPrijs
+        ? 'Prijs ontbreekt (€0) — corrigeer de prijs of bevestig op de order dat €0 klopt voordat je een pickronde start'
+      : alleenGeblokkeerd
       ? 'Geen vervoerder mogelijk voor dit afleverland — activeer de vervoerder (Logistiek > Vervoerders) of kies handmatig een vervoerder op de order'
       : niksTeDoen
         ? 'Geen pickbare orders in deze groep — eerst voorraad/snijden/confectie afronden'
@@ -236,7 +280,15 @@ export function StartPickrondesButton({
         className={buttonClass}
       >
         {knopIcon}
-        {alleenGeblokkeerd ? 'Geen vervoerder mogelijk' : niksTeDoen ? 'Niets pickbaar' : knopLabel}
+        {alleenAflAdres
+          ? 'Afleveradres ontbreekt'
+          : alleenPrijs
+            ? 'Prijs ontbreekt'
+            : alleenGeblokkeerd
+              ? 'Geen vervoerder mogelijk'
+              : niksTeDoen
+                ? 'Niets pickbaar'
+                : knopLabel}
       </button>
       {error && <div className="max-w-72 text-right text-[11px] text-rose-600">{error}</div>}
 
