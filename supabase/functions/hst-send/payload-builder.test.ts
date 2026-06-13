@@ -12,7 +12,7 @@
 //   deno test --allow-read payload-builder.test.ts
 
 import { assertEquals, assert } from 'https://deno.land/std@0.224.0/assert/mod.ts';
-import { bouwTransportOrderPayload, splitAdres } from './payload-builder.ts';
+import { bouwTransportOrderPayload, splitAdres, verdeelToevoeging } from './payload-builder.ts';
 
 const KARPI_BEDRIJF = {
   bedrijfsnaam: 'Karpi B.V.',
@@ -33,6 +33,8 @@ Deno.test('bouwTransportOrderPayload — per-colli regels met SSCC-BarCode', () 
       afl_postcode: '1111AA',
       afl_plaats: 'Diemen',
       afl_land: 'NL',
+      afl_telefoon: '0612345678',
+      afl_email: 'klant@voorbeeld.nl',
       totaal_gewicht_kg: 126,
       aantal_colli: 2,
       opmerkingen: 'Transport instructie',
@@ -100,6 +102,8 @@ Deno.test('bouwTransportOrderPayload — fallback naar aggregate-regel zonder co
       afl_postcode: '1111AA',
       afl_plaats: 'Diemen',
       afl_land: 'NL',
+      afl_telefoon: null,
+      afl_email: null,
       totaal_gewicht_kg: 50,
       aantal_colli: 2,
       opmerkingen: null,
@@ -127,6 +131,8 @@ Deno.test('bouwTransportOrderPayload — vult lege strings bij ontbrekend afleve
       afl_postcode: null,
       afl_plaats: null,
       afl_land: null,
+      afl_telefoon: null,
+      afl_email: null,
       totaal_gewicht_kg: null,
       aantal_colli: null,
       opmerkingen: 'Spoed',
@@ -154,6 +160,56 @@ Deno.test('bouwTransportOrderPayload — vult lege strings bij ontbrekend afleve
   assertEquals(result.TransportInstruction, 'Spoed');
 });
 
+Deno.test('bouwTransportOrderPayload zet ToAddress.PhoneNumber uit afl_telefoon', () => {
+  const payload = bouwTransportOrderPayload({
+    zending: {
+      zending_nr: 'ZEND-2026-9999', afl_naam: 'Klant', afl_adres: 'Teststraat 1',
+      afl_postcode: '1111AA', afl_plaats: 'Diemen', afl_land: 'NL',
+      afl_telefoon: '0612345678', afl_email: null, totaal_gewicht_kg: 5, aantal_colli: 1,
+      opmerkingen: null, verzenddatum: '2026-06-09',
+    },
+    order: { order_nr: 'ORD-2026-9999' },
+    bedrijf: {
+      bedrijfsnaam: 'Karpi B.V.', adres: 'Tweede Broekdijk 10', postcode: '7122LB',
+      plaats: 'Aalten', land: 'NL', telefoon: '0543476116', email: 'info@karpi.nl',
+    },
+    hstCustomerId: '038267',
+    colli: [{ colli_nr: 1, sscc: '087159540000000632', gewicht_kg: 5, omschrijving_snapshot: 'Tapijt' }],
+  });
+  assertEquals(payload.ToAddress.PhoneNumber, '0612345678');
+});
+
+// T&T-scheiding (mail Piet-Hein/Marjon 11-06-2026): het aflever-e-mailadres
+// gaat mee naar de vervoerder voor track & trace; een leeg afl_email blijft
+// leeg (nooit stilletjes een factuur-adres invullen).
+Deno.test('bouwTransportOrderPayload zet ToAddress.Email uit afl_email', () => {
+  const basisZending = {
+    zending_nr: 'ZEND-2026-9998', afl_naam: 'Klant', afl_adres: 'Teststraat 1',
+    afl_postcode: '1111AA', afl_plaats: 'Diemen', afl_land: 'NL',
+    afl_telefoon: '0612345678', totaal_gewicht_kg: 5, aantal_colli: 1,
+    opmerkingen: null, verzenddatum: '2026-06-11',
+  };
+  const colli = [{ colli_nr: 1, sscc: '087159540000000632', gewicht_kg: 5, omschrijving_snapshot: 'Tapijt' }];
+
+  const metEmail = bouwTransportOrderPayload({
+    zending: { ...basisZending, afl_email: 'ontvanger@klant.nl' },
+    order: { order_nr: 'ORD-2026-9998' },
+    bedrijf: KARPI_BEDRIJF,
+    hstCustomerId: '038267',
+    colli,
+  });
+  assertEquals(metEmail.ToAddress.Email, 'ontvanger@klant.nl');
+
+  const zonderEmail = bouwTransportOrderPayload({
+    zending: { ...basisZending, afl_email: null },
+    order: { order_nr: 'ORD-2026-9998' },
+    bedrijf: KARPI_BEDRIJF,
+    hstCustomerId: '038267',
+    colli,
+  });
+  assertEquals(zonderEmail.ToAddress.Email, '');
+});
+
 Deno.test('splitAdres — straat + nummer + toevoeging', () => {
   assertEquals(splitAdres('Tweede Broekdijk 10'),
     { street: 'Tweede Broekdijk', number: '10', addition: '' });
@@ -173,4 +229,64 @@ Deno.test('splitAdres — straat + nummer + toevoeging', () => {
 
   assertEquals(splitAdres(''),
     { street: '', number: '', addition: '' });
+});
+
+// Incident ZEND-2026-0002 (11-06-2026): HST 400 "Afleveradres niet aanwezig/
+// compleet" omdat StreetNumber leeg bleef bij werkelijke webshop-invoer.
+// Deze cases komen letterlijk uit de orders-tabel.
+Deno.test('splitAdres — werkelijke webshop-adressen (haakjes, blokhaken, reeks, komma)', () => {
+  assertEquals(splitAdres('Saturnusstraat 60 (Unit 30)'),
+    { street: 'Saturnusstraat', number: '60', addition: 'Unit 30' });
+
+  assertEquals(splitAdres('Biltstraat 35 [001]'),
+    { street: 'Biltstraat', number: '35', addition: '001' });
+
+  assertEquals(splitAdres('westeresch 1-5'),
+    { street: 'westeresch', number: '1', addition: '-5' });
+
+  assertEquals(splitAdres('Koeweistraat, 6'),
+    { street: 'Koeweistraat', number: '6', addition: '' });
+
+  assertEquals(splitAdres('Raasdorperweg 181G'),
+    { street: 'Raasdorperweg', number: '181', addition: 'G' });
+
+  // Straatnaam die zelf met een nummer-woord begint blijft intact.
+  assertEquals(splitAdres('2e Dorpsstraat 5'),
+    { street: '2e Dorpsstraat', number: '5', addition: '' });
+});
+
+// HST-limiet: StreetNumberAddition max 5 tekens (live 400 op "Unit 30").
+// Langere toevoegingen verhuizen naar NameAddition.
+Deno.test('verdeelToevoeging — kort naar StreetNumberAddition, lang naar NameAddition', () => {
+  assertEquals(verdeelToevoeging('G'),
+    { streetNumberAddition: 'G', nameAddition: '' });
+  assertEquals(verdeelToevoeging('001'),
+    { streetNumberAddition: '001', nameAddition: '' });
+  assertEquals(verdeelToevoeging('-5'),
+    { streetNumberAddition: '-5', nameAddition: '' });
+  assertEquals(verdeelToevoeging('Unit 30'),
+    { streetNumberAddition: '', nameAddition: 'Unit 30' });
+  assertEquals(verdeelToevoeging(''),
+    { streetNumberAddition: '', nameAddition: '' });
+});
+
+Deno.test('bouwTransportOrderPayload — lange toevoeging landt in NameAddition', () => {
+  const payload = bouwTransportOrderPayload({
+    zending: {
+      zending_nr: 'ZEND-2026-0002',
+      afl_naam: 'Jeanette van Duffelen',
+      afl_adres: 'Saturnusstraat 60 (Unit 30)',
+      afl_postcode: '2516 AH', afl_plaats: "'s-Gravenhage", afl_land: 'NL',
+      afl_telefoon: '06-57996440', afl_email: null,
+      totaal_gewicht_kg: 10, aantal_colli: 1, opmerkingen: null, verzenddatum: '2026-06-11',
+    },
+    order: { order_nr: 'ORD-2026-0110' },
+    bedrijf: KARPI_BEDRIJF,
+    hstCustomerId: '038267',
+    colli: [{ colli_nr: 1, sscc: '087159540000000649', gewicht_kg: 10, omschrijving_snapshot: 'Tapijt' }],
+  });
+  assertEquals(payload.ToAddress.Street, 'Saturnusstraat');
+  assertEquals(payload.ToAddress.StreetNumber, '60');
+  assertEquals(payload.ToAddress.StreetNumberAddition, '');
+  assertEquals(payload.ToAddress.NameAddition, 'Unit 30');
 });

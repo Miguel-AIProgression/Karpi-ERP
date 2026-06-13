@@ -188,20 +188,52 @@ export function ZendingPrintSetPage() {
           }
         />
 
-        <div className="mb-4 rounded-[var(--radius-sm)] border-2 border-amber-400 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          <div className="font-semibold mb-1">⚠️ In de print-dialoog (Ctrl+P) — anders breekt het label over 2 pagina's:</div>
-          <ul className="ml-5 list-disc space-y-0.5 text-xs">
-            <li>
-              <strong>Printer:</strong> Vervoerderslabels (Zebra) — of bij PDF-export: <strong>papierformaat = Custom {(labelFormaat?.breedteMm ?? 76.2)}×{(labelFormaat?.hoogteMm ?? 50.8)} mm</strong>
-            </li>
-            <li>
-              <strong>Marges = Geen</strong> (onder "Meer instellingen")
-            </li>
-            <li>
-              <strong>Schaal = 100% / Ware grootte</strong>
-            </li>
-          </ul>
-        </div>
+        {zending.status === 'Picken' ? (
+          <div className="mb-4 rounded-[var(--radius-sm)] border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+            <div className="mb-2 font-semibold text-slate-800">Zo werk je deze zending af — 3 stappen</div>
+            <ol className="space-y-2.5">
+              <li className="flex gap-2.5">
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-800 text-[11px] font-semibold text-white">1</span>
+                <span>
+                  <strong>Print de labels en de pakbon.</strong> Klik rechtsboven op{' '}
+                  <strong>Stickers printen</strong> en <strong>Pakbon printen</strong> (of in één keer
+                  op <strong>Alles</strong>). Plak op elke colli (elk pak / elke rol) het
+                  bijbehorende label.
+                  <span className="mt-1 block rounded bg-white px-2 py-1.5 text-xs text-slate-500 ring-1 ring-slate-200">
+                    Print-instellingen (venster Ctrl+P), anders breekt het label over 2 pagina's:
+                    printer = <strong>Vervoerderslabels (Zebra)</strong> — of bij PDF papierformaat{' '}
+                    <strong>Custom {(labelFormaat?.breedteMm ?? 76.2)}×{(labelFormaat?.hoogteMm ?? 50.8)} mm</strong>;
+                    oriëntatie <strong>{(labelFormaat?.hoogteMm ?? 50.8) > (labelFormaat?.breedteMm ?? 76.2) ? 'staand' : 'liggend'}</strong>,
+                    marges = <strong>Geen</strong>, schaal = <strong>100%</strong>.
+                  </span>
+                </span>
+              </li>
+              <li className="flex gap-2.5">
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-800 text-[11px] font-semibold text-white">2</span>
+                <span>
+                  <strong>Verzamel de colli en vink ze hieronder af.</strong> De vinkjes staan al aan —
+                  laat ze aan voor wat je gevonden hebt. Kun je iets <em>niet</em> vinden? Zet dat colli
+                  op <strong>Niet gevonden</strong>. Voltooien kan dan pas als de chef dat heeft opgelost.
+                </span>
+              </li>
+              <li className="flex gap-2.5">
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-800 text-[11px] font-semibold text-white">3</span>
+                <span>
+                  <strong>Kies wie gepickt heeft en klik op de groene knop "Voltooi pickronde".</strong>{' '}
+                  Daarna gaat alles vanzelf: de order wordt <em>Verzonden</em>, de factuur volgt, en de
+                  zending wordt automatisch bij de vervoerder aangemeld. Je hoeft hier verder niets te
+                  doen — de track &amp; trace komt binnen zodra de vervoerder reageert.
+                </span>
+              </li>
+            </ol>
+          </div>
+        ) : (
+          <div className="mb-4 rounded-[var(--radius-sm)] border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            Deze zending is al voltooid en aangemeld bij de vervoerder (status{' '}
+            <strong>{zending.status}</strong>). Je kunt hier alleen nog de labels of de pakbon
+            opnieuw printen — afvinken en voltooien is niet meer nodig.
+          </div>
+        )}
 
         {zending.status === 'Picken' && (
           <div className="mb-4 space-y-3">
@@ -253,6 +285,8 @@ export function ZendingPrintSetPage() {
                 colliTotal={labels.length}
                 serviceCode={zending.service_code}
                 sscc={label.sscc}
+                omschrijvingSnapshot={label.omschrijvingSnapshot}
+                klantOmschrijvingSnapshot={label.klantOmschrijvingSnapshot}
               />
             ) : (
               <ShippingLabel
@@ -263,6 +297,8 @@ export function ZendingPrintSetPage() {
                 colliTotal={labels.length}
                 vervoerderNaam={vervoerder.naam}
                 sscc={label.sscc}
+                omschrijvingSnapshot={label.omschrijvingSnapshot}
+                klantOmschrijvingSnapshot={label.klantOmschrijvingSnapshot}
                 labelFormaat={labelFormaat ?? undefined}
               />
             ),
@@ -293,6 +329,12 @@ export function ZendingPrintSetPage() {
         }
 
         @media print {
+          /* Lege vervolg-pagina's voorkomen: de app-layout (min-h-screen +
+             main-marges) is in print onzichtbaar maar neemt wél ruimte in,
+             waardoor de Zebra een leeg etiket uitvoert. */
+          html, body { height: auto !important; }
+          .min-h-screen { min-height: 0 !important; }
+          main { margin: 0 !important; padding: 0 !important; }
           body * { visibility: hidden; }
           .zending-printset,
           .zending-printset * { visibility: visible; }
@@ -356,7 +398,12 @@ export function ZendingPrintSetPage() {
           .tapijt-stickers .sticker-wrapper > span {
             display: none !important;
           }
+          /* page: MOET ook op .sticker-wrapper (de box met de forced
+             break) — stond hij alleen op het geneste .sticker-label, dan
+             wisselt de page-naam (default ↔ tapijt-sticker) bij elke
+             wrapper-grens en injecteert Chromium een blanco tussenpagina. */
           .tapijt-stickers .sticker-wrapper {
+            page: tapijt-sticker;
             margin: 0 !important;
             padding: 0 !important;
             break-inside: avoid !important;
@@ -366,8 +413,14 @@ export function ZendingPrintSetPage() {
             break-after: page !important;
             page-break-after: always !important;
           }
+          /* 2mm kleiner dan de 148x106-page: een exact passende sticker
+             overflowt bij sub-pixel-afronding of een onbedrukbare
+             printerrand → blanco vervolgpagina per sticker. Onderkant van
+             de sticker is witruimte, dus visueel geen verschil. */
           .tapijt-stickers .sticker-label {
             page: tapijt-sticker;
+            width: 146mm !important;
+            height: 104mm !important;
             break-inside: avoid !important;
             page-break-inside: avoid !important;
             margin: 0 !important;

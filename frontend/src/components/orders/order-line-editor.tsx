@@ -1,5 +1,5 @@
 import { useRef } from 'react'
-import { Trash2 } from 'lucide-react'
+import { Trash2, X } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { formatCurrency } from '@/lib/utils/formatters'
 import {
@@ -14,6 +14,7 @@ import {
 import { AFWERKING_OPTIES } from '@/lib/utils/constants'
 import { UitwisselbaarTekortHint, IoLevertijdHint, berekenRegelDekking } from '@/modules/reserveringen'
 import { getVormDisplay } from '@/lib/utils/vorm-labels'
+import { MaatwerkArtikelPicker } from './maatwerk-artikel-picker'
 import type { SelectedArticle, SubstitutionInfo } from './article-selector'
 import type { OrderRegelFormData, PrijsBron, PrijsBreakdown } from '@/lib/supabase/queries/order-mutations'
 import { SHIPPING_PRODUCT_ID } from '@/lib/constants/shipping'
@@ -317,6 +318,27 @@ function MaatwerkLineRow({
         <tr className="border-b border-slate-50 bg-purple-50/30">
           <td colSpan={8} className="px-3 py-2">
             <div className="flex flex-wrap items-center gap-3 text-xs">
+              <label className="flex items-center gap-1.5">
+                <span className="text-slate-500">Artikel</span>
+                {line.artikelnr ? (
+                  <span className="inline-flex items-center gap-1.5 font-mono text-xs text-slate-700 bg-white border border-slate-200 rounded px-2 py-1">
+                    {line.artikelnr}{line.karpi_code ? ` · ${line.karpi_code}` : ''}
+                    <button
+                      type="button"
+                      title="Product loskoppelen"
+                      onClick={() => updateLine(index, { artikelnr: undefined, karpi_code: undefined })}
+                      className="text-slate-400 hover:text-rose-500"
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                ) : (
+                  <MaatwerkArtikelPicker
+                    onSelect={(a) => updateLine(index, { artikelnr: a.artikelnr, karpi_code: a.karpi_code ?? undefined })}
+                  />
+                )}
+              </label>
+
               <label className="flex items-center gap-1.5">
                 <span className="text-slate-500">Afwerking</span>
                 <select

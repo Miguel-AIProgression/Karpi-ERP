@@ -12,6 +12,7 @@ import {
   fetchStandaardBandKleur,
   fetchStandaardMatenVoorKwaliteit,
   fetchMaatwerkArtikelNr,
+  fetchMaatwerkArtikelExact,
   fetchKwaliteitM2Prijs,
   berekenPrijsOppervlakM2,
   berekenMaatwerkPrijs,
@@ -79,6 +80,9 @@ export function KwaliteitFirstSelector({
   const [pendingArticle, setPendingArticle] = useState<SelectedArticle | null>(null)
   const [klantM2Prijs, setKlantM2Prijs] = useState<number | null>(null)
   const [standaardBandKleurId, setStandaardBandKleurId] = useState<number | null>(null)
+  // Double-submit-guard: handleAdd is async (artikel- + klantnaam-lookup) —
+  // zonder guard voegt een dubbele klik dezelfde regel twee keer toe.
+  const [adding, setAdding] = useState(false)
 
   // Op maat state
   const [vormData, setVormData] = useState<VormAfmetingData>({
@@ -406,7 +410,16 @@ export function KwaliteitFirstSelector({
   }
 
   async function handleAdd() {
-    if (!canAdd || !selectedKleur || !selectedKwaliteit) return
+    if (!canAdd || adding || !selectedKleur || !selectedKwaliteit) return
+    setAdding(true)
+    try {
+      await doAdd(selectedKleur, selectedKwaliteit)
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  async function doAdd(selectedKleur: KleurOptie, selectedKwaliteit: KwaliteitOptie) {
     const totalRollen = selectedKleur.aantal_rollen + selectedKleur.equiv_rollen
     // Klant-eigen kwaliteitsnaam ophalen zodat de maatwerk-regel óók de
     // blauwe sub-tekst krijgt, consistent met standaard regels (handleArticleSelected
@@ -431,12 +444,32 @@ export function KwaliteitFirstSelector({
       : (vormData.lengteCm && vormData.breedteCm
         ? `${vormData.lengteCm}x${vormData.breedteCm} cm`
         : '')
+    // Eigenaar-besluit (bug phdobbe, ORD-2026-0188): de regel koppelt het
+    // generieke MAATWERK-artikel van EXACT (kwaliteit, kleur) — conventie
+    // `{KWAL}{KLEUR}MAATWERK`. `selectedKleur.artikelnr` is het ROL-product
+    // uit `kleuren_voor_kwaliteit` (NULL als er geen rol-product bestaat),
+    // waardoor regels zonder artikelnr konden landen (ORD-2026-0166/0188).
+    // Fallback: rol-product is nog altijd beter dan helemaal niets.
+    let maatwerkArtikel: Awaited<ReturnType<typeof fetchMaatwerkArtikelExact>> = null
+    try {
+      maatwerkArtikel = await fetchMaatwerkArtikelExact(selectedKwaliteit.code, selectedKleur.kleur_code)
+    } catch (e) {
+      console.warn('[maatwerk artikel lookup faalde]', e)
+    }
+    const lineArtikelnr = maatwerkArtikel?.artikelnr ?? selectedKleur.artikelnr ?? undefined
+    if (!lineArtikelnr) {
+      // Niet-blokkerend: regel mag door, orders-overzicht signaleert via
+      // heeft_unmatched_regels (mig 094) "actie vereist".
+      console.warn(
+        `[maatwerk] Geen MAATWERK-artikel gevonden voor ${selectedKwaliteit.code}/${selectedKleur.kleur_code} — regel wordt zonder artikelnr toegevoegd`,
+      )
+    }
     // Bij swap: factuur toont bestelde kwaliteit; intern wijst fysiek_artikelnr
     // naar de MAATWERK-artikelref van de uitwisselbare kwaliteit zodat snijplan/
     // voorraadreservering op de juiste rol landt (omstickeer-model).
     const line: OrderRegelFormData = {
-      artikelnr: selectedKleur.artikelnr ?? undefined,
-      karpi_code: selectedKleur.karpi_code ?? `${selectedKwaliteit.code}${selectedKleur.kleur_code}`,
+      artikelnr: lineArtikelnr,
+      karpi_code: maatwerkArtikel?.karpi_code ?? selectedKleur.karpi_code ?? `${selectedKwaliteit.code}${selectedKleur.kleur_code}`,
       omschrijving: `${selectedKwaliteit.omschrijving ?? selectedKwaliteit.code} ${selectedKleur.kleur_label} - Op maat ${selectedVorm?.naam ?? vormData.vormCode}${afmetingLabel ? ` ${afmetingLabel}` : ''}`,
       klant_eigen_naam,
       orderaantal: 1,
@@ -565,8 +598,9 @@ export function KwaliteitFirstSelector({
           </span>
         </div>
 
-        {/* Kleurfilter (chips) */}
-        {beschikbareKleuren.length > 1 && (
+        {/* Kleurfilter (chips) — verborgen zodra de voorraad-0-keuze open staat,
+            zodat de SubstitutionPicker niet onder een lange maten-lijst verdwijnt. */}
+        {!pendingArticle && beschikbareKleuren.length > 1 && (
           <div className="flex flex-wrap gap-1.5">
             <button
               type="button"
@@ -596,8 +630,8 @@ export function KwaliteitFirstSelector({
           </div>
         )}
 
-        {/* Maten lijst */}
-        {matenLoading ? (
+        {/* Maten lijst — idem verborgen zolang pendingArticle open staat */}
+        {!pendingArticle && (matenLoading ? (
           <div className="text-sm text-slate-400 py-2">Laden...</div>
         ) : (
           <div className="border border-slate-200 rounded-[var(--radius-sm)] divide-y divide-slate-100 overflow-hidden">
@@ -689,9 +723,10 @@ export function KwaliteitFirstSelector({
               )
             })()}
           </div>
-        )}
+        ))}
 
-        {/* Substitution picker bij geen voorraad */}
+        {/* Substitution picker bij geen voorraad — vervangt de maten-lijst
+            zodat de keuze (omstickeren / toch toevoegen) direct in beeld staat. */}
         {pendingArticle && (
           <SubstitutionPicker
             artikelnr={pendingArticle.artikelnr}
@@ -702,6 +737,7 @@ export function KwaliteitFirstSelector({
               setPendingArticle(null)
               handleReset()
             }}
+            onCancel={() => setPendingArticle(null)}
           />
         )}
       </div>
@@ -791,7 +827,7 @@ export function KwaliteitFirstSelector({
             </div>
             <button
               type="button"
-              disabled={!canAdd}
+              disabled={!canAdd || adding}
               onClick={handleAdd}
               className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-purple-600 rounded-[var(--radius-sm)] hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >

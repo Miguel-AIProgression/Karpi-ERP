@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle2, Circle } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { confectieDeadline, type ConfectiePlanningForwardRow } from '@/modules/confectie'
 import { AFWERKING_MAP } from '@/lib/utils/constants'
+import { CONFECTIE_INSTROOM } from '@/lib/utils/snijplan-status'
 
 const MAAND_KORT = ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec']
 
@@ -35,7 +36,7 @@ function fmtDeadline(d: Date): string {
 }
 
 function isGesneden(row: ConfectiePlanningForwardRow): boolean {
-  return row.snijplan_status === 'Gesneden' || row.snijplan_status === 'In confectie'
+  return (CONFECTIE_INSTROOM as readonly string[]).includes(row.snijplan_status)
 }
 
 function sortRows(rows: ConfectiePlanningForwardRow[]): ConfectiePlanningForwardRow[] {

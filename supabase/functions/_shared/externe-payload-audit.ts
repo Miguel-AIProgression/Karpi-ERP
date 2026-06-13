@@ -7,6 +7,7 @@
 //
 // HARDE regel: loggen mag de order-/bericht-verwerking NOOIT blokkeren —
 // daarom staat alles in try/catch en is falen altijd "warn + doorgaan".
+
 // De client-param is bewust `any`: de exacte `SupabaseClient`-generics
 // verschillen per intake-functie (`ReturnType<typeof createClient>` vs. de
 // geïmporteerde `SupabaseClient`) en de getypte client laat `.rpc()` voor
@@ -17,24 +18,33 @@
 type RpcClient = any
 
 export interface LogExternePayloadArgs {
-  /** Kanaal-discriminator, bv. 'shopify' | 'hst' | 'rhenus' | 'email'. */
+  /** Kanaal-discriminator, bv. 'shopify' | 'lightspeed' | 'webshop' |
+   *  'email' | 'klant_po' | 'supplier_portal' | 'orderbevestiging' | 'factuur'. */
   kanaal: string
-  /** Letterlijke payload-string (request-body / order-JSON als tekst). */
+  /** Letterlijke payload-string (request-body / order-JSON / e-mail-bron). */
   raw: string
-  /** Herkomst, bv. het *.myshopify.com-domein of de vervoerder-host. */
+  /** Herkomst/bestemming, bv. een domein, afzender-adres of host. */
   bron: string
-  /** Externe id (Shopify order id, transport-order id, …) of null. */
+  /** Externe id (order id, message-id, …) of null. */
   externeId: string | null
+  /** 'in' (ontvangen) of 'out' (verstuurd) — default 'in'. */
+  richting?: 'in' | 'out'
   contentType?: string | null
   headers?: Record<string, string>
   /** Geparste payload als JSON (zodat de audit doorzoekbaar is). */
   json?: unknown
+  /** Optioneel: directe eindstatus + order_id voor uitgaande berichten die
+   *  in één keer klaar zijn (geen aparte markeer-stap nodig). */
+  status?: 'ontvangen' | 'verwerkt' | 'fout'
+  orderId?: number | null
+  fout?: string | null
 }
 
 /**
- * Schrijft een rauwe payload weg met status 'ontvangen' (inbound) en geeft het
- * rij-id terug voor de latere `markeerExternePayload`-afronding. Geeft `null`
- * terug bij elke fout — de caller mag dan gewoon doorverwerken.
+ * Schrijft een rauwe payload weg en geeft het rij-id terug voor de latere
+ * `markeerExternePayload`-afronding. Geeft `null` terug bij elke fout — de
+ * caller mag dan gewoon doorverwerken. Default-status 'ontvangen' (inbound);
+ * geef `status`/`richting='out'` mee voor een uitgaand bericht dat al af is.
  */
 export async function logExternePayload(
   supabase: RpcClient,
@@ -49,6 +59,10 @@ export async function logExternePayload(
       p_content_type: args.contentType ?? null,
       p_headers: args.headers ?? {},
       p_payload_json: args.json ?? null,
+      p_richting: args.richting ?? 'in',
+      p_status: args.status ?? 'ontvangen',
+      p_order_id: args.orderId ?? null,
+      p_fout: args.fout ?? null,
     })
     if (error) {
       console.warn(`[payload-audit:${args.kanaal}] insert faalde:`, error.message)

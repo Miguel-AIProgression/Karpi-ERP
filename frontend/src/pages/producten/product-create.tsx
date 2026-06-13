@@ -205,6 +205,15 @@ export function ProductCreatePage() {
       setError('Voeg minimaal één variant toe met een artikelnummer.')
       return
     }
+    // Mig 359: karpi_code is verplicht voor rol/vast (DB-trigger weigert
+    // anders). Optioneel voor overig/staaltje (banden/calibra/staaltjes).
+    const zonderKarpi = filledRows.filter(
+      r => (r.product_type === 'rol' || r.product_type === 'vast') && !r.karpi_code.trim()
+    )
+    if (zonderKarpi.length > 0) {
+      setError(`Karpi-code is verplicht voor producten van type Rol of Standaard maat. Vul de Karpi-code in bij: ${zonderKarpi.map(r => r.artikelnr.trim()).join(', ')}.`)
+      return
+    }
     if (kwaliteitBestaat) {
       setError(`Kwaliteitscode "${kwaliteitCode}" bestaat al in de database. Gebruik een andere code of koppel het product aan de bestaande kwaliteit via het productdetail-scherm.`)
       return
@@ -465,8 +474,12 @@ export function ProductCreatePage() {
                         <input
                           value={r.karpi_code}
                           onChange={e => updateRow(r._key, 'karpi_code', e.target.value)}
+                          required={r.product_type === 'rol' || r.product_type === 'vast'}
                           className="input w-36 font-mono text-xs"
                           placeholder="FAMU48XX160230"
+                          title={r.product_type === 'rol' || r.product_type === 'vast'
+                            ? 'Verplicht voor type Rol / Standaard maat'
+                            : undefined}
                         />
                       </Td>
                       <Td>

@@ -22,6 +22,7 @@ export {
   upsertHandelspartnerConfig,
   ruimEdiDemoData,
   fetchInkomendBerichtVoorOrder,
+  fetchUitgaandeEdiBerichtenVoorOrder,
   type EdiBerichtListItem,
   type EdiBerichtenFilters,
   type EdiHandelspartnerConfig,
@@ -29,10 +30,12 @@ export {
   type EdiRichting,
   type EdiBerichtType,
   type EdiBerichtDetail,
+  type EdiUitgaandTijdlijnItem,
 } from './queries/edi'
 
-export { bevestigOrderViaEdi } from './lib/bevestig-helper'
+export { bevestigOrderViaEdi, bevestigOrderZonderEdiBericht } from './lib/bevestig-helper'
 export { KARPI_GLN_DEFAULT } from './lib/karpi-fixed-width'
+export { useBevestigEdiOrder } from './lib/use-bevestig-edi-order'
 
 export {
   useEdiBerichten,

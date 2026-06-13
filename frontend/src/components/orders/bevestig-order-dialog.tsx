@@ -2,11 +2,20 @@ import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase/client'
 import { CheckCircle, Mail, Loader2 } from 'lucide-react'
+import { bevestigOrderZonderEdiBericht } from '@/modules/edi'
 
 interface BevestigOrderDialogProps {
   orderId: number
   orderNr: string
   defaultEmail: string | null
+  isHerversturing?: boolean
+  /**
+   * True als dit een EDI-order is die via e-mail bevestigd wordt (partner zonder
+   * actieve EDI-orderbev — besluit 11-06). Na succesvolle verzending wordt ook de
+   * EDI-leverweek-gate (edi_bevestigd_op) gesloten zodat het "Te bevestigen"-chip
+   * en het amber paneel verdwijnen.
+   */
+  sluitEdiGate?: boolean
   onClose: () => void
 }
 
@@ -40,7 +49,7 @@ async function stuurOrderbevestiging(params: {
   return json as { order_nr: string; verstuurd_naar: string; bevestigd_at: string }
 }
 
-export function BevestigOrderDialog({ orderId, orderNr, defaultEmail, onClose }: BevestigOrderDialogProps) {
+export function BevestigOrderDialog({ orderId, orderNr, defaultEmail, isHerversturing = false, sluitEdiGate = false, onClose }: BevestigOrderDialogProps) {
   const [email, setEmail] = useState(defaultEmail ?? '')
   const qc = useQueryClient()
 
@@ -53,9 +62,23 @@ export function BevestigOrderDialog({ orderId, orderNr, defaultEmail, onClose }:
         bevestigdDoor: user?.email ?? user?.id ?? 'onbekend',
       })
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       qc.invalidateQueries({ queryKey: ['order', orderId] })
       qc.invalidateQueries({ queryKey: ['orders'] })
+
+      // Bij een EDI-order die via e-mail bevestigd wordt: sluit ook de EDI-
+      // leverweek-gate (edi_bevestigd_op) zodat het "Te bevestigen"-chip en
+      // het amber paneel verdwijnen. Best-effort: fout breekt succes-UX niet.
+      if (sluitEdiGate) {
+        try {
+          await bevestigOrderZonderEdiBericht(orderId)
+          qc.invalidateQueries({ queryKey: ['edi-berichten'] })
+          qc.invalidateQueries({ queryKey: ['edi-inkomend-voor-order', orderId] })
+          qc.invalidateQueries({ queryKey: ['edi-uitgaand-voor-order', orderId] })
+        } catch (gateErr) {
+          console.warn('[BevestigOrderDialog] edi-gate sluiten mislukt (niet-blokkerend):', gateErr)
+        }
+      }
     },
   })
 
@@ -85,10 +108,15 @@ export function BevestigOrderDialog({ orderId, orderNr, defaultEmail, onClose }:
           <>
             <div className="flex items-center gap-2 mb-1">
               <Mail size={18} className="text-terracotta-500" />
-              <h3 className="text-lg font-semibold text-slate-900">Orderbevestiging versturen</h3>
+              <h3 className="text-lg font-semibold text-slate-900">
+                {isHerversturing ? 'Orderbevestiging opnieuw versturen' : 'Orderbevestiging versturen'}
+              </h3>
             </div>
             <p className="text-sm text-slate-500 mb-5">
-              Er wordt een PDF-orderbevestiging van <strong>{orderNr}</strong> gegenereerd en per e-mail verstuurd.
+              {isHerversturing
+                ? <>Er wordt een nieuwe PDF-orderbevestiging van <strong>{orderNr}</strong> gegenereerd en per e-mail verstuurd. Het vorige e-mailadres is vooringevuld.</>
+                : <>Er wordt een PDF-orderbevestiging van <strong>{orderNr}</strong> gegenereerd en per e-mail verstuurd.</>
+              }
             </p>
 
             <div className="mb-5">

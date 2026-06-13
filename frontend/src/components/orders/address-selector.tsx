@@ -9,6 +9,7 @@ interface Address {
   postcode: string | null
   plaats: string | null
   land: string | null
+  email: string | null
   gln_afleveradres: string | null
 }
 
@@ -18,6 +19,10 @@ export interface AfleverAdres {
   postcode: string
   plaats: string
   land: string
+  /** E-mailadres van dit afleveradres (mig 364), NULL als niet ingevuld. */
+  email: string | null
+  /** Intern DB-id van het afleveradressen-record (UI-only, voor "opslaan als permanent"). */
+  afleveradresId?: number
 }
 
 interface AddressSelectorProps {
@@ -25,16 +30,20 @@ interface AddressSelectorProps {
   onSelect: (addr: AfleverAdres) => void
   /** Wanneer afhalen aanstaat → tonen we adres-keuze niet (Karpi-locatie is dan het adres). */
   disabled?: boolean
+  /** FALSE in edit-modus: het auto-selecteren van het eerste afleveradres bij
+   *  mount zou daar het opgeslagen order-adres (incl. afl_email) overschrijven
+   *  nog vóór de gebruiker iets doet (incident ORD-2026-0350, 11-06-2026). */
+  autoSelect?: boolean
 }
 
 const NIEUW_OPTION = '__nieuw__'
 
-export function AddressSelector({ debiteurNr, onSelect, disabled = false }: AddressSelectorProps) {
+export function AddressSelector({ debiteurNr, onSelect, disabled = false, autoSelect = true }: AddressSelectorProps) {
   const [addresses, setAddresses] = useState<Address[]>([])
   const [selectedId, setSelectedId] = useState<string>('')
   const [selectedGln, setSelectedGln] = useState<string | null>(null)
   const [manualOpen, setManualOpen] = useState(false)
-  const [manual, setManual] = useState<AfleverAdres>({ naam: '', adres: '', postcode: '', plaats: '', land: 'NL' })
+  const [manual, setManual] = useState<{ naam: string; adres: string; postcode: string; plaats: string; land: string }>({ naam: '', adres: '', postcode: '', plaats: '', land: 'NL' })
   const [persist, setPersist] = useState(false)
   const [savingError, setSavingError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -43,7 +52,7 @@ export function AddressSelector({ debiteurNr, onSelect, disabled = false }: Addr
     if (!debiteurNr) { setAddresses([]); setSelectedId(''); setSelectedGln(null); return }
     supabase
       .from('afleveradressen')
-      .select('id, adres_nr, naam, adres, postcode, plaats, land, gln_afleveradres')
+      .select('id, adres_nr, naam, adres, postcode, plaats, land, email, gln_afleveradres')
       .eq('debiteur_nr', debiteurNr)
       .order('adres_nr')
       .then(({ data }) => {
@@ -51,7 +60,7 @@ export function AddressSelector({ debiteurNr, onSelect, disabled = false }: Addr
         setAddresses(addrs)
         // Auto-selecteer eerste echte afleveradres (adres_nr > 0); adres_nr 0 is het factuuradres
         const defaultAddr = addrs.find(a => a.adres_nr > 0)
-        if (defaultAddr) {
+        if (autoSelect && defaultAddr) {
           setSelectedId(String(defaultAddr.id))
           setSelectedGln(defaultAddr.gln_afleveradres ?? null)
           onSelect({
@@ -60,6 +69,8 @@ export function AddressSelector({ debiteurNr, onSelect, disabled = false }: Addr
             postcode: defaultAddr.postcode ?? '',
             plaats: defaultAddr.plaats ?? '',
             land: defaultAddr.land ?? 'NL',
+            email: defaultAddr.email ?? null,
+            afleveradresId: defaultAddr.id,
           })
         }
       })
@@ -74,10 +85,10 @@ export function AddressSelector({ debiteurNr, onSelect, disabled = false }: Addr
     }
     setSavingError(null)
 
+    let nieuwId: number | undefined
     if (persist && debiteurNr) {
       setSaving(true)
       try {
-        // Volgend adres_nr bepalen — adres_nr 0 = hoofdadres, dus +1 op max bestaande.
         const maxNr = addresses.reduce((m, a) => Math.max(m, a.adres_nr), 0)
         const { data: nieuw, error } = await supabase
           .from('afleveradressen')
@@ -90,10 +101,13 @@ export function AddressSelector({ debiteurNr, onSelect, disabled = false }: Addr
             plaats: manual.plaats.trim(),
             land: manual.land.trim() || 'NL',
           })
-          .select('id, adres_nr, naam, adres, postcode, plaats, land, gln_afleveradres')
+          .select('id, adres_nr, naam, adres, postcode, plaats, land, email, gln_afleveradres')
           .single()
         if (error) throw error
-        if (nieuw) setAddresses((prev) => [...prev, nieuw as Address])
+        if (nieuw) {
+          setAddresses((prev) => [...prev, nieuw as Address])
+          nieuwId = (nieuw as Address).id
+        }
       } catch (e) {
         setSavingError(e instanceof Error ? e.message : 'Opslaan mislukt')
         setSaving(false)
@@ -108,6 +122,8 @@ export function AddressSelector({ debiteurNr, onSelect, disabled = false }: Addr
       postcode: manual.postcode.trim(),
       plaats: manual.plaats.trim(),
       land: manual.land.trim() || 'NL',
+      email: null,
+      afleveradresId: nieuwId,
     })
     setSelectedGln(null)
     setManualOpen(false)
@@ -138,6 +154,8 @@ export function AddressSelector({ debiteurNr, onSelect, disabled = false }: Addr
                   postcode: addr.postcode ?? '',
                   plaats: addr.plaats ?? '',
                   land: addr.land ?? 'NL',
+                  email: addr.email ?? null,
+                  afleveradresId: addr.id,
                 })
                 setSelectedGln(addr.gln_afleveradres ?? null)
               } else {

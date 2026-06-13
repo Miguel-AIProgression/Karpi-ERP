@@ -132,6 +132,7 @@ function stripPdf(body: any): any {
 function extractErrorMsg(body: any, status: number): string {
   if (body && typeof body === 'object') {
     return (
+      body.ErrorMessage ??   // HST gebruikt dit veld (PascalCase) — zónder dit kreeg de operator kaal "HTTP 400"
       body.message ??
       body.Message ??
       body.error ??
@@ -145,4 +146,11 @@ function extractErrorMsg(body: any, status: number): string {
     return body.slice(0, 500);
   }
   return `HTTP ${status}`;
+}
+
+// Test-alias: extractErrorMsg is bewust module-privé; deze export ontsluit 'm
+// puur voor de unit-test zonder de publieke API te vergroten.
+export function extractErrorMsgVoorTest(body: unknown, status: number): string {
+  // deno-lint-ignore no-explicit-any
+  return extractErrorMsg(body as any, status);
 }

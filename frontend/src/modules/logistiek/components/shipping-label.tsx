@@ -1,4 +1,11 @@
 import { Code128Barcode } from './code128-barcode'
+import { ShippingLabelTall } from './shipping-label-tall'
+import {
+  labelDatumKort,
+  labelReferentie,
+  productMaat,
+  productNamen,
+} from '@/modules/logistiek/lib/shipping-label-data'
 import {
   DEFAULT_LABEL_BREEDTE_MM,
   DEFAULT_LABEL_HOOGTE_MM,
@@ -6,77 +13,92 @@ import {
 } from '@/modules/logistiek/lib/printset'
 import type { ZendingPrintRegel, ZendingPrintSet } from '@/modules/logistiek/queries/zendingen'
 
-interface ShippingLabelProps {
+export interface ShippingLabelProps {
   zending: ZendingPrintSet
   regel: ZendingPrintRegel | null
   colliIndex: number
   colliTotal: number
   vervoerderNaam: string
-  sscc: string
+  /** SSCC uit `zending_colli` (= de bij de vervoerder aangemelde barcode).
+   * null → label rendert zonder barcode; er mag nooit een niet-aangemelde
+   * barcode geprint worden. */
+  sscc: string | null
+  /** Mig 209/388: bevroren omschrijving-snapshots uit `zending_colli` — single
+   * source, gelijk aan wat de vervoerder krijgt. null → val terug op live `regel`. */
+  omschrijvingSnapshot: string | null
+  klantOmschrijvingSnapshot: string | null
   labelFormaat?: LabelFormaat
 }
 
-interface RegelNamen {
-  klantNaam: string
-  karpiNaam: string | null
-}
-
-function productNamen(regel: ZendingPrintRegel | null): RegelNamen {
-  const orderRegel = regel?.order_regels
-  if (!orderRegel) {
-    return { klantNaam: regel?.artikelnr ?? 'Artikel', karpiNaam: null }
-  }
-  const klantNaam = [orderRegel.omschrijving, orderRegel.omschrijving_2].filter(Boolean).join(' ')
-  const karpiNaam = orderRegel.producten?.omschrijving ?? null
-  return { klantNaam: klantNaam || (regel?.artikelnr ?? 'Artikel'), karpiNaam }
-}
-
-function productMaat(regel: ZendingPrintRegel | null): string {
-  const orderRegel = regel?.order_regels
-  if (!orderRegel?.is_maatwerk) return ''
-  const lengte = orderRegel.maatwerk_lengte_cm
-  const breedte = orderRegel.maatwerk_breedte_cm
-  if (!lengte || !breedte) return ''
-  return `${breedte}x${lengte} cm`
-}
-
-function datumKort(): string {
-  const now = new Date()
-  const dd = String(now.getDate()).padStart(2, '0')
-  const mm = String(now.getMonth() + 1).padStart(2, '0')
-  const yy = String(now.getFullYear()).slice(-2)
-  return `${dd}/${mm}/${yy}`
-}
-
-// Cell-afmetingen in mm — alles wordt absoluut gepositioneerd zodat de
-// print-engine het label NIET over twee pagina's kan opbreken. De som van de
-// rij-hoogtes is precies hoogteMm; idem voor de kolommen.
+// Basis-celafmetingen in mm bij het 76,2×50,8-ontwerp — alles wordt absoluut
+// gepositioneerd zodat de print-engine het label NIET over twee pagina's kan
+// opbreken. Grotere liggende formaten (HST 152,4×76,2 sinds mig 362) schalen
+// deze maten én de fonts mee met de label-hoogte (factor s).
 const COL_RECHTS_MM = 22
 const RIJ1_MM = 10
 const RIJ3_MM = 13
 
-export function ShippingLabel({
+export function ShippingLabel(props: ShippingLabelProps) {
+  // 0.5mm aftrekken voor sub-pixel rounding-marge bij printen.
+  const breedteMm = (props.labelFormaat?.breedteMm ?? DEFAULT_LABEL_BREEDTE_MM) - 0.5
+  const hoogteMm = (props.labelFormaat?.hoogteMm ?? DEFAULT_LABEL_HOOGTE_MM) - 0.5
+
+  // Staande formaten (hoogte > breedte) krijgen het gestapelde ontwerp;
+  // liggende formaten het vertrouwde 3-rijen-grid, meegeschaald.
+  if (hoogteMm > breedteMm) {
+    return <ShippingLabelTall {...props} breedteMm={breedteMm} hoogteMm={hoogteMm} />
+  }
+  return <ShippingLabelCompact {...props} breedteMm={breedteMm} hoogteMm={hoogteMm} />
+}
+
+function ShippingLabelCompact({
   zending,
   regel,
   colliIndex,
   colliTotal,
   vervoerderNaam,
   sscc,
-  labelFormaat,
-}: ShippingLabelProps) {
+  omschrijvingSnapshot,
+  klantOmschrijvingSnapshot,
+  breedteMm,
+  hoogteMm,
+}: ShippingLabelProps & { breedteMm: number; hoogteMm: number }) {
   const order = zending.orders
-  const namen = productNamen(regel)
+  const snapshot = { omschrijvingSnapshot, klantOmschrijvingSnapshot }
+  const namen = productNamen(regel, snapshot)
   const toonKarpi = namen.karpiNaam && namen.karpiNaam !== namen.klantNaam
-  const maat = productMaat(regel)
+  const maat = productMaat(regel, snapshot)
   const land = zending.afl_land ?? 'NL'
-  const barcodeValue = `00${sscc}`
-  const ref = String(order.oud_order_nr ?? order.id).padStart(6, '0')
+  const barcodeValue = sscc ? `00${sscc}` : null
+  const ref = labelReferentie(order)
 
-  // 0.5mm aftrekken voor sub-pixel rounding-marge bij printen.
-  const breedteMm = (labelFormaat?.breedteMm ?? DEFAULT_LABEL_BREEDTE_MM) - 0.5
-  const hoogteMm = (labelFormaat?.hoogteMm ?? DEFAULT_LABEL_HOOGTE_MM) - 0.5
-  const colLinksMm = breedteMm - COL_RECHTS_MM
-  const rij2Mm = hoogteMm - RIJ1_MM - RIJ3_MM
+  // Schaalfactor t.o.v. het basis-ontwerp: 1.0 op een 3"×2"-rol, 1.5 op de
+  // volle 3"×6" liggend. Hoogte stuurt rijen en fonts; de rechterkolom blijft
+  // proportioneel aan de BREEDTE zodat de verhoudingen van het origineel
+  // behouden blijven (anders oogt de linkerkolom uitgerekt).
+  const s = hoogteMm / (DEFAULT_LABEL_HOOGTE_MM - 0.5)
+  const fz = (px: number) => `${Math.round(px * s * 10) / 10}px`
+  const dik = (px: number) => `${Math.max(px, Math.round(px * s))}px`
+
+  // Ingebouwde witmarge rondom, zoals de oude WC-referentie-stickers (print
+  // staat ~4mm van de stickerrand). Maakt het label meteen robuust tegen
+  // hairline-overflow: het grid is kleiner dan de pagina, dus de print-engine
+  // heeft nooit reden om naar een tweede pagina te breken.
+  const margeMm = 2.5 * s
+  // De Zebra snijdt links een paar mm af (fysieke printkop-offset op de rol)
+  // — extra linkermarge schuift het hele ontwerp van de rand af.
+  const extraLinksMm = 4
+  const binnenBreedteMm = breedteMm - 2 * margeMm - extraLinksMm
+  const binnenHoogteMm = hoogteMm - 2 * margeMm
+
+  const colRechtsMm = binnenBreedteMm * (COL_RECHTS_MM / (DEFAULT_LABEL_BREEDTE_MM - 0.5))
+  const rij1Mm = RIJ1_MM * s
+  const rij3Mm = RIJ3_MM * s
+  const colLinksMm = binnenBreedteMm - colRechtsMm
+  const rij2Mm = binnenHoogteMm - rij1Mm - rij3Mm
+  // Beschikbare breedte voor de barcode (linkerkolom minus padding) — de
+  // barcode kiest daarbinnen zelf een dot-aligned module-breedte.
+  const barcodeFitMm = colLinksMm - 2 * s
 
   const cellBase: React.CSSProperties = {
     position: 'absolute',
@@ -86,7 +108,7 @@ export function ShippingLabel({
 
   return (
     <div
-      className="shipping-label bg-white text-slate-950"
+      className="shipping-label bg-white"
       data-shipping-label-v="3-absolute"
       style={{
         width: `${breedteMm}mm`,
@@ -98,8 +120,11 @@ export function ShippingLabel({
         overflow: 'hidden',
         display: 'block',
         contain: 'layout paint size',
+        color: '#000',
+        padding: `${margeMm}mm ${margeMm}mm ${margeMm}mm ${margeMm + extraLinksMm}mm`,
       }}
     >
+      <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       {/* Rij 1 — links: order/uw-ref + productnaam */}
       <div
         style={{
@@ -107,13 +132,13 @@ export function ShippingLabel({
           top: 0,
           left: 0,
           width: `${colLinksMm}mm`,
-          height: `${RIJ1_MM}mm`,
+          height: `${rij1Mm}mm`,
           borderRight: '1px solid #000',
           borderBottom: '1px solid #000',
-          padding: '0.5mm 1mm',
+          padding: `${0.5 * s}mm ${s}mm`,
         }}
       >
-        <div style={{ fontSize: '6px', lineHeight: 1.1 }}>
+        <div style={{ fontSize: fz(6), lineHeight: 1.1 }}>
           <strong>Order:</strong> {order.order_nr}
           {order.klant_referentie && (
             <>
@@ -124,11 +149,11 @@ export function ShippingLabel({
         </div>
         <div
           style={{
-            fontSize: '8px',
+            fontSize: fz(10),
             fontWeight: 700,
             textTransform: 'uppercase',
             lineHeight: 1.1,
-            marginTop: '0.3mm',
+            marginTop: `${0.3 * s}mm`,
             whiteSpace: 'nowrap',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -140,8 +165,7 @@ export function ShippingLabel({
         {toonKarpi && (
           <div
             style={{
-              fontSize: '6px',
-              color: '#475569',
+              fontSize: fz(6),
               lineHeight: 1.1,
               whiteSpace: 'nowrap',
               overflow: 'hidden',
@@ -159,11 +183,11 @@ export function ShippingLabel({
           ...cellBase,
           top: 0,
           right: 0,
-          width: `${COL_RECHTS_MM}mm`,
-          height: `${RIJ1_MM}mm`,
+          width: `${colRechtsMm}mm`,
+          height: `${rij1Mm}mm`,
           borderBottom: '1px solid #000',
-          padding: '0.5mm 1mm',
-          fontSize: '6px',
+          padding: `${0.5 * s}mm ${s}mm`,
+          fontSize: fz(6),
           lineHeight: 1.15,
         }}
       >
@@ -173,31 +197,31 @@ export function ShippingLabel({
         ) : (
           <div>7122 LB Aalten</div>
         )}
-        <div style={{ fontSize: '5px', color: '#475569' }}>Z {zending.zending_nr}</div>
+        <div style={{ fontSize: fz(5) }}>Z {zending.zending_nr}</div>
       </div>
 
       {/* Rij 2 — links: afleveradres met dik kader */}
       <div
         style={{
           ...cellBase,
-          top: `${RIJ1_MM}mm`,
+          top: `${rij1Mm}mm`,
           left: 0,
           width: `${colLinksMm}mm`,
           height: `${rij2Mm}mm`,
           borderRight: '1px solid #000',
-          padding: '1mm',
+          padding: `${s}mm`,
         }}
       >
         <div
           style={{
             height: '100%',
             width: '100%',
-            border: '2px solid #000',
-            padding: '1mm 1.5mm',
-            fontSize: '8px',
+            border: `${dik(2)} solid #000`,
+            padding: `${s}mm ${1.5 * s}mm`,
+            fontSize: fz(8),
             fontWeight: 700,
             textTransform: 'uppercase',
-            lineHeight: 1.25,
+            lineHeight: 1.6,
             boxSizing: 'border-box',
             overflow: 'hidden',
           }}
@@ -208,7 +232,7 @@ export function ShippingLabel({
           <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {zending.afl_adres ?? ''}
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '2mm' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: `${2 * s}mm` }}>
             <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {zending.afl_postcode ?? ''} {zending.afl_plaats ?? ''}
             </span>
@@ -221,11 +245,11 @@ export function ShippingLabel({
       <div
         style={{
           ...cellBase,
-          top: `${RIJ1_MM}mm`,
+          top: `${rij1Mm}mm`,
           right: 0,
-          width: `${COL_RECHTS_MM}mm`,
+          width: `${colRechtsMm}mm`,
           height: `${rij2Mm}mm`,
-          padding: '1mm',
+          padding: `${s}mm`,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -233,12 +257,13 @@ export function ShippingLabel({
       >
         <div
           style={{
-            border: '2px solid #000',
-            padding: '0.5mm 1mm',
-            fontSize: '8px',
+            border: `${dik(3)} solid #000`,
+            padding: `${s}mm ${2 * s}mm`,
+            fontSize: fz(13),
             fontWeight: 700,
             textAlign: 'center',
             lineHeight: 1.1,
+            letterSpacing: '0.03em',
             maxWidth: '100%',
             whiteSpace: 'nowrap',
             overflow: 'hidden',
@@ -256,28 +281,42 @@ export function ShippingLabel({
           bottom: 0,
           left: 0,
           width: `${colLinksMm}mm`,
-          height: `${RIJ3_MM}mm`,
+          height: `${rij3Mm}mm`,
           borderRight: '1px solid #000',
           borderTop: '1px solid #000',
-          padding: '0.5mm 1mm',
+          padding: `${0.5 * s}mm ${s}mm`,
           display: 'flex',
           flexDirection: 'column',
+          alignItems: 'center',
           justifyContent: 'center',
         }}
       >
-        <Code128Barcode value={barcodeValue} className="w-full" style={{ height: '8mm' }} />
-        <div
-          style={{
-            marginTop: '0.3mm',
-            textAlign: 'center',
-            fontFamily: 'monospace',
-            fontSize: '6px',
-            letterSpacing: '0.05em',
-            lineHeight: 1,
-          }}
-        >
-          {barcodeValue}
-        </div>
+        {barcodeValue ? (
+          <>
+            <Code128Barcode
+              value={barcodeValue}
+              fitMm={barcodeFitMm}
+              style={{ height: `${8 * s}mm` }}
+            />
+            <div
+              style={{
+                marginTop: `${0.3 * s}mm`,
+                textAlign: 'center',
+                fontFamily: 'monospace',
+                fontSize: fz(9),
+                fontWeight: 600,
+                letterSpacing: '0.12em',
+                lineHeight: 1,
+              }}
+            >
+              {barcodeValue}
+            </div>
+          </>
+        ) : (
+          <div style={{ fontSize: fz(7), textAlign: 'center' }}>
+            Geen colli-barcode geregistreerd
+          </div>
+        )}
       </div>
 
       {/* Rij 3 — rechts: colli + REFERENTIE + datum/ref */}
@@ -286,8 +325,8 @@ export function ShippingLabel({
           ...cellBase,
           bottom: 0,
           right: 0,
-          width: `${COL_RECHTS_MM}mm`,
-          height: `${RIJ3_MM}mm`,
+          width: `${colRechtsMm}mm`,
+          height: `${rij3Mm}mm`,
           borderTop: '1px solid #000',
           display: 'flex',
           flexDirection: 'column',
@@ -300,20 +339,19 @@ export function ShippingLabel({
             alignItems: 'center',
             justifyContent: 'center',
             borderBottom: '1px solid #000',
-            fontSize: '10px',
+            fontSize: fz(10),
             fontWeight: 700,
             lineHeight: 1,
           }}
         >
           {colliIndex} VAN {colliTotal}
         </div>
-        <div style={{ padding: '0.3mm 1mm' }}>
+        <div style={{ padding: `${0.3 * s}mm ${s}mm` }}>
           <div
             style={{
-              fontSize: '5px',
+              fontSize: fz(5),
               textTransform: 'uppercase',
               letterSpacing: '0.05em',
-              color: '#64748b',
               lineHeight: 1,
             }}
           >
@@ -323,16 +361,17 @@ export function ShippingLabel({
             style={{
               display: 'flex',
               justifyContent: 'space-between',
-              gap: '1mm',
-              fontSize: '7px',
+              gap: `${s}mm`,
+              fontSize: fz(7),
               fontFamily: 'monospace',
               lineHeight: 1.1,
             }}
           >
-            <span>{datumKort()}</span>
+            <span>{labelDatumKort(zending)}</span>
             <span>{ref}</span>
           </div>
         </div>
+      </div>
       </div>
     </div>
   )

@@ -1,6 +1,8 @@
 import { supabase } from '../client'
 import { sanitizeSearch } from '@/lib/utils/sanitize'
 import { fetchKlanteigenNamenMap } from '@/modules/debiteuren'
+import { filterDebiteurTeBevestigen } from '@/lib/orders/intake-predicaten'
+import { filterLeverweekTeBevestigen } from '@/lib/orders/edi-leverweek'
 
 export interface OrderRow {
   id: number
@@ -43,6 +45,15 @@ export interface OrderRow {
   heeft_deadline_conflict_na_swap?: boolean
   /** Datum van het laatste deadline_conflict_na_swap-event (ISO), voor tooltip. */
   deadline_conflict_na_swap_at?: string | null
+  /**
+   * Mig 326: tijdstip van de laatst gedetecteerde levertijd-wijziging door een
+   * leverancier/Karpi-ETA-update (sync_order_afleverdatum_eta), nog niet
+   * herbevestigd aan de klant. NULL = niets open. Spiegelt
+   * isLevertijdWijzigingTeBevestigen / het 'Levertijd gewijzigd'-tab-predicaat.
+   */
+  levertijd_wijziging_te_bevestigen_sinds?: string | null
+  /** Mig 335: tijdstip waarop de orderbevestiging per e-mail is verstuurd. NULL = nog niet bevestigd. */
+  bevestigd_at?: string | null
 }
 
 export interface OrderDetail extends OrderRow {
@@ -52,6 +63,7 @@ export interface OrderDetail extends OrderRow {
   fact_postcode: string | null
   fact_plaats: string | null
   fact_land: string | null
+  fact_email: string | null
   afl_naam: string | null
   afl_naam_2: string | null
   afl_adres: string | null
@@ -76,6 +88,15 @@ export interface OrderDetail extends OrderRow {
   bevestigd_door: string | null
   bevestiging_email: string | null
   klant_email: string | null
+  /** Default-ontvanger voor de orderbevestiging: email_overig → email_factuur.
+   *  Bewust ANDERSOM dan klant_email (factuur-eerst, voedt o.a. de dropship-
+   *  check): de bevestiging hoort naar het algemene/orderbevestiging-adres,
+   *  niet naar het factuuradres (melding Marjon 11-06-2026, klant 803741). */
+  klant_email_orderbev: string | null
+  /** Mig 327 / ADR-0029: TRUE = productie-only order uit Basta (alleen snijden+
+   *  confectie in RugFlow; verzending/facturatie in Basta). Voedt het
+   *  BastaAfhandelingPaneel op order-detail. Voor gewone orders FALSE. */
+  alleen_productie: boolean
 }
 
 export interface OrderRegelSnijplan {
@@ -105,6 +126,8 @@ export interface OrderRegel {
   klant_artikelnr?: string | null
   /** Admin-pseudo-flag (mig 272 / ADR-0018) — gemapt uit producten.is_pseudo via join. */
   is_pseudo?: boolean
+  /** Dropshipment-vlag (mig 370 / ADR-0018) — gemapt uit producten.is_dropship via join. */
+  is_dropship?: boolean
   // Substitutie
   fysiek_artikelnr?: string | null
   omstickeren?: boolean
@@ -124,6 +147,8 @@ export interface OrderRegel {
   maatwerk_afwerking_prijs?: number | null
   // Productie tracking
   snijplannen?: OrderRegelSnijplan[]
+  /** Handmatige verzendweek-override (mig 334). NULL = auto in frontend. */
+  verzendweek?: string | null
 }
 
 export interface StatusCount {
@@ -140,12 +165,13 @@ export async function fetchOrders(params: {
   search?: string
   debiteurNr?: number
   debiteurNrs?: number[]
+  bronSystemen?: string[]
   page?: number
   pageSize?: number
   sortBy?: OrderSortField
   sortDir?: SortDirection
 }) {
-  const { status, search, debiteurNr, debiteurNrs, page = 0, pageSize = 50, sortBy = 'orderdatum', sortDir = 'desc' } = params
+  const { status, search, debiteurNr, debiteurNrs, bronSystemen, page = 0, pageSize = 50, sortBy = 'orderdatum', sortDir = 'desc' } = params
 
   let query = supabase
     .from('orders_list')
@@ -171,10 +197,7 @@ export async function fetchOrders(params: {
     // Status-overstijgend: filtert op bron + ontbrekende bevestiging.
     // Geannuleerde orders uitgesloten: die hoeven geen leverweek-bevestiging
     // (annuleren vereist geen bevestiging, dus edi_bevestigd_op blijft NULL).
-    query = query
-      .eq('bron_systeem', 'edi')
-      .is('edi_bevestigd_op', null)
-      .neq('status', 'Geannuleerd')
+    query = filterLeverweekTeBevestigen(query)
   } else if (status === 'Debiteur te bevestigen') {
     // Mig 322: orders waarvan de debiteur via een onzekere fuzzy strategie
     // geraden is. env_fallback (verzameldebiteur) is bewust géén fout en valt
@@ -183,10 +206,16 @@ export async function fetchOrders(params: {
     // expliciet env_fallback valt af) — anders zou hij stil uit beeld vallen,
     // wat de "geen order verloren"-garantie ondermijnt. Spiegelt de JS-conditie
     // op order-detail én countTeBevestigenDebiteurOrders.
+    query = filterDebiteurTeBevestigen(query)
+  } else if (status === 'Levertijd gewijzigd') {
+    // Mig 326: orders waarvan de levertijd is verschoven (andere ISO-leverweek)
+    // door een leverancier/Karpi-ETA-update op een gekoppelde inkooporderregel,
+    // en die nog niet handmatig aan de klant zijn herbevestigd. Status-overstijgend;
+    // de gate is een enkele nullable timestamp (NULL = niets open) zodat dit met
+    // een simpele .not(...is.null) filterbaar is — spiegelt isLevertijdWijzigingTeBevestigen.
     query = query
-      .eq('debiteur_zeker', false)
-      .or('debiteur_match_bron.is.null,debiteur_match_bron.neq.env_fallback')
-      .neq('status', 'Geannuleerd')
+      .not('levertijd_wijziging_te_bevestigen_sinds', 'is', null)
+      .not('status', 'in', '("Verzonden","Geannuleerd")')
   } else if (status && status !== 'Alle') {
     query = query.eq('status', status)
   }
@@ -200,10 +229,25 @@ export async function fetchOrders(params: {
   if (search) {
     const s = sanitizeSearch(search)
     if (s) {
-      query = query.or(
-        `order_nr.ilike.%${s}%,klant_referentie.ilike.%${s}%,klant_naam.ilike.%${s}%`
-      )
+      // Productie-only orders (Basta) zoekbaar op hun oude Basta-ordernummer.
+      // `oud_order_nr` is een BIGINT — exact-match alleen toevoegen bij een
+      // puur-numerieke term, anders gooit PostgREST een typefout op de kolom.
+      const numeriek = /^\d+$/.test(s) ? s : null
+      const orFilter = numeriek
+        ? `order_nr.ilike.%${s}%,klant_referentie.ilike.%${s}%,klant_naam.ilike.%${s}%,oud_order_nr.eq.${numeriek}`
+        : `order_nr.ilike.%${s}%,klant_referentie.ilike.%${s}%,klant_naam.ilike.%${s}%`
+      query = query.or(orFilter)
     }
+  }
+
+  if (bronSystemen && bronSystemen.length > 0) {
+    // 'handmatig' is de UI-sleutel voor NULL of expliciet 'handmatig' in de DB.
+    const heeftHandmatig = bronSystemen.includes('handmatig')
+    const overige = bronSystemen.filter((b) => b !== 'handmatig')
+    const orParts: string[] = []
+    if (heeftHandmatig) orParts.push('bron_systeem.is.null', 'bron_systeem.eq.handmatig')
+    for (const b of overige) orParts.push(`bron_systeem.eq.${b}`)
+    query = query.or(orParts.join(','))
   }
 
   const { data, error, count } = await query
@@ -263,20 +307,22 @@ export async function fetchOrders(params: {
  * altijd reflecteert wat er in de lijst verschijnt bij selectie.
  */
 export async function fetchStatusCounts(): Promise<StatusCount[]> {
-  const [tellingRes, unmatchedRes, teBevestigenRes, debiteurTeBevestigenRes] = await Promise.all([
+  const [tellingRes, unmatchedRes, teBevestigenRes, debiteurTeBevestigenRes, levertijdGewijzigdRes] = await Promise.all([
     supabase.from('orders_status_telling').select('status, aantal'),
     supabase
       .from('orders')
       .select('id', { count: 'exact', head: true })
       .eq('heeft_unmatched_regels', true)
       .neq('status', 'Actie vereist'),
+    filterLeverweekTeBevestigen(
+      supabase.from('orders').select('id', { count: 'exact', head: true }),
+    ),
+    countTeBevestigenDebiteurOrders(),
     supabase
       .from('orders')
       .select('id', { count: 'exact', head: true })
-      .eq('bron_systeem', 'edi')
-      .is('edi_bevestigd_op', null)
-      .neq('status', 'Geannuleerd'),
-    countTeBevestigenDebiteurOrders(),
+      .not('levertijd_wijziging_te_bevestigen_sinds', 'is', null)
+      .not('status', 'in', '("Verzonden","Geannuleerd")'),
   ])
 
   if (tellingRes.error) throw tellingRes.error
@@ -299,6 +345,11 @@ export async function fetchStatusCounts(): Promise<StatusCount[]> {
     counts.push({ status: 'Debiteur te bevestigen', aantal: debiteurTeBevestigenRes })
   }
 
+  const levertijdGewijzigd = levertijdGewijzigdRes.count ?? 0
+  if (levertijdGewijzigd > 0) {
+    counts.push({ status: 'Levertijd gewijzigd', aantal: levertijdGewijzigd })
+  }
+
   return counts
 }
 
@@ -311,14 +362,9 @@ export async function fetchStatusCounts(): Promise<StatusCount[]> {
  * ('Debiteur te bevestigen'-branch) aan als het ooit moet wijzigen.
  */
 export async function countTeBevestigenDebiteurOrders(): Promise<number> {
-  const { count, error } = await supabase
-    .from('orders')
-    .select('id', { count: 'exact', head: true })
-    .eq('debiteur_zeker', false)
-    // NULL-safe: alleen expliciet env_fallback valt af; een onzekere order
-    // zonder vastgelegde bron telt mee (zie fetchOrders-branch + order-detail).
-    .or('debiteur_match_bron.is.null,debiteur_match_bron.neq.env_fallback')
-    .neq('status', 'Geannuleerd')
+  const { count, error } = await filterDebiteurTeBevestigen(
+    supabase.from('orders').select('id', { count: 'exact', head: true }),
+  )
   if (error) throw error
   return count ?? 0
 }
@@ -376,6 +422,7 @@ export async function fetchOrderDetail(id: number): Promise<OrderDetail> {
       klant_naam = deb.naam
       klant_vertegenw_code = deb.vertegenw_code
       ;(order as Record<string, unknown>).klant_email = deb.email_factuur ?? deb.email_overig ?? null
+      ;(order as Record<string, unknown>).klant_email_orderbev = deb.email_overig ?? deb.email_factuur ?? null
     }
   }
 
@@ -405,7 +452,7 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
 
   const { data, error } = await supabase
     .from('order_regels')
-    .select('id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2, orderaantal, te_leveren, backorder, prijs, korting_pct, bedrag, gewicht_kg, vrije_voorraad, fysiek_artikelnr, omstickeren, is_maatwerk, maatwerk_vorm, maatwerk_lengte_cm, maatwerk_breedte_cm, maatwerk_diameter_cm, maatwerk_afwerking, maatwerk_band_kleur, maatwerk_instructies, maatwerk_m2_prijs, maatwerk_oppervlak_m2, maatwerk_vorm_toeslag, maatwerk_afwerking_prijs, producten!order_regels_artikelnr_fkey(kwaliteit_code, kleur_code, is_pseudo, karpi_code)')
+    .select('id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2, orderaantal, te_leveren, backorder, prijs, korting_pct, bedrag, gewicht_kg, vrije_voorraad, fysiek_artikelnr, omstickeren, is_maatwerk, maatwerk_vorm, maatwerk_lengte_cm, maatwerk_breedte_cm, maatwerk_diameter_cm, maatwerk_afwerking, maatwerk_band_kleur, maatwerk_instructies, maatwerk_m2_prijs, maatwerk_oppervlak_m2, maatwerk_vorm_toeslag, maatwerk_afwerking_prijs, verzendweek, producten!order_regels_artikelnr_fkey(kwaliteit_code, kleur_code, is_pseudo, is_dropship, karpi_code)')
     .eq('order_id', orderId)
     .order('regelnummer')
 
@@ -423,10 +470,11 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
   ): OrderRegel {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const row = r as any
-    const product = row.producten as { kwaliteit_code: string; kleur_code: string | null; is_pseudo: boolean | null; karpi_code: string | null } | null
+    const product = row.producten as { kwaliteit_code: string; kleur_code: string | null; is_pseudo: boolean | null; is_dropship: boolean | null; karpi_code: string | null } | null
     const kwalCode = product?.kwaliteit_code ?? null
     const kleurCode = product?.kleur_code ?? null
     const isPseudo = product?.is_pseudo === true
+    const isDropship = product?.is_dropship === true
 
     let klantEigenNaam: string | null = null
     if (kwalCode && eigenNaamMap) {
@@ -454,6 +502,7 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
       klant_eigen_naam: klantEigenNaam,
       klant_artikelnr: row.artikelnr && klantArtMap ? klantArtMap.get(row.artikelnr) ?? null : null,
       is_pseudo: isPseudo,  // mig 272 / ADR-0018: admin-pseudo-flag uit producten.is_pseudo
+      is_dropship: isDropship,  // mig 370 / ADR-0018: dropship-vlag uit producten.is_dropship
       fysiek_artikelnr: row.fysiek_artikelnr ?? null,
       omstickeren: row.omstickeren ?? false,
       fysiek_omschrijving: row.fysiek_artikelnr && fysiekOmschMap
@@ -470,6 +519,7 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
       maatwerk_oppervlak_m2: row.maatwerk_oppervlak_m2 ?? null,
       maatwerk_vorm_toeslag: row.maatwerk_vorm_toeslag ?? null,
       maatwerk_afwerking_prijs: row.maatwerk_afwerking_prijs ?? null,
+      verzendweek: row.verzendweek ?? null,
     }
   }
 
@@ -538,4 +588,52 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
   }
 
   return baseRegels
+}
+
+/** Stel handmatige verzendweek in voor een orderregel (mig 334). NULL = reset. */
+export async function setRegelVerzendweek(regelId: number, verzendweek: string | null): Promise<void> {
+  const { error } = await supabase.rpc('set_regel_verzendweek', {
+    p_regel_id: regelId,
+    p_verzendweek: verzendweek,
+  })
+  if (error) throw error
+}
+
+/** Metadata-payload bij `order_events.event_type = 'levertijd_gewijzigd_door_eta'` (mig 326). */
+export interface LevertijdWijzigingMetadata {
+  afleverdatum_oud: string | null
+  afleverdatum_nieuw: string | null
+  verzendweek_oud: string | null
+  verzendweek_nieuw: string | null
+  inkooporder_regel_id: number | null
+  eta_bijgewerkt_door: 'karpi' | 'leverancier' | null
+}
+
+export interface LevertijdWijzigingEvent {
+  id: number
+  created_at: string
+  metadata: LevertijdWijzigingMetadata
+}
+
+/**
+ * Haalt het meest recente `levertijd_gewijzigd_door_eta`-event voor een order op
+ * (mig 326) — voedt de detailweergave (oud/nieuw-week, oorzaak) in
+ * `LevertijdWijzigingBanner`. Spiegelt `fetchInkomendBerichtVoorOrder`.
+ */
+export async function fetchLaatsteLevertijdWijziging(
+  orderId: number,
+): Promise<LevertijdWijzigingEvent | null> {
+  const { data, error } = await supabase
+    .from('order_events')
+    .select('id, created_at, metadata')
+    .eq('order_id', orderId)
+    .eq('event_type', 'levertijd_gewijzigd_door_eta')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) throw error
+  if (!data) return null
+
+  return data as unknown as LevertijdWijzigingEvent
 }

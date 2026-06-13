@@ -9,7 +9,7 @@ interface ConfectieTabelProps {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const colors = CONFECTIE_STATUS_COLORS[status] ?? { bg: 'bg-slate-100', text: 'text-slate-600' }
+  const colors = (CONFECTIE_STATUS_COLORS as Record<string, { bg: string; text: string }>)[status] ?? { bg: 'bg-slate-100', text: 'text-slate-600' }
   return (
     <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium', colors.bg, colors.text)}>
       {status}

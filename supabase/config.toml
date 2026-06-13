@@ -21,6 +21,9 @@ verify_jwt = false
 [functions.factuur-verzenden]
 verify_jwt = false
 
+[functions.stuur-orderbevestiging]
+verify_jwt = false
+
 [functions.parse-klant-po]
 verify_jwt = false
 
@@ -33,6 +36,12 @@ verify_jwt = false
 [functions.poll-email-orders]
 verify_jwt = false
 
+[functions.import-lightspeed-orders]
+verify_jwt = false
+
+[functions.supplier-portal]
+verify_jwt = false
+
 [functions.gebruikers-beheer]
 verify_jwt = false
 
@@ -40,4 +49,22 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.transus-send]
+verify_jwt = false
+
+[functions.hst-send]
+verify_jwt = false
+
+[functions.verhoek-send]
+verify_jwt = false
+
+[functions.verhoek-sftp-spike]
+verify_jwt = false
+
+[functions.bouw-verzendbericht-edi]
+verify_jwt = false
+
+[functions.rhenus-send]
+verify_jwt = false
+
+[functions.rhenus-sftp-spike]
 verify_jwt = false

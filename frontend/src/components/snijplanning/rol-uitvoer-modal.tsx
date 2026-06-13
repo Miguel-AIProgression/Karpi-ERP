@@ -28,6 +28,7 @@ import { useRolDetail } from '@/hooks/use-rollen'
 import { ReststukStickerLayout } from './reststuk-sticker-layout'
 import { cn } from '@/lib/utils/cn'
 import { AFWERKING_MAP } from '@/lib/utils/constants'
+import { TE_SNIJDEN } from '@/lib/utils/snijplan-status'
 
 interface RolUitvoerModalProps {
   rolId: number | null
@@ -295,7 +296,7 @@ export function RolUitvoerModal({ rolId, open, onClose }: RolUitvoerModalProps) 
   }, [open])
 
   const teSnijden = useMemo(
-    () => (stukken ?? []).filter((s) => s.status === 'Gepland' || s.status === 'Snijden'),
+    () => (stukken ?? []).filter((s) => (TE_SNIJDEN as readonly string[]).includes(s.status)),
     [stukken],
   )
 

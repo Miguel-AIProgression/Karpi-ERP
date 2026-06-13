@@ -3,6 +3,7 @@
 
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import type { SnijplanPiece, Roll, Placement, FifoMetrics, FifoOptions } from './ffdh-packing.ts'
+import { ROL_FYSIEK_BEZET } from './snijplan-status.ts'
 
 // ---------------------------------------------------------------------------
 // Kleur-code variants — DB heeft historisch zowel "12" als "12.0" gangbaar
@@ -46,6 +47,11 @@ export async function fetchStukken(
     .is('rol_id', null)
     .eq('kwaliteit_code', kwaliteitCode)
     .in('kleur_code', kleurVariants)
+    // R5 (productie-only): stukken die uit een standaard-maat kleed gesneden
+    // worden verbruiken geen rollengte → niet aan de packer aanbieden. Ze blijven
+    // wel als snijplan bestaan (zichtbaar in snijplanning + confectie). De kolom
+    // komt uit snijplanning_overzicht (mig 331), is BOOLEAN NOT NULL DEFAULT false.
+    .eq('snijden_uit_standaardmaat', false)
 
   if (totDatum) {
     query = query.or(`afleverdatum.lte.${totDatum},afleverdatum.is.null`)
@@ -165,7 +171,7 @@ export async function fetchBeschikbareRollen(
   const { data: bezigeRolRows, error: bezigError } = await supabase
     .from('snijplannen')
     .select('rol_id')
-    .in('status', ['Snijden', 'Gesneden'])
+    .in('status', [...ROL_FYSIEK_BEZET])
     .not('rol_id', 'is', null)
   if (bezigError) throw bezigError
   const bezigeRolIds = new Set<number>(

@@ -39,6 +39,8 @@ export interface DebiteurDetail {
   email_factuur: string | null
   email_overig: string | null
   email_2: string | null
+  /** Klant-niveau verzend-/T&T-e-mailadres (mig 369). Default voor orders.afl_email vóór email_overig. */
+  email_verzend: string | null
   fax: string | null
   vertegenw_code: string | null
   vertegenwoordiger_naam?: string | null
@@ -138,6 +140,7 @@ export async function fetchDebiteuren(params: {
       .from('debiteuren')
       .select('debiteur_nr')
       .eq('inkoopgroep_code', inkoopgroep_code)
+      .limit(9999)
     if (ledenErr) throw ledenErr
     const ledenNrs = (leden ?? []).map((r) => r.debiteur_nr as number)
     if (ledenNrs.length === 0) {
@@ -148,23 +151,9 @@ export async function fetchDebiteuren(params: {
 
   if (prijslijst_filter) {
     if (prijslijst_filter === 'geen') {
-      const { data: geenPrijsRows, error: geenErr } = await supabase
-        .from('debiteuren')
-        .select('debiteur_nr')
-        .is('prijslijst_nr', null)
-      if (geenErr) throw geenErr
-      const geenNrs = (geenPrijsRows ?? []).map((r) => r.debiteur_nr as number)
-      if (geenNrs.length === 0) return { debiteuren: [], totalCount: 0 }
-      query = query.in('debiteur_nr', geenNrs)
+      query = query.is('prijslijst_nr', null)
     } else {
-      const { data: prijsRows, error: prijsErr } = await supabase
-        .from('debiteuren')
-        .select('debiteur_nr')
-        .eq('prijslijst_nr', prijslijst_filter)
-      if (prijsErr) throw prijsErr
-      const prijsNrs = (prijsRows ?? []).map((r) => r.debiteur_nr as number)
-      if (prijsNrs.length === 0) return { debiteuren: [], totalCount: 0 }
-      query = query.in('debiteur_nr', prijsNrs)
+      query = query.eq('prijslijst_nr', prijslijst_filter)
     }
   }
 

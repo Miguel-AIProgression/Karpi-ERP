@@ -1,0 +1,21 @@
+{
+  "_bron": "live DB enum_range() — 2026-06-09; regenereer via supabase/migrations/344_assert_status_enum_snapshot.sql-query",
+  "snijplan_status": [
+    "Wacht",
+    "Gepland",
+    "In productie",
+    "Snijden",
+    "Gesneden",
+    "In confectie",
+    "Gereed",
+    "Ingepakt",
+    "Geannuleerd"
+  ],
+  "confectie_status": [
+    "Wacht op materiaal",
+    "In productie",
+    "Kwaliteitscontrole",
+    "Gereed",
+    "Geannuleerd"
+  ]
+}

@@ -4,7 +4,7 @@ import { PageHeader } from '@/components/layout/page-header'
 import { ScanInput, type ScanFeedback } from '@/components/ui/scan-input'
 import { ScannedItemCard } from '@/components/scanstation/scanned-item-card'
 import { cn } from '@/lib/utils/cn'
-import { SNIJPLAN_STATUS_COLORS } from '@/lib/utils/constants'
+import { snijplanBadgeClass } from '@/lib/utils/constants'
 import {
   useLookupScancode,
   useLogScanEvent,
@@ -159,7 +159,6 @@ export function ScanstationPage() {
               </thead>
               <tbody>
                 {openstaandItems.map((item) => {
-                  const colors = SNIJPLAN_STATUS_COLORS[item.status] ?? { bg: 'bg-gray-100', text: 'text-gray-600' }
                   return (
                     <tr
                       key={`${item.type}-${item.id}`}
@@ -174,8 +173,7 @@ export function ScanstationPage() {
                       <td className="px-5 py-3">
                         <span className={cn(
                           'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium',
-                          colors.bg,
-                          colors.text
+                          snijplanBadgeClass(item.status)
                         )}>
                           {item.status}
                         </span>

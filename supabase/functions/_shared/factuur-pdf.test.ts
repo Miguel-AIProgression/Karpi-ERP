@@ -200,3 +200,35 @@ Deno.test('genereerFactuurPDF: dubbele bankregel + 3-talige voorwaarden-footer',
   const bytes = await genereerFactuurPDF(input)
   assert(bytes.length > 500, 'PDF met 2 banken en 3-talige voorwaarden moet renderen')
 })
+
+Deno.test('genereerFactuurPDF: BTW verlegd — vermelding i.p.v. BTW-regel', async () => {
+  const input: FactuurPDFInput = {
+    ...MINIMAL_INPUT,
+    factuur: {
+      ...MINIMAL_INPUT.factuur,
+      btw_percentage: 0,
+      btw_bedrag: 0,
+      totaal: 100,
+      btw_verlegd: true,
+      btw_nummer_afnemer: 'DE123456789',
+    },
+  }
+  const bytes = await genereerFactuurPDF(input)
+  assert(bytes.length > 500, 'PDF met BTW-verlegd-blok moet renderen')
+})
+
+Deno.test('genereerFactuurPDF: BTW verlegd zonder btw-nummer afnemer rendert ook', async () => {
+  const input: FactuurPDFInput = {
+    ...MINIMAL_INPUT,
+    factuur: {
+      ...MINIMAL_INPUT.factuur,
+      btw_percentage: 0,
+      btw_bedrag: 0,
+      totaal: 100,
+      btw_verlegd: true,
+      btw_nummer_afnemer: null,
+    },
+  }
+  const bytes = await genereerFactuurPDF(input)
+  assert(bytes.length > 500, 'PDF met kale BTW-verlegd-vermelding (zonder btw-nr) moet renderen')
+})

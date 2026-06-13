@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { ArrowUp, ArrowDown, ArrowUpDown, AlertCircle, AlertTriangle } from 'lucide-react'
+import { ArrowUp, ArrowDown, ArrowUpDown, AlertCircle, AlertTriangle, CheckCircle, Mail } from 'lucide-react'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { formatCurrency, formatDate } from '@/lib/utils/formatters'
 import { verzendWeekVoor } from '@/lib/orders/verzendweek'
@@ -94,9 +94,11 @@ function FactuurCel({ orderId, facturenPerOrder }: {
 function BronBadge({ bron }: { bron?: string | null }) {
   if (!bron || bron === 'handmatig') return null
   const config: Record<string, { label: string; className: string }> = {
-    shopify:    { label: 'Shopify',    className: 'bg-green-100 text-green-700' },
-    edi:        { label: 'EDI',        className: 'bg-blue-100 text-blue-700' },
-    lightspeed: { label: 'Lightspeed', className: 'bg-amber-100 text-amber-700' },
+    shopify:     { label: 'Shopify',     className: 'bg-green-100 text-green-700' },
+    edi:         { label: 'EDI',         className: 'bg-blue-100 text-blue-700' },
+    lightspeed:  { label: 'Lightspeed',  className: 'bg-amber-100 text-amber-700' },
+    email:       { label: 'E-mail',      className: 'bg-purple-100 text-purple-700' },
+    oud_systeem: { label: 'Oud systeem', className: 'bg-slate-100 text-slate-500' },
   }
   const c = config[bron] ?? { label: bron, className: 'bg-slate-100 text-slate-600' }
   return (
@@ -124,6 +126,32 @@ function VerzendweekCel({ order }: { order: OrderRow }) {
     </span>
   ) : (
     <span className="text-slate-300">—</span>
+  )
+}
+
+const FINALE_STATUSSEN = new Set(['Verzonden', 'Geannuleerd'])
+
+function BevestigingBadge({ bevestigd_at, status }: { bevestigd_at?: string | null; status: string }) {
+  if (bevestigd_at) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-green-50 text-green-700 text-[10px] font-medium"
+        title={`Orderbevestiging verzonden op ${formatDate(bevestigd_at)}`}
+      >
+        <CheckCircle size={10} />
+        OB {formatDate(bevestigd_at)}
+      </span>
+    )
+  }
+  if (FINALE_STATUSSEN.has(status)) return null
+  return (
+    <span
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-50 text-slate-400 text-[10px] font-medium"
+      title="Nog geen orderbevestiging verstuurd"
+    >
+      <Mail size={10} />
+      Geen OB
+    </span>
   )
 }
 
@@ -228,7 +256,10 @@ function OrderTr({ order, bundel, facturenPerOrder }: {
         {formatCurrency(order.totaal_bedrag)}
       </td>
       <td className="px-4 py-3">
-        <StatusBadge status={order.status} />
+        <div className="flex flex-col gap-1">
+          <StatusBadge status={order.status} />
+          <BevestigingBadge bevestigd_at={order.bevestigd_at} status={order.status} />
+        </div>
       </td>
       <td className="px-4 py-3 whitespace-nowrap">
         <FactuurCel orderId={order.id} facturenPerOrder={facturenPerOrder} />

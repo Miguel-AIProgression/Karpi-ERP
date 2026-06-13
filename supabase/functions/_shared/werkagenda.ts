@@ -1,120 +1,168 @@
-// Deno-port van frontend/src/lib/utils/bereken-agenda.ts.
-// Berekent voor een lijst rollen wanneer ze sequentieel gesneden worden,
-// gegeven werktijden + pauze. Gebruikt door check-levertijd om de werkelijke
-// snij-datum van een matched rol te bepalen (niet alleen "afleverdatum − buffer").
-//
-// Gebruikt UTC-Date math i.p.v. local time (edge runtime ≠ Amsterdam tz);
-// dat klopt voor datum-berekening, alleen het exacte uur wijkt af.
-//
 // ----------------------------------------------------------------------------
-// ADR-0020: synchronous-only mirror — SQL is ground-truth
+// EIGENAAR-MODULE: werkdag- en werkagenda-rekenkunde — de enige implementatie.
 // ----------------------------------------------------------------------------
-// Werkdag-rekenkunde (`werkdagMinN` en de minuten-helpers die op werkdagen
-// rusten) leeft sinds mig 279 ook in SQL als `werkdag_min_n`,
-// `werkdag_plus_n` en `werkagenda_kalender`. Die SQL-versie is de canonieke
-// definitie. Deze Deno-module blijft bestaan als **synchrone mirror** voor
-// edge-functions die per-call geen RPC-roundtrip kunnen veroorloven
-// (`check-levertijd` doet honderden agenda-rekensommen per request). Bij elke
-// wijziging aan werkdag-definitie (bv. NL-feestdagen toevoegen) moet je
-// drie plekken tegelijk updaten:
-//   1. supabase/migrations/279_werkagenda_sql_functions.sql (ground-truth)
-//   2. dit bestand (Deno-mirror)
-//   3. frontend/src/lib/utils/bereken-agenda.ts (TS-mirror voor UI-pad)
-// Anders divergeren edge-berekeningen, UI-bucketing en SQL-views.
+// Tot 2026-06 leefde deze rekenkunde op drie plekken (SQL mig 279 — nul
+// callers, gedropt in mig 383; dit bestand; frontend bereken-agenda.ts).
+// Sinds plan 2026-06-12-werkagenda-een-bron is dít de enige bron: de frontend
+// importeert deze module direct (patroon: order-lifecycle/derive-status).
+// Er is géén mirror meer om bij te houden. Contract: __tests__/werkagenda.
+// golden.json, getoetst door Deno- én Vitest-test.
+//
+// Tijdzone: alle functies rekenen in LOKALE tijd (getDay/setHours). In de
+// edge-runtime is TZ=UTC, dus daar identiek aan de oude UTC-variant; in de
+// browser betekent 'start: 08:00' Amsterdamse tijd. Voor pure datum-functies
+// (werkdagMinN) maakt de tijdzone niet uit.
+//
+// Feestdagen/vrije dagen: dagen in `Werktijden.vrij` tellen NIET als werkdag.
+// De configuratie leeft in app_config sleutel 'werkagenda' (mig 384) — edge
+// én frontend lezen dezelfde rij.
+//
+// teLaat-semantiek (besluit B4, 2026-06-12): strikt — deadline is 00:00 van
+// (leverdatum − bufferDagen), zodat er minimaal `buffer` volle kalenderdagen
+// tussen snij-eind en leverdatum zitten. UI en check-levertijd zeggen nu
+// hetzelfde.
+//
+// Bekende, bewuste divergentie (B6): berekenSnijAgenda (hier) sorteert op
+// leverdatum→rolId met NULL achteraan; de UI-`berekenAgenda` (frontend
+// bereken-agenda.ts) sorteert in sync met de Lijst-weergave (leverdatum→
+// kwaliteit→kleur→rolnummer, NULL als vandaag). Unificatie vergt verrijking
+// van fetchWerkagendaInput in check-levertijd — eigen plan.
+
+export interface FeestdagVrij {
+  /** ISO YYYY-MM-DD */
+  datum: string
+  naam?: string
+}
 
 export interface Werktijden {
   /** ISO werkdagen 1=ma..7=zo */
   werkdagen: number[]
-  startUur: number
-  startMin: number
-  eindUur: number
-  eindMin: number
-  pauzeStartUur: number
-  pauzeStartMin: number
-  pauzeEindUur: number
-  pauzeEindMin: number
+  /** Starttijd 'HH:mm' */
+  start: string
+  /** Eindtijd 'HH:mm' */
+  eind: string
+  /** Pauzestart 'HH:mm' (leeg = geen pauze) */
+  pauzeStart: string
+  /** Pauze-eind 'HH:mm' */
+  pauzeEind: string
+  /** Geblokkeerde dagen (feestdagen, vakantie) */
+  vrij: FeestdagVrij[]
 }
 
 export const STANDAARD_WERKTIJDEN: Werktijden = {
   werkdagen: [1, 2, 3, 4, 5],
-  startUur: 8, startMin: 0,
-  eindUur: 17, eindMin: 0,
-  pauzeStartUur: 12, pauzeStartMin: 0,
-  pauzeEindUur: 12, pauzeEindMin: 30,
+  start: '08:00',
+  eind: '17:00',
+  pauzeStart: '12:00',
+  pauzeEind: '12:30',
+  vrij: [],
 }
 
-function isoWeekdag(d: Date): number {
-  const js = d.getUTCDay()
-  return js === 0 ? 7 : js
+/** Lokale kalenderdatum als ISO YYYY-MM-DD (géén toISOString — die is UTC). */
+export function isoDatum(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-function isWerkdag(d: Date, w: Werktijden): boolean {
-  return w.werkdagen.includes(isoWeekdag(d))
+function parseHHmm(tijd: string): { uren: number; minuten: number } {
+  // Lege string is legaal voor pauze-velden (heeftPauze guard schakelt de
+  // pauze dan uit); een gevulde maar onparseerbare tijd is een config-fout
+  // die NIET stil op 00:00 mag landen (app_config-gedreven sinds mig 384).
+  if (!tijd) return { uren: 0, minuten: 0 }
+  const m = /^(\d{1,2}):(\d{2})$/.exec(tijd)
+  if (!m) throw new Error(`werkagenda: ongeldige HH:mm-tijd '${tijd}'`)
+  return { uren: Number(m[1]), minuten: Number(m[2]) }
+}
+
+function heeftPauze(w: Werktijden): boolean {
+  return Boolean(w.pauzeStart && w.pauzeEind && w.pauzeStart !== w.pauzeEind)
+}
+
+export function isWerkdag(d: Date, w: Werktijden): boolean {
+  const js = d.getDay() // 0=zo..6=za
+  const iso = js === 0 ? 7 : js
+  if (!w.werkdagen.includes(iso)) return false
+  if (w.vrij && w.vrij.length) {
+    const dag = isoDatum(d)
+    if (w.vrij.some((v) => v.datum === dag)) return false
+  }
+  return true
 }
 
 /**
- * Trek N werkdagen af van een ISO-datum-string (YYYY-MM-DD). Werkt in UTC zoals
- * de rest van werkagenda. Voor dag-orders (ADR 0014): kritieke snij-deadline
- * = werkdagMinN(afleverdatum, dag_order_snij_buffer_werkdagen).
+ * Trek N werkdagen af van een ISO-datum (YYYY-MM-DD). Een werkdag = dag in
+ * `werkdagen` én niet in `vrij`. Voor dag-orders (ADR 0014): pick-horizon =
+ * werkdagMinN(afleverdatum, 1); kritieke snij-deadline = werkdagMinN(
+ * afleverdatum, dag_order_snij_buffer_werkdagen).
  *
- * N=0 retourneert input. Max 60 iteraties veiligheidsrem.
+ * N=0 retourneert de input. Max 60 stappen veiligheidsrem; ongeldige datum
+ * retourneert de input ongewijzigd.
  */
-export function werkdagMinN(iso: string, n: number, w: Werktijden): string {
-  const d = new Date(`${iso}T00:00:00Z`)
-  if (isNaN(d.getTime())) return iso
+export function werkdagMinN(iso: string, n: number, w: Werktijden = STANDAARD_WERKTIJDEN): string {
+  const start = new Date(`${iso}T00:00:00`)
+  if (isNaN(start.getTime())) return iso
+  const d = new Date(start)
   let resterend = n
   let stappen = 0
   while (resterend > 0 && stappen < 60) {
-    d.setUTCDate(d.getUTCDate() - 1)
+    d.setDate(d.getDate() - 1)
     stappen += 1
     if (isWerkdag(d, w)) resterend -= 1
   }
-  return d.toISOString().slice(0, 10)
+  return isoDatum(d)
 }
 
 /** Eerste moment vanaf `vanaf` dat binnen werktijd valt. */
 export function volgendeWerkminuut(vanaf: Date, w: Werktijden): Date {
   const d = new Date(vanaf.getTime())
-  const heeftPauze = w.pauzeStartUur !== w.pauzeEindUur || w.pauzeStartMin !== w.pauzeEindMin
+  const { uren: sU, minuten: sM } = parseHHmm(w.start)
+  const { uren: eU, minuten: eM } = parseHHmm(w.eind)
+  const pStart = parseHHmm(w.pauzeStart)
+  const pEind = parseHHmm(w.pauzeEind)
+  const pauze = heeftPauze(w)
 
   for (let i = 0; i < 365; i++) {
     if (isWerkdag(d, w)) {
-      const startDag = new Date(d); startDag.setUTCHours(w.startUur, w.startMin, 0, 0)
-      const eindDag = new Date(d); eindDag.setUTCHours(w.eindUur, w.eindMin, 0, 0)
+      const startDag = new Date(d); startDag.setHours(sU, sM, 0, 0)
+      const eindDag = new Date(d); eindDag.setHours(eU, eM, 0, 0)
       if (d < startDag) d.setTime(startDag.getTime())
       if (d < eindDag) {
-        if (heeftPauze) {
-          const pS = new Date(d); pS.setUTCHours(w.pauzeStartUur, w.pauzeStartMin, 0, 0)
-          const pE = new Date(d); pE.setUTCHours(w.pauzeEindUur, w.pauzeEindMin, 0, 0)
+        if (pauze) {
+          const pS = new Date(d); pS.setHours(pStart.uren, pStart.minuten, 0, 0)
+          const pE = new Date(d); pE.setHours(pEind.uren, pEind.minuten, 0, 0)
           if (d >= pS && d < pE) d.setTime(pE.getTime())
         }
         return d
       }
     }
-    d.setUTCDate(d.getUTCDate() + 1)
-    d.setUTCHours(0, 0, 0, 0)
+    d.setDate(d.getDate() + 1)
+    d.setHours(0, 0, 0, 0)
   }
   return d
 }
 
-/** Tel netto werkminuten in [van, tot) — skipt avonden, weekenden, pauze. */
+/** Tel netto werkminuten in [van, tot) — skipt avonden, weekenden, vrije dagen, pauze. */
 export function werkminutenTussen(van: Date, tot: Date, w: Werktijden): number {
   if (tot <= van) return 0
-  const heeftPauze = w.pauzeStartUur !== w.pauzeEindUur || w.pauzeStartMin !== w.pauzeEindMin
+  const { uren: sU, minuten: sM } = parseHHmm(w.start)
+  const { uren: eU, minuten: eM } = parseHHmm(w.eind)
+  const pStart = parseHHmm(w.pauzeStart)
+  const pEind = parseHHmm(w.pauzeEind)
+  const pauze = heeftPauze(w)
+
   let totaal = 0
-  const d = new Date(Date.UTC(van.getUTCFullYear(), van.getUTCMonth(), van.getUTCDate()))
+  const d = new Date(van); d.setHours(0, 0, 0, 0)
   const einde = tot
   for (let i = 0; i < 400 && d.getTime() <= einde.getTime(); i++) {
     if (isWerkdag(d, w)) {
-      const dagStart = new Date(d); dagStart.setUTCHours(w.startUur, w.startMin, 0, 0)
-      const dagEind = new Date(d); dagEind.setUTCHours(w.eindUur, w.eindMin, 0, 0)
+      const dagStart = new Date(d); dagStart.setHours(sU, sM, 0, 0)
+      const dagEind = new Date(d); dagEind.setHours(eU, eM, 0, 0)
       const blokStart = van > dagStart ? van : dagStart
       const blokEind = einde < dagEind ? einde : dagEind
       if (blokEind > blokStart) {
         let mins = Math.floor((blokEind.getTime() - blokStart.getTime()) / 60_000)
-        if (heeftPauze) {
-          const pS = new Date(d); pS.setUTCHours(w.pauzeStartUur, w.pauzeStartMin, 0, 0)
-          const pE = new Date(d); pE.setUTCHours(w.pauzeEindUur, w.pauzeEindMin, 0, 0)
+        if (pauze) {
+          const pS = new Date(d); pS.setHours(pStart.uren, pStart.minuten, 0, 0)
+          const pE = new Date(d); pE.setHours(pEind.uren, pEind.minuten, 0, 0)
           const overlapStart = blokStart > pS ? blokStart : pS
           const overlapEind = blokEind < pE ? blokEind : pE
           if (overlapEind > overlapStart) {
@@ -124,28 +172,32 @@ export function werkminutenTussen(van: Date, tot: Date, w: Werktijden): number {
         if (mins > 0) totaal += mins
       }
     }
-    d.setUTCDate(d.getUTCDate() + 1)
+    d.setDate(d.getDate() + 1)
   }
   return totaal
 }
 
-/** Voeg N werkminuten toe (skipt avonden, weekenden, pauze). */
+/** Voeg N werkminuten toe (skipt avonden, weekenden, vrije dagen, pauze). */
 export function plusWerkminuten(start: Date, minuten: number, w: Werktijden): Date {
   let huidig = volgendeWerkminuut(start, w)
   let resterend = minuten
-  const heeftPauze = w.pauzeStartUur !== w.pauzeEindUur || w.pauzeStartMin !== w.pauzeEindMin
+  const { uren: eU, minuten: eM } = parseHHmm(w.eind)
+  const pStart = parseHHmm(w.pauzeStart)
+  const pauze = heeftPauze(w)
 
   while (resterend > 0) {
-    const eindDag = new Date(huidig); eindDag.setUTCHours(w.eindUur, w.eindMin, 0, 0)
+    const eindDag = new Date(huidig); eindDag.setHours(eU, eM, 0, 0)
     let blokEind = eindDag
-    if (heeftPauze) {
-      const pS = new Date(huidig); pS.setUTCHours(w.pauzeStartUur, w.pauzeStartMin, 0, 0)
+    if (pauze) {
+      const pS = new Date(huidig); pS.setHours(pStart.uren, pStart.minuten, 0, 0)
       if (huidig < pS && pS < eindDag) blokEind = pS
     }
-    const beschikbaar = Math.floor((blokEind.getTime() - huidig.getTime()) / 60000)
+    const beschikbaar = Math.floor((blokEind.getTime() - huidig.getTime()) / 60_000)
     if (resterend <= beschikbaar) {
-      return new Date(huidig.getTime() + resterend * 60000)
+      return new Date(huidig.getTime() + resterend * 60_000)
     }
+    // beschikbaar kan 0 zijn (huidig exact op blokEind); de +1ms-nudge
+    // hieronder duwt volgendeWerkminuut dan voorbij de grens — geen hang.
     resterend -= beschikbaar
     huidig = volgendeWerkminuut(new Date(blokEind.getTime() + 1), w)
   }
@@ -153,7 +205,7 @@ export function plusWerkminuten(start: Date, minuten: number, w: Werktijden): Da
 }
 
 // ---------------------------------------------------------------------------
-// Agenda-berekening per rol
+// Agenda-berekening per rol (edge: check-levertijd)
 // ---------------------------------------------------------------------------
 
 export interface RolAgendaInput {
@@ -169,19 +221,13 @@ export interface RolAgendaSlot {
   eind: Date
   /** ISO YYYY-MM-DD van het EIND van het rol-blok (= klaar-datum) */
   klaarDatum: string
-  /**
-   * True wanneer eind > (vroegsteAfleverdatum − snijLeverBufferDagen).
-   * Betekent: rol wordt te laat gesneden voor de logistieke afhandeling.
-   */
+  /** True wanneer eind > 00:00 van (vroegsteAfleverdatum − snijLeverBufferDagen). */
   teLaat: boolean
 }
 
 /**
- * Plan rollen sequentieel in een werkagenda.
- * Sorteer op vroegste afleverdatum, daarna rol_id voor stabiliteit.
- * `snijLeverBufferDagen` is het minimum aantal kalenderdagen tussen snij-eind
- * en leverdatum (default 2). Een rol wordt als `teLaat` gemarkeerd als de
- * berekende eind-tijd minder dan deze buffer vóór de leverdatum valt.
+ * Plan rollen sequentieel in een werkagenda. Sorteert op vroegste
+ * afleverdatum, daarna rolId (NULL-leverdatum achteraan — zie B6-noot boven).
  */
 export function berekenSnijAgenda(
   rollen: RolAgendaInput[],
@@ -203,16 +249,11 @@ export function berekenSnijAgenda(
     const eind = plusWerkminuten(start, r.duurMinuten, werktijden)
     let teLaat = false
     if (r.vroegsteAfleverdatum) {
-      const deadline = new Date(`${r.vroegsteAfleverdatum}T00:00:00Z`)
-      deadline.setUTCDate(deadline.getUTCDate() - snijLeverBufferDagen)
+      const deadline = new Date(`${r.vroegsteAfleverdatum}T00:00:00`)
+      deadline.setDate(deadline.getDate() - snijLeverBufferDagen)
       teLaat = eind > deadline
     }
-    result.set(r.rolId, {
-      start,
-      eind,
-      klaarDatum: eind.toISOString().slice(0, 10),
-      teLaat,
-    })
+    result.set(r.rolId, { start, eind, klaarDatum: isoDatum(eind), teLaat })
     cursor = eind
   }
   return result

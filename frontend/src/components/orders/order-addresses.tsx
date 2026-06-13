@@ -1,10 +1,16 @@
 import type { OrderDetail } from '@/lib/supabase/queries/orders'
+import {
+  DROPSHIP_EMAIL_MELDING,
+  type DropshipEmailProbleem,
+} from '@/lib/orders/dropship-email'
 
 interface OrderAddressesProps {
   order: OrderDetail
+  /** Alleen gevuld bij dropshipment-orders: toets van het T&T-adres (dropship-email.ts). */
+  dropshipEmailProbleem?: DropshipEmailProbleem | null
 }
 
-export function OrderAddresses({ order }: OrderAddressesProps) {
+export function OrderAddresses({ order, dropshipEmailProbleem }: OrderAddressesProps) {
   const hasFactuur = order.fact_naam || order.fact_adres
   const hasAflever = order.afl_naam || order.afl_adres
 
@@ -31,6 +37,14 @@ export function OrderAddresses({ order }: OrderAddressesProps) {
               plaats={order.fact_plaats}
               land={order.fact_land}
             />
+            <div className="mt-3 pt-3 border-t border-slate-100 text-sm">
+              <span className="text-slate-400 block mb-0.5">Factuur per e-mail naar</span>
+              {order.fact_email ? (
+                <span className="text-slate-700">{order.fact_email}</span>
+              ) : (
+                <span className="text-amber-600">Geen factuur-e-mailadres bekend</span>
+              )}
+            </div>
           </div>
         )}
         {hasAflever && (
@@ -43,9 +57,28 @@ export function OrderAddresses({ order }: OrderAddressesProps) {
               postcode={order.afl_postcode}
               plaats={order.afl_plaats}
               land={order.afl_land}
-              email={order.afl_email}
               telefoon={order.afl_telefoon}
             />
+            {!order.afhalen && (
+              <div className="mt-3 pt-3 border-t border-slate-100 text-sm">
+                <span className="text-slate-400 block mb-0.5">Track &amp; trace naar</span>
+                {order.afl_email ? (
+                  <span className="text-slate-700">{order.afl_email}</span>
+                ) : dropshipEmailProbleem === 'ontbreekt' ? (
+                  <span className="text-amber-600">{DROPSHIP_EMAIL_MELDING.ontbreekt}</span>
+                ) : (
+                  <span className="text-amber-600">
+                    Geen e-mailadres ingevuld — klant ontvangt geen track &amp; trace van de vervoerder
+                  </span>
+                )}
+                {(dropshipEmailProbleem === 'gelijk_aan_factuur' ||
+                  dropshipEmailProbleem === 'gelijk_aan_debiteur') && (
+                  <p className="mt-1 text-rose-600 text-xs">
+                    {DROPSHIP_EMAIL_MELDING[dropshipEmailProbleem]} Pas aan via order bewerken.
+                  </p>
+                )}
+              </div>
+            )}
             {order.opmerkingen && (
               <div className="mt-3 pt-3 border-t border-slate-100 text-sm text-slate-600">
                 <span className="text-slate-400 block mb-0.5">Opmerking</span>
@@ -66,7 +99,6 @@ function AddressBlock(props: {
   postcode?: string | null
   plaats?: string | null
   land?: string | null
-  email?: string | null
   telefoon?: string | null
 }) {
   return (
@@ -76,8 +108,7 @@ function AddressBlock(props: {
       {props.adres && <p>{props.adres}</p>}
       <p>{[props.postcode, props.plaats].filter(Boolean).join(' ')}</p>
       {props.land && props.land !== 'NL' && <p>{props.land}</p>}
-      {props.email && <p className="text-slate-500 mt-1">{props.email}</p>}
-      {props.telefoon && <p className="text-slate-500">{props.telefoon}</p>}
+      {props.telefoon && <p className="text-slate-500 mt-1">{props.telefoon}</p>}
     </div>
   )
 }

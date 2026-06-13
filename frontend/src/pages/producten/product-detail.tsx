@@ -1,5 +1,6 @@
+import { useMemo, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Truck } from 'lucide-react'
+import { ArrowLeft, Pencil, Truck } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { InfoField } from '@/components/ui/info-field'
 import { formatCurrency, formatNumber } from '@/lib/utils/formatters'
@@ -7,6 +8,8 @@ import { berekenProductGewichtKg } from '@/lib/utils/gewicht'
 import { cn } from '@/lib/utils/cn'
 import { useQuery } from '@tanstack/react-query'
 import { useProductDetail, useRollenVoorProduct, useClaimsVoorProduct, useEquivalenteProducten } from '@/hooks/use-producten'
+import { useUitwisselbareGroepen } from '@/hooks/use-uitwisselbaar'
+import { UitwisselbaarGroepDialog } from '@/components/producten/uitwisselbaar-groep-dialog'
 import { useOpenstaandeInkoopregelsVoorArtikel } from '@/modules/inkoop'
 import { useVoorraadpositie } from '@/modules/voorraadpositie'
 import { ProductTypeBadge } from './producten-overview'
@@ -42,6 +45,13 @@ export function ProductDetailPage() {
   const { data: claims } = useClaimsVoorProduct(artikelnr)
   const { data: equivalenten } = useEquivalenteProducten(artikelnr)
   const { data: inkoopregels } = useOpenstaandeInkoopregelsVoorArtikel(artikelnr)
+  const { data: uitwisselGroepen } = useUitwisselbareGroepen()
+  const [koppelDialoogOpen, setKoppelDialoogOpen] = useState(false)
+
+  const eigenUitwisselGroep = useMemo(() => {
+    if (!uitwisselGroepen || !product?.kwaliteit_code) return undefined
+    return uitwisselGroepen.find((g) => g.kwaliteiten.some((k) => k.code === product.kwaliteit_code))
+  }, [uitwisselGroepen, product?.kwaliteit_code])
   // Voorraadpositie-Module seam (T001 tracer-bullet, mig 179) — levert
   // de aggregate "Openstaande inkooporders"-totaal m¹ via voorraadpositie.besteld.
   // De per-IO-regel-detail blijft uit useOpenstaandeInkoopregelsVoorArtikel komen
@@ -173,10 +183,35 @@ export function ProductDetailPage() {
       })()}
 
       {/* Uitwisselbare producten */}
-      {equivalenten && equivalenten.filter(e => e.artikelnr !== artikelnr).length > 0 && (
+      {(() => {
+        const aantalEquivalenten = equivalenten?.filter(e => e.artikelnr !== artikelnr).length ?? 0
+        if (aantalEquivalenten === 0 && !eigenUitwisselGroep) {
+          return product?.kwaliteit_code ? (
+            <div className="bg-white rounded-[var(--radius)] border border-slate-200 overflow-hidden mb-6 px-5 py-4 flex items-center justify-between">
+              <p className="text-sm text-slate-400">Dit product zit nog niet in een uitwisselgroep</p>
+              <button
+                onClick={() => setKoppelDialoogOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-sm)] text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors border border-slate-200"
+              >
+                <Pencil size={12} />
+                Koppeling toevoegen
+              </button>
+            </div>
+          ) : null
+        }
+        return (
         <div className="bg-white rounded-[var(--radius)] border border-slate-200 overflow-hidden mb-6">
-          <div className="px-5 py-3 border-b border-slate-100">
-            <h3 className="font-medium">Uitwisselbare producten ({equivalenten.filter(e => e.artikelnr !== artikelnr).length})</h3>
+          <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+            <h3 className="font-medium">Uitwisselbare producten ({aantalEquivalenten})</h3>
+            {eigenUitwisselGroep && (
+              <button
+                onClick={() => setKoppelDialoogOpen(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-[var(--radius-sm)] text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+              >
+                <Pencil size={12} />
+                Groep &quot;{eigenUitwisselGroep.collectie_naam}&quot; bewerken
+              </button>
+            )}
           </div>
           <table className="w-full text-sm">
             <thead>
@@ -188,7 +223,7 @@ export function ProductDetailPage() {
               </tr>
             </thead>
             <tbody>
-              {equivalenten
+              {(equivalenten ?? [])
                 .filter(e => e.artikelnr !== artikelnr)
                 .map((e) => (
                   <tr key={e.artikelnr} className="border-b border-slate-50 hover:bg-slate-50">
@@ -214,7 +249,8 @@ export function ProductDetailPage() {
             </tbody>
           </table>
         </div>
-      )}
+        )
+      })()}
 
       {/* Openstaande inkooporders */}
       {inkoopregels && inkoopregels.length > 0 && (
@@ -404,6 +440,14 @@ export function ProductDetailPage() {
           <div className="p-5 text-sm text-slate-400">Geen rollen beschikbaar</div>
         )}
       </div>
+
+      {koppelDialoogOpen && (eigenUitwisselGroep || product?.kwaliteit_code) && (
+        <UitwisselbaarGroepDialog
+          groep={eigenUitwisselGroep}
+          voorselectie={eigenUitwisselGroep ? undefined : (product?.kwaliteit_code ?? undefined)}
+          onClose={() => setKoppelDialoogOpen(false)}
+        />
+      )}
     </>
   )
 }

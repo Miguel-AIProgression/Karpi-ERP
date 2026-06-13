@@ -18,17 +18,17 @@ import {
   createClient as createLightspeed,
   extractShippingAddress,
   extractBillingAddress,
-  parseMaatwerkDims,
   type LightspeedShop,
   type LightspeedOrder,
-  type LightspeedOrderRow,
 } from '../_shared/lightspeed-client.ts'
-import { matchProduct } from '../_shared/product-matcher.ts'
 import { matchDebiteurViaEnv } from '../_shared/debiteur-matcher.ts'
-import { haalKlantPrijs } from '../_shared/klant-prijs.ts'
+import { buildLightspeedRegels } from '../_shared/order-intake/lightspeed-regels.ts'
+import { bepaalAfleverdatumUitOrder } from '../_shared/lightspeed-leverdatum.ts'
+import { logExternePayload, markeerExternePayload } from '../_shared/externe-payload-audit.ts'
 
 const SHOPS: LightspeedShop[] = ['nl', 'de']
 const PAGE_LIMIT = 250
+const DEFAULT_WEBSHOP_MAATWERK_WEKEN = 2
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -41,82 +41,9 @@ function bronShopFor(shop: LightspeedShop): string {
   return shop === 'nl' ? 'floorpassion_nl' : 'floorpassion_de'
 }
 
-function normalizeGewicht(raw: number | undefined): number | null {
-  if (raw == null || Number.isNaN(raw)) return null
-  const kg = raw / 1_000  // Lightspeed weight is in grams
-  if (kg >= 1_000_000 || kg < 0) return null
-  return Math.round(kg * 100) / 100
-}
-
 // Vandaag in ISO formaat (YYYY-MM-DD) als startdatum voor import
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10)
-}
-
-async function buildRegels(
-  supabase: ReturnType<typeof createSupabase>,
-  rows: LightspeedOrderRow[],
-  debiteurNr: number,
-): Promise<{ regels: unknown[]; matched: number; unmatched: number }> {
-  const regels: unknown[] = []
-  let matched = 0
-  let unmatched = 0
-
-  for (const row of rows) {
-    const match = await matchProduct(supabase, row, debiteurNr)
-
-    // Staaltjes (Gratis Muster) worden niet ingeladen — Karpi factureert ze niet aan Floorpassion
-    if (match.unmatchedReden === 'muster') continue
-
-    const omschrijvingBase = [row.productTitle, row.variantTitle].filter(Boolean).join(' — ')
-    const isHerkend = match.artikelnr != null || match.is_maatwerk
-    const omschrijving = isHerkend
-      ? omschrijvingBase
-      : `[UNMATCHED] ${omschrijvingBase || row.articleCode || row.sku || 'onbekend'}`
-
-    if (isHerkend) matched++
-    else unmatched++
-
-    let maatwerk_lengte_cm: number | null = null
-    let maatwerk_breedte_cm: number | null = null
-    if (match.is_maatwerk) {
-      const dims = parseMaatwerkDims(row)
-      if (dims) {
-        maatwerk_lengte_cm = dims.lengte
-        maatwerk_breedte_cm = dims.breedte
-      }
-    }
-
-    // Klantprijs uit prijslijst (NIET de consumentprijs van Lightspeed)
-    const aantal = row.quantityOrdered ?? 1
-    const klantPrijs = await haalKlantPrijs(supabase, debiteurNr, match.artikelnr, {
-      is_maatwerk: match.is_maatwerk,
-      lengte_cm: maatwerk_lengte_cm,
-      breedte_cm: maatwerk_breedte_cm,
-    })
-    const prijs = klantPrijs.prijs
-    const bedrag = prijs != null ? Math.round(prijs * aantal * 100) / 100 : null
-
-    regels.push({
-      artikelnr: match.artikelnr,
-      omschrijving,
-      omschrijving_2: row.variantTitle ?? null,
-      orderaantal: aantal,
-      te_leveren: aantal,
-      prijs,
-      korting_pct: 0,
-      bedrag,
-      gewicht_kg: normalizeGewicht(row.weight),
-      is_maatwerk: match.is_maatwerk ?? false,
-      maatwerk_kwaliteit_code: match.maatwerk_kwaliteit_code ?? null,
-      maatwerk_kleur_code: match.maatwerk_kleur_code ?? null,
-      maatwerk_vorm: match.maatwerk_vorm ?? null,
-      maatwerk_lengte_cm,
-      maatwerk_breedte_cm,
-    })
-  }
-
-  return { regels, matched, unmatched }
 }
 
 async function importShop(
@@ -131,6 +58,18 @@ async function importShop(
   let imported = 0
   let skipped = 0
   let errors = 0
+
+  // Fallback-weken voor de afleverdatum-bepaling, zelfde bron als
+  // sync-webshop-order: debiteuren.maatwerk_weken (Floorpassion=2).
+  const { data: debRow } = await supabase
+    .from('debiteuren')
+    .select('maatwerk_weken')
+    .eq('debiteur_nr', debiteurNr)
+    .maybeSingle<{ maatwerk_weken: number | null }>()
+  const maatwerkWeken =
+    typeof debRow?.maatwerk_weken === 'number' && debRow.maatwerk_weken > 0
+      ? debRow.maatwerk_weken
+      : DEFAULT_WEBSHOP_MAATWERK_WEKEN
 
   while (true) {
     const { count, orders } = await client.listOrders({
@@ -148,18 +87,36 @@ async function importShop(
       if (order.status === 'cancelled') { skipped++; continue }
       if ((order.priceIncl ?? 0) <= 0) { skipped++; continue }
 
+      // Rauwe-payload-audit (mig 324/325): letterlijke inkomende order +
+      // regels wegschrijven als diagnose-vangnet, vóór de creatie.
+      let auditId: number | null = null
+
       try {
         const rows = await client.getOrderProducts(order.id)
-        const { regels, matched, unmatched } = await buildRegels(supabase, rows, debiteurNr)
+        const { regels, matched, unmatched } = await buildLightspeedRegels(supabase, rows, debiteurNr)
+
+        auditId = await logExternePayload(supabase, {
+          kanaal: 'lightspeed',
+          richting: 'in',
+          raw: JSON.stringify({ order, products: rows }),
+          json: { order, products: rows },
+          bron: bronShopFor(shop),
+          externeId: String(order.id),
+        })
 
         const shipping = extractShippingAddress(order)
         const billing = extractBillingAddress(order)
+
+        // Afleverdatum bepalen zoals het webhook-pad (sync-webshop-order) dat
+        // doet — was hier hard NULL (bevinding B4, docs/order-lifecycle.md §11)
+        // waardoor cron-orders zonder deadline in de planning belandden.
+        const leverInfo = bepaalAfleverdatumUitOrder(order, maatwerkWeken)
 
         const header = {
           debiteur_nr: debiteurNr,
           klant_referentie: `Floorpassion #${order.number}`,
           orderdatum: order.createdAt ? order.createdAt.slice(0, 10) : null,
-          afleverdatum: null,
+          afleverdatum: leverInfo.afleverdatum,
           ...shipping,
           ...billing,
           afl_email: order.email ?? null,
@@ -177,16 +134,23 @@ async function importShop(
 
         if (error) {
           console.error(`[import-lightspeed] shop=${shop} order=${order.id} RPC error:`, error.message)
+          await markeerExternePayload(supabase, auditId, 'fout', { fout: error.message })
           errors++
           continue
         }
 
         const result = Array.isArray(data) && data.length > 0 ? data[0] : null
         const wasExisting = result?.was_existing ?? false
+        // Lokale cast zoals het bestaande result-patroon (RPC-return is `never`-getypeerd).
+        const orderId = (result as { order_id?: number } | null)?.order_id
+        const nieuwOrderId = typeof orderId === 'number' ? orderId : null
+
+        await markeerExternePayload(supabase, auditId, 'verwerkt', { orderId: nieuwOrderId })
 
         console.log(
           `[import-lightspeed] shop=${shop} order=${order.id} → ${result?.order_nr} ` +
-          `existing=${wasExisting} matched=${matched} unmatched=${unmatched}`,
+          `existing=${wasExisting} matched=${matched} unmatched=${unmatched} ` +
+          `afleverdatum=${leverInfo.afleverdatum} (bron=${leverInfo.bron})`,
         )
 
         if (wasExisting) skipped++
@@ -194,6 +158,7 @@ async function importShop(
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         console.error(`[import-lightspeed] shop=${shop} order=${order.id} error:`, msg)
+        await markeerExternePayload(supabase, auditId, 'fout', { fout: msg })
         errors++
       }
     }

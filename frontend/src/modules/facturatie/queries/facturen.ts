@@ -14,6 +14,8 @@ export interface FactuurListItem {
   totaal: number
   verstuurd_op: string | null
   pdf_storage_path: string | null
+  /** Distinct orders op deze factuur (bundel = meerdere). Voor klikbare links. */
+  orders: Array<{ id: number; nr: string }>
 }
 
 export interface FactuurDetail {
@@ -61,25 +63,40 @@ export async function fetchFacturen(params?: { debiteurNr?: number }): Promise<F
   let q = supabase
     .from('facturen')
     .select(
-      'id, factuur_nr, debiteur_nr, factuurdatum, vervaldatum, status, totaal, verstuurd_op, pdf_storage_path, debiteuren(naam)',
+      'id, factuur_nr, debiteur_nr, factuurdatum, vervaldatum, status, totaal, verstuurd_op, pdf_storage_path, debiteuren(naam), factuur_regels(order_id, order_nr)',
     )
     .order('factuurdatum', { ascending: false })
     .order('factuur_nr', { ascending: false })
   if (params?.debiteurNr) q = q.eq('debiteur_nr', params.debiteurNr)
   const { data, error } = await q
   if (error) throw error
-  return (data ?? []).map((f) => ({
-    id: f.id,
-    factuur_nr: f.factuur_nr,
-    debiteur_nr: f.debiteur_nr,
-    klant_naam: (f.debiteuren as unknown as { naam: string } | null)?.naam,
-    factuurdatum: f.factuurdatum,
-    vervaldatum: f.vervaldatum,
-    status: f.status as FactuurStatus,
-    totaal: Number(f.totaal),
-    verstuurd_op: f.verstuurd_op,
-    pdf_storage_path: f.pdf_storage_path,
-  }))
+  return (data ?? []).map((f) => {
+    // Distinct orders verzamelen uit de factuurregels (1 factuur kan een
+    // bundel van meerdere orders zijn). Dedup op order_id; order_nr als
+    // weergave met #id-fallback wanneer het nr (nog) niet gevuld is.
+    const regels = (f.factuur_regels ?? []) as Array<{
+      order_id: number | null
+      order_nr: string | null
+    }>
+    const ordersMap = new Map<number, string>()
+    for (const r of regels) {
+      if (r.order_id == null || ordersMap.has(r.order_id)) continue
+      ordersMap.set(r.order_id, r.order_nr ?? `#${r.order_id}`)
+    }
+    return {
+      id: f.id,
+      factuur_nr: f.factuur_nr,
+      debiteur_nr: f.debiteur_nr,
+      klant_naam: (f.debiteuren as unknown as { naam: string } | null)?.naam,
+      factuurdatum: f.factuurdatum,
+      vervaldatum: f.vervaldatum,
+      status: f.status as FactuurStatus,
+      totaal: Number(f.totaal),
+      verstuurd_op: f.verstuurd_op,
+      pdf_storage_path: f.pdf_storage_path,
+      orders: Array.from(ordersMap, ([id, nr]) => ({ id, nr })),
+    }
+  })
 }
 
 export async function fetchFactuurDetail(

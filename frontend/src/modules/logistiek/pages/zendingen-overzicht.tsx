@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Truck, AlertCircle, Settings } from 'lucide-react'
+import { Truck, AlertCircle, Settings, Printer } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { useZendingen } from '@/modules/logistiek/hooks/use-zendingen'
 import { ZendingStatusBadge } from '@/modules/logistiek/components/zending-status-badge'
@@ -23,8 +23,8 @@ const STATUS_PILLEN: StatusFilter[] = [
 const VERVOERDER_PILLEN: { key: VervoerderFilter; label: string }[] = [
   { key: 'alle', label: 'Alle' },
   { key: 'hst_api', label: 'HST' },
-  { key: 'edi_partner_a', label: 'Rhenus' },
-  { key: 'edi_partner_b', label: 'Verhoek' },
+  { key: 'rhenus_sftp', label: 'Rhenus' },
+  { key: 'verhoek_sftp', label: 'Verhoek' },
   { key: 'geen', label: 'Geen' },
 ]
 
@@ -233,6 +233,7 @@ export function ZendingenOverzichtPage() {
                 <th className="px-4 py-3 text-left font-medium">Track &amp; Trace</th>
                 <th className="px-4 py-3 text-right font-medium">Colli</th>
                 <th className="px-4 py-3 text-right font-medium">Gewicht</th>
+                <th className="px-4 py-3 text-right font-medium" aria-label="Acties" />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -293,6 +294,17 @@ export function ZendingenOverzichtPage() {
                       {z.totaal_gewicht_kg != null
                         ? `${z.totaal_gewicht_kg} kg`
                         : <span className="text-slate-400">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <Link
+                        to={`/logistiek/${z.zending_nr}/printset`}
+                        onClick={(e) => e.stopPropagation()}
+                        aria-label={`Verzendset printen voor ${z.zending_nr}`}
+                        title="Verzendset printen (stickers + pakbon)"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700"
+                      >
+                        <Printer size={14} />
+                      </Link>
                     </td>
                   </tr>
                 )

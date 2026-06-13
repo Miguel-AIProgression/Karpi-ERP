@@ -16,6 +16,7 @@ import { AlertTriangle } from 'lucide-react'
 import { AFWERKING_MAP, AFWERKING_OPTIES, SNIJPLAN_STATUS_COLORS } from '@/lib/utils/constants'
 import { getVormDisplay } from '@/lib/utils/vorm-labels'
 import type { SnijplanRow } from '@/lib/types/productie'
+import { CONFECTIE_INSTROOM } from '@/lib/utils/snijplan-status'
 
 /** Label voor afwerking-code of fallback tekst */
 function afwerkingLabel(code: string | null): string {
@@ -30,8 +31,6 @@ function afwerkingVolgorde(code: string | null): number {
   return idx === -1 ? 998 : idx
 }
 
-const KLAAR_STATUSSEN = ['Gesneden', 'In confectie']
-
 export function ConfectieOverviewPage() {
   const { data: alleStukken, isLoading } = useConfectiePlanningForward()
   const [filter, setFilter] = useState<'klaar' | 'alles'>('klaar')
@@ -40,7 +39,7 @@ export function ConfectieOverviewPage() {
   // Filter op status
   const stukken = useMemo(() => {
     if (!alleStukken) return []
-    if (filter === 'klaar') return alleStukken.filter((s) => KLAAR_STATUSSEN.includes(s.snijplan_status))
+    if (filter === 'klaar') return alleStukken.filter((s) => (CONFECTIE_INSTROOM as readonly string[]).includes(s.snijplan_status))
     return alleStukken
   }, [alleStukken, filter])
 

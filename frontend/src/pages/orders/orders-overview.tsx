@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Plus, Search } from 'lucide-react'
+import { Plus, Search, Download } from 'lucide-react'
+import { exporterenNaarExcel } from '@/lib/orders/export-orders'
 import { PageHeader } from '@/components/layout/page-header'
 import { MultiSelectDropdown } from '@/components/ui/multi-select-dropdown'
 import { StatusTabs } from '@/components/orders/status-tabs'
@@ -12,13 +13,24 @@ import { EdiTeKoppelenBanner } from '@/modules/edi'
 import { ShopifySyncStatusBanner } from '@/components/orders/shopify-sync-status-banner'
 import type { OrderSortField, SortDirection } from '@/lib/supabase/queries/orders'
 
+const KANAAL_OPTIES = [
+  { value: 'handmatig', label: 'Handmatig' },
+  { value: 'edi',       label: 'EDI' },
+  { value: 'shopify',   label: 'Shopify' },
+  { value: 'lightspeed', label: 'Lightspeed' },
+  { value: 'email',     label: 'E-mail' },
+  { value: 'oud_systeem', label: 'Oud systeem' },
+]
+
 export function OrdersOverviewPage() {
   const [status, setStatus] = useState('Alle')
   const [search, setSearch] = useState('')
   const [klantSelectie, setKlantSelectie] = useState<string[]>([])
+  const [bronSelectie, setBronSelectie] = useState<string[]>([])
   const [page, setPage] = useState(0)
   const [sortBy, setSortBy] = useState<OrderSortField>('orderdatum')
   const [sortDir, setSortDir] = useState<SortDirection>('desc')
+  const [exportBezig, setExportBezig] = useState(false)
 
   const handleSort = (field: OrderSortField) => {
     if (sortBy === field) {
@@ -35,7 +47,16 @@ export function OrdersOverviewPage() {
     [klantSelectie],
   )
 
-  const { data, isLoading } = useOrders({ status, search, debiteurNrs, page, sortBy, sortDir })
+  async function handleExport() {
+    setExportBezig(true)
+    try {
+      await exporterenNaarExcel({ status, search, debiteurNrs, bronSystemen: bronSelectie, sortBy, sortDir })
+    } finally {
+      setExportBezig(false)
+    }
+  }
+
+  const { data, isLoading } = useOrders({ status, search, debiteurNrs, bronSystemen: bronSelectie, page, sortBy, sortDir })
   const { data: statusCounts } = useStatusCounts()
   const { data: klantOptiesData } = useOrderKlantOpties()
 
@@ -114,6 +135,26 @@ export function OrdersOverviewPage() {
           }}
           zoekbaar
         />
+
+        <MultiSelectDropdown
+          placeholder="Alle kanalen"
+          options={KANAAL_OPTIES}
+          selected={bronSelectie}
+          onChange={(next) => {
+            setBronSelectie(next)
+            setPage(0)
+          }}
+        />
+
+        <button
+          onClick={handleExport}
+          disabled={exportBezig || totalCount === 0}
+          className="ml-auto flex items-center gap-1.5 px-3 py-2 text-sm border border-slate-200 rounded-[var(--radius-sm)] hover:bg-slate-50 disabled:opacity-40 transition-colors"
+          title="Exporteer gefilterde orders naar Excel"
+        >
+          <Download size={15} />
+          {exportBezig ? 'Exporteren…' : `Excel (${totalCount})`}
+        </button>
       </div>
 
       {/* Status tabs */}

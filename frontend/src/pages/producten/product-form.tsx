@@ -45,9 +45,16 @@ export function ProductFormPage({ product }: ProductFormProps) {
   const set = (field: keyof ProductFormData, value: unknown) =>
     setForm(f => ({ ...f, [field]: value }))
 
+  // Mig 359: karpi_code is verplicht voor rol/vast (DB-trigger weigert anders).
+  const karpiVerplicht = form.product_type === 'rol' || form.product_type === 'vast'
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
+    if (karpiVerplicht && !(form.karpi_code ?? '').trim()) {
+      setError('Karpi-code is verplicht voor producten van type Rol of Standaard maat. Vul de Karpi-code in.')
+      return
+    }
     try {
       const { artikelnr, ...rest } = form
       void artikelnr
@@ -92,12 +99,14 @@ export function ProductFormPage({ product }: ProductFormProps) {
                 placeholder="bijv. 526160001"
               />
             </Field>
-            <Field label="Karpi-code">
+            <Field label={karpiVerplicht ? 'Karpi-code *' : 'Karpi-code'}>
               <input
                 value={form.karpi_code ?? ''}
                 onChange={e => set('karpi_code', e.target.value || null)}
+                required={karpiVerplicht}
                 className="input"
                 placeholder="bijv. PABL16XX155230"
+                title={karpiVerplicht ? 'Verplicht voor type Rol / Standaard maat' : undefined}
               />
             </Field>
             <Field label="EAN-code">

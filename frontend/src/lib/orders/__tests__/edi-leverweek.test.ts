@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isLeverweekTeBevestigen, vergelijkLeverweek } from '../edi-leverweek'
+import { isLeverweekTeBevestigen, vergelijkLeverweek, filterLeverweekTeBevestigen } from '../edi-leverweek'
 
 describe('isLeverweekTeBevestigen', () => {
   it('is true voor een EDI-order zonder edi_bevestigd_op', () => {
@@ -48,5 +48,22 @@ describe('vergelijkLeverweek', () => {
   it('geeft relatie "onbekend" als een van beide datums ontbreekt', () => {
     expect(vergelijkLeverweek(null, '2026-06-22').relatie).toBe('onbekend')
     expect(vergelijkLeverweek('2026-06-22', null).relatie).toBe('onbekend')
+  })
+})
+
+describe('filterLeverweekTeBevestigen', () => {
+  it('past de drie PostgREST-filters toe', () => {
+    const calls: { op: string; args: unknown[] }[] = []
+    const q = {
+      eq(c: string, v: unknown) { calls.push({ op: 'eq', args: [c, v] }); return this },
+      is(c: string, v: unknown) { calls.push({ op: 'is', args: [c, v] }); return this },
+      neq(c: string, v: unknown) { calls.push({ op: 'neq', args: [c, v] }); return this },
+    }
+    filterLeverweekTeBevestigen(q)
+    expect(calls).toEqual([
+      { op: 'eq', args: ['bron_systeem', 'edi'] },
+      { op: 'is', args: ['edi_bevestigd_op', null] },
+      { op: 'neq', args: ['status', 'Geannuleerd'] },
+    ])
   })
 })

@@ -12,6 +12,18 @@ import type {
   PickShipWachtOp,
 } from '../lib/types'
 
+/** Rij uit view `order_pickbaarheid` (mig 386): het order-niveau-predicaat.
+ *  Geen rij voor een order = geen (niet-pseudo) regels = niets te picken. */
+export interface OrderPickbaarheidRij {
+  order_id: number
+  totaal_regels: number
+  pickbare_regels: number
+  alle_regels_pickbaar: boolean
+  heeft_pickbare_regel: boolean
+  deelleveringen_toegestaan: boolean
+  pick_ship_zichtbaar: boolean
+}
+
 export interface PickbaarheidRij {
   order_regel_id: number
   order_id: number
@@ -30,6 +42,9 @@ export interface PickbaarheidRij {
   bron: PickShipBron
   fysieke_locatie: string | null
   wacht_op: PickShipWachtOp
+  /** Mig 386: gewicht per stuk uit order_regels, via de view — vervangt de
+   *  aparte gewicht-query. */
+  gewicht_kg: number | null
 }
 
 export interface OrderHeaderRij {
@@ -45,19 +60,9 @@ export interface OrderHeaderRij {
   afl_land: string | null
   afleverdatum: string | null
   afhalen: boolean
-  /** Klant-policy uit `debiteuren.deelleveringen_toegestaan`. Bepaalt of een
-   *  order met ≥1 'Wacht op snijden'-regel toch in Pick & Ship verschijnt
-   *  (deellevering van de pickbare regels), of pas zichtbaar wordt zodra
-   *  alle regels gepickt kunnen worden. */
-  deelleveringen_toegestaan: boolean
   /** ADR 0014 / mig 244: 'datum' = pick-horizon = 1 werkdag vóór afleverdatum;
    *  'week' = direct zichtbaar zodra pickbaar. */
   lever_type: 'week' | 'datum'
-  /** Herkomst van de order; 'edi' = via EDI-poll aangemaakt (mig 156). */
-  bron_systeem: string | null
-  /** EDI (mig 158/309): tijdstip leverweek-bevestiging. NULL = te bevestigen →
-   *  order blijft uit Pick & Ship (zie isLeverweekTeBevestigen). */
-  edi_bevestigd_op: string | null
 }
 
 export function initPickShipOrders(
@@ -89,6 +94,7 @@ export function initPickShipOrders(
       totaal_m2: 0,
       totaal_gewicht_kg: 0,
       aantal_regels: 0,
+      alle_regels_pickbaar: false,
       actieve_pickronde: null,
     })
   }

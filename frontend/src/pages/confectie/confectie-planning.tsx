@@ -15,6 +15,7 @@ import {
 } from '@/modules/confectie'
 import { formatDate } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
+import { CONFECTIE_INSTROOM } from '@/lib/utils/snijplan-status'
 
 export function ConfectiePlanningPage() {
   const [horizon, setHorizon] = useState<HorizonWeken>(4)
@@ -61,7 +62,7 @@ export function ConfectiePlanningPage() {
   // gesorteerd op leverdatum (respecteert lane-filter).
   const volgendeId = useMemo(() => {
     const gesneden = teConfectioneren
-      .filter((r) => r.snijplan_status === 'Gesneden' || r.snijplan_status === 'In confectie')
+      .filter((r) => (CONFECTIE_INSTROOM as readonly string[]).includes(r.snijplan_status))
       .filter((r) => !laneFilter || r.type_bewerking === laneFilter)
       .sort((a, b) => (a.afleverdatum ?? '9999-12-31').localeCompare(b.afleverdatum ?? '9999-12-31'))
     return gesneden[0]?.snijplan_id ?? null
@@ -88,7 +89,7 @@ export function ConfectiePlanningPage() {
 
   const isLoading = fwLoading || tijdenLoading
   const totaal = teConfectioneren.length
-  const totaalGesneden = teConfectioneren.filter((r) => r.snijplan_status === 'Gesneden' || r.snijplan_status === 'In confectie').length
+  const totaalGesneden = teConfectioneren.filter((r) => (CONFECTIE_INSTROOM as readonly string[]).includes(r.snijplan_status)).length
 
   return (
     <>

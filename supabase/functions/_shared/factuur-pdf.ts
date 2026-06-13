@@ -10,6 +10,7 @@ import {
   StandardFonts,
   rgb,
 } from 'https://esm.sh/pdf-lib@1.17.1'
+import { normalizeCountry } from './adres-split.ts'
 
 // ---------------------------------------------------------------------------
 // Types (exported — re-used by factuur-verzenden edge function)
@@ -73,6 +74,10 @@ export interface FactuurHeader {
   totaal: number
   totaal_m2?: number
   totaal_gewicht_kg?: number
+  // Mig 371: intracommunautaire verlegging. TRUE → geen BTW-regel maar de
+  // wettelijke vermelding "BTW verlegd" + btw-nummer van de afnemer.
+  btw_verlegd?: boolean
+  btw_nummer_afnemer?: string | null
 }
 
 export interface FactuurAfleveradres {
@@ -183,31 +188,6 @@ function padLabel(label: string, breedte: number): string {
   return label + ' '.repeat(breedte - label.length)
 }
 
-/**
- * Map een vol landnaam naar de 2-letter ISO-code zoals op het Karpi-briefpapier.
- * Voor onbekende waarden returnt de input zelf (zodat een al-gestelde "NL" werkt).
- */
-function naarLandCode(land: string): string {
-  const m: Record<string, string> = {
-    'nederland': 'NL',
-    'duitsland': 'DE',
-    'belgie': 'BE',
-    'belgië': 'BE',
-    'frankrijk': 'FR',
-    'verenigd koninkrijk': 'GB',
-    'oostenrijk': 'AT',
-    'zwitserland': 'CH',
-    'italië': 'IT',
-    'italie': 'IT',
-    'spanje': 'ES',
-    'denemarken': 'DK',
-    'zweden': 'SE',
-    'noorwegen': 'NO',
-    'polen': 'PL',
-  }
-  const key = land.trim().toLowerCase()
-  return m[key] ?? land
-}
 
 /**
  * Truncate `text` zodat het binnen `maxWidth` past in `font`/`size`.
@@ -354,7 +334,7 @@ function drawPageHeader(
   const SIZE = 6
   drawTextRight(
     page,
-    `${bedrijf.adres}, ${bedrijf.postcode} ${bedrijf.plaats} (${naarLandCode(bedrijf.land)})`,
+    `${bedrijf.adres}, ${bedrijf.postcode} ${bedrijf.plaats} (${normalizeCountry(bedrijf.land)})`,
     rightX, adresY, regular, SIZE,
   )
   const telFax = bedrijf.fax
@@ -463,21 +443,41 @@ function drawBtwBlok(
 
   // Header row: labels
   const SIZE_BOLD = 9
-  drawText(page, 'Grondsl.', MARGIN_L, y, bold, SIZE_BOLD)
-  drawText(page, 'BTW %', MARGIN_L + 30 * MM, y, bold, SIZE_BOLD)
-  drawText(page, 'BTWbedrag', MARGIN_L + 50 * MM, y, bold, SIZE_BOLD)
-  drawTextRight(page, 'Te Betalen', COL_BEDRAG, y, bold, SIZE_BOLD)
-
-  y -= 1 * MM
-  drawHLine(page, y)
-  y -= LINE_H
-
-  // Values row
   const SIZE = 10
-  drawText(page, formatBedrag(factuur.subtotaal), MARGIN_L, y, regular, SIZE)
-  drawText(page, `${factuur.btw_percentage}`, MARGIN_L + 30 * MM, y, regular, SIZE)
-  drawText(page, formatBedrag(factuur.btw_bedrag), MARGIN_L + 50 * MM, y, regular, SIZE)
-  drawTextRight(page, `${formatBedrag(factuur.totaal)} EUR`, COL_BEDRAG, y, regular, SIZE)
+  if (factuur.btw_verlegd) {
+    // Mig 371: intracommunautaire verlegging — geen BTW-kolommen, wel de
+    // wettelijk vereiste vermelding "BTW verlegd" + btw-nummer van de afnemer.
+    drawText(page, 'Grondsl.', MARGIN_L, y, bold, SIZE_BOLD)
+    drawTextRight(page, 'Te Betalen', COL_BEDRAG, y, bold, SIZE_BOLD)
+
+    y -= 1 * MM
+    drawHLine(page, y)
+    y -= LINE_H
+
+    drawText(page, formatBedrag(factuur.subtotaal), MARGIN_L, y, regular, SIZE)
+    drawTextRight(page, `${formatBedrag(factuur.totaal)} EUR`, COL_BEDRAG, y, regular, SIZE)
+    y -= LINE_H
+
+    const verlegdTekst = factuur.btw_nummer_afnemer
+      ? `BTW verlegd — btw-nr afnemer: ${factuur.btw_nummer_afnemer}`
+      : 'BTW verlegd'
+    drawText(page, verlegdTekst, MARGIN_L, y, bold, SIZE_BOLD)
+  } else {
+    drawText(page, 'Grondsl.', MARGIN_L, y, bold, SIZE_BOLD)
+    drawText(page, 'BTW %', MARGIN_L + 30 * MM, y, bold, SIZE_BOLD)
+    drawText(page, 'BTWbedrag', MARGIN_L + 50 * MM, y, bold, SIZE_BOLD)
+    drawTextRight(page, 'Te Betalen', COL_BEDRAG, y, bold, SIZE_BOLD)
+
+    y -= 1 * MM
+    drawHLine(page, y)
+    y -= LINE_H
+
+    // Values row
+    drawText(page, formatBedrag(factuur.subtotaal), MARGIN_L, y, regular, SIZE)
+    drawText(page, `${factuur.btw_percentage}`, MARGIN_L + 30 * MM, y, regular, SIZE)
+    drawText(page, formatBedrag(factuur.btw_bedrag), MARGIN_L + 50 * MM, y, regular, SIZE)
+    drawTextRight(page, `${formatBedrag(factuur.totaal)} EUR`, COL_BEDRAG, y, regular, SIZE)
+  }
 
   y -= LINE_H  // blank line
   y -= LINE_H

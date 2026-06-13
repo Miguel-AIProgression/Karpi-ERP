@@ -320,6 +320,62 @@ export async function fetchMaatwerkArtikelNr(kwaliteitCode: string, kleurCode: s
   return null
 }
 
+export interface MaatwerkArtikelExact {
+  artikelnr: string
+  karpi_code: string | null
+}
+
+/**
+ * Zoek het maatwerk-artikel voor EXACT deze kwaliteit+kleur — geen
+ * uitwissel- of andere-kleur-fallback (strategieën 4/5 van
+ * `fetchMaatwerkArtikelNr` leveren een artikel van een ANDERE kleur of
+ * kwaliteit; acceptabel voor fysiek_artikelnr/omsticker, maar NIET voor de
+ * facturatie-`artikelnr` van een nieuwe orderregel).
+ *
+ * Eigenaar-besluit (bug phdobbe, ORD-2026-0188): een handmatige op-maat-regel
+ * koppelt het generieke MAATWERK-artikel van (kwaliteit, kleur) — conventie
+ * `{KWAL}{KLEUR}MAATWERK`. Strategieën 1-3 zijn 1-op-1 overgenomen uit
+ * `fetchMaatwerkArtikelNr` (die blijft ongewijzigd voor bestaande callers),
+ * met als enige verschil dat ook `karpi_code` wordt geselecteerd.
+ */
+export async function fetchMaatwerkArtikelExact(
+  kwaliteitCode: string,
+  kleurCode: string,
+): Promise<MaatwerkArtikelExact | null> {
+  const normKleur = kleurCode.replace(/\.0$/, '')
+  const kleurVariants = Array.from(new Set([kleurCode, normKleur]))
+
+  for (const kc of kleurVariants) {
+    // Strategie 1: product_type='overig' én 'maatwerk' in omschrijving
+    // (sluit Contour/overige stukprijsproducten uit die geen m²-referentie zijn)
+    const { data: d1 } = await supabase
+      .from('producten').select('artikelnr, karpi_code')
+      .eq('kwaliteit_code', kwaliteitCode).eq('kleur_code', kc)
+      .eq('actief', true).eq('product_type', 'overig')
+      .ilike('omschrijving', '%maatwerk%')
+      .limit(1).maybeSingle()
+    if (d1?.artikelnr) return d1 as MaatwerkArtikelExact
+
+    // Strategie 2: karpi_code bevat 'maatwerk'
+    const { data: d2 } = await supabase
+      .from('producten').select('artikelnr, karpi_code')
+      .eq('kwaliteit_code', kwaliteitCode).eq('kleur_code', kc)
+      .eq('actief', true).ilike('karpi_code', '%maatwerk%')
+      .limit(1).maybeSingle()
+    if (d2?.artikelnr) return d2 as MaatwerkArtikelExact
+
+    // Strategie 3: omschrijving bevat 'maatwerk'
+    const { data: d3 } = await supabase
+      .from('producten').select('artikelnr, karpi_code')
+      .eq('kwaliteit_code', kwaliteitCode).eq('kleur_code', kc)
+      .eq('actief', true).ilike('omschrijving', '%maatwerk%')
+      .limit(1).maybeSingle()
+    if (d3?.artikelnr) return d3 as MaatwerkArtikelExact
+  }
+
+  return null
+}
+
 export interface BandDefault {
   band_merk?: string | null
   band_kleur: string

@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase/client'
+import { filterTeKoppelen } from '@/modules/edi/lib/te-koppelen'
 
 export type EdiBerichtStatus = 'Wachtrij' | 'Bezig' | 'Verstuurd' | 'Verwerkt' | 'Fout' | 'Geannuleerd'
 export type EdiRichting = 'in' | 'uit'
@@ -115,12 +116,9 @@ export async function fetchEdiBerichten(filters: EdiBerichtenFilters = {}): Prom
  * order-creatie faalde (geen GLN-match).
  */
 export async function countTeKoppelenEdiOrders(): Promise<number> {
-  const { count, error } = await supabase
-    .from('edi_berichten')
-    .select('id', { count: 'exact', head: true })
-    .eq('richting', 'in')
-    .eq('berichttype', 'order')
-    .is('order_id', null)
+  const { count, error } = await filterTeKoppelen(
+    supabase.from('edi_berichten').select('id', { count: 'exact', head: true }),
+  )
   if (error) throw error
   return count ?? 0
 }
@@ -317,6 +315,33 @@ export async function ruimEdiDemoData(): Promise<OpruimResult> {
   const { data, error } = await supabase.rpc('ruim_edi_demo_data').single()
   if (error) throw error
   return data as OpruimResult
+}
+
+/**
+ * Uitgaande EDI-berichten van een order, voor de Communicatie-tijdlijn op
+ * order-detail. Bewust geen payload-velden (zwaar); de tijdlijn linkt door
+ * naar het EDI-bericht-detail voor de volledige inhoud.
+ */
+export interface EdiUitgaandTijdlijnItem {
+  id: number
+  berichttype: string
+  status: string
+  is_test: boolean
+  sent_at: string | null
+  created_at: string
+}
+
+export async function fetchUitgaandeEdiBerichtenVoorOrder(
+  orderId: number,
+): Promise<EdiUitgaandTijdlijnItem[]> {
+  const { data, error } = await supabase
+    .from('edi_berichten')
+    .select('id, berichttype, status, is_test, sent_at, created_at')
+    .eq('order_id', orderId)
+    .eq('richting', 'uit')
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  return (data ?? []) as EdiUitgaandTijdlijnItem[]
 }
 
 /**

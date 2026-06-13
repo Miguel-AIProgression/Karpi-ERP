@@ -236,11 +236,12 @@ export function DebiteurAddDialog({ onClose }: Props) {
               </div>
               <div>
                 <label className="block text-xs text-slate-500 mb-1">E-mail factuur</label>
+                {/* type="text": één of meerdere adressen (komma-gescheiden) — type="email" weigert meerdere. */}
                 <input
-                  type="email"
+                  type="text"
                   value={form.email_factuur}
                   onChange={update('email_factuur')}
-                  placeholder="factuur@bedrijf.nl"
+                  placeholder="factuur@bedrijf.nl, kopie@bedrijf.nl"
                   className={inputClasses}
                 />
               </div>

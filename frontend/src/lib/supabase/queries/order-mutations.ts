@@ -15,12 +15,16 @@ export interface OrderFormData {
   fact_postcode?: string
   fact_plaats?: string
   fact_land?: string
+  /** Mig 364: per-order snapshot van het factuur-e-mailadres. */
+  fact_email?: string
   afl_naam?: string
   afl_naam_2?: string
   afl_adres?: string
   afl_postcode?: string
   afl_plaats?: string
   afl_land?: string
+  /** Mig 084 (kolom) / mig 364 (RPC): per-order afleveradres-e-mailadres. */
+  afl_email?: string
   /** Per-order keuze bij tekort. Default uit debiteuren.deelleveringen_toegestaan. NULL voor orders zonder tekort. */
   lever_modus?: 'deelleveringen' | 'in_een_keer' | null
   /** Klant haalt zelf af → UI onderdrukt automatische verzendkosten-regel; logistiek slaat vervoerder over. Mig 204. */
@@ -103,6 +107,15 @@ export interface OrderRegelFormData {
    * uit `producten.is_pseudo`.
    */
   is_pseudo?: boolean
+  /**
+   * Display-only: dropshipment-vlag van het gekoppelde product (mig 370,
+   * ADR-0018-patroon). Gevuld door `applyDropshipmentLogic` (create) of de
+   * order-edit-mapping (edit) uit `producten.is_dropship`. Gebruikt door
+   * `isDropshipRegel`/`heeftDropshipRegel` voor de e-mail-validatie en
+   * afl_email-defaults. Wordt niet gepersisteerd; de DB leest het via JOIN
+   * (`is_dropship_order()`).
+   */
+  is_dropship?: boolean
 }
 
 /** Bronlabel voor de orderregel-prijs zoals geretourneerd door `bereken_orderregel_prijs` (mig 191, mig 253). */
@@ -177,12 +190,14 @@ export async function createOrder(
     fact_postcode: order.fact_postcode || null,
     fact_plaats: order.fact_plaats || null,
     fact_land: order.fact_land || null,
+    fact_email: order.fact_email || null,
     afl_naam: order.afl_naam || null,
     afl_naam_2: order.afl_naam_2 || null,
     afl_adres: order.afl_adres || null,
     afl_postcode: order.afl_postcode || null,
     afl_plaats: order.afl_plaats || null,
     afl_land: order.afl_land || null,
+    afl_email: order.afl_email || null,
     lever_modus: order.lever_modus ?? null,
     afhalen: order.afhalen ?? false,
     lever_type: order.lever_type ?? 'week',
@@ -412,12 +427,12 @@ export async function fetchKlantArtikelnummer(debiteurNr: number, artikelnr: str
 export async function fetchClientCommercialData(debiteurNr: number) {
   const { data, error } = await supabase
     .from('debiteuren')
-    .select('prijslijst_nr, korting_pct, gratis_verzending, verzendkosten, verzend_drempel, standaard_maat_werkdagen, maatwerk_weken, deelleveringen_toegestaan, default_lever_type, email_factuur, email_overig')
+    .select('prijslijst_nr, korting_pct, gratis_verzending, verzendkosten, verzend_drempel, standaard_maat_werkdagen, maatwerk_weken, deelleveringen_toegestaan, default_lever_type, email_factuur, email_overig, email_verzend, afleverwijze')
     .eq('debiteur_nr', debiteurNr)
     .single()
 
   if (error) throw error
-  return data as { prijslijst_nr: string | null; korting_pct: number; gratis_verzending: boolean; verzendkosten: number; verzend_drempel: number; standaard_maat_werkdagen: number | null; maatwerk_weken: number | null; deelleveringen_toegestaan: boolean; default_lever_type: 'week' | 'datum'; email_factuur: string | null; email_overig: string | null }
+  return data as { prijslijst_nr: string | null; korting_pct: number; gratis_verzending: boolean; verzendkosten: number; verzend_drempel: number; standaard_maat_werkdagen: number | null; maatwerk_weken: number | null; deelleveringen_toegestaan: boolean; default_lever_type: 'week' | 'datum'; email_factuur: string | null; email_overig: string | null; email_verzend: string | null; afleverwijze: string | null }
 }
 
 /** Update only the afwerking (+ optional band_kleur) on a single order_regel — used for locked orders where

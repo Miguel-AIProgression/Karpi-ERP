@@ -2,6 +2,7 @@ import { Package, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { SNIJPLAN_STATUS_COLORS, CONFECTIE_STATUS_COLORS } from '@/lib/utils/constants'
 import type { ScannedItem } from '@/lib/types/productie'
+import { INPAK_KANDIDAAT } from '@/lib/utils/snijplan-status'
 
 interface ScannedItemCardProps {
   item: ScannedItem | null
@@ -10,18 +11,16 @@ interface ScannedItemCardProps {
   isOpboeking?: boolean
 }
 
-const INPAK_READY_STATUSES = ['Gesneden', 'In confectie', 'Gereed']
-
 function getStatusColors(item: ScannedItem) {
   const colors = item.type === 'snijplan'
-    ? SNIJPLAN_STATUS_COLORS[item.status]
-    : CONFECTIE_STATUS_COLORS[item.status]
+    ? (SNIJPLAN_STATUS_COLORS as Record<string, { bg: string; text: string }>)[item.status]
+    : (CONFECTIE_STATUS_COLORS as Record<string, { bg: string; text: string }>)[item.status]
   return colors ?? { bg: 'bg-gray-100', text: 'text-gray-600' }
 }
 
 function getBorderColor(item: ScannedItem) {
   if (item.status === 'Ingepakt') return 'border-teal-400'
-  if (INPAK_READY_STATUSES.includes(item.status)) return 'border-emerald-400'
+  if ((INPAK_KANDIDAAT as readonly string[]).includes(item.status)) return 'border-emerald-400'
   return 'border-slate-200'
 }
 
@@ -44,7 +43,7 @@ export function ScannedItemCard({ item, isLoading, onOpboeken, isOpboeking }: Sc
   }
 
   const statusColors = getStatusColors(item)
-  const canOpboeken = INPAK_READY_STATUSES.includes(item.status)
+  const canOpboeken = (INPAK_KANDIDAAT as readonly string[]).includes(item.status)
   const isAlreadyPacked = item.status === 'Ingepakt'
 
   return (

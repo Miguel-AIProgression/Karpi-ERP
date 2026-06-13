@@ -9,6 +9,9 @@
 //
 // Plan: docs/superpowers/plans/2026-05-01-logistiek-hst-api-koppeling.md
 
+import { normalizeCountry, splitAdres } from '../_shared/adres-split.ts';
+export { splitAdres };
+
 import type {
   BedrijfInput,
   HstAddress,
@@ -102,6 +105,10 @@ function bouwAggregateLine(zending: ZendingInput, order: OrderInput): HstTranspo
     ExchangePacking: false,
     Length: DEFAULT_LENGTH_CM,
     Width: DEFAULT_WIDTH_CM,
+    // Fallback-pad (geen colli-rijen). Sinds mig 389 is
+    // zendingen.totaal_gewicht_kg een trigger-afgeleide van
+    // SUM(zending_colli.gewicht_kg), dus dit totaal is consistent met het
+    // per-colli-pad en met wat Rhenus/Verhoek sommeren (audit A2).
     Height: DEFAULT_HEIGHT_CM,
     Weight: zending.totaal_gewicht_kg ?? DEFAULT_WEIGHT_KG,
     BarCode: { BarCode: '' },
@@ -109,32 +116,53 @@ function bouwAggregateLine(zending: ZendingInput, order: OrderInput): HstTranspo
   };
 }
 
+// HST keurt een StreetNumberAddition >5 tekens af met HTTP 400 (live-fout
+// ZEND-2026-0002: '"Unit 30" overschrijdt het maximum van 5 karakters').
+const HST_STREET_NUMBER_ADDITION_MAX = 5;
+
+// Korte toevoeging ('G', '001', '-5') → StreetNumberAddition; langere
+// ('Unit 30', 'Gebouw B') → NameAddition, HST's vrije extra adresregel.
+export function verdeelToevoeging(addition: string): {
+  streetNumberAddition: string;
+  nameAddition: string;
+} {
+  const trimmed = (addition ?? '').trim();
+  if (trimmed.length <= HST_STREET_NUMBER_ADDITION_MAX) {
+    return { streetNumberAddition: trimmed, nameAddition: '' };
+  }
+  return { streetNumberAddition: '', nameAddition: trimmed };
+}
+
 function bouwAddressUitZending(zending: ZendingInput): HstAddress {
   const { street, number, addition } = splitAdres(zending.afl_adres ?? '');
+  const toevoeging = verdeelToevoeging(addition);
   return {
     CustomerCode: '',
     Name: zending.afl_naam ?? '',
-    NameAddition: '',
+    NameAddition: toevoeging.nameAddition,
     Street: street,
     StreetNumber: number,
-    StreetNumberAddition: addition,
+    StreetNumberAddition: toevoeging.streetNumberAddition,
     ZipCode: normalizeZip(zending.afl_postcode ?? ''),
     City: zending.afl_plaats ?? '',
-    PhoneNumber: '',
-    Email: '',
+    PhoneNumber: zending.afl_telefoon ?? '',
+    // Aflever-e-mailadres = track & trace-contact (mig 365). Bewust nooit een
+    // factuur-adres — de klant moet wél de T&T krijgen maar niet de factuur.
+    Email: zending.afl_email ?? '',
     Country: normalizeCountry(zending.afl_land ?? ''),
   };
 }
 
 function bouwAddressUitBedrijf(bedrijf: BedrijfInput): HstAddress {
   const { street, number, addition } = splitAdres(bedrijf.adres);
+  const toevoeging = verdeelToevoeging(addition);
   return {
     CustomerCode: '',
     Name: bedrijf.bedrijfsnaam,
-    NameAddition: '',
+    NameAddition: toevoeging.nameAddition,
     Street: street,
     StreetNumber: number,
-    StreetNumberAddition: addition,
+    StreetNumberAddition: toevoeging.streetNumberAddition,
     ZipCode: normalizeZip(bedrijf.postcode),
     City: bedrijf.plaats,
     PhoneNumber: bedrijf.telefoon,
@@ -143,37 +171,7 @@ function bouwAddressUitBedrijf(bedrijf: BedrijfInput): HstAddress {
   };
 }
 
-// Splitst "Tweede Broekdijk 10 A" → { street: "Tweede Broekdijk", number: "10", addition: "A" }
-// HST wil straat, nummer en toevoeging in aparte velden.
-export function splitAdres(adres: string): { street: string; number: string; addition: string } {
-  const trimmed = (adres ?? '').trim();
-  if (!trimmed) return { street: '', number: '', addition: '' };
-  // Match: <straatnaam (letters/spaties/punten)> <nummer (cijfers)><optioneel toevoeging (letters/streep/spatie+letters)>
-  const m = trimmed.match(/^(.+?)\s+(\d+)\s*([A-Za-z][A-Za-z0-9\-\s]*)?$/);
-  if (!m) {
-    return { street: trimmed, number: '', addition: '' };
-  }
-  return {
-    street: m[1].trim(),
-    number: m[2].trim(),
-    addition: (m[3] ?? '').trim(),
-  };
-}
-
 // "7122 LB" → "7122LB" (HST-voorbeeldbestand gebruikt postcode zonder spatie).
 function normalizeZip(zip: string): string {
   return (zip ?? '').replace(/\s+/g, '').toUpperCase();
-}
-
-function normalizeCountry(land: string): string {
-  const trimmed = (land ?? '').trim();
-  if (!trimmed) return '';
-  const upper = trimmed.toUpperCase();
-  if (upper === 'NEDERLAND' || upper === 'THE NETHERLANDS' || upper === 'HOLLAND') {
-    return 'NL';
-  }
-  if (upper === 'DUITSLAND' || upper === 'GERMANY') return 'DE';
-  if (upper === 'BELGIE' || upper === 'BELGIË' || upper === 'BELGIUM') return 'BE';
-  if (upper === 'FRANKRIJK' || upper === 'FRANCE') return 'FR';
-  return upper;
 }

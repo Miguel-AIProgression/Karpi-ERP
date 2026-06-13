@@ -7,6 +7,7 @@ import { OrderAddresses } from '@/components/orders/order-addresses'
 import { OrderRegelsTable } from '@/components/orders/order-regels-table'
 import { OrderFacturen } from '@/components/orders/order-facturen'
 import { OrderEventsTijdlijn } from '@/components/orders/order-events-tijdlijn'
+import { OrderEmails } from '@/components/orders/order-emails'
 import { ZendingAanmakenKnop } from '@/components/orders/zending-aanmaken-knop'
 import { useOrderDetail, useOrderRegels } from '@/hooks/use-orders'
 import { useLevertijdVoorOrder, useClaimsVoorOrder } from '@/modules/reserveringen'
@@ -14,7 +15,15 @@ import { computeOrderLock } from '@/lib/utils/order-lock'
 import { DocumentenCompact } from '@/components/documenten/documenten-compact'
 import { EdiLeverweekBevestigen } from '@/components/orders/edi-leverweek-bevestigen'
 import { isLeverweekTeBevestigen } from '@/lib/orders/edi-leverweek'
+import { isDebiteurTeBevestigen } from '@/lib/orders/intake-predicaten'
 import { DebiteurBevestigenWidget } from '@/components/orders/debiteur-bevestigen-widget'
+import { BastaAfhandelingPaneel } from '@/components/orders/basta-afhandeling-paneel'
+import { LevertijdWijzigingBanner } from '@/components/orders/levertijd-wijziging-banner'
+import { VerzendFoutBanner } from '@/components/orders/verzend-fout-banner'
+import { OrderZendingen } from '@/components/orders/order-zendingen'
+import { isLevertijdWijzigingTeBevestigen } from '@/lib/orders/levertijd-wijziging'
+import { heeftDropshipRegel } from '@/lib/orders/dropshipment-regel'
+import { dropshipAflEmailProbleem } from '@/lib/orders/dropship-email'
 
 function EmailInhoudPanel({ body }: { body: string }) {
   const [open, setOpen] = useState(false)
@@ -92,7 +101,19 @@ export function OrderDetailPage() {
 
       <DocumentenCompact kind="order" parentId={order.id} className="mb-3" />
 
+      {/* R1: productie-only orders (Basta) tonen bovenaan een afhandeling-hint.
+          Rendert null voor gewone orders (gouden regel). */}
+      <BastaAfhandelingPaneel
+        alleenProductie={order.alleen_productie}
+        oudOrderNr={order.oud_order_nr ?? null}
+        status={order.status}
+      />
+
       <OrderHeader order={order} locked={computeOrderLock(regels) === 'full'} />
+
+      {/* Open HST-verzendfout: order kan al "Verzonden" tonen terwijl de
+          transportorder naar de vervoerder faalde. Rendert null zonder fout. */}
+      {order.status !== 'Geannuleerd' && <VerzendFoutBanner orderId={order.id} />}
 
       {order.bron_systeem === 'email' && order.opmerkingen && (
         <EmailInhoudPanel body={order.opmerkingen} />
@@ -101,17 +122,23 @@ export function OrderDetailPage() {
       {isLeverweekTeBevestigen(order) && order.status !== 'Geannuleerd' && (
         <EdiLeverweekBevestigen
           orderId={order.id}
+          debiteurNr={order.debiteur_nr}
           gewenstIso={order.edi_gewenste_afleverdatum ?? null}
           afleverdatumIso={order.afleverdatum}
           orderStatus={order.status}
         />
       )}
 
+      {isLevertijdWijzigingTeBevestigen(order) && order.status !== 'Geannuleerd' && (
+        <LevertijdWijzigingBanner
+          orderId={order.id}
+          teBevestigenSinds={order.levertijd_wijziging_te_bevestigen_sinds!}
+        />
+      )}
+
       {/* Mig 322: onzekere (fuzzy) debiteur-match → bevestigen of corrigeren.
           env_fallback (verzameldebiteur) is bewust geen fout en valt af. */}
-      {order.debiteur_zeker === false &&
-        order.debiteur_match_bron !== 'env_fallback' &&
-        order.status !== 'Geannuleerd' && (
+      {isDebiteurTeBevestigen(order) && (
           <DebiteurBevestigenWidget
             orderId={order.id}
             klantNaam={order.klant_naam ?? `Debiteur ${order.debiteur_nr}`}
@@ -120,10 +147,31 @@ export function OrderDetailPage() {
           />
         )}
 
-      <OrderAddresses order={order} />
-      <OrderRegelsTable regels={regels ?? []} isLoading={regelsLoading} levertijden={levertijden} claims={claims} orderStatus={order.status} />
+      <OrderAddresses
+        order={order}
+        dropshipEmailProbleem={
+          heeftDropshipRegel(regels ?? [])
+            ? dropshipAflEmailProbleem({
+                aflEmail: order.afl_email,
+                factEmail: order.fact_email,
+                debiteurEmails: [order.klant_email],
+              })
+            : null
+        }
+      />
+      <OrderRegelsTable
+        regels={regels ?? []}
+        isLoading={regelsLoading}
+        levertijden={levertijden}
+        claims={claims}
+        orderStatus={order.status}
+        orderId={order.id}
+        orderdatum={order.orderdatum}
+      />
+      <OrderZendingen orderId={order.id} />
       <OrderEventsTijdlijn orderId={order.id} />
       <OrderFacturen orderId={order.id} />
+      <OrderEmails orderId={order.id} />
     </>
   )
 }

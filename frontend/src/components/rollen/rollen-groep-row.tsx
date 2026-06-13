@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { ChevronDown, ChevronRight, Loader2, Lock, Pencil, Plus, Trash2, Truck } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { cn } from '@/lib/utils/cn'
-import { ROL_STATUS_COLORS, ROL_TYPE_COLORS, ROL_TYPE_LABELS } from '@/lib/utils/constants'
+import { ROL_STATUS_COLORS, ROL_TYPE_COLORS, ROL_TYPE_LABELS, snijplanBadgeClass } from '@/lib/utils/constants'
 import { useReserveringenVoorProduct } from '@/hooks/use-producten'
 import { useRolSnijstukken } from '@/modules/snijplanning'
 import type { RolRow } from '@/lib/types/productie'
@@ -165,7 +165,7 @@ function OpenMaatwerkvraagSectie({
                     : '—'}
                 </td>
                 <td className="py-1.5 pr-3">
-                  <span className={cn('px-1.5 py-0.5 rounded-full', SNIJPLAN_STATUS_COLORS[o.status] ?? 'bg-gray-100 text-gray-600')}>
+                  <span className={cn('px-1.5 py-0.5 rounded-full', snijplanBadgeClass(o.status))}>
                     {o.status}
                   </span>
                 </td>
@@ -215,16 +215,6 @@ function PartnerChip({ partner }: { partner: UitwisselbarePartner }) {
       &#8646; {partner.kwaliteit_code} {partner.kleur_code}
     </Link>
   )
-}
-
-const SNIJPLAN_STATUS_COLORS: Record<string, string> = {
-  Wacht: 'bg-slate-100 text-slate-600',
-  Gepland: 'bg-blue-100 text-blue-700',
-  'In productie': 'bg-amber-100 text-amber-700',
-  Gesneden: 'bg-emerald-100 text-emerald-700',
-  'In confectie': 'bg-purple-100 text-purple-700',
-  Gereed: 'bg-green-100 text-green-700',
-  Ingepakt: 'bg-teal-100 text-teal-700',
 }
 
 function RolDetails({ rolId, artikelnr, rolOppervlak }: { rolId: number; artikelnr: string; rolOppervlak: number }) {
@@ -301,7 +291,7 @@ function RolDetails({ rolId, artikelnr, rolOppervlak }: { rolId: number; artikel
                       </Link>
                     </td>
                     <td className="py-1.5 pr-3">
-                      <span className={cn('px-1.5 py-0.5 rounded-full', SNIJPLAN_STATUS_COLORS[s.status] ?? 'bg-gray-100 text-gray-600')}>
+                      <span className={cn('px-1.5 py-0.5 rounded-full', snijplanBadgeClass(s.status))}>
                         {s.status}
                       </span>
                     </td>

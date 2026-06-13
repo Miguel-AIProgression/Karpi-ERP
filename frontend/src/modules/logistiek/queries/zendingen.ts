@@ -84,6 +84,25 @@ export interface ZendingPrintBundelOrder {
   week: string | null
 }
 
+/**
+ * Eén fysieke colli uit `zending_colli` (mig 209). De `sscc` hier is exact de
+ * barcode die `hst-send` als `BarCode` bij de vervoerder aanmeldt — geprinte
+ * labels MOETEN deze waarde tonen en mogen nooit zelf een SSCC genereren
+ * (HST-overlossing-incident 12-06-2026: label en aanmelding liepen uiteen).
+ */
+export interface ZendingPrintColli {
+  id: number
+  colli_nr: number
+  sscc: string
+  order_regel_id: number | null
+  /** Mig 209: bevroren Karpi-product + maat ("Egyptische Wol 240x330 cm").
+   *  Exact wat HST/Verhoek als GoodsDescription/Omschrijving meekrijgen. */
+  omschrijving_snapshot: string | null
+  /** Mig 388: bevroren, ontdubbelde klant-omschrijving (order_regels.omschrijving
+   *  + _2). Single source voor de klant-naam op label/pakbon — niet meer live. */
+  klant_omschrijving_snapshot: string | null
+}
+
 export interface ZendingPrintSet {
   id: number
   zending_nr: string
@@ -97,6 +116,8 @@ export interface ZendingPrintSet {
   afl_postcode: string | null
   afl_plaats: string | null
   afl_land: string | null
+  /** Mig 339: leveringstelefoonnummer-snapshot — pakbon toont 'm onder het afleveradres. */
+  afl_telefoon: string | null
   aantal_colli: number | null
   totaal_gewicht_kg: number | null
   opmerkingen: string | null
@@ -133,6 +154,8 @@ export interface ZendingPrintSet {
       /** Mig 303: per-klant voorkeur om tapijt-stickers ook voor standaard
        *  (niet-maatwerk) artikelen te printen bij de vervoerderslabels. */
       tapijt_sticker_bij_standaard: boolean | null
+      /** Legacy routecode uit de debiteuren-import — pakbon toont 'm als "Routecode". */
+      route: string | null
     } | null
     vertegenwoordigers?: {
       code: string
@@ -146,6 +169,7 @@ export interface ZendingPrintSet {
    */
   bundel_orders: ZendingPrintBundelOrder[]
   zending_regels: ZendingPrintRegel[]
+  zending_colli: ZendingPrintColli[]
 }
 
 /**
@@ -240,7 +264,7 @@ export async function fetchZendingPrintSet(zending_nr: string): Promise<ZendingP
     .select(
       `
       id, zending_nr, status, vervoerder_code, service_code, verzenddatum, track_trace,
-      afl_naam, afl_adres, afl_postcode, afl_plaats, afl_land,
+      afl_naam, afl_adres, afl_postcode, afl_plaats, afl_land, afl_telefoon,
       aantal_colli, totaal_gewicht_kg, opmerkingen, created_at,
       vervoerders ( code, display_naam, type, actief, label_breedte_mm, label_hoogte_mm ),
       orders!zendingen_order_id_fkey!inner (
@@ -249,7 +273,7 @@ export async function fetchZendingPrintSet(zending_nr: string): Promise<ZendingP
         fact_naam, fact_adres, fact_postcode, fact_plaats, fact_land,
         afl_naam_2,
         debiteuren:debiteuren!orders_debiteur_nr_fkey (
-          naam, gln_bedrijf, tapijt_sticker_bij_standaard
+          naam, gln_bedrijf, tapijt_sticker_bij_standaard, route
         ),
         vertegenwoordigers ( code, naam )
       ),
@@ -271,7 +295,8 @@ export async function fetchZendingPrintSet(zending_nr: string): Promise<ZendingP
             lengte_cm, breedte_cm, vorm
           )
         )
-      )
+      ),
+      zending_colli ( id, colli_nr, sscc, order_regel_id, omschrijving_snapshot, klant_omschrijving_snapshot )
     `,
     )
     .eq('zending_nr', zending_nr)

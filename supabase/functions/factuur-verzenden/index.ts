@@ -5,7 +5,9 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { genereerFactuurPDF } from '../_shared/factuur-pdf.ts'
-import { sendFactuurEmail } from '../_shared/resend-client.ts'
+import { sendFactuurEmail } from '../_shared/graph-mail-client.ts'
+import { normalizeCountry } from '../_shared/adres-split.ts'
+import { logExternePayload } from '../_shared/externe-payload-audit.ts'
 import {
   buildKarpiInvoiceFixedWidth,
   type InvoiceParty,
@@ -14,7 +16,9 @@ import {
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!
+const MS_GRAPH_TENANT_ID = Deno.env.get('MS_GRAPH_TENANT_ID')!
+const MS_GRAPH_CLIENT_ID = Deno.env.get('MS_GRAPH_CLIENT_ID')!
+const MS_GRAPH_CLIENT_SECRET = Deno.env.get('MS_GRAPH_CLIENT_SECRET')!
 const FACTUUR_FROM = Deno.env.get('FACTUUR_FROM_EMAIL')!
 const FACTUUR_REPLY_TO = Deno.env.get('FACTUUR_REPLY_TO') ?? FACTUUR_FROM
 const AV_PATH = Deno.env.get('ALGEMENE_VOORWAARDEN_PATH') ?? 'algemene-voorwaarden-karpi-bv.pdf'
@@ -54,6 +58,7 @@ interface FactuurRow {
   btw_percentage: number | string
   btw_bedrag: number | string
   totaal: number | string
+  btw_verlegd: boolean | null
 }
 
 interface FactuurRegelRow {
@@ -238,6 +243,10 @@ serve(async () => {
       const debiteur = debiteurRes.data as DebiteurFactuurRow
       const ediConfig = await fetchEdiConfig(supabase, item.debiteur_nr)
       const ediFactuurActief = !!(ediConfig?.transus_actief && ediConfig.factuur_uit)
+      // In test_modus blijft de e-mail het echte kanaal: de INVOIC gaat als
+      // test de wachtrij op, maar de partner moet de factuur nog gewoon per
+      // mail krijgen. Mail onderdrukken kan pas bij een live EDI-kanaal.
+      const ediMailOnderdrukt = ediFactuurActief && !ediConfig?.test_modus
 
       if (!debiteur.email_factuur && !ediFactuurActief) {
         throw new Error(`Debiteur ${item.debiteur_nr} heeft geen email_factuur`)
@@ -286,6 +295,8 @@ serve(async () => {
           btw_percentage: Number(factuur.btw_percentage),
           btw_bedrag: Number(factuur.btw_bedrag),
           totaal: Number(factuur.totaal),
+          btw_verlegd: factuur.btw_verlegd === true,
+          btw_nummer_afnemer: factuur.btw_nummer ?? null,
         },
         regels: regels.map((r) => ({
           order_nr: r.order_nr ?? '',
@@ -335,7 +346,11 @@ serve(async () => {
         betalerEmail = betalerRow?.email_factuur ?? null
       }
 
-      if (debiteur.email_factuur) {
+      // EDI-partners krijgen de factuur uitsluitend via Transus zodra het kanaal
+      // live is (ediMailOnderdrukt=true). In test_modus staat de INVOIC op de
+      // testqueue maar is e-mail het echte kanaal — de PDF gaat dan gewoon mee.
+      // De PDF blijft altijd in storage; de INVOIC is in stap 6 al gezet.
+      if (!ediMailOnderdrukt && debiteur.email_factuur) {
         const { data: avBlob, error: avErr } = await supabase.storage
           .from('documenten')
           .download(AV_PATH)
@@ -354,9 +369,19 @@ serve(async () => {
           { filename: 'Algemene voorwaarden KARPI BV.pdf', content: avBytes },
         ]
 
+        // Mig 366: bijlage-verwijzingen voor de e-mailtijdlijn — beide bestanden
+        // staan (straks) in storage zodat de dialog ze via signed URL kan openen.
+        const bijlagenMeta = [
+          { filename: `${factuur.factuur_nr}.pdf`, bucket: 'facturen', path: pdfPath },
+          { filename: 'Algemene voorwaarden KARPI BV.pdf', bucket: 'documenten', path: AV_PATH },
+        ]
+        const orderIdsVoorLog = uniqueNumbers(regels.map((r) => Number(r.order_id)))
+
         // Stuur naar debiteur zelf
         await sendFactuurEmail({
-          apiKey: RESEND_API_KEY,
+          tenantId: MS_GRAPH_TENANT_ID,
+          clientId: MS_GRAPH_CLIENT_ID,
+          clientSecret: MS_GRAPH_CLIENT_SECRET,
           from: FACTUUR_FROM,
           to: debiteur.email_factuur,
           replyTo: FACTUUR_REPLY_TO,
@@ -365,16 +390,68 @@ serve(async () => {
           attachments,
         })
 
+        await logVerstuurdeEmails(supabase, {
+          orderIds: orderIdsVoorLog,
+          factuurId,
+          onderwerp: `Factuur ${factuur.factuur_nr}`,
+          verzondenAan: debiteur.email_factuur,
+          html: emailHtml,
+          bijlagen: bijlagenMeta,
+        })
+
+        // Rauwe-payload-audit (mig 324/325): leg de uitgaande factuur-e-mail vast.
+        // Alleen de e-mail-tak — de EDI INVOIC wordt in edi_berichten gelogd, niet
+        // hier. PDF/AV-bytes worden gestript; alleen mail-metadata + bijlage-refs.
+        await logExternePayload(supabase, {
+          kanaal: 'factuur',
+          richting: 'out',
+          bron: 'graph',
+          externeId: factuur.factuur_nr,
+          orderId: orderIdsVoorLog[0] ?? null,
+          status: 'verwerkt',
+          raw: JSON.stringify({ to: debiteur.email_factuur, subject: `Factuur ${factuur.factuur_nr}`, html: emailHtml }),
+          json: {
+            request: { to: debiteur.email_factuur, subject: `Factuur ${factuur.factuur_nr}`, html: emailHtml, bijlagen: bijlagenMeta },
+            ok: true,
+          },
+        })
+
         // Stuur kopie naar betaler indien aanwezig en anders dan debiteur
         if (betalerEmail && betalerEmail !== debiteur.email_factuur) {
           await sendFactuurEmail({
-            apiKey: RESEND_API_KEY,
+            tenantId: MS_GRAPH_TENANT_ID,
+            clientId: MS_GRAPH_CLIENT_ID,
+            clientSecret: MS_GRAPH_CLIENT_SECRET,
             from: FACTUUR_FROM,
             to: betalerEmail,
             replyTo: FACTUUR_REPLY_TO,
             subject: `Factuur ${factuur.factuur_nr} (kopie voor betaler)`,
             html: emailHtml,
             attachments,
+          })
+
+          await logVerstuurdeEmails(supabase, {
+            orderIds: orderIdsVoorLog,
+            factuurId,
+            onderwerp: `Factuur ${factuur.factuur_nr} (kopie voor betaler)`,
+            verzondenAan: betalerEmail,
+            html: emailHtml,
+            bijlagen: bijlagenMeta,
+          })
+
+          // Rauwe-payload-audit: ook de betaler-kopie vastleggen (PDF gestript).
+          await logExternePayload(supabase, {
+            kanaal: 'factuur',
+            richting: 'out',
+            bron: 'graph',
+            externeId: factuur.factuur_nr,
+            orderId: orderIdsVoorLog[0] ?? null,
+            status: 'verwerkt',
+            raw: JSON.stringify({ to: betalerEmail, subject: `Factuur ${factuur.factuur_nr} (kopie voor betaler)`, html: emailHtml }),
+            json: {
+              request: { to: betalerEmail, subject: `Factuur ${factuur.factuur_nr} (kopie voor betaler)`, html: emailHtml, bijlagen: bijlagenMeta },
+              ok: true,
+            },
           })
         }
       }
@@ -386,7 +463,9 @@ serve(async () => {
         .update({
           status: 'Verstuurd',
           verstuurd_op: nowIso,
-          verstuurd_naar: [debiteur.email_factuur, betalerEmail].filter(Boolean).join(', ') || (ediBerichtId ? 'EDI Transus' : null),
+          verstuurd_naar: ediMailOnderdrukt
+            ? 'EDI Transus'
+            : [debiteur.email_factuur, betalerEmail].filter(Boolean).join(', ') || (ediBerichtId ? 'EDI Transus' : null),
           pdf_storage_path: pdfPath,
         })
         .eq('id', factuurId)
@@ -427,6 +506,39 @@ serve(async () => {
     { headers: { 'content-type': 'application/json' } },
   )
 })
+
+// Mig 366: e-mailtijdlijn — één log-rij per betrokken order (bundel-factuur
+// dekt meerdere orders). Best-effort: de mail is al verstuurd, logging mag de
+// factuur-flow nooit laten falen.
+async function logVerstuurdeEmails(
+  supabase: ReturnType<typeof createClient>,
+  input: {
+    orderIds: number[]
+    factuurId: number
+    onderwerp: string
+    verzondenAan: string
+    html: string
+    bijlagen: Array<{ filename: string; bucket: string; path: string }>
+  },
+): Promise<void> {
+  try {
+    if (input.orderIds.length === 0) return
+    const { error } = await supabase.from('verstuurde_emails').insert(
+      input.orderIds.map((orderId) => ({
+        order_id: orderId,
+        factuur_id: input.factuurId,
+        soort: 'factuur',
+        onderwerp: input.onderwerp,
+        verzonden_aan: input.verzondenAan,
+        html: input.html,
+        bijlagen: input.bijlagen,
+      })),
+    )
+    if (error) console.warn(`[factuur-verzenden] e-mail-log mislukt: ${error.message}`)
+  } catch (err) {
+    console.warn(`[factuur-verzenden] e-mail-log mislukt: ${err}`)
+  }
+}
 
 async function fetchEdiConfig(
   supabase: ReturnType<typeof createClient>,
@@ -663,7 +775,7 @@ function buildSupplierParty(bedrijf: BedrijfConfig): InvoiceParty {
     address: bedrijf.adres ?? 'TWEEDE BROEKDIJK 10',
     postcode: bedrijf.postcode ?? '7122 LB',
     city: bedrijf.plaats ?? 'AALTEN',
-    country: normalizeCountry(bedrijf.land, 'NL'),
+    country: normalizeCountry(bedrijf.land || 'NL'),
     vatNumber: bedrijf.btw_nummer ?? null,
   }
 }
@@ -679,7 +791,7 @@ function buildInvoiceeParty(
     address: firstNonEmpty(factuur.fact_adres, debiteur.fact_adres, debiteur.adres, '-')!,
     postcode: firstNonEmpty(factuur.fact_postcode, debiteur.fact_postcode, debiteur.postcode, '-')!,
     city: firstNonEmpty(factuur.fact_plaats, debiteur.fact_plaats, debiteur.plaats, '-')!,
-    country: normalizeCountry(firstNonEmpty(factuur.fact_land, debiteur.land), 'NL'),
+    country: normalizeCountry(firstNonEmpty(factuur.fact_land, debiteur.land) || 'NL'),
     vatNumber: firstNonEmpty(factuur.btw_nummer, debiteur.btw_nummer),
   }
 }
@@ -692,7 +804,7 @@ function buildDeliveryParty(order: OrderForEdi, fallback: InvoiceParty, gln: str
     address: firstNonEmpty(order.afl_adres, fallback.address)!,
     postcode: firstNonEmpty(order.afl_postcode, fallback.postcode)!,
     city: firstNonEmpty(order.afl_plaats, fallback.city)!,
-    country: normalizeCountry(firstNonEmpty(order.afl_land, fallback.country), fallback.country),
+    country: normalizeCountry(firstNonEmpty(order.afl_land, fallback.country) || fallback.country),
     vatNumber: fallback.vatNumber,
   }
 }
@@ -710,7 +822,7 @@ function buildBuyerParty(
     address: firstNonEmpty(order.bes_adres, addressSource.address)!,
     postcode: firstNonEmpty(order.bes_postcode, addressSource.postcode)!,
     city: firstNonEmpty(order.bes_plaats, addressSource.city)!,
-    country: normalizeCountry(firstNonEmpty(order.bes_land, addressSource.country), addressSource.country),
+    country: normalizeCountry(firstNonEmpty(order.bes_land, addressSource.country) || addressSource.country),
     vatNumber: invoicee.vatNumber,
   }
 }
@@ -730,13 +842,6 @@ function firstNonEmpty(...values: Array<string | number | null | undefined>): st
     if (s !== '') return s
   }
   return null
-}
-
-function normalizeCountry(value: string | null | undefined, fallback: string): string {
-  const country = (value ?? fallback).trim().toUpperCase()
-  if (country === 'NEDERLAND') return 'NL'
-  if (country === 'DUITSLAND' || country === 'GERMANY') return 'DE'
-  return (country || fallback).slice(0, 2)
 }
 
 function toNumber(value: number | string | null | undefined, fallback: number): number {

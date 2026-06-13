@@ -11,6 +11,7 @@ import type {
   KarpiInvoiceLineInput,
   InvoiceParty,
 } from './karpi-invoice-fixed-width.ts';
+import { normalizeCountry } from '../adres-split.ts';
 
 /** Eén partij-snapshot zoals die op `orders` staat (bes_/fact_/afl_ + gln). */
 export interface FactuurEdiPartij {
@@ -134,7 +135,7 @@ export function mapFactuurNaarInvoiceInput(data: FactuurEdiData): KarpiInvoiceIn
     vatAmount: data.factuur.btw_bedrag,
     supplier: {
       ...data.supplier,
-      country: normaliseerLand(data.supplier.country),
+      country: normalizeCountry(data.supplier.country),
     },
     buyer,
     invoicee,
@@ -153,33 +154,9 @@ function partijNaarInvoiceParty(
     address: p.adres ?? '',
     postcode: p.postcode ?? '',
     city: p.plaats ?? '',
-    country: normaliseerLand(p.land),
+    country: normalizeCountry(p.land),
     vatNumber: extra.vatNumber ?? null,
   };
-}
-
-/** ISO 3166 alpha-2. Snapshots uit EDIFACT zijn vaak al 'DE'/'NL'; bedrijfsgegevens
- *  kan 'Nederland' zijn. Map het bekende, anders eerste 2 letters uppercase. */
-function normaliseerLand(land: string | null): string {
-  if (!land) return '';
-  const clean = land.trim();
-  if (clean.length === 2) return clean.toUpperCase();
-  const map: Record<string, string> = {
-    nederland: 'NL',
-    netherlands: 'NL',
-    holland: 'NL',
-    duitsland: 'DE',
-    deutschland: 'DE',
-    germany: 'DE',
-    belgie: 'BE',
-    belgië: 'BE',
-    belgium: 'BE',
-    luxemburg: 'LU',
-    luxembourg: 'LU',
-    oostenrijk: 'AT',
-    zwitserland: 'CH',
-  };
-  return map[clean.toLowerCase()] ?? clean.slice(0, 2).toUpperCase();
 }
 
 function round2(n: number): number {

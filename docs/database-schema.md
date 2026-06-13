@@ -5,7 +5,7 @@
 
 ## Overzicht
 
-44 tabellen, 9 enums, 15 views, 36 functies. Alle tabellen hebben RLS enabled (fase 1: authenticated = volledige toegang).
+44 tabellen, 9 enums, 17 views, 37 functies. Alle tabellen hebben RLS enabled (fase 1: authenticated = volledige toegang).
 
 ---
 
@@ -133,15 +133,19 @@ Fysieke locaties in het magazijn.
 
 ### debiteuren
 Klanten/afnemers. PK = debiteur_nr uit het oude systeem.
+
+> **Verzameldebiteur 900000 'OUD SYSTEEM (PRODUCTIE)'** (mig 327, ADR-0029): fallback-debiteur voor productie-only orders uit Basta waarvan het debiteurnummer niet op een bestaande debiteur matcht.
+
 | Kolom | Type | Toelichting |
 |-------|------|-------------|
 | debiteur_nr | INTEGER PK | Uit oud systeem, ook logo-bestandsnaam |
 | naam | TEXT | Bedrijfsnaam (uppercase) |
-| status | TEXT | 'Actief' of 'Inactief' |
+| status | TEXT **NOT NULL** | 'Actief' of 'Inactief'. **NOT NULL** (live-DB geverifieerd 2026-06-08 — een insert met NULL faalt met 23502). De gedeelde debiteur-matcher behandelt NULL/≠'Inactief' als actief (`ACTIEF_OR_FILTER`); verzameldebiteur 900000 staat op 'Inactief'. |
 | adres, postcode, plaats, land | TEXT | Hoofdadres |
 | telefoon | TEXT | |
 | fact_naam, fact_adres, fact_postcode, fact_plaats | TEXT | Factuuradres |
 | email_factuur, email_overig, email_2 | TEXT | |
+| email_verzend | TEXT | Mig 369. Klant-niveau verzend-/T&T-e-mailadres (voorstel Piet-Hein 11-06-2026). Default-ladder voor `orders.afl_email` bij orderaanmaak: `afleveradressen.email` → dit veld → `email_overig`. Gevuld via checkbox "Opslaan als vast verzend-e-mailadres voor deze klant" in het orderformulier of via klant-bewerken. Géén backfill — runtime-fallback. Bij dropshipment-orders geen enkele debiteur-default (mig 370). |
 | fax | TEXT | |
 | vertegenw_code | TEXT FK → vertegenwoordigers.code | |
 | route, rayon, rayon_naam | TEXT | |
@@ -238,7 +242,7 @@ Artikelen uit het oude systeem.
 | kleur_code | TEXT | Eerste 2 cijfers uit karpi_code. **Let op:** fragiel als de leverancier-prefix zelf cijfers bevat (bv. `TAM1` → pakt `11` i.p.v. `13` uit `TAM113400ONG`). Bij nieuwe leveranciers met zulke prefixen: kleur_code handmatig corrigeren of importscript aanpassen (veilig: positie direct na alfabetische prefix). Zie migratie [096](../supabase/migrations/096_tama_kwaliteit_harmoniseren.sql). |
 | zoeksleutel | TEXT | kwaliteit_code + "_" + kleur_code |
 | inkoopprijs, verkoopprijs | NUMERIC(10,2) | |
-| gewicht_kg | NUMERIC(8,2) | **Sinds migratie 185: gederiveerde cache.** Voor `product_type IN ('vast','staaltje')` automatisch herrekend door trigger. Vorm-aware sinds mig 188: `vorm='rond'` → `π × (lengte_cm/200)² × kwaliteiten.gewicht_per_m2_kg`, anders `(lengte_cm × breedte_cm / 10000) × density`. Voor 'rol'/'overig' blijft handmatige waarde staan. |
+| gewicht_kg | NUMERIC(8,2) | **Sinds mig 185 gederiveerde cache; sinds mig 387 AFGEDWONGEN** via BEFORE-trigger `trg_producten_gewicht_derive`: voor `product_type IN ('vast','staaltje')` met maat + kwaliteit-density wordt elke INSERT/UPDATE herleid (vorm-aware: `rond` → `π × (lengte_cm/200)² × density`, anders `(lengte×breedte/10000) × density`) — handmatige waarden worden bewust overschreven; gewicht corrigeren = `kwaliteiten.gewicht_per_m2_kg` aanpassen. Voor 'rol'/'overig' of incomplete data blijft de handmatige/legacy-waarde staan. **Let op (historische bug, gefixt in mig 387):** ~26% van de cache bevatte de density (kg/m²) i.p.v. het stukgewicht. |
 | lengte_cm, breedte_cm | INTEGER | Maat in cm voor vaste/staaltje-producten. **Rechthoekig**: geparset uit `karpi_code`-suffix in mig 184 (`^.{8}(\d{3})(\d{3})$`). **Rond** (mig 188): geparset uit `^.{8}(\d{3})RND$` — `lengte_cm = breedte_cm = diameter`. **Ovaal-bbox** (mig 188): geparset uit omschrijving (`NxN cm OVAAL`) als bbox. NULL voor 'rol'/'overig' of afwijkend patroon. Voedt gewicht-resolver. |
 | vorm | TEXT | `rechthoek` (default, ook voor ovaal — bbox-aanname) of `rond` (cirkel-oppervlak via `π × (lengte_cm/200)²`). Bepaalt formule in `bereken_product_gewicht_kg`. Mig 188. |
 | maatwerk_vorm_code | TEXT FK → maatwerk_vormen(code) | **Logische vormcode** voor de prijs-resolver (mig 191). Onderscheidt `ovaal/organisch_a/organisch_b_sp/pebble/ellips/afgeronde_hoeken` waar `vorm` alleen `rechthoek/rond` kent. Bepaalt vormtoeslag (€0/€75 uit `maatwerk_vormen.toeslag`) bij m²-fallback in `bereken_orderregel_prijs`. NULL = onbekend → resolver behandelt als rechthoek (€0). Backfill via karpi_code-suffix (`RND`/`OVL`) + omschrijving-substring (`ORGANISCH`/`PEBBLE`/`ELLIPS`/`AFGEROND`). Mig 190. |
@@ -246,6 +250,7 @@ Artikelen uit het oude systeem.
 | product_type | TEXT | 'vast' (CA:NNNxNNN >= 1m²), 'staaltje' (CA:NNNxNNN < 1m²), 'rol' (BREED), 'overig' |
 | locatie | TEXT | Magazijnlocatie (bijv. "A.01.L", "C.04.H"). Bron: Locaties123.xls |
 | actief | BOOLEAN | Default true |
+| is_dropship | BOOLEAN | Default false. TRUE op dropshipment-kostenregels (DROPSHIP-KLEIN/GROOT, mig 370): order met zo'n regel gaat rechtstreeks naar de consument — `afl_email` moet dan het consument-adres zijn, nooit het factuur-/debiteur-adres. Predicaat: `is_dropship_order(order_id)`; guard in `fn_zending_fill_email`. |
 
 ---
 
@@ -340,6 +345,10 @@ Orderheaders. Adressen zijn snapshots (niet FK naar afleveradressen).
 | edi_gewenste_afleverdatum | DATE | EDI-only (mig 309): door de partner gewenste leverdatum (snapshot, verandert nooit). `afleverdatum` mag afwijken zodra de allocator/mig 153 een haalbare datum berekent of de operator bij bevestiging corrigeert. NULL voor niet-EDI of als de partner geen leverdatum meestuurde. |
 | debiteur_zeker | BOOLEAN | Mig 322. FALSE = de debiteur is via een onzekere (fuzzy) strategie geraden en moet handmatig bevestigd worden ("Debiteur te bevestigen"-flow). TRUE (default) = harde treffer of handmatig aangemaakt. Gezet door `create_webshop_order` uit `p_header.debiteur_zeker`. |
 | debiteur_match_bron | TEXT | Mig 322. Welke strategie de debiteur bepaalde (`DebiteurMatchBron` uit `_shared/debiteur-matcher.ts`), bv. `company_name_ilike`, `email`, `env_fallback`. NULL voor handmatig aangemaakte orders. Het "te bevestigen"-predicaat sluit `env_fallback` uit (verzameldebiteur = verwachte eindbestemming). |
+| alleen_productie | BOOLEAN NOT NULL DEFAULT false | Mig 327 (ADR-0029). TRUE = productie-only order uit **Basta**: RugFlow doet alleen snijden + confectie, facturatie/verzending/labels blijven in Basta. CHECK `chk_alleen_productie_bron`: `alleen_productie ⇒ bron_systeem='oud_systeem'`. Guards lezen deze vlag (Pick & Ship-uitsluiting, terminale-status-flip). Partiële index `idx_orders_alleen_productie`. |
+| levertijd_wijziging_te_bevestigen_sinds | TIMESTAMPTZ | Mig 326. Nullable gate: tijdstip van de laatst gedetecteerde levertijd-wijziging door een leverancier/Karpi-ETA-update op een gekoppelde inkooporderregel (`sync_order_afleverdatum_eta`), nog niet herbevestigd aan de klant. NULL = niets open. Gezet zodra de ISO-leverweek daadwerkelijk verschuift; teruggezet op NULL door `markeer_levertijd_herbevestigd` (puur administratief, geen automatische communicatie). Eén nullable timestamp i.p.v. een gemeld_op/bevestigd_op-paar (zoals `edi_gewenste_afleverdatum`/`edi_bevestigd_op`): deze gate gaat — anders dan de eenmalige EDI-gate — herhaaldelijk open/dicht, en PostgREST kan niet filteren op kolom-vs-kolom-vergelijkingen; `IS NOT NULL` is hier zowel het filterbare predicaat als de weergavewaarde. |
+
+**Productie-only orders (mig 327, ADR-0029):** `alleen_productie=true`-orders worden uit Basta geïmporteerd via RPC `import_productie_only_order` (status `'In productie'`, `bron_systeem='oud_systeem'`, `order_nr='OUD-<oud_order_nr>'`). Idempotent op `oud_order_nr` (partiële UNIQUE-index `orders_oud_order_nr_uniek`). Ze bereiken de terminale status `'Maatwerk afgerond'` (nooit `'Verzonden'`) en vallen buiten Pick & Ship, facturatie en transport. Debiteur = echte match of verzameldebiteur **900000 'OUD SYSTEEM (PRODUCTIE)'**.
 
 ---
 
@@ -442,7 +451,8 @@ Productregels per order. artikelnr nullable voor service-items.
 | maatwerk_diameter_cm | INTEGER | Diameter voor ronde vormen |
 | maatwerk_kwaliteit_code | TEXT | Kwaliteitscode (voor groepering zonder artikelnr) |
 | maatwerk_kleur_code | TEXT | Kleurcode |
-| productie_groep | TEXT | Groepering voor snijplanning (kwaliteit+kleur) |
+| ~~productie_groep~~ | — | **BESTAAT (NOG) NIET** — V2-backlog (zie mig 278: "er bestaat (nog) geen kolom"). Het concept "groepering voor snijplanning (kwaliteit+kleur)" wordt gerealiseerd via `maatwerk_kwaliteit_code` + `maatwerk_kleur_code` (de view `snijplanning_overzicht` COALESCEt die). NIET in INSERTs gebruiken tot de kolom daadwerkelijk wordt toegevoegd. |
+| snijden_uit_standaardmaat | BOOLEAN NOT NULL DEFAULT false | Mig 327 (ADR-0029). TRUE = stuk wordt uit een standaard-maat kleed gesneden, NIET uit een rol → verschijnt wel in snijden + confectie maar verbruikt geen rollengte (`fetchStukken` sluit het uit van rol-packing). Gekopieerd naar `snijplannen` door `auto_maak_snijplan`/`auto_sync_snijplan_maten` (mig 328). Partiële index `idx_order_regels_uit_standaardmaat`. |
 | vervoerder_code | TEXT FK → vervoerders(code) | Mig 219: per-regel override van order-default vervoerder. NULL = gebruik `effectieve_vervoerder_per_orderregel`-fallback (regel-evaluator → klant-fallback). Wijzigen geblokkeerd door trigger `trg_lock_orderregel_vervoerder` zodra een open zending bestaat. |
 | UK: (order_id, regelnummer) | | |
 
@@ -461,6 +471,7 @@ _Aangemaakt in migratie 117 (2026-04-22). Gepatcht in mig 125: `order_id` op hea
 | subtotaal, btw_percentage, btw_bedrag, totaal | NUMERIC | |
 | fact_naam, fact_adres, fact_postcode, fact_plaats, fact_land | TEXT | Snapshot |
 | btw_nummer | TEXT | Snapshot van klant-BTW-nummer (mig 125) |
+| btw_verlegd | BOOLEAN NOT NULL DEFAULT FALSE | Mig 371: snapshot van `debiteuren.btw_verlegd_intracom` op factuur-aanmaak. TRUE → 0% BTW + vermelding "BTW verlegd" op PDF. |
 | opmerkingen | TEXT | |
 | pdf_storage_path | TEXT | Pad in bucket 'facturen' ({debiteur_nr}/FACT-YYYY-NNNN.pdf) |
 | verstuurd_op | TIMESTAMPTZ | Wanneer email verzonden |
@@ -525,7 +536,9 @@ Fysieke leveringen. Werkelijk aangemaakt sinds migratie 169 — bron-van-waarhei
 | verzenddatum | DATE | |
 | track_trace | TEXT | HST-tracking-nummer of EDI-equivalent — gevuld door adapter na verzending |
 | afl_naam, afl_adres, afl_postcode, afl_plaats, afl_land | TEXT | Adres-snapshot (kopie van orders.afl_*) |
-| totaal_gewicht_kg | NUMERIC | Gevuld door `create_zending_voor_order` vanuit orderregelgewichten; handmatig corrigeerbaar in latere UI. Sinds mig 206 exclusief de pseudo-regel `artikelnr='VERZEND'`. |
+| afl_telefoon | TEXT | Mig 339 (ADR-0030). Snapshot van het leveringstelefoonnummer — HST "belt vóór aflevering" en stuurt dit mee in `ToAddress.PhoneNumber`. Gevuld door BEFORE-INSERT-trigger `trg_zending_fill_telefoon` (functie `fn_zending_fill_telefoon`): ladder `orders.afl_telefoon` → fallback `debiteuren.telefoon`. Via trigger i.p.v. in `start_pickronden` zodat álle zending-aanmaakroutes het veld vullen. Backfill voor nog-niet-verstuurde zendingen. |
+| afl_email | TEXT | Mig 365. Snapshot van het **aflever**-e-mailadres voor track & trace door de vervoerder — hst-send stuurt dit mee in `ToAddress.Email`. Gevuld door BEFORE-INSERT-trigger `trg_zending_fill_email` uit `orders.afl_email` (mig 084, sinds mig 364 door het order-formulier gevuld vanuit `afleveradressen.email`). **Bewust géén fallback naar factuur-e-mailadressen** (`debiteuren.email_factuur` e.d.) — de klant moet wél de T&T krijgen maar niet de factuur (mail Piet-Hein/Marjon 11-06-2026). Leeg = geen T&T-mail. Backfill voor nog-niet-verstuurde zendingen. **Dropship-guard (mig 370):** bij dropshipment-orders (`is_dropship_order`) kopieert de trigger het order-afl_email NIET als het gelijk is aan het factuur-/debiteur-e-mailadres — T&T moet daar naar de consument. |
+| totaal_gewicht_kg | NUMERIC | **Sinds mig 391 een trigger-afgeleide** van `SUM(zending_colli.gewicht_kg)` (`trg_sync_zending_totaal_gewicht`) — bron-van-waarheid is het per-colli-gewicht, niet meer een losse orderregel-som. Voedt het HST-fallback-pad (aggregate-regel zonder colli) zodat dat consistent is met het per-colli-pad. Sinds mig 206 exclusief de pseudo-regel `artikelnr='VERZEND'`. |
 | aantal_colli | INTEGER | Gevuld door `create_zending_voor_order` als som van `order_regels.orderaantal`; gebruikt voor sticker `x VAN y`. Sinds mig 206 exclusief `artikelnr='VERZEND'`. Voor exacte per-stuk identiteit (sticker, SSCC) zie `zending_colli` (mig 209). |
 | service_code | TEXT | Mig 210. Service-variant binnen vervoerder (bv. `'internationaal'` bij DPD), gekozen door `selecteer_vervoerder_voor_zending()`. NULL = vervoerder-default. |
 | verzendweek | TEXT | Mig 230. ISO-week-snapshot (formaat `YYYY-Www`) van de afleverdatum bij pickronde-start. Bron voor de wekelijkse verzamelfactuur-aggregatie (mig 232) en filter in `genereer_factuur_voor_week`. Onveranderlijk na pickronde-start dankzij `trg_lock_zending_bundel_sleutel`. Backfill via `zending_orders` M2M voor bestaande rijen. Trigger `trg_zending_set_verzendweek` vult bij INSERT als nog NULL. |
@@ -569,7 +582,7 @@ M2M tussen zendingen en orders. Sinds migratie 222 (zending-bundeling op aflever
 
 **Consumer:** `voltooi_pickronde` (mig 222) leest betrokken orders uit deze tabel en flipt élke order via `markeer_verzonden` zodra dit de laatste open zending is — sluitstuk factuur-keten (ADR-0005) blijft kloppend voor zowel solo- als bundel-zendingen.
 
-**Helper:** `_normaliseer_afleveradres(adres, postcode, land)` (mig 222) — TRIM + UPPER + whitespace-normalisatie. Wordt door de bundel-RPC gebruikt om de adres-invariant SQL-side te bewaken; de frontend (`bundel-cluster.ts`) dupliceert dezelfde logica om identiek te clusteren vóór de RPC-aanroep.
+**Helper:** `_normaliseer_afleveradres(adres, postcode, land)` (mig 222) — TRIM + UPPER + whitespace-normalisatie; gehard in mig 385: JS-identieke whitespace-klasse + ß/ẞ→ss-fold (chr(223)/chr(7838)); contract via golden fixtures (`bundel-sleutel.golden.json`) + `assert_bundel_sleutel_contract`. Wordt door de bundel-RPC gebruikt om de adres-invariant SQL-side te bewaken; de frontend (`bundel-cluster.ts`) dupliceert dezelfde logica om identiek te clusteren vóór de RPC-aanroep.
 
 **Lock-trigger:** `trg_lock_zending_bundel_sleutel` (mig 230, BEFORE UPDATE OF afleverdatum/afl_*/debiteur_nr ON orders) — blokkeert mutatie van bundel-sleutel-dimensies zodra de order in een actieve bundel-zending zit (status `Klaar voor verzending`+). Voorkomt divergentie tussen pakbon-snapshot, wekelijkse factuur-week en werkelijke order-data. Gooit `restrict_violation`. Picken-status mag wel muteren: operator kan dan bewust splitsen door pickronde te annuleren.
 
@@ -627,10 +640,11 @@ Mig 232. Genereert wekelijkse verzamelfactuur voor `(debiteur_nr, jaar_week)`. A
 Lookup-tabel met de beschikbare vervoerders waarmee Karpi werkt (mig 170, uitgebreid mig 174). Routing-keuze, géén berichten — daadwerkelijk verkeer per vervoerder loopt via een **adapter-tabel** (HST → `hst_transportorders`; EDI-vervoerders → `edi_berichten` met `berichttype='verzendbericht'`). Gezaaid met 3 rijen: `hst_api`, `edi_partner_a` (Rhenus, placeholder), `edi_partner_b` (Verhoek, placeholder). Alleen de HST-koppeling is in dit plan actief; EDI-koppelingen volgen in aparte plans en hun rij staat default `actief=FALSE`. Migratie 174 voegt instellingen-, contact- en tarief-kolommen toe als basis voor de `/logistiek/vervoerders`-UI (vrije-tekst tarieven in V1; gestructureerde tariefmatrix volgt in Fase B — zie roadmap in [`docs/superpowers/plans/2026-05-01-logistiek-vervoerder-instellingen.md`](superpowers/plans/2026-05-01-logistiek-vervoerder-instellingen.md)).
 | Kolom | Type | Toelichting |
 |-------|------|-------------|
-| code | TEXT PK | `'hst_api'`, `'edi_partner_a'`, `'edi_partner_b'`, `'dpd'` — wordt als FK gebruikt op `zendingen.vervoerder_code` |
+| code | TEXT PK | `'hst_api'`, `'verhoek_sftp'`, `'rhenus_sftp'`, `'dpd'` — wordt als FK gebruikt op `zendingen.vervoerder_code`. De mig 170-placeholders zijn guarded verwijderd ná het omhangen van hun selectie-regels: `edi_partner_b` → `verhoek_sftp` (mig 374, ADR-0031) en `edi_partner_a` → `rhenus_sftp` (mig 379, ADR-0032). |
 | display_naam | TEXT NOT NULL | UI-label: `'HST'`, `'Rhenus'`, `'Verhoek'`, `'DPD'` |
-| type | TEXT NOT NULL | CHECK in (`'api'`, `'edi'`, `'print'`). Mig 207: `'print'` toegevoegd voor lokale label-printer-flow (DPD via Zebra ZT230). |
+| type | TEXT NOT NULL | CHECK in (`'api'`, `'edi'`, `'print'`, `'sftp'`). Mig 207: `'print'` toegevoegd voor lokale label-printer-flow (DPD via Zebra ZT230). Mig 374 (ADR-0031): `'sftp'` toegevoegd voor Verhoek AA2.0-XML via SFTP; Rhenus (mig 379, ADR-0032) gebruikt hetzelfde type. De `'edi'`-tak heeft sinds mig 379 geen kandidaten meer maar blijft voor evt. toekomstige échte EDI-vervoerders. |
 | actief | BOOLEAN NOT NULL | Default FALSE — pas TRUE als koppeling werkt. Switch-RPC `enqueue_zending_naar_vervoerder` weigert met `'vervoerder_inactief'` als FALSE |
+| is_default | BOOLEAN NOT NULL | Mig 336 (ADR-0030). Default FALSE. Markeert dé default-vervoerder; partial unique index `uk_vervoerders_is_default` (op `is_default` WHERE TRUE) garandeert hooguit één TRUE. `hst_api` is geseed als default. Administratieve bron-van-waarheid; het werkende mechanisme is de **catch-all** rij in `vervoerder_selectie_regels` (prio 99999, `{"land":["NL"]}`) die mig 336 toevoegt — gegate op `hst_api.actief=TRUE` (bewust nog FALSE tot cutover). |
 | notities | TEXT | Vrije tekst (bv. "REST API. Auth via Basic.") |
 | api_endpoint | TEXT | Mig 174. Basis-URL van de vervoerder-API (alleen relevant voor `type='api'`, bv. `https://accp.hstonline.nl/rest/api/v1`). Read-only referentie in UI; effectieve endpoint voor edge functions blijft uit env-variabelen komen. |
 | api_customer_id | TEXT | Mig 174. Klant-/account-identifier bij de vervoerder-API (alleen relevant voor `type='api'`). |
@@ -641,7 +655,7 @@ Lookup-tabel met de beschikbare vervoerders waarmee Karpi werkt (mig 170, uitgeb
 | tarief_notities | TEXT | Mig 174. Vrije-tekst tariefafspraken voor V1 (bv. "NL t/m 30 kg €9,50, BE +€2"). Gestructureerde `vervoerder_tarieven`-tabel komt in Fase B. |
 | printer_naam | TEXT | Mig 207. Windows-printernaam voor `type='print'`. Browser-print-dialoog stuurt PDF hier naartoe. |
 | printer_ip | TEXT | Mig 207. Optioneel IP voor directe ZPL-push (TCP 9100). V1 niet gebruikt — alleen voor toekomstige native ZPL-flow. |
-| label_breedte_mm, label_hoogte_mm | INTEGER | Mig 207. Label-formaat in mm (bv. 80×150 voor DPD/Zebra). Gelezen door printset-page voor `@page`-CSS. |
+| label_breedte_mm, label_hoogte_mm | NUMERIC(5,1) | Mig 207, NUMERIC sinds mig 361 (inch-rollen zijn fractioneel in mm). Verzendlabel-formaat voor álle typen — ook HST (`hst_api` = 152.4×76.2 sinds mig 362: liggend ontwerp op de 3"×6"-rol, driver roteert). Gelezen door printset-page voor `@page`-CSS; NULL → frontend-default 76.2×50.8. |
 | service_codes | TEXT[] | Mig 207. Service-varianten die deze vervoerder ondersteunt, bv. `{'srv','classic','predict','internationaal'}` voor DPD. Verzendregels kiezen er één. |
 | created_at, updated_at | TIMESTAMPTZ | Auto via `set_vervoerders_updated_at()` |
 
@@ -682,8 +696,9 @@ Eén rij per fysieke colli binnen een zending (mig 209). Bron-van-waarheid voor 
 | order_regel_id | BIGINT FK → order_regels | ON DELETE SET NULL |
 | rol_id | BIGINT FK → rollen | ON DELETE SET NULL — als de colli uit een specifieke rol komt |
 | sscc | TEXT UK | 18-cijferig GS1 SSCC, gegenereerd door `genereer_sscc()` (mig 209). Op label getoond met AI(00)-prefix (totaal 20 chars). |
-| gewicht_kg | NUMERIC | Per-colli gewicht; afgeleid van orderregel/product, handmatig overschrijfbaar in latere UI. |
-| omschrijving_snapshot | TEXT | Sticker-tekst zoals gerenderd, bv. `MAATW. SISAL-GOLD 21 160x090 cm, KI21 Band:KI21`. Snapshot zodat re-print consistent blijft na product-rename. |
+| gewicht_kg | NUMERIC | Per-colli gewicht. Sinds mig 387 gevuld via ladder `NULLIF(order_regels.gewicht_kg,0)` → `bereken_orderregel_gewicht_kg` (live, vorm-aware) → `NULLIF(producten.gewicht_kg,0)`. Verplicht > 0 voor de Rhenus/Verhoek-preflight. Handmatig overschrijfbaar in latere UI. |
+| omschrijving_snapshot | TEXT | Karpi-product + maat, bv. `MAATW. SISAL-GOLD 21 160x090 cm, KI21 Band:KI21` (`compose_colli_omschrijving`). Bevroren snapshot — **single source** voor de Karpi-naam op verzendlabel/pakbon/DPD (sinds mig 390) én voor HST/Verhoek `GoodsDescription`/`Omschrijving`. Re-print blijft consistent na product-rename. |
+| klant_omschrijving_snapshot | TEXT | **Mig 390.** Bevroren, ontdubbelde klant-omschrijving (`order_regels.omschrijving` + `_2` via `compose_klant_omschrijving`). Single source voor de klant-naam op label/pakbon — de print-laag leidt niets meer live af. NULL = geen klant-omschrijving (label valt terug op artikelnr). |
 | aantal | INTEGER NOT NULL | Default 1, CHECK ≥ 1. V1 = altijd 1. |
 | pick_uitkomst | pick_uitkomst | Mig 211. Default 'open'; bij voltooi_pickronde → 'gepickt'. Enum-waardes: open, gepickt, niet_gevonden. |
 | pick_opmerking | TEXT | Mig 211. Operator-notitie bij niet_gevonden. |
@@ -693,7 +708,11 @@ Eén rij per fysieke colli binnen een zending (mig 209). Bron-van-waarheid voor 
 
 **Indexen:** `idx_zending_colli_zending` (zending_id), `idx_zending_colli_orderregel` (order_regel_id).
 
-**Generator-RPC:** `genereer_zending_colli(p_zending_id)` splitst zending-regels in 1-tapijt-per-stuk colli-rijen, vult SSCC en omschrijving-snapshot. Idempotent (skipt als er al colli's zijn). Aangeroepen door `enqueue_zending_naar_vervoerder` voor `type='print'` vervoerders (mig 210).
+**Generator-RPC:** `genereer_zending_colli(p_zending_id)` splitst zending-regels in 1-tapijt-per-stuk colli-rijen, vult SSCC, `omschrijving_snapshot` (`compose_colli_omschrijving`), `klant_omschrijving_snapshot` (`compose_klant_omschrijving`, mig 390) en het gewicht via de gewicht-ladder (mig 387). Idempotent (skipt als er al colli's zijn). Aangeroepen door `enqueue_zending_naar_vervoerder` voor `type='print'` vervoerders (mig 210).
+
+**Ontdubbel-helper:** `compose_klant_omschrijving(omschrijving, omschrijving_2)` (mig 390) — spiegelt de TS-ontdubbeling van `productNamen` (`shipping-label-data.ts`): laat `omschrijving_2` weg als die als substring in `omschrijving` zit. Sinds mig 390 de enige plek waar die logica leeft (voorheen 3 TS-varianten: label substring-match, pakbon geen, DPD eigen).
+
+**Gewicht-sync-trigger:** `trg_sync_zending_totaal_gewicht` (mig 391) op `zending_colli` (AFTER INSERT/DELETE/UPDATE OF gewicht_kg) houdt `zendingen.totaal_gewicht_kg = SUM(zending_colli.gewicht_kg)` — afgeleide som zodat de HST-fallback hetzelfde totaal stuurt als het per-colli-pad en als wat Rhenus/Verhoek sommeren (audit A2, 2026-06-13).
 
 **SSCC-generator:** `genereer_sscc()` produceert 18 cijfers — extension `0` + Karpi GS1-prefix `8715954` + 9-cijferig serial (sequence `sscc_serial_seq`) + Mod-10 check digit. Helper `sscc_check_digit(text)` voor verificatie.
 
@@ -733,6 +752,76 @@ Eén rij per fysieke colli binnen een zending (mig 209). Bron-van-waarheid voor 
 
 ---
 
+### verhoek_transportorders
+**Verhoek-adapter-tabel** (mig 375, ADR-0031) — één rij per XML-bestand dat via SFTP naar Verhoek is/wordt verstuurd. Spiegelt `hst_transportorders`; bewust verticaal per vervoerder (zie ADR-0031). Audit-historie van pogingen: `externe_payloads` kanaal `'verhoek'`; XML-kopie in storage `order-documenten/verhoek-xml/`.
+
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| id | BIGSERIAL PK | |
+| zending_id | BIGINT FK → zendingen | NOT NULL, ON DELETE CASCADE |
+| debiteur_nr | INTEGER FK → debiteuren | Snapshot voor query-gemak |
+| status | verhoek_transportorder_status NOT NULL | Default `'Wachtrij'` |
+| bestandsnaam | TEXT | `Karpi_<timestamp>_<zending_nr>.xml` — de dedup-sleutel bij Verhoek; wordt vóór upload gepersisteerd zodat retries dezelfde naam hergebruiken |
+| xml_storage_path | TEXT | Pad in storage-bucket `order-documenten/verhoek-xml/` |
+| track_trace_id | TEXT | Door ons gegenereerd (= `zending_nr`), historisch uniek |
+| request_xml | TEXT | Laatste verstuurde XML |
+| retry_count | INTEGER NOT NULL | Default 0; max 3 (configureerbaar in `markeer_verhoek_fout`) |
+| error_msg | TEXT | Laatste foutomschrijving |
+| is_test | BOOLEAN NOT NULL | Default FALSE |
+| created_at, sent_at, updated_at | TIMESTAMPTZ | Lifecycle-timestamps |
+
+**Enum `verhoek_transportorder_status`:** `'Wachtrij' | 'Bezig' | 'Verstuurd' | 'Fout' | 'Geannuleerd'`
+
+**Indexen:**
+- `idx_verhoek_to_status` (status) — voor cron-claim-query
+- `idx_verhoek_to_zending` (zending_id)
+- `uk_verhoek_to_zending_actief` — UNIQUE op `zending_id` waar `status NOT IN ('Fout', 'Geannuleerd')` (idempotentie: één actieve transportorder per zending)
+
+**Triggers:** `trg_verhoek_to_updated_at` via `set_verhoek_to_updated_at()`.
+
+**RPCs (Verhoek-adapter):**
+- `enqueue_verhoek_transportorder(p_zending_id BIGINT, p_debiteur_nr INTEGER, p_is_test BOOLEAN DEFAULT FALSE) → BIGINT` — adapter-RPC, idempotent (no-op bij bestaande actieve rij). Wordt aangeroepen door `enqueue_zending_naar_vervoerder` als `vervoerder_code='verhoek_sftp'`. Mig 375.
+- `claim_volgende_verhoek_transportorder() → verhoek_transportorders` — pakt oudste `Wachtrij`-rij via `FOR UPDATE SKIP LOCKED`, zet status `Bezig`. Aangeroepen door edge function `verhoek-send` per cron-tick. Mig 375.
+- `markeer_verhoek_verstuurd(p_id, p_bestandsnaam, p_xml_storage_path, p_track_trace_id, p_request_xml) → VOID` — na geslaagde SFTP-upload: status `Verstuurd`, schrijft `track_trace` terug op `zendingen` en zet zending-status van `'Klaar voor verzending'` naar `'Onderweg'`. Mig 375.
+- `markeer_verhoek_fout(p_id, p_error, p_request_xml DEFAULT NULL, p_max_retries DEFAULT 3) → VOID` — verhoogt `retry_count`; bij `>=` max → status `Fout`, anders terug naar `Wachtrij`. Mig 375.
+- `herstel_vastgelopen_verhoek(p_minuten INTEGER DEFAULT 10) → INTEGER` — **self-healing reaper** (mig 375, SECURITY DEFINER). Zet `verhoek_transportorders`-rijen die >`p_minuten` op `'Bezig'` hangen terug naar `'Wachtrij'`. Bovenin elke `verhoek-send`-run + handmatig.
+
+---
+
+### rhenus_transportorders
+**Rhenus-adapter-tabel** (mig 380, ADR-0032) — één rij per GS1 TransportInstruction-XML-bestand (RHE 3.1) dat via SFTP naar Rhenus is/wordt verstuurd. Spiegelt `verhoek_transportorders`, met één verschil: **geen `track_trace_id`** — het RHE-formaat kent geen T&T-slot (statusterugkoppeling via Rhenus' /out-map = V2-backlog). Audit-historie van pogingen: `externe_payloads` kanaal `'rhenus'`; XML-kopie in storage `order-documenten/rhenus-xml/`.
+
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| id | BIGSERIAL PK | |
+| zending_id | BIGINT FK → zendingen | NOT NULL, ON DELETE CASCADE |
+| debiteur_nr | INTEGER FK → debiteuren | Snapshot voor query-gemak |
+| status | rhenus_transportorder_status NOT NULL | Default `'Wachtrij'` |
+| bestandsnaam | TEXT | `RHE_<timestamp>_<zending_nr>.xml` — vóór upload gepersisteerd zodat retries dezelfde naam hergebruiken (geen dubbele transportorder bij Rhenus) |
+| xml_storage_path | TEXT | Pad in storage-bucket `order-documenten/rhenus-xml/` |
+| request_xml | TEXT | Laatste verstuurde XML |
+| retry_count | INTEGER NOT NULL | Default 0; max 3 (configureerbaar in `markeer_rhenus_fout`) |
+| error_msg | TEXT | Laatste foutomschrijving |
+| is_test | BOOLEAN NOT NULL | Default FALSE |
+| created_at, sent_at, updated_at | TIMESTAMPTZ | Lifecycle-timestamps |
+
+**Enum `rhenus_transportorder_status`:** `'Wachtrij' | 'Bezig' | 'Verstuurd' | 'Fout' | 'Geannuleerd'`
+
+**Indexen:** `idx_rhenus_to_status`, `idx_rhenus_to_zending`, `uk_rhenus_to_zending_actief` (UNIQUE op `zending_id` waar `status NOT IN ('Fout','Geannuleerd')`).
+
+**Triggers:** `trg_rhenus_to_updated_at` via `set_rhenus_to_updated_at()`.
+
+**RPCs (Rhenus-adapter, alle mig 380):**
+- `enqueue_rhenus_transportorder(p_zending_id, p_debiteur_nr, p_is_test DEFAULT FALSE) → BIGINT` — idempotent; aangeroepen door `enqueue_zending_naar_vervoerder` als `vervoerder_code='rhenus_sftp'`.
+- `claim_volgende_rhenus_transportorder() → rhenus_transportorders` — oudste `Wachtrij`-rij via `FOR UPDATE SKIP LOCKED` → `Bezig`. Aangeroepen door edge function `rhenus-send` per cron-tick.
+- `markeer_rhenus_verstuurd(p_id, p_bestandsnaam, p_xml_storage_path, p_request_xml) → VOID` — status `Verstuurd` + zending-status `'Klaar voor verzending'` → `'Onderweg'` (géén track_trace — geen T&T-slot in het formaat).
+- `markeer_rhenus_fout(p_id, p_error, p_request_xml DEFAULT NULL, p_max_retries DEFAULT 3) → VOID` — retry-teller; bij `>=` max → `Fout`, anders terug naar `Wachtrij`.
+- `herstel_vastgelopen_rhenus(p_minuten DEFAULT 10) → INTEGER` — self-healing reaper (spiegel `herstel_vastgelopen_verhoek`).
+
+**Monitor-view:** `rhenus_verzend_monitor` (spiegel `verhoek_verzend_monitor`): verstuurd_vandaag / fout_open / wachtrij / bezig / oudste_wachtrij_minuten / oudste_bezig_minuten.
+
+---
+
 ### snijplannen
 Tapijt op maat snijden uit rollen.
 | Kolom | Type | Toelichting |
@@ -756,9 +845,10 @@ Tapijt op maat snijden uit rollen.
 | grondstofkosten_m2 | NUMERIC(10,4) | Aan dit stuk toegerekend oppervlak in m² = stuk_m² + aandeel × afval_m². Snapshot. |
 | inkoopprijs_m2 | NUMERIC(10,2) | Snapshot `rol.waarde / rol.oppervlak_m2` op moment van snijden. |
 | opmerkingen | TEXT | |
-| confectie_afgerond_op | TIMESTAMPTZ | Moment waarop confectie klaar is (NULL = nog niet afgerond) |
+| confectie_afgerond_op | TIMESTAMPTZ | Moment waarop confectie klaar is (NULL = nog niet afgerond). Productie-only orders flippen naar `'Maatwerk afgerond'` zodra ÁLLE snijplannen van de order deze gezet hebben (`voltooi_confectie`, mig 330). |
 | ingepakt_op | TIMESTAMPTZ | Moment waarop het stuk is ingepakt voor verzending |
 | locatie | TEXT | Magazijnlocatie waar het ingepakte stuk ligt (vrije tekst bv. "A-12") |
+| snijden_uit_standaardmaat | BOOLEAN NOT NULL DEFAULT false | Mig 327 (ADR-0029). Gekopieerd van `order_regels` door `auto_maak_snijplan`/`auto_sync_snijplan_maten` (mig 328). Uitgesloten van rol-packing (`fetchStukken`) — verbruikt geen rollengte. |
 
 ---
 
@@ -1055,6 +1145,25 @@ Applicatie-instellingen (key-value). Gebruikt voor productie-configuratie en aut
 | standaard_maat_werkdagen | number | 5 | Globale levertermijn voor standaard-maat (kalenderdagen); per klant overschrijfbaar via `debiteuren.standaard_maat_werkdagen` |
 | maatwerk_weken | number | 4 | Globale levertermijn voor maatwerk (weken); per klant overschrijfbaar via `debiteuren.maatwerk_weken` |
 
+**verhoek waarde-structuur** (mig 374, ADR-0031 — gelezen per run door `verhoek-send`; antwoorden van Verhoek = SQL-UPDATE, géén redeploy):
+| Veld | Type | Default | Toelichting |
+|------|------|---------|-------------|
+| opdrachtgever_nummer | string | `''` | Karpi-klantnummer bij Verhoek. Leeg = `verhoek-send` weigert niet-dry-run verzending. |
+| scancode_met_00_prefix | boolean | `true` | ScanCode (label-barcode) = `'00'` + SSCC als TRUE, anders kaal SSCC. |
+| verpakkingseenheid | string | `'Rol'` | Vrije tekst in AA2.0-XML `<Verpakkingseenheid>`. |
+| levering | string | `'1'` | AA2.0-XML `<Levering>` code. |
+| soort_levering | string | `'1'` | AA2.0-XML `<SoortLevering>` code. |
+
+**werkagenda waarde-structuur** (mig 384 — één bron voor UI, edge-functions en Pick & Ship; gelezen via `fetchWerkagendaConfig()` + `_shared/werkagenda.ts`):
+| Veld | Type | Default | Toelichting |
+|------|------|---------|-------------|
+| werkdagen | number[] | `[1,2,3,4,5]` | ISO-weekdagnummers (1=ma … 7=zo) waarop er gewerkt wordt. |
+| start | 'HH:mm' | `'08:00'` | Start werktijd (lokale tijd). |
+| eind | 'HH:mm' | `'17:00'` | Einde werktijd. |
+| pauzeStart | 'HH:mm' | `'12:00'` | Begin middagpauze. |
+| pauzeEind | 'HH:mm' | `'12:30'` | Einde middagpauze. |
+| vrij | `{datum: string, naam?: string}[]` | `[]` | Lijst van vrije dagen (feestdagen/bedrijfsvakantie) in ISO-datumformaat. Gelezen door UI (productie-instellingen, snijplanning-agenda), `check-levertijd`/`spoed-check` (edge) en de Pick & Ship-dag-order-horizon (`werkdagMinN`). |
+
 ---
 
 ### snijplan_groep_locks
@@ -1216,7 +1325,55 @@ Centrale audit-/queue-tabel voor alle EDI-berichten via Transus (in én uit) (mi
 - `uk_edi_berichten_transactie_id` — UNIQUE op `transactie_id` (idempotentie inkomend)
 - `uk_edi_berichten_uitgaand_actief` — UNIQUE op `(berichttype, bron_tabel, bron_id)` waar `richting='uit' AND status NOT IN ('Fout','Geannuleerd')` (voorkomt dubbele triggers)
 
-**RPCs:** `log_edi_inkomend`, `markeer_edi_ack`, `create_edi_order`, `match_edi_artikel`, `enqueue_edi_uitgaand`, `claim_volgende_uitgaand`, `markeer_edi_verstuurd`, `markeer_edi_fout`. Sinds migratie 166 gebruikt `create_edi_order` de debiteur-prijslijst (`debiteuren.prijslijst_nr -> prijslijst_regels`) voor orderregelprijzen, met fallback op `producten.verkoopprijs`.
+**RPCs:** `log_edi_inkomend`, `markeer_edi_ack`, `create_edi_order`, `match_edi_artikel`, `enqueue_edi_uitgaand`, `claim_volgende_uitgaand`, `markeer_edi_verstuurd`, `markeer_edi_fout`. Sinds migratie 166 gebruikt `create_edi_order` de debiteur-prijslijst (`debiteuren.prijslijst_nr -> prijslijst_regels`) voor orderregelprijzen, met fallback op `producten.verkoopprijs`. Sinds mig 368 vult `create_edi_order` ook de e-mail-snapshots: `fact_email` (`email_factuur` → `email_overig`) en `afl_email` (e-mail van het GLN-gematchte afleveradres → `email_overig`); `create_webshop_order` idem, waarbij expliciete `p_header`-waarden winnen en `env_fallback`-orders worden overgeslagen.
+
+**Cron `verzendbericht-edi-sweep`** (mig 377, */15 min — **ACTIEF sinds 12-06-2026, jobid 12**): roept edge function `bouw-verzendbericht-edi` aan als sweep over orders met `status='Verzonden' AND bron_systeem='edi'` (venster: `verzonden_at` ≤ 7 dagen oud) bij partners met `verzend_uit && transus_actief`, minus al-bestaande `berichttype='verzendbericht'`-rijen (idempotent; DB-backstop: partial unique index mig 157). Format `karpi-verzendbericht.ts` is byte-identiek gevalideerd tegen Transus-bericht 172390327 + Testen-tab-akkoord. Verstuurd door bestaande cron `transus-send` (mig 305).
+
+---
+
+### externe_payloads
+Generieke, append-only audit van **rauwe externe payloads** per kanaal, **in- én uitgaand** (mig 324 als `inkomende_payloads`, hernoemd in mig 325). Bewaart de letterlijke payload zodat verwerkings-/verzendfouten altijd herleidbaar zijn. **Geen verwerkings-queue** — dat blijft `orders` / `edi_berichten` / `hst_transportorders`. EDI heeft z'n eigen `edi_berichten.payload_raw`; dit kanaal-onafhankelijke vangnet bedient inbound **Shopify** (slice 1, `sync-shopify-order`) en later e-mail/webshop/lightspeed, plus outbound **vervoerders** (HST via `hst-send`, `richting='out'`).
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| id | BIGSERIAL PK | |
+| kanaal | TEXT NOT NULL | `'shopify'` / `'edi'` / `'email'` / `'lightspeed'` / `'webshop'` / `'hst'` |
+| bron | TEXT | shop-domein / systeem-identifier (bv. `'hst'`) |
+| externe_id | TEXT | externe order-/transactie-/message-id; bij HST de OrderNumber of `zending_nr`. **Geen UNIQUE** — append-only, een resend/retry = extra rij |
+| richting | TEXT NOT NULL DEFAULT 'in' | `'in'` (inbound) / `'out'` (carrier) |
+| content_type | TEXT | bv. `application/json` |
+| headers | JSONB | relevante request-headers |
+| payload_raw | TEXT NOT NULL | letterlijke body — bij outbound de verstuurde request-JSON |
+| payload_json | JSONB | geparset gemak; bij outbound `{ request, response, http_code, ok, transport_order_id, tracking_number }` |
+| order_id | BIGINT FK → orders ON DELETE SET NULL | gevuld zodra de order bekend is (outbound: direct) |
+| status | TEXT NOT NULL DEFAULT 'ontvangen' | `'ontvangen'` → `'verwerkt'` / `'fout'` (outbound: eindstatus direct) |
+| fout | TEXT | foutbeschrijving bij status `'fout'` |
+| ontvangen_op, verwerkt_op | TIMESTAMPTZ | lifecycle-timestamps |
+
+**Indexen:** `(kanaal, externe_id)`, `(order_id)`, `(ontvangen_op DESC)`, partial `(ontvangen_op DESC) WHERE status='fout'` (snel de probleemgevallen), `(richting, kanaal, ontvangen_op DESC)` (carrier-verkeer per richting).
+
+**RPCs:** `log_externe_payload(p_kanaal, p_payload_raw, p_bron, p_externe_id, p_content_type, p_headers, p_payload_json, p_richting, p_order_id, p_status, p_fout) → BIGINT` (logt, geeft id terug; outbound geeft richting/order_id/eindstatus direct mee) en `markeer_externe_payload_verwerkt(p_id, p_status, p_order_id, p_fout) → VOID` (two-step inbound status/koppeling bijwerken). Beide best-effort — logging mag verwerking/verzending nooit blokkeren. De oude namen `log_inkomende_payload` / `markeer_inkomende_payload_verwerkt` bestaan als **deprecated wrappers** (mig 325) tot de Shopify-functie herdeployed is.
+
+**Diagnose-queries:**
+- Mislukte Shopify-orders → `SELECT externe_id, fout, ontvangen_op, payload_json FROM externe_payloads WHERE kanaal='shopify' AND status='fout' ORDER BY ontvangen_op DESC;`
+- Mislukte HST-verzendingen (incl. volledige retry-historie per order) → `SELECT externe_id, order_id, fout, ontvangen_op, payload_json FROM externe_payloads WHERE kanaal='hst' AND richting='out' AND status='fout' ORDER BY ontvangen_op DESC;`
+
+---
+
+### verstuurde_emails
+Log van **daadwerkelijk verstuurde e-mails per order** (mig 366) — voedt de sectie "E-mails" (tijdlijn) op order-detail. Geschreven door edge functions [`factuur-verzenden`](../supabase/functions/factuur-verzenden/index.ts) en [`stuur-orderbevestiging`](../supabase/functions/stuur-orderbevestiging/index.ts) **ná** een geslaagde Microsoft Graph-send; logging is best-effort en blokkeert het mailen nooit. Een bundel-factuur over meerdere orders krijgt één rij per order; de betaler-kopie is een eigen rij. **Niet te verwarren** met `externe_payloads` (raw-payload-diagnose-vangnet) — dit is de nette, klikbare weergave-log voor operators.
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| id | BIGSERIAL PK | |
+| order_id | BIGINT NOT NULL FK → orders ON DELETE CASCADE | tijdlijn-sleutel |
+| factuur_id | BIGINT FK → facturen ON DELETE SET NULL | alleen bij soort `'factuur'` |
+| soort | TEXT CHECK | `'factuur'` / `'orderbevestiging'` |
+| onderwerp | TEXT NOT NULL | letterlijke mail-subject |
+| verzonden_aan | TEXT NOT NULL | komma-gescheiden ontvangers |
+| verzonden_op | TIMESTAMPTZ DEFAULT now() | |
+| html | TEXT | volledige mail-body; **NULL = inhoud niet bewaard** (backfill van vóór mig 366) |
+| bijlagen | JSONB DEFAULT '[]' | `[{filename, bucket, path}]` → klikbaar via signed URL in de dialog |
+
+**Index:** `(order_id)`. **RLS:** SELECT voor authenticated; géén insert/update/delete-policies — schrijven uitsluitend via service-role. Backfill in mig 366 reconstrueert eerdere mails uit `facturen.verstuurd_op/verstuurd_naar` (rij per order, EDI-only overgeslagen) en `orders.bevestigd_at/bevestiging_email` (html NULL, geen PDF). Frontend: [`order-emails.tsx`](../frontend/src/components/orders/order-emails.tsx) + [`order-email-dialog.tsx`](../frontend/src/components/orders/order-email-dialog.tsx) (body in **sandboxed iframe**), query [`verstuurde-emails.ts`](../frontend/src/lib/supabase/queries/verstuurde-emails.ts).
 
 ### shopify_sync_runs
 Audit-trail van de geplande Shopify-orderpoll `sync-shopify-orders-poll` (mig 323). Eén rij per cron-tick (elke 10 min); `details` JSONB bevat per-order resultaat (`aangemaakt`/`overgeslagen (bestond al)`/`fout`). Voedt de storingsbanner op het orders-overzicht ([`ShopifySyncStatusBanner`](../frontend/src/components/orders/shopify-sync-status-banner.tsx)) — analoog aan de EDI "Te koppelen"-banner, maar dan voor sync-gezondheid i.p.v. ongekoppelde berichten.
@@ -1240,7 +1397,7 @@ Eén-rij-tabel (`id=1`) met `watermark TIMESTAMPTZ` = de `created_at` van de laa
 
 | Enum | Waarden |
 |------|---------|
-| order_status | **Klaar voor picken** (mig 257, ADR-0016, default sinds mig 275), **Wacht op maatwerk** (mig 257), Wacht op voorraad, **Wacht op inkoop** (mig 144), **In pickronde** (mig 257), **Deels verzonden** (mig 257), Verzonden, Geannuleerd. Legacy (niet meer geschreven post-mig 275): Nieuw, Actie vereist, Wacht op picken, In snijplan, In productie, Deels gereed, Klaar voor verzending. |
+| order_status | **Klaar voor picken** (mig 257, ADR-0016, default sinds mig 275), **Wacht op maatwerk** (mig 257), Wacht op voorraad, **Wacht op inkoop** (mig 144), **In pickronde** (mig 257), **Deels verzonden** (mig 257), Verzonden, Geannuleerd, **Maatwerk afgerond** (mig 327, ADR-0029 — terminale status uitsluitend voor productie-only orders uit Basta; bereikt zodra alle snijplannen confectie-afgerond zijn; valt buiten Pick & Ship/facturatie/transport). Legacy (niet meer geschreven post-mig 275, behalve `In productie` als import-status voor productie-only orders): Nieuw, Actie vereist, Wacht op picken, In snijplan, In productie, Deels gereed, Klaar voor verzending. |
 | zending_status | Gepland, Picken, Ingepakt, Klaar voor verzending, Onderweg, Afgeleverd (mig 169) |
 | factuur_status | Concept, Verstuurd, Betaald, Herinnering, Aanmaning, Gecrediteerd |
 | factuurvoorkeur | per_zending, wekelijks |
@@ -1266,7 +1423,7 @@ Eén-rij-tabel (`id=1`) met `watermark TIMESTAMPTZ` = de `created_at` van de laa
 | rollen_overzicht | Per kwaliteit/kleur: aantal, oppervlak, waarde |
 | recente_orders | Laatste 50 orders met klantnaam |
 | orders_status_telling | Aantal per order_status |
-| snijplanning_overzicht | Snijplannen met order-, klant- en rolgegevens voor de planningsweergave. `snij_lengte_cm`/`snij_breedte_cm` zijn **nominale (bestelde) maten**. Migratie 143 voegt `marge_cm` toe (single-source via `stuk_snij_marge_cm()` migratie 126; ZO +6, rond/ovaal +5, max bij combi) en `geroteerd` toe — beide nodig voor de SnijVolgorde-transformer ([frontend/src/lib/snij-volgorde/derive.ts](../frontend/src/lib/snij-volgorde/derive.ts)) die de rol-uitvoer modal voedt. Fysieke snij-maat = bestelde + marge. Mig 290: `WHERE o.status <> 'Geannuleerd'` (defense-in-depth bij ADR-0023; bewust NIET ook `'Verzonden'` — de view voedt ook de fysieke rol-uitvoer + packer). |
+| snijplanning_overzicht | Snijplannen met order-, klant- en rolgegevens voor de planningsweergave. `snij_lengte_cm`/`snij_breedte_cm` zijn **nominale (bestelde) maten**. Migratie 143 voegt `marge_cm` toe (single-source via `stuk_snij_marge_cm()` migratie 126; ZO +6, rond/ovaal +5, max bij combi) en `geroteerd` toe — beide nodig voor de SnijVolgorde-transformer ([frontend/src/lib/snij-volgorde/derive.ts](../frontend/src/lib/snij-volgorde/derive.ts)) die de rol-uitvoer modal voedt. Fysieke snij-maat = bestelde + marge. Mig 290: `WHERE o.status <> 'Geannuleerd'` (defense-in-depth bij ADR-0023; bewust NIET ook `'Verzonden'` — de view voedt ook de fysieke rol-uitvoer + packer). Mig 331 (ADR-0029): +3 kolommen `alleen_productie`, `oud_order_nr`, `snijden_uit_standaardmaat` zodat productie-only orders (status `In productie`/`Maatwerk afgerond`) zichtbaar blijven; geen filterwijziging. |
 | confectie_overzicht | Confectie-orders met scan- en voortgangsstatus |
 | confectie_planning_overzicht | Confectie-orders (status Wacht op materiaal / In productie) met klant, order, maatwerk-afmetingen en strekkende meter voor planningsweergave |
 | confectie_planning_forward | Vooruitkijkende confectie-planning — alle open maatwerk-snijplannen (Gepland..In confectie/Ingepakt) met afgeleide type_bewerking + confectie_startdatum + backward-compat aliassen. Kwaliteit/kleur valt terug van rol → product → maatwerk-snapshot (mig 243) |
@@ -1278,6 +1435,11 @@ Eén-rij-tabel (`id=1`) met `watermark TIMESTAMPTZ` = de `created_at` van de laa
 | inkooporder_regel_claim_zicht | Per IO-regel: `aantal_geclaimd` / `aantal_vrij` / `aantal_orderregels` (alleen voor `eenheid='stuks'`-regels relevant). Migratie 150. |
 | uitwisselbaarheid_map1_diff | Diagnostiek (migratie 138): Map1-paren in `kwaliteit_kleur_uitwisselgroepen` die NIET door `uitwisselbare_paren()` afgedekt worden, met `reden`-kolom (input-kw zonder collectie_id, kwaliteiten in andere collecties, kleur-code-mismatch, target ontbreekt in producten/rollen/maatwerk_m2_prijzen). Moet 0 rijen geven voordat Map1 fysiek gedropt mag worden. |
 | vervoerder_stats | Per-vervoerder dashboard-aggregaties (mig 174, aangepast mig 176): `aantal_klanten` (distinct debiteuren uit zendingen), `aantal_zendingen_totaal` + `aantal_zendingen_deze_maand` (uit `zendingen.vervoerder_code`), `hst_aantal_verstuurd` + `hst_aantal_fout` (uit `hst_transportorders`, alleen niet-NULL voor de `hst_api`-rij). Voedt de `/logistiek/vervoerders`-overzichts- en detailpagina's. EDI-equivalent uit `edi_berichten` met `berichttype='verzendbericht'` volgt later. |
+| hst_verzend_monitor | Mig 338 (ADR-0030). Aggregaat (één rij, geen state) over `hst_transportorders`: `verstuurd_vandaag`, `fout_open`, `wachtrij`, `bezig`, `oudste_wachtrij_minuten`, `oudste_bezig_minuten`. De laatste twee = **cron-health-signaal** (hoog = `hst-send`-cron staat stil; UI-drempel 5 min). Voedt de HST-verzendmonitor (tab op `/logistiek/vervoerders/hst_api/monitor`) + aandacht-banner op Pick & Ship. Tegengif tegen de "silent failure"-klasse. |
+| verhoek_verzend_monitor | Mig 375 (ADR-0031). Aggregaat (één rij, geen state) over `verhoek_transportorders`: `verstuurd_vandaag`, `fout_open`, `wachtrij`, `bezig`, `oudste_wachtrij_minuten`, `oudste_bezig_minuten`. Spiegelt `hst_verzend_monitor`. `oudste_wachtrij_minuten` = cron-health-signaal voor `verhoek-send`. Frontend-paneel volgt in een later plan. |
+| orders_zonder_vervoerder | Mig 338 (ADR-0030) + 345 + 372. Niet-afhaal-orders (`afhalen=FALSE`), niet productie-only (`NOT alleen_productie` — verzending blijft in Basta, ADR-0029; guard toegevoegd in mig 345), status NOT IN (`'Geannuleerd'`,`'Verzonden'`,`'Concept'`), met ≥1 regel waarvan `effectieve_vervoerder_per_orderregel(o.id).bron='geen'` (geen matchende **actieve** vervoerder → handmatig kiezen nodig). Telt dus álle open orders, óók wat Pick & Ship (nog) niet toont. Sinds mig 372 ook `status` (TEXT) en `afl_land_norm` (`normaliseer_land`, mig 214) zodat de banner per land kan uitsplitsen + "waarvan klaar voor picken" toont. Voedt de "handmatig vervoerder kiezen"-teller/banner. |
+| orderregel_pickbaarheid | Mig 170; mig 288: `'Snijden'`-rang-fix; **mig 386 (v4):** (a) generieke admin-pseudo-skip `AND NOT is_admin_pseudo(oreg.artikelnr)` (ADR-0018) — vervangt de VERZEND-specifieke TS-skip én fixt de latente dropship-blokkade (DROPSHIP-KLEIN/-GROOT-regels kregen geen claim → stonden als `wacht_op='inkoop'` → dropship-orders werden nooit "alles pickbaar"); (b) nieuwe kolom `gewicht_kg` (uit `order_regels`) zodat de aparte gewicht-query in TS vervalt. Per orderregel (open orders, niet-pseudo): `order_regel_id`, `order_id`, `regelnummer`, `artikelnr`, `is_maatwerk`, `orderaantal`, maatwerk-afmetingen, `is_pickbaar`, `bron` (`snijplan`\|`rol`\|`producten_default`\|NULL), `fysieke_locatie`, `wacht_op` (`snijden`\|`confectie`\|`inpak`\|`inkoop`\|NULL), `gewicht_kg`. Single source voor Pick & Ship; de TS-laag leidt niets meer af. |
+| order_pickbaarheid | **Mig 386** (hernummerd van 383 via 385; in de live DB op 12-06 onder werknummer 383 toegepast). Aggregaat per order over `orderregel_pickbaarheid`. Kolommen: `order_id`, `totaal_regels` (INT), `pickbare_regels` (INT), `alle_regels_pickbaar` (BOOL), `heeft_pickbare_regel` (BOOL), `deelleveringen_toegestaan` (BOOL, uit `debiteuren`), `pick_ship_zichtbaar` (BOOL = `alle_regels_pickbaar` OR (`deelleveringen_toegestaan` AND `heeft_pickbare_regel`)). **Geen rij** = order heeft geen (niet-pseudo) regels = niets te picken. Single source voor het Pick & Ship-orderfilter ([`fetchPickShipOrders`](../frontend/src/modules/magazijn/queries/pickbaarheid.ts)) en de pick-start-knop (`StartPickrondesButton.alle_regels_pickbaar`); alleen de dag-order-horizon (ADR 0014) blijft client-side. **Deploy-voorwaarde:** mig 386 moet op de live DB staan vóór de frontend van deze branch deployt — er is geen fallback meer. |
 
 ---
 
@@ -1323,16 +1485,17 @@ Mig 174, aangepast in mig 176. Read-only view die de `/logistiek/vervoerders`-ov
 | `voltooi_snijplan_rol(p_rol_id BIGINT, p_gesneden_door TEXT, p_override_rest_lengte INTEGER, p_reststukken JSONB, p_snijplan_ids BIGINT[])` | Markeert snijplannen als gesneden + maakt reststukken aan. Met `p_snijplan_ids` gevuld: alleen die IDs → Gesneden; overige `Snijden` stukken op de rol → terug naar `Wacht` (rol_id/positie gereset) voor volgende optimalisatie-run. Zet ook `rollen.snijden_voltooid_op=NOW()`. Reststukken: geef `p_reststukken` JSONB array mee → één rol per rechthoek ≥70×140 cm. Returns: TABLE(reststuk_id, reststuk_rolnummer, reststuk_lengte_cm). (migraties 060, 066) |
 | `start_snijden_rol(p_rol_id BIGINT, p_gebruiker TEXT)` | Idempotent: zet `rollen.snijden_gestart_op=NOW()` en `snijden_gestart_door` als nog niet gevuld. Voor tijdanalyse snijduur. (migratie 064) |
 | `auto_markeer_maatwerk()` | Trigger: markeert nieuwe order_regels automatisch als is_maatwerk=true wanneer product_type='rol' |
-| `auto_maak_snijplan()` | Trigger: maakt automatisch een snijplan aan (status 'Wacht') voor nieuwe maatwerk order_regels |
+| `auto_maak_snijplan()` | Trigger: maakt automatisch een snijplan aan (status 'Wacht') voor nieuwe maatwerk order_regels. Mig 328 (ADR-0029): kopieert `order_regels.snijden_uit_standaardmaat` naar het snijplan (additief — gewone regels → false). |
 | `keur_snijvoorstel_goed(voorstel_id BIGINT)` | Keurt een snijvoorstel goed: wijst rollen toe aan snijplannen, zet status 'Gepland', met concurrency guards |
 | `verwerp_snijvoorstel(voorstel_id BIGINT)` | Verwerpt een concept-snijvoorstel zonder wijzigingen |
 | `kleuren_voor_kwaliteit(p_kwaliteit TEXT)` | Retourneert kleuren met m²-prijs, kostprijs, gewicht en max breedte voor een kwaliteit. **Sinds mig 181: gewicht_per_m2_kg komt uit `kwaliteiten` (één bron-van-waarheid)**; voorheen uit `maatwerk_m2_prijzen` per kleur. |
 | `gewicht_per_m2_voor_kwaliteit(p_kwaliteit_code TEXT) → NUMERIC` | **Gewicht-resolver — publiek seam #1.** Eenvoudige lookup van density per kwaliteit. NULL als kwaliteit nog geen gewicht heeft. STABLE. Mig 185. |
 | `bereken_product_gewicht_kg(p_artikelnr TEXT) → TABLE(gewicht_kg, uit_kwaliteit)` | **Gewicht-resolver — publiek seam #2.** Gewicht (kg/stuk) voor een vast/staaltje-product. Vorm-aware sinds mig 188: `vorm='rond'` → `π × (lengte_cm/200)² × density`; anders `(lengte × breedte / 10000) × density`. Bij volledige cache-bron retourneert `(gewicht, true)`; bij ontbrekende kwaliteit-density of maat-data retourneert `(legacy_gewicht, false)`. STABLE. Mig 185, vorm-logica mig 188. |
-| `bereken_orderregel_gewicht_kg(p_order_regel_id BIGINT) → NUMERIC` | **Gewicht-resolver — publiek seam #3.** Gewicht (kg/stuk) voor een orderregel. Maatwerk: `oppervlak × kwaliteit-density`. Vast: copy van `producten.gewicht_kg`. Service-items zonder artikelnr → NULL. STABLE. Mig 185. |
+| `bereken_orderregel_gewicht_kg(p_order_regel_id BIGINT) → NUMERIC` | **Gewicht-resolver — publiek seam #3.** Gewicht (kg/stuk) voor een orderregel. Maatwerk: `oppervlak × kwaliteit-density`. Vast: sinds mig 387 live via `bereken_product_gewicht_kg` (vorm-aware) i.p.v. cache-copy; 0 → NULL. Service-items zonder artikelnr → NULL. STABLE. Mig 185/387. |
 | `bereken_orderregel_prijs(p_artikelnr TEXT, p_prijslijst_nr TEXT) → JSONB` | **Prijs-resolver voor order-aanmaak.** 5-stappen fallback-keten: `prijslijst_vast` (prijslijst_regels) → `prijslijst_m2` (m²-prijs van kleur-specifiek MAATWERK-artikel × oppervlak + vormtoeslag) → `maatwerk_artikel_m2` (`producten.verkoopprijs` van MAATWERK-artikel × oppervlak + vormtoeslag) → `kwaliteit_m2` (`maatwerk_m2_prijzen` × oppervlak + vormtoeslag) → `product_verkoopprijs` (eigen verkoopprijs). Vormtoeslag uit `maatwerk_vormen.toeslag` via `producten.maatwerk_vorm_code`. Retourneert `{ prijs, bron, breakdown }`. STABLE. Mig 191. |
 | `trg_kwaliteit_gewicht_recalc()` | Trigger op `kwaliteiten` (AFTER UPDATE OF gewicht_per_m2_kg). Cascade: herrekent producten in die kwaliteit + open maatwerk-orderregels. Mig 185. |
-| `trg_product_gewicht_recalc()` | Trigger op `producten` (AFTER UPDATE OF gewicht_kg). Cascade: kopieert gewicht naar open vaste-orderregels met dat artikelnr. Mig 185. |
+| `trg_product_gewicht_recalc()` | Trigger op `producten` (AFTER UPDATE OF gewicht_kg). Cascade: kopieert gewicht naar open vaste-orderregels met dat artikelnr. Mig 185. **Interactie met mig 387:** voor vast/staaltje met complete data vuurt de BEFORE-trigger `trg_producten_gewicht_derive` eerst en herleidt de waarde — deze cascade propageert dus altijd het gederiveerde gewicht naar open regels (handmatige input overleeft de keten niet); voor 'rol'/'overig' en incomplete data ongewijzigd gedrag. |
+| `producten_gewicht_derive()` | BEFORE-trigger op `producten` (INSERT + UPDATE OF gewicht_kg/lengte_cm/breedte_cm/kwaliteit_code/vorm/product_type). Self-healing gederiveerde gewicht-cache voor vast/staaltje met complete data; NULL-veilige product_type-guard. Mig 387. |
 | ~~`rollen_uitwissel_voorraad()`~~ | **GEDROPT in mig 187 (T005)** — vervangen door `voorraadposities()` (mig 179/180). Geen externe callers meer; functie definitief verwijderd. |
 | `normaliseer_kleur_code(code TEXT)` | Normaliseert kleur_code: strip trailing ".0" (bijv. "12.0" → "12") — IMMUTABLE helper |
 | `snijplanning_groepen_gefilterd(p_tot_datum)` | Gegroepeerde snijplanning met optionele afleverdatum-filter (groepeert op genormaliseerde kleur_code) |
@@ -1344,10 +1507,12 @@ Mig 174, aangepast in mig 176. Read-only view die de `/logistiek/vervoerders`-ov
 | `acquire_snijplan_lock(kwaliteit TEXT, kleur TEXT)` | Atomisch lock verkrijgen voor auto-planning (5 min staleness timeout) |
 | `release_snijplan_lock(kwaliteit TEXT, kleur TEXT)` | Lock vrijgeven na auto-planning |
 | `start_confectie(p_snijplan_id BIGINT)` | Zet snijplan-status op 'In confectie'. Idempotent. Valideert dat status vooraf Gesneden/In confectie is. |
-| `voltooi_confectie(p_snijplan_id BIGINT, p_afgerond BOOLEAN DEFAULT true, p_ingepakt BOOLEAN DEFAULT false, p_locatie TEXT DEFAULT NULL)` | Rondt confectie af. p_afgerond=false clears + status terug naar Gesneden. p_ingepakt=true zet status Gereed + ingepakt_op. p_locatie="" wist locatie; NULL laat ongemoeid. |
+| `voltooi_confectie(p_snijplan_id BIGINT, p_afgerond BOOLEAN DEFAULT true, p_ingepakt BOOLEAN DEFAULT false, p_locatie TEXT DEFAULT NULL)` | Rondt confectie af. p_afgerond=false clears + status terug naar Gesneden. p_ingepakt=true zet status Gereed + ingepakt_op. p_locatie="" wist locatie; NULL laat ongemoeid. Mig 330 (ADR-0029): na-stap flipt een productie-only order (`alleen_productie=true`) naar `'Maatwerk afgerond'` zodra ÁLLE snijplannen van de order confectie-afgerond zijn (`confectie_afgerond_op IS NOT NULL`). Strikt geguard — gewone orders ongemoeid. |
+| `import_productie_only_order(p_header JSONB, p_regels JSONB) → TABLE(order_nr TEXT, was_existing BOOLEAN)` | Mig 329 (ADR-0029), SECURITY DEFINER. Idempotente import van één Basta-order als productie-only order: maakt `orders`-rij (status `'In productie'`, `alleen_productie=true`, `bron_systeem='oud_systeem'`, `order_nr='OUD-<oud_order_nr>'`) + maatwerk-`order_regels` (`is_maatwerk=true`, geen artikelnr/prijs — facturatie in Basta). Idempotent op `oud_order_nr`: bestaat de order al → `was_existing=true`, niets gemuteerd. Debiteur = echte match of verzameldebiteur **900000**. Géén allocator-aanroep (maatwerk reserveert niet op inkoop); `auto_maak_snijplan` expandeert naar snijplannen. |
 | `update_order_with_lines(p_order_id BIGINT, p_header JSONB, p_regels JSONB)` | Merge-update van order header + regels: UPDATE bestaande regels op `id`, INSERT nieuwe, DELETE regels die uit payload verdwenen zijn. Preserveert `snijplannen.order_regel_id` FK-koppelingen (migratie 074) |
 | `backlog_per_kwaliteit_kleur(p_kwaliteit TEXT, p_kleur TEXT)` | Aggregeert wachtende snijplan-stukken voor real-time levertijd-check: returnt `(totaal_m2, aantal_stukken, vroegste_afleverdatum)`. Match op kleur-varianten (X, X.0). Gebruikt door `check-levertijd` edge function (migratie 080) |
 | `genereer_factuur(p_order_ids BIGINT[])` | Atomair: maakt factuur + regels aan voor 1+ orders van dezelfde debiteur, markeert order_regels.gefactureerd. Retourneert factuur_id. Migratie 119. |
+| `effectief_btw_pct(p_verlegd BOOLEAN, p_btw_percentage NUMERIC) → NUMERIC` | Mig 371: effectief BTW-percentage voor een debiteur — verlegd → 0, anders `COALESCE(pct, 21)`. IMMUTABLE. Gebruikt door `genereer_factuur_voor_bundel`; gespiegeld in `supabase/functions/_shared/btw.ts` (`effectiefBtwPct`). |
 | `enqueue_factuur_bij_verzonden()` | Trigger: bij orders.status → 'Verzonden' vult factuur_queue voor per_zending-klanten. Migratie 118. |
 | `enqueue_wekelijkse_verzamelfacturen()` | Verzamelt niet-gefactureerde Verzonden-orders per wekelijks-klant in de queue. Maandag 05:00 UTC via pg_cron. Migratie 122. |
 | `recover_stuck_factuur_queue()` | Zet queue-items >10 min in 'processing' terug op 'pending'. Elke 5 min via pg_cron. Migratie 121. |
@@ -1360,11 +1525,17 @@ Mig 174, aangepast in mig 176. Read-only view die de `/logistiek/vervoerders`-ov
 | `boek_voorraad_ontvangst(p_regel_id BIGINT, p_aantal INTEGER, p_medewerker TEXT)` | Voor vaste producten (eenheid='stuks'): verhoogt `producten.voorraad` met p_aantal en werkt regel + order-status bij. Sinds migratie 148: consumeert IO-claims in `claim_volgorde`-volgorde en verschuift ze naar voorraad-claims op dezelfde orderregel; roept `herwaardeer_order_status` aan per geraakte order. |
 | `create_zending_voor_order(p_order_id BIGINT) → BIGINT` | Maakt één `zendingen`-rij + bijbehorende `zending_regels` voor één order. Adres-snapshot uit `orders.afl_*`, één zending_regel per `order_regels`-rij met `orderaantal > 0`; migratie 177 vult `zending_regels.aantal`, `zendingen.aantal_colli` en `zendingen.totaal_gewicht_kg` vanuit `orderaantal`/`gewicht_kg` voor Pick & Ship stickers en pakbon. Idempotent: returnt bestaande actieve zending als die er al is (alle statussen behalve `Afgeleverd`) en enqueue't opnieuw als status `'Klaar voor verzending'` is. Status direct op `'Klaar voor verzending'` zodat de zending-trigger meteen vuurt. Aangeroepen vanuit order-detail en Pick & Ship Verzendset. Migratie 172, aangescherpt in 177. |
 | `selecteer_vervoerder_voor_zending(p_zending_id BIGINT) → TABLE(gekozen_vervoerder_code, keuze_uitleg)` | Centrale vervoerderselector (mig 176). V1 kiest alleen als precies één vervoerder actief is. Bij 0 actieve of meerdere actieve vervoerders zonder criteria geeft de functie NULL + JSON-uitleg terug. Latere uitbreiding: voorwaarden, zones en tarieven per zending. |
-| `enqueue_zending_naar_vervoerder(p_zending_id BIGINT) → TEXT` | **Single switch-point voor multi-vervoerder dispatch** — enige plek in de codebase waar op `vervoerder_code` wordt geswitcht. Leest `zendingen.vervoerder_code` of vult die via `selecteer_vervoerder_voor_zending()` en dispatcht naar de juiste adapter-RPC: `'hst_api'` → `enqueue_hst_transportorder`; toekomstige `'edi_partner_a/b'` → `enqueue_edi_verzendbericht` (op `edi_berichten`). Returnt textuele status (`enqueued_hst` / `geen_actieve_vervoerder` / `meerdere_actieve_vervoerders_geen_criteria` / `vervoerder_inactief` / `no_adapter_voor_<code>`) — alleen voor logging/debugging, niet voor caller-control-flow. Migratie 172, aangepast in 176. |
+| `enqueue_zending_naar_vervoerder(p_zending_id BIGINT) → TEXT` | **Single switch-point voor multi-vervoerder dispatch** — enige plek in de codebase waar op `vervoerder_code` wordt geswitcht. Leest `zendingen.vervoerder_code` of vult die via `selecteer_vervoerder_voor_zending()` en dispatcht naar de juiste adapter-RPC op basis van `vervoerders.type`: `type='api'` + `'hst_api'` → `enqueue_hst_transportorder`; `type='sftp'` + `'verhoek_sftp'` → `enqueue_verhoek_transportorder` (mig 375, ADR-0031); `type='print'` → `genereer_zending_colli`; `type='edi'` → nog geen adapter-RPC. Returnt textuele status (`enqueued_hst` / `enqueued_verhoek` / `vervoerder_inactief` / `no_adapter_voor_<code>` / …) — alleen voor logging/debugging, niet voor caller-control-flow. Migratie 172, aangepast in 176 + 375. |
 | `enqueue_hst_transportorder(p_zending_id BIGINT, p_debiteur_nr INTEGER, p_is_test BOOLEAN) → BIGINT` | HST-adapter: plaatst transportorder op wachtrij in `hst_transportorders`. Idempotent via `uk_hst_to_zending_actief`. Migratie 171. |
 | `claim_volgende_hst_transportorder() → hst_transportorders` | HST-adapter: pakt oudste `Wachtrij`-rij (`FOR UPDATE SKIP LOCKED`), zet status `Bezig`. Aangeroepen door edge function `hst-send`. Migratie 171. |
 | `markeer_hst_verstuurd(p_id, p_extern_transport_order_id, p_extern_tracking_number, p_request_payload, p_response_payload, p_response_http_code) → VOID` | HST-adapter: na 200-respons. Status → `Verstuurd`; schrijft `track_trace` terug op `zendingen` en promoveert zending-status van `'Klaar voor verzending'` naar `'Onderweg'`. Migratie 171. |
 | `markeer_hst_fout(p_id, p_error, p_request_payload, p_response_payload, p_response_http_code, p_max_retries DEFAULT 3) → VOID` | HST-adapter: incrementeert `retry_count`. Bij `>=` max_retries → status `Fout`, anders terug naar `Wachtrij`. Migratie 171. |
+| `herstel_vastgelopen_hst(p_minuten INTEGER DEFAULT 10) → INTEGER` | **Self-healing reaper** (mig 337, ADR-0030, SECURITY DEFINER, GRANT authenticated). Zet `hst_transportorders`-rijen die >`p_minuten` op status `'Bezig'` hangen terug naar `'Wachtrij'` (beschermt tegen crash/timeout tussen `claim_volgende_hst_transportorder` en de POST). Returnt aantal herstelde rijen. Bovenin elke `hst-send`-run aangeroepen + handmatig. |
+| `enqueue_verhoek_transportorder(p_zending_id BIGINT, p_debiteur_nr INTEGER, p_is_test BOOLEAN DEFAULT FALSE) → BIGINT` | Verhoek-adapter: plaatst transportorder op wachtrij in `verhoek_transportorders`. Idempotent via `uk_verhoek_to_zending_actief`. Mig 375 (ADR-0031). |
+| `claim_volgende_verhoek_transportorder() → verhoek_transportorders` | Verhoek-adapter: pakt oudste `Wachtrij`-rij (`FOR UPDATE SKIP LOCKED`), zet status `Bezig`. Aangeroepen door edge function `verhoek-send`. Mig 375. |
+| `markeer_verhoek_verstuurd(p_id, p_bestandsnaam, p_xml_storage_path, p_track_trace_id, p_request_xml) → VOID` | Verhoek-adapter: na geslaagde SFTP-upload. Status → `Verstuurd`; schrijft `track_trace` terug op `zendingen` en promoveert zending-status van `'Klaar voor verzending'` naar `'Onderweg'`. Mig 375. |
+| `markeer_verhoek_fout(p_id, p_error, p_request_xml DEFAULT NULL, p_max_retries DEFAULT 3) → VOID` | Verhoek-adapter: incrementeert `retry_count`. Bij `>=` max_retries → status `Fout`, anders terug naar `Wachtrij`. Mig 375. |
+| `herstel_vastgelopen_verhoek(p_minuten INTEGER DEFAULT 10) → INTEGER` | **Self-healing reaper** (mig 375, ADR-0031, SECURITY DEFINER, GRANT authenticated). Spiegelt `herstel_vastgelopen_hst`. Bovenin elke `verhoek-send`-run + handmatig. |
 | `create_or_get_magazijn_locatie(p_code TEXT, p_omschrijving TEXT DEFAULT NULL, p_type TEXT DEFAULT 'rek') → BIGINT` | Idempotent: vindt-of-maakt `magazijn_locaties.id` voor `code` (UPPER+TRIM). Wordt gebruikt door `MagazijnLocatieEdit` (rol-locatie zetten) en `boek_ontvangst`. Migratie 169. |
 | `set_locatie_voor_orderregel(p_order_regel_id INTEGER, p_code TEXT) → BIGINT` | **Atomair**: vindt-of-maakt `magazijn_locaties`-rij voor `code` én zet `snijplannen.locatie = code` voor alle `Ingepakt`-rijen van de orderregel. Vervangt twee opeenvolgende RPC-calls (`createOrGetMagazijnLocatie + UPDATE snijplannen`) in `useUpdateMaatwerkLocatie` — voorkomt dangling `magazijn_locaties`-rijen wanneer de tweede call faalt. Returnt `magazijn_locaties.id`. Migratie 0183 (ADR-0002). |
 | `match_klant_po(p_extractie jsonb) → jsonb` | **Klant-PO parsing — deterministische koppellaag** (mig 294). Matcht AI-extractie van een klant-inkooporder-PDF tegen de database. Debiteur: btw → e-maildomein → exacte naam (telkens precies 1 hit = `zeker`, anders geen debiteur; alleen actieve debiteuren). Per regel: kwaliteit via reverse-lookup op `klanteigen_namen.benaming` (debiteur-/inkoopgroep-scoped) + exacte `kwaliteiten.omschrijving`; kleur via numeriek suffix; artikel via `klant_artikelnummers` / `producten`. Debiteur en elke regel dragen een eigen `zeker`-label — de frontend vult alleen `zeker`-regels/-debiteur voor (adres + klant-referentie altijd concept). STABLE, geen side-effects. GRANT anon/authenticated/service_role. |
@@ -1374,6 +1545,7 @@ Mig 174, aangepast in mig 176. Read-only view die de `/logistiek/vervoerders`-ov
 | `effectieve_vervoerder_per_orderregel(p_order_id BIGINT) → TABLE(...)` | **Per-orderregel-resolver (mig 219).** Returnt voor elke pickbare regel: `override_code`, `evaluator_code`/`evaluator_service`, `klant_fallback_code`, `effectief_code`/`effectief_service` en `bron` (`override` / `regel` / `klant_fallback` / `geen` / `afhalen`). Bron-precedentie: override > regel > klant_fallback > geen. Globaal-actief blijft een UI-fallback. Gebruikt door `start_pickronden_voor_order` (mig 220) voor groepering en door pick-card UI voor per-regel pill. STABLE. |
 | `evalueer_orderregel_attributes(p_orderregel_id BIGINT) → TABLE(...)` | **Per-regel attributen voor regel-evaluator (mig 219).** Symmetrisch met `evalueer_zending_attributes` (mig 210), maar `kleinste_zijde_cm` en `gewicht_kg` zijn per regel zodat de evaluator per regel kan beslissen. Land/debiteur/inkoopgroep blijven order-niveau. STABLE. |
 | `start_pickronden_voor_order(p_order_id BIGINT, p_picker_id BIGINT) → TABLE(zending_id, zending_nr, vervoerder_code, aantal_regels, is_nieuw)` | **Splits-aware pickronde-starter (mig 220).** Voor élke unieke effectieve vervoerder maakt 1 zending aan (regels uit groep, vervoerder direct gezet bij INSERT). Idempotent op (order, vervoerder): bestaande Picken-zendingen worden hergebruikt. Eindstatus-guard uit mig 218 blijft van kracht. `start_pickronde` (oude single-zending wrapper) returnt nu het eerste zending_id van deze RPC voor backward compat. |
+| `assert_bundel_sleutel_contract(JSONB) → void` | Mig 385 (in DB toegepast als 383 op 12-06): toetst `_normaliseer_afleveradres` + `verzendweek_voor_datum` + `bundel_sleutel` tegen de golden fixtures (RAISE EXCEPTION bij mismatch, vorm-guard tegen lege arrays); aanroepen aan het eind van elke migratie die een van de drie wijzigt (`*_bundel_sleutel_contract*.sql`-conventie). |
 
 ### Triggers op order_regels (maatwerk)
 
@@ -1392,3 +1564,11 @@ Mig 174, aangepast in mig 176. Read-only view die de `/logistiek/vervoerders`-ov
 | facturen | Verstuurde factuur-PDFs ({debiteur_nr}/FACT-YYYY-NNNN.pdf) | Privé, frontend leest via signed URL (10 min); uploads via service role |
 | documenten | Algemene documenten (algemene-voorwaarden-karpi-bv.pdf) | Publiek lezen, uploads via service role |
 | order-documenten | Bijlagen bij orders en inkooporders. Paden `orders/{id}/...` en `inkooporders/{id}/...`. Max 25 MB; alleen PDF/JPG/PNG/WebP/Excel/Word/TXT toegestaan. | Privé, authenticated SELECT/INSERT/UPDATE/DELETE; frontend leest via signed URL |
+| bug-bijlagen | Screenshots/bijlagen bij bug-meldingen (mig 342). Paden `{auth_uid}/{uuid}-{naam}`. Max 10 MB; afbeeldingen + PDF. | Privé, authenticated SELECT/INSERT; frontend leest via signed URL |
+| orderbevestigingen | Verstuurde orderbevestiging-PDFs ({order_id}/Orderbevestiging-{order_nr}.pdf, mig 366 — upsert bij hersturen). Bijlage-bron voor de e-mailtijdlijn op order-detail. | Privé, frontend leest via signed URL (10 min); uploads via service role |
+
+## Bug-meldtool (mig 342)
+
+| Tabel | Doel |
+|-------|------|
+| `bug_meldingen` | In-app feedback/bug-meldingen. Kolommen o.a. `titel`, `omschrijving`, `urgentie` (enum `bug_urgentie`), `pagina_url`, `status` (enum `bug_melding_status`: Open→Verwerkt→Geaccepteerd), `bijlage_path`, `gemeld_door` (→auth.users), `gemeld_door_email`, `verwerkt_op`, `geaccepteerd_op`. **Mig 360:** `verwerkt_opgelost`/`verwerkt_testen` (toelichting van de beheerder bij verwerken — wat opgelost + hoe te testen, zichtbaar voor de melder) en `verwerkt_gezien_op` (wanneer de melder de verwerking zag; `NULL` + status Verwerkt = ongezien → teller op het belletje rechtsboven). RLS: melder ziet eigen rijen, beheerder (`is_bug_beheerder()`) ziet alles. Statuswissel via SECURITY DEFINER-RPC `set_bug_status(p_id, p_status, p_opgelost, p_testen)` (mig 360, was `(p_id, p_status)`); melder dooft de teller via `markeer_verwerkt_gezien()`. |

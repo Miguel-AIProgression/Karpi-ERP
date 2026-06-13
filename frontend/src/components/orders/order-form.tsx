@@ -3,7 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ClientSelector, type SelectedClient } from './client-selector'
 import { AddressSelector } from './address-selector'
+import type { AfleverAdres } from './address-selector'
 import { InvoiceAddressEditor, type FactuurAdres, type FactuurContact } from './invoice-address-editor'
+import { DeliveryAddressEditor } from './delivery-address-editor'
 import { OrderLineEditor } from './order-line-editor'
 import { LevertijdSuggestie } from './levertijd-suggestie'
 import { LeverModusDialog, type LeverModusTekort } from './lever-modus-dialog'
@@ -21,16 +23,26 @@ import { fetchOrderConfig } from '@/lib/supabase/queries/order-config'
 import { triggerAutoplan, fetchAutoplanningConfig } from '@/modules/snijplanning'
 import { berekenMaatwerkAfleverdatumViaSeam } from '@/modules/maatwerk'
 import {
-  verzendWeekIsoString,
-  verzendWeekStringToDatum,
   verzendWeekVoor,
   verzendWeekRelatief,
   verzendWeekSleutel,
+  verzendWeekStringToDatum,
 } from '@/lib/orders/verzendweek'
+import { WeekDatumPicker } from './week-datum-picker'
 import { applyShippingLogic } from '@/lib/orders/verzend-regel'
 import { bepaalOrderAfleverdatum } from '@/lib/orders/order-afleverdatum'
 import { SHIPPING_PRODUCT_ID } from '@/lib/constants/shipping'
+import { bouwOrderCommit, isGemengdeSplit } from '@/lib/orders/order-commit'
 import { SPOED_PRODUCT_ID, SPOED_FALLBACK_BEDRAG } from '@/lib/constants/spoed'
+import { applyDropshipmentLogic, detecteerDropshipKeuze, heeftDropshipRegel } from '@/lib/orders/dropshipment-regel'
+import {
+  DROPSHIP_EMAIL_MELDING,
+  dropshipAflEmailProbleem,
+  isBlokkerendDropshipEmailProbleem,
+} from '@/lib/orders/dropship-email'
+import { DropshipmentSelector } from './dropshipment-selector'
+import type { DropshipmentKeuze } from '@/lib/constants/dropshipment'
+import { useDropshipPrijzen } from '@/hooks/use-dropship-prijzen'
 
 function getISOWeek(dateStr: string): number {
   return verzendWeekVoor(dateStr)?.week ?? 0
@@ -73,18 +85,57 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
   )
   const [leverModusDialogOpen, setLeverModusDialogOpen] = useState(false)
   const [afhalen, setAfhalen] = useState<boolean>(initialData?.header?.afhalen ?? false)
+  const [dropshipKeuze, setDropshipKeuze] = useState<DropshipmentKeuze>(
+    () => detecteerDropshipKeuze(initialData?.regels ?? [])
+  )
+  // Dropship-prijzen uit producten.verkoopprijs (ADR-0018) — niet hardcoded.
+  const { data: dropshipPrijzen } = useDropshipPrijzen()
+  // Dropship-detectie is flag-based (producten.is_dropship, mig 370) zodat
+  // ook een dropship-artikel buiten de selector-keuzes (klein/groot) de
+  // e-mail-validatie en afl_email-defaults activeert. dropshipKeuze blijft
+  // puur selector-state. De selector-toggle muteert keuze + regels in
+  // dezelfde handler; uiteenlopen kan alleen door flag-only artikelen,
+  // en dan wint de OR terecht.
+  const isDropshipOrder = useMemo(
+    () => dropshipKeuze !== 'nee' || heeftDropshipRegel(regels),
+    [dropshipKeuze, regels],
+  )
+  // UI-only: id van het geselecteerde afleveradressen-record (voor "opslaan als permanent").
+  const [selectedAfleveradresId, setSelectedAfleveradresId] = useState<number | undefined>(undefined)
 
   // In edit-modus laadt clientData asynchroon na de eerste render.
-  // Sync de prijslijst en korting zodra die beschikbaar komen.
+  // Sync de prijslijst, korting én klant-e-mailadressen zodra die beschikbaar
+  // komen — zonder de e-mails valt de afl_email-ladder bij een adreswissel
+  // terug op de stale form-waarde (incident ORD-2026-0350, 11-06-2026).
   useEffect(() => {
     if (mode !== 'edit' || !initialData?.client) return
     const incoming = initialData.client
     setClient((prev) => {
       if (!prev) return incoming
-      if (prev.prijslijst_nr === incoming.prijslijst_nr && prev.korting_pct === incoming.korting_pct) return prev
-      return { ...prev, prijslijst_nr: incoming.prijslijst_nr, korting_pct: incoming.korting_pct }
+      if (
+        prev.prijslijst_nr === incoming.prijslijst_nr &&
+        prev.korting_pct === incoming.korting_pct &&
+        prev.email_factuur === incoming.email_factuur &&
+        prev.email_overig === incoming.email_overig &&
+        prev.email_verzend === incoming.email_verzend
+      ) return prev
+      return {
+        ...prev,
+        prijslijst_nr: incoming.prijslijst_nr,
+        korting_pct: incoming.korting_pct,
+        email_factuur: incoming.email_factuur,
+        email_overig: incoming.email_overig,
+        email_verzend: incoming.email_verzend,
+      }
     })
-  }, [mode, initialData?.client?.prijslijst_nr, initialData?.client?.korting_pct])
+  }, [
+    mode,
+    initialData?.client?.prijslijst_nr,
+    initialData?.client?.korting_pct,
+    initialData?.client?.email_factuur,
+    initialData?.client?.email_overig,
+    initialData?.client?.email_verzend,
+  ])
 
   const { data: orderConfig } = useQuery({ queryKey: ['order-config'], queryFn: fetchOrderConfig })
 
@@ -155,6 +206,40 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
     setRegels((current) => applyShippingLogic(current, client, nieuw))
   }
 
+  function handleDropshipChange(keuze: DropshipmentKeuze) {
+    // klein/groot vereisen een geladen prijs (producten.verkoopprijs); zonder
+    // wordt de keuze geblokkeerd zodat er nooit een €0-/onbekende regel ontstaat.
+    if (keuze !== 'nee' && !dropshipPrijzen) {
+      setError('Dropshipment-prijzen zijn nog niet geladen. Probeer het zo opnieuw.')
+      return
+    }
+    setError(null)
+    setDropshipKeuze(keuze)
+    setShippingOverridden(keuze !== 'nee')
+    setRegels((current) => {
+      const metDropship = applyDropshipmentLogic(current, keuze, dropshipPrijzen)
+      if (keuze === 'nee') {
+        return applyShippingLogic(metDropship, client, afhalen)
+      }
+      return metDropship
+    })
+    if (keuze !== 'nee') {
+      // Het bij klant-selectie gedefaulte aflever-e-mailadres is de debiteur
+      // zelf — bij dropshipment per definitie fout (T&T moet naar de
+      // consument). Leegmaken zodat de operator het consument-adres invult.
+      setHeader((h) => {
+        const probleem = dropshipAflEmailProbleem({
+          aflEmail: h.afl_email,
+          factEmail: h.fact_email,
+          debiteurEmails: [client?.email_factuur, client?.email_overig, client?.email_verzend],
+        })
+        return isBlokkerendDropshipEmailProbleem(probleem)
+          ? { ...h, afl_email: undefined }
+          : h
+      })
+    }
+  }
+
   // Auto-fill addresses when client is selected + reprice existing lines
   const handleClientChange = async (c: SelectedClient | null) => {
     setClient(c)
@@ -177,11 +262,18 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
         fact_postcode: c.fact_postcode ?? c.postcode ?? undefined,
         fact_plaats: c.fact_plaats ?? c.plaats ?? undefined,
         fact_land: c.land ?? 'NL',
+        fact_email: c.email_factuur || c.email_overig || undefined,
         afl_naam: c.naam,
         afl_adres: c.adres ?? undefined,
         afl_postcode: c.postcode ?? undefined,
         afl_plaats: c.plaats ?? undefined,
         afl_land: c.land ?? 'NL',
+        // Dropshipment: afl_email is het consument-adres — nooit defaulten
+        // naar het e-mailadres van de debiteur (winkel). Anders ladder
+        // klant-verzendadres (mig 369) → algemeen adres.
+        afl_email: isDropshipOrder
+          ? h.afl_email
+          : (c.email_verzend || c.email_overig || undefined),
         lever_type: h.lever_type ?? c.default_lever_type ?? 'week',
       }))
       applyAfleverdatum(regels, c)
@@ -230,7 +322,8 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
     }
   }
 
-  const handleAddressSelect = (addr: { naam: string; adres: string; postcode: string; plaats: string; land: string }) => {
+  const handleAddressSelect = (addr: AfleverAdres) => {
+    setSelectedAfleveradresId(addr.afleveradresId)
     setHeader((h) => ({
       ...h,
       afl_naam: addr.naam,
@@ -238,6 +331,13 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
       afl_postcode: addr.postcode,
       afl_plaats: addr.plaats,
       afl_land: addr.land,
+      // Als het afleveradres een eigen email heeft, gebruik die; anders val
+      // terug op klant-verzendadres (mig 369) → algemeen adres — behalve bij
+      // dropshipment (consument-adres).
+      afl_email: addr.email ??
+        (isDropshipOrder
+          ? h.afl_email
+          : (client?.email_verzend ?? client?.email_overig ?? h.afl_email)),
     }))
   }
 
@@ -250,6 +350,14 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
       fact_plaats: addr.plaats,
       fact_land: addr.land,
     }))
+  }
+
+  const handleFactuurEmailChange = (email: string) => {
+    setHeader((h) => ({ ...h, fact_email: email || undefined }))
+  }
+
+  const handleAflEmailChange = (email: string) => {
+    setHeader((h) => ({ ...h, afl_email: email || undefined }))
   }
 
   const handleFactuurAdresSavedAsDefault = (addr: FactuurAdres, contact: FactuurContact) => {
@@ -404,10 +512,27 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
     }
   }
 
+  // Dropshipment-e-mail-toets: T&T (afl_email) moet naar de consument, nooit
+  // naar het factuur-/debiteur-adres. 'ontbreekt' is alleen een hint.
+  const dropshipEmailProbleem = useMemo(
+    () =>
+      !isDropshipOrder
+        ? null
+        : dropshipAflEmailProbleem({
+            aflEmail: header.afl_email,
+            factEmail: header.fact_email,
+            debiteurEmails: [client?.email_factuur, client?.email_overig, client?.email_verzend],
+          }),
+    [isDropshipOrder, header.afl_email, header.fact_email, client],
+  )
+
   const saveMutation = useMutation({
     mutationFn: async (overrideLeverModus?: LeverModus) => {
       if (!client) throw new Error('Selecteer een klant')
       if (regels.filter(r => r.artikelnr !== SHIPPING_PRODUCT_ID).length === 0) throw new Error('Voeg minstens één orderregel toe')
+      if (isBlokkerendDropshipEmailProbleem(dropshipEmailProbleem)) {
+        throw new Error(DROPSHIP_EMAIL_MELDING[dropshipEmailProbleem])
+      }
 
       const headerWithModus: Partial<OrderFormData> = overrideLeverModus
         ? { ...header, lever_modus: overrideLeverModus, afhalen }
@@ -421,122 +546,48 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
       const snapshotCtx: LevertijdSnapshotContext = { klant: client }
 
       if (mode === 'create') {
-        // Split-order flow: deelleveringen AAN + gemengde order (standaard + maatwerk)
-        if (deelleveringen && afleverdatumInfo.heeftGemengd) {
-          const shippingRegel = regels.find(r => r.artikelnr === SHIPPING_PRODUCT_ID)
-          const standaardRegels = regels.filter(r => r.artikelnr !== SHIPPING_PRODUCT_ID && !r.is_maatwerk)
-          const maatwerkRegels = regels.filter(r => r.artikelnr !== SHIPPING_PRODUCT_ID && r.is_maatwerk)
+        // Order-commit (CONTEXT.md): pure planning van de create-flow.
+        // Enige I/O vóór het plan is de maatwerk-seam-datum (issue #33) —
+        // alleen opgehaald wanneer de gemengde split daadwerkelijk speelt,
+        // exact zoals de oude inline-branch deed.
+        const echteMaatwerkDatum = isGemengdeSplit(deelleveringen, afleverdatumInfo.heeftGemengd)
+          ? await berekenMaatwerkAfleverdatumViaSeam({
+              maatwerkRegels: regels.filter(r => r.artikelnr !== SHIPPING_PRODUCT_ID && r.is_maatwerk),
+              debiteurNr: client.debiteur_nr,
+              fallbackDatum: afleverdatumInfo.maatwerkDatum,
+              gewensteLeverdatum: header.afleverdatum ?? null,
+            })
+          : null
 
-          // Issue #33: maatwerk-afleverdatum via echte planning-seam (check-levertijd)
-          // i.p.v. de statische maatwerk_weken-config — die laatste levert "1 week
-          // later" terwijl de echte capaciteit 15 weken kan zijn.
-          const echteMaatwerkDatum = await berekenMaatwerkAfleverdatumViaSeam({
-            maatwerkRegels,
-            debiteurNr: client.debiteur_nr,
-            fallbackDatum: afleverdatumInfo.maatwerkDatum,
-            gewensteLeverdatum: header.afleverdatum ?? null,
-          })
+        const plan = bouwOrderCommit({
+          regels,
+          header,
+          debiteurNr: client.debiteur_nr,
+          afhalen,
+          deelleveringen,
+          overrideLeverModus,
+          afleverdatumInfo,
+          echteMaatwerkDatum,
+        })
 
-          const standaardOrder: OrderFormData = {
-            ...orderData,
-            afleverdatum: afleverdatumInfo.standaardDatum ?? orderData.afleverdatum,
-            week: afleverdatumInfo.standaardDatum ? String(getISOWeek(afleverdatumInfo.standaardDatum)) : orderData.week,
+        // Side-effects in dezelfde volgorde als vóór de extractie:
+        // alle orders aanmaken → claims persisteren → autoplan.
+        const created: Awaited<ReturnType<typeof createOrder>>[] = []
+        for (const o of plan.orders) {
+          created.push(await createOrder(o.header, o.regels, snapshotCtx))
+        }
+        for (let i = 0; i < plan.orders.length; i++) {
+          await persistUitwisselbaarKeuzes(created[i].id, plan.orders[i].regels)
+        }
+        for (let i = 0; i < plan.orders.length; i++) {
+          if (plan.orders[i].triggerAutoplan) {
+            await triggerAutoplanForMaatwerk(plan.orders[i].regels)
           }
-          const maatwerkOrder: OrderFormData = {
-            ...orderData,
-            afleverdatum: echteMaatwerkDatum ?? orderData.afleverdatum,
-            week: echteMaatwerkDatum ? String(getISOWeek(echteMaatwerkDatum)) : orderData.week,
-          }
-
-          // Issue #33: verzendkosten naar de duurste sub-order (eerder altijd
-          // standaard-deel — onlogisch als maatwerk-deel waardevoller is).
-          const totaalStandaard = standaardRegels.reduce((s, r) => s + (r.bedrag ?? 0), 0)
-          const totaalMaatwerk = maatwerkRegels.reduce((s, r) => s + (r.bedrag ?? 0), 0)
-          const verzendNaarMaatwerk = totaalMaatwerk > totaalStandaard
-          const regelsA = !verzendNaarMaatwerk && shippingRegel
-            ? [...standaardRegels, shippingRegel]
-            : standaardRegels
-          const regelsB = verzendNaarMaatwerk && shippingRegel
-            ? [...maatwerkRegels, shippingRegel]
-            : maatwerkRegels
-
-          const a = await createOrder(standaardOrder, regelsA, snapshotCtx)
-          const b = await createOrder(maatwerkOrder, regelsB, snapshotCtx)
-          await persistUitwisselbaarKeuzes(a.id, regelsA)
-          await persistUitwisselbaarKeuzes(b.id, regelsB)
-          await triggerAutoplanForMaatwerk(regelsB)
-          return { split: true as const, standaard: a, maatwerk: b }
         }
 
-        // IO-split flow: lever_modus=deelleveringen + ≥1 regel met IO-tekort.
-        // Splits in 2 orders: directe levering (voorraad + uitwisselbaar, mét verzend)
-        // en IO-deel (zonder verzend, één zending op laatste IO-leverdatum).
-        const effectieveModus = overrideLeverModus ?? headerWithModus.lever_modus
-        const heeftIoTekort = regels.some(r => berekenRegelDekking(r).ioTekort > 0)
-
-        if (effectieveModus === 'deelleveringen' && heeftIoTekort) {
-          const directeRegels: OrderRegelFormData[] = []
-          const ioRegels: OrderRegelFormData[] = []
-          let shippingRegel: OrderRegelFormData | null = null
-
-          for (const r of regels) {
-            if (r.artikelnr === SHIPPING_PRODUCT_ID) {
-              shippingRegel = r  // pas later toewijzen aan duurste deel (issue #33)
-              continue
-            }
-            const d = berekenRegelDekking(r)
-            const directDeel = d.direct + d.uitwisselbaar
-
-            if (d.ioTekort === 0) {
-              directeRegels.push(r)
-            } else if (directDeel === 0) {
-              // Volledig op IO
-              ioRegels.push({ ...r, uitwisselbaar_keuzes: [] })
-            } else {
-              // Per-regel splitsing
-              const prijs = r.prijs ?? 0
-              const korting = (r.korting_pct ?? 0) / 100
-              directeRegels.push({
-                ...r,
-                orderaantal: directDeel,
-                te_leveren: directDeel,
-                bedrag: Math.round(prijs * directDeel * (1 - korting) * 100) / 100,
-              })
-              ioRegels.push({
-                ...r,
-                id: undefined,
-                orderaantal: d.ioTekort,
-                te_leveren: d.ioTekort,
-                uitwisselbaar_keuzes: [],
-                bedrag: Math.round(prijs * d.ioTekort * (1 - korting) * 100) / 100,
-              })
-            }
-          }
-
-          // Issue #33: verzendkosten naar duurste sub-order (i.p.v. altijd directe).
-          if (shippingRegel) {
-            const totaalDirect = directeRegels.reduce((s, r) => s + (r.bedrag ?? 0), 0)
-            const totaalIo = ioRegels.reduce((s, r) => s + (r.bedrag ?? 0), 0)
-            if (totaalIo > totaalDirect) ioRegels.push(shippingRegel)
-            else directeRegels.push(shippingRegel)
-          }
-
-          const directeOrder: OrderFormData = { ...orderData, lever_modus: 'in_een_keer' }
-          // De IO-order hangt aan de IO-leverdatum (mig 153 zet afleverdatum vooruit)
-          const ioOrder: OrderFormData = { ...orderData, lever_modus: 'in_een_keer' }
-
-          const a = await createOrder(directeOrder, directeRegels, snapshotCtx)
-          const b = await createOrder(ioOrder, ioRegels, snapshotCtx)
-          await persistUitwisselbaarKeuzes(a.id, directeRegels)
-          await persistUitwisselbaarKeuzes(b.id, ioRegels)
-          await triggerAutoplanForMaatwerk(directeRegels)
-          return { split: true as const, standaard: a, maatwerk: b }
-        }
-
-        const single = await createOrder(orderData, regels, snapshotCtx)
-        await persistUitwisselbaarKeuzes(single.id, regels)
-        await triggerAutoplanForMaatwerk(regels)
-        return { split: false as const, ...single }
+        return plan.gesplitst
+          ? { split: true as const, standaard: created[0], maatwerk: created[1] }
+          : { split: false as const, ...created[0] }
       } else {
         const orderId = initialData!.orderId
         await updateOrderWithLines(orderId, orderData, regels, snapshotCtx)
@@ -780,6 +831,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
             debiteurNr={client.debiteur_nr}
             onSelect={handleAddressSelect}
             disabled={afhalen}
+            autoSelect={mode === 'create'}
           />
         </div>
       )}
@@ -805,12 +857,33 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
                 email_factuur: client.email_factuur ?? '',
                 email_overig: client.email_overig ?? '',
               }}
+              factEmail={header.fact_email ?? ''}
               onAdresChange={handleFactuurAdresChange}
+              onEmailChange={handleFactuurEmailChange}
               onSavedAsDefault={handleFactuurAdresSavedAsDefault}
             />
-            <AddressPreview title="Afleveradres" naam={header.afl_naam} adres={header.afl_adres} postcode={header.afl_postcode} plaats={header.afl_plaats} />
+            <DeliveryAddressEditor
+              naam={header.afl_naam}
+              adres={header.afl_adres}
+              postcode={header.afl_postcode}
+              plaats={header.afl_plaats}
+              aflEmail={header.afl_email ?? ''}
+              afleveradresId={selectedAfleveradresId}
+              debiteurNr={client.debiteur_nr}
+              onEmailChange={handleAflEmailChange}
+              dropshipEmailProbleem={dropshipEmailProbleem}
+            />
           </div>
         )
+      )}
+
+      {/* Dropshipment */}
+      {client && !afhalen && (
+        <DropshipmentSelector
+          value={dropshipKeuze}
+          onChange={handleDropshipChange}
+          prijzen={dropshipPrijzen}
+        />
       )}
 
       {/* Order lines */}
@@ -956,7 +1029,6 @@ function LeverDatumField({
   onLeverTypeChange: (nieuw: 'week' | 'datum') => void
   onChange: (nieuweDatum: string | undefined, weekNr: string | undefined) => void
 }) {
-  const weekString = verzendWeekIsoString(afleverdatum ?? null)
   const info = verzendWeekVoor(afleverdatum ?? null)
   const vandaagDate = new Date()
   const vandaagIso =
@@ -977,39 +1049,14 @@ function LeverDatumField({
           </span>
         )}
       </div>
-      {isWeek ? (
-        <input
-          type="week"
-          value={weekString}
-          onChange={(e) => {
-            const value = e.target.value
-            if (!value) {
-              onChange(undefined, undefined)
-              return
-            }
-            const nieuweDatum = verzendWeekStringToDatum(value)
-            if (!nieuweDatum) return
-            const week = verzendWeekVoor(nieuweDatum)
-            onChange(nieuweDatum, week ? String(week.week) : undefined)
-          }}
-          className="w-full px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
-        />
-      ) : (
-        <input
-          type="date"
-          value={afleverdatum ?? ''}
-          onChange={(e) => {
-            const value = e.target.value
-            if (!value) {
-              onChange(undefined, undefined)
-              return
-            }
-            const week = verzendWeekVoor(value)
-            onChange(value, week ? String(week.week) : undefined)
-          }}
-          className="w-full px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
-        />
-      )}
+      <WeekDatumPicker
+        mode={leverType}
+        waarde={afleverdatum}
+        onChange={(nieuweDatum) => {
+          const week = verzendWeekVoor(nieuweDatum)
+          onChange(nieuweDatum, week ? String(week.week) : undefined)
+        }}
+      />
       <div className="flex items-center gap-1 mt-2 p-0.5 bg-slate-100 rounded-[var(--radius-sm)] w-fit">
         <button
           type="button"
@@ -1052,17 +1099,3 @@ function LeverDatumField({
   )
 }
 
-function AddressPreview({ title, naam, adres, postcode, plaats }: {
-  title: string; naam?: string; adres?: string; postcode?: string; plaats?: string
-}) {
-  return (
-    <div className="bg-slate-50 rounded-[var(--radius-sm)] p-4">
-      <div className="text-xs font-medium text-slate-500 mb-1">{title}</div>
-      <div className="text-sm">
-        {naam && <p className="font-medium">{naam}</p>}
-        {adres && <p>{adres}</p>}
-        <p>{[postcode, plaats].filter(Boolean).join(' ')}</p>
-      </div>
-    </div>
-  )
-}

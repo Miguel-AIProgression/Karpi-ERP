@@ -20,6 +20,19 @@ interface Code128BarcodeProps {
   height?: number
   className?: string
   style?: React.CSSProperties
+  /**
+   * Vaste breedte per Code128-module in mm. Op de 203dpi Zebra is 1 dot =
+   * 0.125mm — kies een veelvoud (0.25 / 0.375) zodat elke balk op hele
+   * printer-dots valt en niet vervaagt. Zonder prop rekt de SVG mee met de
+   * container (oude gedrag).
+   */
+  moduleMm?: number
+  /**
+   * Maximaal beschikbare breedte in mm: de barcode kiest zelf de grootste
+   * dot-aligned module-breedte (veelvoud van 0.125mm) die erin past.
+   * Wint van `moduleMm` als beide gezet zijn.
+   */
+  fitMm?: number
 }
 
 function encodeCode128C(value: string): number[] {
@@ -39,7 +52,14 @@ function encodeCode128C(value: string): number[] {
   return [...codes, checksum, 106]
 }
 
-export function Code128Barcode({ value, height = 54, className, style }: Code128BarcodeProps) {
+export function Code128Barcode({
+  value,
+  height = 54,
+  className,
+  style,
+  moduleMm,
+  fitMm,
+}: Code128BarcodeProps) {
   const codes = encodeCode128C(value)
   let x = 0
   const bars: Array<{ x: number; width: number }> = []
@@ -58,7 +78,12 @@ export function Code128Barcode({ value, height = 54, className, style }: Code128
   return (
     <svg
       className={className}
-      style={style}
+      style={(() => {
+        const effectiefModuleMm = fitMm
+          ? Math.max(0.125, Math.floor(fitMm / x / 0.125) * 0.125)
+          : moduleMm
+        return effectiefModuleMm ? { ...style, width: `${x * effectiefModuleMm}mm` } : style
+      })()}
       viewBox={`0 0 ${x} ${height}`}
       preserveAspectRatio="none"
       role="img"
@@ -66,7 +91,7 @@ export function Code128Barcode({ value, height = 54, className, style }: Code128
     >
       <rect width={x} height={height} fill="#fff" />
       {bars.map((bar, index) => (
-        <rect key={`${bar.x}-${index}`} x={bar.x} y={0} width={bar.width} height={height} fill="#111" />
+        <rect key={`${bar.x}-${index}`} x={bar.x} y={0} width={bar.width} height={height} fill="#000" />
       ))}
     </svg>
   )

@@ -139,7 +139,7 @@ Volgt ADR-0001/0002:
   - Annulerings-mutatie verhuist naar `useMarkeerGeannuleerd`-hook in deze module.
   - Bestaande `modules/orders/` blijft ongemoeid (intake/voorstel — ADR-0001).
 
-- **Tests:** state-machine als pure TS-functie ⇒ unit-testbaar zonder DB. Drie RPC-contract-tests (`markeer_verzonden`, `markeer_geannuleerd`, `herbereken_wacht_status`) valideren guards (terminal-statussen, idempotentie, actor-XOR). End-to-end contract-test op de keten `voltooi_pickronde → markeer_verzonden → factuur_queue → factuur` vervangt drie losse end-to-end klik-tests.
+- **Tests:** state-machine als pure TS-functie ⇒ unit-testbaar zonder DB. Drie RPC-contract-tests (`markeer_verzonden`, `markeer_geannuleerd`, `herbereken_wacht_status`) valideren guards (terminal-statussen, idempotentie, actor-XOR). End-to-end contract-test op de keten `voltooi_pickronde → markeer_verzonden → factuur_queue → factuur` vervangt drie losse end-to-end klik-tests. **Ingelost per Fase 2 (2026-06-10, mig 346):** de beloofde pure TS-state-machine bestaat als `deriveWachtStatus` in [`_shared/order-lifecycle/derive-status.ts`](../../supabase/functions/_shared/order-lifecycle/derive-status.ts), gespiegeld door pure SQL-functie `derive_wacht_status` (mig 346) waarnaar `herbereken_wacht_status` de beslissing delegeert. Een golden-fixture-truthtable van 21 cases bindt beide kanten: Vitest-contracttest (`frontend/src/lib/orders/__tests__/derive-status.test.ts`, TS ≡ fixture) + zelf-testende migratie (SQL ≡ dezelfde combinaties). `_apply_transitie` blijft het enige schrijfpad.
 
 - **Lint/CI:** grep-regel die faalt bij `UPDATE orders SET status` buiten `modules/orders-lifecycle/` of de bijbehorende migraties. Voorkomt regressie naar "veld zonder eigenaar".
 

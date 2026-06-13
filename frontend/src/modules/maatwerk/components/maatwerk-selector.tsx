@@ -1,4 +1,4 @@
-import { useReducer, useMemo } from 'react'
+import { useReducer, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Plus } from 'lucide-react'
 import {
@@ -15,6 +15,7 @@ import {
   fetchAfwerkingTypes,
   fetchStandaardAfwerking,
   fetchStandaardBandKleur,
+  fetchMaatwerkArtikelExact,
   berekenPrijsOppervlakM2,
   berekenMaatwerkPrijs,
   berekenOmtrekMeter,
@@ -139,6 +140,9 @@ interface MaatwerkSelectorProps {
 
 export function MaatwerkSelector({ defaultKorting, onAdd }: MaatwerkSelectorProps) {
   const [state, dispatch] = useReducer(reducer, initialState)
+  // Double-submit-guard: handleAdd is async (artikel-lookup) — zonder guard
+  // voegt een dubbele klik dezelfde regel twee keer toe.
+  const [adding, setAdding] = useState(false)
 
   // Queries
   const { data: vormen = [] } = useQuery({
@@ -196,14 +200,42 @@ export function MaatwerkSelector({ defaultKorting, onAdd }: MaatwerkSelectorProp
     state.verkoopprijsM2 > 0 &&
     oppervlakM2 > 0
 
-  function handleAdd() {
-    if (!canAdd) return
+  async function handleAdd() {
+    if (!canAdd || adding) return
+    setAdding(true)
+    try {
+      await doAdd()
+    } finally {
+      setAdding(false)
+    }
+  }
 
+  async function doAdd() {
     const totalRollen = state.aantalRollen + state.equivRollen
 
+    // Eigenaar-besluit (bug phdobbe, ORD-2026-0188): de regel koppelt het
+    // generieke MAATWERK-artikel van EXACT (kwaliteit, kleur) — conventie
+    // `{KWAL}{KLEUR}MAATWERK`. `state.artikelnr` is het ROL-product (NULL als
+    // dat niet bestaat), waardoor regels zonder artikelnr konden landen.
+    // Fallback: rol-product is nog altijd beter dan helemaal niets.
+    let maatwerkArtikel: Awaited<ReturnType<typeof fetchMaatwerkArtikelExact>> = null
+    try {
+      maatwerkArtikel = await fetchMaatwerkArtikelExact(state.kwaliteitCode, state.kleurCode)
+    } catch (e) {
+      console.warn('[maatwerk artikel lookup faalde]', e)
+    }
+    const lineArtikelnr = maatwerkArtikel?.artikelnr ?? state.artikelnr ?? undefined
+    if (!lineArtikelnr) {
+      // Niet-blokkerend: regel mag door, orders-overzicht signaleert via
+      // heeft_unmatched_regels (mig 094) "actie vereist".
+      console.warn(
+        `[maatwerk] Geen MAATWERK-artikel gevonden voor ${state.kwaliteitCode}/${state.kleurCode} — regel wordt zonder artikelnr toegevoegd`,
+      )
+    }
+
     const line: OrderRegelFormData = {
-      artikelnr: state.artikelnr ?? undefined,
-      karpi_code: state.karpiCode ?? `${state.kwaliteitCode}${state.kleurCode}`,
+      artikelnr: lineArtikelnr,
+      karpi_code: maatwerkArtikel?.karpi_code ?? state.karpiCode ?? `${state.kwaliteitCode}${state.kleurCode}`,
       omschrijving: `${state.kwaliteitNaam} ${state.kleurLabel} - Op maat ${selectedVorm?.naam ?? state.vormCode}`,
       orderaantal: 1,
       te_leveren: 1,
@@ -293,7 +325,7 @@ export function MaatwerkSelector({ defaultKorting, onAdd }: MaatwerkSelectorProp
 
             <button
               type="button"
-              disabled={!canAdd}
+              disabled={!canAdd || adding}
               onClick={handleAdd}
               className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-purple-600 rounded-[var(--radius-sm)] hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >

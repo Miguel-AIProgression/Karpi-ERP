@@ -95,6 +95,7 @@ export function OrderEditPage() {
     fact_plaats: order.fact_plaats,
     email_factuur: clientData?.email_factuur ?? null,
     email_overig: clientData?.email_overig ?? null,
+    email_verzend: clientData?.email_verzend ?? null,
     vertegenw_code: order.vertegenw_code,
     prijslijst_nr: clientData?.prijslijst_nr ?? null,
     korting_pct: clientData?.korting_pct ?? 0,
@@ -107,6 +108,7 @@ export function OrderEditPage() {
     maatwerk_weken: clientData?.maatwerk_weken ?? null,
     deelleveringen_toegestaan: clientData?.deelleveringen_toegestaan ?? false,
     default_lever_type: clientData?.default_lever_type ?? 'week',
+    afleverwijze: clientData?.afleverwijze ?? null,
   } : null
 
   // Groepeer handmatige keuzes per orderregel-id
@@ -129,6 +131,12 @@ export function OrderEditPage() {
     korting_pct: r.korting_pct,
     bedrag: r.bedrag ?? undefined,
     gewicht_kg: r.gewicht_kg ?? undefined,
+    // Display-only product-vlaggen (ADR-0018-patroon) — zonder deze ziet
+    // flag-based detectie (isDropshipRegel/isAdminPseudo) geladen regels
+    // niet in de bewerk-flow. is_pseudo was een pre-existing gap (de
+    // tekort-bepaling in order-form leest r.is_pseudo, dat hier nooit gevuld werd).
+    is_pseudo: r.is_pseudo,
+    is_dropship: r.is_dropship,
     // Maatwerk
     is_maatwerk: r.is_maatwerk ?? false,
     maatwerk_vorm: r.maatwerk_vorm ?? undefined,
@@ -184,6 +192,11 @@ export function OrderEditPage() {
             fact_postcode: order.fact_postcode ?? undefined,
             fact_plaats: order.fact_plaats ?? undefined,
             fact_land: order.fact_land ?? undefined,
+            // E-mail-snapshots (mig 364) meegeven — anders wist elke
+            // bewerking fact_email/afl_email (update-RPC zet ontbrekende
+            // sleutels op NULL; incident ORD-2026-0350, 11-06-2026).
+            fact_email: order.fact_email ?? undefined,
+            afl_email: order.afl_email ?? undefined,
             afl_naam: order.afl_naam ?? undefined,
             afl_naam_2: order.afl_naam_2 ?? undefined,
             afl_adres: order.afl_adres ?? undefined,

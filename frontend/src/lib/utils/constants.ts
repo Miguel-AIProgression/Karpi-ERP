@@ -1,3 +1,5 @@
+import type { SnijplanStatus, ConfectieStatus } from '@/lib/utils/snijplan-status'
+
 /** Order status → badge color mapping
  *  Canonieke statussen na ADR-0016 (mig 257-258). Legacy waarden behouden
  *  voor backwards-compat met historische orders. */
@@ -13,6 +15,8 @@ export const ORDER_STATUS_COLORS: Record<string, { bg: string; text: string }> =
   'Deels verzonden':       { bg: 'bg-cyan-100',    text: 'text-cyan-700' },
   'Verzonden':             { bg: 'bg-green-100',   text: 'text-green-700' },
   'Geannuleerd':           { bg: 'bg-gray-100',    text: 'text-gray-500' },
+  // Terminaal voor productie-only orders (ADR-0029, mig 327/330)
+  'Maatwerk afgerond':     { bg: 'bg-teal-100',    text: 'text-teal-700' },
   // Legacy — niet meer geschreven post-mig-258, maar bestaande data kan ze nog hebben
   'Nieuw':                 { bg: 'bg-blue-100',    text: 'text-blue-700' },
   'Actie vereist':         { bg: 'bg-rose-100',    text: 'text-rose-700' },
@@ -30,9 +34,11 @@ export const TIER_COLORS: Record<string, { bg: string; text: string }> = {
   'Bronze': { bg: 'bg-orange-100', text: 'text-orange-700' },
 }
 
-/** Snijplan status → badge color mapping */
-export const SNIJPLAN_STATUS_COLORS: Record<string, { bg: string; text: string }> = {
+/** Snijplan status → badge color mapping (compiler dwingt alle 9 af) */
+export const SNIJPLAN_STATUS_COLORS: Record<SnijplanStatus, { bg: string; text: string }> = {
+  'Wacht': { bg: 'bg-slate-100', text: 'text-slate-600' },
   'Gepland': { bg: 'bg-slate-100', text: 'text-slate-700' },
+  'In productie': { bg: 'bg-amber-100', text: 'text-amber-700' },
   'Snijden': { bg: 'bg-blue-100', text: 'text-blue-700' },
   'Gesneden': { bg: 'bg-amber-100', text: 'text-amber-700' },
   'In confectie': { bg: 'bg-purple-100', text: 'text-purple-700' },
@@ -41,8 +47,14 @@ export const SNIJPLAN_STATUS_COLORS: Record<string, { bg: string; text: string }
   'Geannuleerd': { bg: 'bg-gray-100', text: 'text-gray-500' },
 }
 
-/** Confectie status → badge color mapping */
-export const CONFECTIE_STATUS_COLORS: Record<string, { bg: string; text: string }> = {
+/** Gecombineerde tailwind-className voor een snijplan-status-badge. */
+export function snijplanBadgeClass(status: string): string {
+  const c = (SNIJPLAN_STATUS_COLORS as Record<string, { bg: string; text: string }>)[status]
+  return c ? `${c.bg} ${c.text}` : 'bg-gray-100 text-gray-600'
+}
+
+/** Confectie status → badge color mapping (compiler dwingt alle 5 af) */
+export const CONFECTIE_STATUS_COLORS: Record<ConfectieStatus, { bg: string; text: string }> = {
   'Wacht op materiaal': { bg: 'bg-amber-100', text: 'text-amber-700' },
   'In productie': { bg: 'bg-indigo-100', text: 'text-indigo-700' },
   'Kwaliteitscontrole': { bg: 'bg-purple-100', text: 'text-purple-700' },
@@ -59,7 +71,7 @@ export const AFWERKING_OPTIES: { code: string; label: string; bg: string; text: 
   { code: 'SB', label: 'Smalband',         bg: 'bg-indigo-100',  text: 'text-indigo-700' },
   { code: 'SF', label: 'Smalfeston',       bg: 'bg-teal-100',    text: 'text-teal-700' },
   { code: 'VO', label: 'Volume afwerking', bg: 'bg-amber-100',   text: 'text-amber-700' },
-  { code: 'ZO', label: 'Zonder afwerking', bg: 'bg-gray-100',    text: 'text-gray-500' },
+  { code: 'ZO', label: 'Zoomlock',          bg: 'bg-gray-100',    text: 'text-gray-500' },
 ]
 
 export const AFWERKING_MAP = Object.fromEntries(

@@ -772,6 +772,7 @@ function InfoTab({ klant }: { klant: NonNullable<ReturnType<typeof useDebiteurDe
       <InfoField label="Factuur naam" value={klant.fact_naam} />
       <InfoField label="Factuur adres" value={[klant.fact_adres, `${klant.fact_postcode ?? ''} ${klant.fact_plaats ?? ''}`.trim()].filter(Boolean).join(', ')} />
       <InfoField label="Email (overig)" value={klant.email_overig} />
+      <InfoField label="Email verzending (T&T)" value={klant.email_verzend} />
       <InfoField label="Email 2" value={klant.email_2} />
       <InfoField label="Fax" value={klant.fax} />
       <InfoField label="GLN" value={klant.gln_bedrijf} />

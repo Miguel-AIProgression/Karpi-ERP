@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase/client'
 import type { SnijvoorstelResponse, SnijvoorstelRow, SnijvoorstelPlaatsingRow, RolStatus, ReststukRect } from '@/lib/types/productie'
 import { computeReststukken } from '../lib/compute-reststukken'
+import { TE_SNIJDEN } from '@/lib/utils/snijplan-status'
 
 /** Call the Edge Function to generate a cutting proposal */
 export async function generateSnijvoorstel(
@@ -208,7 +209,7 @@ export async function fetchBeschikbareCapaciteit(kwaliteitCode: string, kleurCod
       .from('snijplannen')
       .select('rol_id, positie_y_cm, lengte_cm, breedte_cm, geroteerd')
       .in('rol_id', inPlanRolIds)
-      .in('status', ['Gepland', 'Snijden'])
+      .in('status', [...TE_SNIJDEN])
 
     for (const p of plannen ?? []) {
       const endY = (p.positie_y_cm ?? 0) + (p.geroteerd ? p.lengte_cm : p.breedte_cm)

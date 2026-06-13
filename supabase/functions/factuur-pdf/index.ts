@@ -23,6 +23,8 @@ interface FactuurRow {
   btw_percentage: number | string
   btw_bedrag: number | string
   totaal: number | string
+  btw_nummer: string | null
+  btw_verlegd: boolean | null
 }
 
 interface FactuurRegelRow {
@@ -330,6 +332,8 @@ serve(async (req) => {
         totaal: Number(factuur.totaal),
         totaal_m2: totaalM2 > 0 ? totaalM2 : undefined,
         totaal_gewicht_kg: totaalGewichtKg > 0 ? totaalGewichtKg : undefined,
+        btw_verlegd: factuur.btw_verlegd === true,
+        btw_nummer_afnemer: factuur.btw_nummer ?? null,
       },
       regels: renderRegels,
     })

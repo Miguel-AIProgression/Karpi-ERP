@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { fetchProducten, fetchProductDetail, fetchRollenVoorProduct, fetchReserveringenVoorProduct, fetchClaimsVoorProduct, updateProductType, updateProductLocatie, fetchUitwisselbareGroepen, fetchKwaliteiten, fetchKleurenVoorKwaliteit, fetchLeveranciers, createProduct, updateProduct, fetchNextArtikelnr, type ProductType, type ProductSortField, type SortDirection, type ProductFormData } from '@/lib/supabase/queries/producten'
+import { fetchProducten, fetchProductDetail, fetchRollenVoorProduct, fetchReserveringenVoorProduct, fetchClaimsVoorProduct, updateProductType, updateProductLocatie, fetchKwaliteiten, fetchKleurenVoorKwaliteit, fetchLeveranciers, createProduct, updateProduct, fetchNextArtikelnr, type ProductType, type ProductSortField, type SortDirection, type ProductFormData } from '@/lib/supabase/queries/producten'
 import { fetchEquivalenteProducten } from '@/lib/supabase/queries/product-equivalents'
 
 export function useProducten(params: { search?: string; page?: number; pageSize?: number; productType?: ProductType | 'alle'; kwaliteitCode?: string | null; sortBy?: ProductSortField; sortDir?: SortDirection }) {
@@ -98,14 +98,6 @@ export function useUpdateProduct() {
       queryClient.invalidateQueries({ queryKey: ['producten'] })
       queryClient.invalidateQueries({ queryKey: ['producten', artikelnr] })
     },
-  })
-}
-
-export function useUitwisselbareGroepen() {
-  return useQuery({
-    queryKey: ['uitwisselbare-groepen'],
-    queryFn: fetchUitwisselbareGroepen,
-    staleTime: 5 * 60 * 1000,
   })
 }
 

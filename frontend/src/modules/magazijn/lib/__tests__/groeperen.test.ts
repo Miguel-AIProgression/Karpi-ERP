@@ -25,6 +25,7 @@ function makeOrder(overrides: Partial<PickShipOrder> = {}): PickShipOrder {
     totaal_m2: 0,
     totaal_gewicht_kg: 0,
     aantal_regels: 0,
+    alle_regels_pickbaar: false,
     actieve_pickronde: null,
     ...overrides,
   }
@@ -129,6 +130,42 @@ describe('clusterOrdersOpKlant', () => {
 
   it('lege input → lege output', () => {
     expect(clusterOrdersOpKlant([])).toEqual([])
+  })
+
+  it('geblokkeerde orders (geen vervoerder) sorteren onder de startbare', () => {
+    const orders = [
+      makeOrder({ order_id: 1, order_nr: 'ORD-001', debiteur_nr: 100, klant_naam: 'Alpha DE' }),
+      makeOrder({ order_id: 2, order_nr: 'ORD-002', debiteur_nr: 200, klant_naam: 'Beta NL' }),
+      makeOrder({ order_id: 3, order_nr: 'ORD-003', debiteur_nr: 300, klant_naam: 'Gamma NL' }),
+    ]
+    // Alpha DE is alfabetisch eerst maar geblokkeerd → zakt naar onder.
+    const geblokkeerd = new Set([1])
+    const clusters = clusterOrdersOpKlant(orders, undefined, geblokkeerd)
+    expect(clusters.map((c) => c.klant_naam)).toEqual(['Beta NL', 'Gamma NL', 'Alpha DE'])
+  })
+
+  it('binnen één bundel-cluster sorteren geblokkeerde orders onderaan', () => {
+    const orders = [
+      makeOrder({ order_id: 1, order_nr: 'ORD-001', debiteur_nr: 100, klant_naam: 'Klant A' }),
+      makeOrder({ order_id: 2, order_nr: 'ORD-002', debiteur_nr: 100, klant_naam: 'Klant A' }),
+    ]
+    const sleutel = new Map<number, string>([
+      [1, 'D100|VHST|W2026-W24|Aabc'],
+      [2, 'D100|VHST|W2026-W24|Aabc'],
+    ])
+    const geblokkeerd = new Set([1])
+    const clusters = clusterOrdersOpKlant(orders, sleutel, geblokkeerd)
+    expect(clusters).toHaveLength(1)
+    expect(clusters[0].orders.map((o) => o.order_id)).toEqual([2, 1])
+  })
+
+  it('zonder geblokkeerd-set blijft de volgorde puur alfabetisch', () => {
+    const orders = [
+      makeOrder({ order_id: 1, order_nr: 'ORD-001', klant_naam: 'Beta' }),
+      makeOrder({ order_id: 2, order_nr: 'ORD-002', klant_naam: 'Alpha' }),
+    ]
+    const clusters = clusterOrdersOpKlant(orders)
+    expect(clusters.map((c) => c.klant_naam)).toEqual(['Alpha', 'Beta'])
   })
 })
 

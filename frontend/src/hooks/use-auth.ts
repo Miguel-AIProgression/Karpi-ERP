@@ -28,5 +28,13 @@ export function useAuth() {
     await supabase.auth.signOut()
   }
 
-  return { user, loading, signIn, signOut }
+  /** Stuurt een wachtwoord-herstel-mail; landt op /wachtwoord-instellen (zelfde pagina als invites). */
+  const resetPassword = async (email: string) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/wachtwoord-instellen`,
+    })
+    if (error) throw error
+  }
+
+  return { user, loading, signIn, signOut, resetPassword }
 }

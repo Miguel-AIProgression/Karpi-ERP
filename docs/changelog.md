@@ -1,159 +1,1787 @@
 # Changelog — RugFlow ERP
 
-## 2026-06-13 — Rauwe Shopify-payload-audit op het live poll-pad (`externe_payloads`)
+## 2026-06-13 — Rauwe-payload-audit verbreed naar álle externe kanalen + unified view (mig 392)
 
-**Waarom:** ORD-2026-0097 (Shopify #5575) printte een verzendlabel met een
-**leeg afleveradres-kader**. Diagnose: Shopify stuurde voor die order géén
-`shipping_address` én géén `billing_address` mee →
-[`extractShopifyShippingAddress`](../supabase/functions/_shared/shopify-types.ts)
-gaf `{}` → `afl_naam=""`, `afl_adres/postcode/plaats=null` op order + zending →
-leeg kader. De order bleek een seed-import-artefact (`bron_order_id=""`, terwijl
-elke live-order een echt Shopify-id heeft). **Maar de echte les:** de payload was
-achteraf niet te reconstrueren, want de **live Shopify-intake (poll-functie)
-bewaarde de rauwe payload nergens** — alleen de webhook-functie deed dat, en die
-draait niet live (0 `shopify`-rijen in `externe_payloads`; alleen HST/Rhenus
-uitgaand).
+**Waarom:** één centrale "black box recorder" zodat bij een bug ("waarom kreeg
+deze order geen adres?", "is deze factuur-mail/dit EDI-bericht verstuurd?") het
+originele in-/uitgaande bericht direct terug te vinden is. Aanleiding:
+ORD-2026-0097 (Shopify) printte een leeg verzendlabel doordat de inkomende
+payload nergens bewaard was. Vóór vandaag logden alleen carriers (HST/Rhenus/
+Verhoek, uitgaand) en Shopify-poll (inkomend) naar `externe_payloads`; EDI zat
+al volledig in `edi_berichten`.
 
 **Wat:**
-- `processShopifyOrder` ([`_shared/shopify-order-processor.ts`](../supabase/functions/_shared/shopify-order-processor.ts))
-  logt nu per **daadwerkelijk verwerkte** order de letterlijke payload via de
-  bestaande mig 324/325-RPC's, two-step status `ontvangen` → `verwerkt`/`fout`
-  (met `order_id` resp. foutreden). Loggen gebeurt **na** de idempotentie-check,
-  zodat de 10-min-cron geen dubbele audit-rijen maakt voor al-verwerkte orders.
-- RPC-helpers geëxtraheerd naar gedeelde seam
-  [`_shared/externe-payload-audit.ts`](../supabase/functions/_shared/externe-payload-audit.ts)
-  (ADR-0033, geen duplicatie van de webhook-kopie), **best-effort** (gooit nooit
-  — loggen mag verwerking niet blokkeren), met unit-tests
-  (`externe-payload-audit.test.ts`, 7 groen).
-- Deployed: `sync-shopify-orders-poll` (branch `feat/shopify-polling-sync`).
+- Gedeelde seam [`_shared/externe-payload-audit.ts`](../supabase/functions/_shared/externe-payload-audit.ts)
+  (ADR-0033, best-effort — gooit nooit, loggen mag verwerking/verzending nooit
+  blokkeren; unittest 8 groen). Two-step `ontvangen`→`verwerkt`/`fout` voor
+  inbound, one-step met eindstatus voor outbound.
+- **Inbound** (`richting='in'`): `import-lightspeed-orders` ('lightspeed'),
+  `sync-webshop-order` ('webshop'), `poll-email-orders` ('email'),
+  `parse-klant-po` ('klant_po'), `supplier-portal` ('supplier_portal', alleen
+  de ETA-PATCH — GET/login niet).
+- **Outbound** (`richting='out'`, PDF-bytes gestript — alleen metadata):
+  `stuur-orderbevestiging` ('orderbevestiging'), `factuur-verzenden` ('factuur',
+  uitsluitend de e-mail-tak; de EDI-INVOIC blijft in `edi_berichten`).
+- **Mig 392** — unified view `alle_externe_berichten` = `externe_payloads`
+  UNION `edi_berichten`, genormaliseerd (audit_tabel, kanaal, richting,
+  berichttype, externe_id, status, order_id, debiteur_nr, payload_raw/json,
+  fout, aangemaakt_op/afgerond_op). Eén SELECT doorzoekt nu álle berichten.
+  EDI niet gedupliceerd (blijft in `edi_berichten`).
+- Alle 7 functies live gedeployed (na live-diff veiligheidscheck: 6/7 live==main;
+  `factuur-verzenden` had niet-gemergede `normalizeCountry`-seam-drift uit de
+  Verhoek/Rhenus-branch — logging daar herbaseerd op de live-versie zodat de
+  refactor niet teruggedraaid werd). `verify_jwt=false` voor lightspeed +
+  supplier-portal in config.toml gepind.
 
-**Nog open:** het label van ORD-2026-0097 zelf (adres-snapshot vullen) + de
-structurele intake-fallback naar het debiteur-adres bij een adresloze
-Shopify-order + label-renderer bestand maken tegen lege strings.
+**Status:** mig 392 (de view) is op 13-06 handmatig op de live DB toegepast
+(MCP heeft geen DDL-rechten); geverifieerd via `alle_externe_berichten`. De
+logging draait live op alle 7 functies (na live-diff veiligheidscheck +
+redeploy). Repo-nr 387→392 hernummerd vlak vóór merge (origin/main claimde
+intussen 387-391).
 
-## 2026-06-07 — Maatwerk-herkenning Shopify/mail: vorm-detectie data-driven uit `maatwerk_vormen` + gedeelde dims-parser voor Shopify `properties`
+## 2026-06-13 — Colli-data single-source: omschrijving + label-metadata + gewicht-totaal (mig 390-391)
 
-**Waarom:** Order ORD-2026-0118 (Shopify #5580, FLOORPASSION) toonde meerdere
-`[UNMATCHED]`-regels "Lago 13 — Organic gespiegeld / 200 x 290 cm" met status
-"Wacht op nieuwe inkoop" i.p.v. herkenning als maatwerk `LAGO13XXMAATWERK`
-200×290, vorm "organic gespiegeld". Twee samenhangende oorzaken:
-1. `detectVorm()` in [`product-matcher.ts`](../supabase/functions/_shared/product-matcher.ts)
-   gebruikte een hardgecodeerde regex (`/organisch[e]?.../`) die alleen Nederlandse
-   spelling matchte — de live `maatwerk_vormen`-tabel bevat **Engelse** namen
-   ("Organic", "Organic Gespiegeld", "Pebble", "Ellips", "Afgeronde Hoeken",
-   "Cloud"). 6 van de 9 actieve vormen waren dus principieel onherkenbaar.
-2. Shopify line-item `properties` (waar de maatwerk-app de échte afmetingen
-   neerzet, bv. `"Maatwerk: 260x250 rechthoek"` / `"custom-vorm: organic"`)
-   werden opgevangen in een dood veld `_shopifyProperties` dat nergens werd
-   gelezen — en de Shopify-orderprocessor had bovendien zijn eigen, zwakkere
-   bespoke dimensie-parsing i.p.v. de gedeelde `parseMaatwerkDims` die de
-   mail-import al wél correct gebruikte, en gaf `match.maatwerk_vorm` helemaal
-   niet door aan de orderregel.
+> **Migratienummers:** repo-nrs **390/391** (vlak vóór merge hernummerd 388/389 → 390/391 — origin/main claimde intussen 388 `maatwerk_vorm_contour` + 389 `normaliseer_land_contract`; mig 387-gewicht stond al op main). In de live DB op 13-06 toegepast onder werknummers 388/389; idempotent, inhoudelijk identiek. Achtergrond: [`docs/superpowers/plans/2026-06-13-sscc-analogen-audit.md`](superpowers/plans/2026-06-13-sscc-analogen-audit.md).
+
+Vervolg op de SSCC-fix (12-06): het "SSCC-patroon" (één canonieke, bevroren bron) doorgetrokken naar de resterende afgeleide colli-data, zodat verzendlabel, pakbon, DPD-label en vervoerder-payload niet meer uiteenlopen voor hetzelfde collo.
+
+**A1 — omschrijving (mig 390):** label/pakbon/DPD leidden de productomschrijving LIVE af uit `order_regels`/`producten`, met **drie verschillende ontdubbel-varianten** (label substring-match, pakbon geen, DPD eigen logica), terwijl HST/Verhoek de bevroren `zending_colli.omschrijving_snapshot` lezen → na een productnaamwijziging drie verschillende teksten. Nu: nieuwe kolom `zending_colli.klant_omschrijving_snapshot` (ontdubbelde klant-omschrijving) + de bestaande `omschrijving_snapshot` (Karpi-product + maat); de print-laag leest uitsluitend die snapshots, met live-fallback alleen voor legacy-zendingen zonder colli. De ontdubbeling verhuisde van 3 TS-varianten naar één SQL-helper `compose_klant_omschrijving` (spiegelt `productNamen`). `genereer_zending_colli` herschreven als **superset** van de mig 387-gewicht-versie (gewicht-ladder + nieuwe snapshot blijven samen overeind).
+
+**D/E — label-metadata (mig 390, frontend):** label-datum komt uit `zendingen.verzenddatum` (gedeelde `labelDatumKort`) i.p.v. de printdatum (`datumKort` verwijderd) — een herprint toont nu exact wat de vervoerder kreeg; alle labelformaten gebruiken dezelfde order-referentie (`labelReferentie`) — het DPD-label gebruikte voorheen `zending.id`, wat niet matchte met compact/tall.
+
+**A2 — gewicht-totaal (mig 391):** trigger `trg_sync_zending_totaal_gewicht` houdt `zendingen.totaal_gewicht_kg = SUM(zending_colli.gewicht_kg)`, zodat het HST-fallback-pad hetzelfde totaal stuurt als het per-colli-pad en als wat Rhenus/Verhoek sommeren. Raakt alléén de afgeleide som — niet de gewicht-DATA-keten (`zending_colli.gewicht_kg`, producten-cache) van mig 387 (aparte sessie). **Volgorde-eis:** mig 391 ná mig 387 draaien.
+
+Vangnet: `printset.test.ts` uitgebreid (snapshot wint van live; legacy-fallback; datum/referentie). Buiten scope (gedocumenteerd in de audit): colli-afmetingen (HST hardcodet nog 120×80×20), adres-split (by-design), GTIN-in-EDI (laag risico).
+
+## 2026-06-13 — Config-constanten naar single source (tech-debt categorie C, mig 389)
+
+> **Nummering:** deze migratie is hernummerd 387 → 388 → **389** vlak vóór de merge (origin/main claimde 387 via de colli-gewicht-fix en 388 via de maatwerk-vorm-contour-fix). In de live DB is de assert op 13-06 al uitgevoerd (nul mismatches); de inhoud is idempotent.
+
+**Wat:** drie hardcoded constanten die naast hun DB-/config-bron leefden teruggebracht tot één bron. Branch `fix/config-constanten-single-source`. Plan: [`docs/superpowers/plans/2026-06-13-config-constanten-single-source.md`](superpowers/plans/2026-06-13-config-constanten-single-source.md).
+
+- **Probleem 7 — `normalizeCountry` (landnaam→ISO-2):** 5 divergerende varianten geconsolideerd. `factuur-verzenden` kende alleen NL/DE en viel terug op `slice(0,2)` → **Oostenrijk→`OO`, Zwitserland→`ZW`, Spanje→`SP`, Polen→`PO`, Engeland→`EN`** op de elektronische factuur. De seam [`_shared/adres-split.ts`](../supabase/functions/_shared/adres-split.ts) `normalizeCountry` (lenient) + nieuwe `landNaarIso2Strikt` (null-contract) spiegelt nu de SQL-bron `normaliseer_land` (mig 214) één-op-één. `factuur-verzenden`, `factuur-mapper.ts`, `factuur-pdf.ts` en de frontend `land-vlag.ts` (cross-root re-export, ADR-0033) lozen hun lokale kopie. **Mig 389** `assert_normaliseer_land_contract()` + Vitest `normaliseer-land.contract.test.ts` borgen de SQL↔TS-pariteit via golden fixtures (patroon mig 385). Conventie: wijzig je `normaliseer_land`/de seam → golden bijwerken + nieuwe `*_normaliseer_land_contract*.sql`.
+- **Probleem 5 — Karpi-GLN (Rhenus):** `rhenus-send/xml-builder.ts` was het énige outbound-kanaal dat de SBDH-afzender-GLN niet uit `app_config.bedrijfsgegevens.gln_eigen` las. `BedrijfInput` kreeg optioneel `gln_eigen` (orchestrator cast de app_config-waarde al direct → stroomt mee zonder fetch-wijziging); builder gebruikt `bedrijf.gln_eigen ?? KARPI_GLN` (fallback-patroon zoals de andere kanalen). GS1-prefix `8715954` in mig 209 (SSCC) is een ander concept → buiten scope.
+- **Probleem 6 — dropship-prijs:** `DROPSHIP_KLEIN_PRIJS`/`GROOT_PRIJS` stonden hardcoded naast `producten.verkoopprijs` (de DB werd al eens los gecorrigeerd, mig 363: 27,50→35,00). Prijs komt nu uit `producten.verkoopprijs` via `fetchDropshipPrijzen`/`useDropshipPrijzen`; `applyDropshipmentLogic(regels, keuze, prijzen?)` krijgt de prijs als parameter. De selector blokkeert klein/groot tot de prijs geladen is — nooit stil een €0-regel. De id-constanten (`DROPSHIP_*_ID`) blijven identifiers (ADR-0018).
+- **Probleem 8 — BTW-21-fallback:** geverifieerd ruis (geen actie): alle `COALESCE(..., 21.00)`-treffers staan in dode/vervangen migraties; de enige live factuur-RPC `genereer_factuur_voor_bundel` (mig 371) gebruikt al `effectief_btw_pct()`.
+
+**Deploy-voorwaarde:** mig 389 toepassen (read-only assert; valideert dat de live `normaliseer_land` de golden volgt) + edge functions `factuur-verzenden`, `rhenus-send` (en `bouw-factuur-edi` via de gedeelde mapper) herdeployen ná merge.
+
+---
+
+## 2026-06-12 — Colli-gewicht-fix: resolver-verdieping + self-healing producten-cache (mig 387)
+
+**Aanleiding:** de Rhenus/Verhoek-SFTP-preflights verplichten `gewicht_kg > 0` per colli, maar `zending_colli.gewicht_kg` stond op 0. Diagnose: ~26% van de vaste producten met complete maat+density had de **density (kg/m²) als stukgewicht** in de `producten.gewicht_kg`-cache (bv. 548120001, 200×290 cm: cache 2,5 kg, werkelijk 14,5 kg; volledige meting: 1.022 density-als-gewicht + 1.430 anders fout op 21.746 meetbare producten). Oorzaak-keten: oorspronkelijke import schreef de Excel-kolom "Gewicht" (kg/m²) naar `gewicht_kg`; mig 185-backfill dekte alleen wat toen compleet was; de mig 188 §6 self-update-backfill was een stille no-op (`SET x = x` passeert de `WHEN OLD IS DISTINCT FROM NEW`-trigger niet); en er bestond geen herreken-trigger aan de product-kant. Dezelfde rotte bronnen voedden ook de vervoerder-selectie (`evalueer_orderregel_attributes`, o.a. de Rhenus-regel "DE ≤30 kg").
+
+**Fix (mig 387):** (1) `bereken_orderregel_gewicht_kg` rekent vast-producten live via `bereken_product_gewicht_kg` (vorm-aware) i.p.v. cache-copy; (2) BEFORE-trigger `trg_producten_gewicht_derive` maakt de cache self-healing — vervuiling door imports/UI is categorisch onmogelijk geworden (gewicht corrigeren = density op de kwaliteit aanpassen); (3) `genereer_zending_colli` gewicht-ladder met `NULLIF(0)`; (4) `evalueer_orderregel_attributes` NULLIF(0)-defensie; (5) backfill producten (vorm-aware, `PI()::NUMERIC` — mig 192-les) + open orderregels (vast én maatwerk, incl. 'Klaar voor verzending') + niet-verzonden colli. Import-hygiëne: `prijslijst_import.py` schrijft kolom F niet meer naar `gewicht_kg` bij auto-create. Verificatie: `import/check_gewicht_integriteit.py` (read-only, exit 1 bij fouten — baseline 12-06: 2.452 fouten). Run-advies: migratie buiten piekuren draaien (row-locks op producten/order_regels; idempotent her-runbaar).
+
+---
+
+## 2026-06-12 — Pickbaarheid single-source (mig 386)
+
+> **Hernummering (2×):** deze migratie is vlak vóór de merge hernummerd van 383 → 385 → **386** (origin/main claimde intussen 383/384 via het werkagenda-traject en 385 via het bundel-sleutel-contract). In de live DB is hij op 12-06 onder werknummer 383 toegepast; inhoudelijk identiek.
+
+**Wat:** order-niveau-pickbaarheidslogica verplaatst van TypeScript naar SQL; TS-laag filtert alleen nog de dag-order-horizon (ADR 0014, hangt af van `vandaag`).
+
+**Gebouwd (branch `refactor/pickbaarheid-single-source`):**
+- **Mig 386 — `orderregel_pickbaarheid` v4:** (a) generieke admin-pseudo-skip `AND NOT is_admin_pseudo(oreg.artikelnr)` (ADR-0018) — vervangt de VERZEND-specifieke `.neq()`-skip in TS én fixt de **latente dropship-blokkade** (DROPSHIP-KLEIN/-GROOT-regels uit mig 353/370 kregen nooit een voorraad-claim maar stonden als `wacht_op='inkoop'` in de view, waardoor dropship-orders nooit de "alles pickbaar"-drempel haalden); (b) nieuwe kolom `gewicht_kg` — maakt de aparte `fetchTotaalGewichtPerOrder`-query overbodig. Maatwerk-gewicht telt nu correct mee in het indicatieve ordergewicht (de oude `.neq('artikelnr','VERZEND')`-query sloot NULL-`artikelnr`-rijen per ongeluk uit — PostgREST three-valued logic).
+- **Mig 386 — nieuwe view `order_pickbaarheid`:** per order `totaal_regels`, `pickbare_regels`, `alle_regels_pickbaar`, `heeft_pickbare_regel`, `deelleveringen_toegestaan`, `pick_ship_zichtbaar`. Geen rij = geen (niet-pseudo) regels = niets te picken.
+- **Frontend `fetchPickShipOrders`** ([`pickbaarheid.ts`](../frontend/src/modules/magazijn/queries/pickbaarheid.ts)): consumeert `order_pickbaarheid.pick_ship_zichtbaar`; de 3× VERZEND-skip, de aparte gewicht-query (`fetchTotaalGewichtPerOrder`) en de PGRST205-fallback (`fetchFallbackOrderRegels`) zijn verwijderd. `StartPickrondesButton.isPickbaar` leest `order.alle_regels_pickbaar` (view-veld) i.p.v. client-side `every()`.
+- **Stale contracttest gerepareerd:** `magazijn-pickbaarheid.contract.test.ts` mockte `zendingen` i.p.v. `zending_orders` (7/7 rood op main). Gedeelde testhelper `__tests__/helpers/fake-supabase.ts`; 8 scenario's inclusief hard-fail bij ontbrekende view en dag-horizon.
+
+**Deploy-voorwaarde:** mig 386 moet op de live DB staan vóór de frontend van deze branch deployt — er is geen fallback meer (`fetchPickShipOrders` faalt hard bij ontbrekende view). (Toegepast 12-06, vóór de merge.)
+
+---
+
+## 2026-06-12 — VERZEND-guard in `applyShippingLogic` bij dropship-orders
+
+**Wat:** `applyShippingLogic` ([`verzend-regel.ts`](../frontend/src/lib/orders/verzend-regel.ts))
+kreeg regel 0: bevat de regellijst een dropship-kostenregel (`heeftDropshipRegel`,
+flag-based) → VERZEND-regel altijd verwijderen/weigeren. Nieuwe testfile
+`verzend-regel.test.ts` (9 tests) legt ook de bestaande drempel-/afhalen-/
+idempotentie-regels vast.
+
+**Waarom:** pre-existing bug (gevonden in de review van de dropship-detectie-
+refactor): een klantwissel op een dropship-order reset `shippingOverridden`
+en paste verzendlogica onverkort toe, en in edit-mode triggerde elke
+regel-mutatie hetzelfde pad — de klant kreeg dan VERZEND-kosten náást de
+dropship-kostenregel. De guard in de pure functie dekt alle vier de
+call-sites in `order-form.tsx` tegelijk.
+
+## 2026-06-12 — Seam-consolidatie: cross-root imports i.p.v. kopieën (ADR-0033)
+Vier handmatig-gesynchroniseerde kopieparen tussen `supabase/functions/_shared/`
+en `frontend/src/` vervangen door één bron in `_shared/` + dunne frontend
+re-export-shims: `vervoerder-eisen` (frontend-kopie was dead code),
+`iso-week` (kern gedeeld, frontend-extensies lokaal), `snijplan-status`
+(frontend-superset → `_shared`) en `email-list`/`email-recipients`.
+Waarom: handmatige kopieën = dezelfde incident-klasse als het SSCC-incident
+(12-06); `snijplan-status` was al gedivergeerd. Vite dev-server kreeg
+`server.fs.allow: ['..']`. Conventie vastgelegd in CLAUDE.md + ADR-0033.
+De parallel uitgevoerde werkagenda-kernel-consolidatie (zie hieronder) volgt
+hetzelfde patroon — `werkagenda`/`bereken-agenda` was in ADR-0033 nog als
+"buiten scope" gemarkeerd maar is dezelfde dag alsnog geconsolideerd.
+
+## 2026-06-12 — Dropship-detectie in TS data-driven (ADR-0018-patroon)
+
+**Wat:** `isDropshipRegel`/`heeftDropshipRegel` lezen nu `producten.is_dropship`
+(mig 370) via de query-join (`fetchOrderRegels`) en form-data, i.p.v. hardcoded
+`DROPSHIP-KLEIN`/`DROPSHIP-GROOT` te matchen. `detecteerDropshipKeuze` blijft
+artikelnr-based maar voedt uitsluitend de selector-toggle. De order-edit-mapping
+draagt voortaan `is_pseudo` + `is_dropship` over naar form-data (pre-existing gap).
+Ongebruikte export `DROPSHIP_IDS` verwijderd.
+
+**Waarom:** een derde dropship-artikel werkte server-side wél (e-mail-guard
+mig 370) maar was onzichtbaar voor form-validatie en order-detail-hint — exact
+de pre-ADR-0018-bug-klasse (mig 263→269). Nu: nieuw dropship-artikel =
+`UPDATE producten SET is_dropship=TRUE`, nul code-edits.
+
+## 2026-06-12 — Bundel-sleutel SQL↔TS-contract met golden fixtures (mig 385)
+
+De bundel-sleutel-familie (`_normaliseer_afleveradres`/`bundel_sleutel`/`verzendweek_voor_datum` ↔ `normaliseer-adres.ts`/`bundel-sleutel.ts`/`verzendweek.ts`) werd alleen door comments in lockstep gehouden. Nu: één golden-fixture-bestand (`frontend/src/lib/orders/__tests__/golden/bundel-sleutel.golden.json`, 21 cases) met twee consumenten — Vitest-contracttest `bundel-sleutel.contract.test.ts` (TS) en `assert_bundel_sleutel_contract()` (SQL, zelf-testende migratie 385, incl. vorm-guard tegen stil-slagende lege case-arrays); een sync-test bewijst dat het `$golden$`-blok in de laatste `*_bundel_sleutel_contract*.sql`-migratie gelijk is aan de JSON. Probe op de live DB (12-06): NBSP en kleine-ß gaven op deze locale toevallig al TS-identieke output, maar hoofdletter-ẞ (U+1E9E) divergeerde bevestigd — en het gedrag was sowieso locale-afhankelijk. `_normaliseer_afleveradres` v2 (mig 385) en `normaliseerAdresKey` (ß/ẞ→ss-fold) zijn nu deterministisch JS-identiek (expliciete whitespace-klasse + chr(223)/chr(7838)-fold). Steekproef: 20 van 1427 open orders dragen zo'n teken in `afl_adres` (DE-straatnamen); sleutels worden nergens gepersisteerd, dus geen datamigratie. Conventie: wijziging aan een van de zes functies = golden bijwerken + nieuwe `*_bundel_sleutel_contract*.sql` met assert-aanroep (sync-test wordt anders rood). Toegepast in de SQL Editor op 12-06 onder werknummer 383 (hernummerd naar 385 wegens collisie met de werkagenda-migraties); na-verificatie via live probe geslaagd, incl. de ẞ-case.
+
+## 2026-06-12 — Werkagenda-config centraal (mig 384, fase 2)
+
+Werktijden + vrije dagen verhuisd van per-browser-localStorage naar
+`app_config 'werkagenda'`. UI (productie-instellingen, snijplanning-agenda),
+`check-levertijd`/`spoed-check` (edge) en de Pick & Ship-dag-order-horizon
+lezen nu dezelfde kalender — een feestdag invoeren landt één keer en telt
+overal. `volgendeWerkdag`/`naarWerkdag` (levertijd-match) lopen nu ook via
+kernel-`isWerkdag` i.p.v. hardcoded za/zo. Eenmalige best-effort-overname van
+bestaande localStorage-instellingen (alleen als de DB-rij nog default is).
+
+## 2026-06-12 — Werkagenda: één bron (kernel-consolidatie, mig 383)
+
+De werkdag-/werkagenda-rekenkunde leefde op drie plekken: SQL (mig 279 — nul
+callers, dode code), Deno `_shared/werkagenda.ts` (UTC, geen feestdagen) en
+frontend `bereken-agenda.ts` (lokale tijd, wél feestdagen) — met al-uiteengelopen
+interfaces, ~24u verschil in `teLaat`-semantiek en andere sortering.
+Geconsolideerd: `_shared/werkagenda.ts` is nu de enige implementatie (rijke
+interface met 'HH:mm' + `vrij`-feestdagen); de frontend importeert de kernel
+direct (derive-status-patroon, vite `server.fs.allow`); golden fixture
+`werkagenda.golden.json` wordt door Deno én Vitest getoetst; de dode SQL is
+gedropt (mig 383). `teLaat` is geünificeerd op strikt (00:00-deadline) — de
+UI-agenda en check-levertijd geven nu dezelfde vlag. Sorterings-verschil
+berekenAgenda↔berekenSnijAgenda blijft bewust staan (B6, kernel-header).
+
+## 2026-06-12 — Rhenus als transporteur: GS1-XML via SFTP (ADR-0032, mig 379-382) — gebouwd, rondreis geslaagd
+
+> **Hernummering:** de Rhenus-migraties zijn vlak vóór de merge hernummerd van 378-381 naar **379-382** (origin/main bleek een eigen 378 te hebben — `klant_omzet_ytd_prijslijst`). In de live DB zijn ze onder de óúde bestandsnamen toegepast; inhoudelijk identiek.
+
+**Aanleiding:** mails Rhenus → Piet-Hein (12-06): SFTP-gegevens compleet (`sedi.de.rhenus.com`, user `Karpi`, /in-map + testmap; wachtwoord apart gemaild — alleen als secret, nooit in de repo) én een foutmelding over legacy-bericht `0455395` (`totalPackageQuantity=0` zonder item-segmenten → error bij Rhenus; daar handmatig hersteld). Rhenus-cutover staat gepland voor week 24 (= deze week).
+
+**Gebouwd (branch `feat/rhenus-transporteur`, gestapeld op `feat/verhoek-transporteur`):**
+- **ADR-0032:** Rhenus via GS1 TransportInstruction-XML ("RHE" 3.1, SBDH) over SFTP — derde vervoerder-adapter naar het Verhoek-patroon. Legacy-referentie-excerpt + toelichting in `docs/rhenus/voorbeelden/`.
+- **Mig 374-amendement (cascade-fix):** de live DB bleek selectie-regels te hebben die naar de placeholders wijzen (Verhoek NL ≥27 kg / DE ≥30 kg; Rhenus DE ≤30 kg + debiteur-pins). De guarded `DELETE edi_partner_b` in mig 374 cascadeert naar die regels → ze zouden bij apply stilletjes verdwijnen. Fix: regels eerst omhangen naar `verhoek_sftp`, dán de delete. **Apply mig 374 dus vanaf deze branch.**
+- **Mig 379:** vervoerder `rhenus_sftp` (type `'sftp'`, `actief=FALSE`), selectie-regels `edi_partner_a`→`rhenus_sftp` omgehangen, placeholder guarded verwijderd, `app_config 'rhenus'` geseed (`sscc_met_00_prefix`/`package_type_code`/`bestandsnaam_prefix`).
+- **Mig 380:** `rhenus_transportorders` + enum + 5 RPC's + reaper + `rhenus_verzend_monitor`; dispatch-case `WHEN 'rhenus_sftp'` in de `'sftp'`-tak van `enqueue_zending_naar_vervoerder`.
+- **Mig 381:** cron `rhenus-send-elke-minuut` (veilig: lege wachtrij zolang inactief + dry-run-default).
+- **`_shared/sftp-client.ts`:** verplaatst uit `verhoek-send` (pure move; verhoek-send/spike importeren uit de seam). Orchestrator-loop bewust opnieuw gespiegeld — generalisatie over 3 adapters = backlog (cutover-week).
+- **`rhenus-send`:** pure `xml-builder.ts` (12 unit-tests; kg-formattering legacy-conform, escaping, planned-dates met trailing `T`, Freetext `Order <nr> Ref <klant_referentie>`) + orchestrator met dry-run-default, bestandsnaam-dedup vóór upload, audit via `externe_payloads` kanaal `'rhenus'`, XML-kopie in `rhenus-xml/`. **0-colli driedubbel geblokkeerd** (validator + preflight + builder-throw — incident 0455395 kan uit ons systeem niet meer ontstaan).
+- **`vervoerder-eisen`-seam:** `rhenus_sftp` deelt de SFTP-eisen (adresvelden verplicht; telefoon/land niet) — shared + frontend-spiegel + tests.
+- **`rhenus-sftp-spike`** (wegwerp): verbindings-/upload-test met de `RHENUS_SFTP_*`-secrets; uploadt met `.xml.test`-extensie zodat een per ongeluk op /in gerichte spike niet als echte instructie verwerkt wordt.
+
+**Verificatie:** 32 deno-tests groen (rhenus + verhoek + shared), `deno check` op alle nieuwe entrypoints, frontend `npm run typecheck` groen.
+
+**Voortgang later op 12-06 (alles uitgevoerd):** migraties toegepast (geverifieerd: regels omgehangen zonder verlies, placeholders weg, config + monitors live); alle vier de functions gedeployed (`rhenus-send`/`rhenus-sftp-spike`/`verhoek-send`/`verhoek-sftp-spike`). **Interne dry-run-rondreis geslaagd:** happy path ZEND-2026-0004 → `Verstuurd` (dry-run) met legacy-conforme XML (land `NEDERLAND`→`NL`, SSCC 00-prefix, kg-decimalen, Freetext `Order ORD-2026-0005 Ref 7200438517`) + `externe_payloads`-rij; fout-pad ZEND-2026-0001 (gewicht 0) → `Fout` na 3 retries met heldere `Pre-flight:`-reden. **Bevinding → mig 382:** de best-effort XML-kopie naar storage faalde op 415 `invalid_mime_type` — de `order-documenten`-allowlist (mig 178) kent geen XML; mig 382 voegt `application/xml`+`text/xml` toe (raakt ook verhoek-send). **Secrets vereisen owner/admin-rechten** ("account does not have the necessary privileges" op Miguels account) — Piet-Hein heeft `RHENUS_SFTP_*` + `RHENUS_DRY_RUN=false` + `RHENUS_SFTP_REMOTE_DIR=/test` gezet. **Échte rondreis geslaagd:** `rhenus-send` uploadde via de edge-runtime (= ssh2-runtime-bewijs) `RHE_20260612145904_ZEND-2026-0004.xml` naar Rhenus' `/test`-map; onafhankelijk geverifieerd via SFTP-listing (3170 bytes; servermappen: `in`/`out`/`test`/`dev`). Testmail naar Rhenus verstuurd (format-check + vraag over alfanumerieke entityIdentification / 1-bestand-per-zending / bestandsnaam-conventie). **Frontend:** vervoerder-registry + zendingen-filter omgezet van de mig 170-placeholdercodes naar `rhenus_sftp`/`verhoek_sftp` (pills kregen anders grijze fallback); inactieve vervoerders waren al zichtbaar-maar-disabled ("inactief") in beide selectors — Rhenus is dus zichtbaar maar niet selecteerbaar tot de cutover.
+
+**Nog open (na Rhenus' format-akkoord):** `RHENUS_SFTP_REMOTE_DIR=/in` (Piet-Hein) + `UPDATE vervoerders SET actief=TRUE WHERE code='rhenus_sftp'` = cutover. **Vóór echte verzending:** gewicht-datagap (`zending_colli.gewicht_kg` vrijwel overal 0) oplossen — preflight blokkeert terecht. Geen heraanlevering van bericht 0455395 nodig (door Rhenus handmatig verwerkt).
+
+## 2026-06-12 — Verzendlabel-SSCC uit `zending_colli`: label = HST-aanmelding (overlossing-incident)
+
+**Incident:** HST meldde 3 karpetten (ZEND-2026-0001/0002/0003) als "overlossing — geen data" ondanks geslaagde transportorder-aanmeldingen (T75038267000181/182/183, HTTP 201). Oorzaak: twee onafhankelijke SSCC-generatoren. De geprinte labels kregen hun barcode van de client-side `generateSscc(zendingId, colliIndex)` (`lib/sscc.ts`, 1 mei), terwijl `hst-send` de DB-SSCC's uit `zending_colli` (sequence `genereer_sscc()`, mig 209, 7 mei) aanmeldde met `HasBarcode: true` — twee bronnen die nooit gekoppeld zijn geweest. HST scant het label → onbekende barcode → geen match.
+
+**Fix (frontend-only, geen migratie):**
+- `fetchZendingPrintSet` fetcht `zending_colli (id, colli_nr, sscc, order_regel_id)` mee; nieuw interface `ZendingPrintColli`.
+- `expandLabels` (`lib/printset.ts`) bouwt labels uit de colli-rijen (gesorteerd op `colli_nr`, regel-koppeling via `order_regel_id`) — de SSCC komt verbatim uit de DB, exact dezelfde rijen als de HST-aanmelding. Legacy-zendingen zonder colli-rijen krijgen labels zónder barcode (`sscc: null`): een niet-aangemelde barcode mag nooit geprint worden.
+- Client-side generator `lib/sscc.ts` verwijderd — de fout-klasse kan niet terugkomen.
+- Label-componenten (`shipping-label`, `shipping-label-tall`, `dpd-shipping-label`) accepteren `sscc: string | null` en tonen "Geen colli-barcode geregistreerd" bij null.
+- Vangnet: `lib/printset.test.ts`, incl. expliciete regressietest dat de oude generator-waarde (zending 28/colli 1 → `…2810`) nooit meer kan verschijnen.
+
+**Operationeel (lopende zendingen):** HST koppelt de drie karpetten handmatig via de mapping label-barcode → T&T: `00087159540000002612` → T75038267000181 (Clark, Lijnden), `00087159540000002711` → T75038267000183 (Van Duffelen, 's-Gravenhage), `00087159540000002810` → T75038267000182 (Ten Velde, Bennebroek).
+
+## 2026-06-12 — DESADV-verzendbevestiging LIVE: format gevalideerd + cron actief (slice 4 afgerond)
+
+**Activatie voltooid (12-06):** format-builder byte-identiek gevalideerd tegen écht Hornbach-bericht 172390327 (bronbestand + EDIFACT-paar in `docs/transus/voorbeelden/`, kolomkaart in `karpi-verzendbericht.ts`); test-renders van orders ORD-2026-0334 (Hornbach) en ORD-2026-0232 (BDSK, 10 regels) door Miguel goedgekeurd in Transus' Testen-tab; `bouw-verzendbericht-edi` gedeployed (`--no-verify-jwt`, auth via `?token=` zoals transus-send); **migratie 377 toegepast — cron `verzendbericht-edi-sweep` draait (jobid 12, */15 min)**. Er waren op activatiemoment 0 verzonden EDI-orders; de eerste echte verzending van een Hornbach/BDSK-order produceert automatisch de eerste DESADV (zichtbaar in de Communicatie-tijdlijn + EDI-module). **Bugfix tijdens activatie:** kale PostgREST-embeds `debiteuren(naam)` en `producten(ean_code)` gaven PGRST201 (dubbele FK-relaties: `betaler`-FK resp. `fysiek_artikelnr`-FK mig 154) — expliciete FK-hints toegevoegd; DESADV toont het originele artikel (omsticker intern, zelfde regel als factuur).
+
+## 2026-06-11 — DESADV-verzendbevestiging via EDI: infra gebouwd (slice 4)
+
+**Wat:** de infra voor automatisch versturen van DESADV-verzendberichten (verzendbericht/pakbon) via Transus is gebouwd. De format-builder gooide bewust een fout totdat het Transus-format gevalideerd was (Taak 12-STOP — opgelost op 12-06, zie entry hierboven).
+
+**Gebouwd:**
+- `supabase/functions/_shared/transus-formats/karpi-verzendbericht.ts` (+test): bevroren input-interface `VerzendberichtInput` + `valideerVerzendberichtInput`; `buildKarpiVerzendbericht` gooit bewust een `Error('DESADV-format nog niet gevalideerd')` tot Taak 12 afgerond is.
+- Edge function `supabase/functions/bouw-verzendbericht-edi/index.ts` (spiegelt `bouw-factuur-edi`): POST `{order_id}` (gericht) of `{}` (sweep over `status='Verzonden' AND bron_systeem='edi'` met partners waarbij `verzend_uit && transus_actief`, minus al-bestaande verzendberichten). Sweep-venster: alleen `verzonden_at >= now() - 7 dagen` — historische orders worden bij activatie niet alsnog verzonden; gerichte POST omzeilt het venster bewust. Idempotent op `(richting='uit', berichttype='verzendbericht', bron_tabel='orders', bron_id)`. Klant-PO uit `orders.klant_referentie`; zending via `zending_orders → zendingen(zending_nr, verzenddatum, track_trace)`; GTIN uit `producten.ean_code` (admin-pseudo/VERZEND-regels gefilterd — fysiek document); GLN's uit order-snapshots. Verstuurd door bestaande cron `transus-send` (mig 305).
+- `supabase/config.toml`: `[functions.bouw-verzendbericht-edi] verify_jwt = false`.
+- `supabase/migrations/377_verzendbericht_edi_cron.sql`: pg_cron-sweep elke 15 min — **NOG NIET TOEGEPAST** (builder gooit tot format-validatie klaar is). (Driemaal hernummerd: 372→373→374→377 wegens collisies met origin/main en `feat/verhoek-transporteur` (374-376).)
+- Verschijnt automatisch in de Communicatie-tijdlijn op order-detail (slice 3, label 'Verzendbevestiging') — geen extra UI nodig.
+- Partners die hierop wachten: Hornbach NL (361208) en BDSK (600556) — `verzend_uit` staat daar al aan.
+
+**Activatievolgorde (mens-stappen, in deze volgorde):**
+1. **Taak 12:** Miguel downloadt een historisch verzendbericht/pakbon-voorbeeld uit Transus Online (Handelspartners → proces "Pakbon/Verzendbericht versturen" → Bekijken en testen → bestand downloaden, bij voorkeur BDSK of Hornbach), plaatst het in `docs/transus/voorbeelden/`, daarna wordt het format gereverse-engineered + fixture-test + `buildKarpiVerzendbericht` geïmplementeerd, en gevalideerd in Transus' Testen-tab (recept `docs/transus/demo-rondreis.md`).
+2. **Deploy:** `supabase functions deploy bouw-verzendbericht-edi --project-ref wqzeevfobwauxkalagtn`.
+3. **Gerichte test:** POST met één order_id van een verzonden Hornbach/BDSK-order; wachtrij-rij controleren; `transus-send` laten versturen; ontvangst bij partner verifiëren.
+4. **Migratie 377 toepassen** (cron aan).
+
+## 2026-06-11 — Communicatie-tijdlijn: EDI-berichten naast e-mails op order-detail (slice 3)
+
+**Wat:** de "E-mails"-sectie op order-detail heet nu "Communicatie" en toont in één gecombineerde tijdlijn zowel verstuurde e-mails als uitgaande EDI-berichten (`edi_berichten richting='uit'`). EDI-items tonen type (orderbev/factuur/verzendbericht), live status (Wachtrij/Verstuurd/Fout met kleurcodering) en een directe link naar het EDI-bericht-detail (`/edi/berichten/:id`). E-mail-items renderen exact als voorheen (klik opent dialog).
+
+**Technisch:**
+- Pure merge-helper `communicatie-tijdlijn.ts` (`bouwCommunicatieTijdlijn`) — testbaar zonder Supabase, bewust géén logica in de component.
+- Nieuwe query `fetchUitgaandeEdiBerichtenVoorOrder` (`@/modules/edi`) — haalt `id, berichttype, status, is_test, sent_at, created_at` op; geen payload-velden (zwaar).
+- `order-emails.tsx` laadt via `useQuery` de EDI-berichten parallel aan de bestaande e-mailhook; wacht op beide `isLoading`-flags voor render.
+
+**Ontwerp-keuze (géén dubbel-loggen):** `verstuurde_emails` en `edi_berichten` blijven elk hun eigen bron-van-waarheid; de merge is puur presentatie. EDI-facturen die via `edi_handelspartner_config` gestuurd worden, verschijnen als EDI-rij — niet als e-mailrij — conform de slice-2-gate.
+- **Bekende beperking bundel-facturen:** de EDI-INVOIC hangt aan één order (`edi_berichten.order_id` = eerste order van de bundel); op de tijdlijn van de overige bundel-orders is de factuur niet zichtbaar (de e-mail-variant logde wél per order). Eventuele match op `factuur_id` staat op de backlog.
+
+## 2026-06-11 — Factuur: e-mail onderdrukt bij actieve EDI-INVOIC (slice 2)
+
+**Wat:** mail-gate `!ediFactuurActief` toegevoegd aan het e-mailblok in `factuur-verzenden` (stap 7); `verstuurd_naar` logt nu `'EDI Transus'` i.p.v. een e-mailadres dat nooit gemaild is. De `logVerstuurdeEmails`-aanroepen zitten al binnen het gated blok — geen aparte aanpassing nodig. De PDF blijft altijd in storage.
+
+**Waarom:** debiteuren met `edi_handelspartner_config.transus_actief && factuur_uit` kregen de factuur zowel via EDI-INVOIC (stap 6) als per e-mail (stap 7) — dubbel kanaal in strijd met de partner-afspraak "EDI-only". `verstuurd_naar` registreerde vervolgens het e-mailadres alsof er gemaild was.
+
+## 2026-06-11 — Universele bevestig-knop: kanaal-dispatch EDI vs e-mail
+
+**Aanleiding:** EDI-orders kregen nul orderbevestigingen na de EDI-cutover van 3 juni — de "Bevestig order"-knop stuurde altijd e-mail, ook bij EDI-orders. Bovendien werd de `orderbev_uit`-toggle in `edi_handelspartner_config` nergens gecheckt, waardoor partners die géén orderbev willen (SB Möbel BOSS 150761, Hammer 330955) er toch een kregen. Ontwerp-besluit (bijgesteld dezelfde dag, zie onderaan deze entry): het kanaal hangt aan de order (`bron_systeem`) én per documenttype aan de partnerconfig — wat de partner via EDI wil, gaat via EDI; al het andere gewoon per e-mail.
+
+- **`bepaalBevestigingKanaal` + `isOrderBevestigd`** ([`bevestiging-kanaal.ts`](../frontend/src/lib/orders/bevestiging-kanaal.ts)): pure dispatcher — `bron_systeem='edi'` + `transus_actief && orderbev_uit` → `'edi'`; alle andere orders (ook EDI-orders zonder actieve EDI-orderbev) → `'email'`. Optioneel `kanaal`-param in `isOrderBevestigd`: met `'edi'` → `edi_bevestigd_op`; met `'email'` → `bevestigd_at`; zonder → oud fallback-gedrag.
+- **`bevestigOrderZonderEdiBericht`** ([`bevestig-helper.ts`](../frontend/src/modules/edi/lib/bevestig-helper.ts)): zet de `edi_bevestigd_op`-gate via RPC `markeer_order_edi_bevestigd` — hergebruikt voor het administratieve deel van de leverweek-bevestiging bij email-kanaal EDI-orders.
+- **Gedeelde hook `useBevestigEdiOrder`** ([`use-bevestig-edi-order.ts`](../frontend/src/modules/edi/lib/use-bevestig-edi-order.ts)): gedeeld door het amber leverweek-paneel (`edi-leverweek-bevestigen.tsx`) én de nieuwe `BevestigOrderEdiDialog`; laadt `edi_handelspartner_config` en bepaalt het kanaal.
+- **`BevestigOrderEdiDialog`** ([`bevestig-order-edi-dialog.tsx`](../frontend/src/components/orders/bevestig-order-edi-dialog.tsx)): uitsluitend bereikbaar bij kanaal `'edi'` — leverweek kiezen, geen e-mailveld; ORDRSP op `edi_berichten`-wachtrij → `transus-send`.
+- **Kanaal-dispatch in `order-header.tsx`**: groene knop opent bij kanaal `'edi'` de EDI-dialog, bij kanaal `'email'` de e-maildialog (ook voor EDI-orders zonder actieve EDI-orderbev); "Opnieuw versturen" ook voor email-kanaal EDI-orders; button disabled tijdens config-laden.
+- **`BevestigOrderDialog` met `sluitEdiGate`** ([`bevestig-order-dialog.tsx`](../frontend/src/components/orders/bevestig-order-dialog.tsx)): nieuwe optionele prop — na succesvolle mail sluit ook de `edi_bevestigd_op`-gate (best-effort) zodat het "Te bevestigen"-chip en het amber paneel verdwijnen.
+
+**Bijgesteld besluit (11-06, Miguel):** wat een partner niet via EDI wil ontvangen, gaat automatisch per e-mail — kanaal `'edi_stil'` vervangen door `'email'`-fallback; na succesvolle mail sluit ook de EDI-leverweek-gate.
+
+## 2026-06-12 — Pick & Ship: geblokkeerde orders naar eigen sectie ónder de week-secties (branch `fix/pick-geblokkeerd-onderaan`)
+
+**Correctie op de sorteer-fix van vanochtend (zie entry hieronder):** de
+binnen-sectie-sortering loste het probleem niet op — de "Geen vervoerder
+mogelijk"-orders hebben oude verzendweken en vormden dus **complete
+"Achterstallig"-secties die als geheel bovenaan de tab stonden**. Miguel:
+"alle die niet verzonden kunnen worden staan bovenaan in de week."
+
+**Fix:** geblokkeerde orders gaan helemaal niet meer de week-/dag-secties in.
+[`pick-overview.tsx`](../frontend/src/modules/magazijn/pages/pick-overview.tsx)
+splitst `naVervoerderFilter` in startbaar vs. geblokkeerd (predicaat ongewijzigd:
+≥1 regel `bron='geen'`, niet-afhalen); de week-secties tonen alleen startbare
+orders en nieuwe component
+[`PickGeblokkeerdSectie`](../frontend/src/modules/magazijn/components/pick-geblokkeerd-sectie.tsx)
+(amber, Ban-icoon, zelfde klant-clustering + land-toggle) rendert de
+geblokkeerde orders als laatste sectie. Week-sectie-tellingen tellen ze niet
+meer mee; de week-tab-badges (stats) wél — ze zitten nog in de tab. Zodra een
+vervoerder geactiveerd of een override gezet is verhuist de order vanzelf
+terug naar zijn week-sectie. De sorteer-props op PickWeekSectie/
+PickDagOrdersSectie (vanochtend) zijn weer verwijderd; de
+`geblokkeerdeOrderIds`-parameter op de `groeperen.ts`-helpers blijft (getest,
+defense-in-depth). Puur UI — geen DB-wijziging.
+
+**Verzoek Miguel:** orders die gepickt kunnen worden moeten boven de
+"Geen vervoerder mogelijk"-orders staan. `clusterOrdersOpKlant` /
+`groepeerOrdersOpLand` ([`groeperen.ts`](../frontend/src/modules/magazijn/lib/groeperen.ts))
+accepteren nu een optionele `geblokkeerdeOrderIds`-set als primaire sorteersleutel
+(geblokkeerd → achteraan, daarbinnen ongewijzigd alfabetisch op klant + order_nr;
+binnen een bundel-cluster zakken geblokkeerde orders ook naar onder).
+[`pick-overview.tsx`](../frontend/src/modules/magazijn/pages/pick-overview.tsx)
+voedt de set uit de al aanwezige per-order vervoerder-queries (zelfde predicaat
+als `StartPickrondesButton` + mig 373-guard: ≥1 regel `bron='geen'`, niet-afhalen)
+en geeft hem door aan beide secties (week + dag-orders). Puur UI-sortering —
+geen DB-wijziging. Tests: 3 nieuwe cases in `groeperen.test.ts`.
+
+## 2026-06-11 — Pick & Ship toonde maar 91 van ~236 pickbare orders (PostgREST-cap) + pick-start geblokkeerd zonder vervoerder (mig 373, branch `fix/pick-ship-zonder-vervoerder`)
+
+**Verzoek Miguel (vervolg op mig 372):** "Zet ze [orders zonder vervoerder]
+wel allemaal tussen de pick lijst, maar blokkeer het starten van het picken
+door 'geen vervoerder mogelijk'." Bij het onderzoek bleek een **echte bug**
+de orders te verbergen — niet de vervoerder-status:
+
+1. **PostgREST max-rows-cap (1000) at orders stilletjes op.**
+   `fetchPickbaarheidRegels` ([`pickbaarheid.ts`](../frontend/src/modules/magazijn/queries/pickbaarheid.ts))
+   haalde de héle `orderregel_pickbaarheid`-view op zonder `order_id`-filter.
+   De view heeft inmiddels 2068 rijen (EDI-instroom juni); de kale GET gaf er
+   maar 1000 terug. Orders waarvan de regels buiten die eerste 1000 vielen
+   kregen `regels.length === 0` → het pickbaarheidsfilter gooide ze weg.
+   Resultaat: 91 zichtbaar van ~236 pickbare orders, zonder enige fout.
+   **Fix:** gechunkt ophalen per `order_id` (100 per chunk, zelfde patroon als
+   de fallback). Incidentklasse om te onthouden: een PostgREST-GET zonder
+   filter op een groeiende view is een tijdbom — de cap knipt geruisloos.
+2. **Pick-start zonder vervoerder geblokkeerd, dubbel:**
+   - **Frontend** ([`start-pickrondes-button.tsx`](../frontend/src/modules/logistiek/components/start-pickrondes-button.tsx)):
+     per order de effectieve vervoerder geresolved (zelfde queryKey als de
+     pick-card-tag → cache-hit); orders met ≥1 regel `bron='geen'` tellen
+     niet mee als startbaar. Solo-kaart toont disabled knop **"Geen
+     vervoerder mogelijk"**; bundel-tooltip telt ze als overgeslagen.
+   - **Server** (mig 373): `start_pickronden` (body = mig 258 + guard)
+     weigert elke niet-afhaal-order met ≥1 regel `bron='geen'` met dezelfde
+     melding. Voorkomt zendingen met `vervoerder_code=NULL` die na voltooien
+     nergens heen kunnen. Escape-hatch: vervoerder-override op de orderregel
+     (bron wordt 'override') voor bewuste uitzonderingen.
+
+Met de cap-fix verschijnen de ~159 DE/BE-orders (zie mig 372-entry) nu wél in
+Pick & Ship; hun Verzendset-knop is geblokkeerd totdat Rhenus/DPD geactiveerd
+zijn (Rhenus gepland deze week) of een handmatige vervoerder gekozen is.
+
+**Toepassen:** mig 373 in de Supabase SQL-editor draaien.
+
+## 2026-06-11 — "196 orders zonder vervoerder"-banner geduid: uitsplitsing per land + scope-uitleg (mig 372, branch `fix/zonder-vervoerder-banner`)
+
+**Melding Miguel:** de amber banner op Pick & Ship zei "196 order(s) zonder
+vervoerder" terwijl het scherm maar 91 orders toonde — "volgens mij gaat er
+iets fout". **Diagnose: de telling klopt, de presentatie misleidde.** De view
+`orders_zonder_vervoerder` (mig 338/345) telt bewust álle open orders (ook
+`Wacht op voorraad/inkoop/maatwerk`, die Pick & Ship verbergt). De 196 waren
+op dat moment: 183× DE + 13× BE (179 EDI-orders, instroom 3–11 juni), 0× NL.
+Oorzaak dat ze geen vervoerder krijgen: alle DE/BE-vervoerders
+(`dpd`/`edi_partner_a`/`edi_partner_b`) staan tot hun cutover op
+`actief=false` — de resolver (mig 225) slaat regels van inactieve vervoerders
+over, en alleen `hst_api` (NL) is live. Dat is conform ADR-0030, maar de
+banner ("kies handmatig") suggereerde een handmatige actie op 196 orders.
+
+**Belangrijke non-bug:** `afl_land='DEUTSCHLAND'`/`'BELGIË'` (vol uitgeschreven,
+102 orders) leek een match-probleem maar is het niet — `matcht_regel`
+normaliseert sinds mig 214 beide zijden via `normaliseer_land`. Bewust **niet**
+gebackfilld naar ISO-codes: `trg_lock_zending_bundel_sleutel` blokkeert
+afl_*-mutaties op orders in actieve bundels, en gemengde spelling zou juist
+de adres-bundeling (mig 222, exacte string-match) tussen oude en nieuwe orders
+breken.
+
+**Fix (mig 372 + frontend):**
+- View krijgt twee extra kolommen: `status` (TEXT) en `afl_land_norm`
+  (via `normaliseer_land`). Scope bewust ongewijzigd.
+- [`hst-monitor.ts`](../frontend/src/modules/logistiek/queries/hst-monitor.ts):
+  `countOrdersZonderVervoerder` → `fetchOrdersZonderVervoerder` + pure
+  aggregator `vatZonderVervoerderSamen` (totaal, per-land, waarvan klaar voor
+  picken). `select('*')` zodat de frontend ook op de pre-mig-372-view blijft
+  werken (dan zonder status-uitsplitsing).
+- [`hst-aandacht-banner.tsx`](../frontend/src/modules/logistiek/components/hst-aandacht-banner.tsx):
+  toont nu "X open order(s) zonder vervoerder — 183× DE, 13× BE · waarvan 159
+  klaar voor picken", legt uit dat over álle open orders geteld wordt, en linkt
+  naar `/logistiek/vervoerders`.
+
+**Open beslispunt (Miguel):** DE/BE-verzending — DPD/Rhenus activeren (dan
+lossen de bestaande selectie-regels het gros op) of deze orders blijven
+handmatig bedienen. Tot die keuze blijft de banner deze aantallen tonen.
+
+**Toepassen:** mig 372 in de Supabase SQL-editor draaien (idempotent,
+alleen view + comment).
+
+## 2026-06-11 — BTW verlegd intracommunautair (mig 371)
+Duitse (en alle EU-verlegd-)klanten kregen 21% BTW op factuur en orderbevestiging terwijl `debiteuren.btw_verlegd_intracom` al correct stond (verzoek Marjon). De vlag is nu bron van waarheid: SQL-helper `effectief_btw_pct` + TS-seam `_shared/btw.ts`, snapshot `facturen.btw_verlegd`, factuur-PDF en orderbevestiging (mail + PDF, 4-talig) tonen "BTW verlegd" + btw-nr afnemer i.p.v. een BTW-regel. UI: verlegd-toggle op klant-facturering-tab. Geen data-update nodig; bestaande facturen (3) waren niet fout.
+
+## 2026-06-11 — Orderbevestiging pakte factuur-e-mailadres + order-bewerken wiste e-mail-snapshots (branch `fix/orderbevestiging-email-ladder`)
+
+**Melding Marjon (klant 803741, ORD-2026-0349/0350):** "als ik de order wil
+bevestigen pakt hij het factuuradres (zr-pdf@einrichtungspartnerring.com)…
+Voor mijn gevoel heb ik het wel veranderd naar orderbevestiging@trendhopperbreda.nl."
+Diagnose via `verstuurde_emails`-log: haar handmatige correcties kwamen wél
+goed aan, maar er zaten vier losse fouten achter:
+
+1. **Order-bewerken wiste `fact_email`/`afl_email`** —
+   [`order-edit.tsx`](../frontend/src/pages/orders/order-edit.tsx) gaf beide
+   mig 364-snapshots niet mee in de initiële header, waarna
+   `update_order_with_lines` ze op NULL zette (zelfde incidentklasse als
+   mig 343/368: nieuw veld niet in álle paden). ORD-2026-0350 verloor zo zijn
+   factuur-e-mailadres. Fix: velden meegeven in de edit-header.
+2. **Edit-mode kende de klant-e-mails niet** — het sync-effect in
+   [`order-form.tsx`](../frontend/src/components/orders/order-form.tsx) nam
+   alleen `prijslijst_nr`/`korting_pct` over uit het asynchroon geladen
+   `clientData`; bij een adreswissel viel de `afl_email`-ladder daardoor terug
+   op de stale form-waarde. Fix: ook `email_factuur`/`email_overig`/
+   `email_verzend` syncen.
+3. **Bevestig-dialog prefillde het factuuradres** — de ladder was
+   `bevestiging_email ?? klant_email` waarbij `klant_email` =
+   `email_factuur ?? email_overig`. Nieuw veld `klant_email_orderbev`
+   (`email_overig ?? email_factuur`) in
+   [`orders.ts`](../frontend/src/lib/supabase/queries/orders.ts) voedt de
+   prefill in [`order-header.tsx`](../frontend/src/components/orders/order-header.tsx);
+   `klant_email` zelf blijft ongewijzigd (voedt de dropship-check). Bewust ook
+   geen `afl_email` in deze ladder: bij dropship is dat het consument-adres.
+   Edge function [`stuur-orderbevestiging`](../supabase/functions/stuur-orderbevestiging/index.ts)
+   kreeg dezelfde flip in de fallback (`email_overig` eerst) — die fallback
+   vuurt alleen als de dialog leeg verstuurd wordt.
+4. **`AddressSelector` auto-selecteerde bij mount óók in edit-mode** het
+   eerste afleveradres en overschreef daarmee het opgeslagen order-adres
+   (incl. `afl_email`) nog vóór de gebruiker iets deed. Nieuwe prop
+   `autoSelect` (FALSE in edit-mode) in
+   [`address-selector.tsx`](../frontend/src/components/orders/address-selector.tsx).
+
+**Data-hotfix (live):** ORD-2026-0350 `afl_email` →
+orderbevestiging@trendhopperbreda.nl, `fact_email` → zr-pdf@… hersteld;
+`afleveradressen` id 6805 (ETTENSEBAAN, het factuuradres) droeg het
+factuur-e-mailadres als adres-e-mail → geleegd zodat de ladder voortaan op
+klant-niveau (`email_verzend`/`email_overig`) uitvalt. Naveeg (zelfde dag,
+mig 367/368-ladder, alleen-vullen-waar-leeg): ook ORD-2026-0152/0305/0343/
+0347/0352 hadden door de edit-bug lege snapshots → hersteld en geverifieerd.
+De ~46 overige open orders met lege snapshots zijn klanten zónder enig
+e-mailadres op de klantkaart — daar is niets te vullen (conform de
+migratie-backfill); script: `scripts/_tmp_hotfix_orderbev_email.mjs`.
+
+## 2026-06-11 — Verhoek-transporteur Fase 1: AA2.0-XML via SFTP (ADR-0031, mig 374-376)
+
+**Aanleiding:** Verhoek Europe (tweede vervoerder naast HST) levert niet via Transus-EDI maar via hun eigen XML-formaat "XMLstandardVerhoekEuropeAA20" (AA2.0) over SFTP. Mig 170's placeholder `edi_partner_b` (type `'edi'`) was daarvoor niet geschikt.
+
+**Wat er gebouwd is (code compleet, wacht op apply/deploy/rondreis):**
+
+- **Mig 374** — Nieuw vervoerder-type `'sftp'` (CHECK-constraint uitgebreid); nieuwe vervoerder-rij `verhoek_sftp` (`actief=FALSE` tot rondreis-test geslaagd); `edi_partner_b`-placeholder guarded verwijderd; runtime-config `app_config` sleutel `'verhoek'` (opdrachtgever_nummer, scancode_met_00_prefix, verpakkingseenheid, levering, soort_levering) — antwoorden van Verhoek = SQL-UPDATE, géén redeploy.
+- **Mig 375** — Adapter-tabel `verhoek_transportorders` + enum `verhoek_transportorder_status` (Wachtrij/Bezig/Verstuurd/Fout/Geannuleerd) + 5 RPC's (`enqueue_verhoek_transportorder`, `claim_volgende_verhoek_transportorder`, `markeer_verhoek_verstuurd`, `markeer_verhoek_fout`, `herstel_vastgelopen_verhoek`); view `verhoek_verzend_monitor` (cron-health-signaal analoog aan `hst_verzend_monitor`); `WHEN 'sftp'`-tak in `enqueue_zending_naar_vervoerder`.
+- **Mig 376** — pg_cron `verhoek-send-elke-minuut` (hergebruikt vault-secret `cron_token`).
+- **Edge function `verhoek-send`** — orchestrator-loop (claim → valideer → bouw XML → upload SFTP → markeer); pure `xml-builder.ts` (AA2.0, ScanCode = label-barcode `'00'+SSCC`, Gewicht in decagram, Lengte/Breedte in hele cm); `sftp-client.ts` (SFTP via `npm:ssh2-sftp-client@11` onder Deno Node-compatibiliteit; `test.rebex.net` is de publieke test-server voor de runtime-spike, geen Verhoek-credentials nodig); pre-flight via `vervoerder-eisen.ts`-seam (adresvelden verplicht; telefoon/land niet verplicht voor Verhoek); colli-preflight via `xml-builder.ts` `valideerVerhoekColli` (SSCC, lengte/breedte cm, gewicht_kg — ontbrekende velden → rij op `Fout` met `Pre-flight:`-reden, geen upload); audit via `externe_payloads` kanaal `'verhoek'` + XML-kopie in storage `order-documenten/verhoek-xml/`. Bestandsnaam `Karpi_<timestamp>_<zending_nr>.xml` is de dedup-sleutel bij Verhoek en wordt persisteerd vóór de SFTP-upload zodat retries dezelfde naam hergebruiken.
+- **Edge function `verhoek-sftp-spike`** — standalone rebex-runtime-spike tegen publieke test-SFTP-server; faalt de runtime → fallback n8n/Python-worker leegt dezelfde wachtrij.
+- **`_shared/adres-split.ts`** — `splitAdres`/`normalizeCountry` geëxtraheerd uit `hst-send` (gedragsneutraal); `hst-send` importeert voortaan uit de seam.
+- **`_shared/vervoerder-eisen.ts`** — `verhoek_sftp`-tak toegevoegd (adresvelden verplicht; telefoon/land niet verplicht voor Verhoek); `valideerVerhoekColli` in `xml-builder.ts` valideert SSCC, lengte/breedte cm, gewicht_kg → decagram.
+
+**Status:** Code compleet + getest (unit tests groen). De volgende acties staan open en worden door Miguel uitgevoerd:
+1. Mig 374/375/376 apply'en op de live database.
+2. Edge functions `verhoek-send` en `verhoek-sftp-spike` deployen.
+3. Rebex-runtime-spike draaien (publieke test-SFTP).
+4. Interne dry-run-rondreis: `VERHOEK_DRY_RUN=true` (default aan), geen echte SFTP-upload.
+
+**Bekende datagap:** `zending_colli.gewicht_kg` is NULL bij bestaande zendingen → preflight `valideerVerhoekColli` faalt op gewicht. Moet gevuld worden vóór de pilot (bestaande zendingen handmatig of via script; nieuwe zendingen via gewicht-resolver).
+
+---
+
+## 2026-06-11 — Universele bevestig-knop: kanaal-dispatch EDI vs e-mail
+
+**Aanleiding:** EDI-orders kregen nul orderbevestigingen na de EDI-cutover van 3 juni — de "Bevestig order"-knop stuurde altijd e-mail, ook bij EDI-orders. Bovendien werd de `orderbev_uit`-toggle in `edi_handelspartner_config` nergens gecheckt, waardoor partners die géén orderbev willen (SB Möbel BOSS 150761, Hammer 330955) er toch een kregen. Ontwerp-besluit: EDI-orders krijgen nooit e-mail; het kanaal hangt aan de order (`bron_systeem`), niet aan de klant.
+
+- **`bepaalBevestigingKanaal` + `isOrderBevestigd`** ([`bevestiging-kanaal.ts`](../frontend/src/lib/orders/bevestiging-kanaal.ts)): pure dispatcher — `bron_systeem='edi'` + `transus_actief && orderbev_uit` → `'edi'`; `bron_systeem='edi'` anders → `'edi_stil'`; overige orders → `'email'`. Één bevestigd-predicaat: EDI-orders via gate `edi_bevestigd_op` (mig 158), gewone orders via `bevestigd_at` (mig 304).
+- **`bevestigOrderZonderEdiBericht`** ([`bevestig-helper.ts`](../frontend/src/modules/edi/lib/bevestig-helper.ts)): kanaal `edi_stil` — zet uitsluitend de `edi_bevestigd_op`-gate via RPC `markeer_order_edi_bevestigd`, geen ORDRSP, geen e-mail.
+- **Gedeelde hook `useBevestigEdiOrder`** ([`use-bevestig-edi-order.ts`](../frontend/src/modules/edi/lib/use-bevestig-edi-order.ts)): gedeeld door het amber leverweek-paneel (`edi-leverweek-bevestigen.tsx`) én de nieuwe `BevestigOrderEdiDialog`; laadt `edi_handelspartner_config` en bepaalt het kanaal.
+- **`BevestigOrderEdiDialog`** ([`bevestig-order-edi-dialog.tsx`](../frontend/src/components/orders/bevestig-order-edi-dialog.tsx)): EDI-variant — leverweek kiezen, geen e-mailveld; bij `edi` → ORDRSP op `edi_berichten`-wachtrij → `transus-send`; bij `edi_stil` → alleen administratief.
+- **Kanaal-dispatch in `order-header.tsx`**: groene knop opent bij `bron_systeem='edi'` de EDI-dialog, anders de e-maildialog; badge via `isOrderBevestigd`; "Opnieuw versturen" alleen voor niet-EDI.
+
+## 2026-06-11 — Klant-niveau verzend-e-mailadres `debiteuren.email_verzend` (mig 369, branch `fix/dropship-afl-email`)
+
+**Voorstel Piet-Hein (akkoord Marjon):** per klant een apart e-mailadres voor
+het verzendadres, los van het algemene adres — in Basta stond dit noodgedwongen
+bij de "openingstijden" omdat het echte e-mailveld anders ook de factuur kreeg.
+Het grootste deel van zijn voorstel bestond al (mig 364: `afleveradressen.email`,
+automatische overname bij orderaanmaak, per order aanpasbaar, "opslaan als vast
+e-mail voor dit afleveradres"); dit voegt de ontbrekende klant-niveau-laag toe.
+
+- **Mig 369:** `debiteuren.email_verzend TEXT`. Bewust géén backfill uit
+  `email_overig` — de fallback zit runtime in de ladder.
+- **Default-ladder `orders.afl_email`** bij orderaanmaak/adreskeuze
+  ([`order-form.tsx`](../frontend/src/components/orders/order-form.tsx)):
+  `afleveradressen.email` → `email_verzend` → `email_overig`. Dropshipment
+  blijft uitgezonderd (geen enkele debiteur-default, mig 370); `email_verzend`
+  telt daar mee in de verboden-set.
+- **Checkbox in [`delivery-address-editor.tsx`](../frontend/src/components/orders/delivery-address-editor.tsx)**
+  heet nu "Opslaan als vast verzend-e-mailadres voor deze klant" en schrijft
+  naar `email_verzend` (was: `email_overig` — dat algemene veld voedt ook
+  andere flows). Zo wordt het bestand organisch correct ("dan staat dit
+  naarmate van tijd goed").
+- **Klantpagina:** veld zichtbaar op klant-detail + bewerkbaar in
+  [`debiteur-edit-dialog.tsx`](../frontend/src/modules/debiteuren/components/debiteur-edit-dialog.tsx).
+- Mee-gefetcht in `ClientSelector`, `fetchSelectedClientVoorPrefill`
+  (gespiegelde kolomlijst) en `fetchClientCommercialData` (edit-mode).
+
+Automatisch vullen vanuit Basta is geparkeerd: het adres staat daar niet op een
+consequente plek (bevestigd door Piet-Hein/Marjon). Typecheck + suite groen
+(op de bekende pre-existing pickbaarheid-contracttest na).
+
+## 2026-06-11 — Dropshipment: track & trace-e-mail mag nooit het factuur-adres zijn (mig 370, branch `fix/dropship-afl-email`)
+
+*(Mig in de repo hernummerd van 368 → 370 vóór merge — origin/main nam parallel
+368 in beslag met `368_intake_email_snapshots.sql`. Live uitgevoerd als "368".)*
+
+**Melding Marjon (sales support):** "Het mailadres van de dropshipment voor de
+track and trace is NIET hetzelfde als de factuur. Dus dat moet anders zijn."
+
+**Diagnose:** bij een dropshipment-order levert Karpi rechtstreeks aan de
+consument namens de winkel. Het orderformulier defaultte `afl_email` (= T&T-
+adres richting vervoerder, mig 364/365) echter uit `debiteuren.email_overig`,
+en backfill mig 367 deed hetzelfde op bestaande orders → de winkel kreeg de
+track & trace, de consument niets.
+
+**Herkenning als data (mig 370):** nieuw `producten.is_dropship` (TRUE op
+DROPSHIP-KLEIN/GROOT) + SQL-predicaat `is_dropship_order(order_id)` — spiegelt
+TS `detecteerDropshipKeuze`. Nieuw dropship-artikel = `UPDATE producten`.
+
+**Fix in vier lagen:**
+1. **Orderformulier** ([`order-form.tsx`](../frontend/src/components/orders/order-form.tsx)):
+   bij dropship-keuze wordt een gedefault afl_email (= debiteur-/factuur-adres)
+   leeggemaakt; klant-selectie en afleveradres-keuze defaulten niet meer naar
+   de debiteur-e-mail zolang dropship actief is; opslaan blokkeert als
+   afl_email gelijk is aan het factuur-/debiteur-adres (leeg = toegestaan,
+   alleen amber hint — geen T&T is beter dan T&T naar de winkel).
+2. **UI-hints:** rose/amber meldingen in
+   [`delivery-address-editor.tsx`](../frontend/src/components/orders/delivery-address-editor.tsx)
+   en op order-detail ([`order-addresses.tsx`](../frontend/src/components/orders/order-addresses.tsx)).
+3. **Trigger-guard (defense-in-depth):** `fn_zending_fill_email` (mig 365)
+   kopieert bij dropship-orders het order-afl_email NIET naar de zending als
+   het gelijk is aan het factuur-/debiteur-adres.
+4. **Data-fix:** open dropship-orders + nog niet verstuurde zendingen waar
+   afl_email het factuur-/debiteur-adres was → NULL (operator vult het
+   consument-adres aan; rose hint wijst erop).
+
+Pure helper: [`dropship-email.ts`](../frontend/src/lib/orders/dropship-email.ts)
+(`dropshipAflEmailProbleem`, case-/whitespace-ongevoelig) + unit tests.
+Typecheck groen; suite groen op de bekende pre-existing pickbaarheid-test na.
+
+## 2026-06-11 — Orderbevestiging-PDF in de taal van de klant (branch `feat/orderbevestiging-pdf-taal`)
+
+**Melding Marjon (via Miguel):** orderbevestiging ORD-2026-0348 (Knutzen Wohnen,
+DE) — de begeleidende e-mail was correct Duits, maar de PDF-bijlage stond
+volledig in het Nederlands.
+
+**Oorzaak:** `stuur-orderbevestiging` bepaalde de taal (uit `orders.fact_land`
+via `normaliseer_land` → `bepaalTaal`) pas ná de PDF-generatie en gebruikte die
+alleen voor de mail-HTML; [`_shared/orderbevestiging-pdf.ts`](../supabase/functions/_shared/orderbevestiging-pdf.ts)
+had alle labels hardcoded in het Nederlands.
+
+**Fix:**
+- Nieuwe gedeelde module [`_shared/orderbevestiging-taal.ts`](../supabase/functions/_shared/orderbevestiging-taal.ts):
+  `Taal`-type, `bepaalTaal` (DE/AT→de, FR→fr, NL/BE→nl, rest→en) en
+  `vertaalOmschrijving` (hele-woord-woordenboek + frase "Op maat" → "Nach Maß"/
+  "Sur mesure"/"Custom size") verhuisd uit de edge function — één taalbron voor
+  mail én PDF.
+- `genereerOrderbevestigingPDF` accepteert `taal?: Taal` (default `'nl'`) en
+  vertaalt álle vaste teksten: documenttitel, info-labels, adresblok-koppen,
+  tabelkolommen, eenheid, totaalregels, betalingsconditie, maatafwijking-
+  disclaimer, opmerkingen, groet en paginanummering. Label→waarde-offsets zijn
+  dynamisch (minimaal de oude NL-breedte) zodat langere vertalingen (bv. FR
+  "Date de livraison:") niet overlappen.
+- `stuur-orderbevestiging` bepaalt de taal nu vóór de PDF-generatie, vertaalt
+  regel-omschrijvingen één keer (`regelsVertaald`, zelfde tekst op PDF en in
+  mail) en geeft `taal` door aan de PDF. Mail-restje "Afhalen:" was ook nog
+  hardcoded NL en is meertalig gemaakt.
+
+Smoke-test: PDF gegenereerd in alle 4 talen (diakrieten Ä/ß/é/· renderen
+correct door WinAnsi); pre-existing 2 typefouten in `resolveKlantEigenNamen`
+(esm.sh supabase-js type-drift) staan los van deze wijziging.
+
+## 2026-06-11 — Feedback-knop verplaatst naar de TopBar
+
+De zwevende feedback-knop rechtsonder overlapte pagina-knoppen, zoals de
+"Volgende"-paginering op het orders-overzicht. De knop staat nu permanent in
+de bovenbalk naast het meldingen-belletje, in dezelfde donkere pill-stijl
+zodat hij opvallend blijft. [`FeedbackWidget`](../frontend/src/components/feedback/feedback-widget.tsx)
+wordt voortaan gerenderd in [`top-bar.tsx`](../frontend/src/components/layout/top-bar.tsx)
+i.p.v. los in `AppLayout`; dialog en gedrag (pagina-URL, urgentie, bijlage)
+ongewijzigd.
+
+## 2026-06-11 — EDI/webshop-intake vult e-mail-snapshots (mig 368, branch `fix/intake-email-snapshots`)
+
+**Melding Miguel:** order ORD-2026-0332 (HEADLAM) toont "Geen factuur-e-mailadres
+bekend" terwijl de Facturering-tab van de klant wél `inkoop@headlam.nl` heeft.
+
+**Diagnose (twee oorzaken):**
+1. **HEADLAM-orders 0332/0333:** `orders.fact_email` is een per-order snapshot
+   bij aanmaak (mig 364). De orders zijn om 13:04/13:09 ingevoerd, precies in
+   het venster waarin het factuur-e-mailadres op de klant werd gewijzigd van
+   `invoices@` naar `inkoop@headlam.nl` en tijdelijk leeg stond (0331 om 13:00
+   had nog `invoices@`, 0335 om 13:15 had `inkoop@`). Later invullen op de
+   klant werkt niet terug op bestaande orders — by design.
+2. **Structureel gat:** mig 364 paste alleen de orderformulier-RPC's aan;
+   `create_edi_order` en `create_webshop_order` (Shopify/Lightspeed/e-mail)
+   vullen `fact_email`/`afl_email` niet. De eenmalige backfill (mig 367) ving
+   bestaande orders, maar elke intake daarná landde leeg — bewijs:
+   Hornbach-EDI-order ORD-2026-0334 (13:15, ná backfill) leeg terwijl de
+   debiteur beide adressen heeft. Zelfde incidentklasse als mig 343
+   (JSONB-sleutel-drop: nieuw veld niet in álle intake-paden).
+
+**Fix (mig 368):** beide intake-RPC's passen dezelfde ladder toe als het
+orderformulier: `fact_email` = `debiteuren.email_factuur` → `email_overig`;
+`afl_email` = afleveradres-e-mail (EDI: de GLN-gematchte vestiging) →
+`email_overig`. In `create_webshop_order` winnen expliciete `p_header`-waarden
+(consument-e-mail uit de payload) en slaat de ladder `env_fallback`-orders
+over (verzameldebiteur ≠ klant, mirrort mig 367-guard). De migratie sluit af
+met een idempotente her-run van de mig 367-backfill die o.a. ORD-2026-0332/0333
+en de lege EDI/Shopify-orders van 11-06 alsnog vult. Zelf-test bewaakt ook de
+regressie-guards van mig 357 (status-literal) en mig 343 (maatwerk_vorm).
+
+## 2026-06-11 — Voorraad-0-artikel toevoegen aan order: keuze prominent + levertijd vooraf zichtbaar (branch `fix/voorraad-0-artikel-toevoegen-ux`)
+
+**Melding Marjon (sales support):** "Als een artikel geen voorraad heeft kan ik
+hem niet aanklikken… Daarnaast kan ik ook niet zien wanneer het artikel weer
+binnenkomt met welke levertijd." (voorbeeld LAGO13 240x340, art. 553130045 —
+vrije voorraad 0, wél 20× besteld op inkoop.)
+
+**Diagnose:** het pad bestond al (klik op voorraad-0-maat → `SubstitutionPicker`
+→ "Toch toevoegen zonder voorraad" → allocator claimt op IO, mig 144-152), maar
+was in de praktijk onvindbaar:
+1. Het paneel rendert **onder** de volledige maten-lijst (LAGO kleur 13 = 16+
+   rijen) — buiten beeld, klik leek niets te doen.
+2. Alle 4 equivalenten (ROVE/GLOR/KAES/LAVA 13 240x340) hadden óók voorraad 0
+   → elke rij in het paneel disabled/grijs — "ik kan hem niet aanklikken".
+3. De ontsnappingsroute was een klein onderstreept linkje; de IO-levertijd
+   (`IoLevertijdHint`) verscheen pas ná het toevoegen van de regel.
+
+**Fix** (frontend-only, geen DB-wijziging):
+- [`substitution-picker.tsx`](../frontend/src/modules/reserveringen/components/substitution-picker.tsx):
+  nieuwe `InkoopVerwachtHint` toont direct in het paneel hoeveel er besteld is
+  en de eerstvolgende verwachte leverweek (zelfde bron + FIFO-volgorde als
+  `IoLevertijdHint`: `useOpenstaandeInkoopregelsVoorArtikel`, `verwacht_datum
+  ASC`); "Toch toevoegen" is nu een prominente amber knop i.p.v. een linkje;
+  equivalenten tonen ook hun `besteld_inkoop`; optionele `onCancel`-sluitknop.
+- [`kwaliteit-first-selector.tsx`](../frontend/src/modules/maatwerk/components/kwaliteit-first-selector.tsx):
+  zodra een voorraad-0-maat is aangeklikt verbergen de kleurchips + maten-lijst
+  zich en staat het keuzepaneel direct in beeld (annuleren = terug naar lijst).
+- [`article-selector.tsx`](../frontend/src/components/orders/article-selector.tsx):
+  zelfde `onCancel`-route.
+
+De daadwerkelijke claim blijft server-side (`herallocateer_orderregel`); dit is
+puur de zichtbaarheid van een bestaand pad. Typecheck groen.
+
+## 2026-06-11 — Backfill fact_email + afl_email op bestaande open orders (mig 367)
+
+Mig 364 vult de e-mail-snapshots alleen bij nieuwe orders; bestaande orders
+stonden leeg (geen factuur-e-mail, geen T&T). Mig 367 (live uitgevoerd
+11-06-2026; in de repo hernummerd van 366 wegens collisie met
+`366_verstuurde_emails_log.sql`) backfillt open orders
+met dezelfde ladder als het orderformulier: `fact_email` uit
+`debiteuren.email_factuur` → `email_overig`; `afl_email` uit het op
+adres-snapshot gematchte `afleveradressen.email` (`_normaliseer_afleveradres`,
+mig 222; laagste `adres_nr` wint) → fallback `debiteuren.email_overig`.
+Guards: alleen lege velden, eindstatussen overgeslagen, en
+`env_fallback`-orders (verzameldebiteur/consumenten-webshop) uitgesloten —
+daar zou de debiteur-e-mail een verkéérd T&T-adres zijn. Sluit af met een
+herhaling van de mig 365-zending-backfill zodat nog-niet-verstuurde
+zendingen het gevulde adres als snapshot meekrijgen.
+
+## 2026-06-11 — T&T- en factuur-e-mail expliciet gelabeld op order-detail + in adres-editor
+
+**Waarom:** vervolg op de T&T-e-mail-keten (mig 364/365 hieronder) — op de
+orderpagina stond het aflever-e-mailadres als kale grijze regel; nergens was
+zichtbaar dat de vervoerder dáár de track & trace naartoe stuurt en het
+factuur-adres nooit gebruikt.
 
 **Wat:**
-- `detectVorm()` is nu **data-driven**: laadt actieve rijen uit `maatwerk_vormen`
-  (gecached per cold-start), normaliseert via `normaliseerNaam()`
-  (diacritics-/hoofdletter-ongevoelig) en matcht op de langste naam eerst
-  (voorkomt dat "Organic" "Organic Gespiegeld" wegkaapt). `OVAAL_PATROON`/
-  `DURCHMESSER_PATROON` blijven als fallback voor Duitse/niet-tabel-spellingen
-  ("Durchmesser", "rund"). Eén bron-van-waarheid — nieuwe vormen toevoegen aan
-  `maatwerk_vormen` is voldoende, geen code-wijziging nodig.
-- Shopify line-item `properties` lopen nu via een nieuw `extraTexts`-veld op
-  `LightspeedOrderRow` ([`lightspeed-client.ts`](../supabase/functions/_shared/lightspeed-client.ts))
-  → `collectExtraTexts()` neemt ze mee → `parseMaatwerkDims()`/`detectVorm()`
-  zien exact dezelfde tekst-hooiberg als bij mail-orders. `shopifyLineItemToMatcherRow`
-  ([`shopify-types.ts`](../supabase/functions/_shared/shopify-types.ts)) zet elke
-  property om naar `"naam: waarde"` en vervangt het dode `_shopifyProperties`-veld.
-- [`shopify-order-processor.ts`](../supabase/functions/_shared/shopify-order-processor.ts):
-  `buildRegels` hergebruikt nu `parseMaatwerkDims` (in plaats van eigen 27-regelige
-  parsing) en zet `maatwerk_vorm: match.maatwerk_vorm ?? null` op de orderregel —
-  Shopify- en mail-orders lopen nu door identieke matching/parsing-primitieven
-  (`matchProduct`, `parseMaatwerkDims`, `collectExtraTexts`).
+- [`order-addresses.tsx`](../frontend/src/components/orders/order-addresses.tsx):
+  Afleveradres-blok kreeg een gelabelde regel **"Track & trace naar"** (verborgen
+  bij afhaal-orders); leeg veld toont een amber hint "Geen e-mailadres ingevuld —
+  klant ontvangt geen track & trace van de vervoerder". Factuuradres-blok toont
+  `fact_email` (mig 364) als **"Factuur per e-mail naar"**.
+- [`delivery-address-editor.tsx`](../frontend/src/components/orders/delivery-address-editor.tsx)
+  (orderformulier): e-mailregel gemarkeerd met "· track & trace", lege staat in
+  amber, en uitleg onder het invoerveld dat de vervoerder de T&T naar dit adres
+  stuurt — niet naar het factuur-adres.
+- `OrderDetail`-interface uitgebreid met `fact_email` (fetch was al `select('*')`).
 
-**Derde, onderliggende oorzaak (gevonden tijdens verificatie):** de fuzzy
-naam-alias-matching (`klanteigen_namen`) kon de verkeerde kwaliteit kiezen vóórdat
-de expliciete Karpi-SKU ooit werd geraadpleegd. "Lago 13" matchte op klant-alias
-"LAGO SISAL" (→ kwaliteit `ZONK`), terwijl kleur `13` binnen `ZONK` niet eens
-bestaat — en de SKU die Shopify meestuurt (`LAGO13XXMAATWERK`) direct naar de
-echte kwaliteit `LAGO` + kleur `13` wijst (`LAGO13MAATWERK` = artikelnr 553139998
-bestaat al). **Fix:** in `matchProduct` ([`product-matcher.ts`](../supabase/functions/_shared/product-matcher.ts))
-wordt de uit `articleCode`/SKU geparste kwaliteit nu, mits hij ook echt bestaat
-in `kwaliteiten`, vóóraan `kwaliteitCodes` gezet — vóórdat enige kwaliteit-keuze
-plaatsvindt (incl. het vorm-detectiepad dat voorheen blind `kwaliteitCodes[0]`
-gebruikte zonder ooit naar de SKU te kijken). Een expliciete, autoritatieve
-broncode wint nu altijd van een fuzzy naam-gok.
+De gevraagde gedragingen bestonden al: factuur-e-mail default vanuit
+`debiteuren.email_factuur` en wijzigbare aflever-e-mail per order (mig 364,
+orderformulier) — deze wijziging maakt de bestemming ervan zichtbaar.
 
-**Vierde bevinding:** Shopify's maatwerk-app laat `line_item.sku` soms leeg en
-levert de Karpi-code dan uitsluitend via een line-item property `"Maatwerk-sku"`
-(bv. `"LAGO13XXMAATWERK"`). Zonder fallback bleef de net toegevoegde SKU-override
-dan alsnog buiten bereik. **Fix:** `shopifyLineItemToMatcherRow` ([`shopify-types.ts`](../supabase/functions/_shared/shopify-types.ts))
-valt terug op die property wanneer `sku` ontbreekt.
+## 2026-06-11 — E-mailtijdlijn op order-detail (mig 366)
 
-**Vijfde bevinding:** variant-namen als "Rechthoek / **Custom**" (zonder
-afmetingen in de regel zelf — vermoedelijk een omissie aan Shopify-zijde bij het
-plaatsen van de order) werden niet als `WUNSCHGROSSE_PATROON`/expliciet-maatwerk
-herkend (de regex eiste "custom **size**"), met als risico dat de regel — nu de
-SKU-override `LAGO` toevoegt aan de kwaliteitskandidaten — zou worden vastgeklikt
-aan een willekeurig vaste-maat LAGO13-artikel i.p.v. als maatwerk-zonder-dims
-weggezet te worden. **Fix:** patroon verbreed naar los woord `\bcustom\b`
-(geverifieerd: geen enkel vaste-maat-artikel bevat "custom" in de omschrijving,
-dus geen vals-positief-risico).
+**Waarom:** facturen en orderbevestigingen worden sinds 8 juni daadwerkelijk
+gemaild via Microsoft Graph, maar nergens in RugFlow was per order te zien
+wélke mails verstuurd zijn. Operators moesten daarvoor het M365-postvak in.
+Spec: [`2026-06-11-order-email-tijdlijn-design.md`](superpowers/specs/2026-06-11-order-email-tijdlijn-design.md).
 
-**Resultaat:** "Lago 13 — Organic gespiegeld / 200 x 290 cm" matcht nu op
-kwaliteit **LAGO** (niet ZONK) → maatwerk (geen exacte-maat-match) → vorm
-"organic gespiegeld" → generiek artikel `LAGO13MAATWERK`, dims 200×290.
-Shopify-orders met expliciete `"Maatwerk: 260x250 rechthoek"`-property
-extraheren nu ook hun afmeting (260×250) i.p.v. die te missen. Gedeployed naar
-`sync-shopify-orders-poll` en `import-lightspeed-orders` (beide afhankelijk van
-de gewijzigde `_shared`-bestanden).
+**Wat (branch `feat/order-email-tijdlijn`):**
+- **Mig 366** — nieuwe tabel `verstuurde_emails` (rij per verstuurde mail per
+  order: soort, onderwerp, ontvangers, html-body, bijlage-verwijzingen JSONB),
+  nieuwe private bucket `orderbevestigingen`, en backfill van eerder
+  verstuurde facturen (uit `facturen.verstuurd_op/verstuurd_naar`, rij per
+  order via `factuur_regels`, EDI-only overgeslagen) en orderbevestigingen
+  (uit `orders.bevestigd_at/bevestiging_email`) — zonder body (`html` NULL =
+  "inhoud niet bewaard").
+- [`factuur-verzenden`](../supabase/functions/factuur-verzenden/index.ts):
+  na elke geslaagde Graph-send een log-rij per betrokken order (bundel-aware;
+  betaler-kopie = eigen rij). Best-effort — logging blokkeert het mailen nooit.
+- [`stuur-orderbevestiging`](../supabase/functions/stuur-orderbevestiging/index.ts):
+  de PDF wordt voortaan ook bewaard in bucket `orderbevestigingen`
+  (`{order_id}/Orderbevestiging-{order_nr}.pdf`, upsert) + log-rij met het
+  taalafhankelijke onderwerp en de HTML-body.
+- Frontend: sectie **"E-mails"** op order-detail
+  ([`order-emails.tsx`](../frontend/src/components/orders/order-emails.tsx),
+  lege staat "Nog geen e-mails verstuurd" zolang er niets is) — tijdlijn met datum/tijd,
+  soort-badge en klikbaar onderwerp. Klik opent
+  [`order-email-dialog.tsx`](../frontend/src/components/orders/order-email-dialog.tsx):
+  ontvangers, body in **sandboxed iframe** (`sandbox=""` — mail-HTML kan nooit
+  scripts draaien in RugFlow) en bijlage-knoppen via signed URL (10 min).
+  Query [`verstuurde-emails.ts`](../frontend/src/lib/supabase/queries/verstuurde-emails.ts)
+  + hook `useEmailsVoorOrder`.
 
-**Bestaande order ORD-2026-0118 (Shopify #5580) handmatig gecorrigeerd**
-(idempotentie-check sloeg de al-bestaande order over bij de volgende poll —
-geen automatische herstel mogelijk). Regels 3534-3537 herzien naar kwaliteit
-LAGO/kleur 13 (i.p.v. ZONK), met correcte vorm/dims/artikelnr zoals de
-gefixte matcher ze nu zou opleveren (geverifieerd tegen de ruwe Shopify
-line-item-payload via een tijdelijke debug-functie, nadien verwijderd). De
-bijbehorende triggers (`trg_auto_snijplan` e.a.) creëerden daarop automatisch
-3 snijplannen (status `Gepland`) — exact het gedrag dat bij correcte import
-had moeten optreden.
+## 2026-06-11 — Aflever-e-mailadres mee naar vervoerder voor track & trace (mig 365)
 
-## 2026-06-07 — Shopify-orders #5562-#5577 ontbraken: dode webhook → vervangen door zelf-helende polling-sync (mig 323)
+**Waarom:** mail Piet-Hein/Marjon 11-06-2026 — het order-formulier vult sinds
+mig 364 automatisch aparte e-mailadressen voor factuur en aflevering. Het
+aflever-e-mailadres is bedoeld voor track & trace: de vervoerder mag dáár
+naartoe mailen, het factuur-adres nooit (klant krijgt wél T&T, niet de factuur).
+HST stuurde `ToAddress.Email` tot nu toe altijd leeg.
 
-**Waarom:** Shopify-orders bleven niet automatisch inladen. Onderzoek wees uit
-dat de `orders/create`-webhook (`sync-shopify-order`) al sinds 15 mei 2026 niet
-meer vuurde (0 invocations) — vermoedelijk verloren bij een shop-domeinwissel
-(`karpi-group.myshopify.com` → `karpi.myshopify.com`) of credential-rotatie.
-Een webhook die stilletjes dood gaat is onzichtbaar totdat iemand toevallig
-ontbrekende orders opmerkt — een fundamenteel fragiel patroon voor een
-geautomatiseerde koppeling.
+**Wat (branch `feat/zending-afl-email-tnt`):**
+- Mig 365: `zendingen.afl_email` (snapshot) + BEFORE-INSERT-trigger
+  `trg_zending_fill_email` uit `orders.afl_email` — zelfde patroon als
+  `afl_telefoon` (mig 339), maar **bewust zonder fallback** naar
+  factuur-e-mailadressen. Backfill voor nog-niet-verstuurde zendingen.
+- [`hst-send`](../supabase/functions/hst-send/index.ts): select + `ZendingInput`
+  uitgebreid met `afl_email`; [`payload-builder.ts`](../supabase/functions/hst-send/payload-builder.ts)
+  vult `ToAddress.Email` ermee (leeg blijft leeg). Test toegevoegd in
+  `payload-builder.test.ts` (6/6 groen).
+- Toekomstige vervoerder-koppelingen lezen hetzelfde snapshot-veld; of T&T-mail
+  "mag" is dan een keuze per adapter, niet per order.
+
+## 2026-06-11 — Zendingen + track & trace zichtbaar op order-detail (branch `feat/zending-herprint-ingang`)
+
+De track & trace-code van een zending was alleen op de Zendingen-pagina te
+zien; op de order zelf stond wel het verzenddocument maar niet de T&T-code.
+Nieuw blok **Zendingen** op order-detail
+([`order-zendingen.tsx`](../frontend/src/components/orders/order-zendingen.tsx),
+stijl gespiegeld aan het Facturatie-blok): per zending het zending-nr (link
+naar zending-detail), status-badge, vervoerder-tag, verzenddatum en de
+track & trace-code uit `zendingen.track_trace` met kopieerknop. Zolang de
+vervoerder nog geen code teruggaf staat er "nog geen track & trace"; zonder
+zendingen rendert het blok niets (gouden regel). Orders-per-zending lopen via
+de M2M `zending_orders` (mig 222), dus bundel-zendingen tonen ook correct.
+
+## 2026-06-11 — HST-adresparser robuust voor werkelijke webshop-adressen (branch `feat/zending-herprint-ingang`)
+
+**Incident ZEND-2026-0002 (vervolg op de Shopify-plaats-fix verderop):** HST
+weigerde de transportorder twee keer met HTTP 400. (1) `splitAdres` kon
+"Saturnusstraat 60 (Unit 30)" niet splitsen — de oude regex eiste een
+toevoeging die met een letter begint, dus haakjes/blokhaken/reeksen
+("(Unit 30)", "[001]", "1-5", allemaal échte adressen in de orders-tabel)
+lieten `StreetNumber` leeg → HST 400 "Afleveradres niet aanwezig/compleet".
+(2) Na die fix bleek HST een **max van 5 tekens** op `StreetNumberAddition`
+te hanteren → "Unit 30" opnieuw 400.
+
+**Structurele fix** ([`payload-builder.ts`](../supabase/functions/hst-send/payload-builder.ts), hst-send opnieuw gedeployed):
+- `splitAdres` haalt (…)- en […]-delen eruit als toevoeging, negeert komma's,
+  en pakt het eerste losstaande cijfer-token als huisnummer — een adres mét
+  nummer kan nooit meer een lege `StreetNumber` opleveren.
+- Nieuw `verdeelToevoeging`: toevoeging ≤5 tekens → `StreetNumberAddition`
+  ("G", "001", "-5"); langer → `NameAddition` (HST's extra adresregel,
+  "Unit 30"). Limiet als constante `HST_STREET_NUMBER_ADDITION_MAX`.
+- 4 nieuwe Deno-tests met de letterlijke incident-adressen (8 totaal groen).
+
+**Resultaat:** ZEND-2026-0002 alsnog verstuurd — HTTP 201, transportorder
+T75038267000183, tracking op de zending, status "Onderweg", vrachtbrief-PDF
+in storage. ZEND-2026-0001 (T75038267000181) en -0003 waren al goed.
+
+## 2026-06-11 — Pakbon-layout naar oud Lieferschein-ontwerp
+
+**Waarom:** de pakbon uit Pick & Ship moet qua layout lijken op het oude
+Karpi Lieferschein-document (foto-voorbeeld KIBEK, 5 juni) — de vertrouwde
+vorm voor magazijn én ontvangers. Goedgekeurd via visual-companion-mockup;
+spec: [`2026-06-11-pakbon-lieferschein-layout-design.md`](superpowers/specs/2026-06-11-pakbon-lieferschein-layout-design.md).
+
+**Wat (branch `feat/pakbon-lieferschein-layout`):**
+- [`pakbon-document.tsx`](../frontend/src/modules/logistiek/components/pakbon-document.tsx)
+  volledig herschikt: gecentreerd KARPI GROUP-logo, grote titel "Pakbon" met
+  pakbonnr/datum ernaast, **afleveradres als hoofd-adresblok** (+ telefoon
+  uit `zendingen.afl_telefoon`, mig 339), factuuradres verhuisd naar de body
+  ("Factuuradres:", zoals "Rechnungsadresse"), referentieblok met
+  `Order/Debiteur` + `Routecode` (uit `debiteuren.route`, legacy-import;
+  regel verdwijnt als leeg), tabelkolommen **Rgl./Artikel/Omschrijving/
+  Besteld/Geleverd** (eenheid inline), hoofdregel = Karpi-omschrijving met
+  sub-regel "Uw naam: …" bij afwijkende klantnaam, **Kolli + Gewicht**
+  i.p.v. Totaal m², vaste NL-disclaimer (maat-/kleurafwijking) boven de footer.
+- "Leveringscond." uit het oude document bewust weggelaten — geen betrouwbaar
+  veld in het schema (eerdere beslissing rond "Franco").
+- Bundel-gedrag (mig 222) ongewijzigd: sub-kop per bron-order, bundel-lijst
+  in het referentieblok.
+- [`zendingen.ts`](../frontend/src/modules/logistiek/queries/zendingen.ts):
+  `fetchZendingPrintSet` selecteert nu ook `afl_telefoon` en `debiteuren.route`.
+
+## 2026-06-11 — Fix: blanco pagina tussen tapijt-stickers in de printset
+
+Bij het printen van tapijt-stickers via Pick & Ship (zowel
+[`zending-printset.tsx`](../frontend/src/modules/logistiek/pages/zending-printset.tsx)
+als [`bulk-printset.tsx`](../frontend/src/modules/logistiek/pages/bulk-printset.tsx))
+kwam tussen elke sticker een witte pagina mee. Twee oorzaken, beide gefixt
+in de print-CSS van beide pagina's:
+
+1. **Page-naam-mismatch:** `page: tapijt-sticker` stond alleen op het
+   geneste `.sticker-label`, terwijl de forced page-break op de buitenste
+   `.sticker-wrapper` zit. De wrapper viel daardoor op de *default* page —
+   Chromium wisselt dan bij elke stickergrens van page-naam en injecteert
+   een blanco tussenpagina. `page:` staat nu óók op de wrapper. (De
+   maatwerk-bulkpagina `stickers-bulk.tsx` heeft één naamloze `@page` en
+   had dit probleem dus niet.)
+2. **Exacte fit:** de sticker was precies 148×106mm op een 148×106mm-page;
+   sub-pixel-afronding of een onbedrukbare printerrand laat zo'n sticker
+   overflowen → blanco vervolgpagina. Sticker print nu op 146×104mm
+   (onderkant is toch witruimte, visueel geen verschil).
+
+## 2026-06-11 — Shopify-plaats-bug + verzendset-herprint + verzendfout-signalering (branch `feat/zending-herprint-ingang`)
+
+**Aanleiding (incident 11-06):** twee pickrondes (ZEND-2026-0001/0002) werden
+foutief voltooid. De HST-transportorders strandden allebei op de pre-flight
+"Naam, adres, postcode of plaats is leeg" — en dat bleek géén invoerfout maar
+een **structurele Shopify-intake-bug**: 20 van de 26 Shopify-orders sinds mei
+misten `afl_plaats`. Daarnaast bleken de facturen al automatisch gemaild
+(per_zending-keten deed exact wat hij moest doen) en was er geen weg terug
+naar Pick & Ship zonder handwerk.
+
+**Root cause Shopify-plaats:** `extractShopifyShippingAddress`
+([`_shared/shopify-types.ts`](../supabase/functions/_shared/shopify-types.ts))
+leverde sleutel `afl_stad` (en `afl_bedrijf`/`fact_stad`), maar
+`create_webshop_order` (mig 343) leest `p_header->>'afl_plaats'` /
+`afl_naam_2` / `fact_plaats` — de JSONB-RPC dropt onbekende sleutels
+geruisloos (zelfde bugklasse als het maatwerk_vorm-incident, mig 343).
+**Fix:** sleutels hernoemd naar wat de RPC kent; zelfde fix in
+`scripts/import-shopify-orders.mjs`; nieuwe contract-test
+[`shopify-types.test.ts`](../supabase/functions/_shared/shopify-types.test.ts)
+pint de geproduceerde sleutels vast op de RPC-kolomlijst (4 tests groen).
+⚠️ **`sync-shopify-order` moet opnieuw gedeployed worden** voordat de fix
+live is (neemt meteen de mig 325-RPC-hernoeming mee).
+
+**Data-repair (eenmalig, met akkoord):** 17 NL-orders kregen `afl_plaats`
+terug via de PDOK Locatieserver (BAG, postcode+huisnummer), incl. de
+zending-snapshots ZEND-2026-0001 (Lijnden), -0002 ('s-Gravenhage), -0003
+(Bennebroek). Niet hersteld: ORD-2026-0097 (geen adres), 0108/0123 (BE,
+Willebroek — handmatig).
+
+**Nazorg (11-06 middag, met akkoord):** dezelfde sleutel-drop raakte ook
+`fact_plaats` — gemeld doordat ORD-2026-0107 een factuuradres zonder stad
+toonde. Alle 22 getroffen Shopify-orders zijn gevuld vanuit **interne**
+bronnen (debiteur-factuuradres/-postcode of het identieke afleveradres —
+géén externe lookup; script `scripts/_tmp_repair_fact_plaats.mjs`), incl.
+de twee BE-orders 0108/0123 (Willebroek via debiteur-postcode). Daarnaast is
+`sync-shopify-order` gedeployed (was nog v8 van 10-06, vóór de fix) — de
+sleutel-fix is nu pas écht live; nieuwe Shopify-orders krijgen zowel
+`afl_plaats` als `fact_plaats`.
+
+**Poll-pad ook gedicht (11-06 middag):** Shopify-orders komen feitelijk
+binnen via `sync-shopify-orders-poll` (branch `feat/shopify-polling-sync`,
+mig 323 — vervangt de fragiele webhook; code stond alléén op die branch,
+niet op main). Die bundelde een **oude** kopie van `shopify-types.ts` mét de
+`afl_stad`/`fact_stad`-bug — de webhook-fix dekte dit pad dus niet. Fix
+geport naar die branch (commit 292d488: types + contract-test van main,
+`shopify-order-processor.ts` op `afl_naam_2`) en `sync-shopify-orders-poll`
+v13 gedeployed. Beide Shopify-intake-paden zijn nu sleutel-correct.
+
+**Incident-terugdraai:** beide orders terug naar 'Klaar voor picken'
+(verzonden_at NULL), zendingen terug naar 'Picken', Fout-transportorders op
+'Geannuleerd'. Omdat `voltooi_pickronde` de voorraad-claims op `released` had
+gezet (en `orderregel_pickbaarheid.is_pickbaar` op actieve claims leunt),
+zijn de regels opnieuw gealloceerd via `herallocateer_orderregel` — orders
+weer zichtbaar in Pick & Ship. Facturen FACT-2026-0001/0002 waren al gemaild
+en blijven bewust staan (besluit Miguel): bedragen kloppen, de
+`gefactureerd`-guard (mig 227) voorkomt een dubbele factuur bij de echte
+verzending.
+
+**Frontend (3 wijzigingen):**
+- **Verzendset-herprint:** de printset-pagina (`/logistiek/:zending_nr/printset`)
+  was alleen bereikbaar via de Pick & Ship-flow — pakbon/sticker vergeten
+  printen = geen weg terug. Nu: "Verzendset printen"-knop op zending-detail +
+  printer-icoon per rij op het zendingen-overzicht.
+- **[`VerzendFoutBanner`](../frontend/src/components/orders/verzend-fout-banner.tsx)**
+  op order-detail: een order kan "Verzonden" tonen terwijl de transportorder
+  naar de vervoerder daarna faalde (voltooi_pickronde flipt de status vóór de
+  HST-call). Rose banner met zending-link + foutreden zodra een zending een
+  open HST-fout heeft (Fout-rij zonder actieve/geslaagde opvolger). Helper
+  `bepaalOpenVerzendFouten` is puur en testbaar.
+
+## 2026-06-11 — HST-verzendlabel tóch liggend op de 3"×6"-rol (mig 362)
+
+**Waarom:** mig 361 (hieronder) introduceerde een staand 3×6-ontwerp, maar
+Miguel wil expliciet het vertrouwde **liggende** ontwerp (zoals de oude
+3"×2"-labels uit Windows Connect kwamen: tekst dwars op de uitvoer-richting),
+alleen dan het volledige etiket vullend.
+
+**Wat (branch `fix/hst-label-liggend`):**
+- **Mig 362**: `hst_api` van 76.2×152.4 naar **152.4×76.2** (breedte×hoogte
+  van de print-página; de fysieke rol blijft 76,2 breed — de ZDesigner-driver
+  op **liggend** roteert het beeld op het etiket, exact de oude WC-flow).
+- **Compact label schaalt mee** ([shipping-label.tsx](../frontend/src/modules/logistiek/components/shipping-label.tsx)):
+  schaalfactor `s = hoogte/50.8` (1.5 op de 3×6) op rij-hoogtes, kolommen,
+  paddings, fonts en kaderdiktes; adresblok centreert verticaal. Het staande
+  ontwerp (`shipping-label-tall`) blijft bestaan voor portrait-formaten.
+- **Barcode `fitMm`-prop** ([code128-barcode.tsx](../frontend/src/modules/logistiek/components/code128-barcode.tsx)):
+  kiest zelf de grootste dot-aligned module-breedte (veelvoud 0.125mm =
+  1 dot op 203dpi) die in de beschikbare ruimte past — groot én scanbaar.
+- Banner-instructie oriëntatie is nu dynamisch: Staand bij hoog formaat,
+  **Liggend** bij breed formaat (HST).
+- **Driver:** terug naar **liggend** (zoals Miguels oorspronkelijke instelling),
+  7,62×15,24, marges/schaal-instructies ongewijzigd.
+
+## 2026-06-11 — HST-verzendlabel op 3"×6"-rol + thermische scherpte-fixes (mig 361)
+
+**Waarom:** het verzendlabel op de Pick & Ship-verzendset stond hard op
+76,2×50,8 mm (3"×2", oude ZD420-aanname) terwijl de fysieke rol in de Zebra
+ZT231 76,2×152,4 mm (3"×6") is — het label vulde maar een derde van het etiket
+en stond 90° gedraaid. Daarnaast oogde de print wazig: grijstinten en een
+gestretchte barcode worden op een 203dpi thermische printer geditherd.
+Betreft alléén het verzendlabel — pakbon (A4) en tapijt-stickers (148×106,
+eigen printers) hebben hun eigen `@page`-regels en zijn ongewijzigd.
+
+**Wat (branch `fix/hst-verzendlabel-3x6`):**
+- **Mig 361** (`361_vervoerder_label_formaat_hst_3x6.sql`):
+  `vervoerders.label_breedte_mm/label_hoogte_mm` van INTEGER → **NUMERIC(5,1)**
+  (inch-rollen zijn fractioneel in mm) + `hst_api` op **76.2×152.4**. De
+  bestaande per-vervoerder-formaat-keten (`labelFormaatVoor`, mig 207) pakt
+  dit automatisch op in `@page shipping-label` én de instructie-banner.
+- **Nieuw staand labelontwerp** [`shipping-label-tall.tsx`](../frontend/src/modules/logistiek/components/shipping-label-tall.tsx):
+  `ShippingLabel` dispatcht op vorm — hoogte > breedte → gestapeld 3×6-ontwerp
+  (afzender+vervoerder / order+product / groot adresblok / colli+referentie /
+  grote SSCC-barcode), anders het bestaande compacte 3-rijen-grid (fallback
+  voor vervoerders zonder formaat). Gedeelde data-helpers geëxtraheerd naar
+  [`shipping-label-data.ts`](../frontend/src/modules/logistiek/lib/shipping-label-data.ts).
+- **Thermische scherpte:** alle grijstinten (#475569/#64748b/#111) → puur
+  `#000` (grijs = dither = wazig op thermisch); `Code128Barcode` kreeg een
+  `moduleMm`-prop — het 3×6-label rendert op 0.375mm/module = exact 3 dots
+  per module op 203dpi, dus balken op hele printer-dots.
+- **Bugfix vervoerder-form:** een save op een niet-print-vervoerder (HST is
+  type `api`) wiste `label_*_mm` stilletjes naar NULL
+  ([`use-vervoerder-form.ts`](../frontend/src/modules/logistiek/hooks/use-vervoerder-form.ts)).
+  Label-formaat wordt nu voor álle typen bewaard, accepteert 1 decimaal
+  (komma of punt) en de velden staan op de detailpagina buiten het
+  print-only-blok.
+- **Driver-instelling (handmatig, ZDesigner ZT231):** papierformaat 7,62×15,24
+  cm **staand** (was liggend), snelheid omlaag (≤7,6 cm/s), densiteit ~20+,
+  Rasteren/dithering uit.
+
+## 2026-06-10 — Bug-meldingen: verwerkingsnotitie + "verwerkt"-belletje voor de melder (mig 360)
+
+**Waarom:** bij het op 'Verwerkt' zetten van een gemelde bug (mig 342) kon de
+beheerder geen toelichting meegeven — de melder (bv. phdobbe) zag alleen een
+statuswissel, niet *wat* er gedaan is of *hoe* het te testen. En de melder
+kreeg nergens een signaal dat zijn melding behandeld was. Beide gevraagd door
+Miguel n.a.v. het verwerken van een echte melding.
+
+**Wat (branch `feat/bug-melding-verwerkt-notitie`):**
+- **Mig 360** (`360_bug_melding_verwerkt_notitie.sql`):
+  - Nieuwe kolommen op `bug_meldingen`: `verwerkt_opgelost` + `verwerkt_testen`
+    (toelichting bij verwerken) en `verwerkt_gezien_op` (gezien-stempel melder).
+  - `set_bug_status` herzien naar `(p_id, p_status, p_opgelost, p_testen)`
+    (DROP + CREATE — extra params met default). Bij `Verwerkt`: schrijft de
+    notitie (leeg→NULL via `NULLIF(btrim())`) en **reset `verwerkt_gezien_op`**
+    (her-verwerking attendeert de melder opnieuw). `Open` wist notitie +
+    stempel; `Geaccepteerd` impliceert gezien (`verwerkt_gezien_op = now()`),
+    notitie blijft staan. Autorisatie ongewijzigd. Frontend roept de RPC met
+    alleen `p_id`/`p_status` aan → defaults vangen dat op.
+  - Nieuwe RPC `markeer_verwerkt_gezien()` (SECURITY DEFINER, scoped op
+    `auth.uid()`): stempelt eigen `Verwerkt`-meldingen als gezien, retourneert
+    het aantal. Dooft het belletje.
+- **Frontend:** `BugMelding`-interface + `SELECT_COLS` uitgebreid;
+  `setBugStatus(id, status, notitie?)` + `markeerVerwerktGezien()`
+  ([`bug-meldingen.ts`](../frontend/src/lib/supabase/queries/bug-meldingen.ts));
+  hooks `useSetBugStatus` (accepteert notitie), `useMarkeerVerwerktGezien` +
+  helper `isVerwerktOngezien`
+  ([`use-bug-meldingen.ts`](../frontend/src/hooks/use-bug-meldingen.ts)).
+  - **Meldingen-pagina:** "Markeer verwerkt" opent een inline formulier met
+    twee velden (*Wat is opgelost?* / *Hoe te testen?*); de toelichting verschijnt
+    daarna als groen blok onder de melding (zichtbaar voor melder én beheerder).
+    Bij openen van de pagina markeert de melder zijn ongeziene verwerkte
+    meldingen als gezien.
+  - **Topbar:** belletje (`Bell`) rechtsboven met rode teller = aantal eigen
+    `Verwerkt`-maar-ongeziene meldingen; klik → `/meldingen`
+    ([`top-bar.tsx`](../frontend/src/components/layout/top-bar.tsx)).
+- **Nummering:** mig 358/359 waren al gereserveerd door de ongemergede branch
+  `fix/maatwerk-form-artikel` (changelog-entry hieronder) → deze migratie kreeg
+  **360**. Vóór merge opnieuw verifiëren (collisie-recept in geheugen).
+
+**Toepassen:** mig 360 handmatig in Supabase draaien (MCP heeft geen toegang).
+
+## 2026-06-10 — Maatwerk-form koppelt MAATWERK-artikel + karpi_code-borging (mig 358-359)
+
+**Waarom:** sluitstuk van de "maatwerk zonder artikelnr"-saga (zie entry
+hieronder, mig 356). Bug-melding phdobbe: ook **handmatige** op-maat-regels
+uit het orderformulier landden zonder `artikelnr` (productie: ORD-2026-0166,
+ORD-2026-0188). Root cause: `kwaliteit-first-selector` bouwde de regel met
+`selectedKleur.artikelnr` — dat is het **ROL-product**-artikelnr uit RPC
+`kleuren_voor_kwaliteit`, NULL als er geen rol-product bestaat — en een kale
+`{KWAL}{KLEUR}`-concat als karpi_code-fallback (de "VERR14"-achtige
+regel-codes). Eigenaar-besluit: een handmatige op-maat-regel koppelt het
+**generieke MAATWERK-artikel** van (kwaliteit, kleur) — conventie
+`{KWAL}{KLEUR}MAATWERK`, zelfde als het Shopify-intake-pad sinds mig 356.
+
+**Wat (branch `fix/maatwerk-form-artikel`):**
+- **Form-fix:** nieuwe smalle helper `fetchMaatwerkArtikelExact` in
+  `maatwerk-runtime.ts` — alleen de exact-match-strategieën 1-3 van
+  `fetchMaatwerkArtikelNr` (zelfde kwaliteit+kleur, `.0`-tolerant, actief),
+  selecteert óók `karpi_code`. **Bewust géén strategie 4/5** (uitwisselbare
+  kwaliteit / andere kleur): die leveren een artikel van een ANDERE
+  kleur/kwaliteit — acceptabel voor `fysiek_artikelnr`/omsticker, niet voor
+  de facturatie-`artikelnr`. `fetchMaatwerkArtikelNr` zelf ongewijzigd
+  (bestaande callers intact). Beide op-maat-builders
+  (`kwaliteit-first-selector.tsx` + `maatwerk-selector.tsx`) koppelen nu:
+  artikelnr = exact MAATWERK-artikel, fallback rol-product (beter dan niets),
+  anders undefined + `console.warn` (niet-blokkerend — orders-overzicht
+  signaleert via `heeft_unmatched_regels`, mig 094); karpi_code = die van het
+  gekoppelde product, fallback oud gedrag. Swap/omsticker-logica
+  (`fysiek_artikelnr` via equiv) onaangeroerd.
+- **Mig 358** (`358_herstel_maatwerk_regels_zonder_artikel.sql`): generiek
+  herstel van bestaande artikel-loze maatwerk-regels in open orders (status
+  niet Verzonden/Geannuleerd), **exclusief** `alleen_productie`-orders
+  (ADR-0029: productie-only blijft bewust artikel-loos). Match op exact
+  kwaliteit+kleur (`.0`-tolerant in beide richtingen) + omschrijving-patroon
+  `^[A-Z]+[0-9]+MAATWERK$`; regel-karpi_code mee-gefixt als die NULL of de
+  kale concat was. NOTICE-tellingen + informatieve zelf-test (restant-count,
+  geen EXCEPTION — onbekende data).
+- **Mig 359** (`359_producten_karpi_code_borging.sql`): trigger
+  `trg_producten_karpi_code_guard` (BEFORE INSERT OR UPDATE OF karpi_code,
+  product_type, omschrijving) borgt de invariant: rol/vast én
+  MAATWERK-patroon-producten dragen een karpi_code. MAATWERK-patroon →
+  auto-afleiden `{KWAL}{KLEUR}MAATWERK`; rol/vast → EXCEPTION (SQLSTATE
+  `KA359`, geen stille afleiding — maat-info onbetrouwbaar). **Vrijgesteld:**
+  `is_pseudo`, overig/staaltje buiten het MAATWERK-patroon (banden/calibra/
+  staaltjes, eigenaar-besluit). **Legacy-veilig:** dubbele guard (UPDATE OF
+  kolomlijst + IS DISTINCT FROM-check) zodat de dagelijkse voorraad-imports
+  (`update_voorraad*.py`, UPDATEn alleen voorraad-kolommen) op legacy rijen
+  met NULL karpi_code blijven werken. Zelf-test: trigger-existence +
+  subtransactie-insert die op KA359 moet falen + informatieve legacy-count.
+- **UI-borging:** Karpi-code-veld verplicht (HTML `required` + submit-guard
+  met NL-melding) in `product-create.tsx` en `product-form.tsx` zodra
+  product_type rol of vast is; auto-derive via `buildKarpiCode` blijft.
+  Optioneel voor overig/staaltje.
+
+## 2026-06-10 — Meerdere factuur-e-mailadressen per debiteur
+
+Bugfix (branch `fix/meerdere-factuur-emails`): een operator kon op het
+Facturering-tabblad geen tweede factuur-e-mailadres invullen — het veld was
+`<input type="email">`, waarvan de browservalidatie meerdere adressen (spatie na
+`@`) weigert. `debiteuren.email_factuur` is en blijft één TEXT-kolom; de adressen
+worden nu komma-gescheiden opgeslagen (conventie `, `, zoals `verstuurd_naar`).
+
+- **Frontend:** [`klant-facturering-tab.tsx`](frontend/src/modules/debiteuren/components/klant-facturering-tab.tsx)
+  gebruikt nu `type="text"` + eigen validatie via nieuwe pure helper
+  [`email-recipients.ts`](frontend/src/lib/email-recipients.ts)
+  (`parseEmailRecipients` splitst op komma/puntkomma/whitespace, valideert elk
+  adres, normaliseert naar `, `-gescheiden string; ongeldige adressen → inline
+  foutmelding). Add-/edit-dialogs (`debiteur-add-dialog`, `debiteur-edit-dialog`)
+  idem op `type="text"` gezet voor consistentie.
+- **Edge function:** [`graph-mail-client.ts`](supabase/functions/_shared/graph-mail-client.ts)
+  splitst `to` via gespiegelde helper [`_shared/email-list.ts`](supabase/functions/_shared/email-list.ts)
+  (`splitEmailRecipients`) naar losse `toRecipients` — anders zou Microsoft Graph
+  de komma-string als één ongeldig adres afkeuren. Seam-patroon zoals
+  `_shared/debiteur-matcher.ts` ↔ frontend `product-matcher` (Deno-edge niet door
+  Vite importeerbaar). Geldt automatisch ook voor de betaler-kopie en
+  orderbevestiging.
+- Tests: `email-recipients.test.ts` (vitest, 5×) + extra Deno-test in
+  `graph-mail-client.test.ts` (multi-recipient split).
+
+## 2026-06-10 — Order-status follow-ups: EDI-'Nieuw'-regressie hersteld (mig 357) + enum-TS-single-source
+
+> **Nummering/dedup:** het plan claimde mig 353/354. Drie collisies met
+> parallelle sessies: 353 = dropshipment, 354 = de B3-fix die op main al
+> gedaan bleek, 355/356 = afleverdatum-sync + maatwerk-backfill. De EDI-mig
+> van deze branch is hernummerd naar **357** (in de DB toegepast als "mig
+> 355" — NOTICE-teksten dragen het oude nummer; inhoud identiek).
+
+Restpunten uit de order-status-consolidatie (branch
+`worktree-order-status-followups`):
+
+- **B3 bleek parallel al gesloten** (mig 354 op main, zelfde
+  `_apply_transitie`-aanpak — daar ook ontdekt dat de mig 308-INSERT crashte op
+  de niet-bestaande kolom `actor`). Deze branch draagt alleen de
+  lint-whitelist-notitie-update bij ("follow-up open" → "vervangen door mig
+  354"). NB: de live functie draagt de variant van deze branch (extra
+  `metadata.actor` + `search_path`-pin) — functioneel gelijk aan mig 354.
+- **EDI-'Nieuw'-regressie hersteld (mig 357):** mig 309/312 hadden de mig
+  275-patch ongedaan gemaakt waardoor EDI-orders sinds dien op de dode status
+  `'Nieuw'` landden (zelf-helend zodra een orderregel-trigger
+  `herbereken_wacht_status` aanroept, maar header-only/niet-getriggerde orders
+  blijven hangen). Mig 357 herdefinieert schoon (volledige body = mig 312, één
+  literal gewijzigd — geen `pg_get_functiondef`+`REPLACE`-truc meer) en
+  backfillt hangende `'Nieuw'`-EDI-orders door de ladder (schade-query
+  2026-06-10: **0** hangende orders — het zelf-helende orderregel-trigger-pad
+  had alles al gecorrigeerd; de backfill is een no-op-vangnet).
+- **`order_status` TS-single-source:**
+  [`_shared/order-lifecycle/order-status.ts`](../supabase/functions/_shared/order-lifecycle/order-status.ts)
+  (canoniek+legacy, set-semantiek) ⇄ golden-fixture ⇄ mig 350-assert, met een
+  Vitest-contracttest die `ORDER_STATUS_COLORS` als eerste spiegel automatiseert
+  (dekte al alle 17 waarden) en `satisfies`-typing op de
+  `derive-status.ts`-lijsten (inhoud ongewijzigd).
+
+
+## 2026-06-10 — Maatwerk altijd aan een productcode (matcher + mig 356)
+
+**Waarom:** eigenaar-melding n.a.v. ORD-2026-0166 — maatwerk-orderregels uit
+Shopify/Lightspeed landden soms zonder `artikelnr`, terwijl facturatie en EDI
+het artikelnr lezen. Productie-bewijs: 3 regels (ORD-2026-0118 regel 1+2,
+ORD-2026-0098 regel 1). Maatwerk moet altijd aan het generieke
+`{KWAL}{KLEUR}MAATWERK`-artikel hangen (bv. LAGO13MAATWERK = 553139998).
+
+**Wat (branch `fix/maatwerk-artikel-koppeling`):**
+- **product-matcher vorm-pad:** niet-rechthoekig maatwerk (organisch/ovaal/
+  rond) probeert nu óók `zoekMaatwerkProduct` en koppelt het generieke
+  maatwerk-artikel; niet gevonden → `artikelnr: null`, exact het oude gedrag.
+  Vorm + dims blijven in de `maatwerk_*`-velden. **Bewust géén auto-pricing
+  voor vorm-regels:** de artikelnr-koppeling mag `haalKlantPrijs` niet
+  activeren — het TS-prijspad kent de €75-vormtoeslag niet en kan een
+  per-m²-verkoopprijs als regelprijs teruggeven. Vorm-maatwerk houdt dus
+  `prijs NULL` zoals vóór de fix (operator prijst; zie €0,00-orders-
+  werkitem), afgedwongen op beide call-sites (`sync-shopify-order` +
+  `order-intake/lightspeed-regels.ts`). Rechthoek-maatwerk dat al vóór deze
+  branch een artikelnr kreeg prijst exact als op main. **Redeploy nodig**
+  voor `sync-shopify-order` / `import-lightspeed-orders` (gebeurt bij merge).
+- **LUXR17-parse-fix:** ORD-2026-0098 regel 1 kreeg `maatwerk_kwaliteit_code
+  = 'LUXR17'` (kwaliteit+kleur aaneengeplakt) met kleur NULL. Root cause:
+  `import/import_shopify_csv.py` `match_product` — regex `^([A-Z]+\d*)`
+  splitste de kleur niet af én zocht het MAATWERK-artikel in kolom
+  `artikelnr` i.p.v. `omschrijving` (vond dus nooit iets). Gefixt — met
+  geaccepteerde regex-randgevallen (letters-only SKU levert geen kwaliteit
+  meer op, >6-letter-prefixen matchen niet meer; backfill-tool). In
+  `product-matcher.ts` lopen alle vier maatwerk-return-paden nu via
+  `resolveMaatwerkArtikel` — **unsplit-first**: de ONgesplitste kwaliteit
+  wordt altijd eerst geprobeerd zodat een legitieme cijfer-eindigende
+  `kwaliteit_code` (mig 098 anticipeert WLP1/WLP4) nooit kapotgesplitst
+  wordt; pas bij een miss splitst `splitsKwaliteitKleur` de samengeplakte
+  vorm (`^[A-Z]{2,6}\d{1,3}$`, LUXR17 → LUXR + 17).
+- **Mig 356** (`356_maatwerk_artikel_koppeling_backfill.sql` — initieel 353, tweemaal hernummerd wegens collisies met `353_dropshipment_producten` en `354/355` (lifecycle-follow-ups) op main): (a) backfill
+  `producten.karpi_code = kwaliteit_code || kleur_code || 'MAATWERK'`
+  (catalogus-conventie, consistent met bestaande rijen als ALDO17MAATWERK;
+  doel: catalogus-consistentie + document-/EDI-weergave — factuur-verzenden
+  leest karpi_code) op generieke MAATWERK-artikelen met strikt
+  omschrijving-patroon `^[A-Z]+[0-9]+MAATWERK$` (spiegelt mig 106),
+  duplicaat-guard + NOTICE-skips; (b) herstel ORD-2026-0118 regel 1+2 →
+  LAGO13MAATWERK-artikelnr; (c) herstel ORD-2026-0098 regel 1 → kwaliteit
+  `LUXR`/kleur `17` + LUXR17MAATWERK-artikelnr. In expliciete
+  `BEGIN;`/`COMMIT;` (huisstijl herstel-migraties 096/098), lookups
+  deterministisch (`ORDER BY artikelnr` bij `LIMIT 1`), idempotent,
+  lookup-gedreven (geen hardcoded artikelnrs), ontbrekende orders/producten
+  → NOTICE+skip. Consequentie in `import_shopify_csv.py`: SKU's eindigend
+  op `MAATWERK` slaan de karpi_code-equality-stap over (die zou na de
+  backfill `is_maatwerk=False` zonder dims teruggeven) en vallen door naar
+  de maatwerk-tak.
+- **Tests:** `product-matcher.test.ts` (9, mock-patroon van
+  `debiteur-matcher.test.ts`; incl. unsplit-first-pinning: (a) unsplit-hit
+  wint en kwaliteit blijft ongesplitst, (b) unsplit-miss → split-hit
+  gebruikt gesplitste waarden); `_shared`-suite 231 groen, enige faler is
+  de bekende pre-existing `guillotine-packing.test.ts` REGRESSIE K1756006D.
+
+**Bewust buiten scope:** karpi_code-borging via trigger/constraint op
+`producten` (wacht op besluit banden/calibra-uitzondering); dubbele
+"Selections"-regels in `sync-shopify-order` `buildRegels` (apart werkitem
+met payload-bewijs).
+
+## 2026-06-10 — Lifecycle-follow-ups: kapotte Concept-bevestiging + guard-completering (mig 354-355)
+
+Vervolg op de hardening-branch (zie entry hieronder); branch
+`fix/order-lifecycle-followups`.
+
+> **Hernummering (zelfde patroon als 347-352):** toegepast als 353/354,
+> hernummerd naar 354/355 wegens collisie met `353_dropshipment_producten`
+> op main. DB-NOTICEs dragen de oude nummers.
+
+- **B3 (mig 354) — `bevestig_concept_order` was kapot sinds mig 308:** de
+  events-INSERT gebruikte de niet-bestaande kolom `actor` (en miste het
+  verplichte `status_na`) → de RPC crashte bij élke bevestiging van een
+  Concept-order (e-mail-kanaal) en de status-flip rolde mee terug. In de UI
+  bedraad maar kon nooit succesvol draaien. Nu via `_apply_transitie`
+  (ADR-0006): correcte event-rij, zelfde guards, zelfde herbereken-keten.
+- **B14 (mig 355):** `'Maatwerk afgerond'` toegevoegd aan de eindstatus-guard
+  van `sync_order_afleverdatum_met_claims` (zelfde klasse als B13: status-
+  lijsten ouder dan mig 327). Risico was laag (maatwerk reserveert niet op IO
+  in V1), guard nu compleet.
+- **B8 — onderzocht, geen acute bug:** `lever_type` heeft `NOT NULL DEFAULT
+  'week'` (non-issue); `lever_modus=NULL` bij externe orders met tekort is
+  veilig voor de afleverdatum-sync (NULL = `'in_een_keer'`), maar (a) de
+  levertijd-views tonen dan de eerste i.p.v. laatste IO-week en (b)
+  zending-splitsen weigert tot de operator via order-bewerken een modus kiest.
+  Aanbeveling (geen losse fix): bij landing defaulten uit
+  `debiteuren.deelleveringen_toegestaan` — input voor de Order-landing-kern
+  (Fase 2). Details: `docs/order-lifecycle.md` §11C/B8.
+
+Beide migraties zijn op 2026-06-10 toegepast (als 353/354) en de
+Concept-bevestiging is end-to-end getest met testorder ORD-2026-0201:
+status flipte naar Klaar voor picken mét correcte `aangemaakt`-rij in
+order_events (eerste succesvolle run van deze flow ooit).
+
+## 2026-06-10 — Order-commit-pipeline: create-flow als pure functie (Fase 1 order-intake-verdieping)
+
+- **Wat:** de create-flow-orkestratie uit `saveMutation.mutationFn` (order-form.tsx) is geëxtraheerd naar pure functie `bouwOrderCommit(input) → OrderCommitPlan` in `frontend/src/lib/orders/order-commit.ts`. Golden fixtures (8 scenario's, `__tests__/order-commit.fixtures.ts`) pinnen het bestaande gedrag: gemengde standaard/maatwerk-split, IO-tekort-split (sub-orders 'in_een_keer'), in_een_keer-met-tekort (géén split), verzend-naar-duurste met tie→deel A, admin-pseudo-skip, en de spoed-regel-eigenaardigheid (telt als IO-tekort, verhuist naar IO-deel).
+- **Waarom:** plan 2026-06-10 order-intake-verdieping — de Order-commit (CONTEXT.md) testbaar maken als gedrags-anker vóór de Fase 2 Order-landing-kern (SQL). Strikt gedragsbehoud; verbeteringen (form-idempotency, uniform 'aangemaakt'-event) zijn expliciete Fase 2-beslispunten.
+- **Niet gewijzigd:** RPC-laag (`create_order_with_lines`), edit-flow, `split-order.ts`-helpers.
+
+## 2026-06-10 — Order-lifecycle-hardening: doc + 6 fixes (mig 347-352)
+
+> **Hernummering:** deze migraties zijn op 2026-06-10 initieel toegepast als
+> 346-350 en daarna hernummerd naar 347-351 wegens collisie met
+> `346_derive_wacht_status_single_source` (parallel gemerged). De
+> NOTICE-teksten in de DB-historie dragen de oude nummers. Mig 352 verenigt
+> daarnaast de twee sporen (zie onderaan).
+
+**Waarom:** sparring-sessie over codestructuur en bug-archetypen vóór de go-lives
+van volgende week (verzending standaardmaten + maatwerk-productie). Onderzoek
+(4 Explore-agents + handverificatie) leverde `docs/order-lifecycle.md` op — het
+levende statusmodel-document (statussen, transities, gates, intake-matrix,
+productie-/magazijnpad, RPC→laatste-migratie-tabel) — plus 12 getriageerde
+bevindingen (§11 aldaar).
+
+**Wat (branch `fix/order-lifecycle-hardening`):**
+- **Nieuw levend document** `docs/order-lifecycle.md` — toetssteen voor elke
+  flow-wijziging.
+- **B2 (mig 347+348):** `voltooi_confectie` schrijft de terminale
+  'Maatwerk afgerond'-flip nu via `_apply_transitie` met nieuw event-type
+  `maatwerk_afgerond` (was directe UPDATE zonder audit-event, mig 330).
+- **B1-vangnet (mig 349):** `match_edi_artikel` stap 3 (eerste-token-match)
+  weigert wanneer de artikelcode-suffix een maat-patroon (`155x230`) of
+  vorm-woord (`rund`/`rond`/`ovaal`) bevat — maat-informatie kan niet meer
+  stilzwijgend gedropt worden; regel landt als ongematcht ('Actie vereist').
+  Echte EDI-maatwerk-parsing = V2, eerst corpus verzamelen.
+- **B4:** `import-lightspeed-orders` (cron-pad) bepaalt nu de afleverdatum via
+  dezelfde `bepaalAfleverdatumUitOrder`-helper als het webhook-pad (was hard
+  `NULL` → orders zonder deadline). **Redeploy nodig.**
+- **B5 (mig 350):** snapshot-assert op de `order_status`-enum (set-vergelijking,
+  mirror van mig 344) — enum wijzigen zonder de spiegels bij te werken faalt
+  voortaan hard.
+- **B11:** lint `lint-no-direct-orders-status-update.sh` scant nu ook
+  `migrations/3*.sql`+ (mig 308/330 glipten door de oude `2*.sql`-scope;
+  als bevroren historie ge-allowlist).
+- **B12:** `ORDER_STATUS_COLORS` kende `'Maatwerk afgerond'` niet (badge zonder
+  kleur) — toegevoegd.
+- **B13 (mig 351, uit de code-review van deze branch):** `'Maatwerk afgerond'`
+  ontbrak in de no-touch-lijst van `herbereken_wacht_status` (mig 275 is ouder
+  dan mig 327) → een afgeronde productie-only order viel bij elke
+  orderregel-touch terug naar `'Wacht op maatwerk'`, definitief. Toegevoegd aan
+  de eindstatus-guard; SECURITY DEFINER + search_path expliciet herzet
+  (218_z-les).
+- **Mig 352 — samenloop met "order-status single-source" (mig 346) verenigd:**
+  mig 346 (parallel gemerged én mogelijk al toegepast) delegeert de ladder aan
+  de pure `derive_wacht_status`, maar diens guard miste `'Maatwerk afgerond'`
+  óók (de truthtable pinde alleen de all-false-combinatie — met `maatwerk=true`,
+  per definitie waar voor afgeronde productie-only orders, vuurde tak 4 alsnog).
+  Mijn mig 351 (toegepast ná hun 346) herstelde tijdelijk de inline vorm en
+  maakte de delegatie in de DB ongedaan. Mig 352 verenigt: `derive_wacht_status`
+  mét de status in de guard + uitgebreide truthtable (échte B13-case), her-
+  delegerende `herbereken_wacht_status`, SECURITY DEFINER herzet, en de
+  TS-spiegel `derive-status.ts` + `derive-status.golden.json` zijn mee
+  bijgewerkt (Vitest-contracttest dekt de nieuwe case).
+
+Mig 347-351 zijn al toegepast (als 346-350, zie hernummering-noot);
+**alleen mig 352 moet nog in de SQL Editor gedraaid worden.** Open follow-ups:
+B3/B7-B10/B14 in `docs/order-lifecycle.md` §11C.
+
+## 2026-06-10 — Order-status-ladder als single-source (Fase 2, ADR-0006)
+
+De beslissingsladder die `orders.status` kiest stond inline in de PL/pgSQL-runtime
+`herbereken_wacht_status` en was sinds mig 218 vijfmaal herschreven; bij mig 269/273
+vielen de ADR-0016-takken (`Wacht op maatwerk`/`Klaar voor picken`) geruisloos weg
+(orders 2063-2067 bleven op dode status `Nieuw`, mig 275 herstelde met de hand, geen
+test ving het). Geconsolideerd naar één pure functie `derive_wacht_status(huidig, io,
+tekort, maatwerk)` (SQL, mig 346) + TS-spiegel `deriveWachtStatus`
+([`_shared/order-lifecycle/derive-status.ts`](../supabase/functions/_shared/order-lifecycle/derive-status.ts),
+ADR-0006-belofte ingelost). Twee ankers binden ze: een golden-fixture-truthtable van
+21 cases (Vitest-contracttest, TS ≡ fixture; alle 9 guard-statussen gepind, incl.
+`Concept`/`Maatwerk afgerond` als huidig gedrag) en een zelf-testende migratie
+(SQL ≡ dezelfde combinaties, incl. de regressie-cases). `herbereken_wacht_status`
+verzamelt nog steeds de claim-/snijplan-state en delegeert nu de beslissing — gedrag
+identiek aan mig 275 (bewuste trade-off: de drie EXISTS-queries draaien nu ook voor
+eindstatus-orders; mig 275 returnde eerder vroeg). De toegepaste backfills
+(mig 258/275) zijn bevroren history en blijven ongemoeid. Migratie 346 nog handmatig
+in de SQL Editor te draaien.
+
+Genoteerde follow-ups (buiten scope): schone herdefinitie van `edi_create_order`
+(de pg_get_functiondef+REPLACE-patch uit mig 275 r164-197); `order_status`-enum als
+TS-single-source (Fase 1-stijl); `herbereken_wacht_status` verloor sinds mig 258
+stilzwijgend het SECURITY DEFINER + search_path uit mig 218_z (CREATE OR REPLACE
+reset die attributen) — bewust besluit nodig of her-pinnen gewenst is (aparte
+migratie); lint-script `lint-no-direct-orders-status-update.sh` scant alleen
+`2*.sql`-migraties, glob verbreden naar 3xx. *(Update later die dag: de
+SECURITY-DEFINER-her-pin, de lint-glob-verbreding én de `Maatwerk afgerond`-gap
+in de guard zijn opgepakt in de order-lifecycle-hardening-branch, mig 351/352 —
+zie entry hierboven.)*
+
+## 2026-06-10 — Productie-only orders uit "zonder vervoerder"-teller (mig 345)
+
+De banner "1165 order(s) zonder vervoerder" op Pick & Ship bestond voor 1066 stuks
+uit Basta productie-only orders (`alleen_productie=TRUE`, bron `oud_systeem`,
+ADR-0029) — daar doet RugFlow alleen snijden + confectie en blijft verzending in
+Basta, dus een vervoerder kiezen is niet aan de orde. De `alleen_productie`-guard
+uit mig 327 ontbrak in de view `orders_zonder_vervoerder` (mig 338). Mig 345 voegt
+`AND NOT o.alleen_productie` toe; de teller toont nu de 99 échte gevallen (vrijwel
+allemaal Duitse EDI-orders buiten HST-bereik). Geen frontend-wijziging — banner en
+teller lezen de view.
+
+## 2026-06-10 — Snijplan-status enum-seam (Fase 1 TS↔SQL-consolidatie)
+
+`SnijplanStatus` (TS) miste `'Wacht'`+`'In productie'` t.o.v. de DB-enum
+`snijplan_status` en er bestonden twee divergerende `SNIJPLAN_STATUS_COLORS`-maps.
+Geconsolideerd naar één single-source (`frontend/src/lib/utils/snijplan-status.ts`):
+enum-arrays + afgeleide types + semantische groepen (`TE_SNIJDEN`, `ROL_FYSIEK_BEZET`,
+`INPAK_KANDIDAAT`, `CONFECTIE_INSTROOM`), met Deno-spiegel `_shared/snijplan-status.ts`.
+Drie ankers binden TS aan SQL: Vitest-contracttest (TS ≡ golden snapshot), zelf-testende
+migratie 344 (snapshot ≡ DB-enum), en lint-script tegen losse status-strings. Kleurmaps zijn
+nu `Record<SnijplanStatus,…>` (compiler dwingt volledigheid); de divergerende kopie in
+`rollen-groep-row.tsx` is weg. ~13 bestanden omgezet van magic-string-arrays naar de
+semantische groepen (incl. een gemiste edge-function `check-levertijd`, gevangen door de lint).
+Geen gedragsverandering — `confectie_orders` is leeg en `snijplannen` staat volledig op
+`Gepland`. Migratie 344 nog handmatig in de SQL Editor te draaien.
+
+## 2026-06-10 — create_webshop_order persisteert maatwerk_vorm (mig 343)
+
+**Waarom:** slice 4 van het order-intake-plan (2026-06-09) liet Shopify én beide
+Lightspeed-paden `maatwerk_vorm` meesturen in de regel-JSON, maar de regel-INSERT
+in `create_webshop_order` (mig 322) kende die sleutel niet. JSONB geeft geen fout
+op onbekende sleutels → het veld stierf geruisloos in de RPC en webshop-maatwerk
+landde met `maatwerk_vorm = NULL`, waardoor het auto-snijplan van een rechthoek
+uitging. Gevonden tijdens het order-aanmaak-verdiepingsonderzoek (architectuur-
+review 2026-06-10).
+
+**Wat (branch `fix/webshop-maatwerk-vorm`, mig 343):**
+- `create_webshop_order` insert nu `maatwerk_vorm`, **gevalideerd** tegen
+  `maatwerk_vormen(code)`: onbekende/lege code → NULL (order blijft landen, zoals
+  nu), bekende code → gepersisteerd. Body verder byte-voor-byte mig 322;
+  signatuur ongewijzigd.
+- Zelf-testende migratie: asserteert dat de live definitie de lookup bevat én dat
+  de drie codes die de TS-kant emit (`rond`/`ovaal`/`organisch_a`,
+  `product-matcher.ts detectVorm`) in `maatwerk_vormen` bestaan.
+
+**Waarom:** de monitor is HST-specifieke informatie en hoort bij de vervoerder zelf,
+niet als los menu-item in de sidebar.
+
+**Wat (branch `refactor/hst-monitor-onder-vervoerder`, frontend-only):**
+- Monitor-inhoud (KPI's, open-fouten-tabel + retry, cron-health-waarschuwing) verplaatst
+  van `pages/hst-monitor.tsx` (verwijderd) naar
+  [`components/hst-monitor-panel.tsx`](../frontend/src/modules/logistiek/components/hst-monitor-panel.tsx).
+- [`vervoerder-detail.tsx`](../frontend/src/modules/logistiek/pages/vervoerder-detail.tsx) kreeg
+  tabs **Gegevens / Verzendmonitor** — alleen zichtbaar voor `hst_api`; de monitor-tab toont
+  een rode `telHstAandacht`-badge. Nieuwe route `logistiek/vervoerders/:code/monitor`
+  (zelfde component, tab via `useLocation`).
+- Menu-item "HST-monitor" verwijderd uit `constants.ts`; de rode aandacht-badge in de
+  sidebar zit nu op het nav-item **Logistiek**.
+- Oude route `/logistiek/hst-monitor` redirect naar `/logistiek/vervoerders/hst_api/monitor`
+  (bookmarks/muscle memory); `HstAandachtBanner` op Pick & Ship linkt direct naar de tab.
+
+## 2026-06-10 — In-app feedback/bug-meldtool (mig 342)
+
+**Waarom:** RugFlow gaat live bij de gebruikers; zij gaan tegen bugs/onvolkomenheden
+aanlopen en moeten die laagdrempelig kunnen melden zonder de context te verliezen —
+net als de feedback-popup in de LocoBrands-omgeving.
+
+**Wat — frontend (branch `feat/feedback-bug-tool`):**
+- **Zwevende `FeedbackWidget`** ([`feedback-widget.tsx`](../frontend/src/components/feedback/feedback-widget.tsx))
+  rechtsonder op elke pagina (gerenderd in [`app-layout.tsx`](../frontend/src/components/layout/app-layout.tsx)).
+  Modal met titel, omschrijving, urgentie en optionele screenshot/bijlage; legt
+  **automatisch de huidige pagina-URL** (`window.location.href`) en de **ingelogde melder**
+  (auth.users id + e-mail-snapshot) vast.
+- **Gebruikersmenu rechtsboven** ([`top-bar.tsx`](../frontend/src/components/layout/top-bar.tsx)):
+  het kale logout-icoon is vervangen door een uitklapmenu (avatar + chevron) met
+  "Mijn meldingen" / (beheerder) "Alle meldingen" en "Uitloggen".
+- **Meldingen-pagina** `/meldingen` ([`bug-meldingen.tsx`](../frontend/src/pages/feedback/bug-meldingen.tsx)):
+  gebruiker ziet eigen meldingen, **Miguel (beheerder) ziet alle**. Beheerder zet
+  `Open` ↔ `Verwerkt` (verwerken + terugzetten); de **melder accepteert** een verwerkte
+  melding (`Verwerkt` → `Geaccepteerd`). Bijlage opent via signed URL.
+
+**Wat — database (mig 342, handmatig toepassen):**
+- Tabel `bug_meldingen` + enums `bug_melding_status` (Open/Verwerkt/Geaccepteerd) en
+  `bug_urgentie` (Laag/Middel/Hoog). RLS: melder ziet eigen rijen, beheerder ziet alles
+  (`is_bug_beheerder()` = Miguels e-mail uit JWT, gespiegeld in
+  [`frontend/src/lib/bug/beheerder.ts`](../frontend/src/lib/bug/beheerder.ts)).
+- Storage-bucket `bug-bijlagen` (privé, 10 MB, afbeeldingen + PDF).
+- SECURITY DEFINER-RPC `set_bug_status(p_id, p_status)` dwingt de transitie-rechten af
+  en stempelt `verwerkt_op`/`geaccepteerd_op`.
+
+## 2026-06-09 — Order-intake consolidatie (gefaseerd, slices 0-4)
+
+Plan: [`docs/superpowers/plans/2026-06-09-order-intake-consolidatie-gefaseerd.md`](superpowers/plans/2026-06-09-order-intake-consolidatie-gefaseerd.md). Branch `refactor/order-intake-consolidatie`.
+
+- **Slice 0 — fix:** Lightspeed gewicht-conversie geünificeerd op micro-kg in gedeelde helper [`_shared/order-intake/gewicht.ts`](../supabase/functions/_shared/order-intake/gewicht.ts); `import-lightspeed-orders` deelde foutief door 1.000 (grams-aanname) → factor-1000 te laag gewicht, terwijl `sync-webshop-order` al door 1.000.000 deelde. Eén bron van waarheid + Deno-test.
+- **Slice 1 — docs:** `architectuur.md` + ADR-0001 in lijn gebracht met de realiteit (`modules/orders/` bestaat niet; order-code leeft bewust verspreid over `components/orders/`, `lib/orders/`, `lib/supabase/queries/orders.ts`, `modules/orders-lifecycle/`).
+- **Slice 2 — refactor:** drie intake-predicaten (Te koppelen / Te bevestigen / Debiteur te bevestigen) gecentraliseerd in pure helpers + filterhelpers ([`intake-predicaten.ts`](../frontend/src/lib/orders/intake-predicaten.ts), [`edi-leverweek.ts`](../frontend/src/lib/orders/edi-leverweek.ts) `filterLeverweekTeBevestigen`, [`modules/edi/lib/te-koppelen.ts`](../frontend/src/modules/edi/lib/te-koppelen.ts)); inline-kopieën in `fetchOrders`/`fetchStatusCounts`/`countTeBevestigenDebiteurOrders`/order-detail/`berichten-overzicht`/`countTeKoppelenEdiOrders` verwijderd. Filterhelpers casten intern i.p.v. zelf-refererende generic (vermijdt TS2589 op de Supabase-builder).
+- **Slice 3 — refactor:** split-/verzend-toewijzing-logica uit [`order-form.tsx`](../frontend/src/components/orders/order-form.tsx) `saveMutation.mutationFn` geëxtraheerd naar geteste pure helpers [`lib/orders/split-order.ts`](../frontend/src/lib/orders/split-order.ts) (`wijsVerzendNaarDuurste` + `splitRegelOpDekking`). Geld-rekenende logica (maatwerk-split + IO-split, eerder 2× gedupliceerd) nu los testbaar; gedrag ongewijzigd.
+- **Slice 4 — refactor:** gedeeld `IntakeRegel`-type ([`_shared/order-intake/types.ts`](../supabase/functions/_shared/order-intake/types.ts)) + gededupliceerde Lightspeed-regelbouw ([`_shared/order-intake/lightspeed-regels.ts`](../supabase/functions/_shared/order-intake/lightspeed-regels.ts) `buildLightspeedRegels` + pure `toIntakeRegel`); de twee near-duplicate `buildRegels` in `sync-webshop-order` en `import-lightspeed-orders` zijn vervangen. `sync-shopify-order` kreeg het eerder ontbrekende `maatwerk_vorm`-veld en emit nu `IntakeRegel[]`. EDI (SQL-pad `create_edi_order`) valt bewust buiten dit type.
+## 2026-06-09 — Betaaltermijn als bron-van-waarheid (ADR-0022, mig 340-341)
+
+Foute `regexp_match(betaalconditie, '^(\d+)')` in `genereer_factuur_voor_bundel`
+pakte de betaalconditie-**code** (bv. "02") i.p.v. het aantal **dagen** (30) →
+vervaldatum +2 i.p.v. +30 (FACT-2026-0021-klasse). Opgelost met centrale SQL-
+helper `betaaltermijn_dagen(TEXT)` (mig 340) die de code-prefix opzoekt in
+`betaalcondities.dagen` (mig 202/203) met vangnet "<n> dagen" en default 30;
+`genereer_factuur_voor_bundel` consumeert die nu (mig 341). De andere historische
+kopieën (`genereer_factuur`, `genereer_factuur_voor_week`) waren al door mig 240
+gedropt — dit was de laatste live drager. Self-testing migratie borgt de bug-case.
+(Migratienr verschoven van plan-claim 333/334 → 340/341 wegens collisie met
+origin/main, dat inmiddels tot 339 liep.)
+
+## 2026-06-09 — HST-observability + altijd-een-vervoerder (productie-klaar maken HST-koppeling)
+
+**Waarom:** de HST-verzendkoppeling gaat van acceptatie naar productie. Twee gaten
+blokkeerden dat: (1) orders zonder matchende vervoerder-regel bleven stil liggen — HST is
+de enige actieve koppeling maar lag niet als bodem onder NL-orders; (2) de `hst-send`-cron
+kon stilvallen / een transportorder mid-claim op `'Bezig'` laten hangen zonder zichtbaar
+signaal (zelfde klasse als de EDI poll silent failure). Aanleiding bovendien: ACCP-afkeuring
+2026-06-09 "Bellen voor aflevering, geef telefoonnummer op" — HST gaf kaal `"HTTP 400"`
+terug en het leveringstelefoonnummer werd niet meegestuurd. Zie
+[ADR-0030](adr/0030-altijd-een-vervoerder-en-hst-default-carrier.md) (bouwt voort op
+[ADR-0008](adr/0008-vervoerder-keuze-als-deep-module.md)).
+
+**Wat — migraties 336-339 (handmatig toepassen):**
+- **mig 336:** `vervoerders.is_default BOOLEAN DEFAULT FALSE` (partial unique index
+  `uk_vervoerders_is_default` → hooguit één TRUE) + seed `hst_api` als default + een
+  **catch-all** rij in `vervoerder_selectie_regels` (`vervoerder_code='hst_api'`, prio
+  `99999` = laagste, conditie `{"land":["NL"]}`, notitie "Default-vervoerder binnen NL").
+  Mechanisme: de bestaande ladder in `effectieve_vervoerder_per_orderregel`
+  (`override → regel → geen`, ADR-0008/mig 219) levert nu HST binnen NL via de catch-all;
+  specifieke regels (lagere prio) winnen nog steeds. **Gegate op `hst_api.actief=TRUE`** —
+  staat bewust nog FALSE tot de cutover, dus de default wordt pas dan effectief. Buiten NL
+  blijft `bron='geen'` → "handmatig vervoerder kiezen".
+- **mig 337:** RPC `herstel_vastgelopen_hst(p_minuten INTEGER DEFAULT 10) RETURNS INTEGER`
+  (SECURITY DEFINER, GRANT authenticated) — self-healing reaper: zet `hst_transportorders`-
+  rijen die >`p_minuten` op `'Bezig'` hangen terug naar `'Wachtrij'`. Bovenin elke
+  `hst-send`-run aangeroepen + handmatig.
+- **mig 338:** twee observability-views. `hst_verzend_monitor` (aggregaat, één rij, geen
+  state): `verstuurd_vandaag`, `fout_open`, `wachtrij`, `bezig`, `oudste_wachtrij_minuten`,
+  `oudste_bezig_minuten` — de laatste twee zijn het cron-health-signaal (hoog = verzend-cron
+  staat stil; UI-drempel 5 min). `orders_zonder_vervoerder`: niet-afhaal-orders
+  (`afhalen=FALSE`), status NOT IN (`'Geannuleerd'`,`'Verzonden'`,`'Concept'`), met ≥1 regel
+  waarvan `effectieve_vervoerder_per_orderregel(...).bron='geen'` — voedt de
+  "handmatig vervoerder kiezen"-teller/banner.
+- **mig 339:** `zendingen.afl_telefoon TEXT` — snapshot leveringstelefoonnummer voor HST
+  (die "belt vóór aflevering"). Gevuld door BEFORE-INSERT-trigger `trg_zending_fill_telefoon`
+  (functie `fn_zending_fill_telefoon`): ladder `orders.afl_telefoon` → fallback
+  `debiteuren.telefoon`. Bewust via trigger zodat álle zending-aanmaakroutes het veld vullen.
+  Inclusief backfill voor nog-niet-verstuurde zendingen. (Hernummerd van 335 → 339 bij merge
+  naar main wegens collisie met `335_orders_list_bevestigd_at.sql`.)
+
+**Wat — edge function `hst-send` + gedeelde validator:**
+- Nieuwe pure pre-flight validator [`_shared/vervoerder-eisen.ts`](../supabase/functions/_shared/vervoerder-eisen.ts)
+  (`valideerVoorVervoerder(ctx) → {ok, problemen[]}`, codes `TELEFOON_ONTBREEKT` /
+  `ADRESVELD_LEEG` / `LAND_BUITEN_BEREIK`, const `HST_LANDEN_BEREIK=['NL']`). Aangeroepen als
+  laatste poort in `hst-send` vóór de POST — faalt een eis → rij direct op `Fout` met heldere
+  reden, geen kansloze HST-call. Gespiegeld als frontend-kopie
+  [`frontend/src/lib/orders/vervoerder-eisen.ts`](../frontend/src/lib/orders/vervoerder-eisen.ts)
+  (Deno-edge niet door Vite importeerbaar; seam-patroon zoals `_shared/debiteur-matcher.ts`
+  ↔ frontend `product-matcher`).
+- Bugfix `hst-client.ts` `extractErrorMsg`: leest nu ook HST's PascalCase-veld
+  `ErrorMessage` (operator kreeg eerder kaal `"HTTP 400"`).
+- `payload-builder.ts`: vult `ToAddress.PhoneNumber` uit `zendingen.afl_telefoon`
+  (was hardcoded leeg).
+
+**Wat — frontend (module logistiek):**
+- [`queries/hst-monitor.ts`](../frontend/src/modules/logistiek/queries/hst-monitor.ts)
+  (query's + helpers `cronVermoedelijkStil`, `telHstAandacht`, `countOrdersZonderVervoerder`)
+  en [`hooks/use-hst-monitor.ts`](../frontend/src/modules/logistiek/hooks/use-hst-monitor.ts)
+  (TanStack-hooks, refetchInterval 30s/60s).
+- Nieuwe route `/logistiek/hst-monitor`
+  ([`pages/hst-monitor.tsx`](../frontend/src/modules/logistiek/pages/hst-monitor.tsx)):
+  KPI's, open-fouten-tabel met echte `error_msg` + opnieuw-versturen-knop, cron-health-
+  waarschuwing.
+- [`components/hst-aandacht-banner.tsx`](../frontend/src/modules/logistiek/components/hst-aandacht-banner.tsx):
+  rode/amber banner op Pick & Ship (MagazijnOverviewPage) bij open fouten / stilstaande cron
+  / orders zonder vervoerder, plus nav-link naar de monitor. Spiegelt het
+  `EdiTeKoppelenBanner`-patroon.
+
+**Gevolg:** tweede vervoerder = eigen `vervoerder_selectie_regels` + `is_default`-vlag
+omzetten — geen resolver-edit. Ladder en RPC uit ADR-0008 onaangeraakt; alle wijzigingen
+strikt additief en geguard.
+
+**Migraties:** 336-339 (handmatig). **ADR:** [0030](adr/0030-altijd-een-vervoerder-en-hst-default-carrier.md) (bouwt voort op [0008](adr/0008-vervoerder-keuze-als-deep-module.md)).
+
+## 2026-06-09 — Orders-overzicht: kanaal-filter (EDI, Shopify, handmatig, oud systeem)
+
+**Wat:** MultiSelectDropdown "Alle kanalen" op het orders-overzicht filtert op `bron_systeem`. Handmatig = `NULL` of `'handmatig'`; oud-systeem-orders afzonderlijk uit- of aan te zetten. `BronBadge` uitgebreid met expliciete labels voor `oud_systeem` ("Oud systeem") en `email` ("E-mail").
+
+## 2026-06-08 — Productie-only orders uit Basta (Fase A): import + snijden/confectie, buiten facturatie
+
+**Waarom:** Basta (het oude ERP) heeft een backlog nog-niet-gesneden maatwerk-orders.
+Piet-hein wil die digitaal door RugFlow's snij- + confectie-planning laten lopen
+(gestuurd door de packer/auto-planner, zichtbaar op de snijplanning, gereserveerd op de
+rol) — terwijl factureren, verzenden en labels printen in Basta blijven. RugFlow dient
+hier als snij-/confectie-tracker + opzoek-bord (op het Basta-ordernummer). Dit
+**vervangt** [ADR-0028](adr/0028-maatwerk-voorraad-reservering-migratie.md)'s virtuele
+`migratie_blokkering`: na import + planning worden de echte snijplannen de claim op de
+rollengte (één bron van waarheid). Zie [ADR-0029](adr/0029-productie-only-orders-basta.md).
+
+**Wat — migraties 327-331:**
+- **mig 327** (schema): `orders.alleen_productie BOOLEAN NOT NULL DEFAULT false` (de
+  schakelaar) + CHECK `chk_alleen_productie_bron` (`alleen_productie ⇒
+  bron_systeem='oud_systeem'`); enum `order_status` krijgt terminale waarde
+  **`'Maatwerk afgerond'`**; `order_regels.snijden_uit_standaardmaat` + idem op
+  `snijplannen`; partiële indexen; verzameldebiteur **900000 'OUD SYSTEEM (PRODUCTIE)'**;
+  partiële UNIQUE-index `orders_oud_order_nr_uniek` (idempotentie-sleutel).
+- **mig 328**: `auto_maak_snijplan` + `auto_sync_snijplan_maten` kopiëren
+  `snijden_uit_standaardmaat` naar het snijplan (additief — gewone regels → false).
+- **mig 329**: RPC `import_productie_only_order(p_header JSONB, p_regels JSONB)
+  RETURNS TABLE(order_nr TEXT, was_existing BOOLEAN)` — idempotent op `oud_order_nr`;
+  maakt order (status `'In productie'`, `alleen_productie=true`,
+  `bron_systeem='oud_systeem'`, `order_nr='OUD-<nr>'`) + maatwerk-regels (geen
+  artikelnr/prijs). Geen allocator. Verzameldebiteur 900000 als fallback.
+- **mig 330**: `voltooi_confectie` flipt een productie-only order naar
+  `'Maatwerk afgerond'` zodra ALLE snijplannen confectie-afgerond zijn
+  (`confectie_afgerond_op IS NOT NULL`). Strikt geguard op `alleen_productie=true`;
+  gewone orders ongemoeid.
+- **mig 331**: view `snijplanning_overzicht` + 3 kolommen (`alleen_productie`,
+  `oud_order_nr`, `snijden_uit_standaardmaat`); geen filterwijziging.
+
+**Wat — Python import:**
+- `import/lib/afwerking_mapper.py`: mapt Basta's GROF+FIJN-afwerkingscodes naar
+  FK-veilige `afwerking_types.code` (B/SB/FE/SF/LO/VO/ON/ZO). Niet-herkende codes →
+  `B` (breedband) + gerapporteerd in de dry-run; biasband (DA) → `ON` (stickeren) in V1.
+- `import/import_productie_only.py`: parset `totaalplanning_cleaned_v2.xlsx`, groepeert
+  per Basta-ordernr, zet verzendweek (`WW-2026`) om naar de maandag-datum, roept de RPC
+  aan. Dry-run default; `--commit` voert echt uit.
+
+**Wat — frontend:**
+- Pick & Ship-guard: `fetchOpenOrderHeaders` filtert `alleen_productie=false` → een
+  productie-only order verschijnt nooit in Pick & Ship/facturatie/transport.
+- Zoeken op Basta-nr (`oud_order_nr`) in `fetchOrders`.
+- `BastaAfhandelingPaneel` op order-detail: amber signaal "afhandelen in Basta"
+  (labels/verzenden/factureren), met "Maatwerk afgerond"-tekst zodra terminaal.
+- `fetchStukken` (`_shared/db-helpers.ts`): sluit `snijden_uit_standaardmaat=true`-stukken
+  uit van rol-packing (verbruiken geen rollengte, blijven zichtbaar in snijplanning +
+  confectie).
+
+**Gouden regel:** elke wijziging is geguard op `alleen_productie=true` (resp. de
+standaardmaat-vlag); gewone orders blijven byte-voor-byte ongewijzigd.
+
+**Migraties:** 327-331 (handmatig toepassen). **ADR:** [0029](adr/0029-productie-only-orders-basta.md) (vervangt 0028).
+
+## 2026-06-08 — Orderbevestiging: ontbrekende velden uit oude PDF toegevoegd (e-mail + bijlage)
+
+**Waarom:** vergelijking van de nieuwe Graph-mail-orderbevestiging met de
+"HERBEVESTIGING"-PDF's van het oude systeem (`ob26485640.pdf`, `ob26499970.pdf`)
+liet zien dat een aantal velden die klanten gewend zijn te zien, ontbraken —
+zowel in de e-mailtekst als op de PDF-bijlage die de klant bewaart.
+
+**Wat — beide in [`stuur-orderbevestiging`](../supabase/functions/stuur-orderbevestiging/index.ts)
+en [`_shared/orderbevestiging-pdf.ts`](../supabase/functions/_shared/orderbevestiging-pdf.ts):**
+- **Vertegenwoordiger** (`orders.vertegenw_code` → `medewerkers.naam`, zelfde
+  resolutieketen als view `klant_omzet_ytd` — NIET de legacy `vertegenwoordigers`-tabel).
+- **"Uw debiteurnr."** ook op de PDF (stond al in de e-mailtekst).
+- Per regel: **eenheid** ("St", hardcoded voor echte productregels — er bestaat
+  geen `eenheid`-kolom op `producten`/`order_regels`, mirrort de oude lay-out),
+  **korting%** (`order_regels.korting_pct`) en een herhaalde **verzendweek**-subregel
+  (bewuste keuze: het order-niveau-week herhalen i.p.v. een nieuwe per-regel
+  IO-claim-berekening optuigen — de oude PDF toonde notabene ook bij de
+  vrachtkosten-regel gewoon dezelfde week).
+- **Orderreferentie** (`klant_referentie`) zichtbaar maken waar aanwezig
+  (bevestigd door gebruiker als betekenis van de mysterieuze derde sub-regel
+  "R26005850 T Groot Bleumink" op de oude PDF).
+- **BTW-uitsplitsing** (`Totaalbedrag excl. btw` → `XX% btw over Y` →
+  `Totaalbedrag incl. btw`) via de gedeelde `berekenFactuurTotalen`-helper, met
+  `btw_percentage = COALESCE(debiteuren.btw_percentage, 21.00)` — **letterlijk
+  dezelfde bron-van-waarheid en default als `genereer_factuur`**, zodat
+  orderbevestiging en factuur niet uit elkaar lopen.
+- **Maatafwijking-disclaimer** (vaste juridische tekst, letterlijk overgenomen:
+  "Een geringe maatafwijking van +/- 3% alsmede een kleurafwijking kan optreden.").
+- **Betalingsconditie** (`debiteuren.betaalconditie`, leidende numerieke code
+  gestript: "31 - 30 dagen netto" → "30 dagen netto").
+- **Afleveradresblok** ook in de e-mailtekst (stond al conditioneel op de PDF,
+  ontbrak in de mailtekst zelf).
+- Alle nieuwe labels vertaald in de bestaande 4-talen-`VERTALINGEN`-dictionary
+  (nl/de/fr/en).
+
+**Bewust niet gedaan (data-gaten, gerapporteerd aan gebruiker):**
+- **Verzendmethode-code** (bv. "VRIJ2"/"HST10") — overbodig naast de al
+  getoonde levertijd, op uitdrukkelijk verzoek weggelaten.
+- **"Leveringsconditie"/"Franco"** — geen velden hiervoor in het schema
+  (`debiteuren.gratis_verzending=false` voor beide referentie-debiteuren,
+  ondanks "Franco" op één van de oude PDF's). Niet te betrouwbaar afleiden →
+  bewust weggelaten i.p.v. gefabriceerd.
+- **Fiscale bevinding (los van deze taak):** debiteuren met
+  `btw_verlegd_intracom=true` (bv. #152004, #150762, #331114) hebben nog steeds
+  `btw_percentage=21.00`, en de bestaande `genereer_factuur`-RPC negeert die
+  vlag volledig — het intra-EU-verleggingsmechanisme lijkt dus nooit
+  geïmplementeerd in de facturatie. Gebruiker koos bewust om de (mogelijk
+  onvolledige) bestaande BTW-logica te spiegelen i.p.v. hier te diveren; dit is
+  een apart fiscaal/compliance-aandachtspunt voor de boekhouding.
+
+**Getest:** end-to-end testverzending op order ORD-2026-0001 (debiteur 150620,
+NL, met vertegenwoordiger + regelkorting + betaalconditie) — `bevestigd_at`/
+`bevestigd_door`/`bevestiging_email`-bijwerking nadien teruggedraaid.
+
+### Vervolg dezelfde dag — correcties + PDF-redesign + logo-fix
+
+Na gebruikersfeedback op de eerste versie:
+- **Vertegenwoordiger** toont nu uitsluitend de naam (bv. "Astrid Roth"), niet
+  langer "10 Astrid Roth" — de medewerkerscode wordt niet meer meegestuurd naar
+  e-mail of PDF.
+- **Betalingsconditie** is nu **uitsluitend op de PDF-bijlage** zichtbaar; is
+  volledig verwijderd uit de e-mailtekst (incl. de bijbehorende `betalingsconditie`-
+  sleutel uit de 4-talen-`VERTALINGEN`-dictionary en de orphaned helper in
+  `index.ts` — de enige overgebleven `strippedBetaalconditie` leeft in
+  `_shared/orderbevestiging-pdf.ts`, waar hij ook daadwerkelijk gebruikt wordt).
+- **Logo verscheen nooit op de PDF — root cause gevonden en gefixt:** de oude
+  default `KARPI_LOGO_PATH = 'logos/karpi-logo.jpg'` in combinatie met bucket
+  `'documenten'` verwees naar een niet-bestaand storage-object (geverifieerd via
+  `storage.objects`: het bestand staat op `public-assets/karpi-logo.jpg`, 25KB).
+  De try/catch slikte de downloadfout stil in, dus niemand merkte het. **Fix:**
+  `KARPI_LOGO_BUCKET = 'public-assets'` / `KARPI_LOGO_PATH = 'karpi-logo.jpg'`,
+  zelfde conventie als het al-werkende `factuur-pdf/index.ts`.
+- **PDF-redesign: het oude-systeem-template (`ob26499970.pdf`, "HERBEVESTIGING")
+  nagebootst** in `_shared/orderbevestiging-pdf.ts`. De gekleurde/blokkerige
+  stijl (terracotta titelbalk, slate tabel-headerbalk, zebra-gestreepte rijen)
+  is vervangen door een rustigere, tekstgerichte lay-out die de merk-header van
+  `_shared/factuur-pdf.ts` spiegelt: gecentreerd Karpi-logo bovenaan, "KARPI BV"
+  + adresgegevens rechtsboven in `KARPI_ORANJE` (`rgb(0.76, 0.53, 0.22)` —
+  afgeleid uit de gouden lijnkleur van het logo, dezelfde constante als in de
+  factuur), een platte "ORDERBEVESTIGING"-labelregel (i.p.v. gekleurde balk,
+  analoog aan "FACTUUR"/"HERBEVESTIGING" in het oude template), en een
+  tabel-opmaak met dunne zwarte lijnen i.p.v. gekleurde balken/zebra-striping.
+  Brengt orderbevestiging en factuur visueel in lijn — beide stammen uit
+  dezelfde oude-systeem-"Custom ERP"-templatefamilie.
+
+**Getest:** opnieuw end-to-end testverzending op ORD-2026-0001 naar
+phdobbe@gmail.com (na deploy) — `bevestigd_at`/`bevestigd_door`/
+`bevestiging_email` nadien weer teruggedraaid naar `NULL`.
+
+## 2026-06-08 — Signalering levertijd-wijziging door leverancier-ETA-update (mig 326)
+
+**Waarom:** sinds mig 318/319 kunnen leveranciers (supplier-portal) en Karpi
+intern de ETA op een inkooporderregel aanpassen — `update_regel_eta`
+propageert dat al **direct en stil** naar lopende klantorders:
+`herallocateer_orderregel` herberekent de claims en de bidirectionele
+`sync_order_afleverdatum_eta` (mig 319) verschuift `orders.afleverdatum` zowel
+naar voren als naar achteren. Operationeel correct, maar onzichtbaar — een
+order kon twee weken later gaan leveren zonder dat iemand het zag of de klant
+daarover werd geïnformeerd. Gebruiker wilde dit zichtbaar: een overzicht +
+per-order signalering, met een **handmatige** "herbevestigd aan klant"-afvinking
+(geen automatische mail/EDI-bericht — dat regelt de operator zelf en legt het
+hier vast als audit-trail).
 
 **Wat:**
-- **Nieuwe architectuur — geplande polling-sync** ([mig 323](../supabase/migrations/323_shopify_polling_sync.sql),
-  [`sync-shopify-orders-poll`](../supabase/functions/sync-shopify-orders-poll/index.ts)):
-  vervangt de webhook volledig door een pg_cron-tick elke 10 minuten die
-  `GET /orders.json?created_at_min=<watermark>&order=created_at asc` bevraagt
-  (cursor-paginering via `Link`-header `page_info`). Zelf-helend via
-  `shopify_sync_watermark` (schuift progressief per order op, ook bij timeouts)
-  en gecapt op `MAX_ORDERS_PER_RUN=25` om ruim binnen de edge-function
-  idle-timeout (150s) te blijven — de rest pakt de volgende tick op. Audit-trail
-  in nieuwe tabel `shopify_sync_runs` (analoog aan `edi_berichten`).
-- **Gedeelde verwerkingslogica** geëxtraheerd naar [`_shared/shopify-order-processor.ts`](../supabase/functions/_shared/shopify-order-processor.ts)
-  (`processShopifyOrder`) — idempotentie-check, debiteur-matching (`matchDebiteur`),
-  orderregels bouwen, adres/afleverdatum afleiden en de `create_webshop_order`-RPC,
-  inclusief de `debiteur_zeker`/`debiteur_match_bron`-snapshot (mig 322) zodat
-  onzeker-gematchte orders ook via de poller in de "te bevestigen"-flow landen.
-  Vervangt en verwijdert de oude webhook-handler (`sync-shopify-order`) en de
-  bijbehorende `shopify-verify.ts` (HMAC-verificatie, nu overbodig).
-- **Monitoring:** nieuwe banner [`ShopifySyncStatusBanner`](../frontend/src/components/orders/shopify-sync-status-banner.tsx)
-  op het orders-overzicht — verschijnt zodra de laatste run `status='fout'` heeft
-  of ouder is dan 3× het verwachte interval (30 min), zodat een stille storing
-  (zoals deze) niet meer maandenlang onopgemerkt blijft.
+- `order_event_type` uitgebreid met `'levertijd_gewijzigd_door_eta'` (patroon
+  mig 297: `ALTER TYPE ... ADD VALUE` vóór de functies die 'm gebruiken).
+- Nieuwe nullable gate-kolom `orders.levertijd_wijziging_te_bevestigen_sinds`
+  (TIMESTAMPTZ, NULL = niets open). Bewust **één** kolom i.p.v. een
+  gemeld_op/bevestigd_op-paar (zoals `edi_gewenste_afleverdatum`/
+  `edi_bevestigd_op`): die EDI-gate is eenmalig (vast bij order-aanmaak),
+  terwijl deze gate herhaaldelijk open/dicht moet — en PostgREST kan niet
+  filteren op kolom-vs-kolom-vergelijkingen (`bevestigd_op < gemeld_op`). Eén
+  nulbare "open sinds"-timestamp is zowel het filterbare gate-predicaat
+  (`IS NOT NULL`) als de weergavewaarde ineen.
+- `sync_order_afleverdatum_eta` (mig 319) uitgebreid met detectie: vergelijkt
+  de oude vs. nieuwe `afleverdatum` op **ISO-leverweek**
+  (`verzendweek_voor_datum`, mig 228 — kleine dag-schuiven binnen dezelfde week
+  triggeren bewust geen melding, mirrort EDI-leverweek/bundel-conventies). Bij
+  een leverweek-verschuiving: logt een `levertijd_gewijzigd_door_eta`
+  `order_events`-rij (met `afleverdatum_oud/nieuw`, `verzendweek_oud/nieuw`,
+  `inkooporder_regel_id`, `eta_bijgewerkt_door`) en zet de gate op `now()`.
+  Signaleert bij **elke** ETA-gedreven wijziging, ongeacht of de leverancier
+  (portal) of Karpi intern de ETA aanpaste — de impact op de klant is gelijk.
+  **Subtiele bug onderweg gefixt:** de "voor"-snapshot moet vóór
+  `herallocateer_orderregel` worden gelezen — dat pad triggert zelf al
+  `herwaardeer_order_status → sync_order_afleverdatum_met_claims`
+  (forward-only), die de `afleverdatum` bij een latere ETA al naar de nieuwe
+  waarde kan hebben geschoven vóórdat de detectie draait (oud == nieuw, geen
+  melding; of bij een terugdraai: verkeerde "voor"-waarde). Opgelost met een
+  expliciete `p_oude_afleverdatum`-parameter die `update_regel_eta` vult met
+  de pré-allocatie-snapshot.
+- Nieuwe RPC `markeer_levertijd_herbevestigd(order_id)` — idempotente
+  gate-clearer (zet de kolom terug op NULL), mirrort `markeer_order_edi_bevestigd`
+  (mig 158). Puur administratief, geen geautomatiseerde communicatie.
+- `orders_list`-view: kolom toegevoegd zodat overzicht en detail erop kunnen
+  filteren/conditioneren.
+- Frontend: helper [`levertijd-wijziging.ts`](../frontend/src/lib/orders/levertijd-wijziging.ts)
+  (`isLevertijdWijzigingTeBevestigen`, mirrort `edi-leverweek.ts`), nieuwe
+  status-overstijgende tab **"Levertijd gewijzigd"** op het orders-overzicht
+  (`levertijd_wijziging_te_bevestigen_sinds IS NOT NULL AND status NOT IN
+  ('Verzonden','Geannuleerd')` — dit is het gevraagde *overzicht*), amber
+  [`LevertijdWijzigingBanner`](../frontend/src/components/orders/levertijd-wijziging-banner.tsx)
+  op order-detail (toont was-wk → wordt-wk + oorzaak, knop
+  "Herbevestigd aan klant ✓"), en query
+  `fetchLaatsteLevertijdWijziging` (mirrort `fetchInkomendBerichtVoorOrder`)
+  voor de banner-detailweergave.
+- Niet in scope (bewust, evt. latere iteratie): geen automatische
+  klant-notificatie bij herbevestigen; geen inline oud→nieuw-badge in de
+  orders-tabelrijen (de tab-filter zelf vormt het overzicht, volledige
+  vergelijking staat op order-detail).
+- Plan: `/Users/pd/.claude/plans/melodic-churning-haven.md` (lokaal, niet in git).
 
-**Bekend, niet aangepakt in deze wijziging:** de bestaande `poll-email-orders`-cron
-faalt op dit project elke run met `unrecognized configuration parameter
-"app.supabase_url"` (die GUC's bestaan niet hier — mig 323 gebruikt daarom bewust
-het wél-werkende `vault.decrypted_secrets`-patroon i.p.v. `current_setting`). Apart
-issue, niet in scope van deze fix.
+## 2026-06-08 — Factuur-/orderbevestigingsmail van Resend naar Microsoft Graph (M365)
+
+**Waarom:** we gaan daadwerkelijk facturen en orderbevestigingen per mail versturen
+vanuit RugFlow, en wilden eerst checken of de bestaande Resend-koppeling
+betrouwbaar zou werken. Bleek niet: het Resend-verzenddomein `karpi.nl` stond op
+**Failed** — ontbrekend MX-record + falende SPF op het `send`-subdomein, en de
+DNS-provider (netzozeker.nl) liet via het zelfbedieningsformulier geen
+aangepaste naam toe bij recordtype MX (alleen op de domein-apex). In plaats van
+daar achteraan te blijven hobbelen: `karpi.nl` is namelijk **al correct
+geconfigureerd voor Microsoft 365** (de bestaande MX wijst al naar
+`protection.outlook.com`, de SPF bevat al `include:spf.protection.outlook.com`)
+— dus is overstappen op verzenden via het bestaande M365-postvak zowel
+eenvoudiger als betrouwbaarder, zonder enige nieuwe DNS-wijziging.
+
+**Wat:**
+- Nieuwe gedeelde module [`_shared/graph-mail-client.ts`](../supabase/functions/_shared/graph-mail-client.ts)
+  (+ `graph-mail-client.test.ts`) — dunne wrapper rond de **Microsoft Graph
+  `sendMail`-API**, met OAuth2 client-credentials-flow (Entra ID app-registratie,
+  permissie `Mail.Send`, application-type met admin-consent). Spiegelt de oude
+  `sendFactuurEmail(...)`-interface zodat de callers nauwelijks hoefden te wijzigen.
+- [`factuur-verzenden`](../supabase/functions/factuur-verzenden/index.ts) en
+  [`stuur-orderbevestiging`](../supabase/functions/stuur-orderbevestiging/index.ts)
+  roepen nu `sendFactuurEmail` uit `graph-mail-client.ts` aan i.p.v.
+  `resend-client.ts`. Nieuwe env-vars: `MS_GRAPH_TENANT_ID`, `MS_GRAPH_CLIENT_ID`,
+  `MS_GRAPH_CLIENT_SECRET` (vervangen `RESEND_API_KEY`); `FACTUUR_FROM_EMAIL` en
+  `FACTUUR_REPLY_TO` blijven bestaan maar wijzen nu naar een echte M365-mailbox
+  (bv. `facturen@karpi.nl`) — de app-registratie moet `Mail.Send` hebben voor die
+  mailbox.
+- `resend-client.ts` + `resend-client.test.ts` **verwijderd** (geen overige callers).
+
+**Nog te doen (door gebruiker, buiten code-scope):** Entra ID app-registratie
+aanmaken (Azure Portal → App registrations → New registration → API permissions
+→ Microsoft Graph → Application permissions → `Mail.Send` → Grant admin consent
+→ Certificates & secrets → nieuw client secret), en de vier secrets
+(`MS_GRAPH_TENANT_ID`, `MS_GRAPH_CLIENT_ID`, `MS_GRAPH_CLIENT_SECRET`,
+`FACTUUR_FROM_EMAIL`) in Supabase edge-function-secrets zetten/bijwerken vóór
+deploy. `RESEND_API_KEY`/`FACTUUR_REPLY_TO` (oud) kunnen daarna opgeruimd worden.
+
+## 2026-06-07 — Carrier-payload-audit: rauwe HST request/response per poging bewaren
+
+**Waarom:** de rauwe payloads van inkomende kanalen (Shopify, EDI) worden al
+bewaard, maar uitgaand vervoerder-verkeer niet volledig. HST slaat z'n
+request/response wél op `hst_transportorders` op, maar dat is **één rij die bij
+elke retry overschreven wordt** (`markeer_hst_fout`, mig 171) — bij succes wordt
+`error_msg` zelfs op NULL gezet. Daardoor verdwijnt de fout-historie van eerdere
+pogingen, juist wat je bij diagnose nodig hebt. Doel: van élke carrier-poping de
+ruwe payload herleidbaar houden, gekoppeld aan de order.
+
+**Wat — mig 325:**
+- Tabel `inkomende_payloads` (mig 324) **hernoemd naar `externe_payloads`** — de
+  tabel had al een `richting`-kolom, de oude naam dekte de uitgaande lading niet.
+  Eén centrale plek voor álle externe payloads (in + uit). Indexen mee hernoemd
+  + nieuwe index `(richting, kanaal, ontvangen_op DESC)`.
+- Neutrale RPC's `log_externe_payload(... p_richting, p_order_id, p_status, p_fout)`
+  + `markeer_externe_payload_verwerkt`. Outbound carrier-calls leggen in één insert
+  richting=`'out'`, `order_id` en de eindstatus vast.
+- Oude namen `log_inkomende_payload` / `markeer_inkomende_payload_verwerkt` blijven
+  als **deprecated wrappers** bestaan zodat de reeds-gedeployde `sync-shopify-order`
+  niet breekt vóór de herdeploy.
+- [`hst-send`](../supabase/functions/hst-send/index.ts): best-effort append-only
+  logging na elke POST — `kanaal='hst'`, `richting='out'`, `order_id` gevuld,
+  `payload_raw` = verstuurde request, `payload_json` = `{ request, response,
+  http_code, ok, transport_order_id, tracking_number }`, status `verwerkt`/`fout`.
+  Elke retry = nieuwe rij → volledige historie bewaard. PDF blijft uit de response
+  gestript (staat in storage). Logging mag het versturen nooit blokkeren.
+- [`sync-shopify-order`](../supabase/functions/sync-shopify-order/index.ts) overgezet
+  naar de neutrale RPC-namen.
+
+**Scope:** alleen HST (enige nu-actieve API-vervoerder). EDI-carriers
+(Rhenus/Verhoek via `transus-send`) volgen zodra ze live gaan; backend-only, een
+diagnose-UI is een aparte vervolgslice.
+
+**Diagnose:** mislukte HST-verzendingen incl. retry-historie →
+`SELECT externe_id, order_id, fout, ontvangen_op, payload_json FROM externe_payloads
+WHERE kanaal='hst' AND richting='out' AND status='fout' ORDER BY ontvangen_op DESC;`
+
+**Migratie:** 325 (handmatig toepassen). **Deploy:** `hst-send` + `sync-shopify-order`.
+
+## 2026-06-07 — Debiteur-matcher-seam Slices 4–5: "debiteur te bevestigen" + env-ladder
+
+**Waarom:** vervolg op de gedeelde debiteur-matcher-seam (Slices 0–3). Tot nu toe
+werd de `zeker`-vlag van een match genegeerd: een onzekere fuzzy treffer
+(bedrijfsnaam-deelmatch / e-mail) landde stil op de gegokte debiteur. Operator-keuze
+(2026-06-07): zo'n order wél aanmaken maar markeren als "debiteur te bevestigen",
+analoog aan de EDI "te koppelen"-flow, zodat geen order ongezien op de verkeerde
+klant blijft staan.
+
+**Wat — Slice 4 (mig 322):**
+- Kolommen `orders.debiteur_zeker BOOLEAN DEFAULT true` + `orders.debiteur_match_bron TEXT`
+  (audit: welke strategie won → locality op "waarom deze debiteur?").
+- `create_webshop_order` (herdefinitie van mig 308) persisteert beide uit `p_header`
+  (backward-compatibele `COALESCE`-default `zeker=TRUE`); `orders_list`-view (herdefinitie
+  van mig 309) exposeert ze.
+- [`sync-shopify-order`](../supabase/functions/sync-shopify-order/index.ts) stuurt
+  `debiteur_zeker` + `debiteur_match_bron` mee i.p.v. `zeker` te negeren.
+- **"Te bevestigen"-predicaat** = `debiteur_zeker=false AND (debiteur_match_bron IS NULL OR
+  debiteur_match_bron <> 'env_fallback') AND status <> 'Geannuleerd'` — NULL-safe (een onzekere
+  order zónder bron telt mee, valt niet stil uit beeld); één bron-van-waarheid:
+  `countTeBevestigenDebiteurOrders` + de `'Debiteur te bevestigen'`-branch in `fetchOrders`
+  + de JS-conditie op order-detail. **`env_fallback` valt bewust af:**
+  de verzameldebiteur is voor consumenten-webshops (wisselend afleveradres) de verwachte
+  eindbestemming, geen fout.
+- UI: amber [`DebiteurTeBevestigenBanner`](../frontend/src/components/orders/debiteur-te-bevestigen-banner.tsx)
+  + status-tab `'Debiteur te bevestigen'` op het orders-overzicht; bevestig-widget
+  [`DebiteurBevestigenWidget`](../frontend/src/components/orders/debiteur-bevestigen-widget.tsx)
+  op order-detail (`bevestigDebiteur` → `debiteur_zeker=true`, of corrigeren via order-bewerken).
+
+**Wat — Slice 5:**
+- `matchDebiteurViaEnv(envKey)` in [`_shared/debiteur-matcher.ts`](../supabase/functions/_shared/debiteur-matcher.ts):
+  Lightspeed/webshop (`FLOORPASSION_DEBITEUR_NR`), Shopify-catch-all
+  (`SHOPIFY_FALLBACK_DEBITEUR_NR`) lopen nu via één helper → `DebiteurMatch{bron:'env_fallback',
+  zeker:false}`. Geen gedragswijziging; uniformeert het contract zodat échte Floorpassion-B2B-
+  matching later achter dezelfde ladder kan.
+
+**Tests:** +4 cases (`matchDebiteurViaEnv` + bestaande seam-suite groen, 18/18).
+**Migratie:** 322 (handmatig toepassen). **Deploy:** `sync-shopify-order`, `sync-webshop-order`,
+`import-lightspeed-orders` opnieuw deployen.
+**Plan:** [`docs/superpowers/plans/2026-06-07-gedeelde-debiteur-matcher-seam.md`](superpowers/plans/2026-06-07-gedeelde-debiteur-matcher-seam.md).
 
 ## 2026-06-07 — Consolidatie ISO-week-kern (UTC) + `formatDateTime`
 

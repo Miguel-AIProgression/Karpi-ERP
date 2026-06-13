@@ -56,6 +56,7 @@ import {
 } from '@/modules/logistiek'
 import { SupplierPortalPage } from '@/pages/portal/supplier-portal'
 import { PortalLoginPage } from '@/pages/portal/portal-login'
+import { BugMeldingenPage } from '@/pages/feedback/bug-meldingen'
 
 export const router = createBrowserRouter([
   // Standalone (zonder app-shell): publieke pagina's zonder auth
@@ -66,6 +67,9 @@ export const router = createBrowserRouter([
     element: <AppLayout />,
     children: [
       { index: true, element: <DashboardPage /> },
+
+      // Feedback / bug-meldingen (bereikbaar via gebruikersmenu rechtsboven)
+      { path: 'meldingen', element: <BugMeldingenPage /> },
 
       // Orders (V1)
       { path: 'orders', element: <OrdersOverviewPage /> },
@@ -117,6 +121,9 @@ export const router = createBrowserRouter([
       // als zending_nr de detail-route in).
       { path: 'logistiek/vervoerders', element: <VervoerdersOverzichtPage /> },
       { path: 'logistiek/vervoerders/:code', element: <VervoerderDetailPage /> },
+      { path: 'logistiek/vervoerders/:code/monitor', element: <VervoerderDetailPage /> },
+      // Oude monitor-URL (was eigen menu-item) → tab op de HST-vervoerderpagina
+      { path: 'logistiek/hst-monitor', element: <Navigate to="/logistiek/vervoerders/hst_api/monitor" replace /> },
       { path: 'logistiek/printset/bulk', element: <BulkPrintSetPage /> },
       { path: 'logistiek/:zending_nr/printset', element: <ZendingPrintSetPage /> },
       { path: 'logistiek/:zending_nr', element: <ZendingDetailPage /> },
