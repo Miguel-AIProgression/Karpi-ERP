@@ -138,6 +138,10 @@ function guil_computeFreeRects(rollWidth, rollLength, bezette) {
   return free
 }
 
+// Bewuste benchmark-kopie: dit is een standalone Node-dev-tool zonder Deno/TS-
+// loader, dus het kan _shared/reststuk-config.ts niet importeren. Single source
+// van deze waarden = supabase/functions/_shared/reststuk-config.ts; houd ze
+// gelijk als je daar wijzigt (geen productie-pad, alleen FFDH-vs-guillotine).
 const RESTSTUK_MIN_SHORT = 50
 const RESTSTUK_MIN_LONG = 100
 const AANGEBROKEN_MIN_LENGTE = 100

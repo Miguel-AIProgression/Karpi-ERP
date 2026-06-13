@@ -38,6 +38,19 @@ import {
   packRoll as packRollFfdh,
   reconstructShelves,
 } from './ffdh-packing.ts'
+// Reststuk-/aanbreek-drempels: één bron (ADR-0033). Re-export hieronder zodat
+// bestaande importeurs van deze module ongewijzigd blijven werken.
+import {
+  RESTSTUK_MIN_SHORT,
+  RESTSTUK_MIN_LONG,
+  AANGEBROKEN_MIN_LENGTE,
+} from './reststuk-config.ts'
+export {
+  RESTSTUK_MIN_SHORT,
+  RESTSTUK_MIN_LONG,
+  AANGEBROKEN_MIN_LENGTE,
+  ROND_SNIJ_MARGE,
+} from './reststuk-config.ts'
 
 // ---------------------------------------------------------------------------
 // Free rectangle tracking
@@ -50,37 +63,11 @@ export interface FreeRect {
   height: number  // afmeting langs Y (rol-lengte)
 }
 
-/**
- * Reststuk-minima — synchroon met compute-reststukken.ts (edge-function én
- * frontend) en de bedrijfsregel dat kleinere stukken niet als herbruikbaar
- * reststuk bewaard worden. Deze module gebruikt ze voor scoring: placements
- * die grote samenhangende vrije rechthoeken achterlaten boven deze drempels
- * krijgen voorrang.
- *
- * Pas je deze waarden aan, wijzig dan óók:
- *   - supabase/functions/_shared/compute-reststukken.ts
- *   - frontend/src/modules/snijplanning/lib/compute-reststukken.ts
- *   - scripts/vergelijk-snijalgoritmes.mjs (benchmark)
- */
-export const RESTSTUK_MIN_SHORT = 50
-export const RESTSTUK_MIN_LONG = 100
-
-/** Extra snijmarge voor ronde stukken: diameter + 5 cm in beide richtingen. */
-export const ROND_SNIJ_MARGE = 5
-
-/**
- * Minimale rol-rest om een rol nog als "aangebroken" terug te zetten. Blijft
- * er minder dan dit over na snijden, dan is de rol-rest feitelijk verspild
- * tenzij die rest zelf als reststuk kwalificeert (≥ RESTSTUK_MIN_SHORT ×
- * RESTSTUK_MIN_LONG). Synchroon met frontend `AANGEBROKEN_MIN_LENGTE` en de
- * UI-drempel in `rol-uitvoer-modal.tsx`.
- *
- * Gebruikt in placement-scoring: als een placement de rol-rest onder deze
- * drempel zou duwen, schakelen we over van "minimaliseer rol-verbruik" naar
- * "maximaliseer reststuk-m²" — want de rol gaat toch op, en dan telt elke
- * herbruikbare rest.
- */
-export const AANGEBROKEN_MIN_LENGTE = 100
+// RESTSTUK_MIN_SHORT/LONG + AANGEBROKEN_MIN_LENGTE worden nu uit
+// ./reststuk-config.ts geïmporteerd (ADR-0033, zie boven). De packer gebruikt
+// ze voor scoring: placements die grote samenhangende vrije rechthoeken boven
+// deze drempels achterlaten krijgen voorrang, en de aanbreek-drempel bepaalt de
+// dead-zone grens (rolLengte − AANGEBROKEN_MIN_LENGTE) in de placement-keuze.
 
 function qualifiesAsReststuk(fr: FreeRect): boolean {
   const short = Math.min(fr.width, fr.height)
