@@ -44,12 +44,6 @@ function EtaEditCell({
           <div className={`text-sm ${regel.regel_verwacht_datum ? 'font-medium' : 'text-slate-500'}`}>
             {formatDatum(regel.verwacht_datum)}
           </div>
-          {regel.eta_bijgewerkt_op && (
-            <div className="text-xs text-slate-400 mt-0.5">
-              {regel.eta_bijgewerkt_door === 'leverancier' ? 'Leverancier' : 'Karpi'}{' '}
-              {formatDatum(regel.eta_bijgewerkt_op.slice(0, 10))}
-            </div>
-          )}
         </div>
         <button
           onClick={() => { setEditing(true); setValue(regel.verwacht_datum ?? '') }}
@@ -173,6 +167,7 @@ export function LeverancierOpenRegels({ leverancierId }: Props) {
                 <th className="px-4 py-2 text-right font-medium">Geleverd</th>
                 <th className="px-4 py-2 text-right font-medium">Resterend</th>
                 <th className="px-4 py-2 text-left font-medium">ETA</th>
+                <th className="px-4 py-2 text-left font-medium whitespace-nowrap">Gewijzigd</th>
                 <th className="px-4 py-2 text-left font-medium">Opmerking</th>
               </tr>
             </thead>
@@ -209,6 +204,20 @@ export function LeverancierOpenRegels({ leverancierId }: Props) {
                     </td>
                     <td className="px-4 py-3">
                       <EtaEditCell regel={r} leverancierId={leverancierId} />
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {r.eta_bijgewerkt_op ? (
+                        <div>
+                          <div className="text-sm text-slate-700">
+                            {formatDatum(r.eta_bijgewerkt_op.slice(0, 10))}
+                          </div>
+                          <div className={`text-xs mt-0.5 font-medium ${r.eta_bijgewerkt_door === 'leverancier' ? 'text-blue-500' : 'text-slate-400'}`}>
+                            {r.eta_bijgewerkt_door === 'leverancier' ? 'Leverancier' : 'Karpi'}
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-slate-300">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 max-w-[200px]">
                       {r.leverancier_notitie ? (

@@ -77,18 +77,6 @@ function EtaInlineEdit({ regel }: { regel: OpenRegelOverzichtRow }) {
       />
       <div className="text-xs text-slate-400 pl-0.5">
         <span>{isoWeekLabel(value || null)}</span>
-        {!isDirty && regel.eta_bijgewerkt_door && regel.eta_bijgewerkt_op && (
-          <div className={`mt-0.5 flex items-center gap-0.5 ${regel.eta_bijgewerkt_door === 'leverancier' ? 'text-blue-500' : 'text-slate-400'}`}>
-            <span>{regel.eta_bijgewerkt_door === 'leverancier' ? '▲' : '✎'}</span>
-            <span className="font-medium">
-              {regel.eta_bijgewerkt_door === 'leverancier'
-                ? (regel.leverancier_naam ?? 'Leverancier')
-                : 'Karpi'}
-            </span>
-            <span className="text-slate-300 mx-0.5">·</span>
-            <span>{formatBijgewerktOp(regel.eta_bijgewerkt_op)}</span>
-          </div>
-        )}
       </div>
       {isDirty && (
         <button
@@ -255,6 +243,7 @@ export function InkoopRegelOverzichtTab() {
                     <SortIcon active={sortKey === 'eta'} dir={sortDir} />
                   </button>
                 </th>
+                <th className="px-4 py-3 text-left font-medium whitespace-nowrap">Gewijzigd</th>
                 <th className="px-4 py-3 text-left font-medium">Opmerking</th>
               </tr>
             </thead>
@@ -300,6 +289,22 @@ export function InkoopRegelOverzichtTab() {
                     </td>
                     <td className="px-4 py-3">
                       <EtaInlineEdit regel={r} />
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {r.eta_bijgewerkt_op ? (
+                        <div>
+                          <div className="text-sm text-slate-700">
+                            {r.eta_bijgewerkt_op.slice(8, 10)}-{r.eta_bijgewerkt_op.slice(5, 7)}-{r.eta_bijgewerkt_op.slice(0, 4)}
+                          </div>
+                          <div className={`text-xs mt-0.5 font-medium ${r.eta_bijgewerkt_door === 'leverancier' ? 'text-blue-500' : 'text-slate-400'}`}>
+                            {r.eta_bijgewerkt_door === 'leverancier'
+                              ? (r.leverancier_naam ?? 'Leverancier')
+                              : 'Karpi'}
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-slate-300">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 max-w-[220px]">
                       {r.leverancier_notitie ? (
