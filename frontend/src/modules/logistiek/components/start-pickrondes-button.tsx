@@ -220,7 +220,7 @@ export function StartPickrondesButton({
   }
 
   async function handleStart() {
-    // Picker optioneel (mig 393): niet langer geblokkeerd op lege picker.
+    // Picker optioneel (mig 394): niet langer geblokkeerd op lege picker.
     setError(null)
     if (pickerId) saveLastPicker(pickerId)
     try {

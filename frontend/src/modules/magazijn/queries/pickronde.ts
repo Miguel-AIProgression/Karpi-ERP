@@ -7,7 +7,7 @@ export interface MarkeerNietGevondenArgs {
   colliId: number
   modus: NietGevondenModus
   opmerking?: string | null
-  pickerId: number
+  pickerId: number | null
 }
 
 export async function startPickronde(orderId: number, pickerId: number): Promise<number> {
@@ -31,7 +31,10 @@ export async function markeerColliNietGevonden(
   if (error) throw toError(error, 'Markeren niet-gevonden mislukt')
 }
 
-export async function voltooiPickronde(zendingId: number, pickerId: number): Promise<number> {
+export async function voltooiPickronde(
+  zendingId: number,
+  pickerId: number | null,
+): Promise<number> {
   const { data, error } = await supabase.rpc('voltooi_pickronde', {
     p_zending_id: zendingId,
     p_picker_id: pickerId,

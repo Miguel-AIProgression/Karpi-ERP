@@ -81,7 +81,7 @@ export function useStartPickrondes() {
       forceSoloIds,
     }: {
       orderIds: number[]
-      pickerId: number
+      pickerId: number | null
       forceSoloIds?: number[]
     }) => startPickrondes(orderIds, pickerId, forceSoloIds ?? []),
     onSuccess: () => {

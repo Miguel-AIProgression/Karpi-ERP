@@ -19,13 +19,10 @@ export function VoltooiPickrondeKnop({ zendingId, zendingStatus, pickerId }: Pro
   if (zendingStatus !== 'Picken') return null
 
   const aantalNietGevonden = colli.filter((c) => c.pick_uitkomst === 'niet_gevonden').length
-  const disabled = mutate.isPending || aantalNietGevonden > 0 || !pickerId
+  // Picker optioneel (mig 394): niet langer geblokkeerd op lege picker.
+  const disabled = mutate.isPending || aantalNietGevonden > 0
 
   async function handleClick() {
-    if (!pickerId) {
-      setError('Kies eerst een picker bovenaan')
-      return
-    }
     setError(null)
     try {
       await mutate.mutateAsync({ zendingId, pickerId })
@@ -35,9 +32,8 @@ export function VoltooiPickrondeKnop({ zendingId, zendingStatus, pickerId }: Pro
     }
   }
 
-  const tooltip = !pickerId
-    ? 'Kies eerst een picker'
-    : aantalNietGevonden > 0
+  const tooltip =
+    aantalNietGevonden > 0
       ? `Eerst ${aantalNietGevonden} pick-probleem oplossen (chef)`
       : 'Markeer alle colli als gepickt en sluit de pickronde — order gaat naar Verzonden, factuur volgt'
 
