@@ -3,9 +3,8 @@ import { SHIPPING_PRODUCT_ID } from '@/lib/constants/shipping'
 import {
   DROPSHIP_KLEIN_ID,
   DROPSHIP_GROOT_ID,
-  DROPSHIP_KLEIN_PRIJS,
-  DROPSHIP_GROOT_PRIJS,
   type DropshipmentKeuze,
+  type DropshipPrijzen,
 } from '@/lib/constants/dropshipment'
 
 /**
@@ -20,9 +19,11 @@ import {
  * 2. Form-data met `is_dropship` top-level — gestempeld door
  *    `applyDropshipmentLogic` (create) of de order-edit-mapping (edit).
  *
- * LET OP: voor het *toevoegen* van de kostenregel blijven de constants in
- * `constants/dropshipment.ts` de bron (welk artikel, welke prijs) — net als
- * `SHIPPING_PRODUCT_ID` bij verzendregels. Toevoegen ≠ detecteren.
+ * LET OP: voor het *toevoegen* van de kostenregel blijven de id-constants in
+ * `constants/dropshipment.ts` de bron (welk artikel) — net als
+ * `SHIPPING_PRODUCT_ID` bij verzendregels. De PRIJS komt sinds 2026-06-13 uit
+ * `producten.verkoopprijs` (via `DropshipPrijzen`, ADR-0018), niet meer uit een
+ * hardcoded constante. Toevoegen ≠ detecteren.
  */
 export interface RegelMetDropshipFlag {
   is_dropship?: boolean | null
@@ -62,11 +63,15 @@ export function detecteerDropshipKeuze(
  * - 'klein' → verwijder VERZEND + andere dropship-regels, voeg dropship-klein toe
  * - 'groot' → verwijder VERZEND + andere dropship-regels, voeg dropship-groot toe
  *
- * Pure functie — geen side effects.
+ * Pure functie — geen side effects. `prijzen` komt uit `producten.verkoopprijs`
+ * (useDropshipPrijzen) en is verplicht voor 'klein'/'groot'; voor 'nee'
+ * ongebruikt. De aanroeper (order-form) blokkeert de keuze tot de prijzen
+ * geladen zijn, dus de guard-throw is een vangnet, geen UI-pad.
  */
 export function applyDropshipmentLogic(
   regels: OrderRegelFormData[],
   keuze: DropshipmentKeuze,
+  prijzen?: DropshipPrijzen,
 ): OrderRegelFormData[] {
   const zonder = regels.filter((r) => !isDropshipRegel(r) && r.artikelnr !== SHIPPING_PRODUCT_ID)
 
@@ -74,8 +79,12 @@ export function applyDropshipmentLogic(
     return regels.filter((r) => !isDropshipRegel(r))
   }
 
+  if (!prijzen) {
+    throw new Error(`applyDropshipmentLogic: dropship-prijzen vereist voor keuze '${keuze}'`)
+  }
+
   const artikelnr = keuze === 'klein' ? DROPSHIP_KLEIN_ID : DROPSHIP_GROOT_ID
-  const prijs = keuze === 'klein' ? DROPSHIP_KLEIN_PRIJS : DROPSHIP_GROOT_PRIJS
+  const prijs = keuze === 'klein' ? prijzen.klein : prijzen.groot
   const omschrijving =
     keuze === 'klein' ? 'Dropshipment (tapijt t/m 200 cm)' : 'Dropshipment (tapijt vanaf 200 cm)'
 

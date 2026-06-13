@@ -42,6 +42,7 @@ import {
 } from '@/lib/orders/dropship-email'
 import { DropshipmentSelector } from './dropshipment-selector'
 import type { DropshipmentKeuze } from '@/lib/constants/dropshipment'
+import { useDropshipPrijzen } from '@/hooks/use-dropship-prijzen'
 
 function getISOWeek(dateStr: string): number {
   return verzendWeekVoor(dateStr)?.week ?? 0
@@ -87,6 +88,8 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
   const [dropshipKeuze, setDropshipKeuze] = useState<DropshipmentKeuze>(
     () => detecteerDropshipKeuze(initialData?.regels ?? [])
   )
+  // Dropship-prijzen uit producten.verkoopprijs (ADR-0018) — niet hardcoded.
+  const { data: dropshipPrijzen } = useDropshipPrijzen()
   // Dropship-detectie is flag-based (producten.is_dropship, mig 370) zodat
   // ook een dropship-artikel buiten de selector-keuzes (klein/groot) de
   // e-mail-validatie en afl_email-defaults activeert. dropshipKeuze blijft
@@ -204,10 +207,17 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
   }
 
   function handleDropshipChange(keuze: DropshipmentKeuze) {
+    // klein/groot vereisen een geladen prijs (producten.verkoopprijs); zonder
+    // wordt de keuze geblokkeerd zodat er nooit een €0-/onbekende regel ontstaat.
+    if (keuze !== 'nee' && !dropshipPrijzen) {
+      setError('Dropshipment-prijzen zijn nog niet geladen. Probeer het zo opnieuw.')
+      return
+    }
+    setError(null)
     setDropshipKeuze(keuze)
     setShippingOverridden(keuze !== 'nee')
     setRegels((current) => {
-      const metDropship = applyDropshipmentLogic(current, keuze)
+      const metDropship = applyDropshipmentLogic(current, keuze, dropshipPrijzen)
       if (keuze === 'nee') {
         return applyShippingLogic(metDropship, client, afhalen)
       }
@@ -872,6 +882,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
         <DropshipmentSelector
           value={dropshipKeuze}
           onChange={handleDropshipChange}
+          prijzen={dropshipPrijzen}
         />
       )}
 
