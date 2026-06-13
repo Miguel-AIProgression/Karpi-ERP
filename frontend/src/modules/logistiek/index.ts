@@ -72,6 +72,7 @@ export {
 } from './hooks/use-vervoerder-keuze'
 export { ZendingStatusBadge } from './components/zending-status-badge'
 export { StartPickrondesButton } from './components/start-pickrondes-button'
+export { StartWeekButton } from './components/start-week-button'
 
 // Fase A — vervoerder-instellingen (mig 174)
 export {

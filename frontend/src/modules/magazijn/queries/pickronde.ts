@@ -43,7 +43,7 @@ export async function voltooiPickronde(
   return Number(data)
 }
 
-// Mig 395: draait een nog-niet-gepickte pickronde terug. Verwijdert de zending
+// Mig 398: draait een nog-niet-gepickte pickronde terug. Verwijdert de zending
 // en zet de betrokken order(s) terug naar 'Klaar voor picken'. Backend weigert
 // als er al gepickt is of de zending niet meer status 'Picken' heeft.
 export async function annuleerPickronde(

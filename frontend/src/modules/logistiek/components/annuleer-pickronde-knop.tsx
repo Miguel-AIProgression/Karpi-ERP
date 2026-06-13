@@ -1,6 +1,6 @@
 // frontend/src/modules/logistiek/components/annuleer-pickronde-knop.tsx
 //
-// Terug uit pickronde (mig 395): vangnet om een per ongeluk gestarte pickronde
+// Terug uit pickronde (mig 398): vangnet om een per ongeluk gestarte pickronde
 // terug te draaien zolang er nog NIETS gepickt is. Verwijdert de zending en zet
 // de order(s) terug naar 'Klaar voor picken'. Bewust onderscheiden van Voltooien:
 // dit is een correctie, geen werkvloer-flow — daarom achter een bevestiging.

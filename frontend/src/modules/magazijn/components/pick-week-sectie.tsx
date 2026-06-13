@@ -7,7 +7,7 @@
 // De pagina beslist welke orders bij deze sectie horen en óf de land-toggle
 // aan staat — hier alleen het rangschikken + renderen.
 import { KlantClusterBlok } from './klant-cluster-blok'
-import { StartPickrondesButton } from '@/modules/logistiek'
+import { StartPickrondesButton, StartWeekButton } from '@/modules/logistiek'
 import type { VoorgesteldeBundel } from '@/modules/logistiek/queries/voorgestelde-bundels'
 import {
   clusterOrdersOpKlant,
@@ -82,32 +82,38 @@ export function PickWeekSectie({
 
   return (
     <section>
-      <h3 className="flex flex-wrap items-center gap-2 mb-2 px-1 text-sm font-semibold">
-        <span className={achterstallig ? 'text-rose-700' : 'text-slate-700'}>
-          {kopLabel}
-        </span>
-        {verzendWeek !== null && (
-          <span
-            className={cn(
-              'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium',
-              achterstallig
-                ? 'bg-rose-100 text-rose-700'
-                : 'bg-teal-50 text-teal-700',
-            )}
-          >
-            Verzendweek {verzendWeek}
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-1">
+        <h3 className="flex flex-wrap items-center gap-2 text-sm font-semibold">
+          <span className={achterstallig ? 'text-rose-700' : 'text-slate-700'}>
+            {kopLabel}
           </span>
-        )}
-        {achterstallig && (
-          <span
-            className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-rose-500 text-white"
-            title="Pick-week ligt al in het verleden — had vorige week of eerder gepickt moeten worden"
-          >
-            Achterstallig
-          </span>
-        )}
-        <span className="text-slate-400 font-normal">({orders.length})</span>
-      </h3>
+          {verzendWeek !== null && (
+            <span
+              className={cn(
+                'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium',
+                achterstallig
+                  ? 'bg-rose-100 text-rose-700'
+                  : 'bg-teal-50 text-teal-700',
+              )}
+            >
+              Verzendweek {verzendWeek}
+            </span>
+          )}
+          {achterstallig && (
+            <span
+              className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-rose-500 text-white"
+              title="Pick-week ligt al in het verleden — had vorige week of eerder gepickt moeten worden"
+            >
+              Achterstallig
+            </span>
+          )}
+          <span className="text-slate-400 font-normal">({orders.length})</span>
+        </h3>
+        {/* Hele week in één keer starten → bulk-printset (labels + pakbonnen als
+            aparte stapels per printer). Auto-4D-bundeling maakt er meerdere
+            zendingen van. Dag-orders blijven hun eigen cluster-start houden. */}
+        <StartWeekButton orders={orders} verzendWeek={verzendWeek} />
+      </div>
 
       <div className="space-y-4">
         {groepen.map((groep, i) => {

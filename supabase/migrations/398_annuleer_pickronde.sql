@@ -1,4 +1,4 @@
--- 395_annuleer_pickronde.sql
+-- 398_annuleer_pickronde.sql
 -- Terugdraai-vangnet voor een nog-niet-gepickte pickronde (ADR-0003 stond dit
 -- als V2 open; aanleiding 13-06-2026: 2 orders moesten handmatig via SQL uit een
 -- pickronde gehaald worden, en de geplande "hele week starten"-knop vergroot het
@@ -112,7 +112,7 @@ $$;
 GRANT EXECUTE ON FUNCTION annuleer_pickronde(BIGINT, TEXT, BIGINT) TO authenticated;
 
 COMMENT ON FUNCTION annuleer_pickronde(BIGINT, TEXT, BIGINT) IS
-  'Mig 395: draait een nog-niet-gepickte pickronde terug (status Picken, alle colli open). '
+  'Mig 398: draait een nog-niet-gepickte pickronde terug (status Picken, alle colli open). '
   'Verwijdert zending_colli/_regels/_orders/zendingen en zet betrokken orders zonder '
   'andere actieve zending via _apply_transitie terug naar Klaar voor picken '
   '(event pickronde_teruggedraaid) + herbereken_wacht_status. Spiegel van voltooi_pickronde.';
