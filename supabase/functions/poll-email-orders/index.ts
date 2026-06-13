@@ -17,6 +17,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { extractTextFromPdfBytes } from '../_shared/pdf-text-extract.ts'
+import { logExternePayload, markeerExternePayload } from '../_shared/externe-payload-audit.ts'
 
 const SUPABASE_URL         = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -138,6 +139,20 @@ async function verwerkEmail(
   const bodyObj  = msg.body as { contentType: string; content: string }
   const bodyText = bodyObj.contentType === 'html' ? htmlToText(bodyObj.content) : bodyObj.content
 
+  // Afzender (alleen aanwezig als '$select' het meeneemt — best-effort metadata)
+  const fromAdres = (msg.from as { emailAddress?: { address?: string } } | undefined)
+    ?.emailAddress?.address ?? null
+
+  // Rauwe-payload-audit (mig 324/325): log de letterlijke e-mailbron vóór parsen.
+  const auditId = await logExternePayload(supabase, {
+    kanaal:    'email',
+    richting:  'in',
+    raw:       bodyObj?.content ?? bodyText ?? '',
+    json:      { from: fromAdres, subject, messageId: msgId, contentType: bodyObj?.contentType },
+    bron:      fromAdres ?? MS_MAILBOX,
+    externeId: msgId,
+  })
+
   // 1. Idempotentie: order al aangemaakt?
   const { data: bestaand } = await supabase
     .from('orders')
@@ -147,9 +162,11 @@ async function verwerkEmail(
     .limit(1)
 
   if (bestaand && bestaand.length > 0) {
+    await markeerExternePayload(supabase, auditId, 'verwerkt')
     return { order_nr: bestaand[0].order_nr, actie: 'overgeslagen (al verwerkt)' }
   }
 
+  try {
   // 2. PDF-bijlagen ophalen (eerste PDF volstaat)
   let pdfBase64: string | undefined
   const bijlagenRes = await graphGet(
@@ -318,7 +335,14 @@ async function verwerkEmail(
   await graphPatch(token, `/users/${MS_MAILBOX}/messages/${msgId}`, { isRead: true })
   await graphPost(token, `/users/${MS_MAILBOX}/messages/${msgId}/move`, { destinationId: verwerktMapId })
 
+  await markeerExternePayload(supabase, auditId, 'verwerkt')
   return { order_nr: orderNr, actie: 'aangemaakt' }
+  } catch (err) {
+    // Audit afronden op 'fout'; verwerkings-fout ongewijzigd doorgooien.
+    const reden = err instanceof Error ? err.message : String(err)
+    await markeerExternePayload(supabase, auditId, 'fout', { fout: reden })
+    throw err
+  }
 }
 
 // ── Serve ────────────────────────────────────────────────────────────────────
@@ -347,7 +371,7 @@ serve(async (req) => {
     // Haal max 20 ongelezen berichten op uit inbox
     const messagesRes = await graphGet(
       token,
-      `/users/${MS_MAILBOX}/mailFolders/inbox/messages?$filter=isRead eq false&$top=20&$select=id,subject,body`,
+      `/users/${MS_MAILBOX}/mailFolders/inbox/messages?$filter=isRead eq false&$top=20&$select=id,subject,body,from`,
     ) as { value: Array<Record<string, unknown>> }
 
     const resultaten: Array<{ subject: string; order_nr: string | null; actie: string; fout?: string }> = []

@@ -11,6 +11,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { logExternePayload, markeerExternePayload } from '../_shared/externe-payload-audit.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -123,9 +124,11 @@ serve(async (req: Request) => {
 
   // ── PATCH: update ETA ──────────────────────────────────────────────────────
   if (req.method === 'PATCH') {
+    // Letterlijke request-body eerst als tekst lezen voor de rauwe-payload-audit.
+    const rawBody = await req.text()
     let body: Record<string, unknown>
     try {
-      body = await req.json()
+      body = JSON.parse(rawBody) as Record<string, unknown>
     } catch {
       return json({ error: 'Invalid JSON body' }, 400)
     }
@@ -137,11 +140,27 @@ serve(async (req: Request) => {
       notitie?: string
     }
 
+    // Audit: inkomende ETA-mutatie wegschrijven vóór verwerking (best-effort).
+    const auditId = await logExternePayload(supabase, {
+      kanaal: 'supplier_portal',
+      richting: 'in',
+      raw: rawBody,
+      json: body,
+      bron: 'supplier_portal',
+      externeId: regel_id != null ? String(regel_id) : (token ?? null),
+    })
+
     if (!token || !regel_id || !verwacht_datum) {
+      await markeerExternePayload(supabase, auditId, 'fout', {
+        fout: 'token, regel_id en verwacht_datum verplicht',
+      })
       return json({ error: 'token, regel_id and verwacht_datum are required' }, 400)
     }
 
     if (!/^\d{4}-\d{2}-\d{2}$/.test(verwacht_datum)) {
+      await markeerExternePayload(supabase, auditId, 'fout', {
+        fout: 'verwacht_datum geen YYYY-MM-DD',
+      })
       return json({ error: 'verwacht_datum must be YYYY-MM-DD' }, 400)
     }
 
@@ -155,12 +174,16 @@ serve(async (req: Request) => {
 
     if (rpcErr) {
       console.error('supplier-portal PATCH error', rpcErr)
+      await markeerExternePayload(supabase, auditId, 'fout', {
+        fout: rpcErr.message ?? 'update_regel_eta faalde',
+      })
       if (rpcErr.message?.includes('Ongeldig') || rpcErr.message?.includes('hoort niet')) {
         return json({ error: rpcErr.message }, 403)
       }
       return json({ error: 'Failed to update ETA' }, 500)
     }
 
+    await markeerExternePayload(supabase, auditId, 'verwerkt')
     return json({ ok: true })
   }
 

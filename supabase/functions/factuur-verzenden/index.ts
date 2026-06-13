@@ -7,6 +7,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { genereerFactuurPDF } from '../_shared/factuur-pdf.ts'
 import { sendFactuurEmail } from '../_shared/graph-mail-client.ts'
 import { normalizeCountry } from '../_shared/adres-split.ts'
+import { logExternePayload } from '../_shared/externe-payload-audit.ts'
 import {
   buildKarpiInvoiceFixedWidth,
   type InvoiceParty,
@@ -398,6 +399,23 @@ serve(async () => {
           bijlagen: bijlagenMeta,
         })
 
+        // Rauwe-payload-audit (mig 324/325): leg de uitgaande factuur-e-mail vast.
+        // Alleen de e-mail-tak — de EDI INVOIC wordt in edi_berichten gelogd, niet
+        // hier. PDF/AV-bytes worden gestript; alleen mail-metadata + bijlage-refs.
+        await logExternePayload(supabase, {
+          kanaal: 'factuur',
+          richting: 'out',
+          bron: 'graph',
+          externeId: factuur.factuur_nr,
+          orderId: orderIdsVoorLog[0] ?? null,
+          status: 'verwerkt',
+          raw: JSON.stringify({ to: debiteur.email_factuur, subject: `Factuur ${factuur.factuur_nr}`, html: emailHtml }),
+          json: {
+            request: { to: debiteur.email_factuur, subject: `Factuur ${factuur.factuur_nr}`, html: emailHtml, bijlagen: bijlagenMeta },
+            ok: true,
+          },
+        })
+
         // Stuur kopie naar betaler indien aanwezig en anders dan debiteur
         if (betalerEmail && betalerEmail !== debiteur.email_factuur) {
           await sendFactuurEmail({
@@ -419,6 +437,21 @@ serve(async () => {
             verzondenAan: betalerEmail,
             html: emailHtml,
             bijlagen: bijlagenMeta,
+          })
+
+          // Rauwe-payload-audit: ook de betaler-kopie vastleggen (PDF gestript).
+          await logExternePayload(supabase, {
+            kanaal: 'factuur',
+            richting: 'out',
+            bron: 'graph',
+            externeId: factuur.factuur_nr,
+            orderId: orderIdsVoorLog[0] ?? null,
+            status: 'verwerkt',
+            raw: JSON.stringify({ to: betalerEmail, subject: `Factuur ${factuur.factuur_nr} (kopie voor betaler)`, html: emailHtml }),
+            json: {
+              request: { to: betalerEmail, subject: `Factuur ${factuur.factuur_nr} (kopie voor betaler)`, html: emailHtml, bijlagen: bijlagenMeta },
+              ok: true,
+            },
           })
         }
       }

@@ -43,19 +43,75 @@ export interface ProductMatch {
 
 const VERZEND_PATROON = /verzend|versand|shipping/i
 const MUSTER_PATROON = /muster|sample|gratis\s+staal/i
-const WUNSCHGROSSE_PATROON = /wunschgr[öo]ß?e|op\s+maat|custom\s+size|volgens\s+tekening/i
+// `\bcustom\b` (los woord) vangt ook Shopify's maatwerk-app-variantnamen als
+// "Rechthoek / Custom" — daar ontbreken de afmetingen in deze regel zelf
+// (vermoedelijk een datalek bij het plaatsen van de order), maar het label
+// "Custom" alleen is al een hard signaal: nooit aan een vaste-maat artikel
+// koppelen, altijd als maatwerk-zonder-dims wegzetten (backfill vult later aan).
+const WUNSCHGROSSE_PATROON = /wunschgr[öo]ß?e|op\s+maat|volgens\s+tekening|\bcustom\b/i
 const DURCHMESSER_PATROON = /durchmesser|diameter|rond\s+\d|rund\s+\d/i
 const AFMETING_PATROON = /(\d{2,3})\s*x\s*(\d{2,3})\s*cm/i
-const ORGANISCH_PATROON = /organisch[e]?\s*(vorm|form|shape)?/i
 const OVAAL_PATROON = /ovaal|oval/i
 // Floorpassion verkoopt tapijten "in Contour Vorm" — een organische
 // contour-vorm waarin het tapijt wordt gesneden (zie webshop). Altijd maatwerk:
 // de combinatie kwaliteit+kleur+maat bestaat vrijwel nooit als standaard SKU.
 const CONTOUR_PATROON = /\bcontour\b|\bkontur\b/i
+// Nederlandse spelling "organisch(e) vorm" — de DB-tabel kent de Engelse
+// "Organic"; deze regex vangt de NL-variant als fallback.
+const ORGANISCH_PATROON = /organisch[e]?\s*(vorm|form|shape)?/i
 
-// Detecteert niet-rechthoekige vormen → altijd maatwerk, geen standaard artikel.
-// Geeft de maatwerk_vormen.code terug, of null als rechthoekig.
-function detectVorm(text: string): string | null {
+// Cache van actieve vormen (m.u.v. 'rechthoek', dat is de default — geen
+// "afwijkende vorm"-signaal). Vormen wijzigen zelden; één keer per cold-start
+// ophalen is ruim voldoende en voorkomt een DB-call per orderregel.
+let vormenCache: Array<{ code: string; naam: string }> | null = null
+
+async function laadAfwijkendeVormen(
+  supabase: SupabaseClient,
+): Promise<Array<{ code: string; naam: string }>> {
+  if (vormenCache) return vormenCache
+  const { data, error } = await supabase
+    .from('maatwerk_vormen')
+    .select('code, naam')
+    .eq('actief', true)
+    .neq('code', 'rechthoek')
+  if (error) console.error('[product-matcher] laadAfwijkendeVormen:', error.message)
+  vormenCache = (data ?? []) as Array<{ code: string; naam: string }>
+  return vormenCache
+}
+
+/**
+ * Detecteert een niet-rechthoekige vorm in de orderregeltekst → altijd
+ * maatwerk, nooit koppelen aan een standaard (rechthoekig) artikel.
+ *
+ * Matcht tegen `maatwerk_vormen.naam` — DE bron-van-waarheid voor vormnamen,
+ * en precies de Engelse benamingen ("Organic", "Organic Gespiegeld", "Pebble",
+ * "Ellips", "Afgeronde Hoeken", "Cloud") die zowel operators als Shopify-/
+ * mailorders gebruiken. Eerder hardcoded regex (`/organisch[e]?/`) miste
+ * "Organic" volledig (andere spelling) en kende alleen organisch_a/ovaal/rond
+ * — vier van de negen actieve vormen werden nooit herkend.
+ *
+ * Langste naam eerst zodat "Organic Gespiegeld" wint van "Organic" (anders
+ * matcht de generieke substring eerder en krijgt het stuk de verkeerde toeslag
+ * en spiegel-instructie mee het snijplan in).
+ *
+ * Fallback op vaste rond/ovaal-patronen voor spellingen die niet 1-op-1 in
+ * `maatwerk_vormen.naam` staan (Duits "Durchmesser"/"rund", Engels "oval").
+ */
+async function detectVorm(supabase: SupabaseClient, text: string): Promise<string | null> {
+  const tNorm = normaliseerNaam(text)
+  if (!tNorm) return null
+
+  const vormen = await laadAfwijkendeVormen(supabase)
+  const sorted = [...vormen].sort((a, b) => b.naam.length - a.naam.length)
+  for (const v of sorted) {
+    const vNorm = normaliseerNaam(v.naam)
+    if (vNorm && tNorm.includes(vNorm)) return v.code
+  }
+
+  // Regex-fallbacks voor spellingen die niet 1-op-1 als `maatwerk_vormen.naam`
+  // bestaan: Duits "Kontur" (de tabel kent alleen "Contour"), en de vaste
+  // rond/ovaal-varianten (Durchmesser/oval). Superset van de oude hardcoded
+  // detectie zodat de overstap naar DB-gedreven niets laat vallen.
   if (CONTOUR_PATROON.test(text)) return 'contour'
   if (ORGANISCH_PATROON.test(text)) return 'organisch_a'
   if (OVAAL_PATROON.test(text)) return 'ovaal'
@@ -311,7 +367,27 @@ export async function matchProduct(
     const aliases = matchAliasesViaPrefix(naam, (aliasRows ?? []) as Array<{ benaming: string; kwaliteit_code: string }>)
 
     if (aliases.length > 0 && kleur) {
-      const kwaliteitCodes = aliases.map((a) => a.kwaliteit_code)
+      let kwaliteitCodes = aliases.map((a) => a.kwaliteit_code)
+
+      // Expliciete Karpi-code (SKU/articleCode) is autoritatief — bronsystemen
+      // (Shopify, Lightspeed) sturen de Karpi-productcode altijd mee, bv. SKU
+      // "LAGO13XXMAATWERK" → kwaliteit LAGO, kleur 13. Die weegt zwaarder dan
+      // een fuzzy naam-alias-gok: "Lago 13" matchte ooit ten onrechte op
+      // klant-alias "LAGO SISAL" (→ ZONK), terwijl kleur 13 binnen ZONK niet
+      // eens bestaat — en LAGO13(XX...)/LAGO13MAATWERK gewoon bestaan. Alleen
+      // vóórvoegen als de geparste kwaliteit ook echt bestaat, anders kan een
+      // willekeurige SKU-prefix de terechte fuzzy match onterecht verdringen.
+      const artcodeEarly = parseArticleCode(row.articleCode)
+      if (artcodeEarly.kwaliteit && !kwaliteitCodes.includes(artcodeEarly.kwaliteit)) {
+        const { data: kwalRow } = await supabase
+          .from('kwaliteiten')
+          .select('code')
+          .eq('code', artcodeEarly.kwaliteit)
+          .limit(1)
+        if (kwalRow && kwalRow.length > 0) {
+          kwaliteitCodes = [artcodeEarly.kwaliteit, ...kwaliteitCodes]
+        }
+      }
 
       // Maat uit variantTitle, productTitle, articleCode én customFields (rechthoek + rond)
       const dims = parseMaatwerkDims(row)
@@ -337,7 +413,8 @@ export async function matchProduct(
         // Vorm-detectie ook hier: een expliciet maatwerk-signaal (Op maat /
         // MAATWERK-sku) sluit een organische vorm zoals Contour niet uit —
         // anders verliest een "Contour"-order zijn vorm bij snijplanning.
-        const explicietVorm = detectVorm(
+        const explicietVorm = await detectVorm(
+          supabase,
           [row.productTitle, row.variantTitle, ...collectExtraTexts(row)].join(' '),
         )
         return {
@@ -354,7 +431,7 @@ export async function matchProduct(
       if (sizeRaw) {
         // Niet-rechthoekige vorm → altijd maatwerk, nooit koppelen aan standaard artikel.
         const fullText = [row.productTitle, row.variantTitle, ...collectExtraTexts(row)].join(' ')
-        const vorm = detectVorm(fullText)
+        const vorm = await detectVorm(supabase, fullText)
         if (vorm) {
           // Ook vorm-maatwerk koppelen aan het generieke
           // `{KWALITEIT}{KLEUR}MAATWERK`-artikel zodat voorraad/facturatie

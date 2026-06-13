@@ -10,6 +10,7 @@ import { DebiteurTeBevestigenBanner } from '@/components/orders/debiteur-te-beve
 import { useOrders, useStatusCounts, useOrderKlantOpties } from '@/hooks/use-orders'
 import { useFacturenVoorOrders } from '@/modules/facturatie'
 import { EdiTeKoppelenBanner } from '@/modules/edi'
+import { ShopifySyncStatusBanner } from '@/components/orders/shopify-sync-status-banner'
 import type { OrderSortField, SortDirection } from '@/lib/supabase/queries/orders'
 
 const KANAAL_OPTIES = [
@@ -104,6 +105,9 @@ export function OrdersOverviewPage() {
           setPage(0)
         }}
       />
+
+      {/* Storingssignaal: de geplande Shopify-orderpoll loopt vast of faalt */}
+      <ShopifySyncStatusBanner />
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3 mb-4">

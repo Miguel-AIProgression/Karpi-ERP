@@ -43,6 +43,14 @@ export interface LightspeedOrderRow {
   discountIncl?: number
   weight?: number
   customFields?: LightspeedCustomField[]
+  /**
+   * Aanvullende vrije tekst buiten customFields — bv. Shopify line-item
+   * `properties` als `"Maatwerk: 260x250 rechthoek"` / `"custom-vorm: organic"`
+   * (zie shopifyLineItemToMatcherRow). Door deze door collectExtraTexts mee
+   * te laten lopen werken parseMaatwerkDims/detectVorm identiek voor alle
+   * orderbronnen — geen aparte parse-logica per kanaal.
+   */
+  extraTexts?: string[]
 }
 
 export interface LightspeedOrder {
@@ -186,6 +194,7 @@ export function collectExtraTexts(row: LightspeedOrderRow): string[] {
       if (v.value != null && typeof v.value === 'string') texts.push(v.value)
     }
   }
+  if (Array.isArray(row.extraTexts)) texts.push(...row.extraTexts)
   return texts
 }
 

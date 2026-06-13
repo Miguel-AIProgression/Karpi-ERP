@@ -19,6 +19,44 @@ Beide volgen het bestaande nullable-timestamp-gate-patroon (mig 326): kolom op `
 **Feature B — prijs (mig 396):** kolom `orders.prijs_ontbreekt_sinds`, AFTER-trigger `trg_order_regels_prijs_gate` op `order_regels` (€0/NULL op een normale regel: NOT `is_admin_pseudo`, artikelnr ≠ VERZEND, `korting_pct` < 100 — admin-pseudo/VERZEND/100%-korting zijn legitiem €0). `UPDATE OF prijs,korting_pct,artikelnr` zodat allocatie-updates niet vuren. RPC `markeer_prijs_geaccepteerd` (operator accepteert €0 bewust, audit `order_events` `'prijs_geaccepteerd'`) óf prijscorrectie wist de gate. Helper [`prijs-ontbreekt.ts`](../frontend/src/lib/orders/prijs-ontbreekt.ts). Amber banner `PrijsOntbreektBanner` (corrigeer / bevestig) + status-tab "Prijs ontbreekt".
 
 **Hard-block (beide):** gedeelde poort `_valideer_intake_gates(order_ids[])` die `start_pickronden` aanroept ná de bundel-uitbreiding — mig 395 voegde de aanroep + adres-check toe, mig 396 breidde de poort uit met de prijs-check (`start_pickronden` zelf maar één keer herschreven, body = mig 373 + één PERFORM). Frontend-spiegel: `StartPickrondesButton` disablet met reden ("Afleveradres ontbreekt"/"Prijs ontbreekt"). Backfill: beide migraties flaggen bestaande open orders retroactief. Tests: `afleveradres-gate.test.ts` + `prijs-ontbreekt.test.ts` (11 nieuwe asserts); typecheck schoon, 311 magazijn/orders-tests groen.
+## 2026-06-13 — Rauwe-payload-audit verbreed naar álle externe kanalen + unified view (mig 392)
+
+**Waarom:** één centrale "black box recorder" zodat bij een bug ("waarom kreeg
+deze order geen adres?", "is deze factuur-mail/dit EDI-bericht verstuurd?") het
+originele in-/uitgaande bericht direct terug te vinden is. Aanleiding:
+ORD-2026-0097 (Shopify) printte een leeg verzendlabel doordat de inkomende
+payload nergens bewaard was. Vóór vandaag logden alleen carriers (HST/Rhenus/
+Verhoek, uitgaand) en Shopify-poll (inkomend) naar `externe_payloads`; EDI zat
+al volledig in `edi_berichten`.
+
+**Wat:**
+- Gedeelde seam [`_shared/externe-payload-audit.ts`](../supabase/functions/_shared/externe-payload-audit.ts)
+  (ADR-0033, best-effort — gooit nooit, loggen mag verwerking/verzending nooit
+  blokkeren; unittest 8 groen). Two-step `ontvangen`→`verwerkt`/`fout` voor
+  inbound, one-step met eindstatus voor outbound.
+- **Inbound** (`richting='in'`): `import-lightspeed-orders` ('lightspeed'),
+  `sync-webshop-order` ('webshop'), `poll-email-orders` ('email'),
+  `parse-klant-po` ('klant_po'), `supplier-portal` ('supplier_portal', alleen
+  de ETA-PATCH — GET/login niet).
+- **Outbound** (`richting='out'`, PDF-bytes gestript — alleen metadata):
+  `stuur-orderbevestiging` ('orderbevestiging'), `factuur-verzenden` ('factuur',
+  uitsluitend de e-mail-tak; de EDI-INVOIC blijft in `edi_berichten`).
+- **Mig 392** — unified view `alle_externe_berichten` = `externe_payloads`
+  UNION `edi_berichten`, genormaliseerd (audit_tabel, kanaal, richting,
+  berichttype, externe_id, status, order_id, debiteur_nr, payload_raw/json,
+  fout, aangemaakt_op/afgerond_op). Eén SELECT doorzoekt nu álle berichten.
+  EDI niet gedupliceerd (blijft in `edi_berichten`).
+- Alle 7 functies live gedeployed (na live-diff veiligheidscheck: 6/7 live==main;
+  `factuur-verzenden` had niet-gemergede `normalizeCountry`-seam-drift uit de
+  Verhoek/Rhenus-branch — logging daar herbaseerd op de live-versie zodat de
+  refactor niet teruggedraaid werd). `verify_jwt=false` voor lightspeed +
+  supplier-portal in config.toml gepind.
+
+**Status:** mig 392 (de view) is op 13-06 handmatig op de live DB toegepast
+(MCP heeft geen DDL-rechten); geverifieerd via `alle_externe_berichten`. De
+logging draait live op alle 7 functies (na live-diff veiligheidscheck +
+redeploy). Repo-nr 387→392 hernummerd vlak vóór merge (origin/main claimde
+intussen 387-391).
 
 ## 2026-06-13 — Colli-data single-source: omschrijving + label-metadata + gewicht-totaal (mig 390-391)
 

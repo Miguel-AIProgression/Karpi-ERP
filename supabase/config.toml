@@ -30,10 +30,16 @@ verify_jwt = false
 [functions.sync-webshop-order]
 verify_jwt = false
 
-[functions.sync-shopify-order]
+[functions.sync-shopify-orders-poll]
 verify_jwt = false
 
 [functions.poll-email-orders]
+verify_jwt = false
+
+[functions.import-lightspeed-orders]
+verify_jwt = false
+
+[functions.supplier-portal]
 verify_jwt = false
 
 [functions.gebruikers-beheer]
