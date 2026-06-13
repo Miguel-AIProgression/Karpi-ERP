@@ -11,7 +11,7 @@ interface Props {
 }
 
 /**
- * Blokkade-banner (mig 392): het afleveradres-snapshot van deze order is
+ * Blokkade-banner (mig 395): het afleveradres-snapshot van deze order is
  * onvolledig. Anders dan de "te bevestigen"-gates is dit een HARDE blokkade —
  * start_pickronden weigert de order tot het adres compleet is, zodat er nooit
  * een verzendlabel zonder adres geprint wordt (aanleiding: ORD-2026-0097).

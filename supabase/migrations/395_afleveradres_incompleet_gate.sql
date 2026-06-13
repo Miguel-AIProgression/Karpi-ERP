@@ -1,4 +1,4 @@
--- Migratie 392: afleveradres-incompleet gate (intake-validatie, Feature A)
+-- Migratie 395: afleveradres-incompleet gate (intake-validatie, Feature A)
 --
 -- Aanleiding (13-06-2026): order ORD-2026-0097 belandde in Pick & Ship ZONDER
 -- afleveradres-snapshot. Gevolg: de verzendlabels/stickers kregen geen adres
@@ -23,7 +23,7 @@
 -- ze niet; ze kunnen wél in de "Afleveradres ontbreekt"-tab opduiken.
 --
 -- Hard-block: start_pickronden weigert een order met open adres-gate via de
--- gedeelde helper _valideer_intake_gates (mig 393 breidt die uit met de
+-- gedeelde helper _valideer_intake_gates (mig 396 breidt die uit met de
 -- prijs-gate). Frontend-spiegel: AfleveradresIncompleetBanner + status-tab +
 -- StartPickrondesButton (disabled).
 --
@@ -34,7 +34,7 @@ ALTER TABLE orders
   ADD COLUMN IF NOT EXISTS afl_adres_incompleet_sinds TIMESTAMPTZ;
 
 COMMENT ON COLUMN orders.afl_adres_incompleet_sinds IS
-  'Mig 392: NULL = afleveradres compleet. TIMESTAMPTZ = moment van eerste '
+  'Mig 395: NULL = afleveradres compleet. TIMESTAMPTZ = moment van eerste '
   'detectie dat het afl_*-snapshot incompleet is (niet-afhaal-order). Afgeleid '
   'door trg_orders_afl_adres_gate; gewist zodra adres compleet. Blokkeert '
   'start_pickronden via _valideer_intake_gates.';
@@ -91,7 +91,7 @@ UPDATE orders
    );
 
 -- 4. Gedeelde intake-gate-poort ---------------------------------------------
--- Centrale server-side guard die start_pickronden aanroept. Mig 393 vervangt
+-- Centrale server-side guard die start_pickronden aanroept. Mig 396 vervangt
 -- deze functie door een versie die óók de prijs-gate checkt; start_pickronden
 -- zelf hoeft dan niet opnieuw herschreven te worden.
 CREATE OR REPLACE FUNCTION _valideer_intake_gates(p_order_ids BIGINT[])
@@ -118,8 +118,8 @@ END;
 $$;
 
 COMMENT ON FUNCTION _valideer_intake_gates(BIGINT[]) IS
-  'Mig 392/393: server-side intake-gate-poort voor start_pickronden. Weigert '
-  'orders met open afleveradres-gate (mig 392) of prijs-gate (mig 393). '
+  'Mig 395/396: server-side intake-gate-poort voor start_pickronden. Weigert '
+  'orders met open afleveradres-gate (mig 395) of prijs-gate (mig 396). '
   'Frontend-spiegel: StartPickrondesButton + banners.';
 
 -- 5. start_pickronden: roep de gate-poort aan na bundel-uitbreiding ----------
@@ -249,7 +249,7 @@ BEGIN
       USING ERRCODE = 'invalid_parameter_value';
   END IF;
 
-  -- Intake-gate-poort (mig 392/393): afleveradres- en prijs-gate.
+  -- Intake-gate-poort (mig 395/396): afleveradres- en prijs-gate.
   PERFORM _valideer_intake_gates(v_alle_orders);
 
   -- Hoofdgroepering — zending-aanmaak per (debiteur × adres × vervoerder × week × solo_marker)
@@ -346,9 +346,9 @@ $$;
 GRANT EXECUTE ON FUNCTION start_pickronden(BIGINT[], BIGINT, BIGINT[]) TO authenticated;
 
 COMMENT ON FUNCTION start_pickronden(BIGINT[], BIGINT, BIGINT[]) IS
-  'Mig 392: als mig 373, plus intake-gate-poort _valideer_intake_gates — '
-  'weigert orders met onvolledig afleveradres (mig 392) of ontbrekende prijs '
-  '(mig 393). Frontend-spiegel: StartPickrondesButton + banners.';
+  'Mig 395: als mig 373, plus intake-gate-poort _valideer_intake_gates — '
+  'weigert orders met onvolledig afleveradres (mig 395) of ontbrekende prijs '
+  '(mig 396). Frontend-spiegel: StartPickrondesButton + banners.';
 
 -- 6. orders_list view: gate-kolom toevoegen (voor overzicht-tab + filter) ----
 -- CREATE OR REPLACE VIEW kan alleen aan het eind kolommen toevoegen → volledige
@@ -403,7 +403,7 @@ SELECT
   b.bundel_order_count,
   o.levertijd_wijziging_te_bevestigen_sinds,
   o.bevestigd_at,
-  -- Mig 392: afleveradres-incompleet gate
+  -- Mig 395: afleveradres-incompleet gate
   o.afl_adres_incompleet_sinds
 FROM orders o
 LEFT JOIN debiteuren d         ON d.debiteur_nr = o.debiteur_nr
@@ -414,6 +414,6 @@ COMMENT ON VIEW orders_list IS
   'Sinds mig 244: lever_type. Sinds mig 259: bundel-info. Sinds mig 309: '
   'edi_bevestigd_op + edi_gewenste_afleverdatum. Sinds mig 322: debiteur_zeker '
   '+ debiteur_match_bron. Sinds mig 326: levertijd_wijziging_te_bevestigen_sinds. '
-  'Sinds mig 335: bevestigd_at. Sinds mig 392: afl_adres_incompleet_sinds.';
+  'Sinds mig 335: bevestigd_at. Sinds mig 395: afl_adres_incompleet_sinds.';
 
 NOTIFY pgrst, 'reload schema';

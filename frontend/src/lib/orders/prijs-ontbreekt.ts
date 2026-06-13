@@ -1,4 +1,4 @@
-// Prijs-ontbreekt-gate-seam (mig 393): bepaalt of een order ≥1 regel zonder
+// Prijs-ontbreekt-gate-seam (mig 396): bepaalt of een order ≥1 regel zonder
 // prijs (€0/NULL) heeft die eerst gecorrigeerd of bewust bevestigd moet worden
 // voordat de order naar de werkvloer/facturatie doorstroomt.
 //

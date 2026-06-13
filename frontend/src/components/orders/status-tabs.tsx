@@ -14,9 +14,9 @@ import type { StatusCount } from '@/lib/supabase/queries/orders'
 // leverancier/Karpi-ETA-update op een gekoppelde inkooporderregel (mig 326,
 // levertijd_wijziging_te_bevestigen_sinds IS NOT NULL); ook status-overstijgend.
 // 'Afleveradres ontbreekt' = orders met een onvolledig afleveradres-snapshot
-// (mig 392, afl_adres_incompleet_sinds IS NOT NULL); status-overstijgend en
+// (mig 395, afl_adres_incompleet_sinds IS NOT NULL); status-overstijgend en
 // blokkeert pickronde-start tot het adres is aangevuld.
-// 'Prijs ontbreekt' = orders met ≥1 regel zonder prijs (€0/NULL) (mig 393,
+// 'Prijs ontbreekt' = orders met ≥1 regel zonder prijs (€0/NULL) (mig 396,
 // prijs_ontbreekt_sinds IS NOT NULL); status-overstijgend en blokkeert
 // pickronde-start tot de prijs is gecorrigeerd of bewust bevestigd.
 const ALL_STATUSES = [

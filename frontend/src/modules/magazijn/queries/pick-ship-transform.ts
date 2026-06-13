@@ -63,10 +63,10 @@ export interface OrderHeaderRij {
   /** ADR 0014 / mig 244: 'datum' = pick-horizon = 1 werkdag vóór afleverdatum;
    *  'week' = direct zichtbaar zodra pickbaar. */
   lever_type: 'week' | 'datum'
-  /** Mig 392: NULL = afleveradres compleet; gezet = onvolledig → pick-start
+  /** Mig 395: NULL = afleveradres compleet; gezet = onvolledig → pick-start
    *  geblokkeerd (server-side in start_pickronden, frontend-spiegel in knop). */
   afl_adres_incompleet_sinds: string | null
-  /** Mig 393: NULL = prijs ok/geaccepteerd; gezet = ≥1 regel €0 → pick-start
+  /** Mig 396: NULL = prijs ok/geaccepteerd; gezet = ≥1 regel €0 → pick-start
    *  geblokkeerd (server-side in start_pickronden, frontend-spiegel in knop). */
   prijs_ontbreekt_sinds: string | null
 }

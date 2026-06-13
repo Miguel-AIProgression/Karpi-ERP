@@ -11,7 +11,7 @@ interface Props {
 }
 
 /**
- * Blokkade-banner (mig 393): deze order heeft ≥1 regel zonder prijs (€0/NULL).
+ * Blokkade-banner (mig 396): deze order heeft ≥1 regel zonder prijs (€0/NULL).
  * Harde blokkade — start_pickronden weigert de order tot de prijs gecorrigeerd
  * of bewust bevestigd is (aanleiding: Shopify-orders die zonder prijs binnenkwamen).
  *

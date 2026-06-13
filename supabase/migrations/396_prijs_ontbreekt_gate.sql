@@ -1,4 +1,4 @@
--- Migratie 393: prijs-ontbreekt gate (intake-validatie, Feature B)
+-- Migratie 396: prijs-ontbreekt gate (intake-validatie, Feature B)
 --
 -- Aanleiding (13-06-2026): soms komt een order via Shopify/webshop binnen
 -- zonder prijs — sync-shopify-order's haalKlantPrijs() kan null teruggeven en
@@ -19,7 +19,7 @@
 -- 13-06: admin-pseudo + VERZEND + 100%-korting uitgesloten.
 --
 -- Hard-block: start_pickronden weigert een order met open prijs-gate via de
--- gedeelde poort _valideer_intake_gates (mig 392 deed de adres-check; hier
+-- gedeelde poort _valideer_intake_gates (mig 395 deed de adres-check; hier
 -- breiden we 'm uit — start_pickronden zelf hoeft niet opnieuw herschreven).
 -- Bevestigen: markeer_prijs_geaccepteerd zet de gate op NULL (operator
 -- accepteert €0 bewust); prijs corrigeren via order-bewerken wist 'm
@@ -36,7 +36,7 @@ ALTER TABLE orders
   ADD COLUMN IF NOT EXISTS prijs_ontbreekt_sinds TIMESTAMPTZ;
 
 COMMENT ON COLUMN orders.prijs_ontbreekt_sinds IS
-  'Mig 393: NULL = geen ontbrekende prijs of bewust geaccepteerd. TIMESTAMPTZ '
+  'Mig 396: NULL = geen ontbrekende prijs of bewust geaccepteerd. TIMESTAMPTZ '
   '= moment van eerste detectie dat ≥1 niet-pseudo/niet-VERZEND-regel zonder '
   '100%-korting een prijs van 0/NULL heeft. Afgeleid door '
   'trg_order_regels_prijs_gate; gewist door markeer_prijs_geaccepteerd of '
@@ -135,7 +135,7 @@ BEGIN
     p_order_id,
     'prijs_geaccepteerd',
     v_status,
-    jsonb_build_object('geaccepteerd_sinds', v_sinds, 'migratie', 393)
+    jsonb_build_object('geaccepteerd_sinds', v_sinds, 'migratie', 396)
   );
 END;
 $$;
@@ -143,14 +143,14 @@ $$;
 GRANT EXECUTE ON FUNCTION markeer_prijs_geaccepteerd(BIGINT) TO authenticated;
 
 COMMENT ON FUNCTION markeer_prijs_geaccepteerd(BIGINT) IS
-  'Mig 393: zet orders.prijs_ontbreekt_sinds op NULL — de operator bevestigt '
+  'Mig 396: zet orders.prijs_ontbreekt_sinds op NULL — de operator bevestigt '
   'bewust dat de €0-prijs(en) op deze order kloppen. No-op als de gate al '
   'dicht is. Audit via order_events ''prijs_geaccepteerd''. Prijs corrigeren '
   'via order-bewerken wist de gate automatisch (trigger).';
 
 -- 5. Intake-gate-poort uitbreiden met de prijs-check ------------------------
--- Vervangt de mig 392-versie (alleen adres) door adres + prijs. start_pickronden
--- roept deze poort al aan (mig 392) — geen wijziging daar nodig.
+-- Vervangt de mig 395-versie (alleen adres) door adres + prijs. start_pickronden
+-- roept deze poort al aan (mig 395) — geen wijziging daar nodig.
 CREATE OR REPLACE FUNCTION _valideer_intake_gates(p_order_ids BIGINT[])
 RETURNS VOID
 LANGUAGE plpgsql
@@ -190,12 +190,12 @@ END;
 $$;
 
 COMMENT ON FUNCTION _valideer_intake_gates(BIGINT[]) IS
-  'Mig 392/393: server-side intake-gate-poort voor start_pickronden. Weigert '
-  'orders met open afleveradres-gate (mig 392) of prijs-gate (mig 393). '
+  'Mig 395/396: server-side intake-gate-poort voor start_pickronden. Weigert '
+  'orders met open afleveradres-gate (mig 395) of prijs-gate (mig 396). '
   'Frontend-spiegel: StartPickrondesButton + banners.';
 
 -- 6. orders_list view: prijs-gate-kolom toevoegen ---------------------------
--- Volledige herdefinitie van mig 392-versie + o.prijs_ontbreekt_sinds (alleen
+-- Volledige herdefinitie van mig 395-versie + o.prijs_ontbreekt_sinds (alleen
 -- aan het eind toevoegbaar bij CREATE OR REPLACE VIEW).
 CREATE OR REPLACE VIEW orders_list AS
 WITH bundel_per_order AS (
@@ -248,7 +248,7 @@ SELECT
   o.levertijd_wijziging_te_bevestigen_sinds,
   o.bevestigd_at,
   o.afl_adres_incompleet_sinds,
-  -- Mig 393: prijs-ontbreekt gate
+  -- Mig 396: prijs-ontbreekt gate
   o.prijs_ontbreekt_sinds
 FROM orders o
 LEFT JOIN debiteuren d         ON d.debiteur_nr = o.debiteur_nr
@@ -259,7 +259,7 @@ COMMENT ON VIEW orders_list IS
   'Sinds mig 244: lever_type. Sinds mig 259: bundel-info. Sinds mig 309: '
   'edi_bevestigd_op + edi_gewenste_afleverdatum. Sinds mig 322: debiteur_zeker '
   '+ debiteur_match_bron. Sinds mig 326: levertijd_wijziging_te_bevestigen_sinds. '
-  'Sinds mig 335: bevestigd_at. Sinds mig 392: afl_adres_incompleet_sinds. '
-  'Sinds mig 393: prijs_ontbreekt_sinds.';
+  'Sinds mig 335: bevestigd_at. Sinds mig 395: afl_adres_incompleet_sinds. '
+  'Sinds mig 396: prijs_ontbreekt_sinds.';
 
 NOTIFY pgrst, 'reload schema';

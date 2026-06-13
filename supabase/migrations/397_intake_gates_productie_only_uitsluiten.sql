@@ -1,6 +1,6 @@
--- Migratie 394: intake-gates (mig 392-393) sluiten productie-only orders uit
+-- Migratie 397: intake-gates (mig 395-396) sluiten productie-only orders uit
 --
--- Aanleiding (13-06-2026, direct na de mig 392-393-backfill): ALLE ~200+
+-- Aanleiding (13-06-2026, direct na de mig 395-396-backfill): ALLE ~200+
 -- productie-only orders (`alleen_productie=true`, status 'In productie',
 -- OUD-*-nummers uit Basta) werden door de backfill geflagd op zowel adres als
 -- prijs — ze hebben per definitie geen afleveradres-snapshot en geen prijs in

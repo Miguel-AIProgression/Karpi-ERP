@@ -1,4 +1,4 @@
-// Afleveradres-gate-seam (mig 392): bepaalt of een order een onvolledig
+// Afleveradres-gate-seam (mig 395): bepaalt of een order een onvolledig
 // afleveradres-snapshot heeft dat eerst aangevuld moet worden voordat de order
 // naar de werkvloer (Pick & Ship) mag doorstromen.
 //

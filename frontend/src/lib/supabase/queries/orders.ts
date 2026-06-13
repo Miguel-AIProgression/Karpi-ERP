@@ -57,13 +57,13 @@ export interface OrderRow {
   /** Mig 335: tijdstip waarop de orderbevestiging per e-mail is verstuurd. NULL = nog niet bevestigd. */
   bevestigd_at?: string | null
   /**
-   * Mig 392: tijdstip waarop gedetecteerd is dat het afleveradres-snapshot
+   * Mig 395: tijdstip waarop gedetecteerd is dat het afleveradres-snapshot
    * onvolledig is (niet-afhaal-order, naam/adres/postcode/plaats leeg). NULL =
    * compleet. Spiegelt isAfleveradresIncompleet / het 'Afleveradres ontbreekt'-tab.
    */
   afl_adres_incompleet_sinds?: string | null
   /**
-   * Mig 393: tijdstip waarop gedetecteerd is dat ≥1 normale regel (niet pseudo,
+   * Mig 396: tijdstip waarop gedetecteerd is dat ≥1 normale regel (niet pseudo,
    * niet VERZEND, korting < 100%) een prijs van €0/NULL heeft. NULL = geen
    * ontbrekende prijs of bewust geaccepteerd. Spiegelt isPrijsOntbreekt / het
    * 'Prijs ontbreekt'-tab.
@@ -232,13 +232,13 @@ export async function fetchOrders(params: {
       .not('levertijd_wijziging_te_bevestigen_sinds', 'is', null)
       .not('status', 'in', '("Verzonden","Geannuleerd")')
   } else if (status === 'Afleveradres ontbreekt') {
-    // Mig 392: orders met een onvolledig afleveradres-snapshot dat eerst
+    // Mig 395: orders met een onvolledig afleveradres-snapshot dat eerst
     // aangevuld moet worden (geen labels zonder adres). Status-overstijgend;
     // de gate is een enkele nullable timestamp (NULL = compleet). Spiegelt
     // isAfleveradresIncompleet en de DB-trigger fn_orders_afl_adres_gate.
     query = filterAfleveradresIncompleet(query)
   } else if (status === 'Prijs ontbreekt') {
-    // Mig 393: orders met ≥1 regel zonder prijs (€0/NULL) die gecorrigeerd of
+    // Mig 396: orders met ≥1 regel zonder prijs (€0/NULL) die gecorrigeerd of
     // bewust bevestigd moet worden. Status-overstijgend; nullable timestamp
     // (NULL = geen probleem / geaccepteerd). Spiegelt isPrijsOntbreekt en de
     // DB-trigger fn_order_regels_prijs_gate.

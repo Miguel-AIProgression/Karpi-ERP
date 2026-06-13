@@ -121,7 +121,7 @@ export function StartPickrondesButton({
   }, [verzendOrders, vervoerderQueries])
   const vervoerderResolutieLaadt = vervoerderQueries.some((q) => q.isLoading)
 
-  // Intake-gates (mig 392/393): orders met een onvolledig afleveradres of een
+  // Intake-gates (mig 395/396): orders met een onvolledig afleveradres of een
   // ontbrekende prijs (€0) mogen geen pickronde starten — labels zonder adres
   // resp. ongeprijsde regels. Server-side gespiegeld in start_pickronden (via
   // _valideer_intake_gates). De Pick & Ship-query haalt alleen open orders op,
@@ -174,7 +174,7 @@ export function StartPickrondesButton({
 
   const niksTeDoen = aantal === 0
   const alleenGeblokkeerd = niksTeDoen && aantalGeblokkeerd > 0
-  // Data-fouten op de order (mig 392/393) krijgen voorrang in de melding boven
+  // Data-fouten op de order (mig 395/396) krijgen voorrang in de melding boven
   // "nog geen vervoerder voor dit land". Adres vóór prijs.
   const alleenAflAdres = alleenGeblokkeerd && aantalAflAdres > 0
   const alleenPrijs = alleenGeblokkeerd && aantalAflAdres === 0 && aantalPrijs > 0
