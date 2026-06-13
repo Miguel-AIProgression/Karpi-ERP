@@ -24,6 +24,7 @@ import {
 import { matchDebiteurViaEnv } from '../_shared/debiteur-matcher.ts'
 import { buildLightspeedRegels } from '../_shared/order-intake/lightspeed-regels.ts'
 import { bepaalAfleverdatumUitOrder } from '../_shared/lightspeed-leverdatum.ts'
+import { logExternePayload, markeerExternePayload } from '../_shared/externe-payload-audit.ts'
 
 const SHOPS: LightspeedShop[] = ['nl', 'de']
 const PAGE_LIMIT = 250
@@ -86,9 +87,22 @@ async function importShop(
       if (order.status === 'cancelled') { skipped++; continue }
       if ((order.priceIncl ?? 0) <= 0) { skipped++; continue }
 
+      // Rauwe-payload-audit (mig 324/325): letterlijke inkomende order +
+      // regels wegschrijven als diagnose-vangnet, vóór de creatie.
+      let auditId: number | null = null
+
       try {
         const rows = await client.getOrderProducts(order.id)
         const { regels, matched, unmatched } = await buildLightspeedRegels(supabase, rows, debiteurNr)
+
+        auditId = await logExternePayload(supabase, {
+          kanaal: 'lightspeed',
+          richting: 'in',
+          raw: JSON.stringify({ order, products: rows }),
+          json: { order, products: rows },
+          bron: bronShopFor(shop),
+          externeId: String(order.id),
+        })
 
         const shipping = extractShippingAddress(order)
         const billing = extractBillingAddress(order)
@@ -120,12 +134,18 @@ async function importShop(
 
         if (error) {
           console.error(`[import-lightspeed] shop=${shop} order=${order.id} RPC error:`, error.message)
+          await markeerExternePayload(supabase, auditId, 'fout', { fout: error.message })
           errors++
           continue
         }
 
         const result = Array.isArray(data) && data.length > 0 ? data[0] : null
         const wasExisting = result?.was_existing ?? false
+        // Lokale cast zoals het bestaande result-patroon (RPC-return is `never`-getypeerd).
+        const orderId = (result as { order_id?: number } | null)?.order_id
+        const nieuwOrderId = typeof orderId === 'number' ? orderId : null
+
+        await markeerExternePayload(supabase, auditId, 'verwerkt', { orderId: nieuwOrderId })
 
         console.log(
           `[import-lightspeed] shop=${shop} order=${order.id} → ${result?.order_nr} ` +
@@ -138,6 +158,7 @@ async function importShop(
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         console.error(`[import-lightspeed] shop=${shop} order=${order.id} error:`, msg)
+        await markeerExternePayload(supabase, auditId, 'fout', { fout: msg })
         errors++
       }
     }

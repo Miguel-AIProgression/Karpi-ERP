@@ -19,6 +19,7 @@ import { sendFactuurEmail } from '../_shared/graph-mail-client.ts'
 import { isoWeekJaar } from '../_shared/iso-week.ts'
 import { berekenFactuurTotalen } from '../_shared/factuur-bedrag.ts'
 import { effectiefBtwPct, isBtwVerlegd } from '../_shared/btw.ts'
+import { logExternePayload } from '../_shared/externe-payload-audit.ts'
 
 const SUPABASE_URL        = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -449,20 +450,55 @@ serve(async (req) => {
   const onderwerp = `${v.onderwerp} ${klantNaam} ${o.order_nr}`
   const pdfFilename = `Orderbevestiging-${o.order_nr}.pdf`
 
-  await sendFactuurEmail({
-    tenantId: MS_GRAPH_TENANT_ID,
-    clientId: MS_GRAPH_CLIENT_ID,
-    clientSecret: MS_GRAPH_CLIENT_SECRET,
+  // Verzendpoging + rauwe-payload-audit (richting 'out'). Loggen is best-effort
+  // en gooit nooit; de PDF-bytes worden bewust uit raw/json gestript (alleen
+  // bijlage-metadata, zoals hst-send de PDF uit de audit weglaat).
+  let sendOk = false
+  let sendFout: string | null = null
+  try {
+    await sendFactuurEmail({
+      tenantId: MS_GRAPH_TENANT_ID,
+      clientId: MS_GRAPH_CLIENT_ID,
+      clientSecret: MS_GRAPH_CLIENT_SECRET,
+      from: FROM_EMAIL,
+      to: toEmail,
+      replyTo: REPLY_TO,
+      subject: onderwerp,
+      html: htmlBody,
+      attachments: [{
+        filename: pdfFilename,
+        content: pdfBytes,
+      }],
+    })
+    sendOk = true
+  } catch (e) {
+    sendFout = e instanceof Error ? e.message : String(e)
+  }
+
+  const auditPayload = {
     from: FROM_EMAIL,
     to: toEmail,
     replyTo: REPLY_TO,
     subject: onderwerp,
     html: htmlBody,
-    attachments: [{
-      filename: pdfFilename,
-      content: pdfBytes,
-    }],
+    // Bijlage-metadata zonder de base64-PDF-bytes.
+    attachments: [{ filename: pdfFilename, contentType: 'application/pdf', bytes: pdfBytes.length }],
+  }
+  await logExternePayload(supabase, {
+    kanaal: 'orderbevestiging',
+    richting: 'out',
+    raw: JSON.stringify(auditPayload),
+    json: { request: auditPayload, response: sendOk ? { ok: true } : null, ok: sendOk },
+    bron: 'graph',
+    externeId: null, // Graph sendMail geeft geen message-id terug
+    status: sendOk ? 'verwerkt' : 'fout',
+    orderId: o.id ?? null,
+    fout: sendFout,
   })
+
+  // Faalde de verzending, dan stopt de flow hier (zelfde gedrag als voorheen:
+  // sendFactuurEmail gooide direct). De audit-rij is dan al weggeschreven.
+  if (!sendOk) return json({ error: sendFout ?? 'E-mail versturen mislukt' }, 502)
 
   // ── Mig 366: PDF bewaren + e-mailtijdlijn-rij ──────────────────────────────
   // Best-effort: de bevestiging is al verstuurd, dit mag de flow niet laten

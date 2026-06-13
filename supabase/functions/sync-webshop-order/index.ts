@@ -28,6 +28,7 @@ import { verifyLightspeedSignature } from '../_shared/lightspeed-verify.ts'
 import { matchDebiteurViaEnv } from '../_shared/debiteur-matcher.ts'
 import { bepaalAfleverdatumUitOrder } from '../_shared/lightspeed-leverdatum.ts'
 import { buildLightspeedRegels } from '../_shared/order-intake/lightspeed-regels.ts'
+import { logExternePayload, markeerExternePayload } from '../_shared/externe-payload-audit.ts'
 
 // Fallback als de debiteur geen `maatwerk_weken` heeft ingesteld. Floorpassion
 // staat op 2; nieuwe verzameldebiteuren zonder configuratie krijgen hetzelfde
@@ -110,6 +111,17 @@ serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
   )
 
+  // Rauwe-payload-audit: log het binnenkomende webhook-bericht letterlijk
+  // (best-effort, blokkeert nooit). Twee-staps: hier 'ontvangen', later af.
+  const auditId = await logExternePayload(supabase, {
+    kanaal: 'webshop',
+    richting: 'in',
+    raw: rawPayload,
+    json: webhookBody,
+    bron: bronShopFor(shop),
+    externeId: String(orderId),
+  })
+
   try {
     // Idempotentie-check vóór Lightspeed-fetch: voorkomt onnodige API-calls
     // (en dus rate-limit hits) bij Lightspeed's retry-mechanisme.
@@ -123,6 +135,7 @@ serve(async (req) => {
       console.log(
         `[sync-webshop-order] shop=${shop} order=${orderId} already exists as ${existing[0].order_nr} — skip fetch`,
       )
+      await markeerExternePayload(supabase, auditId, 'verwerkt')
       return json({
         order_nr: existing[0].order_nr,
         was_existing: true,
@@ -175,6 +188,7 @@ serve(async (req) => {
 
     if (error) {
       console.error(`[sync-webshop-order] RPC error:`, error)
+      await markeerExternePayload(supabase, auditId, 'fout', { fout: error.message })
       return json({ error: error.message }, 500)
     }
 
@@ -183,6 +197,10 @@ serve(async (req) => {
       `[sync-webshop-order] shop=${shop} order=${order.id} → ${result?.order_nr} ` +
         `(existing=${result?.was_existing}) matched=${matched} unmatched=${unmatched}`,
     )
+
+    // create_webshop_order geeft alleen order_nr/was_existing terug, geen
+    // numeriek order_id — markeer dus zonder orderId-koppeling.
+    await markeerExternePayload(supabase, auditId, 'verwerkt')
 
     return json({
       order_nr: result?.order_nr ?? null,
@@ -193,6 +211,7 @@ serve(async (req) => {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error(`[sync-webshop-order] shop=${shop} error:`, message)
+    await markeerExternePayload(supabase, auditId, 'fout', { fout: message })
     return json({ error: message }, 500)
   }
 })

@@ -5,6 +5,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { buildAnthropicRequest, buildAnthropicRequestFromEmail, parsePoExtractie } from '../_shared/po-extract.ts'
+import { logExternePayload, markeerExternePayload } from '../_shared/externe-payload-audit.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -45,6 +46,20 @@ serve(async (req) => {
   }
   const bestandsnaam = body.bestandsnaam ?? 'order.pdf'
 
+  // ---- Rauwe-payload-audit (best-effort, blokkeert nooit) ----
+  // raw = letterlijke PO-bron: e-mail-tekst (incl. onderwerp) of de base64-PDF.
+  const rawBron = body.email_body
+    ? `Onderwerp: ${body.email_subject ?? ''}\n\n${body.email_body}`
+    : (body.pdf_base64 ?? '')
+  const auditId = await logExternePayload(supabase, {
+    kanaal: 'klant_po',
+    richting: 'in',
+    raw: rawBron,
+    json: { bestandsnaam, heeft_pdf: !!body.pdf_base64, heeft_email: !!body.email_body },
+    bron: body.email_subject ?? bestandsnaam ?? 'klant_po',
+    externeId: null,
+  })
+
   try {
     // ---- 1. Claude-extractie ----
     const anthropicReq = body.email_body
@@ -62,6 +77,7 @@ serve(async (req) => {
     if (!aiRes.ok) {
       const detail = await aiRes.text()
       console.error('parse-klant-po anthropic-fout:', aiRes.status, detail)
+      await markeerExternePayload(supabase, auditId, 'fout', { fout: `Claude-extractie status ${aiRes.status}` })
       return jsonResponse({ error: `Claude-extractie mislukt (status ${aiRes.status})`, detail }, 502)
     }
 
@@ -73,6 +89,7 @@ serve(async (req) => {
     } catch (parseErr) {
       const m = parseErr instanceof Error ? parseErr.message : String(parseErr)
       console.error('parse-klant-po extractie-fout:', m)
+      await markeerExternePayload(supabase, auditId, 'fout', { fout: `Extractie onbruikbaar: ${m}` })
       return jsonResponse({ error: `Claude-respons onbruikbaar: ${m}` }, 502)
     }
 
@@ -81,13 +98,16 @@ serve(async (req) => {
       p_extractie: extractie,
     })
     if (rpcErr) {
+      await markeerExternePayload(supabase, auditId, 'fout', { fout: `match_klant_po: ${rpcErr.message}` })
       return jsonResponse({ error: `match_klant_po fout: ${rpcErr.message}` }, 500)
     }
 
+    await markeerExternePayload(supabase, auditId, 'verwerkt')
     return jsonResponse({ extractie, match }, 200)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error('parse-klant-po error:', message)
+    await markeerExternePayload(supabase, auditId, 'fout', { fout: message })
     return jsonResponse({ error: `Parse-fout: ${message}` }, 500)
   }
 })
