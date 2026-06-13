@@ -101,6 +101,7 @@ export function FactuurLijst({
             )}
             <SortHeader label="Factuurnr" sortKey="factuur_nr" sort={sort} onClick={klikHeader} />
             <SortHeader label="Datum" sortKey="factuurdatum" sort={sort} onClick={klikHeader} />
+            <th className="pb-3 pr-4 font-medium text-slate-500">Order</th>
             {showKlant && (
               <SortHeader label="Klant" sortKey="klant_naam" sort={sort} onClick={klikHeader} />
             )}
@@ -140,9 +141,41 @@ export function FactuurLijst({
                 <td className="py-3 pr-4 text-slate-600 whitespace-nowrap">
                   {formatDate(f.factuurdatum)}
                 </td>
+                <td className="py-3 pr-4 whitespace-nowrap">
+                  {f.orders.length === 0 ? (
+                    <span className="text-slate-400">—</span>
+                  ) : (
+                    <span className="inline-flex flex-wrap gap-x-2 gap-y-1">
+                      {f.orders.map((o, i) => (
+                        <span key={o.id}>
+                          <Link
+                            to={`/orders/${o.id}`}
+                            className="text-terracotta-500 hover:underline"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {o.nr}
+                          </Link>
+                          {i < f.orders.length - 1 && (
+                            <span className="text-slate-300">,</span>
+                          )}
+                        </span>
+                      ))}
+                    </span>
+                  )}
+                </td>
                 {showKlant && (
-                  <td className="py-3 pr-4 text-slate-700 max-w-[200px] truncate">
-                    {f.klant_naam ?? '—'}
+                  <td className="py-3 pr-4 max-w-[200px] truncate">
+                    {f.klant_naam ? (
+                      <Link
+                        to={`/klanten/${f.debiteur_nr}`}
+                        className="text-terracotta-500 hover:underline"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {f.klant_naam}
+                      </Link>
+                    ) : (
+                      <span className="text-slate-400">—</span>
+                    )}
                   </td>
                 )}
                 <td className="py-3 pr-4">
