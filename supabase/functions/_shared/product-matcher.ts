@@ -48,10 +48,15 @@ const DURCHMESSER_PATROON = /durchmesser|diameter|rond\s+\d|rund\s+\d/i
 const AFMETING_PATROON = /(\d{2,3})\s*x\s*(\d{2,3})\s*cm/i
 const ORGANISCH_PATROON = /organisch[e]?\s*(vorm|form|shape)?/i
 const OVAAL_PATROON = /ovaal|oval/i
+// Floorpassion verkoopt tapijten "in Contour Vorm" — een organische
+// contour-vorm waarin het tapijt wordt gesneden (zie webshop). Altijd maatwerk:
+// de combinatie kwaliteit+kleur+maat bestaat vrijwel nooit als standaard SKU.
+const CONTOUR_PATROON = /\bcontour\b|\bkontur\b/i
 
 // Detecteert niet-rechthoekige vormen → altijd maatwerk, geen standaard artikel.
 // Geeft de maatwerk_vormen.code terug, of null als rechthoekig.
 function detectVorm(text: string): string | null {
+  if (CONTOUR_PATROON.test(text)) return 'contour'
   if (ORGANISCH_PATROON.test(text)) return 'organisch_a'
   if (OVAAL_PATROON.test(text)) return 'ovaal'
   if (DURCHMESSER_PATROON.test(text)) return 'rond'
@@ -329,6 +334,12 @@ export async function matchProduct(
         // maatwerk_lengte/breedte_cm. Unsplit-first: pas bij een miss wordt
         // een samengeplakte alias-code ("LUXR17") gesplitst (ORD-2026-0098).
         const gekozen = await resolveMaatwerkArtikel(supabase, ruweKwaliteit, kleur)
+        // Vorm-detectie ook hier: een expliciet maatwerk-signaal (Op maat /
+        // MAATWERK-sku) sluit een organische vorm zoals Contour niet uit —
+        // anders verliest een "Contour"-order zijn vorm bij snijplanning.
+        const explicietVorm = detectVorm(
+          [row.productTitle, row.variantTitle, ...collectExtraTexts(row)].join(' '),
+        )
         return {
           artikelnr: gekozen.artikelnr,
           matchedOn: 'maatwerk',
@@ -336,6 +347,7 @@ export async function matchProduct(
           is_maatwerk: true,
           maatwerk_kwaliteit_code: gekozen.kwaliteit,
           maatwerk_kleur_code: gekozen.kleur,
+          ...(explicietVorm ? { maatwerk_vorm: explicietVorm } : {}),
         }
       }
 
