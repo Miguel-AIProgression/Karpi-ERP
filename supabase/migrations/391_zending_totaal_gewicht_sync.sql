@@ -1,7 +1,8 @@
--- Migratie 390: zendingen.totaal_gewicht_kg = SUM(zending_colli.gewicht_kg) sync
--- (repo-nr 390; volgt op 389_colli_omschrijving_snapshot. Vlak vóór merge
---  hernummerd van 389 — origin/main claimde 388 (maatwerk_vorm_contour). In de
---  live DB op 13-06 toegepast als werknummer 389; idempotent, inhoudelijk gelijk.)
+-- Migratie 391: zendingen.totaal_gewicht_kg = SUM(zending_colli.gewicht_kg) sync
+-- (repo-nr 391; volgt op 390_colli_omschrijving_snapshot. Vlak vóór merge
+--  hernummerd 389→390→391 — origin/main claimde 388 (maatwerk_vorm_contour) en
+--  389 (normaliseer_land). In de live DB op 13-06 toegepast als werknummer 389;
+--  idempotent, inhoudelijk gelijk.)
 --
 -- VOLGORDE-EIS: draai dit NÁ mig 387 (colli-gewicht-fix, fix/colli-gewicht).
 -- De backfill hieronder somt over zending_colli.gewicht_kg; mig 387 vult/
@@ -48,7 +49,7 @@ CREATE TRIGGER trg_sync_zending_totaal_gewicht
   EXECUTE FUNCTION sync_zending_totaal_gewicht();
 
 COMMENT ON FUNCTION sync_zending_totaal_gewicht IS
-  'Mig 390: houdt zendingen.totaal_gewicht_kg = SUM(zending_colli.gewicht_kg). '
+  'Mig 391: houdt zendingen.totaal_gewicht_kg = SUM(zending_colli.gewicht_kg). '
   'Afgeleide som zodat de HST-fallback hetzelfde totaal stuurt als de per-colli-'
   'gewichten (audit A2). Vuurt bij INSERT/DELETE/UPDATE OF gewicht_kg op colli.';
 
@@ -77,7 +78,7 @@ BEGIN
     AND z.totaal_gewicht_kg IS DISTINCT FROM (
       SELECT COALESCE(SUM(c.gewicht_kg), 0) FROM zending_colli c WHERE c.zending_id = z.id
     );
-  RAISE NOTICE 'Mig 390 verifier: niet-verzonden zendingen met totaal <> SUM(colli): % (verwacht 0)', v_mismatch;
+  RAISE NOTICE 'Mig 391 verifier: niet-verzonden zendingen met totaal <> SUM(colli): % (verwacht 0)', v_mismatch;
 END $$;
 
 NOTIFY pgrst, 'reload schema';
