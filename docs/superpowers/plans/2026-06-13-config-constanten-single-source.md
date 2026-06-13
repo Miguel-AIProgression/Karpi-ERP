@@ -37,7 +37,7 @@ De seam `supabase/functions/_shared/adres-split.ts` (al ADR-0033, `splitAdres`/`
    - `_shared/transus-formats/factuur-mapper.ts:163` — `normaliseerLand` def verwijderen; import uit seam (relatief pad). Call-sites 137/156.
    - `_shared/factuur-pdf.ts:194` — `naarLandCode` def verwijderen; import uit seam. Call-site 361 (Karpi's eigen adres, altijd NL — cosmetisch maar consistent).
 6. **Frontend omschakelen** — `frontend/src/lib/utils/land-vlag.ts:45` `landNaarIso2`: herimplementeren als dunne wrapper bovenop de seam via cross-root re-export-shim (ADR-0033, zoals `@/lib/orders/vervoerder-eisen`). **Behoud het `null`-contract** (vlag-emoji-logica heeft `null` bij onbekend nodig): wrapper geeft `null` als seam de input ongewijzigd teruggeeft.
-7. **Verificatie:** `npm run typecheck` (frontend), Deno-tests (`adres-split.test.ts`), mig 387 contract groen. Handmatig: factuur-EDI voor een AT/CH/ES-debiteur produceert nu correcte ISO2.
+7. **Verificatie:** `npm run typecheck` (frontend), Deno-tests (`adres-split.test.ts`), mig 388 contract groen. Handmatig: factuur-EDI voor een AT/CH/ES-debiteur produceert nu correcte ISO2.
 
 ### Niet doen
 - Reverse display-maps (`iso2NaarNaam`, `LAND_NAMEN` in pakbon, `formatLand` in XLS) — ander concern (code→naam), laten staan.
