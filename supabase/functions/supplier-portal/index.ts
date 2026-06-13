@@ -26,6 +26,7 @@ function json(body: unknown, status = 200): Response {
   })
 }
 
+
 serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
@@ -189,3 +190,4 @@ serve(async (req: Request) => {
 
   return json({ error: 'Method not allowed' }, 405)
 })
+

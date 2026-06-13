@@ -23,7 +23,11 @@ import {
   fetchLeverancierPortalToken,
 } from '../queries/leveranciers'
 
-const PORTAL_LOGIN_URL = `${window.location.origin}/portal/login`
+// VITE_PORTAL_HTML_URL = base URL where docs/portal/index.html is hosted (no trailing slash)
+// e.g. https://miguel-aiprogression.github.io/Karpi-ERP/portal
+// Accessible from China; falls back to Supabase domain placeholder if not configured.
+const PORTAL_HTML_BASE = import.meta.env.VITE_PORTAL_HTML_URL ?? ''
+const PORTAL_LOGIN_URL = PORTAL_HTML_BASE ? `${PORTAL_HTML_BASE}/index.html` : '#portal-url-not-configured'
 
 // ── PortalToegang ──────────────────────────────────────────────────────────────
 function PortalToegang({ leverancierId, leverancierNaam, portalEmail }: {
@@ -261,7 +265,10 @@ export function LeverancierDetailPage() {
 
   async function copyTokenLink() {
     if (!tokenData?.portal_token) return
-    await navigator.clipboard.writeText(`${window.location.origin}/portal/${tokenData.portal_token}`)
+    const directUrl = PORTAL_HTML_BASE
+      ? `${PORTAL_HTML_BASE}/index.html?token=${tokenData.portal_token}`
+      : `#portal-url-not-configured?token=${tokenData.portal_token}`
+    await navigator.clipboard.writeText(directUrl)
     setTokenCopied(true)
     setTimeout(() => setTokenCopied(false), 2000)
   }
