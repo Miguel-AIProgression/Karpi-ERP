@@ -285,6 +285,8 @@ export function ZendingPrintSetPage() {
                 colliTotal={labels.length}
                 serviceCode={zending.service_code}
                 sscc={label.sscc}
+                omschrijvingSnapshot={label.omschrijvingSnapshot}
+                klantOmschrijvingSnapshot={label.klantOmschrijvingSnapshot}
               />
             ) : (
               <ShippingLabel
@@ -295,6 +297,8 @@ export function ZendingPrintSetPage() {
                 colliTotal={labels.length}
                 vervoerderNaam={vervoerder.naam}
                 sscc={label.sscc}
+                omschrijvingSnapshot={label.omschrijvingSnapshot}
+                klantOmschrijvingSnapshot={label.klantOmschrijvingSnapshot}
                 labelFormaat={labelFormaat ?? undefined}
               />
             ),

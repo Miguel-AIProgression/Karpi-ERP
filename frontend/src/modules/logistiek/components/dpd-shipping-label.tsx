@@ -1,4 +1,9 @@
 import { Code128Barcode } from './code128-barcode'
+import {
+  labelDatumKort,
+  labelReferentie,
+  productNamen,
+} from '@/modules/logistiek/lib/shipping-label-data'
 import type { ZendingPrintRegel, ZendingPrintSet } from '@/modules/logistiek/queries/zendingen'
 
 interface Props {
@@ -9,37 +14,10 @@ interface Props {
   serviceCode: string | null
   /** SSCC uit `zending_colli` — null = geen colli-registratie, geen barcode. */
   sscc: string | null
-}
-
-function omschrijvingVoorRegel(regel: ZendingPrintRegel | null): string {
-  const orderRegel = regel?.order_regels
-  if (!orderRegel) return regel?.artikelnr ?? ''
-
-  if (orderRegel.is_maatwerk) {
-    const lengte = orderRegel.maatwerk_lengte_cm
-    const breedte = orderRegel.maatwerk_breedte_cm
-    const productNaam = orderRegel.producten?.omschrijving ?? orderRegel.omschrijving ?? ''
-    const dim =
-      lengte && breedte
-        ? `${String(breedte).padStart(3, '0')}x${String(lengte).padStart(3, '0')} cm`
-        : ''
-    const kwaliteit = orderRegel.maatwerk_kwaliteit_code
-      ? `, ${orderRegel.maatwerk_kwaliteit_code}`
-      : ''
-    const band = orderRegel.maatwerk_afwerking
-      ? ` Band:${orderRegel.maatwerk_afwerking}`
-      : ''
-    return `MAATW. ${productNaam.toUpperCase()} ${dim}${kwaliteit}${band}`.trim()
-  }
-
-  const productNaam = orderRegel.producten?.omschrijving ?? orderRegel.omschrijving ?? ''
-  const breedte = orderRegel.producten?.breedte_cm
-  const lengte = orderRegel.producten?.lengte_cm
-  const dim =
-    breedte && lengte
-      ? ` ${String(breedte).padStart(3, '0')}x${String(lengte).padStart(3, '0')} cm`
-      : ''
-  return `${productNaam}${dim}`.trim()
+  /** Mig 209/388: bevroren omschrijving-snapshots uit `zending_colli` — single
+   * source, gelijk aan label/pakbon/vervoerder. null → val terug op live `regel`. */
+  omschrijvingSnapshot: string | null
+  klantOmschrijvingSnapshot: string | null
 }
 
 /**
@@ -54,13 +32,18 @@ export function DpdShippingLabel({
   colliTotal,
   serviceCode,
   sscc,
+  omschrijvingSnapshot,
+  klantOmschrijvingSnapshot,
 }: Props) {
   const order = zending.orders
-  const omschrijving = omschrijvingVoorRegel(regel)
+  // Single source (mig 388): één omschrijving-bron, gelijk aan label/pakbon/
+  // vervoerder — geen eigen DPD-afleiding meer.
+  const namen = productNamen(regel, { omschrijvingSnapshot, klantOmschrijvingSnapshot })
+  const toonKarpi = namen.karpiNaam && namen.karpiNaam !== namen.klantNaam
   const land = zending.afl_land ?? 'NL'
   const barcodeValue = sscc ? `00${sscc}` : null // SSCC-AI(00) prefix
-  const datum = formatLabelDatum(zending.verzenddatum ?? zending.created_at)
-  const referentie = String(zending.id).padStart(7, '0')
+  const datum = labelDatumKort(zending)
+  const referentie = labelReferentie(order)
   const serviceLabel = (serviceCode ?? 'SRV').toUpperCase()
 
   return (
@@ -79,8 +62,11 @@ export function DpdShippingLabel({
               )}
             </div>
             <div className="mt-0.5 text-[8px] font-semibold leading-snug">
-              {omschrijving}
+              {namen.klantNaam}
             </div>
+            {toonKarpi && (
+              <div className="text-[7px] leading-snug">{namen.karpiNaam}</div>
+            )}
           </div>
           <div className="text-right text-[8px] leading-tight">
             <div>Karpi BV</div>
@@ -133,14 +119,4 @@ export function DpdShippingLabel({
       </div>
     </div>
   )
-}
-
-function formatLabelDatum(value: string | null | undefined): string {
-  if (!value) return ''
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return ''
-  const dd = String(d.getDate()).padStart(2, '0')
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const yy = String(d.getFullYear() % 100).padStart(2, '0')
-  return `${dd}/${mm}/${yy}`
 }

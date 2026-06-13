@@ -2,29 +2,16 @@ import { useQuery } from '@tanstack/react-query'
 import { formatDate, formatNumber } from '@/lib/utils/formatters'
 import { fetchBedrijfsConfig, type BedrijfsConfig } from '@/lib/supabase/queries/bedrijfsconfig'
 import { isShippingRegel } from '@/modules/logistiek/lib/is-shipping-regel'
+import {
+  productNamen,
+  type OmschrijvingSnapshot,
+} from '@/modules/logistiek/lib/shipping-label-data'
 import type { ZendingPrintRegel, ZendingPrintSet } from '@/modules/logistiek/queries/zendingen'
 
 interface PakbonDocumentProps {
   zending: ZendingPrintSet
   vervoerderNaam: string
   colliTotal: number
-}
-
-interface RegelNamen {
-  /** Naam zoals de klant 'm in z'n eigen administratie kent (klanteigen-alias of fallback). */
-  klantNaam: string
-  /** Karpi's eigen product-omschrijving uit `producten.omschrijving`. NULL als producten-join leeg is. */
-  karpiNaam: string | null
-}
-
-function regelNamen(regel: ZendingPrintRegel): RegelNamen {
-  const orderRegel = regel.order_regels
-  if (!orderRegel) {
-    return { klantNaam: regel.artikelnr ?? 'Artikel', karpiNaam: null }
-  }
-  const klantNaam = [orderRegel.omschrijving, orderRegel.omschrijving_2].filter(Boolean).join(' ')
-  const karpiNaam = orderRegel.producten?.omschrijving ?? null
-  return { klantNaam: klantNaam || (regel.artikelnr ?? 'Artikel'), karpiNaam }
 }
 
 function geleverdAantal(regel: ZendingPrintRegel): number {
@@ -86,6 +73,20 @@ export function PakbonDocument({ zending, vervoerderNaam: _vervoerderNaam, colli
       const br = b.order_regels?.regelnummer ?? 0
       return ar - br
     })
+
+  // Mig 388: bevroren omschrijving-snapshot per orderregel (eerste colli — in V1
+  // is compose regel-deterministisch). Single source, gelijk aan label/vervoerder.
+  const snapshotPerOrderRegel = new Map<number, OmschrijvingSnapshot>()
+  for (const c of zending.zending_colli ?? []) {
+    if (c.order_regel_id != null && !snapshotPerOrderRegel.has(c.order_regel_id)) {
+      snapshotPerOrderRegel.set(c.order_regel_id, {
+        omschrijvingSnapshot: c.omschrijving_snapshot,
+        klantOmschrijvingSnapshot: c.klant_omschrijving_snapshot,
+      })
+    }
+  }
+  const snapshotVoor = (regel: ZendingPrintRegel): OmschrijvingSnapshot | null =>
+    (regel.order_regel_id != null ? snapshotPerOrderRegel.get(regel.order_regel_id) : null) ?? null
 
   // Mig 222: bij bundel-zendingen regels groeperen op bron-order_id zodat het
   // pakbon-document onder elke order-sub-kop de bijbehorende regels toont.
@@ -246,7 +247,8 @@ export function PakbonDocument({ zending, vervoerderNaam: _vervoerderNaam, colli
                   </div>
                 )}
                 {orderRegels.map((regel, idx) => {
-                  const namen = regelNamen(regel)
+                  const snap = snapshotVoor(regel)
+                  const namen = productNamen(regel, snap)
                   const hoofdNaam = namen.karpiNaam ?? namen.klantNaam
                   const toonUwNaam = namen.karpiNaam != null && namen.karpiNaam !== namen.klantNaam
                   const rgl = String(regel.order_regels?.regelnummer ?? idx + 1).padStart(2, '0')
@@ -257,7 +259,9 @@ export function PakbonDocument({ zending, vervoerderNaam: _vervoerderNaam, colli
                       <div className="truncate">{regel.artikelnr ?? '-'}</div>
                       <div>
                         <div>{eenheidVoor(regel)}&nbsp;&nbsp;{hoofdNaam}</div>
-                        {regel.order_regels?.is_maatwerk && (
+                        {/* Maat zit al in de bevroren omschrijving; aparte regel
+                            alleen tonen bij legacy-zending zonder colli-snapshot. */}
+                        {regel.order_regels?.is_maatwerk && !snap && (
                           <div className="text-slate-600">
                             Op maat {regel.order_regels.maatwerk_breedte_cm ?? '-'} x{' '}
                             {regel.order_regels.maatwerk_lengte_cm ?? '-'} cm

@@ -1,5 +1,10 @@
 import { Code128Barcode } from './code128-barcode'
-import { datumKort, productMaat, productNamen } from '@/modules/logistiek/lib/shipping-label-data'
+import {
+  labelDatumKort,
+  labelReferentie,
+  productMaat,
+  productNamen,
+} from '@/modules/logistiek/lib/shipping-label-data'
 import type { ShippingLabelProps } from './shipping-label'
 
 // Staand verzendlabel voor 3"×6"-rollen (76,2×152,4mm) — de fysieke rol in de
@@ -24,16 +29,19 @@ export function ShippingLabelTall({
   colliTotal,
   vervoerderNaam,
   sscc,
+  omschrijvingSnapshot,
+  klantOmschrijvingSnapshot,
   breedteMm,
   hoogteMm,
 }: ShippingLabelProps & { breedteMm: number; hoogteMm: number }) {
   const order = zending.orders
-  const namen = productNamen(regel)
+  const snapshot = { omschrijvingSnapshot, klantOmschrijvingSnapshot }
+  const namen = productNamen(regel, snapshot)
   const toonKarpi = namen.karpiNaam && namen.karpiNaam !== namen.klantNaam
-  const maat = productMaat(regel)
+  const maat = productMaat(regel, snapshot)
   const land = zending.afl_land ?? 'NL'
   const barcodeValue = sscc ? `00${sscc}` : null
-  const ref = String(order.oud_order_nr ?? order.id).padStart(6, '0')
+  const ref = labelReferentie(order)
 
   const rijBarcodeMm = hoogteMm - RIJ_AFZENDER_MM - RIJ_ORDER_MM - RIJ_ADRES_MM - RIJ_COLLI_MM
 
@@ -228,7 +236,7 @@ export function ShippingLabelTall({
               lineHeight: 1.2,
             }}
           >
-            <span>{datumKort()}</span>
+            <span>{labelDatumKort(zending)}</span>
             <span>{ref}</span>
           </div>
         </div>

@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import { expandLabels } from './printset'
+import {
+  labelDatumKort,
+  labelReferentie,
+  productMaat,
+  productNamen,
+} from './shipping-label-data'
 import type {
   ZendingPrintColli,
   ZendingPrintRegel,
@@ -30,6 +36,8 @@ function maakColli(overrides: Partial<ZendingPrintColli> = {}): ZendingPrintColl
     colli_nr: 1,
     sscc: '087159540000000656',
     order_regel_id: 10,
+    omschrijving_snapshot: null,
+    klant_omschrijving_snapshot: null,
     ...overrides,
   }
 }
@@ -158,5 +166,129 @@ describe('expandLabels — SSCC-bron-van-waarheid', () => {
 
     expect(labels).toHaveLength(1)
     expect(labels[0].sscc).toBeNull()
+  })
+})
+
+// Mig 388: omschrijving = single source uit `zending_colli`-snapshot. De
+// print-laag leidt niets meer live af zodra een colli geregistreerd is; een
+// latere wijziging op order_regels/producten verandert het label dus NIET.
+describe('expandLabels + productNamen — omschrijving-snapshot single source', () => {
+  it('draagt de snapshot-omschrijvingen door op het LabelItem', () => {
+    const zending = maakZending({
+      zending_regels: [maakRegel()],
+      zending_colli: [
+        maakColli({
+          omschrijving_snapshot: 'Egyptische Wol 240x330 cm',
+          klant_omschrijving_snapshot: 'RUBI 15 — RECHTHOEK / 240 X 330 CM',
+        }),
+      ],
+    })
+
+    const [label] = expandLabels(zending)
+
+    expect(label.omschrijvingSnapshot).toBe('Egyptische Wol 240x330 cm')
+    expect(label.klantOmschrijvingSnapshot).toBe('RUBI 15 — RECHTHOEK / 240 X 330 CM')
+  })
+
+  it('legacy-colli zonder snapshot → beide velden null (val terug op live regel)', () => {
+    const zending = maakZending({
+      zending_regels: [maakRegel()],
+      zending_colli: [maakColli()],
+    })
+
+    const [label] = expandLabels(zending)
+
+    expect(label.omschrijvingSnapshot).toBeNull()
+    expect(label.klantOmschrijvingSnapshot).toBeNull()
+  })
+
+  it('productNamen: snapshot wint van de live order_regel-omschrijving', () => {
+    const regel = maakRegel({
+      order_regels: {
+        id: 10,
+        order_id: 1,
+        regelnummer: 1,
+        artikelnr: 'ART-1',
+        omschrijving: 'OUDE LIVE NAAM',
+        omschrijving_2: null,
+        orderaantal: 1,
+        te_leveren: 1,
+        gewicht_kg: null,
+        is_maatwerk: false,
+        maatwerk_lengte_cm: null,
+        maatwerk_breedte_cm: null,
+        maatwerk_afwerking: null,
+        maatwerk_kwaliteit_code: null,
+        maatwerk_kleur_code: null,
+        maatwerk_oppervlak_m2: null,
+        producten: {
+          ean_code: null,
+          omschrijving: 'OUDE PRODUCTNAAM',
+          vervolgomschrijving: null,
+          gewicht_kg: null,
+          lengte_cm: null,
+          breedte_cm: null,
+          vorm: null,
+        },
+      },
+    })
+
+    const namen = productNamen(regel, {
+      omschrijvingSnapshot: 'Egyptische Wol 240x330 cm',
+      klantOmschrijvingSnapshot: 'RUBI 15',
+    })
+
+    expect(namen.klantNaam).toBe('RUBI 15')
+    expect(namen.karpiNaam).toBe('Egyptische Wol 240x330 cm')
+  })
+
+  it('productMaat: geen aparte maat als die al in de product-snapshot zit', () => {
+    const regel = maakRegel({
+      order_regels: {
+        id: 10,
+        order_id: 1,
+        regelnummer: 1,
+        artikelnr: 'ART-1',
+        omschrijving: null,
+        omschrijving_2: null,
+        orderaantal: 1,
+        te_leveren: 1,
+        gewicht_kg: null,
+        is_maatwerk: true,
+        maatwerk_lengte_cm: 330,
+        maatwerk_breedte_cm: 240,
+        maatwerk_afwerking: null,
+        maatwerk_kwaliteit_code: null,
+        maatwerk_kleur_code: null,
+        maatwerk_oppervlak_m2: null,
+        producten: null,
+      },
+    })
+
+    // Met snapshot: maat zit in omschrijvingSnapshot → geen dubbele maat-regel.
+    expect(
+      productMaat(regel, {
+        omschrijvingSnapshot: 'MAATW. SISAL 240x330 cm',
+        klantOmschrijvingSnapshot: null,
+      }),
+    ).toBe('')
+    // Legacy (geen snapshot): live maat-afleiding blijft.
+    expect(productMaat(regel, null)).toBe('240x330 cm')
+  })
+})
+
+describe('label-datum + referentie (mig 388, D/E)', () => {
+  it('labelDatumKort gebruikt de verzenddatum (niet de printdatum), fallback created_at', () => {
+    expect(
+      labelDatumKort({ verzenddatum: '2026-06-12', created_at: '2026-06-01T00:00:00Z' }),
+    ).toBe('12/06/26')
+    expect(
+      labelDatumKort({ verzenddatum: null, created_at: '2026-06-01T10:00:00Z' }),
+    ).toBe('01/06/26')
+  })
+
+  it('labelReferentie: Basta-ordernr wint van interne id, 6 cijfers', () => {
+    expect(labelReferentie({ oud_order_nr: 12345, id: 999 })).toBe('012345')
+    expect(labelReferentie({ oud_order_nr: null, id: 42 })).toBe('000042')
   })
 })
