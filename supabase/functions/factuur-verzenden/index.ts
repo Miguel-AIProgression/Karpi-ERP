@@ -6,12 +6,13 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { genereerFactuurPDF } from '../_shared/factuur-pdf.ts'
 import { sendFactuurEmail } from '../_shared/graph-mail-client.ts'
+import { normalizeCountry } from '../_shared/adres-split.ts'
+import { logExternePayload } from '../_shared/externe-payload-audit.ts'
 import {
   buildKarpiInvoiceFixedWidth,
   type InvoiceParty,
   type KarpiInvoiceInput,
 } from '../_shared/transus-formats/karpi-invoice-fixed-width.ts'
-import { logExternePayload } from '../_shared/externe-payload-audit.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -774,7 +775,7 @@ function buildSupplierParty(bedrijf: BedrijfConfig): InvoiceParty {
     address: bedrijf.adres ?? 'TWEEDE BROEKDIJK 10',
     postcode: bedrijf.postcode ?? '7122 LB',
     city: bedrijf.plaats ?? 'AALTEN',
-    country: normalizeCountry(bedrijf.land, 'NL'),
+    country: normalizeCountry(bedrijf.land || 'NL'),
     vatNumber: bedrijf.btw_nummer ?? null,
   }
 }
@@ -790,7 +791,7 @@ function buildInvoiceeParty(
     address: firstNonEmpty(factuur.fact_adres, debiteur.fact_adres, debiteur.adres, '-')!,
     postcode: firstNonEmpty(factuur.fact_postcode, debiteur.fact_postcode, debiteur.postcode, '-')!,
     city: firstNonEmpty(factuur.fact_plaats, debiteur.fact_plaats, debiteur.plaats, '-')!,
-    country: normalizeCountry(firstNonEmpty(factuur.fact_land, debiteur.land), 'NL'),
+    country: normalizeCountry(firstNonEmpty(factuur.fact_land, debiteur.land) || 'NL'),
     vatNumber: firstNonEmpty(factuur.btw_nummer, debiteur.btw_nummer),
   }
 }
@@ -803,7 +804,7 @@ function buildDeliveryParty(order: OrderForEdi, fallback: InvoiceParty, gln: str
     address: firstNonEmpty(order.afl_adres, fallback.address)!,
     postcode: firstNonEmpty(order.afl_postcode, fallback.postcode)!,
     city: firstNonEmpty(order.afl_plaats, fallback.city)!,
-    country: normalizeCountry(firstNonEmpty(order.afl_land, fallback.country), fallback.country),
+    country: normalizeCountry(firstNonEmpty(order.afl_land, fallback.country) || fallback.country),
     vatNumber: fallback.vatNumber,
   }
 }
@@ -821,7 +822,7 @@ function buildBuyerParty(
     address: firstNonEmpty(order.bes_adres, addressSource.address)!,
     postcode: firstNonEmpty(order.bes_postcode, addressSource.postcode)!,
     city: firstNonEmpty(order.bes_plaats, addressSource.city)!,
-    country: normalizeCountry(firstNonEmpty(order.bes_land, addressSource.country), addressSource.country),
+    country: normalizeCountry(firstNonEmpty(order.bes_land, addressSource.country) || addressSource.country),
     vatNumber: invoicee.vatNumber,
   }
 }
@@ -841,13 +842,6 @@ function firstNonEmpty(...values: Array<string | number | null | undefined>): st
     if (s !== '') return s
   }
   return null
-}
-
-function normalizeCountry(value: string | null | undefined, fallback: string): string {
-  const country = (value ?? fallback).trim().toUpperCase()
-  if (country === 'NEDERLAND') return 'NL'
-  if (country === 'DUITSLAND' || country === 'GERMANY') return 'DE'
-  return (country || fallback).slice(0, 2)
 }
 
 function toNumber(value: number | string | null | undefined, fallback: number): number {
