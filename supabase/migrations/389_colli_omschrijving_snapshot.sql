@@ -1,8 +1,7 @@
--- Migratie 388: colli-omschrijving single-source — klant_omschrijving_snapshot
--- (repo-nr 388; main stond bij branchen op 386. Twee parallelle branches
---  voegden elk een 387 toe — 387_normaliseer_land_contract + 387_colli_gewicht_fix
---  (gewicht-sessie). Dit is 388 om daar bovenop te landen. Migratienummer
---  vlak vóór merge herverifiëren — memory reference_migratienummer_collisie_bij_merge.)
+-- Migratie 389: colli-omschrijving single-source — klant_omschrijving_snapshot
+-- (repo-nr 389; vlak vóór merge hernummerd van 388: origin/main claimde 388 via
+--  388_maatwerk_vorm_contour, en mig 387_colli_gewicht stond al op main. In de
+--  live DB op 13-06 toegepast als werknummer 388; idempotent, inhoudelijk gelijk.)
 --
 -- Aanleiding (SSCC-analogen-audit 2026-06-13): de productomschrijving op het
 -- verzendlabel, de pakbon en het DPD-label werd LIVE uit order_regels/producten
@@ -21,7 +20,7 @@
 -- COÖRDINATIE met de gewicht-sessie (mig 387, fix/colli-gewicht): die migratie
 -- doet óók CREATE OR REPLACE genereer_zending_colli (gewicht-ladder). De §3 hier
 -- is bewust de SUPERSET van die 387-body: gewicht-ladder ÉN klant_omschrijving.
--- Omdat 388 > 387 landt deze versie als laatste → beide wijzigingen overleven.
+-- Omdat 389 > 387 landt deze versie als laatste → beide wijzigingen overleven.
 -- Verifieer bij apply met pg_get_functiondef dat de live-body niet méér bevat
 -- dan deze superset (drift-check).
 --
@@ -33,7 +32,7 @@
 ALTER TABLE zending_colli ADD COLUMN IF NOT EXISTS klant_omschrijving_snapshot TEXT;
 
 COMMENT ON COLUMN zending_colli.klant_omschrijving_snapshot IS
-  'Mig 388: bevroren klant-omschrijving (order_regels.omschrijving + _2, '
+  'Mig 389: bevroren klant-omschrijving (order_regels.omschrijving + _2, '
   'ontdubbeld via compose_klant_omschrijving) op moment van colli-aanmaak. '
   'Single source voor de klant-naam op verzendlabel/pakbon/DPD-label — de '
   'print-laag leidt niets meer live af. NULL = geen klant-omschrijving (label '
@@ -64,7 +63,7 @@ END;
 $$ LANGUAGE plpgsql IMMUTABLE;
 
 COMMENT ON FUNCTION compose_klant_omschrijving IS
-  'Mig 388: ontdubbelde klant-omschrijving uit order_regels.omschrijving + _2. '
+  'Mig 389: ontdubbelde klant-omschrijving uit order_regels.omschrijving + _2. '
   'Spiegelt de TS-ontdubbeling van productNamen (shipping-label-data.ts) — sinds '
   'deze migratie de enige plek waar die logica leeft. Gebruikt door '
   'genereer_zending_colli; mag los aangeroepen worden voor preview.';
@@ -141,7 +140,7 @@ BEGIN
           r.maatwerk_lengte_cm, r.maatwerk_breedte_cm, r.maatwerk_afwerking,
           r.product_naam, r.prod_lengte_cm, r.prod_breedte_cm
         ),
-        -- Mig 388: bevroren klant-omschrijving (single source voor label/pakbon).
+        -- Mig 389: bevroren klant-omschrijving (single source voor label/pakbon).
         compose_klant_omschrijving(r.regel_omschrijving, r.regel_omschrijving_2),
         1
       );
@@ -158,7 +157,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 GRANT EXECUTE ON FUNCTION genereer_zending_colli(BIGINT) TO authenticated;
 
 COMMENT ON FUNCTION genereer_zending_colli(BIGINT) IS
-  'Mig 388 (superset van mig 387): gewicht-ladder NULLIF(regel,0) → '
+  'Mig 389 (superset van mig 387): gewicht-ladder NULLIF(regel,0) → '
   'bereken_orderregel_gewicht_kg (live, vorm-aware) → NULLIF(product-cache,0) '
   'PLUS klant_omschrijving_snapshot (compose_klant_omschrijving). Verder '
   'identiek aan mig 213: 1 colli per stuk, idempotent, SSCC + '
@@ -194,7 +193,7 @@ BEGIN
     AND zc.klant_omschrijving_snapshot IS NULL
     AND compose_klant_omschrijving(ore.omschrijving, ore.omschrijving_2) IS NOT NULL;
 
-  RAISE NOTICE 'Mig 388 verifier: niet-verzonden colli met lege klant-snapshot terwijl er wel een omschrijving is: % (verwacht 0)', v_leeg;
+  RAISE NOTICE 'Mig 389 verifier: niet-verzonden colli met lege klant-snapshot terwijl er wel een omschrijving is: % (verwacht 0)', v_leeg;
 END $$;
 
 NOTIFY pgrst, 'reload schema';

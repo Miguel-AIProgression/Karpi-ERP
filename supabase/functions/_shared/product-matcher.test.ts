@@ -236,6 +236,60 @@ Deno.test('unsplit-first: unsplit miss + split hit → gesplitste waarden gebrui
 })
 
 // ===========================================================================
+// Contour-vorm (Floorpassion "in Contour Vorm") — ORD-2026-0383
+// ===========================================================================
+Deno.test('contour-pad: "Contour" in variant → maatwerk-artikel + vorm contour', async () => {
+  // Reconstructie ORD-2026-0383 regel 1: "Vernon 13 - Linnen Grey" met variant
+  // "Contour / 240 x 340 cm". Vóór de fix → kale [UNMATCHED] (geen vorm bekend,
+  // geen alias). Met alias Vernon→VERR moet dit maatwerk VERR/13 worden, vorm
+  // 'contour', gekoppeld aan VERR13MAATWERK.
+  const { client, calls } = mockSupabase(({ table, ops }) => {
+    if (table === 'klanteigen_namen') return [{ benaming: 'Vernon', kwaliteit_code: 'VERR' }]
+    if (table === 'producten') {
+      const il = ops.find((o) => o.op === 'ilike')
+      if (il && il.args[1] === 'VERR13MAATWERK') return [{ artikelnr: '490139999' }]
+    }
+    return []
+  })
+  const m = await matchProduct(client as never, row({
+    productTitle: 'Vernon 13 - Linnen Grey',
+    variantTitle: 'Contour / 240 x 340 cm',
+  }), 102019)
+
+  assertEquals(m.artikelnr, '490139999')
+  assertEquals(m.matchedOn, 'maatwerk')
+  assertEquals(m.is_maatwerk, true)
+  assertEquals(m.maatwerk_kwaliteit_code, 'VERR')
+  assertEquals(m.maatwerk_kleur_code, '13')
+  assertEquals(m.maatwerk_vorm, 'contour')
+  // Standaard rechthoek-artikel mag NIET gekozen zijn ondanks passende maat
+  assert(ilikeArgs(calls, 'producten').some((a) => a[1] === 'VERR13MAATWERK'))
+})
+
+Deno.test('contour-pad: expliciet maatwerk (MAATWERK-sku) behoudt vorm contour', async () => {
+  // Een Contour-order die óók een MAATWERK-sku draagt mag de vorm niet verliezen.
+  const { client } = mockSupabase(({ table, ops }) => {
+    if (table === 'klanteigen_namen') return [{ benaming: 'Vernon', kwaliteit_code: 'VERR' }]
+    if (table === 'producten') {
+      const il = ops.find((o) => o.op === 'ilike')
+      if (il && il.args[1] === 'VERR13MAATWERK') return [{ artikelnr: '490139999' }]
+    }
+    return []
+  })
+  const m = await matchProduct(client as never, row({
+    productTitle: 'Vernon 13 - Linnen Grey',
+    variantTitle: 'Contour / 240 x 340 cm',
+    articleCode: 'VERR13MAATWERK',
+    sku: 'VERR13MAATWERK',
+  }), 102019)
+
+  assertEquals(m.is_maatwerk, true)
+  assertEquals(m.maatwerk_vorm, 'contour')
+  assertEquals(m.maatwerk_kwaliteit_code, 'VERR')
+  assertEquals(m.maatwerk_kleur_code, '13')
+})
+
+// ===========================================================================
 // Regressie: schoon explicit-maatwerk-pad blijft identiek
 // ===========================================================================
 Deno.test('explicit maatwerk (Op maat) met schone alias: gedrag ongewijzigd', async () => {
