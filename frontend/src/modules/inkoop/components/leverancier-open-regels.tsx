@@ -50,9 +50,6 @@ function EtaEditCell({
               {formatDatum(regel.eta_bijgewerkt_op.slice(0, 10))}
             </div>
           )}
-          {regel.leverancier_notitie && (
-            <div className="text-xs text-slate-500 italic mt-0.5">"{regel.leverancier_notitie}"</div>
-          )}
         </div>
         <button
           onClick={() => { setEditing(true); setValue(regel.verwacht_datum ?? '') }}
@@ -176,6 +173,7 @@ export function LeverancierOpenRegels({ leverancierId }: Props) {
                 <th className="px-4 py-2 text-right font-medium">Geleverd</th>
                 <th className="px-4 py-2 text-right font-medium">Resterend</th>
                 <th className="px-4 py-2 text-left font-medium">ETA</th>
+                <th className="px-4 py-2 text-left font-medium">Opmerking</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -211,6 +209,15 @@ export function LeverancierOpenRegels({ leverancierId }: Props) {
                     </td>
                     <td className="px-4 py-3">
                       <EtaEditCell regel={r} leverancierId={leverancierId} />
+                    </td>
+                    <td className="px-4 py-3 max-w-[200px]">
+                      {r.leverancier_notitie ? (
+                        <span className="text-sm text-blue-700 italic" title={r.leverancier_notitie}>
+                          {r.leverancier_notitie}
+                        </span>
+                      ) : (
+                        <span className="text-slate-300">—</span>
+                      )}
                     </td>
                   </tr>
                 )

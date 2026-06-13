@@ -255,6 +255,7 @@ export function InkoopRegelOverzichtTab() {
                     <SortIcon active={sortKey === 'eta'} dir={sortDir} />
                   </button>
                 </th>
+                <th className="px-4 py-3 text-left font-medium">Opmerking</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -299,10 +300,14 @@ export function InkoopRegelOverzichtTab() {
                     </td>
                     <td className="px-4 py-3">
                       <EtaInlineEdit regel={r} />
-                      {r.leverancier_notitie && (
-                        <div className="text-xs text-blue-600 italic mt-0.5 max-w-[200px] truncate" title={r.leverancier_notitie}>
-                          "{r.leverancier_notitie}"
-                        </div>
+                    </td>
+                    <td className="px-4 py-3 max-w-[220px]">
+                      {r.leverancier_notitie ? (
+                        <span className="text-sm text-blue-700 italic" title={r.leverancier_notitie}>
+                          {r.leverancier_notitie}
+                        </span>
+                      ) : (
+                        <span className="text-slate-300">—</span>
                       )}
                     </td>
                   </tr>
