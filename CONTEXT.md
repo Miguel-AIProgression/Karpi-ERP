@@ -116,12 +116,58 @@ lezen díé en herleiden afmetingen/gewicht nooit zelf uit de live
 hoger: het ophalen leeft op één plek, niet drie keer per adapter.
 _Avoid_: per-adapter colli-query, live maatwerk→product-join voor verzending
 
+**Verzend-wachtrij**:
+De operationele wachtrij van zendingen die naar een vervoerder verstuurd moeten
+worden. Eén concept, gediscrimineerd op `vervoerder_code` — niet drie kopieën
+(`hst_transportorders`/`verhoek_transportorders`/`rhenus_transportorders`). Het
+draagt alléén operationele state (status, retry, fout, correlatiesleutel,
+timestamps) + de unique-active-invariant (max één actieve rij per zending); de
+zware request/response-payload leeft in [[Externe-payload-audit]]
+(`externe_payloads`), niet hier. Eén set generieke RPC's (`claim_volgende_*`,
+`markeer_verstuurd`, `markeer_fout`, `herstel_vastgelopen`) en één
+`verzend_monitor`-view (group by `vervoerder_code`) voeden álle carriers. Het is
+de **data-as** naast de capability-as (ADR-0034) en de process-as (ADR-0035,
+verzend-orchestrator): samen maken die een vierde vervoerder een kwestie van data
++ één format-adapter, geen DDL-kopie.
+_Avoid_: per-vervoerder transportorder-tabel, hst/verhoek/rhenus_transportorders als concept
+
+### Facturatie & documenten
+
+**Artikelpresentatie**:
+De opgeloste verzameling identificatoren + tekst waarmee het artikel van een
+Orderregel op een **klantdocument** verschijnt: Karpi's eigen code (`karpi_code`),
+het klant-artikelnummer (`klant_artikelen.klant_artikel` → EDI `buyerArticleNumber`),
+de GTIN (`producten.ean_code`), het gewicht en de definitieve omschrijving. Het is
+een eigenschap van **hoe een artikel naar buiten getoond wordt**, niet van de rauwe
+orderregel. Daarom leeft het oplossen ervan op **één plek** (gedeelde resolver) die
+zowel het [[Factuurdocument]] als de orderbevestiging voedt — dezelfde artikeltekst
+op order­bevestiging én factuur, op papier én EDI. Vóór de consolidatie loste elk
+renderpad dit zelf op (`buildEdiFactuurInput` rijk, `mapFactuurNaarInvoiceInput`
+kaal, factuur-PDF rauw, orderbevestiging apart) → dezelfde factuur kon per kanaal
+een andere artikeltekst tonen. Zelfde patroon als [[Zending-colli]] één domein
+verder: het ophalen/oplossen leeft op één plek, niet per renderpad.
+_Avoid_: articleDescription-opbouw per kanaal, inline karpi_code-lookup
+
+**Factuurdocument**:
+De canonieke, opgeloste representatie van een factuur (header + regels mét
+[[Artikelpresentatie]] en toegepaste BTW-verlegging via de `btw.ts`-seam),
+opgebouwd uit `factuur_regels` door één seam (`fetchFactuurDocument`). De drie
+externe representaties — factuur-PDF, EDI-INVOIC (automatisch via `factuur-verzenden`
+én handmatig via `bouw-factuur-edi`) — zijn **dunne renderers** op dit ene document,
+niet drie onafhankelijke afleidingen uit `order_regels`/`producten`. Eén golden
+fixture pint "deze factuur → deze PDF-regels én deze INVOIC-lines" zodat de twee
+EDI-paden nooit meer kunnen divergeren. Analoog aan het verzend-domein waar label
+én pakbon uit één `bouwVerzenddocument` komen.
+_Avoid_: factuur-regel-afleiding per renderpad, twee factuur→INVOIC-transforms
+
 ## Relationships
 
 - Een **Order** bevat één of meer **Orderregels**
 - Elk **Intake-kanaal** is een adapter op de **Order-landing**; het handmatige
   kanaal bouwt zijn invoer via de **Order-commit**-pipeline
 - Een maatwerk-**Orderregel** produceert één **Snijplan** per stuk
+- Een **Factuurdocument** rendert naar factuur-PDF én EDI-INVOIC; beide tonen
+  dezelfde **Artikelpresentatie**, die óók de orderbevestiging voedt
 - Een **Productie-only order** bereikt **Maatwerk afgerond** zodra al zijn
   **Snijplannen** geconfectioneerd zijn; hij wordt nooit **Verzonden**
 - Echte **Snijplannen** van Productie-only orders **vervangen** de
