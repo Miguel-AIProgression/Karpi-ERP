@@ -1,5 +1,48 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-14 — Factuurdocument: één opgeloste factuur voor PDF én EDI-INVOIC
+
+**Waarom:** een factuur werd naar buiten gerenderd via drie onafhankelijke paden
+(factuur-PDF, EDI-INVOIC automatisch via `factuur-verzenden`, EDI-INVOIC handmatig
+via `bouw-factuur-edi`), elk met een eigen regel-shape, metadata-resolve
+(karpi_code/klant_artikel/GTIN/gewicht) en BTW-verlegd-behandeling. De scherpste
+frictie was geen DRY-smaak maar een **echte bug**: dezelfde factuur leverde een
+ánder INVOIC-bericht afhankelijk van automatisch vs. handmatig versturen (het
+handmatige pad was kaler — géén karpi_code/klant_artikel/gewicht), en de PDF toonde
+een derde variant van de artikeltekst. (Architectuur-deepening #2; [ADR-0036](adr/0036-factuurdocument-als-deep-module.md),
+plan [`docs/superpowers/plans/2026-06-14-factuurdocument-deep-module.md`](superpowers/plans/2026-06-14-factuurdocument-deep-module.md).)
+
+**Wat:** drie nieuwe modules in [`_shared/facturatie/`](../supabase/functions/_shared/facturatie/):
+- **`artikel-presentatie.ts`** — gedeelde resolver `resolveArtikelPresentatie`
+  (+ `resolveKarpiCode`): artikelnr → karpi_code/klant_artikel/GTIN/gewicht/omschrijving
+  + samengestelde artikeltekst.
+- **`factuur-document.ts`** — `fetchFactuurDocument` + pure `bouwFactuurDocument`:
+  canoniek `FactuurDocument` (header + regels mét Artikelpresentatie + effectief
+  BTW-tarief via de `btw.ts`-seam). Heft ook de verlegd-bron-divergentie op (PDF las
+  `facturen.btw_verlegd`, EDI `debiteuren.btw_verlegd_intracom` → nu één snapshot).
+- **`factuur-invoice-renderer.ts`** (`naarInvoiceInput`) + **`factuur-pdf-renderer.ts`**
+  (`naarFactuurPdfInput`) — dunne renderers op het document.
+
+`factuur-verzenden` en `bouw-factuur-edi` bouwen het INVOIC nu via dezelfde
+`naarInvoiceInput` → **gegarandeerd identiek INVOIC** (golden-gepind); het handmatige
+pad trekt op naar het rijke contract. `factuur-verzenden` + `factuur-pdf` bouwen de
+PDF via `naarFactuurPdfInput`; de PDF toont voortaan de opgeloste artikeltekst
+(incl. karpi_code), zelfde tekst als de EDI-articleDescription. `stuur-orderbevestiging`
+deelt `resolveKarpiCode` (BTW deelde het al via `btw.ts`); de OB-omschrijving blijft
+document-specifiek (order-tijd + 4-talige vertaling).
+
+**Opgeruimd:** het oude `buildEdiFactuurInput` + party-builders in `factuur-verzenden`
+en het duplicaat `transus-formats/factuur-mapper.ts` (+ test) zijn verwijderd — één
+factuur→INVOIC-transform.
+
+**Vangnet:** golden-test pint de volledige `KarpiInvoiceInput` byte-voor-byte
+(verlegd → 0%; ontbrekende GLN gooit); pure-functie-tests voor resolver + document +
+PDF-renderer. 18 tests groen.
+
+**Zichtbare wijziging + deploy:** de factuur-PDF-artikeltekst verandert (visueel
+akkoord vóór deploy). Te herdeployen edge functions: `factuur-verzenden`,
+`bouw-factuur-edi`, `factuur-pdf`, `stuur-orderbevestiging` (gedeelde `_shared/`-wijziging).
+
 ## 2026-06-14 — Verzenddocument-bron: label én pakbon uit één colli-expansie
 
 **Waarom:** de `zending_colli`-snapshot is sinds de SSCC- (a046e88) en

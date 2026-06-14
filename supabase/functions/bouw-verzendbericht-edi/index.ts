@@ -253,7 +253,7 @@ async function verwerkOrder(sb: any, orderId: number): Promise<VerwerkResult> {
     }
 
     // 7. Bouw VerzendberichtInput
-    //    recipientGln (UNB-routering) = factuuradres_gln — spiegelt factuur-mapper.ts
+    //    recipientGln (UNB-routering) = factuuradres_gln — spiegelt factuur-invoice-renderer.ts
     const partnerNaam = (order.debiteuren as { naam: string | null } | null)?.naam ?? null
     const input: VerzendberichtInput = {
       zendingNr: zending?.zending_nr ?? order.order_nr,

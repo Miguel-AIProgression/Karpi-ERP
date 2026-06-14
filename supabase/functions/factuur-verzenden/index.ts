@@ -6,13 +6,8 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { genereerFactuurPDF } from '../_shared/factuur-pdf.ts'
 import { sendFactuurEmail } from '../_shared/graph-mail-client.ts'
-import { normalizeCountry } from '../_shared/adres-split.ts'
 import { logExternePayload } from '../_shared/externe-payload-audit.ts'
-import {
-  buildKarpiInvoiceFixedWidth,
-  type InvoiceParty,
-  type KarpiInvoiceInput,
-} from '../_shared/transus-formats/karpi-invoice-fixed-width.ts'
+import { buildKarpiInvoiceFixedWidth } from '../_shared/transus-formats/karpi-invoice-fixed-width.ts'
 import { fetchFactuurDocument } from '../_shared/facturatie/factuur-document.ts'
 import { naarFactuurPdfInput } from '../_shared/facturatie/factuur-pdf-renderer.ts'
 import {
@@ -148,27 +143,6 @@ interface OrderForEdi {
   factuuradres_gln: string | null
   besteller_gln: string | null
   afleveradres_gln: string | null
-}
-
-interface OrderRegelForEdi {
-  id: number
-  karpi_code: string | null
-  gewicht_kg: number | string | null
-}
-
-interface ProductForEdi {
-  artikelnr: string
-  karpi_code: string | null
-  omschrijving: string | null
-  omschrijving_2: string | null
-  ean_code: string | null
-  gewicht_kg: number | string | null
-}
-
-interface KlantArtikelForEdi {
-  artikelnr: string
-  klant_artikel: string | null
-  omschrijving: string | null
 }
 
 serve(async () => {
@@ -607,112 +581,6 @@ async function queueEdiFactuur(
   return data.id as number
 }
 
-async function buildEdiFactuurInput(
-  supabase: ReturnType<typeof createClient>,
-  factuur: FactuurRow,
-  regels: FactuurRegelRow[],
-  bedrijf: BedrijfConfig,
-  debiteur: DebiteurFactuurRow,
-  ediConfig: EdiConfig,
-): Promise<KarpiInvoiceInput> {
-  if (regels.length === 0) {
-    throw new Error(`Factuur ${factuur.factuur_nr} heeft geen regels; EDI INVOIC niet te bouwen`)
-  }
-
-  const orderIds = uniqueNumbers(regels.map((r) => Number(r.order_id)))
-  const regelIds = uniqueNumbers(regels.map((r) => Number(r.order_regel_id)))
-  const artikelnrs = uniqueStrings(regels.map((r) => r.artikelnr))
-
-  const [orders, orderRegels, producten, klantArtikelen] = await Promise.all([
-    fetchOrdersForEdi(supabase, orderIds),
-    fetchOrderRegelsForEdi(supabase, regelIds),
-    fetchProductenForEdi(supabase, artikelnrs),
-    fetchKlantArtikelenForEdi(supabase, factuur.debiteur_nr, artikelnrs),
-  ])
-
-  const firstOrder = orders[0]
-  if (!firstOrder) {
-    throw new Error(`Factuur ${factuur.factuur_nr}: geen gekoppelde orders gevonden voor EDI INVOIC`)
-  }
-
-  const ordersById = new Map(orders.map((o) => [Number(o.id), o]))
-  const orderRegelsById = new Map(orderRegels.map((r) => [Number(r.id), r]))
-  const productenByArtikel = new Map(producten.map((p) => [p.artikelnr, p]))
-  const klantArtikelByArtikel = new Map(klantArtikelen.map((k) => [k.artikelnr, k]))
-
-  const invoiceeGln = firstNonEmpty(firstOrder.factuuradres_gln, debiteur.gln_bedrijf)
-  const buyerGln = firstNonEmpty(firstOrder.besteller_gln, firstOrder.afleveradres_gln, invoiceeGln)
-  const deliveryGln = firstNonEmpty(firstOrder.afleveradres_gln, buyerGln)
-  if (!invoiceeGln || !buyerGln || !deliveryGln) {
-    throw new Error(
-      `Factuur ${factuur.factuur_nr}: GLN ontbreekt (IV=${invoiceeGln ?? '-'}, BY=${buyerGln ?? '-'}, DP=${deliveryGln ?? '-'})`,
-    )
-  }
-
-  const supplier = buildSupplierParty(bedrijf)
-  const invoicee = buildInvoiceeParty(factuur, debiteur, invoiceeGln)
-  const deliveryParty = buildDeliveryParty(firstOrder, invoicee, deliveryGln)
-  const buyer = buildBuyerParty(firstOrder, invoicee, deliveryParty, buyerGln)
-  const orderNumberBuyer = firstNonEmpty(
-    regels.find((r) => r.uw_referentie)?.uw_referentie,
-    firstOrder.klant_referentie,
-    factuur.factuur_nr,
-  )!
-  const supplierOrderNumber = firstNonEmpty(
-    firstOrder.oud_order_nr == null ? null : String(firstOrder.oud_order_nr),
-    firstOrder.order_nr,
-    factuur.factuur_nr,
-  )!
-  const deliveryNoteNumber = factuur.factuur_nr
-
-  return {
-    invoiceDate: factuur.factuurdatum,
-    invoiceNumber: factuur.factuur_nr,
-    customerShortName: debiteur.naam ?? null,
-    recipientGln: invoiceeGln,
-    orderNumberBuyer,
-    orderDate: firstOrder.orderdatum ?? factuur.factuurdatum,
-    deliveryNoteNumber,
-    supplierOrderNumber,
-    vatAmount: toNumber(factuur.btw_bedrag, 0),
-    isTestMessage: ediConfig.test_modus,
-    supplier,
-    buyer,
-    invoicee,
-    deliveryParty,
-    lines: regels.map((regel) => {
-      const product = regel.artikelnr ? productenByArtikel.get(regel.artikelnr) : null
-      const orderRegel = orderRegelsById.get(Number(regel.order_regel_id))
-      const klantArtikel = regel.artikelnr ? klantArtikelByArtikel.get(regel.artikelnr) : null
-      const regelOrder = ordersById.get(Number(regel.order_id)) ?? firstOrder
-      const aantal = toNumber(regel.aantal, 0)
-      const artikelCode = firstNonEmpty(orderRegel?.karpi_code, product?.karpi_code, regel.artikelnr)
-      const omschrijving = firstNonEmpty(klantArtikel?.omschrijving, regel.omschrijving, product?.omschrijving, regel.omschrijving_2)
-      const gewichtPerRegel = toNumber(orderRegel?.gewicht_kg, NaN)
-      const gewichtProduct = toNumber(product?.gewicht_kg, 0) * aantal
-
-      return {
-        lineNumber: Number(regel.regelnummer),
-        supplierArticleNumber: regel.artikelnr ?? '',
-        articleDescription: [artikelCode, omschrijving].filter(Boolean).join(' '),
-        deliveryNoteNumber,
-        gtin: product?.ean_code ?? '',
-        quantity: aantal,
-        invoiceNumber: factuur.factuur_nr,
-        netPrice: toNumber(regel.prijs, 0),
-        orderNumberBuyer: firstNonEmpty(regel.uw_referentie, regelOrder.klant_referentie, orderNumberBuyer),
-        buyerArticleNumber: klantArtikel?.klant_artikel ?? '',
-        lineAmount: toNumber(regel.bedrag, 0),
-        taxableAmount: toNumber(regel.bedrag, 0),
-        vatAmount: Math.round(toNumber(regel.bedrag, 0) * toNumber(regel.btw_percentage, 0)) / 100,
-        packageQuantity: aantal,
-        weightKg: Number.isFinite(gewichtPerRegel) ? gewichtPerRegel : gewichtProduct,
-        vatPercentage: toNumber(regel.btw_percentage, 0),
-      }
-    }),
-  }
-}
-
 async function fetchOrdersForEdi(
   supabase: ReturnType<typeof createClient>,
   orderIds: number[],
@@ -733,128 +601,6 @@ async function fetchOrdersForEdi(
   return (data ?? []) as OrderForEdi[]
 }
 
-async function fetchOrderRegelsForEdi(
-  supabase: ReturnType<typeof createClient>,
-  regelIds: number[],
-): Promise<OrderRegelForEdi[]> {
-  if (regelIds.length === 0) return []
-  const { data, error } = await supabase
-    .from('order_regels')
-    .select('id, karpi_code, gewicht_kg')
-    .in('id', regelIds)
-  if (error) throw new Error(`Fetch EDI-orderregels: ${error.message}`)
-  return (data ?? []) as OrderRegelForEdi[]
-}
-
-async function fetchProductenForEdi(
-  supabase: ReturnType<typeof createClient>,
-  artikelnrs: string[],
-): Promise<ProductForEdi[]> {
-  if (artikelnrs.length === 0) return []
-  const { data, error } = await supabase
-    .from('producten')
-    .select('artikelnr, karpi_code, omschrijving, omschrijving_2, ean_code, gewicht_kg')
-    .in('artikelnr', artikelnrs)
-  if (error) throw new Error(`Fetch EDI-producten: ${error.message}`)
-  return (data ?? []) as ProductForEdi[]
-}
-
-async function fetchKlantArtikelenForEdi(
-  supabase: ReturnType<typeof createClient>,
-  debiteurNr: number,
-  artikelnrs: string[],
-): Promise<KlantArtikelForEdi[]> {
-  if (artikelnrs.length === 0) return []
-  const { data, error } = await supabase
-    .from('klant_artikelnummers')
-    .select('artikelnr, klant_artikel, omschrijving')
-    .eq('debiteur_nr', debiteurNr)
-    .in('artikelnr', artikelnrs)
-  if (error) throw new Error(`Fetch EDI-klantartikelen: ${error.message}`)
-  return (data ?? []) as KlantArtikelForEdi[]
-}
-
-function buildSupplierParty(bedrijf: BedrijfConfig): InvoiceParty {
-  return {
-    name: bedrijf.bedrijfsnaam ?? 'KARPI GROUP HOME FASHION B.V.',
-    gln: bedrijf.gln_eigen ?? '8715954999998',
-    address: bedrijf.adres ?? 'TWEEDE BROEKDIJK 10',
-    postcode: bedrijf.postcode ?? '7122 LB',
-    city: bedrijf.plaats ?? 'AALTEN',
-    country: normalizeCountry(bedrijf.land || 'NL'),
-    vatNumber: bedrijf.btw_nummer ?? null,
-  }
-}
-
-function buildInvoiceeParty(
-  factuur: FactuurRow,
-  debiteur: DebiteurFactuurRow,
-  gln: string,
-): InvoiceParty {
-  return {
-    name: firstNonEmpty(factuur.fact_naam, debiteur.fact_naam, debiteur.naam, 'Onbekend')!,
-    gln,
-    address: firstNonEmpty(factuur.fact_adres, debiteur.fact_adres, debiteur.adres, '-')!,
-    postcode: firstNonEmpty(factuur.fact_postcode, debiteur.fact_postcode, debiteur.postcode, '-')!,
-    city: firstNonEmpty(factuur.fact_plaats, debiteur.fact_plaats, debiteur.plaats, '-')!,
-    country: normalizeCountry(firstNonEmpty(factuur.fact_land, debiteur.land) || 'NL'),
-    vatNumber: firstNonEmpty(factuur.btw_nummer, debiteur.btw_nummer),
-  }
-}
-
-function buildDeliveryParty(order: OrderForEdi, fallback: InvoiceParty, gln: string): InvoiceParty {
-  return {
-    name: firstNonEmpty(order.afl_naam, fallback.name)!,
-    name2: order.afl_naam_2,
-    gln,
-    address: firstNonEmpty(order.afl_adres, fallback.address)!,
-    postcode: firstNonEmpty(order.afl_postcode, fallback.postcode)!,
-    city: firstNonEmpty(order.afl_plaats, fallback.city)!,
-    country: normalizeCountry(firstNonEmpty(order.afl_land, fallback.country) || fallback.country),
-    vatNumber: fallback.vatNumber,
-  }
-}
-
-function buildBuyerParty(
-  order: OrderForEdi,
-  invoicee: InvoiceParty,
-  deliveryParty: InvoiceParty,
-  gln: string,
-): InvoiceParty {
-  const addressSource = gln === deliveryParty.gln ? deliveryParty : invoicee
-  return {
-    name: firstNonEmpty(order.bes_naam, addressSource.name)!,
-    gln,
-    address: firstNonEmpty(order.bes_adres, addressSource.address)!,
-    postcode: firstNonEmpty(order.bes_postcode, addressSource.postcode)!,
-    city: firstNonEmpty(order.bes_plaats, addressSource.city)!,
-    country: normalizeCountry(firstNonEmpty(order.bes_land, addressSource.country) || addressSource.country),
-    vatNumber: invoicee.vatNumber,
-  }
-}
-
 function uniqueNumbers(values: number[]): number[] {
   return Array.from(new Set(values.filter((v) => Number.isFinite(v) && v > 0)))
-}
-
-function uniqueStrings(values: Array<string | null | undefined>): string[] {
-  return Array.from(new Set(values.filter((v): v is string => !!v && v.trim() !== '')))
-}
-
-function firstNonEmpty(...values: Array<string | number | null | undefined>): string | null {
-  for (const value of values) {
-    if (value == null) continue
-    const s = String(value).trim()
-    if (s !== '') return s
-  }
-  return null
-}
-
-function toNumber(value: number | string | null | undefined, fallback: number): number {
-  if (typeof value === 'number' && Number.isFinite(value)) return value
-  if (typeof value === 'string' && value.trim() !== '') {
-    const parsed = Number(value)
-    if (Number.isFinite(parsed)) return parsed
-  }
-  return fallback
 }

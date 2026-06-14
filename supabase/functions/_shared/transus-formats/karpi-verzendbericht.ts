@@ -64,7 +64,7 @@
 //   order_regels.regelnummer toch al het regelnummer van de inkomende order.
 // - AANNAME: recipientGln = orders.factuuradres_gln (Hornbach-routering
 //   '4306517008994' = gefactureerd-GLN van de inkomende order) — spiegelt
-//   factuur-mapper.ts (recipientGln ← order.factuuradres.gln).
+//   factuur-invoice-renderer.ts (recipientGln ← order.factuuradres.gln).
 // - Tracking-nummer heeft GÉÉN slot in dit format (ook niet in de EDIFACT);
 //   het veld is daarom uit VerzendberichtInput verwijderd.
 //
@@ -127,7 +127,7 @@ export interface VerzendberichtInput {
   /**
    * Partner-routerings-GLN → UNB-recipient, [117,130).
    * Uit orders.factuuradres_gln (gefactureerd-GLN van de inkomende order) —
-   * spiegelt factuur-mapper.ts. Hornbach: '4306517008994'.
+   * spiegelt factuur-invoice-renderer.ts. Hornbach: '4306517008994'.
    */
   recipientGln: string;
   /** Koper-GLN — NAD+BY, [130,143). Uit orders.besteller_gln snapshot. */
