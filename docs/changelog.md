@@ -33,6 +33,25 @@ betreft de rij-opbouw, niet de bron-semantiek.
 beide bronnen, kolli, VERZEND-skip, bundel-subkoppen, legacy zonder colli) — bewijst
 dat de pakbon-output onveranderd blijft. `printset.test.ts` (labels) ongewijzigd
 groen. Typecheck schoon. Geen deploy (geen edge/DB).
+## 2026-06-14 — Verzend-orchestrator-skeleton (ADR-0035) slice 1: skeleton + Verhoek
+
+**Waarom:** vervolg op slice 0 (vangnet). De gedeelde per-rij-sequence van de drie
+verzend-adapters samentrekken in één skeleton, te beginnen met Verhoek (dry-run,
+laagste risico — niet live).
+
+**Wat:** nieuwe [`_shared/verzend-orchestrator.ts`](../supabase/functions/_shared/verzend-orchestrator.ts)
+met `verwerkVerzendRij(adapter, …)` — draagt de sequence één keer: fetch zending/
+order/bedrijf → colli → 0-colli-guard → preflight (adres-capability + carrier-colli
++ carrier-extra) → bestandsnaam-persist → render → transport → audit
+(`log_externe_payload`) → markeer succes/fout. De `VerzendAdapter`-interface levert
+wat écht per carrier verschilt (kanaal, select-kolommen, builder, transport,
+markeer-RPC's, storage). `verhoek-send/verwerk-row.ts` is nu de Verhoek-adapter +
+een dunne `verwerkRow`-wrapper die naar de skeleton delegeert; de claim-loop +
+secret/dry-run-resolutie blijven (nog) in `index.ts`.
+
+**Status:** Verhoek-karakterisatie-test (slice 0) ongewijzigd groen → gedragsneutraal.
+66 Deno-tests groen, 3× `index.ts` type-clean. Rhenus (slice 2) + HST (slice 3)
+volgen op dezelfde skeleton; drift-opschoning = slice 4.
 
 ## 2026-06-14 — Rhenus go-live: canary geslaagd, colli-join-fix (mig 400) + country-routing
 
