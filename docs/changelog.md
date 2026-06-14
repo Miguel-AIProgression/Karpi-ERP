@@ -38,6 +38,34 @@ de portaal-check, daarna eventueel hard-delete. **Open (operationeel):** annulee
 naar Rhenus (Referenz ZEND-2026-0007, géén ophaling) + portaal-verificatie op
 https://mandantenportal.rhenus-hd.de/tat/.
 
+## 2026-06-14 — Verzend-orchestrator-skeleton (ADR-0035) slice 0: karakterisatie-vangnet
+
+**Waarom:** de drie verzend-edge-functions (`hst-send`/`verhoek-send`/`rhenus-send`)
+delen een vrijwel identiek loop-skelet (claim → fetch → preflight → build →
+transport → audit → markeer); alleen render + transport zijn carrier-specifiek.
+ADR-0034 benoemde deze duplicatie als "process-as"-sibling-seam, op te pakken ná
+de capability-seam. De loops hadden echter **geen enkele test** — alleen de pure
+helpers. Vóór we het skelet samentrekken (slice 1–3) is een vangnet verplicht:
+het raakt het live verzendpad (HST live, Rhenus vlak vóór go-live).
+
+**Wat (gedragsneutraal):**
+- ADR-0035 + plan `docs/superpowers/plans/2026-06-14-verzend-orchestrator-skeleton-seam.md`.
+- `verwerkRow` + helpers + interfaces per carrier geëxtraheerd uit `index.ts` naar
+  `verwerk-row.ts` (pure code-move + imports) zodat ze testbaar zijn zonder dat
+  het top-level `Deno.serve` bij import een server start. `index.ts` houdt de
+  claim-loop + auth-wrapper en importeert `verwerkRow`.
+- Herbruikbare test-fake [`_shared/__tests__/fake-supabase.ts`](../supabase/functions/_shared/__tests__/fake-supabase.ts):
+  recordt de side-effect-sequence (`.rpc`/`.update`/`storage.upload`) als contract.
+- Karakterisatie-tests per carrier (15 tests): succes / preflight-fout / 0-colli /
+  niet-gevonden. Leggen de huidige markeer_*/log_externe_payload-aanroepen vast
+  zodat de skeleton-migratie gedragsneutraliteit kan bewijzen.
+- Bijvangst: HST's `zendingen`-select was een string-concatenatie → supabase-js'
+  type-parser kon 'm niet lezen (5 pre-existing `deno check`-errors, identiek in de
+  live code). Eén string-literal van gemaakt — runtime-identiek, nu type-clean.
+
+**Status:** 66 Deno-tests groen, 3× `index.ts` type-clean. Slice 1–3 (skeleton +
+adapters, incrementeel Verhoek → Rhenus → HST) staan nog open.
+
 ## 2026-06-14 — Zending-colli-seam: colli ophalen op één plek (vóór Rhenus go-live)
 
 **Waarom:** mig 399 (zelfde dag) maakte de colli-afmetingen single-source op
