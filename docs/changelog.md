@@ -1,5 +1,43 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-14 — Rhenus go-live: canary geslaagd, colli-join-fix (mig 400) + country-routing
+
+**Waarom:** Rhenus van inactief → productief, met een gecontroleerde canary van
+precies één zending. Aanpak: een **kopie** van een echte DE-order (ORD-2026-0050
+PAMPOW → kopie ORD-2026-0390, `bron_systeem=null`, gemarkeerd "CANARY TEST") zodat
+het origineel onaangeraakt blijft. Veiligheidsmodel (ADR-0030): selectie-regels
+uit → `rhenus_sftp` actief → override op de kopie → blast-radius = 1.
+
+**Wat de canary opleverde:**
+- **Verzonden + gelogd:** `voltooi_pickronde` → trigger `trg_zending_klaar_voor_verzending`
+  → `rhenus-send` uploadde `RHE_20260614143405_ZEND-2026-0007.xml` naar Rhenus `/in`
+  (transportorder `Verstuurd`, `externe_payloads` id 12 richting=out `ok=true`,
+  byte-correcte GS1 RHE 3.1 met `depth=200`, `sscc 00087159540000000731`).
+- **Blocker gevonden → mig 400.** De colli kreeg `lengte_cm=NULL` + lege
+  `omschrijving_snapshot`: mig 399 joinde `producten` via `zending_regels.artikelnr`,
+  dat door de membership-INSERT in `start_pickronden` **nooit** gevuld wordt (alleen
+  `zending_id`/`order_regel_id`/`aantal`). Voor VAST producten bleef de afmeting dus
+  NULL → Rhenus-preflight (eist `lengte_cm>0`) zou álle DE-zendingen blokkeren
+  (maatwerk ontsprong de dans omdat de maat op `order_regels.maatwerk_*_cm` staat).
+  **Mig 400** joint nu via `COALESCE(order_regels.artikelnr, zending_regels.artikelnr)`
+  + re-backfill van lengte/breedte/omschrijving voor niet-verzonden colli; volledige
+  superset van mig 399. Live toegepast + drift-check (`pg_get_functiondef`) OK.
+- **Country-routing live:** nieuwe regel (rhenus_sftp, prio 99998, `{"land":["DE"]}`)
+  als DE-catch-all (spiegelt HST NL-catch-all) + de DE-bandregel weer aan; NL-pins
+  (debiteuren 99001/640505 → Rhenus) bewust UIT. Resolver filtert `vsr.actief AND
+  v.actief`, dus de inactieve dpd/verhoek-bandregels worden overgeslagen → **DE →
+  Rhenus, NL → HST puur op leverland** (geverifieerd op orders 2493/2528/ORD-2026-0328).
+  Bandregels dpd/verhoek blijven staan voor wanneer die carriers actief worden.
+
+**Klant-/voorraad-impact kopie = nul:** `factuur_queue` id 31 `failed` ("geen
+te-factureren regels" → geen factuur), geen e-mail (`bron_systeem=null` → geen
+EDI-verzendbericht; Rhenus heeft geen T&T-mail), `producten.voorraad` 526310144
+intact (11), claim `released`. Kopie is Verzonden en **niet annuleerbaar**
+(`markeer_geannuleerd` faalt op eindstatus) → blijft als gemarkeerde test staan tot
+de portaal-check, daarna eventueel hard-delete. **Open (operationeel):** annuleer-mail
+naar Rhenus (Referenz ZEND-2026-0007, géén ophaling) + portaal-verificatie op
+https://mandantenportal.rhenus-hd.de/tat/.
+
 ## 2026-06-14 — Zending-colli-seam: colli ophalen op één plek (vóór Rhenus go-live)
 
 **Waarom:** mig 399 (zelfde dag) maakte de colli-afmetingen single-source op
