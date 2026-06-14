@@ -67,7 +67,12 @@ Deno.serve(async (req) => {
     details: [],
   };
 
+  const runStart = Date.now();
   for (let i = 0; i < MAX_PER_RUN; i++) {
+    // Tijdsbudget (ADR-0035 slice 4, drift-fix): ruim binnen de edge-wall-clock
+    // blijven; de rest van de wachtrij pakt de volgende cron-run op. Verhoek/
+    // Rhenus hadden dit al — HST liep zonder deze guard achter.
+    if (Date.now() - runStart > 60_000) break;
     const { data: claimed, error: claimErr } = await supabase
       .rpc('claim_volgende_hst_transportorder');
     if (claimErr) {

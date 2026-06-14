@@ -33,6 +33,26 @@ betreft de rij-opbouw, niet de bron-semantiek.
 beide bronnen, kolli, VERZEND-skip, bundel-subkoppen, legacy zonder colli) — bewijst
 dat de pakbon-output onveranderd blijft. `printset.test.ts` (labels) ongewijzigd
 groen. Typecheck schoon. Geen deploy (geen edge/DB).
+## 2026-06-14 — Verzend-orchestrator-skeleton (ADR-0035) slice 4: drift-opschoning
+
+**Wat (bewust gedrags-wijzigend):** de HST-claim-loop (`hst-send/index.ts`) kreeg
+de **60s-tijdsbudget-break** die Verhoek/Rhenus al hadden — HST liep zonder die
+guard achter en kon bij een volle wachtrij + trage HST-calls de edge-wall-clock
+overschrijden. Defensief; de rest van de wachtrij pakt de volgende cron-run op.
+
+**Bewust NIET gedaan (geen echte drift):**
+- 0-colli-afhandeling (#10) is door slice 1–3 al structureel uniform: de skeleton
+  modelleert het via `hardFailOnZeroColli`. De resterende verschillen (HST/Verhoek
+  harde check met carrier-melding; Rhenus via de preflight, incident 0455395) zijn
+  intentioneel en blijven exact behouden.
+- Summary `dry_run`-veld overal (#18): HST kent geen dry-run; dat veld forceren is
+  betekenisloze ruis. Overgeslagen.
+
+**Status:** 66 Deno-tests groen, 3× `index.ts` type-clean. Hiermee zijn alle slices
+van ADR-0035 (vangnet → skeleton → 3 carriers → drift) afgerond. De claim-loop +
+secret/dry-run-resolutie blijven bewust in elke `index.ts` (carrier-specifieke
+env-resolutie); de per-rij process-as is nu één gedeelde module.
+
 ## 2026-06-14 — Verzend-orchestrator-skeleton (ADR-0035) slice 2+3: Rhenus + HST op de skeleton
 
 **Wat:** `rhenus-send` en `hst-send` `verwerk-row.ts` zijn nu carrier-adapters op
