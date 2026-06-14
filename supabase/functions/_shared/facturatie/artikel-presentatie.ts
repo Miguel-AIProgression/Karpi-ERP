@@ -24,11 +24,13 @@ export interface OrderRegelLookup {
   gewicht_kg: number | null
 }
 
-/** producten-rij. */
+/** producten-rij. NB: `producten` heeft GÉÉN omschrijving_2-kolom — de omschrijving-
+ *  ladder gebruikt `regel.omschrijving_2`, niet die van het product. Daarom wordt
+ *  `omschrijving_2` hier niet uit de DB gehaald (optioneel/ongebruikt veld). */
 export interface ProductLookup {
   karpi_code: string | null
   omschrijving: string | null
-  omschrijving_2: string | null
+  omschrijving_2?: string | null
   ean_code: string | null
   gewicht_kg: number | null
 }

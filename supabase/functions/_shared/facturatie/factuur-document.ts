@@ -244,7 +244,7 @@ async function fetchFactuurDocumentLookups(
     artikelnrs.length
       ? supabase
           .from('producten')
-          .select('artikelnr, karpi_code, omschrijving, omschrijving_2, ean_code, gewicht_kg')
+          .select('artikelnr, karpi_code, omschrijving, ean_code, gewicht_kg')
           .in('artikelnr', artikelnrs)
       : Promise.resolve({ data: [], error: null }),
     artikelnrs.length
@@ -269,7 +269,6 @@ async function fetchFactuurDocumentLookups(
     producten.set(p.artikelnr, {
       karpi_code: p.karpi_code,
       omschrijving: p.omschrijving,
-      omschrijving_2: p.omschrijving_2,
       ean_code: p.ean_code,
       gewicht_kg: p.gewicht_kg,
     })
