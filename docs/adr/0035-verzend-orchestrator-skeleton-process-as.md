@@ -1,6 +1,6 @@
 # ADR-0035: Verzend-orchestrator-skeleton als één deep module (process-as)
 
-**Status:** Voorgesteld (2026-06-14)
+**Status:** Geaccepteerd (2026-06-14) — alle slices (0 vangnet, 1 skeleton+Verhoek, 2 Rhenus, 3 HST, 4 drift) geïmplementeerd; 66 Deno-tests groen, gedragsneutraal bewezen via de karakterisatie-tests.
 
 ## Context
 
