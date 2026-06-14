@@ -19,6 +19,7 @@ import { sendFactuurEmail } from '../_shared/graph-mail-client.ts'
 import { isoWeekJaar } from '../_shared/iso-week.ts'
 import { berekenFactuurTotalen } from '../_shared/factuur-bedrag.ts'
 import { effectiefBtwPct, isBtwVerlegd } from '../_shared/btw.ts'
+import { resolveKarpiCode } from '../_shared/facturatie/artikel-presentatie.ts'
 import { logExternePayload } from '../_shared/externe-payload-audit.ts'
 
 const SUPABASE_URL        = Deno.env.get('SUPABASE_URL')!
@@ -269,7 +270,8 @@ serve(async (req) => {
   const regels = (regelsRaw ?? []).map((r: any) => ({
     regelnummer: r.regelnummer,
     artikelnr: r.artikelnr,
-    karpi_code: r.karpi_code ?? r.producten?.karpi_code ?? null,
+    // Gedeelde karpi_code-ladder (ADR-0036): zelfde Karpi-code als op de factuur.
+    karpi_code: resolveKarpiCode(r.karpi_code, r.producten?.karpi_code, r.artikelnr) || null,
     omschrijving: r.omschrijving ?? '',
     omschrijving_2: r.omschrijving_2 ?? null,
     orderaantal: r.orderaantal ?? 0,

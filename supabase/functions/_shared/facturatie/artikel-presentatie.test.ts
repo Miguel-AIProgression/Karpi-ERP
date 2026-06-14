@@ -3,7 +3,15 @@
 // leven (ADR-0036 slice 1) — gedragsneutrale extractie.
 
 import { assertEquals } from 'https://deno.land/std@0.168.0/testing/asserts.ts'
-import { resolveArtikelPresentatie } from './artikel-presentatie.ts'
+import { resolveArtikelPresentatie, resolveKarpiCode } from './artikel-presentatie.ts'
+
+Deno.test('resolveKarpiCode: ladder orderRegel → product → artikelnr → ""', () => {
+  assertEquals(resolveKarpiCode('OR', 'PROD', 'ART'), 'OR')
+  assertEquals(resolveKarpiCode(null, 'PROD', 'ART'), 'PROD')
+  assertEquals(resolveKarpiCode(null, null, 'ART'), 'ART')
+  assertEquals(resolveKarpiCode('  ', null, 'ART'), 'ART') // blanco overslaan
+  assertEquals(resolveKarpiCode(null, null, null), '')
+})
 
 Deno.test('karpi_code: orderRegel-snapshot wint van product en artikelnr', () => {
   const p = resolveArtikelPresentatie(

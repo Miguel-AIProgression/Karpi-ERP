@@ -77,6 +77,19 @@ function toNumber(value: unknown, fallback: number): number {
 }
 
 /**
+ * De karpi_code-ladder: order_regel-snapshot → product → fallback artikelnr.
+ * Gedeeld zodat factuur (Factuurdocument) en orderbevestiging dezelfde Karpi-code
+ * tonen. Retourneert '' als alles leeg is (caller mag dat naar null mappen).
+ */
+export function resolveKarpiCode(
+  orderRegelKarpiCode: string | null | undefined,
+  productKarpiCode: string | null | undefined,
+  artikelnr: string | null | undefined,
+): string {
+  return firstNonEmpty(orderRegelKarpiCode, productKarpiCode, artikelnr) ?? ''
+}
+
+/**
  * Los de Artikelpresentatie van één regel op uit de lookup-maps.
  * Gedragsneutraal t.o.v. de inline resolve in factuur-verzenden buildEdiFactuurInput.
  */
@@ -86,7 +99,7 @@ export function resolveArtikelPresentatie(
 ): ArtikelPresentatie {
   const { orderRegel, product, klantArtikel } = lookups
 
-  const karpi_code = firstNonEmpty(orderRegel?.karpi_code, product?.karpi_code, regel.artikelnr) ?? ''
+  const karpi_code = resolveKarpiCode(orderRegel?.karpi_code, product?.karpi_code, regel.artikelnr)
   const omschrijving =
     firstNonEmpty(klantArtikel?.omschrijving, regel.omschrijving, product?.omschrijving, regel.omschrijving_2) ?? ''
   const gtin = product?.ean_code ?? ''
