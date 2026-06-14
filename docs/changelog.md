@@ -1,5 +1,33 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-14 — Colli-afmetingen in de `zending_colli`-snapshot (single source, mig 399)
+
+**Waarom:** asymmetrie in het snapshot-patroon. `zending_colli.gewicht_kg`
+(mig 387), `omschrijving_snapshot` (mig 209) en `klant_omschrijving_snapshot`
+(mig 390) zijn bevroren snapshots die álle carriers uit dezelfde rij lezen —
+single source. Maar `lengte_cm`/`breedte_cm` stonden **niet** op `zending_colli`:
+`rhenus-send` én `verhoek-send` haalden ze live op via een hand-gekopieerde
+ladder `order_regels.maatwerk_*_cm ?? producten.*_cm`. Twee adapters met dezelfde
+ladder = de ladder wijzigen raakt 3 plekken (één vergeten = stille divergentie
+tussen wat label/pakbon tonen en wat de vervoerder als afmeting krijgt), en na
+een live productmaat-wijziging kon een carrier een ándere afmeting versturen dan
+de bevroren colli. Candidate #2 uit de SSCC-analogen-audit (2026-06-13).
+
+**Wat:** mig 399 voegt `lengte_cm INTEGER`/`breedte_cm INTEGER` toe aan
+`zending_colli` en breidt `genereer_zending_colli` uit (superset van mig 390 →
+387) met `lengte_cm = COALESCE(maatwerk_lengte_cm, prod_lengte_cm)`, idem
+breedte — exact de carrier-ladder, nu één keer in SQL. Backfill voor
+niet-verzonden zendingen (zelfde guard als mig 390) + verifier-`DO`-block.
+`rhenus-send`/`verhoek-send` (`index.ts` + `genereer-proef-xml.ts`, 4 plekken)
+lezen nu de bevroren kolommen i.p.v. de FK-hint-join: Rhenus' `order_regels`-join
+vervalt volledig, Verhoek behoudt 'm alleen nog voor `artikelnr` (`ArtikelID`).
+De pure xml-builders + hun tests blijven ongemoeid (ColliInput-contract
+ongewijzigd). **HST buiten scope** (gebruikt `DEFAULT_*` uit de
+capability-descriptor, geen per-colli dims). **Frontend ongemoeid:** de
+print-laag leidt zijn maat af uit `order_regels.maatwerk_*`/de
+omschrijving-snapshot, niet uit de carrier-afmetingen — `printset.test.ts` bewust
+niet uitgebreid (zou dode velden zijn). Deno (19) + `deno check` groen.
+
 ## 2026-06-14 — Labelbarcode-encoding als één seam (HST-overlossing-klasse, vóór Rhenus go-live)
 
 **Waarom:** vlak vóór de Rhenus-cutover de SSOT rond de verzendbarcode

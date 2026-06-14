@@ -39,7 +39,7 @@ const { data: cfgRow } = await supabase.from('app_config').select('waarde').eq('
 
 const { data: colliRows, error: cErr } = await supabase
   .from('zending_colli')
-  .select('colli_nr, sscc, gewicht_kg, order_regels:order_regel_id ( maatwerk_lengte_cm, maatwerk_breedte_cm, producten:order_regels_artikelnr_fkey ( lengte_cm, breedte_cm ) )')
+  .select('colli_nr, sscc, gewicht_kg, lengte_cm, breedte_cm')
   .eq('zending_id', zending.id)
   .order('colli_nr', { ascending: true });
 if (cErr) { console.error(`Colli-query faalde: ${cErr.message}`); Deno.exit(1); }
@@ -49,8 +49,8 @@ const colli: RhenusColliInput[] = (colliRows ?? []).map((r: any) => ({
   colli_nr: r.colli_nr,
   sscc: r.sscc,
   gewicht_kg: r.gewicht_kg,
-  lengte_cm: r.order_regels?.maatwerk_lengte_cm ?? r.order_regels?.producten?.lengte_cm ?? null,
-  breedte_cm: r.order_regels?.maatwerk_breedte_cm ?? r.order_regels?.producten?.breedte_cm ?? null,
+  lengte_cm: r.lengte_cm,
+  breedte_cm: r.breedte_cm,
 }));
 
 const problemen = valideerRhenusColli(colli);

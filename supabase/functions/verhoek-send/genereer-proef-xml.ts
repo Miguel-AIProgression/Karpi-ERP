@@ -37,7 +37,7 @@ const { data: cfgRow } = await supabase.from('app_config').select('waarde').eq('
 
 const { data: colliRows, error: cErr } = await supabase
   .from('zending_colli')
-  .select('colli_nr, sscc, gewicht_kg, omschrijving_snapshot, order_regels:order_regel_id ( artikelnr, maatwerk_lengte_cm, maatwerk_breedte_cm, producten:order_regels_artikelnr_fkey ( lengte_cm, breedte_cm ) )')
+  .select('colli_nr, sscc, gewicht_kg, omschrijving_snapshot, lengte_cm, breedte_cm, order_regels:order_regel_id ( artikelnr )')
   .eq('zending_id', zending.id)
   .order('colli_nr', { ascending: true });
 if (cErr) { console.error(`Colli-query faalde: ${cErr.message}`); Deno.exit(1); }
@@ -49,8 +49,8 @@ const colli: VerhoekColliInput[] = (colliRows ?? []).map((r: any) => ({
   gewicht_kg: r.gewicht_kg,
   omschrijving_snapshot: r.omschrijving_snapshot,
   artikelnr: r.order_regels?.artikelnr ?? null,
-  lengte_cm: r.order_regels?.maatwerk_lengte_cm ?? r.order_regels?.producten?.lengte_cm ?? null,
-  breedte_cm: r.order_regels?.maatwerk_breedte_cm ?? r.order_regels?.producten?.breedte_cm ?? null,
+  lengte_cm: r.lengte_cm,
+  breedte_cm: r.breedte_cm,
 }));
 
 const problemen = valideerVerhoekColli(colli);

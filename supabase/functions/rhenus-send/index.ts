@@ -159,11 +159,13 @@ async function verwerkRow(
     return markFoutMetSummary(supabase, row, summary, `bedrijfsgegevens-record ontbreekt in app_config: ${bErr?.message ?? 'leeg'}`);
   }
 
-  // Colli's mét lengte: maatwerk-dims van de orderregel, anders product-dims
-  // (zelfde ladder als verhoek-send; expliciete FK-hint tegen PGRST201).
+  // Colli's mét lengte: afmetingen komen uit de BEVROREN zending_colli-snapshot
+  // (mig 399, lengte_cm/breedte_cm = COALESCE(maatwerk_*, product_*) op moment
+  // van colli-aanmaak). Single source — geen live maatwerk→product-join meer,
+  // dezelfde rij die label/pakbon lezen.
   const { data: colliRows, error: colliErr } = await supabase
     .from('zending_colli')
-    .select('colli_nr, sscc, gewicht_kg, order_regels:order_regel_id ( maatwerk_lengte_cm, maatwerk_breedte_cm, producten:order_regels_artikelnr_fkey ( lengte_cm, breedte_cm ) )')
+    .select('colli_nr, sscc, gewicht_kg, lengte_cm, breedte_cm')
     .eq('zending_id', row.zending_id)
     .order('colli_nr', { ascending: true });
   if (colliErr) {
@@ -174,8 +176,8 @@ async function verwerkRow(
     colli_nr: r.colli_nr,
     sscc: r.sscc,
     gewicht_kg: r.gewicht_kg,
-    lengte_cm: r.order_regels?.maatwerk_lengte_cm ?? r.order_regels?.producten?.lengte_cm ?? null,
-    breedte_cm: r.order_regels?.maatwerk_breedte_cm ?? r.order_regels?.producten?.breedte_cm ?? null,
+    lengte_cm: r.lengte_cm,
+    breedte_cm: r.breedte_cm,
   }));
 
   const z = zending as ZendingInput & { order_id: number };

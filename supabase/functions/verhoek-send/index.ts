@@ -156,10 +156,13 @@ async function verwerkRow(
     return markFoutMetSummary(supabase, row, summary, `bedrijfsgegevens-record ontbreekt in app_config: ${bErr?.message ?? 'leeg'}`);
   }
 
-  // Colli's mét afmetingen: maatwerk-dims van de orderregel, anders product-dims.
+  // Afmetingen komen uit de BEVROREN zending_colli-snapshot (mig 399,
+  // lengte_cm/breedte_cm = COALESCE(maatwerk_*, product_*) bij colli-aanmaak) —
+  // single source, dezelfde rij die label/pakbon lezen. De order_regels-join
+  // blijft alleen nog voor artikelnr (ArtikelID in de XML).
   const { data: colliRows, error: colliErr } = await supabase
     .from('zending_colli')
-    .select('colli_nr, sscc, gewicht_kg, omschrijving_snapshot, order_regels:order_regel_id ( artikelnr, maatwerk_lengte_cm, maatwerk_breedte_cm, producten:order_regels_artikelnr_fkey ( lengte_cm, breedte_cm ) )')
+    .select('colli_nr, sscc, gewicht_kg, omschrijving_snapshot, lengte_cm, breedte_cm, order_regels:order_regel_id ( artikelnr )')
     .eq('zending_id', row.zending_id)
     .order('colli_nr', { ascending: true });
   if (colliErr) {
@@ -172,8 +175,8 @@ async function verwerkRow(
     gewicht_kg: r.gewicht_kg,
     omschrijving_snapshot: r.omschrijving_snapshot,
     artikelnr: r.order_regels?.artikelnr ?? null,
-    lengte_cm: r.order_regels?.maatwerk_lengte_cm ?? r.order_regels?.producten?.lengte_cm ?? null,
-    breedte_cm: r.order_regels?.maatwerk_breedte_cm ?? r.order_regels?.producten?.breedte_cm ?? null,
+    lengte_cm: r.lengte_cm,
+    breedte_cm: r.breedte_cm,
   }));
   if (colli.length === 0) {
     return markFoutMetSummary(
