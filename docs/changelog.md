@@ -1,5 +1,39 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-14 — Verzenddocument-bron: label én pakbon uit één colli-expansie
+
+**Waarom:** de `zending_colli`-snapshot is sinds de SSCC- (a046e88) en
+omschrijving-fix (mig 388/390) de canonieke bron per colli, maar het verzendlabel
+en de pakbon **bouwden hun print-rijen nog onafhankelijk op** — elk met een eigen
+colli→regel-map, sortering, snapshot-lookup en aantal/gewicht-fallback. Dat is
+exact de divergentie-klasse waar het HST-overlossing-incident (12-06) uit kwam;
+bovendien had de pakbon géén tests. (Voorstel #2 uit de architectuur-deepening;
+zie [`docs/superpowers/plans/2026-06-14-verzenddocument-een-bron.md`](superpowers/plans/2026-06-14-verzenddocument-een-bron.md).)
+
+**Wat:** één pure functie `bouwVerzenddocument(zending)` in
+[`printset.ts`](../frontend/src/modules/logistiek/lib/printset.ts) expandeert de
+zending éénmaal naar **`colliRijen`** (labels, 1 per fysieke colli) én
+**`pakbonRegels`** (1 per orderregel), uit dezelfde colli→regel-map, regelnummer-
+sortering, mig 388-snapshot-lookup en VERZEND-filter. `expandLabels` is een dunne
+wrapper (`bouwVerzenddocument(z).colliRijen`) → de drie labelvarianten en beide
+printset-pagina's blijven onaangeroerd. [`pakbon-document.tsx`](../frontend/src/modules/logistiek/components/pakbon-document.tsx)
+consumeert nu `pakbonRegels` i.p.v. eigen `geleverdAantal`/`regelGewichtKg`/
+`snapshotVoor`/`regelsPerOrder`; de mig 222-groepering per bron-order blijft een
+dunne presentatielaag.
+
+**Bewust conservatief (byte-identiek):** de besteld/geleverd/gewicht-formules zijn
+**niet** gewijzigd (regel-gebaseerd, niet colli-count), zodat de geprinte pakbon
+exact gelijk blijft. Daarom ook **geen query-uitbreiding** nodig (colli-`aantal`/
+`gewicht_kg` ongebruikt) en **geen migratie** — puur frontend. De consolidatie
+betreft de rij-opbouw, niet de bron-semantiek.
+
+**Vangnet:** nieuwe karakteriseringstest
+[`pakbon-document.test.tsx`](../frontend/src/modules/logistiek/components/pakbon-document.test.tsx)
+(render-test, 7 scenario's: besteld/geleverd per regel, sortering, gewicht-totaal
+beide bronnen, kolli, VERZEND-skip, bundel-subkoppen, legacy zonder colli) — bewijst
+dat de pakbon-output onveranderd blijft. `printset.test.ts` (labels) ongewijzigd
+groen. Typecheck schoon. Geen deploy (geen edge/DB).
+
 ## 2026-06-14 — Rhenus go-live: canary geslaagd, colli-join-fix (mig 400) + country-routing
 
 **Waarom:** Rhenus van inactief → productief, met een gecontroleerde canary van
