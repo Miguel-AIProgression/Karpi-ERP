@@ -281,6 +281,39 @@ describe('PakbonDocument — karakterisering rijopbouw', () => {
     expect(container.textContent).toContain('ART-A')
   })
 
+  it('maatwerk-regel: losse maat-regel verborgen als er een colli is (ook met lege snapshot)', () => {
+    // Subtiele tak (door de reviewer gevlagd): een colli bestaat maar zijn
+    // snapshot-velden zijn null. De maat-regel hangt aan colli-AANWEZIGHEID
+    // (`!snapshot`), niet aan snapshot-INHOUD — dus verborgen, ook al staat de
+    // maat nergens in een snapshot. Zonder colli (legacy) verschijnt hij wél.
+    const maatwerkRegel = (extra: { colli: boolean }) =>
+      maakZending({
+        zending_regels: [
+          maakRegel({
+            id: 1,
+            order_regel_id: 10,
+            artikelnr: 'ART-MW',
+            order_regels: maakOrderRegel({
+              id: 10,
+              regelnummer: 1,
+              artikelnr: 'ART-MW',
+              is_maatwerk: true,
+              maatwerk_breedte_cm: 240,
+              maatwerk_lengte_cm: 330,
+            }),
+          }),
+        ],
+        // colli met order_regel_id maar lege snapshot-velden (default maakColli)
+        zending_colli: extra.colli ? [maakColli({ order_regel_id: 10 })] : [],
+      })
+
+    const metColli = renderPakbon(maatwerkRegel({ colli: true }), 1)
+    expect(metColli.container.textContent).not.toContain('Op maat')
+
+    const zonderColli = renderPakbon(maatwerkRegel({ colli: false }), 1)
+    expect(zonderColli.container.textContent).toContain('Op maat')
+  })
+
   it('bundel-zending: subkop per bron-order met de regels eronder', () => {
     const zending = maakZending({
       bundel_orders: [

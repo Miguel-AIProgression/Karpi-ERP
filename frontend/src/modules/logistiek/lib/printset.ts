@@ -61,7 +61,7 @@ export interface PakbonRegel {
   orderId: number
   /** `order_regels.orderaantal`, fallback geleverd. */
   besteld: number
-  /** Geleverd in deze zending (`zending_regels.aantal`-ladder). */
+  /** Geleverd in deze zending — ladder `aantal ?? te_leveren ?? orderaantal ?? 1`. */
   geleverd: number
   /** `regelgewicht × geleverd` — opgeteld levert dit het zending-totaal. */
   gewichtKg: number
