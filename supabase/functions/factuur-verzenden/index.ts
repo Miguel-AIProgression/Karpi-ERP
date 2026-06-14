@@ -13,6 +13,12 @@ import {
   type InvoiceParty,
   type KarpiInvoiceInput,
 } from '../_shared/transus-formats/karpi-invoice-fixed-width.ts'
+import { fetchFactuurDocument } from '../_shared/facturatie/factuur-document.ts'
+import {
+  naarInvoiceInput,
+  type FactuurInvoiceContext,
+  type FactuurInvoiceOrder,
+} from '../_shared/facturatie/factuur-invoice-renderer.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -573,7 +579,37 @@ async function queueEdiFactuur(
   if (bestaandErr) throw new Error(`Fetch bestaande EDI-factuur: ${bestaandErr.message}`)
   if (bestaand?.id) return bestaand.id as number
 
-  const input = await buildEdiFactuurInput(supabase, factuur, regels, bedrijf, debiteur, ediConfig)
+  // Gedeelde Factuurdocument-renderer (ADR-0036): zelfde pad als bouw-factuur-edi.
+  const doc = await fetchFactuurDocument(supabase, factuur.id, { isTestMessage: ediConfig.test_modus })
+  const orderIds = uniqueNumbers(regels.map((r) => Number(r.order_id)))
+  const orders = await fetchOrdersForEdi(supabase, orderIds)
+  const ctx: FactuurInvoiceContext = {
+    bedrijf: {
+      bedrijfsnaam: bedrijf.bedrijfsnaam,
+      gln_eigen: bedrijf.gln_eigen ?? '8715954999998',
+      adres: bedrijf.adres,
+      postcode: bedrijf.postcode,
+      plaats: bedrijf.plaats,
+      land: bedrijf.land,
+      btw_nummer: bedrijf.btw_nummer ?? null,
+    },
+    debiteur: {
+      naam: debiteur.naam,
+      btw_nummer: debiteur.btw_nummer,
+      fact_naam: debiteur.fact_naam,
+      fact_adres: debiteur.fact_adres,
+      fact_postcode: debiteur.fact_postcode,
+      fact_plaats: debiteur.fact_plaats,
+      adres: debiteur.adres,
+      postcode: debiteur.postcode,
+      plaats: debiteur.plaats,
+      land: debiteur.land,
+      gln_bedrijf: debiteur.gln_bedrijf,
+    },
+    orders: orders as unknown as FactuurInvoiceOrder[],
+    deliveryNoteNumber: factuur.factuur_nr,
+  }
+  const input = naarInvoiceInput(doc, ctx)
   const payloadRaw = buildKarpiInvoiceFixedWidth(input)
   const firstOrderId = regels.map((r) => Number(r.order_id)).find((id) => Number.isFinite(id)) ?? null
 
