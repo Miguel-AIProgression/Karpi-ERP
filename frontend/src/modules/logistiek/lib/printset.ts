@@ -3,6 +3,7 @@
 // bulk-printset-pagina, zodat één zending er identiek uitziet ongeacht de bron.
 import { isShippingRegel } from './is-shipping-regel'
 import { getVervoerderDef } from '../registry'
+import type { OmschrijvingSnapshot } from './shipping-label-data'
 import type {
   ZendingPrintRegel,
   ZendingPrintSet,
@@ -54,7 +55,7 @@ export interface LabelItem {
  * historische pakbon-logica (byte-identieke output — zie `pakbon-document.test.tsx`).
  */
 export interface PakbonRegel {
-  regel: ZendingPrintRegel | null
+  regel: ZendingPrintRegel
   orderRegelId: number | null
   /** Bron-order voor groepering per orderbevestiging (mig 222). */
   orderId: number
@@ -64,9 +65,11 @@ export interface PakbonRegel {
   geleverd: number
   /** `regelgewicht × geleverd` — opgeteld levert dit het zending-totaal. */
   gewichtKg: number
-  /** Mig 388-snapshot voor de productnaam, gelijk aan het label. */
-  omschrijvingSnapshot: string | null
-  klantOmschrijvingSnapshot: string | null
+  /** Mig 388-snapshot uit de eerste colli van deze regel, of `null` als de
+   * regel géén colli heeft (legacy). `null` ⟺ val terug op de live afleiding én
+   * toon de losse maat-regel — exact de `snapshotVoor`-semantiek van de oude
+   * pakbon (een colli met lege snapshot-inhoud telt als non-null). */
+  snapshot: OmschrijvingSnapshot | null
 }
 
 /**
@@ -217,8 +220,10 @@ export function bouwVerzenddocument(zending: ZendingPrintSet): Verzenddocument {
     .sort((a, b) => (a.order_regels?.regelnummer ?? 0) - (b.order_regels?.regelnummer ?? 0))
     .map((regel) => {
       const geleverd = geleverdAantal(regel)
-      const snap =
-        regel.order_regel_id != null ? snapshotPerOrderRegel.get(regel.order_regel_id) : undefined
+      const snapshot =
+        (regel.order_regel_id != null
+          ? snapshotPerOrderRegel.get(regel.order_regel_id)
+          : undefined) ?? null
       return {
         regel,
         orderRegelId: regel.order_regel_id,
@@ -226,8 +231,7 @@ export function bouwVerzenddocument(zending: ZendingPrintSet): Verzenddocument {
         besteld: Number(regel.order_regels?.orderaantal ?? geleverd),
         geleverd,
         gewichtKg: regelGewichtKg(regel) * geleverd,
-        omschrijvingSnapshot: snap?.omschrijvingSnapshot ?? null,
-        klantOmschrijvingSnapshot: snap?.klantOmschrijvingSnapshot ?? null,
+        snapshot,
       }
     })
 
