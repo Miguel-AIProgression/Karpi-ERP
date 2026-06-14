@@ -51,9 +51,9 @@ export type { ColliProbleem } from '../_shared/vervoerders/colli.ts';
 // Runtime-config uit app_config sleutel 'rhenus' (mig 379). Wijziging =
 // SQL-UPDATE op dat record, geen redeploy (ADR-0032).
 export interface RhenusOpties {
-  /** true = <sscc> is de volledige label-waarde 00+SSCC (20 cijfers, zoals
-   *  legacy én ons label); false = kale 18-cijferige SSCC. */
-  sscc_met_00_prefix: boolean;
+  // <sscc> = de labelbarcode (AI(00)+SSCC) uit _shared/vervoerders/
+  // labelbarcode.ts — niet langer een per-carrier config-vlag, zodat label en
+  // aanmelding nooit kunnen divergeren (de HST-overlossing-klasse bug).
   /** GS1 packageTypeCode per colli. Legacy kende RLEN/COLL/PLTS/HPLT;
    *  onze zendingen zijn rollen → default 'RLEN'. */
   package_type_code: string;
@@ -62,7 +62,6 @@ export interface RhenusOpties {
 }
 
 export const DEFAULT_RHENUS_OPTIES: RhenusOpties = {
-  sscc_met_00_prefix: true,
   package_type_code: 'RLEN',
   bestandsnaam_prefix: 'RHE',
 };

@@ -11,6 +11,7 @@
 
 import { normalizeCountry, splitAdres } from '../_shared/adres-split.ts';
 import { capabilityVoor } from '../_shared/vervoerders/capabilities.ts';
+import { labelBarcode } from '../_shared/vervoerders/labelbarcode.ts';
 export { splitAdres };
 
 import type {
@@ -95,8 +96,9 @@ function bouwLineUitColli(c: ZendingColliInput, order: OrderInput): HstTransport
     Width: DEFAULT_WIDTH_CM,
     Height: DEFAULT_HEIGHT_CM,
     Weight: c.gewicht_kg ?? DEFAULT_WEIGHT_KG,
-    // AI(00) + 18-cijferige SSCC = de Code128-waarde die ook op het label staat.
-    BarCode: { BarCode: `00${c.sscc}` },
+    // De labelbarcode (AI(00)+SSCC) uit de gedeelde seam — exact wat op het
+    // label staat en bij elke vervoerder wordt aangemeld (single source).
+    BarCode: { BarCode: labelBarcode(c.sscc) ?? '' },
     PackageUnitID: DEFAULT_PACKAGE_UNIT_ID,
   };
 }

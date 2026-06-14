@@ -51,9 +51,9 @@ export type { ColliProbleem } from '../_shared/vervoerders/colli.ts';
 export interface VerhoekOpties {
   /** Karpi's klantnummer bij Verhoek. '' = nog onbekend (vraag 1 testmail). */
   opdrachtgever_nummer: string;
-  /** true = ScanCode is de volledige label-waarde 00+SSCC (20 cijfers);
-   *  false = kale 18-cijferige SSCC. Open vraag in de testmail. */
-  scancode_met_00_prefix: boolean;
+  // ScanCode = de labelbarcode (AI(00)+SSCC) uit _shared/vervoerders/
+  // labelbarcode.ts — niet langer een per-carrier config-vlag, zodat label en
+  // aanmelding nooit kunnen divergeren (de HST-overlossing-klasse bug).
   verpakkingseenheid: string; // vraag 4 testmail
   levering: string;           // vraag 2 testmail
   soort_levering: string;     // vraag 2 testmail
@@ -61,7 +61,6 @@ export interface VerhoekOpties {
 
 export const DEFAULT_VERHOEK_OPTIES: VerhoekOpties = {
   opdrachtgever_nummer: '',
-  scancode_met_00_prefix: true,
   verpakkingseenheid: 'Rol',
   levering: '1',
   soort_levering: '1',

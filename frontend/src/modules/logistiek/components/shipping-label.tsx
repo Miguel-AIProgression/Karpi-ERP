@@ -1,3 +1,4 @@
+import { labelBarcode } from '@/lib/logistiek/labelbarcode'
 import { Code128Barcode } from './code128-barcode'
 import { ShippingLabelTall } from './shipping-label-tall'
 import {
@@ -69,7 +70,7 @@ function ShippingLabelCompact({
   const toonKarpi = namen.karpiNaam && namen.karpiNaam !== namen.klantNaam
   const maat = productMaat(regel, snapshot)
   const land = zending.afl_land ?? 'NL'
-  const barcodeValue = sscc ? `00${sscc}` : null
+  const barcodeValue = labelBarcode(sscc)
   const ref = labelReferentie(order)
 
   // Schaalfactor t.o.v. het basis-ontwerp: 1.0 op een 3"×2"-rol, 1.5 op de

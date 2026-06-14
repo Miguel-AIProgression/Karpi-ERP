@@ -1,3 +1,4 @@
+import { labelBarcode } from '@/lib/logistiek/labelbarcode'
 import { Code128Barcode } from './code128-barcode'
 import {
   labelDatumKort,
@@ -40,7 +41,7 @@ export function ShippingLabelTall({
   const toonKarpi = namen.karpiNaam && namen.karpiNaam !== namen.klantNaam
   const maat = productMaat(regel, snapshot)
   const land = zending.afl_land ?? 'NL'
-  const barcodeValue = sscc ? `00${sscc}` : null
+  const barcodeValue = labelBarcode(sscc)
   const ref = labelReferentie(order)
 
   const rijBarcodeMm = hoogteMm - RIJ_AFZENDER_MM - RIJ_ORDER_MM - RIJ_ADRES_MM - RIJ_COLLI_MM

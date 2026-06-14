@@ -1,3 +1,4 @@
+import { labelBarcode } from '@/lib/logistiek/labelbarcode'
 import { Code128Barcode } from './code128-barcode'
 import {
   labelDatumKort,
@@ -41,7 +42,7 @@ export function DpdShippingLabel({
   const namen = productNamen(regel, { omschrijvingSnapshot, klantOmschrijvingSnapshot })
   const toonKarpi = namen.karpiNaam && namen.karpiNaam !== namen.klantNaam
   const land = zending.afl_land ?? 'NL'
-  const barcodeValue = sscc ? `00${sscc}` : null // SSCC-AI(00) prefix
+  const barcodeValue = labelBarcode(sscc) // AI(00)+SSCC, gedeelde seam
   const datum = labelDatumKort(zending)
   const referentie = labelReferentie(order)
   const serviceLabel = (serviceCode ?? 'SRV').toUpperCase()

@@ -1151,7 +1151,7 @@ Applicatie-instellingen (key-value). Gebruikt voor productie-configuratie en aut
 | Veld | Type | Default | Toelichting |
 |------|------|---------|-------------|
 | opdrachtgever_nummer | string | `''` | Karpi-klantnummer bij Verhoek. Leeg = `verhoek-send` weigert niet-dry-run verzending. |
-| scancode_met_00_prefix | boolean | `true` | ScanCode (label-barcode) = `'00'` + SSCC als TRUE, anders kaal SSCC. |
+| ~~scancode_met_00_prefix~~ | boolean | — | **Vervallen 2026-06-14** (dode JSONB-key, niet meer gelezen): ScanCode = de gedeelde Labelbarcode-seam `labelBarcode()` (AI(00)+SSCC), niet langer per-carrier configureerbaar. |
 | verpakkingseenheid | string | `'Rol'` | Vrije tekst in AA2.0-XML `<Verpakkingseenheid>`. |
 | levering | string | `'1'` | AA2.0-XML `<Levering>` code. |
 | soort_levering | string | `'1'` | AA2.0-XML `<SoortLevering>` code. |

@@ -97,17 +97,18 @@ Deno.test('bouwVerhoekXml: structuur, escaping, kernvelden', () => {
   assertStringIncludes(xml, '<Verpakkingseenheid>Rol</Verpakkingseenheid>');
 });
 
-Deno.test('bouwVerhoekXml: opties sturen ScanCode-prefix en codes', () => {
+Deno.test('bouwVerhoekXml: opties sturen verpakkingseenheid en codes; ScanCode blijft de labelbarcode', () => {
   const args = fixtureArgs();
   args.opties = {
     ...args.opties,
-    scancode_met_00_prefix: false,
     verpakkingseenheid: 'Doos',
     levering: '2',
     soort_levering: '3',
   };
   const xml = bouwVerhoekXml(args);
-  assertStringIncludes(xml, '<ScanCode>087159540000000014</ScanCode>');
+  // ScanCode is altijd AI(00)+SSCC (gedeelde labelbarcode-seam) — geen
+  // per-carrier prefix-vlag meer, dus geen kale-SSCC-variant.
+  assertStringIncludes(xml, '<ScanCode>00087159540000000014</ScanCode>');
   assertStringIncludes(xml, '<Verpakkingseenheid>Doos</Verpakkingseenheid>');
   assertStringIncludes(xml, '<Levering>2</Levering>');
   assertStringIncludes(xml, '<SoortLevering>3</SoortLevering>');

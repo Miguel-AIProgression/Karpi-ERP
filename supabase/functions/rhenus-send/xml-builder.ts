@@ -19,6 +19,7 @@
 import { normalizeCountry } from '../_shared/adres-split.ts';
 import { capabilityVoor } from '../_shared/vervoerders/capabilities.ts';
 import { type ColliMeldingen, type ColliProbleem, valideerColli } from '../_shared/vervoerders/colli.ts';
+import { labelBarcode } from '../_shared/vervoerders/labelbarcode.ts';
 import type {
   BouwRhenusXmlArgs,
   RhenusColliInput,
@@ -113,7 +114,9 @@ function bouwItem(c: RhenusColliInput, volgnr: number, opties: RhenusOpties): st
     '<transportInstructionShipmentItem>',
     tag('lineItemNumber', volgnr),
     '<logisticUnit>',
-    tag('sscc', opties.sscc_met_00_prefix ? `00${c.sscc}` : c.sscc),
+    // <sscc> = de labelbarcode (AI(00)+SSCC) uit de gedeelde seam — exact wat
+    // op het label staat; één bron met label + HST + Verhoek.
+    tag('sscc', labelBarcode(c.sscc) ?? ''),
     tag('Weight', c.gewicht_kg !== null ? formatKg(c.gewicht_kg) : ''),
     tag('packageTypeCode', opties.package_type_code),
     '<dimension>',

@@ -1,5 +1,28 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-14 — Labelbarcode-encoding als één seam (HST-overlossing-klasse, vóór Rhenus go-live)
+
+**Waarom:** vlak vóór de Rhenus-cutover de SSOT rond de verzendbarcode
+dichtgetimmerd. De SSCC-*waarde* kwam al uit één bron (`zending_colli.sscc`),
+maar de beslissing *"de scanbare barcode = AI(00) + SSCC"* leefde apart op **6
+plekken**: 3 label-varianten (`shipping-label`, `shipping-label-tall`,
+`dpd-shipping-label`, elk hardcoded `00${sscc}`), HST-`BarCode` (hardcoded),
+Verhoek-`ScanCode` en Rhenus-`<sscc>` (elk een eigen `app_config`-vlag). Dat was
+de HST-overlossing-bug (12-06) één laag hoger: een verkeerde config-UPDATE op
+`scancode_met_00_prefix`/`sscc_met_00_prefix` liet de aanmelding stil afwijken
+van het hardcoded label → "geen data" op het depot.
+
+**Wat:** één pure functie `labelBarcode(sscc)` in
+`supabase/functions/_shared/vervoerders/labelbarcode.ts` (+ `labelbarcode.test.ts`,
+5 cases). Álle 6 consumenten lezen die nu; frontend via shim
+`@/lib/logistiek/labelbarcode` (ADR-0033). De twee per-carrier config-vlaggen
+zijn **geschrapt** uit `VerhoekOpties`/`RhenusOpties` + defaults; de
+`app_config 'verhoek'/'rhenus'`-JSONB-keys blijven als dode (niet-gelezen) keys
+staan — geen migratie-churn. Een carrier die ooit kale SSCC eist = capability-
+veld in de registry (ADR-0034), géén losse vlag. Domeinterm **Labelbarcode**
+toegevoegd aan CONTEXT.md. Carrier-tests bijgewerkt (kale-SSCC-pad verviel →
+sscc is altijd de Labelbarcode). Deno (24) + frontend-typecheck groen.
+
 ## 2026-06-13 — Vervoerder-capability-seam: één descriptor-registry (ADR-0034)
 
 **Waarom:** de vervoerder-*keuze* was al data-driven (ADR-0008/0030), maar de

@@ -127,11 +127,13 @@ Deno.test('bouwRhenusXml: items met 00-prefix-sscc, gewicht en depth', () => {
   assertStringIncludes(xml, '<depth measurementUnitCode="CMS">155</depth>');
 });
 
-Deno.test('bouwRhenusXml: opties sturen sscc-prefix en packageTypeCode', () => {
+Deno.test('bouwRhenusXml: packageTypeCode is configureerbaar; sscc blijft de labelbarcode', () => {
   const args = fixtureArgs();
-  args.opties = { ...args.opties, sscc_met_00_prefix: false, package_type_code: 'COLL' };
+  args.opties = { ...args.opties, package_type_code: 'COLL' };
   const xml = bouwRhenusXml(args);
-  assertStringIncludes(xml, '<sscc>087159544540630024</sscc>');
+  // <sscc> is altijd AI(00)+SSCC (gedeelde labelbarcode-seam) — geen
+  // per-carrier prefix-vlag meer, dus geen kale-SSCC-variant.
+  assertStringIncludes(xml, '<sscc>00087159544540630024</sscc>');
   assertStringIncludes(xml, '<packageTypeCode>COLL</packageTypeCode>');
 });
 

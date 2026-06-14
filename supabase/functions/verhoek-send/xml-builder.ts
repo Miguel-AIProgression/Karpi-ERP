@@ -14,6 +14,7 @@
 import { normalizeCountry, splitAdres } from '../_shared/adres-split.ts';
 import { capabilityVoor } from '../_shared/vervoerders/capabilities.ts';
 import { type ColliMeldingen, type ColliProbleem, valideerColli } from '../_shared/vervoerders/colli.ts';
+import { labelBarcode } from '../_shared/vervoerders/labelbarcode.ts';
 import type {
   BedrijfInput,
   BouwVerhoekXmlArgs,
@@ -127,10 +128,10 @@ function bouwPart(c: VerhoekColliInput, volgnr: number, opties: VerhoekOpties): 
     tag('ArtikelID', c.artikelnr ?? ''),
     tag('Verpakkingseenheid', opties.verpakkingseenheid),
     tag('Omschrijving', c.omschrijving_snapshot ?? ''),
-    // ScanCode MOET exact de barcode op de eenheid zijn. Onze labels dragen
-    // AI(00)+SSCC (shipping-label.tsx: `00${sscc}`); of Verhoek de prefix
-    // wil is een open vraag → configureerbaar.
-    tag('ScanCode', opties.scancode_met_00_prefix ? `00${c.sscc}` : c.sscc),
+    // ScanCode MOET exact de barcode op de eenheid zijn — dus precies de
+    // labelbarcode uit de gedeelde seam (AI(00)+SSCC). Eén bron met het label
+    // en de andere carriers; geen per-carrier prefix-keuze meer.
+    tag('ScanCode', labelBarcode(c.sscc) ?? ''),
     tag('RolNummer', c.colli_nr),
     // Decagram (eis Verhoek): 125 kg → 12500.
     tag('Gewicht', c.gewicht_kg ? naarDecagram(c.gewicht_kg) : ''),
