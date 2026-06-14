@@ -51,6 +51,18 @@ export interface VerzendZending {
   [k: string]: unknown;
 }
 
+/** Het punt in de sequence waar een pre-verzending-fout optrad. De adapter mag
+ *  dit gebruiken voor zijn `summary.details`-vorm (HST logt fase-codes i.p.v. de
+ *  melding); Verhoek/Rhenus negeren het en loggen de melding. */
+export type VerzendFase =
+  | 'zending'
+  | 'order'
+  | 'bedrijf'
+  | 'colli_query'
+  | 'geen_colli'
+  | 'preflight'
+  | 'bestandsnaam';
+
 /** Context-data die de skeleton ophaalt en aan de build-/verstuur-callbacks geeft. */
 export interface VerzendContextData {
   z: VerzendZending;
@@ -133,8 +145,9 @@ export interface VerzendAdapter<Row extends VerzendRijBasis, Ctx, Payload, R> {
     summary: VerzendSummaryBasis,
   ): Promise<void>;
 
-  /** Markeer-fout vóór verzending (fetch-fout/preflight): markeer_*_fout + summary. */
-  markFout(supabase: SupabaseClient, row: Row, summary: VerzendSummaryBasis, melding: string): Promise<void>;
+  /** Markeer-fout vóór verzending (fetch-fout/preflight): markeer_*_fout + summary.
+   *  `fase` duidt het punt aan; de adapter kiest zelf zijn details-vorm. */
+  markFout(supabase: SupabaseClient, row: Row, summary: VerzendSummaryBasis, melding: string, fase: VerzendFase): Promise<void>;
 }
 
 /**
@@ -155,30 +168,30 @@ export async function verwerkVerzendRij<Row extends VerzendRijBasis, Ctx, Payloa
     .eq('id', row.zending_id)
     .single();
   if (zErr || !zending) {
-    return adapter.markFout(supabase, row, summary, `Zending ${row.zending_id} niet gevonden: ${zErr?.message ?? 'leeg'}`);
+    return adapter.markFout(supabase, row, summary, `Zending ${row.zending_id} niet gevonden: ${zErr?.message ?? 'leeg'}`, 'zending');
   }
   const z = zending as unknown as VerzendZending;
 
   const { data: order, error: oErr } = await supabase
     .from('orders').select(adapter.orderSelect).eq('id', z.order_id).single();
   if (oErr || !order) {
-    return adapter.markFout(supabase, row, summary, `Order ${z.order_id} niet gevonden: ${oErr?.message ?? 'leeg'}`);
+    return adapter.markFout(supabase, row, summary, `Order ${z.order_id} niet gevonden: ${oErr?.message ?? 'leeg'}`, 'order');
   }
 
   const { data: bedrijfRow, error: bErr } = await supabase
     .from('app_config').select('waarde').eq('sleutel', 'bedrijfsgegevens').single();
   if (bErr || !(bedrijfRow as { waarde?: unknown } | null)?.waarde) {
-    return adapter.markFout(supabase, row, summary, `bedrijfsgegevens-record ontbreekt in app_config: ${bErr?.message ?? 'leeg'}`);
+    return adapter.markFout(supabase, row, summary, `bedrijfsgegevens-record ontbreekt in app_config: ${bErr?.message ?? 'leeg'}`, 'bedrijf');
   }
   const bedrijf = (bedrijfRow as { waarde: unknown }).waarde;
 
   // Colli via de Zending-colli-seam (één canonieke bron, mig 399).
   const { colli, error: colliErr } = await fetchZendingColli(supabase, row.zending_id);
   if (colliErr) {
-    return adapter.markFout(supabase, row, summary, `zending_colli query fout: ${colliErr}`);
+    return adapter.markFout(supabase, row, summary, `zending_colli query fout: ${colliErr}`, 'colli_query');
   }
   if (adapter.hardFailOnZeroColli && colli.length === 0) {
-    return adapter.markFout(supabase, row, summary, adapter.zeroColliMelding(row.zending_id));
+    return adapter.markFout(supabase, row, summary, adapter.zeroColliMelding(row.zending_id), 'geen_colli');
   }
 
   // 2. Pre-flight: adres (capability-seam) + carrier-colli + carrier-extra.
@@ -198,7 +211,7 @@ export async function verwerkVerzendRij<Row extends VerzendRijBasis, Ctx, Payloa
     ...(adapter.preflightExtra?.(ctx, z, colli) ?? []),
   ];
   if (redenen.length > 0) {
-    return adapter.markFout(supabase, row, summary, 'Pre-flight: ' + redenen.join(' | '));
+    return adapter.markFout(supabase, row, summary, 'Pre-flight: ' + redenen.join(' | '), 'preflight');
   }
 
   // 3. Bestandsnaam (SFTP-dedup): eenmalig genereren en vóór de upload
@@ -212,7 +225,7 @@ export async function verwerkVerzendRij<Row extends VerzendRijBasis, Ctx, Payloa
         .update({ bestandsnaam })
         .eq('id', row.id);
       if (naamErr) {
-        return adapter.markFout(supabase, row, summary, `bestandsnaam persisteren faalde: ${naamErr.message}`);
+        return adapter.markFout(supabase, row, summary, `bestandsnaam persisteren faalde: ${naamErr.message}`, 'bestandsnaam');
       }
     }
   }

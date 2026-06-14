@@ -33,6 +33,25 @@ betreft de rij-opbouw, niet de bron-semantiek.
 beide bronnen, kolli, VERZEND-skip, bundel-subkoppen, legacy zonder colli) — bewijst
 dat de pakbon-output onveranderd blijft. `printset.test.ts` (labels) ongewijzigd
 groen. Typecheck schoon. Geen deploy (geen edge/DB).
+## 2026-06-14 — Verzend-orchestrator-skeleton (ADR-0035) slice 2+3: Rhenus + HST op de skeleton
+
+**Wat:** `rhenus-send` en `hst-send` `verwerk-row.ts` zijn nu carrier-adapters op
+de gedeelde [`_shared/verzend-orchestrator.ts`](../supabase/functions/_shared/verzend-orchestrator.ts),
+net als Verhoek (slice 1). Alle drie de `verwerkRow`'s delegeren nu naar
+`verwerkVerzendRij(adapter, …)`; de carrier-specifieke `verwerkRow`-bodies (3×
+~180 r duplicatie) bestaan niet meer. De skeleton kreeg een `fase`-parameter op
+`markFout` zodat HST zijn `summary.details`-fase-codes (`zending_niet_gevonden`,
+`preflight`, …) behoudt i.p.v. de melding (Verhoek/Rhenus loggen de melding).
+
+**Carrier-verschillen die de adapters dragen:** HST = REST/JSON + PDF-storage +
+geen bestandsnaam + markeer_hst_*-velden (transport_order_id/tracking/pdf); Rhenus =
+`klant_referentie` + 0-colli via preflight (incident 0455395) + geen track_trace;
+Verhoek = afl_email/opmerkingen + opdrachtgever-guard + harde 0-colli-check.
+
+**Status:** alle 15 karakterisatie-tests (slice 0) ongewijzigd groen →
+gedragsneutraal voor álle drie. 66 Deno-tests groen, 3× `index.ts` type-clean.
+Drift-opschoning = slice 4.
+
 ## 2026-06-14 — Verzend-orchestrator-skeleton (ADR-0035) slice 1: skeleton + Verhoek
 
 **Waarom:** vervolg op slice 0 (vangnet). De gedeelde per-rij-sequence van de drie
