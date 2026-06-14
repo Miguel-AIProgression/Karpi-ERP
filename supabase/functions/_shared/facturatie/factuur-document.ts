@@ -46,6 +46,8 @@ export interface FactuurDocumentRegel {
   order_nr: string
   uw_referentie: string
   artikelnr: string
+  /** Rauwe tweede omschrijvingsregel (PDF-sub-regels); EDI gebruikt artikel_tekst. */
+  omschrijving_2: string | null
   aantal: number
   /** Verkoopeenheid op de factuur; vast 'St' (mirrors huidige PDF). */
   eenheid: string
@@ -163,6 +165,7 @@ export function bouwFactuurDocument(
       order_nr: r.order_nr ?? '',
       uw_referentie: r.uw_referentie ?? '',
       artikelnr: r.artikelnr ?? '',
+      omschrijving_2: r.omschrijving_2 ?? null,
       aantal,
       eenheid: EENHEID,
       prijs: num(r.prijs),

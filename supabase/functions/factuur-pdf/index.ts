@@ -2,43 +2,20 @@
 // Rendert een factuur real-time als PDF en streamt de bytes terug.
 // Geen DB-mutaties, geen mail, geen EDI — pure preview/download voor de UI.
 // Werkt op elke factuur, ongeacht status (Concept ook).
+//
+// Header + regels komen uit het canonieke Factuurdocument (ADR-0036): dezelfde
+// Artikelpresentatie als de EDI-INVOIC. De PDF-specifieke verrijking
+// (m²-/gewicht-totalen + afleveradres-per-order) blijft hier — die hoort niet in
+// het gedeelde document.
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { genereerFactuurPDF } from '../_shared/factuur-pdf.ts'
+import { fetchFactuurDocument } from '../_shared/facturatie/factuur-document.ts'
+import { naarFactuurPdfInput } from '../_shared/facturatie/factuur-pdf-renderer.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-
-interface FactuurRow {
-  id: number
-  factuur_nr: string
-  factuurdatum: string
-  debiteur_nr: number
-  fact_naam: string | null
-  fact_adres: string | null
-  fact_postcode: string | null
-  fact_plaats: string | null
-  subtotaal: number | string
-  btw_percentage: number | string
-  btw_bedrag: number | string
-  totaal: number | string
-  btw_nummer: string | null
-  btw_verlegd: boolean | null
-}
-
-interface FactuurRegelRow {
-  artikelnr: string | null
-  omschrijving: string | null
-  omschrijving_2: string | null
-  uw_referentie: string | null
-  order_nr: string | null
-  order_id: number | null
-  order_regel_id: number | null
-  aantal: number | string
-  prijs: number | string
-  bedrag: number | string
-}
 
 interface OrderRegelMeta {
   id: number
@@ -123,21 +100,11 @@ serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE)
 
-    const [factuurRes, regelsRes, bedrijfRes] = await Promise.all([
-      supabase.from('facturen').select('*').eq('id', factuurId).maybeSingle(),
-      supabase
-        .from('factuur_regels')
-        .select(
-          'artikelnr, omschrijving, omschrijving_2, uw_referentie, order_nr, order_id, order_regel_id, aantal, prijs, bedrag',
-        )
-        .eq('factuur_id', factuurId)
-        .order('regelnummer'),
-      supabase.from('app_config').select('waarde').eq('sleutel', 'bedrijfsgegevens').maybeSingle(),
-    ])
-
-    if (factuurRes.error) return jsonError(500, `Fetch factuur: ${factuurRes.error.message}`)
-    if (!factuurRes.data) return jsonError(404, `Factuur ${factuurId} niet gevonden`)
-    if (regelsRes.error) return jsonError(500, `Fetch regels: ${regelsRes.error.message}`)
+    const bedrijfRes = await supabase
+      .from('app_config')
+      .select('waarde')
+      .eq('sleutel', 'bedrijfsgegevens')
+      .maybeSingle()
     if (bedrijfRes.error) return jsonError(500, `Fetch bedrijfsgegevens: ${bedrijfRes.error.message}`)
     if (!bedrijfRes.data?.waarde) {
       return jsonError(
@@ -145,19 +112,21 @@ serve(async (req) => {
         'Bedrijfsgegevens ontbreken — vul ze in via /instellingen/bedrijfsgegevens (app_config sleutel "bedrijfsgegevens")',
       )
     }
-
-    const factuur = factuurRes.data as FactuurRow
-    const regels = (regelsRes.data ?? []) as FactuurRegelRow[]
     const bedrijf = bedrijfRes.data.waarde as BedrijfConfig
 
-    // Verzamel ID's voor secundaire fetches (m2, gewicht, afleveradres)
-    const orderIds = Array.from(new Set(regels.map((r) => r.order_id).filter((v): v is number => v !== null)))
-    const orderRegelIds = Array.from(
-      new Set(regels.map((r) => r.order_regel_id).filter((v): v is number => v !== null)),
-    )
-    const artikelnrs = Array.from(
-      new Set(regels.map((r) => r.artikelnr).filter((v): v is string => v !== null && v.length > 0)),
-    )
+    // Canoniek Factuurdocument (header + regels mét Artikelpresentatie).
+    let doc
+    try {
+      doc = await fetchFactuurDocument(supabase, factuurId)
+    } catch (e) {
+      return jsonError(404, e instanceof Error ? e.message : String(e))
+    }
+    const base = naarFactuurPdfInput(doc)
+
+    // Secundaire fetches voor PDF-specifieke verrijking (m², gewicht, afleveradres).
+    const orderIds = Array.from(new Set(doc.regels.map((r) => r.order_id).filter((v) => Number.isFinite(v))))
+    const orderRegelIds = Array.from(new Set(doc.regels.map((r) => r.order_regel_id).filter((v) => Number.isFinite(v))))
+    const artikelnrs = Array.from(new Set(doc.regels.map((r) => r.artikelnr).filter((v) => v.length > 0)))
 
     const [ordersRes, orderRegelsRes, productenRes] = await Promise.all([
       orderIds.length > 0
@@ -208,37 +177,22 @@ serve(async (req) => {
       // Logo niet beschikbaar — PDF wordt zonder logo gerenderd (oude gedrag).
     }
 
-    let vertegenwoordigerNaam = 'Niet van Toepassing'
-    const { data: debiteur } = await supabase
-      .from('debiteuren')
-      .select('vertegenw_code')
-      .eq('debiteur_nr', factuur.debiteur_nr)
-      .maybeSingle()
-    if (debiteur?.vertegenw_code) {
-      const { data: vert } = await supabase
-        .from('vertegenwoordigers')
-        .select('naam')
-        .eq('code', debiteur.vertegenw_code)
-        .maybeSingle()
-      if (vert?.naam) vertegenwoordigerNaam = vert.naam
-    }
-
-    // M2 + gewicht per regel berekenen
-    const factAdres = (factuur.fact_adres ?? '').trim().toLowerCase()
-    const factPostcode = (factuur.fact_postcode ?? '').trim().toLowerCase()
+    // M² + gewicht per regel + afleveradres-per-order: PDF-specifieke verrijking
+    // op het doc-gedreven regel-basis (base.regels). Indexen lopen 1-op-1 met
+    // doc.regels (zelfde regelnummer-sortering).
+    const factAdres = doc.header.fact_adres.trim().toLowerCase()
+    const factPostcode = doc.header.fact_postcode.trim().toLowerCase()
     let totaalM2 = 0
     let totaalGewichtKg = 0
-
-    // Per order: alleen op eerste factuurregel van die order toon de afleveradres-snapshot,
-    // en alleen als die afwijkt van het factuuradres.
     const aflGetoondPerOrder = new Set<number>()
 
-    const renderRegels = regels.map((r) => {
-      const orderRegel = r.order_regel_id !== null ? orderRegelsById.get(r.order_regel_id) : undefined
-      const product = r.artikelnr ? productenByArtikelnr.get(r.artikelnr) : undefined
-      const aantal = Number(r.aantal)
+    const renderRegels = base.regels.map((br, i) => {
+      const dr = doc.regels[i]
+      const orderRegel = orderRegelsById.get(dr.order_regel_id)
+      const product = dr.artikelnr ? productenByArtikelnr.get(dr.artikelnr) : undefined
+      const aantal = br.aantal
 
-      // m2-berekening per regel (per stuk × aantal)
+      // m²-berekening per regel (per stuk × aantal)
       let m2PerStuk = 0
       const maatwerkM2 = orderRegel?.maatwerk_oppervlak_m2
       if (maatwerkM2 !== null && maatwerkM2 !== undefined && Number(maatwerkM2) > 0) {
@@ -260,8 +214,8 @@ serve(async (req) => {
 
       // Afleveradres alleen bij eerste regel van de order EN alleen als afwijkend
       let afleveradres: { naam: string; naam_2?: string; adres: string; postcode: string; plaats: string } | undefined
-      if (r.order_id !== null && !aflGetoondPerOrder.has(r.order_id)) {
-        const order = ordersById.get(r.order_id)
+      if (!aflGetoondPerOrder.has(dr.order_id)) {
+        const order = ordersById.get(dr.order_id)
         if (order) {
           const aflAdres = (order.afl_adres ?? '').trim().toLowerCase()
           const aflPostcode = (order.afl_postcode ?? '').trim().toLowerCase()
@@ -276,21 +230,10 @@ serve(async (req) => {
             }
           }
         }
-        aflGetoondPerOrder.add(r.order_id)
+        aflGetoondPerOrder.add(dr.order_id)
       }
 
-      return {
-        order_nr: r.order_nr ?? '',
-        uw_referentie: r.uw_referentie ?? '',
-        artikelnr: r.artikelnr ?? '',
-        aantal,
-        eenheid: 'St',
-        omschrijving: r.omschrijving ?? '',
-        omschrijving_2: r.omschrijving_2 ?? undefined,
-        prijs: Number(r.prijs),
-        bedrag: Number(r.bedrag),
-        afleveradres,
-      }
+      return { ...br, afleveradres }
     })
 
     const pdfBytes = await genereerFactuurPDF({
@@ -318,22 +261,9 @@ serve(async (req) => {
       },
       logo: logoOptie,
       factuur: {
-        factuur_nr: factuur.factuur_nr,
-        factuurdatum: factuur.factuurdatum,
-        debiteur_nr: factuur.debiteur_nr,
-        vertegenwoordiger: vertegenwoordigerNaam,
-        fact_naam: factuur.fact_naam ?? '',
-        fact_adres: factuur.fact_adres ?? '',
-        fact_postcode: factuur.fact_postcode ?? '',
-        fact_plaats: factuur.fact_plaats ?? '',
-        subtotaal: Number(factuur.subtotaal),
-        btw_percentage: Number(factuur.btw_percentage),
-        btw_bedrag: Number(factuur.btw_bedrag),
-        totaal: Number(factuur.totaal),
+        ...base.factuur,
         totaal_m2: totaalM2 > 0 ? totaalM2 : undefined,
         totaal_gewicht_kg: totaalGewichtKg > 0 ? totaalGewichtKg : undefined,
-        btw_verlegd: factuur.btw_verlegd === true,
-        btw_nummer_afnemer: factuur.btw_nummer ?? null,
       },
       regels: renderRegels,
     })
@@ -343,7 +273,7 @@ serve(async (req) => {
       headers: {
         ...CORS_HEADERS,
         'content-type': 'application/pdf',
-        'content-disposition': `inline; filename="${factuur.factuur_nr}.pdf"`,
+        'content-disposition': `inline; filename="${doc.header.factuur_nr}.pdf"`,
         'cache-control': 'no-store',
       },
     })

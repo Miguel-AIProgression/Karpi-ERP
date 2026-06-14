@@ -14,6 +14,7 @@ import {
   type KarpiInvoiceInput,
 } from '../_shared/transus-formats/karpi-invoice-fixed-width.ts'
 import { fetchFactuurDocument } from '../_shared/facturatie/factuur-document.ts'
+import { naarFactuurPdfInput } from '../_shared/facturatie/factuur-pdf-renderer.ts'
 import {
   naarInvoiceInput,
   type FactuurInvoiceContext,
@@ -258,17 +259,11 @@ serve(async () => {
         throw new Error(`Debiteur ${item.debiteur_nr} heeft geen email_factuur`)
       }
 
-      let vertegenwoordigerNaam = 'Niet van Toepassing'
-      if (debiteur.vertegenw_code) {
-        const { data: vert } = await supabase
-          .from('vertegenwoordigers')
-          .select('naam')
-          .eq('code', debiteur.vertegenw_code)
-          .maybeSingle()
-        if (vert?.naam) vertegenwoordigerNaam = vert.naam
-      }
-
-      // 4. Bouw PDF
+      // 4. Bouw PDF uit het canonieke Factuurdocument (ADR-0036): zelfde
+      // Artikelpresentatie als de EDI-INVOIC. Dit pad kent geen m²-/afleveradres-
+      // verrijking (dat doet alleen de on-demand factuur-pdf-functie).
+      const pdfDoc = await fetchFactuurDocument(supabase, factuurId)
+      const pdfDeel = naarFactuurPdfInput(pdfDoc)
       const pdfBytes = await genereerFactuurPDF({
         bedrijf: {
           bedrijfsnaam: bedrijf.bedrijfsnaam,
@@ -288,33 +283,8 @@ serve(async () => {
           betalingscondities_tekst: bedrijf.betalingscondities_tekst,
           fax: bedrijf.fax,
         },
-        factuur: {
-          factuur_nr: factuur.factuur_nr,
-          factuurdatum: factuur.factuurdatum,
-          debiteur_nr: factuur.debiteur_nr,
-          vertegenwoordiger: vertegenwoordigerNaam,
-          fact_naam: factuur.fact_naam ?? '',
-          fact_adres: factuur.fact_adres ?? '',
-          fact_postcode: factuur.fact_postcode ?? '',
-          fact_plaats: factuur.fact_plaats ?? '',
-          subtotaal: Number(factuur.subtotaal),
-          btw_percentage: Number(factuur.btw_percentage),
-          btw_bedrag: Number(factuur.btw_bedrag),
-          totaal: Number(factuur.totaal),
-          btw_verlegd: factuur.btw_verlegd === true,
-          btw_nummer_afnemer: factuur.btw_nummer ?? null,
-        },
-        regels: regels.map((r) => ({
-          order_nr: r.order_nr ?? '',
-          uw_referentie: r.uw_referentie ?? '',
-          artikelnr: r.artikelnr ?? '',
-          aantal: Number(r.aantal),
-          eenheid: 'St',
-          omschrijving: r.omschrijving ?? '',
-          omschrijving_2: r.omschrijving_2 ?? undefined,
-          prijs: Number(r.prijs),
-          bedrag: Number(r.bedrag),
-        })),
+        factuur: pdfDeel.factuur,
+        regels: pdfDeel.regels,
       })
 
       // 5. Upload PDF naar storage
