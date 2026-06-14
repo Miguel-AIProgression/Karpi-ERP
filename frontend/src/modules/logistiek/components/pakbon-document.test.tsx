@@ -1,4 +1,3 @@
-import type React from 'react'
 import { describe, it, expect, vi } from 'vitest'
 import { render } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'

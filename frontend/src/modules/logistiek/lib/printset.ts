@@ -33,6 +33,71 @@ export interface LabelItem {
   /** Mig 388: bevroren, ontdubbelde klant-omschrijving. `null` = legacy of
    * geen klant-omschrijving (val terug op de live `regel`). */
   klantOmschrijvingSnapshot: string | null
+  /** Colli-volgnummer (`zending_colli.colli_nr`) of, in het legacy-pad, de
+   * lopende index. De labelvarianten gebruiken dit niet direct (zij krijgen
+   * `index`), maar de gedeelde expansie houdt het bij voor diagnose. */
+  colliNr: number
+  /** Bron-orderregel — voedt de pakbon-aggregatie (mig 388-snapshot-lookup)
+   * en bundel-groepering. `null` = colli zonder regel-koppeling. */
+  orderRegelId: number | null
+  /** Bron-order (uit `order_regels.order_id`, fallback de primaire order) —
+   * voedt de pakbon-groepering per bron-order (mig 222). */
+  orderId: number | null
+}
+
+/**
+ * Eén pakbonregel = één fysieke orderregel in de zending (geaggregeerd over de
+ * colli's, anders dan een `LabelItem` dat per colli is). Komt uit dezelfde
+ * `bouwVerzenddocument`-expansie als de labels, zodat sortering, snapshot-
+ * omschrijving en regelfilter (VERZEND) niet meer kunnen driften tussen sticker
+ * en pakbon. De besteld/geleverd/gewicht-formules zijn bewust gelijk aan de
+ * historische pakbon-logica (byte-identieke output — zie `pakbon-document.test.tsx`).
+ */
+export interface PakbonRegel {
+  regel: ZendingPrintRegel | null
+  orderRegelId: number | null
+  /** Bron-order voor groepering per orderbevestiging (mig 222). */
+  orderId: number
+  /** `order_regels.orderaantal`, fallback geleverd. */
+  besteld: number
+  /** Geleverd in deze zending (`zending_regels.aantal`-ladder). */
+  geleverd: number
+  /** `regelgewicht × geleverd` — opgeteld levert dit het zending-totaal. */
+  gewichtKg: number
+  /** Mig 388-snapshot voor de productnaam, gelijk aan het label. */
+  omschrijvingSnapshot: string | null
+  klantOmschrijvingSnapshot: string | null
+}
+
+/**
+ * Eén canonieke expansie van een zending, geconsumeerd door zowel de drie
+ * labelvarianten (`colliRijen`, 1 per fysieke colli) als de pakbon
+ * (`pakbonRegels`, 1 per orderregel). Beide views komen uit dezelfde
+ * colli→regel-map, sortering en VERZEND-filter — dat is de hele bestaansreden
+ * van deze functie (voorheen bouwden label en pakbon dit onafhankelijk op).
+ */
+export interface Verzenddocument {
+  colliRijen: LabelItem[]
+  pakbonRegels: PakbonRegel[]
+  /** Aantal fysieke colli's (= `colliRijen.length`). */
+  colliTotaal: number
+  /** Σ(regelgewicht × geleverd) over de pakbonregels. De pakbon geeft
+   * `zendingen.totaal_gewicht_kg` voorrang en valt hierop terug. */
+  totaalGewichtKg: number
+}
+
+/** Geleverd-aantal in deze zending — identiek aan de historische pakbon-ladder. */
+function geleverdAantal(regel: ZendingPrintRegel): number {
+  return Number(
+    regel.aantal ?? regel.order_regels?.te_leveren ?? regel.order_regels?.orderaantal ?? 1,
+  )
+}
+
+/** Regelgewicht (kg) — `order_regels.gewicht_kg` met product-fallback. */
+function regelGewichtKg(regel: ZendingPrintRegel): number {
+  const r = regel.order_regels
+  if (!r) return 0
+  return Number(r.gewicht_kg ?? r.producten?.gewicht_kg ?? 0)
 }
 
 export interface VervoerderInfo {
@@ -58,59 +123,124 @@ export function vervoerderInfoVoor(zending: ZendingPrintSet): VervoerderInfo {
 }
 
 /**
- * Expandeert een zending naar één label-item per fysieke colli.
+ * Expandeert een zending ÉÉN keer naar zowel de label-rijen (per fysieke colli)
+ * als de pakbon-rijen (per orderregel). Single source: label en pakbon delen
+ * dezelfde colli→regel-map, sortering, snapshot-omschrijving en VERZEND-filter,
+ * zodat ze niet meer onafhankelijk kunnen driften (de klasse waar het
+ * HST-overlossing-incident van 12-06-2026 uit kwam).
  *
  * BRON-VAN-WAARHEID voor de SSCC: `zending_colli` (mig 209) — dezelfde rijen
- * waaruit `hst-send` de `BarCode` naar de vervoerder stuurt. De SSCC wordt
- * hier dus NOOIT client-side gegenereerd; label en vervoerder-aanmelding
- * kunnen daardoor niet meer uiteenlopen. (HST-overlossing-incident
- * 12-06-2026: de oude `generateSscc(zendingId, colliIndex)` printte barcodes
- * die HST niet kende → karpetten "geen data" op het depot.)
+ * waaruit `hst-send` de `BarCode` naar de vervoerder stuurt; nooit client-side
+ * gegenereerd. Legacy-zendingen zonder colli-rijen: één label per stuk uit de
+ * zending_regels, zónder barcode (`sscc: null`).
  *
- * Fallback voor legacy-zendingen zonder colli-rijen: één label per stuk uit
- * de zending_regels, maar zónder barcode (`sscc: null`) — een barcode die
- * nergens aangemeld is mag nooit geprint worden.
+ * De besteld/geleverd/gewicht-formules van de pakbonregels zijn bewust gelijk
+ * aan de historische pakbon-logica (regel-gebaseerd, niet colli-count) zodat de
+ * geprinte pakbon byte-identiek blijft — geborgd door `pakbon-document.test.tsx`.
  */
-export function expandLabels(zending: ZendingPrintSet): LabelItem[] {
-  // Service-regels (verzendkosten) zijn factuur-only en hebben geen sticker.
+export function bouwVerzenddocument(zending: ZendingPrintSet): Verzenddocument {
+  // Service-regels (verzendkosten) zijn factuur-only en hebben geen sticker/colli.
   const fysiekeRegels = zending.zending_regels.filter((r) => !isShippingRegel(r))
+  const primaireOrderId = zending.orders.id
 
-  const colli = [...(zending.zending_colli ?? [])].sort((a, b) => a.colli_nr - b.colli_nr)
-  if (colli.length > 0) {
-    const regelPerOrderRegel = new Map<number, ZendingPrintRegel>()
-    for (const regel of fysiekeRegels) {
-      if (regel.order_regel_id != null && !regelPerOrderRegel.has(regel.order_regel_id)) {
-        regelPerOrderRegel.set(regel.order_regel_id, regel)
-      }
+  // Eén colli→regel-map (eerste fysieke regel per orderregel), gedeeld door
+  // beide views.
+  const regelPerOrderRegel = new Map<number, ZendingPrintRegel>()
+  for (const regel of fysiekeRegels) {
+    if (regel.order_regel_id != null && !regelPerOrderRegel.has(regel.order_regel_id)) {
+      regelPerOrderRegel.set(regel.order_regel_id, regel)
     }
-    return colli.map((c, index) => ({
-      regel:
-        (c.order_regel_id != null ? regelPerOrderRegel.get(c.order_regel_id) : null) ?? null,
+  }
+
+  // Snapshot-omschrijving per orderregel (eerste colli — compose is in V1
+  // regel-deterministisch, dus alle colli van een regel zijn identiek).
+  const snapshotPerOrderRegel = new Map<
+    number,
+    { omschrijvingSnapshot: string | null; klantOmschrijvingSnapshot: string | null }
+  >()
+  for (const c of zending.zending_colli ?? []) {
+    if (c.order_regel_id != null && !snapshotPerOrderRegel.has(c.order_regel_id)) {
+      snapshotPerOrderRegel.set(c.order_regel_id, {
+        omschrijvingSnapshot: c.omschrijving_snapshot,
+        klantOmschrijvingSnapshot: c.klant_omschrijving_snapshot,
+      })
+    }
+  }
+
+  const orderIdVoor = (regel: ZendingPrintRegel | null): number =>
+    regel?.order_regels?.order_id ?? primaireOrderId
+
+  // ── colliRijen (labels) ──────────────────────────────────────────────────
+  const colli = [...(zending.zending_colli ?? [])].sort((a, b) => a.colli_nr - b.colli_nr)
+  let colliRijen: LabelItem[]
+  if (colli.length > 0) {
+    colliRijen = colli.map((c, index) => {
+      const regel = (c.order_regel_id != null ? regelPerOrderRegel.get(c.order_regel_id) : null) ?? null
+      return {
+        regel,
+        index: index + 1,
+        colliNr: c.colli_nr,
+        sscc: c.sscc,
+        orderRegelId: c.order_regel_id,
+        orderId: orderIdVoor(regel),
+        omschrijvingSnapshot: c.omschrijving_snapshot,
+        klantOmschrijvingSnapshot: c.klant_omschrijving_snapshot,
+      }
+    })
+  } else {
+    // Legacy-pad: geen colli-registratie → adres-labels zonder barcode, één per
+    // stuk. Identiek aan de oude `expandLabels`-fallback (incl. de "minstens
+    // één label"-garantie als alle regels aantal 0 hebben).
+    const expanded: Array<ZendingPrintRegel | null> = []
+    for (const regel of fysiekeRegels) {
+      const aantal = Math.max(0, Math.trunc(Number(regel.aantal ?? 1)))
+      for (let i = 0; i < aantal; i += 1) expanded.push(regel)
+    }
+    const targetTotal = Math.max(expanded.length, 1)
+    while (expanded.length < targetTotal) expanded.push(expanded.at(-1) ?? null)
+    colliRijen = expanded.slice(0, targetTotal).map((regel, index) => ({
+      regel,
       index: index + 1,
-      sscc: c.sscc,
-      omschrijvingSnapshot: c.omschrijving_snapshot,
-      klantOmschrijvingSnapshot: c.klant_omschrijving_snapshot,
+      colliNr: index + 1,
+      sscc: null,
+      orderRegelId: regel?.order_regel_id ?? null,
+      orderId: orderIdVoor(regel),
+      omschrijvingSnapshot: null,
+      klantOmschrijvingSnapshot: null,
     }))
   }
 
-  // Legacy-pad: geen colli-registratie → adres-labels zonder barcode.
-  const expanded: Array<{ regel: ZendingPrintRegel | null }> = []
-  for (const regel of fysiekeRegels) {
-    const aantal = Math.max(0, Math.trunc(Number(regel.aantal ?? 1)))
-    for (let i = 0; i < aantal; i += 1) expanded.push({ regel })
-  }
-  const targetTotal = Math.max(expanded.length, 1)
-  while (expanded.length < targetTotal) {
-    expanded.push({ regel: expanded.at(-1)?.regel ?? null })
-  }
+  // ── pakbonRegels (pakbon) ────────────────────────────────────────────────
+  // Eén regel per fysieke orderregel, gesorteerd op regelnummer. De pakbon-
+  // component groepeert deze daarna per `orderId` voor de bundel-subkoppen.
+  const pakbonRegels: PakbonRegel[] = [...fysiekeRegels]
+    .sort((a, b) => (a.order_regels?.regelnummer ?? 0) - (b.order_regels?.regelnummer ?? 0))
+    .map((regel) => {
+      const geleverd = geleverdAantal(regel)
+      const snap =
+        regel.order_regel_id != null ? snapshotPerOrderRegel.get(regel.order_regel_id) : undefined
+      return {
+        regel,
+        orderRegelId: regel.order_regel_id,
+        orderId: orderIdVoor(regel),
+        besteld: Number(regel.order_regels?.orderaantal ?? geleverd),
+        geleverd,
+        gewichtKg: regelGewichtKg(regel) * geleverd,
+        omschrijvingSnapshot: snap?.omschrijvingSnapshot ?? null,
+        klantOmschrijvingSnapshot: snap?.klantOmschrijvingSnapshot ?? null,
+      }
+    })
 
-  return expanded.slice(0, targetTotal).map((item, index) => ({
-    ...item,
-    index: index + 1,
-    sscc: null,
-    // Legacy-zending zonder colli-registratie: geen snapshot → val terug op
-    // de live `regel` in de label-/pakbon-component.
-    omschrijvingSnapshot: null,
-    klantOmschrijvingSnapshot: null,
-  }))
+  const totaalGewichtKg = pakbonRegels.reduce((sum, r) => sum + r.gewichtKg, 0)
+
+  return { colliRijen, pakbonRegels, colliTotaal: colliRijen.length, totaalGewichtKg }
+}
+
+/**
+ * Label-expansie: één item per fysieke colli. Dunne wrapper rond
+ * `bouwVerzenddocument` zodat de labelvarianten en beide printset-pagina's
+ * onaangeroerd blijven.
+ */
+export function expandLabels(zending: ZendingPrintSet): LabelItem[] {
+  return bouwVerzenddocument(zending).colliRijen
 }
