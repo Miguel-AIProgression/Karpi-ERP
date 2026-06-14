@@ -39,7 +39,7 @@ export interface BedrijfInput {
 // wordt in V1 niet uitgestuurd).
 export interface RhenusColliInput {
   colli_nr: number;
-  sscc: string;
+  sscc: string | null;
   gewicht_kg: number | null;
   lengte_cm: number | null;
   breedte_cm: number | null;

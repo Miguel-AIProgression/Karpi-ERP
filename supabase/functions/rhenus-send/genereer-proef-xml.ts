@@ -12,8 +12,9 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { bouwRhenusBestandsnaam, bouwRhenusXml, valideerRhenusColli } from './xml-builder.ts';
+import { fetchZendingColli } from '../_shared/vervoerders/fetch-zending-colli.ts';
 import { DEFAULT_RHENUS_OPTIES } from './types.ts';
-import type { BedrijfInput, RhenusColliInput, ZendingInput } from './types.ts';
+import type { BedrijfInput, ZendingInput } from './types.ts';
 
 const zendingNr = Deno.args[0];
 if (!zendingNr) {
@@ -37,21 +38,8 @@ const { data: order } = await supabase.from('orders').select('order_nr, klant_re
 const { data: bedrijfRow } = await supabase.from('app_config').select('waarde').eq('sleutel', 'bedrijfsgegevens').single();
 const { data: cfgRow } = await supabase.from('app_config').select('waarde').eq('sleutel', 'rhenus').single();
 
-const { data: colliRows, error: cErr } = await supabase
-  .from('zending_colli')
-  .select('colli_nr, sscc, gewicht_kg, lengte_cm, breedte_cm')
-  .eq('zending_id', zending.id)
-  .order('colli_nr', { ascending: true });
-if (cErr) { console.error(`Colli-query faalde: ${cErr.message}`); Deno.exit(1); }
-
-// deno-lint-ignore no-explicit-any
-const colli: RhenusColliInput[] = (colliRows ?? []).map((r: any) => ({
-  colli_nr: r.colli_nr,
-  sscc: r.sscc,
-  gewicht_kg: r.gewicht_kg,
-  lengte_cm: r.lengte_cm,
-  breedte_cm: r.breedte_cm,
-}));
+const { colli, error: cErr } = await fetchZendingColli(supabase, zending.id);
+if (cErr) { console.error(`Colli-query faalde: ${cErr}`); Deno.exit(1); }
 
 const problemen = valideerRhenusColli(colli);
 if (problemen.length > 0) {

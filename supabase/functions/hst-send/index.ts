@@ -17,7 +17,8 @@ import { bouwTransportOrderPayload } from './payload-builder.ts';
 import { postTransportOrder } from './hst-client.ts';
 import { valideerVoorVervoerder } from '../_shared/vervoerder-eisen.ts';
 import { capabilityVoor } from '../_shared/vervoerders/capabilities.ts';
-import type { BedrijfInput, HstResponse, OrderInput, ZendingColliInput, ZendingInput } from './types.ts';
+import { fetchZendingColli } from '../_shared/vervoerders/fetch-zending-colli.ts';
+import type { BedrijfInput, HstResponse, OrderInput, ZendingInput } from './types.ts';
 
 const MAX_PER_RUN = capabilityVoor('hst_api')?.maxPerRun ?? 25;
 
@@ -184,18 +185,16 @@ async function verwerkRow(
   // gegenereerd (mig 248). Zonder colli's kunnen we HST geen BarCodes meegeven —
   // dan kan HST's scanner ons label niet aan deze TransportOrder matchen. Liever
   // niet POSTen + duidelijke fout dan een onkoppelbare order bij HST.
-  const { data: colliRows, error: colliErr } = await supabase
-    .from('zending_colli')
-    .select('colli_nr, sscc, gewicht_kg, omschrijving_snapshot')
-    .eq('zending_id', row.zending_id)
-    .order('colli_nr', { ascending: true });
+  // Colli's via de Zending-colli-seam (één canonieke bron). HST gebruikt sscc +
+  // gewicht + omschrijving; de extra snapshot-velden (dims/artikelnr) negeert
+  // het — de payload-builder vult pallet-default-afmetingen.
+  const { colli, error: colliErr } = await fetchZendingColli(supabase, row.zending_id);
   if (colliErr) {
-    await markFout(supabase, row.id, `zending_colli query fout: ${colliErr.message}`);
+    await markFout(supabase, row.id, `zending_colli query fout: ${colliErr}`);
     summary.failed += 1;
     summary.details.push({ id: row.id, zending_id: row.zending_id, status: 'error', error: 'colli_query_fout' });
     return;
   }
-  const colli = (colliRows ?? []) as ZendingColliInput[];
   if (colli.length === 0) {
     await markFout(
       supabase,

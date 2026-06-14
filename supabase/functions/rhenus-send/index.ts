@@ -19,8 +19,9 @@ import { bouwRhenusBestandsnaam, bouwRhenusXml, valideerRhenusColli } from './xm
 import { type SftpConfig, uploadXmlViaSftp } from '../_shared/sftp-client.ts';
 import { valideerVoorVervoerder } from '../_shared/vervoerder-eisen.ts';
 import { capabilityVoor } from '../_shared/vervoerders/capabilities.ts';
+import { fetchZendingColli } from '../_shared/vervoerders/fetch-zending-colli.ts';
 import { DEFAULT_RHENUS_OPTIES } from './types.ts';
-import type { BedrijfInput, RhenusColliInput, RhenusOpties, ZendingInput } from './types.ts';
+import type { BedrijfInput, RhenusOpties, ZendingInput } from './types.ts';
 
 const MAX_PER_RUN = capabilityVoor('rhenus_sftp')?.maxPerRun ?? 25;
 
@@ -159,26 +160,12 @@ async function verwerkRow(
     return markFoutMetSummary(supabase, row, summary, `bedrijfsgegevens-record ontbreekt in app_config: ${bErr?.message ?? 'leeg'}`);
   }
 
-  // Colli's mét lengte: afmetingen komen uit de BEVROREN zending_colli-snapshot
-  // (mig 399, lengte_cm/breedte_cm = COALESCE(maatwerk_*, product_*) op moment
-  // van colli-aanmaak). Single source — geen live maatwerk→product-join meer,
-  // dezelfde rij die label/pakbon lezen.
-  const { data: colliRows, error: colliErr } = await supabase
-    .from('zending_colli')
-    .select('colli_nr, sscc, gewicht_kg, lengte_cm, breedte_cm')
-    .eq('zending_id', row.zending_id)
-    .order('colli_nr', { ascending: true });
+  // Colli's via de Zending-colli-seam: één canonieke bron, afmetingen uit de
+  // bevroren zending_colli-snapshot (mig 399) — nooit meer uit een live join.
+  const { colli, error: colliErr } = await fetchZendingColli(supabase, row.zending_id);
   if (colliErr) {
-    return markFoutMetSummary(supabase, row, summary, `zending_colli query fout: ${colliErr.message}`);
+    return markFoutMetSummary(supabase, row, summary, `zending_colli query fout: ${colliErr}`);
   }
-  // deno-lint-ignore no-explicit-any
-  const colli: RhenusColliInput[] = ((colliRows ?? []) as any[]).map((r) => ({
-    colli_nr: r.colli_nr,
-    sscc: r.sscc,
-    gewicht_kg: r.gewicht_kg,
-    lengte_cm: r.lengte_cm,
-    breedte_cm: r.breedte_cm,
-  }));
 
   const z = zending as ZendingInput & { order_id: number };
 

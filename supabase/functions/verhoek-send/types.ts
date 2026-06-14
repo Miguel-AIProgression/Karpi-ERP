@@ -35,7 +35,7 @@ export interface BedrijfInput {
 // ze plat aan zodat de builder puur blijft).
 export interface VerhoekColliInput {
   colli_nr: number;
-  sscc: string;
+  sscc: string | null;
   gewicht_kg: number | null;
   omschrijving_snapshot: string | null;
   artikelnr: string | null;

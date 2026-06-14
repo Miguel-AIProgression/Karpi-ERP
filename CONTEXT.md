@@ -104,6 +104,18 @@ barcode geprint of verstuurd worden. De SSCC-waarde zelf blijft single-source
 uit `zending_colli.sscc`; de Labelbarcode is de gedeelde *encoding* daarvan.
 _Avoid_: scancode, SSCC-barcode (per-carrier termen — het is één label-feit)
 
+**Zending-colli**:
+De bevroren per-pakket-snapshotrijen van een zending (`zending_colli`: sscc,
+gewicht, afmetingen, omschrijving), aangemaakt bij pickronde-start door
+`genereer_zending_colli`. Het zijn een eigenschap van de **fysieke zending op
+het moment van inpakken**, geen live-afleiding uit order/product. Daarom haalt
+één seam (`_shared/vervoerders/fetchZendingColli`) ze op en beslist als enige
+welke kolommen canoniek zijn; álle vervoerder-adapters (HST, Verhoek, Rhenus)
+lezen díé en herleiden afmetingen/gewicht nooit zelf uit de live
+`order_regels → producten`-join. Zelfde patroon als de [[Labelbarcode]] één laag
+hoger: het ophalen leeft op één plek, niet drie keer per adapter.
+_Avoid_: per-adapter colli-query, live maatwerk→product-join voor verzending
+
 ## Relationships
 
 - Een **Order** bevat één of meer **Orderregels**

@@ -40,7 +40,7 @@ export interface OrderInput {
 // krijgt AI(00) prefix: `00${sscc}` → 20 chars.
 export interface ZendingColliInput {
   colli_nr: number;
-  sscc: string;
+  sscc: string | null;
   gewicht_kg: number | null;
   omschrijving_snapshot: string | null;
 }

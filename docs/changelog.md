@@ -1,5 +1,31 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-14 — Zending-colli-seam: colli ophalen op één plek (vóór Rhenus go-live)
+
+**Waarom:** mig 399 (zelfde dag) maakte de colli-afmetingen single-source op
+`zending_colli`, maar moest daarvoor de colli-query+mapping in **vijf** plekken
+met de hand bijwerken — `hst-send`/`verhoek-send`/`rhenus-send` `index.ts` +
+beide `genereer-proef-xml.ts`. Dat is dezelfde klasse als de HST-overlossing-bug
+één laag hoger: "haal de colli van een zending op (en beslis welke kolommen
+canoniek zijn)" leefde per adapter, dus een bron-wijziging was een N-plekken-edit
+die een stale checkout of een vergeten adapter stil kon missen. Candidate #2 uit
+de architectuur-review n.a.v. de Rhenus-go-live; laag 1 van de in ADR-0034 als
+backlog benoemde "process-as"-seam.
+
+**Wat:** nieuwe edge-only seam [`_shared/vervoerders/fetch-zending-colli.ts`](../supabase/functions/_shared/vervoerders/fetch-zending-colli.ts)
+(`fetchZendingColli(supabase, zendingId) → { colli, error }`) — dé enige plek die
+de canonieke kolommen kent (de bevroren snapshot + de `order_regels`-FK-hint-embed
+voor `artikelnr`). Alle vijf call-sites consumeren 'm; de drie adapter-`sscc`-velden
+zijn `string | null` gemaakt (honest t.o.v. de DB, verwijdert de `as any`-casts).
+De 0-colli-guards blijven **ongewijzigd per adapter** (bewust — HST/Rhenus
+verschillen in 0-colli-semantiek; guard-unificatie = laag 2, ná de cutover). De
+pure xml-builders + payload-builder + hun tests blijven ongemoeid → byte-identiek
+gedrag. Regressietest `fetch-zending-colli.test.ts` (4 cases) borgt het kolom-/
+embed-/foutcontract. CONTEXT.md: nieuwe domeinterm **Zending-colli**. 39 vervoerder-
+tests groen, `deno check` op de seam schoon. **Backlog (laag 2):** 0-colli-guard
+opvouwen in `valideerColli`/`vereistColli`, `HST.vereistColli=true` (matcht de
+realiteit — HST errort al op 0 colli), dode `bouwAggregateLine` opruimen.
+
 ## 2026-06-14 — Colli-afmetingen in de `zending_colli`-snapshot (single source, mig 399)
 
 **Waarom:** asymmetrie in het snapshot-patroon. `zending_colli.gewicht_kg`
