@@ -43,6 +43,39 @@ export async function fetchEffectieveVervoerderPerOrderregel(
   return (data ?? []) as OrderregelVervoerder[]
 }
 
+/** Batch-rij = OrderregelVervoerder + het order_id waartoe de regel hoort. */
+export interface OrderregelVervoerderMetOrder extends OrderregelVervoerder {
+  order_id: number
+}
+
+/**
+ * Batch-resolver (mig 401): haalt de effectieve vervoerder voor álle
+ * meegegeven orders in ÉÉN RPC-call op en groepeert per order_id.
+ *
+ * Vervangt het N+1-patroon op Pick & Ship (één `effectieve_vervoerder_per_orderregel`
+ * per order-card → N losse HTTP-calls). De DB-functie is een dunne LATERAL-wrapper
+ * over de per-order-resolver, dus de per-regel-shape is identiek — alleen de
+ * `order_id`-prefix is extra. Orders zonder regels (of onbekende ids) verschijnen
+ * niet in de Map; consumers behandelen "ontbrekend" als lege regel-lijst.
+ */
+export async function fetchEffectieveVervoerderVoorOrders(
+  orderIds: number[],
+): Promise<Map<number, OrderregelVervoerder[]>> {
+  const map = new Map<number, OrderregelVervoerder[]>()
+  if (orderIds.length === 0) return map
+  const { data, error } = await supabase.rpc('effectieve_vervoerder_voor_orders', {
+    p_order_ids: orderIds,
+  })
+  if (error) throw error
+  for (const rij of (data ?? []) as OrderregelVervoerderMetOrder[]) {
+    const { order_id, ...regel } = rij
+    const lijst = map.get(order_id)
+    if (lijst) lijst.push(regel)
+    else map.set(order_id, [regel])
+  }
+  return map
+}
+
 /**
  * Zet de override-vervoerder op een orderregel (NULL = override verwijderen,
  * dan vallen we terug op evaluator/klant-fallback).

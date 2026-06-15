@@ -22,11 +22,13 @@
 // Mig 217 — picker-dropdown met `last-picker-id`-recall via localStorage.
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQueries } from '@tanstack/react-query'
 import { Loader2, Printer, PackageCheck, X } from 'lucide-react'
 import { useStartPickrondes } from '../hooks/use-zendingen'
 import { useVervoerders } from '../hooks/use-vervoerders'
-import { fetchEffectieveVervoerderPerOrderregel } from '../queries/orderregel-vervoerder'
+import {
+  useVervoerderResolutieContext,
+  useEffectieveVervoerderVoorOrders,
+} from '../context/vervoerder-resolutie-context'
 import { PickerDropdown } from '@/components/orders/picker-dropdown'
 import { cn } from '@/lib/utils/cn'
 import type { PickShipOrder } from '@/modules/magazijn'
@@ -100,26 +102,30 @@ export function StartPickrondesButton({
   // Per-order vervoerder-resolutie: een niet-afhaal-order met ≥1 regel
   // bron='geen' (geen matchende actieve vervoerder, bv. DE/BE vóór de
   // Rhenus/DPD-cutover) mag géén pickronde starten — de zending zou zonder
-  // vervoerder ontstaan. Zelfde queryKey als de VervoerderTag op de pick-card,
-  // dus dit is vrijwel altijd een cache-hit. Server-side gespiegeld in
-  // start_pickronden (mig 373).
+  // vervoerder ontstaan. Server-side gespiegeld in start_pickronden (mig 373).
+  //
+  // Binnen Pick & Ship levert de `VervoerderResolutieProvider` de resolutie uit
+  // één gedeelde batch-call (mig 401) — geen eigen fetch. Daarbuiten (bv.
+  // bulk-printset) valt de knop terug op een eigen batch-call over alleen de
+  // orders die niet door een provider gedekt zijn.
   const verzendOrders = useMemo(() => orders.filter((o) => !o.afhalen), [orders])
-  const vervoerderQueries = useQueries({
-    queries: verzendOrders.map((o) => ({
-      queryKey: ['logistiek', 'orderregel-vervoerder', o.order_id],
-      queryFn: () => fetchEffectieveVervoerderPerOrderregel(o.order_id),
-      staleTime: 30_000,
-    })),
-  })
+  const batchCtx = useVervoerderResolutieContext()
+  const idsZonderContext = useMemo(
+    () => verzendOrders.map((o) => o.order_id).filter((id) => !(batchCtx?.heeftOrder(id) ?? false)),
+    [verzendOrders, batchCtx],
+  )
+  const fallbackQuery = useEffectieveVervoerderVoorOrders(idsZonderContext)
   const geenVervoerderIds = useMemo(() => {
     const set = new Set<number>()
-    verzendOrders.forEach((o, i) => {
-      const regels = vervoerderQueries[i]?.data
+    verzendOrders.forEach((o) => {
+      const regels = batchCtx?.heeftOrder(o.order_id)
+        ? batchCtx.getRegels(o.order_id)
+        : fallbackQuery.data?.get(o.order_id)
       if (regels?.some((r) => r.bron === 'geen')) set.add(o.order_id)
     })
     return set
-  }, [verzendOrders, vervoerderQueries])
-  const vervoerderResolutieLaadt = vervoerderQueries.some((q) => q.isLoading)
+  }, [verzendOrders, batchCtx, fallbackQuery.data])
+  const vervoerderResolutieLaadt = (batchCtx?.isLoading ?? false) || fallbackQuery.isLoading
 
   // Intake-gates (mig 395/396): orders met een onvolledig afleveradres of een
   // ontbrekende prijs (€0) mogen geen pickronde starten — labels zonder adres

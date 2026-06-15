@@ -1,5 +1,39 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-15 — Pick & Ship: vervoerder-resolutie in één batch-call (N+1 weg)
+
+**Waarom:** na de Rhenus go-live (06-14 country-routing-cutover) zijn ~171
+DE-orders niet langer "geen vervoerder" en stromen ze allemaal als pickbaar de
+week-secties in. Pick & Ship rendert daardoor ~266 order-cards, en elke card
+resolveerde zijn effectieve vervoerder via een eigen
+`effectieve_vervoerder_per_orderregel(order_id)`-RPC (N+1). React Query
+dedupliceert per order_id, maar dat blijven N losse HTTP-calls; zolang een
+card's call laadt staat zijn "Verzendset"-knop disabled (`vervoerderResolutieLaadt`)
+en de vervoerder-pill leeg. De operator zag daardoor "geblokkeerde" grijze
+knoppen terwijl er server-side niets mis was (order pickbaar, Rhenus resolveert,
+geen intake-gate).
+
+**Wat:**
+- **Mig 401** — `effectieve_vervoerder_voor_orders(BIGINT[])`: dunne LATERAL-wrapper
+  over de bestaande per-order-resolver (géén duplicatie van de ladder-logica),
+  met EXISTS-guard + DISTINCT. Haalt de resolutie voor álle zichtbare orders in
+  ÉÉN call op. Return-shape = per-order-functie + `order_id`-prefix.
+- **Frontend** — `fetchEffectieveVervoerderVoorOrders` (groepeert per order),
+  nieuwe `VervoerderResolutieProvider` + `useEffectieveVervoerderVoorOrders` +
+  `useVervoerderResolutieContext` ([`context/`](../frontend/src/modules/logistiek/context/)).
+  De provider doet één batch-call, seedt de per-order query-caches
+  (`['logistiek','orderregel-vervoerder', id]`) en de per-order hook
+  (`useEffectieveVervoerderPerOrderregel`) draait voor batch-gedekte orders met
+  `enabled: false` → fetcht niet zelf maar leest de geseede cache (geen race,
+  geen losse calls). Inline-select, pill én Verzendset-/week-knop lezen zo uit
+  één gedeelde fetch; buiten Pick & Ship (order-detail, bulk-printset) valt alles
+  terug op de losse/eigen batch-fetch.
+- Override-mutaties invalideren nu ook de aparte `...-batch`-cache-key.
+
+**Deploy-volgorde:** mig 401 moet op de live DB staan vóór de frontend deployt —
+de Pick & Ship-cards fetchen niet meer zelf, dus zonder de RPC krijgen ze geen
+resolutie. Branch `feat/vervoerder-resolutie-batch`.
+
 ## 2026-06-14 — Factuurdocument: één opgeloste factuur voor PDF én EDI-INVOIC
 
 **Waarom:** een factuur werd naar buiten gerenderd via drie onafhankelijke paden

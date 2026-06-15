@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react'
 import { Globe, Search, Package, CalendarCheck, CalendarClock } from 'lucide-react'
-import { useQueries } from '@tanstack/react-query'
 import { PageHeader } from '@/components/layout/page-header'
 import { PickProblemenBanner } from '../components/pick-problemen-banner'
 import { HstAandachtBanner } from '@/modules/logistiek'
@@ -10,9 +9,10 @@ import { PickWeekSectie } from '../components/pick-week-sectie'
 import { usePickShipOrders, usePickShipStats } from '../hooks/use-pick-ship'
 import {
   VervoerderFilterButton,
+  VervoerderResolutieProvider,
+  useEffectieveVervoerderVoorOrders,
   type VervoerderFilterValue,
 } from '@/modules/logistiek'
-import { fetchEffectieveVervoerderPerOrderregel } from '@/modules/logistiek/queries/orderregel-vervoerder'
 import { aggregeerVervoerderKeuzeVoorOrder } from '@/modules/logistiek/queries/vervoerder-keuze'
 import { useVoorgesteldeBundels } from '@/modules/logistiek/queries/voorgestelde-bundels'
 import type { ResolvedVervoerder } from '@/modules/logistiek/lib/resolved-vervoerder'
@@ -26,8 +26,6 @@ import {
   verzendWeekVoor,
   type PickStatus,
 } from '@/lib/orders/verzendweek'
-
-const STALE_30_SEC = 30_000
 
 export function MagazijnOverviewPage() {
   const [filter, setFilter] = useState<BucketKey>('wk_1')
@@ -52,21 +50,19 @@ export function MagazijnOverviewPage() {
     return orders.filter((o) => o.bucket === filter)
   }, [orders, filter])
 
-  // Vervoerder-filter: resolutie via per-orderregel-evaluator (ADR-0008).
-  // Cache wordt gedeeld met de inline-select in elke pick-card via dezelfde
-  // queryKeys ['logistiek', 'orderregel-vervoerder', orderId] (ADR-0002).
-  const perOrderQueries = useQueries({
-    queries: gefilterd.map((o) => ({
-      queryKey: ['logistiek', 'orderregel-vervoerder', o.order_id],
-      queryFn: () => fetchEffectieveVervoerderPerOrderregel(o.order_id),
-      staleTime: STALE_30_SEC,
-    })),
-  })
+  // Vervoerder-resolutie in ÉÉN batch-call (mig 401) i.p.v. N losse RPC's per
+  // order-card. De `VervoerderResolutieProvider` rond de secties hieronder
+  // hergebruikt dezelfde queryKey (React Query dedupliceert → 1 fetch) en seedt
+  // de per-order caches zodat de inline-select/pill/knop in elke card de data
+  // uit de cache lezen i.p.v. zelf te fetchen. Voedt hier de page-niveau maps:
+  // het vervoerder-filter en de geblokkeerd/startbaar-split.
+  const gefilterdIds = useMemo(() => gefilterd.map((o) => o.order_id), [gefilterd])
+  const { data: regelsPerOrder } = useEffectieveVervoerderVoorOrders(gefilterdIds)
+
   const vervoerderMap = useMemo(() => {
     const m = new Map<number, ResolvedVervoerder>()
-    gefilterd.forEach((o, i) => {
-      const q = perOrderQueries[i]
-      const regels = q?.data ?? []
+    gefilterd.forEach((o) => {
+      const regels = regelsPerOrder?.get(o.order_id) ?? []
       const aggregaat = aggregeerVervoerderKeuzeVoorOrder(regels)
       m.set(o.order_id, {
         code: aggregaat.soort === 'uniform' ? aggregaat.code : null,
@@ -74,20 +70,20 @@ export function MagazijnOverviewPage() {
       })
     })
     return m
-  }, [gefilterd, perOrderQueries])
+  }, [gefilterd, regelsPerOrder])
 
   // Niet-startbare orders ("Geen vervoerder mogelijk", zelfde predicaat als
   // StartPickrondesButton + de mig 373-guard): ≥1 regel bron='geen' op een
   // niet-afhaal-order. Deze sorteren ónder de startbare orders in elke sectie.
   const geblokkeerdeOrderIds = useMemo(() => {
     const s = new Set<number>()
-    gefilterd.forEach((o, i) => {
+    gefilterd.forEach((o) => {
       if (o.afhalen) return
-      const regels = perOrderQueries[i]?.data
+      const regels = regelsPerOrder?.get(o.order_id)
       if (regels?.some((r) => r.bron === 'geen')) s.add(o.order_id)
     })
     return s
-  }, [gefilterd, perOrderQueries])
+  }, [gefilterd, regelsPerOrder])
 
   const naVervoerderFilter = useMemo(() => {
     if (vervoerderFilter === 'all') return gefilterd
@@ -298,34 +294,40 @@ export function MagazijnOverviewPage() {
           Geen open orders
         </div>
       ) : (
-        <div className="space-y-6">
-          {dagOrders.length > 0 && (
-            <PickDagOrdersSectie
-              orders={dagOrders}
+        // Provider deelt de batch-resolutie (mig 401) met alle cards hieronder:
+        // de inline-select, pill en Verzendset-knop lezen de geseede cache i.p.v.
+        // elk een eigen RPC af te vuren. Zelfde queryKey als de page-niveau hook
+        // hierboven → één gedeelde fetch.
+        <VervoerderResolutieProvider orderIds={gefilterdIds}>
+          <div className="space-y-6">
+            {dagOrders.length > 0 && (
+              <PickDagOrdersSectie
+                orders={dagOrders}
+                groepeerOpLand={groepeerOpLand}
+                voorgesteldeBundels={voorgesteldeBundels.filter((b) =>
+                  b.order_ids.some((oid) =>
+                    dagOrders.some((o) => o.order_id === oid),
+                  ),
+                )}
+              />
+            )}
+            {perWeek.map((groep) => (
+              <PickWeekSectie
+                key={groep.sleutel}
+                orders={groep.orders}
+                pickWeek={groep.pickWeek}
+                verzendWeek={groep.verzendWeek}
+                status={groep.status}
+                groepeerOpLand={groepeerOpLand}
+                voorgesteldeBundels={bundelsPerWeek.get(groep.sleutel) ?? []}
+              />
+            ))}
+            <PickGeblokkeerdSectie
+              orders={geblokkeerdeOrders}
               groepeerOpLand={groepeerOpLand}
-              voorgesteldeBundels={voorgesteldeBundels.filter((b) =>
-                b.order_ids.some((oid) =>
-                  dagOrders.some((o) => o.order_id === oid),
-                ),
-              )}
             />
-          )}
-          {perWeek.map((groep) => (
-            <PickWeekSectie
-              key={groep.sleutel}
-              orders={groep.orders}
-              pickWeek={groep.pickWeek}
-              verzendWeek={groep.verzendWeek}
-              status={groep.status}
-              groepeerOpLand={groepeerOpLand}
-              voorgesteldeBundels={bundelsPerWeek.get(groep.sleutel) ?? []}
-            />
-          ))}
-          <PickGeblokkeerdSectie
-            orders={geblokkeerdeOrders}
-            groepeerOpLand={groepeerOpLand}
-          />
-        </div>
+          </div>
+        </VervoerderResolutieProvider>
       )}
     </>
   )

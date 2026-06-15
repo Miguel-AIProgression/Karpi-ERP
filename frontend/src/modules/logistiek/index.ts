@@ -70,6 +70,11 @@ export {
   type BulkOverrideResultaat,
   type OrderVervoerderAggregaat,
 } from './hooks/use-vervoerder-keuze'
+export { VervoerderResolutieProvider } from './context/vervoerder-resolutie-provider'
+export {
+  useVervoerderResolutieContext,
+  useEffectieveVervoerderVoorOrders,
+} from './context/vervoerder-resolutie-context'
 export { ZendingStatusBadge } from './components/zending-status-badge'
 export { StartPickrondesButton } from './components/start-pickrondes-button'
 export { StartWeekButton } from './components/start-week-button'
