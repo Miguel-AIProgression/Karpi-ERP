@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Plus, Trash2, AlertTriangle, CheckCircle2, Info } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, AlertTriangle, CheckCircle2, Info, Check } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { useLeveranciers, useCreateProduct, useNextArtikelnr } from '@/hooks/use-producten'
+import { STANDAARD_TAPIJTMATEN } from '@/lib/constants/tapijt-maten'
 import {
   fetchAfwerkingTypes,
   fetchStandaardAfwerking,
@@ -178,7 +179,7 @@ export function ProductCreatePage() {
     }
   }
 
-  function addRow() {
+  function addRow(maat?: { breedte: number; lengte: number }) {
     const r = newRow()
     if (nextArtikelnr) {
       const base = parseInt(nextArtikelnr, 10)
@@ -186,7 +187,41 @@ export function ProductCreatePage() {
         r.artikelnr = String(base + rows.length).padStart(9, '0')
       }
     }
+    if (maat) {
+      r.breedte = String(maat.breedte)
+      r.lengte = String(maat.lengte)
+      r.karpi_code = buildKarpiCode(kwaliteitCode, kleurCode, r.breedte, r.lengte)
+    }
     setRows(rs => [...rs, r])
+  }
+
+  /** Zet breedte+lengte (en karpi-code) op een bestaande rij. */
+  function setRowMaat(key: number, breedte: string, lengte: string) {
+    setRows(rs => rs.map(r => {
+      if (r._key !== key) return r
+      const next = { ...r, breedte, lengte }
+      if (!manualKarpi.has(key)) {
+        next.karpi_code = buildKarpiCode(kwaliteitCode, kleurCode, breedte, lengte)
+      }
+      return next
+    }))
+  }
+
+  /** Snelkeuze: voeg een standaard maat toe als variant, of haal 'm weg. */
+  function toggleMaat(breedte: number, lengte: number) {
+    const b = String(breedte)
+    const l = String(lengte)
+    const bestaand = rows.find(r => r.breedte === b && r.lengte === l)
+    if (bestaand) {
+      // Al aanwezig → weghalen. Laatste rij niet verwijderen, alleen leegmaken.
+      if (rows.length === 1) setRowMaat(bestaand._key, '', '')
+      else removeRow(bestaand._key)
+      return
+    }
+    // Nog niet aanwezig → vul een lege rij, anders nieuwe variant.
+    const legeRij = rows.find(r => !r.breedte && !r.lengte && !manualArtikelnr.has(r._key))
+    if (legeRij) setRowMaat(legeRij._key, b, l)
+    else addRow({ breedte, lengte })
   }
 
   function removeRow(key: number) {
@@ -411,8 +446,47 @@ export function ProductCreatePage() {
             <p className="text-xs text-slate-500 mt-0.5">Elke rij wordt een apart artikel in het systeem</p>
           </div>
           <div className="p-6 space-y-4">
+            {/* Snelkeuze standaard maten */}
+            <div className="rounded-[var(--radius-sm)] border border-dashed border-slate-200 bg-white p-4">
+              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-2.5">
+                Snelkeuze standaard maten
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {STANDAARD_TAPIJTMATEN.map((m) => {
+                  const actief = rows.some(
+                    r => r.breedte === String(m.breedte) && r.lengte === String(m.lengte),
+                  )
+                  return (
+                    <button
+                      key={`${m.breedte}x${m.lengte}`}
+                      type="button"
+                      onClick={() => toggleMaat(m.breedte, m.lengte)}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+                        actief
+                          ? 'bg-terracotta-500 border-terracotta-500 text-white hover:bg-terracotta-600'
+                          : 'bg-white border-slate-200 text-slate-600 hover:border-terracotta-300 hover:text-terracotta-600'
+                      }`}
+                    >
+                      {actief && <Check size={13} />}
+                      {m.breedte} × {m.lengte}
+                    </button>
+                  )
+                })}
+              </div>
+              <p className="text-[11px] text-slate-400 mt-2.5">
+                Klik op een maat om 'm als variant toe te voegen; nogmaals klikken haalt 'm weer weg.
+              </p>
+            </div>
+
             {rows.map((r, idx) => {
               const karpiVerplicht = r.product_type === 'rol' || r.product_type === 'vast'
+              const karpiPlaceholder = !kwaliteitCode
+                ? 'Vul eerst kwaliteitscode in ↑'
+                : !kleurCode.trim()
+                  ? 'Vul eerst kleurcode in ↑'
+                  : (!r.breedte || !r.lengte)
+                    ? 'Kies een maat'
+                    : 'FAMU48XX160230'
               return (
                 <div
                   key={r._key}
@@ -488,7 +562,7 @@ export function ProductCreatePage() {
                         onChange={e => updateRow(r._key, 'karpi_code', e.target.value)}
                         required={karpiVerplicht}
                         className="input w-full font-mono"
-                        placeholder="FAMU48XX160230"
+                        placeholder={karpiPlaceholder}
                       />
                     </VariantVeld>
 
@@ -553,7 +627,7 @@ export function ProductCreatePage() {
 
             <button
               type="button"
-              onClick={addRow}
+              onClick={() => addRow()}
               className="flex items-center gap-1.5 text-sm text-terracotta-500 hover:text-terracotta-600 font-medium transition-colors"
             >
               <Plus size={15} /> Maat / variant toevoegen
