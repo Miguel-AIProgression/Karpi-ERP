@@ -660,7 +660,7 @@ export function DebiteurDetailPage() {
       {/* Tab content */}
       <div className="bg-white rounded-[var(--radius)] border border-slate-200">
         {activeTab === 'info' && <InfoTab klant={klant} />}
-        {activeTab === 'adressen' && <AfleveradressenTab adressen={adressen} />}
+        {activeTab === 'adressen' && <AfleveradressenTab debiteurNr={debiteurNr} adressen={adressen} />}
         {activeTab === 'orders' && <OrdersTab orders={ordersData?.orders} totalCount={ordersData?.totalCount} />}
         {activeTab === 'facturering' && klant && (
           <KlantFactureringTab

@@ -249,6 +249,55 @@ export async function fetchAfleveradressen(debiteurNr: number): Promise<Aflevera
   return (data ?? []) as Afleveradres[]
 }
 
+export async function saveAfleveradres(
+  debiteurNr: number,
+  data: Omit<Afleveradres, 'id' | 'adres_nr'> & { id?: number },
+): Promise<void> {
+  if (data.id) {
+    const { error } = await supabase
+      .from('afleveradressen')
+      .update({
+        naam: data.naam,
+        adres: data.adres,
+        postcode: data.postcode,
+        plaats: data.plaats,
+        land: data.land,
+        telefoon: data.telefoon,
+        email: data.email,
+        gln_afleveradres: data.gln_afleveradres,
+      })
+      .eq('id', data.id)
+    if (error) throw error
+  } else {
+    const { data: existing, error: fetchErr } = await supabase
+      .from('afleveradressen')
+      .select('adres_nr')
+      .eq('debiteur_nr', debiteurNr)
+      .order('adres_nr', { ascending: false })
+      .limit(1)
+    if (fetchErr) throw fetchErr
+    const nextNr = existing && existing.length > 0 ? (existing[0].adres_nr as number) + 1 : 1
+    const { error } = await supabase.from('afleveradressen').insert({
+      debiteur_nr: debiteurNr,
+      adres_nr: nextNr,
+      naam: data.naam,
+      adres: data.adres,
+      postcode: data.postcode,
+      plaats: data.plaats,
+      land: data.land,
+      telefoon: data.telefoon,
+      email: data.email,
+      gln_afleveradres: data.gln_afleveradres,
+    })
+    if (error) throw error
+  }
+}
+
+export async function deleteAfleveradres(id: number): Promise<void> {
+  const { error } = await supabase.from('afleveradressen').delete().eq('id', id)
+  if (error) throw error
+}
+
 export async function fetchKoppelbareDebiteurenMetPrijslijst() {
   const all: { debiteur_nr: number; naam: string; plaats: string | null; prijslijst_nr: string | null }[] = []
   const pageSize = 1000

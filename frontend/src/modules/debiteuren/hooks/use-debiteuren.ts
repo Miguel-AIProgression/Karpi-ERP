@@ -3,7 +3,10 @@ import {
   fetchDebiteuren,
   fetchDebiteurDetail,
   fetchAfleveradressen,
+  saveAfleveradres,
+  deleteAfleveradres,
   fetchKoppelbareDebiteurenMetPrijslijst,
+  type Afleveradres,
 } from '../queries/debiteuren'
 import { fetchKlantArtikelnummers } from '../queries/klant-artikelnummers'
 import {
@@ -87,6 +90,25 @@ export function useSetKlantPrijslijst() {
       qc.invalidateQueries({ queryKey: ['prijslijsten'] })
     },
   })
+}
+
+export function useAfleveradresMutation(debiteurNr: number) {
+  const qc = useQueryClient()
+  const invalidate = () =>
+    qc.invalidateQueries({ queryKey: ['klanten', debiteurNr, 'afleveradressen'] })
+
+  const save = useMutation({
+    mutationFn: (data: Omit<Afleveradres, 'id' | 'adres_nr'> & { id?: number }) =>
+      saveAfleveradres(debiteurNr, data),
+    onSuccess: invalidate,
+  })
+
+  const remove = useMutation({
+    mutationFn: (id: number) => deleteAfleveradres(id),
+    onSuccess: invalidate,
+  })
+
+  return { save, remove }
 }
 
 export function useSetKlantenPrijslijst() {
