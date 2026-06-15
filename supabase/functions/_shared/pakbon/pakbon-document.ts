@@ -1,0 +1,161 @@
+// Canonieke pakbon-document-builder: zet een zending + bedrijfsgegevens om in een
+// medium-onafhankelijk `PakbonDocument` waarin alle presentatie-beslissingen al
+// genomen zijn (welke tekst, groepering, totalen). Spiegelt de afleiding in de
+// React-component `pakbon-document.tsx`; de pdf-lib-renderer doet alleen lay-out.
+
+import { bouwPakbonRegels, productNamen } from './aggregatie.ts'
+import type {
+  PakbonDocument,
+  PakbonOrderGroep,
+  PakbonRegel,
+  PakbonRegelDisplay,
+  PakbonZendingInput,
+} from './types.ts'
+
+// Pakbon toont het land voluit zoals het oude Lieferschein ("DUITSLAND");
+// onbekende codes vallen terug op de code zelf. Gelijk aan pakbon-document.tsx.
+const LAND_NAMEN: Record<string, string> = {
+  NL: 'NEDERLAND',
+  DE: 'DUITSLAND',
+  BE: 'BELGIË',
+  FR: 'FRANKRIJK',
+  AT: 'OOSTENRIJK',
+  LU: 'LUXEMBURG',
+  CH: 'ZWITSERLAND',
+  DK: 'DENEMARKEN',
+}
+
+function landNaam(code: string | null): string | null {
+  if (!code) return null
+  return LAND_NAMEN[code.toUpperCase()] ?? code
+}
+
+const nlGetal = new Intl.NumberFormat('nl-NL', { maximumFractionDigits: 0 })
+const nlGewicht = new Intl.NumberFormat('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+function formatAantal(v: number): string {
+  return nlGetal.format(v)
+}
+
+/** ISO ('YYYY-MM-DD' of timestamp) → DD-MM-YYYY (mirror frontend formatDate). */
+function formatDatum(iso: string | null): string {
+  if (!iso) return ''
+  const datumDeel = iso.slice(0, 10)
+  const [y, m, d] = datumDeel.split('-')
+  if (!y || !m || !d) return ''
+  return `${d}-${m}-${y}`
+}
+
+/** Bouw de display-regels voor één bron-order-groep. */
+function bouwGroepRegels(regels: PakbonRegel[]): PakbonRegelDisplay[] {
+  return regels.map((pr, idx) => {
+    const namen = productNamen(pr.regel, pr.snapshot)
+    const hoofdNaam = namen.karpiNaam ?? namen.klantNaam
+    const toonUwNaam = namen.karpiNaam != null && namen.karpiNaam !== namen.klantNaam
+    const orderRegel = pr.regel.order_regels
+    // Maat zit al in de bevroren omschrijving; aparte regel alleen bij legacy-
+    // zending zonder colli-snapshot (= `!snapshot`).
+    const maatRegel =
+      orderRegel?.is_maatwerk && !pr.snapshot
+        ? `Op maat ${orderRegel.maatwerk_breedte_cm ?? '-'} x ${orderRegel.maatwerk_lengte_cm ?? '-'} cm`
+        : null
+    return {
+      regelnummer: String(orderRegel?.regelnummer ?? idx + 1).padStart(2, '0'),
+      artikelnr: pr.regel.artikelnr ?? '-',
+      hoofdNaam,
+      uwNaam: toonUwNaam ? namen.klantNaam : null,
+      maatRegel,
+      besteld: formatAantal(pr.besteld),
+      geleverd: formatAantal(pr.geleverd),
+    }
+  })
+}
+
+export interface BouwPakbonDocumentOpties {
+  /** Aantal colli (komt normaal uit de label-expansie / colli-count). */
+  kolli?: number
+}
+
+export function bouwPakbonDocument(
+  zending: PakbonZendingInput,
+  opties: BouwPakbonDocumentOpties = {},
+): PakbonDocument {
+  const order = zending.orders
+  const pakbonRegels = bouwPakbonRegels(zending)
+
+  // Groepeer per bron-order (mig 222). Solo-zending = één groep.
+  const isBundel = zending.bundel_orders.length > 1
+  const orderNrPerOrderId = new Map(zending.bundel_orders.map((bo) => [bo.id, bo.order_nr]))
+  const regelsPerOrder = new Map<number, PakbonRegel[]>()
+  for (const pr of pakbonRegels) {
+    const lijst = regelsPerOrder.get(pr.orderId) ?? []
+    lijst.push(pr)
+    regelsPerOrder.set(pr.orderId, lijst)
+  }
+  const orderIdRenderVolgorde: number[] = [
+    ...zending.bundel_orders.map((bo) => bo.id).filter((id) => regelsPerOrder.has(id)),
+    ...Array.from(regelsPerOrder.keys()).filter(
+      (id) => !zending.bundel_orders.some((bo) => bo.id === id),
+    ),
+  ]
+  const groepen: PakbonOrderGroep[] = orderIdRenderVolgorde.map((oid) => ({
+    orderId: oid,
+    orderNr: orderNrPerOrderId.get(oid) ?? null,
+    regels: bouwGroepRegels(regelsPerOrder.get(oid) ?? []),
+  }))
+
+  // Totalen: gewicht uit zending wint, val terug op SUM(regelgewicht × geleverd).
+  const somGewicht = pakbonRegels.reduce((sum, r) => sum + r.gewichtKg, 0)
+  const totaalGewichtKg = Number(zending.totaal_gewicht_kg ?? 0) || somGewicht
+  const kolli = (opties.kolli ?? 0) > 0 ? (opties.kolli as number) : Number(zending.aantal_colli ?? 0)
+
+  // Adresblokken.
+  const aflLand = landNaam(zending.afl_land)
+  const afleveradres = [
+    zending.afl_naam ?? order.debiteuren?.naam ?? '',
+    order.afl_naam_2 ?? '',
+    zending.afl_adres ?? '',
+    `${zending.afl_postcode ?? ''} ${zending.afl_plaats ?? ''}`.trim(),
+    aflLand && zending.afl_land !== 'NL' ? aflLand : '',
+  ].filter((r) => r.trim().length > 0)
+
+  const klantLand = landNaam(order.fact_land)
+  const factuuradres = [
+    order.fact_naam || order.debiteuren?.naam || '',
+    order.fact_adres ?? '',
+    `${order.fact_postcode ?? ''} ${order.fact_plaats ?? ''}`.trim(),
+    klantLand && order.fact_land !== 'NL' ? klantLand : '',
+  ].filter((r) => r.trim().length > 0)
+
+  // Referentie-meta.
+  const referentieRegel =
+    [order.klant_referentie, order.week ? `(WK ${order.week})` : null].filter(Boolean).join(' ') || '-'
+  const vertegenwoordiger = order.vertegenwoordigers?.naam ?? order.vertegenw_code ?? '-'
+  const bundelRegels = isBundel
+    ? zending.bundel_orders.map((bo) => {
+        const ref =
+          [bo.klant_referentie, bo.week ? `(WK ${bo.week})` : null].filter(Boolean).join(' ') || '-'
+        return `· ${bo.order_nr} : Ref. ${ref}`
+      })
+    : []
+
+  return {
+    pakbonnr: zending.zending_nr,
+    datum: formatDatum(zending.verzenddatum ?? zending.created_at),
+    afleveradres,
+    afleverTelefoon: zending.afl_telefoon,
+    factuuradres,
+    isBundel,
+    referentieRegel,
+    vertegenwoordiger,
+    orderDebiteur: `${order.order_nr}/${order.debiteur_nr}`,
+    debiteur: String(order.debiteur_nr),
+    routecode: order.debiteuren?.route ?? null,
+    bundelRegels,
+    groepen,
+    kolli,
+    totaalGewichtKg,
+  }
+}
+
+export { formatAantal, formatDatum, nlGewicht }
