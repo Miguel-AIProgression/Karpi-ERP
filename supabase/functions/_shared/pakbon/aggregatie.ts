@@ -80,6 +80,20 @@ export function bouwPakbonRegels(zending: PakbonZendingInput): PakbonRegel[] {
     })
 }
 
+/**
+ * Aantal fysieke colli — gelijk aan `colliRijen.length` van de frontend
+ * `bouwVerzenddocument`: bij colli-registratie het aantal colli-rijen, anders het
+ * legacy-pad (som van fysieke-regel-aantallen, minimaal 1).
+ */
+export function telColli(zending: PakbonZendingInput): number {
+  const colli = zending.zending_colli ?? []
+  if (colli.length > 0) return colli.length
+  const fysiekeRegels = zending.zending_regels.filter((r) => !isShippingRegel(r))
+  let som = 0
+  for (const regel of fysiekeRegels) som += Math.max(0, Math.trunc(Number(regel.aantal ?? 1)))
+  return Math.max(som, 1)
+}
+
 export interface RegelNamen {
   klantNaam: string
   karpiNaam: string | null

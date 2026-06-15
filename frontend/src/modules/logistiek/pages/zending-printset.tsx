@@ -42,6 +42,7 @@ import {
   labelFormaatVoor,
   vervoerderInfoVoor,
 } from '@/modules/logistiek/lib/printset'
+import { renderPakbonPdfBlobUrl } from '@/modules/logistiek/queries/zendingen'
 
 type PrintMode = 'all' | 'labels' | 'pakbon' | 'tapijt-stickers'
 
@@ -96,6 +97,23 @@ export function ZendingPrintSetPage() {
   function print(mode: PrintMode) {
     setPrintMode(mode)
     window.setTimeout(() => window.print(), 50)
+  }
+
+  // Tijdelijke verificatie-knop (Slice 2): opent de server-side pakbon-PDF
+  // (single source). Zodra die naast de huidige React-pakbon is geverifieerd,
+  // vervangt deze de "Pakbon printen"-knop en verdwijnt de React-pakbon.
+  const [pakbonPdfBezig, setPakbonPdfBezig] = useState(false)
+  async function openPakbonPdf() {
+    if (!zending) return
+    setPakbonPdfBezig(true)
+    try {
+      const url = await renderPakbonPdfBlobUrl(zending.zending_nr)
+      window.open(url, '_blank', 'noopener')
+    } catch (e) {
+      alert(`Pakbon-PDF openen mislukt: ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setPakbonPdfBezig(false)
+    }
   }
 
   if (isLoading) {
@@ -157,6 +175,15 @@ export function ZendingPrintSetPage() {
               >
                 <FileText size={16} />
                 Pakbon printen
+              </button>
+              {/* Slice 2 verificatie: server-side pakbon-PDF (single source). */}
+              <button
+                onClick={openPakbonPdf}
+                disabled={pakbonPdfBezig}
+                className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                <FileText size={16} />
+                {pakbonPdfBezig ? 'Bezig…' : 'Pakbon PDF (nieuw)'}
               </button>
               {heeftTapijtStickers && (
                 <button

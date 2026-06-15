@@ -333,6 +333,32 @@ export async function fetchZendingPrintSet(zending_nr: string): Promise<ZendingP
 }
 
 /**
+ * Rendert de pakbon van een zending server-side (edge function `pakbon-pdf`,
+ * `_shared/pakbon`-laag) en geeft een blob-URL terug om te openen/printen.
+ * Single source: dezelfde renderer voedt de verzendbevestiging-mail-bijlage.
+ * Spiegelt `renderFactuurPdfBlobUrl`.
+ */
+export async function renderPakbonPdfBlobUrl(zendingNr: string): Promise<string> {
+  const { data, error } = await supabase.functions.invoke('pakbon-pdf', {
+    body: { zending_nr: zendingNr },
+  })
+  if (error) throw toError(error, 'Pakbon-PDF renderen mislukt')
+
+  let blob: Blob
+  if (data instanceof Blob) {
+    blob = data
+  } else if (data instanceof ArrayBuffer) {
+    blob = new Blob([data], { type: 'application/pdf' })
+  } else if (data instanceof Uint8Array) {
+    const ab = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer
+    blob = new Blob([ab], { type: 'application/pdf' })
+  } else {
+    throw new Error('Onverwacht response-type van pakbon-pdf edge function')
+  }
+  return URL.createObjectURL(blob)
+}
+
+/**
  * Mig 248 (ADR-0012): canonieke RPC voor pickronde-start. Vervangt
  * de gedropte `startPickrondenVoorOrder` (mig 220) en `startPickrondenBundel` (mig 222).
  *

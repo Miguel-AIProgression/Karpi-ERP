@@ -3,7 +3,7 @@
 // genomen zijn (welke tekst, groepering, totalen). Spiegelt de afleiding in de
 // React-component `pakbon-document.tsx`; de pdf-lib-renderer doet alleen lay-out.
 
-import { bouwPakbonRegels, productNamen } from './aggregatie.ts'
+import { bouwPakbonRegels, productNamen, telColli } from './aggregatie.ts'
 import type {
   PakbonDocument,
   PakbonOrderGroep,
@@ -107,7 +107,7 @@ export function bouwPakbonDocument(
   // Totalen: gewicht uit zending wint, val terug op SUM(regelgewicht × geleverd).
   const somGewicht = pakbonRegels.reduce((sum, r) => sum + r.gewichtKg, 0)
   const totaalGewichtKg = Number(zending.totaal_gewicht_kg ?? 0) || somGewicht
-  const kolli = (opties.kolli ?? 0) > 0 ? (opties.kolli as number) : Number(zending.aantal_colli ?? 0)
+  const kolli = (opties.kolli ?? 0) > 0 ? (opties.kolli as number) : telColli(zending)
 
   // Adresblokken.
   const aflLand = landNaam(zending.afl_land)
