@@ -634,16 +634,27 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr,
               </tr>
             </thead>
             <tbody>
-              {lines.map((line, i) => (
-                <MaatwerkLineRow
-                  key={getKey(i)}
-                  line={line}
-                  index={i}
-                  updateLine={updateLine}
-                  removeLine={removeLine}
-                  vormen={vormen}
-                />
-              ))}
+              {/* Nieuwste regel bovenaan tonen zodat een net toegevoegd artikel
+                  direct onder de zoekbalk zichtbaar is en de invoerder niet hoeft
+                  te scrollen (verzoek Marjon, 15-06-2026). We keren alléén de
+                  wéérgave om — de `lines`-array blijft chronologisch, dus de
+                  opgeslagen regelnummering (pakbon/factuur/order-detail) verandert
+                  niet. `index` blijft de echte array-index zodat updateLine/
+                  removeLine de juiste regel raken; `getKey(i)` houdt focus/state
+                  per regel stabiel bij het herordenen. */}
+              {lines
+                .map((line, i) => ({ line, i }))
+                .reverse()
+                .map(({ line, i }) => (
+                  <MaatwerkLineRow
+                    key={getKey(i)}
+                    line={line}
+                    index={i}
+                    updateLine={updateLine}
+                    removeLine={removeLine}
+                    vormen={vormen}
+                  />
+                ))}
             </tbody>
           </table>
         </div>
