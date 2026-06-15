@@ -1,5 +1,38 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-15 — Voorraad-baseline terug naar kolom H (vrije voorraad), niet D
+
+**Waarom:** Marjon zag RugFlow vrij=4 waar het oude systeem 3 toonde
+(artikel 801250000 / DIMV25XX200100). Onderzoek: de fysieke voorraad (lijst
+kolom D) matchte al, het verschil zat in de reserveringen. De voorraad-import
+nam sinds 2026-06-08 kolom D (FYSIEK) als baseline, vanuit de aanname dat
+RugFlow's allocator de openstaande orders zelf aftrekt (anders dubbel). Maar de
+order-sets zijn **disjunct**: het oude systeem houdt de actuele voorraad én alle
+orders van vóór 1-06 (reserveringen in kolom F), RugFlow maakt alleen nieuwe
+orders ná 1-06. De pre-1-06 reserveringen worden fysiek uitgeleverd vanuit het
+oude systeem → die voorraad is NIET vrij voor RugFlow. Door kolom D te nemen
+negeerde RugFlow die oude verplichtingen → te veel vrij = oversold-risico
+(bv. DREA23XX080RND toonde 118 vrij waar maar 67 echt vrij was).
+
+**Wat:**
+- **`import/update_voorraad.py`** — baseline `COL_VOORRAAD` van kolom D (3) naar
+  kolom H 'Vrije voorraad' (7). Omdat de order-sets disjunct zijn is er geen
+  dubbel-aftrekken: vrij = kolom H − RugFlow's eigen nieuwe orders =
+  fysiek − oude verplichtingen − nieuwe orders. `lees_lijst` leest nu ook
+  kolom D als `fysiek` (referentie).
+- **`import/herbereken_alle_reserveringen.py`** (nieuw) — sluitstap die
+  `herbereken_product_reservering(artikelnr)` (mig 154) aanroept voor álle
+  artikelen met een actieve voorraad-claim. Nodig omdat
+  `herallocateer_open_orders.py` alleen WACHT-orders pakt; claims op
+  'Klaar voor picken'-orders (763 stuks / 274 artikelen) zouden anders de
+  baseline-reset `gereserveerd=0` niet hersteld krijgen → vrije voorraad te hoog.
+- **Import-run 15-06:** 18.181 vaste producten op kolom H; 1.297 daalden
+  (−5.112 stuks die ten onrechte vrij stonden). Sluitverificatie diff-tool:
+  0 afwijkingen. **41 producten (−83 stuks) staan nu op negatieve vrije
+  voorraad** = fysiek conflict (RugFlow-order claimt voorraad die het oude
+  systeem volledig aan pre-1-06 orders vergaf) → actielijst
+  `import/rapporten/voorraad_conflicten_15-6-2026.xlsx` voor Karpi.
+
 ## 2026-06-15 — Pick & Ship: vervoerder-resolutie in één batch-call (N+1 weg)
 
 **Waarom:** na de Rhenus go-live (06-14 country-routing-cutover) zijn ~171

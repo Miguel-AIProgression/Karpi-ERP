@@ -6,13 +6,20 @@ alle artikelen" (`Voorraadlijst <datum>.xls`). Vervangt de losse gedateerde
 scripts (update_voorraad_2026_05.py / _2026_06_01.py): geef het bestandspad
 gewoon als argument mee.
 
-Beslissingen (vastgelegd met Karpi, ongewijzigd):
+Beslissingen (vastgelegd met Karpi):
   - Scope: ALLEEN product_type='vast'. Staaltje/rol/overig NIET aangeraakt.
   - Sleutel: kolom A 'Artikelnr' -> producten.artikelnr (PK).
-  - Waarde:  kolom D 'Voorraad' (FYSIEK). Backorder/gereserveerd als baseline
-    op 0; gereserveerd/vrije_voorraad worden voor producten MET open orders
-    daarna hersteld door herallocateer_open_orders.py (RugFlow trekt de orders
-    zelf af -> geen dubbel-aftrekken).
+  - Waarde:  kolom H 'Vrije voorraad' (= fysiek D - oude reserveringen F).
+    HERZIEN 2026-06-15 (was kolom D 'Voorraad' (FYSIEK) sinds 2026-06-08).
+    Reden: het oude systeem houdt de actuele voorraad EN alle orders van
+    vóór 1-06; reserveringen daar (kolom F) zijn pre-1-06 orders die fysiek
+    nog uitgeleverd worden -> die voorraad is NIET vrij voor RugFlow. RugFlow
+    maakt alleen NIEUWE orders (ná 1-06). De twee order-sets zijn DISJUNCT,
+    dus geen dubbel-aftrekken: baseline = kolom H, en herallocateer_open_orders.py
+    trekt daar bovenop alleen RugFlow's eigen nieuwe orders af. Eindresultaat:
+    vrij = fysiek - oude verplichtingen - nieuwe RugFlow-orders. (De 2026-06-08
+    keuze voor kolom D negeerde de oude verplichtingen -> RugFlow toonde te veel
+    vrij = oversold-risico.) Backorder/gereserveerd als baseline op 0.
   - MAATWERK-regels (Karpi-code bevat 'MAATWERK') uitgesloten.
   - Rode regels (rood font) = "niet meer inladen". Karpi markeert deze
     PROGRESSIEF ALFABETISCH per lijst, dus de uitsluitlijst is een UNION:
@@ -47,7 +54,8 @@ RAPPORT_DIR = BASE_DIR / "import" / "rapporten"
 
 # Kolom-indices in de .xls (header op rij index 1, data vanaf rij 2)
 COL_ARTNR, COL_KARPI, COL_OMS = 0, 1, 2
-COL_VOORRAAD = 3  # kolom D 'Voorraad' (FYSIEK) — bewust NIET H 'Vrije voorraad' (7)
+COL_FYSIEK = 3   # kolom D 'Voorraad' (FYSIEK) — alleen ter referentie/diff
+COL_VOORRAAD = 7  # kolom H 'Vrije voorraad' = baseline voor RugFlow (zie docstring)
 
 _QC_RE = re.compile(r"^([A-Z]{3,4})(\d{2})")
 _VAST_RE = re.compile(r"^[A-Z]{3,4}\d{2}XX")
@@ -125,7 +133,8 @@ def lees_lijst(pad: Path):
             "artikelnr": artnr,
             "karpi_code": karpi,
             "omschrijving": str(sh.cell(r, COL_OMS).value).strip(),
-            "voorraad": num(sh.cell(r, COL_VOORRAAD).value),
+            "voorraad": num(sh.cell(r, COL_VOORRAAD).value),  # baseline = kolom H
+            "fysiek": num(sh.cell(r, COL_FYSIEK).value),      # kolom D, referentie
             "is_red": is_red(r),
             "is_maatwerk": "MAATWERK" in karpi.upper(),
         })
