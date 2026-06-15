@@ -43,7 +43,7 @@ export function AddressSelector({ debiteurNr, onSelect, disabled = false, autoSe
   const [selectedId, setSelectedId] = useState<string>('')
   const [selectedGln, setSelectedGln] = useState<string | null>(null)
   const [manualOpen, setManualOpen] = useState(false)
-  const [manual, setManual] = useState<{ naam: string; adres: string; postcode: string; plaats: string; land: string }>({ naam: '', adres: '', postcode: '', plaats: '', land: 'NL' })
+  const [manual, setManual] = useState<{ naam: string; adres: string; postcode: string; plaats: string; land: string; telefoon: string; email: string; gln_afleveradres: string }>({ naam: '', adres: '', postcode: '', plaats: '', land: 'NL', telefoon: '', email: '', gln_afleveradres: '' })
   const [persist, setPersist] = useState(false)
   const [savingError, setSavingError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -100,6 +100,9 @@ export function AddressSelector({ debiteurNr, onSelect, disabled = false, autoSe
             postcode: manual.postcode.trim() || null,
             plaats: manual.plaats.trim(),
             land: manual.land.trim() || 'NL',
+            telefoon: manual.telefoon.trim() || null,
+            email: manual.email.trim() || null,
+            gln_afleveradres: manual.gln_afleveradres.trim() || null,
           })
           .select('id, adres_nr, naam, adres, postcode, plaats, land, email, gln_afleveradres')
           .single()
@@ -122,7 +125,7 @@ export function AddressSelector({ debiteurNr, onSelect, disabled = false, autoSe
       postcode: manual.postcode.trim(),
       plaats: manual.plaats.trim(),
       land: manual.land.trim() || 'NL',
-      email: null,
+      email: manual.email.trim() || null,
       afleveradresId: nieuwId,
     })
     setSelectedGln(null)
@@ -198,6 +201,9 @@ export function AddressSelector({ debiteurNr, onSelect, disabled = false, autoSe
             <ManualField label="Postcode" value={manual.postcode} onChange={(v) => setManual(m => ({ ...m, postcode: v }))} />
             <ManualField label="Plaats" value={manual.plaats} onChange={(v) => setManual(m => ({ ...m, plaats: v }))} />
             <ManualField label="Land" value={manual.land} onChange={(v) => setManual(m => ({ ...m, land: v }))} />
+            <ManualField label="Telefoon" value={manual.telefoon} onChange={(v) => setManual(m => ({ ...m, telefoon: v }))} type="tel" />
+            <ManualField label="E-mail" value={manual.email} onChange={(v) => setManual(m => ({ ...m, email: v }))} type="email" />
+            <ManualField label="GLN-afleveradres" value={manual.gln_afleveradres} onChange={(v) => setManual(m => ({ ...m, gln_afleveradres: v }))} />
           </div>
           <label className="inline-flex items-center gap-2 text-xs text-slate-700 mt-1">
             <input
@@ -228,12 +234,12 @@ export function AddressSelector({ debiteurNr, onSelect, disabled = false, autoSe
   )
 }
 
-function ManualField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+function ManualField({ label, value, onChange, type = 'text' }: { label: string; value: string; onChange: (v: string) => void; type?: string }) {
   return (
     <div>
       <label className="block text-[11px] uppercase tracking-wide text-slate-500 mb-0.5">{label}</label>
       <input
-        type="text"
+        type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className="w-full px-2 py-1.5 rounded-[var(--radius-sm)] border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
