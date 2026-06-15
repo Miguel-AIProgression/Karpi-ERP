@@ -410,149 +410,151 @@ export function ProductCreatePage() {
             <h3 className="font-semibold text-slate-800 text-base">Varianten / Maten</h3>
             <p className="text-xs text-slate-500 mt-0.5">Elke rij wordt een apart artikel in het systeem</p>
           </div>
-          <div className="p-6">
-            <div className="overflow-x-auto rounded-[var(--radius-sm)] border border-slate-200">
-              <table className="w-full text-sm border-collapse">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200">
-                    <Th>Artikelnr *</Th>
-                    <Th>Type</Th>
-                    <Th>Breedte cm</Th>
-                    <Th>Lengte cm</Th>
-                    <Th>Karpi-code</Th>
-                    <Th>EAN</Th>
-                    <Th>Verkoop €</Th>
-                    <Th>Inkoop €</Th>
-                    <Th>Gewicht kg</Th>
-                    <Th>Voorraad</Th>
-                    <Th>Locatie</Th>
-                    <th className="pb-2 w-8 px-3"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {rows.map((r) => (
-                    <tr key={r._key} className="hover:bg-slate-50/70 transition-colors">
-                      <Td>
-                        <input
-                          value={r.artikelnr}
-                          onChange={e => updateRow(r._key, 'artikelnr', e.target.value)}
-                          className="input w-28 font-mono text-xs"
-                          placeholder="298480000"
-                        />
-                      </Td>
-                      <Td>
-                        <select
-                          value={r.product_type}
-                          onChange={e => updateRow(r._key, 'product_type', e.target.value)}
-                          className="input w-36"
-                        >
-                          <option value="">— type —</option>
-                          {PRODUCT_TYPES.map(t => (
-                            <option key={t.value} value={t.value}>{t.label}</option>
-                          ))}
-                        </select>
-                      </Td>
-                      <Td>
-                        <input
-                          type="number" min="0"
-                          value={r.breedte}
-                          onChange={e => updateRow(r._key, 'breedte', e.target.value)}
-                          className="input w-20"
-                          placeholder="160"
-                        />
-                      </Td>
-                      <Td>
-                        <input
-                          type="number" min="0"
-                          value={r.lengte}
-                          onChange={e => updateRow(r._key, 'lengte', e.target.value)}
-                          className="input w-20"
-                          placeholder="230"
-                        />
-                      </Td>
-                      <Td>
-                        <input
-                          value={r.karpi_code}
-                          onChange={e => updateRow(r._key, 'karpi_code', e.target.value)}
-                          required={r.product_type === 'rol' || r.product_type === 'vast'}
-                          className="input w-36 font-mono text-xs"
-                          placeholder="FAMU48XX160230"
-                          title={r.product_type === 'rol' || r.product_type === 'vast'
-                            ? 'Verplicht voor type Rol / Standaard maat'
-                            : undefined}
-                        />
-                      </Td>
-                      <Td>
-                        <input
-                          value={r.ean_code}
-                          onChange={e => updateRow(r._key, 'ean_code', e.target.value)}
-                          className="input w-32 font-mono text-xs"
-                          placeholder="8712345678901"
-                        />
-                      </Td>
-                      <Td>
-                        <input
-                          type="number" step="0.01" min="0"
-                          value={r.verkoopprijs}
-                          onChange={e => updateRow(r._key, 'verkoopprijs', e.target.value)}
-                          className="input w-24"
-                        />
-                      </Td>
-                      <Td>
-                        <input
-                          type="number" step="0.01" min="0"
-                          value={r.inkoopprijs}
-                          onChange={e => updateRow(r._key, 'inkoopprijs', e.target.value)}
-                          className="input w-24"
-                        />
-                      </Td>
-                      <Td>
-                        <input
-                          type="number" step="0.01" min="0"
-                          value={r.gewicht_kg}
-                          onChange={e => updateRow(r._key, 'gewicht_kg', e.target.value)}
-                          className="input w-20"
-                        />
-                      </Td>
-                      <Td>
-                        <input
-                          type="number"
-                          value={0}
-                          readOnly
-                          disabled
-                          className="input w-20"
-                          title="Voorraad start op 0 — ophogen via boek-ontvangst op de inkooporder"
-                        />
-                      </Td>
-                      <Td>
-                        <input
-                          value={r.locatie}
-                          onChange={e => updateRow(r._key, 'locatie', e.target.value)}
-                          className="input w-24"
-                          placeholder="A3-12"
-                        />
-                      </Td>
-                      <Td>
-                        <button
-                          type="button"
-                          onClick={() => removeRow(r._key)}
-                          disabled={rows.length === 1}
-                          className="text-slate-300 hover:text-rose-500 disabled:opacity-20 transition-colors p-1"
-                          title="Verwijder rij"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </Td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          <div className="p-6 space-y-4">
+            {rows.map((r, idx) => {
+              const karpiVerplicht = r.product_type === 'rol' || r.product_type === 'vast'
+              return (
+                <div
+                  key={r._key}
+                  className="rounded-[var(--radius-sm)] border border-slate-200 bg-slate-50/40 p-5"
+                >
+                  {/* Kaart-kop */}
+                  <div className="flex items-center justify-between mb-4">
+                    <span className="inline-flex items-center gap-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                      <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-terracotta-100 text-terracotta-600 text-[11px] font-bold">
+                        {idx + 1}
+                      </span>
+                      Variant {idx + 1}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => removeRow(r._key)}
+                      disabled={rows.length === 1}
+                      className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-rose-500 disabled:opacity-20 disabled:hover:text-slate-400 transition-colors"
+                      title="Verwijder deze variant"
+                    >
+                      <Trash2 size={14} /> Verwijderen
+                    </button>
+                  </div>
+
+                  {/* Velden */}
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-5 gap-y-4">
+                    <VariantVeld label="Artikelnr *" className="col-span-2" hint="Automatisch — pas aan indien nodig">
+                      <input
+                        value={r.artikelnr}
+                        onChange={e => updateRow(r._key, 'artikelnr', e.target.value)}
+                        className="input w-full font-mono"
+                        placeholder="298480000"
+                      />
+                    </VariantVeld>
+                    <VariantVeld label="Type" className="col-span-2">
+                      <select
+                        value={r.product_type}
+                        onChange={e => updateRow(r._key, 'product_type', e.target.value)}
+                        className="input w-full"
+                      >
+                        <option value="">— kies type —</option>
+                        {PRODUCT_TYPES.map(t => (
+                          <option key={t.value} value={t.value}>{t.label}</option>
+                        ))}
+                      </select>
+                    </VariantVeld>
+
+                    <VariantVeld label="Breedte cm">
+                      <input
+                        type="number" min="0"
+                        value={r.breedte}
+                        onChange={e => updateRow(r._key, 'breedte', e.target.value)}
+                        className="input w-full"
+                        placeholder="160"
+                      />
+                    </VariantVeld>
+                    <VariantVeld label="Lengte cm">
+                      <input
+                        type="number" min="0"
+                        value={r.lengte}
+                        onChange={e => updateRow(r._key, 'lengte', e.target.value)}
+                        className="input w-full"
+                        placeholder="230"
+                      />
+                    </VariantVeld>
+                    <VariantVeld
+                      label={karpiVerplicht ? 'Karpi-code *' : 'Karpi-code'}
+                      className="col-span-2"
+                      hint={karpiVerplicht ? 'Verplicht voor Rol / Standaard maat' : 'Automatisch uit kwaliteit + kleur + maat'}
+                    >
+                      <input
+                        value={r.karpi_code}
+                        onChange={e => updateRow(r._key, 'karpi_code', e.target.value)}
+                        required={karpiVerplicht}
+                        className="input w-full font-mono"
+                        placeholder="FAMU48XX160230"
+                      />
+                    </VariantVeld>
+
+                    <VariantVeld label="Verkoop €">
+                      <input
+                        type="number" step="0.01" min="0"
+                        value={r.verkoopprijs}
+                        onChange={e => updateRow(r._key, 'verkoopprijs', e.target.value)}
+                        className="input w-full"
+                        placeholder="0,00"
+                      />
+                    </VariantVeld>
+                    <VariantVeld label="Inkoop €">
+                      <input
+                        type="number" step="0.01" min="0"
+                        value={r.inkoopprijs}
+                        onChange={e => updateRow(r._key, 'inkoopprijs', e.target.value)}
+                        className="input w-full"
+                        placeholder="0,00"
+                      />
+                    </VariantVeld>
+                    <VariantVeld label="Gewicht kg">
+                      <input
+                        type="number" step="0.01" min="0"
+                        value={r.gewicht_kg}
+                        onChange={e => updateRow(r._key, 'gewicht_kg', e.target.value)}
+                        className="input w-full"
+                        placeholder="0,00"
+                      />
+                    </VariantVeld>
+                    <VariantVeld label="Voorraad" hint="Start op 0 — via inkoop-ontvangst">
+                      <input
+                        type="number"
+                        value={0}
+                        readOnly
+                        disabled
+                        className="input w-full bg-slate-100 text-slate-400"
+                        title="Voorraad start op 0 — ophogen via boek-ontvangst op de inkooporder"
+                      />
+                    </VariantVeld>
+
+                    <VariantVeld label="EAN" className="col-span-2">
+                      <input
+                        value={r.ean_code}
+                        onChange={e => updateRow(r._key, 'ean_code', e.target.value)}
+                        className="input w-full font-mono"
+                        placeholder="8712345678901"
+                      />
+                    </VariantVeld>
+                    <VariantVeld label="Locatie" className="col-span-2">
+                      <input
+                        value={r.locatie}
+                        onChange={e => updateRow(r._key, 'locatie', e.target.value)}
+                        className="input w-full"
+                        placeholder="A3-12"
+                      />
+                    </VariantVeld>
+                  </div>
+                </div>
+              )
+            })}
 
             <button
               type="button"
               onClick={addRow}
-              className="mt-4 flex items-center gap-1.5 text-sm text-terracotta-500 hover:text-terracotta-600 font-medium transition-colors"
+              className="flex items-center gap-1.5 text-sm text-terracotta-500 hover:text-terracotta-600 font-medium transition-colors"
             >
               <Plus size={15} /> Maat / variant toevoegen
             </button>
@@ -645,14 +647,24 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   )
 }
 
-function Th({ children }: { children: React.ReactNode }) {
+function VariantVeld({
+  label,
+  hint,
+  className = '',
+  children,
+}: {
+  label: string
+  hint?: string
+  className?: string
+  children: React.ReactNode
+}) {
   return (
-    <th className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wide py-2.5 px-3 whitespace-nowrap">
+    <div className={className}>
+      <label className="block text-[11px] font-semibold text-slate-500 mb-1 uppercase tracking-wide">
+        {label}
+      </label>
       {children}
-    </th>
+      {hint && <p className="mt-1 text-[11px] text-slate-400">{hint}</p>}
+    </div>
   )
-}
-
-function Td({ children }: { children: React.ReactNode }) {
-  return <td className="py-2 px-3 align-top">{children}</td>
 }
