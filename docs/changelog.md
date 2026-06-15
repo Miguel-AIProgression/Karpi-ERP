@@ -1,5 +1,49 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-15 — Verzendbevestiging-mail met pakbon (single-source pakbon-PDF)
+
+**Waarom:** de klant wil dat elke verzonden order een verzendbevestiging mét pakbon
+krijgt. De track & trace-mail komt echter van de **vervoerder** (HST/Verhoek mailen
+zelf op basis van het meegestuurde `afl_email`; Rhenus mailt niet), dus daar kunnen
+we geen pakbon aan toevoegen. Oplossing: Karpi stuurt **zelf** één verzendbevestiging
+mét pakbon-PDF voor elke verzonden zending, naar het afleveradres, automatisch via
+cron, en logt dit onder de order. De pakbon bestond alleen als React-print
+(`window.print`) — er is geen HTML→PDF in de codebase — dus de pakbon is nu een
+server-side `pdf-lib`-document (single source), zoals factuur/orderbevestiging.
+
+**Wat — gedeelde pakbon-laag** [`_shared/pakbon/`](../supabase/functions/_shared/pakbon/):
+- `types.ts` + `aggregatie.ts` (`bouwPakbonRegels`/`productNamen`/`telColli`, spiegelt
+  `printset.ts`) + `pakbon-document.ts` (canoniek `PakbonDocument`, presentatie-afleiding
+  uit `pakbon-document.tsx`) + `pakbon-pdf.ts` (`pdf-lib`-renderer, Karpi-huisstijl) +
+  `fetch.ts`/`bedrijf.ts` (server-side data + logo). 10 Deno-tests pinnen de aggregatie
+  (sortering/besteld-geleverd/gewicht/VERZEND/bundel/legacy/maatwerk) = byte-identiek aan
+  de React-pakbon.
+
+**Edge functions:**
+- `pakbon-pdf` — `GET ?zending_nr` → PDF-bytes (spiegelt `factuur-pdf`). Voedt zowel een
+  download/print als (straks) DE pakbon-print.
+- `stuur-verzendbevestiging` — zending-centrische **sweep** (Verzonden orders → zendingen)
+  + gericht `{zending_nr}`/`{order_id}`; pakbon-PDF via de gedeelde renderer; mail via
+  Microsoft Graph naar `zendingen.afl_email` (géén factuur-adres-fallback, mig 365). Een
+  bundel-zending = één mail/één pakbon; per betrokken order één `verstuurde_emails`-rij.
+  T&T-nummer best-effort in de mail (`_shared/verzendbevestiging/track-trace.ts`; publieke
+  URL-template nog open punt → nummer als tekst).
+
+**Loggen onder de order:** `verstuurde_emails` (soort `'verzendbevestiging'` → zichtbaar
+in de e-mailtijdlijn op order-detail) + `externe_payloads` (richting `out`, diagnostiek).
+
+**Migraties:** 401 (gate `zendingen.verzendbevestiging_verstuurd_op` voor idempotentie +
+`verstuurde_emails.soort`-CHECK uitgebreid + bucket `verzendbevestigingen`), 402 (pg_cron
+`verzendbevestiging-sweep`, elke 15 min, spiegelt mig 377).
+
+**Frontend:** tijdelijke "Pakbon PDF (nieuw)"-knop op de printset-pagina náást de
+bestaande React-print, zodat de server-PDF visueel geverifieerd kan worden vóór de
+React-pakbon vervangen wordt (`bouwCommunicatieTijdlijn`/badge tonen het nieuwe soort).
+
+**Nog te doen:** visuele verificatie pakbon-PDF ↔ React-pakbon → daarna "Pakbon printen"
+omschakelen naar de server-PDF en de React-`PakbonDocument` verwijderen; deploy edge
+functions + mig 401/402; T&T-URL-template per vervoerder bevestigen.
+
 ## 2026-06-14 — Factuurdocument: één opgeloste factuur voor PDF én EDI-INVOIC
 
 **Waarom:** een factuur werd naar buiten gerenderd via drie onafhankelijke paden
