@@ -48,7 +48,9 @@ function VerzendweekCell({ regel, orderId, orderdatum, levertijd, bewerkbaar }: 
   const mutation = useMutation({
     mutationFn: (w: string | null) => setRegelVerzendweek(regel.id, w),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['order-regels', orderId] })
+      // Query-key MOET matchen met useOrderRegels (['orders', id, 'regels']),
+      // anders ververst de tabel niet en lijkt de opslag mislukt (bug 2026-06-15).
+      queryClient.invalidateQueries({ queryKey: ['orders', orderId, 'regels'] })
       setEditing(false)
     },
   })
@@ -60,36 +62,46 @@ function VerzendweekCell({ regel, orderId, orderdatum, levertijd, bewerkbaar }: 
   if (editing) {
     const initValue = regel.verzendweek ?? autoWeek ?? ''
     return (
-      <span className="inline-flex items-center gap-1">
-        <input
-          ref={inputRef}
-          type="week"
-          defaultValue={initValue}
-          className="border border-slate-300 rounded px-1 py-0.5 text-xs w-36 focus:outline-none focus:ring-1 focus:ring-terracotta-400"
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') mutation.mutate((e.target as HTMLInputElement).value || null)
-            if (e.key === 'Escape') setEditing(false)
-          }}
-        />
-        <button
-          type="button"
-          onClick={() => {
-            const inp = inputRef.current
-            mutation.mutate(inp?.value || null)
-          }}
-          className="text-green-600 hover:text-green-700"
-          title="Opslaan"
-        >
-          <Check size={13} />
-        </button>
-        <button
-          type="button"
-          onClick={() => setEditing(false)}
-          className="text-slate-400 hover:text-slate-600"
-          title="Annuleren"
-        >
-          <X size={13} />
-        </button>
+      <span className="inline-flex flex-col gap-0.5">
+        <span className="inline-flex items-center gap-1">
+          <input
+            ref={inputRef}
+            type="week"
+            defaultValue={initValue}
+            disabled={mutation.isPending}
+            className="border border-slate-300 rounded px-1 py-0.5 text-xs w-36 focus:outline-none focus:ring-1 focus:ring-terracotta-400 disabled:opacity-50"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') mutation.mutate((e.target as HTMLInputElement).value || null)
+              if (e.key === 'Escape') setEditing(false)
+            }}
+          />
+          <button
+            type="button"
+            disabled={mutation.isPending}
+            onClick={() => {
+              const inp = inputRef.current
+              mutation.mutate(inp?.value || null)
+            }}
+            className="text-green-600 hover:text-green-700 disabled:opacity-40"
+            title="Opslaan"
+          >
+            <Check size={13} />
+          </button>
+          <button
+            type="button"
+            disabled={mutation.isPending}
+            onClick={() => setEditing(false)}
+            className="text-slate-400 hover:text-slate-600 disabled:opacity-40"
+            title="Annuleren"
+          >
+            <X size={13} />
+          </button>
+        </span>
+        {mutation.isError && (
+          <span className="text-[11px] text-rose-600">
+            Opslaan mislukt — probeer opnieuw
+          </span>
+        )}
       </span>
     )
   }
