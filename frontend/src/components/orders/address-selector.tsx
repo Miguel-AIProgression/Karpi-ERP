@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, useMemo } from 'react'
+import { Search } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
 
 interface Address {
@@ -36,8 +37,6 @@ interface AddressSelectorProps {
   autoSelect?: boolean
 }
 
-const NIEUW_OPTION = '__nieuw__'
-
 export function AddressSelector({ debiteurNr, onSelect, disabled = false, autoSelect = true }: AddressSelectorProps) {
   const [addresses, setAddresses] = useState<Address[]>([])
   const [selectedId, setSelectedId] = useState<string>('')
@@ -47,6 +46,12 @@ export function AddressSelector({ debiteurNr, onSelect, disabled = false, autoSe
   const [persist, setPersist] = useState(false)
   const [savingError, setSavingError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  // Zoekbare keuze (gespiegeld van ClientSelector) — filtert client-side over de
+  // al-geladen `addresses`, zodat een klant met veel afleveradressen niet door een
+  // lange dropdown hoeft te scrollen. Geen extra query: de lijst staat al in state.
+  const [search, setSearch] = useState('')
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!debiteurNr) { setAddresses([]); setSelectedId(''); setSelectedGln(null); return }
@@ -75,6 +80,40 @@ export function AddressSelector({ debiteurNr, onSelect, disabled = false, autoSe
         }
       })
   }, [debiteurNr])
+
+  // Sluit de dropdown bij klik buiten de component (zelfde patroon als ClientSelector).
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const selectedAddr = addresses.find((a) => String(a.id) === selectedId) ?? null
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return addresses
+    return addresses.filter((a) =>
+      [a.naam, a.adres, a.postcode, a.plaats, `#${a.adres_nr}`, String(a.adres_nr)]
+        .some((f) => f != null && String(f).toLowerCase().includes(q)),
+    )
+  }, [addresses, search])
+
+  function selectAddress(addr: Address) {
+    setSelectedId(String(addr.id))
+    setSelectedGln(addr.gln_afleveradres ?? null)
+    onSelect({
+      naam: addr.naam ?? '',
+      adres: addr.adres ?? '',
+      postcode: addr.postcode ?? '',
+      plaats: addr.plaats ?? '',
+      land: addr.land ?? 'NL',
+      email: addr.email ?? null,
+      afleveradresId: addr.id,
+    })
+  }
 
   if (disabled) return null
 
@@ -128,6 +167,10 @@ export function AddressSelector({ debiteurNr, onSelect, disabled = false, autoSe
       email: manual.email.trim() || null,
       afleveradresId: nieuwId,
     })
+    // Persisteerde adressen staan nu in de lijst → toon ze als geselecteerde chip;
+    // niet-persisteerde handmatige adressen hebben geen record en blijven via de
+    // order-header zelf gedekt (selectedId leeg).
+    setSelectedId(nieuwId ? String(nieuwId) : '')
     setSelectedGln(null)
     setManualOpen(false)
     setPersist(false)
@@ -139,42 +182,67 @@ export function AddressSelector({ debiteurNr, onSelect, disabled = false, autoSe
 
       {!manualOpen && (
         <>
-          <select
-            value={selectedId}
-            onChange={(e) => {
-              const v = e.target.value
-              if (v === NIEUW_OPTION) {
-                setManualOpen(true)
-                setSelectedId('')
-                return
-              }
-              setSelectedId(v)
-              const addr = addresses.find(a => a.id === Number(v))
-              if (addr) {
-                onSelect({
-                  naam: addr.naam ?? '',
-                  adres: addr.adres ?? '',
-                  postcode: addr.postcode ?? '',
-                  plaats: addr.plaats ?? '',
-                  land: addr.land ?? 'NL',
-                  email: addr.email ?? null,
-                  afleveradresId: addr.id,
-                })
-                setSelectedGln(addr.gln_afleveradres ?? null)
-              } else {
-                setSelectedGln(null)
-              }
-            }}
-            className="w-full px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm"
-          >
-            {!selectedId && <option value="">Kies een afleveradres...</option>}
-            {addresses.map((a) => (
-              <option key={a.id} value={a.id}>
-                #{a.adres_nr} — {a.naam} — {a.adres}, {a.postcode} {a.plaats}
-              </option>
-            ))}
-            <option value={NIEUW_OPTION}>+ Nieuw afleveradres invullen…</option>
-          </select>
+          {selectedAddr ? (
+            <div className="flex items-start gap-3 p-3 bg-slate-50 rounded-[var(--radius-sm)] border border-slate-200">
+              <div className="flex-1 text-sm">
+                <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-terracotta-50 text-terracotta-700 border border-terracotta-200 text-xs font-semibold tabular-nums mr-2">
+                  #{selectedAddr.adres_nr}
+                </span>
+                <span className="font-medium">{selectedAddr.naam}</span>
+                <div className="text-xs text-slate-500 mt-0.5">
+                  {selectedAddr.adres}, {selectedAddr.postcode} {selectedAddr.plaats}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setSelectedId(''); setSelectedGln(null); setSearch(''); setOpen(true) }}
+                className="text-xs text-slate-500 hover:text-terracotta-600"
+              >
+                Wijzig
+              </button>
+            </div>
+          ) : (
+            <div ref={ref} className="relative">
+              <div className="relative">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => { setSearch(e.target.value); setOpen(true) }}
+                  onFocus={() => setOpen(true)}
+                  placeholder="Zoek afleveradres op naam, plaats of adres..."
+                  className="w-full pl-10 pr-4 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
+                />
+              </div>
+
+              {open && (
+                <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-[var(--radius-sm)] shadow-lg max-h-60 overflow-y-auto">
+                  {filtered.length === 0 && (
+                    <div className="px-4 py-2 text-sm text-slate-400">Geen afleveradres gevonden</div>
+                  )}
+                  {filtered.map((a) => (
+                    <button
+                      key={a.id}
+                      type="button"
+                      onClick={() => { selectAddress(a); setSearch(''); setOpen(false) }}
+                      className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 border-b border-slate-50 last:border-0"
+                    >
+                      <span className="text-xs text-slate-400 mr-1 tabular-nums">#{a.adres_nr}</span>
+                      <span className="font-medium">{a.naam}</span>
+                      <div className="text-xs text-slate-400">{a.adres}, {a.postcode} {a.plaats}</div>
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => { setManualOpen(true); setSelectedId(''); setOpen(false); setSearch('') }}
+                    className="w-full text-left px-4 py-2 text-sm text-terracotta-600 hover:bg-slate-50 font-medium border-t border-slate-100"
+                  >
+                    + Nieuw afleveradres invullen…
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
           {selectedGln && (
             <p className="mt-1 text-xs text-slate-500">
               GLN: <span className="font-mono font-medium text-slate-700">{selectedGln}</span>
