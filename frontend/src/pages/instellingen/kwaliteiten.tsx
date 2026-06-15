@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Search, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { Search, AlertCircle, CheckCircle2, Plus } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { fetchKwaliteitenMetGewicht, updateKwaliteitGewicht, type KwaliteitMetGewicht } from '@/lib/supabase/queries/kwaliteiten'
 import { formatNumber } from '@/lib/utils/formatters'
@@ -75,10 +76,19 @@ export function KwaliteitenInstellingenPage() {
 
   return (
     <>
-      <PageHeader
-        title="Kwaliteiten — gewicht per m²"
-        description="Bron-van-waarheid voor automatische gewicht-berekening op orderregels en zendingen."
-      />
+      <div className="flex items-start justify-between mb-0">
+        <PageHeader
+          title="Kwaliteiten — gewicht per m²"
+          description="Bron-van-waarheid voor automatische gewicht-berekening op orderregels en zendingen."
+        />
+        <Link
+          to="/producten/nieuw"
+          className="inline-flex items-center gap-1.5 px-4 py-2 bg-terracotta-500 text-white rounded-[var(--radius-sm)] text-sm font-medium hover:bg-terracotta-600 shrink-0"
+        >
+          <Plus size={14} />
+          Nieuw artikel
+        </Link>
+      </div>
 
       {/* Banner */}
       {stats.ontbreekt > 0 && (
