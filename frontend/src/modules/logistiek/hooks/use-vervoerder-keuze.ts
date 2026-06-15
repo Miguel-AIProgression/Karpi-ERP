@@ -83,6 +83,10 @@ export function useSetOrderVervoerderOverride() {
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ['logistiek', 'orderregel-vervoerder', vars.orderId] })
       qc.invalidateQueries({ queryKey: ['logistiek', 'orderregel-vervoerder'] })
+      // Batch-cache (mig 401) heeft een aparte key-stam ('...-batch') die niet
+      // door de prefix hierboven geraakt wordt — los invalideren zodat de Pick &
+      // Ship-resolutie herlaadt na een override-wissel.
+      qc.invalidateQueries({ queryKey: ['logistiek', 'orderregel-vervoerder-batch'] })
       qc.invalidateQueries({ queryKey: ['logistiek', 'zending-printset'] })
       qc.invalidateQueries({ queryKey: ['logistiek', 'zending'] })
       qc.invalidateQueries({ queryKey: ['logistiek', 'zendingen'] })

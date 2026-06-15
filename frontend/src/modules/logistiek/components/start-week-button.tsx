@@ -17,11 +17,13 @@
 // die merge.
 import { useMemo, useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQueries } from '@tanstack/react-query'
 import { Loader2, Printer, X } from 'lucide-react'
 import { useStartPickrondes } from '../hooks/use-zendingen'
 import { useVervoerders } from '../hooks/use-vervoerders'
-import { fetchEffectieveVervoerderPerOrderregel } from '../queries/orderregel-vervoerder'
+import {
+  useVervoerderResolutieContext,
+  useEffectieveVervoerderVoorOrders,
+} from '../context/vervoerder-resolutie-context'
 import { PickerDropdown } from '@/components/orders/picker-dropdown'
 import { cn } from '@/lib/utils/cn'
 import type { PickShipOrder } from '@/modules/magazijn'
@@ -77,26 +79,29 @@ export function StartWeekButton({ orders, verzendWeek }: Props) {
     return () => document.removeEventListener('mousedown', handler)
   }, [showPopover])
 
-  // Per-order vervoerder-resolutie (cache-hit met de VervoerderTag op de cards):
-  // een niet-afhaal-order met ≥1 regel bron='geen' mag niet starten (server-side
-  // gespiegeld in start_pickronden, mig 373) — anders faalt de hele week-start.
+  // Per-order vervoerder-resolutie: een niet-afhaal-order met ≥1 regel
+  // bron='geen' mag niet starten (server-side gespiegeld in start_pickronden,
+  // mig 373) — anders faalt de hele week-start. Binnen Pick & Ship komt de
+  // resolutie uit de gedeelde batch (mig 401, `VervoerderResolutieProvider`);
+  // daarbuiten valt de knop terug op een eigen batch-call.
   const verzendOrders = useMemo(() => orders.filter((o) => !o.afhalen), [orders])
-  const vervoerderQueries = useQueries({
-    queries: verzendOrders.map((o) => ({
-      queryKey: ['logistiek', 'orderregel-vervoerder', o.order_id],
-      queryFn: () => fetchEffectieveVervoerderPerOrderregel(o.order_id),
-      staleTime: 30_000,
-    })),
-  })
+  const batchCtx = useVervoerderResolutieContext()
+  const idsZonderContext = useMemo(
+    () => verzendOrders.map((o) => o.order_id).filter((id) => !(batchCtx?.heeftOrder(id) ?? false)),
+    [verzendOrders, batchCtx],
+  )
+  const fallbackQuery = useEffectieveVervoerderVoorOrders(idsZonderContext)
   const geenVervoerderIds = useMemo(() => {
     const set = new Set<number>()
-    verzendOrders.forEach((o, i) => {
-      const regels = vervoerderQueries[i]?.data
+    verzendOrders.forEach((o) => {
+      const regels = batchCtx?.heeftOrder(o.order_id)
+        ? batchCtx.getRegels(o.order_id)
+        : fallbackQuery.data?.get(o.order_id)
       if (regels?.some((r) => r.bron === 'geen')) set.add(o.order_id)
     })
     return set
-  }, [verzendOrders, vervoerderQueries])
-  const vervoerderResolutieLaadt = vervoerderQueries.some((q) => q.isLoading)
+  }, [verzendOrders, batchCtx, fallbackQuery.data])
+  const vervoerderResolutieLaadt = (batchCtx?.isLoading ?? false) || fallbackQuery.isLoading
 
   const pickbareOrders = useMemo(
     () => orders.filter((o) => isPickbaar(o) && !geenVervoerderIds.has(o.order_id)),
