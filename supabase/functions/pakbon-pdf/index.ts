@@ -54,7 +54,14 @@ serve(async (req) => {
     const doc = bouwPakbonDocument(zending)
     const pdfBytes = await genereerPakbonPDF(doc, bedrijf, logo)
 
-    return new Response(pdfBytes, {
+    // Naar een gegarandeerde ArrayBuffer (deno's BodyInit accepteert geen
+    // Uint8Array<ArrayBufferLike>); zelfde cast als de frontend-blob-helper.
+    const ab = pdfBytes.buffer.slice(
+      pdfBytes.byteOffset,
+      pdfBytes.byteOffset + pdfBytes.byteLength,
+    ) as ArrayBuffer
+
+    return new Response(ab, {
       status: 200,
       headers: {
         ...CORS_HEADERS,

@@ -35,6 +35,7 @@ const EDI_LABELS: Record<string, string> = {
 const EMAIL_LABELS: Record<string, string> = {
   factuur: 'Factuur',
   orderbevestiging: 'Orderbevestiging',
+  verzendbevestiging: 'Verzendbevestiging',
 }
 
 export function bouwCommunicatieTijdlijn(

@@ -10,7 +10,7 @@ export interface VerstuurdeEmail {
   id: number
   order_id: number
   factuur_id: number | null
-  soort: 'factuur' | 'orderbevestiging'
+  soort: 'factuur' | 'orderbevestiging' | 'verzendbevestiging'
   onderwerp: string
   verzonden_aan: string
   verzonden_op: string

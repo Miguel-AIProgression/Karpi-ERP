@@ -3,6 +3,7 @@ import type { VerstuurdeEmail } from '@/lib/supabase/queries/verstuurde-emails'
 const SOORT_STYLE: Record<VerstuurdeEmail['soort'], { label: string; className: string }> = {
   factuur: { label: 'Factuur', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
   orderbevestiging: { label: 'Orderbevestiging', className: 'bg-sky-50 text-sky-700 border-sky-200' },
+  verzendbevestiging: { label: 'Verzendbevestiging', className: 'bg-violet-50 text-violet-700 border-violet-200' },
 }
 
 export function EmailSoortBadge({ soort }: { soort: VerstuurdeEmail['soort'] }) {
