@@ -57,7 +57,7 @@ interface ZendingControle {
 
 interface VerwerkResult {
   zending_nr: string
-  status: 'verstuurd' | 'al_verstuurd' | 'geen_email' | 'fout'
+  status: 'verstuurd' | 'al_verstuurd' | 'geen_email' | 'dropship_overgeslagen' | 'fout'
   verstuurd_naar?: string
   error?: string
 }
@@ -191,6 +191,21 @@ async function verwerkZending(ctx: VerwerkCtx, z: ZendingControle): Promise<Verw
     if (z.verzendbevestiging_verstuurd_op && !ctx.force) {
       return { zending_nr: z.zending_nr, status: 'al_verstuurd' }
     }
+    // Betrokken orders (voor de dropship-check + het loggen per order).
+    const betrokkenOrders = await betrokkenOrdersVoorZending(sb, z.zending_nr)
+
+    // Dropship-uitsluiting (harde regel): bij dropship is afl_email de
+    // CONSUMENT (mig 370) — de pakbon mag daar nooit heen (de winkel is de
+    // klant, niet de eindontvanger). De vervoerder-T&T naar de consument is wél
+    // gewenst, maar die komt van HST/Verhoek, niet van ons. We zetten de gate
+    // zodat de sweep deze zending niet elke run opnieuw evalueert.
+    if (await isDropshipZending(sb, betrokkenOrders.map((o) => o.id))) {
+      await sb.from('zendingen')
+        .update({ verzendbevestiging_verstuurd_op: new Date().toISOString() })
+        .eq('id', z.id)
+      return { zending_nr: z.zending_nr, status: 'dropship_overgeslagen' }
+    }
+
     const aflEmail = (z.afl_email ?? '').trim()
     if (!aflEmail) {
       // Geen afleveradres-e-mail (bewust geen factuur-adres-fallback, mig 365).
@@ -201,9 +216,6 @@ async function verwerkZending(ctx: VerwerkCtx, z: ZendingControle): Promise<Verw
     const pakbonZending = await fetchPakbonZending(sb, z.zending_nr)
     const doc = bouwPakbonDocument(pakbonZending)
     const pdfBytes = await genereerPakbonPDF(doc, ctx.bedrijf, ctx.logo)
-
-    // Betrokken orders (voor het loggen per order).
-    const betrokkenOrders = await betrokkenOrdersVoorZending(sb, z.zending_nr)
 
     // Track & trace (best-effort).
     const tt = await resolveTrackTrace(sb, z)
@@ -288,6 +300,20 @@ async function verwerkZending(ctx: VerwerkCtx, z: ZendingControle): Promise<Verw
   } catch (e) {
     return { zending_nr: z.zending_nr, status: 'fout', error: e instanceof Error ? e.message : String(e) }
   }
+}
+
+/** TRUE als één van de betrokken orders een dropship-order is (single source:
+ *  SQL-predicaat is_dropship_order, mig 370). */
+async function isDropshipZending(sb: Sb, orderIds: number[]): Promise<boolean> {
+  for (const id of orderIds) {
+    try {
+      const { data } = await sb.rpc('is_dropship_order', { p_order_id: id })
+      if (data === true) return true
+    } catch {
+      // RPC niet beschikbaar — niet blokkeren, behandel als niet-dropship.
+    }
+  }
+  return false
 }
 
 async function betrokkenOrdersVoorZending(sb: Sb, zendingNr: string): Promise<Array<{ id: number; order_nr: string }>> {
