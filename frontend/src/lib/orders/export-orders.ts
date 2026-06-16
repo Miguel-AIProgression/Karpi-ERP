@@ -53,7 +53,14 @@ interface ExportRegel {
   maatwerk_lengte_cm: number | null
   maatwerk_breedte_cm: number | null
   maatwerk_diameter_cm: number | null
-  producten: { karpi_code: string | null } | null
+  producten: {
+    karpi_code: string | null
+    vrije_voorraad: number | null
+    gewicht_kg: number | null
+    lengte_cm: number | null
+    breedte_cm: number | null
+    vorm: string | null
+  } | null
 }
 
 interface ExportOrderDetail {
@@ -118,7 +125,7 @@ export async function exporterenNaarExcel(params: {
     Promise.all(chunks.map((ids) =>
       supabase
         .from('order_regels')
-        .select('id, order_id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2, orderaantal, te_leveren, backorder, prijs, korting_pct, bedrag, gewicht_kg, vrije_voorraad, is_maatwerk, maatwerk_lengte_cm, maatwerk_breedte_cm, maatwerk_diameter_cm, producten!order_regels_artikelnr_fkey(karpi_code)')
+        .select('id, order_id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2, orderaantal, te_leveren, backorder, prijs, korting_pct, bedrag, gewicht_kg, vrije_voorraad, is_maatwerk, maatwerk_lengte_cm, maatwerk_breedte_cm, maatwerk_diameter_cm, producten!order_regels_artikelnr_fkey(karpi_code, vrije_voorraad, gewicht_kg, lengte_cm, breedte_cm, vorm)')
         .in('order_id', ids)
         .order('order_id')
         .order('regelnummer')
@@ -240,14 +247,20 @@ export async function exporterenNaarExcel(params: {
     for (const r of regels) {
       const karpiCode = r.karpi_code ?? r.producten?.karpi_code ?? ''
 
-      const maat = r.is_maatwerk
-        ? [
-            r.maatwerk_lengte_cm != null && r.maatwerk_breedte_cm != null
-              ? `${r.maatwerk_lengte_cm}×${r.maatwerk_breedte_cm} cm`
-              : null,
-            r.maatwerk_diameter_cm != null ? `⌀${r.maatwerk_diameter_cm} cm` : null,
-          ].filter(Boolean).join(', ')
-        : ''
+      // Maat: voor maatwerk de opgegeven maten; voor vaste producten uit producten-tabel
+      let maat = ''
+      if (r.is_maatwerk) {
+        maat = [
+          r.maatwerk_lengte_cm != null && r.maatwerk_breedte_cm != null
+            ? `${r.maatwerk_lengte_cm}×${r.maatwerk_breedte_cm} cm`
+            : null,
+          r.maatwerk_diameter_cm != null ? `⌀${r.maatwerk_diameter_cm} cm` : null,
+        ].filter(Boolean).join(', ')
+      } else if (r.producten?.vorm === 'rond' && r.producten.lengte_cm != null) {
+        maat = `⌀${r.producten.lengte_cm} cm`
+      } else if (r.producten?.lengte_cm != null && r.producten.breedte_cm != null) {
+        maat = `${r.producten.lengte_cm}×${r.producten.breedte_cm} cm`
+      }
 
       const lev = levertijdMap.get(r.id)
       const heeftIO = (lev?.aantal_io ?? 0) > 0
@@ -267,10 +280,10 @@ export async function exporterenNaarExcel(params: {
         'Backorder': r.backorder,
         'Vert.': vertegenw,
         'Compl.Lev.': compleetLev,
-        'VrijVoorr.': r.vrije_voorraad ?? '',
+        'VrijVoorr.': r.vrije_voorraad ?? r.producten?.vrije_voorraad ?? '',
         'Volg.ontvangst': formatDatum(lev?.eerste_io_datum),
         'Verwacht aantal': lev ? (lev.aantal_io || '') : '',
-        'Gewicht': r.gewicht_kg ?? '',
+        'Gewicht': r.gewicht_kg ?? r.producten?.gewicht_kg ?? '',
         'Inkooporder J/N': lev ? (heeftIO ? 'J' : 'N') : '',
         'Nummer inkooporder': lev?.eerste_io_nr ?? '',
         // Extra Rugflow-kolommen (niet in oud systeem)
