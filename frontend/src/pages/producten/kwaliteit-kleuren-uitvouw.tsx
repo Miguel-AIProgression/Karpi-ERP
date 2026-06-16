@@ -26,7 +26,7 @@ export function KwaliteitKleurenUitvouw({ kwaliteitCode, productType }: Props) {
     kwaliteitCode,
     productType,
     pageSize: 1000,
-    sortBy: 'artikelnr',
+    sortBy: 'omschrijving',
     sortDir: 'asc',
   })
   const { data: afwerkingen } = useQuery({
@@ -238,7 +238,7 @@ function ArtikelsVoorKleur({
     kwaliteitCode,
     productType,
     pageSize: 1000,
-    sortBy: 'artikelnr',
+    sortBy: 'omschrijving',
     sortDir: 'asc',
   })
   const [expandedArtikel, setExpandedArtikel] = useState<string | null>(null)
