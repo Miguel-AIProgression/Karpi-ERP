@@ -1,5 +1,26 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-16 — Pick & Ship: "Terug uit pickronde" = navigatie + colli-vinkjes standaard aan
+
+**Waarom:** Twee verwarringen op de verzendset-/pickronde-detailpagina
+(`zending-printset.tsx`), aan het licht gekomen toen een operator per ongeluk
+pickrondes startte. (1) De knop **"Terug uit pickronde"** riep `annuleer_pickronde`
+(mig 398) aan en **vernietigde** de zending, terwijl het label "ga terug naar het
+overzicht" suggereert — operators draaiden zo onbedoeld rondes terug. (2) De
+instructie beloofde "de vinkjes staan al aan", maar `open` colli's toonden een
+**leeg** vakje, waardoor de afvink-flow onlogisch oogde.
+
+**Wat:**
+- **`zending-printset.tsx`** — nieuwe **navigatie**-knop "Terug uit pickronde"
+  (`ArrowLeft` → `/pick-ship`, laat de pickronde intact). De terugdraai-correctie
+  staat nu subtiel eronder.
+- **`annuleer-pickronde-knop.tsx`** — hernoemd naar **"Pickronde annuleren"**,
+  als subtiele rode tekst-link (correctie, geen hoofd-flow); bevestigingsstap +
+  `annuleer_pickronde`-RPC ongewijzigd. Bewust onderscheiden van de navigatie-knop.
+- **`colli-pick-vinkjes.tsx`** — `open` colli's tonen nu als **aangevinkt**
+  (`CheckSquare`, emerald) i.p.v. een leeg vakje; alleen `niet_gevonden` is een
+  afwijkend (X) vinkje. Sluit aan op de stap-2-instructie "de vinkjes staan al aan".
+
 ## 2026-06-15 — Voorraad-baseline terug naar kolom H (vrije voorraad), niet D
 
 **Waarom:** Marjon zag RugFlow vrij=4 waar het oude systeem 3 toonde

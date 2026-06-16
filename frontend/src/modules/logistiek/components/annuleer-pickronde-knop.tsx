@@ -1,9 +1,11 @@
 // frontend/src/modules/logistiek/components/annuleer-pickronde-knop.tsx
 //
-// Terug uit pickronde (mig 398): vangnet om een per ongeluk gestarte pickronde
+// Pickronde annuleren (mig 398): vangnet om een per ongeluk gestarte pickronde
 // terug te draaien zolang er nog NIETS gepickt is. Verwijdert de zending en zet
-// de order(s) terug naar 'Klaar voor picken'. Bewust onderscheiden van Voltooien:
-// dit is een correctie, geen werkvloer-flow — daarom achter een bevestiging.
+// de order(s) terug naar 'Klaar voor picken'. Bewust onderscheiden van Voltooien
+// én van de navigatie-knop "Terug uit pickronde" (die laat de pickronde intact en
+// gaat alleen terug naar het overzicht): dit is een correctie, geen werkvloer-
+// flow — daarom subtiel weergegeven en achter een bevestiging.
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Loader2, Undo2 } from 'lucide-react'
@@ -42,11 +44,11 @@ export function AnnuleerPickrondeKnop({ zendingId, zendingStatus }: Props) {
     return (
       <button
         onClick={() => setBevestig(true)}
-        title="Draai deze pickronde terug — de zending vervalt en de order(s) gaan terug naar Klaar voor picken"
-        className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100"
+        title="Per ongeluk gestart? Draai deze pickronde terug — de zending vervalt en de order(s) gaan terug naar Klaar voor picken. Dit annuleert de pickronde; gebruik 'Terug uit pickronde' als je alleen naar het overzicht wilt."
+        className="inline-flex items-center gap-1.5 text-xs font-medium text-rose-600 transition-colors hover:text-rose-700 hover:underline"
       >
-        <Undo2 size={14} />
-        Terug uit pickronde
+        <Undo2 size={13} />
+        Pickronde annuleren
       </button>
     )
   }

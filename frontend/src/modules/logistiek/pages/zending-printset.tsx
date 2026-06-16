@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, FileText, Tags } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { PakbonDocument } from '@/modules/logistiek/components/pakbon-document'
@@ -47,6 +47,7 @@ type PrintMode = 'all' | 'labels' | 'pakbon' | 'tapijt-stickers'
 
 export function ZendingPrintSetPage() {
   const { zending_nr } = useParams<{ zending_nr: string }>()
+  const navigate = useNavigate()
   const { data: zending, isLoading, error } = useZendingPrintSet(zending_nr)
   const { data: tapijtStickers = [] } = useZendingStickerData(zending?.id)
   const [printMode, setPrintMode] = useState<PrintMode>('all')
@@ -242,12 +243,24 @@ export function ZendingPrintSetPage() {
               pickerId={pickerId}
             />
             <div className="flex items-center justify-between gap-3">
-              <AnnuleerPickrondeKnop zendingId={zending.id} zendingStatus={zending.status} />
+              <button
+                onClick={() => navigate('/pick-ship')}
+                title="Terug naar het Pick & Ship-overzicht — de pickronde blijft gewoon open staan"
+                className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100"
+              >
+                <ArrowLeft size={16} />
+                Terug uit pickronde
+              </button>
               <VoltooiPickrondeKnop
                 zendingId={zending.id}
                 zendingStatus={zending.status}
                 pickerId={pickerId}
               />
+            </div>
+            {/* Correctie-actie (per ongeluk gestart), bewust subtiel en los van de
+                hoofd-flow zodat hij niet met de navigatie-knop verward wordt. */}
+            <div className="flex justify-end">
+              <AnnuleerPickrondeKnop zendingId={zending.id} zendingStatus={zending.status} />
             </div>
           </div>
         )}

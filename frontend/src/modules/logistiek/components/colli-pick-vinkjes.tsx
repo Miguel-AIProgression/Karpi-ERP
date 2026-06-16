@@ -1,6 +1,6 @@
 // frontend/src/modules/logistiek/components/colli-pick-vinkjes.tsx
 import { useState } from 'react'
-import { CheckSquare, Square, AlertCircle, X } from 'lucide-react'
+import { CheckSquare, AlertCircle, X } from 'lucide-react'
 import {
   useColliVoorZending,
   useMarkeerColliNietGevonden,
@@ -66,18 +66,18 @@ function ColliRij({
   colli: PickColliRij
   onMarkeerNietGevonden: () => void
 }) {
-  const isGepickt = colli.pick_uitkomst === 'gepickt'
   const isOpen = colli.pick_uitkomst === 'open'
   const isNietGevonden = colli.pick_uitkomst === 'niet_gevonden'
+  // 'open' = standaard aanwezig/te picken → toon als aangevinkt (zoals de
+  // instructie belooft: "vinkjes staan al aan"). Alleen 'niet_gevonden' is een
+  // uitgevinkt/probleem-vinkje. 'gepickt' (na voltooien) blijft uiteraard aan.
 
   return (
     <li className="py-2 flex items-center gap-3">
       {isNietGevonden ? (
         <X size={18} className="text-rose-500 shrink-0" />
-      ) : isGepickt ? (
-        <CheckSquare size={18} className="text-emerald-500 shrink-0" />
       ) : (
-        <Square size={18} className="text-slate-400 shrink-0" />
+        <CheckSquare size={18} className="text-emerald-500 shrink-0" />
       )}
       <div className="flex-1 min-w-0">
         <div className={cn('text-sm', isNietGevonden && 'text-rose-700 line-through')}>
