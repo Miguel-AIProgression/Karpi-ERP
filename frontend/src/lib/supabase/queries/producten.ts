@@ -5,6 +5,8 @@ export type ProductType = 'vast' | 'rol' | 'overig' | 'staaltje'
 export type ProductSortField = 'artikelnr' | 'karpi_code' | 'omschrijving' | 'verkoopprijs' | 'voorraad' | 'vrije_voorraad' | 'aantal_rollen' | 'totaal_oppervlak_m2' | 'locatie'
 export type SortDirection = 'asc' | 'desc'
 
+export type VormCode = 'rond' | 'ovaal' | 'organisch_a' | 'pebble'
+
 export interface ProductRow {
   artikelnr: string
   karpi_code: string | null
@@ -21,6 +23,7 @@ export interface ProductRow {
   aantal_rollen: number
   totaal_oppervlak_m2: number
   totaal_waarde_rollen: number
+  maatwerk_vorm_code: VormCode | null
 }
 
 export interface ProductDetail extends ProductRow {
@@ -56,21 +59,30 @@ export async function fetchProducten(params: {
   page?: number
   pageSize?: number
   productType?: ProductType | 'alle'
+  vormCode?: VormCode | 'rechthoek' | 'alle'
   kwaliteitCode?: string | null
   sortBy?: ProductSortField
   sortDir?: SortDirection
 }) {
-  const { search, page = 0, pageSize = 50, productType, kwaliteitCode, sortBy = 'artikelnr', sortDir = 'asc' } = params
+  const { search, page = 0, pageSize = 50, productType, vormCode, kwaliteitCode, sortBy = 'artikelnr', sortDir = 'asc' } = params
   const hasSearch = Boolean(search?.trim())
 
   let query = supabase
     .from('producten_overzicht')
-    .select('artikelnr, karpi_code, omschrijving, kwaliteit_code, kleur_code, zoeksleutel, voorraad, vrije_voorraad, verkoopprijs, actief, product_type, locatie, aantal_rollen, totaal_oppervlak_m2, totaal_waarde_rollen', { count: 'exact' })
+    .select('artikelnr, karpi_code, omschrijving, kwaliteit_code, kleur_code, zoeksleutel, voorraad, vrije_voorraad, verkoopprijs, actief, product_type, locatie, aantal_rollen, totaal_oppervlak_m2, totaal_waarde_rollen, maatwerk_vorm_code', { count: 'exact' })
     .eq('actief', true)
     .order(sortBy, { ascending: sortDir === 'asc' })
 
   if (productType && productType !== 'alle') {
     query = query.eq('product_type', productType)
+  }
+
+  if (vormCode && vormCode !== 'alle') {
+    if (vormCode === 'rechthoek') {
+      query = query.is('maatwerk_vorm_code', null)
+    } else {
+      query = query.eq('maatwerk_vorm_code', vormCode)
+    }
   }
 
   if (kwaliteitCode) {

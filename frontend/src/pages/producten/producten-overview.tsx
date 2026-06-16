@@ -10,6 +10,7 @@ import { ProductRow, SortHeader } from './product-row'
 import { KwaliteitenGroupedView } from './kwaliteiten-grouped-view'
 import { fetchKwaliteitenMetGewicht } from '@/lib/supabase/queries/kwaliteiten'
 import type { ProductType, ProductSortField, SortDirection } from '@/lib/supabase/queries/producten'
+import type { VormCode } from '@/hooks/use-producten'
 
 export { ProductTypeBadge } from './product-row'
 
@@ -24,6 +25,15 @@ const TYPE_OPTIONS: { value: ProductType | 'alle'; label: string }[] = [
   { value: 'overig', label: 'Overig' },
 ]
 
+const VORM_OPTIONS: { value: VormCode | 'rechthoek' | 'alle'; label: string }[] = [
+  { value: 'alle', label: 'Alle vormen' },
+  { value: 'rechthoek', label: 'Rechthoek' },
+  { value: 'rond', label: 'Rond' },
+  { value: 'ovaal', label: 'Ovaal' },
+  { value: 'organisch_a', label: 'Organisch' },
+  { value: 'pebble', label: 'Pebble' },
+]
+
 const COL_COUNT = 10
 
 export function ProductenOverviewPage() {
@@ -32,6 +42,7 @@ export function ProductenOverviewPage() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(0)
   const [productType, setProductType] = useState<ProductType | 'alle'>('alle')
+  const [vormCode, setVormCode] = useState<VormCode | 'rechthoek' | 'alle'>('alle')
   const [expandedArtikel, setExpandedArtikel] = useState<string | null>(null)
   const [sortBy, setSortBy] = useState<ProductSortField>('artikelnr')
   const [sortDir, setSortDir] = useState<SortDirection>('asc')
@@ -46,14 +57,15 @@ export function ProductenOverviewPage() {
     setPage(0)
   }
 
-  // Forceer flat list bij artikelnr-zoekopdracht — kwaliteit-grouping kan niet matchen op artikelnr
+  // Forceer flat list bij artikelnr-zoekopdracht of vormfilter — kwaliteit-grouping kan niet matchen op artikelnr of vorm
   const looksLikeArtikelSearch = /^\s*\d{3,}/.test(search) || /^[A-Za-z]{3,4}\d/.test(search.trim())
-  const effectiveViewMode: ViewMode = looksLikeArtikelSearch ? 'per_product' : viewMode
+  const effectiveViewMode: ViewMode = (looksLikeArtikelSearch || vormCode !== 'alle') ? 'per_product' : viewMode
 
   const { data, isLoading } = useProducten({
     search,
     page,
     productType,
+    vormCode,
     sortBy,
     sortDir,
   })
@@ -191,6 +203,24 @@ export function ProductenOverviewPage() {
               className={cn(
                 'px-3 py-1.5 text-sm rounded-[var(--radius-sm)] transition-colors',
                 productType === opt.value
+                  ? 'bg-white text-slate-900 shadow-sm font-medium'
+                  : 'text-slate-500 hover:text-slate-700'
+              )}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Vorm filter */}
+        <div className="flex gap-1 bg-slate-100 rounded-[var(--radius-sm)] p-1">
+          {VORM_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => { setVormCode(opt.value); setPage(0) }}
+              className={cn(
+                'px-3 py-1.5 text-sm rounded-[var(--radius-sm)] transition-colors',
+                vormCode === opt.value
                   ? 'bg-white text-slate-900 shadow-sm font-medium'
                   : 'text-slate-500 hover:text-slate-700'
               )}

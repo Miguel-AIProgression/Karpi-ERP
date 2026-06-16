@@ -1,8 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { fetchProducten, fetchProductDetail, fetchRollenVoorProduct, fetchReserveringenVoorProduct, fetchClaimsVoorProduct, updateProductType, updateProductLocatie, fetchKwaliteiten, fetchKleurenVoorKwaliteit, fetchLeveranciers, createProduct, updateProduct, fetchNextArtikelnr, type ProductType, type ProductSortField, type SortDirection, type ProductFormData } from '@/lib/supabase/queries/producten'
+import { fetchProducten, fetchProductDetail, fetchRollenVoorProduct, fetchReserveringenVoorProduct, fetchClaimsVoorProduct, updateProductType, updateProductLocatie, fetchKwaliteiten, fetchKleurenVoorKwaliteit, fetchLeveranciers, createProduct, updateProduct, fetchNextArtikelnr, type ProductType, type VormCode, type ProductSortField, type SortDirection, type ProductFormData } from '@/lib/supabase/queries/producten'
 import { fetchEquivalenteProducten } from '@/lib/supabase/queries/product-equivalents'
 
-export function useProducten(params: { search?: string; page?: number; pageSize?: number; productType?: ProductType | 'alle'; kwaliteitCode?: string | null; sortBy?: ProductSortField; sortDir?: SortDirection }) {
+export { type VormCode }
+
+export function useProducten(params: { search?: string; page?: number; pageSize?: number; productType?: ProductType | 'alle'; vormCode?: VormCode | 'rechthoek' | 'alle'; kwaliteitCode?: string | null; sortBy?: ProductSortField; sortDir?: SortDirection }) {
   return useQuery({
     queryKey: ['producten', params],
     queryFn: () => fetchProducten(params),
