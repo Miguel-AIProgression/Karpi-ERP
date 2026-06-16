@@ -27,6 +27,9 @@ interface Props {
   status: PickStatus
   /** Toggle: split orders eerst op land vóór de klant-clustering. */
   groepeerOpLand: boolean
+  /** Orders waarvan de print-knop geblokkeerd is (niet pickbaar / intake-gate);
+   *  zakken naar onder binnen deze sectie zodat printbare orders bovenaan staan. */
+  geblokkeerdeOrderIds?: Set<number>
   /** Voorgestelde-bundels voor déze verzendweek. Per cluster matchen we op
    *  order-id om de drempel-progressbar + besparing-badge te tonen. Zonder
    *  match (bv. solo-orders, weken zonder bundeling) toont KlantClusterBlok
@@ -40,6 +43,7 @@ export function PickWeekSectie({
   verzendWeek,
   status,
   groepeerOpLand,
+  geblokkeerdeOrderIds,
   voorgesteldeBundels,
 }: Props) {
   // Twee indexen op de bundel-rijen:
@@ -77,8 +81,14 @@ export function PickWeekSectie({
   // Beide paden eindigen in dezelfde KlantCluster[]-shape, zodat de render-
   // loop er niets van merkt.
   const groepen: LandGroep[] = groepeerOpLand
-    ? groepeerOrdersOpLand(orders, sleutelByOrderId)
-    : [{ iso2: null, vlag: null, clusters: clusterOrdersOpKlant(orders, sleutelByOrderId) }]
+    ? groepeerOrdersOpLand(orders, sleutelByOrderId, geblokkeerdeOrderIds)
+    : [
+        {
+          iso2: null,
+          vlag: null,
+          clusters: clusterOrdersOpKlant(orders, sleutelByOrderId, geblokkeerdeOrderIds),
+        },
+      ]
 
   return (
     <section>

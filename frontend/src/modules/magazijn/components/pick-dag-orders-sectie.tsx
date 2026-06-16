@@ -28,12 +28,16 @@ import type { PickShipOrder } from '../lib/types'
 interface Props {
   orders: PickShipOrder[]
   groepeerOpLand: boolean
+  /** Orders waarvan de print-knop geblokkeerd is (niet pickbaar / intake-gate);
+   *  zakken naar onder binnen deze sectie zodat printbare orders bovenaan staan. */
+  geblokkeerdeOrderIds?: Set<number>
   voorgesteldeBundels: VoorgesteldeBundel[]
 }
 
 export function PickDagOrdersSectie({
   orders,
   groepeerOpLand,
+  geblokkeerdeOrderIds,
   voorgesteldeBundels,
 }: Props) {
   const bundelByOrderId = new Map<number, VoorgesteldeBundel>()
@@ -59,8 +63,14 @@ export function PickDagOrdersSectie({
   })
 
   const groepen: LandGroep[] = groepeerOpLand
-    ? groepeerOrdersOpLand(gesort, sleutelByOrderId)
-    : [{ iso2: null, vlag: null, clusters: clusterOrdersOpKlant(gesort, sleutelByOrderId) }]
+    ? groepeerOrdersOpLand(gesort, sleutelByOrderId, geblokkeerdeOrderIds)
+    : [
+        {
+          iso2: null,
+          vlag: null,
+          clusters: clusterOrdersOpKlant(gesort, sleutelByOrderId, geblokkeerdeOrderIds),
+        },
+      ]
 
   return (
     <section className="rounded-[var(--radius)] border-2 border-terracotta-400 bg-terracotta-50/40 p-3">

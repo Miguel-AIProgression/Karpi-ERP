@@ -171,6 +171,31 @@ export function MagazijnOverviewPage() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   }, [vandaagDate])
 
+  // Orders waarvan de Verzendset/print-knop geblokkeerd is om een ándere reden
+  // dan "geen vervoerder" (die staan al in de aparte sectie onderaan): nog niet
+  // pickbaar (`alle_regels_pickbaar=false`), onvolledig afleveradres (mig 395)
+  // of ontbrekende prijs (mig 396) — zelfde per-order-condities die
+  // StartPickrondesButton disabled maken. Orders met een lopende pickronde
+  // tellen NIET als geblokkeerd: die zijn in uitvoering, geen probleem. Deze set
+  // laat de niet-printbare orders ónderaan elke week-/dag-sectie zakken zodat
+  // alles wat de magazijnier wél kan starten bovenaan staat (verzoek Miguel
+  // 2026-06-16). Hergebruikt het bestaande `geblokkeerdeOrderIds`-sorteerpad in
+  // clusterOrdersOpKlant.
+  const nietPrintbaarIds = useMemo(() => {
+    const s = new Set<number>()
+    for (const o of startbareOrders) {
+      if (o.actieve_pickronde) continue
+      if (
+        !o.alle_regels_pickbaar ||
+        o.afl_adres_incompleet_sinds ||
+        o.prijs_ontbreekt_sinds
+      ) {
+        s.add(o.order_id)
+      }
+    }
+    return s
+  }, [startbareOrders])
+
   // Groepeer binnen het actieve filter per verzendweek (gesorteerd op sleutel).
   // Voor wk_2..wk_5 hoort er normaal precies één verzendweek-groep te zijn.
   //
@@ -367,6 +392,7 @@ export function MagazijnOverviewPage() {
               <PickDagOrdersSectie
                 orders={dagOrders}
                 groepeerOpLand={groepeerOpLand}
+                geblokkeerdeOrderIds={nietPrintbaarIds}
                 voorgesteldeBundels={voorgesteldeBundels.filter((b) =>
                   b.order_ids.some((oid) =>
                     dagOrders.some((o) => o.order_id === oid),
@@ -382,6 +408,7 @@ export function MagazijnOverviewPage() {
                 verzendWeek={groep.verzendWeek}
                 status={groep.status}
                 groepeerOpLand={groepeerOpLand}
+                geblokkeerdeOrderIds={nietPrintbaarIds}
                 // wk_1 is één gecombineerde sectie: geef ALLE voorgestelde
                 // bundels mee. Na mig 403 zijn alle achterstallige bundels
                 // geclampt naar de huidige week en zitten in de view — de
