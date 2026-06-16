@@ -1,5 +1,26 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-16 — Antislip doos-stuks koppeling (mig 408)
+
+**Waarom:** Antislip wordt per doos ingekocht en opgeslagen, maar sommige klanten
+bestellen per doos en anderen per stuk. Eerder was er geen systematische koppeling
+tussen doos-artikelen en stuks-artikelen, waardoor voorraad dubbel bijgehouden moest
+worden of verkeerd getoond werd.
+
+**Architectuur (Optie A — stuk als basiseenheid):**
+- **Stuks-artikel** = bron-van-waarheid voor voorraad (alle stuks staan hier)
+- **Doos-artikel** = ordering vehicle; allocator vertaalt automatisch
+  1 doos → `stuks_per_doos` stuks op het stuks-artikel
+- **Trigger `trg_sync_doos_vrije_voorraad`**: doos.vrije_voorraad = floor(stuks.vrije_voorraad / stuks_per_doos) — bestaande UI werkt zonder aanpassingen
+- **Inkoop-IOs** voor antislip altijd op het stuks-artikel aanmaken (in stuks)
+
+**Wat:**
+- `producten.stuks_per_doos INTEGER` + `producten.stuks_artikelnr TEXT FK` (mig 408)
+- Koppelingen: 900000005↔900000020 (20st), 900000006↔900000021 (15st), 900000000↔900000022 (12st), 900000001↔900000023 (8st), 900000009↔900000024 (5st)
+- `herallocateer_orderregel` bijgewerkt: als artikel.stuks_artikelnr IS NOT NULL → vertaal naar stuks-artikel × stuks_per_doos vóór allocatie
+- Prijzen ingesteld op alle doos- en stuks-artikelen (25%-toeslag losse stuks)
+- Nog open: stuks-artikel 900000025 (300×400 cm) voor doos 900000015 + prijs 900000018 (60×110 cm)
+
 ## 2026-06-16 — Pick & Ship: "Terug uit pickronde" = navigatie + colli-vinkjes standaard aan
 
 **Waarom:** Twee verwarringen op de verzendset-/pickronde-detailpagina
