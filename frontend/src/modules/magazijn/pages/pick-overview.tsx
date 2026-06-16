@@ -164,9 +164,23 @@ export function MagazijnOverviewPage() {
     [startbareOrders],
   )
 
+  // ISO-datumstring van vandaag in lokale tijd (niet UTC) — veilig voor
+  // verzendWeekVoor/pickWeekVoor die op 'YYYY-MM-DD' werken.
+  const vandaagIso = useMemo(() => {
+    const d = vandaagDate
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }, [vandaagDate])
+
   // Groepeer binnen het actieve filter per verzendweek (gesorteerd op sleutel).
-  // Voor wk_1 kunnen er meerdere groepen zijn (achterstallig + huidige + +1);
-  // voor wk_2..wk_5 hoort er normaal precies één verzendweek-groep te zijn.
+  // Voor wk_2..wk_5 hoort er normaal precies één verzendweek-groep te zijn.
+  //
+  // Voor wk_1 (huidige + achterstallige orders) worden ALLE sub-week-groepen
+  // samengevoegd in ÉÉN sectie. Achterstallige orders (verlopen verzendweek)
+  // moeten kunnen bundelen met huidige-week-orders naar hetzelfde adres — dat
+  // kan alleen als ze in dezelfde PickWeekSectie zitten zodat clusterOrdersOpKlant
+  // ze gezamenlijk groepeert. De SQL-view (mig 403) clampt de bundel-sleutel-week
+  // al naar CURRENT_DATE, dus voorgestelde bundels overspannen weken.
+  //
   // Alleen week-orders — dag-orders zitten in de aparte top-sectie hierboven.
   const perWeek = useMemo(() => {
     type Groep = {
@@ -178,23 +192,33 @@ export function MagazijnOverviewPage() {
     }
     const map = new Map<string, Groep>()
     for (const o of weekOrders) {
-      const bestaand = map.get(o.verzend_week_sleutel)
+      // wk_1: alles in één gecombineerde groep; andere buckets: per verzendweek.
+      const groepSleutel = filter === 'wk_1' ? '__wk1_gecombineerd__' : o.verzend_week_sleutel
+
+      const bestaand = map.get(groepSleutel)
       if (bestaand) {
         bestaand.orders.push(o)
       } else {
-        const verzend = verzendWeekVoor(o.afleverdatum)
-        const pick = pickWeekVoor(o.afleverdatum)
-        map.set(o.verzend_week_sleutel, {
-          sleutel: o.verzend_week_sleutel,
+        // wk_1 merged: gebruik vandaag als header-referentie ("Te picken in week
+        // N · Verzendweek M" voor de actuele week). Status = 'deze_week' zodat
+        // de sectiekop niet geheel rood kleurt terwijl er ook on-track orders in
+        // zitten. Achterstallige orders zijn herkenbaar via hun eigen order-kaart.
+        // Andere buckets: leid de header af van de eigenlijke afleverdatum.
+        const datumIso = filter === 'wk_1' ? vandaagIso : o.afleverdatum
+        const verzend = verzendWeekVoor(datumIso)
+        const pick = pickWeekVoor(datumIso)
+        const status: PickStatus = filter === 'wk_1' ? 'deze_week' : pickStatusVoor(o.afleverdatum, vandaagDate)
+        map.set(groepSleutel, {
+          sleutel: groepSleutel,
           orders: [o],
           verzendWeek: verzend?.week ?? null,
           pickWeek: pick?.week ?? null,
-          status: pickStatusVoor(o.afleverdatum, vandaagDate),
+          status,
         })
       }
     }
     return Array.from(map.values()).sort((a, b) => a.sleutel.localeCompare(b.sleutel))
-  }, [weekOrders, vandaagDate])
+  }, [weekOrders, filter, vandaagDate, vandaagIso])
 
   const statCards = [
     {
@@ -358,7 +382,16 @@ export function MagazijnOverviewPage() {
                 verzendWeek={groep.verzendWeek}
                 status={groep.status}
                 groepeerOpLand={groepeerOpLand}
-                voorgesteldeBundels={bundelsPerWeek.get(groep.sleutel) ?? []}
+                // wk_1 is één gecombineerde sectie: geef ALLE voorgestelde
+                // bundels mee. Na mig 403 zijn alle achterstallige bundels
+                // geclampt naar de huidige week en zitten in de view — de
+                // PickWeekSectie matcht op order_id, dus bundels van andere
+                // tabs beïnvloeden de clustering niet.
+                voorgesteldeBundels={
+                  filter === 'wk_1'
+                    ? voorgesteldeBundels
+                    : bundelsPerWeek.get(groep.sleutel) ?? []
+                }
               />
             ))}
             <PickGeblokkeerdSectie
