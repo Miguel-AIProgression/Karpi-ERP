@@ -56,8 +56,16 @@ export function MagazijnOverviewPage() {
   // de per-order caches zodat de inline-select/pill/knop in elke card de data
   // uit de cache lezen i.p.v. zelf te fetchen. Voedt hier de page-niveau maps:
   // het vervoerder-filter en de geblokkeerd/startbaar-split.
-  const gefilterdIds = useMemo(() => gefilterd.map((o) => o.order_id), [gefilterd])
-  const { data: regelsPerOrder } = useEffectieveVervoerderVoorOrders(gefilterdIds)
+  // Eén globale batch-resolutie voor ALLE orders (niet alleen de actieve bucket).
+  // Dezelfde queryKey als de VervoerderResolutieProvider → React Query
+  // dedupliceert naar één fetch. Voordelen: (1) tab-tellingen kunnen meebewegen
+  // met het vervoerder-filter, (2) kaartjes in andere tabs zijn al pre-seeded
+  // als de gebruiker van tab wisselt.
+  const allOrderIds = useMemo(
+    () => Array.from(new Set(orders?.map((o) => o.order_id) ?? [])).sort((a, b) => a - b),
+    [orders],
+  )
+  const { data: regelsPerOrder } = useEffectieveVervoerderVoorOrders(allOrderIds)
 
   const vervoerderMap = useMemo(() => {
     const m = new Map<number, ResolvedVervoerder>()
@@ -84,6 +92,26 @@ export function MagazijnOverviewPage() {
     })
     return s
   }, [gefilterd, regelsPerOrder])
+
+  // Gefilterde tellingen per bucket — zodat de weektabs meebewegen als een
+  // vervoerder-filter actief is. null = geen filter → val terug op stats.
+  const gefilterdeTellingenPerBucket = useMemo(() => {
+    if (vervoerderFilter === 'all' || !orders) return null
+    const m = new Map<BucketKey, number>()
+    for (const o of orders) {
+      const r = regelsPerOrder?.get(o.order_id)
+      if (!r) continue
+      const aggregaat = aggregeerVervoerderKeuzeVoorOrder(r)
+      const code = aggregaat.soort === 'uniform' ? aggregaat.code : null
+      let match: boolean
+      if (vervoerderFilter === 'afhalen') match = o.afhalen
+      else if (vervoerderFilter === 'geen') match = !o.afhalen && !code
+      else match = !o.afhalen && code === vervoerderFilter
+      if (!match) continue
+      m.set(o.bucket, (m.get(o.bucket) ?? 0) + 1)
+    }
+    return m
+  }, [orders, regelsPerOrder, vervoerderFilter])
 
   const naVervoerderFilter = useMemo(() => {
     if (vervoerderFilter === 'all') return gefilterd
@@ -192,7 +220,10 @@ export function MagazijnOverviewPage() {
   const tabs = weekTabs.map((t) => ({
     key: t.key,
     label: t.label,
-    aantal: stats?.per_bucket[t.key] ?? 0,
+    aantal: gefilterdeTellingenPerBucket?.get(t.key) ?? stats?.per_bucket[t.key] ?? 0,
+    // Toon een dimme originele telling naast de gefilterde telling zodat de
+    // gebruiker ziet hoeveel orders er in totaal in die week staan.
+    aantalTotaal: gefilterdeTellingenPerBucket ? (stats?.per_bucket[t.key] ?? 0) : null,
   }))
 
   return (
@@ -229,10 +260,12 @@ export function MagazijnOverviewPage() {
         <div className="flex flex-wrap gap-1">
           {tabs.map((t) => {
             const isActive = filter === t.key
+            const isGefilterd = t.aantalTotaal !== null
             return (
               <button
                 key={t.key}
                 onClick={() => setFilter(t.key)}
+                title={isGefilterd ? `${t.aantal} van ${t.aantalTotaal} orders voor geselecteerde vervoerder` : undefined}
                 className={cn(
                   'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition-colors',
                   isActive
@@ -243,11 +276,16 @@ export function MagazijnOverviewPage() {
                 {t.label}
                 <span
                   className={cn(
-                    'text-xs px-1.5 py-0.5 rounded-full',
+                    'inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-full',
                     isActive ? 'bg-white/20' : 'bg-slate-200'
                   )}
                 >
                   {t.aantal}
+                  {isGefilterd && (
+                    <span className={cn('opacity-60', isActive ? '' : 'text-slate-400')}>
+                      /{t.aantalTotaal}
+                    </span>
+                  )}
                 </span>
               </button>
             )
@@ -297,8 +335,9 @@ export function MagazijnOverviewPage() {
         // Provider deelt de batch-resolutie (mig 401) met alle cards hieronder:
         // de inline-select, pill en Verzendset-knop lezen de geseede cache i.p.v.
         // elk een eigen RPC af te vuren. Zelfde queryKey als de page-niveau hook
-        // hierboven → één gedeelde fetch.
-        <VervoerderResolutieProvider orderIds={gefilterdIds}>
+        // hierboven (allOrderIds) → één gedeelde fetch; cards in andere tabs zijn
+        // al pre-seeded als de gebruiker van tab wisselt.
+        <VervoerderResolutieProvider orderIds={allOrderIds}>
           <div className="space-y-6">
             {dagOrders.length > 0 && (
               <PickDagOrdersSectie
