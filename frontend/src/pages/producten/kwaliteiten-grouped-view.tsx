@@ -61,12 +61,13 @@ export function KwaliteitenGroupedView({ search, productType }: Props) {
 
   const gefilterd = useMemo(() => {
     const term = search.trim().toLowerCase()
+    const tokens = term.split(/\s+/).filter(Boolean)
     return kwaliteiten
       .filter((q) => q.aantal_producten > 0)
       .filter((q) => {
-        if (!term) return true
+        if (!tokens.length) return true
         const haystack = `${q.code} ${q.omschrijving ?? ''} ${q.naam_afgeleid ?? ''}`.toLowerCase()
-        return haystack.includes(term)
+        return tokens.every((t) => haystack.includes(t))
       })
   }, [kwaliteiten, search])
 

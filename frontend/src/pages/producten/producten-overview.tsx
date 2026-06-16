@@ -82,11 +82,13 @@ export function ProductenOverviewPage() {
 
   const groupedCounts = useMemo(() => {
     const term = search.trim().toLowerCase()
+    const tokens = term.split(/\s+/).filter(Boolean)
     const matched = kwaliteitenData
       .filter((q) => q.aantal_producten > 0)
       .filter((q) => {
-        if (!term) return true
-        return `${q.code} ${q.omschrijving ?? ''} ${(q as import('@/lib/supabase/queries/kwaliteiten').KwaliteitMetGewicht).naam_afgeleid ?? ''}`.toLowerCase().includes(term)
+        if (!tokens.length) return true
+        const haystack = `${q.code} ${q.omschrijving ?? ''} ${(q as import('@/lib/supabase/queries/kwaliteiten').KwaliteitMetGewicht).naam_afgeleid ?? ''}`.toLowerCase()
+        return tokens.every((t) => haystack.includes(t))
       })
     return {
       kwaliteiten: matched.length,
