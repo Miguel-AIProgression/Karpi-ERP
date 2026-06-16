@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { useKwaliteiten, useLeveranciers, useUpdateProduct } from '@/hooks/use-producten'
+import { useKwaliteiten, useLeveranciers, useUpdateProduct, useDistincteVormen } from '@/hooks/use-producten'
 import type { ProductDetail, ProductFormData, ProductType } from '@/lib/supabase/queries/producten'
 
 const PRODUCT_TYPES: { value: ProductType; label: string }[] = [
@@ -20,6 +20,7 @@ export function ProductFormPage({ product }: ProductFormProps) {
   const navigate = useNavigate()
   const { data: kwaliteiten } = useKwaliteiten()
   const { data: leveranciers } = useLeveranciers()
+  const { data: beschikbareVormen = [] } = useDistincteVormen()
   const updateMutation = useUpdateProduct()
 
   const [form, setForm] = useState<ProductFormData>({
@@ -31,6 +32,7 @@ export function ProductFormPage({ product }: ProductFormProps) {
     kwaliteit_code: product?.kwaliteit_code ?? '',
     kleur_code: product?.kleur_code ?? '',
     product_type: product?.product_type ?? null,
+    maatwerk_vorm_code: (product as ProductDetail & { maatwerk_vorm_code?: string | null })?.maatwerk_vorm_code ?? null,
     verkoopprijs: product?.verkoopprijs ?? undefined,
     inkoopprijs: product?.inkoopprijs ?? undefined,
     gewicht_kg: product?.gewicht_kg ?? undefined,
@@ -176,6 +178,21 @@ export function ProductFormPage({ product }: ProductFormProps) {
                 className="input"
                 placeholder="bijv. 16"
               />
+            </Field>
+            <Field label="Vorm">
+              <input
+                list="vormen-list"
+                value={form.maatwerk_vorm_code ?? ''}
+                onChange={e => set('maatwerk_vorm_code', e.target.value.trim() || null)}
+                className="input"
+                placeholder="bijv. rond, ovaal, organisch_a"
+              />
+              <datalist id="vormen-list">
+                {beschikbareVormen.map(v => (
+                  <option key={v} value={v} />
+                ))}
+              </datalist>
+              <p className="text-xs text-slate-400 mt-1">Leeg = rechthoek. Nieuwe waarden worden automatisch filterbaar.</p>
             </Field>
             <Field label="Leverancier">
               <select

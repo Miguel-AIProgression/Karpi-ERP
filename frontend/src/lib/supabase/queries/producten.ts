@@ -134,6 +134,7 @@ export interface ProductFormData {
   kwaliteit_code?: string | null
   kleur_code?: string | null
   product_type?: ProductType | null
+  maatwerk_vorm_code?: string | null
   verkoopprijs?: number | null
   inkoopprijs?: number | null
   gewicht_kg?: number | null
@@ -142,6 +143,19 @@ export interface ProductFormData {
   locatie?: string | null
   leverancier_id?: number | null
   actief?: boolean
+}
+
+/** Haal alle unieke vormen op uit de database (dynamisch, incl. toekomstige) */
+export async function fetchDistincteVormen(): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('producten')
+    .select('maatwerk_vorm_code')
+    .eq('actief', true)
+    .not('maatwerk_vorm_code', 'is', null)
+    .order('maatwerk_vorm_code')
+  if (error) throw error
+  const uniek = [...new Set((data ?? []).map(r => r.maatwerk_vorm_code as string))]
+  return uniek
 }
 
 /** Create a new product */

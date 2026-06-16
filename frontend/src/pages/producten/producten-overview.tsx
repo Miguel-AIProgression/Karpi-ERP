@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Search, Link2, LayoutGrid, Layers, List } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { cn } from '@/lib/utils/cn'
-import { useProducten } from '@/hooks/use-producten'
+import { useProducten, useDistincteVormen } from '@/hooks/use-producten'
 import { UitwisselbaarTab } from './uitwisselbaar-tab'
 import { ProductRow, SortHeader } from './product-row'
 import { KwaliteitenGroupedView } from './kwaliteiten-grouped-view'
@@ -25,14 +25,12 @@ const TYPE_OPTIONS: { value: ProductType | 'alle'; label: string }[] = [
   { value: 'overig', label: 'Overig' },
 ]
 
-const VORM_OPTIONS: { value: VormCode | 'rechthoek' | 'alle'; label: string }[] = [
-  { value: 'alle', label: 'Alle vormen' },
-  { value: 'rechthoek', label: 'Rechthoek' },
-  { value: 'rond', label: 'Rond' },
-  { value: 'ovaal', label: 'Ovaal' },
-  { value: 'organisch_a', label: 'Organisch' },
-  { value: 'pebble', label: 'Pebble' },
-]
+const VORM_LABELS: Record<string, string> = {
+  rond: 'Rond',
+  ovaal: 'Ovaal',
+  organisch_a: 'Organisch',
+  pebble: 'Pebble',
+}
 
 const COL_COUNT = 10
 
@@ -42,7 +40,8 @@ export function ProductenOverviewPage() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(0)
   const [productType, setProductType] = useState<ProductType | 'alle'>('alle')
-  const [vormCode, setVormCode] = useState<VormCode | 'rechthoek' | 'alle'>('alle')
+  const [vormCode, setVormCode] = useState<string>('alle')
+  const { data: beschikbareVormen = [] } = useDistincteVormen()
   const [expandedArtikel, setExpandedArtikel] = useState<string | null>(null)
   const [sortBy, setSortBy] = useState<ProductSortField>('artikelnr')
   const [sortDir, setSortDir] = useState<SortDirection>('asc')
@@ -65,7 +64,7 @@ export function ProductenOverviewPage() {
     search,
     page,
     productType,
-    vormCode,
+    vormCode: vormCode !== 'alle' ? (vormCode as VormCode | 'rechthoek') : 'alle',
     sortBy,
     sortDir,
   })
@@ -212,9 +211,13 @@ export function ProductenOverviewPage() {
           ))}
         </div>
 
-        {/* Vorm filter */}
-        <div className="flex gap-1 bg-slate-100 rounded-[var(--radius-sm)] p-1">
-          {VORM_OPTIONS.map((opt) => (
+        {/* Vorm filter — dynamisch vanuit DB */}
+        <div className="flex flex-wrap gap-1 bg-slate-100 rounded-[var(--radius-sm)] p-1">
+          {[
+            { value: 'alle', label: 'Alle vormen' },
+            { value: 'rechthoek', label: 'Rechthoek' },
+            ...beschikbareVormen.map(v => ({ value: v, label: VORM_LABELS[v] ?? v })),
+          ].map((opt) => (
             <button
               key={opt.value}
               onClick={() => { setVormCode(opt.value); setPage(0) }}
