@@ -34,6 +34,7 @@ interface VerzendweekCellProps {
 function VerzendweekCell({ regel, orderId, orderdatum, levertijd, bewerkbaar }: VerzendweekCellProps) {
   const queryClient = useQueryClient()
   const [editing, setEditing] = useState(false)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const autoWeek: string | null = (() => {
@@ -52,6 +53,11 @@ function VerzendweekCell({ regel, orderId, orderdatum, levertijd, bewerkbaar }: 
       // anders ververst de tabel niet en lijkt de opslag mislukt (bug 2026-06-15).
       queryClient.invalidateQueries({ queryKey: ['orders', orderId, 'regels'] })
       setEditing(false)
+      setErrorMsg(null)
+    },
+    onError: (err) => {
+      setEditing(false)
+      setErrorMsg(err instanceof Error ? err.message : 'Opslaan mislukt — probeer opnieuw')
     },
   })
 
@@ -59,54 +65,45 @@ function VerzendweekCell({ regel, orderId, orderdatum, levertijd, bewerkbaar }: 
     if (editing) inputRef.current?.focus()
   }, [editing])
 
-  if (editing) {
+  const editView = editing ? (() => {
     const initValue = regel.verzendweek ?? autoWeek ?? ''
     return (
-      <span className="inline-flex flex-col gap-0.5">
-        <span className="inline-flex items-center gap-1">
-          <input
-            ref={inputRef}
-            type="week"
-            defaultValue={initValue}
-            disabled={mutation.isPending}
-            className="border border-slate-300 rounded px-1 py-0.5 text-xs w-36 focus:outline-none focus:ring-1 focus:ring-terracotta-400 disabled:opacity-50"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') mutation.mutate((e.target as HTMLInputElement).value || null)
-              if (e.key === 'Escape') setEditing(false)
-            }}
-          />
-          <button
-            type="button"
-            disabled={mutation.isPending}
-            onClick={() => {
-              const inp = inputRef.current
-              mutation.mutate(inp?.value || null)
-            }}
-            className="text-green-600 hover:text-green-700 disabled:opacity-40"
-            title="Opslaan"
-          >
-            <Check size={13} />
-          </button>
-          <button
-            type="button"
-            disabled={mutation.isPending}
-            onClick={() => setEditing(false)}
-            className="text-slate-400 hover:text-slate-600 disabled:opacity-40"
-            title="Annuleren"
-          >
-            <X size={13} />
-          </button>
-        </span>
-        {mutation.isError && (
-          <span className="text-[11px] text-rose-600">
-            Opslaan mislukt — probeer opnieuw
-          </span>
-        )}
+      <span className="inline-flex items-center gap-1">
+        <input
+          ref={inputRef}
+          type="week"
+          defaultValue={initValue}
+          disabled={mutation.isPending}
+          className="border border-slate-300 rounded px-1 py-0.5 text-xs w-36 focus:outline-none focus:ring-1 focus:ring-terracotta-400 disabled:opacity-50"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') mutation.mutate((e.target as HTMLInputElement).value || null)
+            if (e.key === 'Escape') setEditing(false)
+          }}
+        />
+        <button
+          type="button"
+          disabled={mutation.isPending}
+          onClick={() => {
+            const inp = inputRef.current
+            mutation.mutate(inp?.value || null)
+          }}
+          className="text-green-600 hover:text-green-700 disabled:opacity-40"
+          title="Opslaan"
+        >
+          <Check size={13} />
+        </button>
+        <button
+          type="button"
+          disabled={mutation.isPending}
+          onClick={() => setEditing(false)}
+          className="text-slate-400 hover:text-slate-600 disabled:opacity-40"
+          title="Annuleren"
+        >
+          <X size={13} />
+        </button>
       </span>
     )
-  }
-
-  return (
+  })() : (
     <span className="inline-flex items-center gap-1 group">
       {displayed ? (
         <span
@@ -121,7 +118,7 @@ function VerzendweekCell({ regel, orderId, orderdatum, levertijd, bewerkbaar }: 
       {bewerkbaar && (
         <button
           type="button"
-          onClick={() => setEditing(true)}
+          onClick={() => { setEditing(true); setErrorMsg(null) }}
           className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-terracotta-500"
           title="Verzendweek aanpassen"
         >
@@ -137,6 +134,18 @@ function VerzendweekCell({ regel, orderId, orderdatum, levertijd, bewerkbaar }: 
         >
           <X size={11} />
         </button>
+      )}
+    </span>
+  )
+
+  return (
+    <span className="inline-flex flex-col gap-0.5">
+      {editView}
+      {errorMsg && (
+        <span className="text-[11px] text-rose-600 inline-flex items-center gap-1">
+          {errorMsg}
+          <button type="button" onClick={() => setErrorMsg(null)} className="ml-1 hover:text-rose-800 font-bold" title="Sluiten">×</button>
+        </span>
       )}
     </span>
   )
