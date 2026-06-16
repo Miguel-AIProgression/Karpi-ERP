@@ -26,6 +26,13 @@ function formatVerzendweek(iso: string | null | undefined, leverType?: string): 
   return w ? `Wk ${w.week} · ${w.jaar}` : ''
 }
 
+// Splits array in stukken om de PostgREST row-cap te omzeilen (zie pick-ship fix 2026-06-11)
+function inChunks<T>(arr: T[], size = 150): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
+  return out
+}
+
 interface ExportRegel {
   id: number
   order_id: number
@@ -37,8 +44,6 @@ interface ExportRegel {
   orderaantal: number
   te_leveren: number
   backorder: number
-  te_factureren: number
-  gefactureerd: number
   prijs: number | null
   korting_pct: number
   bedrag: number | null
@@ -48,6 +53,7 @@ interface ExportRegel {
   maatwerk_lengte_cm: number | null
   maatwerk_breedte_cm: number | null
   maatwerk_diameter_cm: number | null
+  producten: { karpi_code: string | null } | null
 }
 
 interface ExportOrderDetail {
@@ -97,71 +103,68 @@ export async function exporterenNaarExcel(params: {
   if (orders.length === 0) return
 
   const orderIds = orders.map((o) => o.id)
+  const chunks = inChunks(orderIds)
 
-  // Alle benodigde data in parallel ophalen
-  const [orderDetailsRes, regelDataRes, levertijdRes, zendingRes] = await Promise.all([
-    supabase
-      .from('orders')
-      .select('id, fact_naam, fact_adres, fact_postcode, fact_plaats, fact_land, afl_naam, afl_naam_2, afl_adres, afl_postcode, afl_plaats, afl_land, betaler, inkooporganisatie, lever_modus')
-      .in('id', orderIds),
-    supabase
-      .from('order_regels')
-      .select('id, order_id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2, orderaantal, te_leveren, backorder, te_factureren, gefactureerd, prijs, korting_pct, bedrag, gewicht_kg, vrije_voorraad, is_maatwerk, maatwerk_lengte_cm, maatwerk_breedte_cm, maatwerk_diameter_cm')
-      .in('order_id', orderIds)
-      .order('order_id')
-      .order('regelnummer'),
-    supabase
-      .from('order_regel_levertijd')
-      .select('order_regel_id, eerste_io_datum, eerste_io_nr, aantal_io')
-      .in('order_id', orderIds),
-    // verzenddatum voor Ltste bon, zending_nr voor Pakbonnr.
-    supabase
-      .from('zending_orders')
-      .select('order_id, zendingen!inner(zending_nr, verzenddatum)')
-      .in('order_id', orderIds),
+  // Alle benodigde data gechunkt ophalen om PostgREST row-cap te omzeilen
+  const [orderDetailRows, regelRows, levertijdRows, zendingRows] = await Promise.all([
+    Promise.all(chunks.map((ids) =>
+      supabase
+        .from('orders')
+        .select('id, fact_naam, fact_adres, fact_postcode, fact_plaats, fact_land, afl_naam, afl_naam_2, afl_adres, afl_postcode, afl_plaats, afl_land, betaler, inkooporganisatie, lever_modus')
+        .in('id', ids)
+    )).then((rs) => rs.flatMap((r) => (r.data ?? []) as ExportOrderDetail[])),
+
+    // Alleen bewezen kolommen (zie fetchOrderRegels); karpi_code fallback via producten-join
+    Promise.all(chunks.map((ids) =>
+      supabase
+        .from('order_regels')
+        .select('id, order_id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2, orderaantal, te_leveren, backorder, prijs, korting_pct, bedrag, gewicht_kg, vrije_voorraad, is_maatwerk, maatwerk_lengte_cm, maatwerk_breedte_cm, maatwerk_diameter_cm, producten!order_regels_artikelnr_fkey(karpi_code)')
+        .in('order_id', ids)
+        .order('order_id')
+        .order('regelnummer')
+    )).then((rs) => rs.flatMap((r) => (r.data ?? []) as unknown as ExportRegel[])),
+
+    Promise.all(chunks.map((ids) =>
+      supabase
+        .from('order_regel_levertijd')
+        .select('order_regel_id, eerste_io_datum, eerste_io_nr, aantal_io')
+        .in('order_id', ids)
+    )).then((rs) => rs.flatMap((r) => (r.data ?? []) as ExportLevertijd[])),
+
+    Promise.all(chunks.map((ids) =>
+      supabase
+        .from('zending_orders')
+        .select('order_id, zendingen!inner(zending_nr, verzenddatum)')
+        .in('order_id', ids)
+    )).then((rs) => rs.flatMap((r) => (r.data ?? []) as unknown as ZendingRij[])),
   ])
 
   // Lookup maps bouwen
   const orderDetailMap = new Map<number, ExportOrderDetail>()
-  for (const d of (orderDetailsRes.data ?? []) as ExportOrderDetail[]) {
-    orderDetailMap.set(d.id, d)
-  }
+  for (const d of orderDetailRows) orderDetailMap.set(d.id, d)
 
   const regelsPerOrder = new Map<number, ExportRegel[]>()
-  for (const r of (regelDataRes.data ?? []) as ExportRegel[]) {
+  for (const r of regelRows) {
     const bestaand = regelsPerOrder.get(r.order_id) ?? []
     bestaand.push(r)
     regelsPerOrder.set(r.order_id, bestaand)
   }
 
   const levertijdMap = new Map<number, ExportLevertijd>()
-  for (const l of (levertijdRes.data ?? []) as ExportLevertijd[]) {
-    levertijdMap.set(l.order_regel_id, l)
-  }
+  for (const l of levertijdRows) levertijdMap.set(l.order_regel_id, l)
 
   // Per order: oudste verzenddatum (Ltste bon) en alle zending_nrs (Pakbonnr.)
-  const ltsteBonPerOrder = new Map<number, string>()
   const pakbonNrsPerOrder = new Map<number, Set<string>>()
-  for (const z of (zendingRes.data ?? []) as unknown as ZendingRij[]) {
+  for (const z of zendingRows) {
     const zend = z.zendingen
-    if (!zend) continue
-    if (zend.verzenddatum) {
-      const bestaand = ltsteBonPerOrder.get(z.order_id)
-      if (!bestaand || zend.verzenddatum < bestaand) {
-        ltsteBonPerOrder.set(z.order_id, zend.verzenddatum)
-      }
-    }
-    if (zend.zending_nr) {
-      if (!pakbonNrsPerOrder.has(z.order_id)) pakbonNrsPerOrder.set(z.order_id, new Set())
-      pakbonNrsPerOrder.get(z.order_id)!.add(zend.zending_nr)
-    }
+    if (!zend?.zending_nr) continue
+    if (!pakbonNrsPerOrder.has(z.order_id)) pakbonNrsPerOrder.set(z.order_id, new Set())
+    pakbonNrsPerOrder.get(z.order_id)!.add(zend.zending_nr)
   }
 
   // Betaler-namen batch ophalen
   const betaalderNrs = [...new Set(
-    Array.from(orderDetailMap.values())
-      .map((d) => d.betaler)
-      .filter((b): b is number => b != null),
+    Array.from(orderDetailMap.values()).map((d) => d.betaler).filter((b): b is number => b != null),
   )]
   const betaalderNaamMap = new Map<number, string>()
   if (betaalderNrs.length > 0) {
@@ -192,12 +195,10 @@ export async function exporterenNaarExcel(params: {
     const betaalderNaam = detail?.betaler != null ? (betaalderNaamMap.get(detail.betaler) ?? '') : ''
     const inkooporg = detail?.inkooporganisatie ?? ''
     const compleetLev = detail?.lever_modus === 'in_een_keer' ? 'J' : detail?.lever_modus === 'deelleveringen' ? 'N' : ''
-    const ltsteBon = formatDatum(ltsteBonPerOrder.get(o.id))
-    const pakbon = Array.from(pakbonNrsPerOrder.get(o.id) ?? []).join(', ')
 
     const regels = regelsPerOrder.get(o.id) ?? []
 
-    // Vaste order-velden (dezelfde volgorde als oud systeem, kolom 1-22)
+    // Vaste order-velden (zelfde volgorde als oud systeem)
     const orderVelden = {
       'Debiteur': debiteurNr,
       'Order': orderNr,
@@ -227,17 +228,18 @@ export async function exporterenNaarExcel(params: {
         'Regel': '', 'Artikelnr': '', 'Karpi-code': '',
         'Omschrijving': '', 'Omschrijving 2': '', 'Orderaantal': '',
         'Prijs': '', 'Kort.%': '', 'Bedrag': '',
-        'Te lev.': '', 'Backorder': '', 'Te fact.': '', 'Gefact.': '',
-        'Vert.': vertegenw, 'Ltste bon': ltsteBon, 'Compl.Lev.': compleetLev,
+        'Te lev.': '', 'Backorder': '',
+        'Vert.': vertegenw, 'Compl.Lev.': compleetLev,
         'VrijVoorr.': '', 'Volg.ontvangst': '', 'Verwacht aantal': '',
-        'Gewicht': '', 'Inkooporder J/N': '', 'Nummer inkooporder': '', 'Pakbonnr.': pakbon,
-        // Extra Rugflow-kolommen (niet in oud systeem)
+        'Gewicht': '', 'Inkooporder J/N': '', 'Nummer inkooporder': '',
         'Maat': '', 'Status': statusStr, 'Kanaal': kanaal,
       })
       continue
     }
 
     for (const r of regels) {
+      const karpiCode = r.karpi_code ?? r.producten?.karpi_code ?? ''
+
       const maat = r.is_maatwerk
         ? [
             r.maatwerk_lengte_cm != null && r.maatwerk_breedte_cm != null
@@ -252,10 +254,9 @@ export async function exporterenNaarExcel(params: {
 
       rijen.push({
         ...orderVelden,
-        // Regeldetails (kolom 22-44, zelfde volgorde als oud systeem)
         'Regel': r.regelnummer,
-        'Artikelnr': r.artikelnr ?? '',   // Let op: in oud systeem was dit numeriek; in Rugflow tekst
-        'Karpi-code': r.karpi_code ?? '',
+        'Artikelnr': r.artikelnr ?? '',
+        'Karpi-code': karpiCode,
         'Omschrijving': r.omschrijving,
         'Omschrijving 2': r.omschrijving_2 ?? '',
         'Orderaantal': r.orderaantal,
@@ -264,10 +265,7 @@ export async function exporterenNaarExcel(params: {
         'Bedrag': r.bedrag ?? '',
         'Te lev.': r.te_leveren,
         'Backorder': r.backorder,
-        'Te fact.': r.te_factureren,
-        'Gefact.': r.gefactureerd,
         'Vert.': vertegenw,
-        'Ltste bon': ltsteBon,
         'Compl.Lev.': compleetLev,
         'VrijVoorr.': r.vrije_voorraad ?? '',
         'Volg.ontvangst': formatDatum(lev?.eerste_io_datum),
@@ -275,7 +273,6 @@ export async function exporterenNaarExcel(params: {
         'Gewicht': r.gewicht_kg ?? '',
         'Inkooporder J/N': lev ? (heeftIO ? 'J' : 'N') : '',
         'Nummer inkooporder': lev?.eerste_io_nr ?? '',
-        'Pakbonnr.': pakbon,
         // Extra Rugflow-kolommen (niet in oud systeem)
         'Maat': maat,
         'Status': statusStr,
@@ -317,10 +314,7 @@ export async function exporterenNaarExcel(params: {
     { wch: 12 }, // Bedrag
     { wch: 8  }, // Te lev.
     { wch: 10 }, // Backorder
-    { wch: 10 }, // Te fact.
-    { wch: 10 }, // Gefact.
     { wch: 8  }, // Vert.
-    { wch: 12 }, // Ltste bon
     { wch: 12 }, // Compl.Lev.
     { wch: 12 }, // VrijVoorr.
     { wch: 14 }, // Volg.ontvangst
@@ -328,7 +322,6 @@ export async function exporterenNaarExcel(params: {
     { wch: 10 }, // Gewicht
     { wch: 14 }, // Inkooporder J/N
     { wch: 20 }, // Nummer inkooporder
-    { wch: 14 }, // Pakbonnr.
     { wch: 18 }, // Maat (extra)
     { wch: 22 }, // Status (extra)
     { wch: 12 }, // Kanaal (extra)
