@@ -140,8 +140,8 @@ function MaatwerkLineRow({
           <input
             type="text"
             value={line.klant_referentie ?? ''}
-            onChange={(e) => updateLine(index, { klant_referentie: e.target.value.trim() || null })}
-            className="w-full bg-transparent border-0 p-0 text-xs text-slate-500 placeholder:text-slate-300 focus:outline-none focus:ring-0 mt-0.5"
+            onChange={(e) => updateLine(index, { klant_referentie: e.target.value || null })}
+            className="w-full bg-transparent border-0 border-b border-slate-200 p-0 pb-0.5 text-xs text-slate-500 placeholder:text-slate-400 focus:outline-none focus:border-terracotta-400 mt-1"
             placeholder="Ref klant..."
           />
         </td>
