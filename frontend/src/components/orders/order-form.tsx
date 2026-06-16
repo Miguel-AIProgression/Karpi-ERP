@@ -41,7 +41,6 @@ import {
   isBlokkerendDropshipEmailProbleem,
 } from '@/lib/orders/dropship-email'
 import { isAfleveradresCompleet, ontbrekendeAfleveradresVelden } from '@/lib/orders/afleveradres-gate'
-import type { AfleverAdres } from './delivery-address-editor'
 import { DropshipmentSelector } from './dropshipment-selector'
 import type { DropshipmentKeuze } from '@/lib/constants/dropshipment'
 import { useDropshipPrijzen } from '@/hooks/use-dropship-prijzen'
@@ -362,7 +361,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
     setHeader((h) => ({ ...h, afl_email: email || undefined }))
   }
 
-  const handleAflAdresChange = (addr: AfleverAdres) => {
+  const handleAflAdresChange = (addr: Pick<AfleverAdres, 'naam' | 'adres' | 'postcode' | 'plaats' | 'land'>) => {
     setHeader((h) => ({
       ...h,
       afl_naam: addr.naam,
@@ -892,7 +891,6 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
               plaats={header.afl_plaats}
               aflEmail={header.afl_email ?? ''}
               afleveradresId={selectedAfleveradresId}
-              debiteurNr={client.debiteur_nr}
               onAdresChange={handleAflAdresChange}
               onEmailChange={handleAflEmailChange}
               dropshipEmailProbleem={dropshipEmailProbleem}

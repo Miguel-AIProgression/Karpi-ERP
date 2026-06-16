@@ -5,14 +5,7 @@ import {
   isBlokkerendDropshipEmailProbleem,
   type DropshipEmailProbleem,
 } from '@/lib/orders/dropship-email'
-
-export interface AfleverAdres {
-  naam: string
-  adres: string
-  postcode: string
-  plaats: string
-  land: string
-}
+import type { AfleverAdres } from './address-selector'
 
 interface DeliveryAddressEditorProps {
   naam?: string
@@ -23,8 +16,7 @@ interface DeliveryAddressEditorProps {
   aflEmail: string
   /** DB-id van het geselecteerde afleveradressen-record (voor "opslaan als permanent"). */
   afleveradresId?: number
-  debiteurNr: number | null
-  onAdresChange: (addr: AfleverAdres) => void
+  onAdresChange: (addr: Pick<AfleverAdres, 'naam' | 'adres' | 'postcode' | 'plaats' | 'land'>) => void
   onEmailChange: (email: string) => void
   /** Alleen gevuld bij dropshipment-orders: toets van het T&T-adres (dropship-email.ts). */
   dropshipEmailProbleem?: DropshipEmailProbleem | null
@@ -32,11 +24,12 @@ interface DeliveryAddressEditorProps {
 
 export function DeliveryAddressEditor({
   naam, adres, postcode, plaats,
-  aflEmail, afleveradresId, debiteurNr,
+  aflEmail, afleveradresId,
   onAdresChange, onEmailChange, dropshipEmailProbleem,
 }: DeliveryAddressEditorProps) {
   const [editing, setEditing] = useState(false)
-  const [draftAdres, setDraftAdres] = useState<AfleverAdres>({
+  type DraftAdres = Pick<AfleverAdres, 'naam' | 'adres' | 'postcode' | 'plaats' | 'land'>
+  const [draftAdres, setDraftAdres] = useState<DraftAdres>({
     naam: naam ?? '',
     adres: adres ?? '',
     postcode: postcode ?? '',
@@ -69,7 +62,7 @@ export function DeliveryAddressEditor({
     }
     setError(null)
 
-    const normAdres: AfleverAdres = {
+    const normAdres: DraftAdres = {
       naam: draftAdres.naam.trim(),
       adres: draftAdres.adres.trim(),
       postcode: draftAdres.postcode.trim(),
