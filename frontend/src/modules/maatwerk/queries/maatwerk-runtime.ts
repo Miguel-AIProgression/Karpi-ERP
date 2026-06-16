@@ -608,16 +608,18 @@ export interface StandaardMaat {
   kwaliteit_code: string | null
   kleur_code: string | null
   product_type: string | null
+  breedte_cm: number | null
+  lengte_cm: number | null
+  maatwerk_vorm_code: string | null
 }
 
 export async function fetchStandaardMatenVoorKwaliteit(kwaliteitCode: string): Promise<StandaardMaat[]> {
   const { data, error } = await supabase
     .from('producten')
-    .select('artikelnr, karpi_code, omschrijving, verkoopprijs, gewicht_kg, vrije_voorraad, besteld_inkoop, kwaliteit_code, kleur_code, product_type')
+    .select('artikelnr, karpi_code, omschrijving, verkoopprijs, gewicht_kg, vrije_voorraad, besteld_inkoop, kwaliteit_code, kleur_code, product_type, breedte_cm, lengte_cm, maatwerk_vorm_code')
     .eq('kwaliteit_code', kwaliteitCode)
     .eq('actief', true)
     .not('product_type', 'in', '("rol","staaltje")')
-    .order('omschrijving')
   if (error) throw error
   return (data ?? []) as StandaardMaat[]
 }

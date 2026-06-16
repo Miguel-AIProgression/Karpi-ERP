@@ -174,12 +174,34 @@ export function KwaliteitFirstSelector({
   const filtered = kwaliteiten
 
   // ── Gefilterde maten ──────────────────────────────────────────
+  // Sorteervolgorde: 1) rechthoek klein→groot  2) rond klein→groot
+  //                  3) overige vormen klein→groot  4) op maat / overig onderaan
   const gefilterdeMatem = useMemo(() => {
-    if (!selectedKleurCode) return standaardMaten
-    const norm = normalizeKleur(selectedKleurCode)
-    return standaardMaten.filter(
-      (m) => m.kleur_code != null && normalizeKleur(m.kleur_code) === norm
-    )
+    const filtered = !selectedKleurCode
+      ? standaardMaten
+      : (() => {
+          const norm = normalizeKleur(selectedKleurCode)
+          return standaardMaten.filter(
+            (m) => m.kleur_code != null && normalizeKleur(m.kleur_code) === norm
+          )
+        })()
+
+    return [...filtered].sort((a, b) => {
+      const groep = (m: typeof a): number => {
+        if (m.product_type !== 'vast') return 3
+        if (!m.maatwerk_vorm_code) return 0          // rechthoek
+        if (m.maatwerk_vorm_code === 'rond') return 1 // rond
+        return 2                                      // organisch / overig
+      }
+      const groepA = groep(a), groepB = groep(b)
+      if (groepA !== groepB) return groepA - groepB
+      // Binnen groep: oppervlakte voor rechthoek/organisch, diameter voor rond
+      const opp = (m: typeof a) =>
+        m.maatwerk_vorm_code === 'rond'
+          ? (m.breedte_cm ?? 0)
+          : (m.lengte_cm ?? 0) * (m.breedte_cm ?? 0)
+      return opp(a) - opp(b)
+    })
   }, [standaardMaten, selectedKleurCode])
 
   // ── Beschikbare kleuren: union van m²-geconfigureerde kleuren én kleuren die
