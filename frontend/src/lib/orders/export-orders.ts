@@ -142,7 +142,7 @@ export async function exporterenNaarExcel(params: {
   // Per order: oudste verzenddatum (Ltste bon) en alle zending_nrs (Pakbonnr.)
   const ltsteBonPerOrder = new Map<number, string>()
   const pakbonNrsPerOrder = new Map<number, Set<string>>()
-  for (const z of (zendingRes.data ?? []) as ZendingRij[]) {
+  for (const z of (zendingRes.data ?? []) as unknown as ZendingRij[]) {
     const zend = z.zendingen
     if (!zend) continue
     if (zend.verzenddatum) {
