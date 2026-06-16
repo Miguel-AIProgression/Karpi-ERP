@@ -137,6 +137,13 @@ function MaatwerkLineRow({
               Omstickeren van: {line.fysiek_omschrijving}
             </div>
           )}
+          <input
+            type="text"
+            value={line.klant_referentie ?? ''}
+            onChange={(e) => updateLine(index, { klant_referentie: e.target.value.trim() || null })}
+            className="w-full bg-transparent border-0 p-0 text-xs text-slate-500 placeholder:text-slate-300 focus:outline-none focus:ring-0 mt-0.5"
+            placeholder="Ref klant..."
+          />
         </td>
         <td className="px-3 py-2 text-right">
           {line.is_maatwerk && line.maatwerk_beschikbaar_m2 != null ? (

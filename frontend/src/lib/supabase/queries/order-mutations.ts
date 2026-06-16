@@ -116,6 +116,8 @@ export interface OrderRegelFormData {
    * (`is_dropship_order()`).
    */
   is_dropship?: boolean
+  /** Mig 406: per-orderregel klantreferentie (bv. "REF Hugo / Veyron"). */
+  klant_referentie?: string | null
 }
 
 /** Bronlabel voor de orderregel-prijs zoals geretourneerd door `bereken_orderregel_prijs` (mig 191, mig 253). */
@@ -233,6 +235,7 @@ export async function createOrder(
     maatwerk_diameter_cm: r.maatwerk_diameter_cm ?? null,
     maatwerk_kwaliteit_code: r.maatwerk_kwaliteit_code || null,
     maatwerk_kleur_code: r.maatwerk_kleur_code || null,
+    klant_referentie: r.klant_referentie || null,
   }))
 
   const { data, error } = await supabase.rpc('create_order_with_lines', {
@@ -305,6 +308,7 @@ export async function updateOrderWithLines(
     maatwerk_diameter_cm: r.maatwerk_diameter_cm ?? null,
     maatwerk_kwaliteit_code: r.maatwerk_kwaliteit_code || null,
     maatwerk_kleur_code: r.maatwerk_kleur_code || null,
+    klant_referentie: r.klant_referentie || null,
   }))
 
   const { error } = await supabase.rpc('update_order_with_lines', {

@@ -31,6 +31,8 @@ export interface OrderbevestigingRegel {
   karpi_code: string | null
   omschrijving: string
   omschrijving_2: string | null
+  /** Mig 406: per-orderregel klantreferentie. */
+  klant_referentie?: string | null
   orderaantal: number
   prijs: number | null
   korting_pct: number | null
@@ -421,7 +423,7 @@ export async function genereerOrderbevestigingPDF(input: OrderbevestigingInput):
     const kortingTxt = formatKorting(regel.korting_pct)
 
     const omschrijvingLines = wrapText(regel.omschrijving ?? '', fontR, 7.5, colOmsch.w - mm(2))
-    const subLineCount = (regel.omschrijving_2 ? 1 : 0) + (input.verzendweek ? 1 : 0)
+    const subLineCount = (regel.omschrijving_2 ? 1 : 0) + (regel.klant_referentie ? 1 : 0) + (input.verzendweek ? 1 : 0)
     const totalH = ROW_H + (omschrijvingLines.length > 1 ? (omschrijvingLines.length - 1) * EXTRA_LINE_H : 0)
       + subLineCount * EXTRA_LINE_H
 
@@ -453,6 +455,10 @@ export async function genereerOrderbevestigingPDF(input: OrderbevestigingInput):
     let subY = textY - omschrijvingLines.length * EXTRA_LINE_H
     if (regel.omschrijving_2) {
       drawText(page, regel.omschrijving_2, omschX, subY, fontR, 6.5, SLATE)
+      subY -= EXTRA_LINE_H
+    }
+    if (regel.klant_referentie) {
+      drawText(page, `Ref: ${regel.klant_referentie}`, omschX, subY, fontR, 6.5, SLATE)
       subY -= EXTRA_LINE_H
     }
     if (input.verzendweek) {

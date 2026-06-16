@@ -48,6 +48,8 @@ export interface FactuurDocumentRegel {
   artikelnr: string
   /** Rauwe tweede omschrijvingsregel (PDF-sub-regels); EDI gebruikt artikel_tekst. */
   omschrijving_2: string | null
+  /** Mig 406: per-orderregel klantreferentie (snapshot van order_regels.klant_referentie). */
+  klant_referentie: string | null
   aantal: number
   /** Verkoopeenheid op de factuur; vast 'St' (mirrors huidige PDF). */
   eenheid: string
@@ -94,6 +96,8 @@ export interface FactuurDocumentRegelRow {
   omschrijving_2: string | null
   uw_referentie: string | null
   order_nr: string | null
+  /** Mig 406: per-orderregel klantreferentie. */
+  klant_referentie?: string | null
   aantal: number | string
   prijs: number | string
   bedrag: number | string
@@ -166,6 +170,7 @@ export function bouwFactuurDocument(
       uw_referentie: r.uw_referentie ?? '',
       artikelnr: r.artikelnr ?? '',
       omschrijving_2: r.omschrijving_2 ?? null,
+      klant_referentie: r.klant_referentie ?? null,
       aantal,
       eenheid: EENHEID,
       prijs: num(r.prijs),
@@ -207,7 +212,7 @@ export async function fetchFactuurDocument(
       .from('factuur_regels')
       .select(
         'order_id, order_regel_id, regelnummer, artikelnr, omschrijving, omschrijving_2, ' +
-          'uw_referentie, order_nr, aantal, prijs, bedrag, btw_percentage',
+          'uw_referentie, order_nr, klant_referentie, aantal, prijs, bedrag, btw_percentage',
       )
       .eq('factuur_id', factuurId)
       .order('regelnummer'),

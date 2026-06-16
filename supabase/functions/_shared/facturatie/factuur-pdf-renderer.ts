@@ -47,7 +47,9 @@ export function naarFactuurPdfInput(doc: FactuurDocument): FactuurPdfDocumentDee
     eenheid: r.eenheid,
     // Gedeelde Artikelpresentatie — dezelfde tekst als de EDI-articleDescription.
     omschrijving: r.presentatie.artikel_tekst,
-    omschrijving_2: r.omschrijving_2 ?? undefined,
+    // Mig 406: klant_referentie als extra sub-regel achter omschrijving_2.
+    omschrijving_2: [r.omschrijving_2, r.klant_referentie ? `Ref: ${r.klant_referentie}` : null]
+      .filter(Boolean).join('\n') || undefined,
     prijs: r.prijs,
     bedrag: r.bedrag,
   }))

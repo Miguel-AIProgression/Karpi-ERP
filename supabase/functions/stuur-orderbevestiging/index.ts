@@ -258,6 +258,7 @@ serve(async (req) => {
     .from('order_regels')
     .select(`
       id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2,
+      klant_referentie,
       orderaantal, prijs, korting_pct, bedrag,
       maatwerk_kwaliteit_code, maatwerk_kleur_code,
       producten!order_regels_artikelnr_fkey(karpi_code, kwaliteit_code, kleur_code)
@@ -274,6 +275,7 @@ serve(async (req) => {
     karpi_code: resolveKarpiCode(r.karpi_code, r.producten?.karpi_code, r.artikelnr) || null,
     omschrijving: r.omschrijving ?? '',
     omschrijving_2: r.omschrijving_2 ?? null,
+    klant_referentie: r.klant_referentie ?? null,
     orderaantal: r.orderaantal ?? 0,
     prijs: r.prijs ?? null,
     korting_pct: r.korting_pct ?? null,
@@ -393,7 +395,7 @@ serve(async (req) => {
   const regelsHtml = regelsVertaald.map((r) => {
     const model = r.kwaliteit_code ? klantEigenNamen.get(`${r.kwaliteit_code}|${r.kleur_code ?? ''}`) ?? null : null
     return `<tr>
-      <td style="padding: 4px 8px; border-bottom: 1px solid #eee;">${r.omschrijving}${model ? `<br><span style="color:#888; font-size: 11px;">${v.model}: ${model}</span>` : ''}</td>
+      <td style="padding: 4px 8px; border-bottom: 1px solid #eee;">${r.omschrijving}${model ? `<br><span style="color:#888; font-size: 11px;">${v.model}: ${model}</span>` : ''}${r.klant_referentie ? `<br><span style="color:#888; font-size: 11px;">Ref: ${r.klant_referentie}</span>` : ''}</td>
       <td style="padding: 4px 8px; border-bottom: 1px solid #eee; text-align: right;">${r.orderaantal}</td>
       <td style="padding: 4px 8px; border-bottom: 1px solid #eee; text-align: right; white-space: nowrap;">${r.bedrag != null ? formatBedrag(r.bedrag) : ''}</td>
     </tr>`
