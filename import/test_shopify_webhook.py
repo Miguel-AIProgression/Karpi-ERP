@@ -18,10 +18,31 @@ Wat te controleren in de output:
 """
 
 import json
+import os
+import ssl
 import sys
 import urllib.request
+from pathlib import Path
 
-SUPABASE_URL = "https://wqzeevfobwauxkalagtn.supabase.co"
+# Mac Python 3.14 heeft geen systeem-CA's — voor dit testscript is dat prima.
+_ssl_ctx = ssl.create_default_context()
+_ssl_ctx.check_hostname = False
+_ssl_ctx.verify_mode = ssl.CERT_NONE
+
+# Lees service role key uit import/.env (zelfde als andere import-scripts)
+def _read_env():
+    env_file = Path(__file__).parent / ".env"
+    env = {}
+    if env_file.exists():
+        for line in env_file.read_text().splitlines():
+            if "=" in line and not line.startswith("#"):
+                k, v = line.split("=", 1)
+                env[k.strip()] = v.strip()
+    return env
+
+_env = _read_env()
+SUPABASE_URL = _env.get("SUPABASE_URL", "https://wqzeevfobwauxkalagtn.supabase.co")
+SUPABASE_KEY = _env.get("SUPABASE_SERVICE_ROLE_KEY", "")
 FUNCTION_URL = f"{SUPABASE_URL}/functions/v1/sync-shopify-order?debug=1"
 
 # ── Test-payload ─────────────────────────────────────────────────────────────
@@ -38,10 +59,10 @@ TEST_ORDER = {
     "updated_at": "2026-06-17T10:00:00+02:00",
     "financial_status": "paid",
     "fulfillment_status": None,
-    "email": "info@unikliving.nl",   # ← pas aan naar email van klant in RugFlow
+    "email": "admin@unik-living.com",  # e-mailadres van UNIK LIVING (debiteur 831800)
     "customer": {
         "id": 1234567,
-        "email": "info@unikliving.nl",
+        "email": "admin@unik-living.com",
         "first_name": "Niek",
         "last_name": "Wouters",
         "company": "Unik Living BV",
@@ -99,6 +120,7 @@ req = urllib.request.Request(
     data=payload_bytes,
     headers={
         "Content-Type": "application/json",
+        "Authorization": f"Bearer {SUPABASE_KEY}",
         "X-Shopify-Topic": "orders/create",
         "X-Shopify-Shop-Domain": "karpi-tapijt.myshopify.com",
     },
@@ -106,7 +128,7 @@ req = urllib.request.Request(
 )
 
 try:
-    with urllib.request.urlopen(req) as resp:
+    with urllib.request.urlopen(req, context=_ssl_ctx) as resp:
         body = json.loads(resp.read())
 except urllib.error.HTTPError as e:
     body = json.loads(e.read())

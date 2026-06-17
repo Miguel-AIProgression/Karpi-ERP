@@ -228,18 +228,20 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
 
-  const webhookSecret = Deno.env.get('SHOPIFY_WEBHOOK_SECRET')
-  if (!webhookSecret) return json({ error: 'SHOPIFY_WEBHOOK_SECRET not configured' }, 500)
-
-  const rawPayload = await req.text()
+  // URL eerst uitlezen zodat debugMode de secret-check kan bypassen.
   const url = new URL(req.url)
   const debugMode = url.searchParams.get('debug') === '1'
+
+  const rawPayload = await req.text()
+
+  const webhookSecret = Deno.env.get('SHOPIFY_WEBHOOK_SECRET')
+  if (!webhookSecret && !debugMode) return json({ error: 'SHOPIFY_WEBHOOK_SECRET not configured' }, 500)
 
   // Debug/dry-run: signature-check overslaan zodat tests werken zonder echte
   // Shopify-secret. Debug schrijft nooit naar DB, geen security-risico.
   if (!debugMode) {
     const hmacHeader = req.headers.get('x-shopify-hmac-sha256')
-    const isValid = await verifyShopifySignature(rawPayload, hmacHeader, webhookSecret)
+    const isValid = await verifyShopifySignature(rawPayload, hmacHeader, webhookSecret!)
     if (!isValid) {
       console.warn('[sync-shopify-order] ongeldige signature')
       return json({ error: 'Invalid signature' }, 401)
