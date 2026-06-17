@@ -40,7 +40,6 @@ import {
   DEFAULT_LABEL_HOOGTE_MM,
   expandLabels,
   labelFormaatVoor,
-  printFormaatVoor,
   vervoerderInfoVoor,
 } from '@/modules/logistiek/lib/printset'
 
@@ -89,9 +88,7 @@ export function ZendingPrintSetPage() {
 
   const labels = useMemo(() => (zending ? expandLabels(zending) : []), [zending])
   const vervoerder = zending ? vervoerderInfoVoor(zending) : null
-  // Print-formaat = rolformaat iets gekrompen (zie printFormaatVoor) zodat de
-  // pagina binnen het fysieke etiket past en niet over 2 stickers valt.
-  const labelFormaat = zending ? printFormaatVoor(labelFormaatVoor(zending)) : null
+  const labelFormaat = zending ? labelFormaatVoor(zending) : null
   const isPrintType = zending?.vervoerders?.type === 'print'
   const aantalTapijtStickers = totaalAantalTapijtStickers(tapijtStickers)
   const heeftTapijtStickers = aantalTapijtStickers > 0

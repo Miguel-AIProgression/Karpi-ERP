@@ -82,16 +82,21 @@ function ShippingLabelCompact({
   const fz = (px: number) => `${Math.round(px * s * 10) / 10}px`
   const dik = (px: number) => `${Math.max(px, Math.round(px * s))}px`
 
-  // Ingebouwde witmarge rondom, zoals de oude WC-referentie-stickers (print
-  // staat ~4mm van de stickerrand). Maakt het label meteen robuust tegen
-  // hairline-overflow: het grid is kleiner dan de pagina, dus de print-engine
-  // heeft nooit reden om naar een tweede pagina te breken.
-  const margeMm = 2.5 * s
-  // De Zebra snijdt links een paar mm af (fysieke printkop-offset op de rol)
-  // — extra linkermarge schuift het hele ontwerp van de rand af.
-  const extraLinksMm = 4
-  const binnenBreedteMm = breedteMm - 2 * margeMm - extraLinksMm
-  const binnenHoogteMm = hoogteMm - 2 * margeMm
+  // Veilige marges (mm) rondom de inhoud. BELANGRIJK: de inhoud wordt absoluut
+  // INGESPRONGEN (zie de return), NIET via padding op .shipping-label — die
+  // padding wordt door de @media-print-regel genuld, waardoor de marge enkel op
+  // het scherm zichtbaar was en de print tegen/over de rand liep. Vast in mm
+  // (geen schaling): een fysieke veiligheidsmarge is absoluut. Tunebaar — ruim
+  // links (afsnijding + zwart streepje), iets minder onder, compacter/centraler.
+  const margeLinksMm = 7
+  const margeRechtsMm = 4
+  const margeBovenMm = 4
+  const margeOnderMm = 3
+  // Dun zwart rand-/registratiestreepje links, binnen de linkermarge.
+  const streepLinksMm = 2.5
+  const streepBreedteMm = 0.8
+  const binnenBreedteMm = breedteMm - margeLinksMm - margeRechtsMm
+  const binnenHoogteMm = hoogteMm - margeBovenMm - margeOnderMm
 
   const colRechtsMm = binnenBreedteMm * (COL_RECHTS_MM / (DEFAULT_LABEL_BREEDTE_MM - 0.5))
   const rij1Mm = RIJ1_MM * s
@@ -111,7 +116,7 @@ function ShippingLabelCompact({
   return (
     <div
       className="shipping-label bg-white"
-      data-shipping-label-v="3-absolute"
+      data-shipping-label-v="4-inset"
       style={{
         width: `${breedteMm}mm`,
         height: `${hoogteMm}mm`,
@@ -123,10 +128,31 @@ function ShippingLabelCompact({
         display: 'block',
         contain: 'layout paint size',
         color: '#000',
-        padding: `${margeMm}mm ${margeMm}mm ${margeMm}mm ${margeMm + extraLinksMm}mm`,
       }}
     >
-      <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      {/* Dun zwart rand-streepje links — markeert de linkergrens zodat de
+          inhoud zichtbaar bínnen het etiket valt. */}
+      <div
+        style={{
+          position: 'absolute',
+          left: `${streepLinksMm}mm`,
+          top: `${margeBovenMm}mm`,
+          width: `${streepBreedteMm}mm`,
+          height: `${binnenHoogteMm}mm`,
+          backgroundColor: '#000',
+        }}
+      />
+      {/* Inhoud absoluut INGESPRONGEN i.p.v. via root-padding, zodat de marge
+          ook bij het printen behouden blijft (de print-CSS nult padding). */}
+      <div
+        style={{
+          position: 'absolute',
+          top: `${margeBovenMm}mm`,
+          left: `${margeLinksMm}mm`,
+          width: `${binnenBreedteMm}mm`,
+          height: `${binnenHoogteMm}mm`,
+        }}
+      >
       {/* Rij 1 — links: order/uw-ref + productnaam */}
       <div
         style={{
