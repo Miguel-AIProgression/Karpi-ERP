@@ -1,28 +1,5 @@
 # Changelog — RugFlow ERP
 
-## 2026-06-17 — Verzendlabels: extra veilige witrand rondom (scheef-invoer)
-
-**Waarom:** De verzendstickers uit Pick & Ship (Verzendset → "Stickers printen")
-zaten te dicht op de etiketrand. Loopt een thermisch etiket iets scheef door de
-printer, dan sneed de rand adres of barcode af. De HST-sticker (152,4×76,2 mm
-liggend, mig 362 → `ShippingLabelCompact`) had op dat formaat al ~3,7 mm rand,
-maar dat bleek onvoldoende; de staande `ShippingLabelTall` had zelfs géén
-rondom-marge.
-
-**Wat:**
-- **`printset.ts`** — nieuwe gedeelde constante `LABEL_EXTRA_RANDMARGE_MM = 4`:
-  een vaste veilige witrand (mm) die aan álle zijden naar binnen wordt gelegd,
-  bovenop het bestaande ontwerp. Vast in mm (schaalt bewust niet mee met de
-  labelgrootte — fysieke veiligheidsafstand is absoluut). Eén getal om bij te
-  stellen, gedeeld door alle drie de labelvarianten.
-- **`shipping-label.tsx`** (compact/HST) — basismarge `2.5·s` + de extra randmarge.
-- **`shipping-label-tall.tsx`** (staand 3"×6") — krijgt nu `padding` rondom; de
-  barcode-rij vangt de ingekorte binnenhoogte op.
-- **`dpd-shipping-label.tsx`** (print-type) — content-padding = basis + extra.
-
-**Geen impact** op SSCC/barcode-inhoud, colli-expansie of pakbon (puur de
-marge rondom de geprinte inhoud).
-
 ## 2026-06-16 — Antislip doos-stuks koppeling (mig 408)
 
 **Waarom:** Antislip wordt per doos ingekocht en opgeslagen, maar sommige klanten

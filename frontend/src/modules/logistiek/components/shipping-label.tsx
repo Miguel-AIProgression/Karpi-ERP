@@ -10,7 +10,6 @@ import {
 import {
   DEFAULT_LABEL_BREEDTE_MM,
   DEFAULT_LABEL_HOOGTE_MM,
-  LABEL_EXTRA_RANDMARGE_MM,
   type LabelFormaat,
 } from '@/modules/logistiek/lib/printset'
 import type { ZendingPrintRegel, ZendingPrintSet } from '@/modules/logistiek/queries/zendingen'
@@ -85,10 +84,8 @@ function ShippingLabelCompact({
   // Ingebouwde witmarge rondom, zoals de oude WC-referentie-stickers (print
   // staat ~4mm van de stickerrand). Maakt het label meteen robuust tegen
   // hairline-overflow: het grid is kleiner dan de pagina, dus de print-engine
-  // heeft nooit reden om naar een tweede pagina te breken. Bovenop de
-  // proportionele basismarge komt een vaste veilige randmarge zodat een licht
-  // scheef ingevoerd etiket geen data tegen de rand verliest.
-  const margeMm = 2.5 * s + LABEL_EXTRA_RANDMARGE_MM
+  // heeft nooit reden om naar een tweede pagina te breken.
+  const margeMm = 2.5 * s
   // De Zebra snijdt links een paar mm af (fysieke printkop-offset op de rol)
   // — extra linkermarge schuift het hele ontwerp van de rand af.
   const extraLinksMm = 4

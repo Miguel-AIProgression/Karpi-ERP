@@ -5,7 +5,6 @@ import {
   labelReferentie,
   productNamen,
 } from '@/modules/logistiek/lib/shipping-label-data'
-import { LABEL_EXTRA_RANDMARGE_MM } from '@/modules/logistiek/lib/printset'
 import type { ZendingPrintRegel, ZendingPrintSet } from '@/modules/logistiek/queries/zendingen'
 
 interface Props {
@@ -53,10 +52,7 @@ export function DpdShippingLabel({
       className="shipping-label dpd-label bg-white text-black"
       style={{ width: '80mm', height: '150mm' }}
     >
-      <div
-        className="flex h-full flex-col font-sans text-[8px] leading-tight"
-        style={{ padding: `calc(0.5rem + ${LABEL_EXTRA_RANDMARGE_MM}mm)` }}
-      >
+      <div className="flex h-full flex-col p-2 font-sans text-[8px] leading-tight">
         {/* HEADER: order/ref/product + Karpi afzender */}
         <div className="grid grid-cols-[1fr_28mm] gap-2 border-b border-black pb-1.5">
           <div>

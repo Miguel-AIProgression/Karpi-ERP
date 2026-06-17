@@ -15,14 +15,6 @@ import type {
 export const DEFAULT_LABEL_BREEDTE_MM = 76.2
 export const DEFAULT_LABEL_HOOGTE_MM = 50.8
 
-// Extra veilige witrand (mm) die bovenop het bestaande label-ontwerp aan ÁLLE
-// zijden naar binnen wordt gelegd. Een thermisch etiket loopt vaak iets scheef
-// door de printer; zonder deze buffer snijdt de rand dan adres of barcode af.
-// Vast in mm (niet meeschalend met de labelgrootte) — een fysieke veiligheids-
-// afstand is absoluut, geen percentage. Toegepast door alle drie de label-
-// varianten (compact/staand/DPD); één getal om de witrand bij te stellen.
-export const LABEL_EXTRA_RANDMARGE_MM = 4
-
 export interface LabelFormaat {
   breedteMm: number
   hoogteMm: number
