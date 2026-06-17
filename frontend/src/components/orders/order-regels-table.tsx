@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { Scissors, ArrowRight, Pencil, X, Check } from 'lucide-react'
+import { Scissors, ArrowRight, Pencil, X, Check, PackageCheck } from 'lucide-react'
+import { DeelzendingDialog } from '@/components/orders/deelzending-dialog'
 import { useQueryClient, useMutation } from '@tanstack/react-query'
 import { formatCurrency } from '@/lib/utils/formatters'
 import { snijplanBadgeClass, AFWERKING_MAP } from '@/lib/utils/constants'
 import { getVormDisplay } from '@/lib/utils/vorm-labels'
-import { isoWeekFromString, isoWeekString } from '@/lib/utils/iso-week'
+import { isoWeekFromString, isoWeekString, isoWeekStringVanIso } from '@/lib/utils/iso-week'
 import type { OrderRegel } from '@/lib/supabase/queries/orders'
 import { setRegelVerzendweek } from '@/lib/supabase/queries/orders'
 import { isAdminPseudo } from '@/lib/orders/admin-pseudo'
@@ -15,6 +16,27 @@ function formatVerzendweek(w: string): string {
   const m = w.match(/^(\d{4})-W(\d{2})$/)
   if (!m) return w
   return `Wk ${parseInt(m[2])} · ${m[1]}`
+}
+
+/** Toont "Kan al Wk N" als deze regel eerder kan dan de order-verzendweek. */
+function VroegstLeverbaerHint({ vroegst, orderVerzendweek }: {
+  vroegst: string | null | undefined
+  orderVerzendweek: string | null | undefined
+}) {
+  if (!vroegst) return null
+  const regelWeek = isoWeekStringVanIso(vroegst)
+  if (!regelWeek || !orderVerzendweek) return null
+  // Alleen tonen als de regel eerder klaar is dan de order als geheel
+  if (regelWeek >= orderVerzendweek) return null
+  const wkNr = parseInt(regelWeek.split('-W')[1] ?? '0')
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-[11px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded"
+      title={`Kan al verzonden worden per ${vroegst} (${regelWeek})`}
+    >
+      Kan al Wk {wkNr}
+    </span>
+  )
 }
 
 function volgendeWeekVanDatum(iso: string): string {
@@ -295,12 +317,14 @@ interface RegelRowProps {
   regel: OrderRegel
   orderId: number
   orderdatum: string
+  /** Order-niveau verzendweek (YYYY-Www). Geeft context voor vroegst_leverbaar-hint. */
+  orderVerzendweek?: string | null
   levertijd?: OrderRegelLevertijd
   claims: OrderClaim[]
   isEindstatus: boolean
 }
 
-function RegelRow({ regel, orderId, orderdatum, levertijd, claims, isEindstatus }: RegelRowProps) {
+function RegelRow({ regel, orderId, orderdatum, orderVerzendweek, levertijd, claims, isEindstatus }: RegelRowProps) {
   const afwerkingInfo = regel.maatwerk_afwerking ? AFWERKING_MAP[regel.maatwerk_afwerking] : null
   const maat = formatMaat(regel)
   const toonSubRows = !regel.is_maatwerk
@@ -363,7 +387,7 @@ function RegelRow({ regel, orderId, orderdatum, levertijd, claims, isEindstatus 
             <span className="text-xs text-slate-300">—</span>
           )}
           {!regel.is_maatwerk && !isAdminPseudo(regel) && (
-            <div className="mt-1">
+            <div className="mt-1 flex flex-col gap-1">
               <VerzendweekCell
                 regel={regel}
                 orderId={orderId}
@@ -371,6 +395,12 @@ function RegelRow({ regel, orderId, orderdatum, levertijd, claims, isEindstatus 
                 levertijd={levertijd}
                 bewerkbaar={!isEindstatus}
               />
+              {!isEindstatus && (
+                <VroegstLeverbaerHint
+                  vroegst={regel.vroegst_leverbaar}
+                  orderVerzendweek={orderVerzendweek}
+                />
+              )}
             </div>
           )}
         </td>
@@ -449,10 +479,22 @@ interface OrderRegelsTableProps {
   orderStatus?: string
   orderId: number
   orderdatum: string
+  /** ISO-datum van de order-afleverdatum; wordt omgezet naar verzendweek voor de vroegst_leverbaar-hint. */
+  orderAfleverdatum?: string | null
 }
 
-export function OrderRegelsTable({ regels, isLoading, levertijden, claims, orderStatus, orderId, orderdatum }: OrderRegelsTableProps) {
+export function OrderRegelsTable({ regels, isLoading, levertijden, claims, orderStatus, orderId, orderdatum, orderAfleverdatum }: OrderRegelsTableProps) {
+  const [deelzendingOpen, setDeelzendingOpen] = useState(false)
   const isEindstatus = EINDSTATUS_ORDERS.has(orderStatus ?? '')
+  const orderVerzendweek = isoWeekStringVanIso(orderAfleverdatum)
+
+  // Toon de deelzending-knop alleen als er ≥2 niet-pseudo-regels zijn waarvan
+  // minstens 1 eerder klaar is dan de order-verzendweek.
+  const heeftDeelzendingKandidaat = !isEindstatus && orderVerzendweek != null && regels.some(
+    (r) => !r.is_maatwerk && r.te_leveren > 0 && r.vroegst_leverbaar != null
+      && isoWeekStringVanIso(r.vroegst_leverbaar) != null
+      && isoWeekStringVanIso(r.vroegst_leverbaar)! < orderVerzendweek,
+  )
   const levertijdMap = new Map<number, OrderRegelLevertijd>(
     (levertijden ?? []).map(l => [l.order_regel_id, l]),
   )
@@ -473,11 +515,31 @@ export function OrderRegelsTable({ regels, isLoading, levertijden, claims, order
 
   return (
     <div className="bg-white rounded-[var(--radius)] border border-slate-200 overflow-hidden">
-      <div className="px-5 py-3 border-b border-slate-100">
+      <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between gap-3">
         <h3 className="font-medium text-slate-900">
           Orderregels ({regels.length})
         </h3>
+        {heeftDeelzendingKandidaat && (
+          <button
+            type="button"
+            onClick={() => setDeelzendingOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-[var(--radius-sm)] border border-slate-200 text-slate-600 hover:bg-slate-50"
+            title="Stuur een deel van de regels alvast — de rest volgt later"
+          >
+            <PackageCheck size={13} />
+            Deelzending starten
+          </button>
+        )}
       </div>
+      {deelzendingOpen && (
+        <DeelzendingDialog
+          orderId={orderId}
+          orderStatus={orderStatus ?? ''}
+          regels={regels}
+          orderVerzendweek={orderVerzendweek}
+          onClose={() => setDeelzendingOpen(false)}
+        />
+      )}
 
       {regels.length === 0 ? (
         <div className="p-8 text-center text-slate-400">Geen orderregels</div>
@@ -505,6 +567,7 @@ export function OrderRegelsTable({ regels, isLoading, levertijden, claims, order
                 regel={regel}
                 orderId={orderId}
                 orderdatum={orderdatum}
+                orderVerzendweek={orderVerzendweek}
                 levertijd={levertijdMap.get(regel.id)}
                 claims={claimsMap.get(regel.id) ?? []}
                 isEindstatus={isEindstatus}

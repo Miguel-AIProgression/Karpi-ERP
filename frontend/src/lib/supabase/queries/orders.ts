@@ -166,6 +166,9 @@ export interface OrderRegel {
   verzendweek?: string | null
   /** Mig 406: per-orderregel klantreferentie. */
   klant_referentie?: string | null
+  /** Mig 412: vroegste verzenddatum voor deze regel op basis van actieve claims.
+   * NULL = geen dekking of maatwerk. CURRENT_DATE of later = beschikbaar. */
+  vroegst_leverbaar?: string | null
 }
 
 export interface StatusCount {
@@ -505,7 +508,7 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
 
   const { data, error } = await supabase
     .from('order_regels')
-    .select('id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2, orderaantal, te_leveren, backorder, prijs, korting_pct, bedrag, gewicht_kg, vrije_voorraad, fysiek_artikelnr, omstickeren, is_maatwerk, maatwerk_vorm, maatwerk_lengte_cm, maatwerk_breedte_cm, maatwerk_diameter_cm, maatwerk_afwerking, maatwerk_band_kleur, maatwerk_instructies, maatwerk_m2_prijs, maatwerk_oppervlak_m2, maatwerk_vorm_toeslag, maatwerk_afwerking_prijs, verzendweek, klant_referentie, producten!order_regels_artikelnr_fkey(kwaliteit_code, kleur_code, is_pseudo, is_dropship, karpi_code)')
+    .select('id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2, orderaantal, te_leveren, backorder, prijs, korting_pct, bedrag, gewicht_kg, vrije_voorraad, fysiek_artikelnr, omstickeren, is_maatwerk, maatwerk_vorm, maatwerk_lengte_cm, maatwerk_breedte_cm, maatwerk_diameter_cm, maatwerk_afwerking, maatwerk_band_kleur, maatwerk_instructies, maatwerk_m2_prijs, maatwerk_oppervlak_m2, maatwerk_vorm_toeslag, maatwerk_afwerking_prijs, verzendweek, klant_referentie, vroegst_leverbaar, producten!order_regels_artikelnr_fkey(kwaliteit_code, kleur_code, is_pseudo, is_dropship, karpi_code)')
     .eq('order_id', orderId)
     .order('regelnummer')
 
@@ -574,6 +577,7 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
       maatwerk_afwerking_prijs: row.maatwerk_afwerking_prijs ?? null,
       verzendweek: row.verzendweek ?? null,
       klant_referentie: row.klant_referentie ?? null,
+      vroegst_leverbaar: row.vroegst_leverbaar ?? null,
     }
   }
 

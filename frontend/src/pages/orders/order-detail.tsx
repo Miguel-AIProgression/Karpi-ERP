@@ -190,6 +190,7 @@ export function OrderDetailPage() {
         orderStatus={order.status}
         orderId={order.id}
         orderdatum={order.orderdatum}
+        orderAfleverdatum={order.afleverdatum}
       />
       <OrderZendingen orderId={order.id} />
       <OrderEventsTijdlijn orderId={order.id} />
