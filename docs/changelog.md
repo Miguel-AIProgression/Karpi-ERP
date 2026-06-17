@@ -16,7 +16,7 @@ rondes in één greep "op compleet" zetten — zonder opnieuw labels te printen.
   picker)` → géén printen, géén navigatie. Afgeronde orders vallen uit de lijst
   (→ Verzonden); een zending met openstaand pick-probleem wordt overgeslagen en
   per zending mét reden teruggekoppeld in een amber melding (de batch faalt niet).
-- **DB (mig 412)**: nieuwe RPC `voltooi_pickronden(p_zending_ids[], p_picker_id)`
+- **DB (mig 414, gedraaid als 412)**: nieuwe RPC `voltooi_pickronden(p_zending_ids[], p_picker_id)`
   die per (DISTINCT) zending de bestaande bundel-aware `voltooi_pickronde`
   (mig 258) aanroept met een savepoint per zending. Geen gedupliceerde
   voltooi-logica; picker optioneel (mig 394).

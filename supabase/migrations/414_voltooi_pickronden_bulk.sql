@@ -1,4 +1,7 @@
--- 412_voltooi_pickronden_bulk.sql
+-- 414_voltooi_pickronden_bulk.sql
+-- (Hernummerd van 412 → 414 wegens collisie met 412_deelzending_vroegst_leverbaar
+--  van een parallelle sessie; de functie was als 412 al op de live DB gedraaid —
+--  het nummer is puur repo-administratie, de DB-staat is ongewijzigd correct.)
 -- Bulk-variant van voltooi_pickronde (mig 258): rondt meerdere lopende pickrondes
 -- (zendingen status 'Picken') in één call af. Aanleiding (17-06-2026): sinds we
 -- vanaf Pick & Ship meerdere pickrondes tegelijk kunnen STARTEN (mig 248), wil de
@@ -74,7 +77,7 @@ $$;
 GRANT EXECUTE ON FUNCTION voltooi_pickronden(BIGINT[], BIGINT) TO authenticated;
 
 COMMENT ON FUNCTION voltooi_pickronden(BIGINT[], BIGINT) IS
-  'Mig 412: bulk-afronden van meerdere pickrondes. Roept per (DISTINCT) zending '
+  'Mig 414 (gedraaid als 412): bulk-afronden van meerdere pickrondes. Roept per (DISTINCT) zending '
   'voltooi_pickronde (mig 258, bundel-aware) aan met een savepoint per zending '
   'zodat een pick-probleem of al-voltooide zending de batch niet laat falen. '
   'Returnt per zending {zending_id, zending_nr, ok, reden}. Picker optioneel (mig 394).';
