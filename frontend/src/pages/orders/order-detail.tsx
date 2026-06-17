@@ -134,7 +134,9 @@ export function OrderDetailPage() {
       {isPrijsOntbreekt(order) && (
         <PrijsOntbreektBanner
           orderId={order.id}
+          debiteurNr={order.debiteur_nr}
           teBevestigenSinds={order.prijs_ontbreekt_sinds!}
+          regels={regels}
         />
       )}
 
