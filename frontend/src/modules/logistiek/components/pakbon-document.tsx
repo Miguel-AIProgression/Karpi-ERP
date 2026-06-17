@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { formatDate, formatNumber } from '@/lib/utils/formatters'
-import { fetchBedrijfsConfig, type BedrijfsConfig } from '@/lib/supabase/queries/bedrijfsconfig'
+import { fetchBedrijfsConfig } from '@/lib/supabase/queries/bedrijfsconfig'
 import { productNamen } from '@/modules/logistiek/lib/shipping-label-data'
 import { bouwVerzenddocument, type PakbonRegel } from '@/modules/logistiek/lib/printset'
 import type { ZendingPrintSet } from '@/modules/logistiek/queries/zendingen'
@@ -265,8 +265,6 @@ export function PakbonDocument({ zending, vervoerderNaam: _vervoerderNaam, colli
           EEN KLEINE MAATAFWIJKING (+/- 3%) EN<br />
           KLEURAFWIJKINGEN KUNNEN OPTREDEN
         </div>
-
-        <FooterBlock bedrijf={bedrijf} />
       </div>
     </div>
   )
@@ -281,24 +279,3 @@ function MetaRow({ label, value, bold }: { label: string; value: string; bold?: 
   )
 }
 
-function FooterBlock({ bedrijf }: { bedrijf: BedrijfsConfig | undefined }) {
-  if (!bedrijf) return null
-  const bankParts = [
-    bedrijf.kvk && `k.v.k. ${bedrijf.kvk}`,
-    bedrijf.btw_nummer && `btw ${bedrijf.btw_nummer}`,
-    bedrijf.bank,
-    bedrijf.iban && `IBAN ${bedrijf.iban}`,
-    bedrijf.bic && `BIC ${bedrijf.bic}`,
-  ].filter(Boolean) as string[]
-
-  return (
-    <div className="mt-2 text-center text-[8px] text-slate-700 font-sans">
-      <div>{bankParts.join(' | ')}</div>
-      {bedrijf.betalingscondities_tekst && (
-        <div className="mt-1 whitespace-pre-line text-left text-[7px] leading-tight text-slate-600">
-          {bedrijf.betalingscondities_tekst}
-        </div>
-      )}
-    </div>
-  )
-}
