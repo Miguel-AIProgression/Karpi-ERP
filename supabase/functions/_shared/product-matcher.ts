@@ -15,7 +15,7 @@
 //   6. productTitle omschrijving ilike — alleen unieke match
 
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { collectExtraTexts, parseMaatwerkDims, type LightspeedOrderRow } from './lightspeed-client.ts'
+import { collectExtraTexts, parseMaatwerkDims, type OrderMatcherRow } from './order-matcher.ts'
 import { normaliseerNaam } from './debiteur-matcher.ts'
 
 export type MatchBron =
@@ -119,7 +119,7 @@ async function detectVorm(supabase: SupabaseClient, text: string): Promise<strin
   return null
 }
 
-function uniekeCodes(row: LightspeedOrderRow): string[] {
+function uniekeCodes(row: OrderMatcherRow): string[] {
   const set = new Set<string>()
   for (const v of [row.articleCode, row.sku]) {
     const t = v?.trim()
@@ -233,7 +233,7 @@ export function splitsKwaliteitKleur(
   return { kwaliteit: m[1], kleur: kleur ?? m[2] }
 }
 
-function classifyRow(row: LightspeedOrderRow): UnmatchedReden {
+function classifyRow(row: OrderMatcherRow): UnmatchedReden {
   const hay = `${row.productTitle ?? ''} ${row.variantTitle ?? ''}`
   if (MUSTER_PATROON.test(hay)) return 'muster'
   if (WUNSCHGROSSE_PATROON.test(hay)) return 'wunschgrosse'
@@ -341,7 +341,7 @@ async function zoekViaVormOmschrijving(
   return hit?.artikelnr ?? null
 }
 
-async function zoekViaParsing(supabase: SupabaseClient, row: LightspeedOrderRow): Promise<string | null> {
+async function zoekViaParsing(supabase: SupabaseClient, row: OrderMatcherRow): Promise<string | null> {
   const { basis, kleur } = parseTitel(row.productTitle ?? '')
   const afm = parseAfmeting(row.variantTitle ?? '') ?? parseAfmeting(row.productTitle ?? '')
   if (!basis || !kleur || !afm) return null
@@ -360,7 +360,7 @@ async function zoekViaParsing(supabase: SupabaseClient, row: LightspeedOrderRow)
 
 export async function matchProduct(
   supabase: SupabaseClient,
-  row: LightspeedOrderRow,
+  row: OrderMatcherRow,
   debiteurNr?: number,
 ): Promise<ProductMatch> {
 
@@ -684,7 +684,7 @@ export async function matchProduct(
   return { artikelnr: null, matchedOn: 'geen', unmatchedReden }
 }
 
-export function buildOmschrijving(row: LightspeedOrderRow, match: ProductMatch): string {
+export function buildOmschrijving(row: OrderMatcherRow, match: ProductMatch): string {
   const base = [row.productTitle, row.variantTitle].filter(Boolean).join(' — ').trim()
   if (match.artikelnr || match.is_maatwerk) return base
   const prefix = (() => {

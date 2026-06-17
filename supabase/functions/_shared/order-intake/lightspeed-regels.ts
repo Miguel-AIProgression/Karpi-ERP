@@ -4,10 +4,7 @@
 // (factor 1000, nu opgelost in slice 0), maatwerk_vorm (alleen de cron zette het)
 // en omschrijving-opbouw. Eén bron van waarheid.
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import {
-  parseMaatwerkDims,
-  type LightspeedOrderRow,
-} from '../lightspeed-client.ts'
+import { parseMaatwerkDims, type OrderMatcherRow } from '../order-matcher.ts'
 import { matchProduct, buildOmschrijving, type ProductMatch } from '../product-matcher.ts'
 import { haalKlantPrijs } from '../klant-prijs.ts'
 import { kgVanLightspeedGewicht } from './gewicht.ts'
@@ -47,7 +44,7 @@ export function toIntakeRegel(input: {
 /** Bouwt de IntakeRegels voor een Lightspeed-order (beide paden delen dit). */
 export async function buildLightspeedRegels(
   supabase: SupabaseClient,
-  rows: LightspeedOrderRow[],
+  rows: OrderMatcherRow[],
   debiteurNr: number,
 ): Promise<{ regels: IntakeRegel[]; matched: number; unmatched: number }> {
   const regels: IntakeRegel[] = []

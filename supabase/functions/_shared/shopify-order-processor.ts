@@ -14,7 +14,7 @@ import {
 } from './shopify-types.ts'
 import { matchDebiteur } from './shopify-debiteur-matcher.ts'
 import { matchProduct, buildOmschrijving } from './product-matcher.ts'
-import { parseMaatwerkDims } from './lightspeed-client.ts'
+import { parseMaatwerkDims } from './order-matcher.ts'
 import { haalKlantPrijs } from './klant-prijs.ts'
 import { logExternePayload, markeerExternePayload } from './externe-payload-audit.ts'
 

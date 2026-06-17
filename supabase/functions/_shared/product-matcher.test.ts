@@ -51,8 +51,8 @@ function ilikeArgs(calls: Calls, table: string): unknown[][] {
   return out
 }
 
-// Minimale LightspeedOrderRow-fabriek (Shopify-regels lopen via
-// shopifyLineItemToMatcherRow door dezelfde shape).
+// Minimale OrderMatcherRow-fabriek (zowel Lightspeed- als Shopify-regels
+// lopen via dezelfde shape door product-matcher.ts).
 function row(overrides: Record<string, unknown>) {
   return {
     id: 1,

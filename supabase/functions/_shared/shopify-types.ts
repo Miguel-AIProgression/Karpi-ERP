@@ -132,7 +132,7 @@ export function extractShopifyBillingAddress(order: ShopifyOrderWebhook): Record
 }
 
 /**
- * Map een Shopify line_item naar het LightspeedOrderRow-compatibele formaat
+ * Map een Shopify line_item naar het kanaal-neutrale OrderMatcherRow-formaat
  * zodat `product-matcher.ts` hergebruikt kan worden zonder wijzigingen.
  */
 export function shopifyLineItemToMatcherRow(item: ShopifyLineItem) {
