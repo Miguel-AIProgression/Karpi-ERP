@@ -363,12 +363,7 @@ export function ZendingPrintSetPage() {
             break-inside: avoid !important;
             page-break-inside: avoid !important;
             margin: 0 !important;
-            /* BEWUST GEEN padding-reset: het label zet zelf via inline padding
-               zijn veilige witrand (LABEL_EXTRA_RANDMARGE_MM). Een eerdere
-               'padding: 0 !important' overschreef die marge ALLEEN bij print,
-               waardoor adres/barcode tegen de etiketrand kwamen terwijl de
-               schermpreview wel marge toonde. box-sizing + overflow hieronder
-               houden het label binnen de pagina. */
+            padding: 0 !important;
             border: 0 !important;
             box-sizing: border-box !important;
             overflow: hidden !important;
