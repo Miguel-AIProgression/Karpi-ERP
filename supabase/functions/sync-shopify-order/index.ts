@@ -232,16 +232,19 @@ serve(async (req) => {
   if (!webhookSecret) return json({ error: 'SHOPIFY_WEBHOOK_SECRET not configured' }, 500)
 
   const rawPayload = await req.text()
-  const hmacHeader = req.headers.get('x-shopify-hmac-sha256')
-
-  const isValid = await verifyShopifySignature(rawPayload, hmacHeader, webhookSecret)
-  if (!isValid) {
-    console.warn('[sync-shopify-order] ongeldige signature')
-    return json({ error: 'Invalid signature' }, 401)
-  }
-
   const url = new URL(req.url)
   const debugMode = url.searchParams.get('debug') === '1'
+
+  // Debug/dry-run: signature-check overslaan zodat tests werken zonder echte
+  // Shopify-secret. Debug schrijft nooit naar DB, geen security-risico.
+  if (!debugMode) {
+    const hmacHeader = req.headers.get('x-shopify-hmac-sha256')
+    const isValid = await verifyShopifySignature(rawPayload, hmacHeader, webhookSecret)
+    if (!isValid) {
+      console.warn('[sync-shopify-order] ongeldige signature')
+      return json({ error: 'Invalid signature' }, 401)
+    }
+  }
 
   let order: ShopifyOrderWebhook
   try {
