@@ -250,31 +250,6 @@ serve(async (req) => {
     return json({ error: 'Invalid JSON' }, 400)
   }
 
-  // Debug-modus: return de raw order zonder DB-aanroepen
-  if (debugMode) {
-    return json({
-      debug: true,
-      shopify_order_id: order.id,
-      shopify_order_name: order.name,
-      note: order.note ?? null,
-      note_attributes: order.note_attributes ?? [],
-      customer_note: order.customer?.note ?? null,
-      customer_tags: order.customer?.tags ?? null,
-      company: order.company ?? null,
-      billing_company: order.billing_address?.company ?? null,
-      email: order.email ?? order.customer?.email ?? null,
-      line_items_count: order.line_items?.length ?? 0,
-      line_items: (order.line_items ?? []).map(i => ({
-        title: i.title,
-        variant_title: i.variant_title,
-        sku: i.sku,
-        quantity: i.quantity,
-        price: i.price,
-        properties: i.properties ?? [],
-      })),
-    })
-  }
-
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL') ?? '',
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
@@ -398,6 +373,19 @@ serve(async (req) => {
     // uitgesloten op bron.
     debiteur_zeker: debiteurMatch.zeker,
     debiteur_match_bron: debiteurMatch.bron,
+  }
+
+  // Debug/dry-run: volledige verwerking gedaan maar GEEN schrijven naar DB.
+  // Geeft exact terug wat er aan create_webshop_order meegegeven zou worden.
+  if (debugMode) {
+    return json({
+      dry_run: true,
+      header,
+      regels,
+      debiteur_match: { debiteur_nr: debiteurMatch.debiteur_nr, bron: debiteurMatch.bron, zeker: debiteurMatch.zeker },
+      matched,
+      unmatched,
+    })
   }
 
   const { data, error } = await supabase.rpc('create_webshop_order', {
