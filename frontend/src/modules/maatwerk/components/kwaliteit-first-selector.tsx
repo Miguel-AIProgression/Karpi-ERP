@@ -359,7 +359,7 @@ export function KwaliteitFirstSelector({
     [oppervlakM2, effectieveM2Prijs, vormToeslag, afwerkingPrijs, defaultKorting]
   )
 
-  const canAdd = !!selectedKleur && effectieveM2Prijs > 0 && oppervlakM2 > 0
+  const canAdd = !!selectedKleur && oppervlakM2 > 0
 
   // ── Click outside ─────────────────────────────────────────────
   useEffect(() => {
@@ -846,6 +846,9 @@ export function KwaliteitFirstSelector({
               {afwerkingPrijs > 0 && <span>+ {formatCurrency(afwerkingPrijs)} (afwerking)</span>}
               {defaultKorting > 0 && <span>− {defaultKorting}% korting</span>}
               <span className="font-semibold">= {formatCurrency(totaalPrijs)}</span>
+              {effectieveM2Prijs === 0 && (
+                <span className="text-amber-600 text-xs">Geen prijs op prijslijst — pas prijs aan na toevoegen</span>
+              )}
             </div>
             <button
               type="button"
