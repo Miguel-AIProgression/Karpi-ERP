@@ -1,5 +1,33 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-17 — Pick & Ship: meerdere pickrondes tegelijk afronden (bulk → Verzonden)
+
+**Waarom:** Sinds we vanaf Pick & Ship meerdere pickrondes tegelijk kunnen
+*starten*, miste de tegenhanger: na het fysiek picken moest elke ronde nog één
+voor één op de printset-pagina worden voltooid. De operator wil de gepickte
+rondes in één greep "op compleet" zetten — zonder opnieuw labels te printen.
+
+**Wat:**
+- **Modus-switch op Pick & Ship** (`pick-overview`): segmented control "Picken
+  starten" (default, terracotta) ↔ "Afronden" (emerald). In afrond-modus zijn de
+  orders mét lopende pickronde selecteerbaar (i.p.v. de startbare orders); de
+  checkboxes en de sticky balk kleuren groen.
+- **Bulk-afrond-balk**: "Zet op compleet (N)" → `voltooi_pickronden(zending_ids,
+  picker)` → géén printen, géén navigatie. Afgeronde orders vallen uit de lijst
+  (→ Verzonden); een zending met openstaand pick-probleem wordt overgeslagen en
+  per zending mét reden teruggekoppeld in een amber melding (de batch faalt niet).
+- **DB (mig 412)**: nieuwe RPC `voltooi_pickronden(p_zending_ids[], p_picker_id)`
+  die per (DISTINCT) zending de bestaande bundel-aware `voltooi_pickronde`
+  (mig 258) aanroept met een savepoint per zending. Geen gedupliceerde
+  voltooi-logica; picker optioneel (mig 394).
+- **Bundel-dedup**: pure helper `zendingenVoorAfronden(orders)` vertaalt de
+  order-selectie naar unieke zending-ids — een bundel-zending (meerdere orders,
+  mig 222) wordt één keer voltooid. Vangnet: `afrond-selectie.test.ts` +
+  bulk-contracttest in `pickronde.contract.test.ts`.
+- **Architectuur**: hergebruikt de bestaande selectie-context (uitgebreid met een
+  `modus`-veld) en `PickSelectieBalk` (nu modus-aware) — de tussenliggende secties
+  en order-cards bleven onaangeroerd op de checkbox-tint na.
+
 ## 2026-06-17 — Pick & Ship: multi-select → picker toewijzen → bundelen + bulk-print
 
 **Waarom:** Op Pick & Ship kon je alleen een héle week, één bundel of één losse

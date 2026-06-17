@@ -22,6 +22,7 @@ import {
   startPickronde,
   markeerColliNietGevonden,
   voltooiPickronde,
+  voltooiPickrondes,
 } from '../queries/pickronde'
 
 beforeEach(() => {
@@ -102,5 +103,38 @@ describe('voltooiPickronde', () => {
       error: { message: 'Pickronde heeft 2 openstaand(e) pick-probleem(en)', code: '23001' },
     }
     await expect(voltooiPickronde(42, 3)).rejects.toThrow(/openstaand/)
+  })
+})
+
+describe('voltooiPickrondes (bulk, mig 412)', () => {
+  it('roept RPC voltooi_pickronden aan met p_zending_ids + p_picker_id en parset per-zending-uitkomsten', async () => {
+    nextRpcResponse = {
+      data: [
+        { zending_id: 10, zending_nr: 'ZEND-0010', ok: true, reden: null },
+        { zending_id: 11, zending_nr: 'ZEND-0011', ok: false, reden: 'Pickronde heeft 1 openstaand(e) pick-probleem(en)' },
+      ],
+      error: null,
+    }
+    const result = await voltooiPickrondes([10, 11], 3)
+    expect(rpcCalls).toEqual([
+      { fn: 'voltooi_pickronden', args: { p_zending_ids: [10, 11], p_picker_id: 3 } },
+    ])
+    expect(result).toHaveLength(2)
+    expect(result[0]).toEqual({ zending_id: 10, zending_nr: 'ZEND-0010', ok: true, reden: null })
+    expect(result[1].ok).toBe(false)
+    expect(result[1].reden).toMatch(/openstaand/)
+  })
+
+  it('picker is optioneel (mig 394): mag NULL meesturen', async () => {
+    nextRpcResponse = { data: [], error: null }
+    await voltooiPickrondes([10], null)
+    expect(rpcCalls).toEqual([
+      { fn: 'voltooi_pickronden', args: { p_zending_ids: [10], p_picker_id: null } },
+    ])
+  })
+
+  it('gooit fout bij harde RPC-fout', async () => {
+    nextRpcResponse = { data: null, error: { message: 'Medewerker 99 is geen actieve picker' } }
+    await expect(voltooiPickrondes([10], 99)).rejects.toThrow(/geen actieve picker/)
   })
 })

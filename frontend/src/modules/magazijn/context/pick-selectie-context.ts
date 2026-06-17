@@ -18,10 +18,22 @@
 //     zónder de onderliggende keuze te wissen.
 import { createContext, useCallback, useContext, useMemo, useState } from 'react'
 
+/**
+ * Twee selectie-modi op dezelfde Pick & Ship-pagina (besluit 17-06-2026):
+ *  - 'starten'  → selecteer pickbare orders om een pickronde te starten & printen.
+ *  - 'afronden' → selecteer al-gestarte pickrondes (orders met actieve_pickronde)
+ *                 en zet ze in bulk op compleet (→ Verzonden), zonder printen.
+ * De checkbox-tint en de actiebalk dispatchen hierop; `selectableIds` (door de
+ * pagina bepaald) bevat per modus de juiste order-ids.
+ */
+export type PickSelectieModus = 'starten' | 'afronden'
+
 export interface PickSelectieValue {
+  /** Actieve modus — stuurt checkbox-tint en de actiebalk. */
+  modus: PickSelectieModus
   /** Geselecteerde, nog-selecteerbare order-ids (afgeleide "schone" set). */
   selectedIds: Set<number>
-  /** Mag deze order aangevinkt worden? (pickbaar, niet geblokkeerd, niet al in pickronde) */
+  /** Mag deze order aangevinkt worden? (per modus: startbaar resp. lopende pickronde) */
   isSelectable: (orderId: number) => boolean
   isSelected: (orderId: number) => boolean
   /** Toggle één order. No-op als de order niet selecteerbaar is. */
@@ -36,12 +48,13 @@ export const PickSelectieContext = createContext<PickSelectieValue | null>(null)
 
 /**
  * State-hook die de pagina (pick-overview) host. `selectableIds` is de set
- * orders die op dit moment een pickronde kunnen starten; `resetKey` wisselt bij
- * tab-/filterwissel zodat de selectie dan leegt.
+ * orders die in de huidige modus aangevinkt mogen worden; `resetKey` wisselt bij
+ * tab-/filter-/modus-wissel zodat de selectie dan leegt.
  */
 export function usePickSelectieState(
   resetKey: string,
   selectableIds: Set<number>,
+  modus: PickSelectieModus = 'starten',
 ): PickSelectieValue {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set())
 
@@ -107,6 +120,7 @@ export function usePickSelectieState(
 
   return useMemo(
     () => ({
+      modus,
       selectedIds: cleanSelectedIds,
       isSelectable,
       isSelected: (orderId: number) => cleanSelectedIds.has(orderId),
@@ -115,7 +129,7 @@ export function usePickSelectieState(
       clear,
       count: cleanSelectedIds.size,
     }),
-    [cleanSelectedIds, isSelectable, toggle, setMany, clear],
+    [modus, cleanSelectedIds, isSelectable, toggle, setMany, clear],
   )
 }
 

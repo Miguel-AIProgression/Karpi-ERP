@@ -89,7 +89,8 @@ Afgedwongen door [`scripts/lint-no-direct-orders-status-update.sh`](../scripts/l
 | `herbereken_wacht_status` | **mig 352** (delegatie naar `derive_wacht_status` mét `Maatwerk afgerond`) | 218, 258, 267, 275, 346, 351 |
 | `derive_wacht_status` (pure ladder) | **mig 352** (`Maatwerk afgerond` no-touch) | 346 |
 | `voltooi_confectie` | **mig 348** (`_apply_transitie`) | 101, 247, 250, 330 |
-| `voltooi_pickronde` | mig 218 + bundel-aware (mig 222/242) | 217 |
+| `voltooi_pickronde` | **mig 258** (bundel-aware + `Deels verzonden`-split) | 217, 218, 222 |
+| `voltooi_pickronden` (bulk) | **mig 412** (loopt over zendingen → `voltooi_pickronde`, per-zending savepoint) | — |
 | `start_pickronden` (unified) | **mig 373** (geen-vervoerder-guard) | 220, 222, 248, 258 |
 | `sync_order_afleverdatum_met_claims` | **mig 355** (`Maatwerk afgerond` eindstatus) | 153, 298 |
 

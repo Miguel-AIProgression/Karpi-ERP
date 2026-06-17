@@ -107,6 +107,8 @@ export function OrderPickCard({ order }: Props) {
   const toonSelectie = selectie !== null
   const selecteerbaar = selectie?.isSelectable(order.order_id) ?? false
   const geselecteerd = selectie?.isSelected(order.order_id) ?? false
+  // Afrond-modus kleurt groen (= op compleet zetten); starten kleurt terracotta.
+  const afrondModus = selectie?.modus === 'afronden'
 
   const statusColor = ORDER_STATUS_COLORS[order.status] ?? {
     bg: 'bg-slate-100',
@@ -127,7 +129,9 @@ export function OrderPickCard({ order }: Props) {
       className={cn(
         'rounded-[var(--radius)] border',
         tint ? tint.card : 'bg-white border-slate-200',
-        geselecteerd && 'ring-2 ring-terracotta-500 ring-offset-1'
+        geselecteerd && (afrondModus
+          ? 'ring-2 ring-emerald-500 ring-offset-1'
+          : 'ring-2 ring-terracotta-500 ring-offset-1')
       )}
       title={tint?.title}
     >
@@ -162,8 +166,15 @@ export function OrderPickCard({ order }: Props) {
                 type="checkbox"
                 checked={geselecteerd}
                 onChange={() => selectie?.toggle(order.order_id)}
-                className="h-4 w-4 cursor-pointer accent-terracotta-500"
-                title="Selecteer voor gezamenlijk starten & printen"
+                className={cn(
+                  'h-4 w-4 cursor-pointer',
+                  afrondModus ? 'accent-emerald-600' : 'accent-terracotta-500',
+                )}
+                title={
+                  afrondModus
+                    ? 'Selecteer om af te ronden (op compleet zetten)'
+                    : 'Selecteer voor gezamenlijk starten & printen'
+                }
                 aria-label={`Selecteer order ${order.order_nr}`}
               />
             ) : (

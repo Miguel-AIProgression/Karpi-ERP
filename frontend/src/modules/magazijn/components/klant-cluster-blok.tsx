@@ -45,8 +45,11 @@ function BundelSelectieCheckbox({ orderIds }: { orderIds: number[] }) {
     if (ref.current) ref.current.indeterminate = deels
   }, [deels])
 
-  // Geen provider of niets selecteerbaars (bv. bundel loopt al) → geen checkbox.
+  // Geen provider of niets selecteerbaars (in 'starten' loopt de bundel al, in
+  // 'afronden' is hij nog niet gestart) → geen checkbox.
   if (!selectie || selecteerbareIds.length === 0) return null
+
+  const afrondModus = selectie.modus === 'afronden'
 
   return (
     <input
@@ -54,8 +57,10 @@ function BundelSelectieCheckbox({ orderIds }: { orderIds: number[] }) {
       type="checkbox"
       checked={alles}
       onChange={() => selectie.setMany(selecteerbareIds, !alles)}
-      className="h-4 w-4 cursor-pointer accent-terracotta-500"
-      title="Selecteer de hele bundel"
+      className={
+        'h-4 w-4 cursor-pointer ' + (afrondModus ? 'accent-emerald-600' : 'accent-terracotta-500')
+      }
+      title={afrondModus ? 'Selecteer de hele bundel om af te ronden' : 'Selecteer de hele bundel'}
       aria-label="Selecteer alle orders in deze bundel"
     />
   )

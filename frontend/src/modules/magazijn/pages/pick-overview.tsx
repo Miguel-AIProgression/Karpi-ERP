@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Globe, Search, Package, CalendarCheck, CalendarClock } from 'lucide-react'
+import { Globe, Search, Package, CalendarCheck, CalendarClock, Printer, CheckCheck } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { PickProblemenBanner } from '../components/pick-problemen-banner'
 import { HstAandachtBanner } from '@/modules/logistiek'
@@ -7,7 +7,7 @@ import { PickDagOrdersSectie } from '../components/pick-dag-orders-sectie'
 import { PickGeblokkeerdSectie } from '../components/pick-geblokkeerd-sectie'
 import { PickWeekSectie } from '../components/pick-week-sectie'
 import { PickSelectieBalk } from '../components/pick-selectie-balk'
-import { usePickSelectieState } from '../context/pick-selectie-context'
+import { usePickSelectieState, type PickSelectieModus } from '../context/pick-selectie-context'
 import { PickSelectieProvider } from '../context/pick-selectie-provider'
 import { usePickShipOrders, usePickShipStats } from '../hooks/use-pick-ship'
 import {
@@ -20,6 +20,7 @@ import { aggregeerVervoerderKeuzeVoorOrder } from '@/modules/logistiek/queries/v
 import { useVoorgesteldeBundels } from '@/modules/logistiek/queries/voorgestelde-bundels'
 import type { ResolvedVervoerder } from '@/modules/logistiek/lib/resolved-vervoerder'
 import { cn } from '@/lib/utils/cn'
+import { zendingenVoorAfronden } from '../lib/afrond-selectie'
 import { genereerWeekTabs } from '../lib/buckets'
 import { type BucketKey, type PickShipOrder } from '../lib/types'
 import {
@@ -35,6 +36,10 @@ export function MagazijnOverviewPage() {
   const [search, setSearch] = useState('')
   const [groepeerOpLand, setGroepeerOpLand] = useState(false)
   const [vervoerderFilter, setVervoerderFilter] = useState<VervoerderFilterValue>('all')
+  // Modus (besluit 17-06-2026): 'starten' = orders selecteren om te picken &
+  // printen (default); 'afronden' = al-gestarte pickrondes selecteren en in bulk
+  // op compleet zetten (→ Verzonden), zonder printen.
+  const [modus, setModus] = useState<PickSelectieModus>('starten')
 
   const { data: stats } = usePickShipStats()
   const { data: orders, isLoading } = usePickShipOrders({
@@ -199,27 +204,47 @@ export function MagazijnOverviewPage() {
     return s
   }, [startbareOrders])
 
-  // Multi-select (besluit 2026-06-17): orders aanvinken → in één keer starten &
-  // printen met optionele picker. Selecteerbaar = wat de pick-start-knop ook zou
-  // accepteren: pickbaar, niet geblokkeerd (geen vervoerder valt al uit
-  // `startbareOrders`), geen onvolledig adres/prijs (`nietPrintbaarIds`), en niet
-  // al in een lopende pickronde. De selectie wist bij tab-/vervoerderfilter-
-  // wissel (scope = actieve week-tab).
+  // Multi-select (besluit 2026-06-17), twee modi:
+  //  - 'starten': orders aanvinken → in één keer starten & printen met optionele
+  //    picker. Selecteerbaar = wat de pick-start-knop ook zou accepteren:
+  //    pickbaar, niet geblokkeerd (geen vervoerder valt al uit `startbareOrders`),
+  //    geen onvolledig adres/prijs (`nietPrintbaarIds`), en niet al in een lopende
+  //    pickronde.
+  //  - 'afronden': al-gestarte pickrondes aanvinken → in bulk op compleet zetten.
+  //    Selecteerbaar = orders MÉT lopende pickronde (de gate-checks zijn dan al
+  //    gepasseerd bij het starten).
+  // De selectie wist bij tab-/vervoerderfilter-/modus-wissel.
   const selectableIds = useMemo(() => {
     const s = new Set<number>()
     for (const o of startbareOrders) {
+      if (modus === 'afronden') {
+        if (o.actieve_pickronde) s.add(o.order_id)
+        continue
+      }
       if (o.actieve_pickronde) continue
       if (nietPrintbaarIds.has(o.order_id)) continue
       s.add(o.order_id)
     }
     return s
-  }, [startbareOrders, nietPrintbaarIds])
+  }, [modus, startbareOrders, nietPrintbaarIds])
 
-  const selectie = usePickSelectieState(`${filter}|${vervoerderFilter}`, selectableIds)
+  const selectie = usePickSelectieState(
+    `${filter}|${vervoerderFilter}|${modus}`,
+    selectableIds,
+    modus,
+  )
 
   const geselecteerdeOrders = useMemo(
     () => startbareOrders.filter((o) => selectie.selectedIds.has(o.order_id)),
     [startbareOrders, selectie.selectedIds],
+  )
+
+  // Afrond-modus werkt op zending-niveau: een bundel-zending hoort bij meerdere
+  // geselecteerde orders maar moet één keer voltooid worden. Dedupliceer de
+  // geselecteerde orders naar hun unieke actieve-pickronde-zending.
+  const geselecteerdeZendingen = useMemo(
+    () => zendingenVoorAfronden(geselecteerdeOrders),
+    [geselecteerdeOrders],
   )
 
   // Transparantie: hoeveel niet-geselecteerde orders door de auto-4D-bundeling
@@ -346,6 +371,40 @@ export function MagazijnOverviewPage() {
           </div>
         ))}
       </div>
+
+      {/* Modus-switch: picken starten vs. gepickte rondes afronden (besluit 17-06-2026). */}
+      <div className="mb-4 inline-flex rounded-[var(--radius)] border border-slate-200 bg-slate-100 p-1">
+        {([
+          { key: 'starten', label: 'Picken starten', icon: Printer },
+          { key: 'afronden', label: 'Afronden', icon: CheckCheck },
+        ] as const).map((m) => {
+          const isActive = modus === m.key
+          return (
+            <button
+              key={m.key}
+              type="button"
+              onClick={() => setModus(m.key)}
+              aria-pressed={isActive}
+              className={cn(
+                'inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] px-3.5 py-1.5 text-sm font-medium transition-colors',
+                isActive
+                  ? m.key === 'afronden'
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'bg-terracotta-500 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900',
+              )}
+            >
+              <m.icon size={15} />
+              {m.label}
+            </button>
+          )
+        })}
+      </div>
+      {modus === 'afronden' && (
+        <p className="-mt-2 mb-4 text-sm text-slate-500">
+          Vink de pickrondes aan die fysiek gepickt zijn en zet ze in één keer op compleet — er worden geen labels geprint.
+        </p>
+      )}
 
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <div className="flex flex-wrap gap-1">
@@ -474,7 +533,9 @@ export function MagazijnOverviewPage() {
       )}
 
       <PickSelectieBalk
+        modus={modus}
         geselecteerdeOrders={geselecteerdeOrders}
+        geselecteerdeZendingen={geselecteerdeZendingen}
         aantalBundelPartners={aantalBundelPartners}
         onClear={selectie.clear}
       />

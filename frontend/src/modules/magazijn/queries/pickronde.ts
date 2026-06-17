@@ -43,6 +43,44 @@ export async function voltooiPickronde(
   return Number(data)
 }
 
+/** Per-zending-uitkomst van de bulk-afrond-RPC (mig 412). */
+export interface VoltooiPickrondeUitkomst {
+  zending_id: number
+  zending_nr: string | null
+  /** TRUE = afgerond naar 'Klaar voor verzending'; FALSE = overgeslagen (zie reden). */
+  ok: boolean
+  /** Reden bij ok=FALSE (bv. openstaand pick-probleem of al voltooid). */
+  reden: string | null
+}
+
+// Mig 412: rondt meerdere pickrondes (zendingen status 'Picken') in één call af.
+// De RPC slaat per-zending fouten (pick-probleem / al voltooid) over i.p.v. de
+// hele batch te laten falen, dus we throwen alleen bij een harde RPC-fout en
+// geven anders de per-zending-uitkomsten terug zodat de caller kan rapporteren.
+export async function voltooiPickrondes(
+  zendingIds: number[],
+  pickerId: number | null,
+): Promise<VoltooiPickrondeUitkomst[]> {
+  const { data, error } = await supabase.rpc('voltooi_pickronden', {
+    p_zending_ids: zendingIds,
+    p_picker_id: pickerId,
+  })
+  if (error) throw toError(error, 'Pickrondes voltooien mislukt')
+  return (
+    (data ?? []) as Array<{
+      zending_id: number | string
+      zending_nr: string | null
+      ok: boolean
+      reden: string | null
+    }>
+  ).map((r) => ({
+    zending_id: Number(r.zending_id),
+    zending_nr: r.zending_nr,
+    ok: r.ok,
+    reden: r.reden,
+  }))
+}
+
 // Mig 398: draait een nog-niet-gepickte pickronde terug. Verwijdert de zending
 // en zet de betrokken order(s) terug naar 'Klaar voor picken'. Backend weigert
 // als er al gepickt is of de zending niet meer status 'Picken' heeft.

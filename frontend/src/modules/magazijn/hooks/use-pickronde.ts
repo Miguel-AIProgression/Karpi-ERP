@@ -7,6 +7,7 @@ import {
   markeerColliNietGevonden,
   startPickronde,
   voltooiPickronde,
+  voltooiPickrondes,
   type MarkeerNietGevondenArgs,
 } from '../queries/pickronde'
 
@@ -86,6 +87,25 @@ export function useVoltooiPickronde() {
       // Factuur-keten kan vuren na voltooi (mig 217 sluit orders.status='Verzonden')
       qc.invalidateQueries({ queryKey: ['orders'] })
       qc.invalidateQueries({ queryKey: ['facturen'] })
+    },
+  })
+}
+
+// Mig 412: bulk-afronden van meerdere pickrondes tegelijk vanaf Pick & Ship.
+// Zelfde cache-invalidatie als useVoltooiPickronde + voorgestelde-bundels (de
+// afgeronde orders vallen uit de bundel-preview, mig 229).
+export function useVoltooiPickrondes() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ zendingIds, pickerId }: { zendingIds: number[]; pickerId: number | null }) =>
+      voltooiPickrondes(zendingIds, pickerId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['pickronde'] })
+      qc.invalidateQueries({ queryKey: ['logistiek', 'zendingen'] })
+      qc.invalidateQueries({ queryKey: ['pick-ship'] })
+      qc.invalidateQueries({ queryKey: ['orders'] })
+      qc.invalidateQueries({ queryKey: ['facturen'] })
+      qc.invalidateQueries({ queryKey: ['voorgestelde-bundels'] })
     },
   })
 }
