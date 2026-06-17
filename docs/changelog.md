@@ -1,5 +1,28 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-17 — HST-depotnummer op het verzendlabel
+
+**Waarom:** HST sorteert binnenkomende colli over depots op basis van de
+afleverpostcode en wil dat depotnummer zélf zien op het etiket dat Karpi print
+en plakt (mail 17-06; de eis stond al beschreven in mig 175). HST scant alleen
+de SSCC — het depot zit dus **niet** in de API-payload en is puur etiket-info.
+
+**Wat:**
+- Nieuwe pure lookup [`hst-depot.ts`](../frontend/src/modules/logistiek/lib/hst-depot.ts):
+  `hstDepotVoorPostcode(postcode, land)` → eerste 4 cijfers van de postcode +
+  land (NL/BE via de gedeelde land-seam `@/lib/utils/land-vlag`) → depotnummer,
+  of `null`. Ranges uit de door HST aangeleverde *"Postcodeverdeling NL+BE.xlsx"*
+  (85 NL- + 26 BE-ranges, niet-overlappend). Buiten NL/BE → geen depot.
+- [`ShippingLabel`](../frontend/src/modules/logistiek/components/shipping-label.tsx)
+  (compact) en [`ShippingLabelTall`](../frontend/src/modules/logistiek/components/shipping-label-tall.tsx)
+  tonen **"Depot XX"** klein onder de vervoerder-badge, **uitsluitend** bij
+  `vervoerder_code === 'hst_api'`. DPD/pakbon onaangeroerd (DPD ≠ HST).
+- Vangnet [`hst-depot.test.ts`](../frontend/src/modules/logistiek/lib/hst-depot.test.ts)
+  (8 cases, incl. de NL/BE-discriminator 3945 → 39 NL / 30 BE).
+
+**Onderhoud:** werk de range-tabellen in `hst-depot.ts` bij zodra HST een nieuwe
+postcodeverdeling aanlevert.
+
 ## 2026-06-17 — Rhenus LIVE (cutover naar productiebox /in)
 
 **Waarom:** Rhenus gaf telefonisch akkoord op het format en de bestandsnaam — we
