@@ -7,24 +7,22 @@
 // orders ontstaan meestal MEERDERE zendingen — de copy zegt dat ook, i.t.t. de
 // cluster-knop die over één bundel praat. Geen per-order force-solo hier: op
 // weekniveau zou dat een onhanteerbaar lange lijst zijn; de operator stuurt
-// desgewenst per cluster bij met de bestaande Verzendset-knop.
+// desgewenst per cluster bij met de bestaande Verzendset-knop of de multi-select.
 //
-// Picker is optioneel (mig 394) — alleen voor de audit-trail.
+// Eén klik, geen picker (besluit 2026-06-17): het magazijn print met één
+// persoon de hele stapel en verdeelt het werk daarna over de dagen — een picker
+// per order kiezen was onnodige wrijving. `picker_id` blijft NULL (mig 394).
 //
-// NB: de pickbaarheid-/vervoerder-resolutie spiegelt StartPickrondesButton.
-// Bewust niet (nu) geëxtraheerd naar een gedeelde hook omdat StartPickrondesButton
-// op een parallelle branch zwaar wijzigt (intake-gates) — consolidatie volgt na
-// die merge.
-import { useMemo, useState, useEffect, useRef } from 'react'
+// Pickbaarheid-/vervoerder-/intake-resolutie loopt via de gedeelde
+// `usePickbaarheid`-hook (zelfde filtering als StartPickrondesButton en de
+// bulk-actiebalk) — inclusief de intake-gates (mig 395/396), zodat een
+// adres-/prijs-geblokkeerde order de hele week-start niet laat falen.
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Loader2, Printer, X } from 'lucide-react'
+import { Loader2, Printer } from 'lucide-react'
 import { useStartPickrondes } from '../hooks/use-zendingen'
 import { useVervoerders } from '../hooks/use-vervoerders'
-import {
-  useVervoerderResolutieContext,
-  useEffectieveVervoerderVoorOrders,
-} from '../context/vervoerder-resolutie-context'
-import { PickerDropdown } from '@/components/orders/picker-dropdown'
+import { usePickbaarheid } from '../hooks/use-pickbaarheid'
 import { cn } from '@/lib/utils/cn'
 import type { PickShipOrder } from '@/modules/magazijn'
 
@@ -35,101 +33,33 @@ interface Props {
   verzendWeek: number | null
 }
 
-const LAST_PICKER_KEY = 'rugflow.last-picker-id'
-
-function loadLastPicker(): number | null {
-  try {
-    const v = localStorage.getItem(LAST_PICKER_KEY)
-    return v ? Number(v) : null
-  } catch {
-    return null
-  }
-}
-
-function saveLastPicker(id: number) {
-  try {
-    localStorage.setItem(LAST_PICKER_KEY, String(id))
-  } catch {
-    /* ignore */
-  }
-}
-
-function isPickbaar(o: PickShipOrder): boolean {
-  if (o.actieve_pickronde) return false
-  return o.alle_regels_pickbaar
-}
-
 export function StartWeekButton({ orders, verzendWeek }: Props) {
   const navigate = useNavigate()
   const mutation = useStartPickrondes()
   const { data: vervoerders = [] } = useVervoerders()
-  const [showPopover, setShowPopover] = useState(false)
-  const [pickerId, setPickerId] = useState<number | null>(loadLastPicker())
   const [error, setError] = useState<string | null>(null)
-  const popoverRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    if (!showPopover) return
-    const handler = (e: MouseEvent) => {
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
-        setShowPopover(false)
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [showPopover])
-
-  // Per-order vervoerder-resolutie: een niet-afhaal-order met ≥1 regel
-  // bron='geen' mag niet starten (server-side gespiegeld in start_pickronden,
-  // mig 373) — anders faalt de hele week-start. Binnen Pick & Ship komt de
-  // resolutie uit de gedeelde batch (mig 401, `VervoerderResolutieProvider`);
-  // daarbuiten valt de knop terug op een eigen batch-call.
-  const verzendOrders = useMemo(() => orders.filter((o) => !o.afhalen), [orders])
-  const batchCtx = useVervoerderResolutieContext()
-  const idsZonderContext = useMemo(
-    () => verzendOrders.map((o) => o.order_id).filter((id) => !(batchCtx?.heeftOrder(id) ?? false)),
-    [verzendOrders, batchCtx],
-  )
-  const fallbackQuery = useEffectieveVervoerderVoorOrders(idsZonderContext)
-  const geenVervoerderIds = useMemo(() => {
-    const set = new Set<number>()
-    verzendOrders.forEach((o) => {
-      const regels = batchCtx?.heeftOrder(o.order_id)
-        ? batchCtx.getRegels(o.order_id)
-        : fallbackQuery.data?.get(o.order_id)
-      if (regels?.some((r) => r.bron === 'geen')) set.add(o.order_id)
-    })
-    return set
-  }, [verzendOrders, batchCtx, fallbackQuery.data])
-  const vervoerderResolutieLaadt = (batchCtx?.isLoading ?? false) || fallbackQuery.isLoading
-
-  const pickbareOrders = useMemo(
-    () => orders.filter((o) => isPickbaar(o) && !geenVervoerderIds.has(o.order_id)),
-    [orders, geenVervoerderIds],
-  )
+  const { pickbareOrders, aantalGeblokkeerd, vervoerderResolutieLaadt } =
+    usePickbaarheid(orders)
   const aantal = pickbareOrders.length
-  const aantalGeblokkeerd = useMemo(
-    () => orders.filter((o) => isPickbaar(o) && geenVervoerderIds.has(o.order_id)).length,
-    [orders, geenVervoerderIds],
-  )
 
   const heeftVerzend = pickbareOrders.some((o) => !o.afhalen)
   const heeftActieveVervoerder = vervoerders.some((v) => v.actief)
   const vervoerderOk = !heeftVerzend || heeftActieveVervoerder
-  const disabled = mutation.isPending || aantal === 0 || !vervoerderOk || vervoerderResolutieLaadt
+  const disabled =
+    mutation.isPending || aantal === 0 || !vervoerderOk || vervoerderResolutieLaadt
 
   const weekLabel = verzendWeek !== null ? `week ${verzendWeek}` : 'deze week'
 
   async function handleStart() {
+    if (disabled) return
     setError(null)
-    if (pickerId) saveLastPicker(pickerId)
     try {
       const zendingen = await mutation.mutateAsync({
         orderIds: pickbareOrders.map((o) => o.order_id),
-        pickerId,
+        pickerId: null,
         forceSoloIds: [],
       })
-      setShowPopover(false)
       if (zendingen.length === 1) {
         navigate(`/logistiek/${zendingen[0].zending_nr}/printset`)
       } else {
@@ -145,16 +75,17 @@ export function StartWeekButton({ orders, verzendWeek }: Props) {
     ? 'Activeer eerst minstens één vervoerder bij Logistiek > Vervoerders'
     : aantal === 0
       ? `Niets pickbaar in ${weekLabel}`
-      : `Start alle ${aantal} pickbare orders van ${weekLabel} — worden automatisch gebundeld`
+      : `Start alle ${aantal} pickbare orders van ${weekLabel} — worden automatisch gebundeld${
+          aantalGeblokkeerd > 0
+            ? ` (${aantalGeblokkeerd} overgeslagen — geen vervoerder / adres / prijs)`
+            : ''
+        }`
 
   return (
     <div className="relative inline-flex flex-col items-end gap-1">
       <button
         type="button"
-        onClick={() => {
-          setError(null)
-          setShowPopover((v) => !v)
-        }}
+        onClick={handleStart}
         disabled={disabled}
         title={tooltip}
         className={cn(
@@ -165,61 +96,7 @@ export function StartWeekButton({ orders, verzendWeek }: Props) {
         {mutation.isPending ? <Loader2 size={13} className="animate-spin" /> : <Printer size={13} />}
         Hele week starten &amp; printen{aantal > 0 ? ` (${aantal})` : ''}
       </button>
-
-      {showPopover && (
-        <div
-          ref={popoverRef}
-          className="absolute right-0 top-full z-30 mt-1 w-80 rounded-[var(--radius)] border border-slate-200 bg-white p-3 shadow-xl"
-        >
-          <div className="mb-2 flex items-center justify-between">
-            <div className="text-xs font-semibold text-slate-700">
-              Hele {weekLabel} starten
-            </div>
-            <button
-              onClick={() => setShowPopover(false)}
-              className="text-slate-400 hover:text-slate-700"
-            >
-              <X size={14} />
-            </button>
-          </div>
-
-          <p className="mb-3 text-[11px] leading-relaxed text-slate-600">
-            Start <strong>{aantal}</strong> pickbare order{aantal === 1 ? '' : 's'} van {weekLabel}.
-            Ze worden automatisch gebundeld op adres + vervoerder, dus dit maakt meestal
-            meerdere zendingen. Daarna print je de labels en de pakbonnen als aparte stapels.
-            {aantalGeblokkeerd > 0 && (
-              <>
-                {' '}
-                <span className="text-amber-700">
-                  {aantalGeblokkeerd} order{aantalGeblokkeerd === 1 ? '' : 's'} overgeslagen (geen vervoerder).
-                </span>
-              </>
-            )}
-          </p>
-
-          <PickerDropdown value={pickerId} onChange={setPickerId} placeholder="Picker (optioneel)…" />
-
-          <div className="mt-3 flex items-center justify-end gap-2">
-            <button
-              onClick={() => setShowPopover(false)}
-              disabled={mutation.isPending}
-              className="px-3 py-1.5 text-xs text-slate-600 hover:text-slate-900 disabled:opacity-45"
-            >
-              Annuleren
-            </button>
-            <button
-              type="button"
-              onClick={handleStart}
-              disabled={mutation.isPending || aantal === 0}
-              className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] bg-terracotta-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-terracotta-600 disabled:opacity-45"
-            >
-              {mutation.isPending && <Loader2 size={12} className="animate-spin" />}
-              Start &amp; print
-            </button>
-          </div>
-          {error && <div className="mt-2 text-[11px] text-rose-600">{error}</div>}
-        </div>
-      )}
+      {error && <div className="max-w-72 text-right text-[11px] text-rose-600">{error}</div>}
     </div>
   )
 }

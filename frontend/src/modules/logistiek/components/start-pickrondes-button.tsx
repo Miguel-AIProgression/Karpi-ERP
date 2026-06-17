@@ -2,34 +2,29 @@
 //
 // Vervangt zowel `<VerzendsetButton order={order}>` (op order-card) als
 // `<BulkVerzendsetButton orders={cluster.orders}>` (op cluster-card). Eén knop,
-// één dialog, één RPC (`start_pickronden`). Auto-4D-bundeling is default-on
-// in de RPC; de dialog toont per order een checkbox zodat de operator orders
-// uit de bundel kan halen vóór start (force_solo_ids).
+// één RPC (`start_pickronden`). Auto-4D-bundeling is default-on in de RPC.
 //
 // Twee varianten:
 //   - 'compact'   (standaard op order-card): klein, slate-900, "Verzendset"/"Afhaalset"
 //   - 'prominent' (standaard op cluster-card): terracotta, "Bundel printen (N)"
 //
-// Voor solo (1 order): checkbox niet beschikbaar — er valt niks te bundelen.
-// Voor bundel (≥2 orders): elke checkbox uitvinken = die order solo via
-// p_force_solo_ids; aangevinkt = bundel-mee.
+// Eén klik, geen picker, geen popover (besluit 2026-06-17): het magazijn print
+// met één persoon en verdeelt het werk daarna — een picker per order kiezen was
+// onnodige wrijving. `picker_id` blijft NULL (mig 394). Ook de force-solo-
+// checkboxen (bundel opsplitsen) zijn vervallen: de multi-select op de Pick &
+// Ship-lijst geeft daar fijnmaziger controle over (partner-bewuste force_solo).
 //
 // **Geen bespaar-info in dit component.** Verzendkosten-besparing is factuur-
-// /commerciële context die niet thuishoort in de pick-flow — de operator pickt
-// fysiek wat samen reist, niet wat samen factureert. Zie `voorgestelde_zending_bundels`
-// view voor de berekening; consumers zijn factuur-/dashboard-modules.
+// /commerciële context die niet thuishoort in de pick-flow.
 //
-// Mig 217 — picker-dropdown met `last-picker-id`-recall via localStorage.
-import { useState, useEffect, useMemo, useRef } from 'react'
+// Pickbaarheid-/vervoerder-/intake-resolutie loopt via de gedeelde
+// `usePickbaarheid`-hook (zelfde filtering als StartWeekButton en de bulkbalk).
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Loader2, Printer, PackageCheck, X } from 'lucide-react'
+import { Loader2, Printer, PackageCheck } from 'lucide-react'
 import { useStartPickrondes } from '../hooks/use-zendingen'
 import { useVervoerders } from '../hooks/use-vervoerders'
-import {
-  useVervoerderResolutieContext,
-  useEffectieveVervoerderVoorOrders,
-} from '../context/vervoerder-resolutie-context'
-import { PickerDropdown } from '@/components/orders/picker-dropdown'
+import { usePickbaarheid } from '../hooks/use-pickbaarheid'
 import { cn } from '@/lib/utils/cn'
 import type { PickShipOrder } from '@/modules/magazijn'
 
@@ -42,32 +37,6 @@ interface StartPickrondesButtonProps {
   variant?: 'compact' | 'prominent'
 }
 
-const LAST_PICKER_KEY = 'rugflow.last-picker-id'
-
-function loadLastPicker(): number | null {
-  try {
-    const v = localStorage.getItem(LAST_PICKER_KEY)
-    return v ? Number(v) : null
-  } catch {
-    return null
-  }
-}
-
-function saveLastPicker(id: number) {
-  try {
-    localStorage.setItem(LAST_PICKER_KEY, String(id))
-  } catch {
-    /* ignore */
-  }
-}
-
-function isPickbaar(o: PickShipOrder): boolean {
-  if (o.actieve_pickronde) return false
-  // Order-niveau-predicaat uit view `order_pickbaarheid` (mig 386) — niet
-  // client-side herleiden uit regels. False dekt ook "geen regels".
-  return o.alle_regels_pickbaar
-}
-
 export function StartPickrondesButton({
   orders,
   context,
@@ -77,101 +46,16 @@ export function StartPickrondesButton({
   const mutation = useStartPickrondes()
   const { data: vervoerders = [] } = useVervoerders()
   const [error, setError] = useState<string | null>(null)
-  const [showPopover, setShowPopover] = useState(false)
-  const [pickerId, setPickerId] = useState<number | null>(loadLastPicker())
-  const [forceSoloIds, setForceSoloIds] = useState<Set<number>>(new Set())
-  const popoverRef = useRef<HTMLDivElement>(null)
 
-  // Bij elke heropening van de popover de force-solo-state resetten — anders
-  // hangt een eerdere uitvink-keuze rond na annuleren.
-  useEffect(() => {
-    if (!showPopover) setForceSoloIds(new Set())
-  }, [showPopover])
+  const {
+    pickbareOrders,
+    aantalAflAdres,
+    aantalPrijs,
+    aantalGeblokkeerd,
+    vervoerderResolutieLaadt,
+  } = usePickbaarheid(orders)
 
-  useEffect(() => {
-    if (!showPopover) return
-    const handler = (e: MouseEvent) => {
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
-        setShowPopover(false)
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [showPopover])
-
-  // Per-order vervoerder-resolutie: een niet-afhaal-order met ≥1 regel
-  // bron='geen' (geen matchende actieve vervoerder, bv. DE/BE vóór de
-  // Rhenus/DPD-cutover) mag géén pickronde starten — de zending zou zonder
-  // vervoerder ontstaan. Server-side gespiegeld in start_pickronden (mig 373).
-  //
-  // Binnen Pick & Ship levert de `VervoerderResolutieProvider` de resolutie uit
-  // één gedeelde batch-call (mig 401) — geen eigen fetch. Daarbuiten (bv.
-  // bulk-printset) valt de knop terug op een eigen batch-call over alleen de
-  // orders die niet door een provider gedekt zijn.
-  const verzendOrders = useMemo(() => orders.filter((o) => !o.afhalen), [orders])
-  const batchCtx = useVervoerderResolutieContext()
-  const idsZonderContext = useMemo(
-    () => verzendOrders.map((o) => o.order_id).filter((id) => !(batchCtx?.heeftOrder(id) ?? false)),
-    [verzendOrders, batchCtx],
-  )
-  const fallbackQuery = useEffectieveVervoerderVoorOrders(idsZonderContext)
-  const geenVervoerderIds = useMemo(() => {
-    const set = new Set<number>()
-    verzendOrders.forEach((o) => {
-      const regels = batchCtx?.heeftOrder(o.order_id)
-        ? batchCtx.getRegels(o.order_id)
-        : fallbackQuery.data?.get(o.order_id)
-      if (regels?.some((r) => r.bron === 'geen')) set.add(o.order_id)
-    })
-    return set
-  }, [verzendOrders, batchCtx, fallbackQuery.data])
-  const vervoerderResolutieLaadt = (batchCtx?.isLoading ?? false) || fallbackQuery.isLoading
-
-  // Intake-gates (mig 395/396): orders met een onvolledig afleveradres of een
-  // ontbrekende prijs (€0) mogen geen pickronde starten — labels zonder adres
-  // resp. ongeprijsde regels. Server-side gespiegeld in start_pickronden (via
-  // _valideer_intake_gates). De Pick & Ship-query haalt alleen open orders op,
-  // dus de timestamp-kolommen != null volstaan.
-  const aflAdresGeblokkeerdIds = useMemo(() => {
-    const set = new Set<number>()
-    orders.forEach((o) => {
-      if (o.afl_adres_incompleet_sinds) set.add(o.order_id)
-    })
-    return set
-  }, [orders])
-  const prijsGeblokkeerdIds = useMemo(() => {
-    const set = new Set<number>()
-    orders.forEach((o) => {
-      if (o.prijs_ontbreekt_sinds) set.add(o.order_id)
-    })
-    return set
-  }, [orders])
-
-  const pickbareOrders = useMemo(
-    () =>
-      orders.filter(
-        (o) =>
-          isPickbaar(o) &&
-          !geenVervoerderIds.has(o.order_id) &&
-          !aflAdresGeblokkeerdIds.has(o.order_id) &&
-          !prijsGeblokkeerdIds.has(o.order_id),
-      ),
-    [orders, geenVervoerderIds, aflAdresGeblokkeerdIds, prijsGeblokkeerdIds],
-  )
   const aantal = pickbareOrders.length
-  const aantalGeenVervoerder = useMemo(
-    () => orders.filter((o) => isPickbaar(o) && geenVervoerderIds.has(o.order_id)).length,
-    [orders, geenVervoerderIds],
-  )
-  const aantalAflAdres = useMemo(
-    () => orders.filter((o) => isPickbaar(o) && aflAdresGeblokkeerdIds.has(o.order_id)).length,
-    [orders, aflAdresGeblokkeerdIds],
-  )
-  const aantalPrijs = useMemo(
-    () => orders.filter((o) => isPickbaar(o) && prijsGeblokkeerdIds.has(o.order_id)).length,
-    [orders, prijsGeblokkeerdIds],
-  )
-  const aantalGeblokkeerd = aantalGeenVervoerder + aantalAflAdres + aantalPrijs
   const aantalOverig = orders.length - aantal
   const heeftVerzend = pickbareOrders.some((o) => !o.afhalen)
   const heeftActieveVervoerder = vervoerders.some((v) => v.actief)
@@ -185,9 +69,6 @@ export function StartPickrondesButton({
   const alleenAflAdres = alleenGeblokkeerd && aantalAflAdres > 0
   const alleenPrijs = alleenGeblokkeerd && aantalAflAdres === 0 && aantalPrijs > 0
   const disabled = mutation.isPending || !vervoerderOk || niksTeDoen || vervoerderResolutieLaadt
-
-  const aantalInBundel = isBundel ? aantal - forceSoloIds.size : 0
-  const aantalSolo = isBundel ? forceSoloIds.size : aantal
 
   // Tooltip-tekst — context-aware.
   const tooltip = !vervoerderOk
@@ -203,39 +84,20 @@ export function StartPickrondesButton({
         : isBundel
           ? `Bundel ${aantal} zendingen${context ? ` ${context}` : ''}${
               aantalOverig > 0 ? ` (${aantalOverig} overgeslagen — nog niet pickbaar of geen vervoerder)` : ''
-            } — operator kan in de dialog orders uit de bundel halen.`
+            }`
           : pickbareOrders[0]?.afhalen
             ? 'Start afhaal-pickronde (geen verzendstickers)'
-            : 'Start pickronde — print daarna stickers en pakbon (picker kiezen is optioneel)'
-
-  function openPopover() {
-    setError(null)
-    setShowPopover(true)
-  }
-
-  function toggleForceSolo(orderId: number) {
-    setForceSoloIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(orderId)) {
-        next.delete(orderId)
-      } else {
-        next.add(orderId)
-      }
-      return next
-    })
-  }
+            : 'Start pickronde — print daarna stickers en pakbon'
 
   async function handleStart() {
-    // Picker optioneel (mig 394): niet langer geblokkeerd op lege picker.
+    if (disabled) return
     setError(null)
-    if (pickerId) saveLastPicker(pickerId)
     try {
       const zendingen = await mutation.mutateAsync({
         orderIds: pickbareOrders.map((o) => o.order_id),
-        pickerId,
-        forceSoloIds: Array.from(forceSoloIds),
+        pickerId: null,
+        forceSoloIds: [],
       })
-      setShowPopover(false)
       if (zendingen.length === 1) {
         navigate(`/logistiek/${zendingen[0].zending_nr}/printset`)
       } else {
@@ -257,9 +119,7 @@ export function StartPickrondesButton({
 
   const knopIcon = mutation.isPending ? (
     <Loader2 size={13} className="animate-spin" />
-  ) : isBundel ? (
-    <Printer size={13} />
-  ) : pickbareOrders[0]?.afhalen ? (
+  ) : !isBundel && pickbareOrders[0]?.afhalen ? (
     <PackageCheck size={13} />
   ) : (
     <Printer size={13} />
@@ -280,7 +140,7 @@ export function StartPickrondesButton({
     <div className="relative inline-flex flex-col items-end gap-1">
       <button
         type="button"
-        onClick={openPopover}
+        onClick={handleStart}
         disabled={disabled}
         title={tooltip}
         className={buttonClass}
@@ -297,103 +157,6 @@ export function StartPickrondesButton({
                 : knopLabel}
       </button>
       {error && <div className="max-w-72 text-right text-[11px] text-rose-600">{error}</div>}
-
-      {showPopover && (
-        <div
-          ref={popoverRef}
-          className={cn(
-            'absolute right-0 top-full z-30 mt-1 rounded-[var(--radius)] border border-slate-200 bg-white p-3 shadow-xl',
-            isBundel ? 'w-96' : 'w-72',
-          )}
-        >
-          <div className="mb-2 flex items-center justify-between">
-            <div className="text-xs font-semibold text-slate-700">
-              {isBundel ? `Pickronde voor ${aantal} orders` : 'Wie pickt deze order?'}
-            </div>
-            <button
-              onClick={() => setShowPopover(false)}
-              className="text-slate-400 hover:text-slate-700"
-            >
-              <X size={14} />
-            </button>
-          </div>
-
-          {isBundel && (
-            <div className="mb-3 max-h-48 overflow-y-auto rounded border border-slate-200">
-              <div className="border-b border-slate-200 bg-slate-50 px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                Orders in deze bundel
-              </div>
-              <ul className="divide-y divide-slate-100">
-                {pickbareOrders.map((o) => {
-                  const isSolo = forceSoloIds.has(o.order_id)
-                  return (
-                    <li key={o.order_id} className="flex items-start gap-2 px-2 py-1.5 text-xs">
-                      <input
-                        type="checkbox"
-                        checked={!isSolo}
-                        onChange={() => toggleForceSolo(o.order_id)}
-                        className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300"
-                        title={
-                          isSolo
-                            ? 'Aangevinkt = wordt onderdeel van de bundel'
-                            : 'Uitvinken = aparte solo-zending i.p.v. in de bundel'
-                        }
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-slate-800">{o.order_nr}</span>
-                          <span className="truncate text-slate-500">{o.klant_naam}</span>
-                        </div>
-                        {isSolo && (
-                          <div className="mt-0.5 text-[10px] font-medium text-amber-700">
-                            → aparte zending (niet in bundel)
-                          </div>
-                        )}
-                      </div>
-                    </li>
-                  )
-                })}
-              </ul>
-            </div>
-          )}
-
-          <PickerDropdown value={pickerId} onChange={setPickerId} placeholder="Kies picker…" />
-
-          {isBundel && (
-            <p className="mt-2 text-[11px] text-slate-500">
-              {aantalInBundel >= 2 && aantalSolo > 0
-                ? `${aantalInBundel} samen, ${aantalSolo} solo. ${aantalSolo + 1} zending${aantalSolo + 1 === 1 ? '' : 'en'} totaal.`
-                : aantalInBundel >= 2
-                  ? `${aantalInBundel} orders worden 1 bundel-zending met 1 gezamenlijke pakbon.`
-                  : `Alle ${aantal} orders solo — geen bundel.`}
-            </p>
-          )}
-
-          <div className="mt-3 flex items-center justify-end gap-2">
-            <button
-              onClick={() => setShowPopover(false)}
-              disabled={mutation.isPending}
-              className="px-3 py-1.5 text-xs text-slate-600 hover:text-slate-900 disabled:opacity-45"
-            >
-              Annuleren
-            </button>
-            <button
-              type="button"
-              onClick={handleStart}
-              disabled={mutation.isPending}
-              className={cn(
-                'inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-45',
-                variant === 'compact'
-                  ? 'bg-slate-900 hover:bg-slate-800'
-                  : 'bg-terracotta-500 hover:bg-terracotta-600',
-              )}
-            >
-              {mutation.isPending && <Loader2 size={12} className="animate-spin" />}
-              {isBundel ? 'Start bundel' : 'Start pickronde'}
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
