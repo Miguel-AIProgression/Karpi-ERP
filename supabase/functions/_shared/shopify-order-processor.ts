@@ -233,10 +233,15 @@ export async function processShopifyOrder(
   const shipping = extractShopifyShippingAddress(order)
   const billing = extractShopifyBillingAddress(order)
 
-  // afl_naam_2 = tweede adresregel in create_webshop_order (mig 343); een
-  // fact-bedrijfsveld kent de RPC niet — fact_naam valt al terug op company.
+  // Altijd bedrijfsnaam (debiteur.naam uit RugFlow) als eerste adresregel;
+  // contactpersoon (Shopify first+last) als afl_naam_2. fact_naam idem.
   if (debiteurNaam) {
-    if (!shipping.afl_naam_2) shipping.afl_naam_2 = debiteurNaam
+    const contactPersoon = shipping.afl_naam as string | null
+    shipping.afl_naam = debiteurNaam
+    if (contactPersoon && contactPersoon !== debiteurNaam) {
+      shipping.afl_naam_2 = contactPersoon
+    }
+    billing.fact_naam = debiteurNaam
   }
 
   const orderdatum = order.created_at ? order.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10)
