@@ -1,5 +1,6 @@
 import { labelBarcode } from '@/lib/logistiek/labelbarcode'
 import { externReferentie } from '@/lib/orders/referentie'
+import { hstDepotVoorPostcode } from '@/modules/logistiek/lib/hst-depot'
 import { Code128Barcode } from './code128-barcode'
 import { ShippingLabelTall } from './shipping-label-tall'
 import {
@@ -73,6 +74,12 @@ function ShippingLabelCompact({
   const land = zending.afl_land ?? 'NL'
   const barcodeValue = labelBarcode(sscc)
   const ref = labelReferentie(order)
+  // HST-eis (postcodeverdeling 2026-06-17): depotnummer onder de HST-badge.
+  // Alleen voor HST — andere vervoerders kennen dit depot-concept niet.
+  const hstDepot =
+    zending.vervoerder_code === 'hst_api'
+      ? hstDepotVoorPostcode(zending.afl_postcode, land)
+      : null
 
   // Schaalfactor t.o.v. het basis-ontwerp: 1.0 op een 3"×2"-rol, 1.5 op de
   // volle 3"×6" liggend. Hoogte stuurt rijen en fonts; de rechterkolom blijft
@@ -238,7 +245,13 @@ function ShippingLabelCompact({
             lineHeight: 1.6,
             boxSizing: 'border-box',
             overflow: 'hidden',
+            // Horizontaal (textAlign) én verticaal (flex-kolom + justify center)
+            // centreren, zodat het adres écht in het midden van het zwarte vak
+            // staat i.p.v. bovenaan — spiegelt ShippingLabelTall.
             textAlign: 'center',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
           }}
         >
           <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -256,7 +269,7 @@ function ShippingLabelCompact({
         </div>
       </div>
 
-      {/* Rij 2 — rechts: vervoerder-badge gecentreerd */}
+      {/* Rij 2 — rechts: vervoerder-badge gecentreerd, met HST-depot eronder */}
       <div
         style={{
           ...cellBase,
@@ -266,8 +279,10 @@ function ShippingLabelCompact({
           height: `${rij2Mm}mm`,
           padding: `${s}mm`,
           display: 'flex',
+          flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
+          gap: `${0.8 * s}mm`,
         }}
       >
         <div
@@ -287,6 +302,18 @@ function ShippingLabelCompact({
         >
           {vervoerderNaam}
         </div>
+        {hstDepot && (
+          <div
+            style={{
+              fontSize: fz(9),
+              fontWeight: 700,
+              lineHeight: 1,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Depot {hstDepot}
+          </div>
+        )}
       </div>
 
       {/* Rij 3 — links: barcode + cijfers */}

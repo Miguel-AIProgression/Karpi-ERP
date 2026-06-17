@@ -1,5 +1,6 @@
 import { labelBarcode } from '@/lib/logistiek/labelbarcode'
 import { externReferentie } from '@/lib/orders/referentie'
+import { hstDepotVoorPostcode } from '@/modules/logistiek/lib/hst-depot'
 import { Code128Barcode } from './code128-barcode'
 import {
   labelDatumKort,
@@ -44,6 +45,12 @@ export function ShippingLabelTall({
   const land = zending.afl_land ?? 'NL'
   const barcodeValue = labelBarcode(sscc)
   const ref = labelReferentie(order)
+  // HST-eis (postcodeverdeling 2026-06-17): depotnummer onder de HST-badge.
+  // Alleen voor HST — andere vervoerders kennen dit depot-concept niet.
+  const hstDepot =
+    zending.vervoerder_code === 'hst_api'
+      ? hstDepotVoorPostcode(zending.afl_postcode, land)
+      : null
 
   const rijBarcodeMm = hoogteMm - RIJ_AFZENDER_MM - RIJ_ORDER_MM - RIJ_ADRES_MM - RIJ_COLLI_MM
 
@@ -94,7 +101,10 @@ export function ShippingLabelTall({
           style={{
             flex: '0 0 auto',
             display: 'flex',
+            flexDirection: 'column',
             alignItems: 'center',
+            justifyContent: 'center',
+            gap: '1mm',
             padding: '1.5mm 2mm',
           }}
         >
@@ -113,6 +123,11 @@ export function ShippingLabelTall({
           >
             {vervoerderNaam}
           </div>
+          {hstDepot && (
+            <div style={{ fontSize: '12px', fontWeight: 700, lineHeight: 1, whiteSpace: 'nowrap' }}>
+              Depot {hstDepot}
+            </div>
+          )}
         </div>
       </div>
 
