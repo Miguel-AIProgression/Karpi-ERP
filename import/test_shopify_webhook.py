@@ -211,3 +211,108 @@ print("── Alle adressen / header (volledig) ──────────�
 for k, v in header.items():
     if v not in (None, ""):
         print(f"  {k}: {v!r}")
+
+# ── Test 2: Vorm-mismatch — contour in omschrijving maar rechthoekige SKU ────
+#
+# Scenario: de Shopify-operator heeft een verkeerde SKU ingevuld die naar een
+# MAATWERK-artikel verwijst maar de vorm 'contour' ontbreekt daarin.
+# Verwacht: systeem detecteert 'contour' in omschrijving, negeert SKU,
+# en slaat aan als maatwerk MET maatwerk_vorm='contour'.
+
+CONTOUR_ORDER = {
+    "id": 9999999999002,
+    "name": "#6000",
+    "order_number": 6000,
+    "note": "",
+    "note_attributes": [],
+    "created_at": "2026-06-17T10:00:00+02:00",
+    "updated_at": "2026-06-17T10:00:00+02:00",
+    "financial_status": "paid",
+    "fulfillment_status": None,
+    "email": "admin@unik-living.com",
+    "customer": {
+        "id": 1234567,
+        "email": "admin@unik-living.com",
+        "first_name": "Niek",
+        "last_name": "Wouters",
+        "company": "Unik Living BV",
+    },
+    "billing_address": {
+        "first_name": "Niek", "last_name": "Wouters", "company": "Unik Living BV",
+        "address1": "Teststraat 1", "zip": "1234 AB", "city": "Amsterdam",
+        "country": "Netherlands", "country_code": "NL",
+    },
+    "shipping_address": {
+        "first_name": "Niek", "last_name": "Wouters", "company": "Unik Living BV",
+        "address1": "Teststraat 1", "zip": "1234 AB", "city": "Amsterdam",
+        "country": "Netherlands", "country_code": "NL",
+    },
+    "line_items": [
+        {
+            "id": 2001,
+            "title": "Rubi 62",
+            "variant_title": "200x290 Contour",
+            "sku": "RUBI62MAATWERK",   # ← SKU is maatwerk maar zonder vorminformatie
+            "quantity": 1,
+            "price": "0.00",
+            "total_discount": "0.00",
+            "grams": 5800,
+            "requires_shipping": True,
+            "properties": [
+                {"name": "Maatwerk", "value": "200x290 Contour"},
+                {"name": "Maatwerk-sku", "value": "RUBI62MAATWERK"},
+            ],
+        }
+    ],
+    "shipping_lines": [],
+}
+
+print()
+print("=" * 60)
+print("TEST 2: Vorm-mismatch (contour in titel, maatwerk-SKU)")
+print("=" * 60)
+
+payload2 = json.dumps(CONTOUR_ORDER, separators=(",", ":")).encode("utf-8")
+req2 = urllib.request.Request(
+    FUNCTION_URL,
+    data=payload2,
+    headers={
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "X-Shopify-Topic": "orders/create",
+        "X-Shopify-Shop-Domain": "karpi-tapijt.myshopify.com",
+    },
+    method="POST",
+)
+
+try:
+    with urllib.request.urlopen(req2, context=_ssl_ctx) as resp2:
+        body2 = json.loads(resp2.read())
+except urllib.error.HTTPError as e:
+    body2 = json.loads(e.read())
+    print(f"HTTP {e.code}: {e.reason}")
+    print(json.dumps(body2, indent=2, ensure_ascii=False))
+    import sys; sys.exit(1)
+
+regels2 = body2.get("regels", [])
+print()
+for i, regel in enumerate(regels2):
+    is_mw = regel.get("is_maatwerk")
+    vorm  = regel.get("maatwerk_vorm")
+    lengte = regel.get("maatwerk_lengte_cm")
+    breedte = regel.get("maatwerk_breedte_cm")
+    print(f"  Regel {i+1}: {regel.get('omschrijving')!r}")
+    print(f"    is_maatwerk      : {is_mw}")
+    print(f"    maatwerk_vorm    : {vorm}")
+    print(f"    afmeting         : {lengte} × {breedte} cm")
+    print(f"    kwaliteit        : {regel.get('maatwerk_kwaliteit_code')}")
+    print(f"    kleur            : {regel.get('maatwerk_kleur_code')}")
+
+    ok_mw   = is_mw is True
+    ok_vorm = vorm == "contour"
+    ok_afm  = lengte == 200 and breedte == 290
+    print(f"  {OK if ok_mw else FAIL}  is_maatwerk = True")
+    print(f"  {OK if ok_vorm else FAIL}  maatwerk_vorm = 'contour'  (was: {vorm!r})")
+    print(f"  {OK if ok_afm else FAIL}  afmeting 200 × 290  (was: {lengte} × {breedte})")
+    if not ok_vorm:
+        print("    !! Contour werd niet herkend als maatwerk_vorm.")

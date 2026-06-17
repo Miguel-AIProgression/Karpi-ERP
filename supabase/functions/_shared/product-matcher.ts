@@ -565,23 +565,48 @@ export async function matchProduct(
   const codes = uniekeCodes(row)
 
   // Vorm-bewuste match vóór code-lookup: als de omschrijving een niet-rechthoekige
-  // vorm noemt (Contour, Organic, …) én kwaliteit+kleur+afmeting afleidbaar zijn
-  // uit de SKU, zoek dan eerst het bijbehorende standaard-catalogusartikel op.
-  // Dit corrigeert Shopify-orders waarbij de SKU naar de rechthoekige variant
-  // verwijst terwijl de producttitel expliciet "Contour / 240 x 340 cm" zegt.
-  // Voorbeeld: SKU VELV68XX240340 → fout; omschrijving "Contour / 240 x 340 cm"
-  // → correct artikel 771680004 (VELVET TOUCH 68 CA.340x240 Contour).
+  // vorm noemt (Contour, Organic, …) blokkeert dit pad elke doorval naar de
+  // SKU/artikelnr-match hieronder. Reden: "Vernon 13 200x290 contour" mag NOOIT
+  // worden aangeslagen als VERN13XX200290 (rechthoekig), ook als die SKU in
+  // Shopify staat. Twee uitkomsten:
+  //   a. Catalogusartikel voor deze vorm+afmeting bestaat → dat artikel retourneren.
+  //   b. Geen catalogusartikel → maatwerk met de gedetecteerde vorm.
+  // kwaliteit+kleur worden eerst uit de articleCode geparsed; ontbreekt die info
+  // dan valt de kleur terug op de producttitel (bv. "Vernon 13 contour" → 13).
   {
     const fullTextVorm = [row.productTitle, row.variantTitle, ...collectExtraTexts(row)].join(' ')
     const gedetecteerdeVorm = await detectVorm(supabase, fullTextVorm)
     if (gedetecteerdeVorm) {
       const artcodeVorm = parseArticleCode(row.articleCode ?? '')
       const afmVorm = parseAfmeting(row.variantTitle ?? '') ?? parseAfmeting(row.productTitle ?? '')
-      if (artcodeVorm.kwaliteit && artcodeVorm.kleur && afmVorm) {
+      // Kleur ook uit titel proberen als articleCode die niet bevat
+      const { kleur: kleurUitTitel } = splitNaamKleur(row.productTitle ?? '')
+      const kwal = artcodeVorm.kwaliteit ?? null
+      const kl   = artcodeVorm.kleur ?? kleurUitTitel ?? null
+
+      if (kwal && kl && afmVorm) {
         const hit = await zoekViaVormOmschrijving(
-          supabase, artcodeVorm.kwaliteit, artcodeVorm.kleur, afmVorm, gedetecteerdeVorm,
+          supabase, kwal, kl, afmVorm, gedetecteerdeVorm,
         )
         if (hit) return { artikelnr: hit, matchedOn: 'parsed_karpi' }
+      }
+
+      // Geen standaard-catalogusartikel gevonden → altijd maatwerk.
+      // Niet doorgaan naar code-matching: een verkeerde SKU in Shopify mag niet
+      // het rechthoekige product aanslaan.
+      if (kwal && kl) {
+        const gekozen = await resolveMaatwerkArtikel(supabase, kwal, kl)
+        console.info(
+          `[product-matcher] vorm '${gedetecteerdeVorm}' in omschrijving, geen catalogusartikel → maatwerk ${gekozen.artikelnr ?? '(geen)'} (kwal=${gekozen.kwaliteit} kl=${gekozen.kleur})`,
+        )
+        return {
+          artikelnr: gekozen.artikelnr,
+          matchedOn: 'maatwerk',
+          is_maatwerk: true,
+          maatwerk_kwaliteit_code: gekozen.kwaliteit,
+          maatwerk_kleur_code: gekozen.kleur,
+          maatwerk_vorm: gedetecteerdeVorm,
+        }
       }
     }
   }
