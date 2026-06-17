@@ -801,7 +801,7 @@ Eén rij per fysieke colli binnen een zending (mig 209). Bron-van-waarheid voor 
 | zending_id | BIGINT FK → zendingen | NOT NULL, ON DELETE CASCADE |
 | debiteur_nr | INTEGER FK → debiteuren | Snapshot voor query-gemak |
 | status | rhenus_transportorder_status NOT NULL | Default `'Wachtrij'` |
-| bestandsnaam | TEXT | `RHE_<timestamp>_<zending_nr>.xml` — vóór upload gepersisteerd zodat retries dezelfde naam hergebruiken (geen dubbele transportorder bij Rhenus) |
+| bestandsnaam | TEXT | `RHE_<datum>_<zending_nr>.xml` (alleen datum `YYYYMMDD`, géén tijd — Rhenus-akkoord 2026-06-17, oude datum+tijd-vorm was te lang) — vóór upload gepersisteerd zodat retries dezelfde naam hergebruiken (geen dubbele transportorder bij Rhenus). Uniekheid via globaal-unieke `zending_nr`; datum dient alleen voor sortering |
 | xml_storage_path | TEXT | Pad in storage-bucket `order-documenten/rhenus-xml/` |
 | request_xml | TEXT | Laatste verstuurde XML |
 | retry_count | INTEGER NOT NULL | Default 0; max 3 (configureerbaar in `markeer_rhenus_fout`) |

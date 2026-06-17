@@ -36,7 +36,9 @@ zónder `transportInstructionShipmentItem`-segmenten (entityIdentification
    `edi_partner_b` → `verhoek_sftp` (regels 7/8 bestonden nog niet toen
    ADR-0031 geschreven werd).
 3. **1 zending = 1 XML-bestand** met één `<transportInstruction>`
-   (`RHE_<timestamp>_<zending_nr>.xml`). `entityIdentification` =
+   (`RHE_<datum>_<zending_nr>.xml` — alleen datum `YYYYMMDD`, géén tijd;
+   Rhenus-akkoord 2026-06-17 kortte de oude datum+tijd-vorm in. Uniekheid
+   gegarandeerd door globaal-unieke `zending_nr`). `entityIdentification` =
    `zending_nr`; `<sscc>` = label-barcode (AI(00)+SSCC, 20 cijfers,
    config-vlag); `Weight`/`totalGrossWeight` in **kg met decimalen** (géén
    decagram — dat is Verhoek); `depth` = lengte in cm.

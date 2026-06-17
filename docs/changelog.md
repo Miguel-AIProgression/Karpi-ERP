@@ -31,6 +31,34 @@ pakbonnen + stickers printen — waarbij orders die kunnen bundelen vanzelf same
   (gedeeld door de printset-pagina, `zending-aanmaken-knop` en de balk) — telkens
   drie kopieën teruggebracht tot één bron.
 
+## 2026-06-17 — Rhenus-bestandsnaam ingekort (datum i.p.v. datum+tijd)
+
+**Waarom:** Rhenus (Silvian Derksen, IT & Applications) beantwoordde de drie
+format-vragen op het testbestand `RHE_20260612145904_ZEND-2026-0004.xml`:
+1. **Alfanumerieke `entityIdentification`** (zending_nr i.p.v. numeriek) = **akkoord**;
+   let op: dit nummer komt óók op de invoice naar Karpi én op de POD — het zending_nr
+   is dus de spil-referentie richting Rhenus. Geen code-wijziging.
+2. **Eén bestand per zending** (i.p.v. dagbatch) = **akkoord in principe**, maar moet
+   nog operationeel besproken worden + duidelijke afspraken. Onze architectuur levert
+   al 1 bestand per zending → technisch klaar.
+3. **Bestandsnaam was te lang** → inkorten van `RHE_<datum+tijd>_<zending>.xml` naar
+   `RHE_<datum>_<zending>.xml` (filename moet wél uniek blijven).
+
+**Wat:**
+- `bouwRhenusBestandsnaam` (`rhenus-send/xml-builder.ts`): tijd-component (HHMMSS)
+  verwijderd → `RHE_YYYYMMDD_<zending_nr>.xml`. Uniekheid blijft gegarandeerd: het
+  `zending_nr` (ZEND-2026-XXXX) is al globaal uniek per zending; de datum dient alleen
+  voor sortering/overzicht. Retries hergebruiken de gepersisteerde naam (geen botsing).
+- Unit-test `xml-builder.test.ts` bijgewerkt (18 tests groen). `verwerk-row.test.ts`
+  ongewijzigd: de preset-regex `^RHE_\d+_ZEND...` matcht beide vormen.
+- Nieuwe testfile `RHE_20260612_ZEND-2026-0004.xml` (byte-identiek aan het al-geteste
+  bestand, alleen naam ingekort) klaargezet om naar Rhenus `/test/in` te uploaden.
+- Docs: `database-schema.md` (kolom `rhenus_transportorders.bestandsnaam`),
+  ADR-0032, go-live-draaiboek bijgewerkt.
+
+**Open (operationeel, geen code):** afspraken met Rhenus over 1-bestand-per-zending
+(vraag 2) vastleggen; daarna `/test/in` → `/in` + `rhenus_sftp.actief=TRUE` (cutover).
+
 ## 2026-06-16 — Antislip doos-stuks koppeling (mig 408)
 
 **Waarom:** Antislip wordt per doos ingekocht en opgeslagen, maar sommige klanten

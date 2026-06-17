@@ -49,10 +49,10 @@ Deno.test('formatKg: kg met decimalen, trailing nullen gestript (legacy-conform)
   assertEquals(formatKg(12.345), '12.35'); // afronden op 2 decimalen
 });
 
-Deno.test('bestandsnaam: <prefix>_<timestamp>_<zending_nr>.xml', () => {
+Deno.test('bestandsnaam: <prefix>_<datum>_<zending_nr>.xml (alleen datum, Rhenus-akkoord 2026-06-17)', () => {
   assertEquals(
     bouwRhenusBestandsnaam('RHE', 'ZEND-2026-0042', NU),
-    'RHE_20260612130920_ZEND-2026-0042.xml',
+    'RHE_20260612_ZEND-2026-0042.xml',
   );
 });
 

@@ -39,11 +39,17 @@ export function formatKg(kg: number): string {
   return String(Math.round(kg * 100 + 1e-9) / 100);
 }
 
+// Bestandsnaam = <prefix>_<datum>_<zending_nr>.xml (alleen datum, GÉÉN tijd).
+// Rhenus-akkoord 2026-06-17 (Silvian Derksen): de oude datum+tijd-variant was te
+// lang en moest ingekort naar RHE_<datum>_<zending>.xml. Uniekheid (door Rhenus
+// geëist) blijft gegarandeerd: zending_nr (ZEND-2026-XXXX) is al globaal uniek
+// per zending; de datum dient alleen voor sortering/overzicht. Een retry van
+// dezelfde zending hergebruikt de in rhenus_transportorders.bestandsnaam
+// gepersisteerde naam → géén botsing.
 export function bouwRhenusBestandsnaam(prefix: string, zendingNr: string, nu: Date): string {
   const p = (n: number) => String(n).padStart(2, '0');
-  const ts = `${nu.getFullYear()}${p(nu.getMonth() + 1)}${p(nu.getDate())}` +
-    `${p(nu.getHours())}${p(nu.getMinutes())}${p(nu.getSeconds())}`;
-  return `${prefix}_${ts}_${zendingNr}.xml`;
+  const datum = `${nu.getFullYear()}${p(nu.getMonth() + 1)}${p(nu.getDate())}`;
+  return `${prefix}_${datum}_${zendingNr}.xml`;
 }
 
 // Rhenus-verplichte velden (≥1 colli + sscc/gewicht/lengte per colli) staan in
