@@ -303,6 +303,44 @@ async function resolveMaatwerkArtikel(
   return { artikelnr, kwaliteit: gesplitst.kwaliteit, kleur: gesplitst.kleur }
 }
 
+/**
+ * Zoek een standaard catalogusartikel voor een niet-rechthoekige vorm op basis van
+ * kwaliteit, kleur, afmeting en de vormnaam in `producten.omschrijving`.
+ *
+ * Terugvaloptie vóór het maatwerk-pad: sommige Contour/Organic/Ellips-varianten
+ * zijn gewone catalogusartikelen (bv. 771680004 "VELVET TOUCH 68 CA.340x240 Contour").
+ * Als zo'n artikel bestaat, is dit altijd de betere match dan een maatwerk-record,
+ * want het heeft een vaste prijs, gewicht en serienummer.
+ *
+ * Dimensies worden als losse substrings gecontroleerd (`o.includes("240") && o.includes("340")`),
+ * zodat verschillen in formattering (CA.340x240 vs 240×340 cm) geen valse misses geven.
+ */
+async function zoekViaVormOmschrijving(
+  supabase: SupabaseClient,
+  kwaliteit: string,
+  kleur: string,
+  afm: [string | number, string | number],
+  vormCode: string,
+): Promise<string | null> {
+  const vormen = await laadAfwijkendeVormen(supabase)
+  // DB-naam gebruiken voor ilike (bv. code 'contour' → naam 'Contour')
+  const vNaam = vormen.find((v) => v.code === vormCode)?.naam ?? vormCode
+
+  const { data } = await supabase
+    .from('producten')
+    .select('artikelnr, omschrijving')
+    .eq('kwaliteit_code', kwaliteit)
+    .eq('kleur_code', kleur)
+    .ilike('omschrijving', `%${vNaam}%`)
+
+  const [da, db] = afm
+  const hit = (data ?? []).find((p: { artikelnr: string; omschrijving: string }) => {
+    const o = (p.omschrijving ?? '').toLowerCase()
+    return o.includes(String(da)) && o.includes(String(db))
+  })
+  return hit?.artikelnr ?? null
+}
+
 async function zoekViaParsing(supabase: SupabaseClient, row: LightspeedOrderRow): Promise<string | null> {
   const { basis, kleur } = parseTitel(row.productTitle ?? '')
   const afm = parseAfmeting(row.variantTitle ?? '') ?? parseAfmeting(row.productTitle ?? '')
@@ -433,12 +471,18 @@ export async function matchProduct(
         const fullText = [row.productTitle, row.variantTitle, ...collectExtraTexts(row)].join(' ')
         const vorm = await detectVorm(supabase, fullText)
         if (vorm) {
-          // Ook vorm-maatwerk koppelen aan het generieke
-          // `{KWALITEIT}{KLEUR}MAATWERK`-artikel zodat voorraad/facturatie
-          // (en EDI — die lezen artikelnr) een productcode hebben; de vorm
-          // + dims blijven in de maatwerk_*-velden de uniekheid bewaren.
-          // Niet gevonden → artikelnr null, exact het oude gedrag.
-          // Unsplit-first; split alleen bij miss (ORD-2026-0098).
+          // Probeer eerst een standaard catalogusartikel voor deze vorm+afmeting
+          // (bv. 771680004 "VELVET TOUCH 68 CA.340x240 Contour") vóór de maatwerk-fallback.
+          // Zo wordt een order voor een vaste Contour-maat correct aan het voorraadartikel
+          // gekoppeld i.p.v. altijd als snijplan-maatwerk behandeld.
+          const standaardHit = await zoekViaVormOmschrijving(
+            supabase, kwaliteitCodes[0], kleur, sizeRaw, vorm,
+          )
+          if (standaardHit) return { artikelnr: standaardHit, matchedOn: 'alias' }
+
+          // Geen standaard-catalogusartikel gevonden → maatwerk.
+          // Koppelen aan het generieke `{KWALITEIT}{KLEUR}MAATWERK`-artikel zodat
+          // voorraad/facturatie een productcode hebben; vorm+dims bewaren de uniekheid.
           const vormKwal = await resolveMaatwerkArtikel(supabase, kwaliteitCodes[0], kleur)
           return {
             artikelnr: vormKwal.artikelnr,
@@ -519,6 +563,28 @@ export async function matchProduct(
   }
 
   const codes = uniekeCodes(row)
+
+  // Vorm-bewuste match vóór code-lookup: als de omschrijving een niet-rechthoekige
+  // vorm noemt (Contour, Organic, …) én kwaliteit+kleur+afmeting afleidbaar zijn
+  // uit de SKU, zoek dan eerst het bijbehorende standaard-catalogusartikel op.
+  // Dit corrigeert Shopify-orders waarbij de SKU naar de rechthoekige variant
+  // verwijst terwijl de producttitel expliciet "Contour / 240 x 340 cm" zegt.
+  // Voorbeeld: SKU VELV68XX240340 → fout; omschrijving "Contour / 240 x 340 cm"
+  // → correct artikel 771680004 (VELVET TOUCH 68 CA.340x240 Contour).
+  {
+    const fullTextVorm = [row.productTitle, row.variantTitle, ...collectExtraTexts(row)].join(' ')
+    const gedetecteerdeVorm = await detectVorm(supabase, fullTextVorm)
+    if (gedetecteerdeVorm) {
+      const artcodeVorm = parseArticleCode(row.articleCode ?? '')
+      const afmVorm = parseAfmeting(row.variantTitle ?? '') ?? parseAfmeting(row.productTitle ?? '')
+      if (artcodeVorm.kwaliteit && artcodeVorm.kleur && afmVorm) {
+        const hit = await zoekViaVormOmschrijving(
+          supabase, artcodeVorm.kwaliteit, artcodeVorm.kleur, afmVorm, gedetecteerdeVorm,
+        )
+        if (hit) return { artikelnr: hit, matchedOn: 'parsed_karpi' }
+      }
+    }
+  }
 
   // karpi_code match
   const karpiHit = await zoekOpKarpi(supabase, codes)

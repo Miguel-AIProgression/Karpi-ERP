@@ -20,12 +20,16 @@ interface DeliveryAddressEditorProps {
   onEmailChange: (email: string) => void
   /** Alleen gevuld bij dropshipment-orders: toets van het T&T-adres (dropship-email.ts). */
   dropshipEmailProbleem?: DropshipEmailProbleem | null
+  /** Of de operator de blokkade bewust heeft weggevinkt. */
+  dropshipEmailGenegeerd?: boolean
+  onDropshipEmailNegeer?: (v: boolean) => void
 }
 
 export function DeliveryAddressEditor({
   naam, adres, postcode, plaats,
   aflEmail, afleveradresId,
   onAdresChange, onEmailChange, dropshipEmailProbleem,
+  dropshipEmailGenegeerd, onDropshipEmailNegeer,
 }: DeliveryAddressEditorProps) {
   const [editing, setEditing] = useState(false)
   type DraftAdres = Pick<AfleverAdres, 'naam' | 'adres' | 'postcode' | 'plaats' | 'land'>
@@ -129,9 +133,20 @@ export function DeliveryAddressEditor({
             </p>
           )}
           {isBlokkerendDropshipEmailProbleem(dropshipEmailProbleem ?? null) && (
-            <p className="mt-1 text-rose-600 text-xs">
-              {DROPSHIP_EMAIL_MELDING[dropshipEmailProbleem!]}
-            </p>
+            <div className="mt-1">
+              <p className={`text-xs ${dropshipEmailGenegeerd ? 'text-amber-600' : 'text-rose-600'}`}>
+                {DROPSHIP_EMAIL_MELDING[dropshipEmailProbleem!]}
+              </p>
+              <label className="inline-flex items-center gap-1.5 mt-1 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={dropshipEmailGenegeerd ?? false}
+                  onChange={(e) => onDropshipEmailNegeer?.(e.target.checked)}
+                  className="rounded border-slate-300 text-terracotta-500 focus:ring-terracotta-400/30"
+                />
+                <span className="text-xs text-slate-600">Toch dit adres gebruiken</span>
+              </label>
+            </div>
           )}
         </div>
       </div>

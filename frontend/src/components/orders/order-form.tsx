@@ -103,6 +103,10 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
   )
   // UI-only: id van het geselecteerde afleveradressen-record (voor "opslaan als permanent").
   const [selectedAfleveradresId, setSelectedAfleveradresId] = useState<number | undefined>(undefined)
+  // Operator kan de dropship-e-mail-blokkade bewust overrulen (checkbox "toch doorgaan").
+  // Reset zodra het e-mailadres of de dropship-staat verandert.
+  const [dropshipEmailGenegeerd, setDropshipEmailGenegeerd] = useState(false)
+  useEffect(() => { setDropshipEmailGenegeerd(false) }, [header.afl_email, isDropshipOrder])
 
   // In edit-modus laadt clientData asynchroon na de eerste render.
   // Sync de prijslijst, korting én klant-e-mailadressen zodra die beschikbaar
@@ -542,7 +546,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
     mutationFn: async (overrideLeverModus?: LeverModus) => {
       if (!client) throw new Error('Selecteer een klant')
       if (regels.filter(r => r.artikelnr !== SHIPPING_PRODUCT_ID).length === 0) throw new Error('Voeg minstens één orderregel toe')
-      if (isBlokkerendDropshipEmailProbleem(dropshipEmailProbleem)) {
+      if (isBlokkerendDropshipEmailProbleem(dropshipEmailProbleem) && !dropshipEmailGenegeerd) {
         throw new Error(DROPSHIP_EMAIL_MELDING[dropshipEmailProbleem])
       }
       // Mig 392: een verzendorder (niet-afhaal) moet een compleet afleveradres
@@ -894,6 +898,8 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
               onAdresChange={handleAflAdresChange}
               onEmailChange={handleAflEmailChange}
               dropshipEmailProbleem={dropshipEmailProbleem}
+              dropshipEmailGenegeerd={dropshipEmailGenegeerd}
+              onDropshipEmailNegeer={setDropshipEmailGenegeerd}
             />
           </div>
         )
