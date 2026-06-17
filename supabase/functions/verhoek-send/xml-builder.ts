@@ -87,6 +87,34 @@ function partijTags(prefix: string, p: Partij): string[] {
   ];
 }
 
+// Volledig lege partij → alle <Prefix...>-tags zelfsluitend. Verhoek wil
+// ongebruikte velden als lege tag, niet weggelaten (mail 16-06-2026).
+const LEGE_PARTIJ: Partij = {
+  naam: '', straat: '', huisnummer: '', postcode: '', woonplaats: '', land: '', telefoon: '', email: '',
+};
+
+// Verhoek 'Verpakkingseenheid' per colli, afgeleid uit de fysieke afmetingen.
+// Karpi verstuurt via Verhoek NOOIT volle rollen — alleen maatwerk + standaard-
+// maten, opgerold, met een afmeting van hooguit de rolbreedte (mail Applicatie
+// Management Verhoek 16-06-2026). 'Rol' (≥1251 cm lengte) komt dus bewust niet
+// voor. We classificeren binnen Verhoeks eigen maat-envelopes (tabel 'Standaard
+// artikelwaarden'): Karpet (de meeste rugs/standaardmaten) → Loper (smal & lang)
+// → Coupon (grotere gesneden stukken; ook het vangnet). Grenzen 1-op-1 uit die
+// tabel; pas hier aan als Verhoek de indeling bijstelt. null = afmeting onbekend
+// → caller valt terug op de config-default (opties.verpakkingseenheid).
+export function verhoekVerpakkingseenheid(
+  lengte_cm: number | null | undefined,
+  breedte_cm: number | null | undefined,
+): string | null {
+  if (!lengte_cm || !breedte_cm || lengte_cm <= 0 || breedte_cm <= 0) return null;
+  const lang = Math.max(lengte_cm, breedte_cm);
+  const kort = Math.min(lengte_cm, breedte_cm);
+  const m2 = (lang * kort) / 10000;
+  if (lang <= 500 && kort <= 240 && m2 <= 12) return 'Karpet';
+  if (kort <= 130 && lang <= 2500 && m2 <= 32.5) return 'Loper';
+  return 'Coupon'; // ≤1250×500 / ≤50 m²; tevens vangnet voor het uiterste geval
+}
+
 function partijUitBedrijf(b: BedrijfInput): Partij {
   const { street, number, addition } = splitAdres(b.adres);
   return {
@@ -126,7 +154,9 @@ function bouwPart(c: VerhoekColliInput, volgnr: number, opties: VerhoekOpties): 
     tag('VerzendNummer', ''),
     tag('Aantal', 1),
     tag('ArtikelID', c.artikelnr ?? ''),
-    tag('Verpakkingseenheid', opties.verpakkingseenheid),
+    // Afgeleid per colli uit de afmetingen (Karpet/Loper/Coupon, nooit Rol);
+    // fallback op de config-default als de afmeting onbekend is.
+    tag('Verpakkingseenheid', verhoekVerpakkingseenheid(c.lengte_cm, c.breedte_cm) ?? opties.verpakkingseenheid),
     tag('Omschrijving', c.omschrijving_snapshot ?? ''),
     // ScanCode MOET exact de barcode op de eenheid zijn — dus precies de
     // labelbarcode uit de gedeelde seam (AI(00)+SSCC). Eén bron met het label
@@ -170,7 +200,9 @@ export function bouwVerhoekXml(args: BouwVerhoekXmlArgs): string {
     tag('OpdrachtgeverNummer', opties.opdrachtgever_nummer),
     ...partijTags('Opdrachtgever', karpi),
     ...partijTags('Afzender', karpi),
-    ...partijTags('AfwijkendeAfzender', karpi),
+    // Afwijkende afzender: alléén vullen als het afzenderadres afwijkt van Karpi
+    // (mail Verhoek 16-06-2026). Bij ons is dat nooit zo → lege tags.
+    ...partijTags('AfwijkendeAfzender', LEGE_PARTIJ),
     tag('OntvangerNaam', ontvanger.naam),
     tag('OntvangerNaam2', ''),
     tag('OntvangerStraat', ontvanger.straat),

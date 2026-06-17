@@ -54,14 +54,18 @@ export interface VerhoekOpties {
   // ScanCode = de labelbarcode (AI(00)+SSCC) uit _shared/vervoerders/
   // labelbarcode.ts — niet langer een per-carrier config-vlag, zodat label en
   // aanmelding nooit kunnen divergeren (de HST-overlossing-klasse bug).
-  verpakkingseenheid: string; // vraag 4 testmail
+  // Fallback-Verpakkingseenheid als de colli-afmeting onbekend is. Normaal
+  // leidt de builder de eenheid per colli af (Karpet/Loper/Coupon) uit de
+  // afmetingen — Karpi verstuurt via Verhoek nooit volle rollen (mail Verhoek
+  // 16-06-2026), dus 'Rol' (≥1251 cm) komt niet voor.
+  verpakkingseenheid: string;
   levering: string;           // vraag 2 testmail
   soort_levering: string;     // vraag 2 testmail
 }
 
 export const DEFAULT_VERHOEK_OPTIES: VerhoekOpties = {
   opdrachtgever_nummer: '',
-  verpakkingseenheid: 'Rol',
+  verpakkingseenheid: 'Coupon',
   levering: '1',
   soort_levering: '1',
 };

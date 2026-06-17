@@ -2,6 +2,11 @@
 // Runtime. Default: read-only connect+list tegen test.rebex.net (publieke
 // demo-server) — geen Verhoek-credentials nodig. Met VERHOEK_SFTP_*-secrets
 // gezet test hij Verhoeks server (Fase 2, incl. upload als ?upload=1).
+//
+// LET OP — connectie-test-upload gebruikt een .TXT-bestand: Verhoeks live-flow
+// in karpi_to_verhoek pakt alleen .xml/.pdf op (mail 16-06-2026), dus een .txt
+// test de verbinding zonder per ongeluk verwerkt te worden. Voor échte data-
+// tests stuurt Verhoek liever de XML per e-mail (niet via SFTP).
 // Verwijderen ná Fase 2. Auth: CRON_TOKEN-header.
 import { testSftpVerbinding, uploadXmlViaSftp } from '../_shared/sftp-client.ts';
 
@@ -22,8 +27,9 @@ Deno.serve(async (req) => {
   const result = doUpload
     ? await uploadXmlViaSftp(
       { ...cfg, remoteDir: Deno.env.get('VERHOEK_SFTP_REMOTE_DIR') ?? '/' },
-      `Karpi_SPIKE_${crypto.randomUUID().slice(0, 8)}.xml`,
-      '<?xml version="1.0" encoding="utf-8"?><DATA><Versie>AA2.0</Versie></DATA>',
+      // .txt: connectie/schrijf-test zonder dat Verhoeks live-flow het oppakt.
+      `Karpi_SPIKE_${crypto.randomUUID().slice(0, 8)}.txt`,
+      'Verbindingstest Karpi -> Verhoek. Dit bestand mag genegeerd worden.\n',
     )
     : await testSftpVerbinding(cfg);
 
