@@ -1,5 +1,36 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-17 — Pick & Ship: multi-select → picker toewijzen → bundelen + bulk-print
+
+**Waarom:** Op Pick & Ship kon je alleen een héle week, één bundel of één losse
+order starten & printen. De dagelijkse magazijnflow miste het ertussenin: een
+handmatige greep orders aanvinken, daar één picker aan hangen, en in één keer de
+pakbonnen + stickers printen — waarbij orders die kunnen bundelen vanzelf samen
+één zending/pakbon worden.
+
+**Wat (pure frontend — geen migratie):**
+- **Multi-select**: checkbox per order-card (alleen op selecteerbare orders —
+  pickbaar, niet geblokkeerd door geen-vervoerder/adres/prijs, niet al in
+  pickronde) + tri-state "hele bundel"-checkbox op elke bundel-kop.
+- **Sticky actiebalk** (`PickSelectieBalk`): aantal geselecteerd + hoeveel
+  niet-geselecteerde bundelpartners automatisch meekomen, een optionele
+  `PickerDropdown` (onthouden via gedeelde last-picker-localStorage), en
+  "Start & print" → `start_pickronden(ids, picker, [])` → navigeert naar de
+  bestaande single-/bulk-printset.
+- **Auto-bundeling** komt gratis uit de bestaande `start_pickronden`-RPC
+  (4D-expansie). Picker optioneel (`picker_id` nullable, mig 394).
+- **Selectie-scope = actieve week-tab** (besluit 2026-06-17): wist bij tab-/
+  vervoerderfilter-wissel.
+- **Architectuur**: selectie-state via context (`pick-selectie-context` +
+  `-provider`, spiegelt het VervoerderResolutie-patroon) zodat de tussenliggende
+  secties (`PickWeekSectie`/`PickDagOrdersSectie`) onaangeroerd blijven; géén
+  useEffect — reset via guarded render-setState, schoonhouden van stale ids via
+  afgeleide set.
+- **Ontdubbeld**: `printsetPadVoorZendingen` (gedeeld door `StartWeekButton`,
+  `ZendingAanmakenKnop` en de balk) en de last-picker-localStorage-helper
+  (gedeeld door de printset-pagina, `zending-aanmaken-knop` en de balk) — telkens
+  drie kopieën teruggebracht tot één bron.
+
 ## 2026-06-16 — Antislip doos-stuks koppeling (mig 408)
 
 **Waarom:** Antislip wordt per doos ingekocht en opgeslagen, maar sommige klanten

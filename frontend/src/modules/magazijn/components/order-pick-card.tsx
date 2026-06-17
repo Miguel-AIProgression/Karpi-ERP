@@ -20,6 +20,7 @@ import {
 import { cn } from '@/lib/utils/cn'
 import { ORDER_STATUS_COLORS } from '@/lib/utils/constants'
 import { iso2NaarVlag, landNaarIso2 } from '@/lib/utils/land-vlag'
+import { usePickSelectie } from '../context/pick-selectie-context'
 import type { PickShipOrder, PickShipRegel, PickShipWachtOp } from '../lib/types'
 
 /** Compacte NL-dag-badge "wo 14-05" voor dag-orders (ADR 0014). */
@@ -100,6 +101,12 @@ interface Props {
 
 export function OrderPickCard({ order }: Props) {
   const [open, setOpen] = useState(false)
+  const selectie = usePickSelectie()
+  // Multi-select staat alleen aan binnen een PickSelectieProvider; buiten de
+  // Pick & Ship-overview (geen provider) rendert de card zonder checkbox.
+  const toonSelectie = selectie !== null
+  const selecteerbaar = selectie?.isSelectable(order.order_id) ?? false
+  const geselecteerd = selectie?.isSelected(order.order_id) ?? false
 
   const statusColor = ORDER_STATUS_COLORS[order.status] ?? {
     bg: 'bg-slate-100',
@@ -119,7 +126,8 @@ export function OrderPickCard({ order }: Props) {
     <div
       className={cn(
         'rounded-[var(--radius)] border',
-        tint ? tint.card : 'bg-white border-slate-200'
+        tint ? tint.card : 'bg-white border-slate-200',
+        geselecteerd && 'ring-2 ring-terracotta-500 ring-offset-1'
       )}
       title={tint?.title}
     >
@@ -140,6 +148,30 @@ export function OrderPickCard({ order }: Props) {
           !open && 'rounded-b-[var(--radius)]'
         )}
       >
+        {/* Multi-select checkbox — alleen voor selecteerbare orders (pickbaar,
+            niet geblokkeerd, geen lopende pickronde). stopPropagation zodat het
+            aanvinken de card niet open/dicht klapt. */}
+        {toonSelectie && (
+          <span
+            className="flex flex-shrink-0 items-center"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
+            {selecteerbaar ? (
+              <input
+                type="checkbox"
+                checked={geselecteerd}
+                onChange={() => selectie?.toggle(order.order_id)}
+                className="h-4 w-4 cursor-pointer accent-terracotta-500"
+                title="Selecteer voor gezamenlijk starten & printen"
+                aria-label={`Selecteer order ${order.order_nr}`}
+              />
+            ) : (
+              <span className="inline-block h-4 w-4" aria-hidden />
+            )}
+          </span>
+        )}
+
         {/* Toggle */}
         <span className="text-slate-400 flex-shrink-0">
           {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}

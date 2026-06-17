@@ -16,25 +16,7 @@ import {
   TapijtStickersSectie,
   totaalAantalTapijtStickers,
 } from '@/modules/logistiek/components/tapijt-stickers-sectie'
-
-const LAST_PICKER_KEY = 'rugflow.last-picker-id'
-
-function loadLastPicker(): number | null {
-  try {
-    const v = localStorage.getItem(LAST_PICKER_KEY)
-    return v ? Number(v) : null
-  } catch {
-    return null
-  }
-}
-
-function saveLastPicker(id: number) {
-  try {
-    localStorage.setItem(LAST_PICKER_KEY, String(id))
-  } catch {
-    /* ignore */
-  }
-}
+import { loadLastPicker, saveLastPicker } from '@/lib/orders/last-picker'
 import {
   DEFAULT_LABEL_BREEDTE_MM,
   DEFAULT_LABEL_HOOGTE_MM,

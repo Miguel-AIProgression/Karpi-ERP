@@ -6,6 +6,9 @@ import { HstAandachtBanner } from '@/modules/logistiek'
 import { PickDagOrdersSectie } from '../components/pick-dag-orders-sectie'
 import { PickGeblokkeerdSectie } from '../components/pick-geblokkeerd-sectie'
 import { PickWeekSectie } from '../components/pick-week-sectie'
+import { PickSelectieBalk } from '../components/pick-selectie-balk'
+import { usePickSelectieState } from '../context/pick-selectie-context'
+import { PickSelectieProvider } from '../context/pick-selectie-provider'
 import { usePickShipOrders, usePickShipStats } from '../hooks/use-pick-ship'
 import {
   VervoerderFilterButton,
@@ -195,6 +198,45 @@ export function MagazijnOverviewPage() {
     }
     return s
   }, [startbareOrders])
+
+  // Multi-select (besluit 2026-06-17): orders aanvinken → in één keer starten &
+  // printen met optionele picker. Selecteerbaar = wat de pick-start-knop ook zou
+  // accepteren: pickbaar, niet geblokkeerd (geen vervoerder valt al uit
+  // `startbareOrders`), geen onvolledig adres/prijs (`nietPrintbaarIds`), en niet
+  // al in een lopende pickronde. De selectie wist bij tab-/vervoerderfilter-
+  // wissel (scope = actieve week-tab).
+  const selectableIds = useMemo(() => {
+    const s = new Set<number>()
+    for (const o of startbareOrders) {
+      if (o.actieve_pickronde) continue
+      if (nietPrintbaarIds.has(o.order_id)) continue
+      s.add(o.order_id)
+    }
+    return s
+  }, [startbareOrders, nietPrintbaarIds])
+
+  const selectie = usePickSelectieState(`${filter}|${vervoerderFilter}`, selectableIds)
+
+  const geselecteerdeOrders = useMemo(
+    () => startbareOrders.filter((o) => selectie.selectedIds.has(o.order_id)),
+    [startbareOrders, selectie.selectedIds],
+  )
+
+  // Transparantie: hoeveel niet-geselecteerde orders door de auto-4D-bundeling
+  // van `start_pickronden` tóch meekomen (bundel-partners in dezelfde
+  // voorgestelde bundel). Puur informatief in de actiebalk.
+  const aantalBundelPartners = useMemo(() => {
+    if (selectie.selectedIds.size === 0) return 0
+    const partners = new Set<number>()
+    for (const b of voorgesteldeBundels) {
+      if (b.order_ids.some((id) => selectie.selectedIds.has(id))) {
+        for (const id of b.order_ids) {
+          if (!selectie.selectedIds.has(id)) partners.add(id)
+        }
+      }
+    }
+    return partners.size
+  }, [voorgesteldeBundels, selectie.selectedIds])
 
   // Groepeer binnen het actieve filter per verzendweek (gesorteerd op sleutel).
   // Voor wk_2..wk_5 hoort er normaal precies één verzendweek-groep te zijn.
@@ -387,47 +429,55 @@ export function MagazijnOverviewPage() {
         // hierboven (allOrderIds) → één gedeelde fetch; cards in andere tabs zijn
         // al pre-seeded als de gebruiker van tab wisselt.
         <VervoerderResolutieProvider orderIds={allOrderIds}>
-          <div className="space-y-6">
-            {dagOrders.length > 0 && (
-              <PickDagOrdersSectie
-                orders={dagOrders}
+          <PickSelectieProvider value={selectie}>
+            <div className="space-y-6">
+              {dagOrders.length > 0 && (
+                <PickDagOrdersSectie
+                  orders={dagOrders}
+                  groepeerOpLand={groepeerOpLand}
+                  geblokkeerdeOrderIds={nietPrintbaarIds}
+                  voorgesteldeBundels={voorgesteldeBundels.filter((b) =>
+                    b.order_ids.some((oid) =>
+                      dagOrders.some((o) => o.order_id === oid),
+                    ),
+                  )}
+                />
+              )}
+              {perWeek.map((groep) => (
+                <PickWeekSectie
+                  key={groep.sleutel}
+                  orders={groep.orders}
+                  pickWeek={groep.pickWeek}
+                  verzendWeek={groep.verzendWeek}
+                  status={groep.status}
+                  groepeerOpLand={groepeerOpLand}
+                  geblokkeerdeOrderIds={nietPrintbaarIds}
+                  // wk_1 is één gecombineerde sectie: geef ALLE voorgestelde
+                  // bundels mee. Na mig 403 zijn alle achterstallige bundels
+                  // geclampt naar de huidige week en zitten in de view — de
+                  // PickWeekSectie matcht op order_id, dus bundels van andere
+                  // tabs beïnvloeden de clustering niet.
+                  voorgesteldeBundels={
+                    filter === 'wk_1'
+                      ? voorgesteldeBundels
+                      : bundelsPerWeek.get(groep.sleutel) ?? []
+                  }
+                />
+              ))}
+              <PickGeblokkeerdSectie
+                orders={geblokkeerdeOrders}
                 groepeerOpLand={groepeerOpLand}
-                geblokkeerdeOrderIds={nietPrintbaarIds}
-                voorgesteldeBundels={voorgesteldeBundels.filter((b) =>
-                  b.order_ids.some((oid) =>
-                    dagOrders.some((o) => o.order_id === oid),
-                  ),
-                )}
               />
-            )}
-            {perWeek.map((groep) => (
-              <PickWeekSectie
-                key={groep.sleutel}
-                orders={groep.orders}
-                pickWeek={groep.pickWeek}
-                verzendWeek={groep.verzendWeek}
-                status={groep.status}
-                groepeerOpLand={groepeerOpLand}
-                geblokkeerdeOrderIds={nietPrintbaarIds}
-                // wk_1 is één gecombineerde sectie: geef ALLE voorgestelde
-                // bundels mee. Na mig 403 zijn alle achterstallige bundels
-                // geclampt naar de huidige week en zitten in de view — de
-                // PickWeekSectie matcht op order_id, dus bundels van andere
-                // tabs beïnvloeden de clustering niet.
-                voorgesteldeBundels={
-                  filter === 'wk_1'
-                    ? voorgesteldeBundels
-                    : bundelsPerWeek.get(groep.sleutel) ?? []
-                }
-              />
-            ))}
-            <PickGeblokkeerdSectie
-              orders={geblokkeerdeOrders}
-              groepeerOpLand={groepeerOpLand}
-            />
-          </div>
+            </div>
+          </PickSelectieProvider>
         </VervoerderResolutieProvider>
       )}
+
+      <PickSelectieBalk
+        geselecteerdeOrders={geselecteerdeOrders}
+        aantalBundelPartners={aantalBundelPartners}
+        onClear={selectie.clear}
+      />
     </>
   )
 }

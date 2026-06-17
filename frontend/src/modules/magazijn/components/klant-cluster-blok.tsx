@@ -16,17 +16,49 @@
 //
 // Gedeeld door PickWeekSectie en PickDagOrdersSectie — beide weergaven willen
 // hetzelfde bundel-gedrag.
+import { useEffect, useRef } from 'react'
 import { Layers } from 'lucide-react'
 import { OrderPickCard } from './order-pick-card'
 import { VoorgesteldeBundelInfo } from './voorgestelde-bundel-info'
 import { ActieveBundelInfo } from './actieve-bundel-info'
 import { StartPickrondesButton } from '@/modules/logistiek'
+import { usePickSelectie } from '../context/pick-selectie-context'
 import type { VoorgesteldeBundel } from '@/modules/logistiek/queries/voorgestelde-bundels'
 import type { KlantCluster } from '../lib/groeperen'
 
 interface Props {
   cluster: KlantCluster
   bundel: VoorgesteldeBundel | null
+}
+
+/** Tri-state checkbox die de hele bundel in één keer selecteert/deselecteert. */
+function BundelSelectieCheckbox({ orderIds }: { orderIds: number[] }) {
+  const selectie = usePickSelectie()
+  const ref = useRef<HTMLInputElement>(null)
+
+  const selecteerbareIds = orderIds.filter((id) => selectie?.isSelectable(id))
+  const geselecteerd = selecteerbareIds.filter((id) => selectie?.isSelected(id)).length
+  const alles = selecteerbareIds.length > 0 && geselecteerd === selecteerbareIds.length
+  const deels = geselecteerd > 0 && !alles
+
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = deels
+  }, [deels])
+
+  // Geen provider of niets selecteerbaars (bv. bundel loopt al) → geen checkbox.
+  if (!selectie || selecteerbareIds.length === 0) return null
+
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      checked={alles}
+      onChange={() => selectie.setMany(selecteerbareIds, !alles)}
+      className="h-4 w-4 cursor-pointer accent-terracotta-500"
+      title="Selecteer de hele bundel"
+      aria-label="Selecteer alle orders in deze bundel"
+    />
+  )
 }
 
 export function KlantClusterBlok({ cluster, bundel }: Props) {
@@ -48,6 +80,7 @@ export function KlantClusterBlok({ cluster, bundel }: Props) {
       />
       <div className="flex items-center justify-between gap-2 px-1 pt-0.5">
         <div className="flex items-center gap-2.5 min-w-0">
+          <BundelSelectieCheckbox orderIds={cluster.orders.map((o) => o.order_id)} />
           <span className="inline-flex items-center gap-1 rounded-full bg-terracotta-500 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
             <Layers size={11} />
             Bundel

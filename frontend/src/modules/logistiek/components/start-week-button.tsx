@@ -23,6 +23,7 @@ import { Loader2, Printer } from 'lucide-react'
 import { useStartPickrondes } from '../hooks/use-zendingen'
 import { useVervoerders } from '../hooks/use-vervoerders'
 import { usePickbaarheid } from '../hooks/use-pickbaarheid'
+import { printsetPadVoorZendingen } from '../lib/printset-navigatie'
 import { cn } from '@/lib/utils/cn'
 import type { PickShipOrder } from '@/modules/magazijn'
 
@@ -60,12 +61,7 @@ export function StartWeekButton({ orders, verzendWeek }: Props) {
         pickerId: null,
         forceSoloIds: [],
       })
-      if (zendingen.length === 1) {
-        navigate(`/logistiek/${zendingen[0].zending_nr}/printset`)
-      } else {
-        const qs = encodeURIComponent(zendingen.map((z) => z.zending_nr).join(','))
-        navigate(`/logistiek/printset/bulk?zendingen=${qs}`)
-      }
+      navigate(printsetPadVoorZendingen(zendingen))
     } catch (err) {
       setError(readErrorMessage(err))
     }
