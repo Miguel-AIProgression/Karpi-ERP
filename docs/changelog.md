@@ -50,6 +50,27 @@ gewicht worden door de preflight geblokkeerd (handmatig `gewicht_kg` zetten);
 operationele afspraak met Rhenus over 1-bestand-per-zending (evt. per paar uur
 bundelen).
 
+## 2026-06-17 — HST vervoerder: cutover acceptatie → productie
+
+**Waarom:** HST heeft de productie-koppeling vrijgegeven (mail HST 2026-06-17).
+Tot nu draaide de live NL-verzending wel via HST, maar tegen de
+acceptatie-omgeving (`accp.hstonline.nl`). Nu schakelen we naar productie.
+
+**Wat:**
+- **Secrets (Supabase dashboard, buiten git):** `HST_API_BASE_URL` →
+  `https://portal.hstonline.nl/rest/api/v1` en `HST_API_WACHTWOORD` →
+  productie-wachtwoord. `HST_API_USERNAME` (`karpi_array1_api_user`) en
+  `HST_API_CUSTOMER_ID` (`038267`) bleven ongewijzigd — digest-bevestigd
+  identiek aan acceptatie.
+- **UI-referentie (mig 417):** `vervoerders.api_endpoint` → productie-host +
+  OMGEVING-notitie naar "PRODUCTIE sinds 2026-06-17". `api_endpoint` is read-only
+  referentie; het effectieve endpoint van `hst-send` komt uit de secret.
+- **`.env.example`:** HST-blok default naar productie-host.
+- **Geen schakelaar-wijziging:** `hst_api.actief`/`is_default` stonden al TRUE
+  (HST was al de NL-default, catch-all regel id 13) — de cutover zit puur in de
+  secret-omgeving + wachtwoord. Validatie via de eerste echte zending +
+  Verzendmonitor (`hst_verzend_monitor`).
+
 ## 2026-06-17 — Pick & Ship: meerdere pickrondes tegelijk afronden (bulk → Verzonden)
 
 **Waarom:** Sinds we vanaf Pick & Ship meerdere pickrondes tegelijk kunnen
