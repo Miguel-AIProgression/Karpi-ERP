@@ -1,5 +1,32 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-17 — Rhenus LIVE (cutover naar productiebox /in)
+
+**Waarom:** Rhenus gaf telefonisch akkoord op het format en de bestandsnaam — we
+mogen vanaf nu naar de **productiebox (`/in`)** sturen i.p.v. de testmap. Daarmee
+vervalt ook de 15-juni-blokkade (bestanden werden wel opgehaald maar verschenen
+niet in het Mandantenportal); ons aanleveraccount is nu aan Rhenus' kant
+ready/gekoppeld.
+
+**Cutover-stappen (17-06):**
+- `rhenus-send` herdeployed met de ingekorte bestandsnaam-fix
+  (`RHE_<datum>_<zending>.xml`, commit `6fbd44a`) — was gemerged maar nog niet live.
+- Secrets bevestigd zonder ze te kunnen lezen: de Supabase secret-digest is een
+  pure `sha256(waarde)`, dus `RHENUS_DRY_RUN`-digest = `sha256('false')` ✅ en
+  `RHENUS_SFTP_REMOTE_DIR`-digest = `sha256('/in')` ✅ (Piet-Hein had ze 12/14-06
+  al goed gezet — geen wijziging nodig).
+- `UPDATE vervoerders SET actief=TRUE WHERE code='rhenus_sftp'` → de DE-catch-all
+  (prio 99998, `{"land":["DE"]}`) routeert nu DE-orders automatisch naar Rhenus.
+  *Valkuil:* `vervoerders` heeft geen `id`-kolom (PK = `code`); activeer met een
+  kale `UPDATE` zonder join (één foute SELECT in de SQL-editor rollbackt de batch).
+
+**Open na go-live:** eerste echte DE-zending end-to-end verifiëren
+(`rhenus_transportorders`→`Verstuurd`, `externe_payloads` `ok=true`, en vooral
+**zichtbaar in het Mandantenportal**); broadloom/rol-producten zonder berekenbaar
+gewicht worden door de preflight geblokkeerd (handmatig `gewicht_kg` zetten);
+operationele afspraak met Rhenus over 1-bestand-per-zending (evt. per paar uur
+bundelen).
+
 ## 2026-06-17 — Pick & Ship: meerdere pickrondes tegelijk afronden (bulk → Verzonden)
 
 **Waarom:** Sinds we vanaf Pick & Ship meerdere pickrondes tegelijk kunnen
