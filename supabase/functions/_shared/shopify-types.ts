@@ -164,6 +164,10 @@ export function shopifyLineItemToMatcherRow(item: ShopifyLineItem) {
     variantTitle = dimensieProp
   }
 
+  // Shopify-properties naar extraTexts zodat parseMaatwerkDims/detectVorm ze
+  // meepakt — bv. "Maatwerk: 300x400 rechthoek" → parseMaatwerkDims vindt "300x400".
+  const extraTexts = (item.properties ?? []).map(p => `${p.name}: ${p.value}`)
+
   return {
     id: item.id,
     productTitle: item.title,
@@ -175,11 +179,8 @@ export function shopifyLineItemToMatcherRow(item: ShopifyLineItem) {
     priceExcl: parseFloat(item.price ?? '0') || 0,
     priceIncl: parseFloat(item.price ?? '0') || 0,
     discountExcl: parseFloat(item.total_discount ?? '0') || 0,
-    // Shopify levert gram; product-matcher gebruikt het voor normalizeGewicht (micro-kg)
-    // Wij converteren hier zelf naar kg zodat de caller dat niet hoeft.
-    weight: item.grams != null ? item.grams * 1000 : undefined, // gram → milli-gram (≈ micro-kg ×1000/1000)
+    weight: item.grams != null ? item.grams * 1000 : undefined,
     customFields: undefined,
-    // Extra velden voor de maatwerk-dims-parser
-    _shopifyProperties: item.properties ?? [],
+    extraTexts,
   }
 }
