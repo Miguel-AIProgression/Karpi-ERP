@@ -8,6 +8,7 @@
 // `fetchFactuurDocument`. ADR-0036 slice 2 — nog niet gewired (additief).
 
 import { effectiefBtwPct } from '../btw.ts'
+import { externReferentie } from '../referentie.ts'
 import {
   resolveArtikelPresentatie,
   type ArtikelPresentatie,
@@ -167,7 +168,7 @@ export function bouwFactuurDocument(
       order_id: r.order_id,
       order_regel_id: r.order_regel_id,
       order_nr: r.order_nr ?? '',
-      uw_referentie: r.uw_referentie ?? '',
+      uw_referentie: externReferentie(r.uw_referentie) ?? '',
       artikelnr: r.artikelnr ?? '',
       omschrijving_2: r.omschrijving_2 ?? null,
       klant_referentie: r.klant_referentie ?? null,

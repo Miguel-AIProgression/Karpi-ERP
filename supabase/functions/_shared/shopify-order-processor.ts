@@ -241,7 +241,12 @@ export async function processShopifyOrder(
 
   const orderdatum = order.created_at ? order.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10)
   const afleverdatum = leidAfleverdatumAf(order, orderdatum)
-  const klantReferentie = order.note?.trim() || order.name
+  // Interne referentie: klant-eigen PO + Shopify-ordernummer (bv. "#5590").
+  // Het Shopify-gedeelte is puur intern — externReferentie() strips het op
+  // alle externe documenten (pakbon, factuur, EDI, labels, orderbevestiging).
+  const klantReferentie = order.note?.trim()
+    ? `${order.note.trim()} / Shopify: ${order.name}`
+    : `Shopify: ${order.name}`
 
   const header = {
     debiteur_nr: debiteurMatch.debiteur_nr,

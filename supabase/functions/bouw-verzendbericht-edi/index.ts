@@ -23,6 +23,7 @@ import {
   buildKarpiVerzendbericht,
   type VerzendberichtInput,
 } from '../_shared/transus-formats/karpi-verzendbericht.ts'
+import { externReferentie } from '../_shared/referentie.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -204,7 +205,7 @@ async function verwerkOrder(sb: any, orderId: number): Promise<VerwerkResult> {
 
     // 3. Klant-PO: mirrors bouw-factuur-edi → orders.klant_referentie
     //    (snapshot van het inkomende EDI-bericht-ordernummer, gezet door create_edi_order)
-    const orderNumberBuyer = order.klant_referentie ?? ''
+    const orderNumberBuyer = externReferentie(order.klant_referentie) ?? ''
     if (!orderNumberBuyer) {
       return { order_id: orderId, status: 'fout', error: 'klant_referentie (klant-PO) ontbreekt op order' }
     }

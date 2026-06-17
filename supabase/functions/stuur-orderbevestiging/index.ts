@@ -21,6 +21,7 @@ import { berekenFactuurTotalen } from '../_shared/factuur-bedrag.ts'
 import { effectiefBtwPct, isBtwVerlegd } from '../_shared/btw.ts'
 import { resolveKarpiCode } from '../_shared/facturatie/artikel-presentatie.ts'
 import { logExternePayload } from '../_shared/externe-payload-audit.ts'
+import { externReferentie } from '../_shared/referentie.ts'
 
 const SUPABASE_URL        = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -367,7 +368,7 @@ serve(async (req) => {
     orderdatum: o.orderdatum,
     debiteur_nr: o.debiteur_nr,
     vertegenwoordiger: vertegenwoordigerNaam,
-    klant_referentie: o.klant_referentie ?? null,
+    klant_referentie: externReferentie(o.klant_referentie),
     verzendweek: verzendweekLabel(o.afleverdatum),
     afleverdatum: o.afleverdatum ?? null,
     klant_naam: deb?.naam ?? o.fact_naam ?? 'Klant',
@@ -420,11 +421,11 @@ serve(async (req) => {
   const htmlBody = `
 <div style="font-family: Arial, sans-serif; max-width: 600px; color: #333;">
   <p>${v.aanhef(klantNaam)}</p>
-  <p>${v.intro(o.order_nr, o.klant_referentie ?? null)}</p>
+  <p>${v.intro(o.order_nr, externReferentie(o.klant_referentie))}</p>
   <p>
     <strong>${v.klantnummer}:</strong> ${o.debiteur_nr}<br>
     <strong>${v.ordernummer}:</strong> ${o.order_nr}<br>
-    ${o.klant_referentie ? `<strong>${v.referentie}:</strong> ${o.klant_referentie}<br>` : ''}
+    ${externReferentie(o.klant_referentie) ? `<strong>${v.referentie}:</strong> ${externReferentie(o.klant_referentie)}<br>` : ''}
     ${vertegenwoordigerNaam ? `<strong>${v.vertegenwoordiger}:</strong> ${vertegenwoordigerNaam}<br>` : ''}
     ${o.afleverdatum ? `<strong>${v.levering}:</strong> ${verzendweekLabel(o.afleverdatum) ?? ''}<br>` : ''}
   </p>

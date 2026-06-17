@@ -1,4 +1,5 @@
 import { labelBarcode } from '@/lib/logistiek/labelbarcode'
+import { externReferentie } from '@/lib/orders/referentie'
 import { Code128Barcode } from './code128-barcode'
 import {
   labelDatumKort,
@@ -119,10 +120,10 @@ export function ShippingLabelTall({
       <div style={{ ...rijBase, height: `${RIJ_ORDER_MM}mm`, padding: '1mm 2mm', lineHeight: 1.2 }}>
         <div style={{ fontSize: '10px' }}>
           <strong>Order:</strong> {order.order_nr}
-          {order.klant_referentie && (
+          {externReferentie(order.klant_referentie) && (
             <>
               {' '}
-              <strong>Ref:</strong> {order.klant_referentie}
+              <strong>Ref:</strong> {externReferentie(order.klant_referentie)}
             </>
           )}
         </div>

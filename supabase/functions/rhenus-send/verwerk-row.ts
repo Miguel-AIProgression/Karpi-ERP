@@ -5,6 +5,7 @@
 // en de XML-builder krijgt een `nu`-tijdstip.
 
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { externReferentie } from '../_shared/referentie.ts';
 
 import { bouwRhenusBestandsnaam, bouwRhenusXml, valideerRhenusColli } from './xml-builder.ts';
 import { type SftpConfig, uploadXmlViaSftp } from '../_shared/sftp-client.ts';
@@ -64,7 +65,7 @@ export const rhenusAdapter: VerzendAdapter<RhenusTransportOrderRow, VerwerkConte
   bouwPayload: ({ z, order, bedrijf, colli, ctx }) =>
     bouwRhenusXml({
       zending: z as unknown as ZendingInput,
-      order: { order_nr: order.order_nr as string, klant_referentie: (order.klant_referentie as string | null) ?? null },
+      order: { order_nr: order.order_nr as string, klant_referentie: externReferentie(order.klant_referentie as string | null) },
       bedrijf: bedrijf as BedrijfInput,
       opties: ctx.opties,
       colli,

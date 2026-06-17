@@ -1,4 +1,5 @@
 import { labelBarcode } from '@/lib/logistiek/labelbarcode'
+import { externReferentie } from '@/lib/orders/referentie'
 import { Code128Barcode } from './code128-barcode'
 import {
   labelDatumKort,
@@ -58,8 +59,8 @@ export function DpdShippingLabel({
           <div>
             <div className="flex items-baseline gap-2">
               <span className="font-semibold">Order: {order.order_nr}</span>
-              {order.klant_referentie && (
-                <span className="text-[7px]">Uw ref: {order.klant_referentie}</span>
+              {externReferentie(order.klant_referentie) && (
+                <span className="text-[7px]">Uw ref: {externReferentie(order.klant_referentie)}</span>
               )}
             </div>
             <div className="mt-0.5 text-[8px] font-semibold leading-snug">

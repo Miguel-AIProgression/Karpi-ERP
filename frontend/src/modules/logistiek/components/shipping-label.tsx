@@ -1,4 +1,5 @@
 import { labelBarcode } from '@/lib/logistiek/labelbarcode'
+import { externReferentie } from '@/lib/orders/referentie'
 import { Code128Barcode } from './code128-barcode'
 import { ShippingLabelTall } from './shipping-label-tall'
 import {
@@ -141,10 +142,10 @@ function ShippingLabelCompact({
       >
         <div style={{ fontSize: fz(6), lineHeight: 1.1 }}>
           <strong>Order:</strong> {order.order_nr}
-          {order.klant_referentie && (
+          {externReferentie(order.klant_referentie) && (
             <>
               {' '}
-              <strong>Ref:</strong> {order.klant_referentie}
+              <strong>Ref:</strong> {externReferentie(order.klant_referentie)}
             </>
           )}
         </div>

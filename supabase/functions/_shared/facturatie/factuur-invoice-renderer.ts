@@ -11,6 +11,7 @@
 // Pure functie (geen DB) — de caller levert de partij-/order-context.
 
 import { normalizeCountry } from '../adres-split.ts'
+import { externReferentie } from '../referentie.ts'
 import type {
   InvoiceParty,
   KarpiInvoiceInput,
@@ -172,7 +173,7 @@ export function naarInvoiceInput(doc: FactuurDocument, ctx: FactuurInvoiceContex
   const ordersById = new Map(ctx.orders.map((o) => [o.id, o]))
   const orderNumberBuyer = firstNonEmpty(
     doc.regels.find((r) => r.uw_referentie)?.uw_referentie,
-    firstOrder.klant_referentie,
+    externReferentie(firstOrder.klant_referentie),
     header.factuur_nr,
   )!
   const supplierOrderNumber = firstNonEmpty(
@@ -193,7 +194,7 @@ export function naarInvoiceInput(doc: FactuurDocument, ctx: FactuurInvoiceContex
       quantity: r.aantal,
       invoiceNumber: header.factuur_nr,
       netPrice: r.prijs,
-      orderNumberBuyer: firstNonEmpty(r.uw_referentie, regelOrder.klant_referentie, orderNumberBuyer),
+      orderNumberBuyer: firstNonEmpty(r.uw_referentie, externReferentie(regelOrder.klant_referentie), orderNumberBuyer),
       buyerArticleNumber: r.presentatie.klant_artikel,
       lineAmount: r.bedrag,
       taxableAmount: r.bedrag,

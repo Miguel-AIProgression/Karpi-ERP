@@ -4,6 +4,7 @@ import { fetchBedrijfsConfig, type BedrijfsConfig } from '@/lib/supabase/queries
 import { productNamen } from '@/modules/logistiek/lib/shipping-label-data'
 import { bouwVerzenddocument, type PakbonRegel } from '@/modules/logistiek/lib/printset'
 import type { ZendingPrintSet } from '@/modules/logistiek/queries/zendingen'
+import { externReferentie } from '@/lib/orders/referentie'
 
 interface PakbonDocumentProps {
   zending: ZendingPrintSet
@@ -89,7 +90,7 @@ export function PakbonDocument({ zending, vervoerderNaam: _vervoerderNaam, colli
   const route = order.debiteuren?.route ?? null
 
   const referentieRegel =
-    [order.klant_referentie, order.week ? `(WK ${order.week})` : null].filter(Boolean).join(' ') || '-'
+    [externReferentie(order.klant_referentie), order.week ? `(WK ${order.week})` : null].filter(Boolean).join(' ') || '-'
 
   const vertegNaam = order.vertegenwoordigers?.naam ?? order.vertegenw_code ?? '-'
   const datum = formatDate(zending.verzenddatum ?? zending.created_at)
@@ -148,7 +149,7 @@ export function PakbonDocument({ zending, vervoerderNaam: _vervoerderNaam, colli
                 <MetaRow label="Debiteur" value={String(order.debiteur_nr)} />
                 <MetaRow label="Orders" value={`${zending.bundel_orders.length} orders gebundeld`} />
                 {zending.bundel_orders.map((bo) => {
-                  const ref = [bo.klant_referentie, bo.week ? `(WK ${bo.week})` : null]
+                  const ref = [externReferentie(bo.klant_referentie), bo.week ? `(WK ${bo.week})` : null]
                     .filter(Boolean)
                     .join(' ') || '-'
                   return (
