@@ -6,6 +6,7 @@ import {
   productMaat,
   productNamen,
 } from '@/modules/logistiek/lib/shipping-label-data'
+import { LABEL_EXTRA_RANDMARGE_MM } from '@/modules/logistiek/lib/printset'
 import type { ShippingLabelProps } from './shipping-label'
 
 // Staand verzendlabel voor 3"×6"-rollen (76,2×152,4mm) — de fysieke rol in de
@@ -44,7 +45,13 @@ export function ShippingLabelTall({
   const barcodeValue = labelBarcode(sscc)
   const ref = labelReferentie(order)
 
-  const rijBarcodeMm = hoogteMm - RIJ_AFZENDER_MM - RIJ_ORDER_MM - RIJ_ADRES_MM - RIJ_COLLI_MM
+  // Veilige witrand rondom: het hele gestapelde ontwerp komt aan alle zijden
+  // naar binnen zodat een licht scheef ingevoerd etiket niets afsnijdt. De
+  // rij-hoogtes blijven vast; de barcode-rij vangt de ingekorte binnenhoogte op.
+  const margeMm = LABEL_EXTRA_RANDMARGE_MM
+  const binnenHoogteMm = hoogteMm - 2 * margeMm
+  const rijBarcodeMm =
+    binnenHoogteMm - RIJ_AFZENDER_MM - RIJ_ORDER_MM - RIJ_ADRES_MM - RIJ_COLLI_MM
 
   const rijBase: React.CSSProperties = {
     boxSizing: 'border-box',
@@ -67,6 +74,7 @@ export function ShippingLabelTall({
         display: 'block',
         contain: 'layout paint size',
         color: '#000',
+        padding: `${margeMm}mm`,
       }}
     >
       {/* Rij 1 — afzender + vervoerder-badge */}
