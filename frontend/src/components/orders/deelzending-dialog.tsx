@@ -3,8 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { Package, Loader2, X } from 'lucide-react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase/client'
-import { PickerDropdown } from '@/components/orders/picker-dropdown'
-import { loadLastPicker, saveLastPicker } from '@/lib/orders/last-picker'
 import { isAdminPseudo } from '@/lib/orders/admin-pseudo'
 import { isoWeekStringVanIso } from '@/lib/utils/iso-week'
 import type { OrderRegel } from '@/lib/supabase/queries/orders'
@@ -49,13 +47,11 @@ export function DeelzendingDialog({
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [geselecteerd, setGeselecteerd] = useState<Set<number>>(new Set())
-  const [pickerId, setPickerId] = useState<number | null>(() => loadLastPicker())
   const [fout, setFout] = useState<string | null>(null)
 
   const mutation = useMutation({
-    mutationFn: () => startDeelzending(orderId, Array.from(geselecteerd), pickerId),
+    mutationFn: () => startDeelzending(orderId, Array.from(geselecteerd), null),
     onSuccess: (data) => {
-      if (pickerId) saveLastPicker(pickerId)
       queryClient.invalidateQueries({ queryKey: ['orders', orderId] })
       queryClient.invalidateQueries({ queryKey: ['orders', orderId, 'regels'] })
       queryClient.invalidateQueries({ queryKey: ['orders', orderId, 'zendingen'] })
@@ -199,19 +195,6 @@ export function DeelzendingDialog({
                 })
               )}
             </div>
-          </div>
-
-          {/* Picker */}
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">
-              Picker (optioneel)
-            </label>
-            <PickerDropdown
-              value={pickerId}
-              onChange={setPickerId}
-              disabled={mutation.isPending}
-              placeholder="Geen picker opgegeven"
-            />
           </div>
 
           {/* Foutmelding */}
