@@ -197,7 +197,6 @@ export function MaatwerkSelector({ defaultKorting, onAdd }: MaatwerkSelectorProp
   const canAdd =
     state.kwaliteitCode !== '' &&
     state.kleurCode !== '' &&
-    state.verkoopprijsM2 > 0 &&
     oppervlakM2 > 0
 
   async function handleAdd() {
@@ -311,6 +310,9 @@ export function MaatwerkSelector({ defaultKorting, onAdd }: MaatwerkSelectorProp
                 {oppervlakM2.toLocaleString('nl-NL', { maximumFractionDigits: 2 })} m²
                 {' '}x {formatCurrency(state.verkoopprijsM2)}/m²
               </span>
+              {state.verkoopprijsM2 === 0 && (
+                <span className="text-amber-600 text-xs">Geen prijs op prijslijst — pas prijs aan na toevoegen</span>
+              )}
               {vormToeslag > 0 && (
                 <span>+ {formatCurrency(vormToeslag)} (vorm)</span>
               )}
