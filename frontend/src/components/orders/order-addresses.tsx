@@ -41,6 +41,11 @@ export function OrderAddresses({ order, dropshipEmailProbleem }: OrderAddressesP
               <span className="text-slate-400 block mb-0.5">Factuur per e-mail naar</span>
               {order.fact_email ? (
                 <span className="text-slate-700">{order.fact_email}</span>
+              ) : order.klant_email ? (
+                <span className="text-slate-700">
+                  {order.klant_email}
+                  <span className="ml-1.5 text-xs text-slate-400">(klantprofiel)</span>
+                </span>
               ) : (
                 <span className="text-amber-600">Geen factuur-e-mailadres bekend</span>
               )}
