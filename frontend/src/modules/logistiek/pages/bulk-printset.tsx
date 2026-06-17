@@ -26,6 +26,7 @@ import {
   DEFAULT_LABEL_HOOGTE_MM,
   expandLabels,
   labelFormaatVoor,
+  printFormaatVoor,
   vervoerderInfoVoor,
 } from '@/modules/logistiek/lib/printset'
 import type { ZendingPrintSet } from '@/modules/logistiek/queries/zendingen'
@@ -48,7 +49,7 @@ interface ZendingBlokProps {
 function ZendingBlok({ zending, tapijtStickers }: ZendingBlokProps) {
   const labels = useMemo(() => expandLabels(zending), [zending])
   const vervoerder = vervoerderInfoVoor(zending)
-  const labelFormaat = useMemo(() => labelFormaatVoor(zending), [zending])
+  const labelFormaat = useMemo(() => printFormaatVoor(labelFormaatVoor(zending)), [zending])
   const isPrintType = zending.vervoerders?.type === 'print'
   // Afhaal-zendingen krijgen geen sticker — alleen een pakbon. We gebruiken
   // de orders.afhalen-flag direct (bron-van-waarheid) en niet bv. de
@@ -171,7 +172,7 @@ export function BulkPrintSetPage() {
   // Label-formaat van de eerste verzend-zending (afhaal heeft geen sticker
   // dus geen formaat). Fallback op default als de bundel puur afhaal is.
   const eersteVerzend = zendingen.find((z) => z.orders.afhalen !== true)
-  const labelFormaat = eersteVerzend ? labelFormaatVoor(eersteVerzend) : null
+  const labelFormaat = eersteVerzend ? printFormaatVoor(labelFormaatVoor(eersteVerzend)) : null
   const verzendZendingen = zendingen.filter((z) => z.orders.afhalen !== true)
   const afhaalZendingen = zendingen.filter((z) => z.orders.afhalen === true)
   const totaalColli = useMemo(
