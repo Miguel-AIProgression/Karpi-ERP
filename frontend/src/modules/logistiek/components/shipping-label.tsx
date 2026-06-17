@@ -92,9 +92,6 @@ function ShippingLabelCompact({
   const margeRechtsMm = 4
   const margeBovenMm = 4
   const margeOnderMm = 3
-  // Dun zwart rand-/registratiestreepje links, binnen de linkermarge.
-  const streepLinksMm = 2.5
-  const streepBreedteMm = 0.8
   const binnenBreedteMm = breedteMm - margeLinksMm - margeRechtsMm
   const binnenHoogteMm = hoogteMm - margeBovenMm - margeOnderMm
 
@@ -130,18 +127,6 @@ function ShippingLabelCompact({
         color: '#000',
       }}
     >
-      {/* Dun zwart rand-streepje links — markeert de linkergrens zodat de
-          inhoud zichtbaar bínnen het etiket valt. */}
-      <div
-        style={{
-          position: 'absolute',
-          left: `${streepLinksMm}mm`,
-          top: `${margeBovenMm}mm`,
-          width: `${streepBreedteMm}mm`,
-          height: `${binnenHoogteMm}mm`,
-          backgroundColor: '#000',
-        }}
-      />
       {/* Inhoud absoluut INGESPRONGEN i.p.v. via root-padding, zodat de marge
           ook bij het printen behouden blijft (de print-CSS nult padding). */}
       <div
@@ -164,6 +149,7 @@ function ShippingLabelCompact({
           borderRight: '1px solid #000',
           borderBottom: '1px solid #000',
           padding: `${0.5 * s}mm ${s}mm`,
+          textAlign: 'center',
         }}
       >
         <div style={{ fontSize: fz(6), lineHeight: 1.1 }}>
@@ -252,6 +238,7 @@ function ShippingLabelCompact({
             lineHeight: 1.6,
             boxSizing: 'border-box',
             overflow: 'hidden',
+            textAlign: 'center',
           }}
         >
           <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -260,7 +247,7 @@ function ShippingLabelCompact({
           <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {zending.afl_adres ?? ''}
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: `${2 * s}mm` }}>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: `${2 * s}mm` }}>
             <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {zending.afl_postcode ?? ''} {zending.afl_plaats ?? ''}
             </span>
