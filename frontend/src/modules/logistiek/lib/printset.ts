@@ -20,6 +20,26 @@ export interface LabelFormaat {
   hoogteMm: number
 }
 
+// Het GEPRINTE label is bewust iets kleiner dan de fysieke labelrol
+// (`label_breedte_mm/hoogte_mm` uit de DB). Een thermische printer heeft een
+// onbedrukbare rand; een pagina exact zo groot als de rol valt daardoor over
+// 2 etiketten — óók met printer-marge "Geen". Door het print-formaat een paar
+// mm te krimpen past het altijd ruim binnen het etiket én ontstaat er rand.
+// Tunebaar: mm afgetrokken per dimensie van het volledige rolformaat.
+// HST-rol 152,4×76,2 → geprint 150×75.
+export const LABEL_PRINT_KRIMP_BREEDTE_MM = 2.4
+export const LABEL_PRINT_KRIMP_HOOGTE_MM = 1.2
+
+/** Verkleint een (rol)formaat naar het te printen paginaformaat. Gedeeld door
+ *  de enkele- en bulk-printset zodat `@page` én het label-div hetzelfde,
+ *  iets-kleinere formaat krijgen. */
+export function printFormaatVoor(formaat: LabelFormaat): LabelFormaat {
+  return {
+    breedteMm: Math.max(10, formaat.breedteMm - LABEL_PRINT_KRIMP_BREEDTE_MM),
+    hoogteMm: Math.max(10, formaat.hoogteMm - LABEL_PRINT_KRIMP_HOOGTE_MM),
+  }
+}
+
 export interface LabelItem {
   regel: ZendingPrintRegel | null
   index: number
