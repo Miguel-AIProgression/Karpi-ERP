@@ -893,6 +893,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
               adres={header.afl_adres}
               postcode={header.afl_postcode}
               plaats={header.afl_plaats}
+              land={header.afl_land}
               aflEmail={header.afl_email ?? ''}
               afleveradresId={selectedAfleveradresId}
               onAdresChange={handleAflAdresChange}
