@@ -2,6 +2,7 @@ import { labelBarcode } from '@/lib/logistiek/labelbarcode'
 import { externReferentie } from '@/lib/orders/referentie'
 import { Code128Barcode } from './code128-barcode'
 import {
+  klanteigenReferentie,
   labelDatumKort,
   labelReferentie,
   productNamen,
@@ -20,6 +21,8 @@ interface Props {
    * source, gelijk aan label/pakbon/vervoerder. null → val terug op live `regel`. */
   omschrijvingSnapshot: string | null
   klantOmschrijvingSnapshot: string | null
+  /** Mig 418: klant-eigennaam voor de kwaliteit. null/leeg → geen "Uw referentie"-regel. */
+  klanteigenNaamSnapshot: string | null
 }
 
 /**
@@ -36,11 +39,13 @@ export function DpdShippingLabel({
   sscc,
   omschrijvingSnapshot,
   klantOmschrijvingSnapshot,
+  klanteigenNaamSnapshot,
 }: Props) {
   const order = zending.orders
   // Single source (mig 388): één omschrijving-bron, gelijk aan label/pakbon/
   // vervoerder — geen eigen DPD-afleiding meer.
   const namen = productNamen(regel, { omschrijvingSnapshot, klantOmschrijvingSnapshot })
+  const uwReferentie = klanteigenReferentie(klanteigenNaamSnapshot)
   const toonKarpi = namen.karpiNaam && namen.karpiNaam !== namen.klantNaam
   const land = zending.afl_land ?? 'NL'
   const barcodeValue = labelBarcode(sscc) // AI(00)+SSCC, gedeelde seam
@@ -66,6 +71,9 @@ export function DpdShippingLabel({
             <div className="mt-0.5 text-[8px] font-semibold leading-snug">
               {namen.klantNaam}
             </div>
+            {uwReferentie && (
+              <div className="text-[7px] font-semibold leading-snug">Uw referentie: {uwReferentie}</div>
+            )}
             {toonKarpi && (
               <div className="text-[7px] leading-snug">{namen.karpiNaam}</div>
             )}

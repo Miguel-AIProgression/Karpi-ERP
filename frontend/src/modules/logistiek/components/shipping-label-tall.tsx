@@ -3,6 +3,7 @@ import { externReferentie } from '@/lib/orders/referentie'
 import { hstDepotVoorPostcode } from '@/modules/logistiek/lib/hst-depot'
 import { Code128Barcode } from './code128-barcode'
 import {
+  klanteigenReferentie,
   labelDatumKort,
   labelReferentie,
   productMaat,
@@ -34,12 +35,14 @@ export function ShippingLabelTall({
   sscc,
   omschrijvingSnapshot,
   klantOmschrijvingSnapshot,
+  klanteigenNaamSnapshot,
   breedteMm,
   hoogteMm,
 }: ShippingLabelProps & { breedteMm: number; hoogteMm: number }) {
   const order = zending.orders
   const snapshot = { omschrijvingSnapshot, klantOmschrijvingSnapshot }
   const namen = productNamen(regel, snapshot)
+  const uwReferentie = klanteigenReferentie(klanteigenNaamSnapshot)
   const toonKarpi = namen.karpiNaam && namen.karpiNaam !== namen.klantNaam
   const maat = productMaat(regel, snapshot)
   const land = zending.afl_land ?? 'NL'
@@ -156,6 +159,18 @@ export function ShippingLabelTall({
           {namen.klantNaam}
           {maat ? ` - ${maat}` : ''}
         </div>
+        {uwReferentie && (
+          <div
+            style={{
+              fontSize: '9px',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            Uw referentie: {uwReferentie}
+          </div>
+        )}
         {toonKarpi && (
           <div
             style={{

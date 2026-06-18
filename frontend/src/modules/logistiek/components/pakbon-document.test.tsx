@@ -78,6 +78,7 @@ function maakColli(o: Partial<ZendingPrintColli> = {}): ZendingPrintColli {
     order_regel_id: 10,
     omschrijving_snapshot: null,
     klant_omschrijving_snapshot: null,
+    klanteigen_naam_snapshot: null,
     ...o,
   }
 }

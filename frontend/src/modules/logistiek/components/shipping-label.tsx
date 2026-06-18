@@ -4,6 +4,7 @@ import { hstDepotVoorPostcode } from '@/modules/logistiek/lib/hst-depot'
 import { Code128Barcode } from './code128-barcode'
 import { ShippingLabelTall } from './shipping-label-tall'
 import {
+  klanteigenReferentie,
   labelDatumKort,
   labelReferentie,
   productMaat,
@@ -30,6 +31,9 @@ export interface ShippingLabelProps {
    * source, gelijk aan wat de vervoerder krijgt. null → val terug op live `regel`. */
   omschrijvingSnapshot: string | null
   klantOmschrijvingSnapshot: string | null
+  /** Mig 418: klant-eigennaam voor de kwaliteit (`zending_colli.klanteigen_naam_snapshot`).
+   * null/leeg → geen "Uw referentie"-regel. */
+  klanteigenNaamSnapshot: string | null
   labelFormaat?: LabelFormaat
 }
 
@@ -63,12 +67,14 @@ function ShippingLabelCompact({
   sscc,
   omschrijvingSnapshot,
   klantOmschrijvingSnapshot,
+  klanteigenNaamSnapshot,
   breedteMm,
   hoogteMm,
 }: ShippingLabelProps & { breedteMm: number; hoogteMm: number }) {
   const order = zending.orders
   const snapshot = { omschrijvingSnapshot, klantOmschrijvingSnapshot }
   const namen = productNamen(regel, snapshot)
+  const uwReferentie = klanteigenReferentie(klanteigenNaamSnapshot)
   const toonKarpi = namen.karpiNaam && namen.karpiNaam !== namen.klantNaam
   const maat = productMaat(regel, snapshot)
   const land = zending.afl_land ?? 'NL'
@@ -183,6 +189,19 @@ function ShippingLabelCompact({
           {namen.klantNaam}
           {maat ? ` - ${maat}` : ''}
         </div>
+        {uwReferentie && (
+          <div
+            style={{
+              fontSize: fz(6),
+              lineHeight: 1.1,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            Uw referentie: {uwReferentie}
+          </div>
+        )}
         {toonKarpi && (
           <div
             style={{

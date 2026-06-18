@@ -95,6 +95,7 @@ function ZendingBlok({ zending, tapijtStickers }: ZendingBlokProps) {
                 sscc={label.sscc}
                 omschrijvingSnapshot={label.omschrijvingSnapshot}
                 klantOmschrijvingSnapshot={label.klantOmschrijvingSnapshot}
+                klanteigenNaamSnapshot={label.klanteigenNaamSnapshot}
               />
             ) : (
               <ShippingLabel
@@ -107,6 +108,7 @@ function ZendingBlok({ zending, tapijtStickers }: ZendingBlokProps) {
                 sscc={label.sscc}
                 omschrijvingSnapshot={label.omschrijvingSnapshot}
                 klantOmschrijvingSnapshot={label.klantOmschrijvingSnapshot}
+                klanteigenNaamSnapshot={label.klanteigenNaamSnapshot}
                 labelFormaat={labelFormaat}
               />
             ),
