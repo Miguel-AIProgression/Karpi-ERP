@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { formatDate, formatNumber } from '@/lib/utils/formatters'
 import { fetchBedrijfsConfig } from '@/lib/supabase/queries/bedrijfsconfig'
 import { productNamen } from '@/modules/logistiek/lib/shipping-label-data'
+import { hstDepotVoorPostcode } from '@/modules/logistiek/lib/hst-depot'
 import { bouwVerzenddocument, type PakbonRegel } from '@/modules/logistiek/lib/printset'
 import type { ZendingPrintSet } from '@/modules/logistiek/queries/zendingen'
 import { externReferentie } from '@/lib/orders/referentie'
@@ -87,7 +88,15 @@ export function PakbonDocument({ zending, vervoerderNaam: _vervoerderNaam, colli
   const klantLand = landNaam(order.fact_land)
 
   const aflLand = landNaam(zending.afl_land)
-  const route = order.debiteuren?.route ?? null
+  // Routecode = HST-depotnummer uit de postcodeverdeling (zelfde lookup als op
+  // het verzendlabel, mig 2026-06-17). Alléén bij HST: andere vervoerders
+  // (Rhenus/Verhoek) kennen dit depot-concept niet, dus geen routecode op hun
+  // pakbon. De legacy `debiteuren.route` is bewust niet meer de bron — die
+  // toonde bij élke vervoerder een waarde (bv. "RHE10" op een Rhenus-pakbon).
+  const route =
+    zending.vervoerder_code === 'hst_api'
+      ? hstDepotVoorPostcode(zending.afl_postcode, zending.afl_land)
+      : null
 
   const referentieRegel =
     [externReferentie(order.klant_referentie), order.week ? `(WK ${order.week})` : null].filter(Boolean).join(' ') || '-'

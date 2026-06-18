@@ -356,6 +356,30 @@ describe('PakbonDocument — karakterisering rijopbouw', () => {
     expect(text.indexOf('Order ORD-2026-0002')).toBeLessThan(text.indexOf('ART-TWEE'))
   })
 
+  it('Routecode = HST-depot uit de postcodeverdeling, alléén bij HST', () => {
+    // HST + postcode 2121 (NL) → depot 27 (NL_DEPOTS [2100,2899,27]).
+    const hst = maakZending({
+      vervoerder_code: 'hst_api',
+      afl_postcode: '2121 AX',
+      afl_land: 'NL',
+      zending_regels: [maakRegel()],
+      zending_colli: [maakColli()],
+    })
+    const { container: hstC } = renderPakbon(hst, 1)
+    expect(hstC.textContent).toContain('Routecode: 27')
+
+    // Rhenus (niet-HST) → géén routecode, ook al ligt er een geldige postcode.
+    const rhenus = maakZending({
+      vervoerder_code: 'rhenus_sftp',
+      afl_postcode: '2500',
+      afl_land: 'BE',
+      zending_regels: [maakRegel()],
+      zending_colli: [maakColli()],
+    })
+    const { container: rhenusC } = renderPakbon(rhenus, 1)
+    expect(rhenusC.textContent).not.toContain('Routecode')
+  })
+
   it('legacy-zending zonder colli: regels + Geleverd uit zending_regels.aantal', () => {
     const zending = maakZending({
       zending_regels: [

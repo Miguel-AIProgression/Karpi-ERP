@@ -52,6 +52,39 @@ prijslijst-regel, dus na deze fix toont de order "prijs ontbreekt" in plaats van
 Vangnet: 4 nieuwe Deno-tests (`product-matcher.test.ts` ×2, `shopify-types.test.ts` ×3),
 volledige bestaande suite ongewijzigd groen.
 
+## 2026-06-18 — Factuur: 2-uur verzend-vertraging + pakbon als bijlage (mig 423)
+
+**Waarom:** een per-zending-factuur werd tot nu DIRECT na het verzenden van de
+zending geënqueued en binnen een minuut gemaild — geen venster om een laatste
+correctie te doen of een fout te onderscheppen vóór de factuur de deur uit was.
+Daarnaast moet de klant de pakbon bij de factuur ontvangen.
+
+**Wat:**
+- **Mig 423 — verzend-vertraging:** nieuwe kolom `factuur_queue.beschikbaar_op`.
+  `enqueue_factuur_voor_event` (was mig 252) zet die op `now() +
+  app_config.facturatie.vertraging_minuten` (default **120 min = 2 uur**);
+  `claim_factuur_queue_items` (was mig 234, return-shape onveranderd) pakt enkel
+  rijen met `beschikbaar_op IS NULL OR <= now()`. De factuur wordt PAS bij het
+  draaien gegenereerd (`genereer_factuur_voor_bundel`), dus een correctie die je
+  in dat venster aan de order maakt gaat automatisch mee. Geldt alleen voor het
+  event-driven per_zending-pad; wekelijkse cron-facturen (beschikbaar_op NULL) en
+  retries (beschikbaar_op in het verleden) worden onveranderd direct opgepakt.
+  Vertraging aanpasbaar zonder migratie via `app_config 'facturatie'`.
+- **Pakbon-bijlage in [factuur-verzenden](../supabase/functions/factuur-verzenden/index.ts):**
+  per zending die de factuur dekt (per_zending = 1, wekelijkse verzamelfactuur = N)
+  wordt een pakbon-PDF gegenereerd en als extra bijlage meegestuurd (naar debiteur
+  én betaler-kopie). Server-side renderer overgenomen uit de
+  verzendbevestiging-branch (`_shared/pakbon/`: `bouwPakbonDocument` →
+  `genereerPakbonPDF`, pdf-lib, zelfde bron als de geprinte pakbon). **Volledig
+  best-effort:** een ontbrekende/foutende pakbon (geen zending, geen colli,
+  render-fout) wordt gelogd en overgeslagen — de factuur-mail gaat altijd door.
+  De pakbon wordt best-effort naar `facturen/{debiteur_nr}/pakbon/{zending_nr}.pdf`
+  geüpload voor de e-mailtijdlijn-referentie.
+- Vangnet: `_shared/pakbon/aggregatie.test.ts` (10 tests) groen; Deno-typecheck
+  introduceert geen nieuwe fout-klasse (alleen de bestaande `never`-ruis).
+- **Deploy:** mig 423 toepassen + `supabase functions deploy factuur-verzenden`
+  (de `_shared/pakbon/`-map moet meekomen in de bundel).
+
 ## 2026-06-18 — Fix: order bewerken faalde met FK-fout zodra een regel een snijplan had (mig 422)
 
 **Waarom:** op order ORD-2026-0623 (regel "Vernon 17 - Shadow Taupe rond") gaf
