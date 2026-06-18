@@ -102,6 +102,7 @@ export function PickDagOrdersSectie({
                   <StartPickrondesButton
                     orders={ordersInLand}
                     context={`voor ${groep.iso2 ?? 'onbekend land'}`}
+                    scope="groep"
                   />
                 </div>
               )}
