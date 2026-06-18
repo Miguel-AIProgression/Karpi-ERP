@@ -1,5 +1,28 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-18 — UI: maatwerk-orderregel toont "In productie" i.p.v. "Te leveren"
+
+**Waarom:** op order-detail toonde de kolom "Te leveren" voor een maatwerk-regel
+direct het orderaantal (bv. 1), alsof het stuk al klaar/leverbaar was — terwijl
+het nog gesneden/geconfectioneerd/ingepakt moest worden. Misleidend voor de
+operator (signaal Marjon, ORD-2026-0160). Maatwerk reserveert niet op
+voorraad/inkoop, dus de allocator herberekent `te_leveren` nooit; de échte
+voortgang zit in de snijplannen.
+
+**Wat:** puur frontend, geen DB-wijziging. De "Te leveren"-cel toont voor een
+maatwerk-regel het label **"In productie"** (paars) zolang niet álle
+niet-geannuleerde snijplannen op `Ingepakt` staan; zodra alles ingepakt
+(= leverbaar, dezelfde drempel als de pickbaarheid-view mig 386) is, verschijnt
+het getal weer. Niet-maatwerk-regels ongewijzigd. De fijnmazige snijplan-fase
+blijft als badge onder de regel staan (Gepland → … → Ingepakt).
+- Nieuwe pure helper
+  [`maatwerk-productie.ts`](../frontend/src/lib/orders/maatwerk-productie.ts)
+  (`isMaatwerkProductieKlaar`) + unittest; leunt op de gedeelde
+  `'Ingepakt'`-drempel uit de snijplan-status-module.
+- Render-wijziging in
+  [`order-regels-table.tsx`](../frontend/src/components/orders/order-regels-table.tsx).
+- `order_regels.te_leveren` zelf blijft ongemoeid (voedt facturatie/status/allocatie).
+
 ## 2026-06-18 — Verzendetiket: ronde karpetten als Ø-diameter
 
 **Waarom:** vervolg op de kleurnummer+vorm-etiketregel. Ronde karpetten kregen
