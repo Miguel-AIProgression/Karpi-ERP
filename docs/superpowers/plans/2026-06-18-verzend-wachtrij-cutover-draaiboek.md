@@ -1,11 +1,11 @@
-# Cutover-draaiboek: Verzend-wachtrij data-as (mig 424, ADR-0038)
+# Cutover-draaiboek: Verzend-wachtrij data-as (mig 426, ADR-0038)
 
 **Datum:** 2026-06-18
 **Status:** klaar om uit te voeren — wacht op een rustig venster
 **Hoort bij:** [`2026-06-18-verzend-wachtrij-data-as.md`](2026-06-18-verzend-wachtrij-data-as.md) (plan) + [ADR-0038](../../adr/0038-verzend-wachtrij-als-data-as.md)
 **Branch:** `refactor/verzend-wachtrij-data-as` (slices 0–4 gecommit; nog niet gemerged)
 
-> **Raakt het live HST-pad.** HST verstuurt continu; Rhenus is net live. Daarom: drain → crons pauzeren → DB + edge + frontend in één venster → crons hervatten. De oude tabellen + RPC's blijven staan als rollback (drop = stap 7, aparte migratie 425, ná live-bewijs).
+> **Raakt het live HST-pad.** HST verstuurt continu; Rhenus is net live. Daarom: drain → crons pauzeren → DB + edge + frontend in één venster → crons hervatten. De oude tabellen + RPC's blijven staan als rollback (drop = stap 7, aparte migratie 427, ná live-bewijs).
 
 ## 0. Vooraf (buiten het venster)
 - [ ] Merge `refactor/verzend-wachtrij-data-as` naar `main` (op commando) — Vercel deployt de frontend automatisch bij push naar `main`. **Let op:** de frontend leest ná deploy `verzend_wachtrij`/`verzend_monitor`; die moeten dan op de live DB staan. Doe daarom de DB-migratie (stap 3) **vóór** de Vercel-deploy live is, of accepteer een korte mismatch binnen het venster. Veiligst: venster strak houden.
@@ -31,7 +31,7 @@ UNION ALL SELECT 'rhenus',  count(*) FROM rhenus_transportorders  WHERE status I
 Alle tellingen `0` → door. (Een nieuwe zending kan tijdens het venster `enqueue_zending_naar_vervoerder` triggeren; omdat operators in het venster niet verzenden is dat zeldzaam. Een eventuele rij landt ná stap 3 al in `verzend_wachtrij` — geen probleem.)
 
 ## 3. DB-migratie
-- [ ] Pas **mig 424** (`424_verzend_wachtrij_data_as.sql`) toe op de live DB (handmatig, geen `db push`).
+- [ ] Pas **mig 426** (`426_verzend_wachtrij_data_as.sql`) toe op de live DB (handmatig, geen `db push`).
 - [ ] De ingebouwde verifier draait mee (enqueue/claim/fout/verstuurd, net-nul). Daarna handmatig:
 ```sql
 SELECT (SELECT count(*) FROM verzend_wachtrij) AS nieuw,
@@ -64,7 +64,7 @@ SELECT cron.alter_job(<jobid>, active := true);  -- per verzend-job
 - [ ] HST-monitor-tab toont kloppende tellers; fout-lijst werkt.
 
 ## 7. Contract-drop (slice 5 — pas ná ≥1 bewezen HST- én Rhenus-zending via verzend_wachtrij)
-- [ ] Pas **mig 425** (`425_drop_oude_transportorder_tabellen.sql`) toe: dropt de 3 monitor-shims, de 3 oude tabellen (CASCADE neemt hun enums/RPC's/triggers mee) en de losse oude RPC's/enums. Pas uitvoeren als de nieuwe keten een paar dagen stabiel live draait.
+- [ ] Pas **mig 427** (`427_drop_oude_transportorder_tabellen.sql`) toe: dropt de 3 monitor-shims, de 3 oude tabellen (CASCADE neemt hun enums/RPC's/triggers mee) en de losse oude RPC's/enums. Pas uitvoeren als de nieuwe keten een paar dagen stabiel live draait.
 
 ## Rollback (binnen het venster, vóór drain-hervatting)
 1. Crons gepauzeerd houden.

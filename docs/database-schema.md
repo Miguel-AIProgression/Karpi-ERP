@@ -724,7 +724,7 @@ Eén rij per fysieke colli binnen een zending (mig 209). Bron-van-waarheid voor 
 ---
 
 ### verzend_wachtrij
-**Geconsolideerde verzend-wachtrij** (mig 424, ADR-0038, data-as) — één rij per zending die naar een vervoerder verstuurd moet worden, gediscrimineerd op `vervoerder_code` (`'hst_api'|'verhoek_sftp'|'rhenus_sftp'`). Vervangt de drie per-vervoerder-tabellen hieronder (die blijven t/m de contract-drop staan als rollback-vangnet). Draagt alléén operationele state + drie generieke correlatievelden; de rauwe request/response-payload leeft in `externe_payloads` (mig 325) — dát maakt de generalisatie *deep* i.p.v. *shallow* (de eerdere afweging hieronder ging uit van payload-op-de-rij; die is nu geschrapt).
+**Geconsolideerde verzend-wachtrij** (mig 426, ADR-0038, data-as) — één rij per zending die naar een vervoerder verstuurd moet worden, gediscrimineerd op `vervoerder_code` (`'hst_api'|'verhoek_sftp'|'rhenus_sftp'`). Vervangt de drie per-vervoerder-tabellen hieronder (die blijven t/m de contract-drop staan als rollback-vangnet). Draagt alléén operationele state + drie generieke correlatievelden; de rauwe request/response-payload leeft in `externe_payloads` (mig 325) — dát maakt de generalisatie *deep* i.p.v. *shallow* (de eerdere afweging hieronder ging uit van payload-op-de-rij; die is nu geschrapt).
 
 | Kolom | Type | Opmerking |
 |---|---|---|
@@ -755,7 +755,7 @@ Eén rij per fysieke colli binnen een zending (mig 209). Bron-van-waarheid voor 
 **View `verzend_monitor`** — cron-health per `vervoerder_code` (GROUP BY): `verstuurd_vandaag, fout_open, wachtrij, bezig, oudste_wachtrij_minuten, oudste_bezig_minuten`.
 
 ### hst_transportorders
-> **⚠️ Superseded door `verzend_wachtrij`** (mig 424, ADR-0038). Blijft als rollback-vangnet t/m de contract-drop (slice 5); na de cutover niet meer gelezen.
+> **⚠️ Superseded door `verzend_wachtrij`** (mig 426, ADR-0038). Blijft als rollback-vangnet t/m de contract-drop (slice 5); na de cutover niet meer gelezen.
 
 **HST-adapter-tabel** (mig 171) — één rij per transportorder die naar HST is/wordt verstuurd. **HST-specifiek**: géén multi-vervoerder-abstractie, géén berichttype-discriminator (alle rijen zijn transportorders), géén `vervoerder_code` (deze tabel ÍS HST). Toekomstige EDI-vervoerders (Rhenus, Verhoek) hergebruiken de bestaande `edi_berichten`-tabel met `berichttype='verzendbericht'` (DESADV) — geen wijziging aan `hst_transportorders`. Het ontwerp is bewust per-vervoerder verticaal omdat een gegeneraliseerde `vervoerder_berichten`-queue *shallow* zou zijn: de interface (JSONB-payload + tekstuele extern_id + retry) is bijna net zo complex als de twee implementaties zelf.
 | Kolom | Type | Toelichting |

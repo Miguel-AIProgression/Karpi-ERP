@@ -1,11 +1,11 @@
--- Migratie 425: contract-drop van de oude per-vervoerder transportorder-artefacten
+-- Migratie 427: contract-drop van de oude per-vervoerder transportorder-artefacten
 -- ADR-0038 (data-as), slice 5. Plan/draaiboek:
 --   docs/superpowers/plans/2026-06-18-verzend-wachtrij-cutover-draaiboek.md (stap 7)
 --
 -- ╔══════════════════════════════════════════════════════════════════════════╗
 -- ║  ⚠️  NIET DRAAIEN TOT DE NIEUWE KETEN LIVE-BEWEZEN IS.                      ║
 -- ║                                                                            ║
--- ║  Voorwaarde: mig 424 is gecutoverd ÉN er is ≥1 ECHTE HST-zending én ≥1     ║
+-- ║  Voorwaarde: mig 426 is gecutoverd ÉN er is ≥1 ECHTE HST-zending én ≥1     ║
 -- ║  ECHTE Rhenus-zending succesvol via `verzend_wachtrij` verstuurd, en de    ║
 -- ║  keten draait een paar dagen stabiel. Tot dan zijn de oude tabellen +      ║
 -- ║  RPC's het rollback-vangnet — die mag je niet weggooien.                   ║
@@ -13,19 +13,19 @@
 --
 -- Idempotent: DROP ... IF EXISTS overal.
 
--- ── Guard: mig 424 moet gedraaid zijn (anders is dit een no-op-ramp) ─────────
+-- ── Guard: mig 426 moet gedraaid zijn (anders is dit een no-op-ramp) ─────────
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.tables
                   WHERE table_name = 'verzend_wachtrij') THEN
-    RAISE EXCEPTION 'Mig 425 afgebroken: verzend_wachtrij bestaat niet — draai eerst mig 424 + de cutover.';
+    RAISE EXCEPTION 'Mig 427 afgebroken: verzend_wachtrij bestaat niet — draai eerst mig 426 + de cutover.';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM verzend_wachtrij WHERE status = 'Verstuurd') THEN
-    RAISE WARNING 'Mig 425: nog GEEN Verstuurd-rij in verzend_wachtrij. Zeker dat de nieuwe keten live-bewezen is? (alleen waarschuwing)';
+    RAISE WARNING 'Mig 427: nog GEEN Verstuurd-rij in verzend_wachtrij. Zeker dat de nieuwe keten live-bewezen is? (alleen waarschuwing)';
   END IF;
 END $$;
 
--- ── 1. Monitor-views (shims uit mig 424) ────────────────────────────────────
+-- ── 1. Monitor-views (shims uit mig 426) ────────────────────────────────────
 DROP VIEW IF EXISTS hst_verzend_monitor;
 DROP VIEW IF EXISTS verhoek_verzend_monitor;
 DROP VIEW IF EXISTS rhenus_verzend_monitor;

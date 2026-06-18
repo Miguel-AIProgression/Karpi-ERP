@@ -11,7 +11,7 @@ van de drie vervoerder-seams na keuze-as (ADR-0008/0030), capability-as (ADR-003
 process-as (ADR-0035) — vóór nu lekte de `VerzendAdapter` nog per-carrier RPC-namen.
 
 **Wat (branch `refactor/verzend-wachtrij-data-as`, nog niet gecutoverd):**
-- **Mig 424** — één tabel `verzend_wachtrij` (enum `verzend_status`, discriminator
+- **Mig 426** — één tabel `verzend_wachtrij` (enum `verzend_status`, discriminator
   `vervoerder_code`, generieke velden `extern_referentie`/`track_trace`/`document_pad`,
   combined unique-active-index). De zware payload is **geschrapt** — die leeft al in
   `externe_payloads` (mig 325). Generieke RPC's (`enqueue_transportorder` /
@@ -29,7 +29,7 @@ process-as (ADR-0035) — vóór nu lekte de `VerzendAdapter` nog per-carrier RP
   `verstuurZendingOpnieuw`, `zending-detail`, `zendingen-overzicht`, `verzend-fout-banner`,
   `colli-bundel.ts`) lezen `verzend_wachtrij` / `verzend_monitor`; `response_http_code`
   uit de fout-monitor (leeft nu in `externe_payloads`).
-- **Cutover (open):** drain + crons gepauzeerd, mig 424 + 3 edge functions + frontend in
+- **Cutover (open):** drain + crons gepauzeerd, mig 426 + 3 edge functions + frontend in
   één venster — draaiboek + contract-drop (slice 5/6) in het plan. Vangnet-fix vooraf:
   fake-supabase `.is()` toegevoegd (de colli-bundel-mig 420 had de 15 tests rood gezet).
 

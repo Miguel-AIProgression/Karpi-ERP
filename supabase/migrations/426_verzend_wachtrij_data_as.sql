@@ -1,4 +1,4 @@
--- Migratie 424: verzend_wachtrij — één wachtrij gediscrimineerd op vervoerder_code
+-- Migratie 426: verzend_wachtrij — één wachtrij gediscrimineerd op vervoerder_code
 -- ADR-0038 (data-as). Plan: docs/superpowers/plans/2026-06-18-verzend-wachtrij-data-as.md
 --
 -- Consolideert hst_transportorders (mig 171/304) + verhoek_transportorders (375)
@@ -15,9 +15,12 @@
 -- + de 3 edge functions (slice 2) + de frontend (slice 3) gaan in één venster.
 -- De OUDE tabellen + RPC's blijven staan als rollback-vangnet → drop = mig slice 5.
 --
--- VOORWAARDE: mig 171/304/337/338/375/380/420 toegepast.
+-- VOORWAARDE: mig 171/304/337/338/375/380/420 + 424 (vervoerder_eigen_vervoer)
+-- toegepast — deze migratie CREATE OR REPLACE't enqueue_zending_naar_vervoerder en
+-- neemt de WHEN 'eigen'-tak van mig 424 mee, dus draai ná 424.
 -- Idempotent: enum-guard, IF NOT EXISTS, CREATE OR REPLACE, backfill-leeg-guard.
--- NB nummer 424: her-verifiëren vlak vóór merge t.o.v. origin/main (collisie-historie).
+-- NB hernummerd 424→426 vlak vóór merge: 424/425 botsten met
+-- 424_vervoerder_eigen_vervoer + 425_bug_melding_verwijderen op main (collisie-historie).
 
 -- ============================================================================
 -- §1. Status-enum + tabel
@@ -128,10 +131,10 @@ BEGIN
            retry_count, error_msg, is_test, created_at, sent_at, updated_at
       FROM rhenus_transportorders;
 
-    RAISE NOTICE 'Mig 424 backfill: % rijen naar verzend_wachtrij',
+    RAISE NOTICE 'Mig 426 backfill: % rijen naar verzend_wachtrij',
       (SELECT COUNT(*) FROM verzend_wachtrij);
   ELSE
-    RAISE NOTICE 'Mig 424 backfill overgeslagen — verzend_wachtrij is niet leeg.';
+    RAISE NOTICE 'Mig 426 backfill overgeslagen — verzend_wachtrij is niet leeg.';
   END IF;
 END $$;
 
@@ -354,6 +357,13 @@ BEGIN
       PERFORM genereer_zending_colli(p_zending_id);
       RETURN 'enqueued_print';
 
+    -- Eigen vervoer (mig 424): als 'print' qua flow (colli klaarzetten voor
+    -- label/pakbon), GEEN externe dispatch. Meegenomen zodat deze CREATE OR
+    -- REPLACE de 424-tak niet wegvaagt.
+    WHEN 'eigen' THEN
+      PERFORM genereer_zending_colli(p_zending_id);
+      RETURN 'enqueued_eigen';
+
     WHEN 'edi' THEN
       RAISE NOTICE 'EDI-vervoerder % heeft nog geen adapter', v_vervoerder_code;
       RETURN 'no_adapter_voor_' || v_vervoerder_code;
@@ -368,7 +378,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 GRANT EXECUTE ON FUNCTION enqueue_zending_naar_vervoerder(BIGINT, BOOLEAN) TO authenticated;
 
 COMMENT ON FUNCTION enqueue_zending_naar_vervoerder IS
-  'SWITCH-POINT + hold-guard. Sinds mig 424 (ADR-0038): de api/sftp-takken '
+  'SWITCH-POINT + hold-guard. Sinds mig 426 (ADR-0038): de api/sftp-takken '
   'collapsen tot één enqueue_transportorder(code) — geen per-code-CASE meer. '
   'Hold-guard (mig 420) + afhalen-skip + print-tak ongewijzigd.';
 
@@ -494,7 +504,7 @@ BEGIN
   SELECT id, status, track_trace INTO v_zending, v_orig_status, v_orig_tt
     FROM zendingen ORDER BY id LIMIT 1;
   IF v_zending IS NULL THEN
-    RAISE NOTICE 'Mig 424 verifier overgeslagen — geen zendingen.';
+    RAISE NOTICE 'Mig 426 verifier overgeslagen — geen zendingen.';
     RETURN;
   END IF;
 
@@ -504,30 +514,30 @@ BEGIN
   -- wachtrij (= de cutover-conditie, beslissing B); anders skippen.
   IF EXISTS (SELECT 1 FROM verzend_wachtrij
               WHERE vervoerder_code = 'hst_api' AND status IN ('Wachtrij','Bezig')) THEN
-    RAISE NOTICE 'Mig 424 verifier: hst_api-wachtrij niet leeg — behavioural assert overgeslagen.';
+    RAISE NOTICE 'Mig 426 verifier: hst_api-wachtrij niet leeg — behavioural assert overgeslagen.';
     RETURN;
   END IF;
 
   -- enqueue → 1 Wachtrij-rij; tweede enqueue = no-op (idempotent).
   v_id := enqueue_transportorder(v_zending, NULL, 'hst_api', TRUE);
   IF v_id IS NULL THEN
-    RAISE NOTICE 'Mig 424 verifier: zending % had al een actieve rij — skip behavioural assert.', v_zending;
+    RAISE NOTICE 'Mig 426 verifier: zending % had al een actieve rij — skip behavioural assert.', v_zending;
     RETURN;
   END IF;
   IF enqueue_transportorder(v_zending, NULL, 'hst_api', TRUE) IS NOT NULL THEN
-    RAISE EXCEPTION 'Mig 424: enqueue niet idempotent (tweede call gaf een id terug)';
+    RAISE EXCEPTION 'Mig 426: enqueue niet idempotent (tweede call gaf een id terug)';
   END IF;
 
   -- claim → Bezig.
   PERFORM claim_volgende_transportorder('hst_api');
   SELECT status INTO v_status FROM verzend_wachtrij WHERE id = v_id;
-  IF v_status <> 'Bezig' THEN RAISE EXCEPTION 'Mig 424: claim zette status niet op Bezig (was %)', v_status; END IF;
+  IF v_status <> 'Bezig' THEN RAISE EXCEPTION 'Mig 426: claim zette status niet op Bezig (was %)', v_status; END IF;
 
   -- fout < max → terug naar Wachtrij + retry_count = 1.
   PERFORM markeer_transportorder_fout(v_id, 'test-fout', 3);
   SELECT status, retry_count INTO v_status, v_retry FROM verzend_wachtrij WHERE id = v_id;
   IF v_status <> 'Wachtrij' OR v_retry <> 1 THEN
-    RAISE EXCEPTION 'Mig 424: fout<max gaf status=%/retry=% (verwacht Wachtrij/1)', v_status, v_retry;
+    RAISE EXCEPTION 'Mig 426: fout<max gaf status=%/retry=% (verwacht Wachtrij/1)', v_status, v_retry;
   END IF;
 
   -- verstuurd zonder track_trace → Verstuurd, zending.track_trace ongemoeid
@@ -535,15 +545,15 @@ BEGIN
   -- gekozen zending raken; we herstellen 'm hieronder volledig.
   PERFORM markeer_transportorder_verstuurd(v_id, 'TEST-REF', NULL, NULL);
   SELECT status INTO v_status FROM verzend_wachtrij WHERE id = v_id;
-  IF v_status <> 'Verstuurd' THEN RAISE EXCEPTION 'Mig 424: verstuurd gaf status % (verwacht Verstuurd)', v_status; END IF;
+  IF v_status <> 'Verstuurd' THEN RAISE EXCEPTION 'Mig 426: verstuurd gaf status % (verwacht Verstuurd)', v_status; END IF;
   IF (SELECT track_trace FROM zendingen WHERE id = v_zending) IS DISTINCT FROM v_orig_tt THEN
-    RAISE EXCEPTION 'Mig 424: NULL-track_trace wijzigde zending.track_trace (Rhenus-gedrag geschonden)';
+    RAISE EXCEPTION 'Mig 426: NULL-track_trace wijzigde zending.track_trace (Rhenus-gedrag geschonden)';
   END IF;
 
   -- Net-nul opruimen: testrij weg + zending volledig terug (status kan geflipt zijn).
   DELETE FROM verzend_wachtrij WHERE id = v_id;
   UPDATE zendingen SET status = v_orig_status, track_trace = v_orig_tt WHERE id = v_zending;
-  RAISE NOTICE 'Mig 424 verifier: enqueue/claim/fout/verstuurd OK (testrij + zending hersteld).';
+  RAISE NOTICE 'Mig 426 verifier: enqueue/claim/fout/verstuurd OK (testrij + zending hersteld).';
 END $$;
 
 NOTIFY pgrst, 'reload schema';

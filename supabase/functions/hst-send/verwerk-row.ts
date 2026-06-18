@@ -121,7 +121,7 @@ export const hstAdapter: VerzendAdapter<HstTransportOrderRow, HstSecrets, HstTra
   // PDF-vrachtbrief naar storage als HST 'm meegaf (best-effort: een mislukte
   // upload mag het HST-succes niet ongedaan maken — POST is al gelukt). De
   // skeleton zet het pad als document_pad in markeer_transportorder_verstuurd
-  // → spiegel-trigger naar order_documenten (mig 304 → mig 424).
+  // → spiegel-trigger naar order_documenten (mig 304 → mig 426).
   bewaarArtefact: async (supabase, z, _payload, r, _bestandsnaam) => {
     const zendingNr = z.zending_nr as string | null;
     if (!r.pdfBase64 || !zendingNr) return null;

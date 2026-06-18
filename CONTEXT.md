@@ -158,7 +158,7 @@ lezen díé en herleiden afmetingen/gewicht nooit zelf uit de live
 hoger: het ophalen leeft op één plek, niet drie keer per adapter.
 _Avoid_: per-adapter colli-query, live maatwerk→product-join voor verzending
 
-**Verzend-wachtrij** (ADR-0038, mig 424 — gebouwd):
+**Verzend-wachtrij** (ADR-0038, mig 426 — gebouwd):
 De operationele wachtrij van zendingen die naar een vervoerder verstuurd moeten
 worden. Eén tabel `verzend_wachtrij`, gediscrimineerd op `vervoerder_code` — niet
 drie kopieën (de oude `hst_transportorders`/`verhoek_transportorders`/
