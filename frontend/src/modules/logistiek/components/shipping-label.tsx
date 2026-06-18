@@ -4,10 +4,10 @@ import { hstDepotVoorPostcode } from '@/modules/logistiek/lib/hst-depot'
 import { Code128Barcode } from './code128-barcode'
 import { ShippingLabelTall } from './shipping-label-tall'
 import {
+  klanteigenReferentie,
   labelDatumKort,
+  labelProductRegels,
   labelReferentie,
-  productMaat,
-  productNamen,
 } from '@/modules/logistiek/lib/shipping-label-data'
 import {
   DEFAULT_LABEL_BREEDTE_MM,
@@ -30,6 +30,9 @@ export interface ShippingLabelProps {
    * source, gelijk aan wat de vervoerder krijgt. null → val terug op live `regel`. */
   omschrijvingSnapshot: string | null
   klantOmschrijvingSnapshot: string | null
+  /** Mig 419: klant-eigennaam voor de kwaliteit (`zending_colli.klanteigen_naam_snapshot`).
+   * null/leeg → geen "Uw referentie"-regel. */
+  klanteigenNaamSnapshot: string | null
   labelFormaat?: LabelFormaat
 }
 
@@ -63,14 +66,14 @@ function ShippingLabelCompact({
   sscc,
   omschrijvingSnapshot,
   klantOmschrijvingSnapshot,
+  klanteigenNaamSnapshot,
   breedteMm,
   hoogteMm,
 }: ShippingLabelProps & { breedteMm: number; hoogteMm: number }) {
   const order = zending.orders
   const snapshot = { omschrijvingSnapshot, klantOmschrijvingSnapshot }
-  const namen = productNamen(regel, snapshot)
-  const toonKarpi = namen.karpiNaam && namen.karpiNaam !== namen.klantNaam
-  const maat = productMaat(regel, snapshot)
+  const productRegels = labelProductRegels(regel, snapshot)
+  const uwReferentie = klanteigenReferentie(klanteigenNaamSnapshot)
   const land = zending.afl_land ?? 'NL'
   const barcodeValue = labelBarcode(sscc)
   const ref = labelReferentie(order)
@@ -180,10 +183,9 @@ function ShippingLabelCompact({
             textOverflow: 'ellipsis',
           }}
         >
-          {namen.klantNaam}
-          {maat ? ` - ${maat}` : ''}
+          {productRegels.groot}
         </div>
-        {toonKarpi && (
+        {uwReferentie && (
           <div
             style={{
               fontSize: fz(6),
@@ -193,7 +195,20 @@ function ShippingLabelCompact({
               textOverflow: 'ellipsis',
             }}
           >
-            {namen.karpiNaam}
+            Uw referentie: {uwReferentie}
+          </div>
+        )}
+        {productRegels.klein && (
+          <div
+            style={{
+              fontSize: fz(6),
+              lineHeight: 1.1,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {productRegels.klein}
           </div>
         )}
       </div>

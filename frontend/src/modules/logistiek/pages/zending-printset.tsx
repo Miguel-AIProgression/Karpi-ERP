@@ -272,6 +272,7 @@ export function ZendingPrintSetPage() {
                 sscc={label.sscc}
                 omschrijvingSnapshot={label.omschrijvingSnapshot}
                 klantOmschrijvingSnapshot={label.klantOmschrijvingSnapshot}
+                klanteigenNaamSnapshot={label.klanteigenNaamSnapshot}
               />
             ) : (
               <ShippingLabel
@@ -284,6 +285,7 @@ export function ZendingPrintSetPage() {
                 sscc={label.sscc}
                 omschrijvingSnapshot={label.omschrijvingSnapshot}
                 klantOmschrijvingSnapshot={label.klantOmschrijvingSnapshot}
+                klanteigenNaamSnapshot={label.klanteigenNaamSnapshot}
                 labelFormaat={labelFormaat ?? undefined}
               />
             ),

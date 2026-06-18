@@ -58,6 +58,9 @@ export interface ZendingPrintOrderRegel {
     lengte_cm: number | null
     breedte_cm: number | null
     vorm: string | null
+    /** Volledige Karpi-code (kwaliteit+kleur+afmeting) — verzendlabel toont deze
+     *  als kleine regel onder de kwaliteitsnaam (besluit 2026-06-18). */
+    karpi_code: string | null
   } | null
 }
 
@@ -106,6 +109,9 @@ export interface ZendingPrintColli {
   bundel_colli_id: number | null
   /** Mig 420: TRUE = synthetische bundel-rij (eigen SSCC, "BUNDEL — N colli"). */
   is_bundel: boolean
+  /** Mig 419: klant-eigennaam voor de kwaliteit (bv. "BREDA"), bevroren via
+   *  resolve_klanteigen_naam. null = geen afwijkende naam → geen "Uw referentie"-regel. */
+  klanteigen_naam_snapshot: string | null
 }
 
 export interface ZendingPrintSet {
@@ -297,11 +303,11 @@ export async function fetchZendingPrintSet(zending_nr: string): Promise<ZendingP
           maatwerk_oppervlak_m2,
           producten!order_regels_artikelnr_fkey (
             ean_code, omschrijving, vervolgomschrijving, gewicht_kg,
-            lengte_cm, breedte_cm, vorm
+            lengte_cm, breedte_cm, vorm, karpi_code
           )
         )
       ),
-      zending_colli ( id, colli_nr, sscc, order_regel_id, omschrijving_snapshot, klant_omschrijving_snapshot, bundel_colli_id, is_bundel )
+      zending_colli ( id, colli_nr, sscc, order_regel_id, omschrijving_snapshot, klant_omschrijving_snapshot, klanteigen_naam_snapshot, bundel_colli_id, is_bundel )
     `,
     )
     .eq('zending_nr', zending_nr)

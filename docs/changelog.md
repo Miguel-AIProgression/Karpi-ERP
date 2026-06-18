@@ -8,6 +8,82 @@ met zelf-FK `bundel_colli_id`; carrier-seam + label-expansie negeren de kinderen
 Rhenus-aanmelding van ≥2-colli-zendingen wordt vastgehouden (`vervoerders.handmatig_aanmelden`)
 tot de operator op zending-detail bundelt en "Aanmelden bij Rhenus" klikt.
 1-colli Rhenus + alle andere vervoerders ongewijzigd. Spec: docs/superpowers/specs/2026-06-17-rhenus-colli-bundeling-design.md.
+## 2026-06-18 — "Uw referentie" (klant-eigennaam) op verzendlabel
+- `zending_colli.klanteigen_naam_snapshot` (mig 419): klant-eigennaam voor de
+  kwaliteit, bevroren bij `genereer_zending_colli` via `resolve_klanteigen_naam`
+  (bron `klanteigen_namen`, mig 199/200). De drie labelvarianten tonen een regel
+  "Uw referentie: <naam>" onder de kwaliteitscode, alleen als de klant een
+  afwijkende naam heeft. Snapshot-aanpak zoals omschrijving_snapshot; reeds
+  verzonden zendingen ongemoeid (backfill alleen niet-verzonden).
+
+## 2026-06-18 — Verzendlabel: kwaliteitsnaam + maten i.p.v. kale Karpi-code
+
+**Waarom:** op het verzendetiket stond de productregel als kale Karpi-code
+(`GALA10XX200290` groot, `GALA10XX200290 290x200 cm` klein) — voor de
+magazijnier/chauffeur niet leesbaar. Gevraagd: de **kwaliteitsnaam + maten**
+prominent, met de Karpi-code als referentie eronder.
+
+**Wat (vaste-maat producten):**
+- Grote regel = **kwaliteitsnaam + maten met de kleinste maat eerst**
+  ("Galaxy 200x290 cm"); kleine regel = **de Karpi-code** ("GALA10XX200290").
+- Nieuwe pure helpers [`labelProductRegels` + `kwaliteitNaamUitVervolg`](../frontend/src/modules/logistiek/lib/shipping-label-data.ts)
+  bepalen beide regels. Vaste maat → nieuw formaat; **maatwerk + alle gevallen
+  met onvoldoende data** (geen product/kwaliteit/maat) vallen terug op het
+  bestaande gedrag (klant-omschrijving groot, snapshot-omschrijving klein).
+- Toegepast op alle drie de labelvarianten: compact
+  [`ShippingLabel`](../frontend/src/modules/logistiek/components/shipping-label.tsx),
+  staand [`ShippingLabelTall`](../frontend/src/modules/logistiek/components/shipping-label-tall.tsx)
+  en [`DpdShippingLabel`](../frontend/src/modules/logistiek/components/dpd-shipping-label.tsx).
+  Hoofdletter-stijl behouden (thermische leesbaarheid).
+- **Bron van de kwaliteitsnaam = `producten.vervolgomschrijving`** (geparset tot
+  het eerste cijfer/kleur-marker → "GALAXY" uit "GALAXY Kleur 10 CA: 200x290 cm").
+  `kwaliteiten.omschrijving` leek de logische bron maar staat in de hele DB leeg
+  (997/997 NULL); `collecties.naam` is vaak een code ("AEST13") en dekt maar ~54%.
+  `vervolgomschrijving` is gevuld voor 99,9% van de vaste producten; de heuristiek
+  is geverifieerd op alle 18.181 (0 code-lekken, 23 zonder naam → oude gedrag).
+- **Live afgeleid** (geen snapshot/migratie): de label-query
+  [`fetchZendingPrintSet`](../frontend/src/modules/logistiek/queries/zendingen.ts)
+  haalt nu ook `producten.karpi_code` op (`vervolgomschrijving` + maten zaten er al).
+
+**Bewust ongewijzigd:** de bevroren `zending_colli.omschrijving_snapshot` — dus
+wat HST/Rhenus/Verhoek en de pakbon krijgen blijft exact gelijk. De wijziging is
+puur de **etiket-weergave**.
+
+**Vangnet:** [`shipping-label-data.test.ts`](../frontend/src/modules/logistiek/lib/shipping-label-data.test.ts)
+(kleinste-eerst, karpi_code-fallback, kwaliteit/maat-ontbreekt-fallback, maatwerk
++ legacy ongewijzigd, plus parse-tests voor de NL/DE-formaatvarianten).
+
+## 2026-06-18 — HST levert ook in België (BE → HST) + zichtbare blokkade-reden
+
+**Waarom:** op Pick & Ship stonden BE-orders op "Geen vervoerder mogelijk" terwijl
+HST óók in België levert. Diagnose op de live data: er waren 12 open BE-orders,
+maar **geen enkele selectie-regel dekte BE** (alleen NL→HST mig 336 en DE→Rhenus).
+Operators losten dat per order op met een handmatige HST-override (9 BE-regels),
+maar de orders zonder override (o.a. ORD-2026-0581) bleven liggen — én die
+overrides zouden bij verzending alsnog stuklopen, want HST's capability-`landbereik`
+stond op `['NL']` (preflight `LAND_BUITEN_BEREIK`).
+
+**Wat:**
+- **Routering (mig 418):** catch-all `vervoerder_selectie_regel` `{land:['BE']}` →
+  `hst_api`, prio 99999, gespiegeld op de NL-catch-all (mig 336). `matcht_regel`
+  (mig 214) normaliseert via `normaliseer_land`, dus deze ene regel matcht zowel
+  `afl_land='BE'` als `'BELGIË'`. BE-orders routeren nu automatisch naar HST —
+  geen handmatige override meer nodig.
+- **Capability ([`capabilities.ts`](../supabase/functions/_shared/vervoerders/capabilities.ts)):**
+  HST `landbereik` `['NL']` → `['NL','BE']`.
+- **Preflight-normalisatie ([`vervoerder-eisen.ts`](../supabase/functions/_shared/vervoerder-eisen.ts)):**
+  de land-in-bereik-check vergeleek de **rauwe** `afl_land` (`'BELGIË'`,
+  `'NEDERLAND'`) tegen ISO-2-codes → faalde op vrije tekst. Nu via
+  `landNaarIso2Strikt` genormaliseerd. Fixt en passant ook latent NL-falen voor
+  `afl_land='NEDERLAND'`.
+- **Zichtbare blokkade-reden ([`start-pickrondes-button.tsx`](../frontend/src/modules/logistiek/components/start-pickrondes-button.tsx)):**
+  onder een disabled "Geen vervoerder mogelijk"-knop staat nu de concrete reden
+  (bv. "Nog geen actieve vervoerder voor *land*", afgeleid uit `afl_land`); de
+  tooltip kreeg dezelfde land-context + de oplossing. Voor een echt niet-gerouteerd
+  land blijft dit accuraat; BE valt er na deze cutover buiten.
+
+**Deploy-volgorde:** mig 418 toepassen → `hst-send` redeployen (capability +
+preflight) → frontend deployen (melding + landbereik-shim).
 
 ## 2026-06-17 — HST-depotnummer op het verzendlabel
 
@@ -58,6 +134,27 @@ ready/gekoppeld.
 gewicht worden door de preflight geblokkeerd (handmatig `gewicht_kg` zetten);
 operationele afspraak met Rhenus over 1-bestand-per-zending (evt. per paar uur
 bundelen).
+
+## 2026-06-17 — HST vervoerder: cutover acceptatie → productie
+
+**Waarom:** HST heeft de productie-koppeling vrijgegeven (mail HST 2026-06-17).
+Tot nu draaide de live NL-verzending wel via HST, maar tegen de
+acceptatie-omgeving (`accp.hstonline.nl`). Nu schakelen we naar productie.
+
+**Wat:**
+- **Secrets (Supabase dashboard, buiten git):** `HST_API_BASE_URL` →
+  `https://portal.hstonline.nl/rest/api/v1` en `HST_API_WACHTWOORD` →
+  productie-wachtwoord. `HST_API_USERNAME` (`karpi_array1_api_user`) en
+  `HST_API_CUSTOMER_ID` (`038267`) bleven ongewijzigd — digest-bevestigd
+  identiek aan acceptatie.
+- **UI-referentie (mig 417):** `vervoerders.api_endpoint` → productie-host +
+  OMGEVING-notitie naar "PRODUCTIE sinds 2026-06-17". `api_endpoint` is read-only
+  referentie; het effectieve endpoint van `hst-send` komt uit de secret.
+- **`.env.example`:** HST-blok default naar productie-host.
+- **Geen schakelaar-wijziging:** `hst_api.actief`/`is_default` stonden al TRUE
+  (HST was al de NL-default, catch-all regel id 13) — de cutover zit puur in de
+  secret-omgeving + wachtwoord. Validatie via de eerste echte zending +
+  Verzendmonitor (`hst_verzend_monitor`).
 
 ## 2026-06-17 — Pick & Ship: meerdere pickrondes tegelijk afronden (bulk → Verzonden)
 
