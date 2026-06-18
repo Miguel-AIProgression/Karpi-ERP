@@ -518,7 +518,14 @@ export function MagazijnOverviewPage() {
         // al pre-seeded als de gebruiker van tab wisselt.
         <VervoerderResolutieProvider orderIds={allOrderIds}>
           <PickSelectieProvider value={selectie}>
-            <div className="space-y-6">
+            {/* key={modus} forceert een verse mount van de lijst bij het wisselen
+                tussen Starten en Afronden. De data (perWeek) is per render al
+                correct gefilterd op modus, maar de secties + klant-clusters dragen
+                stabiele keys ('__wk1_gecombineerd__' resp. 'none-<debiteur_nr>'),
+                waardoor React bij een modus-wissel de oude card-DOM hergebruikte
+                i.p.v. te verversen — de lijst bleef dan één render achter (stale)
+                tot een volgende interactie. Remounten op modus omzeilt dat. */}
+            <div key={modus} className="space-y-6">
               {dagOrders.length > 0 && (
                 <PickDagOrdersSectie
                   orders={dagOrders}
