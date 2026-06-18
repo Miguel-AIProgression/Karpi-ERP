@@ -1,5 +1,26 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-18 — Factuur concept-fase: direct zichtbaar concept, verzending pas na vertraging (mig 428)
+
+**Waarom:** sinds de 2-uur-verzendvertraging (mig 423) werd een per_zending-factuur PAS
+op claim-tijd (na 2u) aangemaakt — in dat venster stond er niets in de facturatie-module.
+Aanleiding: bugmelding "2 orders niet bij gefactureerd" (ORD-2026-0614/0620). Gewenst:
+factuur direct als **Concept** zichtbaar, e-mail/EDI pas na de vertraging, en order-
+correcties in het venster gaan automatisch mee.
+
+**Wat (branch `feat/factuur-concept-fase`):**
+- **Mig 428** — splitst de niet-herhaalbare `genereer_factuur_voor_bundel` (mig 341) in
+  `projecteer_concept_factuur(zending, [factuur_id])` (herhaalbaar, géén side-effects) +
+  `finaliseer_concept_factuur(zending, factuur_id)` (verse projectie + flip `gefactureerd`
+  + korting-orderregels, gespiegeld 1-op-1 uit de korting-factuurregels → byte-identiek
+  aan mig 341). Plus `verwerk_concept_queue()` (fase-1 orchestrator, race-safe) en de
+  claim-gate + `factuur_queue.gefinaliseerd_op`-vlag (retry-veilig tegen mail-flakiness).
+- **Edge function `factuur-verzenden`** — 2-fasen-drain: fase 1 projecteert concepten
+  (geen delay → direct zichtbaar), fase 2 finaliseert+verstuurt alleen beschikbare rijen.
+- Wekelijks/legacy (`zending_id NULL`) loopt onveranderd via het oude directe pad.
+- **Deploy-volgorde:** mig 428 + edge function ~samen (tussenin claimt de oude drain geen
+  per_zending-rijen). Plan: `docs/superpowers/plans/2026-06-18-factuur-concept-fase-uitgestelde-verzending.md`.
+
 ## 2026-06-18 — Verzend-wachtrij als data-as: één tabel gediscrimineerd op vervoerder_code (ADR-0038)
 
 **Waarom:** drie near-identieke wachtrij-tabellen (`hst_transportorders` mig 171/304,

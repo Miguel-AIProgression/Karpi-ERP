@@ -41,6 +41,8 @@ interface QueueItem {
   attempts: number
   zending_id: number | null  // mig 234 (ADR-0010): nieuwe bron-FK; mig 237 maakt 'm NOT NULL
   verzendweek: string | null  // mig 231: gevuld voor wekelijks-pad (legacy)
+  factuur_id: number | null  // mig 428: concept-factuur gemaakt in fase 1 (projectie)
+  gefinaliseerd_op: string | null  // mig 428: NULL = nog finaliseren; gezet = alleen (her)mailen
 }
 
 interface EdiConfig {
@@ -153,9 +155,22 @@ interface OrderForEdi {
 serve(async () => {
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE)
 
+  // Mig 428 — FASE 1: projecteer concepten voor nieuwe pending per_zending-rijen
+  // (factuur_id IS NULL). Geen delay-gate: het concept verschijnt direct in de
+  // facturatie-module. Race-safe DB-side (FOR UPDATE SKIP LOCKED in de RPC).
+  // Best-effort: een fout hier mag de finalisatie-fase niet blokkeren.
+  const { error: conceptErr } = await supabase.rpc('verwerk_concept_queue', {
+    p_max_batch: MAX_BATCH,
+  })
+  if (conceptErr) {
+    console.warn(`[factuur-verzenden] concept-fase mislukt: ${conceptErr.message}`)
+  }
+
   // Mig 227: atomic claim via RPC met FOR UPDATE SKIP LOCKED. Vervangt
   // SELECT-then-UPDATE die race-conditions veroorzaakte tussen parallelle
   // drains (cron-tik + handmatige aanroep konden dezelfde rij dubbel pakken).
+  // Mig 428 — FASE 2: claim_factuur_queue_items claimt nu alleen rijen mét
+  // concept (per_zending) of zonder zending (wekelijks/legacy), én beschikbaar.
   const { data: items, error: fetchErr } = await supabase.rpc('claim_factuur_queue_items', {
     p_max_batch: MAX_BATCH,
   })
@@ -172,21 +187,45 @@ serve(async () => {
   for (const item of (items ?? []) as QueueItem[]) {
     try {
 
-      // ADR-0010 mig 234: 3-paden-dispatch met legacy-fallback.
-      //   1. NIEUW: item.zending_id gevuld → genereer_factuur_voor_bundel
+      // ADR-0010 mig 234 / mig 428: 3-paden-dispatch met legacy-fallback.
+      //   1. NIEUW (mig 428): item.zending_id gevuld → finaliseer_concept_factuur
+      //      op de in fase 1 geprojecteerde concept-factuur (item.factuur_id).
+      //      Idempotent tegen mail-retry via item.gefinaliseerd_op: is die al
+      //      gezet, dan is de factuur al definitief → enkel (her)mailen.
       //   2. LEGACY wekelijks: zending_id NULL maar type='wekelijks' →
       //      genereer_factuur_voor_week (gedropt na mig 237)
       //   3. LEGACY per_zending: zending_id NULL en type='per_zending' →
       //      genereer_factuur (gedropt na mig 237)
-      // Mig 234 step 5 zorgt dat zending_id + verzendweek meekomen via
-      // claim_factuur_queue_items, dus geen extra fetch meer.
+      // Mig 234 step 5 / mig 428 zorgen dat zending_id + factuur_id +
+      // gefinaliseerd_op meekomen via claim_factuur_queue_items.
       let factuurId: number
       if (item.zending_id != null) {
-        const { data, error } = await supabase.rpc('genereer_factuur_voor_bundel', {
-          p_zending_id: item.zending_id,
-        })
-        if (error) throw new Error(`RPC genereer_factuur_voor_bundel: ${error.message}`)
-        factuurId = data as number
+        // Per_zending: in fase 1 hoort er een concept te zijn. Defensief: maak er
+        // alsnog één als de claim-gate 'm toch zonder factuur_id doorliet.
+        if (item.factuur_id == null) {
+          const { data, error } = await supabase.rpc('projecteer_concept_factuur', {
+            p_zending_id: item.zending_id,
+          })
+          if (error) throw new Error(`RPC projecteer_concept_factuur: ${error.message}`)
+          item.factuur_id = data as number
+        }
+        if (!item.gefinaliseerd_op) {
+          const { data, error } = await supabase.rpc('finaliseer_concept_factuur', {
+            p_zending_id: item.zending_id,
+            p_factuur_id: item.factuur_id,
+          })
+          if (error) throw new Error(`RPC finaliseer_concept_factuur: ${error.message}`)
+          factuurId = data as number
+          // Markeer gefinaliseerd vóór de mail: faalt de mail daarna, dan
+          // retry'en we alleen de mail (geen tweede finalisatie → geen flip-fout).
+          await supabase
+            .from('factuur_queue')
+            .update({ gefinaliseerd_op: new Date().toISOString() })
+            .eq('id', item.id)
+        } else {
+          // Al gefinaliseerd in een eerdere (mislukte-mail) run → hergebruik.
+          factuurId = item.factuur_id
+        }
       } else if (item.type === 'wekelijks') {
         if (!item.verzendweek) throw new Error(`Queue-rij ${item.id} type=wekelijks zonder verzendweek én zonder zending_id`)
         const { data, error } = await supabase.rpc('genereer_factuur_voor_week', {
