@@ -1,5 +1,14 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-18 — Colli-bundeling bij Rhenus (mig 418)
+
+Magazijn kan binnen één Rhenus-zending colli samenpakken onder één nieuwe
+SSCC-sticker (1× betalen i.p.v. per collo). Bundel = extra `zending_colli`-rij
+met zelf-FK `bundel_colli_id`; carrier-seam + label-expansie negeren de kinderen.
+Rhenus-aanmelding van ≥2-colli-zendingen wordt vastgehouden (`vervoerders.handmatig_aanmelden`)
+tot de operator op zending-detail bundelt en "Aanmelden bij Rhenus" klikt.
+1-colli Rhenus + alle andere vervoerders ongewijzigd. Spec: docs/superpowers/specs/2026-06-17-rhenus-colli-bundeling-design.md.
+
 ## 2026-06-17 — HST-depotnummer op het verzendlabel
 
 **Waarom:** HST sorteert binnenkomende colli over depots op basis van de
