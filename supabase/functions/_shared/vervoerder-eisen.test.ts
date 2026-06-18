@@ -25,9 +25,34 @@ Deno.test('valideerVoorVervoerder: te kort telefoonnummer faalt', () => {
 });
 
 Deno.test('valideerVoorVervoerder: land buiten bereik faalt', () => {
-  const r = valideerVoorVervoerder({ ...basis, afl_land: 'BE' });
+  const r = valideerVoorVervoerder({ ...basis, afl_land: 'FR' });
   assertEquals(r.ok, false);
   assertEquals(r.problemen.some((p) => p.code === 'LAND_BUITEN_BEREIK'), true);
+});
+
+Deno.test('valideerVoorVervoerder: BE valt binnen bereik (HST levert ook in BE)', () => {
+  assertEquals(valideerVoorVervoerder({ ...basis, afl_land: 'BE' }).ok, true);
+});
+
+Deno.test('valideerVoorVervoerder: vrije-tekst land genormaliseerd (BELGIË/Nederland → ok)', () => {
+  // afl_land is vrij TEXT; de bereik-check moet via normaliseer_land/ISO-2 lopen.
+  assertEquals(valideerVoorVervoerder({ ...basis, afl_land: 'BELGIË' }).ok, true);
+  assertEquals(valideerVoorVervoerder({ ...basis, afl_land: 'Nederland' }).ok, true);
+});
+
+Deno.test('valideerVoorVervoerder: leeg/onbekend land faalt op bereik', () => {
+  assertEquals(
+    valideerVoorVervoerder({ ...basis, afl_land: null }).problemen.some(
+      (p) => p.code === 'LAND_BUITEN_BEREIK',
+    ),
+    true,
+  );
+  assertEquals(
+    valideerVoorVervoerder({ ...basis, afl_land: 'Atlantis' }).problemen.some(
+      (p) => p.code === 'LAND_BUITEN_BEREIK',
+    ),
+    true,
+  );
 });
 
 Deno.test('valideerVoorVervoerder: leeg adres faalt op velden', () => {

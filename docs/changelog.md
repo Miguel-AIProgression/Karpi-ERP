@@ -34,8 +34,40 @@ wat HST/Rhenus/Verhoek en de pakbon krijgen blijft exact gelijk. De wijziging is
 puur de **etiket-weergave**.
 
 **Vangnet:** [`shipping-label-data.test.ts`](../frontend/src/modules/logistiek/lib/shipping-label-data.test.ts)
-(7 cases: kleinste-eerst, karpi_code-fallback, kwaliteit/maat-ontbreekt-fallback,
-maatwerk + legacy ongewijzigd).
+(kleinste-eerst, karpi_code-fallback, kwaliteit/maat-ontbreekt-fallback, maatwerk
++ legacy ongewijzigd, plus parse-tests voor de NL/DE-formaatvarianten).
+
+## 2026-06-18 — HST levert ook in België (BE → HST) + zichtbare blokkade-reden
+
+**Waarom:** op Pick & Ship stonden BE-orders op "Geen vervoerder mogelijk" terwijl
+HST óók in België levert. Diagnose op de live data: er waren 12 open BE-orders,
+maar **geen enkele selectie-regel dekte BE** (alleen NL→HST mig 336 en DE→Rhenus).
+Operators losten dat per order op met een handmatige HST-override (9 BE-regels),
+maar de orders zonder override (o.a. ORD-2026-0581) bleven liggen — én die
+overrides zouden bij verzending alsnog stuklopen, want HST's capability-`landbereik`
+stond op `['NL']` (preflight `LAND_BUITEN_BEREIK`).
+
+**Wat:**
+- **Routering (mig 418):** catch-all `vervoerder_selectie_regel` `{land:['BE']}` →
+  `hst_api`, prio 99999, gespiegeld op de NL-catch-all (mig 336). `matcht_regel`
+  (mig 214) normaliseert via `normaliseer_land`, dus deze ene regel matcht zowel
+  `afl_land='BE'` als `'BELGIË'`. BE-orders routeren nu automatisch naar HST —
+  geen handmatige override meer nodig.
+- **Capability ([`capabilities.ts`](../supabase/functions/_shared/vervoerders/capabilities.ts)):**
+  HST `landbereik` `['NL']` → `['NL','BE']`.
+- **Preflight-normalisatie ([`vervoerder-eisen.ts`](../supabase/functions/_shared/vervoerder-eisen.ts)):**
+  de land-in-bereik-check vergeleek de **rauwe** `afl_land` (`'BELGIË'`,
+  `'NEDERLAND'`) tegen ISO-2-codes → faalde op vrije tekst. Nu via
+  `landNaarIso2Strikt` genormaliseerd. Fixt en passant ook latent NL-falen voor
+  `afl_land='NEDERLAND'`.
+- **Zichtbare blokkade-reden ([`start-pickrondes-button.tsx`](../frontend/src/modules/logistiek/components/start-pickrondes-button.tsx)):**
+  onder een disabled "Geen vervoerder mogelijk"-knop staat nu de concrete reden
+  (bv. "Nog geen actieve vervoerder voor *land*", afgeleid uit `afl_land`); de
+  tooltip kreeg dezelfde land-context + de oplossing. Voor een echt niet-gerouteerd
+  land blijft dit accuraat; BE valt er na deze cutover buiten.
+
+**Deploy-volgorde:** mig 418 toepassen → `hst-send` redeployen (capability +
+preflight) → frontend deployen (melding + landbereik-shim).
 
 ## 2026-06-17 — HST-depotnummer op het verzendlabel
 
