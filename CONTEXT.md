@@ -92,6 +92,29 @@ _Avoid_: reservering, blokkade
 
 ### Magazijn & verzending
 
+**Pickbaarheid**:
+Of een Orderregel fysiek te picken is (voorraad-claim of gereed Maatwerk-stuk),
+en op order-niveau of de Order in Pick & Ship zichtbaar is. Single source is de
+SQL-view `order_pickbaarheid`/`orderregel_pickbaarheid` (mig 386): de TS-laag
+leidt hier niets meer zelf af. Onderscheidt zich van [[Startbaarheid]]:
+pickbaarheid zegt "is het werk klaar", startbaarheid zegt "mag de pickronde nú
+beginnen" (incl. vervoerder + intake-gates).
+_Avoid_: leverbaar, beschikbaar (te generiek — het gaat om de pick-stap)
+
+**Startbaarheid**:
+Of een Order nú een [[Pickronde]] kan starten, en zo niet, waaróm geblokkeerd —
+als één status per order in canonieke prioriteit: `in_pickronde` > `niet_pickbaar`
+> `afl_adres` > `prijs` > `geen_vervoerder` > `startbaar`. Het is een eigenschap
+van de **Order tegenover de pick-start**, niet van een knop of een pagina: daarom
+leeft het predikaat op één plek (`modules/logistiek/lib/startbaarheid.ts`,
+`bepaalStartbaarheid`) en lezen álle consumenten díé — de start-/week-/bulk-knoppen
+(via `usePickbaarheid`) én de Pick & Ship-page-sectionering/selecteerbaarheid. De
+prioriteit is de frontend-spiegel van de server-poort `_valideer_intake_gates`
+(mig 395/396) + de geen-vervoerder-guard in `start_pickronden` (mig 373). Een
+Order belandt alléén in de "Geen vervoerder mogelijk"-sectie als de vervoerder
+zijn énige blocker is (ADR-0037). Bouwt bovenop [[Pickbaarheid]].
+_Avoid_: pickbaarheid (dat is de onderlaag), geblokkeerd-zijn (te vaag — het is één status)
+
 **Labelbarcode**:
 De Code128-waarde die fysiek op het verzendlabel staat: AI(00) + de
 18-cijferige SSCC (20 cijfers). Het is een eigenschap van **ons label**, niet

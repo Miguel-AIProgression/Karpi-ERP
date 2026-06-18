@@ -14,6 +14,9 @@ import {
   VervoerderFilterButton,
   VervoerderResolutieProvider,
   useEffectieveVervoerderVoorOrders,
+  bepaalStartbaarheid,
+  heeftGeenVervoerder,
+  type StartStatus,
   type VervoerderFilterValue,
 } from '@/modules/logistiek'
 import { aggregeerVervoerderKeuzeVoorOrder } from '@/modules/logistiek/queries/vervoerder-keuze'
@@ -88,18 +91,42 @@ export function MagazijnOverviewPage() {
     return m
   }, [gefilterd, regelsPerOrder])
 
-  // Niet-startbare orders ("Geen vervoerder mogelijk", zelfde predicaat als
-  // StartPickrondesButton + de mig 373-guard): ≥1 regel bron='geen' op een
-  // niet-afhaal-order. Deze sorteren ónder de startbare orders in elke sectie.
+  // Startbaarheid als single source (ADR-0037): één canonieke status per order,
+  // bepaald uit de view-pickbaarheid (`alle_regels_pickbaar`) + de intake-gates +
+  // de al-aanwezige vervoerder-batch (`regelsPerOrder` — géén extra fetch). Alle
+  // afgeleide sets hieronder (geblokkeerd-split, sink-sortering, multi-select)
+  // lezen deze map i.p.v. het predikaat opnieuw inline af te leiden.
+  const startbaarheidStatus = useMemo(() => {
+    const m = new Map<number, StartStatus>()
+    for (const o of gefilterd) {
+      m.set(
+        o.order_id,
+        bepaalStartbaarheid({
+          order_id: o.order_id,
+          afhalen: o.afhalen,
+          alle_regels_pickbaar: o.alle_regels_pickbaar,
+          afl_adres_incompleet_sinds: o.afl_adres_incompleet_sinds,
+          prijs_ontbreekt_sinds: o.prijs_ontbreekt_sinds,
+          in_pickronde: o.actieve_pickronde !== null,
+          geen_vervoerder: heeftGeenVervoerder(o.afhalen, regelsPerOrder?.get(o.order_id)),
+        }).status,
+      )
+    }
+    return m
+  }, [gefilterd, regelsPerOrder])
+
+  // Orders waarvan de vervoerder de énige blocker is ("Geen vervoerder mogelijk",
+  // server-side gespiegeld in start_pickronden, mig 373). Splitsen naar de eigen
+  // sectie onderaan. Orders die óók niet-pickbaar of adres-/prijs-geblokkeerd zijn
+  // vallen hier bewust buiten (ADR-0037) — die tonen onder hun primaire reden in
+  // de week-/dag-sectie.
   const geblokkeerdeOrderIds = useMemo(() => {
     const s = new Set<number>()
-    gefilterd.forEach((o) => {
-      if (o.afhalen) return
-      const regels = regelsPerOrder?.get(o.order_id)
-      if (regels?.some((r) => r.bron === 'geen')) s.add(o.order_id)
-    })
+    for (const [id, status] of startbaarheidStatus) {
+      if (status === 'geen_vervoerder') s.add(id)
+    }
     return s
-  }, [gefilterd, regelsPerOrder])
+  }, [startbaarheidStatus])
 
   // Gefilterde tellingen per bucket — zodat de weektabs meebewegen als een
   // vervoerder-filter actief is. null = geen filter → val terug op stats.
@@ -202,10 +229,10 @@ export function MagazijnOverviewPage() {
 
   // Orders waarvan de Verzendset/print-knop geblokkeerd is om een ándere reden
   // dan "geen vervoerder" (die staan al in de aparte sectie onderaan): nog niet
-  // pickbaar (`alle_regels_pickbaar=false`), onvolledig afleveradres (mig 395)
-  // of ontbrekende prijs (mig 396) — zelfde per-order-condities die
-  // StartPickrondesButton disabled maken. Orders met een lopende pickronde
-  // tellen NIET als geblokkeerd: die zijn in uitvoering, geen probleem. Deze set
+  // pickbaar, onvolledig afleveradres (mig 395) of ontbrekende prijs (mig 396) —
+  // de statussen `niet_pickbaar`/`afl_adres`/`prijs` uit de startbaarheid-map
+  // (ADR-0037). Orders met een lopende pickronde (status `in_pickronde`) vallen
+  // hier per definitie buiten — die zijn in uitvoering, geen probleem. Deze set
   // laat de niet-printbare orders ónderaan elke week-/dag-sectie zakken zodat
   // alles wat de magazijnier wél kan starten bovenaan staat (verzoek Miguel
   // 2026-06-16). Hergebruikt het bestaande `geblokkeerdeOrderIds`-sorteerpad in
@@ -213,17 +240,13 @@ export function MagazijnOverviewPage() {
   const nietPrintbaarIds = useMemo(() => {
     const s = new Set<number>()
     for (const o of startbareOrders) {
-      if (o.actieve_pickronde) continue
-      if (
-        !o.alle_regels_pickbaar ||
-        o.afl_adres_incompleet_sinds ||
-        o.prijs_ontbreekt_sinds
-      ) {
+      const status = startbaarheidStatus.get(o.order_id)
+      if (status === 'niet_pickbaar' || status === 'afl_adres' || status === 'prijs') {
         s.add(o.order_id)
       }
     }
     return s
-  }, [startbareOrders])
+  }, [startbareOrders, startbaarheidStatus])
 
   // Multi-select (besluit 2026-06-17), twee modi:
   //  - 'starten': orders aanvinken → in één keer starten & printen met optionele
@@ -238,16 +261,15 @@ export function MagazijnOverviewPage() {
   const selectableIds = useMemo(() => {
     const s = new Set<number>()
     for (const o of startbareOrders) {
+      const status = startbaarheidStatus.get(o.order_id)
       if (modus === 'afronden') {
-        if (o.actieve_pickronde) s.add(o.order_id)
-        continue
+        if (status === 'in_pickronde') s.add(o.order_id)
+      } else if (status === 'startbaar') {
+        s.add(o.order_id)
       }
-      if (o.actieve_pickronde) continue
-      if (nietPrintbaarIds.has(o.order_id)) continue
-      s.add(o.order_id)
     }
     return s
-  }, [modus, startbareOrders, nietPrintbaarIds])
+  }, [modus, startbareOrders, startbaarheidStatus])
 
   const selectie = usePickSelectieState(
     `${filter}|${vervoerderFilter}|${modus}`,
