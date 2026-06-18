@@ -1,5 +1,34 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-18 — Fix: order bewerken faalde met FK-fout zodra een regel een snijplan had (mig 422)
+
+**Waarom:** op order ORD-2026-0623 (regel "Vernon 17 - Shadow Taupe rond") gaf
+"Wijzigingen opslaan" een database-fout. Oorzaak: `update_order_with_lines` deed
+onvoorwaardelijk `DELETE FROM order_regels` + re-INSERT van alle regels, wat een
+FK-violation gaf (`snijplannen_order_regel_id_fkey`) zodra één regel een gekoppeld
+snijplan had — ongeacht status, ongeacht of die regel zelf gewijzigd werd.
+
+**Root cause — een dubbele regressie:** mig 212 had dit destijds al opgelost met een
+UPSERT-patroon (regels matchen op meegestuurde `id`, alleen verwijderde regels
+worden echt gedelete) juist om dit soort FK-conflicten (ook met `zending_regels`/
+`factuur_regels`) te voorkomen. Mig 317 (snijplan-cleanup) herschreef de functie
+per ongeluk vanaf een ouder full-delete-insert-snapshot — het UPSERT-patroon
+verdween. Mig 406 (klant_referentie) herschreef de functie wéér vanaf een nóg
+oudere snapshot, en liet zo ook de snijplan-guard zelf + `afhalen`/`lever_type`/
+`fact_email`/`afl_email`/`maatwerk_band_kleur_id` vallen (mig 407 patchte alleen
+verzendweek-behoud erbovenop, zonder de regressie te zien).
+
+**Wat:** mig 422 herstelt `update_order_with_lines` met het UPSERT-patroon als
+basis (ongewijzigde regels behouden hun `id` → snijplan-koppeling blijft intact,
+geen cleanup nodig) + alle sinds-406 verloren velden. De guard voor het
+*verwijderen* van een regel met snijplan staat nu op **Gesneden of later**
+(was: al bij 'Snijden') — conform de bevestigde bedrijfsregel: een maatwerk-regel
+is wijzigbaar/verwijderbaar zolang het snijplan nog niet 'Gesneden' is. Dit
+mirrort exact de bestaande frontend-gate ([`order-lock.ts`](../frontend/src/lib/utils/order-lock.ts),
+STAGE-map Snijden=0/Gesneden=1) — die liet de hele order-edit-pagina al door bij
+deze order, het was puur een backend-bug. Getest in een rolled-back transactie
+tegen de live ORD-2026-0623-data vóór toepassen.
+
 ## 2026-06-18 — Rhenus colli-bundeling tijdens de pickronde (mig 421 + pop-up)
 
 **Waarom:** colli-bundeling (mig 420) kon alleen ná "Voltooi pickronde" (status
