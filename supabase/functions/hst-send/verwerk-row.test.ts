@@ -110,12 +110,15 @@ Deno.test('HST succes (HTTP 201 + PDF) → audit + PDF-upload + markeer_verstuur
 
   assertEquals(aangeroepen, 1); // precies één POST naar HST
   assertEquals(fake.calls.map((c) => c.op), ['rpc', 'storage_upload', 'rpc']);
-  assertEquals(fake.rpcNames(), ['log_externe_payload', 'markeer_hst_verstuurd']);
+  assertEquals(fake.rpcNames(), ['log_externe_payload', 'markeer_transportorder_verstuurd']);
 
   const audit = fake.rpcCalls()[0];
   assertEquals(audit.args.p_kanaal, 'hst');
   assertEquals(audit.args.p_order_id, 77);
   assertEquals(audit.args.p_status, 'verwerkt');
+  // http_code leeft sinds ADR-0038 in de audit-payload (externe_payloads), niet
+  // meer op de wachtrij-rij.
+  assertEquals((audit.args.p_payload_json as { http_code: number }).http_code, 201);
 
   const upload = fake.calls.find((c) => c.op === 'storage_upload')!;
   assertEquals(upload.bucket, 'order-documenten');
@@ -123,9 +126,11 @@ Deno.test('HST succes (HTTP 201 + PDF) → audit + PDF-upload + markeer_verstuur
 
   const markeer = fake.rpcCalls()[1];
   assertEquals(markeer.args.p_id, 3);
-  assertEquals(markeer.args.p_extern_transport_order_id, 'T75038267000180');
-  assertEquals(markeer.args.p_pdf_path, 'hst-vrachtbrieven/ZEND-2026-0009.pdf');
-  assertEquals(markeer.args.p_response_http_code, 201);
+  assertEquals(markeer.args.p_extern_referentie, 'T75038267000180');
+  // Geen tracking_number in de response → track_trace valt terug op de
+  // transportOrderId (COALESCE-gedrag van markeer_hst_verstuurd, nu expliciet).
+  assertEquals(markeer.args.p_track_trace, 'T75038267000180');
+  assertEquals(markeer.args.p_document_pad, 'hst-vrachtbrieven/ZEND-2026-0009.pdf');
 
   assertEquals(summary.succeeded, 1);
 });
@@ -140,11 +145,12 @@ Deno.test('HST HTTP 400 → audit + markeer_fout, geen PDF-upload', async () => 
   );
 
   assertEquals(fake.calls.map((c) => c.op), ['rpc', 'rpc']); // log + markeer_fout, geen storage
-  assertEquals(fake.rpcNames(), ['log_externe_payload', 'markeer_hst_fout']);
+  assertEquals(fake.rpcNames(), ['log_externe_payload', 'markeer_transportorder_fout']);
   const fout = fake.rpcCalls()[1];
   assertEquals(fout.args.p_id, 3);
   assertEquals(fout.args.p_error, 'Bellen voor aflevering');
-  assertEquals(fout.args.p_response_http_code, 400);
+  // http_code zit in de audit-payload, niet meer op markeer_fout.
+  assertEquals((fake.rpcCalls()[0].args.p_payload_json as { http_code: number }).http_code, 400);
   assertEquals(summary.failed, 1);
 });
 
@@ -159,7 +165,7 @@ Deno.test('HST preflight-fout (leeg telefoon) → markeer_fout, GEEN HST-call', 
   );
 
   assertEquals(aangeroepen, 0); // preflight short-circuit: geen kansloze POST
-  assertEquals(fake.rpcNames(), ['markeer_hst_fout']);
+  assertEquals(fake.rpcNames(), ['markeer_transportorder_fout']);
   assertMatch(fake.rpcCalls()[0].args.p_error, /^Pre-flight: /);
   assertEquals(summary.failed, 1);
 });
@@ -174,7 +180,7 @@ Deno.test('HST 0-colli → markeer_fout, GEEN HST-call', async () => {
   );
 
   assertEquals(aangeroepen, 0);
-  assertEquals(fake.rpcNames(), ['markeer_hst_fout']);
+  assertEquals(fake.rpcNames(), ['markeer_transportorder_fout']);
   assertMatch(fake.rpcCalls()[0].args.p_error, /Geen zending_colli/);
   assertEquals(summary.failed, 1);
 });
@@ -188,6 +194,6 @@ Deno.test('HST zending niet gevonden → markeer_fout', async () => {
     () => verwerkRow(asClient(fake), rij(), SECRETS, summary),
   );
 
-  assertEquals(fake.rpcNames(), ['markeer_hst_fout']);
+  assertEquals(fake.rpcNames(), ['markeer_transportorder_fout']);
   assertMatch(fake.rpcCalls()[0].args.p_error, /niet gevonden/);
 });

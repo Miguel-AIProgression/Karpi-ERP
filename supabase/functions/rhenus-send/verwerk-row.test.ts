@@ -1,6 +1,7 @@
-// Karakterisatie-test voor de Rhenus-verwerkRow (ADR-0035 slice 0). Spiegelt de
-// Verhoek-test maar legt de Rhenus-specifieke side-effects vast: markeer_rhenus_*,
-// kanaal 'rhenus', GÉÉN track_trace_id bij verstuurd, en — cruciaal — de
+// Karakterisatie-test voor de Rhenus-verwerkRow (ADR-0035 slice 0; RPC's
+// generiek sinds ADR-0038). Spiegelt de Verhoek-test maar legt de Rhenus-
+// specifieke side-effects vast: markeer_transportorder_* met vervoerder_code
+// rhenus_sftp, kanaal 'rhenus', track_trace NULL bij verstuurd, en — cruciaal — de
 // 0-colli-zending die bij Rhenus via de preflight (valideerRhenusColli,
 // incident 0455395) loopt i.p.v. een aparte length-check.
 
@@ -22,7 +23,7 @@ function rij(overrides: Partial<RhenusTransportOrderRow> = {}): RhenusTransportO
     debiteur_nr: 600556,
     status: 'Bezig',
     is_test: false,
-    bestandsnaam: VASTE_BESTANDSNAAM,
+    extern_referentie: VASTE_BESTANDSNAAM,
     ...overrides,
   };
 }
@@ -67,7 +68,7 @@ function configOk(extra: Partial<FakeSupabaseConfig['tables']> = {}): FakeSupaba
       orders: { single: { data: { order_nr: 'ORD-2026-0088', klant_referentie: 'KREF-1' }, error: null } },
       app_config: { single: { data: { waarde: BEDRIJF }, error: null } },
       zending_colli: { list: { data: COLLI_OK, error: null } },
-      rhenus_transportorders: { update: { error: null } },
+      verzend_wachtrij: { update: { error: null } },
       ...extra,
     },
   };
@@ -78,7 +79,7 @@ Deno.test('Rhenus succes (dry-run, bestandsnaam preset) → audit + markeer_vers
   const summary = legeSummary();
   await verwerkRow(asClient(fake), rij(), { sftpConfig: null, opties: DEFAULT_RHENUS_OPTIES, dryRun: true }, summary);
 
-  assertEquals(fake.rpcNames(), ['log_externe_payload', 'markeer_rhenus_verstuurd']);
+  assertEquals(fake.rpcNames(), ['log_externe_payload', 'markeer_transportorder_verstuurd']);
   assertEquals(fake.calls.map((c) => c.op), ['rpc', 'storage_upload', 'rpc']);
 
   const audit = fake.rpcCalls()[0];
@@ -91,9 +92,10 @@ Deno.test('Rhenus succes (dry-run, bestandsnaam preset) → audit + markeer_vers
 
   const markeer = fake.rpcCalls()[1];
   assertEquals(markeer.args.p_id, 9);
-  assertEquals(markeer.args.p_bestandsnaam, VASTE_BESTANDSNAAM);
-  // Rhenus heeft GEEN track_trace-slot — het argument bestaat niet.
-  assertEquals('p_track_trace_id' in markeer.args, false);
+  assertEquals(markeer.args.p_extern_referentie, VASTE_BESTANDSNAAM);
+  // Rhenus heeft GEEN T&T → de generieke markeer krijgt p_track_trace = null
+  // (markeer_transportorder_verstuurd laat zending.track_trace dan ongemoeid).
+  assertEquals(markeer.args.p_track_trace, null);
 
   assertEquals(summary.succeeded, 1);
 });
@@ -101,12 +103,12 @@ Deno.test('Rhenus succes (dry-run, bestandsnaam preset) → audit + markeer_vers
 Deno.test('Rhenus zonder bestandsnaam → eerst update (genereer-tak)', async () => {
   const fake = new FakeSupabase(configOk());
   const summary = legeSummary();
-  await verwerkRow(asClient(fake), rij({ bestandsnaam: null }), { sftpConfig: null, opties: DEFAULT_RHENUS_OPTIES, dryRun: true }, summary);
+  await verwerkRow(asClient(fake), rij({ extern_referentie: null }), { sftpConfig: null, opties: DEFAULT_RHENUS_OPTIES, dryRun: true }, summary);
 
   assertEquals(fake.calls.map((c) => c.op), ['update', 'rpc', 'storage_upload', 'rpc']);
   const update = fake.calls[0];
-  assertEquals(update.table, 'rhenus_transportorders');
-  assertMatch((update.values as { bestandsnaam: string }).bestandsnaam, /^RHE_\d+_ZEND-2026-0004\.xml$/);
+  assertEquals(update.table, 'verzend_wachtrij');
+  assertMatch((update.values as { extern_referentie: string }).extern_referentie, /^RHE_\d+_ZEND-2026-0004\.xml$/);
 });
 
 Deno.test('Rhenus preflight-fout (leeg afl_naam) → alleen markeer_fout', async () => {
@@ -115,7 +117,7 @@ Deno.test('Rhenus preflight-fout (leeg afl_naam) → alleen markeer_fout', async
   const summary = legeSummary();
   await verwerkRow(asClient(fake), rij(), { sftpConfig: null, opties: DEFAULT_RHENUS_OPTIES, dryRun: true }, summary);
 
-  assertEquals(fake.rpcNames(), ['markeer_rhenus_fout']);
+  assertEquals(fake.rpcNames(), ['markeer_transportorder_fout']);
   assertMatch(fake.rpcCalls()[0].args.p_error, /^Pre-flight: /);
   assertEquals(summary.failed, 1);
 });
@@ -125,7 +127,7 @@ Deno.test('Rhenus 0-colli → markeer_fout via preflight (incident 0455395), GEE
   const summary = legeSummary();
   await verwerkRow(asClient(fake), rij(), { sftpConfig: null, opties: DEFAULT_RHENUS_OPTIES, dryRun: true }, summary);
 
-  assertEquals(fake.rpcNames(), ['markeer_rhenus_fout']);
+  assertEquals(fake.rpcNames(), ['markeer_transportorder_fout']);
   // 0-colli loopt via de preflight-tak, dus de melding draagt de Pre-flight-prefix.
   assertMatch(fake.rpcCalls()[0].args.p_error, /^Pre-flight: /);
   assertEquals(summary.failed, 1);
@@ -136,6 +138,6 @@ Deno.test('Rhenus order niet gevonden → markeer_fout', async () => {
   const summary = legeSummary();
   await verwerkRow(asClient(fake), rij(), { sftpConfig: null, opties: DEFAULT_RHENUS_OPTIES, dryRun: true }, summary);
 
-  assertEquals(fake.rpcNames(), ['markeer_rhenus_fout']);
+  assertEquals(fake.rpcNames(), ['markeer_transportorder_fout']);
   assertMatch(fake.rpcCalls()[0].args.p_error, /Order 88 niet gevonden/);
 });

@@ -26,7 +26,7 @@ function rij(overrides: Partial<VerhoekTransportOrderRow> = {}): VerhoekTranspor
     debiteur_nr: 600556,
     status: 'Bezig',
     is_test: false,
-    bestandsnaam: VASTE_BESTANDSNAAM,
+    extern_referentie: VASTE_BESTANDSNAAM,
     ...overrides,
   };
 }
@@ -72,7 +72,7 @@ function configOk(extra: Partial<FakeSupabaseConfig['tables']> = {}): FakeSupaba
       orders: { single: { data: { order_nr: 'ORD-2026-0042' }, error: null } },
       app_config: { single: { data: { waarde: BEDRIJF }, error: null } },
       zending_colli: { list: { data: COLLI_OK, error: null } },
-      verhoek_transportorders: { update: { error: null } },
+      verzend_wachtrij: { update: { error: null } },
       ...extra,
     },
   };
@@ -83,7 +83,7 @@ Deno.test('Verhoek succes (dry-run, bestandsnaam preset) → audit + markeer_ver
   const summary = legeSummary();
   await verwerkRow(asClient(fake), rij(), { sftpConfig: null, opties: DEFAULT_VERHOEK_OPTIES, dryRun: true }, summary);
 
-  assertEquals(fake.rpcNames(), ['log_externe_payload', 'markeer_verhoek_verstuurd']);
+  assertEquals(fake.rpcNames(), ['log_externe_payload', 'markeer_transportorder_verstuurd']);
 
   const ops = fake.calls.map((c) => c.op);
   assertEquals(ops, ['rpc', 'storage_upload', 'rpc']);
@@ -101,9 +101,9 @@ Deno.test('Verhoek succes (dry-run, bestandsnaam preset) → audit + markeer_ver
 
   const markeer = fake.rpcCalls()[1];
   assertEquals(markeer.args.p_id, 7);
-  assertEquals(markeer.args.p_bestandsnaam, VASTE_BESTANDSNAAM);
-  // afl_email niet-leeg → track_trace_id = zending_nr.
-  assertEquals(markeer.args.p_track_trace_id, 'ZEND-2026-0001');
+  assertEquals(markeer.args.p_extern_referentie, VASTE_BESTANDSNAAM);
+  // afl_email niet-leeg → track_trace = zending_nr.
+  assertEquals(markeer.args.p_track_trace, 'ZEND-2026-0001');
 
   assertEquals(summary.succeeded, 1);
   assertEquals(summary.failed, 0);
@@ -112,14 +112,14 @@ Deno.test('Verhoek succes (dry-run, bestandsnaam preset) → audit + markeer_ver
 Deno.test('Verhoek succes zonder bestandsnaam → eerst update (genereer-tak), dan audit + markeer', async () => {
   const fake = new FakeSupabase(configOk());
   const summary = legeSummary();
-  await verwerkRow(asClient(fake), rij({ bestandsnaam: null }), { sftpConfig: null, opties: DEFAULT_VERHOEK_OPTIES, dryRun: true }, summary);
+  await verwerkRow(asClient(fake), rij({ extern_referentie: null }), { sftpConfig: null, opties: DEFAULT_VERHOEK_OPTIES, dryRun: true }, summary);
 
   assertEquals(fake.calls.map((c) => c.op), ['update', 'rpc', 'storage_upload', 'rpc']);
   const update = fake.calls[0];
-  assertEquals(update.table, 'verhoek_transportorders');
+  assertEquals(update.table, 'verzend_wachtrij');
   assertEquals(update.match, { id: 7 });
-  assertMatch((update.values as { bestandsnaam: string }).bestandsnaam, /^Karpi_\d+_ZEND-2026-0001\.xml$/);
-  assertEquals(fake.rpcNames(), ['log_externe_payload', 'markeer_verhoek_verstuurd']);
+  assertMatch((update.values as { extern_referentie: string }).extern_referentie, /^Karpi_\d+_ZEND-2026-0001\.xml$/);
+  assertEquals(fake.rpcNames(), ['log_externe_payload', 'markeer_transportorder_verstuurd']);
   assertEquals(summary.succeeded, 1);
 });
 
@@ -129,7 +129,7 @@ Deno.test('Verhoek preflight-fout (leeg afl_adres) → alleen markeer_fout, geen
   const summary = legeSummary();
   await verwerkRow(asClient(fake), rij(), { sftpConfig: null, opties: DEFAULT_VERHOEK_OPTIES, dryRun: true }, summary);
 
-  assertEquals(fake.rpcNames(), ['markeer_verhoek_fout']);
+  assertEquals(fake.rpcNames(), ['markeer_transportorder_fout']);
   const fout = fake.rpcCalls()[0];
   assertEquals(fout.args.p_id, 7);
   assertMatch(fout.args.p_error, /^Pre-flight: /);
@@ -142,7 +142,7 @@ Deno.test('Verhoek 0-colli → markeer_fout met colli-reden', async () => {
   const summary = legeSummary();
   await verwerkRow(asClient(fake), rij(), { sftpConfig: null, opties: DEFAULT_VERHOEK_OPTIES, dryRun: true }, summary);
 
-  assertEquals(fake.rpcNames(), ['markeer_verhoek_fout']);
+  assertEquals(fake.rpcNames(), ['markeer_transportorder_fout']);
   assertMatch(fake.rpcCalls()[0].args.p_error, /Geen zending_colli/);
   assertEquals(summary.failed, 1);
 });
@@ -152,7 +152,7 @@ Deno.test('Verhoek zending niet gevonden → markeer_fout, geen verdere reads', 
   const summary = legeSummary();
   await verwerkRow(asClient(fake), rij(), { sftpConfig: null, opties: DEFAULT_VERHOEK_OPTIES, dryRun: true }, summary);
 
-  assertEquals(fake.rpcNames(), ['markeer_verhoek_fout']);
+  assertEquals(fake.rpcNames(), ['markeer_transportorder_fout']);
   assertMatch(fake.rpcCalls()[0].args.p_error, /niet gevonden/);
   assertEquals(summary.failed, 1);
 });

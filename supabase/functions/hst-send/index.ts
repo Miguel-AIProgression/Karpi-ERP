@@ -1,9 +1,9 @@
 // Supabase Edge Function: hst-send
 //
-// Cron-driven sender voor HST TransportOrders. Claimt 'Wachtrij'-rijen uit
-// `hst_transportorders` (HST-adapter-tabel), bouwt een TransportOrder-payload
-// uit zending + order + bedrijfsgegevens, POST't via Basic-auth naar HST en
-// markeert succes/fout in dezelfde tabel.
+// Cron-driven sender voor HST TransportOrders. Claimt 'Wachtrij'-rijen uit de
+// gedeelde `verzend_wachtrij` (vervoerder_code='hst_api', ADR-0038), bouwt een
+// TransportOrder-payload uit zending + order + bedrijfsgegevens, POST't via
+// Basic-auth naar HST en markeert succes/fout via de generieke wachtrij-RPC's.
 //
 // Auth: Bearer-CRON_TOKEN-header (zelfde patroon als transus-send).
 // Verticale slice: alle HST-specifieke logica leeft in deze folder. Switch
@@ -51,7 +51,7 @@ Deno.serve(async (req) => {
   // Zelfhelend: herstel rijen die in een vorige run vastliepen in 'Bezig'
   // (crash/timeout vóór markeer-*). Best-effort — mag de run niet blokkeren.
   try {
-    const { data: hersteld } = await supabase.rpc('herstel_vastgelopen_hst', { p_minuten: 10 });
+    const { data: hersteld } = await supabase.rpc('herstel_vastgelopen_verzending', { p_vervoerder_code: 'hst_api', p_minuten: 10 });
     if (hersteld && Number(hersteld) > 0) {
       console.log(`[hst-send] reaper: ${hersteld} vastgelopen Bezig-rij(en) teruggezet naar Wachtrij`);
     }
@@ -74,7 +74,7 @@ Deno.serve(async (req) => {
     // Rhenus hadden dit al — HST liep zonder deze guard achter.
     if (Date.now() - runStart > 60_000) break;
     const { data: claimed, error: claimErr } = await supabase
-      .rpc('claim_volgende_hst_transportorder');
+      .rpc('claim_volgende_transportorder', { p_vervoerder_code: 'hst_api' });
     if (claimErr) {
       return jsonResp({ error: `claim-rpc fout: ${claimErr.message}` }, 500);
     }
@@ -100,7 +100,7 @@ Deno.serve(async (req) => {
         status: 'error',
         error: String(err),
       });
-      await supabase.rpc('markeer_hst_fout', {
+      await supabase.rpc('markeer_transportorder_fout', {
         p_id: row.id,
         p_error: `Onverwachte exception: ${String(err)}`,
         p_max_retries: 3,

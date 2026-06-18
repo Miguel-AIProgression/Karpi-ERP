@@ -22,7 +22,8 @@ export interface RhenusTransportOrderRow {
   debiteur_nr: number | null;
   status: string;
   is_test: boolean;
-  bestandsnaam: string | null;
+  // SFTP-bestandsnaam = de extern_referentie op de wachtrij-rij (retry-dedup).
+  extern_referentie: string | null;
 }
 
 export interface SendSummary extends VerzendSummaryBasis {
@@ -46,7 +47,7 @@ interface SftpResultaat {
 
 export const rhenusAdapter: VerzendAdapter<RhenusTransportOrderRow, VerwerkContext, string, SftpResultaat> = {
   kanaal: 'rhenus',
-  capabilityCode: 'rhenus_sftp',
+  vervoerderCode: 'rhenus_sftp',
   contentType: 'application/xml',
   zendingSelect:
     'zending_nr, order_id, afl_naam, afl_adres, afl_postcode, afl_plaats, afl_land, afl_telefoon, verzenddatum',
@@ -59,7 +60,6 @@ export const rhenusAdapter: VerzendAdapter<RhenusTransportOrderRow, VerwerkConte
 
   preflightColli: (colli) => valideerRhenusColli(colli).map((p) => p.melding),
 
-  bestandsnaamTabel: 'rhenus_transportorders',
   maakBestandsnaam: (z, ctx) => bouwRhenusBestandsnaam(ctx.opties.bestandsnaam_prefix, z.zending_nr, new Date()),
 
   bouwPayload: ({ z, order, bedrijf, colli, ctx }) =>
@@ -89,56 +89,41 @@ export const rhenusAdapter: VerzendAdapter<RhenusTransportOrderRow, VerwerkConte
     error: r.errorMsg,
   }),
 
-  onSucces: async (supabase, row, _ctx, _z, xml, _r, bestandsnaam, summary) => {
-    let storagePath: string | null = null;
+  // XML-kopie naar storage (best-effort) → document_pad.
+  bewaarArtefact: async (supabase, _z, xml, _r, bestandsnaam) => {
     try {
       const path = `rhenus-xml/${bestandsnaam}`;
       const { error: upErr } = await supabase.storage
         .from('order-documenten')
         .upload(path, new TextEncoder().encode(xml), { contentType: 'application/xml', upsert: true });
-      if (!upErr) storagePath = path;
-      else console.error(`[rhenus-send] storage-upload faalde: ${upErr.message}`);
+      if (upErr) {
+        console.error(`[rhenus-send] storage-upload faalde: ${upErr.message}`);
+        return null;
+      }
+      return path;
     } catch (e) {
       console.error(`[rhenus-send] storage-upload exception: ${String(e)}`);
+      return null;
     }
+  },
 
+  // Rhenus heeft GEEN T&T-slot → trackTrace null (markeer laat zending.track_trace
+  // ongemoeid, gedragsneutraal t.o.v. markeer_rhenus_verstuurd).
+  uitkomst: (_z, _xml, _r, bestandsnaam) => ({ externReferentie: bestandsnaam, trackTrace: null }),
+
+  noteerSucces: (row, _r, bestandsnaam, summary) => {
     summary.succeeded += 1;
     summary.details.push({ id: row.id, zending_id: row.zending_id, status: 'sent', bestandsnaam: bestandsnaam ?? undefined });
-    const { error: markOkErr } = await supabase.rpc('markeer_rhenus_verstuurd', {
-      p_id: row.id,
-      p_bestandsnaam: bestandsnaam,
-      p_xml_storage_path: storagePath,
-      p_request_xml: xml,
-    });
-    if (markOkErr) console.error(`[rhenus-send] markeer_rhenus_verstuurd faalde voor rij ${row.id}: ${markOkErr.message}`);
   },
-
-  onFout: async (supabase, row, xml, r, summary) => {
+  noteerFout: (row, r, summary) => {
     summary.failed += 1;
     summary.details.push({ id: row.id, zending_id: row.zending_id, status: 'error', error: r.errorMsg ?? 'onbekende fout' });
-    const { error: markFoutErr } = await supabase.rpc('markeer_rhenus_fout', {
-      p_id: row.id,
-      p_error: r.errorMsg ?? 'onbekende fout',
-      p_request_xml: xml,
-      p_max_retries: 3,
-    });
-    if (markFoutErr) console.error(`[rhenus-send] markeer_rhenus_fout faalde voor rij ${row.id}: ${markFoutErr.message}`);
   },
-
-  markFout: (supabase, row, summary, melding) => markFoutMetSummary(supabase, row, summary, melding),
+  noteerMarkFout: (row, melding, _fase, summary) => {
+    summary.failed += 1;
+    summary.details.push({ id: row.id, zending_id: row.zending_id, status: 'error', error: melding });
+  },
 };
-
-export async function markFoutMetSummary(
-  supabase: SupabaseClient,
-  row: RhenusTransportOrderRow,
-  summary: VerzendSummaryBasis,
-  error: string,
-): Promise<void> {
-  summary.failed += 1;
-  summary.details.push({ id: row.id, zending_id: row.zending_id, status: 'error', error });
-  const { error: markErr } = await supabase.rpc('markeer_rhenus_fout', { p_id: row.id, p_error: error, p_max_retries: 3 });
-  if (markErr) console.error(`[rhenus-send] markeer_rhenus_fout faalde voor rij ${row.id}: ${markErr.message}`);
-}
 
 /** Publieke entry — index.ts (claim-loop) + karakterisatie-test. */
 export function verwerkRow(

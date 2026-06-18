@@ -22,7 +22,8 @@ export interface VerhoekTransportOrderRow {
   debiteur_nr: number | null;
   status: string;
   is_test: boolean;
-  bestandsnaam: string | null;
+  // SFTP-bestandsnaam = de extern_referentie op de wachtrij-rij (retry-dedup).
+  extern_referentie: string | null;
 }
 
 export interface SendSummary extends VerzendSummaryBasis {
@@ -47,7 +48,7 @@ interface SftpResultaat {
 
 export const verhoekAdapter: VerzendAdapter<VerhoekTransportOrderRow, VerwerkContext, string, SftpResultaat> = {
   kanaal: 'verhoek',
-  capabilityCode: 'verhoek_sftp',
+  vervoerderCode: 'verhoek_sftp',
   contentType: 'application/xml',
   zendingSelect:
     'zending_nr, order_id, afl_naam, afl_adres, afl_postcode, afl_plaats, afl_land, afl_telefoon, afl_email, opmerkingen, verzenddatum',
@@ -65,7 +66,6 @@ export const verhoekAdapter: VerzendAdapter<VerhoekTransportOrderRow, VerwerkCon
       ? ["opdrachtgever_nummer ontbreekt in app_config 'verhoek' — antwoord Verhoek (vraag 1) nog niet verwerkt."]
       : [],
 
-  bestandsnaamTabel: 'verhoek_transportorders',
   maakBestandsnaam: (z) => bouwVerhoekBestandsnaam(z.zending_nr, new Date()),
 
   bouwPayload: ({ z, order, bedrijf, colli, ctx }) =>
@@ -94,58 +94,45 @@ export const verhoekAdapter: VerzendAdapter<VerhoekTransportOrderRow, VerwerkCon
     error: r.errorMsg,
   }),
 
-  onSucces: async (supabase, row, _ctx, z, xml, _r, bestandsnaam, summary) => {
-    // XML-kopie naar storage (best-effort).
-    let storagePath: string | null = null;
+  // XML-kopie naar storage (best-effort) → document_pad. De skeleton roept
+  // markeer_transportorder_verstuurd aan met dit pad.
+  bewaarArtefact: async (supabase, _z, xml, _r, bestandsnaam) => {
     try {
       const path = `verhoek-xml/${bestandsnaam}`;
       const { error: upErr } = await supabase.storage
         .from('order-documenten')
         .upload(path, new TextEncoder().encode(xml), { contentType: 'application/xml', upsert: true });
-      if (!upErr) storagePath = path;
-      else console.error(`[verhoek-send] storage-upload faalde: ${upErr.message}`);
+      if (upErr) {
+        console.error(`[verhoek-send] storage-upload faalde: ${upErr.message}`);
+        return null;
+      }
+      return path;
     } catch (e) {
       console.error(`[verhoek-send] storage-upload exception: ${String(e)}`);
+      return null;
     }
+  },
 
+  // extern_referentie = bestandsnaam; track_trace = zending_nr alleen als er een
+  // afl_email is (gedragsneutraal t.o.v. markeer_verhoek_verstuurd).
+  uitkomst: (z, _xml, _r, bestandsnaam) => ({
+    externReferentie: bestandsnaam,
+    trackTrace: ((z.afl_email as string | null) ?? '').trim() !== '' ? (z.zending_nr as string) : null,
+  }),
+
+  noteerSucces: (row, _r, bestandsnaam, summary) => {
     summary.succeeded += 1;
     summary.details.push({ id: row.id, zending_id: row.zending_id, status: 'sent', bestandsnaam: bestandsnaam ?? undefined });
-    const { error: markOkErr } = await supabase.rpc('markeer_verhoek_verstuurd', {
-      p_id: row.id,
-      p_bestandsnaam: bestandsnaam,
-      p_xml_storage_path: storagePath,
-      p_track_trace_id: ((z.afl_email as string | null) ?? '').trim() !== '' ? z.zending_nr : null,
-      p_request_xml: xml,
-    });
-    if (markOkErr) console.error(`[verhoek-send] markeer_verhoek_verstuurd faalde voor rij ${row.id}: ${markOkErr.message}`);
   },
-
-  onFout: async (supabase, row, xml, r, summary) => {
+  noteerFout: (row, r, summary) => {
     summary.failed += 1;
     summary.details.push({ id: row.id, zending_id: row.zending_id, status: 'error', error: r.errorMsg ?? 'onbekende fout' });
-    const { error: markFoutErr } = await supabase.rpc('markeer_verhoek_fout', {
-      p_id: row.id,
-      p_error: r.errorMsg ?? 'onbekende fout',
-      p_request_xml: xml,
-      p_max_retries: 3,
-    });
-    if (markFoutErr) console.error(`[verhoek-send] markeer_verhoek_fout faalde voor rij ${row.id}: ${markFoutErr.message}`);
   },
-
-  markFout: (supabase, row, summary, melding) => markFoutMetSummary(supabase, row, summary, melding),
+  noteerMarkFout: (row, melding, _fase, summary) => {
+    summary.failed += 1;
+    summary.details.push({ id: row.id, zending_id: row.zending_id, status: 'error', error: melding });
+  },
 };
-
-export async function markFoutMetSummary(
-  supabase: SupabaseClient,
-  row: VerhoekTransportOrderRow,
-  summary: VerzendSummaryBasis,
-  error: string,
-): Promise<void> {
-  summary.failed += 1;
-  summary.details.push({ id: row.id, zending_id: row.zending_id, status: 'error', error });
-  const { error: markErr } = await supabase.rpc('markeer_verhoek_fout', { p_id: row.id, p_error: error, p_max_retries: 3 });
-  if (markErr) console.error(`[verhoek-send] markeer_verhoek_fout faalde voor rij ${row.id}: ${markErr.message}`);
-}
 
 /** Publieke entry — index.ts (claim-loop) + karakterisatie-test. Delegeert naar
  *  de gedeelde skeleton met de Verhoek-adapter. */
