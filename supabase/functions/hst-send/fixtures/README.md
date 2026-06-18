@@ -16,15 +16,22 @@ gebruikt PascalCase, `TransportOrderLines[]`, `ToAddress`/`FromAddress` (met
 `Street`/`StreetNumber` apart), `ShippingServices[]`, en een top-level
 `CustomerID`.
 
-### Bekende enum-waarden uit het voorbeeld
+### Bekende enum-waarden
 
 - `OrderType`: `"DELIVERY_LARGE"`
-- `PackageUnitID`: `"SP"` (vermoedelijk single-package / stuk)
-- `ShippingServiceID`: `"FFBL"`
+- `PackageUnitID`:
+  - `"SP"` = Wegwerp pallet (uit het HST-voorbeeldbestand)
+  - `"col"` = **Colli** (kleine letters!) — Karpi's standaard sinds 2026-06-18,
+    bevestigd via een live test (`T75038267004386`). HST's OpenAPI definieert
+    `PackageUnitID` als vrij stringveld zónder enum-lijst; onbekende codes geven
+    HTTP 400 *"Regel nummer 1 heeft geen verzendeenheid"*.
+- `ShippingServiceID`:
+  - `"FFBL"` = "Bellen voor aflevering" (vereist een telefoonnummer in
+    `ExtraInformation`). Karpi stuurt deze service **niet** meer — `ShippingServices`
+    is leeg zodat het bel-vinkje uit blijft.
 
-Andere waarden (`DELIVERY_SMALL`, alternatieve `ShippingServiceID`s, etc.) zijn
-nog niet bevestigd — vragen bij HST wanneer Karpi meerdere service-niveaus wil
-ontsluiten.
+Andere `PackageUnitID`-/`ShippingServiceID`-waarden zijn nog niet bevestigd —
+vragen bij HST wanneer Karpi meer eenheden/service-niveaus wil ontsluiten.
 
 ## Response
 
