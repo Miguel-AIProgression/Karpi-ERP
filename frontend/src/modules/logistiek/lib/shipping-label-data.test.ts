@@ -94,7 +94,11 @@ describe('labelProductRegels — vaste maat', () => {
     expect(labelProductRegels(regel).groot).toBe('GALAXY (10) 200x290 cm Organisch')
   })
 
-  it('toont de vorm voor een rond product', () => {
+  // Ø (U+00D8) byte-veilig opgebouwd zodat de assert faalt als de bron-code
+  // het diameter-teken als mojibake produceert (zie unicode-escape-valkuil).
+  const O = String.fromCharCode(0xd8)
+
+  it('toont een rond product met diameter (gelijke L=B) als Ø-maat', () => {
     const regel = maakRegel(
       maakOrderRegel({
         producten: {
@@ -108,9 +112,41 @@ describe('labelProductRegels — vaste maat', () => {
       }),
     )
     expect(labelProductRegels(regel)).toEqual({
-      groot: 'PLUSH (11) 120x120 cm Rond',
+      groot: `PLUSH (11) ${O}120 cm Rond`,
       klein: 'PLUS11XX120RND',
     })
+  })
+
+  it('toont een rond product met alleen diameter (breedte 0) als Ø-maat', () => {
+    const regel = maakRegel(
+      maakOrderRegel({
+        producten: {
+          ...product,
+          vervolgomschrijving: 'RADIUS KLEUR 18 CA: 240 cm ROND Band: NB12',
+          lengte_cm: 240,
+          breedte_cm: 0,
+          kleur_code: '18',
+          karpi_code: 'RADI18XX240RND',
+        },
+      }),
+    )
+    // breedte 0 zou vroeger naar legacy vallen; nu diameter = grootste maat.
+    expect(labelProductRegels(regel).groot).toBe(`RADIUS (18) ${O}240 cm Rond`)
+  })
+
+  it('houdt ovaal op de L×B-maat (geen diameter)', () => {
+    const regel = maakRegel(
+      maakOrderRegel({
+        producten: {
+          ...product,
+          vervolgomschrijving: 'PABLO Kleur 23 CA: 200x290 cm OVAAL',
+          lengte_cm: 200,
+          breedte_cm: 290,
+          kleur_code: '23',
+        },
+      }),
+    )
+    expect(labelProductRegels(regel).groot).toBe('PABLO (23) 200x290 cm Ovaal')
   })
 
   it('valt voor de kleine regel terug op artikelnr als karpi_code ontbreekt', () => {

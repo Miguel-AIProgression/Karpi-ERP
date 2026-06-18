@@ -136,9 +136,10 @@ export function labelProductRegels(
  * caller terug op het oude gedrag.
  *
  * Grote regel (besluit 2026-06-18, verzoek Thom): kwaliteitsnaam, kleurnummer
- * tussen haakjes, maten (kleinste eerst) en — als de uitvoering afwijkt — de
- * vorm. Voorbeeld: "GALAXY (10) 200x290 cm Organisch". Zo ziet de picker dat
- * het géén standaard rechthoekige 200x290 is. Kleine regel = de Karpi-code.
+ * tussen haakjes, maat en — als de uitvoering afwijkt — de vorm. Voorbeeld:
+ * "GALAXY (10) 200x290 cm Organisch". Ronde karpetten tonen de diameter:
+ * "PLUSH (11) Ø120 cm Rond". Zo ziet de picker kleur én uitvoering. Kleine
+ * regel = de Karpi-code.
  *
  * Kleurnummer en vorm zijn beide optioneel: ontbreekt het kleurnummer of is de
  * uitvoering gewoon rechthoekig (geen vorm-token), dan valt dat deel weg.
@@ -150,22 +151,37 @@ function vasteMaatRegels(regel: ZendingPrintRegel | null): LabelProductRegels | 
   if (!product) return null
   const kwaliteit = kwaliteitNaamUitVervolg(product.vervolgomschrijving)
   const lengte = product.lengte_cm
-  const breedte = product.breedte_cm
-  if (!kwaliteit || !lengte || !breedte) return null
-  const kleinsteMaat = Math.min(lengte, breedte)
-  const grootsteMaat = Math.max(lengte, breedte)
+  if (!kwaliteit || !lengte) return null
   const kleur = (product.kleur_code ?? '').trim()
   const vorm = vormUitOmschrijving(product.vervolgomschrijving ?? product.omschrijving)
+  const maat = maatWeergave(lengte, product.breedte_cm, vorm)
+  if (!maat) return null
   const klein = (product.karpi_code ?? regel?.artikelnr ?? '').trim() || null
-  const groot = [
-    kwaliteit,
-    kleur ? `(${kleur})` : '',
-    `${kleinsteMaat}x${grootsteMaat} cm`,
-    vorm ?? '',
-  ]
+  const groot = [kwaliteit, kleur ? `(${kleur})` : '', maat, vorm ?? '']
     .filter(Boolean)
     .join(' ')
   return { groot, klein }
+}
+
+/**
+ * Maat-tekst voor de grote label-regel.
+ *
+ * RONDE karpetten meet je in diameter, niet als L×B — toon "Ø240 cm". De
+ * diameter = de grootste van de twee maten: ronde producten dragen de diameter
+ * vaak op `lengte_cm` met `breedte_cm = 0` (1506 stuks), de overige op een
+ * gelijke L=B (1508). Beide → één consistente Ø-notatie.
+ *
+ * Rechthoekig/ovaal/organisch: "kleinstexgrootste cm" (kleinste eerst).
+ * `null` = onvoldoende maat-data (geen breedte én niet rond) → de caller valt
+ * terug op het oude gedrag.
+ */
+function maatWeergave(lengte: number, breedte: number | null, vorm: string | null): string | null {
+  if (vorm === 'Rond') {
+    const diameter = Math.max(lengte, breedte ?? 0)
+    return diameter > 0 ? `Ø${diameter} cm` : null
+  }
+  if (!breedte) return null
+  return `${Math.min(lengte, breedte)}x${Math.max(lengte, breedte)} cm`
 }
 
 /**

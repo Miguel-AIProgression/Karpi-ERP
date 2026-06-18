@@ -1,5 +1,26 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-18 — Verzendetiket: ronde karpetten als Ø-diameter
+
+**Waarom:** vervolg op de kleurnummer+vorm-etiketregel. Ronde karpetten kregen
+de maat als L×B ("120x120 cm") of vielen — als ze alleen een diameter hadden
+(`breedte_cm=0`, ~1506 producten) — terug op het oude etiketgedrag zónder
+kwaliteit-titel. Een rond karpet meet je in diameter, niet als L×B.
+
+**Wat:** ronde producten tonen nu "KWALITEIT (kleurnr) Ø{diameter} cm Rond", bv.
+`RADIUS (18) Ø240 cm Rond` (diameter = grootste maat — dekt zowel de
+breedte=0-producten als de L=B-producten in één consistente notatie). Nieuwe
+pure helper `maatWeergave(lengte, breedte, vorm)` in
+[`shipping-label-data.ts`](../frontend/src/modules/logistiek/lib/shipping-label-data.ts);
+de `breedte`-guard in `vasteMaatRegels` is versoepeld zodat diameter-only ronde
+producten niet meer naar het legacy-pad vallen. **Ovaal/rechthoekig/organisch
+blijven L×B** (een ovaal heeft een rechthoekige bounding box, geen diameter).
+Puur frontend, geen migratie. Tests: shipping-label-data.test.ts uitgebreid
+(diameter-only + L=B + ovaal-blijft-L×B; Ø byte-veilig getoetst). Geverifieerd
+over alle 3015 ronde producten: 3014 krijgen nu een Ø-titel, 1 valt terug
+(geen kwaliteit/maat). **Print-aandachtspunt:** controleer of het Ø-symbool
+correct rendert op de thermische printer.
+
 ## 2026-06-18 — Feature: vervoerder "Eigen vervoer" (mig 424)
 
 **Waarom:** verzoek Thom (/pick-ship): naast HST/Rhenus/Verhoek ook "eigen
