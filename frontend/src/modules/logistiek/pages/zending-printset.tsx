@@ -4,7 +4,6 @@ import { ArrowLeft, FileText, Tags } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { PakbonDocument } from '@/modules/logistiek/components/pakbon-document'
 import { ShippingLabel } from '@/modules/logistiek/components/shipping-label'
-import { DpdShippingLabel } from '@/modules/logistiek/components/dpd-shipping-label'
 import { VervoerderTag } from '@/modules/logistiek/components/vervoerder-tag'
 import { ColliPickVinkjes } from '@/modules/logistiek/components/colli-pick-vinkjes'
 import { VoltooiPickrondeKnop } from '@/modules/logistiek/components/voltooi-pickronde-knop'
@@ -77,7 +76,6 @@ export function ZendingPrintSetPage() {
   }, [zending, colliFilter])
   const vervoerder = zending ? vervoerderInfoVoor(zending) : null
   const labelFormaat = zending ? labelFormaatVoor(zending) : null
-  const isPrintType = zending?.vervoerders?.type === 'print'
   const aantalTapijtStickers = totaalAantalTapijtStickers(tapijtStickers)
   const heeftTapijtStickers = aantalTapijtStickers > 0
   const tapijtStickersMeeprinten = includeTapijtStickers === true && heeftTapijtStickers
@@ -259,37 +257,26 @@ export function ZendingPrintSetPage() {
         data-print-mode={printMode}
         data-include-tapijt-stickers={tapijtStickersMeeprinten ? 'true' : 'false'}
       >
+        {/* Eén canonieke ShippingLabel voor álle vervoerders. De vroegere
+            DPD-render (`vervoerders.type==='print'`) is verwijderd: er is geen
+            actieve 'print'-vervoerder meer. Her-introduceren van een afwijkend
+            labelformaat = een nieuwe adapter, niet een tak hier. */}
         <div className="shipping-labels flex flex-col items-start gap-4">
-          {labels.map((label) =>
-            isPrintType ? (
-              <DpdShippingLabel
-                key={label.index}
-                zending={zending}
-                regel={label.regel}
-                colliIndex={label.index}
-                colliTotal={labels.length}
-                serviceCode={zending.service_code}
-                sscc={label.sscc}
-                omschrijvingSnapshot={label.omschrijvingSnapshot}
-                klantOmschrijvingSnapshot={label.klantOmschrijvingSnapshot}
-                klanteigenNaamSnapshot={label.klanteigenNaamSnapshot}
-              />
-            ) : (
-              <ShippingLabel
-                key={label.index}
-                zending={zending}
-                regel={label.regel}
-                colliIndex={label.index}
-                colliTotal={labels.length}
-                vervoerderNaam={vervoerder.naam}
-                sscc={label.sscc}
-                omschrijvingSnapshot={label.omschrijvingSnapshot}
-                klantOmschrijvingSnapshot={label.klantOmschrijvingSnapshot}
-                klanteigenNaamSnapshot={label.klanteigenNaamSnapshot}
-                labelFormaat={labelFormaat ?? undefined}
-              />
-            ),
-          )}
+          {labels.map((label) => (
+            <ShippingLabel
+              key={label.index}
+              zending={zending}
+              regel={label.regel}
+              colliIndex={label.index}
+              colliTotal={labels.length}
+              vervoerderNaam={vervoerder.naam}
+              sscc={label.sscc}
+              omschrijvingSnapshot={label.omschrijvingSnapshot}
+              klantOmschrijvingSnapshot={label.klantOmschrijvingSnapshot}
+              klanteigenNaamSnapshot={label.klanteigenNaamSnapshot}
+              labelFormaat={labelFormaat ?? undefined}
+            />
+          ))}
         </div>
 
         <PakbonDocument

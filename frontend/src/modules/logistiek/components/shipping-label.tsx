@@ -2,7 +2,6 @@ import { labelBarcode } from '@/lib/logistiek/labelbarcode'
 import { externReferentie } from '@/lib/orders/referentie'
 import { hstDepotVoorPostcode } from '@/modules/logistiek/lib/hst-depot'
 import { Code128Barcode } from './code128-barcode'
-import { ShippingLabelTall } from './shipping-label-tall'
 import {
   klanteigenReferentie,
   labelDatumKort,
@@ -38,26 +37,21 @@ export interface ShippingLabelProps {
 
 // Basis-celafmetingen in mm bij het 76,2×50,8-ontwerp — alles wordt absoluut
 // gepositioneerd zodat de print-engine het label NIET over twee pagina's kan
-// opbreken. Grotere liggende formaten (HST 152,4×76,2 sinds mig 362) schalen
-// deze maten én de fonts mee met de label-hoogte (factor s).
+// opbreken. Het canonieke formaat is liggend 152,4×76,2 (HST-basis, mig 362);
+// deze maten én de fonts schalen mee met de label-hoogte (factor s).
 const COL_RECHTS_MM = 22
 const RIJ1_MM = 10
 const RIJ3_MM = 13
 
-export function ShippingLabel(props: ShippingLabelProps) {
-  // 0.5mm aftrekken voor sub-pixel rounding-marge bij printen.
-  const breedteMm = (props.labelFormaat?.breedteMm ?? DEFAULT_LABEL_BREEDTE_MM) - 0.5
-  const hoogteMm = (props.labelFormaat?.hoogteMm ?? DEFAULT_LABEL_HOOGTE_MM) - 0.5
-
-  // Staande formaten (hoogte > breedte) krijgen het gestapelde ontwerp;
-  // liggende formaten het vertrouwde 3-rijen-grid, meegeschaald.
-  if (hoogteMm > breedteMm) {
-    return <ShippingLabelTall {...props} breedteMm={breedteMm} hoogteMm={hoogteMm} />
-  }
-  return <ShippingLabelCompact {...props} breedteMm={breedteMm} hoogteMm={hoogteMm} />
-}
-
-function ShippingLabelCompact({
+/**
+ * Het canonieke verzendlabel: één liggende layout voor álle vervoerders. De
+ * vroegere staande (`ShippingLabelTall`) en DPD-varianten zijn verwijderd —
+ * een tweede labelvorm rechtvaardigt pas dán een echte tweede adapter (twee
+ * adapters = een echte seam). Het enige per-vervoerder-verschil is het
+ * HST-depotnummer onder de badge (gelokaliseerd, geen registry nodig).
+ * Het formaat komt uit `labelFormaat` (override-seam) of de default.
+ */
+export function ShippingLabel({
   zending,
   regel,
   colliIndex,
@@ -67,9 +61,12 @@ function ShippingLabelCompact({
   omschrijvingSnapshot,
   klantOmschrijvingSnapshot,
   klanteigenNaamSnapshot,
-  breedteMm,
-  hoogteMm,
-}: ShippingLabelProps & { breedteMm: number; hoogteMm: number }) {
+  labelFormaat,
+}: ShippingLabelProps) {
+  // 0.5mm aftrekken voor sub-pixel rounding-marge bij printen.
+  const breedteMm = (labelFormaat?.breedteMm ?? DEFAULT_LABEL_BREEDTE_MM) - 0.5
+  const hoogteMm = (labelFormaat?.hoogteMm ?? DEFAULT_LABEL_HOOGTE_MM) - 0.5
+
   const order = zending.orders
   const snapshot = { omschrijvingSnapshot, klantOmschrijvingSnapshot }
   const productRegels = labelProductRegels(regel, snapshot)
@@ -262,7 +259,7 @@ function ShippingLabelCompact({
             overflow: 'hidden',
             // Horizontaal (textAlign) én verticaal (flex-kolom + justify center)
             // centreren, zodat het adres écht in het midden van het zwarte vak
-            // staat i.p.v. bovenaan — spiegelt ShippingLabelTall.
+            // staat i.p.v. bovenaan.
             textAlign: 'center',
             display: 'flex',
             flexDirection: 'column',

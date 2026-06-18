@@ -1,5 +1,40 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-18 — Verzendlabel als één deep module (compact/staand/DPD geconsolideerd)
+
+**Waarom:** HST- en Rhenus-labels zagen er verschillend uit op dezelfde printer
+(ZT231). Diagnose: het labelformaat is per vervoerder data
+([`labelFormaatVoor`](../frontend/src/modules/logistiek/lib/printset.ts)); HST stond
+op **152,4 × 76,2** (mig 362), Rhenus/Verhoek hadden géén formaat-rij → terugval op
+de kleine legacy-default **76,2 × 50,8** → ander schaalniveau en afgekapte badge
+("Rhe…"). Daaronder leefden **drie shallow renderers** (compact/staand/DPD) die elk
+dezelfde data-proloog en zones herhaalden, terwijl er maar één live layout was: alle
+drie de actieve vervoerders renderden via het compacte label.
+
+**Wat:**
+- **Default-formaat → 152,4 × 76,2** ([`printset.ts`](../frontend/src/modules/logistiek/lib/printset.ts)):
+  HST-maat als basis. Rhenus/Verhoek (NULL) erven het grote liggende label vanzelf
+  → "Rhe…" verdwijnt; de `vervoerders.label_*_mm`-kolom blijft de override-seam.
+  Dit is op zichzelf de zichtbare fix.
+- **Eén canonieke `ShippingLabel`** ([`shipping-label.tsx`](../frontend/src/modules/logistiek/components/shipping-label.tsx)):
+  de staande tak (`ShippingLabelTall`) en het DPD-label zijn verwijderd; de
+  compact-render is geïnlined tot één functie. Het enige per-vervoerder-verschil
+  blijft het HST-depotnummer onder de badge (gelokaliseerde `vervoerder_code === 'hst_api'`-check).
+- **Eén render-pad in beide printset-pagina's** ([`zending-printset.tsx`](../frontend/src/modules/logistiek/pages/zending-printset.tsx),
+  [`bulk-printset.tsx`](../frontend/src/modules/logistiek/pages/bulk-printset.tsx)):
+  de `isPrintType`-tak + `DpdShippingLabel`-import zijn weg. `service_code` /
+  `vervoerders.type='print'` blijven in het datamodel/CRUD bestaan (out of scope),
+  maar worden niet meer door de label-render geraakt. Her-introduceren van een
+  afwijkend labelformaat = pas dán een echte tweede adapter.
+- **Vangnet:** nieuw [`shipping-label.test.tsx`](../frontend/src/modules/logistiek/components/shipping-label.test.tsx)
+  (render-karakterisering: depot-lookup alleen HST, volledige badge, SSCC-barcode-bron,
+  alle zones). `printset.test.ts` / `pakbon-document.test.tsx` ongewijzigd groen.
+
+**Verwijderd:** `shipping-label-tall.tsx`, `dpd-shipping-label.tsx`.
+**Geen migratie / edge-deploy** (puur frontend). Plan:
+[`docs/superpowers/plans/2026-06-18-verzendlabel-een-deep-module.md`](superpowers/plans/2026-06-18-verzendlabel-een-deep-module.md).
+**Print-gate:** gebruiker test HST + Rhenus naast elkaar op de ZT231 vóór merge.
+
 ## 2026-06-18 — Colli-bundeling bij Rhenus (mig 420)
 
 Magazijn kan binnen één Rhenus-zending colli samenpakken onder één nieuwe

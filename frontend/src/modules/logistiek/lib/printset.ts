@@ -9,11 +9,14 @@ import type {
   ZendingPrintSet,
 } from '../queries/zendingen'
 
-// Zebra-standaard 3"×2" verzendlabel — fysiek formaat op de Karpi-printer
-// (ZD420 met 76.2×50.8mm rollen). Per-vervoerder afwijkende formaten worden
-// uitgelezen uit `vervoerders.label_breedte_mm / label_hoogte_mm`.
-export const DEFAULT_LABEL_BREEDTE_MM = 76.2
-export const DEFAULT_LABEL_HOOGTE_MM = 50.8
+// Zebra-standaard 3"×6" liggend verzendlabel (152,4×76,2mm) — het fysieke
+// formaat op de Karpi-printer (ZT231). HST stond al expliciet op deze maat
+// (mig 362) en is de basis voor het canonieke verzendlabel; Rhenus/Verhoek
+// (geen `vervoerders.label_*_mm`-rij → NULL) erven dit grote label nu vanzelf,
+// zodat de afgekapte "Rhe…"-badge verdwijnt. De kolom blijft de override-seam:
+// een vervoerder die echt afwijkt, zet zijn eigen `label_breedte_mm/_hoogte_mm`.
+export const DEFAULT_LABEL_BREEDTE_MM = 152.4
+export const DEFAULT_LABEL_HOOGTE_MM = 76.2
 
 export interface LabelFormaat {
   breedteMm: number
