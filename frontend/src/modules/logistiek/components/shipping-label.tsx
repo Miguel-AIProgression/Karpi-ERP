@@ -5,9 +5,8 @@ import { Code128Barcode } from './code128-barcode'
 import { ShippingLabelTall } from './shipping-label-tall'
 import {
   labelDatumKort,
+  labelProductRegels,
   labelReferentie,
-  productMaat,
-  productNamen,
 } from '@/modules/logistiek/lib/shipping-label-data'
 import {
   DEFAULT_LABEL_BREEDTE_MM,
@@ -68,9 +67,7 @@ function ShippingLabelCompact({
 }: ShippingLabelProps & { breedteMm: number; hoogteMm: number }) {
   const order = zending.orders
   const snapshot = { omschrijvingSnapshot, klantOmschrijvingSnapshot }
-  const namen = productNamen(regel, snapshot)
-  const toonKarpi = namen.karpiNaam && namen.karpiNaam !== namen.klantNaam
-  const maat = productMaat(regel, snapshot)
+  const productRegels = labelProductRegels(regel, snapshot)
   const land = zending.afl_land ?? 'NL'
   const barcodeValue = labelBarcode(sscc)
   const ref = labelReferentie(order)
@@ -180,10 +177,9 @@ function ShippingLabelCompact({
             textOverflow: 'ellipsis',
           }}
         >
-          {namen.klantNaam}
-          {maat ? ` - ${maat}` : ''}
+          {productRegels.groot}
         </div>
-        {toonKarpi && (
+        {productRegels.klein && (
           <div
             style={{
               fontSize: fz(6),
@@ -193,7 +189,7 @@ function ShippingLabelCompact({
               textOverflow: 'ellipsis',
             }}
           >
-            {namen.karpiNaam}
+            {productRegels.klein}
           </div>
         )}
       </div>

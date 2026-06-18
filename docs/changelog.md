@@ -1,5 +1,38 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-18 — Verzendlabel: kwaliteitsnaam + maten i.p.v. kale Karpi-code
+
+**Waarom:** op het verzendetiket stond de productregel als kale Karpi-code
+(`GALA10XX200290` groot, `GALA10XX200290 290x200 cm` klein) — voor de
+magazijnier/chauffeur niet leesbaar. Gevraagd: de **kwaliteitsnaam + maten**
+prominent, met de Karpi-code als referentie eronder.
+
+**Wat (vaste-maat producten):**
+- Grote regel = **kwaliteitsnaam + maten met de kleinste maat eerst**
+  ("Galaxy 200x290 cm"); kleine regel = **de Karpi-code** ("GALA10XX200290").
+- Nieuwe pure helper [`labelProductRegels`](../frontend/src/modules/logistiek/lib/shipping-label-data.ts)
+  bepaalt beide regels. Vaste maat → nieuw formaat; **maatwerk + alle gevallen
+  met onvoldoende data** (geen product/kwaliteit/maat) vallen terug op het
+  bestaande gedrag (klant-omschrijving groot, snapshot-omschrijving klein).
+- Toegepast op alle drie de labelvarianten: compact
+  [`ShippingLabel`](../frontend/src/modules/logistiek/components/shipping-label.tsx),
+  staand [`ShippingLabelTall`](../frontend/src/modules/logistiek/components/shipping-label-tall.tsx)
+  en [`DpdShippingLabel`](../frontend/src/modules/logistiek/components/dpd-shipping-label.tsx).
+  Hoofdletter-stijl behouden (thermische leesbaarheid).
+- **Live afgeleid** (geen snapshot/migratie): de label-query
+  [`fetchZendingPrintSet`](../frontend/src/modules/logistiek/queries/zendingen.ts)
+  haalt nu `producten.karpi_code`, `kwaliteit_code` en de kwaliteitsnaam op
+  (`producten → kwaliteiten(omschrijving)`). De kwaliteit + maten zijn stabiele
+  data; een herprint na een kwaliteitscorrectie toont automatisch de nieuwe naam.
+
+**Bewust ongewijzigd:** de bevroren `zending_colli.omschrijving_snapshot` — dus
+wat HST/Rhenus/Verhoek en de pakbon krijgen blijft exact gelijk. De wijziging is
+puur de **etiket-weergave**.
+
+**Vangnet:** [`shipping-label-data.test.ts`](../frontend/src/modules/logistiek/lib/shipping-label-data.test.ts)
+(7 cases: kleinste-eerst, karpi_code-fallback, kwaliteit/maat-ontbreekt-fallback,
+maatwerk + legacy ongewijzigd).
+
 ## 2026-06-17 — HST-depotnummer op het verzendlabel
 
 **Waarom:** HST sorteert binnenkomende colli over depots op basis van de

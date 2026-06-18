@@ -3,8 +3,8 @@ import { externReferentie } from '@/lib/orders/referentie'
 import { Code128Barcode } from './code128-barcode'
 import {
   labelDatumKort,
+  labelProductRegels,
   labelReferentie,
-  productNamen,
 } from '@/modules/logistiek/lib/shipping-label-data'
 import type { ZendingPrintRegel, ZendingPrintSet } from '@/modules/logistiek/queries/zendingen'
 
@@ -39,9 +39,9 @@ export function DpdShippingLabel({
 }: Props) {
   const order = zending.orders
   // Single source (mig 388): één omschrijving-bron, gelijk aan label/pakbon/
-  // vervoerder — geen eigen DPD-afleiding meer.
-  const namen = productNamen(regel, { omschrijvingSnapshot, klantOmschrijvingSnapshot })
-  const toonKarpi = namen.karpiNaam && namen.karpiNaam !== namen.klantNaam
+  // vervoerder — geen eigen DPD-afleiding meer. Vaste-maat krijgt sinds
+  // 2026-06-18 de kwaliteitsnaam + maten groot, Karpi-code klein.
+  const productRegels = labelProductRegels(regel, { omschrijvingSnapshot, klantOmschrijvingSnapshot })
   const land = zending.afl_land ?? 'NL'
   const barcodeValue = labelBarcode(sscc) // AI(00)+SSCC, gedeelde seam
   const datum = labelDatumKort(zending)
@@ -63,11 +63,11 @@ export function DpdShippingLabel({
                 <span className="text-[7px]">Uw ref: {externReferentie(order.klant_referentie)}</span>
               )}
             </div>
-            <div className="mt-0.5 text-[8px] font-semibold leading-snug">
-              {namen.klantNaam}
+            <div className="mt-0.5 text-[8px] font-semibold uppercase leading-snug">
+              {productRegels.groot}
             </div>
-            {toonKarpi && (
-              <div className="text-[7px] leading-snug">{namen.karpiNaam}</div>
+            {productRegels.klein && (
+              <div className="text-[7px] leading-snug">{productRegels.klein}</div>
             )}
           </div>
           <div className="text-right text-[8px] leading-tight">

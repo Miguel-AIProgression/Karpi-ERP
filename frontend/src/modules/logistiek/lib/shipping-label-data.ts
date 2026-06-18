@@ -58,6 +58,63 @@ export function productNamen(
   return { klantNaam: klantNaam || (regel?.artikelnr ?? 'Artikel'), karpiNaam }
 }
 
+/** De twee productregels zoals ze op het verzendlabel verschijnen. */
+export interface LabelProductRegels {
+  /** Grote (vette) productregel. */
+  groot: string
+  /** Kleinere regel eronder; `null` = niet tonen. */
+  klein: string | null
+}
+
+/**
+ * Bepaalt de twee productregels op het verzendlabel.
+ *
+ * VASTE-MAAT producten (besluit 2026-06-18): grote regel = kwaliteitsnaam +
+ * maten met de KLEINSTE maat eerst ("Galaxy 200x290 cm"), kleine regel = de
+ * Karpi-code (`producten.karpi_code`). Live afgeleid uit orderregel + product;
+ * de vervoerder-omschrijving (`omschrijving_snapshot`) verandert hier NIET mee.
+ *
+ * Maatwerk en alle gevallen met onvoldoende data (geen product, geen kwaliteit
+ * of geen maat) vallen terug op het bestaande gedrag (klant-omschrijving groot,
+ * Karpi-snapshot-omschrijving klein) — pakbon en carrier-payload blijven gelijk.
+ */
+export function labelProductRegels(
+  regel: ZendingPrintRegel | null,
+  snapshot?: OmschrijvingSnapshot | null,
+): LabelProductRegels {
+  const vast = vasteMaatRegels(regel)
+  if (vast) return vast
+
+  const namen = productNamen(regel, snapshot)
+  const maat = productMaat(regel, snapshot)
+  const groot = `${namen.klantNaam}${maat ? ` - ${maat}` : ''}`
+  const klein =
+    namen.karpiNaam && namen.karpiNaam !== namen.klantNaam ? namen.karpiNaam : null
+  return { groot, klein }
+}
+
+/**
+ * Vaste-maat-formaat (kwaliteitsnaam + maten / Karpi-code), of `null` als het
+ * niet van toepassing is — dan valt de caller terug op het oude gedrag.
+ */
+function vasteMaatRegels(regel: ZendingPrintRegel | null): LabelProductRegels | null {
+  const orderRegel = regel?.order_regels
+  if (!orderRegel || orderRegel.is_maatwerk) return null
+  const product = orderRegel.producten
+  if (!product) return null
+  const kwaliteit = product.kwaliteiten?.omschrijving?.trim()
+  const lengte = product.lengte_cm
+  const breedte = product.breedte_cm
+  if (!kwaliteit || !lengte || !breedte) return null
+  const kleinsteMaat = Math.min(lengte, breedte)
+  const grootsteMaat = Math.max(lengte, breedte)
+  const klein = (product.karpi_code ?? regel?.artikelnr ?? '').trim() || null
+  return {
+    groot: `${kwaliteit} ${kleinsteMaat}x${grootsteMaat} cm`,
+    klein,
+  }
+}
+
 export function productMaat(
   regel: ZendingPrintRegel | null,
   snapshot?: OmschrijvingSnapshot | null,
