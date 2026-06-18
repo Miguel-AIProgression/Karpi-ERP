@@ -32,6 +32,34 @@ process-as (ADR-0035) — vóór nu lekte de `VerzendAdapter` nog per-carrier RP
 - **Cutover (open):** drain + crons gepauzeerd, mig 426 + 3 edge functions + frontend in
   één venster — draaiboek + contract-drop (slice 5/6) in het plan. Vangnet-fix vooraf:
   fake-supabase `.is()` toegevoegd (de colli-bundel-mig 420 had de 15 tests rood gezet).
+
+## 2026-06-18 — UI: maatwerk-"Te leveren"-kolom toont de productie-fase
+
+**Waarom:** vervolg op de "In productie"-wijziging. Dat ene generieke label gaf
+geen inzicht in hóe ver een maatwerk-stuk in de werkvloer-flow zit. De operator
+wil de echte fase zien (besteld → snijden → gesneden → afwerken → klaar).
+
+**Wat:** de "Te leveren"-cel toont voor maatwerk nu een **fase-badge** die de
+snijplanning/confectie-flow spiegelt, in 5 fases (traagste stuk telt, net als de
+pickbaarheid-view mig 386; geannuleerde stuks tellen niet mee):
+
+| Snijplan-status | Fase | Kleur |
+|---|---|---|
+| Wacht | Te plannen | grijs |
+| Gepland · Snijden | Op de snijplanning | blauw |
+| Gesneden | Gesneden | amber |
+| In confectie · Gereed · In productie | In afwerking | paars |
+| Ingepakt | Klaar voor verzending | groen |
+
+Puur frontend, geen DB-wijziging; `te_leveren` blijft ongemoeid. De per-stuk
+snijplan-status-badge onder de regel blijft de fijnmazige status tonen.
+- [`maatwerk-productie.ts`](../frontend/src/lib/orders/maatwerk-productie.ts):
+  `MaatwerkFase`-type + `bepaalMaatwerkFase()` (puur, `Record<SnijplanStatus,…>`
+  zodat de compiler een nieuwe enum-waarde afdwingt) + presentatie-map;
+  `isMaatwerkProductieKlaar` blijft als dunne afgeleide. Test uitgebreid (9 cases).
+- [`order-regels-table.tsx`](../frontend/src/components/orders/order-regels-table.tsx):
+  kleine `MaatwerkFaseBadge` i.p.v. de binaire "In productie"-tekst.
+
 ## 2026-06-18 — UI: maatwerk-orderregel toont "In productie" i.p.v. "Te leveren"
 
 **Waarom:** op order-detail toonde de kolom "Te leveren" voor een maatwerk-regel

@@ -10,8 +10,24 @@ import { isoWeekFromString, isoWeekString, isoWeekStringVanIso } from '@/lib/uti
 import type { OrderRegel } from '@/lib/supabase/queries/orders'
 import { setRegelVerzendweek } from '@/lib/supabase/queries/orders'
 import { isAdminPseudo } from '@/lib/orders/admin-pseudo'
-import { isMaatwerkProductieKlaar } from '@/lib/orders/maatwerk-productie'
+import { bepaalMaatwerkFase, MAATWERK_FASE_PRESENTATIE } from '@/lib/orders/maatwerk-productie'
 import { LevertijdBadge, UitwisselbaarToepassenRij, type OrderRegelLevertijd, type OrderClaim } from '@/modules/reserveringen'
+
+/**
+ * Toont in de "Te leveren"-kolom de samenvattende productie-fase van een
+ * maatwerk-regel (traagste stuk telt) i.p.v. het misleidende orderaantal.
+ * De fijnmazige status per stuk staat als badge onder de regel.
+ */
+function MaatwerkFaseBadge({ snijplannen }: { snijplannen?: { status: string }[] }) {
+  const presentatie = MAATWERK_FASE_PRESENTATIE[bepaalMaatwerkFase(snijplannen)]
+  return (
+    <span
+      className={`inline-block px-1.5 py-0.5 rounded text-xs font-medium ${presentatie.bg} ${presentatie.text}`}
+    >
+      {presentatie.label}
+    </span>
+  )
+}
 
 function formatVerzendweek(w: string): string {
   const m = w.match(/^(\d{4})-W(\d{2})$/)
@@ -374,13 +390,8 @@ function RegelRow({ regel, orderId, orderdatum, orderVerzendweek, levertijd, cla
         </td>
         <td className="px-4 py-2 text-right">{regel.orderaantal}</td>
         <td className="px-4 py-2 text-right">
-          {regel.is_maatwerk && !isMaatwerkProductieKlaar(regel.snijplannen) ? (
-            <span
-              className="text-xs font-medium text-violet-600"
-              title="Nog in productie — wordt 'te leveren' zodra alle stuks ingepakt zijn"
-            >
-              In productie
-            </span>
+          {regel.is_maatwerk ? (
+            <MaatwerkFaseBadge snijplannen={regel.snijplannen} />
           ) : (
             regel.te_leveren
           )}
