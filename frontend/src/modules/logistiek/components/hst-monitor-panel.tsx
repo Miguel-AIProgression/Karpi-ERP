@@ -42,7 +42,6 @@ export function HstMonitorPanel() {
               <tr>
                 <th className="px-3 py-2 text-left font-medium">Zending</th>
                 <th className="px-3 py-2 text-left font-medium">Fout</th>
-                <th className="px-3 py-2 text-right font-medium">HTTP</th>
                 <th className="px-3 py-2 text-right font-medium">Retries</th>
                 <th className="px-3 py-2 text-right font-medium">Actie</th>
               </tr>
@@ -56,7 +55,6 @@ export function HstMonitorPanel() {
                     </Link>
                   </td>
                   <td className="px-3 py-2 text-slate-700">{f.error_msg ?? '—'}</td>
-                  <td className="px-3 py-2 text-right text-slate-600">{f.response_http_code ?? '—'}</td>
                   <td className="px-3 py-2 text-right text-slate-600">{f.retry_count}</td>
                   <td className="px-3 py-2 text-right">
                     <button

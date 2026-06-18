@@ -23,8 +23,9 @@ export function VervoerderDetailPage() {
   const { data: recenteZendingen = [] } = useRecenteZendingenVervoerder(code, 10)
   const updateMut = useUpdateVervoerder()
 
-  // Verzendmonitor is HST-specifiek (view hst_verzend_monitor) en verschijnt
-  // alleen als tab op de hst_api-vervoerder. Route: /logistiek/vervoerders/hst_api/monitor
+  // Verzendmonitor is HST-specifiek (view verzend_monitor, gefilterd op
+  // vervoerder_code='hst_api'; mig 424) en verschijnt alleen als tab op de
+  // hst_api-vervoerder. Route: /logistiek/vervoerders/hst_api/monitor
   const heeftMonitor = code === 'hst_api'
   const { pathname } = useLocation()
   const monitorActief = heeftMonitor && pathname.endsWith('/monitor')

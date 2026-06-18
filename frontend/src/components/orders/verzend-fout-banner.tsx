@@ -12,7 +12,8 @@ interface TransportorderRij {
 interface ZendingRij {
   zending_nr: string
   status: string
-  hst_transportorders: TransportorderRij[]
+  /** Mig 424 (ADR-0038): geconsolideerde verzend-wachtrij-rijen. */
+  verzend_wachtrij: TransportorderRij[]
 }
 
 export interface OpenVerzendFout {
@@ -30,7 +31,7 @@ export interface OpenVerzendFout {
 export function bepaalOpenVerzendFouten(zendingen: ZendingRij[]): OpenVerzendFout[] {
   const fouten: OpenVerzendFout[] = []
   for (const z of zendingen) {
-    const rijen = z.hst_transportorders ?? []
+    const rijen = z.verzend_wachtrij ?? []
     const heeftActiefOfGeslaagd = rijen.some((t) =>
       ['Wachtrij', 'Bezig', 'Verstuurd'].includes(t.status),
     )
@@ -47,7 +48,7 @@ async function fetchOpenVerzendFouten(orderId: number): Promise<OpenVerzendFout[
   // 1-op-1 zendingen ook gevuld, dus deze route dekt solo én bundel).
   const { data, error } = await supabase
     .from('zending_orders')
-    .select('zendingen ( zending_nr, status, hst_transportorders ( id, status, error_msg ) )')
+    .select('zendingen ( zending_nr, status, verzend_wachtrij ( id, status, error_msg ) )')
     .eq('order_id', orderId)
   if (error) throw error
   const zendingen = (data ?? [])

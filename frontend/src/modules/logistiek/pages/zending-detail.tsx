@@ -57,7 +57,8 @@ interface ZendingDetailShape {
     bundel_order: BundelOrder | null
   }>
   zending_regels: ZendingRegelRow[]
-  hst_transportorders: HstTransportorderRow[]
+  /** Mig 424 (ADR-0038): geconsolideerde verzend-wachtrij-rijen voor deze zending. */
+  verzend_wachtrij: HstTransportorderRow[]
 }
 
 export function ZendingDetailPage() {
@@ -247,16 +248,16 @@ export function ZendingDetailPage() {
         )}
       </Section>
 
-      {/* Sectie 4 — HST-transportorders-historie */}
-      <Section titel={`HST-transportorders (${z.hst_transportorders?.length ?? 0})`}>
-        {!z.hst_transportorders || z.hst_transportorders.length === 0 ? (
+      {/* Sectie 4 — transportorders-historie (mig 424: geconsolideerde verzend_wachtrij) */}
+      <Section titel={`Transportorders (${z.verzend_wachtrij?.length ?? 0})`}>
+        {!z.verzend_wachtrij || z.verzend_wachtrij.length === 0 ? (
           <div className="text-sm text-slate-400">
             Nog geen transportorder. Wordt automatisch aangemaakt door de trigger zodra de
             klant een vervoerder heeft.
           </div>
         ) : (
           <div className="space-y-4">
-            {z.hst_transportorders.map((t) => (
+            {z.verzend_wachtrij.map((t) => (
               <HstTransportorderCard
                 key={t.id}
                 row={t}

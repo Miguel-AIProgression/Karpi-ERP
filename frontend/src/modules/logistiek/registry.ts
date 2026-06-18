@@ -1,10 +1,11 @@
 // Logistiek-vervoerder-registry: pure display-data per vervoerder.
 //
 // Géén berichttypen-registry — adapters bepalen zelf welke payloads ze sturen.
-// HST gebruikt `hst_transportorders`; Verhoek en Rhenus hebben eigen
-// SFTP-adapter-tabellen (`verhoek_transportorders` mig 375 / ADR-0031,
-// `rhenus_transportorders` mig 380 / ADR-0032). Deze registry dient alleen
-// voor UI-mapping (display-naam, badge-kleur).
+// Sinds mig 424 (ADR-0038) delen alle vervoerders (HST/Verhoek/Rhenus) één
+// geconsolideerde tabel `verzend_wachtrij`, gediscrimineerd op `vervoerder_code`
+// (verving de aparte `hst_transportorders`/`verhoek_transportorders`/
+// `rhenus_transportorders`). Deze registry dient alleen voor UI-mapping
+// (display-naam, badge-kleur).
 //
 // Bron-van-waarheid voor "is deze vervoerder geactiveerd?" blijft de tabel
 // `vervoerders` (kolom `actief`). Dit registry-bestand wordt niet automatisch

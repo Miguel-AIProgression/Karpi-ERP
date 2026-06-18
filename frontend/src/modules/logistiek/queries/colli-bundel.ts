@@ -33,11 +33,13 @@ export async function fetchZendingColliVoorBundel(zendingId: number): Promise<Co
   return (data ?? []) as unknown as ColliBundelRij[]
 }
 
-/** Laatste actieve Rhenus-transportorder (Wachtrij/Bezig/Verstuurd), of null. */
+/** Laatste actieve Rhenus-transportorder (Wachtrij/Bezig/Verstuurd), of null.
+ *  Mig 424 (ADR-0038): geconsolideerde `verzend_wachtrij`, gefilterd op vervoerder. */
 export async function fetchRhenusAanmelding(zendingId: number): Promise<RhenusAanmeldStatus | null> {
   const { data, error } = await supabase
-    .from('rhenus_transportorders')
+    .from('verzend_wachtrij')
     .select('status')
+    .eq('vervoerder_code', 'rhenus_sftp')
     .eq('zending_id', zendingId)
     .in('status', ['Wachtrij', 'Bezig', 'Verstuurd'])
     .order('id', { ascending: false })

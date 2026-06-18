@@ -184,8 +184,9 @@ export interface ZendingPrintSet {
 /**
  * Lijst-query voor de logistiek-overzichtspagina.
  *
- * V1: alleen `hst_transportorders`. Bij toekomstige Rhenus/Verhoek-vertical wordt
- * hier een tweede query toegevoegd voor `edi_berichten WHERE berichttype='verzendbericht'`.
+ * Mig 424 (ADR-0038): alle vervoerders delen één `verzend_wachtrij`-tabel,
+ * gediscrimineerd op `vervoerder_code`. Eén zending heeft hooguit één
+ * vervoerder, dus de embed levert 0 of 1 rij.
  */
 export async function fetchZendingen(filters: ZendingenFilters = {}) {
   let q = supabase
@@ -207,8 +208,8 @@ export async function fetchZendingen(filters: ZendingenFilters = {}) {
           id, order_nr
         )
       ),
-      hst_transportorders (
-        id, status, extern_transport_order_id, extern_tracking_number, sent_at
+      verzend_wachtrij (
+        id, status, extern_referentie, track_trace, sent_at
       )
     `,
     )
@@ -260,7 +261,7 @@ export async function fetchZendingMetTransportorders(zending_nr: string) {
           id, order_id, regelnummer, artikelnr, omschrijving
         )
       ),
-      hst_transportorders ( * )
+      verzend_wachtrij ( * )
     `,
     )
     .eq('zending_nr', zending_nr)
@@ -409,13 +410,15 @@ function toError(error: unknown, fallback: string): Error {
 /**
  * Reset een Fout-rij naar Wachtrij zodat de cron 'm opnieuw oppakt.
  *
+ * Mig 424 (ADR-0038): één geconsolideerde `verzend_wachtrij`-tabel.
  * Edge case: als er ondertussen al een nieuwe actieve transportorder voor
- * dezelfde zending bestaat, blokkeert de unique-index `uk_hst_to_zending_actief`
- * de update. We zetten eventuele duplicate eerst op `Geannuleerd`.
+ * dezelfde zending bestaat, blokkeert de unique-index
+ * `uk_verzend_wachtrij_zending_actief` de update. We zetten eventuele duplicate
+ * eerst op `Geannuleerd`.
  */
 export async function verstuurZendingOpnieuw(transportorder_id: number) {
   const { data: huidig, error: fetchError } = await supabase
-    .from('hst_transportorders')
+    .from('verzend_wachtrij')
     .select('id, zending_id')
     .eq('id', transportorder_id)
     .single()
@@ -424,7 +427,7 @@ export async function verstuurZendingOpnieuw(transportorder_id: number) {
 
   if (huidig) {
     const { error: cancelError } = await supabase
-      .from('hst_transportorders')
+      .from('verzend_wachtrij')
       .update({
         status: 'Geannuleerd',
         error_msg: 'Vervangen door retry van #' + transportorder_id,
@@ -437,7 +440,7 @@ export async function verstuurZendingOpnieuw(transportorder_id: number) {
   }
 
   return await supabase
-    .from('hst_transportorders')
+    .from('verzend_wachtrij')
     .update({ status: 'Wachtrij', error_msg: null, retry_count: 0 })
     .eq('id', transportorder_id)
 }
