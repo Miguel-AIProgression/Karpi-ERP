@@ -1,4 +1,4 @@
--- Migratie 422: factuur-verzend-vertraging (2 uur buffer na verzending)
+-- Migratie 423: factuur-verzend-vertraging (2 uur buffer na verzending)
 --
 -- Tot nu wordt een per_zending-factuur DIRECT na het verzenden van de zending
 -- geenqueued (enqueue_factuur_voor_event, mig 252) en binnen een minuut door de
@@ -26,7 +26,7 @@ ALTER TABLE factuur_queue
   ADD COLUMN IF NOT EXISTS beschikbaar_op TIMESTAMPTZ;
 
 COMMENT ON COLUMN factuur_queue.beschikbaar_op IS
-  'Mig 422: vroegste moment waarop deze rij door claim_factuur_queue_items '
+  'Mig 423: vroegste moment waarop deze rij door claim_factuur_queue_items '
   'opgepakt mag worden. NULL = direct beschikbaar (wekelijks/legacy/retry). '
   'Event-driven per_zending krijgt now() + facturatie.vertraging_minuten.';
 
@@ -115,7 +115,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION enqueue_factuur_voor_event() IS
-  'Mig 422 (was mig 252): enqueue per bundel-zending met verzend-vertraging '
+  'Mig 423 (was mig 252): enqueue per bundel-zending met verzend-vertraging '
   '(beschikbaar_op = now() + facturatie.vertraging_minuten, default 2u). '
   'Gate op factuurvoorkeur; ON CONFLICT dedupliceert zusterorders.';
 
@@ -156,7 +156,7 @@ $$;
 GRANT EXECUTE ON FUNCTION claim_factuur_queue_items(INTEGER) TO authenticated, service_role;
 
 COMMENT ON FUNCTION claim_factuur_queue_items(INTEGER) IS
-  'Mig 422 (was mig 234): claim met FOR UPDATE SKIP LOCKED + beschikbaar_op-gate '
+  'Mig 423 (was mig 234): claim met FOR UPDATE SKIP LOCKED + beschikbaar_op-gate '
   '(NULL of <= now()). Return-shape onveranderd t.o.v. mig 234.';
 
 NOTIFY pgrst, 'reload schema';

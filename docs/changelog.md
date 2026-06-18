@@ -1,6 +1,6 @@
 # Changelog — RugFlow ERP
 
-## 2026-06-18 — Factuur: 2-uur verzend-vertraging + pakbon als bijlage (mig 422)
+## 2026-06-18 — Factuur: 2-uur verzend-vertraging + pakbon als bijlage (mig 423)
 
 **Waarom:** een per-zending-factuur werd tot nu DIRECT na het verzenden van de
 zending geënqueued en binnen een minuut gemaild — geen venster om een laatste
@@ -8,7 +8,7 @@ correctie te doen of een fout te onderscheppen vóór de factuur de deur uit was
 Daarnaast moet de klant de pakbon bij de factuur ontvangen.
 
 **Wat:**
-- **Mig 422 — verzend-vertraging:** nieuwe kolom `factuur_queue.beschikbaar_op`.
+- **Mig 423 — verzend-vertraging:** nieuwe kolom `factuur_queue.beschikbaar_op`.
   `enqueue_factuur_voor_event` (was mig 252) zet die op `now() +
   app_config.facturatie.vertraging_minuten` (default **120 min = 2 uur**);
   `claim_factuur_queue_items` (was mig 234, return-shape onveranderd) pakt enkel
@@ -30,7 +30,7 @@ Daarnaast moet de klant de pakbon bij de factuur ontvangen.
   geüpload voor de e-mailtijdlijn-referentie.
 - Vangnet: `_shared/pakbon/aggregatie.test.ts` (10 tests) groen; Deno-typecheck
   introduceert geen nieuwe fout-klasse (alleen de bestaande `never`-ruis).
-- **Deploy:** mig 422 toepassen + `supabase functions deploy factuur-verzenden`
+- **Deploy:** mig 423 toepassen + `supabase functions deploy factuur-verzenden`
   (de `_shared/pakbon/`-map moet meekomen in de bundel).
 
 ## 2026-06-18 — Rhenus colli-bundeling tijdens de pickronde (mig 421 + pop-up)
