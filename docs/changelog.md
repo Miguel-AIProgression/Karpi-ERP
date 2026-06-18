@@ -1,5 +1,38 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-18 — Verzend-wachtrij als data-as: één tabel gediscrimineerd op vervoerder_code (ADR-0038)
+
+**Waarom:** drie near-identieke wachtrij-tabellen (`hst_transportorders` mig 171/304,
+`verhoek_transportorders` mig 375, `rhenus_transportorders` mig 380) met dezelfde
+operationele state-kern + elk een eigen RPC-set (5×3) + monitor-view (×3), en een
+dispatch die bij élke nieuwe vervoerder volledig herschreven werd (mig 210→375→380→420).
+De carrier-verschillen waren puur storage-details. Dit is de **data-as**, de laatste
+van de drie vervoerder-seams na keuze-as (ADR-0008/0030), capability-as (ADR-0034) en
+process-as (ADR-0035) — vóór nu lekte de `VerzendAdapter` nog per-carrier RPC-namen.
+
+**Wat (branch `refactor/verzend-wachtrij-data-as`, nog niet gecutoverd):**
+- **Mig 424** — één tabel `verzend_wachtrij` (enum `verzend_status`, discriminator
+  `vervoerder_code`, generieke velden `extern_referentie`/`track_trace`/`document_pad`,
+  combined unique-active-index). De zware payload is **geschrapt** — die leeft al in
+  `externe_payloads` (mig 325). Generieke RPC's (`enqueue_transportorder` /
+  `claim_volgende_transportorder` / `markeer_transportorder_verstuurd` / `_fout` /
+  `herstel_vastgelopen_verzending`) + view `verzend_monitor` (GROUP BY) + lees-shims voor
+  de 3 oude views. Dispatch `enqueue_zending_naar_vervoerder`: api/sftp-takken collapsen
+  tot één `enqueue_transportorder(code)` (nul dispatch-edits voor een nieuwe carrier).
+  order_documenten-spiegel (mig 304) overgenomen, gegate op hst_api. Backfill uit de 3
+  oude tabellen; OUDE tabellen + RPC's blijven staan als rollback (drop = slice 5).
+- **Edge** — `_shared/verzend-orchestrator.ts` bezit nu de state-transitie-RPC's
+  (generiek op `vervoerderCode`); de 3 adapters afgeslankt (geen RPC-namen meer; alleen
+  render/transport/`bewaarArtefact`/`uitkomst`/`noteer*`). 15 karakterisatietests
+  her-gebaseerd, identieke call-sequence = gedragsneutraal.
+- **Frontend** — alle consumenten (`hst-monitor.ts`, `zendingen.ts` incl.
+  `verstuurZendingOpnieuw`, `zending-detail`, `zendingen-overzicht`, `verzend-fout-banner`,
+  `colli-bundel.ts`) lezen `verzend_wachtrij` / `verzend_monitor`; `response_http_code`
+  uit de fout-monitor (leeft nu in `externe_payloads`).
+- **Cutover (open):** drain + crons gepauzeerd, mig 424 + 3 edge functions + frontend in
+  één venster — draaiboek + contract-drop (slice 5/6) in het plan. Vangnet-fix vooraf:
+  fake-supabase `.is()` toegevoegd (de colli-bundel-mig 420 had de 15 tests rood gezet).
+
 ## 2026-06-18 — Fix: pakbon "Uw naam"-subregel alleen tonen als die zinvol afwijkt
 
 **Waarom:** op de pakbon (Lieferschein-layout) verscheen onder élke artikelregel
