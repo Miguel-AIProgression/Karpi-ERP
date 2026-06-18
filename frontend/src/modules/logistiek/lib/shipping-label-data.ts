@@ -99,3 +99,14 @@ export function labelDatumKort(zending: {
 export function labelReferentie(order: { oud_order_nr: number | null; id: number }): string {
   return String(order.oud_order_nr ?? order.id).padStart(6, '0')
 }
+
+/**
+ * Klant-eigennaam voor de kwaliteit (bv. "BREDA"), bevroren in
+ * `zending_colli.klanteigen_naam_snapshot` (mig 418). Leeg/whitespace → null
+ * zodat de "Uw referentie"-regel alleen verschijnt bij een echte afwijkende
+ * naam. Eén plek voor de niet-leeg-check, gedeeld door de drie labelvarianten.
+ */
+export function klanteigenReferentie(snapshot: string | null | undefined): string | null {
+  const v = (snapshot ?? '').trim()
+  return v === '' ? null : v
+}

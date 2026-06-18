@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { expandLabels } from './printset'
 import {
+  klanteigenReferentie,
   labelDatumKort,
   labelReferentie,
   productMaat,
@@ -38,6 +39,7 @@ function maakColli(overrides: Partial<ZendingPrintColli> = {}): ZendingPrintColl
     order_regel_id: 10,
     omschrijving_snapshot: null,
     klant_omschrijving_snapshot: null,
+    klanteigen_naam_snapshot: null,
     ...overrides,
   }
 }
@@ -290,5 +292,49 @@ describe('label-datum + referentie (mig 388, D/E)', () => {
   it('labelReferentie: Basta-ordernr wint van interne id, 6 cijfers', () => {
     expect(labelReferentie({ oud_order_nr: 12345, id: 999 })).toBe('012345')
     expect(labelReferentie({ oud_order_nr: null, id: 42 })).toBe('000042')
+  })
+})
+
+// Mig 418: klant-eigennaam voor de kwaliteit ("Uw referentie") — bevroren in
+// zending_colli.klanteigen_naam_snapshot, puur doorgegeven aan het label.
+describe('expandLabels — klant-eigennaam-snapshot (Uw referentie)', () => {
+  it('draagt de klanteigen-naam door op het LabelItem', () => {
+    const zending = maakZending({
+      zending_regels: [maakRegel()],
+      zending_colli: [maakColli({ klanteigen_naam_snapshot: 'BREDA' })],
+    })
+
+    const [label] = expandLabels(zending)
+
+    expect(label.klanteigenNaamSnapshot).toBe('BREDA')
+  })
+
+  it('colli zonder eigennaam → null (geen Uw-referentie-regel)', () => {
+    const zending = maakZending({
+      zending_regels: [maakRegel()],
+      zending_colli: [maakColli()],
+    })
+
+    const [label] = expandLabels(zending)
+
+    expect(label.klanteigenNaamSnapshot).toBeNull()
+  })
+
+  it('legacy-zending zonder colli-rijen → klanteigenNaamSnapshot null', () => {
+    const zending = maakZending({
+      zending_regels: [maakRegel()],
+      zending_colli: [],
+    })
+
+    const [label] = expandLabels(zending)
+
+    expect(label.klanteigenNaamSnapshot).toBeNull()
+  })
+
+  it('klanteigenReferentie: leeg/whitespace → null, anders getrimd', () => {
+    expect(klanteigenReferentie(null)).toBeNull()
+    expect(klanteigenReferentie('')).toBeNull()
+    expect(klanteigenReferentie('   ')).toBeNull()
+    expect(klanteigenReferentie('  BREDA  ')).toBe('BREDA')
   })
 })

@@ -44,6 +44,9 @@ export interface LabelItem {
   /** Bron-order (uit `order_regels.order_id`, fallback de primaire order) —
    * voedt de pakbon-groepering per bron-order (mig 222). */
   orderId: number | null
+  /** Mig 418: bevroren klant-eigennaam voor de kwaliteit ("Uw referentie" op
+   * het label). `null` = geen afwijkende naam / legacy-colli. */
+  klanteigenNaamSnapshot: string | null
 }
 
 /**
@@ -188,6 +191,7 @@ export function bouwVerzenddocument(zending: ZendingPrintSet): Verzenddocument {
         orderId: orderIdVoor(regel),
         omschrijvingSnapshot: c.omschrijving_snapshot,
         klantOmschrijvingSnapshot: c.klant_omschrijving_snapshot,
+        klanteigenNaamSnapshot: c.klanteigen_naam_snapshot,
       }
     })
   } else {
@@ -210,6 +214,7 @@ export function bouwVerzenddocument(zending: ZendingPrintSet): Verzenddocument {
       orderId: orderIdVoor(regel),
       omschrijvingSnapshot: null,
       klantOmschrijvingSnapshot: null,
+      klanteigenNaamSnapshot: null,
     }))
   }
 
