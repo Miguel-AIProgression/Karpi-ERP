@@ -178,6 +178,37 @@ function matchAliasesViaPrefix(
     .sort((a, b) => b.benaming.length - a.benaming.length)
 }
 
+/**
+ * Debiteur-overstijgende fallback voor `matchAliasesViaPrefix` — gebruikt
+ * ALLEEN wanneer de huidige debiteur géén eigen alias heeft voor `naam`.
+ * Generieke merknamen ("Vernon", Mart Visser, collectie "VERNON - LUXURY")
+ * zijn geen klant-rebranding en staan daarom al identiek bij andere
+ * debiteuren in `klanteigen_namen` (ORD-2026-0383 loste dit destijds op met
+ * ÉÉN debiteur-rij voor 102019 — 5 dagen later miste een ANDERE debiteur
+ * exact dezelfde naam opnieuw, want de fix schaalde niet).
+ *
+ * Vertrouwt de naam uitsluitend als ALLE bestaande rijen (over alle
+ * debiteuren) voor die naam naar dezelfde kwaliteit_code wijzen. Dat is
+ * cruciaal: klant-specifieke rebranding (stadsnamen als "Milaan"/"Madrid")
+ * wijst bewust per debiteur naar tientallen verschillende kwaliteiten en mag
+ * dit pad nooit raken — vandaar de unanimiteits-eis i.p.v. "eerste hit".
+ */
+async function matchAliasGlobaalUniek(
+  supabase: SupabaseClient,
+  naam: string,
+): Promise<string | null> {
+  const eersteWoord = naam.trim().split(/\s+/)[0]
+  if (!eersteWoord) return null
+  const { data } = await supabase
+    .from('klanteigen_namen')
+    .select('benaming, kwaliteit_code')
+    .not('debiteur_nr', 'is', null)
+    .ilike('benaming', `${eersteWoord}%`)
+  const hits = matchAliasesViaPrefix(naam, (data ?? []) as Array<{ benaming: string; kwaliteit_code: string }>)
+  const codes = new Set(hits.map((h) => h.kwaliteit_code))
+  return codes.size === 1 ? hits[0].kwaliteit_code : null
+}
+
 // "Firenze 12 - Niederflorteppich" → { basis: "Firenze", kleur: "12" }
 function parseTitel(titel: string): { basis: string; kleur: string | null } {
   const clean = titel.replace(/\s*-.*$/, '').trim()
@@ -402,7 +433,15 @@ export async function matchProduct(
       .select('benaming, kwaliteit_code')
       .eq('debiteur_nr', debiteurNr)
 
-    const aliases = matchAliasesViaPrefix(naam, (aliasRows ?? []) as Array<{ benaming: string; kwaliteit_code: string }>)
+    let aliases = matchAliasesViaPrefix(naam, (aliasRows ?? []) as Array<{ benaming: string; kwaliteit_code: string }>)
+
+    // Geen alias bij DEZE debiteur → val terug op de debiteur-overstijgende
+    // unanimiteits-check (zie matchAliasGlobaalUniek). Alleen geprobeerd als
+    // er een kleur is, anders kan deze fallback toch niets met de hit.
+    if (aliases.length === 0 && kleur) {
+      const globaal = await matchAliasGlobaalUniek(supabase, naam)
+      if (globaal) aliases = [{ benaming: naam, kwaliteit_code: globaal }]
+    }
 
     if (aliases.length > 0 && kleur) {
       let kwaliteitCodes = aliases.map((a) => a.kwaliteit_code)

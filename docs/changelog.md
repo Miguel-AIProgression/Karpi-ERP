@@ -1,5 +1,57 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-18 — Shopify-intake: VO Product Options "Selections"-duplicaat + Vernon-merknaam ongematcht (ORD-2026-0623)
+
+**Waarom:** ORD-2026-0623 (Vivaldi XL, Shopify #5599) toonde twee bugs: (1) 2x
+"Vernon 17 - Shadow Taupe rond" terwijl de klant 1x bestelde, en (2) "Vernon 12 -
+Sandy Dust — Contour / 240 x 340 cm" stond als `[UNMATCHED]` terwijl het
+catalogusartikel (490120011, VERR12XX240340) al bestaat.
+
+**Belangrijke nevenvondst:** `sync-shopify-order` (de webhook-edge-function) is
+**dode code** sinds 15 mei 2026 (0 invocations — zie de eigen header-comment in
+`sync-shopify-orders-poll/index.ts`). Alle live Shopify-orders lopen via de
+10-minuten-cron `sync-shopify-orders-poll` → gedeelde `processShopifyOrder`/
+`buildRegels` in [`_shared/shopify-order-processor.ts`](../supabase/functions/_shared/shopify-order-processor.ts).
+`sync-shopify-order/index.ts` heeft echter zijn **eigen, gedriftte kopie** van
+`buildRegels` (incl. een "geen auto-prijs voor vorm-maatwerk"-gate die nooit in
+de live kopie is doorgevoerd) — recente fixes belandden daardoor in dode code.
+Beide `buildRegels` zijn nu bijgewerkt zodat ze niet verder uit elkaar lopen;
+een structurele samenvoeging (`sync-shopify-order` laten delegeren naar
+`processShopifyOrder`) staat nog open — apart te beoordelen vóór de dode
+webhook-functie verwijderd of gereactiveerd wordt.
+
+**Root cause bug 1:** de Shopify-app "VO Product Options" splitst een
+geconfigureerd maatwerk-product over twee `line_items` — een "ouder" (met SKU
+en basisprijs) direct gevolgd door een gekoppeld `"<titel> - Selections"`-item
+(geen eigen SKU, wél de maat/SKU in `properties`). Niets dedupliceerde dit paar,
+dus elk werd een eigen orderregel. Fix: nieuwe pure helper
+[`groepeerVoSelectionsItems`](../supabase/functions/_shared/shopify-types.ts)
+voegt zo'n paar samen tot 1 item (properties overgenomen) vóórdat
+`buildRegels` erover itereert — gebruikt in zowel de live als de dode kopie.
+`item.price` van Shopify werd al genegeerd voor productregels (RugFlow prijst
+altijd zelf via `haalKlantPrijs`), dus samenvoegen volstaat zonder prijs-optelling.
+
+**Root cause bug 2:** in [`product-matcher.ts`](../supabase/functions/_shared/product-matcher.ts)
+wordt een kwaliteit zonder SKU alleen herkend via een debiteur-specifieke rij in
+`klanteigen_namen`. "Vernon" (Mart Visser, collectie "VERNON - LUXURY") is geen
+klant-rebranding maar Karpi's eigen merknaam en stond al identiek bij 4 andere
+debiteuren — niet bij Vivaldi XL. Dit is de **derde** keer dat deze klasse bug
+toeslaat (eerder: ORD-2026-0098 LUXR17-split, ORD-2026-0383 Vernon-voor-102019);
+de 0383-fix loste het destijds op met één debiteur-rij, wat 5 dagen later voor
+een andere debiteur opnieuw misging. Fix: nieuwe fallback `matchAliasGlobaalUniek`
+zoekt — alléén als de huidige debiteur niets heeft — naar bestaande
+`klanteigen_namen`-rijen over ALLE debiteuren, en gebruikt de naam alleen als
+die **unaniem** naar dezelfde kwaliteit_code wijst (stadsnamen als "Milaan"
+wijzen bewust per debiteur naar andere kwaliteiten en mogen dit pad nooit
+raken — getest in `product-matcher.test.ts`).
+
+**Niet meegenomen:** product 490120011 heeft zelf nog geen actieve
+prijslijst-regel, dus na deze fix toont de order "prijs ontbreekt" in plaats van
+`[UNMATCHED]` — een aparte, kleinere prijslijst-actie voor de operator.
+
+Vangnet: 4 nieuwe Deno-tests (`product-matcher.test.ts` ×2, `shopify-types.test.ts` ×3),
+volledige bestaande suite ongewijzigd groen.
+
 ## 2026-06-18 — Fix: order bewerken faalde met FK-fout zodra een regel een snijplan had (mig 422)
 
 **Waarom:** op order ORD-2026-0623 (regel "Vernon 17 - Shadow Taupe rond") gaf
