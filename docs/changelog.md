@@ -1,5 +1,34 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-18 — Feature: vervoerder "Eigen vervoer" (mig 424)
+
+**Waarom:** verzoek Thom (/pick-ship): naast HST/Rhenus/Verhoek ook "eigen
+vervoer" kunnen kiezen — Karpi of een derde rijdt zelf. "Verder alles hetzelfde,
+alleen er moet geen verzenddata worden doorgestuurd naar een portal." Tot nu toe
+moest de operator zo'n order ad-hoc op afhalen zetten of zonder vervoerder laten
+liggen ("Geen vervoerder mogelijk").
+
+**Wat:** een nieuwe, losstaande vervoerder `eigen_vervoer` (NIET de afhalen-vlag).
+Volledig data-driven (ADR-0008/0030/0034) — geen edge function, geen
+transportorder-queue, geen monitor, geen capability/preflight:
+- **mig 424** — `vervoerders.type`-CHECK uitgebreid met `'eigen'`; rij
+  `eigen_vervoer` (display "Eigen vervoer", `actief=TRUE`); dispatcher
+  `enqueue_zending_naar_vervoerder` krijgt een `WHEN 'eigen'`-tak die — net als de
+  bestaande `'print'`-tak (DPD, mig 207) — alleen `genereer_zending_colli` draait
+  en `'enqueued_eigen'` teruggeeft, zónder externe dispatch. Bewust een aparte
+  type-waarde i.p.v. `'print'` hergebruiken: semantisch helder + eigen audit-spoor.
+- **frontend** — `eigen_vervoer`/`eigen` toegevoegd aan de registry
+  ([`registry.ts`](../frontend/src/modules/logistiek/registry.ts), badge grijs).
+  De Pick & Ship-selector toont elke actieve `vervoerders`-rij, dus eigen vervoer
+  verschijnt automatisch; de operator kiest 'm **handmatig** via de
+  vervoerder-override per order (`bron='override'`). Geen selectie-regel → geen
+  automatische routering. `vervoerder-tag.tsx`-tooltip kreeg een nette
+  type→omschrijving-mapping (corrigeert meteen dat `sftp` "EDI-koppeling" toonde).
+
+De pick/label/pakbon/zending-flow en de order→`Verzonden`-overgang zijn
+vervoerder-agnostisch en blijven identiek; alleen de portal-aanmelding valt weg
+(de zending blijft op `Klaar voor verzending`, zoals bij afhalen/DPD).
+
 ## 2026-06-18 — Verzendetiket: kleurnummer + vorm in de vetgedrukte productregel
 
 **Waarom:** verzoek Thom (ZEND-2026-0034). De vetgedrukte regel op het verzendetiket
