@@ -58,6 +58,10 @@ export interface ZendingPrintOrderRegel {
     lengte_cm: number | null
     breedte_cm: number | null
     vorm: string | null
+    /** Kleurnummer ("10") — verzendlabel toont dit tussen haakjes achter de
+     *  kwaliteitsnaam ("GALAXY (10) …", besluit 2026-06-18). Schoon, puur
+     *  numeriek; `producten.vorm` (rechthoek/rond) dekt de uitvoering NIET. */
+    kleur_code: string | null
     /** Volledige Karpi-code (kwaliteit+kleur+afmeting) — verzendlabel toont deze
      *  als kleine regel onder de kwaliteitsnaam (besluit 2026-06-18). */
     karpi_code: string | null
@@ -302,7 +306,7 @@ export async function fetchZendingPrintSet(zending_nr: string): Promise<ZendingP
           maatwerk_oppervlak_m2,
           producten!order_regels_artikelnr_fkey (
             ean_code, omschrijving, vervolgomschrijving, gewicht_kg,
-            lengte_cm, breedte_cm, vorm, karpi_code
+            lengte_cm, breedte_cm, vorm, kleur_code, karpi_code
           )
         )
       ),

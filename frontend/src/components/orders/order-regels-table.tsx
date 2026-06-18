@@ -10,6 +10,7 @@ import { isoWeekFromString, isoWeekString, isoWeekStringVanIso } from '@/lib/uti
 import type { OrderRegel } from '@/lib/supabase/queries/orders'
 import { setRegelVerzendweek } from '@/lib/supabase/queries/orders'
 import { isAdminPseudo } from '@/lib/orders/admin-pseudo'
+import { isMaatwerkProductieKlaar } from '@/lib/orders/maatwerk-productie'
 import { LevertijdBadge, UitwisselbaarToepassenRij, type OrderRegelLevertijd, type OrderClaim } from '@/modules/reserveringen'
 
 function formatVerzendweek(w: string): string {
@@ -372,7 +373,18 @@ function RegelRow({ regel, orderId, orderdatum, orderVerzendweek, levertijd, cla
           )}
         </td>
         <td className="px-4 py-2 text-right">{regel.orderaantal}</td>
-        <td className="px-4 py-2 text-right">{regel.te_leveren}</td>
+        <td className="px-4 py-2 text-right">
+          {regel.is_maatwerk && !isMaatwerkProductieKlaar(regel.snijplannen) ? (
+            <span
+              className="text-xs font-medium text-violet-600"
+              title="Nog in productie — wordt 'te leveren' zodra alle stuks ingepakt zijn"
+            >
+              In productie
+            </span>
+          ) : (
+            regel.te_leveren
+          )}
+        </td>
         <td className="px-4 py-2 text-right">
           {regel.backorder > 0 ? (
             <span className="text-amber-600">{regel.backorder}</span>

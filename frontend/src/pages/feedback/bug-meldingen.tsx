@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Paperclip, Wrench, FlaskConical } from 'lucide-react'
+import { Paperclip, Wrench, FlaskConical, Trash2 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { useAuth } from '@/hooks/use-auth'
 import { isBugBeheerder } from '@/lib/bug/beheerder'
 import {
   useBugMeldingen,
   useSetBugStatus,
+  useVerwijderBugMelding,
   useMarkeerVerwerktGezien,
   isVerwerktOngezien,
 } from '@/hooks/use-bug-meldingen'
@@ -110,6 +111,7 @@ function MeldingKaart({
   isMelder: boolean
 }) {
   const setStatus = useSetBugStatus()
+  const verwijder = useVerwijderBugMelding()
   const [verwerkFormOpen, setVerwerkFormOpen] = useState(false)
 
   function zet(status: BugMeldingStatus, notitie?: { opgelost?: string; testen?: string }) {
@@ -118,6 +120,16 @@ function MeldingKaart({
       { onSuccess: () => setVerwerkFormOpen(false) },
     )
   }
+
+  function verwijderMelding() {
+    if (!confirm(`Melding "${melding.titel}" definitief verwijderen?\n\nDit kan niet ongedaan worden gemaakt.`)) {
+      return
+    }
+    verwijder.mutate(melding.id)
+  }
+
+  // Verwijderen mag de melder zelf of de beheerder (afgedwongen in de RPC).
+  const magVerwijderen = isMelder || beheerder
 
   const heeftNotitie = melding.verwerkt_opgelost || melding.verwerkt_testen
 
@@ -166,6 +178,17 @@ function MeldingKaart({
             <ActieKnop variant="primary" onClick={() => zet('Geaccepteerd')} disabled={setStatus.isPending}>
               Accepteren
             </ActieKnop>
+          )}
+          {magVerwijderen && (
+            <button
+              onClick={verwijderMelding}
+              disabled={verwijder.isPending}
+              title="Melding verwijderen"
+              className="inline-flex items-center gap-1 whitespace-nowrap rounded-[var(--radius-sm)] border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-500 hover:border-rose-300 hover:text-rose-600 disabled:opacity-50"
+            >
+              <Trash2 size={12} />
+              {verwijder.isPending ? 'Verwijderen…' : 'Verwijderen'}
+            </button>
           )}
         </div>
       </div>

@@ -132,8 +132,17 @@ export function labelProductRegels(
 }
 
 /**
- * Vaste-maat-formaat (kwaliteitsnaam + maten / Karpi-code), of `null` als het
- * niet van toepassing is — dan valt de caller terug op het oude gedrag.
+ * Vaste-maat-formaat, of `null` als het niet van toepassing is — dan valt de
+ * caller terug op het oude gedrag.
+ *
+ * Grote regel (besluit 2026-06-18, verzoek Thom): kwaliteitsnaam, kleurnummer
+ * tussen haakjes, maat en — als de uitvoering afwijkt — de vorm. Voorbeeld:
+ * "GALAXY (10) 200x290 cm Organisch". Ronde karpetten tonen de diameter:
+ * "PLUSH (11) Ø120 cm Rond". Zo ziet de picker kleur én uitvoering. Kleine
+ * regel = de Karpi-code.
+ *
+ * Kleurnummer en vorm zijn beide optioneel: ontbreekt het kleurnummer of is de
+ * uitvoering gewoon rechthoekig (geen vorm-token), dan valt dat deel weg.
  */
 function vasteMaatRegels(regel: ZendingPrintRegel | null): LabelProductRegels | null {
   const orderRegel = regel?.order_regels
@@ -142,15 +151,70 @@ function vasteMaatRegels(regel: ZendingPrintRegel | null): LabelProductRegels | 
   if (!product) return null
   const kwaliteit = kwaliteitNaamUitVervolg(product.vervolgomschrijving)
   const lengte = product.lengte_cm
-  const breedte = product.breedte_cm
-  if (!kwaliteit || !lengte || !breedte) return null
-  const kleinsteMaat = Math.min(lengte, breedte)
-  const grootsteMaat = Math.max(lengte, breedte)
+  if (!kwaliteit || !lengte) return null
+  const kleur = (product.kleur_code ?? '').trim()
+  const vorm = vormUitOmschrijving(product.vervolgomschrijving ?? product.omschrijving)
+  const maat = maatWeergave(lengte, product.breedte_cm, vorm)
+  if (!maat) return null
   const klein = (product.karpi_code ?? regel?.artikelnr ?? '').trim() || null
-  return {
-    groot: `${kwaliteit} ${kleinsteMaat}x${grootsteMaat} cm`,
-    klein,
+  const groot = [kwaliteit, kleur ? `(${kleur})` : '', maat, vorm ?? '']
+    .filter(Boolean)
+    .join(' ')
+  return { groot, klein }
+}
+
+/**
+ * Maat-tekst voor de grote label-regel.
+ *
+ * RONDE karpetten meet je in diameter, niet als L×B — toon "Ø240 cm". De
+ * diameter = de grootste van de twee maten: ronde producten dragen de diameter
+ * vaak op `lengte_cm` met `breedte_cm = 0` (1506 stuks), de overige op een
+ * gelijke L=B (1508). Beide → één consistente Ø-notatie.
+ *
+ * Rechthoekig/ovaal/organisch: "kleinstexgrootste cm" (kleinste eerst).
+ * `null` = onvoldoende maat-data (geen breedte én niet rond) → de caller valt
+ * terug op het oude gedrag.
+ */
+function maatWeergave(lengte: number, breedte: number | null, vorm: string | null): string | null {
+  if (vorm === 'Rond') {
+    const diameter = Math.max(lengte, breedte ?? 0)
+    return diameter > 0 ? `Ø${diameter} cm` : null
   }
+  if (!breedte) return null
+  return `${Math.min(lengte, breedte)}x${Math.max(lengte, breedte)} cm`
+}
+
+/**
+ * Karpet-vorm/uitvoering uit de productomschrijving, genormaliseerd naar één
+ * Nederlandse term, of `null` voor een standaard (rechthoekig) karpet.
+ *
+ * WAAROM PARSEN: er is geen schone bron. `producten.vorm` bevat alleen
+ * "rechthoek"/"rond" (en is fout — RADIUS "ROND" staat als rechthoek), en
+ * `maatwerk_vorm_code` is leeg voor vaste producten. De uitvoering staat enkel
+ * als suffix in de omschrijving ("…290x200 cm ORGA"), tússen ruis als
+ * kleurnamen (SILVER/GREY/TAUPE) en dessins (SPLASH/ROMANCE). Daarom een
+ * WHITELIST van echte vorm-woorden i.p.v. het kale staart-fragment tonen —
+ * zo lift geen kleur-/dessinnaam mee.
+ *
+ * Word-boundary-match (JS `\b`), volgorde = specifiek-eerst zodat "halfrond"
+ * niet als "rond" en "special shape" niet als losse "shape" leest.
+ */
+const VORM_PATRONEN: ReadonlyArray<{ re: RegExp; naam: string }> = [
+  { re: /\bhalfrond\b/i, naam: 'Halfrond' },
+  { re: /\bspecial\s+shape\b/i, naam: 'Special shape' },
+  { re: /\b(?:organisch|organic|orga)\b/i, naam: 'Organisch' },
+  { re: /\b(?:ovaal|oval)\b/i, naam: 'Ovaal' },
+  { re: /\bcontour\b/i, naam: 'Contour' },
+  { re: /\bpebble\b/i, naam: 'Pebble' },
+  { re: /\b(?:rond|rund|rnd)\b/i, naam: 'Rond' },
+]
+
+export function vormUitOmschrijving(tekst: string | null | undefined): string | null {
+  if (!tekst) return null
+  for (const { re, naam } of VORM_PATRONEN) {
+    if (re.test(tekst)) return naam
+  }
+  return null
 }
 
 export function productMaat(

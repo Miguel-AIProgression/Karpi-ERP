@@ -32,6 +32,130 @@ process-as (ADR-0035) — vóór nu lekte de `VerzendAdapter` nog per-carrier RP
 - **Cutover (open):** drain + crons gepauzeerd, mig 426 + 3 edge functions + frontend in
   één venster — draaiboek + contract-drop (slice 5/6) in het plan. Vangnet-fix vooraf:
   fake-supabase `.is()` toegevoegd (de colli-bundel-mig 420 had de 15 tests rood gezet).
+## 2026-06-18 — UI: maatwerk-orderregel toont "In productie" i.p.v. "Te leveren"
+
+**Waarom:** op order-detail toonde de kolom "Te leveren" voor een maatwerk-regel
+direct het orderaantal (bv. 1), alsof het stuk al klaar/leverbaar was — terwijl
+het nog gesneden/geconfectioneerd/ingepakt moest worden. Misleidend voor de
+operator (signaal Marjon, ORD-2026-0160). Maatwerk reserveert niet op
+voorraad/inkoop, dus de allocator herberekent `te_leveren` nooit; de échte
+voortgang zit in de snijplannen.
+
+**Wat:** puur frontend, geen DB-wijziging. De "Te leveren"-cel toont voor een
+maatwerk-regel het label **"In productie"** (paars) zolang niet álle
+niet-geannuleerde snijplannen op `Ingepakt` staan; zodra alles ingepakt
+(= leverbaar, dezelfde drempel als de pickbaarheid-view mig 386) is, verschijnt
+het getal weer. Niet-maatwerk-regels ongewijzigd. De fijnmazige snijplan-fase
+blijft als badge onder de regel staan (Gepland → … → Ingepakt).
+- Nieuwe pure helper
+  [`maatwerk-productie.ts`](../frontend/src/lib/orders/maatwerk-productie.ts)
+  (`isMaatwerkProductieKlaar`) + unittest; leunt op de gedeelde
+  `'Ingepakt'`-drempel uit de snijplan-status-module.
+- Render-wijziging in
+  [`order-regels-table.tsx`](../frontend/src/components/orders/order-regels-table.tsx).
+- `order_regels.te_leveren` zelf blijft ongemoeid (voedt facturatie/status/allocatie).
+
+## 2026-06-18 — Verzendetiket: ronde karpetten als Ø-diameter
+
+**Waarom:** vervolg op de kleurnummer+vorm-etiketregel. Ronde karpetten kregen
+de maat als L×B ("120x120 cm") of vielen — als ze alleen een diameter hadden
+(`breedte_cm=0`, ~1506 producten) — terug op het oude etiketgedrag zónder
+kwaliteit-titel. Een rond karpet meet je in diameter, niet als L×B.
+
+**Wat:** ronde producten tonen nu "KWALITEIT (kleurnr) Ø{diameter} cm Rond", bv.
+`RADIUS (18) Ø240 cm Rond` (diameter = grootste maat — dekt zowel de
+breedte=0-producten als de L=B-producten in één consistente notatie). Nieuwe
+pure helper `maatWeergave(lengte, breedte, vorm)` in
+[`shipping-label-data.ts`](../frontend/src/modules/logistiek/lib/shipping-label-data.ts);
+de `breedte`-guard in `vasteMaatRegels` is versoepeld zodat diameter-only ronde
+producten niet meer naar het legacy-pad vallen. **Ovaal/rechthoekig/organisch
+blijven L×B** (een ovaal heeft een rechthoekige bounding box, geen diameter).
+Puur frontend, geen migratie. Tests: shipping-label-data.test.ts uitgebreid
+(diameter-only + L=B + ovaal-blijft-L×B; Ø byte-veilig getoetst). Geverifieerd
+over alle 3015 ronde producten: 3014 krijgen nu een Ø-titel, 1 valt terug
+(geen kwaliteit/maat). **Print-aandachtspunt:** controleer of het Ø-symbool
+correct rendert op de thermische printer.
+
+## 2026-06-18 — Feature: vervoerder "Eigen vervoer" (mig 424)
+
+**Waarom:** verzoek Thom (/pick-ship): naast HST/Rhenus/Verhoek ook "eigen
+vervoer" kunnen kiezen — Karpi of een derde rijdt zelf. "Verder alles hetzelfde,
+alleen er moet geen verzenddata worden doorgestuurd naar een portal." Tot nu toe
+moest de operator zo'n order ad-hoc op afhalen zetten of zonder vervoerder laten
+liggen ("Geen vervoerder mogelijk").
+
+**Wat:** een nieuwe, losstaande vervoerder `eigen_vervoer` (NIET de afhalen-vlag).
+Volledig data-driven (ADR-0008/0030/0034) — geen edge function, geen
+transportorder-queue, geen monitor, geen capability/preflight:
+- **mig 424** — `vervoerders.type`-CHECK uitgebreid met `'eigen'`; rij
+  `eigen_vervoer` (display "Eigen vervoer", `actief=TRUE`); dispatcher
+  `enqueue_zending_naar_vervoerder` krijgt een `WHEN 'eigen'`-tak die — net als de
+  bestaande `'print'`-tak (DPD, mig 207) — alleen `genereer_zending_colli` draait
+  en `'enqueued_eigen'` teruggeeft, zónder externe dispatch. Bewust een aparte
+  type-waarde i.p.v. `'print'` hergebruiken: semantisch helder + eigen audit-spoor.
+- **frontend** — `eigen_vervoer`/`eigen` toegevoegd aan de registry
+  ([`registry.ts`](../frontend/src/modules/logistiek/registry.ts), badge grijs).
+  De Pick & Ship-selector toont elke actieve `vervoerders`-rij, dus eigen vervoer
+  verschijnt automatisch; de operator kiest 'm **handmatig** via de
+  vervoerder-override per order (`bron='override'`). Geen selectie-regel → geen
+  automatische routering. `vervoerder-tag.tsx`-tooltip kreeg een nette
+  type→omschrijving-mapping (corrigeert meteen dat `sftp` "EDI-koppeling" toonde).
+
+De pick/label/pakbon/zending-flow en de order→`Verzonden`-overgang zijn
+vervoerder-agnostisch en blijven identiek; alleen de portal-aanmelding valt weg
+(de zending blijft op `Klaar voor verzending`, zoals bij afhalen/DPD).
+
+## 2026-06-18 — Bug-meldingen: melding verwijderen (melder of beheerder)
+
+**Waarom:** een verbeterpunt/bug-melding kon alleen van status veranderen
+(Open/Verwerkt/Geaccepteerd), niet verwijderd worden. Niet meer relevante meldingen
+bleven zo in de lijst staan. Verzoek: zowel de oorspronkelijke melder als de
+developer (beheerder) moeten een melding kunnen weggooien.
+
+**Wat:** een prullenbak-knop ("Verwijderen") op elke melding-kaart in
+[`bug-meldingen.tsx`](../frontend/src/pages/feedback/bug-meldingen.tsx), zichtbaar voor
+de melder én de beheerder, met `confirm()`-bevestiging. Achterliggend nieuwe RPC
+`verwijder_bug_melding(p_id)` (mig 425, SECURITY DEFINER) die de autorisatie van
+`set_bug_status` spiegelt (melder of `is_bug_beheerder()`), de rij verwijdert en de
+`bijlage_path` teruggeeft. De frontend ruimt daarna de storage-bijlage best-effort op
+(`verwijderBugMelding` → `useVerwijderBugMelding`). Mig 425 voegt ook de ontbrekende
+storage DELETE-policy op bucket `bug-bijlagen` toe (eigen map of beheerder) — mig 342
+gaf alleen INSERT + SELECT.
+
+**Scope:** frontend (query + hook + UI) + mig 425. Geen wijziging aan het statusmodel.
+
+## 2026-06-18 — Verzendetiket: kleurnummer + vorm in de vetgedrukte productregel
+
+**Waarom:** verzoek Thom (ZEND-2026-0034). De vetgedrukte regel op het verzendetiket
+toonde alleen kwaliteitsnaam + maat ("GALAXY 200x290 cm"), waardoor de picker het
+**kleurnummer** en de **vorm/uitvoering** niet kon zien — twee karpetten van dezelfde
+kwaliteit en maat maar verschillende kleur of vorm (rechthoekig vs. organisch) waren
+op het etiket niet te onderscheiden. Concreet voorbeeld: een 200x290 Galaxy **organisch**
+was niet te onderscheiden van een gewone rechthoekige 200x290 Galaxy.
+
+**Wat:** de grote regel toont nu `KWALITEIT (kleurnr) maat cm [vorm]`, bv.
+`GALAXY (10) 200x290 cm Organisch`. Kleine regel (Karpi-code) ongewijzigd. Beide
+toevoegingen zijn optioneel: ontbreekt het kleurnummer of is de uitvoering gewoon
+rechthoekig, dan valt dat deel weg.
+
+**Databron:** kleurnummer = `producten.kleur_code` (schoon, puur numeriek). De vorm
+heeft **geen** schone bron — `producten.vorm` bevat alleen "rechthoek"/"rond" (en is
+fout: RADIUS "ROND" staat als rechthoek), en `maatwerk_vorm_code` is leeg voor vaste
+producten. De uitvoering staat enkel als suffix in `vervolgomschrijving` ("…290x200 cm
+ORGA"), tússen ruis als kleurnamen (SILVER/GREY) en dessins (SPLASH/ROMANCE). Daarom
+een **whitelist** van echte vorm-woorden (nieuwe pure helper `vormUitOmschrijving` in
+[`shipping-label-data.ts`](../frontend/src/modules/logistiek/lib/shipping-label-data.ts)),
+genormaliseerd naar één Nederlandse term: Rond/Ovaal/Organisch/Contour/Pebble/Halfrond/
+Special shape. Geverifieerd over 18.161 vaste producten: 0 ruis-categorieën, ZEND-2026-0034
+geeft exact `GALAXY (10) 200x290 cm Organisch`.
+
+**Scope:** alleen het verzendetiket (`labelProductRegels` → vaste-maat-tak); de
+carrier-snapshot (`omschrijving_snapshot`) en de pakbon blijven ongemoeid. Puur
+frontend, geen migratie. Query `fetchZendingPrintSet` kreeg `producten.kleur_code` erbij.
+Tests: shipping-label-data.test.ts uitgebreid (kleurnummer + 15 vorm-cases). **Bekende
+beperking:** ~1507 ronde producten hebben alleen een diameter (`breedte_cm=0`) en lopen
+via het bestaande legacy-pad (geen kwaliteit-titel) — diameter-weergave ("Ø240 cm Rond")
+is een mogelijke vervolgslice.
 
 ## 2026-06-18 — Fix: pakbon "Uw naam"-subregel alleen tonen als die zinvol afwijkt
 

@@ -1,4 +1,4 @@
-import { getVervoerderDef, type VervoerderBadgeKleur } from '@/modules/logistiek/registry'
+import { getVervoerderDef, type VervoerderBadgeKleur, type VervoerderType } from '@/modules/logistiek/registry'
 import { useActieveVervoerder } from '../hooks/use-vervoerders'
 
 interface VervoerderTagProps {
@@ -18,6 +18,13 @@ const KLEUR_STYLES: Record<VervoerderBadgeKleur, string> = {
   oranje: 'bg-orange-100 text-orange-700',
   paars:  'bg-purple-100 text-purple-700',
   grijs:  'bg-slate-100 text-slate-500',
+}
+
+const TYPE_OMSCHRIJVING: Record<VervoerderType, string> = {
+  api:   'API-koppeling',
+  edi:   'EDI-koppeling',
+  sftp:  'SFTP-koppeling',
+  eigen: 'geen externe koppeling',
 }
 
 export function VervoerderTag({ code, showLeeg = false }: VervoerderTagProps) {
@@ -40,7 +47,7 @@ export function VervoerderTag({ code, showLeeg = false }: VervoerderTagProps) {
   return (
     <span
       className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide ${KLEUR_STYLES[def.badgeKleur]}`}
-      title={`Vervoerder: ${def.displayNaam} (${def.type === 'api' ? 'API-koppeling' : 'EDI-koppeling'})`}
+      title={`Vervoerder: ${def.displayNaam} (${TYPE_OMSCHRIJVING[def.type]})`}
     >
       <span className="w-1.5 h-1.5 rounded-full bg-current opacity-80" />
       {def.displayNaam}
