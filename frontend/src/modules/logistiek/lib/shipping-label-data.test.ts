@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { labelProductRegels } from './shipping-label-data'
+import { labelProductRegels, kwaliteitNaamUitVervolg } from './shipping-label-data'
 import type {
   ZendingPrintOrderRegel,
   ZendingPrintRegel,
@@ -50,21 +50,19 @@ function maakRegel(orderRegel: ZendingPrintOrderRegel | null): ZendingPrintRegel
 const product = {
   ean_code: null,
   omschrijving: 'GALA10XX200290',
-  vervolgomschrijving: null,
+  vervolgomschrijving: 'GALAXY Kleur 10 CA: 200x290 cm',
   gewicht_kg: null,
   lengte_cm: 200,
   breedte_cm: 290,
   vorm: 'rechthoek' as const,
   karpi_code: 'GALA10XX200290',
-  kwaliteit_code: 'GALA',
-  kwaliteiten: { omschrijving: 'Galaxy' },
 }
 
 describe('labelProductRegels — vaste maat', () => {
   it('toont kwaliteitsnaam + maten (kleinste eerst) groot en Karpi-code klein', () => {
     const regel = maakRegel(maakOrderRegel({ producten: { ...product } }))
     expect(labelProductRegels(regel)).toEqual({
-      groot: 'Galaxy 200x290 cm',
+      groot: 'GALAXY 200x290 cm',
       klein: 'GALA10XX200290',
     })
   })
@@ -73,7 +71,7 @@ describe('labelProductRegels — vaste maat', () => {
     const regel = maakRegel(
       maakOrderRegel({ producten: { ...product, lengte_cm: 290, breedte_cm: 200 } }),
     )
-    expect(labelProductRegels(regel).groot).toBe('Galaxy 200x290 cm')
+    expect(labelProductRegels(regel).groot).toBe('GALAXY 200x290 cm')
   })
 
   it('valt voor de kleine regel terug op artikelnr als karpi_code ontbreekt', () => {
@@ -87,7 +85,7 @@ describe('labelProductRegels — vaste maat', () => {
     const regel = maakRegel(
       maakOrderRegel({
         omschrijving: 'EIGEN OMSCHRIJVING',
-        producten: { ...product, kwaliteiten: null },
+        producten: { ...product, vervolgomschrijving: null },
       }),
     )
     // Geen kwaliteit → legacy: klant-omschrijving groot, snapshot/product klein.
@@ -103,6 +101,28 @@ describe('labelProductRegels — vaste maat', () => {
     )
     expect(labelProductRegels(regel).groot).toBe('EIGEN OMSCHRIJVING')
   })
+})
+
+describe('kwaliteitNaamUitVervolg — parse van vervolgomschrijving', () => {
+  // Echte formaat-varianten uit de productdata (oude-systeem-import).
+  const gevallen: Array<[string | null, string | null]> = [
+    ['GALAXY Kleur 10 CA: 200x290 cm', 'GALAXY'],
+    ['ADIVA Kleur 23 CA: 160x230 cm', 'ADIVA'],
+    ['PALACE Farbe 11 CA: 080 ROND', 'PALACE'], // Duits "Farbe"
+    ['SILVER SPRING Kl.24 CA: 200x290 cm', 'SILVER SPRING'], // afkorting + 2 woorden
+    ['VERNISSAGE MIX Kl.22 CA: 120x170 cm', 'VERNISSAGE MIX'],
+    ['GALAXY 10 CA: 240x340 cm ORGANIC', 'GALAXY'], // los kleurnummer
+    ['MANDA 3726-1V48 CA: 240x330 cm', 'MANDA'], // artikelcode na naam
+    ['KARPET ASSORTI CA: 160x230cm BAND: SB', 'KARPET ASSORTI'], // direct CA:
+    [null, null],
+    ['', null],
+    ['123 GEEN NAAM', null], // begint met cijfer → geen naam
+  ]
+  for (const [invoer, verwacht] of gevallen) {
+    it(`"${invoer}" -> ${verwacht === null ? 'null' : `"${verwacht}"`}`, () => {
+      expect(kwaliteitNaamUitVervolg(invoer)).toBe(verwacht)
+    })
+  }
 })
 
 describe('labelProductRegels — maatwerk + legacy ongewijzigd', () => {

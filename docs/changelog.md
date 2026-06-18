@@ -10,8 +10,8 @@ prominent, met de Karpi-code als referentie eronder.
 **Wat (vaste-maat producten):**
 - Grote regel = **kwaliteitsnaam + maten met de kleinste maat eerst**
   ("Galaxy 200x290 cm"); kleine regel = **de Karpi-code** ("GALA10XX200290").
-- Nieuwe pure helper [`labelProductRegels`](../frontend/src/modules/logistiek/lib/shipping-label-data.ts)
-  bepaalt beide regels. Vaste maat → nieuw formaat; **maatwerk + alle gevallen
+- Nieuwe pure helpers [`labelProductRegels` + `kwaliteitNaamUitVervolg`](../frontend/src/modules/logistiek/lib/shipping-label-data.ts)
+  bepalen beide regels. Vaste maat → nieuw formaat; **maatwerk + alle gevallen
   met onvoldoende data** (geen product/kwaliteit/maat) vallen terug op het
   bestaande gedrag (klant-omschrijving groot, snapshot-omschrijving klein).
 - Toegepast op alle drie de labelvarianten: compact
@@ -19,11 +19,15 @@ prominent, met de Karpi-code als referentie eronder.
   staand [`ShippingLabelTall`](../frontend/src/modules/logistiek/components/shipping-label-tall.tsx)
   en [`DpdShippingLabel`](../frontend/src/modules/logistiek/components/dpd-shipping-label.tsx).
   Hoofdletter-stijl behouden (thermische leesbaarheid).
+- **Bron van de kwaliteitsnaam = `producten.vervolgomschrijving`** (geparset tot
+  het eerste cijfer/kleur-marker → "GALAXY" uit "GALAXY Kleur 10 CA: 200x290 cm").
+  `kwaliteiten.omschrijving` leek de logische bron maar staat in de hele DB leeg
+  (997/997 NULL); `collecties.naam` is vaak een code ("AEST13") en dekt maar ~54%.
+  `vervolgomschrijving` is gevuld voor 99,9% van de vaste producten; de heuristiek
+  is geverifieerd op alle 18.181 (0 code-lekken, 23 zonder naam → oude gedrag).
 - **Live afgeleid** (geen snapshot/migratie): de label-query
   [`fetchZendingPrintSet`](../frontend/src/modules/logistiek/queries/zendingen.ts)
-  haalt nu `producten.karpi_code`, `kwaliteit_code` en de kwaliteitsnaam op
-  (`producten → kwaliteiten(omschrijving)`). De kwaliteit + maten zijn stabiele
-  data; een herprint na een kwaliteitscorrectie toont automatisch de nieuwe naam.
+  haalt nu ook `producten.karpi_code` op (`vervolgomschrijving` + maten zaten er al).
 
 **Bewust ongewijzigd:** de bevroren `zending_colli.omschrijving_snapshot` — dus
 wat HST/Rhenus/Verhoek en de pakbon krijgen blijft exact gelijk. De wijziging is
