@@ -69,15 +69,16 @@ function ColliBundelSectieInner({ zendingId, zendingNr }: { zendingId: number; z
       else next.add(id)
       return next
     })
+    setGewicht(''); setLengte(''); setBreedte('')
   }
 
   function bundel() {
     maak.mutate(
       {
         colliIds: [...geselecteerd],
-        gewichtKg: gewicht === '' ? defaults.gewicht : Number(gewicht),
-        lengteCm: lengte === '' ? defaults.lengte : Number(lengte),
-        breedteCm: breedte === '' ? defaults.breedte : Number(breedte),
+        gewichtKg: parseOrDefault(gewicht, defaults.gewicht),
+        lengteCm: parseOrDefault(lengte, defaults.lengte),
+        breedteCm: parseOrDefault(breedte, defaults.breedte),
       },
       {
         onSuccess: () => {
@@ -199,20 +200,22 @@ function ColliBundelSectieInner({ zendingId, zendingNr }: { zendingId: number; z
 
           {/* Aanmelden bij Rhenus */}
           {!aangemeld && (
-            <div className="mt-4 flex items-center justify-end gap-3 border-t border-slate-100 pt-3">
-              <button
-                onClick={() => meldAan.mutate()}
-                disabled={meldAan.isPending}
-                className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
-              >
-                <Send size={15} /> Aanmelden bij Rhenus
-              </button>
-            </div>
-          )}
-          {meldAan.isError && (
-            <div className="mt-2 text-xs text-rose-600 text-right">
-              Aanmelden mislukt: {(meldAan.error as Error).message}
-            </div>
+            <>
+              <div className="mt-4 flex items-center justify-end gap-3 border-t border-slate-100 pt-3">
+                <button
+                  onClick={() => meldAan.mutate()}
+                  disabled={meldAan.isPending}
+                  className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  <Send size={15} /> Aanmelden bij Rhenus
+                </button>
+              </div>
+              {meldAan.isError && (
+                <div className="mt-2 text-xs text-rose-600 text-right">
+                  Aanmelden mislukt: {(meldAan.error as Error).message}
+                </div>
+              )}
+            </>
           )}
         </>
       )}
@@ -240,4 +243,9 @@ function MaatVeld({
 
 function round1(n: number): number {
   return Math.round(n * 10) / 10
+}
+
+function parseOrDefault(s: string, d: number): number {
+  const n = parseFloat(s)
+  return Number.isNaN(n) ? d : n
 }
