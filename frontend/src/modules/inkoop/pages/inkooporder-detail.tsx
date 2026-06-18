@@ -151,7 +151,7 @@ export function InkooporderDetailPage() {
                 <th className="text-right pb-2 font-medium">Geleverd</th>
                 <th className="text-right pb-2 font-medium">Te leveren</th>
                 <th className="text-right pb-2 font-medium">Geclaimd</th>
-                <th className="text-left pb-2 font-medium">Verwachte levering</th>
+                <th className="text-left pb-2 pl-4 font-medium">ETA</th>
                 <th className="pb-2"></th>
               </tr>
             </thead>
@@ -203,11 +203,14 @@ export function InkooporderDetailPage() {
                         <span className="text-xs text-slate-300">n.v.t.</span>
                       )}
                     </td>
-                    <td className="py-2">
+                    <td className="py-2 pl-4">
                       <EtaEditCell
                         regelId={r.id}
                         leverancierId={order.leverancier?.id ?? null}
                         verwachtDatum={r.verwacht_datum}
+                        bijgewerktDoor={r.eta_bijgewerkt_door}
+                        bijgewerktOp={r.eta_bijgewerkt_op}
+                        leverancierNaam={order.leverancier?.naam ?? null}
                         onSaved={() => qc.invalidateQueries({ queryKey: ['inkooporders', 'detail', orderId] })}
                       />
                     </td>

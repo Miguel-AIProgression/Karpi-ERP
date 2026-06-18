@@ -9,6 +9,9 @@ interface Props {
   leverancierId: number | null
   verwachtDatum: string | null
   onSaved: () => void
+  bijgewerktDoor?: 'karpi' | 'leverancier' | null
+  bijgewerktOp?: string | null
+  leverancierNaam?: string | null
 }
 
 function isoWeekLabel(iso: string | null): string {
@@ -16,9 +19,22 @@ function isoWeekLabel(iso: string | null): string {
   return w ? `wk ${w.week}` : ''
 }
 
+function formatDatumKort(iso: string | null): string {
+  if (!iso) return ''
+  return `${iso.slice(8, 10)}-${iso.slice(5, 7)}-${iso.slice(0, 4)}`
+}
+
 /** Inline ETA-editor voor inkooporder_regels.verwacht_datum (mig 318/319: update_regel_eta
  * propageert dit zelf naar orders.afleverdatum en de leverancier-portal — geen losse sync nodig). */
-export function EtaEditCell({ regelId, leverancierId, verwachtDatum, onSaved }: Props) {
+export function EtaEditCell({
+  regelId,
+  leverancierId,
+  verwachtDatum,
+  onSaved,
+  bijgewerktDoor,
+  bijgewerktOp,
+  leverancierNaam,
+}: Props) {
   const [value, setValue] = useState(verwachtDatum ?? '')
   const today = new Date().toISOString().slice(0, 10)
   const isDirty = value !== (verwachtDatum ?? '')
@@ -54,6 +70,14 @@ export function EtaEditCell({ regelId, leverancierId, verwachtDatum, onSaved }: 
       <div className="text-xs text-slate-400 pl-0.5">
         <span>{isoWeekLabel(value || null)}</span>
       </div>
+      {!isDirty && bijgewerktOp && (
+        <div className="text-xs pl-0.5">
+          <span className={bijgewerktDoor === 'leverancier' ? 'text-blue-500 font-medium' : 'text-slate-400'}>
+            {bijgewerktDoor === 'leverancier' ? (leverancierNaam ?? 'Leverancier') : 'Karpi'}
+          </span>
+          <span className="text-slate-300"> · {formatDatumKort(bijgewerktOp.slice(0, 10))}</span>
+        </div>
+      )}
       {isDirty && (
         <button
           onClick={() => mutation.mutate()}
