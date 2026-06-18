@@ -27,13 +27,14 @@
 //
 // Pickbaarheid-/vervoerder-/intake-resolutie loopt via de gedeelde
 // `usePickbaarheid`-hook (zelfde filtering als StartWeekButton en de bulkbalk).
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Loader2, Printer, PackageCheck } from 'lucide-react'
 import { useStartPickrondes } from '../hooks/use-zendingen'
 import { useVervoerders } from '../hooks/use-vervoerders'
 import { usePickbaarheid } from '../hooks/use-pickbaarheid'
 import { cn } from '@/lib/utils/cn'
+import { iso2NaarNaam, landNaarIso2 } from '@/lib/utils/land-vlag'
 import type { PickShipOrder } from '@/modules/magazijn'
 
 interface StartPickrondesButtonProps {
@@ -62,6 +63,7 @@ export function StartPickrondesButton({
 
   const {
     pickbareOrders,
+    geenVervoerderIds,
     aantalAflAdres,
     aantalPrijs,
     aantalGeblokkeerd,
@@ -83,6 +85,31 @@ export function StartPickrondesButton({
   const alleenPrijs = alleenGeblokkeerd && aantalAflAdres === 0 && aantalPrijs > 0
   const disabled = mutation.isPending || !vervoerderOk || niksTeDoen || vervoerderResolutieLaadt
 
+  // Afleverlanden van de orders die op "geen vervoerder" geblokkeerd zijn.
+  // Voedt de zichtbare reden onder de knop: de operator hoeft niet te raden
+  // waaróm — meestal is er simpelweg nog geen actieve vervoerder voor dat land.
+  const geenVervoerderLanden = useMemo(() => {
+    const namen = new Set<string>()
+    for (const o of orders) {
+      if (!geenVervoerderIds.has(o.order_id)) continue
+      const iso2 = landNaarIso2(o.afl_land)
+      const naam = (iso2 ? iso2NaarNaam(iso2) ?? iso2 : o.afl_land?.trim()) || ''
+      namen.add(naam.length > 0 ? naam : 'onbekend land')
+    }
+    return Array.from(namen)
+  }, [orders, geenVervoerderIds])
+
+  // Alleen wanneer de knop daadwerkelijk "Geen vervoerder mogelijk" toont
+  // (= geblokkeerd, maar niet door adres/prijs — die hebben hun eigen melding).
+  const toonGeenVervoerderReden = alleenGeblokkeerd && !alleenAflAdres && !alleenPrijs
+  const landTekst = geenVervoerderLanden.join(', ')
+  // Korte, zichtbare reden onder de knop; de volledige oplossing staat in de tooltip.
+  const geenVervoerderReden = toonGeenVervoerderReden
+    ? landTekst
+      ? `Nog geen actieve vervoerder voor ${landTekst}`
+      : 'Geen passende vervoerder voor deze order'
+    : null
+
   // Tooltip-tekst — context-aware.
   const tooltip = !vervoerderOk
     ? 'Activeer eerst minstens één vervoerder bij Logistiek > Vervoerders'
@@ -91,7 +118,9 @@ export function StartPickrondesButton({
       : alleenPrijs
         ? 'Prijs ontbreekt (€0) — corrigeer de prijs of bevestig op de order dat €0 klopt voordat je een pickronde start'
       : alleenGeblokkeerd
-      ? 'Geen vervoerder mogelijk voor dit afleverland — activeer de vervoerder (Logistiek > Vervoerders) of kies handmatig een vervoerder op de order'
+      ? (landTekst
+          ? `Nog geen actieve vervoerder voor ${landTekst} — activeer de vervoerder (Logistiek > Vervoerders) of kies handmatig een vervoerder op de order`
+          : 'Geen vervoerder mogelijk voor dit afleverland — activeer de vervoerder (Logistiek > Vervoerders) of kies handmatig een vervoerder op de order')
       : niksTeDoen
         ? 'Geen pickbare orders in deze groep — eerst voorraad/snijden/confectie afronden'
         : scope === 'groep'
@@ -178,6 +207,11 @@ export function StartPickrondesButton({
                 ? 'Niets pickbaar'
                 : knopLabel}
       </button>
+      {!error && geenVervoerderReden && (
+        <div className="max-w-72 text-right text-[11px] leading-tight text-amber-700">
+          {geenVervoerderReden}
+        </div>
+      )}
       {error && <div className="max-w-72 text-right text-[11px] text-rose-600">{error}</div>}
     </div>
   )
