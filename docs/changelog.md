@@ -35,6 +35,15 @@ drie de actieve vervoerders renderden via het compacte label.
 [`docs/superpowers/plans/2026-06-18-verzendlabel-een-deep-module.md`](superpowers/plans/2026-06-18-verzendlabel-een-deep-module.md).
 **Print-gate:** gebruiker test HST + Rhenus naast elkaar op de ZT231 vóór merge.
 
+**Correctie (18-06, regressie):** de eerste versie verschoof per ongeluk óók de
+schaal-basis. `s` (font/rij-schaal) en `colRechtsMm` (badge-kolom) rekenden t.o.v.
+`DEFAULT_LABEL_*_MM` — door die op 152,4×76,2 te zetten werd `s` 1,0 i.p.v. 1,5
+(alles uitgerekt/ingezoomd) en halveerde de badge-kolom ("Rhen…" weer afgekapt,
+óók HST lelijk). Opgelost door de **ontwerp-basis** (`BASIS_BREEDTE_MM` 76,2 /
+`BASIS_HOOGTE_MM` 50,8) te scheiden van het **default-formaat** (de fallback,
+152,4×76,2): de schaal-math rekent weer vanaf 76,2×50,8, de default blijft alleen
+de fallback. HST rendert weer exact als voorheen; Rhenus/Verhoek erven die look.
+
 ## 2026-06-18 — Rhenus colli-bundeling: doorverwijzing vanaf de Verzendset-pagina (frontend-only)
 
 **Waarom:** mig 420 (colli-bundeling) stond volledig live (hold + RPC's + `enqueue` 2-arg

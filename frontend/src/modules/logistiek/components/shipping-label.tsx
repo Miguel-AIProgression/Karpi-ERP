@@ -35,13 +35,20 @@ export interface ShippingLabelProps {
   labelFormaat?: LabelFormaat
 }
 
-// Basis-celafmetingen in mm bij het 76,2×50,8-ontwerp — alles wordt absoluut
-// gepositioneerd zodat de print-engine het label NIET over twee pagina's kan
-// opbreken. Het canonieke formaat is liggend 152,4×76,2 (HST-basis, mig 362);
-// deze maten én de fonts schalen mee met de label-hoogte (factor s).
+// Basis-celafmetingen in mm bij het 76,2×50,8-ONTWERP — alle absolute posities,
+// rijen en fonts zijn op die maat getuned. Grotere labels (152,4×76,2 liggend)
+// schalen daar proportioneel vanaf via factor s.
 const COL_RECHTS_MM = 22
 const RIJ1_MM = 10
 const RIJ3_MM = 13
+
+// ONTWERP-BASIS (≠ het default-formaat!). De schaal-math hieronder rekent t.o.v.
+// dit 76,2×50,8-ontwerp; het DEFAULT_LABEL_*_MM-formaat (152,4×76,2, de fallback
+// voor carriers zonder eigen `label_*_mm`-rij) mag dit NIET verschuiven. Die twee
+// scheiden voorkomt de regressie van 18-06: de default op 152,4×76,2 zetten maakte
+// s=1,0 i.p.v. 1,5 (alles uitgerekt) en halveerde de badge-kolom ("Rhen…").
+const BASIS_BREEDTE_MM = 76.2
+const BASIS_HOOGTE_MM = 50.8
 
 /**
  * Het canonieke verzendlabel: één liggende layout voor álle vervoerders. De
@@ -84,8 +91,9 @@ export function ShippingLabel({
   // Schaalfactor t.o.v. het basis-ontwerp: 1.0 op een 3"×2"-rol, 1.5 op de
   // volle 3"×6" liggend. Hoogte stuurt rijen en fonts; de rechterkolom blijft
   // proportioneel aan de BREEDTE zodat de verhoudingen van het origineel
-  // behouden blijven (anders oogt de linkerkolom uitgerekt).
-  const s = hoogteMm / (DEFAULT_LABEL_HOOGTE_MM - 0.5)
+  // behouden blijven (anders oogt de linkerkolom uitgerekt). Rekent t.o.v. de
+  // ONTWERP-basis (76,2×50,8), niet het default-formaat — zie BASIS_*_MM.
+  const s = hoogteMm / (BASIS_HOOGTE_MM - 0.5)
   const fz = (px: number) => `${Math.round(px * s * 10) / 10}px`
   const dik = (px: number) => `${Math.max(px, Math.round(px * s))}px`
 
@@ -102,7 +110,7 @@ export function ShippingLabel({
   const binnenBreedteMm = breedteMm - margeLinksMm - margeRechtsMm
   const binnenHoogteMm = hoogteMm - margeBovenMm - margeOnderMm
 
-  const colRechtsMm = binnenBreedteMm * (COL_RECHTS_MM / (DEFAULT_LABEL_BREEDTE_MM - 0.5))
+  const colRechtsMm = binnenBreedteMm * (COL_RECHTS_MM / (BASIS_BREEDTE_MM - 0.5))
   const rij1Mm = RIJ1_MM * s
   const rij3Mm = RIJ3_MM * s
   const colLinksMm = binnenBreedteMm - colRechtsMm
