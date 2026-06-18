@@ -63,7 +63,7 @@ function lookups(): FactuurDocumentLookups {
     ['ART2', { karpi_code: null, omschrijving: 'MAT', omschrijving_2: null, ean_code: null, gewicht_kg: 4 }],
   ])
   const klantArtikelen = new Map([['ART1', { klant_artikel: 'KL-77', omschrijving: null }]])
-  return { orderRegels, producten, klantArtikelen }
+  return { orderRegels, producten, klantArtikelen, klantEigenNamen: new Map() }
 }
 
 const CTX: FactuurInvoiceContext = {

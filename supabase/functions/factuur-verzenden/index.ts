@@ -10,6 +10,7 @@ import { logExternePayload } from '../_shared/externe-payload-audit.ts'
 import { buildKarpiInvoiceFixedWidth } from '../_shared/transus-formats/karpi-invoice-fixed-width.ts'
 import { fetchFactuurDocument } from '../_shared/facturatie/factuur-document.ts'
 import { naarFactuurPdfInput } from '../_shared/facturatie/factuur-pdf-renderer.ts'
+import { bepaalTaal } from '../_shared/klant-taal.ts'
 import {
   naarInvoiceInput,
   type FactuurInvoiceContext,
@@ -242,6 +243,14 @@ serve(async () => {
       // verrijking (dat doet alleen de on-demand factuur-pdf-functie).
       const pdfDoc = await fetchFactuurDocument(supabase, factuurId)
       const pdfDeel = naarFactuurPdfInput(pdfDoc)
+      // Taal van de factuur: land van het factuuradres → ISO2 (zelfde bron als de
+      // orderbevestiging). Default 'nl' bij leeg/onbekend land.
+      let factLandIso2: string | null = null
+      if (pdfDoc.header.fact_land) {
+        const { data: landData } = await supabase.rpc('normaliseer_land', { p_land: pdfDoc.header.fact_land })
+        factLandIso2 = (landData as string | null) ?? null
+      }
+      const pdfTaal = bepaalTaal(factLandIso2)
       const pdfBytes = await genereerFactuurPDF({
         bedrijf: {
           bedrijfsnaam: bedrijf.bedrijfsnaam,
@@ -263,6 +272,7 @@ serve(async () => {
         },
         factuur: pdfDeel.factuur,
         regels: pdfDeel.regels,
+        taal: pdfTaal,
       })
 
       // 5. Upload PDF naar storage

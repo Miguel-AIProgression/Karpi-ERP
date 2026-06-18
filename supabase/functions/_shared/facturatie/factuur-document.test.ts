@@ -9,7 +9,7 @@ import {
 } from './factuur-document.ts'
 
 function leegLookups(): FactuurDocumentLookups {
-  return { orderRegels: new Map(), producten: new Map(), klantArtikelen: new Map() }
+  return { orderRegels: new Map(), producten: new Map(), klantArtikelen: new Map(), klantEigenNamen: new Map() }
 }
 
 const FACTUUR: FactuurDocumentFactuurRow = {

@@ -2,6 +2,11 @@
 // (liggende) en het staande 3×6-ontwerp zodat beide exact dezelfde
 // product-/referentie-logica tonen.
 import type { ZendingPrintRegel } from '@/modules/logistiek/queries/zendingen'
+// kwaliteitNaamUitVervolg leeft sinds 2026-06-18 in _shared/ (ADR-0033): één
+// bron voor het label én de factuur-PDF. Cross-root re-export houdt de bestaande
+// import `from './shipping-label-data'` (o.a. de test) ongewijzigd.
+import { kwaliteitNaamUitVervolg } from '../../../../../supabase/functions/_shared/kwaliteit-naam'
+export { kwaliteitNaamUitVervolg } from '../../../../../supabase/functions/_shared/kwaliteit-naam'
 
 export interface RegelNamen {
   klantNaam: string
@@ -91,33 +96,6 @@ export function labelProductRegels(
   const klein =
     namen.karpiNaam && namen.karpiNaam !== namen.klantNaam ? namen.karpiNaam : null
   return { groot, klein }
-}
-
-// Tokens die het einde van de kwaliteitsnaam markeren in vervolgomschrijving:
-// "Kleur"/"Farbe"/"Kl."/"CA:" (NL + DE varianten uit de oude-systeem-import).
-const KWALITEIT_MARKER = /^(kleur|farbe|kl\.?|ca[:.]?)$/i
-
-/**
- * Haal de kwaliteitsnaam uit `producten.vervolgomschrijving`.
- *
- * Het oude systeem schreef die als "{KWALITEITNAAM} Kleur {nr} CA: {maat} cm"
- * (varianten: "Farbe"/"Kl."/los kleurnummer/artikelcode). De naam = de leidende
- * woorden tot het EERSTE token dat een cijfer bevat of een kleur-/CA-marker is.
- * Geverifieerd op 18.181 vaste producten: 0 lekken een code/cijfer, 23 leveren
- * geen naam (vallen terug op het oude labelgedrag).
- *
- * Bron-keuze (2026-06-18): `kwaliteiten.omschrijving` was de logische plek maar
- * staat in de hele DB leeg (997/997 NULL); `vervolgomschrijving` is gevuld voor
- * 99,9% van de vaste producten.
- */
-export function kwaliteitNaamUitVervolg(vervolg: string | null | undefined): string | null {
-  if (!vervolg) return null
-  const woorden: string[] = []
-  for (const token of vervolg.replace(/\s+/g, ' ').trim().split(' ')) {
-    if (/\d/.test(token) || KWALITEIT_MARKER.test(token)) break
-    woorden.push(token)
-  }
-  return woorden.join(' ').trim() || null
 }
 
 /**

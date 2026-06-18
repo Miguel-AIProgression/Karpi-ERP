@@ -43,6 +43,7 @@ function lookups(): FactuurDocumentLookups {
     orderRegels: new Map([[50, { karpi_code: 'BAN21', gewicht_kg: 7.5 }]]),
     producten: new Map(),
     klantArtikelen: new Map(),
+    klantEigenNamen: new Map(),
   }
 }
 
@@ -59,7 +60,8 @@ Deno.test('naarFactuurPdfInput: header overgenomen incl. verlegd', () => {
   assertEquals(factuur.totaal_gewicht_kg, undefined)
 })
 
-Deno.test('naarFactuurPdfInput: regel-omschrijving = gedeelde artikeltekst', () => {
+Deno.test('naarFactuurPdfInput: zonder product-titel → bestaande artikeltekst + omschrijving_2 (fallback)', () => {
+  // Geen product-lookup → geen kwaliteit/maat → klant_titel null → ongewijzigd gedrag.
   const doc = bouwFactuurDocument(FACTUUR, REGELS, lookups(), { vertegenwoordiger: 'Jan', isTestMessage: false })
   const { regels } = naarFactuurPdfInput(doc)
   assertEquals(regels.length, 1)
@@ -74,4 +76,37 @@ Deno.test('naarFactuurPdfInput: regel-omschrijving = gedeelde artikeltekst', () 
     prijs: 50,
     bedrag: 100,
   })
+})
+
+Deno.test('naarFactuurPdfInput: tapijt-regel → kwaliteitnaam − afmeting, geen Karpi-code, geen dubbele', () => {
+  const lk = lookups()
+  // Vaste-maat tapijt: kwaliteitnaam uit vervolgomschrijving + product-maat.
+  lk.producten.set('ART1', {
+    karpi_code: 'BAN21',
+    omschrijving: 'BANGKOK KLEUR 21',
+    ean_code: null,
+    gewicht_kg: null,
+    vervolgomschrijving: 'GALAXY Kleur 21 CA: 60x90 cm',
+    lengte_cm: 90,
+    breedte_cm: 60,
+    kwaliteit_code: 'GAL',
+    kleur_code: '21',
+  })
+  const doc = bouwFactuurDocument(FACTUUR, REGELS, lk, { vertegenwoordiger: 'Jan', isTestMessage: false })
+  const { regels } = naarFactuurPdfInput(doc)
+  assertEquals(regels[0].omschrijving, 'GALAXY - 60x90 cm')
+  assertEquals(regels[0].omschrijving_2, undefined)
+})
+
+Deno.test('naarFactuurPdfInput: klant-eigennaam wint van kwaliteitnaam op de titel', () => {
+  const lk = lookups()
+  lk.producten.set('ART1', {
+    karpi_code: 'BAN21', omschrijving: 'BANGKOK KLEUR 21', ean_code: null, gewicht_kg: null,
+    vervolgomschrijving: 'GALAXY Kleur 21 CA: 60x90 cm', lengte_cm: 90, breedte_cm: 60,
+    kwaliteit_code: 'GAL', kleur_code: '21',
+  })
+  lk.klantEigenNamen.set('GAL|21', 'BREDA')
+  const doc = bouwFactuurDocument(FACTUUR, REGELS, lk, { vertegenwoordiger: 'Jan', isTestMessage: false })
+  const { regels } = naarFactuurPdfInput(doc)
+  assertEquals(regels[0].omschrijving, 'BREDA - 60x90 cm')
 })

@@ -13,6 +13,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { genereerFactuurPDF } from '../_shared/factuur-pdf.ts'
 import { fetchFactuurDocument } from '../_shared/facturatie/factuur-document.ts'
 import { naarFactuurPdfInput } from '../_shared/facturatie/factuur-pdf-renderer.ts'
+import { bepaalTaal } from '../_shared/klant-taal.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -122,6 +123,15 @@ serve(async (req) => {
       return jsonError(404, e instanceof Error ? e.message : String(e))
     }
     const base = naarFactuurPdfInput(doc)
+
+    // Taal van de factuur: land van het factuuradres → ISO2 via normaliseer_land
+    // (zelfde bron als de orderbevestiging). Default 'nl' bij leeg/onbekend land.
+    let factLandIso2: string | null = null
+    if (doc.header.fact_land) {
+      const { data: landData } = await supabase.rpc('normaliseer_land', { p_land: doc.header.fact_land })
+      factLandIso2 = (landData as string | null) ?? null
+    }
+    const taal = bepaalTaal(factLandIso2)
 
     // Secundaire fetches voor PDF-specifieke verrijking (m², gewicht, afleveradres).
     const orderIds = Array.from(new Set(doc.regels.map((r) => r.order_id).filter((v) => Number.isFinite(v))))
@@ -266,6 +276,7 @@ serve(async (req) => {
         totaal_gewicht_kg: totaalGewichtKg > 0 ? totaalGewichtKg : undefined,
       },
       regels: renderRegels,
+      taal,
     })
 
     return new Response(pdfBytes, {

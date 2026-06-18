@@ -52,6 +52,48 @@ prijslijst-regel, dus na deze fix toont de order "prijs ontbreekt" in plaats van
 Vangnet: 4 nieuwe Deno-tests (`product-matcher.test.ts` ×2, `shopify-types.test.ts` ×3),
 volledige bestaande suite ongewijzigd groen.
 
+## 2026-06-18 — Factuur-PDF: kwaliteit/klant-eigennaam − afmeting + klanttaal
+
+**Waarom:** de PDF-factuur toonde per tapijt-regel een dubbele, verkeerde
+omschrijving (2× de Karpi-code, bv. `PATS23XX060090` op FACT-2026-0006 → BDSK/DE)
+en stond altijd in het Nederlands, ook voor buitenlandse klanten. Gewenst: één
+regel "kwaliteitnaam (of klant-eigennaam) − afmeting" zónder Karpi-code, en de
+hele factuur in de taal van de klant. **Alleen de PDF-factuur** (preview +
+e-mailbijlage); de EDI-INVOIC blijft de technische artikeltekst sturen.
+
+**Wat (geen migratie — alleen leesqueries + bestaande RPC `resolve_klanteigen_naam`):**
+- **Regel-omschrijving (Slice A):** nieuw veld `ArtikelPresentatie.klant_titel`
+  (alleen door de PDF gelezen; EDI `naarInvoiceInput` blijft `artikel_tekst`
+  gebruiken → INVOIC gedragsneutraal, golden-test groen). Pure helper
+  [`factuur-product-titel.ts`](../supabase/functions/_shared/facturatie/factuur-product-titel.ts)
+  bouwt "naam − min×max cm": naam = klant-eigennaam (`resolve_klanteigen_naam`,
+  mig 199/200) ?? kwaliteitnaam uit `producten.vervolgomschrijving`. Beide (naam +
+  maat) verplicht, anders `null` → de PDF valt terug op de bestaande omschrijving
+  (VERZEND/toeslagen/admin-pseudo ongewijzigd). [`naarFactuurPdfInput`](../supabase/functions/_shared/facturatie/factuur-pdf-renderer.ts)
+  toont de titel 1× en laat bij een titel de rauwe `omschrijving_2` weg (lost de
+  dubbele op). [`fetchFactuurDocument`](../supabase/functions/_shared/facturatie/factuur-document.ts)
+  haalt de extra product-/orderregel-velden op + bouwt de klant-eigennaam-map.
+- **`kwaliteitNaamUitVervolg` verhuisd naar `_shared/`** (ADR-0033): nieuw
+  [`_shared/kwaliteit-naam.ts`](../supabase/functions/_shared/kwaliteit-naam.ts),
+  één bron voor het verzendlabel én de factuur; frontend `shipping-label-data.ts`
+  re-exporteert cross-root.
+- **Klanttaal (Slice B):** [`genereerFactuurPDF`](../supabase/functions/_shared/factuur-pdf.ts)
+  krijgt een `taal`-parameter + vertaaltabel `FACTUUR_TEKSTEN` (nl/de/fr/en) voor
+  álle statische labels (FACTUUR/koppen/order-header/TRANSPORT/BTW-blok/
+  betalingscond.); colon-uitlijning dynamisch per taal (Courier monospace).
+  `Taal`/`bepaalTaal`/`vertaalOmschrijving` verhuisd uit `orderbevestiging-taal.ts`
+  naar gedeeld [`_shared/klant-taal.ts`](../supabase/functions/_shared/klant-taal.ts)
+  (orderbevestiging re-exporteert). De edge functions `factuur-pdf` en
+  `factuur-verzenden` bepalen de taal uit `fact_land` via `normaliseer_land` →
+  `bepaalTaal` (zelfde patroon als de orderbevestiging). Bedragen/datum blijven
+  NL-formaat.
+- **Vangnet:** 27 Deno-tests groen (incl. golden INVOIC + nieuwe
+  `factuur-product-titel`/`kwaliteit-naam`/renderer-tapijt-tests); frontend
+  `typecheck` + `shipping-label-data` vitest groen; Deno-typecheck van de edge
+  functions introduceert geen nieuwe fout-klasse (alleen de bestaande `never`-ruis).
+- **Deploy:** `supabase functions deploy factuur-pdf factuur-verzenden`
+  (`_shared/` deelt mee). Geen migratie.
+
 ## 2026-06-18 — Factuur: 2-uur verzend-vertraging + pakbon als bijlage (mig 423)
 
 **Waarom:** een per-zending-factuur werd tot nu DIRECT na het verzenden van de
