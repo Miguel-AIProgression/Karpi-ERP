@@ -170,7 +170,7 @@ describe('expandLabels — SSCC-bron-van-waarheid', () => {
     expect(labels[0].sscc).toBeNull()
   })
 
-  it('mig 418: gebundelde kind-colli vallen weg; alleen losse colli + bundel-rij krijgen een label', () => {
+  it('mig 420: gebundelde kind-colli vallen weg; alleen losse colli + bundel-rij krijgen een label', () => {
     const zending = maakZending({
       zending_regels: [
         maakRegel({ id: 1, order_regel_id: 10, artikelnr: 'ART-A' }),

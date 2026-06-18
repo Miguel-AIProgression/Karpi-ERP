@@ -101,10 +101,10 @@ export interface ZendingPrintColli {
   /** Mig 388: bevroren, ontdubbelde klant-omschrijving (order_regels.omschrijving
    *  + _2). Single source voor de klant-naam op label/pakbon — niet meer live. */
   klant_omschrijving_snapshot: string | null
-  /** Mig 418: zelf-FK naar de bundel-rij. NOT NULL = dit colli zit in een bundel
+  /** Mig 420: zelf-FK naar de bundel-rij. NOT NULL = dit colli zit in een bundel
    *  en valt uit labels/carrier-bericht. */
   bundel_colli_id: number | null
-  /** Mig 418: TRUE = synthetische bundel-rij (eigen SSCC, "BUNDEL — N colli"). */
+  /** Mig 420: TRUE = synthetische bundel-rij (eigen SSCC, "BUNDEL — N colli"). */
   is_bundel: boolean
 }
 

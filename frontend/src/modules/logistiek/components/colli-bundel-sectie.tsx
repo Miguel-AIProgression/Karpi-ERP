@@ -8,7 +8,7 @@ import {
   useVerwijderColliBundel,
   useZendingColliVoorBundel,
 } from '@/modules/logistiek/hooks/use-colli-bundel'
-// Alleen Rhenus kent handmatige aanmelding/colli-bundeling (mig 418). De DB-RPC's
+// Alleen Rhenus kent handmatige aanmelding/colli-bundeling (mig 420). De DB-RPC's
 // dwingen dit hard af; deze constant stuurt alleen de zichtbaarheid van de sectie.
 const HANDMATIG_VERVOERDER = 'rhenus_sftp'
 

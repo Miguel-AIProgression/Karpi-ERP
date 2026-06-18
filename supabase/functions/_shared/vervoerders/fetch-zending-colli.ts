@@ -12,7 +12,7 @@
 // adapter stilletjes kon missen. Eén laag boven de [[Labelbarcode]]-seam,
 // zelfde patroon.
 //
-// Mig 418: filtert bundel_colli_id IS NULL — gebundelde kind-colli (Rhenus
+// Mig 420: filtert bundel_colli_id IS NULL — gebundelde kind-colli (Rhenus
 // colli-bundeling) vallen uit het bericht; de bundel-rij gaat als 1 collo mee.
 //
 // NIET puur (raakt de DB) → edge-only, geen cross-root-deling met de frontend
@@ -56,7 +56,7 @@ export async function fetchZendingColli(
     .from('zending_colli')
     .select(COLLI_SELECT)
     .eq('zending_id', zendingId)
-    // Mig 418: gebundelde kind-colli horen niet in het carrier-bericht; alleen
+    // Mig 420: gebundelde kind-colli horen niet in het carrier-bericht; alleen
     // losse colli + bundel-rijen (die hun eigen SSCC dragen).
     .is('bundel_colli_id', null)
     .order('colli_nr', { ascending: true });

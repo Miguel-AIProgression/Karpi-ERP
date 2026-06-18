@@ -174,7 +174,7 @@ export function bouwVerzenddocument(zending: ZendingPrintSet): Verzenddocument {
     regel?.order_regels?.order_id ?? primaireOrderId
 
   // ── colliRijen (labels) ──────────────────────────────────────────────────
-  // Mig 418: gebundelde kind-colli (bundel_colli_id != null) vallen weg uit de
+  // Mig 420: gebundelde kind-colli (bundel_colli_id != null) vallen weg uit de
   // labels — die zitten fysiek in de zak onder de bundel-sticker. De bundel-rij
   // zelf (is_bundel) draagt zijn eigen SSCC en wordt wél geprint.
   const colli = [...(zending.zending_colli ?? [])]

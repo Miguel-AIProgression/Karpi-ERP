@@ -1,6 +1,6 @@
 # Changelog — RugFlow ERP
 
-## 2026-06-18 — Colli-bundeling bij Rhenus (mig 418)
+## 2026-06-18 — Colli-bundeling bij Rhenus (mig 420)
 
 Magazijn kan binnen één Rhenus-zending colli samenpakken onder één nieuwe
 SSCC-sticker (1× betalen i.p.v. per collo). Bundel = extra `zending_colli`-rij
