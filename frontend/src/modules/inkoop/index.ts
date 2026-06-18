@@ -57,6 +57,7 @@ export type { RolStickerData } from './components/rol-sticker-layout'
 // Components — nieuw in Stap 6
 export { LeverancierStatsCard } from './components/leverancier-stats-card'
 export { InkoopRegelSamenvatting } from './components/inkoop-regel-samenvatting'
+export { EtaEditCell } from './components/eta-edit-cell'
 
 // Components — verhuisd in Stap 11 (cleanup)
 export { LeverancierFormDialog } from './components/leverancier-form-dialog'

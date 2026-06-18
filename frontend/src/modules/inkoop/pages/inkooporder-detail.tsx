@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, PackageCheck, Ban, Printer } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import {
@@ -9,6 +10,7 @@ import {
   OntvangstBoekenDialog,
   VoorraadOntvangstDialog,
   IORegelClaimsPopover,
+  EtaEditCell,
   type InkooporderRegel,
 } from '@/modules/inkoop'
 import { DocumentenCompact } from '@/components/documenten/documenten-compact'
@@ -35,6 +37,7 @@ function formatGeld(value: number | null): string {
 export function InkooporderDetailPage() {
   const { id } = useParams()
   const orderId = id ? Number(id) : undefined
+  const qc = useQueryClient()
   const { data, isLoading, error } = useInkooporderDetail(orderId)
   const updateStatus = useUpdateInkooporderStatus()
   const [ontvangstRegel, setOntvangstRegel] = useState<InkooporderRegel | null>(null)
@@ -148,6 +151,7 @@ export function InkooporderDetailPage() {
                 <th className="text-right pb-2 font-medium">Geleverd</th>
                 <th className="text-right pb-2 font-medium">Te leveren</th>
                 <th className="text-right pb-2 font-medium">Geclaimd</th>
+                <th className="text-left pb-2 pl-4 font-medium">ETA</th>
                 <th className="pb-2"></th>
               </tr>
             </thead>
@@ -198,6 +202,17 @@ export function InkooporderDetailPage() {
                       ) : (
                         <span className="text-xs text-slate-300">n.v.t.</span>
                       )}
+                    </td>
+                    <td className="py-2 pl-4">
+                      <EtaEditCell
+                        regelId={r.id}
+                        leverancierId={order.leverancier?.id ?? null}
+                        verwachtDatum={r.verwacht_datum}
+                        bijgewerktDoor={r.eta_bijgewerkt_door}
+                        bijgewerktOp={r.eta_bijgewerkt_op}
+                        leverancierNaam={order.leverancier?.naam ?? null}
+                        onSaved={() => qc.invalidateQueries({ queryKey: ['inkooporders', 'detail', orderId] })}
+                      />
                     </td>
                     <td className="py-2 text-right">
                       {r.te_leveren_m > 0 ? (

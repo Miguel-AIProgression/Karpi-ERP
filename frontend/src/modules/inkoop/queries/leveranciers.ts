@@ -196,7 +196,7 @@ export async function verwijderPortalToegang(leverancierId: number): Promise<voi
 export async function updateRegelEta(
   regelId: number,
   verwachtDatum: string,
-  leverancierId: number,
+  leverancierId: number | null,
   notitie?: string | null,
 ): Promise<void> {
   const { error } = await supabase.rpc('update_regel_eta', {
