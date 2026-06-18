@@ -12,10 +12,10 @@ Deno.test('capabilityVoor: onbekende carrier → null (geen preflight)', () => {
   assertEquals(capabilityVoor('edi_partner_a'), null);
 });
 
-Deno.test('HST: REST, NL-bereik, telefoon+land verplicht, pallet-defaults', () => {
+Deno.test('HST: REST, NL+BE-bereik, telefoon+land verplicht, pallet-defaults', () => {
   const c = capabilityVoor('hst_api')!;
   assertEquals(c.protocol, 'rest');
-  assertEquals(c.landbereik, ['NL']);
+  assertEquals(c.landbereik, ['NL', 'BE']);
   assertEquals(c.preflight.vereistTelefoon, true);
   assertEquals(c.preflight.vereistLandInBereik, true);
   assertEquals(c.preflight.vereistColli, false);

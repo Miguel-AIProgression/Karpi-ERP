@@ -7,6 +7,7 @@
 // vervoerder-eisen.ts, ADR-0033) dezelfde uitkomst gebruiken.
 
 import { capabilityVoor } from './vervoerders/capabilities.ts';
+import { landNaarIso2Strikt } from './adres-split.ts';
 
 export interface VerzendContext {
   vervoerder_code: string;
@@ -76,12 +77,16 @@ export function valideerVoorVervoerder(ctx: VerzendContext): VerzendValidatie {
   }
 
   if (preflight.vereistLandInBereik) {
-    const land = (ctx.afl_land ?? '').trim().toUpperCase();
-    if (!(landbereik ?? []).includes(land)) {
+    // Normaliseer naar ISO-2 (`'BELGIË'`/`'Nederland'` → `'BE'`/`'NL'`) zodat de
+    // bereik-check ook vrije-tekst-landen dekt — `afl_land` is een vrij TEXT-veld
+    // en staat in de praktijk zowel als 'BE' als 'BELGIË' (en 'NL'/'NEDERLAND').
+    // landbereik bevat ISO-2-codes. Onbekend land → null → buiten bereik.
+    const iso2 = landNaarIso2Strikt(ctx.afl_land);
+    if (!iso2 || !(landbereik ?? []).includes(iso2)) {
       problemen.push({
         code: 'LAND_BUITEN_BEREIK',
         veld: 'afl_land',
-        melding: `HST bedient ${land || '(leeg)'} niet — kies handmatig een vervoerder.`,
+        melding: `HST bedient ${(ctx.afl_land ?? '').trim() || '(leeg)'} niet — kies handmatig een vervoerder.`,
       });
     }
   }
