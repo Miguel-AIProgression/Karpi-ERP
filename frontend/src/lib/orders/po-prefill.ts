@@ -124,6 +124,13 @@ export function mapMatchNaarPrefill(match: PoMatchResultaat): PoPrefill {
 
   let gematcht = 0
   let concept = 0
+  // TODO (backlog — "bron → order-form-state"-seam, zie lib/orders/order-hydratie.ts):
+  // deze adapter zet GEEN vrije_voorraad/besteld_inkoop op de regels (het regel-input-
+  // contract, RegelProductVelden). match_klant_po levert geen producten-join, dus de
+  // velden zijn hier niet beschikbaar. Gevolg: een PO-voorgevulde voorradige regel
+  // kan met vrije_voorraad=undefined door berekenRegelDekking gaan → vals IO-tekort,
+  // zelfde klasse als ORD-2026-0614. Echte fix vereist een producten-lookup voor de
+  // gematchte artikelnrs en daarna metProductVelden(regel, …) — eigen slice.
   const regels: OrderRegelFormData[] = match.regels.map((r) => {
     const aantal = r.aantal ?? 1
     const basis: OrderRegelFormData = {

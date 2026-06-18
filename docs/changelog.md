@@ -50,6 +50,51 @@ blijft als badge onder de regel staan (Gepland → … → Ingepakt).
   [`order-regels-table.tsx`](../frontend/src/components/orders/order-regels-table.tsx).
 - `order_regels.te_leveren` zelf blijft ongemoeid (voedt facturatie/status/allocatie).
 
+## 2026-06-18 — Order-hydratie: vals "wacht op inkoop" bij bewerken opgelost (ORD-2026-0614)
+
+**Waarom:** melding bij ORD-2026-0614 — twee voorradige, pickbare artikelen,
+maar bij het wijzigen van de leverdatum opende onterecht de "wacht op inkoop"-
+dialoog (deelleveren/in één keer), waarbij juist de gewone voorradige **Loranda**
+als wachtend werd aangewezen en niet de omgestickerde regel. Root cause: de
+order-**bewerk**-flow rehydrateerde de orderregels naar form-state zónder
+`vrije_voorraad`/`besteld_inkoop` ([order-edit.tsx](../frontend/src/pages/orders/order-edit.tsx)
+mapte ze nooit; [fetchOrderRegels](../frontend/src/lib/supabase/queries/orders.ts)
+joinde ze niet). Daardoor zag [`berekenRegelDekking`](../frontend/src/modules/reserveringen/lib/dekking-preview.ts)
+`vrij=0` en meldde een **vals IO-tekort** voor elke regel zónder
+omsticker-keuze. De omgestickerde regel ontsnapte toevallig omdat z'n handmatige
+claim wél als `uitwisselbaar_keuzes` werd gerehydrateerd — vandaar het
+asymmetrische, "vreemde" gedrag. Dezelfde mapping vergat ook `lever_modus`,
+waardoor de `!header.lever_modus`-guard de dialoog hoe dan ook heropende én de
+update-RPC `lever_modus` op NULL wiste.
+
+**Wat (Order-hydratie — nieuwe term in CONTEXT.md, inverse van Order-commit):**
+- Nieuwe pure module [`lib/orders/order-hydratie.ts`](../frontend/src/lib/orders/order-hydratie.ts):
+  `hydrateerOrderRegels(regels, keuzes)` bouwt de bewerk-form-state, plus de
+  gedeelde helper `metProductVelden(regel, velden)` + type `RegelProductVelden`
+  dat het **regel-input-contract** vastlegt (de display-only producten-velden
+  `vrije_voorraad`/`besteld_inkoop`/`is_pseudo`/`is_dropship` die de
+  form-beslissingen voeden). Tweede adapter op het *"bron → order-form-state"*-
+  seam naast `po-prefill`; spiegel van `order-commit`.
+- `fetchOrderRegels` joint nu `producten.vrije_voorraad, besteld_inkoop`
+  (`toRegel` laat het product winnen van de ongebruikte `order_regels`-kolom;
+  `OrderRegel` kreeg `besteld_inkoop`). Additief — order-detail leest het niet.
+- [order-edit.tsx](../frontend/src/pages/orders/order-edit.tsx): inline mapping
+  vervangen door `hydrateerOrderRegels`; `lever_modus` in de header
+  gerehydrateerd.
+- [order-line-editor.tsx](../frontend/src/components/orders/order-line-editor.tsx)
+  `addArticle` consumeert dezelfde `metProductVelden`-helper (gedragsneutraal) →
+  twee echte adapters delen het contract.
+- [po-prefill.ts](../frontend/src/lib/orders/po-prefill.ts) gemarkeerd met een
+  TODO: deelt dezelfde latente bug (geen producten-join) — eigen backlog-slice.
+
+**Niet meegenomen (bewust):** de krappe-voorraad-randcase (order claimt de laatste
+rol → `producten.vrije_voorraad=0`) blijft — daarvoor is de Claim-state de juiste
+bron (kandidaat K2: de bewerk-flow leunt op `order_regel_levertijd` i.p.v. de
+client-simulatie). Puur frontend, geen migratie. Tests:
+[order-hydratie.test.ts](../frontend/src/lib/orders/__tests__/order-hydratie.test.ts)
+(contract-helper + fixture-hydratie + ORD-2026-0614-regressie + "bug zonder
+hydratie"). Typecheck schoon.
+
 ## 2026-06-18 — Verzendetiket: ronde karpetten als Ø-diameter
 
 **Waarom:** vervolg op de kleurnummer+vorm-etiketregel. Ronde karpetten kregen

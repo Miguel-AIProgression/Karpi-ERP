@@ -76,6 +76,21 @@ claims) — zonder React of I/O. Implementatie: `bouwOrderCommit` in
 `order-form.tsx` is de dunne schil die het plan uitvoert.
 _Avoid_: saveMutation (dat is de huidige implementatie-locatie, niet het concept)
 
+**Order-hydratie**:
+De inverse van [[Order-commit]]: bouwt uit een **bestaande** Order de form-state
+(`OrderRegelFormData[]`) waarmee de order-form de bewerk-flow opent. Tweede
+adapter op het *"bron → order-form-state"*-seam dat de PO-prefill
+(`mapMatchNaarPrefill`) ook bewoont. Implementatie: `hydrateerOrderRegels` in
+`frontend/src/lib/orders/order-hydratie.ts`. Draagt náást de regel-velden het
+**regel-input-contract** over — de display-only producten-velden
+(`vrije_voorraad`, `besteld_inkoop`, `is_pseudo`, `is_dropship`) die de
+form-beslissingen voeden (`berekenRegelDekking` → IO-tekort → LeverModusDialog).
+Eén gedeelde helper (`metProductVelden`) zet die velden zodat een bouwer ze niet
+stil kan vergeten — de oorzaak van ORD-2026-0614 (ontbrekend `vrije_voorraad`
+→ vals IO-tekort op een voorradige regel). De header-rehydratie blijft in
+`order-edit.tsx` (heeft client-context nodig).
+_Avoid_: order-edit-mapping (de oude inline-locatie, niet het concept), rehydratie (te vaag)
+
 ### Snijden & confectie
 
 **Snijplan**:
@@ -207,6 +222,8 @@ _Avoid_: factuur-regel-afleiding per renderpad, twee factuur→INVOIC-transforms
 - Een **Order** bevat één of meer **Orderregels**
 - Elk **Intake-kanaal** is een adapter op de **Order-landing**; het handmatige
   kanaal bouwt zijn invoer via de **Order-commit**-pipeline
+- **Order-hydratie** is de inverse van **Order-commit**: de bewerk-flow laadt een
+  bestaande **Order** terug naar dezelfde `OrderRegelFormData`-form-state-shape
 - Een maatwerk-**Orderregel** produceert één **Snijplan** per stuk
 - Een **Factuurdocument** rendert naar factuur-PDF én EDI-INVOIC; beide tonen
   dezelfde **Artikelpresentatie**, die óók de orderbevestiging voedt
