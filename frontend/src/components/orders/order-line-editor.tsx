@@ -468,7 +468,22 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr,
     return lineKeys.current.get(index)!
   }
 
+  // Maatwerk-velden die de prijs (en afgeleiden) bepalen. We herberekenen de
+  // prijs UITSLUITEND wanneer één hiervan in deze update zit. Een handmatige
+  // prijs-, korting- of omschrijving-wijziging laat de (mogelijk overschreven)
+  // prijs dus intact — voorheen ketste een handmatige prijs meteen terug naar
+  // de berekende waarde, waardoor maatwerk-prijzen onbewerkbaar leken
+  // (verzoek Marjon, 18-06-2026: berekening blijft de basis, maar moet daarna
+  // handmatig te overschrijven zijn). Wijzigt de gebruiker later een afmeting/
+  // vorm/afwerking, dan herberekent het systeem bewust opnieuw — de oude
+  // override geldt dan niet meer voor de nieuwe maat.
+  const MAATWERK_PRIJS_VELDEN: (keyof OrderRegelFormData)[] = [
+    'maatwerk_lengte_cm', 'maatwerk_breedte_cm', 'maatwerk_diameter_cm',
+    'maatwerk_vorm', 'maatwerk_afwerking', 'maatwerk_m2_prijs',
+  ]
+
   const updateLine = (index: number, updates: Partial<OrderRegelFormData>) => {
+    const raaktMaatwerkPrijs = MAATWERK_PRIJS_VELDEN.some((k) => k in updates)
     const updated = lines.map((l, i) => {
       if (i !== index) return l
       const merged = { ...l, ...updates }
@@ -477,7 +492,7 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr,
       // veranderen. Vorm-toeslag + afwerking-prijs worden opnieuw uit de
       // lookups afgeleid — alleen `merged.maatwerk_vorm_toeslag` gebruiken
       // zou de oude waarde bevriezen (bug t/m mig 244).
-      if (merged.is_maatwerk && merged.maatwerk_m2_prijs) {
+      if (merged.is_maatwerk && merged.maatwerk_m2_prijs && raaktMaatwerkPrijs) {
         const vormCode = merged.maatwerk_vorm ?? 'rechthoek'
         const oppervlak = berekenPrijsOppervlakM2(
           vormCode,
