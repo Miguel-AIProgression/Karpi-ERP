@@ -4,6 +4,7 @@ import {
   fetchBugMeldingen,
   markeerVerwerktGezien,
   setBugStatus,
+  verwijderBugMelding,
   type BugMelding,
   type BugMeldingStatus,
   type NieuweBugMelding,
@@ -39,6 +40,14 @@ export function useSetBugStatus() {
       status: BugMeldingStatus
       notitie?: VerwerktNotitie
     }) => setBugStatus(id, status, notitie),
+    onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
+  })
+}
+
+export function useVerwijderBugMelding() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => verwijderBugMelding(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
   })
 }

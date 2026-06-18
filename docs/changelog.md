@@ -29,6 +29,25 @@ De pick/label/pakbon/zending-flow en de order→`Verzonden`-overgang zijn
 vervoerder-agnostisch en blijven identiek; alleen de portal-aanmelding valt weg
 (de zending blijft op `Klaar voor verzending`, zoals bij afhalen/DPD).
 
+## 2026-06-18 — Bug-meldingen: melding verwijderen (melder of beheerder)
+
+**Waarom:** een verbeterpunt/bug-melding kon alleen van status veranderen
+(Open/Verwerkt/Geaccepteerd), niet verwijderd worden. Niet meer relevante meldingen
+bleven zo in de lijst staan. Verzoek: zowel de oorspronkelijke melder als de
+developer (beheerder) moeten een melding kunnen weggooien.
+
+**Wat:** een prullenbak-knop ("Verwijderen") op elke melding-kaart in
+[`bug-meldingen.tsx`](../frontend/src/pages/feedback/bug-meldingen.tsx), zichtbaar voor
+de melder én de beheerder, met `confirm()`-bevestiging. Achterliggend nieuwe RPC
+`verwijder_bug_melding(p_id)` (mig 425, SECURITY DEFINER) die de autorisatie van
+`set_bug_status` spiegelt (melder of `is_bug_beheerder()`), de rij verwijdert en de
+`bijlage_path` teruggeeft. De frontend ruimt daarna de storage-bijlage best-effort op
+(`verwijderBugMelding` → `useVerwijderBugMelding`). Mig 425 voegt ook de ontbrekende
+storage DELETE-policy op bucket `bug-bijlagen` toe (eigen map of beheerder) — mig 342
+gaf alleen INSERT + SELECT.
+
+**Scope:** frontend (query + hook + UI) + mig 425. Geen wijziging aan het statusmodel.
+
 ## 2026-06-18 — Verzendetiket: kleurnummer + vorm in de vetgedrukte productregel
 
 **Waarom:** verzoek Thom (ZEND-2026-0034). De vetgedrukte regel op het verzendetiket

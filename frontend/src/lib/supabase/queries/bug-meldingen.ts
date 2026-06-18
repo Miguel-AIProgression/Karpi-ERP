@@ -115,6 +115,24 @@ export async function setBugStatus(
   return data as BugMelding
 }
 
+/**
+ * Verwijdert een melding definitief. Mag alleen door de melder of de beheerder
+ * (afgedwongen in de RPC verwijder_bug_melding, mig 425). De RPC geeft de
+ * bijlage_path terug; die ruimen we daarna best-effort op uit storage — een
+ * mislukte storage-remove (wees-bestand) mag het verwijderen niet blokkeren.
+ */
+export async function verwijderBugMelding(id: number): Promise<void> {
+  const { data: bijlagePath, error } = await supabase.rpc('verwijder_bug_melding', {
+    p_id: id,
+  })
+  if (error) throw error
+
+  if (bijlagePath) {
+    const { error: rmErr } = await supabase.storage.from(BUCKET).remove([bijlagePath as string])
+    if (rmErr) console.warn('Bijlage van verwijderde melding kon niet opgeruimd worden:', rmErr)
+  }
+}
+
 /** Markeert alle eigen Verwerkt-meldingen als gezien; dooft de teller rechtsboven. */
 export async function markeerVerwerktGezien(): Promise<number> {
   const { data, error } = await supabase.rpc('markeer_verwerkt_gezien')
