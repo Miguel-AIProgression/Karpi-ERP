@@ -104,12 +104,19 @@ export function MagazijnOverviewPage() {
   // Gefilterde tellingen per bucket — zodat de weektabs meebewegen als een
   // vervoerder-filter actief is. null = geen filter → val terug op stats.
   const gefilterdeTellingenPerBucket = useMemo(() => {
-    // Live tellingen wanneer er op vervoerder gefilterd wordt OF in afronden-modus
-    // (waar alleen lopende pickrondes meetellen). Anders null → val terug op stats.
-    if ((vervoerderFilter === 'all' && modus !== 'afronden') || !orders) return null
+    // Live tellingen per bucket, modus- én vervoerder-bewust zodat de weektab-
+    // badges exact de getoonde lijst weerspiegelen:
+    //  - 'afronden' telt alleen orders MÉT een lopende pickronde,
+    //  - 'starten' sluit lopende pickrondes juist UIT (daar valt niets meer te
+    //    starten — die horen in de Afronden-modus),
+    //  - een actief vervoerder-filter vernauwt verder.
+    // `orders` is al door de Pick & Ship-gate (pick_ship_zichtbaar + dag-horizon)
+    // gegaan, dus dit telt de daadwerkelijk zichtbare orders. null = nog geen
+    // data → val terug op de server-stats.
+    if (!orders) return null
     const m = new Map<BucketKey, number>()
     for (const o of orders) {
-      if (modus === 'afronden' && !o.actieve_pickronde) continue
+      if (modus === 'afronden' ? !o.actieve_pickronde : o.actieve_pickronde) continue
       if (vervoerderFilter !== 'all') {
         const r = regelsPerOrder?.get(o.order_id)
         if (!r) continue
@@ -127,9 +134,15 @@ export function MagazijnOverviewPage() {
   }, [orders, regelsPerOrder, vervoerderFilter, modus])
 
   const naVervoerderFilter = useMemo(() => {
-    // Afronden-modus toont uitsluitend orders met een lopende pickronde — aan een
-    // nog-niet-gestarte order valt niets af te ronden (verzoek Miguel 18-06).
-    const basis = modus === 'afronden' ? gefilterd.filter((o) => o.actieve_pickronde) : gefilterd
+    // Strikte scheiding tussen de twee modi (verzoek Miguel 18-06):
+    //  - 'afronden' toont uitsluitend orders MÉT een lopende pickronde (alleen
+    //    daar valt iets af te ronden);
+    //  - 'starten' toont uitsluitend orders ZÓNDER lopende pickronde (de zwarte
+    //    Verzendset-knop) — een al-gestarte order hoort in de Afronden-modus en
+    //    mag de te-starten-lijst niet vervuilen.
+    const basis = gefilterd.filter((o) =>
+      modus === 'afronden' ? o.actieve_pickronde : !o.actieve_pickronde,
+    )
     if (vervoerderFilter === 'all') return basis
     return basis.filter((o) => {
       const r = vervoerderMap.get(o.order_id)
@@ -341,13 +354,21 @@ export function MagazijnOverviewPage() {
     },
   ]
 
+  // De "/totaal"-suffix verschijnt alleen wanneer de telling een echte deel-
+  // verzameling is: bij een actief vervoerder-filter of in de Afronden-modus
+  // (lopende pickrondes ⊂ alle open orders). In de gewone Starten-modus zonder
+  // filter is de telling de volledige te-starten-lijst → geen suffix (gedragsbehoud).
+  const toonTellingSuffix = vervoerderFilter !== 'all' || modus === 'afronden'
   const tabs = weekTabs.map((t) => ({
     key: t.key,
     label: t.label,
-    aantal: gefilterdeTellingenPerBucket?.get(t.key) ?? stats?.per_bucket[t.key] ?? 0,
-    // Toon een dimme originele telling naast de gefilterde telling zodat de
-    // gebruiker ziet hoeveel orders er in totaal in die week staan.
-    aantalTotaal: gefilterdeTellingenPerBucket ? (stats?.per_bucket[t.key] ?? 0) : null,
+    // Bij een live tellingsmap is een ontbrekende bucket écht 0 — niet "val terug
+    // op stats". Die fallback toonde voorheen onterecht het volledige weektotaal
+    // voor een lege Afronden-bucket (bv. "74/74" i.p.v. "0/74").
+    aantal: gefilterdeTellingenPerBucket
+      ? gefilterdeTellingenPerBucket.get(t.key) ?? 0
+      : stats?.per_bucket[t.key] ?? 0,
+    aantalTotaal: toonTellingSuffix ? (stats?.per_bucket[t.key] ?? 0) : null,
   }))
 
   return (
