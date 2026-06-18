@@ -97,12 +97,31 @@ De Code128-waarde die fysiek op het verzendlabel staat: AI(00) + de
 18-cijferige SSCC (20 cijfers). Het is een eigenschap van **ons label**, niet
 van een vervoerder — dezelfde doos, ongeacht wie hem ophaalt. Daarom leeft de
 encoding op één plek (`_shared/vervoerders/labelbarcode.ts`, `labelBarcode()`)
-en lezen álle consumenten die: de drie label-varianten (compact/staand/DPD), de
+en lezen álle consumenten die: het [[Verzendlabel]], de
 HST-`BarCode`, de Verhoek-`ScanCode` en de Rhenus-`<sscc>`. Een colli zonder
 SSCC levert geen Labelbarcode (`null`) — er mag nooit een niet-aangemelde
 barcode geprint of verstuurd worden. De SSCC-waarde zelf blijft single-source
 uit `zending_colli.sscc`; de Labelbarcode is de gedeelde *encoding* daarvan.
 _Avoid_: scancode, SSCC-barcode (per-carrier termen — het is één label-feit)
+
+**Verzendlabel**:
+De fysieke sticker op één collo: één canonieke layout (liggend, het HST-ontwerp)
+met afzender, order/productregels, adres-kader, vervoerder-badge, colli-telling,
+[[Labelbarcode]] en referentie-voet. Het is een eigenschap van **ons pakket**,
+niet van een vervoerder: álle vervoerders krijgen exact hetzelfde label, op één
+gelokaliseerd verschil na — de HST-depotregel onder de badge (HST-eigen
+postcode→depot-lookup). Daarom leeft de layout op **één plek** (het
+`ShippingLabel`-component, met `vervoerderNaam` als data-veld), niet meer als drie
+near-dubbele renderers (de oude compact/staand/DPD-varianten, elk met een eigen
+kopie van de zone-layout + een eigen `vervoerder_code === 'hst_api'`-tak). Het formaat komt uit
+`vervoerders.label_*_mm` met de HST-maat (152,4×76,2) als **default**, zodat een
+nieuwe vervoerder zonder formaat-rij automatisch het juiste label erft i.p.v.
+terug te vallen op de kleine legacy-3×2-maat (de oorzaak van het "Rhenus"-
+afkappings-incident 2026-06-18). De product-/referentie-data komt uit de bevroren
+[[Zending-colli]]-snapshot, gelijk aan pakbon en vervoerder-payload. Een tweede
+per-vervoerder-presentatieverschil (depot voor carrier X) = pas dán een descriptor
+extraheren (twee adapters = echte seam), niet speculatief vooraf.
+_Avoid_: compact/staand/DPD-labelvariant, per-vervoerder labelontwerp
 
 **Zending-colli**:
 De bevroren per-pakket-snapshotrijen van een zending (`zending_colli`: sscc,
