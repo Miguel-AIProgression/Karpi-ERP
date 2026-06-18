@@ -9,8 +9,9 @@ import {
   useZendingColliVoorBundel,
 } from '@/modules/logistiek/hooks/use-colli-bundel'
 // Alleen Rhenus kent handmatige aanmelding/colli-bundeling (mig 420). De DB-RPC's
-// dwingen dit hard af; deze constant stuurt alleen de zichtbaarheid van de sectie.
-const HANDMATIG_VERVOERDER = 'rhenus_sftp'
+// dwingen dit hard af; deze frontend-spiegel stuurt alleen de zichtbaarheid van de
+// sectie + de doorverwijzing vanaf de Verzendset-pagina (één bron-van-waarheid).
+import { isHandmatigAanmeldenVervoerder } from '@/modules/logistiek/lib/handmatig-aanmelden'
 
 interface Props {
   zendingId: number
@@ -22,7 +23,7 @@ interface Props {
 
 export function ColliBundelSectie({ zendingId, zendingNr, vervoerderCode, status, aantalColli }: Props) {
   const zichtbaar =
-    vervoerderCode === HANDMATIG_VERVOERDER &&
+    isHandmatigAanmeldenVervoerder(vervoerderCode) &&
     status === 'Klaar voor verzending' &&
     (aantalColli ?? 0) >= 2
 

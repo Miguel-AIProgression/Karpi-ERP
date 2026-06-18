@@ -24,6 +24,7 @@ import {
   labelFormaatVoor,
   vervoerderInfoVoor,
 } from '@/modules/logistiek/lib/printset'
+import { isHandmatigAanmeldenVervoerder } from '@/modules/logistiek/lib/handmatig-aanmelden'
 
 type PrintMode = 'all' | 'labels' | 'pakbon' | 'tapijt-stickers'
 
@@ -110,6 +111,16 @@ export function ZendingPrintSetPage() {
     )
   }
 
+  // Mig 420: een Rhenus-zending met >=2 colli wordt na voltooien NIET automatisch
+  // aangemeld maar vastgehouden — de operator moet eerst (optioneel) colli bundelen
+  // en de zending handmatig aanmelden op de zending-detailpagina. Tel niet-gebundelde
+  // colli (tijdens 'Picken' bestaan er nog geen bundels, dus = het fysieke aantal).
+  const losseColliAantal = (zending.zending_colli ?? []).filter(
+    (c) => c.bundel_colli_id == null && !c.is_bundel,
+  ).length
+  const isRhenusBundel =
+    isHandmatigAanmeldenVervoerder(zending.vervoerder_code) && losseColliAantal >= 2
+
   return (
     <>
       <div className="print:hidden">
@@ -190,14 +201,39 @@ export function ZendingPrintSetPage() {
               <li className="flex gap-2.5">
                 <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-800 text-[11px] font-semibold text-white">3</span>
                 <span>
-                  <strong>Klik op de groene knop "Voltooi pickronde".</strong>{' '}
-                  Een picker kiezen mag, maar hoeft niet. Daarna gaat alles vanzelf: de order wordt{' '}
-                  <em>Verzonden</em>, de factuur volgt, en de
-                  zending wordt automatisch bij de vervoerder aangemeld. Je hoeft hier verder niets te
-                  doen — de track &amp; trace komt binnen zodra de vervoerder reageert.
+                  {isRhenusBundel ? (
+                    <>
+                      <strong>Klik op de groene knop "Voltooi pickronde".</strong>{' '}
+                      Een picker kiezen mag, maar hoeft niet. Deze <strong>Rhenus</strong>-zending heeft
+                      meerdere colli en wordt daarom <strong>niet</strong> automatisch aangemeld. Na het
+                      voltooien ga je automatisch naar de zending-pagina, waar je colli kunt{' '}
+                      <strong>samenpakken (bundelen)</strong> onder één nieuwe sticker en de zending
+                      vervolgens <strong>aanmeldt bij Rhenus</strong>.
+                    </>
+                  ) : (
+                    <>
+                      <strong>Klik op de groene knop "Voltooi pickronde".</strong>{' '}
+                      Een picker kiezen mag, maar hoeft niet. Daarna gaat alles vanzelf: de order wordt{' '}
+                      <em>Verzonden</em>, de factuur volgt, en de
+                      zending wordt automatisch bij de vervoerder aangemeld. Je hoeft hier verder niets te
+                      doen — de track &amp; trace komt binnen zodra de vervoerder reageert.
+                    </>
+                  )}
                 </span>
               </li>
             </ol>
+          </div>
+        ) : isRhenusBundel && zending.status === 'Klaar voor verzending' ? (
+          <div className="mb-4 rounded-[var(--radius-sm)] border border-terracotta-200 bg-white px-4 py-3 text-sm text-slate-700">
+            Deze <strong>Rhenus</strong>-zending is voltooid maar wordt <strong>niet</strong>{' '}
+            automatisch aangemeld. Pak eventueel colli samen (bundelen) en meld de zending aan op de{' '}
+            <Link
+              to={`/logistiek/${zending.zending_nr}`}
+              className="font-medium text-terracotta-700 underline hover:text-terracotta-800"
+            >
+              zending-pagina
+            </Link>
+            . Labels en pakbon kun je hier opnieuw printen.
           </div>
         ) : (
           <div className="mb-4 rounded-[var(--radius-sm)] border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
@@ -243,6 +279,9 @@ export function ZendingPrintSetPage() {
                 zendingId={zending.id}
                 zendingStatus={zending.status}
                 pickerId={pickerId}
+                navigeerNaVoltooienNaar={
+                  isRhenusBundel ? `/logistiek/${zending.zending_nr}` : undefined
+                }
               />
             </div>
             {/* Correctie-actie (per ongeluk gestart), bewust subtiel en los van de

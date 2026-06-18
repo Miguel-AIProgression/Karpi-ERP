@@ -1,5 +1,28 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-18 — Rhenus colli-bundeling: doorverwijzing vanaf de Verzendset-pagina (frontend-only)
+
+**Waarom:** mig 420 (colli-bundeling) stond volledig live (hold + RPC's + `enqueue` 2-arg
+geverifieerd in productie), maar de bundel-UI zit op de **zending-detailpagina** en verschijnt
+pas bij status `'Klaar voor verzending'`. De operator werkt een zending echter af op de
+**Verzendset-pagina** (`zending-printset.tsx`) tijdens een lopende pickronde — en die zei in
+stap 3 letterlijk *"de zending wordt automatisch bij de vervoerder aangemeld, je hoeft hier
+verder niets te doen"*. Voor een Rhenus-zending met ≥2 colli klopt dat niet (die wordt
+vastgehouden) → de operator wist niet dat/waar hij moest bundelen.
+
+**Wat** (puur frontend, geen migratie):
+- Nieuwe pure helper [`handmatig-aanmelden.ts`](frontend/src/modules/logistiek/lib/handmatig-aanmelden.ts)
+  (`isHandmatigAanmeldenVervoerder` / `HANDMATIG_AANMELDEN_VERVOERDERS`) = één frontend-bron
+  voor "welke vervoerder houdt vast". `ColliBundelSectie` consumeert 'm nu (i.p.v. lokale const).
+- `VoltooiPickrondeKnop` krijgt optionele prop `navigeerNaVoltooienNaar` (default `/logistiek`).
+- `zending-printset.tsx` detecteert `isRhenusBundel` (handmatig-aanmelden-vervoerder + ≥2
+  niet-gebundelde colli) en: (1) toont een aangepaste stap-3-tekst die uitlegt dat de zending
+  niet automatisch aangemeld wordt en dat je colli kunt bundelen, (2) navigeert na voltooien
+  naar de **zending-detailpagina** (`/logistiek/:zending_nr`) i.p.v. het overzicht — daar staat
+  de bundel-sectie + "Aanmelden bij Rhenus", (3) corrigeert ook de "al voltooid"-tekst voor een
+  vastgehouden Rhenus-zending met een link naar de zending-pagina.
+- Vangnet: typecheck schoon, `printset.test.ts` 16/16 groen.
+
 ## 2026-06-18 — Colli-bundeling bij Rhenus (mig 420)
 
 Magazijn kan binnen één Rhenus-zending colli samenpakken onder één nieuwe
