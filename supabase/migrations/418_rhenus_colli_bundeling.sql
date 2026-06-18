@@ -1,11 +1,11 @@
--- Migratie 417: colli-bundeling bij Rhenus (ADR-volgt; spec 2026-06-17).
+-- Migratie 418: colli-bundeling bij Rhenus (ADR-volgt; spec 2026-06-17).
 -- Binnen één zending meerdere colli samenpakken onder één nieuwe SSCC; alleen
 -- die bundel-SSCC + de niet-gebundelde colli worden bij Rhenus aangemeld.
 --
 -- NIET te verwarren met zending-bundeling (orders -> 1 zending, mig 222) of de
 -- bundel-sleutel (mig 228-230). Dit is COLLI-bundeling, alleen voor Rhenus.
 --
--- Nummer 417: her-verifieer vlak vóór merge t.o.v. origin/main (collisie-historie).
+-- Nummer 418: her-verifieer vlak vóór merge t.o.v. origin/main (collisie-historie).
 -- Idempotent: ADD COLUMN IF NOT EXISTS + CREATE OR REPLACE.
 
 -- ============================================================================
@@ -229,7 +229,11 @@ BEGIN
   -- multi-colli-zending vast tot de operator vrijgeeft (p_handmatig=TRUE). Een
   -- 1-colli-zending kan niet gebundeld worden -> gaat altijd automatisch door.
   IF NOT p_handmatig AND COALESCE(v_handmatig_verv, FALSE) THEN
-    SELECT COUNT(*) INTO v_aantal_colli FROM zending_colli WHERE zending_id = p_zending_id;
+    -- Tel alleen niet-gebundelde colli (bundel_colli_id IS NULL): bij de auto-trigger
+    -- bestaan er nog geen bundels, dus dit = het fysieke aantal; de filter maakt de
+    -- intentie expliciet en is defensief tegen een eventuele her-trigger na bundeling.
+    SELECT COUNT(*) INTO v_aantal_colli
+      FROM zending_colli WHERE zending_id = p_zending_id AND bundel_colli_id IS NULL;
     IF v_aantal_colli >= 2 THEN
       RETURN 'held_handmatig';
     END IF;
@@ -277,7 +281,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 GRANT EXECUTE ON FUNCTION enqueue_zending_naar_vervoerder(BIGINT, BOOLEAN) TO authenticated;
 
 COMMENT ON FUNCTION enqueue_zending_naar_vervoerder IS
-  'SWITCH-POINT + hold-guard. Sinds mig 417: 2-arg (p_handmatig). Een vervoerder '
+  'SWITCH-POINT + hold-guard. Sinds mig 418: 2-arg (p_handmatig). Een vervoerder '
   'met handmatig_aanmelden houdt een >=2-colli-zending vast (RETURN ''held_handmatig'') '
   'tot de operator vrijgeeft (p_handmatig=TRUE, via meld_zending_handmatig_aan). '
   'De trigger roept de 1-arg-vorm aan -> resolved naar deze functie met default FALSE.';
@@ -326,14 +330,18 @@ DECLARE
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns
                   WHERE table_name = 'zending_colli' AND column_name = 'bundel_colli_id') THEN
-    RAISE EXCEPTION 'Mig 417: kolom zending_colli.bundel_colli_id ontbreekt';
+    RAISE EXCEPTION 'Mig 418: kolom zending_colli.bundel_colli_id ontbreekt';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                  WHERE table_name = 'zending_colli' AND column_name = 'is_bundel') THEN
+    RAISE EXCEPTION 'Mig 418: kolom zending_colli.is_bundel ontbreekt';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns
                   WHERE table_name = 'vervoerders' AND column_name = 'handmatig_aanmelden') THEN
-    RAISE EXCEPTION 'Mig 417: kolom vervoerders.handmatig_aanmelden ontbreekt';
+    RAISE EXCEPTION 'Mig 418: kolom vervoerders.handmatig_aanmelden ontbreekt';
   END IF;
   SELECT handmatig_aanmelden INTO v_flag FROM vervoerders WHERE code = 'rhenus_sftp';
-  RAISE NOTICE 'Mig 417 verifier: rhenus_sftp.handmatig_aanmelden = % (verwacht TRUE)', v_flag;
+  RAISE NOTICE 'Mig 418 verifier: rhenus_sftp.handmatig_aanmelden = % (verwacht TRUE)', v_flag;
 END $$;
 
 NOTIFY pgrst, 'reload schema';
