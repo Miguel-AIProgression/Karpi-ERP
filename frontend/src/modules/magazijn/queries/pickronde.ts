@@ -111,6 +111,10 @@ export async function fetchColliVoorZending(zendingId: number): Promise<PickColl
     .from('zending_colli')
     .select('id, colli_nr, sscc, pick_uitkomst, pick_opmerking, omschrijving_snapshot')
     .eq('zending_id', zendingId)
+    // Mig 421: de synthetische bundel-rij (is_bundel=TRUE) is geen fysiek pick-item —
+    // je verzamelt de kind-colli, niet de zak. Die rij weglaten houdt de pick-vinkjes
+    // schoon (de gebundelde kinderen blijven gewoon afvinkbaar).
+    .eq('is_bundel', false)
     .order('colli_nr', { ascending: true })
 
   if (error) throw toError(error, 'Colli ophalen mislukt')

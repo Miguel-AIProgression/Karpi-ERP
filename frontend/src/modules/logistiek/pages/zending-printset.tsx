@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, FileText, Tags } from 'lucide-react'
+import { ArrowLeft, Boxes, FileText, Tags } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { PakbonDocument } from '@/modules/logistiek/components/pakbon-document'
 import { ShippingLabel } from '@/modules/logistiek/components/shipping-label'
@@ -24,6 +24,7 @@ import {
   vervoerderInfoVoor,
 } from '@/modules/logistiek/lib/printset'
 import { isHandmatigAanmeldenVervoerder } from '@/modules/logistiek/lib/handmatig-aanmelden'
+import { ColliBundelDialog } from '@/modules/logistiek/components/colli-bundel-dialog'
 
 type PrintMode = 'all' | 'labels' | 'pakbon' | 'tapijt-stickers'
 
@@ -44,6 +45,8 @@ export function ZendingPrintSetPage() {
   // start_pickronde) → localStorage last-picker → null. Operator kan wisselen
   // bij shift-overgang. Wordt gepersisteerd zodra hij voltooi/markeer doet.
   const [pickerId, setPickerId] = useState<number | null>(null)
+  // Mig 421: colli-bundel-pop-up tijdens de pickronde (Rhenus + ≥2 colli).
+  const [bundelOpen, setBundelOpen] = useState(false)
 
   useEffect(() => {
     const reset = () => setPrintMode('all')
@@ -264,6 +267,27 @@ export function ZendingPrintSetPage() {
               }
               pickerId={pickerId}
             />
+            {/* Mig 421: Rhenus-zending met meerdere colli — pak colli samen in één zak
+                onder één nieuwe sticker, al tijdens het verzamelen. */}
+            {isRhenusBundel && (
+              <div className="rounded-[var(--radius)] border border-terracotta-200 bg-white p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-700">Colli bundelen (Rhenus)</h3>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      Pak meerdere colli samen in één zak onder één nieuwe sticker. De losse
+                      stickers gooi je dan weg.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setBundelOpen(true)}
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius-sm)] bg-terracotta-600 px-3 py-2 text-sm font-medium text-white hover:bg-terracotta-700"
+                  >
+                    <Boxes size={15} /> Colli bundelen
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="flex items-center justify-between gap-3">
               <button
                 onClick={() => navigate('/pick-ship')}
@@ -288,6 +312,14 @@ export function ZendingPrintSetPage() {
               <AnnuleerPickrondeKnop zendingId={zending.id} zendingStatus={zending.status} />
             </div>
           </div>
+        )}
+
+        {bundelOpen && isRhenusBundel && (
+          <ColliBundelDialog
+            zendingId={zending.id}
+            zendingNr={zending.zending_nr}
+            onClose={() => setBundelOpen(false)}
+          />
         )}
       </div>
 

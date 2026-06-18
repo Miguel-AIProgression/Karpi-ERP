@@ -1,5 +1,29 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-18 — Rhenus colli-bundeling tijdens de pickronde (mig 421 + pop-up)
+
+**Waarom:** colli-bundeling (mig 420) kon alleen ná "Voltooi pickronde" (status
+'Klaar voor verzending') op de zending-detailpagina. De magazijnmedewerker wil al
+**tijdens het verzamelen** (op de Verzendset-pagina, status 'Picken') colli samenpakken
+onder één nieuwe sticker — via een pop-up, zonder ergens heen te navigeren.
+
+**Wat:**
+- **Mig 421:** `maak_colli_bundel` + `verwijder_colli_bundel` status-poort verruimd van
+  `= 'Klaar voor verzending'` naar `IN ('Picken','Klaar voor verzending')`. Body verder
+  byte-identiek aan mig 420 (alleen de status-IF + COMMENT). Veilig: `voltooi_pickronde`
+  (mig 258) blokkeert alleen op `niet_gevonden` en pickt 'open'-rijen (incl. de bundel-rij);
+  de hold-guard in `enqueue_zending_naar_vervoerder` is ongewijzigd (aanmelden blijft ná voltooien).
+- **Pick-flow:** `fetchColliVoorZending` ([pickronde.ts](frontend/src/modules/magazijn/queries/pickronde.ts))
+  filtert `is_bundel=false` zodat de synthetische bundel-rij geen los pick-item wordt; de
+  gebundelde kind-colli blijven gewoon afvinkbaar.
+- **Pop-up** [colli-bundel-dialog.tsx](frontend/src/modules/logistiek/components/colli-bundel-dialog.tsx):
+  colli selecteren → bundelen → bundelsticker printen (`?colli=`-link) + ontbundelen. Hergebruikt
+  de bestaande bundel-hooks (`use-colli-bundel`). **Géén** "Aanmelden bij Rhenus" hier — dat blijft
+  ná "Voltooi pickronde" (de bestaande doorverwijzing naar zending-detail).
+- **Knop "Colli bundelen"** op de Verzendset-pagina ([zending-printset.tsx](frontend/src/modules/logistiek/pages/zending-printset.tsx))
+  tijdens 'Picken' bij een Rhenus-zending met ≥2 colli → opent de pop-up.
+- Vangnet: typecheck schoon, `pickronde.contract.test.ts` + `printset.test.ts` groen.
+
 ## 2026-06-18 — Verzendlabel als één deep module (compact/staand/DPD geconsolideerd)
 
 **Waarom:** HST- en Rhenus-labels zagen er verschillend uit op dezelfde printer
