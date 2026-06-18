@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, FileText, Tags } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { PakbonDocument } from '@/modules/logistiek/components/pakbon-document'
@@ -30,6 +30,9 @@ type PrintMode = 'all' | 'labels' | 'pakbon' | 'tapijt-stickers'
 export function ZendingPrintSetPage() {
   const { zending_nr } = useParams<{ zending_nr: string }>()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  // Mig 418: bundel-sticker apart printen — filter op één colli_nr (de bundel-rij).
+  const colliFilter = searchParams.get('colli')
   const { data: zending, isLoading, error } = useZendingPrintSet(zending_nr)
   const { data: tapijtStickers = [] } = useZendingStickerData(zending?.id)
   const [printMode, setPrintMode] = useState<PrintMode>('all')
@@ -68,7 +71,10 @@ export function ZendingPrintSetPage() {
     }
   }, [zending, includeTapijtStickers])
 
-  const labels = useMemo(() => (zending ? expandLabels(zending) : []), [zending])
+  const labels = useMemo(() => {
+    const alle = zending ? expandLabels(zending) : []
+    return colliFilter ? alle.filter((l) => String(l.colliNr) === colliFilter) : alle
+  }, [zending, colliFilter])
   const vervoerder = zending ? vervoerderInfoVoor(zending) : null
   const labelFormaat = zending ? labelFormaatVoor(zending) : null
   const isPrintType = zending?.vervoerders?.type === 'print'
