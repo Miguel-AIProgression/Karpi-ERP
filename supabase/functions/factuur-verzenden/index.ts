@@ -15,6 +15,10 @@ import {
   type FactuurInvoiceContext,
   type FactuurInvoiceOrder,
 } from '../_shared/facturatie/factuur-invoice-renderer.ts'
+import { fetchPakbonZending } from '../_shared/pakbon/fetch.ts'
+import { bouwPakbonDocument } from '../_shared/pakbon/pakbon-document.ts'
+import { genereerPakbonPDF } from '../_shared/pakbon/pakbon-pdf.ts'
+import { fetchBedrijfMetLogo } from '../_shared/pakbon/bedrijf.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -307,9 +311,26 @@ serve(async () => {
         if (avErr || !avBlob) throw new Error(`Download AV: ${avErr?.message ?? 'geen data'}`)
         const avBytes = new Uint8Array(await avBlob.arrayBuffer())
 
+        const orderIdsVoorLog = uniqueNumbers(regels.map((r) => Number(r.order_id)))
+
+        // Pakbon(nen) als extra bijlage: één pakbon-PDF per zending die deze
+        // factuur dekt — per_zending/bundel = 1, wekelijkse verzamelfactuur = N.
+        // Volledig best-effort: een ontbrekende pakbon mag de factuur-mail nooit
+        // blokkeren (zie genereerPakbonBijlagen).
+        const pakbonBijlagen = await genereerPakbonBijlagen(
+          supabase,
+          item.debiteur_nr,
+          orderIdsVoorLog,
+        )
+        const pakbonZin =
+          pakbonBijlagen.length > 0
+            ? `<p>De ${pakbonBijlagen.length > 1 ? 'pakbonnen vindt u' : 'pakbon vindt u'} eveneens als bijlage.</p>`
+            : ''
+
         const emailHtml = `
 <p>Geachte heer/mevrouw,</p>
 <p>Hierbij ontvangt u bijgaand factuur <strong>${factuur.factuur_nr}</strong>.</p>
+${pakbonZin}
 <p>Onze algemene voorwaarden vindt u als bijlage bij deze e-mail.</p>
 <p>Met vriendelijke groet,<br/>KARPI BV</p>
       `.trim()
@@ -317,15 +338,19 @@ serve(async () => {
         const attachments = [
           { filename: `${factuur.factuur_nr}.pdf`, content: pdfBytes },
           { filename: 'Algemene voorwaarden KARPI BV.pdf', content: avBytes },
+          ...pakbonBijlagen.map((p) => ({ filename: p.filename, content: p.content })),
         ]
 
-        // Mig 366: bijlage-verwijzingen voor de e-mailtijdlijn — beide bestanden
-        // staan (straks) in storage zodat de dialog ze via signed URL kan openen.
+        // Mig 366: bijlage-verwijzingen voor de e-mailtijdlijn — bestanden staan
+        // in storage zodat de dialog ze via signed URL kan openen. Pakbonnen
+        // krijgen alleen een ref als hun storage-upload lukte (best-effort).
         const bijlagenMeta = [
           { filename: `${factuur.factuur_nr}.pdf`, bucket: 'facturen', path: pdfPath },
           { filename: 'Algemene voorwaarden KARPI BV.pdf', bucket: 'documenten', path: AV_PATH },
+          ...pakbonBijlagen
+            .filter((p) => p.bucket && p.path)
+            .map((p) => ({ filename: p.filename, bucket: p.bucket as string, path: p.path as string })),
         ]
-        const orderIdsVoorLog = uniqueNumbers(regels.map((r) => Number(r.order_id)))
 
         // Stuur naar debiteur zelf
         await sendFactuurEmail({
@@ -487,6 +512,92 @@ async function logVerstuurdeEmails(
     if (error) console.warn(`[factuur-verzenden] e-mail-log mislukt: ${error.message}`)
   } catch (err) {
     console.warn(`[factuur-verzenden] e-mail-log mislukt: ${err}`)
+  }
+}
+
+interface PakbonBijlage {
+  filename: string
+  content: Uint8Array
+  bucket?: string
+  path?: string
+}
+
+// Genereert één pakbon-PDF per zending die deze factuur dekt (via zending_orders
+// M2M op de gefactureerde orders). Een per_zending/bundel-factuur levert 1
+// pakbon, een wekelijkse verzamelfactuur N (alle zendingen van die week).
+// Volledig BEST-EFFORT: elke fout (geen zending, geen colli, render-fout) wordt
+// gelogd en overgeslagen zodat de factuur-mail altijd doorgaat — een pakbon mag
+// nooit de facturatie blokkeren. De server-side renderer komt uit _shared/pakbon
+// (zelfde bron als de geprinte pakbon).
+async function genereerPakbonBijlagen(
+  supabase: ReturnType<typeof createClient>,
+  debiteurNr: number,
+  orderIds: number[],
+): Promise<PakbonBijlage[]> {
+  if (orderIds.length === 0) return []
+  try {
+    const { data: zoData, error: zoErr } = await supabase
+      .from('zending_orders')
+      .select('zending_id')
+      .in('order_id', orderIds)
+    if (zoErr) {
+      console.warn(`[factuur-verzenden] pakbon: zendingen ophalen mislukt: ${zoErr.message}`)
+      return []
+    }
+    const zendingOrders = (zoData ?? []) as Array<{ zending_id: number }>
+    const zendingIds = uniqueNumbers(zendingOrders.map((r) => Number(r.zending_id)))
+    if (zendingIds.length === 0) return []
+
+    const { data: zData, error: zErr } = await supabase
+      .from('zendingen')
+      .select('zending_nr')
+      .in('id', zendingIds)
+      .order('zending_nr')
+    if (zErr) {
+      console.warn(`[factuur-verzenden] pakbon: zending_nr ophalen mislukt: ${zErr.message}`)
+      return []
+    }
+    const zendingRijen = (zData ?? []) as Array<{ zending_nr: string }>
+    const zendingNrs = zendingRijen.map((r) => String(r.zending_nr)).filter(Boolean)
+    if (zendingNrs.length === 0) return []
+
+    const { bedrijf, logo } = await fetchBedrijfMetLogo(supabase)
+
+    const bijlagen: PakbonBijlage[] = []
+    for (const zendingNr of zendingNrs) {
+      try {
+        const zending = await fetchPakbonZending(supabase, zendingNr)
+        const doc = bouwPakbonDocument(zending)
+        const bytes = await genereerPakbonPDF(doc, bedrijf, logo)
+        const filename = `Pakbon-${zendingNr}.pdf`
+
+        // Storage-upload óók best-effort: lukt het, dan krijgt de pakbon een
+        // e-mailtijdlijn-referentie (signed URL). Faalt het, dan gaat de pakbon
+        // nog steeds als bijlage mee — alleen zonder tijdlijn-ref.
+        let bucket: string | undefined
+        let path: string | undefined
+        try {
+          const kandidaatPad = `${debiteurNr}/pakbon/${zendingNr}.pdf`
+          const up = await supabase.storage
+            .from('facturen')
+            .upload(kandidaatPad, bytes, { contentType: 'application/pdf', upsert: true })
+          if (!up.error) {
+            bucket = 'facturen'
+            path = kandidaatPad
+          }
+        } catch {
+          // upload mislukt — bijlage gaat zonder tijdlijn-ref mee
+        }
+
+        bijlagen.push({ filename, content: bytes, bucket, path })
+      } catch (err) {
+        console.warn(`[factuur-verzenden] pakbon ${zendingNr} overgeslagen: ${err}`)
+      }
+    }
+    return bijlagen
+  } catch (err) {
+    console.warn(`[factuur-verzenden] pakbon-bijlagen mislukt: ${err}`)
+    return []
   }
 }
 
