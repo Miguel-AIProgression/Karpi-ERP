@@ -1,5 +1,38 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-18 — Verzendetiket: kleurnummer + vorm in de vetgedrukte productregel
+
+**Waarom:** verzoek Thom (ZEND-2026-0034). De vetgedrukte regel op het verzendetiket
+toonde alleen kwaliteitsnaam + maat ("GALAXY 200x290 cm"), waardoor de picker het
+**kleurnummer** en de **vorm/uitvoering** niet kon zien — twee karpetten van dezelfde
+kwaliteit en maat maar verschillende kleur of vorm (rechthoekig vs. organisch) waren
+op het etiket niet te onderscheiden. Concreet voorbeeld: een 200x290 Galaxy **organisch**
+was niet te onderscheiden van een gewone rechthoekige 200x290 Galaxy.
+
+**Wat:** de grote regel toont nu `KWALITEIT (kleurnr) maat cm [vorm]`, bv.
+`GALAXY (10) 200x290 cm Organisch`. Kleine regel (Karpi-code) ongewijzigd. Beide
+toevoegingen zijn optioneel: ontbreekt het kleurnummer of is de uitvoering gewoon
+rechthoekig, dan valt dat deel weg.
+
+**Databron:** kleurnummer = `producten.kleur_code` (schoon, puur numeriek). De vorm
+heeft **geen** schone bron — `producten.vorm` bevat alleen "rechthoek"/"rond" (en is
+fout: RADIUS "ROND" staat als rechthoek), en `maatwerk_vorm_code` is leeg voor vaste
+producten. De uitvoering staat enkel als suffix in `vervolgomschrijving` ("…290x200 cm
+ORGA"), tússen ruis als kleurnamen (SILVER/GREY) en dessins (SPLASH/ROMANCE). Daarom
+een **whitelist** van echte vorm-woorden (nieuwe pure helper `vormUitOmschrijving` in
+[`shipping-label-data.ts`](../frontend/src/modules/logistiek/lib/shipping-label-data.ts)),
+genormaliseerd naar één Nederlandse term: Rond/Ovaal/Organisch/Contour/Pebble/Halfrond/
+Special shape. Geverifieerd over 18.161 vaste producten: 0 ruis-categorieën, ZEND-2026-0034
+geeft exact `GALAXY (10) 200x290 cm Organisch`.
+
+**Scope:** alleen het verzendetiket (`labelProductRegels` → vaste-maat-tak); de
+carrier-snapshot (`omschrijving_snapshot`) en de pakbon blijven ongemoeid. Puur
+frontend, geen migratie. Query `fetchZendingPrintSet` kreeg `producten.kleur_code` erbij.
+Tests: shipping-label-data.test.ts uitgebreid (kleurnummer + 15 vorm-cases). **Bekende
+beperking:** ~1507 ronde producten hebben alleen een diameter (`breedte_cm=0`) en lopen
+via het bestaande legacy-pad (geen kwaliteit-titel) — diameter-weergave ("Ø240 cm Rond")
+is een mogelijke vervolgslice.
+
 ## 2026-06-18 — Fix: pakbon "Uw naam"-subregel alleen tonen als die zinvol afwijkt
 
 **Waarom:** op de pakbon (Lieferschein-layout) verscheen onder élke artikelregel

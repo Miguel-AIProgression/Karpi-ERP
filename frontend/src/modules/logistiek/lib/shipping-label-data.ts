@@ -132,8 +132,16 @@ export function labelProductRegels(
 }
 
 /**
- * Vaste-maat-formaat (kwaliteitsnaam + maten / Karpi-code), of `null` als het
- * niet van toepassing is — dan valt de caller terug op het oude gedrag.
+ * Vaste-maat-formaat, of `null` als het niet van toepassing is — dan valt de
+ * caller terug op het oude gedrag.
+ *
+ * Grote regel (besluit 2026-06-18, verzoek Thom): kwaliteitsnaam, kleurnummer
+ * tussen haakjes, maten (kleinste eerst) en — als de uitvoering afwijkt — de
+ * vorm. Voorbeeld: "GALAXY (10) 200x290 cm Organisch". Zo ziet de picker dat
+ * het géén standaard rechthoekige 200x290 is. Kleine regel = de Karpi-code.
+ *
+ * Kleurnummer en vorm zijn beide optioneel: ontbreekt het kleurnummer of is de
+ * uitvoering gewoon rechthoekig (geen vorm-token), dan valt dat deel weg.
  */
 function vasteMaatRegels(regel: ZendingPrintRegel | null): LabelProductRegels | null {
   const orderRegel = regel?.order_regels
@@ -146,11 +154,51 @@ function vasteMaatRegels(regel: ZendingPrintRegel | null): LabelProductRegels | 
   if (!kwaliteit || !lengte || !breedte) return null
   const kleinsteMaat = Math.min(lengte, breedte)
   const grootsteMaat = Math.max(lengte, breedte)
+  const kleur = (product.kleur_code ?? '').trim()
+  const vorm = vormUitOmschrijving(product.vervolgomschrijving ?? product.omschrijving)
   const klein = (product.karpi_code ?? regel?.artikelnr ?? '').trim() || null
-  return {
-    groot: `${kwaliteit} ${kleinsteMaat}x${grootsteMaat} cm`,
-    klein,
+  const groot = [
+    kwaliteit,
+    kleur ? `(${kleur})` : '',
+    `${kleinsteMaat}x${grootsteMaat} cm`,
+    vorm ?? '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+  return { groot, klein }
+}
+
+/**
+ * Karpet-vorm/uitvoering uit de productomschrijving, genormaliseerd naar één
+ * Nederlandse term, of `null` voor een standaard (rechthoekig) karpet.
+ *
+ * WAAROM PARSEN: er is geen schone bron. `producten.vorm` bevat alleen
+ * "rechthoek"/"rond" (en is fout — RADIUS "ROND" staat als rechthoek), en
+ * `maatwerk_vorm_code` is leeg voor vaste producten. De uitvoering staat enkel
+ * als suffix in de omschrijving ("…290x200 cm ORGA"), tússen ruis als
+ * kleurnamen (SILVER/GREY/TAUPE) en dessins (SPLASH/ROMANCE). Daarom een
+ * WHITELIST van echte vorm-woorden i.p.v. het kale staart-fragment tonen —
+ * zo lift geen kleur-/dessinnaam mee.
+ *
+ * Word-boundary-match (JS `\b`), volgorde = specifiek-eerst zodat "halfrond"
+ * niet als "rond" en "special shape" niet als losse "shape" leest.
+ */
+const VORM_PATRONEN: ReadonlyArray<{ re: RegExp; naam: string }> = [
+  { re: /\bhalfrond\b/i, naam: 'Halfrond' },
+  { re: /\bspecial\s+shape\b/i, naam: 'Special shape' },
+  { re: /\b(?:organisch|organic|orga)\b/i, naam: 'Organisch' },
+  { re: /\b(?:ovaal|oval)\b/i, naam: 'Ovaal' },
+  { re: /\bcontour\b/i, naam: 'Contour' },
+  { re: /\bpebble\b/i, naam: 'Pebble' },
+  { re: /\b(?:rond|rund|rnd)\b/i, naam: 'Rond' },
+]
+
+export function vormUitOmschrijving(tekst: string | null | undefined): string | null {
+  if (!tekst) return null
+  for (const { re, naam } of VORM_PATRONEN) {
+    if (re.test(tekst)) return naam
   }
+  return null
 }
 
 export function productMaat(
