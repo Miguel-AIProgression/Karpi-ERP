@@ -1,7 +1,7 @@
 # Changelog — RugFlow ERP
 
 ## 2026-06-18 — "Uw referentie" (klant-eigennaam) op verzendlabel
-- `zending_colli.klanteigen_naam_snapshot` (mig 418): klant-eigennaam voor de
+- `zending_colli.klanteigen_naam_snapshot` (mig 419): klant-eigennaam voor de
   kwaliteit, bevroren bij `genereer_zending_colli` via `resolve_klanteigen_naam`
   (bron `klanteigen_namen`, mig 199/200). De drie labelvarianten tonen een regel
   "Uw referentie: <naam>" onder de kwaliteitscode, alleen als de klant een

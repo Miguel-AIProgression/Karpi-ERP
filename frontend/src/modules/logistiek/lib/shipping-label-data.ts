@@ -102,7 +102,7 @@ export function labelReferentie(order: { oud_order_nr: number | null; id: number
 
 /**
  * Klant-eigennaam voor de kwaliteit (bv. "BREDA"), bevroren in
- * `zending_colli.klanteigen_naam_snapshot` (mig 418). Leeg/whitespace → null
+ * `zending_colli.klanteigen_naam_snapshot` (mig 419). Leeg/whitespace → null
  * zodat de "Uw referentie"-regel alleen verschijnt bij een echte afwijkende
  * naam. Eén plek voor de niet-leeg-check, gedeeld door de drie labelvarianten.
  */

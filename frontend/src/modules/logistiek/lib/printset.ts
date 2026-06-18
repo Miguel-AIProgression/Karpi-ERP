@@ -44,7 +44,7 @@ export interface LabelItem {
   /** Bron-order (uit `order_regels.order_id`, fallback de primaire order) —
    * voedt de pakbon-groepering per bron-order (mig 222). */
   orderId: number | null
-  /** Mig 418: bevroren klant-eigennaam voor de kwaliteit ("Uw referentie" op
+  /** Mig 419: bevroren klant-eigennaam voor de kwaliteit ("Uw referentie" op
    * het label). `null` = geen afwijkende naam / legacy-colli. */
   klanteigenNaamSnapshot: string | null
 }

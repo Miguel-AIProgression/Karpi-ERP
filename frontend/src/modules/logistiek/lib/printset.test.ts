@@ -295,7 +295,7 @@ describe('label-datum + referentie (mig 388, D/E)', () => {
   })
 })
 
-// Mig 418: klant-eigennaam voor de kwaliteit ("Uw referentie") — bevroren in
+// Mig 419: klant-eigennaam voor de kwaliteit ("Uw referentie") — bevroren in
 // zending_colli.klanteigen_naam_snapshot, puur doorgegeven aan het label.
 describe('expandLabels — klant-eigennaam-snapshot (Uw referentie)', () => {
   it('draagt de klanteigen-naam door op het LabelItem', () => {

@@ -1,4 +1,4 @@
--- Migratie 418: klant-eigennaam voor de kwaliteit op het verzendlabel.
+-- Migratie 419: klant-eigennaam voor de kwaliteit op het verzendlabel.
 --
 -- Sommige klanten hanteren een eigen naam voor een kwaliteit (bv. debiteur
 -- noemt BEAC intern "BREDA"). Het oude systeem toonde die als regel
@@ -67,7 +67,7 @@ BEGIN
       ore.gewicht_kg      AS regel_gewicht_kg,
       COALESCE(ore.maatwerk_kwaliteit_code, p.kwaliteit_code) AS kwaliteit_code,
       k.omschrijving      AS kwaliteit_naam,
-      -- Mig 418: klant-eigennaam voor de kwaliteit, bevroren op shipmoment.
+      -- Mig 419: klant-eigennaam voor de kwaliteit, bevroren op shipmoment.
       -- NULL als de klant geen afwijkende naam heeft. Kwaliteit/kleur volgen
       -- dezelfde maatwerk→product-fallback als kwaliteit_code hierboven (en als
       -- snijplan_sticker_data, mig 295).
@@ -78,7 +78,7 @@ BEGIN
       ) AS klanteigen_naam
     FROM zending_regels zr
     LEFT JOIN order_regels ore ON ore.id = zr.order_regel_id
-    -- Mig 418: orders erbij voor debiteur_nr (klant-eigennaam-resolve).
+    -- Mig 419: orders erbij voor debiteur_nr (klant-eigennaam-resolve).
     LEFT JOIN orders o         ON o.id = ore.order_id
     -- Mig 400: join via het order_regel-artikel (zr.artikelnr is altijd NULL).
     LEFT JOIN producten p     ON p.artikelnr = COALESCE(ore.artikelnr, zr.artikelnr)
@@ -117,7 +117,7 @@ BEGIN
         -- carrier-ladder maatwerk → product, nu met werkende product-join.
         COALESCE(r.maatwerk_lengte_cm,  r.prod_lengte_cm),
         COALESCE(r.maatwerk_breedte_cm, r.prod_breedte_cm),
-        -- Mig 418: bevroren klant-eigennaam voor de kwaliteit (of NULL).
+        -- Mig 419: bevroren klant-eigennaam voor de kwaliteit (of NULL).
         r.klanteigen_naam,
         1
       );
@@ -134,7 +134,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 GRANT EXECUTE ON FUNCTION genereer_zending_colli(BIGINT) TO authenticated;
 
 COMMENT ON FUNCTION genereer_zending_colli(BIGINT) IS
-  'Mig 418 (superset van mig 400 → 399 → 390 → 387): gewicht-ladder + '
+  'Mig 419 (superset van mig 400 → 399 → 390 → 387): gewicht-ladder + '
   'klant_omschrijving_snapshot + lengte_cm/breedte_cm + klanteigen_naam_snapshot '
   '(klant-eigennaam voor de kwaliteit via resolve_klanteigen_naam). 1 colli per '
   'stuk, idempotent, SSCC + alle snapshots per colli — single source voor label, '
@@ -171,7 +171,7 @@ BEGIN
   SELECT COUNT(*) INTO v_met_naam
   FROM zending_colli
   WHERE klanteigen_naam_snapshot IS NOT NULL;
-  RAISE NOTICE 'Mig 418: colli met een klant-eigennaam-snapshot: % (0 is OK als geen niet-verzonden zending een klanteigen_namen-match heeft)', v_met_naam;
+  RAISE NOTICE 'Mig 419: colli met een klant-eigennaam-snapshot: % (0 is OK als geen niet-verzonden zending een klanteigen_namen-match heeft)', v_met_naam;
 END $$;
 
 NOTIFY pgrst, 'reload schema';

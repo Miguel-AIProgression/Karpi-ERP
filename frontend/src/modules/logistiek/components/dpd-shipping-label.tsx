@@ -21,7 +21,7 @@ interface Props {
    * source, gelijk aan label/pakbon/vervoerder. null → val terug op live `regel`. */
   omschrijvingSnapshot: string | null
   klantOmschrijvingSnapshot: string | null
-  /** Mig 418: klant-eigennaam voor de kwaliteit. null/leeg → geen "Uw referentie"-regel. */
+  /** Mig 419: klant-eigennaam voor de kwaliteit. null/leeg → geen "Uw referentie"-regel. */
   klanteigenNaamSnapshot: string | null
 }
 

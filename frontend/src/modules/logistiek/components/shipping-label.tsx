@@ -31,7 +31,7 @@ export interface ShippingLabelProps {
    * source, gelijk aan wat de vervoerder krijgt. null → val terug op live `regel`. */
   omschrijvingSnapshot: string | null
   klantOmschrijvingSnapshot: string | null
-  /** Mig 418: klant-eigennaam voor de kwaliteit (`zending_colli.klanteigen_naam_snapshot`).
+  /** Mig 419: klant-eigennaam voor de kwaliteit (`zending_colli.klanteigen_naam_snapshot`).
    * null/leeg → geen "Uw referentie"-regel. */
   klanteigenNaamSnapshot: string | null
   labelFormaat?: LabelFormaat
