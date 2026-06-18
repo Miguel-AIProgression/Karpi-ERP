@@ -18,7 +18,7 @@
 
 - **Werk uitsluitend in de worktree** `.worktrees/rhenus-colli-bundel` (branch `feat/rhenus-colli-bundel`). Niet op `main` of in de hoofd-working-tree (daar lopen andere sessies).
 - **Migraties worden handmatig toegepast** (project-conventie: `supabase db push` is gevaarlijk, MCP heeft geen toegang). De SQL-migratie krijgt daarom een ingebouwde `DO`-block-verifier die bij apply een `NOTICE` logt. Het daadwerkelijk *toepassen* op de DB is een **handmatige checkpoint** (de eigenaar draait de migratie via de Supabase SQL-editor of CLI). Schrijf het migratiebestand volledig; markeer apply als checkpoint.
-- **Migratienummer:** dit plan gebruikt **417**. De hoogste in de repo is nu 416. **Her-verifieer het nummer vlak vóór merge** t.o.v. `origin/main` (parallelle sessies claimen nummers — bekende collisie-historie). Als 417 bezet is: hernoem het bestand + de comment-header.
+- **Migratienummer:** dit plan gebruikt **418**. `origin/main` bevat al `417_hst_productie_cutover.sql`, dus 417 is bezet; 418 is het eerstvolgende vrije nummer. **Her-verifieer het nummer nogmaals vlak vóór merge** t.o.v. `origin/main` (parallelle sessies claimen nummers — bekende collisie-historie). Als 418 ondertussen bezet is: hernoem het bestand + de comment-header.
 - **Em-dash valkuil:** de bundel-stickertekst bevat een em-dash (`—`, U+2014). Schrijf die als correcte UTF-8 via de Write/Edit-tool — **nooit** via een PowerShell `-replace` (mojibake-valkuil `â€"`).
 - **Eén overload, niet twee:** `enqueue_zending_naar_vervoerder(BIGINT)` moet eerst ge-`DROP`t worden vóór je de 2-arg-versie maakt — anders blijft de oude 1-arg-overload bestaan en blijft de trigger díé (zonder hold-guard) aanroepen.
 
@@ -48,25 +48,25 @@ Expected: alle bestaande `printset.test.ts`-tests PASS (baseline vóór wijzigin
 
 ---
 
-## Task 1: Migratie 417 — datamodel, hold-vlag, RPC's, hold-guard
+## Task 1: Migratie 418 — datamodel, hold-vlag, RPC's, hold-guard
 
 Bouwt het volledige DB-fundament in één migratiebestand. Secties worden incrementeel toegevoegd; de migratie wordt als geheel gecommit en (handmatig) toegepast.
 
 **Files:**
-- Create: `supabase/migrations/417_rhenus_colli_bundeling.sql`
+- Create: `supabase/migrations/418_rhenus_colli_bundeling.sql`
 
 - [ ] **Step 1: Maak het migratiebestand met §1 (kolommen) + §2 (vlag)**
 
-Create `supabase/migrations/417_rhenus_colli_bundeling.sql`:
+Create `supabase/migrations/418_rhenus_colli_bundeling.sql`:
 ```sql
--- Migratie 417: colli-bundeling bij Rhenus (ADR-volgt; spec 2026-06-17).
+-- Migratie 418: colli-bundeling bij Rhenus (ADR-volgt; spec 2026-06-17).
 -- Binnen één zending meerdere colli samenpakken onder één nieuwe SSCC; alleen
 -- die bundel-SSCC + de niet-gebundelde colli worden bij Rhenus aangemeld.
 --
 -- NIET te verwarren met zending-bundeling (orders -> 1 zending, mig 222) of de
 -- bundel-sleutel (mig 228-230). Dit is COLLI-bundeling, alleen voor Rhenus.
 --
--- Nummer 417: her-verifieer vlak vóór merge t.o.v. origin/main (collisie-historie).
+-- Nummer 418: her-verifieer vlak vóór merge t.o.v. origin/main (collisie-historie).
 -- Idempotent: ADD COLUMN IF NOT EXISTS + CREATE OR REPLACE.
 
 -- ============================================================================
@@ -305,7 +305,11 @@ BEGIN
   -- multi-colli-zending vast tot de operator vrijgeeft (p_handmatig=TRUE). Een
   -- 1-colli-zending kan niet gebundeld worden -> gaat altijd automatisch door.
   IF NOT p_handmatig AND COALESCE(v_handmatig_verv, FALSE) THEN
-    SELECT COUNT(*) INTO v_aantal_colli FROM zending_colli WHERE zending_id = p_zending_id;
+    -- Tel alleen niet-gebundelde colli (bundel_colli_id IS NULL): bij de auto-trigger
+    -- bestaan er nog geen bundels, dus dit = het fysieke aantal; de filter maakt de
+    -- intentie expliciet en is defensief tegen een eventuele her-trigger na bundeling.
+    SELECT COUNT(*) INTO v_aantal_colli
+      FROM zending_colli WHERE zending_id = p_zending_id AND bundel_colli_id IS NULL;
     IF v_aantal_colli >= 2 THEN
       RETURN 'held_handmatig';
     END IF;
@@ -353,7 +357,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 GRANT EXECUTE ON FUNCTION enqueue_zending_naar_vervoerder(BIGINT, BOOLEAN) TO authenticated;
 
 COMMENT ON FUNCTION enqueue_zending_naar_vervoerder IS
-  'SWITCH-POINT + hold-guard. Sinds mig 417: 2-arg (p_handmatig). Een vervoerder '
+  'SWITCH-POINT + hold-guard. Sinds mig 418: 2-arg (p_handmatig). Een vervoerder '
   'met handmatig_aanmelden houdt een >=2-colli-zending vast (RETURN ''held_handmatig'') '
   'tot de operator vrijgeeft (p_handmatig=TRUE, via meld_zending_handmatig_aan). '
   'De trigger roept de 1-arg-vorm aan -> resolved naar deze functie met default FALSE.';
@@ -412,14 +416,18 @@ DECLARE
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns
                   WHERE table_name = 'zending_colli' AND column_name = 'bundel_colli_id') THEN
-    RAISE EXCEPTION 'Mig 417: kolom zending_colli.bundel_colli_id ontbreekt';
+    RAISE EXCEPTION 'Mig 418: kolom zending_colli.bundel_colli_id ontbreekt';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                  WHERE table_name = 'zending_colli' AND column_name = 'is_bundel') THEN
+    RAISE EXCEPTION 'Mig 418: kolom zending_colli.is_bundel ontbreekt';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns
                   WHERE table_name = 'vervoerders' AND column_name = 'handmatig_aanmelden') THEN
-    RAISE EXCEPTION 'Mig 417: kolom vervoerders.handmatig_aanmelden ontbreekt';
+    RAISE EXCEPTION 'Mig 418: kolom vervoerders.handmatig_aanmelden ontbreekt';
   END IF;
   SELECT handmatig_aanmelden INTO v_flag FROM vervoerders WHERE code = 'rhenus_sftp';
-  RAISE NOTICE 'Mig 417 verifier: rhenus_sftp.handmatig_aanmelden = % (verwacht TRUE)', v_flag;
+  RAISE NOTICE 'Mig 418 verifier: rhenus_sftp.handmatig_aanmelden = % (verwacht TRUE)', v_flag;
 END $$;
 
 NOTIFY pgrst, 'reload schema';
@@ -428,14 +436,14 @@ NOTIFY pgrst, 'reload schema';
 - [ ] **Step 7: Commit het migratiebestand**
 
 ```bash
-git add supabase/migrations/417_rhenus_colli_bundeling.sql
-git commit -m "feat(rhenus): mig 417 colli-bundeling — schema, RPC's, hold-guard"
+git add supabase/migrations/418_rhenus_colli_bundeling.sql
+git commit -m "feat(rhenus): mig 418 colli-bundeling — schema, RPC's, hold-guard"
 ```
 
 - [ ] **Step 8: CHECKPOINT (handmatig) — migratie toepassen + verifiëren**
 
 De eigenaar past de migratie toe via de Supabase SQL-editor of CLI (project-conventie: handmatig). Verifieer:
-- De `DO`-block geeft `NOTICE: Mig 417 verifier: rhenus_sftp.handmatig_aanmelden = t (verwacht TRUE)`.
+- De `DO`-block geeft `NOTICE: Mig 418 verifier: rhenus_sftp.handmatig_aanmelden = t (verwacht TRUE)`.
 - `SELECT handmatig_aanmelden FROM vervoerders WHERE code='rhenus_sftp';` → `t`.
 - `\d zending_colli` toont `bundel_colli_id` + `is_bundel`.
 
@@ -464,7 +472,7 @@ door:
 
 Voeg in de eerste test (`bevraagt de canonieke snapshot-kolommen + embed, gefilterd en gesorteerd`), ná de bestaande `assertEquals(argOf(ops, 'eq'), ['zending_id', 42]);`, toe:
 ```ts
-  // Mig 417: gebundelde kind-colli (bundel_colli_id NOT NULL) vallen uit het
+  // Mig 418: gebundelde kind-colli (bundel_colli_id NOT NULL) vallen uit het
   // carrier-bericht; alleen losse colli + bundel-rijen blijven over.
   assertEquals(argOf(ops, 'is'), ['bundel_colli_id', null]);
 ```
@@ -485,7 +493,7 @@ In `fetch-zending-colli.ts`, in `fetchZendingColli`, voeg `.is('bundel_colli_id'
     .from('zending_colli')
     .select(COLLI_SELECT)
     .eq('zending_id', zendingId)
-    // Mig 417: gebundelde kind-colli horen niet in het carrier-bericht; alleen
+    // Mig 418: gebundelde kind-colli horen niet in het carrier-bericht; alleen
     // losse colli + bundel-rijen (die hun eigen SSCC dragen).
     .is('bundel_colli_id', null)
     .order('colli_nr', { ascending: true });
@@ -493,7 +501,7 @@ In `fetch-zending-colli.ts`, in `fetchZendingColli`, voeg `.is('bundel_colli_id'
 
 Werk ook de module-docstring bovenaan bij met één regel (na de bestaande achtergrond-alinea):
 ```ts
-// Mig 417: filtert bundel_colli_id IS NULL — gebundelde kind-colli (Rhenus
+// Mig 418: filtert bundel_colli_id IS NULL — gebundelde kind-colli (Rhenus
 // colli-bundeling) vallen uit het bericht; de bundel-rij gaat als 1 collo mee.
 ```
 
@@ -509,7 +517,7 @@ Expected: alle tests PASS.
 
 ```bash
 git add supabase/functions/_shared/vervoerders/fetch-zending-colli.ts supabase/functions/_shared/vervoerders/fetch-zending-colli.test.ts
-git commit -m "feat(rhenus): colli-seam negeert gebundelde kind-colli (mig 417)"
+git commit -m "feat(rhenus): colli-seam negeert gebundelde kind-colli (mig 418)"
 ```
 
 > **Geen edge-deploy nu.** `rhenus-send`/`verhoek-send`/`hst-send` importeren deze seam; ze worden pas herdeployed bij de uiteindelijke uitrol (samen met de overige edge-functies). Verhoek/HST zien nooit bundels (geen `handmatig_aanmelden`), dus de filter is voor hen een no-op.
@@ -529,10 +537,10 @@ git commit -m "feat(rhenus): colli-seam negeert gebundelde kind-colli (mig 417)"
 
 In `queries/zendingen.ts`, voeg aan `interface ZendingPrintColli` (ná `klant_omschrijving_snapshot`) toe:
 ```ts
-  /** Mig 417: zelf-FK naar de bundel-rij. NOT NULL = dit colli zit in een bundel
+  /** Mig 418: zelf-FK naar de bundel-rij. NOT NULL = dit colli zit in een bundel
    *  en valt uit labels/carrier-bericht. */
   bundel_colli_id: number | null
-  /** Mig 417: TRUE = synthetische bundel-rij (eigen SSCC, "BUNDEL — N colli"). */
+  /** Mig 418: TRUE = synthetische bundel-rij (eigen SSCC, "BUNDEL — N colli"). */
   is_bundel: boolean
 ```
 
@@ -551,7 +559,7 @@ In `printset.test.ts`, breid de `maakColli`-helper-defaults uit (ná `klant_omsc
 
 Voeg binnen `describe('expandLabels — SSCC-bron-van-waarheid', ...)` deze test toe:
 ```ts
-  it('mig 417: gebundelde kind-colli vallen weg; alleen losse colli + bundel-rij krijgen een label', () => {
+  it('mig 418: gebundelde kind-colli vallen weg; alleen losse colli + bundel-rij krijgen een label', () => {
     const zending = maakZending({
       zending_regels: [
         maakRegel({ id: 1, order_regel_id: 10, artikelnr: 'ART-A' }),
@@ -599,7 +607,7 @@ In `printset.ts`, in `bouwVerzenddocument`, vervang het opbouwen van de colli-li
 Vervang door:
 ```ts
   // ── colliRijen (labels) ──────────────────────────────────────────────────
-  // Mig 417: gebundelde kind-colli (bundel_colli_id != null) vallen weg uit de
+  // Mig 418: gebundelde kind-colli (bundel_colli_id != null) vallen weg uit de
   // labels — die zitten fysiek in de zak onder de bundel-sticker. De bundel-rij
   // zelf (is_bundel) draagt zijn eigen SSCC en wordt wél geprint.
   const colli = [...(zending.zending_colli ?? [])]
@@ -621,7 +629,7 @@ Expected: alle tests PASS (incl. de bestaande — geen regressie).
 
 ```bash
 git add frontend/src/modules/logistiek/queries/zendingen.ts frontend/src/modules/logistiek/lib/printset.ts frontend/src/modules/logistiek/lib/printset.test.ts
-git commit -m "feat(rhenus): label-expansie negeert gebundelde kind-colli (mig 417)"
+git commit -m "feat(rhenus): label-expansie negeert gebundelde kind-colli (mig 418)"
 ```
 
 ---
@@ -645,7 +653,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 Voeg ná `const navigate = useNavigate()` toe:
 ```ts
   const [searchParams] = useSearchParams()
-  // Mig 417: bundel-sticker apart printen — filter op één colli_nr (de bundel-rij).
+  // Mig 418: bundel-sticker apart printen — filter op één colli_nr (de bundel-rij).
   const colliFilter = searchParams.get('colli')
 ```
 
@@ -673,7 +681,7 @@ Expected: geen type-fouten.
 
 ```bash
 git add frontend/src/modules/logistiek/pages/zending-printset.tsx
-git commit -m "feat(rhenus): printset ?colli-filter voor losse bundelsticker (mig 417)"
+git commit -m "feat(rhenus): printset ?colli-filter voor losse bundelsticker (mig 418)"
 ```
 
 ---
@@ -850,7 +858,7 @@ Expected: geen fouten.
 
 ```bash
 git add frontend/src/modules/logistiek/queries/colli-bundel.ts frontend/src/modules/logistiek/hooks/use-colli-bundel.ts
-git commit -m "feat(rhenus): queries + hooks voor colli-bundeling (mig 417)"
+git commit -m "feat(rhenus): queries + hooks voor colli-bundeling (mig 418)"
 ```
 
 ---
@@ -879,7 +887,7 @@ import {
 } from '@/modules/logistiek/hooks/use-colli-bundel'
 import type { ColliBundelRij } from '@/modules/logistiek/queries/colli-bundel'
 
-// Alleen Rhenus kent handmatige aanmelding/colli-bundeling (mig 417). De DB-RPC's
+// Alleen Rhenus kent handmatige aanmelding/colli-bundeling (mig 418). De DB-RPC's
 // dwingen dit hard af; deze constant stuurt alleen de zichtbaarheid van de sectie.
 const HANDMATIG_VERVOERDER = 'rhenus_sftp'
 
@@ -1127,7 +1135,7 @@ import { ColliBundelSectie } from '@/modules/logistiek/components/colli-bundel-s
 
 Plaats de sectie ná "Sectie 1 — zending-info" (vóór "Sectie 2 — order-koppeling"). Zoek de afsluiting van Sectie 1 (`</Section>` direct ná het `grid`-blok met de velden) en voeg er ná toe:
 ```tsx
-      {/* Colli-bundeling (mig 417) — alleen Rhenus + 'Klaar voor verzending' + >=2 colli. */}
+      {/* Colli-bundeling (mig 418) — alleen Rhenus + 'Klaar voor verzending' + >=2 colli. */}
       <ColliBundelSectie
         zendingId={z.id}
         zendingNr={z.zending_nr}
@@ -1149,7 +1157,7 @@ Expected: geen fouten. (Lost eventuele ontbrekende Tailwind-kleurklassen of impo
 
 ```bash
 git add frontend/src/modules/logistiek/components/colli-bundel-sectie.tsx frontend/src/modules/logistiek/pages/zending-detail.tsx
-git commit -m "feat(rhenus): colli-bundel-sectie op zending-detail (mig 417)"
+git commit -m "feat(rhenus): colli-bundel-sectie op zending-detail (mig 418)"
 ```
 
 ---
@@ -1164,14 +1172,14 @@ git commit -m "feat(rhenus): colli-bundel-sectie op zending-detail (mig 417)"
 
 Voeg onder de bedrijfsregels (bij de andere verzend-/colli-bullets, bv. ná de "Verzendlabel-SSCC"-bullet) toe:
 ```markdown
-- **Colli-bundeling bij Rhenus (mig 417):** binnen één Rhenus-zending kan de operator handmatig meerdere colli samenpakken onder één nieuwe SSCC-sticker; alleen die bundel-SSCC + de niet-gebundelde colli worden aangemeld, de onderliggende stickers genegeerd. Datamodel: een bundel = extra `zending_colli`-rij (`is_bundel=TRUE`, eigen `genereer_sscc()`, gewicht=Σ, maat=MAX) waarnaar de kind-colli wijzen via zelf-FK `bundel_colli_id` (`ON DELETE SET NULL`). **Eén filter-predicaat overal:** `bundel_colli_id IS NULL` in de colli-seam ([`fetch-zending-colli.ts`](supabase/functions/_shared/vervoerders/fetch-zending-colli.ts)) én in [`bouwVerzenddocument`](frontend/src/modules/logistiek/lib/printset.ts) → de bundel-rij telt als 1 collo in de Rhenus-XML/labels. **Hold-mechaniek:** data-vlag `vervoerders.handmatig_aanmelden` (TRUE voor `rhenus_sftp`); `enqueue_zending_naar_vervoerder(p_zending_id, p_handmatig)` houdt een ≥2-colli-zending vast op `'Klaar voor verzending'` (`RETURN 'held_handmatig'`) tot de operator vrijgeeft via `meld_zending_handmatig_aan` (de "Aanmelden bij Rhenus"-knop in [`colli-bundel-sectie.tsx`](frontend/src/modules/logistiek/components/colli-bundel-sectie.tsx)). 1-colli Rhenus-zendingen gaan altijd automatisch door; HST/Verhoek/NL ongewijzigd (vlag FALSE). RPC's `maak_colli_bundel`/`verwijder_colli_bundel`. **Niet te verwarren** met zending-bundeling (mig 222) of de bundel-sleutel (mig 228-230). Spec: [`docs/superpowers/specs/2026-06-17-rhenus-colli-bundeling-design.md`](docs/superpowers/specs/2026-06-17-rhenus-colli-bundeling-design.md).
+- **Colli-bundeling bij Rhenus (mig 418):** binnen één Rhenus-zending kan de operator handmatig meerdere colli samenpakken onder één nieuwe SSCC-sticker; alleen die bundel-SSCC + de niet-gebundelde colli worden aangemeld, de onderliggende stickers genegeerd. Datamodel: een bundel = extra `zending_colli`-rij (`is_bundel=TRUE`, eigen `genereer_sscc()`, gewicht=Σ, maat=MAX) waarnaar de kind-colli wijzen via zelf-FK `bundel_colli_id` (`ON DELETE SET NULL`). **Eén filter-predicaat overal:** `bundel_colli_id IS NULL` in de colli-seam ([`fetch-zending-colli.ts`](supabase/functions/_shared/vervoerders/fetch-zending-colli.ts)) én in [`bouwVerzenddocument`](frontend/src/modules/logistiek/lib/printset.ts) → de bundel-rij telt als 1 collo in de Rhenus-XML/labels. **Hold-mechaniek:** data-vlag `vervoerders.handmatig_aanmelden` (TRUE voor `rhenus_sftp`); `enqueue_zending_naar_vervoerder(p_zending_id, p_handmatig)` houdt een ≥2-colli-zending vast op `'Klaar voor verzending'` (`RETURN 'held_handmatig'`) tot de operator vrijgeeft via `meld_zending_handmatig_aan` (de "Aanmelden bij Rhenus"-knop in [`colli-bundel-sectie.tsx`](frontend/src/modules/logistiek/components/colli-bundel-sectie.tsx)). 1-colli Rhenus-zendingen gaan altijd automatisch door; HST/Verhoek/NL ongewijzigd (vlag FALSE). RPC's `maak_colli_bundel`/`verwijder_colli_bundel`. **Niet te verwarren** met zending-bundeling (mig 222) of de bundel-sleutel (mig 228-230). Spec: [`docs/superpowers/specs/2026-06-17-rhenus-colli-bundeling-design.md`](docs/superpowers/specs/2026-06-17-rhenus-colli-bundeling-design.md).
 ```
 
 - [ ] **Step 2: Voeg een changelog-entry toe**
 
 Voeg bovenaan `docs/changelog.md` (bij de meest recente entries) toe:
 ```markdown
-## 2026-06-18 — Colli-bundeling bij Rhenus (mig 417)
+## 2026-06-18 — Colli-bundeling bij Rhenus (mig 418)
 
 Magazijn kan binnen één Rhenus-zending colli samenpakken onder één nieuwe
 SSCC-sticker (1× betalen i.p.v. per collo). Bundel = extra `zending_colli`-rij
@@ -1185,7 +1193,7 @@ tot de operator op zending-detail bundelt en "Aanmelden bij Rhenus" klikt.
 
 ```bash
 git add CLAUDE.md docs/changelog.md
-git commit -m "docs(rhenus): colli-bundeling in CLAUDE.md + changelog (mig 417)"
+git commit -m "docs(rhenus): colli-bundeling in CLAUDE.md + changelog (mig 418)"
 ```
 
 ---
@@ -1197,7 +1205,7 @@ git commit -m "docs(rhenus): colli-bundeling in CLAUDE.md + changelog (mig 417)"
   ```bash
   supabase functions deploy rhenus-send verhoek-send hst-send --project-ref wqzeevfobwauxkalagtn
   ```
-- [ ] **Migratienummer her-verifiëren** t.o.v. `origin/main` (hernoem 417 indien bezet).
+- [ ] **Migratienummer her-verifiëren** t.o.v. `origin/main` (hernoem 418 indien bezet).
 - [ ] **Volledige test-suite groen:**
   ```bash
   deno test supabase/functions/_shared/vervoerders/fetch-zending-colli.test.ts
