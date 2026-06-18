@@ -380,6 +380,58 @@ describe('PakbonDocument — karakterisering rijopbouw', () => {
     expect(rhenusC.textContent).not.toContain('Routecode')
   })
 
+  it('"Uw naam" verschijnt niet als die slechts de hoofdregel mín de maat is', () => {
+    // GERO-geval: hoofdregel = Karpi-omschrijving + maat, klant-snapshot = zónder
+    // maat (én = de Karpi-code voor het tweede product). Geen van beide wijkt
+    // zinvol af → geen "Uw naam"-subregel.
+    const zending = maakZending({
+      zending_regels: [
+        maakRegel({
+          id: 1,
+          order_regel_id: 10,
+          artikelnr: 'PLUS11XX120RND',
+          order_regels: maakOrderRegel({ id: 10, regelnummer: 2, artikelnr: 'PLUS11XX120RND' }),
+        }),
+      ],
+      zending_colli: [
+        maakColli({
+          order_regel_id: 10,
+          omschrijving_snapshot: 'PLUS11XX120RND 120x120 cm',
+          klant_omschrijving_snapshot: 'PLUS11XX120RND',
+        }),
+      ],
+    })
+
+    const { container } = renderPakbon(zending, 1)
+
+    expect(container.textContent).toContain('PLUS11XX120RND 120x120 cm') // hoofdregel
+    expect(container.textContent).not.toContain('Uw naam')
+  })
+
+  it('"Uw naam" verschijnt wél bij een echte afwijkende klant-benaming', () => {
+    const zending = maakZending({
+      zending_regels: [
+        maakRegel({
+          id: 1,
+          order_regel_id: 10,
+          artikelnr: 'GALA10XX200290',
+          order_regels: maakOrderRegel({ id: 10, regelnummer: 1, artikelnr: 'GALA10XX200290' }),
+        }),
+      ],
+      zending_colli: [
+        maakColli({
+          order_regel_id: 10,
+          omschrijving_snapshot: 'GALAXY Kleur 10 200x290 cm',
+          klant_omschrijving_snapshot: 'BREDA HUISMERK',
+        }),
+      ],
+    })
+
+    const { container } = renderPakbon(zending, 1)
+
+    expect(container.textContent).toContain('Uw naam: BREDA HUISMERK')
+  })
+
   it('legacy-zending zonder colli: regels + Geleverd uit zending_regels.aantal', () => {
     const zending = maakZending({
       zending_regels: [

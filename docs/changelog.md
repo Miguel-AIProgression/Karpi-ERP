@@ -1,5 +1,28 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-18 — Fix: pakbon "Uw naam"-subregel alleen tonen als die zinvol afwijkt
+
+**Waarom:** op de pakbon (Lieferschein-layout) verscheen onder élke artikelregel
+een sub-regel `Uw naam: …`, ook als die niets toevoegde. Voorbeeld GERO MEUBELEN
+(debiteur 116000): regel 1 toonde `Uw naam: GALAXY Kleur 10 CA: 290x200 cm ORGA`
+(identiek aan de hoofdregel mín de maat), de regels eronder `Uw naam: PLUS11XX120RND`
+(de kale Karpi-code). Gebruiker: "Uw naam moet enkel als het afwijkt van wat er
+boven staat; bij regel 1 staat het uitgeschreven, daaronder zijn het Karpi-codes."
+
+**Root cause:** de hoofdregel komt uit `omschrijving_snapshot` (Karpi-omschrijving
+**+ maat**, `compose_colli_omschrijving`), "Uw naam" uit `klant_omschrijving_snapshot`
+(`order_regels.omschrijving`, **zónder** maat). De zichtbaarheids-check
+`karpiNaam !== klantNaam` was daardoor altijd waar (de maat-suffix maakt ze nooit
+gelijk) → "Uw naam" verscheen overal, vaak slechts de hoofdregel-mín-maat, of — als
+`producten.omschrijving` de artikelcode ís — gewoon een Karpi-code.
+
+**Wat:** nieuwe pure helper `klantNaamWijktAf(hoofdNaam, klantNaam, artikelnr)` in
+[`shipping-label-data.ts`](../frontend/src/modules/logistiek/lib/shipping-label-data.ts):
+toont "Uw naam" alleen als de klant-naam niet leeg is, niet het artikelnummer is, en
+(genormaliseerd) niet al volledig in de hoofdregel zit. [`pakbon-document.tsx`](../frontend/src/modules/logistiek/components/pakbon-document.tsx)
+gebruikt die i.p.v. de kale string-ongelijkheid. Puur frontend, geen migratie.
+Tests: 5 helper-cases + 2 pakbon-render-scenario's; bestaande karakterisering blijft groen.
+
 ## 2026-06-18 — Shopify-intake: VO Product Options "Selections"-duplicaat + Vernon-merknaam ongematcht (ORD-2026-0623)
 
 **Waarom:** ORD-2026-0623 (Vivaldi XL, Shopify #5599) toonde twee bugs: (1) 2x

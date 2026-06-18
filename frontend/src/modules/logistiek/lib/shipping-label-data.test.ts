@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { labelProductRegels, kwaliteitNaamUitVervolg } from './shipping-label-data'
+import { labelProductRegels, kwaliteitNaamUitVervolg, klantNaamWijktAf } from './shipping-label-data'
 import type {
   ZendingPrintOrderRegel,
   ZendingPrintRegel,
@@ -123,6 +123,44 @@ describe('kwaliteitNaamUitVervolg — parse van vervolgomschrijving', () => {
       expect(kwaliteitNaamUitVervolg(invoer)).toBe(verwacht)
     })
   }
+})
+
+describe('klantNaamWijktAf — pakbon "Uw naam"-zichtbaarheid', () => {
+  // Echte gevallen uit de GERO-pakbon (ZR-NR 116000): de hoofdregel is de
+  // Karpi-omschrijving + maat, "Uw naam" is order_regels.omschrijving zónder maat.
+  it('verbergt als de klant-naam de hoofdregel mín de maat is (uitgeschreven)', () => {
+    expect(
+      klantNaamWijktAf(
+        'GALAXY Kleur 10 CA: 290x200 cm ORGA 200x290 cm',
+        'GALAXY Kleur 10 CA: 290x200 cm ORGA',
+        'GALA10XX200290',
+      ),
+    ).toBe(false)
+  })
+
+  it('verbergt als de klant-naam de Karpi-code is (hoofdregel = code + maat)', () => {
+    expect(klantNaamWijktAf('PLUS11XX120RND 120x120 cm', 'PLUS11XX120RND', 'PLUS11XX120RND')).toBe(
+      false,
+    )
+  })
+
+  it('verbergt als de klant-naam exact het artikelnummer is, ongeacht de hoofdregel', () => {
+    expect(klantNaamWijktAf('Heel andere omschrijving', 'PLUS11XX120RND', 'PLUS11XX120RND')).toBe(
+      false,
+    )
+  })
+
+  it('toont als de klant een echte afwijkende eigen benaming heeft', () => {
+    expect(
+      klantNaamWijktAf('GALAXY Kleur 10 200x290 cm', 'BREDA HUISMERK', 'GALA10XX200290'),
+    ).toBe(true)
+  })
+
+  it('verbergt bij lege/whitespace klant-naam en is whitespace-tolerant', () => {
+    expect(klantNaamWijktAf('GALAXY 200x290 cm', '', 'X')).toBe(false)
+    expect(klantNaamWijktAf('GALAXY 200x290 cm', '   ', 'X')).toBe(false)
+    expect(klantNaamWijktAf('GALAXY   200x290 cm', 'galaxy 200x290 cm', null)).toBe(false)
+  })
 })
 
 describe('labelProductRegels — maatwerk + legacy ongewijzigd', () => {

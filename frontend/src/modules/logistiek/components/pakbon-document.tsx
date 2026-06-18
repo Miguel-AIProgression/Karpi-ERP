@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { formatDate, formatNumber } from '@/lib/utils/formatters'
 import { fetchBedrijfsConfig } from '@/lib/supabase/queries/bedrijfsconfig'
-import { productNamen } from '@/modules/logistiek/lib/shipping-label-data'
+import { productNamen, klantNaamWijktAf } from '@/modules/logistiek/lib/shipping-label-data'
 import { hstDepotVoorPostcode } from '@/modules/logistiek/lib/hst-depot'
 import { bouwVerzenddocument, type PakbonRegel } from '@/modules/logistiek/lib/printset'
 import type { ZendingPrintSet } from '@/modules/logistiek/queries/zendingen'
@@ -225,7 +225,9 @@ export function PakbonDocument({ zending, vervoerderNaam: _vervoerderNaam, colli
                   const regel = pr.regel
                   const namen = productNamen(regel, pr.snapshot)
                   const hoofdNaam = namen.karpiNaam ?? namen.klantNaam
-                  const toonUwNaam = namen.karpiNaam != null && namen.karpiNaam !== namen.klantNaam
+                  // "Uw naam" alleen als die zinvol afwijkt van de hoofdregel —
+                  // niet als het slechts de hoofdregel-mín-maat of de Karpi-code is.
+                  const toonUwNaam = klantNaamWijktAf(hoofdNaam, namen.klantNaam, regel.artikelnr)
                   const rgl = String(regel.order_regels?.regelnummer ?? idx + 1).padStart(2, '0')
                   return (
                     <div key={regel.id} className={REGEL_GRID}>

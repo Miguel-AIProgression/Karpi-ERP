@@ -63,6 +63,39 @@ export function productNamen(
   return { klantNaam: klantNaam || (regel?.artikelnr ?? 'Artikel'), karpiNaam }
 }
 
+function normaliseerNaam(s: string): string {
+  return s.toLowerCase().replace(/\s+/g, ' ').trim()
+}
+
+/**
+ * Of de klant-eigen omschrijving (pakbon-subregel "Uw naam: …") zinvol afwijkt
+ * van de hoofdregel die er al boven staat.
+ *
+ * De hoofdregel komt uit `omschrijving_snapshot` (Karpi-omschrijving **+ maat**),
+ * "Uw naam" uit `klant_omschrijving_snapshot` (`order_regels.omschrijving`, zónder
+ * maat). Een kale string-ongelijkheid is dus altijd waar door de maat-suffix,
+ * waardoor "Uw naam" overal verscheen — vaak slechts de hoofdregel mín de maat,
+ * of (als `producten.omschrijving` de artikelcode ís) gewoon een Karpi-code.
+ *
+ * Toon "Uw naam" daarom alleen als de klant-naam:
+ *  - niet leeg is,
+ *  - niet simpelweg het artikelnummer/code is, en
+ *  - (genormaliseerd) niet al volledig in de hoofdregel zit (bv. hoofdregel =
+ *    klant-naam + maat).
+ */
+export function klantNaamWijktAf(
+  hoofdNaam: string | null,
+  klantNaam: string | null,
+  artikelnr: string | null,
+): boolean {
+  const klant = normaliseerNaam(klantNaam ?? '')
+  if (!klant) return false
+  if (artikelnr && klant === normaliseerNaam(artikelnr)) return false
+  const hoofd = normaliseerNaam(hoofdNaam ?? '')
+  if (hoofd.includes(klant)) return false
+  return true
+}
+
 /** De twee productregels zoals ze op het verzendlabel verschijnen. */
 export interface LabelProductRegels {
   /** Grote (vette) productregel. */
