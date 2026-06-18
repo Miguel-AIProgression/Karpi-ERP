@@ -42,6 +42,11 @@ export interface ZendingColliInput {
   colli_nr: number;
   sscc: string | null;
   gewicht_kg: number | null;
+  // Bevroren colli-afmetingen (mig 399). Length = min(lengte_cm, breedte_cm) =
+  // korte zijde van het tapijt = de lengte van de opgerolde rol. Optioneel zodat
+  // legacy-colli zonder maat terugvallen op de default-lengte.
+  lengte_cm?: number | null;
+  breedte_cm?: number | null;
   omschrijving_snapshot: string | null;
 }
 

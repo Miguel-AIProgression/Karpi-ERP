@@ -8,6 +8,32 @@ met zelf-FK `bundel_colli_id`; carrier-seam + label-expansie negeren de kinderen
 Rhenus-aanmelding van ≥2-colli-zendingen wordt vastgehouden (`vervoerders.handmatig_aanmelden`)
 tot de operator op zending-detail bundelt en "Aanmelden bij Rhenus" klikt.
 1-colli Rhenus + alle andere vervoerders ongewijzigd. Spec: docs/superpowers/specs/2026-06-17-rhenus-colli-bundeling-design.md.
+
+## 2026-06-18 — HST-aanmelding: Colli-verzendeenheid + rol-afmetingen + geen bel-service + stad in hoofdletters
+
+**Waarom:** HST kreeg onze zendingen aangemeld als *Wegwerp pallet* met pallet-
+afmetingen (120×80×20) en de service "Bellen voor aflevering" aan — HST corrigeerde
+dat per order handmatig. Karpi verstuurt opgerolde tapijtrollen; die horen als
+**Colli** aangemeld te worden met de korte tapijtzijde als lengte en de rol-diameter
+(30 cm) als breedte/hoogte, zonder bel-dienst.
+
+**Wat** (alles in [`payload-builder.ts`](supabase/functions/hst-send/payload-builder.ts),
+pure builder — geen migratie):
+- `PackageUnitID`: `'SP'` → **`'col'`** (HST-code voor Colli, kleine letters;
+  ontdekt via een live test `T75038267004386`. HST's OpenAPI heeft géén enum-lijst
+  voor dit veld — onbekende code → HTTP 400 "regel heeft geen verzendeenheid").
+- Afmetingen per colli: `Length = min(lengte_cm, breedte_cm)` (= korte zijde, uit de
+  mig 399-snapshot die de colli al draagt; `ZendingColliInput` uitgebreid), `Width`/
+  `Height` = vaste **30** (rol-diameter). Fallback-lengte 120 als de colli geen maat heeft.
+- `ShippingServices` = **leeg** → "Bellen voor aflevering" (`FFBL`) uit. HST accepteert
+  een lege lijst (live getest).
+- `ToAddress.City` + `FromAddress.City` in **hoofdletters** (zoals het oude systeem).
+
+**Verificatie:** live ACCP/productie-test bevestigde elk punt (Colli geaccepteerd,
+200×30×30, geen telefoon-fout meer); `payload-builder.test.ts` uitgebreid (korte-zijde,
+30×30, `'col'`, lege services, stad-uppercase) + `verwerk-row.test.ts` ongewijzigd groen.
+`fixtures/README.md` documenteert de `col`/`FFBL`-codes.
+
 ## 2026-06-18 — "Uw referentie" (klant-eigennaam) op verzendlabel
 - `zending_colli.klanteigen_naam_snapshot` (mig 419): klant-eigennaam voor de
   kwaliteit, bevroren bij `genereer_zending_colli` via `resolve_klanteigen_naam`
