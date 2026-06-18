@@ -136,7 +136,11 @@ export interface OrderRegel {
   korting_pct: number
   bedrag: number | null
   gewicht_kg: number | null
+  /** Vrije voorraad van het gekoppelde product (producten.vrije_voorraad via join,
+   *  niet de ongebruikte order_regels-kolom). Voedt de Order-hydratie. */
   vrije_voorraad: number | null
+  /** Openstaande inkoop van het gekoppelde product (producten.besteld_inkoop via join). */
+  besteld_inkoop?: number | null
   klant_eigen_naam?: string | null
   klant_artikelnr?: string | null
   /** Admin-pseudo-flag (mig 272 / ADR-0018) — gemapt uit producten.is_pseudo via join. */
@@ -508,7 +512,7 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
 
   const { data, error } = await supabase
     .from('order_regels')
-    .select('id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2, orderaantal, te_leveren, backorder, prijs, korting_pct, bedrag, gewicht_kg, vrije_voorraad, fysiek_artikelnr, omstickeren, is_maatwerk, maatwerk_vorm, maatwerk_lengte_cm, maatwerk_breedte_cm, maatwerk_diameter_cm, maatwerk_afwerking, maatwerk_band_kleur, maatwerk_instructies, maatwerk_m2_prijs, maatwerk_oppervlak_m2, maatwerk_vorm_toeslag, maatwerk_afwerking_prijs, verzendweek, klant_referentie, vroegst_leverbaar, producten!order_regels_artikelnr_fkey(kwaliteit_code, kleur_code, is_pseudo, is_dropship, karpi_code)')
+    .select('id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2, orderaantal, te_leveren, backorder, prijs, korting_pct, bedrag, gewicht_kg, vrije_voorraad, fysiek_artikelnr, omstickeren, is_maatwerk, maatwerk_vorm, maatwerk_lengte_cm, maatwerk_breedte_cm, maatwerk_diameter_cm, maatwerk_afwerking, maatwerk_band_kleur, maatwerk_instructies, maatwerk_m2_prijs, maatwerk_oppervlak_m2, maatwerk_vorm_toeslag, maatwerk_afwerking_prijs, verzendweek, klant_referentie, vroegst_leverbaar, producten!order_regels_artikelnr_fkey(kwaliteit_code, kleur_code, is_pseudo, is_dropship, karpi_code, vrije_voorraad, besteld_inkoop)')
     .eq('order_id', orderId)
     .order('regelnummer')
 
@@ -526,7 +530,7 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
   ): OrderRegel {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const row = r as any
-    const product = row.producten as { kwaliteit_code: string; kleur_code: string | null; is_pseudo: boolean | null; is_dropship: boolean | null; karpi_code: string | null } | null
+    const product = row.producten as { kwaliteit_code: string; kleur_code: string | null; is_pseudo: boolean | null; is_dropship: boolean | null; karpi_code: string | null; vrije_voorraad: number | null; besteld_inkoop: number | null } | null
     const kwalCode = product?.kwaliteit_code ?? null
     const kleurCode = product?.kleur_code ?? null
     const isPseudo = product?.is_pseudo === true
@@ -554,7 +558,12 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
       korting_pct: row.korting_pct,
       bedrag: row.bedrag,
       gewicht_kg: row.gewicht_kg,
-      vrije_voorraad: row.vrije_voorraad,
+      // Bron-van-waarheid is producten.vrije_voorraad (de order_regels-kolom
+      // wordt niet onderhouden en is meestal NULL). Nodig zodat de Order-
+      // hydratie (order-edit → form-state) de dekking-velden correct vult en
+      // berekenRegelDekking geen vals IO-tekort meldt. Mig 149 / ADR-0015.
+      vrije_voorraad: product?.vrije_voorraad ?? row.vrije_voorraad,
+      besteld_inkoop: product?.besteld_inkoop ?? null,
       klant_eigen_naam: klantEigenNaam,
       klant_artikelnr: row.artikelnr && klantArtMap ? klantArtMap.get(row.artikelnr) ?? null : null,
       is_pseudo: isPseudo,  // mig 272 / ADR-0018: admin-pseudo-flag uit producten.is_pseudo

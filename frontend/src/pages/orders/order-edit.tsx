@@ -10,7 +10,7 @@ import { computeOrderLock } from '@/lib/utils/order-lock'
 import { AfwerkingOnlyEditor } from '@/components/orders/afwerking-only-editor'
 import { DocumentenCompact } from '@/components/documenten/documenten-compact'
 import type { SelectedClient } from '@/components/orders/client-selector'
-import type { OrderRegelFormData } from '@/lib/supabase/queries/order-mutations'
+import { hydrateerOrderRegels } from '@/lib/orders/order-hydratie'
 
 export function OrderEditPage() {
   const { id } = useParams<{ id: string }>()
@@ -111,53 +111,13 @@ export function OrderEditPage() {
     afleverwijze: clientData?.afleverwijze ?? null,
   } : null
 
-  // Groepeer handmatige keuzes per orderregel-id
-  const keuzesPerRegel = new Map<number, { artikelnr: string; aantal: number; omschrijving?: string }[]>()
-  for (const k of handmatigeKeuzes ?? []) {
-    const existing = keuzesPerRegel.get(k.order_regel_id) ?? []
-    existing.push({ artikelnr: k.artikelnr, aantal: k.aantal, omschrijving: k.omschrijving })
-    keuzesPerRegel.set(k.order_regel_id, existing)
-  }
-
-  const regelData: OrderRegelFormData[] = (regels ?? []).map((r) => ({
-    id: r.id,
-    artikelnr: r.artikelnr ?? undefined,
-    karpi_code: r.karpi_code ?? undefined,
-    omschrijving: r.omschrijving,
-    omschrijving_2: r.omschrijving_2 ?? undefined,
-    orderaantal: r.orderaantal,
-    te_leveren: r.te_leveren,
-    prijs: r.prijs ?? undefined,
-    korting_pct: r.korting_pct,
-    bedrag: r.bedrag ?? undefined,
-    gewicht_kg: r.gewicht_kg ?? undefined,
-    // Display-only product-vlaggen (ADR-0018-patroon) — zonder deze ziet
-    // flag-based detectie (isDropshipRegel/isAdminPseudo) geladen regels
-    // niet in de bewerk-flow. is_pseudo was een pre-existing gap (de
-    // tekort-bepaling in order-form leest r.is_pseudo, dat hier nooit gevuld werd).
-    is_pseudo: r.is_pseudo,
-    is_dropship: r.is_dropship,
-    // Maatwerk
-    is_maatwerk: r.is_maatwerk ?? false,
-    maatwerk_vorm: r.maatwerk_vorm ?? undefined,
-    maatwerk_lengte_cm: r.maatwerk_lengte_cm ?? undefined,
-    maatwerk_breedte_cm: r.maatwerk_breedte_cm ?? undefined,
-    maatwerk_diameter_cm: r.maatwerk_diameter_cm ?? undefined,
-    maatwerk_afwerking: r.maatwerk_afwerking ?? undefined,
-    maatwerk_band_kleur: r.maatwerk_band_kleur ?? undefined,
-    maatwerk_instructies: r.maatwerk_instructies ?? undefined,
-    // Prijs-onderdelen — nodig zodat OrderLineEditor de breakdown-zin
-    // ("X m² × €Y/m² + €Z vorm + €A afwerking") in de bewerk-flow toont
-    // én bij vorm-/afmetingswijziging opnieuw kan herrekenen (de guard in
-    // updateLine vereist een gevulde maatwerk_m2_prijs).
-    maatwerk_m2_prijs: r.maatwerk_m2_prijs ?? undefined,
-    maatwerk_oppervlak_m2: r.maatwerk_oppervlak_m2 ?? undefined,
-    maatwerk_vorm_toeslag: r.maatwerk_vorm_toeslag ?? undefined,
-    maatwerk_afwerking_prijs: r.maatwerk_afwerking_prijs ?? undefined,
-    klant_referentie: r.klant_referentie ?? null,
-    // Handmatige uitwisselbaar-claims gerehydrateerd
-    uitwisselbaar_keuzes: keuzesPerRegel.get(r.id) ?? [],
-  }))
+  // Order-hydratie: bestaande Order → form-state (zie lib/orders/order-hydratie.ts,
+  // het "bron → order-form-state"-seam, spiegel van Order-commit). Draagt náást de
+  // regel-velden óók de display-only producten-velden over (vrije_voorraad,
+  // besteld_inkoop, is_pseudo, is_dropship). Vóór deze adapter ontbraken
+  // vrije_voorraad/besteld_inkoop hier → berekenRegelDekking zag vrij=0 en meldde
+  // een vals IO-tekort, waardoor de LeverModusDialog onterecht opende (ORD-2026-0614).
+  const regelData = hydrateerOrderRegels(regels ?? [], handmatigeKeuzes ?? [])
 
   return (
     <>
@@ -205,6 +165,11 @@ export function OrderEditPage() {
             afl_plaats: order.afl_plaats ?? undefined,
             afl_land: order.afl_land ?? undefined,
             afhalen: order.afhalen ?? false,
+            // lever_modus rehydrateren: anders is header.lever_modus altijd
+            // undefined → de !header.lever_modus-guard in order-form opent de
+            // LeverModusDialog opnieuw, én de update-RPC zet lever_modus op NULL
+            // (zelfde wis-bug-klasse als de e-mail-snapshots hierboven).
+            lever_modus: order.lever_modus ?? undefined,
           },
           regels: regelData,
           status: order.status,

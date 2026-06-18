@@ -17,6 +17,7 @@ import { getVormDisplay } from '@/lib/utils/vorm-labels'
 import { MaatwerkArtikelPicker } from './maatwerk-artikel-picker'
 import type { SelectedArticle, SubstitutionInfo } from './article-selector'
 import type { OrderRegelFormData, PrijsBron, PrijsBreakdown } from '@/lib/supabase/queries/order-mutations'
+import { metProductVelden } from '@/lib/orders/order-hydratie'
 import { SHIPPING_PRODUCT_ID } from '@/lib/constants/shipping'
 import { formatPrijsBron } from '@/lib/utils/prijs-bron'
 import { fetchEquivalenteProducten } from '@/lib/supabase/queries/product-equivalents'
@@ -573,7 +574,7 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr,
       }
     }
 
-    const newLine: OrderRegelFormData = {
+    const newLine: OrderRegelFormData = metProductVelden({
       artikelnr: article.artikelnr,
       karpi_code: article.karpi_code ?? undefined,
       // Bewaar de rijke product-omschrijving (incl. afmeting zoals
@@ -587,8 +588,6 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr,
       korting_pct: defaultKorting,
       gewicht_kg: article.gewicht_kg ?? undefined,
       bedrag: 0,
-      vrije_voorraad: substitution ? substitution.fysiek_vrije_voorraad : article.vrije_voorraad,
-      besteld_inkoop: article.besteld_inkoop,
       klant_eigen_naam,
       klant_artikelnr,
       // Substitutie
@@ -601,7 +600,13 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr,
       prijs_uit_prijslijst: prijs_bron === 'prijslijst_vast',
       prijs_bron,
       prijs_breakdown,
-    }
+    // Regel-input-contract: producten-display-velden via de gedeelde helper
+    // (zelfde contract als de Order-hydratie). Substitution wint voor de
+    // omsticker-flow.
+    }, {
+      vrije_voorraad: substitution ? substitution.fysiek_vrije_voorraad : article.vrije_voorraad,
+      besteld_inkoop: article.besteld_inkoop,
+    })
     newLine.bedrag = calcBedrag(newLine)
     onChange([...lines, newLine])
   }
