@@ -38,6 +38,8 @@ function maakColli(overrides: Partial<ZendingPrintColli> = {}): ZendingPrintColl
     order_regel_id: 10,
     omschrijving_snapshot: null,
     klant_omschrijving_snapshot: null,
+    bundel_colli_id: null,
+    is_bundel: false,
     ...overrides,
   }
 }
@@ -166,6 +168,37 @@ describe('expandLabels — SSCC-bron-van-waarheid', () => {
 
     expect(labels).toHaveLength(1)
     expect(labels[0].sscc).toBeNull()
+  })
+
+  it('mig 418: gebundelde kind-colli vallen weg; alleen losse colli + bundel-rij krijgen een label', () => {
+    const zending = maakZending({
+      zending_regels: [
+        maakRegel({ id: 1, order_regel_id: 10, artikelnr: 'ART-A' }),
+        maakRegel({ id: 2, order_regel_id: 20, artikelnr: 'ART-B' }),
+        maakRegel({ id: 3, order_regel_id: 30, artikelnr: 'ART-C' }),
+      ],
+      zending_colli: [
+        // c1 + c2 zitten in bundel 99; c3 los; 99 = de bundel-rij
+        maakColli({ id: 1, colli_nr: 1, sscc: '087159540000000656', order_regel_id: 10, bundel_colli_id: 99 }),
+        maakColli({ id: 2, colli_nr: 2, sscc: '087159540000000663', order_regel_id: 20, bundel_colli_id: 99 }),
+        maakColli({ id: 3, colli_nr: 3, sscc: '087159540000000670', order_regel_id: 30 }),
+        maakColli({
+          id: 99, colli_nr: 4, sscc: '087159540000000687', order_regel_id: null,
+          is_bundel: true, klant_omschrijving_snapshot: 'BUNDEL — 2 colli',
+        }),
+      ],
+    })
+
+    const labels = expandLabels(zending)
+
+    // c3 (los) + bundel-rij; de twee kinderen vallen weg.
+    expect(labels.map((l) => l.sscc)).toEqual([
+      '087159540000000670',
+      '087159540000000687',
+    ])
+    const bundel = labels.find((l) => l.sscc === '087159540000000687')
+    expect(bundel?.klantOmschrijvingSnapshot).toBe('BUNDEL — 2 colli')
+    expect(bundel?.regel).toBeNull()
   })
 })
 
