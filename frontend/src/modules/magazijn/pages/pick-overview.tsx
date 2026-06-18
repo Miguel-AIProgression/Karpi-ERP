@@ -104,33 +104,41 @@ export function MagazijnOverviewPage() {
   // Gefilterde tellingen per bucket — zodat de weektabs meebewegen als een
   // vervoerder-filter actief is. null = geen filter → val terug op stats.
   const gefilterdeTellingenPerBucket = useMemo(() => {
-    if (vervoerderFilter === 'all' || !orders) return null
+    // Live tellingen wanneer er op vervoerder gefilterd wordt OF in afronden-modus
+    // (waar alleen lopende pickrondes meetellen). Anders null → val terug op stats.
+    if ((vervoerderFilter === 'all' && modus !== 'afronden') || !orders) return null
     const m = new Map<BucketKey, number>()
     for (const o of orders) {
-      const r = regelsPerOrder?.get(o.order_id)
-      if (!r) continue
-      const aggregaat = aggregeerVervoerderKeuzeVoorOrder(r)
-      const code = aggregaat.soort === 'uniform' ? aggregaat.code : null
-      let match: boolean
-      if (vervoerderFilter === 'afhalen') match = o.afhalen
-      else if (vervoerderFilter === 'geen') match = !o.afhalen && !code
-      else match = !o.afhalen && code === vervoerderFilter
-      if (!match) continue
+      if (modus === 'afronden' && !o.actieve_pickronde) continue
+      if (vervoerderFilter !== 'all') {
+        const r = regelsPerOrder?.get(o.order_id)
+        if (!r) continue
+        const aggregaat = aggregeerVervoerderKeuzeVoorOrder(r)
+        const code = aggregaat.soort === 'uniform' ? aggregaat.code : null
+        let match: boolean
+        if (vervoerderFilter === 'afhalen') match = o.afhalen
+        else if (vervoerderFilter === 'geen') match = !o.afhalen && !code
+        else match = !o.afhalen && code === vervoerderFilter
+        if (!match) continue
+      }
       m.set(o.bucket, (m.get(o.bucket) ?? 0) + 1)
     }
     return m
-  }, [orders, regelsPerOrder, vervoerderFilter])
+  }, [orders, regelsPerOrder, vervoerderFilter, modus])
 
   const naVervoerderFilter = useMemo(() => {
-    if (vervoerderFilter === 'all') return gefilterd
-    return gefilterd.filter((o) => {
+    // Afronden-modus toont uitsluitend orders met een lopende pickronde — aan een
+    // nog-niet-gestarte order valt niets af te ronden (verzoek Miguel 18-06).
+    const basis = modus === 'afronden' ? gefilterd.filter((o) => o.actieve_pickronde) : gefilterd
+    if (vervoerderFilter === 'all') return basis
+    return basis.filter((o) => {
       const r = vervoerderMap.get(o.order_id)
       if (!r) return false
       if (vervoerderFilter === 'afhalen') return r.afhalen
       if (vervoerderFilter === 'geen') return !r.afhalen && !r.code
       return !r.afhalen && r.code === vervoerderFilter
     })
-  }, [gefilterd, vervoerderFilter, vervoerderMap])
+  }, [gefilterd, vervoerderFilter, vervoerderMap, modus])
 
   // Voorgestelde-bundels (mig 229): pure SQL-view die per (debiteur × adres ×
   // vervoerder × verzendweek) de open-orders aggregeert met drempel-toets en
@@ -479,7 +487,7 @@ export function MagazijnOverviewPage() {
         </div>
       ) : dagOrders.length === 0 && perWeek.length === 0 && geblokkeerdeOrders.length === 0 ? (
         <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-12 text-center text-slate-400">
-          Geen open orders
+          {modus === 'afronden' ? 'Geen lopende pickrondes om af te ronden' : 'Geen open orders'}
         </div>
       ) : (
         // Provider deelt de batch-resolutie (mig 401) met alle cards hieronder:
