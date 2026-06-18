@@ -1,0 +1,243 @@
+import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { Boxes, Printer, Send, Undo2 } from 'lucide-react'
+import {
+  useMaakColliBundel,
+  useMeldZendingHandmatigAan,
+  useRhenusAanmelding,
+  useVerwijderColliBundel,
+  useZendingColliVoorBundel,
+} from '@/modules/logistiek/hooks/use-colli-bundel'
+// Alleen Rhenus kent handmatige aanmelding/colli-bundeling (mig 418). De DB-RPC's
+// dwingen dit hard af; deze constant stuurt alleen de zichtbaarheid van de sectie.
+const HANDMATIG_VERVOERDER = 'rhenus_sftp'
+
+interface Props {
+  zendingId: number
+  zendingNr: string
+  vervoerderCode: string | null
+  status: string
+  aantalColli: number | null
+}
+
+export function ColliBundelSectie({ zendingId, zendingNr, vervoerderCode, status, aantalColli }: Props) {
+  const zichtbaar =
+    vervoerderCode === HANDMATIG_VERVOERDER &&
+    status === 'Klaar voor verzending' &&
+    (aantalColli ?? 0) >= 2
+
+  if (!zichtbaar) return null
+  return (
+    <ColliBundelSectieInner zendingId={zendingId} zendingNr={zendingNr} />
+  )
+}
+
+function ColliBundelSectieInner({ zendingId, zendingNr }: { zendingId: number; zendingNr: string }) {
+  const { data: colli = [], isLoading } = useZendingColliVoorBundel(zendingId)
+  const { data: aanmelding } = useRhenusAanmelding(zendingId)
+  const maak = useMaakColliBundel(zendingId)
+  const verwijder = useVerwijderColliBundel(zendingId)
+  const meldAan = useMeldZendingHandmatigAan(zendingId)
+
+  const [geselecteerd, setGeselecteerd] = useState<Set<number>>(new Set())
+
+  const losseColli = colli.filter((c) => !c.is_bundel && c.bundel_colli_id == null)
+  const bundels = colli.filter((c) => c.is_bundel)
+  const kinderenVan = (bundelId: number) => colli.filter((c) => c.bundel_colli_id === bundelId)
+
+  // Voorgevulde maten/gewicht uit de selectie (Σ gewicht, MAX maat).
+  const defaults = useMemo(() => {
+    const sel = colli.filter((c) => geselecteerd.has(c.id))
+    return {
+      gewicht: sel.reduce((s, c) => s + (c.gewicht_kg ?? 0), 0),
+      lengte: sel.reduce((m, c) => Math.max(m, c.lengte_cm ?? 0), 0),
+      breedte: sel.reduce((m, c) => Math.max(m, c.breedte_cm ?? 0), 0),
+    }
+  }, [colli, geselecteerd])
+
+  const [gewicht, setGewicht] = useState('')
+  const [lengte, setLengte] = useState('')
+  const [breedte, setBreedte] = useState('')
+
+  const aangemeld = !!aanmelding
+  const kanBundelen = geselecteerd.size >= 2 && !aangemeld
+
+  function toggle(id: number) {
+    setGeselecteerd((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function bundel() {
+    maak.mutate(
+      {
+        colliIds: [...geselecteerd],
+        gewichtKg: gewicht === '' ? defaults.gewicht : Number(gewicht),
+        lengteCm: lengte === '' ? defaults.lengte : Number(lengte),
+        breedteCm: breedte === '' ? defaults.breedte : Number(breedte),
+      },
+      {
+        onSuccess: () => {
+          setGeselecteerd(new Set())
+          setGewicht(''); setLengte(''); setBreedte('')
+        },
+      },
+    )
+  }
+
+  return (
+    <div className="bg-white rounded-[var(--radius)] border border-terracotta-200 p-5 mb-6">
+      <h3 className="text-sm font-semibold text-slate-700 mb-1 flex items-center gap-2">
+        <Boxes size={16} className="text-terracotta-600" /> Colli bundelen (Rhenus)
+      </h3>
+
+      {aangemeld ? (
+        <p className="text-sm text-emerald-700 mb-2">
+          Aangemeld bij Rhenus (status: {aanmelding!.status}). Bundelen is niet meer mogelijk.
+        </p>
+      ) : (
+        <p className="text-xs text-slate-500 mb-3">
+          Pak een paar colli samen in één zak: vink ze aan → <strong>Bundelen</strong> → print de
+          nieuwe sticker en plak die op de zak. Klik tot slot <strong>Aanmelden bij Rhenus</strong>.
+          Geen bundel nodig? Klik meteen op Aanmelden.
+        </p>
+      )}
+
+      {isLoading ? (
+        <div className="text-sm text-slate-400">Colli laden…</div>
+      ) : (
+        <>
+          {/* Bestaande bundels */}
+          {bundels.length > 0 && (
+            <div className="mb-4 space-y-2">
+              {bundels.map((b) => (
+                <div key={b.id} className="rounded-[var(--radius-sm)] border border-slate-200 bg-slate-50 p-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-medium text-slate-700">
+                      {b.klant_omschrijving_snapshot ?? 'Bundel'}{' '}
+                      <span className="font-mono text-xs text-slate-500">{b.sscc}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Link
+                        to={`/logistiek/${zendingNr}/printset?colli=${b.colli_nr}`}
+                        className="inline-flex items-center gap-1 rounded-[var(--radius-sm)] bg-slate-900 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
+                      >
+                        <Printer size={13} /> Bundelsticker
+                      </Link>
+                      {!aangemeld && (
+                        <button
+                          onClick={() => verwijder.mutate(b.id)}
+                          disabled={verwijder.isPending}
+                          className="inline-flex items-center gap-1 rounded-[var(--radius-sm)] border border-slate-300 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+                        >
+                          <Undo2 size={13} /> Ontbundelen
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {kinderenVan(b.id).map((k) => k.omschrijving_snapshot ?? `Colli ${k.colli_nr}`).join(' · ')}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Losse colli met checkboxes */}
+          {!aangemeld && (
+            <div className="space-y-1.5">
+              {losseColli.map((c) => (
+                <label key={c.id} className="flex items-center gap-2 text-sm text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={geselecteerd.has(c.id)}
+                    onChange={() => toggle(c.id)}
+                  />
+                  <span className="font-mono text-xs text-slate-400 w-8">#{c.colli_nr}</span>
+                  <span className="flex-1">{c.omschrijving_snapshot ?? `Colli ${c.colli_nr}`}</span>
+                  <span className="text-xs text-slate-400">
+                    {c.gewicht_kg != null ? `${c.gewicht_kg} kg` : '—'}
+                  </span>
+                </label>
+              ))}
+              {losseColli.length === 0 && (
+                <div className="text-sm text-slate-400">Geen losse colli meer om te bundelen.</div>
+              )}
+            </div>
+          )}
+
+          {/* Bundel-formulier (≥2 geselecteerd) */}
+          {kanBundelen && (
+            <div className="mt-4 rounded-[var(--radius-sm)] border border-slate-200 p-3">
+              <div className="text-xs font-semibold text-slate-600 mb-2">
+                {geselecteerd.size} colli bundelen — controleer gewicht/maat van de zak:
+              </div>
+              <div className="flex flex-wrap items-end gap-3">
+                <MaatVeld label="Gewicht (kg)" value={gewicht} ph={String(round1(defaults.gewicht))} onChange={setGewicht} />
+                <MaatVeld label="Lengte (cm)" value={lengte} ph={String(defaults.lengte)} onChange={setLengte} />
+                <MaatVeld label="Breedte (cm)" value={breedte} ph={String(defaults.breedte)} onChange={setBreedte} />
+                <button
+                  onClick={bundel}
+                  disabled={maak.isPending}
+                  className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] bg-terracotta-600 px-3 py-2 text-sm font-medium text-white hover:bg-terracotta-700 disabled:opacity-50"
+                >
+                  <Boxes size={15} /> Bundel maken
+                </button>
+              </div>
+            </div>
+          )}
+
+          {maak.isError && (
+            <div className="mt-2 text-xs text-rose-600">Bundelen mislukt: {(maak.error as Error).message}</div>
+          )}
+          {verwijder.isError && (
+            <div className="mt-2 text-xs text-rose-600">Ontbundelen mislukt: {(verwijder.error as Error).message}</div>
+          )}
+
+          {/* Aanmelden bij Rhenus */}
+          {!aangemeld && (
+            <div className="mt-4 flex items-center justify-end gap-3 border-t border-slate-100 pt-3">
+              <button
+                onClick={() => meldAan.mutate()}
+                disabled={meldAan.isPending}
+                className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+              >
+                <Send size={15} /> Aanmelden bij Rhenus
+              </button>
+            </div>
+          )}
+          {meldAan.isError && (
+            <div className="mt-2 text-xs text-rose-600 text-right">
+              Aanmelden mislukt: {(meldAan.error as Error).message}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+function MaatVeld({
+  label, value, ph, onChange,
+}: { label: string; value: string; ph: string; onChange: (v: string) => void }) {
+  return (
+    <div>
+      <label className="block text-xs text-slate-500 mb-1">{label}</label>
+      <input
+        type="number"
+        inputMode="decimal"
+        value={value}
+        placeholder={ph}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-28 rounded-[var(--radius-sm)] border border-slate-300 px-2 py-1.5 text-sm"
+      />
+    </div>
+  )
+}
+
+function round1(n: number): number {
+  return Math.round(n * 10) / 10
+}

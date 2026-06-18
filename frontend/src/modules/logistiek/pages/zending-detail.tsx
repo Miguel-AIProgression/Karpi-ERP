@@ -8,6 +8,7 @@ import {
   HstTransportorderCard,
   type HstTransportorderRow,
 } from '@/modules/logistiek/components/hst-transportorder-card'
+import { ColliBundelSectie } from '@/modules/logistiek/components/colli-bundel-sectie'
 
 interface BundelOrder {
   id: number
@@ -158,6 +159,15 @@ export function ZendingDetailPage() {
           )}
         </div>
       </Section>
+
+      {/* Colli-bundeling (mig 418) — alleen Rhenus + 'Klaar voor verzending' + >=2 colli. */}
+      <ColliBundelSectie
+        zendingId={z.id}
+        zendingNr={z.zending_nr}
+        vervoerderCode={z.vervoerder_code}
+        status={z.status}
+        aantalColli={z.aantal_colli}
+      />
 
       {/* Sectie 2 — order-koppeling (mig 222: kan een bundel zijn). */}
       <Section titel={isBundel ? `Orders (${bundelOrdersGesorteerd.length})` : 'Order'}>
