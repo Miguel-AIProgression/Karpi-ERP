@@ -101,6 +101,9 @@ export interface ZendingPrintColli {
   /** Mig 388: bevroren, ontdubbelde klant-omschrijving (order_regels.omschrijving
    *  + _2). Single source voor de klant-naam op label/pakbon — niet meer live. */
   klant_omschrijving_snapshot: string | null
+  /** Mig 418: klant-eigennaam voor de kwaliteit (bv. "BREDA"), bevroren via
+   *  resolve_klanteigen_naam. null = geen afwijkende naam → geen "Uw referentie"-regel. */
+  klanteigen_naam_snapshot: string | null
 }
 
 export interface ZendingPrintSet {
@@ -296,7 +299,7 @@ export async function fetchZendingPrintSet(zending_nr: string): Promise<ZendingP
           )
         )
       ),
-      zending_colli ( id, colli_nr, sscc, order_regel_id, omschrijving_snapshot, klant_omschrijving_snapshot )
+      zending_colli ( id, colli_nr, sscc, order_regel_id, omschrijving_snapshot, klant_omschrijving_snapshot, klanteigen_naam_snapshot )
     `,
     )
     .eq('zending_nr', zending_nr)
