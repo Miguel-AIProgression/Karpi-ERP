@@ -8,9 +8,19 @@ interface Props {
   zendingId: number
   zendingStatus: string
   pickerId: number | null
+  /** Waarheen na succesvol voltooien. Default '/logistiek'. Voor Rhenus-bundel-
+   *  zendingen (mig 420) stuurt de Verzendset-pagina hier de zending-detailpagina
+   *  in, zodat de operator direct bij "Colli bundelen / Aanmelden bij Rhenus" landt
+   *  i.p.v. terug naar het overzicht. */
+  navigeerNaVoltooienNaar?: string
 }
 
-export function VoltooiPickrondeKnop({ zendingId, zendingStatus, pickerId }: Props) {
+export function VoltooiPickrondeKnop({
+  zendingId,
+  zendingStatus,
+  pickerId,
+  navigeerNaVoltooienNaar,
+}: Props) {
   const navigate = useNavigate()
   const { data: colli = [] } = useColliVoorZending(zendingId)
   const mutate = useVoltooiPickronde()
@@ -26,7 +36,7 @@ export function VoltooiPickrondeKnop({ zendingId, zendingStatus, pickerId }: Pro
     setError(null)
     try {
       await mutate.mutateAsync({ zendingId, pickerId })
-      navigate('/logistiek')
+      navigate(navigeerNaVoltooienNaar ?? '/logistiek')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
