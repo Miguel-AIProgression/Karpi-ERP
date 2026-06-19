@@ -1,5 +1,23 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-19 — Terugdraaien mig 430: eigen vervoer behoudt de VERZEND-kostenregel (mig 431)
+
+**Waarom (correctie Miguel, 19-06):** mig 430 was op een verkeerd begrip gebaseerd.
+"Eigen vervoer" (`type='eigen'`, mig 424) betekent NIET afhalen — Karpi bezorgt de
+order zelf met de eigen bus, en daarvoor moeten juist **wél** bezorgkosten gerekend
+worden. De VERZEND-kostenregel moet dus blijven staan en op de factuur komen.
+
+**Wat (branch `fix/eigen-vervoer-verzend-terugdraaien`):**
+- **Mig 431** — `set_orderregel_vervoerder_override_voor_order` terug naar de mig
+  227-vorm: het mig-430-cleanup-blok (DELETE VERZEND bij `type='eigen'`) is
+  verwijderd. De RPC raakt de VERZEND-regel niet meer aan, ongeacht de vervoerder.
+- **Frontend** — de mig-430-`['orders']`-invalidatie in `useSetOrderVervoerderOverride`
+  is teruggedraaid (was alleen nodig omdat mig 430 de order muteerde).
+- **Data-herstel** — de mig-430-backfill verwijderde al niet-gefactureerde
+  VERZEND-regels uit bestaande eigen-vervoer-orders. Die worden **eenmalig gericht
+  hersteld** (niet automatisch gereconstrueerd, om geen VERZEND toe te voegen aan
+  orders die er bewust geen hadden).
+
 ## 2026-06-19 — Eigen vervoer verwijdert de automatische VERZEND-kostenregel (mig 430)
 
 **Waarom (wens Miguel, 19-06):** zodra een order op vervoerder "Eigen vervoer"
