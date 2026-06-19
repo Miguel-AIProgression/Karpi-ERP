@@ -129,7 +129,7 @@ function BundelOrdersCell({ orders }: { orders: BundelOrderRef[] }) {
           key={o.id}
           to={`/orders/${o.id}`}
           onClick={(e) => e.stopPropagation()}
-          className="text-slate-600 hover:text-terracotta-600 hover:underline w-fit"
+          className="text-slate-600 hover:text-terracotta-600 hover:underline w-fit whitespace-nowrap"
         >
           {o.order_nr}
         </Link>
@@ -324,7 +324,7 @@ export function ZendingenOverzichtPage() {
                 <th className="px-4 py-3 text-left font-medium">Bestemming</th>
                 <th className="px-4 py-3 text-left font-medium">Vervoerder</th>
                 <th className="px-4 py-3 text-left font-medium">Status</th>
-                <th className="px-4 py-3 text-left font-medium">Track &amp; Trace</th>
+                <th className="hidden xl:table-cell px-4 py-3 text-left font-medium">T&amp;T</th>
                 <th className="px-4 py-3 text-right font-medium">Colli</th>
                 <th className="px-4 py-3 text-right font-medium">Gewicht</th>
                 <th className="px-4 py-3 text-right font-medium" aria-label="Acties" />
@@ -365,7 +365,7 @@ export function ZendingenOverzichtPage() {
                     onClick={() => navigate(`/logistiek/${z.zending_nr}`)}
                     className="hover:bg-slate-50 cursor-pointer align-top"
                   >
-                    <td className="px-4 py-3 font-medium text-terracotta-600">{z.zending_nr}</td>
+                    <td className="px-4 py-3 font-medium text-terracotta-600 whitespace-nowrap">{z.zending_nr}</td>
                     <td className="px-4 py-3">
                       <BundelOrdersCell orders={orders} />
                     </td>
@@ -390,8 +390,14 @@ export function ZendingenOverzichtPage() {
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-slate-500 font-mono text-xs">
-                      {z.track_trace ?? <span className="text-slate-400">—</span>}
+                    <td className="hidden xl:table-cell px-4 py-3 text-slate-500 font-mono text-xs">
+                      {z.track_trace ? (
+                        <span className="block max-w-[140px] truncate" title={z.track_trace}>
+                          {z.track_trace}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-slate-600 text-right">
                       {z.aantal_colli ?? <span className="text-slate-400">—</span>}
