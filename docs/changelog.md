@@ -1,5 +1,33 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-19 — Eigen vervoer verwijdert de automatische VERZEND-kostenregel (mig 430)
+
+**Waarom (wens Miguel, 19-06):** zodra een order op vervoerder "Eigen vervoer"
+(type='eigen', mig 424) wordt gezet, rijdt Karpi of een derde zelf — er zijn geen
+externe verzendkosten om door te belasten. Een eventuele automatische
+VERZEND-kostenregel moet dan uit de order worden gehaald én niet meer op de
+factuur terugkomen.
+
+**Wat (branch `feat/eigen-vervoer-verzend-verwijderen`):**
+- **Mig 430** — `set_orderregel_vervoerder_override_voor_order` (mig 227, de enige
+  entry-point voor "order op een vervoerder zetten" via de Pick & Ship-pill /
+  order-detail) verwijdert ná het zetten van de override de niet-gefactureerde
+  VERZEND-regel(s) zodra `p_vervoerder_code` een vervoerder van `type='eigen'` is.
+  Discriminator = `vervoerders.type='eigen'` (niet de exacte code), consistent met
+  mig 429 → een tweede eigen-vervoer-vervoerder doet automatisch mee. Guard:
+  alleen `gefactureerd=0`. **Single source:** de factuur (`projecteer_concept_factuur`
+  / `finaliseer_concept_factuur`, mig 428) neemt de VERZEND-orderregel rechtstreeks
+  uit `order_regels` over — weg uit `order_regels` = weg uit de order én van de
+  factuur, zonder edit in de (net-live) concept-factuur-RPC's. + backfill van
+  bestaande eigen-vervoer-orders met een ongefactureerde VERZEND-regel.
+- **Frontend** — `useSetOrderVervoerderOverride` invalideert nu ook `['orders']`
+  zodat het overzicht + order-detail/-regels de verdwenen VERZEND-regel direct tonen.
+
+**Bekende rand (niet in deze slice):** bewerken van een reeds-op-eigen-vervoer-order
+in het orderformulier kan via `applyShippingLogic` (subtotaal < drempel) opnieuw een
+VERZEND-regel introduceren — het formulier kent de eigen-vervoer-status van de order
+nog niet. Vervolgstap als dit in de praktijk opduikt.
+
 ## 2026-06-19 — Fix: Eigen-vervoer-zending blijft op 'Klaar voor verzending' hangen
 
 **Waarom (melding Thom, 18-06):** zendingen met vervoerder "Eigen vervoer"

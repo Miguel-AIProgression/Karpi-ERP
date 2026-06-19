@@ -67,6 +67,8 @@ export function useVervoerderKeuzeVoorOrder(orderId: number | null | undefined) 
  *   4. ['logistiek', 'zending']                         — zending-detail
  *   5. ['logistiek', 'zendingen']                       — zendingen-lijst
  *   6. ['pick-ship']                                    — pick-overzicht
+ *   7. ['orders']                                       — overzicht + detail/regels
+ *      (mig 430: eigen vervoer verwijdert de VERZEND-regel server-side)
  */
 export function useSetOrderVervoerderOverride() {
   const qc = useQueryClient()
@@ -91,6 +93,11 @@ export function useSetOrderVervoerderOverride() {
       qc.invalidateQueries({ queryKey: ['logistiek', 'zending'] })
       qc.invalidateQueries({ queryKey: ['logistiek', 'zendingen'] })
       qc.invalidateQueries({ queryKey: ['pick-ship'] })
+      // Mig 430: een type='eigen'-vervoerder verwijdert server-side de
+      // VERZEND-kostenregel uit de order (geen externe verzendkosten). Het
+      // orders-overzicht én order-detail/-regels (['orders', id] en
+      // ['orders', id, 'regels']) moeten die verdwenen regel meteen tonen.
+      qc.invalidateQueries({ queryKey: ['orders'] })
       // Mig 229 / ADR-0012: vervoerder is een dimensie van de 4D-bundel-sleutel.
       // Wijziging betekent dat orders kunnen schuiven tussen voorgestelde-bundels
       // in de Pick & Ship live preview. Zonder deze invalidate ziet de operator
