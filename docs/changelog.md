@@ -1,5 +1,27 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-19 — Fix: Eigen-vervoer-zending blijft op 'Klaar voor verzending' hangen
+
+**Waarom (melding Thom, 18-06):** zendingen met vervoerder "Eigen vervoer"
+(type='eigen', mig 424) bleven op het logistiek-zendingen-overzicht op status
+`Klaar voor verzending` staan, terwijl carrier-zendingen (HST/Rhenus/Verhoek)
+doorschoten naar `Onderweg`.
+
+**Root cause:** de zending-status `Klaar voor verzending → Onderweg` wordt op
+precies één plek getild — `markeer_transportorder_verstuurd` (mig 426), aangeroepen
+door de verzend-edge-function ná carrier-aanmelding. Eigen vervoer is als kopie van
+type `print` geïmplementeerd in `enqueue_zending_naar_vervoerder`: alleen
+`genereer_zending_colli`, géén `verzend_wachtrij`-rij → geen edge-function → geen
+callback → niets zet de zending door. De ORDER flipte wél correct naar `Verzonden`
+(`voltooi_pickronde` is vervoerder-agnostisch); enkel de zending-status hing.
+
+**Wat (branch `fix/eigen-vervoer-zending-afgeleverd`):**
+- **Mig 429** — `enqueue_zending_naar_vervoerder`: de `WHEN 'eigen'`-tak zet de
+  zending na `genereer_zending_colli` synchroon op `Afgeleverd` (keuze gebruiker:
+  geen T&T-stap volgt, dus direct de eindstatus i.p.v. `Onderweg`). Status-guard +
+  trigger-short-circuit voorkomen recursie/terugzetten. Backfill van bestaande
+  vastgelopen eigen-vervoer-zendingen (o.a. ZEND-2026-0054, ZEND-2026-0056).
+
 ## 2026-06-18 — Verzend-wachtrij als data-as: één tabel gediscrimineerd op vervoerder_code (ADR-0038)
 
 **Waarom:** drie near-identieke wachtrij-tabellen (`hst_transportorders` mig 171/304,
