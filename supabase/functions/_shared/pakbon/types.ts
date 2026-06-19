@@ -90,7 +90,7 @@ export interface PakbonZendingInput {
     fact_plaats: string | null
     fact_land: string | null
     afl_naam_2: string | null
-    debiteuren?: { naam: string | null; route: string | null } | null
+    debiteuren?: { naam: string | null } | null
     vertegenwoordigers?: { naam: string | null } | null
   }
   bundel_orders: PakbonBundelOrder[]
@@ -146,6 +146,9 @@ export interface PakbonRegelDisplay {
   uwNaam: string | null
   /** Losse maat-regel, alleen bij legacy-maatwerk zonder colli-snapshot. */
   maatRegel: string | null
+  /** Mig 436: unieke omsticker-codes (fysiek gepakt equivalent). Leeg = geen
+   *  "OMB:"-subregel. Zelfde notatie als het verzendlabel. */
+  omstickerCodes: string[]
   besteld: string
   geleverd: string
 }

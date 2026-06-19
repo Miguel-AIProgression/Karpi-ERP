@@ -93,9 +93,20 @@ legacy-routecode, andere "Uw naam"-onderdrukking. Visuele check bij 1e echte
 verzending. `factuur-verzenden` opnieuw deployen (deelt `_shared/pakbon`).
 
 ### Slice 3 — opruimen
-- `debiteuren.route` uit `PAKBON_SELECT` (`fetch.ts`) en uit `bouwPakbonDocument` /
-  `PakbonZendingInput.orders.debiteuren`.
-- dubbele `LAND_NAMEN` (één bron in `_shared/pakbon`).
+- ~~`debiteuren.route` uit `PAKBON_SELECT` (`fetch.ts`) en uit `bouwPakbonDocument` /
+  `PakbonZendingInput.orders.debiteuren`.~~ **Gefold in slice 2** — de cross-root
+  aanroep `bouwPakbonDocument(zending: ZendingPrintSet)` vereist dat `route` uit de
+  shared input verdwijnt (ZendingPrintSet heeft geen `debiteuren.route`).
+- ~~dubbele `LAND_NAMEN`~~ **opgelost door slice 2**: de React-pakbon leidt niets
+  meer af, dus de inline `LAND_NAMEN`-kopie is verdwenen; de server-builder houdt
+  als enige nog `LAND_NAMEN` (geen duplicaat meer).
+
+## Voortgang
+- **Slice 1** — commit `d11a57e`. Gedragsneutraal; tsc + 29 vitest + 10 deno groen.
+- **Slice 2** — builder + PDF + React-thin-renderer + route-removal + golden.
+  Drifts opgelost (routecode-injectie, OMB, klantNaamWijktAf, externReferentie).
+  tsc schoon; 29 vitest + 15 deno (incl. golden) groen. **Open:** `factuur-verzenden`
+  herdeployen + visuele check factuurmail-PDF bij 1e echte verzending.
 
 ## Tests / vangnet
 - Slice 1: bestaande `aggregatie.test.ts` (uitgebreid met omsticker) + `pakbon-document.test.tsx`

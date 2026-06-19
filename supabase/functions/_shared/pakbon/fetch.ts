@@ -13,7 +13,7 @@ const PAKBON_SELECT = `
   orders!zendingen_order_id_fkey!inner (
     id, order_nr, klant_referentie, week, debiteur_nr, vertegenw_code,
     fact_naam, fact_adres, fact_postcode, fact_plaats, fact_land, afl_naam_2,
-    debiteuren:debiteuren!orders_debiteur_nr_fkey ( naam, route ),
+    debiteuren:debiteuren!orders_debiteur_nr_fkey ( naam ),
     vertegenwoordigers ( naam )
   ),
   zending_orders (

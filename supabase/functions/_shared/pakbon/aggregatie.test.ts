@@ -185,3 +185,97 @@ Deno.test('uw-naam-subregel alleen als Karpi-naam afwijkt van klant-naam', () =>
   assertEquals(regel.hoofdNaam, 'Egyptische Wol 240x330 cm')
   assertEquals(regel.uwNaam, 'RUBI 15')
 })
+
+Deno.test('"Uw naam" onderdrukt als klant-naam de hoofdregel-mín-maat / artikelcode is (klantNaamWijktAf)', () => {
+  const zending = maakZending({
+    zending_regels: [maakRegel({ order_regel_id: 10, artikelnr: 'PLUS11XX120RND', order_regels: maakOrderRegel({ regelnummer: 1, artikelnr: 'PLUS11XX120RND' }) })],
+    zending_colli: [maakColli({ order_regel_id: 10, omschrijving_snapshot: 'PLUS11XX120RND 120x120 cm', klant_omschrijving_snapshot: 'PLUS11XX120RND' })],
+  })
+  assertEquals(bouwPakbonDocument(zending).groepen[0].regels[0].uwNaam, null)
+})
+
+Deno.test('omsticker (mig 436): OMB-codes per regel in het display-document', () => {
+  const zending = maakZending({
+    zending_regels: [maakRegel({ order_regel_id: 10, artikelnr: '522230010', order_regels: maakOrderRegel({ regelnummer: 1, artikelnr: '522230010' }) })],
+    zending_colli: [maakColli({ order_regel_id: 10, omsticker_snapshot: 'TIFF23XX200290' })],
+  })
+  assertEquals(bouwPakbonDocument(zending).groepen[0].regels[0].omstickerCodes, ['TIFF23XX200290'])
+})
+
+Deno.test('routecode = geïnjecteerde render-context (niet debiteuren.route)', () => {
+  const zending = maakZending({ zending_regels: [maakRegel()] })
+  assertEquals(bouwPakbonDocument(zending).routecode, null) // factuurmail-PDF: geen routecode
+  assertEquals(bouwPakbonDocument(zending, { routecode: '27' }).routecode, '27') // geprinte pakbon
+})
+
+Deno.test('externReferentie: interne Shopify-suffix gestript op referentie + bundel-regels', () => {
+  const solo = bouwPakbonDocument(
+    maakZending({
+      zending_regels: [maakRegel()],
+      orders: { ...maakZending().orders, klant_referentie: 'PO-123 / Shopify: #5590' },
+    }),
+  )
+  assertEquals(solo.referentieRegel, 'PO-123')
+
+  const bundel = bouwPakbonDocument(
+    maakZending({
+      bundel_orders: [
+        { id: 1, order_nr: 'ORD-2026-0001', klant_referentie: 'GOOSSEN / Shopify: #1', week: null },
+        { id: 2, order_nr: 'ORD-2026-0002', klant_referentie: 'REF-2', week: 'W24' },
+      ],
+      zending_regels: [
+        maakRegel({ id: 1, order_regel_id: 10, order_regels: maakOrderRegel({ order_id: 1, regelnummer: 1 }) }),
+        maakRegel({ id: 2, order_regel_id: 20, order_regels: maakOrderRegel({ order_id: 2, regelnummer: 1 }) }),
+      ],
+      zending_colli: [maakColli({ colli_nr: 1, order_regel_id: 10 }), maakColli({ colli_nr: 2, order_regel_id: 20 })],
+    }),
+  )
+  assertEquals(bundel.bundelRegels, ['· ORD-2026-0001 : Ref. GOOSSEN', '· ORD-2026-0002 : Ref. REF-2 (WK W24)'])
+})
+
+// GOLDEN (ADR-0036-patroon): één representatieve zending → één volledig
+// `PakbonDocument`. Pint de canonieke representatie die zowel de geprinte
+// React-pakbon als de pdf-lib-PDF consumeren — divergeren kan niet meer.
+Deno.test('golden: volledig PakbonDocument', () => {
+  const zending = maakZending({
+    zending_regels: [
+      maakRegel({ id: 1, order_regel_id: 10, artikelnr: '522230010', aantal: 2, order_regels: maakOrderRegel({ regelnummer: 1, artikelnr: '522230010', orderaantal: 2, gewicht_kg: 5 }) }),
+    ],
+    zending_colli: [maakColli({ order_regel_id: 10, omschrijving_snapshot: 'TIFFANY 23 200x290 cm', klant_omschrijving_snapshot: 'BREDA', omsticker_snapshot: 'TIFF23XX200290' })],
+  })
+  const doc = bouwPakbonDocument(zending, { kolli: 1, routecode: '27' })
+  assertEquals(doc, {
+    pakbonnr: 'ZEND-2026-0003',
+    datum: '12-06-2026',
+    afleveradres: ['Fam. ten Velde', 'Leidsevaart 8', '2121 AX Bennebroek'],
+    afleverTelefoon: null,
+    factuuradres: ['Karpi Klant', 'Straat 1', '1000 AA Plaats'],
+    isBundel: false,
+    referentieRegel: '-',
+    vertegenwoordiger: '-',
+    orderDebiteur: 'ORD-2026-0107/152009',
+    debiteur: '152009',
+    routecode: '27',
+    bundelRegels: [],
+    groepen: [
+      {
+        orderId: 1,
+        orderNr: null,
+        regels: [
+          {
+            regelnummer: '01',
+            artikelnr: '522230010',
+            hoofdNaam: 'TIFFANY 23 200x290 cm',
+            uwNaam: 'BREDA',
+            maatRegel: null,
+            omstickerCodes: ['TIFF23XX200290'],
+            besteld: '2',
+            geleverd: '2',
+          },
+        ],
+      },
+    ],
+    kolli: 1,
+    totaalGewichtKg: 10,
+  })
+})
