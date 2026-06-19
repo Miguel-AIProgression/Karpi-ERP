@@ -79,6 +79,10 @@ export interface PakbonRegel {
    * toon de losse maat-regel — exact de `snapshotVoor`-semantiek van de oude
    * pakbon (een colli met lege snapshot-inhoud telt als non-null). */
   snapshot: OmschrijvingSnapshot | null
+  /** Mig 436: unieke omsticker-codes (karpi_code van het fysiek gepakte
+   * equivalent) over de colli van deze regel. Leeg = geen omsticker. De pakbon
+   * toont ze als "OMB:"-subregel, net als het verzendlabel. */
+  omstickerCodes: string[]
 }
 
 /**
@@ -179,6 +183,19 @@ export function bouwVerzenddocument(zending: ZendingPrintSet): Verzenddocument {
     }
   }
 
+  // Mig 436: unieke omsticker-codes per orderregel (over álle colli van de
+  // regel — een regel kan multi-source gedekt zijn). Voor de pakbon-rij, die
+  // per orderregel geaggregeerd is. Leeg = geen omsticker.
+  const omstickerPerOrderRegel = new Map<number, string[]>()
+  for (const c of zending.zending_colli ?? []) {
+    if (c.order_regel_id == null) continue
+    const code = (c.omsticker_snapshot ?? '').trim()
+    if (!code) continue
+    const lijst = omstickerPerOrderRegel.get(c.order_regel_id) ?? []
+    if (!lijst.includes(code)) lijst.push(code)
+    omstickerPerOrderRegel.set(c.order_regel_id, lijst)
+  }
+
   const orderIdVoor = (regel: ZendingPrintRegel | null): number =>
     regel?.order_regels?.order_id ?? primaireOrderId
 
@@ -250,6 +267,10 @@ export function bouwVerzenddocument(zending: ZendingPrintSet): Verzenddocument {
         geleverd,
         gewichtKg: regelGewichtKg(regel) * geleverd,
         snapshot,
+        omstickerCodes:
+          regel.order_regel_id != null
+            ? omstickerPerOrderRegel.get(regel.order_regel_id) ?? []
+            : [],
       }
     })
 

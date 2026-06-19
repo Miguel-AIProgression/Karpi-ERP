@@ -243,6 +243,11 @@ export function PakbonDocument({ zending, vervoerderNaam: _vervoerderNaam, colli
                             {regel.order_regels.maatwerk_lengte_cm ?? '-'} cm
                           </div>
                         )}
+                        {/* Mig 436: omsticker — fysiek gepakt equivalent. Zelfde
+                            "OMB:"-notatie als het verzendlabel. */}
+                        {pr.omstickerCodes.length > 0 && (
+                          <div className="text-slate-600">OMB: {pr.omstickerCodes.join(', ')}</div>
+                        )}
                         {toonUwNaam && <div>Uw naam: {namen.klantNaam}</div>}
                       </div>
                       <div className="text-right">{formatNumber(pr.besteld)}</div>

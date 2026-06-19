@@ -1,5 +1,20 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-19 — Omsticker "OMB:"-regel ook op de geprinte pakbon
+
+**Vervolg op mig 436 (verzendlabel-OMB).** De `OMB:`-regel staat nu ook op de
+**geprinte pakbon** (`pakbon-document.tsx`), niet alleen op de sticker. Frontend-only —
+de kolom `zending_colli.omsticker_snapshot` bestaat al (mig 436).
+
+- `bouwVerzenddocument` (`printset.ts`) aggregeert per orderregel de **unieke**
+  omsticker-codes over alle colli (`PakbonRegel.omstickerCodes`); de pakbon toont ze als
+  `OMB: <code>`-subregel onder de hoofdregel (zelfde notatie als het label).
+- **Buiten scope (bewust):** carrier-payloads én de server-side PDF-pakbon
+  (`_shared/pakbon/`, factuurmail-bijlage) — die blijven het bestelde/`omschrijving_snapshot`
+  tonen. OMB is een print-laag-/magazijnconcern.
+- Tests: `pakbon-document.test.tsx` (OMB met/zonder snapshot) + fixtures. Typecheck + 81
+  logistiek-tests groen.
+
 ## 2026-06-19 — Omsticker-artikel ("OMB:") op het verzendlabel (mig 436)
 
 **Waarom (melding Miguel, 19-06 — ORD-2026-0672 / ZEND-2026-0108):** bij een order

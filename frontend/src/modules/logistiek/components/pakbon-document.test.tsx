@@ -456,4 +456,35 @@ describe('PakbonDocument — karakterisering rijopbouw', () => {
 
     expect(bestelGeleverd(container, 'ART-A')).toEqual([formatNumber(4), formatNumber(2)])
   })
+
+  it('mig 436: toont "OMB:" met de fysieke code als een colli een omsticker-snapshot heeft', () => {
+    const zending = maakZending({
+      zending_regels: [
+        maakRegel({
+          id: 1,
+          order_regel_id: 10,
+          artikelnr: '522230010',
+          order_regels: maakOrderRegel({ id: 10, regelnummer: 1, artikelnr: '522230010' }),
+        }),
+      ],
+      zending_colli: [
+        maakColli({ order_regel_id: 10, omsticker_snapshot: 'TIFF23XX200290' }),
+      ],
+    })
+
+    const { container } = renderPakbon(zending, 1)
+
+    expect(container.textContent).toContain('OMB: TIFF23XX200290')
+  })
+
+  it('mig 436: geen "OMB:"-regel zonder omsticker-snapshot', () => {
+    const zending = maakZending({
+      zending_regels: [maakRegel({ order_regel_id: 10 })],
+      zending_colli: [maakColli({ order_regel_id: 10, omsticker_snapshot: null })],
+    })
+
+    const { container } = renderPakbon(zending, 1)
+
+    expect(container.textContent).not.toContain('OMB:')
+  })
 })
