@@ -198,6 +198,41 @@ Deno.test('HST Success=false MET OrderNumber → terminaal: anker + markeer_fout
   assertEquals(summary.failed, 1);
 });
 
+// ANTI-DUBBELE-AANMELDING — VERVOLGFIX (retry 19-06 ~14:33, T75038267004442/4443/4444):
+// HST keurt de datum-validatiefout in de praktijk af met HTTP 400 MÉT een
+// OrderNumber (NIET 200) — maar mààkt de order tóch server-side aan ("Niet valide"
+// in de Portal). De 400 loopt door de `!res.ok`-tak van hst-client; die moet het
+// OrderNumber bewaren en `aangemeldMaarFout` zetten, zodat de poging óók hier
+// TERMINAAL is (anker + markeer_fout max_retries=1) en de claim-loop niet 3×
+// re-POST't. Terminaal-detectie = "OrderNumber aanwezig", onafhankelijk van de
+// HTTP-status.
+Deno.test('HST HTTP 400 MET OrderNumber → terminaal: anker + markeer_fout (max_retries=1)', async () => {
+  const fake = new FakeSupabase(configOk());
+  const summary = legeSummary();
+
+  const { aangeroepen } = await metFetchStub(
+    () => jsonResponse(
+      { Success: false, OrderNumber: 'T75038267004442', ErrorMessage: 'Datum berekening is niet goed gegaan.' },
+      400,
+    ),
+    () => verwerkRow(asClient(fake), rij(), SECRETS, summary),
+  );
+
+  assertEquals(aangeroepen, 1); // precies één POST — geen retry-storm
+  assertEquals(fake.rpcNames(), ['log_externe_payload', 'markeer_transport_bevestigd', 'markeer_transportorder_fout']);
+
+  const anker = fake.rpcCalls()[1];
+  assertEquals(anker.args.p_id, 3);
+  assertEquals(anker.args.p_extern_referentie, 'T75038267004442');
+
+  const fout = fake.rpcCalls()[2];
+  assertEquals(fout.args.p_id, 3);
+  assertEquals(fout.args.p_max_retries, 1); // direct terminaal Fout, geen recycle
+  assertMatch(fout.args.p_error, /Datum berekening/);
+
+  assertEquals(summary.failed, 1);
+});
+
 Deno.test('HST preflight-fout (leeg afl_adres) → markeer_fout, GEEN HST-call', async () => {
   const zonderAdres = { ...ZENDING_OK, afl_adres: '' };
   const fake = new FakeSupabase(configOk({ zendingen: { single: { data: zonderAdres, error: null } } }));
