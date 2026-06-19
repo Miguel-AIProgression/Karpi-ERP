@@ -82,6 +82,10 @@ export function ShippingLabel({
   const snapshot = { omschrijvingSnapshot, klantOmschrijvingSnapshot }
   const productRegels = labelProductRegels(regel, snapshot, omstickerSnapshot)
   const uwReferentie = klanteigenReferentie(klanteigenNaamSnapshot)
+  // Magazijnlocatie (verzoek 2026-06-19): toon de kale locatiecode zodat de
+  // picker weet waar het karpet ligt. Live uit `producten.locatie`; leeg/NULL
+  // → niets tonen (bv. maatwerk zonder product). Geen "Locatie:"-label.
+  const locatie = (regel?.order_regels?.producten?.locatie ?? '').trim() || null
   const land = zending.afl_land ?? 'NL'
   const barcodeValue = labelBarcode(sscc)
   const ref = labelReferentie(order)
@@ -194,6 +198,21 @@ export function ShippingLabel({
         >
           {productRegels.groot}
         </div>
+        {locatie && (
+          <div
+            style={{
+              fontSize: fz(9),
+              fontWeight: 700,
+              lineHeight: 1.1,
+              marginTop: `${0.2 * s}mm`,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {locatie}
+          </div>
+        )}
         {uwReferentie && (
           <div
             style={{
