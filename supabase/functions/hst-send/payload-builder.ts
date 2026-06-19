@@ -54,14 +54,24 @@ const HST_DEFAULT_AFMETINGEN = capabilityVoor('hst_api')?.defaultAfmetingen ??
 const DEFAULT_LENGTH_CM = HST_DEFAULT_AFMETINGEN.lengteCm;
 const DEFAULT_WEIGHT_KG = HST_DEFAULT_AFMETINGEN.gewichtKg;
 
+// HST's TransportOrderLine.Length accepteert max 200 cm en weigert de hele order
+// anders (live-fout ZEND-2026-0061: 'Regel nummer 1 lengte (min: 0 | max: 200)').
+// Grote tapijten (bv. 240×330) geven een opgerolde colli die langer is dan 200;
+// de fysieke rol blijft natuurlijk z'n echte maat, maar het HST-veld kan dat niet
+// representeren → clampen op het carrier-maximum (zoals GoodsDescription op 30 en
+// StreetNumberAddition op 5).
+const HST_LENGTH_MAX_CM = 200;
+
 // Korte zijde van het tapijt = de lengte van de opgerolde colli: de kleinste
 // van lengte/breedte (cm). Valt terug op de default als geen maat bekend is.
+// Geclampt op HST's veldmaximum.
 function korteZijdeCm(
   lengte: number | null | undefined,
   breedte: number | null | undefined,
 ): number {
   const maten = [lengte, breedte].filter((m): m is number => typeof m === 'number' && m > 0);
-  return maten.length > 0 ? Math.min(...maten) : DEFAULT_LENGTH_CM;
+  const korteZijde = maten.length > 0 ? Math.min(...maten) : DEFAULT_LENGTH_CM;
+  return Math.min(korteZijde, HST_LENGTH_MAX_CM);
 }
 
 export interface BouwTransportOrderArgs {

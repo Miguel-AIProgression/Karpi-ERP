@@ -226,6 +226,29 @@ Deno.test('bouwTransportOrderPayload kapt GoodsDescription af op 30 tekens', () 
   assertEquals(desc, 'LORANDA Kleur 21 CA: 200x290 c');
 });
 
+// HST's Length-veld accepteert max 200 cm (live-fout ZEND-2026-0061: tapijt
+// 240×330 → korte zijde 240 → 'Regel nummer 1 lengte (min: 0 | max: 200)').
+// De builder clampt Length op 200.
+Deno.test('bouwTransportOrderPayload clampt Length op HST-max 200 cm', () => {
+  const payload = bouwTransportOrderPayload({
+    zending: {
+      zending_nr: 'ZEND-2026-0061', afl_naam: 'HOREMANS', afl_adres: 'Olenseweg 150',
+      afl_postcode: '2440', afl_plaats: 'Geel', afl_land: 'BE',
+      afl_telefoon: null, afl_email: null, totaal_gewicht_kg: 15.84, aantal_colli: 1,
+      opmerkingen: null, verzenddatum: '2026-06-19',
+    },
+    order: { order_nr: 'ORD-2026-0157' },
+    bedrijf: KARPI_BEDRIJF,
+    hstCustomerId: '038267',
+    colli: [{
+      colli_nr: 1, sscc: '087159540000000632', gewicht_kg: 15.84, lengte_cm: 240, breedte_cm: 330,
+      omschrijving_snapshot: 'OASI51XX240330 330x240 cm',
+    }],
+  });
+  // korte zijde = min(240,330) = 240 > 200 → geclampt naar 200.
+  assertEquals(payload.TransportOrderLines[0].Length, 200);
+});
+
 // T&T-scheiding (mail Piet-Hein/Marjon 11-06-2026): het aflever-e-mailadres
 // gaat mee naar de vervoerder voor track & trace; een leeg afl_email blijft
 // leeg (nooit stilletjes een factuur-adres invullen).
