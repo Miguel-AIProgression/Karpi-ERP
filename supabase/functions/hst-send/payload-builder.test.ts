@@ -202,6 +202,30 @@ Deno.test('bouwTransportOrderPayload zet ToAddress.PhoneNumber uit afl_telefoon'
   assertEquals(payload.ToAddress.PhoneNumber, '0612345678');
 });
 
+// HST's Mendix-veld GoodsDescription weigert >30 tekens (live-fout
+// ZEND-2026-0059: 'LORANDA Kleur 21 CA: 200x290 cm 290x200 cm' = 42 tekens →
+// validation error). De builder kapt af op 30.
+Deno.test('bouwTransportOrderPayload kapt GoodsDescription af op 30 tekens', () => {
+  const payload = bouwTransportOrderPayload({
+    zending: {
+      zending_nr: 'ZEND-2026-0059', afl_naam: "'T STOELTJE NV", afl_adres: 'Ossenberg 42',
+      afl_postcode: '2490', afl_plaats: 'Balen', afl_land: 'BE',
+      afl_telefoon: '0032 14300677', afl_email: null, totaal_gewicht_kg: 21.46, aantal_colli: 1,
+      opmerkingen: null, verzenddatum: '2026-06-19',
+    },
+    order: { order_nr: 'ORD-2026-0197' },
+    bedrijf: KARPI_BEDRIJF,
+    hstCustomerId: '038267',
+    colli: [{
+      colli_nr: 1, sscc: '087159540000000632', gewicht_kg: 21.46, lengte_cm: 290, breedte_cm: 200,
+      omschrijving_snapshot: 'LORANDA Kleur 21 CA: 200x290 cm 290x200 cm',
+    }],
+  });
+  const desc = payload.TransportOrderLines[0].GoodsDescription;
+  assert(desc.length <= 30, `GoodsDescription moet ≤30 zijn, is ${desc.length}`);
+  assertEquals(desc, 'LORANDA Kleur 21 CA: 200x290 c');
+});
+
 // T&T-scheiding (mail Piet-Hein/Marjon 11-06-2026): het aflever-e-mailadres
 // gaat mee naar de vervoerder voor track & trace; een leeg afl_email blijft
 // leeg (nooit stilletjes een factuur-adres invullen).

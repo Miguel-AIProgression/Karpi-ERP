@@ -12,11 +12,12 @@ Deno.test('capabilityVoor: onbekende carrier → null (geen preflight)', () => {
   assertEquals(capabilityVoor('edi_partner_a'), null);
 });
 
-Deno.test('HST: REST, NL+BE-bereik, telefoon+land verplicht, pallet-defaults', () => {
+Deno.test('HST: REST, NL+BE-bereik, land verplicht, telefoon niet (FFBL uit), pallet-defaults', () => {
   const c = capabilityVoor('hst_api')!;
   assertEquals(c.protocol, 'rest');
   assertEquals(c.landbereik, ['NL', 'BE']);
-  assertEquals(c.preflight.vereistTelefoon, true);
+  // "Bellen vóór aflevering" (FFBL) is uit sinds 2026-06-18 → telefoon niet verplicht.
+  assertEquals(c.preflight.vereistTelefoon, false);
   assertEquals(c.preflight.vereistLandInBereik, true);
   assertEquals(c.preflight.vereistColli, false);
   assertEquals(c.defaultAfmetingen, { lengteCm: 120, breedteCm: 80, hoogteCm: 20, gewichtKg: 1 });

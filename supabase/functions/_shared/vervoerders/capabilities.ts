@@ -30,7 +30,9 @@ export interface VerzendCapability {
    *  selectie-regels bepalen het bereik, geen harde preflight-land-check). */
   landbereik: string[] | null;
   preflight: {
-    /** HST belt vóór aflevering → telefoon (10–15 cijfers) verplicht. */
+    /** Telefoon (10–15 cijfers) verplicht vóór verzending. Alle huidige
+     *  carriers: false (HST's "bellen vóór aflevering"/FFBL is uit sinds
+     *  2026-06-18). */
     vereistTelefoon: boolean;
     /** Harde land-check tegen `landbereik` in de preflight (HST). SFTP-
      *  vervoerders: false — de routering dekt het bereik al. */
@@ -52,15 +54,22 @@ export interface VerzendCapability {
 }
 
 // HST — REST/JSON, bedient NL + BE (HST levert ook in België — bevestigd
-// 2026-06-18), belt vóór aflevering, mag pallet-default-afmetingen invullen
-// (tapijtrollen zonder gemeten maat). Geen colli-preflight: de payload-builder
-// valt terug op één aggregate-regel als er geen colli's zijn.
+// 2026-06-18), mag pallet-default-afmetingen invullen (tapijtrollen zonder
+// gemeten maat). Geen colli-preflight: de payload-builder valt terug op één
+// aggregate-regel als er geen colli's zijn.
+//
+// Telefoon NIET verplicht (2026-06-18): "bellen vóór aflevering" (FFBL) is
+// uitgezet — `payload-builder` stuurt `ShippingServices: []`. HST belt dus niet
+// meer vóór aflevering, dus een ontbrekend telefoonnummer mag verzending niet
+// langer blokkeren (aanleiding: BE-zending ZEND-2026-0061 viel onterecht op
+// pre-flight TELEFOON_ONTBREEKT). Het nummer wordt nog wél meegestuurd als het
+// bekend is.
 const HST: VerzendCapability = {
   code: 'hst_api',
   protocol: 'rest',
   landbereik: ['NL', 'BE'],
   preflight: {
-    vereistTelefoon: true,
+    vereistTelefoon: false,
     vereistLandInBereik: true,
     vereistAdresvelden: true,
     vereistColli: false,

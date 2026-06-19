@@ -31,6 +31,16 @@ const DEFAULT_ORDER_TYPE = 'DELIVERY_LARGE';
 // fixtures/README.md.
 const DEFAULT_PACKAGE_UNIT_ID = 'col';
 const DEFAULT_GOODS_DESCRIPTION = 'Tapijten';
+// HST's Mendix-veld GoodsDescription accepteert max 30 tekens en weigert de
+// hele TransportOrder anders met een validation error (live-fout ZEND-2026-0059:
+// 'GoodsDescription: Maximale lengte is 30'). De colli-omschrijving-snapshot
+// (mig 399, kwaliteit + kleur + maat) is regelmatig langer → hier afkappen.
+const HST_GOODS_DESCRIPTION_MAX = 30;
+
+function trunceerOmschrijving(omschrijving: string): string {
+  const t = (omschrijving ?? '').trim();
+  return t.length <= HST_GOODS_DESCRIPTION_MAX ? t : t.slice(0, HST_GOODS_DESCRIPTION_MAX).trim();
+}
 // Karpi verstuurt opgerolde tapijtrollen: de colli-LENGTE = de korte zijde van
 // het tapijt (uit de zending_colli-snapshot, mig 399), BREEDTE en HOOGTE = de
 // vaste rol-diameter (30 cm). Bewust niet 0 — HST verwerpt soms 0-waarden.
@@ -101,7 +111,9 @@ function bouwLineUitColli(c: ZendingColliInput, order: OrderInput): HstTransport
   return {
     Quantity: 1,
     GoodsOnPallet: 0,
-    GoodsDescription: c.omschrijving_snapshot ?? `${DEFAULT_GOODS_DESCRIPTION} (${order.order_nr})`,
+    GoodsDescription: trunceerOmschrijving(
+      c.omschrijving_snapshot ?? `${DEFAULT_GOODS_DESCRIPTION} (${order.order_nr})`,
+    ),
     ExchangePacking: false,
     Length: korteZijdeCm(c.lengte_cm, c.breedte_cm),
     Width: ROL_BREEDTE_CM,
@@ -118,7 +130,7 @@ function bouwAggregateLine(zending: ZendingInput, order: OrderInput): HstTranspo
   return {
     Quantity: zending.aantal_colli ?? 1,
     GoodsOnPallet: 0,
-    GoodsDescription: `${DEFAULT_GOODS_DESCRIPTION} (${order.order_nr})`,
+    GoodsDescription: trunceerOmschrijving(`${DEFAULT_GOODS_DESCRIPTION} (${order.order_nr})`),
     ExchangePacking: false,
     // Fallback-pad (geen colli-rijen) → geen colli-maat beschikbaar: lengte op
     // de default, breedte/hoogte op de vaste rol-diameter. Sinds mig 389 is

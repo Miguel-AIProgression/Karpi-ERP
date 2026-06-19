@@ -13,15 +13,15 @@ Deno.test('valideerVoorVervoerder: complete order is ok', () => {
   assertEquals(r.problemen.length, 0);
 });
 
-Deno.test('valideerVoorVervoerder: ontbrekend telefoonnummer faalt', () => {
+Deno.test('valideerVoorVervoerder: ontbrekend telefoonnummer blokkeert HST niet meer (FFBL uit 2026-06-18)', () => {
   const r = valideerVoorVervoerder({ ...basis, afl_telefoon: null });
-  assertEquals(r.ok, false);
-  assertEquals(r.problemen[0].code, 'TELEFOON_ONTBREEKT');
+  assertEquals(r.ok, true);
+  assertEquals(r.problemen.some((p) => p.code === 'TELEFOON_ONTBREEKT'), false);
 });
 
-Deno.test('valideerVoorVervoerder: te kort telefoonnummer faalt', () => {
+Deno.test('valideerVoorVervoerder: te kort telefoonnummer blokkeert HST niet meer', () => {
   const r = valideerVoorVervoerder({ ...basis, afl_telefoon: '0612' });
-  assertEquals(r.problemen[0].code, 'TELEFOON_ONTBREEKT');
+  assertEquals(r.problemen.some((p) => p.code === 'TELEFOON_ONTBREEKT'), false);
 });
 
 Deno.test('valideerVoorVervoerder: land buiten bereik faalt', () => {
