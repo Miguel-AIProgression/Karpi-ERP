@@ -1,11 +1,12 @@
 import { useState, useMemo } from 'react'
-import { Search, FileDown } from 'lucide-react'
+import { Search, FileDown, Globe } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { MultiSelectDropdown } from '@/components/ui/multi-select-dropdown'
 import { FactuurLijst } from '@/modules/facturatie'
 import { useFacturen } from '../hooks/use-facturen'
 import type { FactuurStatus } from '../queries/facturen'
 import { VerkoopoverzichtExportDialog } from '../components/verkoopoverzicht-export-dialog'
+import { CbsExportDialog } from '../components/cbs-export-dialog'
 import { FactuurBulkBalk } from '../components/factuur-bulk-balk'
 
 const ALLE_STATUSSEN: FactuurStatus[] = [
@@ -27,6 +28,7 @@ export function FacturatieOverviewPage() {
   const [datumTot, setDatumTot] = useState('')
   const [selectie, setSelectie] = useState<Set<number>>(new Set())
   const [exportDialogOpen, setExportDialogOpen] = useState(false)
+  const [cbsDialogOpen, setCbsDialogOpen] = useState(false)
 
   const { data: facturen = [] } = useFacturen()
 
@@ -95,20 +97,34 @@ export function FacturatieOverviewPage() {
         title="Facturen"
         description={`${gefilterd.length} facturen`}
         actions={
-          <button
-            type="button"
-            onClick={() => setExportDialogOpen(true)}
-            className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-[var(--radius-sm)] border border-slate-300 bg-white hover:bg-slate-50 text-slate-700"
-          >
-            <FileDown size={14} />
-            Verkoopoverzicht
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setCbsDialogOpen(true)}
+              className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-[var(--radius-sm)] border border-slate-300 bg-white hover:bg-slate-50 text-slate-700"
+            >
+              <Globe size={14} />
+              CBS-export
+            </button>
+            <button
+              type="button"
+              onClick={() => setExportDialogOpen(true)}
+              className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-[var(--radius-sm)] border border-slate-300 bg-white hover:bg-slate-50 text-slate-700"
+            >
+              <FileDown size={14} />
+              Verkoopoverzicht
+            </button>
+          </div>
         }
       />
 
       <VerkoopoverzichtExportDialog
         open={exportDialogOpen}
         onClose={() => setExportDialogOpen(false)}
+      />
+      <CbsExportDialog
+        open={cbsDialogOpen}
+        onClose={() => setCbsDialogOpen(false)}
       />
 
       {/* Filters */}

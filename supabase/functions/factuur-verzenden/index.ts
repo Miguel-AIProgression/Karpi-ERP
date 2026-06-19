@@ -8,9 +8,15 @@ import { genereerFactuurPDF } from '../_shared/factuur-pdf.ts'
 import { sendFactuurEmail } from '../_shared/graph-mail-client.ts'
 import { logExternePayload } from '../_shared/externe-payload-audit.ts'
 import { buildKarpiInvoiceFixedWidth } from '../_shared/transus-formats/karpi-invoice-fixed-width.ts'
-import { fetchFactuurDocument } from '../_shared/facturatie/factuur-document.ts'
+import { fetchFactuurDocument, type FactuurDocument } from '../_shared/facturatie/factuur-document.ts'
 import { naarFactuurPdfInput } from '../_shared/facturatie/factuur-pdf-renderer.ts'
-import { bepaalTaal } from '../_shared/klant-taal.ts'
+import { bepaalTaal, type Taal } from '../_shared/klant-taal.ts'
+import type { FactuurPDFRegel } from '../_shared/factuur-pdf.ts'
+import {
+  bereekenM2PerStuk,
+  bouwIntracomStatRegel,
+  fetchGoederencodePerKwaliteit,
+} from '../_shared/facturatie/intracom-statregel.ts'
 import {
   naarInvoiceInput,
   type FactuurInvoiceContext,
@@ -279,8 +285,10 @@ serve(async () => {
       }
 
       // 4. Bouw PDF uit het canonieke Factuurdocument (ADR-0036): zelfde
-      // Artikelpresentatie als de EDI-INVOIC. Dit pad kent geen m²-/afleveradres-
-      // verrijking (dat doet alleen de on-demand factuur-pdf-functie).
+      // Artikelpresentatie als de EDI-INVOIC. Dit pad kent geen m²-totaal-/
+      // afleveradres-verrijking (dat doet alleen de on-demand factuur-pdf-
+      // functie) — de Stat.nr.-regel (mig 446) wordt hier wél toegevoegd,
+      // want dit is de daadwerkelijk verzonden factuur.
       const pdfDoc = await fetchFactuurDocument(supabase, factuurId)
       const pdfDeel = naarFactuurPdfInput(pdfDoc)
       // Taal van de factuur: land van het factuuradres → ISO2 (zelfde bron als de
@@ -291,6 +299,9 @@ serve(async () => {
         factLandIso2 = (landData as string | null) ?? null
       }
       const pdfTaal = bepaalTaal(factLandIso2)
+      const pdfRegelsMetStatRegel = pdfDoc.header.btw_verlegd
+        ? await metIntracomStatRegels(supabase, pdfDoc, pdfDeel.regels, pdfTaal)
+        : pdfDeel.regels
       const pdfBytes = await genereerFactuurPDF({
         bedrijf: {
           bedrijfsnaam: bedrijf.bedrijfsnaam,
@@ -311,7 +322,7 @@ serve(async () => {
           fax: bedrijf.fax,
         },
         factuur: pdfDeel.factuur,
-        regels: pdfDeel.regels,
+        regels: pdfRegelsMetStatRegel,
         taal: pdfTaal,
       })
 
@@ -663,6 +674,96 @@ async function fetchEdiConfig(
     .maybeSingle()
   if (error) throw new Error(`Fetch EDI-config: ${error.message}`)
   return data as EdiConfig | null
+}
+
+/**
+ * Mig 446: verrijkt de PDF-regels met de Intrastat-Stat.nr.-regel — alleen
+ * aangeroepen bij intracommunautaire (btw_verlegd) facturen. Eigen, minimale
+ * fetch (geen afleveradres/m²-totalen — dat blijft het on-demand preview-pad,
+ * zie factuur-pdf/index.ts) zodat het reguliere NL-factuurpad geen extra
+ * queries krijgt.
+ */
+async function metIntracomStatRegels(
+  supabase: ReturnType<typeof createClient>,
+  doc: FactuurDocument,
+  regels: FactuurPDFRegel[],
+  taal: Taal,
+): Promise<FactuurPDFRegel[]> {
+  const orderRegelIds = uniqueNumbers(doc.regels.map((r) => r.order_regel_id))
+  const artikelnrs = Array.from(new Set(doc.regels.map((r) => r.artikelnr).filter((v) => v.length > 0)))
+
+  const [orderRegelsRes, productenRes] = await Promise.all([
+    orderRegelIds.length > 0
+      ? supabase
+          .from('order_regels')
+          .select('id, gewicht_kg, maatwerk_oppervlak_m2, maatwerk_kwaliteit_code')
+          .in('id', orderRegelIds)
+      : Promise.resolve({ data: [], error: null }),
+    artikelnrs.length > 0
+      ? supabase
+          .from('producten')
+          .select('artikelnr, lengte_cm, breedte_cm, vorm, kwaliteit_code')
+          .in('artikelnr', artikelnrs)
+      : Promise.resolve({ data: [], error: null }),
+  ])
+  if (orderRegelsRes.error) throw new Error(`Fetch order_regels (stat.nr.): ${orderRegelsRes.error.message}`)
+  if (productenRes.error) throw new Error(`Fetch producten (stat.nr.): ${productenRes.error.message}`)
+
+  interface OrderRegelMeta {
+    id: number
+    gewicht_kg: number | string | null
+    maatwerk_oppervlak_m2: number | string | null
+    maatwerk_kwaliteit_code: string | null
+  }
+  interface ProductMeta {
+    artikelnr: string
+    lengte_cm: number | null
+    breedte_cm: number | null
+    vorm: string | null
+    kwaliteit_code: string | null
+  }
+  const orderRegelsById = new Map<number, OrderRegelMeta>()
+  for (const orr of (orderRegelsRes.data ?? []) as OrderRegelMeta[]) orderRegelsById.set(orr.id, orr)
+  const productenByArtikelnr = new Map<string, ProductMeta>()
+  for (const p of (productenRes.data ?? []) as ProductMeta[]) productenByArtikelnr.set(p.artikelnr, p)
+
+  const kwaliteitCodes = Array.from(
+    new Set(
+      doc.regels
+        .map((r) => {
+          const orderRegel = orderRegelsById.get(r.order_regel_id)
+          const product = r.artikelnr ? productenByArtikelnr.get(r.artikelnr) : undefined
+          return orderRegel?.maatwerk_kwaliteit_code ?? product?.kwaliteit_code ?? null
+        })
+        .filter((v): v is string => !!v),
+    ),
+  )
+  const goederencodeByKwaliteit = await fetchGoederencodePerKwaliteit(supabase, kwaliteitCodes)
+
+  return regels.map((br, i) => {
+    const dr = doc.regels[i]
+    const orderRegel = orderRegelsById.get(dr.order_regel_id)
+    const product = dr.artikelnr ? productenByArtikelnr.get(dr.artikelnr) : undefined
+    const m2PerStuk = bereekenM2PerStuk({
+      maatwerkOppervlakM2: orderRegel?.maatwerk_oppervlak_m2,
+      productLengteCm: product?.lengte_cm,
+      productBreedteCm: product?.breedte_cm,
+      productVorm: product?.vorm,
+    })
+    const kwaliteitCode = orderRegel?.maatwerk_kwaliteit_code ?? product?.kwaliteit_code ?? null
+    const goederencode = kwaliteitCode ? goederencodeByKwaliteit.get(kwaliteitCode) : undefined
+    const statRegel = bouwIntracomStatRegel({
+      taal,
+      btwVerlegd: doc.header.btw_verlegd,
+      goederencode,
+      gewichtKg: orderRegel?.gewicht_kg,
+      m2Totaal: m2PerStuk * br.aantal,
+    })
+    return {
+      ...br,
+      omschrijving_2: [br.omschrijving_2, statRegel].filter(Boolean).join('\n') || undefined,
+    }
+  })
 }
 
 async function queueEdiFactuur(

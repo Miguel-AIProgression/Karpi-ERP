@@ -1,5 +1,39 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-19 — CBS-statistieknummer op buitenlandse facturen + Intrastat-export
+
+**Waarom:** mail Nando (controller) 17-06-2026 — buitenlandse facturen misten het
+statistieknummer dat het oude systeem (Basta) per regel toonde
+(`Stat.nr./Ursprungsland/Transp./Gewicht: 57024290/NL/0/576`), nodig voor de
+maandelijkse CBS/Intrastat-aangifte. Alex leverde 18-06-2026 twee exports
+(kwaliteit→code en artikel→code, 100% onderling consistent, 0 tegenstrijdigheden)
+— geanalyseerd tegen de orderhistorie: van de 526 artikelen die ooit naar het
+buitenland zijn verkocht had 99,4% al een code (de 3 resterende waren VERZEND/
+DROPSHIP-KLEIN/BUNDELKORTING — geen fysieke goederen).
+
+- **`kwaliteiten.goederencode`** (mig 446) — CN-code per kwaliteit (niet per
+  artikel: CISC 18/21 delen 1 code ongeacht maat). Ingeladen via
+  `import/import_goederencodes.py`: 775/1000 kwaliteiten gevuld, de overige 225
+  zijn nooit naar het buitenland verkocht (geen actie nodig).
+- **Stat.nr.-regel op de factuur-PDF** — nieuwe gedeelde module
+  [`intracom-statregel.ts`](../supabase/functions/_shared/facturatie/intracom-statregel.ts)
+  (`bouwIntracomStatRegel` + `bereekenM2PerStuk`, taal-afhankelijk label via
+  `intracomRegelLabel` in `factuur-pdf.ts`) — gebruikt door **zowel** de
+  on-demand preview (`factuur-pdf`) **als** de daadwerkelijk gemailde factuur
+  (`factuur-verzenden`), zodat beide hetzelfde tonen. Alleen op `btw_verlegd`-
+  facturen en alleen als de kwaliteit een code heeft (anders stil weglaten).
+  Vaste waarden: land van oorsprong `NL`, vervoerswijze `3` (weg).
+- **CBS-exportview `cbs_intrastat_export`** (mig 448) — vervangt de Basta-
+  bijlage "fbacbs" voor de verzendingen-kant. Per factuurregel 1 rij, alleen
+  `btw_verlegd`-facturen, admin-pseudo uitgesloten. "CBS-export"-knop op
+  [`/facturatie`](../frontend/src/modules/facturatie/pages/facturatie-overview.tsx)
+  downloadt een tab-separated bestand met numerieke velden 10-cijferig
+  zero-padded + CRLF — exact het Basta-format, met een waarschuwing als een
+  regel nog geen goederencode heeft.
+- **Scope:** dekt de verzendingen-kant (buitenlandse verkoopfacturen). De
+  inkoop-arrivals-kant (intracommunautaire verwervingen van buitenlandse
+  leveranciers) zat ook in de Basta-export maar is niet gevraagd/gebouwd.
+
 ## 2026-06-19 — Omsticker "OMB:"-regel ook op de geprinte pakbon
 
 **Vervolg op mig 436 (verzendlabel-OMB).** De `OMB:`-regel staat nu ook op de

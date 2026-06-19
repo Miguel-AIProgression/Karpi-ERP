@@ -215,6 +215,21 @@ const FACTUUR_TEKSTEN: Record<Taal, FactuurTeksten> = {
   },
 }
 
+// Label voor de Intrastat/CBS-statistiekregel onder een buitenlandse
+// (intracommunautaire) factuurregel, bv. NL: "Stat.nr./Land herkomst/Vervoer/
+// Gewicht: 57024200/NL/3/16". Alleen het label is taal-afhankelijk; de waarden
+// zelf (goederencode/land/vervoerswijze/gewicht) berekent de caller (mig 446).
+const INTRACOM_REGEL_LABEL: Record<Taal, string> = {
+  nl: 'Stat.nr./Land herkomst/Vervoer/Gewicht',
+  de: 'Stat.nr./Ursprungsland/Transp./Gewicht',
+  fr: 'N° stat./Pays d’origine/Transport/Poids',
+  en: 'Stat. no./Country of origin/Transport/Weight',
+}
+
+export function intracomRegelLabel(taal: Taal): string {
+  return INTRACOM_REGEL_LABEL[taal]
+}
+
 // ---------------------------------------------------------------------------
 // Constants (mm → pt: 1mm = 2.8346457 pt)
 // ---------------------------------------------------------------------------
