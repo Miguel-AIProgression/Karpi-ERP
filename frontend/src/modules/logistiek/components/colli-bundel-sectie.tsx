@@ -123,11 +123,14 @@ function ColliBundelSectieInner({ zendingId, zendingNr }: { zendingId: number; z
                       <span className="font-mono text-xs text-slate-500">{b.sscc}</span>
                     </div>
                     <div className="flex items-center gap-2">
+                      {/* Toont ALLE verzendstickers (losse colli + deze bundel) —
+                          niet alleen de bundel. De gebundelde kind-colli vallen weg
+                          (die zitten in de zak). Geen `?colli=`-filter meer. */}
                       <Link
-                        to={`/logistiek/${zendingNr}/printset?colli=${b.colli_nr}`}
+                        to={`/logistiek/${zendingNr}/printset`}
                         className="inline-flex items-center gap-1 rounded-[var(--radius-sm)] bg-slate-900 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
                       >
-                        <Printer size={13} /> Bundelsticker
+                        <Printer size={13} /> Verzendstickers
                       </Link>
                       {!aangemeld && (
                         <button

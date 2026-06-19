@@ -32,7 +32,10 @@ export function ZendingPrintSetPage() {
   const { zending_nr } = useParams<{ zending_nr: string }>()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  // Mig 418: bundel-sticker apart printen — filter op één colli_nr (de bundel-rij).
+  // Optioneel: herprint van één losse sticker via `?colli=<colli_nr>`. Zonder
+  // filter toont de pagina álle verzendstickers (losse colli + bundel-rij; de
+  // gebundelde kind-colli vallen weg via expandLabels). De bundel-sectie linkt
+  // bewust zónder filter zodat de operator alle te verzenden stickers ziet.
   const colliFilter = searchParams.get('colli')
   const { data: zending, isLoading, error } = useZendingPrintSet(zending_nr)
   const { data: tapijtStickers = [] } = useZendingStickerData(zending?.id)
