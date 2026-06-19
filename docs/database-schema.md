@@ -5,7 +5,7 @@
 
 ## Overzicht
 
-44 tabellen, 9 enums, 17 views, 37 functies. Alle tabellen hebben RLS enabled (fase 1: authenticated = volledige toegang).
+44 tabellen, 9 enums, 18 views, 37 functies. Alle tabellen hebben RLS enabled (fase 1: authenticated = volledige toegang).
 
 ---
 
@@ -112,6 +112,7 @@ Alle 997 kwaliteitscodes (3-4 letters). 170 met collectie, 822 zonder, 5 alleen 
 | omschrijving | TEXT | Volledige naam |
 | standaard_breedte_cm | INTEGER | Standaard rolbreedte voor deze kwaliteit. Primaire bron voor `bereken_rol_type()` sinds migratie 086/087. NULL = fallback op artikelnr-heuristiek (laatste 3 cijfers), daarna 400 cm. |
 | gewicht_per_m2_kg | NUMERIC(8,3) | **Bron-van-waarheid voor gewicht-density** (kg/m²). Toegevoegd in migratie 184. Drijft `bereken_product_gewicht_kg` + `bereken_orderregel_gewicht_kg` (mig 185). NULL = nog niet ingevuld; producten in deze kwaliteit vallen terug op legacy `producten.gewicht_kg` met flag `gewicht_uit_kwaliteit=false`. |
+| goederencode | TEXT | **Mig 446.** CBS/Intrastat-statistieknummer (CN-code, 8 cijfers, bv. `57024200`) — bron-van-waarheid per kwaliteit (niet per artikel: zelfde kwaliteit in verschillende maten deelt 1 code). Gevuld via `import/import_goederencodes.py` uit Alex' export (18-06-2026); 775/1000 kwaliteiten hebben een code, de overige 225 zijn nooit naar het buitenland verkocht (geverifieerd tegen orderhistorie). NULL = onbekend/nog niet ingevuld. Gebruikt op de buitenlandse factuur-PDF (`intracom-statregel.ts` — Stat.nr.-regel, alleen bij `btw_verlegd`) en de CBS-exportview (`cbs_intrastat_export`, mig 448). |
 | created_at | TIMESTAMPTZ | Auto |
 
 **Uitwisselbaarheid:** kwaliteiten met dezelfde `collectie_id` zijn uitwisselbaar. Canonieke seam (sinds migratie 138): `SELECT * FROM uitwisselbare_paren('VERI', '15')` — geeft alle (kwaliteit_code, kleur_code)-aliassen terug, incl. zichzelf. Resolver: zelfde `collectie_id` én genormaliseerde kleur-code matcht. Bron-van-waarheid voor snijplanning, order-aanmaak en voorraad-aggregatie. De legacy tabel `kwaliteit_kleur_uitwisselgroepen` (Map1) is een parallel spoor dat fade-out wordt; check dekking via view `uitwisselbaarheid_map1_diff` voordat hij gedropt wordt.
@@ -496,6 +497,11 @@ _Aangemaakt in migratie 117 (2026-04-22)._
 
 ### verkoopoverzicht_export (VIEW)
 _Mig 302._ AFAS-compatibele tab-separated factuurexport. Per factuur 1 rij; bundel-facturen (meerdere orders → 1 factuur) krijgen `ordernummers` en `klant_refs` als `; `-gescheiden DISTINCT-aggregaten uit `factuur_regels`. `naam2` afgeleid uit `debiteuren.inkoopgroep_code` (bv. `(INKC02 DECOR UNION)`). Gevoed door de "Verkoopoverzicht"-knop op [`/facturatie`](../frontend/src/modules/facturatie/pages/facturatie-overview.tsx); frontend filtert op status (`Verstuurd/Betaald/Herinnering/Aanmaning`, géén Concept/Gecrediteerd) en datum-range. Output-bestandsnaam: `VERK_OVERZICHT_VAN_{YYYYMMDD}_TOT_{YYYYMMDD}.XLS`. Bytes geëncodeerd als ISO-8859-1 / Windows-1252 voor backward-compat met legacy AFAS-import.
+
+---
+
+### cbs_intrastat_export (VIEW)
+_Mig 448._ Maandelijkse CBS/Intrastat-verzendingen-export (buitenlandse verkoopfacturen) — vervangt de Basta-bijlage "fbacbs" (mail Nando 17-06-2026). Per `factuur_regels`-rij 1 export-rij, alléén facturen met `btw_verlegd=true` (intracommunautair); admin-pseudo-regels (`is_admin_pseudo`, ADR-0018 — VERZEND/DROPSHIP-*/kortingen) uitgesloten. Kolommen matchen de Basta-export 1-op-1: Partner ID (`facturen.btw_nummer`), land bestemming (`normaliseer_land(fact_land)`), land oorsprong (constant `'NL'`), Transactie (constant `'11'`), Vervoerswijze (constant `'3'`, wegvervoer), Goederencode (via `kwaliteiten.goederencode`, NULL toegestaan — rij wordt niet uitgesloten), Netto gewicht (`order_regels.gewicht_kg`, afgerond), Bijzondere maatstaf (constant `0`, zie mig 446-toelichting), Factuurwaarde (`factuur_regels.bedrag`, afgerond), Eigen administratienummer (`factuur_nr`). Gevoed door de "CBS-export"-knop op [`/facturatie`](../frontend/src/modules/facturatie/pages/facturatie-overview.tsx); frontend filtert op datum-range en formatteert numerieke velden 10-cijferig zero-padded + CRLF (`cbs-export-tsv.ts`), exact het Basta-format. Bestandsnaam: `CBS_INTRASTAT_VAN_{YYYYMMDD}_TOT_{YYYYMMDD}.txt`.
 
 ---
 

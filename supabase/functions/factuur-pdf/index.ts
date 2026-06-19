@@ -14,6 +14,11 @@ import { genereerFactuurPDF } from '../_shared/factuur-pdf.ts'
 import { fetchFactuurDocument } from '../_shared/facturatie/factuur-document.ts'
 import { naarFactuurPdfInput } from '../_shared/facturatie/factuur-pdf-renderer.ts'
 import { bepaalTaal } from '../_shared/klant-taal.ts'
+import {
+  bereekenM2PerStuk,
+  bouwIntracomStatRegel,
+  fetchGoederencodePerKwaliteit,
+} from '../_shared/facturatie/intracom-statregel.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -22,6 +27,7 @@ interface OrderRegelMeta {
   id: number
   gewicht_kg: number | string | null
   maatwerk_oppervlak_m2: number | string | null
+  maatwerk_kwaliteit_code: string | null
 }
 
 interface OrderMeta {
@@ -38,6 +44,7 @@ interface ProductMeta {
   lengte_cm: number | null
   breedte_cm: number | null
   vorm: string | null
+  kwaliteit_code: string | null
 }
 
 interface BedrijfConfig {
@@ -148,13 +155,13 @@ serve(async (req) => {
       orderRegelIds.length > 0
         ? supabase
             .from('order_regels')
-            .select('id, gewicht_kg, maatwerk_oppervlak_m2')
+            .select('id, gewicht_kg, maatwerk_oppervlak_m2, maatwerk_kwaliteit_code')
             .in('id', orderRegelIds)
         : Promise.resolve({ data: [] as OrderRegelMeta[], error: null }),
       artikelnrs.length > 0
         ? supabase
             .from('producten')
-            .select('artikelnr, lengte_cm, breedte_cm, vorm')
+            .select('artikelnr, lengte_cm, breedte_cm, vorm, kwaliteit_code')
             .in('artikelnr', artikelnrs)
         : Promise.resolve({ data: [] as ProductMeta[], error: null }),
     ])
@@ -171,6 +178,29 @@ serve(async (req) => {
 
     const productenByArtikelnr = new Map<string, ProductMeta>()
     for (const p of (productenRes.data ?? []) as ProductMeta[]) productenByArtikelnr.set(p.artikelnr, p)
+
+    // Mig 446: goederencode (Stat.nr.) per kwaliteit — alleen ophalen + tonen
+    // bij intracommunautaire (buitenlandse, btw_verlegd) facturen. Op een
+    // NL-factuur is dit niet relevant en blijft de fetch leeg.
+    const kwaliteitCodes = doc.header.btw_verlegd
+      ? Array.from(
+          new Set(
+            doc.regels
+              .map((r) => {
+                const orderRegel = orderRegelsById.get(r.order_regel_id)
+                const product = r.artikelnr ? productenByArtikelnr.get(r.artikelnr) : undefined
+                return orderRegel?.maatwerk_kwaliteit_code ?? product?.kwaliteit_code ?? null
+              })
+              .filter((v): v is string => !!v),
+          ),
+        )
+      : []
+    let goederencodeByKwaliteit: Map<string, string>
+    try {
+      goederencodeByKwaliteit = await fetchGoederencodePerKwaliteit(supabase, kwaliteitCodes)
+    } catch (e) {
+      return jsonError(500, e instanceof Error ? e.message : String(e))
+    }
 
     // Logo ophalen uit Storage (best effort — als bucket/pad niet bestaat: skip)
     const logoBucket = bedrijf.logo_storage_bucket ?? 'public-assets'
@@ -203,17 +233,12 @@ serve(async (req) => {
       const aantal = br.aantal
 
       // m²-berekening per regel (per stuk × aantal)
-      let m2PerStuk = 0
-      const maatwerkM2 = orderRegel?.maatwerk_oppervlak_m2
-      if (maatwerkM2 !== null && maatwerkM2 !== undefined && Number(maatwerkM2) > 0) {
-        m2PerStuk = Number(maatwerkM2)
-      } else if (product?.lengte_cm && product?.breedte_cm) {
-        if (product.vorm === 'rond') {
-          m2PerStuk = Math.PI * Math.pow(product.lengte_cm / 200, 2)
-        } else {
-          m2PerStuk = (product.lengte_cm * product.breedte_cm) / 10000
-        }
-      }
+      const m2PerStuk = bereekenM2PerStuk({
+        maatwerkOppervlakM2: orderRegel?.maatwerk_oppervlak_m2,
+        productLengteCm: product?.lengte_cm,
+        productBreedteCm: product?.breedte_cm,
+        productVorm: product?.vorm,
+      })
       totaalM2 += m2PerStuk * aantal
 
       // gewicht: order_regels.gewicht_kg is per regel-totaal (UNIQUE 1-op-1 mapping)
@@ -221,6 +246,20 @@ serve(async (req) => {
       if (gewichtKg !== null && gewichtKg !== undefined) {
         totaalGewichtKg += Number(gewichtKg)
       }
+
+      // Mig 446: Stat.nr.-regel (Intrastat-statistieknummer) op buitenlandse
+      // (intracommunautaire) facturen — alleen als de kwaliteit een
+      // goederencode heeft (anders stil weglaten, geen halve regel tonen).
+      const kwaliteitCode = orderRegel?.maatwerk_kwaliteit_code ?? product?.kwaliteit_code ?? null
+      const goederencode = kwaliteitCode ? goederencodeByKwaliteit.get(kwaliteitCode) : undefined
+      const statRegel = bouwIntracomStatRegel({
+        taal,
+        btwVerlegd: doc.header.btw_verlegd,
+        goederencode,
+        gewichtKg,
+        m2Totaal: m2PerStuk * aantal,
+      })
+      const omschrijving_2 = [br.omschrijving_2, statRegel].filter(Boolean).join('\n') || undefined
 
       // Afleveradres alleen bij eerste regel van de order EN alleen als afwijkend
       let afleveradres: { naam: string; naam_2?: string; adres: string; postcode: string; plaats: string } | undefined
@@ -243,7 +282,7 @@ serve(async (req) => {
         aflGetoondPerOrder.add(dr.order_id)
       }
 
-      return { ...br, afleveradres }
+      return { ...br, omschrijving_2, afleveradres }
     })
 
     const pdfBytes = await genereerFactuurPDF({
