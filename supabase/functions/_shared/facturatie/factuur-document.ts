@@ -109,6 +109,13 @@ export interface FactuurDocumentLookups {
   orderRegels: Map<number, OrderRegelLookup>
   producten: Map<string, ProductLookup>
   klantArtikelen: Map<string, KlantArtikelLookup>
+  /** Klant-eigennaam per "kwaliteit_code|kleur_code" (resolve_klanteigen_naam). */
+  klantEigenNamen: Map<string, string>
+}
+
+/** Sleutel voor de klant-eigennaam-map; kleur leeg → ''. */
+function klantEigenNaamSleutel(kwaliteitCode: string | null, kleurCode: string | null): string {
+  return `${kwaliteitCode}|${kleurCode ?? ''}`
 }
 
 function num(value: number | string | null | undefined): number {
@@ -150,12 +157,21 @@ export function bouwFactuurDocument(
 
   const regels: FactuurDocumentRegel[] = regelRows.map((r) => {
     const aantal = num(r.aantal)
+    const orderRegel = lookups.orderRegels.get(r.order_regel_id) ?? null
+    const product = r.artikelnr ? lookups.producten.get(r.artikelnr) ?? null : null
+    // Kwaliteit/kleur: maatwerk-snapshot wint van het product (mirror orderbevestiging).
+    const kwaliteitCode = orderRegel?.maatwerk_kwaliteit_code ?? product?.kwaliteit_code ?? null
+    const kleurCode = orderRegel?.maatwerk_kleur_code ?? product?.kleur_code ?? null
+    const klantEigenNaam = kwaliteitCode
+      ? lookups.klantEigenNamen.get(klantEigenNaamSleutel(kwaliteitCode, kleurCode)) ?? null
+      : null
     const presentatie = resolveArtikelPresentatie(
       { artikelnr: r.artikelnr, omschrijving: r.omschrijving, omschrijving_2: r.omschrijving_2, aantal },
       {
-        orderRegel: lookups.orderRegels.get(r.order_regel_id) ?? null,
-        product: r.artikelnr ? lookups.producten.get(r.artikelnr) ?? null : null,
+        orderRegel,
+        product,
         klantArtikel: r.artikelnr ? lookups.klantArtikelen.get(r.artikelnr) ?? null : null,
+        klantEigenNaam,
       },
     )
     // Effectief BTW-tarief via de gedeelde seam: verlegd (factuur-snapshot) wint.
@@ -245,12 +261,21 @@ async function fetchFactuurDocumentLookups(
 
   const [orderRegelsRes, productenRes, klantArtikelenRes] = await Promise.all([
     orderRegelIds.length
-      ? supabase.from('order_regels').select('id, karpi_code, gewicht_kg').in('id', orderRegelIds)
+      ? supabase
+          .from('order_regels')
+          .select(
+            'id, karpi_code, gewicht_kg, is_maatwerk, maatwerk_lengte_cm, maatwerk_breedte_cm, ' +
+              'maatwerk_kwaliteit_code, maatwerk_kleur_code',
+          )
+          .in('id', orderRegelIds)
       : Promise.resolve({ data: [], error: null }),
     artikelnrs.length
       ? supabase
           .from('producten')
-          .select('artikelnr, karpi_code, omschrijving, ean_code, gewicht_kg')
+          .select(
+            'artikelnr, karpi_code, omschrijving, ean_code, gewicht_kg, ' +
+              'vervolgomschrijving, lengte_cm, breedte_cm, kwaliteit_code, kleur_code',
+          )
           .in('artikelnr', artikelnrs)
       : Promise.resolve({ data: [], error: null }),
     artikelnrs.length
@@ -268,7 +293,15 @@ async function fetchFactuurDocumentLookups(
 
   const orderRegels = new Map<number, OrderRegelLookup>()
   for (const r of orderRegelsRes.data ?? []) {
-    orderRegels.set(Number(r.id), { karpi_code: r.karpi_code, gewicht_kg: r.gewicht_kg })
+    orderRegels.set(Number(r.id), {
+      karpi_code: r.karpi_code,
+      gewicht_kg: r.gewicht_kg,
+      is_maatwerk: r.is_maatwerk,
+      maatwerk_lengte_cm: r.maatwerk_lengte_cm,
+      maatwerk_breedte_cm: r.maatwerk_breedte_cm,
+      maatwerk_kwaliteit_code: r.maatwerk_kwaliteit_code,
+      maatwerk_kleur_code: r.maatwerk_kleur_code,
+    })
   }
   const producten = new Map<string, ProductLookup>()
   for (const p of productenRes.data ?? []) {
@@ -277,6 +310,11 @@ async function fetchFactuurDocumentLookups(
       omschrijving: p.omschrijving,
       ean_code: p.ean_code,
       gewicht_kg: p.gewicht_kg,
+      vervolgomschrijving: p.vervolgomschrijving,
+      lengte_cm: p.lengte_cm,
+      breedte_cm: p.breedte_cm,
+      kwaliteit_code: p.kwaliteit_code,
+      kleur_code: p.kleur_code,
     })
   }
   const klantArtikelen = new Map<string, KlantArtikelLookup>()
@@ -284,7 +322,44 @@ async function fetchFactuurDocumentLookups(
     klantArtikelen.set(k.artikelnr, { klant_artikel: k.klant_artikel, omschrijving: k.omschrijving })
   }
 
-  return { orderRegels, producten, klantArtikelen }
+  const klantEigenNamen = await fetchKlantEigenNamen(supabase, debiteurNr, regelRows, orderRegels, producten)
+
+  return { orderRegels, producten, klantArtikelen, klantEigenNamen }
+}
+
+/**
+ * Bouw de klant-eigennaam-map per (kwaliteit_code, kleur_code) voor deze debiteur.
+ * Spiegelt resolveKlantEigenNamen in stuur-orderbevestiging: maatwerk-snapshot wint
+ * van het product, één RPC-call per uniek paar. NULL-resultaten worden niet gezet
+ * → de regel valt terug op de kwaliteitnaam.
+ */
+async function fetchKlantEigenNamen(
+  supabase: SupabaseClient,
+  debiteurNr: number,
+  regelRows: FactuurDocumentRegelRow[],
+  orderRegels: Map<number, OrderRegelLookup>,
+  producten: Map<string, ProductLookup>,
+): Promise<Map<string, string>> {
+  const uniek = new Map<string, { kwaliteit_code: string; kleur_code: string | null }>()
+  for (const r of regelRows) {
+    const orderRegel = orderRegels.get(r.order_regel_id)
+    const product = r.artikelnr ? producten.get(r.artikelnr) : undefined
+    const kwaliteitCode = orderRegel?.maatwerk_kwaliteit_code ?? product?.kwaliteit_code ?? null
+    if (!kwaliteitCode) continue
+    const kleurCode = orderRegel?.maatwerk_kleur_code ?? product?.kleur_code ?? null
+    uniek.set(klantEigenNaamSleutel(kwaliteitCode, kleurCode), { kwaliteit_code: kwaliteitCode, kleur_code: kleurCode })
+  }
+
+  const resultaat = new Map<string, string>()
+  for (const [sleutel, paar] of uniek) {
+    const { data } = await supabase.rpc('resolve_klanteigen_naam', {
+      p_debiteur_nr: debiteurNr,
+      p_kwaliteit_code: paar.kwaliteit_code,
+      p_kleur_code: paar.kleur_code,
+    })
+    if (data) resultaat.set(sleutel, data as string)
+  }
+  return resultaat
 }
 
 async function fetchVertegenwoordiger(supabase: SupabaseClient, debiteurNr: number): Promise<string> {

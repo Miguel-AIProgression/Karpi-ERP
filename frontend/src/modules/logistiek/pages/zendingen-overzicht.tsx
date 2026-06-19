@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Truck, AlertCircle, Settings, Printer } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { useZendingen } from '@/modules/logistiek/hooks/use-zendingen'
-import { ZendingStatusBadge } from '@/modules/logistiek/components/zending-status-badge'
+import { ZendingStatusBadge, zendingStatusLabel } from '@/modules/logistiek/components/zending-status-badge'
 import { VervoerderTag } from '@/modules/logistiek/components/vervoerder-tag'
 import { VERVOERDER_REGISTRY, type VervoerderCode } from '@/modules/logistiek/registry'
 import type { ZendingStatus } from '@/modules/logistiek/queries/zendingen'
@@ -55,7 +55,8 @@ interface ZendingRow {
     order_id: number
     bundel_order: { id: number; order_nr: string } | null
   }>
-  hst_transportorders: { id: number; status: string }[]
+  /** Mig 424 (ADR-0038): geconsolideerde verzend-wachtrij-rijen. */
+  verzend_wachtrij: { id: number; status: string }[]
 }
 
 const BUNDEL_PREVIEW_AANTAL = 2
@@ -145,7 +146,7 @@ export function ZendingenOverzichtPage() {
   }, [zendingen, vervoerderFilter])
 
   const aantalFout = (zendingen as unknown as ZendingRow[]).filter((z) =>
-    (z.hst_transportorders ?? []).some((t) => t.status === 'Fout'),
+    (z.verzend_wachtrij ?? []).some((t) => t.status === 'Fout'),
   ).length
 
   return (
@@ -157,7 +158,7 @@ export function ZendingenOverzichtPage() {
             Zendingen
           </span>
         }
-        description={`${gefilterd.length} zendingen${aantalFout ? ` — ${aantalFout} met HST-fout` : ''}${statusFilter === 'alle' ? ' (lopende Pickrondes verborgen)' : ''}`}
+        description={`${gefilterd.length} zendingen${aantalFout ? ` — ${aantalFout} met verzendfout` : ''}${statusFilter === 'alle' ? ' (lopende Pickrondes verborgen)' : ''}`}
         actions={
           <Link
             to="/logistiek/vervoerders"
@@ -202,7 +203,7 @@ export function ZendingenOverzichtPage() {
                   : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50',
               )}
             >
-              {s === 'alle' ? 'Alle' : s}
+              {s === 'alle' ? 'Alle' : zendingStatusLabel(s)}
             </button>
           ))}
         </div>
@@ -239,7 +240,7 @@ export function ZendingenOverzichtPage() {
             <tbody className="divide-y divide-slate-100">
               {gefilterd.map((z) => {
                 const code = pickVervoerderCode(z)
-                const heeftFout = (z.hst_transportorders ?? []).some((t) => t.status === 'Fout')
+                const heeftFout = (z.verzend_wachtrij ?? []).some((t) => t.status === 'Fout')
                 // Mig 222: bundel-zendingen hebben meerdere orders via `zending_orders`.
                 // Backfill heeft solo-zendingen ook in M2M gezet; fallback op primaire
                 // `orders` als de M2M leeg is.
@@ -277,7 +278,7 @@ export function ZendingenOverzichtPage() {
                       {heeftFout && (
                         <span
                           className="ml-2 inline-flex items-center text-xs text-rose-600"
-                          title="Er staat een hst_transportorder met status Fout"
+                          title="Er staat een transportorder met status Fout"
                         >
                           <AlertCircle size={12} className="mr-1" />
                           fout
@@ -315,7 +316,7 @@ export function ZendingenOverzichtPage() {
       </div>
       {/* Helper-text bij tabel */}
       <div className="mt-4 text-xs text-slate-400">
-        Tip: lijst ververst elke 30 seconden. Klik op een rij voor details + HST-payloads.
+        Tip: lijst ververst elke 30 seconden. Klik op een rij voor details + transportorders.
       </div>
       {/* Vervoerder-registry-debug-info: aantal beschikbare codes (zodat lint geen unused warning geeft) */}
       <div className="sr-only">{Object.keys(VERVOERDER_REGISTRY).length} vervoerders bekend</div>

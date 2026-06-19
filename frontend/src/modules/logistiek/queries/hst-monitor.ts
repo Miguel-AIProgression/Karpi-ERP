@@ -14,16 +14,33 @@ export interface HstFoutRij {
   zending_id: number
   zending_nr: string | null
   error_msg: string | null
-  response_http_code: number | null
+  extern_referentie: string | null
   retry_count: number
   updated_at: string
 }
 
 const CRON_STIL_DREMPEL_MIN = 5
 
+const LEGE_MONITOR: HstMonitor = {
+  verstuurd_vandaag: 0,
+  fout_open: 0,
+  wachtrij: 0,
+  bezig: 0,
+  oudste_wachtrij_minuten: 0,
+  oudste_bezig_minuten: 0,
+}
+
 export async function fetchHstMonitor(): Promise<HstMonitor> {
-  const { data, error } = await supabase.from('hst_verzend_monitor').select('*').single()
+  // Mig 424 (ADR-0038): één geconsolideerde view `verzend_monitor` met één rij
+  // per vervoerder_code. Geen rij voor 'hst_api' = geen actieve/recente rijen
+  // → behandel als alle-nullen (zelfde shape).
+  const { data, error } = await supabase
+    .from('verzend_monitor')
+    .select('verstuurd_vandaag, fout_open, wachtrij, bezig, oudste_wachtrij_minuten, oudste_bezig_minuten')
+    .eq('vervoerder_code', 'hst_api')
+    .maybeSingle()
   if (error) throw error
+  if (!data) return { ...LEGE_MONITOR }
   return data as HstMonitor
 }
 
@@ -38,9 +55,12 @@ export function telHstAandacht(m: HstMonitor): number {
 }
 
 export async function fetchHstFouten(): Promise<HstFoutRij[]> {
+  // Mig 424 (ADR-0038): één geconsolideerde `verzend_wachtrij`-tabel,
+  // gediscrimineerd op vervoerder_code.
   const { data, error } = await supabase
-    .from('hst_transportorders')
-    .select('id, zending_id, error_msg, response_http_code, retry_count, updated_at, zendingen(zending_nr)')
+    .from('verzend_wachtrij')
+    .select('id, zending_id, error_msg, retry_count, updated_at, extern_referentie, zendingen ( zending_nr )')
+    .eq('vervoerder_code', 'hst_api')
     .eq('status', 'Fout')
     .order('updated_at', { ascending: false })
     .limit(50)
@@ -48,7 +68,7 @@ export async function fetchHstFouten(): Promise<HstFoutRij[]> {
   // deno-lint-ignore no-explicit-any
   return (data ?? []).map((r: any) => ({
     id: r.id, zending_id: r.zending_id, zending_nr: r.zendingen?.zending_nr ?? null,
-    error_msg: r.error_msg, response_http_code: r.response_http_code,
+    error_msg: r.error_msg, extern_referentie: r.extern_referentie,
     retry_count: r.retry_count, updated_at: r.updated_at,
   }))
 }

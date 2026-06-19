@@ -17,6 +17,7 @@ import { getVormDisplay } from '@/lib/utils/vorm-labels'
 import { MaatwerkArtikelPicker } from './maatwerk-artikel-picker'
 import type { SelectedArticle, SubstitutionInfo } from './article-selector'
 import type { OrderRegelFormData, PrijsBron, PrijsBreakdown } from '@/lib/supabase/queries/order-mutations'
+import { metProductVelden } from '@/lib/orders/order-hydratie'
 import { SHIPPING_PRODUCT_ID } from '@/lib/constants/shipping'
 import { formatPrijsBron } from '@/lib/utils/prijs-bron'
 import { fetchEquivalenteProducten } from '@/lib/supabase/queries/product-equivalents'
@@ -468,7 +469,22 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr,
     return lineKeys.current.get(index)!
   }
 
+  // Maatwerk-velden die de prijs (en afgeleiden) bepalen. We herberekenen de
+  // prijs UITSLUITEND wanneer één hiervan in deze update zit. Een handmatige
+  // prijs-, korting- of omschrijving-wijziging laat de (mogelijk overschreven)
+  // prijs dus intact — voorheen ketste een handmatige prijs meteen terug naar
+  // de berekende waarde, waardoor maatwerk-prijzen onbewerkbaar leken
+  // (verzoek Marjon, 18-06-2026: berekening blijft de basis, maar moet daarna
+  // handmatig te overschrijven zijn). Wijzigt de gebruiker later een afmeting/
+  // vorm/afwerking, dan herberekent het systeem bewust opnieuw — de oude
+  // override geldt dan niet meer voor de nieuwe maat.
+  const MAATWERK_PRIJS_VELDEN: (keyof OrderRegelFormData)[] = [
+    'maatwerk_lengte_cm', 'maatwerk_breedte_cm', 'maatwerk_diameter_cm',
+    'maatwerk_vorm', 'maatwerk_afwerking', 'maatwerk_m2_prijs',
+  ]
+
   const updateLine = (index: number, updates: Partial<OrderRegelFormData>) => {
+    const raaktMaatwerkPrijs = MAATWERK_PRIJS_VELDEN.some((k) => k in updates)
     const updated = lines.map((l, i) => {
       if (i !== index) return l
       const merged = { ...l, ...updates }
@@ -477,7 +493,7 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr,
       // veranderen. Vorm-toeslag + afwerking-prijs worden opnieuw uit de
       // lookups afgeleid — alleen `merged.maatwerk_vorm_toeslag` gebruiken
       // zou de oude waarde bevriezen (bug t/m mig 244).
-      if (merged.is_maatwerk && merged.maatwerk_m2_prijs) {
+      if (merged.is_maatwerk && merged.maatwerk_m2_prijs && raaktMaatwerkPrijs) {
         const vormCode = merged.maatwerk_vorm ?? 'rechthoek'
         const oppervlak = berekenPrijsOppervlakM2(
           vormCode,
@@ -558,7 +574,7 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr,
       }
     }
 
-    const newLine: OrderRegelFormData = {
+    const newLine: OrderRegelFormData = metProductVelden({
       artikelnr: article.artikelnr,
       karpi_code: article.karpi_code ?? undefined,
       // Bewaar de rijke product-omschrijving (incl. afmeting zoals
@@ -572,8 +588,6 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr,
       korting_pct: defaultKorting,
       gewicht_kg: article.gewicht_kg ?? undefined,
       bedrag: 0,
-      vrije_voorraad: substitution ? substitution.fysiek_vrije_voorraad : article.vrije_voorraad,
-      besteld_inkoop: article.besteld_inkoop,
       klant_eigen_naam,
       klant_artikelnr,
       // Substitutie
@@ -586,7 +600,13 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr,
       prijs_uit_prijslijst: prijs_bron === 'prijslijst_vast',
       prijs_bron,
       prijs_breakdown,
-    }
+    // Regel-input-contract: producten-display-velden via de gedeelde helper
+    // (zelfde contract als de Order-hydratie). Substitution wint voor de
+    // omsticker-flow.
+    }, {
+      vrije_voorraad: substitution ? substitution.fysiek_vrije_voorraad : article.vrije_voorraad,
+      besteld_inkoop: article.besteld_inkoop,
+    })
     newLine.bedrag = calcBedrag(newLine)
     onChange([...lines, newLine])
   }

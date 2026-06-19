@@ -9,11 +9,14 @@ import type {
   ZendingPrintSet,
 } from '../queries/zendingen'
 
-// Zebra-standaard 3"×2" verzendlabel — fysiek formaat op de Karpi-printer
-// (ZD420 met 76.2×50.8mm rollen). Per-vervoerder afwijkende formaten worden
-// uitgelezen uit `vervoerders.label_breedte_mm / label_hoogte_mm`.
-export const DEFAULT_LABEL_BREEDTE_MM = 76.2
-export const DEFAULT_LABEL_HOOGTE_MM = 50.8
+// Zebra-standaard 3"×6" liggend verzendlabel (152,4×76,2mm) — het fysieke
+// formaat op de Karpi-printer (ZT231). HST stond al expliciet op deze maat
+// (mig 362) en is de basis voor het canonieke verzendlabel; Rhenus/Verhoek
+// (geen `vervoerders.label_*_mm`-rij → NULL) erven dit grote label nu vanzelf,
+// zodat de afgekapte "Rhe…"-badge verdwijnt. De kolom blijft de override-seam:
+// een vervoerder die echt afwijkt, zet zijn eigen `label_breedte_mm/_hoogte_mm`.
+export const DEFAULT_LABEL_BREEDTE_MM = 152.4
+export const DEFAULT_LABEL_HOOGTE_MM = 76.2
 
 export interface LabelFormaat {
   breedteMm: number
@@ -44,6 +47,9 @@ export interface LabelItem {
   /** Bron-order (uit `order_regels.order_id`, fallback de primaire order) —
    * voedt de pakbon-groepering per bron-order (mig 222). */
   orderId: number | null
+  /** Mig 419: bevroren klant-eigennaam voor de kwaliteit ("Uw referentie" op
+   * het label). `null` = geen afwijkende naam / legacy-colli. */
+  klanteigenNaamSnapshot: string | null
 }
 
 /**
@@ -174,7 +180,12 @@ export function bouwVerzenddocument(zending: ZendingPrintSet): Verzenddocument {
     regel?.order_regels?.order_id ?? primaireOrderId
 
   // ── colliRijen (labels) ──────────────────────────────────────────────────
-  const colli = [...(zending.zending_colli ?? [])].sort((a, b) => a.colli_nr - b.colli_nr)
+  // Mig 420: gebundelde kind-colli (bundel_colli_id != null) vallen weg uit de
+  // labels — die zitten fysiek in de zak onder de bundel-sticker. De bundel-rij
+  // zelf (is_bundel) draagt zijn eigen SSCC en wordt wél geprint.
+  const colli = [...(zending.zending_colli ?? [])]
+    .filter((c) => c.bundel_colli_id == null)
+    .sort((a, b) => a.colli_nr - b.colli_nr)
   let colliRijen: LabelItem[]
   if (colli.length > 0) {
     colliRijen = colli.map((c, index) => {
@@ -188,6 +199,7 @@ export function bouwVerzenddocument(zending: ZendingPrintSet): Verzenddocument {
         orderId: orderIdVoor(regel),
         omschrijvingSnapshot: c.omschrijving_snapshot,
         klantOmschrijvingSnapshot: c.klant_omschrijving_snapshot,
+        klanteigenNaamSnapshot: c.klanteigen_naam_snapshot,
       }
     })
   } else {
@@ -210,6 +222,7 @@ export function bouwVerzenddocument(zending: ZendingPrintSet): Verzenddocument {
       orderId: orderIdVoor(regel),
       omschrijvingSnapshot: null,
       klantOmschrijvingSnapshot: null,
+      klanteigenNaamSnapshot: null,
     }))
   }
 

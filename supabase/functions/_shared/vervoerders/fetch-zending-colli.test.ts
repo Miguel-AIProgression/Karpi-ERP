@@ -18,7 +18,7 @@ function mockSupabase(result: { data: any[] | null; error: { message: string } |
     ops.push({ op, args });
     return b;
   };
-  for (const m of ['select', 'eq', 'order']) b[m] = chain(m);
+  for (const m of ['select', 'eq', 'is', 'order']) b[m] = chain(m);
   b.then = (resolve: (v: unknown) => void) => resolve(result);
   const client = { from: (table: string) => { ops.push({ op: 'from', args: [table] }); return b; } };
   // deno-lint-ignore no-explicit-any
@@ -43,6 +43,9 @@ Deno.test('fetchZendingColli: bevraagt de canonieke snapshot-kolommen + embed, g
   assertEquals(select.includes('order_regels:order_regel_id ( artikelnr )'), true);
   assertEquals(select.includes('producten'), false, 'mag geen live product-join doen');
   assertEquals(argOf(ops, 'eq'), ['zending_id', 42]);
+  // Mig 418: gebundelde kind-colli (bundel_colli_id NOT NULL) vallen uit het
+  // carrier-bericht; alleen losse colli + bundel-rijen blijven over.
+  assertEquals(argOf(ops, 'is'), ['bundel_colli_id', null]);
   assertEquals(argOf(ops, 'order'), ['colli_nr', { ascending: true }]);
 });
 

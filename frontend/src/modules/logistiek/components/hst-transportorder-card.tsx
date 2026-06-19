@@ -14,11 +14,10 @@ const HST_STATUS_KLEUREN: Record<HstTransportorderStatus, { bg: string; text: st
 export interface HstTransportorderRow {
   id: number
   status: HstTransportorderStatus
-  extern_transport_order_id: string | null
-  extern_tracking_number: string | null
-  request_payload: unknown
-  response_payload: unknown
-  response_http_code: number | null
+  /** Mig 424 (ADR-0038): externe referentie (HST transportOrderId / SFTP-bestandsnaam). */
+  extern_referentie: string | null
+  /** Mig 424: track & trace-code van de vervoerder. */
+  track_trace: string | null
   retry_count: number
   error_msg: string | null
   is_test: boolean
@@ -70,15 +69,14 @@ export function HstTransportorderCard({ row, onRetry, retryBusy }: HstTransporto
         )}
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs mb-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs mb-3">
         <Field label="Verstuurd">{row.sent_at ? formatDateTime(row.sent_at) : '—'}</Field>
-        <Field label="HST transportOrderId">
-          <span className="font-mono">{row.extern_transport_order_id ?? '—'}</span>
+        <Field label="Externe referentie">
+          <span className="font-mono">{row.extern_referentie ?? '—'}</span>
         </Field>
-        <Field label="Tracking">
-          <span className="font-mono">{row.extern_tracking_number ?? '—'}</span>
+        <Field label="Track & Trace">
+          <span className="font-mono">{row.track_trace ?? '—'}</span>
         </Field>
-        <Field label="HTTP-code">{row.response_http_code ?? '—'}</Field>
       </div>
 
       {row.error_msg && (
@@ -87,39 +85,6 @@ export function HstTransportorderCard({ row, onRetry, retryBusy }: HstTransporto
           <pre className="text-xs text-rose-700 whitespace-pre-wrap break-words">{row.error_msg}</pre>
         </div>
       )}
-
-      {row.request_payload != null && (
-        <PayloadBlok titel="Request payload" payload={row.request_payload} />
-      )}
-      {row.response_payload != null && (
-        <PayloadBlok titel="Response payload" payload={row.response_payload} dark />
-      )}
-    </div>
-  )
-}
-
-function PayloadBlok({
-  titel,
-  payload,
-  dark = false,
-}: {
-  titel: string
-  payload: unknown
-  dark?: boolean
-}) {
-  return (
-    <div className="mt-3">
-      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">{titel}</div>
-      <pre
-        className={cn(
-          'rounded-[var(--radius-sm)] border p-3 text-xs overflow-auto max-h-[320px]',
-          dark
-            ? 'bg-slate-900 text-slate-100 border-slate-700 font-mono'
-            : 'bg-slate-50 text-slate-800 border-slate-200',
-        )}
-      >
-        {JSON.stringify(payload, null, 2)}
-      </pre>
     </div>
   )
 }

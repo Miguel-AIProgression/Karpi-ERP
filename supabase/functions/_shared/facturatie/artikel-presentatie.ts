@@ -10,6 +10,8 @@
 // unit-testen is. Geëxtraheerd uit de inline resolve in factuur-verzenden
 // `buildEdiFactuurInput` (gedragsneutraal — zelfde fallback-ladders).
 
+import { factuurProductTitel } from './factuur-product-titel.ts'
+
 /** De regel waarvoor we de presentatie oplossen (factuur_regels of order_regels). */
 export interface ArtikelPresentatieRegel {
   artikelnr: string | null
@@ -22,6 +24,13 @@ export interface ArtikelPresentatieRegel {
 export interface OrderRegelLookup {
   karpi_code: string | null
   gewicht_kg: number | null
+  /** Maatwerk-velden voor de klant-titel (kwaliteitnaam − afmeting) op de PDF-factuur. */
+  is_maatwerk?: boolean | null
+  maatwerk_lengte_cm?: number | null
+  maatwerk_breedte_cm?: number | null
+  /** Kwaliteit/kleur-snapshot — bron voor de klant-eigennaam-lookup (factuur-document). */
+  maatwerk_kwaliteit_code?: string | null
+  maatwerk_kleur_code?: string | null
 }
 
 /** producten-rij. NB: `producten` heeft GÉÉN omschrijving_2-kolom — de omschrijving-
@@ -33,6 +42,14 @@ export interface ProductLookup {
   omschrijving_2?: string | null
   ean_code: string | null
   gewicht_kg: number | null
+  /** Bron voor de kwaliteitnaam op de klant-titel (kwaliteiten.omschrijving is leeg). */
+  vervolgomschrijving?: string | null
+  /** Vaste-maat-product-afmeting voor de klant-titel. */
+  lengte_cm?: number | null
+  breedte_cm?: number | null
+  /** Kwaliteit/kleur — bron voor de klant-eigennaam-lookup (factuur-document). */
+  kwaliteit_code?: string | null
+  kleur_code?: string | null
 }
 
 /** klant_artikelnummers-rij (per debiteur). */
@@ -45,6 +62,8 @@ export interface ArtikelPresentatieLookups {
   orderRegel?: OrderRegelLookup | null
   product?: ProductLookup | null
   klantArtikel?: KlantArtikelLookup | null
+  /** Al-geresolvde klant-eigennaam (resolve_klanteigen_naam) of null — wint op de klant-titel. */
+  klantEigenNaam?: string | null
 }
 
 /** De opgeloste presentatie. Voedt zowel het Factuurdocument als de orderbevestiging. */
@@ -61,6 +80,12 @@ export interface ArtikelPresentatie {
   omschrijving: string
   /** Samengestelde artikeltekst "[karpi_code] [omschrijving]" — gedeeld door PDF én EDI. */
   artikel_tekst: string
+  /**
+   * Klant-facing titel voor de PDF-factuur: "kwaliteitnaam (of klant-eigennaam)
+   * − afmeting" (bv. "Galaxy - 60x90 cm"); null als niet samen te stellen (geen
+   * kwaliteit/maat). ALLEEN de PDF-renderer leest dit — de EDI-INVOIC blijft
+   * `artikel_tekst` gebruiken. */
+  klant_titel: string | null
 }
 
 /** Eerste waarde die getrimd niet-leeg is, anders null. Spiegelt factuur-verzenden. */
@@ -99,7 +124,7 @@ export function resolveArtikelPresentatie(
   regel: ArtikelPresentatieRegel,
   lookups: ArtikelPresentatieLookups = {},
 ): ArtikelPresentatie {
-  const { orderRegel, product, klantArtikel } = lookups
+  const { orderRegel, product, klantArtikel, klantEigenNaam } = lookups
 
   const karpi_code = resolveKarpiCode(orderRegel?.karpi_code, product?.karpi_code, regel.artikelnr)
   const omschrijving =
@@ -115,5 +140,17 @@ export function resolveArtikelPresentatie(
 
   const artikel_tekst = [karpi_code, omschrijving].filter(Boolean).join(' ')
 
-  return { karpi_code, klant_artikel, gtin, gewicht_kg, omschrijving, artikel_tekst }
+  // Klant-titel voor de PDF (kwaliteitnaam/klant-eigennaam − afmeting); null als
+  // niet samen te stellen → de PDF-renderer valt terug op artikel_tekst.
+  const klant_titel = factuurProductTitel({
+    isMaatwerk: orderRegel?.is_maatwerk === true,
+    maatwerkLengteCm: orderRegel?.maatwerk_lengte_cm ?? null,
+    maatwerkBreedteCm: orderRegel?.maatwerk_breedte_cm ?? null,
+    vervolgomschrijving: product?.vervolgomschrijving ?? null,
+    prodLengteCm: product?.lengte_cm ?? null,
+    prodBreedteCm: product?.breedte_cm ?? null,
+    klantEigenNaam: klantEigenNaam ?? null,
+  })
+
+  return { karpi_code, klant_artikel, gtin, gewicht_kg, omschrijving, artikel_tekst, klant_titel }
 }

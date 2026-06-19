@@ -1,12 +1,12 @@
 import { labelBarcode } from '@/lib/logistiek/labelbarcode'
 import { externReferentie } from '@/lib/orders/referentie'
+import { hstDepotVoorPostcode } from '@/modules/logistiek/lib/hst-depot'
 import { Code128Barcode } from './code128-barcode'
-import { ShippingLabelTall } from './shipping-label-tall'
 import {
+  klanteigenReferentie,
   labelDatumKort,
+  labelProductRegels,
   labelReferentie,
-  productMaat,
-  productNamen,
 } from '@/modules/logistiek/lib/shipping-label-data'
 import {
   DEFAULT_LABEL_BREEDTE_MM,
@@ -29,31 +29,36 @@ export interface ShippingLabelProps {
    * source, gelijk aan wat de vervoerder krijgt. null → val terug op live `regel`. */
   omschrijvingSnapshot: string | null
   klantOmschrijvingSnapshot: string | null
+  /** Mig 419: klant-eigennaam voor de kwaliteit (`zending_colli.klanteigen_naam_snapshot`).
+   * null/leeg → geen "Uw referentie"-regel. */
+  klanteigenNaamSnapshot: string | null
   labelFormaat?: LabelFormaat
 }
 
-// Basis-celafmetingen in mm bij het 76,2×50,8-ontwerp — alles wordt absoluut
-// gepositioneerd zodat de print-engine het label NIET over twee pagina's kan
-// opbreken. Grotere liggende formaten (HST 152,4×76,2 sinds mig 362) schalen
-// deze maten én de fonts mee met de label-hoogte (factor s).
+// Basis-celafmetingen in mm bij het 76,2×50,8-ONTWERP — alle absolute posities,
+// rijen en fonts zijn op die maat getuned. Grotere labels (152,4×76,2 liggend)
+// schalen daar proportioneel vanaf via factor s.
 const COL_RECHTS_MM = 22
 const RIJ1_MM = 10
 const RIJ3_MM = 13
 
-export function ShippingLabel(props: ShippingLabelProps) {
-  // 0.5mm aftrekken voor sub-pixel rounding-marge bij printen.
-  const breedteMm = (props.labelFormaat?.breedteMm ?? DEFAULT_LABEL_BREEDTE_MM) - 0.5
-  const hoogteMm = (props.labelFormaat?.hoogteMm ?? DEFAULT_LABEL_HOOGTE_MM) - 0.5
+// ONTWERP-BASIS (≠ het default-formaat!). De schaal-math hieronder rekent t.o.v.
+// dit 76,2×50,8-ontwerp; het DEFAULT_LABEL_*_MM-formaat (152,4×76,2, de fallback
+// voor carriers zonder eigen `label_*_mm`-rij) mag dit NIET verschuiven. Die twee
+// scheiden voorkomt de regressie van 18-06: de default op 152,4×76,2 zetten maakte
+// s=1,0 i.p.v. 1,5 (alles uitgerekt) en halveerde de badge-kolom ("Rhen…").
+const BASIS_BREEDTE_MM = 76.2
+const BASIS_HOOGTE_MM = 50.8
 
-  // Staande formaten (hoogte > breedte) krijgen het gestapelde ontwerp;
-  // liggende formaten het vertrouwde 3-rijen-grid, meegeschaald.
-  if (hoogteMm > breedteMm) {
-    return <ShippingLabelTall {...props} breedteMm={breedteMm} hoogteMm={hoogteMm} />
-  }
-  return <ShippingLabelCompact {...props} breedteMm={breedteMm} hoogteMm={hoogteMm} />
-}
-
-function ShippingLabelCompact({
+/**
+ * Het canonieke verzendlabel: één liggende layout voor álle vervoerders. De
+ * vroegere staande (`ShippingLabelTall`) en DPD-varianten zijn verwijderd —
+ * een tweede labelvorm rechtvaardigt pas dán een echte tweede adapter (twee
+ * adapters = een echte seam). Het enige per-vervoerder-verschil is het
+ * HST-depotnummer onder de badge (gelokaliseerd, geen registry nodig).
+ * Het formaat komt uit `labelFormaat` (override-seam) of de default.
+ */
+export function ShippingLabel({
   zending,
   regel,
   colliIndex,
@@ -62,23 +67,33 @@ function ShippingLabelCompact({
   sscc,
   omschrijvingSnapshot,
   klantOmschrijvingSnapshot,
-  breedteMm,
-  hoogteMm,
-}: ShippingLabelProps & { breedteMm: number; hoogteMm: number }) {
+  klanteigenNaamSnapshot,
+  labelFormaat,
+}: ShippingLabelProps) {
+  // 0.5mm aftrekken voor sub-pixel rounding-marge bij printen.
+  const breedteMm = (labelFormaat?.breedteMm ?? DEFAULT_LABEL_BREEDTE_MM) - 0.5
+  const hoogteMm = (labelFormaat?.hoogteMm ?? DEFAULT_LABEL_HOOGTE_MM) - 0.5
+
   const order = zending.orders
   const snapshot = { omschrijvingSnapshot, klantOmschrijvingSnapshot }
-  const namen = productNamen(regel, snapshot)
-  const toonKarpi = namen.karpiNaam && namen.karpiNaam !== namen.klantNaam
-  const maat = productMaat(regel, snapshot)
+  const productRegels = labelProductRegels(regel, snapshot)
+  const uwReferentie = klanteigenReferentie(klanteigenNaamSnapshot)
   const land = zending.afl_land ?? 'NL'
   const barcodeValue = labelBarcode(sscc)
   const ref = labelReferentie(order)
+  // HST-eis (postcodeverdeling 2026-06-17): depotnummer onder de HST-badge.
+  // Alleen voor HST — andere vervoerders kennen dit depot-concept niet.
+  const hstDepot =
+    zending.vervoerder_code === 'hst_api'
+      ? hstDepotVoorPostcode(zending.afl_postcode, land)
+      : null
 
   // Schaalfactor t.o.v. het basis-ontwerp: 1.0 op een 3"×2"-rol, 1.5 op de
   // volle 3"×6" liggend. Hoogte stuurt rijen en fonts; de rechterkolom blijft
   // proportioneel aan de BREEDTE zodat de verhoudingen van het origineel
-  // behouden blijven (anders oogt de linkerkolom uitgerekt).
-  const s = hoogteMm / (DEFAULT_LABEL_HOOGTE_MM - 0.5)
+  // behouden blijven (anders oogt de linkerkolom uitgerekt). Rekent t.o.v. de
+  // ONTWERP-basis (76,2×50,8), niet het default-formaat — zie BASIS_*_MM.
+  const s = hoogteMm / (BASIS_HOOGTE_MM - 0.5)
   const fz = (px: number) => `${Math.round(px * s * 10) / 10}px`
   const dik = (px: number) => `${Math.max(px, Math.round(px * s))}px`
 
@@ -95,7 +110,7 @@ function ShippingLabelCompact({
   const binnenBreedteMm = breedteMm - margeLinksMm - margeRechtsMm
   const binnenHoogteMm = hoogteMm - margeBovenMm - margeOnderMm
 
-  const colRechtsMm = binnenBreedteMm * (COL_RECHTS_MM / (DEFAULT_LABEL_BREEDTE_MM - 0.5))
+  const colRechtsMm = binnenBreedteMm * (COL_RECHTS_MM / (BASIS_BREEDTE_MM - 0.5))
   const rij1Mm = RIJ1_MM * s
   const rij3Mm = RIJ3_MM * s
   const colLinksMm = binnenBreedteMm - colRechtsMm
@@ -173,10 +188,9 @@ function ShippingLabelCompact({
             textOverflow: 'ellipsis',
           }}
         >
-          {namen.klantNaam}
-          {maat ? ` - ${maat}` : ''}
+          {productRegels.groot}
         </div>
-        {toonKarpi && (
+        {uwReferentie && (
           <div
             style={{
               fontSize: fz(6),
@@ -186,7 +200,20 @@ function ShippingLabelCompact({
               textOverflow: 'ellipsis',
             }}
           >
-            {namen.karpiNaam}
+            Uw referentie: {uwReferentie}
+          </div>
+        )}
+        {productRegels.klein && (
+          <div
+            style={{
+              fontSize: fz(6),
+              lineHeight: 1.1,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {productRegels.klein}
           </div>
         )}
       </div>
@@ -238,7 +265,13 @@ function ShippingLabelCompact({
             lineHeight: 1.6,
             boxSizing: 'border-box',
             overflow: 'hidden',
+            // Horizontaal (textAlign) én verticaal (flex-kolom + justify center)
+            // centreren, zodat het adres écht in het midden van het zwarte vak
+            // staat i.p.v. bovenaan.
             textAlign: 'center',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
           }}
         >
           <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -256,7 +289,7 @@ function ShippingLabelCompact({
         </div>
       </div>
 
-      {/* Rij 2 — rechts: vervoerder-badge gecentreerd */}
+      {/* Rij 2 — rechts: vervoerder-badge gecentreerd, met HST-depot eronder */}
       <div
         style={{
           ...cellBase,
@@ -266,8 +299,10 @@ function ShippingLabelCompact({
           height: `${rij2Mm}mm`,
           padding: `${s}mm`,
           display: 'flex',
+          flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
+          gap: `${0.8 * s}mm`,
         }}
       >
         <div
@@ -287,6 +322,18 @@ function ShippingLabelCompact({
         >
           {vervoerderNaam}
         </div>
+        {hstDepot && (
+          <div
+            style={{
+              fontSize: fz(9),
+              fontWeight: 700,
+              lineHeight: 1,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Depot {hstDepot}
+          </div>
+        )}
       </div>
 
       {/* Rij 3 — links: barcode + cijfers */}

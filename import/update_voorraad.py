@@ -29,7 +29,17 @@ Beslissingen (vastgelegd met Karpi):
   - Nieuw in lijst maar niet in DB: alleen echte vaste maten met vrije
     voorraad > 0 aanmaken (^[A-Z]{3,4}\\d{2}XX, incl. ...RND). Broadloom/rol
     (geen XX-scheiding) worden gelogd + overgeslagen.
+  - Ontbrekende kwaliteiten: elke kwaliteitscode in de actieve lijst zonder
+    rij in `kwaliteiten` wordt bij --commit code-only aangemaakt (overige
+    velden NULL -> Karpi verrijkt gewicht/omschrijving/collectie later). Zo
+    blijft de FK producten.kwaliteit_code geldig en hoeft niets op NULL.
   - Negatieve vrije voorraad -> clampen naar 0.
+
+Bestandsformaat: zowel .xls (klassieke export met rode-font-markering via
+xlrd) als .xlsx (nieuwere export via openpyxl). LET OP: de .xlsx-export draagt
+doorgaans GEEN font-opmaak -> de rode 'niet inladen'-markering ontbreekt dan.
+Dat is veilig door de union-uitsluitlijst (bestaande exclusions blijven staan);
+er worden enkel geen NIEUWE rode regels in zo'n ronde gedetecteerd.
 
 Gebruik:
   python update_voorraad.py "..\\Voorraadlijst 01-6-2026.xls"            # DRY-RUN
@@ -104,8 +114,33 @@ def _afmeting(karpi_code: str):
     return None, None, None
 
 
-def lees_lijst(pad: Path):
-    """Lees de .xls met opmaak -> lijst van rij-dicts incl. is_red."""
+def _num(v):
+    try:
+        return int(float(v))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _maak_rij(artnr, karpi, oms, voorraad, fysiek, is_red):
+    artnr = str(artnr).strip()
+    karpi = str(karpi).strip()
+    if not artnr and not karpi:
+        return None
+    if artnr.endswith(".0"):
+        artnr = artnr[:-2]
+    return {
+        "artikelnr": artnr,
+        "karpi_code": karpi,
+        "omschrijving": str(oms).strip(),
+        "voorraad": _num(voorraad),  # baseline = kolom H
+        "fysiek": _num(fysiek),      # kolom D, referentie
+        "is_red": is_red,
+        "is_maatwerk": "MAATWERK" in karpi.upper(),
+    }
+
+
+def _lees_xls(pad: Path):
+    """Klassieke .xls-export met rode-font-opmaak (xlrd)."""
     wb = xlrd.open_workbook(str(pad), formatting_info=True)
     sh = wb.sheet_by_index(0)
 
@@ -115,30 +150,58 @@ def lees_lijst(pad: Path):
         font = wb.font_list[xf.font_index]
         return wb.colour_map.get(font.colour_index) == (255, 0, 0)
 
-    def num(v):
-        try:
-            return int(float(v))
-        except (TypeError, ValueError):
-            return 0
-
     rijen = []
     for r in range(2, sh.nrows):
-        artnr = str(sh.cell(r, COL_ARTNR).value).strip()
-        karpi = str(sh.cell(r, COL_KARPI).value).strip()
-        if not artnr and not karpi:
-            continue
-        if artnr.endswith(".0"):
-            artnr = artnr[:-2]
-        rijen.append({
-            "artikelnr": artnr,
-            "karpi_code": karpi,
-            "omschrijving": str(sh.cell(r, COL_OMS).value).strip(),
-            "voorraad": num(sh.cell(r, COL_VOORRAAD).value),  # baseline = kolom H
-            "fysiek": num(sh.cell(r, COL_FYSIEK).value),      # kolom D, referentie
-            "is_red": is_red(r),
-            "is_maatwerk": "MAATWERK" in karpi.upper(),
-        })
+        rij = _maak_rij(
+            sh.cell(r, COL_ARTNR).value, sh.cell(r, COL_KARPI).value,
+            sh.cell(r, COL_OMS).value, sh.cell(r, COL_VOORRAAD).value,
+            sh.cell(r, COL_FYSIEK).value, is_red(r),
+        )
+        if rij:
+            rijen.append(rij)
     return rijen
+
+
+def _is_rood_font(cell) -> bool:
+    """openpyxl: True als de font-kleur een expliciet rood (FF0000) is."""
+    col = cell.font.color if cell.font else None
+    rgb = getattr(col, "rgb", None) if col else None
+    if not isinstance(rgb, str):
+        return False
+    return rgb.upper().lstrip("F").startswith("FF0000") or rgb.upper() in (
+        "FFFF0000", "00FF0000", "FF0000")
+
+
+def _lees_xlsx(pad: Path):
+    """Nieuwere .xlsx-export (openpyxl). LET OP: deze export draagt doorgaans
+    GEEN font-opmaak -> rode 'niet inladen'-markering ontbreekt. Dankzij de
+    union-uitsluitlijst is dat veilig (bestaande exclusions blijven staan);
+    er worden enkel geen NIEUWE rode regels in deze ronde gedetecteerd."""
+    import openpyxl
+    wb = openpyxl.load_workbook(str(pad), data_only=True)
+    sh = wb[wb.sheetnames[0]]
+    rijen = []
+    # openpyxl is 1-based; header op rij 2 -> data vanaf rij 3
+    for row in sh.iter_rows(min_row=3, values_only=False):
+        c = {cell.column - 1: cell for cell in row}
+        rij = _maak_rij(
+            c[COL_ARTNR].value if COL_ARTNR in c else "",
+            c[COL_KARPI].value if COL_KARPI in c else "",
+            c[COL_OMS].value if COL_OMS in c else "",
+            c[COL_VOORRAAD].value if COL_VOORRAAD in c else 0,
+            c[COL_FYSIEK].value if COL_FYSIEK in c else 0,
+            _is_rood_font(c[COL_ARTNR]) if COL_ARTNR in c else False,
+        )
+        if rij:
+            rijen.append(rij)
+    return rijen
+
+
+def lees_lijst(pad: Path):
+    """Lees de voorraadlijst (.xls of .xlsx) -> lijst van rij-dicts incl. is_red."""
+    if pad.suffix.lower() == ".xlsx":
+        return _lees_xlsx(pad)
+    return _lees_xls(pad)
 
 
 def lees_bestaande_uitsluitlijst():
@@ -177,6 +240,21 @@ def laad_db_producten(sb):
             break
         start += 1000
     return out
+
+
+def laad_kwaliteiten(sb):
+    """set van bestaande kwaliteit-codes (paginated)."""
+    codes = set()
+    start = 0
+    while True:
+        kr = sb.table("kwaliteiten").select("code").range(start, start + 999).execute()
+        if not kr.data:
+            break
+        codes.update(str(k["code"]) for k in kr.data)
+        if len(kr.data) < 1000:
+            break
+        start += 1000
+    return codes
 
 
 def main():
@@ -244,6 +322,16 @@ def main():
     nieuw_vast_leeg = [x for x in nieuw_vast_alle if x["voorraad"] <= 0]
     nieuw_broadloom = [x for x in nieuw_alle if not is_vaste_maat(x["karpi_code"])]
 
+    # --- Ontbrekende kwaliteiten: codes in de actieve lijst zonder rij in
+    #     kwaliteiten. Worden bij --commit code-only aangemaakt (overige velden
+    #     NULL -> Karpi verrijkt gewicht/omschrijving/collectie later). ---
+    geldige_kwal = laad_kwaliteiten(sb)
+    ontbrekende_kwal = {}
+    for x in actief.values():
+        kwal, _, _ = _afgeleide_codes(x["karpi_code"])
+        if kwal and kwal not in geldige_kwal and kwal not in ontbrekende_kwal:
+            ontbrekende_kwal[kwal] = x["karpi_code"]
+
     skip_types = {"staaltje": 0, "rol": 0, "overig": 0}
     for a, (t, _) in db.items():
         if t in skip_types:
@@ -256,6 +344,8 @@ def main():
     print(f"  nieuw aanmaken (vaste maat, vrd>0): {len(nieuw)}")
     print(f"  nieuw vaste maat 0/neg -> skip    : {len(nieuw_vast_leeg)}")
     print(f"  nieuw broadloom -> overgeslagen   : {len(nieuw_broadloom)}")
+    print(f"  ontbrekende kwaliteiten aanmaken  : {len(ontbrekende_kwal)}"
+          + (f"  ({', '.join(sorted(ontbrekende_kwal))})" if ontbrekende_kwal else ""))
     print(f"  uitsluitlijst totaal (union)      : {len(exclude_artnr)}")
     print(f"  overgeslagen staaltje             : {skip_types['staaltje']}")
     print(f"  overgeslagen rol                  : {skip_types['rol']}")
@@ -285,6 +375,10 @@ def main():
     } for x in nieuw_broadloom])
     df_op0 = pd.DataFrame({"artikelnr": sorted(op_0_niet_in_lijst)})
     df_nieuw_rood = pd.DataFrame([nieuwe_rode[a] for a in nieuw_rood_extra])
+    df_kwal = pd.DataFrame(
+        [{"kwaliteit_code": c, "voorbeeld_karpi_code": ontbrekende_kwal[c]}
+         for c in sorted(ontbrekende_kwal)]
+    )
     df_samenvatting = pd.DataFrame([
         {"Categorie": "bestand", "Aantal": pad.name},
         {"Categorie": "vast geupdatet uit lijst", "Aantal": len(updates)},
@@ -293,6 +387,7 @@ def main():
         {"Categorie": "nieuw aangemaakt (vaste maat, vrd>0)", "Aantal": len(nieuw)},
         {"Categorie": "nieuw vaste maat 0/neg overgeslagen", "Aantal": len(nieuw_vast_leeg)},
         {"Categorie": "nieuw broadloom overgeslagen", "Aantal": len(nieuw_broadloom)},
+        {"Categorie": "ontbrekende kwaliteiten aangemaakt", "Aantal": len(ontbrekende_kwal)},
         {"Categorie": "uitsluitlijst totaal (union)", "Aantal": len(exclude_artnr)},
         {"Categorie": "nieuw rood toegevoegd deze run", "Aantal": len(nieuw_rood_extra)},
         {"Categorie": "overgeslagen staaltje", "Aantal": skip_types["staaltje"]},
@@ -306,6 +401,7 @@ def main():
         df_broadloom.to_excel(w, sheet_name="Nieuw_broadloom_skip", index=False)
         df_op0.to_excel(w, sheet_name="Op_0_niet_in_lijst", index=False)
         df_nieuw_rood.to_excel(w, sheet_name="Nieuw_rood_deze_run", index=False)
+        df_kwal.to_excel(w, sheet_name="Kwaliteiten_aangemaakt", index=False)
         df_uitsluiten.to_excel(w, sheet_name="Uitsluitlijst_union", index=False)
     print(f"Rapport geschreven: {rapport.name}")
 
@@ -333,16 +429,14 @@ def main():
         gedaan += len(artnrs)
         print(f"  update voorraad={v}: +{len(artnrs)}  ({gedaan}/{totaal})")
 
-    geldige_kwal = set()
-    kstart = 0
-    while True:
-        kr = sb.table("kwaliteiten").select("code").range(kstart, kstart + 999).execute()
-        if not kr.data:
-            break
-        geldige_kwal.update(str(k["code"]) for k in kr.data)
-        if len(kr.data) < 1000:
-            break
-        kstart += 1000
+    # --- Ontbrekende kwaliteiten aanmaken (code-only) vóór de product-inserts,
+    #     zodat de FK producten.kwaliteit_code -> kwaliteiten geldig blijft. ---
+    if ontbrekende_kwal:
+        kwal_rows = [{"code": c} for c in sorted(ontbrekende_kwal)]
+        sb.table("kwaliteiten").insert(kwal_rows).execute()
+        geldige_kwal.update(ontbrekende_kwal)
+        print(f"  kwaliteiten aangemaakt: {len(kwal_rows)} "
+              f"({', '.join(sorted(ontbrekende_kwal))})")
 
     rec_new = []
     zonder_kwal = []

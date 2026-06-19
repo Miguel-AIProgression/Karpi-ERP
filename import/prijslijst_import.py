@@ -331,6 +331,19 @@ def main():
                     ptype = "vast"
             else:
                 ptype = "overig"
+            # Maatwerk_vorm_code afleiden uit omschrijving (spiegelt mig 190 + mig 414)
+            if "CONTOUR" in oms:
+                vorm_code = "contour"
+            elif "ORGANISCH" in oms:
+                vorm_code = "organisch_a"
+            elif "PEBBLE" in oms:
+                vorm_code = "pebble"
+            elif "ELLIPS" in oms:
+                vorm_code = "ellips"
+            elif "AFGEROND" in oms:
+                vorm_code = "afgeronde_hoeken"
+            else:
+                vorm_code = None
             new_products.append({
                 "artikelnr": artikelnr,
                 "omschrijving": info["omschrijving"] or "Onbekend product",
@@ -342,6 +355,7 @@ def main():
                 "gereserveerd": 0,
                 "vrije_voorraad": 0,
                 "product_type": ptype,
+                "maatwerk_vorm_code": vorm_code,
                 "actief": True,
             })
         upsert_batch(sb, "producten", new_products, on_conflict="artikelnr")

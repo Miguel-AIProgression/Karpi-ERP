@@ -48,12 +48,16 @@ Deno.test('bouwTransportOrderPayload — per-colli regels met SSCC-BarCode', () 
         colli_nr: 1,
         sscc: '087159540000000018',
         gewicht_kg: 25,
+        lengte_cm: 230,
+        breedte_cm: 160,
         omschrijving_snapshot: 'MAATW. SISAL-GOLD 160x230 cm',
       },
       {
         colli_nr: 2,
         sscc: '087159540000000026',
         gewicht_kg: 30,
+        lengte_cm: 300,
+        breedte_cm: 200,
         omschrijving_snapshot: 'MAATW. SISAL-GOLD 200x300 cm',
       },
     ],
@@ -71,10 +75,14 @@ Deno.test('bouwTransportOrderPayload — per-colli regels met SSCC-BarCode', () 
   assertEquals(result.FromAddress.StreetNumber, '10');
   assertEquals(result.FromAddress.ZipCode, '7122LB');
 
-  // ToAddress = afleveradres uit zending
+  // ToAddress = afleveradres uit zending; stad in hoofdletters (oud-systeem-conventie)
   assertEquals(result.ToAddress.Street, 'Koningin Wilhelminaweg');
   assertEquals(result.ToAddress.StreetNumber, '257');
   assertEquals(result.ToAddress.ZipCode, '1111AA');
+  assertEquals(result.ToAddress.City, 'DIEMEN');
+
+  // Geen "bellen voor aflevering"-service meer (besluit 2026-06-18).
+  assertEquals(result.ShippingServices, []);
 
   // Twee transportregels, één per colli, elk met eigen SSCC-BarCode
   assertEquals(result.TransportOrderLines.length, 2);
@@ -84,11 +92,20 @@ Deno.test('bouwTransportOrderPayload — per-colli regels met SSCC-BarCode', () 
   assertEquals(line1.Weight, 25);
   assertEquals(line1.GoodsDescription, 'MAATW. SISAL-GOLD 160x230 cm');
   assertEquals(line1.BarCode, { BarCode: '00087159540000000018' }); // AI(00) + SSCC
+  // Nieuwe standaard: verzendeenheid Colli, lengte = korte zijde, breedte/hoogte = 30.
+  assertEquals(line1.PackageUnitID, 'col');
+  assertEquals(line1.Length, 160); // korte zijde van 230x160
+  assertEquals(line1.Width, 30);
+  assertEquals(line1.Height, 30);
 
   const line2 = result.TransportOrderLines[1];
   assertEquals(line2.Weight, 30);
   assertEquals(line2.BarCode, { BarCode: '00087159540000000026' });
   assertEquals(line2.GoodsDescription, 'MAATW. SISAL-GOLD 200x300 cm');
+  assertEquals(line2.PackageUnitID, 'col');
+  assertEquals(line2.Length, 200); // korte zijde van 300x200
+  assertEquals(line2.Width, 30);
+  assertEquals(line2.Height, 30);
 });
 
 Deno.test('bouwTransportOrderPayload — fallback naar aggregate-regel zonder colli', () => {
@@ -120,6 +137,12 @@ Deno.test('bouwTransportOrderPayload — fallback naar aggregate-regel zonder co
   assertEquals(result.TransportOrderLines[0].Quantity, 2);
   assertEquals(result.TransportOrderLines[0].Weight, 50);
   assertEquals(result.TransportOrderLines[0].BarCode, { BarCode: '' });
+  // Aggregate-fallback: Colli, default-lengte (geen colli-maat), 30x30, geen bel.
+  assertEquals(result.TransportOrderLines[0].PackageUnitID, 'col');
+  assertEquals(result.TransportOrderLines[0].Length, 120);
+  assertEquals(result.TransportOrderLines[0].Width, 30);
+  assertEquals(result.TransportOrderLines[0].Height, 30);
+  assertEquals(result.ShippingServices, []);
 });
 
 Deno.test('bouwTransportOrderPayload — vult lege strings bij ontbrekend afleveradres', () => {

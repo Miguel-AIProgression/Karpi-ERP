@@ -62,6 +62,11 @@ export interface InkooporderRegel {
   aantal_vrij?: number
   /** Sinds migratie 150: aantal distincte orderregels dat op deze IO-regel wacht. */
   aantal_orderregels?: number
+  /** Sinds migratie 318/319: per-regel ETA, bijgewerkt via update_regel_eta (Karpi of leverancier-portal). */
+  verwacht_datum: string | null
+  eta_bijgewerkt_door: 'karpi' | 'leverancier' | null
+  eta_bijgewerkt_op: string | null
+  leverancier_notitie: string | null
 }
 
 export interface InkooporderFilters {

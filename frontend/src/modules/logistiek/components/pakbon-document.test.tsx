@@ -78,6 +78,9 @@ function maakColli(o: Partial<ZendingPrintColli> = {}): ZendingPrintColli {
     order_regel_id: 10,
     omschrijving_snapshot: null,
     klant_omschrijving_snapshot: null,
+    bundel_colli_id: null,
+    is_bundel: false,
+    klanteigen_naam_snapshot: null,
     ...o,
   }
 }
@@ -351,6 +354,82 @@ describe('PakbonDocument — karakterisering rijopbouw', () => {
     expect(text.indexOf('Order ORD-2026-0001')).toBeLessThan(text.indexOf('ART-EEN'))
     expect(text.indexOf('ART-EEN')).toBeLessThan(text.indexOf('Order ORD-2026-0002'))
     expect(text.indexOf('Order ORD-2026-0002')).toBeLessThan(text.indexOf('ART-TWEE'))
+  })
+
+  it('Routecode = HST-depot uit de postcodeverdeling, alléén bij HST', () => {
+    // HST + postcode 2121 (NL) → depot 27 (NL_DEPOTS [2100,2899,27]).
+    const hst = maakZending({
+      vervoerder_code: 'hst_api',
+      afl_postcode: '2121 AX',
+      afl_land: 'NL',
+      zending_regels: [maakRegel()],
+      zending_colli: [maakColli()],
+    })
+    const { container: hstC } = renderPakbon(hst, 1)
+    expect(hstC.textContent).toContain('Routecode: 27')
+
+    // Rhenus (niet-HST) → géén routecode, ook al ligt er een geldige postcode.
+    const rhenus = maakZending({
+      vervoerder_code: 'rhenus_sftp',
+      afl_postcode: '2500',
+      afl_land: 'BE',
+      zending_regels: [maakRegel()],
+      zending_colli: [maakColli()],
+    })
+    const { container: rhenusC } = renderPakbon(rhenus, 1)
+    expect(rhenusC.textContent).not.toContain('Routecode')
+  })
+
+  it('"Uw naam" verschijnt niet als die slechts de hoofdregel mín de maat is', () => {
+    // GERO-geval: hoofdregel = Karpi-omschrijving + maat, klant-snapshot = zónder
+    // maat (én = de Karpi-code voor het tweede product). Geen van beide wijkt
+    // zinvol af → geen "Uw naam"-subregel.
+    const zending = maakZending({
+      zending_regels: [
+        maakRegel({
+          id: 1,
+          order_regel_id: 10,
+          artikelnr: 'PLUS11XX120RND',
+          order_regels: maakOrderRegel({ id: 10, regelnummer: 2, artikelnr: 'PLUS11XX120RND' }),
+        }),
+      ],
+      zending_colli: [
+        maakColli({
+          order_regel_id: 10,
+          omschrijving_snapshot: 'PLUS11XX120RND 120x120 cm',
+          klant_omschrijving_snapshot: 'PLUS11XX120RND',
+        }),
+      ],
+    })
+
+    const { container } = renderPakbon(zending, 1)
+
+    expect(container.textContent).toContain('PLUS11XX120RND 120x120 cm') // hoofdregel
+    expect(container.textContent).not.toContain('Uw naam')
+  })
+
+  it('"Uw naam" verschijnt wél bij een echte afwijkende klant-benaming', () => {
+    const zending = maakZending({
+      zending_regels: [
+        maakRegel({
+          id: 1,
+          order_regel_id: 10,
+          artikelnr: 'GALA10XX200290',
+          order_regels: maakOrderRegel({ id: 10, regelnummer: 1, artikelnr: 'GALA10XX200290' }),
+        }),
+      ],
+      zending_colli: [
+        maakColli({
+          order_regel_id: 10,
+          omschrijving_snapshot: 'GALAXY Kleur 10 200x290 cm',
+          klant_omschrijving_snapshot: 'BREDA HUISMERK',
+        }),
+      ],
+    })
+
+    const { container } = renderPakbon(zending, 1)
+
+    expect(container.textContent).toContain('Uw naam: BREDA HUISMERK')
   })
 
   it('legacy-zending zonder colli: regels + Geleverd uit zending_regels.aantal', () => {

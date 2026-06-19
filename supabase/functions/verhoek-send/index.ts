@@ -1,7 +1,8 @@
 // Supabase Edge Function: verhoek-send
 //
 // Cron-driven sender voor Verhoek-XML's (ADR-0031). Claimt 'Wachtrij'-rijen
-// uit `verhoek_transportorders`, bouwt per zending een AA2.0-XML en levert
+// uit de gedeelde `verzend_wachtrij` (vervoerder_code='verhoek_sftp', ADR-0038),
+// bouwt per zending een AA2.0-XML en levert
 // die via SFTP aan bij Verhoek. Audit: externe_payloads (kanaal 'verhoek',
 // elke poging een rij) + XML-kopie in storage (order-documenten/verhoek-xml/).
 //
@@ -70,7 +71,7 @@ Deno.serve(async (req) => {
 
   // Zelfhelend (mig 375-reaper): herstel rijen die vastliepen in 'Bezig'.
   try {
-    const { data: hersteld } = await supabase.rpc('herstel_vastgelopen_verhoek', { p_minuten: 10 });
+    const { data: hersteld } = await supabase.rpc('herstel_vastgelopen_verzending', { p_vervoerder_code: 'verhoek_sftp', p_minuten: 10 });
     if (hersteld && Number(hersteld) > 0) {
       console.log(`[verhoek-send] reaper: ${hersteld} vastgelopen Bezig-rij(en) terug naar Wachtrij`);
     }
@@ -85,7 +86,7 @@ Deno.serve(async (req) => {
     // Tijdsbudget (review-I2): ruim binnen de edge-wall-clock blijven; de
     // rest van de wachtrij pakt de volgende cron-run (elke minuut) op.
     if (Date.now() - runStart > 60_000) break;
-    const { data: claimed, error: claimErr } = await supabase.rpc('claim_volgende_verhoek_transportorder');
+    const { data: claimed, error: claimErr } = await supabase.rpc('claim_volgende_transportorder', { p_vervoerder_code: 'verhoek_sftp' });
     if (claimErr) return jsonResp({ error: `claim-rpc fout: ${claimErr.message}` }, 500);
     const row = claimed as VerhoekTransportOrderRow | null;
     if (!row || !row.id) {
@@ -99,8 +100,8 @@ Deno.serve(async (req) => {
     } catch (err) {
       summary.failed += 1;
       summary.details.push({ id: row.id, zending_id: row.zending_id, status: 'error', error: String(err) });
-      const { error: catchMarkErr } = await supabase.rpc('markeer_verhoek_fout', { p_id: row.id, p_error: `Onverwachte exception: ${String(err)}`, p_max_retries: 3 });
-      if (catchMarkErr) console.error(`[verhoek-send] markeer_verhoek_fout faalde voor rij ${row.id}: ${catchMarkErr.message}`);
+      const { error: catchMarkErr } = await supabase.rpc('markeer_transportorder_fout', { p_id: row.id, p_error: `Onverwachte exception: ${String(err)}`, p_max_retries: 3 });
+      if (catchMarkErr) console.error(`[verhoek-send] markeer_transportorder_fout faalde voor rij ${row.id}: ${catchMarkErr.message}`);
     }
   }
 

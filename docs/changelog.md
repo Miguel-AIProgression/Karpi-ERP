@@ -1,5 +1,757 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-19 — Eigen vervoer verwijdert de automatische VERZEND-kostenregel (mig 430)
+
+**Waarom (wens Miguel, 19-06):** zodra een order op vervoerder "Eigen vervoer"
+(type='eigen', mig 424) wordt gezet, rijdt Karpi of een derde zelf — er zijn geen
+externe verzendkosten om door te belasten. Een eventuele automatische
+VERZEND-kostenregel moet dan uit de order worden gehaald én niet meer op de
+factuur terugkomen.
+
+**Wat (branch `feat/eigen-vervoer-verzend-verwijderen`):**
+- **Mig 430** — `set_orderregel_vervoerder_override_voor_order` (mig 227, de enige
+  entry-point voor "order op een vervoerder zetten" via de Pick & Ship-pill /
+  order-detail) verwijdert ná het zetten van de override de niet-gefactureerde
+  VERZEND-regel(s) zodra `p_vervoerder_code` een vervoerder van `type='eigen'` is.
+  Discriminator = `vervoerders.type='eigen'` (niet de exacte code), consistent met
+  mig 429 → een tweede eigen-vervoer-vervoerder doet automatisch mee. Guard:
+  alleen `gefactureerd=0`. **Single source:** de factuur (`projecteer_concept_factuur`
+  / `finaliseer_concept_factuur`, mig 428) neemt de VERZEND-orderregel rechtstreeks
+  uit `order_regels` over — weg uit `order_regels` = weg uit de order én van de
+  factuur, zonder edit in de (net-live) concept-factuur-RPC's. + backfill van
+  bestaande eigen-vervoer-orders met een ongefactureerde VERZEND-regel.
+- **Frontend** — `useSetOrderVervoerderOverride` invalideert nu ook `['orders']`
+  zodat het overzicht + order-detail/-regels de verdwenen VERZEND-regel direct tonen.
+
+**Bekende rand (niet in deze slice):** bewerken van een reeds-op-eigen-vervoer-order
+in het orderformulier kan via `applyShippingLogic` (subtotaal < drempel) opnieuw een
+VERZEND-regel introduceren — het formulier kent de eigen-vervoer-status van de order
+nog niet. Vervolgstap als dit in de praktijk opduikt.
+
+## 2026-06-19 — Fix: Eigen-vervoer-zending blijft op 'Klaar voor verzending' hangen
+
+**Waarom (melding Thom, 18-06):** zendingen met vervoerder "Eigen vervoer"
+(type='eigen', mig 424) bleven op het logistiek-zendingen-overzicht op status
+`Klaar voor verzending` staan, terwijl carrier-zendingen (HST/Rhenus/Verhoek)
+doorschoten naar `Onderweg`.
+
+**Root cause:** de zending-status `Klaar voor verzending → Onderweg` wordt op
+precies één plek getild — `markeer_transportorder_verstuurd` (mig 426), aangeroepen
+door de verzend-edge-function ná carrier-aanmelding. Eigen vervoer is als kopie van
+type `print` geïmplementeerd in `enqueue_zending_naar_vervoerder`: alleen
+`genereer_zending_colli`, géén `verzend_wachtrij`-rij → geen edge-function → geen
+callback → niets zet de zending door. De ORDER flipte wél correct naar `Verzonden`
+(`voltooi_pickronde` is vervoerder-agnostisch); enkel de zending-status hing.
+
+**Wat (branch `fix/eigen-vervoer-zending-afgeleverd`):**
+- **Mig 429** — `enqueue_zending_naar_vervoerder`: de `WHEN 'eigen'`-tak zet de
+  zending na `genereer_zending_colli` synchroon op `Afgeleverd` (keuze gebruiker:
+  geen T&T-stap volgt, dus direct de eindstatus i.p.v. `Onderweg`). Status-guard +
+  trigger-short-circuit voorkomen recursie/terugzetten. Backfill van bestaande
+  vastgelopen eigen-vervoer-zendingen (o.a. ZEND-2026-0054, ZEND-2026-0056).
+
+## 2026-06-18 — Factuur concept-fase: direct zichtbaar concept, verzending pas na vertraging (mig 428)
+
+**Waarom:** sinds de 2-uur-verzendvertraging (mig 423) werd een per_zending-factuur PAS
+op claim-tijd (na 2u) aangemaakt — in dat venster stond er niets in de facturatie-module.
+Aanleiding: bugmelding "2 orders niet bij gefactureerd" (ORD-2026-0614/0620). Gewenst:
+factuur direct als **Concept** zichtbaar, e-mail/EDI pas na de vertraging, en order-
+correcties in het venster gaan automatisch mee.
+
+**Wat (branch `feat/factuur-concept-fase`):**
+- **Mig 428** — splitst de niet-herhaalbare `genereer_factuur_voor_bundel` (mig 341) in
+  `projecteer_concept_factuur(zending, [factuur_id])` (herhaalbaar, géén side-effects) +
+  `finaliseer_concept_factuur(zending, factuur_id)` (verse projectie + flip `gefactureerd`
+  + korting-orderregels, gespiegeld 1-op-1 uit de korting-factuurregels → byte-identiek
+  aan mig 341). Plus `verwerk_concept_queue()` (fase-1 orchestrator, race-safe) en de
+  claim-gate + `factuur_queue.gefinaliseerd_op`-vlag (retry-veilig tegen mail-flakiness).
+- **Edge function `factuur-verzenden`** — 2-fasen-drain: fase 1 projecteert concepten
+  (geen delay → direct zichtbaar), fase 2 finaliseert+verstuurt alleen beschikbare rijen.
+- Wekelijks/legacy (`zending_id NULL`) loopt onveranderd via het oude directe pad.
+- **Deploy-volgorde:** mig 428 + edge function ~samen (tussenin claimt de oude drain geen
+  per_zending-rijen). Plan: `docs/superpowers/plans/2026-06-18-factuur-concept-fase-uitgestelde-verzending.md`.
+
+## 2026-06-18 — Verzend-wachtrij als data-as: één tabel gediscrimineerd op vervoerder_code (ADR-0038)
+
+**Waarom:** drie near-identieke wachtrij-tabellen (`hst_transportorders` mig 171/304,
+`verhoek_transportorders` mig 375, `rhenus_transportorders` mig 380) met dezelfde
+operationele state-kern + elk een eigen RPC-set (5×3) + monitor-view (×3), en een
+dispatch die bij élke nieuwe vervoerder volledig herschreven werd (mig 210→375→380→420).
+De carrier-verschillen waren puur storage-details. Dit is de **data-as**, de laatste
+van de drie vervoerder-seams na keuze-as (ADR-0008/0030), capability-as (ADR-0034) en
+process-as (ADR-0035) — vóór nu lekte de `VerzendAdapter` nog per-carrier RPC-namen.
+
+**Wat (branch `refactor/verzend-wachtrij-data-as`, nog niet gecutoverd):**
+- **Mig 426** — één tabel `verzend_wachtrij` (enum `verzend_status`, discriminator
+  `vervoerder_code`, generieke velden `extern_referentie`/`track_trace`/`document_pad`,
+  combined unique-active-index). De zware payload is **geschrapt** — die leeft al in
+  `externe_payloads` (mig 325). Generieke RPC's (`enqueue_transportorder` /
+  `claim_volgende_transportorder` / `markeer_transportorder_verstuurd` / `_fout` /
+  `herstel_vastgelopen_verzending`) + view `verzend_monitor` (GROUP BY) + lees-shims voor
+  de 3 oude views. Dispatch `enqueue_zending_naar_vervoerder`: api/sftp-takken collapsen
+  tot één `enqueue_transportorder(code)` (nul dispatch-edits voor een nieuwe carrier).
+  order_documenten-spiegel (mig 304) overgenomen, gegate op hst_api. Backfill uit de 3
+  oude tabellen; OUDE tabellen + RPC's blijven staan als rollback (drop = slice 5).
+- **Edge** — `_shared/verzend-orchestrator.ts` bezit nu de state-transitie-RPC's
+  (generiek op `vervoerderCode`); de 3 adapters afgeslankt (geen RPC-namen meer; alleen
+  render/transport/`bewaarArtefact`/`uitkomst`/`noteer*`). 15 karakterisatietests
+  her-gebaseerd, identieke call-sequence = gedragsneutraal.
+- **Frontend** — alle consumenten (`hst-monitor.ts`, `zendingen.ts` incl.
+  `verstuurZendingOpnieuw`, `zending-detail`, `zendingen-overzicht`, `verzend-fout-banner`,
+  `colli-bundel.ts`) lezen `verzend_wachtrij` / `verzend_monitor`; `response_http_code`
+  uit de fout-monitor (leeft nu in `externe_payloads`).
+- **Cutover (open):** drain + crons gepauzeerd, mig 426 + 3 edge functions + frontend in
+  één venster — draaiboek + contract-drop (slice 5/6) in het plan. Vangnet-fix vooraf:
+  fake-supabase `.is()` toegevoegd (de colli-bundel-mig 420 had de 15 tests rood gezet).
+
+## 2026-06-18 — UI: maatwerk-"Te leveren"-kolom toont de productie-fase
+
+**Waarom:** vervolg op de "In productie"-wijziging. Dat ene generieke label gaf
+geen inzicht in hóe ver een maatwerk-stuk in de werkvloer-flow zit. De operator
+wil de echte fase zien (besteld → snijden → gesneden → afwerken → klaar).
+
+**Wat:** de "Te leveren"-cel toont voor maatwerk nu een **fase-badge** die de
+snijplanning/confectie-flow spiegelt, in 5 fases (traagste stuk telt, net als de
+pickbaarheid-view mig 386; geannuleerde stuks tellen niet mee):
+
+| Snijplan-status | Fase | Kleur |
+|---|---|---|
+| Wacht | Te plannen | grijs |
+| Gepland · Snijden | Op de snijplanning | blauw |
+| Gesneden | Gesneden | amber |
+| In confectie · Gereed · In productie | In afwerking | paars |
+| Ingepakt | Klaar voor verzending | groen |
+
+Puur frontend, geen DB-wijziging; `te_leveren` blijft ongemoeid. De per-stuk
+snijplan-status-badge onder de regel blijft de fijnmazige status tonen.
+- [`maatwerk-productie.ts`](../frontend/src/lib/orders/maatwerk-productie.ts):
+  `MaatwerkFase`-type + `bepaalMaatwerkFase()` (puur, `Record<SnijplanStatus,…>`
+  zodat de compiler een nieuwe enum-waarde afdwingt) + presentatie-map;
+  `isMaatwerkProductieKlaar` blijft als dunne afgeleide. Test uitgebreid (9 cases).
+- [`order-regels-table.tsx`](../frontend/src/components/orders/order-regels-table.tsx):
+  kleine `MaatwerkFaseBadge` i.p.v. de binaire "In productie"-tekst.
+
+## 2026-06-18 — UI: maatwerk-orderregel toont "In productie" i.p.v. "Te leveren"
+
+**Waarom:** op order-detail toonde de kolom "Te leveren" voor een maatwerk-regel
+direct het orderaantal (bv. 1), alsof het stuk al klaar/leverbaar was — terwijl
+het nog gesneden/geconfectioneerd/ingepakt moest worden. Misleidend voor de
+operator (signaal Marjon, ORD-2026-0160). Maatwerk reserveert niet op
+voorraad/inkoop, dus de allocator herberekent `te_leveren` nooit; de échte
+voortgang zit in de snijplannen.
+
+**Wat:** puur frontend, geen DB-wijziging. De "Te leveren"-cel toont voor een
+maatwerk-regel het label **"In productie"** (paars) zolang niet álle
+niet-geannuleerde snijplannen op `Ingepakt` staan; zodra alles ingepakt
+(= leverbaar, dezelfde drempel als de pickbaarheid-view mig 386) is, verschijnt
+het getal weer. Niet-maatwerk-regels ongewijzigd. De fijnmazige snijplan-fase
+blijft als badge onder de regel staan (Gepland → … → Ingepakt).
+- Nieuwe pure helper
+  [`maatwerk-productie.ts`](../frontend/src/lib/orders/maatwerk-productie.ts)
+  (`isMaatwerkProductieKlaar`) + unittest; leunt op de gedeelde
+  `'Ingepakt'`-drempel uit de snijplan-status-module.
+- Render-wijziging in
+  [`order-regels-table.tsx`](../frontend/src/components/orders/order-regels-table.tsx).
+- `order_regels.te_leveren` zelf blijft ongemoeid (voedt facturatie/status/allocatie).
+
+## 2026-06-18 — Order-hydratie: vals "wacht op inkoop" bij bewerken opgelost (ORD-2026-0614)
+
+**Waarom:** melding bij ORD-2026-0614 — twee voorradige, pickbare artikelen,
+maar bij het wijzigen van de leverdatum opende onterecht de "wacht op inkoop"-
+dialoog (deelleveren/in één keer), waarbij juist de gewone voorradige **Loranda**
+als wachtend werd aangewezen en niet de omgestickerde regel. Root cause: de
+order-**bewerk**-flow rehydrateerde de orderregels naar form-state zónder
+`vrije_voorraad`/`besteld_inkoop` ([order-edit.tsx](../frontend/src/pages/orders/order-edit.tsx)
+mapte ze nooit; [fetchOrderRegels](../frontend/src/lib/supabase/queries/orders.ts)
+joinde ze niet). Daardoor zag [`berekenRegelDekking`](../frontend/src/modules/reserveringen/lib/dekking-preview.ts)
+`vrij=0` en meldde een **vals IO-tekort** voor elke regel zónder
+omsticker-keuze. De omgestickerde regel ontsnapte toevallig omdat z'n handmatige
+claim wél als `uitwisselbaar_keuzes` werd gerehydrateerd — vandaar het
+asymmetrische, "vreemde" gedrag. Dezelfde mapping vergat ook `lever_modus`,
+waardoor de `!header.lever_modus`-guard de dialoog hoe dan ook heropende én de
+update-RPC `lever_modus` op NULL wiste.
+
+**Wat (Order-hydratie — nieuwe term in CONTEXT.md, inverse van Order-commit):**
+- Nieuwe pure module [`lib/orders/order-hydratie.ts`](../frontend/src/lib/orders/order-hydratie.ts):
+  `hydrateerOrderRegels(regels, keuzes)` bouwt de bewerk-form-state, plus de
+  gedeelde helper `metProductVelden(regel, velden)` + type `RegelProductVelden`
+  dat het **regel-input-contract** vastlegt (de display-only producten-velden
+  `vrije_voorraad`/`besteld_inkoop`/`is_pseudo`/`is_dropship` die de
+  form-beslissingen voeden). Tweede adapter op het *"bron → order-form-state"*-
+  seam naast `po-prefill`; spiegel van `order-commit`.
+- `fetchOrderRegels` joint nu `producten.vrije_voorraad, besteld_inkoop`
+  (`toRegel` laat het product winnen van de ongebruikte `order_regels`-kolom;
+  `OrderRegel` kreeg `besteld_inkoop`). Additief — order-detail leest het niet.
+- [order-edit.tsx](../frontend/src/pages/orders/order-edit.tsx): inline mapping
+  vervangen door `hydrateerOrderRegels`; `lever_modus` in de header
+  gerehydrateerd.
+- [order-line-editor.tsx](../frontend/src/components/orders/order-line-editor.tsx)
+  `addArticle` consumeert dezelfde `metProductVelden`-helper (gedragsneutraal) →
+  twee echte adapters delen het contract.
+- [po-prefill.ts](../frontend/src/lib/orders/po-prefill.ts) gemarkeerd met een
+  TODO: deelt dezelfde latente bug (geen producten-join) — eigen backlog-slice.
+
+**Niet meegenomen (bewust):** de krappe-voorraad-randcase (order claimt de laatste
+rol → `producten.vrije_voorraad=0`) blijft — daarvoor is de Claim-state de juiste
+bron (kandidaat K2: de bewerk-flow leunt op `order_regel_levertijd` i.p.v. de
+client-simulatie). Puur frontend, geen migratie. Tests:
+[order-hydratie.test.ts](../frontend/src/lib/orders/__tests__/order-hydratie.test.ts)
+(contract-helper + fixture-hydratie + ORD-2026-0614-regressie + "bug zonder
+hydratie"). Typecheck schoon.
+
+## 2026-06-18 — Verzendetiket: ronde karpetten als Ø-diameter
+
+**Waarom:** vervolg op de kleurnummer+vorm-etiketregel. Ronde karpetten kregen
+de maat als L×B ("120x120 cm") of vielen — als ze alleen een diameter hadden
+(`breedte_cm=0`, ~1506 producten) — terug op het oude etiketgedrag zónder
+kwaliteit-titel. Een rond karpet meet je in diameter, niet als L×B.
+
+**Wat:** ronde producten tonen nu "KWALITEIT (kleurnr) Ø{diameter} cm Rond", bv.
+`RADIUS (18) Ø240 cm Rond` (diameter = grootste maat — dekt zowel de
+breedte=0-producten als de L=B-producten in één consistente notatie). Nieuwe
+pure helper `maatWeergave(lengte, breedte, vorm)` in
+[`shipping-label-data.ts`](../frontend/src/modules/logistiek/lib/shipping-label-data.ts);
+de `breedte`-guard in `vasteMaatRegels` is versoepeld zodat diameter-only ronde
+producten niet meer naar het legacy-pad vallen. **Ovaal/rechthoekig/organisch
+blijven L×B** (een ovaal heeft een rechthoekige bounding box, geen diameter).
+Puur frontend, geen migratie. Tests: shipping-label-data.test.ts uitgebreid
+(diameter-only + L=B + ovaal-blijft-L×B; Ø byte-veilig getoetst). Geverifieerd
+over alle 3015 ronde producten: 3014 krijgen nu een Ø-titel, 1 valt terug
+(geen kwaliteit/maat). **Print-aandachtspunt:** controleer of het Ø-symbool
+correct rendert op de thermische printer.
+
+## 2026-06-18 — Feature: vervoerder "Eigen vervoer" (mig 424)
+
+**Waarom:** verzoek Thom (/pick-ship): naast HST/Rhenus/Verhoek ook "eigen
+vervoer" kunnen kiezen — Karpi of een derde rijdt zelf. "Verder alles hetzelfde,
+alleen er moet geen verzenddata worden doorgestuurd naar een portal." Tot nu toe
+moest de operator zo'n order ad-hoc op afhalen zetten of zonder vervoerder laten
+liggen ("Geen vervoerder mogelijk").
+
+**Wat:** een nieuwe, losstaande vervoerder `eigen_vervoer` (NIET de afhalen-vlag).
+Volledig data-driven (ADR-0008/0030/0034) — geen edge function, geen
+transportorder-queue, geen monitor, geen capability/preflight:
+- **mig 424** — `vervoerders.type`-CHECK uitgebreid met `'eigen'`; rij
+  `eigen_vervoer` (display "Eigen vervoer", `actief=TRUE`); dispatcher
+  `enqueue_zending_naar_vervoerder` krijgt een `WHEN 'eigen'`-tak die — net als de
+  bestaande `'print'`-tak (DPD, mig 207) — alleen `genereer_zending_colli` draait
+  en `'enqueued_eigen'` teruggeeft, zónder externe dispatch. Bewust een aparte
+  type-waarde i.p.v. `'print'` hergebruiken: semantisch helder + eigen audit-spoor.
+- **frontend** — `eigen_vervoer`/`eigen` toegevoegd aan de registry
+  ([`registry.ts`](../frontend/src/modules/logistiek/registry.ts), badge grijs).
+  De Pick & Ship-selector toont elke actieve `vervoerders`-rij, dus eigen vervoer
+  verschijnt automatisch; de operator kiest 'm **handmatig** via de
+  vervoerder-override per order (`bron='override'`). Geen selectie-regel → geen
+  automatische routering. `vervoerder-tag.tsx`-tooltip kreeg een nette
+  type→omschrijving-mapping (corrigeert meteen dat `sftp` "EDI-koppeling" toonde).
+
+De pick/label/pakbon/zending-flow en de order→`Verzonden`-overgang zijn
+vervoerder-agnostisch en blijven identiek; alleen de portal-aanmelding valt weg
+(de zending blijft op `Klaar voor verzending`, zoals bij afhalen/DPD).
+
+## 2026-06-18 — Bug-meldingen: melding verwijderen (melder of beheerder)
+
+**Waarom:** een verbeterpunt/bug-melding kon alleen van status veranderen
+(Open/Verwerkt/Geaccepteerd), niet verwijderd worden. Niet meer relevante meldingen
+bleven zo in de lijst staan. Verzoek: zowel de oorspronkelijke melder als de
+developer (beheerder) moeten een melding kunnen weggooien.
+
+**Wat:** een prullenbak-knop ("Verwijderen") op elke melding-kaart in
+[`bug-meldingen.tsx`](../frontend/src/pages/feedback/bug-meldingen.tsx), zichtbaar voor
+de melder én de beheerder, met `confirm()`-bevestiging. Achterliggend nieuwe RPC
+`verwijder_bug_melding(p_id)` (mig 425, SECURITY DEFINER) die de autorisatie van
+`set_bug_status` spiegelt (melder of `is_bug_beheerder()`), de rij verwijdert en de
+`bijlage_path` teruggeeft. De frontend ruimt daarna de storage-bijlage best-effort op
+(`verwijderBugMelding` → `useVerwijderBugMelding`). Mig 425 voegt ook de ontbrekende
+storage DELETE-policy op bucket `bug-bijlagen` toe (eigen map of beheerder) — mig 342
+gaf alleen INSERT + SELECT.
+
+**Scope:** frontend (query + hook + UI) + mig 425. Geen wijziging aan het statusmodel.
+
+## 2026-06-18 — Verzendetiket: kleurnummer + vorm in de vetgedrukte productregel
+
+**Waarom:** verzoek Thom (ZEND-2026-0034). De vetgedrukte regel op het verzendetiket
+toonde alleen kwaliteitsnaam + maat ("GALAXY 200x290 cm"), waardoor de picker het
+**kleurnummer** en de **vorm/uitvoering** niet kon zien — twee karpetten van dezelfde
+kwaliteit en maat maar verschillende kleur of vorm (rechthoekig vs. organisch) waren
+op het etiket niet te onderscheiden. Concreet voorbeeld: een 200x290 Galaxy **organisch**
+was niet te onderscheiden van een gewone rechthoekige 200x290 Galaxy.
+
+**Wat:** de grote regel toont nu `KWALITEIT (kleurnr) maat cm [vorm]`, bv.
+`GALAXY (10) 200x290 cm Organisch`. Kleine regel (Karpi-code) ongewijzigd. Beide
+toevoegingen zijn optioneel: ontbreekt het kleurnummer of is de uitvoering gewoon
+rechthoekig, dan valt dat deel weg.
+
+**Databron:** kleurnummer = `producten.kleur_code` (schoon, puur numeriek). De vorm
+heeft **geen** schone bron — `producten.vorm` bevat alleen "rechthoek"/"rond" (en is
+fout: RADIUS "ROND" staat als rechthoek), en `maatwerk_vorm_code` is leeg voor vaste
+producten. De uitvoering staat enkel als suffix in `vervolgomschrijving` ("…290x200 cm
+ORGA"), tússen ruis als kleurnamen (SILVER/GREY) en dessins (SPLASH/ROMANCE). Daarom
+een **whitelist** van echte vorm-woorden (nieuwe pure helper `vormUitOmschrijving` in
+[`shipping-label-data.ts`](../frontend/src/modules/logistiek/lib/shipping-label-data.ts)),
+genormaliseerd naar één Nederlandse term: Rond/Ovaal/Organisch/Contour/Pebble/Halfrond/
+Special shape. Geverifieerd over 18.161 vaste producten: 0 ruis-categorieën, ZEND-2026-0034
+geeft exact `GALAXY (10) 200x290 cm Organisch`.
+
+**Scope:** alleen het verzendetiket (`labelProductRegels` → vaste-maat-tak); de
+carrier-snapshot (`omschrijving_snapshot`) en de pakbon blijven ongemoeid. Puur
+frontend, geen migratie. Query `fetchZendingPrintSet` kreeg `producten.kleur_code` erbij.
+Tests: shipping-label-data.test.ts uitgebreid (kleurnummer + 15 vorm-cases). **Bekende
+beperking:** ~1507 ronde producten hebben alleen een diameter (`breedte_cm=0`) en lopen
+via het bestaande legacy-pad (geen kwaliteit-titel) — diameter-weergave ("Ø240 cm Rond")
+is een mogelijke vervolgslice.
+
+## 2026-06-18 — Fix: pakbon "Uw naam"-subregel alleen tonen als die zinvol afwijkt
+
+**Waarom:** op de pakbon (Lieferschein-layout) verscheen onder élke artikelregel
+een sub-regel `Uw naam: …`, ook als die niets toevoegde. Voorbeeld GERO MEUBELEN
+(debiteur 116000): regel 1 toonde `Uw naam: GALAXY Kleur 10 CA: 290x200 cm ORGA`
+(identiek aan de hoofdregel mín de maat), de regels eronder `Uw naam: PLUS11XX120RND`
+(de kale Karpi-code). Gebruiker: "Uw naam moet enkel als het afwijkt van wat er
+boven staat; bij regel 1 staat het uitgeschreven, daaronder zijn het Karpi-codes."
+
+**Root cause:** de hoofdregel komt uit `omschrijving_snapshot` (Karpi-omschrijving
+**+ maat**, `compose_colli_omschrijving`), "Uw naam" uit `klant_omschrijving_snapshot`
+(`order_regels.omschrijving`, **zónder** maat). De zichtbaarheids-check
+`karpiNaam !== klantNaam` was daardoor altijd waar (de maat-suffix maakt ze nooit
+gelijk) → "Uw naam" verscheen overal, vaak slechts de hoofdregel-mín-maat, of — als
+`producten.omschrijving` de artikelcode ís — gewoon een Karpi-code.
+
+**Wat:** nieuwe pure helper `klantNaamWijktAf(hoofdNaam, klantNaam, artikelnr)` in
+[`shipping-label-data.ts`](../frontend/src/modules/logistiek/lib/shipping-label-data.ts):
+toont "Uw naam" alleen als de klant-naam niet leeg is, niet het artikelnummer is, en
+(genormaliseerd) niet al volledig in de hoofdregel zit. [`pakbon-document.tsx`](../frontend/src/modules/logistiek/components/pakbon-document.tsx)
+gebruikt die i.p.v. de kale string-ongelijkheid. Puur frontend, geen migratie.
+Tests: 5 helper-cases + 2 pakbon-render-scenario's; bestaande karakterisering blijft groen.
+
+## 2026-06-18 — Shopify-intake: VO Product Options "Selections"-duplicaat + Vernon-merknaam ongematcht (ORD-2026-0623)
+
+**Waarom:** ORD-2026-0623 (Vivaldi XL, Shopify #5599) toonde twee bugs: (1) 2x
+"Vernon 17 - Shadow Taupe rond" terwijl de klant 1x bestelde, en (2) "Vernon 12 -
+Sandy Dust — Contour / 240 x 340 cm" stond als `[UNMATCHED]` terwijl het
+catalogusartikel (490120011, VERR12XX240340) al bestaat.
+
+**Belangrijke nevenvondst:** `sync-shopify-order` (de webhook-edge-function) is
+**dode code** sinds 15 mei 2026 (0 invocations — zie de eigen header-comment in
+`sync-shopify-orders-poll/index.ts`). Alle live Shopify-orders lopen via de
+10-minuten-cron `sync-shopify-orders-poll` → gedeelde `processShopifyOrder`/
+`buildRegels` in [`_shared/shopify-order-processor.ts`](../supabase/functions/_shared/shopify-order-processor.ts).
+`sync-shopify-order/index.ts` heeft echter zijn **eigen, gedriftte kopie** van
+`buildRegels` (incl. een "geen auto-prijs voor vorm-maatwerk"-gate die nooit in
+de live kopie is doorgevoerd) — recente fixes belandden daardoor in dode code.
+Beide `buildRegels` zijn nu bijgewerkt zodat ze niet verder uit elkaar lopen;
+een structurele samenvoeging (`sync-shopify-order` laten delegeren naar
+`processShopifyOrder`) staat nog open — apart te beoordelen vóór de dode
+webhook-functie verwijderd of gereactiveerd wordt.
+
+**Root cause bug 1:** de Shopify-app "VO Product Options" splitst een
+geconfigureerd maatwerk-product over twee `line_items` — een "ouder" (met SKU
+en basisprijs) direct gevolgd door een gekoppeld `"<titel> - Selections"`-item
+(geen eigen SKU, wél de maat/SKU in `properties`). Niets dedupliceerde dit paar,
+dus elk werd een eigen orderregel. Fix: nieuwe pure helper
+[`groepeerVoSelectionsItems`](../supabase/functions/_shared/shopify-types.ts)
+voegt zo'n paar samen tot 1 item (properties overgenomen) vóórdat
+`buildRegels` erover itereert — gebruikt in zowel de live als de dode kopie.
+`item.price` van Shopify werd al genegeerd voor productregels (RugFlow prijst
+altijd zelf via `haalKlantPrijs`), dus samenvoegen volstaat zonder prijs-optelling.
+
+**Root cause bug 2:** in [`product-matcher.ts`](../supabase/functions/_shared/product-matcher.ts)
+wordt een kwaliteit zonder SKU alleen herkend via een debiteur-specifieke rij in
+`klanteigen_namen`. "Vernon" (Mart Visser, collectie "VERNON - LUXURY") is geen
+klant-rebranding maar Karpi's eigen merknaam en stond al identiek bij 4 andere
+debiteuren — niet bij Vivaldi XL. Dit is de **derde** keer dat deze klasse bug
+toeslaat (eerder: ORD-2026-0098 LUXR17-split, ORD-2026-0383 Vernon-voor-102019);
+de 0383-fix loste het destijds op met één debiteur-rij, wat 5 dagen later voor
+een andere debiteur opnieuw misging. Fix: nieuwe fallback `matchAliasGlobaalUniek`
+zoekt — alléén als de huidige debiteur niets heeft — naar bestaande
+`klanteigen_namen`-rijen over ALLE debiteuren, en gebruikt de naam alleen als
+die **unaniem** naar dezelfde kwaliteit_code wijst (stadsnamen als "Milaan"
+wijzen bewust per debiteur naar andere kwaliteiten en mogen dit pad nooit
+raken — getest in `product-matcher.test.ts`).
+
+**Niet meegenomen:** product 490120011 heeft zelf nog geen actieve
+prijslijst-regel, dus na deze fix toont de order "prijs ontbreekt" in plaats van
+`[UNMATCHED]` — een aparte, kleinere prijslijst-actie voor de operator.
+
+Vangnet: 4 nieuwe Deno-tests (`product-matcher.test.ts` ×2, `shopify-types.test.ts` ×3),
+volledige bestaande suite ongewijzigd groen.
+
+## 2026-06-18 — Factuur-PDF: kwaliteit/klant-eigennaam − afmeting + klanttaal
+
+**Waarom:** de PDF-factuur toonde per tapijt-regel een dubbele, verkeerde
+omschrijving (2× de Karpi-code, bv. `PATS23XX060090` op FACT-2026-0006 → BDSK/DE)
+en stond altijd in het Nederlands, ook voor buitenlandse klanten. Gewenst: één
+regel "kwaliteitnaam (of klant-eigennaam) − afmeting" zónder Karpi-code, en de
+hele factuur in de taal van de klant. **Alleen de PDF-factuur** (preview +
+e-mailbijlage); de EDI-INVOIC blijft de technische artikeltekst sturen.
+
+**Wat (geen migratie — alleen leesqueries + bestaande RPC `resolve_klanteigen_naam`):**
+- **Regel-omschrijving (Slice A):** nieuw veld `ArtikelPresentatie.klant_titel`
+  (alleen door de PDF gelezen; EDI `naarInvoiceInput` blijft `artikel_tekst`
+  gebruiken → INVOIC gedragsneutraal, golden-test groen). Pure helper
+  [`factuur-product-titel.ts`](../supabase/functions/_shared/facturatie/factuur-product-titel.ts)
+  bouwt "naam − min×max cm": naam = klant-eigennaam (`resolve_klanteigen_naam`,
+  mig 199/200) ?? kwaliteitnaam uit `producten.vervolgomschrijving`. Beide (naam +
+  maat) verplicht, anders `null` → de PDF valt terug op de bestaande omschrijving
+  (VERZEND/toeslagen/admin-pseudo ongewijzigd). [`naarFactuurPdfInput`](../supabase/functions/_shared/facturatie/factuur-pdf-renderer.ts)
+  toont de titel 1× en laat bij een titel de rauwe `omschrijving_2` weg (lost de
+  dubbele op). [`fetchFactuurDocument`](../supabase/functions/_shared/facturatie/factuur-document.ts)
+  haalt de extra product-/orderregel-velden op + bouwt de klant-eigennaam-map.
+- **`kwaliteitNaamUitVervolg` verhuisd naar `_shared/`** (ADR-0033): nieuw
+  [`_shared/kwaliteit-naam.ts`](../supabase/functions/_shared/kwaliteit-naam.ts),
+  één bron voor het verzendlabel én de factuur; frontend `shipping-label-data.ts`
+  re-exporteert cross-root.
+- **Klanttaal (Slice B):** [`genereerFactuurPDF`](../supabase/functions/_shared/factuur-pdf.ts)
+  krijgt een `taal`-parameter + vertaaltabel `FACTUUR_TEKSTEN` (nl/de/fr/en) voor
+  álle statische labels (FACTUUR/koppen/order-header/TRANSPORT/BTW-blok/
+  betalingscond.); colon-uitlijning dynamisch per taal (Courier monospace).
+  `Taal`/`bepaalTaal`/`vertaalOmschrijving` verhuisd uit `orderbevestiging-taal.ts`
+  naar gedeeld [`_shared/klant-taal.ts`](../supabase/functions/_shared/klant-taal.ts)
+  (orderbevestiging re-exporteert). De edge functions `factuur-pdf` en
+  `factuur-verzenden` bepalen de taal uit `fact_land` via `normaliseer_land` →
+  `bepaalTaal` (zelfde patroon als de orderbevestiging). Bedragen/datum blijven
+  NL-formaat.
+- **Vangnet:** 27 Deno-tests groen (incl. golden INVOIC + nieuwe
+  `factuur-product-titel`/`kwaliteit-naam`/renderer-tapijt-tests); frontend
+  `typecheck` + `shipping-label-data` vitest groen; Deno-typecheck van de edge
+  functions introduceert geen nieuwe fout-klasse (alleen de bestaande `never`-ruis).
+- **Deploy:** `supabase functions deploy factuur-pdf factuur-verzenden`
+  (`_shared/` deelt mee). Geen migratie.
+
+## 2026-06-18 — Factuur: 2-uur verzend-vertraging + pakbon als bijlage (mig 423)
+
+**Waarom:** een per-zending-factuur werd tot nu DIRECT na het verzenden van de
+zending geënqueued en binnen een minuut gemaild — geen venster om een laatste
+correctie te doen of een fout te onderscheppen vóór de factuur de deur uit was.
+Daarnaast moet de klant de pakbon bij de factuur ontvangen.
+
+**Wat:**
+- **Mig 423 — verzend-vertraging:** nieuwe kolom `factuur_queue.beschikbaar_op`.
+  `enqueue_factuur_voor_event` (was mig 252) zet die op `now() +
+  app_config.facturatie.vertraging_minuten` (default **120 min = 2 uur**);
+  `claim_factuur_queue_items` (was mig 234, return-shape onveranderd) pakt enkel
+  rijen met `beschikbaar_op IS NULL OR <= now()`. De factuur wordt PAS bij het
+  draaien gegenereerd (`genereer_factuur_voor_bundel`), dus een correctie die je
+  in dat venster aan de order maakt gaat automatisch mee. Geldt alleen voor het
+  event-driven per_zending-pad; wekelijkse cron-facturen (beschikbaar_op NULL) en
+  retries (beschikbaar_op in het verleden) worden onveranderd direct opgepakt.
+  Vertraging aanpasbaar zonder migratie via `app_config 'facturatie'`.
+- **Pakbon-bijlage in [factuur-verzenden](../supabase/functions/factuur-verzenden/index.ts):**
+  per zending die de factuur dekt (per_zending = 1, wekelijkse verzamelfactuur = N)
+  wordt een pakbon-PDF gegenereerd en als extra bijlage meegestuurd (naar debiteur
+  én betaler-kopie). Server-side renderer overgenomen uit de
+  verzendbevestiging-branch (`_shared/pakbon/`: `bouwPakbonDocument` →
+  `genereerPakbonPDF`, pdf-lib, zelfde bron als de geprinte pakbon). **Volledig
+  best-effort:** een ontbrekende/foutende pakbon (geen zending, geen colli,
+  render-fout) wordt gelogd en overgeslagen — de factuur-mail gaat altijd door.
+  De pakbon wordt best-effort naar `facturen/{debiteur_nr}/pakbon/{zending_nr}.pdf`
+  geüpload voor de e-mailtijdlijn-referentie.
+- Vangnet: `_shared/pakbon/aggregatie.test.ts` (10 tests) groen; Deno-typecheck
+  introduceert geen nieuwe fout-klasse (alleen de bestaande `never`-ruis).
+- **Deploy:** mig 423 toepassen + `supabase functions deploy factuur-verzenden`
+  (de `_shared/pakbon/`-map moet meekomen in de bundel).
+
+## 2026-06-18 — Fix: order bewerken faalde met FK-fout zodra een regel een snijplan had (mig 422)
+
+**Waarom:** op order ORD-2026-0623 (regel "Vernon 17 - Shadow Taupe rond") gaf
+"Wijzigingen opslaan" een database-fout. Oorzaak: `update_order_with_lines` deed
+onvoorwaardelijk `DELETE FROM order_regels` + re-INSERT van alle regels, wat een
+FK-violation gaf (`snijplannen_order_regel_id_fkey`) zodra één regel een gekoppeld
+snijplan had — ongeacht status, ongeacht of die regel zelf gewijzigd werd.
+
+**Root cause — een dubbele regressie:** mig 212 had dit destijds al opgelost met een
+UPSERT-patroon (regels matchen op meegestuurde `id`, alleen verwijderde regels
+worden echt gedelete) juist om dit soort FK-conflicten (ook met `zending_regels`/
+`factuur_regels`) te voorkomen. Mig 317 (snijplan-cleanup) herschreef de functie
+per ongeluk vanaf een ouder full-delete-insert-snapshot — het UPSERT-patroon
+verdween. Mig 406 (klant_referentie) herschreef de functie wéér vanaf een nóg
+oudere snapshot, en liet zo ook de snijplan-guard zelf + `afhalen`/`lever_type`/
+`fact_email`/`afl_email`/`maatwerk_band_kleur_id` vallen (mig 407 patchte alleen
+verzendweek-behoud erbovenop, zonder de regressie te zien).
+
+**Wat:** mig 422 herstelt `update_order_with_lines` met het UPSERT-patroon als
+basis (ongewijzigde regels behouden hun `id` → snijplan-koppeling blijft intact,
+geen cleanup nodig) + alle sinds-406 verloren velden. De guard voor het
+*verwijderen* van een regel met snijplan staat nu op **Gesneden of later**
+(was: al bij 'Snijden') — conform de bevestigde bedrijfsregel: een maatwerk-regel
+is wijzigbaar/verwijderbaar zolang het snijplan nog niet 'Gesneden' is. Dit
+mirrort exact de bestaande frontend-gate ([`order-lock.ts`](../frontend/src/lib/utils/order-lock.ts),
+STAGE-map Snijden=0/Gesneden=1) — die liet de hele order-edit-pagina al door bij
+deze order, het was puur een backend-bug. Getest in een rolled-back transactie
+tegen de live ORD-2026-0623-data vóór toepassen.
+
+## 2026-06-18 — Rhenus colli-bundeling tijdens de pickronde (mig 421 + pop-up)
+
+**Waarom:** colli-bundeling (mig 420) kon alleen ná "Voltooi pickronde" (status
+'Klaar voor verzending') op de zending-detailpagina. De magazijnmedewerker wil al
+**tijdens het verzamelen** (op de Verzendset-pagina, status 'Picken') colli samenpakken
+onder één nieuwe sticker — via een pop-up, zonder ergens heen te navigeren.
+
+**Wat:**
+- **Mig 421:** `maak_colli_bundel` + `verwijder_colli_bundel` status-poort verruimd van
+  `= 'Klaar voor verzending'` naar `IN ('Picken','Klaar voor verzending')`. Body verder
+  byte-identiek aan mig 420 (alleen de status-IF + COMMENT). Veilig: `voltooi_pickronde`
+  (mig 258) blokkeert alleen op `niet_gevonden` en pickt 'open'-rijen (incl. de bundel-rij);
+  de hold-guard in `enqueue_zending_naar_vervoerder` is ongewijzigd (aanmelden blijft ná voltooien).
+- **Pick-flow:** `fetchColliVoorZending` ([pickronde.ts](frontend/src/modules/magazijn/queries/pickronde.ts))
+  filtert `is_bundel=false` zodat de synthetische bundel-rij geen los pick-item wordt; de
+  gebundelde kind-colli blijven gewoon afvinkbaar.
+- **Pop-up** [colli-bundel-dialog.tsx](frontend/src/modules/logistiek/components/colli-bundel-dialog.tsx):
+  colli selecteren → bundelen → bundelsticker printen (`?colli=`-link) + ontbundelen. Hergebruikt
+  de bestaande bundel-hooks (`use-colli-bundel`). **Géén** "Aanmelden bij Rhenus" hier — dat blijft
+  ná "Voltooi pickronde" (de bestaande doorverwijzing naar zending-detail).
+- **Knop "Colli bundelen"** op de Verzendset-pagina ([zending-printset.tsx](frontend/src/modules/logistiek/pages/zending-printset.tsx))
+  tijdens 'Picken' bij een Rhenus-zending met ≥2 colli → opent de pop-up.
+- Vangnet: typecheck schoon, `pickronde.contract.test.ts` + `printset.test.ts` groen.
+
+## 2026-06-18 — Verzendlabel als één deep module (compact/staand/DPD geconsolideerd)
+
+**Waarom:** HST- en Rhenus-labels zagen er verschillend uit op dezelfde printer
+(ZT231). Diagnose: het labelformaat is per vervoerder data
+([`labelFormaatVoor`](../frontend/src/modules/logistiek/lib/printset.ts)); HST stond
+op **152,4 × 76,2** (mig 362), Rhenus/Verhoek hadden géén formaat-rij → terugval op
+de kleine legacy-default **76,2 × 50,8** → ander schaalniveau en afgekapte badge
+("Rhe…"). Daaronder leefden **drie shallow renderers** (compact/staand/DPD) die elk
+dezelfde data-proloog en zones herhaalden, terwijl er maar één live layout was: alle
+drie de actieve vervoerders renderden via het compacte label.
+
+**Wat:**
+- **Default-formaat → 152,4 × 76,2** ([`printset.ts`](../frontend/src/modules/logistiek/lib/printset.ts)):
+  HST-maat als basis. Rhenus/Verhoek (NULL) erven het grote liggende label vanzelf
+  → "Rhe…" verdwijnt; de `vervoerders.label_*_mm`-kolom blijft de override-seam.
+  Dit is op zichzelf de zichtbare fix.
+- **Eén canonieke `ShippingLabel`** ([`shipping-label.tsx`](../frontend/src/modules/logistiek/components/shipping-label.tsx)):
+  de staande tak (`ShippingLabelTall`) en het DPD-label zijn verwijderd; de
+  compact-render is geïnlined tot één functie. Het enige per-vervoerder-verschil
+  blijft het HST-depotnummer onder de badge (gelokaliseerde `vervoerder_code === 'hst_api'`-check).
+- **Eén render-pad in beide printset-pagina's** ([`zending-printset.tsx`](../frontend/src/modules/logistiek/pages/zending-printset.tsx),
+  [`bulk-printset.tsx`](../frontend/src/modules/logistiek/pages/bulk-printset.tsx)):
+  de `isPrintType`-tak + `DpdShippingLabel`-import zijn weg. `service_code` /
+  `vervoerders.type='print'` blijven in het datamodel/CRUD bestaan (out of scope),
+  maar worden niet meer door de label-render geraakt. Her-introduceren van een
+  afwijkend labelformaat = pas dán een echte tweede adapter.
+- **Vangnet:** nieuw [`shipping-label.test.tsx`](../frontend/src/modules/logistiek/components/shipping-label.test.tsx)
+  (render-karakterisering: depot-lookup alleen HST, volledige badge, SSCC-barcode-bron,
+  alle zones). `printset.test.ts` / `pakbon-document.test.tsx` ongewijzigd groen.
+
+**Verwijderd:** `shipping-label-tall.tsx`, `dpd-shipping-label.tsx`.
+**Geen migratie / edge-deploy** (puur frontend). Plan:
+[`docs/superpowers/plans/2026-06-18-verzendlabel-een-deep-module.md`](superpowers/plans/2026-06-18-verzendlabel-een-deep-module.md).
+**Print-gate:** gebruiker test HST + Rhenus naast elkaar op de ZT231 vóór merge.
+
+**Correctie (18-06, regressie):** de eerste versie verschoof per ongeluk óók de
+schaal-basis. `s` (font/rij-schaal) en `colRechtsMm` (badge-kolom) rekenden t.o.v.
+`DEFAULT_LABEL_*_MM` — door die op 152,4×76,2 te zetten werd `s` 1,0 i.p.v. 1,5
+(alles uitgerekt/ingezoomd) en halveerde de badge-kolom ("Rhen…" weer afgekapt,
+óók HST lelijk). Opgelost door de **ontwerp-basis** (`BASIS_BREEDTE_MM` 76,2 /
+`BASIS_HOOGTE_MM` 50,8) te scheiden van het **default-formaat** (de fallback,
+152,4×76,2): de schaal-math rekent weer vanaf 76,2×50,8, de default blijft alleen
+de fallback. HST rendert weer exact als voorheen; Rhenus/Verhoek erven die look.
+
+## 2026-06-18 — Rhenus colli-bundeling: doorverwijzing vanaf de Verzendset-pagina (frontend-only)
+
+**Waarom:** mig 420 (colli-bundeling) stond volledig live (hold + RPC's + `enqueue` 2-arg
+geverifieerd in productie), maar de bundel-UI zit op de **zending-detailpagina** en verschijnt
+pas bij status `'Klaar voor verzending'`. De operator werkt een zending echter af op de
+**Verzendset-pagina** (`zending-printset.tsx`) tijdens een lopende pickronde — en die zei in
+stap 3 letterlijk *"de zending wordt automatisch bij de vervoerder aangemeld, je hoeft hier
+verder niets te doen"*. Voor een Rhenus-zending met ≥2 colli klopt dat niet (die wordt
+vastgehouden) → de operator wist niet dat/waar hij moest bundelen.
+
+**Wat** (puur frontend, geen migratie):
+- Nieuwe pure helper [`handmatig-aanmelden.ts`](frontend/src/modules/logistiek/lib/handmatig-aanmelden.ts)
+  (`isHandmatigAanmeldenVervoerder` / `HANDMATIG_AANMELDEN_VERVOERDERS`) = één frontend-bron
+  voor "welke vervoerder houdt vast". `ColliBundelSectie` consumeert 'm nu (i.p.v. lokale const).
+- `VoltooiPickrondeKnop` krijgt optionele prop `navigeerNaVoltooienNaar` (default `/logistiek`).
+- `zending-printset.tsx` detecteert `isRhenusBundel` (handmatig-aanmelden-vervoerder + ≥2
+  niet-gebundelde colli) en: (1) toont een aangepaste stap-3-tekst die uitlegt dat de zending
+  niet automatisch aangemeld wordt en dat je colli kunt bundelen, (2) navigeert na voltooien
+  naar de **zending-detailpagina** (`/logistiek/:zending_nr`) i.p.v. het overzicht — daar staat
+  de bundel-sectie + "Aanmelden bij Rhenus", (3) corrigeert ook de "al voltooid"-tekst voor een
+  vastgehouden Rhenus-zending met een link naar de zending-pagina.
+- Vangnet: typecheck schoon, `printset.test.ts` 16/16 groen.
+
+## 2026-06-18 — Colli-bundeling bij Rhenus (mig 420)
+
+Magazijn kan binnen één Rhenus-zending colli samenpakken onder één nieuwe
+SSCC-sticker (1× betalen i.p.v. per collo). Bundel = extra `zending_colli`-rij
+met zelf-FK `bundel_colli_id`; carrier-seam + label-expansie negeren de kinderen.
+Rhenus-aanmelding van ≥2-colli-zendingen wordt vastgehouden (`vervoerders.handmatig_aanmelden`)
+tot de operator op zending-detail bundelt en "Aanmelden bij Rhenus" klikt.
+1-colli Rhenus + alle andere vervoerders ongewijzigd. Spec: docs/superpowers/specs/2026-06-17-rhenus-colli-bundeling-design.md.
+
+## 2026-06-18 — HST-aanmelding: Colli-verzendeenheid + rol-afmetingen + geen bel-service + stad in hoofdletters
+
+**Waarom:** HST kreeg onze zendingen aangemeld als *Wegwerp pallet* met pallet-
+afmetingen (120×80×20) en de service "Bellen voor aflevering" aan — HST corrigeerde
+dat per order handmatig. Karpi verstuurt opgerolde tapijtrollen; die horen als
+**Colli** aangemeld te worden met de korte tapijtzijde als lengte en de rol-diameter
+(30 cm) als breedte/hoogte, zonder bel-dienst.
+
+**Wat** (alles in [`payload-builder.ts`](supabase/functions/hst-send/payload-builder.ts),
+pure builder — geen migratie):
+- `PackageUnitID`: `'SP'` → **`'col'`** (HST-code voor Colli, kleine letters;
+  ontdekt via een live test `T75038267004386`. HST's OpenAPI heeft géén enum-lijst
+  voor dit veld — onbekende code → HTTP 400 "regel heeft geen verzendeenheid").
+- Afmetingen per colli: `Length = min(lengte_cm, breedte_cm)` (= korte zijde, uit de
+  mig 399-snapshot die de colli al draagt; `ZendingColliInput` uitgebreid), `Width`/
+  `Height` = vaste **30** (rol-diameter). Fallback-lengte 120 als de colli geen maat heeft.
+- `ShippingServices` = **leeg** → "Bellen voor aflevering" (`FFBL`) uit. HST accepteert
+  een lege lijst (live getest).
+- `ToAddress.City` + `FromAddress.City` in **hoofdletters** (zoals het oude systeem).
+
+**Verificatie:** live ACCP/productie-test bevestigde elk punt (Colli geaccepteerd,
+200×30×30, geen telefoon-fout meer); `payload-builder.test.ts` uitgebreid (korte-zijde,
+30×30, `'col'`, lege services, stad-uppercase) + `verwerk-row.test.ts` ongewijzigd groen.
+`fixtures/README.md` documenteert de `col`/`FFBL`-codes.
+
+## 2026-06-18 — "Uw referentie" (klant-eigennaam) op verzendlabel
+- `zending_colli.klanteigen_naam_snapshot` (mig 419): klant-eigennaam voor de
+  kwaliteit, bevroren bij `genereer_zending_colli` via `resolve_klanteigen_naam`
+  (bron `klanteigen_namen`, mig 199/200). De drie labelvarianten tonen een regel
+  "Uw referentie: <naam>" onder de kwaliteitscode, alleen als de klant een
+  afwijkende naam heeft. Snapshot-aanpak zoals omschrijving_snapshot; reeds
+  verzonden zendingen ongemoeid (backfill alleen niet-verzonden).
+
+## 2026-06-18 — Verzendlabel: kwaliteitsnaam + maten i.p.v. kale Karpi-code
+
+**Waarom:** op het verzendetiket stond de productregel als kale Karpi-code
+(`GALA10XX200290` groot, `GALA10XX200290 290x200 cm` klein) — voor de
+magazijnier/chauffeur niet leesbaar. Gevraagd: de **kwaliteitsnaam + maten**
+prominent, met de Karpi-code als referentie eronder.
+
+**Wat (vaste-maat producten):**
+- Grote regel = **kwaliteitsnaam + maten met de kleinste maat eerst**
+  ("Galaxy 200x290 cm"); kleine regel = **de Karpi-code** ("GALA10XX200290").
+- Nieuwe pure helpers [`labelProductRegels` + `kwaliteitNaamUitVervolg`](../frontend/src/modules/logistiek/lib/shipping-label-data.ts)
+  bepalen beide regels. Vaste maat → nieuw formaat; **maatwerk + alle gevallen
+  met onvoldoende data** (geen product/kwaliteit/maat) vallen terug op het
+  bestaande gedrag (klant-omschrijving groot, snapshot-omschrijving klein).
+- Toegepast op alle drie de labelvarianten: compact
+  [`ShippingLabel`](../frontend/src/modules/logistiek/components/shipping-label.tsx),
+  staand [`ShippingLabelTall`](../frontend/src/modules/logistiek/components/shipping-label-tall.tsx)
+  en [`DpdShippingLabel`](../frontend/src/modules/logistiek/components/dpd-shipping-label.tsx).
+  Hoofdletter-stijl behouden (thermische leesbaarheid).
+- **Bron van de kwaliteitsnaam = `producten.vervolgomschrijving`** (geparset tot
+  het eerste cijfer/kleur-marker → "GALAXY" uit "GALAXY Kleur 10 CA: 200x290 cm").
+  `kwaliteiten.omschrijving` leek de logische bron maar staat in de hele DB leeg
+  (997/997 NULL); `collecties.naam` is vaak een code ("AEST13") en dekt maar ~54%.
+  `vervolgomschrijving` is gevuld voor 99,9% van de vaste producten; de heuristiek
+  is geverifieerd op alle 18.181 (0 code-lekken, 23 zonder naam → oude gedrag).
+- **Live afgeleid** (geen snapshot/migratie): de label-query
+  [`fetchZendingPrintSet`](../frontend/src/modules/logistiek/queries/zendingen.ts)
+  haalt nu ook `producten.karpi_code` op (`vervolgomschrijving` + maten zaten er al).
+
+**Bewust ongewijzigd:** de bevroren `zending_colli.omschrijving_snapshot` — dus
+wat HST/Rhenus/Verhoek en de pakbon krijgen blijft exact gelijk. De wijziging is
+puur de **etiket-weergave**.
+
+**Vangnet:** [`shipping-label-data.test.ts`](../frontend/src/modules/logistiek/lib/shipping-label-data.test.ts)
+(kleinste-eerst, karpi_code-fallback, kwaliteit/maat-ontbreekt-fallback, maatwerk
++ legacy ongewijzigd, plus parse-tests voor de NL/DE-formaatvarianten).
+
+## 2026-06-18 — HST levert ook in België (BE → HST) + zichtbare blokkade-reden
+
+**Waarom:** op Pick & Ship stonden BE-orders op "Geen vervoerder mogelijk" terwijl
+HST óók in België levert. Diagnose op de live data: er waren 12 open BE-orders,
+maar **geen enkele selectie-regel dekte BE** (alleen NL→HST mig 336 en DE→Rhenus).
+Operators losten dat per order op met een handmatige HST-override (9 BE-regels),
+maar de orders zonder override (o.a. ORD-2026-0581) bleven liggen — én die
+overrides zouden bij verzending alsnog stuklopen, want HST's capability-`landbereik`
+stond op `['NL']` (preflight `LAND_BUITEN_BEREIK`).
+
+**Wat:**
+- **Routering (mig 418):** catch-all `vervoerder_selectie_regel` `{land:['BE']}` →
+  `hst_api`, prio 99999, gespiegeld op de NL-catch-all (mig 336). `matcht_regel`
+  (mig 214) normaliseert via `normaliseer_land`, dus deze ene regel matcht zowel
+  `afl_land='BE'` als `'BELGIË'`. BE-orders routeren nu automatisch naar HST —
+  geen handmatige override meer nodig.
+- **Capability ([`capabilities.ts`](../supabase/functions/_shared/vervoerders/capabilities.ts)):**
+  HST `landbereik` `['NL']` → `['NL','BE']`.
+- **Preflight-normalisatie ([`vervoerder-eisen.ts`](../supabase/functions/_shared/vervoerder-eisen.ts)):**
+  de land-in-bereik-check vergeleek de **rauwe** `afl_land` (`'BELGIË'`,
+  `'NEDERLAND'`) tegen ISO-2-codes → faalde op vrije tekst. Nu via
+  `landNaarIso2Strikt` genormaliseerd. Fixt en passant ook latent NL-falen voor
+  `afl_land='NEDERLAND'`.
+- **Zichtbare blokkade-reden ([`start-pickrondes-button.tsx`](../frontend/src/modules/logistiek/components/start-pickrondes-button.tsx)):**
+  onder een disabled "Geen vervoerder mogelijk"-knop staat nu de concrete reden
+  (bv. "Nog geen actieve vervoerder voor *land*", afgeleid uit `afl_land`); de
+  tooltip kreeg dezelfde land-context + de oplossing. Voor een echt niet-gerouteerd
+  land blijft dit accuraat; BE valt er na deze cutover buiten.
+
+**Deploy-volgorde:** mig 418 toepassen → `hst-send` redeployen (capability +
+preflight) → frontend deployen (melding + landbereik-shim).
+
+## 2026-06-17 — HST-depotnummer op het verzendlabel
+
+**Waarom:** HST sorteert binnenkomende colli over depots op basis van de
+afleverpostcode en wil dat depotnummer zélf zien op het etiket dat Karpi print
+en plakt (mail 17-06; de eis stond al beschreven in mig 175). HST scant alleen
+de SSCC — het depot zit dus **niet** in de API-payload en is puur etiket-info.
+
+**Wat:**
+- Nieuwe pure lookup [`hst-depot.ts`](../frontend/src/modules/logistiek/lib/hst-depot.ts):
+  `hstDepotVoorPostcode(postcode, land)` → eerste 4 cijfers van de postcode +
+  land (NL/BE via de gedeelde land-seam `@/lib/utils/land-vlag`) → depotnummer,
+  of `null`. Ranges uit de door HST aangeleverde *"Postcodeverdeling NL+BE.xlsx"*
+  (85 NL- + 26 BE-ranges, niet-overlappend). Buiten NL/BE → geen depot.
+- [`ShippingLabel`](../frontend/src/modules/logistiek/components/shipping-label.tsx)
+  (compact) en [`ShippingLabelTall`](../frontend/src/modules/logistiek/components/shipping-label-tall.tsx)
+  tonen **"Depot XX"** klein onder de vervoerder-badge, **uitsluitend** bij
+  `vervoerder_code === 'hst_api'`. DPD/pakbon onaangeroerd (DPD ≠ HST).
+- Vangnet [`hst-depot.test.ts`](../frontend/src/modules/logistiek/lib/hst-depot.test.ts)
+  (8 cases, incl. de NL/BE-discriminator 3945 → 39 NL / 30 BE).
+
+**Onderhoud:** werk de range-tabellen in `hst-depot.ts` bij zodra HST een nieuwe
+postcodeverdeling aanlevert.
+
+## 2026-06-17 — Rhenus LIVE (cutover naar productiebox /in)
+
+**Waarom:** Rhenus gaf telefonisch akkoord op het format en de bestandsnaam — we
+mogen vanaf nu naar de **productiebox (`/in`)** sturen i.p.v. de testmap. Daarmee
+vervalt ook de 15-juni-blokkade (bestanden werden wel opgehaald maar verschenen
+niet in het Mandantenportal); ons aanleveraccount is nu aan Rhenus' kant
+ready/gekoppeld.
+
+**Cutover-stappen (17-06):**
+- `rhenus-send` herdeployed met de ingekorte bestandsnaam-fix
+  (`RHE_<datum>_<zending>.xml`, commit `6fbd44a`) — was gemerged maar nog niet live.
+- Secrets bevestigd zonder ze te kunnen lezen: de Supabase secret-digest is een
+  pure `sha256(waarde)`, dus `RHENUS_DRY_RUN`-digest = `sha256('false')` ✅ en
+  `RHENUS_SFTP_REMOTE_DIR`-digest = `sha256('/in')` ✅ (Piet-Hein had ze 12/14-06
+  al goed gezet — geen wijziging nodig).
+- `UPDATE vervoerders SET actief=TRUE WHERE code='rhenus_sftp'` → de DE-catch-all
+  (prio 99998, `{"land":["DE"]}`) routeert nu DE-orders automatisch naar Rhenus.
+  *Valkuil:* `vervoerders` heeft geen `id`-kolom (PK = `code`); activeer met een
+  kale `UPDATE` zonder join (één foute SELECT in de SQL-editor rollbackt de batch).
+
+**Open na go-live:** eerste echte DE-zending end-to-end verifiëren
+(`rhenus_transportorders`→`Verstuurd`, `externe_payloads` `ok=true`, en vooral
+**zichtbaar in het Mandantenportal**); broadloom/rol-producten zonder berekenbaar
+gewicht worden door de preflight geblokkeerd (handmatig `gewicht_kg` zetten);
+operationele afspraak met Rhenus over 1-bestand-per-zending (evt. per paar uur
+bundelen).
+
+## 2026-06-17 — HST vervoerder: cutover acceptatie → productie
+
+**Waarom:** HST heeft de productie-koppeling vrijgegeven (mail HST 2026-06-17).
+Tot nu draaide de live NL-verzending wel via HST, maar tegen de
+acceptatie-omgeving (`accp.hstonline.nl`). Nu schakelen we naar productie.
+
+**Wat:**
+- **Secrets (Supabase dashboard, buiten git):** `HST_API_BASE_URL` →
+  `https://portal.hstonline.nl/rest/api/v1` en `HST_API_WACHTWOORD` →
+  productie-wachtwoord. `HST_API_USERNAME` (`karpi_array1_api_user`) en
+  `HST_API_CUSTOMER_ID` (`038267`) bleven ongewijzigd — digest-bevestigd
+  identiek aan acceptatie.
+- **UI-referentie (mig 417):** `vervoerders.api_endpoint` → productie-host +
+  OMGEVING-notitie naar "PRODUCTIE sinds 2026-06-17". `api_endpoint` is read-only
+  referentie; het effectieve endpoint van `hst-send` komt uit de secret.
+- **`.env.example`:** HST-blok default naar productie-host.
+- **Geen schakelaar-wijziging:** `hst_api.actief`/`is_default` stonden al TRUE
+  (HST was al de NL-default, catch-all regel id 13) — de cutover zit puur in de
+  secret-omgeving + wachtwoord. Validatie via de eerste echte zending +
+  Verzendmonitor (`hst_verzend_monitor`).
 ## 2026-06-17 — Verhoek Fase 2: antwoorden + SFTP-credentials verwerkt
 
 **Waarom:** Verhoek (Applicatie Management) beantwoordde op 16-06 alle openstaande vragen uit onze testmail en leverde de SFTP-inloggegevens. Daarmee is Fase 2 van de Verhoek-koppeling (ADR-0031) ontgrendeld.

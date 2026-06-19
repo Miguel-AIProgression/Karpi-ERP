@@ -13,6 +13,7 @@ import {
   type OrderbevXmlInput,
   type OrderbevXmlArticle,
 } from './transus-xml'
+import { maakBerichtGtinResolver } from './orderbev-gtin'
 
 const KARPI_GLN_DEFAULT = '8715954999998'
 
@@ -145,27 +146,39 @@ export async function bouwOrderbevXmlVoorBericht(
     : toNumber(debiteur?.btw_percentage, 0)
   const supplierOrderNumber = String(orderRow.order_nr ?? bericht.order_id)
 
-  const articles: OrderbevXmlArticle[] = (regels as unknown as OrderRegelVoorXml[]).map((r) => {
-    const product = firstRelation(r.producten)
-    const prijs = toNumber(r.prijs, 0)
-    return {
-      lineNumber: String(r.regelnummer),
-      articleDescription: r.omschrijving ?? '',
-      articleCodeSupplier: r.artikelnr ?? '',
-      gtin: product?.ean_code ?? '',
-      purchasePrice: prijs,
-      articleNetPrice: prijs,
-      vatPercentage,
-      action: 'ACC',
-      orderedQuantity: toNumber(r.orderaantal, 1),
-      despatchedQuantity: toNumber(r.te_leveren, toNumber(r.orderaantal, 1)),
-      deliveryDate: leverdatum,
-    }
-  })
+  // GTIN-bron: de ORDRSP geeft de door de koper aangeleverde GTIN uit het
+  // inkomende bericht terug; `producten.ean_code` is alleen een vangnet (een
+  // EDI-order matcht vaak op artikelcode i.p.v. GTIN → lege ean_code). Zie
+  // orderbev-gtin.ts.
+  const gtinUitBericht = maakBerichtGtinResolver(orderbevInput, regels.length)
+
+  const articles: OrderbevXmlArticle[] = (regels as unknown as OrderRegelVoorXml[]).map(
+    (r, index) => {
+      const product = firstRelation(r.producten)
+      const prijs = toNumber(r.prijs, 0)
+      const gtin = gtinUitBericht(toNumber(r.regelnummer, 0), index) || (product?.ean_code ?? '')
+      return {
+        lineNumber: String(r.regelnummer),
+        articleDescription: r.omschrijving ?? '',
+        articleCodeSupplier: r.artikelnr ?? '',
+        gtin,
+        purchasePrice: prijs,
+        articleNetPrice: prijs,
+        vatPercentage,
+        action: 'ACC',
+        orderedQuantity: toNumber(r.orderaantal, 1),
+        despatchedQuantity: toNumber(r.te_leveren, toNumber(r.orderaantal, 1)),
+        deliveryDate: leverdatum,
+      }
+    },
+  )
   for (const article of articles) {
     assertRequiredFields([
       [`regel ${article.lineNumber} artikelnr`, article.articleCodeSupplier],
-      [`regel ${article.lineNumber} GTIN`, article.gtin],
+      [
+        `regel ${article.lineNumber} GTIN (niet in EDI-bericht én geen ean_code op product)`,
+        article.gtin,
+      ],
     ])
   }
 

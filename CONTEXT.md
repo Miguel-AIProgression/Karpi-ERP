@@ -76,6 +76,21 @@ claims) — zonder React of I/O. Implementatie: `bouwOrderCommit` in
 `order-form.tsx` is de dunne schil die het plan uitvoert.
 _Avoid_: saveMutation (dat is de huidige implementatie-locatie, niet het concept)
 
+**Order-hydratie**:
+De inverse van [[Order-commit]]: bouwt uit een **bestaande** Order de form-state
+(`OrderRegelFormData[]`) waarmee de order-form de bewerk-flow opent. Tweede
+adapter op het *"bron → order-form-state"*-seam dat de PO-prefill
+(`mapMatchNaarPrefill`) ook bewoont. Implementatie: `hydrateerOrderRegels` in
+`frontend/src/lib/orders/order-hydratie.ts`. Draagt náást de regel-velden het
+**regel-input-contract** over — de display-only producten-velden
+(`vrije_voorraad`, `besteld_inkoop`, `is_pseudo`, `is_dropship`) die de
+form-beslissingen voeden (`berekenRegelDekking` → IO-tekort → LeverModusDialog).
+Eén gedeelde helper (`metProductVelden`) zet die velden zodat een bouwer ze niet
+stil kan vergeten — de oorzaak van ORD-2026-0614 (ontbrekend `vrije_voorraad`
+→ vals IO-tekort op een voorradige regel). De header-rehydratie blijft in
+`order-edit.tsx` (heeft client-context nodig).
+_Avoid_: order-edit-mapping (de oude inline-locatie, niet het concept), rehydratie (te vaag)
+
 ### Snijden & confectie
 
 **Snijplan**:
@@ -92,17 +107,59 @@ _Avoid_: reservering, blokkade
 
 ### Magazijn & verzending
 
+**Pickbaarheid**:
+Of een Orderregel fysiek te picken is (voorraad-claim of gereed Maatwerk-stuk),
+en op order-niveau of de Order in Pick & Ship zichtbaar is. Single source is de
+SQL-view `order_pickbaarheid`/`orderregel_pickbaarheid` (mig 386): de TS-laag
+leidt hier niets meer zelf af. Onderscheidt zich van [[Startbaarheid]]:
+pickbaarheid zegt "is het werk klaar", startbaarheid zegt "mag de pickronde nú
+beginnen" (incl. vervoerder + intake-gates).
+_Avoid_: leverbaar, beschikbaar (te generiek — het gaat om de pick-stap)
+
+**Startbaarheid**:
+Of een Order nú een [[Pickronde]] kan starten, en zo niet, waaróm geblokkeerd —
+als één status per order in canonieke prioriteit: `in_pickronde` > `niet_pickbaar`
+> `afl_adres` > `prijs` > `geen_vervoerder` > `startbaar`. Het is een eigenschap
+van de **Order tegenover de pick-start**, niet van een knop of een pagina: daarom
+leeft het predikaat op één plek (`modules/logistiek/lib/startbaarheid.ts`,
+`bepaalStartbaarheid`) en lezen álle consumenten díé — de start-/week-/bulk-knoppen
+(via `usePickbaarheid`) én de Pick & Ship-page-sectionering/selecteerbaarheid. De
+prioriteit is de frontend-spiegel van de server-poort `_valideer_intake_gates`
+(mig 395/396) + de geen-vervoerder-guard in `start_pickronden` (mig 373). Een
+Order belandt alléén in de "Geen vervoerder mogelijk"-sectie als de vervoerder
+zijn énige blocker is (ADR-0037). Bouwt bovenop [[Pickbaarheid]].
+_Avoid_: pickbaarheid (dat is de onderlaag), geblokkeerd-zijn (te vaag — het is één status)
+
 **Labelbarcode**:
 De Code128-waarde die fysiek op het verzendlabel staat: AI(00) + de
 18-cijferige SSCC (20 cijfers). Het is een eigenschap van **ons label**, niet
 van een vervoerder — dezelfde doos, ongeacht wie hem ophaalt. Daarom leeft de
 encoding op één plek (`_shared/vervoerders/labelbarcode.ts`, `labelBarcode()`)
-en lezen álle consumenten die: de drie label-varianten (compact/staand/DPD), de
+en lezen álle consumenten die: het [[Verzendlabel]], de
 HST-`BarCode`, de Verhoek-`ScanCode` en de Rhenus-`<sscc>`. Een colli zonder
 SSCC levert geen Labelbarcode (`null`) — er mag nooit een niet-aangemelde
 barcode geprint of verstuurd worden. De SSCC-waarde zelf blijft single-source
 uit `zending_colli.sscc`; de Labelbarcode is de gedeelde *encoding* daarvan.
 _Avoid_: scancode, SSCC-barcode (per-carrier termen — het is één label-feit)
+
+**Verzendlabel**:
+De fysieke sticker op één collo: één canonieke layout (liggend, het HST-ontwerp)
+met afzender, order/productregels, adres-kader, vervoerder-badge, colli-telling,
+[[Labelbarcode]] en referentie-voet. Het is een eigenschap van **ons pakket**,
+niet van een vervoerder: álle vervoerders krijgen exact hetzelfde label, op één
+gelokaliseerd verschil na — de HST-depotregel onder de badge (HST-eigen
+postcode→depot-lookup). Daarom leeft de layout op **één plek** (het
+`ShippingLabel`-component, met `vervoerderNaam` als data-veld), niet meer als drie
+near-dubbele renderers (de oude compact/staand/DPD-varianten, elk met een eigen
+kopie van de zone-layout + een eigen `vervoerder_code === 'hst_api'`-tak). Het formaat komt uit
+`vervoerders.label_*_mm` met de HST-maat (152,4×76,2) als **default**, zodat een
+nieuwe vervoerder zonder formaat-rij automatisch het juiste label erft i.p.v.
+terug te vallen op de kleine legacy-3×2-maat (de oorzaak van het "Rhenus"-
+afkappings-incident 2026-06-18). De product-/referentie-data komt uit de bevroren
+[[Zending-colli]]-snapshot, gelijk aan pakbon en vervoerder-payload. Een tweede
+per-vervoerder-presentatieverschil (depot voor carrier X) = pas dán een descriptor
+extraheren (twee adapters = echte seam), niet speculatief vooraf.
+_Avoid_: compact/staand/DPD-labelvariant, per-vervoerder labelontwerp
 
 **Zending-colli**:
 De bevroren per-pakket-snapshotrijen van een zending (`zending_colli`: sscc,
@@ -116,20 +173,29 @@ lezen díé en herleiden afmetingen/gewicht nooit zelf uit de live
 hoger: het ophalen leeft op één plek, niet drie keer per adapter.
 _Avoid_: per-adapter colli-query, live maatwerk→product-join voor verzending
 
-**Verzend-wachtrij**:
+**Verzend-wachtrij** (ADR-0038, mig 426 — gebouwd):
 De operationele wachtrij van zendingen die naar een vervoerder verstuurd moeten
-worden. Eén concept, gediscrimineerd op `vervoerder_code` — niet drie kopieën
-(`hst_transportorders`/`verhoek_transportorders`/`rhenus_transportorders`). Het
-draagt alléén operationele state (status, retry, fout, correlatiesleutel,
-timestamps) + de unique-active-invariant (max één actieve rij per zending); de
-zware request/response-payload leeft in [[Externe-payload-audit]]
-(`externe_payloads`), niet hier. Eén set generieke RPC's (`claim_volgende_*`,
-`markeer_verstuurd`, `markeer_fout`, `herstel_vastgelopen`) en één
-`verzend_monitor`-view (group by `vervoerder_code`) voeden álle carriers. Het is
-de **data-as** naast de capability-as (ADR-0034) en de process-as (ADR-0035,
+worden. Eén tabel `verzend_wachtrij`, gediscrimineerd op `vervoerder_code` — niet
+drie kopieën (de oude `hst_transportorders`/`verhoek_transportorders`/
+`rhenus_transportorders` blijven t/m de contract-drop nog als rollback-vangnet
+staan). Het draagt alléén operationele state (`status` via enum `verzend_status`,
+`retry_count`, `error_msg`, timestamps) + drie generieke correlatievelden die de
+carrier-kolommen subsumeren (`extern_referentie` = transportOrderId|bestandsnaam,
+`track_trace` = HST/Verhoek-T&T of NULL bij Rhenus, `document_pad` = PDF|XML) + de
+unique-active-invariant op één plek (`uk_verzend_wachtrij_zending_actief`, max één
+actieve rij per zending over álle carriers). De zware request/response-payload
+leeft in [[Externe-payload-audit]] (`externe_payloads`), niet hier. Eén set
+generieke RPC's (`enqueue_transportorder`, `claim_volgende_transportorder`,
+`markeer_transportorder_verstuurd`, `markeer_transportorder_fout`,
+`herstel_vastgelopen_verzending`) en één `verzend_monitor`-view (group by
+`vervoerder_code`) voeden álle carriers; de dispatch `enqueue_zending_naar_vervoerder`
+collapst de api/sftp-takken tot één `enqueue_transportorder(code)`. Het is de
+**data-as** naast de capability-as (ADR-0034) en de process-as (ADR-0035,
 verzend-orchestrator): samen maken die een vierde vervoerder een kwestie van data
-+ één format-adapter, geen DDL-kopie.
-_Avoid_: per-vervoerder transportorder-tabel, hst/verhoek/rhenus_transportorders als concept
++ één format-adapter, geen DDL-kopie — en sinds deze as draagt de `VerzendAdapter`
+géén per-carrier RPC-namen meer (de orchestrator bezit de state-transitie-RPC's,
+generiek op `vervoerderCode`).
+_Avoid_: per-vervoerder transportorder-tabel, hst/verhoek/rhenus_transportorders als concept; payload-kopie op de wachtrij
 
 ### Facturatie & documenten
 
@@ -165,6 +231,8 @@ _Avoid_: factuur-regel-afleiding per renderpad, twee factuur→INVOIC-transforms
 - Een **Order** bevat één of meer **Orderregels**
 - Elk **Intake-kanaal** is een adapter op de **Order-landing**; het handmatige
   kanaal bouwt zijn invoer via de **Order-commit**-pipeline
+- **Order-hydratie** is de inverse van **Order-commit**: de bewerk-flow laadt een
+  bestaande **Order** terug naar dezelfde `OrderRegelFormData`-form-state-shape
 - Een maatwerk-**Orderregel** produceert één **Snijplan** per stuk
 - Een **Factuurdocument** rendert naar factuur-PDF én EDI-INVOIC; beide tonen
   dezelfde **Artikelpresentatie**, die óók de orderbevestiging voedt

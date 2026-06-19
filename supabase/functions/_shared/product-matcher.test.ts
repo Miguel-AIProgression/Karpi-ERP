@@ -33,7 +33,7 @@ function mockSupabase(rowsFor: (c: { table: string; ops: Op[] }) => any[]) {
       ops.push({ op, args })
       return b
     }
-    for (const m of ['select', 'eq', 'neq', 'in', 'or', 'ilike', 'order', 'limit']) b[m] = chain(m)
+    for (const m of ['select', 'eq', 'neq', 'not', 'in', 'or', 'ilike', 'order', 'limit']) b[m] = chain(m)
     const rows = () => rowsFor({ table, ops })
     b.maybeSingle = () => Promise.resolve({ data: rows()[0] ?? null, error: null })
     b.then = (resolve: (v: unknown) => void) => resolve({ data: rows(), error: null })
@@ -314,4 +314,71 @@ Deno.test('explicit maatwerk (Op maat) met schone alias: gedrag ongewijzigd', as
   assertEquals(m.maatwerk_kwaliteit_code, 'LAGO')
   assertEquals(m.maatwerk_kleur_code, '13')
   assertEquals(m.unmatchedReden, 'wunschgrosse')
+})
+
+// ===========================================================================
+// Cross-debiteur alias-consensus (ORD-2026-0623) — "Vernon" is Karpi's eigen
+// merknaam (Mart Visser, collectie "VERNON - LUXURY"), geen klant-rebranding.
+// Stond al identiek bij 4 andere debiteuren in klanteigen_namen, maar NIET
+// bij Vivaldi XL (861505) — vóór deze fix landde dit kaal als [UNMATCHED],
+// terwijl het catalogusartikel VERR12XX240340 al bestaat.
+// ===========================================================================
+Deno.test('cross-debiteur alias-consensus: "Vernon" zonder eigen alias + geen SKU → Contour-catalogusartikel', async () => {
+  const { client } = mockSupabase(({ table, ops }) => {
+    if (table === 'klanteigen_namen') {
+      const heeftDebiteurFilter = ops.some((o) => o.op === 'eq' && o.args[0] === 'debiteur_nr')
+      // Vivaldi XL heeft tientallen eigen aliassen, maar niets voor "Vernon".
+      if (heeftDebiteurFilter) return [{ benaming: 'BRAVE', kwaliteit_code: 'BEAC' }]
+      // Debiteur-overstijgende fallback-query (geen debiteur_nr-filter):
+      // 4 andere debiteuren wijzen "Vernon"/"VERNON" allemaal naar VERR.
+      return [
+        { benaming: 'Vernon', kwaliteit_code: 'VERR' },
+        { benaming: 'VERNON', kwaliteit_code: 'VERR' },
+        { benaming: 'VERNON', kwaliteit_code: 'VERR' },
+        { benaming: 'VERNON', kwaliteit_code: 'VERR' },
+      ]
+    }
+    if (table === 'producten') {
+      const il = ops.find((o) => o.op === 'ilike')
+      // ilike is case-insensitive in Postgres; vormenCache is leeg binnen deze
+      // testrun (eerdere tests cachen 'm al), dus de code valt terug op de
+      // vormCode zelf ('contour', kleine letters) i.p.v. de DB-naam 'Contour'.
+      if (il && String(il.args[1]).toLowerCase().includes('contour')) {
+        return [{ artikelnr: '490120011', omschrijving: 'VERNON 12 CA:240X340 cm CONTOUR' }]
+      }
+    }
+    return []
+  })
+
+  const m = await matchProduct(client as never, row({
+    productTitle: 'Vernon 12 - Sandy Dust',
+    variantTitle: 'Contour / 240 x 340 cm',
+  }), 861505)
+
+  assertEquals(m.artikelnr, '490120011')
+  assertEquals(m.matchedOn, 'alias')
+})
+
+Deno.test('cross-debiteur alias-consensus: ambigue naam (per debiteur andere kwaliteit) blijft ongematcht', async () => {
+  // "Milaan" is bewuste klant-rebranding — bij verschillende debiteuren wijst
+  // dezelfde naam naar een andere kwaliteit. De fallback mag dit NOOIT gokken.
+  const { client } = mockSupabase(({ table, ops }) => {
+    if (table === 'klanteigen_namen') {
+      const heeftDebiteurFilter = ops.some((o) => o.op === 'eq' && o.args[0] === 'debiteur_nr')
+      if (heeftDebiteurFilter) return []
+      return [
+        { benaming: 'Milaan', kwaliteit_code: 'BILA' },
+        { benaming: 'Milaan', kwaliteit_code: 'LUXR' },
+      ]
+    }
+    return []
+  })
+
+  const m = await matchProduct(client as never, row({
+    productTitle: 'Milaan 13 - Grijs',
+    variantTitle: '200 x 290 cm',
+  }), 999999)
+
+  assertEquals(m.artikelnr, null)
+  assertEquals(m.matchedOn, 'geen')
 })

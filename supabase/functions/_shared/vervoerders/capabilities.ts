@@ -51,13 +51,14 @@ export interface VerzendCapability {
   maxPerRun: number;
 }
 
-// HST — REST/JSON, bedient NL, belt vóór aflevering, mag pallet-default-
-// afmetingen invullen (tapijtrollen zonder gemeten maat). Geen colli-preflight:
-// de payload-builder valt terug op één aggregate-regel als er geen colli's zijn.
+// HST — REST/JSON, bedient NL + BE (HST levert ook in België — bevestigd
+// 2026-06-18), belt vóór aflevering, mag pallet-default-afmetingen invullen
+// (tapijtrollen zonder gemeten maat). Geen colli-preflight: de payload-builder
+// valt terug op één aggregate-regel als er geen colli's zijn.
 const HST: VerzendCapability = {
   code: 'hst_api',
   protocol: 'rest',
-  landbereik: ['NL'],
+  landbereik: ['NL', 'BE'],
   preflight: {
     vereistTelefoon: true,
     vereistLandInBereik: true,

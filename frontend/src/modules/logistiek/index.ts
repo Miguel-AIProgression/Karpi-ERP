@@ -79,6 +79,13 @@ export { ZendingStatusBadge } from './components/zending-status-badge'
 export { StartPickrondesButton } from './components/start-pickrondes-button'
 export { StartWeekButton } from './components/start-week-button'
 export { usePickbaarheid, type PickbaarheidResultaat } from './hooks/use-pickbaarheid'
+export {
+  bepaalStartbaarheid,
+  heeftGeenVervoerder,
+  type StartStatus,
+  type StartbaarheidInput,
+  type OrderStartbaarheid,
+} from './lib/startbaarheid'
 export { printsetPadVoorZendingen } from './lib/printset-navigatie'
 
 // Fase A — vervoerder-instellingen (mig 174)

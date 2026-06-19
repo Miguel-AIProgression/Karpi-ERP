@@ -703,6 +703,7 @@ Eén rij per fysieke colli binnen een zending (mig 209). Bron-van-waarheid voor 
 | klant_omschrijving_snapshot | TEXT | **Mig 390.** Bevroren, ontdubbelde klant-omschrijving (`order_regels.omschrijving` + `_2` via `compose_klant_omschrijving`). Single source voor de klant-naam op label/pakbon — de print-laag leidt niets meer live af. NULL = geen klant-omschrijving (label valt terug op artikelnr). |
 | lengte_cm | INTEGER | **Mig 399.** Bevroren colli-lengte (cm) = `COALESCE(order_regels.maatwerk_lengte_cm, producten.lengte_cm)` bij colli-aanmaak. **Single source** voor de afmeting die Rhenus (`dimension/depth`) en Verhoek (`Lengte`) versturen — de carriers leiden niets meer live af via een eigen maatwerk→product-join. NULL = onbekend (carrier-preflight beslist of dat blokkeert: Rhenus eist lengte, Verhoek lengte+breedte). |
 | breedte_cm | INTEGER | **Mig 399.** Bevroren colli-breedte (cm) = `COALESCE(order_regels.maatwerk_breedte_cm, producten.breedte_cm)`. Zie `lengte_cm`. Verhoek eist dit per colli; Rhenus stuurt alleen depth (=lengte) en raakt dit niet. |
+| klanteigen_naam_snapshot | TEXT | **Mig 419.** Bevroren klant-eigennaam voor de kwaliteit (`resolve_klanteigen_naam`, bron `klanteigen_namen` mig 199/200). NULL = geen afwijkende naam voor deze klant. De drie labelvarianten tonen "Uw referentie: <naam>" onder de kwaliteitscode alleen als dit veld gevuld is. |
 | aantal | INTEGER NOT NULL | Default 1, CHECK ≥ 1. V1 = altijd 1. |
 | pick_uitkomst | pick_uitkomst | Mig 211. Default 'open'; bij voltooi_pickronde → 'gepickt'. Enum-waardes: open, gepickt, niet_gevonden. |
 | pick_opmerking | TEXT | Mig 211. Operator-notitie bij niet_gevonden. |
@@ -722,7 +723,40 @@ Eén rij per fysieke colli binnen een zending (mig 209). Bron-van-waarheid voor 
 
 ---
 
+### verzend_wachtrij
+**Geconsolideerde verzend-wachtrij** (mig 426, ADR-0038, data-as) — één rij per zending die naar een vervoerder verstuurd moet worden, gediscrimineerd op `vervoerder_code` (`'hst_api'|'verhoek_sftp'|'rhenus_sftp'`). Vervangt de drie per-vervoerder-tabellen hieronder (die blijven t/m de contract-drop staan als rollback-vangnet). Draagt alléén operationele state + drie generieke correlatievelden; de rauwe request/response-payload leeft in `externe_payloads` (mig 325) — dát maakt de generalisatie *deep* i.p.v. *shallow* (de eerdere afweging hieronder ging uit van payload-op-de-rij; die is nu geschrapt).
+
+| Kolom | Type | Opmerking |
+|---|---|---|
+| id | BIGSERIAL PK | |
+| zending_id | BIGINT NOT NULL FK → zendingen | ON DELETE CASCADE |
+| debiteur_nr | INTEGER FK → debiteuren | |
+| vervoerder_code | TEXT NOT NULL | discriminator |
+| status | verzend_status NOT NULL | Default `'Wachtrij'` |
+| extern_referentie | TEXT | HST transportOrderId \| SFTP bestandsnaam |
+| track_trace | TEXT | HST trackingNumber \| Verhoek zending_nr \| NULL (Rhenus) |
+| document_pad | TEXT | storage-pad PDF (HST) \| XML (SFTP) |
+| retry_count | INTEGER NOT NULL | Default 0 |
+| error_msg | TEXT | |
+| is_test | BOOLEAN NOT NULL | Default FALSE |
+| created_at / sent_at / updated_at | TIMESTAMPTZ | |
+
+**Enum `verzend_status`:** `'Wachtrij' | 'Bezig' | 'Verstuurd' | 'Fout' | 'Geannuleerd'`
+
+**Index:** `uk_verzend_wachtrij_zending_actief` — UNIQUE op `zending_id` waar `status NOT IN ('Fout','Geannuleerd')` (één actieve rij per zending over álle carriers).
+
+**Generieke RPC's** (geparametriseerd op `vervoerder_code`):
+- `enqueue_transportorder(p_zending_id, p_debiteur_nr, p_vervoerder_code, p_is_test DEFAULT FALSE) → BIGINT` — idempotent.
+- `claim_volgende_transportorder(p_vervoerder_code) → verzend_wachtrij` — oudste `Wachtrij`-rij voor die carrier, `FOR UPDATE SKIP LOCKED` → `Bezig`.
+- `markeer_transportorder_verstuurd(p_id, p_extern_referentie, p_track_trace, p_document_pad)` — `track_trace` op de zending alleen bij non-NULL; status-flip Klaar→Onderweg; HST-PDF → order_documenten via `trg_verzend_wachtrij_pdf`.
+- `markeer_transportorder_fout(p_id, p_error, p_max_retries DEFAULT 3)` — retry-cascade.
+- `herstel_vastgelopen_verzending(p_vervoerder_code, p_minuten DEFAULT 10) → INTEGER` — reaper.
+
+**View `verzend_monitor`** — cron-health per `vervoerder_code` (GROUP BY): `verstuurd_vandaag, fout_open, wachtrij, bezig, oudste_wachtrij_minuten, oudste_bezig_minuten`.
+
 ### hst_transportorders
+> **⚠️ Superseded door `verzend_wachtrij`** (mig 426, ADR-0038). Blijft als rollback-vangnet t/m de contract-drop (slice 5); na de cutover niet meer gelezen.
+
 **HST-adapter-tabel** (mig 171) — één rij per transportorder die naar HST is/wordt verstuurd. **HST-specifiek**: géén multi-vervoerder-abstractie, géén berichttype-discriminator (alle rijen zijn transportorders), géén `vervoerder_code` (deze tabel ÍS HST). Toekomstige EDI-vervoerders (Rhenus, Verhoek) hergebruiken de bestaande `edi_berichten`-tabel met `berichttype='verzendbericht'` (DESADV) — geen wijziging aan `hst_transportorders`. Het ontwerp is bewust per-vervoerder verticaal omdat een gegeneraliseerde `vervoerder_berichten`-queue *shallow* zou zijn: de interface (JSONB-payload + tekstuele extern_id + retry) is bijna net zo complex als de twee implementaties zelf.
 | Kolom | Type | Toelichting |
 |-------|------|-------------|

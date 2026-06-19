@@ -22,15 +22,17 @@ import { valideerVoorVervoerder } from './vervoerder-eisen.ts';
 import { type ZendingColli } from './vervoerders/fetch-zending-colli.ts';
 import { fetchZendingColli } from './vervoerders/fetch-zending-colli.ts';
 
-/** Minimale wachtrij-rij die de skeleton aanraakt. Carriers breiden uit. */
+/** Minimale wachtrij-rij die de skeleton aanraakt. Carriers breiden uit.
+ *  `extern_referentie` draagt bij SFTP de (eerder gepersisteerde) bestandsnaam,
+ *  zodat een retry dezelfde naam hergebruikt. */
 export interface VerzendRijBasis {
   id: number;
   zending_id: number;
-  bestandsnaam?: string | null;
+  extern_referentie?: string | null;
 }
 
-/** Minimale samenvatting-shape; de adapter-callbacks doen de eigen bookkeeping
- *  (succeeded/failed/details), exact zoals de oude `markFoutMetSummary`. */
+/** Minimale samenvatting-shape; de adapter-`noteer*`-hooks doen de eigen
+ *  bookkeeping (succeeded/failed/details) — de skeleton roept de RPC's aan. */
 export interface VerzendSummaryBasis {
   succeeded: number;
   failed: number;
@@ -83,8 +85,9 @@ export interface VerzendContextData {
 export interface VerzendAdapter<Row extends VerzendRijBasis, Ctx, Payload, R> {
   /** Audit-kanaal + bron ('hst'|'verhoek'|'rhenus'). */
   kanaal: string;
-  /** Capability-code voor de preflight (ADR-0034). */
-  capabilityCode: string;
+  /** Vervoerder-code: discriminator voor de generieke wachtrij-RPC's (ADR-0038)
+   *  én de preflight-key (ADR-0034). Bv. 'hst_api'|'verhoek_sftp'|'rhenus_sftp'. */
+  vervoerderCode: string;
   /** MIME voor de audit-rij. */
   contentType: string;
   /** Kolomlijst voor de `zendingen`-fetch (carrier leest verschillende velden). */
@@ -104,10 +107,9 @@ export interface VerzendAdapter<Row extends VerzendRijBasis, Ctx, Payload, R> {
   /** Extra preflight-redenen buiten adres/colli (Verhoek: opdrachtgever_nummer). */
   preflightExtra?(ctx: Ctx, z: VerzendZending, colli: ZendingColli[]): string[];
 
-  /** Tabel waarin de bestandsnaam (SFTP-dedup) gepersisteerd wordt, of `null`
-   *  als de carrier geen bestandsnaam kent (HST/REST). */
-  bestandsnaamTabel: string | null;
-  /** Genereert een bestandsnaam wanneer de rij er nog geen heeft (SFTP). */
+  /** Genereert een bestandsnaam wanneer de rij er nog geen heeft (SFTP-dedup).
+   *  Aanwezigheid schakelt de persist-stap in (extern_referentie op
+   *  verzend_wachtrij); HST/REST laat 'm weg. */
   maakBestandsnaam?(z: VerzendZending, ctx: Ctx): string;
 
   /** Rendert het bericht (pure builder). */
@@ -125,29 +127,21 @@ export interface VerzendAdapter<Row extends VerzendRijBasis, Ctx, Payload, R> {
   /** Carrier-specifieke audit-`p_payload_json`-body. */
   auditPayloadJson(payload: Payload, r: R, bestandsnaam: string | null, ctx: Ctx): unknown;
 
-  /** Succes-afhandeling: storage (PDF/XML) + markeer_*_verstuurd + summary. */
-  onSucces(
-    supabase: SupabaseClient,
-    row: Row,
-    ctx: Ctx,
-    z: VerzendZending,
-    payload: Payload,
-    r: R,
-    bestandsnaam: string | null,
-    summary: VerzendSummaryBasis,
-  ): Promise<void>;
-  /** Fout-afhandeling: markeer_*_fout + summary. */
-  onFout(
-    supabase: SupabaseClient,
-    row: Row,
-    payload: Payload,
-    r: R,
-    summary: VerzendSummaryBasis,
-  ): Promise<void>;
+  /** Bewaart het verzendartefact (PDF voor HST, XML voor SFTP) in storage en
+   *  geeft het pad terug (of null) → de skeleton zet 't als document_pad in
+   *  markeer_transportorder_verstuurd. Best-effort: een upload-fout geeft null
+   *  + console.error en mag het verzend-succes niet ongedaan maken. */
+  bewaarArtefact(supabase: SupabaseClient, z: VerzendZending, payload: Payload, r: R, bestandsnaam: string | null): Promise<string | null>;
 
-  /** Markeer-fout vóór verzending (fetch-fout/preflight): markeer_*_fout + summary.
-   *  `fase` duidt het punt aan; de adapter kiest zelf zijn details-vorm. */
-  markFout(supabase: SupabaseClient, row: Row, summary: VerzendSummaryBasis, melding: string, fase: VerzendFase): Promise<void>;
+  /** Mapt het transport-resultaat naar de generieke verstuurd-velden. trackTrace
+   *  null → geen T&T (Rhenus); de skeleton geeft 't door aan markeer_*_verstuurd. */
+  uitkomst(z: VerzendZending, payload: Payload, r: R, bestandsnaam: string | null): { externReferentie: string | null; trackTrace: string | null };
+
+  /** Summary-cosmetica (carrier-specifieke `details`-vorm). De skeleton doet de
+   *  markeer-RPC-aanroepen zelf; deze hooks raken alléén de summary. */
+  noteerSucces(row: Row, r: R, bestandsnaam: string | null, summary: VerzendSummaryBasis): void;
+  noteerFout(row: Row, r: R, summary: VerzendSummaryBasis): void;
+  noteerMarkFout(row: Row, melding: string, fase: VerzendFase, summary: VerzendSummaryBasis): void;
 }
 
 /**
@@ -161,6 +155,14 @@ export async function verwerkVerzendRij<Row extends VerzendRijBasis, Ctx, Payloa
   ctx: Ctx,
   summary: VerzendSummaryBasis,
 ): Promise<void> {
+  // Pre-verzending-fout: generieke markeer-fout-RPC + adapter-summary-cosmetica.
+  // Vervangt de oude per-carrier `adapter.markFout` (ADR-0038: geen RPC-naam meer
+  // in de adapter).
+  const faal = async (melding: string, fase: VerzendFase): Promise<void> => {
+    await supabase.rpc('markeer_transportorder_fout', { p_id: row.id, p_error: melding, p_max_retries: 3 });
+    adapter.noteerMarkFout(row, melding, fase, summary);
+  };
+
   // 1. Context-data ophalen.
   const { data: zending, error: zErr } = await supabase
     .from('zendingen')
@@ -168,30 +170,30 @@ export async function verwerkVerzendRij<Row extends VerzendRijBasis, Ctx, Payloa
     .eq('id', row.zending_id)
     .single();
   if (zErr || !zending) {
-    return adapter.markFout(supabase, row, summary, `Zending ${row.zending_id} niet gevonden: ${zErr?.message ?? 'leeg'}`, 'zending');
+    return faal(`Zending ${row.zending_id} niet gevonden: ${zErr?.message ?? 'leeg'}`, 'zending');
   }
   const z = zending as unknown as VerzendZending;
 
   const { data: order, error: oErr } = await supabase
     .from('orders').select(adapter.orderSelect).eq('id', z.order_id).single();
   if (oErr || !order) {
-    return adapter.markFout(supabase, row, summary, `Order ${z.order_id} niet gevonden: ${oErr?.message ?? 'leeg'}`, 'order');
+    return faal(`Order ${z.order_id} niet gevonden: ${oErr?.message ?? 'leeg'}`, 'order');
   }
 
   const { data: bedrijfRow, error: bErr } = await supabase
     .from('app_config').select('waarde').eq('sleutel', 'bedrijfsgegevens').single();
   if (bErr || !(bedrijfRow as { waarde?: unknown } | null)?.waarde) {
-    return adapter.markFout(supabase, row, summary, `bedrijfsgegevens-record ontbreekt in app_config: ${bErr?.message ?? 'leeg'}`, 'bedrijf');
+    return faal(`bedrijfsgegevens-record ontbreekt in app_config: ${bErr?.message ?? 'leeg'}`, 'bedrijf');
   }
   const bedrijf = (bedrijfRow as { waarde: unknown }).waarde;
 
   // Colli via de Zending-colli-seam (één canonieke bron, mig 399).
   const { colli, error: colliErr } = await fetchZendingColli(supabase, row.zending_id);
   if (colliErr) {
-    return adapter.markFout(supabase, row, summary, `zending_colli query fout: ${colliErr}`, 'colli_query');
+    return faal(`zending_colli query fout: ${colliErr}`, 'colli_query');
   }
   if (adapter.hardFailOnZeroColli && colli.length === 0) {
-    return adapter.markFout(supabase, row, summary, adapter.zeroColliMelding(row.zending_id), 'geen_colli');
+    return faal(adapter.zeroColliMelding(row.zending_id), 'geen_colli');
   }
 
   // 2. Pre-flight: adres (capability-seam) + carrier-colli + carrier-extra.
@@ -199,7 +201,7 @@ export async function verwerkVerzendRij<Row extends VerzendRijBasis, Ctx, Payloa
   //    (ADR-0030-principe).
   const redenen = [
     ...valideerVoorVervoerder({
-      vervoerder_code: adapter.capabilityCode,
+      vervoerder_code: adapter.vervoerderCode,
       afl_land: z.afl_land,
       afl_telefoon: z.afl_telefoon,
       afl_naam: z.afl_naam,
@@ -211,21 +213,22 @@ export async function verwerkVerzendRij<Row extends VerzendRijBasis, Ctx, Payloa
     ...(adapter.preflightExtra?.(ctx, z, colli) ?? []),
   ];
   if (redenen.length > 0) {
-    return adapter.markFout(supabase, row, summary, 'Pre-flight: ' + redenen.join(' | '), 'preflight');
+    return faal('Pre-flight: ' + redenen.join(' | '), 'preflight');
   }
 
   // 3. Bestandsnaam (SFTP-dedup): eenmalig genereren en vóór de upload
-  //    persisteren zodat een retry dezelfde naam hergebruikt.
+  //    persisteren (in verzend_wachtrij.extern_referentie) zodat een retry
+  //    dezelfde naam hergebruikt.
   let bestandsnaam: string | null = null;
-  if (adapter.bestandsnaamTabel && adapter.maakBestandsnaam) {
-    bestandsnaam = row.bestandsnaam ?? adapter.maakBestandsnaam(z, ctx);
-    if (!row.bestandsnaam) {
+  if (adapter.maakBestandsnaam) {
+    bestandsnaam = row.extern_referentie ?? adapter.maakBestandsnaam(z, ctx);
+    if (!row.extern_referentie) {
       const { error: naamErr } = await supabase
-        .from(adapter.bestandsnaamTabel)
-        .update({ bestandsnaam })
+        .from('verzend_wachtrij')
+        .update({ extern_referentie: bestandsnaam })
         .eq('id', row.id);
       if (naamErr) {
-        return adapter.markFout(supabase, row, summary, `bestandsnaam persisteren faalde: ${naamErr.message}`, 'bestandsnaam');
+        return faal(`bestandsnaam persisteren faalde: ${naamErr.message}`, 'bestandsnaam');
       }
     }
   }
@@ -255,10 +258,26 @@ export async function verwerkVerzendRij<Row extends VerzendRijBasis, Ctx, Payloa
     console.warn(`[${adapter.kanaal}-send] payload-audit faalde: ${String(e)}`);
   }
 
-  // 6. Markeer succes/fout.
+  // 6. Markeer succes/fout via de GENERIEKE wachtrij-RPC's (ADR-0038). De
+  //    adapter levert alleen het carrier-specifieke deel: het artefact bewaren
+  //    (PDF/XML → document_pad), de uitkomst-mapping (extern_referentie/
+  //    track_trace) en de summary-cosmetica.
   if (ok) {
-    await adapter.onSucces(supabase, row, ctx, z, payload, result, bestandsnaam, summary);
+    const documentPad = await adapter.bewaarArtefact(supabase, z, payload, result, bestandsnaam);
+    const { externReferentie, trackTrace } = adapter.uitkomst(z, payload, result, bestandsnaam);
+    await supabase.rpc('markeer_transportorder_verstuurd', {
+      p_id: row.id,
+      p_extern_referentie: externReferentie,
+      p_track_trace: trackTrace,
+      p_document_pad: documentPad,
+    });
+    adapter.noteerSucces(row, result, bestandsnaam, summary);
   } else {
-    await adapter.onFout(supabase, row, payload, result, summary);
+    await supabase.rpc('markeer_transportorder_fout', {
+      p_id: row.id,
+      p_error: adapter.resultFout(result) ?? 'onbekende fout',
+      p_max_retries: 3,
+    });
+    adapter.noteerFout(row, result, summary);
   }
 }

@@ -12,6 +12,7 @@ interface DeliveryAddressEditorProps {
   adres?: string
   postcode?: string
   plaats?: string
+  land?: string
   /** Per-order snapshot van het afleveradres-email (orders.afl_email). */
   aflEmail: string
   /** DB-id van het geselecteerde afleveradressen-record (voor "opslaan als permanent"). */
@@ -26,7 +27,7 @@ interface DeliveryAddressEditorProps {
 }
 
 export function DeliveryAddressEditor({
-  naam, adres, postcode, plaats,
+  naam, adres, postcode, plaats, land,
   aflEmail, afleveradresId,
   onAdresChange, onEmailChange, dropshipEmailProbleem,
   dropshipEmailGenegeerd, onDropshipEmailNegeer,
@@ -38,7 +39,7 @@ export function DeliveryAddressEditor({
     adres: adres ?? '',
     postcode: postcode ?? '',
     plaats: plaats ?? '',
-    land: 'NL',
+    land: land ?? 'NL',
   })
   const [draftEmail, setDraftEmail] = useState(aflEmail)
   const [persist, setPersist] = useState(!!afleveradresId)
@@ -51,7 +52,7 @@ export function DeliveryAddressEditor({
       adres: adres ?? '',
       postcode: postcode ?? '',
       plaats: plaats ?? '',
-      land: 'NL',
+      land: land ?? 'NL',
     })
     setDraftEmail(aflEmail)
     setPersist(!!afleveradresId)
@@ -110,7 +111,7 @@ export function DeliveryAddressEditor({
             onClick={openEdit}
             className="text-xs text-terracotta-600 hover:text-terracotta-700"
           >
-            Wijzigen
+            Bewerken
           </button>
         </div>
         <div className="text-sm">

@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, FileText, Tags } from 'lucide-react'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { ArrowLeft, Boxes, FileText, Tags } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { PakbonDocument } from '@/modules/logistiek/components/pakbon-document'
 import { ShippingLabel } from '@/modules/logistiek/components/shipping-label'
-import { DpdShippingLabel } from '@/modules/logistiek/components/dpd-shipping-label'
 import { VervoerderTag } from '@/modules/logistiek/components/vervoerder-tag'
 import { ColliPickVinkjes } from '@/modules/logistiek/components/colli-pick-vinkjes'
 import { VoltooiPickrondeKnop } from '@/modules/logistiek/components/voltooi-pickronde-knop'
@@ -24,12 +23,17 @@ import {
   labelFormaatVoor,
   vervoerderInfoVoor,
 } from '@/modules/logistiek/lib/printset'
+import { isHandmatigAanmeldenVervoerder } from '@/modules/logistiek/lib/handmatig-aanmelden'
+import { ColliBundelDialog } from '@/modules/logistiek/components/colli-bundel-dialog'
 
 type PrintMode = 'all' | 'labels' | 'pakbon' | 'tapijt-stickers'
 
 export function ZendingPrintSetPage() {
   const { zending_nr } = useParams<{ zending_nr: string }>()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  // Mig 418: bundel-sticker apart printen — filter op één colli_nr (de bundel-rij).
+  const colliFilter = searchParams.get('colli')
   const { data: zending, isLoading, error } = useZendingPrintSet(zending_nr)
   const { data: tapijtStickers = [] } = useZendingStickerData(zending?.id)
   const [printMode, setPrintMode] = useState<PrintMode>('all')
@@ -41,6 +45,8 @@ export function ZendingPrintSetPage() {
   // start_pickronde) → localStorage last-picker → null. Operator kan wisselen
   // bij shift-overgang. Wordt gepersisteerd zodra hij voltooi/markeer doet.
   const [pickerId, setPickerId] = useState<number | null>(null)
+  // Mig 421: colli-bundel-pop-up tijdens de pickronde (Rhenus + ≥2 colli).
+  const [bundelOpen, setBundelOpen] = useState(false)
 
   useEffect(() => {
     const reset = () => setPrintMode('all')
@@ -68,10 +74,12 @@ export function ZendingPrintSetPage() {
     }
   }, [zending, includeTapijtStickers])
 
-  const labels = useMemo(() => (zending ? expandLabels(zending) : []), [zending])
+  const labels = useMemo(() => {
+    const alle = zending ? expandLabels(zending) : []
+    return colliFilter ? alle.filter((l) => String(l.colliNr) === colliFilter) : alle
+  }, [zending, colliFilter])
   const vervoerder = zending ? vervoerderInfoVoor(zending) : null
   const labelFormaat = zending ? labelFormaatVoor(zending) : null
-  const isPrintType = zending?.vervoerders?.type === 'print'
   const aantalTapijtStickers = totaalAantalTapijtStickers(tapijtStickers)
   const heeftTapijtStickers = aantalTapijtStickers > 0
   const tapijtStickersMeeprinten = includeTapijtStickers === true && heeftTapijtStickers
@@ -103,6 +111,16 @@ export function ZendingPrintSetPage() {
       </div>
     )
   }
+
+  // Mig 420: een Rhenus-zending met >=2 colli wordt na voltooien NIET automatisch
+  // aangemeld maar vastgehouden — de operator moet eerst (optioneel) colli bundelen
+  // en de zending handmatig aanmelden op de zending-detailpagina. Tel niet-gebundelde
+  // colli (tijdens 'Picken' bestaan er nog geen bundels, dus = het fysieke aantal).
+  const losseColliAantal = (zending.zending_colli ?? []).filter(
+    (c) => c.bundel_colli_id == null && !c.is_bundel,
+  ).length
+  const isRhenusBundel =
+    isHandmatigAanmeldenVervoerder(zending.vervoerder_code) && losseColliAantal >= 2
 
   return (
     <>
@@ -184,14 +202,39 @@ export function ZendingPrintSetPage() {
               <li className="flex gap-2.5">
                 <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-800 text-[11px] font-semibold text-white">3</span>
                 <span>
-                  <strong>Klik op de groene knop "Voltooi pickronde".</strong>{' '}
-                  Een picker kiezen mag, maar hoeft niet. Daarna gaat alles vanzelf: de order wordt{' '}
-                  <em>Verzonden</em>, de factuur volgt, en de
-                  zending wordt automatisch bij de vervoerder aangemeld. Je hoeft hier verder niets te
-                  doen — de track &amp; trace komt binnen zodra de vervoerder reageert.
+                  {isRhenusBundel ? (
+                    <>
+                      <strong>Klik op de groene knop "Voltooi pickronde".</strong>{' '}
+                      Een picker kiezen mag, maar hoeft niet. Deze <strong>Rhenus</strong>-zending heeft
+                      meerdere colli en wordt daarom <strong>niet</strong> automatisch aangemeld. Na het
+                      voltooien ga je automatisch naar de zending-pagina, waar je colli kunt{' '}
+                      <strong>samenpakken (bundelen)</strong> onder één nieuwe sticker en de zending
+                      vervolgens <strong>aanmeldt bij Rhenus</strong>.
+                    </>
+                  ) : (
+                    <>
+                      <strong>Klik op de groene knop "Voltooi pickronde".</strong>{' '}
+                      Een picker kiezen mag, maar hoeft niet. Daarna gaat alles vanzelf: de order wordt{' '}
+                      <em>Verzonden</em>, de factuur volgt, en de
+                      zending wordt automatisch bij de vervoerder aangemeld. Je hoeft hier verder niets te
+                      doen — de track &amp; trace komt binnen zodra de vervoerder reageert.
+                    </>
+                  )}
                 </span>
               </li>
             </ol>
+          </div>
+        ) : isRhenusBundel && zending.status === 'Klaar voor verzending' ? (
+          <div className="mb-4 rounded-[var(--radius-sm)] border border-terracotta-200 bg-white px-4 py-3 text-sm text-slate-700">
+            Deze <strong>Rhenus</strong>-zending is voltooid maar wordt <strong>niet</strong>{' '}
+            automatisch aangemeld. Pak eventueel colli samen (bundelen) en meld de zending aan op de{' '}
+            <Link
+              to={`/logistiek/${zending.zending_nr}`}
+              className="font-medium text-terracotta-700 underline hover:text-terracotta-800"
+            >
+              zending-pagina
+            </Link>
+            . Labels en pakbon kun je hier opnieuw printen.
           </div>
         ) : (
           <div className="mb-4 rounded-[var(--radius-sm)] border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
@@ -224,6 +267,27 @@ export function ZendingPrintSetPage() {
               }
               pickerId={pickerId}
             />
+            {/* Mig 421: Rhenus-zending met meerdere colli — pak colli samen in één zak
+                onder één nieuwe sticker, al tijdens het verzamelen. */}
+            {isRhenusBundel && (
+              <div className="rounded-[var(--radius)] border border-terracotta-200 bg-white p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-700">Colli bundelen (Rhenus)</h3>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      Pak meerdere colli samen in één zak onder één nieuwe sticker. De losse
+                      stickers gooi je dan weg.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setBundelOpen(true)}
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius-sm)] bg-terracotta-600 px-3 py-2 text-sm font-medium text-white hover:bg-terracotta-700"
+                  >
+                    <Boxes size={15} /> Colli bundelen
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="flex items-center justify-between gap-3">
               <button
                 onClick={() => navigate('/pick-ship')}
@@ -237,6 +301,9 @@ export function ZendingPrintSetPage() {
                 zendingId={zending.id}
                 zendingStatus={zending.status}
                 pickerId={pickerId}
+                navigeerNaVoltooienNaar={
+                  isRhenusBundel ? `/logistiek/${zending.zending_nr}` : undefined
+                }
               />
             </div>
             {/* Correctie-actie (per ongeluk gestart), bewust subtiel en los van de
@@ -246,6 +313,14 @@ export function ZendingPrintSetPage() {
             </div>
           </div>
         )}
+
+        {bundelOpen && isRhenusBundel && (
+          <ColliBundelDialog
+            zendingId={zending.id}
+            zendingNr={zending.zending_nr}
+            onClose={() => setBundelOpen(false)}
+          />
+        )}
       </div>
 
       <div
@@ -253,35 +328,26 @@ export function ZendingPrintSetPage() {
         data-print-mode={printMode}
         data-include-tapijt-stickers={tapijtStickersMeeprinten ? 'true' : 'false'}
       >
+        {/* Eén canonieke ShippingLabel voor álle vervoerders. De vroegere
+            DPD-render (`vervoerders.type==='print'`) is verwijderd: er is geen
+            actieve 'print'-vervoerder meer. Her-introduceren van een afwijkend
+            labelformaat = een nieuwe adapter, niet een tak hier. */}
         <div className="shipping-labels flex flex-col items-start gap-4">
-          {labels.map((label) =>
-            isPrintType ? (
-              <DpdShippingLabel
-                key={label.index}
-                zending={zending}
-                regel={label.regel}
-                colliIndex={label.index}
-                colliTotal={labels.length}
-                serviceCode={zending.service_code}
-                sscc={label.sscc}
-                omschrijvingSnapshot={label.omschrijvingSnapshot}
-                klantOmschrijvingSnapshot={label.klantOmschrijvingSnapshot}
-              />
-            ) : (
-              <ShippingLabel
-                key={label.index}
-                zending={zending}
-                regel={label.regel}
-                colliIndex={label.index}
-                colliTotal={labels.length}
-                vervoerderNaam={vervoerder.naam}
-                sscc={label.sscc}
-                omschrijvingSnapshot={label.omschrijvingSnapshot}
-                klantOmschrijvingSnapshot={label.klantOmschrijvingSnapshot}
-                labelFormaat={labelFormaat ?? undefined}
-              />
-            ),
-          )}
+          {labels.map((label) => (
+            <ShippingLabel
+              key={label.index}
+              zending={zending}
+              regel={label.regel}
+              colliIndex={label.index}
+              colliTotal={labels.length}
+              vervoerderNaam={vervoerder.naam}
+              sscc={label.sscc}
+              omschrijvingSnapshot={label.omschrijvingSnapshot}
+              klantOmschrijvingSnapshot={label.klantOmschrijvingSnapshot}
+              klanteigenNaamSnapshot={label.klanteigenNaamSnapshot}
+              labelFormaat={labelFormaat ?? undefined}
+            />
+          ))}
         </div>
 
         <PakbonDocument

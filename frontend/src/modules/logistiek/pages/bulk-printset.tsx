@@ -13,7 +13,6 @@ import { ArrowLeft, FileText, Tags } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { PakbonDocument } from '@/modules/logistiek/components/pakbon-document'
 import { ShippingLabel } from '@/modules/logistiek/components/shipping-label'
-import { DpdShippingLabel } from '@/modules/logistiek/components/dpd-shipping-label'
 import { useZendingPrintSets } from '@/modules/logistiek/hooks/use-zendingen'
 import { useZendingStickerDataBulk } from '@/modules/logistiek/hooks/use-zending-stickers'
 import {
@@ -49,7 +48,6 @@ function ZendingBlok({ zending, tapijtStickers }: ZendingBlokProps) {
   const labels = useMemo(() => expandLabels(zending), [zending])
   const vervoerder = vervoerderInfoVoor(zending)
   const labelFormaat = useMemo(() => labelFormaatVoor(zending), [zending])
-  const isPrintType = zending.vervoerders?.type === 'print'
   // Afhaal-zendingen krijgen geen sticker — alleen een pakbon. We gebruiken
   // de orders.afhalen-flag direct (bron-van-waarheid) en niet bv. de
   // vervoerder-aan/afwezigheid, zodat dit ook werkt als er ooit een
@@ -83,34 +81,21 @@ function ZendingBlok({ zending, tapijtStickers }: ZendingBlokProps) {
 
       {!isAfhaal && (
         <div className="shipping-labels flex flex-col items-start gap-4">
-          {labels.map((label) =>
-            isPrintType ? (
-              <DpdShippingLabel
-                key={label.index}
-                zending={zending}
-                regel={label.regel}
-                colliIndex={label.index}
-                colliTotal={labels.length}
-                serviceCode={zending.service_code}
-                sscc={label.sscc}
-                omschrijvingSnapshot={label.omschrijvingSnapshot}
-                klantOmschrijvingSnapshot={label.klantOmschrijvingSnapshot}
-              />
-            ) : (
-              <ShippingLabel
-                key={label.index}
-                zending={zending}
-                regel={label.regel}
-                colliIndex={label.index}
-                colliTotal={labels.length}
-                vervoerderNaam={vervoerder.naam}
-                sscc={label.sscc}
-                omschrijvingSnapshot={label.omschrijvingSnapshot}
-                klantOmschrijvingSnapshot={label.klantOmschrijvingSnapshot}
-                labelFormaat={labelFormaat}
-              />
-            ),
-          )}
+          {labels.map((label) => (
+            <ShippingLabel
+              key={label.index}
+              zending={zending}
+              regel={label.regel}
+              colliIndex={label.index}
+              colliTotal={labels.length}
+              vervoerderNaam={vervoerder.naam}
+              sscc={label.sscc}
+              omschrijvingSnapshot={label.omschrijvingSnapshot}
+              klantOmschrijvingSnapshot={label.klantOmschrijvingSnapshot}
+              klanteigenNaamSnapshot={label.klanteigenNaamSnapshot}
+              labelFormaat={labelFormaat}
+            />
+          ))}
         </div>
       )}
 

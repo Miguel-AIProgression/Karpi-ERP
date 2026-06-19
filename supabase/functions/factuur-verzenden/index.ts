@@ -10,11 +10,16 @@ import { logExternePayload } from '../_shared/externe-payload-audit.ts'
 import { buildKarpiInvoiceFixedWidth } from '../_shared/transus-formats/karpi-invoice-fixed-width.ts'
 import { fetchFactuurDocument } from '../_shared/facturatie/factuur-document.ts'
 import { naarFactuurPdfInput } from '../_shared/facturatie/factuur-pdf-renderer.ts'
+import { bepaalTaal } from '../_shared/klant-taal.ts'
 import {
   naarInvoiceInput,
   type FactuurInvoiceContext,
   type FactuurInvoiceOrder,
 } from '../_shared/facturatie/factuur-invoice-renderer.ts'
+import { fetchPakbonZending } from '../_shared/pakbon/fetch.ts'
+import { bouwPakbonDocument } from '../_shared/pakbon/pakbon-document.ts'
+import { genereerPakbonPDF } from '../_shared/pakbon/pakbon-pdf.ts'
+import { fetchBedrijfMetLogo } from '../_shared/pakbon/bedrijf.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -36,6 +41,8 @@ interface QueueItem {
   attempts: number
   zending_id: number | null  // mig 234 (ADR-0010): nieuwe bron-FK; mig 237 maakt 'm NOT NULL
   verzendweek: string | null  // mig 231: gevuld voor wekelijks-pad (legacy)
+  factuur_id: number | null  // mig 428: concept-factuur gemaakt in fase 1 (projectie)
+  gefinaliseerd_op: string | null  // mig 428: NULL = nog finaliseren; gezet = alleen (her)mailen
 }
 
 interface EdiConfig {
@@ -148,9 +155,22 @@ interface OrderForEdi {
 serve(async () => {
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE)
 
+  // Mig 428 — FASE 1: projecteer concepten voor nieuwe pending per_zending-rijen
+  // (factuur_id IS NULL). Geen delay-gate: het concept verschijnt direct in de
+  // facturatie-module. Race-safe DB-side (FOR UPDATE SKIP LOCKED in de RPC).
+  // Best-effort: een fout hier mag de finalisatie-fase niet blokkeren.
+  const { error: conceptErr } = await supabase.rpc('verwerk_concept_queue', {
+    p_max_batch: MAX_BATCH,
+  })
+  if (conceptErr) {
+    console.warn(`[factuur-verzenden] concept-fase mislukt: ${conceptErr.message}`)
+  }
+
   // Mig 227: atomic claim via RPC met FOR UPDATE SKIP LOCKED. Vervangt
   // SELECT-then-UPDATE die race-conditions veroorzaakte tussen parallelle
   // drains (cron-tik + handmatige aanroep konden dezelfde rij dubbel pakken).
+  // Mig 428 — FASE 2: claim_factuur_queue_items claimt nu alleen rijen mét
+  // concept (per_zending) of zonder zending (wekelijks/legacy), én beschikbaar.
   const { data: items, error: fetchErr } = await supabase.rpc('claim_factuur_queue_items', {
     p_max_batch: MAX_BATCH,
   })
@@ -167,21 +187,45 @@ serve(async () => {
   for (const item of (items ?? []) as QueueItem[]) {
     try {
 
-      // ADR-0010 mig 234: 3-paden-dispatch met legacy-fallback.
-      //   1. NIEUW: item.zending_id gevuld → genereer_factuur_voor_bundel
+      // ADR-0010 mig 234 / mig 428: 3-paden-dispatch met legacy-fallback.
+      //   1. NIEUW (mig 428): item.zending_id gevuld → finaliseer_concept_factuur
+      //      op de in fase 1 geprojecteerde concept-factuur (item.factuur_id).
+      //      Idempotent tegen mail-retry via item.gefinaliseerd_op: is die al
+      //      gezet, dan is de factuur al definitief → enkel (her)mailen.
       //   2. LEGACY wekelijks: zending_id NULL maar type='wekelijks' →
       //      genereer_factuur_voor_week (gedropt na mig 237)
       //   3. LEGACY per_zending: zending_id NULL en type='per_zending' →
       //      genereer_factuur (gedropt na mig 237)
-      // Mig 234 step 5 zorgt dat zending_id + verzendweek meekomen via
-      // claim_factuur_queue_items, dus geen extra fetch meer.
+      // Mig 234 step 5 / mig 428 zorgen dat zending_id + factuur_id +
+      // gefinaliseerd_op meekomen via claim_factuur_queue_items.
       let factuurId: number
       if (item.zending_id != null) {
-        const { data, error } = await supabase.rpc('genereer_factuur_voor_bundel', {
-          p_zending_id: item.zending_id,
-        })
-        if (error) throw new Error(`RPC genereer_factuur_voor_bundel: ${error.message}`)
-        factuurId = data as number
+        // Per_zending: in fase 1 hoort er een concept te zijn. Defensief: maak er
+        // alsnog één als de claim-gate 'm toch zonder factuur_id doorliet.
+        if (item.factuur_id == null) {
+          const { data, error } = await supabase.rpc('projecteer_concept_factuur', {
+            p_zending_id: item.zending_id,
+          })
+          if (error) throw new Error(`RPC projecteer_concept_factuur: ${error.message}`)
+          item.factuur_id = data as number
+        }
+        if (!item.gefinaliseerd_op) {
+          const { data, error } = await supabase.rpc('finaliseer_concept_factuur', {
+            p_zending_id: item.zending_id,
+            p_factuur_id: item.factuur_id,
+          })
+          if (error) throw new Error(`RPC finaliseer_concept_factuur: ${error.message}`)
+          factuurId = data as number
+          // Markeer gefinaliseerd vóór de mail: faalt de mail daarna, dan
+          // retry'en we alleen de mail (geen tweede finalisatie → geen flip-fout).
+          await supabase
+            .from('factuur_queue')
+            .update({ gefinaliseerd_op: new Date().toISOString() })
+            .eq('id', item.id)
+        } else {
+          // Al gefinaliseerd in een eerdere (mislukte-mail) run → hergebruik.
+          factuurId = item.factuur_id
+        }
       } else if (item.type === 'wekelijks') {
         if (!item.verzendweek) throw new Error(`Queue-rij ${item.id} type=wekelijks zonder verzendweek én zonder zending_id`)
         const { data, error } = await supabase.rpc('genereer_factuur_voor_week', {
@@ -238,6 +282,14 @@ serve(async () => {
       // verrijking (dat doet alleen de on-demand factuur-pdf-functie).
       const pdfDoc = await fetchFactuurDocument(supabase, factuurId)
       const pdfDeel = naarFactuurPdfInput(pdfDoc)
+      // Taal van de factuur: land van het factuuradres → ISO2 (zelfde bron als de
+      // orderbevestiging). Default 'nl' bij leeg/onbekend land.
+      let factLandIso2: string | null = null
+      if (pdfDoc.header.fact_land) {
+        const { data: landData } = await supabase.rpc('normaliseer_land', { p_land: pdfDoc.header.fact_land })
+        factLandIso2 = (landData as string | null) ?? null
+      }
+      const pdfTaal = bepaalTaal(factLandIso2)
       const pdfBytes = await genereerFactuurPDF({
         bedrijf: {
           bedrijfsnaam: bedrijf.bedrijfsnaam,
@@ -259,6 +311,7 @@ serve(async () => {
         },
         factuur: pdfDeel.factuur,
         regels: pdfDeel.regels,
+        taal: pdfTaal,
       })
 
       // 5. Upload PDF naar storage
@@ -307,9 +360,26 @@ serve(async () => {
         if (avErr || !avBlob) throw new Error(`Download AV: ${avErr?.message ?? 'geen data'}`)
         const avBytes = new Uint8Array(await avBlob.arrayBuffer())
 
+        const orderIdsVoorLog = uniqueNumbers(regels.map((r) => Number(r.order_id)))
+
+        // Pakbon(nen) als extra bijlage: één pakbon-PDF per zending die deze
+        // factuur dekt — per_zending/bundel = 1, wekelijkse verzamelfactuur = N.
+        // Volledig best-effort: een ontbrekende pakbon mag de factuur-mail nooit
+        // blokkeren (zie genereerPakbonBijlagen).
+        const pakbonBijlagen = await genereerPakbonBijlagen(
+          supabase,
+          item.debiteur_nr,
+          orderIdsVoorLog,
+        )
+        const pakbonZin =
+          pakbonBijlagen.length > 0
+            ? `<p>De ${pakbonBijlagen.length > 1 ? 'pakbonnen vindt u' : 'pakbon vindt u'} eveneens als bijlage.</p>`
+            : ''
+
         const emailHtml = `
 <p>Geachte heer/mevrouw,</p>
 <p>Hierbij ontvangt u bijgaand factuur <strong>${factuur.factuur_nr}</strong>.</p>
+${pakbonZin}
 <p>Onze algemene voorwaarden vindt u als bijlage bij deze e-mail.</p>
 <p>Met vriendelijke groet,<br/>KARPI BV</p>
       `.trim()
@@ -317,15 +387,19 @@ serve(async () => {
         const attachments = [
           { filename: `${factuur.factuur_nr}.pdf`, content: pdfBytes },
           { filename: 'Algemene voorwaarden KARPI BV.pdf', content: avBytes },
+          ...pakbonBijlagen.map((p) => ({ filename: p.filename, content: p.content })),
         ]
 
-        // Mig 366: bijlage-verwijzingen voor de e-mailtijdlijn — beide bestanden
-        // staan (straks) in storage zodat de dialog ze via signed URL kan openen.
+        // Mig 366: bijlage-verwijzingen voor de e-mailtijdlijn — bestanden staan
+        // in storage zodat de dialog ze via signed URL kan openen. Pakbonnen
+        // krijgen alleen een ref als hun storage-upload lukte (best-effort).
         const bijlagenMeta = [
           { filename: `${factuur.factuur_nr}.pdf`, bucket: 'facturen', path: pdfPath },
           { filename: 'Algemene voorwaarden KARPI BV.pdf', bucket: 'documenten', path: AV_PATH },
+          ...pakbonBijlagen
+            .filter((p) => p.bucket && p.path)
+            .map((p) => ({ filename: p.filename, bucket: p.bucket as string, path: p.path as string })),
         ]
-        const orderIdsVoorLog = uniqueNumbers(regels.map((r) => Number(r.order_id)))
 
         // Stuur naar debiteur zelf
         await sendFactuurEmail({
@@ -487,6 +561,92 @@ async function logVerstuurdeEmails(
     if (error) console.warn(`[factuur-verzenden] e-mail-log mislukt: ${error.message}`)
   } catch (err) {
     console.warn(`[factuur-verzenden] e-mail-log mislukt: ${err}`)
+  }
+}
+
+interface PakbonBijlage {
+  filename: string
+  content: Uint8Array
+  bucket?: string
+  path?: string
+}
+
+// Genereert één pakbon-PDF per zending die deze factuur dekt (via zending_orders
+// M2M op de gefactureerde orders). Een per_zending/bundel-factuur levert 1
+// pakbon, een wekelijkse verzamelfactuur N (alle zendingen van die week).
+// Volledig BEST-EFFORT: elke fout (geen zending, geen colli, render-fout) wordt
+// gelogd en overgeslagen zodat de factuur-mail altijd doorgaat — een pakbon mag
+// nooit de facturatie blokkeren. De server-side renderer komt uit _shared/pakbon
+// (zelfde bron als de geprinte pakbon).
+async function genereerPakbonBijlagen(
+  supabase: ReturnType<typeof createClient>,
+  debiteurNr: number,
+  orderIds: number[],
+): Promise<PakbonBijlage[]> {
+  if (orderIds.length === 0) return []
+  try {
+    const { data: zoData, error: zoErr } = await supabase
+      .from('zending_orders')
+      .select('zending_id')
+      .in('order_id', orderIds)
+    if (zoErr) {
+      console.warn(`[factuur-verzenden] pakbon: zendingen ophalen mislukt: ${zoErr.message}`)
+      return []
+    }
+    const zendingOrders = (zoData ?? []) as Array<{ zending_id: number }>
+    const zendingIds = uniqueNumbers(zendingOrders.map((r) => Number(r.zending_id)))
+    if (zendingIds.length === 0) return []
+
+    const { data: zData, error: zErr } = await supabase
+      .from('zendingen')
+      .select('zending_nr')
+      .in('id', zendingIds)
+      .order('zending_nr')
+    if (zErr) {
+      console.warn(`[factuur-verzenden] pakbon: zending_nr ophalen mislukt: ${zErr.message}`)
+      return []
+    }
+    const zendingRijen = (zData ?? []) as Array<{ zending_nr: string }>
+    const zendingNrs = zendingRijen.map((r) => String(r.zending_nr)).filter(Boolean)
+    if (zendingNrs.length === 0) return []
+
+    const { bedrijf, logo } = await fetchBedrijfMetLogo(supabase)
+
+    const bijlagen: PakbonBijlage[] = []
+    for (const zendingNr of zendingNrs) {
+      try {
+        const zending = await fetchPakbonZending(supabase, zendingNr)
+        const doc = bouwPakbonDocument(zending)
+        const bytes = await genereerPakbonPDF(doc, bedrijf, logo)
+        const filename = `Pakbon-${zendingNr}.pdf`
+
+        // Storage-upload óók best-effort: lukt het, dan krijgt de pakbon een
+        // e-mailtijdlijn-referentie (signed URL). Faalt het, dan gaat de pakbon
+        // nog steeds als bijlage mee — alleen zonder tijdlijn-ref.
+        let bucket: string | undefined
+        let path: string | undefined
+        try {
+          const kandidaatPad = `${debiteurNr}/pakbon/${zendingNr}.pdf`
+          const up = await supabase.storage
+            .from('facturen')
+            .upload(kandidaatPad, bytes, { contentType: 'application/pdf', upsert: true })
+          if (!up.error) {
+            bucket = 'facturen'
+            path = kandidaatPad
+          }
+        } catch {
+          // upload mislukt — bijlage gaat zonder tijdlijn-ref mee
+        }
+
+        bijlagen.push({ filename, content: bytes, bucket, path })
+      } catch (err) {
+        console.warn(`[factuur-verzenden] pakbon ${zendingNr} overgeslagen: ${err}`)
+      }
+    }
+    return bijlagen
+  } catch (err) {
+    console.warn(`[factuur-verzenden] pakbon-bijlagen mislukt: ${err}`)
+    return []
   }
 }
 

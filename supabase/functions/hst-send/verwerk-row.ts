@@ -43,8 +43,9 @@ export interface HstTransportOrderRow {
   debiteur_nr: number | null;
   status: string;
   is_test: boolean;
-  // HST kent geen bestandsnaam, maar de skeleton-basis heeft 'm optioneel.
-  bestandsnaam?: string | null;
+  // HST gebruikt geen SFTP-bestandsnaam; het veld bestaat op de wachtrij-rij maar
+  // blijft NULL (geen maakBestandsnaam → skeleton leest 't niet).
+  extern_referentie?: string | null;
 }
 
 export interface HstSecrets {
@@ -68,7 +69,7 @@ const FASE_CODE: Record<VerzendFase, string> = {
 
 export const hstAdapter: VerzendAdapter<HstTransportOrderRow, HstSecrets, HstTransportOrderPayload, HstResponse> = {
   kanaal: 'hst',
-  capabilityCode: 'hst_api',
+  vervoerderCode: 'hst_api',
   contentType: 'application/json',
   zendingSelect:
     'zending_nr, order_id, afl_naam, afl_adres, afl_postcode, afl_plaats, afl_land, afl_telefoon, afl_email, totaal_gewicht_kg, aantal_colli, opmerkingen, verzenddatum',
@@ -84,8 +85,8 @@ export const hstAdapter: VerzendAdapter<HstTransportOrderRow, HstSecrets, HstTra
   // payload-builder valt terug op pallet-default-afmetingen.
   preflightColli: () => [],
 
-  // REST → geen bestandsnaam-dedup.
-  bestandsnaamTabel: null,
+  // REST → geen bestandsnaam-dedup (geen maakBestandsnaam → skeleton slaat de
+  // extern_referentie-persist-stap over).
 
   bouwPayload: ({ z, order, bedrijf, colli, ctx }) =>
     bouwTransportOrderPayload({
@@ -117,23 +118,30 @@ export const hstAdapter: VerzendAdapter<HstTransportOrderRow, HstSecrets, HstTra
     tracking_number: r.trackingNumber,
   }),
 
-  onSucces: async (supabase, row, _ctx, z, payload, r, _bestandsnaam, summary) => {
-    // PDF naar storage als HST 'm meegaf (best-effort: een mislukte upload mag
-    // het HST-succes niet ongedaan maken — POST is al gelukt).
-    let pdfPath: string | null = null;
-    let pdfUploadedAt: string | null = null;
+  // PDF-vrachtbrief naar storage als HST 'm meegaf (best-effort: een mislukte
+  // upload mag het HST-succes niet ongedaan maken — POST is al gelukt). De
+  // skeleton zet het pad als document_pad in markeer_transportorder_verstuurd
+  // → spiegel-trigger naar order_documenten (mig 304 → mig 426).
+  bewaarArtefact: async (supabase, z, _payload, r, _bestandsnaam) => {
     const zendingNr = z.zending_nr as string | null;
-    if (r.pdfBase64 && zendingNr) {
-      const path = `hst-vrachtbrieven/${zendingNr}.pdf`;
-      const upErr = await uploadPdf(supabase, path, r.pdfBase64);
-      if (upErr) {
-        console.error(`PDF-upload voor zending ${row.zending_id} faalde: ${upErr}`);
-      } else {
-        pdfPath = path;
-        pdfUploadedAt = new Date().toISOString();
-      }
+    if (!r.pdfBase64 || !zendingNr) return null;
+    const path = `hst-vrachtbrieven/${zendingNr}.pdf`;
+    const upErr = await uploadPdf(supabase, path, r.pdfBase64);
+    if (upErr) {
+      console.error(`PDF-upload voor zending ${zendingNr} faalde: ${upErr}`);
+      return null;
     }
+    return path;
+  },
 
+  // Generieke verstuurd-velden. zending.track_trace kreeg voorheen
+  // COALESCE(tracking_number, transport_order_id) — hier expliciet gemaakt.
+  uitkomst: (_z, _payload, r) => ({
+    externReferentie: r.transportOrderId ?? null,
+    trackTrace: r.trackingNumber ?? r.transportOrderId ?? null,
+  }),
+
+  noteerSucces: (row, r, _bestandsnaam, summary) => {
     summary.succeeded += 1;
     summary.details.push({
       id: row.id,
@@ -142,19 +150,8 @@ export const hstAdapter: VerzendAdapter<HstTransportOrderRow, HstSecrets, HstTra
       transportOrderId: r.transportOrderId,
       httpCode: r.httpCode,
     });
-    await supabase.rpc('markeer_hst_verstuurd', {
-      p_id: row.id,
-      p_extern_transport_order_id: r.transportOrderId,
-      p_extern_tracking_number: r.trackingNumber,
-      p_request_payload: payload,
-      p_response_payload: r.body,
-      p_response_http_code: r.httpCode,
-      p_pdf_path: pdfPath,
-      p_pdf_uploaded_at: pdfUploadedAt,
-    });
   },
-
-  onFout: async (supabase, row, payload, r, summary) => {
+  noteerFout: (row, r, summary) => {
     summary.failed += 1;
     summary.details.push({
       id: row.id,
@@ -163,20 +160,11 @@ export const hstAdapter: VerzendAdapter<HstTransportOrderRow, HstSecrets, HstTra
       httpCode: r.httpCode,
       error: r.errorMsg ?? 'onbekende fout',
     });
-    await supabase.rpc('markeer_hst_fout', {
-      p_id: row.id,
-      p_error: r.errorMsg ?? 'onbekende fout',
-      p_request_payload: payload,
-      p_response_payload: r.body,
-      p_response_http_code: r.httpCode,
-      p_max_retries: 3,
-    });
   },
-
-  markFout: async (supabase, row, summary, _melding, fase) => {
+  // HST logt de fase-CODE in summary.details i.p.v. de melding (gedragsneutraal).
+  noteerMarkFout: (row, _melding, fase, summary) => {
     summary.failed += 1;
     summary.details.push({ id: row.id, zending_id: row.zending_id, status: 'error', error: FASE_CODE[fase] });
-    await supabase.rpc('markeer_hst_fout', { p_id: row.id, p_error: _melding, p_max_retries: 3 });
   },
 };
 

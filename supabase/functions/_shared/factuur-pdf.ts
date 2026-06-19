@@ -11,6 +11,7 @@ import {
   rgb,
 } from 'https://esm.sh/pdf-lib@1.17.1'
 import { normalizeCountry } from './adres-split.ts'
+import { type Taal, vertaalOmschrijving } from './klant-taal.ts'
 
 // ---------------------------------------------------------------------------
 // Types (exported — re-used by factuur-verzenden edge function)
@@ -110,6 +111,108 @@ export interface FactuurPDFInput {
   factuur: FactuurHeader
   regels: FactuurPDFRegel[]
   logo?: LogoOptie
+  // Taal van de statische labels + regel-vaktermen. Default 'nl' (backwards-compat).
+  // Bepaald door de caller uit het land van het factuuradres (zie factuur-pdf /
+  // factuur-verzenden edge functions). Bedragen/datum blijven NL-formaat.
+  taal?: Taal
+}
+
+// ---------------------------------------------------------------------------
+// Taal: statische factuur-labels per taal (nl/de/fr/en). Bedragen, datums en
+// kwaliteitnamen blijven ongemoeid; alleen vaste teksten + regel-vaktermen
+// (via vertaalOmschrijving) volgen de klanttaal.
+// ---------------------------------------------------------------------------
+
+interface FactuurTeksten {
+  titel: string
+  debiteurnummer: string
+  factuurnummer: string
+  factuurdatum: string
+  vertegenwoordiger: string
+  colArtikel: string
+  colAantal: string
+  colEh: string
+  colOmschrijving: string
+  colPrijs: string
+  colBedrag: string
+  onsOrdernummer: string
+  uwReferentie: string
+  afleveradres: string
+  transporteren: string
+  transport: string
+  blad: string
+  grondslag: string
+  btwPct: string
+  btwBedrag: string
+  teBetalen: string
+  btwVerlegd: string
+  btwNrAfnemer: string
+  totaalM2: string
+  totaalGewicht: string
+  betalingscond: string
+}
+
+const FACTUUR_TEKSTEN: Record<Taal, FactuurTeksten> = {
+  nl: {
+    titel: 'FACTUUR',
+    debiteurnummer: 'Uw debiteurnummer',
+    factuurnummer: 'Factuurnummer',
+    factuurdatum: 'Factuurdatum',
+    vertegenwoordiger: 'Vertegenwoordiger',
+    colArtikel: 'Artikel', colAantal: 'Aantal', colEh: 'Eh',
+    colOmschrijving: 'Omschrijving', colPrijs: 'Prijs', colBedrag: 'Bedrag',
+    onsOrdernummer: 'Ons Ordernummer', uwReferentie: 'Uw Referentie', afleveradres: 'Afleveradres',
+    transporteren: 'TRANSPORTEREN', transport: 'TRANSPORT', blad: 'BLAD',
+    grondslag: 'Grondsl.', btwPct: 'BTW %', btwBedrag: 'BTWbedrag', teBetalen: 'Te Betalen',
+    btwVerlegd: 'BTW verlegd', btwNrAfnemer: 'btw-nr afnemer',
+    totaalM2: 'Totaal m2', totaalGewicht: 'Totaal gewicht (kg)',
+    betalingscond: 'Betalingscond.',
+  },
+  de: {
+    titel: 'RECHNUNG',
+    debiteurnummer: 'Ihre Kundennummer',
+    factuurnummer: 'Rechnungsnummer',
+    factuurdatum: 'Rechnungsdatum',
+    vertegenwoordiger: 'Vertreter',
+    colArtikel: 'Artikel', colAantal: 'Menge', colEh: 'Einh.',
+    colOmschrijving: 'Bezeichnung', colPrijs: 'Preis', colBedrag: 'Betrag',
+    onsOrdernummer: 'Unsere Auftragsnr.', uwReferentie: 'Ihre Referenz', afleveradres: 'Lieferadresse',
+    transporteren: 'ÜBERTRAG', transport: 'ÜBERTRAG', blad: 'BLATT',
+    grondslag: 'Grundlage', btwPct: 'MwSt. %', btwBedrag: 'MwSt.-Betrag', teBetalen: 'Zu zahlen',
+    btwVerlegd: 'Steuerschuldnerschaft des Leistungsempfängers', btwNrAfnemer: 'USt-IdNr. Empfänger',
+    totaalM2: 'Gesamt m2', totaalGewicht: 'Gesamtgewicht (kg)',
+    betalingscond: 'Zahlungsbedingungen',
+  },
+  fr: {
+    titel: 'FACTURE',
+    debiteurnummer: 'Votre numéro de client',
+    factuurnummer: 'Numéro de facture',
+    factuurdatum: 'Date de facture',
+    vertegenwoordiger: 'Représentant',
+    colArtikel: 'Article', colAantal: 'Quantité', colEh: 'Un.',
+    colOmschrijving: 'Description', colPrijs: 'Prix', colBedrag: 'Montant',
+    onsOrdernummer: 'Notre n° commande', uwReferentie: 'Votre référence', afleveradres: 'Adresse de livraison',
+    transporteren: 'À REPORTER', transport: 'REPORT', blad: 'PAGE',
+    grondslag: 'Base HT', btwPct: 'TVA %', btwBedrag: 'Montant TVA', teBetalen: 'À payer',
+    btwVerlegd: 'Autoliquidation de la TVA', btwNrAfnemer: 'n° TVA client',
+    totaalM2: 'Total m2', totaalGewicht: 'Poids total (kg)',
+    betalingscond: 'Conditions de paiement',
+  },
+  en: {
+    titel: 'INVOICE',
+    debiteurnummer: 'Your customer number',
+    factuurnummer: 'Invoice number',
+    factuurdatum: 'Invoice date',
+    vertegenwoordiger: 'Sales representative',
+    colArtikel: 'Item', colAantal: 'Qty', colEh: 'Un.',
+    colOmschrijving: 'Description', colPrijs: 'Price', colBedrag: 'Amount',
+    onsOrdernummer: 'Our order number', uwReferentie: 'Your reference', afleveradres: 'Delivery address',
+    transporteren: 'CARRIED FORWARD', transport: 'BROUGHT FORWARD', blad: 'SHEET',
+    grondslag: 'Net amount', btwPct: 'VAT %', btwBedrag: 'VAT amount', teBetalen: 'Amount due',
+    btwVerlegd: 'VAT reverse charged', btwNrAfnemer: 'VAT no. customer',
+    totaalM2: 'Total m2', totaalGewicht: 'Total weight (kg)',
+    betalingscond: 'Payment terms',
+  },
 }
 
 // ---------------------------------------------------------------------------
@@ -297,6 +400,7 @@ function drawPageHeader(
   bedrijf: BedrijfsInfo,
   regular: PDFFont,
   bold: PDFFont,
+  t: FactuurTeksten,
   logoImage: { width: number; height: number; draw: (x: number, y: number, w: number, h: number) => void } | null,
 ) {
   // Logo gecentreerd. Iets kleiner dan eerst (18mm) zodat de rechter-tekst
@@ -343,8 +447,8 @@ function drawPageHeader(
   drawTextRight(page, telFax, rightX, telY, regular, SIZE)
   drawTextRight(page, `e ${bedrijf.email} | i ${bedrijf.website}`, rightX, emailY, regular, SIZE)
 
-  // "FACTUUR" links (klein, bold). Zit onder het logo.
-  drawText(page, 'FACTUUR', MARGIN_L, HEADER_TITLE_Y, bold, 9)
+  // Factuur-titel links (klein, bold). Zit onder het logo.
+  drawText(page, t.titel, MARGIN_L, HEADER_TITLE_Y, bold, 9)
 }
 
 /**
@@ -356,6 +460,7 @@ function drawFirstPageBlocks(
   factuur: FactuurHeader,
   regular: PDFFont,
   bold: PDFFont,
+  t: FactuurTeksten,
 ) {
   // Klant-blok (left) — Karpi-template: alle regels regular (geen bold op naam)
   let y = KLANT_BLOCK_Y
@@ -366,18 +471,22 @@ function drawFirstPageBlocks(
   y -= LINE_H
   drawText(page, `${factuur.fact_postcode}  ${factuur.fact_plaats}`, MARGIN_L, y, regular, 10)
 
-  // Info-blok (right) — labels 9pt
+  // Info-blok (right) — labels 9pt; colons uitlijnen op de langste label per taal
+  // (Courier monospace → padding op tekenaantal volstaat).
   const infoX = PAGE_W - 90 * MM
   const SIZE = 9
   let iy = INFO_BLOCK_Y
+  const labelW = Math.max(
+    t.debiteurnummer.length, t.factuurnummer.length, t.factuurdatum.length, t.vertegenwoordiger.length,
+  )
 
-  drawText(page, `Uw debiteurnummer: ${factuur.debiteur_nr}`, infoX, iy, regular, SIZE)
+  drawText(page, `${padLabel(t.debiteurnummer, labelW)}: ${factuur.debiteur_nr}`, infoX, iy, regular, SIZE)
   iy -= LINE_H
-  drawText(page, `Factuurnummer    : ${factuur.factuur_nr}`, infoX, iy, regular, SIZE)
+  drawText(page, `${padLabel(t.factuurnummer, labelW)}: ${factuur.factuur_nr}`, infoX, iy, regular, SIZE)
   iy -= LINE_H
-  drawText(page, `Factuurdatum     : ${formatDatumNL(factuur.factuurdatum)}`, infoX, iy, regular, SIZE)
+  drawText(page, `${padLabel(t.factuurdatum, labelW)}: ${formatDatumNL(factuur.factuurdatum)}`, infoX, iy, regular, SIZE)
   iy -= LINE_H
-  drawText(page, `Vertegenwoordiger: ${factuur.vertegenwoordiger}`, infoX, iy, regular, SIZE)
+  drawText(page, `${padLabel(t.vertegenwoordiger, labelW)}: ${factuur.vertegenwoordiger}`, infoX, iy, regular, SIZE)
 }
 
 /**
@@ -390,17 +499,18 @@ function drawTableHeader(
   y: number,
   regular: PDFFont,
   bold: PDFFont,
+  t: FactuurTeksten,
 ): number {
   // Streep BOVEN de header-labels (zoals in het Karpi-template)
   drawHLine(page, y + LINE_H - 1 * MM)
 
   const SIZE = 9
-  drawText(page, 'Artikel',       COL_ARTIKEL,        y, bold, SIZE)
-  drawTextRight(page, 'Aantal',   COL_AANTAL + COL_AANTAL_W, y, bold, SIZE)
-  drawText(page, 'Eh',            COL_EH,             y, bold, SIZE)
-  drawText(page, 'Omschrijving',  COL_OMSCHR,         y, bold, SIZE)
-  drawTextRight(page, 'Prijs',    COL_PRIJS,          y, bold, SIZE)
-  drawTextRight(page, 'Bedrag',   COL_BEDRAG,         y, bold, SIZE)
+  drawText(page, t.colArtikel,       COL_ARTIKEL,        y, bold, SIZE)
+  drawTextRight(page, t.colAantal,   COL_AANTAL + COL_AANTAL_W, y, bold, SIZE)
+  drawText(page, t.colEh,            COL_EH,             y, bold, SIZE)
+  drawText(page, t.colOmschrijving,  COL_OMSCHR,         y, bold, SIZE)
+  drawTextRight(page, t.colPrijs,    COL_PRIJS,          y, bold, SIZE)
+  drawTextRight(page, t.colBedrag,   COL_BEDRAG,         y, bold, SIZE)
 
   // Streep ONDER de header-labels
   const lineY = y - 1 * MM
@@ -420,16 +530,17 @@ function drawBtwBlok(
   bedrijf: BedrijfsInfo,
   regular: PDFFont,
   bold: PDFFont,
+  t: FactuurTeksten,
 ): number {
   y -= LINE_H  // blank line before block
 
   // Optionele "Totaal m2 / Totaal gewicht"-regel boven het BTW-blok
   if (factuur.totaal_m2 !== undefined || factuur.totaal_gewicht_kg !== undefined) {
     const m2Str = factuur.totaal_m2 !== undefined
-      ? `Totaal m2: ${factuur.totaal_m2.toFixed(2)}`
+      ? `${t.totaalM2}: ${factuur.totaal_m2.toFixed(2)}`
       : ''
     const gewichtStr = factuur.totaal_gewicht_kg !== undefined
-      ? `Totaal gewicht (kg): ${factuur.totaal_gewicht_kg.toFixed(2)}`
+      ? `${t.totaalGewicht}: ${factuur.totaal_gewicht_kg.toFixed(2)}`
       : ''
     const samen = [m2Str, gewichtStr].filter(Boolean).join('   ')
     drawText(page, samen, MARGIN_L + 5 * MM, y, regular, 9)
@@ -447,8 +558,8 @@ function drawBtwBlok(
   if (factuur.btw_verlegd) {
     // Mig 371: intracommunautaire verlegging — geen BTW-kolommen, wel de
     // wettelijk vereiste vermelding "BTW verlegd" + btw-nummer van de afnemer.
-    drawText(page, 'Grondsl.', MARGIN_L, y, bold, SIZE_BOLD)
-    drawTextRight(page, 'Te Betalen', COL_BEDRAG, y, bold, SIZE_BOLD)
+    drawText(page, t.grondslag, MARGIN_L, y, bold, SIZE_BOLD)
+    drawTextRight(page, t.teBetalen, COL_BEDRAG, y, bold, SIZE_BOLD)
 
     y -= 1 * MM
     drawHLine(page, y)
@@ -459,14 +570,14 @@ function drawBtwBlok(
     y -= LINE_H
 
     const verlegdTekst = factuur.btw_nummer_afnemer
-      ? `BTW verlegd — btw-nr afnemer: ${factuur.btw_nummer_afnemer}`
-      : 'BTW verlegd'
+      ? `${t.btwVerlegd} — ${t.btwNrAfnemer}: ${factuur.btw_nummer_afnemer}`
+      : t.btwVerlegd
     drawText(page, verlegdTekst, MARGIN_L, y, bold, SIZE_BOLD)
   } else {
-    drawText(page, 'Grondsl.', MARGIN_L, y, bold, SIZE_BOLD)
-    drawText(page, 'BTW %', MARGIN_L + 30 * MM, y, bold, SIZE_BOLD)
-    drawText(page, 'BTWbedrag', MARGIN_L + 50 * MM, y, bold, SIZE_BOLD)
-    drawTextRight(page, 'Te Betalen', COL_BEDRAG, y, bold, SIZE_BOLD)
+    drawText(page, t.grondslag, MARGIN_L, y, bold, SIZE_BOLD)
+    drawText(page, t.btwPct, MARGIN_L + 30 * MM, y, bold, SIZE_BOLD)
+    drawText(page, t.btwBedrag, MARGIN_L + 50 * MM, y, bold, SIZE_BOLD)
+    drawTextRight(page, t.teBetalen, COL_BEDRAG, y, bold, SIZE_BOLD)
 
     y -= 1 * MM
     drawHLine(page, y)
@@ -483,7 +594,7 @@ function drawBtwBlok(
   y -= LINE_H
 
   // Payment conditions
-  drawText(page, `Betalingscond.: ${bedrijf.betalingscondities_tekst}`, MARGIN_L, y, regular, 8)
+  drawText(page, `${t.betalingscond}: ${bedrijf.betalingscondities_tekst}`, MARGIN_L, y, regular, 8)
 
   return y
 }
@@ -571,6 +682,12 @@ function drawWrappedText(
 
 export async function genereerFactuurPDF(input: FactuurPDFInput): Promise<Uint8Array> {
   const { bedrijf, factuur, regels, logo } = input
+  const taal: Taal = input.taal ?? 'nl'
+  const t = FACTUUR_TEKSTEN[taal]
+  // Order-header-labels uitlijnen op de langste vertaalde label (Courier monospace).
+  const orderLabelBreedte = Math.max(
+    ORDER_LABEL_BREEDTE, t.onsOrdernummer.length, t.uwReferentie.length, t.afleveradres.length,
+  )
 
   const pdfDoc = await PDFDocument.create()
   const regular = await pdfDoc.embedFont(StandardFonts.Courier)
@@ -596,15 +713,15 @@ export async function genereerFactuurPDF(input: FactuurPDFInput): Promise<Uint8A
         }
       : null
 
-    drawPageHeader(page, bedrijf, regular, bold, pageLogoImage)
+    drawPageHeader(page, bedrijf, regular, bold, t, pageLogoImage)
     drawFooter(page, bedrijf, regular)
 
     if (!isContinuation) {
-      drawFirstPageBlocks(page, factuur, regular, bold)
-      const cursorY = drawTableHeader(page, TABLE_HEADER_Y_P1, regular, bold)
+      drawFirstPageBlocks(page, factuur, regular, bold, t)
+      const cursorY = drawTableHeader(page, TABLE_HEADER_Y_P1, regular, bold, t)
       return { page, cursorY }
     } else {
-      const cursorY = drawTableHeader(page, TABLE_HEADER_Y_CN, regular, bold)
+      const cursorY = drawTableHeader(page, TABLE_HEADER_Y_CN, regular, bold, t)
       return { page, cursorY }
     }
   }
@@ -628,9 +745,9 @@ export async function genereerFactuurPDF(input: FactuurPDFInput): Promise<Uint8A
 
   // Helper: 3-koloms transport-regel zoals Karpi-template:
   // "TRANSPORTEREN     BLAD     762.49"  → label rechts, BLAD rechts, bedrag rechts.
-  function drawTransportRegel(targetPage: PDFPage, y: number, label: 'TRANSPORTEREN' | 'TRANSPORT', bedrag: number): void {
+  function drawTransportRegel(targetPage: PDFPage, y: number, label: string, bedrag: number): void {
     drawTextRight(targetPage, label, COL_TRANSP_LABEL, y, bold, 9)
-    drawTextRight(targetPage, 'BLAD', COL_TRANSP_BLAD, y, bold, 9)
+    drawTextRight(targetPage, t.blad, COL_TRANSP_BLAD, y, bold, 9)
     drawTextRight(targetPage, formatBedrag(bedrag), COL_BEDRAG, y, bold, 9)
   }
 
@@ -643,8 +760,8 @@ export async function genereerFactuurPDF(input: FactuurPDFInput): Promise<Uint8A
       const { page: newPage, cursorY: newCursorStart } = addPage(true)
       const transportY = BODY_STOP - LINE_H
 
-      drawTransportRegel(page, transportY, 'TRANSPORTEREN', paginaTotaal)
-      drawTransportRegel(newPage, newCursorStart, 'TRANSPORT', paginaTotaal)
+      drawTransportRegel(page, transportY, t.transporteren, paginaTotaal)
+      drawTransportRegel(newPage, newCursorStart, t.transport, paginaTotaal)
 
       page = newPage
       cursorY = newCursorStart - LINE_H
@@ -664,18 +781,18 @@ export async function genereerFactuurPDF(input: FactuurPDFInput): Promise<Uint8A
     // Blank line
     cursorY -= LINE_H
 
-    // Group header lines — labels op vaste prefix-breedte zodat alle ":" uitlijnen.
-    drawText(page, `${padLabel('Ons Ordernummer', ORDER_LABEL_BREEDTE)}: ${orderNr}`, MARGIN_L, cursorY, regular, 9)
+    // Group header lines — labels op (taal-afhankelijke) prefix-breedte zodat alle ":" uitlijnen.
+    drawText(page, `${padLabel(t.onsOrdernummer, orderLabelBreedte)}: ${orderNr}`, MARGIN_L, cursorY, regular, 9)
     cursorY -= LINE_H
-    drawText(page, `${padLabel('Uw Referentie', ORDER_LABEL_BREEDTE)}: ${eersteRegel.uw_referentie}`, MARGIN_L, cursorY, regular, 9)
+    drawText(page, `${padLabel(t.uwReferentie, orderLabelBreedte)}: ${eersteRegel.uw_referentie}`, MARGIN_L, cursorY, regular, 9)
     cursorY -= LINE_H
 
     if (aflever) {
       // "Afleveradres    : <naam>"
-      drawText(page, `${padLabel('Afleveradres', ORDER_LABEL_BREEDTE)}: ${aflever.naam}`, MARGIN_L, cursorY, regular, 9)
+      drawText(page, `${padLabel(t.afleveradres, orderLabelBreedte)}: ${aflever.naam}`, MARGIN_L, cursorY, regular, 9)
       cursorY -= LINE_H
       // Vervolgregels op dezelfde indent als de waarde (na ": ")
-      const indentX = MARGIN_L + (regular.widthOfTextAtSize(`${padLabel('Afleveradres', ORDER_LABEL_BREEDTE)}: `, 9))
+      const indentX = MARGIN_L + (regular.widthOfTextAtSize(`${padLabel(t.afleveradres, orderLabelBreedte)}: `, 9))
       if (aflever.naam_2) {
         drawText(page, aflever.naam_2, indentX, cursorY, regular, 9)
         cursorY -= LINE_H
@@ -698,10 +815,14 @@ export async function genereerFactuurPDF(input: FactuurPDFInput): Promise<Uint8A
       // Wrap lange omschrijving over hoofdregel + 0..n vervolgregels.
       // Voorbeeld: "Drempelkorting verzending — vanaf €35.00" past niet naast de prijs,
       // dus de staart komt op een tweede regel onder de hoofdregel.
+      // Vaktermen worden in de klanttaal vertaald (NL = no-op; kwaliteitnaam + "cm"
+      // blijven ongemoeid omdat ze geen woordenboek-treffer zijn).
       const { eerste: omschrijvingEerste, vervolg: omschrijvingVervolg } =
-        splitOmschrijvingOverRegels(r.omschrijving, OMSCHR_MAX_W, EXTRA_MAX_W, regular, SIZE)
+        splitOmschrijvingOverRegels(vertaalOmschrijving(r.omschrijving, taal), OMSCHR_MAX_W, EXTRA_MAX_W, regular, SIZE)
 
-      const extraRegels = r.omschrijving_2 ? r.omschrijving_2.split('\n').filter(s => s.length > 0) : []
+      const extraRegels = r.omschrijving_2
+        ? r.omschrijving_2.split('\n').filter(s => s.length > 0).map(s => vertaalOmschrijving(s, taal))
+        : []
       const rowCount = 1 + omschrijvingVervolg.length + extraRegels.length
       ensureRoom(rowCount * (LINE_H / MM))
 
@@ -733,7 +854,7 @@ export async function genereerFactuurPDF(input: FactuurPDFInput): Promise<Uint8A
   }
 
   // Draw BTW / payment block on last page
-  drawBtwBlok(page, cursorY, factuur, bedrijf, regular, bold)
+  drawBtwBlok(page, cursorY, factuur, bedrijf, regular, bold, t)
 
   return pdfDoc.save()
 }

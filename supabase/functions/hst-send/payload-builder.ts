@@ -24,21 +24,35 @@ import type {
   ZendingInput,
 } from './types.ts';
 
-// Defaults voor velden die V1 nog niet uit Pick & Ship krijgt. Pas aan zodra
-// de werkelijke pakket-afmetingen + service-keuze per zending bekend zijn.
 const DEFAULT_ORDER_TYPE = 'DELIVERY_LARGE';
-const DEFAULT_SHIPPING_SERVICE_ID = 'FFBL';
-const DEFAULT_PACKAGE_UNIT_ID = 'SP';
+// Verzendeenheid "Colli" — HST-code, kleine letters. Door HST bevestigd via een
+// live test (T75038267004386, 2026-06-18); 'SP' (= Wegwerp pallet) was de oude
+// default. Codelijst staat niet in HST's OpenAPI (vrij stringveld). Zie
+// fixtures/README.md.
+const DEFAULT_PACKAGE_UNIT_ID = 'col';
 const DEFAULT_GOODS_DESCRIPTION = 'Tapijten';
-// Standaard pallet-achtige afmetingen (cm). Bewust niet 0 — HST verwerpt soms
-// 0-waarden. Bron-van-waarheid = de HST-capability-descriptor (ADR-0034);
-// vervangen door werkelijke meting zodra Pick & Ship die levert.
+// Karpi verstuurt opgerolde tapijtrollen: de colli-LENGTE = de korte zijde van
+// het tapijt (uit de zending_colli-snapshot, mig 399), BREEDTE en HOOGTE = de
+// vaste rol-diameter (30 cm). Bewust niet 0 — HST verwerpt soms 0-waarden.
+const ROL_BREEDTE_CM = 30;
+const ROL_HOOGTE_CM = 30;
+// Fallback-afmeting (lengte als de colli geen maat draagt — zeldzaam sinds mig
+// 399) + gewicht-fallback. Bron-van-waarheid = de HST-capability-descriptor
+// (ADR-0034).
 const HST_DEFAULT_AFMETINGEN = capabilityVoor('hst_api')?.defaultAfmetingen ??
   { lengteCm: 120, breedteCm: 80, hoogteCm: 20, gewichtKg: 1 };
 const DEFAULT_LENGTH_CM = HST_DEFAULT_AFMETINGEN.lengteCm;
-const DEFAULT_WIDTH_CM = HST_DEFAULT_AFMETINGEN.breedteCm;
-const DEFAULT_HEIGHT_CM = HST_DEFAULT_AFMETINGEN.hoogteCm;
 const DEFAULT_WEIGHT_KG = HST_DEFAULT_AFMETINGEN.gewichtKg;
+
+// Korte zijde van het tapijt = de lengte van de opgerolde colli: de kleinste
+// van lengte/breedte (cm). Valt terug op de default als geen maat bekend is.
+function korteZijdeCm(
+  lengte: number | null | undefined,
+  breedte: number | null | undefined,
+): number {
+  const maten = [lengte, breedte].filter((m): m is number => typeof m === 'number' && m > 0);
+  return maten.length > 0 ? Math.min(...maten) : DEFAULT_LENGTH_CM;
+}
 
 export interface BouwTransportOrderArgs {
   zending: ZendingInput;
@@ -74,13 +88,10 @@ export function bouwTransportOrderPayload(
     // BarCode-velden meesturen (= zodra colli's bestaan).
     HasBarcode: colli.length > 0,
     TransportOrderLines: lines,
-    ShippingServices: [
-      {
-        ShippingServiceID: DEFAULT_SHIPPING_SERVICE_ID,
-        // ExtraInformation = order_nr als secundaire ref voor HST-medewerkers.
-        ExtraInformation: order.order_nr,
-      },
-    ],
+    // Geen ShippingServices: "bellen voor aflevering" (FFBL) is bewust uit
+    // (besluit 2026-06-18) — een lege lijst accepteert HST (live getest). Extra
+    // diensten worden hier toegevoegd zodra Karpi ze gaat gebruiken.
+    ShippingServices: [],
     ToAddress: bouwAddressUitZending(zending),
     FromAddress: bouwAddressUitBedrijf(bedrijf),
   };
@@ -92,9 +103,9 @@ function bouwLineUitColli(c: ZendingColliInput, order: OrderInput): HstTransport
     GoodsOnPallet: 0,
     GoodsDescription: c.omschrijving_snapshot ?? `${DEFAULT_GOODS_DESCRIPTION} (${order.order_nr})`,
     ExchangePacking: false,
-    Length: DEFAULT_LENGTH_CM,
-    Width: DEFAULT_WIDTH_CM,
-    Height: DEFAULT_HEIGHT_CM,
+    Length: korteZijdeCm(c.lengte_cm, c.breedte_cm),
+    Width: ROL_BREEDTE_CM,
+    Height: ROL_HOOGTE_CM,
     Weight: c.gewicht_kg ?? DEFAULT_WEIGHT_KG,
     // De labelbarcode (AI(00)+SSCC) uit de gedeelde seam — exact wat op het
     // label staat en bij elke vervoerder wordt aangemeld (single source).
@@ -109,13 +120,14 @@ function bouwAggregateLine(zending: ZendingInput, order: OrderInput): HstTranspo
     GoodsOnPallet: 0,
     GoodsDescription: `${DEFAULT_GOODS_DESCRIPTION} (${order.order_nr})`,
     ExchangePacking: false,
-    Length: DEFAULT_LENGTH_CM,
-    Width: DEFAULT_WIDTH_CM,
-    // Fallback-pad (geen colli-rijen). Sinds mig 389 is
+    // Fallback-pad (geen colli-rijen) → geen colli-maat beschikbaar: lengte op
+    // de default, breedte/hoogte op de vaste rol-diameter. Sinds mig 389 is
     // zendingen.totaal_gewicht_kg een trigger-afgeleide van
     // SUM(zending_colli.gewicht_kg), dus dit totaal is consistent met het
     // per-colli-pad en met wat Rhenus/Verhoek sommeren (audit A2).
-    Height: DEFAULT_HEIGHT_CM,
+    Length: DEFAULT_LENGTH_CM,
+    Width: ROL_BREEDTE_CM,
+    Height: ROL_HOOGTE_CM,
     Weight: zending.totaal_gewicht_kg ?? DEFAULT_WEIGHT_KG,
     BarCode: { BarCode: '' },
     PackageUnitID: DEFAULT_PACKAGE_UNIT_ID,
@@ -150,7 +162,8 @@ function bouwAddressUitZending(zending: ZendingInput): HstAddress {
     StreetNumber: number,
     StreetNumberAddition: toevoeging.streetNumberAddition,
     ZipCode: normalizeZip(zending.afl_postcode ?? ''),
-    City: zending.afl_plaats ?? '',
+    // Stad in hoofdletters — zoals het oude systeem die ook aanleverde.
+    City: (zending.afl_plaats ?? '').toUpperCase(),
     PhoneNumber: zending.afl_telefoon ?? '',
     // Aflever-e-mailadres = track & trace-contact (mig 365). Bewust nooit een
     // factuur-adres — de klant moet wél de T&T krijgen maar niet de factuur.
@@ -170,7 +183,7 @@ function bouwAddressUitBedrijf(bedrijf: BedrijfInput): HstAddress {
     StreetNumber: number,
     StreetNumberAddition: toevoeging.streetNumberAddition,
     ZipCode: normalizeZip(bedrijf.postcode),
-    City: bedrijf.plaats,
+    City: bedrijf.plaats.toUpperCase(),
     PhoneNumber: bedrijf.telefoon,
     Email: bedrijf.email,
     Country: normalizeCountry(bedrijf.land),

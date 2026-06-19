@@ -1,7 +1,8 @@
 // Supabase Edge Function: rhenus-send
 //
 // Cron-driven sender voor Rhenus-XML's (ADR-0032). Claimt 'Wachtrij'-rijen
-// uit `rhenus_transportorders`, bouwt per zending een GS1
+// uit de gedeelde `verzend_wachtrij` (vervoerder_code='rhenus_sftp', ADR-0038),
+// bouwt per zending een GS1
 // TransportInstruction-XML (RHE 3.1) en levert die via SFTP aan bij Rhenus
 // (/in-map). Audit: externe_payloads (kanaal 'rhenus', elke poging een rij)
 // + XML-kopie in storage (order-documenten/rhenus-xml/).
@@ -73,7 +74,7 @@ Deno.serve(async (req) => {
 
   // Zelfhelend (mig 380-reaper): herstel rijen die vastliepen in 'Bezig'.
   try {
-    const { data: hersteld } = await supabase.rpc('herstel_vastgelopen_rhenus', { p_minuten: 10 });
+    const { data: hersteld } = await supabase.rpc('herstel_vastgelopen_verzending', { p_vervoerder_code: 'rhenus_sftp', p_minuten: 10 });
     if (hersteld && Number(hersteld) > 0) {
       console.log(`[rhenus-send] reaper: ${hersteld} vastgelopen Bezig-rij(en) terug naar Wachtrij`);
     }
@@ -88,7 +89,7 @@ Deno.serve(async (req) => {
     // Tijdsbudget: ruim binnen de edge-wall-clock blijven; de rest van de
     // wachtrij pakt de volgende cron-run (elke minuut) op.
     if (Date.now() - runStart > 60_000) break;
-    const { data: claimed, error: claimErr } = await supabase.rpc('claim_volgende_rhenus_transportorder');
+    const { data: claimed, error: claimErr } = await supabase.rpc('claim_volgende_transportorder', { p_vervoerder_code: 'rhenus_sftp' });
     if (claimErr) return jsonResp({ error: `claim-rpc fout: ${claimErr.message}` }, 500);
     const row = claimed as RhenusTransportOrderRow | null;
     if (!row || !row.id) {
@@ -102,8 +103,8 @@ Deno.serve(async (req) => {
     } catch (err) {
       summary.failed += 1;
       summary.details.push({ id: row.id, zending_id: row.zending_id, status: 'error', error: String(err) });
-      const { error: catchMarkErr } = await supabase.rpc('markeer_rhenus_fout', { p_id: row.id, p_error: `Onverwachte exception: ${String(err)}`, p_max_retries: 3 });
-      if (catchMarkErr) console.error(`[rhenus-send] markeer_rhenus_fout faalde voor rij ${row.id}: ${catchMarkErr.message}`);
+      const { error: catchMarkErr } = await supabase.rpc('markeer_transportorder_fout', { p_id: row.id, p_error: `Onverwachte exception: ${String(err)}`, p_max_retries: 3 });
+      if (catchMarkErr) console.error(`[rhenus-send] markeer_transportorder_fout faalde voor rij ${row.id}: ${catchMarkErr.message}`);
     }
   }
 

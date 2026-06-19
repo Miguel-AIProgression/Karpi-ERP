@@ -198,7 +198,7 @@ export function AddressSelector({ debiteurNr, onSelect, disabled = false, autoSe
                 onClick={() => { setSelectedId(''); setSelectedGln(null); setSearch(''); setOpen(true) }}
                 className="text-xs text-slate-500 hover:text-terracotta-600"
               >
-                Wijzig
+                Ander adres
               </button>
             </div>
           ) : (

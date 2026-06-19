@@ -58,6 +58,13 @@ export interface ZendingPrintOrderRegel {
     lengte_cm: number | null
     breedte_cm: number | null
     vorm: string | null
+    /** Kleurnummer ("10") — verzendlabel toont dit tussen haakjes achter de
+     *  kwaliteitsnaam ("GALAXY (10) …", besluit 2026-06-18). Schoon, puur
+     *  numeriek; `producten.vorm` (rechthoek/rond) dekt de uitvoering NIET. */
+    kleur_code: string | null
+    /** Volledige Karpi-code (kwaliteit+kleur+afmeting) — verzendlabel toont deze
+     *  als kleine regel onder de kwaliteitsnaam (besluit 2026-06-18). */
+    karpi_code: string | null
   } | null
 }
 
@@ -101,6 +108,14 @@ export interface ZendingPrintColli {
   /** Mig 388: bevroren, ontdubbelde klant-omschrijving (order_regels.omschrijving
    *  + _2). Single source voor de klant-naam op label/pakbon — niet meer live. */
   klant_omschrijving_snapshot: string | null
+  /** Mig 420: zelf-FK naar de bundel-rij. NOT NULL = dit colli zit in een bundel
+   *  en valt uit labels/carrier-bericht. */
+  bundel_colli_id: number | null
+  /** Mig 420: TRUE = synthetische bundel-rij (eigen SSCC, "BUNDEL — N colli"). */
+  is_bundel: boolean
+  /** Mig 419: klant-eigennaam voor de kwaliteit (bv. "BREDA"), bevroren via
+   *  resolve_klanteigen_naam. null = geen afwijkende naam → geen "Uw referentie"-regel. */
+  klanteigen_naam_snapshot: string | null
 }
 
 export interface ZendingPrintSet {
@@ -154,8 +169,6 @@ export interface ZendingPrintSet {
       /** Mig 303: per-klant voorkeur om tapijt-stickers ook voor standaard
        *  (niet-maatwerk) artikelen te printen bij de vervoerderslabels. */
       tapijt_sticker_bij_standaard: boolean | null
-      /** Legacy routecode uit de debiteuren-import — pakbon toont 'm als "Routecode". */
-      route: string | null
     } | null
     vertegenwoordigers?: {
       code: string
@@ -175,8 +188,9 @@ export interface ZendingPrintSet {
 /**
  * Lijst-query voor de logistiek-overzichtspagina.
  *
- * V1: alleen `hst_transportorders`. Bij toekomstige Rhenus/Verhoek-vertical wordt
- * hier een tweede query toegevoegd voor `edi_berichten WHERE berichttype='verzendbericht'`.
+ * Mig 424 (ADR-0038): alle vervoerders delen één `verzend_wachtrij`-tabel,
+ * gediscrimineerd op `vervoerder_code`. Eén zending heeft hooguit één
+ * vervoerder, dus de embed levert 0 of 1 rij.
  */
 export async function fetchZendingen(filters: ZendingenFilters = {}) {
   let q = supabase
@@ -198,8 +212,8 @@ export async function fetchZendingen(filters: ZendingenFilters = {}) {
           id, order_nr
         )
       ),
-      hst_transportorders (
-        id, status, extern_transport_order_id, extern_tracking_number, sent_at
+      verzend_wachtrij (
+        id, status, extern_referentie, track_trace, sent_at
       )
     `,
     )
@@ -251,7 +265,7 @@ export async function fetchZendingMetTransportorders(zending_nr: string) {
           id, order_id, regelnummer, artikelnr, omschrijving
         )
       ),
-      hst_transportorders ( * )
+      verzend_wachtrij ( * )
     `,
     )
     .eq('zending_nr', zending_nr)
@@ -273,7 +287,7 @@ export async function fetchZendingPrintSet(zending_nr: string): Promise<ZendingP
         fact_naam, fact_adres, fact_postcode, fact_plaats, fact_land,
         afl_naam_2,
         debiteuren:debiteuren!orders_debiteur_nr_fkey (
-          naam, gln_bedrijf, tapijt_sticker_bij_standaard, route
+          naam, gln_bedrijf, tapijt_sticker_bij_standaard
         ),
         vertegenwoordigers ( code, naam )
       ),
@@ -292,11 +306,11 @@ export async function fetchZendingPrintSet(zending_nr: string): Promise<ZendingP
           maatwerk_oppervlak_m2,
           producten!order_regels_artikelnr_fkey (
             ean_code, omschrijving, vervolgomschrijving, gewicht_kg,
-            lengte_cm, breedte_cm, vorm
+            lengte_cm, breedte_cm, vorm, kleur_code, karpi_code
           )
         )
       ),
-      zending_colli ( id, colli_nr, sscc, order_regel_id, omschrijving_snapshot, klant_omschrijving_snapshot )
+      zending_colli ( id, colli_nr, sscc, order_regel_id, omschrijving_snapshot, klant_omschrijving_snapshot, klanteigen_naam_snapshot, bundel_colli_id, is_bundel )
     `,
     )
     .eq('zending_nr', zending_nr)
@@ -400,13 +414,15 @@ function toError(error: unknown, fallback: string): Error {
 /**
  * Reset een Fout-rij naar Wachtrij zodat de cron 'm opnieuw oppakt.
  *
+ * Mig 424 (ADR-0038): één geconsolideerde `verzend_wachtrij`-tabel.
  * Edge case: als er ondertussen al een nieuwe actieve transportorder voor
- * dezelfde zending bestaat, blokkeert de unique-index `uk_hst_to_zending_actief`
- * de update. We zetten eventuele duplicate eerst op `Geannuleerd`.
+ * dezelfde zending bestaat, blokkeert de unique-index
+ * `uk_verzend_wachtrij_zending_actief` de update. We zetten eventuele duplicate
+ * eerst op `Geannuleerd`.
  */
 export async function verstuurZendingOpnieuw(transportorder_id: number) {
   const { data: huidig, error: fetchError } = await supabase
-    .from('hst_transportorders')
+    .from('verzend_wachtrij')
     .select('id, zending_id')
     .eq('id', transportorder_id)
     .single()
@@ -415,7 +431,7 @@ export async function verstuurZendingOpnieuw(transportorder_id: number) {
 
   if (huidig) {
     const { error: cancelError } = await supabase
-      .from('hst_transportorders')
+      .from('verzend_wachtrij')
       .update({
         status: 'Geannuleerd',
         error_msg: 'Vervangen door retry van #' + transportorder_id,
@@ -428,7 +444,7 @@ export async function verstuurZendingOpnieuw(transportorder_id: number) {
   }
 
   return await supabase
-    .from('hst_transportorders')
+    .from('verzend_wachtrij')
     .update({ status: 'Wachtrij', error_msg: null, retry_count: 0 })
     .eq('id', transportorder_id)
 }

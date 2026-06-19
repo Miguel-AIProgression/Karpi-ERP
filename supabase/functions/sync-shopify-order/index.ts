@@ -26,6 +26,7 @@ import {
   extractShopifyShippingAddress,
   extractShopifyBillingAddress,
   shopifyLineItemToMatcherRow,
+  groepeerVoSelectionsItems,
   type ShopifyOrderWebhook,
 } from '../_shared/shopify-types.ts'
 import { matchDebiteur } from '../_shared/shopify-debiteur-matcher.ts'
@@ -118,7 +119,7 @@ async function buildRegels(
   let matched = 0
   let unmatched = 0
 
-  for (const item of order.line_items) {
+  for (const item of groepeerVoSelectionsItems(order.line_items)) {
     // Verzendregels van Shopify niet als orderregel importeren — die komen
     // uit shipping_lines en worden apart verwerkt.
     if (item.requires_shipping === false && /verzend|verzending|shipping/i.test(item.title)) {

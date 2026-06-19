@@ -70,6 +70,13 @@ class QueryBuilder implements PromiseLike<{ data: unknown; error: unknown }> {
     this.match[col] = val;
     return this;
   }
+  // `.is(col, null)` — sinds mig 420 filtert de colli-seam op
+  // `bundel_colli_id IS NULL`. Zelfde semantiek als `.eq` voor de recorder:
+  // reads worden niet gelogd, alleen chainbaar maken telt.
+  is(col: string, val: unknown): this {
+    this.match[col] = val;
+    return this;
+  }
   order(_col: string, _opts?: unknown): this {
     return this;
   }

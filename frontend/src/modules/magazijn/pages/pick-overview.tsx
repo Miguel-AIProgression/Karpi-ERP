@@ -14,6 +14,9 @@ import {
   VervoerderFilterButton,
   VervoerderResolutieProvider,
   useEffectieveVervoerderVoorOrders,
+  bepaalStartbaarheid,
+  heeftGeenVervoerder,
+  type StartStatus,
   type VervoerderFilterValue,
 } from '@/modules/logistiek'
 import { aggregeerVervoerderKeuzeVoorOrder } from '@/modules/logistiek/queries/vervoerder-keuze'
@@ -88,49 +91,94 @@ export function MagazijnOverviewPage() {
     return m
   }, [gefilterd, regelsPerOrder])
 
-  // Niet-startbare orders ("Geen vervoerder mogelijk", zelfde predicaat als
-  // StartPickrondesButton + de mig 373-guard): ≥1 regel bron='geen' op een
-  // niet-afhaal-order. Deze sorteren ónder de startbare orders in elke sectie.
+  // Startbaarheid als single source (ADR-0037): één canonieke status per order,
+  // bepaald uit de view-pickbaarheid (`alle_regels_pickbaar`) + de intake-gates +
+  // de al-aanwezige vervoerder-batch (`regelsPerOrder` — géén extra fetch). Alle
+  // afgeleide sets hieronder (geblokkeerd-split, sink-sortering, multi-select)
+  // lezen deze map i.p.v. het predikaat opnieuw inline af te leiden.
+  const startbaarheidStatus = useMemo(() => {
+    const m = new Map<number, StartStatus>()
+    for (const o of gefilterd) {
+      m.set(
+        o.order_id,
+        bepaalStartbaarheid({
+          order_id: o.order_id,
+          afhalen: o.afhalen,
+          alle_regels_pickbaar: o.alle_regels_pickbaar,
+          afl_adres_incompleet_sinds: o.afl_adres_incompleet_sinds,
+          prijs_ontbreekt_sinds: o.prijs_ontbreekt_sinds,
+          in_pickronde: o.actieve_pickronde !== null,
+          geen_vervoerder: heeftGeenVervoerder(o.afhalen, regelsPerOrder?.get(o.order_id)),
+        }).status,
+      )
+    }
+    return m
+  }, [gefilterd, regelsPerOrder])
+
+  // Orders waarvan de vervoerder de énige blocker is ("Geen vervoerder mogelijk",
+  // server-side gespiegeld in start_pickronden, mig 373). Splitsen naar de eigen
+  // sectie onderaan. Orders die óók niet-pickbaar of adres-/prijs-geblokkeerd zijn
+  // vallen hier bewust buiten (ADR-0037) — die tonen onder hun primaire reden in
+  // de week-/dag-sectie.
   const geblokkeerdeOrderIds = useMemo(() => {
     const s = new Set<number>()
-    gefilterd.forEach((o) => {
-      if (o.afhalen) return
-      const regels = regelsPerOrder?.get(o.order_id)
-      if (regels?.some((r) => r.bron === 'geen')) s.add(o.order_id)
-    })
+    for (const [id, status] of startbaarheidStatus) {
+      if (status === 'geen_vervoerder') s.add(id)
+    }
     return s
-  }, [gefilterd, regelsPerOrder])
+  }, [startbaarheidStatus])
 
   // Gefilterde tellingen per bucket — zodat de weektabs meebewegen als een
   // vervoerder-filter actief is. null = geen filter → val terug op stats.
   const gefilterdeTellingenPerBucket = useMemo(() => {
-    if (vervoerderFilter === 'all' || !orders) return null
+    // Live tellingen per bucket, modus- én vervoerder-bewust zodat de weektab-
+    // badges exact de getoonde lijst weerspiegelen:
+    //  - 'afronden' telt alleen orders MÉT een lopende pickronde,
+    //  - 'starten' sluit lopende pickrondes juist UIT (daar valt niets meer te
+    //    starten — die horen in de Afronden-modus),
+    //  - een actief vervoerder-filter vernauwt verder.
+    // `orders` is al door de Pick & Ship-gate (pick_ship_zichtbaar + dag-horizon)
+    // gegaan, dus dit telt de daadwerkelijk zichtbare orders. null = nog geen
+    // data → val terug op de server-stats.
+    if (!orders) return null
     const m = new Map<BucketKey, number>()
     for (const o of orders) {
-      const r = regelsPerOrder?.get(o.order_id)
-      if (!r) continue
-      const aggregaat = aggregeerVervoerderKeuzeVoorOrder(r)
-      const code = aggregaat.soort === 'uniform' ? aggregaat.code : null
-      let match: boolean
-      if (vervoerderFilter === 'afhalen') match = o.afhalen
-      else if (vervoerderFilter === 'geen') match = !o.afhalen && !code
-      else match = !o.afhalen && code === vervoerderFilter
-      if (!match) continue
+      if (modus === 'afronden' ? !o.actieve_pickronde : o.actieve_pickronde) continue
+      if (vervoerderFilter !== 'all') {
+        const r = regelsPerOrder?.get(o.order_id)
+        if (!r) continue
+        const aggregaat = aggregeerVervoerderKeuzeVoorOrder(r)
+        const code = aggregaat.soort === 'uniform' ? aggregaat.code : null
+        let match: boolean
+        if (vervoerderFilter === 'afhalen') match = o.afhalen
+        else if (vervoerderFilter === 'geen') match = !o.afhalen && !code
+        else match = !o.afhalen && code === vervoerderFilter
+        if (!match) continue
+      }
       m.set(o.bucket, (m.get(o.bucket) ?? 0) + 1)
     }
     return m
-  }, [orders, regelsPerOrder, vervoerderFilter])
+  }, [orders, regelsPerOrder, vervoerderFilter, modus])
 
   const naVervoerderFilter = useMemo(() => {
-    if (vervoerderFilter === 'all') return gefilterd
-    return gefilterd.filter((o) => {
+    // Strikte scheiding tussen de twee modi (verzoek Miguel 18-06):
+    //  - 'afronden' toont uitsluitend orders MÉT een lopende pickronde (alleen
+    //    daar valt iets af te ronden);
+    //  - 'starten' toont uitsluitend orders ZÓNDER lopende pickronde (de zwarte
+    //    Verzendset-knop) — een al-gestarte order hoort in de Afronden-modus en
+    //    mag de te-starten-lijst niet vervuilen.
+    const basis = gefilterd.filter((o) =>
+      modus === 'afronden' ? o.actieve_pickronde : !o.actieve_pickronde,
+    )
+    if (vervoerderFilter === 'all') return basis
+    return basis.filter((o) => {
       const r = vervoerderMap.get(o.order_id)
       if (!r) return false
       if (vervoerderFilter === 'afhalen') return r.afhalen
       if (vervoerderFilter === 'geen') return !r.afhalen && !r.code
       return !r.afhalen && r.code === vervoerderFilter
     })
-  }, [gefilterd, vervoerderFilter, vervoerderMap])
+  }, [gefilterd, vervoerderFilter, vervoerderMap, modus])
 
   // Voorgestelde-bundels (mig 229): pure SQL-view die per (debiteur × adres ×
   // vervoerder × verzendweek) de open-orders aggregeert met drempel-toets en
@@ -181,10 +229,10 @@ export function MagazijnOverviewPage() {
 
   // Orders waarvan de Verzendset/print-knop geblokkeerd is om een ándere reden
   // dan "geen vervoerder" (die staan al in de aparte sectie onderaan): nog niet
-  // pickbaar (`alle_regels_pickbaar=false`), onvolledig afleveradres (mig 395)
-  // of ontbrekende prijs (mig 396) — zelfde per-order-condities die
-  // StartPickrondesButton disabled maken. Orders met een lopende pickronde
-  // tellen NIET als geblokkeerd: die zijn in uitvoering, geen probleem. Deze set
+  // pickbaar, onvolledig afleveradres (mig 395) of ontbrekende prijs (mig 396) —
+  // de statussen `niet_pickbaar`/`afl_adres`/`prijs` uit de startbaarheid-map
+  // (ADR-0037). Orders met een lopende pickronde (status `in_pickronde`) vallen
+  // hier per definitie buiten — die zijn in uitvoering, geen probleem. Deze set
   // laat de niet-printbare orders ónderaan elke week-/dag-sectie zakken zodat
   // alles wat de magazijnier wél kan starten bovenaan staat (verzoek Miguel
   // 2026-06-16). Hergebruikt het bestaande `geblokkeerdeOrderIds`-sorteerpad in
@@ -192,17 +240,13 @@ export function MagazijnOverviewPage() {
   const nietPrintbaarIds = useMemo(() => {
     const s = new Set<number>()
     for (const o of startbareOrders) {
-      if (o.actieve_pickronde) continue
-      if (
-        !o.alle_regels_pickbaar ||
-        o.afl_adres_incompleet_sinds ||
-        o.prijs_ontbreekt_sinds
-      ) {
+      const status = startbaarheidStatus.get(o.order_id)
+      if (status === 'niet_pickbaar' || status === 'afl_adres' || status === 'prijs') {
         s.add(o.order_id)
       }
     }
     return s
-  }, [startbareOrders])
+  }, [startbareOrders, startbaarheidStatus])
 
   // Multi-select (besluit 2026-06-17), twee modi:
   //  - 'starten': orders aanvinken → in één keer starten & printen met optionele
@@ -217,16 +261,15 @@ export function MagazijnOverviewPage() {
   const selectableIds = useMemo(() => {
     const s = new Set<number>()
     for (const o of startbareOrders) {
+      const status = startbaarheidStatus.get(o.order_id)
       if (modus === 'afronden') {
-        if (o.actieve_pickronde) s.add(o.order_id)
-        continue
+        if (status === 'in_pickronde') s.add(o.order_id)
+      } else if (status === 'startbaar') {
+        s.add(o.order_id)
       }
-      if (o.actieve_pickronde) continue
-      if (nietPrintbaarIds.has(o.order_id)) continue
-      s.add(o.order_id)
     }
     return s
-  }, [modus, startbareOrders, nietPrintbaarIds])
+  }, [modus, startbareOrders, startbaarheidStatus])
 
   const selectie = usePickSelectieState(
     `${filter}|${vervoerderFilter}|${modus}`,
@@ -333,13 +376,21 @@ export function MagazijnOverviewPage() {
     },
   ]
 
+  // De "/totaal"-suffix verschijnt alleen wanneer de telling een echte deel-
+  // verzameling is: bij een actief vervoerder-filter of in de Afronden-modus
+  // (lopende pickrondes ⊂ alle open orders). In de gewone Starten-modus zonder
+  // filter is de telling de volledige te-starten-lijst → geen suffix (gedragsbehoud).
+  const toonTellingSuffix = vervoerderFilter !== 'all' || modus === 'afronden'
   const tabs = weekTabs.map((t) => ({
     key: t.key,
     label: t.label,
-    aantal: gefilterdeTellingenPerBucket?.get(t.key) ?? stats?.per_bucket[t.key] ?? 0,
-    // Toon een dimme originele telling naast de gefilterde telling zodat de
-    // gebruiker ziet hoeveel orders er in totaal in die week staan.
-    aantalTotaal: gefilterdeTellingenPerBucket ? (stats?.per_bucket[t.key] ?? 0) : null,
+    // Bij een live tellingsmap is een ontbrekende bucket écht 0 — niet "val terug
+    // op stats". Die fallback toonde voorheen onterecht het volledige weektotaal
+    // voor een lege Afronden-bucket (bv. "74/74" i.p.v. "0/74").
+    aantal: gefilterdeTellingenPerBucket
+      ? gefilterdeTellingenPerBucket.get(t.key) ?? 0
+      : stats?.per_bucket[t.key] ?? 0,
+    aantalTotaal: toonTellingSuffix ? (stats?.per_bucket[t.key] ?? 0) : null,
   }))
 
   return (
@@ -479,7 +530,7 @@ export function MagazijnOverviewPage() {
         </div>
       ) : dagOrders.length === 0 && perWeek.length === 0 && geblokkeerdeOrders.length === 0 ? (
         <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-12 text-center text-slate-400">
-          Geen open orders
+          {modus === 'afronden' ? 'Geen lopende pickrondes om af te ronden' : 'Geen open orders'}
         </div>
       ) : (
         // Provider deelt de batch-resolutie (mig 401) met alle cards hieronder:
@@ -489,7 +540,14 @@ export function MagazijnOverviewPage() {
         // al pre-seeded als de gebruiker van tab wisselt.
         <VervoerderResolutieProvider orderIds={allOrderIds}>
           <PickSelectieProvider value={selectie}>
-            <div className="space-y-6">
+            {/* key={modus} forceert een verse mount van de lijst bij het wisselen
+                tussen Starten en Afronden. De data (perWeek) is per render al
+                correct gefilterd op modus, maar de secties + klant-clusters dragen
+                stabiele keys ('__wk1_gecombineerd__' resp. 'none-<debiteur_nr>'),
+                waardoor React bij een modus-wissel de oude card-DOM hergebruikte
+                i.p.v. te verversen — de lijst bleef dan één render achter (stale)
+                tot een volgende interactie. Remounten op modus omzeilt dat. */}
+            <div key={modus} className="space-y-6">
               {dagOrders.length > 0 && (
                 <PickDagOrdersSectie
                   orders={dagOrders}

@@ -132,6 +132,42 @@ export function extractShopifyBillingAddress(order: ShopifyOrderWebhook): Record
 }
 
 /**
+ * De Shopify-app "VO Product Options" (maatwerk-configurator) splitst een
+ * geconfigureerd product over TWEE line_items: de "ouder" — het normale
+ * product/variant met SKU en basisprijs — direct gevolgd door een gekoppeld
+ * "<titel> - Selections"-item (géén eigen SKU, wél de configurator-breakdown
+ * in `properties`, incl. `Maatwerk`/`Maatwerk-sku`). Zonder samenvoeging
+ * importeert RugFlow twee orderregels voor wat de klant als ÉÉN tapijt heeft
+ * besteld (incident ORD-2026-0623: 2x "Vernon 17 rond" i.p.v. 1x).
+ *
+ * Koppeling is positioneel + naam-gebaseerd (`volgende.title ===
+ * "${huidige.title} - Selections"`) — exact het patroon dat Shopify hier
+ * aanlevert; er is geen apart "parent_id"-veld in de payload. De properties
+ * van het Selections-item (waar de echte maatwerk-afmeting/SKU in staat)
+ * worden overgenomen op het samengevoegde item; `item.price` van beide
+ * regels doet er niet toe — RugFlow prijst altijd zelf via de prijslijst
+ * (`haalKlantPrijs`), nooit op Shopify's eigen regelprijs.
+ */
+export function groepeerVoSelectionsItems(items: ShopifyLineItem[]): ShopifyLineItem[] {
+  const result: ShopifyLineItem[] = []
+  for (let i = 0; i < items.length; i++) {
+    const huidig = items[i]
+    const volgende = items[i + 1]
+    if (volgende && volgende.title === `${huidig.title} - Selections`) {
+      result.push({
+        ...huidig,
+        properties: [...(huidig.properties ?? []), ...(volgende.properties ?? [])],
+        grams: (huidig.grams ?? 0) + (volgende.grams ?? 0),
+      })
+      i++ // het samengevoegde Selections-item zelf overslaan
+      continue
+    }
+    result.push(huidig)
+  }
+  return result
+}
+
+/**
  * Map een Shopify line_item naar het kanaal-neutrale OrderMatcherRow-formaat
  * zodat `product-matcher.ts` hergebruikt kan worden zonder wijzigingen.
  */
