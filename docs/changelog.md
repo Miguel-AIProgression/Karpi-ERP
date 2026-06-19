@@ -5,7 +5,7 @@
 **Waarom:** Verhoek (Applicatie Management) beantwoordde op 16-06 alle openstaande vragen uit onze testmail en leverde de SFTP-inloggegevens. Daarmee is Fase 2 van de Verhoek-koppeling (ADR-0031) ontgrendeld.
 
 **Wat (branch `feat/verhoek-fase2-go-live`):**
-- **Opdrachtgevernummer `OG123`** verwerkt in `app_config.verhoek` (mig 415, config-UPDATE). `verhoek-send` weigerde echte verzending zolang dit leeg was.
+- **Opdrachtgevernummer `OG123`** verwerkt in `app_config.verhoek` (mig 431, config-UPDATE). `verhoek-send` weigerde echte verzending zolang dit leeg was.
 - **Verpakkingseenheid per colli afgeleid** (`xml-builder.ts::verhoekVerpakkingseenheid`): Karpi verstuurt via Verhoek nooit volle rollen, alleen opgerolde maatwerk/standaardmaten (≤~rolbreedte). De vaste waarde `'Rol'` (Verhoek-eis ≥1251 cm lengte) was dus verkeerd. Classificatie binnen Verhoeks eigen maat-envelopes ("Standaard artikelwaarden"-tabel): Karpet → Loper → Coupon, nooit Rol. Config-`verpakkingseenheid` is voortaan alleen de fallback (afmeting onbekend) → `'Coupon'`.
 - **`AfwijkendeAfzender` leeg** gelaten (Verhoek: alleen vullen als het afzendadres afwijkt — bij ons nooit).
 - **ScanCode** ongewijzigd: blijft de gedeelde Labelbarcode (AI(00)+SSCC) = exact de fysieke labelbarcode (Verhoek-eis: 100% match).

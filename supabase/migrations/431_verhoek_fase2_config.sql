@@ -1,4 +1,4 @@
--- Migratie 415: Verhoek Fase 2 — antwoorden Verhoek (mail Applicatie Management
+-- Migratie 431: Verhoek Fase 2 — antwoorden Verhoek (mail Applicatie Management
 -- 16-06-2026) verwerken in de runtime-config. Plan:
 --   docs/superpowers/plans/2026-06-11-verhoek-transporteur-xml-sftp.md (ADR-0031)
 --
