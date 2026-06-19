@@ -46,6 +46,13 @@ interface ZendingBlokProps {
 
 function ZendingBlok({ zending, tapijtStickers }: ZendingBlokProps) {
   const labels = useMemo(() => expandLabels(zending), [zending])
+  // "X VAN Y" = opgeslagen `colli_nr` tegen het aantal ORIGINELE colli
+  // (`is_bundel=false`), zodat een eenmaal geprinte sticker nooit van nummer
+  // wisselt en een bundel een EXTRA sticker is ("5 VAN 4"). Spiegelt
+  // zending-printset.tsx. Legacy zonder colli-registratie → val terug op
+  // het aantal labels.
+  const origineelColliTotaal =
+    (zending.zending_colli ?? []).filter((c) => !c.is_bundel).length || labels.length
   const vervoerder = vervoerderInfoVoor(zending)
   const labelFormaat = useMemo(() => labelFormaatVoor(zending), [zending])
   // Afhaal-zendingen krijgen geen sticker — alleen een pakbon. We gebruiken
@@ -86,8 +93,8 @@ function ZendingBlok({ zending, tapijtStickers }: ZendingBlokProps) {
               key={label.index}
               zending={zending}
               regel={label.regel}
-              colliIndex={label.index}
-              colliTotal={labels.length}
+              colliIndex={label.colliNr}
+              colliTotal={origineelColliTotaal}
               vervoerderNaam={vervoerder.naam}
               sscc={label.sscc}
               omschrijvingSnapshot={label.omschrijvingSnapshot}
@@ -102,7 +109,7 @@ function ZendingBlok({ zending, tapijtStickers }: ZendingBlokProps) {
       <PakbonDocument
         zending={zending}
         vervoerderNaam={isAfhaal ? 'Afhalen' : vervoerder.naam}
-        colliTotal={labels.length}
+        colliTotal={origineelColliTotaal}
       />
 
       {/* Mig 303: tapijt-stickers per zending (alleen niet-maatwerk regels).

@@ -74,10 +74,23 @@ export function ZendingPrintSetPage() {
     }
   }, [zending, includeTapijtStickers])
 
-  const labels = useMemo(() => {
-    const alle = zending ? expandLabels(zending) : []
-    return colliFilter ? alle.filter((l) => String(l.colliNr) === colliFilter) : alle
-  }, [zending, colliFilter])
+  // Te printen labels: één per niet-gebundelde colli (`expandLabels` filtert de
+  // gebundelde kind-colli al weg) plus de bundel-rij zelf.
+  const alleLabels = useMemo(() => (zending ? expandLabels(zending) : []), [zending])
+  // `?colli=` (bundelsticker apart printen) filtert WELKE labels we tonen.
+  const labels = useMemo(
+    () => (colliFilter ? alleLabels.filter((l) => String(l.colliNr) === colliFilter) : alleLabels),
+    [alleLabels, colliFilter],
+  )
+  // "X VAN Y": een eenmaal geprint colli-label mag NOOIT van nummer wisselen —
+  // de fysieke sticker op het tapijt blijft plakken (we overstickeren niet bij
+  // bundelen). Daarom = X het opgeslagen `colli_nr` en Y het aantal ORIGINELE
+  // colli (`is_bundel=false`), beide stabiel. Gevolg: de originelen behouden hun
+  // nummer (bijv. "2 VAN 4") en de bundel is een EXTRA sticker bovenop dat aantal
+  // ("5 VAN 4"). Legacy-zendingen zonder colli-registratie → val terug op het
+  // aantal labels (colli_nr is daar de lopende index, dus nog steeds consistent).
+  const origineelColliTotaal =
+    (zending?.zending_colli ?? []).filter((c) => !c.is_bundel).length || alleLabels.length
   const vervoerder = zending ? vervoerderInfoVoor(zending) : null
   const labelFormaat = zending ? labelFormaatVoor(zending) : null
   const aantalTapijtStickers = totaalAantalTapijtStickers(tapijtStickers)
@@ -338,8 +351,8 @@ export function ZendingPrintSetPage() {
               key={label.index}
               zending={zending}
               regel={label.regel}
-              colliIndex={label.index}
-              colliTotal={labels.length}
+              colliIndex={label.colliNr}
+              colliTotal={origineelColliTotaal}
               vervoerderNaam={vervoerder.naam}
               sscc={label.sscc}
               omschrijvingSnapshot={label.omschrijvingSnapshot}
@@ -353,7 +366,7 @@ export function ZendingPrintSetPage() {
         <PakbonDocument
           zending={zending}
           vervoerderNaam={vervoerder.naam}
-          colliTotal={labels.length}
+          colliTotal={origineelColliTotaal}
         />
 
         {/* Mig 303: optionele tapijt-stickers voor standaard-artikelen.
