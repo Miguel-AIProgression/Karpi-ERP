@@ -54,24 +54,56 @@ const HST_DEFAULT_AFMETINGEN = capabilityVoor('hst_api')?.defaultAfmetingen ??
 const DEFAULT_LENGTH_CM = HST_DEFAULT_AFMETINGEN.lengteCm;
 const DEFAULT_WEIGHT_KG = HST_DEFAULT_AFMETINGEN.gewichtKg;
 
-// HST's TransportOrderLine.Length accepteert max 200 cm en weigert de hele order
-// anders (live-fout ZEND-2026-0061: 'Regel nummer 1 lengte (min: 0 | max: 200)').
-// Grote tapijten (bv. 240×330) geven een opgerolde colli die langer is dan 200;
-// de fysieke rol blijft natuurlijk z'n echte maat, maar het HST-veld kan dat niet
-// representeren → clampen op het carrier-maximum (zoals GoodsDescription op 30 en
-// StreetNumberAddition op 5).
-const HST_LENGTH_MAX_CM = 200;
+// HST's TransportOrderLine.Length-veldmaximum is afhankelijk van de gekozen
+// verzendeenheid: 'col' (Colli) weigert >200 cm (live-fout ZEND-2026-0061:
+// 'Regel nummer 1 lengte (min: 0 | max: 200)'). Een opgerolde tapijtrol is zo
+// lang als z'n korte tapijtzijde — een tapijt van 240×330 geeft een rol van 240
+// cm en past dus niet in 'col'. In plaats van de lengte naar 200 te clampen (= de
+// klant een te korte maat melden) kiest HST een langere-pakket-code per maatband
+// (mail Niek Zandvoort, 2026-06-19):
+//
+//   ≤ 200 cm        → 'col'   (Colli)
+//   201 – 274 cm    → 'BDLS'
+//   275 – 600 cm    → 'LNGT'
+//
+// EP (Europallet) / SP (wegwerp pallet) zijn verpakkings-keuzes, niet maat-
+// afgeleid — die blijven buiten deze automaat. De max. tapijtmaat is 4 m (400
+// cm), dus LNGT volstaat altijd; 600 is puur het code-plafond als vangnet.
+//
+// ⚠️ ACTIVATIE: BDLS/LNGT moeten door HST per code "opengezet" worden vóórdat ze
+// geaccepteerd worden — een niet-opengezette code geeft een HTTP 400 net als een
+// onbekende PackageUnitID. Deploy deze builder dus pas nadat HST bevestigt dat
+// BDLS én LNGT live staan. Tot dan blijft de oude clamp-versie het veilige pad.
+const HST_LANGE_COLLI_CODES = [
+  { maxCm: 200, code: 'col' },
+  { maxCm: 274, code: 'BDLS' },
+  { maxCm: 600, code: 'LNGT' },
+] as const;
+const HST_LENGTH_ABSOLUUT_MAX_CM = HST_LANGE_COLLI_CODES[HST_LANGE_COLLI_CODES.length - 1].maxCm;
+
+interface Verzendeenheid {
+  packageUnitId: string;
+  length: number;
+}
 
 // Korte zijde van het tapijt = de lengte van de opgerolde colli: de kleinste
 // van lengte/breedte (cm). Valt terug op de default als geen maat bekend is.
-// Geclampt op HST's veldmaximum.
 function korteZijdeCm(
   lengte: number | null | undefined,
   breedte: number | null | undefined,
 ): number {
   const maten = [lengte, breedte].filter((m): m is number => typeof m === 'number' && m > 0);
-  const korteZijde = maten.length > 0 ? Math.min(...maten) : DEFAULT_LENGTH_CM;
-  return Math.min(korteZijde, HST_LENGTH_MAX_CM);
+  return maten.length > 0 ? Math.min(...maten) : DEFAULT_LENGTH_CM;
+}
+
+// Kies de HST-verzendeenheid + bijbehorende (geclampte) lengte op basis van de
+// rol-lengte. Boven het code-plafond (600 cm, in de praktijk onbereikbaar) valt
+// het terug op de hoogste code met geclampte lengte i.p.v. te falen.
+function kiesVerzendeenheid(korteZijde: number): Verzendeenheid {
+  const length = Math.min(korteZijde, HST_LENGTH_ABSOLUUT_MAX_CM);
+  const band = HST_LANGE_COLLI_CODES.find((b) => length <= b.maxCm) ??
+    HST_LANGE_COLLI_CODES[HST_LANGE_COLLI_CODES.length - 1];
+  return { packageUnitId: band.code, length };
 }
 
 export interface BouwTransportOrderArgs {
@@ -118,6 +150,7 @@ export function bouwTransportOrderPayload(
 }
 
 function bouwLineUitColli(c: ZendingColliInput, order: OrderInput): HstTransportOrderLine {
+  const eenheid = kiesVerzendeenheid(korteZijdeCm(c.lengte_cm, c.breedte_cm));
   return {
     Quantity: 1,
     GoodsOnPallet: 0,
@@ -125,14 +158,16 @@ function bouwLineUitColli(c: ZendingColliInput, order: OrderInput): HstTransport
       c.omschrijving_snapshot ?? `${DEFAULT_GOODS_DESCRIPTION} (${order.order_nr})`,
     ),
     ExchangePacking: false,
-    Length: korteZijdeCm(c.lengte_cm, c.breedte_cm),
+    Length: eenheid.length,
     Width: ROL_BREEDTE_CM,
     Height: ROL_HOOGTE_CM,
     Weight: c.gewicht_kg ?? DEFAULT_WEIGHT_KG,
     // De labelbarcode (AI(00)+SSCC) uit de gedeelde seam — exact wat op het
     // label staat en bij elke vervoerder wordt aangemeld (single source).
     BarCode: { BarCode: labelBarcode(c.sscc) ?? '' },
-    PackageUnitID: DEFAULT_PACKAGE_UNIT_ID,
+    // Verzendeenheid afgeleid van de rol-lengte (col/BDLS/LNGT) — zie
+    // HST_LANGE_COLLI_CODES.
+    PackageUnitID: eenheid.packageUnitId,
   };
 }
 

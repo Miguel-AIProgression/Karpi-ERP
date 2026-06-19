@@ -226,10 +226,11 @@ Deno.test('bouwTransportOrderPayload kapt GoodsDescription af op 30 tekens', () 
   assertEquals(desc, 'LORANDA Kleur 21 CA: 200x290 c');
 });
 
-// HST's Length-veld accepteert max 200 cm (live-fout ZEND-2026-0061: tapijt
+// Rol-lengte > 200 cm past niet in 'col' (live-fout ZEND-2026-0061: tapijt
 // 240×330 → korte zijde 240 → 'Regel nummer 1 lengte (min: 0 | max: 200)').
-// De builder clampt Length op 200.
-Deno.test('bouwTransportOrderPayload clampt Length op HST-max 200 cm', () => {
+// In plaats van de lengte te clampen kiest de builder een langere-pakket-code
+// per maatband (mail Niek 2026-06-19): 201–274 → BDLS, 275–600 → LNGT.
+Deno.test('bouwTransportOrderPayload — 201–274 cm → BDLS met echte lengte', () => {
   const payload = bouwTransportOrderPayload({
     zending: {
       zending_nr: 'ZEND-2026-0061', afl_naam: 'HOREMANS', afl_adres: 'Olenseweg 150',
@@ -245,8 +246,37 @@ Deno.test('bouwTransportOrderPayload clampt Length op HST-max 200 cm', () => {
       omschrijving_snapshot: 'OASI51XX240330 330x240 cm',
     }],
   });
-  // korte zijde = min(240,330) = 240 > 200 → geclampt naar 200.
-  assertEquals(payload.TransportOrderLines[0].Length, 200);
+  // korte zijde = min(240,330) = 240 → band 201–274 → BDLS, echte lengte 240.
+  assertEquals(payload.TransportOrderLines[0].Length, 240);
+  assertEquals(payload.TransportOrderLines[0].PackageUnitID, 'BDLS');
+});
+
+// Maatbanden rond de grenzen: 200 hoort nog bij 'col', 275 al bij LNGT.
+Deno.test('bouwTransportOrderPayload — verzendeenheid per maatband', () => {
+  const maak = (lengte: number, breedte: number) =>
+    bouwTransportOrderPayload({
+      zending: {
+        zending_nr: 'ZEND-2026-0070', afl_naam: 'Klant', afl_adres: 'Teststraat 1',
+        afl_postcode: '1111AA', afl_plaats: 'Diemen', afl_land: 'NL',
+        afl_telefoon: null, afl_email: null, totaal_gewicht_kg: 10, aantal_colli: 1,
+        opmerkingen: null, verzenddatum: '2026-06-19',
+      },
+      order: { order_nr: 'ORD-2026-0070' },
+      bedrijf: KARPI_BEDRIJF,
+      hstCustomerId: '038267',
+      colli: [{ colli_nr: 1, sscc: '087159540000000632', gewicht_kg: 10, lengte_cm: lengte, breedte_cm: breedte, omschrijving_snapshot: 'Tapijt' }],
+    }).TransportOrderLines[0];
+
+  // ≤200 → col
+  assertEquals(maak(200, 300).PackageUnitID, 'col');
+  assertEquals(maak(200, 300).Length, 200);
+  // 201–274 → BDLS
+  assertEquals(maak(201, 300).PackageUnitID, 'BDLS');
+  assertEquals(maak(274, 300).PackageUnitID, 'BDLS');
+  // 275–600 → LNGT (max tapijtmaat = 400, ruim binnen bereik)
+  assertEquals(maak(275, 400).PackageUnitID, 'LNGT');
+  assertEquals(maak(400, 400).PackageUnitID, 'LNGT');
+  assertEquals(maak(400, 400).Length, 400);
 });
 
 // T&T-scheiding (mail Piet-Hein/Marjon 11-06-2026): het aflever-e-mailadres
