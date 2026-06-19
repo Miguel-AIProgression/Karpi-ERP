@@ -162,6 +162,42 @@ Deno.test('HST HTTP 400 → audit + markeer_fout, geen PDF-upload', async () => 
 
 // NB: telefoon is sinds commit d40d97a NIET meer verplicht voor HST (FFBL uit),
 // dus een leeg adresveld is nu de juiste preflight-blocker (ADRESVELD_LEEG).
+// ANTI-DUBBELE-AANMELDING (ZEND-2026-0063, 19-06): HST antwoordt HTTP 200 met
+// Success=false MAAR een OrderNumber → de order is server-side al aangemaakt
+// ("Niet valide" in de Portal). De poging is TERMINAAL: anker zetten (reaper
+// recyclet niet) + markeer_fout met p_max_retries=1 (direct Fout, géén retry,
+// dus de claim-loop her-pakt 'm niet → geen duplicaten). Precies één POST.
+Deno.test('HST Success=false MET OrderNumber → terminaal: anker + markeer_fout (max_retries=1)', async () => {
+  const fake = new FakeSupabase(configOk());
+  const summary = legeSummary();
+
+  const { aangeroepen } = await metFetchStub(
+    () => jsonResponse(
+      { Success: false, OrderNumber: 'T75038267004438', ErrorMessage: 'Datum berekening is niet goed gegaan.' },
+      200,
+    ),
+    () => verwerkRow(asClient(fake), rij(), SECRETS, summary),
+  );
+
+  assertEquals(aangeroepen, 1); // precies één POST — geen retry-storm
+  // ok=false → géén §4b-anker en géén PDF-upload; wél audit, dan anker (terminaal)
+  // + markeer_fout.
+  assertEquals(fake.rpcNames(), ['log_externe_payload', 'markeer_transport_bevestigd', 'markeer_transportorder_fout']);
+
+  // Het OrderNumber wordt als extern_referentie geankerd (welke Portal-order af te
+  // keuren) en de reaper slaat de geankerde rij over.
+  const anker = fake.rpcCalls()[1];
+  assertEquals(anker.args.p_id, 3);
+  assertEquals(anker.args.p_extern_referentie, 'T75038267004438');
+
+  const fout = fake.rpcCalls()[2];
+  assertEquals(fout.args.p_id, 3);
+  assertEquals(fout.args.p_max_retries, 1); // direct terminaal Fout, geen recycle
+  assertMatch(fout.args.p_error, /Datum berekening/);
+
+  assertEquals(summary.failed, 1);
+});
+
 Deno.test('HST preflight-fout (leeg afl_adres) → markeer_fout, GEEN HST-call', async () => {
   const zonderAdres = { ...ZENDING_OK, afl_adres: '' };
   const fake = new FakeSupabase(configOk({ zendingen: { single: { data: zonderAdres, error: null } } }));

@@ -83,15 +83,20 @@ export async function postTransportOrder(
   const orderNumber = typed?.OrderNumber ?? null;
   const pdfBase64 = typed?.PDFDocument?.Contents ?? null;
 
-  // Defensief: HST kan in een edge-case 200 sturen met Success=false.
+  // HST kan HTTP 200/201 sturen met Success=false ÉN een OrderNumber: de order is
+  // dan WÉL aangemaakt (Portal-status "Niet valide", bv. mislukte datumberekening).
+  // We behouden het OrderNumber en markeren de poging TERMINAAL — een retry/re-POST
+  // zou een duplicaat aanmaken (HST = POST-only). Een Success=false ZÓNDER
+  // OrderNumber is een echte pre-creatie-afwijzing en blijft retrybaar.
   if (typed?.Success === false) {
     return {
       ok: false,
       httpCode: res.status,
       body: stripPdf(body),
-      transportOrderId: null,
+      transportOrderId: orderNumber,
       trackingNumber: null,
       pdfBase64: null,
+      aangemeldMaarFout: orderNumber != null,
       errorMsg: extractErrorMsg(body, res.status),
     };
   }

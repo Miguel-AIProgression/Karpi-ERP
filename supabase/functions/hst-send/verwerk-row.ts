@@ -107,6 +107,9 @@ export const hstAdapter: VerzendAdapter<HstTransportOrderRow, HstSecrets, HstTra
     }),
   resultOk: (r) => r.ok,
   resultFout: (r) => r.errorMsg,
+  // HST gaf een OrderNumber mee ondanks Success=false → order bestaat al, niet
+  // opnieuw POSTen (anders duplicaat). De orchestrator maakt de rij terminaal.
+  resultTerminaal: (r) => r.aangemeldMaarFout === true,
 
   auditExterneId: (_bestandsnaam, r, z) => r.transportOrderId ?? (z.zending_nr as string | null) ?? null,
   auditPayloadJson: (payload, r) => ({

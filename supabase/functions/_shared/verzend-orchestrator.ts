@@ -121,6 +121,13 @@ export interface VerzendAdapter<Row extends VerzendRijBasis, Ctx, Payload, R> {
   transport(ctx: Ctx, payload: Payload, bestandsnaam: string | null): Promise<R>;
   resultOk(r: R): boolean;
   resultFout(r: R): string | null;
+  /** Is deze GEFAALDE poging TERMINAAL (niet-retrybaar)? True wanneer de carrier
+   *  de zending server-side al aanmaakte ondanks de fout — een retry/re-POST zou
+   *  een DUPLICAAT geven (HST = POST-only). De orchestrator markeert zo'n rij dan
+   *  direct terminaal Fout + ankert 'm (reaper skipt) i.p.v. te recyclen.
+   *  Default (ontbreekt) → false: gewone retry. Alleen HST implementeert dit;
+   *  SFTP-carriers maken bij een mislukte upload niets aan. (ZEND-2026-0063, 19-06.) */
+  resultTerminaal?(r: R): boolean;
 
   /** Externe-id voor de audit-rij (bestandsnaam, of transport_order_id/zending_nr). */
   auditExterneId(bestandsnaam: string | null, r: R, z: VerzendZending): string | null;
@@ -296,6 +303,30 @@ export async function verwerkVerzendRij<Row extends VerzendRijBasis, Ctx, Payloa
       p_document_pad: documentPad,
     });
     adapter.noteerSucces(row, result, bestandsnaam, summary);
+  } else if (adapter.resultTerminaal?.(result)) {
+    // TERMINALE fout (anti-dubbele-aanmelding): de carrier maakte de zending
+    // server-side al aan (OrderNumber teruggekregen) ondanks Success=false. Een
+    // retry/re-POST zou een DUPLICAAT geven (HST = POST-only). Daarom:
+    //  (a) ANKER zetten → de reaper (herstel_vastgelopen_verzending) recyclet de
+    //      rij nooit meer, en het OrderNumber wordt als extern_referentie bewaard
+    //      zodat zichtbaar is wélke (af te keuren) carrier-order bestaat;
+    //  (b) markeer_fout met p_max_retries=1 → de rij gaat DIRECT naar Fout, zodat
+    //      de claim-loop 'm binnen dezelfde run niet opnieuw pakt (retry 0→1→2 gaf
+    //      anders 3 POSTs = 3 duplicaten in ~14s). Aanleiding ZEND-2026-0063 (15×).
+    const ref = adapter.uitkomst(z, payload, result, bestandsnaam).externReferentie;
+    const { error: ankerErr } = await supabase.rpc('markeer_transport_bevestigd', {
+      p_id: row.id,
+      p_extern_referentie: ref,
+    });
+    if (ankerErr) {
+      console.error(`[${adapter.kanaal}-send] anker (terminale fout) zetten faalde voor rij ${row.id}: ${ankerErr.message}`);
+    }
+    await supabase.rpc('markeer_transportorder_fout', {
+      p_id: row.id,
+      p_error: adapter.resultFout(result) ?? 'onbekende fout',
+      p_max_retries: 1,
+    });
+    adapter.noteerFout(row, result, summary);
   } else {
     await supabase.rpc('markeer_transportorder_fout', {
       p_id: row.id,

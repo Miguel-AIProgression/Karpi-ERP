@@ -139,4 +139,10 @@ export interface HstResponse {
   trackingNumber: string | null;    // V1: zelfde als OrderNumber (HST levert geen apart tracking-veld)
   pdfBase64: string | null;         // PDF voor toekomstig opslaan in storage; nu niet in DB gelogd
   errorMsg: string | null;
+  // TERMINAAL-vlag (anti-dubbele-aanmelding): true wanneer HST de POST mét een
+  // OrderNumber beantwoordde maar Success=false (order is WÉL aangemaakt, staat in
+  // de Portal op "Niet valide"). Retryen/re-POSTen zou een DUPLICAAT maken (HST =
+  // POST-only, geen idempotentie) — de orchestrator markeert deze rij daarom
+  // terminaal i.p.v. te recyclen. Aanleiding: ZEND-2026-0063 (19-06) → 15× aangemeld.
+  aangemeldMaarFout?: boolean;
 }
