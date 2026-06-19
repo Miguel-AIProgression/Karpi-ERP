@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Truck, AlertCircle, Settings, Printer } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { useZendingen } from '@/modules/logistiek/hooks/use-zendingen'
-import { ZendingStatusBadge } from '@/modules/logistiek/components/zending-status-badge'
+import { ZendingStatusBadge, zendingStatusLabel } from '@/modules/logistiek/components/zending-status-badge'
 import { VervoerderTag } from '@/modules/logistiek/components/vervoerder-tag'
 import { VERVOERDER_REGISTRY, type VervoerderCode } from '@/modules/logistiek/registry'
 import type { ZendingStatus } from '@/modules/logistiek/queries/zendingen'
@@ -203,7 +203,7 @@ export function ZendingenOverzichtPage() {
                   : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50',
               )}
             >
-              {s === 'alle' ? 'Alle' : s}
+              {s === 'alle' ? 'Alle' : zendingStatusLabel(s)}
             </button>
           ))}
         </div>

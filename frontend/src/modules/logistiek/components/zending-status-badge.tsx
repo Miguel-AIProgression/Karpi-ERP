@@ -10,6 +10,19 @@ const STATUS_KLEUREN: Record<ZendingStatus, { bg: string; text: string }> = {
   Afgeleverd:               { bg: 'bg-emerald-100', text: 'text-emerald-700' },
 }
 
+// Weergave-label per status. De DB-enum-waarde blijft 'Onderweg', maar we tonen
+// 'Verzonden': HST/Rhenus geven (nog) géén bezorgbevestiging terug, dus we weten
+// alleen dat de zending succesvol is aangemeld/verstuurd — niet dat-ie onderweg
+// of geleverd is. 'Verzonden' is daarmee eerlijker dan 'Onderweg'. Zodra er een
+// echte T&T-/delivery-terugkoppeling is, kan dit label weer 'Onderweg' worden.
+const STATUS_LABELS: Partial<Record<ZendingStatus, string>> = {
+  Onderweg: 'Verzonden',
+}
+
+export function zendingStatusLabel(status: ZendingStatus | string): string {
+  return STATUS_LABELS[status as ZendingStatus] ?? status
+}
+
 interface ZendingStatusBadgeProps {
   status: ZendingStatus | string
   className?: string
@@ -26,7 +39,7 @@ export function ZendingStatusBadge({ status, className }: ZendingStatusBadgeProp
         className,
       )}
     >
-      {status}
+      {zendingStatusLabel(status)}
     </span>
   )
 }
