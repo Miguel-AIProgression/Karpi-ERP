@@ -1,5 +1,26 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-19 — Logistiek-zendingenoverzicht: sorteren/groeperen/filteren op afrond-datum (mig 432)
+
+**Waarom (verzoek Miguel, 19-06):** het zendingenoverzicht (`/logistiek`) sorteerde op
+intern `id`. Gevraagd: sorteren + groeperen + filteren op de datum waarop een zending
+op de pagina "verscheen" = het moment dat de **pickronde werd afgerond** (zending →
+`'Klaar voor verzending'`).
+
+**Wat (branch `feat/zendingen-gereed-datum`):**
+- **Mig 432** — nieuwe kolom `zendingen.gereed_op` (TIMESTAMPTZ), eenmalig gestempeld
+  door BEFORE-trigger `trg_zending_set_gereed_op` zodra de zending een afgeronde status
+  bereikt (NULL-guard → onveranderlijk). Backfill uit `pickronde_voltooid`-events
+  (via `zending_orders`) met fallback `updated_at`. Index `idx_zendingen_gereed_op`.
+- **Query** (`fetchZendingen`) — selecteert `gereed_op` en sorteert
+  `gereed_op DESC NULLS LAST, id DESC`.
+- **UI** (`zendingen-overzicht.tsx`) — rijen gegroepeerd per afrond-dag met een
+  datum-kopregel (+ telling), en een dropdown "Afgerond op:" om op één dag te filteren.
+  Zendingen zonder afrond-datum vallen onder de groep "Nog niet afgerond".
+
+**Deploy-voorwaarde:** mig 432 moet op de live DB staan vóór de frontend deployt — de
+query leest de nieuwe kolom `gereed_op`.
+
 ## 2026-06-19 — Terugdraaien mig 430: eigen vervoer behoudt de VERZEND-kostenregel (mig 431)
 
 **Waarom (correctie Miguel, 19-06):** mig 430 was op een verkeerd begrip gebaseerd.

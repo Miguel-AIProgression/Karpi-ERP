@@ -545,9 +545,12 @@ Fysieke leveringen. Werkelijk aangemaakt sinds migratie 169 — bron-van-waarhei
 | service_code | TEXT | Mig 210. Service-variant binnen vervoerder (bv. `'internationaal'` bij DPD), gekozen door `selecteer_vervoerder_voor_zending()`. NULL = vervoerder-default. |
 | verzendweek | TEXT | Mig 230. ISO-week-snapshot (formaat `YYYY-Www`) van de afleverdatum bij pickronde-start. Bron voor de wekelijkse verzamelfactuur-aggregatie (mig 232) en filter in `genereer_factuur_voor_week`. Onveranderlijk na pickronde-start dankzij `trg_lock_zending_bundel_sleutel`. Backfill via `zending_orders` M2M voor bestaande rijen. Trigger `trg_zending_set_verzendweek` vult bij INSERT als nog NULL. |
 | opmerkingen | TEXT | |
+| gereed_op | TIMESTAMPTZ | Mig 432. Moment waarop de zending vóór het eerst status `'Klaar voor verzending'` bereikte = **pickronde afgerond**. Eenmalig gezet door BEFORE-trigger `trg_zending_set_gereed_op` (NULL-guard → onveranderlijk; latere transities naar Onderweg/Afgeleverd raken het niet). Voedt sortering/groepering/datumfilter op het logistiek-zendingenoverzicht (`/logistiek`). Backfill = `pickronde_voltooid`-`order_event` via `zending_orders`, fallback `updated_at`. NULL voor nog niet-afgeronde zendingen (bv. `'Picken'`). |
 | created_at, updated_at | TIMESTAMPTZ | Auto |
 
-**Indexen:** `idx_zendingen_order` (order_id), `idx_zendingen_status` (status), `idx_zendingen_vervoerder` (partial op `vervoerder_code`), `idx_zendingen_verzendweek` (partial op `verzendweek IS NOT NULL`, mig 230). `updated_at` via trigger `set_zendingen_updated_at()`.
+**Indexen:** `idx_zendingen_order` (order_id), `idx_zendingen_status` (status), `idx_zendingen_vervoerder` (partial op `vervoerder_code`), `idx_zendingen_verzendweek` (partial op `verzendweek IS NOT NULL`, mig 230), `idx_zendingen_gereed_op` (`gereed_op DESC NULLS LAST`, mig 432). `updated_at` via trigger `set_zendingen_updated_at()`.
+
+**Trigger:** `trg_zending_set_gereed_op` (BEFORE INSERT/UPDATE OF status, mig 432) — stempelt `gereed_op` bij het bereiken van een afgeronde status. Staat los van `trg_zending_klaar_voor_verzending` (mig 172, AFTER, vervoerder-enqueue).
 
 **Trigger:** `trg_zending_klaar_voor_verzending` (AFTER INSERT/UPDATE OF status, mig 172) roept bij transitie naar `'Klaar voor verzending'` de switch-RPC `enqueue_zending_naar_vervoerder()` aan. Sinds mig 176 vult die eerst `zendingen.vervoerder_code` via `selecteer_vervoerder_voor_zending()`.
 

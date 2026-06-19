@@ -199,7 +199,7 @@ export async function fetchZendingen(filters: ZendingenFilters = {}) {
       `
       id, zending_nr, status, vervoerder_code, verzenddatum, track_trace,
       afl_naam, afl_postcode, afl_plaats, afl_land,
-      aantal_colli, totaal_gewicht_kg, created_at,
+      aantal_colli, totaal_gewicht_kg, created_at, gereed_op,
       orders!zendingen_order_id_fkey!inner (
         id, order_nr, debiteur_nr,
         debiteuren:debiteuren!orders_debiteur_nr_fkey (
@@ -217,6 +217,10 @@ export async function fetchZendingen(filters: ZendingenFilters = {}) {
       )
     `,
     )
+    // Sorteer op het moment dat de pickronde werd afgerond (zending →
+    // 'Klaar voor verzending', mig 432). NULL (nog niet afgerond, bv. 'Picken')
+    // achteraan; `id` als stabiele tiebreak binnen dezelfde dag.
+    .order('gereed_op', { ascending: false, nullsFirst: false })
     .order('id', { ascending: false })
     .limit(200)
 

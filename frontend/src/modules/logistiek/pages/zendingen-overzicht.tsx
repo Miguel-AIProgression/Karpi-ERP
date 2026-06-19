@@ -28,6 +28,45 @@ const VERVOERDER_PILLEN: { key: VervoerderFilter; label: string }[] = [
   { key: 'geen', label: 'Geen' },
 ]
 
+/** Aantal kolommen in de tabel — gebruikt voor de datum-kopregel (colSpan). */
+const TABEL_KOLOMMEN = 10
+
+/** Groep-sleutel voor zendingen zonder afrond-datum (bv. lopende pickronde). */
+const ONBEKEND = 'onbekend'
+
+/** Lokale (NL-tijd) datum-sleutel YYYY-MM-DD voor een ISO-timestamp. */
+function lokaleDatumKey(iso: string): string {
+  const d = new Date(iso)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+/** Groep-sleutel: afrond-datum (gereed_op) of ONBEKEND. */
+function groepKeyVan(z: ZendingRow): string {
+  return z.gereed_op ? lokaleDatumKey(z.gereed_op) : ONBEKEND
+}
+
+/** Volledig label voor de datum-kopregel ("donderdag 19 juni 2026"). */
+function datumKopLabel(key: string): string {
+  if (key === ONBEKEND) return 'Nog niet afgerond'
+  const [y, m, d] = key.split('-').map(Number)
+  return new Date(y, m - 1, d).toLocaleDateString('nl-NL', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+}
+
+/** Kort label voor de filter-dropdown ("19-06-2026"). */
+function datumKortLabel(key: string): string {
+  if (key === ONBEKEND) return 'Nog niet afgerond'
+  const [y, m, d] = key.split('-')
+  return `${d}-${m}-${y}`
+}
+
 interface ZendingRow {
   id: number
   zending_nr: string
@@ -42,6 +81,8 @@ interface ZendingRow {
   aantal_colli: number | null
   totaal_gewicht_kg: number | null
   created_at: string
+  /** Mig 432: moment waarop de pickronde werd afgerond (→ 'Klaar voor verzending'). */
+  gereed_op: string | null
   orders: {
     id: number
     order_nr: string
@@ -130,6 +171,7 @@ export function ZendingenOverzichtPage() {
   const navigate = useNavigate()
   const [vervoerderFilter, setVervoerderFilter] = useState<VervoerderFilter>('alle')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('alle')
+  const [datumFilter, setDatumFilter] = useState<string>('alle')
 
   const { data: zendingen = [], isLoading } = useZendingen({
     status: statusFilter === 'alle' ? undefined : statusFilter,
@@ -145,6 +187,40 @@ export function ZendingenOverzichtPage() {
     })
   }, [zendingen, vervoerderFilter])
 
+  // Beschikbare afrond-datums (uit de vervoerder-gefilterde set), in dezelfde
+  // volgorde als de query-sortering (gereed_op DESC) zodat de dropdown
+  // nieuwste-eerst is.
+  const datumOpties = useMemo(() => {
+    const keys: string[] = []
+    const gezien = new Set<string>()
+    for (const r of gefilterd) {
+      const k = groepKeyVan(r)
+      if (!gezien.has(k)) {
+        gezien.add(k)
+        keys.push(k)
+      }
+    }
+    return keys
+  }, [gefilterd])
+
+  // Pas het gekozen datumfilter toe.
+  const naDatum = useMemo(() => {
+    if (datumFilter === 'alle') return gefilterd
+    return gefilterd.filter((r) => groepKeyVan(r) === datumFilter)
+  }, [gefilterd, datumFilter])
+
+  // Groepeer per afrond-dag; insertion-order volgt de query-sortering.
+  const groepen = useMemo(() => {
+    const map = new Map<string, ZendingRow[]>()
+    for (const r of naDatum) {
+      const k = groepKeyVan(r)
+      const lijst = map.get(k)
+      if (lijst) lijst.push(r)
+      else map.set(k, [r])
+    }
+    return Array.from(map.entries())
+  }, [naDatum])
+
   const aantalFout = (zendingen as unknown as ZendingRow[]).filter((z) =>
     (z.verzend_wachtrij ?? []).some((t) => t.status === 'Fout'),
   ).length
@@ -158,7 +234,7 @@ export function ZendingenOverzichtPage() {
             Zendingen
           </span>
         }
-        description={`${gefilterd.length} zendingen${aantalFout ? ` — ${aantalFout} met verzendfout` : ''}${statusFilter === 'alle' ? ' (lopende Pickrondes verborgen)' : ''}`}
+        description={`${naDatum.length} zendingen${aantalFout ? ` — ${aantalFout} met verzendfout` : ''}${statusFilter === 'alle' ? ' (lopende Pickrondes verborgen)' : ''}`}
         actions={
           <Link
             to="/logistiek/vervoerders"
@@ -207,13 +283,30 @@ export function ZendingenOverzichtPage() {
             </button>
           ))}
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs uppercase tracking-wide text-slate-500 mr-2">
+            Afgerond op:
+          </span>
+          <select
+            value={datumFilter}
+            onChange={(e) => setDatumFilter(e.target.value)}
+            className="px-3 py-1 rounded-full text-xs font-medium border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-terracotta-400/30"
+          >
+            <option value="alle">Alle datums</option>
+            {datumOpties.map((k) => (
+              <option key={k} value={k}>
+                {datumKortLabel(k)}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {/* Tabel */}
       <div className="bg-white rounded-[var(--radius)] border border-slate-200 overflow-hidden">
         {isLoading ? (
           <div className="p-8 text-center text-slate-500 text-sm">Laden…</div>
-        ) : gefilterd.length === 0 ? (
+        ) : naDatum.length === 0 ? (
           <div className="p-12 text-center text-slate-500 text-sm">
             <div className="mb-2">Geen zendingen gevonden.</div>
             <div className="text-xs text-slate-400">
@@ -237,9 +330,21 @@ export function ZendingenOverzichtPage() {
                 <th className="px-4 py-3 text-right font-medium" aria-label="Acties" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
-              {gefilterd.map((z) => {
-                const code = pickVervoerderCode(z)
+            {groepen.map(([datumKey, rijen]) => (
+              <tbody key={datumKey} className="divide-y divide-slate-100">
+                <tr className="bg-slate-50/80 border-t border-slate-200">
+                  <td
+                    colSpan={TABEL_KOLOMMEN}
+                    className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                  >
+                    {datumKopLabel(datumKey)}
+                    <span className="ml-2 font-normal normal-case text-slate-400">
+                      · {rijen.length} {rijen.length === 1 ? 'zending' : 'zendingen'}
+                    </span>
+                  </td>
+                </tr>
+                {rijen.map((z) => {
+                  const code = pickVervoerderCode(z)
                 const heeftFout = (z.verzend_wachtrij ?? []).some((t) => t.status === 'Fout')
                 // Mig 222: bundel-zendingen hebben meerdere orders via `zending_orders`.
                 // Backfill heeft solo-zendingen ook in M2M gezet; fallback op primaire
@@ -309,8 +414,9 @@ export function ZendingenOverzichtPage() {
                     </td>
                   </tr>
                 )
-              })}
-            </tbody>
+                })}
+              </tbody>
+            ))}
           </table>
         )}
       </div>
