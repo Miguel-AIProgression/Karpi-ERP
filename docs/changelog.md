@@ -1,5 +1,42 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-19 — Omsticker-artikel ("OMB:") op het verzendlabel (mig 436)
+
+**Waarom (melding Miguel, 19-06 — ORD-2026-0672 / ZEND-2026-0108):** bij een order
+waar de allocator een **equivalent** product pakt (omstickeren) toonde het verzendlabel
+alleen de code van het *bestelde* artikel. Voorbeeld: besteld RACC23XX200290 (RACCOON),
+fysiek gepakt 522230003 = TIFF23XX200290 → de picker zag nergens dát hij omsticker, laat
+staan náár wat. Gewenst: onder de productregel een extra regel `OMB: TIFF23XX200290`
+(resp. `OMB: TIFF13XX160230` op het tweede colli).
+
+**Kerninzicht:** de omsticker gebeurde hier **automatisch** (`order_reserveringen`-rij met
+`is_handmatig=FALSE`, `bron='voorraad'`, `fysiek_artikelnr` ≠ orderregel-artikel). De
+detectie is dus puur `fysiek_artikelnr <> order_regels.artikelnr` — **niet** op
+`is_handmatig` filteren (dat zou de automatische equivalent-allocatie missen). Spiegelt de
+order-detail-claim-uitsplitsing (`fetchClaimsVoorOrder`).
+
+**Wat (branch `feat/label-omsticker-code`):**
+- **Mig 436** — kolom `zending_colli.omsticker_snapshot` (karpi_code van het fysiek
+  gepakte equivalent, of NULL) + `genereer_zending_colli` als **superset van mig 419**.
+  Per orderregel wordt een per-stuk-array van omsticker-codes opgebouwd (actieve claims
+  geëxpandeerd op `aantal`, claim_volgorde-volgorde; eigen voorraad/IO → NULL); stuk *i*
+  krijgt code *i*. Backfill (zelfde per-stuk-mapping via row_number) vult niet-verzonden
+  zendingen direct, inclusief ZEND-2026-0108. Snapshot-patroon zoals mig 390/399/400/419.
+- **Frontend** — `omsticker_snapshot` door de keten: query (`ZendingPrintColli`),
+  `LabelItem.omstickerSnapshot` (`printset.ts`), en `labelProductRegels(regel, snapshot,
+  omstickerCode?)` (`shipping-label-data.ts`) die de kleine Karpi-code-regel **vervangt**
+  door `OMB: <code>` (de grote regel toont al de bestelde kwaliteit + maat). `ShippingLabel`
+  krijgt de prop; beide aanroepers (zending-printset, bulk-printset) geven 'm door.
+- **Carrier-payloads (HST/Rhenus/Verhoek) ongewijzigd** — OMB is puur label-presentatie;
+  zij gebruiken `omschrijving_snapshot` / DEFAULT.
+
+**Tests:** `shipping-label-data.test.ts` (OMB vervangt/whitespace-no-op) +
+`shipping-label.test.tsx` (render met/zonder OMB) + fixtures bijgewerkt (printset/pakbon).
+Typecheck + 79 logistiek-tests groen.
+
+**Deploy:** mig 436 vóór de frontend draaien (de print-query leest de nieuwe kolom; de
+backfill vult de al-bestaande colli van lopende pickrondes). Frontend daarna deployen.
+
 ## 2026-06-19 — Dropship-kostenregel telt niet meer als collo (mig 434)
 
 **Waarom (melding Miguel, 19-06 — ORD-2026-0305 / ZEND-2026-0105):** een dropship-order

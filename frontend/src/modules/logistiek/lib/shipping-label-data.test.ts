@@ -85,6 +85,21 @@ describe('labelProductRegels — vaste maat', () => {
     expect(labelProductRegels(regel).groot).toBe('GALAXY 200x290 cm')
   })
 
+  it('omsticker (mig 436): vervangt de Karpi-code-regel door "OMB: <fysieke code>"', () => {
+    const regel = maakRegel(maakOrderRegel({ producten: { ...product } }))
+    // Grote regel onveranderd (bestelde kwaliteit + maat), kleine regel = OMB.
+    expect(labelProductRegels(regel, null, 'TIFF13XX160230')).toEqual({
+      groot: 'GALAXY (10) 200x290 cm',
+      klein: 'OMB: TIFF13XX160230',
+    })
+  })
+
+  it('omsticker leeg/whitespace → ongewijzigd (geen OMB-regel)', () => {
+    const regel = maakRegel(maakOrderRegel({ producten: { ...product } }))
+    expect(labelProductRegels(regel, null, '  ').klein).toBe('GALA10XX200290')
+    expect(labelProductRegels(regel, null, null).klein).toBe('GALA10XX200290')
+  })
+
   it('toont de vorm achteraan als de uitvoering afwijkt (organisch)', () => {
     const regel = maakRegel(
       maakOrderRegel({

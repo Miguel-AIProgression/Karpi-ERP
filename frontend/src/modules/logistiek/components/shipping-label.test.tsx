@@ -66,6 +66,7 @@ interface RenderOpties {
   colliIndex?: number
   colliTotal?: number
   regel?: ZendingPrintRegel | null
+  omstickerSnapshot?: string | null
 }
 
 function renderLabel(zending: ZendingPrintSet, opts: RenderOpties = {}) {
@@ -83,6 +84,7 @@ function renderLabel(zending: ZendingPrintSet, opts: RenderOpties = {}) {
       omschrijvingSnapshot={null}
       klantOmschrijvingSnapshot={null}
       klanteigenNaamSnapshot={null}
+      omstickerSnapshot={opts.omstickerSnapshot ?? null}
     />,
   )
 }
@@ -151,5 +153,19 @@ describe('ShippingLabel — informatieve zones', () => {
     expect(text).toContain('1 VAN 3') // colli-telling
     expect(text).toContain('Referentie') // referentie-zone
     expect(text).toContain('12/06/26') // bevroren verzenddatum (DD/MM/YY)
+  })
+})
+
+describe('ShippingLabel — omsticker (mig 436)', () => {
+  it('omstickerSnapshot gezet → toont de "OMB:"-regel met de fysieke karpi_code', () => {
+    const { container } = renderLabel(maakZending(), {
+      omstickerSnapshot: 'TIFF13XX160230',
+    })
+    expect(container.textContent).toContain('OMB: TIFF13XX160230')
+  })
+
+  it('omstickerSnapshot=null → géén "OMB:"-regel', () => {
+    const { container } = renderLabel(maakZending(), { omstickerSnapshot: null })
+    expect(container.textContent).not.toContain('OMB:')
   })
 })

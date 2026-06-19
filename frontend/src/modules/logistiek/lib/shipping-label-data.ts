@@ -119,6 +119,22 @@ export interface LabelProductRegels {
 export function labelProductRegels(
   regel: ZendingPrintRegel | null,
   snapshot?: OmschrijvingSnapshot | null,
+  omstickerCode?: string | null,
+): LabelProductRegels {
+  const basis = basisProductRegels(regel, snapshot)
+
+  // Omsticker (mig 436): de allocator pakte een equivalent product. De grote
+  // regel toont al de bestelde kwaliteit + maat; vervang de kleine Karpi-code-
+  // regel door "OMB: <karpi_code fysiek artikel>" zodat de picker ziet wat hij
+  // fysiek omsticker. Leeg/afwezig → ongewijzigd.
+  const omsticker = (omstickerCode ?? '').trim()
+  if (omsticker) return { groot: basis.groot, klein: `OMB: ${omsticker}` }
+  return basis
+}
+
+function basisProductRegels(
+  regel: ZendingPrintRegel | null,
+  snapshot?: OmschrijvingSnapshot | null,
 ): LabelProductRegels {
   const vast = vasteMaatRegels(regel)
   if (vast) return vast

@@ -32,6 +32,9 @@ export interface ShippingLabelProps {
   /** Mig 419: klant-eigennaam voor de kwaliteit (`zending_colli.klanteigen_naam_snapshot`).
    * null/leeg → geen "Uw referentie"-regel. */
   klanteigenNaamSnapshot: string | null
+  /** Mig 436: karpi_code van het fysiek gepakte equivalent (`zending_colli.omsticker_snapshot`).
+   * null/leeg → geen "OMB:"-regel. */
+  omstickerSnapshot: string | null
   labelFormaat?: LabelFormaat
 }
 
@@ -68,6 +71,7 @@ export function ShippingLabel({
   omschrijvingSnapshot,
   klantOmschrijvingSnapshot,
   klanteigenNaamSnapshot,
+  omstickerSnapshot,
   labelFormaat,
 }: ShippingLabelProps) {
   // 0.5mm aftrekken voor sub-pixel rounding-marge bij printen.
@@ -76,7 +80,7 @@ export function ShippingLabel({
 
   const order = zending.orders
   const snapshot = { omschrijvingSnapshot, klantOmschrijvingSnapshot }
-  const productRegels = labelProductRegels(regel, snapshot)
+  const productRegels = labelProductRegels(regel, snapshot, omstickerSnapshot)
   const uwReferentie = klanteigenReferentie(klanteigenNaamSnapshot)
   const land = zending.afl_land ?? 'NL'
   const barcodeValue = labelBarcode(sscc)

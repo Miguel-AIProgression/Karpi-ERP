@@ -42,6 +42,7 @@ function maakColli(overrides: Partial<ZendingPrintColli> = {}): ZendingPrintColl
     bundel_colli_id: null,
     is_bundel: false,
     klanteigen_naam_snapshot: null,
+    omsticker_snapshot: null,
     ...overrides,
   }
 }

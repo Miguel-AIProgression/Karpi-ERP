@@ -361,6 +361,7 @@ export function ZendingPrintSetPage() {
               omschrijvingSnapshot={label.omschrijvingSnapshot}
               klantOmschrijvingSnapshot={label.klantOmschrijvingSnapshot}
               klanteigenNaamSnapshot={label.klanteigenNaamSnapshot}
+              omstickerSnapshot={label.omstickerSnapshot}
               labelFormaat={labelFormaat ?? undefined}
             />
           ))}

@@ -50,6 +50,9 @@ export interface LabelItem {
   /** Mig 419: bevroren klant-eigennaam voor de kwaliteit ("Uw referentie" op
    * het label). `null` = geen afwijkende naam / legacy-colli. */
   klanteigenNaamSnapshot: string | null
+  /** Mig 436: karpi_code van het fysiek gepakte equivalent ("OMB:"-regel op het
+   * label). `null` = geen omsticker / legacy-colli. */
+  omstickerSnapshot: string | null
 }
 
 /**
@@ -200,6 +203,7 @@ export function bouwVerzenddocument(zending: ZendingPrintSet): Verzenddocument {
         omschrijvingSnapshot: c.omschrijving_snapshot,
         klantOmschrijvingSnapshot: c.klant_omschrijving_snapshot,
         klanteigenNaamSnapshot: c.klanteigen_naam_snapshot,
+        omstickerSnapshot: c.omsticker_snapshot,
       }
     })
   } else {
@@ -223,6 +227,7 @@ export function bouwVerzenddocument(zending: ZendingPrintSet): Verzenddocument {
       omschrijvingSnapshot: null,
       klantOmschrijvingSnapshot: null,
       klanteigenNaamSnapshot: null,
+      omstickerSnapshot: null,
     }))
   }
 
