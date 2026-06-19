@@ -62,6 +62,7 @@ const product = {
   vorm: 'rechthoek' as const,
   kleur_code: '10',
   karpi_code: 'GALA10XX200290',
+  locatie: null,
 }
 
 describe('labelProductRegels — vaste maat', () => {
