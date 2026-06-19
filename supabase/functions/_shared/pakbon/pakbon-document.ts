@@ -3,7 +3,8 @@
 // genomen zijn (welke tekst, groepering, totalen). Spiegelt de afleiding in de
 // React-component `pakbon-document.tsx`; de pdf-lib-renderer doet alleen lay-out.
 
-import { bouwPakbonRegels, productNamen, telColli } from './aggregatie.ts'
+import { bouwPakbonRegels, klantNaamWijktAf, productNamen, telColli } from './aggregatie.ts'
+import { externReferentie } from '../referentie.ts'
 import type {
   PakbonDocument,
   PakbonOrderGroep,
@@ -51,7 +52,10 @@ function bouwGroepRegels(regels: PakbonRegel[]): PakbonRegelDisplay[] {
   return regels.map((pr, idx) => {
     const namen = productNamen(pr.regel, pr.snapshot)
     const hoofdNaam = namen.karpiNaam ?? namen.klantNaam
-    const toonUwNaam = namen.karpiNaam != null && namen.karpiNaam !== namen.klantNaam
+    // "Uw naam" alleen als die zinvol afwijkt van de hoofdregel — niet als het
+    // slechts de hoofdregel-mín-maat of de Karpi-code is (single source met de
+    // geprinte pakbon, mig 388/436).
+    const toonUwNaam = klantNaamWijktAf(hoofdNaam, namen.klantNaam, pr.regel.artikelnr)
     const orderRegel = pr.regel.order_regels
     // Maat zit al in de bevroren omschrijving; aparte regel alleen bij legacy-
     // zending zonder colli-snapshot (= `!snapshot`).
@@ -65,6 +69,7 @@ function bouwGroepRegels(regels: PakbonRegel[]): PakbonRegelDisplay[] {
       hoofdNaam,
       uwNaam: toonUwNaam ? namen.klantNaam : null,
       maatRegel,
+      omstickerCodes: pr.omstickerCodes,
       besteld: formatAantal(pr.besteld),
       geleverd: formatAantal(pr.geleverd),
     }
@@ -74,6 +79,10 @@ function bouwGroepRegels(regels: PakbonRegel[]): PakbonRegelDisplay[] {
 export interface BouwPakbonDocumentOpties {
   /** Aantal colli (komt normaal uit de label-expansie / colli-count). */
   kolli?: number
+  /** Routecode (HST-depot) — geïnjecteerde render-context, géén document-
+   *  eigenschap. Print-only voor de magazijn-sortering: de geprinte React-pakbon
+   *  geeft `hstDepotVoorPostcode` mee, de factuurmail-PDF niets (→ NULL). */
+  routecode?: string | null
 }
 
 export function bouwPakbonDocument(
@@ -127,14 +136,19 @@ export function bouwPakbonDocument(
     klantLand && order.fact_land !== 'NL' ? klantLand : '',
   ].filter((r) => r.trim().length > 0)
 
-  // Referentie-meta.
+  // Referentie-meta. externReferentie strips de interne " / Shopify: #NNN"-suffix
+  // (mag nooit op een extern document) — gelijk aan de geprinte pakbon.
   const referentieRegel =
-    [order.klant_referentie, order.week ? `(WK ${order.week})` : null].filter(Boolean).join(' ') || '-'
+    [externReferentie(order.klant_referentie), order.week ? `(WK ${order.week})` : null]
+      .filter(Boolean)
+      .join(' ') || '-'
   const vertegenwoordiger = order.vertegenwoordigers?.naam ?? order.vertegenw_code ?? '-'
   const bundelRegels = isBundel
     ? zending.bundel_orders.map((bo) => {
         const ref =
-          [bo.klant_referentie, bo.week ? `(WK ${bo.week})` : null].filter(Boolean).join(' ') || '-'
+          [externReferentie(bo.klant_referentie), bo.week ? `(WK ${bo.week})` : null]
+            .filter(Boolean)
+            .join(' ') || '-'
         return `· ${bo.order_nr} : Ref. ${ref}`
       })
     : []
@@ -150,7 +164,9 @@ export function bouwPakbonDocument(
     vertegenwoordiger,
     orderDebiteur: `${order.order_nr}/${order.debiteur_nr}`,
     debiteur: String(order.debiteur_nr),
-    routecode: order.debiteuren?.route ?? null,
+    // Geïnjecteerde print-only render-context (geen `debiteuren.route` meer — die
+    // legacy-bron toonde bij élke vervoerder een waarde, ook op een Rhenus-pakbon).
+    routecode: opties.routecode ?? null,
     bundelRegels,
     groepen,
     kolli,

@@ -13,7 +13,7 @@ const PAKBON_SELECT = `
   orders!zendingen_order_id_fkey!inner (
     id, order_nr, klant_referentie, week, debiteur_nr, vertegenw_code,
     fact_naam, fact_adres, fact_postcode, fact_plaats, fact_land, afl_naam_2,
-    debiteuren:debiteuren!orders_debiteur_nr_fkey ( naam, route ),
+    debiteuren:debiteuren!orders_debiteur_nr_fkey ( naam ),
     vertegenwoordigers ( naam )
   ),
   zending_orders (
@@ -29,7 +29,7 @@ const PAKBON_SELECT = `
       producten!order_regels_artikelnr_fkey ( omschrijving, gewicht_kg )
     )
   ),
-  zending_colli ( colli_nr, sscc, order_regel_id, omschrijving_snapshot, klant_omschrijving_snapshot )
+  zending_colli ( colli_nr, sscc, order_regel_id, omschrijving_snapshot, klant_omschrijving_snapshot, omsticker_snapshot )
 `
 
 /** Haalt één zending op en levert een `PakbonZendingInput` (bundel platgeslagen). */

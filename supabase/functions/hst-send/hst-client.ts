@@ -64,34 +64,49 @@ export async function postTransportOrder(
     body = null;
   }
 
-  if (!res.ok) {
-    return {
-      ok: false,
-      httpCode: res.status,
-      body,
-      transportOrderId: null,
-      trackingNumber: null,
-      pdfBase64: null,
-      errorMsg: extractErrorMsg(body, res.status),
-    };
-  }
-
   // HST 201-pad: Success-veld + OrderNumber + optionele PDF.
   // Splits PDF af zodat we 'm niet onnodig in `response_payload` opslaan
   // (~14KB base64 per zending zou de hst_transportorders-tabel snel laten groeien).
+  // OrderNumber-parse staat bewust VÓÓR de !res.ok-tak: HST keurt de
+  // datum-validatiefout in de praktijk af met HTTP 400 (niet 200) MÉT een
+  // OrderNumber — en maakt de order tóch server-side aan ("Niet valide" in de
+  // Portal). Terminaal-detectie moet dus op "OrderNumber aanwezig" staan,
+  // onafhankelijk van de HTTP-status (retry 19-06, T75038267004442/4443/4444).
   const typed = body as Partial<HstTransportOrderResponseBody> | null;
   const orderNumber = typed?.OrderNumber ?? null;
   const pdfBase64 = typed?.PDFDocument?.Contents ?? null;
 
-  // Defensief: HST kan in een edge-case 200 sturen met Success=false.
+  if (!res.ok) {
+    // 400 MÉT OrderNumber = de order is server-side al aangemaakt → behoud het
+    // OrderNumber en markeer TERMINAAL (een re-POST zou een DUPLICAAT geven; HST =
+    // POST-only). Een 400 ZÓNDER OrderNumber is een echte pre-creatie-afwijzing
+    // (bv. "Bellen voor aflevering") en blijft retrybaar.
+    return {
+      ok: false,
+      httpCode: res.status,
+      body: stripPdf(body),
+      transportOrderId: orderNumber,
+      trackingNumber: null,
+      pdfBase64: null,
+      aangemeldMaarFout: orderNumber != null,
+      errorMsg: extractErrorMsg(body, res.status),
+    };
+  }
+
+  // HST kan HTTP 200/201 sturen met Success=false ÉN een OrderNumber: de order is
+  // dan WÉL aangemaakt (Portal-status "Niet valide", bv. mislukte datumberekening).
+  // We behouden het OrderNumber en markeren de poging TERMINAAL — een retry/re-POST
+  // zou een duplicaat aanmaken (HST = POST-only). Een Success=false ZÓNDER
+  // OrderNumber is een echte pre-creatie-afwijzing en blijft retrybaar.
   if (typed?.Success === false) {
     return {
       ok: false,
       httpCode: res.status,
       body: stripPdf(body),
-      transportOrderId: null,
+      transportOrderId: orderNumber,
       trackingNumber: null,
       pdfBase64: null,
+      aangemeldMaarFout: orderNumber != null,
       errorMsg: extractErrorMsg(body, res.status),
     };
   }
