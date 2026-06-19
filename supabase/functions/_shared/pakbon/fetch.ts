@@ -26,6 +26,7 @@ const PAKBON_SELECT = `
       order_id, regelnummer, artikelnr, omschrijving, omschrijving_2,
       orderaantal, te_leveren, gewicht_kg, is_maatwerk,
       maatwerk_lengte_cm, maatwerk_breedte_cm,
+      maatwerk_afwerking, maatwerk_band_kleur,
       producten!order_regels_artikelnr_fkey ( omschrijving, gewicht_kg )
     )
   ),

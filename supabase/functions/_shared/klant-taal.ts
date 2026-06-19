@@ -27,17 +27,21 @@ export function bepaalTaal(landIso2: string | null): Taal {
 // al "Farbe"). Een woordenboek met hele-woord-matching is hierop veilig: het
 // raakt alleen herkenbare NL-vaktermen en laat al-vertaalde tekst ongemoeid.
 const REGEL_WOORDVERTALINGEN: Record<Exclude<Taal, 'nl'>, Record<string, string>> = {
-  de: { Kleur: 'Farbe', Rond: 'Rund', Rechthoek: 'Rechteck', Ovaal: 'Oval', Karpet: 'Teppich' },
-  fr: { Kleur: 'Couleur', Rond: 'Rond', Rechthoek: 'Rectangle', Ovaal: 'Ovale', Karpet: 'Tapis' },
-  en: { Kleur: 'Colour', Rond: 'Round', Rechthoek: 'Rectangle', Ovaal: 'Oval', Karpet: 'Rug' },
+  de: { Kleur: 'Farbe', Rond: 'Rund', Rechthoek: 'Rechteck', Ovaal: 'Oval', Karpet: 'Teppich', band: 'Band' },
+  fr: { Kleur: 'Couleur', Rond: 'Rond', Rechthoek: 'Rectangle', Ovaal: 'Ovale', Karpet: 'Tapis', band: 'bande' },
+  en: { Kleur: 'Colour', Rond: 'Round', Rechthoek: 'Rectangle', Ovaal: 'Oval', Karpet: 'Rug', band: 'band' },
 }
 
 // Meerwoordige frasen apart, met vaste vervangtekst — de hoofdletter-logica van
 // de woord-loop zou "Op maat" → "Nach maß" maken (binnen-kapitaal gaat verloren).
+// "afwerking:" (met colon) is bewust een fraseregel i.p.v. een los woord: de
+// afwerkingsnaam "Volume afwerking" bevat ook het woord "afwerking", maar
+// blijft onvertaald (besluit gebruiker 2026-06-18) — alleen het label vóór de
+// colon (uit de afwerkingPresentatie-suffix) mag vertaald worden.
 const REGEL_FRASEVERTALINGEN: Record<Exclude<Taal, 'nl'>, [RegExp, string][]> = {
-  de: [[/\bop maat\b/gi, 'nach Maß']],
-  fr: [[/\bop maat\b/gi, 'sur mesure']],
-  en: [[/\bop maat\b/gi, 'custom size']],
+  de: [[/\bop maat\b/gi, 'nach Maß'], [/\bafwerking:/gi, 'Verarbeitung:']],
+  fr: [[/\bop maat\b/gi, 'sur mesure'], [/\bafwerking:/gi, 'finition:']],
+  en: [[/\bop maat\b/gi, 'custom size'], [/\bafwerking:/gi, 'finish:']],
 }
 
 export function vertaalOmschrijving(tekst: string, taal: Taal): string {

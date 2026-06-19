@@ -47,6 +47,8 @@ export interface ZendingPrintOrderRegel {
   maatwerk_lengte_cm: number | null
   maatwerk_breedte_cm: number | null
   maatwerk_afwerking: string | null
+  /** Gekozen bandkleur-snapshot — alleen relevant (en getoond) bij Breedband. */
+  maatwerk_band_kleur: string | null
   maatwerk_kwaliteit_code: string | null
   maatwerk_kleur_code: string | null
   maatwerk_oppervlak_m2: number | null
@@ -313,7 +315,7 @@ export async function fetchZendingPrintSet(zending_nr: string): Promise<ZendingP
         order_regels (
           id, order_id, regelnummer, artikelnr, omschrijving, omschrijving_2, orderaantal, te_leveren,
           gewicht_kg, is_maatwerk, maatwerk_lengte_cm, maatwerk_breedte_cm,
-          maatwerk_afwerking, maatwerk_kwaliteit_code, maatwerk_kleur_code,
+          maatwerk_afwerking, maatwerk_band_kleur, maatwerk_kwaliteit_code, maatwerk_kleur_code,
           maatwerk_oppervlak_m2,
           producten!order_regels_artikelnr_fkey (
             ean_code, omschrijving, vervolgomschrijving, gewicht_kg,

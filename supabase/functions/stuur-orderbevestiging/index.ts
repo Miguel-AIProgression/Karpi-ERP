@@ -20,6 +20,7 @@ import { isoWeekJaar } from '../_shared/iso-week.ts'
 import { berekenFactuurTotalen } from '../_shared/factuur-bedrag.ts'
 import { effectiefBtwPct, isBtwVerlegd } from '../_shared/btw.ts'
 import { resolveKarpiCode } from '../_shared/facturatie/artikel-presentatie.ts'
+import { afwerkingPresentatie, fetchAfwerkingTypeMap } from '../_shared/afwerking-presentatie.ts'
 import { logExternePayload } from '../_shared/externe-payload-audit.ts'
 import { externReferentie } from '../_shared/referentie.ts'
 
@@ -262,6 +263,7 @@ serve(async (req) => {
       klant_referentie,
       orderaantal, prijs, korting_pct, bedrag,
       maatwerk_kwaliteit_code, maatwerk_kleur_code,
+      maatwerk_afwerking, maatwerk_band_kleur,
       producten!order_regels_artikelnr_fkey(karpi_code, kwaliteit_code, kleur_code)
     `)
     .eq('order_id', order_id)
@@ -269,23 +271,31 @@ serve(async (req) => {
 
   if (regelsErr) return json({ error: regelsErr.message }, 500)
 
-  const regels = (regelsRaw ?? []).map((r: any) => ({
-    regelnummer: r.regelnummer,
-    artikelnr: r.artikelnr,
-    // Gedeelde karpi_code-ladder (ADR-0036): zelfde Karpi-code als op de factuur.
-    karpi_code: resolveKarpiCode(r.karpi_code, r.producten?.karpi_code, r.artikelnr) || null,
-    omschrijving: r.omschrijving ?? '',
-    omschrijving_2: r.omschrijving_2 ?? null,
-    klant_referentie: r.klant_referentie ?? null,
-    orderaantal: r.orderaantal ?? 0,
-    prijs: r.prijs ?? null,
-    korting_pct: r.korting_pct ?? null,
-    bedrag: r.bedrag ?? null,
-    // Resolutieketen gelijk aan view snijplan_sticker_data (mig 295):
-    // maatwerk-snapshot wint van het gekoppelde product.
-    kwaliteit_code: r.maatwerk_kwaliteit_code ?? r.producten?.kwaliteit_code ?? null,
-    kleur_code: r.maatwerk_kleur_code ?? r.producten?.kleur_code ?? null,
-  }))
+  // Afwerking als omschrijving-suffix — zelfde regel als factuur/pakbon: de
+  // bandkleur verschijnt alleen bij Breedband (afwerkingPresentatie).
+  const afwerkingTypeMap = await fetchAfwerkingTypeMap(supabase)
+
+  const regels = (regelsRaw ?? []).map((r: any) => {
+    const afwerking = afwerkingPresentatie(r.maatwerk_afwerking, r.maatwerk_band_kleur, afwerkingTypeMap)
+    const omschrijvingBasis = r.omschrijving ?? ''
+    return {
+      regelnummer: r.regelnummer,
+      artikelnr: r.artikelnr,
+      // Gedeelde karpi_code-ladder (ADR-0036): zelfde Karpi-code als op de factuur.
+      karpi_code: resolveKarpiCode(r.karpi_code, r.producten?.karpi_code, r.artikelnr) || null,
+      omschrijving: afwerking ? `${omschrijvingBasis} - afwerking: ${afwerking}` : omschrijvingBasis,
+      omschrijving_2: r.omschrijving_2 ?? null,
+      klant_referentie: r.klant_referentie ?? null,
+      orderaantal: r.orderaantal ?? 0,
+      prijs: r.prijs ?? null,
+      korting_pct: r.korting_pct ?? null,
+      bedrag: r.bedrag ?? null,
+      // Resolutieketen gelijk aan view snijplan_sticker_data (mig 295):
+      // maatwerk-snapshot wint van het gekoppelde product.
+      kwaliteit_code: r.maatwerk_kwaliteit_code ?? r.producten?.kwaliteit_code ?? null,
+      kleur_code: r.maatwerk_kleur_code ?? r.producten?.kleur_code ?? null,
+    }
+  })
 
   // BTW: zelfde bron-van-waarheid als genereer_factuur_voor_bundel (mig 371) —
   // verlegd-vlag wint, anders debiteuren.btw_percentage met fallback 21. Zo

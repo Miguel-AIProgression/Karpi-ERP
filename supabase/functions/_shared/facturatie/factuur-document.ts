@@ -9,6 +9,7 @@
 
 import { effectiefBtwPct } from '../btw.ts'
 import { externReferentie } from '../referentie.ts'
+import { afwerkingPresentatie, fetchAfwerkingTypeMap } from '../afwerking-presentatie.ts'
 import {
   resolveArtikelPresentatie,
   type ArtikelPresentatie,
@@ -259,13 +260,13 @@ async function fetchFactuurDocumentLookups(
   const orderRegelIds = uniqueNumbers(regelRows.map((r) => r.order_regel_id))
   const artikelnrs = uniqueStrings(regelRows.map((r) => r.artikelnr))
 
-  const [orderRegelsRes, productenRes, klantArtikelenRes] = await Promise.all([
+  const [orderRegelsRes, productenRes, klantArtikelenRes, afwerkingTypes] = await Promise.all([
     orderRegelIds.length
       ? supabase
           .from('order_regels')
           .select(
             'id, karpi_code, gewicht_kg, is_maatwerk, maatwerk_lengte_cm, maatwerk_breedte_cm, ' +
-              'maatwerk_kwaliteit_code, maatwerk_kleur_code',
+              'maatwerk_kwaliteit_code, maatwerk_kleur_code, maatwerk_afwerking, maatwerk_band_kleur',
           )
           .in('id', orderRegelIds)
       : Promise.resolve({ data: [], error: null }),
@@ -285,6 +286,7 @@ async function fetchFactuurDocumentLookups(
           .eq('debiteur_nr', debiteurNr)
           .in('artikelnr', artikelnrs)
       : Promise.resolve({ data: [], error: null }),
+    fetchAfwerkingTypeMap(supabase),
   ])
 
   if (orderRegelsRes.error) throw new Error(`Fetch order_regels: ${orderRegelsRes.error.message}`)
@@ -301,6 +303,7 @@ async function fetchFactuurDocumentLookups(
       maatwerk_breedte_cm: r.maatwerk_breedte_cm,
       maatwerk_kwaliteit_code: r.maatwerk_kwaliteit_code,
       maatwerk_kleur_code: r.maatwerk_kleur_code,
+      afwerking: afwerkingPresentatie(r.maatwerk_afwerking, r.maatwerk_band_kleur, afwerkingTypes),
     })
   }
   const producten = new Map<string, ProductLookup>()

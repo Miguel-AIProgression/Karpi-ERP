@@ -2,6 +2,8 @@ import { useQuery } from '@tanstack/react-query'
 import { formatNumber } from '@/lib/utils/formatters'
 import { fetchBedrijfsConfig } from '@/lib/supabase/queries/bedrijfsconfig'
 import { hstDepotVoorPostcode } from '@/modules/logistiek/lib/hst-depot'
+import { fetchAfwerkingTypes } from '@/modules/maatwerk/queries/maatwerk-runtime'
+import type { AfwerkingTypeMap } from '@/lib/orders/afwerking-presentatie'
 import type { ZendingPrintSet } from '@/modules/logistiek/queries/zendingen'
 // Single source (Pakbondocument-consolidatie 2026-06-19, ADR-0033): de geprinte
 // pakbon en de factuurmail-PDF zijn dunne renderers op hetzelfde canonieke
@@ -36,6 +38,14 @@ export function PakbonDocument({ zending, vervoerderNaam: _vervoerderNaam, colli
     queryFn: fetchBedrijfsConfig,
     staleTime: 5 * 60 * 1000,
   })
+  const { data: afwerkingTypesRaw } = useQuery({
+    queryKey: ['afwerking-types'],
+    queryFn: fetchAfwerkingTypes,
+    staleTime: 5 * 60 * 1000,
+  })
+  const afwerkingTypes: AfwerkingTypeMap = new Map(
+    (afwerkingTypesRaw ?? []).map((a) => [a.code, { naam: a.naam, type_bewerking: a.type_bewerking }]),
+  )
 
   // Routecode = HST-depotnummer uit de postcodeverdeling (zelfde lookup als op
   // het verzendlabel). Alléén bij HST: andere vervoerders (Rhenus/Verhoek) kennen
@@ -45,7 +55,7 @@ export function PakbonDocument({ zending, vervoerderNaam: _vervoerderNaam, colli
       ? hstDepotVoorPostcode(zending.afl_postcode, zending.afl_land)
       : null
 
-  const doc = bouwPakbonDocument(zending, { kolli: colliTotal, routecode })
+  const doc = bouwPakbonDocument(zending, { kolli: colliTotal, routecode, afwerkingTypes })
 
   return (
     <div className="pakbon-page bg-white text-slate-900" style={{ width: '210mm', minHeight: '297mm' }}>
@@ -159,6 +169,7 @@ export function PakbonDocument({ zending, vervoerderNaam: _vervoerderNaam, colli
                   <div>
                     <div>{eenheidVoor()}&nbsp;&nbsp;{r.hoofdNaam}</div>
                     {r.maatRegel && <div className="text-slate-600">{r.maatRegel}</div>}
+                    {r.afwerkingRegel && <div className="text-slate-600">Afwerking: {r.afwerkingRegel}</div>}
                     {/* Mig 436: omsticker — fysiek gepakt equivalent, zelfde
                         "OMB:"-notatie als het verzendlabel. */}
                     {r.omstickerCodes.length > 0 && (

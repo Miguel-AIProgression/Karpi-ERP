@@ -20,6 +20,7 @@ import { fetchPakbonZending } from '../_shared/pakbon/fetch.ts'
 import { bouwPakbonDocument } from '../_shared/pakbon/pakbon-document.ts'
 import { genereerPakbonPDF } from '../_shared/pakbon/pakbon-pdf.ts'
 import { fetchBedrijfMetLogo } from '../_shared/pakbon/bedrijf.ts'
+import { fetchAfwerkingTypeMap } from '../_shared/afwerking-presentatie.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -611,12 +612,13 @@ async function genereerPakbonBijlagen(
     if (zendingNrs.length === 0) return []
 
     const { bedrijf, logo } = await fetchBedrijfMetLogo(supabase)
+    const afwerkingTypes = await fetchAfwerkingTypeMap(supabase)
 
     const bijlagen: PakbonBijlage[] = []
     for (const zendingNr of zendingNrs) {
       try {
         const zending = await fetchPakbonZending(supabase, zendingNr)
-        const doc = bouwPakbonDocument(zending)
+        const doc = bouwPakbonDocument(zending, { afwerkingTypes })
         const bytes = await genereerPakbonPDF(doc, bedrijf, logo)
         const filename = `Pakbon-${zendingNr}.pdf`
 

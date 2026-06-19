@@ -31,6 +31,8 @@ export interface OrderRegelLookup {
   /** Kwaliteit/kleur-snapshot — bron voor de klant-eigennaam-lookup (factuur-document). */
   maatwerk_kwaliteit_code?: string | null
   maatwerk_kleur_code?: string | null
+  /** Al-opgeloste afwerkingstekst (afwerkingPresentatie), bv. "Breedband - band KK21". */
+  afwerking?: string | null
 }
 
 /** producten-rij. NB: `producten` heeft GÉÉN omschrijving_2-kolom — de omschrijving-
@@ -86,6 +88,13 @@ export interface ArtikelPresentatie {
    * kwaliteit/maat). ALLEEN de PDF-renderer leest dit — de EDI-INVOIC blijft
    * `artikel_tekst` gebruiken. */
   klant_titel: string | null
+  /**
+   * Al-opgeloste afwerkingstekst (bv. "Breedband - band KK21"), ongewijzigd
+   * doorgegeven uit de lookup. Zit al verwerkt in `omschrijving`/`artikel_tekst`
+   * — apart blootgesteld zodat een renderer die in plaats daarvan `klant_titel`
+   * toont (PDF) de afwerking als losse regel kan terugzetten i.p.v. 'm stilletjes
+   * te laten vallen. */
+  afwerking: string | null
 }
 
 /** Eerste waarde die getrimd niet-leeg is, anders null. Spiegelt factuur-verzenden. */
@@ -127,8 +136,13 @@ export function resolveArtikelPresentatie(
   const { orderRegel, product, klantArtikel, klantEigenNaam } = lookups
 
   const karpi_code = resolveKarpiCode(orderRegel?.karpi_code, product?.karpi_code, regel.artikelnr)
-  const omschrijving =
+  const basisOmschrijving =
     firstNonEmpty(klantArtikel?.omschrijving, regel.omschrijving, product?.omschrijving, regel.omschrijving_2) ?? ''
+  // Afwerking als suffix — al opgelost door de caller (afwerkingPresentatie),
+  // zodat deze pure resolver geen afwerking_types-lookup nodig heeft.
+  const omschrijving = orderRegel?.afwerking
+    ? `${basisOmschrijving} - afwerking: ${orderRegel.afwerking}`
+    : basisOmschrijving
   const gtin = product?.ean_code ?? ''
   const klant_artikel = klantArtikel?.klant_artikel ?? ''
 
@@ -152,5 +166,14 @@ export function resolveArtikelPresentatie(
     klantEigenNaam: klantEigenNaam ?? null,
   })
 
-  return { karpi_code, klant_artikel, gtin, gewicht_kg, omschrijving, artikel_tekst, klant_titel }
+  return {
+    karpi_code,
+    klant_artikel,
+    gtin,
+    gewicht_kg,
+    omschrijving,
+    artikel_tekst,
+    klant_titel,
+    afwerking: orderRegel?.afwerking ?? null,
+  }
 }

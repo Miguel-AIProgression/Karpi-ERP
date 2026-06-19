@@ -33,6 +33,7 @@ function maakOrderRegel(
     maatwerk_lengte_cm: null,
     maatwerk_breedte_cm: null,
     maatwerk_afwerking: null,
+    maatwerk_band_kleur: null,
     maatwerk_kwaliteit_code: null,
     maatwerk_kleur_code: null,
     maatwerk_oppervlak_m2: null,

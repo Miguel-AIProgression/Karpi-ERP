@@ -44,8 +44,11 @@ export function naarFactuurPdfInput(doc: FactuurDocument): FactuurPdfDocumentDee
     // Tapijt-regel met klant-titel (kwaliteitnaam/klant-eigennaam − afmeting):
     // één regel, géén Karpi-code en géén omschrijving_2 (lost de dubbele op).
     // Andere regels (VERZEND/toeslagen/admin-pseudo, geen kwaliteit/maat) houden
-    // de bestaande artikeltekst + sub-regels (geen regressie).
+    // de bestaande artikeltekst + sub-regels (geen regressie). De afwerking zit
+    // bij die andere regels al in `artikel_tekst` — bij een klant-titel zou ze
+    // anders stilletjes verdwijnen, dus die komt hier terug als losse regel.
     const titel = r.presentatie.klant_titel
+    const afwerkingRegel = titel && r.presentatie.afwerking ? `Afwerking: ${r.presentatie.afwerking}` : null
     return {
       order_nr: r.order_nr,
       uw_referentie: r.uw_referentie,
@@ -54,7 +57,7 @@ export function naarFactuurPdfInput(doc: FactuurDocument): FactuurPdfDocumentDee
       eenheid: r.eenheid,
       omschrijving: titel ?? r.presentatie.artikel_tekst,
       omschrijving_2: titel
-        ? (klantRef ?? undefined)
+        ? ([afwerkingRegel, klantRef].filter(Boolean).join('\n') || undefined)
         : ([r.omschrijving_2, klantRef].filter(Boolean).join('\n') || undefined),
       prijs: r.prijs,
       bedrag: r.bedrag,
