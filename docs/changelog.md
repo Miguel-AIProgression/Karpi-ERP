@@ -1,5 +1,35 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-19 — Dropship-kostenregel telt niet meer als collo (mig 434)
+
+**Waarom (melding Miguel, 19-06 — ORD-2026-0305 / ZEND-2026-0105):** een dropship-order
+(`DROPSHIP-KLEIN/-GROOT`) telde de dropshipment-**kostenregel** mee als fysiek collo →
+2 colli i.p.v. 1, een extra verzendlabel ("DROPSHIPMENT 1 VAN 2"), `aantal_colli` op de
+pakbon te hoog, en de dropship-regel verscheen als pakbon-onderregel.
+
+**Root cause (ADR-0018-valkuil):** de zending-/colli-pijplijn filtert op de hardcoded
+string `artikelnr <> 'VERZEND'` (mig 206 / mig 225) i.p.v. het generieke predikaat
+`NOT is_admin_pseudo()`. Dropship is dezelfde admin-pseudo-klasse (`is_pseudo=TRUE`,
+mig 353/370) maar een ánder artikelnr → glipt door de VERZEND-specifieke filter →
+belandt in `zending_regels` → `genereer_zending_colli` maakt er een collo van.
+
+**Wat (branch `fix/dropship-colli-telling`):**
+- **Mig 434** — `BEFORE INSERT`-trigger `trg_zending_regels_skip_admin_pseudo` op
+  `zending_regels` weert élke admin-pseudo-regel (VERZEND/DROPSHIP-*/korting, via
+  `is_admin_pseudo()`) uit de tabel. Eén enforcement-punt i.p.v. de vier insert-paden
+  (`start_pickronden` mig 248, `start_pickronden_voor_order` + `start_deelzending`
+  mig 413, `create_zending_voor_order` mig 206) elk te herschrijven. Generaliseert wat
+  mig 206 bewust voor VERZEND deed naar de hele admin-pseudo-klasse.
+- Omdat `zending_regels` voortaan alleen fysieke regels bevat, ziet
+  `genereer_zending_colli` (loopt over `zending_regels`) nooit meer een admin-pseudo-regel
+  → geen collo, geen label, geen pakbon-onderregel. Eén punt, alle downstream correct.
+- NULL-veilig: maatwerk (`artikelnr=NULL`) → `is_admin_pseudo` FALSE → blijft.
+
+**Forward-only** (zoals mig 206): bestaande zendingen worden NIET retroactief opgeschoond.
+Voor een lopende, nog-niet-aangemelde zending staat een handmatig remediatie-recept
+onderaan de migratie. **Deploy-voorwaarde:** alleen mig 434; géén frontend-deploy nodig
+(pakbon/labels lezen al puur uit `zending_regels`/`zending_colli`).
+
 ## 2026-06-19 — Zendingen-overzicht toont AANGEMELDE colli (na bundeling) + gewicht-dubbeltel-fix (mig 433)
 
 **Waarom (verzoek Miguel, 19-06):** in het Zendingen-overzicht (`/logistiek`) stond bij
