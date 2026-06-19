@@ -1,5 +1,27 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-19 — Zendingen-overzicht toont AANGEMELDE colli (na bundeling) + gewicht-dubbeltel-fix (mig 433)
+
+**Waarom (verzoek Miguel, 19-06):** in het Zendingen-overzicht (`/logistiek`) stond bij
+COLLI altijd het fysieke aantal colli, ook nadat de operator binnen een (Rhenus-)zending
+meerdere colli onder één bundel-SSCC had samengepakt (mig 420). Wat de vervoerder krijgt
+aangemeld is echter het aantal ná bundeling: 3 colli → 1 bundel = er moet **1** staan, niet 3.
+
+**Wat (branch `fix/colli-teller-aangemeld`):**
+- **Mig 433** — `zendingen.aantal_colli` wordt voortaan afgeleid van de **aangemelde**
+  colli (`zending_colli WHERE bundel_colli_id IS NULL`: de bundel-rij telt als 1 collo, de
+  gebundelde kind-colli niet) — hetzelfde predicaat dat label/pakbon/carrier-bericht al
+  hanteren. Het overzicht leest `aantal_colli` rechtstreeks, dus géén frontend-wijziging.
+- **Meegenomen latente bug:** `sync_zending_totaal_gewicht` (mig 391) somde `gewicht_kg`
+  over álle colli; omdat de bundel-rij `gewicht_kg = SUM(kinderen)` krijgt, telde het
+  gewicht na bundeling **dubbel**. Vervangen door één gecombineerde trigger
+  `sync_zending_colli_aggregaten` die zowel `aantal_colli` als `totaal_gewicht_kg` met
+  `bundel_colli_id IS NULL` afleidt. Vuurt nu óók op `UPDATE OF bundel_colli_id` (de
+  `maak_colli_bundel`-stap die kinderen markeert moet de aggregaten herberekenen).
+- Eenmalige backfill voor niet-verzonden zendingen + verifier-NOTICE.
+
+**Deploy-voorwaarde:** alleen mig 433; geen frontend-deploy nodig.
+
 ## 2026-06-19 — Logistiek-zendingenoverzicht: sorteren/groeperen/filteren op afrond-datum (mig 432)
 
 **Waarom (verzoek Miguel, 19-06):** het zendingenoverzicht (`/logistiek`) sorteerde op
