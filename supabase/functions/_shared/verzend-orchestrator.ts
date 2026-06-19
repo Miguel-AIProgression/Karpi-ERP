@@ -238,6 +238,30 @@ export async function verwerkVerzendRij<Row extends VerzendRijBasis, Ctx, Payloa
   const result = await adapter.transport(ctx, payload, bestandsnaam);
   const ok = adapter.resultOk(result);
 
+  // 4b. IDEMPOTENTIE-ANKER (mig 435, anti-dubbele-aanmelding). Zodra het
+  //     transport is geslaagd, leggen we dat VAST op de wachtrij-rij — vóór de
+  //     hierna volgende, faalbare stappen (audit + artefact-opslag + markeer).
+  //     Anders kan een crash/timeout ná een geslaagde POST de rij op 'Bezig'
+  //     laten hangen, waarna de reaper (herstel_vastgelopen_verzending) 'm op
+  //     leeftijd terugzet naar 'Wachtrij' en de carrier de zending OPNIEUW
+  //     aanmaakt (HST = POST-only, geen idempotentie → dubbele transportorder,
+  //     incident ZEND-2026-0061 4×). De reaper slaat geankerde rijen over.
+  //     De uitkomst (puur) wordt hier alvast berekend zodat de OrderNumber/
+  //     correlatiesleutel mee-bewaard wordt en de afronding 'm hergebruikt.
+  const uitkomst = ok ? adapter.uitkomst(z, payload, result, bestandsnaam) : null;
+  if (ok) {
+    const { error: ankerErr } = await supabase.rpc('markeer_transport_bevestigd', {
+      p_id: row.id,
+      p_extern_referentie: uitkomst!.externReferentie,
+    });
+    if (ankerErr) {
+      // Anker zetten faalde (RPC naar de eigen DB) → log luid; de afronding
+      // hieronder zet alsnog extern_referentie + status. Restrisico (dubbele
+      // faal) is veel zeldzamer dan het oude crash-na-POST-venster.
+      console.error(`[${adapter.kanaal}-send] idempotentie-anker zetten faalde voor rij ${row.id}: ${ankerErr.message}`);
+    }
+  }
+
   // 5. Audit (mig 325): één externe_payloads-rij per poging, best-effort —
   //    mag het versturen nooit blokkeren.
   try {
@@ -264,7 +288,7 @@ export async function verwerkVerzendRij<Row extends VerzendRijBasis, Ctx, Payloa
   //    track_trace) en de summary-cosmetica.
   if (ok) {
     const documentPad = await adapter.bewaarArtefact(supabase, z, payload, result, bestandsnaam);
-    const { externReferentie, trackTrace } = adapter.uitkomst(z, payload, result, bestandsnaam);
+    const { externReferentie, trackTrace } = uitkomst!; // al berekend bij het anker (§4b)
     await supabase.rpc('markeer_transportorder_verstuurd', {
       p_id: row.id,
       p_extern_referentie: externReferentie,

@@ -109,10 +109,16 @@ Deno.test('HST succes (HTTP 201 + PDF) → audit + PDF-upload + markeer_verstuur
   );
 
   assertEquals(aangeroepen, 1); // precies één POST naar HST
-  assertEquals(fake.calls.map((c) => c.op), ['rpc', 'storage_upload', 'rpc']);
-  assertEquals(fake.rpcNames(), ['log_externe_payload', 'markeer_transportorder_verstuurd']);
+  // Idempotentie-anker (mig 429) gaat als ÉÉRSTE rpc, vóór de faalbare audit/
+  // upload/markeer — zodat een crash daarna geen reaper-re-POST veroorzaakt.
+  assertEquals(fake.calls.map((c) => c.op), ['rpc', 'rpc', 'storage_upload', 'rpc']);
+  assertEquals(fake.rpcNames(), ['markeer_transport_bevestigd', 'log_externe_payload', 'markeer_transportorder_verstuurd']);
 
-  const audit = fake.rpcCalls()[0];
+  const anker = fake.rpcCalls()[0];
+  assertEquals(anker.args.p_id, 3);
+  assertEquals(anker.args.p_extern_referentie, 'T75038267000180');
+
+  const audit = fake.rpcCalls()[1];
   assertEquals(audit.args.p_kanaal, 'hst');
   assertEquals(audit.args.p_order_id, 77);
   assertEquals(audit.args.p_status, 'verwerkt');
@@ -124,7 +130,7 @@ Deno.test('HST succes (HTTP 201 + PDF) → audit + PDF-upload + markeer_verstuur
   assertEquals(upload.bucket, 'order-documenten');
   assertEquals(upload.path, 'hst-vrachtbrieven/ZEND-2026-0009.pdf');
 
-  const markeer = fake.rpcCalls()[1];
+  const markeer = fake.rpcCalls()[2];
   assertEquals(markeer.args.p_id, 3);
   assertEquals(markeer.args.p_extern_referentie, 'T75038267000180');
   // Geen tracking_number in de response → track_trace valt terug op de
@@ -154,9 +160,11 @@ Deno.test('HST HTTP 400 → audit + markeer_fout, geen PDF-upload', async () => 
   assertEquals(summary.failed, 1);
 });
 
-Deno.test('HST preflight-fout (leeg telefoon) → markeer_fout, GEEN HST-call', async () => {
-  const zonderTel = { ...ZENDING_OK, afl_telefoon: '' };
-  const fake = new FakeSupabase(configOk({ zendingen: { single: { data: zonderTel, error: null } } }));
+// NB: telefoon is sinds commit d40d97a NIET meer verplicht voor HST (FFBL uit),
+// dus een leeg adresveld is nu de juiste preflight-blocker (ADRESVELD_LEEG).
+Deno.test('HST preflight-fout (leeg afl_adres) → markeer_fout, GEEN HST-call', async () => {
+  const zonderAdres = { ...ZENDING_OK, afl_adres: '' };
+  const fake = new FakeSupabase(configOk({ zendingen: { single: { data: zonderAdres, error: null } } }));
   const summary = legeSummary();
 
   const { aangeroepen } = await metFetchStub(

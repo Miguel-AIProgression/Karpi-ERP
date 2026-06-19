@@ -79,10 +79,15 @@ Deno.test('Rhenus succes (dry-run, bestandsnaam preset) → audit + markeer_vers
   const summary = legeSummary();
   await verwerkRow(asClient(fake), rij(), { sftpConfig: null, opties: DEFAULT_RHENUS_OPTIES, dryRun: true }, summary);
 
-  assertEquals(fake.rpcNames(), ['log_externe_payload', 'markeer_transportorder_verstuurd']);
-  assertEquals(fake.calls.map((c) => c.op), ['rpc', 'storage_upload', 'rpc']);
+  // Idempotentie-anker (mig 429) gaat als éérste rpc, vóór audit/upload/markeer.
+  assertEquals(fake.rpcNames(), ['markeer_transport_bevestigd', 'log_externe_payload', 'markeer_transportorder_verstuurd']);
+  assertEquals(fake.calls.map((c) => c.op), ['rpc', 'rpc', 'storage_upload', 'rpc']);
 
-  const audit = fake.rpcCalls()[0];
+  const anker = fake.rpcCalls()[0];
+  assertEquals(anker.args.p_id, 9);
+  assertEquals(anker.args.p_extern_referentie, VASTE_BESTANDSNAAM);
+
+  const audit = fake.rpcCalls()[1];
   assertEquals(audit.args.p_kanaal, 'rhenus');
   assertEquals(audit.args.p_order_id, 88);
   assertEquals(audit.args.p_status, 'verwerkt');
@@ -90,7 +95,7 @@ Deno.test('Rhenus succes (dry-run, bestandsnaam preset) → audit + markeer_vers
   const upload = fake.calls.find((c) => c.op === 'storage_upload')!;
   assertEquals(upload.path, `rhenus-xml/${VASTE_BESTANDSNAAM}`);
 
-  const markeer = fake.rpcCalls()[1];
+  const markeer = fake.rpcCalls()[2];
   assertEquals(markeer.args.p_id, 9);
   assertEquals(markeer.args.p_extern_referentie, VASTE_BESTANDSNAAM);
   // Rhenus heeft GEEN T&T → de generieke markeer krijgt p_track_trace = null
@@ -105,7 +110,7 @@ Deno.test('Rhenus zonder bestandsnaam → eerst update (genereer-tak)', async ()
   const summary = legeSummary();
   await verwerkRow(asClient(fake), rij({ extern_referentie: null }), { sftpConfig: null, opties: DEFAULT_RHENUS_OPTIES, dryRun: true }, summary);
 
-  assertEquals(fake.calls.map((c) => c.op), ['update', 'rpc', 'storage_upload', 'rpc']);
+  assertEquals(fake.calls.map((c) => c.op), ['update', 'rpc', 'rpc', 'storage_upload', 'rpc']);
   const update = fake.calls[0];
   assertEquals(update.table, 'verzend_wachtrij');
   assertMatch((update.values as { extern_referentie: string }).extern_referentie, /^RHE_\d+_ZEND-2026-0004\.xml$/);

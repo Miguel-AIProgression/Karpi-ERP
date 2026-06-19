@@ -83,12 +83,17 @@ Deno.test('Verhoek succes (dry-run, bestandsnaam preset) → audit + markeer_ver
   const summary = legeSummary();
   await verwerkRow(asClient(fake), rij(), { sftpConfig: null, opties: DEFAULT_VERHOEK_OPTIES, dryRun: true }, summary);
 
-  assertEquals(fake.rpcNames(), ['log_externe_payload', 'markeer_transportorder_verstuurd']);
+  // Idempotentie-anker (mig 429) gaat als éérste rpc, vóór audit/upload/markeer.
+  assertEquals(fake.rpcNames(), ['markeer_transport_bevestigd', 'log_externe_payload', 'markeer_transportorder_verstuurd']);
 
   const ops = fake.calls.map((c) => c.op);
-  assertEquals(ops, ['rpc', 'storage_upload', 'rpc']);
+  assertEquals(ops, ['rpc', 'rpc', 'storage_upload', 'rpc']);
 
-  const audit = fake.rpcCalls()[0];
+  const anker = fake.rpcCalls()[0];
+  assertEquals(anker.args.p_id, 7);
+  assertEquals(anker.args.p_extern_referentie, VASTE_BESTANDSNAAM);
+
+  const audit = fake.rpcCalls()[1];
   assertEquals(audit.args.p_kanaal, 'verhoek');
   assertEquals(audit.args.p_richting, 'out');
   assertEquals(audit.args.p_order_id, 42);
@@ -99,7 +104,7 @@ Deno.test('Verhoek succes (dry-run, bestandsnaam preset) → audit + markeer_ver
   assertEquals(upload.bucket, 'order-documenten');
   assertEquals(upload.path, `verhoek-xml/${VASTE_BESTANDSNAAM}`);
 
-  const markeer = fake.rpcCalls()[1];
+  const markeer = fake.rpcCalls()[2];
   assertEquals(markeer.args.p_id, 7);
   assertEquals(markeer.args.p_extern_referentie, VASTE_BESTANDSNAAM);
   // afl_email niet-leeg → track_trace = zending_nr.
@@ -114,12 +119,12 @@ Deno.test('Verhoek succes zonder bestandsnaam → eerst update (genereer-tak), d
   const summary = legeSummary();
   await verwerkRow(asClient(fake), rij({ extern_referentie: null }), { sftpConfig: null, opties: DEFAULT_VERHOEK_OPTIES, dryRun: true }, summary);
 
-  assertEquals(fake.calls.map((c) => c.op), ['update', 'rpc', 'storage_upload', 'rpc']);
+  assertEquals(fake.calls.map((c) => c.op), ['update', 'rpc', 'rpc', 'storage_upload', 'rpc']);
   const update = fake.calls[0];
   assertEquals(update.table, 'verzend_wachtrij');
   assertEquals(update.match, { id: 7 });
   assertMatch((update.values as { extern_referentie: string }).extern_referentie, /^Karpi_\d+_ZEND-2026-0001\.xml$/);
-  assertEquals(fake.rpcNames(), ['log_externe_payload', 'markeer_transportorder_verstuurd']);
+  assertEquals(fake.rpcNames(), ['markeer_transport_bevestigd', 'log_externe_payload', 'markeer_transportorder_verstuurd']);
   assertEquals(summary.succeeded, 1);
 });
 
