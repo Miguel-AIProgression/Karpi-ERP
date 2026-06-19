@@ -156,6 +156,59 @@ describe('ShippingLabel — informatieve zones', () => {
   })
 })
 
+describe('ShippingLabel — magazijnlocatie (verzoek 2026-06-19)', () => {
+  function regelMetLocatie(locatie: string | null): ZendingPrintRegel {
+    return {
+      id: 1,
+      order_regel_id: 1,
+      artikelnr: 'ABC',
+      rol_id: null,
+      aantal: 1,
+      order_regels: {
+        id: 1,
+        order_id: 2585,
+        regelnummer: 1,
+        artikelnr: 'ABC',
+        omschrijving: 'Karpet',
+        omschrijving_2: null,
+        orderaantal: 1,
+        te_leveren: 1,
+        gewicht_kg: null,
+        is_maatwerk: false,
+        maatwerk_lengte_cm: null,
+        maatwerk_breedte_cm: null,
+        maatwerk_afwerking: null,
+        maatwerk_kwaliteit_code: null,
+        maatwerk_kleur_code: null,
+        maatwerk_oppervlak_m2: null,
+        producten: {
+          ean_code: null,
+          omschrijving: 'Karpet',
+          vervolgomschrijving: null,
+          gewicht_kg: null,
+          lengte_cm: null,
+          breedte_cm: null,
+          vorm: null,
+          kleur_code: null,
+          karpi_code: null,
+          locatie,
+        },
+      },
+    }
+  }
+
+  it('product met locatie → toont de kale locatiecode (geen "Locatie:"-label)', () => {
+    const { container } = renderLabel(maakZending(), { regel: regelMetLocatie('A.01.L') })
+    expect(container.textContent).toContain('A.01.L')
+    expect(container.textContent).not.toContain('Locatie:')
+  })
+
+  it('product zonder locatie → toont niets', () => {
+    const { container } = renderLabel(maakZending(), { regel: regelMetLocatie(null) })
+    expect(container.textContent).not.toContain('Locatie')
+  })
+})
+
 describe('ShippingLabel — omsticker (mig 436)', () => {
   it('omstickerSnapshot gezet → toont de "OMB:"-regel met de fysieke karpi_code', () => {
     const { container } = renderLabel(maakZending(), {

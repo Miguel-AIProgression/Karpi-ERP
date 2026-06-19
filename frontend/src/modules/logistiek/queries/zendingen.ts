@@ -65,6 +65,10 @@ export interface ZendingPrintOrderRegel {
     /** Volledige Karpi-code (kwaliteit+kleur+afmeting) — verzendlabel toont deze
      *  als kleine regel onder de kwaliteitsnaam (besluit 2026-06-18). */
     karpi_code: string | null
+    /** Magazijnlocatie ("A.01.L") — verzendlabel toont de kale code zodat de
+     *  picker weet waar het karpet ligt (verzoek 2026-06-19). Live veld (geen
+     *  snapshot); leeg/NULL → niet tonen. */
+    locatie: string | null
   } | null
 }
 
@@ -313,7 +317,7 @@ export async function fetchZendingPrintSet(zending_nr: string): Promise<ZendingP
           maatwerk_oppervlak_m2,
           producten!order_regels_artikelnr_fkey (
             ean_code, omschrijving, vervolgomschrijving, gewicht_kg,
-            lengte_cm, breedte_cm, vorm, kleur_code, karpi_code
+            lengte_cm, breedte_cm, vorm, kleur_code, karpi_code, locatie
           )
         )
       ),

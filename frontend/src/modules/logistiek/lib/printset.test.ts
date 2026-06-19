@@ -267,6 +267,7 @@ describe('expandLabels + productNamen — omschrijving-snapshot single source', 
           vorm: null,
           kleur_code: null,
           karpi_code: null,
+          locatie: null,
         },
       },
     })
