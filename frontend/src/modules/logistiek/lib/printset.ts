@@ -3,11 +3,19 @@
 // bulk-printset-pagina, zodat één zending er identiek uitziet ongeacht de bron.
 import { isShippingRegel } from './is-shipping-regel'
 import { getVervoerderDef } from '../registry'
-import type { OmschrijvingSnapshot } from './shipping-label-data'
+// Pakbon-regel-aggregatie = single source in _shared/pakbon (Pakbondocument-
+// consolidatie 2026-06-19, ADR-0033). De label-`colliRijen`-expansie blijft hier
+// (één renderer); alleen de `pakbonRegels`-tak deelt de gedeelde aggregatie.
+import { bouwPakbonRegels } from '../../../../../supabase/functions/_shared/pakbon/aggregatie'
+import type { PakbonRegel } from '../../../../../supabase/functions/_shared/pakbon/types'
 import type {
   ZendingPrintRegel,
   ZendingPrintSet,
 } from '../queries/zendingen'
+
+// PakbonRegel woont nu in _shared/pakbon/types — re-export houdt de bestaande
+// import `from '@/modules/logistiek/lib/printset'` (pakbon-document.tsx) intact.
+export type { PakbonRegel } from '../../../../../supabase/functions/_shared/pakbon/types'
 
 // Zebra-standaard 3"×6" liggend verzendlabel (152,4×76,2mm) — het fysieke
 // formaat op de Karpi-printer (ZT231). HST stond al expliciet op deze maat
@@ -56,36 +64,6 @@ export interface LabelItem {
 }
 
 /**
- * Eén pakbonregel = één fysieke orderregel in de zending (geaggregeerd over de
- * colli's, anders dan een `LabelItem` dat per colli is). Komt uit dezelfde
- * `bouwVerzenddocument`-expansie als de labels, zodat sortering, snapshot-
- * omschrijving en regelfilter (VERZEND) niet meer kunnen driften tussen sticker
- * en pakbon. De besteld/geleverd/gewicht-formules zijn bewust gelijk aan de
- * historische pakbon-logica (byte-identieke output — zie `pakbon-document.test.tsx`).
- */
-export interface PakbonRegel {
-  regel: ZendingPrintRegel
-  orderRegelId: number | null
-  /** Bron-order voor groepering per orderbevestiging (mig 222). */
-  orderId: number
-  /** `order_regels.orderaantal`, fallback geleverd. */
-  besteld: number
-  /** Geleverd in deze zending — ladder `aantal ?? te_leveren ?? orderaantal ?? 1`. */
-  geleverd: number
-  /** `regelgewicht × geleverd` — opgeteld levert dit het zending-totaal. */
-  gewichtKg: number
-  /** Mig 388-snapshot uit de eerste colli van deze regel, of `null` als de
-   * regel géén colli heeft (legacy). `null` ⟺ val terug op de live afleiding én
-   * toon de losse maat-regel — exact de `snapshotVoor`-semantiek van de oude
-   * pakbon (een colli met lege snapshot-inhoud telt als non-null). */
-  snapshot: OmschrijvingSnapshot | null
-  /** Mig 436: unieke omsticker-codes (karpi_code van het fysiek gepakte
-   * equivalent) over de colli van deze regel. Leeg = geen omsticker. De pakbon
-   * toont ze als "OMB:"-subregel, net als het verzendlabel. */
-  omstickerCodes: string[]
-}
-
-/**
  * Eén canonieke expansie van een zending, geconsumeerd door zowel de drie
  * labelvarianten (`colliRijen`, 1 per fysieke colli) als de pakbon
  * (`pakbonRegels`, 1 per orderregel). Beide views komen uit dezelfde
@@ -100,20 +78,6 @@ export interface Verzenddocument {
   /** Σ(regelgewicht × geleverd) over de pakbonregels. De pakbon geeft
    * `zendingen.totaal_gewicht_kg` voorrang en valt hierop terug. */
   totaalGewichtKg: number
-}
-
-/** Geleverd-aantal in deze zending — identiek aan de historische pakbon-ladder. */
-function geleverdAantal(regel: ZendingPrintRegel): number {
-  return Number(
-    regel.aantal ?? regel.order_regels?.te_leveren ?? regel.order_regels?.orderaantal ?? 1,
-  )
-}
-
-/** Regelgewicht (kg) — `order_regels.gewicht_kg` met product-fallback. */
-function regelGewichtKg(regel: ZendingPrintRegel): number {
-  const r = regel.order_regels
-  if (!r) return 0
-  return Number(r.gewicht_kg ?? r.producten?.gewicht_kg ?? 0)
 }
 
 export interface VervoerderInfo {
@@ -166,34 +130,6 @@ export function bouwVerzenddocument(zending: ZendingPrintSet): Verzenddocument {
     if (regel.order_regel_id != null && !regelPerOrderRegel.has(regel.order_regel_id)) {
       regelPerOrderRegel.set(regel.order_regel_id, regel)
     }
-  }
-
-  // Snapshot-omschrijving per orderregel (eerste colli — compose is in V1
-  // regel-deterministisch, dus alle colli van een regel zijn identiek).
-  const snapshotPerOrderRegel = new Map<
-    number,
-    { omschrijvingSnapshot: string | null; klantOmschrijvingSnapshot: string | null }
-  >()
-  for (const c of zending.zending_colli ?? []) {
-    if (c.order_regel_id != null && !snapshotPerOrderRegel.has(c.order_regel_id)) {
-      snapshotPerOrderRegel.set(c.order_regel_id, {
-        omschrijvingSnapshot: c.omschrijving_snapshot,
-        klantOmschrijvingSnapshot: c.klant_omschrijving_snapshot,
-      })
-    }
-  }
-
-  // Mig 436: unieke omsticker-codes per orderregel (over álle colli van de
-  // regel — een regel kan multi-source gedekt zijn). Voor de pakbon-rij, die
-  // per orderregel geaggregeerd is. Leeg = geen omsticker.
-  const omstickerPerOrderRegel = new Map<number, string[]>()
-  for (const c of zending.zending_colli ?? []) {
-    if (c.order_regel_id == null) continue
-    const code = (c.omsticker_snapshot ?? '').trim()
-    if (!code) continue
-    const lijst = omstickerPerOrderRegel.get(c.order_regel_id) ?? []
-    if (!lijst.includes(code)) lijst.push(code)
-    omstickerPerOrderRegel.set(c.order_regel_id, lijst)
   }
 
   const orderIdVoor = (regel: ZendingPrintRegel | null): number =>
@@ -249,30 +185,10 @@ export function bouwVerzenddocument(zending: ZendingPrintSet): Verzenddocument {
   }
 
   // ── pakbonRegels (pakbon) ────────────────────────────────────────────────
-  // Eén regel per fysieke orderregel, gesorteerd op regelnummer. De pakbon-
-  // component groepeert deze daarna per `orderId` voor de bundel-subkoppen.
-  const pakbonRegels: PakbonRegel[] = [...fysiekeRegels]
-    .sort((a, b) => (a.order_regels?.regelnummer ?? 0) - (b.order_regels?.regelnummer ?? 0))
-    .map((regel) => {
-      const geleverd = geleverdAantal(regel)
-      const snapshot =
-        (regel.order_regel_id != null
-          ? snapshotPerOrderRegel.get(regel.order_regel_id)
-          : undefined) ?? null
-      return {
-        regel,
-        orderRegelId: regel.order_regel_id,
-        orderId: orderIdVoor(regel),
-        besteld: Number(regel.order_regels?.orderaantal ?? geleverd),
-        geleverd,
-        gewichtKg: regelGewichtKg(regel) * geleverd,
-        snapshot,
-        omstickerCodes:
-          regel.order_regel_id != null
-            ? omstickerPerOrderRegel.get(regel.order_regel_id) ?? []
-            : [],
-      }
-    })
+  // Eén regel per fysieke orderregel — gedeelde aggregatie (single source met de
+  // server-pakbon-PDF). De pakbon-component groepeert daarna per `orderId` voor
+  // de bundel-subkoppen.
+  const pakbonRegels = bouwPakbonRegels(zending)
 
   const totaalGewichtKg = pakbonRegels.reduce((sum, r) => sum + r.gewichtKg, 0)
 

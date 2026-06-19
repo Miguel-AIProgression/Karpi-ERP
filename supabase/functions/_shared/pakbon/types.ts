@@ -40,6 +40,22 @@ export interface PakbonColliInput {
   order_regel_id: number | null
   omschrijving_snapshot: string | null
   klant_omschrijving_snapshot: string | null
+  /** Mig 436: karpi_code van het fysiek gepakte (omgesticker) equivalent als dat
+   *  afwijkt van het bestelde artikel. null = geen omsticker → geen "OMB:"-regel. */
+  omsticker_snapshot: string | null
+}
+
+/**
+ * Smalle input voor `bouwPakbonRegels`/`telColli` — exact wat de regel-aggregatie
+ * leest, niet het volledige document. Zowel `PakbonZendingInput` (server) als de
+ * frontend `ZendingPrintSet` voldoen er structureel aan, zodat één aggregatie
+ * beide voedt zonder dat de frontend zijn `debiteuren.route`-loze orders-shape
+ * hoeft uit te breiden.
+ */
+export interface PakbonRegelsInput {
+  orders: { id: number }
+  zending_regels: PakbonRegelInput[]
+  zending_colli: PakbonColliInput[]
 }
 
 export interface PakbonBundelOrder {
@@ -106,6 +122,10 @@ export interface PakbonRegel {
   gewichtKg: number
   /** Mig 388-snapshot uit de eerste colli van deze regel, of `null` (legacy). */
   snapshot: OmschrijvingSnapshot | null
+  /** Mig 436: unieke omsticker-codes (karpi_code van het fysiek gepakte
+   *  equivalent) over de colli van deze regel. Leeg = geen omsticker. De pakbon
+   *  toont ze als "OMB:"-subregel, net als het verzendlabel. */
+  omstickerCodes: string[]
 }
 
 /** Eén bundel-groep voor de pakbon: een bron-order met zijn regels. */

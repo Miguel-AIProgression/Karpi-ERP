@@ -9,6 +9,7 @@ import type {
   PakbonColliInput,
   PakbonRegel,
   PakbonRegelInput,
+  PakbonRegelsInput,
   PakbonZendingInput,
 } from './types.ts'
 
@@ -41,7 +42,7 @@ function regelGewichtKg(regel: PakbonRegelInput): number {
  * de `pakbonRegels`-tak van `bouwVerzenddocument` (frontend), maar zonder de
  * label/colli-expansie (die blijft frontend, registry-afhankelijk).
  */
-export function bouwPakbonRegels(zending: PakbonZendingInput): PakbonRegel[] {
+export function bouwPakbonRegels(zending: PakbonRegelsInput): PakbonRegel[] {
   const fysiekeRegels = zending.zending_regels.filter((r) => !isShippingRegel(r))
   const primaireOrderId = zending.orders.id
 
@@ -55,6 +56,18 @@ export function bouwPakbonRegels(zending: PakbonZendingInput): PakbonRegel[] {
         klantOmschrijvingSnapshot: c.klant_omschrijving_snapshot,
       })
     }
+  }
+
+  // Mig 436: unieke omsticker-codes per orderregel (over álle colli van de regel
+  // — een regel kan multi-source gedekt zijn). Gelijk aan de frontend-expansie.
+  const omstickerPerOrderRegel = new Map<number, string[]>()
+  for (const c of (zending.zending_colli ?? []) as PakbonColliInput[]) {
+    if (c.order_regel_id == null) continue
+    const code = (c.omsticker_snapshot ?? '').trim()
+    if (!code) continue
+    const lijst = omstickerPerOrderRegel.get(c.order_regel_id) ?? []
+    if (!lijst.includes(code)) lijst.push(code)
+    omstickerPerOrderRegel.set(c.order_regel_id, lijst)
   }
 
   const orderIdVoor = (regel: PakbonRegelInput): number =>
@@ -76,6 +89,10 @@ export function bouwPakbonRegels(zending: PakbonZendingInput): PakbonRegel[] {
         geleverd,
         gewichtKg: regelGewichtKg(regel) * geleverd,
         snapshot,
+        omstickerCodes:
+          regel.order_regel_id != null
+            ? omstickerPerOrderRegel.get(regel.order_regel_id) ?? []
+            : [],
       }
     })
 }
@@ -129,4 +146,33 @@ export function productNamen(
   const klantNaam = [o1, o2IsDubbel ? '' : o2].filter(Boolean).join(' ')
   const karpiNaam = orderRegel.producten?.omschrijving ?? null
   return { klantNaam: klantNaam || (regel?.artikelnr ?? 'Artikel'), karpiNaam }
+}
+
+function normaliseerNaam(s: string): string {
+  return s.toLowerCase().replace(/\s+/g, ' ').trim()
+}
+
+/**
+ * Of de klant-eigen omschrijving (pakbon-subregel "Uw naam: …") zinvol afwijkt
+ * van de hoofdregel die er al boven staat. Single source — gespiegeld door de
+ * frontend via cross-root re-export (`shipping-label-data.ts`, ADR-0033).
+ *
+ * De hoofdregel komt uit `omschrijving_snapshot` (Karpi-omschrijving **+ maat**),
+ * "Uw naam" uit `klant_omschrijving_snapshot` (zónder maat). Een kale string-
+ * ongelijkheid is dus altijd waar door de maat-suffix → "Uw naam" verscheen
+ * overal. Toon "Uw naam" daarom alleen als de klant-naam niet leeg is, niet
+ * simpelweg het artikelnummer is, en (genormaliseerd) niet al volledig in de
+ * hoofdregel zit.
+ */
+export function klantNaamWijktAf(
+  hoofdNaam: string | null,
+  klantNaam: string | null,
+  artikelnr: string | null,
+): boolean {
+  const klant = normaliseerNaam(klantNaam ?? '')
+  if (!klant) return false
+  if (artikelnr && klant === normaliseerNaam(artikelnr)) return false
+  const hoofd = normaliseerNaam(hoofdNaam ?? '')
+  if (hoofd.includes(klant)) return false
+  return true
 }

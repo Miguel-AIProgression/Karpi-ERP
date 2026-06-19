@@ -7,93 +7,22 @@ import type { ZendingPrintRegel } from '@/modules/logistiek/queries/zendingen'
 // import `from './shipping-label-data'` (o.a. de test) ongewijzigd.
 import { kwaliteitNaamUitVervolg } from '../../../../../supabase/functions/_shared/kwaliteit-naam'
 export { kwaliteitNaamUitVervolg } from '../../../../../supabase/functions/_shared/kwaliteit-naam'
-
-export interface RegelNamen {
-  klantNaam: string
-  karpiNaam: string | null
-}
-
-/**
- * De bevroren omschrijving-snapshot van een colli (`zending_colli`, mig 209/388).
- * `LabelItem` voldoet structureel aan deze vorm.
- */
-export interface OmschrijvingSnapshot {
-  /** Karpi-product + maat ("Egyptische Wol 240x330 cm"). */
-  omschrijvingSnapshot: string | null
-  /** Ontdubbelde klant-omschrijving (order_regels.omschrijving + _2). */
-  klantOmschrijvingSnapshot: string | null
-}
+// Pakbon-naam-resolutie leeft sinds 2026-06-19 als single source in
+// _shared/pakbon (ADR-0033, Pakbondocument-consolidatie). Cross-root re-export
+// houdt de bestaande imports `from './shipping-label-data'` (label + pakbon)
+// ongewijzigd; productNamen accepteert ZendingPrintRegel structureel als
+// PakbonRegelInput.
+import { productNamen } from '../../../../../supabase/functions/_shared/pakbon/aggregatie'
+export {
+  productNamen,
+  klantNaamWijktAf,
+} from '../../../../../supabase/functions/_shared/pakbon/aggregatie'
+export type { RegelNamen } from '../../../../../supabase/functions/_shared/pakbon/aggregatie'
+import type { OmschrijvingSnapshot } from '../../../../../supabase/functions/_shared/pakbon/types'
+export type { OmschrijvingSnapshot } from '../../../../../supabase/functions/_shared/pakbon/types'
 
 function heeftSnapshot(s?: OmschrijvingSnapshot | null): s is OmschrijvingSnapshot {
   return !!s && (s.omschrijvingSnapshot != null || s.klantOmschrijvingSnapshot != null)
-}
-
-/**
- * Productnaam-paar voor verzendlabel/pakbon.
- *
- * SINGLE SOURCE (mig 388): bij een colli-geregistreerde zending komen beide
- * namen uit de BEVROREN snapshot op `zending_colli` — exact wat de vervoerder
- * krijgt, zodat label, pakbon en vrachtbrief niet meer uiteenlopen na een
- * productnaamwijziging. De live order_regels-afleiding (mét substring-
- * ontdubbeling, nu gespiegeld in SQL `compose_klant_omschrijving`) is alleen
- * nog de legacy-fallback voor zendingen zonder colli-snapshot.
- */
-export function productNamen(
-  regel: ZendingPrintRegel | null,
-  snapshot?: OmschrijvingSnapshot | null,
-): RegelNamen {
-  if (heeftSnapshot(snapshot)) {
-    return {
-      klantNaam: snapshot.klantOmschrijvingSnapshot ?? regel?.artikelnr ?? 'Artikel',
-      karpiNaam: snapshot.omschrijvingSnapshot,
-    }
-  }
-  // Legacy-fallback: live afleiding (zending zonder colli-snapshot).
-  const orderRegel = regel?.order_regels
-  if (!orderRegel) {
-    return { klantNaam: regel?.artikelnr ?? 'Artikel', karpiNaam: null }
-  }
-  // Ontdubbel: omschrijving_2 herhaalt vaak (een deel van) omschrijving
-  // (bv. "RUBI 15 — RECHTHOEK / 240 X 330 CM" + "RECHTHOEK / 240 X 330 CM").
-  const o1 = (orderRegel.omschrijving ?? '').trim()
-  const o2 = (orderRegel.omschrijving_2 ?? '').trim()
-  const o2IsDubbel = o2 !== '' && o1.toLowerCase().includes(o2.toLowerCase())
-  const klantNaam = [o1, o2IsDubbel ? '' : o2].filter(Boolean).join(' ')
-  const karpiNaam = orderRegel.producten?.omschrijving ?? null
-  return { klantNaam: klantNaam || (regel?.artikelnr ?? 'Artikel'), karpiNaam }
-}
-
-function normaliseerNaam(s: string): string {
-  return s.toLowerCase().replace(/\s+/g, ' ').trim()
-}
-
-/**
- * Of de klant-eigen omschrijving (pakbon-subregel "Uw naam: …") zinvol afwijkt
- * van de hoofdregel die er al boven staat.
- *
- * De hoofdregel komt uit `omschrijving_snapshot` (Karpi-omschrijving **+ maat**),
- * "Uw naam" uit `klant_omschrijving_snapshot` (`order_regels.omschrijving`, zónder
- * maat). Een kale string-ongelijkheid is dus altijd waar door de maat-suffix,
- * waardoor "Uw naam" overal verscheen — vaak slechts de hoofdregel mín de maat,
- * of (als `producten.omschrijving` de artikelcode ís) gewoon een Karpi-code.
- *
- * Toon "Uw naam" daarom alleen als de klant-naam:
- *  - niet leeg is,
- *  - niet simpelweg het artikelnummer/code is, en
- *  - (genormaliseerd) niet al volledig in de hoofdregel zit (bv. hoofdregel =
- *    klant-naam + maat).
- */
-export function klantNaamWijktAf(
-  hoofdNaam: string | null,
-  klantNaam: string | null,
-  artikelnr: string | null,
-): boolean {
-  const klant = normaliseerNaam(klantNaam ?? '')
-  if (!klant) return false
-  if (artikelnr && klant === normaliseerNaam(artikelnr)) return false
-  const hoofd = normaliseerNaam(hoofdNaam ?? '')
-  if (hoofd.includes(klant)) return false
-  return true
 }
 
 /** De twee productregels zoals ze op het verzendlabel verschijnen. */

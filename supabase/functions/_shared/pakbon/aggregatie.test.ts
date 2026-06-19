@@ -40,7 +40,7 @@ function maakRegel(o: Partial<PakbonRegelInput> = {}): PakbonRegelInput {
 }
 
 function maakColli(o: Partial<PakbonColliInput> = {}): PakbonColliInput {
-  return { colli_nr: 1, sscc: '087159540000000656', order_regel_id: 10, omschrijving_snapshot: null, klant_omschrijving_snapshot: null, ...o }
+  return { colli_nr: 1, sscc: '087159540000000656', order_regel_id: 10, omschrijving_snapshot: null, klant_omschrijving_snapshot: null, omsticker_snapshot: null, ...o }
 }
 
 function maakZending(o: Partial<PakbonZendingInput> = {}): PakbonZendingInput {

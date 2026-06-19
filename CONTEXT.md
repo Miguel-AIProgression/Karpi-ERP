@@ -226,6 +226,25 @@ EDI-paden nooit meer kunnen divergeren. Analoog aan het verzend-domein waar labe
 én pakbon uit één `bouwVerzenddocument` komen.
 _Avoid_: factuur-regel-afleiding per renderpad, twee factuur→INVOIC-transforms
 
+**Pakbondocument**:
+De canonieke, medium-onafhankelijke representatie van een pakbon (adresblokken,
+referentie-meta, bundel-groepering, per-regel display-tekst met [[Artikelpresentatie]]-
+naam + OMB-omsticker, totalen), opgebouwd uit een [[Zending-colli]]-dragende
+zending door één seam (`bouwPakbonDocument`). De twee externe representaties — de
+geprinte React-pakbon en de pdf-lib-PDF (factuurmail-bijlage) — zijn **dunne
+renderers** op dit ene document, niet twee onafhankelijke afleidingen (de oude
+React-component leidde adres/naam/referentie/totalen inline in JSX af terwijl de
+server hetzelfde in `bouwPakbonDocument` deed → al gedrift op routecode, OMB,
+"Uw naam" en referentie). De regel-aggregatie (geleverd/besteld/gewicht-ladder,
+naam-resolutie `productNamen`/`klantNaamWijktAf`) leeft één keer in `_shared/pakbon`;
+de frontend `bouwVerzenddocument` deelt díé voor zijn `pakbonRegels`-tak en houdt
+alleen de label-`colliRijen`-expansie (één renderer = geen seam). De **routecode**
+(HST-depot) is géén document-eigenschap maar een geïnjecteerde render-context:
+print-only voor de magazijn-sortering, dus de React-renderer berekent
+`hstDepotVoorPostcode` en geeft 'm mee, de klant-factuurmail-PDF niet. Zelfde
+patroon als [[Factuurdocument]]: één opgeloste representatie, N dunne renderers.
+_Avoid_: pakbon-afleiding per renderpad, inline JSX-presentatie naast bouwPakbonDocument, routecode als document-veld
+
 ## Relationships
 
 - Een **Order** bevat één of meer **Orderregels**
@@ -236,6 +255,9 @@ _Avoid_: factuur-regel-afleiding per renderpad, twee factuur→INVOIC-transforms
 - Een maatwerk-**Orderregel** produceert één **Snijplan** per stuk
 - Een **Factuurdocument** rendert naar factuur-PDF én EDI-INVOIC; beide tonen
   dezelfde **Artikelpresentatie**, die óók de orderbevestiging voedt
+- Een **Pakbondocument** rendert naar de geprinte React-pakbon én de factuurmail-PDF;
+  beide lezen dezelfde **Zending-colli**-snapshot, met de routecode als
+  print-only render-context (alleen op de geprinte pakbon)
 - Een **Productie-only order** bereikt **Maatwerk afgerond** zodra al zijn
   **Snijplannen** geconfectioneerd zijn; hij wordt nooit **Verzonden**
 - Echte **Snijplannen** van Productie-only orders **vervangen** de
