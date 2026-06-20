@@ -1,5 +1,120 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-20 — Haalbaarheid-overzicht naar order-niveau + echte wachtrij-positie
+
+**Waarom:** vervolgvraag op Fase 1. De bestaande pagina toonde per stuk alleen de
+statische snij-deadline tegen "vandaag" — geen idee of een al-gepland stuk straks
+ook daadwerkelijk op tijd aan de beurt komt gegeven de rest van de wachtrij, en geen
+order-niveau-totaalbeeld ("zien we nu alleen wat er per rol gesneden wordt, geen
+totaaloverzicht"). Gevraagd: 1 rij per order, gepland ja/nee, op welke datum, en of
+de gevraagde deadline gehaald wordt.
+
+- **Granulariteit naar order:** `haalbaarheid-overview.tsx` groepeert nu per
+  `order_id` i.p.v. per snijplan-stuk; een order met meerdere maatwerk-regels toont
+  het slechtste oordeel + de laatste (meest kritieke) geplande snijdatum onder zijn
+  stukken.
+- **Echte geplande snijdatum, niet alleen de deadline:** `snijplannen.planning_week/
+  _jaar` staan voor alle ~1130 huidige al-geplande stukken op NULL — die datum
+  bestaat dus nergens als kolom. Afgeleid via de **al-bestaande**
+  `berekenAgenda` (`frontend/src/lib/utils/bereken-agenda.ts`, tot nu toe alleen
+  gebruikt door de Agenda-tab): plant alle open stukken globaal, gegroepeerd per
+  rol, sequentieel vanaf nu (landt vanzelf op de eerstvolgende werkdag, 22 juni →
+  week 26, zonder iets hard te coderen). De haalbaarheidsstatus gebruikt die
+  afgeleide datum als vergelijkingspunt i.p.v. de letterlijke datum van vandaag —
+  wachtrij-bewust i.p.v. naïef (een stuk met een nabije deadline kan dus terecht rood
+  tonen, ook als vandaag zelf nog ruim vóór de deadline ligt).
+- **`berekenAgenda`/`RolBlok` generic gemaakt** (`<T extends AgendaInputStuk>`, de 5
+  velden die de functie al las) zodat ze ook `MaatwerkHaalbaarheidRow[]` accepteren
+  zonder de bestaande Agenda-tab-aanroep (`SnijplanRow[]`) aan te raken — puur een
+  type-verruiming, geen gedragswijziging voor bestaande callers.
+- **Bugfix en passant:** `fetchMaatwerkHaalbaarheid` had geen paginering. Bij >1000
+  open maatwerk-stukken (nu ~1650) sneed de PostgREST-rijencap de wachtrij stilletjes
+  af op 1000 — precies de bugklasse van de Pick & Ship-fix van 2026-06-11. Daardoor
+  zag de nieuwe agenda-berekening de wachtrij incompleet, wat afgeleide snijdatums
+  te optimistisch maakte voor alles ná de eerste 1000 rijen. Nu gepagineerd (patroon
+  `fetchKwaliteitCodes`, `range()`-loop tot een kortere batch).
+- **Live geverifieerd** (tijdelijk Vitest-testbestand tegen de echte database, achteraf
+  verwijderd): 1624 stukken, 294 rollen, eerste rol-start `2026-06-22` — exact de
+  door de gebruiker genoemde eerstvolgende werkdag. **Resultaat is fors strenger dan
+  voorheen** (742 van 1223 orders rood) — dat is de bedoelde correctie: de oude
+  naïeve vandaag-vs-deadline-vergelijking toonde veel stukken ten onrechte groen
+  omdat hij de wachtrij-diepte niet meewoog. Het model gaat uit van één sequentiële
+  snij-wachtrij (geen parallelle snijders/machines, bestaande aanname van
+  `berekenAgenda`/`berekenSnijAgenda`) — als dat in de praktijk niet klopt, is het
+  rode aantal een overschatting; dat is hier niet aangepast.
+- **Buiten scope (bewust):** geen voorspelde datum voor nog niet aan een rol
+  toegewezen stukken (zou een volledige capaciteits-projectie vereisen); geen
+  wijziging aan `auto-plan-groep`/de packer/de bestaande Agenda-tab; geen per-stuk-
+  detail-uitklap (link naar order-detail volstaat).
+
+## 2026-06-20 — Correctie: BTW-controle-blokkade verplaatst van SQL naar factuur-verzenden
+
+**Waarom:** vraag van de gebruiker ("hoe zie ik dit?") legde een gat bloot in de
+zojuist gebouwde BTW-regeling-gate (zie vorige entry). De eerste versie liet
+`projecteer_concept_factuur`/`genereer_factuur(_voor_week)` zelf een
+`RAISE EXCEPTION` doen vóór de factuur-INSERT zodra `bepaal_btw_regeling` een
+hard-block-regeling teruggaf. Gevolg: bij een blokkade werd er **helemaal geen
+factuur aangemaakt** — de enige sporen waren `factuur_queue.last_error`, een
+tabel zonder enige UI. De net gebouwde `BtwControleNodigBanner` op factuur-
+detail kon dus nooit zichtbaar worden voor precies het scenario waarvoor hij
+bedoeld was.
+
+**Fix:** de 3 RPC's zetten de gate-kolommen nu **altijd** (factuur wordt altijd
+aangemaakt/bijgewerkt als Concept, met de banner zichtbaar) — de daadwerkelijke
+blokkade verhuisde naar `factuur-verzenden/index.ts`, ná het aanmaken van de
+factuur en vóór het versturen van mail/EDI (`HARD_BLOCK_REGELINGEN` uit
+`_shared/btw.ts`). Hierdoor vindt de gebruiker een geblokkeerde factuur nu
+gewoon terug als status "Concept" op `/facturatie`, met de banner + reden +
+bevestig-knop — exact waar je een factuur zou zoeken, in plaats van in een
+tabel die nergens in de UI verschijnt.
+
+## 2026-06-20 — BTW-regeling per order (afleverland-bewust, export buiten EU, controle-gate)
+
+**Waarom:** de gebruiker leverde de volledige Belastingdienst-beslisboom voor BTW op
+goederenverkoop aan (B2B/B2C, EU-ICL, export buiten EU, OSS) en vroeg of RugFlow daar
+al naar handelt. Audit tegen de live database (bevestigd: vrijwel uitsluitend
+B2B-groothandel, geen OSS/particulier-scope) legde drie gaten bloot t.o.v. het
+bestaande mig 164/371-mechanisme (één statische klant-checkbox `btw_verlegd_intracom`):
+6 actieve niet-EU-debiteuren (VS/Australië/Suriname/Ukraine/VK) stonden op 21% i.p.v.
+0%-export; geen koppeling tussen de checkbox en het werkelijke afleverland van een
+specifieke order (`orders.afl_land` bestond, werd niet gebruikt); 30 actieve debiteuren
+op verlegd zonder btw-nummer (bewust niet geblokkeerd sinds mig 164, blijft zo).
+
+**Kritieke correctie tijdens het plannen:** 996 van de 1602 actieve debiteuren (62%)
+hebben een leeg `land`-veld (legacy NL-klanten van vóór het land-veld werd ingevuld).
+Een naïeve "geen land bekend → controle nodig"-regel zou bij de eerste factuur-projectie
+de meerderheid van alle nieuwe facturen geblokkeerd hebben — opgevangen door leeg land
+veilig te laten terugvallen op het bestaande NL-gedrag, geen blokkade. Live geverifieerd
+op een echte Hornbach-zending (leeg land) vóór oplevering.
+
+- **Mig 454:** `normaliseer_land` uitgebreid met de 13 ontbrekende EU-lidstaten
+  (Portugal, Slowakije, Hongarije, Griekenland, Slovenië, Estland, Letland, Litouwen,
+  Bulgarije, Roemenië, Kroatië, Cyprus, Finland — dekte voorheen alleen Karpi's
+  "kernlanden"). Nieuwe `is_eu_land(iso2)` (hardcoded 27-lidstatenlijst, CH/NO/GB
+  bewust uitgesloten). Contract-update: golden fixtures + `adres-split.ts`.
+- **Mig 455:** nieuwe pure functie `bepaal_btw_regeling(afl_land, debiteur_land,
+  afhalen, verlegd_vlag, btw_nummer, btw_percentage)` — combineert het effectieve
+  afleverland met de klant-checkbox tot een regeling: `nl_binnenland`/`eu_b2b_icl`/
+  `eu_b2b_binnenland_afwijking` (mismatch tussen checkbox en order-werkelijkheid)/
+  `export_buiten_eu`.
+- **Mig 456:** nieuwe gate `facturen.btw_controle_nodig_sinds` + `facturen.btw_regeling`
+  (zelfde nullable-timestamp-conventie als `afl_adres_incompleet_sinds`/
+  `prijs_ontbreekt_sinds`) — **blokkeert de factuur-aanmaak-RPC's** (`projecteer_concept_
+  factuur`, `genereer_factuur_voor_week`, `genereer_factuur`) bij `eu_b2b_binnenland_
+  afwijking`/`export_buiten_eu`, **niet** pick & ship: het risico hier is een factuur met
+  het verkeerde BTW-bedrag, niet het fysiek verzenden van de goederen. `eu_b2b_icl`
+  zonder btw-nummer blijft advisory (mig 164-besluit, niet heropend). Nieuwe RPC
+  `markeer_btw_regeling_geaccepteerd` (analoog `markeer_prijs_geaccepteerd`).
+- **TS-seam** `_shared/btw.ts` uitgebreid: `isEuLand`/`bepaalBtwRegeling`/
+  `HARD_BLOCK_REGELINGEN` (17 nieuwe/uitgebreide tests).
+- **UI:** `BtwControleNodigBanner` op factuur-detail (bevestig-knop), banner +
+  filter-toggle op het facturen-overzicht, uitleg-tekst op de bestaande
+  verlegd-checkbox (`klant-facturering-tab.tsx`).
+- **Scope bewust niet meegenomen:** VIES-validatie, OSS/particuliere afstandsverkopen,
+  exportbewijs-/transportbewijs-documentatie bijhouden, ICP-opgave-automatisering,
+  binnenlandse-verlegging (niet relevant voor tapijt-groothandel) — zie plan voor de
+  volledige onderbouwing.
+
 ## 2026-06-20 — Handmatige rol-toewijzing met bescherming tegen terugdraaien (Fase 4)
 
 **Waarom:** laatste van de 4 fases uit de oorspronkelijke Q&A. De overkoepelende eis was een

@@ -31,12 +31,27 @@ export {
   werkminutenTussen,
 } from '../../../../supabase/functions/_shared/werkagenda'
 
-export interface RolBlok {
+/**
+ * Minimale vorm die berekenAgenda nodig heeft — alles wat de functie ooit leest.
+ * `SnijplanRow` voldoet hier structureel aan (bestaande aanroepen blijven werken,
+ * T wordt afgeleid); een smallere rij-vorm (bv. `MaatwerkHaalbaarheidRow` +
+ * rol_id) voldoet er ook aan, zonder de volledige SnijplanRow-vorm te hoeven
+ * fetchen.
+ */
+export interface AgendaInputStuk {
+  rol_id: number | null
+  rolnummer: string | null
+  kwaliteit_code: string | null
+  kleur_code: string | null
+  afleverdatum: string | null
+}
+
+export interface RolBlok<T extends AgendaInputStuk = SnijplanRow> {
   rolId: number
   rolnummer: string
   kwaliteitCode: string
   kleurCode: string
-  stukken: SnijplanRow[]
+  stukken: T[]
   /** Vroegste leverdatum binnen deze rol (ISO) */
   vroegsteLeverdatum: string | null
   /** Starttijd van de rol in de agenda */
@@ -55,19 +70,19 @@ export interface PlanningConfigLite {
 }
 
 /** Groepeer stukken per rol + plan sequentieel in werkagenda. */
-export function berekenAgenda(
-  stukken: SnijplanRow[],
+export function berekenAgenda<T extends AgendaInputStuk>(
+  stukken: T[],
   werktijden: Werktijden,
   planningConfig: PlanningConfigLite,
   startVanaf: Date = new Date(),
   snijLeverBufferDagen: number = 2,
-): RolBlok[] {
+): Array<RolBlok<T>> {
   type Groep = {
     rolId: number
     rolnummer: string
     kwaliteitCode: string
     kleurCode: string
-    stukken: SnijplanRow[]
+    stukken: T[]
     vroegsteLeverdatum: string | null
   }
   const map = new Map<number, Groep>()
@@ -119,7 +134,7 @@ export function berekenAgenda(
     return a.rolnummer.localeCompare(b.rolnummer)
   })
 
-  const blokken: RolBlok[] = []
+  const blokken: Array<RolBlok<T>> = []
   let cursor = startVanaf
   for (const g of groepen) {
     const duur = planningConfig.wisseltijd_minuten
