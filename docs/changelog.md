@@ -1,5 +1,52 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-20 — BTW-regeling per order (afleverland-bewust, export buiten EU, controle-gate)
+
+**Waarom:** de gebruiker leverde de volledige Belastingdienst-beslisboom voor BTW op
+goederenverkoop aan (B2B/B2C, EU-ICL, export buiten EU, OSS) en vroeg of RugFlow daar
+al naar handelt. Audit tegen de live database (bevestigd: vrijwel uitsluitend
+B2B-groothandel, geen OSS/particulier-scope) legde drie gaten bloot t.o.v. het
+bestaande mig 164/371-mechanisme (één statische klant-checkbox `btw_verlegd_intracom`):
+6 actieve niet-EU-debiteuren (VS/Australië/Suriname/Ukraine/VK) stonden op 21% i.p.v.
+0%-export; geen koppeling tussen de checkbox en het werkelijke afleverland van een
+specifieke order (`orders.afl_land` bestond, werd niet gebruikt); 30 actieve debiteuren
+op verlegd zonder btw-nummer (bewust niet geblokkeerd sinds mig 164, blijft zo).
+
+**Kritieke correctie tijdens het plannen:** 996 van de 1602 actieve debiteuren (62%)
+hebben een leeg `land`-veld (legacy NL-klanten van vóór het land-veld werd ingevuld).
+Een naïeve "geen land bekend → controle nodig"-regel zou bij de eerste factuur-projectie
+de meerderheid van alle nieuwe facturen geblokkeerd hebben — opgevangen door leeg land
+veilig te laten terugvallen op het bestaande NL-gedrag, geen blokkade. Live geverifieerd
+op een echte Hornbach-zending (leeg land) vóór oplevering.
+
+- **Mig 454:** `normaliseer_land` uitgebreid met de 13 ontbrekende EU-lidstaten
+  (Portugal, Slowakije, Hongarije, Griekenland, Slovenië, Estland, Letland, Litouwen,
+  Bulgarije, Roemenië, Kroatië, Cyprus, Finland — dekte voorheen alleen Karpi's
+  "kernlanden"). Nieuwe `is_eu_land(iso2)` (hardcoded 27-lidstatenlijst, CH/NO/GB
+  bewust uitgesloten). Contract-update: golden fixtures + `adres-split.ts`.
+- **Mig 455:** nieuwe pure functie `bepaal_btw_regeling(afl_land, debiteur_land,
+  afhalen, verlegd_vlag, btw_nummer, btw_percentage)` — combineert het effectieve
+  afleverland met de klant-checkbox tot een regeling: `nl_binnenland`/`eu_b2b_icl`/
+  `eu_b2b_binnenland_afwijking` (mismatch tussen checkbox en order-werkelijkheid)/
+  `export_buiten_eu`.
+- **Mig 456:** nieuwe gate `facturen.btw_controle_nodig_sinds` + `facturen.btw_regeling`
+  (zelfde nullable-timestamp-conventie als `afl_adres_incompleet_sinds`/
+  `prijs_ontbreekt_sinds`) — **blokkeert de factuur-aanmaak-RPC's** (`projecteer_concept_
+  factuur`, `genereer_factuur_voor_week`, `genereer_factuur`) bij `eu_b2b_binnenland_
+  afwijking`/`export_buiten_eu`, **niet** pick & ship: het risico hier is een factuur met
+  het verkeerde BTW-bedrag, niet het fysiek verzenden van de goederen. `eu_b2b_icl`
+  zonder btw-nummer blijft advisory (mig 164-besluit, niet heropend). Nieuwe RPC
+  `markeer_btw_regeling_geaccepteerd` (analoog `markeer_prijs_geaccepteerd`).
+- **TS-seam** `_shared/btw.ts` uitgebreid: `isEuLand`/`bepaalBtwRegeling`/
+  `HARD_BLOCK_REGELINGEN` (17 nieuwe/uitgebreide tests).
+- **UI:** `BtwControleNodigBanner` op factuur-detail (bevestig-knop), banner +
+  filter-toggle op het facturen-overzicht, uitleg-tekst op de bestaande
+  verlegd-checkbox (`klant-facturering-tab.tsx`).
+- **Scope bewust niet meegenomen:** VIES-validatie, OSS/particuliere afstandsverkopen,
+  exportbewijs-/transportbewijs-documentatie bijhouden, ICP-opgave-automatisering,
+  binnenlandse-verlegging (niet relevant voor tapijt-groothandel) — zie plan voor de
+  volledige onderbouwing.
+
 ## 2026-06-20 — Handmatige rol-toewijzing met bescherming tegen terugdraaien (Fase 4)
 
 **Waarom:** laatste van de 4 fases uit de oorspronkelijke Q&A. De overkoepelende eis was een

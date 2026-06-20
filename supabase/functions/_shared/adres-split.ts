@@ -69,6 +69,22 @@ const LAND_NAAR_ISO2: Record<string, string> = {
   NOORWEGEN: 'NO', NORWAY: 'NO', NORGE: 'NO',
   ENGELAND: 'GB', GROOTBRITTANNIE: 'GB', 'GROOT-BRITTANNIE': 'GB', UK: 'GB', 'UNITED KINGDOM': 'GB',
   IERLAND: 'IE', IRELAND: 'IE',
+  // Mig 454: resterende EU-lidstaten (nodig voor is_eu_land/bepaal_btw_regeling,
+  // mig 455) — voorheen alleen Karpi's "kernlanden" hierboven.
+  PORTUGAL: 'PT',
+  SLOVAKIA: 'SK', SLOWAKIJE: 'SK',
+  HUNGARY: 'HU', HONGARIJE: 'HU', MAGYARORSZAG: 'HU',
+  GREECE: 'GR', GRIEKENLAND: 'GR', ELLAS: 'GR',
+  SLOVENIA: 'SI', SLOVENIE: 'SI',
+  ESTONIA: 'EE', ESTLAND: 'EE',
+  LATVIA: 'LV', LETLAND: 'LV',
+  LITHUANIA: 'LT', LITOUWEN: 'LT',
+  BULGARIA: 'BG', BULGARIJE: 'BG',
+  ROMANIA: 'RO', ROEMENIE: 'RO',
+  CROATIA: 'HR', KROATIE: 'HR',
+  CYPRUS: 'CY',
+  MALTA: 'MT',
+  FINLAND: 'FI', SUOMI: 'FI',
 };
 
 // Trim → uppercase → diakritieken strippen → whitespace-runs naar één spatie.

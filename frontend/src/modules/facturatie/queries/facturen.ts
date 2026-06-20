@@ -16,6 +16,8 @@ export interface FactuurListItem {
   pdf_storage_path: string | null
   /** Distinct orders op deze factuur (bundel = meerdere). Voor klikbare links. */
   orders: Array<{ id: number; nr: string }>
+  /** Mig 456: NULL = BTW-regeling zeker, TIMESTAMPTZ = controle nodig sinds. */
+  btw_controle_nodig_sinds: string | null
 }
 
 export interface FactuurDetail {
@@ -39,6 +41,10 @@ export interface FactuurDetail {
   pdf_storage_path: string | null
   verstuurd_op: string | null
   verstuurd_naar: string | null
+  /** Mig 456: NULL = BTW-regeling zeker, TIMESTAMPTZ = controle nodig sinds. */
+  btw_controle_nodig_sinds: string | null
+  /** Mig 456: snapshot regeling-code (nl_binnenland/eu_b2b_icl/eu_b2b_binnenland_afwijking/export_buiten_eu). */
+  btw_regeling: string | null
 }
 
 export interface FactuurRegel {
@@ -63,7 +69,7 @@ export async function fetchFacturen(params?: { debiteurNr?: number }): Promise<F
   let q = supabase
     .from('facturen')
     .select(
-      'id, factuur_nr, debiteur_nr, factuurdatum, vervaldatum, status, totaal, verstuurd_op, pdf_storage_path, debiteuren(naam), factuur_regels(order_id, order_nr)',
+      'id, factuur_nr, debiteur_nr, factuurdatum, vervaldatum, status, totaal, verstuurd_op, pdf_storage_path, btw_controle_nodig_sinds, debiteuren(naam), factuur_regels(order_id, order_nr)',
     )
     .order('factuurdatum', { ascending: false })
     .order('factuur_nr', { ascending: false })
@@ -95,6 +101,7 @@ export async function fetchFacturen(params?: { debiteurNr?: number }): Promise<F
       verstuurd_op: f.verstuurd_op,
       pdf_storage_path: f.pdf_storage_path,
       orders: Array.from(ordersMap, ([id, nr]) => ({ id, nr })),
+      btw_controle_nodig_sinds: f.btw_controle_nodig_sinds,
     }
   })
 }
@@ -251,6 +258,29 @@ export async function zetFactuurOpBetaald(id: number): Promise<void> {
   const { error } = await supabase
     .from('facturen').update({ status: 'Betaald' }).eq('id', id)
   if (error) throw error
+}
+
+/**
+ * Mig 456: bevestigt dat de BTW-regeling op deze concept-factuur klopt, ook al
+ * signaleerde bepaal_btw_regeling een afwijking (eu_b2b_binnenland_afwijking/
+ * export_buiten_eu/eu_b2b_icl-zonder-nummer). Wist de gate zonder data te
+ * wijzigen — analoog markeer_prijs_geaccepteerd.
+ */
+export async function markeerBtwRegelingGeaccepteerd(factuurId: number): Promise<void> {
+  const { error } = await supabase.rpc('markeer_btw_regeling_geaccepteerd', {
+    p_factuur_id: factuurId,
+  })
+  if (error) throw error
+}
+
+/** Telling voor de facturen-overzicht-banner (mig 456). */
+export async function countBtwControleNodigFacturen(): Promise<number> {
+  const { count, error } = await supabase
+    .from('facturen')
+    .select('id', { count: 'exact', head: true })
+    .not('btw_controle_nodig_sinds', 'is', null)
+  if (error) throw error
+  return count ?? 0
 }
 
 export async function zetFactuurStatus(id: number, status: FactuurStatus): Promise<void> {

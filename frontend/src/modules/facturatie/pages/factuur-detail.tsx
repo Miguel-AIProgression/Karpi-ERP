@@ -9,6 +9,7 @@ import {
   useVerstuurFactuurViaEdi,
 } from '../hooks/use-facturen'
 import { FactuurStatusSelect } from '../components/factuur-status-select'
+import { BtwControleNodigBanner } from '../components/btw-controle-nodig-banner'
 import { getFactuurPdfSignedUrl, renderFactuurPdfBlobUrl, type FactuurRegel } from '../queries/facturen'
 import { formatCurrency, formatDate } from '@/lib/utils/formatters'
 
@@ -166,6 +167,15 @@ export function FactuurDetailPage() {
           </div>
         }
       />
+
+      {factuur.btw_controle_nodig_sinds && (
+        <BtwControleNodigBanner
+          factuurId={factuur.id}
+          debiteurNr={factuur.debiteur_nr}
+          controleNodigSinds={factuur.btw_controle_nodig_sinds}
+          btwRegeling={factuur.btw_regeling}
+        />
+      )}
 
       {ediMelding && (
         <div

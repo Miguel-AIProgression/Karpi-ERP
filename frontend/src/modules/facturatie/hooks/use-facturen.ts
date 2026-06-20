@@ -10,6 +10,8 @@ import {
   fetchBundelInfoVoorFactuur,
   fetchEdiFactuurConfig,
   verstuurFactuurViaEdi,
+  markeerBtwRegelingGeaccepteerd,
+  countBtwControleNodigFacturen,
   type FactuurStatus,
 } from '../queries/facturen'
 
@@ -93,6 +95,22 @@ export function useBundelInfoVoorFactuur(factuurId: number | null | undefined) {
     queryKey: ['bundel-info-factuur', factuurId],
     queryFn: () => fetchBundelInfoVoorFactuur(factuurId as number),
     enabled: Boolean(factuurId),
+    staleTime: 60_000,
+  })
+}
+
+export function useMarkeerBtwRegelingGeaccepteerd() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: markeerBtwRegelingGeaccepteerd,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['facturen'] }),
+  })
+}
+
+export function useBtwControleNodigCount() {
+  return useQuery({
+    queryKey: ['facturen', 'btw-controle-nodig-count'],
+    queryFn: countBtwControleNodigFacturen,
     staleTime: 60_000,
   })
 }
