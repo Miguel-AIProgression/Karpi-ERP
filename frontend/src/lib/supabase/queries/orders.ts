@@ -126,6 +126,11 @@ export interface OrderRegelSnijplan {
   status: string
   scancode: string
   locatie: string | null
+  /** Mig-overzicht: alleen gevuld zodra het stuk daadwerkelijk op een rol
+   *  geplaatst is. status='Gepland' zonder rol_id betekent "in de wachtrij/
+   *  tekort-pool", géén echte planning op een specifieke dag/rol. */
+  rol_id: number | null
+  rolnummer: string | null
 }
 
 export interface OrderRegel {
@@ -634,8 +639,8 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
   const maatwerkRegelIds = baseRegels.filter((r) => r.is_maatwerk).map((r) => r.id)
   if (maatwerkRegelIds.length > 0) {
     const { data: snijplanData } = await supabase
-      .from('snijplannen')
-      .select('id, snijplan_nr, status, scancode, locatie, order_regel_id')
+      .from('snijplanning_overzicht')
+      .select('id, snijplan_nr, status, scancode, snijplan_locatie, rol_id, rolnummer, order_regel_id')
       .in('order_regel_id', maatwerkRegelIds)
       .order('snijplan_nr')
 
@@ -649,7 +654,9 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
           snijplan_nr: sp.snijplan_nr,
           status: sp.status,
           scancode: sp.scancode,
-          locatie: (sp as { locatie?: string | null }).locatie ?? null,
+          locatie: (sp as { snijplan_locatie?: string | null }).snijplan_locatie ?? null,
+          rol_id: (sp as { rol_id?: number | null }).rol_id ?? null,
+          rolnummer: (sp as { rolnummer?: string | null }).rolnummer ?? null,
         })
       }
       for (const regel of baseRegels) {

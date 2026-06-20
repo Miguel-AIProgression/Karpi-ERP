@@ -197,12 +197,57 @@ function formatMaat(regel: OrderRegel): string {
   return `${l}×${b} cm`
 }
 
-function SnijplanStatusBadge({ status, suffix }: { status: string; suffix?: string | null }) {
-  return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${snijplanBadgeClass(status)}`}>
-      {status}
+/** Statussen die nog in de snijplanning-pool zitten (TE_SNIJDEN ∪ wacht-varianten) —
+ *  alleen hiervoor heeft een link naar /snijplanning zin (zie snijplan-status.ts). */
+const SNIJPLANNING_POOL_STATUSSEN = new Set(['Wacht', 'Wacht op inkoop', 'Gepland', 'Snijden'])
+
+/** Welke status-tab op /snijplanning toont dit snijplan? Spiegelt de
+ *  client-side classificatie in snijplanning-overview.tsx (rol_id aanwezig =
+ *  Te snijden-tab, anders Tekort, behalve de eigen Wacht op inkoop-tab). */
+function snijplanningTabVoor(status: string, rolId: number | null): string {
+  if (status === 'Wacht op inkoop') return 'Wacht op inkoop'
+  return rolId != null ? 'Te snijden' : 'Tekort'
+}
+
+function SnijplanStatusBadge({ status, rolId, rolnummer, orderNr, suffix }: {
+  status: string
+  rolId: number | null
+  rolnummer: string | null
+  orderNr: string
+  suffix?: string | null
+}) {
+  // status='Gepland' betekent zowel "in de wachtrij zonder rol" als "echt op
+  // een rol geplaatst" (zie CLAUDE.md) — alleen rol_id onderscheidt die twee.
+  const isGeplandZonderRol = status === 'Gepland' && rolId == null
+  const label = isGeplandZonderRol
+    ? 'Wacht op planning'
+    : status === 'Gepland' && rolnummer
+      ? `Gepland · Rol ${rolnummer}`
+      : status
+  const className = isGeplandZonderRol
+    ? 'bg-slate-100 text-slate-600'
+    : status === 'Gepland' && rolnummer
+      ? 'bg-cyan-100 text-cyan-700'
+      : snijplanBadgeClass(status)
+
+  const inhoud = (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${className}`}>
+      {label}
       {suffix && <span className="font-mono opacity-80">· {suffix}</span>}
     </span>
+  )
+
+  if (!SNIJPLANNING_POOL_STATUSSEN.has(status)) return inhoud
+
+  const tabParam = snijplanningTabVoor(status, rolId)
+  return (
+    <Link
+      to={`/snijplanning?status=${encodeURIComponent(tabParam)}&zoek=${encodeURIComponent(orderNr)}`}
+      title="Bekijk op de snijplanning"
+      className="hover:opacity-80"
+    >
+      {inhoud}
+    </Link>
   )
 }
 
@@ -333,6 +378,7 @@ function SubRowTr({ sub }: { sub: SubRow }) {
 interface RegelRowProps {
   regel: OrderRegel
   orderId: number
+  orderNr: string
   orderdatum: string
   /** Order-niveau verzendweek (YYYY-Www). Geeft context voor vroegst_leverbaar-hint. */
   orderVerzendweek?: string | null
@@ -341,7 +387,7 @@ interface RegelRowProps {
   isEindstatus: boolean
 }
 
-function RegelRow({ regel, orderId, orderdatum, orderVerzendweek, levertijd, claims, isEindstatus }: RegelRowProps) {
+function RegelRow({ regel, orderId, orderNr, orderdatum, orderVerzendweek, levertijd, claims, isEindstatus }: RegelRowProps) {
   const afwerkingInfo = regel.maatwerk_afwerking ? AFWERKING_MAP[regel.maatwerk_afwerking] : null
   const maat = formatMaat(regel)
   const toonSubRows = !regel.is_maatwerk
@@ -463,15 +509,19 @@ function RegelRow({ regel, orderId, orderdatum, orderVerzendweek, levertijd, cla
                 <span className="text-slate-500 italic">{regel.maatwerk_instructies}</span>
               )}
 
-              {/* Productie status — info-only (geen klik; was kapotte
-                  /productie/snijplanning route). Ingepakt-badge bevat de
-                  magazijn-locatie in dezelfde pill ("Ingepakt · A-13"). */}
+              {/* Productie status — klikbaar voor statussen die nog in de
+                  snijplanning-pool zitten (linkt naar /snijplanning, gefilterd
+                  op deze order). Ingepakt-badge bevat de magazijn-locatie in
+                  dezelfde pill ("Ingepakt · A-13"). */}
               {regel.snijplannen && regel.snijplannen.length > 0 && (
                 <span className="ml-auto flex items-center gap-2 flex-wrap">
                   {regel.snijplannen.map((sp) => (
                     <SnijplanStatusBadge
                       key={sp.id}
                       status={sp.status}
+                      rolId={sp.rol_id}
+                      rolnummer={sp.rolnummer}
+                      orderNr={orderNr}
                       suffix={sp.status === 'Ingepakt' ? sp.locatie : null}
                     />
                   ))}
@@ -501,12 +551,13 @@ interface OrderRegelsTableProps {
   claims?: OrderClaim[]
   orderStatus?: string
   orderId: number
+  orderNr: string
   orderdatum: string
   /** ISO-datum van de order-afleverdatum; wordt omgezet naar verzendweek voor de vroegst_leverbaar-hint. */
   orderAfleverdatum?: string | null
 }
 
-export function OrderRegelsTable({ regels, isLoading, levertijden, claims, orderStatus, orderId, orderdatum, orderAfleverdatum }: OrderRegelsTableProps) {
+export function OrderRegelsTable({ regels, isLoading, levertijden, claims, orderStatus, orderId, orderNr, orderdatum, orderAfleverdatum }: OrderRegelsTableProps) {
   const [deelzendingOpen, setDeelzendingOpen] = useState(false)
   const isEindstatus = EINDSTATUS_ORDERS.has(orderStatus ?? '')
   const orderVerzendweek = isoWeekStringVanIso(orderAfleverdatum)
@@ -589,6 +640,7 @@ export function OrderRegelsTable({ regels, isLoading, levertijden, claims, order
                 key={regel.id}
                 regel={regel}
                 orderId={orderId}
+                orderNr={orderNr}
                 orderdatum={orderdatum}
                 orderVerzendweek={orderVerzendweek}
                 levertijd={levertijdMap.get(regel.id)}
