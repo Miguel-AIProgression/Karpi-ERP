@@ -1,5 +1,52 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-20 — Haalbaarheid-overzicht naar order-niveau + echte wachtrij-positie
+
+**Waarom:** vervolgvraag op Fase 1. De bestaande pagina toonde per stuk alleen de
+statische snij-deadline tegen "vandaag" — geen idee of een al-gepland stuk straks
+ook daadwerkelijk op tijd aan de beurt komt gegeven de rest van de wachtrij, en geen
+order-niveau-totaalbeeld ("zien we nu alleen wat er per rol gesneden wordt, geen
+totaaloverzicht"). Gevraagd: 1 rij per order, gepland ja/nee, op welke datum, en of
+de gevraagde deadline gehaald wordt.
+
+- **Granulariteit naar order:** `haalbaarheid-overview.tsx` groepeert nu per
+  `order_id` i.p.v. per snijplan-stuk; een order met meerdere maatwerk-regels toont
+  het slechtste oordeel + de laatste (meest kritieke) geplande snijdatum onder zijn
+  stukken.
+- **Echte geplande snijdatum, niet alleen de deadline:** `snijplannen.planning_week/
+  _jaar` staan voor alle ~1130 huidige al-geplande stukken op NULL — die datum
+  bestaat dus nergens als kolom. Afgeleid via de **al-bestaande**
+  `berekenAgenda` (`frontend/src/lib/utils/bereken-agenda.ts`, tot nu toe alleen
+  gebruikt door de Agenda-tab): plant alle open stukken globaal, gegroepeerd per
+  rol, sequentieel vanaf nu (landt vanzelf op de eerstvolgende werkdag, 22 juni →
+  week 26, zonder iets hard te coderen). De haalbaarheidsstatus gebruikt die
+  afgeleide datum als vergelijkingspunt i.p.v. de letterlijke datum van vandaag —
+  wachtrij-bewust i.p.v. naïef (een stuk met een nabije deadline kan dus terecht rood
+  tonen, ook als vandaag zelf nog ruim vóór de deadline ligt).
+- **`berekenAgenda`/`RolBlok` generic gemaakt** (`<T extends AgendaInputStuk>`, de 5
+  velden die de functie al las) zodat ze ook `MaatwerkHaalbaarheidRow[]` accepteren
+  zonder de bestaande Agenda-tab-aanroep (`SnijplanRow[]`) aan te raken — puur een
+  type-verruiming, geen gedragswijziging voor bestaande callers.
+- **Bugfix en passant:** `fetchMaatwerkHaalbaarheid` had geen paginering. Bij >1000
+  open maatwerk-stukken (nu ~1650) sneed de PostgREST-rijencap de wachtrij stilletjes
+  af op 1000 — precies de bugklasse van de Pick & Ship-fix van 2026-06-11. Daardoor
+  zag de nieuwe agenda-berekening de wachtrij incompleet, wat afgeleide snijdatums
+  te optimistisch maakte voor alles ná de eerste 1000 rijen. Nu gepagineerd (patroon
+  `fetchKwaliteitCodes`, `range()`-loop tot een kortere batch).
+- **Live geverifieerd** (tijdelijk Vitest-testbestand tegen de echte database, achteraf
+  verwijderd): 1624 stukken, 294 rollen, eerste rol-start `2026-06-22` — exact de
+  door de gebruiker genoemde eerstvolgende werkdag. **Resultaat is fors strenger dan
+  voorheen** (742 van 1223 orders rood) — dat is de bedoelde correctie: de oude
+  naïeve vandaag-vs-deadline-vergelijking toonde veel stukken ten onrechte groen
+  omdat hij de wachtrij-diepte niet meewoog. Het model gaat uit van één sequentiële
+  snij-wachtrij (geen parallelle snijders/machines, bestaande aanname van
+  `berekenAgenda`/`berekenSnijAgenda`) — als dat in de praktijk niet klopt, is het
+  rode aantal een overschatting; dat is hier niet aangepast.
+- **Buiten scope (bewust):** geen voorspelde datum voor nog niet aan een rol
+  toegewezen stukken (zou een volledige capaciteits-projectie vereisen); geen
+  wijziging aan `auto-plan-groep`/de packer/de bestaande Agenda-tab; geen per-stuk-
+  detail-uitklap (link naar order-detail volstaat).
+
 ## 2026-06-20 — Correctie: BTW-controle-blokkade verplaatst van SQL naar factuur-verzenden
 
 **Waarom:** vraag van de gebruiker ("hoe zie ik dit?") legde een gat bloot in de

@@ -20,6 +20,7 @@ export interface MaatwerkHaalbaarheidRow {
   maatwerk_vorm: string | null
   afleverdatum: string | null
   lever_type: LeverType
+  rol_id: number | null
   rolnummer: string | null
   verwacht_inkooporder_regel_id: number | null
 }
@@ -29,21 +30,37 @@ export interface MaatwerkHaalbaarheidRow {
 const TERMINALE_STATUSSEN = ['Gesneden', 'In confectie', 'Gereed', 'Ingepakt', 'Geannuleerd']
 
 export async function fetchMaatwerkHaalbaarheid(): Promise<MaatwerkHaalbaarheidRow[]> {
-  const { data, error } = await supabase
-    .from('snijplanning_overzicht')
-    .select(
-      `id, snijplan_nr, status, order_id, order_nr, debiteur_nr, klant_naam,
-       kwaliteit_code, kleur_code, snij_lengte_cm, snij_breedte_cm, maatwerk_vorm,
-       afleverdatum, lever_type, rolnummer, verwacht_inkooporder_regel_id`,
-    )
-    .eq('snijden_uit_standaardmaat', false)
-    // Status-namen bevatten spaties ("In confectie") — PostgREST vereist dan
-    // quotes per waarde binnen de in-lijst (zelfde patroon als orders.ts).
-    .not('status', 'in', `(${TERMINALE_STATUSSEN.map((s) => `"${s}"`).join(',')})`)
-    .not('afleverdatum', 'is', null)
+  // Gepagineerd: een kale GET loopt tegen de PostgREST max-rows-cap (1000) aan —
+  // er staan momenteel ~1650 niet-terminale maatwerk-stukken open. Zonder paginering
+  // zou de agenda-berekening (berekenAgenda, in de pagina) de wachtrij stilletjes
+  // incompleet zien, wat de afgeleide snijdatums te optimistisch maakt voor alles
+  // ná de eerste 1000 rijen (zelfde bugklasse als de Pick & Ship-fix 2026-06-11).
+  const all: MaatwerkHaalbaarheidRow[] = []
+  const pageSize = 1000
+  let from = 0
+  while (true) {
+    const { data, error } = await supabase
+      .from('snijplanning_overzicht')
+      .select(
+        `id, snijplan_nr, status, order_id, order_nr, debiteur_nr, klant_naam,
+         kwaliteit_code, kleur_code, snij_lengte_cm, snij_breedte_cm, maatwerk_vorm,
+         afleverdatum, lever_type, rol_id, rolnummer, verwacht_inkooporder_regel_id`,
+      )
+      .eq('snijden_uit_standaardmaat', false)
+      // Status-namen bevatten spaties ("In confectie") — PostgREST vereist dan
+      // quotes per waarde binnen de in-lijst (zelfde patroon als orders.ts).
+      .not('status', 'in', `(${TERMINALE_STATUSSEN.map((s) => `"${s}"`).join(',')})`)
+      .not('afleverdatum', 'is', null)
+      .order('id')
+      .range(from, from + pageSize - 1)
 
-  if (error) throw error
-  return (data ?? []) as MaatwerkHaalbaarheidRow[]
+    if (error) throw error
+    const batch = (data ?? []) as MaatwerkHaalbaarheidRow[]
+    all.push(...batch)
+    if (batch.length < pageSize) break
+    from += pageSize
+  }
+  return all
 }
 
 export interface InkoopRegelInfo {

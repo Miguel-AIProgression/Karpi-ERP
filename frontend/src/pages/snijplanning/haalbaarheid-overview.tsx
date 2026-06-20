@@ -4,14 +4,13 @@ import { ArrowDown, ArrowUp, ArrowUpDown, Search, AlertTriangle } from 'lucide-r
 import { PageHeader } from '@/components/layout/page-header'
 import { cn } from '@/lib/utils/cn'
 import { formatDate } from '@/lib/utils/formatters'
-import { snijplanBadgeClass } from '@/lib/utils/constants'
 import { useMaatwerkHaalbaarheid } from '@/modules/snijplanning'
 import type { MaatwerkHaalbaarheidRow } from '@/modules/snijplanning'
 import { usePlanningConfig } from '@/hooks/use-planning-config'
 import { useQuery } from '@tanstack/react-query'
 import { fetchWerkagendaConfig } from '@/lib/supabase/queries/werkagenda'
-import { berekenHaalbaarheid, type HaalbaarheidStatus } from '@/lib/orders/snij-haalbaarheid'
-import { isoDatum } from '@/lib/utils/bereken-agenda'
+import { bepaalSnijDeadline, bepaalHaalbaarheidStatus, type HaalbaarheidStatus } from '@/lib/orders/snij-haalbaarheid'
+import { berekenAgenda, isoDatum, werkdagenTussen } from '@/lib/utils/bereken-agenda'
 import { verzendWeekVoor } from '@/lib/orders/verzendweek'
 
 type SortKey = 'status' | 'marge' | 'leverdatum' | 'klant'
@@ -27,9 +26,27 @@ const STATUS_BADGE: Record<HaalbaarheidStatus, { bg: string; text: string; label
 
 interface HaalbaarheidsRij extends MaatwerkHaalbaarheidRow {
   snijDeadline: string
+  /** ISO-datum, of null als dit stuk nog geen rol heeft (niet gepland). */
+  geplandeSnijDatum: string | null
   margeWerkdagen: number
   haalbaarheidStatus: HaalbaarheidStatus
   inkoopInfo?: { inkooporder_nr: string; verwacht_datum: string | null }
+}
+
+interface OrderRij {
+  orderId: number
+  orderNr: string
+  klantNaam: string
+  afleverdatum: string | null
+  leverType: 'week' | 'datum'
+  kwaliteitKleurLabel: string
+  aantalStukken: number
+  aantalGepland: number
+  /** Laatste (meest kritieke) geplande snijdatum onder de al-geplande stukken. NULL = geen enkel stuk gepland. */
+  geplandeDatum: string | null
+  margeWerkdagen: number
+  haalbaarheidStatus: HaalbaarheidStatus
+  stukken: HaalbaarheidsRij[]
 }
 
 function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
@@ -46,37 +63,99 @@ export function HaalbaarheidOverviewPage() {
   const { data: planningConfig } = usePlanningConfig()
   const { data: werktijden } = useQuery({ queryKey: ['werkagenda-config'], queryFn: fetchWerkagendaConfig })
 
+  // Eén globale agenda over ALLE al-geplande stukken (alle kwaliteit/kleur-groepen
+  // samen, ongebonden door een horizon) — exact de wachtrij zoals de snijder hem
+  // doorwerkt. `berekenAgenda` plant vanaf "nu", wat vanzelf op de eerstvolgende
+  // werkdag landt. Levert per rol een echte eind-datum: de kern van "wanneer wordt
+  // dit nou echt gesneden", die nergens als los veld in de data bestaat.
+  const rolEindMap = useMemo(() => {
+    if (!haalbaarheid || !planningConfig || !werktijden) return new Map<number, Date>()
+    const blokken = berekenAgenda(haalbaarheid.rows, werktijden, planningConfig)
+    return new Map(blokken.map((b) => [b.rolId, b.eind]))
+  }, [haalbaarheid, planningConfig, werktijden])
+
   const rijen = useMemo<HaalbaarheidsRij[]>(() => {
     if (!haalbaarheid || !planningConfig || !werktijden) return []
     const vandaag = isoDatum(new Date())
     return haalbaarheid.rows
       .filter((r) => r.afleverdatum != null)
       .map((r) => {
-        const { snijDeadline, margeWerkdagen, status } = berekenHaalbaarheid(
-          r.afleverdatum!,
-          r.lever_type ?? 'week',
-          planningConfig,
-          werktijden,
-          vandaag,
-        )
+        const snijDeadline = bepaalSnijDeadline(r.afleverdatum!, r.lever_type ?? 'week', planningConfig, werktijden)
+        const eind = r.rol_id != null ? rolEindMap.get(r.rol_id) ?? null : null
+        const geplandeSnijDatum = eind ? isoDatum(eind) : null
+        // Geen rol → er is geen agenda-positie, dus terugvallen op de letterlijke
+        // datum van vandaag (ongewijzigd Fase-1-gedrag voor niet-geplande stukken).
+        const referentieDatum = geplandeSnijDatum ?? vandaag
+        const margeWerkdagen = werkdagenTussen(referentieDatum, snijDeadline, werktijden)
+        const status = bepaalHaalbaarheidStatus(snijDeadline, referentieDatum, werktijden)
         const inkoopInfo = r.verwacht_inkooporder_regel_id != null
           ? haalbaarheid.inkoopInfo.get(r.verwacht_inkooporder_regel_id)
           : undefined
-        return { ...r, snijDeadline, margeWerkdagen, haalbaarheidStatus: status, inkoopInfo }
+        return { ...r, snijDeadline, geplandeSnijDatum, margeWerkdagen, haalbaarheidStatus: status, inkoopInfo }
       })
-  }, [haalbaarheid, planningConfig, werktijden])
+  }, [haalbaarheid, planningConfig, werktijden, rolEindMap])
+
+  // Groepeer per order — het gevraagde overzicht is "halen we de deadline volgens
+  // order", niet per los stuk. Een order met meerdere maatwerk-regels toont het
+  // slechtste oordeel onder zijn stukken (rood > oranje > groen) en de laatste
+  // (meest kritieke) geplande datum.
+  const orderRijen = useMemo<OrderRij[]>(() => {
+    const groepen = new Map<number, HaalbaarheidsRij[]>()
+    for (const r of rijen) {
+      const lijst = groepen.get(r.order_id) ?? []
+      lijst.push(r)
+      groepen.set(r.order_id, lijst)
+    }
+    const result: OrderRij[] = []
+    for (const [orderId, stukken] of groepen) {
+      const eerste = stukken[0]
+      const aantalGepland = stukken.filter((s) => s.rol_id != null).length
+      const geplandeDatums = stukken
+        .map((s) => s.geplandeSnijDatum)
+        .filter((d): d is string => d != null)
+      const geplandeDatum = geplandeDatums.length > 0
+        ? geplandeDatums.reduce((a, b) => (a > b ? a : b))
+        : null
+      const status = stukken.reduce<HaalbaarheidStatus>(
+        (worst, s) => (STATUS_VOLGORDE[s.haalbaarheidStatus] < STATUS_VOLGORDE[worst] ? s.haalbaarheidStatus : worst),
+        'groen',
+      )
+      const margeWerkdagen = Math.min(...stukken.map((s) => s.margeWerkdagen))
+      const combinaties = Array.from(
+        new Set(stukken.map((s) => `${s.kwaliteit_code ?? '—'} · ${s.kleur_code ?? '—'}`)),
+      )
+      result.push({
+        orderId,
+        orderNr: eerste.order_nr,
+        klantNaam: eerste.klant_naam,
+        afleverdatum: eerste.afleverdatum,
+        leverType: eerste.lever_type ?? 'week',
+        kwaliteitKleurLabel: combinaties.length > 1 ? `${combinaties[0]} +${combinaties.length - 1}` : combinaties[0],
+        aantalStukken: stukken.length,
+        aantalGepland,
+        geplandeDatum,
+        margeWerkdagen,
+        haalbaarheidStatus: status,
+        stukken,
+      })
+    }
+    return result
+  }, [rijen])
 
   const filtered = useMemo(() => {
-    if (!zoek.trim()) return rijen
+    if (!zoek.trim()) return orderRijen
     const q = zoek.toLowerCase()
-    return rijen.filter(
+    return orderRijen.filter(
       (r) =>
-        r.order_nr.toLowerCase().includes(q) ||
-        r.klant_naam.toLowerCase().includes(q) ||
-        (r.kwaliteit_code ?? '').toLowerCase().includes(q) ||
-        (r.kleur_code ?? '').toLowerCase().includes(q),
+        r.orderNr.toLowerCase().includes(q) ||
+        r.klantNaam.toLowerCase().includes(q) ||
+        r.stukken.some(
+          (s) =>
+            (s.kwaliteit_code ?? '').toLowerCase().includes(q) ||
+            (s.kleur_code ?? '').toLowerCase().includes(q),
+        ),
     )
-  }, [rijen, zoek])
+  }, [orderRijen, zoek])
 
   const sorted = useMemo(() => {
     const arr = [...filtered]
@@ -90,7 +169,7 @@ export function HaalbaarheidOverviewPage() {
       } else if (sortKey === 'leverdatum') {
         cmp = (a.afleverdatum ?? '').localeCompare(b.afleverdatum ?? '')
       } else if (sortKey === 'klant') {
-        cmp = a.klant_naam.localeCompare(b.klant_naam, 'nl-NL', { sensitivity: 'base' })
+        cmp = a.klantNaam.localeCompare(b.klantNaam, 'nl-NL', { sensitivity: 'base' })
       }
       return sortDir === 'asc' ? cmp : -cmp
     })
@@ -106,15 +185,15 @@ export function HaalbaarheidOverviewPage() {
     setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
   }
 
-  const aantalRood = rijen.filter((r) => r.haalbaarheidStatus === 'rood').length
-  const aantalOranje = rijen.filter((r) => r.haalbaarheidStatus === 'oranje').length
-  const aantalGroen = rijen.filter((r) => r.haalbaarheidStatus === 'groen').length
+  const aantalRood = orderRijen.filter((r) => r.haalbaarheidStatus === 'rood').length
+  const aantalOranje = orderRijen.filter((r) => r.haalbaarheidStatus === 'oranje').length
+  const aantalGroen = orderRijen.filter((r) => r.haalbaarheidStatus === 'groen').length
 
   return (
     <>
       <PageHeader
         title="Haalbaarheid maatwerk"
-        description={`${rijen.length} maatwerk-stukken nog te snijden — welke halen hun snij-deadline?`}
+        description={`${orderRijen.length} maatwerk-orders nog te produceren — welke halen hun gevraagde deadline?`}
       />
 
       <div className="flex gap-4 text-sm mb-4">
@@ -140,7 +219,7 @@ export function HaalbaarheidOverviewPage() {
         {isLoading ? (
           <div className="p-12 text-center text-slate-400">Laden...</div>
         ) : sorted.length === 0 ? (
-          <div className="p-12 text-center text-slate-400">Geen maatwerk-stukken gevonden</div>
+          <div className="p-12 text-center text-slate-400">Geen maatwerk-orders gevonden</div>
         ) : (
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
@@ -152,14 +231,13 @@ export function HaalbaarheidOverviewPage() {
                   </button>
                 </th>
                 <th className="px-4 py-3 text-left font-medium">Kwaliteit · Kleur</th>
-                <th className="px-4 py-3 text-left font-medium">Maat</th>
                 <th className="px-4 py-3 text-left font-medium">
                   <button onClick={() => toggleSort('leverdatum')} className="inline-flex items-center gap-1.5 hover:text-slate-900">
                     Leverdatum <SortIcon active={sortKey === 'leverdatum'} dir={sortDir} />
                   </button>
                 </th>
-                <th className="px-4 py-3 text-left font-medium">Snijplan-status</th>
-                <th className="px-4 py-3 text-left font-medium">Snij-deadline</th>
+                <th className="px-4 py-3 text-left font-medium">Stukken</th>
+                <th className="px-4 py-3 text-left font-medium">Geplande snijdatum</th>
                 <th className="px-4 py-3 text-right font-medium">
                   <button onClick={() => toggleSort('marge')} className="inline-flex items-center gap-1.5 hover:text-slate-900">
                     Marge <SortIcon active={sortKey === 'marge'} dir={sortDir} />
@@ -175,21 +253,17 @@ export function HaalbaarheidOverviewPage() {
             <tbody className="divide-y divide-slate-100">
               {sorted.map((r) => {
                 const badge = STATUS_BADGE[r.haalbaarheidStatus]
-                const isWeek = (r.lever_type ?? 'week') === 'week'
+                const isWeek = r.leverType === 'week'
                 const verzendweek = isWeek ? verzendWeekVoor(r.afleverdatum) : null
                 return (
-                  <tr key={r.id} className={cn('hover:bg-slate-50/60', r.haalbaarheidStatus === 'rood' && 'bg-red-50/30')}>
+                  <tr key={r.orderId} className={cn('hover:bg-slate-50/60', r.haalbaarheidStatus === 'rood' && 'bg-red-50/30')}>
                     <td className="px-4 py-3 whitespace-nowrap">
-                      <Link to={`/orders/${r.order_id}`} className="font-medium text-terracotta-600 hover:underline">
-                        {r.order_nr}
+                      <Link to={`/orders/${r.orderId}`} className="font-medium text-terracotta-600 hover:underline">
+                        {r.orderNr}
                       </Link>
-                      <div className="text-xs text-slate-400">{r.snijplan_nr}</div>
                     </td>
-                    <td className="px-4 py-3 text-slate-700">{r.klant_naam}</td>
-                    <td className="px-4 py-3 text-slate-700 whitespace-nowrap">{r.kwaliteit_code} · {r.kleur_code}</td>
-                    <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
-                      {r.snij_breedte_cm}×{r.snij_lengte_cm} cm{r.maatwerk_vorm ? ` (${r.maatwerk_vorm})` : ''}
-                    </td>
+                    <td className="px-4 py-3 text-slate-700">{r.klantNaam}</td>
+                    <td className="px-4 py-3 text-slate-700 whitespace-nowrap">{r.kwaliteitKleurLabel}</td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       {isWeek && verzendweek ? (
                         <span>wk {verzendweek.week}/{verzendweek.jaar}</span>
@@ -198,16 +272,16 @@ export function HaalbaarheidOverviewPage() {
                       )}
                       <div className="text-xs text-slate-400">{isWeek ? 'week-order' : 'dag-order'}</div>
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <span className={cn('text-xs px-1.5 py-0.5 rounded', snijplanBadgeClass(r.status))}>{r.status}</span>
-                      {r.rolnummer && <div className="text-xs text-slate-400 mt-0.5">Rol {r.rolnummer}</div>}
-                      {r.inkoopInfo && (
-                        <div className="text-xs text-orange-600 mt-0.5">
-                          via {r.inkoopInfo.inkooporder_nr}{r.inkoopInfo.verwacht_datum ? ` (${formatDate(r.inkoopInfo.verwacht_datum)})` : ''}
-                        </div>
+                    <td className="px-4 py-3 whitespace-nowrap text-slate-700">
+                      {r.aantalGepland}/{r.aantalStukken} gepland
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-slate-700">
+                      {r.geplandeDatum ? (
+                        formatDate(r.geplandeDatum)
+                      ) : (
+                        <span className="text-slate-400">Niet gepland</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-slate-700">{formatDate(r.snijDeadline)}</td>
                     <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap">
                       {r.margeWerkdagen} {r.margeWerkdagen === 1 ? 'werkdag' : 'werkdagen'}
                     </td>
