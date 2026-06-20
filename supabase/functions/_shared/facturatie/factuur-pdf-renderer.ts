@@ -42,10 +42,20 @@ export function naarFactuurPdfInput(doc: FactuurDocument): FactuurPdfDocumentDee
   const regels: FactuurPDFRegel[] = doc.regels.map((r) => {
     const klantRef = r.klant_referentie ? `Ref: ${r.klant_referentie}` : null
     // Tapijt-regel met klant-titel (kwaliteitnaam/klant-eigennaam − afmeting):
-    // één regel, géén Karpi-code en géén omschrijving_2 (lost de dubbele op).
-    // Andere regels (VERZEND/toeslagen/admin-pseudo, geen kwaliteit/maat) houden
-    // de bestaande artikeltekst + sub-regels (geen regressie).
+    // één regel + omschrijving_2, géén Karpi-code in de hoofdregel (lost de
+    // dubbele op). Andere regels (VERZEND/toeslagen/admin-pseudo, geen
+    // kwaliteit/maat) houden de bestaande artikeltekst + sub-regels (geen
+    // regressie). De afwerking zit bij die andere regels al in `artikel_tekst`
+    // — bij een klant-titel zou ze anders stilletjes verdwijnen, dus die komt
+    // hier terug als losse regel.
+    //
+    // Mig 450-fix: de Karpi-eigen artikelcode (PATS23XX060090) verdween
+    // volledig zodra een klant-titel getoond werd — de klant zag alleen het
+    // numerieke artikelnummer (Artikel-kolom) zonder de Karpi-code, terwijl
+    // het oude systeem beide toonde. Komt nu terug als losse regel.
     const titel = r.presentatie.klant_titel
+    const afwerkingRegel = titel && r.presentatie.afwerking ? `Afwerking: ${r.presentatie.afwerking}` : null
+    const karpiCodeRegel = titel && r.presentatie.karpi_code ? `Karpi: ${r.presentatie.karpi_code}` : null
     return {
       order_nr: r.order_nr,
       uw_referentie: r.uw_referentie,
@@ -54,7 +64,7 @@ export function naarFactuurPdfInput(doc: FactuurDocument): FactuurPdfDocumentDee
       eenheid: r.eenheid,
       omschrijving: titel ?? r.presentatie.artikel_tekst,
       omschrijving_2: titel
-        ? (klantRef ?? undefined)
+        ? ([karpiCodeRegel, afwerkingRegel, klantRef].filter(Boolean).join('\n') || undefined)
         : ([r.omschrijving_2, klantRef].filter(Boolean).join('\n') || undefined),
       prijs: r.prijs,
       bedrag: r.bedrag,

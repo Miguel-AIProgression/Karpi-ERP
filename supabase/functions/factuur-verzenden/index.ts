@@ -16,7 +16,9 @@ import {
   bereekenM2PerStuk,
   bouwIntracomStatRegel,
   fetchGoederencodePerKwaliteit,
+  fetchVervoerderCodePerOrder,
 } from '../_shared/facturatie/intracom-statregel.ts'
+import { fetchBetaalconditie, fetchOrderPdfMeta, metEdiPrefix } from '../_shared/facturatie/factuur-pdf-verrijking.ts'
 import {
   naarInvoiceInput,
   type FactuurInvoiceContext,
@@ -26,6 +28,7 @@ import { fetchPakbonZending } from '../_shared/pakbon/fetch.ts'
 import { bouwPakbonDocument } from '../_shared/pakbon/pakbon-document.ts'
 import { genereerPakbonPDF } from '../_shared/pakbon/pakbon-pdf.ts'
 import { fetchBedrijfMetLogo } from '../_shared/pakbon/bedrijf.ts'
+import { fetchAfwerkingTypeMap } from '../_shared/afwerking-presentatie.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -298,9 +301,29 @@ serve(async () => {
         factLandIso2 = (landData as string | null) ?? null
       }
       const pdfTaal = bepaalTaal(factLandIso2)
-      const pdfRegelsMetStatRegel = pdfDoc.header.btw_verlegd
-        ? await metIntracomStatRegels(supabase, pdfDoc, pdfDeel.regels, pdfTaal)
-        : pdfDeel.regels
+
+      // Mig 450: EDI-prefix + "Auftrag" (alle facturen) + debiteur-specifieke
+      // betaalconditie — zelfde verrijking als het on-demand preview-pad
+      // (factuur-pdf/index.ts), hier ook toegepast op de daadwerkelijk
+      // verzonden factuur.
+      const pdfOrderIds = uniqueNumbers(pdfDoc.regels.map((r) => r.order_id))
+      const [orderMetaById, betaalconditie] = await Promise.all([
+        fetchOrderPdfMeta(supabase, pdfOrderIds),
+        fetchBetaalconditie(supabase, pdfDoc.header.debiteur_nr),
+      ])
+      let pdfRegels = pdfDeel.regels.map((br, i) => {
+        const dr = pdfDoc.regels[i]
+        const meta = orderMetaById.get(dr.order_id)
+        return {
+          ...br,
+          uw_referentie: metEdiPrefix(br.uw_referentie, meta),
+          oud_order_nr: meta?.oud_order_nr ?? null,
+        }
+      })
+      if (pdfDoc.header.btw_verlegd) {
+        pdfRegels = await metIntracomStatRegels(supabase, pdfDoc, pdfRegels, pdfTaal)
+      }
+
       const pdfBytes = await genereerFactuurPDF({
         bedrijf: {
           bedrijfsnaam: bedrijf.bedrijfsnaam,
@@ -320,8 +343,8 @@ serve(async () => {
           betalingscondities_tekst: bedrijf.betalingscondities_tekst,
           fax: bedrijf.fax,
         },
-        factuur: pdfDeel.factuur,
-        regels: pdfRegelsMetStatRegel,
+        factuur: { ...pdfDeel.factuur, betalingscondities_tekst: betaalconditie },
+        regels: pdfRegels,
         taal: pdfTaal,
       })
 
@@ -622,12 +645,13 @@ async function genereerPakbonBijlagen(
     if (zendingNrs.length === 0) return []
 
     const { bedrijf, logo } = await fetchBedrijfMetLogo(supabase)
+    const afwerkingTypes = await fetchAfwerkingTypeMap(supabase)
 
     const bijlagen: PakbonBijlage[] = []
     for (const zendingNr of zendingNrs) {
       try {
         const zending = await fetchPakbonZending(supabase, zendingNr)
-        const doc = bouwPakbonDocument(zending)
+        const doc = bouwPakbonDocument(zending, { afwerkingTypes })
         const bytes = await genereerPakbonPDF(doc, bedrijf, logo)
         const filename = `Pakbon-${zendingNr}.pdf`
 
@@ -737,6 +761,8 @@ async function metIntracomStatRegels(
     ),
   )
   const goederencodeByKwaliteit = await fetchGoederencodePerKwaliteit(supabase, kwaliteitCodes)
+  const orderIds = uniqueNumbers(doc.regels.map((r) => r.order_id))
+  const vervoerderByOrder = await fetchVervoerderCodePerOrder(supabase, orderIds)
 
   return regels.map((br, i) => {
     const dr = doc.regels[i]
@@ -756,6 +782,7 @@ async function metIntracomStatRegels(
       goederencode,
       gewichtKg: orderRegel?.gewicht_kg,
       m2Totaal: m2PerStuk * br.aantal,
+      vervoerderCode: vervoerderByOrder.get(dr.order_id),
     })
     return {
       ...br,
