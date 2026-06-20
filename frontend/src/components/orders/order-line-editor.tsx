@@ -11,7 +11,6 @@ import {
   type MaatwerkVormRow,
   type AfwerkingTypeRow,
 } from '@/modules/maatwerk'
-import { AFWERKING_OPTIES } from '@/lib/utils/constants'
 import { UitwisselbaarTekortHint, IoLevertijdHint, berekenRegelDekking } from '@/modules/reserveringen'
 import { getVormDisplay } from '@/lib/utils/vorm-labels'
 import { MaatwerkArtikelPicker } from './maatwerk-artikel-picker'
@@ -49,7 +48,7 @@ const inputClass = 'w-full text-right bg-transparent border border-slate-200 rou
 const selectClass = 'bg-transparent border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-terracotta-400/30'
 
 function MaatwerkLineRow({
-  line, index, updateLine, removeLine, vormen,
+  line, index, updateLine, removeLine, vormen, afwerkingen,
 }: {
   line: OrderRegelFormData
   index: number
@@ -60,6 +59,10 @@ function MaatwerkLineRow({
    *  KwaliteitFirstSelector. Lege array tot de query retourneert; in dat geval
    *  valt de render terug op de statische 5 fallback-vormen zonder toeslag. */
   vormen: MaatwerkVormRow[]
+  /** DB-afwerkingen uit `afwerking_types` — zelfde bron als de aanmaak-flow
+   *  (KwaliteitFirstSelector/VormAfmetingSelector), zodat een nieuwe afwerking
+   *  (bv. FUR) hier ook meteen kiesbaar is zonder code-wijziging. */
+  afwerkingen: AfwerkingTypeRow[]
 }) {
   const isVasteMaatRegel = !line.is_maatwerk
     && line.artikelnr
@@ -355,13 +358,13 @@ function MaatwerkLineRow({
                   className={selectClass}
                 >
                   <option value="">Geen</option>
-                  {AFWERKING_OPTIES.map((a) => (
-                    <option key={a.code} value={a.code}>{a.code} — {a.label}</option>
+                  {afwerkingen.map((a) => (
+                    <option key={a.code} value={a.code}>{a.code} — {a.naam}</option>
                   ))}
                 </select>
               </label>
 
-              {(line.maatwerk_afwerking === 'B' || line.maatwerk_afwerking === 'SB') && (
+              {afwerkingen.find((a) => a.code === line.maatwerk_afwerking)?.heeft_band_kleur && (
                 <label className="flex items-center gap-1.5">
                   <span className="text-slate-500">Bandkleur</span>
                   <input
@@ -680,6 +683,7 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr,
                     updateLine={updateLine}
                     removeLine={removeLine}
                     vormen={vormen}
+                    afwerkingen={afwerkingen}
                   />
                 ))}
             </tbody>

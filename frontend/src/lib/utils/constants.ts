@@ -72,6 +72,7 @@ export const AFWERKING_OPTIES: { code: string; label: string; bg: string; text: 
   { code: 'SF', label: 'Smalfeston',       bg: 'bg-teal-100',    text: 'text-teal-700' },
   { code: 'VO', label: 'Volume afwerking', bg: 'bg-amber-100',   text: 'text-amber-700' },
   { code: 'ZO', label: 'Zoomlock',          bg: 'bg-gray-100',    text: 'text-gray-500' },
+  { code: 'FUR', label: 'Fur',             bg: 'bg-pink-100',    text: 'text-pink-700' },
 ]
 
 export const AFWERKING_MAP = Object.fromEntries(
