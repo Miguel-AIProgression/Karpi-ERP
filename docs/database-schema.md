@@ -350,6 +350,7 @@ Orderheaders. Adressen zijn snapshots (niet FK naar afleveradressen).
 | levertijd_wijziging_te_bevestigen_sinds | TIMESTAMPTZ | Mig 326. Nullable gate: tijdstip van de laatst gedetecteerde levertijd-wijziging door een leverancier/Karpi-ETA-update op een gekoppelde inkooporderregel (`sync_order_afleverdatum_eta`), nog niet herbevestigd aan de klant. NULL = niets open. Gezet zodra de ISO-leverweek daadwerkelijk verschuift; teruggezet op NULL door `markeer_levertijd_herbevestigd` (puur administratief, geen automatische communicatie). Eén nullable timestamp i.p.v. een gemeld_op/bevestigd_op-paar (zoals `edi_gewenste_afleverdatum`/`edi_bevestigd_op`): deze gate gaat — anders dan de eenmalige EDI-gate — herhaaldelijk open/dicht, en PostgREST kan niet filteren op kolom-vs-kolom-vergelijkingen; `IS NOT NULL` is hier zowel het filterbare predicaat als de weergavewaarde. |
 | afl_adres_incompleet_sinds | TIMESTAMPTZ | Mig 395 (+397). Nullable intake-gate: gezet zodra een niet-afhaal-, niet-productie-only-order (status ≠ Verzonden/Geannuleerd; `alleen_productie` uitgesloten sinds mig 397) een onvolledig afleveradres-snapshot heeft (`afl_naam`/`afl_adres`/`afl_postcode`/`afl_plaats` leeg-na-trim). NULL = compleet. Afgeleid door BEFORE-trigger `trg_orders_afl_adres_gate` (single source); wist zichzelf zodra het adres compleet is — geen handmatige bevestiging. **Harde blokkade**: `start_pickronden` weigert de order via `_valideer_intake_gates`. Voedt de status-tab "Afleveradres ontbreekt" + order-detail-banner. Aanleiding: ORD-2026-0097 zonder adres in Pick & Ship → labels zonder adres. |
 | prijs_ontbreekt_sinds | TIMESTAMPTZ | Mig 396 (+397). Nullable intake-gate: gezet zodra ≥1 normale regel (NOT `is_admin_pseudo`, artikelnr ≠ `VERZEND`, `korting_pct` < 100) een prijs van 0/NULL heeft, op een **niet-productie-only** order (`alleen_productie` uitgesloten sinds mig 397). NULL = geen ontbrekende prijs of bewust geaccepteerd. Afgeleid door AFTER-trigger `trg_order_regels_prijs_gate` op `order_regels` (single source; `UPDATE OF prijs,korting_pct,artikelnr` zodat allocatie-updates op te_leveren/backorder niet vuren). Teruggezet op NULL door `markeer_prijs_geaccepteerd` (operator accepteert €0 bewust, audit via `order_events` `'prijs_geaccepteerd'`) of door prijscorrectie. **Harde blokkade** via `_valideer_intake_gates`. Voedt de status-tab "Prijs ontbreekt" + order-detail-banner. Aanleiding: Shopify-orders die zonder prijs binnenkwamen. |
+| express | BOOLEAN | Mig 450 (Fase 2 snijplanning, NOT NULL DEFAULT false). Handmatige vlag (planner/verkoper, `ExpressToggle` op order-detail) — krijgt hoogste sorteerprioriteit in `sortPieces()` (`_shared/ffdh-packing.ts`), vóór grootte/oppervlak/afleverdatum. Zichtbaar op `snijplanning_overzicht` (mig 450) en `orders_list` (mig 451, voedt de rode Express-badge op orders-overzicht). Toggelen triggert `auto-plan-groep` voor de (kwaliteit, kleur)-groepen van de maatwerk-regels; verdringt een eerder gepland stuk daarvan zijn rol, dan vangt `auto-plan-groep`'s verdringingscheck dat af (zie CLAUDE.md). |
 
 **Productie-only orders (mig 327, ADR-0029):** `alleen_productie=true`-orders worden uit Basta geïmporteerd via RPC `import_productie_only_order` (status `'In productie'`, `bron_systeem='oud_systeem'`, `order_nr='OUD-<oud_order_nr>'`). Idempotent op `oud_order_nr` (partiële UNIQUE-index `orders_oud_order_nr_uniek`). Ze bereiken de terminale status `'Maatwerk afgerond'` (nooit `'Verzonden'`) en vallen buiten Pick & Ship, facturatie en transport. Debiteur = echte match of verzameldebiteur **900000 'OUD SYSTEEM (PRODUCTIE)'**.
 
@@ -896,6 +897,8 @@ Tapijt op maat snijden uit rollen.
 | ingepakt_op | TIMESTAMPTZ | Moment waarop het stuk is ingepakt voor verzending |
 | locatie | TEXT | Magazijnlocatie waar het ingepakte stuk ligt (vrije tekst bv. "A-12") |
 | snijden_uit_standaardmaat | BOOLEAN NOT NULL DEFAULT false | Mig 327 (ADR-0029). Gekopieerd van `order_regels` door `auto_maak_snijplan`/`auto_sync_snijplan_maten` (mig 328). Uitgesloten van rol-packing (`fetchStukken`) — verbruikt geen rollengte. |
+| verwacht_inkooporder_regel_id | BIGINT FK → inkooporder_regels | Mig 438. Gezet zodra `status='Wacht op inkoop'` (mig 437) — stuk past op een nog niet ontvangen rol uit deze openstaande inkooporder_regel (virtuele rol, in-memory in `auto-plan-groep`, nooit een rij in `rollen`). CHECK wederzijds exclusief met `rol_id`. |
+| is_handmatig_toegewezen | BOOLEAN NOT NULL DEFAULT false | Mig 453 (Fase 4). TRUE = een planner heeft dit stuk handmatig aan `rol_id` toegewezen via `wijs_snijplan_handmatig_toe()`. `release_gepland_stukken()` slaat vergrendelde stukken over — `auto-plan-groep` kan de keuze dus nooit terugdraaien (het stuk wordt door `fetchBezettePlaatsingen` gezien als bezette shelf-ruimte, net als al-gesneden stukken). Ontgrendelen via `ontgrendel_handmatige_toewijzing()`. |
 
 ---
 
@@ -1034,9 +1037,12 @@ _Aangemaakt in migratie 127 (2026-04-24)._
 | te_leveren_m | NUMERIC(10,2) NOT NULL DEFAULT 0 | = besteld_m − geleverd_m |
 | eenheid | TEXT NOT NULL DEFAULT 'm' CHECK ('m','stuks') | `'m'` voor rolproducten, `'stuks'` voor vaste afmetingen / staaltjes. Afgeleid uit `producten.product_type` bij import. |
 | status_excel | INTEGER | Status-code uit bron-Excel (1 actief, 8 geannuleerd, 0 onbekend) |
+| snijplan_gebruikte_lengte_cm | INTEGER NOT NULL DEFAULT 0 | Mig 438. Snapshot: cm van deze (nog niet ontvangen) rol belegd door `snijplannen.status='Wacht op inkoop'`. Single writer `claim_wacht_op_inkoop()`/`release_wacht_op_inkoop_stukken()` — volledige overwrite per `auto-plan-groep`-run, geen optelling. |
 | UK: (inkooporder_id, regelnummer) | | |
 
 **Koppeling aan rollen:** `rollen.inkooporder_regel_id` (BIGINT FK → inkooporder_regels) legt vast uit welke regel een fysieke rol ontvangen is. Gevuld door RPC `boek_ontvangst`.
+
+**Koppeling aan snijplannen (mig 437/438):** vóór fysieke ontvangst kan een snijplan-stuk al "Wacht op inkoop" claimen op een openstaande regel via `snijplannen.verwacht_inkooporder_regel_id` — zie sectie `snijplannen`.
 
 ### order_documenten
 _Aangemaakt in migratie 178 (2026-05-01)._
@@ -1174,8 +1180,10 @@ Applicatie-instellingen (key-value). Gebruikt voor productie-configuratie en aut
 | Veld | Type | Default | Toelichting |
 |------|------|---------|-------------|
 | planning_modus | 'weken' \| 'capaciteit' | 'weken' | Planmodus |
-| capaciteit_per_week | number | 450 | Max tapijten per week |
-| capaciteit_marge_pct | number | 10 | Buffer % boven capaciteit |
+| capaciteit_per_week_streef | number | 350 | Streefwaarde tapijten/week (mig 452, Fase 3) — vervangt het verouderde `capaciteit_per_week` (450). Mag automatisch escaleren naar `capaciteit_per_week_max` binnen dezelfde week. Raakt alleen de levertijd-belofte (`check-levertijd`), niet `auto-plan-groep`. |
+| capaciteit_per_week_max | number | 400 | Absolute max tapijten/week (mig 452) — de enige echte blokkerende grens in `capaciteitsCheck()`. |
+| max_rollen_per_dag_streef | number | 20 | Streefwaarde max aantal verschillende rollen (wissels) per dag (mig 452) — vertaald naar een week-grens via `werkdagenInIsoWeek` (feestdagen-bewust). Puur informatief (`rollen_overschreden`), blokkeert niet. |
+| capaciteit_marge_pct | number | 10 | Buffer % boven capaciteit (geldt voor beide stuks-velden) |
 | weken_vooruit | number | 4 | Hoeveel weken vooruit plannen |
 | max_reststuk_verspilling_pct | number | 15 | Max afval % voor reststuk-suggesties |
 | wisseltijd_minuten | number | 15 | Tijd om nieuwe rol op machine te leggen |
@@ -1449,7 +1457,7 @@ Eén-rij-tabel (`id=1`) met `watermark TIMESTAMPTZ` = de `created_at` van de laa
 | factuur_status | Concept, Verstuurd, Betaald, Herinnering, Aanmaning, Gecrediteerd |
 | factuurvoorkeur | per_zending, wekelijks |
 | factuur_queue_status | pending, processing, done, failed |
-| snijplan_status | Gepland, Wacht, Snijden, Gesneden, In confectie, Ingepakt, In productie, Gereed, Geannuleerd (`Snijden` toegevoegd mig 051, `BEFORE 'Gesneden'`) |
+| snijplan_status | Gepland, Wacht, Snijden, Gesneden, In confectie, Ingepakt, In productie, Gereed, Geannuleerd (`Snijden` toegevoegd mig 051, `BEFORE 'Gesneden'`); **Wacht op inkoop** (mig 437, `AFTER 'Wacht'` — stuk geclaimd op openstaande rol-inkoop, zie `snijplannen.verwacht_inkooporder_regel_id`) |
 | inkooporder_status | Concept, Besteld, Deels ontvangen, Ontvangen, Geannuleerd |
 | confectie_status | Wacht op materiaal, In productie, Kwaliteitscontrole, Gereed, Geannuleerd |
 | edi_bericht_status | Wachtrij, Bezig, Verstuurd, Verwerkt, Fout, Geannuleerd (mig 157) |
@@ -1470,7 +1478,7 @@ Eén-rij-tabel (`id=1`) met `watermark TIMESTAMPTZ` = de `created_at` van de laa
 | rollen_overzicht | Per kwaliteit/kleur: aantal, oppervlak, waarde |
 | recente_orders | Laatste 50 orders met klantnaam |
 | orders_status_telling | Aantal per order_status |
-| snijplanning_overzicht | Snijplannen met order-, klant- en rolgegevens voor de planningsweergave. `snij_lengte_cm`/`snij_breedte_cm` zijn **nominale (bestelde) maten**. Migratie 143 voegt `marge_cm` toe (single-source via `stuk_snij_marge_cm()` migratie 126; ZO +6, rond/ovaal +5, max bij combi) en `geroteerd` toe — beide nodig voor de SnijVolgorde-transformer ([frontend/src/lib/snij-volgorde/derive.ts](../frontend/src/lib/snij-volgorde/derive.ts)) die de rol-uitvoer modal voedt. Fysieke snij-maat = bestelde + marge. Mig 290: `WHERE o.status <> 'Geannuleerd'` (defense-in-depth bij ADR-0023; bewust NIET ook `'Verzonden'` — de view voedt ook de fysieke rol-uitvoer + packer). Mig 331 (ADR-0029): +3 kolommen `alleen_productie`, `oud_order_nr`, `snijden_uit_standaardmaat` zodat productie-only orders (status `In productie`/`Maatwerk afgerond`) zichtbaar blijven; geen filterwijziging. |
+| snijplanning_overzicht | Snijplannen met order-, klant- en rolgegevens voor de planningsweergave. `snij_lengte_cm`/`snij_breedte_cm` zijn **nominale (bestelde) maten**. Migratie 143 voegt `marge_cm` toe (single-source via `stuk_snij_marge_cm()` migratie 126; ZO +6, rond/ovaal +5, max bij combi) en `geroteerd` toe — beide nodig voor de SnijVolgorde-transformer ([frontend/src/lib/snij-volgorde/derive.ts](../frontend/src/lib/snij-volgorde/derive.ts)) die de rol-uitvoer modal voedt. Fysieke snij-maat = bestelde + marge. Mig 290: `WHERE o.status <> 'Geannuleerd'` (defense-in-depth bij ADR-0023; bewust NIET ook `'Verzonden'` — de view voedt ook de fysieke rol-uitvoer + packer). Mig 331 (ADR-0029): +3 kolommen `alleen_productie`, `oud_order_nr`, `snijden_uit_standaardmaat` zodat productie-only orders (status `In productie`/`Maatwerk afgerond`) zichtbaar blijven; geen filterwijziging. Mig 447: +2 kolommen `lever_type` (orders) en `verwacht_inkooporder_regel_id` (snijplannen, mig 438) voor het maatwerk-haalbaarheid-overzicht (`/snijplanning/haalbaarheid`, Fase 1, 2026-06-19). |
 | confectie_overzicht | Confectie-orders met scan- en voortgangsstatus |
 | confectie_planning_overzicht | Confectie-orders (status Wacht op materiaal / In productie) met klant, order, maatwerk-afmetingen en strekkende meter voor planningsweergave |
 | confectie_planning_forward | Vooruitkijkende confectie-planning — alle open maatwerk-snijplannen (Gepland..In confectie/Ingepakt) met afgeleide type_bewerking + confectie_startdatum + backward-compat aliassen. Kwaliteit/kleur valt terug van rol → product → maatwerk-snapshot (mig 243) |

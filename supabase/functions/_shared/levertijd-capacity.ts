@@ -10,6 +10,7 @@ import type {
 } from './levertijd-types.ts'
 import { maandagVanWeek } from './levertijd-match.ts'
 import { isoWeekJaar } from './iso-week.ts'
+import { werkdagenInIsoWeek } from './werkagenda.ts'
 
 const MAX_WEEK_ITERATIES = 6
 
@@ -70,6 +71,21 @@ export interface CapaciteitsCheckInput {
   fetchBezetting: (week: number, jaar: number) => Promise<BezettingsRow[]>
 }
 
+/**
+ * Rollen-streefwaarde-grens voor een ISO-week (Fase 3): max_rollen_per_dag_streef
+ * × het aantal werkdagen in die week (feestdagen-bewust, zie werkdagenInIsoWeek).
+ * Puur informatief — beïnvloedt de week-iteratie in capaciteitsCheck niet.
+ */
+function rollenStreefVoorWeek(
+  week: number,
+  jaar: number,
+  cfg: Pick<LevertijdConfig, 'max_rollen_per_dag_streef' | 'werktijden'>,
+): number {
+  const maandag = maandagVanWeek(week, jaar)
+  const werkdagen = werkdagenInIsoWeek(maandag, cfg.werktijden)
+  return Math.round(cfg.max_rollen_per_dag_streef * werkdagen)
+}
+
 /** Itereer door weken tot er ruimte is (max MAX_WEEK_ITERATIES). */
 export async function capaciteitsCheck(
   input: CapaciteitsCheckInput,
@@ -77,18 +93,34 @@ export async function capaciteitsCheck(
   const { cfg, fetchBezetting } = input
   let week = input.start_week
   let jaar = input.start_jaar
-  const max_stuks = Math.max(
-    0,
-    Math.round(cfg.capaciteit_per_week * (1 - cfg.capaciteit_marge_pct / 100)),
-  )
+  const marge = 1 - cfg.capaciteit_marge_pct / 100
+  // max_stuks = de enige echte blokkerende grens (Fase 3: het 400-max, niet de
+  // 350-streef) — de loop hieronder schuift dus pas naar een volgende week als
+  // zelfs het geëscaleerde maximum niet genoeg ruimte biedt. max_stuks_streef
+  // wordt apart gerapporteerd zodat de caller kan zien of escalatie nodig was.
+  const max_stuks = Math.max(0, Math.round(cfg.capaciteit_per_week_max * marge))
+  const max_stuks_streef = Math.max(0, Math.round(cfg.capaciteit_per_week_streef * marge))
 
   for (let i = 0; i < MAX_WEEK_ITERATIES; i++) {
     const rows = await fetchBezetting(week, jaar)
-    const huidig_stuks = bezetting(rows, cfg).stuks
-    const ruimte_stuks = max_stuks - huidig_stuks
+    const bez = bezetting(rows, cfg)
+    const ruimte_stuks = max_stuks - bez.stuks
 
     if (ruimte_stuks > 0) {
-      return { week, jaar, huidig_stuks, max_stuks, ruimte_stuks, iteraties: i }
+      const max_rollen_streef = rollenStreefVoorWeek(week, jaar, cfg)
+      return {
+        week,
+        jaar,
+        huidig_stuks: bez.stuks,
+        max_stuks,
+        max_stuks_streef,
+        binnen_streef: bez.stuks <= max_stuks_streef,
+        ruimte_stuks,
+        iteraties: i,
+        huidig_rollen: bez.unieke_rollen,
+        max_rollen_streef,
+        rollen_overschreden: bez.unieke_rollen > max_rollen_streef,
+      }
     }
 
     const nxt = nextWeek(week, jaar)
@@ -98,14 +130,20 @@ export async function capaciteitsCheck(
 
   // Geen ruimte gevonden binnen horizon — return laatste poging als feitelijk vol.
   const rows = await fetchBezetting(week, jaar)
-  const huidig_stuks = bezetting(rows, cfg).stuks
+  const bez = bezetting(rows, cfg)
+  const max_rollen_streef = rollenStreefVoorWeek(week, jaar, cfg)
   return {
     week,
     jaar,
-    huidig_stuks,
+    huidig_stuks: bez.stuks,
     max_stuks,
-    ruimte_stuks: max_stuks - huidig_stuks,
+    max_stuks_streef,
+    binnen_streef: bez.stuks <= max_stuks_streef,
+    ruimte_stuks: max_stuks - bez.stuks,
     iteraties: MAX_WEEK_ITERATIES,
+    huidig_rollen: bez.unieke_rollen,
+    max_rollen_streef,
+    rollen_overschreden: bez.unieke_rollen > max_rollen_streef,
   }
 }
 

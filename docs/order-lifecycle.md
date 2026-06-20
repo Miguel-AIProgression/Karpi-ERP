@@ -228,6 +228,38 @@ snijplannen `confectie_afgerond_op` hebben (inpak-stap niet vereist) — via
 `snijden_gestart_op IS NOT NULL` **én** op ANY snijplan in `Snijden`/`Gesneden` —
 beide nodig vanwege het window tussen status-promotie en rol-vlag.
 
+**Express + verdringing-veiligheidsnet (Fase 2, mig 450, 2026-06-20):** `orders.express`
+(handmatige vlag, `ExpressToggle` op order-detail) krijgt hoogste sorteerprioriteit in
+`sortPieces` (`_shared/ffdh-packing.ts`) — vóór grootte/oppervlak/afleverdatum. Toggelen
+triggert direct `auto-plan-groep` voor de (kwaliteit, kleur)-groepen van de maatwerk-regels
+op die order. Regel (verbatim gebruikerseis): heroptimaliseren mag, **maar nooit zodanig
+dat een order die zijn snij-deadline zou halen hem daardoor mist** — gebeurt dat toch, dan
+moet het systeem het voorleggen i.p.v. stilletjes doorvoeren. Implementatie hergebruikt de
+bestaande `snijvoorstellen.status='concept'`-aftakking (ADR-0021's FIFO-rode-badge-carve-out,
+zie §6-stijl gates): `auto-plan-groep` snapshot de rol-toewijzing vóór de release
+(`fetchOudeRolToewijzingen`), en na het packen is een stuk dat eerst een echte rol had maar
+nergens meer geplaatst is (ook niet via de IO-claim-pas) "verdrongen". Wordt de
+herberekende haalbaarheid (`_shared/snij-haalbaarheid.ts`, verplaatst hierheen vanuit
+`frontend/src/lib/orders/` — ADR-0033) voor zo'n stuk `rood`, dan blijft het hele voorstel
+`'concept'` (geen auto-approve) en bevat de response een `verdrongen_orders`-array. Géén
+nieuwe gate-kolom of UI — de planner ontdekt het concept-voorstel via dezelfde
+voorstel-review-pagina als een rode FIFO-badge.
+
+**Handmatige rol-toewijzing met bescherming (Fase 4, mig 453, 2026-06-20):** een planner kan
+een `Gepland`-stuk handmatig naar een specifieke compatibele rol verplaatsen (`Move`-knop in
+`groep-accordion.tsx`) via RPC `wijs_snijplan_handmatig_toe` — zet `rol_id`/positie +
+`snijplannen.is_handmatig_toegewezen=true`. `release_gepland_stukken` slaat vergrendelde
+stukken over, dus `auto-plan-groep` kan de keuze nooit terugdraaien; het vergrendelde stuk
+wordt door de bestaande `fetchBezettePlaatsingen` simpelweg gezien als bezette shelf-ruimte
+(zelfde mechanisme als een al-gesneden stuk). Positiebepaling op de gekozen rol hergebruikt
+de pure packing-helpers `reconstructShelves`/`tryPlacePiece` (`_shared/ffdh-packing.ts`) in de
+nieuwe edge function `wijs-snijplan-handmatig-toe` — geen nieuwe positioneringslogica.
+Ontgrendelen (`ontgrendel_handmatige_toewijzing`, `Lock`-badge) geeft het stuk vrij en
+triggert direct een nieuwe `auto-plan-groep`-run; **toewijzen triggert dit ook**, nodig om de
+Fase-3 IO-claim-aggregaat (`inkooporder_regels.snijplan_gebruikte_lengte_cm`) correct te
+hertellen wanneer een "Wacht op inkoop"-stuk naar een echte rol verplaatst wordt (er is geen
+per-stuk-aandeel bijgehouden, alleen het totaal per virtuele rol).
+
 ## 9. Magazijnpad — pickbaarheid → zending → Verzonden → factuur
 
 1. **Pickbaarheid** ([`pickbaarheid.ts`](../frontend/src/modules/magazijn/queries/pickbaarheid.ts)):

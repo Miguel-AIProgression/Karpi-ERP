@@ -16,7 +16,9 @@ function defaultConfig(overrides: Partial<LevertijdConfig> = {}): LevertijdConfi
   return {
     logistieke_buffer_dagen: 2,
     backlog_minimum_m2: 12,
-    capaciteit_per_week: 450,
+    capaciteit_per_week_streef: 350,
+    capaciteit_per_week_max: 400,
+    max_rollen_per_dag_streef: 20,
     capaciteit_marge_pct: 0,
     wisseltijd_minuten: 15,
     snijtijd_minuten: 5,
@@ -48,9 +50,14 @@ const capaciteitOk: CapaciteitsCheckResult = {
   week: 17,
   jaar: 2026,
   huidig_stuks: 100,
-  max_stuks: 450,
-  ruimte_stuks: 350,
+  max_stuks: 400,
+  max_stuks_streef: 350,
+  binnen_streef: true,
+  ruimte_stuks: 300,
   iteraties: 0,
+  huidig_rollen: 3,
+  max_rollen_streef: 100,
+  rollen_overschreden: false,
 }
 
 const backlogOk: BacklogResult = { totaal_m2: 20, aantal_stukken: 8, voldoende: true }
@@ -138,6 +145,42 @@ Deno.test('resolveScenario: capaciteits-iteratie wordt gemeld', () => {
     vandaag: VANDAAG,
   })
   assertStringIncludes(result.onderbouwing, 'doorgeschoven')
+})
+
+Deno.test('resolveScenario: escalatie boven streefwaarde wordt gemeld', () => {
+  const result = resolveScenario({
+    match: matchNietGevonden,
+    capaciteit: { ...capaciteitOk, huidig_stuks: 370, binnen_streef: false, ruimte_stuks: 30 },
+    backlog: backlogOk,
+    cfg: defaultConfig(),
+    nieuw_stuk_m2: 6,
+    vandaag: VANDAAG,
+  })
+  assertStringIncludes(result.onderbouwing, 'boven streefwaarde 350')
+})
+
+Deno.test('resolveScenario: binnen streefwaarde → geen escalatie-tekst', () => {
+  const result = resolveScenario({
+    match: matchNietGevonden,
+    capaciteit: capaciteitOk,
+    backlog: backlogOk,
+    cfg: defaultConfig(),
+    nieuw_stuk_m2: 6,
+    vandaag: VANDAAG,
+  })
+  assert(!result.onderbouwing.includes('streefwaarde'))
+})
+
+Deno.test('resolveScenario: rollen boven streefwaarde wordt gemeld', () => {
+  const result = resolveScenario({
+    match: matchNietGevonden,
+    capaciteit: { ...capaciteitOk, huidig_rollen: 120, max_rollen_streef: 100, rollen_overschreden: true },
+    backlog: backlogOk,
+    cfg: defaultConfig(),
+    nieuw_stuk_m2: 6,
+    vandaag: VANDAAG,
+  })
+  assertStringIncludes(result.onderbouwing, 'rollen 120/100')
 })
 
 // ---------------------------------------------------------------------------

@@ -3,6 +3,7 @@ import { assertEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import {
   reconstructShelves,
   packAcrossRolls,
+  sortPieces,
   type Placement,
   type Roll,
   type SnijplanPiece,
@@ -23,6 +24,7 @@ function piece(
     klant_naam: null,
     afleverdatum,
     area_cm2: lengte * breedte,
+    express: false,
   }
 }
 
@@ -169,6 +171,48 @@ Deno.test('packAcrossRolls: reststuk wel gebruikt als afval onder max_pct', () =
   )
   assertEquals(rollResults.length, 1)
   assertEquals(rollResults[0].rol_status, 'reststuk')
+})
+
+// ---------------------------------------------------------------------------
+// Fase 2 (mig 450): express altijd eerst in sortPieces, ongeacht grootte.
+// ---------------------------------------------------------------------------
+
+Deno.test('sortPieces: express stuk komt eerst, ondanks veel kleiner', () => {
+  const groot = piece(1, 300, 300) // niet-express, groot
+  const klein = { ...piece(2, 50, 50), express: true } // express, klein
+  const sorted = sortPieces([groot, klein])
+  assertEquals(sorted[0].id, 2, 'express stuk staat eerst, ondanks kleinere afmeting')
+  assertEquals(sorted[1].id, 1)
+})
+
+Deno.test('sortPieces: bij twee express stukken geldt de normale grootte/datum-sortering', () => {
+  const a = { ...piece(1, 100, 100, '2026-06-01'), express: true }
+  const b = { ...piece(2, 100, 100, '2026-05-01'), express: true }
+  const sorted = sortPieces([a, b])
+  assertEquals(sorted[0].id, 2, 'gelijke grootte → vroegste afleverdatum wint, ook binnen express')
+})
+
+Deno.test('packAcrossRolls: express stuk verdringt een niet-express stuk van de enige passende rol', () => {
+  // Rol heeft precies plek voor 1 stuk van 100×100 (breedte 100, geen ruimte
+  // voor een tweede shelf naast elkaar). Het niet-express stuk komt het eerst
+  // binnen, maar het express-stuk moet toch de rol krijgen — het niet-express
+  // stuk wordt nietGeplaatst (= verdrongen; auto-plan-groep's verdringingscheck
+  // vergelijkt dit tegen de oude toewijzing).
+  const nietExpress = piece(1, 100, 100)
+  const express = { ...piece(2, 100, 100), express: true }
+  const rolls = [roll(1, 100, 100, 'beschikbaar')]
+
+  const { rollResults, nietGeplaatst } = packAcrossRolls(
+    [nietExpress, express],
+    rolls,
+    new Map(),
+  )
+
+  assertEquals(rollResults.length, 1)
+  assertEquals(rollResults[0].plaatsingen.length, 1)
+  assertEquals(rollResults[0].plaatsingen[0].snijplan_id, 2, 'express stuk krijgt de rol')
+  assertEquals(nietGeplaatst.length, 1)
+  assertEquals(nietGeplaatst[0].snijplan_id, 1, 'niet-express stuk is verdrongen')
 })
 
 Deno.test('sortRolls: rol met bestaande plaatsingen komt eerst', () => {

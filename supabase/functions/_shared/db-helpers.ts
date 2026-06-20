@@ -41,7 +41,7 @@ export async function fetchStukken(
   let query = supabase
     .from('snijplanning_overzicht')
     .select(
-      'id, placed_lengte_cm, placed_breedte_cm, maatwerk_vorm, order_nr, klant_naam, afleverdatum',
+      'id, placed_lengte_cm, placed_breedte_cm, maatwerk_vorm, order_nr, klant_naam, afleverdatum, express',
     )
     .in('status', statuses)
     .is('rol_id', null)
@@ -75,8 +75,56 @@ export async function fetchStukken(
       klant_naam: sp.klant_naam as string | null,
       afleverdatum: sp.afleverdatum as string | null,
       area_cm2: lengte * breedte,
+      express: (sp.express as boolean | null) ?? false,
     }
   })
+}
+
+// ---------------------------------------------------------------------------
+// Oude rol-toewijzing vóór release (Fase 2, mig 450) — de "vóór"-foto die
+// auto-plan-groep na het packen vergelijkt met de "na"-foto om verdringing te
+// detecteren: een stuk dat hier een echte rol had maar straks nergens als
+// geplaatst voorkomt, is verdrongen.
+// ---------------------------------------------------------------------------
+
+export interface OudeRolToewijzing {
+  rolId: number
+  orderId: number
+  orderNr: string | null
+  snijplanNr: string | null
+  afleverdatum: string | null
+  leverType: 'week' | 'datum'
+}
+
+export async function fetchOudeRolToewijzingen(
+  supabase: SupabaseClient,
+  kwaliteitCode: string,
+  kleurCode: string,
+): Promise<Map<number, OudeRolToewijzing>> {
+  const kleurVariants = getKleurVariants(kleurCode)
+
+  const { data, error } = await supabase
+    .from('snijplanning_overzicht')
+    .select('id, rol_id, order_id, order_nr, snijplan_nr, afleverdatum, lever_type')
+    .eq('status', 'Gepland')
+    .not('rol_id', 'is', null)
+    .eq('kwaliteit_code', kwaliteitCode)
+    .in('kleur_code', kleurVariants)
+
+  if (error) throw error
+
+  const map = new Map<number, OudeRolToewijzing>()
+  for (const sp of (data ?? []) as Array<Record<string, unknown>>) {
+    map.set(sp.id as number, {
+      rolId: sp.rol_id as number,
+      orderId: sp.order_id as number,
+      orderNr: (sp.order_nr as string | null) ?? null,
+      snijplanNr: (sp.snijplan_nr as string | null) ?? null,
+      afleverdatum: (sp.afleverdatum as string | null) ?? null,
+      leverType: ((sp.lever_type as string | null) ?? 'week') as 'week' | 'datum',
+    })
+  }
+  return map
 }
 
 // ---------------------------------------------------------------------------
@@ -523,4 +571,66 @@ export async function saveVoorstel(
   throw new Error(
     `saveVoorstel: ${MAX_RETRIES} retries uitgeput — counter blijft out-of-sync. Laatste fout: ${JSON.stringify(lastError)}`,
   )
+}
+
+// ---------------------------------------------------------------------------
+// Openstaande rol-inkoop voor de "Wacht op inkoop"-claim (mig 437/438).
+// Matching = exacte kwaliteit_code + kleur_code (plan-scope: geen cross-
+// kwaliteit/kleur-substitutie via inkoop in v1) — een kwaliteit heeft vaak
+// tientallen kleuren in dezelfde inkooporder; zonder kleur-filter claimt de
+// packer per ongeluk de verkeerde kleur (bug gevonden via CISC 48: matchte
+// op kleur 24 i.p.v. 48, simpelweg omdat die regel een eerdere verwacht_datum
+// + lagere regel_id had). FIFO-volgorde spiegelt herallocateer_orderregel:
+// verwacht_datum ASC NULLS LAST, regel_id ASC.
+// ---------------------------------------------------------------------------
+
+export interface OpenInkoopRegel {
+  regel_id: number
+  inkooporder_nr: string
+  leverancier_naam: string | null
+  verwacht_datum: string | null
+  te_leveren_m: number
+}
+
+export async function fetchOpenInkoopRegels(
+  supabase: SupabaseClient,
+  kwaliteitCode: string,
+  kleurCode: string,
+): Promise<OpenInkoopRegel[]> {
+  const kleurVariants = getKleurVariants(kleurCode)
+  const { data, error } = await supabase
+    .from('openstaande_inkooporder_regels')
+    .select('regel_id, inkooporder_nr, leverancier_naam, verwacht_datum, te_leveren_m')
+    .eq('eenheid', 'm')
+    .eq('kwaliteit_code', kwaliteitCode)
+    .in('kleur_code', kleurVariants)
+    .order('verwacht_datum', { ascending: true, nullsFirst: false })
+    .order('regel_id', { ascending: true })
+
+  if (error) throw error
+
+  return (data ?? []).map((r: Record<string, unknown>) => ({
+    regel_id: r.regel_id as number,
+    inkooporder_nr: r.inkooporder_nr as string,
+    leverancier_naam: (r.leverancier_naam as string | null) ?? null,
+    verwacht_datum: (r.verwacht_datum as string | null) ?? null,
+    te_leveren_m: Number(r.te_leveren_m ?? 0),
+  }))
+}
+
+/** Standaard rolbreedte (cm) voor een kwaliteit — `null` als onbekend/0 (dan
+ *  kan er geen virtuele rol gebouwd worden, zie auto-plan-groep). */
+export async function fetchStandaardBreedte(
+  supabase: SupabaseClient,
+  kwaliteitCode: string,
+): Promise<number | null> {
+  const { data, error } = await supabase
+    .from('kwaliteiten')
+    .select('standaard_breedte_cm')
+    .eq('code', kwaliteitCode)
+    .maybeSingle()
+  if (error) throw error
+
+  const breedte = (data as { standaard_breedte_cm: number | null } | null)?.standaard_breedte_cm
+  return typeof breedte === 'number' && breedte > 0 ? breedte : null
 }

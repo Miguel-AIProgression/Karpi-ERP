@@ -60,6 +60,9 @@ export interface SnijplanRow {
   order_nr: string
   debiteur_nr: number
   klant_naam: string
+  /** Mig 453 (Fase 4): TRUE = handmatig vergrendeld op rol_id — release_gepland_stukken
+   *  slaat dit stuk over, auto-plan-groep kan het dus niet terugdraaien. */
+  is_handmatig_toegewezen: boolean
 }
 
 /** Grouped by kwaliteit+kleur for the accordion view */
@@ -213,13 +216,25 @@ export interface BesteldInkoopInfo {
 
 export interface PlanningConfig {
   planning_modus: 'weken' | 'capaciteit'
-  capaciteit_per_week: number
+  /** Fase 3: streefwaarde stuks/week (bv. 350) — mag automatisch escaleren naar capaciteit_per_week_max. */
+  capaciteit_per_week_streef: number
+  /** Fase 3: absolute max stuks/week (bv. 400). */
+  capaciteit_per_week_max: number
+  /** Fase 3: streefwaarde max aantal rolwissels per dag (bv. 20) — puur informatief, blokkeert niet. */
+  max_rollen_per_dag_streef: number
   capaciteit_marge_pct: number
   weken_vooruit: number
   max_reststuk_verspilling_pct: number
   wisseltijd_minuten: number
   snijtijd_minuten: number
   confectie_buffer_minuten: number
+  /** Werkdagen tussen "klaar met snijden" en afleverdatum voor week-orders
+   *  (lever_type='week'). Bestond al in app_config.productie_planning en
+   *  wordt gelezen door check-levertijd; stond tot nu niet op dit TS-type. */
+  logistieke_buffer_dagen: number
+  /** Idem voor dag-orders (lever_type='datum', ADR-0014) — strenger dan de
+   *  week-buffer omdat de klant een exacte datum verwacht. */
+  dag_order_snij_buffer_werkdagen: number
 }
 
 // === Snijvoorstel types ===

@@ -14,6 +14,8 @@ export interface SnijplanPiece {
   klant_naam: string | null
   afleverdatum: string | null
   area_cm2: number
+  /** Mig 450 (Fase 2): handmatige vlag, krijgt hoogste prioriteit in sortPieces. */
+  express: boolean
 }
 
 export interface Roll {
@@ -340,6 +342,13 @@ export function calcRollStats(
 export function sortPieces(pieces: SnijplanPiece[]): SnijplanPiece[] {
   const vandaag = new Date().toISOString().slice(0, 10)
   return [...pieces].sort((a, b) => {
+    // 0. Express altijd eerst (Fase 2, mig 450) — vóór grootte/oppervlak/
+    // afleverdatum, ongeacht stukafmeting. Dit is precies het mechanisme dat
+    // een express-stuk een plek op een rol laat "verdringen" t.o.v. een
+    // niet-express-stuk dat verder identiek scoort; auto-plan-groep detecteert
+    // en bewaakt die verdringing (zie de "geen regressie"-check daar).
+    if (a.express !== b.express) return a.express ? -1 : 1
+
     // 1. Grootste dimensie eerst (FFDH-standaard).
     const maxA = Math.max(a.lengte_cm, a.breedte_cm)
     const maxB = Math.max(b.lengte_cm, b.breedte_cm)

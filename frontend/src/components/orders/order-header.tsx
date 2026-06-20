@@ -11,6 +11,7 @@ import { BevestigOrderDialog } from './bevestig-order-dialog'
 import { BevestigOrderEdiDialog } from './bevestig-order-edi-dialog'
 import { bepaalBevestigingKanaal, isOrderBevestigd } from '@/lib/orders/bevestiging-kanaal'
 import { fetchHandelspartnerConfig } from '@/modules/edi'
+import { ExpressToggle } from './express-toggle'
 import type { OrderDetail } from '@/lib/supabase/queries/orders'
 
 const EINDSTATUSSEN = ['Verzonden', 'Geannuleerd'] as const
@@ -86,6 +87,7 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
             </h2>
             <StatusBadge status={order.status} />
             <LevertijdStatusBadge orderId={order.id} />
+            <ExpressToggle orderId={order.id} express={order.express ?? false} />
             {order.status === 'Verzonden' && order.verzonden_at && (
               <span
                 className="text-xs text-slate-500"

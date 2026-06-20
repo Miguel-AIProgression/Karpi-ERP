@@ -62,7 +62,9 @@ const PLANNING_STATUS_IN_PIPELINE = [...TE_SNIJDEN]
 const DEFAULT_CONFIG: LevertijdConfig = {
   logistieke_buffer_dagen: 2,
   backlog_minimum_m2: 12,
-  capaciteit_per_week: 450,
+  capaciteit_per_week_streef: 350,
+  capaciteit_per_week_max: 400,
+  max_rollen_per_dag_streef: 20,
   capaciteit_marge_pct: 0,
   wisseltijd_minuten: 15,
   snijtijd_minuten: 5,
@@ -84,7 +86,9 @@ async function fetchConfig(supabase: SupabaseClient): Promise<LevertijdConfig> {
   for (const row of (data ?? []) as Array<{ sleutel: string; waarde: Record<string, unknown> }>) {
     if (row.sleutel === 'productie_planning') {
       const w = row.waarde
-      if (typeof w.capaciteit_per_week === 'number') cfg.capaciteit_per_week = w.capaciteit_per_week
+      if (typeof w.capaciteit_per_week_streef === 'number') cfg.capaciteit_per_week_streef = w.capaciteit_per_week_streef
+      if (typeof w.capaciteit_per_week_max === 'number') cfg.capaciteit_per_week_max = w.capaciteit_per_week_max
+      if (typeof w.max_rollen_per_dag_streef === 'number') cfg.max_rollen_per_dag_streef = w.max_rollen_per_dag_streef
       if (typeof w.capaciteit_marge_pct === 'number') cfg.capaciteit_marge_pct = w.capaciteit_marge_pct
       if (typeof w.wisseltijd_minuten === 'number') cfg.wisseltijd_minuten = w.wisseltijd_minuten
       if (typeof w.snijtijd_minuten === 'number') cfg.snijtijd_minuten = w.snijtijd_minuten
@@ -317,6 +321,10 @@ serve(async (req) => {
       klant_naam: null,
       afleverdatum: gewenste_leverdatum ?? null,
       area_cm2: lengte_cm * breedte_cm,
+      // Een nieuwe, nog niet aangemaakte order heeft nooit al een express-vlag
+      // (die wordt pas ná aanmaak handmatig gezet) — feasibility-check op
+      // basis van de normale (niet-express) volgorde.
+      express: false,
     }
     const nieuwStukM2 = (lengte_cm * breedte_cm) / 10000
 

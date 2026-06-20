@@ -24,6 +24,7 @@ function piece(
     klant_naam: null,
     afleverdatum,
     area_cm2: lengte * breedte,
+    express: false,
   }
 }
 

@@ -369,6 +369,60 @@ export async function bevestigDebiteur(orderId: number) {
   if (error) throw error
 }
 
+/**
+ * Zet/wist de handmatige express-vlag (mig 450, Fase 2) — hoogste
+ * sorteerprioriteit in de snijplanner (sortPieces). De caller triggert
+ * daarna zelf auto-plan-groep voor de relevante (kwaliteit, kleur)-groepen
+ * (zie fetchMaatwerkGroepenVoorOrder) zodat de heroptimalisatie meteen
+ * plaatsvindt i.p.v. te wachten op de volgende reguliere trigger.
+ */
+export async function setExpress(orderId: number, express: boolean) {
+  const { error } = await supabase
+    .from('orders')
+    .update({ express })
+    .eq('id', orderId)
+
+  if (error) throw error
+}
+
+/**
+ * Unieke (kwaliteit_code, kleur_code)-paren van de maatwerk-regels op een
+ * order — voor het triggeren van auto-plan-groep na een express-toggle.
+ * Spiegelt order-form.tsx's triggerAutoplanForMaatwerk, maar leest hier de
+ * al-opgeslagen regels rechtstreeks op i.p.v. uit form-state.
+ */
+export async function fetchMaatwerkGroepenVoorOrder(
+  orderId: number,
+): Promise<Array<{ kwaliteit_code: string; kleur_code: string }>> {
+  const { data, error } = await supabase
+    .from('order_regels')
+    .select('producten!order_regels_artikelnr_fkey(kwaliteit_code, kleur_code)')
+    .eq('order_id', orderId)
+    .eq('is_maatwerk', true)
+
+  if (error) throw error
+
+  // Many-to-one embed: runtime geeft een object, PostgREST-types inferreren
+  // een array (zelfde mismatch als elders bij snijplannen→order_regels).
+  type ProductEmbed = { kwaliteit_code: string; kleur_code: string | null }
+  function unwrapEmbed(v: ProductEmbed | ProductEmbed[] | null | undefined): ProductEmbed | null {
+    if (Array.isArray(v)) return v[0] ?? null
+    return v ?? null
+  }
+
+  const seen = new Set<string>()
+  const out: Array<{ kwaliteit_code: string; kleur_code: string }> = []
+  for (const row of (data ?? []) as unknown as Array<{ producten: ProductEmbed | ProductEmbed[] | null }>) {
+    const product = unwrapEmbed(row.producten)
+    if (!product?.kwaliteit_code || !product.kleur_code) continue
+    const key = `${product.kwaliteit_code}|${product.kleur_code}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push({ kwaliteit_code: product.kwaliteit_code, kleur_code: product.kleur_code })
+  }
+  return out
+}
+
 /** Lookup price for an article in a client's price list */
 export async function lookupPrice(prijslijstNr: string, artikelnr: string): Promise<number | null> {
   const { data, error } = await supabase

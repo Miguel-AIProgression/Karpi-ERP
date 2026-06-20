@@ -30,6 +30,7 @@ function makePiece(overrides: Partial<SnijplanPiece> = {}): SnijplanPiece {
     klant_naam: overrides.klant_naam ?? null,
     afleverdatum: overrides.afleverdatum ?? null,
     area_cm2: (overrides.lengte_cm ?? 100) * (overrides.breedte_cm ?? 100),
+    express: overrides.express ?? false,
   }
 }
 

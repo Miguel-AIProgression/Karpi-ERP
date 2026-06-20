@@ -13,9 +13,11 @@ import {
   fetchAlleSnijden,
   fetchRolLocaties,
   fetchTekortAnalyse,
+  fetchWachtOpInkoopAnalyse,
   fetchSnijplanningKpis,
 } from '../queries/snijplanning'
-import type { SnijplanSortField, SortDirection, TekortAnalyseRow } from '../queries/snijplanning'
+import type { SnijplanSortField, SortDirection, TekortAnalyseRow, WachtOpInkoopRow } from '../queries/snijplanning'
+import { fetchMaatwerkHaalbaarheid, fetchInkoopRegelInfo } from '../queries/haalbaarheid'
 import {
   createSnijplan,
   updateSnijplanStatus,
@@ -40,9 +42,15 @@ import {
   fetchAutoplanningConfig,
   updateAutoplanningConfig,
   triggerAutoplan,
+  fetchBenodigdeLengteSchatting,
   startProductieRol,
 } from '../queries/auto-planning'
 import type { AutoPlanningConfig } from '../queries/auto-planning'
+import {
+  fetchKandidaatRollenVoorStuk,
+  wijsHandmatigToe,
+  ontgrendelHandmatigeToewijzing,
+} from '../queries/handmatige-toewijzing'
 import { berekenTotDatum } from '@/components/snijplanning/week-filter'
 import { fetchPlanningConfig } from '@/lib/supabase/queries/planning-config'
 import { invalidateNaSnijplanMutatie } from '../cache'
@@ -84,6 +92,42 @@ export function useTekortAnalyse() {
         m.set(`${r.kwaliteit_code}_${kleurNormalised}`, r)
       }
       return m
+    },
+  })
+}
+
+/** "Wacht op inkoop"-claims (mig 437/438/440) — groepeert per (kwaliteit,
+ *  kleur) zodat de pagina per groep de gekoppelde inkooporder_regel(s) toont. */
+export function useWachtOpInkoopAnalyse() {
+  return useQuery({
+    queryKey: ['snijplanning', 'wacht-op-inkoop-analyse'],
+    queryFn: fetchWachtOpInkoopAnalyse,
+    select: (rows): Map<string, WachtOpInkoopRow[]> => {
+      const m = new Map<string, WachtOpInkoopRow[]>()
+      for (const r of rows) {
+        const kleurNormalised = r.kleur_code.replace(/\.0$/, '')
+        const key = `${r.kwaliteit_code}_${kleurNormalised}`
+        const lijst = m.get(key) ?? []
+        lijst.push(r)
+        m.set(key, lijst)
+      }
+      return m
+    },
+  })
+}
+
+/** Fase 1 (2026-06-19): haalbaarheid-overzicht. Haalt de stukken op + (voor
+ *  status='Wacht op inkoop') de gekoppelde inkooporder-info erbij. */
+export function useMaatwerkHaalbaarheid() {
+  return useQuery({
+    queryKey: ['snijplanning', 'maatwerk-haalbaarheid'],
+    queryFn: async () => {
+      const rows = await fetchMaatwerkHaalbaarheid()
+      const regelIds = rows
+        .map((r) => r.verwacht_inkooporder_regel_id)
+        .filter((id): id is number => id != null)
+      const inkoopInfo = await fetchInkoopRegelInfo(regelIds)
+      return { rows, inkoopInfo }
     },
   })
 }
@@ -403,12 +447,73 @@ export function useTriggerAutoplan() {
   })
 }
 
+/** Puur lezende schatting (geen invalidatie nodig — wijzigt niets). */
+export function useBenodigdeLengteSchatting() {
+  return useMutation({
+    mutationFn: ({ kwaliteitCode, kleurCode }: { kwaliteitCode: string; kleurCode: string }) =>
+      fetchBenodigdeLengteSchatting(kwaliteitCode, kleurCode),
+  })
+}
+
 export function useStartProductieRol() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (rolId: number) => startProductieRol(rolId),
     onSuccess: () => {
       invalidateNaSnijplanMutatie(qc)
+    },
+  })
+}
+
+/** Kandidaat-rollen voor de handmatige-toewijzing-dropdown (Fase 4). */
+export function useKandidaatRollenVoorStuk(snijplanId: number | null) {
+  return useQuery({
+    queryKey: ['snijplanning', 'kandidaat-rollen', snijplanId],
+    queryFn: () => fetchKandidaatRollenVoorStuk(snijplanId!),
+    enabled: snijplanId != null,
+  })
+}
+
+/**
+ * Fase 4: wijst een stuk handmatig toe aan een rol en vergrendelt het. Triggert
+ * daarna `auto-plan-groep` voor de rest van de (kwaliteit,kleur)-groep — zowel om
+ * de overige stukken om het nieuwe obstakel te herverdelen als om (bij een stuk
+ * dat van "Wacht op inkoop" afkomt) de IO-claim-aggregaat correct te hertellen.
+ * Niet-blokkerend: een mislukte trigger laat de toewijzing zelf onaangetast.
+ */
+export function useWijsHandmatigToe() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ snijplanId, rolId }: { snijplanId: number; rolId: number }) =>
+      wijsHandmatigToe(snijplanId, rolId),
+    onSuccess: async (result) => {
+      invalidateNaSnijplanMutatie(qc)
+      if (result.success && result.kwaliteit_code && result.kleur_code) {
+        try {
+          await triggerAutoplan(result.kwaliteit_code, result.kleur_code)
+          invalidateNaSnijplanMutatie(qc)
+        } catch (e) {
+          console.warn('Auto-plan trigger na handmatige toewijzing faalde (niet-blokkerend):', e)
+        }
+      }
+    },
+  })
+}
+
+/** Fase 4: ontgrendelt een handmatig vergrendeld stuk en triggert direct een
+ *  nieuwe auto-plan-groep-run voor die groep (zelfde patroon als ExpressToggle). */
+export function useOntgrendelHandmatig() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (snijplanId: number) => ontgrendelHandmatigeToewijzing(snijplanId),
+    onSuccess: async (result) => {
+      invalidateNaSnijplanMutatie(qc)
+      try {
+        await triggerAutoplan(result.kwaliteit_code, result.kleur_code)
+        invalidateNaSnijplanMutatie(qc)
+      } catch (e) {
+        console.warn('Auto-plan trigger na ontgrendelen faalde (niet-blokkerend):', e)
+      }
     },
   })
 }

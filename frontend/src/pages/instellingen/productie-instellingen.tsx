@@ -173,16 +173,42 @@ export function ProductieInstellingenPage() {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Tapijten per week
+                  Streefwaarde per week
                 </label>
                 <input
                   type="number"
                   min={1}
-                  value={form.capaciteit_per_week}
-                  onChange={(e) => update('capaciteit_per_week', Number(e.target.value))}
+                  value={form.capaciteit_per_week_streef}
+                  onChange={(e) => update('capaciteit_per_week_streef', Number(e.target.value))}
                   className="w-32 px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
                 />
-                <p className="mt-1 text-xs text-slate-400">Maximale snijcapaciteit per week</p>
+                <p className="mt-1 text-xs text-slate-400">Streefcapaciteit per week (bv. 350 tapijten)</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Maximum per week (bij drukte)
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  value={form.capaciteit_per_week_max}
+                  onChange={(e) => update('capaciteit_per_week_max', Number(e.target.value))}
+                  className="w-32 px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
+                />
+                <p className="mt-1 text-xs text-slate-400">Wordt automatisch gebruikt als de streefwaarde een levertijd-belofte anders niet haalbaar maakt</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Max. rolwissels per dag
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  value={form.max_rollen_per_dag_streef}
+                  onChange={(e) => update('max_rollen_per_dag_streef', Number(e.target.value))}
+                  className="w-32 px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
+                />
+                <p className="mt-1 text-xs text-slate-400">Streefwaarde — mag overschreden worden als de levertijd anders niet haalbaar is</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">

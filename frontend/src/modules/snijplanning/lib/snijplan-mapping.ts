@@ -9,6 +9,13 @@ export interface RolGroep {
   stukken: SnijplanRow[]
   vroegsteLeverdatum: string | null
   aantalTeSnijden: number
+  /** Werkelijk gebruikte lengte (cm) op deze rol, berekend uit de opgeslagen
+   *  2D-posities (niet een platte m²-som) — zelfde berekening als het
+   *  snijvoorstel-modal/rol-header-card via `mapSnijplannenToStukken`. */
+  gebruikteLengteCm: number
+  /** rolLengte - gebruikteLengteCm. */
+  restLengteCm: number
+  afvalPct: number
 }
 
 /**
@@ -32,6 +39,9 @@ export function groepeerStukkenPerRol(stukken: SnijplanRow[]): RolGroep[] {
         stukken: [],
         vroegsteLeverdatum: null,
         aantalTeSnijden: 0,
+        gebruikteLengteCm: 0,
+        restLengteCm: 0,
+        afvalPct: 0,
       }
       map.set(s.rol_id, groep)
     }
@@ -40,6 +50,14 @@ export function groepeerStukkenPerRol(stukken: SnijplanRow[]): RolGroep[] {
     if (s.afleverdatum && (!groep.vroegsteLeverdatum || s.afleverdatum < groep.vroegsteLeverdatum)) {
       groep.vroegsteLeverdatum = s.afleverdatum
     }
+  }
+  // Gebruikte/resterende lengte pas berekenen als alle stukken van de rol
+  // bekend zijn (mapSnijplannenToStukken leest groep.stukken in zijn geheel).
+  for (const groep of map.values()) {
+    const { gebruikteLengte, afvalPct } = mapSnijplannenToStukken(groep.stukken, groep.rolBreedte, groep.rolLengte)
+    groep.gebruikteLengteCm = gebruikteLengte
+    groep.restLengteCm = groep.rolLengte - gebruikteLengte
+    groep.afvalPct = afvalPct
   }
   return Array.from(map.values()).sort((a, b) => {
     const aD = a.vroegsteLeverdatum

@@ -238,6 +238,30 @@ export async function fetchTekortAnalyse(): Promise<TekortAnalyseRow[]> {
   return (data ?? []) as TekortAnalyseRow[]
 }
 
+/** Eén (kwaliteit, kleur, inkooporder_regel)-claim — mig 437/438/440:
+ *  stukken die geen fysieke rol vonden maar wel passen op een openstaande
+ *  rol-inkooporder. Status 'Wacht op inkoop', géén rol_id. */
+export interface WachtOpInkoopRow {
+  kwaliteit_code: string
+  kleur_code: string
+  inkooporder_regel_id: number
+  inkooporder_nr: string
+  leverancier_naam: string | null
+  verwacht_datum: string | null
+  te_leveren_m: number
+  te_leveren_m2: number
+  gebruikte_lengte_cm: number
+  resterend_lengte_cm: number
+  resterend_m2: number
+  aantal_stukken: number
+}
+
+export async function fetchWachtOpInkoopAnalyse(): Promise<WachtOpInkoopRow[]> {
+  const { data, error } = await supabase.rpc('snijplanning_wacht_op_inkoop_analyse', {})
+  if (error) throw error
+  return (data ?? []) as WachtOpInkoopRow[]
+}
+
 /** Fetch status counts, optionally filtered by delivery date.
  *  Always uses RPC function (single query instead of 8 separate counts). */
 export async function fetchSnijplanningStatusCounts(

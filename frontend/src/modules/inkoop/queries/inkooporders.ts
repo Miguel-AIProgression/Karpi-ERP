@@ -558,6 +558,9 @@ export interface OpenRegelOverzichtRow {
   eta_bijgewerkt_door: 'karpi' | 'leverancier' | null
   eta_bijgewerkt_op: string | null
   leverancier_notitie: string | null
+  /** Mig 438/444: cm van deze (nog niet ontvangen) rol al geclaimd door
+   *  snijplannen.status='Wacht op inkoop'. 0 = geen snijplan-claim. */
+  snijplan_gebruikte_lengte_cm: number
 }
 
 export async function fetchOpenRegelOverzicht(
@@ -571,7 +574,8 @@ export async function fetchOpenRegelOverzicht(
        leverancier_id, leverancier_naam,
        regelnummer, artikelnr, karpi_code, artikel_omschrijving, product_omschrijving,
        besteld_m, geleverd_m, te_leveren_m, eenheid,
-       eta_bijgewerkt_door, eta_bijgewerkt_op, leverancier_notitie`,
+       eta_bijgewerkt_door, eta_bijgewerkt_op, leverancier_notitie,
+       snijplan_gebruikte_lengte_cm`,
     )
     .order('verwacht_datum', { ascending: true, nullsFirst: false })
     .order('leverancier_naam', { ascending: true })
@@ -607,6 +611,7 @@ export async function fetchOpenRegelOverzicht(
     eta_bijgewerkt_door: (r.eta_bijgewerkt_door as 'karpi' | 'leverancier' | null) ?? null,
     eta_bijgewerkt_op: (r.eta_bijgewerkt_op as string | null) ?? null,
     leverancier_notitie: (r.leverancier_notitie as string | null) ?? null,
+    snijplan_gebruikte_lengte_cm: Number(r.snijplan_gebruikte_lengte_cm ?? 0),
   }))
 }
 

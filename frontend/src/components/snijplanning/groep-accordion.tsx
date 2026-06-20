@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { ChevronDown, ChevronRight, Printer, Scissors, Loader2, RotateCcw } from 'lucide-react'
-import { formatDate } from '@/lib/utils/formatters'
+import { ChevronDown, ChevronRight, Printer, Scissors, Loader2, RotateCcw, Ruler, Move, Lock } from 'lucide-react'
+import { formatDate, formatNumber } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
 import { AFWERKING_MAP } from '@/lib/utils/constants'
 import { getVormDisplay } from '@/lib/utils/vorm-labels'
@@ -10,7 +10,11 @@ import {
   useGenereerSnijvoorstel,
   useGoedgekeurdVoorstel,
   useTriggerAutoplan,
+  useBenodigdeLengteSchatting,
   useRolLocaties,
+  useKandidaatRollenVoorStuk,
+  useWijsHandmatigToe,
+  useOntgrendelHandmatig,
   buildPlanFromStukken,
   groepeerStukkenPerRol,
   type RolGroep,
@@ -73,8 +77,10 @@ export function GroepAccordion({
   const [voorstelResult, setVoorstelResult] = useState<SnijvoorstelResponse | null>(null)
   const [showPlan, setShowPlan] = useState(false)
   const [startError, setStartError] = useState<string | null>(null)
+  const [handmatigStuk, setHandmatigStuk] = useState<SnijplanRow | null>(null)
   const genereer = useGenereerSnijvoorstel(); void genereer
   const autoplan = useTriggerAutoplan()
+  const lengteSchatting = useBenodigdeLengteSchatting()
 
   const { data: stukken, isLoading } = useSnijplannenVoorGroep(kwaliteitCode, kleurCode, true, totDatum)
 
@@ -208,6 +214,7 @@ export function GroepAccordion({
                     onStart={handleStartRol}
                     isStartPending={false}
                     pendingRolId={null}
+                    onHandmatigToewijzen={setHandmatigStuk}
                   />
                   {rolGroepen.length > 1 && !toonExtraRollen && (
                     <button
@@ -229,6 +236,7 @@ export function GroepAccordion({
                       onStart={handleStartRol}
                       isStartPending={false}
                       pendingRolId={null}
+                      onHandmatigToewijzen={setHandmatigStuk}
                     />
                   ))}
                   {toonExtraRollen && rolGroepen.length > 1 && (
@@ -278,6 +286,9 @@ export function GroepAccordion({
                     },
                   )
                 }
+                const handleSchatLengte = () => {
+                  lengteSchatting.mutate({ kwaliteitCode, kleurCode })
+                }
                 return (
                 <div className={cn('mt-2 border rounded-[var(--radius-sm)] overflow-hidden', redenBg)}>
                   <div className={cn('px-3 py-2 text-xs font-medium flex items-center gap-2 flex-wrap', redenText)}>
@@ -288,7 +299,11 @@ export function GroepAccordion({
                       · {stukkenZonderRol.length} {stukkenZonderRol.length === 1 ? 'stuk' : 'stukken'} ({tekortM2} m²)
                     </span>
                     <span className="w-full mt-1 font-normal">{redenLabel}</span>
-                    {tekortReden?.kind === 'voldoende' && (
+                    {/* Ook tonen bij geen_voorraad/rol_te_klein/geen_collectie: de
+                        tweede pak-pas (mig 437-445) matcht op exacte kwaliteit+kleur
+                        tegen openstaande rol-inkoop, los van de uitwisselbare-paren-
+                        check hierboven — dus ook dán kan een herplan iets oplossen. */}
+                    {tekortReden && (
                       <button
                         onClick={handleAutoplan}
                         disabled={autoplan.isPending}
@@ -301,6 +316,42 @@ export function GroepAccordion({
                         )}
                         Auto-plan opnieuw draaien
                       </button>
+                    )}
+                    {/* Read-only schatting (schat-benodigde-lengte) — géén
+                        mutatie, los van de Auto-plan-knop hierboven. */}
+                    <button
+                      onClick={handleSchatLengte}
+                      disabled={lengteSchatting.isPending}
+                      className={cn(
+                        'flex items-center gap-1.5 px-2.5 py-1 rounded-[var(--radius-sm)] bg-white border border-slate-300 text-slate-700 text-xs font-medium hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed transition-colors',
+                        tekortReden ? '' : 'ml-auto',
+                      )}
+                    >
+                      {lengteSchatting.isPending ? (
+                        <Loader2 size={12} className="animate-spin" />
+                      ) : (
+                        <Ruler size={12} />
+                      )}
+                      Bereken benodigde lengte
+                    </button>
+                    {lengteSchatting.data && (
+                      <span className="w-full mt-1 font-normal text-slate-700">
+                        {lengteSchatting.data.kan_berekenen ? (
+                          <>
+                            ≈ {formatNumber((lengteSchatting.data.benodigde_lengte_cm ?? 0) / 100, 1)} m nodig bij{' '}
+                            {lengteSchatting.data.standaard_breedte_cm} cm breedte ({lengteSchatting.data.afval_percentage}% afval)
+                            {(lengteSchatting.data.aantal_niet_passend ?? 0) > 0 && (
+                              <span className="text-rose-700">
+                                {' '}— {lengteSchatting.data.aantal_niet_passend}{' '}
+                                {lengteSchatting.data.aantal_niet_passend === 1 ? 'stuk past' : 'stukken passen'} niet eens
+                                op een rol van {lengteSchatting.data.standaard_breedte_cm} cm breed
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <span className="text-rose-700">{lengteSchatting.data.reden}</span>
+                        )}
+                      </span>
                     )}
                   </div>
                   <table className="w-full text-sm table-fixed">
@@ -362,13 +413,23 @@ export function GroepAccordion({
                               ) : '—'}
                             </td>
                             <td className="py-2 pr-3">
-                              <Link
-                                to={`/snijplanning/${stuk.id}/stickers`}
-                                className="text-slate-300 hover:text-slate-600 transition-colors"
-                                title="Sticker printen"
-                              >
-                                <Printer size={14} />
-                              </Link>
+                              <div className="flex items-center gap-2 justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() => setHandmatigStuk(stuk)}
+                                  className="text-slate-300 hover:text-slate-600 transition-colors"
+                                  title="Handmatig aan een rol toewijzen"
+                                >
+                                  <Move size={14} />
+                                </button>
+                                <Link
+                                  to={`/snijplanning/${stuk.id}/stickers`}
+                                  className="text-slate-300 hover:text-slate-600 transition-colors"
+                                  title="Sticker printen"
+                                >
+                                  <Printer size={14} />
+                                </Link>
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -380,6 +441,11 @@ export function GroepAccordion({
             </>
           )}
         </div>
+
+      {/* Handmatige rol-toewijzing (Fase 4) */}
+      {handmatigStuk && (
+        <HandmatigToewijzenDialog stuk={handmatigStuk} onClose={() => setHandmatigStuk(null)} />
+      )}
 
       {/* Snijvoorstel modal */}
       {modalData && (voorstelResult || showPlan) && (
@@ -405,9 +471,10 @@ interface RolSectieProps {
   onStart: (rolId: number) => void
   isStartPending: boolean
   pendingRolId: number | null
+  onHandmatigToewijzen: (stuk: SnijplanRow) => void
 }
 
-function RolSectie({ rol, locatieMap, kwaliteitCode, kleurLabel, geschatteTijd, defaultOpen, onStart, isStartPending, pendingRolId }: RolSectieProps) {
+function RolSectie({ rol, locatieMap, kwaliteitCode, kleurLabel, geschatteTijd, defaultOpen, onStart, isStartPending, pendingRolId, onHandmatigToewijzen }: RolSectieProps) {
   const [open, setOpen] = useState(defaultOpen)
   const locatie = locatieMap?.get(rol.rolId) ?? null
   const isPendingThis = isStartPending && pendingRolId === rol.rolId
@@ -456,6 +523,18 @@ function RolSectie({ rol, locatieMap, kwaliteitCode, kleurLabel, geschatteTijd, 
               {rol.aantalTeSnijden} te snijden
             </span>
           )}
+          {/* Werkelijk gebruikte/resterende lengte uit de opgeslagen 2D-posities
+              (mapSnijplannenToStukken) — niet een platte m²-som. Amber zodra er
+              minder dan 1m over is ("bijna vol"). */}
+          <span
+            className={cn(
+              'text-xs px-2 py-0.5 rounded-full',
+              rol.restLengteCm < 100 ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600',
+            )}
+            title="Gebruikte / resterende lengte op deze rol"
+          >
+            {formatNumber(rol.gebruikteLengteCm / 100, 1)}m gebruikt · {formatNumber(rol.restLengteCm / 100, 1)}m rest
+          </span>
           {rol.vroegsteLeverdatum && (
             <span className="text-xs text-slate-600">{formatDate(rol.vroegsteLeverdatum)}</span>
           )}
@@ -505,7 +584,7 @@ function RolSectie({ rol, locatieMap, kwaliteitCode, kleurLabel, geschatteTijd, 
             </thead>
             <tbody className="divide-y divide-slate-100">
               {gesorteerdeStukken.map((stuk) => (
-                <StukRow key={stuk.id} stuk={stuk} />
+                <StukRow key={stuk.id} stuk={stuk} onHandmatigToewijzen={onHandmatigToewijzen} />
               ))}
             </tbody>
           </table>
@@ -516,7 +595,8 @@ function RolSectie({ rol, locatieMap, kwaliteitCode, kleurLabel, geschatteTijd, 
 }
 
 
-function StukRow({ stuk }: { stuk: SnijplanRow }) {
+function StukRow({ stuk, onHandmatigToewijzen }: { stuk: SnijplanRow; onHandmatigToewijzen: (stuk: SnijplanRow) => void }) {
+  const ontgrendel = useOntgrendelHandmatig()
   return (
     <tr className="hover:bg-slate-50">
       <td className="py-2 pr-3 font-medium">
@@ -564,14 +644,123 @@ function StukRow({ stuk }: { stuk: SnijplanRow }) {
         </span>
       </td>
       <td className="py-2 pr-3">
-        <Link
-          to={`/snijplanning/${stuk.id}/stickers`}
-          className="text-slate-300 hover:text-slate-600 transition-colors"
-          title="Sticker printen"
-        >
-          <Printer size={14} />
-        </Link>
+        <div className="flex items-center gap-2 justify-end">
+          {stuk.is_handmatig_toegewezen && (
+            <button
+              type="button"
+              onClick={() => ontgrendel.mutate(stuk.id)}
+              disabled={ontgrendel.isPending}
+              className="text-amber-500 hover:text-amber-700 transition-colors disabled:opacity-50"
+              title="Vergrendeld — klik om te ontgrendelen (geeft vrij voor automatische planning)"
+            >
+              <Lock size={14} />
+            </button>
+          )}
+          {stuk.status === 'Gepland' && (
+            <button
+              type="button"
+              onClick={() => onHandmatigToewijzen(stuk)}
+              className="text-slate-300 hover:text-slate-600 transition-colors"
+              title="Handmatig naar een andere rol verplaatsen"
+            >
+              <Move size={14} />
+            </button>
+          )}
+          <Link
+            to={`/snijplanning/${stuk.id}/stickers`}
+            className="text-slate-300 hover:text-slate-600 transition-colors"
+            title="Sticker printen"
+          >
+            <Printer size={14} />
+          </Link>
+        </div>
       </td>
     </tr>
+  )
+}
+
+/**
+ * Fase 4: handmatige rol-toewijzing. Toont compatibele, groot-genoeg rollen
+ * (`kandidaat_rollen_voor_handmatige_toewijzing`); de positie op de gekozen
+ * rol wordt server-side bepaald (edge function `wijs-snijplan-handmatig-toe`,
+ * dezelfde shelf-packing-logica als de auto-planner). Werkt zowel voor een
+ * nog-niet-geplaatst stuk als voor het verplaatsen van een al-geplaatst
+ * (ook al-vergrendeld) stuk naar een andere rol.
+ */
+function HandmatigToewijzenDialog({ stuk, onClose }: { stuk: SnijplanRow; onClose: () => void }) {
+  const [rolId, setRolId] = useState<number | null>(null)
+  const { data: kandidaten, isLoading } = useKandidaatRollenVoorStuk(stuk.id)
+  const wijsToe = useWijsHandmatigToe()
+
+  function handleConfirm() {
+    if (!rolId) return
+    wijsToe.mutate(
+      { snijplanId: stuk.id, rolId },
+      { onSuccess: (result) => { if (result.success) onClose() } },
+    )
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div
+        className="bg-white rounded-[var(--radius)] shadow-xl p-6 max-w-sm w-full mx-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="text-lg font-semibold text-slate-900 mb-1">Handmatig toewijzen</h3>
+        <p className="text-sm text-slate-600 mb-4">
+          {stuk.snij_breedte_cm}×{stuk.snij_lengte_cm} cm — kies een rol. De toewijzing wordt
+          vergrendeld zodat de automatische planning dit stuk niet terugdraait.
+        </p>
+
+        {isLoading ? (
+          <p className="text-sm text-slate-400 mb-4">Rollen laden...</p>
+        ) : !kandidaten || kandidaten.length === 0 ? (
+          <p className="text-sm text-rose-600 mb-4">
+            Geen compatibele rol groot genoeg gevonden voor dit stuk.
+          </p>
+        ) : (
+          <select
+            value={rolId ?? ''}
+            onChange={(e) => setRolId(Number(e.target.value))}
+            className="w-full px-3 py-2 mb-4 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
+          >
+            <option value="" disabled>Kies een rol...</option>
+            {kandidaten.map((k) => (
+              <option key={k.rol_id} value={k.rol_id}>
+                {k.rolnummer} — {k.breedte_cm}×{k.lengte_cm} cm{k.is_exact ? '' : ' (uitwisselbaar)'}
+              </option>
+            ))}
+          </select>
+        )}
+
+        {wijsToe.data && !wijsToe.data.success && (
+          <p className="text-sm text-rose-600 mb-3">{wijsToe.data.reason}</p>
+        )}
+        {wijsToe.isError && (
+          <p className="text-sm text-rose-600 mb-3">
+            {wijsToe.error instanceof Error ? wijsToe.error.message : 'Toewijzen mislukt'}
+          </p>
+        )}
+
+        <div className="flex items-center gap-3 justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={wijsToe.isPending}
+            className="px-4 py-2 border border-slate-200 rounded-[var(--radius-sm)] text-sm hover:bg-slate-50"
+          >
+            Annuleren
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={!rolId || wijsToe.isPending || isLoading || !kandidaten?.length}
+            className="px-4 py-2 bg-terracotta-500 text-white rounded-[var(--radius-sm)] text-sm font-medium hover:bg-terracotta-600 disabled:opacity-50 transition-colors"
+          >
+            {wijsToe.isPending ? 'Bezig...' : 'Toewijzen'}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }

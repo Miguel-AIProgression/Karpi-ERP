@@ -278,6 +278,14 @@ export function InkoopRegelOverzichtTab() {
                       <span className={r.te_leveren_m > 0 ? 'text-slate-800' : 'text-slate-400'}>
                         {formatAantal(r.te_leveren_m)} {unit}
                       </span>
+                      {r.snijplan_gebruikte_lengte_cm > 0 && (
+                        <div
+                          className="text-xs text-orange-600 font-normal mt-0.5"
+                          title="Aantal meter van deze (nog niet ontvangen) rol al toegewezen aan snijplanning (status 'Wacht op inkoop')"
+                        >
+                          {formatAantal(r.snijplan_gebruikte_lengte_cm / 100)} m gebruikt door snijplanning
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <EtaInlineEdit regel={r} />

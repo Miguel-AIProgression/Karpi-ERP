@@ -174,7 +174,16 @@ function DetailsPanel({ data }: { data: CheckLevertijdResponse }) {
       {d.capaciteit && (
         <Row
           label="Capaciteit"
-          value={`week ${d.capaciteit.week}: ${d.capaciteit.huidig_stuks}/${d.capaciteit.max_stuks} stuks (${d.capaciteit.ruimte_stuks} vrij)`}
+          value={
+            `week ${d.capaciteit.week}: ${d.capaciteit.huidig_stuks}/${d.capaciteit.max_stuks} stuks (${d.capaciteit.ruimte_stuks} vrij)` +
+            (!d.capaciteit.binnen_streef ? ` — boven streefwaarde ${d.capaciteit.max_stuks_streef}` : '')
+          }
+        />
+      )}
+      {d.capaciteit?.rollen_overschreden && (
+        <Row
+          label="Rolwissels"
+          value={`${d.capaciteit.huidig_rollen}/${d.capaciteit.max_rollen_streef} (boven streefwaarde)`}
         />
       )}
       {d.backlog && (
