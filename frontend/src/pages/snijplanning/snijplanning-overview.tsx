@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, Fragment } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { Search, Scissors, Calendar, CheckCircle2, AlertTriangle, List, Truck, Gauge } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { GroepAccordion } from '@/components/snijplanning/groep-accordion'
@@ -53,9 +53,15 @@ function sorteerGroepen<T extends { kwaliteit_code: string | null; kleur_code: s
 }
 
 export function SnijplanningOverviewPage() {
+  // Deep-link vanaf order-detail (?status=...&zoek=...) — alleen bij mount
+  // gelezen, dit is een entry-point geen blijvende URL-sync.
+  const [searchParams] = useSearchParams()
   const [tab, setTab] = useState<'lijst' | 'agenda'>('lijst')
-  const [status, setStatus] = useState('Te snijden')
-  const [search, setSearch] = useState('')
+  const [status, setStatus] = useState(() => {
+    const fromUrl = searchParams.get('status')
+    return fromUrl && SNIJPLAN_STATUSES.includes(fromUrl) ? fromUrl : 'Te snijden'
+  })
+  const [search, setSearch] = useState(() => searchParams.get('zoek') ?? '')
   const [sortMode, setSortMode] = useState<SortMode>('leverdatum')
   // Modal-state op page-niveau zodat de RolUitvoerModal niet unmounted bij
   // rerenders/refetches van de GroepAccordion (TanStack Query invalidate na

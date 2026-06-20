@@ -191,6 +191,7 @@ export function OrderDetailPage() {
         claims={claims}
         orderStatus={order.status}
         orderId={order.id}
+        orderNr={order.order_nr}
         orderdatum={order.orderdatum}
         orderAfleverdatum={order.afleverdatum}
       />
