@@ -1,5 +1,26 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-20 — Correctie: BTW-controle-blokkade verplaatst van SQL naar factuur-verzenden
+
+**Waarom:** vraag van de gebruiker ("hoe zie ik dit?") legde een gat bloot in de
+zojuist gebouwde BTW-regeling-gate (zie vorige entry). De eerste versie liet
+`projecteer_concept_factuur`/`genereer_factuur(_voor_week)` zelf een
+`RAISE EXCEPTION` doen vóór de factuur-INSERT zodra `bepaal_btw_regeling` een
+hard-block-regeling teruggaf. Gevolg: bij een blokkade werd er **helemaal geen
+factuur aangemaakt** — de enige sporen waren `factuur_queue.last_error`, een
+tabel zonder enige UI. De net gebouwde `BtwControleNodigBanner` op factuur-
+detail kon dus nooit zichtbaar worden voor precies het scenario waarvoor hij
+bedoeld was.
+
+**Fix:** de 3 RPC's zetten de gate-kolommen nu **altijd** (factuur wordt altijd
+aangemaakt/bijgewerkt als Concept, met de banner zichtbaar) — de daadwerkelijke
+blokkade verhuisde naar `factuur-verzenden/index.ts`, ná het aanmaken van de
+factuur en vóór het versturen van mail/EDI (`HARD_BLOCK_REGELINGEN` uit
+`_shared/btw.ts`). Hierdoor vindt de gebruiker een geblokkeerde factuur nu
+gewoon terug als status "Concept" op `/facturatie`, met de banner + reden +
+bevestig-knop — exact waar je een factuur zou zoeken, in plaats van in een
+tabel die nergens in de UI verschijnt.
+
 ## 2026-06-20 — BTW-regeling per order (afleverland-bewust, export buiten EU, controle-gate)
 
 **Waarom:** de gebruiker leverde de volledige Belastingdienst-beslisboom voor BTW op

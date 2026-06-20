@@ -3,12 +3,27 @@
 -- Vervolg op mig 454/455 (normaliseer_land EU-27 + bepaal_btw_regeling).
 -- Gate-conventie zoals afl_adres_incompleet_sinds (mig 395) / prijs_ontbreekt_sinds
 -- (mig 396): nullable TIMESTAMPTZ, NULL = geen probleem. ONTWERPKEUZE (zie plan
--- 2026-06-20): deze gate leeft op `facturen`, NIET op `orders`, en blokkeert de
--- factuur-aanmaak-RPC's, NIET _valideer_intake_gates/start_pickronden — het
+-- 2026-06-20): deze gate leeft op `facturen`, NIET op `orders`, en blokkeert het
+-- VERZENDEN van de factuur, NIET _valideer_intake_gates/start_pickronden — het
 -- risico hier is een factuur met het verkeerde BTW-bedrag, niet het fysiek
 -- verzenden van de goederen. Een order mag dus gewoon gepickt en verzonden
 -- worden; de bijbehorende factuur blijft hangen tot een mens het tarief
 -- bevestigt.
+--
+-- KORTE-TERMIJN-CORRECTIE (zelfde dag, vóór merge): de eerste versie van deze
+-- migratie liet de 3 RPC's een RAISE EXCEPTION doen ZODRA bepaal_btw_regeling
+-- een hard-block-regeling teruggaf — VÓÓR de factuur-INSERT/UPDATE. Gevolg:
+-- bij een blokkade werd er HELEMAAL GEEN factuur aangemaakt — alleen
+-- `factuur_queue.last_error` kreeg de reden, en die tabel heeft geen enkele
+-- UI. De "BTW controle nodig"-banner (factuur-detail) kon dus nooit zichtbaar
+-- worden voor precies het scenario waarvoor hij gebouwd is.
+--
+-- Fix: de RPC's zetten de gate-kolommen nu ALTIJD (factuur wordt altijd
+-- aangemaakt/bijgewerkt, zichtbaar als Concept met de banner) — de
+-- daadwerkelijke blokkade verhuist naar de TS-laag in factuur-verzenden/
+-- index.ts, ná het aanmaken van de factuur en VÓÓR het versturen van de
+-- e-mail/EDI (zelfde "check bij de risicovolle actie"-patroon als
+-- _valideer_intake_gates bij start_pickronden, alleen op een ander niveau).
 --
 -- Hard-block geldt alleen voor regeling IN ('eu_b2b_binnenland_afwijking',
 -- 'export_buiten_eu') — 'eu_b2b_icl' zonder btw-nummer blijft advisory (mig
@@ -149,14 +164,10 @@ BEGIN
   v_btw_pct := v_btw_regeling.effectief_pct;
   v_betaaltermijn_dagen := betaaltermijn_dagen(v_debiteur.betaalconditie);
 
-  -- Mig 456: hard-blokkade VOOR de no-op-guard — een onzekere BTW-regeling mag
-  -- nooit een concept-factuur opleveren. ERRCODE invalid_parameter_value
-  -- (zelfde als _valideer_intake_gates) — dit is een echte blokkade, geen no-op.
-  IF v_btw_regeling.controle_nodig
-     AND v_btw_regeling.regeling IN ('eu_b2b_binnenland_afwijking', 'export_buiten_eu') THEN
-    RAISE EXCEPTION '%', v_btw_regeling.controle_reden
-      USING ERRCODE = 'invalid_parameter_value';
-  END IF;
+  -- Mig 456 (gecorrigeerd): GEEN blokkade hier — de factuur wordt altijd
+  -- aangemaakt/bijgewerkt (zichtbaar als Concept met de "BTW controle
+  -- nodig"-banner als v_btw_regeling.controle_nodig). De daadwerkelijke
+  -- blokkade (vóór verzenden) zit in factuur-verzenden/index.ts.
 
   -- No-op-guard (mig 341): faal vroeg als alle regels al gefactureerd zijn.
   -- Bij projectie is de flip nog niet gedaan, dus dit telt de nog-open regels.
@@ -335,9 +346,11 @@ $function$;
 COMMENT ON FUNCTION public.projecteer_concept_factuur(bigint, bigint) IS
   'Mig 428, BTW-fix mig 449, regeling-bewust sinds mig 456: projecteert een '
   'concept-factuur (header + regels) voor een zending — herhaalbaar, geen '
-  'side-effects buiten de BTW-gate. BTW-regeling via bepaal_btw_regeling (mig '
-  '455, afl_land-bewust); blokkeert hard bij eu_b2b_binnenland_afwijking/'
-  'export_buiten_eu (ERRCODE invalid_parameter_value).';
+  'side-effects. BTW-regeling via bepaal_btw_regeling (mig 455, afl_land-bewust) '
+  'snapshot op btw_regeling/btw_controle_nodig_sinds — GEEN blokkade hier (zie '
+  'mig 456-correctie); factuur-verzenden/index.ts blokkeert het versturen bij '
+  'eu_b2b_binnenland_afwijking/export_buiten_eu, ná aanmaak, zodat de factuur '
+  'zichtbaar blijft als Concept met de "BTW controle nodig"-banner.';
 
 -- ============================================================================
 -- 4. genereer_factuur_voor_week — zelfde patroon
@@ -406,11 +419,7 @@ BEGIN
     );
   v_btw_pct := v_btw_regeling.effectief_pct;
 
-  IF v_btw_regeling.controle_nodig
-     AND v_btw_regeling.regeling IN ('eu_b2b_binnenland_afwijking', 'export_buiten_eu') THEN
-    RAISE EXCEPTION '%', v_btw_regeling.controle_reden
-      USING ERRCODE = 'invalid_parameter_value';
-  END IF;
+  -- Mig 456 (gecorrigeerd): geen blokkade hier — zie projecteer_concept_factuur.
 
   -- Mig 227-guard: tel daadwerkelijk te-factureren orderregels VÓÓR
   -- header-INSERT om lege facturen te voorkomen bij dubbele drain-aanroep.
@@ -564,9 +573,10 @@ $function$;
 
 COMMENT ON FUNCTION public.genereer_factuur_voor_week(integer, text) IS
   'Legacy wekelijkse-verzamelfactuur-generatie (mig 117/122/231), BTW-fix mig '
-  '453, regeling-bewust sinds mig 456 (bepaal_btw_regeling, hard-block bij '
-  'eu_b2b_binnenland_afwijking/export_buiten_eu). Nog actief voor '
-  'factuurvoorkeur=wekelijks-debiteuren (momenteel 0).';
+  '453, regeling-bewust sinds mig 456 (bepaal_btw_regeling) — snapshot, GEEN '
+  'blokkade hier (zie mig 456-correctie, factuur-verzenden/index.ts blokkeert '
+  'het versturen). Nog actief voor factuurvoorkeur=wekelijks-debiteuren '
+  '(momenteel 0).';
 
 -- ============================================================================
 -- 5. genereer_factuur — zelfde patroon
@@ -624,11 +634,7 @@ BEGIN
     );
   v_btw_pct := v_btw_regeling.effectief_pct;
 
-  IF v_btw_regeling.controle_nodig
-     AND v_btw_regeling.regeling IN ('eu_b2b_binnenland_afwijking', 'export_buiten_eu') THEN
-    RAISE EXCEPTION '%', v_btw_regeling.controle_reden
-      USING ERRCODE = 'invalid_parameter_value';
-  END IF;
+  -- Mig 456 (gecorrigeerd): geen blokkade hier — zie projecteer_concept_factuur.
 
   IF v_debiteur.betaalconditie ~ '^\d+' THEN
     v_betaaltermijn_dagen := (regexp_match(v_debiteur.betaalconditie, '^(\d+)'))[1]::INTEGER;

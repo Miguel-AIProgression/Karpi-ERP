@@ -19,6 +19,7 @@ import {
   fetchVervoerderCodePerOrder,
 } from '../_shared/facturatie/intracom-statregel.ts'
 import { fetchBetaalconditie, fetchOrderPdfMeta, metEdiPrefix } from '../_shared/facturatie/factuur-pdf-verrijking.ts'
+import { HARD_BLOCK_REGELINGEN, type BtwRegeling } from '../_shared/btw.ts'
 import {
   naarInvoiceInput,
   type FactuurInvoiceContext,
@@ -77,6 +78,9 @@ interface FactuurRow {
   btw_bedrag: number | string
   totaal: number | string
   btw_verlegd: boolean | null
+  // Mig 456: BTW-regeling-gate (zie metBtwRegelingBlokkade hieronder).
+  btw_regeling: string | null
+  btw_controle_nodig_sinds: string | null
 }
 
 interface FactuurRegelRow {
@@ -275,6 +279,23 @@ serve(async () => {
       const regels = (regelsRes.data ?? []) as FactuurRegelRow[]
       const bedrijf = bedrijfRes.data.waarde as BedrijfConfig
       const debiteur = debiteurRes.data as DebiteurFactuurRow
+
+      // Mig 456 (gecorrigeerd): blokkeer het VERSTUREN als de BTW-regeling
+      // onzeker is — de factuur is al aangemaakt (Concept, zichtbaar met de
+      // "BTW controle nodig"-banner). Niet blokkerend voor eu_b2b_icl zonder
+      // btw-nummer (mig 164-besluit, advisory). Bewust ná de factuur-INSERT/
+      // UPDATE i.p.v. in de SQL-RPC, anders zou de factuur nooit zichtbaar
+      // worden (zie mig 456-correctie-commentaar).
+      if (
+        factuur.btw_controle_nodig_sinds &&
+        HARD_BLOCK_REGELINGEN.has(factuur.btw_regeling as BtwRegeling)
+      ) {
+        throw new Error(
+          `BTW-regeling vereist bevestiging vóór verzending (factuur ${factuur.factuur_nr}, ` +
+            `regeling ${factuur.btw_regeling}) — bevestig op de factuur-pagina.`,
+        )
+      }
+
       const ediConfig = await fetchEdiConfig(supabase, item.debiteur_nr)
       const ediFactuurActief = !!(ediConfig?.transus_actief && ediConfig.factuur_uit)
       // In test_modus blijft de e-mail het echte kanaal: de INVOIC gaat als
