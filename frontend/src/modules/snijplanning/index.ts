@@ -12,6 +12,8 @@ export {
   useSnijplanningPool,
   useSnijplanningGroepen,
   useTekortAnalyse,
+  useWachtOpInkoopAnalyse,
+  useMaatwerkHaalbaarheid,
   useSnijplannenVoorGroep,
   useSnijplanningStatusCounts,
   useSnijplanDetail,
@@ -46,10 +48,15 @@ export {
   usePauzeerSnijdenRol,
   useUpdateAutoplanningConfig,
   useTriggerAutoplan,
+  useBenodigdeLengteSchatting,
   useStartProductieRol,
+  useKandidaatRollenVoorStuk,
+  useWijsHandmatigToe,
+  useOntgrendelHandmatig,
 } from './hooks/use-snijplanning'
 
 export type { CreateSnijplanData, ReststukResult } from './hooks/use-snijplanning'
+export type { KandidaatRol } from './queries/handmatige-toewijzing'
 
 // ---------------------------------------------------------------------------
 // Cache seam (cross-Module invalidation — ADR-0013)
@@ -59,10 +66,11 @@ export { invalidateNaSnijplanMutatie } from './cache'
 // ---------------------------------------------------------------------------
 // Query types (voor advanced callers / parameter-shaping)
 // ---------------------------------------------------------------------------
-export type { SnijplanSortField, SortDirection, TekortAnalyseRow, SnijplanStatusCount, SnijGroepSummary, SnijplanningKpis, StickerData } from './queries/snijplanning'
+export type { SnijplanSortField, SortDirection, TekortAnalyseRow, WachtOpInkoopRow, SnijplanStatusCount, SnijGroepSummary, SnijplanningKpis, StickerData } from './queries/snijplanning'
 export { formatVerzendweekShort } from './queries/snijplanning'
 export type { SnijplanFormData } from './queries/snijplanning-mutations'
-export type { AutoPlanningConfig } from './queries/auto-planning'
+export type { AutoPlanningConfig, BenodigdeLengteSchatting } from './queries/auto-planning'
+export type { MaatwerkHaalbaarheidRow, InkoopRegelInfo } from './queries/haalbaarheid'
 
 // ---------------------------------------------------------------------------
 // Raw query-functies (alleen voor advanced callers — orchestrated saves buiten

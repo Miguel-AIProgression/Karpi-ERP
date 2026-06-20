@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { ArrowUp, ArrowDown, ArrowUpDown, AlertCircle, AlertTriangle, CheckCircle, Mail } from 'lucide-react'
+import { ArrowUp, ArrowDown, ArrowUpDown, AlertCircle, AlertTriangle, CheckCircle, Mail, Zap } from 'lucide-react'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { formatCurrency, formatDate } from '@/lib/utils/formatters'
 import { verzendWeekVoor } from '@/lib/orders/verzendweek'
@@ -192,6 +192,15 @@ function OrderTr({ order, bundel, facturenPerOrder }: {
             {order.order_nr}
           </Link>
           <BronBadge bron={order.bron_systeem} />
+          {order.express && (
+            <span
+              className="inline-flex items-center gap-1 rounded-full bg-rose-100 text-rose-700 px-2 py-0.5 text-xs font-semibold"
+              title="Express — hoogste prioriteit bij het snijden van maatwerk"
+            >
+              <Zap size={12} className="fill-current" />
+              Express
+            </span>
+          )}
           {toonBundelChip && bundel && (
             <span
               className="inline-flex items-center px-1.5 py-0.5 rounded-[var(--radius-sm)] bg-terracotta-100 text-terracotta-700 text-[11px] font-medium"

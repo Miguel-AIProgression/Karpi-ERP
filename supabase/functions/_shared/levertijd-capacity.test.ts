@@ -20,7 +20,9 @@ function defaultConfig(overrides: Partial<LevertijdConfig> = {}): LevertijdConfi
   return {
     logistieke_buffer_dagen: 2,
     backlog_minimum_m2: 12,
-    capaciteit_per_week: 450,
+    capaciteit_per_week_streef: 350,
+    capaciteit_per_week_max: 400,
+    max_rollen_per_dag_streef: 20,
     capaciteit_marge_pct: 0,
     wisseltijd_minuten: 15,
     snijtijd_minuten: 5,
@@ -121,7 +123,7 @@ Deno.test('bezetting: rol_id null wordt niet geteld als unieke rol', () => {
 // ---------------------------------------------------------------------------
 
 Deno.test('capaciteitsCheck: ruimte in eerste week → geen iteratie', async () => {
-  const cfg = defaultConfig({ capaciteit_per_week: 10 })
+  const cfg = defaultConfig({ capaciteit_per_week_streef: 10, capaciteit_per_week_max: 10 })
   const result = await capaciteitsCheck({
     start_week: 17,
     start_jaar: 2026,
@@ -134,7 +136,7 @@ Deno.test('capaciteitsCheck: ruimte in eerste week → geen iteratie', async () 
 })
 
 Deno.test('capaciteitsCheck: vol in eerste week → schuift door naar volgende', async () => {
-  const cfg = defaultConfig({ capaciteit_per_week: 10 })
+  const cfg = defaultConfig({ capaciteit_per_week_streef: 10, capaciteit_per_week_max: 10 })
   let calls = 0
   const result = await capaciteitsCheck({
     start_week: 17,
@@ -155,7 +157,7 @@ Deno.test('capaciteitsCheck: vol in eerste week → schuift door naar volgende',
 })
 
 Deno.test('capaciteitsCheck: alle weken vol → return laatste met negatieve ruimte', async () => {
-  const cfg = defaultConfig({ capaciteit_per_week: 10 })
+  const cfg = defaultConfig({ capaciteit_per_week_streef: 10, capaciteit_per_week_max: 10 })
   const result = await capaciteitsCheck({
     start_week: 17,
     start_jaar: 2026,
@@ -167,7 +169,7 @@ Deno.test('capaciteitsCheck: alle weken vol → return laatste met negatieve rui
 })
 
 Deno.test('capaciteitsCheck: marge_pct verlaagt max_stuks', async () => {
-  const cfg = defaultConfig({ capaciteit_per_week: 100, capaciteit_marge_pct: 20 })
+  const cfg = defaultConfig({ capaciteit_per_week_streef: 100, capaciteit_per_week_max: 100, capaciteit_marge_pct: 20 })
   const result = await capaciteitsCheck({
     start_week: 17,
     start_jaar: 2026,
@@ -175,7 +177,64 @@ Deno.test('capaciteitsCheck: marge_pct verlaagt max_stuks', async () => {
     fetchBezetting: async () => [],
   })
   assertEquals(result.max_stuks, 80)
+  assertEquals(result.max_stuks_streef, 80)
   assertEquals(result.ruimte_stuks, 80)
+})
+
+// ---------------------------------------------------------------------------
+// capaciteitsCheck — Fase 3: streef/max-escalatie + rollen-streefwaarde
+// ---------------------------------------------------------------------------
+
+Deno.test('capaciteitsCheck: binnen streefwaarde → binnen_streef true, geen escalatie', async () => {
+  const cfg = defaultConfig({ capaciteit_per_week_streef: 350, capaciteit_per_week_max: 400 })
+  const result = await capaciteitsCheck({
+    start_week: 17,
+    start_jaar: 2026,
+    cfg,
+    fetchBezetting: async () => Array.from({ length: 300 }, (_, i) => ({ id: i, rol_id: 1 })),
+  })
+  assertEquals(result.iteraties, 0)
+  assertEquals(result.binnen_streef, true)
+  assertEquals(result.max_stuks, 400)
+  assertEquals(result.max_stuks_streef, 350)
+})
+
+Deno.test('capaciteitsCheck: tussen streef en max → automatische escalatie, geen doorschuif', async () => {
+  const cfg = defaultConfig({ capaciteit_per_week_streef: 350, capaciteit_per_week_max: 400 })
+  let calls = 0
+  const result = await capaciteitsCheck({
+    start_week: 17,
+    start_jaar: 2026,
+    cfg,
+    fetchBezetting: async () => {
+      calls++
+      return Array.from({ length: 370 }, (_, i) => ({ id: i, rol_id: 1 }))
+    },
+  })
+  // Week 17 zelf levert ruimte op (370 < 400) — geen doorschuif naar week 18 nodig,
+  // de escalatie naar het maximum gebeurt binnen dezelfde week-iteratie.
+  assertEquals(calls, 1)
+  assertEquals(result.week, 17)
+  assertEquals(result.iteraties, 0)
+  assertEquals(result.binnen_streef, false)
+  assertEquals(result.ruimte_stuks, 30)
+})
+
+Deno.test('capaciteitsCheck: rollen boven streefwaarde blokkeert niet, alleen gerapporteerd', async () => {
+  const cfg = defaultConfig({ max_rollen_per_dag_streef: 1 }) // 5 werkdagen × 1 = 5 max_rollen_streef
+  const result = await capaciteitsCheck({
+    start_week: 17, // maandag 2026-04-20, normale 5-daagse week
+    start_jaar: 2026,
+    cfg,
+    // 10 stukken op 10 unieke rollen → ruim boven de rollen-streef van 5, maar
+    // stuks-capaciteit (350) is niet overschreden → resultaat blokkeert niet.
+    fetchBezetting: async () => Array.from({ length: 10 }, (_, i) => ({ id: i, rol_id: i })),
+  })
+  assertEquals(result.iteraties, 0)
+  assertEquals(result.huidig_rollen, 10)
+  assertEquals(result.max_rollen_streef, 5)
+  assertEquals(result.rollen_overschreden, true)
+  assert(result.ruimte_stuks > 0, 'rollen-overschrijding blokkeert de capaciteits-ruimte niet')
 })
 
 // ---------------------------------------------------------------------------

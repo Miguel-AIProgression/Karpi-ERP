@@ -40,6 +40,16 @@ export interface CapaciteitDetails {
   ruimte_stuks: number
   max_stuks: number
   huidig_stuks: number
+  /** Fase 3: streefwaarde-grens (vóór de automatische 350→400-escalatie). */
+  max_stuks_streef: number
+  /** TRUE als deze week zonder escalatie naar het maximum past (huidig_stuks ≤ max_stuks_streef). */
+  binnen_streef: boolean
+  /** Aantal unieke rollen al gepland in deze week (proxy voor rolwissels). */
+  huidig_rollen: number
+  /** Streefwaarde-grens voor rolwissels deze week (max_rollen_per_dag_streef × werkdagen). */
+  max_rollen_streef: number
+  /** TRUE als huidig_rollen > max_rollen_streef — puur informatief, blokkeert niets. */
+  rollen_overschreden: boolean
 }
 
 export interface BacklogDetails {
@@ -97,7 +107,12 @@ export interface SpoedDetails {
 export interface LevertijdConfig {
   logistieke_buffer_dagen: number       // bv. 2
   backlog_minimum_m2: number            // bv. 12
-  capaciteit_per_week: number           // bv. 450 (stuks)
+  /** Fase 3: streefwaarde stuks/week (bv. 350). Mag automatisch escaleren naar capaciteit_per_week_max. */
+  capaciteit_per_week_streef: number
+  /** Fase 3: absolute max stuks/week (bv. 400) — de enige echte blokkerende grens in capaciteitsCheck. */
+  capaciteit_per_week_max: number
+  /** Fase 3: streefwaarde max aantal verschillende rollen (wissels) per dag (bv. 20) — puur informatief. */
+  max_rollen_per_dag_streef: number
   capaciteit_marge_pct: number          // bv. 0
   wisseltijd_minuten: number            // bv. 15 (per rol-wissel)
   snijtijd_minuten: number              // bv. 5 (per stuk)
@@ -178,6 +193,16 @@ export interface CapaciteitsCheckResult {
   max_stuks: number
   ruimte_stuks: number
   iteraties: number   // hoe vaak doorgeschoven naar volgende week
+  /** Fase 3: streefwaarde-grens (vóór escalatie naar max_stuks). */
+  max_stuks_streef: number
+  /** TRUE als huidig_stuks ≤ max_stuks_streef (geen escalatie nodig). */
+  binnen_streef: boolean
+  /** Aantal unieke rollen in deze week (= bezetting(...).unieke_rollen). */
+  huidig_rollen: number
+  /** Streefwaarde-grens voor rolwissels deze week (max_rollen_per_dag_streef × werkdagen). */
+  max_rollen_streef: number
+  /** TRUE als huidig_rollen > max_rollen_streef — informatief, blokkeert niet. */
+  rollen_overschreden: boolean
 }
 
 export interface BacklogResult {

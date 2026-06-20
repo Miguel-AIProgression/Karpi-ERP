@@ -7,6 +7,8 @@ import {
   volgendeWerkminuut,
   plusWerkminuten,
   werkminutenTussen,
+  werkdagenTussen,
+  werkdagenInIsoWeek,
   berekenSnijAgenda,
   isoDatum,
   type RolAgendaInput,
@@ -91,6 +93,45 @@ Deno.test('werkminutenTussen: weekend tussen van en tot telt niet mee', () => {
 
 Deno.test('werkminutenTussen: tot <= van → 0', () => {
   assertEquals(werkminutenTussen(DO_8u, DO_8u, STANDAARD_WERKTIJDEN), 0)
+})
+
+// ---------------------------------------------------------------------------
+// werkdagenTussen (haalbaarheid-marge, Fase 1)
+// ---------------------------------------------------------------------------
+
+Deno.test('werkdagenTussen: do 16 april → do 23 april = 5 werkdagen (weekend overgeslagen)', () => {
+  assertEquals(werkdagenTussen('2026-04-16', '2026-04-23', STANDAARD_WERKTIJDEN), 5)
+})
+
+Deno.test('werkdagenTussen: vr 17 april → ma 20 april = 1 werkdag (weekend telt niet)', () => {
+  assertEquals(werkdagenTussen('2026-04-17', '2026-04-20', STANDAARD_WERKTIJDEN), 1)
+})
+
+Deno.test('werkdagenTussen: van === tot → 0', () => {
+  assertEquals(werkdagenTussen('2026-04-16', '2026-04-16', STANDAARD_WERKTIJDEN), 0)
+})
+
+Deno.test('werkdagenTussen: van > tot → 0 (deadline ligt al achter ons)', () => {
+  assertEquals(werkdagenTussen('2026-04-20', '2026-04-16', STANDAARD_WERKTIJDEN), 0)
+})
+
+Deno.test('werkdagenTussen: vrije dag binnen het interval telt niet mee', () => {
+  const w = { ...STANDAARD_WERKTIJDEN, vrij: [{ datum: '2026-04-17' }] }
+  // Zonder vrij: 17(vr) + 20(ma) = 2. Met 17 als vrije dag: alleen 20 telt = 1.
+  assertEquals(werkdagenTussen('2026-04-16', '2026-04-20', w), 1)
+})
+
+Deno.test('werkdagenInIsoWeek: normale week (ma 2026-04-20) = 5 werkdagen', () => {
+  assertEquals(werkdagenInIsoWeek('2026-04-20', STANDAARD_WERKTIJDEN), 5)
+})
+
+Deno.test('werkdagenInIsoWeek: week met één feestdag = 4 werkdagen', () => {
+  const w = { ...STANDAARD_WERKTIJDEN, vrij: [{ datum: '2026-04-17' }] } // vrijdag in die week
+  assertEquals(werkdagenInIsoWeek('2026-04-13', w), 4)
+})
+
+Deno.test('werkdagenInIsoWeek: ongeldige datum → fallback 5', () => {
+  assertEquals(werkdagenInIsoWeek('niet-een-datum', STANDAARD_WERKTIJDEN), 5)
 })
 
 Deno.test('parseHHmm-guard: onparseerbare werktijd gooit (geen stille 00:00)', () => {

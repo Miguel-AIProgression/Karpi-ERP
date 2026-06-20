@@ -16,6 +16,7 @@ function piece(id: number, l: number, b: number, afleverdatum: string | null = n
   return {
     id, lengte_cm: l, breedte_cm: b, maatwerk_vorm: null,
     order_nr: null, klant_naam: null, afleverdatum, area_cm2: l * b,
+    express: false,
   }
 }
 

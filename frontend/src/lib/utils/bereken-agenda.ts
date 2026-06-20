@@ -25,6 +25,7 @@ export {
   isoDatum,
   isWerkdag,
   werkdagMinN,
+  werkdagenTussen,
   volgendeWerkminuut,
   plusWerkminuten,
   werkminutenTussen,

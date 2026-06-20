@@ -111,6 +111,45 @@ export function werkdagMinN(iso: string, n: number, w: Werktijden = STANDAARD_WE
   return isoDatum(d)
 }
 
+/**
+ * Tel het aantal werkdagen tussen twee ISO-datums (YYYY-MM-DD) — de keerzijde
+ * van `werkdagMinN`: telt werkdagen ná `van` t/m (incl.) `tot`. `van >= tot`
+ * geeft 0 (zowel "vandaag is de deadline" als "deadline ligt al achter ons"
+ * geven dus 0 — onderscheid daartussen maakt de caller zelf via een directe
+ * datumvergelijking, dit telt alleen de resterende marge).
+ */
+export function werkdagenTussen(van: string, tot: string, w: Werktijden = STANDAARD_WERKTIJDEN): number {
+  const start = new Date(`${van}T00:00:00`)
+  const eind = new Date(`${tot}T00:00:00`)
+  if (isNaN(start.getTime()) || isNaN(eind.getTime()) || eind <= start) return 0
+  const d = new Date(start)
+  let aantal = 0
+  let stappen = 0
+  while (d.getTime() < eind.getTime() && stappen < 1000) {
+    d.setDate(d.getDate() + 1)
+    stappen += 1
+    if (isWerkdag(d, w)) aantal += 1
+  }
+  return aantal
+}
+
+/**
+ * Aantal werkdagen in de ISO-week die op `maandagIso` begint (normaliter 5,
+ * minder bij een feestdagen-week). Gebruikt om een per-dag-streefwaarde
+ * (bv. max rolwissels/dag) te vertalen naar een week-grens zonder een
+ * vaste ×5 te hardcoden (Fase 3 productiecapaciteit).
+ */
+export function werkdagenInIsoWeek(maandagIso: string, w: Werktijden = STANDAARD_WERKTIJDEN): number {
+  const d = new Date(`${maandagIso}T00:00:00`)
+  if (isNaN(d.getTime())) return 5
+  let aantal = 0
+  for (let i = 0; i < 7; i++) {
+    if (isWerkdag(d, w)) aantal += 1
+    d.setDate(d.getDate() + 1)
+  }
+  return aantal
+}
+
 /** Eerste moment vanaf `vanaf` dat binnen werktijd valt. */
 export function volgendeWerkminuut(vanaf: Date, w: Werktijden): Date {
   const d = new Date(vanaf.getTime())

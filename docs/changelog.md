@@ -1,5 +1,189 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-20 — Handmatige rol-toewijzing met bescherming tegen terugdraaien (Fase 4)
+
+**Waarom:** laatste van de 4 fases uit de oorspronkelijke Q&A. De overkoepelende eis was een
+overzicht van alle maatwerk-orders met zicht op haalbare levertijden (Fase 1), en "vervolgens
+wil ik als het nodig sturen in de planning handmatig" — een planner moet een stuk handmatig
+naar een specifieke rol kunnen verplaatsen, zonder dat de automatische heroptimalisatie
+(`auto-plan-groep`) die keuze bij de volgende trigger weer terugdraait.
+
+**Scope-keuze (Q&A vóór de bouw):** (1) één mechanisme dekt zowel het voor het eerst toewijzen
+van een stuk-zonder-rol als het verplaatsen van een al-geplaatst stuk; (2) rol-keuze beperkt
+tot compatibele (uitwisselbare), fysiek groot genoeg rollen — geen vrije keuze; (3) de actie
+leeft op de bestaande Snijplanning-hoofdpagina, geen losse pagina; (4) ontgrendelen wist de
+vlag, geeft vrij én triggert direct een nieuwe `auto-plan-groep`-run; (5) een al-vergrendeld
+stuk kan zonder tussenstap naar een derde rol herplaatst worden.
+
+- **Kernontdekking:** geen enkele wijziging nodig aan de packer of aan Fase 2's
+  verdringingscheck. `release_gepland_stukken` (mig 133) kreeg één extra voorwaarde
+  (`AND NOT is_handmatig_toegewezen`, nieuwe kolom op `snijplannen`, mig 453) — een vergrendeld
+  stuk behoudt dus zijn `rol_id`/positie tijdens elke heroptimalisatie-cyclus, en wordt
+  vervolgens door de **al-bestaande** `fetchBezettePlaatsingen` (filtert al op
+  `status='Gepland'` op `in_snijplan`-rollen) automatisch gezien als bezette shelf-ruimte —
+  exact hetzelfde mechanisme dat al-gesneden stukken al beschermt.
+- **Drie nieuwe RPC's (mig 453):** `kandidaat_rollen_voor_handmatige_toewijzing` (compatibel +
+  groot genoeg + niet fysiek onder het mes, bouwt op `uitwisselbare_paren()`, rechtstreeks
+  aanroepbaar vanuit de frontend — geen edge-function-tussenstap voor de lijst-query),
+  `wijs_snijplan_handmatig_toe` (atomaire schrijfactie + vergrendeling, mirrort
+  `keur_snijvoorstel_goed`'s UPDATE-patroon voor één rij; released eerst de huidige
+  toewijzing — werkt dus voor zowel "voor het eerst toewijzen" als "verplaatsen", inclusief
+  van een Fase-3 "Wacht op inkoop"-claim af), `ontgrendel_handmatige_toewijzing`.
+- **Nieuwe edge function `wijs-snijplan-handmatig-toe`**: bezit de positiebepaling op de
+  gekozen rol via de **bestaande** pure packing-helpers `reconstructShelves`/`tryPlacePiece`
+  (`_shared/ffdh-packing.ts`, dezelfde shelf-logica als de auto-planner) — geen nieuwe
+  positioneringslogica, geen drag-and-drop-UI nodig. Vindt geen plek → geen mutatie, duidelijke
+  foutmelding.
+- **IO-claim-detail:** een stuk dat van "Wacht op inkoop" naar een echte rol verplaatst wordt
+  kan zijn aandeel in `inkooporder_regels.snijplan_gebruikte_lengte_cm` niet zelf precies
+  terugtrekken (alleen het totaal per virtuele rol is bekend, geen per-stuk-aandeel) — daarom
+  triggert **ook** "handmatig toewijzen" (niet alleen ontgrendelen) direct een
+  `auto-plan-groep`-run voor de groep, die de aggregaat via de bestaande release-en-recompute-
+  cyclus correct hertelt.
+- **UI** (`groep-accordion.tsx`): `Move`-knop op elk `Gepland`-stuk (Tekort-tab én binnen een
+  `RolSectie`) opent `HandmatigToewijzenDialog` (dropdown van kandidaat-rollen). Vergrendelde
+  stukken tonen een `Lock`-badge die ook als ontgrendel-knop dient.
+- **Bijvangst:** een stale rij in `snijplan_locks` (CISC/32, 58 dagen oud) blokkeerde
+  `auto-plan-groep` voor die groep al sinds 2026-04-22 — ontdekt tijdens het live testen van
+  deze fase (de lock-tabel kent geen timeout/expiry). Verwijderd; groep direct daarna weer
+  normaal auto-plannable. Los probleem, niet veroorzaakt door Fase 4 — de afwezigheid van een
+  lock-timeout is een bestaand gat, niet hier opgelost.
+- **Live geverifieerd:** een Tekort-stuk handmatig toegewezen aan een lege rol (rol-status
+  correct naar `in_snijplan`), `release_gepland_stukken` liet het ongemoeid, ontgrendelen gaf
+  het correct vrij (rol terug naar `beschikbaar`) en een daaropvolgende `auto-plan-groep`-run
+  pakte het weer normaal in.
+- **Buiten scope (bewust):** geen drag-and-drop-visualisatie; geen aparte "vries vast op
+  huidige plek"-actie (toewijzen aan de eigen huidige rol geeft functioneel hetzelfde
+  resultaat); geen wijziging aan `auto-plan-groep`/de packer/Fase 2.
+
+## 2026-06-20 — Productiecapaciteit 350/400 + max 20 rolwissels/dag (Fase 3)
+
+**Waarom:** vervolg op Fase 1 (haalbaarheid) en Fase 2 (express + verdringing). De
+oorspronkelijke Q&A legde vast dat de bestaande `capaciteit_per_week: 450` verouderd was —
+de échte regel is een streefwaarde van 350 stuks/week die automatisch naar 400 mag escaleren
+bij verzendweek-druk, plus een streefwaarde van max 20 verschillende rollen (wissels) per dag.
+
+**Scope-keuze (Q&A vóór de bouw):** drie vragen voorgelegd — waar de grens aangrijpt (alleen
+de levertijd-belofte bij ordercreatie vs. ook de daadwerkelijke snijplanner vs. puur een
+read-only signaal), hoe de 350→400-escalatie triggert, en of de 20/dag een harde of zachte
+grens is. Gekozen: **alleen `check-levertijd`** (de snijplanner `auto-plan-groep` blijft
+volledig ongewijzigd), **automatische escalatie per week** (geen handmatige schakelaar), en
+**de rolwissel-grens is, net als 350, een streefwaarde** die overschreden mag worden zonder
+te blokkeren.
+
+- **Config-vorm vervangen** (geen back-compat-shim, "was verouderd"): `capaciteit_per_week`
+  (450) → `capaciteit_per_week_streef` (350) + `capaciteit_per_week_max` (400) +
+  `max_rollen_per_dag_streef` (20), in `app_config.productie_planning` (mig 452, non-
+  destructieve JSONB-`UPDATE` op de bestaande rij, patroon van mig 103/285).
+- **`capaciteitsCheck()`** (`_shared/levertijd-capacity.ts`) toetst nu tegen
+  `capaciteit_per_week_max` als enige blokkerende grens — de 350→400-escalatie kost daardoor
+  **geen extra controlestroom**: één `stuks < 400`-vergelijking is al "automatisch escaleren
+  binnen dezelfde week, vóór doorschuiven". `binnen_streef` rapporteert apart of escalatie
+  nodig was. De rolwissel-telling (`bezetting().unieke_rollen`, bestond al voor de minuten-
+  schatting) wordt nu ook vergeleken met een week-grens (`max_rollen_per_dag_streef ×
+  werkdagenInIsoWeek`, nieuwe pure helper in `_shared/werkagenda.ts` — feestdagen-bewust i.p.v.
+  hardcoded ×5) → `rollen_overschreden`, **puur informatief, blokkeert nooit**.
+- **`onderbouwing`-tekst** (`levertijd-resolver.ts`) en het `LevertijdSuggestie`-detailpaneel
+  tonen de streef/max-nuance en een rolwissel-rij, maar **alleen wanneer relevant** (geen ruis
+  bij een comfortabele week — mirrort de bestaande `iteraties > 0`-conditionele tekst).
+- **Frontend-instellingenpagina** (`productie-instellingen.tsx`): één "Tapijten per week"-veld
+  vervangen door drie ("Streefwaarde per week", "Maximum per week (bij drukte)", "Max.
+  rolwissels per dag").
+- **Twee parallelle TS-kopieën van het API-contract** (`_shared/levertijd-types.ts` +
+  `frontend/src/lib/supabase/queries/levertijd.ts`, géén ADR-0033-shared-module — bestond al
+  zo) zijn allebei met dezelfde 5 velden uitgebreid om synchroon te blijven.
+- **Live geverifieerd:** een testaanroep met 0 bestaande stukken in de snij-week bevestigde de
+  juiste 360/315 (400/350 × marge 10%) en `max_rollen_streef: 100` (20 × 5 werkdagen).
+- **Buiten scope (bewust):** `auto-plan-groep`/de packer blijft ongewijzigd; geen
+  capaciteits-kolom op de Fase-1 haalbaarheid-overview; geen dashboard-widget.
+
+## 2026-06-20 — Express-vlag + verdringing-met-veiligheidsnet (Fase 2)
+
+**Waarom:** vervolg op Fase 1 (haalbaarheid-overzicht). Twee regels uit de oorspronkelijke
+Q&A (2026-06-19) raken de packer-logica zelf: een handmatige "express"-vlag krijgt de
+hoogste snijprioriteit, en het systeem mag automatisch heroptimaliseren maar **nooit
+zodanig dat een order die zijn snij-deadline zou halen hem daardoor mist** — gebeurt dat
+toch, dan moet het systeem het voorleggen i.p.v. stilletjes doorvoeren (verbatim gebruikers-
+eis). Kernontdekking: dit "voorleggen" hergebruikt het bestaande
+`snijvoorstellen.status='concept'`-patroon (ADR-0021's FIFO-rode-badge-aftakking) — geen
+nieuwe UI, geen nieuwe tabel.
+
+- **`orders.express`** (mig 450) + `orders_list`/`snijplanning_overzicht` tonen 'm (mig 451
+  resp. 450). Krijgt in `sortPieces` (`_shared/ffdh-packing.ts`) de hoogste sorteerprioriteit,
+  vóór grootte/oppervlak/afleverdatum.
+- **ADR-0033-correctie:** `snij-haalbaarheid.ts` (Fase 1) verhuisd naar
+  `supabase/functions/_shared/snij-haalbaarheid.ts` — `auto-plan-groep` heeft de identieke
+  deadline-formule nodig voor de verdringingscheck. De frontend-module is nu een dunne
+  re-export-shim (patroon `bereken-agenda.ts`).
+- **Verdringingscheck in `auto-plan-groep`:** vóór de release-stap snapshot van de huidige
+  rol-toewijzing (`fetchOudeRolToewijzingen`, `_shared/db-helpers.ts`). Na het packen:
+  stukken die eerst een echte rol hadden maar nergens meer geplaatst zijn (ook niet via de
+  IO-claim-pas) zijn "verdrongen" — voor elk zo'n stuk wordt de haalbaarheid herberekend
+  (`berekenHaalbaarheid`); status `rood` zet `verdringingRisico=true`. Auto-approve-
+  voorwaarde is nu `!fifoCarveOut && !verdringingRisico`; bij carve-out blijft het voorstel
+  `'concept'` en bevat de response een `verdrongen_orders`-array (order_nr + snijplan_nr) +
+  duidelijke `reason`-tekst.
+- **Frontend:** `ExpressToggle`-widget op order-detail (naast de status-badges in
+  `OrderHeader`) — zet/wist `orders.express` en triggert daarna `auto-plan-groep` voor elke
+  (kwaliteit, kleur) van de maatwerk-regels op die order (zelfde aanroep-patroon als
+  order-form.tsx's `triggerAutoplanForMaatwerk`). Rode "Express"-badge op orders-overzicht
+  (`orders-table.tsx`) naast de bestaande Bron/bundel/deadline-conflict-badges.
+- **Vangnet:** 3 nieuwe Deno-tests in `ffdh-packing.test.ts` bewijzen het
+  verdringingsmechanisme op het pure-functie-niveau (express verdringt een groter
+  niet-express stuk van de enige passende rol). Volledige `deno test`/`vitest run`/
+  `tsc -b --noEmit` groen (twee voorbestaande, niet-gerelateerde testfalen ongewijzigd:
+  een guillotine-rotatie-regressie en een CRLF-fixture-mismatch).
+- **Live:** AEST/13 (4 stukken, alle al gepland) opnieuw gepland via `auto-plan-groep` —
+  `auto_approved:true`, geen `verdrongen_orders` — bevestigt dat de normale (geen-
+  verdringing) flow exact als voorheen werkt. De échte-verdringing-aftakking (rode status)
+  is bewust **niet** live op productie-orders getest — dat zou een voorstel van een bestaande
+  klantorder op 'concept' kunnen laten staan; gedekt door de pure-functie-tests + code-review
+  in plaats daarvan.
+- **Buiten scope (bewust):** geen banner voor "concept-voorstellen wachten op beoordeling"
+  (zelfde FIFO-rode-badge-flow ontdekt dit al), geen express-toggle op het order-form zelf
+  (alleen order-detail, na opslaan — een spoedbeslissing volgt typisch op het zien van de
+  planning).
+
+## 2026-06-19 — Haalbaarheid-overzicht maatwerk (Fase 1, read-only)
+
+**Waarom:** na de inkoop-koppeling (mig 437-445) en de echte-rol-lengte-fix bleek de bredere
+vraag: "welke maatwerk-orders halen hun levertijd, en welke niet?" Uitgewerkt via een
+uitgebreide Q&A (prioritering, express, capaciteit, "voorlopig vs vast" gepland) — te groot
+voor één bouwstap, dus gefaseerd. **Fase 1 = puur lezend overzicht, raakt de bestaande
+planner/packer niet.**
+
+Vastgelegde regels (Q&A 2026-06-19): "halen" = gesneden vóór de snij-deadline (focus
+snij-stap); granulariteit = per snijplan-stuk; risico-marge = 3 werkdagen vóór de
+snij-deadline → oranje, voorbij de deadline → rood, anders groen. Snij-deadline-formule
+hergebruikt **bestaande** config (geen wijziging): week-orders →
+`app_config.productie_planning.logistieke_buffer_dagen` (2 werkdagen — dekt confectie 1 dag +
+klaarleggen 1 dag, exact zoals het fysieke proces is); dag-orders →
+`dag_order_snij_buffer_werkdagen` (2 werkdagen, bestaand ADR-0014-gedrag). De 3-werkdagen-marge
+daarboven komt op ≈1 week vóór de afleverdatum — de oorspronkelijke vuistregel, nu in twee
+kloppende lagen.
+
+- **Bugfix en passant:** `PlanningConfig` (TS-type, `frontend/src/lib/types/productie.ts`) miste
+  `logistieke_buffer_dagen`/`dag_order_snij_buffer_werkdagen` — die bestonden al in
+  `app_config.productie_planning` en worden door `check-levertijd` gelezen, maar stonden niet op
+  het frontend-type. Aangevuld (met dezelfde defaults, 2/2) zodat dit Fase-1-werk ze type-veilig
+  kan lezen — en toekomstige frontend-code ook.
+- **Nieuwe pure helper** `_shared/werkagenda.ts` → `werkdagenTussen(van, tot, w)` (de keerzijde
+  van `werkdagMinN`) + frontend-shim (`bereken-agenda.ts`). Nieuwe module
+  `frontend/src/lib/orders/snij-haalbaarheid.ts` (`bepaalSnijDeadline`/`bepaalHaalbaarheidStatus`/
+  `berekenHaalbaarheid`) — puur, 11 unit-tests.
+- **Mig 447:** `snijplanning_overzicht` uitgebreid met `lever_type` + `verwacht_inkooporder_regel_id`
+  (additief, non-breaking — zelfde patroon als mig 444).
+- **Nieuwe pagina** `/snijplanning/haalbaarheid` (eigen route, geen 4e tab op de toch al complexe
+  hoofdpagina) — tabel met order/klant/kwaliteit/maat/leverdatum/snij-deadline/marge/
+  groen-oranje-rood, zoekbaar/sorteerbaar, KPI-telling per kleur. Link vanaf de
+  Snijplanning-hoofdpagina.
+- **Live bevestigd** met de bestaande BANG/12- en CISC/48-stukken (mig 437-445) — tonen correct
+  hun gekoppelde inkooporder; een oude MWDI-99-order (afleverdatum al gepasseerd) toont
+  terecht rood.
+- **Buiten scope (latere fases):** express-vlag + verdringing-met-bevestiging (Fase 2),
+  capaciteit 350/400 + rolwissel-limiet (Fase 3), handmatige rol-toewijzing met bescherming
+  (Fase 4).
+
 ## 2026-06-19 — CBS-statistieknummer op buitenlandse facturen + Intrastat-export
 
 **Waarom:** mail Nando (controller) 17-06-2026 — buitenlandse facturen misten het
@@ -33,6 +217,85 @@ DROPSHIP-KLEIN/BUNDELKORTING — geen fysieke goederen).
 - **Scope:** dekt de verzendingen-kant (buitenlandse verkoopfacturen). De
   inkoop-arrivals-kant (intracommunautaire verwervingen van buitenlandse
   leveranciers) zat ook in de Basta-export maar is niet gevraagd/gebouwd.
+
+## 2026-06-19 — Echte rol-lengte i.p.v. platte m² (Tekort-tab + Te-snijden-tab)
+
+**Waarom:** bij het controleren van een LAMI 15-tekort bleek "79,4 m² nodig" misleidend —
+stukken worden in werkelijkheid naast elkaar op de rolbreedte gesneden (guillotine-
+packing), dus een platte m²-som zegt niets over de werkelijk benodigde rol-*lengte*.
+Onderzoek wees uit dat de échte berekening al bestond (`mapSnijplannenToStukken`,
+gebruikt door het snijvoorstel-modal/rol-header-card) maar niet zichtbaar was op de
+Tekort-tab (geen rol om vanaf terug te rekenen) of op de Te-snijden-tab (`RolSectie`
+toonde alleen rol-afmetingen, geen gebruikt/resterend).
+
+- **Te-snijden-tab:** `groepeerStukkenPerRol` (`snijplan-mapping.ts`) zet nu per rol
+  `gebruikteLengteCm`/`restLengteCm`/`afvalPct` op `RolGroep` (hergebruikt de bestaande
+  `mapSnijplannenToStukken`, geen nieuwe berekening). `RolSectie` toont dit als badge
+  ("X m gebruikt · Y m rest", amber als < 1m over). Vangnet:
+  `snijplan-mapping.test.ts` (5 tests, o.a. het kern-scenario: twee stukken náást elkaar
+  op dezelfde shelf tellen niet dubbel mee in de lengte).
+- **Tekort-tab:** nieuwe **puur lezende** edge function `schat-benodigde-lengte` —
+  bewust LOS van `auto-plan-groep` (die muteert altijd: release/save/approve/claim).
+  Pakt de huidige Tekort-stukken (`rol_id IS NULL`) van een groep tegen één virtuele rol
+  van de standaardbreedte (`kwaliteiten.standaard_breedte_cm`, nooit een rij in `rollen`)
+  en geeft `gebruikte_lengte_cm` + `afval_percentage` + welke stukken zelfs dan niet
+  passen. Knop "Bereken benodigde lengte" in de Tekort-sectie (`groep-accordion.tsx`),
+  on-demand per groep (geen eager fetch voor alle ~65 groepen).
+- **Live bevestigd op LAMI/15:** van de 8 tekort-stukken past er 1 (591×424cm) **sowieso
+  niet** op de standaardbreedte van 400cm (beide zijden > 400cm — een fundamenteel
+  ander probleem dan "te weinig voorraad"). De overige 7 hebben 20,45 m nodig (81,8 m²,
+  36% afval) — **meer** dan de platte 79,4 m²-som voor alle 8 suggereerde, niet minder:
+  reële pak-inefficiëntie kost altijd extra, een naieve m²-som onderschat dus structureel.
+
+## 2026-06-19 — Snijplan-tekorten koppelen aan openstaande rol-inkoop (mig 437-445)
+
+**Waarom:** snijplan-tekorten (kwaliteit+kleur zonder fysieke rol) hielden nooit rekening
+met een al openstaande rol-inkooporder voor exact dezelfde kwaliteit (CLAUDE.md
+documenteerde dit als bewuste V1-leemte: maatwerk/rol-producten reserveren niet op
+inkoop, alleen een levertijd-hint). Concrete case: BANG kleur 12, 7 stukken in Tekort,
+terwijl INK-2026-9651 al 360m BANGKOK kleur 12 onderweg had (wk 26).
+
+**Architectuur:** `auto-plan-groep` (edge function) krijgt een **tweede pak-pas**: stukken
+die na de normale fysieke-rollen-poging nog "niet geplaatst" zijn, worden opnieuw door
+dezelfde guillotine-packer gestuurd tegen **in-memory virtuele rollen** gebouwd uit
+openstaande `inkooporder_regels` (eenheid='m', exacte kwaliteit_code **en** kleur_code, FIFO
+op `verwacht_datum`). Een virtuele rol wordt **nooit** als rij in `rollen` aangemaakt (les uit
+het afgeschafte PH-placeholder-rollen-patroon, mig 112/113→182) — puur een `Roll`-object
+(`sort_priority=3`, altijd na echte voorraad) dat alleen binnen de packer-aanroep bestaat.
+
+- **Nieuwe status `'Wacht op inkoop'`** (mig 437, enum-uitbreiding) op `snijplannen` —
+  `rol_id` blijft NULL, nieuwe kolom `verwacht_inkooporder_regel_id` (mig 438, wederzijds
+  exclusief met `rol_id`) wijst naar de inkooporder_regel. Snapshot-kolom
+  `inkooporder_regels.snijplan_gebruikte_lengte_cm` (mig 438) houdt bij hoeveel van de
+  (nog niet ontvangen) rol belegd is — RPC's `claim_wacht_op_inkoop`/
+  `release_wacht_op_inkoop_stukken` (release-dan-herberekenen, zelfde patroon als
+  `release_gepland_stukken`).
+- `snijplanning_tekort_analyse()` (mig 439) sluit `'Wacht op inkoop'` uit — een geclaimde
+  groep telt niet meer als Tekort. Nieuwe RPC `snijplanning_wacht_op_inkoop_analyse()`
+  (mig 440) voedt een eigen "Wacht op inkoop"-tab op de Snijplanning-pagina.
+- Mig 441/442: pg_net-triggers op `inkooporder_regels`/`inkooporders`/order-annulering die
+  `auto-plan-groep` her-triggeren (spiegelt de bestaande rollen-triggers, mig 100/111) —
+  **inert** tot `app_config.snijplanning.auto_planning.edge_url`/`auth_header` gevuld zijn
+  (bestaande, niet hier geïntroduceerde leemte; de wél-actieve paden — order-aanmaak,
+  snijplan-aanmaak, de "Auto-plan opnieuw draaien"-knop — werken al meteen).
+- Mig 444: `openstaande_inkooporder_regels` toont `snijplan_gebruikte_lengte_cm` —
+  Inkooporders-Regeloverzicht toont nu "Xm gebruikt door snijplanning" onder Te leveren.
+- **Scope v1 (bewuste keuze):** matching = exacte kwaliteit_code + kleur_code, geen
+  cross-kwaliteit via uitwisselbare paren (voorkomt dat twee tekort-groepen dezelfde
+  IO-regel claimen).
+- **Bugfix mig 445 (gevonden bij handmatige test op CISC kleur 48):** `fetchOpenInkoopRegels`
+  filterde initieel alleen op kwaliteit_code — bij CISC stonden tientallen kleuren (24, 32,
+  25, 18, 11, 21...) in dezelfde inkooporder, en de FIFO-sortering (datum, dan regel_id)
+  matchte per ongeluk kleur 24 i.p.v. de gevraagde kleur 48. Fix: ook filteren op kleur_code
+  (incl. `.0`-variant, zelfde patroon als `fetchStukken`). Daarnaast had
+  `release_wacht_op_inkoop_stukken` een `RETURNING`-bug: gaf de net-genulde nieuwe waarde
+  van `verwacht_inkooporder_regel_id` terug i.p.v. de oude, dus `snijplan_gebruikte_lengte_cm`
+  werd bij een release nooit teruggezet naar 0. Gefixt via een losse pre-update SELECT-CTE.
+  De foutief geclaimde productiedata (regel 167, kleur 24) is rechtgezet.
+- Live geverifieerd: BANG/12 (7 stukken) → INK-2026-9651, 16,9m gebruikt van 180m, 163,1m
+  resterend; CISC/48 (3 van 11 stukken, 8 al op échte rollen) → INK-2026-0621 regel 198
+  (kleur 48, niet 24), 7,15m gebruikt van 120m. Beide groepen verdwenen uit Tekort. Plan:
+  `docs/superpowers/plans/2026-06-19-snijplan-tekort-koppelen-aan-inkoop.md`.
 
 ## 2026-06-19 — Omsticker "OMB:"-regel ook op de geprinte pakbon
 

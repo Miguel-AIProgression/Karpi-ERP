@@ -67,6 +67,46 @@ export async function triggerAutoplan(
   return data as { success?: boolean; skipped?: boolean; reason?: string }
 }
 
+export interface BenodigdeLengteSchatting {
+  kan_berekenen: boolean
+  reden?: string
+  benodigde_lengte_cm?: number
+  benodigde_m2?: number
+  standaard_breedte_cm?: number
+  afval_percentage?: number
+  aantal_stukken?: number
+  aantal_niet_passend?: number
+}
+
+/** Puur lezende schatting: hoeveel rol-lengte is nodig om de huidige
+ *  Tekort-stukken (rol_id IS NULL) van deze kwaliteit+kleur te snijden op een
+ *  nieuwe rol van de standaardbreedte — via de echte guillotine-packer, niet
+ *  een platte m²-som. Geen schrijfacties (zie schat-benodigde-lengte). */
+export async function fetchBenodigdeLengteSchatting(
+  kwaliteitCode: string,
+  kleurCode: string,
+): Promise<BenodigdeLengteSchatting> {
+  const { data, error } = await supabase.functions.invoke('schat-benodigde-lengte', {
+    body: { kwaliteit_code: kwaliteitCode, kleur_code: kleurCode },
+  })
+
+  if (error) {
+    let msg = error.message
+    try {
+      const ctx = (error as Record<string, unknown>).context
+      const resp = ctx as Response
+      if (resp?.json) {
+        const parsed = await resp.json()
+        if (parsed?.error) msg = parsed.error
+        else msg = JSON.stringify(parsed)
+      }
+    } catch { /* fallback */ }
+    throw new Error(msg)
+  }
+
+  return data as BenodigdeLengteSchatting
+}
+
 /** Start productie for a specific roll via RPC */
 export async function startProductieRol(rolId: number): Promise<number> {
   const { data, error } = await supabase.rpc('start_productie_rol', {

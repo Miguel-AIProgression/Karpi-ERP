@@ -175,7 +175,7 @@ export function resolveScenario(input: ResolveScenarioInput): CheckLevertijdResp
     week,
     jaar,
     onderbouwing: trim(
-      `Nieuwe rol gepland in week ${capaciteit.week} (${formatDatum(snijMaandag)}); capaciteit ${capaciteit.huidig_stuks}/${capaciteit.max_stuks} stuks${capaciteit.iteraties > 0 ? ` — ${capaciteit.iteraties} week(en) doorgeschoven` : ''}.`,
+      `Nieuwe rol gepland in week ${capaciteit.week} (${formatDatum(snijMaandag)}); capaciteit ${capaciteit.huidig_stuks}/${capaciteit.max_stuks} stuks${capaciteit.iteraties > 0 ? ` — ${capaciteit.iteraties} week(en) doorgeschoven` : ''}${!capaciteit.binnen_streef ? ` (boven streefwaarde ${capaciteit.max_stuks_streef})` : ''}${capaciteit.rollen_overschreden ? `; rollen ${capaciteit.huidig_rollen}/${capaciteit.max_rollen_streef} (boven streefwaarde)` : ''}.`,
     ),
     details: {
       capaciteit,

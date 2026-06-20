@@ -33,6 +33,16 @@ export interface CapaciteitDetails {
   ruimte_stuks: number
   max_stuks: number
   huidig_stuks: number
+  /** Fase 3: streefwaarde-grens (vóór de automatische 350→400-escalatie). */
+  max_stuks_streef: number
+  /** TRUE als huidig_stuks ≤ max_stuks_streef (geen escalatie nodig). */
+  binnen_streef: boolean
+  /** Aantal unieke rollen al gepland in deze week (proxy voor rolwissels). */
+  huidig_rollen: number
+  /** Streefwaarde-grens voor rolwissels deze week (max_rollen_per_dag_streef × werkdagen). */
+  max_rollen_streef: number
+  /** TRUE als huidig_rollen > max_rollen_streef — puur informatief, blokkeert niets. */
+  rollen_overschreden: boolean
 }
 
 export interface BacklogDetails {

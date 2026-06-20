@@ -5,13 +5,18 @@ const CONFIG_KEY = 'productie_planning'
 
 const DEFAULT_CONFIG: PlanningConfig = {
   planning_modus: 'weken',
-  capaciteit_per_week: 450,
+  capaciteit_per_week_streef: 350,
+  capaciteit_per_week_max: 400,
+  max_rollen_per_dag_streef: 20,
   capaciteit_marge_pct: 10,
   weken_vooruit: 4,
   max_reststuk_verspilling_pct: 15,
   wisseltijd_minuten: 15,
   snijtijd_minuten: 5,
   confectie_buffer_minuten: 15,
+  // Defaults spiegelen check-levertijd/index.ts (zelfde app_config-rij).
+  logistieke_buffer_dagen: 2,
+  dag_order_snij_buffer_werkdagen: 2,
 }
 
 /** Fetch planning config from app_config */

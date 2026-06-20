@@ -10,7 +10,8 @@ const lokaal = (j: number, m: number, d: number, u = 0, min = 0) => new Date(j, 
 
 function defaultConfig(overrides: Partial<LevertijdConfig> = {}): LevertijdConfig {
   return {
-    logistieke_buffer_dagen: 2, backlog_minimum_m2: 12, capaciteit_per_week: 450,
+    logistieke_buffer_dagen: 2, backlog_minimum_m2: 12,
+    capaciteit_per_week_streef: 350, capaciteit_per_week_max: 400, max_rollen_per_dag_streef: 20,
     capaciteit_marge_pct: 0, wisseltijd_minuten: 15, snijtijd_minuten: 5,
     maatwerk_weken: 4, spoed_buffer_uren: 4, spoed_toeslag_bedrag: 50,
     spoed_product_id: 'SPOEDTOESLAG', dag_order_snij_buffer_werkdagen: 2,

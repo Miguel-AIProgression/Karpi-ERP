@@ -81,6 +81,7 @@ Bij nieuwe orders wordt de snijplanning automatisch herberekend en goedgekeurd:
 1. Order aangemaakt → `auto_maak_snijplan()` trigger maakt snijplan (status Wacht)
 2. Frontend of edge function triggert `auto-plan-groep` als leverdatum binnen horizon
 3. `auto-plan-groep`: lock → release Gepland stukken → best-of-both heroptimalisatie → auto-approve
+   (carve-out naar `concept` bij rode FIFO-badge óf verdringingsrisico — zie CLAUDE.md Fase 2)
 4. Rollen direct gereserveerd (status `in_snijplan`)
 5. Snijder klikt "Start productie" → status `In productie` (niet meer herberekend)
 6. Stukken buiten horizon of zonder beschikbare rollen blijven in Wacht (handmatige flow)

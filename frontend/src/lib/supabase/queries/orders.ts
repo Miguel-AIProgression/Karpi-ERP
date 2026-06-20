@@ -69,6 +69,12 @@ export interface OrderRow {
    * 'Prijs ontbreekt'-tab.
    */
   prijs_ontbreekt_sinds?: string | null
+  /**
+   * Mig 450 (Fase 2): handmatige vlag (planner/verkoper) — hoogste
+   * sorteerprioriteit in de snijplanner (sortPieces). Optional zodat oude
+   * cache-data zonder deze kolom niet crasht; default-render = false.
+   */
+  express?: boolean
 }
 
 export interface OrderDetail extends OrderRow {
