@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowDown, ArrowUp, ArrowUpDown, Search, PackageX } from 'lucide-react'
+import { ArrowDown, ArrowUp, ArrowUpDown, Search, PackageX, List, Calendar, AlertTriangle } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { cn } from '@/lib/utils/cn'
 import { formatDate } from '@/lib/utils/formatters'
@@ -13,7 +13,7 @@ import { usePlanningConfig } from '@/hooks/use-planning-config'
 import { useQuery } from '@tanstack/react-query'
 import { fetchWerkagendaConfig } from '@/lib/supabase/queries/werkagenda'
 import { berekenHaalbaarheid, type HaalbaarheidStatus } from '@/lib/orders/snij-haalbaarheid'
-import { berekenAgenda, isoDatum } from '@/lib/utils/bereken-agenda'
+import { berekenAgenda, isoDatum, type RolBlok } from '@/lib/utils/bereken-agenda'
 import { verzendWeekVoor } from '@/lib/orders/verzendweek'
 import { leverdatumVoorSnijDatum } from '@/lib/orders/levertijd-match'
 import { bepaalMaatwerkFase, MAATWERK_FASE_PRESENTATIE, type MaatwerkFase } from '@/lib/orders/maatwerk-productie'
@@ -21,6 +21,16 @@ import { bepaalMaatwerkFase, MAATWERK_FASE_PRESENTATIE, type MaatwerkFase } from
 type SortKey = 'kwaliteit' | 'snijdatum' | 'leverdatum' | 'klant' | 'status'
 type SortDir = 'asc' | 'desc'
 type RijStatus = HaalbaarheidStatus | 'materiaaltekort'
+type ViewMode = 'tabel' | 'per_dag'
+
+const DAG_LABELS = ['zondag', 'maandag', 'dinsdag', 'woensdag', 'donderdag', 'vrijdag', 'zaterdag']
+
+function fmtTijd(d: Date): string {
+  return d.toTimeString().slice(0, 5)
+}
+function fmtDagHeader(d: Date): string {
+  return `${DAG_LABELS[d.getDay()]} ${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`
+}
 
 const TERMINALE_FASE_STATUSSEN = new Set(['Gesneden', 'In confectie', 'Gereed', 'Ingepakt'])
 
@@ -58,11 +68,113 @@ function VerzendweekCel({ datum, leverType }: { datum: string | null; leverType:
   return w ? <span>wk {w.week}/{w.jaar}</span> : <span>{formatDate(datum)}</span>
 }
 
+/** Dag-voor-dag doorloop van de Gepland/Snijden-wachtrij — maakt het effect
+ *  van "start produceren vanaf" direct zichtbaar (i.p.v. één kolom in een
+ *  kwaliteit-gesorteerde tabel) en toont in één blik t/m welke dag alles
+ *  klaar is. Zelfde dag-groeperingspatroon als de bestaande Agenda-tab
+ *  (agenda-weergave.tsx), hier uitgebreid met de onderliggende orders per rol. */
+function PerDagWeergave({ blokken }: { blokken: RolBlok<MasterPlanningRow>[] }) {
+  const perDag = useMemo(() => {
+    const map = new Map<string, RolBlok<MasterPlanningRow>[]>()
+    for (const b of blokken) {
+      const key = isoDatum(b.start)
+      const lijst = map.get(key) ?? []
+      lijst.push(b)
+      map.set(key, lijst)
+    }
+    return Array.from(map.entries())
+  }, [blokken])
+
+  if (perDag.length === 0) {
+    return (
+      <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-12 text-center text-slate-400">
+        Niets ingepland binnen deze simulatie
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      {perDag.map(([iso, rollen]) => {
+        const datum = new Date(`${iso}T00:00:00`)
+        const totMin = rollen.reduce((s, b) => s + b.duurMinuten, 0)
+        return (
+          <div key={iso} className="bg-white rounded-[var(--radius)] border border-slate-200 overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-2 bg-slate-50 border-b border-slate-200">
+              <span className="text-sm font-semibold text-slate-800 capitalize">{fmtDagHeader(datum)}</span>
+              <span className="text-xs text-slate-500">
+                {rollen.length} {rollen.length === 1 ? 'rol' : 'rollen'} · {Math.floor(totMin / 60)}u {totMin % 60}m
+              </span>
+            </div>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-left text-xs text-slate-500 uppercase">
+                  <th className="py-2 px-4">Tijd</th>
+                  <th className="py-2 px-4">Rol</th>
+                  <th className="py-2 px-4">Kwaliteit · Kleur</th>
+                  <th className="py-2 px-4">Stuks</th>
+                  <th className="py-2 px-4">Orders</th>
+                  <th className="py-2 px-4">Duur</th>
+                  <th className="py-2 px-4">Leverdatum</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {rollen.map((b) => {
+                  const uren = Math.floor(b.duurMinuten / 60)
+                  const min = b.duurMinuten % 60
+                  const orders = Array.from(new Map(b.stukken.map((s) => [s.order_id, s.order_nr])).entries())
+                  return (
+                    <tr key={b.rolId} className={cn('hover:bg-slate-50', b.teLaat && 'bg-red-50/50')}>
+                      <td className="py-2 px-4 tabular-nums whitespace-nowrap">
+                        {fmtTijd(b.start)}–{fmtTijd(b.eind)}
+                        {isoDatum(b.start) !== isoDatum(b.eind) && (
+                          <span className="text-xs text-slate-400 ml-1">(→ {formatDate(isoDatum(b.eind))})</span>
+                        )}
+                      </td>
+                      <td className="py-2 px-4 font-medium whitespace-nowrap">{b.rolnummer}</td>
+                      <td className="py-2 px-4 text-slate-700 whitespace-nowrap">{b.kwaliteitCode} · {b.kleurCode}</td>
+                      <td className="py-2 px-4 tabular-nums">{b.stukken.length}</td>
+                      <td className="py-2 px-4">
+                        <span className="flex flex-wrap gap-1.5">
+                          {orders.map(([id, nr]) => (
+                            <Link key={id} to={`/orders/${id}`} className="text-terracotta-600 hover:underline text-xs whitespace-nowrap">
+                              {nr}
+                            </Link>
+                          ))}
+                        </span>
+                      </td>
+                      <td className="py-2 px-4 tabular-nums whitespace-nowrap">{uren > 0 ? `${uren}u ` : ''}{min}m</td>
+                      <td className={cn('py-2 px-4 whitespace-nowrap', b.teLaat && 'text-red-700 font-medium')}>
+                        {b.vroegsteLeverdatum ? (
+                          <span className="inline-flex items-center gap-1">
+                            {b.teLaat && <AlertTriangle size={12} />}
+                            {formatDate(b.vroegsteLeverdatum)}
+                          </span>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )
+      })}
+      <div className="text-center text-sm text-slate-500 py-2">
+        Backlog volledig verwerkt op <strong>{formatDate(isoDatum(blokken[blokken.length - 1].eind))}</strong>
+      </div>
+    </div>
+  )
+}
+
 export function MasterPlanningPage() {
   const [startVanaf, setStartVanaf] = useState(() => isoDatum(new Date()))
   const [zoek, setZoek] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('kwaliteit')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
+  const [viewMode, setViewMode] = useState<ViewMode>('tabel')
 
   const { data: masterPlanning, isLoading } = useMasterPlanning()
   const { data: planningConfig } = usePlanningConfig()
@@ -229,15 +341,37 @@ export function MasterPlanningPage() {
             className="px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
           />
         </div>
-        <div className="relative w-80">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            value={zoek}
-            onChange={(e) => setZoek(e.target.value)}
-            placeholder="Zoek op order, klant, kwaliteit, kleur..."
-            className="w-full pl-10 pr-4 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
-          />
+        {viewMode === 'tabel' && (
+          <div className="relative w-80">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={zoek}
+              onChange={(e) => setZoek(e.target.value)}
+              placeholder="Zoek op order, klant, kwaliteit, kleur..."
+              className="w-full pl-10 pr-4 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
+            />
+          </div>
+        )}
+        <div className="flex rounded-[var(--radius-sm)] border border-slate-200 overflow-hidden text-xs">
+          <button
+            onClick={() => setViewMode('tabel')}
+            className={cn(
+              'flex items-center gap-1.5 px-3 py-2 transition-colors',
+              viewMode === 'tabel' ? 'bg-terracotta-500 text-white font-medium' : 'bg-white text-slate-600 hover:bg-slate-50',
+            )}
+          >
+            <List size={13} /> Tabel
+          </button>
+          <button
+            onClick={() => setViewMode('per_dag')}
+            className={cn(
+              'flex items-center gap-1.5 px-3 py-2 transition-colors border-l border-slate-200',
+              viewMode === 'per_dag' ? 'bg-terracotta-500 text-white font-medium' : 'bg-white text-slate-600 hover:bg-slate-50',
+            )}
+          >
+            <Calendar size={13} /> Per dag
+          </button>
         </div>
       </div>
 
@@ -265,6 +399,13 @@ export function MasterPlanningPage() {
         </div>
       )}
 
+      {viewMode === 'per_dag' ? (
+        isLoading ? (
+          <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-12 text-center text-slate-400">Laden...</div>
+        ) : (
+          <PerDagWeergave blokken={blokken} />
+        )
+      ) : (
       <div className="bg-white rounded-[var(--radius)] border border-slate-200 overflow-hidden overflow-x-auto">
         {isLoading ? (
           <div className="p-12 text-center text-slate-400">Laden...</div>
@@ -374,6 +515,7 @@ export function MasterPlanningPage() {
           </table>
         )}
       </div>
+      )}
     </>
   )
 }
