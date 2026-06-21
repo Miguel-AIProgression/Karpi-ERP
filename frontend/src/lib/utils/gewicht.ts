@@ -10,6 +10,8 @@
  * `bereken_orderregel_gewicht_kg` (mig 185).
  */
 
+import { round2 } from './formatters'
+
 /**
  * Bereken gewicht (kg/stuk) op basis van oppervlak en kwaliteit-density.
  * Geretourneerd in 2 decimalen. Returnt undefined als density NULL is of
@@ -17,7 +19,7 @@
  */
 export function berekenGewichtKg(oppervlakM2: number, gewichtPerM2Kg: number | null): number | undefined {
   if (!gewichtPerM2Kg || oppervlakM2 <= 0) return undefined
-  return Math.round(oppervlakM2 * gewichtPerM2Kg * 100) / 100
+  return round2(oppervlakM2 * gewichtPerM2Kg)
 }
 
 /**
@@ -41,7 +43,7 @@ export function berekenProductGewichtKg(params: {
   const { lengte_cm, breedte_cm, vorm, gewichtPerM2Kg } = params
   if (!gewichtPerM2Kg || !lengte_cm || !breedte_cm) return undefined
   if (vorm === 'rond') {
-    return Math.round(Math.PI * (lengte_cm / 200) ** 2 * gewichtPerM2Kg * 100) / 100
+    return round2(Math.PI * (lengte_cm / 200) ** 2 * gewichtPerM2Kg)
   }
-  return Math.round(((lengte_cm * breedte_cm) / 10000) * gewichtPerM2Kg * 100) / 100
+  return round2(((lengte_cm * breedte_cm) / 10000) * gewichtPerM2Kg)
 }

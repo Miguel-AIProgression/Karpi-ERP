@@ -5,6 +5,7 @@ import {
   verzendWeekSleutel,
 } from '@/lib/orders/verzendweek'
 import { sanitizeSearch } from '@/lib/utils/sanitize'
+import { round2 } from '@/lib/utils/formatters'
 import type {
   PickShipBron,
   PickShipOrder,
@@ -116,7 +117,7 @@ export function mapPickbaarheidRegel(
 ): PickShipRegel {
   const lengte = r.maatwerk_lengte_cm ?? 0
   const breedte = r.maatwerk_breedte_cm ?? 0
-  const m2 = r.is_maatwerk ? Math.round(((lengte * breedte) / 10000) * 100) / 100 : 0
+  const m2 = r.is_maatwerk ? round2((lengte * breedte) / 10000) : 0
   // Pick & Ship toont de canonische Karpi-naam (producten.omschrijving) — geen
   // klanteigen-naam. Het magazijn werkt op Karpi's eigen artikel-administratie;
   // klantnamen horen pas op pakbon/verzendsticker thuis.
@@ -173,12 +174,4 @@ export function comparePickShipOrders(a: PickShipOrder, b: PickShipOrder): numbe
   const ad = a.afleverdatum ?? '9999-12-31'
   const bd = b.afleverdatum ?? '9999-12-31'
   return ad.localeCompare(bd) || a.order_nr.localeCompare(b.order_nr)
-}
-
-export function chunks<T>(items: T[], size: number): T[][] {
-  const result: T[][] = []
-  for (let i = 0; i < items.length; i += size) {
-    result.push(items.slice(i, i + size))
-  }
-  return result
 }

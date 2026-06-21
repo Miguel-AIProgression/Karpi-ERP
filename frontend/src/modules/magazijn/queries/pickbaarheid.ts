@@ -2,8 +2,9 @@ import { supabase } from '@/lib/supabase/client'
 import { werkdagMinN } from '@/lib/utils/bereken-agenda'
 import { fetchWerkagendaConfig } from '@/lib/supabase/queries/werkagenda'
 import type { BucketKey, PickShipOrder } from '../lib/types'
+import { chunks } from '@/lib/utils/chunk'
+import { round2 } from '@/lib/utils/formatters'
 import {
-  chunks,
   comparePickShipOrders,
   filterPickShipOrders,
   initPickShipOrders,
@@ -63,9 +64,9 @@ export async function fetchPickShipOrders(
     const karpiNaam = r.artikelnr ? karpiNamen.get(r.artikelnr) ?? null : null
     const regel = mapPickbaarheidRegel(r, karpiNaam)
     order.regels.push(regel)
-    order.totaal_m2 = Math.round((order.totaal_m2 + regel.m2) * 100) / 100
+    order.totaal_m2 = round2(order.totaal_m2 + regel.m2)
     order.totaal_gewicht_kg =
-      Math.round((order.totaal_gewicht_kg + (r.gewicht_kg ?? 0) * (r.orderaantal ?? 0)) * 100) / 100
+      round2(order.totaal_gewicht_kg + (r.gewicht_kg ?? 0) * (r.orderaantal ?? 0))
     order.aantal_regels = order.regels.length
   }
 
@@ -315,7 +316,7 @@ export async function fetchPickShipStats(vandaag: Date = new Date()): Promise<Pi
   const stats: PickShipStats = {
     totaal_orders: orders.length,
     totaal_stuks: orders.reduce((s, o) => s + o.aantal_regels, 0),
-    totaal_m2: Math.round(orders.reduce((s, o) => s + o.totaal_m2, 0) * 100) / 100,
+    totaal_m2: round2(orders.reduce((s, o) => s + o.totaal_m2, 0)),
     per_bucket: { wk_1: 0, wk_2: 0, wk_3: 0, wk_4: 0, wk_5: 0, later: 0 },
   }
   for (const o of orders) stats.per_bucket[o.bucket] += 1
