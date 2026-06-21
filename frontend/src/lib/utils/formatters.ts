@@ -43,6 +43,11 @@ export function formatPercentage(pct: number | null | undefined): string {
   return `${pct.toLocaleString('nl-NL', { maximumFractionDigits: 1 })}%`
 }
 
+/** Rond af op 2 decimalen (geld/oppervlak/gewicht). `round2(x)` === `Math.round(x*100)/100`. */
+export function round2(n: number): number {
+  return Math.round(n * 100) / 100
+}
+
 /** Format a number with Dutch locale: 1.234. Pass `decimals` to fix fractie-digits (1.234,56). */
 export function formatNumber(n: number | null | undefined, decimals?: number): string {
   if (n == null) return '—'

@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx'
 import { fetchOrders } from '@/lib/supabase/queries/orders'
 import type { OrderSortField, SortDirection } from '@/lib/supabase/queries/orders'
 import { verzendWeekVoor } from '@/lib/orders/verzendweek'
+import { chunks } from '@/lib/utils/chunk'
 import { supabase } from '@/lib/supabase/client'
 
 const BRON_LABEL: Record<string, string> = {
@@ -24,13 +25,6 @@ function formatVerzendweek(iso: string | null | undefined, leverType?: string): 
   if (leverType === 'datum') return formatDatum(iso)
   const w = verzendWeekVoor(iso)
   return w ? `Wk ${w.week} · ${w.jaar}` : ''
-}
-
-// Splits array in stukken om de PostgREST row-cap te omzeilen (zie pick-ship fix 2026-06-11)
-function inChunks<T>(arr: T[], size = 150): T[][] {
-  const out: T[][] = []
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
-  return out
 }
 
 interface ExportRegel {
@@ -110,11 +104,11 @@ export async function exporterenNaarExcel(params: {
   if (orders.length === 0) return
 
   const orderIds = orders.map((o) => o.id)
-  const chunks = inChunks(orderIds)
+  const idChunks = chunks(orderIds, 150)
 
   // Alle benodigde data gechunkt ophalen om PostgREST row-cap te omzeilen
   const [orderDetailRows, regelRows, levertijdRows, zendingRows] = await Promise.all([
-    Promise.all(chunks.map((ids) =>
+    Promise.all(idChunks.map((ids) =>
       supabase
         .from('orders')
         .select('id, fact_naam, fact_adres, fact_postcode, fact_plaats, fact_land, afl_naam, afl_naam_2, afl_adres, afl_postcode, afl_plaats, afl_land, betaler, inkooporganisatie, lever_modus')
@@ -122,7 +116,7 @@ export async function exporterenNaarExcel(params: {
     )).then((rs) => rs.flatMap((r) => (r.data ?? []) as ExportOrderDetail[])),
 
     // Alleen bewezen kolommen (zie fetchOrderRegels); karpi_code fallback via producten-join
-    Promise.all(chunks.map((ids) =>
+    Promise.all(idChunks.map((ids) =>
       supabase
         .from('order_regels')
         .select('id, order_id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2, orderaantal, te_leveren, backorder, prijs, korting_pct, bedrag, gewicht_kg, vrije_voorraad, is_maatwerk, maatwerk_lengte_cm, maatwerk_breedte_cm, maatwerk_diameter_cm, producten!order_regels_artikelnr_fkey(karpi_code, vrije_voorraad, gewicht_kg, lengte_cm, breedte_cm, vorm)')
@@ -131,14 +125,14 @@ export async function exporterenNaarExcel(params: {
         .order('regelnummer')
     )).then((rs) => rs.flatMap((r) => (r.data ?? []) as unknown as ExportRegel[])),
 
-    Promise.all(chunks.map((ids) =>
+    Promise.all(idChunks.map((ids) =>
       supabase
         .from('order_regel_levertijd')
         .select('order_regel_id, eerste_io_datum, eerste_io_nr, aantal_io')
         .in('order_id', ids)
     )).then((rs) => rs.flatMap((r) => (r.data ?? []) as ExportLevertijd[])),
 
-    Promise.all(chunks.map((ids) =>
+    Promise.all(idChunks.map((ids) =>
       supabase
         .from('zending_orders')
         .select('order_id, zendingen!inner(zending_nr, verzenddatum)')

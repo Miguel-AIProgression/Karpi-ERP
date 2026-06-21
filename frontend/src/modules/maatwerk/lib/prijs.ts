@@ -1,3 +1,5 @@
+import { round2 } from '@/lib/utils/formatters'
+
 /** Bereken totaalprijs voor een op-maat orderregel */
 export function berekenMaatwerkPrijs(params: {
   oppervlakM2: number
@@ -10,5 +12,5 @@ export function berekenMaatwerkPrijs(params: {
   const basis = oppervlakM2 * m2Prijs
   const subtotaal = basis + vormToeslag + afwerkingPrijs
   const netto = subtotaal * (1 - korting_pct / 100)
-  return Math.round(netto * 100) / 100
+  return round2(netto)
 }

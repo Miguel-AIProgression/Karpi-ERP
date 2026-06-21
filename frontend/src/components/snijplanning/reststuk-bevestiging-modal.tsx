@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { XCircle, Printer, Package } from 'lucide-react'
+import { round2 } from '@/lib/utils/formatters'
 
 interface ReststukBevestigingModalProps {
   berekendeLengte: number
@@ -23,7 +24,7 @@ export function ReststukBevestigingModal({
   onAnnuleer,
 }: ReststukBevestigingModalProps) {
   const [lengte, setLengte] = useState(berekendeLengte)
-  const oppervlak = Math.round((lengte * rolBreedte) / 10000 * 100) / 100
+  const oppervlak = round2((lengte * rolBreedte) / 10000)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">

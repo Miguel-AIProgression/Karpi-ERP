@@ -10,6 +10,7 @@ import { OrderLineEditor } from './order-line-editor'
 import { LevertijdSuggestie } from './levertijd-suggestie'
 import { LeverModusDialog, type LeverModusTekort } from './lever-modus-dialog'
 import { berekenRegelDekking, invalidateNaReserveringsmutatie, type LeverModus } from '@/modules/reserveringen'
+import { round2 } from '@/lib/utils/formatters'
 import {
   LevertijdFitIndicator,
   SnelsteHaalbaarKnop,
@@ -318,7 +319,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
             }
             updated.bedrag = (updated.orderaantal ?? 0) * (updated.prijs ?? 0) *
               (1 - (updated.korting_pct ?? 0) / 100)
-            updated.bedrag = Math.round(updated.bedrag * 100) / 100
+            updated.bedrag = round2(updated.bedrag)
             return updated
           })
         )

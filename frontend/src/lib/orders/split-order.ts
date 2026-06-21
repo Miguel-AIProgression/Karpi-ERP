@@ -2,6 +2,7 @@
 // Geëxtraheerd uit saveMutation.mutationFn zodat de geld-rekenende logica
 // los testbaar is. Geen React, geen I/O.
 import type { OrderRegelFormData } from '@/lib/supabase/queries/order-mutations'
+import { round2 } from '@/lib/utils/formatters'
 
 /** Minimaal contract: alles wat een 'bedrag' draagt kan toegewezen worden. */
 interface MetBedrag {
@@ -57,7 +58,7 @@ export function splitRegelOpDekking(
 
   const prijs = regel.prijs ?? 0
   const korting = (regel.korting_pct ?? 0) / 100
-  const bedragVoor = (aantal: number) => Math.round(prijs * aantal * (1 - korting) * 100) / 100
+  const bedragVoor = (aantal: number) => round2(prijs * aantal * (1 - korting))
 
   return {
     directeRegel: {
