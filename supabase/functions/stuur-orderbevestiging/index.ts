@@ -14,7 +14,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { genereerOrderbevestigingPDF } from '../_shared/orderbevestiging-pdf.ts'
-import { type Taal, bepaalTaal, vertaalOmschrijving } from '../_shared/orderbevestiging-taal.ts'
+import { type Taal, bepaalTaal, vertaalOmschrijving } from '../_shared/klant-taal.ts'
 import { sendFactuurEmail } from '../_shared/graph-mail-client.ts'
 import { isoWeekJaar } from '../_shared/iso-week.ts'
 import { berekenFactuurTotalen } from '../_shared/factuur-bedrag.ts'
@@ -36,7 +36,7 @@ const KARPI_LOGO_PATH     = Deno.env.get('KARPI_LOGO_PATH') ?? 'karpi-logo.jpg'
 
 // ── Taal van mail + PDF: bepaald door het land van het factuuradres ─────────
 // Taal-type, landmapping en regel-woordvertaling komen uit de gedeelde module
-// _shared/orderbevestiging-taal.ts (ook gebruikt door orderbevestiging-pdf.ts).
+// _shared/klant-taal.ts (ook gebruikt door orderbevestiging-pdf.ts).
 // Hieronder alleen de mail-specifieke teksten.
 const VERTALINGEN: Record<Taal, {
   onderwerp: string

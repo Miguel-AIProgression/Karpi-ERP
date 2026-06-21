@@ -5,8 +5,8 @@
 // vervoerder-regelevaluator mig 214).
 //
 // Geëxtraheerd uit orderbevestiging-taal.ts (2026-06-18) zodat de factuur niet
-// hoeft te importeren uit een module die "orderbevestiging" heet;
-// orderbevestiging-taal.ts re-exporteert dit ongewijzigd.
+// hoeft te importeren uit een module die "orderbevestiging" heet. De
+// re-export-shim is verwijderd; alle callers importeren hier rechtstreeks.
 
 export type Taal = 'nl' | 'de' | 'fr' | 'en'
 

@@ -1,7 +1,8 @@
 import { useRef } from 'react'
 import { Trash2, X } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
-import { formatCurrency, round2 } from '@/lib/utils/formatters'
+import { formatCurrency } from '@/lib/utils/formatters'
+import { berekenRegelBedrag } from '@/lib/orders/bedrag'
 import {
   berekenPrijsOppervlakM2,
   berekenOmtrekMeter,
@@ -40,8 +41,7 @@ interface OrderLineEditorProps {
 }
 
 function calcBedrag(line: OrderRegelFormData): number {
-  const base = (line.orderaantal ?? 0) * (line.prijs ?? 0)
-  return round2(base * (1 - (line.korting_pct ?? 0) / 100))
+  return berekenRegelBedrag(line.prijs ?? 0, line.orderaantal ?? 0, line.korting_pct ?? 0)
 }
 
 const inputClass = 'w-full text-right bg-transparent border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-terracotta-400/30'
