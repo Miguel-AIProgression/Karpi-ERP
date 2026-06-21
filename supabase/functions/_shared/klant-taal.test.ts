@@ -1,8 +1,8 @@
-// Deno unit tests voor orderbevestiging-taal.ts.
-// Run: deno test --no-check supabase/functions/_shared/orderbevestiging-taal.test.ts
+// Deno unit tests voor klant-taal.ts.
+// Run: deno test --no-check supabase/functions/_shared/klant-taal.test.ts
 
 import { assertEquals } from 'https://deno.land/std@0.168.0/testing/asserts.ts'
-import { bepaalTaal, vertaalOmschrijving } from './orderbevestiging-taal.ts'
+import { bepaalTaal, vertaalOmschrijving } from './klant-taal.ts'
 
 Deno.test('bepaalTaal: land → taal', () => {
   assertEquals(bepaalTaal('DE'), 'de')

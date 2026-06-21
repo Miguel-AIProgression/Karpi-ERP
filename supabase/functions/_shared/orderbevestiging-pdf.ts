@@ -9,7 +9,7 @@ import {
   StandardFonts,
   rgb,
 } from 'https://esm.sh/pdf-lib@1.17.1'
-import type { Taal } from './orderbevestiging-taal.ts'
+import type { Taal } from './klant-taal.ts'
 
 export interface OrderbevestigingBedrijf {
   bedrijfsnaam: string
