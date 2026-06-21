@@ -276,14 +276,20 @@ serve(async (req) => {
     let shelfWaarschuwingen: ReturnType<typeof validateShelfMesLimiet> = []
 
     if (rollResults.length > 0) {
+      // Math.round: lengte_cm/breedte_cm op snijvoorstel_plaatsingen zijn INTEGER-
+      // kolommen, maar p.lengte_cm/breedte_cm zijn de "placed" (marge-inclusieve)
+      // afmetingen — sinds mig 455 (2,5cm vorm-marge) kan dat een fractie zijn
+      // (bv. 242.5), wat een "invalid input syntax for type integer"-fout gaf.
+      // Positie wordt ook afgerond voor consistentie met de rest van het systeem
+      // (hele cm overal zichtbaar voor de gebruiker, zelfde principe als derive.ts).
       const plaatsingen = rollResults.flatMap((r) =>
         r.plaatsingen.map((p) => ({
           rol_id: r.rol_id,
           snijplan_id: p.snijplan_id,
-          positie_x_cm: p.positie_x_cm,
-          positie_y_cm: p.positie_y_cm,
-          lengte_cm: p.lengte_cm,
-          breedte_cm: p.breedte_cm,
+          positie_x_cm: Math.round(p.positie_x_cm),
+          positie_y_cm: Math.round(p.positie_y_cm),
+          lengte_cm: Math.round(p.lengte_cm),
+          breedte_cm: Math.round(p.breedte_cm),
           geroteerd: p.geroteerd,
         })),
       )
