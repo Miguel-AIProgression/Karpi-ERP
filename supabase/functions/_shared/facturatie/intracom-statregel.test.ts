@@ -1,51 +1,63 @@
-// Tests voor de Intrastat-Stat.nr.-regel (mig 446) — gedeeld tussen
-// factuur-pdf (preview) en factuur-verzenden (de daadwerkelijk verzonden
-// factuur).
+// Tests voor de Intrastat-Stat.nr.-regel (mig 446, herontworpen mig 450) —
+// gedeeld tussen factuur-pdf (preview) en factuur-verzenden (de daadwerkelijk
+// verzonden factuur).
 
 import { assertEquals } from 'https://deno.land/std@0.168.0/testing/asserts.ts'
 import { bereekenM2PerStuk, bouwIntracomStatRegel } from './intracom-statregel.ts'
-import { intracomRegelLabel } from '../factuur-pdf.ts'
+import { intracomLabels } from '../factuur-pdf.ts'
 
 Deno.test('bouwIntracomStatRegel: geen regel als niet btw_verlegd', () => {
   const r = bouwIntracomStatRegel({
-    taal: 'nl', btwVerlegd: false, goederencode: '57024200', gewichtKg: 16, m2Totaal: 4,
+    taal: 'nl', btwVerlegd: false, goederencode: '57024200', gewichtKg: 16, m2Totaal: 4, vervoerderCode: 'RHE',
   })
   assertEquals(r, undefined)
 })
 
 Deno.test('bouwIntracomStatRegel: geen regel zonder goederencode (kwaliteit nog onbekend)', () => {
   const r = bouwIntracomStatRegel({
-    taal: 'nl', btwVerlegd: true, goederencode: undefined, gewichtKg: 16, m2Totaal: 4,
+    taal: 'nl', btwVerlegd: true, goederencode: undefined, gewichtKg: 16, m2Totaal: 4, vervoerderCode: 'RHE',
   })
   assertEquals(r, undefined)
 })
 
-Deno.test('bouwIntracomStatRegel: NL-label + waarden, gewicht afgerond op heel getal', () => {
+Deno.test('bouwIntracomStatRegel: NL — 2 compacte regels, gewicht afgerond, vervoerder-code', () => {
   const r = bouwIntracomStatRegel({
-    taal: 'nl', btwVerlegd: true, goederencode: '57024200', gewichtKg: 15.6, m2Totaal: 4.0,
+    taal: 'nl', btwVerlegd: true, goederencode: '57024200', gewichtKg: 15.6, m2Totaal: 4.0, vervoerderCode: 'RHE',
   })
-  assertEquals(r, 'Stat.nr./Land herkomst/Vervoer/Gewicht: 57024200/NL/3/16\nM2: 4.00')
+  assertEquals(r, 'Stat.nr.: 57024200   Herkomst: NL   Vervoer: RHE\nGewicht: 16 kg   M2: 4.00')
 })
 
-Deno.test('bouwIntracomStatRegel: geen M2-regel als m2Totaal 0 is (bv. geen maat bekend)', () => {
+Deno.test('bouwIntracomStatRegel: geen M2-suffix als m2Totaal 0 is (bv. geen maat bekend)', () => {
   const r = bouwIntracomStatRegel({
-    taal: 'de', btwVerlegd: true, goederencode: '57024290', gewichtKg: 576, m2Totaal: 0,
+    taal: 'de', btwVerlegd: true, goederencode: '57024290', gewichtKg: 576, m2Totaal: 0, vervoerderCode: 'HST',
   })
-  assertEquals(r, 'Stat.nr./Ursprungsland/Transp./Gewicht: 57024290/NL/3/576')
+  assertEquals(r, 'Stat.nr.: 57024290   Ursprung: NL   Transport: HST\nGewicht: 576 kg')
 })
 
-Deno.test('bouwIntracomStatRegel: ontbrekend gewicht → 0', () => {
+Deno.test('bouwIntracomStatRegel: ontbrekend gewicht → 0, ontbrekende vervoerder → "—"', () => {
   const r = bouwIntracomStatRegel({
-    taal: 'en', btwVerlegd: true, goederencode: '57024200', gewichtKg: null, m2Totaal: 0,
+    taal: 'en', btwVerlegd: true, goederencode: '57024200', gewichtKg: null, m2Totaal: 0, vervoerderCode: undefined,
   })
-  assertEquals(r, 'Stat. no./Country of origin/Transport/Weight: 57024200/NL/3/0')
+  assertEquals(r, 'Stat no.: 57024200   Origin: NL   Transport: —\nWeight: 0 kg')
 })
 
-Deno.test('intracomRegelLabel: label per taal (matcht legacy DE-export)', () => {
-  assertEquals(intracomRegelLabel('de'), 'Stat.nr./Ursprungsland/Transp./Gewicht')
-  assertEquals(intracomRegelLabel('nl'), 'Stat.nr./Land herkomst/Vervoer/Gewicht')
-  assertEquals(intracomRegelLabel('fr'), 'N° stat./Pays d’origine/Transport/Poids')
-  assertEquals(intracomRegelLabel('en'), 'Stat. no./Country of origin/Transport/Weight')
+Deno.test('bouwIntracomStatRegel: beide regels passen ruim binnen de PDF-kolombreedte (≤52 tekens @9pt Courier)', () => {
+  // Regressietest voor de afkap-bug (2026-06-20): de oude 1-regel-vorm liep
+  // over de kolombreedte heen waardoor Vervoer+Gewicht stilletjes verdwenen.
+  const MAX_CHARS = 52
+  const r = bouwIntracomStatRegel({
+    taal: 'en', btwVerlegd: true, goederencode: '57024200', gewichtKg: 999, m2Totaal: 999.99, vervoerderCode: 'RHE',
+  })
+  for (const regel of (r ?? '').split('\n')) {
+    if (regel.length > MAX_CHARS) throw new Error(`Regel te lang (${regel.length} > ${MAX_CHARS}): "${regel}"`)
+  }
+})
+
+Deno.test('intracomLabels: korte labels per taal (matchen legacy DE-export waar relevant)', () => {
+  assertEquals(intracomLabels('de'), { statnr: 'Stat.nr.', herkomst: 'Ursprung', vervoer: 'Transport', gewicht: 'Gewicht' })
+  assertEquals(intracomLabels('nl').herkomst, 'Herkomst')
+  assertEquals(intracomLabels('fr').statnr, 'N° stat.')
+  assertEquals(intracomLabels('en').vervoer, 'Transport')
 })
 
 Deno.test('bereekenM2PerStuk: maatwerk-snapshot wint van product-maat', () => {

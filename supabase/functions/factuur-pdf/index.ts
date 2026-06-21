@@ -18,7 +18,9 @@ import {
   bereekenM2PerStuk,
   bouwIntracomStatRegel,
   fetchGoederencodePerKwaliteit,
+  fetchVervoerderCodePerOrder,
 } from '../_shared/facturatie/intracom-statregel.ts'
+import { fetchBetaalconditie, metEdiPrefix } from '../_shared/facturatie/factuur-pdf-verrijking.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -37,6 +39,9 @@ interface OrderMeta {
   afl_adres: string | null
   afl_postcode: string | null
   afl_plaats: string | null
+  // Mig 450: EDI-prefix op "Uw Referentie" + legacy "Auftrag"-nummer.
+  bron_systeem: string | null
+  oud_order_nr: string | null
 }
 
 interface ProductMeta {
@@ -149,7 +154,7 @@ serve(async (req) => {
       orderIds.length > 0
         ? supabase
             .from('orders')
-            .select('id, afl_naam, afl_naam_2, afl_adres, afl_postcode, afl_plaats')
+            .select('id, afl_naam, afl_naam_2, afl_adres, afl_postcode, afl_plaats, bron_systeem, oud_order_nr')
             .in('id', orderIds)
         : Promise.resolve({ data: [] as OrderMeta[], error: null }),
       orderRegelIds.length > 0
@@ -196,8 +201,22 @@ serve(async (req) => {
         )
       : []
     let goederencodeByKwaliteit: Map<string, string>
+    let vervoerderByOrder: Map<number, string>
     try {
       goederencodeByKwaliteit = await fetchGoederencodePerKwaliteit(supabase, kwaliteitCodes)
+      vervoerderByOrder = doc.header.btw_verlegd
+        ? await fetchVervoerderCodePerOrder(supabase, orderIds)
+        : new Map()
+    } catch (e) {
+      return jsonError(500, e instanceof Error ? e.message : String(e))
+    }
+
+    // Mig 450: debiteur-specifieke betaalconditie — overschreef voorheen altijd
+    // bedrijf.betalingscondities_tekst (bug: BDSK heeft "50 - 45 Tage Netto",
+    // de PDF toonde de bedrijfsbrede default).
+    let betaalconditie: string | undefined
+    try {
+      betaalconditie = await fetchBetaalconditie(supabase, doc.header.debiteur_nr)
     } catch (e) {
       return jsonError(500, e instanceof Error ? e.message : String(e))
     }
@@ -258,13 +277,19 @@ serve(async (req) => {
         goederencode,
         gewichtKg,
         m2Totaal: m2PerStuk * aantal,
+        vervoerderCode: vervoerderByOrder.get(dr.order_id),
       })
       const omschrijving_2 = [br.omschrijving_2, statRegel].filter(Boolean).join('\n') || undefined
+
+      const order = ordersById.get(dr.order_id)
+
+      // Mig 450: EDI-orders krijgen een "EDI: "-prefix op Uw Referentie zodat
+      // direct zichtbaar is via welk kanaal de order binnenkwam.
+      const uw_referentie = metEdiPrefix(br.uw_referentie, order)
 
       // Afleveradres alleen bij eerste regel van de order EN alleen als afwijkend
       let afleveradres: { naam: string; naam_2?: string; adres: string; postcode: string; plaats: string } | undefined
       if (!aflGetoondPerOrder.has(dr.order_id)) {
-        const order = ordersById.get(dr.order_id)
         if (order) {
           const aflAdres = (order.afl_adres ?? '').trim().toLowerCase()
           const aflPostcode = (order.afl_postcode ?? '').trim().toLowerCase()
@@ -282,7 +307,7 @@ serve(async (req) => {
         aflGetoondPerOrder.add(dr.order_id)
       }
 
-      return { ...br, omschrijving_2, afleveradres }
+      return { ...br, uw_referentie, omschrijving_2, afleveradres, oud_order_nr: order?.oud_order_nr ?? null }
     })
 
     const pdfBytes = await genereerFactuurPDF({
@@ -313,6 +338,7 @@ serve(async (req) => {
         ...base.factuur,
         totaal_m2: totaalM2 > 0 ? totaalM2 : undefined,
         totaal_gewicht_kg: totaalGewichtKg > 0 ? totaalGewichtKg : undefined,
+        betalingscondities_tekst: betaalconditie,
       },
       regels: renderRegels,
       taal,

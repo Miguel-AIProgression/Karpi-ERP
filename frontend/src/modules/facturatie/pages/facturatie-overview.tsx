@@ -7,6 +7,7 @@ import { useFacturen } from '../hooks/use-facturen'
 import type { FactuurStatus } from '../queries/facturen'
 import { VerkoopoverzichtExportDialog } from '../components/verkoopoverzicht-export-dialog'
 import { CbsExportDialog } from '../components/cbs-export-dialog'
+import { BtwControleNodigOverzichtBanner } from '../components/btw-controle-nodig-overzicht-banner'
 import { FactuurBulkBalk } from '../components/factuur-bulk-balk'
 
 const ALLE_STATUSSEN: FactuurStatus[] = [
@@ -29,6 +30,7 @@ export function FacturatieOverviewPage() {
   const [selectie, setSelectie] = useState<Set<number>>(new Set())
   const [exportDialogOpen, setExportDialogOpen] = useState(false)
   const [cbsDialogOpen, setCbsDialogOpen] = useState(false)
+  const [alleenBtwControleNodig, setAlleenBtwControleNodig] = useState(false)
 
   const { data: facturen = [] } = useFacturen()
 
@@ -63,9 +65,10 @@ export function FacturatieOverviewPage() {
         !q ||
         f.factuur_nr.toLowerCase().includes(q) ||
         (f.klant_naam ?? '').toLowerCase().includes(q)
-      return matchStatus && matchKlant && matchDatum && matchZoek
+      const matchBtwControle = !alleenBtwControleNodig || f.btw_controle_nodig_sinds != null
+      return matchStatus && matchKlant && matchDatum && matchZoek && matchBtwControle
     })
-  }, [facturen, zoekterm, statusSelectie, klantSelectie, datumVan, datumTot])
+  }, [facturen, zoekterm, statusSelectie, klantSelectie, datumVan, datumTot, alleenBtwControleNodig])
 
   function toggle(id: number) {
     setSelectie((huidig) => {
@@ -126,6 +129,20 @@ export function FacturatieOverviewPage() {
         open={cbsDialogOpen}
         onClose={() => setCbsDialogOpen(false)}
       />
+
+      <BtwControleNodigOverzichtBanner onBekijk={() => setAlleenBtwControleNodig(true)} />
+      {alleenBtwControleNodig && (
+        <div className="mb-4 flex items-center gap-2 text-sm text-amber-700">
+          Filter actief: alleen facturen met BTW controle nodig.
+          <button
+            type="button"
+            onClick={() => setAlleenBtwControleNodig(false)}
+            className="underline hover:text-amber-800"
+          >
+            Wis filter
+          </button>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3 mb-5">

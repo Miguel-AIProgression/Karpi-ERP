@@ -79,6 +79,10 @@ export interface FactuurHeader {
   // wettelijke vermelding "BTW verlegd" + btw-nummer van de afnemer.
   btw_verlegd?: boolean
   btw_nummer_afnemer?: string | null
+  // Mig 450: debiteur-specifieke betaalconditie-tekst (debiteuren.betaalconditie).
+  // Override op bedrijf.betalingscondities_tekst — bug gevonden 2026-06-20: de
+  // factuur toonde altijd de bedrijfsbrede default, nooit de klant-eigen conditie.
+  betalingscondities_tekst?: string
 }
 
 export interface FactuurAfleveradres {
@@ -104,6 +108,9 @@ export interface FactuurPDFRegel {
   // Per order in de groep: alleen op de eerste regel van een order-groep getoond.
   // Wanneer afleveradres = factuuradres laat de caller dit weg.
   afleveradres?: FactuurAfleveradres
+  // Mig 450: orders.oud_order_nr ("Auftrag" op de legacy Basta-factuur) — alleen
+  // getoond als gevuld (gemigreerde orders). Per order-groep, net als afleveradres.
+  oud_order_nr?: string | null
 }
 
 export interface FactuurPDFInput {
@@ -215,19 +222,51 @@ const FACTUUR_TEKSTEN: Record<Taal, FactuurTeksten> = {
   },
 }
 
-// Label voor de Intrastat/CBS-statistiekregel onder een buitenlandse
-// (intracommunautaire) factuurregel, bv. NL: "Stat.nr./Land herkomst/Vervoer/
-// Gewicht: 57024200/NL/3/16". Alleen het label is taal-afhankelijk; de waarden
-// zelf (goederencode/land/vervoerswijze/gewicht) berekent de caller (mig 446).
-const INTRACOM_REGEL_LABEL: Record<Taal, string> = {
-  nl: 'Stat.nr./Land herkomst/Vervoer/Gewicht',
-  de: 'Stat.nr./Ursprungsland/Transp./Gewicht',
-  fr: 'N° stat./Pays d’origine/Transport/Poids',
-  en: 'Stat. no./Country of origin/Transport/Weight',
+// Korte labels voor de Intrastat-statistiekregel onder een buitenlandse
+// (intracommunautaire) factuurregel — opgesplitst in 2 compacte regels
+// ("Stat.nr.: 57024200   Herkomst: NL   Vervoer: RHE" / "Gewicht: 16 kg   M2: 4.00")
+// i.p.v. 1 lange regel, want die liep bij alle 4 talen over de kolombreedte
+// heen en werd afgekapt (bug gevonden 2026-06-20, Vervoer+Gewicht vielen weg).
+// Alleen de labels zijn taal-afhankelijk; de waarden berekent de caller (mig 446).
+export interface IntracomLabels {
+  statnr: string
+  herkomst: string
+  vervoer: string
+  gewicht: string
 }
 
-export function intracomRegelLabel(taal: Taal): string {
-  return INTRACOM_REGEL_LABEL[taal]
+const INTRACOM_LABELS: Record<Taal, IntracomLabels> = {
+  nl: { statnr: 'Stat.nr.', herkomst: 'Herkomst', vervoer: 'Vervoer', gewicht: 'Gewicht' },
+  de: { statnr: 'Stat.nr.', herkomst: 'Ursprung', vervoer: 'Transport', gewicht: 'Gewicht' },
+  fr: { statnr: 'N° stat.', herkomst: 'Origine', vervoer: 'Transport', gewicht: 'Poids' },
+  en: { statnr: 'Stat no.', herkomst: 'Origin', vervoer: 'Transport', gewicht: 'Weight' },
+}
+
+export function intracomLabels(taal: Taal): IntracomLabels {
+  return INTRACOM_LABELS[taal]
+}
+
+// Label voor de Karpi-eigen artikelcode (4 letters kwaliteit + kleur + xx +
+// afmeting, bv. "PATS23XX060090") als sub-regel onder de klant-titel — die
+// titel toont de kwaliteitnaam in plaats van de code, dus zonder deze regel
+// verdwijnt de Karpi-code (bug gevonden 2026-06-20).
+const KARPI_CODE_LABEL: Record<Taal, string> = {
+  nl: 'Karpi-code', de: 'Karpi-Code', fr: 'Code Karpi', en: 'Karpi code',
+}
+
+export function karpiCodeLabel(taal: Taal): string {
+  return KARPI_CODE_LABEL[taal]
+}
+
+// Label voor het oude-systeem-ordernummer ("Auftrag" op de legacy Basta-
+// factuur) — alleen getoond als orders.oud_order_nr gevuld is (migreerde
+// orders).
+const OUD_ORDER_LABEL: Record<Taal, string> = {
+  nl: 'Oud ordernr', de: 'Auftrag', fr: 'N° commande (ancien)', en: 'Legacy order no.',
+}
+
+export function oudOrderLabel(taal: Taal): string {
+  return OUD_ORDER_LABEL[taal]
 }
 
 // ---------------------------------------------------------------------------
@@ -609,7 +648,11 @@ function drawBtwBlok(
   y -= LINE_H
 
   // Payment conditions
-  drawText(page, `${t.betalingscond}: ${bedrijf.betalingscondities_tekst}`, MARGIN_L, y, regular, 8)
+  drawText(
+    page,
+    `${t.betalingscond}: ${factuur.betalingscondities_tekst ?? bedrijf.betalingscondities_tekst}`,
+    MARGIN_L, y, regular, 8,
+  )
 
   return y
 }
@@ -700,8 +743,9 @@ export async function genereerFactuurPDF(input: FactuurPDFInput): Promise<Uint8A
   const taal: Taal = input.taal ?? 'nl'
   const t = FACTUUR_TEKSTEN[taal]
   // Order-header-labels uitlijnen op de langste vertaalde label (Courier monospace).
+  const auftragLabel = oudOrderLabel(taal)
   const orderLabelBreedte = Math.max(
-    ORDER_LABEL_BREEDTE, t.onsOrdernummer.length, t.uwReferentie.length, t.afleveradres.length,
+    ORDER_LABEL_BREEDTE, t.onsOrdernummer.length, t.uwReferentie.length, t.afleveradres.length, auftragLabel.length,
   )
 
   const pdfDoc = await PDFDocument.create()
@@ -786,11 +830,12 @@ export async function genereerFactuurPDF(input: FactuurPDFInput): Promise<Uint8A
   for (const [orderNr, groepRegels] of groupMap.entries()) {
     const eersteRegel = groepRegels[0]
     const aflever = eersteRegel.afleveradres
-    // 1 blank + Ons Ordernummer + Uw Referentie + (afleveradres: naam + opt. naam_2 + adres + plaats) + 1 blank
+    // 1 blank + Ons Ordernummer + Uw Referentie + opt. Auftrag + (afleveradres: naam + opt. naam_2 + adres + plaats) + 1 blank
     const aflRegels = aflever
       ? 1 + (aflever.naam_2 ? 1 : 0) + 1 + 1 // naam (+naam_2) + adres + postcode/plaats
       : 0
-    const groepHeaderRegels = 1 + 2 + aflRegels + 1
+    const auftragRegels = eersteRegel.oud_order_nr ? 1 : 0
+    const groepHeaderRegels = 1 + 2 + auftragRegels + aflRegels + 1
     ensureRoom(groepHeaderRegels * (LINE_H / MM))
 
     // Blank line
@@ -801,6 +846,13 @@ export async function genereerFactuurPDF(input: FactuurPDFInput): Promise<Uint8A
     cursorY -= LINE_H
     drawText(page, `${padLabel(t.uwReferentie, orderLabelBreedte)}: ${eersteRegel.uw_referentie}`, MARGIN_L, cursorY, regular, 9)
     cursorY -= LINE_H
+
+    // Mig 450: oud-systeem-ordernummer ("Auftrag" op de legacy factuur) — alleen
+    // bij gemigreerde orders (orders.oud_order_nr gevuld).
+    if (eersteRegel.oud_order_nr) {
+      drawText(page, `${padLabel(auftragLabel, orderLabelBreedte)}: ${eersteRegel.oud_order_nr}`, MARGIN_L, cursorY, regular, 9)
+      cursorY -= LINE_H
+    }
 
     if (aflever) {
       // "Afleveradres    : <naam>"

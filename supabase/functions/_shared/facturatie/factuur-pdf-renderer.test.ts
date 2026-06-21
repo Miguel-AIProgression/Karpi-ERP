@@ -78,7 +78,7 @@ Deno.test('naarFactuurPdfInput: zonder product-titel → bestaande artikeltekst 
   })
 })
 
-Deno.test('naarFactuurPdfInput: tapijt-regel → kwaliteitnaam − afmeting, geen Karpi-code, geen dubbele', () => {
+Deno.test('naarFactuurPdfInput: tapijt-regel → kwaliteitnaam − afmeting + Karpi-code als sub-regel', () => {
   const lk = lookups()
   // Vaste-maat tapijt: kwaliteitnaam uit vervolgomschrijving + product-maat.
   lk.producten.set('ART1', {
@@ -95,10 +95,12 @@ Deno.test('naarFactuurPdfInput: tapijt-regel → kwaliteitnaam − afmeting, gee
   const doc = bouwFactuurDocument(FACTUUR, REGELS, lk, { vertegenwoordiger: 'Jan', isTestMessage: false })
   const { regels } = naarFactuurPdfInput(doc)
   assertEquals(regels[0].omschrijving, 'GALAXY - 60x90 cm')
-  assertEquals(regels[0].omschrijving_2, undefined)
+  // Mig 450-fix: Karpi-code verdween volledig bij een klant-titel — komt nu
+  // terug als losse sub-regel zodat de klant zowel artikelnr als Karpi-code ziet.
+  assertEquals(regels[0].omschrijving_2, 'Karpi: BAN21')
 })
 
-Deno.test('naarFactuurPdfInput: tapijt-regel mét afwerking → titel + afwerking als omschrijving_2 (niet stilletjes laten vallen)', () => {
+Deno.test('naarFactuurPdfInput: tapijt-regel mét afwerking → titel + Karpi-code + afwerking als omschrijving_2 (niet stilletjes laten vallen)', () => {
   const lk = lookups()
   lk.orderRegels.set(50, { karpi_code: 'BAN21', gewicht_kg: 7.5, afwerking: 'Breedband - band KK21' })
   lk.producten.set('ART1', {
@@ -109,7 +111,7 @@ Deno.test('naarFactuurPdfInput: tapijt-regel mét afwerking → titel + afwerkin
   const doc = bouwFactuurDocument(FACTUUR, REGELS, lk, { vertegenwoordiger: 'Jan', isTestMessage: false })
   const { regels } = naarFactuurPdfInput(doc)
   assertEquals(regels[0].omschrijving, 'GALAXY - 60x90 cm')
-  assertEquals(regels[0].omschrijving_2, 'Afwerking: Breedband - band KK21')
+  assertEquals(regels[0].omschrijving_2, 'Karpi: BAN21\nAfwerking: Breedband - band KK21')
 })
 
 Deno.test('naarFactuurPdfInput: klant-eigennaam wint van kwaliteitnaam op de titel', () => {

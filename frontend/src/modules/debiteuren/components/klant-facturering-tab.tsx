@@ -118,6 +118,9 @@ export function KlantFactureringTab({ debiteurNr, btwNummer }: Props) {
           <p className="mt-1 text-xs text-slate-400">
             Effectief tarief: <strong>0%</strong> met vermelding &ldquo;BTW verlegd&rdquo; op de factuur.
             Het BTW-percentage hieronder is het NL-tarief en wordt genegeerd zolang verlegd aan staat.
+            Geldt als default voor afleveringen binnen de EU — een order naar een ander land
+            (bv. terug naar NL, of buiten de EU) wordt apart gesignaleerd op de factuur als
+            &ldquo;BTW controle nodig&rdquo; (mig 456).
           </p>
         )}
         {btwWaarschuwing && (

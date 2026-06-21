@@ -16,7 +16,10 @@ import {
   bereekenM2PerStuk,
   bouwIntracomStatRegel,
   fetchGoederencodePerKwaliteit,
+  fetchVervoerderCodePerOrder,
 } from '../_shared/facturatie/intracom-statregel.ts'
+import { fetchBetaalconditie, fetchOrderPdfMeta, metEdiPrefix } from '../_shared/facturatie/factuur-pdf-verrijking.ts'
+import { HARD_BLOCK_REGELINGEN, type BtwRegeling } from '../_shared/btw.ts'
 import {
   naarInvoiceInput,
   type FactuurInvoiceContext,
@@ -75,6 +78,9 @@ interface FactuurRow {
   btw_bedrag: number | string
   totaal: number | string
   btw_verlegd: boolean | null
+  // Mig 456: BTW-regeling-gate (zie metBtwRegelingBlokkade hieronder).
+  btw_regeling: string | null
+  btw_controle_nodig_sinds: string | null
 }
 
 interface FactuurRegelRow {
@@ -273,6 +279,23 @@ serve(async () => {
       const regels = (regelsRes.data ?? []) as FactuurRegelRow[]
       const bedrijf = bedrijfRes.data.waarde as BedrijfConfig
       const debiteur = debiteurRes.data as DebiteurFactuurRow
+
+      // Mig 456 (gecorrigeerd): blokkeer het VERSTUREN als de BTW-regeling
+      // onzeker is — de factuur is al aangemaakt (Concept, zichtbaar met de
+      // "BTW controle nodig"-banner). Niet blokkerend voor eu_b2b_icl zonder
+      // btw-nummer (mig 164-besluit, advisory). Bewust ná de factuur-INSERT/
+      // UPDATE i.p.v. in de SQL-RPC, anders zou de factuur nooit zichtbaar
+      // worden (zie mig 456-correctie-commentaar).
+      if (
+        factuur.btw_controle_nodig_sinds &&
+        HARD_BLOCK_REGELINGEN.has(factuur.btw_regeling as BtwRegeling)
+      ) {
+        throw new Error(
+          `BTW-regeling vereist bevestiging vóór verzending (factuur ${factuur.factuur_nr}, ` +
+            `regeling ${factuur.btw_regeling}) — bevestig op de factuur-pagina.`,
+        )
+      }
+
       const ediConfig = await fetchEdiConfig(supabase, item.debiteur_nr)
       const ediFactuurActief = !!(ediConfig?.transus_actief && ediConfig.factuur_uit)
       // In test_modus blijft de e-mail het echte kanaal: de INVOIC gaat als
@@ -299,9 +322,29 @@ serve(async () => {
         factLandIso2 = (landData as string | null) ?? null
       }
       const pdfTaal = bepaalTaal(factLandIso2)
-      const pdfRegelsMetStatRegel = pdfDoc.header.btw_verlegd
-        ? await metIntracomStatRegels(supabase, pdfDoc, pdfDeel.regels, pdfTaal)
-        : pdfDeel.regels
+
+      // Mig 450: EDI-prefix + "Auftrag" (alle facturen) + debiteur-specifieke
+      // betaalconditie — zelfde verrijking als het on-demand preview-pad
+      // (factuur-pdf/index.ts), hier ook toegepast op de daadwerkelijk
+      // verzonden factuur.
+      const pdfOrderIds = uniqueNumbers(pdfDoc.regels.map((r) => r.order_id))
+      const [orderMetaById, betaalconditie] = await Promise.all([
+        fetchOrderPdfMeta(supabase, pdfOrderIds),
+        fetchBetaalconditie(supabase, pdfDoc.header.debiteur_nr),
+      ])
+      let pdfRegels = pdfDeel.regels.map((br, i) => {
+        const dr = pdfDoc.regels[i]
+        const meta = orderMetaById.get(dr.order_id)
+        return {
+          ...br,
+          uw_referentie: metEdiPrefix(br.uw_referentie, meta),
+          oud_order_nr: meta?.oud_order_nr ?? null,
+        }
+      })
+      if (pdfDoc.header.btw_verlegd) {
+        pdfRegels = await metIntracomStatRegels(supabase, pdfDoc, pdfRegels, pdfTaal)
+      }
+
       const pdfBytes = await genereerFactuurPDF({
         bedrijf: {
           bedrijfsnaam: bedrijf.bedrijfsnaam,
@@ -321,8 +364,8 @@ serve(async () => {
           betalingscondities_tekst: bedrijf.betalingscondities_tekst,
           fax: bedrijf.fax,
         },
-        factuur: pdfDeel.factuur,
-        regels: pdfRegelsMetStatRegel,
+        factuur: { ...pdfDeel.factuur, betalingscondities_tekst: betaalconditie },
+        regels: pdfRegels,
         taal: pdfTaal,
       })
 
@@ -739,6 +782,8 @@ async function metIntracomStatRegels(
     ),
   )
   const goederencodeByKwaliteit = await fetchGoederencodePerKwaliteit(supabase, kwaliteitCodes)
+  const orderIds = uniqueNumbers(doc.regels.map((r) => r.order_id))
+  const vervoerderByOrder = await fetchVervoerderCodePerOrder(supabase, orderIds)
 
   return regels.map((br, i) => {
     const dr = doc.regels[i]
@@ -758,6 +803,7 @@ async function metIntracomStatRegels(
       goederencode,
       gewichtKg: orderRegel?.gewicht_kg,
       m2Totaal: m2PerStuk * br.aantal,
+      vervoerderCode: vervoerderByOrder.get(dr.order_id),
     })
     return {
       ...br,
