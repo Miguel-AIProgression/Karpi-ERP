@@ -8,6 +8,9 @@ import {
   computeReststukkenFromStukken,
   mapSnijplannenToStukken,
   useSnijplannenVoorGroep,
+  useVormSnijtijden,
+  useMoeilijkeKwaliteiten,
+  bepaalSnijtijdMinuten,
 } from '@/modules/snijplanning'
 import { usePlanningConfig } from '@/hooks/use-planning-config'
 import { cn } from '@/lib/utils/cn'
@@ -75,19 +78,29 @@ export function ProductieGroepPage() {
     return (alleStukken ?? []).filter(s => !s.rol_id && (s.status === 'Gepland' || s.status === 'Snijden'))
   }, [alleStukken])
 
-  const totaalTeSnijden = (alleStukken ?? []).filter(s => s.status === 'Gepland' || s.status === 'Snijden').length
+  const teSnijdenStukken = useMemo(
+    () => (alleStukken ?? []).filter(s => s.status === 'Gepland' || s.status === 'Snijden'),
+    [alleStukken],
+  )
+  const totaalTeSnijden = teSnijdenStukken.length
   const totaalGesneden = (alleStukken ?? []).filter(s => s.status === 'Gesneden' || s.status === 'In confectie' || s.status === 'Gereed').length
   const { data: planningConfig } = usePlanningConfig()
+  const { data: vormTarieven } = useVormSnijtijden()
+  const { data: moeilijkeKwaliteiten } = useMoeilijkeKwaliteiten()
 
   const geschatteTijd = useMemo(() => {
-    if (!planningConfig || rolGroepen.length === 0) return null
-    const minuten = (rolGroepen.length * planningConfig.wisseltijd_minuten) + (totaalTeSnijden * planningConfig.snijtijd_minuten)
+    if (!planningConfig || !vormTarieven || !moeilijkeKwaliteiten || rolGroepen.length === 0) return null
+    const snijMinuten = teSnijdenStukken.reduce(
+      (s, p) => s + bepaalSnijtijdMinuten(p.maatwerk_vorm, p.kwaliteit_code, vormTarieven, moeilijkeKwaliteiten),
+      0,
+    )
+    const minuten = (rolGroepen.length * planningConfig.wisseltijd_minuten) + snijMinuten
     if (minuten === 0) return null
     const uren = Math.floor(minuten / 60)
     const min = Math.round(minuten % 60)
     if (uren === 0) return `${min} min`
     return min === 0 ? `${uren} uur` : `${uren} uur ${min} min`
-  }, [planningConfig, rolGroepen.length, totaalTeSnijden])
+  }, [planningConfig, vormTarieven, moeilijkeKwaliteiten, rolGroepen.length, teSnijdenStukken])
 
   if (isLoading) {
     return <PageHeader title="Laden..." />

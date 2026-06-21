@@ -7,7 +7,7 @@ import { formatDate } from '@/lib/utils/formatters'
 import { AFWERKING_MAP } from '@/lib/utils/constants'
 import { getVormDisplay } from '@/lib/utils/vorm-labels'
 import { TE_SNIJDEN } from '@/lib/utils/snijplan-status'
-import { useMasterPlanning } from '@/modules/snijplanning'
+import { useMasterPlanning, useVormSnijtijden, useMoeilijkeKwaliteiten } from '@/modules/snijplanning'
 import type { MasterPlanningRow } from '@/modules/snijplanning'
 import { usePlanningConfig } from '@/hooks/use-planning-config'
 import { useQuery } from '@tanstack/react-query'
@@ -17,6 +17,8 @@ import { berekenAgenda, isoDatum, type RolBlok } from '@/lib/utils/bereken-agend
 import { verzendWeekVoor } from '@/lib/orders/verzendweek'
 import { leverdatumVoorSnijDatum } from '@/lib/orders/levertijd-match'
 import { bepaalMaatwerkFase, MAATWERK_FASE_PRESENTATIE, type MaatwerkFase } from '@/lib/orders/maatwerk-productie'
+import { MateriaaltekortModal } from '@/components/snijplanning/materiaaltekort-modal'
+import { isAchterstalligeEta } from '@/modules/inkoop/lib/inkoop-eta'
 
 type SortKey = 'kwaliteit' | 'snijdatum' | 'leverdatum' | 'klant' | 'status'
 type SortDir = 'asc' | 'desc'
@@ -46,9 +48,12 @@ const STATUS_BADGE: Record<RijStatus, { bg: string; text: string; label: string 
 interface IngedeeldeRol {
   type: 'rol' | 'inkoop' | 'tekort'
   label: string
+  /** Inkoop wacht op een ETA die al verstreken is — koppeling blijft staan (de
+   *  inkoop komt alsnog), maar de datum klopt niet meer en moet bijgewerkt worden. */
+  achterstallig?: boolean
 }
 
-interface MasterPlanningRij extends MasterPlanningRow {
+export interface MasterPlanningRij extends MasterPlanningRow {
   snijDatum: string | null
   ingedeeldeRol: IngedeeldeRol
   statusKolom: RijStatus | null
@@ -98,12 +103,13 @@ function PerDagWeergave({ blokken }: { blokken: RolBlok<MasterPlanningRow>[] }) 
       {perDag.map(([iso, rollen]) => {
         const datum = new Date(`${iso}T00:00:00`)
         const totMin = rollen.reduce((s, b) => s + b.duurMinuten, 0)
+        const totStukken = rollen.reduce((s, b) => s + b.stukken.length, 0)
         return (
           <div key={iso} className="bg-white rounded-[var(--radius)] border border-slate-200 overflow-hidden">
             <div className="flex items-center justify-between px-4 py-2 bg-slate-50 border-b border-slate-200">
               <span className="text-sm font-semibold text-slate-800 capitalize">{fmtDagHeader(datum)}</span>
               <span className="text-xs text-slate-500">
-                {rollen.length} {rollen.length === 1 ? 'rol' : 'rollen'} · {Math.floor(totMin / 60)}u {totMin % 60}m
+                {rollen.length} {rollen.length === 1 ? 'rol' : 'rollen'} · {totStukken} {totStukken === 1 ? 'stuk' : 'stuks'} · {Math.floor(totMin / 60)}u {totMin % 60}m
               </span>
             </div>
             <table className="w-full text-sm">
@@ -175,19 +181,22 @@ export function MasterPlanningPage() {
   const [sortKey, setSortKey] = useState<SortKey>('kwaliteit')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [viewMode, setViewMode] = useState<ViewMode>('tabel')
+  const [toonMateriaaltekort, setToonMateriaaltekort] = useState(false)
 
   const { data: masterPlanning, isLoading } = useMasterPlanning()
   const { data: planningConfig } = usePlanningConfig()
   const { data: werktijden } = useQuery({ queryKey: ['werkagenda-config'], queryFn: fetchWerkagendaConfig })
+  const { data: vormTarieven } = useVormSnijtijden()
+  const { data: moeilijkeKwaliteiten } = useMoeilijkeKwaliteiten()
 
   // Agenda-simulatie alleen op de Gepland/Snijden-subset — al-gesneden stukken
   // horen niet in een toekomst-wachtrij-simulatie.
   const blokken = useMemo(() => {
-    if (!masterPlanning || !planningConfig || !werktijden) return []
+    if (!masterPlanning || !planningConfig || !werktijden || !vormTarieven || !moeilijkeKwaliteiten) return []
     const teSnijdenRows = masterPlanning.rows.filter((r) => (TE_SNIJDEN as readonly string[]).includes(r.status))
     const start = new Date(`${startVanaf}T00:00:00`)
-    return berekenAgenda(teSnijdenRows, werktijden, planningConfig, start)
-  }, [masterPlanning, planningConfig, werktijden, startVanaf])
+    return berekenAgenda(teSnijdenRows, werktijden, planningConfig, vormTarieven, moeilijkeKwaliteiten, start)
+  }, [masterPlanning, planningConfig, werktijden, vormTarieven, moeilijkeKwaliteiten, startVanaf])
 
   const rolEindMap = useMemo(() => new Map(blokken.map((b) => [b.rolId, b.eind])), [blokken])
 
@@ -215,7 +224,11 @@ export function MasterPlanningPage() {
       const ingedeeldeRol: IngedeeldeRol = r.rol_id != null
         ? { type: 'rol', label: r.rolnummer ?? '?' }
         : inkoop
-          ? { type: 'inkoop', label: `${inkoop.inkooporder_nr} · verwacht ${formatDate(inkoop.verwacht_datum)}` }
+          ? {
+              type: 'inkoop',
+              label: `${inkoop.inkooporder_nr} · verwacht ${formatDate(inkoop.verwacht_datum)}`,
+              achterstallig: isAchterstalligeEta(inkoop.verwacht_datum),
+            }
           : { type: 'tekort', label: 'Geen rol, geen inkoop' }
 
       let statusKolom: RijStatus | null = null
@@ -281,6 +294,11 @@ export function MasterPlanningPage() {
     })
     return arr
   }, [filtered, sortKey, sortDir])
+
+  const materiaaltekortRijen = useMemo(
+    () => rijen.filter((r) => r.statusKolom === 'materiaaltekort'),
+    [rijen],
+  )
 
   function toggleSort(key: SortKey) {
     if (sortKey !== key) {
@@ -375,10 +393,11 @@ export function MasterPlanningPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 mb-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 mb-4">
         {[
           { label: 'Openstaande orders', value: summary.openstaandeOrders, cls: 'text-slate-700' },
           { label: 'Totaal karpetten', value: summary.totaalKarpetten, cls: 'text-slate-700' },
+          { label: 'Rollen te pakken', value: blokken.length, cls: 'text-slate-700' },
           { label: 'Snijtijd nodig', value: `${Math.floor(totaalSnijMinuten / 60)}u ${totaalSnijMinuten % 60}m`, cls: 'text-slate-700' },
           { label: 'Backlog klaar op', value: backlogEinde ? formatDate(isoDatum(backlogEinde)) : '—', cls: 'text-slate-700' },
           { label: 'Op schema', value: summary.opSchema, cls: 'text-emerald-600' },
@@ -393,10 +412,18 @@ export function MasterPlanningPage() {
       </div>
 
       {summary.materiaaltekortRegels > 0 && (
-        <div className="flex items-center gap-2 px-4 py-3 mb-4 bg-purple-50 border border-purple-200 rounded-[var(--radius)] text-sm text-purple-700">
+        <button
+          onClick={() => setToonMateriaaltekort(true)}
+          className="flex items-center gap-2 w-full px-4 py-3 mb-4 bg-purple-50 border border-purple-200 rounded-[var(--radius)] text-sm text-purple-700 hover:bg-purple-100 transition-colors text-left"
+        >
           <PackageX size={16} className="flex-shrink-0" />
           <strong>{summary.materiaaltekortRegels}</strong> regels hebben geen rol én geen inkoop — echt materiaaltekort.
-        </div>
+          <span className="text-xs text-purple-500 ml-auto">Klik voor details →</span>
+        </button>
+      )}
+
+      {toonMateriaaltekort && (
+        <MateriaaltekortModal rijen={materiaaltekortRijen} onClose={() => setToonMateriaaltekort(false)} />
       )}
 
       {viewMode === 'per_dag' ? (
@@ -483,9 +510,11 @@ export function MasterPlanningPage() {
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <span className={cn(
-                        r.ingedeeldeRol.type === 'tekort' ? 'text-red-600' : r.ingedeeldeRol.type === 'inkoop' ? 'text-orange-600' : 'text-slate-700',
+                        r.ingedeeldeRol.achterstallig
+                          ? 'text-red-600 font-medium'
+                          : r.ingedeeldeRol.type === 'tekort' ? 'text-red-600' : r.ingedeeldeRol.type === 'inkoop' ? 'text-orange-600' : 'text-slate-700',
                       )}>
-                        {r.ingedeeldeRol.label}
+                        {r.ingedeeldeRol.achterstallig && '⚠ '}{r.ingedeeldeRol.label}
                       </span>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap text-slate-700">

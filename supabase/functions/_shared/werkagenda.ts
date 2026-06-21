@@ -34,6 +34,13 @@ export interface FeestdagVrij {
   naam?: string
 }
 
+export interface Pauze {
+  /** Pauzestart 'HH:mm' */
+  start: string
+  /** Pauze-eind 'HH:mm' */
+  eind: string
+}
+
 export interface Werktijden {
   /** ISO werkdagen 1=ma..7=zo */
   werkdagen: number[]
@@ -41,10 +48,8 @@ export interface Werktijden {
   start: string
   /** Eindtijd 'HH:mm' */
   eind: string
-  /** Pauzestart 'HH:mm' (leeg = geen pauze) */
-  pauzeStart: string
-  /** Pauze-eind 'HH:mm' */
-  pauzeEind: string
+  /** Pauzes per werkdag (leeg = geen pauze). Mogen niet overlappen. */
+  pauzes: Pauze[]
   /** Geblokkeerde dagen (feestdagen, vakantie) */
   vrij: FeestdagVrij[]
 }
@@ -53,8 +58,11 @@ export const STANDAARD_WERKTIJDEN: Werktijden = {
   werkdagen: [1, 2, 3, 4, 5],
   start: '08:00',
   eind: '17:00',
-  pauzeStart: '12:00',
-  pauzeEind: '12:30',
+  pauzes: [
+    { start: '09:30', eind: '09:45' },
+    { start: '12:00', eind: '12:30' },
+    { start: '14:30', eind: '14:45' },
+  ],
   vrij: [],
 }
 
@@ -64,8 +72,8 @@ export function isoDatum(d: Date): string {
 }
 
 function parseHHmm(tijd: string): { uren: number; minuten: number } {
-  // Lege string is legaal voor pauze-velden (heeftPauze guard schakelt de
-  // pauze dan uit); een gevulde maar onparseerbare tijd is een config-fout
+  // Lege string is legaal voor pauze-velden (geparstePauzes filtert die
+  // dan weg); een gevulde maar onparseerbare tijd is een config-fout
   // die NIET stil op 00:00 mag landen (app_config-gedreven sinds mig 384).
   if (!tijd) return { uren: 0, minuten: 0 }
   const m = /^(\d{1,2}):(\d{2})$/.exec(tijd)
@@ -73,8 +81,24 @@ function parseHHmm(tijd: string): { uren: number; minuten: number } {
   return { uren: Number(m[1]), minuten: Number(m[2]) }
 }
 
-function heeftPauze(w: Werktijden): boolean {
-  return Boolean(w.pauzeStart && w.pauzeEind && w.pauzeStart !== w.pauzeEind)
+interface GeparsteUur { uren: number; minuten: number }
+interface GeparstePauze { start: GeparsteUur; eind: GeparsteUur }
+
+/** Geldige pauzes (niet-leeg, start !== eind), geparsed — negeert kapotte/lege rijen. */
+function geparstePauzes(w: Werktijden): GeparstePauze[] {
+  return (w.pauzes ?? [])
+    .filter((p) => p.start && p.eind && p.start !== p.eind)
+    .map((p) => ({ start: parseHHmm(p.start), eind: parseHHmm(p.eind) }))
+}
+
+/** Eerstvolgende pauzestart ná `vanaf` op dezelfde kalenderdag, of null. */
+function volgendePauzeStart(vanaf: Date, pauzes: GeparstePauze[]): Date | null {
+  let beste: Date | null = null
+  for (const p of pauzes) {
+    const pS = new Date(vanaf); pS.setHours(p.start.uren, p.start.minuten, 0, 0)
+    if (pS > vanaf && (!beste || pS < beste)) beste = pS
+  }
+  return beste
 }
 
 export function isWerkdag(d: Date, w: Werktijden): boolean {
@@ -155,9 +179,7 @@ export function volgendeWerkminuut(vanaf: Date, w: Werktijden): Date {
   const d = new Date(vanaf.getTime())
   const { uren: sU, minuten: sM } = parseHHmm(w.start)
   const { uren: eU, minuten: eM } = parseHHmm(w.eind)
-  const pStart = parseHHmm(w.pauzeStart)
-  const pEind = parseHHmm(w.pauzeEind)
-  const pauze = heeftPauze(w)
+  const pauzes = geparstePauzes(w)
 
   for (let i = 0; i < 365; i++) {
     if (isWerkdag(d, w)) {
@@ -165,10 +187,16 @@ export function volgendeWerkminuut(vanaf: Date, w: Werktijden): Date {
       const eindDag = new Date(d); eindDag.setHours(eU, eM, 0, 0)
       if (d < startDag) d.setTime(startDag.getTime())
       if (d < eindDag) {
-        if (pauze) {
-          const pS = new Date(d); pS.setHours(pStart.uren, pStart.minuten, 0, 0)
-          const pE = new Date(d); pE.setHours(pEind.uren, pEind.minuten, 0, 0)
-          if (d >= pS && d < pE) d.setTime(pE.getTime())
+        // Pauzes zijn niet-overlappend, maar na het skippen van de ene
+        // kan d in een latere pauze terechtkomen — loop tot stabiel.
+        let veranderd = true
+        while (veranderd) {
+          veranderd = false
+          for (const p of pauzes) {
+            const pS = new Date(d); pS.setHours(p.start.uren, p.start.minuten, 0, 0)
+            const pE = new Date(d); pE.setHours(p.eind.uren, p.eind.minuten, 0, 0)
+            if (d >= pS && d < pE) { d.setTime(pE.getTime()); veranderd = true }
+          }
         }
         return d
       }
@@ -184,9 +212,7 @@ export function werkminutenTussen(van: Date, tot: Date, w: Werktijden): number {
   if (tot <= van) return 0
   const { uren: sU, minuten: sM } = parseHHmm(w.start)
   const { uren: eU, minuten: eM } = parseHHmm(w.eind)
-  const pStart = parseHHmm(w.pauzeStart)
-  const pEind = parseHHmm(w.pauzeEind)
-  const pauze = heeftPauze(w)
+  const pauzes = geparstePauzes(w)
 
   let totaal = 0
   const d = new Date(van); d.setHours(0, 0, 0, 0)
@@ -199,9 +225,9 @@ export function werkminutenTussen(van: Date, tot: Date, w: Werktijden): number {
       const blokEind = einde < dagEind ? einde : dagEind
       if (blokEind > blokStart) {
         let mins = Math.floor((blokEind.getTime() - blokStart.getTime()) / 60_000)
-        if (pauze) {
-          const pS = new Date(d); pS.setHours(pStart.uren, pStart.minuten, 0, 0)
-          const pE = new Date(d); pE.setHours(pEind.uren, pEind.minuten, 0, 0)
+        for (const p of pauzes) {
+          const pS = new Date(d); pS.setHours(p.start.uren, p.start.minuten, 0, 0)
+          const pE = new Date(d); pE.setHours(p.eind.uren, p.eind.minuten, 0, 0)
           const overlapStart = blokStart > pS ? blokStart : pS
           const overlapEind = blokEind < pE ? blokEind : pE
           if (overlapEind > overlapStart) {
@@ -221,16 +247,12 @@ export function plusWerkminuten(start: Date, minuten: number, w: Werktijden): Da
   let huidig = volgendeWerkminuut(start, w)
   let resterend = minuten
   const { uren: eU, minuten: eM } = parseHHmm(w.eind)
-  const pStart = parseHHmm(w.pauzeStart)
-  const pauze = heeftPauze(w)
+  const pauzes = geparstePauzes(w)
 
   while (resterend > 0) {
     const eindDag = new Date(huidig); eindDag.setHours(eU, eM, 0, 0)
-    let blokEind = eindDag
-    if (pauze) {
-      const pS = new Date(huidig); pS.setHours(pStart.uren, pStart.minuten, 0, 0)
-      if (huidig < pS && pS < eindDag) blokEind = pS
-    }
+    const pStart = volgendePauzeStart(huidig, pauzes)
+    const blokEind = pStart && pStart < eindDag ? pStart : eindDag
     const beschikbaar = Math.floor((blokEind.getTime() - huidig.getTime()) / 60_000)
     if (resterend <= beschikbaar) {
       return new Date(huidig.getTime() + resterend * 60_000)

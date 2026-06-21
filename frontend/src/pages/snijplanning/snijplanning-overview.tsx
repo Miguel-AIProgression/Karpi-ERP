@@ -4,15 +4,16 @@ import { Search, Scissors, Calendar, CheckCircle2, AlertTriangle, List, Truck, G
 import { PageHeader } from '@/components/layout/page-header'
 import { GroepAccordion } from '@/components/snijplanning/groep-accordion'
 import { WachtOpInkoopSectie } from '@/components/snijplanning/wacht-op-inkoop-sectie'
+import { TeBeoordelenSectie } from '@/components/snijplanning/te-beoordelen-sectie'
 import { RolUitvoerModal } from '@/components/snijplanning/rol-uitvoer-modal'
 import { AutoPlanningConfig } from '@/components/snijplanning/auto-planning-config'
 import { AgendaWeergave } from '@/components/snijplanning/agenda-weergave'
 import { cn } from '@/lib/utils/cn'
-import { useSnijplanningGroepen, useTekortAnalyse, useWachtOpInkoopAnalyse, useSnijplanningKpis } from '@/modules/snijplanning'
+import { useSnijplanningGroepen, useTekortAnalyse, useWachtOpInkoopAnalyse, useSnijplanningKpis, useConceptVoorstellen } from '@/modules/snijplanning'
 import { usePlanningConfig } from '@/hooks/use-planning-config'
 import { berekenTotDatum } from '@/components/snijplanning/week-filter'
 
-const SNIJPLAN_STATUSES = ['Te snijden', 'Tekort', 'Wacht op inkoop']
+const SNIJPLAN_STATUSES = ['Te snijden', 'Tekort', 'Wacht op inkoop', 'Te beoordelen']
 type SortMode = 'alfabetisch' | 'leverdatum'
 
 function sorteerGroepen<T extends { kwaliteit_code: string | null; kleur_code: string | null; vroegste_afleverdatum: string | null }>(
@@ -83,6 +84,7 @@ export function SnijplanningOverviewPage() {
   const { data: tekortAnalyseMap } = useTekortAnalyse()
   const { data: wachtOpInkoopMap } = useWachtOpInkoopAnalyse()
   const { data: kpis } = useSnijplanningKpis(totDatum)
+  const { data: conceptVoorstellen } = useConceptVoorstellen()
 
   const wachtOpInkoopGroepen = useMemo(
     () => Array.from(wachtOpInkoopMap?.entries() ?? []),
@@ -311,7 +313,14 @@ export function SnijplanningOverviewPage() {
         {SNIJPLAN_STATUSES.map((s) => {
           const isTekort = s === 'Tekort'
           const isWachtOpInkoop = s === 'Wacht op inkoop'
-          const count = isTekort ? tekortGroepen.length : isWachtOpInkoop ? wachtOpInkoopGroepen.length : teSnijdenCount
+          const isTeBeoordelen = s === 'Te beoordelen'
+          const count = isTekort
+            ? tekortGroepen.length
+            : isWachtOpInkoop
+            ? wachtOpInkoopGroepen.length
+            : isTeBeoordelen
+            ? conceptVoorstellen?.length ?? 0
+            : teSnijdenCount
           const isActive = status === s
           return (
             <button
@@ -323,23 +332,29 @@ export function SnijplanningOverviewPage() {
                   ? 'bg-red-500 text-white font-medium'
                   : isActive && isWachtOpInkoop
                   ? 'bg-orange-500 text-white font-medium'
+                  : isActive && isTeBeoordelen
+                  ? 'bg-purple-500 text-white font-medium'
                   : isActive
                   ? 'bg-terracotta-500 text-white font-medium'
                   : isTekort && count > 0
                   ? 'bg-red-50 text-red-700 hover:bg-red-100'
                   : isWachtOpInkoop && count > 0
                   ? 'bg-orange-50 text-orange-700 hover:bg-orange-100'
+                  : isTeBeoordelen && count > 0
+                  ? 'bg-purple-50 text-purple-700 hover:bg-purple-100'
                   : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               )}
             >
               {isTekort && <AlertTriangle size={12} />}
               {isWachtOpInkoop && <Truck size={12} />}
+              {isTeBeoordelen && <AlertTriangle size={12} />}
               {s}
               <span className={cn(
                 'text-xs px-1.5 py-0.5 rounded-full',
                 isActive ? 'bg-white/20'
                   : isTekort && count > 0 ? 'bg-red-200'
                   : isWachtOpInkoop && count > 0 ? 'bg-orange-200'
+                  : isTeBeoordelen && count > 0 ? 'bg-purple-200'
                   : 'bg-slate-200'
               )}>
                 {count}
@@ -350,7 +365,9 @@ export function SnijplanningOverviewPage() {
       </div>
 
       {/* Groepen lijst — gegroepeerd per kwaliteit, altijd uitgeklapt */}
-      {status === 'Wacht op inkoop' ? (
+      {status === 'Te beoordelen' ? (
+        <TeBeoordelenSectie voorstellen={conceptVoorstellen ?? []} />
+      ) : status === 'Wacht op inkoop' ? (
         wachtOpInkoopGroepen.length === 0 ? (
           <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-12 text-center text-slate-400">
             Geen stukken wachten op inkoop

@@ -14,6 +14,8 @@ export interface MaatwerkVormRow {
   naam: string
   afmeting_type: 'lengte_breedte' | 'diameter'
   toeslag: number
+  /** Snijtijd in minuten voor deze vorm (mig 460) — zie _shared/snijtijd.ts. */
+  snijtijd_minuten: number
   actief: boolean
   volgorde: number
 }

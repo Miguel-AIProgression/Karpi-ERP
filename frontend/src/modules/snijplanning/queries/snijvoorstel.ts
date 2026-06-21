@@ -67,6 +67,55 @@ export async function rejectSnijvoorstel(voorstelId: number) {
   if (error) throw error
 }
 
+/** Eén regel binnen `verdringing_info.wacht_op_inkoop` (mig 459) — gespiegeld
+ *  aan de auto-plan-groep-respons, inclusief de al-berekende achterstallig-vlag. */
+export interface VerdringingWachtOpInkoopRegel {
+  inkooporder_nr: string
+  gebruikte_lengte_cm: number
+  te_leveren_cm: number
+  resterend_cm: number
+  verwacht_datum: string | null
+  is_achterstallig: boolean
+}
+
+export interface VerdrongenOrder {
+  order_id: number
+  order_nr: string | null
+  snijplan_id: number
+  snijplan_nr: string | null
+}
+
+export interface VerdringingInfo {
+  reden: string
+  verdrongen_orders: VerdrongenOrder[]
+  wacht_op_inkoop: { aantal_stukken: number; regels: VerdringingWachtOpInkoopRegel[] } | null
+}
+
+/** Een 'concept' gebleven snijvoorstel (verdringingsrisico of rode FIFO-badge,
+ *  mig 459) — wacht op handmatige beoordeling door een planner. */
+export interface ConceptVoorstelRow {
+  id: number
+  voorstel_nr: string
+  kwaliteit_code: string
+  kleur_code: string
+  totaal_stukken: number
+  totaal_rollen: number
+  afval_percentage: number
+  fifo_badge: string | null
+  verdringing_info: VerdringingInfo | null
+  created_at: string
+}
+
+export async function fetchConceptVoorstellen(): Promise<ConceptVoorstelRow[]> {
+  const { data, error } = await supabase
+    .from('snijvoorstellen')
+    .select('id, voorstel_nr, kwaliteit_code, kleur_code, totaal_stukken, totaal_rollen, afval_percentage, fifo_badge, verdringing_info, created_at')
+    .eq('status', 'concept')
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  return (data ?? []) as ConceptVoorstelRow[]
+}
+
 /** Fetch the most recent goedgekeurd voorstel for a kwaliteit+kleur group.
  *  Returns voorstel + plaatsingen + rollen info, reconstructed as SnijvoorstelResponse. */
 export async function fetchGoedgekeurdVoorstel(

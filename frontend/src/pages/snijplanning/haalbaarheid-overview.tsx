@@ -4,7 +4,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown, Search, AlertTriangle } from 'lucide-r
 import { PageHeader } from '@/components/layout/page-header'
 import { cn } from '@/lib/utils/cn'
 import { formatDate } from '@/lib/utils/formatters'
-import { useMaatwerkHaalbaarheid } from '@/modules/snijplanning'
+import { useMaatwerkHaalbaarheid, useVormSnijtijden, useMoeilijkeKwaliteiten } from '@/modules/snijplanning'
 import type { MaatwerkHaalbaarheidRow } from '@/modules/snijplanning'
 import { usePlanningConfig } from '@/hooks/use-planning-config'
 import { useQuery } from '@tanstack/react-query'
@@ -62,6 +62,8 @@ export function HaalbaarheidOverviewPage() {
   const { data: haalbaarheid, isLoading } = useMaatwerkHaalbaarheid()
   const { data: planningConfig } = usePlanningConfig()
   const { data: werktijden } = useQuery({ queryKey: ['werkagenda-config'], queryFn: fetchWerkagendaConfig })
+  const { data: vormTarieven } = useVormSnijtijden()
+  const { data: moeilijkeKwaliteiten } = useMoeilijkeKwaliteiten()
 
   // Eén globale agenda over ALLE al-geplande stukken (alle kwaliteit/kleur-groepen
   // samen, ongebonden door een horizon) — exact de wachtrij zoals de snijder hem
@@ -69,10 +71,10 @@ export function HaalbaarheidOverviewPage() {
   // werkdag landt. Levert per rol een echte eind-datum: de kern van "wanneer wordt
   // dit nou echt gesneden", die nergens als los veld in de data bestaat.
   const rolEindMap = useMemo(() => {
-    if (!haalbaarheid || !planningConfig || !werktijden) return new Map<number, Date>()
-    const blokken = berekenAgenda(haalbaarheid.rows, werktijden, planningConfig)
+    if (!haalbaarheid || !planningConfig || !werktijden || !vormTarieven || !moeilijkeKwaliteiten) return new Map<number, Date>()
+    const blokken = berekenAgenda(haalbaarheid.rows, werktijden, planningConfig, vormTarieven, moeilijkeKwaliteiten)
     return new Map(blokken.map((b) => [b.rolId, b.eind]))
-  }, [haalbaarheid, planningConfig, werktijden])
+  }, [haalbaarheid, planningConfig, werktijden, vormTarieven, moeilijkeKwaliteiten])
 
   const rijen = useMemo<HaalbaarheidsRij[]>(() => {
     if (!haalbaarheid || !planningConfig || !werktijden) return []

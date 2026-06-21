@@ -12,7 +12,10 @@ import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supa
 import {
   fetchUitwisselbareParen,
   getKleurVariants,
+  fetchVormSnijtijden,
+  fetchMoeilijkeKwaliteiten,
 } from '../_shared/db-helpers.ts'
+import { bepaalSnijtijdMinuten } from '../_shared/snijtijd.ts'
 import {
   rolHeeftPlek,
   snijDatumVoorRol,
@@ -67,7 +70,6 @@ const DEFAULT_CONFIG: LevertijdConfig = {
   max_rollen_per_dag_streef: 20,
   capaciteit_marge_pct: 0,
   wisseltijd_minuten: 15,
-  snijtijd_minuten: 5,
   maatwerk_weken: 4,
   spoed_buffer_uren: 4,
   spoed_toeslag_bedrag: 50,
@@ -91,7 +93,6 @@ async function fetchConfig(supabase: SupabaseClient): Promise<LevertijdConfig> {
       if (typeof w.max_rollen_per_dag_streef === 'number') cfg.max_rollen_per_dag_streef = w.max_rollen_per_dag_streef
       if (typeof w.capaciteit_marge_pct === 'number') cfg.capaciteit_marge_pct = w.capaciteit_marge_pct
       if (typeof w.wisseltijd_minuten === 'number') cfg.wisseltijd_minuten = w.wisseltijd_minuten
-      if (typeof w.snijtijd_minuten === 'number') cfg.snijtijd_minuten = w.snijtijd_minuten
       if (typeof w.logistieke_buffer_dagen === 'number') cfg.logistieke_buffer_dagen = w.logistieke_buffer_dagen
       if (typeof w.backlog_minimum_m2 === 'number') cfg.backlog_minimum_m2 = w.backlog_minimum_m2
       if (typeof w.spoed_buffer_uren === 'number') cfg.spoed_buffer_uren = w.spoed_buffer_uren
@@ -192,6 +193,8 @@ async function fetchBestaandePlaatsingen(
 async function fetchWerkagendaInput(
   supabase: SupabaseClient,
   cfg: LevertijdConfig,
+  vormTarieven: Map<string, number>,
+  moeilijkeKwaliteiten: Set<string>,
 ): Promise<RolAgendaInput[]> {
   // Moet overeenkomen met PLANNING_STATUS_IN_PIPELINE. Alleen 'Snijden' filteren
   // mist de 'Gepland' backlog en dan valt de match-tak door naar
@@ -199,7 +202,7 @@ async function fetchWerkagendaInput(
   // verleden uitkomen als een bestaande plaatsing al overtijd was.
   const { data, error } = await supabase
     .from('snijplannen')
-    .select('rol_id, order_regel:order_regels(orders(afleverdatum))')
+    .select('rol_id, order_regel:order_regels(maatwerk_vorm, maatwerk_kwaliteit_code, orders(afleverdatum))')
     .in('status', PLANNING_STATUS_IN_PIPELINE)
     .not('rol_id', 'is', null)
     .is('gesneden_datum', null)
@@ -210,14 +213,22 @@ async function fetchWerkagendaInput(
     return v ?? null
   }
 
-  const perRol = new Map<number, { stuks: number; vroegsteAfleverdatum: string | null }>()
+  const perRol = new Map<number, { snijMinuten: number; vroegsteAfleverdatum: string | null }>()
   for (const r of (data ?? []) as Array<Record<string, unknown>>) {
     const rolId = r.rol_id as number
-    const orderRegel = unwrap(r.order_regel as { orders: unknown } | { orders: unknown }[] | null)
+    const orderRegel = unwrap(
+      r.order_regel as { orders: unknown; maatwerk_vorm: string | null; maatwerk_kwaliteit_code: string | null }
+        | Array<{ orders: unknown; maatwerk_vorm: string | null; maatwerk_kwaliteit_code: string | null }> | null,
+    )
     const order = orderRegel ? unwrap(orderRegel.orders as { afleverdatum: string | null } | { afleverdatum: string | null }[] | null) : null
     const afl = order?.afleverdatum ?? null
-    const huidig = perRol.get(rolId) ?? { stuks: 0, vroegsteAfleverdatum: null }
-    huidig.stuks++
+    const huidig = perRol.get(rolId) ?? { snijMinuten: 0, vroegsteAfleverdatum: null }
+    huidig.snijMinuten += bepaalSnijtijdMinuten(
+      orderRegel?.maatwerk_vorm ?? null,
+      orderRegel?.maatwerk_kwaliteit_code ?? null,
+      vormTarieven,
+      moeilijkeKwaliteiten,
+    )
     if (afl && (!huidig.vroegsteAfleverdatum || afl < huidig.vroegsteAfleverdatum)) {
       huidig.vroegsteAfleverdatum = afl
     }
@@ -227,7 +238,7 @@ async function fetchWerkagendaInput(
   return Array.from(perRol.entries()).map(([rolId, info]) => ({
     rolId,
     vroegsteAfleverdatum: info.vroegsteAfleverdatum,
-    duurMinuten: cfg.wisseltijd_minuten + info.stuks * cfg.snijtijd_minuten,
+    duurMinuten: cfg.wisseltijd_minuten + info.snijMinuten,
   }))
 }
 
@@ -295,9 +306,11 @@ serve(async (req) => {
     // terug — voor de rollen-OR-clause moeten we per paar nog beide kleur-
     // varianten ("12" + "12.0") uitvouwen, anders missen we rollen waarvan
     // de kleur_code nog niet gemigreerd is.
-    const [cfg, uitwisselbareParen] = await Promise.all([
+    const [cfg, uitwisselbareParen, vormTarieven, moeilijkeKwaliteiten] = await Promise.all([
       fetchConfig(supabase),
       fetchUitwisselbareParen(supabase, kwaliteit_code, kleur_code),
+      fetchVormSnijtijden(supabase),
+      fetchMoeilijkeKwaliteiten(supabase),
     ])
 
     const uitwisselbarePairs = uitwisselbareParen.flatMap((p) =>
@@ -332,7 +345,7 @@ serve(async (req) => {
     const [rollen, backlogRaw, agendaInput] = await Promise.all([
       fetchKandidaatRollen(supabase, uitwisselbareCodes, kleurVariants, uitwisselbarePairs, minSide),
       fetchBacklog(supabase, kwaliteit_code, kleur_code),
-      fetchWerkagendaInput(supabase, cfg),
+      fetchWerkagendaInput(supabase, cfg, vormTarieven, moeilijkeKwaliteiten),
     ])
 
     // Werkagenda: bepaal voor elke wachtende rol wanneer die fysiek gesneden wordt.
@@ -397,15 +410,27 @@ serve(async (req) => {
     const fetchBezetting = async (week: number, jaar: number) => {
       const { data } = await supabase
         .from('snijplannen')
-        .select('id, rol_id')
+        .select('id, rol_id, order_regel:order_regels(maatwerk_vorm, maatwerk_kwaliteit_code)')
         .eq('planning_week', week)
         .eq('planning_jaar', jaar)
         .neq('status', 'Geannuleerd')
-      return (data ?? []) as Array<{ id: number; rol_id: number | null }>
+      function unwrapRegel<T>(v: T | T[] | null | undefined): T | null {
+        return Array.isArray(v) ? (v[0] ?? null) : (v ?? null)
+      }
+      return ((data ?? []) as Array<Record<string, unknown>>).map((r) => {
+        const regel = unwrapRegel(r.order_regel as { maatwerk_vorm: string | null; maatwerk_kwaliteit_code: string | null }
+          | Array<{ maatwerk_vorm: string | null; maatwerk_kwaliteit_code: string | null }> | null)
+        return {
+          id: r.id as number,
+          rol_id: r.rol_id as number | null,
+          maatwerk_vorm: regel?.maatwerk_vorm ?? null,
+          kwaliteit_code: regel?.maatwerk_kwaliteit_code ?? null,
+        }
+      })
     }
     const [capaciteit, capaciteitNu] = await Promise.all([
-      capaciteitsCheck({ start_week: snij.week, start_jaar: snij.jaar, cfg, fetchBezetting }),
-      capaciteitsCheck({ start_week: nu.week, start_jaar: nu.jaar, cfg, fetchBezetting }),
+      capaciteitsCheck({ start_week: snij.week, start_jaar: snij.jaar, cfg, fetchBezetting, vormTarieven, moeilijkeKwaliteiten }),
+      capaciteitsCheck({ start_week: nu.week, start_jaar: nu.jaar, cfg, fetchBezetting, vormTarieven, moeilijkeKwaliteiten }),
     ])
 
     const backlog = backlogIsVoldoende(backlogRaw, nieuwStukM2, cfg.backlog_minimum_m2)
@@ -423,7 +448,7 @@ serve(async (req) => {
     })
 
     // ---- Stap 4: Spoed-evaluatie (altijd, voor UI-toggle) ----
-    const nieuwStukDuur = cfg.wisseltijd_minuten + cfg.snijtijd_minuten
+    const nieuwStukDuur = cfg.wisseltijd_minuten + bepaalSnijtijdMinuten(vorm ?? null, kwaliteit_code, vormTarieven, moeilijkeKwaliteiten)
     response.spoed = evalueerSpoed(werkagenda, nieuwStukDuur, cfg, new Date(), cfg.werktijden)
 
     return jsonResponse(response, 200)

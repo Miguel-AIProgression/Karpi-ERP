@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { Settings, Save, CheckCircle2, Clock, Truck } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { PageHeader } from '@/components/layout/page-header'
@@ -420,17 +421,12 @@ export function ProductieInstellingenPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">
-                Snijtijd per karpet (minuten)
+                Snijtijd per karpet
               </label>
-              <input
-                type="number"
-                min={0}
-                max={60}
-                value={form.snijtijd_minuten}
-                onChange={(e) => update('snijtijd_minuten', Number(e.target.value))}
-                className="w-32 px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
-              />
-              <p className="mt-1 text-xs text-slate-400">Gemiddelde snijtijd per individueel karpet</p>
+              <p className="text-sm text-slate-500">
+                Sinds mig 460 per vorm ingesteld (Rechthoek, Rond, Ovaal, ...) i.p.v. één vlak tarief — beheer dit op{' '}
+                <Link to="/instellingen/vormen" className="text-terracotta-600 hover:underline">de Vormen-pagina</Link>.
+              </p>
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">

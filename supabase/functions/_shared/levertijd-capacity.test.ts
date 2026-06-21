@@ -25,7 +25,6 @@ function defaultConfig(overrides: Partial<LevertijdConfig> = {}): LevertijdConfi
     max_rollen_per_dag_streef: 20,
     capaciteit_marge_pct: 0,
     wisseltijd_minuten: 15,
-    snijtijd_minuten: 5,
     maatwerk_weken: 4,
     spoed_buffer_uren: 4,
     spoed_toeslag_bedrag: 50,
@@ -34,6 +33,17 @@ function defaultConfig(overrides: Partial<LevertijdConfig> = {}): LevertijdConfi
     werktijden: STANDAARD_WERKTIJDEN,
     ...overrides,
   }
+}
+
+// Vlak 5 min/stuk via 'rechthoek' — alle test-rijen zijn rechthoek, dus dit
+// reproduceert het oude vlakke snijtijd_minuten-gedrag voor de bestaande
+// aantallen-asserties (mig 460: snijtijd is nu per-vorm, zie snijtijd.ts).
+const vormTarieven = new Map<string, number>([['rechthoek', 5]])
+const moeilijkeKwaliteiten = new Set<string>()
+
+/** Bouw een BezettingsRow met de mig-460-velden, default op rechthoek. */
+function rij(id: number, rolId: number | null): BezettingsRow {
+  return { id, rol_id: rolId, maatwerk_vorm: 'rechthoek', kwaliteit_code: null }
 }
 
 // ---------------------------------------------------------------------------
@@ -89,19 +99,19 @@ Deno.test('nextWeek: laatste ISO-week → eerste van volgend jaar', () => {
 // ---------------------------------------------------------------------------
 
 Deno.test('bezetting: lege input → 0', () => {
-  const result = bezetting([], defaultConfig())
+  const result = bezetting([], defaultConfig(), vormTarieven, moeilijkeKwaliteiten)
   assertEquals(result, { stuks: 0, unieke_rollen: 0, minuten: 0 })
 })
 
 Deno.test('bezetting: 5 stukken op 2 unieke rollen', () => {
   const rows: BezettingsRow[] = [
-    { id: 1, rol_id: 10 },
-    { id: 2, rol_id: 10 },
-    { id: 3, rol_id: 11 },
-    { id: 4, rol_id: 11 },
-    { id: 5, rol_id: 11 },
+    rij(1, 10),
+    rij(2, 10),
+    rij(3, 11),
+    rij(4, 11),
+    rij(5, 11),
   ]
-  const result = bezetting(rows, defaultConfig())
+  const result = bezetting(rows, defaultConfig(), vormTarieven, moeilijkeKwaliteiten)
   assertEquals(result.stuks, 5)
   assertEquals(result.unieke_rollen, 2)
   // 2 wissels × 15 + 5 stuks × 5 = 55
@@ -110,12 +120,33 @@ Deno.test('bezetting: 5 stukken op 2 unieke rollen', () => {
 
 Deno.test('bezetting: rol_id null wordt niet geteld als unieke rol', () => {
   const rows: BezettingsRow[] = [
-    { id: 1, rol_id: null },
-    { id: 2, rol_id: null },
+    rij(1, null),
+    rij(2, null),
   ]
-  const result = bezetting(rows, defaultConfig())
+  const result = bezetting(rows, defaultConfig(), vormTarieven, moeilijkeKwaliteiten)
   assertEquals(result.unieke_rollen, 0)
   assertEquals(result.stuks, 2)
+})
+
+Deno.test('bezetting: vorm-tarief weegt zwaarder dan rechthoek', () => {
+  const lokaleTarieven = new Map<string, number>([['rechthoek', 5], ['rond', 7.5]])
+  const rows: BezettingsRow[] = [
+    { id: 1, rol_id: 10, maatwerk_vorm: 'rond', kwaliteit_code: null },
+  ]
+  const result = bezetting(rows, defaultConfig(), lokaleTarieven, moeilijkeKwaliteiten)
+  // 1 wissel × 15 + 1 stuk × 7,5 = 22,5
+  assertEquals(result.minuten, 22.5)
+})
+
+Deno.test('bezetting: moeilijke kwaliteit telt rechthoek niet als gekort tarief', () => {
+  const lokaleTarieven = new Map<string, number>([['rechthoek', 2.5]])
+  const lokaleMoeilijk = new Set<string>(['MARI'])
+  const rows: BezettingsRow[] = [
+    { id: 1, rol_id: 10, maatwerk_vorm: 'rechthoek', kwaliteit_code: 'MARI' },
+  ]
+  const result = bezetting(rows, defaultConfig(), lokaleTarieven, lokaleMoeilijk)
+  // 1 wissel × 15 + 1 stuk × 5 (uitzondering, niet de 2,5 rechthoek-korting) = 20
+  assertEquals(result.minuten, 20)
 })
 
 // ---------------------------------------------------------------------------
@@ -128,7 +159,9 @@ Deno.test('capaciteitsCheck: ruimte in eerste week → geen iteratie', async () 
     start_week: 17,
     start_jaar: 2026,
     cfg,
-    fetchBezetting: async () => Array.from({ length: 5 }, (_, i) => ({ id: i, rol_id: 1 })),
+    vormTarieven,
+    moeilijkeKwaliteiten,
+    fetchBezetting: async () => Array.from({ length: 5 }, (_, i) => rij(i, 1)),
   })
   assertEquals(result.iteraties, 0)
   assertEquals(result.week, 17)
@@ -142,11 +175,13 @@ Deno.test('capaciteitsCheck: vol in eerste week → schuift door naar volgende',
     start_week: 17,
     start_jaar: 2026,
     cfg,
+    vormTarieven,
+    moeilijkeKwaliteiten,
     fetchBezetting: async (week) => {
       calls++
       // Week 17 vol, week 18 leeg
       return week === 17
-        ? Array.from({ length: 10 }, (_, i) => ({ id: i, rol_id: 1 }))
+        ? Array.from({ length: 10 }, (_, i) => rij(i, 1))
         : []
     },
   })
@@ -162,7 +197,9 @@ Deno.test('capaciteitsCheck: alle weken vol → return laatste met negatieve rui
     start_week: 17,
     start_jaar: 2026,
     cfg,
-    fetchBezetting: async () => Array.from({ length: 15 }, (_, i) => ({ id: i, rol_id: 1 })),
+    vormTarieven,
+    moeilijkeKwaliteiten,
+    fetchBezetting: async () => Array.from({ length: 15 }, (_, i) => rij(i, 1)),
   })
   assertEquals(result.iteraties, 6)
   assert(result.ruimte_stuks <= 0)
@@ -174,6 +211,8 @@ Deno.test('capaciteitsCheck: marge_pct verlaagt max_stuks', async () => {
     start_week: 17,
     start_jaar: 2026,
     cfg,
+    vormTarieven,
+    moeilijkeKwaliteiten,
     fetchBezetting: async () => [],
   })
   assertEquals(result.max_stuks, 80)
@@ -191,7 +230,9 @@ Deno.test('capaciteitsCheck: binnen streefwaarde → binnen_streef true, geen es
     start_week: 17,
     start_jaar: 2026,
     cfg,
-    fetchBezetting: async () => Array.from({ length: 300 }, (_, i) => ({ id: i, rol_id: 1 })),
+    vormTarieven,
+    moeilijkeKwaliteiten,
+    fetchBezetting: async () => Array.from({ length: 300 }, (_, i) => rij(i, 1)),
   })
   assertEquals(result.iteraties, 0)
   assertEquals(result.binnen_streef, true)
@@ -206,9 +247,11 @@ Deno.test('capaciteitsCheck: tussen streef en max → automatische escalatie, ge
     start_week: 17,
     start_jaar: 2026,
     cfg,
+    vormTarieven,
+    moeilijkeKwaliteiten,
     fetchBezetting: async () => {
       calls++
-      return Array.from({ length: 370 }, (_, i) => ({ id: i, rol_id: 1 }))
+      return Array.from({ length: 370 }, (_, i) => rij(i, 1))
     },
   })
   // Week 17 zelf levert ruimte op (370 < 400) — geen doorschuif naar week 18 nodig,
@@ -226,9 +269,11 @@ Deno.test('capaciteitsCheck: rollen boven streefwaarde blokkeert niet, alleen ge
     start_week: 17, // maandag 2026-04-20, normale 5-daagse week
     start_jaar: 2026,
     cfg,
+    vormTarieven,
+    moeilijkeKwaliteiten,
     // 10 stukken op 10 unieke rollen → ruim boven de rollen-streef van 5, maar
     // stuks-capaciteit (350) is niet overschreden → resultaat blokkeert niet.
-    fetchBezetting: async () => Array.from({ length: 10 }, (_, i) => ({ id: i, rol_id: i })),
+    fetchBezetting: async () => Array.from({ length: 10 }, (_, i) => rij(i, i)),
   })
   assertEquals(result.iteraties, 0)
   assertEquals(result.huidig_rollen, 10)

@@ -30,6 +30,9 @@ export {
   useBeschikbareCapaciteit,
   useGoedgekeurdVoorstel,
   useAutoplanningConfig,
+  useConceptVoorstellen,
+  useVormSnijtijden,
+  useMoeilijkeKwaliteiten,
 } from './hooks/use-snijplanning'
 
 // ---------------------------------------------------------------------------
@@ -73,6 +76,7 @@ export type { SnijplanFormData } from './queries/snijplanning-mutations'
 export type { AutoPlanningConfig, BenodigdeLengteSchatting } from './queries/auto-planning'
 export type { MaatwerkHaalbaarheidRow, InkoopRegelInfo } from './queries/haalbaarheid'
 export type { MasterPlanningRow } from './queries/master-planning'
+export type { ConceptVoorstelRow, VerdringingInfo, VerdrongenOrder, VerdringingWachtOpInkoopRegel } from './queries/snijvoorstel'
 
 // ---------------------------------------------------------------------------
 // Raw query-functies (alleen voor advanced callers — orchestrated saves buiten
@@ -90,6 +94,7 @@ export {
   buildPlanFromStukken,
 } from './lib/snijplan-mapping'
 export type { RolGroep } from './lib/snijplan-mapping'
+export { bepaalSnijtijdMinuten } from './lib/snijtijd'
 export {
   computeReststukken,
   computeReststukkenEnAfval,

@@ -11,6 +11,7 @@ import type {
 import { maandagVanWeek } from './levertijd-match.ts'
 import { isoWeekJaar } from './iso-week.ts'
 import { werkdagenInIsoWeek } from './werkagenda.ts'
+import { bepaalSnijtijdMinuten } from './snijtijd.ts'
 
 const MAX_WEEK_ITERATIES = 6
 
@@ -46,16 +47,23 @@ export function nextWeek(week: number, jaar: number): { week: number; jaar: numb
 // Bezetting per week
 // ---------------------------------------------------------------------------
 
-/** Bereken bezetting (stuks + minuten) voor een set snijplannen-rijen van één week. */
+/** Bereken bezetting (stuks + minuten) voor een set snijplannen-rijen van één week.
+ *  Snijtijd is per-vorm (mig 460) i.p.v. een vlak tarief. */
 export function bezetting(
   rows: BezettingsRow[],
-  cfg: Pick<LevertijdConfig, 'wisseltijd_minuten' | 'snijtijd_minuten'>,
+  cfg: Pick<LevertijdConfig, 'wisseltijd_minuten'>,
+  vormTarieven: Map<string, number>,
+  moeilijkeKwaliteiten: Set<string>,
 ): BezettingResultaat {
   const stuks = rows.length
   const unieke_rollen = new Set(
     rows.filter((r) => r.rol_id !== null).map((r) => r.rol_id),
   ).size
-  const minuten = unieke_rollen * cfg.wisseltijd_minuten + stuks * cfg.snijtijd_minuten
+  const snijMinuten = rows.reduce(
+    (s, r) => s + bepaalSnijtijdMinuten(r.maatwerk_vorm, r.kwaliteit_code, vormTarieven, moeilijkeKwaliteiten),
+    0,
+  )
+  const minuten = unieke_rollen * cfg.wisseltijd_minuten + snijMinuten
   return { stuks, unieke_rollen, minuten }
 }
 
@@ -69,6 +77,9 @@ export interface CapaciteitsCheckInput {
   cfg: LevertijdConfig
   /** Async fetcher: geef snijplan-rijen voor (week, jaar) terug. */
   fetchBezetting: (week: number, jaar: number) => Promise<BezettingsRow[]>
+  /** Snijtijd per vorm (mig 460) — zie _shared/snijtijd.ts. */
+  vormTarieven: Map<string, number>
+  moeilijkeKwaliteiten: Set<string>
 }
 
 /**
@@ -90,7 +101,7 @@ function rollenStreefVoorWeek(
 export async function capaciteitsCheck(
   input: CapaciteitsCheckInput,
 ): Promise<CapaciteitsCheckResult> {
-  const { cfg, fetchBezetting } = input
+  const { cfg, fetchBezetting, vormTarieven, moeilijkeKwaliteiten } = input
   let week = input.start_week
   let jaar = input.start_jaar
   const marge = 1 - cfg.capaciteit_marge_pct / 100
@@ -103,7 +114,7 @@ export async function capaciteitsCheck(
 
   for (let i = 0; i < MAX_WEEK_ITERATIES; i++) {
     const rows = await fetchBezetting(week, jaar)
-    const bez = bezetting(rows, cfg)
+    const bez = bezetting(rows, cfg, vormTarieven, moeilijkeKwaliteiten)
     const ruimte_stuks = max_stuks - bez.stuks
 
     if (ruimte_stuks > 0) {
@@ -130,7 +141,7 @@ export async function capaciteitsCheck(
 
   // Geen ruimte gevonden binnen horizon — return laatste poging als feitelijk vol.
   const rows = await fetchBezetting(week, jaar)
-  const bez = bezetting(rows, cfg)
+  const bez = bezetting(rows, cfg, vormTarieven, moeilijkeKwaliteiten)
   const max_rollen_streef = rollenStreefVoorWeek(week, jaar, cfg)
   return {
     week,

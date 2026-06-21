@@ -634,3 +634,29 @@ export async function fetchStandaardBreedte(
   const breedte = (data as { standaard_breedte_cm: number | null } | null)?.standaard_breedte_cm
   return typeof breedte === 'number' && breedte > 0 ? breedte : null
 }
+
+// ---------------------------------------------------------------------------
+// Snijtijd per vorm (mig 460) — zie _shared/snijtijd.ts voor de pure functie.
+// ---------------------------------------------------------------------------
+
+/** Snijtijd-tarief (minuten) per vorm-code, uit `maatwerk_vormen`. */
+export async function fetchVormSnijtijden(supabase: SupabaseClient): Promise<Map<string, number>> {
+  const { data, error } = await supabase
+    .from('maatwerk_vormen')
+    .select('code, snijtijd_minuten')
+  if (error) throw error
+  return new Map(
+    ((data ?? []) as Array<{ code: string; snijtijd_minuten: number }>).map((r) => [r.code, Number(r.snijtijd_minuten)]),
+  )
+}
+
+/** Kwaliteit-codes die moeilijk te snijden zijn — rechthoek telt voor hen als
+ *  het algemene (niet-gekorte) tarief, zie bepaalSnijtijdMinuten. */
+export async function fetchMoeilijkeKwaliteiten(supabase: SupabaseClient): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from('kwaliteiten')
+    .select('code')
+    .eq('moeilijk_te_snijden', true)
+  if (error) throw error
+  return new Set(((data ?? []) as Array<{ code: string }>).map((r) => r.code))
+}

@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { AlertTriangle, Calendar } from 'lucide-react'
-import { useAlleSnijden } from '@/modules/snijplanning'
+import { useAlleSnijden, useVormSnijtijden, useMoeilijkeKwaliteiten } from '@/modules/snijplanning'
 import { usePlanningConfig } from '@/hooks/use-planning-config'
 import { berekenTotDatum } from '@/components/snijplanning/week-filter'
 import { berekenAgenda, type RolBlok, type Werktijden } from '@/lib/utils/bereken-agenda'
@@ -24,11 +24,13 @@ export function AgendaWeergave() {
   const { data: planningConfig } = usePlanningConfig()
   const totDatum = berekenTotDatum(planningConfig?.weken_vooruit ?? null)
   const { data: alleSnijden, isLoading } = useAlleSnijden(totDatum)
+  const { data: vormTarieven } = useVormSnijtijden()
+  const { data: moeilijkeKwaliteiten } = useMoeilijkeKwaliteiten()
 
   const blokken = useMemo(() => {
-    if (!alleSnijden || !planningConfig) return []
-    return berekenAgenda(alleSnijden, werktijden, planningConfig)
-  }, [alleSnijden, planningConfig, werktijden])
+    if (!alleSnijden || !planningConfig || !vormTarieven || !moeilijkeKwaliteiten) return []
+    return berekenAgenda(alleSnijden, werktijden, planningConfig, vormTarieven, moeilijkeKwaliteiten)
+  }, [alleSnijden, planningConfig, werktijden, vormTarieven, moeilijkeKwaliteiten])
 
   return (
     <>

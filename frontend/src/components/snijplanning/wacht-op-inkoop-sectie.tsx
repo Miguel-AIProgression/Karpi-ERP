@@ -1,7 +1,8 @@
-import { Truck } from 'lucide-react'
+import { Truck, AlertTriangle } from 'lucide-react'
 import { formatDate, formatNumber } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
 import type { WachtOpInkoopRow } from '@/modules/snijplanning'
+import { isAchterstalligeEta } from '@/modules/inkoop/lib/inkoop-eta'
 
 // Mig 437/438/440: stukken die geen fysieke rol vonden, maar door auto-plan-
 // groep's tweede pas (virtuele rol, in-memory) gekoppeld zijn aan een
@@ -35,27 +36,35 @@ export function WachtOpInkoopSectie({ kwaliteitCode, kleurCode, regels }: WachtO
         </span>
       </div>
       <div className="divide-y divide-orange-100 bg-white">
-        {regels.map((r) => (
-          <div key={r.inkooporder_regel_id} className="px-3 py-2 text-sm flex items-center gap-2 flex-wrap">
-            <span className={cn('text-xs px-1.5 py-0.5 rounded', 'bg-orange-100 text-orange-700')}>
-              Wacht op inkoop
-            </span>
-            <span className="text-slate-700">
-              Onderweg via <span className="font-medium">{r.inkooporder_nr}</span>
-              {r.leverancier_naam ? ` (${r.leverancier_naam})` : ''}
-            </span>
-            <span className="text-slate-500">
-              {formatNumber(r.te_leveren_m, 0)} m verwacht
-              {r.verwacht_datum ? ` ${formatDate(r.verwacht_datum)}` : ''}
-            </span>
-            <span className="ml-auto text-slate-500 tabular-nums">
-              {formatNumber(r.gebruikte_lengte_cm / 100, 1)} m gebruikt · {formatNumber(r.resterend_m2, 1)} m² resterend
-            </span>
-            <span className="text-xs px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
-              {r.aantal_stukken} {r.aantal_stukken === 1 ? 'stuk' : 'stukken'}
-            </span>
-          </div>
-        ))}
+        {regels.map((r) => {
+          const achterstallig = isAchterstalligeEta(r.verwacht_datum)
+          return (
+            <div key={r.inkooporder_regel_id} className="px-3 py-2 text-sm flex items-center gap-2 flex-wrap">
+              <span className={cn('text-xs px-1.5 py-0.5 rounded', 'bg-orange-100 text-orange-700')}>
+                Wacht op inkoop
+              </span>
+              {achterstallig && (
+                <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-medium">
+                  <AlertTriangle size={11} /> ETA verstreken
+                </span>
+              )}
+              <span className="text-slate-700">
+                Onderweg via <span className="font-medium">{r.inkooporder_nr}</span>
+                {r.leverancier_naam ? ` (${r.leverancier_naam})` : ''}
+              </span>
+              <span className={achterstallig ? 'text-red-600 font-medium' : 'text-slate-500'}>
+                {formatNumber(r.te_leveren_m, 0)} m verwacht
+                {r.verwacht_datum ? ` ${formatDate(r.verwacht_datum)}` : ''}
+              </span>
+              <span className="ml-auto text-slate-500 tabular-nums">
+                {formatNumber(r.gebruikte_lengte_cm / 100, 1)} m gebruikt · {formatNumber(r.resterend_m2, 1)} m² resterend
+              </span>
+              <span className="text-xs px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
+                {r.aantal_stukken} {r.aantal_stukken === 1 ? 'stuk' : 'stukken'}
+              </span>
+            </div>
+          )
+        })}
       </div>
     </div>
   )

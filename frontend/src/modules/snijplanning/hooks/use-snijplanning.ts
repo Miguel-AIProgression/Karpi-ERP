@@ -32,6 +32,7 @@ import {
   fetchSnijvoorstel,
   fetchGoedgekeurdVoorstel,
   fetchBeschikbareCapaciteit,
+  fetchConceptVoorstellen,
   approveSnijvoorstel as approveVoorstelOptimalisatie,
   rejectSnijvoorstel,
   voltooiSnijplanRol,
@@ -56,6 +57,8 @@ import { berekenTotDatum } from '@/components/snijplanning/week-filter'
 import { fetchPlanningConfig } from '@/lib/supabase/queries/planning-config'
 import { invalidateNaSnijplanMutatie } from '../cache'
 import { invalidateNaConfectieMutatie } from '@/modules/confectie'
+import { fetchVormen } from '@/modules/maatwerk'
+import { fetchMoeilijkeKwaliteiten } from '@/lib/supabase/queries/kwaliteiten'
 
 export function useSnijplanningPool(params: {
   status?: string
@@ -378,6 +381,36 @@ export function useVerwerpSnijvoorstel() {
     onSuccess: () => {
       invalidateNaSnijplanMutatie(qc)
     },
+  })
+}
+
+/** Alle 'concept' gebleven voorstellen (verdringingsrisico/rode FIFO-badge,
+ *  mig 459) — voedt de "Te beoordelen"-tab op de Snijplanning-pagina. */
+export function useConceptVoorstellen() {
+  return useQuery({
+    queryKey: ['snijvoorstel', 'concept-lijst'],
+    queryFn: fetchConceptVoorstellen,
+  })
+}
+
+/** Snijtijd-tarief (minuten) per vorm-code (mig 460) — voedt bepaalSnijtijdMinuten. */
+export function useVormSnijtijden() {
+  return useQuery({
+    queryKey: ['maatwerk-vormen', 'snijtijd'],
+    queryFn: async () => {
+      const vormen = await fetchVormen()
+      return new Map(vormen.map((v) => [v.code, v.snijtijd_minuten]))
+    },
+    staleTime: 5 * 60 * 1000,
+  })
+}
+
+/** Kwaliteit-codes die moeilijk te snijden zijn (mig 460) — voedt bepaalSnijtijdMinuten. */
+export function useMoeilijkeKwaliteiten() {
+  return useQuery({
+    queryKey: ['kwaliteiten', 'moeilijk-te-snijden'],
+    queryFn: fetchMoeilijkeKwaliteiten,
+    staleTime: 5 * 60 * 1000,
   })
 }
 

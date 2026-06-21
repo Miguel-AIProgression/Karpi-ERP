@@ -23,6 +23,9 @@ export function VormFormDialog({ vorm, defaultVolgorde, onClose }: Props) {
   const [toeslag, setToeslag] = useState<string>(
     vorm?.toeslag !== undefined ? String(vorm.toeslag) : '0',
   )
+  const [snijtijdMinuten, setSnijtijdMinuten] = useState<string>(
+    vorm?.snijtijd_minuten !== undefined ? String(vorm.snijtijd_minuten) : '5',
+  )
   const [volgorde, setVolgorde] = useState<string>(
     String(vorm?.volgorde ?? defaultVolgorde ?? 0),
   )
@@ -37,6 +40,7 @@ export function VormFormDialog({ vorm, defaultVolgorde, onClose }: Props) {
     const trimmedCode = code.trim().toLowerCase().replace(/\s+/g, '_')
     const trimmedNaam = naam.trim()
     const toeslagNum = Number(toeslag.replace(',', '.'))
+    const snijtijdNum = Number(snijtijdMinuten.replace(',', '.'))
     const volgordeNum = Number(volgorde)
     if (!trimmedNaam) {
       setError('Naam is verplicht')
@@ -50,6 +54,10 @@ export function VormFormDialog({ vorm, defaultVolgorde, onClose }: Props) {
       setError('Toeslag moet een geldig (≥ 0) getal zijn')
       return
     }
+    if (Number.isNaN(snijtijdNum) || snijtijdNum < 0) {
+      setError('Snijtijd moet een geldig (≥ 0) getal zijn')
+      return
+    }
     if (Number.isNaN(volgordeNum)) {
       setError('Volgorde moet een geldig getal zijn')
       return
@@ -61,6 +69,7 @@ export function VormFormDialog({ vorm, defaultVolgorde, onClose }: Props) {
         naam: trimmedNaam,
         afmeting_type: afmetingType,
         toeslag: toeslagNum,
+        snijtijd_minuten: snijtijdNum,
         volgorde: volgordeNum,
         actief,
       })
@@ -142,7 +151,7 @@ export function VormFormDialog({ vorm, defaultVolgorde, onClose }: Props) {
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="block text-sm text-slate-600 mb-1">Toeslag (€)</label>
               <input
@@ -154,6 +163,18 @@ export function VormFormDialog({ vorm, defaultVolgorde, onClose }: Props) {
                 className={inputClasses}
               />
               <p className="text-xs text-slate-400 mt-1">Bovenop de m²-prijs.</p>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-600 mb-1">Snijtijd (min)</label>
+              <input
+                type="number"
+                step="0.5"
+                min="0"
+                value={snijtijdMinuten}
+                onChange={(e) => setSnijtijdMinuten(e.target.value)}
+                className={inputClasses}
+              />
+              <p className="text-xs text-slate-400 mt-1">Per stuk, voor planning/capaciteit.</p>
             </div>
             <div>
               <label className="block text-sm text-slate-600 mb-1">Volgorde</label>

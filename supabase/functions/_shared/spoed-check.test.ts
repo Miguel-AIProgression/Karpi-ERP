@@ -12,7 +12,7 @@ function defaultConfig(overrides: Partial<LevertijdConfig> = {}): LevertijdConfi
   return {
     logistieke_buffer_dagen: 2, backlog_minimum_m2: 12,
     capaciteit_per_week_streef: 350, capaciteit_per_week_max: 400, max_rollen_per_dag_streef: 20,
-    capaciteit_marge_pct: 0, wisseltijd_minuten: 15, snijtijd_minuten: 5,
+    capaciteit_marge_pct: 0, wisseltijd_minuten: 15,
     maatwerk_weken: 4, spoed_buffer_uren: 4, spoed_toeslag_bedrag: 50,
     spoed_product_id: 'SPOEDTOESLAG', dag_order_snij_buffer_werkdagen: 2,
     werktijden: STANDAARD_WERKTIJDEN,
@@ -106,10 +106,10 @@ Deno.test('evalueerSpoed: week_restruimte_uren correct gerapporteerd', () => {
     teLaat: false,
   })
   const result = evalueerSpoed(fakeAgenda, 30, defaultConfig(), VANDAAG)
-  // Deze week: 5×510=2550 - 1530 - 240 buffer = 780 min = 13.0 uur
-  assertEquals(result.week_restruimte_uren.deze, 13)
-  // Volgende week: 2550 - 0 - 240 = 2310 / 60 = 38.5 uur
-  assertEquals(result.week_restruimte_uren.volgende, 38.5)
+  // Deze week (3 pauzes/dag, mig 460/458): 5×480=2400 - 1440 bezet - 240 buffer = 720 min = 12,0 uur
+  assertEquals(result.week_restruimte_uren.deze, 12)
+  // Volgende week: 2400 - 0 - 240 = 2160 / 60 = 36,0 uur
+  assertEquals(result.week_restruimte_uren.volgende, 36)
 })
 
 Deno.test('evalueerSpoed: bestaande rol al te laat (snij = lever) → spoed niet beschikbaar', () => {

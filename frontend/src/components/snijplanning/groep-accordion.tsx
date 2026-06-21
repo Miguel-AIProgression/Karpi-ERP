@@ -17,6 +17,9 @@ import {
   useOntgrendelHandmatig,
   buildPlanFromStukken,
   groepeerStukkenPerRol,
+  useVormSnijtijden,
+  useMoeilijkeKwaliteiten,
+  bepaalSnijtijdMinuten,
   type RolGroep,
   type TekortAnalyseRow,
 } from '@/modules/snijplanning'
@@ -149,6 +152,8 @@ export function GroepAccordion({
   const { data: locatieMap } = useRolLocaties(rolIds)
 
   const { data: planningConfig } = usePlanningConfig()
+  const { data: vormTarieven } = useVormSnijtijden()
+  const { data: moeilijkeKwaliteiten } = useMoeilijkeKwaliteiten()
 
   const { data: goedgekeurdPlan } = useGoedgekeurdVoorstel(kwaliteitCode, kleurCode, showPlan && !voorstelResult)
 
@@ -159,9 +164,10 @@ export function GroepAccordion({
 
   const modalData = voorstelResult ?? goedgekeurdPlan ?? reconstructedPlan
 
-  function formatMinuten(aantalTeSnijden: number): string | null {
-    if (!planningConfig || aantalTeSnijden === 0) return null
-    const minuten = planningConfig.wisseltijd_minuten + aantalTeSnijden * planningConfig.snijtijd_minuten
+  function formatMinuten(stukken: SnijplanRow[]): string | null {
+    if (!planningConfig || !vormTarieven || !moeilijkeKwaliteiten || stukken.length === 0) return null
+    const minuten = planningConfig.wisseltijd_minuten
+      + stukken.reduce((s, p) => s + bepaalSnijtijdMinuten(p.maatwerk_vorm, p.kwaliteit_code, vormTarieven, moeilijkeKwaliteiten), 0)
     if (minuten === 0) return null
     const uren = Math.floor(minuten / 60)
     const min = Math.round(minuten % 60)
@@ -209,7 +215,7 @@ export function GroepAccordion({
                     locatieMap={locatieMap ?? null}
                     kwaliteitCode={kwaliteitCode}
                     kleurLabel={kleurCodeZonderDecimaal}
-                    geschatteTijd={formatMinuten(rolGroepen[0].aantalTeSnijden)}
+                    geschatteTijd={formatMinuten(rolGroepen[0].stukken)}
                     defaultOpen={true}
                     onStart={handleStartRol}
                     isStartPending={false}
@@ -231,7 +237,7 @@ export function GroepAccordion({
                       locatieMap={locatieMap ?? null}
                       kwaliteitCode={kwaliteitCode}
                       kleurLabel={kleurCodeZonderDecimaal}
-                      geschatteTijd={formatMinuten(rol.aantalTeSnijden)}
+                      geschatteTijd={formatMinuten(rol.stukken)}
                       defaultOpen={false}
                       onStart={handleStartRol}
                       isStartPending={false}

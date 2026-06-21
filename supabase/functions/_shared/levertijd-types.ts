@@ -115,7 +115,6 @@ export interface LevertijdConfig {
   max_rollen_per_dag_streef: number
   capaciteit_marge_pct: number          // bv. 0
   wisseltijd_minuten: number            // bv. 15 (per rol-wissel)
-  snijtijd_minuten: number              // bv. 5 (per stuk)
   maatwerk_weken: number                // bv. 4 (pessimistische fallback)
   spoed_buffer_uren: number             // bv. 4 (min vrije uren per week voor spoed)
   spoed_toeslag_bedrag: number          // bv. 50 (€ vast bedrag)
@@ -174,10 +173,13 @@ export type MatchResult =
       reden: 'geen_rol_in_pipeline' | 'geen_plek_op_bestaande_rollen'
     }
 
-// Snijplannen-rij voor capaciteits-bezetting (week-aggregatie).
+// Snijplannen-rij voor capaciteits-bezetting (week-aggregatie). Vorm/kwaliteit
+// nodig voor de per-vorm snijtijd (mig 460, zie _shared/snijtijd.ts).
 export interface BezettingsRow {
   id: number
   rol_id: number | null
+  maatwerk_vorm: string | null
+  kwaliteit_code: string | null
 }
 
 export interface BezettingResultaat {

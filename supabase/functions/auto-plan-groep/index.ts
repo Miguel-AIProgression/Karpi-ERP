@@ -30,6 +30,7 @@ import {
 import { PLANBAAR } from '../_shared/snijplan-status.ts'
 import { berekenHaalbaarheid, type SnijDeadlineConfig } from '../_shared/snij-haalbaarheid.ts'
 import { STANDAARD_WERKTIJDEN, isoDatum, type Werktijden } from '../_shared/werkagenda.ts'
+import { isAchterstalligeEta } from '../_shared/inkoop-eta.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -350,7 +351,14 @@ serve(async (req) => {
 
     let wachtOpInkoop: {
       aantal_stukken: number
-      regels: Array<{ inkooporder_nr: string; gebruikte_lengte_cm: number; te_leveren_cm: number; resterend_cm: number }>
+      regels: Array<{
+        inkooporder_nr: string
+        gebruikte_lengte_cm: number
+        te_leveren_cm: number
+        resterend_cm: number
+        verwacht_datum: string | null
+        is_achterstallig: boolean
+      }>
     } | null = null
     let nietGeplaatstFinaal = nietGeplaatst
 
@@ -393,7 +401,14 @@ serve(async (req) => {
           const claims: Array<{ snijplan_id: number; inkooporder_regel_id: number }> = []
           const regelTotalen: Array<{ inkooporder_regel_id: number; gebruikte_lengte_cm: number }> = []
           const regelInfoMap = new Map(openRegels.map((r) => [r.regel_id, r]))
-          const regels: Array<{ inkooporder_nr: string; gebruikte_lengte_cm: number; te_leveren_cm: number; resterend_cm: number }> = []
+          const regels: Array<{
+            inkooporder_nr: string
+            gebruikte_lengte_cm: number
+            te_leveren_cm: number
+            resterend_cm: number
+            verwacht_datum: string | null
+            is_achterstallig: boolean
+          }> = []
 
           for (const r of ioPak.rollResults) {
             const regelId = -r.rol_id
@@ -409,6 +424,8 @@ serve(async (req) => {
               gebruikte_lengte_cm: Math.round(r.gebruikte_lengte_cm),
               te_leveren_cm: teLeverenCm,
               resterend_cm: Math.max(teLeverenCm - Math.round(r.gebruikte_lengte_cm), 0),
+              verwacht_datum: info?.verwacht_datum ?? null,
+              is_achterstallig: isAchterstalligeEta(info?.verwacht_datum ?? null),
             })
           }
 
@@ -445,6 +462,24 @@ serve(async (req) => {
       carveOutReasons.push(
         `Verdringingsrisico — ${verdrongenOrders.length} eerder gepland stuk(ken) verloren hun rol en zouden hun snij-deadline missen.`,
       )
+    }
+
+    // Concept blijft anders onzichtbaar voor de planner — alleen deze ene
+    // HTTP-respons kende de reden. Best-effort: een mislukte diagnostische
+    // write mag de hoofd-flow niet blokkeren (zelfde filosofie als de
+    // externe_payloads-logging).
+    if (voorstel_id != null && (verdringingRisico || fifoCarveOut)) {
+      const { error: verdringingError } = await supabase
+        .from('snijvoorstellen')
+        .update({
+          verdringing_info: {
+            reden: carveOutReasons.join(' '),
+            verdrongen_orders: verdrongenOrders,
+            wacht_op_inkoop: wachtOpInkoop,
+          },
+        })
+        .eq('id', voorstel_id)
+      if (verdringingError) console.error('verdringing_info best-effort update faalde:', verdringingError)
     }
 
     return new Response(

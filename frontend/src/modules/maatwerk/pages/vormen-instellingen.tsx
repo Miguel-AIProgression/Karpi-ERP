@@ -63,6 +63,7 @@ export function VormenInstellingenPage() {
                 <th className="text-left px-4 py-2 font-medium text-slate-600">Naam</th>
                 <th className="text-left px-4 py-2 font-medium text-slate-600 w-40">Afmeting-type</th>
                 <th className="text-right px-4 py-2 font-medium text-slate-600 w-28">Toeslag</th>
+                <th className="text-right px-4 py-2 font-medium text-slate-600 w-28">Snijtijd</th>
                 <th className="text-center px-4 py-2 font-medium text-slate-600 w-24">Status</th>
                 <th className="px-4 py-2 w-32"></th>
               </tr>
@@ -85,6 +86,9 @@ export function VormenInstellingenPage() {
                   </td>
                   <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">
                     {v.toeslag > 0 ? `€ ${formatNumber(v.toeslag, 2)}` : '—'}
+                  </td>
+                  <td className="px-4 py-2.5 text-right tabular-nums text-slate-700">
+                    {formatNumber(v.snijtijd_minuten, 1)} min
                   </td>
                   <td className="px-4 py-2.5 text-center">
                     {v.actief ? (

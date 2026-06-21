@@ -18,6 +18,7 @@ import {
   plusWerkminuten,
   isoDatum,
 } from '../../../../supabase/functions/_shared/werkagenda'
+import { bepaalSnijtijdMinuten } from '../../../../supabase/functions/_shared/snijtijd'
 
 export type { Werktijden, FeestdagVrij } from '../../../../supabase/functions/_shared/werkagenda'
 export {
@@ -44,6 +45,7 @@ export interface AgendaInputStuk {
   kwaliteit_code: string | null
   kleur_code: string | null
   afleverdatum: string | null
+  maatwerk_vorm: string | null
 }
 
 export interface RolBlok<T extends AgendaInputStuk = SnijplanRow> {
@@ -65,15 +67,17 @@ export interface RolBlok<T extends AgendaInputStuk = SnijplanRow> {
 }
 
 export interface PlanningConfigLite {
-  snijtijd_minuten: number
   wisseltijd_minuten: number
 }
 
-/** Groepeer stukken per rol + plan sequentieel in werkagenda. */
+/** Groepeer stukken per rol + plan sequentieel in werkagenda. Snijtijd is
+ *  per-vorm (mig 460, zie bepaalSnijtijdMinuten) i.p.v. een vlak tarief. */
 export function berekenAgenda<T extends AgendaInputStuk>(
   stukken: T[],
   werktijden: Werktijden,
   planningConfig: PlanningConfigLite,
+  vormTarieven: Map<string, number>,
+  moeilijkeKwaliteiten: Set<string>,
   startVanaf: Date = new Date(),
   snijLeverBufferDagen: number = 2,
 ): Array<RolBlok<T>> {
@@ -138,7 +142,7 @@ export function berekenAgenda<T extends AgendaInputStuk>(
   let cursor = startVanaf
   for (const g of groepen) {
     const duur = planningConfig.wisseltijd_minuten
-      + g.stukken.length * planningConfig.snijtijd_minuten
+      + g.stukken.reduce((s, p) => s + bepaalSnijtijdMinuten(p.maatwerk_vorm, p.kwaliteit_code, vormTarieven, moeilijkeKwaliteiten), 0)
     const start = volgendeWerkminuut(cursor, werktijden)
     const eind = plusWerkminuten(start, duur, werktijden)
     // teLaat strikt (B4): deadline = 00:00 van (leverdatum − buffer), zodat er

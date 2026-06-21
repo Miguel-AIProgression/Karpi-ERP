@@ -21,7 +21,6 @@ function defaultConfig(overrides: Partial<LevertijdConfig> = {}): LevertijdConfi
     max_rollen_per_dag_streef: 20,
     capaciteit_marge_pct: 0,
     wisseltijd_minuten: 15,
-    snijtijd_minuten: 5,
     maatwerk_weken: 4,
     spoed_buffer_uren: 4,
     spoed_toeslag_bedrag: 50,

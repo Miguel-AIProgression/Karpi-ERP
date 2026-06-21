@@ -29,6 +29,14 @@ Deno.test('volgendeWerkminuut: in pauze → schuift naar 12:30', () => {
   assertEquals(klok(volgendeWerkminuut(lokaal(2026, 4, 16, 12, 15), STANDAARD_WERKTIJDEN)), '2026-04-16 12:30')
 })
 
+Deno.test('volgendeWerkminuut: in ochtendpauze (09:30-09:45) → schuift naar 09:45', () => {
+  assertEquals(klok(volgendeWerkminuut(lokaal(2026, 4, 16, 9, 35), STANDAARD_WERKTIJDEN)), '2026-04-16 09:45')
+})
+
+Deno.test('volgendeWerkminuut: in middagpauze (14:30-14:45) → schuift naar 14:45', () => {
+  assertEquals(klok(volgendeWerkminuut(lokaal(2026, 4, 16, 14, 40), STANDAARD_WERKTIJDEN)), '2026-04-16 14:45')
+})
+
 Deno.test('volgendeWerkminuut: zaterdag → schuift naar maandag 08:00', () => {
   assertEquals(klok(volgendeWerkminuut(lokaal(2026, 4, 18, 10, 0), STANDAARD_WERKTIJDEN)), '2026-04-20 08:00')
 })
@@ -46,18 +54,19 @@ Deno.test('plusWerkminuten: +30 min vanaf 08:00 → 08:30', () => {
   assertEquals(klok(plusWerkminuten(DO_8u, 30, STANDAARD_WERKTIJDEN)), '2026-04-16 08:30')
 })
 
-Deno.test('plusWerkminuten: +4 uur vanaf 08:00 → 12:00 (vlak vóór pauze)', () => {
-  assertEquals(klok(plusWerkminuten(DO_8u, 240, STANDAARD_WERKTIJDEN)), '2026-04-16 12:00')
+Deno.test('plusWerkminuten: +4 uur vanaf 08:00 → 12:45 (kruist ochtendpauze + stukje lunch)', () => {
+  // 90 min (→09:30) + 15 min skip; 135 min (→12:00) + 15 min resterend → 12:30 + 15 = 12:45
+  assertEquals(klok(plusWerkminuten(DO_8u, 240, STANDAARD_WERKTIJDEN)), '2026-04-16 12:45')
 })
 
-Deno.test('plusWerkminuten: +5 uur vanaf 08:00 → 13:30 (skipt 30 min pauze)', () => {
-  assertEquals(klok(plusWerkminuten(DO_8u, 300, STANDAARD_WERKTIJDEN)), '2026-04-16 13:30')
+Deno.test('plusWerkminuten: +5 uur vanaf 08:00 → 13:45 (skipt ochtendpauze + lunch)', () => {
+  assertEquals(klok(plusWerkminuten(DO_8u, 300, STANDAARD_WERKTIJDEN)), '2026-04-16 13:45')
 })
 
-Deno.test('plusWerkminuten: +9 uur vanaf 08:00 → volgende werkdag (overschrijdt 17:00 + pauze)', () => {
-  // Beschikbare werkminuten per dag: 09:00 − 0:30 pauze = 510 min
-  // 510 op donderdag → resterend 90 min op vrijdag vanaf 08:00 → 09:30
-  assertEquals(klok(plusWerkminuten(DO_8u, 600, STANDAARD_WERKTIJDEN)), '2026-04-17 09:30')
+Deno.test('plusWerkminuten: +10 uur vanaf 08:00 → volgende werkdag (overschrijdt 17:00 + pauzes)', () => {
+  // Beschikbare werkminuten per dag: 540 − 60 (3 pauzes: 15+30+15) = 480 min
+  // 480 op donderdag → resterend 120 min op vrijdag vanaf 08:00: 90 (→09:30) + 15 skip + 30 → 10:15
+  assertEquals(klok(plusWerkminuten(DO_8u, 600, STANDAARD_WERKTIJDEN)), '2026-04-17 10:15')
 })
 
 Deno.test('plusWerkminuten: vrijdag eind van dag → maandag', () => {
@@ -76,10 +85,10 @@ Deno.test('plusWerkminuten: vrije vrijdag → werk schuift naar maandag', () => 
 // ---------------------------------------------------------------------------
 
 Deno.test('werkminutenTussen: round-trip met plusWerkminuten over de pauze heen', () => {
-  // 10:00 + 300 werkminuten kruist de pauze (12:00-12:30) → eind 15:30.
+  // 10:00 + 300 werkminuten kruist de lunch- (12:00-12:30) én de middagpauze (14:30-14:45) → eind 15:45.
   const start = lokaal(2026, 4, 16, 10, 0)
   const eind = plusWerkminuten(start, 300, STANDAARD_WERKTIJDEN)
-  assertEquals(klok(eind), '2026-04-16 15:30')
+  assertEquals(klok(eind), '2026-04-16 15:45')
   assertEquals(werkminutenTussen(start, eind, STANDAARD_WERKTIJDEN), 300)
 })
 
@@ -93,6 +102,11 @@ Deno.test('werkminutenTussen: weekend tussen van en tot telt niet mee', () => {
 
 Deno.test('werkminutenTussen: tot <= van → 0', () => {
   assertEquals(werkminutenTussen(DO_8u, DO_8u, STANDAARD_WERKTIJDEN), 0)
+})
+
+Deno.test('werkminutenTussen: volledige werkdag 08:00-17:00 = 480 min (540 − 3 pauzes van samen 60 min)', () => {
+  const eindDag = lokaal(2026, 4, 16, 17, 0)
+  assertEquals(werkminutenTussen(DO_8u, eindDag, STANDAARD_WERKTIJDEN), 480)
 })
 
 // ---------------------------------------------------------------------------

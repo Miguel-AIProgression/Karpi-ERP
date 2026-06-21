@@ -14,6 +14,7 @@ import { useLeveranciersOverzicht } from '../hooks/use-leveranciers'
 import { updateRegelEta } from '../queries/leveranciers'
 import type { OpenRegelOverzichtRow } from '../queries/inkooporders'
 import { isoWeekJaarVanIso } from '@/lib/utils/iso-week'
+import { isAchterstalligeEta } from '../lib/inkoop-eta'
 
 type SortKey = 'eta' | 'leverancier' | 'order' | 'product'
 type SortDir = 'asc' | 'desc'
@@ -32,7 +33,6 @@ function EtaInlineEdit({ regel }: { regel: OpenRegelOverzichtRow }) {
   const qc = useQueryClient()
   const [value, setValue] = useState(regel.verwacht_datum ?? '')
   const inputRef = useRef<HTMLInputElement>(null)
-  const today = new Date().toISOString().slice(0, 10)
 
   const isDirty = value !== (regel.verwacht_datum ?? '')
 
@@ -43,7 +43,7 @@ function EtaInlineEdit({ regel }: { regel: OpenRegelOverzichtRow }) {
     },
   })
 
-  const isAchterstallig = value && value < today
+  const isAchterstallig = isAchterstalligeEta(value || null)
   const isDezeWeek = (() => {
     if (!value) return false
     const d = new Date(value)
@@ -105,6 +105,7 @@ export function InkoopRegelOverzichtTab() {
   const [zoek, setZoek] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('eta')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
+  const [alleenBlokkerend, setAlleenBlokkerend] = useState(false)
 
   const { data: regels = [], isLoading } = useOpenRegelOverzicht(leverancierId)
   const { data: leveranciers = [] } = useLeveranciersOverzicht()
@@ -119,9 +120,13 @@ export function InkoopRegelOverzichtTab() {
   }
 
   const filtered = useMemo(() => {
-    if (!zoek.trim()) return regels
+    let r = regels
+    if (alleenBlokkerend) {
+      r = r.filter((x) => isAchterstalligeEta(x.verwacht_datum) && x.snijplan_gebruikte_lengte_cm > 0)
+    }
+    if (!zoek.trim()) return r
     const q = zoek.toLowerCase()
-    return regels.filter(
+    return r.filter(
       (r) =>
         r.inkooporder_nr.toLowerCase().includes(q) ||
         (r.leverancier_naam ?? '').toLowerCase().includes(q) ||
@@ -130,7 +135,7 @@ export function InkoopRegelOverzichtTab() {
         (r.artikel_omschrijving ?? '').toLowerCase().includes(q) ||
         (r.product_omschrijving ?? '').toLowerCase().includes(q),
     )
-  }, [regels, zoek])
+  }, [regels, zoek, alleenBlokkerend])
 
   const sorted = useMemo(() => {
     const arr = [...filtered]
@@ -155,19 +160,40 @@ export function InkoopRegelOverzichtTab() {
   }, [filtered, sortKey, sortDir])
 
   const showLeverancierKolom = leverancierId === 'alle'
-  const achterstallig = regels.filter(r => r.verwacht_datum && r.verwacht_datum < new Date().toISOString().slice(0, 10)).length
+  const achterstallig = regels.filter(r => isAchterstalligeEta(r.verwacht_datum)).length
   const geenEta = regels.filter(r => !r.verwacht_datum).length
+  const blokkerendAchterstallig = regels.filter(
+    r => isAchterstalligeEta(r.verwacht_datum) && r.snijplan_gebruikte_lengte_cm > 0,
+  ).length
 
   return (
     <div className="space-y-4">
       {regels.length > 0 && (
-        <div className="flex gap-4 text-sm">
+        <div className="flex gap-4 text-sm items-center">
           <span className="text-slate-500">{regels.length} regels</span>
           {achterstallig > 0 && (
             <span className="text-red-600 font-medium">{achterstallig} achterstallig</span>
           )}
           {geenEta > 0 && (
             <span className="text-amber-600">{geenEta} zonder ETA</span>
+          )}
+          {blokkerendAchterstallig > 0 && (
+            <button
+              onClick={() => setAlleenBlokkerend((v) => !v)}
+              className={`px-2 py-0.5 rounded-full text-xs font-medium border transition-colors ${
+                alleenBlokkerend
+                  ? 'bg-red-600 text-white border-red-600'
+                  : 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'
+              }`}
+              title="Achterstallige inkoop die snijplanning daadwerkelijk blokkeert"
+            >
+              ⚠ {blokkerendAchterstallig} blokkeert snijplanning
+            </button>
+          )}
+          {alleenBlokkerend && (
+            <button onClick={() => setAlleenBlokkerend(false)} className="text-xs text-slate-400 hover:text-slate-600">
+              Filter wissen
+            </button>
           )}
         </div>
       )}
@@ -243,7 +269,7 @@ export function InkoopRegelOverzichtTab() {
               {sorted.map((r) => {
                 const omschrijving = r.artikel_omschrijving ?? r.product_omschrijving ?? r.artikelnr ?? `Regel ${r.regelnummer}`
                 const unit = r.eenheid === 'stuks' ? 'st' : 'm'
-                const isAchterstallig = r.verwacht_datum && r.verwacht_datum < new Date().toISOString().slice(0, 10)
+                const isAchterstallig = isAchterstalligeEta(r.verwacht_datum)
 
                 return (
                   <tr key={r.regel_id} className={`hover:bg-slate-50/60 transition-colors ${isAchterstallig ? 'bg-red-50/30' : ''}`}>
@@ -284,6 +310,11 @@ export function InkoopRegelOverzichtTab() {
                           title="Aantal meter van deze (nog niet ontvangen) rol al toegewezen aan snijplanning (status 'Wacht op inkoop')"
                         >
                           {formatAantal(r.snijplan_gebruikte_lengte_cm / 100)} m gebruikt door snijplanning
+                          {isAchterstallig && (
+                            <span className="block text-red-600 font-medium">
+                              ⚠ blokkeert snijplanning — ETA verstreken
+                            </span>
+                          )}
                         </div>
                       )}
                     </td>

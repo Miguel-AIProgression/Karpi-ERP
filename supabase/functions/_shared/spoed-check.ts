@@ -17,8 +17,6 @@ import {
 import { naarWerkdag } from './levertijd-match.ts'
 import { isoWeekJaar, isoWeekMaandag } from './iso-week.ts'
 
-const MIN_PER_WEEKDAG = 510  // 09:00-uur netto (08:00-17:00 minus 30 min pauze)
-
 function plusWeken(d: Date, n: number): Date {
   const out = new Date(d.getTime())
   out.setUTCDate(out.getUTCDate() + n * 7)
@@ -75,9 +73,13 @@ export function evalueerSpoed(
 
   const bezetDeze = bezetWerkminutenInWeek(werkagenda, dezeWeek, eindDezeWeek, werktijden)
   const bezetVolgende = bezetWerkminutenInWeek(werkagenda, volgendeWeek, eindVolgendeWeek, werktijden)
-  const totaalWeekMin = MIN_PER_WEEKDAG * werktijden.werkdagen.length
-  const restDeze = totaalWeekMin - bezetDeze - buffer
-  const restVolgende = totaalWeekMin - bezetVolgende - buffer
+  // Werkelijke netto werkminuten in de week (alle pauzes + feestdagen meegerekend)
+  // i.p.v. een hardcoded vlak tarief per werkdag — anders raakt dit uit sync
+  // zodra het aantal pauzes of een feestdag verandert (zie werkagenda.ts).
+  const totaalWeekMinDeze = werkminutenTussen(dezeWeek, eindDezeWeek, werktijden)
+  const totaalWeekMinVolgende = werkminutenTussen(volgendeWeek, eindVolgendeWeek, werktijden)
+  const restDeze = totaalWeekMinDeze - bezetDeze - buffer
+  const restVolgende = totaalWeekMinVolgende - bezetVolgende - buffer
 
   const week_restruimte_uren = {
     deze: Math.round((Math.max(0, restDeze) / 60) * 10) / 10,

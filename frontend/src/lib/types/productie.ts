@@ -226,7 +226,6 @@ export interface PlanningConfig {
   weken_vooruit: number
   max_reststuk_verspilling_pct: number
   wisseltijd_minuten: number
-  snijtijd_minuten: number
   confectie_buffer_minuten: number
   /** Werkdagen tussen "klaar met snijden" en afleverdatum voor week-orders
    *  (lever_type='week'). Bestond al in app_config.productie_planning en

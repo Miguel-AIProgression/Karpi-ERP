@@ -9,6 +9,9 @@ import {
   useSnijplannenVoorGroep,
   useKeurSnijvoorstelGoed,
   useVerwerpSnijvoorstel,
+  useVormSnijtijden,
+  useMoeilijkeKwaliteiten,
+  bepaalSnijtijdMinuten,
 } from '@/modules/snijplanning'
 import { usePlanningConfig } from '@/hooks/use-planning-config'
 import type {
@@ -127,6 +130,23 @@ export function SnijvoorstelReviewPage() {
     })
   }, [voorstelResponse, snijplanMap])
 
+  const { data: planningConfig } = usePlanningConfig()
+  const { data: vormTarieven } = useVormSnijtijden()
+  const { data: moeilijkeKwaliteiten } = useMoeilijkeKwaliteiten()
+
+  // Alle stukken in één voorstel delen dezelfde kwaliteit_code (een voorstel
+  // is altijd voor één kwaliteit/kleur-groep) — geen per-stuk kwaliteit nodig.
+  const snijMinuten = useMemo(() => {
+    if (!vormTarieven || !moeilijkeKwaliteiten) return null
+    return rolVoorstellen.reduce(
+      (s, rv) => s + rv.stukken.reduce(
+        (s2, st) => s2 + bepaalSnijtijdMinuten(st.vorm, kwaliteitCode, vormTarieven, moeilijkeKwaliteiten),
+        0,
+      ),
+      0,
+    )
+  }, [rolVoorstellen, vormTarieven, moeilijkeKwaliteiten, kwaliteitCode])
+
   if (!voorstelResponse) {
     return (
       <>
@@ -148,7 +168,6 @@ export function SnijvoorstelReviewPage() {
   }
 
   const sam = voorstelResponse.samenvatting
-  const { data: planningConfig } = usePlanningConfig()
 
   return (
     <>
@@ -168,7 +187,7 @@ export function SnijvoorstelReviewPage() {
       </div>
 
       {/* Summary card */}
-      <SummaryCard samenvatting={sam} planningConfig={planningConfig} />
+      <SummaryCard samenvatting={sam} planningConfig={planningConfig} snijMinuten={snijMinuten} />
 
       {/* Per-roll visualisations */}
       {rolVoorstellen.map((rv) => (
@@ -222,9 +241,17 @@ function formatTijd(minuten: number): string {
   return min === 0 ? `${uren} uur` : `${uren} uur ${min} min`
 }
 
-function SummaryCard({ samenvatting, planningConfig }: { samenvatting: SnijvoorstelResponse['samenvatting']; planningConfig?: PlanningConfig | null }) {
-  const geschatteTijd = planningConfig
-    ? (samenvatting.totaal_rollen * planningConfig.wisseltijd_minuten) + (samenvatting.geplaatst * planningConfig.snijtijd_minuten)
+function SummaryCard({
+  samenvatting,
+  planningConfig,
+  snijMinuten,
+}: {
+  samenvatting: SnijvoorstelResponse['samenvatting']
+  planningConfig?: PlanningConfig | null
+  snijMinuten: number | null
+}) {
+  const geschatteTijd = planningConfig && snijMinuten != null
+    ? (samenvatting.totaal_rollen * planningConfig.wisseltijd_minuten) + snijMinuten
     : null
 
   return (

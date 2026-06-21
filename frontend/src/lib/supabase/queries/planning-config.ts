@@ -12,7 +12,6 @@ const DEFAULT_CONFIG: PlanningConfig = {
   weken_vooruit: 4,
   max_reststuk_verspilling_pct: 15,
   wisseltijd_minuten: 15,
-  snijtijd_minuten: 5,
   confectie_buffer_minuten: 15,
   // Defaults spiegelen check-levertijd/index.ts (zelfde app_config-rij).
   logistieke_buffer_dagen: 2,

@@ -136,3 +136,15 @@ export async function fetchKwaliteitInfo(code: string | null): Promise<Kwaliteit
   if (error) throw error
   return data
 }
+
+/** Kwaliteit-codes die moeilijk te snijden zijn (mig 460) — rechthoek telt
+ *  voor hen als het algemene (5 min) snijtijd-tarief, niet de rechthoek-
+ *  korting. Zie supabase/functions/_shared/snijtijd.ts. */
+export async function fetchMoeilijkeKwaliteiten(): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from('kwaliteiten')
+    .select('code')
+    .eq('moeilijk_te_snijden', true)
+  if (error) throw error
+  return new Set((data ?? []).map((r: { code: string }) => r.code))
+}
