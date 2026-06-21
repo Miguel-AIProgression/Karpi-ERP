@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase/client'
-import { round2 } from '@/lib/utils/formatters'
+import { berekenRegelBedrag } from '@/lib/orders/bedrag'
 
 interface OrderRegelForPricing {
   id: number
@@ -52,7 +52,7 @@ export async function herprijsEdiOrderUitPrijslijst(orderId: number): Promise<nu
     const prijs = prijsPerArtikel.get(regel.artikelnr)
     if (prijs == null) continue
     const aantal = Number(regel.orderaantal ?? 0)
-    const bedrag = round2(prijs * aantal * (1 - kortingPct / 100))
+    const bedrag = berekenRegelBedrag(prijs, aantal, kortingPct)
     const { error } = await supabase
       .from('order_regels')
       .update({ prijs, korting_pct: kortingPct, bedrag })

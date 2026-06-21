@@ -17,6 +17,7 @@ import { matchDebiteur } from './shopify-debiteur-matcher.ts'
 import { matchProduct, buildOmschrijving } from './product-matcher.ts'
 import { parseMaatwerkDims } from './order-matcher.ts'
 import { haalKlantPrijs } from './klant-prijs.ts'
+import { regelBedrag } from './order-intake/regel-bedrag.ts'
 import { logExternePayload, markeerExternePayload } from './externe-payload-audit.ts'
 
 type SupabaseClient = ReturnType<typeof createClient>
@@ -93,7 +94,7 @@ async function buildRegels(
       breedte_cm: maatwerk_breedte_cm,
     })
     const prijs = klantPrijs.prijs
-    const bedrag = prijs != null ? Math.round(prijs * aantal * 100) / 100 : null
+    const bedrag = regelBedrag(prijs, aantal)
 
     regels.push({
       artikelnr: match.artikelnr,

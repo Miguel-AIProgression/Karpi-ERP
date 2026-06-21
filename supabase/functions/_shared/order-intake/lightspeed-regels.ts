@@ -6,6 +6,7 @@
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { parseMaatwerkDims, type OrderMatcherRow } from '../order-matcher.ts'
 import { matchProduct, buildOmschrijving, type ProductMatch } from '../product-matcher.ts'
+import { regelBedrag } from './regel-bedrag.ts'
 import { haalKlantPrijs } from '../klant-prijs.ts'
 import { kgVanLightspeedGewicht } from './gewicht.ts'
 import type { IntakeRegel } from './types.ts'
@@ -21,7 +22,7 @@ export function toIntakeRegel(input: {
   dims: { lengte: number; breedte: number } | null
 }): IntakeRegel {
   const { match, aantal, prijs } = input
-  const bedrag = prijs != null ? Math.round(prijs * aantal * 100) / 100 : null
+  const bedrag = regelBedrag(prijs, aantal)
   return {
     artikelnr: match.artikelnr,
     omschrijving: input.omschrijving,
