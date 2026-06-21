@@ -19,6 +19,7 @@ import { PrijslijstenOverviewPage } from '@/pages/prijslijsten/prijslijsten-over
 import { PrijslijstDetailPage } from '@/pages/prijslijsten/prijslijst-detail'
 import { SnijplanningOverviewPage } from '@/pages/snijplanning/snijplanning-overview'
 import { HaalbaarheidOverviewPage } from '@/pages/snijplanning/haalbaarheid-overview'
+import { MasterPlanningPage } from '@/pages/snijplanning/master-planning-overview'
 import { RolSnijvoorstelPage } from '@/pages/snijplanning/rol-snijvoorstel'
 import { StickerPrintPage } from '@/pages/snijplanning/sticker-print'
 import { StickersBulkPage } from '@/pages/snijplanning/stickers-bulk'
@@ -108,6 +109,7 @@ export const router = createBrowserRouter([
       { path: 'magazijn', element: <Navigate to="/pick-ship" replace /> },
       { path: 'snijplanning', element: <SnijplanningOverviewPage /> },
       { path: 'snijplanning/haalbaarheid', element: <HaalbaarheidOverviewPage /> },
+      { path: 'snijplanning/master-planning', element: <MasterPlanningPage /> },
       { path: 'snijplanning/rol/:rolId', element: <RolSnijvoorstelPage /> },
       { path: 'snijplanning/voorstel/:voorstelId', element: <SnijvoorstelReviewPage /> },
       { path: 'snijplanning/:id/stickers', element: <StickerPrintPage /> },

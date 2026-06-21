@@ -18,6 +18,7 @@ import {
 } from '../queries/snijplanning'
 import type { SnijplanSortField, SortDirection, TekortAnalyseRow, WachtOpInkoopRow } from '../queries/snijplanning'
 import { fetchMaatwerkHaalbaarheid, fetchInkoopRegelInfo } from '../queries/haalbaarheid'
+import { fetchMasterPlanningRegels } from '../queries/master-planning'
 import {
   createSnijplan,
   updateSnijplanStatus,
@@ -123,6 +124,20 @@ export function useMaatwerkHaalbaarheid() {
     queryKey: ['snijplanning', 'maatwerk-haalbaarheid'],
     queryFn: async () => {
       const rows = await fetchMaatwerkHaalbaarheid()
+      const regelIds = rows
+        .map((r) => r.verwacht_inkooporder_regel_id)
+        .filter((id): id is number => id != null)
+      const inkoopInfo = await fetchInkoopRegelInfo(regelIds)
+      return { rows, inkoopInfo }
+    },
+  })
+}
+
+export function useMasterPlanning() {
+  return useQuery({
+    queryKey: ['snijplanning', 'master-planning'],
+    queryFn: async () => {
+      const rows = await fetchMasterPlanningRegels()
       const regelIds = rows
         .map((r) => r.verwacht_inkooporder_regel_id)
         .filter((id): id is number => id != null)

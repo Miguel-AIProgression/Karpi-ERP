@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, Fragment } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { Search, Scissors, Calendar, CheckCircle2, AlertTriangle, List, Truck, Gauge } from 'lucide-react'
+import { Search, Scissors, Calendar, CheckCircle2, AlertTriangle, List, Truck, Gauge, LayoutList } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { GroepAccordion } from '@/components/snijplanning/groep-accordion'
 import { WachtOpInkoopSectie } from '@/components/snijplanning/wacht-op-inkoop-sectie'
@@ -182,13 +182,22 @@ export function SnijplanningOverviewPage() {
             : `${filteredGroepen.length ?? 0} kwaliteit/kleur groepen — ${teSnijdenCount} snijplannen`
         }
         actions={
-          <Link
-            to="/snijplanning/haalbaarheid"
-            className="flex items-center gap-1.5 px-3 py-2 rounded-[var(--radius-sm)] border border-slate-300 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
-          >
-            <Gauge size={14} />
-            Haalbaarheid
-          </Link>
+          <>
+            <Link
+              to="/snijplanning/master-planning"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-[var(--radius-sm)] border border-slate-300 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+              <LayoutList size={14} />
+              Master Planning
+            </Link>
+            <Link
+              to="/snijplanning/haalbaarheid"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-[var(--radius-sm)] border border-slate-300 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+              <Gauge size={14} />
+              Haalbaarheid
+            </Link>
+          </>
         }
       />
 
