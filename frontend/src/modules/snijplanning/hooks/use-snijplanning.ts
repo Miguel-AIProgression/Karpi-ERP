@@ -18,7 +18,7 @@ import {
 } from '../queries/snijplanning'
 import type { SnijplanSortField, SortDirection, TekortAnalyseRow, WachtOpInkoopRow } from '../queries/snijplanning'
 import { fetchMaatwerkHaalbaarheid, fetchInkoopRegelInfo } from '../queries/haalbaarheid'
-import { fetchMasterPlanningRegels } from '../queries/master-planning'
+import { fetchMasterPlanningRegels, fetchConceptSnijplanVoorstelMap } from '../queries/master-planning'
 import {
   createSnijplan,
   updateSnijplanStatus,
@@ -144,8 +144,11 @@ export function useMasterPlanning() {
       const regelIds = rows
         .map((r) => r.verwacht_inkooporder_regel_id)
         .filter((id): id is number => id != null)
-      const inkoopInfo = await fetchInkoopRegelInfo(regelIds)
-      return { rows, inkoopInfo }
+      const [inkoopInfo, conceptVoorstelMap] = await Promise.all([
+        fetchInkoopRegelInfo(regelIds),
+        fetchConceptSnijplanVoorstelMap(),
+      ])
+      return { rows, inkoopInfo, conceptVoorstelMap }
     },
   })
 }

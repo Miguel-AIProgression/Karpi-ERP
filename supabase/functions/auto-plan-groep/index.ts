@@ -24,9 +24,11 @@ import {
   fetchOpenInkoopRegels,
   fetchStandaardBreedte,
   fetchOudeRolToewijzingen,
+  herstelVerdrongenStukken,
   buildFifoOptions,
   saveVoorstel,
 } from '../_shared/db-helpers.ts'
+import type { OudeRolToewijzing } from '../_shared/db-helpers.ts'
 import { PLANBAAR } from '../_shared/snijplan-status.ts'
 import { berekenHaalbaarheid, type SnijDeadlineConfig } from '../_shared/snij-haalbaarheid.ts'
 import { STANDAARD_WERKTIJDEN, isoDatum, type Werktijden } from '../_shared/werkagenda.ts'
@@ -249,6 +251,7 @@ serve(async (req) => {
     const verdrongenKandidaten = [...oudeToewijzingen.entries()].filter(
       ([snijplanId]) => !geplaatsteIds.has(snijplanId),
     )
+    const teHerstellen: Array<{ snijplanId: number; oude: OudeRolToewijzing }> = []
     if (verdrongenKandidaten.length > 0) {
       const { config: deadlineConfig, werktijden } = await fetchSnijDeadlineConfig(supabase)
       const vandaag = isoDatum(new Date())
@@ -263,9 +266,20 @@ serve(async (req) => {
             snijplan_id: snijplanId,
             snijplan_nr: oude.snijplanNr,
           })
+          teHerstellen.push({ snijplanId, oude })
         }
       }
     }
+
+    // Het voorstel met de nieuwe plaatsing blijft straks 'concept' (niet
+    // goedgekeurd) — maar de release in Step 2 was al definitief. Zonder dit
+    // herstel zou het verdrongen stuk permanent wees blijven: status='Gepland'
+    // met rol_id=NULL, onzichtbaar voor de volgende run (zoekt op 'Wacht') en
+    // onterecht geteld als materiaaltekort (zie db-helpers.ts).
+    if (teHerstellen.length > 0) {
+      await herstelVerdrongenStukken(supabase, teHerstellen)
+    }
+    const herstelIds = new Set(teHerstellen.map((t) => t.snijplanId))
 
     // ---- Step 6-8: Save voorstel + auto-approve + shelf-validator ----
     // Alleen relevant als er überhaupt iets op een échte rol geplaatst is;
@@ -346,7 +360,12 @@ serve(async (req) => {
     // FIFO op verwacht_datum). Virtuele rol bestaat alleen hier in-memory —
     // nooit een rij in `rollen` (zie plan: les uit de PH-placeholder-rollen-
     // afschaffing, mig 182).
-    const nietGeplaatstIds = new Set(nietGeplaatst.map((np) => np.snijplan_id))
+    // herstelIds (zojuist teruggezet op hun oude rol) horen niet langer bij
+    // "niet geplaatst" — anders pakt de IO-claim-pas ze hieronder alsnog op en
+    // verliezen ze de net herstelde fysieke rol weer voor een IO-claim.
+    const nietGeplaatstIds = new Set(
+      nietGeplaatst.map((np) => np.snijplan_id).filter((id) => !herstelIds.has(id)),
+    )
     const nietGeplaatstPieces: SnijplanPiece[] = pieces.filter((p) => nietGeplaatstIds.has(p.id))
 
     let wachtOpInkoop: {
@@ -360,7 +379,7 @@ serve(async (req) => {
         is_achterstallig: boolean
       }>
     } | null = null
-    let nietGeplaatstFinaal = nietGeplaatst
+    let nietGeplaatstFinaal = nietGeplaatst.filter((np) => !herstelIds.has(np.snijplan_id))
 
     if (nietGeplaatstPieces.length > 0) {
       const [openRegels, standaardBreedteCm] = await Promise.all([
@@ -460,7 +479,7 @@ serve(async (req) => {
     if (fifoCarveOut) carveOutReasons.push('Rode FIFO-badge — leeftijd-voorkeur kost fors extra snijafval.')
     if (verdringingRisico) {
       carveOutReasons.push(
-        `Verdringingsrisico — ${verdrongenOrders.length} eerder gepland stuk(ken) verloren hun rol en zouden hun snij-deadline missen.`,
+        `Verdringingsrisico — ${verdrongenOrders.length} eerder gepland stuk(ken) zouden hun snij-deadline gemist hebben en zijn automatisch teruggezet op hun oude rol. Dit voorstel (de overige stukken) blijft concept voor handmatige beoordeling.`,
       )
     }
 

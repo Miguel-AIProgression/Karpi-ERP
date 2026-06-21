@@ -94,6 +94,15 @@ export interface OudeRolToewijzing {
   snijplanNr: string | null
   afleverdatum: string | null
   leverType: 'week' | 'datum'
+  /** Volledige plaatsings-geometrie vóór de release — nodig om een verdrongen
+   *  stuk (zie verdringingscheck in index.ts) exact terug te zetten i.p.v.
+   *  alleen de rol_id, anders blijft positie_x_cm/positie_y_cm/geroteerd NULL
+   *  en is het stuk "Gepland" zonder geldige positie. */
+  positieXCm: number | null
+  positieYCm: number | null
+  lengteCm: number | null
+  breedteCm: number | null
+  geroteerd: boolean
 }
 
 export async function fetchOudeRolToewijzingen(
@@ -105,7 +114,7 @@ export async function fetchOudeRolToewijzingen(
 
   const { data, error } = await supabase
     .from('snijplanning_overzicht')
-    .select('id, rol_id, order_id, order_nr, snijplan_nr, afleverdatum, lever_type')
+    .select('id, rol_id, order_id, order_nr, snijplan_nr, afleverdatum, lever_type, positie_x_cm, positie_y_cm, snij_lengte_cm, snij_breedte_cm, geroteerd')
     .eq('status', 'Gepland')
     .not('rol_id', 'is', null)
     .eq('kwaliteit_code', kwaliteitCode)
@@ -122,9 +131,55 @@ export async function fetchOudeRolToewijzingen(
       snijplanNr: (sp.snijplan_nr as string | null) ?? null,
       afleverdatum: (sp.afleverdatum as string | null) ?? null,
       leverType: ((sp.lever_type as string | null) ?? 'week') as 'week' | 'datum',
+      positieXCm: (sp.positie_x_cm as number | null) ?? null,
+      positieYCm: (sp.positie_y_cm as number | null) ?? null,
+      lengteCm: (sp.snij_lengte_cm as number | null) ?? null,
+      breedteCm: (sp.snij_breedte_cm as number | null) ?? null,
+      geroteerd: (sp.geroteerd as boolean | null) ?? false,
     })
   }
   return map
+}
+
+/**
+ * Zet verdrongen stukken terug op hun oude rol+positie (Fase 2 veiligheidsnet,
+ * verdringingscheck in index.ts). `release_gepland_stukken` nult bij elke
+ * auto-plan-groep-run onvoorwaardelijk rol_id/positie_x_cm/positie_y_cm/
+ * geroteerd voor de hele groep — als de heroptimalisatie daarna als 'concept'
+ * blijft staan (verdringingsrisico), wordt die nieuwe plaatsing nooit
+ * goedgekeurd, maar de release was al definitief. Zonder herstel blijft het
+ * verdrongen stuk dan permanent wezen: status='Gepland' maar rol_id=NULL —
+ * onzichtbaar voor een volgende run (die zoekt op status='Wacht') én onterecht
+ * geteld als materiaaltekort. Roept zelf geen RPC aan (geen bestaande RPC doet
+ * dit) — directe UPDATE, symmetrisch met release_gepland_stukken se eigen
+ * rollen-status-flip (mig 453).
+ */
+export async function herstelVerdrongenStukken(
+  supabase: SupabaseClient,
+  verdrongen: Array<{ snijplanId: number; oude: OudeRolToewijzing }>,
+): Promise<void> {
+  if (verdrongen.length === 0) return
+
+  for (const { snijplanId, oude } of verdrongen) {
+    const { error } = await supabase
+      .from('snijplannen')
+      .update({
+        rol_id: oude.rolId,
+        positie_x_cm: oude.positieXCm,
+        positie_y_cm: oude.positieYCm,
+        geroteerd: oude.geroteerd,
+      })
+      .eq('id', snijplanId)
+    if (error) throw error
+  }
+
+  const rolIds = [...new Set(verdrongen.map((v) => v.oude.rolId))]
+  const { error: rolError } = await supabase
+    .from('rollen')
+    .update({ status: 'in_snijplan' })
+    .in('id', rolIds)
+    .in('status', ['beschikbaar', 'reststuk'])
+  if (rolError) throw rolError
 }
 
 // ---------------------------------------------------------------------------

@@ -230,6 +230,10 @@ export interface TekortAnalyseRow {
   max_korte_zijde_cm: number
   grootste_onpassend_stuk_lange_cm?: number
   grootste_onpassend_stuk_korte_cm?: number
+  /** Rollen van deze kwaliteit/kleur (of uitwisselbaar) die fysiek bestaan maar
+   *  status in_snijplan/verkocht hebben — mig 462. Onderscheidt "0 rollen
+   *  bestaan" van "rollen bestaan, zijn alleen al ingedeeld bij andere orders". */
+  aantal_fysiek_bezet: number
 }
 
 export async function fetchTekortAnalyse(): Promise<TekortAnalyseRow[]> {

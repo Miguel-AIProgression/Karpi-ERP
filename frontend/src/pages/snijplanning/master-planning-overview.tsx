@@ -22,7 +22,7 @@ import { isAchterstalligeEta } from '@/modules/inkoop/lib/inkoop-eta'
 
 type SortKey = 'kwaliteit' | 'snijdatum' | 'leverdatum' | 'klant' | 'status'
 type SortDir = 'asc' | 'desc'
-type RijStatus = HaalbaarheidStatus | 'materiaaltekort'
+type RijStatus = HaalbaarheidStatus | 'materiaaltekort' | 'concept'
 type ViewMode = 'tabel' | 'per_dag'
 
 const DAG_LABELS = ['zondag', 'maandag', 'dinsdag', 'woensdag', 'donderdag', 'vrijdag', 'zaterdag']
@@ -36,13 +36,14 @@ function fmtDagHeader(d: Date): string {
 
 const TERMINALE_FASE_STATUSSEN = new Set(['Gesneden', 'In confectie', 'Gereed', 'Ingepakt'])
 
-const STATUS_VOLGORDE: Record<RijStatus, number> = { rood: 0, materiaaltekort: 0, oranje: 1, groen: 2 }
+const STATUS_VOLGORDE: Record<RijStatus, number> = { rood: 0, materiaaltekort: 0, concept: 0, oranje: 1, groen: 2 }
 
 const STATUS_BADGE: Record<RijStatus, { bg: string; text: string; label: string }> = {
   rood: { bg: 'bg-red-100', text: 'text-red-700', label: 'Te laat' },
   oranje: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Risico' },
   groen: { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'Op schema' },
   materiaaltekort: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Materiaaltekort' },
+  concept: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Te beoordelen' },
 }
 
 interface IngedeeldeRol {
@@ -59,6 +60,9 @@ export interface MasterPlanningRij extends MasterPlanningRow {
   statusKolom: RijStatus | null
   actueleFase: MaatwerkFase
   verwachteVerzendDatum: string | null
+  /** Voorstel dat dit stuk al heeft geplaatst maar nog niet is goedgekeurd
+   *  (Verdringingsrisico-concept) — null als er geen voorstel openstaat. */
+  conceptVoorstelId: number | null
 }
 
 function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
@@ -231,11 +235,17 @@ export function MasterPlanningPage() {
             }
           : { type: 'tekort', label: 'Geen rol, geen inkoop' }
 
+      const conceptVoorstelId = masterPlanning.conceptVoorstelMap.get(r.id) ?? null
+
       let statusKolom: RijStatus | null = null
       let verwachteVerzendDatum: string | null = null
       if (!alGesneden && r.afleverdatum) {
         const isMateriaaltekort = r.rol_id == null && r.verwacht_inkooporder_regel_id == null
-        if (isMateriaaltekort) {
+        if (conceptVoorstelId != null) {
+          // Stuk heeft al een plaatsing in een nog niet beoordeeld voorstel —
+          // geen materiaaltekort, wacht op een planner-klik in "Te beoordelen".
+          statusKolom = 'concept'
+        } else if (isMateriaaltekort) {
           statusKolom = 'materiaaltekort'
         } else {
           const referentieDatum = snijDatum ?? vandaag
@@ -249,7 +259,7 @@ export function MasterPlanningPage() {
         }
       }
 
-      return { ...r, snijDatum, ingedeeldeRol, statusKolom, actueleFase, verwachteVerzendDatum }
+      return { ...r, snijDatum, ingedeeldeRol, statusKolom, actueleFase, verwachteVerzendDatum, conceptVoorstelId }
     })
   }, [masterPlanning, planningConfig, werktijden, rolEindMap])
 
@@ -311,16 +321,17 @@ export function MasterPlanningPage() {
 
   // Samenvatting: orders op schema/risico/te laat — alleen orders met ≥1 nog
   // niet-gesneden regel tellen mee (bij al-gesneden orders is de vraag al
-  // beantwoord). Materiaaltekort telt voor die rollup als 'rood' (geen dekking
-  // is per definitie niet op schema), maar krijgt daarnaast een eigen,
-  // regel-niveau telling.
+  // beantwoord). Materiaaltekort/concept tellen voor die rollup als 'rood'
+  // (geen dekking, resp. nog niet goedgekeurd = per definitie niet op schema),
+  // materiaaltekort krijgt daarnaast een eigen, regel-niveau telling.
   const summary = useMemo(() => {
     const orderWorst = new Map<number, HaalbaarheidStatus>()
     let materiaaltekortRegels = 0
     for (const r of rijen) {
       if (r.statusKolom === 'materiaaltekort') materiaaltekortRegels++
       if (r.statusKolom == null) continue
-      const effectief: HaalbaarheidStatus = r.statusKolom === 'materiaaltekort' ? 'rood' : r.statusKolom
+      const effectief: HaalbaarheidStatus =
+        r.statusKolom === 'materiaaltekort' || r.statusKolom === 'concept' ? 'rood' : r.statusKolom
       const huidig = orderWorst.get(r.order_id)
       if (!huidig || STATUS_VOLGORDE[effectief] < STATUS_VOLGORDE[huidig]) {
         orderWorst.set(r.order_id, effectief)
@@ -483,7 +494,7 @@ export function MasterPlanningPage() {
                 const fase = MAATWERK_FASE_PRESENTATIE[r.actueleFase]
                 const statusBadge = r.statusKolom ? STATUS_BADGE[r.statusKolom] : null
                 return (
-                  <tr key={r.id} className={cn('hover:bg-slate-50/60', r.statusKolom === 'rood' && 'bg-red-50/30', r.statusKolom === 'materiaaltekort' && 'bg-purple-50/30')}>
+                  <tr key={r.id} className={cn('hover:bg-slate-50/60', r.statusKolom === 'rood' && 'bg-red-50/30', r.statusKolom === 'materiaaltekort' && 'bg-purple-50/30', r.statusKolom === 'concept' && 'bg-blue-50/30')}>
                     <td className="px-4 py-3 whitespace-nowrap text-slate-700">
                       {r.snijDatum ? formatDate(r.snijDatum) : <span className="text-slate-400">—</span>}
                     </td>
@@ -525,9 +536,18 @@ export function MasterPlanningPage() {
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       {statusBadge ? (
-                        <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium', statusBadge.bg, statusBadge.text)}>
-                          {statusBadge.label}
-                        </span>
+                        r.statusKolom === 'concept' && r.conceptVoorstelId != null ? (
+                          <Link
+                            to={`/snijplanning/voorstel/${r.conceptVoorstelId}`}
+                            className={cn('text-xs px-2 py-0.5 rounded-full font-medium hover:underline', statusBadge.bg, statusBadge.text)}
+                          >
+                            {statusBadge.label}
+                          </Link>
+                        ) : (
+                          <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium', statusBadge.bg, statusBadge.text)}>
+                            {statusBadge.label}
+                          </span>
+                        )
                       ) : (
                         <span className="text-slate-400">—</span>
                       )}

@@ -67,3 +67,31 @@ export async function fetchMasterPlanningRegels(): Promise<MasterPlanningRow[]> 
   }
   return all
 }
+
+/** snijplan_id → voorstel_id voor stukken die al een plaatsing hebben in een
+ *  nog niet beoordeeld ('concept') snijvoorstel (Verdringingsrisico/rode FIFO-
+ *  badge, mig 459). Zonder deze koppeling labelt Master Planning zo'n stuk
+ *  als "materiaaltekort" terwijl er al een voorstel met geldige rol klaarstaat
+ *  — het wacht alleen op een planner-klik in "Te beoordelen", niet op
+ *  materiaal. */
+export async function fetchConceptSnijplanVoorstelMap(): Promise<Map<number, number>> {
+  const map = new Map<number, number>()
+  const pageSize = 1000
+  let from = 0
+  while (true) {
+    const { data, error } = await supabase
+      .from('snijvoorstel_plaatsingen')
+      .select('snijplan_id, voorstel_id, snijvoorstellen!inner(status)')
+      .eq('snijvoorstellen.status', 'concept')
+      .range(from, from + pageSize - 1)
+
+    if (error) throw error
+    const batch = data ?? []
+    for (const row of batch as Array<{ snijplan_id: number; voorstel_id: number }>) {
+      map.set(row.snijplan_id, row.voorstel_id)
+    }
+    if (batch.length < pageSize) break
+    from += pageSize
+  }
+  return map
+}
