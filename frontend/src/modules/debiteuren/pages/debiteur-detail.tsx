@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Pencil, X, Trash2 } from 'lucide-react'
+import { ArrowLeft, Pencil, X, Trash2, Upload } from 'lucide-react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase/client'
 import { PageHeader } from '@/components/layout/page-header'
@@ -43,6 +43,8 @@ export function DebiteurDetailPage() {
   const [showEdit, setShowEdit] = useState(false)
   const [showDelete, setShowDelete] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [logoVersion, setLogoVersion] = useState(0)
+  const logoInputRef = useRef<HTMLInputElement>(null)
 
   const queryClient = useQueryClient()
   const { data: klant, isLoading } = useDebiteurDetail(debiteurNr)
@@ -227,6 +229,44 @@ export function DebiteurDetailPage() {
     },
   })
 
+  const logoUploadMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const path = `${debiteurNr}.jpg`
+      const { error: uploadError } = await supabase.storage
+        .from('logos')
+        .upload(path, file, { upsert: true, contentType: file.type || 'image/jpeg' })
+      if (uploadError) throw uploadError
+      const { error: dbError } = await supabase
+        .from('debiteuren')
+        .update({ logo_path: path })
+        .eq('debiteur_nr', debiteurNr)
+      if (dbError) throw dbError
+    },
+    onSuccess: () => {
+      setLogoVersion(Date.now())
+      queryClient.invalidateQueries({ queryKey: ['klanten'] })
+    },
+    onError: showError('Logo uploaden'),
+  })
+
+  const logoDeleteMutation = useMutation({
+    mutationFn: async () => {
+      const path = `${debiteurNr}.jpg`
+      const { error: removeError } = await supabase.storage.from('logos').remove([path])
+      if (removeError) throw removeError
+      const { error: dbError } = await supabase
+        .from('debiteuren')
+        .update({ logo_path: null })
+        .eq('debiteur_nr', debiteurNr)
+      if (dbError) throw dbError
+    },
+    onSuccess: () => {
+      setShowLogo(false)
+      queryClient.invalidateQueries({ queryKey: ['klanten'] })
+    },
+    onError: showError('Logo verwijderen'),
+  })
+
   if (isLoading) {
     return <PageHeader title="Klant laden..." />
   }
@@ -279,20 +319,58 @@ export function DebiteurDetailPage() {
         </div>
         <div className="flex items-start gap-4 mb-4">
           {/* Logo / initialen */}
-          {klant.logo_path ? (
-            <button onClick={() => setShowLogo(true)} className="cursor-zoom-in">
-              <img
-                src={`${SUPABASE_URL}/storage/v1/object/public/logos/${klant.debiteur_nr}.jpg`}
-                alt={klant.naam}
-                className="w-16 h-16 rounded-[var(--radius-sm)] object-contain bg-slate-50 border border-slate-100"
-                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
-              />
+          <div className="relative group w-16 h-16 shrink-0">
+            {klant.logo_path ? (
+              <button onClick={() => setShowLogo(true)} className="cursor-zoom-in block w-full h-full">
+                <img
+                  src={`${SUPABASE_URL}/storage/v1/object/public/logos/${klant.debiteur_nr}.jpg${logoVersion ? `?v=${logoVersion}` : ''}`}
+                  alt={klant.naam}
+                  className="w-16 h-16 rounded-[var(--radius-sm)] object-contain bg-slate-50 border border-slate-100"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                />
+              </button>
+            ) : (
+              <div className="w-16 h-16 rounded-[var(--radius-sm)] bg-slate-100 flex items-center justify-center text-lg font-medium text-slate-400">
+                {klant.naam.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()}
+              </div>
+            )}
+
+            <input
+              ref={logoInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) logoUploadMutation.mutate(file)
+                e.target.value = ''
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => logoInputRef.current?.click()}
+              disabled={logoUploadMutation.isPending}
+              aria-label="Logo uploaden"
+              title="Logo uploaden"
+              className="absolute -bottom-1.5 -right-1.5 w-6 h-6 flex items-center justify-center rounded-full bg-white border border-slate-200 shadow-sm text-slate-400 opacity-0 group-hover:opacity-100 hover:text-terracotta-600 hover:bg-terracotta-50 transition-opacity disabled:opacity-50"
+            >
+              <Upload size={12} />
             </button>
-          ) : (
-            <div className="w-16 h-16 rounded-[var(--radius-sm)] bg-slate-100 flex items-center justify-center text-lg font-medium text-slate-400">
-              {klant.naam.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()}
-            </div>
-          )}
+            {klant.logo_path && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirm('Logo verwijderen voor deze klant?')) logoDeleteMutation.mutate()
+                }}
+                disabled={logoDeleteMutation.isPending}
+                aria-label="Logo verwijderen"
+                title="Logo verwijderen"
+                className="absolute -top-1.5 -right-1.5 w-6 h-6 flex items-center justify-center rounded-full bg-white border border-slate-200 shadow-sm text-slate-400 opacity-0 group-hover:opacity-100 hover:text-rose-600 hover:bg-rose-50 transition-opacity disabled:opacity-50"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
 
           <div className="flex-1">
             <h1 className="text-xl font-semibold text-slate-900 mb-1">{klant.naam}</h1>
@@ -732,7 +810,7 @@ export function DebiteurDetailPage() {
               <X size={16} />
             </button>
             <img
-              src={`${SUPABASE_URL}/storage/v1/object/public/logos/${klant.debiteur_nr}.jpg`}
+              src={`${SUPABASE_URL}/storage/v1/object/public/logos/${klant.debiteur_nr}.jpg${logoVersion ? `?v=${logoVersion}` : ''}`}
               alt={klant.naam}
               className="max-w-full max-h-[75vh] object-contain"
             />
