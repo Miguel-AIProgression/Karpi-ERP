@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
+  AlertTriangle,
   CalendarDays,
   CheckCircle2,
   ChevronDown,
@@ -21,6 +22,7 @@ import { cn } from '@/lib/utils/cn'
 import { ORDER_STATUS_COLORS } from '@/lib/utils/constants'
 import { iso2NaarVlag, landNaarIso2 } from '@/lib/utils/land-vlag'
 import { usePickSelectie } from '../context/pick-selectie-context'
+import { bepaalDagOrderUrgentie, type DagOrderUrgentie } from '../lib/dag-order-urgentie'
 import type { PickShipOrder, PickShipRegel, PickShipWachtOp } from '../lib/types'
 
 /** Compacte NL-dag-badge "wo 14-05" voor dag-orders (ADR 0014). */
@@ -77,6 +79,24 @@ function bepaalOrderType(regels: PickShipRegel[]): OrderType | null {
 // zodat std echt los staat van witte achtergrond — eerdere lichte tinten waren
 // op het overzichtsscherm nauwelijks te zien. De hover-kleur blijft binnen
 // hetzelfde tint-thema, anders flikkert hij grijs bij mouseover.
+// Dag-order is per definitie pas zichtbaar vanaf 1 werkdag vóór de
+// afleverdatum (horizon-filter in queries/pickbaarheid.ts) — "vandaag
+// verzenden" is dus het normale devies zolang hij in deze lijst staat.
+// Is de afleverdatum al verstreken zonder dat de order verzonden is, dan
+// is de belofte al gemist en krijgt de badge de zwaardere `te_laat`-stijl.
+const DAG_ORDER_URGENTIE_STIJL: Record<DagOrderUrgentie, { classes: string; label: string; titel: string }> = {
+  vandaag: {
+    classes: 'bg-terracotta-500 text-white',
+    label: 'Vandaag verzenden',
+    titel: 'Levering op specifieke dag — moet vandaag verzonden worden om op tijd te leveren',
+  },
+  te_laat: {
+    classes: 'bg-rose-600 text-white',
+    label: 'Te laat!',
+    titel: 'Afleverdatum is al verstreken zonder dat deze order verzonden is',
+  },
+}
+
 const ORDER_TYPE_TINT: Record<OrderType, { card: string; row: string; title: string }> = {
   maatwerk: {
     card: 'bg-orange-100 border-orange-300',
@@ -123,6 +143,9 @@ export function OrderPickCard({ order }: Props) {
   const heeftM2 = order.totaal_m2 > 0
   const orderType = bepaalOrderType(order.regels)
   const tint = orderType ? ORDER_TYPE_TINT[orderType] : null
+  const isDagOrder = order.lever_type === 'datum' && !!order.afleverdatum
+  const dagOrderUrgentie = isDagOrder ? bepaalDagOrderUrgentie(order.afleverdatum!) : null
+  const dagOrderStijl = dagOrderUrgentie ? DAG_ORDER_URGENTIE_STIJL[dagOrderUrgentie] : null
 
   return (
     <div
@@ -250,14 +273,19 @@ export function OrderPickCard({ order }: Props) {
           </span>
         </div>
 
-        {/* Verzendweek / Leverdatum (ADR 0014 — dag-orders krijgen prominente datum-badge) */}
-        {order.lever_type === 'datum' && order.afleverdatum ? (
+        {/* Verzendweek / Leverdatum (ADR 0014 — dag-orders krijgen prominente
+            datum-badge + expliciete urgentie, want eenmaal zichtbaar moet
+            een dag-order altijd dezelfde dag verzonden worden). */}
+        {isDagOrder && dagOrderUrgentie && dagOrderStijl ? (
           <div
-            className="hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[var(--radius-sm)] bg-terracotta-50 text-terracotta-700 text-xs font-medium whitespace-nowrap"
-            title="Levering op specifieke dag — verschijnt 1 werkdag vóór afleverdatum in Pick & Ship"
+            className={cn(
+              'hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[var(--radius-sm)] text-xs font-semibold whitespace-nowrap',
+              dagOrderStijl.classes,
+            )}
+            title={dagOrderStijl.titel}
           >
-            <CalendarDays size={12} />
-            {formatDagBadge(order.afleverdatum)}
+            {dagOrderUrgentie === 'te_laat' ? <AlertTriangle size={12} /> : <CalendarDays size={12} />}
+            {formatDagBadge(order.afleverdatum!)} · {dagOrderStijl.label}
           </div>
         ) : (
           <div
