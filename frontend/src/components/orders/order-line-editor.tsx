@@ -21,6 +21,8 @@ import { metProductVelden } from '@/lib/orders/order-hydratie'
 import { SHIPPING_PRODUCT_ID } from '@/lib/constants/shipping'
 import { formatPrijsBron } from '@/lib/utils/prijs-bron'
 import { fetchEquivalenteProducten } from '@/lib/supabase/queries/product-equivalents'
+import { isAdminPseudo } from '@/lib/orders/admin-pseudo'
+import { syncVormToeslagRegel, verwijderRegelMetCompanion } from '@/lib/orders/vorm-toeslag-regel'
 
 interface OrderLineEditorProps {
   lines: OrderRegelFormData[]
@@ -68,6 +70,7 @@ function MaatwerkLineRow({
     && line.artikelnr
     && line.artikelnr !== SHIPPING_PRODUCT_ID
     && !line.omstickeren
+    && !isAdminPseudo(line)
 
   const dekking = berekenRegelDekking(line)
   const uitwisselbaarTotaal = dekking.uitwisselbaar
@@ -433,8 +436,8 @@ function MaatwerkLineRow({
               {line.maatwerk_m2_prijs != null && line.maatwerk_m2_prijs > 0 && (
                 <span className="text-purple-600 font-medium">
                   {line.maatwerk_oppervlak_m2?.toFixed(2)} m² x {formatCurrency(line.maatwerk_m2_prijs)}/m²
-                  {(line.maatwerk_vorm_toeslag ?? 0) > 0 && ` + ${formatCurrency(line.maatwerk_vorm_toeslag!)} vorm`}
                   {(line.maatwerk_afwerking_prijs ?? 0) > 0 && ` + ${formatCurrency(line.maatwerk_afwerking_prijs!)} afwerking`}
+                  {/* Mig 465: vorm-toeslag is een eigen orderregel (VORMTOESLAG, zie regel hieronder), niet meer in deze prijs verwerkt. */}
                 </span>
               )}
             </div>
@@ -488,14 +491,17 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr,
 
   const updateLine = (index: number, updates: Partial<OrderRegelFormData>) => {
     const raaktMaatwerkPrijs = MAATWERK_PRIJS_VELDEN.some((k) => k in updates)
-    const updated = lines.map((l, i) => {
+    let updated = lines.map((l, i) => {
       if (i !== index) return l
       const merged = { ...l, ...updates }
 
       // Herbereken m²-prijs bij maatwerk wanneer afmetingen/vorm/afwerking
       // veranderen. Vorm-toeslag + afwerking-prijs worden opnieuw uit de
       // lookups afgeleid — alleen `merged.maatwerk_vorm_toeslag` gebruiken
-      // zou de oude waarde bevriezen (bug t/m mig 244).
+      // zou de oude waarde bevriezen (bug t/m mig 244). Mig 465: vorm-
+      // toeslag blijft WEL bewaard als metadata (voedt de VORMTOESLAG-
+      // companion-regel hieronder), maar telt niet meer mee in `prijs` —
+      // anders zou de regel-korting% er toch weer overheen gaan.
       if (merged.is_maatwerk && merged.maatwerk_m2_prijs && raaktMaatwerkPrijs) {
         const vormCode = merged.maatwerk_vorm ?? 'rechthoek'
         const oppervlak = berekenPrijsOppervlakM2(
@@ -519,20 +525,28 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr,
         merged.maatwerk_oppervlak_m2 = oppervlak
         merged.maatwerk_vorm_toeslag = vormToeslag
         merged.maatwerk_afwerking_prijs = afwerkingPrijs
-        merged.prijs = oppervlak * merged.maatwerk_m2_prijs
-          + vormToeslag
-          + afwerkingPrijs
+        merged.prijs = oppervlak * merged.maatwerk_m2_prijs + afwerkingPrijs
       }
 
       merged.bedrag = calcBedrag(merged)
       return merged
     })
+
+    // Mig 465: na elke wijziging die de prijs of het aantal raakt, de
+    // VORMTOESLAG-companion-regel (toevoegen/bijwerken/verwijderen) in
+    // lockstep houden met de maatwerk-regel op `index`.
+    if (updated[index]?.is_maatwerk && (raaktMaatwerkPrijs || 'orderaantal' in updates)) {
+      const vormCode = updated[index].maatwerk_vorm ?? 'rechthoek'
+      const vormNaam = vormen.find((v) => v.code === vormCode)?.naam ?? vormCode
+      updated = syncVormToeslagRegel(updated, index, vormNaam)
+    }
+
     onChange(updated)
   }
 
   const removeLine = (index: number) => {
     if (!window.confirm('Weet je zeker dat je deze regel wilt verwijderen?')) return
-    onChange(lines.filter((_, i) => i !== index))
+    onChange(verwijderRegelMetCompanion(lines, index))
   }
 
   const addArticle = async (article: SelectedArticle, substitution?: SubstitutionInfo) => {
@@ -639,7 +653,7 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr,
           prijslijstNr={prijslijstNr}
           debiteurNr={debiteurNr}
           onSelectArticle={addArticle}
-          onAddMaatwerk={(line) => onChange([...lines, line])}
+          onAddMaatwerk={(newLines) => onChange([...lines, ...newLines])}
         />
       </div>
 

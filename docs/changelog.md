@@ -1,5 +1,38 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-22 — Vormtoeslag als eigen orderregel (mig 465)
+
+**Waarom:** gebruiker meldt dat de vorm-toeslag (bv. € 75,00 voor een rond/ovaal/
+ellips-stuk, `maatwerk_vormen.toeslag`) verwerkt zat in de per-m²-prijs van de
+maatwerk-orderregel, waardoor de regel-korting% er ook van afging. Niet de
+bedoeling: de toeslag moet als eigen prijsregel verschijnen, zonder korting.
+
+- **`producten`**: nieuw admin-pseudo-product `VORMTOESLAG` (`is_pseudo=TRUE`,
+  `product_type='overig'`), zelfde patroon als VERZEND/BUNDELKORTING/DREMPELKORTING
+  (mig 265/272) en DROPSHIP-KLEIN/-GROOT (mig 353). Geen vaste verkoopprijs — het
+  bedrag varieert per vorm en wordt per orderregel meegegeven.
+- **Nieuwe pure module** `frontend/src/lib/orders/vorm-toeslag-regel.ts`:
+  `maakVormToeslagRegel`/`syncVormToeslagRegel`/`verwijderRegelMetCompanion`. De
+  companion-regel staat altijd direct ná zijn maatwerk-regel — een bewuste
+  array-positie-convention in plaats van een DB-FK, omdat `regelnummer` (en dus
+  de laad-volgorde) bij elke save toch al uit de array-positie wordt herberekend
+  door `create_order_with_lines`/`update_order_with_lines`. Aantal/te_leveren van
+  de companion spiegelt het orderaantal van de parent; korting_pct altijd 0.
+- **`KwaliteitFirstSelector`** (aanmaken) en **`OrderLineEditor`** (bewerken,
+  `updateLine`/`removeLine`) roepen dezelfde helper aan zodat toevoegen, vorm
+  wijzigen, aantal wijzigen en verwijderen allemaal de companion in lockstep
+  houden. `berekenMaatwerkPrijs` (live prijspreview) past korting nu alleen toe
+  op m²-bedrag + afwerking; de toeslag komt er ongekort bovenop.
+- **Geen wijziging nodig** aan snijplanning (de companion heeft `is_maatwerk=false`
+  → de auto-snijplan-trigger slaat 'm vanzelf over), allocator/pickbaarheid/
+  levertijd-view (al generiek gedekt door `is_admin_pseudo`/`isAdminPseudo`), of
+  facturatie (`FactuurDocument` leest artikelen generiek via de `producten`-join,
+  geen hardcoded artikelnr-lijst per documenttype).
+- **Bijvangst-fix:** `isVasteMaatRegel` in `order-line-editor.tsx` sloot pseudo-
+  regels nog niet uit — gold latent ook al voor bestaande VERZEND/DROPSHIP-regels
+  in die editor (toonde onterecht een "0 voorraad"-tekort-styling). Nu via
+  `!isAdminPseudo(line)` gerepareerd voor alle pseudo-artikelen tegelijk.
+
 ## 2026-06-20 — Vorm-marge rond/ovaal van 5cm naar 2,5cm
 
 **Waarom:** vervolg op de exacte-rolbreedte-match-fix van eerder vandaag — gebruiker

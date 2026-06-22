@@ -29,6 +29,8 @@ import { lookupPrice } from '@/lib/supabase/queries/order-mutations'
 import type { OrderRegelFormData } from '@/lib/supabase/queries/order-mutations'
 import type { EquivalentProduct } from '@/lib/supabase/queries/product-equivalents'
 import { fetchKlanteigenNaam } from '@/modules/debiteuren'
+import { berekenRegelBedrag } from '@/lib/orders/bedrag'
+import { maakVormToeslagRegel } from '@/lib/orders/vorm-toeslag-regel'
 
 type Step = 'kwaliteit' | 'maten' | 'op_maat'
 
@@ -39,7 +41,13 @@ interface KwaliteitFirstSelectorProps {
    *  meegenomen in de zoekopdracht (zie `searchKwaliteitenViaProducten`). */
   debiteurNr?: number
   onSelectArticle: (article: SelectedArticle, substitution?: SubstitutionInfo) => void
-  onAddMaatwerk: (line: OrderRegelFormData) => void
+  /**
+   * 1 of 2 regels: de maatwerk-regel, plus (mig 465) een losse VORMTOESLAG-
+   * companion-regel zodra de gekozen vorm een toeslag heeft — die komt
+   * altijd als laatste element zodat de caller hem direct ná de maatwerk-
+   * regel kan invoegen.
+   */
+  onAddMaatwerk: (lines: OrderRegelFormData[]) => void
 }
 
 /** Normaliseert kleurcodes voor vergelijking: "11.0" → "11", "11" → "11" */
@@ -489,6 +497,12 @@ export function KwaliteitFirstSelector({
     // Bij swap: factuur toont bestelde kwaliteit; intern wijst fysiek_artikelnr
     // naar de MAATWERK-artikelref van de uitwisselbare kwaliteit zodat snijplan/
     // voorraadreservering op de juiste rol landt (omstickeer-model).
+    // Mig 465: de vorm-toeslag wordt een eigen orderregel (korting_pct=0)
+    // zodat de regel-korting niet over de toeslag heen gaat — `prijs`/
+    // `bedrag` van de hoofdregel sluiten vormToeslag dus uit; `totaalPrijs`
+    // (incl. toeslag, voor de live preview hierboven) blijft het
+    // gecombineerde bedrag van hoofdregel + companion samen.
+    const hoofdPrijs = oppervlakM2 * effectieveM2Prijs + afwerkingPrijs
     const line: OrderRegelFormData = {
       artikelnr: lineArtikelnr,
       karpi_code: maatwerkArtikel?.karpi_code ?? selectedKleur.karpi_code ?? `${selectedKwaliteit.code}${selectedKleur.kleur_code}`,
@@ -496,9 +510,9 @@ export function KwaliteitFirstSelector({
       klant_eigen_naam,
       orderaantal: 1,
       te_leveren: 1,
-      prijs: oppervlakM2 * effectieveM2Prijs + vormToeslag + afwerkingPrijs,
+      prijs: hoofdPrijs,
       korting_pct: defaultKorting,
-      bedrag: totaalPrijs,
+      bedrag: berekenRegelBedrag(hoofdPrijs, 1, defaultKorting),
       gewicht_kg: berekenGewichtKg(oppervlakM2, selectedKleur.gewicht_per_m2_kg),
       vrije_voorraad: totalRollen,
       besteld_inkoop: selectedKleur.equiv_rollen > 0 ? selectedKleur.equiv_rollen : 0,
@@ -526,7 +540,11 @@ export function KwaliteitFirstSelector({
       maatwerk_beschikbaar_m2: selectedKleur.beschikbaar_m2,
       maatwerk_equiv_m2: selectedKleur.equiv_m2,
     }
-    onAddMaatwerk(line)
+    const lines: OrderRegelFormData[] = [line]
+    if (vormToeslag > 0) {
+      lines.push(maakVormToeslagRegel(line, selectedVorm?.naam ?? vormData.vormCode, vormToeslag))
+    }
+    onAddMaatwerk(lines)
     handleReset()
   }
 
@@ -842,9 +860,13 @@ export function KwaliteitFirstSelector({
                 {oppervlakM2.toLocaleString('nl-NL', { maximumFractionDigits: 2 })} m²
                 {' '}× {formatCurrency(effectieveM2Prijs)}/m²
               </span>
-              {vormToeslag > 0 && <span>+ {formatCurrency(vormToeslag)} (vorm)</span>}
               {afwerkingPrijs > 0 && <span>+ {formatCurrency(afwerkingPrijs)} (afwerking)</span>}
               {defaultKorting > 0 && <span>− {defaultKorting}% korting</span>}
+              {vormToeslag > 0 && (
+                <span title="Komt als eigen orderregel zonder korting">
+                  + {formatCurrency(vormToeslag)} (vorm, apart — geen korting)
+                </span>
+              )}
               <span className="font-semibold">= {formatCurrency(totaalPrijs)}</span>
               {effectieveM2Prijs === 0 && (
                 <span className="text-amber-600 text-xs">Geen prijs op prijslijst — pas prijs aan na toevoegen</span>
