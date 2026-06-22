@@ -37,6 +37,7 @@ export const TIER_COLORS: Record<string, { bg: string; text: string }> = {
 /** Snijplan status → badge color mapping (compiler dwingt alle 9 af) */
 export const SNIJPLAN_STATUS_COLORS: Record<SnijplanStatus, { bg: string; text: string }> = {
   'Wacht': { bg: 'bg-slate-100', text: 'text-slate-600' },
+  'Wacht op inkoop': { bg: 'bg-orange-100', text: 'text-orange-700' },
   'Gepland': { bg: 'bg-slate-100', text: 'text-slate-700' },
   'In productie': { bg: 'bg-amber-100', text: 'text-amber-700' },
   'Snijden': { bg: 'bg-blue-100', text: 'text-blue-700' },

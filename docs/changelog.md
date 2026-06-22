@@ -1,5 +1,97 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-20 — Vorm-marge rond/ovaal van 5cm naar 2,5cm
+
+**Waarom:** vervolg op de exacte-rolbreedte-match-fix van eerder vandaag — gebruiker
+bevestigt dat de algemene snijspeling voor ronde/ovale vormen omlaag mag naar 2,5cm
+(was 5cm), met behoud van de net gebouwde uitzonderingsregel (die blijft nodig: ook
+met 2,5cm marge zou een 400×400 rond stuk nog 402,5cm "vereisen" op een 400cm-rol
+zonder de exacte-match-uitzondering).
+
+- **`stuk_snij_marge_cm`**: vorm-component 5cm → 2,5cm. Omdat 2,5 geen heel getal
+  is, ging het returntype van `INTEGER` naar `NUMERIC` — dat kan niet via
+  `CREATE OR REPLACE` ("cannot change return type of existing function"), dus
+  `DROP FUNCTION ... CASCADE` gevolgd door herdefinitie.
+- **Onverwachte vondst tijdens het droppen:** `snijplanning_overzicht` (een VIEW)
+  heeft een **harde** `pg_depend`-afhankelijkheid van de functie — anders dan
+  function-bodies die elkaar bij naam aanroepen (geen vaste binding, bleek eerder
+  vandaag al bij het droppen van de oude 2-argument-overload). De CASCADE nam
+  daardoor ook `confectie_planning_overzicht` mee (leest van `snijplanning_overzicht`,
+  gebruikt zelf geen marge-kolom). Beide views zijn — geverifieerd via `pg_depend`
+  dat er geen verdere keten is — ongewijzigd teruggezet na de functie-herdefinitie.
+- **Geen wijziging nodig** aan `snijplanning_tekort_analyse()` of
+  `kandidaat_rollen_voor_handmatige_toewijzing()` (hun `RETURNS TABLE`-kolommen zijn
+  al expliciet `::INTEGER`-gecast, robuust tegen de onderliggende NUMERIC-waarde) of
+  aan enige frontend-code (`derive.ts` rondt de uiteindelijke snij-instructie al af
+  naar hele cm via `Math.round`, dus de fractie blijft intern in `marge_cm`/
+  `placed_lengte_cm`/`placed_breedte_cm`).
+- **Live geverifieerd:** `marge_cm`/`placed_lengte_cm`/`placed_breedte_cm` zijn nu
+  `numeric`-kolommen op `snijplanning_overzicht`; een normaal rond stuk (niet exacte
+  match) toont `marge_cm=2.5`; de exacte-match-clamp en de BEAC/13-regressiecheck
+  (echt te groot, blijft tekort) zijn opnieuw bevestigd na de migratie.
+- **Buiten scope (ter informatie van gebruiker, bewust niet opgepakt):** klant-
+  communicatie staat een afwijking van ca. 3cm op de uiteindelijke afmeting toe
+  (bv. 200×290 kan 203×293 of 197×287 worden). Dat is een **klant-tolerantie**
+  (sales-kant — wat acceptabel is om te leveren), conceptueel iets anders dan de
+  **snij-marge** hier (productie-kant — hoeveel extra stof nodig is om te snijden/
+  afwerken). Mogelijke vervolgvraag aan gebruiker: zou deze tolerantie ook gebruikt
+  mogen worden om de "past niet op rol"-tekort-check te verruimen (een stuk dat net
+  te groot is zou dan binnen de tolerantie iets kleiner gesneden kunnen worden)? Nog
+  niet besproken/gebouwd.
+
+## 2026-06-20 — Snij-marge negeren bij exacte rolbreedte-match
+
+**Waarom:** een 400×400 rond stuk (order OUD-26559570, kwaliteit LUXR/14) zat blijvend
+in Tekort en de tekort-analyse meldde ten onrechte "past niet eens op een rol van
+400cm breed". `stuk_snij_marge_cm` (mig 126) telt voor ronde/ovale vormen altijd
++5cm op beide zijden — bij een stuk waarvan de korte zijde al exact de standaard
+rolbreedte is, "vereiste" dat dus 405cm terwijl het in de praktijk gewoon past (geen
+ruimte voor marge in de breedte-richting, geen probleem op de werkvloer — bevestigd
+door gebruiker).
+
+- **Regel (bevestigd via Q&A):** de vorm-marge wordt 0 zodra `LEAST(lengte_cm,
+  breedte_cm)` van het stuk al exact gelijk is aan `kwaliteiten.standaard_breedte_cm`.
+  Alleen de korte zijde (de enige échte fysieke grens — rollengte is altijd
+  uitbreidbaar met een nieuwe rol) en bewust exacte `=`, geen `>=` (anders zou een
+  écht te groot stuk ten onrechte uit de tekort-melding verdwijnen). De
+  ZO-afwerking-marge (6cm, andere fysieke reden — stofovermaat voor de afwerkrand)
+  blijft in alle gevallen ongewijzigd; de uitzondering geldt alleen voor de
+  vorm-marge.
+- **`stuk_snij_marge_cm`** kreeg 3 optionele parameters (`lengte_cm`, `breedte_cm`,
+  `standaard_breedte_cm`, DEFAULT NULL) — backward-compatible, een 2-argument-
+  aanroep evalueert de clamp niet. De oude 2-argument-overload is expliciet
+  gedropt (`CREATE OR REPLACE` vervangt alleen bij identieke signature; bij een
+  nieuwe arity zou de oude overload anders blijven bestaan en elke 2-argument-
+  aanroep ambigu maken).
+- **Drie SQL-call-sites bijgewerkt** (de enige aanroepers — geverifieerd via een
+  `pg_proc.prosrc`/`pg_get_viewdef`-scan over de hele database, geen vierde plek
+  over het hoofd gezien): `snijplanning_overzicht` (`marge_cm`/`placed_lengte_cm`/
+  `placed_breedte_cm`, +`LEFT JOIN kwaliteiten` voor `standaard_breedte_cm`),
+  `snijplanning_tekort_analyse()`, `kandidaat_rollen_voor_handmatige_toewijzing()`
+  (mig 453, Fase 4).
+- **Geen frontend-wijziging nodig:** het scanstation (`rol-uitvoer-modal.tsx` →
+  `derive.ts`) leest `marge_cm` rechtstreeks uit de view-kolom zonder eigen
+  marge-berekening — de fix erft automatisch door naar de snij-instructie die de
+  snijder ziet, exact zoals gevraagd (niet alleen de tekort-melding, ook de
+  daadwerkelijke snij-maat).
+- **Live geverifieerd:** dit was geen geïsoleerd geval — minstens 10 kwaliteit/
+  kleur-groepen hadden hetzelfde exacte-match-scenario (CISC·15, GALA·14, LORA·21,
+  LUXR·14, LUXR·17, MARI·69, SEAO·13, SPLE·12, TAMA·23, VERI·13).
+  `schat-benodigde-lengte` voor LUXR/14: `aantal_niet_passend` ging van 1 naar 0.
+  `auto-plan-groep` opnieuw gedraaid voor alle 10 groepen: SEAO/13's 400×400 ronde
+  stuk (OUD-26568390) kreeg meteen een rol toegewezen. Regressie bevestigd: een
+  écht te groot stuk (BEAC/13, 260cm korte zijde tegen een beschikbare 200cm-rol)
+  blijft terecht als tekort gemeld.
+- **Bijvangst van het opnieuw draaien van `auto-plan-groep` over 10 groepen:** 4
+  groepen (LUXR·14 ×2 voorstellen, LUXR·17, SPLE·12) raakten de Fase-2-
+  verdringingscheck — eerder geplande stukken verloren hun rol tijdens de
+  volledige release-en-herpak-cyclus van die groep en kregen niet gegarandeerd een
+  nieuwe. De bijbehorende voorstellen staan op `concept` voor handmatige
+  beoordeling op de voorstel-review-pagina — dit is het bestaande Fase-2-
+  veiligheidsnet dat correct werkt, geen nieuwe bug. Gecontroleerd dat dit geen
+  data-verlies is (snijplan-rijen worden nooit verwijderd, alleen `rol_id`
+  losgemaakt); VERI/13's 31 stukken-met-rol bleven na een tweede run stabiel.
+
 ## 2026-06-20 — Haalbaarheid-overzicht naar order-niveau + echte wachtrij-positie
 
 **Waarom:** vervolgvraag op Fase 1. De bestaande pagina toonde per stuk alleen de

@@ -12,6 +12,7 @@ import { fetchWerkagendaConfig } from '@/lib/supabase/queries/werkagenda'
 import { bepaalSnijDeadline, bepaalHaalbaarheidStatus, type HaalbaarheidStatus } from '@/lib/orders/snij-haalbaarheid'
 import { berekenAgenda, isoDatum, werkdagenTussen } from '@/lib/utils/bereken-agenda'
 import { verzendWeekVoor } from '@/lib/orders/verzendweek'
+import { leverdatumVoorSnijDatum } from '@/lib/orders/levertijd-match'
 
 type SortKey = 'status' | 'marge' | 'leverdatum' | 'klant'
 type SortDir = 'asc' | 'desc'
@@ -46,7 +47,27 @@ interface OrderRij {
   geplandeDatum: string | null
   margeWerkdagen: number
   haalbaarheidStatus: HaalbaarheidStatus
+  /**
+   * Realistische verzenddatum = geplande snijdatum + buffer (confectie + klaarleggen) —
+   * alleen gevuld wanneer ALLE stukken van de order al een rol hebben: bij een
+   * deels geplande order zou de projectie te optimistisch zijn (de nog niet
+   * geplande stukken kunnen de werkelijke datum nog verder naar achteren duwen).
+   */
+  verwachteVerzendDatum: string | null
+  /** Calendar-dagen verschil tussen verwachteVerzendDatum en de gevraagde afleverdatum. Positief = later dan gevraagd. */
+  vertragingDagen: number | null
   stukken: HaalbaarheidsRij[]
+}
+
+/** Week-orders tonen de vertraging in weken (afgerond), tenzij dat naar 0 afrondt
+ *  (een paar dagen te laat op een week-order) — dan toch in dagen, om geen
+ *  "+0 weken" te tonen terwijl er wel degelijk vertraging is. */
+function formatVertraging(dagen: number, isWeek: boolean): string {
+  if (isWeek) {
+    const weken = Math.round(dagen / 7)
+    if (weken >= 1) return `+${weken} ${weken === 1 ? 'week' : 'weken'} later`
+  }
+  return `+${dagen} ${dagen === 1 ? 'dag' : 'dagen'} later`
 }
 
 function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
@@ -102,6 +123,7 @@ export function HaalbaarheidOverviewPage() {
   // slechtste oordeel onder zijn stukken (rood > oranje > groen) en de laatste
   // (meest kritieke) geplande datum.
   const orderRijen = useMemo<OrderRij[]>(() => {
+    if (!planningConfig || !werktijden) return []
     const groepen = new Map<number, HaalbaarheidsRij[]>()
     for (const r of rijen) {
       const lijst = groepen.get(r.order_id) ?? []
@@ -111,6 +133,7 @@ export function HaalbaarheidOverviewPage() {
     const result: OrderRij[] = []
     for (const [orderId, stukken] of groepen) {
       const eerste = stukken[0]
+      const leverType = eerste.lever_type ?? 'week'
       const aantalGepland = stukken.filter((s) => s.rol_id != null).length
       const geplandeDatums = stukken
         .map((s) => s.geplandeSnijDatum)
@@ -126,23 +149,44 @@ export function HaalbaarheidOverviewPage() {
       const combinaties = Array.from(
         new Set(stukken.map((s) => `${s.kwaliteit_code ?? '—'} · ${s.kleur_code ?? '—'}`)),
       )
+
+      // Realistische verzenddatum: alleen geprojecteerd als ALLE stukken al een
+      // rol hebben — bij een deels geplande order zouden de nog te plannen
+      // stukken de werkelijke datum nog verder naar achteren kunnen duwen, dus
+      // zou de projectie hier valse precisie suggereren.
+      const volledigGepland = aantalGepland === stukken.length && geplandeDatum != null
+      const bufferDagen = leverType === 'datum'
+        ? planningConfig.dag_order_snij_buffer_werkdagen
+        : planningConfig.logistieke_buffer_dagen
+      const verwachteVerzendDatum = volledigGepland
+        ? leverdatumVoorSnijDatum(geplandeDatum!, bufferDagen, werktijden)
+        : null
+      let vertragingDagen: number | null = null
+      if (verwachteVerzendDatum && eerste.afleverdatum) {
+        const verwacht = new Date(`${verwachteVerzendDatum}T00:00:00Z`).getTime()
+        const gevraagd = new Date(`${eerste.afleverdatum}T00:00:00Z`).getTime()
+        vertragingDagen = Math.round((verwacht - gevraagd) / 86_400_000)
+      }
+
       result.push({
         orderId,
         orderNr: eerste.order_nr,
         klantNaam: eerste.klant_naam,
         afleverdatum: eerste.afleverdatum,
-        leverType: eerste.lever_type ?? 'week',
+        leverType,
         kwaliteitKleurLabel: combinaties.length > 1 ? `${combinaties[0]} +${combinaties.length - 1}` : combinaties[0],
         aantalStukken: stukken.length,
         aantalGepland,
         geplandeDatum,
         margeWerkdagen,
         haalbaarheidStatus: status,
+        verwachteVerzendDatum,
+        vertragingDagen,
         stukken,
       })
     }
     return result
-  }, [rijen])
+  }, [rijen, planningConfig, werktijden])
 
   const filtered = useMemo(() => {
     if (!zoek.trim()) return orderRijen
@@ -240,6 +284,7 @@ export function HaalbaarheidOverviewPage() {
                 </th>
                 <th className="px-4 py-3 text-left font-medium">Stukken</th>
                 <th className="px-4 py-3 text-left font-medium">Geplande snijdatum</th>
+                <th className="px-4 py-3 text-left font-medium">Verwachte verzending</th>
                 <th className="px-4 py-3 text-right font-medium">
                   <button onClick={() => toggleSort('marge')} className="inline-flex items-center gap-1.5 hover:text-slate-900">
                     Marge <SortIcon active={sortKey === 'marge'} dir={sortDir} />
@@ -282,6 +327,29 @@ export function HaalbaarheidOverviewPage() {
                         formatDate(r.geplandeDatum)
                       ) : (
                         <span className="text-slate-400">Niet gepland</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {r.verwachteVerzendDatum ? (
+                        <>
+                          {isWeek ? (() => {
+                            const verwachteWeek = verzendWeekVoor(r.verwachteVerzendDatum)
+                            return verwachteWeek
+                              ? <span className="text-slate-700">wk {verwachteWeek.week}/{verwachteWeek.jaar}</span>
+                              : <span className="text-slate-700">{formatDate(r.verwachteVerzendDatum)}</span>
+                          })() : (
+                            <span className="text-slate-700">{formatDate(r.verwachteVerzendDatum)}</span>
+                          )}
+                          {r.vertragingDagen != null && (
+                            r.vertragingDagen > 0 ? (
+                              <div className="text-xs text-rose-600">{formatVertraging(r.vertragingDagen, isWeek)}</div>
+                            ) : (
+                              <div className="text-xs text-emerald-600">op tijd</div>
+                            )
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-slate-400">—</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap">

@@ -30,6 +30,7 @@ const GENEGEERD_STATUS: SnijplanStatus = 'Geannuleerd'
 // afdwingt dat een nieuwe enum-waarde hier expliciet wordt ingedeeld.
 const FASE_VOOR_STATUS: Record<SnijplanStatus, MaatwerkFase | null> = {
   Wacht: 'te_plannen',
+  'Wacht op inkoop': 'te_plannen',
   Gepland: 'op_snijplanning',
   Snijden: 'op_snijplanning',
   Gesneden: 'gesneden',
