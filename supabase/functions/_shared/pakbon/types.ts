@@ -23,6 +23,9 @@ export interface PakbonOrderRegel {
   is_maatwerk: boolean | null
   maatwerk_lengte_cm: number | null
   maatwerk_breedte_cm: number | null
+  /** Afwerking-code (afwerking_types.code) + de gekozen bandkleur-snapshot. */
+  maatwerk_afwerking: string | null
+  maatwerk_band_kleur: string | null
   producten?: PakbonProduct | null
 }
 
@@ -146,6 +149,10 @@ export interface PakbonRegelDisplay {
   uwNaam: string | null
   /** Losse maat-regel, alleen bij legacy-maatwerk zonder colli-snapshot. */
   maatRegel: string | null
+  /** "Breedband - band KK21" / "Smalband" / null. Afwerking zit nooit in de
+   *  bevroren colli-snapshot — deze regel verschijnt dus altijd, ook als er wél
+   *  een snapshot is (anders dan `maatRegel`). */
+  afwerkingRegel: string | null
   /** Mig 436: unieke omsticker-codes (fysiek gepakt equivalent). Leeg = geen
    *  "OMB:"-subregel. Zelfde notatie als het verzendlabel. */
   omstickerCodes: string[]

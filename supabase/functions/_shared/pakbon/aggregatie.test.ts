@@ -30,6 +30,8 @@ function maakOrderRegel(o: Partial<PakbonOrderRegel> = {}): PakbonOrderRegel {
     is_maatwerk: false,
     maatwerk_lengte_cm: null,
     maatwerk_breedte_cm: null,
+    maatwerk_afwerking: null,
+    maatwerk_band_kleur: null,
     producten: null,
     ...o,
   }
@@ -136,6 +138,38 @@ Deno.test('maatwerk: losse maat-regel verborgen mét colli (ook lege snapshot), 
 
   assertEquals(bouwPakbonDocument(maak(true)).groepen[0].regels[0].maatRegel, null)
   assertEquals(bouwPakbonDocument(maak(false)).groepen[0].regels[0].maatRegel, 'Op maat 240 x 330 cm')
+})
+
+const AFWERKING_TYPES = new Map([
+  ['B', { naam: 'Breedband', type_bewerking: 'breedband' }],
+  ['SB', { naam: 'Smalband', type_bewerking: 'smalband' }],
+])
+
+Deno.test('afwerkingRegel: Breedband toont de bandkleur, ook mét colli-snapshot', () => {
+  const zending = maakZending({
+    zending_regels: [
+      maakRegel({ order_regel_id: 10, order_regels: maakOrderRegel({ regelnummer: 1, maatwerk_afwerking: 'B', maatwerk_band_kleur: 'KK21' }) }),
+    ],
+    zending_colli: [maakColli({ order_regel_id: 10, omschrijving_snapshot: 'BERM 21 350x250 cm' })],
+  })
+  const regel = bouwPakbonDocument(zending, { afwerkingTypes: AFWERKING_TYPES }).groepen[0].regels[0]
+  assertEquals(regel.afwerkingRegel, 'Breedband - band KK21')
+})
+
+Deno.test('afwerkingRegel: Smalband met bandkleur toont de band NIET', () => {
+  const zending = maakZending({
+    zending_regels: [
+      maakRegel({ order_regel_id: 10, order_regels: maakOrderRegel({ regelnummer: 1, maatwerk_afwerking: 'SB', maatwerk_band_kleur: 'Piero Groen 1073' }) }),
+    ],
+  })
+  const regel = bouwPakbonDocument(zending, { afwerkingTypes: AFWERKING_TYPES }).groepen[0].regels[0]
+  assertEquals(regel.afwerkingRegel, 'Smalband')
+})
+
+Deno.test('afwerkingRegel: geen afwerking-code → null (geen sub-regel)', () => {
+  const zending = maakZending({ zending_regels: [maakRegel({ order_regel_id: 10 })] })
+  const regel = bouwPakbonDocument(zending, { afwerkingTypes: AFWERKING_TYPES }).groepen[0].regels[0]
+  assertEquals(regel.afwerkingRegel, null)
 })
 
 Deno.test('bundel-zending: groep per bron-order in bundel-volgorde', () => {
@@ -268,6 +302,7 @@ Deno.test('golden: volledig PakbonDocument', () => {
             hoofdNaam: 'TIFFANY 23 200x290 cm',
             uwNaam: 'BREDA',
             maatRegel: null,
+            afwerkingRegel: null,
             omstickerCodes: ['TIFF23XX200290'],
             besteld: '2',
             geleverd: '2',

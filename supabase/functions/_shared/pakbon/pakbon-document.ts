@@ -5,6 +5,7 @@
 
 import { bouwPakbonRegels, klantNaamWijktAf, productNamen, telColli } from './aggregatie.ts'
 import { externReferentie } from '../referentie.ts'
+import { afwerkingPresentatie, type AfwerkingTypeMap } from '../afwerking-presentatie.ts'
 import type {
   PakbonDocument,
   PakbonOrderGroep,
@@ -48,7 +49,7 @@ function formatDatum(iso: string | null): string {
 }
 
 /** Bouw de display-regels voor één bron-order-groep. */
-function bouwGroepRegels(regels: PakbonRegel[]): PakbonRegelDisplay[] {
+function bouwGroepRegels(regels: PakbonRegel[], afwerkingTypes: AfwerkingTypeMap): PakbonRegelDisplay[] {
   return regels.map((pr, idx) => {
     const namen = productNamen(pr.regel, pr.snapshot)
     const hoofdNaam = namen.karpiNaam ?? namen.klantNaam
@@ -63,12 +64,20 @@ function bouwGroepRegels(regels: PakbonRegel[]): PakbonRegelDisplay[] {
       orderRegel?.is_maatwerk && !pr.snapshot
         ? `Op maat ${orderRegel.maatwerk_breedte_cm ?? '-'} x ${orderRegel.maatwerk_lengte_cm ?? '-'} cm`
         : null
+    // Afwerking zit NOOIT in de bevroren snapshot (die kent alleen kwaliteit/
+    // kleur/maat) — dus altijd tonen, ook mét colli-snapshot.
+    const afwerkingRegel = afwerkingPresentatie(
+      orderRegel?.maatwerk_afwerking ?? null,
+      orderRegel?.maatwerk_band_kleur ?? null,
+      afwerkingTypes,
+    )
     return {
       regelnummer: String(orderRegel?.regelnummer ?? idx + 1).padStart(2, '0'),
       artikelnr: pr.regel.artikelnr ?? '-',
       hoofdNaam,
       uwNaam: toonUwNaam ? namen.klantNaam : null,
       maatRegel,
+      afwerkingRegel,
       omstickerCodes: pr.omstickerCodes,
       besteld: formatAantal(pr.besteld),
       geleverd: formatAantal(pr.geleverd),
@@ -83,6 +92,8 @@ export interface BouwPakbonDocumentOpties {
    *  eigenschap. Print-only voor de magazijn-sortering: de geprinte React-pakbon
    *  geeft `hstDepotVoorPostcode` mee, de factuurmail-PDF niets (→ NULL). */
   routecode?: string | null
+  /** code → {naam, type_bewerking} uit `afwerking_types` (fetchAfwerkingTypeMap). */
+  afwerkingTypes?: AfwerkingTypeMap
 }
 
 export function bouwPakbonDocument(
@@ -91,6 +102,7 @@ export function bouwPakbonDocument(
 ): PakbonDocument {
   const order = zending.orders
   const pakbonRegels = bouwPakbonRegels(zending)
+  const afwerkingTypes = opties.afwerkingTypes ?? new Map()
 
   // Groepeer per bron-order (mig 222). Solo-zending = één groep.
   const isBundel = zending.bundel_orders.length > 1
@@ -110,7 +122,7 @@ export function bouwPakbonDocument(
   const groepen: PakbonOrderGroep[] = orderIdRenderVolgorde.map((oid) => ({
     orderId: oid,
     orderNr: orderNrPerOrderId.get(oid) ?? null,
-    regels: bouwGroepRegels(regelsPerOrder.get(oid) ?? []),
+    regels: bouwGroepRegels(regelsPerOrder.get(oid) ?? [], afwerkingTypes),
   }))
 
   // Totalen: gewicht uit zending wint, val terug op SUM(regelgewicht × geleverd).

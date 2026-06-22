@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { AFWERKING_OPTIES } from '@/lib/utils/constants'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { fetchAfwerkingTypes } from '@/modules/maatwerk'
 import { updateRegelAfwerking } from '@/lib/supabase/queries/order-mutations'
 import { isAfwerkingEditable } from '@/lib/utils/order-lock'
 import type { OrderRegel } from '@/lib/supabase/queries/orders'
@@ -24,6 +24,12 @@ export function AfwerkingOnlyEditor({ orderId, regels }: Props) {
 
   const editableRegels = regels.filter(isAfwerkingEditable)
 
+  const { data: afwerkingen = [] } = useQuery({
+    queryKey: ['afwerking-types'],
+    queryFn: fetchAfwerkingTypes,
+    staleTime: 60_000,
+  })
+
   const [values, setValues] = useState<RegelState[]>(() =>
     editableRegels.map((r) => ({
       id: r.id,
@@ -36,7 +42,7 @@ export function AfwerkingOnlyEditor({ orderId, regels }: Props) {
     mutationFn: async () => {
       for (const v of values) {
         if (!v.afwerking) continue
-        const needsBand = v.afwerking === 'B' || v.afwerking === 'SB'
+        const needsBand = afwerkingen.find((a) => a.code === v.afwerking)?.heeft_band_kleur ?? false
         await updateRegelAfwerking(v.id, v.afwerking, needsBand ? (v.bandKleur || null) : null)
       }
     },
@@ -71,7 +77,7 @@ export function AfwerkingOnlyEditor({ orderId, regels }: Props) {
       <div className="bg-white rounded-[var(--radius)] border border-slate-200 divide-y divide-slate-100">
         {editableRegels.map((r) => {
           const v = values.find((x) => x.id === r.id)!
-          const needsBand = v.afwerking === 'B' || v.afwerking === 'SB'
+          const needsBand = afwerkingen.find((a) => a.code === v.afwerking)?.heeft_band_kleur ?? false
           return (
             <div key={r.id} className="p-4 space-y-2">
               <div className="flex items-baseline justify-between">
@@ -94,9 +100,9 @@ export function AfwerkingOnlyEditor({ orderId, regels }: Props) {
                     className="bg-white border border-slate-200 rounded px-2 py-1 text-sm"
                   >
                     <option value="">— kies —</option>
-                    {AFWERKING_OPTIES.map((a) => (
+                    {afwerkingen.map((a) => (
                       <option key={a.code} value={a.code}>
-                        {a.code} — {a.label}
+                        {a.code} — {a.naam}
                       </option>
                     ))}
                   </select>

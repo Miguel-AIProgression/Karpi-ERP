@@ -111,6 +111,31 @@ Deno.test('gewicht: orderRegel-snapshot wint van product×aantal', () => {
   assertEquals(resolveArtikelPresentatie({ artikelnr: 'ART1', aantal: 3 }, {}).gewicht_kg, 0)
 })
 
+Deno.test('afwerking: als suffix achter de omschrijving, ook in artikel_tekst', () => {
+  const p = resolveArtikelPresentatie(
+    { artikelnr: 'ART1', omschrijving: 'LAMI 15 - Op maat Rechthoek 435x245 cm', aantal: 1 },
+    { orderRegel: { karpi_code: null, gewicht_kg: null, afwerking: 'Onafgewerkt' } },
+  )
+  assertEquals(p.omschrijving, 'LAMI 15 - Op maat Rechthoek 435x245 cm - afwerking: Onafgewerkt')
+  assertEquals(p.artikel_tekst, 'ART1 LAMI 15 - Op maat Rechthoek 435x245 cm - afwerking: Onafgewerkt')
+})
+
+Deno.test('afwerking: Breedband-string (incl. band) komt ongewijzigd als suffix terug', () => {
+  const p = resolveArtikelPresentatie(
+    { artikelnr: 'ART1', omschrijving: 'BERM 21 - Op maat Rechthoek 350x250 cm', aantal: 1 },
+    { orderRegel: { karpi_code: null, gewicht_kg: null, afwerking: 'Breedband - band KK21' } },
+  )
+  assertEquals(p.omschrijving, 'BERM 21 - Op maat Rechthoek 350x250 cm - afwerking: Breedband - band KK21')
+})
+
+Deno.test('geen afwerking → geen suffix (ongewijzigd gedrag)', () => {
+  const p = resolveArtikelPresentatie(
+    { artikelnr: 'ART1', omschrijving: 'GEWOON ARTIKEL', aantal: 1 },
+    { orderRegel: { karpi_code: null, gewicht_kg: null } },
+  )
+  assertEquals(p.omschrijving, 'GEWOON ARTIKEL')
+})
+
 Deno.test('artikel_tekst: "[karpi_code] [omschrijving]", lege delen weggefilterd', () => {
   // volledig
   assertEquals(

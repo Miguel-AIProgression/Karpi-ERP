@@ -76,6 +76,19 @@ Deno.test('regel: presentatie wordt per regel opgelost en gewired', () => {
   assertEquals(r.presentatie.artikel_tekst, 'BAN21 BANGKOK KLEUR 21')
 })
 
+Deno.test('regel: afwerking-suffix uit orderRegel-lookup landt in omschrijving + artikel_tekst', () => {
+  const lookups = leegLookups()
+  lookups.orderRegels.set(50, { karpi_code: 'BAN21', gewicht_kg: 7.5, afwerking: 'Breedband - band KK21' })
+
+  const doc = bouwFactuurDocument(FACTUUR, [REGEL], lookups, {
+    vertegenwoordiger: 'Jan',
+    isTestMessage: false,
+  })
+  const r = doc.regels[0]
+  assertEquals(r.presentatie.omschrijving, 'BANGKOK KLEUR 21 - afwerking: Breedband - band KK21')
+  assertEquals(r.presentatie.artikel_tekst, 'BAN21 BANGKOK KLEUR 21 - afwerking: Breedband - band KK21')
+})
+
 Deno.test('effectief BTW: verlegd-snapshot zet alle regels op 0%', () => {
   const verlegdFactuur = { ...FACTUUR, btw_verlegd: true }
   const doc = bouwFactuurDocument(verlegdFactuur, [REGEL], leegLookups(), {

@@ -214,6 +214,7 @@ export async function genereerPakbonPDF(
       const omsLines = wrapText(`St  ${regel.hoofdNaam}`, fontR, 7.5, colOms.w - mm(2))
       const subRegels = [
         regel.maatRegel,
+        regel.afwerkingRegel ? `Afwerking: ${regel.afwerkingRegel}` : null,
         // Mig 436: omsticker — fysiek gepakt equivalent, zelfde "OMB:"-notatie
         // als het verzendlabel en de geprinte pakbon.
         regel.omstickerCodes.length > 0 ? `OMB: ${regel.omstickerCodes.join(', ')}` : null,

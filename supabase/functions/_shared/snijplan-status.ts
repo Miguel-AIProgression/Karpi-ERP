@@ -8,6 +8,7 @@
 
 export const SNIJPLAN_STATUSSEN = [
   'Wacht',
+  'Wacht op inkoop',
   'Gepland',
   'In productie',
   'Snijden',

@@ -37,6 +37,7 @@ export const TIER_COLORS: Record<string, { bg: string; text: string }> = {
 /** Snijplan status → badge color mapping (compiler dwingt alle 9 af) */
 export const SNIJPLAN_STATUS_COLORS: Record<SnijplanStatus, { bg: string; text: string }> = {
   'Wacht': { bg: 'bg-slate-100', text: 'text-slate-600' },
+  'Wacht op inkoop': { bg: 'bg-orange-100', text: 'text-orange-700' },
   'Gepland': { bg: 'bg-slate-100', text: 'text-slate-700' },
   'In productie': { bg: 'bg-amber-100', text: 'text-amber-700' },
   'Snijden': { bg: 'bg-blue-100', text: 'text-blue-700' },
@@ -72,6 +73,7 @@ export const AFWERKING_OPTIES: { code: string; label: string; bg: string; text: 
   { code: 'SF', label: 'Smalfeston',       bg: 'bg-teal-100',    text: 'text-teal-700' },
   { code: 'VO', label: 'Volume afwerking', bg: 'bg-amber-100',   text: 'text-amber-700' },
   { code: 'ZO', label: 'Zoomlock',          bg: 'bg-gray-100',    text: 'text-gray-500' },
+  { code: 'FUR', label: 'Fur',             bg: 'bg-pink-100',    text: 'text-pink-700' },
 ]
 
 export const AFWERKING_MAP = Object.fromEntries(

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render } from '@testing-library/react'
+import { render, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { formatNumber } from '@/lib/utils/formatters'
 import { PakbonDocument } from './pakbon-document'
@@ -22,6 +22,14 @@ import type {
 
 vi.mock('@/lib/supabase/queries/bedrijfsconfig', () => ({
   fetchBedrijfsConfig: vi.fn().mockResolvedValue(null),
+}))
+
+vi.mock('@/modules/maatwerk/queries/maatwerk-runtime', () => ({
+  fetchAfwerkingTypes: vi.fn().mockResolvedValue([
+    { id: 1, code: 'B', naam: 'Breedband', prijs: 0, prijs_per_meter: 0, heeft_band_kleur: true, actief: true, volgorde: 1, type_bewerking: 'breedband' },
+    { id: 5, code: 'SB', naam: 'Smalband', prijs: 0, prijs_per_meter: 0, heeft_band_kleur: true, actief: true, volgorde: 5, type_bewerking: 'smalband' },
+    { id: 4, code: 'ON', naam: 'Onafgewerkt', prijs: 0, prijs_per_meter: 0, heeft_band_kleur: false, actief: true, volgorde: 4, type_bewerking: null },
+  ]),
 }))
 
 function renderPakbon(zending: ZendingPrintSet, colliTotal: number) {
@@ -50,6 +58,7 @@ function maakOrderRegel(o: Partial<ZendingPrintOrderRegel> = {}): ZendingPrintOr
     maatwerk_lengte_cm: null,
     maatwerk_breedte_cm: null,
     maatwerk_afwerking: null,
+    maatwerk_band_kleur: null,
     maatwerk_kwaliteit_code: null,
     maatwerk_kleur_code: null,
     maatwerk_oppervlak_m2: null,
@@ -431,6 +440,58 @@ describe('PakbonDocument — karakterisering rijopbouw', () => {
     const { container } = renderPakbon(zending, 1)
 
     expect(container.textContent).toContain('Uw naam: BREDA HUISMERK')
+  })
+
+  it('afwerking: Breedband toont de bandkleur, ook mét colli-snapshot', async () => {
+    const zending = maakZending({
+      zending_regels: [
+        maakRegel({
+          id: 1,
+          order_regel_id: 10,
+          artikelnr: 'ART-A',
+          order_regels: maakOrderRegel({
+            id: 10,
+            regelnummer: 1,
+            artikelnr: 'ART-A',
+            maatwerk_afwerking: 'B',
+            maatwerk_band_kleur: 'KK21',
+          }),
+        }),
+      ],
+      zending_colli: [maakColli({ order_regel_id: 10, omschrijving_snapshot: 'BERM 21 350x250 cm' })],
+    })
+
+    const { container } = renderPakbon(zending, 1)
+    await waitFor(() => expect(container.textContent).toContain('Afwerking: Breedband - band KK21'))
+  })
+
+  it('afwerking: Smalband met bandkleur toont de band NIET', async () => {
+    const zending = maakZending({
+      zending_regels: [
+        maakRegel({
+          id: 1,
+          order_regel_id: 10,
+          artikelnr: 'ART-A',
+          order_regels: maakOrderRegel({
+            id: 10,
+            regelnummer: 1,
+            artikelnr: 'ART-A',
+            maatwerk_afwerking: 'SB',
+            maatwerk_band_kleur: 'Piero Groen 1073',
+          }),
+        }),
+      ],
+    })
+
+    const { container } = renderPakbon(zending, 1)
+    await waitFor(() => expect(container.textContent).toContain('Afwerking: Smalband'))
+    expect(container.textContent).not.toContain('Piero Groen 1073')
+  })
+
+  it('afwerking: geen afwerking-code → geen Afwerking-regel', () => {
+    const zending = maakZending({ zending_regels: [maakRegel({ order_regel_id: 10 })] })
+    const { container } = renderPakbon(zending, 1)
+    expect(container.textContent).not.toContain('Afwerking:')
   })
 
   it('legacy-zending zonder colli: regels + Geleverd uit zending_regels.aantal', () => {
