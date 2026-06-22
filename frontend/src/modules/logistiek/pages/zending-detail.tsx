@@ -1,7 +1,7 @@
 import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, Printer } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { useZending, useVerstuurZendingOpnieuw } from '@/modules/logistiek/hooks/use-zendingen'
+import { useZending, useMarkeerZendingAfgehandeld } from '@/modules/logistiek/hooks/use-zendingen'
 import { ZendingStatusBadge } from '@/modules/logistiek/components/zending-status-badge'
 import { VervoerderTag } from '@/modules/logistiek/components/vervoerder-tag'
 import {
@@ -64,7 +64,7 @@ interface ZendingDetailShape {
 export function ZendingDetailPage() {
   const { zending_nr } = useParams<{ zending_nr: string }>()
   const { data: zending, isLoading } = useZending(zending_nr)
-  const retryMutation = useVerstuurZendingOpnieuw()
+  const afhandelMutation = useMarkeerZendingAfgehandeld()
 
   if (isLoading) return <div className="p-8 text-slate-500">Laden…</div>
   if (!zending) return <div className="p-8 text-rose-600">Zending niet gevonden.</div>
@@ -261,15 +261,15 @@ export function ZendingDetailPage() {
               <HstTransportorderCard
                 key={t.id}
                 row={t}
-                onRetry={() => retryMutation.mutate(t.id)}
-                retryBusy={retryMutation.isPending && retryMutation.variables === t.id}
+                onAfgehandeld={() => afhandelMutation.mutate({ id: t.id, externRef: t.extern_referentie })}
+                afhandelBusy={afhandelMutation.isPending && afhandelMutation.variables?.id === t.id}
               />
             ))}
           </div>
         )}
-        {retryMutation.isError && (
+        {afhandelMutation.isError && (
           <div className="mt-3 text-xs text-rose-600">
-            Retry mislukt: {String((retryMutation.error as Error).message)}
+            Afhandelen mislukt: {String((afhandelMutation.error as Error).message)}
           </div>
         )}
       </Section>

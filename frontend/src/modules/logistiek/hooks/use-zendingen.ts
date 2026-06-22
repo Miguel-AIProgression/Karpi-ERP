@@ -4,7 +4,7 @@ import {
   fetchZendingen,
   fetchZendingMetTransportorders,
   fetchZendingPrintSet,
-  verstuurZendingOpnieuw,
+  markeerZendingHandmatigAfgehandeld,
   type ZendingenFilters,
   type ZendingPrintSet,
 } from '@/modules/logistiek/queries/zendingen'
@@ -94,13 +94,22 @@ export function useStartPickrondes() {
   })
 }
 
-export function useVerstuurZendingOpnieuw() {
+/**
+ * Markeer een Fout-zending als afgehandeld zonder opnieuw naar de vervoerder te
+ * versturen. Een HST-foutmelding betekent dat de zending tóch al in de portal
+ * staat — opnieuw versturen dupliceert. De operator corrigeert de fout in HST
+ * en sluit 'm hier af.
+ */
+export function useMarkeerZendingAfgehandeld() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (transportorder_id: number) => verstuurZendingOpnieuw(transportorder_id),
+    mutationFn: (v: { id: number; externRef: string | null }) =>
+      markeerZendingHandmatigAfgehandeld(v.id, v.externRef),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['logistiek', 'zending'] })
       qc.invalidateQueries({ queryKey: ['logistiek', 'zendingen'] })
+      qc.invalidateQueries({ queryKey: ['hst-monitor'] })
+      qc.invalidateQueries({ queryKey: ['hst-fouten'] })
     },
   })
 }

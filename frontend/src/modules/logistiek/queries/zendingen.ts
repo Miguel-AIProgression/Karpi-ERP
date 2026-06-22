@@ -425,39 +425,25 @@ function toError(error: unknown, fallback: string): Error {
 }
 
 /**
- * Reset een Fout-rij naar Wachtrij zodat de cron 'm opnieuw oppakt.
+ * Wikkel een Fout-rij af ZONDER opnieuw naar de vervoerder te versturen.
  *
- * Mig 424 (ADR-0038): één geconsolideerde `verzend_wachtrij`-tabel.
- * Edge case: als er ondertussen al een nieuwe actieve transportorder voor
- * dezelfde zending bestaat, blokkeert de unique-index
- * `uk_verzend_wachtrij_zending_actief` de update. We zetten eventuele duplicate
- * eerst op `Geannuleerd`.
+ * Scenario: de zending is bij HST al in de portal beland maar was niet valide;
+ * de operator heeft 'm dáár handmatig goedgezet. Opnieuw versturen zou een tweede
+ * transportorder POST'en (HST is POST-only zonder idempotentie → dubbele
+ * aanmelding, incident ZEND-2026-0061). Deze actie markeert de rij als Verstuurd
+ * via de canonieke RPC `markeer_transportorder_verstuurd` (zet het idempotentie-
+ * anker mig 435 + flipt de zending Klaar→Onderweg). Géén POST. extern_referentie
+ * geeft de caller mee (uit de fout-rij); ontbreekt die → marker 'HANDMATIG-PORTAL'.
  */
-export async function verstuurZendingOpnieuw(transportorder_id: number) {
-  const { data: huidig, error: fetchError } = await supabase
-    .from('verzend_wachtrij')
-    .select('id, zending_id')
-    .eq('id', transportorder_id)
-    .single()
-
-  if (fetchError) throw fetchError
-
-  if (huidig) {
-    const { error: cancelError } = await supabase
-      .from('verzend_wachtrij')
-      .update({
-        status: 'Geannuleerd',
-        error_msg: 'Vervangen door retry van #' + transportorder_id,
-      })
-      .eq('zending_id', huidig.zending_id)
-      .neq('id', transportorder_id)
-      .in('status', ['Wachtrij', 'Bezig', 'Verstuurd'])
-
-    if (cancelError) throw cancelError
-  }
-
-  return await supabase
-    .from('verzend_wachtrij')
-    .update({ status: 'Wachtrij', error_msg: null, retry_count: 0 })
-    .eq('id', transportorder_id)
+export async function markeerZendingHandmatigAfgehandeld(
+  transportorder_id: number,
+  extern_referentie: string | null,
+) {
+  const { error } = await supabase.rpc('markeer_transportorder_verstuurd', {
+    p_id: transportorder_id,
+    p_extern_referentie: extern_referentie ?? 'HANDMATIG-PORTAL',
+    p_track_trace: null,
+    p_document_pad: null,
+  })
+  if (error) throw error
 }

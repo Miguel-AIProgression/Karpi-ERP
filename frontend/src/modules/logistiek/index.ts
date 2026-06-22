@@ -18,7 +18,7 @@ export {
   fetchZendingMetTransportorders,
   fetchZendingPrintSet,
   startPickrondes,
-  verstuurZendingOpnieuw,
+  markeerZendingHandmatigAfgehandeld,
   type ZendingAanmaakResult,
   type ZendingPrintSet,
   type ZendingPrintRegel,
@@ -35,7 +35,7 @@ export {
   useZending,
   useZendingPrintSet,
   useStartPickrondes,
-  useVerstuurZendingOpnieuw,
+  useMarkeerZendingAfgehandeld,
 } from './hooks/use-zendingen'
 
 // use-vervoerder-config (klant-fallback hooks) verwijderd in ADR-0008

@@ -1,4 +1,4 @@
-import { AlertCircle, RefreshCw, Loader2 } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { formatDateTime } from '@/lib/utils/formatters'
 import type { HstTransportorderStatus } from '@/modules/logistiek/queries/zendingen'
@@ -27,13 +27,14 @@ export interface HstTransportorderRow {
 
 interface HstTransportorderCardProps {
   row: HstTransportorderRow
-  onRetry: () => void
-  retryBusy: boolean
+  /** Markeer als afgehandeld zonder opnieuw te versturen (de fout is in de HST-portal opgelost). */
+  onAfgehandeld: () => void
+  afhandelBusy: boolean
 }
 
-export function HstTransportorderCard({ row, onRetry, retryBusy }: HstTransportorderCardProps) {
+export function HstTransportorderCard({ row, onAfgehandeld, afhandelBusy }: HstTransportorderCardProps) {
   const kleur = HST_STATUS_KLEUREN[row.status]
-  const kanRetry = row.status === 'Fout'
+  const isFout = row.status === 'Fout'
 
   return (
     <div className="border border-slate-200 rounded-[var(--radius)] p-4">
@@ -57,14 +58,14 @@ export function HstTransportorderCard({ row, onRetry, retryBusy }: HstTransporto
             <span className="text-xs text-slate-500">retries: {row.retry_count}</span>
           )}
         </div>
-        {kanRetry && (
+        {isFout && (
           <button
-            onClick={onRetry}
-            disabled={retryBusy}
-            className="px-3 py-1.5 rounded-[var(--radius-sm)] border border-rose-200 bg-rose-50 text-rose-700 text-xs font-medium hover:bg-rose-100 disabled:opacity-50 inline-flex items-center gap-1.5"
+            onClick={onAfgehandeld}
+            disabled={afhandelBusy}
+            className="px-3 py-1.5 rounded-[var(--radius-sm)] border border-emerald-200 bg-emerald-50 text-emerald-700 text-xs font-medium hover:bg-emerald-100 disabled:opacity-50 inline-flex items-center gap-1.5"
           >
-            {retryBusy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-            Opnieuw versturen
+            {afhandelBusy ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
+            Markeer afgehandeld (HST)
           </button>
         )}
       </div>
@@ -84,6 +85,14 @@ export function HstTransportorderCard({ row, onRetry, retryBusy }: HstTransporto
           <div className="text-xs font-medium text-rose-800 mb-1">Foutmelding</div>
           <pre className="text-xs text-rose-700 whitespace-pre-wrap break-words">{row.error_msg}</pre>
         </div>
+      )}
+
+      {isFout && (
+        <p className="text-xs text-slate-500">
+          Deze zending staat ook al in de HST-portal. Pas de fout dáár aan en klik
+          dan op <span className="font-medium">Markeer afgehandeld</span> — niet opnieuw
+          versturen (dat maakt een dubbele transportorder).
+        </p>
       )}
     </div>
   )
