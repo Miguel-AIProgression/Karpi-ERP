@@ -296,6 +296,15 @@ overgrote meerderheid) moet het gedrag exact hetzelfde blijven. Plan:
 - Getest op een live snijplan (toggle van `verwacht_inkooporder_regel_id`, twee scenario's): nabije IO-ETA → de 7-weken-floor wint; IO-ETA ver in de toekomst (tijdelijk gezet, daarna teruggezet) → de IO-datum + 2wk overstemt de floor correct.
 - Bewust niet gebouwd: herziening van een al-gezette `verzendweek` als de IO-ETA later wijzigt (blijft snapshot, zoals de rol-tak) — losse vervolgstap indien gewenst.
 
+## 2026-06-23 — Orderregel omzetten naar maatwerk (mig 472)
+
+**Waarom:** laatste van de 3 bevindingen uit de gebruikersaudit van de order-workflow — een vaste-maat-regel zonder voorraad/tijdige inkoop kunnen medewerkers nergens handmatig omzetten naar maatwerk (snijden uit een rol), ook al heeft het artikel (of een uitwisselbaar equivalent) daar soms wel een rol voor. Bevestigd: bestond nergens in de code.
+
+- **`kandidaat_rollen_voor_conversie(kwaliteit, kleur, lengte_cm, breedte_cm, ...)`** (puur lezend) — mirrort `kandidaat_rollen_voor_handmatige_toewijzing` (mig 453) maar vanaf ruwe maten i.p.v. een bestaand snijplan-id (dat bestaat hier nog niet). Voedt de "geen rol beschikbaar"-blokkade in een nieuw dialoogje.
+- **`converteer_regel_naar_maatwerk(order_regel_id, lengte_cm, breedte_cm, vorm)`** — bewust minimaal: guards + één UPDATE op `is_maatwerk` + de `maatwerk_*`-kolommen (kwaliteit/kleur uit `producten`, dimensies uit de al-bestaande `producten.lengte_cm`/`breedte_cm`-kolommen). Géén eigen release- of snijplan-logica: twee al bestaande triggers (`trg_auto_sync_snijplan_maten`, `trg_orderregel_herallocateer`) reageren vanzelf op die UPDATE en doen de snijplan-aanmaak + claim-release + status-herwaardering.
+- **UI:** "Zet om naar maatwerk"-knop in `order-regels-table.tsx`, naast de bestaande `UitwisselbaarToepassenRij` in de tekort-rij. Opent `OmzettenNaarMaatwerkDialog` (lengte/breedte bevestigen, live kandidaat-rollen-preview, bevestigknop disabled zonder kandidaat).
+- Getest in een rolled-back transactie op een live order/regel (RUBI/15, 155×230cm): conversie + guards (al-maatwerk, niet-bestaand, eindstatus) werken; het stuk kreeg zelfs direct een rol toegewezen omdat er voorraad was — bevestigt dat de bestaande trigger-keten volledig automatisch werkt, geen handmatige vervolgstap nodig.
+
 ## 2026-06-23 — Afgeleide snijdatum/rol zichtbaar + automatische verzendweek voor maatwerk-op-voorraad (mig 469)
 
 **Waarom:** bij het uitzoeken van twee orders bleek order-detail voor een maatwerk-

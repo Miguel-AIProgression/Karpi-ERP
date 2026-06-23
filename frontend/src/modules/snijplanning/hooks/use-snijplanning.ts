@@ -59,6 +59,10 @@ import { invalidateNaSnijplanMutatie } from '../cache'
 import { invalidateNaConfectieMutatie } from '@/modules/confectie'
 import { fetchVormen } from '@/modules/maatwerk'
 import { fetchMoeilijkeKwaliteiten } from '@/lib/supabase/queries/kwaliteiten'
+import {
+  fetchKandidaatRollenVoorConversie,
+  converteerRegelNaarMaatwerk,
+} from '../queries/omzetten-naar-maatwerk'
 
 export function useSnijplanningPool(params: {
   status?: string
@@ -565,6 +569,37 @@ export function useOntgrendelHandmatig() {
       } catch (e) {
         console.warn('Auto-plan trigger na ontgrendelen faalde (niet-blokkerend):', e)
       }
+    },
+  })
+}
+
+/** Mig 472: kandidaat-rollen voor het "omzetten naar maatwerk"-dialoogje —
+ *  geen kandidaat = de bevestigknop in die dialoog blijft disabled. */
+export function useKandidaatRollenVoorConversie(params: {
+  kwaliteitCode: string
+  kleurCode: string
+  lengteCm: number
+  breedteCm: number
+} | null) {
+  return useQuery({
+    queryKey: ['snijplanning', 'kandidaat-rollen-conversie', params],
+    queryFn: () => fetchKandidaatRollenVoorConversie(params!),
+    enabled: params != null,
+  })
+}
+
+/** Mig 472: zet een vaste-maat-orderregel om naar maatwerk. De RPC zelf
+ *  triggert al snijplan-aanmaak + claim-release + status-herwaardering — hier
+ *  alleen de relevante caches ongeldig maken zodat de UI direct bijwerkt. */
+export function useConverteerNaarMaatwerk() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (params: { orderRegelId: number; orderId: number; lengteCm: number; breedteCm?: number; vorm?: string }) =>
+      converteerRegelNaarMaatwerk(params),
+    onSuccess: (_data, variables) => {
+      invalidateNaSnijplanMutatie(qc)
+      qc.invalidateQueries({ queryKey: ['orders', variables.orderId, 'regels'] })
+      qc.invalidateQueries({ queryKey: ['orders', variables.orderId] })
     },
   })
 }

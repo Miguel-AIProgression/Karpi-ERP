@@ -57,10 +57,13 @@ export {
   useKandidaatRollenVoorStuk,
   useWijsHandmatigToe,
   useOntgrendelHandmatig,
+  useKandidaatRollenVoorConversie,
+  useConverteerNaarMaatwerk,
 } from './hooks/use-snijplanning'
 
 export type { CreateSnijplanData, ReststukResult } from './hooks/use-snijplanning'
 export type { KandidaatRol } from './queries/handmatige-toewijzing'
+export type { KandidaatRolVoorConversie } from './queries/omzetten-naar-maatwerk'
 
 // ---------------------------------------------------------------------------
 // Cache seam (cross-Module invalidation — ADR-0013)
