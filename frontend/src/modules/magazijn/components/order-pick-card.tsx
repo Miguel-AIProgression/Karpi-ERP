@@ -18,6 +18,7 @@ import {
   VervoerderInlineSelect,
   VervoerderOrderregelPill,
 } from '@/modules/logistiek'
+import { AnnuleerPickrondeKnop } from '@/modules/logistiek/components/annuleer-pickronde-knop'
 import { cn } from '@/lib/utils/cn'
 import { ORDER_STATUS_COLORS } from '@/lib/utils/constants'
 import { iso2NaarVlag, landNaarIso2 } from '@/lib/utils/land-vlag'
@@ -306,23 +307,31 @@ export function OrderPickCard({ order }: Props) {
         </div>
 
         {/* Actieknop — als er al een pickronde loopt, toon "Open printset"-link
-            in plaats van een nieuwe Verzendset starten. */}
-        <div onClick={(e) => e.stopPropagation()} className="flex-shrink-0">
+            in plaats van een nieuwe Verzendset starten, plus direct hier de
+            annuleer-knop (vangnet, mig 398/478) zonder eerst te moeten
+            doorklikken naar de zending-/printset-pagina. */}
+        <div onClick={(e) => e.stopPropagation()} className="flex-shrink-0 flex items-center gap-2">
           {order.actieve_pickronde ? (
-            <Link
-              to={`/logistiek/${order.actieve_pickronde.zending_nr}/printset`}
-              className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] bg-amber-500 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-amber-600"
-              title={
-                order.actieve_pickronde.picker_naam
-                  ? `Pickronde gestart door ${order.actieve_pickronde.picker_naam} — open printset om te voltooien`
-                  : 'Pickronde loopt — open printset om te voltooien'
-              }
-            >
-              <Clock size={13} />
-              {order.actieve_pickronde.picker_naam
-                ? `In pickronde · ${order.actieve_pickronde.picker_naam}`
-                : 'In pickronde'}
-            </Link>
+            <>
+              <Link
+                to={`/logistiek/${order.actieve_pickronde.zending_nr}/printset`}
+                className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] bg-amber-500 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-amber-600"
+                title={
+                  order.actieve_pickronde.picker_naam
+                    ? `Pickronde gestart door ${order.actieve_pickronde.picker_naam} — open printset om te voltooien`
+                    : 'Pickronde loopt — open printset om te voltooien'
+                }
+              >
+                <Clock size={13} />
+                {order.actieve_pickronde.picker_naam
+                  ? `In pickronde · ${order.actieve_pickronde.picker_naam}`
+                  : 'In pickronde'}
+              </Link>
+              <AnnuleerPickrondeKnop
+                zendingId={order.actieve_pickronde.zending_id}
+                zendingStatus="Picken"
+              />
+            </>
           ) : (
             <StartPickrondesButton orders={[order]} variant="compact" />
           )}
