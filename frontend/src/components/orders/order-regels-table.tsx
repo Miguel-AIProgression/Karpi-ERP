@@ -12,6 +12,7 @@ import { setRegelVerzendweek } from '@/lib/supabase/queries/orders'
 import { isAdminPseudo } from '@/lib/orders/admin-pseudo'
 import { bepaalMaatwerkFase, MAATWERK_FASE_PRESENTATIE } from '@/lib/orders/maatwerk-productie'
 import { LevertijdBadge, UitwisselbaarToepassenRij, type OrderRegelLevertijd, type OrderClaim } from '@/modules/reserveringen'
+import { OmzettenNaarMaatwerkDialog } from '@/components/orders/omzetten-naar-maatwerk-dialog'
 import type { HaalbaarheidsRij } from '@/modules/snijplanning'
 import { HAALBAARHEID_STATUS_STYLE } from '@/lib/orders/haalbaarheid-status-badge'
 import { usePlanningConfig } from '@/hooks/use-planning-config'
@@ -441,6 +442,7 @@ interface RegelRowProps {
 }
 
 function RegelRow({ regel, orderId, orderNr, orderdatum, orderVerzendweek, levertijd, claims, isEindstatus, snijHaalbaarheidPerStuk }: RegelRowProps) {
+  const [omzetOpen, setOmzetOpen] = useState(false)
   const afwerkingInfo = regel.maatwerk_afwerking ? AFWERKING_MAP[regel.maatwerk_afwerking] : null
   const maat = formatMaat(regel)
   const toonSubRows = !regel.is_maatwerk
@@ -594,6 +596,28 @@ function RegelRow({ regel, orderId, orderNr, orderdatum, orderVerzendweek, lever
       ))}
       {toonSubRows && tekort > 0 && regel.artikelnr && (
         <UitwisselbaarToepassenRij regel={regel} tekort={tekort} claims={claims} />
+      )}
+      {toonSubRows && tekort > 0 && regel.artikelnr && (
+        <tr className="border-b border-slate-50">
+          <td className="px-4 py-1.5"></td>
+          <td colSpan={10} className="px-4 py-1.5">
+            <button
+              type="button"
+              onClick={() => setOmzetOpen(true)}
+              className="inline-flex items-center gap-1.5 pl-3 border-l-2 border-slate-200 text-xs text-terracotta-600 hover:underline"
+            >
+              <Scissors size={12} />
+              Zet om naar maatwerk
+            </button>
+          </td>
+        </tr>
+      )}
+      {omzetOpen && (
+        <OmzettenNaarMaatwerkDialog
+          regel={regel}
+          orderId={orderId}
+          onClose={() => setOmzetOpen(false)}
+        />
       )}
     </>
   )

@@ -186,6 +186,12 @@ export interface OrderRegel {
   /** Mig 412: vroegste verzenddatum voor deze regel op basis van actieve claims.
    * NULL = geen dekking of maatwerk. CURRENT_DATE of later = beschikbaar. */
   vroegst_leverbaar?: string | null
+  /** Kwaliteit/kleur + afmetingen van het gekoppelde product (producten-join) —
+   *  voedt o.a. "omzetten naar maatwerk" (mig 472, prefill + kandidaat-rollen-lookup). */
+  product_kwaliteit_code?: string | null
+  product_kleur_code?: string | null
+  product_lengte_cm?: number | null
+  product_breedte_cm?: number | null
 }
 
 export interface StatusCount {
@@ -525,7 +531,7 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
 
   const { data, error } = await supabase
     .from('order_regels')
-    .select('id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2, orderaantal, te_leveren, backorder, prijs, korting_pct, bedrag, gewicht_kg, vrije_voorraad, fysiek_artikelnr, omstickeren, is_maatwerk, maatwerk_vorm, maatwerk_lengte_cm, maatwerk_breedte_cm, maatwerk_diameter_cm, maatwerk_afwerking, maatwerk_band_kleur, maatwerk_instructies, maatwerk_m2_prijs, maatwerk_oppervlak_m2, maatwerk_vorm_toeslag, maatwerk_afwerking_prijs, verzendweek, verzendweek_bron, klant_referentie, vroegst_leverbaar, producten!order_regels_artikelnr_fkey(kwaliteit_code, kleur_code, is_pseudo, is_dropship, karpi_code, vrije_voorraad, besteld_inkoop)')
+    .select('id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2, orderaantal, te_leveren, backorder, prijs, korting_pct, bedrag, gewicht_kg, vrije_voorraad, fysiek_artikelnr, omstickeren, is_maatwerk, maatwerk_vorm, maatwerk_lengte_cm, maatwerk_breedte_cm, maatwerk_diameter_cm, maatwerk_afwerking, maatwerk_band_kleur, maatwerk_instructies, maatwerk_m2_prijs, maatwerk_oppervlak_m2, maatwerk_vorm_toeslag, maatwerk_afwerking_prijs, verzendweek, verzendweek_bron, klant_referentie, vroegst_leverbaar, producten!order_regels_artikelnr_fkey(kwaliteit_code, kleur_code, is_pseudo, is_dropship, karpi_code, vrije_voorraad, besteld_inkoop, lengte_cm, breedte_cm)')
     .eq('order_id', orderId)
     .order('regelnummer')
 
@@ -543,7 +549,7 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
   ): OrderRegel {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const row = r as any
-    const product = row.producten as { kwaliteit_code: string; kleur_code: string | null; is_pseudo: boolean | null; is_dropship: boolean | null; karpi_code: string | null; vrije_voorraad: number | null; besteld_inkoop: number | null } | null
+    const product = row.producten as { kwaliteit_code: string; kleur_code: string | null; is_pseudo: boolean | null; is_dropship: boolean | null; karpi_code: string | null; vrije_voorraad: number | null; besteld_inkoop: number | null; lengte_cm: number | null; breedte_cm: number | null } | null
     const kwalCode = product?.kwaliteit_code ?? null
     const kleurCode = product?.kleur_code ?? null
     const isPseudo = product?.is_pseudo === true
@@ -601,6 +607,10 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
       verzendweek_bron: row.verzendweek_bron ?? null,
       klant_referentie: row.klant_referentie ?? null,
       vroegst_leverbaar: row.vroegst_leverbaar ?? null,
+      product_kwaliteit_code: kwalCode,
+      product_kleur_code: kleurCode,
+      product_lengte_cm: product?.lengte_cm ?? null,
+      product_breedte_cm: product?.breedte_cm ?? null,
     }
   }
 
