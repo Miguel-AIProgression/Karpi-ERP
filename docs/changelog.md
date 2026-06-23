@@ -1,5 +1,28 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-23 — Order aanmaken vereist een gekoppelde prijslijst (mig 481)
+
+**Waarom:** directe vervolgstap op de HEADLAM-prijscorrectie hieronder —
+gebruiker wil structureel voorkomen dat een debiteur zonder prijslijst-
+koppeling een nieuwe order kan krijgen.
+
+- `create_order_with_lines` (de enige RPC achter de handmatige order-aanmaak-
+  UI) weigert nu een nieuwe order als de debiteur geen `prijslijst_nr` heeft —
+  `RAISE EXCEPTION` vóór de `orders`-INSERT.
+- Frontend-spiegel in `order-form.tsx`'s `saveMutation` (zelfde
+  `throw new Error(...)`-patroon als de bestaande afleveradres-gate) voor
+  directe feedback zonder DB-round-trip.
+- **Scope bewust beperkt** tot de handmatige creatie-RPC: `create_edi_order`/
+  `create_webshop_order` blijven ongewijzigd (intentionele bestaande fallback
+  op `producten.verkoopprijs`). Alleen creatie, geen edit — een bestaande
+  order blijft altijd bewerkbaar.
+- Blast-radius vooraf gecheckt: van de 138 actieve debiteuren zonder
+  prijslijst kwamen de laatste 14 dagen alleen orders binnen via handmatig/
+  `oud_systeem`, nul via EDI/Shopify/webshop.
+- Geverifieerd via rolled-back transacties: debiteur zonder prijslijst →
+  correct geblokkeerd met duidelijke melding; debiteur met prijslijst →
+  ongewijzigd succesvol.
+
 ## 2026-06-23 — Eenmalige prijscorrectie HEADLAM B.V. (#500001) na koppeling aan prijslijst
 
 **Geen code-wijziging — pure datacorrectie**, los van al het overige werk

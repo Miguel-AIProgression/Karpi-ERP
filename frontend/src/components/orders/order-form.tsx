@@ -546,6 +546,17 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
   const saveMutation = useMutation({
     mutationFn: async (overrideLeverModus?: LeverModus) => {
       if (!client) throw new Error('Selecteer een klant')
+      // Mig 481: een nieuwe order mag alleen aangemaakt worden voor een
+      // debiteur die aan een prijslijst gekoppeld is — anders staan de
+      // orderregels op een willekeurige/verkeerde prijs (aanleiding: HEADLAM
+      // B.V. had nooit een koppeling, 12 open orders stonden te laag
+      // geprijsd). Alleen bij aanmaken, niet bij bewerken van een bestaande
+      // order (zou anders een al-bestaande order onbewerkbaar maken).
+      if (mode === 'create' && !client.prijslijst_nr) {
+        throw new Error(
+          `${client.naam} heeft geen prijslijst gekoppeld — koppel eerst een prijslijst aan deze klant (klantdetail > Prijslijst) voordat je een order aanmaakt.`,
+        )
+      }
       if (regels.filter(r => r.artikelnr !== SHIPPING_PRODUCT_ID).length === 0) throw new Error('Voeg minstens één orderregel toe')
       if (isBlokkerendDropshipEmailProbleem(dropshipEmailProbleem) && !dropshipEmailGenegeerd) {
         throw new Error(DROPSHIP_EMAIL_MELDING[dropshipEmailProbleem])
