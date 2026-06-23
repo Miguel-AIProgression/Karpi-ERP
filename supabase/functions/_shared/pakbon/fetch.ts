@@ -7,7 +7,7 @@ import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import type { PakbonBundelOrder, PakbonZendingInput } from './types.ts'
 
 const PAKBON_SELECT = `
-  zending_nr, verzenddatum, created_at,
+  zending_nr, verzenddatum, created_at, is_deelzending,
   afl_naam, afl_adres, afl_postcode, afl_plaats, afl_land, afl_telefoon,
   aantal_colli, totaal_gewicht_kg,
   orders!zendingen_order_id_fkey!inner (

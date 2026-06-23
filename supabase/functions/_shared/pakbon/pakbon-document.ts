@@ -168,6 +168,7 @@ export function bouwPakbonDocument(
   return {
     pakbonnr: zending.zending_nr,
     datum: formatDatum(zending.verzenddatum ?? zending.created_at),
+    isDeelzending: zending.is_deelzending === true,
     afleveradres,
     afleverTelefoon: zending.afl_telefoon,
     factuuradres,

@@ -72,6 +72,8 @@ export interface PakbonZendingInput {
   zending_nr: string
   verzenddatum: string | null
   created_at: string
+  /** Mig 473: TRUE = deze zending dekt niet de hele order (deelzending). */
+  is_deelzending?: boolean | null
   afl_naam: string | null
   afl_adres: string | null
   afl_postcode: string | null
@@ -188,6 +190,9 @@ export interface PakbonBedrijf {
 export interface PakbonDocument {
   pakbonnr: string
   datum: string
+  /** Mig 473: TRUE = deze pakbon dekt niet de hele order — toont een
+   *  "DEELZENDING"-indicator zodat magazijn/klant niet denken dat alles binnen is. */
+  isDeelzending: boolean
   /** Afleveradres-blok (regels, leeg gefilterd). */
   afleveradres: string[]
   afleverTelefoon: string | null

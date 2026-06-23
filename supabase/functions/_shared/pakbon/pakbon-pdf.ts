@@ -129,6 +129,19 @@ export async function genereerPakbonPDF(
   drawText(page, doc.datum, metaX + mm(22), y - mm(5), fontR, 8)
   y -= mm(16)
 
+  // Mig 473: deze zending dekt niet de hele order — niet missen op de werkvloer.
+  if (doc.isDeelzending) {
+    const badgeTekst = 'DEELZENDING — niet de volledige order'
+    const badgeW = fontB.widthOfTextAtSize(badgeTekst, 9) + mm(4)
+    const badgeH = mm(6)
+    page.drawRectangle({
+      x: mL, y: y - badgeH + mm(1.5), width: badgeW, height: badgeH,
+      borderColor: BLACK, borderWidth: 1,
+    })
+    drawText(page, badgeTekst, mL + mm(2), y - mm(3), fontB, 9)
+    y -= mm(10)
+  }
+
   // ── Afleveradres (rechterkolom) ───────────────────────────────────────────
   const adresX = mL + mm(110)
   drawText(page, 'Afleveradres:', adresX, y, fontB, 8, SLATE)

@@ -142,6 +142,8 @@ export interface ZendingPrintSet {
   afl_land: string | null
   /** Mig 339: leveringstelefoonnummer-snapshot — pakbon toont 'm onder het afleveradres. */
   afl_telefoon: string | null
+  /** Mig 473: TRUE = deze zending dekt niet de hele order (deelzending). */
+  is_deelzending?: boolean | null
   aantal_colli: number | null
   totaal_gewicht_kg: number | null
   opmerkingen: string | null
@@ -291,7 +293,7 @@ export async function fetchZendingPrintSet(zending_nr: string): Promise<ZendingP
     .select(
       `
       id, zending_nr, status, vervoerder_code, service_code, verzenddatum, track_trace,
-      afl_naam, afl_adres, afl_postcode, afl_plaats, afl_land, afl_telefoon,
+      afl_naam, afl_adres, afl_postcode, afl_plaats, afl_land, afl_telefoon, is_deelzending,
       aantal_colli, totaal_gewicht_kg, opmerkingen, created_at,
       vervoerders ( code, display_naam, type, actief, label_breedte_mm, label_hoogte_mm ),
       orders!zendingen_order_id_fkey!inner (

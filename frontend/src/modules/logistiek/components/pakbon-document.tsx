@@ -89,6 +89,13 @@ export function PakbonDocument({ zending, vervoerderNaam: _vervoerderNaam, colli
           </div>
         </div>
 
+        {/* Mig 473: deze zending dekt niet de hele order — niet missen op de werkvloer. */}
+        {doc.isDeelzending && (
+          <div className="mt-2 inline-block self-start border-2 border-slate-900 px-2 py-1 font-sans text-[11px] font-bold tracking-wide">
+            DEELZENDING — niet de volledige order
+          </div>
+        )}
+
         {/* AFLEVERADRES als hoofd-adresblok (rechts van het midden) --------- */}
         <section className="mt-8 grid grid-cols-2">
           <div />
