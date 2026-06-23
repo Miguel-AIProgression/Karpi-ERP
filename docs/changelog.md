@@ -1,5 +1,75 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-23 — Deelzending correct maken: override, pakbon, facturatie-timing, DESADV-per-zending (mig 473-475)
+
+**Waarom:** tijdens het lokaal testen van een deelzending (ORD-2026-0788) bleek
+`start_deelzending` te falen omdat de klant `deelleveringen_toegestaan=false`
+heeft. Doorvragen "wat gebeurt er dan verder" legde drie structurele gaten
+bloot, met directe code-/DB-verificatie (geen aannames): geen override-
+mogelijkheid, pakbon toont nergens dat het een deelzending is, en facturatie
++ DESADV gaan allebei uit van "1 order = 1 zending" — fout zodra dat niet
+klopt. Belangrijkste restrictie: voor elke order zonder deelzending (de
+overgrote meerderheid) moet het gedrag exact hetzelfde blijven. Plan:
+[`docs/superpowers/plans/2026-06-22-deelzending-correctheid.md`](superpowers/plans/2026-06-22-deelzending-correctheid.md).
+
+- **Deel 1 — handmatige override (mig 473):** `start_deelzending` krijgt
+  `p_override_reden TEXT DEFAULT NULL` — gevuld omzeilt het de
+  `deelleveringen_toegestaan`-blokkade en logt de reden in `order_events.metadata`.
+  Nieuwe read-only RPC `kan_deelzending(order_id)` laat
+  [`deelzending-dialog.tsx`](frontend/src/components/orders/deelzending-dialog.tsx)
+  vooraf checken en een verplicht reden-veld tonen. **Bijvangst:** de audit-
+  insert in `start_deelzending` schreef sinds mig 413 naar een niet-bestaande
+  kolom `payload` i.p.v. de echte kolom `metadata` — elke deelzending-poging
+  faalde dus altijd op de laatste statement, nu gefixt.
+- **Deel 2 — pakbon-indicator (geen migratie, puur TS):** `PakbonZendingInput.is_deelzending`
+  → `PakbonDocument.isDeelzending` (canonieke builder
+  [`_shared/pakbon/pakbon-document.ts`](supabase/functions/_shared/pakbon/pakbon-document.ts),
+  ADR-0033) → "DEELZENDING — niet de volledige order"-badge op zowel de
+  browser-pakbon als de server-PDF (factuurmail-bijlage).
+- **Deel 3 — facturatie wachtte op de hele order (mig 474):** `enqueue_factuur_voor_event()`
+  filterde op `event_type='pickronde_voltooid' AND status_na='Verzonden'`;
+  `markeer_deels_verzonden()` logt het ANDERE event_type `'deels_verzonden'`
+  (`status_na='Deels verzonden'`) — een deelzending werd dus nooit
+  gefactureerd totdat de hele order (soms maanden later) compleet was.
+  Conditie dekt nu beide combinaties; bestaande `ON CONFLICT (zending_id)`-guard
+  voorkomt een dubbele factuurregel bij de latere order-completion. Geverifieerd
+  in een rolled-back transactie (order 2487/zending 57): nieuw event → nieuwe
+  queue-rij; daaropvolgend order-completion-event → geen duplicaat.
+- **Deel 4 — DESADV per fysieke zending i.p.v. per order (mig 475 + herschreven
+  [`bouw-verzendbericht-edi`](supabase/functions/bouw-verzendbericht-edi/index.ts)):**
+  grootste/risicovolste deel, raakt de live EDI-koppeling (Hornbach, BDSK).
+  Oud: sweep zocht op `orders.status='Verzonden'`, idempotent op
+  `(bron_tabel='orders', bron_id=order_id)`, regels uit **alle**
+  `order_regels.orderaantal` via een willekeurig-eerste zending (`.limit(1)`
+  zonder ORDER BY) — bij een deelzending zou de tweede zending nooit een eigen
+  DESADV krijgen (idempotentie blokkeerde 'm) en de eerste zou alle regels
+  tonen alsof in 1x verzonden. Nieuw: kandidaten komen uit
+  `zendingen.gereed_op IS NOT NULL` (eerste moment 'Klaar voor verzending',
+  blijft staan bij latere Onderweg/Afgeleverd) i.p.v. `orders.status` — een
+  deelzending bereikt dat moment vaak terwijl de order nog 'Deels verzonden'
+  staat. Idempotentie-sleutel wordt `(order_id, zending_id)` via nieuwe
+  partial unique index `uk_edi_berichten_verzendbericht_actief` (de oude
+  `uk_edi_berichten_uitgaand_actief` is verengd tot `berichttype <> 'verzendbericht'`,
+  overige berichttypes ongewijzigd; 100 bestaande verzendbericht-rijen
+  ge-backfilled met hun `zending_id`). Regels komen uit `SUM(zending_regels.aantal)`
+  per `order_regel_id` i.p.v. `orderaantal`. Targeted POST-modus wijzigt van
+  `{order_id}` naar `{zending_id}` (geen bestaande caller hing van de oude vorm
+  af — de cron draait altijd sweep-modus `{}`).
+  **Geverifieerd op echte data:** voor een normale (1-zending) order is de
+  regel-inhoud byte-identiek aan vóór de migratie (order 2487). Het
+  deelzending-pad is geverifieerd via een gefabriceerde, volledig rolled-back
+  transactie op een echte 10-regelige EDI-order (order 3780, zending 177):
+  3 regels verhuisd naar een nieuwe synthetische zending — kandidaten-query
+  herkent de bestaande zending correct als "al aanwezig" en de nieuwe zending
+  correct als verse kandidaat, regel-partitionering klopt exact (7 vs 3, geen
+  overlap, geen dubbeltelling). Niets van de testdata is in de live DB
+  beland.
+  **Apart bevestigingsmoment:** de migraties (473-475) zijn direct op de live
+  DB toegepast (project-conventie), maar de edge function-deploy is bewust
+  NIET meegenomen — de cron (`verzendbericht-edi-sweep`, elke 15 min) stuurt
+  na deploy binnen 15 minuten echte DESADV-berichten naar Hornbach/BDSK; dat
+  vereist een expliciete go-ahead, los van het schrijven/verifiëren van de code.
+
 ## 2026-06-23 — Afgeleide snijdatum/rol zichtbaar + automatische verzendweek voor maatwerk-op-voorraad (mig 469)
 
 **Waarom:** bij het uitzoeken van twee orders bleek order-detail voor een maatwerk-

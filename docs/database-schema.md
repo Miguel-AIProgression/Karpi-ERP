@@ -412,7 +412,7 @@ CHECK constraint `order_events_actor_xor`: niet beide actor-velden tegelijk gevu
 #### order_event_type (enum)
 `aangemaakt | pickronde_gestart | pickronde_voltooid | deels_verzonden | wacht_status_herberekend | geannuleerd`
 
-Sinds mig 257 (ADR-0016): `pickronde_gestart` (geschreven door `markeer_pickronde_gestart` als ≥1 zending in `Picken` overgaat) en `deels_verzonden` (geschreven door `markeer_deels_verzonden` wanneer niet-laatste zending in een multi-zending order wordt voltooid). Factuur-trigger `enqueue_factuur_voor_event` (mig 223) filtert strict op `event_type='pickronde_voltooid'` — nieuwe types triggeren géén factuur.
+Sinds mig 257 (ADR-0016): `pickronde_gestart` (geschreven door `markeer_pickronde_gestart` als ≥1 zending in `Picken` overgaat) en `deels_verzonden` (geschreven door `markeer_deels_verzonden` wanneer niet-laatste zending in een multi-zending order wordt voltooid). **Mig 474 (2026-06-22):** `enqueue_factuur_voor_event` filterde tot dan strict op `event_type='pickronde_voltooid' AND status_na='Verzonden'` — een deelzending (`event_type='deels_verzonden', status_na='Deels verzonden'`) werd dus nooit gefactureerd totdat de hele order (soms maanden later, bij een trage laatste regel) compleet was. De conditie dekt nu beide combinaties; de bestaande `factuur_queue`-insert (`ON CONFLICT (zending_id) DO NOTHING`) voorkomt dat de latere order-completion een dubbele factuurregel voor de al-gefactureerde deelzending aanmaakt.
 
 ---
 
@@ -1364,9 +1364,9 @@ Centrale audit-/queue-tabel voor alle EDI-berichten via Transus (in én uit) (mi
 | debiteur_nr | INTEGER FK → debiteuren | NULL als GLN niet matcht |
 | order_id | BIGINT FK → orders | Voor inkomende orders + uitgaande orderbev/verzending |
 | factuur_id | BIGINT FK → facturen | Voor uitgaande factuurberichten |
-| zending_id | BIGINT | FK volgt zodra zendingen-tabel DESADV-velden krijgt |
+| zending_id | BIGINT FK → zendingen | Voor `berichttype='verzendbericht'` (mig 475): de specifieke fysieke zending waarover dit bericht gaat — samen met `order_id` de idempotentie-as (zie hieronder). Voor andere berichttypes ongebruikt (NULL). |
 | bron_tabel | TEXT | Voor uitgaand: welke tabel triggerde ('orders'/'facturen'/'zendingen') |
-| bron_id | BIGINT | PK van het bron-record. Idempotent met (berichttype, bron_tabel, bron_id) UK |
+| bron_id | BIGINT | PK van het bron-record. Idempotent met (berichttype, bron_tabel, bron_id) UK — geldt sinds mig 475 niet meer voor `berichttype='verzendbericht'` (zie hieronder) |
 | payload_raw | TEXT | Letterlijke fixed-width / EDIFACT / XML |
 | payload_parsed | JSONB | Geparseerde data |
 | is_test | BOOLEAN | Test-marker (uit IsTestMessage of `edi_handelspartner_config.test_modus`) |
@@ -1382,11 +1382,12 @@ Centrale audit-/queue-tabel voor alle EDI-berichten via Transus (in én uit) (mi
 
 **Unieke partial indexen:**
 - `uk_edi_berichten_transactie_id` — UNIQUE op `transactie_id` (idempotentie inkomend)
-- `uk_edi_berichten_uitgaand_actief` — UNIQUE op `(berichttype, bron_tabel, bron_id)` waar `richting='uit' AND status NOT IN ('Fout','Geannuleerd')` (voorkomt dubbele triggers)
+- `uk_edi_berichten_uitgaand_actief` — UNIQUE op `(berichttype, bron_tabel, bron_id)` waar `richting='uit' AND berichttype <> 'verzendbericht' AND status NOT IN ('Fout','Geannuleerd')` (voorkomt dubbele triggers; verengd in mig 475 — verzendbericht heeft zijn eigen index, zie hieronder)
+- `uk_edi_berichten_verzendbericht_actief` (mig 475) — UNIQUE op `(order_id, zending_id)` waar `richting='uit' AND berichttype='verzendbericht' AND status NOT IN ('Fout','Geannuleerd')`. Eenheid is de fysieke zending, niet de order: een order met ≥2 zendingen (deelzending) krijgt zo per zending zijn eigen DESADV; een bundel-zending (mig 222, meerdere orders in 1 zending) krijgt per order zijn eigen DESADV. Voor de oude `(berichttype, bron_tabel, bron_id)`-index (`bron_id`=order_id) zou de tweede deelzending van een order altijd als "al aanwezig" zijn overgeslagen.
 
 **RPCs:** `log_edi_inkomend`, `markeer_edi_ack`, `create_edi_order`, `match_edi_artikel`, `enqueue_edi_uitgaand`, `claim_volgende_uitgaand`, `markeer_edi_verstuurd`, `markeer_edi_fout`. Sinds migratie 166 gebruikt `create_edi_order` de debiteur-prijslijst (`debiteuren.prijslijst_nr -> prijslijst_regels`) voor orderregelprijzen, met fallback op `producten.verkoopprijs`. Sinds mig 368 vult `create_edi_order` ook de e-mail-snapshots: `fact_email` (`email_factuur` → `email_overig`) en `afl_email` (e-mail van het GLN-gematchte afleveradres → `email_overig`); `create_webshop_order` idem, waarbij expliciete `p_header`-waarden winnen en `env_fallback`-orders worden overgeslagen.
 
-**Cron `verzendbericht-edi-sweep`** (mig 377, */15 min — **ACTIEF sinds 12-06-2026, jobid 12**): roept edge function `bouw-verzendbericht-edi` aan als sweep over orders met `status='Verzonden' AND bron_systeem='edi'` (venster: `verzonden_at` ≤ 7 dagen oud) bij partners met `verzend_uit && transus_actief`, minus al-bestaande `berichttype='verzendbericht'`-rijen (idempotent; DB-backstop: partial unique index mig 157). Format `karpi-verzendbericht.ts` is byte-identiek gevalideerd tegen Transus-bericht 172390327 + Testen-tab-akkoord. Verstuurd door bestaande cron `transus-send` (mig 305).
+**Cron `verzendbericht-edi-sweep`** (mig 377, */15 min — **ACTIEF sinds 12-06-2026, jobid 12**): roept edge function `bouw-verzendbericht-edi` aan. **Herontwerp mig 475 (2026-06-22):** sweep zoekt voortaan op `zendingen.gereed_op IS NOT NULL` (eerste moment 'Klaar voor verzending', venster ≤7 dagen) i.p.v. `orders.status='Verzonden' AND verzonden_at` — een deelzending bereikt dat moment vaak terwijl de order nog 'Deels verzonden' staat, dus de order-status was het verkeerde trigger-moment. Regels per DESADV komen uit `SUM(zending_regels.aantal)` per `order_regel_id` (wat in déze zending werkelijk verzonden is), niet uit `order_regels.orderaantal` (het volledige bestelde aantal). Minus al-bestaande `(order_id, zending_id)`-paren (idempotent; DB-backstop: `uk_edi_berichten_verzendbericht_actief`). Format `karpi-verzendbericht.ts` is byte-identiek gevalideerd tegen Transus-bericht 172390327 + Testen-tab-akkoord. Verstuurd door bestaande cron `transus-send` (mig 305). Plan: [`docs/superpowers/plans/2026-06-22-deelzending-correctheid.md`](superpowers/plans/2026-06-22-deelzending-correctheid.md).
 
 ---
 
