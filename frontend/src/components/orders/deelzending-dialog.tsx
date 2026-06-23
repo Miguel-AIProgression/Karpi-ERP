@@ -93,9 +93,9 @@ export function DeelzendingDialog({
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-[var(--radius)] border border-slate-200 shadow-xl w-full max-w-lg">
+      <div className="bg-white rounded-[var(--radius)] border border-slate-200 shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 shrink-0">
           <div className="flex items-center gap-2">
             <Package size={16} className="text-terracotta-500" />
             <h2 className="font-semibold text-slate-900">Deelzending starten</h2>
@@ -111,7 +111,7 @@ export function DeelzendingDialog({
         </div>
 
         {/* Body */}
-        <div className="px-5 py-4 space-y-4">
+        <div className="px-5 py-4 space-y-4 overflow-y-auto">
           <p className="text-sm text-slate-600">
             Selecteer de orderregels die je nu al wilt verzenden. De overige regels
             blijven in de order staan voor een latere zending.
@@ -119,7 +119,7 @@ export function DeelzendingDialog({
 
           {/* Regel-selectie */}
           <div className="border border-slate-200 rounded-[var(--radius-sm)] overflow-hidden">
-            <div className="px-3 py-2 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+            <div className="px-3 py-2 bg-slate-50 border-b border-slate-100 flex items-center justify-between sticky top-0">
               <span className="text-xs font-medium text-slate-600">
                 {kandidaatRegels.length} {kandidaatRegels.length === 1 ? 'regel' : 'regels'}
               </span>
@@ -140,7 +140,7 @@ export function DeelzendingDialog({
                 </button>
               </div>
             </div>
-            <div className="divide-y divide-slate-100">
+            <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto">
               {kandidaatRegels.length === 0 ? (
                 <p className="px-3 py-4 text-sm text-slate-400 text-center">
                   Geen selecteerbare regels
@@ -206,7 +206,7 @@ export function DeelzendingDialog({
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-4 border-t border-slate-100 flex items-center justify-between gap-3">
+        <div className="px-5 py-4 border-t border-slate-100 flex items-center justify-between gap-3 shrink-0">
           <span className="text-xs text-slate-400">
             {aantalGeselecteerd === 0
               ? 'Selecteer minimaal 1 regel'
