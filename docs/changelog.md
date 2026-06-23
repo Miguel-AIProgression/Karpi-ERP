@@ -1,5 +1,29 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-23 (update) — Pick & Ship verliest een order met een actieve zending niet meer (mig 476)
+
+**Waarom:** tijdens het lokaal testen van de deelzending-override (mig 473)
+bleek dat een net-gestarte override-deelzending (klant met
+`deelleveringen_toegestaan=false`) de order keurig op 'In pickronde' zette,
+maar de order volledig uit Pick & Ship liet verdwijnen — `pick_ship_zichtbaar`
+(view `order_pickbaarheid`, mig 386) is een statische snapshot van de huidige
+pickbaarheid, zonder geheugen van "er loopt al een pickronde". **Geen
+incident specifiek voor de override:** ORD-2026-0126 (id 3674) zat al vier
+dagen in exact dezelfde val — een regel werd ná het starten van de pickronde
+niet meer pickbaar, waardoor de order onvindbaar werd voor de picker.
+
+- **Fix:** extra OR-tak in `pick_ship_zichtbaar`: `EXISTS(zending_orders/
+  zendingen met status IN ('Gepland','Picken') voor deze order)`. Een order
+  met een actieve zending is nu altijd zichtbaar in Pick & Ship, los van de
+  statische pickbaarheid-snapshot.
+- **Geverifieerd op alle 1497 live rijen** in `order_pickbaarheid`: precies 2
+  orders veranderen van onzichtbaar naar zichtbaar (de twee hierboven
+  genoemde), 0 regressies voor orders zonder actieve zending.
+- Bijvangst: dezelfde sessie maakte de bestaande "Pickronde annuleren"-knop
+  (mig 398) ook bereikbaar vanaf de zending-detail-pagina (niet alleen de
+  printset-pagina) en gaf hem een duidelijker, omkaderde stijl i.p.v. een
+  kaal tekstlinkje.
+
 ## 2026-06-23 — Deelzending correct maken: override, pakbon, facturatie-timing, DESADV-per-zending (mig 473-475)
 
 **Waarom:** tijdens het lokaal testen van een deelzending (ORD-2026-0788) bleek
