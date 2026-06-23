@@ -23,7 +23,10 @@ export function AnnuleerPickrondeKnop({ zendingId, zendingStatus }: Props) {
   const [bevestig, setBevestig] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  if (zendingStatus !== 'Picken') return null
+  // Mig 478: ook een nog-niet-gestarte ('Gepland') deelzending mag terug —
+  // zelfs veiliger dan 'Picken' (er is per definitie nog niets gepickt).
+  if (zendingStatus !== 'Gepland' && zendingStatus !== 'Picken') return null
+  const nogNietGestart = zendingStatus === 'Gepland'
 
   // Zodra er iets gepickt/niet-gevonden is, kan terugdraaien niet meer (backend
   // weigert ook). Dan tonen we de knop niet — voltooien is de weg.
@@ -33,7 +36,10 @@ export function AnnuleerPickrondeKnop({ zendingId, zendingStatus }: Props) {
   async function handleAnnuleer() {
     setError(null)
     try {
-      await mutate.mutateAsync({ zendingId, reden: 'Handmatig teruggedraaid vanaf Verzendset' })
+      await mutate.mutateAsync({
+        zendingId,
+        reden: nogNietGestart ? 'Deelzending verwijderd vóór start' : 'Handmatig teruggedraaid vanaf Verzendset',
+      })
       navigate('/pick-ship')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -44,11 +50,15 @@ export function AnnuleerPickrondeKnop({ zendingId, zendingStatus }: Props) {
     return (
       <button
         onClick={() => setBevestig(true)}
-        title="Per ongeluk gestart? Draai deze pickronde terug — de zending vervalt en de order(s) gaan terug naar Klaar voor picken. Dit annuleert de pickronde; gebruik 'Terug uit pickronde' als je alleen naar het overzicht wilt."
+        title={
+          nogNietGestart
+            ? "Deze deelzending is nog niet gestart — verwijder de reservering als je 'm niet (meer) wilt."
+            : "Per ongeluk gestart? Draai deze pickronde terug — de zending vervalt en de order(s) gaan terug naar Klaar voor picken. Dit annuleert de pickronde; gebruik 'Terug uit pickronde' als je alleen naar het overzicht wilt."
+        }
         className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 transition-colors hover:bg-rose-100 hover:border-rose-400"
       >
         <Undo2 size={16} />
-        Pickronde annuleren
+        {nogNietGestart ? 'Deelzending verwijderen' : 'Pickronde annuleren'}
       </button>
     )
   }
@@ -56,7 +66,9 @@ export function AnnuleerPickrondeKnop({ zendingId, zendingStatus }: Props) {
   return (
     <div className="inline-flex flex-col items-end gap-1.5">
       <div className="inline-flex items-center gap-2">
-        <span className="text-sm text-slate-600">Zeker? Zending vervalt, order(s) terug naar Klaar voor picken.</span>
+        <span className="text-sm text-slate-600">
+          {nogNietGestart ? 'Zeker? De gereserveerde regels komen terug bij de rest van de order.' : 'Zeker? Zending vervalt, order(s) terug naar Klaar voor picken.'}
+        </span>
         <button
           onClick={() => setBevestig(false)}
           disabled={mutate.isPending}
@@ -70,7 +82,7 @@ export function AnnuleerPickrondeKnop({ zendingId, zendingStatus }: Props) {
           className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] bg-rose-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-rose-700 disabled:opacity-45"
         >
           {mutate.isPending ? <Loader2 size={14} className="animate-spin" /> : <Undo2 size={14} />}
-          Ja, terugdraaien
+          {nogNietGestart ? 'Ja, verwijderen' : 'Ja, terugdraaien'}
         </button>
       </div>
       {error && <div className="max-w-72 text-right text-xs text-rose-600">{error}</div>}

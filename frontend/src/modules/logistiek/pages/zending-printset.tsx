@@ -188,7 +188,20 @@ export function ZendingPrintSetPage() {
           }
         />
 
-        {zending.status === 'Picken' ? (
+        {zending.status === 'Gepland' ? (
+          <div className="mb-4 rounded-[var(--radius-sm)] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <div className="mb-1 font-semibold">Deze deelzending is nog niet gestart</div>
+            <p>
+              De regels zijn alleen gereserveerd — er is nog niets gepickt en er zijn nog geen labels
+              geprint. Ga naar{' '}
+              <Link to="/pick-ship" className="font-medium underline hover:text-amber-900">
+                Pick &amp; Ship
+              </Link>
+              {' '}(tab <strong>Picken starten</strong>) om de labels te printen en de pickronde echt te
+              starten.
+            </p>
+          </div>
+        ) : zending.status === 'Picken' ? (
           <div className="mb-4 rounded-[var(--radius-sm)] border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
             <div className="mb-2 font-semibold text-slate-800">Zo werk je deze zending af — 3 stappen</div>
             <ol className="space-y-2.5">

@@ -1458,7 +1458,7 @@ Eén-rij-tabel (`id=1`) met `watermark TIMESTAMPTZ` = de `created_at` van de laa
 | Enum | Waarden |
 |------|---------|
 | order_status | **Klaar voor picken** (mig 257, ADR-0016, default sinds mig 275), **Wacht op maatwerk** (mig 257), Wacht op voorraad, **Wacht op inkoop** (mig 144), **In pickronde** (mig 257), **Deels verzonden** (mig 257), Verzonden, Geannuleerd, **Maatwerk afgerond** (mig 327, ADR-0029 — terminale status uitsluitend voor productie-only orders uit Basta; bereikt zodra alle snijplannen confectie-afgerond zijn; valt buiten Pick & Ship/facturatie/transport). Legacy (niet meer geschreven post-mig 275, behalve `In productie` als import-status voor productie-only orders): Nieuw, Actie vereist, Wacht op picken, In snijplan, In productie, Deels gereed, Klaar voor verzending. |
-| zending_status | Gepland, Picken, Ingepakt, Klaar voor verzending, Onderweg, Afgeleverd (mig 169) |
+| zending_status | Gepland, Picken, Ingepakt, Klaar voor verzending, Onderweg, Afgeleverd (mig 169). **`Gepland`** was tot mig 477 een dood, ongebruikt lid (geen schrijf-/leespad); sinds mig 477 betekent het "deelzending aangemaakt (regels gereserveerd via `start_deelzending`) maar nog niet gestart" — `start_pickronden` promoot 'm naar `Picken` zodra de picker 'm via Pick & Ship's "Picken starten" daadwerkelijk oppakt. `Ingepakt` blijft ongebruikt (niet in de V1-flow, mig 218). |
 | factuur_status | Concept, Verstuurd, Betaald, Herinnering, Aanmaning, Gecrediteerd |
 | factuurvoorkeur | per_zending, wekelijks |
 | factuur_queue_status | pending, processing, done, failed |

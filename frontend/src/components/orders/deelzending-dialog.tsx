@@ -76,12 +76,14 @@ export function DeelzendingDialog({
       null,
       overrideNodig ? 'Door operator bevestigd in deelzending-dialoog' : null,
     ),
-    onSuccess: (data) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['orders', orderId] })
       queryClient.invalidateQueries({ queryKey: ['orders', orderId, 'regels'] })
       queryClient.invalidateQueries({ queryKey: ['orders', orderId, 'zendingen'] })
-      // Navigeer naar printset (zending_nr, niet het numerieke id)
-      navigate(`/logistiek/${data.zending_nr}/printset`)
+      // Mig 477: de deelzending is alleen GERESERVEERD ('Gepland'), nog niet
+      // gestart — de order-status verandert niet. Labels printen + écht
+      // starten gebeurt straks vanuit Pick & Ship > Picken starten.
+      navigate('/pick-ship')
     },
     onError: (err) => {
       setFout(err instanceof Error ? err.message : 'Onbekende fout')

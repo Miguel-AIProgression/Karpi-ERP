@@ -1,5 +1,48 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-23 (update 2) — Deelzending aanmaken reserveert alleen, start de pickronde niet meer (mig 477-478)
+
+**Waarom:** na mig 476 (orders met een actieve zending blijven zichtbaar in
+Pick & Ship) bleek bij verder testen dat de net-aangemaakte deelzending wél
+zichtbaar was, maar onder de verkeerde tab — "Afronden" (klaar om af te
+vinken) i.p.v. "Picken starten" (nog te beginnen), terwijl er nog niets
+fysiek gepickt was. Gebruiker, expliciet gevraagd en bevestigd: een
+deelzending aanmaken moet alleen de regels RESERVEREN; de picker moet 'm
+zelf onder "Picken starten" oppakken — labels printen, dan pas de pickronde
+echt starten.
+
+- **`'Gepland'`** (eerste waarde van `zending_status`) bleek een dood,
+  ongebruikt enum-lid — nul schrijf- of leespaden nergens in de codebase.
+  Exact de vrije ruimte die nodig was om "gereserveerd" en "gestart" uit
+  elkaar te trekken.
+- **`start_deelzending`** zet de nieuwe zending nu op `'Gepland'` i.p.v.
+  `'Picken'` en roept `markeer_pickronde_gestart` niet meer aan — de
+  orderstatus blijft ongewijzigd tot de pickronde daadwerkelijk start.
+- **`start_pickronden`** (de RPC die echt aan de "Picken starten"-knoppen
+  hangt — niet de inmiddels dode `start_pickronden_voor_order`/`_bundel`)
+  kreeg twee aanpassingen: (1) sluit regels uit die al in ENIGE zending
+  zitten (`is_locked`) — was nergens afgedekt, pure verharding tegen dubbele
+  `zending_regels`-rijen; (2) promoot bestaande `'Gepland'`-zendingen van de
+  orders in scope naar `'Picken'` i.p.v. hun regels opnieuw te zenden, en
+  levert ze terug in de resultatenset zodat de bestaande "ga naar
+  printset"-navigatie (labels printen) ongewijzigd werkt.
+- **Geverifieerd** via een gefabriceerde, volledig rolled-back transactie op
+  een echte 4-regelige order: deelzending op 1 regel → 'Gepland', orderstatus
+  ongewijzigd; daarna de hele order via "Picken starten" → die ene zending
+  gepromoveerd, de overige 3 regels in een nieuwe zending, order naar 'In
+  pickronde', **geen dubbele regels**. Een onafhankelijke normale order zonder
+  bestaande zending bleef byte-identiek aan vóór de migratie.
+- **`annuleer_pickronde`** accepteerde tot nu toe alleen `status='Picken'` —
+  een operator kon een Gepland-deelzending nergens weggooien vóór het starten
+  (de knop verdween zelfs uit de UI). Guard verruimd naar
+  `status IN ('Gepland','Picken')` — voor Gepland zelfs veiliger dan Picken
+  (per definitie nog niets gepickt). De knop toont nu "Deelzending
+  verwijderen" i.p.v. "Pickronde annuleren" als de zending nog niet gestart
+  is, en staat zowel op de zending-detail- als de printset-pagina.
+- Bijvangst: de printset-pagina toonde voor een `'Gepland'`-zending onterecht
+  "al voltooid en aangemeld bij de vervoerder" — kreeg een eigen amber
+  uitlegblok dat naar Pick & Ship verwijst.
+
 ## 2026-06-23 (update) — Pick & Ship verliest een order met een actieve zending niet meer (mig 476)
 
 **Waarom:** tijdens het lokaal testen van de deelzending-override (mig 473)
