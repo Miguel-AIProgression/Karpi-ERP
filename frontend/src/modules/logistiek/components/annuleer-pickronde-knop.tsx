@@ -45,31 +45,31 @@ export function AnnuleerPickrondeKnop({ zendingId, zendingStatus }: Props) {
       <button
         onClick={() => setBevestig(true)}
         title="Per ongeluk gestart? Draai deze pickronde terug — de zending vervalt en de order(s) gaan terug naar Klaar voor picken. Dit annuleert de pickronde; gebruik 'Terug uit pickronde' als je alleen naar het overzicht wilt."
-        className="inline-flex items-center gap-1.5 text-xs font-medium text-rose-600 transition-colors hover:text-rose-700 hover:underline"
+        className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 transition-colors hover:bg-rose-100 hover:border-rose-400"
       >
-        <Undo2 size={13} />
+        <Undo2 size={16} />
         Pickronde annuleren
       </button>
     )
   }
 
   return (
-    <div className="inline-flex flex-col items-end gap-1">
+    <div className="inline-flex flex-col items-end gap-1.5">
       <div className="inline-flex items-center gap-2">
-        <span className="text-xs text-slate-600">Zeker? Zending vervalt, order(s) terug naar Klaar voor picken.</span>
+        <span className="text-sm text-slate-600">Zeker? Zending vervalt, order(s) terug naar Klaar voor picken.</span>
         <button
           onClick={() => setBevestig(false)}
           disabled={mutate.isPending}
-          className="rounded-[var(--radius-sm)] px-2.5 py-1.5 text-xs text-slate-600 hover:bg-slate-100 disabled:opacity-45"
+          className="rounded-[var(--radius-sm)] border border-slate-300 px-3 py-2 text-sm text-slate-600 hover:bg-slate-100 disabled:opacity-45"
         >
           Annuleren
         </button>
         <button
           onClick={handleAnnuleer}
           disabled={mutate.isPending}
-          className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] bg-rose-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-rose-700 disabled:opacity-45"
+          className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] bg-rose-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-rose-700 disabled:opacity-45"
         >
-          {mutate.isPending ? <Loader2 size={13} className="animate-spin" /> : <Undo2 size={13} />}
+          {mutate.isPending ? <Loader2 size={14} className="animate-spin" /> : <Undo2 size={14} />}
           Ja, terugdraaien
         </button>
       </div>
