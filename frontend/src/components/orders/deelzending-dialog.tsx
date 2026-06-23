@@ -59,7 +59,7 @@ export function DeelzendingDialog({
   const queryClient = useQueryClient()
   const [geselecteerd, setGeselecteerd] = useState<Set<number>>(new Set())
   const [fout, setFout] = useState<string | null>(null)
-  const [overrideReden, setOverrideReden] = useState('')
+  const [overrideBevestigd, setOverrideBevestigd] = useState(false)
 
   const { data: kanDeelzending, isLoading: kanDeelzendingLoading } = useQuery({
     queryKey: ['orders', orderId, 'kan-deelzending'],
@@ -68,21 +68,20 @@ export function DeelzendingDialog({
   // Pas weten of een override nodig is zodra de check binnen is — vóór die
   // tijd niet alvast de happy-path blokkeren.
   const overrideNodig = kanDeelzending === false
-  const overrideRedenGevuld = overrideReden.trim().length > 0
 
   const mutation = useMutation({
     mutationFn: () => startDeelzending(
       orderId,
       Array.from(geselecteerd),
       null,
-      overrideNodig ? overrideReden.trim() : null,
+      overrideNodig ? 'Door operator bevestigd in deelzending-dialoog' : null,
     ),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['orders', orderId] })
       queryClient.invalidateQueries({ queryKey: ['orders', orderId, 'regels'] })
       queryClient.invalidateQueries({ queryKey: ['orders', orderId, 'zendingen'] })
-      // Navigeer naar printset
-      navigate(`/magazijn/printset/${data.zending_id}`)
+      // Navigeer naar printset (zending_nr, niet het numerieke id)
+      navigate(`/logistiek/${data.zending_nr}/printset`)
     },
     onError: (err) => {
       setFout(err instanceof Error ? err.message : 'Onbekende fout')
@@ -115,7 +114,7 @@ export function DeelzendingDialog({
   const kanStarten = aantalGeselecteerd > 0
     && !mutation.isPending
     && !kanDeelzendingLoading
-    && (!overrideNodig || overrideRedenGevuld)
+    && (!overrideNodig || overrideBevestigd)
   const isEindstatus = orderStatus === 'Verzonden' || orderStatus === 'Geannuleerd'
 
   if (isEindstatus) return null
@@ -226,24 +225,23 @@ export function DeelzendingDialog({
             </div>
           </div>
 
-          {/* Mig 473: deelleveringen niet toegestaan voor deze klant — override met verplichte reden */}
+          {/* Mig 473: deelleveringen niet toegestaan voor deze klant — override met bevestiging */}
           {overrideNodig && (
             <div className="bg-amber-50 border border-amber-200 rounded-[var(--radius-sm)] px-3 py-2.5 space-y-2">
               <p className="text-sm text-amber-800 flex items-center gap-1.5 font-medium">
                 <AlertTriangle size={14} />
                 Deelleveringen zijn niet toegestaan voor deze klant
               </p>
-              <p className="text-xs text-amber-700">
-                Je kunt dit bewust overrulen — geef hieronder een reden op (verplicht, wordt vastgelegd in de orderhistorie).
-              </p>
-              <textarea
-                value={overrideReden}
-                onChange={(e) => setOverrideReden(e.target.value)}
-                disabled={mutation.isPending}
-                placeholder="Bijv. klant telefonisch akkoord, spoedlevering..."
-                rows={2}
-                className="w-full px-2.5 py-1.5 text-sm rounded-[var(--radius-sm)] border border-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 disabled:opacity-50"
-              />
+              <label className="flex items-start gap-2 text-xs text-amber-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={overrideBevestigd}
+                  onChange={(e) => setOverrideBevestigd(e.target.checked)}
+                  disabled={mutation.isPending}
+                  className="mt-0.5 accent-amber-600"
+                />
+                <span>Ik wil dit bewust overrulen en toch een deelzending starten voor deze klant.</span>
+              </label>
             </div>
           )}
 
@@ -260,8 +258,8 @@ export function DeelzendingDialog({
           <span className="text-xs text-slate-400">
             {aantalGeselecteerd === 0
               ? 'Selecteer minimaal 1 regel'
-              : overrideNodig && !overrideRedenGevuld
-                ? 'Geef een reden op om te overrulen'
+              : overrideNodig && !overrideBevestigd
+                ? 'Bevestig de waarschuwing om door te gaan'
                 : `${aantalGeselecteerd} regel${aantalGeselecteerd > 1 ? 's' : ''} geselecteerd`}
           </span>
           <div className="flex gap-2">
