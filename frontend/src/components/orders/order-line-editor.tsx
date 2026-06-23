@@ -23,6 +23,7 @@ import { formatPrijsBron } from '@/lib/utils/prijs-bron'
 import { fetchEquivalenteProducten } from '@/lib/supabase/queries/product-equivalents'
 import { isAdminPseudo } from '@/lib/orders/admin-pseudo'
 import { syncVormToeslagRegel, verwijderRegelMetCompanion } from '@/lib/orders/vorm-toeslag-regel'
+import { OverigeRegelToevoegen } from './overige-regel-toevoegen'
 
 interface OrderLineEditorProps {
   lines: OrderRegelFormData[]
@@ -647,14 +648,17 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr,
       </div>
 
       {/* Artikel toevoegen */}
-      <div className="px-5 py-3 border-b border-slate-100">
-        <KwaliteitFirstSelector
-          defaultKorting={defaultKorting}
-          prijslijstNr={prijslijstNr}
-          debiteurNr={debiteurNr}
-          onSelectArticle={addArticle}
-          onAddMaatwerk={(newLines) => onChange([...lines, ...newLines])}
-        />
+      <div className="px-5 py-3 border-b border-slate-100 flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <KwaliteitFirstSelector
+            defaultKorting={defaultKorting}
+            prijslijstNr={prijslijstNr}
+            debiteurNr={debiteurNr}
+            onSelectArticle={addArticle}
+            onAddMaatwerk={(newLines) => onChange([...lines, ...newLines])}
+          />
+        </div>
+        <OverigeRegelToevoegen lines={lines} onChange={onChange} vormen={vormen} />
       </div>
 
       {/* Lines table */}

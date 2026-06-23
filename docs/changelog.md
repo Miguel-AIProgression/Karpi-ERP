@@ -1,5 +1,35 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-23 — Handmatig een admin-pseudo-regel (her)toevoegen aan een order
+
+**Waarom:** gebruiker verwijderde per ongeluk de VORMTOESLAG-companion-regel
+(€75, mig 465) van een order en kon 'm nergens terugzetten — alle bestaande
+artikel-zoekers (`KwaliteitFirstSelector`/`MaatwerkArtikelPicker`/
+`ArticleSelector`) filteren bewust `is_pseudo=false`, dus pseudo-artikelen
+waren letterlijk niet meer op te zoeken. Verzoek: generaliseer dit voor alle
+"niet-product"-regels.
+
+- Nieuwe knop **"Overige regel toevoegen"**
+  ([`overige-regel-toevoegen.tsx`](../frontend/src/components/orders/overige-regel-toevoegen.tsx))
+  naast de bestaande artikel-zoeker in `OrderLineEditor`. Toont alle 6
+  `producten.is_pseudo=TRUE`-artikelen (VERZEND, VORMTOESLAG, DROPSHIP-KLEIN,
+  DROPSHIP-GROOT, BUNDELKORTING, DREMPELKORTING).
+- VERZEND/DROPSHIP-*/BUNDELKORTING/DREMPELKORTING zijn order-niveau en worden
+  simpelweg achteraan toegevoegd.
+- VORMTOESLAG is een bijzonder geval (companion die strikt direct ná zijn
+  maatwerk-regel moet staan, array-positie-convention) — de knop laat
+  (alleen bij >1 kandidaat) eerst kiezen bij welke maatwerk-regel het hoort,
+  en hergebruikt daarna **`syncVormToeslagRegel` zelf** (dezelfde functie die
+  de companion ook bij een normale prijswijziging bijhoudt), zodat de toeslag
+  uit de al-bewaarde `maatwerk_vorm_toeslag`-metadata van de parent komt
+  (niet uit `producten.verkoopprijs`, die voor VORMTOESLAG bewust NULL is —
+  de werkelijke toeslag verschilt per vorm).
+- Geverifieerd tegen de echte casus (ORD-2026-0816): vorm `organisch_b_sp` →
+  "Organic Gespiegeld", toeslag €75 nog intact op de parent-regel.
+- Op eigen branch `feat/overige-regel-toevoegen` (vanaf de tip van
+  `feat/deelzending-correctheid`, om de lopende lokale testsessie niet te
+  onderbreken) — onafhankelijk van de deelzending-werkzaamheden.
+
 ## 2026-06-23 (update 4) — Order annuleren liet een actieve zending als weeskind staan (mig 480)
 
 **Waarom:** tijdens het testen een order met een actieve pickronde direct
