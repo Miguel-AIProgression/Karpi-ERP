@@ -1,8 +1,9 @@
-// Contracttest: TS-spiegel deriveWachtStatus ≡ golden truthtable (mig 346 + 352).
+// Contracttest: TS-spiegel deriveWachtStatus ≡ golden truthtable (mig 346 + 352 + 470).
 // De golden fixture is byte-equivalent met de DO-assertie in
-// supabase/migrations/352_derive_wacht_status_maatwerk_afgerond.sql — beide
+// supabase/migrations/470_flip_wacht_inkoop_voorraad_betekenis.sql — beide
 // kanten (SQL + TS) worden tegen dezelfde 23 cases geborgd (ADR-0006; mig 352
-// voegde de B13-cases toe: 'Maatwerk afgerond' met maatwerk=true blijft no-op).
+// voegde de B13-cases toe: 'Maatwerk afgerond' met maatwerk=true blijft no-op;
+// mig 470 draaide de betekenis van 'Wacht op inkoop'/'Wacht op voorraad' om).
 import { describe, it, expect } from 'vitest'
 import golden from '../../../../../supabase/functions/_shared/order-lifecycle/__tests__/derive-status.golden.json'
 import { deriveWachtStatus } from '../../../../../supabase/functions/_shared/order-lifecycle/derive-status'

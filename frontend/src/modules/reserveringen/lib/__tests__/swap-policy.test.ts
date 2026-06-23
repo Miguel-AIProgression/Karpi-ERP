@@ -28,6 +28,12 @@ import { describe, it, expect } from 'vitest'
  * Minimale DB-fixture-shape om een swap-scenario te beschrijven.
  * Velden volgen de echte schema's van orders / order_regels / order_reserveringen /
  * inkooporder_regels — niet uitputtend, alleen het deel dat de swap raakt.
+ *
+ * LET OP (mig 470): de betekenis van 'Wacht op inkoop'/'Wacht op voorraad' is
+ * omgedraaid ('Wacht op inkoop' = nog géén IO-claim, 'Wacht op voorraad' = IO-
+ * claim bestaat al). De `status`-waarden hieronder zijn puur illustratief/niet
+ * door een assertie geëxercised (zie `it.todo` onder) en al vóór mig 470 niet
+ * strikt afgeleid uit `derive_wacht_status` — niet als bron-van-waarheid lezen.
  */
 interface OrderFix {
   id: number
