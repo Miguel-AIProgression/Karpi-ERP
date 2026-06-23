@@ -37,6 +37,10 @@ export interface OrderbevestigingRegel {
   prijs: number | null
   korting_pct: number | null
   bedrag: number | null
+  /** Mig 469: maatwerk-regels kunnen een eigen verzendweek hebben, die de
+   *  order-brede `input.verzendweek` voor déze regel overstemt. */
+  is_maatwerk?: boolean
+  verzendweek?: string | null
 }
 
 export interface OrderbevestigingInput {
@@ -207,6 +211,15 @@ function strippedBetaalconditie(raw: string | null): string | null {
 function formatKorting(pct: number | null): string | null {
   if (pct == null || Number(pct) === 0) return null
   return `${Number(pct).toFixed(2)}%`
+}
+
+// Mig 469: order_regels.verzendweek is 'YYYY-Www' (verzendweek_voor_datum,
+// mig 228) — anders dan input.verzendweek (al een kant-en-klaar label van de
+// caller). Spiegelt formatVerzendweekLabel() in stuur-orderbevestiging/index.ts.
+function formatRegelVerzendweek(w: string): string {
+  const m = w.match(/^(\d{4})-W(\d{2})$/)
+  if (!m) return w
+  return `Wk ${parseInt(m[2])} · ${m[1]}`
 }
 
 function formatBtwPercentage(pct: number): string {
@@ -422,8 +435,15 @@ export async function genereerOrderbevestigingPDF(input: OrderbevestigingInput):
     const eenheid = regel.artikelnr && !isVerzend ? t.eenheidStuks : null
     const kortingTxt = formatKorting(regel.korting_pct)
 
+    // Mig 469: een maatwerk-regel met een eigen verzendweek toont die i.p.v.
+    // de order-brede `input.verzendweek` — preciezer, want gebaseerd op
+    // daadwerkelijke materiaal-beschikbaarheid voor déze regel.
+    const verzendweekVoorRegel = regel.is_maatwerk && regel.verzendweek
+      ? formatRegelVerzendweek(regel.verzendweek)
+      : input.verzendweek
+
     const omschrijvingLines = wrapText(regel.omschrijving ?? '', fontR, 7.5, colOmsch.w - mm(2))
-    const subLineCount = (regel.omschrijving_2 ? 1 : 0) + (regel.klant_referentie ? 1 : 0) + (input.verzendweek ? 1 : 0)
+    const subLineCount = (regel.omschrijving_2 ? 1 : 0) + (regel.klant_referentie ? 1 : 0) + (verzendweekVoorRegel ? 1 : 0)
     const totalH = ROW_H + (omschrijvingLines.length > 1 ? (omschrijvingLines.length - 1) * EXTRA_LINE_H : 0)
       + subLineCount * EXTRA_LINE_H
 
@@ -461,8 +481,8 @@ export async function genereerOrderbevestigingPDF(input: OrderbevestigingInput):
       drawText(page, `Ref: ${regel.klant_referentie}`, omschX, subY, fontR, 6.5, SLATE)
       subY -= EXTRA_LINE_H
     }
-    if (input.verzendweek) {
-      drawText(page, `${t.verzendweek} ${input.verzendweek}`, omschX, subY, fontR, 6.5, SLATE)
+    if (verzendweekVoorRegel) {
+      drawText(page, `${t.verzendweek} ${verzendweekVoorRegel}`, omschX, subY, fontR, 6.5, SLATE)
     }
 
     if (eenheid) {

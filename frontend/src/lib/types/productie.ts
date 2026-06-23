@@ -234,6 +234,9 @@ export interface PlanningConfig {
   /** Idem voor dag-orders (lever_type='datum', ADR-0014) — strenger dan de
    *  week-buffer omdat de klant een exacte datum verwacht. */
   dag_order_snij_buffer_werkdagen: number
+  /** Mig 469: aantal weken voor de automatische verzendweek-snapshot van een
+   *  maatwerk-regel zodra materiaal (een echte rol) beschikbaar komt. */
+  maatwerk_voorraad_levertijd_weken: number
 }
 
 // === Snijvoorstel types ===

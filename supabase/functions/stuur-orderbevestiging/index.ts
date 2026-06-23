@@ -46,6 +46,8 @@ const VERTALINGEN: Record<Taal, {
   ordernummer: string
   referentie: string
   levering: string
+  /** Mig 469: per-regel verzendweek-label voor maatwerk-stukken met materiaal op voorraad. */
+  verzendweekRegel: string
   model: string
   vertegenwoordiger: string
   afleveradres: string
@@ -67,6 +69,7 @@ const VERTALINGEN: Record<Taal, {
     ordernummer: 'Ordernummer',
     referentie: 'Uw referentie',
     levering: 'Verwachte levering',
+    verzendweekRegel: 'Verzendweek',
     model: 'Uw model',
     vertegenwoordiger: 'Uw vertegenwoordiger',
     afleveradres: 'Afleveradres',
@@ -88,6 +91,7 @@ const VERTALINGEN: Record<Taal, {
     ordernummer: 'Auftragsnummer',
     referentie: 'Ihre Referenz',
     levering: 'Voraussichtliche Lieferung',
+    verzendweekRegel: 'Versandwoche',
     model: 'Ihr Modell',
     vertegenwoordiger: 'Ihr Vertreter',
     afleveradres: 'Lieferadresse',
@@ -109,6 +113,7 @@ const VERTALINGEN: Record<Taal, {
     ordernummer: 'Numéro de commande',
     referentie: 'Votre référence',
     levering: 'Livraison prévue',
+    verzendweekRegel: 'Semaine d\'expédition',
     model: 'Votre modèle',
     vertegenwoordiger: 'Votre représentant',
     afleveradres: 'Adresse de livraison',
@@ -130,6 +135,7 @@ const VERTALINGEN: Record<Taal, {
     ordernummer: 'Order number',
     referentie: 'Your reference',
     levering: 'Expected delivery',
+    verzendweekRegel: 'Shipping week',
     model: 'Your model',
     vertegenwoordiger: 'Your sales representative',
     afleveradres: 'Delivery address',
@@ -174,6 +180,14 @@ async function resolveKlantEigenNamen(
 
 function formatBedrag(v: number): string {
   return new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' }).format(v)
+}
+
+// Mig 469: order_regels.verzendweek is 'YYYY-Www' (verzendweek_voor_datum, mig 228).
+// Spiegelt formatVerzendweek() in frontend/src/components/orders/order-regels-table.tsx.
+function formatVerzendweekLabel(w: string): string {
+  const m = w.match(/^(\d{4})-W(\d{2})$/)
+  if (!m) return w
+  return `Wk ${parseInt(m[2])} · ${m[1]}`
 }
 
 function formatBtwPercentage(pct: number): string {
@@ -262,6 +276,7 @@ serve(async (req) => {
       id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2,
       klant_referentie,
       orderaantal, prijs, korting_pct, bedrag,
+      is_maatwerk, verzendweek,
       maatwerk_kwaliteit_code, maatwerk_kleur_code,
       maatwerk_afwerking, maatwerk_band_kleur,
       producten!order_regels_artikelnr_fkey(karpi_code, kwaliteit_code, kleur_code)
@@ -294,6 +309,9 @@ serve(async (req) => {
       // maatwerk-snapshot wint van het gekoppelde product.
       kwaliteit_code: r.maatwerk_kwaliteit_code ?? r.producten?.kwaliteit_code ?? null,
       kleur_code: r.maatwerk_kleur_code ?? r.producten?.kleur_code ?? null,
+      // Mig 469: per-regel verzendweek, alleen relevant/gezet voor maatwerk.
+      is_maatwerk: r.is_maatwerk === true,
+      verzendweek: r.verzendweek ?? null,
     }
   })
 
@@ -405,8 +423,12 @@ serve(async (req) => {
 
   const regelsHtml = regelsVertaald.map((r) => {
     const model = r.kwaliteit_code ? klantEigenNamen.get(`${r.kwaliteit_code}|${r.kleur_code ?? ''}`) ?? null : null
+    // Mig 469: per-regel verzendweek, alleen voor maatwerk-regels met een
+    // gezette week (materiaal op voorraad of handmatig ingevuld) — de
+    // order-brede verzendweek hierboven blijft daarnaast ongewijzigd staan.
+    const verzendweekRegel = r.is_maatwerk && r.verzendweek ? formatVerzendweekLabel(r.verzendweek) : null
     return `<tr>
-      <td style="padding: 4px 8px; border-bottom: 1px solid #eee;">${r.omschrijving}${model ? `<br><span style="color:#888; font-size: 11px;">${v.model}: ${model}</span>` : ''}${r.klant_referentie ? `<br><span style="color:#888; font-size: 11px;">Ref: ${r.klant_referentie}</span>` : ''}</td>
+      <td style="padding: 4px 8px; border-bottom: 1px solid #eee;">${r.omschrijving}${model ? `<br><span style="color:#888; font-size: 11px;">${v.model}: ${model}</span>` : ''}${r.klant_referentie ? `<br><span style="color:#888; font-size: 11px;">Ref: ${r.klant_referentie}</span>` : ''}${verzendweekRegel ? `<br><span style="color:#888; font-size: 11px;">${v.verzendweekRegel}: ${verzendweekRegel}</span>` : ''}</td>
       <td style="padding: 4px 8px; border-bottom: 1px solid #eee; text-align: right;">${r.orderaantal}</td>
       <td style="padding: 4px 8px; border-bottom: 1px solid #eee; text-align: right; white-space: nowrap;">${r.bedrag != null ? formatBedrag(r.bedrag) : ''}</td>
     </tr>`

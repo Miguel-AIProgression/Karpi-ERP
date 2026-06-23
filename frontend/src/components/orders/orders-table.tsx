@@ -6,6 +6,8 @@ import { verzendWeekVoor } from '@/lib/orders/verzendweek'
 import { cn } from '@/lib/utils/cn'
 import type { OrderRow, OrderSortField, SortDirection } from '@/lib/supabase/queries/orders'
 import type { FactuurVoorOrder } from '@/modules/facturatie'
+import type { OrderRij } from '@/modules/snijplanning'
+import { HAALBAARHEID_STATUS_STYLE } from '@/lib/orders/haalbaarheid-status-badge'
 import { useBundelGroupedOrders } from './use-bundel-grouped-orders'
 
 interface OrdersTableProps {
@@ -15,6 +17,7 @@ interface OrdersTableProps {
   sortDir: SortDirection
   onSort: (field: OrderSortField) => void
   facturenPerOrder?: Map<number, FactuurVoorOrder[]>
+  snijHaalbaarheidPerOrder?: Map<number, OrderRij>
 }
 
 function SortIcon({ field, sortBy, sortDir }: { field: OrderSortField; sortBy: OrderSortField; sortDir: SortDirection }) {
@@ -155,16 +158,42 @@ function BevestigingBadge({ bevestigd_at, status }: { bevestigd_at?: string | nu
   )
 }
 
+/** Compact label onder de Status-pil voor orders met een nog-open maatwerk-
+ *  snijplanning-stuk — dezelfde afleiding als order-detail/Haalbaarheid-pagina
+ *  (`useSnijHaalbaarheid`), zodat je niet per order hoeft te klikken om te
+ *  zien welke rol/datum erbij hoort. Leeg voor orders zonder open stuk. */
+function SnijHaalbaarheidLabel({ rij }: { rij?: OrderRij }) {
+  if (!rij) return null
+  const rolLabel = rij.rolnummers.length === 1
+    ? `Gepland · Rol ${rij.rolnummers[0]}`
+    : rij.rolnummers.length > 1
+      ? `Gepland · ${rij.rolnummers.length} rollen`
+      : rij.aantalGepland > 0
+        ? 'Deels gepland'
+        : 'Wacht op planning'
+  const style = HAALBAARHEID_STATUS_STYLE[rij.haalbaarheidStatus]
+  return (
+    <span
+      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${style.bg} ${style.text}`}
+      title={rij.geplandeDatum ? `Afgeleide snijdatum: ${formatDate(rij.geplandeDatum)}` : 'Nog geen snijdatum bekend'}
+    >
+      {rolLabel}
+      {rij.geplandeDatum && <>· {formatDate(rij.geplandeDatum)}</>}
+    </span>
+  )
+}
+
 interface BundelContext {
   zendingNr: string
   positie: 'enkele' | 'eerste' | 'midden' | 'laatste'
   anderOrderNrs: string[]
 }
 
-function OrderTr({ order, bundel, facturenPerOrder }: {
+function OrderTr({ order, bundel, facturenPerOrder, snijHaalbaarheidPerOrder }: {
   order: OrderRow
   bundel: BundelContext | null
   facturenPerOrder?: Map<number, FactuurVoorOrder[]>
+  snijHaalbaarheidPerOrder?: Map<number, OrderRij>
 }) {
   // Bundel-styling: dunne linker-border in terracotta voor alle bundel-orders.
   // Eerste/laatste krijgen iets meer ademruimte; midden-orders sluiten aan.
@@ -268,6 +297,7 @@ function OrderTr({ order, bundel, facturenPerOrder }: {
         <div className="flex flex-col gap-1">
           <StatusBadge status={order.status} />
           <BevestigingBadge bevestigd_at={order.bevestigd_at} status={order.status} />
+          <SnijHaalbaarheidLabel rij={snijHaalbaarheidPerOrder?.get(order.id)} />
         </div>
       </td>
       <td className="px-4 py-3 whitespace-nowrap">
@@ -277,7 +307,7 @@ function OrderTr({ order, bundel, facturenPerOrder }: {
   )
 }
 
-export function OrdersTable({ orders, isLoading, sortBy, sortDir, onSort, facturenPerOrder }: OrdersTableProps) {
+export function OrdersTable({ orders, isLoading, sortBy, sortDir, onSort, facturenPerOrder, snijHaalbaarheidPerOrder }: OrdersTableProps) {
   const grouped = useBundelGroupedOrders(orders)
 
   if (isLoading) {
@@ -323,6 +353,7 @@ export function OrdersTable({ orders, isLoading, sortBy, sortDir, onSort, factur
                   order={item.order}
                   bundel={null}
                   facturenPerOrder={facturenPerOrder}
+                  snijHaalbaarheidPerOrder={snijHaalbaarheidPerOrder}
                 />,
               ]
             }
@@ -344,6 +375,7 @@ export function OrdersTable({ orders, isLoading, sortBy, sortDir, onSort, factur
                   order={order}
                   bundel={{ zendingNr: item.zending_nr, positie, anderOrderNrs }}
                   facturenPerOrder={facturenPerOrder}
+                  snijHaalbaarheidPerOrder={snijHaalbaarheidPerOrder}
                 />
               )
             })

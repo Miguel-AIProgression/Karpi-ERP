@@ -9,6 +9,7 @@ import { OrdersTable } from '@/components/orders/orders-table'
 import { DebiteurTeBevestigenBanner } from '@/components/orders/debiteur-te-bevestigen-banner'
 import { useOrders, useStatusCounts, useOrderKlantOpties } from '@/hooks/use-orders'
 import { useFacturenVoorOrders } from '@/modules/facturatie'
+import { useSnijHaalbaarheid } from '@/modules/snijplanning'
 import { EdiTeKoppelenBanner } from '@/modules/edi'
 import { ShopifySyncStatusBanner } from '@/components/orders/shopify-sync-status-banner'
 import type { OrderSortField, SortDirection } from '@/lib/supabase/queries/orders'
@@ -78,6 +79,7 @@ export function OrdersOverviewPage() {
   const totalPages = Math.ceil(totalCount / pageSize)
 
   const { data: facturenPerOrder } = useFacturenVoorOrders(orders.map((o) => o.id))
+  const { perOrder: snijHaalbaarheidPerOrder } = useSnijHaalbaarheid()
 
   return (
     <>
@@ -175,6 +177,7 @@ export function OrdersOverviewPage() {
         sortDir={sortDir}
         onSort={handleSort}
         facturenPerOrder={facturenPerOrder}
+        snijHaalbaarheidPerOrder={snijHaalbaarheidPerOrder}
       />
 
       {/* Pagination */}

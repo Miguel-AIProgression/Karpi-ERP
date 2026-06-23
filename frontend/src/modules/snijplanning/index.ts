@@ -75,6 +75,8 @@ export { formatVerzendweekShort } from './queries/snijplanning'
 export type { SnijplanFormData } from './queries/snijplanning-mutations'
 export type { AutoPlanningConfig, BenodigdeLengteSchatting } from './queries/auto-planning'
 export type { MaatwerkHaalbaarheidRow, InkoopRegelInfo } from './queries/haalbaarheid'
+export { useSnijHaalbaarheid } from './hooks/use-snij-haalbaarheid'
+export type { SnijHaalbaarheid, HaalbaarheidsRij, OrderRij } from './hooks/use-snij-haalbaarheid'
 export type { MasterPlanningRow } from './queries/master-planning'
 export type { ConceptVoorstelRow, VerdringingInfo, VerdrongenOrder, VerdringingWachtOpInkoopRegel } from './queries/snijvoorstel'
 

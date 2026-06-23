@@ -11,6 +11,7 @@ import { OrderEmails } from '@/components/orders/order-emails'
 import { ZendingAanmakenKnop } from '@/components/orders/zending-aanmaken-knop'
 import { useOrderDetail, useOrderRegels } from '@/hooks/use-orders'
 import { useLevertijdVoorOrder, useClaimsVoorOrder } from '@/modules/reserveringen'
+import { useSnijHaalbaarheid } from '@/modules/snijplanning'
 import { computeOrderLock } from '@/lib/utils/order-lock'
 import { DocumentenCompact } from '@/components/documenten/documenten-compact'
 import { EdiLeverweekBevestigen } from '@/components/orders/edi-leverweek-bevestigen'
@@ -61,6 +62,7 @@ export function OrderDetailPage() {
   const { data: regels, isLoading: regelsLoading } = useOrderRegels(orderId)
   const { data: levertijden } = useLevertijdVoorOrder(orderId)
   const { data: claims } = useClaimsVoorOrder(orderId)
+  const { perStuk: snijHaalbaarheidPerStuk } = useSnijHaalbaarheid()
 
   if (orderLoading) {
     return (
@@ -194,6 +196,7 @@ export function OrderDetailPage() {
         orderNr={order.order_nr}
         orderdatum={order.orderdatum}
         orderAfleverdatum={order.afleverdatum}
+        snijHaalbaarheidPerStuk={snijHaalbaarheidPerStuk}
       />
       <OrderZendingen orderId={order.id} />
       <OrderEventsTijdlijn orderId={order.id} />

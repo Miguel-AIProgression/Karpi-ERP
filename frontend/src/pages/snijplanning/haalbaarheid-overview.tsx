@@ -4,60 +4,15 @@ import { ArrowDown, ArrowUp, ArrowUpDown, Search, AlertTriangle } from 'lucide-r
 import { PageHeader } from '@/components/layout/page-header'
 import { cn } from '@/lib/utils/cn'
 import { formatDate } from '@/lib/utils/formatters'
-import { useMaatwerkHaalbaarheid, useVormSnijtijden, useMoeilijkeKwaliteiten } from '@/modules/snijplanning'
-import type { MaatwerkHaalbaarheidRow } from '@/modules/snijplanning'
-import { usePlanningConfig } from '@/hooks/use-planning-config'
-import { useQuery } from '@tanstack/react-query'
-import { fetchWerkagendaConfig } from '@/lib/supabase/queries/werkagenda'
-import { bepaalSnijDeadline, bepaalHaalbaarheidStatus, type HaalbaarheidStatus } from '@/lib/orders/snij-haalbaarheid'
-import { berekenAgenda, isoDatum, werkdagenTussen } from '@/lib/utils/bereken-agenda'
+import { useSnijHaalbaarheid } from '@/modules/snijplanning'
+import type { HaalbaarheidStatus } from '@/lib/orders/snij-haalbaarheid'
+import { HAALBAARHEID_STATUS_STYLE } from '@/lib/orders/haalbaarheid-status-badge'
 import { verzendWeekVoor } from '@/lib/orders/verzendweek'
-import { leverdatumVoorSnijDatum } from '@/lib/orders/levertijd-match'
 
 type SortKey = 'status' | 'marge' | 'leverdatum' | 'klant'
 type SortDir = 'asc' | 'desc'
 
 const STATUS_VOLGORDE: Record<HaalbaarheidStatus, number> = { rood: 0, oranje: 1, groen: 2 }
-
-const STATUS_BADGE: Record<HaalbaarheidStatus, { bg: string; text: string; label: string }> = {
-  rood: { bg: 'bg-red-100', text: 'text-red-700', label: 'Niet haalbaar' },
-  oranje: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Risico' },
-  groen: { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'Oké' },
-}
-
-interface HaalbaarheidsRij extends MaatwerkHaalbaarheidRow {
-  snijDeadline: string
-  /** ISO-datum, of null als dit stuk nog geen rol heeft (niet gepland). */
-  geplandeSnijDatum: string | null
-  margeWerkdagen: number
-  haalbaarheidStatus: HaalbaarheidStatus
-  inkoopInfo?: { inkooporder_nr: string; verwacht_datum: string | null }
-}
-
-interface OrderRij {
-  orderId: number
-  orderNr: string
-  klantNaam: string
-  afleverdatum: string | null
-  leverType: 'week' | 'datum'
-  kwaliteitKleurLabel: string
-  aantalStukken: number
-  aantalGepland: number
-  /** Laatste (meest kritieke) geplande snijdatum onder de al-geplande stukken. NULL = geen enkel stuk gepland. */
-  geplandeDatum: string | null
-  margeWerkdagen: number
-  haalbaarheidStatus: HaalbaarheidStatus
-  /**
-   * Realistische verzenddatum = geplande snijdatum + buffer (confectie + klaarleggen) —
-   * alleen gevuld wanneer ALLE stukken van de order al een rol hebben: bij een
-   * deels geplande order zou de projectie te optimistisch zijn (de nog niet
-   * geplande stukken kunnen de werkelijke datum nog verder naar achteren duwen).
-   */
-  verwachteVerzendDatum: string | null
-  /** Calendar-dagen verschil tussen verwachteVerzendDatum en de gevraagde afleverdatum. Positief = later dan gevraagd. */
-  vertragingDagen: number | null
-  stukken: HaalbaarheidsRij[]
-}
 
 /** Week-orders tonen de vertraging in weken (afgerond), tenzij dat naar 0 afrondt
  *  (een paar dagen te laat op een week-order) — dan toch in dagen, om geen
@@ -80,113 +35,8 @@ export function HaalbaarheidOverviewPage() {
   const [sortKey, setSortKey] = useState<SortKey>('status')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
 
-  const { data: haalbaarheid, isLoading } = useMaatwerkHaalbaarheid()
-  const { data: planningConfig } = usePlanningConfig()
-  const { data: werktijden } = useQuery({ queryKey: ['werkagenda-config'], queryFn: fetchWerkagendaConfig })
-  const { data: vormTarieven } = useVormSnijtijden()
-  const { data: moeilijkeKwaliteiten } = useMoeilijkeKwaliteiten()
-
-  // Eén globale agenda over ALLE al-geplande stukken (alle kwaliteit/kleur-groepen
-  // samen, ongebonden door een horizon) — exact de wachtrij zoals de snijder hem
-  // doorwerkt. `berekenAgenda` plant vanaf "nu", wat vanzelf op de eerstvolgende
-  // werkdag landt. Levert per rol een echte eind-datum: de kern van "wanneer wordt
-  // dit nou echt gesneden", die nergens als los veld in de data bestaat.
-  const rolEindMap = useMemo(() => {
-    if (!haalbaarheid || !planningConfig || !werktijden || !vormTarieven || !moeilijkeKwaliteiten) return new Map<number, Date>()
-    const blokken = berekenAgenda(haalbaarheid.rows, werktijden, planningConfig, vormTarieven, moeilijkeKwaliteiten)
-    return new Map(blokken.map((b) => [b.rolId, b.eind]))
-  }, [haalbaarheid, planningConfig, werktijden, vormTarieven, moeilijkeKwaliteiten])
-
-  const rijen = useMemo<HaalbaarheidsRij[]>(() => {
-    if (!haalbaarheid || !planningConfig || !werktijden) return []
-    const vandaag = isoDatum(new Date())
-    return haalbaarheid.rows
-      .filter((r) => r.afleverdatum != null)
-      .map((r) => {
-        const snijDeadline = bepaalSnijDeadline(r.afleverdatum!, r.lever_type ?? 'week', planningConfig, werktijden)
-        const eind = r.rol_id != null ? rolEindMap.get(r.rol_id) ?? null : null
-        const geplandeSnijDatum = eind ? isoDatum(eind) : null
-        // Geen rol → er is geen agenda-positie, dus terugvallen op de letterlijke
-        // datum van vandaag (ongewijzigd Fase-1-gedrag voor niet-geplande stukken).
-        const referentieDatum = geplandeSnijDatum ?? vandaag
-        const margeWerkdagen = werkdagenTussen(referentieDatum, snijDeadline, werktijden)
-        const status = bepaalHaalbaarheidStatus(snijDeadline, referentieDatum, werktijden)
-        const inkoopInfo = r.verwacht_inkooporder_regel_id != null
-          ? haalbaarheid.inkoopInfo.get(r.verwacht_inkooporder_regel_id)
-          : undefined
-        return { ...r, snijDeadline, geplandeSnijDatum, margeWerkdagen, haalbaarheidStatus: status, inkoopInfo }
-      })
-  }, [haalbaarheid, planningConfig, werktijden, rolEindMap])
-
-  // Groepeer per order — het gevraagde overzicht is "halen we de deadline volgens
-  // order", niet per los stuk. Een order met meerdere maatwerk-regels toont het
-  // slechtste oordeel onder zijn stukken (rood > oranje > groen) en de laatste
-  // (meest kritieke) geplande datum.
-  const orderRijen = useMemo<OrderRij[]>(() => {
-    if (!planningConfig || !werktijden) return []
-    const groepen = new Map<number, HaalbaarheidsRij[]>()
-    for (const r of rijen) {
-      const lijst = groepen.get(r.order_id) ?? []
-      lijst.push(r)
-      groepen.set(r.order_id, lijst)
-    }
-    const result: OrderRij[] = []
-    for (const [orderId, stukken] of groepen) {
-      const eerste = stukken[0]
-      const leverType = eerste.lever_type ?? 'week'
-      const aantalGepland = stukken.filter((s) => s.rol_id != null).length
-      const geplandeDatums = stukken
-        .map((s) => s.geplandeSnijDatum)
-        .filter((d): d is string => d != null)
-      const geplandeDatum = geplandeDatums.length > 0
-        ? geplandeDatums.reduce((a, b) => (a > b ? a : b))
-        : null
-      const status = stukken.reduce<HaalbaarheidStatus>(
-        (worst, s) => (STATUS_VOLGORDE[s.haalbaarheidStatus] < STATUS_VOLGORDE[worst] ? s.haalbaarheidStatus : worst),
-        'groen',
-      )
-      const margeWerkdagen = Math.min(...stukken.map((s) => s.margeWerkdagen))
-      const combinaties = Array.from(
-        new Set(stukken.map((s) => `${s.kwaliteit_code ?? '—'} · ${s.kleur_code ?? '—'}`)),
-      )
-
-      // Realistische verzenddatum: alleen geprojecteerd als ALLE stukken al een
-      // rol hebben — bij een deels geplande order zouden de nog te plannen
-      // stukken de werkelijke datum nog verder naar achteren kunnen duwen, dus
-      // zou de projectie hier valse precisie suggereren.
-      const volledigGepland = aantalGepland === stukken.length && geplandeDatum != null
-      const bufferDagen = leverType === 'datum'
-        ? planningConfig.dag_order_snij_buffer_werkdagen
-        : planningConfig.logistieke_buffer_dagen
-      const verwachteVerzendDatum = volledigGepland
-        ? leverdatumVoorSnijDatum(geplandeDatum!, bufferDagen, werktijden)
-        : null
-      let vertragingDagen: number | null = null
-      if (verwachteVerzendDatum && eerste.afleverdatum) {
-        const verwacht = new Date(`${verwachteVerzendDatum}T00:00:00Z`).getTime()
-        const gevraagd = new Date(`${eerste.afleverdatum}T00:00:00Z`).getTime()
-        vertragingDagen = Math.round((verwacht - gevraagd) / 86_400_000)
-      }
-
-      result.push({
-        orderId,
-        orderNr: eerste.order_nr,
-        klantNaam: eerste.klant_naam,
-        afleverdatum: eerste.afleverdatum,
-        leverType,
-        kwaliteitKleurLabel: combinaties.length > 1 ? `${combinaties[0]} +${combinaties.length - 1}` : combinaties[0],
-        aantalStukken: stukken.length,
-        aantalGepland,
-        geplandeDatum,
-        margeWerkdagen,
-        haalbaarheidStatus: status,
-        verwachteVerzendDatum,
-        vertragingDagen,
-        stukken,
-      })
-    }
-    return result
-  }, [rijen, planningConfig, werktijden])
+  const { perOrder, isLoading } = useSnijHaalbaarheid()
+  const orderRijen = useMemo(() => Array.from(perOrder.values()), [perOrder])
 
   const filtered = useMemo(() => {
     if (!zoek.trim()) return orderRijen
@@ -299,7 +149,7 @@ export function HaalbaarheidOverviewPage() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {sorted.map((r) => {
-                const badge = STATUS_BADGE[r.haalbaarheidStatus]
+                const badge = HAALBAARHEID_STATUS_STYLE[r.haalbaarheidStatus]
                 const isWeek = r.leverType === 'week'
                 const verzendweek = isWeek ? verzendWeekVoor(r.afleverdatum) : null
                 return (

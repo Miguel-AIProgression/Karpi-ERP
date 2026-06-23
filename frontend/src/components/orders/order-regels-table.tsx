@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { Scissors, ArrowRight, Pencil, X, Check, PackageCheck } from 'lucide-react'
 import { DeelzendingDialog } from '@/components/orders/deelzending-dialog'
 import { useQueryClient, useMutation } from '@tanstack/react-query'
-import { formatCurrency } from '@/lib/utils/formatters'
+import { formatCurrency, formatDate } from '@/lib/utils/formatters'
 import { snijplanBadgeClass, AFWERKING_MAP } from '@/lib/utils/constants'
 import { getVormDisplay } from '@/lib/utils/vorm-labels'
 import { isoWeekFromString, isoWeekString, isoWeekStringVanIso } from '@/lib/utils/iso-week'
@@ -12,6 +12,9 @@ import { setRegelVerzendweek } from '@/lib/supabase/queries/orders'
 import { isAdminPseudo } from '@/lib/orders/admin-pseudo'
 import { bepaalMaatwerkFase, MAATWERK_FASE_PRESENTATIE } from '@/lib/orders/maatwerk-productie'
 import { LevertijdBadge, UitwisselbaarToepassenRij, type OrderRegelLevertijd, type OrderClaim } from '@/modules/reserveringen'
+import type { HaalbaarheidsRij } from '@/modules/snijplanning'
+import { HAALBAARHEID_STATUS_STYLE } from '@/lib/orders/haalbaarheid-status-badge'
+import { usePlanningConfig } from '@/hooks/use-planning-config'
 
 /**
  * Toont in de "Te leveren"-kolom de samenvattende productie-fase van een
@@ -75,8 +78,24 @@ function VerzendweekCell({ regel, orderId, orderdatum, levertijd, bewerkbaar }: 
   const [editing, setEditing] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const { data: planningConfig } = usePlanningConfig()
 
   const autoWeek: string | null = (() => {
+    // Maatwerk reserveert niet op inkoop, dus de reguliere levertijd_status
+    // ('voorraad'/'op_inkoop') is hier altijd 'maatwerk' (mig 150) — geen
+    // signaal. Materiaal-beschikbaarheid lezen we i.p.v. daarvan af uit de
+    // snijplan-stukken zelf: pas als ALLE een echte rol hebben (zelfde
+    // "volledig gepland"-voorwaarde als de auto-verzendweek-trigger, mig 469)
+    // tonen we een live-voorstel — vóórdat dat zo is, is elke datum giswerk.
+    if (regel.is_maatwerk) {
+      const stukken = regel.snijplannen ?? []
+      const volledigOpRol = stukken.length > 0 && stukken.every((sp) => sp.rol_id != null)
+      if (!volledigOpRol) return null
+      const weken = planningConfig?.maatwerk_voorraad_levertijd_weken ?? 7
+      const d = new Date()
+      d.setUTCDate(d.getUTCDate() + weken * 7)
+      return isoWeekString(d)
+    }
     if (levertijd?.levertijd_status === 'voorraad') return volgendeWeekVanDatum(orderdatum)
     if (levertijd?.verwachte_leverweek) return levertijd.verwachte_leverweek
     return null
@@ -84,6 +103,11 @@ function VerzendweekCell({ regel, orderId, orderdatum, levertijd, bewerkbaar }: 
 
   const displayed = regel.verzendweek ?? autoWeek
   const isOverride = !!regel.verzendweek
+  const bronLabel = regel.verzendweek_bron === 'handmatig'
+    ? 'Handmatig ingesteld'
+    : regel.verzendweek_bron === 'automatisch_voorraad'
+      ? 'Automatisch — materiaal op voorraad'
+      : 'Automatisch berekend'
 
   const mutation = useMutation({
     mutationFn: (w: string | null) => setRegelVerzendweek(regel.id, w),
@@ -147,7 +171,7 @@ function VerzendweekCell({ regel, orderId, orderdatum, levertijd, bewerkbaar }: 
       {displayed ? (
         <span
           className={`text-xs ${isOverride ? 'font-medium text-slate-700' : 'text-slate-400 italic'}`}
-          title={isOverride ? 'Handmatig ingesteld' : 'Automatisch berekend'}
+          title={bronLabel}
         >
           {formatVerzendweek(displayed)}
         </span>
@@ -249,6 +273,33 @@ function SnijplanStatusBadge({ status, rolId, rolnummer, orderNr, suffix }: {
       {inhoud}
     </Link>
   )
+}
+
+/** Afgeleide "wanneer wordt dit nou echt gesneden" naast de status-badge —
+ *  dezelfde queue-simulatie (`useSnijHaalbaarheid`) als de Haalbaarheid-pagina,
+ *  zodat je dat niet apart hoeft op te zoeken. Geen `stuk` (nog niet bekend,
+ *  of dit snijplan valt buiten de haalbaarheid-scope) → niets extra tonen. */
+function SnijDatumIndicator({ stuk }: { stuk?: HaalbaarheidsRij }) {
+  if (!stuk) return null
+  if (stuk.geplandeSnijDatum) {
+    const style = HAALBAARHEID_STATUS_STYLE[stuk.haalbaarheidStatus]
+    return (
+      <span
+        className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${style.bg} ${style.text}`}
+        title={`Afgeleid uit de snijwachtrij — ${style.label.toLowerCase()}`}
+      >
+        → {formatDate(stuk.geplandeSnijDatum)}
+      </span>
+    )
+  }
+  if (stuk.inkoopInfo?.verwacht_datum) {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
+        verwacht {formatDate(stuk.inkoopInfo.verwacht_datum)}
+      </span>
+    )
+  }
+  return null
 }
 
 // Admin-pseudo-detectie via isAdminPseudo(regel) — ADR-0018 / mig 272-273.
@@ -385,9 +436,11 @@ interface RegelRowProps {
   levertijd?: OrderRegelLevertijd
   claims: OrderClaim[]
   isEindstatus: boolean
+  /** Afgeleide snijdatum/haalbaarheid per snijplan-id (zelfde id als `regel.snijplannen[].id`). */
+  snijHaalbaarheidPerStuk?: Map<number, HaalbaarheidsRij>
 }
 
-function RegelRow({ regel, orderId, orderNr, orderdatum, orderVerzendweek, levertijd, claims, isEindstatus }: RegelRowProps) {
+function RegelRow({ regel, orderId, orderNr, orderdatum, orderVerzendweek, levertijd, claims, isEindstatus, snijHaalbaarheidPerStuk }: RegelRowProps) {
   const afwerkingInfo = regel.maatwerk_afwerking ? AFWERKING_MAP[regel.maatwerk_afwerking] : null
   const maat = formatMaat(regel)
   const toonSubRows = !regel.is_maatwerk
@@ -455,7 +508,7 @@ function RegelRow({ regel, orderId, orderNr, orderdatum, orderVerzendweek, lever
           ) : (
             <span className="text-xs text-slate-300">—</span>
           )}
-          {!regel.is_maatwerk && !isAdminPseudo(regel) && (
+          {!isAdminPseudo(regel) && (
             <div className="mt-1 flex flex-col gap-1">
               <VerzendweekCell
                 regel={regel}
@@ -464,7 +517,7 @@ function RegelRow({ regel, orderId, orderNr, orderdatum, orderVerzendweek, lever
                 levertijd={levertijd}
                 bewerkbaar={!isEindstatus}
               />
-              {!isEindstatus && (
+              {!regel.is_maatwerk && !isEindstatus && (
                 <VroegstLeverbaerHint
                   vroegst={regel.vroegst_leverbaar}
                   orderVerzendweek={orderVerzendweek}
@@ -516,14 +569,16 @@ function RegelRow({ regel, orderId, orderNr, orderdatum, orderVerzendweek, lever
               {regel.snijplannen && regel.snijplannen.length > 0 && (
                 <span className="ml-auto flex items-center gap-2 flex-wrap">
                   {regel.snijplannen.map((sp) => (
-                    <SnijplanStatusBadge
-                      key={sp.id}
-                      status={sp.status}
-                      rolId={sp.rol_id}
-                      rolnummer={sp.rolnummer}
-                      orderNr={orderNr}
-                      suffix={sp.status === 'Ingepakt' ? sp.locatie : null}
-                    />
+                    <span key={sp.id} className="inline-flex items-center gap-1.5">
+                      <SnijplanStatusBadge
+                        status={sp.status}
+                        rolId={sp.rol_id}
+                        rolnummer={sp.rolnummer}
+                        orderNr={orderNr}
+                        suffix={sp.status === 'Ingepakt' ? sp.locatie : null}
+                      />
+                      <SnijDatumIndicator stuk={snijHaalbaarheidPerStuk?.get(sp.id)} />
+                    </span>
                   ))}
                 </span>
               )}
@@ -555,9 +610,11 @@ interface OrderRegelsTableProps {
   orderdatum: string
   /** ISO-datum van de order-afleverdatum; wordt omgezet naar verzendweek voor de vroegst_leverbaar-hint. */
   orderAfleverdatum?: string | null
+  /** Afgeleide snijdatum/haalbaarheid per snijplan-id (zie `useSnijHaalbaarheid`). */
+  snijHaalbaarheidPerStuk?: Map<number, HaalbaarheidsRij>
 }
 
-export function OrderRegelsTable({ regels, isLoading, levertijden, claims, orderStatus, orderId, orderNr, orderdatum, orderAfleverdatum }: OrderRegelsTableProps) {
+export function OrderRegelsTable({ regels, isLoading, levertijden, claims, orderStatus, orderId, orderNr, orderdatum, orderAfleverdatum, snijHaalbaarheidPerStuk }: OrderRegelsTableProps) {
   const [deelzendingOpen, setDeelzendingOpen] = useState(false)
   const isEindstatus = EINDSTATUS_ORDERS.has(orderStatus ?? '')
   const orderVerzendweek = isoWeekStringVanIso(orderAfleverdatum)
@@ -646,6 +703,7 @@ export function OrderRegelsTable({ regels, isLoading, levertijden, claims, order
                 levertijd={levertijdMap.get(regel.id)}
                 claims={claimsMap.get(regel.id) ?? []}
                 isEindstatus={isEindstatus}
+                snijHaalbaarheidPerStuk={snijHaalbaarheidPerStuk}
               />
             ))}
           </tbody>

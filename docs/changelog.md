@@ -1,5 +1,59 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-23 — Afgeleide snijdatum/rol zichtbaar + automatische verzendweek voor maatwerk-op-voorraad (mig 469)
+
+**Waarom:** bij het uitzoeken van twee orders bleek order-detail voor een maatwerk-
+regel alleen een generieke status-badge te tonen ("Op de snijplanning"/"Wacht op
+planning"/"Gepland · Rol X") — de afgeleide verwachte snijdatum stond nergens,
+behalve op de losse `/snijplanning/haalbaarheid`-pagina. Gebruiker wil dit direct
+op order-detail én in het orderoverzicht zien, en daarnaast dat de verzendweek
+van een maatwerk-regel automatisch op "vandaag + N weken" komt te staan zodra
+materiaal daadwerkelijk op voorraad is (een echte rol toegewezen), zichtbaar per
+regel op de orderbevestiging.
+
+- **Gedeelde hook `useSnijHaalbaarheid`** (`frontend/src/modules/snijplanning/hooks/use-snij-haalbaarheid.ts`):
+  de queue-simulatie (`berekenAgenda`) + per-stuk/per-order-afleiding die eerder
+  alleen inline in `haalbaarheid-overview.tsx` leefde, is hier geëxtraheerd en
+  hergebruikt — die pagina zelf is een pure refactor (geen gedragswijziging) op
+  de nieuwe hook. Additief: `OrderRij.rolnummers` en gebruik van het al-gefetchte
+  (voorheen ongebruikte) `inkoopInfo` voor "Wacht op inkoop"-stukken.
+- **Order-detail** (`order-regels-table.tsx`): nieuwe `SnijDatumIndicator` naast
+  de bestaande `SnijplanStatusBadge` toont de afgeleide snijdatum (status-
+  gekleurd) of, zonder rol, de verwachte IO-leverdatum.
+- **Orderoverzicht** (`orders-table.tsx`): nieuw compact label onder de Status-pil
+  ("Gepland · Rol X" / "Wacht op inkoop" + datum) voor orders met een open
+  maatwerk-snijplanning-stuk — geen nieuwe kolom, leeg voor orders zonder.
+- **Gedeelde kleurcodering** geëxtraheerd naar `frontend/src/lib/orders/haalbaarheid-status-badge.ts`
+  (groen/oranje/rood), gebruikt door de Haalbaarheid-pagina, order-detail én het orderoverzicht.
+- **Migratie 469 — automatische verzendweek bij materiaal op voorraad:**
+  nieuwe kolom `order_regels.verzendweek_bron` (`'handmatig'` | `'automatisch_voorraad'`)
+  + trigger `trg_snijplan_rol_toegewezen_auto_verzendweek` (AFTER INSERT/UPDATE OF
+  `rol_id` op `snijplannen`): zodra ALLE snijplan-stukken van een maatwerk-regel
+  een echte rol hebben, zet de trigger éénmalig `verzendweek` op "vandaag + N
+  weken" (`app_config.productie_planning.maatwerk_voorraad_levertijd_weken`,
+  default 7) — **mits nog NULL**, dus nooit een bestaande (automatische of
+  handmatige) waarde overschrijven. Bewust een snapshot, geen live herberekening
+  — anders zou de getoonde week elke dag verschuiven zonder dat er iets
+  veranderd is, wat een instabiele toezegging richting de klant zou zijn.
+  `set_regel_verzendweek` (mig 334) labelt voortaan ook `verzendweek_bron` bij
+  een handmatige aanpassing/reset. Getest op de live DB (toggle van `rol_id` op
+  een echte order) — snapshot, geen-overschrijven- en handmatige-override-gedrag
+  alle drie bevestigd, daarna testdata teruggezet.
+  **Niet te verwarren** met de bestaande `app_config.order_config.maatwerk_weken`
+  (default 4) die de order-brede `afleverdatum` bij order-aanmaak default voor
+  élke maatwerk-order, ongeacht voorraad — deze nieuwe, per-regel mechaniek is
+  specifiek voor het "materiaal is al beschikbaar"-geval en bestaat ernaast.
+- **Order-detail `VerzendweekCell`** (mig 334-UI) stond alleen open voor niet-
+  maatwerk-regels; nu ook voor maatwerk, met een live "vandaag + N weken"-
+  voorstel zodra alle snijplan-stukken van de regel al een rol hebben (vóór de
+  trigger gevuurd heeft) en een aangepast tooltip-label voor de drie bronnen
+  (handmatig/automatisch-voorraad/automatisch-berekend).
+- **Orderbevestiging** (`stuur-orderbevestiging`/`_shared/orderbevestiging-pdf.ts`):
+  een maatwerk-regel met een eigen `verzendweek` toont die per regel (e-mail:
+  aanvullende sub-regel onder de omschrijving; PDF: vervangt voor díe regel de
+  order-brede verzendweek-sub-regel, die voorheen op elke rij herhaald werd).
+  4-talig (NL/DE/FR/EN).
+
 ## 2026-06-22 — Vormtoeslag als eigen orderregel (mig 465)
 
 **Waarom:** gebruiker meldt dat de vorm-toeslag (bv. € 75,00 voor een rond/ovaal/

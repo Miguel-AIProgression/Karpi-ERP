@@ -179,6 +179,8 @@ export interface OrderRegel {
   snijplannen?: OrderRegelSnijplan[]
   /** Handmatige verzendweek-override (mig 334). NULL = auto in frontend. */
   verzendweek?: string | null
+  /** Herkomst van `verzendweek` (mig 469): 'handmatig' | 'automatisch_voorraad' | null. */
+  verzendweek_bron?: string | null
   /** Mig 406: per-orderregel klantreferentie. */
   klant_referentie?: string | null
   /** Mig 412: vroegste verzenddatum voor deze regel op basis van actieve claims.
@@ -523,7 +525,7 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
 
   const { data, error } = await supabase
     .from('order_regels')
-    .select('id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2, orderaantal, te_leveren, backorder, prijs, korting_pct, bedrag, gewicht_kg, vrije_voorraad, fysiek_artikelnr, omstickeren, is_maatwerk, maatwerk_vorm, maatwerk_lengte_cm, maatwerk_breedte_cm, maatwerk_diameter_cm, maatwerk_afwerking, maatwerk_band_kleur, maatwerk_instructies, maatwerk_m2_prijs, maatwerk_oppervlak_m2, maatwerk_vorm_toeslag, maatwerk_afwerking_prijs, verzendweek, klant_referentie, vroegst_leverbaar, producten!order_regels_artikelnr_fkey(kwaliteit_code, kleur_code, is_pseudo, is_dropship, karpi_code, vrije_voorraad, besteld_inkoop)')
+    .select('id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2, orderaantal, te_leveren, backorder, prijs, korting_pct, bedrag, gewicht_kg, vrije_voorraad, fysiek_artikelnr, omstickeren, is_maatwerk, maatwerk_vorm, maatwerk_lengte_cm, maatwerk_breedte_cm, maatwerk_diameter_cm, maatwerk_afwerking, maatwerk_band_kleur, maatwerk_instructies, maatwerk_m2_prijs, maatwerk_oppervlak_m2, maatwerk_vorm_toeslag, maatwerk_afwerking_prijs, verzendweek, verzendweek_bron, klant_referentie, vroegst_leverbaar, producten!order_regels_artikelnr_fkey(kwaliteit_code, kleur_code, is_pseudo, is_dropship, karpi_code, vrije_voorraad, besteld_inkoop)')
     .eq('order_id', orderId)
     .order('regelnummer')
 
@@ -596,6 +598,7 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
       maatwerk_vorm_toeslag: row.maatwerk_vorm_toeslag ?? null,
       maatwerk_afwerking_prijs: row.maatwerk_afwerking_prijs ?? null,
       verzendweek: row.verzendweek ?? null,
+      verzendweek_bron: row.verzendweek_bron ?? null,
       klant_referentie: row.klant_referentie ?? null,
       vroegst_leverbaar: row.vroegst_leverbaar ?? null,
     }

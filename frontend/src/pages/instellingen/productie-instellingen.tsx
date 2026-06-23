@@ -446,6 +446,24 @@ export function ProductieInstellingenPage() {
                 Standaard: 15 min.
               </p>
             </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Automatische verzendweek bij materiaal op voorraad (weken)
+              </label>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={form.maatwerk_voorraad_levertijd_weken}
+                onChange={(e) => update('maatwerk_voorraad_levertijd_weken', Number(e.target.value))}
+                className="w-32 px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
+              />
+              <p className="mt-1 text-xs text-slate-400">
+                Zodra een maatwerk-stuk een echte rol toegewezen krijgt (materiaal is dus op voorraad, geen
+                wachten op inkoop) wordt de verzendweek van die regel eenmalig op &quot;vandaag + dit aantal
+                weken&quot; gezet — per regel handmatig aan te passen. Standaard: 7.
+              </p>
+            </div>
           </div>
         </div>
 

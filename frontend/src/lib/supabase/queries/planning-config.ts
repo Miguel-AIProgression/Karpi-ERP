@@ -16,6 +16,7 @@ const DEFAULT_CONFIG: PlanningConfig = {
   // Defaults spiegelen check-levertijd/index.ts (zelfde app_config-rij).
   logistieke_buffer_dagen: 2,
   dag_order_snij_buffer_werkdagen: 2,
+  maatwerk_voorraad_levertijd_weken: 7,
 }
 
 /** Fetch planning config from app_config */
