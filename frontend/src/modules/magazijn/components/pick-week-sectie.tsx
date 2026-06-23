@@ -153,7 +153,7 @@ export function PickWeekSectie({
                   : null
                 return (
                   <KlantClusterBlok
-                    key={`${groep.iso2 ?? 'none'}-${cluster.debiteur_nr}`}
+                    key={`${groep.iso2 ?? 'none'}-${cluster.debiteur_nr}-${eersteId}`}
                     cluster={cluster}
                     bundel={bundel}
                   />
