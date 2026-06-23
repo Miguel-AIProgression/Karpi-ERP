@@ -22,6 +22,7 @@ import {
   bepaalSnijtijdMinuten,
   type RolGroep,
   type TekortAnalyseRow,
+  type AutoplanGroepResultaat,
 } from '@/modules/snijplanning'
 import { usePlanningConfig } from '@/hooks/use-planning-config'
 import { SnijvoorstelModal } from './snijvoorstel-modal'
@@ -42,6 +43,31 @@ function StukkenColgroup({ withStatus }: { withStatus: boolean }) {
       <col className="w-[44px]" />
     </colgroup>
   )
+}
+
+/**
+ * `auto-plan-groep` kan HTTP 200 + success teruggeven terwijl het voorstel
+ * toch niet live ingepland is (concept, verdringingsrisico of een skip) —
+ * vóór deze functie zag de operator dan alleen "geen foutmelding" en had geen
+ * idee waarom er niets veranderde. Geeft null als er niets noemenswaardigs is
+ * (gewoon auto-approved, geen skip).
+ */
+function beschrijfAutoplanResultaat(result: AutoplanGroepResultaat): string | null {
+  if (result.skipped) {
+    return result.reason ?? 'Auto-plan overgeslagen.'
+  }
+  if (result.auto_approved === false) {
+    let msg = result.reason ?? 'Voorstel blijft concept voor handmatige beoordeling.'
+    if (result.verdrongen_orders && result.verdrongen_orders.length > 0) {
+      const orders = result.verdrongen_orders.map((o) => o.order_nr ?? `#${o.order_id}`).join(', ')
+      msg += ` Verdrongen order(s): ${orders}.`
+    }
+    if (result.voorstel_nr) {
+      msg += ` Bekijk voorstel ${result.voorstel_nr} bij "Te beoordelen".`
+    }
+    return msg
+  }
+  return null
 }
 
 interface GroepAccordionProps {
@@ -77,6 +103,7 @@ export function GroepAccordion({
   // props totaalOrders/totaalSnijden/totaalSnijdenGepland/defaultOpen blijven voor compat
   void defaultOpen; void totaalOrders; void totaalSnijden; void totaalSnijdenGepland
   const [genError, setGenError] = useState<string | null>(null)
+  const [autoplanInfo, setAutoplanInfo] = useState<string | null>(null)
   const [voorstelResult, setVoorstelResult] = useState<SnijvoorstelResponse | null>(null)
   const [showPlan, setShowPlan] = useState(false)
   const [startError, setStartError] = useState<string | null>(null)
@@ -192,6 +219,12 @@ export function GroepAccordion({
           <button onClick={() => setGenError(null)} className="ml-2 underline text-xs">Sluiten</button>
         </div>
       )}
+      {autoplanInfo && (
+        <div className="mb-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-[var(--radius-sm)] text-sm text-amber-800">
+          {autoplanInfo}
+          <button onClick={() => setAutoplanInfo(null)} className="ml-2 underline text-xs">Sluiten</button>
+        </div>
+      )}
 
       <div>
           {isLoading ? (
@@ -282,9 +315,11 @@ export function GroepAccordion({
                 })()
                 const handleAutoplan = () => {
                   setGenError(null)
+                  setAutoplanInfo(null)
                   autoplan.mutate(
                     { kwaliteitCode, kleurCode, totDatum: totDatum ?? null },
                     {
+                      onSuccess: (result) => setAutoplanInfo(beschrijfAutoplanResultaat(result)),
                       onError: (err: unknown) => {
                         const msg = err instanceof Error ? err.message : 'Auto-plan faalde'
                         setGenError(msg)
