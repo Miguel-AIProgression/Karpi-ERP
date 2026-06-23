@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase/client'
+import type { VerdrongenOrder } from './snijvoorstel'
 
 export interface AutoPlanningConfig {
   enabled: boolean
@@ -36,12 +37,37 @@ export async function updateAutoplanningConfig(config: AutoPlanningConfig): Prom
   if (error) throw error
 }
 
+/** Volledige respons van edge function `auto-plan-groep` — eerder slechts
+ *  deels getypeerd, waardoor `auto_approved`/`reason`/`verdrongen_orders` in
+ *  de UI onopgemerkt bleven (de aanroeper zag alleen "geen fout", niet "wel
+ *  een concept dat handmatige beoordeling nodig heeft"). */
+export interface AutoplanGroepResultaat {
+  success?: boolean
+  skipped?: boolean
+  reason?: string
+  voorstel_id?: number
+  voorstel_nr?: string
+  released?: number
+  /** FALSE = voorstel blijft concept (handmatige beoordeling nodig) — succes
+   *  betekent hier dus niet automatisch "is nu live ingepland". */
+  auto_approved?: boolean
+  /** Zelfde shape als de Fase 2-verdringingscheck (`./snijvoorstel`). */
+  verdrongen_orders?: VerdrongenOrder[]
+  samenvatting?: {
+    totaal_stukken: number
+    geplaatst: number
+    niet_geplaatst: number
+    totaal_rollen: number
+    gemiddeld_afval_pct: number
+  }
+}
+
 /** Trigger auto-plan for a specific kwaliteit/kleur group */
 export async function triggerAutoplan(
   kwaliteitCode: string,
   kleurCode: string,
   totDatum?: string | null,
-): Promise<{ success?: boolean; skipped?: boolean; reason?: string }> {
+): Promise<AutoplanGroepResultaat> {
   const body: Record<string, string> = {
     kwaliteit_code: kwaliteitCode,
     kleur_code: kleurCode,
@@ -64,7 +90,7 @@ export async function triggerAutoplan(
     throw new Error(msg)
   }
 
-  return data as { success?: boolean; skipped?: boolean; reason?: string }
+  return data as AutoplanGroepResultaat
 }
 
 export interface BenodigdeLengteSchatting {
