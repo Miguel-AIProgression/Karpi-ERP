@@ -3,10 +3,21 @@
 // Zet uitgaande EDI-verzendberichten (DESADV) op de wachtrij voor partners die
 // `transus_actief && verzend_uit` hebben in `edi_handelspartner_config`.
 //
+// Eenheid is de FYSIEKE ZENDING, niet de order (mig 475, 2026-06-22). Eén
+// order kan ≥2 zendingen hebben (deelzending) — elke zending krijgt zijn eigen
+// DESADV, met alleen de regels/aantallen die in DIE zending daadwerkelijk
+// verzonden zijn (`zending_regels`, niet `order_regels.orderaantal`). Een
+// bundel-zending (mig 222, meerdere orders in 1 fysieke zending) levert per
+// betrokken order een eigen DESADV op (elke order heeft een eigen klant-PO/
+// GLN's — onvermijdelijk EDI-gegeven, geen keuze).
+//
 // Twee modi:
-//   POST { order_id: number } — gericht: verwerk één order.
-//   POST {}                  — sweep: verwerk alle EDI-orders met status='Verzonden'
-//                              die nog geen actief verzendbericht hebben.
+//   POST { zending_id: number } — gericht: verwerk één zending (alle
+//                                  betrokken orders), omzeilt het sweep-venster.
+//   POST {}                    — sweep: alle (zending, order)-paren waarvan de
+//                                 zending `gereed_op` (eerste moment 'Klaar
+//                                 voor verzending') binnen het venster heeft en
+//                                 nog geen actief verzendbericht heeft.
 //
 // Auth: ?token=<CRON_TOKEN> (zelfde patroon als transus-send/transus-poll, mig 305).
 //
@@ -29,9 +40,9 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const KARPI_GLN_FALLBACK = '8715954999998'
 
-// Sweep-venster: historische orders niet alsnog DESADV'en bij activatie.
-// De cron draait */15 min — 7 dagen is ruim voldoende. Gerichte POST {order_id}
-// omzeilt het venster bewust (geen lower-bound in verwerkOrder).
+// Sweep-venster: historische zendingen niet alsnog DESADV'en bij activatie.
+// De cron draait */15 min — 7 dagen is ruim voldoende. Gerichte POST {zending_id}
+// omzeilt het venster bewust (geen lower-bound in verwerkZendingOrder).
 const SWEEP_VENSTER_DAGEN = 7
 
 const CORS_HEADERS = {
@@ -53,36 +64,47 @@ serve(async (req) => {
 
   const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE)
 
-  let orderId = 0
-  let rawOrderId: unknown = undefined
+  let zendingId = 0
+  let rawZendingId: unknown = undefined
   try {
     const body = await req.json()
-    rawOrderId = body?.order_id
-    orderId = Number(rawOrderId ?? 0)
+    rawZendingId = body?.zending_id
+    zendingId = Number(rawZendingId ?? 0)
   } catch {
-    // geen body of geen order_id → sweep-modus
+    // geen body of geen zending_id → sweep-modus
   }
 
-  // M1: aanwezige maar ongeldige order_id → 400 (geen stille fallback naar sweep)
-  if (rawOrderId !== undefined && rawOrderId !== null && !(Number.isFinite(orderId) && orderId > 0)) {
-    return json(400, { error: `Ongeldig order_id: ${JSON.stringify(rawOrderId)} (verwacht positief geheel getal)` })
+  // Aanwezige maar ongeldige zending_id → 400 (geen stille fallback naar sweep)
+  if (rawZendingId !== undefined && rawZendingId !== null && !(Number.isFinite(zendingId) && zendingId > 0)) {
+    return json(400, { error: `Ongeldig zending_id: ${JSON.stringify(rawZendingId)} (verwacht positief geheel getal)` })
   }
 
-  if (Number.isFinite(orderId) && orderId > 0) {
-    // Gerichte modus: één order
-    const result = await verwerkOrder(sb, orderId)
-    return json(200, { verwerkt: 1, results: [result] })
+  if (Number.isFinite(zendingId) && zendingId > 0) {
+    // Gerichte modus: één zending, alle betrokken orders (bundel-aware)
+    const { data: zoRows, error: zoErr } = await sb
+      .from('zending_orders')
+      .select('order_id')
+      .eq('zending_id', zendingId)
+    if (zoErr) return json(500, { error: `Fetch zending_orders: ${zoErr.message}` })
+    if (!zoRows || zoRows.length === 0) {
+      return json(404, { error: `Zending ${zendingId} heeft geen gekoppelde orders` })
+    }
+    const results: VerwerkResult[] = []
+    for (const row of zoRows as Array<{ order_id: number }>) {
+      results.push(await verwerkZendingOrder(sb, zendingId, row.order_id))
+    }
+    return json(200, { verwerkt: results.length, results })
   }
 
-  // Sweep-modus: alle kandidaten
+  // Sweep-modus: alle (zending, order)-kandidaten
   const kandidaten = await zoekKandidaten(sb)
   if (!kandidaten.ok) {
     return json(500, { error: `Zoekfout kandidaten: ${kandidaten.error}` })
   }
 
   const results: VerwerkResult[] = []
-  for (const id of kandidaten.ids) {
-    results.push(await verwerkOrder(sb, id))
+  for (const paar of kandidaten.paren) {
+    results.push(await verwerkZendingOrder(sb, paar.zending_id, paar.order_id))
   }
 
   return json(200, { verwerkt: results.length, results })
@@ -92,17 +114,30 @@ serve(async (req) => {
 // Kandidaten-zoeker
 // ---------------------------------------------------------------------------
 
+interface ZendingOrderPaar {
+  zending_id: number
+  order_id: number
+}
+
 interface KandidatenResult {
   ok: boolean
-  ids: number[]
+  paren: ZendingOrderPaar[]
   error?: string
 }
 
 /**
- * Geeft alle order-id's die een verzendbericht nodig hebben:
+ * Geeft alle (zending, order)-paren die een verzendbericht nodig hebben:
  * - partner heeft transus_actief && verzend_uit
- * - order.status = 'Verzonden' && order.bron_systeem = 'edi'
- * - nog geen actief (niet-Fout, niet-Geannuleerd) verzendbericht in edi_berichten
+ * - order.bron_systeem = 'edi'
+ * - zending.gereed_op IS NOT NULL (= ooit 'Klaar voor verzending' bereikt,
+ *   blijft staan ook als de zending later naar Onderweg/Afgeleverd gaat) en
+ *   binnen het sweep-venster
+ * - nog geen actief (niet-Fout, niet-Geannuleerd) verzendbericht voor dit
+ *   exacte (order_id, zending_id)-paar in edi_berichten
+ *
+ * Bewust NIET gefilterd op orders.status: een deelzending bereikt
+ * 'Klaar voor verzending' vaak terwijl de ORDER nog op 'Deels verzonden'
+ * staat (mig 474) — de zending is het juiste trigger-moment, niet de order.
  */
 async function zoekKandidaten(
   // deno-lint-ignore no-explicit-any
@@ -114,49 +149,56 @@ async function zoekKandidaten(
     .select('debiteur_nr')
     .eq('transus_actief', true)
     .eq('verzend_uit', true)
-  if (cfgErr) return { ok: false, ids: [], error: cfgErr.message }
-  if (!configs || configs.length === 0) return { ok: true, ids: [] }
+  if (cfgErr) return { ok: false, paren: [], error: cfgErr.message }
+  if (!configs || configs.length === 0) return { ok: true, paren: [] }
 
   const debiteurNrs = (configs as Array<{ debiteur_nr: number }>).map((c) => c.debiteur_nr)
 
-  // Stap 2: verzonden EDI-orders van deze debiteuren binnen het sweep-venster
-  // (historische orders niet alsnog DESADV'en bij activatie; gerichte POST omzeilt dit)
+  // Stap 2: (zending, order)-paren van EDI-orders van deze debiteuren, waarvan
+  // de zending binnen het sweep-venster gereed is. Embedded filters via
+  // !inner forceren de join-conditie op orders/zendingen-kolommen.
   const sweepVanaf = new Date(Date.now() - SWEEP_VENSTER_DAGEN * 24 * 60 * 60 * 1000).toISOString()
-  const { data: orders, error: ordErr } = await sb
-    .from('orders')
-    .select('id')
-    .eq('status', 'Verzonden')
-    .eq('bron_systeem', 'edi')
-    .in('debiteur_nr', debiteurNrs)
-    .gte('verzonden_at', sweepVanaf)
-  if (ordErr) return { ok: false, ids: [], error: ordErr.message }
-  if (!orders || orders.length === 0) return { ok: true, ids: [] }
+  const { data: rows, error: rowsErr } = await sb
+    .from('zending_orders')
+    .select('zending_id, order_id, orders!inner(bron_systeem, debiteur_nr, status), zendingen!inner(gereed_op)')
+    .eq('orders.bron_systeem', 'edi')
+    .neq('orders.status', 'Geannuleerd')
+    .in('orders.debiteur_nr', debiteurNrs)
+    .not('zendingen.gereed_op', 'is', null)
+    .gte('zendingen.gereed_op', sweepVanaf)
+  if (rowsErr) return { ok: false, paren: [], error: rowsErr.message }
+  if (!rows || rows.length === 0) return { ok: true, paren: [] }
 
-  const alleIds = (orders as Array<{ id: number }>).map((o) => o.id)
+  const alleParen: ZendingOrderPaar[] = (rows as Array<{ zending_id: number; order_id: number }>).map(
+    (r) => ({ zending_id: r.zending_id, order_id: r.order_id }),
+  )
 
-  // Stap 3: filter weg welke al een actief verzendbericht hebben
+  // Stap 3: filter weg welke (order, zending)-paren al een actief verzendbericht hebben
+  const orderIds = [...new Set(alleParen.map((p) => p.order_id))]
   const { data: bestaande, error: bestaandeErr } = await sb
     .from('edi_berichten')
-    .select('bron_id')
+    .select('order_id, zending_id')
     .eq('richting', 'uit')
     .eq('berichttype', 'verzendbericht')
-    .eq('bron_tabel', 'orders')
-    .in('bron_id', alleIds)
+    .in('order_id', orderIds)
     .not('status', 'in', '("Fout","Geannuleerd")')
-  if (bestaandeErr) return { ok: false, ids: [], error: bestaandeErr.message }
+  if (bestaandeErr) return { ok: false, paren: [], error: bestaandeErr.message }
 
   const reedsVerwerkt = new Set(
-    ((bestaande ?? []) as Array<{ bron_id: number }>).map((b) => b.bron_id),
+    ((bestaande ?? []) as Array<{ order_id: number; zending_id: number | null }>).map(
+      (b) => `${b.order_id}:${b.zending_id}`,
+    ),
   )
-  const kandidaatIds = alleIds.filter((id) => !reedsVerwerkt.has(id))
-  return { ok: true, ids: kandidaatIds }
+  const kandidaatParen = alleParen.filter((p) => !reedsVerwerkt.has(`${p.order_id}:${p.zending_id}`))
+  return { ok: true, paren: kandidaatParen }
 }
 
 // ---------------------------------------------------------------------------
-// Order-verwerker
+// Zending×order-verwerker
 // ---------------------------------------------------------------------------
 
 interface VerwerkResult {
+  zending_id: number
   order_id: number
   status: 'wachtrij' | 'al_aanwezig' | 'overgeslagen' | 'skip_geen_fysieke_regels' | 'fout'
   uitgaandId?: number
@@ -164,7 +206,7 @@ interface VerwerkResult {
 }
 
 // deno-lint-ignore no-explicit-any
-async function verwerkOrder(sb: any, orderId: number): Promise<VerwerkResult> {
+async function verwerkZendingOrder(sb: any, zendingId: number, orderId: number): Promise<VerwerkResult> {
   try {
     // 1. Haal order op
     const { data: order, error: ordErr } = await sb
@@ -179,13 +221,13 @@ async function verwerkOrder(sb: any, orderId: number): Promise<VerwerkResult> {
       )
       .eq('id', orderId)
       .maybeSingle()
-    if (ordErr) return { order_id: orderId, status: 'fout', error: `Fetch order: ${ordErr.message}` }
-    if (!order) return { order_id: orderId, status: 'fout', error: `Order ${orderId} niet gevonden` }
+    if (ordErr) return { zending_id: zendingId, order_id: orderId, status: 'fout', error: `Fetch order: ${ordErr.message}` }
+    if (!order) return { zending_id: zendingId, order_id: orderId, status: 'fout', error: `Order ${orderId} niet gevonden` }
     if (order.bron_systeem !== 'edi') {
-      return { order_id: orderId, status: 'overgeslagen', error: 'Geen EDI-order' }
+      return { zending_id: zendingId, order_id: orderId, status: 'overgeslagen', error: 'Geen EDI-order' }
     }
-    if (order.status !== 'Verzonden') {
-      return { order_id: orderId, status: 'overgeslagen', error: `Status is '${order.status}', verwacht 'Verzonden'` }
+    if (order.status === 'Geannuleerd') {
+      return { zending_id: zendingId, order_id: orderId, status: 'overgeslagen', error: 'Order is geannuleerd' }
     }
 
     // 2. Haal partner-config op
@@ -194,9 +236,10 @@ async function verwerkOrder(sb: any, orderId: number): Promise<VerwerkResult> {
       .select('transus_actief, verzend_uit, test_modus')
       .eq('debiteur_nr', order.debiteur_nr)
       .maybeSingle()
-    if (cfgErr) return { order_id: orderId, status: 'fout', error: `Fetch config: ${cfgErr.message}` }
+    if (cfgErr) return { zending_id: zendingId, order_id: orderId, status: 'fout', error: `Fetch config: ${cfgErr.message}` }
     if (!cfg?.transus_actief || !cfg?.verzend_uit) {
       return {
+        zending_id: zendingId,
         order_id: orderId,
         status: 'overgeslagen',
         error: `EDI-verzending niet actief (transus_actief=${cfg?.transus_actief ?? false}, verzend_uit=${cfg?.verzend_uit ?? false})`,
@@ -207,14 +250,18 @@ async function verwerkOrder(sb: any, orderId: number): Promise<VerwerkResult> {
     //    (snapshot van het inkomende EDI-bericht-ordernummer, gezet door create_edi_order)
     const orderNumberBuyer = externReferentie(order.klant_referentie) ?? ''
     if (!orderNumberBuyer) {
-      return { order_id: orderId, status: 'fout', error: 'klant_referentie (klant-PO) ontbreekt op order' }
+      return { zending_id: zendingId, order_id: orderId, status: 'fout', error: 'klant_referentie (klant-PO) ontbreekt op order' }
     }
 
-    // 4. Zending ophalen via zending_orders → zendingen
-    //    kolommen: zending_nr, verzenddatum
-    //    (track_trace heeft géén slot in het fixed-width DESADV-format — zie
-    //    kolomkaart in karpi-verzendbericht.ts)
-    const zending = await haalZendingOp(sb, orderId)
+    // 4. Deze specifieke zending ophalen — geen giswerk meer welke zending
+    //    "de" zending is (oude `.limit(1)` zonder ORDER BY).
+    const { data: zending, error: zendErr } = await sb
+      .from('zendingen')
+      .select('zending_nr, verzenddatum')
+      .eq('id', zendingId)
+      .maybeSingle()
+    if (zendErr) return { zending_id: zendingId, order_id: orderId, status: 'fout', error: `Fetch zending: ${zendErr.message}` }
+    if (!zending) return { zending_id: zendingId, order_id: orderId, status: 'fout', error: `Zending ${zendingId} niet gevonden` }
 
     // 5. Karpi-GLN uit app_config bedrijfsgegevens
     const { data: bedrijfRow } = await sb
@@ -225,40 +272,67 @@ async function verwerkOrder(sb: any, orderId: number): Promise<VerwerkResult> {
     const bedrijf = (bedrijfRow?.waarde ?? {}) as { gln_eigen?: string }
     const senderGln = bedrijf.gln_eigen ?? KARPI_GLN_FALLBACK
 
-    // 6. GTIN's ophalen voor de orderregels
+    // 6. Regels: uit zending_regels (wat in DEZE zending fysiek verzonden is),
+    //    niet uit order_regels.orderaantal (het volledige bestelde aantal).
+    //    Admin-pseudo/VERZEND-regels komen er door trg_zending_regels_skip_admin_pseudo
+    //    (mig 434) nooit in — de is_pseudo-check hieronder is defensief.
+    //    DESADV toont het ORIGINELE artikel (omsticker is intern, zelfde regel
+    //    als de factuur) — vandaar de join via order_regels.artikelnr, niet
+    //    zending_regels.artikelnr.
     const { data: regelRows, error: regelErr } = await sb
-      .from('order_regels')
-      // expliciete FK-hint: order_regels↔producten heeft twee relaties
-      // (artikelnr én fysiek_artikelnr, mig 154) — kale 'producten' geeft
-      // PGRST201. DESADV toont het ORIGINELE artikel (omsticker is intern,
-      // zelfde regel als de factuur).
-      .select('id, regelnummer, artikelnr, omschrijving, orderaantal, producten!order_regels_artikelnr_fkey(ean_code, is_pseudo)')
-      .eq('order_id', orderId)
-      .gt('orderaantal', 0)
-      .order('regelnummer')
-    if (regelErr) return { order_id: orderId, status: 'fout', error: `Fetch regels: ${regelErr.message}` }
+      .from('zending_regels')
+      .select(
+        'aantal, ' +
+          'order_regels!inner(id, order_id, regelnummer, artikelnr, omschrijving, producten!order_regels_artikelnr_fkey(ean_code, is_pseudo))',
+      )
+      .eq('zending_id', zendingId)
+      .eq('order_regels.order_id', orderId)
+    if (regelErr) return { zending_id: zendingId, order_id: orderId, status: 'fout', error: `Fetch regels: ${regelErr.message}` }
 
-    // Fysiek document — admin-pseudo/VERZEND-regels horen er niet op (ADR-0018)
-    const regels = ((regelRows ?? []) as OrderRegelRow[])
-      .filter((r) => Number(r.orderaantal) > 0 && !r.producten?.is_pseudo)
+    // Eén order_regel kan meerdere zending_regels-rijen hebben (bv. verdeeld
+    // over meerdere rollen) — som het werkelijk-verzonden aantal per regel.
+    const totalenPerRegel = new Map<
+      number,
+      { regelnummer: number | null; artikelnr: string | null; omschrijving: string | null; gtin: string | null; aantal: number }
+    >()
+    for (const row of (regelRows ?? []) as ZendingRegelRow[]) {
+      const orRegel = row.order_regels
+      if (!orRegel || orRegel.producten?.is_pseudo) continue
+      const aantal = Number(row.aantal ?? 0)
+      const bestaand = totalenPerRegel.get(orRegel.id)
+      if (bestaand) {
+        bestaand.aantal += aantal
+      } else {
+        totalenPerRegel.set(orRegel.id, {
+          regelnummer: orRegel.regelnummer,
+          artikelnr: orRegel.artikelnr,
+          omschrijving: orRegel.omschrijving,
+          gtin: orRegel.producten?.ean_code ?? null,
+          aantal,
+        })
+      }
+    }
+    const regels = Array.from(totalenPerRegel.values())
+      .filter((r) => r.aantal > 0)
+      .sort((a, b) => (a.regelnummer ?? 0) - (b.regelnummer ?? 0))
       .map((r, idx) => ({
         regelnummer: r.regelnummer ?? idx + 1,
-        gtin: r.producten?.ean_code ?? null,
-        artikelcode: r.artikelnr ?? null,
-        omschrijving: r.omschrijving ?? null,
-        aantal: Number(r.orderaantal),
+        gtin: r.gtin,
+        artikelcode: r.artikelnr,
+        omschrijving: r.omschrijving,
+        aantal: r.aantal,
       }))
 
     if (regels.length === 0) {
-      return { order_id: orderId, status: 'skip_geen_fysieke_regels' as const }
+      return { zending_id: zendingId, order_id: orderId, status: 'skip_geen_fysieke_regels' as const }
     }
 
     // 7. Bouw VerzendberichtInput
     //    recipientGln (UNB-routering) = factuuradres_gln — spiegelt factuur-invoice-renderer.ts
     const partnerNaam = (order.debiteuren as { naam: string | null } | null)?.naam ?? null
     const input: VerzendberichtInput = {
-      zendingNr: zending?.zending_nr ?? order.order_nr,
-      verzenddatum: zending?.verzenddatum ?? new Date().toISOString().slice(0, 10),
+      zendingNr: zending.zending_nr,
+      verzenddatum: zending.verzenddatum ?? new Date().toISOString().slice(0, 10),
       leverdatum: order.afleverdatum ?? '',
       orderNumberBuyer,
       orderNumberSupplier: order.order_nr,
@@ -271,19 +345,21 @@ async function verwerkOrder(sb: any, orderId: number): Promise<VerwerkResult> {
       regels,
     }
 
-    // 8. Idempotent check: is er al een actief verzendbericht voor deze order?
+    // 8. Idempotent check: is er al een actief verzendbericht voor dit exacte
+    //    (order, zending)-paar? (DB-niveau afgedwongen door mig 475's
+    //    uk_edi_berichten_verzendbericht_actief — dit is de snelle vooraf-check.)
     const { data: bestaand, error: bestaandErr } = await sb
       .from('edi_berichten')
       .select('id, status')
       .eq('richting', 'uit')
       .eq('berichttype', 'verzendbericht')
-      .eq('bron_tabel', 'orders')
-      .eq('bron_id', orderId)
+      .eq('order_id', orderId)
+      .eq('zending_id', zendingId)
       .not('status', 'in', '("Fout","Geannuleerd")')
       .maybeSingle()
-    if (bestaandErr) return { order_id: orderId, status: 'fout', error: `Check bestaand: ${bestaandErr.message}` }
+    if (bestaandErr) return { zending_id: zendingId, order_id: orderId, status: 'fout', error: `Check bestaand: ${bestaandErr.message}` }
     if (bestaand?.id) {
-      return { order_id: orderId, status: 'al_aanwezig', uitgaandId: bestaand.id }
+      return { zending_id: zendingId, order_id: orderId, status: 'al_aanwezig', uitgaandId: bestaand.id }
     }
 
     // 9. Bouw bericht (gooit bij validatiefouten, bv. regel zonder GTIN)
@@ -292,14 +368,17 @@ async function verwerkOrder(sb: any, orderId: number): Promise<VerwerkResult> {
       payloadRaw = buildKarpiVerzendbericht(input)
     } catch (e) {
       // Validatiefout (ontbrekende GLN/GTIN/datum) — geen insert in
-      // edi_berichten: geen payload_raw beschikbaar. Resultaat: per-order
+      // edi_berichten: geen payload_raw beschikbaar. Resultaat: per-paar
       // error-result in de response; sweep probeert het volgende keer opnieuw
       // zodra de data compleet is.
       const errorMsg = e instanceof Error ? e.message : String(e)
-      return { order_id: orderId, status: 'fout', error: errorMsg }
+      return { zending_id: zendingId, order_id: orderId, status: 'fout', error: errorMsg }
     }
 
     // 10. Insert in edi_berichten (Wachtrij — transus-send pakt het op)
+    //     bron_tabel/bron_id blijven 'orders'/order_id (backward-compat met de
+    //     generieke EDI-overzicht-UI); zending_id is de échte idempotentie-as
+    //     (mig 475).
     const { data: outRow, error: insErr } = await sb
       .from('edi_berichten')
       .insert({
@@ -308,6 +387,7 @@ async function verwerkOrder(sb: any, orderId: number): Promise<VerwerkResult> {
         status: 'Wachtrij',
         debiteur_nr: order.debiteur_nr,
         order_id: orderId,
+        zending_id: zendingId,
         bron_tabel: 'orders',
         bron_id: orderId,
         payload_raw: payloadRaw,
@@ -316,43 +396,17 @@ async function verwerkOrder(sb: any, orderId: number): Promise<VerwerkResult> {
       })
       .select('id')
       .single()
-    if (insErr) return { order_id: orderId, status: 'fout', error: `Insert edi_berichten: ${insErr.message}` }
+    if (insErr) return { zending_id: zendingId, order_id: orderId, status: 'fout', error: `Insert edi_berichten: ${insErr.message}` }
 
-    return { order_id: orderId, status: 'wachtrij', uitgaandId: outRow.id }
+    return { zending_id: zendingId, order_id: orderId, status: 'wachtrij', uitgaandId: outRow.id }
   } catch (e) {
-    return { order_id: orderId, status: 'fout', error: e instanceof Error ? e.message : String(e) }
+    return { zending_id: zendingId, order_id: orderId, status: 'fout', error: e instanceof Error ? e.message : String(e) }
   }
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-interface ZendingData {
-  zending_nr: string
-  verzenddatum: string | null
-}
-
-/**
- * Haalt de eerste zending op voor een order via zending_orders → zendingen.
- * Mirrors de aanpak in bouw-factuur-edi (zendingNrVoorOrder).
- */
-// deno-lint-ignore no-explicit-any
-async function haalZendingOp(sb: any, orderId: number): Promise<ZendingData | null> {
-  try {
-    const { data, error } = await sb
-      .from('zending_orders')
-      .select('zendingen(zending_nr, verzenddatum)')
-      .eq('order_id', orderId)
-      .limit(1)
-      .maybeSingle()
-    if (error || !data) return null
-    const z = (data as unknown as { zendingen: ZendingData | null }).zendingen
-    return z ?? null
-  } catch {
-    return null
-  }
-}
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -365,11 +419,14 @@ function json(status: number, body: unknown): Response {
 // Type-helpers
 // ---------------------------------------------------------------------------
 
-interface OrderRegelRow {
-  id: number
-  regelnummer: number | null
-  artikelnr: string | null
-  omschrijving: string | null
-  orderaantal: number | string
-  producten: { ean_code: string | null; is_pseudo: boolean | null } | null
+interface ZendingRegelRow {
+  aantal: number | string
+  order_regels: {
+    id: number
+    order_id: number
+    regelnummer: number | null
+    artikelnr: string | null
+    omschrijving: string | null
+    producten: { ean_code: string | null; is_pseudo: boolean | null } | null
+  } | null
 }
