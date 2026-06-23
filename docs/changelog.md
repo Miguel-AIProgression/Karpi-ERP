@@ -1,5 +1,32 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-23 — Eenmalige prijscorrectie HEADLAM B.V. (#500001) na koppeling aan prijslijst
+
+**Geen code-wijziging — pure datacorrectie**, los van al het overige werk
+vandaag. Debiteur HEADLAM B.V. (#500001) is vandaag pas aan een prijslijst
+gekoppeld (0213 — BENELUX INCL. MV + BAMBOE); voorheen had de klant geen
+koppeling, waardoor openstaande orderregels op een afwijkende (te lage)
+prijs stonden.
+
+- **Scope:** alle open orders behalve de al-gefactureerde ORD-2026-0743
+  (FACT-2026-0171) en de 41 "OUD-"-orders (legacy import, NULL-prijzen, oude
+  artikelcodes — horen niet bij het huidige prijslijst-systeem).
+- **24 orderregels op 12 orders** herrekend tegen prijslijst 0213 (maatwerk:
+  oppervlak × prijslijst-m²-prijs + afwerking + vorm-toeslag; vaste maat:
+  prijslijst-prijs direct). Netto **+€1.271,43 (ex BTW)** over deze orders —
+  alle huidige prijzen lagen onder de prijslijst.
+- Inclusief 4 VELV-kwaliteit-regels met een veel grotere afwijking (m²-prijs
+  €24,26 → €59,00, +143% — groter dan de ~10% die de rest liet zien);
+  gebruiker expliciet akkoord nadat dit als afwijkend patroon gemeld is.
+- **3 regels (2× LAMI15 op ORD-2026-0200, 1× VERNON 250 ROND op ORD-2026-0741)
+  hebben geen match in prijslijst 0213** — op gebruikersverzoek op €0 gezet
+  zodat de bestaande prijs-ontbreekt-gate (mig 396,
+  `trg_order_regels_prijs_gate`) ze oppikt voor handmatige aanvulling.
+  ORD-2026-0200 bestaat uitsluitend uit deze 2 regels — totaalbedrag staat
+  daardoor nu op €0,00 tot de juiste prijs is ingevuld.
+- Geverifieerd via een rolled-back transactie (gate-trigger + order-totalen
+  klopten exact) vóór de echte toepassing.
+
 ## 2026-06-23 — Handmatig een admin-pseudo-regel (her)toevoegen aan een order
 
 **Waarom:** gebruiker verwijderde per ongeluk de VORMTOESLAG-companion-regel
