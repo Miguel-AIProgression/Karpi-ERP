@@ -1,5 +1,34 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-23 (update 4) — Order annuleren liet een actieve zending als weeskind staan (mig 480)
+
+**Waarom:** tijdens het testen een order met een actieve pickronde direct
+geannuleerd (niet via de deelzending/pickronde-annuleren-knoppen) — de
+zending bleef gewoon op status 'Picken' staan, wijzend naar een
+geannuleerde order. Gebruiker bevestigde het verwachte gedrag expliciet:
+annuleren van een order moet ALLES annuleren — voorraad/IO-claims vrijgeven
+(al langer correct via mig 255), snijplannen annuleren + rollen vrijgeven
+(al langer correct via mig 290, ADR-0023), én de aangemaakte pickronde/
+zending verwijderen (dit ontbrak — de derde cascade-tak).
+
+- Nieuwe listener `trg_order_events_zending_release` op `order_events`
+  (`event_type='geannuleerd'`, zelfde ADR-0006/0015-patroon als de twee
+  bestaande listeners). Verwijdert per zending van de geannuleerde order met
+  status 'Gepland'/'Picken' de regels/colli van die order.
+- Bewust beperkt tot 'Gepland'/'Picken': `markeer_geannuleerd` blokkeert
+  alleen op `status='Verzonden'`, niet 'Deels verzonden' — een al-fysiek-
+  verzonden deel-zending (status 'Klaar voor verzending' of verder) van een
+  verder geannuleerde order mag nooit aangeraakt worden.
+- Bundel-zending-bewust (mig 222): blijft de zending gekoppeld aan een
+  andere, niet-geannuleerde order, dan blijft de zending zelf bestaan met
+  herberekende `aantal_colli`/`totaal_gewicht_kg`; was de geannuleerde order
+  de enige, dan vervalt de hele zending.
+- Geverifieerd via rolled-back transacties op zowel een solo- als een
+  gefabriceerde bundel-zending (2 orders, 1 geannuleerd) — de andere order's
+  regels/colli en de herberekende aantallen bleven exact intact.
+- Eenmalige backfill in dezelfde migratie ruimde het op dat moment enige
+  bestaande weeskind (ZEND-2026-0197, order ORD-2026-0820) op.
+
 ## 2026-06-23 (update 3) — Picken starten-knop bleef disabled voor een Gepland-deelzending (mig 479)
 
 **Waarom:** mig 477/478 lieten een deelzending correct als 'Gepland' staan en

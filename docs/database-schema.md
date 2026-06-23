@@ -407,6 +407,7 @@ CHECK constraint `order_events_actor_xor`: niet beide actor-velden tegelijk gevu
 |---------|------|---------------|
 | `trg_order_events_reservering_release` | `event_type='geannuleerd'` | Mig 255: releaset alle actieve `order_reserveringen` (voorraad + IO) van de order. |
 | `trg_order_events_snijplan_release` | `event_type='geannuleerd'` | Mig 290 (ADR-0023): alle nog-levende snijplannen van de order → `Geannuleerd` (ongeacht voortgang); geraakte rollen die hun laatste actieve snijplan verliezen → `beschikbaar`/`reststuk` (`snijden_gestart_op=NULL`), met `NOT EXISTS`-guard voor gedeelde rollen. |
+| `trg_order_events_zending_release` | `event_type='geannuleerd'` | Mig 480: per zending van de order met status `'Gepland'`/`'Picken'` (nooit verder — een al-fysiek-verzonden zending van een 'Deels verzonden'-order die toch geannuleerd wordt blijft onaangeroerd) worden de regels/colli van DIE order verwijderd. Bundel-zending-bewust: blijft een andere, niet-geannuleerde order gekoppeld, dan blijft de zending bestaan met herberekende `aantal_colli`/`totaal_gewicht_kg`; was de geannuleerde order de enige, dan vervalt de hele zending. |
 | `enqueue_factuur_voor_event` | div. (mig 223) | Facturatie-Module queue-vulling. |
 
 #### order_event_type (enum)
