@@ -1,5 +1,14 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-23 — IO-fallback-tak voor maatwerk-auto-verzendweek (mig 471)
+
+**Waarom:** vervolg op mig 469 (zelfde dag) — die zette `order_regels.verzendweek` alleen als een maatwerk-regel volledig op een échte rol stond. Bij gebruikersaudit van de order-workflow bleek de "geen rol, wél inkoop onderweg"-tak (mig 437-445, `snijplannen.verwacht_inkooporder_regel_id`) niets te doen — zo'n regel hield `verzendweek=NULL` voor altijd.
+
+- `trg_snijplan_rol_toegewezen_auto_verzendweek` uitgebreid: triggert nu ook op `verwacht_inkooporder_regel_id`. Een stuk is "gedekt" via `rol_id` ÓF `verwacht_inkooporder_regel_id` (XOR-constraint garandeert nooit beide).
+- Datum bij (mede-)IO-dekking: `GREATEST(vandaag + 7wk, MAX(IO-eta over IO-gedekte stukken) + 2wk)` — hergebruikt de bestaande `app_config.order_config.inkoop_buffer_weken_maatwerk` (2), geen nieuwe config-key.
+- Getest op een live snijplan (toggle van `verwacht_inkooporder_regel_id`, twee scenario's): nabije IO-ETA → de 7-weken-floor wint; IO-ETA ver in de toekomst (tijdelijk gezet, daarna teruggezet) → de IO-datum + 2wk overstemt de floor correct.
+- Bewust niet gebouwd: herziening van een al-gezette `verzendweek` als de IO-ETA later wijzigt (blijft snapshot, zoals de rol-tak) — losse vervolgstap indien gewenst.
+
 ## 2026-06-23 — Afgeleide snijdatum/rol zichtbaar + automatische verzendweek voor maatwerk-op-voorraad (mig 469)
 
 **Waarom:** bij het uitzoeken van twee orders bleek order-detail voor een maatwerk-
