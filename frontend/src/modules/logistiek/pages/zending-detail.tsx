@@ -9,6 +9,7 @@ import {
   type HstTransportorderRow,
 } from '@/modules/logistiek/components/hst-transportorder-card'
 import { ColliBundelSectie } from '@/modules/logistiek/components/colli-bundel-sectie'
+import { AnnuleerPickrondeKnop } from '@/modules/logistiek/components/annuleer-pickronde-knop'
 
 interface BundelOrder {
   id: number
@@ -158,6 +159,12 @@ export function ZendingDetailPage() {
               <span className="whitespace-pre-wrap">{z.opmerkingen}</span>
             </Field>
           )}
+        </div>
+        {/* Correctie-actie (per ongeluk gestart), bewust subtiel — zelfde knop
+            als op de printset-pagina, hier ook bereikbaar zonder eerst door te
+            klikken naar "Verzendset printen". */}
+        <div className="mt-4 flex justify-end">
+          <AnnuleerPickrondeKnop zendingId={z.id} zendingStatus={z.status} />
         </div>
       </Section>
 
