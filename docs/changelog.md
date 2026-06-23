@@ -1,5 +1,16 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-23 — Statusbetekenis 'Wacht op inkoop'/'Wacht op voorraad' omgedraaid (mig 470)
+
+**Waarom:** gebruiker beschreef de gewenste order-intake-workflow en vroeg om dit te toetsen tegen de implementatie. Bij het direct lezen van de live `derive_wacht_status()` (mig 346/352, single source of truth voor `orders.status`) bleek de betekenis van deze twee statussen omgekeerd te zijn t.o.v. wat de naam en het mentale model van de gebruiker suggereren: `'Wacht op inkoop'` betekende "er is al een actieve IO-claim" en `'Wacht op voorraad'` betekende "geen IO-claim, wel tekort".
+
+- `derive_wacht_status()`: branches 2/3 omgedraaid — `'Wacht op inkoop'` = nog géén IO-claim (moet besteld worden), `'Wacht op voorraad'` = IO-claim bestaat al (wacht op levering).
+- `trg_io_regel_insert_swap_evaluate()` (mig 297, ADR-0027): de enige andere live plek die specifiek op één van deze twee statussen filterde (alleen orders zónder IO-claim heralloceren bij een nieuwe IO-regel — anders cascade-swap-risico) — string mee omgedraaid in dezelfde migratie.
+- **Backfill**: bestaande orders in een van deze twee statussen zijn met één atomaire `CASE`-UPDATE omgewisseld (geverifieerd: 69↔33 orders precies omgedraaid).
+- TS-spiegel `deriveWachtStatus()` + golden-fixture (`derive-status.golden.json`, 6 van 23 cases aangepast) + contracttest in lockstep meeverhuisd.
+- **Bewust niet aangeraakt:** de `snijplan_status`-enum heeft een eigen, ongerelateerde waarde `'Wacht op inkoop'` (mig 437-445, snijplan-niveau IO-koppeling voor maatwerk) — ander enum-type, ander concept, blijft ongewijzigd. Eerste verkenning vlagde hier een aantal valse positieven (`order-regels-table.tsx`, `snijplanning-overview.tsx`, mig 437-463) die bij nader lezen allemaal op de snijplan-enum filteren, niet op `orders.status` — terecht uitgesloten.
+- Mig 145/153's oudere directe `UPDATE orders SET status = ...`-statements zijn dode code (de functie `herwaardeer_order_status` is later herschreven om te delegeren naar `herbereken_wacht_status`/`derive_wacht_status`) — geverifieerd via live `pg_get_functiondef`, niet aangepast.
+
 ## 2026-06-23 — Afgeleide snijdatum/rol zichtbaar + automatische verzendweek voor maatwerk-op-voorraad (mig 469)
 
 **Waarom:** bij het uitzoeken van twee orders bleek order-detail voor een maatwerk-

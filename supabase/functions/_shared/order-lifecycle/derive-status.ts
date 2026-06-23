@@ -1,7 +1,8 @@
 // Pure order-status-ladder — TS-spiegel van de SQL-functie derive_wacht_status
-// (mig 346 + 352). null = "niet wijzigen" (no-op). Gedrag MOET identiek zijn aan de
+// (mig 346 + 352, betekenis van 'Wacht op inkoop'/'Wacht op voorraad' omgedraaid
+// in mig 470). null = "niet wijzigen" (no-op). Gedrag MOET identiek zijn aan de
 // SQL-functie; de gedeelde golden-fixture (derive-status.golden.json) borgt dat
-// via de Vitest-contracttest, de mig-352-DO-assertie borgt de SQL-kant.
+// via de Vitest-contracttest, de mig-470-DO-assertie borgt de SQL-kant.
 // ADR-0006: dit is de beloofde pure state-machine-functie.
 // LET OP: géén Deno-only imports (npm:/jsr:/https://) toevoegen — dit bestand wordt
 // direct door frontend-Vitest geïmporteerd. Wordt door frontend-contracttests
@@ -33,12 +34,14 @@ export interface WachtStatusInput {
   heeftMaatwerk: boolean
 }
 
-/** Spiegelt SQL derive_wacht_status(). Geeft de doelstatus of null (= no-op). */
+/** Spiegelt SQL derive_wacht_status(). Geeft de doelstatus of null (= no-op).
+ *  Mig 470: 'Wacht op inkoop' = nog géén IO-claim (moet besteld worden),
+ *  'Wacht op voorraad' = IO-claim bestaat al, wacht op levering. */
 export function deriveWachtStatus(input: WachtStatusInput): OrderWachtStatus | null {
   const { huidig, heeftIoClaim, heeftTekort, heeftMaatwerk } = input
   if (EINDSTATUS_OF_PICKRONDE.has(huidig)) return null      // 1
-  if (heeftIoClaim) return 'Wacht op inkoop'                // 2
-  if (heeftTekort) return 'Wacht op voorraad'               // 3
+  if (heeftIoClaim) return 'Wacht op voorraad'              // 2
+  if (heeftTekort) return 'Wacht op inkoop'                 // 3
   if (heeftMaatwerk) return 'Wacht op maatwerk'             // 4
   if (HERBEREKENBARE_WACHT.has(huidig)) return 'Klaar voor picken' // 5
   return null                                               // 6
