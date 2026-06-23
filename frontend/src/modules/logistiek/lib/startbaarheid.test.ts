@@ -13,6 +13,7 @@ function input(overrides: Partial<StartbaarheidInput> = {}): StartbaarheidInput 
     order_id: 1,
     afhalen: false,
     alle_regels_pickbaar: true,
+    heeft_gepland_zending: false,
     afl_adres_incompleet_sinds: null,
     prijs_ontbreekt_sinds: null,
     in_pickronde: false,
@@ -40,6 +41,14 @@ describe('bepaalStartbaarheid — één status per order', () => {
 
   it('niet alle regels pickbaar → niet_pickbaar', () => {
     expect(status({ alle_regels_pickbaar: false })).toBe('niet_pickbaar')
+  })
+
+  it('mig 479: niet alle regels pickbaar, maar wél een Gepland-deelzending → startbaar', () => {
+    // start_pickronden promoot dan alleen de Gepland-zending en laat de
+    // nog-niet-pickbare regel(s) ongemoeid liggen — de knop mag dus aan.
+    expect(
+      status({ alle_regels_pickbaar: false, heeft_gepland_zending: true }),
+    ).toBe('startbaar')
   })
 
   it('afleveradres onvolledig → afl_adres', () => {
@@ -83,6 +92,16 @@ describe('bepaalStartbaarheid — canonieke prioriteit (eerste match wint)', () 
         geen_vervoerder: true,
       }),
     ).toBe('niet_pickbaar')
+  })
+
+  it('mig 479: heeft_gepland_zending tilt niet_pickbaar op, maar de lagere gates blijven gelden', () => {
+    expect(
+      status({
+        alle_regels_pickbaar: false,
+        heeft_gepland_zending: true,
+        afl_adres_incompleet_sinds: 'x',
+      }),
+    ).toBe('afl_adres')
   })
 
   it('afl_adres wint van prijs (mig 395/396-volgorde)', () => {

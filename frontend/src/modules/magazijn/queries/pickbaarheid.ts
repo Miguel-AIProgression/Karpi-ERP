@@ -72,7 +72,10 @@ export async function fetchPickShipOrders(
 
   for (const [orderId, opb] of orderPickbaarheid) {
     const order = perOrder.get(orderId)
-    if (order) order.alle_regels_pickbaar = opb.alle_regels_pickbaar
+    if (order) {
+      order.alle_regels_pickbaar = opb.alle_regels_pickbaar
+      order.heeft_gepland_zending = opb.heeft_gepland_zending
+    }
   }
 
   let result = Array.from(perOrder.values())
@@ -273,7 +276,7 @@ async function fetchOrderPickbaarheid(
       .from('order_pickbaarheid')
       .select(
         'order_id, totaal_regels, pickbare_regels, alle_regels_pickbaar, ' +
-          'heeft_pickbare_regel, deelleveringen_toegestaan, pick_ship_zichtbaar'
+          'heeft_pickbare_regel, deelleveringen_toegestaan, pick_ship_zichtbaar, heeft_gepland_zending'
       )
       .in('order_id', ids)
     if (error) throw error

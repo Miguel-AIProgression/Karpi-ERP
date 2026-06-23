@@ -105,6 +105,7 @@ export function MagazijnOverviewPage() {
           order_id: o.order_id,
           afhalen: o.afhalen,
           alle_regels_pickbaar: o.alle_regels_pickbaar,
+          heeft_gepland_zending: o.heeft_gepland_zending,
           afl_adres_incompleet_sinds: o.afl_adres_incompleet_sinds,
           prijs_ontbreekt_sinds: o.prijs_ontbreekt_sinds,
           in_pickronde: o.actieve_pickronde !== null,

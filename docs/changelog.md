@@ -1,5 +1,35 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-23 (update 3) — Picken starten-knop bleef disabled voor een Gepland-deelzending (mig 479)
+
+**Waarom:** mig 477/478 lieten een deelzending correct als 'Gepland' staan en
+`start_pickronden` kon 'm in theorie promoveren — maar bij het livetesten
+(order met 1 pickbare + 1 niet-pickbare regel, klant zonder standaard
+deelleveringen) bleef de knop in Pick & Ship gewoon disabled ("Niets
+pickbaar"). De frontend-gate (`bepaalStartbaarheid`/`startbaarheid.ts`) zet
+`niet_pickbaar` zodra niet alle regels pickbaar zijn — volledig los van een
+al-klaarstaande Gepland-zending, dus de knop die de promotie zou aanroepen
+was zelf nooit klikbaar.
+
+- Nieuwe kolom `order_pickbaarheid.heeft_gepland_zending`. `bepaalStartbaarheid`
+  blokkeert nu alleen als ZOWEL niet alle regels pickbaar zijn ALS er geen
+  Gepland-zending is om te promoveren.
+- Tweede, onafhankelijke gap die tegelijk aan het licht kwam:
+  `start_pickronden`'s regel-selectie filterde wél op `is_locked` (mig 477)
+  maar niet op `is_pickbaar` — was de knop voor zo'n order ooit ingeschakeld
+  geweest, dan had de niet-pickbare regel alsnog in een nieuwe zending/label
+  terecht kunnen komen. Extra filter op `orderregel_pickbaarheid.is_pickbaar`
+  sluit dat uit.
+- Geverifieerd op de live, exact vastgelopen order: na de fix promoveert
+  "Picken starten" alleen de Gepland-zending, de niet-pickbare regel blijft
+  ongemoeid liggen, order → 'In pickronde'. Regressievrij op een normale
+  volledig-pickbare order. 2 nieuwe tests in `startbaarheid.test.ts`.
+- Bijvangst, los van deze feature: `tsc --noEmit -p .` in de frontend-root is
+  een no-op (solution-style tsconfig zonder build-modus) — heeft de hele
+  sessie niets gecontroleerd. `tsc --noEmit -p tsconfig.app.json` is de echte
+  check; bij het alsnog draaien kwamen 4 type-fouten boven (3 test-fixtures +
+  1 productiebestand), nu allemaal gefixt.
+
 ## 2026-06-23 (update 2) — Deelzending aanmaken reserveert alleen, start de pickronde niet meer (mig 477-478)
 
 **Waarom:** na mig 476 (orders met een actieve zending blijven zichtbaar in

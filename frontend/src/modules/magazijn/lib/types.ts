@@ -77,6 +77,10 @@ export interface PickShipOrder {
   /** Mig 386: order-niveau-predicaat uit view `order_pickbaarheid`. Bron voor
    *  de pick-start-knop (StartPickrondesButton) — niet client-side herleiden. */
   alle_regels_pickbaar: boolean
+  /** Mig 479: heeft de order een nog-niet-gestarte ('Gepland') deelzending —
+   *  zo ja, dan blokkeert `!alle_regels_pickbaar` de pick-start-knop niet
+   *  (start_pickronden promoot dan alleen die zending). */
+  heeft_gepland_zending: boolean
   /** Mig 395: NULL = afleveradres compleet; gezet = onvolledig. Blokkeert de
    *  pick-start (server-side in start_pickronden; frontend-spiegel in de knop). */
   afl_adres_incompleet_sinds: string | null

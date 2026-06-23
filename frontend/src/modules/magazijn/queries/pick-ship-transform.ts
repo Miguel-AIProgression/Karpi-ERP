@@ -23,6 +23,8 @@ export interface OrderPickbaarheidRij {
   heeft_pickbare_regel: boolean
   deelleveringen_toegestaan: boolean
   pick_ship_zichtbaar: boolean
+  /** Mig 479: heeft de order een nog-niet-gestarte ('Gepland') deelzending. */
+  heeft_gepland_zending: boolean
 }
 
 export interface PickbaarheidRij {
@@ -104,6 +106,7 @@ export function initPickShipOrders(
       totaal_gewicht_kg: 0,
       aantal_regels: 0,
       alle_regels_pickbaar: false,
+      heeft_gepland_zending: false,
       actieve_pickronde: null,
     })
   }

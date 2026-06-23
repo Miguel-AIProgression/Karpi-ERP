@@ -32,6 +32,11 @@ export interface StartbaarheidInput {
   afhalen: boolean
   /** Order-niveau-predicaat uit view `order_pickbaarheid` (mig 386). */
   alle_regels_pickbaar: boolean
+  /** Mig 479: heeft de order een nog-niet-gestarte ('Gepland') deelzending
+   *  die gepromoveerd kan worden? Zo ja, dan blokkeert `!alle_regels_pickbaar`
+   *  niet — start_pickronden promoot dan alleen die zending en laat de
+   *  nog-niet-pickbare regel(s) ongemoeid liggen. */
+  heeft_gepland_zending: boolean
   /** mig 395 — gezet = afleveradres onvolledig. */
   afl_adres_incompleet_sinds: string | null
   /** mig 396 — gezet = ≥1 regel €0. */
@@ -61,7 +66,7 @@ export interface OrderStartbaarheid {
 export function bepaalStartbaarheid(o: StartbaarheidInput): OrderStartbaarheid {
   let status: StartStatus
   if (o.in_pickronde) status = 'in_pickronde'
-  else if (!o.alle_regels_pickbaar) status = 'niet_pickbaar'
+  else if (!o.alle_regels_pickbaar && !o.heeft_gepland_zending) status = 'niet_pickbaar'
   else if (o.afl_adres_incompleet_sinds) status = 'afl_adres'
   else if (o.prijs_ontbreekt_sinds) status = 'prijs'
   else if (o.geen_vervoerder) status = 'geen_vervoerder'
