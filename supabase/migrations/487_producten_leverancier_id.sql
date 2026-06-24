@@ -1,4 +1,4 @@
--- Mig 486: producten.leverancier_id (FK -> leveranciers)
+-- Mig 487: producten.leverancier_id (FK -> leveranciers)
 --
 -- Het "+ Nieuw product"/"Bewerken"-formulier had al langer een Leverancier-
 -- dropdown, maar producten had nooit een leverancier_id-kolom — elke save

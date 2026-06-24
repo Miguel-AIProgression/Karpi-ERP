@@ -1,4 +1,4 @@
--- Mig 487: producten_overzicht view uitgebreid met lengte_cm/breedte_cm
+-- Mig 488: producten_overzicht view uitgebreid met lengte_cm/breedte_cm
 --
 -- De productenlijst (frontend fetchProducten) sorteerde binnen een kleur-
 -- groep puur alfabetisch op omschrijving-tekst, zonder begrip van vorm of

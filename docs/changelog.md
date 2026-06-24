@@ -205,7 +205,7 @@ productenoverzicht (alleen per Vaste maat/Staal in product-detail).
   (`kwaliteit-kleuren-uitvouw.tsx`), gedeeld via `ProductRow`
   (`product-row.tsx`) — toont `lengte_cm × breedte_cm` of bij
   `maatwerk_vorm_code='rond'` enkel `Ø {diameter} cm`. Mogelijk dankzij
-  de eerdere view-uitbreiding (mig 487) die deze kolommen al beschikbaar
+  de eerdere view-uitbreiding (mig 488) die deze kolommen al beschikbaar
   maakte voor de lijst-query.
 
 ## 2026-06-24 — `producten.vorm` nooit gesynchroniseerd met `maatwerk_vorm_code` (code-fix + datacorrectie 1.525 producten)
@@ -263,7 +263,7 @@ controle die er niet is.
   `overig` (waar de trigger niet ingrijpt) blijft het veld gewoon
   editable.
 
-## 2026-06-24 — Type verplicht bij aanmaak + sortering op vorm-groep/oppervlak i.p.v. alfabetisch (mig 487)
+## 2026-06-24 — Type verplicht bij aanmaak + sortering op vorm-groep/oppervlak i.p.v. alfabetisch (mig 488)
 
 **Waarom:** live-test toonde twee problemen op de kleur-detailtabel
 (`kwaliteit-kleuren-uitvouw.tsx`): (1) het net aangemaakte artikel
@@ -283,7 +283,7 @@ artikelen, en een 040x040 stond niet vóór een 250x400.
   daardoor automatisch opnieuw correct afgeleid door de bestaande
   gewicht-trigger.
 - **Sortering herzien:** `producten_overzicht`-view uitgebreid met
-  `lengte_cm`/`breedte_cm` (mig 487 — kolommen bestonden al op
+  `lengte_cm`/`breedte_cm` (mig 488 — kolommen bestonden al op
   `producten`, stonden alleen niet in de view; `CREATE OR REPLACE VIEW`
   kan alleen aan het eind toevoegen, geen herordening). `fetchProducten`
   haalt ze nu mee. `ArtikelsVoorKleur` sorteert niet meer op
@@ -298,14 +298,14 @@ artikelen, en een 040x040 stond niet vóór een 250x400.
   levert exact 040x040 → 200x300 (afgeronde hoeken) → 250x400 → 220 rond
   → 280 rond, zoals gevraagd.
 
-## 2026-06-24 — `producten.leverancier_id` als echte kolom (mig 486)
+## 2026-06-24 — `producten.leverancier_id` als echte kolom (mig 487)
 
 **Waarom:** vorige fix verwijderde het Leverancier-veld omdat de kolom niet
 bestond; gebruiker wil de koppeling juist behouden — dus alsnog goed
 bouwen i.p.v. het veld schrappen.
 
 - Nieuwe kolom `producten.leverancier_id BIGINT REFERENCES leveranciers(id)
-  ON DELETE SET NULL` (mig 486, mirrort de `ON DELETE SET NULL`-aanpak van
+  ON DELETE SET NULL` (mig 487, mirrort de `ON DELETE SET NULL`-aanpak van
   `producten_maatwerk_vorm_code_fkey` — een leverancier wordt in de praktijk
   soft-deleted via `actief=false`, maar mag een product nooit blokkeren als
   die ooit toch verwijderd wordt). Puur informatief (default/gebruikelijke

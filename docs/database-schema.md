@@ -252,7 +252,7 @@ Artikelen uit het oude systeem.
 | locatie | TEXT | Magazijnlocatie (bijv. "A.01.L", "C.04.H"). Bron: Locaties123.xls |
 | actief | BOOLEAN | Default true |
 | is_dropship | BOOLEAN | Default false. TRUE op dropshipment-kostenregels (DROPSHIP-KLEIN/GROOT, mig 370): order met zo'n regel gaat rechtstreeks naar de consument — `afl_email` moet dan het consument-adres zijn, nooit het factuur-/debiteur-adres. Predicaat: `is_dropship_order(order_id)`; guard in `fn_zending_fill_email`. |
-| leverancier_id | BIGINT FK → leveranciers(id) ON DELETE SET NULL | **Mig 482 (2026-06-24).** Default/gebruikelijke leverancier voor dit artikel — puur informatief, geen koppeling met de inkoop-flow (`inkooporders.leverancier_id` is daar de bron-van-waarheid). Vóór deze migratie had de kolom niet bestaan terwijl "+ Nieuw product"/"Bewerken" 'm al wel onvoorwaardelijk in elke create/update-payload stuurden — elke opslag via die twee formulieren faalde daardoor altijd met `42703: column does not exist`, los van enige andere wijziging. |
+| leverancier_id | BIGINT FK → leveranciers(id) ON DELETE SET NULL | **Mig 487 (2026-06-24).** Default/gebruikelijke leverancier voor dit artikel — puur informatief, geen koppeling met de inkoop-flow (`inkooporders.leverancier_id` is daar de bron-van-waarheid). Vóór deze migratie had de kolom niet bestaan terwijl "+ Nieuw product"/"Bewerken" 'm al wel onvoorwaardelijk in elke create/update-payload stuurden — elke opslag via die twee formulieren faalde daardoor altijd met `42703: column does not exist`, los van enige andere wijziging. |
 
 ---
 
@@ -1483,7 +1483,7 @@ Eén-rij-tabel (`id=1`) met `watermark TIMESTAMPTZ` = de `created_at` van de laa
 
 | View | Doel |
 |------|------|
-| producten_overzicht | Producten + rollen-aggregatie (aantal_rollen, oppervlak, waarde) + locatie + `lengte_cm`/`breedte_cm` (mig 487, 2026-06-24 — voedt vorm-groep/oppervlak-sortering in de frontend, zie `kwaliteit-kleuren-uitvouw.tsx`) |
+| producten_overzicht | Producten + rollen-aggregatie (aantal_rollen, oppervlak, waarde) + locatie + `lengte_cm`/`breedte_cm` (mig 488, 2026-06-24 — voedt vorm-groep/oppervlak-sortering in de frontend, zie `kwaliteit-kleuren-uitvouw.tsx`) |
 | dashboard_stats | Aggregaties: producten, rollen (aantal), **voorraadwaarde_inkoop = SUM(rollen.waarde) over alle rollen**, **voorraadwaarde_verkoop = SUM(orders.totaal_bedrag) − SUM(VERZEND-regels), excl. Geannuleerd**, marge (op beschikbare rollen), open orders, klanten |
 | klant_omzet_ytd | Per klant: omzet YTD, % totaal, gem/maand, tier, vertegenwoordiger |
 | rollen_overzicht | Per kwaliteit/kleur: aantal, oppervlak, waarde |
