@@ -4,27 +4,35 @@ import { supabase } from '@/lib/supabase/client'
  * Order_events query-laag (ADR-0006). Tabel `order_events` heeft kolommen:
  *   id, order_id, event_type, status_voor, status_na, actor_*, reden, metadata, created_at.
  * Het `metadata`-veld is JSONB en bevat per event-type een ander payload-schema.
- * We modelleren de bekende event-types als een discriminated union zodat
- * consumers (UI) type-veilig per type kunnen renderen, en vallen voor onbekende
- * waardes terug op een 'overig' tak (geen crash bij nieuwe enum-waarden).
- *
- * NB: ADR-0027 Stap 2/3 (mig 297/298) introduceert drie nieuwe enum-waarden —
- * 'claim_geswapt_weg', 'claim_geswapt_naar' en 'deadline_conflict_na_swap'.
- * De render-laag is hier al voorbereid.
+ * We modelleren bekende event-types als een discriminated union; onbekende
+ * toekomstige waarden landen in de 'overig'-tak zonder crash (string & {} vangnet).
  */
 
-/** Bekende event-types uit mig 218 + mig 257 + ADR-0027 Stap 2/3. */
+/** Bekende event-types — uitgebreid in mig 503 met handmatige acties. */
 export type OrderEventType =
   | 'aangemaakt'
   | 'pickronde_gestart'
   | 'pickronde_voltooid'
+  | 'pickronde_teruggedraaid'
   | 'deels_verzonden'
   | 'wacht_status_herberekend'
   | 'geannuleerd'
   | 'backfill_fase_normalisatie'
+  | 'prijs_geaccepteerd'
+  | 'deelzending_gestart'
+  | 'maatwerk_afgerond'
+  | 'levertijd_gewijzigd_door_eta'
   | 'claim_geswapt_weg'
   | 'claim_geswapt_naar'
   | 'deadline_conflict_na_swap'
+  // mig 503 — actor-email in metadata.gedaan_door
+  | 'orderbevestiging_verstuurd'
+  | 'creditfactuur_aangemaakt'
+  | 'order_gewijzigd'
+  // Vangnet: string & {} staat narrowing toe op de specifiek genoemde literals;
+  // onbekende toekomstige DB-waarden landen in de 'overig'-tak van OrderEvent.
+  // eslint-disable-next-line @typescript-eslint/ban-types
+  | (string & {})
 
 /** Metadata-payload bij 'claim_geswapt_weg' (op de bron-order — die voorraad afstaat). */
 export interface ClaimGeswaptWegMetadata {
@@ -53,6 +61,28 @@ export interface DeadlineConflictNaSwapMetadata {
   standaard: string | null
 }
 
+/** Metadata-payload bij 'orderbevestiging_verstuurd' (mig 503). */
+export interface OrderbevestigingVerstuurdMetadata {
+  email_naar: string
+  gedaan_door: string
+}
+
+/** Metadata-payload bij 'creditfactuur_aangemaakt' (mig 503). */
+export interface CreditfactuurAangemaaktMetadata {
+  creditfactuur_id: number
+  creditfactuur_nr: string
+  originele_factuur_nr: string
+  reden: string | null
+  gedaan_door: string | null
+}
+
+/** Metadata-payload bij 'order_gewijzigd' (mig 503). */
+export interface OrderGewijzigdMetadata {
+  oud_bedrag: number | null
+  nieuw_bedrag: number | null
+  gedaan_door: string | null
+}
+
 interface BaseOrderEvent {
   id: number
   order_id: number
@@ -62,21 +92,15 @@ interface BaseOrderEvent {
   created_at: string
 }
 
-/** Discriminated union — switch op `event_type` voor type-narrowing van `metadata`.
- *  Geen catch-all `event_type: string`-tak: die zou een supertype van de literals zijn
- *  en narrowing breken (TS infereert `metadata` dan als `Record<string, unknown> | null`
- *  ook in de specifieke takken). Nieuwe DB-event-types moeten in `OrderEventType`. */
+/** Discriminated union — switch op `event_type` voor type-narrowing van `metadata`. */
 export type OrderEvent =
   | (BaseOrderEvent & { event_type: 'claim_geswapt_weg'; metadata: ClaimGeswaptWegMetadata })
   | (BaseOrderEvent & { event_type: 'claim_geswapt_naar'; metadata: ClaimGeswaptNaarMetadata })
   | (BaseOrderEvent & { event_type: 'deadline_conflict_na_swap'; metadata: DeadlineConflictNaSwapMetadata })
-  | (BaseOrderEvent & {
-      event_type: Exclude<
-        OrderEventType,
-        'claim_geswapt_weg' | 'claim_geswapt_naar' | 'deadline_conflict_na_swap'
-      >
-      metadata: Record<string, unknown> | null
-    })
+  | (BaseOrderEvent & { event_type: 'orderbevestiging_verstuurd'; metadata: OrderbevestigingVerstuurdMetadata })
+  | (BaseOrderEvent & { event_type: 'creditfactuur_aangemaakt'; metadata: CreditfactuurAangemaaktMetadata })
+  | (BaseOrderEvent & { event_type: 'order_gewijzigd'; metadata: OrderGewijzigdMetadata })
+  | (BaseOrderEvent & { event_type: string; metadata: Record<string, unknown> | null })
 
 export async function fetchOrderEvents(orderId: number): Promise<OrderEvent[]> {
   const { data, error } = await supabase

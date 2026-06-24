@@ -563,7 +563,7 @@ serve(async (req) => {
 
   // ── Order markeren als bevestigd ───────────────────────────────────────────
   const now = new Date().toISOString()
-  await supabase
+  const { data: updatedOrder } = await supabase
     .from('orders')
     .update({
       bevestigd_at: now,
@@ -571,6 +571,24 @@ serve(async (req) => {
       bevestiging_email: toEmail,
     })
     .eq('id', order_id)
+    .select('status')
+    .single()
+
+  // Mig 503: log 'orderbevestiging_verstuurd' in order_events (best-effort).
+  try {
+    await supabase.from('order_events').insert({
+      order_id,
+      event_type: 'orderbevestiging_verstuurd',
+      status_voor: updatedOrder?.status ?? null,
+      status_na: updatedOrder?.status ?? 'Bevestigd',
+      metadata: {
+        email_naar: toEmail,
+        gedaan_door: bevestigd_door ?? 'onbekend',
+      },
+    })
+  } catch (e) {
+    console.warn(`[stuur-orderbevestiging] order_events log mislukt: ${e}`)
+  }
 
   console.log(`[stuur-orderbevestiging] order=${o.order_nr} → ${toEmail} (${bevestigd_door ?? 'onbekend'})`)
 
