@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { useKwaliteiten, useLeveranciers, useUpdateProduct, useMaatwerkVormen } from '@/hooks/use-producten'
+import { useKwaliteiten, useUpdateProduct, useMaatwerkVormen } from '@/hooks/use-producten'
 import type { ProductDetail, ProductFormData, ProductType } from '@/lib/supabase/queries/producten'
 
 const PRODUCT_TYPES: { value: ProductType; label: string }[] = [
@@ -19,7 +19,6 @@ interface ProductFormProps {
 export function ProductFormPage({ product }: ProductFormProps) {
   const navigate = useNavigate()
   const { data: kwaliteiten } = useKwaliteiten()
-  const { data: leveranciers } = useLeveranciers()
   const { data: maatwerkVormen = [] } = useMaatwerkVormen()
   const updateMutation = useUpdateProduct()
 
@@ -41,7 +40,6 @@ export function ProductFormPage({ product }: ProductFormProps) {
     voorraad: product?.voorraad ?? 0,
     besteld_inkoop: product?.besteld_inkoop ?? 0,
     locatie: product?.locatie ?? '',
-    leverancier_id: (product as ProductDetail & { leverancier_id?: number | null })?.leverancier_id ?? null,
     actief: product?.actief ?? true,
   })
   const [error, setError] = useState<string | null>(null)
@@ -211,18 +209,6 @@ export function ProductFormPage({ product }: ProductFormProps) {
                 ))}
               </select>
               <p className="text-xs text-slate-400 mt-1">Bepaalt de vormtoeslag bij de m²-prijsberekening.</p>
-            </Field>
-            <Field label="Leverancier">
-              <select
-                value={form.leverancier_id ?? ''}
-                onChange={e => set('leverancier_id', e.target.value ? Number(e.target.value) : null)}
-                className="input"
-              >
-                <option value="">— geen —</option>
-                {leveranciers?.map(l => (
-                  <option key={l.id} value={l.id}>{l.naam}</option>
-                ))}
-              </select>
             </Field>
             <Field label="Locatie">
               <input

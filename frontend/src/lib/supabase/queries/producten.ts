@@ -143,7 +143,6 @@ export interface ProductFormData {
   voorraad?: number
   besteld_inkoop?: number
   locatie?: string | null
-  leverancier_id?: number | null
   actief?: boolean
 }
 

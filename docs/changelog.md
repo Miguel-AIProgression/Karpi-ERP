@@ -1,5 +1,38 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-24 — Fix: `leverancier_id` was een phantom-veld op producten (blokkeerde élke opslag)
+
+**Waarom:** live-test van de variant-toevoegen-feature faalde op opslaan met
+het nutteloze "Er is een fout opgetreden" — geverifieerd via een rolled-back
+insert direct op de live DB (`information_schema.columns`/Management API):
+**`producten.leverancier_id` bestaat niet als kolom.** Leverancier wordt
+uitsluitend op `inkooporders`-niveau bijgehouden, nooit per product
+(bevestigd: nul kolommen op `producten` matchen `%leverancier%`).
+
+- **Impact groter dan deze feature:** zowel "+ Nieuw product" als het
+  bestaande "Bewerken"-formulier stuurden dit veld onvoorwaardelijk mee in
+  elke create/update-payload — dus **élke** opslag via beide formulieren
+  faalde altijd al met `42703: column "leverancier_id" does not exist`,
+  niet pas sinds vandaag. Verklaart waarom de eerder gefixte
+  breedte_cm/lengte_cm-bug nooit opviel: vrijwel niemand heeft deze
+  formulieren ooit succesvol tot een save laten komen (producten komen
+  bijna uitsluitend via de Python-importscripts binnen).
+- Fix: `leverancier_id` verwijderd uit `ProductFormData`
+  ([`producten.ts`](frontend/src/lib/supabase/queries/producten.ts)) en het
+  bijbehorende (dode) Leverancier-dropdown-veld uit zowel
+  `product-create.tsx` als `product-form.tsx`. `useLeveranciers` blijft
+  bestaan en in gebruik voor het echte gebruik ervan (inkooporders-module).
+- **Bijgevangen, losstaande bug in dezelfde catch-block:** `err instanceof
+  Error` matcht nooit op een Supabase/PostgREST-foutobject (een plain
+  object, geen `Error`-instantie) — elke echte DB-foutmelding werd dus
+  altijd vervangen door de generieke "Er is een fout opgetreden", inclusief
+  deze exacte fout. Nu wordt `err.message` direct uitgelezen als die
+  bestaat.
+- Geverifieerd via een rolled-back transactie direct op de live DB: de
+  insert (inclusief `lengte_cm`/`breedte_cm`/`maatwerk_vorm_code`) slaagt
+  nu, én `gewicht_kg` wordt automatisch correct afgeleid (22,80 kg voor
+  200×300cm OMBR) dankzij de eerder gefixte maat-kolommen.
+
 ## 2026-06-24 — Vorm in omschrijving + karpi-code-conventie voor rond/ovaal + botsing-waarschuwing
 
 **Waarom:** gebruiker (live-test van de variant-toevoegen-feature hierboven)

@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Plus, Trash2, AlertTriangle, CheckCircle2, Info, Check } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { useLeveranciers, useCreateProduct, useNextArtikelnr, useKwaliteiten, useMaatwerkVormen, useBestaandeArtikelnrs, useBestaandeKarpiCodes } from '@/hooks/use-producten'
+import { useCreateProduct, useNextArtikelnr, useKwaliteiten, useMaatwerkVormen, useBestaandeArtikelnrs, useBestaandeKarpiCodes } from '@/hooks/use-producten'
 import { STANDAARD_TAPIJTMATEN } from '@/lib/constants/tapijt-maten'
 import {
   fetchAfwerkingTypes,
@@ -100,7 +100,6 @@ function buildKarpiCode(kwaliteit: string, kleur: string, breedte: string, lengt
 export function ProductCreatePage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const { data: leveranciers } = useLeveranciers()
   const { data: kwaliteiten } = useKwaliteiten()
   const { data: maatwerkVormen = [] } = useMaatwerkVormen()
   const createMutation = useCreateProduct()
@@ -117,7 +116,6 @@ export function ProductCreatePage() {
   const [kwaliteitCode, setKwaliteitCode] = useState(kwaliteitParam)
   const [kwaliteitCodeInput, setKwaliteitCodeInput] = useState(kwaliteitParam)  // ruwe invoer (vóór uppercase)
   const [kleurCode, setKleurCode] = useState(kleurParam)
-  const [leverancierId, setLeverancierId] = useState<string>('')
   const [afwerkingCode, setAfwerkingCode] = useState('')
   const [actief, setActief] = useState(existingKwaliteitMode)
 
@@ -357,7 +355,6 @@ export function ProductCreatePage() {
           gewicht_kg: r.gewicht_kg ? Number(r.gewicht_kg) : null,
           voorraad: 0,
           locatie: r.locatie.trim() || null,
-          leverancier_id: leverancierId ? Number(leverancierId) : null,
           actief,
         })
       }
@@ -372,11 +369,16 @@ export function ProductCreatePage() {
 
       navigate(`/producten/${filledRows[0].artikelnr.trim()}`)
     } catch (err: unknown) {
-      const pgError = err as { code?: string; message?: string }
+      // Supabase/PostgREST errors zijn platte objecten, geen Error-instanties —
+      // `err instanceof Error` mist die dus altijd en toont een nutteloze
+      // generieke melding i.p.v. de echte (vaak prima leesbare) DB-foutmelding.
+      const pgError = err as { code?: string; message?: string } | null
       if (pgError?.code === '23505') {
         setError('Eén van de artikelnummers bestaat al (botsing met een net aangemaakt artikel). Pas het artikelnr aan en probeer opnieuw.')
+      } else if (pgError?.message) {
+        setError(pgError.message)
       } else {
-        setError(err instanceof Error ? err.message : 'Er is een fout opgetreden')
+        setError('Er is een fout opgetreden')
       }
     }
   }
@@ -507,20 +509,6 @@ export function ProductCreatePage() {
                 className={`input ${existingKwaliteitMode && kleurParam ? 'bg-slate-100 text-slate-500' : ''}`}
                 placeholder="bijv. 48"
               />
-            </Field>
-
-            {/* Leverancier */}
-            <Field label="Leverancier">
-              <select
-                value={leverancierId}
-                onChange={e => setLeverancierId(e.target.value)}
-                className="input"
-              >
-                <option value="">— geen —</option>
-                {leveranciers?.map(l => (
-                  <option key={l.id} value={l.id}>{l.naam}</option>
-                ))}
-              </select>
             </Field>
 
             {/* Maatwerk afwerking */}
