@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { fetchProducten, fetchProductDetail, fetchRollenVoorProduct, fetchReserveringenVoorProduct, fetchClaimsVoorProduct, updateProductType, updateProductLocatie, fetchKwaliteiten, fetchKleurenVoorKwaliteit, fetchLeveranciers, createProduct, updateProduct, fetchNextArtikelnr, fetchDistincteVormen, type ProductType, type VormCode, type ProductSortField, type SortDirection, type ProductFormData } from '@/lib/supabase/queries/producten'
+import { fetchProducten, fetchProductDetail, fetchRollenVoorProduct, fetchReserveringenVoorProduct, fetchClaimsVoorProduct, updateProductType, updateProductLocatie, fetchKwaliteiten, fetchKleurenVoorKwaliteit, fetchLeveranciers, createProduct, updateProduct, deleteProduct, fetchNextArtikelnr, fetchDistincteVormen, fetchMaatwerkVormen, fetchBestaandeArtikelnrs, fetchBestaandeKarpiCodes, type ProductType, type VormCode, type ProductSortField, type SortDirection, type ProductFormData } from '@/lib/supabase/queries/producten'
 import { fetchEquivalenteProducten } from '@/lib/supabase/queries/product-equivalents'
 
 export { type VormCode }
@@ -9,6 +9,35 @@ export function useDistincteVormen() {
     queryKey: ['producten', 'distincte-vormen'],
     queryFn: fetchDistincteVormen,
     staleTime: 5 * 60 * 1000,
+  })
+}
+
+/** Alle beschikbare vormen uit de master-tabel — voor een echte dropdown (niet alleen vormen al in gebruik). */
+export function useMaatwerkVormen() {
+  return useQuery({
+    queryKey: ['producten', 'maatwerk-vormen'],
+    queryFn: fetchMaatwerkVormen,
+    staleTime: 10 * 60 * 1000,
+  })
+}
+
+/** Live duplicate-check: welke van deze artikelnrs bestaan al? */
+export function useBestaandeArtikelnrs(artikelnrs: string[]) {
+  const key = [...artikelnrs].sort().join(',')
+  return useQuery({
+    queryKey: ['producten', 'bestaande-artikelnrs', key],
+    queryFn: () => fetchBestaandeArtikelnrs(artikelnrs),
+    enabled: artikelnrs.length > 0,
+  })
+}
+
+/** Live botsing-check: welke van deze karpi-codes bestaan al? (waarschuwing, geen unique constraint) */
+export function useBestaandeKarpiCodes(karpiCodes: string[]) {
+  const key = [...karpiCodes].sort().join(',')
+  return useQuery({
+    queryKey: ['producten', 'bestaande-karpi-codes', key],
+    queryFn: () => fetchBestaandeKarpiCodes(karpiCodes),
+    enabled: karpiCodes.length > 0,
   })
 }
 
@@ -107,6 +136,16 @@ export function useUpdateProduct() {
     onSuccess: (_r, { artikelnr }) => {
       queryClient.invalidateQueries({ queryKey: ['producten'] })
       queryClient.invalidateQueries({ queryKey: ['producten', artikelnr] })
+    },
+  })
+}
+
+export function useDeleteProduct() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (artikelnr: string) => deleteProduct(artikelnr),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['producten'] })
     },
   })
 }

@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Plus, Trash2, AlertTriangle, CheckCircle2, Info, Check } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { useLeveranciers, useCreateProduct, useNextArtikelnr } from '@/hooks/use-producten'
+import { useLeveranciers, useCreateProduct, useNextArtikelnr, useKwaliteiten, useMaatwerkVormen, useBestaandeArtikelnrs, useBestaandeKarpiCodes, useProducten } from '@/hooks/use-producten'
 import { STANDAARD_TAPIJTMATEN } from '@/lib/constants/tapijt-maten'
 import {
   fetchAfwerkingTypes,
@@ -14,6 +14,9 @@ import {
 } from '@/modules/maatwerk'
 import { fetchKwaliteitBestaat } from '@/lib/supabase/queries/producten'
 import type { ProductType } from '@/lib/supabase/queries/producten'
+import { fetchKwaliteitInfo } from '@/lib/supabase/queries/kwaliteiten'
+import { berekenProductGewichtKg } from '@/lib/utils/gewicht'
+import { formatNumber } from '@/lib/utils/formatters'
 
 const PRODUCT_TYPES: { value: ProductType; label: string }[] = [
   { value: 'vast', label: 'Standaard maat' },
@@ -28,6 +31,7 @@ interface VariantRow {
   product_type: ProductType | ''
   breedte: string
   lengte: string
+  vorm: string
   karpi_code: string
   ean_code: string
   verkoopprijs: string
@@ -44,6 +48,7 @@ const newRow = (): VariantRow => ({
   product_type: '',
   breedte: '',
   lengte: '',
+  vorm: '',
   karpi_code: '',
   ean_code: '',
   verkoopprijs: '',
@@ -53,23 +58,50 @@ const newRow = (): VariantRow => ({
   locatie: '',
 })
 
-function buildOmschrijving(naam: string, kleurCode: string, breedte: string, lengte: string) {
+/**
+ * Maat-deel volgt de bestaande legacy-conventie ("OMBRE Kleur 14 CA: 220
+ * ROND BEIGE GREY", "OMBRE Kleur 14 CA: 250x400 cm") — "CA:" prefix, en
+ * voor rond een enkele diameter + "ROND" i.p.v. "DxD cm" (een rond stuk
+ * heeft geen tweede afmeting om te tonen). Vorm wordt expliciet genoemd
+ * (behalve rechthoek) omdat productzoeken alleen op omschrijving/
+ * karpi_code/zoeksleutel/artikelnr matcht, niet op maatwerk_vorm_code zelf.
+ */
+function buildOmschrijving(naam: string, kleurCode: string, breedte: string, lengte: string, vormCode: string, vormNaam?: string) {
   const parts = [naam.trim()]
   if (kleurCode.trim()) parts.push(`Kleur ${kleurCode.trim()}`)
-  if (breedte && lengte) parts.push(`${breedte}x${lengte}cm`)
+  if (breedte && lengte) {
+    if (vormCode === 'rond') {
+      parts.push(`CA: ${breedte} ROND`)
+    } else if (vormNaam) {
+      parts.push(`CA: ${breedte}x${lengte} cm ${vormNaam}`)
+    } else {
+      parts.push(`CA: ${breedte}x${lengte} cm`)
+    }
+  }
   return parts.join(' ')
 }
 
 /**
  * Karpi-code conventie: {KWALITEIT}{KLEUR:2}XX{BREEDTE:3}{LENGTE:3}
  * Voorbeeld: FAMU48XX160230
+ *
+ * Rond/ovaal volgen de bestaande suffix-conventie uit de legacy data
+ * (mig 188: karpi_code ~ '^.{8}\d{3}RND$' / 'OVL$') — anders zou een nieuw
+ * rond artikel een karpi_code krijgen die niet als rond te herkennen is en
+ * zou collideren met een rechthoekig artikel van dezelfde maat. Voor de
+ * overige vormen (afgeronde_hoeken, organisch_*, pebble, ellips) bestaat
+ * géén eigen karpi_code-suffix-conventie — die blijven op het gewone
+ * WWWLLL-patroon (vorm staat dan alleen in de omschrijving); een eventuele
+ * botsing met een rechthoek van dezelfde maat wordt apart gesignaleerd.
  */
-function buildKarpiCode(kwaliteit: string, kleur: string, breedte: string, lengte: string) {
+function buildKarpiCode(kwaliteit: string, kleur: string, breedte: string, lengte: string, vorm: string) {
   const k = (kwaliteit || '').trim().toUpperCase()
   const klr = (kleur || '').trim()
   if (!k || !klr || !breedte) return ''
   const klrPad = klr.padStart(2, '0').slice(0, 2)
   const w = String(parseInt(breedte, 10) || 0).padStart(3, '0').slice(-3)
+  if (vorm === 'rond') return `${k}${klrPad}XX${w}RND`
+  if (vorm === 'ovaal') return `${k}${klrPad}XX${w}OVL`
   const lTrim = (lengte || '').trim()
   const l = lTrim ? String(parseInt(lTrim, 10) || 0).padStart(3, '0').slice(-3) : ''
   if (!l) return ''
@@ -78,17 +110,62 @@ function buildKarpiCode(kwaliteit: string, kleur: string, breedte: string, lengt
 
 export function ProductCreatePage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const { data: kwaliteiten } = useKwaliteiten()
+  const { data: maatwerkVormen = [] } = useMaatwerkVormen()
   const { data: leveranciers } = useLeveranciers()
   const createMutation = useCreateProduct()
 
+  // Variant-toevoegen-modus: kwaliteit (+ optioneel kleur) komt mee als query-param
+  // vanaf "Variant toevoegen" op product-detail / de kleur-rij — kwaliteit bestaat
+  // dan al bewust, dus de duplicate-check hieronder is niet van toepassing.
+  const kwaliteitParam = (searchParams.get('kwaliteit') ?? '').toUpperCase().trim()
+  const kleurParam = (searchParams.get('kleur') ?? '').trim()
+  const existingKwaliteitMode = kwaliteitParam.length > 0
+
   // Stamgegevens
   const [naam, setNaam] = useState('')
-  const [kwaliteitCode, setKwaliteitCode] = useState('')
-  const [kwaliteitCodeInput, setKwaliteitCodeInput] = useState('')  // ruwe invoer (vóór uppercase)
-  const [kleurCode, setKleurCode] = useState('')
+  const [kwaliteitCode, setKwaliteitCode] = useState(kwaliteitParam)
+  const [kwaliteitCodeInput, setKwaliteitCodeInput] = useState(kwaliteitParam)  // ruwe invoer (vóór uppercase)
+  const [kleurCode, setKleurCode] = useState(kleurParam)
   const [leverancierId, setLeverancierId] = useState<string>('')
   const [afwerkingCode, setAfwerkingCode] = useState('')
-  const [actief, setActief] = useState(false)
+  const [actief, setActief] = useState(existingKwaliteitMode)
+
+  // Eén bestaand zusterartikel van deze kwaliteit — voedt de naam-fallback
+  // hieronder. kwaliteiten.omschrijving is voor veel kwaliteiten (zoals
+  // OMBR) leeg; de échte naam ("OMBRE") staat alleen in de omschrijving
+  // van bestaande artikelen. Zonder dit viel de fallback terug op de rauwe
+  // 4-letter kwaliteitscode ("OMBR" i.p.v. "OMBRE") — niet vindbaar via
+  // zoeken op "ombre" en inconsistent met alle zusterartikelen.
+  const { data: zusterData } = useProducten({
+    kwaliteitCode: kwaliteitParam,
+    pageSize: 1,
+  })
+  const zusterNaam = (() => {
+    const omschrijving = zusterData?.producten[0]?.omschrijving
+    if (!omschrijving) return null
+    const idx = omschrijving.indexOf(' Kleur ')
+    return idx > 0 ? omschrijving.slice(0, idx) : null
+  })()
+
+  // Naam voorinvullen vanuit de bestaande kwaliteit-omschrijving of een
+  // zusterartikel (bv. "Ombre"/"OMBRE")
+  useEffect(() => {
+    if (!existingKwaliteitMode || naam.trim()) return
+    const viaKwaliteit = kwaliteiten?.find(k => k.code === kwaliteitParam)?.omschrijving
+    const voorstel = viaKwaliteit ?? zusterNaam
+    if (voorstel) setNaam(voorstel)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [existingKwaliteitMode, kwaliteiten, zusterNaam])
+
+  // Effectieve naam voor de omschrijving — in variant-toevoegen-modus mag het
+  // veld leeg blijven; val dan terug op kwaliteit-omschrijving → zusterartikel
+  // → kwaliteitscode (laatste redmiddel, alleen als er nog geen producten zijn).
+  const effectieveNaam = naam.trim()
+    || (existingKwaliteitMode
+      ? (kwaliteiten?.find(k => k.code === kwaliteitParam)?.omschrijving ?? zusterNaam ?? kwaliteitParam)
+      : '')
 
   // Varianten
   const [rows, setRows] = useState<VariantRow[]>([newRow()])
@@ -103,12 +180,58 @@ export function ProductCreatePage() {
     return () => clearTimeout(timer)
   }, [kwaliteitCode])
 
-  // Duplicate check
+  // Duplicate check — niet van toepassing in variant-toevoegen-modus, daar
+  // bestaat de kwaliteit bewust al.
   const { data: kwaliteitBestaat, isFetching: checkingDuplicate } = useQuery({
     queryKey: ['kwaliteit-bestaat', debouncedKwaliteit],
     queryFn: () => fetchKwaliteitBestaat(debouncedKwaliteit),
-    enabled: debouncedKwaliteit.length >= 2,
+    enabled: !existingKwaliteitMode && debouncedKwaliteit.length >= 2,
   })
+
+  // Kwaliteit-density — voor Vaste maat/Staal wordt gewicht_kg server-side
+  // altijd herberekend uit deze waarde (trg_producten_gewicht_derive, mig 387)
+  // en overschrijft handmatige invoer; hier alleen gebruikt voor een live
+  // preview, niet om op te slaan.
+  const { data: kwaliteitInfo } = useQuery({
+    queryKey: ['kwaliteit-info', kwaliteitCode],
+    queryFn: () => fetchKwaliteitInfo(kwaliteitCode || null),
+    enabled: !!kwaliteitCode,
+  })
+
+  // Debounced artikelnrs voor live duplicate-check (artikelnr is de PK)
+  const ingevuldeArtikelnrs = useMemo(
+    () => [...new Set(rows.map(r => r.artikelnr.trim()).filter(Boolean))],
+    [rows],
+  )
+  const [debouncedArtikelnrs, setDebouncedArtikelnrs] = useState<string[]>([])
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedArtikelnrs(ingevuldeArtikelnrs), 400)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ingevuldeArtikelnrs.join(',')])
+  const { data: bestaandeArtikelnrs } = useBestaandeArtikelnrs(debouncedArtikelnrs)
+  const dubbeleArtikelnrs = useMemo(
+    () => new Set(rows.filter(r => bestaandeArtikelnrs?.has(r.artikelnr.trim())).map(r => r.artikelnr.trim())),
+    [rows, bestaandeArtikelnrs],
+  )
+
+  // Debounced karpi-codes voor een botsing-waarschuwing (geen unique constraint, dus
+  // dit blokkeert niet — sommige vormen hebben nu eenmaal geen eigen suffix-conventie).
+  const ingevuldeKarpiCodes = useMemo(
+    () => [...new Set(rows.map(r => r.karpi_code.trim()).filter(Boolean))],
+    [rows],
+  )
+  const [debouncedKarpiCodes, setDebouncedKarpiCodes] = useState<string[]>([])
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedKarpiCodes(ingevuldeKarpiCodes), 400)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ingevuldeKarpiCodes.join(',')])
+  const { data: bestaandeKarpiCodes } = useBestaandeKarpiCodes(debouncedKarpiCodes)
+  const dubbeleKarpiCodes = useMemo(
+    () => new Set(rows.filter(r => bestaandeKarpiCodes?.has(r.karpi_code.trim())).map(r => r.karpi_code.trim())),
+    [rows, bestaandeKarpiCodes],
+  )
 
   // Afwerking-types
   const { data: afwerkingTypes } = useQuery({
@@ -150,7 +273,7 @@ export function ProductCreatePage() {
         }
       }
       if (!manualKarpi.has(r._key)) {
-        next.karpi_code = buildKarpiCode(kwaliteitCode, kleurCode, r.breedte, r.lengte)
+        next.karpi_code = buildKarpiCode(kwaliteitCode, kleurCode, r.breedte, r.lengte, r.vorm)
       }
       return next
     }))
@@ -167,8 +290,8 @@ export function ProductCreatePage() {
     setRows(rs => rs.map(r => {
       if (r._key !== key) return r
       const next = { ...r, [field]: value }
-      if ((field === 'breedte' || field === 'lengte') && !manualKarpi.has(key)) {
-        next.karpi_code = buildKarpiCode(kwaliteitCode, kleurCode, next.breedte, next.lengte)
+      if ((field === 'breedte' || field === 'lengte' || field === 'vorm') && !manualKarpi.has(key)) {
+        next.karpi_code = buildKarpiCode(kwaliteitCode, kleurCode, next.breedte, next.lengte, next.vorm)
       }
       return next
     }))
@@ -190,7 +313,7 @@ export function ProductCreatePage() {
     if (maat) {
       r.breedte = String(maat.breedte)
       r.lengte = String(maat.lengte)
-      r.karpi_code = buildKarpiCode(kwaliteitCode, kleurCode, r.breedte, r.lengte)
+      r.karpi_code = buildKarpiCode(kwaliteitCode, kleurCode, r.breedte, r.lengte, r.vorm)
     }
     setRows(rs => [...rs, r])
   }
@@ -201,7 +324,7 @@ export function ProductCreatePage() {
       if (r._key !== key) return r
       const next = { ...r, breedte, lengte }
       if (!manualKarpi.has(key)) {
-        next.karpi_code = buildKarpiCode(kwaliteitCode, kleurCode, breedte, lengte)
+        next.karpi_code = buildKarpiCode(kwaliteitCode, kleurCode, breedte, lengte, r.vorm)
       }
       return next
     }))
@@ -240,6 +363,11 @@ export function ProductCreatePage() {
       setError('Voeg minimaal één variant toe met een artikelnummer.')
       return
     }
+    const zonderType = filledRows.filter(r => !r.product_type)
+    if (zonderType.length > 0) {
+      setError(`Type is verplicht. Kies een type bij: ${zonderType.map(r => r.artikelnr.trim()).join(', ')}.`)
+      return
+    }
     // Mig 359: karpi_code is verplicht voor rol/vast (DB-trigger weigert
     // anders). Optioneel voor overig/staaltje (banden/calibra/staaltjes).
     const zonderKarpi = filledRows.filter(
@@ -249,8 +377,13 @@ export function ProductCreatePage() {
       setError(`Karpi-code is verplicht voor producten van type Rol of Standaard maat. Vul de Karpi-code in bij: ${zonderKarpi.map(r => r.artikelnr.trim()).join(', ')}.`)
       return
     }
-    if (kwaliteitBestaat) {
-      setError(`Kwaliteitscode "${kwaliteitCode}" bestaat al in de database. Gebruik een andere code of koppel het product aan de bestaande kwaliteit via het productdetail-scherm.`)
+    if (!existingKwaliteitMode && kwaliteitBestaat) {
+      setError(`Kwaliteitscode "${kwaliteitCode}" bestaat al in de database. Gebruik "Variant toevoegen" vanaf een bestaand product van deze kwaliteit, of kies een andere code.`)
+      return
+    }
+    const dubbeleInForm = filledRows.filter(r => dubbeleArtikelnrs.has(r.artikelnr.trim()))
+    if (dubbeleInForm.length > 0) {
+      setError(`Artikelnr bestaat al: ${dubbeleInForm.map(r => r.artikelnr.trim()).join(', ')}. Pas het artikelnr aan.`)
       return
     }
 
@@ -260,10 +393,18 @@ export function ProductCreatePage() {
           artikelnr: r.artikelnr.trim(),
           karpi_code: r.karpi_code.trim() || null,
           ean_code: r.ean_code.trim() || null,
-          omschrijving: buildOmschrijving(naam, kleurCode, r.breedte, r.lengte),
+          omschrijving: buildOmschrijving(effectieveNaam, kleurCode, r.breedte, r.lengte, r.vorm, maatwerkVormen.find(v => v.code === r.vorm)?.naam),
           kwaliteit_code: kwaliteitCode || null,
           kleur_code: kleurCode.trim() || null,
           product_type: (r.product_type as ProductType) || null,
+          maatwerk_vorm_code: r.vorm.trim() || null,
+          // producten.vorm is een apart, beperkt enum (alleen rechthoek/rond) dat
+          // de gewicht-trigger gebruikt — los van maatwerk_vorm_code (de "echte"
+          // vorm voor prijs/omschrijving). Ovaal/afgeronde_hoeken/organisch/etc.
+          // hebben geen eigen formule en vallen terug op de rechthoek-bbox.
+          vorm: r.vorm === 'rond' ? 'rond' : 'rechthoek',
+          lengte_cm: r.lengte ? Number(r.lengte) : null,
+          breedte_cm: r.breedte ? Number(r.breedte) : null,
           verkoopprijs: r.verkoopprijs ? Number(r.verkoopprijs) : null,
           inkoopprijs: r.inkoopprijs ? Number(r.inkoopprijs) : null,
           gewicht_kg: r.gewicht_kg ? Number(r.gewicht_kg) : null,
@@ -284,7 +425,17 @@ export function ProductCreatePage() {
 
       navigate(`/producten/${filledRows[0].artikelnr.trim()}`)
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Er is een fout opgetreden')
+      // Supabase/PostgREST errors zijn platte objecten, geen Error-instanties —
+      // `err instanceof Error` mist die dus altijd en toont een nutteloze
+      // generieke melding i.p.v. de echte (vaak prima leesbare) DB-foutmelding.
+      const pgError = err as { code?: string; message?: string } | null
+      if (pgError?.code === '23505') {
+        setError('Eén van de artikelnummers bestaat al (botsing met een net aangemaakt artikel). Pas het artikelnr aan en probeer opnieuw.')
+      } else if (pgError?.message) {
+        setError(pgError.message)
+      } else {
+        setError('Er is een fout opgetreden')
+      }
     }
   }
 
@@ -298,7 +449,19 @@ export function ProductCreatePage() {
         </Link>
       </div>
 
-      <PageHeader title="Nieuw product aanmaken" />
+      <PageHeader
+        title={existingKwaliteitMode ? `Variant toevoegen aan ${kwaliteitParam}` : 'Nieuw product aanmaken'}
+      />
+
+      {existingKwaliteitMode && (
+        <div className="mt-4 flex items-start gap-3 text-sm text-slate-600 bg-slate-50 border-2 border-slate-200 rounded-[var(--radius-sm)] px-4 py-3 max-w-6xl">
+          <Info size={16} className="mt-0.5 shrink-0 text-slate-400" />
+          <span>
+            Je voegt een nieuwe maat/artikel toe aan de bestaande kwaliteit <strong>{kwaliteitParam}</strong>
+            {kleurParam && <> kleur <strong>{kleurParam}</strong></>}. Kwaliteit en kleur staan daarom vast.
+          </span>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="mt-6 space-y-6 max-w-6xl">
 
@@ -311,59 +474,74 @@ export function ProductCreatePage() {
           <div className="p-6 grid grid-cols-2 gap-x-8 gap-y-5">
 
             {/* Naam */}
-            <Field label="Productnaam *" hint="Bijv. FADED MUSCAT — zonder kleur of maat">
+            <Field
+              label={existingKwaliteitMode ? 'Productnaam' : 'Productnaam *'}
+              hint={
+                existingKwaliteitMode
+                  ? `Optioneel — zonder invoer wordt "${effectieveNaam}" gebruikt.`
+                  : 'Bijv. FADED MUSCAT — zonder kleur of maat'
+              }
+            >
               <input
-                required
+                required={!existingKwaliteitMode}
                 value={naam}
                 onChange={e => setNaam(e.target.value)}
                 className="input"
-                placeholder="bijv. FADED MUSCAT"
+                placeholder={existingKwaliteitMode ? effectieveNaam : 'bijv. FADED MUSCAT'}
               />
             </Field>
 
-            {/* Kwaliteitscode — nieuw, vrije invoer met duplicate-check */}
+            {/* Kwaliteitscode — vrije invoer + duplicate-check, of vergrendeld in variant-toevoegen-modus */}
             <Field
-              label="Kwaliteitscode (nieuw)"
-              hint="Dit is de unieke code voor deze kwaliteitslijn — tevens prefix van de Karpi-code"
+              label={existingKwaliteitMode ? 'Kwaliteitscode (bestaand)' : 'Kwaliteitscode (nieuw)'}
+              hint={
+                existingKwaliteitMode
+                  ? 'Vergrendeld — je voegt een variant toe aan deze bestaande kwaliteit.'
+                  : 'Dit is de unieke code voor deze kwaliteitslijn — tevens prefix van de Karpi-code'
+              }
             >
-              <div className="relative">
-                <input
-                  value={kwaliteitCodeInput}
-                  onChange={e => handleKwaliteitInput(e.target.value)}
-                  className={`input pr-9 font-mono tracking-wider ${kwaliteitBestaat ? 'input-error' : kwaliteitCode.length >= 2 && !checkingDuplicate && !kwaliteitBestaat ? 'border-emerald-400 focus:border-emerald-400' : ''}`}
-                  placeholder="bijv. FAMU"
-                  maxLength={10}
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-                {/* Status icoon rechts in het veld */}
-                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none">
-                  {checkingDuplicate && kwaliteitCode.length >= 2 && (
-                    <span className="inline-block w-4 h-4 border-2 border-slate-300 border-t-terracotta-400 rounded-full animate-spin" />
-                  )}
-                  {!checkingDuplicate && kwaliteitBestaat && (
-                    <AlertTriangle size={16} className="text-rose-500" />
-                  )}
-                  {!checkingDuplicate && kwaliteitCode.length >= 2 && kwaliteitBestaat === false && (
-                    <CheckCircle2 size={16} className="text-emerald-500" />
-                  )}
-                </span>
-              </div>
+              {existingKwaliteitMode ? (
+                <input value={kwaliteitCode} disabled className="input font-mono tracking-wider bg-slate-100 text-slate-500" />
+              ) : (
+                <div className="relative">
+                  <input
+                    value={kwaliteitCodeInput}
+                    onChange={e => handleKwaliteitInput(e.target.value)}
+                    className={`input pr-9 font-mono tracking-wider ${kwaliteitBestaat ? 'input-error' : kwaliteitCode.length >= 2 && !checkingDuplicate && !kwaliteitBestaat ? 'border-emerald-400 focus:border-emerald-400' : ''}`}
+                    placeholder="bijv. FAMU"
+                    maxLength={10}
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                  {/* Status icoon rechts in het veld */}
+                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none">
+                    {checkingDuplicate && kwaliteitCode.length >= 2 && (
+                      <span className="inline-block w-4 h-4 border-2 border-slate-300 border-t-terracotta-400 rounded-full animate-spin" />
+                    )}
+                    {!checkingDuplicate && kwaliteitBestaat && (
+                      <AlertTriangle size={16} className="text-rose-500" />
+                    )}
+                    {!checkingDuplicate && kwaliteitCode.length >= 2 && kwaliteitBestaat === false && (
+                      <CheckCircle2 size={16} className="text-emerald-500" />
+                    )}
+                  </span>
+                </div>
+              )}
 
-              {/* Feedback onder het veld */}
-              {!checkingDuplicate && kwaliteitBestaat === true && (
+              {/* Feedback onder het veld — niet van toepassing in variant-toevoegen-modus */}
+              {!existingKwaliteitMode && !checkingDuplicate && kwaliteitBestaat === true && (
                 <p className="mt-1.5 text-xs text-rose-600 flex items-center gap-1.5">
                   <AlertTriangle size={12} />
                   Kwaliteitscode <strong>{kwaliteitCode}</strong> bestaat al in de database. Kies een andere code.
                 </p>
               )}
-              {!checkingDuplicate && kwaliteitCode.length >= 2 && kwaliteitBestaat === false && (
+              {!existingKwaliteitMode && !checkingDuplicate && kwaliteitCode.length >= 2 && kwaliteitBestaat === false && (
                 <p className="mt-1.5 text-xs text-emerald-600 flex items-center gap-1.5">
                   <CheckCircle2 size={12} />
                   Code beschikbaar — nieuwe kwaliteit wordt aangemaakt.
                 </p>
               )}
-              {kwaliteitCode.length === 0 && (
+              {!existingKwaliteitMode && kwaliteitCode.length === 0 && (
                 <p className="mt-1.5 text-xs text-slate-400 flex items-center gap-1.5">
                   <Info size={12} />
                   Bijv. FAMU, VELV, OASI — wordt ook de prefix van alle Karpi-codes voor dit product.
@@ -372,11 +550,19 @@ export function ProductCreatePage() {
             </Field>
 
             {/* Kleurcode */}
-            <Field label="Kleurcode" hint="Cijfer uit het kleurboek van de leverancier, bijv. 48">
+            <Field
+              label="Kleurcode"
+              hint={
+                existingKwaliteitMode && kleurParam
+                  ? 'Vergrendeld — overgenomen vanaf het bestaande artikel.'
+                  : 'Cijfer uit het kleurboek van de leverancier, bijv. 48'
+              }
+            >
               <input
                 value={kleurCode}
                 onChange={e => setKleurCode(e.target.value)}
-                className="input"
+                disabled={existingKwaliteitMode && !!kleurParam}
+                className={`input ${existingKwaliteitMode && kleurParam ? 'bg-slate-100 text-slate-500' : ''}`}
                 placeholder="bijv. 48"
               />
             </Field>
@@ -432,7 +618,9 @@ export function ProductCreatePage() {
               <div>
                 <span className="text-sm font-medium text-slate-700">Actief (zichtbaar in systeem)</span>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Standaard inactief: nieuw product wordt pas zichtbaar in selectors zodra de eerste inkoop is ontvangen.
+                  {existingKwaliteitMode
+                    ? 'Standaard actief: de kwaliteit is al in gebruik, dus deze variant is direct zichtbaar.'
+                    : 'Standaard inactief: nieuw product wordt pas zichtbaar in selectors zodra de eerste inkoop is ontvangen.'}
                 </p>
               </div>
             </label>
@@ -480,6 +668,18 @@ export function ProductCreatePage() {
 
             {rows.map((r, idx) => {
               const karpiVerplicht = r.product_type === 'rol' || r.product_type === 'vast'
+              // Vaste maat/Staal: gewicht_kg wordt server-side altijd herberekend
+              // uit kwaliteit + afmeting + vorm (trg_producten_gewicht_derive) —
+              // het invoerveld is dan zinloos, toon i.p.v. dat een live preview.
+              const gewichtWordtAfgeleid = r.product_type === 'vast' || r.product_type === 'staaltje'
+              const gewichtPreview = gewichtWordtAfgeleid
+                ? berekenProductGewichtKg({
+                    lengte_cm: r.lengte ? Number(r.lengte) : null,
+                    breedte_cm: r.breedte ? Number(r.breedte) : null,
+                    vorm: r.vorm === 'rond' ? 'rond' : 'rechthoek',
+                    gewichtPerM2Kg: kwaliteitInfo?.gewicht_per_m2_kg ?? null,
+                  })
+                : undefined
               const karpiPlaceholder = !kwaliteitCode
                 ? 'Vul eerst kwaliteitscode in ↑'
                 : !kleurCode.trim()
@@ -513,16 +713,30 @@ export function ProductCreatePage() {
 
                   {/* Velden */}
                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-5 gap-y-4">
-                    <VariantVeld label="Artikelnr *" className="col-span-2" hint="Automatisch — pas aan indien nodig">
+                    <VariantVeld
+                      label="Artikelnr *"
+                      className="col-span-2"
+                      hint={
+                        dubbeleArtikelnrs.has(r.artikelnr.trim())
+                          ? undefined
+                          : 'Automatisch — volgend nummer na het hoogste bestaande artikelnr van deze kwaliteit+kleur'
+                      }
+                    >
                       <input
                         value={r.artikelnr}
                         onChange={e => updateRow(r._key, 'artikelnr', e.target.value)}
-                        className="input w-full font-mono"
+                        className={`input w-full font-mono ${dubbeleArtikelnrs.has(r.artikelnr.trim()) ? 'input-error' : ''}`}
                         placeholder="298480000"
                       />
+                      {dubbeleArtikelnrs.has(r.artikelnr.trim()) && (
+                        <p className="mt-1 text-[11px] text-rose-600 flex items-center gap-1">
+                          <AlertTriangle size={11} /> Dit artikelnr bestaat al — kies een ander nummer.
+                        </p>
+                      )}
                     </VariantVeld>
-                    <VariantVeld label="Type" className="col-span-2">
+                    <VariantVeld label="Type *" className="col-span-2">
                       <select
+                        required
                         value={r.product_type}
                         onChange={e => updateRow(r._key, 'product_type', e.target.value)}
                         className="input w-full"
@@ -540,7 +754,7 @@ export function ProductCreatePage() {
                         value={r.breedte}
                         onChange={e => updateRow(r._key, 'breedte', e.target.value)}
                         className="input w-full"
-                        placeholder="160"
+                        placeholder="bijv. 200"
                       />
                     </VariantVeld>
                     <VariantVeld label="Lengte cm">
@@ -549,21 +763,42 @@ export function ProductCreatePage() {
                         value={r.lengte}
                         onChange={e => updateRow(r._key, 'lengte', e.target.value)}
                         className="input w-full"
-                        placeholder="230"
+                        placeholder="bijv. 300"
                       />
+                    </VariantVeld>
+                    <VariantVeld label="Vorm" className="col-span-2" hint="Bepaalt de vormtoeslag bij de m²-prijsberekening">
+                      <select
+                        value={r.vorm}
+                        onChange={e => updateRow(r._key, 'vorm', e.target.value)}
+                        className="input w-full"
+                      >
+                        <option value="">— rechthoek (standaard) —</option>
+                        {maatwerkVormen.filter(v => v.code !== 'rechthoek').map(v => (
+                          <option key={v.code} value={v.code}>{v.naam}</option>
+                        ))}
+                      </select>
                     </VariantVeld>
                     <VariantVeld
                       label={karpiVerplicht ? 'Karpi-code *' : 'Karpi-code'}
                       className="col-span-2"
-                      hint={karpiVerplicht ? 'Verplicht voor Rol / Standaard maat' : 'Automatisch uit kwaliteit + kleur + maat'}
+                      hint={
+                        dubbeleKarpiCodes.has(r.karpi_code.trim())
+                          ? undefined
+                          : karpiVerplicht ? 'Verplicht voor Rol / Standaard maat' : 'Automatisch uit kwaliteit + kleur + maat'
+                      }
                     >
                       <input
                         value={r.karpi_code}
                         onChange={e => updateRow(r._key, 'karpi_code', e.target.value)}
                         required={karpiVerplicht}
-                        className="input w-full font-mono"
+                        className={`input w-full font-mono ${dubbeleKarpiCodes.has(r.karpi_code.trim()) ? 'border-amber-400 focus:border-amber-400' : ''}`}
                         placeholder={karpiPlaceholder}
                       />
+                      {dubbeleKarpiCodes.has(r.karpi_code.trim()) && (
+                        <p className="mt-1 text-[11px] text-amber-600 flex items-center gap-1">
+                          <AlertTriangle size={11} /> Deze karpi-code bestaat al bij een ander artikel (geen blokkade, maar mogelijk verwarrend — overweeg 'm aan te passen).
+                        </p>
+                      )}
                     </VariantVeld>
 
                     <VariantVeld label="Verkoop €">
@@ -584,14 +819,35 @@ export function ProductCreatePage() {
                         placeholder="0,00"
                       />
                     </VariantVeld>
-                    <VariantVeld label="Gewicht kg">
-                      <input
-                        type="number" step="0.01" min="0"
-                        value={r.gewicht_kg}
-                        onChange={e => updateRow(r._key, 'gewicht_kg', e.target.value)}
-                        className="input w-full"
-                        placeholder="0,00"
-                      />
+                    <VariantVeld
+                      label="Gewicht kg"
+                      hint={
+                        gewichtWordtAfgeleid
+                          ? kwaliteitCode
+                            ? kwaliteitInfo?.gewicht_per_m2_kg
+                              ? `Automatisch: ${formatNumber(kwaliteitInfo.gewicht_per_m2_kg, 3)} kg/m² × oppervlak`
+                              : 'Kwaliteit heeft nog geen gewicht per m² ingesteld'
+                            : 'Vul eerst kwaliteitscode in ↑'
+                          : undefined
+                      }
+                    >
+                      {gewichtWordtAfgeleid ? (
+                        <input
+                          type="text"
+                          readOnly
+                          disabled
+                          value={gewichtPreview != null ? `${formatNumber(gewichtPreview, 2)} kg` : '—'}
+                          className="input w-full bg-slate-100 text-slate-500"
+                        />
+                      ) : (
+                        <input
+                          type="number" step="0.01" min="0"
+                          value={r.gewicht_kg}
+                          onChange={e => updateRow(r._key, 'gewicht_kg', e.target.value)}
+                          className="input w-full"
+                          placeholder="0,00"
+                        />
+                      )}
                     </VariantVeld>
                     <VariantVeld label="Voorraad" hint="Start op 0 — via inkoop-ontvangst">
                       <input
@@ -604,12 +860,12 @@ export function ProductCreatePage() {
                       />
                     </VariantVeld>
 
-                    <VariantVeld label="EAN" className="col-span-2">
+                    <VariantVeld label="EAN" className="col-span-2" hint="Optioneel — wordt niet automatisch gegenereerd, alleen invullen als bekend">
                       <input
                         value={r.ean_code}
                         onChange={e => updateRow(r._key, 'ean_code', e.target.value)}
                         className="input w-full font-mono"
-                        placeholder="8712345678901"
+                        placeholder="bijv. 8712345678901"
                       />
                     </VariantVeld>
                     <VariantVeld label="Locatie" className="col-span-2">
@@ -617,7 +873,7 @@ export function ProductCreatePage() {
                         value={r.locatie}
                         onChange={e => updateRow(r._key, 'locatie', e.target.value)}
                         className="input w-full"
-                        placeholder="A3-12"
+                        placeholder="bijv. A3-12"
                       />
                     </VariantVeld>
                   </div>
@@ -636,7 +892,7 @@ export function ProductCreatePage() {
         </section>
 
         {/* ── Sectie 3: Preview ──────────────────────────────────── */}
-        {naam.trim() && filledRows.length > 0 && (
+        {effectieveNaam && filledRows.length > 0 && (
           <section className="bg-slate-50 rounded-[var(--radius)] border-2 border-slate-200 p-5">
             <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
               Voorbeeld — zo komen de artikelen in het systeem
@@ -655,7 +911,7 @@ export function ProductCreatePage() {
                   <tr key={r._key}>
                     <td className="py-2 pr-6 font-mono text-xs text-slate-500">{r.artikelnr}</td>
                     <td className="py-2 pr-6 text-slate-800">
-                      {buildOmschrijving(naam, kleurCode, r.breedte, r.lengte)}
+                      {buildOmschrijving(effectieveNaam, kleurCode, r.breedte, r.lengte, r.vorm, maatwerkVormen.find(v => v.code === r.vorm)?.naam)}
                     </td>
                     <td className="py-2 pr-6 text-slate-500">
                       {PRODUCT_TYPES.find(t => t.value === r.product_type)?.label ?? '—'}
@@ -681,7 +937,7 @@ export function ProductCreatePage() {
         <div className="flex items-center gap-3 pb-8">
           <button
             type="submit"
-            disabled={isPending || filledRows.length === 0 || kwaliteitBestaat === true}
+            disabled={isPending || filledRows.length === 0 || (!existingKwaliteitMode && kwaliteitBestaat === true) || dubbeleArtikelnrs.size > 0}
             className="px-6 py-2.5 bg-terracotta-500 text-white rounded-[var(--radius-sm)] text-sm font-medium hover:bg-terracotta-600 disabled:opacity-50 transition-colors"
           >
             {isPending
@@ -694,7 +950,7 @@ export function ProductCreatePage() {
           >
             Annuleren
           </Link>
-          {kwaliteitBestaat === true && (
+          {!existingKwaliteitMode && kwaliteitBestaat === true && (
             <span className="text-xs text-rose-500 flex items-center gap-1.5">
               <AlertTriangle size={12} />
               Kies een andere kwaliteitscode om door te gaan.

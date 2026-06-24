@@ -101,6 +101,319 @@ afhalen heeft een handmatige actie nodig (we weten niet wanneer de klant ophaalt
 - Aparte migraties: een nieuw enum-value kan in PostgreSQL niet in dezelfde
   transactie worden gebruikt als waarin het wordt toegevoegd.
 
+## 2026-06-24 — Product verwijderen (nieuwe feature)
+
+**Waarom:** producten-module had nooit een delete — alleen `actief=false`
+(soft-delete, bestaand patroon). Gebruiker wilde een per ongeluk
+aangemaakte testvariant écht weg kunnen halen, geen losse "inactief"-rij.
+
+- Onderzocht: **alle FK's naar `producten.artikelnr`** (rollen,
+  order_regels, inkooporder_regels, zending_regels, prijslijst_regels,
+  klant_artikelnummers, samples, en het self-reference `stuks_artikelnr`)
+  staan op `ON DELETE NO ACTION` — geen enkele cascadeert. Geen losse
+  voor-check nodig: gewoon de DELETE proberen, de database weigert 'm zelf
+  als het artikel nog ergens gebruikt wordt (zelfde filosofie als orders
+  verwijderen, die op de `snijplannen`-FK leunt).
+- Nieuwe `deleteProduct()` ([`producten.ts`](frontend/src/lib/supabase/queries/producten.ts))
+  vertaalt een 23503-FK-violation naar een leesbare Nederlandse melding
+  (welke tabel blokkeert, plus de suggestie om te deactiveren) i.p.v. de
+  rauwe Postgres-tekst. Hook `useDeleteProduct`.
+- Bevestigingsdialoog [`ProductVerwijderenDialog`](frontend/src/components/producten/product-verwijderen-dialog.tsx)
+  mirrort het bestaande `RolVerwijderenDialog`-patroon (ADR-0024) — geen
+  nieuw generiek confirm-component, dit is de dominante stijl in de
+  codebase. "Verwijderen"-knop op product-detail naast Bewerken/Variant
+  toevoegen.
+- Geverifieerd op de live DB: een artikel met referenties (prijslijst_regels)
+  wordt correct geweigerd met de vertaalde melding; een artikel zonder
+  referenties (de testvariant 607140008) is succesvol verwijderd.
+
+## 2026-06-24 — Naam-fallback gebruikte kwaliteitscode i.p.v. echte naam (onvindbaar via zoeken)
+
+**Waarom:** gebruiker zag 607140008 wél op "Per kwaliteit" maar niet op
+"Per product" bij zoeken op "ombre". Oorzaak: `kwaliteiten.omschrijving`
+is voor OMBR (en kennelijk meer kwaliteiten) leeg, dus de naam-fallback in
+variant-toevoegen-modus viel terug op de rauwe kwaliteitscode "OMBR"
+(4 letters, geen E) i.p.v. de échte naam "OMBRE" — die alleen in de
+omschrijving van bestaande artikelen staat, niet op de kwaliteit zelf.
+"Per kwaliteit" toont alle artikelen van een al-geopende kwaliteit zonder
+het zoekveld te gebruiken; "Per product" filtert wél op de zoekterm via
+`ILIKE` op artikelnr/karpi_code/omschrijving/zoeksleutel — "OMBR ..."
+matcht daar niet op "%ombre%".
+
+- `product-create.tsx`: nieuwe fallback-laag tussen `kwaliteiten.
+  omschrijving` en de kwaliteitscode — haalt één bestaand zusterartikel
+  van de kwaliteit op (`useProducten({kwaliteitCode, pageSize:1})`) en
+  parsed de naam uit diens omschrijving (alles vóór `" Kleur "`, de vaste
+  scheiding die `buildOmschrijving` zelf ook hanteert). Kwaliteitscode is
+  nu echt het laatste redmiddel, alleen relevant als de kwaliteit nog
+  géén producten heeft (kan in variant-toevoegen-modus per definitie niet
+  voorkomen).
+- **Eenmalige datacorrectie:** omschrijving van 607140007/607140008
+  aangepast van "OMBR Kleur ..." naar "OMBRE Kleur ...". Geverifieerd:
+  alle 15 OMBR-producten matchen nu op een zoekquery naar "ombre".
+
+## 2026-06-24 — Omschrijving-conventie "CA: ..." + Maat-kolom in productenoverzicht
+
+**Waarom:** gebruiker maakte "Ombre 14 260 Rond" aan en kreeg omschrijving
+"OMBR Kleur 14 260x260cm Rond" — moest zijn "CA: 260 ROND" zoals de
+bestaande rond-omschrijvingen ("OMBRE Kleur 14 CA: 220 ROND BEIGE GREY").
+Daarnaast: de maat was nergens als los, leesbaar veld te zien op het
+productenoverzicht (alleen per Vaste maat/Staal in product-detail).
+
+- `buildOmschrijving` (`product-create.tsx`) volgt nu de legacy-conventie:
+  **"CA:"**-prefix vóór het maat-deel, en voor `rond` één diameter +
+  "ROND" (`CA: 260 ROND`) i.p.v. "DxD cm" — een rond stuk heeft geen
+  zinvolle tweede afmeting om te tonen. Overige vormen ongewijzigd
+  `CA: BxL cm {Vormnaam}`.
+- **Eenmalige datacorrectie:** omschrijving van de 2 al aangemaakte
+  artikelen (607140007, 607140008) rechtgezet naar de nieuwe conventie.
+- **Nieuwe "Maat"-kolom** op zowel het platte "Per product"-overzicht
+  (`producten-overview.tsx`) als de kwaliteit/kleur-uitvouw
+  (`kwaliteit-kleuren-uitvouw.tsx`), gedeeld via `ProductRow`
+  (`product-row.tsx`) — toont `lengte_cm × breedte_cm` of bij
+  `maatwerk_vorm_code='rond'` enkel `Ø {diameter} cm`. Mogelijk dankzij
+  de eerdere view-uitbreiding (mig 487) die deze kolommen al beschikbaar
+  maakte voor de lijst-query.
+
+## 2026-06-24 — `producten.vorm` nooit gesynchroniseerd met `maatwerk_vorm_code` (code-fix + datacorrectie 1.525 producten)
+
+**Waarom:** gebruiker vroeg om bij aanmaken van een variant meteen het te
+verwachten gewicht te tonen i.p.v. een zinloos invoerveld (zie vorige
+bullet). Om die preview correct te berekenen moest ik de exacte
+SQL-trigger-formule spiegelen (`berekenProductGewichtKg`) — en die
+gebruikt `producten.vorm` (enum `rechthoek`/`rond`), niet
+`maatwerk_vorm_code` (de "echte", user-facing vormcode). Bleek dat
+**geen van de twee producten-formulieren `vorm` ooit instelde** — alleen
+`maatwerk_vorm_code` werd weggeschreven.
+
+- **Code-fix:** `product-create.tsx` en `product-form.tsx` sturen nu ook
+  `vorm: maatwerk_vorm_code==='rond' ? 'rond' : 'rechthoek'` mee bij elke
+  create/update — afgeleid, geen apart UI-veld (de gebruiker kiest één
+  vorm, niet twee).
+- **Bijvangst, veel groter dan deze feature:** een query op de hele
+  `producten`-tabel liet zien dat **1.525 bestaande producten**
+  (`maatwerk_vorm_code='rond'` maar `vorm≠'rond'`) al langer een
+  **fout berekend gewicht** hadden — de rechthoek-formule
+  (`lengte×breedte/10000 × dichtheid`) werd toegepast i.p.v. de
+  cirkel-formule (`π×(diameter/200)² × dichtheid`), een systematische
+  ~27% overschatting. Bij 1.506 daarvan (type Vaste maat/Staal met
+  bekende afmeting) stond dit ook echt in `gewicht_kg`. Een deel had
+  zelfs `breedte_cm=0` (i.p.v. NULL of gelijk aan lengte_cm) waardoor de
+  rechthoek-formule **0,00 kg** opleverde — geen overschatting maar een
+  volledig ontbrekend gewicht.
+- **Eenmalige datacorrectie** (geen migratie, geen schema-wijziging):
+  `UPDATE producten SET vorm='rond' WHERE maatwerk_vorm_code='rond' AND
+  vorm<>'rond'` — de bestaande `trg_producten_gewicht_derive`-trigger
+  (mig 387, vuurt op `UPDATE OF ... vorm`) herberekende `gewicht_kg`
+  daardoor automatisch correct voor alle 1.525 rijen in één pass.
+  Geverifieerd: 0 resterende mismatches; steekproef bevestigt de
+  herberekende gewichten exact tegen de cirkel-formule (bv. RADI 240cm
+  diameter: 0,00 kg → 10,54 kg).
+- **Bewust niet aangeraakt:** `breedte_cm=0` op de getroffen rijen — de
+  rond-gewichtformule gebruikt alleen `lengte_cm` (als diameter), dus dit
+  is dode data zonder verder effect, niet in scope van deze fix.
+
+## 2026-06-24 — Live gewicht-preview voor Vaste maat/Staal i.p.v. zinloos invoerveld
+
+**Waarom:** gebruiker vulde 15kg in bij het aanmaken van een variant,
+maar zag 22,80 kg verschijnen — voor `product_type IN ('vast','staaltje')`
+overschrijft `trg_producten_gewicht_derive` (mig 387) elke handmatige
+`gewicht_kg`-invoer altijd met `kwaliteit.gewicht_per_m2_kg × oppervlak`.
+Het "Gewicht kg"-veld in beide formulieren wekte dus een illusie van
+controle die er niet is.
+
+- `product-create.tsx`/`product-form.tsx`: voor `vast`/`staaltje` wordt
+  het invoerveld vervangen door een **read-only live preview**
+  (`berekenProductGewichtKg`, de bestaande TS-spiegel van de
+  SQL-resolver) — herberekent direct bij wijziging van breedte/lengte/
+  vorm/kwaliteit, met een hint die de bronformule toont. Voor `rol`/
+  `overig` (waar de trigger niet ingrijpt) blijft het veld gewoon
+  editable.
+
+## 2026-06-24 — Type verplicht bij aanmaak + sortering op vorm-groep/oppervlak i.p.v. alfabetisch (mig 487)
+
+**Waarom:** live-test toonde twee problemen op de kleur-detailtabel
+(`kwaliteit-kleuren-uitvouw.tsx`): (1) het net aangemaakte artikel
+607140007 had geen "Vaste maat"-badge — `product_type` stond op NULL in de
+database ondanks dat "Standaard maat" zichtbaar geselecteerd stond in een
+eerdere (gefaalde, vóór de leverancier_id-fix) poging; Type was nergens
+verplicht, dus de submit ging gewoon door zonder type. (2) artikelen
+stonden alfabetisch op omschrijving-tekst i.p.v. op afmeting — "OMBR ..."
+(nieuw, geen "E") sorteerde toevallig vóór alle bestaande "OMBRE ..."
+artikelen, en een 040x040 stond niet vóór een 250x400.
+
+- **Type nu verplicht** in "+ Nieuw product"/variant-toevoegen
+  (`required` op de select + expliciete check in `handleSubmit` met
+  duidelijke melding, zelfde patroon als de karpi-code-check).
+- **Eenmalige datacorrectie** (geen migratie): `product_type` van
+  607140007 rechtgezet naar `'vast'` zoals bedoeld — `gewicht_kg` werd
+  daardoor automatisch opnieuw correct afgeleid door de bestaande
+  gewicht-trigger.
+- **Sortering herzien:** `producten_overzicht`-view uitgebreid met
+  `lengte_cm`/`breedte_cm` (mig 487 — kolommen bestonden al op
+  `producten`, stonden alleen niet in de view; `CREATE OR REPLACE VIEW`
+  kan alleen aan het eind toevoegen, geen herordening). `fetchProducten`
+  haalt ze nu mee. `ArtikelsVoorKleur` sorteert niet meer op
+  `omschrijving` maar client-side op **vorm-groep, dan oppervlak
+  oplopend**: groep 1 = vormen met `maatwerk_vormen.afmeting_type=
+  'lengte_breedte'` (rechthoek/null, ovaal, organisch_*, pebble, ellips,
+  **afgeronde_hoeken** — meet net als rechthoek in lengte×breedte, hoort
+  dus in dezelfde groep), groep 2 = `afmeting_type='diameter'`
+  (rond, cloud — fysiek niet zinvol op dezelfde oppervlak-as te
+  vergelijken als een rechthoek). Binnen elke groep oplopend op
+  `lengte_cm × breedte_cm`. Geverifieerd tegen de live OMBR/14-data:
+  levert exact 040x040 → 200x300 (afgeronde hoeken) → 250x400 → 220 rond
+  → 280 rond, zoals gevraagd.
+
+## 2026-06-24 — `producten.leverancier_id` als echte kolom (mig 486)
+
+**Waarom:** vorige fix verwijderde het Leverancier-veld omdat de kolom niet
+bestond; gebruiker wil de koppeling juist behouden — dus alsnog goed
+bouwen i.p.v. het veld schrappen.
+
+- Nieuwe kolom `producten.leverancier_id BIGINT REFERENCES leveranciers(id)
+  ON DELETE SET NULL` (mig 486, mirrort de `ON DELETE SET NULL`-aanpak van
+  `producten_maatwerk_vorm_code_fkey` — een leverancier wordt in de praktijk
+  soft-deleted via `actief=false`, maar mag een product nooit blokkeren als
+  die ooit toch verwijderd wordt). Puur informatief (default/gebruikelijke
+  leverancier voor het artikel) — geen koppeling met de inkoop-flow
+  (`inkooporders.leverancier_id` blijft de bron-van-waarheid daarvoor).
+- `leverancier_id` terug in `ProductFormData` + nieuw op `ProductDetail`
+  (`producten.ts`); Leverancier-dropdown hersteld in zowel "+ Nieuw
+  product" als "Bewerken"; productdetail toont 'm nu ook (`InfoField` met
+  naam-lookup uit `useLeveranciers()`).
+- Geverifieerd via een rolled-back insert direct op de live DB (incl.
+  `leverancier_id=8`): slaagt, `gewicht_kg` blijft correct afgeleid.
+
+## 2026-06-24 — Fix: `leverancier_id` was een phantom-veld op producten (blokkeerde élke opslag)
+
+**Waarom:** live-test van de variant-toevoegen-feature faalde op opslaan met
+het nutteloze "Er is een fout opgetreden" — geverifieerd via een rolled-back
+insert direct op de live DB (`information_schema.columns`/Management API):
+**`producten.leverancier_id` bestaat niet als kolom.** Leverancier wordt
+uitsluitend op `inkooporders`-niveau bijgehouden, nooit per product
+(bevestigd: nul kolommen op `producten` matchen `%leverancier%`).
+
+- **Impact groter dan deze feature:** zowel "+ Nieuw product" als het
+  bestaande "Bewerken"-formulier stuurden dit veld onvoorwaardelijk mee in
+  elke create/update-payload — dus **élke** opslag via beide formulieren
+  faalde altijd al met `42703: column "leverancier_id" does not exist`,
+  niet pas sinds vandaag. Verklaart waarom de eerder gefixte
+  breedte_cm/lengte_cm-bug nooit opviel: vrijwel niemand heeft deze
+  formulieren ooit succesvol tot een save laten komen (producten komen
+  bijna uitsluitend via de Python-importscripts binnen).
+- Fix: `leverancier_id` verwijderd uit `ProductFormData`
+  ([`producten.ts`](frontend/src/lib/supabase/queries/producten.ts)) en het
+  bijbehorende (dode) Leverancier-dropdown-veld uit zowel
+  `product-create.tsx` als `product-form.tsx`. `useLeveranciers` blijft
+  bestaan en in gebruik voor het echte gebruik ervan (inkooporders-module).
+- **Bijgevangen, losstaande bug in dezelfde catch-block:** `err instanceof
+  Error` matcht nooit op een Supabase/PostgREST-foutobject (een plain
+  object, geen `Error`-instantie) — elke echte DB-foutmelding werd dus
+  altijd vervangen door de generieke "Er is een fout opgetreden", inclusief
+  deze exacte fout. Nu wordt `err.message` direct uitgelezen als die
+  bestaat.
+- Geverifieerd via een rolled-back transactie direct op de live DB: de
+  insert (inclusief `lengte_cm`/`breedte_cm`/`maatwerk_vorm_code`) slaagt
+  nu, én `gewicht_kg` wordt automatisch correct afgeleid (22,80 kg voor
+  200×300cm OMBR) dankzij de eerder gefixte maat-kolommen.
+
+## 2026-06-24 — Vorm in omschrijving + karpi-code-conventie voor rond/ovaal + botsing-waarschuwing
+
+**Waarom:** gebruiker (live-test van de variant-toevoegen-feature hierboven)
+vroeg: komt de vorm ergens in de omschrijving zodat het vindbaar is bij
+zoeken? En wat gebeurt er bij "200x300 afgeronde hoeken" + "200x300
+rechthoek" voor dezelfde kwaliteit+kleur — botsen die?
+
+- **Zoeken doorzoekt geen `maatwerk_vorm_code`** (alleen `karpi_code`/
+  `omschrijving`/`zoeksleutel`/`artikelnr`, zie `applyProductSearch`) —
+  zonder vorm-tekst in de omschrijving was een rond/afgeronde-hoeken-
+  artikel dus niet op vorm vindbaar. `buildOmschrijving` voegt nu de
+  vorm-naam toe (behalve rechthoek), bijv. "OMBR Kleur 14 200x300cm
+  Afgeronde Hoeken" — mirrort de bestaande legacy-conventie ("... 220
+  ROND ...").
+- **Karpi-code-botsing bevestigd reëel:** `producten.karpi_code` heeft
+  géén unique constraint (artikelnr is de PK), en `buildKarpiCode`
+  negeerde vorm volledig. Voor `rond`/`ovaal` bestaat al een vaste
+  suffix-conventie in de legacy data (mig 188: `^.{8}\d{3}RND$`/`OVL$`,
+  bijv. bestaande `OMBR14XX220RND`) — die wordt nu ook toegepast bij
+  aanmaak, zodat een nieuw rond artikel niet per ongeluk het
+  rechthoek-patroon krijgt. Voor vormen zonder eigen suffix-conventie
+  (afgeronde_hoeken, organisch_*, pebble, ellips) bestaat dat
+  onderscheid historisch niet — die blijven op het gewone
+  WWWLLL-patroon en kunnen dus alsnog botsen met een rechthoek van
+  dezelfde maat. Daarom: nieuwe **niet-blokkerende** live botsing-
+  waarschuwing (amber, nieuwe query `fetchBestaandeKarpiCodes`/hook
+  `useBestaandeKarpiCodes`, debounced, zelfde patroon als de
+  artikelnr-check) — bewust géén blokkade, want de DB staat het toe en
+  er is geen grond om hier een nieuwe regel af te dwingen die de
+  database zelf niet stelt. Artikelnr blijft de echte unieke sleutel,
+  dus geen dataverlies bij een botsing — wel een leesbaarheidsrisico nu
+  zichtbaar gemaakt i.p.v. stilletjes.
+
+## 2026-06-24 — Variant toevoegen aan bestaande kwaliteit/kleur (producten)
+
+**Waarom:** gebruiker wilde een extra maat (Ombre kleur 14, 200×300cm,
+vorm afgeronde hoeken) toevoegen aan een bestaand artikel en kon dit
+nergens in de UI — een echt gat, geen bedieningsfout. "+ Nieuw product"
+blokkeert de submit hard zodra de kwaliteitscode al bestaat (bedoeld om
+een hele nieuwe kwaliteitslijn aan te maken), en "Bewerken" op een
+bestaand artikel kan alleen dát ene artikel wijzigen (artikelnr
+read-only, geen nieuw artikel).
+
+- `product-create.tsx` (`/producten/nieuw`) ondersteunt nu een
+  **variant-toevoegen-modus** via query-params `?kwaliteit=X&kleur=Y`:
+  kwaliteit + kleur staan vast (disabled inputs), de duplicate-check-
+  blokkade wordt overgeslagen, `naam` wordt voorgevuld uit
+  `kwaliteiten.omschrijving`, en "Actief" defaultet naar `true` (de
+  kwaliteit is al in gebruik, in tegenstelling tot een gloednieuwe
+  kwaliteit die wacht op de eerste inkoop-ontvangst).
+- Twee nieuwe entry-points naar die modus: knop **"Variant toevoegen"**
+  op product-detail (naast "Bewerken") en een link onderaan de
+  artikellijst per kleur in de kwaliteit/kleuren-uitvouw
+  (`kwaliteit-kleuren-uitvouw.tsx`).
+- **Bijgevangen, losstaande bug:** `ProductFormData`/`createProduct()`
+  stuurden `breedte_cm`/`lengte_cm` nooit naar de database — de
+  Breedte/Lengte-velden in "+ Nieuw product" werden alleen gebruikt voor
+  de Karpi-code en omschrijving-tekst, nooit weggeschreven naar de
+  kolommen zelf. Elk via deze UI aangemaakt artikel had dus permanent
+  `breedte_cm`/`lengte_cm = NULL` (raakt o.a. de vorm-aware
+  gewicht-derive-trigger uit mig 387, die zonder maten stilletjes
+  no-opt). Toegevoegd aan `ProductFormData` + de create-payload; het
+  bewerk-formulier (`product-form.tsx`) kreeg er-en-passant ook
+  Breedte/Lengte-velden, want die ontbraken daar volledig.
+- `product-create.tsx` kreeg ook een **Vorm-veld per variant** — eerste
+  versie was een datalist uit `useDistincteVormen` (alleen vormen al in
+  gebruik door een actief product), na live-feedback vervangen door een
+  echte `<select>` op de master-tabel `maatwerk_vormen` (nieuwe query
+  `fetchMaatwerkVormen`/hook `useMaatwerkVormen`) zodat ook
+  `afgeronde_hoeken` direct kiesbaar is — bestond al in `maatwerk_vormen`
+  (mig 190), stond alleen nog niet in de oude datalist. Zelfde dropdown
+  toegepast op het bewerk-formulier (`product-form.tsx`, had nog de
+  datalist-variant).
+- **Live duplicate-check op artikelnr** (nieuwe query
+  `fetchBestaandeArtikelnrs`/hook `useBestaandeArtikelnrs`, debounced):
+  toont direct een waarschuwing + blokkeert submit als het (automatisch
+  voorgestelde of handmatig aangepaste) artikelnr al bestaat, i.p.v. pas
+  een cryptische Postgres-foutmelding na submit. Defense-in-depth: een
+  23505-unique-violation in de catch-block krijgt nu ook een leesbare
+  melding.
+- **Productnaam niet langer verplicht** in variant-toevoegen-modus —
+  viel terug op niets als `kwaliteiten.omschrijving` leeg was; nu
+  optioneel met fallback op de kwaliteit-omschrijving of anders de
+  kwaliteit-code zelf.
+- **Placeholder/waarde-verwarring opgelost:** Breedte/Lengte hadden als
+  placeholder letterlijk "160"/"230" — toevallig exact de cijfers van
+  een van de snelkeuze-maten, dus een leeg veld zag in een screenshot
+  uit als een al ingevulde waarde (en daardoor leek de Karpi-code-
+  suggestie "kapot", terwijl er feitelijk nog geen maat gekozen was).
+  Placeholders nu overal "bijv. ..." (Breedte/Lengte/EAN/Locatie),
+  EAN kreeg een expliciete hint dat hij niet automatisch gegenereerd
+  wordt.
+- Niet end-to-end in de browser getest (login-gated, geen testaccount
+  beschikbaar) — wel `tsc --noEmit` en `eslint` schoon (geen nieuwe
+  fouten t.o.v. main).
+
 ## 2026-06-23 — Order aanmaken vereist een gekoppelde prijslijst (mig 481)
 
 **Waarom:** directe vervolgstap op de HEADLAM-prijscorrectie hieronder —

@@ -7,9 +7,10 @@ import { formatCurrency, formatNumber } from '@/lib/utils/formatters'
 import { berekenProductGewichtKg } from '@/lib/utils/gewicht'
 import { cn } from '@/lib/utils/cn'
 import { useQuery } from '@tanstack/react-query'
-import { useProductDetail, useRollenVoorProduct, useClaimsVoorProduct, useEquivalenteProducten } from '@/hooks/use-producten'
+import { useProductDetail, useRollenVoorProduct, useClaimsVoorProduct, useEquivalenteProducten, useLeveranciers } from '@/hooks/use-producten'
 import { useUitwisselbareGroepen } from '@/hooks/use-uitwisselbaar'
 import { UitwisselbaarGroepDialog } from '@/components/producten/uitwisselbaar-groep-dialog'
+import { ProductVerwijderenDialog } from '@/components/producten/product-verwijderen-dialog'
 import { useOpenstaandeInkoopregelsVoorArtikel } from '@/modules/inkoop'
 import { useVoorraadpositie } from '@/modules/voorraadpositie'
 import { ProductTypeBadge } from './producten-overview'
@@ -46,7 +47,9 @@ export function ProductDetailPage() {
   const { data: equivalenten } = useEquivalenteProducten(artikelnr)
   const { data: inkoopregels } = useOpenstaandeInkoopregelsVoorArtikel(artikelnr)
   const { data: uitwisselGroepen } = useUitwisselbareGroepen()
+  const { data: leveranciers } = useLeveranciers()
   const [koppelDialoogOpen, setKoppelDialoogOpen] = useState(false)
+  const [verwijderDialoogOpen, setVerwijderDialoogOpen] = useState(false)
 
   const eigenUitwisselGroep = useMemo(() => {
     if (!uitwisselGroepen || !product?.kwaliteit_code) return undefined
@@ -90,13 +93,33 @@ export function ProductDetailPage() {
           <PageHeader title={product.omschrijving} description={`Artikelnr: ${product.artikelnr}`} />
           <ProductTypeBadge type={product.product_type} />
         </div>
-        <Link
-          to={`/producten/${product.artikelnr}/bewerken`}
-          className="px-4 py-2 border border-slate-200 rounded-[var(--radius-sm)] text-sm text-slate-600 hover:bg-slate-50 shrink-0"
-        >
-          Bewerken
-        </Link>
+        <div className="flex items-center gap-2 shrink-0">
+          {product.kwaliteit_code && (
+            <Link
+              to={`/producten/nieuw?kwaliteit=${encodeURIComponent(product.kwaliteit_code)}${product.kleur_code ? `&kleur=${encodeURIComponent(product.kleur_code)}` : ''}`}
+              className="px-4 py-2 border border-slate-200 rounded-[var(--radius-sm)] text-sm text-slate-600 hover:bg-slate-50"
+            >
+              Variant toevoegen
+            </Link>
+          )}
+          <Link
+            to={`/producten/${product.artikelnr}/bewerken`}
+            className="px-4 py-2 border border-slate-200 rounded-[var(--radius-sm)] text-sm text-slate-600 hover:bg-slate-50"
+          >
+            Bewerken
+          </Link>
+          <button
+            onClick={() => setVerwijderDialoogOpen(true)}
+            className="px-4 py-2 border border-rose-200 rounded-[var(--radius-sm)] text-sm text-rose-600 hover:bg-rose-50"
+          >
+            Verwijderen
+          </button>
+        </div>
       </div>
+
+      {verwijderDialoogOpen && (
+        <ProductVerwijderenDialog product={product} onClose={() => setVerwijderDialoogOpen(false)} />
+      )}
 
       {/* Info card */}
       <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-6 mb-6">
@@ -105,6 +128,12 @@ export function ProductDetailPage() {
           <InfoField label="EAN" value={product.ean_code} />
           <InfoField label="Kwaliteit" value={product.kwaliteit_code} />
           <InfoField label="Zoeksleutel" value={product.zoeksleutel} />
+          {product.leverancier_id != null && (
+            <InfoField
+              label="Leverancier"
+              value={leveranciers?.find(l => l.id === product.leverancier_id)?.naam ?? `#${product.leverancier_id}`}
+            />
+          )}
           {product.lengte_cm != null && product.breedte_cm != null && (
             <InfoField label="Maat" value={`${product.lengte_cm} × ${product.breedte_cm} cm`} />
           )}

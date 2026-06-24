@@ -32,7 +32,7 @@ const VORM_LABELS: Record<string, string> = {
   pebble: 'Pebble',
 }
 
-const COL_COUNT = 10
+const COL_COUNT = 11
 
 export function ProductenOverviewPage() {
   const [activeTab, setActiveTab] = useState<OverviewTab>('collecties')
@@ -288,6 +288,7 @@ function FlatProductTable({ producten, isLoading, totalCount, page, setPage, sor
               <SortHeader field="artikelnr" label="Artikelnr" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
               <SortHeader field="karpi_code" label="Karpi-code" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
               <SortHeader field="omschrijving" label="Omschrijving" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+              <th className="text-left px-4 py-3 font-medium text-slate-600">Maat</th>
               <th className="text-left px-4 py-3 font-medium text-slate-600">Type</th>
               <th className="text-left px-4 py-3 font-medium text-slate-600">Kwaliteit</th>
               <SortHeader field="locatie" label="Locatie" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />

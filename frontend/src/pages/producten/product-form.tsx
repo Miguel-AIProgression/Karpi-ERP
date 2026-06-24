@@ -1,9 +1,13 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { useKwaliteiten, useLeveranciers, useUpdateProduct, useDistincteVormen } from '@/hooks/use-producten'
+import { useKwaliteiten, useLeveranciers, useUpdateProduct, useMaatwerkVormen } from '@/hooks/use-producten'
 import type { ProductDetail, ProductFormData, ProductType } from '@/lib/supabase/queries/producten'
+import { fetchKwaliteitInfo } from '@/lib/supabase/queries/kwaliteiten'
+import { berekenProductGewichtKg } from '@/lib/utils/gewicht'
+import { formatNumber } from '@/lib/utils/formatters'
 
 const PRODUCT_TYPES: { value: ProductType; label: string }[] = [
   { value: 'vast', label: 'Standaard maat' },
@@ -19,8 +23,8 @@ interface ProductFormProps {
 export function ProductFormPage({ product }: ProductFormProps) {
   const navigate = useNavigate()
   const { data: kwaliteiten } = useKwaliteiten()
+  const { data: maatwerkVormen = [] } = useMaatwerkVormen()
   const { data: leveranciers } = useLeveranciers()
-  const { data: beschikbareVormen = [] } = useDistincteVormen()
   const updateMutation = useUpdateProduct()
 
   const [form, setForm] = useState<ProductFormData>({
@@ -33,13 +37,15 @@ export function ProductFormPage({ product }: ProductFormProps) {
     kleur_code: product?.kleur_code ?? '',
     product_type: product?.product_type ?? null,
     maatwerk_vorm_code: (product as ProductDetail & { maatwerk_vorm_code?: string | null })?.maatwerk_vorm_code ?? null,
+    lengte_cm: product?.lengte_cm ?? null,
+    breedte_cm: product?.breedte_cm ?? null,
     verkoopprijs: product?.verkoopprijs ?? undefined,
     inkoopprijs: product?.inkoopprijs ?? undefined,
     gewicht_kg: product?.gewicht_kg ?? undefined,
     voorraad: product?.voorraad ?? 0,
     besteld_inkoop: product?.besteld_inkoop ?? 0,
     locatie: product?.locatie ?? '',
-    leverancier_id: (product as ProductDetail & { leverancier_id?: number | null })?.leverancier_id ?? null,
+    leverancier_id: product?.leverancier_id ?? null,
     actief: product?.actief ?? true,
   })
   const [error, setError] = useState<string | null>(null)
@@ -49,6 +55,24 @@ export function ProductFormPage({ product }: ProductFormProps) {
 
   // Mig 359: karpi_code is verplicht voor rol/vast (DB-trigger weigert anders).
   const karpiVerplicht = form.product_type === 'rol' || form.product_type === 'vast'
+
+  // Vaste maat/Staal: gewicht_kg wordt server-side altijd herberekend uit
+  // kwaliteit + afmeting + vorm (trg_producten_gewicht_derive, mig 387) —
+  // het invoerveld is dan zinloos, toon i.p.v. dat een live preview.
+  const { data: kwaliteitInfo } = useQuery({
+    queryKey: ['kwaliteit-info', form.kwaliteit_code],
+    queryFn: () => fetchKwaliteitInfo(form.kwaliteit_code ?? null),
+    enabled: !!form.kwaliteit_code,
+  })
+  const gewichtWordtAfgeleid = form.product_type === 'vast' || form.product_type === 'staaltje'
+  const gewichtPreview = gewichtWordtAfgeleid
+    ? berekenProductGewichtKg({
+        lengte_cm: form.lengte_cm ?? null,
+        breedte_cm: form.breedte_cm ?? null,
+        vorm: form.maatwerk_vorm_code === 'rond' ? 'rond' : 'rechthoek',
+        gewichtPerM2Kg: kwaliteitInfo?.gewicht_per_m2_kg ?? null,
+      })
+    : undefined
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -60,7 +84,12 @@ export function ProductFormPage({ product }: ProductFormProps) {
     try {
       const { artikelnr, ...rest } = form
       void artikelnr
-      await updateMutation.mutateAsync({ artikelnr: product!.artikelnr, data: rest })
+      // producten.vorm is een apart, beperkt enum (alleen rechthoek/rond) dat
+      // de gewicht-trigger gebruikt — los van maatwerk_vorm_code. Moet hier
+      // expliciet mee, anders blijft de kolom op zijn oude/default waarde
+      // staan terwijl maatwerk_vorm_code wél wijzigt.
+      const payload = { ...rest, vorm: rest.maatwerk_vorm_code === 'rond' ? 'rond' as const : 'rechthoek' as const }
+      await updateMutation.mutateAsync({ artikelnr: product!.artikelnr, data: payload })
       navigate(`/producten/${product!.artikelnr}`)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Er is een fout opgetreden')
@@ -179,20 +208,36 @@ export function ProductFormPage({ product }: ProductFormProps) {
                 placeholder="bijv. 16"
               />
             </Field>
-            <Field label="Vorm">
+            <Field label="Breedte (cm)">
               <input
-                list="vormen-list"
-                value={form.maatwerk_vorm_code ?? ''}
-                onChange={e => set('maatwerk_vorm_code', e.target.value.trim() || null)}
+                type="number" min="0"
+                value={form.breedte_cm ?? ''}
+                onChange={e => set('breedte_cm', e.target.value ? Number(e.target.value) : null)}
                 className="input"
-                placeholder="bijv. rond, ovaal, organisch_a"
+                placeholder="bijv. 200"
               />
-              <datalist id="vormen-list">
-                {beschikbareVormen.map(v => (
-                  <option key={v} value={v} />
+            </Field>
+            <Field label="Lengte (cm)">
+              <input
+                type="number" min="0"
+                value={form.lengte_cm ?? ''}
+                onChange={e => set('lengte_cm', e.target.value ? Number(e.target.value) : null)}
+                className="input"
+                placeholder="bijv. 300"
+              />
+            </Field>
+            <Field label="Vorm">
+              <select
+                value={form.maatwerk_vorm_code ?? ''}
+                onChange={e => set('maatwerk_vorm_code', e.target.value || null)}
+                className="input"
+              >
+                <option value="">— rechthoek (standaard) —</option>
+                {maatwerkVormen.filter(v => v.code !== 'rechthoek').map(v => (
+                  <option key={v.code} value={v.code}>{v.naam}</option>
                 ))}
-              </datalist>
-              <p className="text-xs text-slate-400 mt-1">Leeg = rechthoek. Nieuwe waarden worden automatisch filterbaar.</p>
+              </select>
+              <p className="text-xs text-slate-400 mt-1">Bepaalt de vormtoeslag bij de m²-prijsberekening.</p>
             </Field>
             <Field label="Leverancier">
               <select
@@ -238,12 +283,29 @@ export function ProductFormPage({ product }: ProductFormProps) {
               />
             </Field>
             <Field label="Gewicht (kg)">
-              <input
-                type="number" step="0.01" min="0"
-                value={form.gewicht_kg ?? ''}
-                onChange={e => set('gewicht_kg', e.target.value ? Number(e.target.value) : null)}
-                className="input"
-              />
+              {gewichtWordtAfgeleid ? (
+                <>
+                  <input
+                    type="text"
+                    readOnly
+                    disabled
+                    value={gewichtPreview != null ? `${formatNumber(gewichtPreview, 2)} kg` : '—'}
+                    className="input bg-slate-100 text-slate-500"
+                  />
+                  <p className="text-xs text-slate-400 mt-1">
+                    {kwaliteitInfo?.gewicht_per_m2_kg
+                      ? `Automatisch: ${formatNumber(kwaliteitInfo.gewicht_per_m2_kg, 3)} kg/m² × oppervlak — handmatige invoer wordt overschreven.`
+                      : 'Kwaliteit heeft nog geen gewicht per m² ingesteld.'}
+                  </p>
+                </>
+              ) : (
+                <input
+                  type="number" step="0.01" min="0"
+                  value={form.gewicht_kg ?? ''}
+                  onChange={e => set('gewicht_kg', e.target.value ? Number(e.target.value) : null)}
+                  className="input"
+                />
+              )}
             </Field>
           </div>
         </section>

@@ -24,6 +24,8 @@ export interface ProductRow {
   totaal_oppervlak_m2: number
   totaal_waarde_rollen: number
   maatwerk_vorm_code: VormCode | null
+  lengte_cm: number | null
+  breedte_cm: number | null
 }
 
 export interface ProductDetail extends ProductRow {
@@ -39,6 +41,7 @@ export interface ProductDetail extends ProductRow {
   vorm: 'rechthoek' | 'rond'
   gewicht_uit_kwaliteit: boolean
   product_type: ProductType | null
+  leverancier_id: number | null
 }
 
 export interface RolRow {
@@ -69,7 +72,7 @@ export async function fetchProducten(params: {
 
   let query = supabase
     .from('producten_overzicht')
-    .select('artikelnr, karpi_code, omschrijving, kwaliteit_code, kleur_code, zoeksleutel, voorraad, vrije_voorraad, verkoopprijs, actief, product_type, locatie, aantal_rollen, totaal_oppervlak_m2, totaal_waarde_rollen, maatwerk_vorm_code', { count: 'exact' })
+    .select('artikelnr, karpi_code, omschrijving, kwaliteit_code, kleur_code, zoeksleutel, voorraad, vrije_voorraad, verkoopprijs, actief, product_type, locatie, aantal_rollen, totaal_oppervlak_m2, totaal_waarde_rollen, maatwerk_vorm_code, lengte_cm, breedte_cm', { count: 'exact' })
     .eq('actief', true)
     .order(sortBy, { ascending: sortDir === 'asc' })
 
@@ -135,6 +138,9 @@ export interface ProductFormData {
   kleur_code?: string | null
   product_type?: ProductType | null
   maatwerk_vorm_code?: string | null
+  vorm?: 'rechthoek' | 'rond'
+  lengte_cm?: number | null
+  breedte_cm?: number | null
   verkoopprijs?: number | null
   inkoopprijs?: number | null
   gewicht_kg?: number | null
@@ -156,6 +162,53 @@ export async function fetchDistincteVormen(): Promise<string[]> {
   if (error) throw error
   const uniek = [...new Set((data ?? []).map(r => r.maatwerk_vorm_code as string))]
   return uniek
+}
+
+export interface MaatwerkVormOptie {
+  code: string
+  naam: string
+  afmeting_type: 'lengte_breedte' | 'diameter'
+}
+
+/** Alle beschikbare vormen uit de master-tabel (niet alleen vormen die al in gebruik zijn). */
+export async function fetchMaatwerkVormen(): Promise<MaatwerkVormOptie[]> {
+  const { data, error } = await supabase
+    .from('maatwerk_vormen')
+    .select('code, naam, afmeting_type')
+    .eq('actief', true)
+    .order('volgorde')
+  if (error) throw error
+  return (data ?? []) as MaatwerkVormOptie[]
+}
+
+/** Welke van deze artikelnummers bestaan al? Voor een live duplicate-check vóór het opslaan. */
+export async function fetchBestaandeArtikelnrs(artikelnrs: string[]): Promise<Set<string>> {
+  const trimmed = [...new Set(artikelnrs.map(a => a.trim()).filter(Boolean))]
+  if (trimmed.length === 0) return new Set()
+  const { data, error } = await supabase
+    .from('producten')
+    .select('artikelnr')
+    .in('artikelnr', trimmed)
+  if (error) throw error
+  return new Set((data ?? []).map(r => r.artikelnr as string))
+}
+
+/**
+ * Welke van deze karpi-codes bestaan al? `karpi_code` heeft GEEN unique
+ * constraint (artikelnr is de PK) — dit is dus een waarschuwing, geen
+ * blokkade. Vooral relevant voor vormen zonder eigen karpi-code-suffix-
+ * conventie (bijv. afgeronde_hoeken), waar dezelfde maat als een
+ * rechthoek anders stilletjes dezelfde karpi-code zou krijgen.
+ */
+export async function fetchBestaandeKarpiCodes(karpiCodes: string[]): Promise<Set<string>> {
+  const trimmed = [...new Set(karpiCodes.map(c => c.trim()).filter(Boolean))]
+  if (trimmed.length === 0) return new Set()
+  const { data, error } = await supabase
+    .from('producten')
+    .select('karpi_code')
+    .in('karpi_code', trimmed)
+  if (error) throw error
+  return new Set((data ?? []).map(r => r.karpi_code as string))
 }
 
 /** Create a new product */
@@ -326,6 +379,43 @@ export async function updateProductLocatie(artikelnr: string, locatie: string | 
     .eq('artikelnr', artikelnr)
 
   if (error) throw error
+}
+
+/** Tabellen die naar producten.artikelnr verwijzen (FK, allemaal ON DELETE NO ACTION) — voor een leesbare melding bij een geblokkeerde delete. */
+const ARTIKEL_REFERENTIE_LABELS: Record<string, string> = {
+  rollen: 'rollen (fysieke voorraad)',
+  order_regels: 'orderregels',
+  inkooporder_regels: 'inkooporderregels',
+  zending_regels: 'zendingen',
+  prijslijst_regels: 'prijslijsten',
+  klant_artikelnummers: 'klant-artikelnummers',
+  samples: 'samples',
+  producten: 'een ander artikel (doos/stuks-koppeling)',
+}
+
+/**
+ * Verwijder een product definitief. Alle FK's naar producten.artikelnr staan
+ * op ON DELETE NO ACTION (RESTRICT) — geen vooraf-check nodig, de database
+ * weigert de delete zelf als het artikel nog ergens gebruikt wordt. Vertaalt
+ * die Postgres-foutmelding (23503) naar een leesbare Nederlandse tekst.
+ */
+export async function deleteProduct(artikelnr: string): Promise<void> {
+  const { error } = await supabase
+    .from('producten')
+    .delete()
+    .eq('artikelnr', artikelnr)
+
+  if (!error) return
+
+  if (error.code === '23503') {
+    const tabel = error.details?.match(/referenced from table "(\w+)"/)?.[1]
+    const label = (tabel && ARTIKEL_REFERENTIE_LABELS[tabel]) || tabel || 'andere gegevens'
+    throw new Error(
+      `Dit artikel kan niet verwijderd worden — het wordt nog gebruikt door ${label}. ` +
+      `Deactiveer het in plaats daarvan (Bewerken → Actief uitzetten).`
+    )
+  }
+  throw new Error(error.message)
 }
 
 export interface ReserveringRow {

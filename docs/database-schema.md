@@ -244,7 +244,7 @@ Artikelen uit het oude systeem.
 | zoeksleutel | TEXT | kwaliteit_code + "_" + kleur_code |
 | inkoopprijs, verkoopprijs | NUMERIC(10,2) | |
 | gewicht_kg | NUMERIC(8,2) | **Sinds mig 185 gederiveerde cache; sinds mig 387 AFGEDWONGEN** via BEFORE-trigger `trg_producten_gewicht_derive`: voor `product_type IN ('vast','staaltje')` met maat + kwaliteit-density wordt elke INSERT/UPDATE herleid (vorm-aware: `rond` → `π × (lengte_cm/200)² × density`, anders `(lengte×breedte/10000) × density`) — handmatige waarden worden bewust overschreven; gewicht corrigeren = `kwaliteiten.gewicht_per_m2_kg` aanpassen. Voor 'rol'/'overig' of incomplete data blijft de handmatige/legacy-waarde staan. **Let op (historische bug, gefixt in mig 387):** ~26% van de cache bevatte de density (kg/m²) i.p.v. het stukgewicht. |
-| lengte_cm, breedte_cm | INTEGER | Maat in cm voor vaste/staaltje-producten. **Rechthoekig**: geparset uit `karpi_code`-suffix in mig 184 (`^.{8}(\d{3})(\d{3})$`). **Rond** (mig 188): geparset uit `^.{8}(\d{3})RND$` — `lengte_cm = breedte_cm = diameter`. **Ovaal-bbox** (mig 188): geparset uit omschrijving (`NxN cm OVAAL`) als bbox. NULL voor 'rol'/'overig' of afwijkend patroon. Voedt gewicht-resolver. |
+| lengte_cm, breedte_cm | INTEGER | Maat in cm voor vaste/staaltje-producten. **Rechthoekig**: geparset uit `karpi_code`-suffix in mig 184 (`^.{8}(\d{3})(\d{3})$`). **Rond** (mig 188): geparset uit `^.{8}(\d{3})RND$` — `lengte_cm = breedte_cm = diameter`. **Ovaal-bbox** (mig 188): geparset uit omschrijving (`NxN cm OVAAL`) als bbox. NULL voor 'rol'/'overig' of afwijkend patroon. Voedt gewicht-resolver. **Frontend (2026-06-24):** vóór deze datum schreef "+ Nieuw product" deze kolommen nooit weg (ondanks Breedte/Lengte-velden in de UI — alleen gebruikt voor Karpi-code/omschrijving) — elk via de UI aangemaakt artikel had dus permanent NULL hier. `ProductFormData`/`createProduct()` + het bewerk-formulier (`product-form.tsx`, had deze velden nog helemaal niet) sturen deze nu wél door. |
 | vorm | TEXT | `rechthoek` (default, ook voor ovaal — bbox-aanname) of `rond` (cirkel-oppervlak via `π × (lengte_cm/200)²`). Bepaalt formule in `bereken_product_gewicht_kg`. Mig 188. |
 | maatwerk_vorm_code | TEXT FK → maatwerk_vormen(code) | **Logische vormcode** voor de prijs-resolver (mig 191). Onderscheidt `ovaal/organisch_a/organisch_b_sp/pebble/ellips/afgeronde_hoeken` waar `vorm` alleen `rechthoek/rond` kent. Bepaalt vormtoeslag (€0/€75 uit `maatwerk_vormen.toeslag`) bij m²-fallback in `bereken_orderregel_prijs`. NULL = onbekend → resolver behandelt als rechthoek (€0). Backfill via karpi_code-suffix (`RND`/`OVL`) + omschrijving-substring (`ORGANISCH`/`PEBBLE`/`ELLIPS`/`AFGEROND`). Mig 190. |
 | gewicht_uit_kwaliteit | BOOLEAN | Default false. TRUE = `gewicht_kg` gederiveerd uit `kwaliteiten.gewicht_per_m2_kg` (cache vers). FALSE = legacy waarde uit oude systeem of kwaliteit heeft nog geen gewicht. UI toont badge "uit oude bron" bij FALSE. Migratie-voortgang-indicator. |
@@ -252,6 +252,7 @@ Artikelen uit het oude systeem.
 | locatie | TEXT | Magazijnlocatie (bijv. "A.01.L", "C.04.H"). Bron: Locaties123.xls |
 | actief | BOOLEAN | Default true |
 | is_dropship | BOOLEAN | Default false. TRUE op dropshipment-kostenregels (DROPSHIP-KLEIN/GROOT, mig 370): order met zo'n regel gaat rechtstreeks naar de consument — `afl_email` moet dan het consument-adres zijn, nooit het factuur-/debiteur-adres. Predicaat: `is_dropship_order(order_id)`; guard in `fn_zending_fill_email`. |
+| leverancier_id | BIGINT FK → leveranciers(id) ON DELETE SET NULL | **Mig 482 (2026-06-24).** Default/gebruikelijke leverancier voor dit artikel — puur informatief, geen koppeling met de inkoop-flow (`inkooporders.leverancier_id` is daar de bron-van-waarheid). Vóór deze migratie had de kolom niet bestaan terwijl "+ Nieuw product"/"Bewerken" 'm al wel onvoorwaardelijk in elke create/update-payload stuurden — elke opslag via die twee formulieren faalde daardoor altijd met `42703: column does not exist`, los van enige andere wijziging. |
 
 ---
 
@@ -1482,7 +1483,7 @@ Eén-rij-tabel (`id=1`) met `watermark TIMESTAMPTZ` = de `created_at` van de laa
 
 | View | Doel |
 |------|------|
-| producten_overzicht | Producten + rollen-aggregatie (aantal_rollen, oppervlak, waarde) + locatie |
+| producten_overzicht | Producten + rollen-aggregatie (aantal_rollen, oppervlak, waarde) + locatie + `lengte_cm`/`breedte_cm` (mig 487, 2026-06-24 — voedt vorm-groep/oppervlak-sortering in de frontend, zie `kwaliteit-kleuren-uitvouw.tsx`) |
 | dashboard_stats | Aggregaties: producten, rollen (aantal), **voorraadwaarde_inkoop = SUM(rollen.waarde) over alle rollen**, **voorraadwaarde_verkoop = SUM(orders.totaal_bedrag) − SUM(VERZEND-regels), excl. Geannuleerd**, marge (op beschikbare rollen), open orders, klanten |
 | klant_omzet_ytd | Per klant: omzet YTD, % totaal, gem/maand, tier, vertegenwoordiger |
 | rollen_overzicht | Per kwaliteit/kleur: aantal, oppervlak, waarde |
