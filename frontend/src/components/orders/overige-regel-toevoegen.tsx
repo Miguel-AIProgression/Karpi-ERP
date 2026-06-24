@@ -17,7 +17,7 @@
 // positie met de juiste (al op de parent bewaarde) toeslag terugkomt. De
 // overige pseudo-artikelen zijn order-niveau en worden gewoon achteraan
 // toegevoegd.
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Plus } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase/client'
@@ -51,12 +51,37 @@ interface Props {
 
 export function OverigeRegelToevoegen({ lines, onChange, vormen }: Props) {
   const [open, setOpen] = useState(false)
+  // `position: fixed` met hier berekende viewport-coördinaten i.p.v. CSS
+  // `position: absolute` — dat laatste bleek in oudere/andere browsers
+  // afhankelijk van scherm/zoom soms te clippen of onder andere elementen
+  // te vallen (sommige menu-items niet klikbaar), `fixed` is altijd
+  // relatief aan de viewport en dus browseronafhankelijk.
+  const [coords, setCoords] = useState<{ left: number; top: number } | null>(null)
   const [gekozenProduct, setGekozenProduct] = useState<PseudoProduct | null>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
   const { data: producten = [] } = useQuery({
     queryKey: ['producten', 'pseudo'],
     queryFn: fetchPseudoProducten,
     staleTime: 5 * 60 * 1000,
   })
+
+  function sluitAf() {
+    setOpen(false)
+    setGekozenProduct(null)
+    setCoords(null)
+  }
+
+  useEffect(() => {
+    if (!open) return
+    const handleOutside = (e: MouseEvent) => {
+      const target = e.target as Node
+      if (menuRef.current?.contains(target) || buttonRef.current?.contains(target)) return
+      sluitAf()
+    }
+    document.addEventListener('mousedown', handleOutside)
+    return () => document.removeEventListener('mousedown', handleOutside)
+  }, [open])
 
   // Maatwerk-regels die een vormtoeslag horen te hebben (parent.maatwerk_vorm_toeslag
   // > 0) maar waarvan de companion-regel er nu niet (meer) direct achter staat.
@@ -68,9 +93,21 @@ export function OverigeRegelToevoegen({ lines, onChange, vormen }: Props) {
       && lines[i + 1]?.artikelnr !== VORMTOESLAG_ARTIKEL_ID,
     )
 
-  function sluitAf() {
-    setOpen(false)
-    setGekozenProduct(null)
+  function toggleOpen() {
+    if (open) {
+      sluitAf()
+      return
+    }
+    const rect = buttonRef.current?.getBoundingClientRect()
+    if (rect) {
+      const menuHoogteSchatting = 340
+      const dropUp = window.innerHeight - rect.bottom < menuHoogteSchatting
+      setCoords({
+        left: rect.left,
+        top: dropUp ? Math.max(8, rect.top - menuHoogteSchatting) : rect.bottom + 4,
+      })
+    }
+    setOpen(true)
   }
 
   function voegOrderNiveauRegelToe(product: PseudoProduct) {
@@ -113,10 +150,11 @@ export function OverigeRegelToevoegen({ lines, onChange, vormen }: Props) {
   }
 
   return (
-    <div className="relative inline-block">
+    <div className="inline-block">
       <button
+        ref={buttonRef}
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={toggleOpen}
         className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50"
         title="Handmatig een administratieve regel toevoegen (verzendkosten, vormtoeslag, dropshipment, korting) — bv. om een per ongeluk verwijderde regel terug te zetten"
       >
@@ -124,8 +162,12 @@ export function OverigeRegelToevoegen({ lines, onChange, vormen }: Props) {
         Overige regel toevoegen
       </button>
 
-      {open && (
-        <div className="absolute left-0 top-full z-20 mt-1 w-72 rounded-[var(--radius)] border border-slate-200 bg-white p-2 shadow-lg">
+      {open && coords && (
+        <div
+          ref={menuRef}
+          className="fixed z-50 w-72 rounded-[var(--radius)] border border-slate-200 bg-white p-2 shadow-lg"
+          style={{ left: coords.left, top: coords.top }}
+        >
           {!gekozenProduct ? (
             <>
               <div className="px-1 pb-1.5 text-xs font-medium text-slate-500">
