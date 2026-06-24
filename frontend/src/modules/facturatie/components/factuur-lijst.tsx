@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react'
+import { ArrowDown, ArrowUp, ArrowUpDown, FileDown } from 'lucide-react'
 import { useFacturen } from '../hooks/use-facturen'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { formatCurrency, formatDate } from '@/lib/utils/formatters'
-import { isFactuurCreditnota, type FactuurListItem } from '../queries/facturen'
+import { isFactuurCreditnota, getFactuurPdfSignedUrl, type FactuurListItem } from '../queries/facturen'
 
 interface FactuurLijstProps {
   debiteurNr?: number
@@ -38,6 +38,25 @@ export function FactuurLijst({
 }: FactuurLijstProps) {
   const { data, isLoading } = useFacturen(debiteurNr)
   const [sort, setSort] = useState(DEFAULT_SORT)
+  const [pdfBezig, setPdfBezig] = useState<number | null>(null)
+
+  async function downloadPdf(f: FactuurListItem) {
+    if (!f.pdf_storage_path || pdfBezig === f.id) return
+    setPdfBezig(f.id)
+    try {
+      const url = await getFactuurPdfSignedUrl(f.pdf_storage_path)
+      const res = await fetch(url)
+      const blob = await res.blob()
+      const objectUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = objectUrl
+      a.download = `${f.factuur_nr}.pdf`
+      a.click()
+      URL.revokeObjectURL(objectUrl)
+    } finally {
+      setPdfBezig(null)
+    }
+  }
 
   const facturen = items ?? data ?? []
   const showKlant = !debiteurNr
@@ -49,8 +68,10 @@ export function FactuurLijst({
     lijst.sort((a, b) => {
       const primair = vergelijk(a, b, sort.key) * richting
       if (primair !== 0) return primair
-      // Tiebreak op factuur_nr (descending) zodat de volgorde stabiel én
-      // logisch is bij gelijke datums/statussen/totaal.
+      // Tiebreak op factuur_nr (descending) — FACT-* vóór plain-nummers.
+      const aF = a.factuur_nr.startsWith('FACT-')
+      const bF = b.factuur_nr.startsWith('FACT-')
+      if (aF !== bF) return aF ? -1 : 1
       return b.factuur_nr.localeCompare(a.factuur_nr)
     })
     return lijst
@@ -197,12 +218,25 @@ export function FactuurLijst({
                   {isFactuurCreditnota(f) ? `− ${formatCurrency(Math.abs(f.totaal))}` : formatCurrency(f.totaal)}
                 </td>
                 <td className="py-3">
-                  <Link
-                    to={`/facturatie/${f.id}`}
-                    className="text-xs text-terracotta-500 hover:underline whitespace-nowrap"
-                  >
-                    Bekijk
-                  </Link>
+                  <div className="flex items-center gap-3">
+                    <Link
+                      to={`/facturatie/${f.id}`}
+                      className="text-xs text-terracotta-500 hover:underline whitespace-nowrap"
+                    >
+                      Bekijk
+                    </Link>
+                    {f.pdf_storage_path && (
+                      <button
+                        type="button"
+                        onClick={() => downloadPdf(f)}
+                        disabled={pdfBezig === f.id}
+                        title="Download PDF"
+                        className="text-slate-400 hover:text-terracotta-500 disabled:opacity-40 transition-colors"
+                      >
+                        <FileDown size={15} />
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             )
@@ -249,8 +283,16 @@ function standaardRichting(key: SortKey): SortDir {
 
 function vergelijk(a: FactuurListItem, b: FactuurListItem, key: SortKey): number {
   switch (key) {
-    case 'factuur_nr':
+    case 'factuur_nr': {
+      // Oud-systeem nummers (puur cijfers, bv. 2026000187) staan alfabetisch
+      // vóór FACT-* omdat '2' < 'F'. Ze zijn echter inhoudelijk nieuwer dan de
+      // FACT-reeks. Oplossing: FACT-* altijd vóór plain-nummers plaatsen binnen
+      // dezelfde sorteerrichting.
+      const aIsFact = a.factuur_nr.startsWith('FACT-')
+      const bIsFact = b.factuur_nr.startsWith('FACT-')
+      if (aIsFact !== bIsFact) return aIsFact ? -1 : 1
       return a.factuur_nr.localeCompare(b.factuur_nr)
+    }
     case 'factuurdatum':
       return a.factuurdatum.localeCompare(b.factuurdatum)
     case 'klant_naam':
