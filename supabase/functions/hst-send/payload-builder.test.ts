@@ -226,6 +226,27 @@ Deno.test('bouwTransportOrderPayload kapt GoodsDescription af op 30 tekens', () 
   assertEquals(desc, 'LORANDA Kleur 21 CA: 200x290 c');
 });
 
+// HST's adres-Name-veld weigert >30 tekens (live-fouten ZEND-2026-0091/0094/
+// 0122). De builder kapt af op 30.
+Deno.test('bouwTransportOrderPayload kapt ToAddress.Name af op 30 tekens', () => {
+  const payload = bouwTransportOrderPayload({
+    zending: {
+      zending_nr: 'ZEND-2026-0091',
+      afl_naam: 'LOGISTIEKCENTRUM WOONBOULEVARD POORTVLIET', // 41 tekens
+      afl_adres: 'Industrieweg 7', afl_postcode: '4671AA', afl_plaats: 'Poortvliet',
+      afl_land: 'NL', afl_telefoon: null, afl_email: null,
+      totaal_gewicht_kg: 10, aantal_colli: 1, opmerkingen: null, verzenddatum: '2026-06-24',
+    },
+    order: { order_nr: 'ORD-2026-0383' },
+    bedrijf: KARPI_BEDRIJF,
+    hstCustomerId: '038267',
+    colli: [{ colli_nr: 1, sscc: '087159540000000632', gewicht_kg: 10, omschrijving_snapshot: 'Tapijt' }],
+  });
+  const naam = payload.ToAddress.Name;
+  assert(naam.length <= 30, `Name moet ≤30 zijn, is ${naam.length}`);
+  assertEquals(naam, 'LOGISTIEKCENTRUM WOONBOULEVARD');
+});
+
 // HST's Length-veld accepteert max 200 cm (live-fout ZEND-2026-0061: tapijt
 // 240×330 → korte zijde 240 → 'Regel nummer 1 lengte (min: 0 | max: 200)').
 // De builder clampt Length op 200.
