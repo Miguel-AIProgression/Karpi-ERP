@@ -1,5 +1,50 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-24 — Creditfactuur-uitbreiding + nieuwe factuurnummering (mig 503-504)
+
+**Waarom:** Karpi had behoefte aan een volwaardig crediteer-workflow vanuit de
+facturatie-module. De bestaande `maak_creditfactuur` (mig 467) dekte alleen een volledig
+spiegelen van alle regels. Gevraagde uitbreidingen: gedeeltelijk crediteren per regel
+(met aangepast aantal), vrij creditbedrag (coulance/korting achteraf), harde financiële
+beveiliging dat nooit méér gecrediteerd kan worden dan het debetbedrag, en een toggle om
+de gekrediteerde voorraad meteen terug te boeken. Tegelijk werd de factuurnummering
+vereenvoudigd van `FACT-2026-0184` naar `2026000185` (YYYY + 6 cijfers) zodat debet- en
+creditfacturen één gedeelde chronologische reeks vormen.
+
+**Mig 503 — Nieuwe factuurnummering:**
+- `fact_2026_seq` sequence aangemaakt (start 185 — sluit aan op oude FACT-2026-0184)
+- `volgend_nummer('FACT')` geeft nu `YYYYNNNNNN`-formaat (geen prefix, geen streepje)
+- Alle andere types (ORD, SNIJ, …) ongewijzigd; debet én credit delen dezelfde reeks
+- Bestaande facturen (FACT-2026-xxxx) blijven staan, geen backfill
+
+**Mig 504 — Uitgebreide `maak_creditfactuur` RPC:**
+- **Modus A:** geselecteerde factuurregels (volledig aantal) — `p_factuur_regel_ids`
+- **Modus B:** deelcredit met aangepast aantal per regel — `p_deelcredit_regels JSONB [{id, aantal}]`
+- **Modus C:** vrij creditbedrag — `p_los_bedrag`, `p_los_bedrag_incl_btw` (incl/excl toggle)
+- **Modus D:** `p_voorraad_bijwerken=TRUE` → `producten.voorraad += gecrediteerd_aantal`
+- **Harde max-credit-grens:** server-side check `Σ|credit.totaal| ≤ |debet.totaal| + 0.01`
+- BTW verlegd: automatisch 0% effectief tarief (zelfde als debetfactuur)
+- Bewaakt dat creditnota niet van een creditnota gemaakt kan worden
+
+**Edge function stuur-creditfactuur:**
+- POST `{ factuur_id }` → genereert PDF (CREDITNOTA-titel via `is_creditnota=true`)
+- Upload naar storage: `{debiteur_nr}/creditnota/{factuur_nr}.pdf`
+- Verstuurt via MS Graph naar `debiteuren.email_factuur`
+
+**Frontend:**
+- `factuur-pdf.ts`: `FactuurHeader.is_creditnota` → CREDITNOTA/GUTSCHRIFT/NOTE DE CRÉDIT/CREDIT NOTE titel
+- `factuur-pdf/index.ts`: detecteert creditnota via `credit_voor_factuur_id` en zet vlag
+- `queries/facturen.ts`: `credit_voor_factuur_id` op beide interfaces, `isFactuurCreditnota()`,
+  `fetchCreditnotasVoorFactuur`, `MaakCreditfactuurParams`, `maakCreditfactuur`, `stuurCreditfactuur`
+- `use-facturen.ts`: drie nieuwe hooks (`useCreditnotasVoorFactuur`, `useMaakCreditfactuur`, `useStuurCreditfactuur`)
+- `creditfactuur-dialog.tsx`: volledig dialog met methode-keuze (factuurregels/los bedrag),
+  regelSelectie met aanpasbaar aantal, kredietlimiet-preview, BTW-preview, twee toggles
+- `factuur-detail.tsx`: "CREDITNOTA"-badge in header, link naar debetfactuur bij creditnotas,
+  "Creditnota aanmaken"-knop (alleen op debetfacturen, alleen als limiet niet vol),
+  gekoppelde creditnotas-sectie onderaan
+- `factuur-lijst.tsx`: Type-kolom (Debet/Credit badge), creditbedragen rood met min-teken
+- `facturatie-overview.tsx`: Alle/Debet/Credit type-filter naast de status-dropdown
+
 ## 2026-06-24 — Omsticker-keuze uitgebreid met inkoop-opties, automatische substitutie afgeschaft (mig 497-502)
 
 **Waarom:** gebruiker zag een omsticker-label op een orderregel en kon zich niet

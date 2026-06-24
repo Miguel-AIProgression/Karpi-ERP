@@ -475,7 +475,7 @@ _Aangemaakt in migratie 117 (2026-04-22). Gepatcht in mig 125: `order_id` op hea
 | Kolom | Type | Toelichting |
 |-------|------|-------------|
 | id | BIGINT PK | |
-| factuur_nr | TEXT UK | FACT-2026-0001 |
+| factuur_nr | TEXT UK | Mig 503: **nieuw format `2026000185`** (YYYY + 6 cijfers, geen prefix). Oude facturen staan nog als `FACT-2026-NNNN`. Debet én credit delen dezelfde `fact_2026_seq` sequence via `volgend_nummer('FACT')`. |
 | debiteur_nr | INTEGER FK → debiteuren | |
 | factuurdatum, vervaldatum | DATE | |
 | status | factuur_status | Default 'Concept' |
@@ -486,10 +486,19 @@ _Aangemaakt in migratie 117 (2026-04-22). Gepatcht in mig 125: `order_id` op hea
 | btw_regeling | TEXT | Mig 456: snapshot van de regeling-code uit `bepaal_btw_regeling` (mig 455) op projectie-moment — `nl_binnenland`/`eu_b2b_icl`/`eu_b2b_binnenland_afwijking`/`export_buiten_eu`. Puur informatief/audit. |
 | btw_controle_nodig_sinds | TIMESTAMPTZ | Mig 456: NULL = BTW-regeling automatisch zeker. Gevuld zodra `bepaal_btw_regeling` een afwijking signaleert — de factuur-RPC's (`projecteer_concept_factuur`/`genereer_factuur(_voor_week)`) zetten dit ALTIJD, ook bij een hard-block-regeling (de factuur wordt dus altijd aangemaakt, zichtbaar als Concept met de banner). De HARDE blokkade zit in `factuur-verzenden/index.ts` (na aanmaak, vóór mail/EDI) voor `eu_b2b_binnenland_afwijking`/`export_buiten_eu`; voor `eu_b2b_icl` zonder btw-nummer is het advisory (mig 164-besluit, niet blokkerend). Bevestigen via `markeer_btw_regeling_geaccepteerd(factuur_id)` — wist de gate zonder data te wijzigen; een latere her-projectie herberekent en kan 'm opnieuw zetten. |
 | opmerkingen | TEXT | |
-| pdf_storage_path | TEXT | Pad in bucket 'facturen' ({debiteur_nr}/FACT-YYYY-NNNN.pdf) |
+| pdf_storage_path | TEXT | Pad in bucket 'facturen' ({debiteur_nr}/FACT-YYYY-NNNN.pdf of {debiteur_nr}/creditnota/{nr}.pdf) |
 | verstuurd_op | TIMESTAMPTZ | Wanneer email verzonden |
 | verstuurd_naar | TEXT | Email-adres waar factuur naartoe is |
+| **credit_voor_factuur_id** | BIGINT FK → facturen | **Mig 467/504:** NULL = debetfactuur; gevuld = creditnota die verwijst naar de originele debetfactuur. Self-referential FK. |
 | created_at, updated_at | TIMESTAMPTZ | Auto |
+
+**RPC `maak_creditfactuur` (mig 467, uitgebreid mig 504):** maakt een creditnota op basis van een bestaande debetfactuur. Vier modi:
+- Modus A: `p_factuur_regel_ids BIGINT[]` — geselecteerde regels, volledig aantal
+- Modus B: `p_deelcredit_regels JSONB [{id, aantal}]` — deelcredit met aangepast aantal per regel
+- Modus C: `p_los_bedrag NUMERIC` + `p_los_bedrag_incl_btw BOOLEAN` — vrij creditbedrag
+- Modus D: `p_voorraad_bijwerken BOOLEAN` — `producten.voorraad += gecrediteerd_aantal` (excl. los bedrag)
+- Harde max-credit-grens: `Σ|credit.totaal| ≤ |debet.totaal| + 0.01` (server-side, raise exception)
+- BTW verlegd → effectief 0% (spiegelt debetfactuur)
 
 ### factuur_regels
 _Aangemaakt in migratie 117 (2026-04-22)._
