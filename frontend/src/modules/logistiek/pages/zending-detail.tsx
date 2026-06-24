@@ -358,7 +358,7 @@ export function ZendingDetailPage() {
               <HstTransportorderCard
                 key={t.id}
                 row={t}
-                onAfgehandeld={() => afhandelMutation.mutate({ id: t.id, externRef: t.extern_referentie })}
+                onAfgehandeld={() => afhandelMutation.mutate({ id: t.id, externRef: t.extern_referentie, vervoerderCode: z.vervoerder_code })}
                 afhandelBusy={afhandelMutation.isPending && afhandelMutation.variables?.id === t.id}
               />
             ))}

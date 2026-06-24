@@ -119,8 +119,8 @@ export function useStartPickrondes() {
 export function useMarkeerZendingAfgehandeld() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (v: { id: number; externRef: string | null }) =>
-      markeerZendingHandmatigAfgehandeld(v.id, v.externRef),
+    mutationFn: (v: { id: number; externRef: string | null; vervoerderCode: string | null }) =>
+      markeerZendingHandmatigAfgehandeld(v.id, v.externRef, v.vervoerderCode),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['logistiek', 'zending'] })
       qc.invalidateQueries({ queryKey: ['logistiek', 'zendingen'] })
