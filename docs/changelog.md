@@ -1,5 +1,24 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-24 — HST pallet-types MP + PLH (mig 491)
+
+**Waarom (mail Niek Zandvoort, HST Groep, 24-06):** naast EP (Europallet) en SP
+(wegwerp pallet) ondersteunt HST nóg twee PackageUnitID's voor een pallet-bundel:
+**MP** (mini pallet) en **PLH** (halve pallet). De operator moet die bij het
+bundelen kunnen kiezen.
+
+**Wat:** puur de bestaande deep module (mig 485) verbreed — géén nieuwe code in de
+payload-builder of colli-seam (`PackageUnitID = pallet_type ?? 'col'` stroomt MP/PLH
+automatisch door; HST prijst op PackageUnitID, dus net als EP/SP géén footprint).
+- **mig 491:** CHECK `zending_colli_pallet_type_chk` + de `maak_colli_bundel`-validatie
+  verbreed met `'MP'`/`'PLH'` (lijst nu EP/SP/MP/PLH + PLTS/HPLT). RPC-body = exact
+  mig 490 (7-arg) + de twee extra waarden; `CREATE OR REPLACE` (signatuur ongewijzigd).
+- **Frontend:** `palletTypeOpties('hst_api')` (`handmatig-aanmelden.ts`) geeft nu vier
+  keuzes — EP/SP/MP/PLH. Eén bron; `ColliBundelDialog` leest 'm ongewijzigd.
+
+Niek noemde nog dat onbekend is of er vanuit HST-verkoop een offerte voor deze
+verzendeenheden is afgegeven — prijsafspraak ligt buiten dit ERP, geen code-impact.
+
 ## 2026-06-24 — Rhenus bundeling: zak-optie terug + L/B/H voor pallets (mig 490)
 
 **Waarom (verzoek Miguel, na mig 489):** twee dingen ontbraken. (1) Door PLTS/HPLT

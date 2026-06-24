@@ -49,8 +49,9 @@ export interface PalletTypeOptie {
 export const RHENUS_GEEN_PALLET = 'ZAK'
 
 /**
- * Pallet-type-opties per vervoerder. HST: EP/SP (PackageUnitID, mig 485). Rhenus:
- * "zak" (geen pallet, RLEN) + PLTS/HPLT (packageTypeCode + footprint, mig 489/490).
+ * Pallet-type-opties per vervoerder. HST: EP/SP/MP/PLH (PackageUnitID, mig 485/491
+ * — MP=mini pallet, PLH=halve pallet, mail Niek Zandvoort 24-06). Rhenus: "zak"
+ * (geen pallet, RLEN) + PLTS/HPLT (packageTypeCode + footprint, mig 489/490).
  * De zak-optie blijft bestaan zodat de operator óók een gewone bundel kan maken.
  */
 export function palletTypeOpties(code: string | null | undefined): PalletTypeOptie[] {
@@ -58,6 +59,8 @@ export function palletTypeOpties(code: string | null | undefined): PalletTypeOpt
     return [
       { value: 'EP', label: 'EP — Europallet' },
       { value: 'SP', label: 'SP — wegwerp pallet' },
+      { value: 'MP', label: 'MP — mini pallet' },
+      { value: 'PLH', label: 'PLH — halve pallet' },
     ]
   }
   if (code === 'rhenus_sftp') {
