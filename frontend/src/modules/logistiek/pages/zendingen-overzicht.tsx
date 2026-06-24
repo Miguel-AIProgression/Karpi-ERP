@@ -17,6 +17,7 @@ const STATUS_PILLEN: StatusFilter[] = [
   'Picken',
   'Klaar voor verzending',
   'Onderweg',
+  'Afgehaald',
   'Afgeleverd',
 ]
 

@@ -8,6 +8,7 @@ const STATUS_KLEUREN: Record<ZendingStatus, { bg: string; text: string }> = {
   'Klaar voor verzending':  { bg: 'bg-indigo-100',  text: 'text-indigo-700' },
   Onderweg:                 { bg: 'bg-cyan-100',    text: 'text-cyan-700' },
   Afgeleverd:               { bg: 'bg-emerald-100', text: 'text-emerald-700' },
+  Afgehaald:                { bg: 'bg-teal-100',    text: 'text-teal-700' },
 }
 
 // Weergave-label per status. De DB-enum-waarde blijft 'Onderweg', maar we tonen

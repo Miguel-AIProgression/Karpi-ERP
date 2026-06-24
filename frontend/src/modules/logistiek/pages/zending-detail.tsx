@@ -1,7 +1,11 @@
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Printer } from 'lucide-react'
+import { ArrowLeft, Printer, PackageCheck } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { useZending, useMarkeerZendingAfgehandeld } from '@/modules/logistiek/hooks/use-zendingen'
+import {
+  useZending,
+  useMarkeerZendingAfgehandeld,
+  useMarkeerZendingAfgehaald,
+} from '@/modules/logistiek/hooks/use-zendingen'
 import { ZendingStatusBadge } from '@/modules/logistiek/components/zending-status-badge'
 import { VervoerderTag } from '@/modules/logistiek/components/vervoerder-tag'
 import {
@@ -66,6 +70,7 @@ export function ZendingDetailPage() {
   const { zending_nr } = useParams<{ zending_nr: string }>()
   const { data: zending, isLoading } = useZending(zending_nr)
   const afhandelMutation = useMarkeerZendingAfgehandeld()
+  const afgehaaldMutation = useMarkeerZendingAfgehaald()
 
   if (isLoading) return <div className="p-8 text-slate-500">Laden…</div>
   if (!zending) return <div className="p-8 text-rose-600">Zending niet gevonden.</div>
@@ -84,6 +89,12 @@ export function ZendingDetailPage() {
     a.order_nr.localeCompare(b.order_nr),
   )
   const isBundel = bundelOrdersGesorteerd.length > 1
+
+  // Afhaal-zending: zonder vervoerder kan een 'Klaar voor verzending'-zending
+  // alleen een afhaal-order zijn (carrier-orders krijgen altijd een vervoerder;
+  // 'geen vervoerder' kan niet starten). Operator markeert 'm afgehaald zodra de
+  // klant het ophaalt (mig 482-483).
+  const isAfhaalKlaar = z.status === 'Klaar voor verzending' && !z.vervoerder_code
 
   // Groepeer regels op bron-order via order_regels.order_id. Onbekende order
   // (legacy of corrupte rij) komt onder een aparte sleutel `null`.
@@ -115,13 +126,26 @@ export function ZendingDetailPage() {
           </span>
         }
         actions={
-          <Link
-            to={`/logistiek/${z.zending_nr}/printset`}
-            className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
-          >
-            <Printer size={16} />
-            Verzendset printen
-          </Link>
+          <div className="flex items-center gap-2">
+            {isAfhaalKlaar && (
+              <button
+                type="button"
+                onClick={() => afgehaaldMutation.mutate(z.id)}
+                disabled={afgehaaldMutation.isPending}
+                className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-60"
+              >
+                <PackageCheck size={16} />
+                {afgehaaldMutation.isPending ? 'Bezig…' : 'Markeer als afgehaald'}
+              </button>
+            )}
+            <Link
+              to={`/logistiek/${z.zending_nr}/printset`}
+              className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
+            >
+              <Printer size={16} />
+              Verzendset printen
+            </Link>
+          </div>
         }
         description={
           bundelOrdersGesorteerd.length > 0 ? (
@@ -139,6 +163,12 @@ export function ZendingDetailPage() {
           ) : null
         }
       />
+
+      {afgehaaldMutation.isError && (
+        <div className="mb-4 rounded-[var(--radius-sm)] border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
+          Afgehaald markeren mislukt: {String((afgehaaldMutation.error as Error).message)}
+        </div>
+      )}
 
       {/* Sectie 1 — zending-info */}
       <Section titel="Zending">

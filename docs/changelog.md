@@ -1,5 +1,28 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-24 — Afhaal-zending handmatig op 'Afgehaald' zetten (mig 482-483)
+
+**Waarom:** afhaal-orders (`orders.afhalen=TRUE` → vervoerder "GEEN") krijgen
+nooit een transportorder en bleven daardoor eeuwig op 'Klaar voor verzending'
+staan — er was nergens een manier om ze af te sluiten. Eigen vervoer (mig 429)
+loste een identiek probleem op met een automatische flip naar 'Afgeleverd';
+afhalen heeft een handmatige actie nodig (we weten niet wanneer de klant ophaalt).
+
+- Nieuwe zending-status **'Afgehaald'** (mig 482, `ALTER TYPE zending_status`) —
+  bewust een eigen eindstatus i.p.v. hergebruik van 'Afgeleverd': afhalen ≠ door
+  ons afgeleverd, en de operator wil ze in het overzicht kunnen onderscheiden.
+- RPC `markeer_zending_afgehaald(p_zending_id)` (mig 483, SECURITY DEFINER):
+  flipt 'Klaar voor verzending' → 'Afgehaald', gegate op `orders.afhalen` +
+  status (idempotent). Raakt alleen de zending; de order staat al op 'Verzonden'
+  (gezet door `voltooi_pickronde`, ongeacht vervoerder). Géén backfill — een
+  blanco doorzet zou niet-opgehaalde zendingen ten onrechte afgehaald markeren.
+- Frontend: knop "Markeer als afgehaald" op zending-detail, alleen zichtbaar bij
+  een afhaal-zending (`status='Klaar voor verzending' && !vervoerder_code`).
+  Badge-kleur (teal) + filter-pil + default-zichtbare set in het zendingen-
+  overzicht uitgebreid.
+- Aparte migraties: een nieuw enum-value kan in PostgreSQL niet in dezelfde
+  transactie worden gebruikt als waarin het wordt toegevoegd.
+
 ## 2026-06-23 — Order aanmaken vereist een gekoppelde prijslijst (mig 481)
 
 **Waarom:** directe vervolgstap op de HEADLAM-prijscorrectie hieronder —

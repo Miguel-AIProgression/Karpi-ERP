@@ -7,6 +7,7 @@ export type ZendingStatus =
   | 'Klaar voor verzending'
   | 'Onderweg'
   | 'Afgeleverd'
+  | 'Afgehaald'
 
 export type HstTransportorderStatus =
   | 'Wachtrij'
@@ -196,6 +197,28 @@ export interface ZendingPrintSet {
   zending_colli: ZendingPrintColli[]
 }
 
+/** Gedeelde select voor de overzichts- én zoek-query (zelfde rij-shape). */
+const LIJST_SELECT = `
+  id, zending_nr, status, vervoerder_code, verzenddatum, track_trace,
+  afl_naam, afl_postcode, afl_plaats, afl_land,
+  aantal_colli, totaal_gewicht_kg, created_at, gereed_op,
+  orders!zendingen_order_id_fkey!inner (
+    id, order_nr, debiteur_nr,
+    debiteuren:debiteuren!orders_debiteur_nr_fkey (
+      debiteur_nr, naam
+    )
+  ),
+  zending_orders (
+    order_id,
+    bundel_order:orders!zending_orders_order_id_fkey (
+      id, order_nr
+    )
+  ),
+  verzend_wachtrij (
+    id, status, extern_referentie, track_trace, sent_at
+  )
+`
+
 /**
  * Lijst-query voor de logistiek-overzichtspagina.
  *
@@ -206,28 +229,7 @@ export interface ZendingPrintSet {
 export async function fetchZendingen(filters: ZendingenFilters = {}) {
   let q = supabase
     .from('zendingen')
-    .select(
-      `
-      id, zending_nr, status, vervoerder_code, verzenddatum, track_trace,
-      afl_naam, afl_postcode, afl_plaats, afl_land,
-      aantal_colli, totaal_gewicht_kg, created_at, gereed_op,
-      orders!zendingen_order_id_fkey!inner (
-        id, order_nr, debiteur_nr,
-        debiteuren:debiteuren!orders_debiteur_nr_fkey (
-          debiteur_nr, naam
-        )
-      ),
-      zending_orders (
-        order_id,
-        bundel_order:orders!zending_orders_order_id_fkey (
-          id, order_nr
-        )
-      ),
-      verzend_wachtrij (
-        id, status, extern_referentie, track_trace, sent_at
-      )
-    `,
-    )
+    .select(LIJST_SELECT)
     // Sorteer op het moment dat de pickronde werd afgerond (zending →
     // 'Klaar voor verzending', mig 432). NULL (nog niet afgerond, bv. 'Picken')
     // achteraan; `id` als stabiele tiebreak binnen dezelfde dag.
@@ -239,11 +241,61 @@ export async function fetchZendingen(filters: ZendingenFilters = {}) {
     q = q.eq('status', filters.status)
   } else if (filters.exclude_picken !== false) {
     // Default: verberg lopende Pickrondes (status='Picken' / 'Gepland').
-    q = q.in('status', ['Klaar voor verzending', 'Onderweg', 'Afgeleverd'])
+    q = q.in('status', ['Klaar voor verzending', 'Onderweg', 'Afgeleverd', 'Afgehaald'])
   }
   if (filters.debiteur_nr) q = q.eq('orders.debiteur_nr', filters.debiteur_nr)
 
   return await q
+}
+
+/**
+ * Zoek zendingen op barcode (SSCC), ordernummer of zendingnummer.
+ *
+ * Use-case: HST/Rhenus mailt bij een manco-melding alléén de colli-barcodes
+ * (de 20-cijferige labelbarcode = AI(00) + 18-cijferige SSCC). De operator
+ * plakt die hier om snel te zien wélke zending/karpet het is.
+ *
+ * Zoekt over ALLE statussen (ook 'Picken' en al verzonden) — een manco-melding
+ * gaat vrijwel altijd over een reeds verzonden zending, die de overzichtslijst
+ * juist verbergt. De drie velden zitten in drie tabellen, dus we verzamelen
+ * eerst de zending-ids en halen daarna de volledige rijen op.
+ */
+export async function zoekZendingen(term: string) {
+  const t = term.trim()
+  if (t.length < 2) return { data: [], error: null }
+
+  // Labelbarcode draagt de AI(00)-prefix; zending_colli.sscc niet. Strip 'm zodat
+  // een geplakte 20-cijferige barcode op de 18-cijferige SSCC matcht. Onze SSCC's
+  // beginnen met de company-prefix (087159…), nooit met '00', dus dit is veilig.
+  const sscc = t.replace(/^00/, '')
+
+  const [opZending, opOrder, opColli] = await Promise.all([
+    supabase.from('zendingen').select('id').ilike('zending_nr', `%${t}%`).limit(100),
+    supabase
+      .from('zending_orders')
+      .select('zending_id, orders!inner(order_nr)')
+      .ilike('orders.order_nr', `%${t}%`)
+      .limit(100),
+    supabase.from('zending_colli').select('zending_id').ilike('sscc', `%${sscc}%`).limit(100),
+  ])
+
+  const err = opZending.error ?? opOrder.error ?? opColli.error
+  if (err) return { data: [], error: err }
+
+  const ids = new Set<number>()
+  opZending.data?.forEach((r) => ids.add(r.id as number))
+  opOrder.data?.forEach((r) => ids.add((r as { zending_id: number }).zending_id))
+  opColli.data?.forEach((r) => ids.add((r as { zending_id: number }).zending_id))
+
+  if (ids.size === 0) return { data: [], error: null }
+
+  return await supabase
+    .from('zendingen')
+    .select(LIJST_SELECT)
+    .in('id', [...ids])
+    .order('gereed_op', { ascending: false, nullsFirst: false })
+    .order('id', { ascending: false })
+    .limit(200)
 }
 
 /**
@@ -448,4 +500,20 @@ export async function markeerZendingHandmatigAfgehandeld(
     p_document_pad: null,
   })
   if (error) throw error
+}
+
+/**
+ * Markeer een afhaal-zending als afgehaald (mig 482-483). Afhaal-orders
+ * (orders.afhalen) hebben geen vervoerder en blijven anders eeuwig op
+ * 'Klaar voor verzending' staan. De order staat dan al op 'Verzonden'; dit
+ * sluit alleen de zending af. Server-side gegate op afhaal + status.
+ */
+export async function markeerZendingAfgehaald(zending_id: number) {
+  const { data, error } = await supabase.rpc('markeer_zending_afgehaald', {
+    p_zending_id: zending_id,
+  })
+  if (error) throw toError(error, 'Afgehaald markeren mislukt')
+  if (data !== 'afgehaald') {
+    throw new Error(`Afgehaald markeren mislukt: ${String(data)}`)
+  }
 }

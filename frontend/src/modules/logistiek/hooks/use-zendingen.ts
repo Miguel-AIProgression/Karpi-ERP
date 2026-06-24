@@ -5,6 +5,7 @@ import {
   fetchZendingMetTransportorders,
   fetchZendingPrintSet,
   markeerZendingHandmatigAfgehandeld,
+  markeerZendingAfgehaald,
   type ZendingenFilters,
   type ZendingPrintSet,
 } from '@/modules/logistiek/queries/zendingen'
@@ -110,6 +111,21 @@ export function useMarkeerZendingAfgehandeld() {
       qc.invalidateQueries({ queryKey: ['logistiek', 'zendingen'] })
       qc.invalidateQueries({ queryKey: ['hst-monitor'] })
       qc.invalidateQueries({ queryKey: ['hst-fouten'] })
+    },
+  })
+}
+
+/**
+ * Markeer een afhaal-zending als afgehaald (mig 482-483). Voor afhaal-orders
+ * zonder vervoerder, die anders op 'Klaar voor verzending' blijven hangen.
+ */
+export function useMarkeerZendingAfgehaald() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (zendingId: number) => markeerZendingAfgehaald(zendingId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['logistiek', 'zending'] })
+      qc.invalidateQueries({ queryKey: ['logistiek', 'zendingen'] })
     },
   })
 }
