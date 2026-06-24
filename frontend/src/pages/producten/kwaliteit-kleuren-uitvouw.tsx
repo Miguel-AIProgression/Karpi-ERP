@@ -14,7 +14,7 @@ import {
 import { ProductRow } from './product-row'
 import type { ProductType } from '@/lib/supabase/queries/producten'
 
-const COL_COUNT = 11
+const COL_COUNT = 12
 
 interface Props {
   kwaliteitCode: string
@@ -290,6 +290,7 @@ function ArtikelsVoorKleur({
               <th className="text-left px-4 py-1.5 font-medium text-slate-500 text-xs pl-20">Artikelnr</th>
               <th className="text-left px-4 py-1.5 font-medium text-slate-500 text-xs">Karpi-code</th>
               <th className="text-left px-4 py-1.5 font-medium text-slate-500 text-xs">Omschrijving</th>
+              <th className="text-left px-4 py-1.5 font-medium text-slate-500 text-xs">Maat</th>
               <th className="text-left px-4 py-1.5 font-medium text-slate-500 text-xs">Type</th>
               <th className="text-left px-4 py-1.5 font-medium text-slate-500 text-xs">Kwaliteit</th>
               <th className="text-left px-4 py-1.5 font-medium text-slate-500 text-xs">Locatie</th>

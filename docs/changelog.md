@@ -1,5 +1,28 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-24 — Omschrijving-conventie "CA: ..." + Maat-kolom in productenoverzicht
+
+**Waarom:** gebruiker maakte "Ombre 14 260 Rond" aan en kreeg omschrijving
+"OMBR Kleur 14 260x260cm Rond" — moest zijn "CA: 260 ROND" zoals de
+bestaande rond-omschrijvingen ("OMBRE Kleur 14 CA: 220 ROND BEIGE GREY").
+Daarnaast: de maat was nergens als los, leesbaar veld te zien op het
+productenoverzicht (alleen per Vaste maat/Staal in product-detail).
+
+- `buildOmschrijving` (`product-create.tsx`) volgt nu de legacy-conventie:
+  **"CA:"**-prefix vóór het maat-deel, en voor `rond` één diameter +
+  "ROND" (`CA: 260 ROND`) i.p.v. "DxD cm" — een rond stuk heeft geen
+  zinvolle tweede afmeting om te tonen. Overige vormen ongewijzigd
+  `CA: BxL cm {Vormnaam}`.
+- **Eenmalige datacorrectie:** omschrijving van de 2 al aangemaakte
+  artikelen (607140007, 607140008) rechtgezet naar de nieuwe conventie.
+- **Nieuwe "Maat"-kolom** op zowel het platte "Per product"-overzicht
+  (`producten-overview.tsx`) als de kwaliteit/kleur-uitvouw
+  (`kwaliteit-kleuren-uitvouw.tsx`), gedeeld via `ProductRow`
+  (`product-row.tsx`) — toont `lengte_cm × breedte_cm` of bij
+  `maatwerk_vorm_code='rond'` enkel `Ø {diameter} cm`. Mogelijk dankzij
+  de eerdere view-uitbreiding (mig 483) die deze kolommen al beschikbaar
+  maakte voor de lijst-query.
+
 ## 2026-06-24 — `producten.vorm` nooit gesynchroniseerd met `maatwerk_vorm_code` (code-fix + datacorrectie 1.525 producten)
 
 **Waarom:** gebruiker vroeg om bij aanmaken van een variant meteen het te

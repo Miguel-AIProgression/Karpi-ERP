@@ -292,6 +292,13 @@ export function ProductRow({ p, expanded, onToggle, showRollen, colSpan, indent 
         </td>
         <td className="px-4 py-3 text-xs font-mono text-slate-500">{p.karpi_code ?? '—'}</td>
         <td className="px-4 py-3">{p.omschrijving}</td>
+        <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">
+          {p.lengte_cm != null && p.breedte_cm != null
+            ? p.maatwerk_vorm_code === 'rond'
+              ? `Ø ${formatNumber(p.lengte_cm)} cm`
+              : `${formatNumber(p.lengte_cm)} × ${formatNumber(p.breedte_cm)} cm`
+            : '—'}
+        </td>
         <td className="px-4 py-3">
           <EditableProductType artikelnr={p.artikelnr} type={p.product_type} />
         </td>

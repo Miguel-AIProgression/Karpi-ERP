@@ -59,17 +59,25 @@ const newRow = (): VariantRow => ({
 })
 
 /**
- * Vorm wordt expliciet in de omschrijving genoemd (behalve rechthoek) —
- * zelfde conventie als bestaande legacy-omschrijvingen ("... 220 ROND ...").
- * Nodig omdat productzoeken alleen op omschrijving/karpi_code/zoeksleutel/
- * artikelnr matcht, niet op maatwerk_vorm_code zelf — zonder vorm-tekst in
- * de omschrijving is een rond/afgeronde-hoeken-artikel niet vindbaar op vorm.
+ * Maat-deel volgt de bestaande legacy-conventie ("OMBRE Kleur 14 CA: 220
+ * ROND BEIGE GREY", "OMBRE Kleur 14 CA: 250x400 cm") — "CA:" prefix, en
+ * voor rond een enkele diameter + "ROND" i.p.v. "DxD cm" (een rond stuk
+ * heeft geen tweede afmeting om te tonen). Vorm wordt expliciet genoemd
+ * (behalve rechthoek) omdat productzoeken alleen op omschrijving/
+ * karpi_code/zoeksleutel/artikelnr matcht, niet op maatwerk_vorm_code zelf.
  */
-function buildOmschrijving(naam: string, kleurCode: string, breedte: string, lengte: string, vormNaam?: string) {
+function buildOmschrijving(naam: string, kleurCode: string, breedte: string, lengte: string, vormCode: string, vormNaam?: string) {
   const parts = [naam.trim()]
   if (kleurCode.trim()) parts.push(`Kleur ${kleurCode.trim()}`)
-  if (breedte && lengte) parts.push(`${breedte}x${lengte}cm`)
-  if (vormNaam) parts.push(vormNaam)
+  if (breedte && lengte) {
+    if (vormCode === 'rond') {
+      parts.push(`CA: ${breedte} ROND`)
+    } else if (vormNaam) {
+      parts.push(`CA: ${breedte}x${lengte} cm ${vormNaam}`)
+    } else {
+      parts.push(`CA: ${breedte}x${lengte} cm`)
+    }
+  }
   return parts.join(' ')
 }
 
@@ -363,7 +371,7 @@ export function ProductCreatePage() {
           artikelnr: r.artikelnr.trim(),
           karpi_code: r.karpi_code.trim() || null,
           ean_code: r.ean_code.trim() || null,
-          omschrijving: buildOmschrijving(effectieveNaam, kleurCode, r.breedte, r.lengte, maatwerkVormen.find(v => v.code === r.vorm)?.naam),
+          omschrijving: buildOmschrijving(effectieveNaam, kleurCode, r.breedte, r.lengte, r.vorm, maatwerkVormen.find(v => v.code === r.vorm)?.naam),
           kwaliteit_code: kwaliteitCode || null,
           kleur_code: kleurCode.trim() || null,
           product_type: (r.product_type as ProductType) || null,
@@ -881,7 +889,7 @@ export function ProductCreatePage() {
                   <tr key={r._key}>
                     <td className="py-2 pr-6 font-mono text-xs text-slate-500">{r.artikelnr}</td>
                     <td className="py-2 pr-6 text-slate-800">
-                      {buildOmschrijving(effectieveNaam, kleurCode, r.breedte, r.lengte, maatwerkVormen.find(v => v.code === r.vorm)?.naam)}
+                      {buildOmschrijving(effectieveNaam, kleurCode, r.breedte, r.lengte, r.vorm, maatwerkVormen.find(v => v.code === r.vorm)?.naam)}
                     </td>
                     <td className="py-2 pr-6 text-slate-500">
                       {PRODUCT_TYPES.find(t => t.value === r.product_type)?.label ?? '—'}
