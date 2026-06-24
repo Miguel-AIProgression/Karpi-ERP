@@ -34,15 +34,20 @@ export interface BedrijfInput {
   gln_eigen?: string;
 }
 
-// Eén colli. lengte_cm → dimension/depth (legacy stuurt voor rollen alleen
-// depth; breedte_cm reist mee voor evt. latere pallet-ondersteuning maar
-// wordt in V1 niet uitgestuurd).
+// Eén colli. lengte_cm → dimension/depth. Een rol stuurt alléén depth (RLEN);
+// een pallet-bundel (mig 489: pallet_type 'PLTS'/'HPLT') stuurt packageTypeCode =
+// pallet_type ÉN depth+width (breedte_cm = de pallet-footprint-breedte). pallet_type
+// is NULL voor losse colli en niet-pallet-bundels (dan: RLEN, alleen depth).
 export interface RhenusColliInput {
   colli_nr: number;
   sscc: string | null;
   gewicht_kg: number | null;
   lengte_cm: number | null;
   breedte_cm: number | null;
+  pallet_type?: string | null;
+  // Mig 490: laadhoogte (cm) van een pallet-bundel → <dimension><height>. NULL voor
+  // rollen/los; alleen relevant bij pallet_type PLTS/HPLT.
+  hoogte_cm?: number | null;
 }
 
 // Colli-preflight-probleem: gedeelde shape (ADR-0034, _shared/vervoerders/colli.ts).

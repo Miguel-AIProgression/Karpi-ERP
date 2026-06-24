@@ -1,45 +1,132 @@
 # Changelog — RugFlow ERP
 
-## 2026-06-24 — Externe vertegenwoordiger-rol: read-only, alleen eigen klanten via RLS (mig 489)
+## 2026-06-24 — Externe vertegenwoordiger-rol: read-only over de hele app (mig 492-495)
 
-**Waarom:** login voor externe vertegenwoordiger (Guido Boecker). Wil read-only inzicht
-in uitsluitend zíjn gekoppelde klanten + orders + facturen. Afgedwongen in de DB (niet
-frontend-only) zodat élke query op élke pagina automatisch filtert — niet "per pagina
-instellen". Taal = browser-vertaling (geen code; Guido zet "vertaal naar Duits" aan).
+**Waarom:** login voor externe vertegenwoordiger (Guido Boecker). Eerst opgezet als
+"alleen eigen klanten + een paar tabs", maar op verzoek omgezet naar **alles zien,
+niks muteren** (read-only over de hele app), behalve systeembeheer
+(Instellingen/Gebruikers/Vertegenwoordigers). Taal = browser-vertaling (geen code).
 
-**Hoe (RLS):** mig 489 zet RLS aan op `orders`/`order_regels`/`debiteuren`/`facturen`/
-`factuur_regels` (stonden tot nu uit) met twee SQL-helpers — `is_externe_vertegenwoordiger()`
-(`auth.jwt() -> 'app_metadata' ->> 'rol' = 'vertegenwoordiger_extern'`) en
-`huidige_vertegenw_code()` — gespiegeld in [`frontend/src/lib/auth/rol.ts`](../frontend/src/lib/auth/rol.ts)
-(patroon van `is_bug_beheerder()`/mig 342). **Filtersleutel = de klant, niet de order**
-(`debiteuren.vertegenw_code` is NOT NULL; `orders.vertegenw_code` kan NULL zijn) — orders/
-facturen filteren via hun debiteur, wat NULL-orders vanzelf uitsluit. **Voor elke niet-rep
-is elke policy `true` → gedrag volledig ongewijzigd** (de hele RLS-laag in deze DB bestaat
-al uit blanket-`true`-policies; we volgen dat). INSERT/UPDATE/DELETE zijn voor de rol geblokt
-(`WITH CHECK (NOT is_externe_vertegenwoordiger())`) — vangt directe tabel-writes (klant-detail).
-Views `orders_list` + `recente_orders` op `security_invoker = true` (anders draaien ze als
-owner en omzeilen de RLS); `dashboard_stats` (globale KPI's, live-only aggregaat-view) bewust
-níét geflipt — de KPI-kaarten worden frontend-zijde voor de rep verborgen.
+**RLS (mig 492-495):** mig 492 zet RLS aan op `orders`/`order_regels`/`debiteuren`/
+`facturen`/`factuur_regels` met schrijf-blokkade-policies + helper
+`is_externe_vertegenwoordiger()`; mig 493 = uid-tabel `vertegenwoordiger_login` +
+helpers (de `rol`-claim zit in deze setup NIET in de JWT → lezen op `auth.uid()`);
+mig 494 maakt de policies `AS RESTRICTIVE` (anders OR't de blanket
+`Authenticated full access`-policy ze weg); **mig 495 dropt de per-klant SELECT-
+policies** → de rep valt terug op de blanket-`true`-zichtbaarheid = ziet alles, net
+als personeel. De write-block-policies blijven als server-side defense-in-depth.
+**Voor elke niet-rep is elke policy `true` → gedrag volledig ongewijzigd.**
 
-**Account krijgt de rol** via `app_metadata` (alléén service-role kan dat → rep kan zijn
-scope niet ophogen): de edge function `gebruikers-beheer` accepteert `rol` + `vertegenw_code`
-en zet die na aanmaken; de uitnodig-dialog onder Systeem → Gebruikers heeft een
-"Externe vertegenwoordiger"-checkbox + dropdown met medewerkers die de `vertegenwoordiger`-rol
-hebben.
+**Read-only afdwinging = frontend (bewuste keuze gebruiker boven hard-in-DB):**
+- **`lib/supabase/client.ts`** = data-vangnet: een Proxy op `.from()` gooit hard bij
+  `insert/update/delete/upsert` zodra de ingelogde user rol `vertegenwoordiger_extern`
+  heeft (rol live uit `app_metadata`). `.rpc()/.select()/storage/auth` ongemoeid →
+  blokkeert in één bestand álle directe table-writes; carve-out `bug_meldingen`.
+- **`lib/auth/rol.ts`** = denylist `repMagPad`: weert `/instellingen`+`/vertegenwoordigers`
+  + de schrijf-subroutes `/nieuw`+`/bewerken`; `sidebar`/`app-layout` tonen al het
+  overige read-only, dashboard-KPI's weer zichtbaar.
+- **UI-sweep:** elke muteer-knop/-dialoog/-toggle verborgen voor de rep in
+  orders/debiteuren/facturatie/logistiek/magazijn/snijplanning/inkoop/edi/producten,
+  incl. de gedeelde componenten (documenten-upload, product-inline, colli-bundeling).
 
-**Frontend (read-only UX):** `useAuth()` exposet `isExternRep`/`vertegenwCode`; de sidebar
-toont alleen Dashboard/Orders/Klanten/Facturatie; een `RoleGuard` in `AppLayout` weert overige
-paden + de schrijf-subroutes `/orders/nieuw` en `/bewerken` (de enige rem op de SECURITY
-DEFINER-RPC's, die RLS omzeilen — zie "bekende grens" in het plan). Muteer-affordances verborgen
-op orders-overzicht ("Nieuwe order"), order-detail (OrderHeader-acties + Express + zending
-aanmaken) en klant-detail (bewerken/verwijderen/logo). Diepere inline klant-instellingen
-(verzendkosten e.d.) blijven RLS-beschermd (fail-closed).
+**Account krijgt de rol** via `app_metadata` (alléén service-role → niet te vervalsen):
+`gebruikers-beheer` zet `rol` + `vertegenw_code` én upsert de `vertegenwoordiger_login`-
+rij (uid-mapping). **Deploy:** mig 492-495 al live (24-06); `gebruikers-beheer` herdeployd
+voor de uid-mapping van toekomstige rep-accounts.
 
-**Bekende grens (bewuste shortcut):** SECURITY DEFINER-schrijf-RPC's (`create_order_with_lines`,
-…) omzeilen RLS; de rep heeft er geen UI voor en wordt door de RoleGuard van de aanmaak-/
-bewerk-pagina's geweerd. Upgrade-pad: één `is_externe_vertegenwoordiger()`-guard vooraan in die
-RPC's. **Deploy-volgorde:** mig 489 vóór de frontend; `gebruikers-beheer` herdeployen voor de
-rol-toewijzing. Plan: [`docs/superpowers/plans/2026-06-24-vertegenwoordiger-rol-read-only-rls.md`](superpowers/plans/2026-06-24-vertegenwoordiger-rol-read-only-rls.md).
+## 2026-06-24 — HST pallet-types MP + PLH (mig 491)
+
+**Waarom (mail Niek Zandvoort, HST Groep, 24-06):** naast EP (Europallet) en SP
+(wegwerp pallet) ondersteunt HST nóg twee PackageUnitID's voor een pallet-bundel:
+**MP** (mini pallet) en **PLH** (halve pallet). De operator moet die bij het
+bundelen kunnen kiezen.
+
+**Wat:** puur de bestaande deep module (mig 485) verbreed — géén nieuwe code in de
+payload-builder of colli-seam (`PackageUnitID = pallet_type ?? 'col'` stroomt MP/PLH
+automatisch door; HST prijst op PackageUnitID, dus net als EP/SP géén footprint).
+- **mig 491:** CHECK `zending_colli_pallet_type_chk` + de `maak_colli_bundel`-validatie
+  verbreed met `'MP'`/`'PLH'` (lijst nu EP/SP/MP/PLH + PLTS/HPLT). RPC-body = exact
+  mig 490 (7-arg) + de twee extra waarden; `CREATE OR REPLACE` (signatuur ongewijzigd).
+- **Frontend:** `palletTypeOpties('hst_api')` (`handmatig-aanmelden.ts`) geeft nu vier
+  keuzes — EP/SP/MP/PLH. Eén bron; `ColliBundelDialog` leest 'm ongewijzigd.
+
+Niek noemde nog dat onbekend is of er vanuit HST-verkoop een offerte voor deze
+verzendeenheden is afgegeven — prijsafspraak ligt buiten dit ERP, geen code-impact.
+
+## 2026-06-24 — Rhenus bundeling: zak-optie terug + L/B/H voor pallets (mig 490)
+
+**Waarom (verzoek Miguel, na mig 489):** twee dingen ontbraken. (1) Door PLTS/HPLT
+verplicht te maken was de **oorspronkelijke "zak"-bundel** (gewone bundel zonder pallet)
+niet meer te maken — die moet blijven bestaan. (2) Voor een pallet moeten **lengte,
+breedte én hoogte** invulbaar zijn; lengte/breedte op basis van de pallet-afmeting,
+hoogte als laadhoogte (operator-invoer). mig 489 verborg de maatvelden juist.
+
+**Wat:**
+- **Zak-optie terug:** `palletTypeOpties('rhenus_sftp')` biedt nu `Geen pallet (zak)` /
+  `Volle pallet` / `Halve pallet`. De zak-keuze is UI-sentinel `RHENUS_GEEN_PALLET='ZAK'`
+  → mapt naar `pallet_type=NULL` (RLEN, géén footprint/hoogte) in de RPC.
+- **L/B/H invulbaar voor pallets:** de lengte/breedte-velden worden weer getoond en
+  **voorgevuld** met de footprint (PLTS 80×120 / HPLT 80×60) via `palletFootprint()`,
+  editbaar; nieuw **hoogte-veld** (laadhoogte) verschijnt alleen bij een echte pallet
+  (`isFootprintPallet`). `palletFootprintVast` is verwijderd.
+- **Datamodel (mig 490):** `zending_colli.hoogte_cm` + `maak_colli_bundel` → 7-arg
+  (`p_hoogte_cm`, DROP 6-arg + CREATE 7-arg met DEFAULT NULL). De colli-seam
+  ([`fetch-zending-colli.ts`](supabase/functions/_shared/vervoerders/fetch-zending-colli.ts))
+  leest `hoogte_cm`; `bouwItem` ([`xml-builder.ts`](supabase/functions/rhenus-send/xml-builder.ts))
+  stuurt voor een pallet mét hoogte een `<height>` in `<dimension>` (depth→width→height).
+- **HST (EP/SP) ongewijzigd:** geen zak-optie, geen footprint-prefill, geen hoogte-veld
+  (`isFootprintPallet` is false voor EP/SP; HST prijst op PackageUnitID).
+
+**Open / te bevestigen bij Rhenus:** `<height>` staat niet in het legacy-bestand (alleen
+depth+width) maar is een standaard optioneel GS1-element — meenemen in dezelfde
+format-check als de HPLT-footprint (mig 489). NULL-guarded: een pallet zonder hoogte =
+byte-identiek aan legacy (geen `<height>`).
+
+**Tests:** rhenus + seam 42/42 (incl. PLTS-met-hoogte, pallet-zonder-hoogte, seam
+hoogte-passthrough); hst + verhoek 34/34; `tsc -b` schoon. Adversariële review (backend +
+frontend): 0 code-bugs; frontend merge-klaar; deploy-volgorde-punt onderkend.
+
+**Deploy-volgorde (BELANGRIJK):** **mig 490 LIVE vóór de frontend deployt** — de nieuwe
+frontend roept `maak_colli_bundel` met 7 named args aan; een 7-arg-call naar de nog-6-arg
+RPC faalt. Andersom (490 live, oude frontend met 6 args) is veilig via de DEFAULT. Dus:
+mig 490 toepassen → daarna pas merge/push (Vercel auto-deploy) + `rhenus-send` redeploy.
+
+## 2026-06-24 — Rhenus colli-bundeling tot een pallet (PLTS/HPLT, mig 489)
+
+**Waarom (verzoek Miguel):** Rhenus kon al colli samenpakken onder één SSCC (mig 420/421),
+maar de bundel ging als "zak" mee — `packageTypeCode RLEN`, alleen een `<depth>`. Rhenus'
+GS1-formaat kent een echt **pallet**-item: ons eigen legacy-bestand (`docs/rhenus/voorbeelden/`,
+zending 9453355) stuurde `<packageTypeCode>PLTS</packageTypeCode>` met `<dimension>` depth=80 +
+**width=120** (Europallet). Die mogelijkheid stond er dus al qua formaat; alleen ons systeem
+gebruikte 'm niet. Dit is het Rhenus-equivalent van de HST-pallet-bundeling (mig 485, EP/SP).
+
+**Wat (bouwt op mig 485, géén nieuw bundel-concept):**
+- **`zending_colli.pallet_type` verbreed** van `EP/SP` (HST) naar ook `PLTS` (volle pallet) /
+  `HPLT` (halve pallet) voor Rhenus — CHECK + `maak_colli_bundel`-validatie. Signatuur van de RPC
+  ongewijzigd (6-arg sinds mig 485) → `CREATE OR REPLACE`, geen DROP.
+- **Vaste pallet-footprint server-side** (single source): `maak_colli_bundel` zet bij `PLTS`
+  depth=80×width=120 (EU-pallet) en bij `HPLT` depth=80×width=60 (half-EU-pallet) tenzij de caller
+  expliciete maten meegeeft. EP/SP (HST) houden footprint = MAX-van-kinderen (HST prijst op
+  PackageUnitID, niet op dims). **HPLT 80×60 is een aanname** (niet in het legacy-bestand, dat
+  alleen 80×120 PLTS toont) → laten bevestigen door Rhenus bij de eerstvolgende format-check.
+- **Rhenus xml-builder** ([`bouwItem`](supabase/functions/rhenus-send/xml-builder.ts)): een
+  pallet-bundel (`pallet_type` PLTS/HPLT) stuurt die code als `packageTypeCode` + een `<width>`-
+  dimensie naast `<depth>`; een rol/los collo blijft RLEN met alleen `<depth>` (legacy-conform,
+  byte-identiek voor niet-pallet-zendingen). `RhenusColliInput` kreeg een optioneel `pallet_type`-veld;
+  de orchestrator geeft de seam-waarde (mig 485) al door.
+- **Frontend:** `bundelOpPallet` geldt nu ook voor Rhenus; nieuwe `palletTypeOpties(code)`
+  (HST → EP/SP, Rhenus → PLTS/HPLT) + `palletFootprintVast` in
+  [`handmatig-aanmelden.ts`](frontend/src/modules/logistiek/lib/handmatig-aanmelden.ts). Zowel de
+  [`ColliBundelDialog`](frontend/src/modules/logistiek/components/colli-bundel-dialog.tsx) (tijdens
+  'Picken') als de post-voltooi [`ColliBundelSectie`](frontend/src/modules/logistiek/components/colli-bundel-sectie.tsx)
+  (16:00-dagbatch) laten het pallet-type kiezen; voor Rhenus zijn de lengte/breedte-velden verborgen
+  (footprint is vast) en stuurt de UI lege maten → de RPC vult de footprint.
+
+**Tests:** `xml-builder.test.ts` +3 cases (PLTS met width, HPLT, regressie los collo blijft RLEN
+zonder width) — 16/16 groen; verwerk-row-karakterisatie 5/5; `tsc -b` schoon.
+
+**Deploy:** mig 489 + `rhenus-send` herdeployen, daarna de frontend. Mig 489 her-verifiëren t.o.v.
+origin/main vóór merge (nummer-collisie-historie).
 
 ## 2026-06-24 — Order-fase volgt de productie: snijplan→order terugkoppel-seam (mig 486)
 
