@@ -19,6 +19,9 @@ import type { StatusCount } from '@/lib/supabase/queries/orders'
 // 'Prijs ontbreekt' = orders met ≥1 regel zonder prijs (€0/NULL) (mig 396,
 // prijs_ontbreekt_sinds IS NOT NULL); status-overstijgend en blokkeert
 // pickronde-start tot de prijs is gecorrigeerd of bewust bevestigd.
+// 'Geen verzendweek' = orders zonder afleverdatum (afleverdatum IS NULL);
+// status-overstijgend — zonder week geen weekindeling in Pick & Ship.
+// Aanleiding: EDI-orders SB MÖBEL BOSS / OSTERMANN zonder datum (2026-06-24).
 const ALL_STATUSES = [
   'Alle',
   'Klaar voor picken',
@@ -28,6 +31,7 @@ const ALL_STATUSES = [
   'Levertijd gewijzigd',
   'Afleveradres ontbreekt',
   'Prijs ontbreekt',
+  'Geen verzendweek',
   'Wacht op voorraad',
   'Wacht op inkoop',
   'Wacht op maatwerk',

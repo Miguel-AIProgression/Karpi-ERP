@@ -5,6 +5,7 @@ import { filterDebiteurTeBevestigen } from '@/lib/orders/intake-predicaten'
 import { filterLeverweekTeBevestigen } from '@/lib/orders/edi-leverweek'
 import { filterAfleveradresIncompleet } from '@/lib/orders/afleveradres-gate'
 import { filterPrijsOntbreekt } from '@/lib/orders/prijs-ontbreekt'
+import { filterGeenVerzendweek } from '@/lib/orders/geen-verzendweek'
 
 export interface OrderRow {
   id: number
@@ -271,6 +272,12 @@ export async function fetchOrders(params: {
     // (NULL = geen probleem / geaccepteerd). Spiegelt isPrijsOntbreekt en de
     // DB-trigger fn_order_regels_prijs_gate.
     query = filterPrijsOntbreekt(query)
+  } else if (status === 'Geen verzendweek') {
+    // Orders waarvan afleverdatum NULL is — geen weekindeling mogelijk in
+    // Pick & Ship. Aanleiding: EDI-orders van SB MÖBEL BOSS / OSTERMANN kwamen
+    // binnen zonder afleverdatum (2026-06-24). Productie-only orders (Basta)
+    // worden uitgesloten (verzending via Basta, ADR-0029).
+    query = filterGeenVerzendweek(query)
   } else if (status && status !== 'Alle') {
     query = query.eq('status', status)
   }
@@ -379,6 +386,7 @@ export async function fetchStatusCounts(): Promise<StatusCountResult> {
     levertijdGewijzigdRes,
     aflAdresOntbreektRes,
     prijsOntbreektRes,
+    geenVerzendweekRes,
   ] = await Promise.all([
     supabase.from('orders_status_telling').select('status, aantal'),
     supabase
@@ -399,6 +407,9 @@ export async function fetchStatusCounts(): Promise<StatusCountResult> {
       supabase.from('orders').select('id', { count: 'exact', head: true }),
     ),
     filterPrijsOntbreekt(
+      supabase.from('orders').select('id', { count: 'exact', head: true }),
+    ),
+    filterGeenVerzendweek(
       supabase.from('orders').select('id', { count: 'exact', head: true }),
     ),
   ])
@@ -440,7 +451,25 @@ export async function fetchStatusCounts(): Promise<StatusCountResult> {
     counts.push({ status: 'Prijs ontbreekt', aantal: prijsOntbreekt })
   }
 
+  const geenVerzendweek = geenVerzendweekRes.count ?? 0
+  if (geenVerzendweek > 0) {
+    counts.push({ status: 'Geen verzendweek', aantal: geenVerzendweek })
+  }
+
   return { counts, totalOrders }
+}
+
+/**
+ * Aantal open orders zonder afleverdatum (= geen verzendweek). Voedt de
+ * waarschuwingsbanner op het orders-overzicht. Productie-only orders (Basta)
+ * worden uitgesloten — die verzenden via Basta zelf (ADR-0029).
+ */
+export async function countGeenVerzendweekOrders(): Promise<number> {
+  const { count, error } = await filterGeenVerzendweek(
+    supabase.from('orders').select('id', { count: 'exact', head: true }),
+  )
+  if (error) throw error
+  return count ?? 0
 }
 
 /**

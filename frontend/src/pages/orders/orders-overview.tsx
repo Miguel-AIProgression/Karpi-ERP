@@ -12,6 +12,7 @@ import { useFacturenVoorOrders } from '@/modules/facturatie'
 import { useSnijHaalbaarheid } from '@/modules/snijplanning'
 import { EdiTeKoppelenBanner } from '@/modules/edi'
 import { ShopifySyncStatusBanner } from '@/components/orders/shopify-sync-status-banner'
+import { GeenVerzendweekBanner } from '@/components/orders/geen-verzendweek-banner'
 import { useAuth } from '@/hooks/use-auth'
 import type { OrderSortField, SortDirection } from '@/lib/supabase/queries/orders'
 
@@ -116,6 +117,14 @@ export function OrdersOverviewPage() {
 
       {/* Storingssignaal: de geplande Shopify-orderpoll loopt vast of faalt */}
       <ShopifySyncStatusBanner />
+
+      {/* Orders zonder afleverdatum — geen weekindeling mogelijk in Pick & Ship */}
+      <GeenVerzendweekBanner
+        onBekijk={() => {
+          setStatus('Geen verzendweek')
+          setPage(0)
+        }}
+      />
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3 mb-4">

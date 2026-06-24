@@ -6,6 +6,7 @@ import {
   fetchOrderRegels,
   fetchOrderKlantOpties,
   countTeBevestigenDebiteurOrders,
+  countGeenVerzendweekOrders,
 } from '@/lib/supabase/queries/orders'
 import type { OrderSortField, SortDirection } from '@/lib/supabase/queries/orders'
 
@@ -65,6 +66,18 @@ export function useTeBevestigenDebiteurCount() {
   return useQuery({
     queryKey: ['orders', 'debiteur-te-bevestigen-count'],
     queryFn: countTeBevestigenDebiteurOrders,
+    refetchInterval: 60_000,
+  })
+}
+
+/**
+ * Aantal open orders zonder afleverdatum (= geen verzendweek zichtbaar).
+ * Voedt de waarschuwingsbanner op het orders-overzicht.
+ */
+export function useGeenVerzendweekCount() {
+  return useQuery({
+    queryKey: ['orders', 'geen-verzendweek-count'],
+    queryFn: countGeenVerzendweekOrders,
     refetchInterval: 60_000,
   })
 }
