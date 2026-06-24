@@ -1,4 +1,4 @@
--- Migratie 489: externe vertegenwoordiger-rol — read-only, alleen eigen klanten via RLS
+-- Migratie 490: externe vertegenwoordiger-rol — read-only, alleen eigen klanten via RLS
 --
 -- Aanleiding: login voor externe vertegenwoordiger (Guido Boecker). Wil read-only
 -- inzicht in uitsluitend zíjn gekoppelde klanten + orders + facturen. Afgedwongen
@@ -36,7 +36,7 @@ AS $$
 $$;
 
 COMMENT ON FUNCTION is_externe_vertegenwoordiger() IS
-  'Mig 489: TRUE als de ingelogde gebruiker de externe-vertegenwoordiger-rol heeft '
+  'Mig 490: TRUE als de ingelogde gebruiker de externe-vertegenwoordiger-rol heeft '
   '(app_metadata.rol). Gespiegeld in frontend/src/lib/auth/rol.ts.';
 
 CREATE OR REPLACE FUNCTION huidige_vertegenw_code()
@@ -49,7 +49,7 @@ AS $$
 $$;
 
 COMMENT ON FUNCTION huidige_vertegenw_code() IS
-  'Mig 489: de medewerkers.code van de ingelogde externe vertegenwoordiger '
+  'Mig 490: de medewerkers.code van de ingelogde externe vertegenwoordiger '
   '(app_metadata.vertegenw_code), of NULL.';
 
 GRANT EXECUTE ON FUNCTION is_externe_vertegenwoordiger() TO authenticated, service_role;

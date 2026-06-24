@@ -61,6 +61,14 @@ async function zetRolClaim(
     app_metadata: { rol, vertegenw_code: c },
   })
   if (error) return error.message
+  // Bron-van-waarheid voor de RLS (mig 491): de helpers lezen de koppeling uit
+  // vertegenwoordiger_login op auth.uid(), niet uit het JWT (custom app_metadata-
+  // claims komen in deze setup niet in het token). Zonder deze rij filtert de RLS
+  // niet → de rep zou alles zien. service_role bypasst RLS, dus de upsert mag.
+  const { error: linkError } = await admin
+    .from('vertegenwoordiger_login')
+    .upsert({ user_id: userId, vertegenw_code: c }, { onConflict: 'user_id' })
+  if (linkError) return linkError.message
   return null
 }
 
