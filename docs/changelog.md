@@ -1,5 +1,30 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-24 — Naam-fallback gebruikte kwaliteitscode i.p.v. echte naam (onvindbaar via zoeken)
+
+**Waarom:** gebruiker zag 607140008 wél op "Per kwaliteit" maar niet op
+"Per product" bij zoeken op "ombre". Oorzaak: `kwaliteiten.omschrijving`
+is voor OMBR (en kennelijk meer kwaliteiten) leeg, dus de naam-fallback in
+variant-toevoegen-modus viel terug op de rauwe kwaliteitscode "OMBR"
+(4 letters, geen E) i.p.v. de échte naam "OMBRE" — die alleen in de
+omschrijving van bestaande artikelen staat, niet op de kwaliteit zelf.
+"Per kwaliteit" toont alle artikelen van een al-geopende kwaliteit zonder
+het zoekveld te gebruiken; "Per product" filtert wél op de zoekterm via
+`ILIKE` op artikelnr/karpi_code/omschrijving/zoeksleutel — "OMBR ..."
+matcht daar niet op "%ombre%".
+
+- `product-create.tsx`: nieuwe fallback-laag tussen `kwaliteiten.
+  omschrijving` en de kwaliteitscode — haalt één bestaand zusterartikel
+  van de kwaliteit op (`useProducten({kwaliteitCode, pageSize:1})`) en
+  parsed de naam uit diens omschrijving (alles vóór `" Kleur "`, de vaste
+  scheiding die `buildOmschrijving` zelf ook hanteert). Kwaliteitscode is
+  nu echt het laatste redmiddel, alleen relevant als de kwaliteit nog
+  géén producten heeft (kan in variant-toevoegen-modus per definitie niet
+  voorkomen).
+- **Eenmalige datacorrectie:** omschrijving van 607140007/607140008
+  aangepast van "OMBR Kleur ..." naar "OMBRE Kleur ...". Geverifieerd:
+  alle 15 OMBR-producten matchen nu op een zoekquery naar "ombre".
+
 ## 2026-06-24 — Omschrijving-conventie "CA: ..." + Maat-kolom in productenoverzicht
 
 **Waarom:** gebruiker maakte "Ombre 14 260 Rond" aan en kreeg omschrijving

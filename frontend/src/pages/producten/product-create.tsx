@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Plus, Trash2, AlertTriangle, CheckCircle2, Info, Check } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { useLeveranciers, useCreateProduct, useNextArtikelnr, useKwaliteiten, useMaatwerkVormen, useBestaandeArtikelnrs, useBestaandeKarpiCodes } from '@/hooks/use-producten'
+import { useLeveranciers, useCreateProduct, useNextArtikelnr, useKwaliteiten, useMaatwerkVormen, useBestaandeArtikelnrs, useBestaandeKarpiCodes, useProducten } from '@/hooks/use-producten'
 import { STANDAARD_TAPIJTMATEN } from '@/lib/constants/tapijt-maten'
 import {
   fetchAfwerkingTypes,
@@ -132,18 +132,40 @@ export function ProductCreatePage() {
   const [afwerkingCode, setAfwerkingCode] = useState('')
   const [actief, setActief] = useState(existingKwaliteitMode)
 
-  // Naam voorinvullen vanuit de bestaande kwaliteit-omschrijving (bv. "Ombre")
+  // Eén bestaand zusterartikel van deze kwaliteit — voedt de naam-fallback
+  // hieronder. kwaliteiten.omschrijving is voor veel kwaliteiten (zoals
+  // OMBR) leeg; de échte naam ("OMBRE") staat alleen in de omschrijving
+  // van bestaande artikelen. Zonder dit viel de fallback terug op de rauwe
+  // 4-letter kwaliteitscode ("OMBR" i.p.v. "OMBRE") — niet vindbaar via
+  // zoeken op "ombre" en inconsistent met alle zusterartikelen.
+  const { data: zusterData } = useProducten({
+    kwaliteitCode: kwaliteitParam,
+    pageSize: 1,
+  })
+  const zusterNaam = (() => {
+    const omschrijving = zusterData?.producten[0]?.omschrijving
+    if (!omschrijving) return null
+    const idx = omschrijving.indexOf(' Kleur ')
+    return idx > 0 ? omschrijving.slice(0, idx) : null
+  })()
+
+  // Naam voorinvullen vanuit de bestaande kwaliteit-omschrijving of een
+  // zusterartikel (bv. "Ombre"/"OMBRE")
   useEffect(() => {
-    if (!existingKwaliteitMode || naam.trim() || !kwaliteiten) return
-    const bestaand = kwaliteiten.find(k => k.code === kwaliteitParam)
-    if (bestaand?.omschrijving) setNaam(bestaand.omschrijving)
+    if (!existingKwaliteitMode || naam.trim()) return
+    const viaKwaliteit = kwaliteiten?.find(k => k.code === kwaliteitParam)?.omschrijving
+    const voorstel = viaKwaliteit ?? zusterNaam
+    if (voorstel) setNaam(voorstel)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [existingKwaliteitMode, kwaliteiten])
+  }, [existingKwaliteitMode, kwaliteiten, zusterNaam])
 
   // Effectieve naam voor de omschrijving — in variant-toevoegen-modus mag het
-  // veld leeg blijven; val dan terug op de kwaliteit-omschrijving of -code.
+  // veld leeg blijven; val dan terug op kwaliteit-omschrijving → zusterartikel
+  // → kwaliteitscode (laatste redmiddel, alleen als er nog geen producten zijn).
   const effectieveNaam = naam.trim()
-    || (existingKwaliteitMode ? (kwaliteiten?.find(k => k.code === kwaliteitParam)?.omschrijving ?? kwaliteitParam) : '')
+    || (existingKwaliteitMode
+      ? (kwaliteiten?.find(k => k.code === kwaliteitParam)?.omschrijving ?? zusterNaam ?? kwaliteitParam)
+      : '')
 
   // Varianten
   const [rows, setRows] = useState<VariantRow[]>([newRow()])
