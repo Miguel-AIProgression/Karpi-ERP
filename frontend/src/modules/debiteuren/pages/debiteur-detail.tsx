@@ -392,7 +392,7 @@ export function DebiteurDetailPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
           <InfoField label="Adres" value={[klant.adres, `${klant.postcode ?? ''} ${klant.plaats ?? ''}`.trim()].filter(Boolean).join(', ')} />
           <InfoField label="Telefoon" value={klant.telefoon} />
-          <InfoField label="Email" value={klant.email_factuur} />
+          <InfoField label="E-mail factuur" value={klant.email_factuur} />
           <InfoField label="BTW" value={klant.btw_nummer} />
         </div>
         <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
@@ -849,9 +849,10 @@ function InfoTab({ klant }: { klant: NonNullable<ReturnType<typeof useDebiteurDe
       <InfoField label="Rayon" value={klant.rayon_naam} />
       <InfoField label="Factuur naam" value={klant.fact_naam} />
       <InfoField label="Factuur adres" value={[klant.fact_adres, `${klant.fact_postcode ?? ''} ${klant.fact_plaats ?? ''}`.trim()].filter(Boolean).join(', ')} />
-      <InfoField label="Email (overig)" value={klant.email_overig} />
-      <InfoField label="Email verzending (T&T)" value={klant.email_verzend} />
-      <InfoField label="Email 2" value={klant.email_2} />
+      <InfoField label="E-mail orderbevestiging" value={klant.email_overig} />
+      <InfoField label="E-mail verzending (T&T)" value={klant.email_verzend} />
+      <InfoField label="E-mail pakbon" value={klant.email_pakbon} />
+      <InfoField label="E-mail 2 (overig)" value={klant.email_2} />
       <InfoField label="Fax" value={klant.fax} />
       <InfoField label="GLN" value={klant.gln_bedrijf} />
       <InfoField label="Land" value={klant.land} />

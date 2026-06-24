@@ -41,6 +41,8 @@ export interface DebiteurDetail {
   email_2: string | null
   /** Klant-niveau verzend-/T&T-e-mailadres (mig 369). Default voor orders.afl_email vóór email_overig. */
   email_verzend: string | null
+  /** Optioneel pakbon-e-mailadres (mig 492). Huidige pakbon = bijlage bij factuurmail. */
+  email_pakbon: string | null
   fax: string | null
   vertegenw_code: string | null
   vertegenwoordiger_naam?: string | null
@@ -51,6 +53,8 @@ export interface DebiteurDetail {
   korting_pct: number
   betaalconditie: string | null
   btw_nummer: string | null
+  /** Mig 164: BTW verlegd (EU B2B) — effectief 0% i.p.v. btw_percentage. */
+  btw_verlegd_intracom: boolean
   gln_bedrijf: string | null
   omzet_ytd: number
   gratis_verzending: boolean
@@ -236,6 +240,21 @@ export async function fetchDebiteurDetail(debiteurNr: number): Promise<DebiteurD
     edi_actief: ediRes.data?.transus_actief ?? false,
     edi_test_modus: ediRes.data?.test_modus ?? false,
   } as DebiteurDetail
+}
+
+/**
+ * Voorstel voor een nieuw klantnummer = hoogste bestaande + 1.
+ * Blijft in de UI aanpasbaar; de uniek-check bij opslaan is de echte garantie.
+ */
+export async function volgendDebiteurNr(): Promise<number> {
+  const { data, error } = await supabase
+    .from('debiteuren')
+    .select('debiteur_nr')
+    .order('debiteur_nr', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) throw error
+  return ((data?.debiteur_nr as number | undefined) ?? 0) + 1
 }
 
 export async function fetchAfleveradressen(debiteurNr: number): Promise<Afleveradres[]> {

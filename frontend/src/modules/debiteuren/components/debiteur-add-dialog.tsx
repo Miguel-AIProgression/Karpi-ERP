@@ -1,110 +1,118 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { X } from 'lucide-react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase/client'
 import { useActieveBetaalcondities } from '@/hooks/use-betaalcondities'
-import { formatBetaalconditie } from '@/lib/supabase/queries/betaalcondities'
+import { saveAfleveradres, volgendDebiteurNr } from '../queries/debiteuren'
+import {
+  DebiteurFormFields,
+  debiteurFormToDb,
+  emptyDebiteurForm,
+  inputClasses,
+  valideerDebiteurForm,
+  type DebiteurFormValues,
+} from './debiteur-form'
 
 interface Props {
   onClose: () => void
 }
 
-const inputClasses =
-  'w-full px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400'
-
-type FormState = {
-  debiteur_nr: string
+type AfleveradresState = {
   naam: string
-  status: string
   adres: string
   postcode: string
   plaats: string
   land: string
   telefoon: string
-  email_factuur: string
-  btw_nummer: string
-  betaalconditie_code: string
+  email: string
+  gln_afleveradres: string
 }
 
-const initialForm: FormState = {
-  debiteur_nr: '',
+const emptyAfleveradres: AfleveradresState = {
   naam: '',
-  status: 'Actief',
   adres: '',
   postcode: '',
   plaats: '',
   land: 'NL',
   telefoon: '',
-  email_factuur: '',
-  btw_nummer: '',
-  betaalconditie_code: '',
+  email: '',
+  gln_afleveradres: '',
 }
 
 export function DebiteurAddDialog({ onClose }: Props) {
   const qc = useQueryClient()
   const navigate = useNavigate()
-  const [form, setForm] = useState<FormState>(initialForm)
-  const [error, setError] = useState<string | null>(null)
   const { data: condities } = useActieveBetaalcondities()
 
-  const update = (key: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setForm((f) => ({ ...f, [key]: e.target.value }))
-  }
+  const [form, setForm] = useState<DebiteurFormValues>(emptyDebiteurForm)
+  const [debiteurNr, setDebiteurNr] = useState('')
+  const [nrTouched, setNrTouched] = useState(false)
+  const [afwijkendAfleveradres, setAfwijkendAfleveradres] = useState(false)
+  const [afl, setAfl] = useState<AfleveradresState>(emptyAfleveradres)
+  const [error, setError] = useState<string | null>(null)
+
+  // Klantnummer-voorstel = hoogste bestaande + 1 (aanpasbaar).
+  const { data: voorstelNr } = useQuery({
+    queryKey: ['volgend-debiteur-nr'],
+    queryFn: volgendDebiteurNr,
+  })
+  useEffect(() => {
+    if (!nrTouched && debiteurNr === '' && voorstelNr != null) {
+      setDebiteurNr(String(voorstelNr))
+    }
+  }, [voorstelNr, nrTouched, debiteurNr])
+
+  const onFormChange = (patch: Partial<DebiteurFormValues>) => setForm((f) => ({ ...f, ...patch }))
+  const setAflField =
+    (key: keyof AfleveradresState) => (e: React.ChangeEvent<HTMLInputElement>) =>
+      setAfl((a) => ({ ...a, [key]: e.target.value }))
 
   const save = useMutation({
     mutationFn: async () => {
-      const trimOrNull = (v: string) => {
-        const t = v.trim()
-        return t === '' ? null : t
-      }
+      const veldFout = valideerDebiteurForm(form)
+      if (veldFout) throw new Error(veldFout)
 
-      const debiteurNrRaw = form.debiteur_nr.trim()
-      if (!debiteurNrRaw) throw new Error('Klantnummer is verplicht')
-      const debiteurNr = parseInt(debiteurNrRaw, 10)
-      if (isNaN(debiteurNr) || debiteurNr <= 0) throw new Error('Klantnummer moet een positief getal zijn')
+      const nrRaw = debiteurNr.trim()
+      if (!nrRaw) throw new Error('Klantnummer is verplicht')
+      const nr = parseInt(nrRaw, 10)
+      if (Number.isNaN(nr) || nr <= 0) throw new Error('Klantnummer moet een positief getal zijn')
 
-      const naam = form.naam.trim()
-      if (!naam) throw new Error('Naam is verplicht')
-
-      // Check of het klantnummer al bestaat
       const { data: existing } = await supabase
         .from('debiteuren')
         .select('debiteur_nr')
-        .eq('debiteur_nr', debiteurNr)
+        .eq('debiteur_nr', nr)
         .maybeSingle()
-      if (existing) throw new Error(`Klantnummer ${debiteurNr} bestaat al`)
+      if (existing) throw new Error(`Klantnummer ${nr} bestaat al`)
 
-      let betaalconditieValue: string | null = null
-      if (form.betaalconditie_code) {
-        const picked = (condities ?? []).find((c) => c.code === form.betaalconditie_code)
-        if (picked) betaalconditieValue = `${picked.code} - ${picked.naam}`
+      const { error: insErr } = await supabase
+        .from('debiteuren')
+        .insert({ debiteur_nr: nr, ...debiteurFormToDb(form, condities ?? []) })
+      if (insErr) throw insErr
+
+      // Optioneel: één primair afleveradres dat afwijkt van het hoofdadres.
+      if (afwijkendAfleveradres && afl.naam.trim()) {
+        await saveAfleveradres(nr, {
+          naam: afl.naam.trim() || null,
+          adres: afl.adres.trim() || null,
+          postcode: afl.postcode.trim() || null,
+          plaats: afl.plaats.trim() || null,
+          land: afl.land.trim() || null,
+          telefoon: afl.telefoon.trim() || null,
+          email: afl.email.trim() || null,
+          gln_afleveradres: afl.gln_afleveradres.trim() || null,
+        })
       }
 
-      const { error } = await supabase.from('debiteuren').insert({
-        debiteur_nr: debiteurNr,
-        naam: naam.toUpperCase(),
-        status: form.status,
-        adres: trimOrNull(form.adres),
-        postcode: trimOrNull(form.postcode),
-        plaats: trimOrNull(form.plaats),
-        land: trimOrNull(form.land),
-        telefoon: trimOrNull(form.telefoon),
-        email_factuur: trimOrNull(form.email_factuur),
-        btw_nummer: trimOrNull(form.btw_nummer),
-        betaalconditie: betaalconditieValue,
-      })
-      if (error) throw error
-
-      return debiteurNr
+      return nr
     },
-    onSuccess: (debiteurNr) => {
+    onSuccess: (nr) => {
       qc.invalidateQueries({ queryKey: ['klanten'] })
       onClose()
-      navigate(`/klanten/${debiteurNr}`)
+      navigate(`/klanten/${nr}`)
     },
     onError: (err: unknown) => {
-      const e = err as { message?: unknown; details?: unknown; hint?: unknown; code?: unknown } | null
+      const e = err as { message?: unknown; details?: unknown; hint?: unknown } | null
       const parts = [
         typeof e?.message === 'string' ? e.message : null,
         typeof e?.details === 'string' ? `details: ${e.details}` : null,
@@ -126,7 +134,7 @@ export function DebiteurAddDialog({ onClose }: Props) {
         <header className="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
           <div>
             <h2 className="font-medium text-lg">Nieuwe klant toevoegen</h2>
-            <p className="text-xs text-slate-400">Vul alle verplichte velden in</p>
+            <p className="text-xs text-slate-400">Vul de gegevens in — verplicht: klantnummer en naam</p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700">
             <X size={18} />
@@ -134,7 +142,7 @@ export function DebiteurAddDialog({ onClose }: Props) {
         </header>
 
         <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4 overflow-y-auto">
-          {/* Klantnummer + naam + status */}
+          {/* Klantnummer (auto-voorstel) */}
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="block text-xs text-slate-500 mb-1">
@@ -144,140 +152,74 @@ export function DebiteurAddDialog({ onClose }: Props) {
                 type="number"
                 min="1"
                 step="1"
-                value={form.debiteur_nr}
-                onChange={update('debiteur_nr')}
+                value={debiteurNr}
+                onChange={(e) => {
+                  setNrTouched(true)
+                  setDebiteurNr(e.target.value)
+                }}
                 required
                 placeholder="bv. 12345"
                 className={inputClasses}
               />
+              <p className="text-xs text-slate-400 mt-1">Voorstel = hoogste bestaande + 1. Aanpasbaar.</p>
             </div>
-            <div>
-              <label className="block text-xs text-slate-500 mb-1">
-                Naam <span className="text-rose-500">*</span>
-              </label>
+          </div>
+
+          {/* Gedeelde veldset (zelfde als bij bewerken) */}
+          <DebiteurFormFields values={form} onChange={onFormChange} />
+
+          {/* Optioneel afwijkend primair afleveradres */}
+          <div className="pt-2 border-t border-slate-100">
+            <label className="flex items-center gap-2 text-sm text-slate-700">
               <input
-                type="text"
-                value={form.naam}
-                onChange={update('naam')}
-                required
-                placeholder="Bedrijfsnaam"
-                className={inputClasses}
+                type="checkbox"
+                checked={afwijkendAfleveradres}
+                onChange={(e) => setAfwijkendAfleveradres(e.currentTarget.checked)}
+                className="h-4 w-4 rounded border-slate-300 accent-terracotta-500"
               />
-            </div>
-            <div>
-              <label className="block text-xs text-slate-500 mb-1">Status</label>
-              <select value={form.status} onChange={update('status')} className={inputClasses}>
-                <option value="Actief">Actief</option>
-                <option value="Inactief">Inactief</option>
-              </select>
-            </div>
-          </div>
+              <span>Afleveradres wijkt af van het hoofdadres</span>
+            </label>
+            <p className="text-xs text-slate-400 mt-1">
+              Laat uit als de klant op het hoofdadres geleverd krijgt. Extra afleveradressen voeg je later toe
+              op de klantpagina (tab Afleveradressen).
+            </p>
 
-          {/* Adres */}
-          <div className="pt-2">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Adres</div>
-            <div className="grid grid-cols-3 gap-3">
-              <div className="col-span-3">
-                <label className="block text-xs text-slate-500 mb-1">Straat + nummer</label>
-                <input
-                  type="text"
-                  value={form.adres}
-                  onChange={update('adres')}
-                  placeholder="Voorbeeldstraat 1"
-                  className={inputClasses}
-                />
+            {afwijkendAfleveradres && (
+              <div className="mt-3 grid grid-cols-3 gap-3">
+                <div className="col-span-3">
+                  <label className="block text-xs text-slate-500 mb-1">Naam</label>
+                  <input type="text" value={afl.naam} onChange={setAflField('naam')} className={inputClasses} />
+                </div>
+                <div className="col-span-3">
+                  <label className="block text-xs text-slate-500 mb-1">Straat + nummer</label>
+                  <input type="text" value={afl.adres} onChange={setAflField('adres')} className={inputClasses} />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">Postcode</label>
+                  <input type="text" value={afl.postcode} onChange={setAflField('postcode')} className={inputClasses} />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">Plaats</label>
+                  <input type="text" value={afl.plaats} onChange={setAflField('plaats')} className={inputClasses} />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">Land</label>
+                  <input type="text" value={afl.land} onChange={setAflField('land')} className={inputClasses} />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">Telefoon</label>
+                  <input type="tel" value={afl.telefoon} onChange={setAflField('telefoon')} className={inputClasses} />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">E-mail (T&amp;T)</label>
+                  <input type="text" value={afl.email} onChange={setAflField('email')} className={inputClasses} />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">GLN-afleveradres</label>
+                  <input type="text" value={afl.gln_afleveradres} onChange={setAflField('gln_afleveradres')} className={inputClasses} />
+                </div>
               </div>
-              <div>
-                <label className="block text-xs text-slate-500 mb-1">Postcode</label>
-                <input
-                  type="text"
-                  value={form.postcode}
-                  onChange={update('postcode')}
-                  placeholder="1234 AB"
-                  className={inputClasses}
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-500 mb-1">Plaats</label>
-                <input
-                  type="text"
-                  value={form.plaats}
-                  onChange={update('plaats')}
-                  placeholder="Amsterdam"
-                  className={inputClasses}
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-500 mb-1">Land</label>
-                <input
-                  type="text"
-                  value={form.land}
-                  onChange={update('land')}
-                  placeholder="NL"
-                  className={inputClasses}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Contact */}
-          <div className="pt-2">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Contact</div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-slate-500 mb-1">Telefoon</label>
-                <input
-                  type="tel"
-                  value={form.telefoon}
-                  onChange={update('telefoon')}
-                  placeholder="+31 20 123 4567"
-                  className={inputClasses}
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-500 mb-1">E-mail factuur</label>
-                {/* type="text": één of meerdere adressen (komma-gescheiden) — type="email" weigert meerdere. */}
-                <input
-                  type="text"
-                  value={form.email_factuur}
-                  onChange={update('email_factuur')}
-                  placeholder="factuur@bedrijf.nl, kopie@bedrijf.nl"
-                  className={inputClasses}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Fiscaal */}
-          <div className="pt-2">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">Fiscaal &amp; commercieel</div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-slate-500 mb-1">BTW-nummer</label>
-                <input
-                  type="text"
-                  value={form.btw_nummer}
-                  onChange={update('btw_nummer')}
-                  placeholder="NL123456789B01"
-                  className={inputClasses}
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-500 mb-1">Betaalconditie</label>
-                <select
-                  value={form.betaalconditie_code}
-                  onChange={update('betaalconditie_code')}
-                  className={inputClasses}
-                >
-                  <option value="">— Geen —</option>
-                  {(condities ?? []).map((c) => (
-                    <option key={c.code} value={c.code}>
-                      {formatBetaalconditie(c)}{c.dagen != null ? ` (${c.dagen} dgn)` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
+            )}
           </div>
 
           {error && (
@@ -288,11 +230,7 @@ export function DebiteurAddDialog({ onClose }: Props) {
         </form>
 
         <footer className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-100 shrink-0">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 text-sm text-slate-600 hover:text-slate-900"
-          >
+          <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-slate-600 hover:text-slate-900">
             Annuleren
           </button>
           <button

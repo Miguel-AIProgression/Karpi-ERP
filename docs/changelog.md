@@ -1,5 +1,45 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-24 — Klant aanmaken = klant bewerken (gedeelde deep module) + pakbon-e-mail (mig 492)
+
+**Waarom (klantverzoek 24-06):** "Klant aanmaken" vroeg veel te weinig (klantnummer,
+naam, adres, telefoon, e-mail factuur, btw, betaalconditie) terwijl de klantpagina veel
+meer kon. Cruciaal ontbraken bij aanmaken o.a. de **prijslijst** (harde blokkade bij
+order-aanmaken, mig 481), de **per-document e-mailadressen** en het **factuuradres** (dat
+nota bene nergens in de UI editbaar was, alleen read-only op de Info-tab). Klantnummer was
+handmatig. Gevolg: een net-aangemaakte klant strandde bij de eerste order.
+
+**Wat — één gedeelde deep module:**
+- **`DebiteurFormFields`** ([`debiteur-form.tsx`](frontend/src/modules/debiteuren/components/debiteur-form.tsx))
+  is nu de canonieke veldset + `debiteurFormToDb`/`debiteurFormFromDetail`/`valideerDebiteurForm`.
+  **"Klant toevoegen" én "Klant bewerken" zijn dunne schillen** rond deze module → ze hebben
+  exact dezelfde velden en kunnen niet meer driften ("gelinkt"). Velden: naam, status,
+  hoofdadres, **factuuradres** (nieuw editbaar), telefoon, **4 e-mailvelden per document**,
+  **prijslijst** (select uit `prijslijst_headers`, met "verplicht voor order"-hint), btw-nummer,
+  btw-verlegd, btw-%, GLN, korting, betaalconditie.
+- **Klantnummer auto-voorstel** = hoogste bestaande + 1 (`volgendDebiteurNr()`), in de UI
+  aanpasbaar; de bestaande uniek-check blijft de garantie.
+- **Primair afleveradres bij aanmaken:** optionele "afleveradres wijkt af van hoofdadres"-sectie
+  → maakt direct één `afleveradressen`-record (adres_nr 1). Extra adressen via de bestaande tab.
+- **E-mail-per-document = single source** (`EMAIL_VELDEN`): factuur=`email_factuur`,
+  orderbevestiging=`email_overig`, verzending/T&T=`email_verzend`, **pakbon=`email_pakbon`** (nieuw,
+  optioneel). Info-tab-labels verduidelijkt.
+
+**mig 492:** `debiteuren.email_pakbon TEXT` (optioneel). **Scope = alleen het adres vastleggen** —
+de huidige pakbon-stroom (bijlage bij factuurmail) blijft ongewijzigd; dit veld is het
+bestemmingsadres voor toekomstige pakbon-specifieke routing. `email_2` bewust niet hergebruikt
+(actieve orderbevestiging-fallback).
+
+**Order-aanmaken erft dit automatisch:** order-form prefilt prijslijst/`fact_email`/`afl_email`
+uit dezelfde debiteur-velden — die zijn nu bij aanmaken invulbaar, dus de prijslijst- en
+afleveradres-gate (mig 481/395) worden direct gehaald.
+
+**Bijvangst:** klant-bewerken normaliseert `naam` voortaan ook naar uppercase (was alleen bij
+aanmaken; debiteurnamen zijn per conventie uppercase).
+
+**Deploy-voorwaarde:** mig 492 **vóór** de frontend — de form schrijft `email_pakbon` bij elke
+klant-insert/update, dus zonder de kolom faalt aanmaken/bewerken.
+
 ## 2026-06-24 — HST pallet-types MP + PLH (mig 491)
 
 **Waarom (mail Niek Zandvoort, HST Groep, 24-06):** naast EP (Europallet) en SP
