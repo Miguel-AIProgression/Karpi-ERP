@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { Link } from 'react-router-dom'
 import { Search } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
 import { sanitizeSearch } from '@/lib/utils/sanitize'
@@ -105,7 +106,14 @@ export function ClientSelector({ value, onChange, disabled }: ClientSelectorProp
     return (
       <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-[var(--radius-sm)] border border-slate-200">
         <div className="flex-1 flex items-center gap-3">
-          <span className="font-medium">{value.naam}</span>
+          <Link
+            to={`/klanten/${value.debiteur_nr}`}
+            target="_blank"
+            className="font-medium text-terracotta-600 hover:underline"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {value.naam}
+          </Link>
           <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-terracotta-50 text-terracotta-700 border border-terracotta-200 text-sm font-semibold tabular-nums">
             #{value.debiteur_nr}
           </span>
@@ -124,7 +132,14 @@ export function ClientSelector({ value, onChange, disabled }: ClientSelectorProp
   if (disabled && value) {
     return (
       <div className="flex items-center gap-3 p-3 bg-slate-100 rounded-[var(--radius-sm)] border border-slate-200">
-        <span className="font-medium">{value.naam}</span>
+        <Link
+          to={`/klanten/${value.debiteur_nr}`}
+          target="_blank"
+          className="font-medium text-terracotta-600 hover:underline"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {value.naam}
+        </Link>
         <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-terracotta-50 text-terracotta-700 border border-terracotta-200 text-sm font-semibold tabular-nums">
           #{value.debiteur_nr}
         </span>
