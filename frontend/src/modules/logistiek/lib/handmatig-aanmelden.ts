@@ -37,16 +37,21 @@ export function bundelOpPallet(code: string | null | undefined): boolean {
   return code === 'hst_api' || code === 'rhenus_sftp'
 }
 
-/** Eén pallet-type-keuze in de bundel-UI. `value` gaat naar `maak_colli_bundel.p_pallet_type`. */
+/** Eén pallet-type-keuze in de bundel-UI. `value` gaat naar `maak_colli_bundel.p_pallet_type`
+ *  (behalve de zak-sentinel hieronder, die → NULL). */
 export interface PalletTypeOptie {
   value: string
   label: string
 }
 
+/** UI-sentinel voor de oorspronkelijke "zak"-bundel (geen pallet) — mapt naar
+ *  pallet_type NULL in de RPC → RLEN, géén footprint/hoogte. */
+export const RHENUS_GEEN_PALLET = 'ZAK'
+
 /**
  * Pallet-type-opties per vervoerder. HST: EP/SP (PackageUnitID, mig 485). Rhenus:
- * PLTS/HPLT (packageTypeCode, mig 489) — de footprint (80×120 / 80×60) wordt
- * server-side in `maak_colli_bundel` gezet, dus de UI hoeft alleen het type te sturen.
+ * "zak" (geen pallet, RLEN) + PLTS/HPLT (packageTypeCode + footprint, mig 489/490).
+ * De zak-optie blijft bestaan zodat de operator óók een gewone bundel kan maken.
  */
 export function palletTypeOpties(code: string | null | undefined): PalletTypeOptie[] {
   if (code === 'hst_api') {
@@ -57,6 +62,7 @@ export function palletTypeOpties(code: string | null | undefined): PalletTypeOpt
   }
   if (code === 'rhenus_sftp') {
     return [
+      { value: RHENUS_GEEN_PALLET, label: 'Geen pallet (zak)' },
       { value: 'PLTS', label: 'Volle pallet (80 × 120 cm)' },
       { value: 'HPLT', label: 'Halve pallet (80 × 60 cm)' },
     ]
@@ -65,10 +71,21 @@ export function palletTypeOpties(code: string | null | undefined): PalletTypeOpt
 }
 
 /**
- * Heeft de pallet-footprint een VASTE maat die de server zelf zet (Rhenus PLTS/HPLT,
- * mig 489)? Dan toont de bundel-UI géén lengte/breedte-velden en stuurt ze leeg —
- * `maak_colli_bundel` vult de footprint. HST (EP/SP) houdt de los instelbare maten.
+ * Pallet-footprint (lengte×breedte in cm) per Rhenus-pallet-type, voor de UI-prefill
+ * van de lengte/breedte-velden. Spiegelt de server-side default in `maak_colli_bundel`
+ * (mig 489/490) — bewust 2 plekken (SQL kan geen TS importeren); ISO-pallet-standaard,
+ * drift-risico nihil. De server blijft autoritatief voor wat opgeslagen wordt.
  */
-export function palletFootprintVast(code: string | null | undefined): boolean {
-  return code === 'rhenus_sftp'
+export const PALLET_FOOTPRINT: Record<string, { lengteCm: number; breedteCm: number }> = {
+  PLTS: { lengteCm: 80, breedteCm: 120 },
+  HPLT: { lengteCm: 80, breedteCm: 60 },
+}
+
+export function palletFootprint(value: string | null | undefined): { lengteCm: number; breedteCm: number } | null {
+  return value ? (PALLET_FOOTPRINT[value] ?? null) : null
+}
+
+/** Is dit een echte pallet (footprint + laadhoogte van toepassing)? Zak/'' = nee. */
+export function isFootprintPallet(value: string | null | undefined): boolean {
+  return value === 'PLTS' || value === 'HPLT'
 }

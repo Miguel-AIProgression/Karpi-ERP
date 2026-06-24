@@ -8,8 +8,10 @@ import {
 } from '@/modules/logistiek/hooks/use-colli-bundel'
 import {
   bundelOpPallet,
-  palletFootprintVast,
+  isFootprintPallet,
+  palletFootprint,
   palletTypeOpties,
+  RHENUS_GEEN_PALLET,
 } from '@/modules/logistiek/lib/handmatig-aanmelden'
 
 interface Props {
@@ -35,8 +37,6 @@ export function ColliBundelDialog({ zendingId, zendingNr, vervoerderCode, onClos
 
   const metPallet = bundelOpPallet(vervoerderCode)
   const palletOpties = palletTypeOpties(vervoerderCode)
-  // Rhenus-pallets hebben een vaste footprint die de server zet → geen maatvelden.
-  const footprintVast = palletFootprintVast(vervoerderCode)
   const eenheid = metPallet ? 'pallet' : 'zak'
 
   const [geselecteerd, setGeselecteerd] = useState<Set<number>>(new Set())
@@ -44,6 +44,10 @@ export function ColliBundelDialog({ zendingId, zendingNr, vervoerderCode, onClos
   const [gewicht, setGewicht] = useState('')
   const [lengte, setLengte] = useState('')
   const [breedte, setBreedte] = useState('')
+  const [hoogte, setHoogte] = useState('')
+
+  // Een echte pallet (PLTS/HPLT) → footprint-prefill voor lengte/breedte + laadhoogte-veld.
+  const isPallet = isFootprintPallet(palletType)
 
   const losseColli = colli.filter((c) => !c.is_bundel && c.bundel_colli_id == null)
   const bundels = colli.filter((c) => c.is_bundel)
@@ -59,9 +63,13 @@ export function ColliBundelDialog({ zendingId, zendingNr, vervoerderCode, onClos
     }
   }, [colli, geselecteerd])
 
-  // Bij een pallet (HST) is EP/SP verplicht — HST weigert een onbekende
-  // PackageUnitID met HTTP 400 (mig 485).
+  // Bij een pallet moet een type gekozen zijn (HST weigert een onbekende
+  // PackageUnitID; Rhenus heeft de zak-optie als expliciete keuze).
   const kanBundelen = geselecteerd.size >= 2 && (!metPallet || palletType !== '')
+
+  function reset() {
+    setGewicht(''); setLengte(''); setBreedte(''); setHoogte('')
+  }
 
   function toggle(id: number) {
     setGeselecteerd((prev) => {
@@ -70,7 +78,20 @@ export function ColliBundelDialog({ zendingId, zendingNr, vervoerderCode, onClos
       else next.add(id)
       return next
     })
-    setGewicht(''); setLengte(''); setBreedte('')
+    reset()
+  }
+
+  // Pallet-type kiezen: prefill lengte/breedte met de footprint (PLTS 80×120 /
+  // HPLT 80×60); zak/EP/SP → leeg laten (placeholder = MAX-van-selectie).
+  function kiesType(value: string) {
+    setPalletType(value)
+    const fp = palletFootprint(value)
+    if (fp) {
+      setLengte(String(fp.lengteCm))
+      setBreedte(String(fp.breedteCm))
+    } else {
+      setLengte(''); setBreedte('')
+    }
   }
 
   function bundel() {
@@ -78,16 +99,18 @@ export function ColliBundelDialog({ zendingId, zendingNr, vervoerderCode, onClos
       {
         colliIds: [...geselecteerd],
         gewichtKg: parseOrDefault(gewicht, defaults.gewicht),
-        // Vaste-footprint-pallet (Rhenus PLTS/HPLT): laat de server de maat zetten.
-        lengteCm: footprintVast ? null : parseOrDefault(lengte, defaults.lengte),
-        breedteCm: footprintVast ? null : parseOrDefault(breedte, defaults.breedte),
-        palletType: metPallet ? palletType : null,
+        lengteCm: parseOrDefault(lengte, defaults.lengte),
+        breedteCm: parseOrDefault(breedte, defaults.breedte),
+        // 'ZAK'-sentinel (Rhenus geen-pallet) → pallet_type NULL (RLEN).
+        palletType: !metPallet || palletType === RHENUS_GEEN_PALLET ? null : palletType,
+        // Laadhoogte alleen bij een echte pallet (operator-invoer, optioneel).
+        hoogteCm: isPallet ? parseOptional(hoogte) : null,
       },
       {
         onSuccess: () => {
           setGeselecteerd(new Set())
           setPalletType('')
-          setGewicht(''); setLengte(''); setBreedte('')
+          reset()
         },
       },
     )
@@ -177,7 +200,7 @@ export function ColliBundelDialog({ zendingId, zendingNr, vervoerderCode, onClos
               {geselecteerd.size >= 2 && (
                 <div className="mt-4 rounded-[var(--radius-sm)] border border-slate-200 p-3">
                   <div className="mb-2 text-xs font-semibold text-slate-600">
-                    {geselecteerd.size} colli bundelen — controleer {footprintVast ? 'gewicht' : 'gewicht/maat'} van de {eenheid}:
+                    {geselecteerd.size} colli bundelen — controleer gewicht/maat van de {palletType === RHENUS_GEEN_PALLET ? 'zak' : eenheid}:
                   </div>
                   {metPallet && (
                     <div className="mb-3">
@@ -187,7 +210,7 @@ export function ColliBundelDialog({ zendingId, zendingNr, vervoerderCode, onClos
                           <button
                             key={opt.value}
                             type="button"
-                            onClick={() => setPalletType(opt.value)}
+                            onClick={() => kiesType(opt.value)}
                             className={`rounded-[var(--radius-sm)] border px-3 py-1.5 text-sm font-medium ${
                               palletType === opt.value
                                 ? 'border-terracotta-600 bg-terracotta-50 text-terracotta-700'
@@ -202,11 +225,10 @@ export function ColliBundelDialog({ zendingId, zendingNr, vervoerderCode, onClos
                   )}
                   <div className="flex flex-wrap items-end gap-3">
                     <MaatVeld label="Gewicht (kg)" value={gewicht} ph={String(round1(defaults.gewicht))} onChange={setGewicht} />
-                    {!footprintVast && (
-                      <>
-                        <MaatVeld label="Lengte (cm)" value={lengte} ph={String(defaults.lengte)} onChange={setLengte} />
-                        <MaatVeld label="Breedte (cm)" value={breedte} ph={String(defaults.breedte)} onChange={setBreedte} />
-                      </>
+                    <MaatVeld label="Lengte (cm)" value={lengte} ph={String(defaults.lengte)} onChange={setLengte} />
+                    <MaatVeld label="Breedte (cm)" value={breedte} ph={String(defaults.breedte)} onChange={setBreedte} />
+                    {isPallet && (
+                      <MaatVeld label="Hoogte (cm)" value={hoogte} ph="hoogte" onChange={setHoogte} />
                     )}
                     <button
                       onClick={bundel}
@@ -268,4 +290,10 @@ function round1(n: number): number {
 function parseOrDefault(s: string, d: number): number {
   const n = parseFloat(s)
   return Number.isNaN(n) ? d : n
+}
+
+// Leeg/ongeldig → null (optioneel veld, bv. laadhoogte).
+function parseOptional(s: string): number | null {
+  const n = parseFloat(s)
+  return Number.isNaN(n) ? null : n
 }

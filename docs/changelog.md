@@ -1,5 +1,43 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-24 — Rhenus bundeling: zak-optie terug + L/B/H voor pallets (mig 490)
+
+**Waarom (verzoek Miguel, na mig 489):** twee dingen ontbraken. (1) Door PLTS/HPLT
+verplicht te maken was de **oorspronkelijke "zak"-bundel** (gewone bundel zonder pallet)
+niet meer te maken — die moet blijven bestaan. (2) Voor een pallet moeten **lengte,
+breedte én hoogte** invulbaar zijn; lengte/breedte op basis van de pallet-afmeting,
+hoogte als laadhoogte (operator-invoer). mig 489 verborg de maatvelden juist.
+
+**Wat:**
+- **Zak-optie terug:** `palletTypeOpties('rhenus_sftp')` biedt nu `Geen pallet (zak)` /
+  `Volle pallet` / `Halve pallet`. De zak-keuze is UI-sentinel `RHENUS_GEEN_PALLET='ZAK'`
+  → mapt naar `pallet_type=NULL` (RLEN, géén footprint/hoogte) in de RPC.
+- **L/B/H invulbaar voor pallets:** de lengte/breedte-velden worden weer getoond en
+  **voorgevuld** met de footprint (PLTS 80×120 / HPLT 80×60) via `palletFootprint()`,
+  editbaar; nieuw **hoogte-veld** (laadhoogte) verschijnt alleen bij een echte pallet
+  (`isFootprintPallet`). `palletFootprintVast` is verwijderd.
+- **Datamodel (mig 490):** `zending_colli.hoogte_cm` + `maak_colli_bundel` → 7-arg
+  (`p_hoogte_cm`, DROP 6-arg + CREATE 7-arg met DEFAULT NULL). De colli-seam
+  ([`fetch-zending-colli.ts`](supabase/functions/_shared/vervoerders/fetch-zending-colli.ts))
+  leest `hoogte_cm`; `bouwItem` ([`xml-builder.ts`](supabase/functions/rhenus-send/xml-builder.ts))
+  stuurt voor een pallet mét hoogte een `<height>` in `<dimension>` (depth→width→height).
+- **HST (EP/SP) ongewijzigd:** geen zak-optie, geen footprint-prefill, geen hoogte-veld
+  (`isFootprintPallet` is false voor EP/SP; HST prijst op PackageUnitID).
+
+**Open / te bevestigen bij Rhenus:** `<height>` staat niet in het legacy-bestand (alleen
+depth+width) maar is een standaard optioneel GS1-element — meenemen in dezelfde
+format-check als de HPLT-footprint (mig 489). NULL-guarded: een pallet zonder hoogte =
+byte-identiek aan legacy (geen `<height>`).
+
+**Tests:** rhenus + seam 42/42 (incl. PLTS-met-hoogte, pallet-zonder-hoogte, seam
+hoogte-passthrough); hst + verhoek 34/34; `tsc -b` schoon. Adversariële review (backend +
+frontend): 0 code-bugs; frontend merge-klaar; deploy-volgorde-punt onderkend.
+
+**Deploy-volgorde (BELANGRIJK):** **mig 490 LIVE vóór de frontend deployt** — de nieuwe
+frontend roept `maak_colli_bundel` met 7 named args aan; een 7-arg-call naar de nog-6-arg
+RPC faalt. Andersom (490 live, oude frontend met 6 args) is veilig via de DEFAULT. Dus:
+mig 490 toepassen → daarna pas merge/push (Vercel auto-deploy) + `rhenus-send` redeploy.
+
 ## 2026-06-24 — Rhenus colli-bundeling tot een pallet (PLTS/HPLT, mig 489)
 
 **Waarom (verzoek Miguel):** Rhenus kon al colli samenpakken onder één SSCC (mig 420/421),

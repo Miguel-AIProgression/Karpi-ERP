@@ -42,6 +42,7 @@ export function useMaakColliBundel(zendingId: number | undefined) {
       lengteCm?: number | null
       breedteCm?: number | null
       palletType?: string | null
+      hoogteCm?: number | null
     }) => maakColliBundel({ zendingId: zendingId!, ...p }),
     onSuccess: invalidate,
   })

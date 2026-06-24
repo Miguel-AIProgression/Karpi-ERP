@@ -58,6 +58,8 @@ export async function maakColliBundel(p: {
   /** Pallet-type per vervoerder: HST (mig 485) EP/SP → PackageUnitID; Rhenus
    *  (mig 489) PLTS/HPLT → packageTypeCode + footprint; null voor niet-pallet-bundels. */
   palletType?: string | null
+  /** Laadhoogte (cm) van een Rhenus-pallet → <dimension><height> (mig 490). */
+  hoogteCm?: number | null
 }): Promise<number> {
   const { data, error } = await supabase.rpc('maak_colli_bundel', {
     p_zending_id: p.zendingId,
@@ -66,6 +68,7 @@ export async function maakColliBundel(p: {
     p_lengte_cm: p.lengteCm ?? null,
     p_breedte_cm: p.breedteCm ?? null,
     p_pallet_type: p.palletType ?? null,
+    p_hoogte_cm: p.hoogteCm ?? null,
   })
   if (error) throw error
   return data as number

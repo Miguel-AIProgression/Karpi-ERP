@@ -45,6 +45,9 @@ export interface RhenusColliInput {
   lengte_cm: number | null;
   breedte_cm: number | null;
   pallet_type?: string | null;
+  // Mig 490: laadhoogte (cm) van een pallet-bundel → <dimension><height>. NULL voor
+  // rollen/los; alleen relevant bij pallet_type PLTS/HPLT.
+  hoogte_cm?: number | null;
 }
 
 // Colli-preflight-probleem: gedeelde shape (ADR-0034, _shared/vervoerders/colli.ts).

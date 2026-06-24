@@ -54,7 +54,7 @@ Deno.test('fetchZendingColli: mapt rijen → canonieke shape, artikelnr platgesl
     data: [
       {
         colli_nr: 1, sscc: '00123', gewicht_kg: 19.8, lengte_cm: 240, breedte_cm: 330,
-        omschrijving_snapshot: 'Egyptische Wol 240x330 cm', pallet_type: 'EP',
+        omschrijving_snapshot: 'Egyptische Wol 240x330 cm', pallet_type: 'EP', hoogte_cm: 150,
         order_regels: { artikelnr: 'EGW-240' },
       },
       // Colli zonder order_regel_id → embed null → artikelnr null, geen drop.
@@ -72,11 +72,12 @@ Deno.test('fetchZendingColli: mapt rijen → canonieke shape, artikelnr platgesl
   assertEquals(colli.length, 2);
   assertEquals(colli[0], {
     colli_nr: 1, sscc: '00123', gewicht_kg: 19.8, lengte_cm: 240, breedte_cm: 330,
-    omschrijving_snapshot: 'Egyptische Wol 240x330 cm', artikelnr: 'EGW-240', pallet_type: 'EP',
+    omschrijving_snapshot: 'Egyptische Wol 240x330 cm', artikelnr: 'EGW-240', pallet_type: 'EP', hoogte_cm: 150,
   });
   assertEquals(colli[1].artikelnr, null);
   assertEquals(colli[1].sscc, null);
   assertEquals(colli[1].pallet_type, null);
+  assertEquals(colli[1].hoogte_cm, null);
 });
 
 Deno.test('fetchZendingColli: query-fout → lege colli + foutmelding (caller beslist)', async () => {
