@@ -150,7 +150,7 @@ export function OrderDetailPage() {
         <EmailInhoudPanel body={order.opmerkingen} />
       )}
 
-      {isLeverweekTeBevestigen(order) && order.status !== 'Geannuleerd' && (
+      {isLeverweekTeBevestigen(order) && (
         <EdiLeverweekBevestigen
           orderId={order.id}
           debiteurNr={order.debiteur_nr}

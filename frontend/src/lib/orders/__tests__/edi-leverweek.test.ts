@@ -18,6 +18,17 @@ describe('isLeverweekTeBevestigen', () => {
       false,
     )
   })
+
+  it('is false voor een verzonden of deels verzonden EDI-order zonder bevestiging', () => {
+    expect(isLeverweekTeBevestigen({ bron_systeem: 'edi', edi_bevestigd_op: null, status: 'Verzonden' })).toBe(false)
+    expect(isLeverweekTeBevestigen({ bron_systeem: 'edi', edi_bevestigd_op: null, status: 'Deels verzonden' })).toBe(false)
+    expect(isLeverweekTeBevestigen({ bron_systeem: 'edi', edi_bevestigd_op: null, status: 'Geannuleerd' })).toBe(false)
+  })
+
+  it('is true voor een EDI-order in actieve status zonder bevestiging', () => {
+    expect(isLeverweekTeBevestigen({ bron_systeem: 'edi', edi_bevestigd_op: null, status: 'Klaar voor picken' })).toBe(true)
+    expect(isLeverweekTeBevestigen({ bron_systeem: 'edi', edi_bevestigd_op: null, status: 'In pickronde' })).toBe(true)
+  })
 })
 
 describe('vergelijkLeverweek', () => {
@@ -52,7 +63,7 @@ describe('vergelijkLeverweek', () => {
 })
 
 describe('filterLeverweekTeBevestigen', () => {
-  it('past de drie PostgREST-filters toe', () => {
+  it('past de vijf PostgREST-filters toe (excl. Geannuleerd, Verzonden, Deels verzonden)', () => {
     const calls: { op: string; args: unknown[] }[] = []
     const q = {
       eq(c: string, v: unknown) { calls.push({ op: 'eq', args: [c, v] }); return this },
@@ -64,6 +75,8 @@ describe('filterLeverweekTeBevestigen', () => {
       { op: 'eq', args: ['bron_systeem', 'edi'] },
       { op: 'is', args: ['edi_bevestigd_op', null] },
       { op: 'neq', args: ['status', 'Geannuleerd'] },
+      { op: 'neq', args: ['status', 'Verzonden'] },
+      { op: 'neq', args: ['status', 'Deels verzonden'] },
     ])
   })
 })

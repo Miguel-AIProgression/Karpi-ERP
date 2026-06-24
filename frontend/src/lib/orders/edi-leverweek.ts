@@ -10,11 +10,20 @@ import { verzendWeekDiff } from './verzendweek'
 export interface LeverweekOrderVelden {
   bron_systeem?: string | null
   edi_bevestigd_op?: string | null
+  status?: string | null
 }
+
+// Statussen waarvoor de EDI-leverweek-bevestiging niet meer relevant is:
+// de order is al fysiek onderweg of afgerond.
+const AFGERONDE_STATUSSEN = new Set(['Geannuleerd', 'Verzonden', 'Deels verzonden'])
 
 /** True als dit een EDI-order is waarvan de leverweek nog bevestigd moet worden. */
 export function isLeverweekTeBevestigen(order: LeverweekOrderVelden): boolean {
-  return order.bron_systeem === 'edi' && !order.edi_bevestigd_op
+  return (
+    order.bron_systeem === 'edi' &&
+    !order.edi_bevestigd_op &&
+    !AFGERONDE_STATUSSEN.has(order.status ?? '')
+  )
 }
 
 // Minimaal structureel contract van de PostgREST-filterbuilder. We binden dit NIET
@@ -30,15 +39,18 @@ interface PostgrestEqIsNeq {
 
 /**
  * Query-tegenhanger van `isLeverweekTeBevestigen`: filtert orders op de
- * EDI-leverweek-bevestiging-gate (mig 158/309). Geannuleerde orders uitgesloten
- * (annuleren vereist geen bevestiging). Wijzig de definitie hier; fetchOrders en
- * fetchStatusCounts volgen automatisch.
+ * EDI-leverweek-bevestiging-gate (mig 158/309). Afgeronde statussen uitgesloten:
+ * Geannuleerd (nooit meer relevant), Verzonden en Deels verzonden (al fysiek
+ * onderweg — orderbevestiging sturen heeft geen zin meer). Wijzig de definitie
+ * hier; fetchOrders en fetchStatusCounts volgen automatisch.
  */
 export function filterLeverweekTeBevestigen<Q>(query: Q): Q {
   return (query as unknown as PostgrestEqIsNeq)
     .eq('bron_systeem', 'edi')
     .is('edi_bevestigd_op', null)
-    .neq('status', 'Geannuleerd') as unknown as Q
+    .neq('status', 'Geannuleerd')
+    .neq('status', 'Verzonden')
+    .neq('status', 'Deels verzonden') as unknown as Q
 }
 
 export type LeverweekRelatie = 'gelijk' | 'later' | 'eerder' | 'onbekend'

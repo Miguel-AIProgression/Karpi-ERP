@@ -357,11 +357,20 @@ export async function fetchOrders(params: {
   return { orders, totalCount: count ?? 0 }
 }
 
+export interface StatusCountResult {
+  counts: StatusCount[]
+  /** Totaal unieke orders: som van orders_status_telling VOOR extra cross-cutting
+   *  buckets worden toegevoegd. Gebruik dit voor de 'Alle'-badge — de optelsom
+   *  van counts geeft dubbeltelling door de heeft_unmatched_regels-component van
+   *  'Actie vereist' en de status-overstijgende tabs (Te bevestigen, etc.). */
+  totalOrders: number
+}
+
 /** Fetch status counts for tabs. "Actie vereist" wordt aangevuld met orders
  * die heeft_unmatched_regels=true hebben (webshop-review), zodat die tab
  * altijd reflecteert wat er in de lijst verschijnt bij selectie.
  */
-export async function fetchStatusCounts(): Promise<StatusCount[]> {
+export async function fetchStatusCounts(): Promise<StatusCountResult> {
   const [
     tellingRes,
     unmatchedRes,
@@ -397,6 +406,8 @@ export async function fetchStatusCounts(): Promise<StatusCount[]> {
   if (tellingRes.error) throw tellingRes.error
 
   const counts = (tellingRes.data ?? []) as StatusCount[]
+  // Bewaar het echte totaal VOOR de cross-cutting extras erbij komen.
+  const totalOrders = counts.reduce((sum, c) => sum + (c.aantal ?? 0), 0)
   const extraUnmatched = unmatchedRes.count ?? 0
 
   if (extraUnmatched > 0) {
@@ -429,7 +440,7 @@ export async function fetchStatusCounts(): Promise<StatusCount[]> {
     counts.push({ status: 'Prijs ontbreekt', aantal: prijsOntbreekt })
   }
 
-  return counts
+  return { counts, totalOrders }
 }
 
 /**

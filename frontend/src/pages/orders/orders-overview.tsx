@@ -59,7 +59,9 @@ export function OrdersOverviewPage() {
   }
 
   const { data, isLoading } = useOrders({ status, search, debiteurNrs, bronSystemen: bronSelectie, page, sortBy, sortDir })
-  const { data: statusCounts } = useStatusCounts()
+  const { data: statusCountsResult } = useStatusCounts()
+  const statusCounts = statusCountsResult?.counts
+  const allOrdersCount = statusCountsResult?.totalOrders
   const { data: klantOptiesData } = useOrderKlantOpties()
 
   // Klant-opties komen uit feitelijke order-data — debiteur_nr (als string,
@@ -171,6 +173,7 @@ export function OrdersOverviewPage() {
           setPage(0)
         }}
         counts={statusCounts ?? []}
+        totalCount={allOrdersCount}
       />
 
       {/* Table */}

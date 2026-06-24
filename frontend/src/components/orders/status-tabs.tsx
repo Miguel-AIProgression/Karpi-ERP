@@ -41,27 +41,16 @@ interface StatusTabsProps {
   selected: string
   onSelect: (status: string) => void
   counts: StatusCount[]
+  /** Totaal aantal unieke orders (fetchOrders totalCount). Gebruikt voor de
+   *  'Alle'-badge — sommige status-buckets zijn cross-cutting (Actie vereist:
+   *  heeft_unmatched_regels-component, Te bevestigen, etc.) en tellen anders
+   *  dubbel in een gewone optelsom. */
+  totalCount?: number
 }
 
-// Deze statussen zijn status-overstijgend (cross-cutting): een order in deze
-// categorie is al meegeteld onder zijn eigen order_status. Meenemen in de
-// "Alle"-optelsom zou dubbeltelling geven (bv. "Te bevestigen: 299" telt dan
-// naast "Klaar voor picken" mee, waardoor Alle ~354 orders te hoog uitkomt).
-const META_STATUSSEN = new Set([
-  'Te bevestigen',
-  'Debiteur te bevestigen',
-  'Levertijd gewijzigd',
-  'Afleveradres ontbreekt',
-  'Prijs ontbreekt',
-])
-
-export function StatusTabs({ selected, onSelect, counts }: StatusTabsProps) {
+export function StatusTabs({ selected, onSelect, counts, totalCount }: StatusTabsProps) {
   const countMap = new Map(counts.map((c) => [c.status, c.aantal]))
-  // Som alleen de échte order-statussen — meta-statussen zijn cross-cutting en
-  // tellen al mee in hun onderliggende status.
-  const allCount = counts
-    .filter((c) => !META_STATUSSEN.has(c.status))
-    .reduce((sum, c) => sum + c.aantal, 0)
+  const allCount = totalCount ?? 0
 
   return (
     <div className="flex gap-1 overflow-x-auto pb-2 mb-4">
