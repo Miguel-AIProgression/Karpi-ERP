@@ -1479,7 +1479,7 @@ Eén-rij-tabel (`id=1`) met `watermark TIMESTAMPTZ` = de `created_at` van de laa
 
 | View | Doel |
 |------|------|
-| producten_overzicht | Producten + rollen-aggregatie (aantal_rollen, oppervlak, waarde) + locatie |
+| producten_overzicht | Producten + rollen-aggregatie (aantal_rollen, oppervlak, waarde) + locatie + `lengte_cm`/`breedte_cm` (mig 483, 2026-06-24 — voedt vorm-groep/oppervlak-sortering in de frontend, zie `kwaliteit-kleuren-uitvouw.tsx`) |
 | dashboard_stats | Aggregaties: producten, rollen (aantal), **voorraadwaarde_inkoop = SUM(rollen.waarde) over alle rollen**, **voorraadwaarde_verkoop = SUM(orders.totaal_bedrag) − SUM(VERZEND-regels), excl. Geannuleerd**, marge (op beschikbare rollen), open orders, klanten |
 | klant_omzet_ytd | Per klant: omzet YTD, % totaal, gem/maand, tier, vertegenwoordiger |
 | rollen_overzicht | Per kwaliteit/kleur: aantal, oppervlak, waarde |

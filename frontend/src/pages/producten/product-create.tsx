@@ -320,6 +320,11 @@ export function ProductCreatePage() {
       setError('Voeg minimaal één variant toe met een artikelnummer.')
       return
     }
+    const zonderType = filledRows.filter(r => !r.product_type)
+    if (zonderType.length > 0) {
+      setError(`Type is verplicht. Kies een type bij: ${zonderType.map(r => r.artikelnr.trim()).join(', ')}.`)
+      return
+    }
     // Mig 359: karpi_code is verplicht voor rol/vast (DB-trigger weigert
     // anders). Optioneel voor overig/staaltje (banden/calibra/staaltjes).
     const zonderKarpi = filledRows.filter(
@@ -669,8 +674,9 @@ export function ProductCreatePage() {
                         </p>
                       )}
                     </VariantVeld>
-                    <VariantVeld label="Type" className="col-span-2">
+                    <VariantVeld label="Type *" className="col-span-2">
                       <select
+                        required
                         value={r.product_type}
                         onChange={e => updateRow(r._key, 'product_type', e.target.value)}
                         className="input w-full"

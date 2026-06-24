@@ -2,7 +2,7 @@ import { Fragment, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight, Plus } from 'lucide-react'
-import { useProducten } from '@/hooks/use-producten'
+import { useProducten, useMaatwerkVormen } from '@/hooks/use-producten'
 import { useActieveAfwerkingKleuren } from '@/hooks/use-afwerking-kleuren'
 import {
   fetchAfwerkingTypes,
@@ -242,11 +242,31 @@ function ArtikelsVoorKleur({
     sortBy: 'omschrijving',
     sortDir: 'asc',
   })
+  const { data: maatwerkVormen } = useMaatwerkVormen()
   const [expandedArtikel, setExpandedArtikel] = useState<string | null>(null)
 
-  const filtered = (data?.producten ?? []).filter(
-    (p) => p.kleur_code === kleurCode || p.kleur_code === kleurCode.replace(/\.0$/, ''),
-  )
+  const filtered = useMemo(() => {
+    const rows = (data?.producten ?? []).filter(
+      (p) => p.kleur_code === kleurCode || p.kleur_code === kleurCode.replace(/\.0$/, ''),
+    )
+    // Vorm-groep eerst, daarna binnen elke groep oplopend op oppervlak —
+    // klein naar groot, i.p.v. de alfabetische omschrijving-sortering (die
+    // "OMBR ..." vóór "OMBRE ..." zette en geen idee had van afmeting).
+    // Groepering volgt `maatwerk_vormen.afmeting_type`, niet "rechthoek vs.
+    // de rest": afgeronde_hoeken/ovaal/organisch/pebble/ellips meten net als
+    // rechthoek in lengte×breedte en horen dus in dezelfde groep; alleen
+    // rond/cloud meten op diameter en vormen een eigen groep (kunnen niet
+    // zinvol op dezelfde oppervlak-as vergeleken worden).
+    const afmetingType = new Map(maatwerkVormen?.map(v => [v.code, v.afmeting_type]))
+    const vormPrioriteit = (code: string | null) => afmetingType.get(code ?? 'rechthoek') === 'diameter' ? 1 : 0
+    const oppervlak = (p: typeof rows[number]) =>
+      p.lengte_cm != null && p.breedte_cm != null ? p.lengte_cm * p.breedte_cm : Infinity
+    return [...rows].sort((a, b) => {
+      const va = vormPrioriteit(a.maatwerk_vorm_code), vb = vormPrioriteit(b.maatwerk_vorm_code)
+      if (va !== vb) return va - vb
+      return oppervlak(a) - oppervlak(b)
+    })
+  }, [data, kleurCode, maatwerkVormen])
 
   if (isLoading) {
     return (

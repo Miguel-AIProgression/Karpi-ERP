@@ -1,5 +1,40 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-24 — Type verplicht bij aanmaak + sortering op vorm-groep/oppervlak i.p.v. alfabetisch (mig 483)
+
+**Waarom:** live-test toonde twee problemen op de kleur-detailtabel
+(`kwaliteit-kleuren-uitvouw.tsx`): (1) het net aangemaakte artikel
+607140007 had geen "Vaste maat"-badge — `product_type` stond op NULL in de
+database ondanks dat "Standaard maat" zichtbaar geselecteerd stond in een
+eerdere (gefaalde, vóór de leverancier_id-fix) poging; Type was nergens
+verplicht, dus de submit ging gewoon door zonder type. (2) artikelen
+stonden alfabetisch op omschrijving-tekst i.p.v. op afmeting — "OMBR ..."
+(nieuw, geen "E") sorteerde toevallig vóór alle bestaande "OMBRE ..."
+artikelen, en een 040x040 stond niet vóór een 250x400.
+
+- **Type nu verplicht** in "+ Nieuw product"/variant-toevoegen
+  (`required` op de select + expliciete check in `handleSubmit` met
+  duidelijke melding, zelfde patroon als de karpi-code-check).
+- **Eenmalige datacorrectie** (geen migratie): `product_type` van
+  607140007 rechtgezet naar `'vast'` zoals bedoeld — `gewicht_kg` werd
+  daardoor automatisch opnieuw correct afgeleid door de bestaande
+  gewicht-trigger.
+- **Sortering herzien:** `producten_overzicht`-view uitgebreid met
+  `lengte_cm`/`breedte_cm` (mig 483 — kolommen bestonden al op
+  `producten`, stonden alleen niet in de view; `CREATE OR REPLACE VIEW`
+  kan alleen aan het eind toevoegen, geen herordening). `fetchProducten`
+  haalt ze nu mee. `ArtikelsVoorKleur` sorteert niet meer op
+  `omschrijving` maar client-side op **vorm-groep, dan oppervlak
+  oplopend**: groep 1 = vormen met `maatwerk_vormen.afmeting_type=
+  'lengte_breedte'` (rechthoek/null, ovaal, organisch_*, pebble, ellips,
+  **afgeronde_hoeken** — meet net als rechthoek in lengte×breedte, hoort
+  dus in dezelfde groep), groep 2 = `afmeting_type='diameter'`
+  (rond, cloud — fysiek niet zinvol op dezelfde oppervlak-as te
+  vergelijken als een rechthoek). Binnen elke groep oplopend op
+  `lengte_cm × breedte_cm`. Geverifieerd tegen de live OMBR/14-data:
+  levert exact 040x040 → 200x300 (afgeronde hoeken) → 250x400 → 220 rond
+  → 280 rond, zoals gevraagd.
+
 ## 2026-06-24 — `producten.leverancier_id` als echte kolom (mig 482)
 
 **Waarom:** vorige fix verwijderde het Leverancier-veld omdat de kolom niet

@@ -24,6 +24,8 @@ export interface ProductRow {
   totaal_oppervlak_m2: number
   totaal_waarde_rollen: number
   maatwerk_vorm_code: VormCode | null
+  lengte_cm: number | null
+  breedte_cm: number | null
 }
 
 export interface ProductDetail extends ProductRow {
@@ -70,7 +72,7 @@ export async function fetchProducten(params: {
 
   let query = supabase
     .from('producten_overzicht')
-    .select('artikelnr, karpi_code, omschrijving, kwaliteit_code, kleur_code, zoeksleutel, voorraad, vrije_voorraad, verkoopprijs, actief, product_type, locatie, aantal_rollen, totaal_oppervlak_m2, totaal_waarde_rollen, maatwerk_vorm_code', { count: 'exact' })
+    .select('artikelnr, karpi_code, omschrijving, kwaliteit_code, kleur_code, zoeksleutel, voorraad, vrije_voorraad, verkoopprijs, actief, product_type, locatie, aantal_rollen, totaal_oppervlak_m2, totaal_waarde_rollen, maatwerk_vorm_code, lengte_cm, breedte_cm', { count: 'exact' })
     .eq('actief', true)
     .order(sortBy, { ascending: sortDir === 'asc' })
 
@@ -164,13 +166,14 @@ export async function fetchDistincteVormen(): Promise<string[]> {
 export interface MaatwerkVormOptie {
   code: string
   naam: string
+  afmeting_type: 'lengte_breedte' | 'diameter'
 }
 
 /** Alle beschikbare vormen uit de master-tabel (niet alleen vormen die al in gebruik zijn). */
 export async function fetchMaatwerkVormen(): Promise<MaatwerkVormOptie[]> {
   const { data, error } = await supabase
     .from('maatwerk_vormen')
-    .select('code, naam')
+    .select('code, naam, afmeting_type')
     .eq('actief', true)
     .order('volgorde')
   if (error) throw error
