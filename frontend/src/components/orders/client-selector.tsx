@@ -64,7 +64,7 @@ export function ClientSelector({ value, onChange, disabled }: ClientSelectorProp
         .from('debiteuren')
         .select('debiteur_nr, naam, adres, postcode, plaats, land, fact_naam, fact_adres, fact_postcode, fact_plaats, email_factuur, email_overig, email_verzend, vertegenw_code, prijslijst_nr, korting_pct, betaler, inkoopgroepen(naam), gratis_verzending, standaard_maat_werkdagen, maatwerk_weken, deelleveringen_toegestaan, default_lever_type, afleverwijze')
         .eq('status', 'Actief')
-        .limit(10)
+        .limit(15)
 
       if (numSearch) {
         query = query.or(`naam.ilike.%${s}%,debiteur_nr.eq.${numSearch}`)
@@ -168,7 +168,7 @@ export function ClientSelector({ value, onChange, disabled }: ClientSelectorProp
       )}
 
       {open && results.length > 0 && (
-        <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-[var(--radius-sm)] shadow-lg max-h-60 overflow-y-auto">
+        <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-[var(--radius-sm)] shadow-lg max-h-[22rem] overflow-y-auto">
           {results.map((client) => (
             <button
               key={client.debiteur_nr}
@@ -178,11 +178,20 @@ export function ClientSelector({ value, onChange, disabled }: ClientSelectorProp
                 setSearch('')
                 setOpen(false)
               }}
-              className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 border-b border-slate-50 last:border-0"
+              className="w-full text-left px-4 py-2.5 hover:bg-slate-50 border-b border-slate-100 last:border-0"
             >
-              <span className="font-medium">{client.naam}</span>
-              <span className="text-xs text-slate-400 ml-2">#{client.debiteur_nr}</span>
-              {client.plaats && <span className="text-xs text-slate-400 ml-1">— {client.plaats}</span>}
+              <div className="flex items-start justify-between gap-3">
+                <span className="font-medium text-sm leading-snug">{client.naam}</span>
+                {client.plaats && (
+                  <span className="shrink-0 text-sm font-semibold text-slate-700 leading-snug">{client.plaats}</span>
+                )}
+              </div>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="text-xs font-mono text-terracotta-600">#{client.debiteur_nr}</span>
+                {client.postcode && (
+                  <span className="text-xs text-slate-400">{client.postcode}</span>
+                )}
+              </div>
             </button>
           ))}
         </div>

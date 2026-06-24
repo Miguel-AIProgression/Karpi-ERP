@@ -216,7 +216,7 @@ export function AddressSelector({ debiteurNr, onSelect, disabled = false, autoSe
               </div>
 
               {open && (
-                <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-[var(--radius-sm)] shadow-lg max-h-60 overflow-y-auto">
+                <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-[var(--radius-sm)] shadow-lg max-h-[22rem] overflow-y-auto">
                   {filtered.length === 0 && (
                     <div className="px-4 py-2 text-sm text-slate-400">Geen afleveradres gevonden</div>
                   )}
@@ -225,11 +225,19 @@ export function AddressSelector({ debiteurNr, onSelect, disabled = false, autoSe
                       key={a.id}
                       type="button"
                       onClick={() => { selectAddress(a); setSearch(''); setOpen(false) }}
-                      className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 border-b border-slate-50 last:border-0"
+                      className="w-full text-left px-4 py-2.5 hover:bg-slate-50 border-b border-slate-100 last:border-0"
                     >
-                      <span className="text-xs text-slate-400 mr-1 tabular-nums">#{a.adres_nr}</span>
-                      <span className="font-medium">{a.naam}</span>
-                      <div className="text-xs text-slate-400">{a.adres}, {a.postcode} {a.plaats}</div>
+                      <div className="flex items-start gap-3">
+                        <span className="shrink-0 text-xs tabular-nums text-slate-400 mt-0.5 w-6 text-right">#{a.adres_nr}</span>
+                        <div className="flex-1 min-w-0">
+                          <span className="font-medium text-sm">{a.naam}</span>
+                          <div className="text-xs text-slate-400 truncate">{a.adres}</div>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          {a.postcode && <div className="text-xs text-slate-400">{a.postcode}</div>}
+                          <div className="text-sm font-semibold text-slate-700">{a.plaats}</div>
+                        </div>
+                      </div>
                     </button>
                   ))}
                   <button
