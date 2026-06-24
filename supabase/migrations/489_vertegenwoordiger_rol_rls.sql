@@ -12,6 +12,11 @@
 -- orders.vertegenw_code kan NULL zijn (webshop/Floorpassion). Orders worden dus via
 -- hun debiteur gefilterd — dat matcht "zijn klanten" en sluit NULL-orders vanzelf uit.
 --
+-- Fail-closed: zonder rol-claim (of zonder vertegenw_code) matcht niets → niet-rep
+-- gedrag resp. 0 rijen, nooit een lek. NB: app_metadata zit pas in het JWT ná een
+-- nieuwe sessie/token-refresh — een al-ingelogde rep krijgt de scope pas bij volgende
+-- login (geen issue voor de invite-flow: Guido logt vers in).
+--
 -- BELANGRIJK — bestaande RLS-laag: orders/order_regels/debiteuren/facturen/factuur_regels
 -- hadden RLS UIT. Alle andere RLS-tabellen in deze DB dragen een blanket
 -- `USING(true) TO authenticated`-policy (advisor-appeasement; writes lopen via

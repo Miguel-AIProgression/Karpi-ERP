@@ -6,12 +6,12 @@ import { useDashboardStats, useRecenteOrders } from '@/hooks/use-dashboard'
 import { useAuth } from '@/hooks/use-auth'
 
 export function DashboardPage() {
-  const { data: stats, isLoading: statsLoading } = useDashboardStats()
-  const { data: recenteOrders, isLoading: ordersLoading } = useRecenteOrders()
   // Externe vertegenwoordiger (mig 489): geen bedrijfsbrede KPI's tonen — die
   // aggregaat-view (dashboard_stats) is niet per-rep gescoped. De recente-orders-
   // lijst (recente_orders) is dat wél via RLS/security_invoker.
   const { isExternRep } = useAuth()
+  const { data: stats, isLoading: statsLoading } = useDashboardStats(!isExternRep)
+  const { data: recenteOrders, isLoading: ordersLoading } = useRecenteOrders()
 
   return (
     <>

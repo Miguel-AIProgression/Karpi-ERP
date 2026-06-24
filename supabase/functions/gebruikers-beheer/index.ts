@@ -88,6 +88,16 @@ serve(async (req) => {
     return jsonResponse({ error: 'Niet geautoriseerd — log opnieuw in.' }, 401)
   }
 
+  // ---- AuthZ: de externe vertegenwoordiger (read-only, mig 489) mag dit
+  // account-beheer NOOIT aanroepen. Anders kon een externe login via een rauwe
+  // invoke collega-accounts verwijderen/uitnodigen — die rol deelt namelijk de
+  // `authenticated`-rol met het personeel, dus de UI-rem (RoleGuard) is hier geen
+  // beveiliging. Fail-closed op de rol-claim. (Bredere "alleen-beheerder"-gate =
+  // bestaande backlog, los van deze feature.)
+  if (((aanroeper.app_metadata ?? {}) as Record<string, unknown>).rol === ROL_EXTERN_REP) {
+    return jsonResponse({ error: 'Geen toegang tot gebruikersbeheer.' }, 403)
+  }
+
   // ---- Body ----
   let body: RequestBody
   try {
