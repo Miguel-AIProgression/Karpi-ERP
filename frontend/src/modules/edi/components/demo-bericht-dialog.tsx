@@ -3,6 +3,7 @@ import { X, Loader2, Check } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { genereerDemoBerichten, type DemoTemplate, type DemoResult } from '@/modules/edi/lib/demo-helper'
+import { useAuth } from '@/hooks/use-auth'
 
 const KARPI_GLN_DEFAULT = '8715954999998'
 
@@ -19,8 +20,10 @@ export function DemoBerichtDialog({ open, onClose }: Props) {
   const [result, setResult] = useState<DemoResult | null>(null)
 
   const qc = useQueryClient()
+  // Externe vertegenwoordiger (mig 489): read-only — demo-bericht aanmaken verbergen.
+  const { isExternRep } = useAuth()
 
-  if (!open) return null
+  if (!open || isExternRep) return null
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()

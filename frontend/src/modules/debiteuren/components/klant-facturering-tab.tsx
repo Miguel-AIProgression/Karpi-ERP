@@ -5,6 +5,7 @@ import {
 } from '@/modules/facturatie'
 import { FactuurLijst } from '@/modules/facturatie'
 import { parseEmailRecipients } from '@/lib/email-recipients'
+import { useAuth } from '@/hooks/use-auth'
 
 interface Props {
   debiteurNr: number
@@ -12,6 +13,8 @@ interface Props {
 }
 
 export function KlantFactureringTab({ debiteurNr, btwNummer }: Props) {
+  // Externe vertegenwoordiger (mig 489): read-only — geen wijzig-affordances.
+  const { isExternRep } = useAuth()
   const { data: instellingen } = useKlantFactuurInstellingen(debiteurNr)
   const updateMut = useUpdateKlantFactuurInstellingen()
 
@@ -33,7 +36,7 @@ export function KlantFactureringTab({ debiteurNr, btwNummer }: Props) {
 
       <section>
         <h3 className="text-sm font-semibold text-slate-700 mb-2">E-mailadres factuur</h3>
-        {editEmail ? (
+        {editEmail && !isExternRep ? (
           <form
             onSubmit={(e) => {
               e.preventDefault()
@@ -88,13 +91,15 @@ export function KlantFactureringTab({ debiteurNr, btwNummer }: Props) {
             {emailFactuur
               ? <span className="text-slate-600">{emailFactuur}</span>
               : <span className="text-red-600">Niet ingesteld — zonder e-mailadres kan geen factuur verstuurd worden</span>}
-            <button
-              type="button"
-              onClick={() => setEditEmail(true)}
-              className="text-xs text-terracotta-500 hover:text-terracotta-700 font-medium"
-            >
-              Wijzig
-            </button>
+            {!isExternRep && (
+              <button
+                type="button"
+                onClick={() => setEditEmail(true)}
+                className="text-xs text-terracotta-500 hover:text-terracotta-700 font-medium"
+              >
+                Wijzig
+              </button>
+            )}
           </div>
         )}
         <p className="mt-1 text-xs text-slate-400">
@@ -104,16 +109,27 @@ export function KlantFactureringTab({ debiteurNr, btwNummer }: Props) {
 
       <section>
         <h3 className="text-sm font-semibold text-slate-700 mb-2">BTW verlegd (intracommunautair)</h3>
-        <label className="flex items-center gap-2 text-sm text-slate-600">
-          <input
-            type="checkbox"
-            checked={verlegd}
-            disabled={updateMut.isPending}
-            onChange={(e) => patch({ btw_verlegd_intracom: e.currentTarget.checked })}
-            className="h-4 w-4 rounded border-slate-300 accent-terracotta-500"
-          />
-          <span>BTW verleggen naar afnemer (EU B2B) — factuur en orderbevestiging rekenen 0%</span>
-        </label>
+        {isExternRep ? (
+          <div className="flex items-center gap-2 text-sm text-slate-600">
+            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+              verlegd ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
+            }`}>
+              {verlegd ? 'Aan' : 'Uit'}
+            </span>
+            <span>BTW verleggen naar afnemer (EU B2B) — factuur en orderbevestiging rekenen 0%</span>
+          </div>
+        ) : (
+          <label className="flex items-center gap-2 text-sm text-slate-600">
+            <input
+              type="checkbox"
+              checked={verlegd}
+              disabled={updateMut.isPending}
+              onChange={(e) => patch({ btw_verlegd_intracom: e.currentTarget.checked })}
+              className="h-4 w-4 rounded border-slate-300 accent-terracotta-500"
+            />
+            <span>BTW verleggen naar afnemer (EU B2B) — factuur en orderbevestiging rekenen 0%</span>
+          </label>
+        )}
         {verlegd && (
           <p className="mt-1 text-xs text-slate-400">
             Effectief tarief: <strong>0%</strong> met vermelding &ldquo;BTW verlegd&rdquo; op de factuur.
@@ -133,26 +149,33 @@ export function KlantFactureringTab({ debiteurNr, btwNummer }: Props) {
 
       <section>
         <h3 className="text-sm font-semibold text-slate-700 mb-2">BTW-percentage</h3>
-        <div className="flex items-center gap-2">
-          <input
-            type="number"
-            step="0.01"
-            min={0}
-            max={100}
-            defaultValue={btwPercentage}
-            key={btwPercentage}
-            onBlur={(e) => {
-              const v = Number(e.currentTarget.value)
-              if (!Number.isNaN(v) && v !== btwPercentage) patch({ btw_percentage: v })
-            }}
-            className="w-24 rounded border border-slate-300 px-2 py-1 text-sm"
-          />
-          <span className="text-sm text-slate-500">%</span>
-          <button type="button" onClick={() => patch({ btw_percentage: 21 })}
-            className="text-xs px-2 py-1 rounded bg-slate-100 hover:bg-slate-200">21% NL</button>
-          <button type="button" onClick={() => patch({ btw_percentage: 0 })}
-            className="text-xs px-2 py-1 rounded bg-slate-100 hover:bg-slate-200">0% EU/export</button>
-        </div>
+        {isExternRep ? (
+          <div className="flex items-center gap-1 text-sm text-slate-700">
+            <span className="font-medium">{btwPercentage}</span>
+            <span className="text-slate-500">%</span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              step="0.01"
+              min={0}
+              max={100}
+              defaultValue={btwPercentage}
+              key={btwPercentage}
+              onBlur={(e) => {
+                const v = Number(e.currentTarget.value)
+                if (!Number.isNaN(v) && v !== btwPercentage) patch({ btw_percentage: v })
+              }}
+              className="w-24 rounded border border-slate-300 px-2 py-1 text-sm"
+            />
+            <span className="text-sm text-slate-500">%</span>
+            <button type="button" onClick={() => patch({ btw_percentage: 21 })}
+              className="text-xs px-2 py-1 rounded bg-slate-100 hover:bg-slate-200">21% NL</button>
+            <button type="button" onClick={() => patch({ btw_percentage: 0 })}
+              className="text-xs px-2 py-1 rounded bg-slate-100 hover:bg-slate-200">0% EU/export</button>
+          </div>
+        )}
       </section>
 
       <section>

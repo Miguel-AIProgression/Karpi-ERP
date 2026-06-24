@@ -3,6 +3,7 @@ import { ChevronDown, Check } from 'lucide-react'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { useZetFactuurStatus } from '../hooks/use-facturen'
 import type { FactuurStatus } from '../queries/facturen'
+import { useAuth } from '@/hooks/use-auth'
 
 const STATUS_OPTIES: FactuurStatus[] = [
   'Concept',
@@ -22,6 +23,8 @@ export function FactuurStatusSelect({ factuurId, status }: FactuurStatusSelectPr
   const [open, setOpen] = useState(false)
   const wrapperRef = useRef<HTMLDivElement>(null)
   const mutatie = useZetFactuurStatus()
+  // Externe vertegenwoordiger (mig 489): read-only — toon de status als badge zonder edit-trigger.
+  const { isExternRep } = useAuth()
 
   useEffect(() => {
     if (!open) return
@@ -38,6 +41,11 @@ export function FactuurStatusSelect({ factuurId, status }: FactuurStatusSelectPr
     setOpen(false)
     if (nieuw === status) return
     mutatie.mutate({ id: factuurId, status: nieuw })
+  }
+
+  // Read-only: laat de waarde (badge) staan, verberg de wijzig-trigger.
+  if (isExternRep) {
+    return <StatusBadge status={status} type="factuur" />
   }
 
   return (

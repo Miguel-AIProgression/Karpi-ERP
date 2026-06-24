@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Loader2, PackageCheck } from 'lucide-react'
 import { useColliVoorZending, useVoltooiPickronde } from '@/modules/magazijn'
+import { useAuth } from '@/hooks/use-auth'
 
 interface Props {
   zendingId: number
@@ -26,7 +27,10 @@ export function VoltooiPickrondeKnop({
   const { data: colli = [] } = useColliVoorZending(zendingId)
   const mutate = useVoltooiPickronde()
   const [error, setError] = useState<string | null>(null)
+  // Externe vertegenwoordiger (mig 489): read-only — geen voltooi-actie.
+  const { isExternRep } = useAuth()
 
+  if (isExternRep) return null
   if (zendingStatus !== 'Picken') return null
 
   const aantalNietGevonden = colli.filter((c) => c.pick_uitkomst === 'niet_gevonden').length

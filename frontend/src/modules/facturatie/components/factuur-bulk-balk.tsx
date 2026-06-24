@@ -3,6 +3,7 @@ import { ChevronDown, X, Loader2 } from 'lucide-react'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { useZetFactuurStatusBulk } from '../hooks/use-facturen'
 import type { FactuurStatus } from '../queries/facturen'
+import { useAuth } from '@/hooks/use-auth'
 
 const STATUS_OPTIES: FactuurStatus[] = [
   'Concept',
@@ -23,6 +24,8 @@ export function FactuurBulkBalk({ geselecteerdeIds, onClear, onKlaar }: FactuurB
   const [open, setOpen] = useState(false)
   const wrapperRef = useRef<HTMLDivElement>(null)
   const mutatie = useZetFactuurStatusBulk()
+  // Externe vertegenwoordiger (mig 489): read-only — geen bulk-muteer-affordance.
+  const { isExternRep } = useAuth()
 
   useEffect(() => {
     if (!open) return
@@ -52,6 +55,7 @@ export function FactuurBulkBalk({ geselecteerdeIds, onClear, onKlaar }: FactuurB
     )
   }
 
+  if (isExternRep) return null
   if (geselecteerdeIds.length === 0) return null
 
   return (

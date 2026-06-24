@@ -4,6 +4,7 @@ import { ChevronDown, ChevronRight, ArrowUp, ArrowDown, ArrowUpDown, MapPin, Pen
 import { formatCurrency, formatNumber } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
 import { useUpdateProductType, useUpdateProductLocatie, useRollenVoorProduct } from '@/hooks/use-producten'
+import { useAuth } from '@/hooks/use-auth'
 import type { ProductType, ProductRow as ProductRowData, ProductSortField, SortDirection } from '@/lib/supabase/queries/producten'
 
 export const TYPE_LABELS: Record<ProductType, string> = {
@@ -30,6 +31,7 @@ export function ProductTypeBadge({ type }: { type: ProductType | null }) {
 }
 
 export function EditableProductType({ artikelnr, type }: { artikelnr: string; type: ProductType | null }) {
+  const { isExternRep } = useAuth()
   const [open, setOpen] = useState(false)
   const [dropUp, setDropUp] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -59,6 +61,9 @@ export function EditableProductType({ artikelnr, type }: { artikelnr: string; ty
     }
     setOpen(false)
   }
+
+  // Read-only voor de externe vertegenwoordiger: badge zonder klik-dropdown.
+  if (isExternRep) return <ProductTypeBadge type={type} />
 
   return (
     <div className="relative" ref={ref}>
@@ -98,6 +103,7 @@ export function EditableProductType({ artikelnr, type }: { artikelnr: string; ty
 }
 
 export function EditableLocatie({ artikelnr, locatie }: { artikelnr: string; locatie: string | null }) {
+  const { isExternRep } = useAuth()
   const [editing, setEditing] = useState(false)
   const [value, setValue] = useState(locatie ?? '')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -127,6 +133,18 @@ export function EditableLocatie({ artikelnr, locatie }: { artikelnr: string; loc
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') handleSave()
     if (e.key === 'Escape') handleCancel()
+  }
+
+  // Read-only voor de externe vertegenwoordiger: toon de locatie zonder edit.
+  if (isExternRep) {
+    return locatie ? (
+      <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-xs font-mono">
+        <MapPin size={11} />
+        {locatie}
+      </span>
+    ) : (
+      <span className="text-slate-300 text-xs">—</span>
+    )
   }
 
   if (editing) {

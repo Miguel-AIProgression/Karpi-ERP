@@ -39,9 +39,10 @@ export function DebiteurDetailPage() {
   const { id } = useParams<{ id: string }>()
   const debiteurNr = Number(id)
   const navigate = useNavigate()
-  // Externe vertegenwoordiger (mig 489): read-only. Primaire muteer-knoppen
-  // (bewerken/verwijderen/logo) worden verborgen; diepere inline-instellingen
-  // schrijven naar `debiteuren` en worden door RLS geblokt (fail-closed).
+  // Externe vertegenwoordiger (mig 489): read-only. Alle muteer-affordances
+  // worden verborgen — primaire knoppen (bewerken/verwijderen/logo) én de
+  // inline-instellingen (afleverwijze/verzending/leveringen/lever-type).
+  // RLS op `debiteuren` blijft de fail-closed backstop.
   const { isExternRep } = useAuth()
   const [activeTab, setActiveTab] = useState<Tab>('info')
   const [showLogo, setShowLogo] = useState(false)
@@ -437,15 +438,19 @@ export function DebiteurDetailPage() {
           {/* Afleverwijze */}
           <div>
             <div className="text-xs text-slate-400 mb-1">Afleverwijze</div>
-            <select
-              value={klant.afleverwijze ?? 'Bezorgen'}
-              onChange={(e) => afleverwijzeMutation.mutate(e.target.value)}
-              disabled={afleverwijzeMutation.isPending}
-              className="w-full px-2 py-1 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400 disabled:opacity-50"
-            >
-              <option value="Bezorgen">Bezorgen</option>
-              <option value="Afhalen">Afhalen</option>
-            </select>
+            {isExternRep ? (
+              <span className="text-slate-700">{klant.afleverwijze ?? 'Bezorgen'}</span>
+            ) : (
+              <select
+                value={klant.afleverwijze ?? 'Bezorgen'}
+                onChange={(e) => afleverwijzeMutation.mutate(e.target.value)}
+                disabled={afleverwijzeMutation.isPending}
+                className="w-full px-2 py-1 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400 disabled:opacity-50"
+              >
+                <option value="Bezorgen">Bezorgen</option>
+                <option value="Afhalen">Afhalen</option>
+              </select>
+            )}
           </div>
 
           {/* Gratis verzending */}
@@ -459,13 +464,15 @@ export function DebiteurDetailPage() {
               }`}>
                 {klant.gratis_verzending ? 'Ja' : 'Nee'}
               </span>
-              <button
-                onClick={() => gratisVerzendingMutation.mutate(!klant.gratis_verzending)}
-                disabled={gratisVerzendingMutation.isPending}
-                className="text-xs text-terracotta-500 hover:text-terracotta-700 font-medium disabled:opacity-50"
-              >
-                {gratisVerzendingMutation.isPending ? '...' : 'Wijzig'}
-              </button>
+              {!isExternRep && (
+                <button
+                  onClick={() => gratisVerzendingMutation.mutate(!klant.gratis_verzending)}
+                  disabled={gratisVerzendingMutation.isPending}
+                  className="text-xs text-terracotta-500 hover:text-terracotta-700 font-medium disabled:opacity-50"
+                >
+                  {gratisVerzendingMutation.isPending ? '...' : 'Wijzig'}
+                </button>
+              )}
             </div>
           </div>
 
@@ -474,7 +481,7 @@ export function DebiteurDetailPage() {
             <div className="text-xs text-slate-400 mb-1">Verzendkosten</div>
             {klant.gratis_verzending ? (
               <span className="text-slate-400 italic">n.v.t.</span>
-            ) : editVerzendkosten ? (
+            ) : editVerzendkosten && !isExternRep ? (
               <form
                 onSubmit={(e) => {
                   e.preventDefault()
@@ -503,9 +510,11 @@ export function DebiteurDetailPage() {
             ) : (
               <div className="flex items-center gap-2">
                 <span className="text-slate-700">€ {(klant.verzendkosten ?? 35).toFixed(2).replace('.', ',')}</span>
-                <button onClick={() => setEditVerzendkosten(true)} className="text-xs text-terracotta-500 hover:text-terracotta-700 font-medium">
-                  Wijzig
-                </button>
+                {!isExternRep && (
+                  <button onClick={() => setEditVerzendkosten(true)} className="text-xs text-terracotta-500 hover:text-terracotta-700 font-medium">
+                    Wijzig
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -515,7 +524,7 @@ export function DebiteurDetailPage() {
             <div className="text-xs text-slate-400 mb-1">Drempel gratis verzending</div>
             {klant.gratis_verzending ? (
               <span className="text-slate-400 italic">n.v.t.</span>
-            ) : editVerzendDrempel ? (
+            ) : editVerzendDrempel && !isExternRep ? (
               <form
                 onSubmit={(e) => {
                   e.preventDefault()
@@ -544,9 +553,11 @@ export function DebiteurDetailPage() {
             ) : (
               <div className="flex items-center gap-2">
                 <span className="text-slate-700">€ {(klant.verzend_drempel ?? 500).toFixed(0)}</span>
-                <button onClick={() => setEditVerzendDrempel(true)} className="text-xs text-terracotta-500 hover:text-terracotta-700 font-medium">
-                  Wijzig
-                </button>
+                {!isExternRep && (
+                  <button onClick={() => setEditVerzendDrempel(true)} className="text-xs text-terracotta-500 hover:text-terracotta-700 font-medium">
+                    Wijzig
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -559,7 +570,7 @@ export function DebiteurDetailPage() {
           {/* Standaard-maat levertermijn */}
           <div>
             <div className="text-xs text-slate-400 mb-1">Standaard-maat levertermijn</div>
-            {editStandaardDagen ? (
+            {editStandaardDagen && !isExternRep ? (
               <form
                 onSubmit={(e) => {
                   e.preventDefault()
@@ -591,9 +602,11 @@ export function DebiteurDetailPage() {
                     ? `${klant.standaard_maat_werkdagen} ${klant.standaard_maat_werkdagen === 1 ? 'dag' : 'dagen'}`
                     : <span className="text-slate-400 italic">Standaard</span>}
                 </span>
-                <button onClick={() => setEditStandaardDagen(true)} className="text-xs text-terracotta-500 hover:text-terracotta-700 font-medium">
-                  Wijzig
-                </button>
+                {!isExternRep && (
+                  <button onClick={() => setEditStandaardDagen(true)} className="text-xs text-terracotta-500 hover:text-terracotta-700 font-medium">
+                    Wijzig
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -601,7 +614,7 @@ export function DebiteurDetailPage() {
           {/* Maatwerk levertermijn */}
           <div>
             <div className="text-xs text-slate-400 mb-1">Maatwerk levertermijn</div>
-            {editMaatwerkWeken ? (
+            {editMaatwerkWeken && !isExternRep ? (
               <form
                 onSubmit={(e) => {
                   e.preventDefault()
@@ -633,9 +646,11 @@ export function DebiteurDetailPage() {
                     ? `${klant.maatwerk_weken} ${klant.maatwerk_weken === 1 ? 'week' : 'weken'}`
                     : <span className="text-slate-400 italic">Standaard</span>}
                 </span>
-                <button onClick={() => setEditMaatwerkWeken(true)} className="text-xs text-terracotta-500 hover:text-terracotta-700 font-medium">
-                  Wijzig
-                </button>
+                {!isExternRep && (
+                  <button onClick={() => setEditMaatwerkWeken(true)} className="text-xs text-terracotta-500 hover:text-terracotta-700 font-medium">
+                    Wijzig
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -644,22 +659,24 @@ export function DebiteurDetailPage() {
           <div>
             <div className="text-xs text-slate-400 mb-1">Deelleveringen</div>
             <div className="flex items-center gap-3">
-              <button
-                type="button"
-                role="switch"
-                aria-checked={klant.deelleveringen_toegestaan}
-                onClick={() => deelleveringenMutation.mutate(!klant.deelleveringen_toegestaan)}
-                disabled={deelleveringenMutation.isPending}
-                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 disabled:opacity-50 ${
-                  klant.deelleveringen_toegestaan ? 'bg-terracotta-500' : 'bg-slate-300'
-                }`}
-              >
-                <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                    klant.deelleveringen_toegestaan ? 'translate-x-4' : 'translate-x-0.5'
+              {!isExternRep && (
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={klant.deelleveringen_toegestaan}
+                  onClick={() => deelleveringenMutation.mutate(!klant.deelleveringen_toegestaan)}
+                  disabled={deelleveringenMutation.isPending}
+                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 disabled:opacity-50 ${
+                    klant.deelleveringen_toegestaan ? 'bg-terracotta-500' : 'bg-slate-300'
                   }`}
-                />
-              </button>
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                      klant.deelleveringen_toegestaan ? 'translate-x-4' : 'translate-x-0.5'
+                    }`}
+                  />
+                </button>
+              )}
               <span className="text-slate-700">
                 {klant.deelleveringen_toegestaan ? 'Aan' : 'Uit'}
               </span>
@@ -670,22 +687,24 @@ export function DebiteurDetailPage() {
           <div>
             <div className="text-xs text-slate-400 mb-1">Tapijt-stickers bij standaard</div>
             <div className="flex items-center gap-3">
-              <button
-                type="button"
-                role="switch"
-                aria-checked={klant.tapijt_sticker_bij_standaard}
-                onClick={() => tapijtStickerMutation.mutate(!klant.tapijt_sticker_bij_standaard)}
-                disabled={tapijtStickerMutation.isPending}
-                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 disabled:opacity-50 ${
-                  klant.tapijt_sticker_bij_standaard ? 'bg-terracotta-500' : 'bg-slate-300'
-                }`}
-              >
-                <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                    klant.tapijt_sticker_bij_standaard ? 'translate-x-4' : 'translate-x-0.5'
+              {!isExternRep && (
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={klant.tapijt_sticker_bij_standaard}
+                  onClick={() => tapijtStickerMutation.mutate(!klant.tapijt_sticker_bij_standaard)}
+                  disabled={tapijtStickerMutation.isPending}
+                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 disabled:opacity-50 ${
+                    klant.tapijt_sticker_bij_standaard ? 'bg-terracotta-500' : 'bg-slate-300'
                   }`}
-                />
-              </button>
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                      klant.tapijt_sticker_bij_standaard ? 'translate-x-4' : 'translate-x-0.5'
+                    }`}
+                  />
+                </button>
+              )}
               <span className="text-slate-700">
                 {klant.tapijt_sticker_bij_standaard ? 'Aan' : 'Uit'}
               </span>
@@ -695,32 +714,38 @@ export function DebiteurDetailPage() {
           {/* Standaard lever-type (segmented) — ADR 0014 / mig 244 */}
           <div>
             <div className="text-xs text-slate-400 mb-1">Standaard levering</div>
-            <div className="inline-flex items-center gap-1 p-0.5 bg-slate-100 rounded-[var(--radius-sm)]">
-              <button
-                type="button"
-                onClick={() => leverTypeMutation.mutate('week')}
-                disabled={leverTypeMutation.isPending || klant.default_lever_type === 'week'}
-                className={`px-3 py-1 text-xs font-medium rounded-[calc(var(--radius-sm)-2px)] transition disabled:cursor-default ${
-                  klant.default_lever_type === 'week'
-                    ? 'bg-white text-slate-800 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                Per week
-              </button>
-              <button
-                type="button"
-                onClick={() => leverTypeMutation.mutate('datum')}
-                disabled={leverTypeMutation.isPending || klant.default_lever_type === 'datum'}
-                className={`px-3 py-1 text-xs font-medium rounded-[calc(var(--radius-sm)-2px)] transition disabled:cursor-default ${
-                  klant.default_lever_type === 'datum'
-                    ? 'bg-white text-slate-800 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                Op datum
-              </button>
-            </div>
+            {isExternRep ? (
+              <span className="text-slate-700">
+                {klant.default_lever_type === 'datum' ? 'Op datum' : 'Per week'}
+              </span>
+            ) : (
+              <div className="inline-flex items-center gap-1 p-0.5 bg-slate-100 rounded-[var(--radius-sm)]">
+                <button
+                  type="button"
+                  onClick={() => leverTypeMutation.mutate('week')}
+                  disabled={leverTypeMutation.isPending || klant.default_lever_type === 'week'}
+                  className={`px-3 py-1 text-xs font-medium rounded-[calc(var(--radius-sm)-2px)] transition disabled:cursor-default ${
+                    klant.default_lever_type === 'week'
+                      ? 'bg-white text-slate-800 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  Per week
+                </button>
+                <button
+                  type="button"
+                  onClick={() => leverTypeMutation.mutate('datum')}
+                  disabled={leverTypeMutation.isPending || klant.default_lever_type === 'datum'}
+                  className={`px-3 py-1 text-xs font-medium rounded-[calc(var(--radius-sm)-2px)] transition disabled:cursor-default ${
+                    klant.default_lever_type === 'datum'
+                      ? 'bg-white text-slate-800 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  Op datum
+                </button>
+              </div>
+            )}
           </div>
           </div>
         </div>

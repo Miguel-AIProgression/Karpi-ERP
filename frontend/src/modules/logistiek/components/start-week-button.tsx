@@ -24,6 +24,7 @@ import { useStartPickrondes } from '../hooks/use-zendingen'
 import { useVervoerders } from '../hooks/use-vervoerders'
 import { usePickbaarheid } from '../hooks/use-pickbaarheid'
 import { printsetPadVoorZendingen } from '../lib/printset-navigatie'
+import { useAuth } from '@/hooks/use-auth'
 import { cn } from '@/lib/utils/cn'
 import type { PickShipOrder } from '@/modules/magazijn'
 
@@ -42,6 +43,11 @@ export function StartWeekButton({ orders, verzendWeek }: Props) {
 
   const { pickbareOrders, aantalGeblokkeerd, vervoerderResolutieLaadt } =
     usePickbaarheid(orders)
+  // Externe vertegenwoordiger (mig 489): read-only — geen week-start.
+  const { isExternRep } = useAuth()
+
+  if (isExternRep) return null
+
   const aantal = pickbareOrders.length
 
   const heeftVerzend = pickbareOrders.some((o) => !o.afhalen)

@@ -10,6 +10,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Loader2, Undo2 } from 'lucide-react'
 import { useAnnuleerPickronde, useColliVoorZending } from '@/modules/magazijn'
+import { useAuth } from '@/hooks/use-auth'
 
 interface Props {
   zendingId: number
@@ -22,6 +23,10 @@ export function AnnuleerPickrondeKnop({ zendingId, zendingStatus }: Props) {
   const mutate = useAnnuleerPickronde()
   const [bevestig, setBevestig] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Externe vertegenwoordiger (mig 489): read-only — geen annuleer-actie.
+  const { isExternRep } = useAuth()
+
+  if (isExternRep) return null
 
   // Mig 478: ook een nog-niet-gestarte ('Gepland') deelzending mag terug —
   // zelfs veiliger dan 'Picken' (er is per definitie nog niets gepickt).

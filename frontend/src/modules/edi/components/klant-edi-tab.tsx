@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAuth } from '@/hooks/use-auth'
 import {
   fetchHandelspartnerConfig,
   upsertHandelspartnerConfig,
@@ -32,6 +33,8 @@ const INKOMEND = getBerichttypenVoorRichting('in')
 const UITGAAND = getBerichttypenVoorRichting('uit')
 
 export function KlantEdiTab({ debiteurNr }: KlantEdiTabProps) {
+  // Externe vertegenwoordiger (mig 489): read-only — EDI-config alleen tonen, niet wijzigen.
+  const { isExternRep } = useAuth()
   const queryClient = useQueryClient()
   const { data: config, isLoading } = useQuery({
     queryKey: ['edi-handelspartner-config', debiteurNr],
@@ -105,6 +108,7 @@ export function KlantEdiTab({ debiteurNr }: KlantEdiTabProps) {
           checked={current.transus_actief}
           onChange={(v) => update('transus_actief', v)}
           disabled={mutation.isPending}
+          readOnly={isExternRep}
         />
       </div>
 
@@ -120,6 +124,7 @@ export function KlantEdiTab({ debiteurNr }: KlantEdiTabProps) {
           checked={current.test_modus}
           onChange={(v) => update('test_modus', v)}
           disabled={mutation.isPending}
+          readOnly={isExternRep}
         />
       </div>
 
@@ -130,6 +135,7 @@ export function KlantEdiTab({ debiteurNr }: KlantEdiTabProps) {
         disabled={processenDisabled}
         onToggle={(toggleKey, value) => update(toggleKey, value)}
         mutationPending={mutation.isPending}
+        readOnly={isExternRep}
       />
 
       <ProcessenSection
@@ -139,6 +145,7 @@ export function KlantEdiTab({ debiteurNr }: KlantEdiTabProps) {
         disabled={processenDisabled}
         onToggle={(toggleKey, value) => update(toggleKey, value)}
         mutationPending={mutation.isPending}
+        readOnly={isExternRep}
       />
 
       {processenDisabled && (
@@ -153,8 +160,9 @@ export function KlantEdiTab({ debiteurNr }: KlantEdiTabProps) {
         </label>
         <textarea
           value={notitiesValue}
-          onChange={(e) => setNotitiesDraft(e.target.value)}
-          onBlur={commitNotities}
+          onChange={isExternRep ? undefined : (e) => setNotitiesDraft(e.target.value)}
+          onBlur={isExternRep ? undefined : commitNotities}
+          readOnly={isExternRep}
           disabled={mutation.isPending}
           placeholder="Partner-specifieke aantekeningen — bv. 'Karpi-artnr in BP-veld', schema-versie, contactpersoon Transus"
           className="w-full min-h-[80px] px-3 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400 disabled:opacity-50"
@@ -177,9 +185,10 @@ interface ProcessenSectionProps {
   disabled: boolean
   onToggle: (toggleKey: ConfigToggleKey, value: boolean) => void
   mutationPending: boolean
+  readOnly?: boolean
 }
 
-function ProcessenSection({ titel, items, config, disabled, onToggle, mutationPending }: ProcessenSectionProps) {
+function ProcessenSection({ titel, items, config, disabled, onToggle, mutationPending, readOnly }: ProcessenSectionProps) {
   if (items.length === 0) return null
   return (
     <div>
@@ -197,6 +206,7 @@ function ProcessenSection({ titel, items, config, disabled, onToggle, mutationPe
               checked={Boolean(config[def.configToggleKey])}
               onChange={(v) => onToggle(def.configToggleKey, v)}
               disabled={mutationPending || disabled}
+              readOnly={readOnly}
             />
           </div>
         ))}
@@ -209,9 +219,22 @@ interface ToggleProps {
   checked: boolean
   onChange: (next: boolean) => void
   disabled?: boolean
+  readOnly?: boolean
 }
 
-function Toggle({ checked, onChange, disabled }: ToggleProps) {
+function Toggle({ checked, onChange, disabled, readOnly }: ToggleProps) {
+  // Externe vertegenwoordiger: toon de status als read-only badge, geen schakelaar.
+  if (readOnly) {
+    return (
+      <span
+        className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+          checked ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
+        }`}
+      >
+        {checked ? 'Aan' : 'Uit'}
+      </span>
+    )
+  }
   return (
     <button
       type="button"

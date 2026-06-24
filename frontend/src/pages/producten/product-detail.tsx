@@ -6,6 +6,7 @@ import { InfoField } from '@/components/ui/info-field'
 import { formatCurrency, formatNumber } from '@/lib/utils/formatters'
 import { berekenProductGewichtKg } from '@/lib/utils/gewicht'
 import { cn } from '@/lib/utils/cn'
+import { useAuth } from '@/hooks/use-auth'
 import { useQuery } from '@tanstack/react-query'
 import { useProductDetail, useRollenVoorProduct, useClaimsVoorProduct, useEquivalenteProducten, useLeveranciers } from '@/hooks/use-producten'
 import { useUitwisselbareGroepen } from '@/hooks/use-uitwisselbaar'
@@ -38,6 +39,8 @@ function formatLeverweek(leverweek: string | null, verwacht: string | null): str
 }
 
 export function ProductDetailPage() {
+  // Externe vertegenwoordiger (mig 489): read-only — geen muteer-affordances.
+  const { isExternRep } = useAuth()
   const { id } = useParams<{ id: string }>()
   const artikelnr = id ?? ''
 
@@ -93,31 +96,33 @@ export function ProductDetailPage() {
           <PageHeader title={product.omschrijving} description={`Artikelnr: ${product.artikelnr}`} />
           <ProductTypeBadge type={product.product_type} />
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {product.kwaliteit_code && (
+        {!isExternRep && (
+          <div className="flex items-center gap-2 shrink-0">
+            {product.kwaliteit_code && (
+              <Link
+                to={`/producten/nieuw?kwaliteit=${encodeURIComponent(product.kwaliteit_code)}${product.kleur_code ? `&kleur=${encodeURIComponent(product.kleur_code)}` : ''}`}
+                className="px-4 py-2 border border-slate-200 rounded-[var(--radius-sm)] text-sm text-slate-600 hover:bg-slate-50"
+              >
+                Variant toevoegen
+              </Link>
+            )}
             <Link
-              to={`/producten/nieuw?kwaliteit=${encodeURIComponent(product.kwaliteit_code)}${product.kleur_code ? `&kleur=${encodeURIComponent(product.kleur_code)}` : ''}`}
+              to={`/producten/${product.artikelnr}/bewerken`}
               className="px-4 py-2 border border-slate-200 rounded-[var(--radius-sm)] text-sm text-slate-600 hover:bg-slate-50"
             >
-              Variant toevoegen
+              Bewerken
             </Link>
-          )}
-          <Link
-            to={`/producten/${product.artikelnr}/bewerken`}
-            className="px-4 py-2 border border-slate-200 rounded-[var(--radius-sm)] text-sm text-slate-600 hover:bg-slate-50"
-          >
-            Bewerken
-          </Link>
-          <button
-            onClick={() => setVerwijderDialoogOpen(true)}
-            className="px-4 py-2 border border-rose-200 rounded-[var(--radius-sm)] text-sm text-rose-600 hover:bg-rose-50"
-          >
-            Verwijderen
-          </button>
-        </div>
+            <button
+              onClick={() => setVerwijderDialoogOpen(true)}
+              className="px-4 py-2 border border-rose-200 rounded-[var(--radius-sm)] text-sm text-rose-600 hover:bg-rose-50"
+            >
+              Verwijderen
+            </button>
+          </div>
+        )}
       </div>
 
-      {verwijderDialoogOpen && (
+      {verwijderDialoogOpen && !isExternRep && (
         <ProductVerwijderenDialog product={product} onClose={() => setVerwijderDialoogOpen(false)} />
       )}
 
@@ -218,13 +223,15 @@ export function ProductDetailPage() {
           return product?.kwaliteit_code ? (
             <div className="bg-white rounded-[var(--radius)] border border-slate-200 overflow-hidden mb-6 px-5 py-4 flex items-center justify-between">
               <p className="text-sm text-slate-400">Dit product zit nog niet in een uitwisselgroep</p>
-              <button
-                onClick={() => setKoppelDialoogOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-sm)] text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors border border-slate-200"
-              >
-                <Pencil size={12} />
-                Koppeling toevoegen
-              </button>
+              {!isExternRep && (
+                <button
+                  onClick={() => setKoppelDialoogOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-sm)] text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors border border-slate-200"
+                >
+                  <Pencil size={12} />
+                  Koppeling toevoegen
+                </button>
+              )}
             </div>
           ) : null
         }
@@ -232,7 +239,7 @@ export function ProductDetailPage() {
         <div className="bg-white rounded-[var(--radius)] border border-slate-200 overflow-hidden mb-6">
           <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
             <h3 className="font-medium">Uitwisselbare producten ({aantalEquivalenten})</h3>
-            {eigenUitwisselGroep && (
+            {eigenUitwisselGroep && !isExternRep && (
               <button
                 onClick={() => setKoppelDialoogOpen(true)}
                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-[var(--radius-sm)] text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
@@ -470,7 +477,7 @@ export function ProductDetailPage() {
         )}
       </div>
 
-      {koppelDialoogOpen && (eigenUitwisselGroep || product?.kwaliteit_code) && (
+      {koppelDialoogOpen && !isExternRep && (eigenUitwisselGroep || product?.kwaliteit_code) && (
         <UitwisselbaarGroepDialog
           groep={eigenUitwisselGroep}
           voorselectie={eigenUitwisselGroep ? undefined : (product?.kwaliteit_code ?? undefined)}

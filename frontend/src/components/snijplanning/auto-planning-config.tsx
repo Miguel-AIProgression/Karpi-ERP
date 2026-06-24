@@ -2,10 +2,13 @@ import { useState, useEffect } from 'react'
 import { Zap, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { useAutoplanningConfig, useUpdateAutoplanningConfig } from '@/modules/snijplanning'
+import { useAuth } from '@/hooks/use-auth'
 
 export function AutoPlanningConfig() {
   const { data: config, isLoading } = useAutoplanningConfig()
   const updateConfig = useUpdateAutoplanningConfig()
+  // Externe vertegenwoordiger (mig 489): read-only — geen auto-planning-toggle.
+  const { isExternRep } = useAuth()
 
   const [enabled, setEnabled] = useState(false)
 
@@ -21,7 +24,7 @@ export function AutoPlanningConfig() {
     updateConfig.mutate({ enabled: newEnabled })
   }
 
-  if (isLoading) return null
+  if (isLoading || isExternRep) return null
 
   return (
     <div className="flex items-center gap-2">

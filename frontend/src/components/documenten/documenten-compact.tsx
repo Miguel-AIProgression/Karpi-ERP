@@ -9,6 +9,7 @@ import {
   useDeleteDocument,
 } from '@/hooks/use-documenten'
 import { getDocumentSignedUrl, type DocumentItem, type DocumentKind } from '@/lib/supabase/queries/documenten'
+import { useAuth } from '@/hooks/use-auth'
 
 interface Props {
   kind: DocumentKind
@@ -23,6 +24,8 @@ const ACCEPT =
 
 export function DocumentenCompact({ kind, parentId, className, defaultOpen = false }: Props) {
   const fileInput = useRef<HTMLInputElement>(null)
+  // Externe vertegenwoordiger (read-only): geen upload/verwijder van bijlagen.
+  const { isExternRep } = useAuth()
   const { data: docs, isLoading } = useDocumenten(kind, parentId)
   const upload = useUploadDocument(kind, parentId)
   const remove = useDeleteDocument(kind, parentId)
@@ -55,13 +58,13 @@ export function DocumentenCompact({ kind, parentId, className, defaultOpen = fal
       <div
         onDragOver={(e) => {
           e.preventDefault()
-          if (parentId) setDragOver(true)
+          if (parentId && !isExternRep) setDragOver(true)
         }}
         onDragLeave={() => setDragOver(false)}
         onDrop={(e) => {
           e.preventDefault()
           setDragOver(false)
-          if (!parentId) return
+          if (!parentId || isExternRep) return
           if (e.dataTransfer.files?.length) handleFiles(e.dataTransfer.files)
         }}
         className={`flex items-center gap-2 px-3 py-1.5 rounded-[var(--radius-sm)] border transition-colors ${
@@ -83,26 +86,28 @@ export function DocumentenCompact({ kind, parentId, className, defaultOpen = fal
           </span>
         </button>
 
-        <div className="ml-auto flex items-center gap-1">
-          {upload.isPending && <Loader2 size={13} className="animate-spin text-slate-400" />}
-          <button
-            type="button"
-            onClick={pickFiles}
-            disabled={!parentId || upload.isPending}
-            className="inline-flex items-center gap-1 px-2 py-0.5 text-xs text-slate-500 hover:text-slate-800 hover:bg-slate-100 disabled:opacity-50 rounded"
-            title={parentId ? 'Document toevoegen' : 'Eerst opslaan om bijlagen toe te voegen'}
-          >
-            {count === 0 ? (
-              <>
-                <Plus size={12} /> Toevoegen
-              </>
-            ) : (
-              <>
-                <Upload size={12} /> Upload
-              </>
-            )}
-          </button>
-        </div>
+        {!isExternRep && (
+          <div className="ml-auto flex items-center gap-1">
+            {upload.isPending && <Loader2 size={13} className="animate-spin text-slate-400" />}
+            <button
+              type="button"
+              onClick={pickFiles}
+              disabled={!parentId || upload.isPending}
+              className="inline-flex items-center gap-1 px-2 py-0.5 text-xs text-slate-500 hover:text-slate-800 hover:bg-slate-100 disabled:opacity-50 rounded"
+              title={parentId ? 'Document toevoegen' : 'Eerst opslaan om bijlagen toe te voegen'}
+            >
+              {count === 0 ? (
+                <>
+                  <Plus size={12} /> Toevoegen
+                </>
+              ) : (
+                <>
+                  <Upload size={12} /> Upload
+                </>
+              )}
+            </button>
+          </div>
+        )}
 
         <input
           ref={fileInput}
@@ -139,6 +144,7 @@ export function DocumentenCompact({ kind, parentId, className, defaultOpen = fal
                 <DocumentRow
                   key={d.id}
                   doc={d}
+                  readOnly={isExternRep}
                   onDelete={() => remove.mutate({ id: d.id, storagePath: d.storage_path })}
                 />
               ))}
@@ -150,7 +156,7 @@ export function DocumentenCompact({ kind, parentId, className, defaultOpen = fal
   )
 }
 
-function DocumentRow({ doc, onDelete }: { doc: DocumentItem; onDelete: () => void }) {
+function DocumentRow({ doc, onDelete, readOnly }: { doc: DocumentItem; onDelete: () => void; readOnly?: boolean }) {
   const [opening, setOpening] = useState(false)
 
   async function open() {
@@ -182,16 +188,18 @@ function DocumentRow({ doc, onDelete }: { doc: DocumentItem; onDelete: () => voi
       <span className="text-[11px] text-slate-400 shrink-0 tabular-nums">
         {formatBytes(doc.grootte_bytes)}
       </span>
-      <button
-        type="button"
-        onClick={() => {
-          if (confirm(`"${doc.bestandsnaam}" verwijderen?`)) onDelete()
-        }}
-        className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"
-        title="Verwijderen"
-      >
-        <Trash2 size={12} />
-      </button>
+      {!readOnly && (
+        <button
+          type="button"
+          onClick={() => {
+            if (confirm(`"${doc.bestandsnaam}" verwijderen?`)) onDelete()
+          }}
+          className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"
+          title="Verwijderen"
+        >
+          <Trash2 size={12} />
+        </button>
+      )}
     </li>
   )
 }

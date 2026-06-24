@@ -9,6 +9,7 @@ import {
 } from '@/modules/logistiek/hooks/use-vervoerders'
 import { VervoerderCreateDialog } from '@/modules/logistiek/components/vervoerder-create-dialog'
 import { VerzendregelsSectie } from '@/modules/logistiek/components/verzendregels-sectie'
+import { useAuth } from '@/hooks/use-auth'
 import type { Vervoerder, VervoerderStats } from '@/modules/logistiek/queries/vervoerders'
 
 interface VervoerderRowVm extends Vervoerder {
@@ -25,6 +26,8 @@ function berekenSuccessRate(stats: VervoerderStats | null): number | null {
 
 export function VervoerdersOverzichtPage() {
   const navigate = useNavigate()
+  // Externe vertegenwoordiger (mig 489): read-only — geen muteer-affordances.
+  const { isExternRep } = useAuth()
   const { data: vervoerders = [], isLoading } = useVervoerders()
   const { data: alleStats = [] } = useVervoerderStats()
   const updateMut = useUpdateVervoerder()
@@ -49,13 +52,15 @@ export function VervoerdersOverzichtPage() {
         }
         description={`${rijen.length} vervoerder${rijen.length === 1 ? '' : 's'} geconfigureerd`}
         actions={
-          <button
-            onClick={() => setShowCreate(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-[var(--radius-sm)] bg-terracotta-500 text-white font-medium hover:bg-terracotta-600"
-          >
-            <Plus size={14} />
-            Nieuwe vervoerder
-          </button>
+          isExternRep ? null : (
+            <button
+              onClick={() => setShowCreate(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-[var(--radius-sm)] bg-terracotta-500 text-white font-medium hover:bg-terracotta-600"
+            >
+              <Plus size={14} />
+              Nieuwe vervoerder
+            </button>
+          )
         }
       />
 
@@ -92,13 +97,19 @@ export function VervoerdersOverzichtPage() {
                     <div className="text-xs text-slate-400 mt-0.5 font-mono">{r.code}</div>
                   </td>
                   <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                    <Toggle
-                      checked={r.actief}
-                      disabled={updateMut.isPending}
-                      onChange={(next) =>
-                        updateMut.mutate({ code: r.code, data: { actief: next } })
-                      }
-                    />
+                    {isExternRep ? (
+                      <span className="text-xs text-slate-600">
+                        {r.actief ? 'Actief' : 'Inactief'}
+                      </span>
+                    ) : (
+                      <Toggle
+                        checked={r.actief}
+                        disabled={updateMut.isPending}
+                        onChange={(next) =>
+                          updateMut.mutate({ code: r.code, data: { actief: next } })
+                        }
+                      />
+                    )}
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums text-slate-700">
                     {r.stats?.aantal_klanten ?? 0}

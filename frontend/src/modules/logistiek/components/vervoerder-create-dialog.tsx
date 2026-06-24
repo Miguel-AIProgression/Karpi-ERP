@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { X } from 'lucide-react'
 import { useCreateVervoerder } from '@/modules/logistiek/hooks/use-vervoerders'
+import { useAuth } from '@/hooks/use-auth'
 import type { VervoerderType } from '@/modules/logistiek/queries/vervoerders'
 
 interface Props {
@@ -38,6 +39,8 @@ function normaliseerCode(raw: string): string {
 }
 
 export function VervoerderCreateDialog({ onClose, onCreated }: Props) {
+  // Externe vertegenwoordiger (mig 489): read-only — geen aanmaak-dialoog.
+  const { isExternRep } = useAuth()
   const [code, setCode] = useState('')
   const [displayNaam, setDisplayNaam] = useState('')
   const [type, setType] = useState<VervoerderType>('api')
@@ -81,6 +84,8 @@ export function VervoerderCreateDialog({ onClose, onCreated }: Props) {
       setError(msg)
     }
   }
+
+  if (isExternRep) return null
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40">

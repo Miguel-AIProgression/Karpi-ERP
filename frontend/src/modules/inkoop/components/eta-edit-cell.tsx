@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Check } from 'lucide-react'
 import { useMutation } from '@tanstack/react-query'
+import { useAuth } from '@/hooks/use-auth'
 import { updateRegelEta } from '../queries/leveranciers'
 import { isoWeekJaarVanIso } from '@/lib/utils/iso-week'
 
@@ -35,6 +36,7 @@ export function EtaEditCell({
   bijgewerktOp,
   leverancierNaam,
 }: Props) {
+  const { isExternRep } = useAuth()
   const [value, setValue] = useState(verwachtDatum ?? '')
   const today = new Date().toISOString().slice(0, 10)
   const isDirty = value !== (verwachtDatum ?? '')
@@ -43,6 +45,31 @@ export function EtaEditCell({
     mutationFn: () => updateRegelEta(regelId, value, leverancierId, null),
     onSuccess: onSaved,
   })
+
+  // Externe vertegenwoordiger (mig 489): read-only — toon de datum, geen edit-input/opslaan.
+  if (isExternRep) {
+    const isAchterstallig = !!verwachtDatum && verwachtDatum < today
+    return (
+      <div className="flex flex-col gap-1">
+        <span
+          className={`text-sm tabular-nums font-medium ${isAchterstallig ? 'text-red-600' : 'text-slate-700'}`}
+        >
+          {formatDatumKort(verwachtDatum) || '—'}
+        </span>
+        <div className="text-xs text-slate-400 pl-0.5">
+          <span>{isoWeekLabel(verwachtDatum)}</span>
+        </div>
+        {bijgewerktOp && (
+          <div className="text-xs pl-0.5">
+            <span className={bijgewerktDoor === 'leverancier' ? 'text-blue-500 font-medium' : 'text-slate-400'}>
+              {bijgewerktDoor === 'leverancier' ? (leverancierNaam ?? 'Leverancier') : 'Karpi'}
+            </span>
+            <span className="text-slate-300"> · {formatDatumKort(bijgewerktOp.slice(0, 10))}</span>
+          </div>
+        )}
+      </div>
+    )
+  }
 
   const isAchterstallig = value !== '' && value < today
   const isDezeWeek = (() => {

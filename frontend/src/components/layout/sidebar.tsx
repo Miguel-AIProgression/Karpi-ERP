@@ -5,7 +5,7 @@ import * as Icons from 'lucide-react'
 import { useHstMonitor } from '@/modules/logistiek/hooks/use-hst-monitor'
 import { telHstAandacht } from '@/modules/logistiek/queries/hst-monitor'
 import { useAuth } from '@/hooks/use-auth'
-import { REP_TOEGESTANE_PADEN } from '@/lib/auth/rol'
+import { isSysteembeheerPad } from '@/lib/auth/rol'
 
 type IconName = keyof typeof Icons
 
@@ -15,8 +15,6 @@ function NavIcon({ name }: { name: string }) {
   return <Icon size={18} />
 }
 
-const REP_PADEN = new Set<string>(REP_TOEGESTANE_PADEN)
-
 export function Sidebar() {
   // Proactieve rode badge op Logistiek: open HST-fouten + stilstaande cron.
   // De monitor zelf is een tab op /logistiek/vervoerders/hst_api/monitor.
@@ -24,12 +22,13 @@ export function Sidebar() {
   const { data: hstM } = useHstMonitor()
   const hstAandacht = hstM ? telHstAandacht(hstM) : 0
 
-  // Externe vertegenwoordiger (mig 489): alleen Dashboard/Orders/Klanten/Facturatie.
+  // Externe vertegenwoordiger (mig 490 e.v.): read-only, ziet alles behalve
+  // systeembeheer (Instellingen/Gebruikers/Vertegenwoordigers).
   const { isExternRep } = useAuth()
   const groups = isExternRep
     ? NAV_GROUPS.map((g) => ({
         ...g,
-        items: g.items.filter((i) => REP_PADEN.has(i.path)),
+        items: g.items.filter((i) => !isSysteembeheerPad(i.path)),
       })).filter((g) => g.items.length > 0)
     : NAV_GROUPS
 

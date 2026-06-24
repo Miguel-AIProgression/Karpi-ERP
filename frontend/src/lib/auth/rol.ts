@@ -1,10 +1,12 @@
 import type { User } from '@supabase/supabase-js'
 
 /**
- * Externe vertegenwoordiger-rol (mig 489). Read-only, ziet alleen eigen klanten.
- * Single source of truth, gespiegeld in de SQL-helpers `is_externe_vertegenwoordiger()`
- * + `huidige_vertegenw_code()`. De rol leeft in app_metadata (alléén service-role kan
- * dat zetten), niet user_metadata — de rep kan zijn scope dus niet zelf ophogen.
+ * Externe vertegenwoordiger-rol (mig 490 e.v.). Read-only: de rep ziet ALLES
+ * behalve systeembeheer (Instellingen/Gebruikers/Vertegenwoordigers), en mag
+ * nergens muteren. Single source of truth, gespiegeld in de SQL-helper
+ * `is_externe_vertegenwoordiger()`. De rol leeft in app_metadata (alléén
+ * service-role kan dat zetten), niet user_metadata — de rep kan zijn scope dus
+ * niet zelf ophogen.
  */
 export const ROL_EXTERN_REP = 'vertegenwoordiger_extern'
 
@@ -26,19 +28,27 @@ export function isExterneVertegenwoordiger(user: User | null | undefined): boole
   return leesAppRol(user).rol === ROL_EXTERN_REP
 }
 
-/** Menu-items die de rep mag zien (paden). Bron voor sidebar-filter. */
-export const REP_TOEGESTANE_PADEN = ['/', '/orders', '/facturatie', '/klanten'] as const
-
 /**
- * Mag de rep dit pad bereiken? Read-only: schrijf-subroutes (/nieuw, /bewerken)
- * worden geweerd — die landen op SECURITY DEFINER-RPC's die RLS omzeilen, dus de
- * UI is hier de enige rem (zie de "bekende grens" in het plan). Bug-meldingen
- * (eigen RLS) blijft bereikbaar via het gebruikersmenu.
+ * Systeembeheer-paden die een externe vertegenwoordiger NIET mag zien/bereiken:
+ * Instellingen (incl. alle subpagina's), Gebruikersbeheer en het beheer van
+ * vertegenwoordigers zelf. Gedeelde denylist voor sidebar én route-guard.
  */
-export function repMagPad(pathname: string): boolean {
-  if (pathname === '/' || pathname === '/meldingen') return true
-  if (pathname.endsWith('/nieuw') || pathname.endsWith('/bewerken')) return false
-  return ['/orders', '/klanten', '/facturatie'].some(
+export const REP_SYSTEEMBEHEER_PADEN = ['/instellingen', '/vertegenwoordigers'] as const
+
+/** TRUE als het pad onder systeembeheer valt (denylist voor de rep). */
+export function isSysteembeheerPad(pathname: string): boolean {
+  return REP_SYSTEEMBEHEER_PADEN.some(
     (p) => pathname === p || pathname.startsWith(p + '/'),
   )
+}
+
+/**
+ * Mag de rep dit pad bereiken? Denylist: alles mag (read-only) BEHALVE
+ * systeembeheer en de schrijf-subroutes (/nieuw, /bewerken) — die landen op
+ * SECURITY DEFINER-RPC's die RLS omzeilen, dus de UI is daar de enige rem.
+ */
+export function repMagPad(pathname: string): boolean {
+  if (pathname.endsWith('/nieuw') || pathname.endsWith('/bewerken')) return false
+  if (isSysteembeheerPad(pathname)) return false
+  return true
 }

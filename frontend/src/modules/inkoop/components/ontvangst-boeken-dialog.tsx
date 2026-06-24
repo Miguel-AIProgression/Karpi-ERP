@@ -22,7 +22,7 @@ function formatAantal(value: number): string {
 }
 
 export function OntvangstBoekenDialog({ regel, inkooporderNr, breedteCm, onClose }: Props) {
-  const { user } = useAuth()
+  const { user, isExternRep } = useAuth()
   const medewerker =
     (user?.user_metadata?.name as string | undefined) ?? user?.email ?? null
 
@@ -38,6 +38,9 @@ export function OntvangstBoekenDialog({ regel, inkooporderNr, breedteCm, onClose
   )
 
   const boek = useBoekOntvangst()
+
+  // Externe vertegenwoordiger (mig 489): read-only — boeken niet toegestaan.
+  if (isExternRep) return null
 
   const breedteVoorRol = (r: RolInput): number | null => {
     if (breedteBekend) return breedteCm as number

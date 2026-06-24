@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Building2, Plus, Search } from 'lucide-react'
+import { useAuth } from '@/hooks/use-auth'
 import { PageHeader } from '@/components/layout/page-header'
 import { useLeveranciersOverzicht, LeverancierFormDialog } from '@/modules/inkoop'
 
@@ -16,6 +17,7 @@ function formatDatum(iso: string | null): string {
 
 export function LeveranciersOverviewPage() {
   const navigate = useNavigate()
+  const { isExternRep } = useAuth()
   const { data: leveranciers = [], isLoading } = useLeveranciersOverzicht()
   const [zoekterm, setZoekterm] = useState('')
   const [toonInactief, setToonInactief] = useState(false)
@@ -42,13 +44,15 @@ export function LeveranciersOverviewPage() {
         title="Leveranciers"
         description={`${gefilterd.length} leveranciers · ${formatMeters(totaalOpen)} openstaand (m + st.)`}
         actions={
-          <button
-            onClick={() => setFormOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-terracotta-500 text-white rounded-[var(--radius-sm)] text-sm font-medium hover:bg-terracotta-600 transition-colors"
-          >
-            <Plus size={16} />
-            Nieuwe leverancier
-          </button>
+          isExternRep ? null : (
+            <button
+              onClick={() => setFormOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-terracotta-500 text-white rounded-[var(--radius-sm)] text-sm font-medium hover:bg-terracotta-600 transition-colors"
+            >
+              <Plus size={16} />
+              Nieuwe leverancier
+            </button>
+          )
         }
       />
 
@@ -140,7 +144,7 @@ export function LeveranciersOverviewPage() {
         )}
       </div>
 
-      {formOpen && <LeverancierFormDialog onClose={() => setFormOpen(false)} />}
+      {formOpen && !isExternRep && <LeverancierFormDialog onClose={() => setFormOpen(false)} />}
     </>
   )
 }

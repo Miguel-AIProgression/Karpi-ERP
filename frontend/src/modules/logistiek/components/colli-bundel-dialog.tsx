@@ -7,6 +7,7 @@ import {
   useZendingColliVoorBundel,
 } from '@/modules/logistiek/hooks/use-colli-bundel'
 import { bundelOpPallet } from '@/modules/logistiek/lib/handmatig-aanmelden'
+import { useAuth } from '@/hooks/use-auth'
 
 interface Props {
   zendingId: number
@@ -28,6 +29,8 @@ export function ColliBundelDialog({ zendingId, zendingNr, vervoerderCode, onClos
   const { data: colli = [], isLoading } = useZendingColliVoorBundel(zendingId)
   const maak = useMaakColliBundel(zendingId)
   const verwijder = useVerwijderColliBundel(zendingId)
+  // Externe vertegenwoordiger (mig 489): read-only — geen colli-bundeling.
+  const { isExternRep } = useAuth()
 
   const metPallet = bundelOpPallet(vervoerderCode)
   const eenheid = metPallet ? 'pallet' : 'zak'
@@ -51,6 +54,8 @@ export function ColliBundelDialog({ zendingId, zendingNr, vervoerderCode, onClos
       breedte: sel.reduce((m, c) => Math.max(m, c.breedte_cm ?? 0), 0),
     }
   }, [colli, geselecteerd])
+
+  if (isExternRep) return null
 
   // Bij een pallet (HST) is EP/SP verplicht — HST weigert een onbekende
   // PackageUnitID met HTTP 400 (mig 485).

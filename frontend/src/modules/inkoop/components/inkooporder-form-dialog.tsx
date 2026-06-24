@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Plus, Trash2, X } from 'lucide-react'
+import { useAuth } from '@/hooks/use-auth'
 import { useCreateInkooporder } from '../hooks/use-inkooporders'
 import { useLeveranciersOverzicht } from '../hooks/use-leveranciers'
 import type {
@@ -30,6 +31,7 @@ const legeRegel = (): RegelInput => ({
 
 export function InkooporderFormDialog({ onClose }: Props) {
   const navigate = useNavigate()
+  const { isExternRep } = useAuth()
   const { data: leveranciers = [] } = useLeveranciersOverzicht()
   const [header, setHeader] = useState<Omit<InkooporderFormData, 'leverancier_id'> & { leverancier_id: string }>({
     leverancier_id: '',
@@ -43,6 +45,9 @@ export function InkooporderFormDialog({ onClose }: Props) {
   const [error, setError] = useState<string | null>(null)
 
   const create = useCreateInkooporder()
+
+  // Externe vertegenwoordiger (mig 489): read-only — bestelling aanmaken niet toegestaan.
+  if (isExternRep) return null
 
   const voegRegelToe = () => setRegels((r) => [...r, legeRegel()])
   const verwijderRegel = (idx: number) => setRegels((r) => r.filter((_, i) => i !== idx))

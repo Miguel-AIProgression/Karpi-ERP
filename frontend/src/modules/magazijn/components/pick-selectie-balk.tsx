@@ -21,6 +21,7 @@ import { PickerDropdown } from '@/components/orders/picker-dropdown'
 import { useStartPickrondes, printsetPadVoorZendingen } from '@/modules/logistiek'
 import { loadLastPicker, saveLastPicker } from '@/lib/orders/last-picker'
 import { useVoltooiPickrondes } from '../hooks/use-pickronde'
+import { useAuth } from '@/hooks/use-auth'
 import type { PickSelectieModus } from '../context/pick-selectie-context'
 import type { PickShipOrder } from '../lib/types'
 
@@ -45,6 +46,8 @@ export function PickSelectieBalk({
   const navigate = useNavigate()
   const startMutation = useStartPickrondes()
   const voltooiMutation = useVoltooiPickrondes()
+  // Externe vertegenwoordiger (mig 489): read-only — geen start/afrond-balk.
+  const { isExternRep } = useAuth()
   // Pre-fill de laatst gekozen picker (gedeeld met de printset-pagina).
   const [pickerId, setPickerId] = useState<number | null>(() => loadLastPicker())
   const [error, setError] = useState<string | null>(null)
@@ -55,6 +58,7 @@ export function PickSelectieBalk({
 
   const bezig = startMutation.isPending || voltooiMutation.isPending
   const aantal = modus === 'afronden' ? geselecteerdeZendingen.length : geselecteerdeOrders.length
+  if (isExternRep) return null
   if (aantal === 0 && overgeslagen.length === 0) return null
 
   async function handleStart() {

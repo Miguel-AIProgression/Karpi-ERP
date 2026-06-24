@@ -9,10 +9,13 @@ import { useDebiteuren, usePrijslijstHeadersList } from '../hooks/use-debiteuren
 import { fetchDebiteuren } from '../queries/debiteuren'
 import { useVertegenwoordigers } from '@/hooks/use-medewerkers'
 import { useInkoopgroepen } from '@/hooks/use-inkoopgroepen'
+import { useAuth } from '@/hooks/use-auth'
 
 const PAGE_SIZE = 50
 
 export function DebiteurenOverviewPage() {
+  // Externe vertegenwoordiger (mig 489): read-only — geen "Nieuwe klant".
+  const { isExternRep } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const [pageSize, setPageSize] = useState(PAGE_SIZE)
   const [exporting, setExporting] = useState(false)
@@ -117,7 +120,7 @@ export function DebiteurenOverviewPage() {
         description={`${data?.totalCount ?? 0} klanten`}
       />
 
-      {showAdd && <DebiteurAddDialog onClose={() => setShowAdd(false)} />}
+      {showAdd && !isExternRep && <DebiteurAddDialog onClose={() => setShowAdd(false)} />}
 
       {/* Filters + export */}
       <div className="flex flex-wrap items-center gap-3 mb-6">
@@ -193,13 +196,15 @@ export function DebiteurenOverviewPage() {
             <Download size={15} />
             {exporting ? 'Exporteren...' : `Exporteer${totalCount > 0 ? ` (${totalCount})` : ''}`}
           </button>
-          <button
-            onClick={() => setShowAdd(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-[var(--radius-sm)] bg-terracotta-500 text-white text-sm font-medium hover:bg-terracotta-600 transition-colors"
-          >
-            <Plus size={15} />
-            Nieuwe klant
-          </button>
+          {!isExternRep && (
+            <button
+              onClick={() => setShowAdd(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-[var(--radius-sm)] bg-terracotta-500 text-white text-sm font-medium hover:bg-terracotta-600 transition-colors"
+            >
+              <Plus size={15} />
+              Nieuwe klant
+            </button>
+          )}
         </div>
       </div>
 

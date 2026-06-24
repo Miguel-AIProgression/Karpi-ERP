@@ -15,10 +15,13 @@ import {
 } from '@/modules/snijplanning'
 import { cn } from '@/lib/utils/cn'
 import { AFWERKING_MAP } from '@/lib/utils/constants'
+import { useAuth } from '@/hooks/use-auth'
 
 export function ProductieRolPage() {
   const { rolId } = useParams<{ rolId: string }>()
   const navigate = useNavigate()
+  // Externe vertegenwoordiger (mig 489): read-only — geen "Rol gesneden".
+  const { isExternRep } = useAuth()
   const rolIdNum = rolId ? Number(rolId) : null
   const { data: stukken, isLoading } = useRolSnijstukken(
     rolIdNum && Number.isFinite(rolIdNum) ? rolIdNum : null
@@ -94,7 +97,7 @@ export function ProductieRolPage() {
                 <ArrowLeft size={16} />
                 Terug
               </Link>
-              {!voltooid && teSnijden.length > 0 && (
+              {!voltooid && teSnijden.length > 0 && !isExternRep && (
                 <button
                   onClick={handleVoltooiRol}
                   disabled={voltooiRol.isPending}

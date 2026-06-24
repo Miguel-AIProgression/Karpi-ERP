@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { CalendarDays, Pencil, CheckCircle2, X } from 'lucide-react'
+import { useAuth } from '@/hooks/use-auth'
 import { fetchOpenRegelsVoorLeverancier, updateRegelEta, type OpenRegelRow } from '../queries/leveranciers'
 
 interface Props {
@@ -22,6 +23,7 @@ function EtaEditCell({
   leverancierId: number
 }) {
   const qc = useQueryClient()
+  const { isExternRep } = useAuth()
   const [editing, setEditing] = useState(false)
   const [value, setValue] = useState(regel.verwacht_datum ?? '')
   const [notitie, setNotitie] = useState(regel.leverancier_notitie ?? '')
@@ -45,13 +47,16 @@ function EtaEditCell({
             {formatDatum(regel.verwacht_datum)}
           </div>
         </div>
-        <button
-          onClick={() => { setEditing(true); setValue(regel.verwacht_datum ?? '') }}
-          className="flex-shrink-0 p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700"
-          title="ETA aanpassen"
-        >
-          <Pencil size={13} />
-        </button>
+        {/* Externe vertegenwoordiger (mig 489): read-only — geen ETA-edit-trigger. */}
+        {!isExternRep && (
+          <button
+            onClick={() => { setEditing(true); setValue(regel.verwacht_datum ?? '') }}
+            className="flex-shrink-0 p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700"
+            title="ETA aanpassen"
+          >
+            <Pencil size={13} />
+          </button>
+        )}
       </div>
     )
   }
