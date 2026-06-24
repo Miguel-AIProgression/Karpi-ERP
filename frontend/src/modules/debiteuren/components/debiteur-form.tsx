@@ -18,6 +18,8 @@
  */
 import { useActieveBetaalcondities } from '@/hooks/use-betaalcondities'
 import { formatBetaalconditie } from '@/lib/supabase/queries/betaalcondities'
+import { isEuLand } from '@/lib/orders/btw'
+import { landNaarIso2 } from '@/lib/utils/land-vlag'
 import { usePrijslijstHeadersList } from '../hooks/use-debiteuren'
 import type { DebiteurDetail } from '../queries/debiteuren'
 
@@ -225,6 +227,17 @@ export function debiteurFormToDb(
   }
 }
 
+/**
+ * Leidt de BTW-verlegd-vlag af uit het (debiteur-)land: een EU-land buiten NL
+ * (intracommunautaire B2B) → verlegd. NL of buiten de EU → niet (export-0% wordt
+ * apart per order/factuur bepaald, mig 455). Hergebruikt de single-source
+ * `isEuLand` + `landNaarIso2` — geen eigen EU-lijst.
+ */
+export function btwVerlegdVoorLand(land: string): boolean {
+  const iso2 = landNaarIso2(land)
+  return !!iso2 && iso2 !== 'NL' && isEuLand(iso2)
+}
+
 interface FieldsProps {
   values: DebiteurFormValues
   onChange: (patch: Partial<DebiteurFormValues>) => void
@@ -284,7 +297,16 @@ export function DebiteurFormFields({ values, onChange }: FieldsProps) {
           </div>
           <div>
             <label className="block text-xs text-slate-500 mb-1">Land</label>
-            <input type="text" value={values.land} onChange={set('land')} placeholder="NL" className={inputClasses} />
+            {/* Land stuurt de BTW-verlegd-vlag (EU buiten NL → verlegd), zie checkbox onderaan. */}
+            <input
+              type="text"
+              value={values.land}
+              onChange={(e) =>
+                onChange({ land: e.target.value, btw_verlegd_intracom: btwVerlegdVoorLand(e.target.value) })
+              }
+              placeholder="NL"
+              className={inputClasses}
+            />
           </div>
         </div>
       </div>
@@ -391,6 +413,9 @@ export function DebiteurFormFields({ values, onChange }: FieldsProps) {
               />
               <span>BTW verlegd (intracommunautair, EU B2B) — factuur en orderbevestiging rekenen 0%</span>
             </label>
+            <p className="text-xs text-slate-400 mt-1">
+              Wordt automatisch afgeleid uit het land (EU buiten NL → verlegd). Handmatig aan te passen.
+            </p>
           </div>
           <div className="col-span-2">
             <label className="block text-xs text-slate-500 mb-1">Betaalconditie</label>

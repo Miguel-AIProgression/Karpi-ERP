@@ -24,6 +24,15 @@ handmatig. Gevolg: een net-aangemaakte klant strandde bij de eerste order.
 - **E-mail-per-document = single source** (`EMAIL_VELDEN`): factuur=`email_factuur`,
   orderbevestiging=`email_overig`, verzending/T&T=`email_verzend`, **pakbon=`email_pakbon`** (nieuw,
   optioneel). Info-tab-labels verduidelijkt.
+- **BTW verlegd afgeleid uit het land:** de `btw_verlegd_intracom`-vink wordt automatisch gezet
+  zodra het land wijzigt — EU-land buiten NL → verlegd, NL/buiten-EU → niet (`btwVerlegdVoorLand`,
+  hergebruikt de single-source `isEuLand` via nieuwe frontend-shim [`@/lib/orders/btw`](frontend/src/lib/orders/btw.ts)
+  → `_shared/btw.ts`, ADR-0033). Alleen bij een land-wijziging (niet bij laden — de opgeslagen
+  waarde blijft leidend), handmatig overschrijfbaar. Export-0% buiten de EU blijft per order/factuur
+  bepaald (mig 455), niet via deze vlag.
+- **Klantnummer-voorstel** = hoogste bestaande nummer + 1 met de 999xxx-reserve uitgesloten
+  (etiket-placeholders + KIBEK-uitbijter) → ~991971. Bewust géén naam-gebaseerd voorstel: de
+  legacy-nummers volgen een interne Basta-matchcode, niet de naam (JANSEN staat op 85xxxx).
 
 **mig 492:** `debiteuren.email_pakbon TEXT` (optioneel). **Scope = alleen het adres vastleggen** —
 de huidige pakbon-stroom (bijlage bij factuurmail) blijft ongewijzigd; dit veld is het
