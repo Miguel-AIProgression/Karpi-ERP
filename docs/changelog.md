@@ -1,5 +1,60 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-24 — `producten.vorm` nooit gesynchroniseerd met `maatwerk_vorm_code` (code-fix + datacorrectie 1.525 producten)
+
+**Waarom:** gebruiker vroeg om bij aanmaken van een variant meteen het te
+verwachten gewicht te tonen i.p.v. een zinloos invoerveld (zie vorige
+bullet). Om die preview correct te berekenen moest ik de exacte
+SQL-trigger-formule spiegelen (`berekenProductGewichtKg`) — en die
+gebruikt `producten.vorm` (enum `rechthoek`/`rond`), niet
+`maatwerk_vorm_code` (de "echte", user-facing vormcode). Bleek dat
+**geen van de twee producten-formulieren `vorm` ooit instelde** — alleen
+`maatwerk_vorm_code` werd weggeschreven.
+
+- **Code-fix:** `product-create.tsx` en `product-form.tsx` sturen nu ook
+  `vorm: maatwerk_vorm_code==='rond' ? 'rond' : 'rechthoek'` mee bij elke
+  create/update — afgeleid, geen apart UI-veld (de gebruiker kiest één
+  vorm, niet twee).
+- **Bijvangst, veel groter dan deze feature:** een query op de hele
+  `producten`-tabel liet zien dat **1.525 bestaande producten**
+  (`maatwerk_vorm_code='rond'` maar `vorm≠'rond'`) al langer een
+  **fout berekend gewicht** hadden — de rechthoek-formule
+  (`lengte×breedte/10000 × dichtheid`) werd toegepast i.p.v. de
+  cirkel-formule (`π×(diameter/200)² × dichtheid`), een systematische
+  ~27% overschatting. Bij 1.506 daarvan (type Vaste maat/Staal met
+  bekende afmeting) stond dit ook echt in `gewicht_kg`. Een deel had
+  zelfs `breedte_cm=0` (i.p.v. NULL of gelijk aan lengte_cm) waardoor de
+  rechthoek-formule **0,00 kg** opleverde — geen overschatting maar een
+  volledig ontbrekend gewicht.
+- **Eenmalige datacorrectie** (geen migratie, geen schema-wijziging):
+  `UPDATE producten SET vorm='rond' WHERE maatwerk_vorm_code='rond' AND
+  vorm<>'rond'` — de bestaande `trg_producten_gewicht_derive`-trigger
+  (mig 387, vuurt op `UPDATE OF ... vorm`) herberekende `gewicht_kg`
+  daardoor automatisch correct voor alle 1.525 rijen in één pass.
+  Geverifieerd: 0 resterende mismatches; steekproef bevestigt de
+  herberekende gewichten exact tegen de cirkel-formule (bv. RADI 240cm
+  diameter: 0,00 kg → 10,54 kg).
+- **Bewust niet aangeraakt:** `breedte_cm=0` op de getroffen rijen — de
+  rond-gewichtformule gebruikt alleen `lengte_cm` (als diameter), dus dit
+  is dode data zonder verder effect, niet in scope van deze fix.
+
+## 2026-06-24 — Live gewicht-preview voor Vaste maat/Staal i.p.v. zinloos invoerveld
+
+**Waarom:** gebruiker vulde 15kg in bij het aanmaken van een variant,
+maar zag 22,80 kg verschijnen — voor `product_type IN ('vast','staaltje')`
+overschrijft `trg_producten_gewicht_derive` (mig 387) elke handmatige
+`gewicht_kg`-invoer altijd met `kwaliteit.gewicht_per_m2_kg × oppervlak`.
+Het "Gewicht kg"-veld in beide formulieren wekte dus een illusie van
+controle die er niet is.
+
+- `product-create.tsx`/`product-form.tsx`: voor `vast`/`staaltje` wordt
+  het invoerveld vervangen door een **read-only live preview**
+  (`berekenProductGewichtKg`, de bestaande TS-spiegel van de
+  SQL-resolver) — herberekent direct bij wijziging van breedte/lengte/
+  vorm/kwaliteit, met een hint die de bronformule toont. Voor `rol`/
+  `overig` (waar de trigger niet ingrijpt) blijft het veld gewoon
+  editable.
+
 ## 2026-06-24 — Type verplicht bij aanmaak + sortering op vorm-groep/oppervlak i.p.v. alfabetisch (mig 483)
 
 **Waarom:** live-test toonde twee problemen op de kleur-detailtabel

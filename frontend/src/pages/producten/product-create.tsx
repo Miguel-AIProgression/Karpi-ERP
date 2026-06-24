@@ -14,6 +14,9 @@ import {
 } from '@/modules/maatwerk'
 import { fetchKwaliteitBestaat } from '@/lib/supabase/queries/producten'
 import type { ProductType } from '@/lib/supabase/queries/producten'
+import { fetchKwaliteitInfo } from '@/lib/supabase/queries/kwaliteiten'
+import { berekenProductGewichtKg } from '@/lib/utils/gewicht'
+import { formatNumber } from '@/lib/utils/formatters'
 
 const PRODUCT_TYPES: { value: ProductType; label: string }[] = [
   { value: 'vast', label: 'Standaard maat' },
@@ -153,6 +156,16 @@ export function ProductCreatePage() {
     queryKey: ['kwaliteit-bestaat', debouncedKwaliteit],
     queryFn: () => fetchKwaliteitBestaat(debouncedKwaliteit),
     enabled: !existingKwaliteitMode && debouncedKwaliteit.length >= 2,
+  })
+
+  // Kwaliteit-density — voor Vaste maat/Staal wordt gewicht_kg server-side
+  // altijd herberekend uit deze waarde (trg_producten_gewicht_derive, mig 387)
+  // en overschrijft handmatige invoer; hier alleen gebruikt voor een live
+  // preview, niet om op te slaan.
+  const { data: kwaliteitInfo } = useQuery({
+    queryKey: ['kwaliteit-info', kwaliteitCode],
+    queryFn: () => fetchKwaliteitInfo(kwaliteitCode || null),
+    enabled: !!kwaliteitCode,
   })
 
   // Debounced artikelnrs voor live duplicate-check (artikelnr is de PK)
@@ -355,6 +368,11 @@ export function ProductCreatePage() {
           kleur_code: kleurCode.trim() || null,
           product_type: (r.product_type as ProductType) || null,
           maatwerk_vorm_code: r.vorm.trim() || null,
+          // producten.vorm is een apart, beperkt enum (alleen rechthoek/rond) dat
+          // de gewicht-trigger gebruikt — los van maatwerk_vorm_code (de "echte"
+          // vorm voor prijs/omschrijving). Ovaal/afgeronde_hoeken/organisch/etc.
+          // hebben geen eigen formule en vallen terug op de rechthoek-bbox.
+          vorm: r.vorm === 'rond' ? 'rond' : 'rechthoek',
           lengte_cm: r.lengte ? Number(r.lengte) : null,
           breedte_cm: r.breedte ? Number(r.breedte) : null,
           verkoopprijs: r.verkoopprijs ? Number(r.verkoopprijs) : null,
@@ -620,6 +638,18 @@ export function ProductCreatePage() {
 
             {rows.map((r, idx) => {
               const karpiVerplicht = r.product_type === 'rol' || r.product_type === 'vast'
+              // Vaste maat/Staal: gewicht_kg wordt server-side altijd herberekend
+              // uit kwaliteit + afmeting + vorm (trg_producten_gewicht_derive) —
+              // het invoerveld is dan zinloos, toon i.p.v. dat een live preview.
+              const gewichtWordtAfgeleid = r.product_type === 'vast' || r.product_type === 'staaltje'
+              const gewichtPreview = gewichtWordtAfgeleid
+                ? berekenProductGewichtKg({
+                    lengte_cm: r.lengte ? Number(r.lengte) : null,
+                    breedte_cm: r.breedte ? Number(r.breedte) : null,
+                    vorm: r.vorm === 'rond' ? 'rond' : 'rechthoek',
+                    gewichtPerM2Kg: kwaliteitInfo?.gewicht_per_m2_kg ?? null,
+                  })
+                : undefined
               const karpiPlaceholder = !kwaliteitCode
                 ? 'Vul eerst kwaliteitscode in ↑'
                 : !kleurCode.trim()
@@ -759,14 +789,35 @@ export function ProductCreatePage() {
                         placeholder="0,00"
                       />
                     </VariantVeld>
-                    <VariantVeld label="Gewicht kg">
-                      <input
-                        type="number" step="0.01" min="0"
-                        value={r.gewicht_kg}
-                        onChange={e => updateRow(r._key, 'gewicht_kg', e.target.value)}
-                        className="input w-full"
-                        placeholder="0,00"
-                      />
+                    <VariantVeld
+                      label="Gewicht kg"
+                      hint={
+                        gewichtWordtAfgeleid
+                          ? kwaliteitCode
+                            ? kwaliteitInfo?.gewicht_per_m2_kg
+                              ? `Automatisch: ${formatNumber(kwaliteitInfo.gewicht_per_m2_kg, 3)} kg/m² × oppervlak`
+                              : 'Kwaliteit heeft nog geen gewicht per m² ingesteld'
+                            : 'Vul eerst kwaliteitscode in ↑'
+                          : undefined
+                      }
+                    >
+                      {gewichtWordtAfgeleid ? (
+                        <input
+                          type="text"
+                          readOnly
+                          disabled
+                          value={gewichtPreview != null ? `${formatNumber(gewichtPreview, 2)} kg` : '—'}
+                          className="input w-full bg-slate-100 text-slate-500"
+                        />
+                      ) : (
+                        <input
+                          type="number" step="0.01" min="0"
+                          value={r.gewicht_kg}
+                          onChange={e => updateRow(r._key, 'gewicht_kg', e.target.value)}
+                          className="input w-full"
+                          placeholder="0,00"
+                        />
+                      )}
                     </VariantVeld>
                     <VariantVeld label="Voorraad" hint="Start op 0 — via inkoop-ontvangst">
                       <input
