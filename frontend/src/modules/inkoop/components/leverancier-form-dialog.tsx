@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { X } from 'lucide-react'
+import { useAuth } from '@/hooks/use-auth'
 import { useCreateLeverancier, useUpdateLeverancier } from '../hooks/use-leveranciers'
 import type { LeverancierDetail, LeverancierFormData } from '../queries/leveranciers'
 
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export function LeverancierFormDialog({ leverancier, onClose }: Props) {
+  const { isExternRep } = useAuth()
   const isEdit = Boolean(leverancier)
   const [form, setForm] = useState<LeverancierFormData>({
     naam: leverancier?.naam ?? '',
@@ -27,6 +29,9 @@ export function LeverancierFormDialog({ leverancier, onClose }: Props) {
 
   const create = useCreateLeverancier()
   const update = useUpdateLeverancier()
+
+  // Externe vertegenwoordiger (mig 489): read-only — leverancier aanmaken/bewerken niet toegestaan.
+  if (isExternRep) return null
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()

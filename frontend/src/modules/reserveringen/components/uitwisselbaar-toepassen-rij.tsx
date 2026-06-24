@@ -5,6 +5,7 @@ import { setUitwisselbaarClaims } from '@/lib/supabase/queries/order-mutations'
 import type { OrderRegel } from '@/lib/supabase/queries/orders'
 import type { OrderClaim } from '../queries/reserveringen'
 import { invalidateNaReserveringsmutatie } from '../cache'
+import { useAuth } from '@/hooks/use-auth'
 
 interface Props {
   regel: OrderRegel
@@ -42,6 +43,8 @@ function mergeKeuzes(...lijsten: Keuze[][]): Keuze[] {
  */
 export function UitwisselbaarToepassenRij({ regel, tekort, claims }: Props) {
   const qc = useQueryClient()
+  // Externe vertegenwoordiger (mig 489): read-only — geen omsticker-claim zetten.
+  const { isExternRep } = useAuth()
 
   const { data: equivalenten } = useQuery({
     queryKey: ['equivalente-producten-summary', regel.artikelnr],
@@ -55,6 +58,7 @@ export function UitwisselbaarToepassenRij({ regel, tekort, claims }: Props) {
     onSuccess: () => invalidateNaReserveringsmutatie(qc),
   })
 
+  if (isExternRep) return null
   if (tekort <= 0 || !equivalenten) return null
 
   const opVoorraad = equivalenten.filter((e) => (e.vrije_voorraad ?? 0) > 0)

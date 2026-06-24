@@ -13,6 +13,7 @@ import {
   palletTypeOpties,
   RHENUS_GEEN_PALLET,
 } from '@/modules/logistiek/lib/handmatig-aanmelden'
+import { useAuth } from '@/hooks/use-auth'
 
 interface Props {
   zendingId: number
@@ -34,6 +35,8 @@ export function ColliBundelDialog({ zendingId, zendingNr, vervoerderCode, onClos
   const { data: colli = [], isLoading } = useZendingColliVoorBundel(zendingId)
   const maak = useMaakColliBundel(zendingId)
   const verwijder = useVerwijderColliBundel(zendingId)
+  // Externe vertegenwoordiger (mig 489): read-only — geen colli-bundeling.
+  const { isExternRep } = useAuth()
 
   const metPallet = bundelOpPallet(vervoerderCode)
   const palletOpties = palletTypeOpties(vervoerderCode)
@@ -62,6 +65,8 @@ export function ColliBundelDialog({ zendingId, zendingNr, vervoerderCode, onClos
       breedte: sel.reduce((m, c) => Math.max(m, c.breedte_cm ?? 0), 0),
     }
   }, [colli, geselecteerd])
+
+  if (isExternRep) return null
 
   // Bij een pallet moet een type gekozen zijn (HST weigert een onbekende
   // PackageUnitID; Rhenus heeft de zak-optie als expliciete keuze).

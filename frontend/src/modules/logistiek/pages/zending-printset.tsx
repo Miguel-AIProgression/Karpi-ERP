@@ -29,12 +29,15 @@ import {
   ondersteuntColliBundelen,
 } from '@/modules/logistiek/lib/handmatig-aanmelden'
 import { ColliBundelDialog } from '@/modules/logistiek/components/colli-bundel-dialog'
+import { useAuth } from '@/hooks/use-auth'
 
 type PrintMode = 'all' | 'labels' | 'pakbon' | 'tapijt-stickers'
 
 export function ZendingPrintSetPage() {
   const { zending_nr } = useParams<{ zending_nr: string }>()
   const navigate = useNavigate()
+  // Externe vertegenwoordiger (read-only): geen colli-bundel-actie.
+  const { isExternRep } = useAuth()
   const [searchParams] = useSearchParams()
   // Optioneel: herprint van één losse sticker via `?colli=<colli_nr>`. Zonder
   // filter toont de pagina álle verzendstickers (losse colli + bundel-rij; de
@@ -319,7 +322,7 @@ export function ZendingPrintSetPage() {
             {/* Mig 421/485: zending met meerdere colli — pak colli samen op één
                 pallet (HST: EP/SP) of in één zak (Rhenus) onder één nieuwe sticker,
                 al tijdens het verzamelen. */}
-            {kanBundelen && (
+            {kanBundelen && !isExternRep && (
               <div className="rounded-[var(--radius)] border border-terracotta-200 bg-white p-4">
                 <div className="flex items-center justify-between gap-3">
                   <div>

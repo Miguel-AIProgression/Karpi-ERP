@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx'
 import { useUitwisselbareGroepen } from '@/hooks/use-uitwisselbaar'
 import type { UitwisselbareGroep } from '@/lib/supabase/queries/uitwisselbaar'
 import { UitwisselbaarGroepDialog } from '@/components/producten/uitwisselbaar-groep-dialog'
+import { useAuth } from '@/hooks/use-auth'
 import { cn } from '@/lib/utils/cn'
 
 function exporteerUitwisselbareGroepen(groepen: UitwisselbareGroep[]) {
@@ -62,6 +63,8 @@ function groepMatcht(groep: UitwisselbareGroep, zoekterm: string): boolean {
 }
 
 export function UitwisselbaarTab() {
+  // Externe vertegenwoordiger (mig 489): read-only — geen muteer-affordances.
+  const { isExternRep } = useAuth()
   const { data: groepen, isLoading, isError } = useUitwisselbareGroepen()
   const [zoekterm, setZoekterm] = useState('')
   const [dialoog, setDialoog] = useState<'nieuw' | UitwisselbareGroep | null>(null)
@@ -101,13 +104,15 @@ export function UitwisselbaarTab() {
             <Download size={15} />
             Exporteer naar Excel
           </button>
-          <button
-            onClick={() => setDialoog('nieuw')}
-            className="flex items-center gap-2 px-4 py-2 rounded-[var(--radius-sm)] bg-terracotta-500 text-white text-sm font-medium hover:bg-terracotta-600 transition-colors"
-          >
-            <Plus size={15} />
-            Koppeling toevoegen
-          </button>
+          {!isExternRep && (
+            <button
+              onClick={() => setDialoog('nieuw')}
+              className="flex items-center gap-2 px-4 py-2 rounded-[var(--radius-sm)] bg-terracotta-500 text-white text-sm font-medium hover:bg-terracotta-600 transition-colors"
+            >
+              <Plus size={15} />
+              Koppeling toevoegen
+            </button>
+          )}
         </div>
       </div>
       <p className="text-xs text-slate-400 mb-4">
@@ -147,13 +152,15 @@ export function UitwisselbaarTab() {
                     {groep.niet_overeenkomende_kleuren.length} niet-overeenkomend)
                   </span>
                 </div>
-                <button
-                  onClick={() => setDialoog(groep)}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-[var(--radius-sm)] text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
-                >
-                  <Pencil size={12} />
-                  Bewerken
-                </button>
+                {!isExternRep && (
+                  <button
+                    onClick={() => setDialoog(groep)}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-[var(--radius-sm)] text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+                  >
+                    <Pencil size={12} />
+                    Bewerken
+                  </button>
+                )}
               </div>
 
               {/* Kwaliteiten in this group */}
@@ -190,7 +197,7 @@ export function UitwisselbaarTab() {
       </div>
       )}
 
-      {dialoog && (
+      {dialoog && !isExternRep && (
         <UitwisselbaarGroepDialog
           groep={dialoog === 'nieuw' ? undefined : dialoog}
           onClose={() => setDialoog(null)}

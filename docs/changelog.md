@@ -50,6 +50,40 @@ aanmaken; debiteurnamen zijn per conventie uppercase).
 klant-insert/update, dus zonder de kolom faalt aanmaken/bewerken. (Kolom is op 24-06 al op prod
 toegepast als de email_pakbon-wijziging; bestand hernummerd van 492 i.v.m. collisie.)
 
+## 2026-06-24 — Externe vertegenwoordiger-rol: read-only over de hele app (mig 492-495)
+
+**Waarom:** login voor externe vertegenwoordiger (Guido Boecker). Eerst opgezet als
+"alleen eigen klanten + een paar tabs", maar op verzoek omgezet naar **alles zien,
+niks muteren** (read-only over de hele app), behalve systeembeheer
+(Instellingen/Gebruikers/Vertegenwoordigers). Taal = browser-vertaling (geen code).
+
+**RLS (mig 492-495):** mig 492 zet RLS aan op `orders`/`order_regels`/`debiteuren`/
+`facturen`/`factuur_regels` met schrijf-blokkade-policies + helper
+`is_externe_vertegenwoordiger()`; mig 493 = uid-tabel `vertegenwoordiger_login` +
+helpers (de `rol`-claim zit in deze setup NIET in de JWT → lezen op `auth.uid()`);
+mig 494 maakt de policies `AS RESTRICTIVE` (anders OR't de blanket
+`Authenticated full access`-policy ze weg); **mig 495 dropt de per-klant SELECT-
+policies** → de rep valt terug op de blanket-`true`-zichtbaarheid = ziet alles, net
+als personeel. De write-block-policies blijven als server-side defense-in-depth.
+**Voor elke niet-rep is elke policy `true` → gedrag volledig ongewijzigd.**
+
+**Read-only afdwinging = frontend (bewuste keuze gebruiker boven hard-in-DB):**
+- **`lib/supabase/client.ts`** = data-vangnet: een Proxy op `.from()` gooit hard bij
+  `insert/update/delete/upsert` zodra de ingelogde user rol `vertegenwoordiger_extern`
+  heeft (rol live uit `app_metadata`). `.rpc()/.select()/storage/auth` ongemoeid →
+  blokkeert in één bestand álle directe table-writes; carve-out `bug_meldingen`.
+- **`lib/auth/rol.ts`** = denylist `repMagPad`: weert `/instellingen`+`/vertegenwoordigers`
+  + de schrijf-subroutes `/nieuw`+`/bewerken`; `sidebar`/`app-layout` tonen al het
+  overige read-only, dashboard-KPI's weer zichtbaar.
+- **UI-sweep:** elke muteer-knop/-dialoog/-toggle verborgen voor de rep in
+  orders/debiteuren/facturatie/logistiek/magazijn/snijplanning/inkoop/edi/producten,
+  incl. de gedeelde componenten (documenten-upload, product-inline, colli-bundeling).
+
+**Account krijgt de rol** via `app_metadata` (alléén service-role → niet te vervalsen):
+`gebruikers-beheer` zet `rol` + `vertegenw_code` én upsert de `vertegenwoordiger_login`-
+rij (uid-mapping). **Deploy:** mig 492-495 al live (24-06); `gebruikers-beheer` herdeployd
+voor de uid-mapping van toekomstige rep-accounts.
+
 ## 2026-06-24 — HST pallet-types MP + PLH (mig 491)
 
 **Waarom (mail Niek Zandvoort, HST Groep, 24-06):** naast EP (Europallet) en SP

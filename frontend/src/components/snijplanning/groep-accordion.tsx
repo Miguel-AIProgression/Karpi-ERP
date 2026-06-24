@@ -25,6 +25,7 @@ import {
   type AutoplanGroepResultaat,
 } from '@/modules/snijplanning'
 import { usePlanningConfig } from '@/hooks/use-planning-config'
+import { useAuth } from '@/hooks/use-auth'
 import { SnijvoorstelModal } from './snijvoorstel-modal'
 import type { SnijplanRow, SnijvoorstelResponse } from '@/lib/types/productie'
 
@@ -99,6 +100,8 @@ export function GroepAccordion({
   onStartRol,
 }: GroepAccordionProps) {
   const [toonExtraRollen, setToonExtraRollen] = useState(false)
+  // Externe vertegenwoordiger (mig 489): read-only — geen muteer-affordances.
+  const { isExternRep } = useAuth()
   const kleurCodeZonderDecimaal = kleurCode.replace(/\.0$/, '')
   // props totaalOrders/totaalSnijden/totaalSnijdenGepland/defaultOpen blijven voor compat
   void defaultOpen; void totaalOrders; void totaalSnijden; void totaalSnijdenGepland
@@ -344,7 +347,7 @@ export function GroepAccordion({
                         tweede pak-pas (mig 437-445) matcht op exacte kwaliteit+kleur
                         tegen openstaande rol-inkoop, los van de uitwisselbare-paren-
                         check hierboven — dus ook dán kan een herplan iets oplossen. */}
-                    {tekortReden && (
+                    {tekortReden && !isExternRep && (
                       <button
                         onClick={handleAutoplan}
                         disabled={autoplan.isPending}
@@ -455,14 +458,16 @@ export function GroepAccordion({
                             </td>
                             <td className="py-2 pr-3">
                               <div className="flex items-center gap-2 justify-end">
-                                <button
-                                  type="button"
-                                  onClick={() => setHandmatigStuk(stuk)}
-                                  className="text-slate-300 hover:text-slate-600 transition-colors"
-                                  title="Handmatig aan een rol toewijzen"
-                                >
-                                  <Move size={14} />
-                                </button>
+                                {!isExternRep && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setHandmatigStuk(stuk)}
+                                    className="text-slate-300 hover:text-slate-600 transition-colors"
+                                    title="Handmatig aan een rol toewijzen"
+                                  >
+                                    <Move size={14} />
+                                  </button>
+                                )}
                                 <Link
                                   to={`/snijplanning/${stuk.id}/stickers`}
                                   className="text-slate-300 hover:text-slate-600 transition-colors"
@@ -517,6 +522,7 @@ interface RolSectieProps {
 
 function RolSectie({ rol, locatieMap, kwaliteitCode, kleurLabel, geschatteTijd, defaultOpen, onStart, isStartPending, pendingRolId, onHandmatigToewijzen }: RolSectieProps) {
   const [open, setOpen] = useState(defaultOpen)
+  const { isExternRep } = useAuth()
   const locatie = locatieMap?.get(rol.rolId) ?? null
   const isPendingThis = isStartPending && pendingRolId === rol.rolId
 
@@ -589,7 +595,7 @@ function RolSectie({ rol, locatieMap, kwaliteitCode, kleurLabel, geschatteTijd, 
           )}
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          {rol.aantalTeSnijden > 0 && (
+          {rol.aantalTeSnijden > 0 && !isExternRep && (
             <button
               onClick={(e) => { e.stopPropagation(); onStart(rol.rolId) }}
               disabled={isStartPending}
@@ -638,6 +644,7 @@ function RolSectie({ rol, locatieMap, kwaliteitCode, kleurLabel, geschatteTijd, 
 
 function StukRow({ stuk, onHandmatigToewijzen }: { stuk: SnijplanRow; onHandmatigToewijzen: (stuk: SnijplanRow) => void }) {
   const ontgrendel = useOntgrendelHandmatig()
+  const { isExternRep } = useAuth()
   return (
     <tr className="hover:bg-slate-50">
       <td className="py-2 pr-3 font-medium">
@@ -686,7 +693,7 @@ function StukRow({ stuk, onHandmatigToewijzen }: { stuk: SnijplanRow; onHandmati
       </td>
       <td className="py-2 pr-3">
         <div className="flex items-center gap-2 justify-end">
-          {stuk.is_handmatig_toegewezen && (
+          {stuk.is_handmatig_toegewezen && !isExternRep && (
             <button
               type="button"
               onClick={() => ontgrendel.mutate(stuk.id)}
@@ -697,7 +704,7 @@ function StukRow({ stuk, onHandmatigToewijzen }: { stuk: SnijplanRow; onHandmati
               <Lock size={14} />
             </button>
           )}
-          {stuk.status === 'Gepland' && (
+          {stuk.status === 'Gepland' && !isExternRep && (
             <button
               type="button"
               onClick={() => onHandmatigToewijzen(stuk)}

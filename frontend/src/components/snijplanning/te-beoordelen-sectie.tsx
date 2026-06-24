@@ -3,6 +3,7 @@ import { AlertTriangle, Check, X } from 'lucide-react'
 import { formatDate } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
 import { useKeurSnijvoorstelGoed, useVerwerpSnijvoorstel, type ConceptVoorstelRow } from '@/modules/snijplanning'
+import { useAuth } from '@/hooks/use-auth'
 
 // Mig 459: voorstellen die auto-plan-groep bewust als 'concept' liet liggen
 // (verdringingsrisico of rode FIFO-badge) — geen automatische actie, een
@@ -37,6 +38,8 @@ function ConceptVoorstelCard({ voorstel: v }: { voorstel: ConceptVoorstelRow }) 
   const keur = useKeurSnijvoorstelGoed()
   const verwerp = useVerwerpSnijvoorstel()
   const pending = keur.isPending || verwerp.isPending
+  // Externe vertegenwoordiger (mig 489): read-only — geen afwijzen/goedkeuren.
+  const { isExternRep } = useAuth()
 
   return (
     <div className="rounded-[var(--radius-sm)] border border-purple-200 bg-purple-50 overflow-hidden">
@@ -48,22 +51,24 @@ function ConceptVoorstelCard({ voorstel: v }: { voorstel: ConceptVoorstelRow }) 
         <span className="text-slate-500 font-normal">
           {v.voorstel_nr} · {v.totaal_stukken} stukken · {v.totaal_rollen} rollen · {v.afval_percentage}% afval
         </span>
-        <div className="ml-auto flex items-center gap-2">
-          <button
-            onClick={() => verwerp.mutate(v.id)}
-            disabled={pending}
-            className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-slate-600 bg-white border border-slate-200 rounded hover:bg-slate-50 disabled:opacity-50"
-          >
-            <X size={12} /> Afwijzen
-          </button>
-          <button
-            onClick={() => keur.mutate(v.id)}
-            disabled={pending}
-            className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-white bg-terracotta-500 rounded hover:bg-terracotta-600 disabled:opacity-50"
-          >
-            <Check size={12} /> Goedkeuren
-          </button>
-        </div>
+        {!isExternRep && (
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={() => verwerp.mutate(v.id)}
+              disabled={pending}
+              className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-slate-600 bg-white border border-slate-200 rounded hover:bg-slate-50 disabled:opacity-50"
+            >
+              <X size={12} /> Afwijzen
+            </button>
+            <button
+              onClick={() => keur.mutate(v.id)}
+              disabled={pending}
+              className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-white bg-terracotta-500 rounded hover:bg-terracotta-600 disabled:opacity-50"
+            >
+              <Check size={12} /> Goedkeuren
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="bg-white divide-y divide-purple-100 text-sm">

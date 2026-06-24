@@ -9,6 +9,7 @@ import type {
   VerzendregelConditie,
 } from '@/modules/logistiek/queries/verzendregels'
 import type { Vervoerder } from '@/modules/logistiek/queries/vervoerders'
+import { useAuth } from '@/hooks/use-auth'
 
 interface Props {
   open: boolean
@@ -32,6 +33,8 @@ export function VerzendregelDialog({
   target,
   prefillLand = null,
 }: Props) {
+  // Externe vertegenwoordiger (mig 489): read-only — geen aanmaak/bewerk-dialoog.
+  const { isExternRep } = useAuth()
   const isEdit = Boolean(target)
 
   const [vervoerderCode, setVervoerderCode] = useState('')
@@ -154,7 +157,7 @@ export function VerzendregelDialog({
     }
   }
 
-  if (!open) return null
+  if (!open || isExternRep) return null
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Scissors, X, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { useKandidaatRollenVoorConversie, useConverteerNaarMaatwerk } from '@/modules/snijplanning'
 import type { OrderRegel } from '@/lib/supabase/queries/orders'
+import { useAuth } from '@/hooks/use-auth'
 
 interface OmzettenNaarMaatwerkDialogProps {
   regel: OrderRegel
@@ -14,6 +15,8 @@ interface OmzettenNaarMaatwerkDialogProps {
 export function OmzettenNaarMaatwerkDialog({ regel, orderId, onClose }: OmzettenNaarMaatwerkDialogProps) {
   const [lengteCm, setLengteCm] = useState(regel.product_lengte_cm ?? 0)
   const [breedteCm, setBreedteCm] = useState(regel.product_breedte_cm ?? 0)
+  // Externe vertegenwoordiger (mig 489): read-only — geen maatwerk-conversie.
+  const { isExternRep } = useAuth()
 
   const kwaliteitCode = regel.product_kwaliteit_code
   const kleurCode = regel.product_kleur_code
@@ -26,6 +29,8 @@ export function OmzettenNaarMaatwerkDialog({ regel, orderId, onClose }: Omzetten
   )
 
   const mutation = useConverteerNaarMaatwerk()
+
+  if (isExternRep) return null
 
   const heeftKandidaat = (kandidaten?.length ?? 0) > 0
   const kanBevestigen = heeftKandidaat && !mutation.isPending

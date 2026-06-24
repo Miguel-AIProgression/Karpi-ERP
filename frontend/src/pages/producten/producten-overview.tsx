@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Search, Link2, LayoutGrid, Layers, List } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { cn } from '@/lib/utils/cn'
+import { useAuth } from '@/hooks/use-auth'
 import { useProducten, useDistincteVormen } from '@/hooks/use-producten'
 import { UitwisselbaarTab } from './uitwisselbaar-tab'
 import { ProductRow, SortHeader } from './product-row'
@@ -35,6 +36,8 @@ const VORM_LABELS: Record<string, string> = {
 const COL_COUNT = 11
 
 export function ProductenOverviewPage() {
+  // Externe vertegenwoordiger (mig 489): read-only — geen muteer-affordances.
+  const { isExternRep } = useAuth()
   const [activeTab, setActiveTab] = useState<OverviewTab>('collecties')
   const [viewMode, setViewMode] = useState<ViewMode>('per_kwaliteit')
   const [search, setSearch] = useState('')
@@ -111,12 +114,14 @@ export function ProductenOverviewPage() {
           title="Producten"
           description={headerDescription}
         />
-        <Link
-          to="/producten/nieuw"
-          className="px-4 py-2 bg-terracotta-500 text-white rounded-[var(--radius-sm)] text-sm font-medium hover:bg-terracotta-600"
-        >
-          + Nieuw product
-        </Link>
+        {!isExternRep && (
+          <Link
+            to="/producten/nieuw"
+            className="px-4 py-2 bg-terracotta-500 text-white rounded-[var(--radius-sm)] text-sm font-medium hover:bg-terracotta-600"
+          >
+            + Nieuw product
+          </Link>
+        )}
       </div>
 
       {/* Tabs */}

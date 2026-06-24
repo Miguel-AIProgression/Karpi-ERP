@@ -7,6 +7,7 @@ import {
 } from '@/lib/orders/verzendweek'
 import { vergelijkLeverweek } from '@/lib/orders/edi-leverweek'
 import { useBevestigEdiOrder } from '@/modules/edi'
+import { useAuth } from '@/hooks/use-auth'
 
 interface Props {
   orderId: number
@@ -30,8 +31,12 @@ interface Props {
  */
 export function EdiLeverweekBevestigen({ orderId, debiteurNr, gewenstIso, afleverdatumIso, orderStatus }: Props) {
   const [weekStr, setWeekStr] = useState(verzendWeekIsoString(afleverdatumIso || gewenstIso))
+  // Externe vertegenwoordiger (mig 489): read-only — geen leverweek-bevestiging.
+  const { isExternRep } = useAuth()
 
   const { kanaal, bericht, isLoading, configError, busy, error, bevestig } = useBevestigEdiOrder(orderId, debiteurNr)
+
+  if (isExternRep) return null
 
   const gekozenDatum = verzendWeekStringToDatum(weekStr)
   const vergelijking = vergelijkLeverweek(gewenstIso, gekozenDatum)

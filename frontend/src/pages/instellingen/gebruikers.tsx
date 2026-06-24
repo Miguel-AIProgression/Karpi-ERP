@@ -64,7 +64,7 @@ export function GebruikersInstellingenPage() {
     setActieFout(null)
     setBezigId(g.id)
     try {
-      const { link } = await linkMut.mutateAsync(g.email)
+      const { link } = await linkMut.mutateAsync({ email: g.email })
       setGedeeldeLink({ email: g.email, link })
     } catch (err) {
       setActieFout(err instanceof Error ? err.message : 'Link genereren mislukt')

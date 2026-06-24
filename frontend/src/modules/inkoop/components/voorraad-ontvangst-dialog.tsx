@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { X } from 'lucide-react'
+import { useAuth } from '@/hooks/use-auth'
 import { useBoekOntvangst } from '../hooks/use-boek-ontvangst'
 import type { InkooporderRegel } from '../queries/inkooporders'
 
@@ -14,11 +15,15 @@ function formatAantal(value: number): string {
 }
 
 export function VoorraadOntvangstDialog({ regel, inkooporderNr, onClose }: Props) {
+  const { isExternRep } = useAuth()
   const [aantal, setAantal] = useState<string>(String(Math.floor(regel.te_leveren_m)))
   const [medewerker, setMedewerker] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   const boek = useBoekOntvangst()
+
+  // Externe vertegenwoordiger (mig 489): read-only — boeken niet toegestaan.
+  if (isExternRep) return null
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()

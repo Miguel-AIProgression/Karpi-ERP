@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase/client'
 import { isAdminPseudo } from '@/lib/orders/admin-pseudo'
 import { isoWeekStringVanIso } from '@/lib/utils/iso-week'
 import type { OrderRegel } from '@/lib/supabase/queries/orders'
+import { useAuth } from '@/hooks/use-auth'
 
 interface DeelzendingResult {
   zending_id: number
@@ -60,6 +61,8 @@ export function DeelzendingDialog({
   const [geselecteerd, setGeselecteerd] = useState<Set<number>>(new Set())
   const [fout, setFout] = useState<string | null>(null)
   const [overrideBevestigd, setOverrideBevestigd] = useState(false)
+  // Externe vertegenwoordiger (mig 489): read-only — geen deelzending starten.
+  const { isExternRep } = useAuth()
 
   const { data: kanDeelzending, isLoading: kanDeelzendingLoading } = useQuery({
     queryKey: ['orders', orderId, 'kan-deelzending'],
@@ -119,7 +122,7 @@ export function DeelzendingDialog({
     && (!overrideNodig || overrideBevestigd)
   const isEindstatus = orderStatus === 'Verzonden' || orderStatus === 'Geannuleerd'
 
-  if (isEindstatus) return null
+  if (isEindstatus || isExternRep) return null
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">

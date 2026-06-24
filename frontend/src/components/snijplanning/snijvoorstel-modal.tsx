@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { X, Zap, CheckCircle2, XCircle, Loader2, AlertTriangle } from 'lucide-react'
 import { useSnijplannenVoorGroep, useKeurSnijvoorstelGoed, useVerwerpSnijvoorstel } from '@/modules/snijplanning'
+import { useAuth } from '@/hooks/use-auth'
 import { SnijVisualisatie } from './snij-visualisatie'
 import { FifoBadge } from './fifo-badge'
 import type { SnijvoorstelResponse, SnijvoorstelPlaatsing, SnijplanRow, SnijStuk } from '@/lib/types/productie'
@@ -60,6 +61,9 @@ export function SnijvoorstelModal({ voorstel, kwaliteitCode, kleurCode, onClose,
   const verwerpen = useVerwerpSnijvoorstel()
   const [error, setError] = useState<string | null>(null)
   const [approved, setApproved] = useState(false)
+  // Externe vertegenwoordiger (mig 489): read-only — geen goedkeuren/verwerpen,
+  // alleen het voorstel bekijken (zelfde footer als de readOnly-weergave).
+  const { isExternRep } = useAuth()
 
   const snijplanMap = useMemo(() => {
     const map = new Map<number, SnijplanRow>()
@@ -157,6 +161,10 @@ export function SnijvoorstelModal({ voorstel, kwaliteitCode, kleurCode, onClose,
           <div className="flex items-center gap-2 px-5 py-3 border-t border-slate-200 bg-blue-50 text-blue-700 text-sm flex-shrink-0">
             <CheckCircle2 size={14} />
             Goedgekeurd snijplan — rollen zijn gereserveerd
+            <button onClick={onClose} className="ml-auto underline text-xs">Sluiten</button>
+          </div>
+        ) : isExternRep ? (
+          <div className="flex items-center gap-2 px-5 py-3 border-t border-slate-200 bg-slate-50 text-slate-600 text-sm flex-shrink-0">
             <button onClick={onClose} className="ml-auto underline text-xs">Sluiten</button>
           </div>
         ) : !approved ? (

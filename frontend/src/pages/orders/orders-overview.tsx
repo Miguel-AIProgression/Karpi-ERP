@@ -12,6 +12,7 @@ import { useFacturenVoorOrders } from '@/modules/facturatie'
 import { useSnijHaalbaarheid } from '@/modules/snijplanning'
 import { EdiTeKoppelenBanner } from '@/modules/edi'
 import { ShopifySyncStatusBanner } from '@/components/orders/shopify-sync-status-banner'
+import { useAuth } from '@/hooks/use-auth'
 import type { OrderSortField, SortDirection } from '@/lib/supabase/queries/orders'
 
 const KANAAL_OPTIES = [
@@ -80,6 +81,7 @@ export function OrdersOverviewPage() {
 
   const { data: facturenPerOrder } = useFacturenVoorOrders(orders.map((o) => o.id))
   const { perOrder: snijHaalbaarheidPerOrder } = useSnijHaalbaarheid()
+  const { isExternRep } = useAuth()
 
   return (
     <>
@@ -87,13 +89,15 @@ export function OrdersOverviewPage() {
         title="Orders"
         description={`${totalCount} orders`}
         actions={
-          <Link
-            to="/orders/nieuw"
-            className="flex items-center gap-2 px-4 py-2 bg-terracotta-500 text-white rounded-[var(--radius-sm)] text-sm font-medium hover:bg-terracotta-600 transition-colors"
-          >
-            <Plus size={16} />
-            Nieuwe order
-          </Link>
+          isExternRep ? undefined : (
+            <Link
+              to="/orders/nieuw"
+              className="flex items-center gap-2 px-4 py-2 bg-terracotta-500 text-white rounded-[var(--radius-sm)] text-sm font-medium hover:bg-terracotta-600 transition-colors"
+            >
+              <Plus size={16} />
+              Nieuwe order
+            </Link>
+          )
         }
       />
 

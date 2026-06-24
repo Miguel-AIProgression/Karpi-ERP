@@ -8,6 +8,7 @@ import {
   type PickColliRij,
 } from '@/modules/magazijn'
 import { cn } from '@/lib/utils/cn'
+import { useAuth } from '@/hooks/use-auth'
 
 interface Props {
   zendingId: number
@@ -68,6 +69,8 @@ function ColliRij({
 }) {
   const isOpen = colli.pick_uitkomst === 'open'
   const isNietGevonden = colli.pick_uitkomst === 'niet_gevonden'
+  // Externe vertegenwoordiger (mig 489): read-only — geen "niet gevonden"-actie.
+  const { isExternRep } = useAuth()
   // 'open' = standaard aanwezig/te picken → toon als aangevinkt (zoals de
   // instructie belooft: "vinkjes staan al aan"). Alleen 'niet_gevonden' is een
   // uitgevinkt/probleem-vinkje. 'gepickt' (na voltooien) blijft uiteraard aan.
@@ -90,7 +93,7 @@ function ColliRij({
           <div className="text-xs text-rose-600 mt-0.5">⚠ {colli.pick_opmerking}</div>
         )}
       </div>
-      {!isNietGevonden && isOpen && (
+      {!isExternRep && !isNietGevonden && isOpen && (
         <button
           onClick={onMarkeerNietGevonden}
           className="text-xs text-slate-500 hover:text-rose-600"

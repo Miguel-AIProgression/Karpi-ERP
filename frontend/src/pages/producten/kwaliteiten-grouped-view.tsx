@@ -13,6 +13,7 @@ import {
 } from '@/modules/maatwerk'
 import { formatNumber } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
+import { useAuth } from '@/hooks/use-auth'
 import type { ProductType } from '@/lib/supabase/queries/producten'
 import { KwaliteitKleurenUitvouw } from './kwaliteit-kleuren-uitvouw'
 
@@ -37,6 +38,8 @@ interface Props {
 }
 
 export function KwaliteitenGroupedView({ search, productType }: Props) {
+  // Externe vertegenwoordiger (mig 489): read-only — inline-edit verbergen, waarde tonen.
+  const { isExternRep } = useAuth()
   const { data: kwaliteiten = [], isLoading } = useQuery({
     queryKey: ['kwaliteiten-met-gewicht'],
     queryFn: fetchKwaliteitenMetGewicht,
@@ -123,6 +126,7 @@ export function KwaliteitenGroupedView({ search, productType }: Props) {
               afwerkingen={afwerkingen}
               standaardAfwerking={standaardAfwerkingen?.get(q.code) ?? null}
               isMaatwerkKwaliteit={maatwerkKwaliteiten?.has(q.code) ?? false}
+              readOnly={isExternRep}
             />
           ))}
         </tbody>
@@ -131,7 +135,7 @@ export function KwaliteitenGroupedView({ search, productType }: Props) {
   )
 }
 
-function KwaliteitRow({ q, isExpanded, onToggle, productType, uitwisselbaarCount, afwerkingen, standaardAfwerking, isMaatwerkKwaliteit }: {
+function KwaliteitRow({ q, isExpanded, onToggle, productType, uitwisselbaarCount, afwerkingen, standaardAfwerking, isMaatwerkKwaliteit, readOnly }: {
   q: KwaliteitMetGewicht
   isExpanded: boolean
   onToggle: () => void
@@ -140,6 +144,7 @@ function KwaliteitRow({ q, isExpanded, onToggle, productType, uitwisselbaarCount
   afwerkingen: AfwerkingTypeRow[]
   standaardAfwerking: string | null
   isMaatwerkKwaliteit: boolean
+  readOnly: boolean
 }) {
   return (
     <>
@@ -170,13 +175,23 @@ function KwaliteitRow({ q, isExpanded, onToggle, productType, uitwisselbaarCount
         </td>
         <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
           {isMaatwerkKwaliteit || standaardAfwerking ? (
-            <AfwerkingEditor code={q.code} huidigeAfwerking={standaardAfwerking} afwerkingen={afwerkingen} />
+            readOnly ? (
+              <AfwerkingReadOnly huidigeAfwerking={standaardAfwerking} afwerkingen={afwerkingen} />
+            ) : (
+              <AfwerkingEditor code={q.code} huidigeAfwerking={standaardAfwerking} afwerkingen={afwerkingen} />
+            )
           ) : (
             <span className="text-xs text-slate-300" title="Geen maatwerk-product in deze kwaliteit">—</span>
           )}
         </td>
         <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-          <GewichtEditor code={q.code} gewicht={q.gewicht_per_m2_kg} uitwisselbaarCount={uitwisselbaarCount} />
+          {readOnly ? (
+            <span className={cn('text-sm', q.gewicht_per_m2_kg == null ? 'text-amber-600 italic' : 'text-slate-800')}>
+              {q.gewicht_per_m2_kg != null ? `${formatNumber(q.gewicht_per_m2_kg, 3)} kg` : 'ontbreekt'}
+            </span>
+          ) : (
+            <GewichtEditor code={q.code} gewicht={q.gewicht_per_m2_kg} uitwisselbaarCount={uitwisselbaarCount} />
+          )}
         </td>
         <td className="px-4 py-3 text-right text-slate-500">
           {q.standaard_breedte_cm ? `${q.standaard_breedte_cm} cm` : '—'}
@@ -191,6 +206,22 @@ function KwaliteitRow({ q, isExpanded, onToggle, productType, uitwisselbaarCount
         <KwaliteitKleurenUitvouw kwaliteitCode={q.code} productType={productType} />
       )}
     </>
+  )
+}
+
+function AfwerkingReadOnly({ huidigeAfwerking, afwerkingen }: {
+  huidigeAfwerking: string | null
+  afwerkingen: AfwerkingTypeRow[]
+}) {
+  const huidige = afwerkingen.find((a) => a.code === huidigeAfwerking)
+  if (!huidige) {
+    return <span className="text-xs text-slate-400 italic">geen afwerking</span>
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-sm text-slate-800">
+      <span className="font-mono text-xs px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700">{huidige.code}</span>
+      <span className="text-xs text-slate-600">{huidige.naam}</span>
+    </span>
   )
 }
 

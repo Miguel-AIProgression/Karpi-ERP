@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight, Plus } from 'lucide-react'
 import { useProducten, useMaatwerkVormen } from '@/hooks/use-producten'
 import { useActieveAfwerkingKleuren } from '@/hooks/use-afwerking-kleuren'
+import { useAuth } from '@/hooks/use-auth'
 import {
   fetchAfwerkingTypes,
   fetchStandaardAfwerking,
@@ -22,6 +23,8 @@ interface Props {
 }
 
 export function KwaliteitKleurenUitvouw({ kwaliteitCode, productType }: Props) {
+  // Externe vertegenwoordiger (mig 489): read-only — band-kleur-select verbergen, waarde tonen.
+  const { isExternRep } = useAuth()
   const qc = useQueryClient()
   const { data: producten, isLoading: prodLoading } = useProducten({
     kwaliteitCode,
@@ -128,6 +131,7 @@ export function KwaliteitKleurenUitvouw({ kwaliteitCode, productType }: Props) {
                     saving={savingKleur === k.code}
                     errorMsg={errorPerKleur[k.code] ?? null}
                     isMaatwerkKleur={isMaatwerkKleur}
+                    readOnly={isExternRep}
                   />
                 )
               })}
@@ -150,6 +154,7 @@ interface KleurRowProps {
   saving: boolean
   errorMsg: string | null
   isMaatwerkKleur: boolean
+  readOnly: boolean
 }
 
 function KleurRow({
@@ -163,6 +168,7 @@ function KleurRow({
   saving,
   errorMsg,
   isMaatwerkKleur,
+  readOnly,
 }: KleurRowProps) {
   const [expanded, setExpanded] = useState(false)
   const { data: kleurOpties } = useActieveAfwerkingKleuren(heeftBandKleur ? afwerkingCode : null)
@@ -194,6 +200,12 @@ function KleurRow({
             <span className="text-xs text-amber-600">
               Geen bandkleuren onder {afwerkingCode} — beheer onder /afwerkingen
             </span>
+          ) : readOnly ? (
+            <span className="text-sm text-slate-700">
+              {(kleurOpties ?? []).find((opt) => opt.id === bandDefaultId)?.label
+                ?? kleur.band_omschrijving
+                ?? <span className="text-xs text-slate-400">— niet ingesteld —</span>}
+            </span>
           ) : (
             <div className="flex flex-col gap-1">
               <select
@@ -224,7 +236,7 @@ function KleurRow({
         </td>
       </tr>
       {expanded && (
-        <ArtikelsVoorKleur kwaliteitCode={kwaliteitCode} kleurCode={kleur.code} productType={productType} />
+        <ArtikelsVoorKleur kwaliteitCode={kwaliteitCode} kleurCode={kleur.code} productType={productType} readOnly={readOnly} />
       )}
     </Fragment>
   )
@@ -234,7 +246,8 @@ function ArtikelsVoorKleur({
   kwaliteitCode,
   kleurCode,
   productType,
-}: { kwaliteitCode: string; kleurCode: string; productType: ProductType | 'alle' }) {
+  readOnly,
+}: { kwaliteitCode: string; kleurCode: string; productType: ProductType | 'alle'; readOnly: boolean }) {
   const { data, isLoading } = useProducten({
     kwaliteitCode,
     productType,
@@ -314,14 +327,16 @@ function ArtikelsVoorKleur({
             ))}
           </tbody>
         </table>
-        <div className="pl-20 pr-4 py-2 border-t border-slate-200 bg-white/40">
-          <Link
-            to={`/producten/nieuw?kwaliteit=${encodeURIComponent(kwaliteitCode)}&kleur=${encodeURIComponent(kleurCode)}`}
-            className="inline-flex items-center gap-1.5 text-xs text-terracotta-500 hover:text-terracotta-600 font-medium transition-colors"
-          >
-            <Plus size={13} /> Variant toevoegen aan {kwaliteitCode} kleur {kleurCode}
-          </Link>
-        </div>
+        {!readOnly && (
+          <div className="pl-20 pr-4 py-2 border-t border-slate-200 bg-white/40">
+            <Link
+              to={`/producten/nieuw?kwaliteit=${encodeURIComponent(kwaliteitCode)}&kleur=${encodeURIComponent(kleurCode)}`}
+              className="inline-flex items-center gap-1.5 text-xs text-terracotta-500 hover:text-terracotta-600 font-medium transition-colors"
+            >
+              <Plus size={13} /> Variant toevoegen aan {kwaliteitCode} kleur {kleurCode}
+            </Link>
+          </div>
+        )}
       </td>
     </tr>
   )

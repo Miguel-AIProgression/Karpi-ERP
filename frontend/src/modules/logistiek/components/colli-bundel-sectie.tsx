@@ -19,6 +19,7 @@ import {
   palletTypeOpties,
   RHENUS_GEEN_PALLET,
 } from '@/modules/logistiek/lib/handmatig-aanmelden'
+import { useAuth } from '@/hooks/use-auth'
 
 interface Props {
   zendingId: number
@@ -29,7 +30,11 @@ interface Props {
 }
 
 export function ColliBundelSectie({ zendingId, zendingNr, vervoerderCode, status, aantalColli }: Props) {
+  // Externe vertegenwoordiger (mig 489): read-only — de hele bundel-werkbank
+  // (bundelen/ontbundelen/nu aanmelden) is verborgen.
+  const { isExternRep } = useAuth()
   const zichtbaar =
+    !isExternRep &&
     isHandmatigAanmeldenVervoerder(vervoerderCode) &&
     status === 'Klaar voor verzending' &&
     (aantalColli ?? 0) >= 2

@@ -2,6 +2,7 @@ import { useMemo, useState, useRef, useEffect } from 'react'
 import { Search, Check, X, Pencil } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { usePrijslijstHeadersList, useSetKlantPrijslijst } from '../hooks/use-debiteuren'
+import { useAuth } from '@/hooks/use-auth'
 
 interface Props {
   debiteurNr: number
@@ -13,6 +14,8 @@ export function KlantPrijslijstSelector({ debiteurNr, prijslijstNr, prijslijstNa
   const [editing, setEditing] = useState(false)
   const [search, setSearch] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
+  // Externe vertegenwoordiger (mig 489): read-only — verberg de wijzig-trigger.
+  const { isExternRep } = useAuth()
 
   const { data: headers, isLoading } = usePrijslijstHeadersList()
   const mutation = useSetKlantPrijslijst()
@@ -66,13 +69,15 @@ export function KlantPrijslijstSelector({ debiteurNr, prijslijstNr, prijslijstNa
           ) : (
             <span className="text-slate-400 italic text-sm">Geen</span>
           )}
-          <button
-            onClick={() => setEditing(true)}
-            className="text-xs text-terracotta-500 hover:text-terracotta-700 font-medium inline-flex items-center gap-1"
-          >
-            <Pencil size={11} />
-            Wijzig
-          </button>
+          {!isExternRep && (
+            <button
+              onClick={() => setEditing(true)}
+              className="text-xs text-terracotta-500 hover:text-terracotta-700 font-medium inline-flex items-center gap-1"
+            >
+              <Pencil size={11} />
+              Wijzig
+            </button>
+          )}
         </div>
       </div>
     )

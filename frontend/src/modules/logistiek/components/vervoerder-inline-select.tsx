@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { useVervoerderKeuzeVoorOrder, useSetOrderVervoerderOverride } from '../hooks/use-vervoerder-keuze'
 import { useVervoerders } from '../hooks/use-vervoerders'
 import { getVervoerderDef, type VervoerderBadgeKleur } from '../registry'
+import { useAuth } from '@/hooks/use-auth'
 
 const KLEUR_STYLES: Record<VervoerderBadgeKleur, string> = {
   blauw: 'bg-blue-100 text-blue-700 hover:bg-blue-200',
@@ -51,6 +52,9 @@ export function VervoerderInlineSelect({ afhalen, orderId }: VervoerderInlineSel
   const [foutmelding, setFoutmelding] = useState<string | null>(null)
   const wrapperRef = useRef<HTMLDivElement>(null)
 
+  // Externe vertegenwoordiger (mig 489): read-only — pill toont de waarde maar
+  // opent geen override-dropdown.
+  const { isExternRep } = useAuth()
   const { data: vervoerders = [] } = useVervoerders()
   const { aggregaat } = useVervoerderKeuzeVoorOrder(orderId ?? null)
   const setOrderOverride = useSetOrderVervoerderOverride()
@@ -87,6 +91,14 @@ export function VervoerderInlineSelect({ afhalen, orderId }: VervoerderInlineSel
     }
     if (aggregaat.soort === 'mix') {
       const mixLabel = 'Mix · ' + aggregaat.codes.filter((c) => c).join('+')
+      if (isExternRep) {
+        return (
+          <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold bg-purple-100 text-purple-700">
+            <Truck size={12} />
+            {mixLabel}
+          </span>
+        )
+      }
       return (
         <button
           type="button"
@@ -110,6 +122,14 @@ export function VervoerderInlineSelect({ afhalen, orderId }: VervoerderInlineSel
     }
     // uniform
     if (aggregaat.code === null) {
+      if (isExternRep) {
+        return (
+          <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold bg-amber-100 text-amber-700">
+            <AlertTriangle size={12} />
+            Geen regel
+          </span>
+        )
+      }
       return (
         <button
           type="button"
@@ -134,6 +154,21 @@ export function VervoerderInlineSelect({ afhalen, orderId }: VervoerderInlineSel
     const def = getVervoerderDef(aggregaat.code)
     const labelKleur: VervoerderBadgeKleur = def?.badgeKleur ?? 'grijs'
     const labelText = def?.displayNaam ?? aggregaat.code
+    if (isExternRep) {
+      return (
+        <span
+          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${KLEUR_STYLES[labelKleur]}`}
+          title={
+            aggregaat.bron === 'regel'
+              ? `Regel-keuze: ${labelText}`
+              : `Bulk-override: ${labelText}`
+          }
+        >
+          {aggregaat.bron === 'regel' ? <Sparkles size={12} /> : <Truck size={12} />}
+          {labelText}
+        </span>
+      )
+    }
     return (
       <button
         type="button"
@@ -196,7 +231,7 @@ export function VervoerderInlineSelect({ afhalen, orderId }: VervoerderInlineSel
         </div>
       )}
 
-      {open && (
+      {open && !isExternRep && (
         <div
           onClick={(e) => e.stopPropagation()}
           className="absolute right-0 mt-1 w-64 rounded-[var(--radius-sm)] border border-slate-200 bg-white shadow-lg z-20 py-1 text-xs"

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { BadgeEuro, Loader2, Check, Pencil } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
+import { useAuth } from '@/hooks/use-auth'
 
 interface RegelInfo {
   artikelnr: string | null
@@ -82,6 +83,8 @@ export function PrijsOntbreektBanner({ orderId, debiteurNr, teBevestigenSinds, r
   const qc = useQueryClient()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Externe vertegenwoordiger (mig 489): read-only — geen prijs-correctie/-acceptatie.
+  const { isExternRep } = useAuth()
 
   const nulRegels = regels ? vindNulPrijsRegels(regels) : []
   const artikelnrs = nulRegels
@@ -94,6 +97,8 @@ export function PrijsOntbreektBanner({ orderId, debiteurNr, teBevestigenSinds, r
     enabled: artikelnrs.length > 0,
     staleTime: 60_000,
   })
+
+  if (isExternRep) return null
 
   async function handleBevestig() {
     setBusy(true)

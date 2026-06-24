@@ -4,6 +4,7 @@ import { CalendarClock, Loader2, Check, ArrowRight } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
 import { verzendWeekKort } from '@/lib/orders/verzendweek'
 import { fetchLaatsteLevertijdWijziging } from '@/lib/supabase/queries/orders'
+import { useAuth } from '@/hooks/use-auth'
 
 interface Props {
   orderId: number
@@ -28,6 +29,9 @@ export function LevertijdWijzigingBanner({ orderId, teBevestigenSinds }: Props) 
   const qc = useQueryClient()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Externe vertegenwoordiger (mig 489): read-only — wel de wijziging zien,
+  // maar geen herbevestig-actie.
+  const { isExternRep } = useAuth()
 
   const { data: event, isLoading } = useQuery({
     queryKey: ['levertijd-wijziging-event', orderId],
@@ -92,22 +96,24 @@ export function LevertijdWijzigingBanner({ orderId, teBevestigenSinds }: Props) 
         {' '}Open sinds {new Date(teBevestigenSinds).toLocaleString('nl-NL')}.
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          onClick={handleHerbevestigd}
-          disabled={busy || isLoading}
-          className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] bg-terracotta-500 px-4 py-2 text-sm font-medium text-white hover:bg-terracotta-600 disabled:opacity-50"
-          title="Markeert dat je de klant handmatig hebt geïnformeerd over de gewijzigde levertijd. Verstuurt zelf geen bericht."
-        >
-          {busy ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-          Herbevestigd aan klant ✓
-        </button>
-        <span className="text-xs text-slate-500">
-          Puur administratief — informeer de klant zelf; dit vinkt het alleen af.
-        </span>
-      </div>
+      {!isExternRep && (
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={handleHerbevestigd}
+            disabled={busy || isLoading}
+            className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] bg-terracotta-500 px-4 py-2 text-sm font-medium text-white hover:bg-terracotta-600 disabled:opacity-50"
+            title="Markeert dat je de klant handmatig hebt geïnformeerd over de gewijzigde levertijd. Verstuurt zelf geen bericht."
+          >
+            {busy ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+            Herbevestigd aan klant ✓
+          </button>
+          <span className="text-xs text-slate-500">
+            Puur administratief — informeer de klant zelf; dit vinkt het alleen af.
+          </span>
+        </div>
+      )}
 
-      {error && <div className="mt-2 text-sm text-rose-600">{error}</div>}
+      {!isExternRep && error && <div className="mt-2 text-sm text-rose-600">{error}</div>}
     </div>
   )
 }

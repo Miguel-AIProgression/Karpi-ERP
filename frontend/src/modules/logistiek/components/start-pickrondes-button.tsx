@@ -33,6 +33,7 @@ import { Loader2, Printer, PackageCheck } from 'lucide-react'
 import { useStartPickrondes } from '../hooks/use-zendingen'
 import { useVervoerders } from '../hooks/use-vervoerders'
 import { usePickbaarheid } from '../hooks/use-pickbaarheid'
+import { useAuth } from '@/hooks/use-auth'
 import { cn } from '@/lib/utils/cn'
 import { iso2NaarNaam, landNaarIso2 } from '@/lib/utils/land-vlag'
 import type { PickShipOrder } from '@/modules/magazijn'
@@ -60,6 +61,8 @@ export function StartPickrondesButton({
   const mutation = useStartPickrondes()
   const { data: vervoerders = [] } = useVervoerders()
   const [error, setError] = useState<string | null>(null)
+  // Externe vertegenwoordiger (mig 489): read-only — geen pickronde-start.
+  const { isExternRep } = useAuth()
 
   const {
     pickbareOrders,
@@ -98,6 +101,8 @@ export function StartPickrondesButton({
     }
     return Array.from(namen)
   }, [orders, geenVervoerderIds])
+
+  if (isExternRep) return null
 
   // Alleen wanneer de knop daadwerkelijk "Geen vervoerder mogelijk" toont
   // (= geblokkeerd, maar niet door adres/prijs — die hebben hun eigen melding).

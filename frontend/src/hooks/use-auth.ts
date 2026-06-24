@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase/client'
 import type { User } from '@supabase/supabase-js'
+import { leesAppRol, isExterneVertegenwoordiger } from '@/lib/auth/rol'
 
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null)
@@ -36,5 +37,17 @@ export function useAuth() {
     if (error) throw error
   }
 
-  return { user, loading, signIn, signOut, resetPassword }
+  const { rol, vertegenwCode } = leesAppRol(user)
+
+  return {
+    user,
+    loading,
+    signIn,
+    signOut,
+    resetPassword,
+    rol,
+    vertegenwCode,
+    /** Externe vertegenwoordiger = read-only, alleen eigen klanten (mig 489). */
+    isExternRep: isExterneVertegenwoordiger(user),
+  }
 }
