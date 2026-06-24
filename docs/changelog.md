@@ -1,5 +1,38 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-24 — Vorm in omschrijving + karpi-code-conventie voor rond/ovaal + botsing-waarschuwing
+
+**Waarom:** gebruiker (live-test van de variant-toevoegen-feature hierboven)
+vroeg: komt de vorm ergens in de omschrijving zodat het vindbaar is bij
+zoeken? En wat gebeurt er bij "200x300 afgeronde hoeken" + "200x300
+rechthoek" voor dezelfde kwaliteit+kleur — botsen die?
+
+- **Zoeken doorzoekt geen `maatwerk_vorm_code`** (alleen `karpi_code`/
+  `omschrijving`/`zoeksleutel`/`artikelnr`, zie `applyProductSearch`) —
+  zonder vorm-tekst in de omschrijving was een rond/afgeronde-hoeken-
+  artikel dus niet op vorm vindbaar. `buildOmschrijving` voegt nu de
+  vorm-naam toe (behalve rechthoek), bijv. "OMBR Kleur 14 200x300cm
+  Afgeronde Hoeken" — mirrort de bestaande legacy-conventie ("... 220
+  ROND ...").
+- **Karpi-code-botsing bevestigd reëel:** `producten.karpi_code` heeft
+  géén unique constraint (artikelnr is de PK), en `buildKarpiCode`
+  negeerde vorm volledig. Voor `rond`/`ovaal` bestaat al een vaste
+  suffix-conventie in de legacy data (mig 188: `^.{8}\d{3}RND$`/`OVL$`,
+  bijv. bestaande `OMBR14XX220RND`) — die wordt nu ook toegepast bij
+  aanmaak, zodat een nieuw rond artikel niet per ongeluk het
+  rechthoek-patroon krijgt. Voor vormen zonder eigen suffix-conventie
+  (afgeronde_hoeken, organisch_*, pebble, ellips) bestaat dat
+  onderscheid historisch niet — die blijven op het gewone
+  WWWLLL-patroon en kunnen dus alsnog botsen met een rechthoek van
+  dezelfde maat. Daarom: nieuwe **niet-blokkerende** live botsing-
+  waarschuwing (amber, nieuwe query `fetchBestaandeKarpiCodes`/hook
+  `useBestaandeKarpiCodes`, debounced, zelfde patroon als de
+  artikelnr-check) — bewust géén blokkade, want de DB staat het toe en
+  er is geen grond om hier een nieuwe regel af te dwingen die de
+  database zelf niet stelt. Artikelnr blijft de echte unieke sleutel,
+  dus geen dataverlies bij een botsing — wel een leesbaarheidsrisico nu
+  zichtbaar gemaakt i.p.v. stilletjes.
+
 ## 2026-06-24 — Variant toevoegen aan bestaande kwaliteit/kleur (producten)
 
 **Waarom:** gebruiker wilde een extra maat (Ombre kleur 14, 200×300cm,

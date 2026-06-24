@@ -188,6 +188,24 @@ export async function fetchBestaandeArtikelnrs(artikelnrs: string[]): Promise<Se
   return new Set((data ?? []).map(r => r.artikelnr as string))
 }
 
+/**
+ * Welke van deze karpi-codes bestaan al? `karpi_code` heeft GEEN unique
+ * constraint (artikelnr is de PK) — dit is dus een waarschuwing, geen
+ * blokkade. Vooral relevant voor vormen zonder eigen karpi-code-suffix-
+ * conventie (bijv. afgeronde_hoeken), waar dezelfde maat als een
+ * rechthoek anders stilletjes dezelfde karpi-code zou krijgen.
+ */
+export async function fetchBestaandeKarpiCodes(karpiCodes: string[]): Promise<Set<string>> {
+  const trimmed = [...new Set(karpiCodes.map(c => c.trim()).filter(Boolean))]
+  if (trimmed.length === 0) return new Set()
+  const { data, error } = await supabase
+    .from('producten')
+    .select('karpi_code')
+    .in('karpi_code', trimmed)
+  if (error) throw error
+  return new Set((data ?? []).map(r => r.karpi_code as string))
+}
+
 /** Create a new product */
 export async function createProduct(data: ProductFormData): Promise<void> {
   const zoeksleutel = data.kwaliteit_code && data.kleur_code

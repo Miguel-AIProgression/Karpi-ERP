@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Plus, Trash2, AlertTriangle, CheckCircle2, Info, Check } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { useLeveranciers, useCreateProduct, useNextArtikelnr, useKwaliteiten, useMaatwerkVormen, useBestaandeArtikelnrs } from '@/hooks/use-producten'
+import { useLeveranciers, useCreateProduct, useNextArtikelnr, useKwaliteiten, useMaatwerkVormen, useBestaandeArtikelnrs, useBestaandeKarpiCodes } from '@/hooks/use-producten'
 import { STANDAARD_TAPIJTMATEN } from '@/lib/constants/tapijt-maten'
 import {
   fetchAfwerkingTypes,
@@ -55,23 +55,42 @@ const newRow = (): VariantRow => ({
   locatie: '',
 })
 
-function buildOmschrijving(naam: string, kleurCode: string, breedte: string, lengte: string) {
+/**
+ * Vorm wordt expliciet in de omschrijving genoemd (behalve rechthoek) —
+ * zelfde conventie als bestaande legacy-omschrijvingen ("... 220 ROND ...").
+ * Nodig omdat productzoeken alleen op omschrijving/karpi_code/zoeksleutel/
+ * artikelnr matcht, niet op maatwerk_vorm_code zelf — zonder vorm-tekst in
+ * de omschrijving is een rond/afgeronde-hoeken-artikel niet vindbaar op vorm.
+ */
+function buildOmschrijving(naam: string, kleurCode: string, breedte: string, lengte: string, vormNaam?: string) {
   const parts = [naam.trim()]
   if (kleurCode.trim()) parts.push(`Kleur ${kleurCode.trim()}`)
   if (breedte && lengte) parts.push(`${breedte}x${lengte}cm`)
+  if (vormNaam) parts.push(vormNaam)
   return parts.join(' ')
 }
 
 /**
  * Karpi-code conventie: {KWALITEIT}{KLEUR:2}XX{BREEDTE:3}{LENGTE:3}
  * Voorbeeld: FAMU48XX160230
+ *
+ * Rond/ovaal volgen de bestaande suffix-conventie uit de legacy data
+ * (mig 188: karpi_code ~ '^.{8}\d{3}RND$' / 'OVL$') — anders zou een nieuw
+ * rond artikel een karpi_code krijgen die niet als rond te herkennen is en
+ * zou collideren met een rechthoekig artikel van dezelfde maat. Voor de
+ * overige vormen (afgeronde_hoeken, organisch_*, pebble, ellips) bestaat
+ * géén eigen karpi_code-suffix-conventie — die blijven op het gewone
+ * WWWLLL-patroon (vorm staat dan alleen in de omschrijving); een eventuele
+ * botsing met een rechthoek van dezelfde maat wordt apart gesignaleerd.
  */
-function buildKarpiCode(kwaliteit: string, kleur: string, breedte: string, lengte: string) {
+function buildKarpiCode(kwaliteit: string, kleur: string, breedte: string, lengte: string, vorm: string) {
   const k = (kwaliteit || '').trim().toUpperCase()
   const klr = (kleur || '').trim()
   if (!k || !klr || !breedte) return ''
   const klrPad = klr.padStart(2, '0').slice(0, 2)
   const w = String(parseInt(breedte, 10) || 0).padStart(3, '0').slice(-3)
+  if (vorm === 'rond') return `${k}${klrPad}XX${w}RND`
+  if (vorm === 'ovaal') return `${k}${klrPad}XX${w}OVL`
   const lTrim = (lengte || '').trim()
   const l = lTrim ? String(parseInt(lTrim, 10) || 0).padStart(3, '0').slice(-3) : ''
   if (!l) return ''
@@ -153,6 +172,24 @@ export function ProductCreatePage() {
     [rows, bestaandeArtikelnrs],
   )
 
+  // Debounced karpi-codes voor een botsing-waarschuwing (geen unique constraint, dus
+  // dit blokkeert niet — sommige vormen hebben nu eenmaal geen eigen suffix-conventie).
+  const ingevuldeKarpiCodes = useMemo(
+    () => [...new Set(rows.map(r => r.karpi_code.trim()).filter(Boolean))],
+    [rows],
+  )
+  const [debouncedKarpiCodes, setDebouncedKarpiCodes] = useState<string[]>([])
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedKarpiCodes(ingevuldeKarpiCodes), 400)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ingevuldeKarpiCodes.join(',')])
+  const { data: bestaandeKarpiCodes } = useBestaandeKarpiCodes(debouncedKarpiCodes)
+  const dubbeleKarpiCodes = useMemo(
+    () => new Set(rows.filter(r => bestaandeKarpiCodes?.has(r.karpi_code.trim())).map(r => r.karpi_code.trim())),
+    [rows, bestaandeKarpiCodes],
+  )
+
   // Afwerking-types
   const { data: afwerkingTypes } = useQuery({
     queryKey: ['afwerking-types'],
@@ -193,7 +230,7 @@ export function ProductCreatePage() {
         }
       }
       if (!manualKarpi.has(r._key)) {
-        next.karpi_code = buildKarpiCode(kwaliteitCode, kleurCode, r.breedte, r.lengte)
+        next.karpi_code = buildKarpiCode(kwaliteitCode, kleurCode, r.breedte, r.lengte, r.vorm)
       }
       return next
     }))
@@ -210,8 +247,8 @@ export function ProductCreatePage() {
     setRows(rs => rs.map(r => {
       if (r._key !== key) return r
       const next = { ...r, [field]: value }
-      if ((field === 'breedte' || field === 'lengte') && !manualKarpi.has(key)) {
-        next.karpi_code = buildKarpiCode(kwaliteitCode, kleurCode, next.breedte, next.lengte)
+      if ((field === 'breedte' || field === 'lengte' || field === 'vorm') && !manualKarpi.has(key)) {
+        next.karpi_code = buildKarpiCode(kwaliteitCode, kleurCode, next.breedte, next.lengte, next.vorm)
       }
       return next
     }))
@@ -233,7 +270,7 @@ export function ProductCreatePage() {
     if (maat) {
       r.breedte = String(maat.breedte)
       r.lengte = String(maat.lengte)
-      r.karpi_code = buildKarpiCode(kwaliteitCode, kleurCode, r.breedte, r.lengte)
+      r.karpi_code = buildKarpiCode(kwaliteitCode, kleurCode, r.breedte, r.lengte, r.vorm)
     }
     setRows(rs => [...rs, r])
   }
@@ -244,7 +281,7 @@ export function ProductCreatePage() {
       if (r._key !== key) return r
       const next = { ...r, breedte, lengte }
       if (!manualKarpi.has(key)) {
-        next.karpi_code = buildKarpiCode(kwaliteitCode, kleurCode, breedte, lengte)
+        next.karpi_code = buildKarpiCode(kwaliteitCode, kleurCode, breedte, lengte, r.vorm)
       }
       return next
     }))
@@ -308,7 +345,7 @@ export function ProductCreatePage() {
           artikelnr: r.artikelnr.trim(),
           karpi_code: r.karpi_code.trim() || null,
           ean_code: r.ean_code.trim() || null,
-          omschrijving: buildOmschrijving(effectieveNaam, kleurCode, r.breedte, r.lengte),
+          omschrijving: buildOmschrijving(effectieveNaam, kleurCode, r.breedte, r.lengte, maatwerkVormen.find(v => v.code === r.vorm)?.naam),
           kwaliteit_code: kwaliteitCode || null,
           kleur_code: kleurCode.trim() || null,
           product_type: (r.product_type as ProductType) || null,
@@ -673,15 +710,24 @@ export function ProductCreatePage() {
                     <VariantVeld
                       label={karpiVerplicht ? 'Karpi-code *' : 'Karpi-code'}
                       className="col-span-2"
-                      hint={karpiVerplicht ? 'Verplicht voor Rol / Standaard maat' : 'Automatisch uit kwaliteit + kleur + maat'}
+                      hint={
+                        dubbeleKarpiCodes.has(r.karpi_code.trim())
+                          ? undefined
+                          : karpiVerplicht ? 'Verplicht voor Rol / Standaard maat' : 'Automatisch uit kwaliteit + kleur + maat'
+                      }
                     >
                       <input
                         value={r.karpi_code}
                         onChange={e => updateRow(r._key, 'karpi_code', e.target.value)}
                         required={karpiVerplicht}
-                        className="input w-full font-mono"
+                        className={`input w-full font-mono ${dubbeleKarpiCodes.has(r.karpi_code.trim()) ? 'border-amber-400 focus:border-amber-400' : ''}`}
                         placeholder={karpiPlaceholder}
                       />
+                      {dubbeleKarpiCodes.has(r.karpi_code.trim()) && (
+                        <p className="mt-1 text-[11px] text-amber-600 flex items-center gap-1">
+                          <AlertTriangle size={11} /> Deze karpi-code bestaat al bij een ander artikel (geen blokkade, maar mogelijk verwarrend — overweeg 'm aan te passen).
+                        </p>
+                      )}
                     </VariantVeld>
 
                     <VariantVeld label="Verkoop €">
@@ -773,7 +819,7 @@ export function ProductCreatePage() {
                   <tr key={r._key}>
                     <td className="py-2 pr-6 font-mono text-xs text-slate-500">{r.artikelnr}</td>
                     <td className="py-2 pr-6 text-slate-800">
-                      {buildOmschrijving(effectieveNaam, kleurCode, r.breedte, r.lengte)}
+                      {buildOmschrijving(effectieveNaam, kleurCode, r.breedte, r.lengte, maatwerkVormen.find(v => v.code === r.vorm)?.naam)}
                     </td>
                     <td className="py-2 pr-6 text-slate-500">
                       {PRODUCT_TYPES.find(t => t.value === r.product_type)?.label ?? '—'}

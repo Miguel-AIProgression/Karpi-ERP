@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { fetchProducten, fetchProductDetail, fetchRollenVoorProduct, fetchReserveringenVoorProduct, fetchClaimsVoorProduct, updateProductType, updateProductLocatie, fetchKwaliteiten, fetchKleurenVoorKwaliteit, fetchLeveranciers, createProduct, updateProduct, fetchNextArtikelnr, fetchDistincteVormen, fetchMaatwerkVormen, fetchBestaandeArtikelnrs, type ProductType, type VormCode, type ProductSortField, type SortDirection, type ProductFormData } from '@/lib/supabase/queries/producten'
+import { fetchProducten, fetchProductDetail, fetchRollenVoorProduct, fetchReserveringenVoorProduct, fetchClaimsVoorProduct, updateProductType, updateProductLocatie, fetchKwaliteiten, fetchKleurenVoorKwaliteit, fetchLeveranciers, createProduct, updateProduct, fetchNextArtikelnr, fetchDistincteVormen, fetchMaatwerkVormen, fetchBestaandeArtikelnrs, fetchBestaandeKarpiCodes, type ProductType, type VormCode, type ProductSortField, type SortDirection, type ProductFormData } from '@/lib/supabase/queries/producten'
 import { fetchEquivalenteProducten } from '@/lib/supabase/queries/product-equivalents'
 
 export { type VormCode }
@@ -28,6 +28,16 @@ export function useBestaandeArtikelnrs(artikelnrs: string[]) {
     queryKey: ['producten', 'bestaande-artikelnrs', key],
     queryFn: () => fetchBestaandeArtikelnrs(artikelnrs),
     enabled: artikelnrs.length > 0,
+  })
+}
+
+/** Live botsing-check: welke van deze karpi-codes bestaan al? (waarschuwing, geen unique constraint) */
+export function useBestaandeKarpiCodes(karpiCodes: string[]) {
+  const key = [...karpiCodes].sort().join(',')
+  return useQuery({
+    queryKey: ['producten', 'bestaande-karpi-codes', key],
+    queryFn: () => fetchBestaandeKarpiCodes(karpiCodes),
+    enabled: karpiCodes.length > 0,
   })
 }
 
