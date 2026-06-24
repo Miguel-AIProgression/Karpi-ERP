@@ -14,6 +14,7 @@ import {
 } from '@/modules/logistiek/components/hst-transportorder-card'
 import { ColliBundelSectie } from '@/modules/logistiek/components/colli-bundel-sectie'
 import { AnnuleerPickrondeKnop } from '@/modules/logistiek/components/annuleer-pickronde-knop'
+import { wachtOpDagbatch, DAGBATCH_LABEL } from '@/modules/logistiek/lib/dagbatch-status'
 import { labelBarcode } from '@/lib/logistiek/labelbarcode'
 
 interface ZendingColliRow {
@@ -108,6 +109,11 @@ export function ZendingDetailPage() {
   // klant het ophaalt (mig 482-483).
   const isAfhaalKlaar = z.status === 'Klaar voor verzending' && !z.vervoerder_code
 
+  // Spiegelt het overzicht: een dagbatch-zending (Rhenus 16:00) staat onder water
+  // op 'Klaar voor verzending' maar toont 'Aangemeld' zodra hij in de wachtrij staat
+  // (mig 484). De echte status blijft 'Klaar voor verzending' → bundelen kan nog.
+  const wachtBatch = wachtOpDagbatch(z.status, z.verzend_wachtrij)
+
   // Colli met barcode, op colli_nr. De op het label gedrukte/aangemelde barcode
   // is labelBarcode(sscc) = AI(00) + SSCC (20 cijfers) — exact wat de vervoerder
   // in een manco-melding doorgeeft.
@@ -138,7 +144,7 @@ export function ZendingDetailPage() {
         title={
           <span className="flex items-center gap-3">
             {z.zending_nr}
-            <ZendingStatusBadge status={z.status} />
+            <ZendingStatusBadge status={z.status} label={wachtBatch ? DAGBATCH_LABEL : undefined} />
             <VervoerderTag code={z.vervoerder_code} showLeeg />
           </span>
         }

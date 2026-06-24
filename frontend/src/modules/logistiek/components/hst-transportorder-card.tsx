@@ -23,6 +23,8 @@ export interface HstTransportorderRow {
   is_test: boolean
   sent_at: string | null
   created_at: string
+  /** Mig 484: gepland dagbatch-moment (Rhenus 16:00). NULL = direct versturen. */
+  beschikbaar_op: string | null
 }
 
 interface HstTransportorderCardProps {
