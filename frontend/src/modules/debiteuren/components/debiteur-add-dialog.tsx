@@ -52,7 +52,7 @@ export function DebiteurAddDialog({ onClose }: Props) {
   const [afl, setAfl] = useState<AfleveradresState>(emptyAfleveradres)
   const [error, setError] = useState<string | null>(null)
 
-  // Klantnummer-voorstel = hoogste bestaande + 1 (aanpasbaar).
+  // Klantnummer-voorstel = hoogste bestaande + 1 (999xxx-placeholders uitgesloten).
   const { data: voorstelNr } = useQuery({
     queryKey: ['volgend-debiteur-nr'],
     queryFn: volgendDebiteurNr,
@@ -161,7 +161,7 @@ export function DebiteurAddDialog({ onClose }: Props) {
                 placeholder="bv. 12345"
                 className={inputClasses}
               />
-              <p className="text-xs text-slate-400 mt-1">Voorstel = hoogste bestaande + 1. Aanpasbaar.</p>
+              <p className="text-xs text-slate-400 mt-1">Voorstel = hoogste bestaande nummer + 1. Aanpasbaar.</p>
             </div>
           </div>
 
