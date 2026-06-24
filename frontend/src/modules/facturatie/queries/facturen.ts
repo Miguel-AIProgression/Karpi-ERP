@@ -18,6 +18,13 @@ export interface FactuurListItem {
   orders: Array<{ id: number; nr: string }>
   /** Mig 456: NULL = BTW-regeling zeker, TIMESTAMPTZ = controle nodig sinds. */
   btw_controle_nodig_sinds: string | null
+  /** Mig 467: NULL = debetfactuur, gevuld = creditnota. */
+  credit_voor_factuur_id: number | null
+}
+
+/** True als de factuur een creditnota is (credit_voor_factuur_id IS NOT NULL). */
+export function isFactuurCreditnota(f: Pick<FactuurListItem | FactuurDetail, 'credit_voor_factuur_id'>): boolean {
+  return f.credit_voor_factuur_id != null
 }
 
 export interface FactuurDetail {
@@ -45,6 +52,8 @@ export interface FactuurDetail {
   btw_controle_nodig_sinds: string | null
   /** Mig 456: snapshot regeling-code (nl_binnenland/eu_b2b_icl/eu_b2b_binnenland_afwijking/export_buiten_eu). */
   btw_regeling: string | null
+  /** Mig 467: verwijst naar de originele debetfactuur als dit een creditnota is. */
+  credit_voor_factuur_id: number | null
 }
 
 export interface FactuurRegel {
@@ -69,7 +78,7 @@ export async function fetchFacturen(params?: { debiteurNr?: number }): Promise<F
   let q = supabase
     .from('facturen')
     .select(
-      'id, factuur_nr, debiteur_nr, factuurdatum, vervaldatum, status, totaal, verstuurd_op, pdf_storage_path, btw_controle_nodig_sinds, debiteuren(naam), factuur_regels(order_id, order_nr)',
+      'id, factuur_nr, debiteur_nr, factuurdatum, vervaldatum, status, totaal, verstuurd_op, pdf_storage_path, btw_controle_nodig_sinds, credit_voor_factuur_id, debiteuren(naam), factuur_regels(order_id, order_nr)',
     )
     .order('factuurdatum', { ascending: false })
     .order('factuur_nr', { ascending: false })
@@ -102,6 +111,7 @@ export async function fetchFacturen(params?: { debiteurNr?: number }): Promise<F
       pdf_storage_path: f.pdf_storage_path,
       orders: Array.from(ordersMap, ([id, nr]) => ({ id, nr })),
       btw_controle_nodig_sinds: f.btw_controle_nodig_sinds,
+      credit_voor_factuur_id: (f as unknown as { credit_voor_factuur_id: number | null }).credit_voor_factuur_id ?? null,
     }
   })
 }
@@ -368,4 +378,94 @@ export async function fetchBundelInfoVoorFactuur(
       : 0,
     andereOrders: isBundel ? orders : [],
   }
+}
+
+/** Geeft alle creditnotas terug die verwijzen naar p_factuur_id (debetfactuur). */
+export async function fetchCreditnotasVoorFactuur(factuurId: number): Promise<FactuurListItem[]> {
+  const { data, error } = await supabase
+    .from('facturen')
+    .select(
+      'id, factuur_nr, debiteur_nr, factuurdatum, vervaldatum, status, totaal, verstuurd_op, pdf_storage_path, btw_controle_nodig_sinds, credit_voor_factuur_id, debiteuren(naam), factuur_regels(order_id, order_nr)',
+    )
+    .eq('credit_voor_factuur_id', factuurId)
+    .order('factuurdatum', { ascending: false })
+  if (error) throw error
+  return (data ?? []).map((f) => {
+    const regels = (f.factuur_regels ?? []) as Array<{ order_id: number | null; order_nr: string | null }>
+    const ordersMap = new Map<number, string>()
+    for (const r of regels) {
+      if (r.order_id == null || ordersMap.has(r.order_id)) continue
+      ordersMap.set(r.order_id, r.order_nr ?? `#${r.order_id}`)
+    }
+    return {
+      id: f.id,
+      factuur_nr: f.factuur_nr,
+      debiteur_nr: f.debiteur_nr,
+      klant_naam: (f.debiteuren as unknown as { naam: string } | null)?.naam,
+      factuurdatum: f.factuurdatum,
+      vervaldatum: f.vervaldatum,
+      status: f.status as FactuurStatus,
+      totaal: Number(f.totaal),
+      verstuurd_op: f.verstuurd_op,
+      pdf_storage_path: f.pdf_storage_path,
+      orders: Array.from(ordersMap, ([id, nr]) => ({ id, nr })),
+      btw_controle_nodig_sinds: f.btw_controle_nodig_sinds,
+      credit_voor_factuur_id: (f as unknown as { credit_voor_factuur_id: number | null }).credit_voor_factuur_id ?? null,
+    }
+  })
+}
+
+export interface MaakCreditfactuurParams {
+  factuur_id: number
+  reden?: string
+  /** Modus A: selecteer specifieke factuurregels (volledig aantal). */
+  factuur_regel_ids?: number[]
+  /** Modus B: deelcredit met aangepast aantal per regel. */
+  deelcredit_regels?: Array<{ id: number; aantal: number }>
+  /** Modus C: vrij creditbedrag (los van regels). */
+  los_bedrag?: number
+  /** Modus C: true = los_bedrag is incl. BTW, false = excl. */
+  los_bedrag_incl_btw?: boolean
+  /** Modus C: omschrijving van de losse creditregel. */
+  los_reden?: string
+  /** D: producten.voorraad ophogen met gecrediteerde aantallen. */
+  voorraad_bijwerken?: boolean
+}
+
+/** Maakt een creditnota op de RPC `maak_creditfactuur` en geeft het nieuwe factuur-id terug. */
+export async function maakCreditfactuur(params: MaakCreditfactuurParams): Promise<number> {
+  const { data, error } = await supabase.rpc('maak_creditfactuur', {
+    p_factuur_id:          params.factuur_id,
+    p_reden:               params.reden ?? null,
+    p_factuur_regel_ids:   params.factuur_regel_ids ?? null,
+    p_deelcredit_regels:   params.deelcredit_regels ? JSON.stringify(params.deelcredit_regels) : null,
+    p_los_bedrag:          params.los_bedrag ?? null,
+    p_los_bedrag_incl_btw: params.los_bedrag_incl_btw ?? null,
+    p_los_reden:           params.los_reden ?? null,
+    p_voorraad_bijwerken:  params.voorraad_bijwerken ?? false,
+  })
+  if (error) throw error
+  return data as number
+}
+
+/** Verstuurt een creditnota per e-mail via de edge function `stuur-creditfactuur`. */
+export async function stuurCreditfactuur(
+  factuurId: number,
+): Promise<{ ok: boolean; verstuurd_naar: string }> {
+  const { data, error } = await supabase.functions.invoke('stuur-creditfactuur', {
+    body: { factuur_id: factuurId },
+  })
+  if (error) {
+    const ctx = (error as { context?: Response }).context
+    if (ctx && typeof ctx.json === 'function') {
+      try {
+        const body = await ctx.json()
+        throw new Error(body?.error ?? error.message)
+      } catch (e) {
+        if (e instanceof Error && e.message) throw e
+      }
+    }
+    throw error
+  }
+  return data as { ok: boolean; verstuurd_naar: string }
 }

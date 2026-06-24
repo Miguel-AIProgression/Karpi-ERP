@@ -136,6 +136,14 @@ serve(async (req) => {
     }
     const base = naarFactuurPdfInput(doc)
 
+    // Mig 504: creditnota-detectie — zet is_creditnota op de PDF-header zodat
+    // de renderer "CREDITNOTA" als titel toont (i.p.v. "FACTUUR").
+    const { data: factuurMeta } = await supabase
+      .from('facturen').select('credit_voor_factuur_id').eq('id', factuurId).maybeSingle()
+    if (factuurMeta?.credit_voor_factuur_id) {
+      base.factuur.is_creditnota = true
+    }
+
     // Taal van de factuur: land van het factuuradres → ISO2 via normaliseer_land
     // (zelfde bron als de orderbevestiging). Default 'nl' bij leeg/onbekend land.
     let factLandIso2: string | null = null

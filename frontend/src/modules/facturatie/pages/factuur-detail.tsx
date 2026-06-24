@@ -1,5 +1,5 @@
-import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Download, CheckCircle, ExternalLink, Send } from 'lucide-react'
+import { useParams, Link, useNavigate } from 'react-router-dom'
+import { ArrowLeft, Download, CheckCircle, ExternalLink, Send, CreditCard } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { Fragment, useState } from 'react'
 import {
@@ -7,26 +7,38 @@ import {
   useMarkeerBetaald,
   useEdiFactuurConfig,
   useVerstuurFactuurViaEdi,
+  useCreditnotasVoorFactuur,
 } from '../hooks/use-facturen'
 import { FactuurStatusSelect } from '../components/factuur-status-select'
 import { BtwControleNodigBanner } from '../components/btw-controle-nodig-banner'
-import { getFactuurPdfSignedUrl, renderFactuurPdfBlobUrl, type FactuurRegel } from '../queries/facturen'
+import { CreditfactuurDialog } from '../components/creditfactuur-dialog'
+import {
+  getFactuurPdfSignedUrl,
+  renderFactuurPdfBlobUrl,
+  isFactuurCreditnota,
+  type FactuurRegel,
+} from '../queries/facturen'
 import { formatCurrency, formatDate } from '@/lib/utils/formatters'
 import { useAuth } from '@/hooks/use-auth'
 
 export function FactuurDetailPage() {
   const { id } = useParams<{ id: string }>()
   const factuurId = Number(id)
+  const navigate = useNavigate()
 
   const { data, isLoading } = useFactuurDetail(factuurId)
   const markeerBetaald = useMarkeerBetaald()
   const ediConfig = useEdiFactuurConfig(data?.factuur.debiteur_nr)
   const verstuurEdi = useVerstuurFactuurViaEdi()
+  const { data: creditnotas } = useCreditnotasVoorFactuur(
+    data && !isFactuurCreditnota(data.factuur) ? factuurId : undefined,
+  )
   // Externe vertegenwoordiger (mig 489): read-only — geen muteer-affordances.
   const { isExternRep } = useAuth()
   const [pdfBezig, setPdfBezig] = useState(false)
   const [pdfFout, setPdfFout] = useState<string | null>(null)
   const [ediMelding, setEdiMelding] = useState<{ type: 'ok' | 'fout'; tekst: string } | null>(null)
+  const [showCreditDialog, setShowCreditDialog] = useState(false)
 
   if (isLoading) {
     return (
@@ -101,6 +113,11 @@ export function FactuurDetailPage() {
   }
 
   const isBetaald = factuur.status === 'Betaald'
+  const isCreditnota = isFactuurCreditnota(factuur)
+
+  // Creditnota aanmaken mag alleen op een debetfactuur die niet volledig gecrediteerd is.
+  const reedsGecrediteerd = (creditnotas ?? []).reduce((sum, c) => sum + Math.abs(c.totaal), 0)
+  const kanCrediteren = !isExternRep && !isCreditnota && reedsGecrediteerd < Math.abs(factuur.totaal) - 0.01
 
   const heeftAdres = Boolean(factuur.fact_adres || factuur.fact_postcode || factuur.fact_plaats)
   const pdfLabel = pdfBezig
@@ -132,7 +149,16 @@ export function FactuurDetailPage() {
       )}
 
       <PageHeader
-        title={factuur.factuur_nr}
+        title={
+          <div className="flex items-center gap-3">
+            <span>{factuur.factuur_nr}</span>
+            {isCreditnota && (
+              <span className="inline-flex items-center rounded-md bg-purple-100 px-2.5 py-0.5 text-xs font-semibold text-purple-700 uppercase tracking-wide">
+                Creditnota
+              </span>
+            )}
+          </div>
+        }
         actions={
           <div className="flex items-center gap-2">
             <button
@@ -159,6 +185,15 @@ export function FactuurDetailPage() {
                 {verstuurEdi.isPending ? 'Versturen…' : 'Verstuur via EDI'}
               </button>
             )}
+            {kanCrediteren && (
+              <button
+                onClick={() => setShowCreditDialog(true)}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-[var(--radius-sm)] border border-purple-300 text-sm font-medium text-purple-700 hover:bg-purple-50 transition-colors"
+              >
+                <CreditCard size={15} />
+                Creditnota aanmaken
+              </button>
+            )}
             {!isExternRep && (
               <button
                 onClick={handleMarkeerBetaald}
@@ -172,6 +207,22 @@ export function FactuurDetailPage() {
           </div>
         }
       />
+
+      {/* Banner: dit is een creditnota — link naar de originele debetfactuur */}
+      {isCreditnota && factuur.credit_voor_factuur_id && (
+        <div className="mb-4 flex items-center gap-2 rounded-lg border border-purple-200 bg-purple-50 px-4 py-3 text-sm text-purple-800">
+          <CreditCard className="h-4 w-4 shrink-0" />
+          <span>
+            Dit is een creditnota voor{' '}
+            <Link
+              to={`/facturatie/${factuur.credit_voor_factuur_id}`}
+              className="font-semibold underline hover:text-purple-600"
+            >
+              debetfactuur #{factuur.credit_voor_factuur_id}
+            </Link>
+          </span>
+        </div>
+      )}
 
       {!isExternRep && factuur.btw_controle_nodig_sinds && (
         <BtwControleNodigBanner
@@ -386,6 +437,60 @@ export function FactuurDetailPage() {
           </h2>
           <p className="text-sm text-slate-700 whitespace-pre-wrap">{factuur.opmerkingen}</p>
         </div>
+      )}
+
+      {/* Gekoppelde creditnotas */}
+      {!isCreditnota && creditnotas && creditnotas.length > 0 && (
+        <div className="bg-white rounded-[var(--radius)] border border-purple-200 mb-6">
+          <div className="p-5 border-b border-purple-100">
+            <h2 className="text-sm font-semibold text-purple-800 flex items-center gap-2">
+              <CreditCard size={15} />
+              Gekoppelde creditnotas
+            </h2>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-purple-100 text-left">
+                <th className="px-5 py-3 font-medium text-slate-500">Creditnota nr</th>
+                <th className="px-5 py-3 font-medium text-slate-500">Datum</th>
+                <th className="px-5 py-3 font-medium text-slate-500">Status</th>
+                <th className="px-5 py-3 font-medium text-slate-500 text-right">Bedrag</th>
+              </tr>
+            </thead>
+            <tbody>
+              {creditnotas.map((cn) => (
+                <tr key={cn.id} className="border-b border-purple-50 last:border-0 hover:bg-purple-50 transition-colors">
+                  <td className="px-5 py-3">
+                    <Link
+                      to={`/facturatie/${cn.id}`}
+                      className="font-mono text-terracotta-500 hover:underline"
+                    >
+                      {cn.factuur_nr}
+                    </Link>
+                  </td>
+                  <td className="px-5 py-3 text-slate-600">{formatDate(cn.factuurdatum)}</td>
+                  <td className="px-5 py-3 text-slate-600">{cn.status}</td>
+                  <td className="px-5 py-3 text-right font-medium text-red-600 tabular-nums">
+                    − {formatCurrency(Math.abs(cn.totaal))}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Creditfactuur dialog */}
+      {showCreditDialog && (
+        <CreditfactuurDialog
+          factuur={factuur}
+          regels={regels}
+          onClose={() => setShowCreditDialog(false)}
+          onCreated={(creditId) => {
+            setShowCreditDialog(false)
+            navigate(`/facturatie/${creditId}`)
+          }}
+        />
       )}
     </>
   )

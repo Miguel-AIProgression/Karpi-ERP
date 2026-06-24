@@ -4,6 +4,7 @@ import {
   fetchFactuurDetail,
   fetchFacturenVoorOrder,
   fetchFacturenVoorOrders,
+  fetchCreditnotasVoorFactuur,
   zetFactuurOpBetaald,
   zetFactuurStatus,
   zetFactuurStatusBulk,
@@ -12,7 +13,10 @@ import {
   verstuurFactuurViaEdi,
   markeerBtwRegelingGeaccepteerd,
   countBtwControleNodigFacturen,
+  maakCreditfactuur,
+  stuurCreditfactuur,
   type FactuurStatus,
+  type MaakCreditfactuurParams,
 } from '../queries/facturen'
 
 export function useFacturen(debiteurNr?: number) {
@@ -112,5 +116,34 @@ export function useBtwControleNodigCount() {
     queryKey: ['facturen', 'btw-controle-nodig-count'],
     queryFn: countBtwControleNodigFacturen,
     staleTime: 60_000,
+  })
+}
+
+export function useCreditnotasVoorFactuur(factuurId: number | undefined) {
+  return useQuery({
+    queryKey: ['facturen', 'creditnotas', factuurId],
+    queryFn: () => fetchCreditnotasVoorFactuur(factuurId!),
+    enabled: !!factuurId,
+    staleTime: 30_000,
+  })
+}
+
+export function useMaakCreditfactuur() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (params: MaakCreditfactuurParams) => maakCreditfactuur(params),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['facturen'] })
+    },
+  })
+}
+
+export function useStuurCreditfactuur() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (factuurId: number) => stuurCreditfactuur(factuurId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['facturen'] })
+    },
   })
 }

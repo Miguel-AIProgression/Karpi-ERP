@@ -4,11 +4,13 @@ import { PageHeader } from '@/components/layout/page-header'
 import { MultiSelectDropdown } from '@/components/ui/multi-select-dropdown'
 import { FactuurLijst } from '@/modules/facturatie'
 import { useFacturen } from '../hooks/use-facturen'
-import type { FactuurStatus } from '../queries/facturen'
+import { isFactuurCreditnota, type FactuurStatus } from '../queries/facturen'
 import { VerkoopoverzichtExportDialog } from '../components/verkoopoverzicht-export-dialog'
 import { CbsExportDialog } from '../components/cbs-export-dialog'
 import { BtwControleNodigOverzichtBanner } from '../components/btw-controle-nodig-overzicht-banner'
 import { FactuurBulkBalk } from '../components/factuur-bulk-balk'
+
+type FactuurType = 'alle' | 'debet' | 'credit'
 
 const ALLE_STATUSSEN: FactuurStatus[] = [
   'Concept',
@@ -31,6 +33,7 @@ export function FacturatieOverviewPage() {
   const [exportDialogOpen, setExportDialogOpen] = useState(false)
   const [cbsDialogOpen, setCbsDialogOpen] = useState(false)
   const [alleenBtwControleNodig, setAlleenBtwControleNodig] = useState(false)
+  const [typeFilter, setTypeFilter] = useState<FactuurType>('alle')
 
   const { data: facturen = [] } = useFacturen()
 
@@ -66,7 +69,12 @@ export function FacturatieOverviewPage() {
         f.factuur_nr.toLowerCase().includes(q) ||
         (f.klant_naam ?? '').toLowerCase().includes(q)
       const matchBtwControle = !alleenBtwControleNodig || f.btw_controle_nodig_sinds != null
-      return matchStatus && matchKlant && matchDatum && matchZoek && matchBtwControle
+      const isCreditnota = isFactuurCreditnota(f)
+      const matchType =
+        typeFilter === 'alle' ||
+        (typeFilter === 'credit' && isCreditnota) ||
+        (typeFilter === 'debet' && !isCreditnota)
+      return matchStatus && matchKlant && matchDatum && matchZoek && matchBtwControle && matchType
     })
   }, [facturen, zoekterm, statusSelectie, klantSelectie, datumVan, datumTot, alleenBtwControleNodig])
 
@@ -155,6 +163,26 @@ export function FacturatieOverviewPage() {
             placeholder="Zoek op factuurnr of klant…"
             className="w-full pl-10 pr-4 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
           />
+        </div>
+
+        {/* Type-filter: Alle / Debet / Credit */}
+        <div className="inline-flex rounded-[var(--radius-sm)] border border-slate-200 overflow-hidden text-sm">
+          {(['alle', 'debet', 'credit'] as FactuurType[]).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTypeFilter(t)}
+              className={`px-3 py-2 capitalize transition-colors ${
+                typeFilter === t
+                  ? t === 'credit'
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-slate-700 text-white'
+                  : 'bg-white text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              {t === 'alle' ? 'Alle types' : t === 'debet' ? 'Debet' : 'Credit'}
+            </button>
+          ))}
         </div>
 
         <MultiSelectDropdown

@@ -83,6 +83,8 @@ export interface FactuurHeader {
   // Override op bedrijf.betalingscondities_tekst — bug gevonden 2026-06-20: de
   // factuur toonde altijd de bedrijfsbrede default, nooit de klant-eigen conditie.
   betalingscondities_tekst?: string
+  // Mig 504: creditnota-vlag — vervangt "FACTUUR" door "CREDITNOTA" als hoofdtitel.
+  is_creditnota?: boolean
 }
 
 export interface FactuurAfleveradres {
@@ -741,7 +743,12 @@ function drawWrappedText(
 export async function genereerFactuurPDF(input: FactuurPDFInput): Promise<Uint8Array> {
   const { bedrijf, factuur, regels, logo } = input
   const taal: Taal = input.taal ?? 'nl'
-  const t = FACTUUR_TEKSTEN[taal]
+  const CREDITNOTA_TITELS: Record<Taal, string> = {
+    nl: 'CREDITNOTA', de: 'GUTSCHRIFT', fr: 'NOTE DE CRÉDIT', en: 'CREDIT NOTE',
+  }
+  const t = factuur.is_creditnota
+    ? { ...FACTUUR_TEKSTEN[taal], titel: CREDITNOTA_TITELS[taal] }
+    : FACTUUR_TEKSTEN[taal]
   // Order-header-labels uitlijnen op de langste vertaalde label (Courier monospace).
   const auftragLabel = oudOrderLabel(taal)
   const orderLabelBreedte = Math.max(

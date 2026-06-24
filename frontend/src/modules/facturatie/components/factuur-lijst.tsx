@@ -4,7 +4,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react'
 import { useFacturen } from '../hooks/use-facturen'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { formatCurrency, formatDate } from '@/lib/utils/formatters'
-import type { FactuurListItem } from '../queries/facturen'
+import { isFactuurCreditnota, type FactuurListItem } from '../queries/facturen'
 
 interface FactuurLijstProps {
   debiteurNr?: number
@@ -99,6 +99,7 @@ export function FactuurLijst({
                 />
               </th>
             )}
+            <th className="pb-3 pr-4 font-medium text-slate-500">Type</th>
             <SortHeader label="Factuurnr" sortKey="factuur_nr" sort={sort} onClick={klikHeader} />
             <SortHeader label="Datum" sortKey="factuurdatum" sort={sort} onClick={klikHeader} />
             <th className="pb-3 pr-4 font-medium text-slate-500">Order</th>
@@ -135,6 +136,17 @@ export function FactuurLijst({
                     />
                   </td>
                 )}
+                <td className="py-3 pr-4">
+                  {isFactuurCreditnota(f) ? (
+                    <span className="inline-flex items-center rounded-md bg-purple-100 px-2 py-0.5 text-xs font-semibold text-purple-700">
+                      Credit
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">
+                      Debet
+                    </span>
+                  )}
+                </td>
                 <td className={`py-3 pr-4 font-mono text-xs text-slate-700 ${compact ? '' : 'py-3'}`}>
                   {f.factuur_nr}
                 </td>
@@ -181,8 +193,8 @@ export function FactuurLijst({
                 <td className="py-3 pr-4">
                   <StatusBadge status={f.status} type="factuur" />
                 </td>
-                <td className="py-3 pr-4 text-right font-medium text-slate-700 whitespace-nowrap">
-                  {formatCurrency(f.totaal)}
+                <td className={`py-3 pr-4 text-right font-medium whitespace-nowrap tabular-nums ${isFactuurCreditnota(f) ? 'text-red-600' : 'text-slate-700'}`}>
+                  {isFactuurCreditnota(f) ? `− ${formatCurrency(Math.abs(f.totaal))}` : formatCurrency(f.totaal)}
                 </td>
                 <td className="py-3">
                   <Link
