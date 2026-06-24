@@ -332,6 +332,9 @@ export async function fetchZendingMetTransportorders(zending_nr: string) {
           id, order_id, regelnummer, artikelnr, omschrijving
         )
       ),
+      zending_colli (
+        id, colli_nr, sscc, omschrijving_snapshot, bundel_colli_id, is_bundel
+      ),
       verzend_wachtrij ( * )
     `,
     )

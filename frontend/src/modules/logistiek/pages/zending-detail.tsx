@@ -14,6 +14,16 @@ import {
 } from '@/modules/logistiek/components/hst-transportorder-card'
 import { ColliBundelSectie } from '@/modules/logistiek/components/colli-bundel-sectie'
 import { AnnuleerPickrondeKnop } from '@/modules/logistiek/components/annuleer-pickronde-knop'
+import { labelBarcode } from '@/lib/logistiek/labelbarcode'
+
+interface ZendingColliRow {
+  id: number
+  colli_nr: number
+  sscc: string | null
+  omschrijving_snapshot: string | null
+  bundel_colli_id: number | null
+  is_bundel: boolean
+}
 
 interface BundelOrder {
   id: number
@@ -62,6 +72,8 @@ interface ZendingDetailShape {
     bundel_order: BundelOrder | null
   }>
   zending_regels: ZendingRegelRow[]
+  /** Mig 209: fysieke colli met SSCC-barcode. */
+  zending_colli?: ZendingColliRow[]
   /** Mig 424 (ADR-0038): geconsolideerde verzend-wachtrij-rijen voor deze zending. */
   verzend_wachtrij: HstTransportorderRow[]
 }
@@ -95,6 +107,11 @@ export function ZendingDetailPage() {
   // 'geen vervoerder' kan niet starten). Operator markeert 'm afgehaald zodra de
   // klant het ophaalt (mig 482-483).
   const isAfhaalKlaar = z.status === 'Klaar voor verzending' && !z.vervoerder_code
+
+  // Colli met barcode, op colli_nr. De op het label gedrukte/aangemelde barcode
+  // is labelBarcode(sscc) = AI(00) + SSCC (20 cijfers) — exact wat de vervoerder
+  // in een manco-melding doorgeeft.
+  const colli = [...(z.zending_colli ?? [])].sort((a, b) => a.colli_nr - b.colli_nr)
 
   // Groepeer regels op bron-order via order_regels.order_id. Onbekende order
   // (legacy of corrupte rij) komt onder een aparte sleutel `null`.
@@ -234,6 +251,49 @@ export function ZendingDetailPage() {
                     </Link>
                   </td>
                   <td className="px-3 py-2 text-slate-600">{o.debiteur_nr}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Section>
+
+      {/* Barcodes — de SSCC-labelbarcode per collo. Hiermee koppelt de operator
+          een door de vervoerder gemelde barcode (manco) aan dit karpet. */}
+      <Section titel={`Barcodes (${colli.length})`}>
+        {colli.length === 0 ? (
+          <div className="text-sm text-slate-400">
+            Nog geen colli geregistreerd. Barcodes verschijnen zodra de pickronde is afgerond.
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-xs text-slate-500 uppercase tracking-wider">
+              <tr>
+                <th className="px-3 py-2 text-left font-medium w-16">Colli</th>
+                <th className="px-3 py-2 text-left font-medium">Barcode</th>
+                <th className="px-3 py-2 text-left font-medium">Omschrijving</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {colli.map((c) => (
+                <tr key={c.id} className={c.bundel_colli_id != null ? 'text-slate-400' : undefined}>
+                  <td className="px-3 py-2 text-slate-700">
+                    {c.colli_nr}
+                    {c.is_bundel && (
+                      <span className="ml-1 text-[10px] uppercase tracking-wide text-slate-400">
+                        bundel
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 font-mono text-xs text-slate-800 select-all">
+                    {labelBarcode(c.sscc) ?? <span className="text-slate-400">—</span>}
+                    {c.bundel_colli_id != null && (
+                      <span className="ml-2 text-[10px] uppercase tracking-wide text-slate-400">
+                        in bundel
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-slate-600">{c.omschrijving_snapshot ?? '—'}</td>
                 </tr>
               ))}
             </tbody>

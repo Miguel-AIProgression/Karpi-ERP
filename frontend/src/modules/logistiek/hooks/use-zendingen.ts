@@ -2,6 +2,7 @@ import { useQueries, useQuery, useMutation, useQueryClient } from '@tanstack/rea
 import {
   startPickrondes,
   fetchZendingen,
+  zoekZendingen,
   fetchZendingMetTransportorders,
   fetchZendingPrintSet,
   markeerZendingHandmatigAfgehandeld,
@@ -19,6 +20,20 @@ export function useZendingen(filters: ZendingenFilters = {}) {
       return data ?? []
     },
     refetchInterval: 30_000, // poll elke 30s zodat tracking-updates binnenkomen
+  })
+}
+
+/** Zoek zendingen op barcode/order/zending (zie `zoekZendingen`). */
+export function useZoekZendingen(term: string) {
+  const t = term.trim()
+  return useQuery({
+    queryKey: ['logistiek', 'zoek-zendingen', t],
+    queryFn: async () => {
+      const { data, error } = await zoekZendingen(t)
+      if (error) throw error
+      return data ?? []
+    },
+    enabled: t.length >= 2,
   })
 }
 
