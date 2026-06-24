@@ -36,10 +36,14 @@ const DEFAULT_GOODS_DESCRIPTION = 'Tapijten';
 // 'GoodsDescription: Maximale lengte is 30'). De colli-omschrijving-snapshot
 // (mig 399, kwaliteit + kleur + maat) is regelmatig langer → hier afkappen.
 const HST_GOODS_DESCRIPTION_MAX = 30;
+// HST's adres-Name-veld weigert óók >30 tekens (live-fouten ZEND-2026-0091/0094/
+// 0122: 'Adres: Name "…" overschrijdt het maximum van 30 karakters'). Zelfde
+// clamp-klasse als GoodsDescription/StreetNumberAddition/Length.
+const HST_NAME_MAX = 30;
 
-function trunceerOmschrijving(omschrijving: string): string {
-  const t = (omschrijving ?? '').trim();
-  return t.length <= HST_GOODS_DESCRIPTION_MAX ? t : t.slice(0, HST_GOODS_DESCRIPTION_MAX).trim();
+function trunceer(waarde: string | null | undefined, max: number): string {
+  const t = (waarde ?? '').trim();
+  return t.length <= max ? t : t.slice(0, max).trim();
 }
 // Karpi verstuurt opgerolde tapijtrollen: de colli-LENGTE = de korte zijde van
 // het tapijt (uit de zending_colli-snapshot, mig 399), BREEDTE en HOOGTE = de
@@ -121,8 +125,9 @@ function bouwLineUitColli(c: ZendingColliInput, order: OrderInput): HstTransport
   return {
     Quantity: 1,
     GoodsOnPallet: 0,
-    GoodsDescription: trunceerOmschrijving(
+    GoodsDescription: trunceer(
       c.omschrijving_snapshot ?? `${DEFAULT_GOODS_DESCRIPTION} (${order.order_nr})`,
+      HST_GOODS_DESCRIPTION_MAX,
     ),
     ExchangePacking: false,
     Length: korteZijdeCm(c.lengte_cm, c.breedte_cm),
@@ -140,7 +145,7 @@ function bouwAggregateLine(zending: ZendingInput, order: OrderInput): HstTranspo
   return {
     Quantity: zending.aantal_colli ?? 1,
     GoodsOnPallet: 0,
-    GoodsDescription: trunceerOmschrijving(`${DEFAULT_GOODS_DESCRIPTION} (${order.order_nr})`),
+    GoodsDescription: trunceer(`${DEFAULT_GOODS_DESCRIPTION} (${order.order_nr})`, HST_GOODS_DESCRIPTION_MAX),
     ExchangePacking: false,
     // Fallback-pad (geen colli-rijen) → geen colli-maat beschikbaar: lengte op
     // de default, breedte/hoogte op de vaste rol-diameter. Sinds mig 389 is
@@ -178,7 +183,7 @@ function bouwAddressUitZending(zending: ZendingInput): HstAddress {
   const toevoeging = verdeelToevoeging(addition);
   return {
     CustomerCode: '',
-    Name: zending.afl_naam ?? '',
+    Name: trunceer(zending.afl_naam, HST_NAME_MAX),
     NameAddition: toevoeging.nameAddition,
     Street: street,
     StreetNumber: number,
@@ -199,7 +204,7 @@ function bouwAddressUitBedrijf(bedrijf: BedrijfInput): HstAddress {
   const toevoeging = verdeelToevoeging(addition);
   return {
     CustomerCode: '',
-    Name: bedrijf.bedrijfsnaam,
+    Name: trunceer(bedrijf.bedrijfsnaam, HST_NAME_MAX),
     NameAddition: toevoeging.nameAddition,
     Street: street,
     StreetNumber: number,
