@@ -1,5 +1,38 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-24 — Prijslijst-koppeling + prijscorrectie TCN/HACO/Headlam Decorette
+
+**Waarom:** vervolg op de HEADLAM B.V. (#500001) prijslijst-fix — 3 andere
+actieve debiteuren met openstaande orders bleken ook zonder prijslijst-
+koppeling te staan. Antwoord ontvangen (mail) welke prijslijst bij elk hoort:
+Tapijtcentrum Nederland → 148, Haco → 192, Headlam Decorette (#500003,
+**andere entiteit dan #500001**) → 213 (bestond al).
+
+- **Prijslijst 148 en 192 bestonden nog niet** in de database (geen header,
+  geen regels) — wel als losse bronbestanden in de repo-root
+  (`Prijslijst TCN 148.xlsx`, `HACO PRIJSLIJST 192.xlsx`, gitignored zoals
+  alle `*.xlsx`). Geïmporteerd via twee nieuwe scripts naar het bestaande
+  `import_prijslijst02XX.py`-patroon: [`import_prijslijst0148_tcn.py`](import/import_prijslijst0148_tcn.py)
+  (909 regels) en [`import_prijslijst0192_haco.py`](import/import_prijslijst0192_haco.py)
+  (2673 regels, 1 nieuw product aangemaakt: `572129999`/BANG12MAATWERK —
+  kwaliteit BANG kleur 12 had nog geen maatwerk-variant, vergelijk bestaande
+  `BANG21MAATWERK`/`572219999`).
+- Debiteuren gekoppeld: `771603→0148`, `330011→0192`, `500003→0213`.
+- **Prijscorrectie op 14 orderregels (11 niet-OUD-orders, OUD-orders
+  bewust uitgesloten — zelfde precedent als HEADLAM #500001, legacy-import
+  zonder huidige artikelcodes):** herrekend tegen de nieuwe prijslijst,
+  zelfde formule als bij HEADLAM (maatwerk: oppervlak × prijslijst-m²-prijs
+  + afwerking + vorm-toeslag, ongewijzigd; vaste maat: prijslijst-prijs
+  direct). 13 van de 14 regels wijzigden (1 regel, CISC43XX200290 op
+  ORD-2026-0299, staat niet in TCN's prijslijst en valt terug op de eigen
+  catalogusprijs — ongewijzigd). Netto +€72,77 over alle regels; sommige
+  regels juist omlaag (bv. ORD-2026-0740 LUXR14-rond: €203,45 → €176,27).
+  `korting_pct` ongewijzigd, alleen de onderliggende prijs. `maatwerk_m2_prijs`
+  mee-geüpdatet als snapshot van de nieuwe bron.
+  `order_regels_totalen`-trigger herberekende `orders.totaal_bedrag`
+  automatisch. Geverifieerd via een rolled-back transactie vóór de echte
+  toepassing (alle 13 deltas exact zoals vooraf getoond aan gebruiker).
+
 ## 2026-06-24 — Order-fase volgt de productie: snijplan→order terugkoppel-seam (mig 486)
 
 **Waarom (architectuur-audit kandidaat #1):** de order-fase (`orders.status`) hoort
