@@ -55,7 +55,8 @@ export async function maakColliBundel(p: {
   gewichtKg?: number | null
   lengteCm?: number | null
   breedteCm?: number | null
-  /** Mig 485: HST-pallet-type (EP/SP) → PackageUnitID; null voor Rhenus. */
+  /** Pallet-type per vervoerder: HST (mig 485) EP/SP → PackageUnitID; Rhenus
+   *  (mig 489) PLTS/HPLT → packageTypeCode + footprint; null voor niet-pallet-bundels. */
   palletType?: string | null
 }): Promise<number> {
   const { data, error } = await supabase.rpc('maak_colli_bundel', {

@@ -1,5 +1,42 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-24 — Rhenus colli-bundeling tot een pallet (PLTS/HPLT, mig 489)
+
+**Waarom (verzoek Miguel):** Rhenus kon al colli samenpakken onder één SSCC (mig 420/421),
+maar de bundel ging als "zak" mee — `packageTypeCode RLEN`, alleen een `<depth>`. Rhenus'
+GS1-formaat kent een echt **pallet**-item: ons eigen legacy-bestand (`docs/rhenus/voorbeelden/`,
+zending 9453355) stuurde `<packageTypeCode>PLTS</packageTypeCode>` met `<dimension>` depth=80 +
+**width=120** (Europallet). Die mogelijkheid stond er dus al qua formaat; alleen ons systeem
+gebruikte 'm niet. Dit is het Rhenus-equivalent van de HST-pallet-bundeling (mig 485, EP/SP).
+
+**Wat (bouwt op mig 485, géén nieuw bundel-concept):**
+- **`zending_colli.pallet_type` verbreed** van `EP/SP` (HST) naar ook `PLTS` (volle pallet) /
+  `HPLT` (halve pallet) voor Rhenus — CHECK + `maak_colli_bundel`-validatie. Signatuur van de RPC
+  ongewijzigd (6-arg sinds mig 485) → `CREATE OR REPLACE`, geen DROP.
+- **Vaste pallet-footprint server-side** (single source): `maak_colli_bundel` zet bij `PLTS`
+  depth=80×width=120 (EU-pallet) en bij `HPLT` depth=80×width=60 (half-EU-pallet) tenzij de caller
+  expliciete maten meegeeft. EP/SP (HST) houden footprint = MAX-van-kinderen (HST prijst op
+  PackageUnitID, niet op dims). **HPLT 80×60 is een aanname** (niet in het legacy-bestand, dat
+  alleen 80×120 PLTS toont) → laten bevestigen door Rhenus bij de eerstvolgende format-check.
+- **Rhenus xml-builder** ([`bouwItem`](supabase/functions/rhenus-send/xml-builder.ts)): een
+  pallet-bundel (`pallet_type` PLTS/HPLT) stuurt die code als `packageTypeCode` + een `<width>`-
+  dimensie naast `<depth>`; een rol/los collo blijft RLEN met alleen `<depth>` (legacy-conform,
+  byte-identiek voor niet-pallet-zendingen). `RhenusColliInput` kreeg een optioneel `pallet_type`-veld;
+  de orchestrator geeft de seam-waarde (mig 485) al door.
+- **Frontend:** `bundelOpPallet` geldt nu ook voor Rhenus; nieuwe `palletTypeOpties(code)`
+  (HST → EP/SP, Rhenus → PLTS/HPLT) + `palletFootprintVast` in
+  [`handmatig-aanmelden.ts`](frontend/src/modules/logistiek/lib/handmatig-aanmelden.ts). Zowel de
+  [`ColliBundelDialog`](frontend/src/modules/logistiek/components/colli-bundel-dialog.tsx) (tijdens
+  'Picken') als de post-voltooi [`ColliBundelSectie`](frontend/src/modules/logistiek/components/colli-bundel-sectie.tsx)
+  (16:00-dagbatch) laten het pallet-type kiezen; voor Rhenus zijn de lengte/breedte-velden verborgen
+  (footprint is vast) en stuurt de UI lege maten → de RPC vult de footprint.
+
+**Tests:** `xml-builder.test.ts` +3 cases (PLTS met width, HPLT, regressie los collo blijft RLEN
+zonder width) — 16/16 groen; verwerk-row-karakterisatie 5/5; `tsc -b` schoon.
+
+**Deploy:** mig 489 + `rhenus-send` herdeployen, daarna de frontend. Mig 489 her-verifiëren t.o.v.
+origin/main vóór merge (nummer-collisie-historie).
+
 ## 2026-06-24 — Order-fase volgt de productie: snijplan→order terugkoppel-seam (mig 486)
 
 **Waarom (architectuur-audit kandidaat #1):** de order-fase (`orders.status`) hoort

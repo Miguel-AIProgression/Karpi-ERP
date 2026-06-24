@@ -12,7 +12,11 @@ import {
 // heeft ná voltooien nog een venster (de 16:00-dagbatch, mig 484). HST bundelt óók
 // (mig 485, op pallet) maar meldt direct aan — dat loopt via de "Colli bundelen"-knop
 // TIJDENS de pickronde op de Verzendset-pagina (`ondersteuntColliBundelen`), niet hier.
-import { isHandmatigAanmeldenVervoerder } from '@/modules/logistiek/lib/handmatig-aanmelden'
+import {
+  isHandmatigAanmeldenVervoerder,
+  palletFootprintVast,
+  palletTypeOpties,
+} from '@/modules/logistiek/lib/handmatig-aanmelden'
 
 interface Props {
   zendingId: number
@@ -30,18 +34,25 @@ export function ColliBundelSectie({ zendingId, zendingNr, vervoerderCode, status
 
   if (!zichtbaar) return null
   return (
-    <ColliBundelSectieInner zendingId={zendingId} zendingNr={zendingNr} />
+    <ColliBundelSectieInner zendingId={zendingId} zendingNr={zendingNr} vervoerderCode={vervoerderCode} />
   )
 }
 
-function ColliBundelSectieInner({ zendingId, zendingNr }: { zendingId: number; zendingNr: string }) {
+function ColliBundelSectieInner(
+  { zendingId, zendingNr, vervoerderCode }: { zendingId: number; zendingNr: string; vervoerderCode: string | null },
+) {
   const { data: colli = [], isLoading } = useZendingColliVoorBundel(zendingId)
   const { data: aanmelding } = useRhenusAanmelding(zendingId)
   const maak = useMaakColliBundel(zendingId)
   const verwijder = useVerwijderColliBundel(zendingId)
   const meldAan = useMeldZendingHandmatigAan(zendingId)
 
+  const palletOpties = palletTypeOpties(vervoerderCode)
+  // Rhenus-pallet (PLTS/HPLT) heeft een vaste footprint die de server zet → geen maatvelden.
+  const footprintVast = palletFootprintVast(vervoerderCode)
+
   const [geselecteerd, setGeselecteerd] = useState<Set<number>>(new Set())
+  const [palletType, setPalletType] = useState<string>('')
 
   const losseColli = colli.filter((c) => !c.is_bundel && c.bundel_colli_id == null)
   const bundels = colli.filter((c) => c.is_bundel)
@@ -66,7 +77,8 @@ function ColliBundelSectieInner({ zendingId, zendingNr }: { zendingId: number; z
   // de zending nog NIET verstuurd is; pas bij 'Bezig'/'Verstuurd' is het te laat.
   const verstuurd = aanmelding?.status === 'Bezig' || aanmelding?.status === 'Verstuurd'
   const inWachtrij = aanmelding?.status === 'Wachtrij'
-  const kanBundelen = geselecteerd.size >= 2 && !verstuurd
+  // Pallet-type is verplicht (Rhenus: PLTS/HPLT → packageTypeCode).
+  const kanBundelen = geselecteerd.size >= 2 && !verstuurd && palletType !== ''
 
   function toggle(id: number) {
     setGeselecteerd((prev) => {
@@ -83,12 +95,15 @@ function ColliBundelSectieInner({ zendingId, zendingNr }: { zendingId: number; z
       {
         colliIds: [...geselecteerd],
         gewichtKg: parseOrDefault(gewicht, defaults.gewicht),
-        lengteCm: parseOrDefault(lengte, defaults.lengte),
-        breedteCm: parseOrDefault(breedte, defaults.breedte),
+        // Vaste-footprint-pallet (Rhenus PLTS/HPLT): de server zet de maat.
+        lengteCm: footprintVast ? null : parseOrDefault(lengte, defaults.lengte),
+        breedteCm: footprintVast ? null : parseOrDefault(breedte, defaults.breedte),
+        palletType: palletType || null,
       },
       {
         onSuccess: () => {
           setGeselecteerd(new Set())
+          setPalletType('')
           setGewicht(''); setLengte(''); setBreedte('')
         },
       },
@@ -107,9 +122,10 @@ function ColliBundelSectieInner({ zendingId, zendingNr }: { zendingId: number; z
         </p>
       ) : (
         <p className="text-xs text-slate-500 mb-3">
-          Pak een paar colli samen in één zak: vink ze aan → <strong>Bundelen</strong> → print de
-          nieuwe sticker en plak die op de zak. Geen bundel nodig? Je hoeft niets te doen — deze
-          zending wordt <strong>automatisch om 16:00</strong> in de Rhenus-dagbatch aangemeld.
+          Pak een paar colli samen op één pallet: vink ze aan, kies <strong>volle</strong> of{' '}
+          <strong>halve</strong> pallet → <strong>Bundelen</strong> → print de nieuwe sticker en plak
+          die op de pallet. Geen bundel nodig? Je hoeft niets te doen — deze zending wordt{' '}
+          <strong>automatisch om 16:00</strong> in de Rhenus-dagbatch aangemeld.
         </p>
       )}
 
@@ -179,19 +195,46 @@ function ColliBundelSectieInner({ zendingId, zendingNr }: { zendingId: number; z
             </div>
           )}
 
-          {/* Bundel-formulier (≥2 geselecteerd) */}
-          {kanBundelen && (
+          {/* Bundel-formulier (≥2 geselecteerd, nog niet verstuurd) */}
+          {geselecteerd.size >= 2 && !verstuurd && (
             <div className="mt-4 rounded-[var(--radius-sm)] border border-slate-200 p-3">
               <div className="text-xs font-semibold text-slate-600 mb-2">
-                {geselecteerd.size} colli bundelen — controleer gewicht/maat van de zak:
+                {geselecteerd.size} colli bundelen — kies het pallet-type en controleer{' '}
+                {footprintVast ? 'gewicht' : 'gewicht/maat'}:
               </div>
+              {palletOpties.length > 0 && (
+                <div className="mb-3">
+                  <div className="mb-1 text-xs text-slate-500">Pallet-type</div>
+                  <div className="flex flex-wrap gap-2">
+                    {palletOpties.map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setPalletType(opt.value)}
+                        className={`rounded-[var(--radius-sm)] border px-3 py-1.5 text-sm font-medium ${
+                          palletType === opt.value
+                            ? 'border-terracotta-600 bg-terracotta-50 text-terracotta-700'
+                            : 'border-slate-300 text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="flex flex-wrap items-end gap-3">
                 <MaatVeld label="Gewicht (kg)" value={gewicht} ph={String(round1(defaults.gewicht))} onChange={setGewicht} />
-                <MaatVeld label="Lengte (cm)" value={lengte} ph={String(defaults.lengte)} onChange={setLengte} />
-                <MaatVeld label="Breedte (cm)" value={breedte} ph={String(defaults.breedte)} onChange={setBreedte} />
+                {!footprintVast && (
+                  <>
+                    <MaatVeld label="Lengte (cm)" value={lengte} ph={String(defaults.lengte)} onChange={setLengte} />
+                    <MaatVeld label="Breedte (cm)" value={breedte} ph={String(defaults.breedte)} onChange={setBreedte} />
+                  </>
+                )}
                 <button
                   onClick={bundel}
-                  disabled={maak.isPending}
+                  disabled={!kanBundelen || maak.isPending}
+                  title={palletType === '' ? 'Kies eerst een pallet-type' : undefined}
                   className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] bg-terracotta-600 px-3 py-2 text-sm font-medium text-white hover:bg-terracotta-700 disabled:opacity-50"
                 >
                   <Boxes size={15} /> Bundel maken

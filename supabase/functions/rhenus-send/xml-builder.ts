@@ -116,6 +116,20 @@ function localDatum(nu: Date): string {
 }
 
 function bouwItem(c: RhenusColliInput, volgnr: number, opties: RhenusOpties): string[] {
+  // Een pallet-bundel (mig 489) draagt pallet_type 'PLTS'/'HPLT' → die code als
+  // packageTypeCode + een width-dimensie (footprint, legacy zending 9453355). Een
+  // rol/los collo heeft geen pallet_type → de geconfigureerde code (RLEN) + alleen
+  // depth, exact zoals voorheen. palletCode is getypt 'PLTS'|'HPLT'|null (geen
+  // non-null-assertion nodig; een EP/SP-code zou hier nooit komen — andere carrier).
+  const palletCode = c.pallet_type === 'PLTS' || c.pallet_type === 'HPLT' ? c.pallet_type : null;
+  const dimensie = [
+    '<dimension>',
+    tag('depth', c.lengte_cm !== null ? Math.round(c.lengte_cm) : '', 'measurementUnitCode="CMS"'),
+    ...(palletCode
+      ? [tag('width', c.breedte_cm !== null ? Math.round(c.breedte_cm) : '', 'measurementUnitCode="CMS"')]
+      : []),
+    '</dimension>',
+  ];
   return [
     '<transportInstructionShipmentItem>',
     tag('lineItemNumber', volgnr),
@@ -124,10 +138,8 @@ function bouwItem(c: RhenusColliInput, volgnr: number, opties: RhenusOpties): st
     // op het label staat; één bron met label + HST + Verhoek.
     tag('sscc', labelBarcode(c.sscc) ?? ''),
     tag('Weight', c.gewicht_kg !== null ? formatKg(c.gewicht_kg) : ''),
-    tag('packageTypeCode', opties.package_type_code),
-    '<dimension>',
-    tag('depth', c.lengte_cm !== null ? Math.round(c.lengte_cm) : '', 'measurementUnitCode="CMS"'),
-    '</dimension>',
+    tag('packageTypeCode', palletCode ?? opties.package_type_code),
+    ...dimensie,
     '</logisticUnit>',
     '</transportInstructionShipmentItem>',
   ];
