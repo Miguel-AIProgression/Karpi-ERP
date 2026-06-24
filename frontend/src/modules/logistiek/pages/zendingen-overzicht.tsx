@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/layout/page-header'
 import { useZendingen, useZoekZendingen } from '@/modules/logistiek/hooks/use-zendingen'
 import { ZendingStatusBadge, zendingStatusLabel } from '@/modules/logistiek/components/zending-status-badge'
 import { VervoerderTag } from '@/modules/logistiek/components/vervoerder-tag'
+import { wachtOpDagbatch, DAGBATCH_LABEL } from '@/modules/logistiek/lib/dagbatch-status'
 import { VERVOERDER_REGISTRY, type VervoerderCode } from '@/modules/logistiek/registry'
 import type { ZendingStatus } from '@/modules/logistiek/queries/zendingen'
 import { cn } from '@/lib/utils/cn'
@@ -97,8 +98,9 @@ interface ZendingRow {
     order_id: number
     bundel_order: { id: number; order_nr: string } | null
   }>
-  /** Mig 424 (ADR-0038): geconsolideerde verzend-wachtrij-rijen. */
-  verzend_wachtrij: { id: number; status: string }[]
+  /** Mig 424 (ADR-0038): geconsolideerde verzend-wachtrij-rijen. beschikbaar_op
+   *  (mig 484) verraadt een dagbatch-zending die op zijn 16:00-moment wacht. */
+  verzend_wachtrij: { id: number; status: string; beschikbaar_op: string | null }[]
 }
 
 const BUNDEL_PREVIEW_AANTAL = 2
@@ -397,6 +399,9 @@ export function ZendingenOverzichtPage() {
                 {rijen.map((z) => {
                   const code = pickVervoerderCode(z)
                 const heeftFout = (z.verzend_wachtrij ?? []).some((t) => t.status === 'Fout')
+                // Mig 484: dagbatch-zending (Rhenus) die op zijn 16:00-moment wacht
+                // → toon 'Aangemeld' i.p.v. 'Klaar voor verzending' (alleen weergave).
+                const wachtBatch = wachtOpDagbatch(z.status, z.verzend_wachtrij)
                 // Mig 222: bundel-zendingen hebben meerdere orders via `zending_orders`.
                 // Backfill heeft solo-zendingen ook in M2M gezet; fallback op primaire
                 // `orders` als de M2M leeg is.
@@ -430,7 +435,7 @@ export function ZendingenOverzichtPage() {
                       <VervoerderTag code={code} showLeeg />
                     </td>
                     <td className="px-4 py-3">
-                      <ZendingStatusBadge status={z.status} />
+                      <ZendingStatusBadge status={z.status} label={wachtBatch ? DAGBATCH_LABEL : undefined} />
                       {heeftFout && (
                         <span
                           className="ml-2 inline-flex items-center text-xs text-rose-600"

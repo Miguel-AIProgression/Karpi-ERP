@@ -215,7 +215,7 @@ const LIJST_SELECT = `
     )
   ),
   verzend_wachtrij (
-    id, status, extern_referentie, track_trace, sent_at
+    id, status, extern_referentie, track_trace, sent_at, beschikbaar_op
   )
 `
 

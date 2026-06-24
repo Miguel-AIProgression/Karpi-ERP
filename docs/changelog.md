@@ -33,6 +33,16 @@ en drained vanaf 16:00 de hele dagbatch. Batch-formaat blijft 1 GS1-XML per zend
 door een info-regel + "Nu aanmelden (niet wachten)"-escape-hatch; Verzendset-copy
 toont nu de 16:00-dagbatch voor élke Rhenus-zending (ook 1 collo).
 
+**Aanvulling (zelfde dag):** op het logistiek-overzicht toont een dagbatch-zending die
+op zijn 16:00-moment wacht voortaan het label **"Aangemeld"** i.p.v. "Klaar voor
+verzending" — een *afgeleid* label (pure helper `wachtOpDagbatch`,
+`modules/logistiek/lib/dagbatch-status.ts`: zending 'Klaar voor verzending' +
+verzend_wachtrij-rij 'Wachtrij' mét `beschikbaar_op`), bewust **géén** nieuwe
+`zending_status`-enum-waarde (die zou alle status-filters/views/pickronde-tellingen
+raken). Carrier-agnostisch: HST/Verhoek hebben `beschikbaar_op=NULL` → geen label.
+`ZendingStatusBadge` kreeg een optionele `label`-override (kleur ongewijzigd). Bij
+verzending (→ Onderweg) verdwijnt het label.
+
 **Open:** mig-nummer herverifiëren vóór merge (parallelle sessies); e2e-test 1e
 echte dagbatch om 16:00. Basis van `enqueue_zending_naar_vervoerder` = mig 429
 (eigen-vervoer→'Afgeleverd'-fix behouden).

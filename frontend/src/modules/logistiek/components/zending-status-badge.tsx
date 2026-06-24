@@ -27,9 +27,13 @@ export function zendingStatusLabel(status: ZendingStatus | string): string {
 interface ZendingStatusBadgeProps {
   status: ZendingStatus | string
   className?: string
+  /** Overschrijft de getoonde tekst (niet de kleur). Bv. 'Aangemeld' voor een
+   *  zending die op zijn dagbatch wacht (mig 484) — de echte status blijft
+   *  'Klaar voor verzending', alleen de weergave wijkt af. */
+  label?: string
 }
 
-export function ZendingStatusBadge({ status, className }: ZendingStatusBadgeProps) {
+export function ZendingStatusBadge({ status, className, label }: ZendingStatusBadgeProps) {
   const kleur = STATUS_KLEUREN[status as ZendingStatus] ?? { bg: 'bg-gray-100', text: 'text-gray-600' }
   return (
     <span
@@ -40,7 +44,7 @@ export function ZendingStatusBadge({ status, className }: ZendingStatusBadgeProp
         className,
       )}
     >
-      {zendingStatusLabel(status)}
+      {label ?? zendingStatusLabel(status)}
     </span>
   )
 }
