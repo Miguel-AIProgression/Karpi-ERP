@@ -1,5 +1,36 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-25 — Factuurlijst: sortering + PDF-download + taalfixes
+
+**Sortering factuurnr:** oud-systeem nummers (`2026XXXXXX`) sorteerden vóór `FACT-*`
+door alfabetische string-vergelijking (`'2' < 'F'`). `vergelijk()` in `factuur-lijst.tsx`
+plaatst `FACT-*` nu altijd vóór plain nummers binnen dezelfde richting; tiebreak idem.
+
+**Directe PDF-download:** `FileDown`-icoontje naast "Bekijk" in de factuurlijst — alleen
+zichtbaar als `pdf_storage_path` gevuld is (= factuur is verstuurd). Klikken haalt een
+signed URL op, fetcht de blob en triggert een browser-download als `<factuur_nr>.pdf`
+zonder voorvertoning.
+
+**NL-klant zonder land krijgt Nederlandse factuur:** `bepaalTaal(null)` gaf voorheen
+`'en'` (default-case) — klanten zonder `land`-veld (62% van debiteuren, legacy NL)
+kregen daardoor Engelstalige facturen/orderbevestigingen. `case null:` toegevoegd vóór
+`case 'NL':` in `_shared/klant-taal.ts`. Alle vier betrokken edge functions herdeployed:
+`factuur-pdf`, `stuur-orderbevestiging`, `factuur-verzenden`, `stuur-creditfactuur`.
+
+**Geen-verzendweek banner + tab:** orders zonder `afleverdatum` (73 stuks, voornamelijk
+SB MÖBEL BOSS / OSTERMANN EDI) zweefden zonder weekindeling in Pick & Ship. Oranje
+waarschuwingsbanner op orders-overzicht + aparte status-tab `'Geen verzendweek'`.
+`oud_systeem`-orders uitgesloten (snijslijt, bewust geen datum). Status in URL-querystring
+via `useSearchParams` zodat browser-terug-knop de gefilterde lijst herstelt.
+
+**"Alle"-badge telt meta-statussen niet dubbel:** `fetchStatusCounts` geeft nu
+`StatusCountResult { counts, totalOrders }` terug; `totalOrders` komt uit de DB-view
+vóór cross-cutting extras worden toegevoegd. `StatusTabs` gebruikt `totalCount` prop
+voor de `'Alle'`-badge.
+
+**"Te bevestigen"-tab sluit verzonden/deels-verzonden uit:** `filterLeverweekTeBevestigen`
+filtert nu ook `status ≠ 'Verzonden'` en `≠ 'Deels verzonden'`.
+
 ## 2026-06-24 — Creditfactuur-uitbreiding + nieuwe factuurnummering (mig 503-504)
 
 **Waarom:** Karpi had behoefte aan een volwaardig crediteer-workflow vanuit de
