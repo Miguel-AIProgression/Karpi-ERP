@@ -1,5 +1,65 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-24 — Omsticker-keuze uitgebreid met inkoop-opties, automatische substitutie afgeschaft (mig 489-494)
+
+**Waarom:** gebruiker zag een omsticker-label op een orderregel en kon zich niet
+herinneren dit zelf gekozen te hebben. Onderzoek bevestigde een echt mechanisme:
+`herallocateer_orderregel` claimde bij een voorraadtekort — voor élk intake-kanaal
+(handmatig/EDI/webshop), zonder gebruikersactie — automatisch eerst een uitwisselbaar
+("omsticker") product binnen dezelfde collectie/kleur/maat, en daarna de oudste open
+inkooporder. Expliciete eis na iteratie: bij een tekort moet de gebruiker zelf kiezen
+uit drie opties (equivalent nu op voorraad / eigen artikel wacht op inkoop / equivalent
+wacht op zíjn inkoop), gesorteerd op levertijd, met de mogelijkheid om een gemaakte
+keuze later terug te draaien. Scope bewust beperkt tot een uitbreiding van de
+bestaande omsticker-knop — **geen** wijziging aan orderstatus, Concept, of de
+"Bevestig order"-klantbevestiging.
+
+**Wat:**
+- **Mig 489:** `herallocateer_orderregel` (de naam die `trg_orderregel_herallocateer`
+  aanroept, dus voor alle kanalen) gesplitst — krimpt tot alleen Stap 1 (eigen
+  voorraad); de volledige oude cascade (Stap 1 → uitwisselbaar-voorraad → oudste IO)
+  leeft voort als `herallocateer_orderregel_auto`, alleen nog aangeroepen ná een
+  bevestigde keuze voor het niet-gekozen restant.
+- **Mig 490:** `orderregel_pickbaarheid`'s voorraad-claim-telling van `COUNT(*)` naar
+  `SUM(aantal)` — zonder de automatische cascade kan een regel nu een ECHTE partiële
+  claim hebben, die de oude `>0 rijen`-check ten onrechte als "volledig pickbaar" zou
+  tonen.
+- **Mig 491/493:** nieuwe pure RPC `allocatie_opties_voor_artikel(artikelnr)` — live
+  databron voor de 3 opties, met `eigen_artikelnr` als constante kolom (mig 493) zodat
+  de frontend de doos→stuks-vertaling (mig 408) niet zelf moet herhalen om "eigen
+  artikel" van "equivalent" te onderscheiden.
+- **Mig 492:** nieuwe RPC's `set_allocatie_keuze` (vervangt alle actieve claims van de
+  regel door de gekozen opties, `is_handmatig=true`, IO-keuze gevalideerd tegen
+  `io_regel_ruimte()`) en `ontgrendel_allocatie_keuze` (release de handmatige claims,
+  valt terug op de **korte** `herallocateer_orderregel` — bewust niet `_auto`, anders
+  triggert ontgrendelen meteen een nieuwe automatische claim). Eenmalige backfill gaf
+  alle bestaande automatische alias/IO-claims vrij, behalve op orders die al
+  `'In pickronde'` of verder stonden (7 orderregels bewust ongemoeid gelaten).
+- **Mig 494:** `handmatige_keuzes_voor_order` (mig 239, voedt edit-mode-hydratatie)
+  uitgebreid met `bron`/`inkooporder_regel_id`/`verwacht_datum` — zonder die info zou
+  een eerder gekozen IO-claim bij een ongewijzigde re-save stil herschreven worden naar
+  een (foutieve) voorraad-claim.
+- **Frontend:** `UitwisselbaarTekortHint` (order-aanmaak/-bewerken) toont nu de 3
+  opties gesorteerd op levertijd, zonder de oude auto-fill (`IoLevertijdHint`-component
+  vervalt, data zit nu in de hoofdcomponent). `UitwisselbaarToepassenRij` (order-detail)
+  idem, met "Bevestigen"-knop; nieuwe `OntgrendelAllocatieKeuzeRij` toont een
+  ontgrendel-actie zodra een regel ≥1 actieve handmatige claim heeft. `order-form.tsx`'s
+  `persistUitwisselbaarKeuzes` roept nu `set_allocatie_keuze` aan en persisteert ook een
+  lokaal teruggedraaide keuze (leeg na eerder niet-leeg) — anders zou de oude DB-claim
+  bij het opslaan in edit-mode ongemoeid blijven liggen.
+
+**Verificatie:** elke migratie eerst in rolled-back transacties getest tegen live data
+(o.a. capaciteit-overschrijding op een IO-claim correct geweigerd, backfill raakte
+precies de verwachte 89 van 96 regels, liet de 7 'In pickronde'-claims ongemoeid).
+Volledige typecheck + lint + testsuite (753 tests) groen na de frontend-wijzigingen.
+Interactieve browsertest kon niet uitgevoerd worden (geen testaccount-credentials
+beschikbaar) — verificatie steunt op de DB-tests + typecheck/tests.
+
+**Bijvangst (niet opgelost, apart te plakken):** `RegelClaimDetail`
+(`regel-claim-detail.tsx:67-70`) labelt een claim als "omstickeren" op basis van
+`is_handmatig` i.p.v. `fysiek_artikelnr !== artikelnr` — inhoudelijk niet helemaal
+juist, klein en niet-blokkerend.
+
 ## 2026-06-24 — Prijslijst-koppeling + prijscorrectie TCN/HACO/Headlam Decorette
 
 **Waarom:** vervolg op de HEADLAM B.V. (#500001) prijslijst-fix — 3 andere

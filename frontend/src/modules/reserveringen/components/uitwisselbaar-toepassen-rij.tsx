@@ -1,10 +1,12 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowRightLeft, Check, Loader2 } from 'lucide-react'
-import { fetchEquivalenteProducten } from '@/lib/supabase/queries/product-equivalents'
-import { setUitwisselbaarClaims } from '@/lib/supabase/queries/order-mutations'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { ArrowRightLeft, Check, Clock, Loader2, Package } from 'lucide-react'
+import { useAllocatieOpties } from '../hooks/use-reserveringen'
+import { setAllocatieKeuze, type AllocatieKeuze } from '@/lib/supabase/queries/order-mutations'
+import type { AllocatieOptie } from '../queries/allocatie-opties'
 import type { OrderRegel } from '@/lib/supabase/queries/orders'
 import type { OrderClaim } from '../queries/reserveringen'
 import { invalidateNaReserveringsmutatie } from '../cache'
+import { isoWeek } from '@/lib/orders/verzendweek'
 
 interface Props {
   regel: OrderRegel
@@ -14,74 +16,80 @@ interface Props {
   claims: OrderClaim[]
 }
 
-interface Keuze {
-  artikelnr: string
-  aantal: number
+function weekLabel(datumIso: string): string {
+  const w = isoWeek(new Date(datumIso + 'T00:00:00'))
+  return `wk ${w.week} · ${w.jaar}`
 }
 
-/** Telt aantallen per artikelnr op (merge van bestaande + nieuwe keuzes). */
-function mergeKeuzes(...lijsten: Keuze[][]): Keuze[] {
-  const map = new Map<string, number>()
-  for (const lijst of lijsten) {
-    for (const k of lijst) {
-      if (k.aantal > 0) map.set(k.artikelnr, (map.get(k.artikelnr) ?? 0) + k.aantal)
+/** Greedy: vul het tekort op uit de beschikbare opties, levertijd-eerst (voorraad vóór inkoop). */
+function vulTekort(opties: AllocatieOptie[], tekort: number): AllocatieKeuze[] {
+  const gesorteerd = [...opties].sort((a, b) => {
+    const ka = a.bron === 'voorraad' ? -1 : (a.verwacht_datum ? new Date(a.verwacht_datum).getTime() : Infinity)
+    const kb = b.bron === 'voorraad' ? -1 : (b.verwacht_datum ? new Date(b.verwacht_datum).getTime() : Infinity)
+    return ka - kb
+  })
+  let resterend = tekort
+  const nieuw: AllocatieKeuze[] = []
+  for (const o of gesorteerd) {
+    if (resterend <= 0) break
+    const pak = Math.min(o.vrij_aantal, resterend)
+    if (pak > 0) {
+      nieuw.push({
+        bron: o.bron,
+        artikelnr: o.artikelnr,
+        aantal: pak,
+        omschrijving: o.omschrijving,
+        inkooporder_regel_id: o.inkooporder_regel_id,
+        verwacht_datum: o.verwacht_datum,
+      })
+      resterend -= pak
     }
   }
-  return [...map.entries()].map(([artikelnr, aantal]) => ({ artikelnr, aantal }))
+  return nieuw
 }
 
 /**
  * Order-detail sub-rij die — wanneer een vaste-maat-regel op nieuwe inkoop wacht
- * terwijl er uitwisselbare voorraad beschikbaar is — toont dat de regel via
- * omstickeren wél geleverd kan worden, met een knop om die handmatige claim
- * direct te zetten zonder de hele order te bewerken.
+ * terwijl er een (equivalent-voorraad of inkoop-) optie beschikbaar is — toont
+ * dat de regel via die optie wél geleverd kan worden, met een knop om die
+ * handmatige claim direct te zetten zonder de hele order te bewerken.
  *
- * Omstickeren blijft een bewuste keuze (CLAUDE.md: "uitwisselbaar = handmatige
- * claims") — deze rij maakt die keuze alleen sneller zichtbaar én uitvoerbaar.
- * Werkt op live voorraad, dus ook voor reeds opgeslagen orders.
+ * Uitbreiding van de oorspronkelijke omsticker-knop (mig 154) met de twee
+ * inkoop-optie-soorten uit `allocatie_opties_voor_artikel` (mig 491/493) —
+ * geen automatische claim meer (mig 489), dit is altijd een bewuste klik.
+ * Terugdraaien kan via de "Ontgrendelen"-rij die ernaast verschijnt zodra de
+ * regel ≥1 handmatige claim heeft (zie `OntgrendelAllocatieKeuzeRij`).
  */
 export function UitwisselbaarToepassenRij({ regel, tekort, claims }: Props) {
   const qc = useQueryClient()
 
-  const { data: equivalenten } = useQuery({
-    queryKey: ['equivalente-producten-summary', regel.artikelnr],
-    queryFn: () => fetchEquivalenteProducten(regel.artikelnr!),
-    enabled: !!regel.artikelnr && tekort > 0,
-    staleTime: 60_000,
-  })
+  const { data: opties } = useAllocatieOpties(tekort > 0 ? regel.artikelnr ?? undefined : undefined)
 
   const toepassen = useMutation({
-    mutationFn: (keuzes: Keuze[]) => setUitwisselbaarClaims(regel.id, keuzes),
+    mutationFn: (keuzes: AllocatieKeuze[]) => setAllocatieKeuze(regel.id, keuzes),
     onSuccess: () => invalidateNaReserveringsmutatie(qc),
   })
 
-  if (tekort <= 0 || !equivalenten) return null
+  if (tekort <= 0 || !opties) return null
+  if (opties.length === 0) return null
 
-  const opVoorraad = equivalenten.filter((e) => (e.vrije_voorraad ?? 0) > 0)
-  if (opVoorraad.length === 0) return null
-
-  // Greedy-vul het tekort uit de uitwisselbare vrije voorraad (beste eerst).
-  let resterend = tekort
-  const nieuw: Keuze[] = []
-  for (const eq of opVoorraad) {
-    if (resterend <= 0) break
-    const pak = Math.min(eq.vrije_voorraad, resterend)
-    if (pak > 0) {
-      nieuw.push({ artikelnr: eq.artikelnr, aantal: pak })
-      resterend -= pak
-    }
-  }
-  const dekbaar = tekort - resterend
+  const nieuw = vulTekort(opties, tekort)
+  const dekbaar = nieuw.reduce((s, k) => s + k.aantal, 0)
   if (dekbaar <= 0) return null
 
-  // Bestaande handmatige (omsticker)-claims behouden — set_uitwisselbaar_claims
-  // vervangt álle handmatige claims, dus we sturen ze samen mee.
-  const bestaande: Keuze[] = claims
-    .filter((c) => c.is_handmatig && c.bron === 'voorraad' && c.fysiek_artikelnr)
-    .map((c) => ({ artikelnr: c.fysiek_artikelnr as string, aantal: c.aantal }))
+  // Bestaande handmatige claims (alle bronnen) behouden — set_allocatie_keuze
+  // vervangt ÁLLE actieve claims van de regel, dus we sturen ze samen mee.
+  const bestaande: AllocatieKeuze[] = claims
+    .filter((c) => c.is_handmatig && c.fysiek_artikelnr)
+    .map((c) => ({
+      bron: c.bron,
+      artikelnr: c.fysiek_artikelnr as string,
+      aantal: c.aantal,
+      inkooporder_regel_id: c.inkooporder_regel_id,
+    }))
 
   function handleToepassen() {
-    toepassen.mutate(mergeKeuzes(bestaande, nieuw))
+    toepassen.mutate([...bestaande, ...nieuw])
   }
 
   return (
@@ -91,16 +99,21 @@ export function UitwisselbaarToepassenRij({ regel, tekort, claims }: Props) {
         <span className="inline-flex items-center gap-2 pl-3 border-l-2 border-emerald-200 flex-wrap">
           <ArrowRightLeft size={12} className="text-emerald-600" />
           <span className="text-emerald-700 font-medium">
-            {dekbaar}× leverbaar via omstickeren
+            {dekbaar}× leverbaar via {nieuw.some(k => k.bron === 'inkooporder_regel') ? 'inkoop/uitwisselbaar' : 'omstickeren'}
           </span>
-          <span className="text-slate-500">
+          <span className="text-slate-500 inline-flex items-center gap-2 flex-wrap">
             uit{' '}
             {nieuw
               .map((k) => {
-                const eq = opVoorraad.find((e) => e.artikelnr === k.artikelnr)
-                return `${eq?.omschrijving ?? k.artikelnr} (${k.aantal}×)`
-              })
-              .join(', ')}
+                const opt = opties.find((o) => o.artikelnr === k.artikelnr && o.inkooporder_regel_id === k.inkooporder_regel_id)
+                return (
+                  <span key={`${k.bron}:${k.artikelnr}:${k.inkooporder_regel_id ?? ''}`} className="inline-flex items-center gap-1">
+                    {k.bron === 'voorraad' ? <Package size={10} /> : <Clock size={10} />}
+                    {opt?.omschrijving ?? k.artikelnr} ({k.aantal}×
+                    {k.bron === 'inkooporder_regel' && opt?.verwacht_datum && <> · {weekLabel(opt.verwacht_datum)}</>})
+                  </span>
+                )
+              })}
           </span>
         </span>
       </td>
@@ -121,7 +134,7 @@ export function UitwisselbaarToepassenRij({ regel, tekort, claims }: Props) {
             ) : (
               <ArrowRightLeft size={12} />
             )}
-            {toepassen.isSuccess ? 'Toegepast' : 'Omstickeren toepassen'}
+            {toepassen.isSuccess ? 'Toegepast' : 'Bevestigen'}
           </button>
           {toepassen.isError && (
             <span className="text-[11px] text-rose-700">

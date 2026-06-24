@@ -77,15 +77,21 @@ export async function fetchLevertijdVoorOrder(orderId: number): Promise<OrderReg
 
 export interface HandmatigeKeuzePerRegel {
   order_regel_id: number
+  /** Mig 491-492/494: 'voorraad' = uitwisselbaar-equivalent, 'inkooporder_regel' = eigen of equivalent op inkoop. */
+  bron: ClaimBron
   artikelnr: string
   aantal: number
   omschrijving: string
+  inkooporder_regel_id: number | null
+  verwacht_datum: string | null
 }
 
 /**
- * Haalt alle actieve, handmatige uitwisselbaar-claims voor een order op,
+ * Haalt alle actieve, handmatige allocatie-keuzes voor een order op,
  * gegroepeerd per orderregel — gebruikt om edit-mode te hydrateren met de
- * bestaande gebruiker-keuzes. Eén RPC-call (mig 239) ipv 3 sequentiële queries.
+ * bestaande gebruiker-keuzes. Eén RPC-call (mig 239, uitgebreid mig 494) ipv
+ * losse queries. `bron`/`inkooporder_regel_id` zijn nodig om een IO-keuze niet
+ * per ongeluk als voorraad-keuze te hydrateren bij het opnieuw opslaan.
  */
 export async function fetchHandmatigeKeuzesVoorOrder(orderId: number): Promise<HandmatigeKeuzePerRegel[]> {
   const { data, error } = await supabase.rpc('handmatige_keuzes_voor_order', {
@@ -94,9 +100,12 @@ export async function fetchHandmatigeKeuzesVoorOrder(orderId: number): Promise<H
   if (error) throw error
   return ((data ?? []) as HandmatigeKeuzePerRegel[]).map(r => ({
     order_regel_id: r.order_regel_id,
+    bron: r.bron,
     artikelnr: r.artikelnr,
     aantal: r.aantal,
     omschrijving: r.omschrijving,
+    inkooporder_regel_id: r.inkooporder_regel_id,
+    verwacht_datum: r.verwacht_datum,
   }))
 }
 

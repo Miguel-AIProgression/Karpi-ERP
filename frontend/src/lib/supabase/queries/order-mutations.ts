@@ -77,12 +77,15 @@ export interface OrderRegelFormData {
   maatwerk_beschikbaar_m2?: number
   maatwerk_equiv_m2?: number
   /**
-   * Handmatige uitwisselbaar-allocaties: gebruiker kiest hoeveel stuks van
-   * welk uitwisselbaar product (omstickeren) deze regel mag dekken. Niet
+   * Handmatige allocatie-keuzes bij een voorraadtekort: gebruiker kiest zelf
+   * hoeveel stuks via een uitwisselbaar product (omstickeren) en/of een
+   * inkooporder (eigen of equivalent artikel) deze regel mag dekken — drie
+   * optie-soorten, zie `allocatie_opties_voor_artikel` (mig 491/493). Niet
    * onderdeel van create_order_with_lines RPC — wordt na regel-INSERT via
-   * set_uitwisselbaar_claims-RPC gepersisteerd. Migratie 154.
+   * set_allocatie_keuze-RPC gepersisteerd. Migratie 154, uitgebreid mig 489-492
+   * (vervangt de automatische alias/IO-substitutie door een expliciete keuze).
    */
-  uitwisselbaar_keuzes?: { artikelnr: string; aantal: number; omschrijving?: string }[]
+  uitwisselbaar_keuzes?: AllocatieKeuze[]
   /**
    * Display-only: of de prijs uit de klant-specifieke prijslijst komt (true)
    * of dat we zijn teruggevallen op `producten.verkoopprijs` (false). Wordt
@@ -150,7 +153,25 @@ export interface PrijsResolverResult {
   breakdown: PrijsBreakdown
 }
 
-/** Roept RPC `set_uitwisselbaar_claims` aan om handmatige uitwisselbaar-allocaties op een orderregel te zetten. Migratie 154. */
+/**
+ * Eén handmatige allocatie-keuze: uitwisselbaar-equivalent op voorraad, óf een
+ * inkooporder-claim (op het eigen artikel of op een equivalent) — de drie
+ * optie-soorten uit `allocatie_opties_voor_artikel` (mig 491/493).
+ *
+ * `bron` is optioneel en valt terug op `'voorraad'` — back-compat met de
+ * oorspronkelijke uitwisselbaar-keuze (mig 154), die altijd voorraad was en
+ * dus nooit een `bron` droeg.
+ */
+export interface AllocatieKeuze {
+  bron?: 'voorraad' | 'inkooporder_regel'
+  artikelnr: string
+  aantal: number
+  omschrijving?: string
+  inkooporder_regel_id?: number | null
+  verwacht_datum?: string | null
+}
+
+/** Roept RPC `set_uitwisselbaar_claims` aan om handmatige uitwisselbaar-allocaties op een orderregel te zetten. Migratie 154. @deprecated geen nieuwe call-sites meer — gebruik `setAllocatieKeuze` (mig 492). */
 export async function setUitwisselbaarClaims(
   orderRegelId: number,
   keuzes: { artikelnr: string; aantal: number }[],
@@ -158,6 +179,36 @@ export async function setUitwisselbaarClaims(
   const { error } = await supabase.rpc('set_uitwisselbaar_claims', {
     p_order_regel_id: orderRegelId,
     p_keuzes: keuzes,
+  })
+  if (error) throw error
+}
+
+/**
+ * Roept RPC `set_allocatie_keuze` aan (mig 492): vervangt alle actieve claims
+ * van de orderregel door de gegeven keuzes (handmatig, vergrendeld) en laat
+ * het restant automatisch cascaderen via `herallocateer_orderregel_auto`.
+ */
+export async function setAllocatieKeuze(orderRegelId: number, keuzes: AllocatieKeuze[]) {
+  const { error } = await supabase.rpc('set_allocatie_keuze', {
+    p_order_regel_id: orderRegelId,
+    p_keuzes: keuzes.map(k => ({
+      bron: k.bron ?? 'voorraad',
+      artikelnr: k.artikelnr,
+      aantal: k.aantal,
+      inkooporder_regel_id: k.inkooporder_regel_id ?? undefined,
+    })),
+  })
+  if (error) throw error
+}
+
+/**
+ * Roept RPC `ontgrendel_allocatie_keuze` aan (mig 492): release de handmatige
+ * keuze van de orderregel en valt terug op de korte allocator-vorm (alleen
+ * eigen voorraad) — bewust geen automatische herclaim van een equivalent/IO.
+ */
+export async function ontgrendelAllocatieKeuze(orderRegelId: number) {
+  const { error } = await supabase.rpc('ontgrendel_allocatie_keuze', {
+    p_order_regel_id: orderRegelId,
   })
   if (error) throw error
 }

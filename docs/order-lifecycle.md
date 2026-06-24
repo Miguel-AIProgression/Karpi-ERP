@@ -208,6 +208,18 @@ Na elke landing: INSERT-trigger op `order_regels` → `herallocateer_orderregel`
 `herwaardeer_order_status`/`herbereken_wacht_status`; maatwerk-INSERT →
 `auto_maak_snijplan` (mig 274/328).
 
+**Mig 489-494 (2026-06-24):** `herallocateer_orderregel` (de naam die deze trigger
+aanroept, dus geldt voor élk kanaal hierboven) claimt bij een tekort niet meer
+automatisch een uitwisselbaar/equivalent artikel of de oudste open inkooporder
+— alleen nog eigen voorraad (Stap 1). Een resterend tekort blijft gewoon
+tekort/"Wacht op inkoop" totdat een gebruiker op order-detail of in het
+order-formulier expliciet een keuze maakt uit de 3 opties (`allocatie_opties_voor_artikel`,
+`UitwisselbaarTekortHint`/`UitwisselbaarToepassenRij`) — dat geldt dus ook voor
+automatisch ingeladen EDI/webshop-orders, die voorheen stilletjes omgestickerd
+konden worden. De oude volledige cascade leeft voort als
+`herallocateer_orderregel_auto`, aangeroepen ná een bevestigde keuze voor het
+niet-gekozen restant. Zie `docs/database-schema.md` (`order_reserveringen`).
+
 ## 8. Productiepad — snijplan-lifecycle
 
 Statussen (single source: [`snijplan-status.ts`](../supabase/functions/_shared/snijplan-status.ts),

@@ -12,7 +12,7 @@ import {
   type MaatwerkVormRow,
   type AfwerkingTypeRow,
 } from '@/modules/maatwerk'
-import { UitwisselbaarTekortHint, IoLevertijdHint, berekenRegelDekking } from '@/modules/reserveringen'
+import { UitwisselbaarTekortHint, berekenRegelDekking } from '@/modules/reserveringen'
 import { getVormDisplay } from '@/lib/utils/vorm-labels'
 import { MaatwerkArtikelPicker } from './maatwerk-artikel-picker'
 import type { SelectedArticle, SubstitutionInfo } from './article-selector'
@@ -323,9 +323,6 @@ function MaatwerkLineRow({
               keuzes={line.uitwisselbaar_keuzes ?? []}
               onChange={(keuzes) => updateLine(index, { uitwisselbaar_keuzes: keuzes })}
             />
-            {tekortAantal > 0 && (
-              <IoLevertijdHint artikelnr={line.artikelnr} tekortAantal={tekortAantal} />
-            )}
           </td>
         </tr>
       )}

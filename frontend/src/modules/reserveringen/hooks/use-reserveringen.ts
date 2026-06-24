@@ -6,6 +6,7 @@ import {
   fetchClaimsVoorIORegel,
   fetchHandmatigeKeuzesVoorOrder,
 } from '../queries/reserveringen'
+import { fetchAllocatieOpties } from '../queries/allocatie-opties'
 
 export function useLevertijdVoorOrder(orderId?: number) {
   return useQuery({
@@ -44,5 +45,14 @@ export function useHandmatigeKeuzesVoorOrder(orderId?: number) {
     queryKey: ['handmatige-keuzes', orderId],
     queryFn: () => fetchHandmatigeKeuzesVoorOrder(orderId!),
     enabled: !!orderId,
+  })
+}
+
+/** Live 3-opties-databron (mig 491/493) voor een tekort op `artikelnr`. */
+export function useAllocatieOpties(artikelnr?: string) {
+  return useQuery({
+    queryKey: ['allocatie-opties', artikelnr],
+    queryFn: () => fetchAllocatieOpties(artikelnr!),
+    enabled: !!artikelnr,
   })
 }

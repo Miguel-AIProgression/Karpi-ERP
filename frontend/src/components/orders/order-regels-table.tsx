@@ -11,7 +11,7 @@ import type { OrderRegel } from '@/lib/supabase/queries/orders'
 import { setRegelVerzendweek } from '@/lib/supabase/queries/orders'
 import { isAdminPseudo } from '@/lib/orders/admin-pseudo'
 import { bepaalMaatwerkFase, MAATWERK_FASE_PRESENTATIE } from '@/lib/orders/maatwerk-productie'
-import { LevertijdBadge, UitwisselbaarToepassenRij, type OrderRegelLevertijd, type OrderClaim } from '@/modules/reserveringen'
+import { LevertijdBadge, UitwisselbaarToepassenRij, OntgrendelAllocatieKeuzeRij, type OrderRegelLevertijd, type OrderClaim } from '@/modules/reserveringen'
 import { OmzettenNaarMaatwerkDialog } from '@/components/orders/omzetten-naar-maatwerk-dialog'
 import type { HaalbaarheidsRij } from '@/modules/snijplanning'
 import { HAALBAARHEID_STATUS_STYLE } from '@/lib/orders/haalbaarheid-status-badge'
@@ -596,6 +596,9 @@ function RegelRow({ regel, orderId, orderNr, orderdatum, orderVerzendweek, lever
       ))}
       {toonSubRows && tekort > 0 && regel.artikelnr && (
         <UitwisselbaarToepassenRij regel={regel} tekort={tekort} claims={claims} />
+      )}
+      {toonSubRows && claims.some((c) => c.is_handmatig) && (
+        <OntgrendelAllocatieKeuzeRij orderRegelId={regel.id} />
       )}
       {toonSubRows && tekort > 0 && regel.artikelnr && (
         <tr className="border-b border-slate-50">

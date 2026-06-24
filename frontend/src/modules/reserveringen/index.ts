@@ -17,6 +17,8 @@ export type {
   LeverModus,
   HandmatigeKeuzePerRegel,
 } from './queries/reserveringen'
+export type { AllocatieOptie } from './queries/allocatie-opties'
+export type { AllocatieKeuze } from '@/lib/supabase/queries/order-mutations'
 
 // ---------------------------------------------------------------------------
 // Types + pure helpers (lib)
@@ -33,6 +35,7 @@ export {
   useClaimsVoorOrderRegel,
   useClaimsVoorIORegel,
   useHandmatigeKeuzesVoorOrder,
+  useAllocatieOpties,
 } from './hooks/use-reserveringen'
 
 // ---------------------------------------------------------------------------
@@ -42,8 +45,8 @@ export { RegelClaimDetail } from './components/regel-claim-detail'
 export { SubstitutionPicker } from './components/substitution-picker'
 export { UitwisselbaarTekortHint } from './components/uitwisselbaar-tekort-hint'
 export { UitwisselbaarToepassenRij } from './components/uitwisselbaar-toepassen-rij'
+export { OntgrendelAllocatieKeuzeRij } from './components/ontgrendel-allocatie-rij'
 export { LevertijdBadge } from './components/levertijd-badge'
-export { IoLevertijdHint } from './components/io-levertijd-hint'
 
 // ---------------------------------------------------------------------------
 // Cache seam (cross-Module invalidation — ADR-0015, Ingreep 5)

@@ -16,7 +16,7 @@ import {
   SnelsteHaalbaarKnop,
   useNeemSnelsteOver,
 } from '@/modules/levertijd'
-import { createOrder, updateOrderWithLines, deleteOrder, resolveOrderlinePrice, fetchKlantArtikelnummer, setUitwisselbaarClaims, type LevertijdSnapshotContext } from '@/lib/supabase/queries/order-mutations'
+import { createOrder, updateOrderWithLines, deleteOrder, resolveOrderlinePrice, fetchKlantArtikelnummer, setAllocatieKeuze, type LevertijdSnapshotContext } from '@/lib/supabase/queries/order-mutations'
 import type { OrderFormData, OrderRegelFormData, PrijsBron, PrijsBreakdown } from '@/lib/supabase/queries/order-mutations'
 import { fetchKlanteigenNaam } from '@/modules/debiteuren'
 import { supabase } from '@/lib/supabase/client'
@@ -499,12 +499,28 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
   }
 
   /**
-   * Persist handmatige uitwisselbaar-keuzes per regel via set_uitwisselbaar_claims-RPC.
-   * Matcht op regelnummer (volgorde-index) na fetch van de net opgeslagen regels.
+   * Persist handmatige allocatie-keuzes per regel via set_allocatie_keuze-RPC
+   * (mig 492). Matcht op regelnummer (volgorde-index) na fetch van de net
+   * opgeslagen regels.
+   *
+   * Een regel die bij het laden van de bewerk-flow al een keuze had (terug-
+   * draaien via de +/- stepper naar 0) moet ook met een LEGE keuzeset worden
+   * gepersisteerd — anders blijft de oude DB-claim ongemoeid liggen omdat hij
+   * simpelweg niet in `regelsMetKeuzes` voorkomt. Regels die nooit een keuze
+   * hadden (en nog steeds niet) worden bewust overgeslagen — anders zou elke
+   * order-save voor élke regel een release+reclaim-cyclus triggeren.
    */
   async function persistUitwisselbaarKeuzes(orderId: number, regelsList: OrderRegelFormData[]) {
-    const regelsMetKeuzes = regelsList.filter(r => (r.uitwisselbaar_keuzes ?? []).length > 0)
-    if (regelsMetKeuzes.length === 0) return
+    const hadKeuzeBijLadenPerId = new Map<number, boolean>(
+      (initialData?.regels ?? [])
+        .filter((r): r is OrderRegelFormData & { id: number } => r.id != null)
+        .map(r => [r.id, (r.uitwisselbaar_keuzes ?? []).length > 0]),
+    )
+    const regelsOmTePersisteren = regelsList.filter(r => {
+      if ((r.uitwisselbaar_keuzes ?? []).length > 0) return true
+      return !!r.id && hadKeuzeBijLadenPerId.get(r.id) === true
+    })
+    if (regelsOmTePersisteren.length === 0) return
 
     const { data: dbRegels } = await supabase
       .from('order_regels')
@@ -516,16 +532,12 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
 
     for (let i = 0; i < regelsList.length; i++) {
       const r = regelsList[i]
-      const keuzes = r.uitwisselbaar_keuzes ?? []
-      if (keuzes.length === 0) continue
+      if (!regelsOmTePersisteren.includes(r)) continue
       // Bij create: regelnummer = i + 1 (zie create_order_with_lines payload).
       // Bij edit: regelnummer wordt ook hergenummerd als i + 1 in updateOrderWithLines.
       const dbId = idPerRegelnummer.get(i + 1) ?? r.id
       if (!dbId) continue
-      await setUitwisselbaarClaims(
-        dbId,
-        keuzes.map(k => ({ artikelnr: k.artikelnr, aantal: k.aantal })),
-      )
+      await setAllocatieKeuze(dbId, r.uitwisselbaar_keuzes ?? [])
     }
   }
 

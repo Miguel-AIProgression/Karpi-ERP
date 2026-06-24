@@ -1,92 +1,85 @@
-import { useEffect, useRef } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { ArrowRightLeft, Package } from 'lucide-react'
-import {
-  fetchEquivalenteProducten,
-} from '@/lib/supabase/queries/product-equivalents'
-
-export interface UitwisselbaarKeuze {
-  artikelnr: string
-  aantal: number
-  omschrijving?: string
-}
+import { ArrowRightLeft, Clock, Package } from 'lucide-react'
+import { useAllocatieOpties } from '../hooks/use-reserveringen'
+import type { AllocatieOptie } from '../queries/allocatie-opties'
+import type { AllocatieKeuze } from '@/lib/supabase/queries/order-mutations'
+import { isoWeek } from '@/lib/orders/verzendweek'
 
 interface Props {
   artikelnr: string
-  /** Aantal nog tekort als er niets uit uitwisselbaar wordt gepakt. */
+  /** Aantal nog tekort als er niets gekozen wordt. */
   tekortAantal: number
-  /** Huidige keuzes van uitwisselbaar producten + aantallen. */
-  keuzes: UitwisselbaarKeuze[]
+  /** Huidige keuzes (uitwisselbaar-voorraad én/of inkoop-claims) + aantallen. */
+  keuzes: AllocatieKeuze[]
   /** Callback bij wijziging van een keuze (lege/0 wordt eruit gefilterd). */
-  onChange: (keuzes: UitwisselbaarKeuze[]) => void
+  onChange: (keuzes: AllocatieKeuze[]) => void
+}
+
+function optieKey(o: { bron?: string; artikelnr: string; inkooporder_regel_id?: number | null }): string {
+  return `${o.bron ?? 'voorraad'}:${o.artikelnr}:${o.inkooporder_regel_id ?? ''}`
+}
+
+function weekLabel(datumIso: string): string {
+  const w = isoWeek(new Date(datumIso + 'T00:00:00'))
+  return `wk ${w.week} · ${w.jaar}`
+}
+
+/** Sorteert op levertijd: direct leverbaar (voorraad) eerst, dan op ETA — een
+ *  IO-optie zonder bekende ETA komt achteraan (onbekend is niet "het snelst"). */
+function levertijdSortKey(o: AllocatieOptie): number {
+  if (o.bron === 'voorraad') return -1
+  return o.verwacht_datum ? new Date(o.verwacht_datum).getTime() : Number.POSITIVE_INFINITY
+}
+
+const GROEP_LABEL: Record<'voorraad' | 'eigen_inkoop' | 'equivalent_inkoop', string> = {
+  voorraad: 'Equivalent — nu op voorraad',
+  eigen_inkoop: 'Eigen artikel — wacht op inkoop',
+  equivalent_inkoop: 'Equivalent — wacht op zijn inkoop',
+}
+
+function groepVan(o: AllocatieOptie): 'voorraad' | 'eigen_inkoop' | 'equivalent_inkoop' {
+  if (o.bron === 'voorraad') return 'voorraad'
+  return o.artikelnr === o.eigen_artikelnr ? 'eigen_inkoop' : 'equivalent_inkoop'
 }
 
 /**
- * Toont per uitwisselbaar product met voorraad een +/- aantal-picker.
- * De gebruiker kiest expliciet hoeveel stuks van welk alternatief meegenomen
- * worden — multi-source allocatie binnen één orderregel.
+ * Toont bij een voorraadtekort op een vaste-maat-regel drie soorten kiesbare
+ * opties — gesorteerd op levertijd — i.p.v. de allocator stilletjes te laten
+ * substitueren (uitbreiding van de bestaande omsticker-knop, geen automatisch
+ * gedrag meer sinds mig 489). De gebruiker kiest expliciet hoeveel stuks van
+ * welke optie deze regel mag dekken; bij submit roept order-form
+ * `set_allocatie_keuze` aan om de claims te persisteren (Plek A). Op
+ * order-detail (Plek B) gebeurt het direct via dezelfde RPC, met een eigen
+ * "Bevestigen"/"Ontgrendelen"-knop (`UitwisselbaarToepassenRij`).
  *
- * Geen DB-allocatie hier: dit is puur form-state. Bij submit roept order-form
- * `set_uitwisselbaar_claims` RPC aan om de claims te persisteren.
+ * Geen auto-fill: de gebruiker moet zelf klikken, nooit een stille keuze.
  */
 export function UitwisselbaarTekortHint({ artikelnr, tekortAantal, keuzes, onChange }: Props) {
-  const { data: equivalenten, isLoading } = useQuery({
-    queryKey: ['equivalente-producten', artikelnr],
-    queryFn: () => fetchEquivalenteProducten(artikelnr),
-    enabled: !!artikelnr,
-  })
+  const { data: opties, isLoading } = useAllocatieOpties(artikelnr)
 
-  // Auto-fill: bij eerste data-load + tekort + nog geen keuzes, vul de eerste
-  // (beste) uitwisselbare op tot tekort gedekt is. Gebruiker kan daarna +/- aanpassen.
-  const autofilledRef = useRef(false)
-  useEffect(() => {
-    if (autofilledRef.current) return
-    if (!equivalenten) return
-    if (keuzes.length > 0) {
-      autofilledRef.current = true
-      return
-    }
-    if (tekortAantal <= 0) return
-
-    const opVrij = equivalenten.filter(e => e.vrije_voorraad > 0)
-    if (opVrij.length === 0) return
-
-    let resterend = tekortAantal
-    const auto: { artikelnr: string; aantal: number; omschrijving?: string }[] = []
-    for (const eq of opVrij) {
-      if (resterend <= 0) break
-      const pak = Math.min(eq.vrije_voorraad, resterend)
-      if (pak > 0) {
-        auto.push({ artikelnr: eq.artikelnr, aantal: pak, omschrijving: eq.omschrijving })
-        resterend -= pak
-      }
-    }
-    if (auto.length > 0) {
-      autofilledRef.current = true
-      onChange(auto)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [equivalenten, tekortAantal])
-
-  if (isLoading || !equivalenten) return null
-
-  const opVoorraad = equivalenten.filter(e => e.vrije_voorraad > 0)
-  const totaalGekozen = keuzes.reduce((s, k) => s + (k.aantal || 0), 0)
-
-  // Hint alleen tonen als er tekort is OF als er al keuzes zijn (om ze te kunnen aanpassen)
-  if (opVoorraad.length === 0 && keuzes.length === 0) return null
+  if (isLoading || !opties) return null
+  if (opties.length === 0 && keuzes.length === 0) return null
   if (tekortAantal <= 0 && keuzes.length === 0) return null
 
-  function setAantalVoor(eq: { artikelnr: string; omschrijving: string }, aantal: number) {
-    const filtered = keuzes.filter(k => k.artikelnr !== eq.artikelnr)
-    if (aantal > 0) {
-      filtered.push({ artikelnr: eq.artikelnr, aantal, omschrijving: eq.omschrijving })
-    }
-    onChange(filtered)
+  const gesorteerd = [...opties].sort((a, b) => levertijdSortKey(a) - levertijdSortKey(b))
+  const totaalGekozen = keuzes.reduce((s, k) => s + (k.aantal || 0), 0)
+
+  function huidigeAantal(o: AllocatieOptie): number {
+    return keuzes.find(k => optieKey(k) === optieKey(o))?.aantal ?? 0
   }
 
-  function huidigeAantal(art: string): number {
-    return keuzes.find(k => k.artikelnr === art)?.aantal ?? 0
+  function setAantalVoor(o: AllocatieOptie, aantal: number) {
+    const filtered = keuzes.filter(k => optieKey(k) !== optieKey(o))
+    if (aantal > 0) {
+      filtered.push({
+        bron: o.bron,
+        artikelnr: o.artikelnr,
+        aantal,
+        omschrijving: o.omschrijving,
+        inkooporder_regel_id: o.inkooporder_regel_id,
+        verwacht_datum: o.verwacht_datum,
+      })
+    }
+    onChange(filtered)
   }
 
   return (
@@ -96,35 +89,45 @@ export function UitwisselbaarTekortHint({ artikelnr, tekortAantal, keuzes, onCha
         <span>
           {tekortAantal > 0 ? (
             <>
-              <strong>{tekortAantal}× tekort</strong> — kies hoeveel stuks via uitwisselbaar product (omstickeren):
+              <strong>{tekortAantal}× tekort</strong> — kies hoeveel stuks via welke optie (op basis van levertijd):
             </>
           ) : (
-            <>Uitwisselbaar gepakt: {totaalGekozen}× — pas hieronder aan:</>
+            <>Gekozen: {totaalGekozen}× — pas hieronder aan:</>
           )}
         </span>
       </div>
-      <div className="flex flex-col gap-1">
-        {opVoorraad.map(eq => {
-          const huidig = huidigeAantal(eq.artikelnr)
-          // Max = wat al gekozen is + tekort dat nog open staat (max van eigen voorraad)
-          const max = Math.min(eq.vrije_voorraad, huidig + Math.max(0, tekortAantal))
+      <div className="flex flex-col gap-1.5">
+        {gesorteerd.map(o => {
+          const huidig = huidigeAantal(o)
+          const max = Math.min(o.vrij_aantal, huidig + Math.max(0, tekortAantal))
+          const groep = groepVan(o)
           return (
             <div
-              key={eq.artikelnr}
+              key={optieKey(o)}
               className="flex items-center justify-between gap-2 px-2 py-1 rounded bg-white border border-amber-100"
             >
               <span className="flex-1 truncate">
-                <span className="font-mono text-terracotta-500">{eq.artikelnr}</span>
-                <span className="ml-2 text-slate-700">{eq.omschrijving}</span>
-                <span className="ml-2 text-emerald-600">
-                  <Package size={10} className="inline mr-0.5" />
-                  Vrij: {eq.vrije_voorraad}
+                <span className="text-[10px] uppercase tracking-wide text-slate-400 mr-1.5">
+                  {GROEP_LABEL[groep]}
                 </span>
+                <span className="font-mono text-terracotta-500">{o.artikelnr}</span>
+                <span className="ml-2 text-slate-700">{o.omschrijving}</span>
+                {o.bron === 'voorraad' ? (
+                  <span className="ml-2 text-emerald-600">
+                    <Package size={10} className="inline mr-0.5" />
+                    Vrij: {o.vrij_aantal}
+                  </span>
+                ) : (
+                  <span className="ml-2 text-amber-700">
+                    <Clock size={10} className="inline mr-0.5" />
+                    {o.verwacht_datum ? weekLabel(o.verwacht_datum) : 'leverweek onbekend'} ({o.vrij_aantal} vrij)
+                  </span>
+                )}
               </span>
               <div className="flex items-center gap-1 shrink-0">
                 <button
                   type="button"
-                  onClick={() => setAantalVoor(eq, Math.max(0, huidig - 1))}
+                  onClick={() => setAantalVoor(o, Math.max(0, huidig - 1))}
                   disabled={huidig === 0}
                   className="w-6 h-6 rounded border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-30"
                 >
@@ -136,14 +139,14 @@ export function UitwisselbaarTekortHint({ artikelnr, tekortAantal, keuzes, onCha
                   min={0}
                   max={max}
                   onChange={e => {
-                    const n = Math.max(0, Math.min(eq.vrije_voorraad, parseInt(e.target.value) || 0))
-                    setAantalVoor(eq, n)
+                    const n = Math.max(0, Math.min(o.vrij_aantal, parseInt(e.target.value) || 0))
+                    setAantalVoor(o, n)
                   }}
                   className="w-12 text-center bg-white border border-slate-200 rounded px-1 py-0.5 text-xs"
                 />
                 <button
                   type="button"
-                  onClick={() => setAantalVoor(eq, Math.min(max, huidig + 1))}
+                  onClick={() => setAantalVoor(o, Math.min(max, huidig + 1))}
                   disabled={huidig >= max}
                   className="w-6 h-6 rounded border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-30"
                 >

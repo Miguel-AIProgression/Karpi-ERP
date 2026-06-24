@@ -46,12 +46,20 @@ export function metProductVelden(
   }
 }
 
-/** Eén handmatige uitwisselbaar-keuze (omstickeren) gekoppeld aan een orderregel. */
+/**
+ * Eén handmatige allocatie-keuze gekoppeld aan een orderregel — uitwisselbaar
+ * (omstickeren) óf een inkooporder-claim (eigen of equivalent artikel, mig
+ * 491-492). `bron`/`inkooporder_regel_id` zijn nodig om een IO-keuze niet per
+ * ongeluk als voorraad-keuze te hydrateren bij het opnieuw opslaan.
+ */
 export interface OrderHydratieKeuze {
   order_regel_id: number
+  bron?: 'voorraad' | 'inkooporder_regel'
   artikelnr: string
   aantal: number
   omschrijving?: string | null
+  inkooporder_regel_id?: number | null
+  verwacht_datum?: string | null
 }
 
 /**
@@ -67,10 +75,17 @@ export function hydrateerOrderRegels(
   handmatigeKeuzes: OrderHydratieKeuze[],
 ): OrderRegelFormData[] {
   // Groepeer handmatige keuzes per orderregel-id.
-  const keuzesPerRegel = new Map<number, { artikelnr: string; aantal: number; omschrijving?: string }[]>()
+  const keuzesPerRegel = new Map<number, OrderRegelFormData['uitwisselbaar_keuzes']>()
   for (const k of handmatigeKeuzes) {
     const existing = keuzesPerRegel.get(k.order_regel_id) ?? []
-    existing.push({ artikelnr: k.artikelnr, aantal: k.aantal, omschrijving: k.omschrijving ?? undefined })
+    existing!.push({
+      bron: k.bron,
+      artikelnr: k.artikelnr,
+      aantal: k.aantal,
+      omschrijving: k.omschrijving ?? undefined,
+      inkooporder_regel_id: k.inkooporder_regel_id ?? undefined,
+      verwacht_datum: k.verwacht_datum ?? undefined,
+    })
     keuzesPerRegel.set(k.order_regel_id, existing)
   }
 
