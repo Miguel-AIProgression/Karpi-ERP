@@ -117,6 +117,12 @@ en golden-fixture; `herbereken_wacht_status` verzamelt alleen nog de state en
 delegeert. Wijzig de ladder dus in `derive_wacht_status` + TS-spiegel + golden,
 nooit meer inline.
 
+**Callers van `herbereken_wacht_status`:** (1) elke claim-/orderregel-mutatie via
+`herwaardeer_order_status` (mig 254-wrapper, ADR-0015); (2) sinds **mig 486** de
+listener `trg_snijplan_herbereken_order_status` op `snijplannen` zodra een stuk de
+`'Ingepakt'`-grens kruist (confectie→pick terugkoppeling — zie §8). Zonder (2) bleef
+een afgeronde maatwerk-order op `Wacht op maatwerk` staan terwijl hij al pickbaar was.
+
 ## 5. `order_events` — types en listeners
 
 **Event-types** (mig 218 + 257 + 346): `aangemaakt`, `wacht_status_herberekend`,
@@ -223,6 +229,22 @@ tot die tijd houdt regel 4 van §4 de order op `Wacht op maatwerk`. Voor product
 orders flipt `voltooi_confectie` de order naar `Maatwerk afgerond` zodra alle
 snijplannen `confectie_afgerond_op` hebben (inpak-stap niet vereist) — via
 `_apply_transitie` met event `maatwerk_afgerond` (mig 347/348).
+
+**Terugkoppel-seam snijplan→order (mig 486, 2026-06-24):** de order-fase is een
+afleiding van de productie- **én** de claim-state. Tot mig 486 herberekende
+niets `orders.status` ná een confectie-/inpak-stap (noch `voltooi_confectie`,
+noch de kale scanstation-`UPDATE` in `opboekenItem`, noch een snijplan-trigger),
+waardoor een gewone maatwerk-order op `Wacht op maatwerk` bleef staan terwijl
+`orderregel_pickbaarheid` (mig 386) hem al pickbaar toonde — twee verhalen
+naast elkaar (de order toonde nooit `Klaar voor picken` en sprong direct naar
+`In pickronde`). Listener `trg_snijplan_herbereken_order_status` (`AFTER UPDATE
+OF status ON snijplannen`, `WHEN` het stuk de `'Ingepakt'`-grens kruist, in- of
+uitpakken) roept nu `herbereken_wacht_status` voor de eigenaar-order aan. Vangt
+beide Ingepakt-zetters op één plek (ADR-0006/0015-listener-patroon — géén edit
+in de command-RPC's). Productie-only orders worden overgeslagen (eigen terminale
+flip hierboven). De beslissing blijft single-source via `derive_wacht_status`,
+die `In pickronde`/`Verzonden`/`Maatwerk afgerond` no-toucht — een al-gestarte
+pickronde wordt nooit teruggetrokken.
 
 **Dubbele bezet-guard (mig 301, VERR130-incident):** planning-pool sluit rollen uit op
 `snijden_gestart_op IS NOT NULL` **én** op ANY snijplan in `Snijden`/`Gesneden` —

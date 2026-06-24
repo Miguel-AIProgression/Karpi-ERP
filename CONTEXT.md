@@ -253,6 +253,11 @@ _Avoid_: pakbon-afleiding per renderpad, inline JSX-presentatie naast bouwPakbon
 - **Order-hydratie** is de inverse van **Order-commit**: de bewerk-flow laadt een
   bestaande **Order** terug naar dezelfde `OrderRegelFormData`-form-state-shape
 - Een maatwerk-**Orderregel** produceert één **Snijplan** per stuk
+- De **Order**-fase (`orders.status`) is een afleiding van de **productie**-state
+  (de **Snijplannen**) én de claim-state — niet alleen de claim-state. Een
+  **Snijplan** dat de `'Ingepakt'`-grens kruist herberekent daarom de wacht-status
+  van zijn **Order** (mig 486-listener), zodat de order-fase en de **Pickbaarheid**
+  hetzelfde productie-feit vertellen i.p.v. twee verhalen
 - Een **Factuurdocument** rendert naar factuur-PDF én EDI-INVOIC; beide tonen
   dezelfde **Artikelpresentatie**, die óók de orderbevestiging voedt
 - Een **Pakbondocument** rendert naar de geprinte React-pakbon én de factuurmail-PDF;

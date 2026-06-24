@@ -1,5 +1,38 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-24 — Order-fase volgt de productie: snijplan→order terugkoppel-seam (mig 486)
+
+**Waarom (architectuur-audit kandidaat #1):** de order-fase (`orders.status`) hoort
+de werkelijke toestand te tonen (ADR-0016), maar werd na een confectie-/inpak-stap
+nergens herberekend. Pick & Ship kreeg het "klaar"-signaal wél correct en direct (de
+view `orderregel_pickbaarheid` leest `snijplannen.status='Ingepakt'` live), maar de
+order-badge bleef op **Wacht op maatwerk** staan terwijl de order al volledig pickbaar
+was — twee verhalen naast elkaar. Een gewone maatwerk-order toonde daardoor nooit
+**Klaar voor picken** en sprong direct naar **In pickronde**.
+
+**Oorzaak:** geen van de Ingepakt-zetters herberekende de order-status. `voltooi_confectie`
+(mig 348) doet alleen de productie-only `Maatwerk afgerond`-flip; het scanstation
+(`opboekenItem`) doet een kale `UPDATE snijplannen SET status='Ingepakt'`. `herbereken_wacht_status`
+werd dus alleen door claim-mutaties getriggerd, nooit door snij/confectie-voortgang.
+
+**Wat:** listener `trg_snijplan_herbereken_order_status` (`AFTER UPDATE OF status ON
+snijplannen`, `WHEN` het stuk de `'Ingepakt'`-grens kruist — in- óf uitpakken) roept
+`herbereken_wacht_status` aan voor de eigenaar-order. Vangt **beide** Ingepakt-zetters
+op één plek (ADR-0006/0015-listener-patroon — geen edit in de command-RPC's, geen
+synchroon-te-houden tweede call-site). Productie-only orders worden overgeslagen (eigen
+terminale flip). De beslissing blijft single-source via `derive_wacht_status`, die
+`In pickronde`/`Verzonden`/`Maatwerk afgerond` no-toucht — een al-gestarte pickronde
+wordt nooit teruggetrokken; uitpakken (`Ingepakt`→`In confectie`) zet de order via tak-4
+netjes terug op `Wacht op maatwerk`.
+
+**Geen frontend-wijziging:** de orders-overzicht-tabs/badges renderen al `orders.status` —
+zodra de listener 'm op `Klaar voor picken` zet, klopt het beeld vanzelf.
+
+**Vangnet:** statische self-test in de migratie (trigger bestaat + roept herbereken +
+productie-only-guard); de gedragsverificatie draait als rolled-back transactie op een
+live maatwerk-order bij apply (alle snijplannen → Ingepakt ⇒ order `Klaar voor picken`;
+productie-only ⇒ `Maatwerk afgerond`; uitpakken ⇒ terug naar `Wacht op maatwerk`).
+
 ## 2026-06-24 — Colli-bundeling ook voor HST, op pallet EP/SP (mig 485)
 
 **Waarom:** Rhenus kon al colli samenpakken onder één nieuwe SSCC (mig 420/421). De
