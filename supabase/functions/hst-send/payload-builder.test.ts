@@ -108,6 +108,32 @@ Deno.test('bouwTransportOrderPayload — per-colli regels met SSCC-BarCode', () 
   assertEquals(line2.Height, 30);
 });
 
+Deno.test('bouwTransportOrderPayload — pallet-bundel zet PackageUnitID (mig 485)', () => {
+  const result = bouwTransportOrderPayload({
+    zending: {
+      zending_nr: 'ZEND-2026-0500',
+      afl_naam: 'Klant', afl_adres: 'Straat 1', afl_postcode: '1111AA', afl_plaats: 'Plaats',
+      afl_land: 'NL', afl_telefoon: null, afl_email: null,
+      totaal_gewicht_kg: 60, aantal_colli: 2, opmerkingen: null, verzenddatum: '2026-06-24',
+    },
+    order: { order_nr: 'ORD-2026-0500' },
+    bedrijf: KARPI_BEDRIJF,
+    hstCustomerId: '038267',
+    colli: [
+      // Losse colli (geen pallet_type) → 'col'.
+      { colli_nr: 1, sscc: '087159540000000010', gewicht_kg: 20, lengte_cm: 230, breedte_cm: 160, omschrijving_snapshot: 'Los tapijt' },
+      // Bundel-rij op een Europallet → 'EP'.
+      { colli_nr: 3, sscc: '087159540000000027', gewicht_kg: 40, lengte_cm: 240, breedte_cm: 80, omschrijving_snapshot: null, pallet_type: 'EP' },
+    ],
+  });
+
+  assertEquals(result.TransportOrderLines.length, 2);
+  assertEquals(result.TransportOrderLines[0].PackageUnitID, 'col');
+  assertEquals(result.TransportOrderLines[1].PackageUnitID, 'EP');
+  // De bundel zonder omschrijving valt terug op "Tapijten (order_nr)".
+  assertEquals(result.TransportOrderLines[1].GoodsDescription, 'Tapijten (ORD-2026-0500)');
+});
+
 Deno.test('bouwTransportOrderPayload — fallback naar aggregate-regel zonder colli', () => {
   // Defensieve fallback: als de orchestrator-guard mist en er gaat toch een
   // zending zonder colli's door, krijgen we minstens nog een geldige call.

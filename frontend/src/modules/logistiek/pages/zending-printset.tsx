@@ -23,7 +23,11 @@ import {
   labelFormaatVoor,
   vervoerderInfoVoor,
 } from '@/modules/logistiek/lib/printset'
-import { isHandmatigAanmeldenVervoerder } from '@/modules/logistiek/lib/handmatig-aanmelden'
+import {
+  bundelOpPallet,
+  isHandmatigAanmeldenVervoerder,
+  ondersteuntColliBundelen,
+} from '@/modules/logistiek/lib/handmatig-aanmelden'
 import { ColliBundelDialog } from '@/modules/logistiek/components/colli-bundel-dialog'
 
 type PrintMode = 'all' | 'labels' | 'pakbon' | 'tapijt-stickers'
@@ -138,6 +142,11 @@ export function ZendingPrintSetPage() {
   ).length
   const isRhenus = isHandmatigAanmeldenVervoerder(zending.vervoerder_code)
   const isRhenusBundel = isRhenus && losseColliAantal >= 2
+  // Mig 485: colli-bundeling tijdens 'Picken' geldt voor Rhenus ÉN HST (op pallet).
+  // De post-voltooi 16:00-copy/navigatie hierboven blijft Rhenus-only (HST meldt
+  // direct aan, geen bundel-venster ná voltooien).
+  const kanBundelen = ondersteuntColliBundelen(zending.vervoerder_code) && losseColliAantal >= 2
+  const metPallet = bundelOpPallet(zending.vervoerder_code)
 
   return (
     <>
@@ -307,16 +316,18 @@ export function ZendingPrintSetPage() {
               }
               pickerId={pickerId}
             />
-            {/* Mig 421: Rhenus-zending met meerdere colli — pak colli samen in één zak
-                onder één nieuwe sticker, al tijdens het verzamelen. */}
-            {isRhenusBundel && (
+            {/* Mig 421/485: zending met meerdere colli — pak colli samen op één
+                pallet (HST: EP/SP) of in één zak (Rhenus) onder één nieuwe sticker,
+                al tijdens het verzamelen. */}
+            {kanBundelen && (
               <div className="rounded-[var(--radius)] border border-terracotta-200 bg-white p-4">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <h3 className="text-sm font-semibold text-slate-700">Colli bundelen (Rhenus)</h3>
+                    <h3 className="text-sm font-semibold text-slate-700">Colli bundelen</h3>
                     <p className="mt-0.5 text-xs text-slate-500">
-                      Pak meerdere colli samen in één zak onder één nieuwe sticker. De losse
-                      stickers gooi je dan weg.
+                      {metPallet
+                        ? 'Pak meerdere colli samen op één pallet (Europallet of wegwerp pallet) onder één nieuwe sticker. De losse stickers gooi je dan weg.'
+                        : 'Pak meerdere colli samen in één zak onder één nieuwe sticker. De losse stickers gooi je dan weg.'}
                     </p>
                   </div>
                   <button
@@ -354,10 +365,11 @@ export function ZendingPrintSetPage() {
           </div>
         )}
 
-        {bundelOpen && isRhenusBundel && (
+        {bundelOpen && kanBundelen && (
           <ColliBundelDialog
             zendingId={zending.id}
             zendingNr={zending.zending_nr}
+            vervoerderCode={zending.vervoerder_code}
             onClose={() => setBundelOpen(false)}
           />
         )}

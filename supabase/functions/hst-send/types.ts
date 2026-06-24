@@ -48,6 +48,9 @@ export interface ZendingColliInput {
   lengte_cm?: number | null;
   breedte_cm?: number | null;
   omschrijving_snapshot: string | null;
+  // Mig 485: pallet-type van een bundel-rij (EP=Europallet, SP=wegwerp pallet).
+  // Zet PackageUnitID; NULL/afwezig → 'col' (losse tapijtrol-colli).
+  pallet_type?: string | null;
 }
 
 export interface BedrijfInput {

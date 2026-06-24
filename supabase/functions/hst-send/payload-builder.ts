@@ -137,7 +137,12 @@ function bouwLineUitColli(c: ZendingColliInput, order: OrderInput): HstTransport
     // De labelbarcode (AI(00)+SSCC) uit de gedeelde seam — exact wat op het
     // label staat en bij elke vervoerder wordt aangemeld (single source).
     BarCode: { BarCode: labelBarcode(c.sscc) ?? '' },
-    PackageUnitID: DEFAULT_PACKAGE_UNIT_ID,
+    // Mig 485: een pallet-bundel (colli-bundeling op HST) draagt EP/SP; een losse
+    // tapijtrol-colli houdt 'col'. De afmetingen blijven de (operator-gezette)
+    // bundel-maten + vaste rol-diameter — HST prijst een pallet op PackageUnitID,
+    // niet op de dims. ponytail: pallet-dims niet auto-afgeleid; tuning-knop is de
+    // lengte/breedte in de bundel-dialog.
+    PackageUnitID: c.pallet_type ?? DEFAULT_PACKAGE_UNIT_ID,
   };
 }
 

@@ -32,6 +32,10 @@ export interface ZendingColli {
   breedte_cm: number | null;
   omschrijving_snapshot: string | null;
   artikelnr: string | null;
+  // Mig 485: pallet-type van een bundel-rij (EP/SP). NULL voor losse colli en
+  // niet-HST-bundels. De HST payload-builder mapt dit op PackageUnitID; Rhenus/
+  // Verhoek negeren het.
+  pallet_type: string | null;
 }
 
 export interface FetchZendingColliResult {
@@ -45,7 +49,7 @@ export interface FetchZendingColliResult {
 // gebruikt de expliciete FK-kolom-alias tegen PGRST201 (zelfde hint die Verhoek
 // al draaide). Colli zonder order_regel_id → artikelnr null, géén drop van rijen.
 const COLLI_SELECT =
-  'colli_nr, sscc, gewicht_kg, lengte_cm, breedte_cm, omschrijving_snapshot, ' +
+  'colli_nr, sscc, gewicht_kg, lengte_cm, breedte_cm, omschrijving_snapshot, pallet_type, ' +
   'order_regels:order_regel_id ( artikelnr )';
 
 export async function fetchZendingColli(
@@ -71,6 +75,7 @@ export async function fetchZendingColli(
     breedte_cm: r.breedte_cm,
     omschrijving_snapshot: r.omschrijving_snapshot,
     artikelnr: r.order_regels?.artikelnr ?? null,
+    pallet_type: r.pallet_type ?? null,
   }));
   return { colli, error: null };
 }

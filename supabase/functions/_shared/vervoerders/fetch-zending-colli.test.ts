@@ -36,7 +36,7 @@ Deno.test('fetchZendingColli: bevraagt de canonieke snapshot-kolommen + embed, g
   assertEquals(argOf(ops, 'from'), ['zending_colli']);
   const select = String(argOf(ops, 'select')[0]);
   // Snapshot-bron: dims uit zending_colli, NIET uit een live order_regels→producten-join.
-  for (const kol of ['colli_nr', 'sscc', 'gewicht_kg', 'lengte_cm', 'breedte_cm', 'omschrijving_snapshot']) {
+  for (const kol of ['colli_nr', 'sscc', 'gewicht_kg', 'lengte_cm', 'breedte_cm', 'omschrijving_snapshot', 'pallet_type']) {
     assertEquals(select.includes(kol), true, `select mist ${kol}`);
   }
   // artikelnr alleen via de expliciete FK-embed (PGRST201-hint).
@@ -54,9 +54,11 @@ Deno.test('fetchZendingColli: mapt rijen → canonieke shape, artikelnr platgesl
     data: [
       {
         colli_nr: 1, sscc: '00123', gewicht_kg: 19.8, lengte_cm: 240, breedte_cm: 330,
-        omschrijving_snapshot: 'Egyptische Wol 240x330 cm', order_regels: { artikelnr: 'EGW-240' },
+        omschrijving_snapshot: 'Egyptische Wol 240x330 cm', pallet_type: 'EP',
+        order_regels: { artikelnr: 'EGW-240' },
       },
       // Colli zonder order_regel_id → embed null → artikelnr null, geen drop.
+      // pallet_type ontbreekt → null (losse colli, mig 485).
       {
         colli_nr: 2, sscc: null, gewicht_kg: null, lengte_cm: null, breedte_cm: null,
         omschrijving_snapshot: null, order_regels: null,
@@ -70,10 +72,11 @@ Deno.test('fetchZendingColli: mapt rijen → canonieke shape, artikelnr platgesl
   assertEquals(colli.length, 2);
   assertEquals(colli[0], {
     colli_nr: 1, sscc: '00123', gewicht_kg: 19.8, lengte_cm: 240, breedte_cm: 330,
-    omschrijving_snapshot: 'Egyptische Wol 240x330 cm', artikelnr: 'EGW-240',
+    omschrijving_snapshot: 'Egyptische Wol 240x330 cm', artikelnr: 'EGW-240', pallet_type: 'EP',
   });
   assertEquals(colli[1].artikelnr, null);
   assertEquals(colli[1].sscc, null);
+  assertEquals(colli[1].pallet_type, null);
 });
 
 Deno.test('fetchZendingColli: query-fout → lege colli + foutmelding (caller beslist)', async () => {

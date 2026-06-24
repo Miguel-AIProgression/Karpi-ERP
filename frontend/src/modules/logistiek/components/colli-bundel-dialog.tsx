@@ -6,25 +6,34 @@ import {
   useVerwijderColliBundel,
   useZendingColliVoorBundel,
 } from '@/modules/logistiek/hooks/use-colli-bundel'
+import { bundelOpPallet } from '@/modules/logistiek/lib/handmatig-aanmelden'
 
 interface Props {
   zendingId: number
   zendingNr: string
+  /** Stuurt de bundel-eenheid: HST bundelt op pallet (EP/SP → PackageUnitID),
+   *  Rhenus in een zak. Mig 485. */
+  vervoerderCode: string | null
   onClose: () => void
 }
 
 /**
- * Pop-up om colli te bundelen tijdens (of net na) de pickronde — mig 421.
- * Selecteer ≥2 colli → één nieuwe SSCC-sticker (de bundel). Aanmelden zit hier
- * bewust NIET: sinds mig 484 meldt Rhenus automatisch aan in de dagbatch om
- * 16:00 (geen handmatige stap meer). Hergebruikt de bundel-hooks van zending-detail.
+ * Pop-up om colli te bundelen tijdens (of net na) de pickronde — mig 421/485.
+ * Selecteer ≥2 colli → één nieuwe SSCC-sticker (de bundel). Bij HST kies je ook
+ * het pallet-type (EP=Europallet / SP=wegwerp pallet, mig 485). Aanmelden zit hier
+ * bewust NIET: HST meldt direct na 'Voltooi pickronde' aan, Rhenus in de dagbatch
+ * om 16:00. Hergebruikt de bundel-hooks van zending-detail.
  */
-export function ColliBundelDialog({ zendingId, zendingNr, onClose }: Props) {
+export function ColliBundelDialog({ zendingId, zendingNr, vervoerderCode, onClose }: Props) {
   const { data: colli = [], isLoading } = useZendingColliVoorBundel(zendingId)
   const maak = useMaakColliBundel(zendingId)
   const verwijder = useVerwijderColliBundel(zendingId)
 
+  const metPallet = bundelOpPallet(vervoerderCode)
+  const eenheid = metPallet ? 'pallet' : 'zak'
+
   const [geselecteerd, setGeselecteerd] = useState<Set<number>>(new Set())
+  const [palletType, setPalletType] = useState<'EP' | 'SP' | ''>('')
   const [gewicht, setGewicht] = useState('')
   const [lengte, setLengte] = useState('')
   const [breedte, setBreedte] = useState('')
@@ -43,7 +52,9 @@ export function ColliBundelDialog({ zendingId, zendingNr, onClose }: Props) {
     }
   }, [colli, geselecteerd])
 
-  const kanBundelen = geselecteerd.size >= 2
+  // Bij een pallet (HST) is EP/SP verplicht — HST weigert een onbekende
+  // PackageUnitID met HTTP 400 (mig 485).
+  const kanBundelen = geselecteerd.size >= 2 && (!metPallet || palletType !== '')
 
   function toggle(id: number) {
     setGeselecteerd((prev) => {
@@ -62,10 +73,12 @@ export function ColliBundelDialog({ zendingId, zendingNr, onClose }: Props) {
         gewichtKg: parseOrDefault(gewicht, defaults.gewicht),
         lengteCm: parseOrDefault(lengte, defaults.lengte),
         breedteCm: parseOrDefault(breedte, defaults.breedte),
+        palletType: metPallet ? palletType : null,
       },
       {
         onSuccess: () => {
           setGeselecteerd(new Set())
+          setPalletType('')
           setGewicht(''); setLengte(''); setBreedte('')
         },
       },
@@ -86,9 +99,11 @@ export function ColliBundelDialog({ zendingId, zendingNr, onClose }: Props) {
 
         <div className="overflow-y-auto px-5 py-4">
           <p className="mb-3 text-xs text-slate-500">
-            Pak een paar colli samen in één zak: vink ze aan → <strong>Bundel maken</strong> → print de
-            nieuwe sticker en plak die op de zak. De losse stickers eronder gooi je weg. Aanmelden bij
-            de vervoerder gebeurt later, bij <strong>Voltooi pickronde</strong>.
+            Pak een paar colli samen op één {eenheid}: vink ze aan
+            {metPallet ? <>, kies <strong>EP</strong> (Europallet) of <strong>SP</strong> (wegwerp pallet)</> : null} →{' '}
+            <strong>Bundel maken</strong> → print de nieuwe sticker en plak die op de {eenheid}. De losse
+            stickers eronder gooi je weg. Aanmelden bij de vervoerder gebeurt later, bij{' '}
+            <strong>Voltooi pickronde</strong>.
           </p>
 
           {isLoading ? (
@@ -151,18 +166,40 @@ export function ColliBundelDialog({ zendingId, zendingNr, onClose }: Props) {
               </div>
 
               {/* Bundel-formulier (≥2 geselecteerd) */}
-              {kanBundelen && (
+              {geselecteerd.size >= 2 && (
                 <div className="mt-4 rounded-[var(--radius-sm)] border border-slate-200 p-3">
                   <div className="mb-2 text-xs font-semibold text-slate-600">
-                    {geselecteerd.size} colli bundelen — controleer gewicht/maat van de zak:
+                    {geselecteerd.size} colli bundelen — controleer gewicht/maat van de {eenheid}:
                   </div>
+                  {metPallet && (
+                    <div className="mb-3">
+                      <div className="mb-1 text-xs text-slate-500">Pallet-type</div>
+                      <div className="flex gap-2">
+                        {(['EP', 'SP'] as const).map((t) => (
+                          <button
+                            key={t}
+                            type="button"
+                            onClick={() => setPalletType(t)}
+                            className={`rounded-[var(--radius-sm)] border px-3 py-1.5 text-sm font-medium ${
+                              palletType === t
+                                ? 'border-terracotta-600 bg-terracotta-50 text-terracotta-700'
+                                : 'border-slate-300 text-slate-600 hover:bg-slate-100'
+                            }`}
+                          >
+                            {t === 'EP' ? 'EP — Europallet' : 'SP — wegwerp pallet'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <div className="flex flex-wrap items-end gap-3">
                     <MaatVeld label="Gewicht (kg)" value={gewicht} ph={String(round1(defaults.gewicht))} onChange={setGewicht} />
                     <MaatVeld label="Lengte (cm)" value={lengte} ph={String(defaults.lengte)} onChange={setLengte} />
                     <MaatVeld label="Breedte (cm)" value={breedte} ph={String(defaults.breedte)} onChange={setBreedte} />
                     <button
                       onClick={bundel}
-                      disabled={maak.isPending}
+                      disabled={!kanBundelen || maak.isPending}
+                      title={metPallet && palletType === '' ? 'Kies eerst EP of SP' : undefined}
                       className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] bg-terracotta-600 px-3 py-2 text-sm font-medium text-white hover:bg-terracotta-700 disabled:opacity-50"
                     >
                       <Boxes size={15} /> Bundel maken

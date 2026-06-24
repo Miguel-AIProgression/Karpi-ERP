@@ -1,5 +1,36 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-24 — Colli-bundeling ook voor HST, op pallet EP/SP (mig 485)
+
+**Waarom:** Rhenus kon al colli samenpakken onder één nieuwe SSCC (mig 420/421). De
+magazijnploeg wil dezelfde bundel-mogelijkheid bij HST, maar dan op een **pallet** —
+EP (Europallet) of SP (wegwerp pallet). Die afkortingen zijn HST's PackageUnitID's
+(mail Niek Zandvoort 19-06). De jongens weten zelf hoeveel er op een pallet past.
+
+**Wat:** op de Verzendset-pagina ('Picken', ≥2 colli) verschijnt voor HST nu dezelfde
+"Colli bundelen"-knop als bij Rhenus, met een verplichte **EP/SP-keuze**. De bundel
+gaat als 1 collo mee in de HST-aanmelding met `PackageUnitID = EP/SP` (losse colli
+houden `col`). HST blijft — anders dan Rhenus' 16:00-batch — **direct** na 'Voltooi
+pickronde' aanmelden, dus bundelen gebeurt tijdens het picken (geen post-voltooi-hold).
+
+**Hoe (hergebruik bestaand bundel-mechanisme):**
+- `zending_colli.pallet_type` (NULL | 'EP' | 'SP', CHECK) — gezet op de synthetische
+  bundel-rij; `maak_colli_bundel` kreeg `p_pallet_type` (DROP+CREATE, 6-arg). NULL voor
+  losse colli en Rhenus-bundels.
+- `vervoerders.handmatig_aanmelden = TRUE` voor `hst_api` — sinds mig 484 gate't deze
+  vlag enkel nog colli-bundeling (geen hold meer), dus dit zet alleen de bundel-poort open.
+- Colli-seam `fetch-zending-colli.ts` leest `pallet_type`; HST `payload-builder` mapt
+  `PackageUnitID = pallet_type ?? 'col'`. Rhenus/Verhoek negeren het veld.
+- Frontend: predicaat-splitsing in `handmatig-aanmelden.ts` — `ondersteuntColliBundelen`
+  (Rhenus + HST, bundel-knop tijdens 'Picken') vs. `isHandmatigAanmeldenVervoerder`
+  (Rhenus-only, 16:00-copy/navigatie) + `bundelOpPallet` (HST → EP/SP-keuze in de dialog).
+- Pallet-afmetingen worden **niet** auto-afgeleid (HST prijst op PackageUnitID, niet op
+  dims); de operator zet desgewenst lengte/breedte/gewicht in de bundel-dialog.
+
+**Vangnet:** payload-builder Deno-test (EP-bundel → 'EP', losse colli → 'col') +
+fetch-zending-colli-seam-test (pallet_type uit snapshot). Mig-verifier = schema + vlag;
+de functionele bundel-test draaien via rolled-back transactie bij apply.
+
 ## 2026-06-24 — Rhenus-dagbatch om 16:00 i.p.v. handmatig 1-voor-1 aanmelden (mig 484)
 
 **Waarom:** twee operationele wensen voor Rhenus. (1) Na pickronde-voltooien bleef

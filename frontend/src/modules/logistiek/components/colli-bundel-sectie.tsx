@@ -8,9 +8,10 @@ import {
   useVerwijderColliBundel,
   useZendingColliVoorBundel,
 } from '@/modules/logistiek/hooks/use-colli-bundel'
-// Alleen Rhenus kent handmatige aanmelding/colli-bundeling (mig 420). De DB-RPC's
-// dwingen dit hard af; deze frontend-spiegel stuurt alleen de zichtbaarheid van de
-// sectie + de doorverwijzing vanaf de Verzendset-pagina (één bron-van-waarheid).
+// Deze POST-voltooi bundel-sectie (zending-detail) is Rhenus-only: alleen Rhenus
+// heeft ná voltooien nog een venster (de 16:00-dagbatch, mig 484). HST bundelt óók
+// (mig 485, op pallet) maar meldt direct aan — dat loopt via de "Colli bundelen"-knop
+// TIJDENS de pickronde op de Verzendset-pagina (`ondersteuntColliBundelen`), niet hier.
 import { isHandmatigAanmeldenVervoerder } from '@/modules/logistiek/lib/handmatig-aanmelden'
 
 interface Props {
