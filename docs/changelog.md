@@ -1,6 +1,6 @@
 # Changelog — RugFlow ERP
 
-## 2026-06-24 — Omsticker-keuze uitgebreid met inkoop-opties, automatische substitutie afgeschaft (mig 496-501)
+## 2026-06-24 — Omsticker-keuze uitgebreid met inkoop-opties, automatische substitutie afgeschaft (mig 497-502)
 
 **Waarom:** gebruiker zag een omsticker-label op een orderregel en kon zich niet
 herinneren dit zelf gekozen te hebben. Onderzoek bevestigde een echt mechanisme:
@@ -15,27 +15,27 @@ bestaande omsticker-knop — **geen** wijziging aan orderstatus, Concept, of de
 "Bevestig order"-klantbevestiging.
 
 **Wat:**
-- **Mig 496:** `herallocateer_orderregel` (de naam die `trg_orderregel_herallocateer`
+- **Mig 497:** `herallocateer_orderregel` (de naam die `trg_orderregel_herallocateer`
   aanroept, dus voor alle kanalen) gesplitst — krimpt tot alleen Stap 1 (eigen
   voorraad); de volledige oude cascade (Stap 1 → uitwisselbaar-voorraad → oudste IO)
   leeft voort als `herallocateer_orderregel_auto`, alleen nog aangeroepen ná een
   bevestigde keuze voor het niet-gekozen restant.
-- **Mig 497:** `orderregel_pickbaarheid`'s voorraad-claim-telling van `COUNT(*)` naar
+- **Mig 498:** `orderregel_pickbaarheid`'s voorraad-claim-telling van `COUNT(*)` naar
   `SUM(aantal)` — zonder de automatische cascade kan een regel nu een ECHTE partiële
   claim hebben, die de oude `>0 rijen`-check ten onrechte als "volledig pickbaar" zou
   tonen.
-- **Mig 498/500:** nieuwe pure RPC `allocatie_opties_voor_artikel(artikelnr)` — live
-  databron voor de 3 opties, met `eigen_artikelnr` als constante kolom (mig 500) zodat
+- **Mig 499/501:** nieuwe pure RPC `allocatie_opties_voor_artikel(artikelnr)` — live
+  databron voor de 3 opties, met `eigen_artikelnr` als constante kolom (mig 501) zodat
   de frontend de doos→stuks-vertaling (mig 408) niet zelf moet herhalen om "eigen
   artikel" van "equivalent" te onderscheiden.
-- **Mig 499:** nieuwe RPC's `set_allocatie_keuze` (vervangt alle actieve claims van de
+- **Mig 500:** nieuwe RPC's `set_allocatie_keuze` (vervangt alle actieve claims van de
   regel door de gekozen opties, `is_handmatig=true`, IO-keuze gevalideerd tegen
   `io_regel_ruimte()`) en `ontgrendel_allocatie_keuze` (release de handmatige claims,
   valt terug op de **korte** `herallocateer_orderregel` — bewust niet `_auto`, anders
   triggert ontgrendelen meteen een nieuwe automatische claim). Eenmalige backfill gaf
   alle bestaande automatische alias/IO-claims vrij, behalve op orders die al
   `'In pickronde'` of verder stonden (7 orderregels bewust ongemoeid gelaten).
-- **Mig 501:** `handmatige_keuzes_voor_order` (mig 239, voedt edit-mode-hydratatie)
+- **Mig 502:** `handmatige_keuzes_voor_order` (mig 239, voedt edit-mode-hydratatie)
   uitgebreid met `bron`/`inkooporder_regel_id`/`verwacht_datum` — zonder die info zou
   een eerder gekozen IO-claim bij een ongewijzigde re-save stil herschreven worden naar
   een (foutieve) voorraad-claim.
@@ -92,6 +92,56 @@ Tapijtcentrum Nederland → 148, Haco → 192, Headlam Decorette (#500003,
   `order_regels_totalen`-trigger herberekende `orders.totaal_bedrag`
   automatisch. Geverifieerd via een rolled-back transactie vóór de echte
   toepassing (alle 13 deltas exact zoals vooraf getoond aan gebruiker).
+
+## 2026-06-24 — Klant aanmaken = klant bewerken (gedeelde deep module) + pakbon-e-mail (mig 496)
+
+**Waarom (klantverzoek 24-06):** "Klant aanmaken" vroeg veel te weinig (klantnummer,
+naam, adres, telefoon, e-mail factuur, btw, betaalconditie) terwijl de klantpagina veel
+meer kon. Cruciaal ontbraken bij aanmaken o.a. de **prijslijst** (harde blokkade bij
+order-aanmaken, mig 481), de **per-document e-mailadressen** en het **factuuradres** (dat
+nota bene nergens in de UI editbaar was, alleen read-only op de Info-tab). Klantnummer was
+handmatig. Gevolg: een net-aangemaakte klant strandde bij de eerste order.
+
+**Wat — één gedeelde deep module:**
+- **`DebiteurFormFields`** ([`debiteur-form.tsx`](frontend/src/modules/debiteuren/components/debiteur-form.tsx))
+  is nu de canonieke veldset + `debiteurFormToDb`/`debiteurFormFromDetail`/`valideerDebiteurForm`.
+  **"Klant toevoegen" én "Klant bewerken" zijn dunne schillen** rond deze module → ze hebben
+  exact dezelfde velden en kunnen niet meer driften ("gelinkt"). Velden: naam, status,
+  hoofdadres, **factuuradres** (nieuw editbaar), telefoon, **4 e-mailvelden per document**,
+  **prijslijst** (select uit `prijslijst_headers`, met "verplicht voor order"-hint), btw-nummer,
+  btw-verlegd, btw-%, GLN, korting, betaalconditie.
+- **Klantnummer auto-voorstel** = hoogste bestaande + 1 (`volgendDebiteurNr()`), in de UI
+  aanpasbaar; de bestaande uniek-check blijft de garantie.
+- **Primair afleveradres bij aanmaken:** optionele "afleveradres wijkt af van hoofdadres"-sectie
+  → maakt direct één `afleveradressen`-record (adres_nr 1). Extra adressen via de bestaande tab.
+- **E-mail-per-document = single source** (`EMAIL_VELDEN`): factuur=`email_factuur`,
+  orderbevestiging=`email_overig`, verzending/T&T=`email_verzend`, **pakbon=`email_pakbon`** (nieuw,
+  optioneel). Info-tab-labels verduidelijkt.
+- **BTW verlegd afgeleid uit het land:** de `btw_verlegd_intracom`-vink wordt automatisch gezet
+  zodra het land wijzigt — EU-land buiten NL → verlegd, NL/buiten-EU → niet (`btwVerlegdVoorLand`,
+  hergebruikt de single-source `isEuLand` via nieuwe frontend-shim [`@/lib/orders/btw`](frontend/src/lib/orders/btw.ts)
+  → `_shared/btw.ts`, ADR-0033). Alleen bij een land-wijziging (niet bij laden — de opgeslagen
+  waarde blijft leidend), handmatig overschrijfbaar. Export-0% buiten de EU blijft per order/factuur
+  bepaald (mig 455), niet via deze vlag.
+- **Klantnummer-voorstel** = hoogste bestaande nummer + 1 met de 999xxx-reserve uitgesloten
+  (etiket-placeholders + KIBEK-uitbijter) → ~991971. Bewust géén naam-gebaseerd voorstel: de
+  legacy-nummers volgen een interne Basta-matchcode, niet de naam (JANSEN staat op 85xxxx).
+
+**mig 496:** `debiteuren.email_pakbon TEXT` (optioneel). **Scope = alleen het adres vastleggen** —
+de huidige pakbon-stroom (bijlage bij factuurmail) blijft ongewijzigd; dit veld is het
+bestemmingsadres voor toekomstige pakbon-specifieke routing. `email_2` bewust niet hergebruikt
+(actieve orderbevestiging-fallback).
+
+**Order-aanmaken erft dit automatisch:** order-form prefilt prijslijst/`fact_email`/`afl_email`
+uit dezelfde debiteur-velden — die zijn nu bij aanmaken invulbaar, dus de prijslijst- en
+afleveradres-gate (mig 481/395) worden direct gehaald.
+
+**Bijvangst:** klant-bewerken normaliseert `naam` voortaan ook naar uppercase (was alleen bij
+aanmaken; debiteurnamen zijn per conventie uppercase).
+
+**Deploy-voorwaarde:** mig 496 **vóór** de frontend — de form schrijft `email_pakbon` bij elke
+klant-insert/update, dus zonder de kolom faalt aanmaken/bewerken. (Kolom is op 24-06 al op prod
+toegepast als de email_pakbon-wijziging; bestand hernummerd van 492 i.v.m. collisie.)
 
 ## 2026-06-24 — Externe vertegenwoordiger-rol: read-only over de hele app (mig 492-495)
 

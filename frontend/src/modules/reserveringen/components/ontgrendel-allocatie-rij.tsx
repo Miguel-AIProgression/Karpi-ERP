@@ -9,7 +9,7 @@ interface Props {
 
 /**
  * Order-detail sub-rij die het terugdraaien van een bevestigde allocatie-
- * keuze aanbiedt (omsticker-voorraad of inkoop-claim, mig 498-499) — release
+ * keuze aanbiedt (omsticker-voorraad of inkoop-claim, mig 499-500) — release
  * de handmatige claim(s) en valt terug op alleen eigen voorraad (de korte
  * allocator-vorm, géén automatische herclaim). Verschijnt náást de bestaande
  * claim-uitsplitsing zodra de regel ≥1 actieve handmatige claim heeft.

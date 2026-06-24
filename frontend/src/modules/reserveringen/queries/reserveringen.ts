@@ -77,7 +77,7 @@ export async function fetchLevertijdVoorOrder(orderId: number): Promise<OrderReg
 
 export interface HandmatigeKeuzePerRegel {
   order_regel_id: number
-  /** Mig 498-499/501: 'voorraad' = uitwisselbaar-equivalent, 'inkooporder_regel' = eigen of equivalent op inkoop. */
+  /** Mig 499-500/502: 'voorraad' = uitwisselbaar-equivalent, 'inkooporder_regel' = eigen of equivalent op inkoop. */
   bron: ClaimBron
   artikelnr: string
   aantal: number
@@ -89,7 +89,7 @@ export interface HandmatigeKeuzePerRegel {
 /**
  * Haalt alle actieve, handmatige allocatie-keuzes voor een order op,
  * gegroepeerd per orderregel — gebruikt om edit-mode te hydrateren met de
- * bestaande gebruiker-keuzes. Eén RPC-call (mig 239, uitgebreid mig 501) ipv
+ * bestaande gebruiker-keuzes. Eén RPC-call (mig 239, uitgebreid mig 502) ipv
  * losse queries. `bron`/`inkooporder_regel_id` zijn nodig om een IO-keuze niet
  * per ongeluk als voorraad-keuze te hydrateren bij het opnieuw opslaan.
  */

@@ -49,7 +49,7 @@ export function metProductVelden(
 /**
  * Eén handmatige allocatie-keuze gekoppeld aan een orderregel — uitwisselbaar
  * (omstickeren) óf een inkooporder-claim (eigen of equivalent artikel, mig
- * 498-499). `bron`/`inkooporder_regel_id` zijn nodig om een IO-keuze niet per
+ * 499-500). `bron`/`inkooporder_regel_id` zijn nodig om een IO-keuze niet per
  * ongeluk als voorraad-keuze te hydrateren bij het opnieuw opslaan.
  */
 export interface OrderHydratieKeuze {

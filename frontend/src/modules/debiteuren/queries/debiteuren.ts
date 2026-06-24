@@ -41,6 +41,8 @@ export interface DebiteurDetail {
   email_2: string | null
   /** Klant-niveau verzend-/T&T-e-mailadres (mig 369). Default voor orders.afl_email vóór email_overig. */
   email_verzend: string | null
+  /** Optioneel pakbon-e-mailadres (mig 492). Huidige pakbon = bijlage bij factuurmail. */
+  email_pakbon: string | null
   fax: string | null
   vertegenw_code: string | null
   vertegenwoordiger_naam?: string | null
@@ -51,6 +53,8 @@ export interface DebiteurDetail {
   korting_pct: number
   betaalconditie: string | null
   btw_nummer: string | null
+  /** Mig 164: BTW verlegd (EU B2B) — effectief 0% i.p.v. btw_percentage. */
+  btw_verlegd_intracom: boolean
   gln_bedrijf: string | null
   omzet_ytd: number
   gratis_verzending: boolean
@@ -236,6 +240,43 @@ export async function fetchDebiteurDetail(debiteurNr: number): Promise<DebiteurD
     edi_actief: ediRes.data?.transus_actief ?? false,
     edi_test_modus: ediRes.data?.test_modus ?? false,
   } as DebiteurDetail
+}
+
+/**
+ * Voorstel voor een nieuw klantnummer = hoogste bestaande nummer + 1.
+ *
+ * De legacy-nummers (Basta) volgen geen afleidbare regel vanuit de naam — ze
+ * zijn toegekend op een interne matchcode (bv. JANSEN-klanten staan op 85xxxx,
+ * "WONINGINRICHTING VAN KREUNINGEN" in het K-blok). Een naam-gebaseerd voorstel
+ * raadt daarom vaak verkeerd; we doen bewust het simpele "nieuwe klant achteraan".
+ *
+ * De 999xxx-reserve wordt uitgesloten: de etiket-placeholders (BLANCO/GEEN
+ * ETIKET, TESTDEBITEUR) plus één central-purchasing-uitbijter (TEPPICH-KIBEK,
+ * 999920). De hoogste gewone klant zit daaronder (~991970), dus het voorstel
+ * landt rond 991971. Blijft in de UI aanpasbaar; de uniek-check bij opslaan is
+ * de garantie.
+ */
+export async function volgendDebiteurNr(): Promise<number> {
+  const { data: maxRij, error } = await supabase
+    .from('debiteuren')
+    .select('debiteur_nr')
+    .lt('debiteur_nr', 999000)
+    .order('debiteur_nr', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) throw error
+  const start = ((maxRij?.debiteur_nr as number | undefined) ?? 99999) + 1
+
+  // Eerstvolgende vrije nummer (normaal direct vrij; vangnet tegen een botsing).
+  const { data: taken } = await supabase
+    .from('debiteuren')
+    .select('debiteur_nr')
+    .gte('debiteur_nr', start)
+    .lte('debiteur_nr', start + 500)
+  const takenSet = new Set((taken ?? []).map((t) => t.debiteur_nr as number))
+  let nr = start
+  while (takenSet.has(nr)) nr++
+  return nr
 }
 
 export async function fetchAfleveradressen(debiteurNr: number): Promise<Afleveradres[]> {

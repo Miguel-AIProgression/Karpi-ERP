@@ -56,8 +56,8 @@ function vulTekort(opties: AllocatieOptie[], tekort: number): AllocatieKeuze[] {
  * handmatige claim direct te zetten zonder de hele order te bewerken.
  *
  * Uitbreiding van de oorspronkelijke omsticker-knop (mig 154) met de twee
- * inkoop-optie-soorten uit `allocatie_opties_voor_artikel` (mig 498/500) —
- * geen automatische claim meer (mig 496), dit is altijd een bewuste klik.
+ * inkoop-optie-soorten uit `allocatie_opties_voor_artikel` (mig 499/501) —
+ * geen automatische claim meer (mig 497), dit is altijd een bewuste klik.
  * Terugdraaien kan via de "Ontgrendelen"-rij die ernaast verschijnt zodra de
  * regel ≥1 handmatige claim heeft (zie `OntgrendelAllocatieKeuzeRij`).
  */

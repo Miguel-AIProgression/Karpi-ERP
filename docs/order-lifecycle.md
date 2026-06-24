@@ -208,7 +208,7 @@ Na elke landing: INSERT-trigger op `order_regels` → `herallocateer_orderregel`
 `herwaardeer_order_status`/`herbereken_wacht_status`; maatwerk-INSERT →
 `auto_maak_snijplan` (mig 274/328).
 
-**Mig 496-501 (2026-06-24):** `herallocateer_orderregel` (de naam die deze trigger
+**Mig 497-502 (2026-06-24):** `herallocateer_orderregel` (de naam die deze trigger
 aanroept, dus geldt voor élk kanaal hierboven) claimt bij een tekort niet meer
 automatisch een uitwisselbaar/equivalent artikel of de oudste open inkooporder
 — alleen nog eigen voorraad (Stap 1). Een resterend tekort blijft gewoon

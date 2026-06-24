@@ -1,4 +1,4 @@
--- Mig 496: herallocateer_orderregel gesplitst in een korte vorm (alleen eigen
+-- Mig 497: herallocateer_orderregel gesplitst in een korte vorm (alleen eigen
 -- voorraad) en herallocateer_orderregel_auto (volledige oude cascade).
 --
 -- Waarom: de allocator claimde tot nu toe bij een tekort automatisch — zonder
@@ -7,7 +7,7 @@
 -- inkooporder (Stap 2). Gebruiker wil dit niet meer automatisch: bij een
 -- tekort moet de gebruiker zelf kiezen tussen drie opties (uitwisselbaar nu
 -- op voorraad / eigen artikel wacht op inkoop / uitwisselbaar wacht op zijn
--- inkoop) — zie mig 498-499 voor de databron en de bevestig/ontgrendel-RPC's.
+-- inkoop) — zie mig 499-500 voor de databron en de bevestig/ontgrendel-RPC's.
 --
 -- herallocateer_orderregel (de naam die trg_orderregel_herallocateer
 -- aanroept, dus geldt voor ALLE intake-kanalen) krimpt tot alleen Stap 1.
@@ -184,8 +184,8 @@ $function$;
 
 -- Korte vorm: alleen Stap 1 (eigen voorraad). Geen automatische
 -- alias/IO-claim meer — resterend tekort blijft tekort tot een gebruiker
--- expliciet kiest (set_allocatie_keuze, mig 499) of ontgrendelt
--- (ontgrendel_allocatie_keuze, mig 499, roept bewust DEZE korte vorm aan
+-- expliciet kiest (set_allocatie_keuze, mig 500) of ontgrendelt
+-- (ontgrendel_allocatie_keuze, mig 500, roept bewust DEZE korte vorm aan
 -- zodat ontgrendelen niet meteen weer een nieuwe auto-claim triggert).
 CREATE OR REPLACE FUNCTION herallocateer_orderregel(p_order_regel_id BIGINT)
 RETURNS VOID

@@ -1,10 +1,10 @@
--- Mig 497: orderregel_pickbaarheid telt voorraad-claims nu op aantal (SUM)
+-- Mig 498: orderregel_pickbaarheid telt voorraad-claims nu op aantal (SUM)
 -- i.p.v. op aanwezigheid van een rij (COUNT).
 --
--- Waarom: vóór mig 496 cascadeerde de allocator altijd tot het volledige
+-- Waarom: vóór mig 497 cascadeerde de allocator altijd tot het volledige
 -- tekort gedekt was (eigen voorraad → alias → inkoop) of tot niets meer
 -- mogelijk was — een regel had dus nooit een ECHTE partiële voorraad-claim
--- naast een nog open restant. Sinds mig 496 (geen automatische alias/IO-claim
+-- naast een nog open restant. Sinds mig 497 (geen automatische alias/IO-claim
 -- meer) kan een regel wél een partiële claim hebben (bv. 3 van 5 via eigen
 -- voorraad, 2 nog open totdat een gebruiker kiest). De oude COUNT(*)-check
 -- (">0 rijen" i.p.v. "som >= benodigd") zou zo'n regel ten onrechte als

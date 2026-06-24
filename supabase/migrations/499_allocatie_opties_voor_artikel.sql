@@ -1,26 +1,31 @@
--- Mig 500: allocatie_opties_voor_artikel krijgt een extra kolom
--- `eigen_artikelnr` (constante waarde over alle rijen) zodat de frontend
--- zonder eigen doos→stuks-herleiding kan groeperen in de 3 optie-soorten:
--- "eigen artikel wacht op inkoop" = rijen waar artikelnr = eigen_artikelnr,
--- de rest (voorraad + equivalent-IO) is per definitie nooit gelijk
--- (allocatie_opties_voor_artikel filtert al op artikelnr <> v_eigen_artikelnr
--- voor die twee groepen). Voorkomt dat de frontend de doos→stuks-vertaling
--- (mig 408) zou moeten dupliceren om "is dit mijn eigen artikel?" te bepalen.
+-- Mig 499: allocatie_opties_voor_artikel — live databron voor de uitgebreide
+-- omsticker-keuze (3 soorten opties naast elkaar, gesorteerd op levertijd).
 --
--- RETURNS TABLE-kolomwijziging → DROP + CREATE (CREATE OR REPLACE kan de
--- return-rijtype-samenstelling niet wijzigen).
+-- Pure, herevaluerende functie (geen state/snapshot, zelfde filosofie als
+-- voorgestelde_zending_bundels mig 229) — combineert:
+--   1) eigen artikel: open inkooporder_regels met ETA (bron='inkooporder_regel',
+--      verwacht_datum gevuld) — bestond al als losse databron (IoLevertijdHint),
+--      nu in dezelfde resultset.
+--   2) equivalent artikel: nu op voorraad (bron='voorraad', verwacht_datum
+--      NULL = direct leverbaar) — bestond al als UitwisselbaarTekortHint.
+--   3) equivalent artikel: wacht op zíjn eigen inkoop met ETA — NIEUW, bestond
+--      nergens als optie.
+--
+-- Equivalentie-matching mirrort EXACT de allocator (herallocateer_orderregel_auto
+-- Stap 1.5, mig 497): zelfde collectie_id + kleur_code + breedte_cm + lengte_cm
+-- + maatwerk_vorm_code. Bewust niet de iets afwijkende matching van
+-- zoek_equivalente_producten (karpi_code-substring, mig 404) — deze functie
+-- toont wat een gekozen optie straks ECHT claimt, dus moet exact aansluiten
+-- op de allocator-criteria, niet op een parallelle definitie.
 
-DROP FUNCTION IF EXISTS allocatie_opties_voor_artikel(TEXT);
-
-CREATE FUNCTION allocatie_opties_voor_artikel(p_artikelnr TEXT)
+CREATE OR REPLACE FUNCTION allocatie_opties_voor_artikel(p_artikelnr TEXT)
 RETURNS TABLE(
   bron TEXT,
   artikelnr TEXT,
   omschrijving TEXT,
   inkooporder_regel_id BIGINT,
   vrij_aantal INTEGER,
-  verwacht_datum DATE,
-  eigen_artikelnr TEXT
+  verwacht_datum DATE
 )
 LANGUAGE plpgsql
 STABLE
@@ -34,6 +39,8 @@ DECLARE
   v_lengte_cm          INTEGER;
   v_maatwerk_vorm_code TEXT;
 BEGIN
+  -- Doos→stuks vertaling zoals de allocator (mig 408) — opties gaan altijd
+  -- over het stuks-artikel, niet het doos-artikel.
   SELECT p0.stuks_artikelnr INTO v_stuks_artikelnr
     FROM producten p0 WHERE p0.artikelnr = p_artikelnr;
   v_eigen_artikelnr := COALESCE(v_stuks_artikelnr, p_artikelnr);
@@ -41,7 +48,7 @@ BEGIN
   -- Optie 2: eigen artikel, open inkoop met ETA.
   RETURN QUERY
   SELECT 'inkooporder_regel'::TEXT, v_eigen_artikelnr, p.omschrijving,
-         ir.id, io_regel_ruimte(ir.id), io.verwacht_datum, v_eigen_artikelnr
+         ir.id, io_regel_ruimte(ir.id), io.verwacht_datum
     FROM inkooporder_regels ir
     JOIN inkooporders io ON io.id = ir.inkooporder_id
     JOIN producten p ON p.artikelnr = ir.artikelnr
@@ -51,6 +58,7 @@ BEGIN
      AND io_regel_ruimte(ir.id) > 0
    ORDER BY io.verwacht_datum NULLS LAST;
 
+  -- Equivalentie-kenmerken van het eigen artikel bepalen.
   SELECT p.kleur_code, k.collectie_id, p.breedte_cm, p.lengte_cm, p.maatwerk_vorm_code
     INTO v_kleur_code, v_collectie_id, v_breedte_cm, v_lengte_cm, v_maatwerk_vorm_code
     FROM producten p
@@ -64,7 +72,7 @@ BEGIN
   -- Optie 1: equivalent, nu op voorraad.
   RETURN QUERY
   SELECT 'voorraad'::TEXT, p.artikelnr, p.omschrijving,
-         NULL::BIGINT, p.vrije_voorraad, NULL::DATE, v_eigen_artikelnr
+         NULL::BIGINT, p.vrije_voorraad, NULL::DATE
     FROM producten p
     JOIN kwaliteiten k ON k.code = p.kwaliteit_code
    WHERE k.collectie_id = v_collectie_id
@@ -80,7 +88,7 @@ BEGIN
   -- Optie 3: equivalent, wacht op zíjn eigen inkoop met ETA.
   RETURN QUERY
   SELECT 'inkooporder_regel'::TEXT, p.artikelnr, p.omschrijving,
-         ir.id, io_regel_ruimte(ir.id), io.verwacht_datum, v_eigen_artikelnr
+         ir.id, io_regel_ruimte(ir.id), io.verwacht_datum
     FROM producten p
     JOIN kwaliteiten k ON k.code = p.kwaliteit_code
     JOIN inkooporder_regels ir ON ir.artikelnr = p.artikelnr

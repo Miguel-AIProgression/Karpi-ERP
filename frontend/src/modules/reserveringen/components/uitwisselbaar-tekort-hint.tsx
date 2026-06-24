@@ -45,7 +45,7 @@ function groepVan(o: AllocatieOptie): 'voorraad' | 'eigen_inkoop' | 'equivalent_
  * Toont bij een voorraadtekort op een vaste-maat-regel drie soorten kiesbare
  * opties — gesorteerd op levertijd — i.p.v. de allocator stilletjes te laten
  * substitueren (uitbreiding van de bestaande omsticker-knop, geen automatisch
- * gedrag meer sinds mig 496). De gebruiker kiest expliciet hoeveel stuks van
+ * gedrag meer sinds mig 497). De gebruiker kiest expliciet hoeveel stuks van
  * welke optie deze regel mag dekken; bij submit roept order-form
  * `set_allocatie_keuze` aan om de claims te persisteren (Plek A). Op
  * order-detail (Plek B) gebeurt het direct via dezelfde RPC, met een eigen

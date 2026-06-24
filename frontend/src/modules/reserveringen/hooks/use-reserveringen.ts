@@ -48,7 +48,7 @@ export function useHandmatigeKeuzesVoorOrder(orderId?: number) {
   })
 }
 
-/** Live 3-opties-databron (mig 498/500) voor een tekort op `artikelnr`. */
+/** Live 3-opties-databron (mig 499/501) voor een tekort op `artikelnr`. */
 export function useAllocatieOpties(artikelnr?: string) {
   return useQuery({
     queryKey: ['allocatie-opties', artikelnr],
