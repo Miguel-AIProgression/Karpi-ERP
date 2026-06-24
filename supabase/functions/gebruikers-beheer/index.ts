@@ -32,6 +32,36 @@ interface RequestBody {
   email?: string
   id?: string
   redirect_to?: string
+  // Optionele rol-toewijzing (externe vertegenwoordiger, mig 489). Wordt als
+  // app_metadata gezet — alléén service-role kan dat, dus de gebruiker kan zijn
+  // eigen rol/scope niet ophogen.
+  rol?: string
+  vertegenw_code?: string | null
+}
+
+const ROL_EXTERN_REP = 'vertegenwoordiger_extern'
+
+/**
+ * Zet de rol-claim op een account via app_metadata. Alleen de bekende rep-rol
+ * wordt geaccepteerd; die vereist een vertegenw_code (anders ziet de rep niets).
+ * Geeft een foutmelding-string terug bij een ongeldige combinatie, anders null.
+ */
+async function zetRolClaim(
+  admin: ReturnType<typeof createClient>,
+  userId: string | null | undefined,
+  rol: string | undefined,
+  code: string | null | undefined,
+): Promise<string | null> {
+  if (!rol) return null
+  if (rol !== ROL_EXTERN_REP) return `Onbekende rol: ${rol}`
+  const c = (code ?? '').trim()
+  if (!c) return 'Vertegenwoordiger-code is verplicht bij de vertegenwoordiger-rol'
+  if (!userId) return 'Geen gebruikers-id om de rol op te zetten'
+  const { error } = await admin.auth.admin.updateUserById(userId, {
+    app_metadata: { rol, vertegenw_code: c },
+  })
+  if (error) return error.message
+  return null
 }
 
 serve(async (req) => {
@@ -104,6 +134,8 @@ serve(async (req) => {
           redirectTo: body.redirect_to,
         })
         if (error) throw error
+        const rolFout = await zetRolClaim(admin, data.user?.id, body.rol, body.vertegenw_code)
+        if (rolFout) return jsonResponse({ error: rolFout }, 400)
         return jsonResponse({ ok: true, id: data.user?.id ?? null }, 200)
       }
 
@@ -121,6 +153,10 @@ serve(async (req) => {
           options: { redirectTo: body.redirect_to },
         })
         if (!inviteRes.error) {
+          const rolFout = await zetRolClaim(
+            admin, inviteRes.data.user?.id, body.rol, body.vertegenw_code,
+          )
+          if (rolFout) return jsonResponse({ error: rolFout }, 400)
           return jsonResponse(
             { link: inviteRes.data.properties?.action_link ?? null, type: 'invite' },
             200,
@@ -134,6 +170,10 @@ serve(async (req) => {
           options: { redirectTo: body.redirect_to },
         })
         if (recoveryRes.error) throw recoveryRes.error
+        const rolFout = await zetRolClaim(
+          admin, recoveryRes.data.user?.id, body.rol, body.vertegenw_code,
+        )
+        if (rolFout) return jsonResponse({ error: rolFout }, 400)
         return jsonResponse(
           { link: recoveryRes.data.properties?.action_link ?? null, type: 'recovery' },
           200,

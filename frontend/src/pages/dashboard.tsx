@@ -3,16 +3,22 @@ import { PageHeader } from '@/components/layout/page-header'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { formatCurrency, formatDate, formatNumber, formatPercentage } from '@/lib/utils/formatters'
 import { useDashboardStats, useRecenteOrders } from '@/hooks/use-dashboard'
+import { useAuth } from '@/hooks/use-auth'
 
 export function DashboardPage() {
   const { data: stats, isLoading: statsLoading } = useDashboardStats()
   const { data: recenteOrders, isLoading: ordersLoading } = useRecenteOrders()
+  // Externe vertegenwoordiger (mig 489): geen bedrijfsbrede KPI's tonen — die
+  // aggregaat-view (dashboard_stats) is niet per-rep gescoped. De recente-orders-
+  // lijst (recente_orders) is dat wél via RLS/security_invoker.
+  const { isExternRep } = useAuth()
 
   return (
     <>
       <PageHeader title="Dashboard" description="Overzicht van RugFlow ERP" />
 
-      {/* Stats cards */}
+      {/* Stats cards — verborgen voor de externe vertegenwoordiger */}
+      {!isExternRep && (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <StatCard
           label="Open orders"
@@ -52,6 +58,7 @@ export function DashboardPage() {
           value={statsLoading ? '...' : formatNumber(stats?.in_productie ?? 0)}
         />
       </div>
+      )}
 
       {/* Recente orders */}
       <div className="bg-white rounded-[var(--radius)] border border-slate-200 overflow-hidden">

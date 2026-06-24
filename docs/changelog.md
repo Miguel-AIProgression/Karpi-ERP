@@ -1,5 +1,46 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-24 — Externe vertegenwoordiger-rol: read-only, alleen eigen klanten via RLS (mig 489)
+
+**Waarom:** login voor externe vertegenwoordiger (Guido Boecker). Wil read-only inzicht
+in uitsluitend zíjn gekoppelde klanten + orders + facturen. Afgedwongen in de DB (niet
+frontend-only) zodat élke query op élke pagina automatisch filtert — niet "per pagina
+instellen". Taal = browser-vertaling (geen code; Guido zet "vertaal naar Duits" aan).
+
+**Hoe (RLS):** mig 489 zet RLS aan op `orders`/`order_regels`/`debiteuren`/`facturen`/
+`factuur_regels` (stonden tot nu uit) met twee SQL-helpers — `is_externe_vertegenwoordiger()`
+(`auth.jwt() -> 'app_metadata' ->> 'rol' = 'vertegenwoordiger_extern'`) en
+`huidige_vertegenw_code()` — gespiegeld in [`frontend/src/lib/auth/rol.ts`](../frontend/src/lib/auth/rol.ts)
+(patroon van `is_bug_beheerder()`/mig 342). **Filtersleutel = de klant, niet de order**
+(`debiteuren.vertegenw_code` is NOT NULL; `orders.vertegenw_code` kan NULL zijn) — orders/
+facturen filteren via hun debiteur, wat NULL-orders vanzelf uitsluit. **Voor elke niet-rep
+is elke policy `true` → gedrag volledig ongewijzigd** (de hele RLS-laag in deze DB bestaat
+al uit blanket-`true`-policies; we volgen dat). INSERT/UPDATE/DELETE zijn voor de rol geblokt
+(`WITH CHECK (NOT is_externe_vertegenwoordiger())`) — vangt directe tabel-writes (klant-detail).
+Views `orders_list` + `recente_orders` op `security_invoker = true` (anders draaien ze als
+owner en omzeilen de RLS); `dashboard_stats` (globale KPI's, live-only aggregaat-view) bewust
+níét geflipt — de KPI-kaarten worden frontend-zijde voor de rep verborgen.
+
+**Account krijgt de rol** via `app_metadata` (alléén service-role kan dat → rep kan zijn
+scope niet ophogen): de edge function `gebruikers-beheer` accepteert `rol` + `vertegenw_code`
+en zet die na aanmaken; de uitnodig-dialog onder Systeem → Gebruikers heeft een
+"Externe vertegenwoordiger"-checkbox + dropdown met medewerkers die de `vertegenwoordiger`-rol
+hebben.
+
+**Frontend (read-only UX):** `useAuth()` exposet `isExternRep`/`vertegenwCode`; de sidebar
+toont alleen Dashboard/Orders/Klanten/Facturatie; een `RoleGuard` in `AppLayout` weert overige
+paden + de schrijf-subroutes `/orders/nieuw` en `/bewerken` (de enige rem op de SECURITY
+DEFINER-RPC's, die RLS omzeilen — zie "bekende grens" in het plan). Muteer-affordances verborgen
+op orders-overzicht ("Nieuwe order"), order-detail (OrderHeader-acties + Express + zending
+aanmaken) en klant-detail (bewerken/verwijderen/logo). Diepere inline klant-instellingen
+(verzendkosten e.d.) blijven RLS-beschermd (fail-closed).
+
+**Bekende grens (bewuste shortcut):** SECURITY DEFINER-schrijf-RPC's (`create_order_with_lines`,
+…) omzeilen RLS; de rep heeft er geen UI voor en wordt door de RoleGuard van de aanmaak-/
+bewerk-pagina's geweerd. Upgrade-pad: één `is_externe_vertegenwoordiger()`-guard vooraan in die
+RPC's. **Deploy-volgorde:** mig 489 vóór de frontend; `gebruikers-beheer` herdeployen voor de
+rol-toewijzing. Plan: [`docs/superpowers/plans/2026-06-24-vertegenwoordiger-rol-read-only-rls.md`](superpowers/plans/2026-06-24-vertegenwoordiger-rol-read-only-rls.md).
+
 ## 2026-06-24 — Order-fase volgt de productie: snijplan→order terugkoppel-seam (mig 486)
 
 **Waarom (architectuur-audit kandidaat #1):** de order-fase (`orders.status`) hoort

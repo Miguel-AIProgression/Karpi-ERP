@@ -9,6 +9,7 @@ import { StatusBadge } from '@/components/ui/status-badge'
 import { formatCurrency } from '@/lib/utils/formatters'
 import { useDebiteurDetail, useAfleveradressen } from '../hooks/use-debiteuren'
 import { useOrders } from '@/hooks/use-orders'
+import { useAuth } from '@/hooks/use-auth'
 import { KlanteigenNamenTab } from '../components/klanteigen-namen-tab'
 import { KlantArtikelnummersTab } from '../components/klant-artikelnummers-tab'
 import { KlantPrijslijstTab } from '../components/klant-prijslijst-tab'
@@ -38,6 +39,10 @@ export function DebiteurDetailPage() {
   const { id } = useParams<{ id: string }>()
   const debiteurNr = Number(id)
   const navigate = useNavigate()
+  // Externe vertegenwoordiger (mig 489): read-only. Primaire muteer-knoppen
+  // (bewerken/verwijderen/logo) worden verborgen; diepere inline-instellingen
+  // schrijven naar `debiteuren` en worden door RLS geblokt (fail-closed).
+  const { isExternRep } = useAuth()
   const [activeTab, setActiveTab] = useState<Tab>('info')
   const [showLogo, setShowLogo] = useState(false)
   const [showEdit, setShowEdit] = useState(false)
@@ -297,6 +302,7 @@ export function DebiteurDetailPage() {
 
       {/* Header card */}
       <div className="relative bg-white rounded-[var(--radius)] border border-slate-200 p-6 mb-6">
+        {!isExternRep && (
         <div className="absolute top-4 right-4 flex items-center gap-1">
           <button
             type="button"
@@ -317,6 +323,7 @@ export function DebiteurDetailPage() {
             <Trash2 size={16} />
           </button>
         </div>
+        )}
         <div className="flex items-start gap-4 mb-4">
           {/* Logo / initialen */}
           <div className="relative group w-16 h-16 shrink-0">
@@ -335,6 +342,7 @@ export function DebiteurDetailPage() {
               </div>
             )}
 
+            {!isExternRep && (
             <input
               ref={logoInputRef}
               type="file"
@@ -346,6 +354,8 @@ export function DebiteurDetailPage() {
                 e.target.value = ''
               }}
             />
+            )}
+            {!isExternRep && (
             <button
               type="button"
               onClick={() => logoInputRef.current?.click()}
@@ -356,7 +366,8 @@ export function DebiteurDetailPage() {
             >
               <Upload size={12} />
             </button>
-            {klant.logo_path && (
+            )}
+            {!isExternRep && klant.logo_path && (
               <button
                 type="button"
                 onClick={() => {

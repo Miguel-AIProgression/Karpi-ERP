@@ -347,13 +347,34 @@ A → B → C is een harde volgorde: geen B vóór ≥2 weken Fase A-gebruik en 
 ## Security
 
 ### Fase 1 (V1)
-- RLS enabled op alle tabellen
+- RLS enabled op de meeste tabellen, maar overal blanket `USING(true) TO authenticated`
+  (advisor-appeasement; writes lopen via SECURITY DEFINER-RPC's). `orders`/`order_regels`/
+  `debiteuren`/`facturen`/`factuur_regels` stonden tot mig 489 zelfs zónder RLS.
 - Policy: authenticated users = volledige CRUD
-- Simpele auth gate (Supabase session check)
+- Simpele auth gate (Supabase session check in `App.tsx`/`AuthGate`)
+
+### RBAC-patroon (app_metadata + JWT-helper + RLS)
+Toegangsrollen worden afgedwongen via een JWT-claim in **`app_metadata`** (alléén
+service-role kan dat zetten → een gebruiker kan zijn eigen rol niet ophogen), gelezen
+door een **STABLE SQL-helper** die `auth.jwt()` raadpleegt, met een **frontend-spiegel**
+voor de UX. Twee toepassingen:
+- **Bug-beheerder** (mig 342): `is_bug_beheerder()` ↔ [`lib/bug/beheerder.ts`](../frontend/src/lib/bug/beheerder.ts) — leest het e-mailclaim.
+- **Externe vertegenwoordiger** (mig 489, read-only, alleen eigen klanten): `is_externe_vertegenwoordiger()`
+  + `huidige_vertegenw_code()` ↔ [`lib/auth/rol.ts`](../frontend/src/lib/auth/rol.ts). RLS-policies
+  op `orders`/`order_regels`/`debiteuren`/`facturen`/`factuur_regels` filteren SELECT op
+  `debiteuren.vertegenw_code` (de klant is de filtersleutel — `orders.vertegenw_code` kan NULL
+  zijn) en blokken alle writes; voor elke niet-rep is elke policy `true` (gedrag ongewijzigd).
+  Views `orders_list`/`recente_orders` op `security_invoker = true` zodat ze de RLS niet
+  omzeilen. Frontend: `useAuth().isExternRep` → sidebar-filter + `RoleGuard` in `AppLayout`
+  (weert óók de schrijf-subroutes `/nieuw`/`/bewerken`, want de SECURITY DEFINER-RPC's daar
+  omzeilen RLS — bewuste grens). De rol toewijzen gebeurt via de edge function
+  `gebruikers-beheer` (Systeem → Gebruikers → "Externe vertegenwoordiger").
 
 ### Fase 2 (later)
 - Rollen: admin, verkoop, magazijn, management
 - Per-rol policies (bijv. magazijn kan geen debiteuren bewerken)
+- Upgrade-pad rep-rol: `is_externe_vertegenwoordiger()`-guard vooraan in de schrijf-RPC's
+  (`create_order_with_lines`, …) zodra een echte adversaire dreiging ontstaat.
 
 ## Productie Patterns
 

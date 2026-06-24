@@ -1645,3 +1645,25 @@ Mig 174, aangepast in mig 176. Read-only view die de `/logistiek/vervoerders`-ov
 | Tabel | Doel |
 |-------|------|
 | `bug_meldingen` | In-app feedback/bug-meldingen. Kolommen o.a. `titel`, `omschrijving`, `urgentie` (enum `bug_urgentie`), `pagina_url`, `status` (enum `bug_melding_status`: Open→Verwerkt→Geaccepteerd), `bijlage_path`, `gemeld_door` (→auth.users), `gemeld_door_email`, `verwerkt_op`, `geaccepteerd_op`. **Mig 360:** `verwerkt_opgelost`/`verwerkt_testen` (toelichting van de beheerder bij verwerken — wat opgelost + hoe te testen, zichtbaar voor de melder) en `verwerkt_gezien_op` (wanneer de melder de verwerking zag; `NULL` + status Verwerkt = ongezien → teller op het belletje rechtsboven). RLS: melder ziet eigen rijen, beheerder (`is_bug_beheerder()`) ziet alles. Statuswissel via SECURITY DEFINER-RPC `set_bug_status(p_id, p_status, p_opgelost, p_testen)` (mig 360, was `(p_id, p_status)`); melder dooft de teller via `markeer_verwerkt_gezien()`. |
+
+## Externe vertegenwoordiger-rol (mig 489)
+
+Read-only-toegang voor een externe vertegenwoordiger tot uitsluitend **zijn eigen klanten**,
+afgedwongen via RLS. Rol-claim in JWT-`app_metadata` (`rol='vertegenwoordiger_extern'` +
+`vertegenw_code`; alleen service-role kan dat zetten).
+
+| Functie | Doel |
+|---------|------|
+| `is_externe_vertegenwoordiger()` | STABLE. TRUE als `auth.jwt() -> 'app_metadata' ->> 'rol' = 'vertegenwoordiger_extern'`. Gespiegeld in `frontend/src/lib/auth/rol.ts`. |
+| `huidige_vertegenw_code()` | STABLE. De `medewerkers.code` van de ingelogde rep (`app_metadata.vertegenw_code`), of NULL. |
+
+**RLS-policies** (mig 489) op `orders`, `order_regels`, `debiteuren`, `facturen`, `factuur_regels`
+— deze tabellen hadden tot dan RLS UIT. Per tabel: SELECT `USING (NOT is_externe_vertegenwoordiger() OR <eigen-klant-filter>)`
+en INSERT/UPDATE/DELETE `WITH CHECK/USING (NOT is_externe_vertegenwoordiger())`. Filtersleutel is
+**de klant** (`debiteuren.vertegenw_code = huidige_vertegenw_code()`; orders/facturen/regels via
+EXISTS op hun debiteur — `orders.vertegenw_code` kan NULL zijn). Voor elke niet-rep evalueert elke
+policy naar `true` → gedrag ongewijzigd. Views `orders_list` + `recente_orders` staan op
+`security_invoker = true` zodat ze de RLS van de onderliggende tabellen niet omzeilen
+(`dashboard_stats` bewust niet — KPI-kaarten worden frontend-zijde voor de rep verborgen).
+**Bekende grens:** SECURITY DEFINER-schrijf-RPC's omzeilen RLS; de rep wordt daarvan geweerd
+door de frontend-`RoleGuard` (geen UI naar `/orders/nieuw` of `/bewerken`).

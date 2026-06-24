@@ -12,6 +12,7 @@ import { BevestigOrderEdiDialog } from './bevestig-order-edi-dialog'
 import { bepaalBevestigingKanaal, isOrderBevestigd } from '@/lib/orders/bevestiging-kanaal'
 import { fetchHandelspartnerConfig } from '@/modules/edi'
 import { ExpressToggle } from './express-toggle'
+import { useAuth } from '@/hooks/use-auth'
 import type { OrderDetail } from '@/lib/supabase/queries/orders'
 
 const EINDSTATUSSEN = ['Verzonden', 'Geannuleerd'] as const
@@ -28,6 +29,8 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
   const [showBevestigDialog, setShowBevestigDialog] = useState(false)
   const annuleer = useMarkeerGeannuleerd()
   const bevestigConcept = useBevestigConceptOrder()
+  // Externe vertegenwoordiger (mig 489): read-only — geen muteer-affordances.
+  const { isExternRep } = useAuth()
 
   const isEindstatus = (EINDSTATUSSEN as readonly string[]).includes(order.status)
   const isConcept = order.status === 'Concept'
@@ -60,7 +63,7 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
   return (
     <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-6 mb-6">
       {/* Concept-banner: e-mail order die nog bevestigd moet worden */}
-      {isConcept && (
+      {isConcept && !isExternRep && (
         <div className="flex items-center justify-between gap-4 mb-5 px-4 py-3 bg-amber-50 border border-amber-200 rounded-[var(--radius-sm)]">
           <div className="flex items-center gap-2 text-sm text-amber-800">
             <Mail size={16} className="shrink-0" />
@@ -87,7 +90,7 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
             </h2>
             <StatusBadge status={order.status} />
             <LevertijdStatusBadge orderId={order.id} />
-            <ExpressToggle orderId={order.id} express={order.express ?? false} />
+            {!isExternRep && <ExpressToggle orderId={order.id} express={order.express ?? false} />}
             {order.status === 'Verzonden' && order.verzonden_at && (
               <span
                 className="text-xs text-slate-500"
@@ -104,6 +107,7 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
           )}
         </div>
         <div className="flex gap-2 flex-wrap justify-end">
+          {isExternRep ? null : <>
           {/* Bevestig order — niet tonen voor concept-orders, en niet voor
               productie-only orders: orderbevestiging + facturatie loopt voor
               die orders via Basta, niet via RugFlow (ADR-0029). */}
@@ -176,6 +180,7 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
               Annuleer order
             </button>
           )}
+          </>}
         </div>
       </div>
 
