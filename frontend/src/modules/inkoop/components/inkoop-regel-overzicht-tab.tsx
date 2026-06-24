@@ -9,6 +9,7 @@ import {
   Search,
 } from 'lucide-react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useAuth } from '@/hooks/use-auth'
 import { useOpenRegelOverzicht } from '../hooks/use-inkooporders'
 import { useLeveranciersOverzicht } from '../hooks/use-leveranciers'
 import { updateRegelEta } from '../queries/leveranciers'
@@ -31,6 +32,7 @@ function isoWeekLabel(iso: string | null): string {
 
 function EtaInlineEdit({ regel }: { regel: OpenRegelOverzichtRow }) {
   const qc = useQueryClient()
+  const { isExternRep } = useAuth()
   const [value, setValue] = useState(regel.verwacht_datum ?? '')
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -44,6 +46,24 @@ function EtaInlineEdit({ regel }: { regel: OpenRegelOverzichtRow }) {
   })
 
   const isAchterstallig = isAchterstalligeEta(value || null)
+
+  // Externe vertegenwoordiger (mig 489): read-only — toon de ETA, geen edit-input/opslaan.
+  if (isExternRep) {
+    return (
+      <div className="flex flex-col gap-1">
+        <span
+          className={`text-sm tabular-nums font-medium ${isAchterstallig ? 'text-red-600' : 'text-slate-700'}`}
+        >
+          {regel.verwacht_datum
+            ? `${regel.verwacht_datum.slice(8, 10)}-${regel.verwacht_datum.slice(5, 7)}-${regel.verwacht_datum.slice(0, 4)}`
+            : '—'}
+        </span>
+        <div className="text-xs text-slate-400 pl-0.5">
+          <span>{isoWeekLabel(regel.verwacht_datum)}</span>
+        </div>
+      </div>
+    )
+  }
   const isDezeWeek = (() => {
     if (!value) return false
     const d = new Date(value)

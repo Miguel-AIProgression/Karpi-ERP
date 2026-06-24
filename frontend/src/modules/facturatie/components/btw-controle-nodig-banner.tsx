@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Globe2, Loader2, Check } from 'lucide-react'
 import { useMarkeerBtwRegelingGeaccepteerd } from '../hooks/use-facturen'
+import { useAuth } from '@/hooks/use-auth'
 
 interface Props {
   factuurId: number
@@ -29,6 +30,8 @@ const REGELING_LABEL: Record<string, string> = {
 export function BtwControleNodigBanner({ factuurId, debiteurNr, controleNodigSinds, btwRegeling }: Props) {
   const mutatie = useMarkeerBtwRegelingGeaccepteerd()
   const [fout, setFout] = useState<string | null>(null)
+  // Externe vertegenwoordiger (mig 489): read-only — deze banner is puur een muteer-actie.
+  const { isExternRep } = useAuth()
 
   function handleBevestig() {
     setFout(null)
@@ -36,6 +39,9 @@ export function BtwControleNodigBanner({ factuurId, debiteurNr, controleNodigSin
       onError: (err) => setFout(err instanceof Error ? err.message : String(err)),
     })
   }
+
+  // Read-only: deze banner bestaat uitsluitend om een muteer-actie aan te bieden.
+  if (isExternRep) return null
 
   return (
     <div className="mb-4 rounded-[var(--radius)] border border-amber-300 bg-amber-50 p-4">

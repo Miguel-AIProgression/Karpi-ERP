@@ -11,12 +11,12 @@ export interface AllocatieOptie {
   /** Constant over alle rijen — het (eventueel doos→stuks vertaalde, mig 408)
    *  eigen artikel van de orderregel. Onderscheidt optie 2 (eigen artikel
    *  wacht op inkoop) van optie 1/3 (equivalent) zonder dat de frontend de
-   *  doos→stuks-vertaling zelf moet herhalen. Mig 493. */
+   *  doos→stuks-vertaling zelf moet herhalen. Mig 500. */
   eigen_artikelnr: string
 }
 
 /**
- * Live databron voor de 3-soorten allocatie-keuze (mig 491/493): equivalent
+ * Live databron voor de 3-soorten allocatie-keuze (mig 498/500): equivalent
  * nu op voorraad, eigen artikel wacht op inkoop, equivalent wacht op zíjn
  * inkoop — gesorteerd op levertijd door de aanroeper. Pure, herevaluerende
  * RPC (geen state/snapshot).

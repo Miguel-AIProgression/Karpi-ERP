@@ -13,6 +13,7 @@ import type { KarpiOrder } from '@/modules/edi/lib/karpi-fixed-width'
 import type { EdiBerichtStatus, EdiBerichtType } from '@/modules/edi/queries/edi'
 import { cn } from '@/lib/utils/cn'
 import { formatDateTime } from '@/lib/utils/formatters'
+import { useAuth } from '@/hooks/use-auth'
 
 const KARPI_GLN_DEFAULT = '8715954999998'
 
@@ -29,6 +30,8 @@ export function EdiBerichtDetailPage() {
   const { id } = useParams<{ id: string }>()
   const idNum = id ? parseInt(id, 10) : undefined
   const { data: bericht, isLoading } = useEdiBericht(idNum)
+  // Externe vertegenwoordiger (mig 489): read-only — geen muteer-affordances.
+  const { isExternRep } = useAuth()
 
   const qc = useQueryClient()
   const [bevestigBusy, setBevestigBusy] = useState(false)
@@ -137,7 +140,7 @@ export function EdiBerichtDetailPage() {
                 TransusXML
               </button>
             )}
-            {kanBevestigen && (
+            {kanBevestigen && !isExternRep && (
               <button
                 onClick={handleBevestig}
                 disabled={bevestigBusy}
@@ -211,7 +214,7 @@ export function EdiBerichtDetailPage() {
       {/* Inkomende order zonder klant-koppeling → bootstrap-koppel-widget.
           Alleen bij een echt geparseerde order; een bericht zonder payload (bv. een
           Transus-testbestand) kan geen order worden — daarvoor de melding hieronder. */}
-      {isInkomendeOrder && !bericht.debiteur_nr && bericht.payload_parsed && (
+      {isInkomendeOrder && !bericht.debiteur_nr && bericht.payload_parsed && !isExternRep && (
         <KoppelVestigingWidget
           berichtId={bericht.id}
           glnAfleveradres={headerGln(bericht.payload_parsed, 'gln_afleveradres')}

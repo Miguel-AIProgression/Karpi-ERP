@@ -29,6 +29,7 @@ import { isPrijsOntbreekt } from '@/lib/orders/prijs-ontbreekt'
 import { PrijsOntbreektBanner } from '@/components/orders/prijs-ontbreekt-banner'
 import { heeftDropshipRegel } from '@/lib/orders/dropshipment-regel'
 import { dropshipAflEmailProbleem } from '@/lib/orders/dropship-email'
+import { useAuth } from '@/hooks/use-auth'
 
 function EmailInhoudPanel({ body }: { body: string }) {
   const [open, setOpen] = useState(false)
@@ -63,6 +64,7 @@ export function OrderDetailPage() {
   const { data: levertijden } = useLevertijdVoorOrder(orderId)
   const { data: claims } = useClaimsVoorOrder(orderId)
   const { perStuk: snijHaalbaarheidPerStuk } = useSnijHaalbaarheid()
+  const { isExternRep } = useAuth()
 
   if (orderLoading) {
     return (
@@ -99,9 +101,11 @@ export function OrderDetailPage() {
       <PageHeader
         title={order.order_nr}
         actions={
-          <ZendingAanmakenKnop
-            order={{ id: order.id, status: order.status, debiteur_nr: order.debiteur_nr, afhalen: order.afhalen }}
-          />
+          isExternRep ? undefined : (
+            <ZendingAanmakenKnop
+              order={{ id: order.id, status: order.status, debiteur_nr: order.debiteur_nr, afhalen: order.afhalen }}
+            />
+          )
         }
       />
 

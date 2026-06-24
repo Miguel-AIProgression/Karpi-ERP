@@ -2,6 +2,7 @@ import { AlertCircle, CheckCircle2, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { formatDateTime } from '@/lib/utils/formatters'
 import type { HstTransportorderStatus } from '@/modules/logistiek/queries/zendingen'
+import { useAuth } from '@/hooks/use-auth'
 
 const HST_STATUS_KLEUREN: Record<HstTransportorderStatus, { bg: string; text: string }> = {
   Wachtrij:    { bg: 'bg-amber-100',  text: 'text-amber-700' },
@@ -35,6 +36,8 @@ interface HstTransportorderCardProps {
 export function HstTransportorderCard({ row, onAfgehandeld, afhandelBusy }: HstTransportorderCardProps) {
   const kleur = HST_STATUS_KLEUREN[row.status]
   const isFout = row.status === 'Fout'
+  // Externe vertegenwoordiger (mig 489): read-only — geen afhandel-actie.
+  const { isExternRep } = useAuth()
 
   return (
     <div className="border border-slate-200 rounded-[var(--radius)] p-4">
@@ -58,7 +61,7 @@ export function HstTransportorderCard({ row, onAfgehandeld, afhandelBusy }: HstT
             <span className="text-xs text-slate-500">retries: {row.retry_count}</span>
           )}
         </div>
-        {isFout && (
+        {isFout && !isExternRep && (
           <button
             onClick={onAfgehandeld}
             disabled={afhandelBusy}
@@ -87,7 +90,7 @@ export function HstTransportorderCard({ row, onAfgehandeld, afhandelBusy }: HstT
         </div>
       )}
 
-      {isFout && (
+      {isFout && !isExternRep && (
         <p className="text-xs text-slate-500">
           Deze zending staat ook al in de HST-portal. Pas de fout dáár aan en klik
           dan op <span className="font-medium">Markeer afgehandeld</span> — niet opnieuw

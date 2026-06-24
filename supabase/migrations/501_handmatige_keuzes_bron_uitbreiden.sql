@@ -1,10 +1,10 @@
--- Mig 494: handmatige_keuzes_voor_order (mig 239) krijgt `bron` +
+-- Mig 501: handmatige_keuzes_voor_order (mig 239) krijgt `bron` +
 -- `inkooporder_regel_id` + `verwacht_datum` erbij.
 --
 -- Waarom: deze RPC voedt de edit-mode-hydratatie van `uitwisselbaar_keuzes`
 -- (order-hydratie.ts). De functie zelf filterde altijd al op `is_handmatig
 -- = TRUE` zonder op `bron` te filteren — een handmatige IO-claim (optie 2/3
--- van de nieuwe 3-optie-keuze, mig 491-492) kwam dus al mee, maar zonder de
+-- van de nieuwe 3-optie-keuze, mig 498-499) kwam dus al mee, maar zonder de
 -- `bron`/`inkooporder_regel_id` informatie kon de frontend zo'n keuze niet
 -- onderscheiden van een 'voorraad'-keuze. Zonder fix: een order bewerken en
 -- opnieuw opslaan zonder de allocatie-keuze aan te raken zou bij het opslaan
@@ -50,6 +50,6 @@ $$;
 
 COMMENT ON FUNCTION handmatige_keuzes_voor_order(BIGINT) IS
   'Alle actieve, handmatige allocatie-keuzes voor een order (uitwisselbaar-'
-  'voorraad EN inkooporder-claims, mig 491-492), met fysiek product-'
+  'voorraad EN inkooporder-claims, mig 498-499), met fysiek product-'
   'omschrijving + IO-verwacht_datum erbij. Gebruikt om edit-mode te '
-  'hydrateren met de bestaande gebruikerskeuzes. Mig 239, uitgebreid mig 494.';
+  'hydrateren met de bestaande gebruikerskeuzes. Mig 239, uitgebreid mig 501.';

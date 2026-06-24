@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Check, Pencil, X } from 'lucide-react'
 import { useMagazijnLocaties } from '../hooks/use-magazijn-locaties'
+import { useAuth } from '@/hooks/use-auth'
 
 interface Props {
   /** Huidige locatie-code (text voor maatwerk; ML.code voor rol). NULL = niet ingesteld. */
@@ -15,12 +16,23 @@ export function MagazijnLocatieEdit({ huidigeCode, onSave }: Props) {
   const [bezig, setBezig] = useState(false)
   const [fout, setFout] = useState<string | null>(null)
   const { data: locaties } = useMagazijnLocaties()
+  // Externe vertegenwoordiger (mig 489): read-only — alleen de waarde tonen,
+  // geen edit-trigger.
+  const { isExternRep } = useAuth()
 
   const suggesties = useMemo(() => {
     if (!locaties || !waarde) return []
     const q = waarde.toUpperCase()
     return locaties.filter((l) => l.code.includes(q)).slice(0, 8)
   }, [locaties, waarde])
+
+  if (isExternRep) {
+    return huidigeCode ? (
+      <span className="font-mono text-xs text-slate-700">{huidigeCode}</span>
+    ) : (
+      <span className="text-xs text-slate-300">—</span>
+    )
+  }
 
   if (!bewerken) {
     if (huidigeCode) {

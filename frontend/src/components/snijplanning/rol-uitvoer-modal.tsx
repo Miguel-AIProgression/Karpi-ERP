@@ -25,6 +25,7 @@ import {
   type Rij,
 } from '@/modules/snijplanning'
 import { useRolDetail } from '@/hooks/use-rollen'
+import { useAuth } from '@/hooks/use-auth'
 import { ReststukStickerLayout } from './reststuk-sticker-layout'
 import { cn } from '@/lib/utils/cn'
 import { AFWERKING_MAP } from '@/lib/utils/constants'
@@ -253,6 +254,10 @@ function printReststukSticker(props: {
 
 export function RolUitvoerModal({ rolId, open, onClose }: RolUitvoerModalProps) {
   const navigate = useNavigate()
+  // Externe vertegenwoordiger (mig 489): read-only — de snij-uitvoer (start/
+  // pauzeer/afsluiten) mag niet draaien. Modal rendert nooit en de auto-start-
+  // mutatie vuurt niet (zie effect + early-return onderaan).
+  const { isExternRep } = useAuth()
   const { data: stukken, isLoading } = useRolSnijstukken(open ? rolId : null)
   const { data: rolDetail } = useRolDetail(open ? rolId : null)
   const startSnijden = useStartSnijdenRol()
@@ -276,6 +281,7 @@ export function RolUitvoerModal({ rolId, open, onClose }: RolUitvoerModalProps) 
   const [aangebrokenLengteOverride, setAangebrokenLengteOverride] = useState<number | null>(null)
 
   useEffect(() => {
+    if (isExternRep) return
     if (!open || !rolId) return
     if (startedRolId === rolId) return
     setStartedRolId(rolId)
@@ -405,7 +411,7 @@ export function RolUitvoerModal({ rolId, open, onClose }: RolUitvoerModalProps) 
     })
   }, [teSnijden, rolnummer, rolBreedte, rolLengte, reststukRectsEffectief, aangebrokenEffectief, afvalRects])
 
-  if (!open || !rolId) return null
+  if (!open || !rolId || isExternRep) return null
 
   const toggle = (id: number) => {
     setCheckedIds((prev) => {

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, PackageCheck, Ban, Printer } from 'lucide-react'
+import { useAuth } from '@/hooks/use-auth'
 import { PageHeader } from '@/components/layout/page-header'
 import {
   useInkooporderDetail,
@@ -38,6 +39,7 @@ export function InkooporderDetailPage() {
   const { id } = useParams()
   const orderId = id ? Number(id) : undefined
   const qc = useQueryClient()
+  const { isExternRep } = useAuth()
   const { data, isLoading, error } = useInkooporderDetail(orderId)
   const updateStatus = useUpdateInkooporderStatus()
   const [ontvangstRegel, setOntvangstRegel] = useState<InkooporderRegel | null>(null)
@@ -90,7 +92,7 @@ export function InkooporderDetailPage() {
         actions={
           <div className="flex items-center gap-2">
             <InkooporderStatusBadge status={order.status} />
-            {kanAnnuleren && (
+            {kanAnnuleren && !isExternRep && (
               <button
                 onClick={() =>
                   updateStatus.mutate({ id: order.id, status: 'Geannuleerd' })
@@ -215,7 +217,7 @@ export function InkooporderDetailPage() {
                       />
                     </td>
                     <td className="py-2 text-right">
-                      {r.te_leveren_m > 0 ? (
+                      {r.te_leveren_m > 0 && !isExternRep ? (
                         <button
                           onClick={() => setOntvangstRegel(r)}
                           className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-[var(--radius-sm)]"
@@ -223,7 +225,7 @@ export function InkooporderDetailPage() {
                           <PackageCheck size={13} />
                           Ontvangst
                         </button>
-                      ) : (
+                      ) : r.te_leveren_m > 0 ? null : (
                         (() => {
                           const ids = rolIdsPerRegel.get(r.id) ?? []
                           if (ids.length === 0) return null

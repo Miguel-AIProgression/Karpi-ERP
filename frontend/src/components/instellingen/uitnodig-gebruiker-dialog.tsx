@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from 'react'
 import { X } from 'lucide-react'
 import { useGenereerLoginLink } from '@/hooks/use-gebruikers'
+import { useVertegenwoordigers } from '@/hooks/use-medewerkers'
+import { ROL_EXTERN_REP } from '@/lib/auth/rol'
 import { KopieerLink } from '@/components/instellingen/link-delen'
 
 interface Props {
@@ -12,10 +14,13 @@ const inputClasses =
 
 export function UitnodigGebruikerDialog({ onClose }: Props) {
   const [email, setEmail] = useState('')
+  const [isRep, setIsRep] = useState(false)
+  const [vertegenwCode, setVertegenwCode] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [resultaat, setResultaat] = useState<{ email: string; link: string } | null>(null)
 
   const genereerMut = useGenereerLoginLink()
+  const { data: vertegenwoordigers } = useVertegenwoordigers()
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -25,10 +30,21 @@ export function UitnodigGebruikerDialog({ onClose }: Props) {
       setError('E-mailadres is verplicht')
       return
     }
+    if (isRep && !vertegenwCode) {
+      setError('Kies de vertegenwoordiger voor dit account')
+      return
+    }
     try {
-      const { link } = await genereerMut.mutateAsync(trimmed)
+      const { link } = await genereerMut.mutateAsync({
+        email: trimmed,
+        rolToewijzing: isRep
+          ? { rol: ROL_EXTERN_REP, vertegenw_code: vertegenwCode }
+          : undefined,
+      })
       setResultaat({ email: trimmed, link })
       setEmail('')
+      setIsRep(false)
+      setVertegenwCode('')
     } catch (err) {
       console.error('[UitnodigGebruikerDialog]', err)
       const e = err as { message?: unknown } | null
@@ -94,6 +110,42 @@ export function UitnodigGebruikerDialog({ onClose }: Props) {
                 Het account wordt aangemaakt en je krijgt een link die je zelf naar de collega
                 stuurt (geen e-mail vanuit het systeem nodig).
               </p>
+            </div>
+
+            <div>
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={isRep}
+                  onChange={(e) => setIsRep(e.target.checked)}
+                  className="rounded border-slate-300 text-terracotta-500 focus:ring-terracotta-400/30"
+                />
+                Externe vertegenwoordiger (read-only, alleen eigen klanten)
+              </label>
+              {isRep && (
+                <div className="mt-2">
+                  <label className="block text-sm text-slate-600 mb-1">
+                    Vertegenwoordiger <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={vertegenwCode}
+                    onChange={(e) => setVertegenwCode(e.target.value)}
+                    className={inputClasses}
+                    required
+                  >
+                    <option value="">— Kies vertegenwoordiger —</option>
+                    {(vertegenwoordigers ?? []).map((v) => (
+                      <option key={v.code} value={v.code}>
+                        {v.naam} ({v.code})
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Het account ziet uitsluitend orders, klanten en facturen van deze
+                    vertegenwoordiger en kan niets wijzigen.
+                  </p>
+                </div>
+              )}
             </div>
 
             {error && (

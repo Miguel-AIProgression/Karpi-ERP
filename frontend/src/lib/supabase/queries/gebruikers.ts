@@ -62,16 +62,27 @@ export interface LoginLink {
   type: 'invite' | 'recovery'
 }
 
+/** Optionele rol-toewijzing bij aanmaken (externe vertegenwoordiger, mig 489). */
+export interface RolToewijzing {
+  rol: 'vertegenwoordiger_extern'
+  vertegenw_code: string
+}
+
 /**
  * Maakt een deelbare wachtwoord-link aan zónder mail te sturen — de operator
  * kopieert de link en stuurt 'm zelf naar de collega. Nieuw e-mailadres → de
- * gebruiker wordt aangemaakt (invite-link); bestaand → recovery-link.
+ * gebruiker wordt aangemaakt (invite-link); bestaand → recovery-link. Optioneel
+ * krijgt het account meteen een rol (app_metadata, alleen service-role).
  */
-export async function genereerLoginLink(email: string): Promise<LoginLink> {
+export async function genereerLoginLink(
+  email: string,
+  rolToewijzing?: RolToewijzing,
+): Promise<LoginLink> {
   const data = await roepBeheer<{ link: string | null; type: 'invite' | 'recovery' }>({
     actie: 'genereer-link',
     email,
     redirect_to: redirectNaarWachtwoordPagina(),
+    ...(rolToewijzing ?? {}),
   })
   if (!data.link) throw new Error('Geen link ontvangen van de server')
   return { link: data.link, type: data.type }

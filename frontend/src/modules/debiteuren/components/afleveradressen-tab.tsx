@@ -3,6 +3,7 @@ import { Plus, Pencil, Trash2 } from 'lucide-react'
 import type { Afleveradres } from '../queries/debiteuren'
 import { useAfleveradresMutation } from '../hooks/use-debiteuren'
 import { AfleveradresDialog } from './afleveradres-dialog'
+import { useAuth } from '@/hooks/use-auth'
 
 interface Props {
   debiteurNr: number
@@ -13,6 +14,8 @@ export function AfleveradressenTab({ debiteurNr, adressen }: Props) {
   const [showDialog, setShowDialog] = useState(false)
   const [editing, setEditing] = useState<Afleveradres | null>(null)
   const { save, remove } = useAfleveradresMutation(debiteurNr)
+  // Externe vertegenwoordiger (mig 489): read-only — geen toevoegen/bewerken/verwijderen.
+  const { isExternRep } = useAuth()
 
   function openNew() {
     setEditing(null)
@@ -31,15 +34,17 @@ export function AfleveradressenTab({ debiteurNr, adressen }: Props) {
 
   return (
     <div>
-      <div className="px-5 py-3 flex justify-end border-b border-slate-100">
-        <button
-          onClick={openNew}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-[var(--radius-sm)] bg-terracotta-500 text-white hover:bg-terracotta-600"
-        >
-          <Plus size={14} />
-          Toevoegen
-        </button>
-      </div>
+      {!isExternRep && (
+        <div className="px-5 py-3 flex justify-end border-b border-slate-100">
+          <button
+            onClick={openNew}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-[var(--radius-sm)] bg-terracotta-500 text-white hover:bg-terracotta-600"
+          >
+            <Plus size={14} />
+            Toevoegen
+          </button>
+        </div>
+      )}
 
       {!adressen || adressen.length === 0 ? (
         <div className="p-5 text-sm text-slate-400">Geen afleveradressen</div>
@@ -68,26 +73,28 @@ export function AfleveradressenTab({ debiteurNr, adressen }: Props) {
                   <div className="text-slate-400 mt-0.5 ml-6 text-xs">GLN {a.gln_afleveradres}</div>
                 )}
               </div>
-              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button
-                  onClick={() => openEdit(a)}
-                  className="p-1.5 text-slate-400 hover:text-slate-700 rounded"
-                >
-                  <Pencil size={14} />
-                </button>
-                <button
-                  onClick={() => handleDelete(a)}
-                  className="p-1.5 text-slate-400 hover:text-red-600 rounded"
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
+              {!isExternRep && (
+                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    onClick={() => openEdit(a)}
+                    className="p-1.5 text-slate-400 hover:text-slate-700 rounded"
+                  >
+                    <Pencil size={14} />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(a)}
+                    className="p-1.5 text-slate-400 hover:text-red-600 rounded"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>
       )}
 
-      {showDialog && (
+      {showDialog && !isExternRep && (
         <AfleveradresDialog
           initial={editing ?? undefined}
           onSave={(data) => save.mutateAsync(data)}

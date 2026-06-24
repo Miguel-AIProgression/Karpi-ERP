@@ -14,6 +14,7 @@ import {
   bepaalSnijtijdMinuten,
 } from '@/modules/snijplanning'
 import { usePlanningConfig } from '@/hooks/use-planning-config'
+import { useAuth } from '@/hooks/use-auth'
 import type {
   SnijvoorstelResponse,
   SnijvoorstelPlaatsing,
@@ -373,6 +374,10 @@ function ActionBar({
   const goedkeuren = useKeurSnijvoorstelGoed()
   const verwerpen = useVerwerpSnijvoorstel()
   const [error, setError] = useState<string | null>(null)
+  // Externe vertegenwoordiger (mig 489): read-only — geen goedkeuren/verwerpen.
+  const { isExternRep } = useAuth()
+
+  if (isExternRep) return null
 
   return (
     <div className="flex items-center gap-3 mt-2 mb-8">

@@ -10,6 +10,7 @@ import { ruimEdiDemoData, type EdiBerichtStatus, type EdiRichting, type EdiBeric
 import { isTeKoppelen } from '@/modules/edi/lib/te-koppelen'
 import { cn } from '@/lib/utils/cn'
 import { formatDateTime } from '@/lib/utils/formatters'
+import { useAuth } from '@/hooks/use-auth'
 
 const ALLE_STATUSSEN: EdiBerichtStatus[] = [
   'Wachtrij', 'Bezig', 'Verstuurd', 'Verwerkt', 'Fout', 'Geannuleerd',
@@ -44,6 +45,8 @@ export function EdiBerichtenOverzichtPage() {
   const [uploadOpen, setUploadOpen] = useState(false)
   const [opruimBusy, setOpruimBusy] = useState(false)
   const qc = useQueryClient()
+  // Externe vertegenwoordiger (mig 489): read-only — geen muteer-affordances.
+  const { isExternRep } = useAuth()
 
   async function handleOpruim() {
     if (!confirm('Alle EDI-test-data verwijderen? Dit verwijdert alle berichten met TEST-vlag én de bijbehorende demo-orders.')) return
@@ -106,6 +109,7 @@ export function EdiBerichtenOverzichtPage() {
         title="EDI-berichten"
         description={`${gefilterd.length} berichten${aantalFout ? ` — ${aantalFout} met fout` : ''}${aantalTeKoppelen ? ` — ${aantalTeKoppelen} te koppelen` : ''}`}
         actions={
+          isExternRep ? null : (
           <div className="flex items-center gap-2">
             <button
               onClick={handleOpruim}
@@ -132,10 +136,15 @@ export function EdiBerichtenOverzichtPage() {
               Demo-bericht
             </button>
           </div>
+          )
         }
       />
-      <DemoBerichtDialog open={demoOpen} onClose={() => setDemoOpen(false)} />
-      <UploadBerichtDialog open={uploadOpen} onClose={() => setUploadOpen(false)} />
+      {!isExternRep && (
+        <>
+          <DemoBerichtDialog open={demoOpen} onClose={() => setDemoOpen(false)} />
+          <UploadBerichtDialog open={uploadOpen} onClose={() => setUploadOpen(false)} />
+        </>
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3 mb-5">

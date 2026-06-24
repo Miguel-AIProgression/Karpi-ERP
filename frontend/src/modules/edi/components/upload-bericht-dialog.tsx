@@ -3,6 +3,7 @@ import { X, Loader2, Check, Upload, AlertCircle } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { verwerkUploadInkomend, type UploadResult } from '@/modules/edi/lib/upload-helper'
+import { useAuth } from '@/hooks/use-auth'
 
 const KARPI_GLN_DEFAULT = '8715954999998'
 
@@ -20,8 +21,10 @@ export function UploadBerichtDialog({ open, onClose }: Props) {
   const [result, setResult] = useState<UploadResult | null>(null)
 
   const qc = useQueryClient()
+  // Externe vertegenwoordiger (mig 489): read-only — bestand-upload verbergen.
+  const { isExternRep } = useAuth()
 
-  if (!open) return null
+  if (!open || isExternRep) return null
 
   function handleFile(e: ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0] ?? null

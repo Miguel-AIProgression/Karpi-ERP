@@ -12,6 +12,7 @@ import { FactuurStatusSelect } from '../components/factuur-status-select'
 import { BtwControleNodigBanner } from '../components/btw-controle-nodig-banner'
 import { getFactuurPdfSignedUrl, renderFactuurPdfBlobUrl, type FactuurRegel } from '../queries/facturen'
 import { formatCurrency, formatDate } from '@/lib/utils/formatters'
+import { useAuth } from '@/hooks/use-auth'
 
 export function FactuurDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -21,6 +22,8 @@ export function FactuurDetailPage() {
   const markeerBetaald = useMarkeerBetaald()
   const ediConfig = useEdiFactuurConfig(data?.factuur.debiteur_nr)
   const verstuurEdi = useVerstuurFactuurViaEdi()
+  // Externe vertegenwoordiger (mig 489): read-only — geen muteer-affordances.
+  const { isExternRep } = useAuth()
   const [pdfBezig, setPdfBezig] = useState(false)
   const [pdfFout, setPdfFout] = useState<string | null>(null)
   const [ediMelding, setEdiMelding] = useState<{ type: 'ok' | 'fout'; tekst: string } | null>(null)
@@ -141,7 +144,7 @@ export function FactuurDetailPage() {
               <Download size={15} />
               {pdfLabel}
             </button>
-            {toonEdiKnop && (
+            {!isExternRep && toonEdiKnop && (
               <button
                 onClick={handleVerstuurEdi}
                 disabled={verstuurEdi.isPending || !isPerOrder}
@@ -156,19 +159,21 @@ export function FactuurDetailPage() {
                 {verstuurEdi.isPending ? 'Versturen…' : 'Verstuur via EDI'}
               </button>
             )}
-            <button
-              onClick={handleMarkeerBetaald}
-              disabled={isBetaald || markeerBetaald.isPending}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-[var(--radius-sm)] bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              <CheckCircle size={15} />
-              Markeer als betaald
-            </button>
+            {!isExternRep && (
+              <button
+                onClick={handleMarkeerBetaald}
+                disabled={isBetaald || markeerBetaald.isPending}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-[var(--radius-sm)] bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <CheckCircle size={15} />
+                Markeer als betaald
+              </button>
+            )}
           </div>
         }
       />
 
-      {factuur.btw_controle_nodig_sinds && (
+      {!isExternRep && factuur.btw_controle_nodig_sinds && (
         <BtwControleNodigBanner
           factuurId={factuur.id}
           debiteurNr={factuur.debiteur_nr}

@@ -32,6 +32,44 @@ interface RequestBody {
   email?: string
   id?: string
   redirect_to?: string
+  // Optionele rol-toewijzing (externe vertegenwoordiger, mig 489). Wordt als
+  // app_metadata gezet — alléén service-role kan dat, dus de gebruiker kan zijn
+  // eigen rol/scope niet ophogen.
+  rol?: string
+  vertegenw_code?: string | null
+}
+
+const ROL_EXTERN_REP = 'vertegenwoordiger_extern'
+
+/**
+ * Zet de rol-claim op een account via app_metadata. Alleen de bekende rep-rol
+ * wordt geaccepteerd; die vereist een vertegenw_code (anders ziet de rep niets).
+ * Geeft een foutmelding-string terug bij een ongeldige combinatie, anders null.
+ */
+async function zetRolClaim(
+  admin: ReturnType<typeof createClient>,
+  userId: string | null | undefined,
+  rol: string | undefined,
+  code: string | null | undefined,
+): Promise<string | null> {
+  if (!rol) return null
+  if (rol !== ROL_EXTERN_REP) return `Onbekende rol: ${rol}`
+  const c = (code ?? '').trim()
+  if (!c) return 'Vertegenwoordiger-code is verplicht bij de vertegenwoordiger-rol'
+  if (!userId) return 'Geen gebruikers-id om de rol op te zetten'
+  const { error } = await admin.auth.admin.updateUserById(userId, {
+    app_metadata: { rol, vertegenw_code: c },
+  })
+  if (error) return error.message
+  // Bron-van-waarheid voor de RLS (mig 491): de helpers lezen de koppeling uit
+  // vertegenwoordiger_login op auth.uid(), niet uit het JWT (custom app_metadata-
+  // claims komen in deze setup niet in het token). Zonder deze rij filtert de RLS
+  // niet → de rep zou alles zien. service_role bypasst RLS, dus de upsert mag.
+  const { error: linkError } = await admin
+    .from('vertegenwoordiger_login')
+    .upsert({ user_id: userId, vertegenw_code: c }, { onConflict: 'user_id' })
+  if (linkError) return linkError.message
+  return null
 }
 
 serve(async (req) => {
@@ -56,6 +94,16 @@ serve(async (req) => {
   const { data: { user: aanroeper }, error: aanroeperFout } = await authClient.auth.getUser(token)
   if (aanroeperFout || !aanroeper) {
     return jsonResponse({ error: 'Niet geautoriseerd — log opnieuw in.' }, 401)
+  }
+
+  // ---- AuthZ: de externe vertegenwoordiger (read-only, mig 489) mag dit
+  // account-beheer NOOIT aanroepen. Anders kon een externe login via een rauwe
+  // invoke collega-accounts verwijderen/uitnodigen — die rol deelt namelijk de
+  // `authenticated`-rol met het personeel, dus de UI-rem (RoleGuard) is hier geen
+  // beveiliging. Fail-closed op de rol-claim. (Bredere "alleen-beheerder"-gate =
+  // bestaande backlog, los van deze feature.)
+  if (((aanroeper.app_metadata ?? {}) as Record<string, unknown>).rol === ROL_EXTERN_REP) {
+    return jsonResponse({ error: 'Geen toegang tot gebruikersbeheer.' }, 403)
   }
 
   // ---- Body ----
@@ -104,6 +152,8 @@ serve(async (req) => {
           redirectTo: body.redirect_to,
         })
         if (error) throw error
+        const rolFout = await zetRolClaim(admin, data.user?.id, body.rol, body.vertegenw_code)
+        if (rolFout) return jsonResponse({ error: rolFout }, 400)
         return jsonResponse({ ok: true, id: data.user?.id ?? null }, 200)
       }
 
@@ -121,6 +171,10 @@ serve(async (req) => {
           options: { redirectTo: body.redirect_to },
         })
         if (!inviteRes.error) {
+          const rolFout = await zetRolClaim(
+            admin, inviteRes.data.user?.id, body.rol, body.vertegenw_code,
+          )
+          if (rolFout) return jsonResponse({ error: rolFout }, 400)
           return jsonResponse(
             { link: inviteRes.data.properties?.action_link ?? null, type: 'invite' },
             200,
@@ -134,6 +188,10 @@ serve(async (req) => {
           options: { redirectTo: body.redirect_to },
         })
         if (recoveryRes.error) throw recoveryRes.error
+        const rolFout = await zetRolClaim(
+          admin, recoveryRes.data.user?.id, body.rol, body.vertegenw_code,
+        )
+        if (rolFout) return jsonResponse({ error: rolFout }, 400)
         return jsonResponse(
           { link: recoveryRes.data.properties?.action_link ?? null, type: 'recovery' },
           200,

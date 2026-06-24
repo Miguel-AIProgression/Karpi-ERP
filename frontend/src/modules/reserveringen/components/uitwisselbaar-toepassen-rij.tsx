@@ -7,6 +7,7 @@ import type { OrderRegel } from '@/lib/supabase/queries/orders'
 import type { OrderClaim } from '../queries/reserveringen'
 import { invalidateNaReserveringsmutatie } from '../cache'
 import { isoWeek } from '@/lib/orders/verzendweek'
+import { useAuth } from '@/hooks/use-auth'
 
 interface Props {
   regel: OrderRegel
@@ -55,13 +56,15 @@ function vulTekort(opties: AllocatieOptie[], tekort: number): AllocatieKeuze[] {
  * handmatige claim direct te zetten zonder de hele order te bewerken.
  *
  * Uitbreiding van de oorspronkelijke omsticker-knop (mig 154) met de twee
- * inkoop-optie-soorten uit `allocatie_opties_voor_artikel` (mig 491/493) —
- * geen automatische claim meer (mig 489), dit is altijd een bewuste klik.
+ * inkoop-optie-soorten uit `allocatie_opties_voor_artikel` (mig 498/500) —
+ * geen automatische claim meer (mig 496), dit is altijd een bewuste klik.
  * Terugdraaien kan via de "Ontgrendelen"-rij die ernaast verschijnt zodra de
  * regel ≥1 handmatige claim heeft (zie `OntgrendelAllocatieKeuzeRij`).
  */
 export function UitwisselbaarToepassenRij({ regel, tekort, claims }: Props) {
   const qc = useQueryClient()
+  // Externe vertegenwoordiger (mig 489): read-only — geen omsticker-claim zetten.
+  const { isExternRep } = useAuth()
 
   const { data: opties } = useAllocatieOpties(tekort > 0 ? regel.artikelnr ?? undefined : undefined)
 
@@ -70,6 +73,7 @@ export function UitwisselbaarToepassenRij({ regel, tekort, claims }: Props) {
     onSuccess: () => invalidateNaReserveringsmutatie(qc),
   })
 
+  if (isExternRep) return null
   if (tekort <= 0 || !opties) return null
   if (opties.length === 0) return null
 

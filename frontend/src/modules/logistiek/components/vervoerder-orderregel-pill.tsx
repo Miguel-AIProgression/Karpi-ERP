@@ -7,6 +7,7 @@ import {
 } from '../hooks/use-orderregel-vervoerder'
 import { useVervoerders } from '../hooks/use-vervoerders'
 import { getVervoerderDef, type VervoerderBadgeKleur } from '../registry'
+import { useAuth } from '@/hooks/use-auth'
 
 const KLEUR_STYLES: Record<VervoerderBadgeKleur, string> = {
   blauw: 'bg-blue-50 text-blue-700 hover:bg-blue-100 ring-1 ring-blue-200',
@@ -57,6 +58,9 @@ export function VervoerderOrderregelPill({ orderId, orderregelId, locked }: Prop
   const [error, setError] = useState<string | null>(null)
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
 
+  // Externe vertegenwoordiger (mig 489): read-only — pill toont de waarde maar
+  // opent geen override-dropdown.
+  const { isExternRep } = useAuth()
   const { data: regels = [] } = useEffectieveVervoerderPerOrderregel(orderId)
   const { data: vervoerders = [] } = useVervoerders()
   const update = useUpdateOrderregelVervoerderOverride()
@@ -153,7 +157,7 @@ export function VervoerderOrderregelPill({ orderId, orderregelId, locked }: Prop
         : Truck
 
   const dropdown =
-    open && !effectiefLocked && regel.bron !== 'afhalen' && pos
+    open && !effectiefLocked && !isExternRep && regel.bron !== 'afhalen' && pos
       ? createPortal(
           <div
             ref={popoverRef}
@@ -213,12 +217,12 @@ export function VervoerderOrderregelPill({ orderId, orderregelId, locked }: Prop
         type="button"
         onClick={(e) => {
           e.stopPropagation()
-          if (effectiefLocked || regel.bron === 'afhalen') return
+          if (effectiefLocked || isExternRep || regel.bron === 'afhalen') return
           setOpen((v) => !v)
         }}
-        disabled={update.isPending || effectiefLocked || regel.bron === 'afhalen'}
+        disabled={update.isPending || effectiefLocked || isExternRep || regel.bron === 'afhalen'}
         className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${KLEUR_STYLES[labelKleur]} disabled:opacity-70 ${
-          effectiefLocked || regel.bron === 'afhalen' ? 'cursor-default' : 'cursor-pointer'
+          effectiefLocked || isExternRep || regel.bron === 'afhalen' ? 'cursor-default' : 'cursor-pointer'
         }`}
         title={
           effectiefLocked
@@ -234,7 +238,7 @@ export function VervoerderOrderregelPill({ orderId, orderregelId, locked }: Prop
           <BronIcon size={10} />
         )}
         {labelText}
-        {!effectiefLocked && regel.bron !== 'afhalen' && (
+        {!effectiefLocked && !isExternRep && regel.bron !== 'afhalen' && (
           <ChevronDown size={9} className="opacity-60" />
         )}
       </button>

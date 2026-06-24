@@ -1,8 +1,8 @@
--- Mig 492: set_allocatie_keuze + ontgrendel_allocatie_keuze + eenmalige
+-- Mig 499: set_allocatie_keuze + ontgrendel_allocatie_keuze + eenmalige
 -- backfill van bestaande automatische alias/inkoop-claims.
 --
 -- set_allocatie_keuze vervangt voor de UITGEBREIDE keuze (3 optietypes, mig
--- 491) de smalle set_uitwisselbaar_claims (mig 154) — die laatste blijft
+-- 498) de smalle set_uitwisselbaar_claims (mig 154) — die laatste blijft
 -- vooralsnog bestaan (geen aanroepers meer na de frontend-ombouw, opruiming
 -- volgt in een latere migratie zodra dat bevestigd is) maar wordt door geen
 -- enkele nieuwe call-site meer gebruikt.

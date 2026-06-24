@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { Search, Pencil, Trash2, Plus, X, Check } from 'lucide-react'
+import { useAuth } from '@/hooks/use-auth'
 import { useKleurenVoorKwaliteit, useKwaliteiten } from '@/hooks/use-producten'
 import {
   useKlanteigenVoorKlant,
@@ -14,6 +15,8 @@ interface Props {
 }
 
 export function KlanteigenNamenTab({ debiteurNr }: Props) {
+  // Externe vertegenwoordiger (mig 489): read-only — geen toevoegen/bewerken/verwijderen.
+  const { isExternRep } = useAuth()
   const { data: namen, isLoading } = useKlanteigenVoorKlant(debiteurNr)
   const [zoek, setZoek] = useState('')
   const [editId, setEditId] = useState<number | null>(null)
@@ -42,14 +45,16 @@ export function KlanteigenNamenTab({ debiteurNr }: Props) {
           <span className="text-xs text-slate-400">
             {namen?.length ?? 0} {namen?.length === 1 ? 'eigen naam' : 'eigen namen'}
           </span>
-          <button
-            type="button"
-            onClick={() => { setShowAdd((v) => !v); setEditId(null) }}
-            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-[var(--radius-sm)] text-terracotta-600 bg-terracotta-50 hover:bg-terracotta-100 border border-terracotta-200"
-          >
-            {showAdd ? <X size={12} /> : <Plus size={12} />}
-            {showAdd ? 'Annuleren' : 'Toevoegen'}
-          </button>
+          {!isExternRep && (
+            <button
+              type="button"
+              onClick={() => { setShowAdd((v) => !v); setEditId(null) }}
+              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-[var(--radius-sm)] text-terracotta-600 bg-terracotta-50 hover:bg-terracotta-100 border border-terracotta-200"
+            >
+              {showAdd ? <X size={12} /> : <Plus size={12} />}
+              {showAdd ? 'Annuleren' : 'Toevoegen'}
+            </button>
+          )}
         </div>
         <div className="relative">
           <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -131,6 +136,7 @@ export function KlanteigenNamenTab({ debiteurNr }: Props) {
 function NaamRow({
   row, onEdit,
 }: { row: KlanteigenVoorKlantRow; debiteurNr: number; onEdit: () => void }) {
+  const { isExternRep } = useAuth()
   const del = useDeleteKlanteigenNaam()
   const isErved = row.bron_niveau === 'inkoopgroep'
   const handleDelete = () => {
@@ -180,23 +186,25 @@ function NaamRow({
         )}
       </td>
       <td className="px-5 py-2 text-right">
-        <div className="inline-flex items-center gap-1">
-          <button
-            onClick={onEdit}
-            className="p-1 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-700"
-            title={isErved ? 'Overschrijven met klant-specifieke regel' : 'Wijzig'}
-          >
-            <Pencil size={13} />
-          </button>
-          <button
-            onClick={handleDelete}
-            disabled={del.isPending}
-            className="p-1 rounded hover:bg-rose-50 text-slate-500 hover:text-rose-600 disabled:opacity-50"
-            title={isErved ? `Verwijder voor inkoopgroep ${row.inkoopgroep_code} (raakt alle klanten)` : 'Verwijder'}
-          >
-            <Trash2 size={13} />
-          </button>
-        </div>
+        {!isExternRep && (
+          <div className="inline-flex items-center gap-1">
+            <button
+              onClick={onEdit}
+              className="p-1 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-700"
+              title={isErved ? 'Overschrijven met klant-specifieke regel' : 'Wijzig'}
+            >
+              <Pencil size={13} />
+            </button>
+            <button
+              onClick={handleDelete}
+              disabled={del.isPending}
+              className="p-1 rounded hover:bg-rose-50 text-slate-500 hover:text-rose-600 disabled:opacity-50"
+              title={isErved ? `Verwijder voor inkoopgroep ${row.inkoopgroep_code} (raakt alle klanten)` : 'Verwijder'}
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
+        )}
       </td>
     </tr>
   )

@@ -80,9 +80,9 @@ export interface OrderRegelFormData {
    * Handmatige allocatie-keuzes bij een voorraadtekort: gebruiker kiest zelf
    * hoeveel stuks via een uitwisselbaar product (omstickeren) en/of een
    * inkooporder (eigen of equivalent artikel) deze regel mag dekken — drie
-   * optie-soorten, zie `allocatie_opties_voor_artikel` (mig 491/493). Niet
+   * optie-soorten, zie `allocatie_opties_voor_artikel` (mig 498/500). Niet
    * onderdeel van create_order_with_lines RPC — wordt na regel-INSERT via
-   * set_allocatie_keuze-RPC gepersisteerd. Migratie 154, uitgebreid mig 489-492
+   * set_allocatie_keuze-RPC gepersisteerd. Migratie 154, uitgebreid mig 496-499
    * (vervangt de automatische alias/IO-substitutie door een expliciete keuze).
    */
   uitwisselbaar_keuzes?: AllocatieKeuze[]
@@ -156,7 +156,7 @@ export interface PrijsResolverResult {
 /**
  * Eén handmatige allocatie-keuze: uitwisselbaar-equivalent op voorraad, óf een
  * inkooporder-claim (op het eigen artikel of op een equivalent) — de drie
- * optie-soorten uit `allocatie_opties_voor_artikel` (mig 491/493).
+ * optie-soorten uit `allocatie_opties_voor_artikel` (mig 498/500).
  *
  * `bron` is optioneel en valt terug op `'voorraad'` — back-compat met de
  * oorspronkelijke uitwisselbaar-keuze (mig 154), die altijd voorraad was en
@@ -171,7 +171,7 @@ export interface AllocatieKeuze {
   verwacht_datum?: string | null
 }
 
-/** Roept RPC `set_uitwisselbaar_claims` aan om handmatige uitwisselbaar-allocaties op een orderregel te zetten. Migratie 154. @deprecated geen nieuwe call-sites meer — gebruik `setAllocatieKeuze` (mig 492). */
+/** Roept RPC `set_uitwisselbaar_claims` aan om handmatige uitwisselbaar-allocaties op een orderregel te zetten. Migratie 154. @deprecated geen nieuwe call-sites meer — gebruik `setAllocatieKeuze` (mig 499). */
 export async function setUitwisselbaarClaims(
   orderRegelId: number,
   keuzes: { artikelnr: string; aantal: number }[],
@@ -184,7 +184,7 @@ export async function setUitwisselbaarClaims(
 }
 
 /**
- * Roept RPC `set_allocatie_keuze` aan (mig 492): vervangt alle actieve claims
+ * Roept RPC `set_allocatie_keuze` aan (mig 499): vervangt alle actieve claims
  * van de orderregel door de gegeven keuzes (handmatig, vergrendeld) en laat
  * het restant automatisch cascaderen via `herallocateer_orderregel_auto`.
  */
@@ -202,7 +202,7 @@ export async function setAllocatieKeuze(orderRegelId: number, keuzes: AllocatieK
 }
 
 /**
- * Roept RPC `ontgrendel_allocatie_keuze` aan (mig 492): release de handmatige
+ * Roept RPC `ontgrendel_allocatie_keuze` aan (mig 499): release de handmatige
  * keuze van de orderregel en valt terug op de korte allocator-vorm (alleen
  * eigen voorraad) — bewust geen automatische herclaim van een equivalent/IO.
  */

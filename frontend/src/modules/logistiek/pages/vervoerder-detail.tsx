@@ -14,10 +14,14 @@ import { VervoerderRecenteZendingenTable } from '@/modules/logistiek/components/
 import { HstMonitorPanel } from '@/modules/logistiek/components/hst-monitor-panel'
 import { useHstMonitor } from '@/modules/logistiek/hooks/use-hst-monitor'
 import { telHstAandacht } from '@/modules/logistiek/queries/hst-monitor'
+import { useAuth } from '@/hooks/use-auth'
 import type { VervoerderType } from '@/modules/logistiek/queries/vervoerders'
 
 export function VervoerderDetailPage() {
   const { code } = useParams<{ code: string }>()
+  // Externe vertegenwoordiger (mig 489): read-only — velden niet bewerkbaar,
+  // geen opslaan/actief-toggle.
+  const { isExternRep } = useAuth()
   const { data: vervoerder, isLoading } = useVervoerder(code)
   const { data: alleStats = [] } = useVervoerderStats()
   const { data: recenteZendingen = [] } = useRecenteZendingenVervoerder(code, 10)
@@ -78,13 +82,15 @@ export function VervoerderDetailPage() {
             <span className="text-xs text-slate-500">
               {vervoerder.actief ? 'Actief' : 'Inactief'}
             </span>
-            <Toggle
-              checked={vervoerder.actief}
-              disabled={updateMut.isPending}
-              onChange={(next) =>
-                updateMut.mutate({ code, data: { actief: next } })
-              }
-            />
+            {!isExternRep && (
+              <Toggle
+                checked={vervoerder.actief}
+                disabled={updateMut.isPending}
+                onChange={(next) =>
+                  updateMut.mutate({ code, data: { actief: next } })
+                }
+              />
+            )}
           </div>
         }
       />
@@ -119,6 +125,7 @@ export function VervoerderDetailPage() {
                   onChange={(e) => update('api_endpoint', e.target.value)}
                   placeholder="https://api.vervoerder.nl/v1"
                   className={inputClass}
+                  readOnly={isExternRep}
                 />
               </Field>
               <Field label="API-customer-id">
@@ -128,6 +135,7 @@ export function VervoerderDetailPage() {
                   onChange={(e) => update('api_customer_id', e.target.value)}
                   placeholder="KARPI-12345"
                   className={inputClass}
+                  readOnly={isExternRep}
                 />
               </Field>
             </>
@@ -141,6 +149,7 @@ export function VervoerderDetailPage() {
                   onChange={(e) => update('printer_naam', e.target.value)}
                   placeholder="Zebra ZT230"
                   className={inputClass}
+                  readOnly={isExternRep}
                 />
               </Field>
               <Field label="Printer-IP (optioneel, voor ZPL-direct)">
@@ -150,6 +159,7 @@ export function VervoerderDetailPage() {
                   onChange={(e) => update('printer_ip', e.target.value)}
                   placeholder="192.168.1.50"
                   className={inputClass}
+                  readOnly={isExternRep}
                 />
               </Field>
               <Field label="Service-codes (komma-gescheiden)">
@@ -159,6 +169,7 @@ export function VervoerderDetailPage() {
                   onChange={(e) => update('service_codes', e.target.value)}
                   placeholder="srv, classic, predict, internationaal"
                   className={inputClass}
+                  readOnly={isExternRep}
                 />
               </Field>
             </>
@@ -175,6 +186,7 @@ export function VervoerderDetailPage() {
               onChange={(e) => update('label_breedte_mm', e.target.value)}
               placeholder="76.2"
               className={inputClass}
+              readOnly={isExternRep}
             />
           </Field>
           <Field label="Verzendlabel-hoogte (mm)">
@@ -186,6 +198,7 @@ export function VervoerderDetailPage() {
               onChange={(e) => update('label_hoogte_mm', e.target.value)}
               placeholder="152.4"
               className={inputClass}
+              readOnly={isExternRep}
             />
           </Field>
           <Field label="Account-nummer">
@@ -195,6 +208,7 @@ export function VervoerderDetailPage() {
               onChange={(e) => update('account_nummer', e.target.value)}
               placeholder="Klant- of contractnummer bij vervoerder"
               className={inputClass}
+              readOnly={isExternRep}
             />
           </Field>
         </div>
@@ -214,6 +228,7 @@ export function VervoerderDetailPage() {
               value={form.kontakt_naam}
               onChange={(e) => update('kontakt_naam', e.target.value)}
               className={inputClass}
+              readOnly={isExternRep}
             />
           </Field>
           <Field label="E-mail">
@@ -222,6 +237,7 @@ export function VervoerderDetailPage() {
               value={form.kontakt_email}
               onChange={(e) => update('kontakt_email', e.target.value)}
               className={inputClass}
+              readOnly={isExternRep}
             />
             {form.kontakt_email && (
               <a
@@ -238,6 +254,7 @@ export function VervoerderDetailPage() {
               value={form.kontakt_telefoon}
               onChange={(e) => update('kontakt_telefoon', e.target.value)}
               className={inputClass}
+              readOnly={isExternRep}
             />
             {form.kontakt_telefoon && (
               <a
@@ -258,6 +275,7 @@ export function VervoerderDetailPage() {
           onChange={(e) => update('tarief_notities', e.target.value)}
           placeholder="Bv. NL postcodes 1000-9999: € 12,50; BE: € 18,00; gewicht > 30 kg: + € 5,00"
           className={`${inputClass} min-h-[120px] font-mono text-xs`}
+          readOnly={isExternRep}
         />
         <div className="mt-2 text-xs text-slate-400 italic">
           Vrije tekst voor V1 — gestructureerde tariefmatrix volgt in Fase B.
@@ -271,33 +289,38 @@ export function VervoerderDetailPage() {
           onChange={(e) => update('notities', e.target.value)}
           placeholder="Vrije aantekeningen over deze vervoerder."
           className={`${inputClass} min-h-[80px]`}
+          readOnly={isExternRep}
         />
       </Section>
 
       {/* Form-actions */}
-      <div className="flex items-center justify-end gap-2 mb-8">
-        <button
-          type="button"
-          onClick={reset}
-          disabled={!dirty || updateMut.isPending}
-          className="px-4 py-2 rounded-[var(--radius-sm)] text-sm font-medium border border-slate-200 text-slate-600 bg-white hover:bg-slate-50 disabled:opacity-50"
-        >
-          Annuleren
-        </button>
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={!dirty || updateMut.isPending}
-          className="px-4 py-2 rounded-[var(--radius-sm)] text-sm font-medium bg-terracotta-600 text-white hover:bg-terracotta-700 disabled:opacity-50"
-        >
-          {updateMut.isPending ? 'Opslaan…' : 'Opslaan'}
-        </button>
-      </div>
+      {!isExternRep && (
+        <>
+          <div className="flex items-center justify-end gap-2 mb-8">
+            <button
+              type="button"
+              onClick={reset}
+              disabled={!dirty || updateMut.isPending}
+              className="px-4 py-2 rounded-[var(--radius-sm)] text-sm font-medium border border-slate-200 text-slate-600 bg-white hover:bg-slate-50 disabled:opacity-50"
+            >
+              Annuleren
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={!dirty || updateMut.isPending}
+              className="px-4 py-2 rounded-[var(--radius-sm)] text-sm font-medium bg-terracotta-600 text-white hover:bg-terracotta-700 disabled:opacity-50"
+            >
+              {updateMut.isPending ? 'Opslaan…' : 'Opslaan'}
+            </button>
+          </div>
 
-      {updateMut.isError && (
-        <div className="mb-6 text-xs text-rose-600">
-          Opslaan mislukt: {String((updateMut.error as Error).message)}
-        </div>
+          {updateMut.isError && (
+            <div className="mb-6 text-xs text-rose-600">
+              Opslaan mislukt: {String((updateMut.error as Error).message)}
+            </div>
+          )}
+        </>
       )}
 
       {/* Sectie 5 — Statistieken */}

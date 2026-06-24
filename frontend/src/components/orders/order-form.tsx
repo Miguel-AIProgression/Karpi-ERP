@@ -500,7 +500,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
 
   /**
    * Persist handmatige allocatie-keuzes per regel via set_allocatie_keuze-RPC
-   * (mig 492). Matcht op regelnummer (volgorde-index) na fetch van de net
+   * (mig 499). Matcht op regelnummer (volgorde-index) na fetch van de net
    * opgeslagen regels.
    *
    * Een regel die bij het laden van de bewerk-flow al een keuze had (terug-

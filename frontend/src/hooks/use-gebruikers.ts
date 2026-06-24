@@ -6,6 +6,7 @@ import {
   wachtwoordResetGebruiker,
   blokkeerGebruiker,
   verwijderGebruiker,
+  type RolToewijzing,
 } from '@/lib/supabase/queries/gebruikers'
 
 const GEBRUIKERS_KEY = ['gebruikers'] as const
@@ -34,7 +35,8 @@ export function useWachtwoordReset() {
 export function useGenereerLoginLink() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (email: string) => genereerLoginLink(email),
+    mutationFn: ({ email, rolToewijzing }: { email: string; rolToewijzing?: RolToewijzing }) =>
+      genereerLoginLink(email, rolToewijzing),
     // Een invite-link maakt het account aan → ververs de lijst.
     onSuccess: () => qc.invalidateQueries({ queryKey: GEBRUIKERS_KEY }),
   })

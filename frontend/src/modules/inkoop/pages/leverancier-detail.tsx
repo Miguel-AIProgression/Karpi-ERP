@@ -14,6 +14,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAuth } from '@/hooks/use-auth'
 import { PageHeader } from '@/components/layout/page-header'
 import { useLeverancierDetail, LeverancierFormDialog, LeverancierStatsCard } from '@/modules/inkoop'
 import { LeverancierOpenRegels } from '../components/leverancier-open-regels'
@@ -36,6 +37,7 @@ function PortalToegang({ leverancierId, leverancierNaam, portalEmail }: {
   portalEmail: string | null
 }) {
   const qc = useQueryClient()
+  const { isExternRep } = useAuth()
   const [formOpen, setFormOpen] = useState(false)
   const [email, setEmail] = useState(portalEmail ?? '')
   const [wachtwoord, setWachtwoord] = useState('')
@@ -87,7 +89,7 @@ function PortalToegang({ leverancierId, leverancierNaam, portalEmail }: {
           <KeyRound size={16} className="text-slate-400" />
           <h2 className="font-medium">Portal toegang</h2>
         </div>
-        {portalEmail && !formOpen && (
+        {portalEmail && !formOpen && !isExternRep && (
           <button
             onClick={openForm}
             className="text-xs text-slate-500 hover:text-slate-800 flex items-center gap-1"
@@ -103,12 +105,14 @@ function PortalToegang({ leverancierId, leverancierNaam, portalEmail }: {
           <p className="text-sm text-slate-500 mb-3">
             {leverancierNaam} heeft nog geen portal-login.
           </p>
-          <button
-            onClick={openForm}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium bg-slate-900 text-white rounded-lg hover:bg-slate-700"
-          >
-            <KeyRound size={14} /> Portal-login aanmaken
-          </button>
+          {!isExternRep && (
+            <button
+              onClick={openForm}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium bg-slate-900 text-white rounded-lg hover:bg-slate-700"
+            >
+              <KeyRound size={14} /> Portal-login aanmaken
+            </button>
+          )}
         </div>
       )}
 
@@ -136,7 +140,7 @@ function PortalToegang({ leverancierId, leverancierNaam, portalEmail }: {
               {copied ? 'Gekopieerd!' : 'Kopieer uitnodigingstekst'}
             </button>
 
-            {!confirmDelete ? (
+            {isExternRep ? null : !confirmDelete ? (
               <button
                 onClick={() => setConfirmDelete(true)}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
@@ -165,7 +169,7 @@ function PortalToegang({ leverancierId, leverancierNaam, portalEmail }: {
         </div>
       )}
 
-      {formOpen && (
+      {formOpen && !isExternRep && (
         <div className="space-y-3">
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Email</label>
@@ -244,6 +248,7 @@ function PortalToegang({ leverancierId, leverancierNaam, portalEmail }: {
 export function LeverancierDetailPage() {
   const { id } = useParams()
   const leverancierId = id ? Number(id) : undefined
+  const { isExternRep } = useAuth()
   const { data: leverancier, isLoading } = useLeverancierDetail(leverancierId)
   const [editOpen, setEditOpen] = useState(false)
 
@@ -289,15 +294,17 @@ export function LeverancierDetailPage() {
         title={leverancier.naam}
         description={`Leverancier ${leverancier.leverancier_nr ?? '-'}`}
         actions={
-          <div className="flex gap-2">
-            <button
-              onClick={() => setEditOpen(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-[var(--radius-sm)] text-sm font-medium hover:bg-slate-50"
-            >
-              <Pencil size={16} />
-              Bewerken
-            </button>
-          </div>
+          isExternRep ? null : (
+            <div className="flex gap-2">
+              <button
+                onClick={() => setEditOpen(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-[var(--radius-sm)] text-sm font-medium hover:bg-slate-50"
+              >
+                <Pencil size={16} />
+                Bewerken
+              </button>
+            </div>
+          )
         }
       />
 
@@ -359,7 +366,7 @@ export function LeverancierDetailPage() {
         </section>
       )}
 
-      {editOpen && (
+      {editOpen && !isExternRep && (
         <LeverancierFormDialog leverancier={leverancier} onClose={() => setEditOpen(false)} />
       )}
     </>

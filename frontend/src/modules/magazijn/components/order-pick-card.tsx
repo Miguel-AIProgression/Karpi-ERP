@@ -23,6 +23,7 @@ import { ORDER_STATUS_COLORS } from '@/lib/utils/constants'
 import { iso2NaarVlag, landNaarIso2 } from '@/lib/utils/land-vlag'
 import { usePickSelectie } from '../context/pick-selectie-context'
 import { bepaalDagOrderUrgentie, type DagOrderUrgentie } from '../lib/dag-order-urgentie'
+import { useAuth } from '@/hooks/use-auth'
 import type { PickShipOrder, PickShipRegel, PickShipWachtOp } from '../lib/types'
 
 /** Compacte NL-dag-badge "wo 14-05" voor dag-orders (ADR 0014). */
@@ -122,9 +123,11 @@ interface Props {
 export function OrderPickCard({ order }: Props) {
   const [open, setOpen] = useState(false)
   const selectie = usePickSelectie()
+  // Externe vertegenwoordiger (mig 489): read-only — geen multi-select checkbox.
+  const { isExternRep } = useAuth()
   // Multi-select staat alleen aan binnen een PickSelectieProvider; buiten de
   // Pick & Ship-overview (geen provider) rendert de card zonder checkbox.
-  const toonSelectie = selectie !== null
+  const toonSelectie = selectie !== null && !isExternRep
   const selecteerbaar = selectie?.isSelectable(order.order_id) ?? false
   const geselecteerd = selectie?.isSelected(order.order_id) ?? false
   // Afrond-modus kleurt groen (= op compleet zetten); starten kleurt terracotta.

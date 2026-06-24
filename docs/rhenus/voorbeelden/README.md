@@ -6,7 +6,11 @@ oude kanaal bij Rhenus aanleverde. Het volledige bestand bevatte ~35
 `transportInstruction`-blokken (één per zending, gebatcht per dag); dit excerpt
 bewaart de drie vormen die er structureel toe doen:
 
-1. **`9453355`** — palletzending (2× `PLTS`, met `width`-dimensie).
+1. **`9453355`** — palletzending (2× `PLTS`, met `width`-dimensie). Sinds mig 489
+   reproduceert onze builder dit: een colli-bundel met `pallet_type='PLTS'` (volle
+   pallet, footprint 80×120) of `'HPLT'` (halve pallet, 80×60) → `packageTypeCode` +
+   `<depth>`+`<width>`. HPLT-footprint 80×60 is een aanname (half-EU-pallet) — nog te
+   bevestigen door Rhenus.
 2. **`0454510`** — rollenzending (5× `RLEN`, alleen `depth`-dimensie;
    `lineItemNumber` herhaalt per orderregel).
 3. **`0455395`** — ⚠️ het **foutgeval** uit de Rhenus-mail van 12-06-2026:

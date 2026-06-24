@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { UserCheck, Pencil } from 'lucide-react'
 import { bevestigDebiteur } from '@/lib/supabase/queries/order-mutations'
+import { useAuth } from '@/hooks/use-auth'
 
 /** Leesbare omschrijving van de match-strategie (mig 322 / debiteur-matcher-seam). */
 const BRON_LABEL: Record<string, string> = {
@@ -30,6 +31,8 @@ export function DebiteurBevestigenWidget({
   matchBron: string | null | undefined
 }) {
   const qc = useQueryClient()
+  // Externe vertegenwoordiger (mig 489): read-only — geen debiteur-bevestiging.
+  const { isExternRep } = useAuth()
   const mutatie = useMutation({
     mutationFn: () => bevestigDebiteur(orderId),
     onSuccess: () => {
@@ -38,6 +41,8 @@ export function DebiteurBevestigenWidget({
       qc.invalidateQueries({ queryKey: ['orders', 'status-counts'] })
     },
   })
+
+  if (isExternRep) return null
 
   const bronTekst = matchBron ? BRON_LABEL[matchBron] ?? `geraden (${matchBron})` : 'automatisch geraden'
 

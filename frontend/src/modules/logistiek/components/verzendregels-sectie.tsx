@@ -6,6 +6,7 @@ import {
   useDeleteVerzendregel,
   useUpdateVerzendregel,
 } from '@/modules/logistiek/hooks/use-verzendregels'
+import { useAuth } from '@/hooks/use-auth'
 import type { Verzendregel } from '@/modules/logistiek/queries/verzendregels'
 import type { Vervoerder } from '@/modules/logistiek/queries/vervoerders'
 import { VerzendregelDialog } from './verzendregel-dialog'
@@ -34,6 +35,8 @@ interface RegelGroep {
  * dezelfde volgorde als de DB-evaluator (mig 210) toepast.
  */
 export function VerzendregelsSectie({ vervoerders }: Props) {
+  // Externe vertegenwoordiger (mig 489): read-only — regels alleen lezen.
+  const { isExternRep } = useAuth()
   const { data: regels = [], isLoading } = useAlleVerzendregels()
   const deleteMut = useDeleteVerzendregel()
   const updateMut = useUpdateVerzendregel()
@@ -96,53 +99,55 @@ export function VerzendregelsSectie({ vervoerders }: Props) {
             gewicht) staan boven generieke.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          {landToevoegOpen ? (
-            <div className="flex items-center gap-1.5">
-              <input
-                autoFocus
-                type="text"
-                maxLength={2}
-                value={nieuwLandInput}
-                onChange={(e) => setNieuwLandInput(e.target.value.toUpperCase())}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleLandToevoegen()
-                  if (e.key === 'Escape') {
+        {!isExternRep && (
+          <div className="flex items-center gap-2">
+            {landToevoegOpen ? (
+              <div className="flex items-center gap-1.5">
+                <input
+                  autoFocus
+                  type="text"
+                  maxLength={2}
+                  value={nieuwLandInput}
+                  onChange={(e) => setNieuwLandInput(e.target.value.toUpperCase())}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleLandToevoegen()
+                    if (e.key === 'Escape') {
+                      setLandToevoegOpen(false)
+                      setNieuwLandInput('')
+                    }
+                  }}
+                  placeholder="NL"
+                  className="w-16 px-2 py-1 rounded-[var(--radius-sm)] border border-slate-300 text-sm uppercase font-mono focus:outline-none focus:ring-2 focus:ring-terracotta-400/30"
+                />
+                <button
+                  type="button"
+                  onClick={handleLandToevoegen}
+                  className="px-2.5 py-1 rounded-[var(--radius-sm)] text-xs font-medium bg-terracotta-600 text-white hover:bg-terracotta-700"
+                >
+                  OK
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
                     setLandToevoegOpen(false)
                     setNieuwLandInput('')
-                  }
-                }}
-                placeholder="NL"
-                className="w-16 px-2 py-1 rounded-[var(--radius-sm)] border border-slate-300 text-sm uppercase font-mono focus:outline-none focus:ring-2 focus:ring-terracotta-400/30"
-              />
+                  }}
+                  className="px-2.5 py-1 rounded-[var(--radius-sm)] text-xs font-medium border border-slate-200 text-slate-600 hover:bg-slate-50"
+                >
+                  Annuleer
+                </button>
+              </div>
+            ) : (
               <button
                 type="button"
-                onClick={handleLandToevoegen}
-                className="px-2.5 py-1 rounded-[var(--radius-sm)] text-xs font-medium bg-terracotta-600 text-white hover:bg-terracotta-700"
+                onClick={() => setLandToevoegOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-sm)] text-xs font-medium border border-slate-200 text-slate-600 hover:bg-slate-50"
               >
-                OK
+                <Plus size={14} /> Land toevoegen
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setLandToevoegOpen(false)
-                  setNieuwLandInput('')
-                }}
-                className="px-2.5 py-1 rounded-[var(--radius-sm)] text-xs font-medium border border-slate-200 text-slate-600 hover:bg-slate-50"
-              >
-                Annuleer
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setLandToevoegOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius-sm)] text-xs font-medium border border-slate-200 text-slate-600 hover:bg-slate-50"
-            >
-              <Plus size={14} /> Land toevoegen
-            </button>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
 
       {isLoading ? (
@@ -159,6 +164,7 @@ export function VerzendregelsSectie({ vervoerders }: Props) {
               groep={g}
               vervoerderMap={vervoerderMap}
               updateBusy={updateMut.isPending}
+              readOnly={isExternRep}
               onAdd={() => openAdd(g.iso2)}
               onEdit={openEdit}
               onToggle={handleToggle}
@@ -171,6 +177,7 @@ export function VerzendregelsSectie({ vervoerders }: Props) {
               groep={algemeneGroep}
               vervoerderMap={vervoerderMap}
               updateBusy={updateMut.isPending}
+              readOnly={isExternRep}
               onAdd={() => openAdd(null)}
               onEdit={openEdit}
               onToggle={handleToggle}
@@ -178,7 +185,7 @@ export function VerzendregelsSectie({ vervoerders }: Props) {
             />
           )}
 
-          {!algemeneGroep && (
+          {!algemeneGroep && !isExternRep && (
             <button
               type="button"
               onClick={() => openAdd(null)}
@@ -190,13 +197,15 @@ export function VerzendregelsSectie({ vervoerders }: Props) {
         </div>
       )}
 
-      <VerzendregelDialog
-        open={dialogOpen}
-        onClose={() => setDialogOpen(false)}
-        vervoerders={vervoerders}
-        target={editTarget}
-        prefillLand={prefillLand}
-      />
+      {!isExternRep && (
+        <VerzendregelDialog
+          open={dialogOpen}
+          onClose={() => setDialogOpen(false)}
+          vervoerders={vervoerders}
+          target={editTarget}
+          prefillLand={prefillLand}
+        />
+      )}
     </div>
   )
 }
@@ -205,6 +214,7 @@ interface LandBlokProps {
   groep: RegelGroep
   vervoerderMap: Map<string, Vervoerder>
   updateBusy: boolean
+  readOnly: boolean
   onAdd: () => void
   onEdit: (r: Verzendregel) => void
   onToggle: (r: Verzendregel) => void
@@ -215,6 +225,7 @@ function LandBlok({
   groep,
   vervoerderMap,
   updateBusy,
+  readOnly,
   onAdd,
   onEdit,
   onToggle,
@@ -238,13 +249,15 @@ function LandBlok({
             )}
           </div>
         </div>
-        <button
-          type="button"
-          onClick={onAdd}
-          className="inline-flex items-center gap-1 text-xs text-terracotta-600 hover:text-terracotta-700 font-medium"
-        >
-          <Plus size={12} /> Regel
-        </button>
+        {!readOnly && (
+          <button
+            type="button"
+            onClick={onAdd}
+            className="inline-flex items-center gap-1 text-xs text-terracotta-600 hover:text-terracotta-700 font-medium"
+          >
+            <Plus size={12} /> Regel
+          </button>
+        )}
       </div>
 
       <ul className="divide-y divide-slate-100">
@@ -259,29 +272,31 @@ function LandBlok({
                 <div className="text-[11px] text-slate-400 italic mt-0.5">{r.notitie}</div>
               )}
             </div>
-            <div className="flex items-center gap-1.5 ml-3 shrink-0">
-              <Toggle
-                checked={r.actief}
-                disabled={updateBusy}
-                onChange={() => onToggle(r)}
-              />
-              <button
-                type="button"
-                onClick={() => onEdit(r)}
-                className="inline-flex items-center justify-center w-7 h-7 rounded-[var(--radius-sm)] text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-                aria-label="Bewerk"
-              >
-                <Pencil size={13} />
-              </button>
-              <button
-                type="button"
-                onClick={() => onDelete(r)}
-                className="inline-flex items-center justify-center w-7 h-7 rounded-[var(--radius-sm)] text-slate-500 hover:bg-rose-50 hover:text-rose-600"
-                aria-label="Verwijder"
-              >
-                <Trash2 size={13} />
-              </button>
-            </div>
+            {!readOnly && (
+              <div className="flex items-center gap-1.5 ml-3 shrink-0">
+                <Toggle
+                  checked={r.actief}
+                  disabled={updateBusy}
+                  onChange={() => onToggle(r)}
+                />
+                <button
+                  type="button"
+                  onClick={() => onEdit(r)}
+                  className="inline-flex items-center justify-center w-7 h-7 rounded-[var(--radius-sm)] text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                  aria-label="Bewerk"
+                >
+                  <Pencil size={13} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDelete(r)}
+                  className="inline-flex items-center justify-center w-7 h-7 rounded-[var(--radius-sm)] text-slate-500 hover:bg-rose-50 hover:text-rose-600"
+                  aria-label="Verwijder"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            )}
           </li>
         ))}
       </ul>

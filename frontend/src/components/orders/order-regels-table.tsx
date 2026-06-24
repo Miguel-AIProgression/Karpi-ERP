@@ -16,6 +16,7 @@ import { OmzettenNaarMaatwerkDialog } from '@/components/orders/omzetten-naar-ma
 import type { HaalbaarheidsRij } from '@/modules/snijplanning'
 import { HAALBAARHEID_STATUS_STYLE } from '@/lib/orders/haalbaarheid-status-badge'
 import { usePlanningConfig } from '@/hooks/use-planning-config'
+import { useAuth } from '@/hooks/use-auth'
 
 /**
  * Toont in de "Te leveren"-kolom de samenvattende productie-fase van een
@@ -80,6 +81,10 @@ function VerzendweekCell({ regel, orderId, orderdatum, levertijd, bewerkbaar }: 
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const { data: planningConfig } = usePlanningConfig()
+  // Externe vertegenwoordiger (mig 489): read-only — toon de verzendweek-waarde
+  // maar verberg de edit-/reset-triggers.
+  const { isExternRep } = useAuth()
+  const kanBewerken = bewerkbaar && !isExternRep
 
   const autoWeek: string | null = (() => {
     // Maatwerk reserveert niet op inkoop, dus de reguliere levertijd_status
@@ -179,7 +184,7 @@ function VerzendweekCell({ regel, orderId, orderdatum, levertijd, bewerkbaar }: 
       ) : (
         <span className="text-xs text-slate-300">—</span>
       )}
-      {bewerkbaar && (
+      {kanBewerken && (
         <button
           type="button"
           onClick={() => { setEditing(true); setErrorMsg(null) }}
@@ -189,7 +194,7 @@ function VerzendweekCell({ regel, orderId, orderdatum, levertijd, bewerkbaar }: 
           <Pencil size={11} />
         </button>
       )}
-      {isOverride && bewerkbaar && (
+      {isOverride && kanBewerken && (
         <button
           type="button"
           onClick={() => mutation.mutate(null)}
@@ -443,6 +448,10 @@ interface RegelRowProps {
 
 function RegelRow({ regel, orderId, orderNr, orderdatum, orderVerzendweek, levertijd, claims, isEindstatus, snijHaalbaarheidPerStuk }: RegelRowProps) {
   const [omzetOpen, setOmzetOpen] = useState(false)
+  // Externe vertegenwoordiger (mig 489): read-only — verberg muteer-triggers
+  // (omsticker-rij + omzetten-naar-maatwerk). De UitwisselbaarToepassenRij en
+  // OmzettenNaarMaatwerkDialog zijn zelf ook al gegate (defense-in-depth).
+  const { isExternRep } = useAuth()
   const afwerkingInfo = regel.maatwerk_afwerking ? AFWERKING_MAP[regel.maatwerk_afwerking] : null
   const maat = formatMaat(regel)
   const toonSubRows = !regel.is_maatwerk
@@ -594,13 +603,13 @@ function RegelRow({ regel, orderId, orderNr, orderdatum, orderVerzendweek, lever
       {subRows.map((s) => (
         <SubRowTr key={s.key} sub={s} />
       ))}
-      {toonSubRows && tekort > 0 && regel.artikelnr && (
+      {!isExternRep && toonSubRows && tekort > 0 && regel.artikelnr && (
         <UitwisselbaarToepassenRij regel={regel} tekort={tekort} claims={claims} />
       )}
-      {toonSubRows && claims.some((c) => c.is_handmatig) && (
+      {!isExternRep && toonSubRows && claims.some((c) => c.is_handmatig) && (
         <OntgrendelAllocatieKeuzeRij orderRegelId={regel.id} />
       )}
-      {toonSubRows && tekort > 0 && regel.artikelnr && (
+      {!isExternRep && toonSubRows && tekort > 0 && regel.artikelnr && (
         <tr className="border-b border-slate-50">
           <td className="px-4 py-1.5"></td>
           <td colSpan={10} className="px-4 py-1.5">
@@ -615,7 +624,7 @@ function RegelRow({ regel, orderId, orderNr, orderdatum, orderVerzendweek, lever
           </td>
         </tr>
       )}
-      {omzetOpen && (
+      {!isExternRep && omzetOpen && (
         <OmzettenNaarMaatwerkDialog
           regel={regel}
           orderId={orderId}
@@ -645,6 +654,8 @@ export function OrderRegelsTable({ regels, isLoading, levertijden, claims, order
   const [deelzendingOpen, setDeelzendingOpen] = useState(false)
   const isEindstatus = EINDSTATUS_ORDERS.has(orderStatus ?? '')
   const orderVerzendweek = isoWeekStringVanIso(orderAfleverdatum)
+  // Externe vertegenwoordiger (mig 489): read-only — geen deelzending starten.
+  const { isExternRep } = useAuth()
 
   // Toon de deelzending-knop alleen als er ≥2 niet-pseudo-regels zijn waarvan
   // minstens 1 eerder klaar is dan de order-verzendweek.
@@ -677,7 +688,7 @@ export function OrderRegelsTable({ regels, isLoading, levertijden, claims, order
         <h3 className="font-medium text-slate-900">
           Orderregels ({regels.length})
         </h3>
-        {heeftDeelzendingKandidaat && (
+        {!isExternRep && heeftDeelzendingKandidaat && (
           <button
             type="button"
             onClick={() => setDeelzendingOpen(true)}
@@ -689,7 +700,7 @@ export function OrderRegelsTable({ regels, isLoading, levertijden, claims, order
           </button>
         )}
       </div>
-      {deelzendingOpen && (
+      {!isExternRep && deelzendingOpen && (
         <DeelzendingDialog
           orderId={orderId}
           orderStatus={orderStatus ?? ''}

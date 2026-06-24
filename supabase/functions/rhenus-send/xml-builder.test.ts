@@ -137,6 +137,48 @@ Deno.test('bouwRhenusXml: packageTypeCode is configureerbaar; sscc blijft de lab
   assertStringIncludes(xml, '<packageTypeCode>COLL</packageTypeCode>');
 });
 
+Deno.test('bouwRhenusXml: pallet-bundel (PLTS) → packageTypeCode PLTS + depth, width & height', () => {
+  const args = fixtureArgs();
+  // Een gebundelde pallet: footprint depth=80 width=120 (mig 489) + laadhoogte 145 (mig 490).
+  args.colli = [
+    { colli_nr: 3, sscc: '087159544540630099', gewicht_kg: 14.4, lengte_cm: 80, breedte_cm: 120, hoogte_cm: 145, pallet_type: 'PLTS' },
+  ];
+  const xml = bouwRhenusXml(args);
+  assertStringIncludes(xml, '<packageTypeCode>PLTS</packageTypeCode>');
+  assertStringIncludes(xml, '<depth measurementUnitCode="CMS">80</depth>');
+  assertStringIncludes(xml, '<width measurementUnitCode="CMS">120</width>');
+  assertStringIncludes(xml, '<height measurementUnitCode="CMS">145</height>');
+  // De geconfigureerde RLEN-default mag NIET op een pallet-item verschijnen.
+  assert(!xml.includes('<packageTypeCode>RLEN</packageTypeCode>'));
+});
+
+Deno.test('bouwRhenusXml: pallet zonder hoogte → geen <height> (optioneel)', () => {
+  const args = fixtureArgs();
+  args.colli = [
+    { colli_nr: 3, sscc: '087159544540630099', gewicht_kg: 14.4, lengte_cm: 80, breedte_cm: 120, pallet_type: 'PLTS' },
+  ];
+  const xml = bouwRhenusXml(args);
+  assertStringIncludes(xml, '<width measurementUnitCode="CMS">120</width>');
+  assert(!xml.includes('<height'));
+});
+
+Deno.test('bouwRhenusXml: halve pallet (HPLT) → packageTypeCode HPLT + width 60', () => {
+  const args = fixtureArgs();
+  args.colli = [
+    { colli_nr: 3, sscc: '087159544540630099', gewicht_kg: 9, lengte_cm: 80, breedte_cm: 60, pallet_type: 'HPLT' },
+  ];
+  const xml = bouwRhenusXml(args);
+  assertStringIncludes(xml, '<packageTypeCode>HPLT</packageTypeCode>');
+  assertStringIncludes(xml, '<width measurementUnitCode="CMS">60</width>');
+});
+
+Deno.test('bouwRhenusXml: los collo (geen pallet_type) blijft RLEN zonder width', () => {
+  // Regressie: de bestaande rol-fixture mag geen width krijgen (legacy: rollen = depth-only).
+  const xml = bouwRhenusXml(fixtureArgs());
+  assertStringIncludes(xml, '<packageTypeCode>RLEN</packageTypeCode>');
+  assert(!xml.includes('<width'));
+});
+
 Deno.test('bouwRhenusXml: zonder klant_referentie alleen "Order <nr>"; lege telefoon = leeg paar', () => {
   const args = fixtureArgs();
   args.order.klant_referentie = null;

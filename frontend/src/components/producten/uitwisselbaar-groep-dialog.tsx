@@ -7,6 +7,7 @@ import {
   useHernoemUitwisselbareGroep,
   useUpdateUitwisselbareGroepLeden,
 } from '@/hooks/use-uitwisselbaar'
+import { useAuth } from '@/hooks/use-auth'
 import type { UitwisselbareGroep } from '@/lib/supabase/queries/uitwisselbaar'
 
 interface Props {
@@ -39,6 +40,9 @@ function KwaliteitKleurBadges({ kleuren }: { kleuren: string[] }) {
 }
 
 export function UitwisselbaarGroepDialog({ groep, voorselectie, onClose }: Props) {
+  // Externe vertegenwoordiger (mig 489): read-only — dit dialoog is uitsluitend
+  // een schrijf-actie; defensief uitschakelen (callers gaten de trigger al).
+  const { isExternRep } = useAuth()
   const isEdit = Boolean(groep)
   const [naam, setNaam] = useState(groep?.collectie_naam ?? '')
   const [search, setSearch] = useState('')
@@ -146,6 +150,8 @@ export function UitwisselbaarGroepDialog({ groep, voorselectie, onClose }: Props
       setError(err instanceof Error ? err.message : 'Er ging iets mis')
     }
   }
+
+  if (isExternRep) return null
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40">

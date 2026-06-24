@@ -15,6 +15,7 @@ import {
 import { ColliBundelSectie } from '@/modules/logistiek/components/colli-bundel-sectie'
 import { AnnuleerPickrondeKnop } from '@/modules/logistiek/components/annuleer-pickronde-knop'
 import { labelBarcode } from '@/lib/logistiek/labelbarcode'
+import { useAuth } from '@/hooks/use-auth'
 
 interface ZendingColliRow {
   id: number
@@ -83,6 +84,8 @@ export function ZendingDetailPage() {
   const { data: zending, isLoading } = useZending(zending_nr)
   const afhandelMutation = useMarkeerZendingAfgehandeld()
   const afgehaaldMutation = useMarkeerZendingAfgehaald()
+  // Externe vertegenwoordiger (mig 489): read-only — geen muteer-affordances.
+  const { isExternRep } = useAuth()
 
   if (isLoading) return <div className="p-8 text-slate-500">Laden…</div>
   if (!zending) return <div className="p-8 text-rose-600">Zending niet gevonden.</div>
@@ -144,7 +147,7 @@ export function ZendingDetailPage() {
         }
         actions={
           <div className="flex items-center gap-2">
-            {isAfhaalKlaar && (
+            {isAfhaalKlaar && !isExternRep && (
               <button
                 type="button"
                 onClick={() => afgehaaldMutation.mutate(z.id)}

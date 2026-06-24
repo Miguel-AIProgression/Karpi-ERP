@@ -33,6 +33,7 @@ import {
   verzendWeekVoor,
   type PickStatus,
 } from '@/lib/orders/verzendweek'
+import { useAuth } from '@/hooks/use-auth'
 
 export function MagazijnOverviewPage() {
   const [filter, setFilter] = useState<BucketKey>('wk_1')
@@ -43,6 +44,9 @@ export function MagazijnOverviewPage() {
   // printen (default); 'afronden' = al-gestarte pickrondes selecteren en in bulk
   // op compleet zetten (→ Verzonden), zonder printen.
   const [modus, setModus] = useState<PickSelectieModus>('starten')
+  // Externe vertegenwoordiger (mig 489): read-only — geen multi-select start/
+  // afrond-affordances (checkboxes + actiebalk).
+  const { isExternRep } = useAuth()
 
   const { data: stats } = usePickShipStats()
   const { data: orders, isLoading } = usePickShipOrders({
@@ -261,6 +265,8 @@ export function MagazijnOverviewPage() {
   // De selectie wist bij tab-/vervoerderfilter-/modus-wissel.
   const selectableIds = useMemo(() => {
     const s = new Set<number>()
+    // Read-only vertegenwoordiger: niets selecteerbaar → geen checkboxes/balk.
+    if (isExternRep) return s
     for (const o of startbareOrders) {
       const status = startbaarheidStatus.get(o.order_id)
       if (modus === 'afronden') {
@@ -270,7 +276,7 @@ export function MagazijnOverviewPage() {
       }
     }
     return s
-  }, [modus, startbareOrders, startbaarheidStatus])
+  }, [isExternRep, modus, startbareOrders, startbaarheidStatus])
 
   const selectie = usePickSelectieState(
     `${filter}|${vervoerderFilter}|${modus}`,
@@ -591,13 +597,15 @@ export function MagazijnOverviewPage() {
         </VervoerderResolutieProvider>
       )}
 
-      <PickSelectieBalk
-        modus={modus}
-        geselecteerdeOrders={geselecteerdeOrders}
-        geselecteerdeZendingen={geselecteerdeZendingen}
-        aantalBundelPartners={aantalBundelPartners}
-        onClear={selectie.clear}
-      />
+      {!isExternRep && (
+        <PickSelectieBalk
+          modus={modus}
+          geselecteerdeOrders={geselecteerdeOrders}
+          geselecteerdeZendingen={geselecteerdeZendingen}
+          aantalBundelPartners={aantalBundelPartners}
+          onClear={selectie.clear}
+        />
+      )}
     </>
   )
 }

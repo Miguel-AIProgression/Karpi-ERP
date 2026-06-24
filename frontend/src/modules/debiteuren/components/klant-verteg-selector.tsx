@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Check, Pencil, Search, X } from 'lucide-react'
 import { useVertegenwoordigers } from '@/hooks/use-medewerkers'
 import { useSetKlantVerteg } from '@/hooks/use-vertegenwoordigers'
+import { useAuth } from '@/hooks/use-auth'
 
 interface Props {
   debiteurNr: number
@@ -14,6 +15,8 @@ export function KlantVertegSelector({ debiteurNr, vertegCode, vertegNaam, varian
   const [editing, setEditing] = useState(false)
   const [search, setSearch] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
+  // Externe vertegenwoordiger (mig 489): read-only — verberg de wijzig-trigger.
+  const { isExternRep } = useAuth()
 
   const { data: vertegen, isLoading } = useVertegenwoordigers()
   const mutation = useSetKlantVerteg()
@@ -59,13 +62,15 @@ export function KlantVertegSelector({ debiteurNr, vertegCode, vertegNaam, varian
           ) : (
             <span className="italic text-slate-400">Geen</span>
           )}
-          <button
-            onClick={() => setEditing(true)}
-            className="text-xs text-terracotta-500 hover:text-terracotta-700 font-medium inline-flex items-center gap-1"
-          >
-            <Pencil size={11} />
-            Wijzig
-          </button>
+          {!isExternRep && (
+            <button
+              onClick={() => setEditing(true)}
+              className="text-xs text-terracotta-500 hover:text-terracotta-700 font-medium inline-flex items-center gap-1"
+            >
+              <Pencil size={11} />
+              Wijzig
+            </button>
+          )}
         </span>
       )
     }
@@ -80,13 +85,15 @@ export function KlantVertegSelector({ debiteurNr, vertegCode, vertegNaam, varian
           ) : (
             <span className="text-slate-400 italic text-sm">Geen</span>
           )}
-          <button
-            onClick={() => setEditing(true)}
-            className="text-xs text-terracotta-500 hover:text-terracotta-700 font-medium inline-flex items-center gap-1"
-          >
-            <Pencil size={11} />
-            Wijzig
-          </button>
+          {!isExternRep && (
+            <button
+              onClick={() => setEditing(true)}
+              className="text-xs text-terracotta-500 hover:text-terracotta-700 font-medium inline-flex items-center gap-1"
+            >
+              <Pencil size={11} />
+              Wijzig
+            </button>
+          )}
         </div>
       </div>
     )

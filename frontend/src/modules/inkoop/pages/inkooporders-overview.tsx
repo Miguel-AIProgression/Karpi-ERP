@@ -12,6 +12,7 @@ import {
   Plus,
   Search,
 } from 'lucide-react'
+import { useAuth } from '@/hooks/use-auth'
 import { PageHeader } from '@/components/layout/page-header'
 import {
   useInkooporders,
@@ -77,6 +78,7 @@ function compareNullable<T>(a: T | null, b: T | null, cmp: (x: T, y: T) => numbe
 
 export function InkooporderOverviewPage() {
   const navigate = useNavigate()
+  const { isExternRep } = useAuth()
   const [activeTab, setActiveTab] = useState<ActiveTab>('orders')
   const [status, setStatus] = useState<InkooporderStatus | 'alle'>('alle')
   const [leverancierId, setLeverancierId] = useState<number | 'alle'>('alle')
@@ -174,13 +176,15 @@ export function InkooporderOverviewPage() {
         title="Inkooporders"
         description={`${orders.length} orders`}
         actions={
-          <button
-            onClick={() => setFormOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-terracotta-500 text-white rounded-[var(--radius-sm)] text-sm font-medium hover:bg-terracotta-600"
-          >
-            <Plus size={16} />
-            Nieuwe bestelling
-          </button>
+          isExternRep ? null : (
+            <button
+              onClick={() => setFormOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-terracotta-500 text-white rounded-[var(--radius-sm)] text-sm font-medium hover:bg-terracotta-600"
+            >
+              <Plus size={16} />
+              Nieuwe bestelling
+            </button>
+          )
         }
       />
 
@@ -364,7 +368,7 @@ export function InkooporderOverviewPage() {
         )}
       </div>
 
-      {formOpen && <InkooporderFormDialog onClose={() => setFormOpen(false)} />}
+      {formOpen && !isExternRep && <InkooporderFormDialog onClose={() => setFormOpen(false)} />}
       </>
       )}
 

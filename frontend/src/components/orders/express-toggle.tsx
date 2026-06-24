@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Zap } from 'lucide-react'
 import { setExpress, fetchMaatwerkGroepenVoorOrder } from '@/lib/supabase/queries/order-mutations'
 import { triggerAutoplan } from '@/modules/snijplanning'
+import { useAuth } from '@/hooks/use-auth'
 
 /**
  * Handmatige express-vlag (mig 450, Fase 2) — toggle i.p.v. eenmalige
@@ -16,6 +17,8 @@ import { triggerAutoplan } from '@/modules/snijplanning'
  */
 export function ExpressToggle({ orderId, express }: { orderId: number; express: boolean }) {
   const qc = useQueryClient()
+  // Externe vertegenwoordiger (mig 489): read-only — geen express-toggle.
+  const { isExternRep } = useAuth()
 
   const mutatie = useMutation({
     mutationFn: async () => {
@@ -35,6 +38,8 @@ export function ExpressToggle({ orderId, express }: { orderId: number; express: 
       qc.invalidateQueries({ queryKey: ['snijplanning'] })
     },
   })
+
+  if (isExternRep) return null
 
   if (express) {
     return (

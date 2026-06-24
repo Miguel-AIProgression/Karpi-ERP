@@ -7,6 +7,7 @@ import {
   useKoppelEdiAfleveradres,
   useKoppelEdiDebiteurAlias,
 } from '@/modules/edi/hooks/use-edi'
+import { useAuth } from '@/hooks/use-auth'
 
 /**
  * Twee manieren om een ongematchte inkomende order te koppelen:
@@ -70,6 +71,8 @@ export function KoppelVestigingWidget({
   const { data: adressen = [], isLoading: adrLoading } = useAfleveradressenVoorKoppeling(debiteurNr)
   const koppelAdres = useKoppelEdiAfleveradres()
   const koppelAlias = useKoppelEdiDebiteurAlias()
+  // Externe vertegenwoordiger (mig 489): read-only — koppelen/order-creatie verbergen.
+  const { isExternRep } = useAuth()
 
   const busy = koppelAdres.isPending || koppelAlias.isPending
   const foutMelding =
@@ -96,6 +99,9 @@ export function KoppelVestigingWidget({
       )
     }
   }
+
+  // Read-only rep ziet geen koppel-/order-creatie-affordance.
+  if (isExternRep) return null
 
   if (orderId) {
     return (
