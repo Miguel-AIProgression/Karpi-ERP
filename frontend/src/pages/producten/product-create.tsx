@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Plus, Trash2, AlertTriangle, CheckCircle2, Info, Check } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { useCreateProduct, useNextArtikelnr, useKwaliteiten, useMaatwerkVormen, useBestaandeArtikelnrs, useBestaandeKarpiCodes } from '@/hooks/use-producten'
+import { useLeveranciers, useCreateProduct, useNextArtikelnr, useKwaliteiten, useMaatwerkVormen, useBestaandeArtikelnrs, useBestaandeKarpiCodes } from '@/hooks/use-producten'
 import { STANDAARD_TAPIJTMATEN } from '@/lib/constants/tapijt-maten'
 import {
   fetchAfwerkingTypes,
@@ -102,6 +102,7 @@ export function ProductCreatePage() {
   const [searchParams] = useSearchParams()
   const { data: kwaliteiten } = useKwaliteiten()
   const { data: maatwerkVormen = [] } = useMaatwerkVormen()
+  const { data: leveranciers } = useLeveranciers()
   const createMutation = useCreateProduct()
 
   // Variant-toevoegen-modus: kwaliteit (+ optioneel kleur) komt mee als query-param
@@ -116,6 +117,7 @@ export function ProductCreatePage() {
   const [kwaliteitCode, setKwaliteitCode] = useState(kwaliteitParam)
   const [kwaliteitCodeInput, setKwaliteitCodeInput] = useState(kwaliteitParam)  // ruwe invoer (vóór uppercase)
   const [kleurCode, setKleurCode] = useState(kleurParam)
+  const [leverancierId, setLeverancierId] = useState<string>('')
   const [afwerkingCode, setAfwerkingCode] = useState('')
   const [actief, setActief] = useState(existingKwaliteitMode)
 
@@ -355,6 +357,7 @@ export function ProductCreatePage() {
           gewicht_kg: r.gewicht_kg ? Number(r.gewicht_kg) : null,
           voorraad: 0,
           locatie: r.locatie.trim() || null,
+          leverancier_id: leverancierId ? Number(leverancierId) : null,
           actief,
         })
       }
@@ -509,6 +512,20 @@ export function ProductCreatePage() {
                 className={`input ${existingKwaliteitMode && kleurParam ? 'bg-slate-100 text-slate-500' : ''}`}
                 placeholder="bijv. 48"
               />
+            </Field>
+
+            {/* Leverancier */}
+            <Field label="Leverancier">
+              <select
+                value={leverancierId}
+                onChange={e => setLeverancierId(e.target.value)}
+                className="input"
+              >
+                <option value="">— geen —</option>
+                {leveranciers?.map(l => (
+                  <option key={l.id} value={l.id}>{l.naam}</option>
+                ))}
+              </select>
             </Field>
 
             {/* Maatwerk afwerking */}

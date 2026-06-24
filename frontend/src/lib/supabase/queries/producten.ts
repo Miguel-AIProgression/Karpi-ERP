@@ -39,6 +39,7 @@ export interface ProductDetail extends ProductRow {
   vorm: 'rechthoek' | 'rond'
   gewicht_uit_kwaliteit: boolean
   product_type: ProductType | null
+  leverancier_id: number | null
 }
 
 export interface RolRow {
@@ -143,6 +144,7 @@ export interface ProductFormData {
   voorraad?: number
   besteld_inkoop?: number
   locatie?: string | null
+  leverancier_id?: number | null
   actief?: boolean
 }
 

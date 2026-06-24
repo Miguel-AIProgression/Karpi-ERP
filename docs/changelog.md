@@ -1,5 +1,25 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-24 — `producten.leverancier_id` als echte kolom (mig 482)
+
+**Waarom:** vorige fix verwijderde het Leverancier-veld omdat de kolom niet
+bestond; gebruiker wil de koppeling juist behouden — dus alsnog goed
+bouwen i.p.v. het veld schrappen.
+
+- Nieuwe kolom `producten.leverancier_id BIGINT REFERENCES leveranciers(id)
+  ON DELETE SET NULL` (mig 482, mirrort de `ON DELETE SET NULL`-aanpak van
+  `producten_maatwerk_vorm_code_fkey` — een leverancier wordt in de praktijk
+  soft-deleted via `actief=false`, maar mag een product nooit blokkeren als
+  die ooit toch verwijderd wordt). Puur informatief (default/gebruikelijke
+  leverancier voor het artikel) — geen koppeling met de inkoop-flow
+  (`inkooporders.leverancier_id` blijft de bron-van-waarheid daarvoor).
+- `leverancier_id` terug in `ProductFormData` + nieuw op `ProductDetail`
+  (`producten.ts`); Leverancier-dropdown hersteld in zowel "+ Nieuw
+  product" als "Bewerken"; productdetail toont 'm nu ook (`InfoField` met
+  naam-lookup uit `useLeveranciers()`).
+- Geverifieerd via een rolled-back insert direct op de live DB (incl.
+  `leverancier_id=8`): slaagt, `gewicht_kg` blijft correct afgeleid.
+
 ## 2026-06-24 — Fix: `leverancier_id` was een phantom-veld op producten (blokkeerde élke opslag)
 
 **Waarom:** live-test van de variant-toevoegen-feature faalde op opslaan met

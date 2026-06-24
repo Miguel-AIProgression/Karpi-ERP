@@ -7,7 +7,7 @@ import { formatCurrency, formatNumber } from '@/lib/utils/formatters'
 import { berekenProductGewichtKg } from '@/lib/utils/gewicht'
 import { cn } from '@/lib/utils/cn'
 import { useQuery } from '@tanstack/react-query'
-import { useProductDetail, useRollenVoorProduct, useClaimsVoorProduct, useEquivalenteProducten } from '@/hooks/use-producten'
+import { useProductDetail, useRollenVoorProduct, useClaimsVoorProduct, useEquivalenteProducten, useLeveranciers } from '@/hooks/use-producten'
 import { useUitwisselbareGroepen } from '@/hooks/use-uitwisselbaar'
 import { UitwisselbaarGroepDialog } from '@/components/producten/uitwisselbaar-groep-dialog'
 import { useOpenstaandeInkoopregelsVoorArtikel } from '@/modules/inkoop'
@@ -46,6 +46,7 @@ export function ProductDetailPage() {
   const { data: equivalenten } = useEquivalenteProducten(artikelnr)
   const { data: inkoopregels } = useOpenstaandeInkoopregelsVoorArtikel(artikelnr)
   const { data: uitwisselGroepen } = useUitwisselbareGroepen()
+  const { data: leveranciers } = useLeveranciers()
   const [koppelDialoogOpen, setKoppelDialoogOpen] = useState(false)
 
   const eigenUitwisselGroep = useMemo(() => {
@@ -115,6 +116,12 @@ export function ProductDetailPage() {
           <InfoField label="EAN" value={product.ean_code} />
           <InfoField label="Kwaliteit" value={product.kwaliteit_code} />
           <InfoField label="Zoeksleutel" value={product.zoeksleutel} />
+          {product.leverancier_id != null && (
+            <InfoField
+              label="Leverancier"
+              value={leveranciers?.find(l => l.id === product.leverancier_id)?.naam ?? `#${product.leverancier_id}`}
+            />
+          )}
           {product.lengte_cm != null && product.breedte_cm != null && (
             <InfoField label="Maat" value={`${product.lengte_cm} × ${product.breedte_cm} cm`} />
           )}
