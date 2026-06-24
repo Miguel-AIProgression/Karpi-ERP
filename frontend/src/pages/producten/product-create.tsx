@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Plus, Trash2, AlertTriangle, CheckCircle2, Info, Check } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { useLeveranciers, useCreateProduct, useNextArtikelnr, useKwaliteiten, useDistincteVormen } from '@/hooks/use-producten'
+import { useLeveranciers, useCreateProduct, useNextArtikelnr, useKwaliteiten, useMaatwerkVormen, useBestaandeArtikelnrs } from '@/hooks/use-producten'
 import { STANDAARD_TAPIJTMATEN } from '@/lib/constants/tapijt-maten'
 import {
   fetchAfwerkingTypes,
@@ -83,7 +83,7 @@ export function ProductCreatePage() {
   const [searchParams] = useSearchParams()
   const { data: leveranciers } = useLeveranciers()
   const { data: kwaliteiten } = useKwaliteiten()
-  const { data: beschikbareVormen = [] } = useDistincteVormen()
+  const { data: maatwerkVormen = [] } = useMaatwerkVormen()
   const createMutation = useCreateProduct()
 
   // Variant-toevoegen-modus: kwaliteit (+ optioneel kleur) komt mee als query-param
@@ -110,6 +110,11 @@ export function ProductCreatePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [existingKwaliteitMode, kwaliteiten])
 
+  // Effectieve naam voor de omschrijving — in variant-toevoegen-modus mag het
+  // veld leeg blijven; val dan terug op de kwaliteit-omschrijving of -code.
+  const effectieveNaam = naam.trim()
+    || (existingKwaliteitMode ? (kwaliteiten?.find(k => k.code === kwaliteitParam)?.omschrijving ?? kwaliteitParam) : '')
+
   // Varianten
   const [rows, setRows] = useState<VariantRow[]>([newRow()])
   const [manualArtikelnr, setManualArtikelnr] = useState<Set<number>>(new Set())
@@ -130,6 +135,23 @@ export function ProductCreatePage() {
     queryFn: () => fetchKwaliteitBestaat(debouncedKwaliteit),
     enabled: !existingKwaliteitMode && debouncedKwaliteit.length >= 2,
   })
+
+  // Debounced artikelnrs voor live duplicate-check (artikelnr is de PK)
+  const ingevuldeArtikelnrs = useMemo(
+    () => [...new Set(rows.map(r => r.artikelnr.trim()).filter(Boolean))],
+    [rows],
+  )
+  const [debouncedArtikelnrs, setDebouncedArtikelnrs] = useState<string[]>([])
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedArtikelnrs(ingevuldeArtikelnrs), 400)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ingevuldeArtikelnrs.join(',')])
+  const { data: bestaandeArtikelnrs } = useBestaandeArtikelnrs(debouncedArtikelnrs)
+  const dubbeleArtikelnrs = useMemo(
+    () => new Set(rows.filter(r => bestaandeArtikelnrs?.has(r.artikelnr.trim())).map(r => r.artikelnr.trim())),
+    [rows, bestaandeArtikelnrs],
+  )
 
   // Afwerking-types
   const { data: afwerkingTypes } = useQuery({
@@ -274,6 +296,11 @@ export function ProductCreatePage() {
       setError(`Kwaliteitscode "${kwaliteitCode}" bestaat al in de database. Gebruik "Variant toevoegen" vanaf een bestaand product van deze kwaliteit, of kies een andere code.`)
       return
     }
+    const dubbeleInForm = filledRows.filter(r => dubbeleArtikelnrs.has(r.artikelnr.trim()))
+    if (dubbeleInForm.length > 0) {
+      setError(`Artikelnr bestaat al: ${dubbeleInForm.map(r => r.artikelnr.trim()).join(', ')}. Pas het artikelnr aan.`)
+      return
+    }
 
     try {
       for (const r of filledRows) {
@@ -281,7 +308,7 @@ export function ProductCreatePage() {
           artikelnr: r.artikelnr.trim(),
           karpi_code: r.karpi_code.trim() || null,
           ean_code: r.ean_code.trim() || null,
-          omschrijving: buildOmschrijving(naam, kleurCode, r.breedte, r.lengte),
+          omschrijving: buildOmschrijving(effectieveNaam, kleurCode, r.breedte, r.lengte),
           kwaliteit_code: kwaliteitCode || null,
           kleur_code: kleurCode.trim() || null,
           product_type: (r.product_type as ProductType) || null,
@@ -308,7 +335,12 @@ export function ProductCreatePage() {
 
       navigate(`/producten/${filledRows[0].artikelnr.trim()}`)
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Er is een fout opgetreden')
+      const pgError = err as { code?: string; message?: string }
+      if (pgError?.code === '23505') {
+        setError('Eén van de artikelnummers bestaat al (botsing met een net aangemaakt artikel). Pas het artikelnr aan en probeer opnieuw.')
+      } else {
+        setError(err instanceof Error ? err.message : 'Er is een fout opgetreden')
+      }
     }
   }
 
@@ -347,13 +379,20 @@ export function ProductCreatePage() {
           <div className="p-6 grid grid-cols-2 gap-x-8 gap-y-5">
 
             {/* Naam */}
-            <Field label="Productnaam *" hint="Bijv. FADED MUSCAT — zonder kleur of maat">
+            <Field
+              label={existingKwaliteitMode ? 'Productnaam' : 'Productnaam *'}
+              hint={
+                existingKwaliteitMode
+                  ? `Optioneel — zonder invoer wordt "${effectieveNaam}" gebruikt.`
+                  : 'Bijv. FADED MUSCAT — zonder kleur of maat'
+              }
+            >
               <input
-                required
+                required={!existingKwaliteitMode}
                 value={naam}
                 onChange={e => setNaam(e.target.value)}
                 className="input"
-                placeholder="bijv. FADED MUSCAT"
+                placeholder={existingKwaliteitMode ? effectieveNaam : 'bijv. FADED MUSCAT'}
               />
             </Field>
 
@@ -567,13 +606,26 @@ export function ProductCreatePage() {
 
                   {/* Velden */}
                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-5 gap-y-4">
-                    <VariantVeld label="Artikelnr *" className="col-span-2" hint="Automatisch — pas aan indien nodig">
+                    <VariantVeld
+                      label="Artikelnr *"
+                      className="col-span-2"
+                      hint={
+                        dubbeleArtikelnrs.has(r.artikelnr.trim())
+                          ? undefined
+                          : 'Automatisch — volgend nummer na het hoogste bestaande artikelnr van deze kwaliteit+kleur'
+                      }
+                    >
                       <input
                         value={r.artikelnr}
                         onChange={e => updateRow(r._key, 'artikelnr', e.target.value)}
-                        className="input w-full font-mono"
+                        className={`input w-full font-mono ${dubbeleArtikelnrs.has(r.artikelnr.trim()) ? 'input-error' : ''}`}
                         placeholder="298480000"
                       />
+                      {dubbeleArtikelnrs.has(r.artikelnr.trim()) && (
+                        <p className="mt-1 text-[11px] text-rose-600 flex items-center gap-1">
+                          <AlertTriangle size={11} /> Dit artikelnr bestaat al — kies een ander nummer.
+                        </p>
+                      )}
                     </VariantVeld>
                     <VariantVeld label="Type" className="col-span-2">
                       <select
@@ -594,7 +646,7 @@ export function ProductCreatePage() {
                         value={r.breedte}
                         onChange={e => updateRow(r._key, 'breedte', e.target.value)}
                         className="input w-full"
-                        placeholder="160"
+                        placeholder="bijv. 200"
                       />
                     </VariantVeld>
                     <VariantVeld label="Lengte cm">
@@ -603,22 +655,20 @@ export function ProductCreatePage() {
                         value={r.lengte}
                         onChange={e => updateRow(r._key, 'lengte', e.target.value)}
                         className="input w-full"
-                        placeholder="230"
+                        placeholder="bijv. 300"
                       />
                     </VariantVeld>
-                    <VariantVeld label="Vorm" className="col-span-2" hint="Leeg = rechthoek. Bijv. rond, ovaal, afgeronde_hoeken">
-                      <input
-                        list={`vormen-list-${r._key}`}
+                    <VariantVeld label="Vorm" className="col-span-2" hint="Bepaalt de vormtoeslag bij de m²-prijsberekening">
+                      <select
                         value={r.vorm}
                         onChange={e => updateRow(r._key, 'vorm', e.target.value)}
                         className="input w-full"
-                        placeholder="bijv. afgeronde_hoeken"
-                      />
-                      <datalist id={`vormen-list-${r._key}`}>
-                        {beschikbareVormen.map(v => (
-                          <option key={v} value={v} />
+                      >
+                        <option value="">— rechthoek (standaard) —</option>
+                        {maatwerkVormen.filter(v => v.code !== 'rechthoek').map(v => (
+                          <option key={v.code} value={v.code}>{v.naam}</option>
                         ))}
-                      </datalist>
+                      </select>
                     </VariantVeld>
                     <VariantVeld
                       label={karpiVerplicht ? 'Karpi-code *' : 'Karpi-code'}
@@ -672,12 +722,12 @@ export function ProductCreatePage() {
                       />
                     </VariantVeld>
 
-                    <VariantVeld label="EAN" className="col-span-2">
+                    <VariantVeld label="EAN" className="col-span-2" hint="Optioneel — wordt niet automatisch gegenereerd, alleen invullen als bekend">
                       <input
                         value={r.ean_code}
                         onChange={e => updateRow(r._key, 'ean_code', e.target.value)}
                         className="input w-full font-mono"
-                        placeholder="8712345678901"
+                        placeholder="bijv. 8712345678901"
                       />
                     </VariantVeld>
                     <VariantVeld label="Locatie" className="col-span-2">
@@ -685,7 +735,7 @@ export function ProductCreatePage() {
                         value={r.locatie}
                         onChange={e => updateRow(r._key, 'locatie', e.target.value)}
                         className="input w-full"
-                        placeholder="A3-12"
+                        placeholder="bijv. A3-12"
                       />
                     </VariantVeld>
                   </div>
@@ -704,7 +754,7 @@ export function ProductCreatePage() {
         </section>
 
         {/* ── Sectie 3: Preview ──────────────────────────────────── */}
-        {naam.trim() && filledRows.length > 0 && (
+        {effectieveNaam && filledRows.length > 0 && (
           <section className="bg-slate-50 rounded-[var(--radius)] border-2 border-slate-200 p-5">
             <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
               Voorbeeld — zo komen de artikelen in het systeem
@@ -723,7 +773,7 @@ export function ProductCreatePage() {
                   <tr key={r._key}>
                     <td className="py-2 pr-6 font-mono text-xs text-slate-500">{r.artikelnr}</td>
                     <td className="py-2 pr-6 text-slate-800">
-                      {buildOmschrijving(naam, kleurCode, r.breedte, r.lengte)}
+                      {buildOmschrijving(effectieveNaam, kleurCode, r.breedte, r.lengte)}
                     </td>
                     <td className="py-2 pr-6 text-slate-500">
                       {PRODUCT_TYPES.find(t => t.value === r.product_type)?.label ?? '—'}
@@ -749,7 +799,7 @@ export function ProductCreatePage() {
         <div className="flex items-center gap-3 pb-8">
           <button
             type="submit"
-            disabled={isPending || filledRows.length === 0 || (!existingKwaliteitMode && kwaliteitBestaat === true)}
+            disabled={isPending || filledRows.length === 0 || (!existingKwaliteitMode && kwaliteitBestaat === true) || dubbeleArtikelnrs.size > 0}
             className="px-6 py-2.5 bg-terracotta-500 text-white rounded-[var(--radius-sm)] text-sm font-medium hover:bg-terracotta-600 disabled:opacity-50 transition-colors"
           >
             {isPending

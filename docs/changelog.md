@@ -31,12 +31,34 @@ read-only, geen nieuw artikel).
   no-opt). Toegevoegd aan `ProductFormData` + de create-payload; het
   bewerk-formulier (`product-form.tsx`) kreeg er-en-passant ook
   Breedte/Lengte-velden, want die ontbraken daar volledig.
-- `product-create.tsx` kreeg ook een **Vorm-veld per variant** (datalist
-  uit `useDistincteVormen`, zelfde patroon als het bewerk-formulier) —
-  ontbrak eerder alleen bij aanmaak. Vorm `afgeronde_hoeken` bestond al
-  in `maatwerk_vormen` (mig 190), stond alleen nog niet in de
-  filterbalk omdat die dynamisch is (alleen vormen die al bij een
-  actief product in gebruik zijn).
+- `product-create.tsx` kreeg ook een **Vorm-veld per variant** — eerste
+  versie was een datalist uit `useDistincteVormen` (alleen vormen al in
+  gebruik door een actief product), na live-feedback vervangen door een
+  echte `<select>` op de master-tabel `maatwerk_vormen` (nieuwe query
+  `fetchMaatwerkVormen`/hook `useMaatwerkVormen`) zodat ook
+  `afgeronde_hoeken` direct kiesbaar is — bestond al in `maatwerk_vormen`
+  (mig 190), stond alleen nog niet in de oude datalist. Zelfde dropdown
+  toegepast op het bewerk-formulier (`product-form.tsx`, had nog de
+  datalist-variant).
+- **Live duplicate-check op artikelnr** (nieuwe query
+  `fetchBestaandeArtikelnrs`/hook `useBestaandeArtikelnrs`, debounced):
+  toont direct een waarschuwing + blokkeert submit als het (automatisch
+  voorgestelde of handmatig aangepaste) artikelnr al bestaat, i.p.v. pas
+  een cryptische Postgres-foutmelding na submit. Defense-in-depth: een
+  23505-unique-violation in de catch-block krijgt nu ook een leesbare
+  melding.
+- **Productnaam niet langer verplicht** in variant-toevoegen-modus —
+  viel terug op niets als `kwaliteiten.omschrijving` leeg was; nu
+  optioneel met fallback op de kwaliteit-omschrijving of anders de
+  kwaliteit-code zelf.
+- **Placeholder/waarde-verwarring opgelost:** Breedte/Lengte hadden als
+  placeholder letterlijk "160"/"230" — toevallig exact de cijfers van
+  een van de snelkeuze-maten, dus een leeg veld zag in een screenshot
+  uit als een al ingevulde waarde (en daardoor leek de Karpi-code-
+  suggestie "kapot", terwijl er feitelijk nog geen maat gekozen was).
+  Placeholders nu overal "bijv. ..." (Breedte/Lengte/EAN/Locatie),
+  EAN kreeg een expliciete hint dat hij niet automatisch gegenereerd
+  wordt.
 - Niet end-to-end in de browser getest (login-gated, geen testaccount
   beschikbaar) — wel `tsc --noEmit` en `eslint` schoon (geen nieuwe
   fouten t.o.v. main).

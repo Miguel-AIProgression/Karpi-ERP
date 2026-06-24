@@ -160,6 +160,34 @@ export async function fetchDistincteVormen(): Promise<string[]> {
   return uniek
 }
 
+export interface MaatwerkVormOptie {
+  code: string
+  naam: string
+}
+
+/** Alle beschikbare vormen uit de master-tabel (niet alleen vormen die al in gebruik zijn). */
+export async function fetchMaatwerkVormen(): Promise<MaatwerkVormOptie[]> {
+  const { data, error } = await supabase
+    .from('maatwerk_vormen')
+    .select('code, naam')
+    .eq('actief', true)
+    .order('volgorde')
+  if (error) throw error
+  return (data ?? []) as MaatwerkVormOptie[]
+}
+
+/** Welke van deze artikelnummers bestaan al? Voor een live duplicate-check vóór het opslaan. */
+export async function fetchBestaandeArtikelnrs(artikelnrs: string[]): Promise<Set<string>> {
+  const trimmed = [...new Set(artikelnrs.map(a => a.trim()).filter(Boolean))]
+  if (trimmed.length === 0) return new Set()
+  const { data, error } = await supabase
+    .from('producten')
+    .select('artikelnr')
+    .in('artikelnr', trimmed)
+  if (error) throw error
+  return new Set((data ?? []).map(r => r.artikelnr as string))
+}
+
 /** Create a new product */
 export async function createProduct(data: ProductFormData): Promise<void> {
   const zoeksleutel = data.kwaliteit_code && data.kleur_code

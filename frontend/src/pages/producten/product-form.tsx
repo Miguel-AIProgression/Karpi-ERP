@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { useKwaliteiten, useLeveranciers, useUpdateProduct, useDistincteVormen } from '@/hooks/use-producten'
+import { useKwaliteiten, useLeveranciers, useUpdateProduct, useMaatwerkVormen } from '@/hooks/use-producten'
 import type { ProductDetail, ProductFormData, ProductType } from '@/lib/supabase/queries/producten'
 
 const PRODUCT_TYPES: { value: ProductType; label: string }[] = [
@@ -20,7 +20,7 @@ export function ProductFormPage({ product }: ProductFormProps) {
   const navigate = useNavigate()
   const { data: kwaliteiten } = useKwaliteiten()
   const { data: leveranciers } = useLeveranciers()
-  const { data: beschikbareVormen = [] } = useDistincteVormen()
+  const { data: maatwerkVormen = [] } = useMaatwerkVormen()
   const updateMutation = useUpdateProduct()
 
   const [form, setForm] = useState<ProductFormData>({
@@ -200,19 +200,17 @@ export function ProductFormPage({ product }: ProductFormProps) {
               />
             </Field>
             <Field label="Vorm">
-              <input
-                list="vormen-list"
+              <select
                 value={form.maatwerk_vorm_code ?? ''}
-                onChange={e => set('maatwerk_vorm_code', e.target.value.trim() || null)}
+                onChange={e => set('maatwerk_vorm_code', e.target.value || null)}
                 className="input"
-                placeholder="bijv. rond, ovaal, organisch_a"
-              />
-              <datalist id="vormen-list">
-                {beschikbareVormen.map(v => (
-                  <option key={v} value={v} />
+              >
+                <option value="">— rechthoek (standaard) —</option>
+                {maatwerkVormen.filter(v => v.code !== 'rechthoek').map(v => (
+                  <option key={v.code} value={v.code}>{v.naam}</option>
                 ))}
-              </datalist>
-              <p className="text-xs text-slate-400 mt-1">Leeg = rechthoek. Nieuwe waarden worden automatisch filterbaar.</p>
+              </select>
+              <p className="text-xs text-slate-400 mt-1">Bepaalt de vormtoeslag bij de m²-prijsberekening.</p>
             </Field>
             <Field label="Leverancier">
               <select
