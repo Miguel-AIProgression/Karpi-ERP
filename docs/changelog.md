@@ -1,5 +1,31 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-24 — Product verwijderen (nieuwe feature)
+
+**Waarom:** producten-module had nooit een delete — alleen `actief=false`
+(soft-delete, bestaand patroon). Gebruiker wilde een per ongeluk
+aangemaakte testvariant écht weg kunnen halen, geen losse "inactief"-rij.
+
+- Onderzocht: **alle FK's naar `producten.artikelnr`** (rollen,
+  order_regels, inkooporder_regels, zending_regels, prijslijst_regels,
+  klant_artikelnummers, samples, en het self-reference `stuks_artikelnr`)
+  staan op `ON DELETE NO ACTION` — geen enkele cascadeert. Geen losse
+  voor-check nodig: gewoon de DELETE proberen, de database weigert 'm zelf
+  als het artikel nog ergens gebruikt wordt (zelfde filosofie als orders
+  verwijderen, die op de `snijplannen`-FK leunt).
+- Nieuwe `deleteProduct()` ([`producten.ts`](frontend/src/lib/supabase/queries/producten.ts))
+  vertaalt een 23503-FK-violation naar een leesbare Nederlandse melding
+  (welke tabel blokkeert, plus de suggestie om te deactiveren) i.p.v. de
+  rauwe Postgres-tekst. Hook `useDeleteProduct`.
+- Bevestigingsdialoog [`ProductVerwijderenDialog`](frontend/src/components/producten/product-verwijderen-dialog.tsx)
+  mirrort het bestaande `RolVerwijderenDialog`-patroon (ADR-0024) — geen
+  nieuw generiek confirm-component, dit is de dominante stijl in de
+  codebase. "Verwijderen"-knop op product-detail naast Bewerken/Variant
+  toevoegen.
+- Geverifieerd op de live DB: een artikel met referenties (prijslijst_regels)
+  wordt correct geweigerd met de vertaalde melding; een artikel zonder
+  referenties (de testvariant 607140008) is succesvol verwijderd.
+
 ## 2026-06-24 — Naam-fallback gebruikte kwaliteitscode i.p.v. echte naam (onvindbaar via zoeken)
 
 **Waarom:** gebruiker zag 607140008 wél op "Per kwaliteit" maar niet op

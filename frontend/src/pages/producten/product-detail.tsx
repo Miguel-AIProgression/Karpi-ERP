@@ -10,6 +10,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useProductDetail, useRollenVoorProduct, useClaimsVoorProduct, useEquivalenteProducten, useLeveranciers } from '@/hooks/use-producten'
 import { useUitwisselbareGroepen } from '@/hooks/use-uitwisselbaar'
 import { UitwisselbaarGroepDialog } from '@/components/producten/uitwisselbaar-groep-dialog'
+import { ProductVerwijderenDialog } from '@/components/producten/product-verwijderen-dialog'
 import { useOpenstaandeInkoopregelsVoorArtikel } from '@/modules/inkoop'
 import { useVoorraadpositie } from '@/modules/voorraadpositie'
 import { ProductTypeBadge } from './producten-overview'
@@ -48,6 +49,7 @@ export function ProductDetailPage() {
   const { data: uitwisselGroepen } = useUitwisselbareGroepen()
   const { data: leveranciers } = useLeveranciers()
   const [koppelDialoogOpen, setKoppelDialoogOpen] = useState(false)
+  const [verwijderDialoogOpen, setVerwijderDialoogOpen] = useState(false)
 
   const eigenUitwisselGroep = useMemo(() => {
     if (!uitwisselGroepen || !product?.kwaliteit_code) return undefined
@@ -106,8 +108,18 @@ export function ProductDetailPage() {
           >
             Bewerken
           </Link>
+          <button
+            onClick={() => setVerwijderDialoogOpen(true)}
+            className="px-4 py-2 border border-rose-200 rounded-[var(--radius-sm)] text-sm text-rose-600 hover:bg-rose-50"
+          >
+            Verwijderen
+          </button>
         </div>
       </div>
+
+      {verwijderDialoogOpen && (
+        <ProductVerwijderenDialog product={product} onClose={() => setVerwijderDialoogOpen(false)} />
+      )}
 
       {/* Info card */}
       <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-6 mb-6">

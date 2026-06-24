@@ -381,6 +381,43 @@ export async function updateProductLocatie(artikelnr: string, locatie: string | 
   if (error) throw error
 }
 
+/** Tabellen die naar producten.artikelnr verwijzen (FK, allemaal ON DELETE NO ACTION) — voor een leesbare melding bij een geblokkeerde delete. */
+const ARTIKEL_REFERENTIE_LABELS: Record<string, string> = {
+  rollen: 'rollen (fysieke voorraad)',
+  order_regels: 'orderregels',
+  inkooporder_regels: 'inkooporderregels',
+  zending_regels: 'zendingen',
+  prijslijst_regels: 'prijslijsten',
+  klant_artikelnummers: 'klant-artikelnummers',
+  samples: 'samples',
+  producten: 'een ander artikel (doos/stuks-koppeling)',
+}
+
+/**
+ * Verwijder een product definitief. Alle FK's naar producten.artikelnr staan
+ * op ON DELETE NO ACTION (RESTRICT) — geen vooraf-check nodig, de database
+ * weigert de delete zelf als het artikel nog ergens gebruikt wordt. Vertaalt
+ * die Postgres-foutmelding (23503) naar een leesbare Nederlandse tekst.
+ */
+export async function deleteProduct(artikelnr: string): Promise<void> {
+  const { error } = await supabase
+    .from('producten')
+    .delete()
+    .eq('artikelnr', artikelnr)
+
+  if (!error) return
+
+  if (error.code === '23503') {
+    const tabel = error.details?.match(/referenced from table "(\w+)"/)?.[1]
+    const label = (tabel && ARTIKEL_REFERENTIE_LABELS[tabel]) || tabel || 'andere gegevens'
+    throw new Error(
+      `Dit artikel kan niet verwijderd worden — het wordt nog gebruikt door ${label}. ` +
+      `Deactiveer het in plaats daarvan (Bewerken → Actief uitzetten).`
+    )
+  }
+  throw new Error(error.message)
+}
+
 export interface ReserveringRow {
   order_id: number
   order_nr: string
