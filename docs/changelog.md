@@ -1,5 +1,21 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-25 — Factuurlijst, vertegenwoordigers-omzet, taalfixes
+
+**Vertegenwoordigers: omzet via klantportfolio i.p.v. ordercode:** zowel het overzicht
+als het detail-scherm van vertegenwoordigers berekenden omzet via `orders.vertegenw_code`,
+maar EDI-orders (Hornbach, BDSK, SB Möbel Boss) komen binnen zonder die code — voor Guido
+B. betekende dit €67.944 gemiste omzet (413 orders). Nu wordt eerst alle `debiteur_nr`
+van de vertegenwoordiger opgehaald (via `debiteuren.vertegenw_code`) en de orders-query
+gebruikt `.in('debiteur_nr', [...])` — klantportfolio als bron van waarheid.
+
+**PostgREST 1000-rij cap (dezelfde bugklasse als Pick & Ship fix 2026-06-11):** drie
+queries in `fetchVertegOverview` en twee in `fetchVertegDetail` hadden geen paginering
+— bij >1000 rijen werden totalen te laag. Generieke `fetchAllPages`-helper toegevoegd
+(zelfde `.range()`-patroon) in `vertegenwoordigers.ts`.
+
+---
+
 ## 2026-06-25 — Factuurlijst: sortering + PDF-download + taalfixes
 
 **Sortering factuurnr:** oud-systeem nummers (`2026XXXXXX`) sorteerden vóór `FACT-*`

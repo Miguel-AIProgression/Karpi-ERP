@@ -75,6 +75,24 @@ export interface VertegOrder {
 
 type Periode = 'YTD' | 'Q1' | 'Q2' | 'Q3' | 'Q4'
 
+/** Haalt alle rijen op door te pagineren (PostgREST cap = 1000/request). */
+async function fetchAllPages<T>(
+  buildQuery: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
+  pageSize = 1000,
+): Promise<T[]> {
+  const result: T[] = []
+  let offset = 0
+  while (true) {
+    const { data, error } = await buildQuery(offset, offset + pageSize - 1)
+    if (error) throw error
+    if (!data || data.length === 0) break
+    result.push(...data)
+    if (data.length < pageSize) break
+    offset += pageSize
+  }
+  return result
+}
+
 function periodeRange(periode: Periode): { from: string; to: string } {
   const year = new Date().getFullYear()
   switch (periode) {
@@ -100,20 +118,33 @@ export async function fetchVertegOverview(periode: Periode = 'YTD'): Promise<Ver
 
   if (vErr) throw vErr
 
-  // Fetch omzet per vertegenwoordiger in period (excluding cancelled)
-  const { data: omzetData, error: oErr } = await supabase
-    .from('orders')
-    .select('vertegenw_code, totaal_bedrag, id')
-    .gte('orderdatum', from)
-    .lte('orderdatum', to)
-    .neq('status', 'Geannuleerd')
+  // Debiteur → vertegenw_code mapping (bron van waarheid voor portfolio-omzet).
+  // Omzet telt alle orders van klanten die bij een rep horen, ongeacht of het
+  // order zelf een vertegenw_code heeft (EDI-orders komen vaak zonder rep-code).
+  const debiteurData = await fetchAllPages((rangeFrom, rangeTo) =>
+    supabase
+      .from('debiteuren')
+      .select('debiteur_nr, vertegenw_code')
+      .not('vertegenw_code', 'is', null)
+      .range(rangeFrom, rangeTo) as PromiseLike<{ data: { debiteur_nr: number; vertegenw_code: string | null }[] | null; error: unknown }>,
+  )
+  const debiteurRepMap = new Map(debiteurData.map((d) => [d.debiteur_nr, d.vertegenw_code!]))
 
-  if (oErr) throw oErr
+  // Fetch omzet per vertegenwoordiger in period (excluding cancelled) — gepagineerd
+  const omzetData = await fetchAllPages((rangeFrom, rangeTo) =>
+    supabase
+      .from('orders')
+      .select('debiteur_nr, totaal_bedrag, id')
+      .gte('orderdatum', from)
+      .lte('orderdatum', to)
+      .neq('status', 'Geannuleerd')
+      .range(rangeFrom, rangeTo) as PromiseLike<{ data: { debiteur_nr: number | null; totaal_bedrag: number | null; id: number }[] | null; error: unknown }>,
+  )
 
-  // Aggregate omzet per code
+  // Aggregate omzet per rep-code via de klant-koppeling
   const omzetMap = new Map<string, { total: number; count: number }>()
-  for (const o of omzetData ?? []) {
-    const code = o.vertegenw_code as string | null
+  for (const o of omzetData) {
+    const code = o.debiteur_nr != null ? (debiteurRepMap.get(o.debiteur_nr) ?? null) : null
     if (!code) continue
     const cur = omzetMap.get(code) ?? { total: 0, count: 0 }
     cur.total += Number(o.totaal_bedrag) || 0
@@ -123,27 +154,29 @@ export async function fetchVertegOverview(periode: Periode = 'YTD'): Promise<Ver
 
   const totalOmzet = Array.from(omzetMap.values()).reduce((s, v) => s + v.total, 0)
 
-  // Fetch open orders count per vertegenwoordiger (no date filter)
-  const { data: openData, error: opErr } = await supabase
-    .from('orders')
-    .select('vertegenw_code, id')
-    .in('status', ACTIVE_ORDER_STATUSES)
-
-  if (opErr) throw opErr
+  // Fetch open orders per vertegenwoordiger — via klant-koppeling, gepagineerd
+  const openData = await fetchAllPages((rangeFrom, rangeTo) =>
+    supabase
+      .from('orders')
+      .select('debiteur_nr, id')
+      .in('status', ACTIVE_ORDER_STATUSES)
+      .range(rangeFrom, rangeTo) as PromiseLike<{ data: { debiteur_nr: number | null; id: number }[] | null; error: unknown }>,
+  )
 
   const openMap = new Map<string, number>()
-  for (const o of openData ?? []) {
-    const code = o.vertegenw_code as string | null
+  for (const o of openData) {
+    const code = o.debiteur_nr != null ? (debiteurRepMap.get(o.debiteur_nr) ?? null) : null
     if (!code) continue
     openMap.set(code, (openMap.get(code) ?? 0) + 1)
   }
 
-  // Fetch klanten + tier per vertegenwoordiger
-  const { data: klantenData, error: kErr } = await supabase
-    .from('klant_omzet_ytd')
-    .select('vertegenw_code, tier')
-
-  if (kErr) throw kErr
+  // Fetch klanten + tier per vertegenwoordiger — gepagineerd (3866 rijen per 2026-06-25)
+  const klantenData = await fetchAllPages((rangeFrom, rangeTo) =>
+    supabase
+      .from('klant_omzet_ytd')
+      .select('vertegenw_code, tier')
+      .range(rangeFrom, rangeTo) as PromiseLike<{ data: { vertegenw_code: string | null; tier: string | null }[] | null; error: unknown }>,
+  )
 
   const klantMap = new Map<string, { total: number; gold: number; silver: number; bronze: number }>()
   for (const k of klantenData ?? []) {
@@ -202,26 +235,38 @@ export async function fetchVertegDetail(code: string): Promise<VertegDetail> {
   const ytdFrom = `${year}-01-01`
   const ytdTo = new Date().toISOString().slice(0, 10)
 
-  // Omzet YTD
-  const { data: omzetData } = await supabase
-    .from('orders')
-    .select('totaal_bedrag, id')
+  // Alle debiteur_nrs die bij deze rep horen (ongeacht actief/inactief —
+  // historische klanten kunnen dit jaar nog orders hebben gehad).
+  const { data: debiteurRows } = await supabase
+    .from('debiteuren')
+    .select('debiteur_nr')
     .eq('vertegenw_code', code)
-    .gte('orderdatum', ytdFrom)
-    .lte('orderdatum', ytdTo)
-    .neq('status', 'Geannuleerd')
 
-  const totalOmzet = (omzetData ?? []).reduce((s, o) => s + (Number(o.totaal_bedrag) || 0), 0)
-  const orderCount = omzetData?.length ?? 0
+  const debiteurNrs = (debiteurRows ?? []).map((d) => d.debiteur_nr)
 
-  // Open orders
+  // Omzet YTD — alle orders van klanten in portfolio, gepagineerd
+  const omzetData = debiteurNrs.length === 0 ? [] : await fetchAllPages((rangeFrom, rangeTo) =>
+    supabase
+      .from('orders')
+      .select('totaal_bedrag, id')
+      .in('debiteur_nr', debiteurNrs)
+      .gte('orderdatum', ytdFrom)
+      .lte('orderdatum', ytdTo)
+      .neq('status', 'Geannuleerd')
+      .range(rangeFrom, rangeTo) as PromiseLike<{ data: { totaal_bedrag: number | null; id: number }[] | null; error: unknown }>,
+  )
+
+  const totalOmzet = omzetData.reduce((s, o) => s + (Number(o.totaal_bedrag) || 0), 0)
+  const orderCount = omzetData.length
+
+  // Open orders — alle openstaande orders van klanten in portfolio
   const { count: openCount } = await supabase
     .from('orders')
     .select('id', { count: 'exact', head: true })
-    .eq('vertegenw_code', code)
+    .in('debiteur_nr', debiteurNrs.length > 0 ? debiteurNrs : [-1])
     .in('status', ACTIVE_ORDER_STATUSES)
 
-  // Aantal klanten
+  // Aantal klanten (actief)
   const { count: klantCount } = await supabase
     .from('debiteuren')
     .select('debiteur_nr', { count: 'exact', head: true })
