@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { Plus, Search, Download } from 'lucide-react'
 import { exporterenNaarExcel } from '@/lib/orders/export-orders'
 import { PageHeader } from '@/components/layout/page-header'
@@ -26,7 +26,21 @@ const KANAAL_OPTIES = [
 ]
 
 export function OrdersOverviewPage() {
-  const [status, setStatus] = useState('Alle')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const status = searchParams.get('status') ?? 'Alle'
+
+  function setStatus(nieuw: string) {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        if (nieuw === 'Alle') next.delete('status')
+        else next.set('status', nieuw)
+        return next
+      },
+      { replace: false },
+    )
+  }
+
   const [search, setSearch] = useState('')
   const [klantSelectie, setKlantSelectie] = useState<string[]>([])
   const [bronSelectie, setBronSelectie] = useState<string[]>([])

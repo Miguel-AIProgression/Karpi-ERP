@@ -10,28 +10,28 @@
 export interface GeenVerzendweekVelden {
   afleverdatum?: string | null
   status?: string | null
-  alleen_productie?: boolean | null
 }
 
 const EIND_STATUSSEN = new Set(['Verzonden', 'Geannuleerd'])
 
 /** True als deze order geen verzendweek heeft en dat een actie-punt is. */
 export function isGeenVerzendweek(order: GeenVerzendweekVelden): boolean {
-  if (order.alleen_productie) return false
   if (EIND_STATUSSEN.has(order.status ?? '')) return false
   return !order.afleverdatum
 }
 
-interface PostgrestIsNeqEqBuilder {
-  is(column: string, value: null): PostgrestIsNeqEqBuilder
-  not(column: string, operator: string, value: unknown): PostgrestIsNeqEqBuilder
-  eq(column: string, value: unknown): PostgrestIsNeqEqBuilder
+interface PostgrestIsNotBuilder {
+  is(column: string, value: null): PostgrestIsNotBuilder
+  not(column: string, operator: string, value: unknown): PostgrestIsNotBuilder
 }
 
-/** Past het 'Geen verzendweek'-filter toe op een query-builder. */
+/** Past het 'Geen verzendweek'-filter toe op een query-builder.
+ *  Werkt op zowel `orders` (countGeenVerzendweekOrders) als `orders_list`
+ *  (fetchOrders). oud_systeem-orders worden uitgesloten — die zijn alleen
+ *  voor snijslijt/Basta en hebben bewust geen afleverdatum. */
 export function filterGeenVerzendweek<Q>(query: Q): Q {
-  return (query as unknown as PostgrestIsNeqEqBuilder)
+  return (query as unknown as PostgrestIsNotBuilder)
     .is('afleverdatum', null)
     .not('status', 'in', '("Verzonden","Geannuleerd")')
-    .eq('alleen_productie', false) as unknown as Q
+    .not('bron_systeem', 'eq', 'oud_systeem') as unknown as Q
 }

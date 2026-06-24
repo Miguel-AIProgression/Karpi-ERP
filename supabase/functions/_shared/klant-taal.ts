@@ -15,6 +15,7 @@ export function bepaalTaal(landIso2: string | null): Taal {
     case 'DE':
     case 'AT': return 'de'
     case 'FR': return 'fr'
+    case null:   // geen land ingesteld = legacy NL-klant (62% van debiteuren)
     case 'NL':
     case 'BE': return 'nl'
     default:   return 'en'
