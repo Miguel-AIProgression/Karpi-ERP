@@ -64,7 +64,7 @@ export function ClientSelector({ value, onChange, disabled }: ClientSelectorProp
         .from('debiteuren')
         .select('debiteur_nr, naam, adres, postcode, plaats, land, fact_naam, fact_adres, fact_postcode, fact_plaats, email_factuur, email_overig, email_verzend, vertegenw_code, prijslijst_nr, korting_pct, betaler, inkoopgroepen(naam), gratis_verzending, standaard_maat_werkdagen, maatwerk_weken, deelleveringen_toegestaan, default_lever_type, afleverwijze')
         .eq('status', 'Actief')
-        .limit(15)
+        .limit(50)
 
       if (numSearch) {
         query = query.or(`naam.ilike.%${s}%,debiteur_nr.eq.${numSearch}`)
@@ -168,7 +168,11 @@ export function ClientSelector({ value, onChange, disabled }: ClientSelectorProp
       )}
 
       {open && results.length > 0 && (
-        <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-[var(--radius-sm)] shadow-lg max-h-[22rem] overflow-y-auto">
+        <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-[var(--radius-sm)] shadow-lg flex flex-col max-h-[22rem]">
+          <div className="shrink-0 px-4 py-1.5 text-xs text-slate-400 border-b border-slate-100 bg-slate-50 rounded-t-[var(--radius-sm)]">
+            {results.length} klant{results.length !== 1 ? 'en' : ''} gevonden{results.length > 5 ? ' — scroll voor meer' : ''}
+          </div>
+          <div className="overflow-y-auto flex-1">
           {results.map((client) => (
             <button
               key={client.debiteur_nr}
@@ -194,6 +198,7 @@ export function ClientSelector({ value, onChange, disabled }: ClientSelectorProp
               </div>
             </button>
           ))}
+          </div>
         </div>
       )}
     </div>
