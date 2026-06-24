@@ -1,11 +1,13 @@
 /**
- * Vervoerders die een multi-colli-zending NIET automatisch aanmelden, maar
- * na pickronde-voltooiing vasthouden op 'Klaar voor verzending' tot de operator
- * handmatig vrijgeeft — zodat hij eerst colli kan samenpakken (colli-bundeling,
- * mig 420). De DB-vlag `vervoerders.handmatig_aanmelden` is de bron-van-waarheid;
- * deze frontend-spiegel stuurt alleen UI-zichtbaarheid en de doorverwijzing
- * vanaf de Verzendset-pagina naar de zending-detailpagina (waar de bundel-sectie
- * en "Aanmelden bij Rhenus" staan).
+ * Vervoerders met colli-bundeling (de operator kan meerdere colli samenpakken
+ * onder één nieuwe SSCC — mig 420/421). De DB-vlag `vervoerders.handmatig_aanmelden`
+ * is de bron-van-waarheid; deze frontend-spiegel stuurt alleen UI-zichtbaarheid
+ * van de bundel-sectie + de doorverwijzing vanaf de Verzendset-pagina.
+ *
+ * NB sinds mig 465: Rhenus wordt na voltooien AUTOMATISCH aangemeld (in de
+ * dagbatch om 16:00, via `vervoerders.batch_cutoff_tijd`) — de oude handmatige
+ * "Aanmelden bij Rhenus"-stap is vervangen. Deze vlag stuurt nu enkel nog
+ * colli-bundeling, niet meer een hold.
  */
 export const HANDMATIG_AANMELDEN_VERVOERDERS = ['rhenus_sftp'] as const
 

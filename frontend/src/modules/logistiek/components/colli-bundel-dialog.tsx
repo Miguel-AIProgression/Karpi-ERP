@@ -15,9 +15,9 @@ interface Props {
 
 /**
  * Pop-up om colli te bundelen tijdens (of net na) de pickronde — mig 421.
- * Selecteer ≥2 colli → één nieuwe SSCC-sticker (de bundel). De "Aanmelden bij
- * Rhenus"-knop zit hier bewust NIET: aanmelden gebeurt ná 'Voltooi pickronde'
- * (hold-mechaniek mig 420). Hergebruikt de bundel-hooks van zending-detail.
+ * Selecteer ≥2 colli → één nieuwe SSCC-sticker (de bundel). Aanmelden zit hier
+ * bewust NIET: sinds mig 484 meldt Rhenus automatisch aan in de dagbatch om
+ * 16:00 (geen handmatige stap meer). Hergebruikt de bundel-hooks van zending-detail.
  */
 export function ColliBundelDialog({ zendingId, zendingNr, onClose }: Props) {
   const { data: colli = [], isLoading } = useZendingColliVoorBundel(zendingId)

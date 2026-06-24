@@ -1,5 +1,42 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-24 — Rhenus-dagbatch om 16:00 i.p.v. handmatig 1-voor-1 aanmelden (mig 484)
+
+**Waarom:** twee operationele wensen voor Rhenus. (1) Na pickronde-voltooien bleef
+een Rhenus-zending (≥2 colli) op 'Klaar voor verzending' staan tot de operator per
+order handmatig op "Aanmelden bij Rhenus" klikte (de hold-guard van mig 420). (2)
+Elke zending werd los aangemeld (cron elke minuut), terwijl Rhenus alle orders van
+die dag in één batch om 16:00 wil ontvangen.
+
+**Wat:** na voltooien wordt een Rhenus-zending **automatisch** in de verzend-wachtrij
+geplaatst, maar pas claimbaar op de **eerstvolgende werkdag-16:00** (Europe/Amsterdam).
+De cron (`rhenus-send`, elke minuut, mig 381) is ongewijzigd: hij vindt overdag niets
+en drained vanaf 16:00 de hele dagbatch. Batch-formaat blijft 1 GS1-XML per zending
+(geen multi-shipment), allemaal om 16:00 in /in. HST/Verhoek ongewijzigd (direct).
+
+**Hoe (hergebruik bestaande diepe modules):**
+- `verzend_wachtrij.beschikbaar_op` (mig 484) — claim-gate `beschikbaar_op IS NULL OR
+  <= now()`, exact het `factuur_queue.beschikbaar_op`-patroon (mig 423).
+- `vervoerders.batch_cutoff_tijd TIME` (NULL = direct; `rhenus_sftp` = 16:00) houdt de
+  dispatch carrier-blind (ADR-0038) — nieuwe batch-vervoerder = alleen deze kolom vullen.
+- `volgende_batch_moment(cutoff)` — eerstvolgende werkdag-cutoff via `werkdag_plus_n`
+  (mig 279), DST-correct via dubbele `AT TIME ZONE 'Europe/Amsterdam'`.
+- De mig-420-hold-guard in `enqueue_zending_naar_vervoerder` is **verwijderd**;
+  `handmatig_aanmelden` blijft TRUE voor Rhenus maar gate't nu enkel nog colli-bundeling.
+- `meld_zending_handmatig_aan` herbestemd → "Nu aanmelden": vervroegt de wachtende rij
+  naar `beschikbaar_op=now()` (escape-hatch voor een urgente zending).
+- Cutover-backfill: vastgehouden Rhenus-zendingen alsnog ge-enqueued + bestaande
+  Wachtrij-rijen op de eerstvolgende 16:00 gezet.
+
+**Frontend:** bundelen blijft mogelijk zolang de zending nog in de wachtrij staat
+(niet meer geblokkeerd zodra ze ge-enqueued is); "Aanmelden bij Rhenus"-knop vervangen
+door een info-regel + "Nu aanmelden (niet wachten)"-escape-hatch; Verzendset-copy
+toont nu de 16:00-dagbatch voor élke Rhenus-zending (ook 1 collo).
+
+**Open:** mig-nummer herverifiëren vóór merge (parallelle sessies); e2e-test 1e
+echte dagbatch om 16:00. Basis van `enqueue_zending_naar_vervoerder` = mig 429
+(eigen-vervoer→'Afgeleverd'-fix behouden).
+
 ## 2026-06-24 — Afhaal-zending handmatig op 'Afgehaald' zetten (mig 482-483)
 
 **Waarom:** afhaal-orders (`orders.afhalen=TRUE` → vervoerder "GEEN") krijgen

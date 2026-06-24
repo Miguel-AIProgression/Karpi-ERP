@@ -9,9 +9,10 @@ interface Props {
   zendingStatus: string
   pickerId: number | null
   /** Waarheen na succesvol voltooien. Default '/logistiek'. Voor Rhenus-bundel-
-   *  zendingen (mig 420) stuurt de Verzendset-pagina hier de zending-detailpagina
-   *  in, zodat de operator direct bij "Colli bundelen / Aanmelden bij Rhenus" landt
-   *  i.p.v. terug naar het overzicht. */
+   *  zendingen stuurt de Verzendset-pagina hier de zending-detailpagina in, zodat
+   *  de operator direct bij "Colli bundelen" (+ de "Nu aanmelden"-escape-hatch)
+   *  landt i.p.v. terug naar het overzicht. NB sinds mig 484 meldt Rhenus
+   *  automatisch aan in de dagbatch om 16:00 — er is geen handmatige aanmeld-stap meer. */
   navigeerNaVoltooienNaar?: string
 }
 

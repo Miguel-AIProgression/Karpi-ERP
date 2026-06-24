@@ -60,8 +60,12 @@ function ColliBundelSectieInner({ zendingId, zendingNr }: { zendingId: number; z
   const [lengte, setLengte] = useState('')
   const [breedte, setBreedte] = useState('')
 
-  const aangemeld = !!aanmelding
-  const kanBundelen = geselecteerd.size >= 2 && !aangemeld
+  // Sinds mig 465 wordt een Rhenus-zending na voltooien automatisch ge-enqueued
+  // (dagbatch 16:00) — er is dus meteen een 'Wachtrij'-rij. Bundelen mag zolang
+  // de zending nog NIET verstuurd is; pas bij 'Bezig'/'Verstuurd' is het te laat.
+  const verstuurd = aanmelding?.status === 'Bezig' || aanmelding?.status === 'Verstuurd'
+  const inWachtrij = aanmelding?.status === 'Wachtrij'
+  const kanBundelen = geselecteerd.size >= 2 && !verstuurd
 
   function toggle(id: number) {
     setGeselecteerd((prev) => {
@@ -96,15 +100,15 @@ function ColliBundelSectieInner({ zendingId, zendingNr }: { zendingId: number; z
         <Boxes size={16} className="text-terracotta-600" /> Colli bundelen (Rhenus)
       </h3>
 
-      {aangemeld ? (
+      {verstuurd ? (
         <p className="text-sm text-emerald-700 mb-2">
           Aangemeld bij Rhenus (status: {aanmelding!.status}). Bundelen is niet meer mogelijk.
         </p>
       ) : (
         <p className="text-xs text-slate-500 mb-3">
           Pak een paar colli samen in één zak: vink ze aan → <strong>Bundelen</strong> → print de
-          nieuwe sticker en plak die op de zak. Klik tot slot <strong>Aanmelden bij Rhenus</strong>.
-          Geen bundel nodig? Klik meteen op Aanmelden.
+          nieuwe sticker en plak die op de zak. Geen bundel nodig? Je hoeft niets te doen — deze
+          zending wordt <strong>automatisch om 16:00</strong> in de Rhenus-dagbatch aangemeld.
         </p>
       )}
 
@@ -132,7 +136,7 @@ function ColliBundelSectieInner({ zendingId, zendingNr }: { zendingId: number; z
                       >
                         <Printer size={13} /> Verzendstickers
                       </Link>
-                      {!aangemeld && (
+                      {!verstuurd && (
                         <button
                           onClick={() => verwijder.mutate(b.id)}
                           disabled={verwijder.isPending}
@@ -152,7 +156,7 @@ function ColliBundelSectieInner({ zendingId, zendingNr }: { zendingId: number; z
           )}
 
           {/* Losse colli met checkboxes */}
-          {!aangemeld && (
+          {!verstuurd && (
             <div className="space-y-1.5">
               {losseColli.map((c) => (
                 <label key={c.id} className="flex items-center gap-2 text-sm text-slate-700">
@@ -202,16 +206,21 @@ function ColliBundelSectieInner({ zendingId, zendingNr }: { zendingId: number; z
             <div className="mt-2 text-xs text-rose-600">Ontbundelen mislukt: {(verwijder.error as Error).message}</div>
           )}
 
-          {/* Aanmelden bij Rhenus */}
-          {!aangemeld && (
+          {/* Dagbatch-status + escape-hatch. Na voltooien staat de zending al in
+              de wachtrij; ze gaat automatisch om 16:00 mee. "Nu aanmelden"
+              vervroegt naar de eerstvolgende cron-run voor een urgente zending. */}
+          {inWachtrij && (
             <>
-              <div className="mt-4 flex items-center justify-end gap-3 border-t border-slate-100 pt-3">
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3">
+                <p className="text-xs text-slate-500">
+                  Staat klaar — wordt <strong>automatisch om 16:00</strong> bij Rhenus aangemeld.
+                </p>
                 <button
                   onClick={() => meldAan.mutate()}
                   disabled={meldAan.isPending}
-                  className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                  className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] border border-emerald-600 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
                 >
-                  <Send size={15} /> Aanmelden bij Rhenus
+                  <Send size={15} /> Nu aanmelden (niet wachten)
                 </button>
               </div>
               {meldAan.isError && (

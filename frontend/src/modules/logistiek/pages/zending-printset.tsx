@@ -128,15 +128,16 @@ export function ZendingPrintSetPage() {
     )
   }
 
-  // Mig 420: een Rhenus-zending met >=2 colli wordt na voltooien NIET automatisch
-  // aangemeld maar vastgehouden — de operator moet eerst (optioneel) colli bundelen
-  // en de zending handmatig aanmelden op de zending-detailpagina. Tel niet-gebundelde
-  // colli (tijdens 'Picken' bestaan er nog geen bundels, dus = het fysieke aantal).
+  // Mig 484: een Rhenus-zending wordt na voltooien AUTOMATISCH aangemeld in de
+  // dagbatch om 16:00 (geen handmatige aanmeld-stap meer). isRhenus stuurt de
+  // 16:00-copy voor élke Rhenus-zending; isRhenusBundel (>=2 niet-gebundelde colli)
+  // voegt daar de bundelen-instructie aan toe. Tel niet-gebundelde colli (tijdens
+  // 'Picken' bestaan er nog geen bundels, dus = het fysieke aantal).
   const losseColliAantal = (zending.zending_colli ?? []).filter(
     (c) => c.bundel_colli_id == null && !c.is_bundel,
   ).length
-  const isRhenusBundel =
-    isHandmatigAanmeldenVervoerder(zending.vervoerder_code) && losseColliAantal >= 2
+  const isRhenus = isHandmatigAanmeldenVervoerder(zending.vervoerder_code)
+  const isRhenusBundel = isRhenus && losseColliAantal >= 2
 
   return (
     <>
@@ -231,14 +232,18 @@ export function ZendingPrintSetPage() {
               <li className="flex gap-2.5">
                 <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-800 text-[11px] font-semibold text-white">3</span>
                 <span>
-                  {isRhenusBundel ? (
+                  {isRhenus ? (
                     <>
                       <strong>Klik op de groene knop "Voltooi pickronde".</strong>{' '}
-                      Een picker kiezen mag, maar hoeft niet. Deze <strong>Rhenus</strong>-zending heeft
-                      meerdere colli en wordt daarom <strong>niet</strong> automatisch aangemeld. Na het
-                      voltooien ga je automatisch naar de zending-pagina, waar je colli kunt{' '}
-                      <strong>samenpakken (bundelen)</strong> onder één nieuwe sticker en de zending
-                      vervolgens <strong>aanmeldt bij Rhenus</strong>.
+                      Een picker kiezen mag, maar hoeft niet. Deze <strong>Rhenus</strong>-zending wordt
+                      automatisch in de <strong>dagbatch om 16:00</strong> aangemeld — je hoeft niet meer
+                      handmatig aan te melden.
+                      {isRhenusBundel ? (
+                        <>
+                          {' '}Na het voltooien ga je naar de zending-pagina, waar je tot 16:00 nog colli
+                          kunt <strong>samenpakken (bundelen)</strong> onder één nieuwe sticker.
+                        </>
+                      ) : null}
                     </>
                   ) : (
                     <>
@@ -253,17 +258,23 @@ export function ZendingPrintSetPage() {
               </li>
             </ol>
           </div>
-        ) : isRhenusBundel && zending.status === 'Klaar voor verzending' ? (
+        ) : isRhenus && zending.status === 'Klaar voor verzending' ? (
           <div className="mb-4 rounded-[var(--radius-sm)] border border-terracotta-200 bg-white px-4 py-3 text-sm text-slate-700">
-            Deze <strong>Rhenus</strong>-zending is voltooid maar wordt <strong>niet</strong>{' '}
-            automatisch aangemeld. Pak eventueel colli samen (bundelen) en meld de zending aan op de{' '}
-            <Link
-              to={`/logistiek/${zending.zending_nr}`}
-              className="font-medium text-terracotta-700 underline hover:text-terracotta-800"
-            >
-              zending-pagina
-            </Link>
-            . Labels en pakbon kun je hier opnieuw printen.
+            Deze <strong>Rhenus</strong>-zending is voltooid en wordt <strong>automatisch om 16:00</strong>{' '}
+            in de dagbatch bij Rhenus aangemeld.
+            {isRhenusBundel ? (
+              <>
+                {' '}Tot dan kun je nog colli samenpakken (bundelen) op de{' '}
+                <Link
+                  to={`/logistiek/${zending.zending_nr}`}
+                  className="font-medium text-terracotta-700 underline hover:text-terracotta-800"
+                >
+                  zending-pagina
+                </Link>
+                .
+              </>
+            ) : null}{' '}
+            Labels en pakbon kun je hier opnieuw printen.
           </div>
         ) : (
           <div className="mb-4 rounded-[var(--radius-sm)] border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">

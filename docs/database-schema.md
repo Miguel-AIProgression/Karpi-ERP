@@ -662,6 +662,8 @@ Lookup-tabel met de beschikbare vervoerders waarmee Karpi werkt (mig 170, uitgeb
 | type | TEXT NOT NULL | CHECK in (`'api'`, `'edi'`, `'print'`, `'sftp'`). Mig 207: `'print'` toegevoegd voor lokale label-printer-flow (DPD via Zebra ZT230). Mig 374 (ADR-0031): `'sftp'` toegevoegd voor Verhoek AA2.0-XML via SFTP; Rhenus (mig 379, ADR-0032) gebruikt hetzelfde type. De `'edi'`-tak heeft sinds mig 379 geen kandidaten meer maar blijft voor evt. toekomstige échte EDI-vervoerders. |
 | actief | BOOLEAN NOT NULL | Default FALSE — pas TRUE als koppeling werkt. Switch-RPC `enqueue_zending_naar_vervoerder` weigert met `'vervoerder_inactief'` als FALSE |
 | is_default | BOOLEAN NOT NULL | Mig 336 (ADR-0030). Default FALSE. Markeert dé default-vervoerder; partial unique index `uk_vervoerders_is_default` (op `is_default` WHERE TRUE) garandeert hooguit één TRUE. `hst_api` is geseed als default. Administratieve bron-van-waarheid; het werkende mechanisme is de **catch-all** rij in `vervoerder_selectie_regels` (prio 99999, `{"land":["NL"]}`) die mig 336 toevoegt — gegate op `hst_api.actief=TRUE` (bewust nog FALSE tot cutover). |
+| handmatig_aanmelden | BOOLEAN NOT NULL | Mig 420, default FALSE (TRUE voor `rhenus_sftp`). Gate't colli-bundeling (`maak_colli_bundel`). Stuurde vóór mig 484 ook een hold op 'Klaar voor verzending'; die hold is verwijderd. |
+| batch_cutoff_tijd | TIME | Mig 484. NULL = zending direct aanmelden (HST/Verhoek). Gezet (`rhenus_sftp`=16:00) = dagbatch: `enqueue_zending_naar_vervoerder` zet `verzend_wachtrij.beschikbaar_op = volgende_batch_moment(batch_cutoff_tijd)` (eerstvolgende werkdag-cutoff) → de zending wacht in de wachtrij tot die tijd. Houdt de dispatch carrier-blind. |
 | notities | TEXT | Vrije tekst (bv. "REST API. Auth via Basic.") |
 | api_endpoint | TEXT | Mig 174. Basis-URL van de vervoerder-API (alleen relevant voor `type='api'`, bv. `https://accp.hstonline.nl/rest/api/v1`). Read-only referentie in UI; effectieve endpoint voor edge functions blijft uit env-variabelen komen. |
 | api_customer_id | TEXT | Mig 174. Klant-/account-identifier bij de vervoerder-API (alleen relevant voor `type='api'`). |
@@ -754,6 +756,7 @@ Eén rij per fysieke colli binnen een zending (mig 209). Bron-van-waarheid voor 
 | retry_count | INTEGER NOT NULL | Default 0 |
 | error_msg | TEXT | |
 | is_test | BOOLEAN NOT NULL | Default FALSE |
+| beschikbaar_op | TIMESTAMPTZ | Mig 484: rij pas claimbaar als `beschikbaar_op IS NULL OR <= now()` (NULL = direct). Voor dagbatch-vervoerders (Rhenus, 16:00) gezet op de eerstvolgende werkdag-cutoff (`volgende_batch_moment()`). Spiegelt `factuur_queue.beschikbaar_op` (mig 423). |
 | created_at / sent_at / updated_at | TIMESTAMPTZ | |
 
 **Enum `verzend_status`:** `'Wachtrij' | 'Bezig' | 'Verstuurd' | 'Fout' | 'Geannuleerd'`
@@ -761,8 +764,9 @@ Eén rij per fysieke colli binnen een zending (mig 209). Bron-van-waarheid voor 
 **Index:** `uk_verzend_wachtrij_zending_actief` — UNIQUE op `zending_id` waar `status NOT IN ('Fout','Geannuleerd')` (één actieve rij per zending over álle carriers).
 
 **Generieke RPC's** (geparametriseerd op `vervoerder_code`):
-- `enqueue_transportorder(p_zending_id, p_debiteur_nr, p_vervoerder_code, p_is_test DEFAULT FALSE) → BIGINT` — idempotent.
-- `claim_volgende_transportorder(p_vervoerder_code) → verzend_wachtrij` — oudste `Wachtrij`-rij voor die carrier, `FOR UPDATE SKIP LOCKED` → `Bezig`.
+- `enqueue_transportorder(p_zending_id, p_debiteur_nr, p_vervoerder_code, p_is_test DEFAULT FALSE, p_beschikbaar_op TIMESTAMPTZ DEFAULT NULL) → BIGINT` — idempotent. Mig 484: `p_beschikbaar_op` (NULL = direct) voor dagbatch-vertraging.
+- `claim_volgende_transportorder(p_vervoerder_code) → verzend_wachtrij` — oudste claimbare `Wachtrij`-rij voor die carrier (mig 484: `beschikbaar_op IS NULL OR <= now()`), `FOR UPDATE SKIP LOCKED` → `Bezig`.
+- `volgende_batch_moment(p_cutoff TIME) → TIMESTAMPTZ` — mig 484: eerstvolgende werkdag-cutoff (Europe/Amsterdam, via `werkdag_plus_n` mig 279). Voedt `beschikbaar_op` voor dagbatch-vervoerders.
 - `markeer_transportorder_verstuurd(p_id, p_extern_referentie, p_track_trace, p_document_pad)` — `track_trace` op de zending alleen bij non-NULL; status-flip Klaar→Onderweg; HST-PDF → order_documenten via `trg_verzend_wachtrij_pdf`.
 - `markeer_transportorder_fout(p_id, p_error, p_max_retries DEFAULT 3)` — retry-cascade.
 - `herstel_vastgelopen_verzending(p_vervoerder_code, p_minuten DEFAULT 10) → INTEGER` — reaper.
