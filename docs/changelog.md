@@ -1,6 +1,6 @@
 # Changelog — RugFlow ERP
 
-## 2026-06-24 — Klant aanmaken = klant bewerken (gedeelde deep module) + pakbon-e-mail (mig 492)
+## 2026-06-24 — Klant aanmaken = klant bewerken (gedeelde deep module) + pakbon-e-mail (mig 496)
 
 **Waarom (klantverzoek 24-06):** "Klant aanmaken" vroeg veel te weinig (klantnummer,
 naam, adres, telefoon, e-mail factuur, btw, betaalconditie) terwijl de klantpagina veel
@@ -34,7 +34,7 @@ handmatig. Gevolg: een net-aangemaakte klant strandde bij de eerste order.
   (etiket-placeholders + KIBEK-uitbijter) → ~991971. Bewust géén naam-gebaseerd voorstel: de
   legacy-nummers volgen een interne Basta-matchcode, niet de naam (JANSEN staat op 85xxxx).
 
-**mig 492:** `debiteuren.email_pakbon TEXT` (optioneel). **Scope = alleen het adres vastleggen** —
+**mig 496:** `debiteuren.email_pakbon TEXT` (optioneel). **Scope = alleen het adres vastleggen** —
 de huidige pakbon-stroom (bijlage bij factuurmail) blijft ongewijzigd; dit veld is het
 bestemmingsadres voor toekomstige pakbon-specifieke routing. `email_2` bewust niet hergebruikt
 (actieve orderbevestiging-fallback).
@@ -46,8 +46,9 @@ afleveradres-gate (mig 481/395) worden direct gehaald.
 **Bijvangst:** klant-bewerken normaliseert `naam` voortaan ook naar uppercase (was alleen bij
 aanmaken; debiteurnamen zijn per conventie uppercase).
 
-**Deploy-voorwaarde:** mig 492 **vóór** de frontend — de form schrijft `email_pakbon` bij elke
-klant-insert/update, dus zonder de kolom faalt aanmaken/bewerken.
+**Deploy-voorwaarde:** mig 496 **vóór** de frontend — de form schrijft `email_pakbon` bij elke
+klant-insert/update, dus zonder de kolom faalt aanmaken/bewerken. (Kolom is op 24-06 al op prod
+toegepast als de email_pakbon-wijziging; bestand hernummerd van 492 i.v.m. collisie.)
 
 ## 2026-06-24 — HST pallet-types MP + PLH (mig 491)
 

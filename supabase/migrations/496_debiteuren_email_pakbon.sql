@@ -1,4 +1,8 @@
--- Migratie 492: optioneel pakbon-e-mailadres op debiteuren (klantverzoek 24-06-2026)
+-- Migratie 496: optioneel pakbon-e-mailadres op debiteuren (klantverzoek 24-06-2026)
+--
+-- (Hernummerd van 492 → 496 bij merge: de vertegenwoordiger-RLS-branch claimde
+--  492-495 op main. De kolom is op 24-06 al op prod toegepast als de
+--  email_pakbon-wijziging; ADD COLUMN IF NOT EXISTS = veilig opnieuw te draaien.)
 --
 -- De klant wil per documenttype een e-mailadres kunnen vastleggen op de
 -- klantkaart. Factuur (email_factuur), orderbevestiging (email_overig) en
@@ -17,4 +21,4 @@
 ALTER TABLE debiteuren ADD COLUMN IF NOT EXISTS email_pakbon TEXT;
 
 COMMENT ON COLUMN debiteuren.email_pakbon IS
-  'Optioneel e-mailadres specifiek voor de pakbon (mig 492). De huidige pakbon gaat als bijlage mee met de factuurmail; dit veld legt het gewenste pakbon-adres vast voor toekomstige/handmatige routing.';
+  'Optioneel e-mailadres specifiek voor de pakbon (mig 496). De huidige pakbon gaat als bijlage mee met de factuurmail; dit veld legt het gewenste pakbon-adres vast voor toekomstige/handmatige routing.';
