@@ -1,6 +1,7 @@
 import { Fragment, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { ChevronDown, ChevronRight, Plus } from 'lucide-react'
 import { useProducten } from '@/hooks/use-producten'
 import { useActieveAfwerkingKleuren } from '@/hooks/use-afwerking-kleuren'
 import {
@@ -292,6 +293,14 @@ function ArtikelsVoorKleur({
             ))}
           </tbody>
         </table>
+        <div className="pl-20 pr-4 py-2 border-t border-slate-200 bg-white/40">
+          <Link
+            to={`/producten/nieuw?kwaliteit=${encodeURIComponent(kwaliteitCode)}&kleur=${encodeURIComponent(kleurCode)}`}
+            className="inline-flex items-center gap-1.5 text-xs text-terracotta-500 hover:text-terracotta-600 font-medium transition-colors"
+          >
+            <Plus size={13} /> Variant toevoegen aan {kwaliteitCode} kleur {kleurCode}
+          </Link>
+        </div>
       </td>
     </tr>
   )

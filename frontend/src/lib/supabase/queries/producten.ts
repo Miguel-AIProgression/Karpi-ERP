@@ -135,6 +135,8 @@ export interface ProductFormData {
   kleur_code?: string | null
   product_type?: ProductType | null
   maatwerk_vorm_code?: string | null
+  lengte_cm?: number | null
+  breedte_cm?: number | null
   verkoopprijs?: number | null
   inkoopprijs?: number | null
   gewicht_kg?: number | null

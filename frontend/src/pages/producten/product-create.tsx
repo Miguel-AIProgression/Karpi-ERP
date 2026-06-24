@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Plus, Trash2, AlertTriangle, CheckCircle2, Info, Check } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { useLeveranciers, useCreateProduct, useNextArtikelnr } from '@/hooks/use-producten'
+import { useLeveranciers, useCreateProduct, useNextArtikelnr, useKwaliteiten, useDistincteVormen } from '@/hooks/use-producten'
 import { STANDAARD_TAPIJTMATEN } from '@/lib/constants/tapijt-maten'
 import {
   fetchAfwerkingTypes,
@@ -28,6 +28,7 @@ interface VariantRow {
   product_type: ProductType | ''
   breedte: string
   lengte: string
+  vorm: string
   karpi_code: string
   ean_code: string
   verkoopprijs: string
@@ -44,6 +45,7 @@ const newRow = (): VariantRow => ({
   product_type: '',
   breedte: '',
   lengte: '',
+  vorm: '',
   karpi_code: '',
   ean_code: '',
   verkoopprijs: '',
@@ -78,17 +80,35 @@ function buildKarpiCode(kwaliteit: string, kleur: string, breedte: string, lengt
 
 export function ProductCreatePage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const { data: leveranciers } = useLeveranciers()
+  const { data: kwaliteiten } = useKwaliteiten()
+  const { data: beschikbareVormen = [] } = useDistincteVormen()
   const createMutation = useCreateProduct()
+
+  // Variant-toevoegen-modus: kwaliteit (+ optioneel kleur) komt mee als query-param
+  // vanaf "Variant toevoegen" op product-detail / de kleur-rij — kwaliteit bestaat
+  // dan al bewust, dus de duplicate-check hieronder is niet van toepassing.
+  const kwaliteitParam = (searchParams.get('kwaliteit') ?? '').toUpperCase().trim()
+  const kleurParam = (searchParams.get('kleur') ?? '').trim()
+  const existingKwaliteitMode = kwaliteitParam.length > 0
 
   // Stamgegevens
   const [naam, setNaam] = useState('')
-  const [kwaliteitCode, setKwaliteitCode] = useState('')
-  const [kwaliteitCodeInput, setKwaliteitCodeInput] = useState('')  // ruwe invoer (vóór uppercase)
-  const [kleurCode, setKleurCode] = useState('')
+  const [kwaliteitCode, setKwaliteitCode] = useState(kwaliteitParam)
+  const [kwaliteitCodeInput, setKwaliteitCodeInput] = useState(kwaliteitParam)  // ruwe invoer (vóór uppercase)
+  const [kleurCode, setKleurCode] = useState(kleurParam)
   const [leverancierId, setLeverancierId] = useState<string>('')
   const [afwerkingCode, setAfwerkingCode] = useState('')
-  const [actief, setActief] = useState(false)
+  const [actief, setActief] = useState(existingKwaliteitMode)
+
+  // Naam voorinvullen vanuit de bestaande kwaliteit-omschrijving (bv. "Ombre")
+  useEffect(() => {
+    if (!existingKwaliteitMode || naam.trim() || !kwaliteiten) return
+    const bestaand = kwaliteiten.find(k => k.code === kwaliteitParam)
+    if (bestaand?.omschrijving) setNaam(bestaand.omschrijving)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [existingKwaliteitMode, kwaliteiten])
 
   // Varianten
   const [rows, setRows] = useState<VariantRow[]>([newRow()])
@@ -103,11 +123,12 @@ export function ProductCreatePage() {
     return () => clearTimeout(timer)
   }, [kwaliteitCode])
 
-  // Duplicate check
+  // Duplicate check — niet van toepassing in variant-toevoegen-modus, daar
+  // bestaat de kwaliteit bewust al.
   const { data: kwaliteitBestaat, isFetching: checkingDuplicate } = useQuery({
     queryKey: ['kwaliteit-bestaat', debouncedKwaliteit],
     queryFn: () => fetchKwaliteitBestaat(debouncedKwaliteit),
-    enabled: debouncedKwaliteit.length >= 2,
+    enabled: !existingKwaliteitMode && debouncedKwaliteit.length >= 2,
   })
 
   // Afwerking-types
@@ -249,8 +270,8 @@ export function ProductCreatePage() {
       setError(`Karpi-code is verplicht voor producten van type Rol of Standaard maat. Vul de Karpi-code in bij: ${zonderKarpi.map(r => r.artikelnr.trim()).join(', ')}.`)
       return
     }
-    if (kwaliteitBestaat) {
-      setError(`Kwaliteitscode "${kwaliteitCode}" bestaat al in de database. Gebruik een andere code of koppel het product aan de bestaande kwaliteit via het productdetail-scherm.`)
+    if (!existingKwaliteitMode && kwaliteitBestaat) {
+      setError(`Kwaliteitscode "${kwaliteitCode}" bestaat al in de database. Gebruik "Variant toevoegen" vanaf een bestaand product van deze kwaliteit, of kies een andere code.`)
       return
     }
 
@@ -264,6 +285,9 @@ export function ProductCreatePage() {
           kwaliteit_code: kwaliteitCode || null,
           kleur_code: kleurCode.trim() || null,
           product_type: (r.product_type as ProductType) || null,
+          maatwerk_vorm_code: r.vorm.trim() || null,
+          lengte_cm: r.lengte ? Number(r.lengte) : null,
+          breedte_cm: r.breedte ? Number(r.breedte) : null,
           verkoopprijs: r.verkoopprijs ? Number(r.verkoopprijs) : null,
           inkoopprijs: r.inkoopprijs ? Number(r.inkoopprijs) : null,
           gewicht_kg: r.gewicht_kg ? Number(r.gewicht_kg) : null,
@@ -298,7 +322,19 @@ export function ProductCreatePage() {
         </Link>
       </div>
 
-      <PageHeader title="Nieuw product aanmaken" />
+      <PageHeader
+        title={existingKwaliteitMode ? `Variant toevoegen aan ${kwaliteitParam}` : 'Nieuw product aanmaken'}
+      />
+
+      {existingKwaliteitMode && (
+        <div className="mt-4 flex items-start gap-3 text-sm text-slate-600 bg-slate-50 border-2 border-slate-200 rounded-[var(--radius-sm)] px-4 py-3 max-w-6xl">
+          <Info size={16} className="mt-0.5 shrink-0 text-slate-400" />
+          <span>
+            Je voegt een nieuwe maat/artikel toe aan de bestaande kwaliteit <strong>{kwaliteitParam}</strong>
+            {kleurParam && <> kleur <strong>{kleurParam}</strong></>}. Kwaliteit en kleur staan daarom vast.
+          </span>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="mt-6 space-y-6 max-w-6xl">
 
@@ -321,49 +357,57 @@ export function ProductCreatePage() {
               />
             </Field>
 
-            {/* Kwaliteitscode — nieuw, vrije invoer met duplicate-check */}
+            {/* Kwaliteitscode — vrije invoer + duplicate-check, of vergrendeld in variant-toevoegen-modus */}
             <Field
-              label="Kwaliteitscode (nieuw)"
-              hint="Dit is de unieke code voor deze kwaliteitslijn — tevens prefix van de Karpi-code"
+              label={existingKwaliteitMode ? 'Kwaliteitscode (bestaand)' : 'Kwaliteitscode (nieuw)'}
+              hint={
+                existingKwaliteitMode
+                  ? 'Vergrendeld — je voegt een variant toe aan deze bestaande kwaliteit.'
+                  : 'Dit is de unieke code voor deze kwaliteitslijn — tevens prefix van de Karpi-code'
+              }
             >
-              <div className="relative">
-                <input
-                  value={kwaliteitCodeInput}
-                  onChange={e => handleKwaliteitInput(e.target.value)}
-                  className={`input pr-9 font-mono tracking-wider ${kwaliteitBestaat ? 'input-error' : kwaliteitCode.length >= 2 && !checkingDuplicate && !kwaliteitBestaat ? 'border-emerald-400 focus:border-emerald-400' : ''}`}
-                  placeholder="bijv. FAMU"
-                  maxLength={10}
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-                {/* Status icoon rechts in het veld */}
-                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none">
-                  {checkingDuplicate && kwaliteitCode.length >= 2 && (
-                    <span className="inline-block w-4 h-4 border-2 border-slate-300 border-t-terracotta-400 rounded-full animate-spin" />
-                  )}
-                  {!checkingDuplicate && kwaliteitBestaat && (
-                    <AlertTriangle size={16} className="text-rose-500" />
-                  )}
-                  {!checkingDuplicate && kwaliteitCode.length >= 2 && kwaliteitBestaat === false && (
-                    <CheckCircle2 size={16} className="text-emerald-500" />
-                  )}
-                </span>
-              </div>
+              {existingKwaliteitMode ? (
+                <input value={kwaliteitCode} disabled className="input font-mono tracking-wider bg-slate-100 text-slate-500" />
+              ) : (
+                <div className="relative">
+                  <input
+                    value={kwaliteitCodeInput}
+                    onChange={e => handleKwaliteitInput(e.target.value)}
+                    className={`input pr-9 font-mono tracking-wider ${kwaliteitBestaat ? 'input-error' : kwaliteitCode.length >= 2 && !checkingDuplicate && !kwaliteitBestaat ? 'border-emerald-400 focus:border-emerald-400' : ''}`}
+                    placeholder="bijv. FAMU"
+                    maxLength={10}
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                  {/* Status icoon rechts in het veld */}
+                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none">
+                    {checkingDuplicate && kwaliteitCode.length >= 2 && (
+                      <span className="inline-block w-4 h-4 border-2 border-slate-300 border-t-terracotta-400 rounded-full animate-spin" />
+                    )}
+                    {!checkingDuplicate && kwaliteitBestaat && (
+                      <AlertTriangle size={16} className="text-rose-500" />
+                    )}
+                    {!checkingDuplicate && kwaliteitCode.length >= 2 && kwaliteitBestaat === false && (
+                      <CheckCircle2 size={16} className="text-emerald-500" />
+                    )}
+                  </span>
+                </div>
+              )}
 
-              {/* Feedback onder het veld */}
-              {!checkingDuplicate && kwaliteitBestaat === true && (
+              {/* Feedback onder het veld — niet van toepassing in variant-toevoegen-modus */}
+              {!existingKwaliteitMode && !checkingDuplicate && kwaliteitBestaat === true && (
                 <p className="mt-1.5 text-xs text-rose-600 flex items-center gap-1.5">
                   <AlertTriangle size={12} />
                   Kwaliteitscode <strong>{kwaliteitCode}</strong> bestaat al in de database. Kies een andere code.
                 </p>
               )}
-              {!checkingDuplicate && kwaliteitCode.length >= 2 && kwaliteitBestaat === false && (
+              {!existingKwaliteitMode && !checkingDuplicate && kwaliteitCode.length >= 2 && kwaliteitBestaat === false && (
                 <p className="mt-1.5 text-xs text-emerald-600 flex items-center gap-1.5">
                   <CheckCircle2 size={12} />
                   Code beschikbaar — nieuwe kwaliteit wordt aangemaakt.
                 </p>
               )}
-              {kwaliteitCode.length === 0 && (
+              {!existingKwaliteitMode && kwaliteitCode.length === 0 && (
                 <p className="mt-1.5 text-xs text-slate-400 flex items-center gap-1.5">
                   <Info size={12} />
                   Bijv. FAMU, VELV, OASI — wordt ook de prefix van alle Karpi-codes voor dit product.
@@ -372,11 +416,19 @@ export function ProductCreatePage() {
             </Field>
 
             {/* Kleurcode */}
-            <Field label="Kleurcode" hint="Cijfer uit het kleurboek van de leverancier, bijv. 48">
+            <Field
+              label="Kleurcode"
+              hint={
+                existingKwaliteitMode && kleurParam
+                  ? 'Vergrendeld — overgenomen vanaf het bestaande artikel.'
+                  : 'Cijfer uit het kleurboek van de leverancier, bijv. 48'
+              }
+            >
               <input
                 value={kleurCode}
                 onChange={e => setKleurCode(e.target.value)}
-                className="input"
+                disabled={existingKwaliteitMode && !!kleurParam}
+                className={`input ${existingKwaliteitMode && kleurParam ? 'bg-slate-100 text-slate-500' : ''}`}
                 placeholder="bijv. 48"
               />
             </Field>
@@ -432,7 +484,9 @@ export function ProductCreatePage() {
               <div>
                 <span className="text-sm font-medium text-slate-700">Actief (zichtbaar in systeem)</span>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Standaard inactief: nieuw product wordt pas zichtbaar in selectors zodra de eerste inkoop is ontvangen.
+                  {existingKwaliteitMode
+                    ? 'Standaard actief: de kwaliteit is al in gebruik, dus deze variant is direct zichtbaar.'
+                    : 'Standaard inactief: nieuw product wordt pas zichtbaar in selectors zodra de eerste inkoop is ontvangen.'}
                 </p>
               </div>
             </label>
@@ -551,6 +605,20 @@ export function ProductCreatePage() {
                         className="input w-full"
                         placeholder="230"
                       />
+                    </VariantVeld>
+                    <VariantVeld label="Vorm" className="col-span-2" hint="Leeg = rechthoek. Bijv. rond, ovaal, afgeronde_hoeken">
+                      <input
+                        list={`vormen-list-${r._key}`}
+                        value={r.vorm}
+                        onChange={e => updateRow(r._key, 'vorm', e.target.value)}
+                        className="input w-full"
+                        placeholder="bijv. afgeronde_hoeken"
+                      />
+                      <datalist id={`vormen-list-${r._key}`}>
+                        {beschikbareVormen.map(v => (
+                          <option key={v} value={v} />
+                        ))}
+                      </datalist>
                     </VariantVeld>
                     <VariantVeld
                       label={karpiVerplicht ? 'Karpi-code *' : 'Karpi-code'}
@@ -681,7 +749,7 @@ export function ProductCreatePage() {
         <div className="flex items-center gap-3 pb-8">
           <button
             type="submit"
-            disabled={isPending || filledRows.length === 0 || kwaliteitBestaat === true}
+            disabled={isPending || filledRows.length === 0 || (!existingKwaliteitMode && kwaliteitBestaat === true)}
             className="px-6 py-2.5 bg-terracotta-500 text-white rounded-[var(--radius-sm)] text-sm font-medium hover:bg-terracotta-600 disabled:opacity-50 transition-colors"
           >
             {isPending
@@ -694,7 +762,7 @@ export function ProductCreatePage() {
           >
             Annuleren
           </Link>
-          {kwaliteitBestaat === true && (
+          {!existingKwaliteitMode && kwaliteitBestaat === true && (
             <span className="text-xs text-rose-500 flex items-center gap-1.5">
               <AlertTriangle size={12} />
               Kies een andere kwaliteitscode om door te gaan.

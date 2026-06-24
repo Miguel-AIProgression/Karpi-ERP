@@ -33,6 +33,8 @@ export function ProductFormPage({ product }: ProductFormProps) {
     kleur_code: product?.kleur_code ?? '',
     product_type: product?.product_type ?? null,
     maatwerk_vorm_code: (product as ProductDetail & { maatwerk_vorm_code?: string | null })?.maatwerk_vorm_code ?? null,
+    lengte_cm: product?.lengte_cm ?? null,
+    breedte_cm: product?.breedte_cm ?? null,
     verkoopprijs: product?.verkoopprijs ?? undefined,
     inkoopprijs: product?.inkoopprijs ?? undefined,
     gewicht_kg: product?.gewicht_kg ?? undefined,
@@ -177,6 +179,24 @@ export function ProductFormPage({ product }: ProductFormProps) {
                 onChange={e => set('kleur_code', e.target.value || null)}
                 className="input"
                 placeholder="bijv. 16"
+              />
+            </Field>
+            <Field label="Breedte (cm)">
+              <input
+                type="number" min="0"
+                value={form.breedte_cm ?? ''}
+                onChange={e => set('breedte_cm', e.target.value ? Number(e.target.value) : null)}
+                className="input"
+                placeholder="bijv. 200"
+              />
+            </Field>
+            <Field label="Lengte (cm)">
+              <input
+                type="number" min="0"
+                value={form.lengte_cm ?? ''}
+                onChange={e => set('lengte_cm', e.target.value ? Number(e.target.value) : null)}
+                className="input"
+                placeholder="bijv. 300"
               />
             </Field>
             <Field label="Vorm">

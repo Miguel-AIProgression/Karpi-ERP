@@ -90,12 +90,22 @@ export function ProductDetailPage() {
           <PageHeader title={product.omschrijving} description={`Artikelnr: ${product.artikelnr}`} />
           <ProductTypeBadge type={product.product_type} />
         </div>
-        <Link
-          to={`/producten/${product.artikelnr}/bewerken`}
-          className="px-4 py-2 border border-slate-200 rounded-[var(--radius-sm)] text-sm text-slate-600 hover:bg-slate-50 shrink-0"
-        >
-          Bewerken
-        </Link>
+        <div className="flex items-center gap-2 shrink-0">
+          {product.kwaliteit_code && (
+            <Link
+              to={`/producten/nieuw?kwaliteit=${encodeURIComponent(product.kwaliteit_code)}${product.kleur_code ? `&kleur=${encodeURIComponent(product.kleur_code)}` : ''}`}
+              className="px-4 py-2 border border-slate-200 rounded-[var(--radius-sm)] text-sm text-slate-600 hover:bg-slate-50"
+            >
+              Variant toevoegen
+            </Link>
+          )}
+          <Link
+            to={`/producten/${product.artikelnr}/bewerken`}
+            className="px-4 py-2 border border-slate-200 rounded-[var(--radius-sm)] text-sm text-slate-600 hover:bg-slate-50"
+          >
+            Bewerken
+          </Link>
+        </div>
       </div>
 
       {/* Info card */}

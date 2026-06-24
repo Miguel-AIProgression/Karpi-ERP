@@ -1,5 +1,46 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-24 — Variant toevoegen aan bestaande kwaliteit/kleur (producten)
+
+**Waarom:** gebruiker wilde een extra maat (Ombre kleur 14, 200×300cm,
+vorm afgeronde hoeken) toevoegen aan een bestaand artikel en kon dit
+nergens in de UI — een echt gat, geen bedieningsfout. "+ Nieuw product"
+blokkeert de submit hard zodra de kwaliteitscode al bestaat (bedoeld om
+een hele nieuwe kwaliteitslijn aan te maken), en "Bewerken" op een
+bestaand artikel kan alleen dát ene artikel wijzigen (artikelnr
+read-only, geen nieuw artikel).
+
+- `product-create.tsx` (`/producten/nieuw`) ondersteunt nu een
+  **variant-toevoegen-modus** via query-params `?kwaliteit=X&kleur=Y`:
+  kwaliteit + kleur staan vast (disabled inputs), de duplicate-check-
+  blokkade wordt overgeslagen, `naam` wordt voorgevuld uit
+  `kwaliteiten.omschrijving`, en "Actief" defaultet naar `true` (de
+  kwaliteit is al in gebruik, in tegenstelling tot een gloednieuwe
+  kwaliteit die wacht op de eerste inkoop-ontvangst).
+- Twee nieuwe entry-points naar die modus: knop **"Variant toevoegen"**
+  op product-detail (naast "Bewerken") en een link onderaan de
+  artikellijst per kleur in de kwaliteit/kleuren-uitvouw
+  (`kwaliteit-kleuren-uitvouw.tsx`).
+- **Bijgevangen, losstaande bug:** `ProductFormData`/`createProduct()`
+  stuurden `breedte_cm`/`lengte_cm` nooit naar de database — de
+  Breedte/Lengte-velden in "+ Nieuw product" werden alleen gebruikt voor
+  de Karpi-code en omschrijving-tekst, nooit weggeschreven naar de
+  kolommen zelf. Elk via deze UI aangemaakt artikel had dus permanent
+  `breedte_cm`/`lengte_cm = NULL` (raakt o.a. de vorm-aware
+  gewicht-derive-trigger uit mig 387, die zonder maten stilletjes
+  no-opt). Toegevoegd aan `ProductFormData` + de create-payload; het
+  bewerk-formulier (`product-form.tsx`) kreeg er-en-passant ook
+  Breedte/Lengte-velden, want die ontbraken daar volledig.
+- `product-create.tsx` kreeg ook een **Vorm-veld per variant** (datalist
+  uit `useDistincteVormen`, zelfde patroon als het bewerk-formulier) —
+  ontbrak eerder alleen bij aanmaak. Vorm `afgeronde_hoeken` bestond al
+  in `maatwerk_vormen` (mig 190), stond alleen nog niet in de
+  filterbalk omdat die dynamisch is (alleen vormen die al bij een
+  actief product in gebruik zijn).
+- Niet end-to-end in de browser getest (login-gated, geen testaccount
+  beschikbaar) — wel `tsc --noEmit` en `eslint` schoon (geen nieuwe
+  fouten t.o.v. main).
+
 ## 2026-06-23 — Order aanmaken vereist een gekoppelde prijslijst (mig 481)
 
 **Waarom:** directe vervolgstap op de HEADLAM-prijscorrectie hieronder —
