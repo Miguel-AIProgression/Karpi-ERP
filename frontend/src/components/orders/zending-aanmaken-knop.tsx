@@ -1,12 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Truck, Loader2, X, ShoppingBag } from 'lucide-react'
+import { Truck, Loader2, X } from 'lucide-react'
 import {
   useStartPickrondes,
   useVervoerdersFull,
   printsetPadVoorZendingen,
 } from '@/modules/logistiek'
-import { useVoltooiPickronde } from '@/modules/magazijn'
 import { PickerDropdown } from '@/components/orders/picker-dropdown'
 import { loadLastPicker, saveLastPicker } from '@/lib/orders/last-picker'
 
@@ -32,7 +31,6 @@ export function ZendingAanmakenKnop({ order }: ZendingAanmakenKnopProps) {
   const navigate = useNavigate()
   const { data: vervoerders = [], isLoading: vervoerdersLoading } = useVervoerdersFull()
   const createMutation = useStartPickrondes()
-  const voltooiMutation = useVoltooiPickronde()
   const [busy, setBusy] = useState(false)
   const [feedback, setFeedback] = useState<{ type: 'error'; msg: string } | null>(null)
   const [showPickerPopover, setShowPickerPopover] = useState(false)
@@ -55,10 +53,9 @@ export function ZendingAanmakenKnop({ order }: ZendingAanmakenKnopProps) {
   const actieveVervoerders = vervoerders.filter((v) => v.actief)
   const kanAutomatischKiezen = actieveVervoerders.length === 1
   // Afhalen-orders hebben geen vervoerder nodig (mig 205): RPC skipt dispatch.
-  const isBezig = busy || createMutation.isPending || voltooiMutation.isPending
   const disabled = order.afhalen
-    ? isBezig
-    : isBezig || vervoerdersLoading || !kanAutomatischKiezen
+    ? busy || createMutation.isPending
+    : busy || vervoerdersLoading || createMutation.isPending || !kanAutomatischKiezen
 
   function openPickerPopover() {
     setFeedback(null)
@@ -76,16 +73,7 @@ export function ZendingAanmakenKnop({ order }: ZendingAanmakenKnopProps) {
     try {
       const zendingen = await createMutation.mutateAsync({ orderIds: [order.id], pickerId })
       setShowPickerPopover(false)
-      if (order.afhalen) {
-        // Afhalen: direct voltooien zonder printset-omweg (klant haalt zelf op,
-        // geen labels/stickers nodig). Beide calls in serie, navigeer terug naar order.
-        for (const z of zendingen) {
-          await voltooiMutation.mutateAsync({ zendingId: z.id, pickerId })
-        }
-        navigate(`/orders/${order.id}`)
-      } else {
-        navigate(printsetPadVoorZendingen(zendingen))
-      }
+      navigate(printsetPadVoorZendingen(zendingen))
     } catch (err) {
       setFeedback({
         type: 'error',
@@ -97,7 +85,7 @@ export function ZendingAanmakenKnop({ order }: ZendingAanmakenKnopProps) {
   }
 
   const tooltip = order.afhalen
-    ? 'Registreert dat de klant de order heeft opgehaald — zet de order direct op Verzonden'
+    ? 'Maak afhaal-zending + pakbon (geen vervoerder, geen verzendstickers)'
     : vervoerdersLoading
       ? 'Vervoerders laden...'
       : actieveVervoerders.length === 0
@@ -114,14 +102,12 @@ export function ZendingAanmakenKnop({ order }: ZendingAanmakenKnopProps) {
         title={tooltip}
         className="px-4 py-2 rounded-[var(--radius-sm)] bg-terracotta-500 text-white text-sm font-medium hover:bg-terracotta-600 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
       >
-        {isBezig ? (
+        {busy || createMutation.isPending ? (
           <Loader2 size={14} className="animate-spin" />
-        ) : order.afhalen ? (
-          <ShoppingBag size={14} />
         ) : (
           <Truck size={14} />
         )}
-        {order.afhalen ? 'Markeer als opgehaald' : 'Zending aanmaken'}
+        {order.afhalen ? 'Afhaal-zending aanmaken' : 'Zending aanmaken'}
       </button>
       {feedback && <div className="text-xs text-rose-600">{feedback.msg}</div>}
 
@@ -149,11 +135,11 @@ export function ZendingAanmakenKnop({ order }: ZendingAanmakenKnopProps) {
             </button>
             <button
               onClick={handleStart}
-              disabled={!pickerId || isBezig}
+              disabled={!pickerId || busy || createMutation.isPending}
               className="inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] bg-terracotta-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-terracotta-600 disabled:opacity-45"
             >
-              {isBezig && <Loader2 size={12} className="animate-spin" />}
-              {order.afhalen ? 'Bevestig ophaling' : 'Start pickronde'}
+              {(busy || createMutation.isPending) && <Loader2 size={12} className="animate-spin" />}
+              Start pickronde
             </button>
           </div>
         </div>
