@@ -423,10 +423,9 @@ serve(async (req) => {
 
   const regelsHtml = regelsVertaald.map((r) => {
     const model = r.kwaliteit_code ? klantEigenNamen.get(`${r.kwaliteit_code}|${r.kleur_code ?? ''}`) ?? null : null
-    // Mig 469: per-regel verzendweek, alleen voor maatwerk-regels met een
-    // gezette week (materiaal op voorraad of handmatig ingevuld) — de
-    // order-brede verzendweek hierboven blijft daarnaast ongewijzigd staan.
-    const verzendweekRegel = r.is_maatwerk && r.verzendweek ? formatVerzendweekLabel(r.verzendweek) : null
+    // Per-regel verzendweek voor alle regeltypen — ook vaste-maat-regels kunnen
+    // bij gemengde orders (deels voorraad, deels IO) elk een andere week hebben.
+    const verzendweekRegel = r.verzendweek ? formatVerzendweekLabel(r.verzendweek) : null
     return `<tr>
       <td style="padding: 4px 8px; border-bottom: 1px solid #eee;">${r.omschrijving}${model ? `<br><span style="color:#888; font-size: 11px;">${v.model}: ${model}</span>` : ''}${r.klant_referentie ? `<br><span style="color:#888; font-size: 11px;">Ref: ${r.klant_referentie}</span>` : ''}${verzendweekRegel ? `<br><span style="color:#888; font-size: 11px;">${v.verzendweekRegel}: ${verzendweekRegel}</span>` : ''}</td>
       <td style="padding: 4px 8px; border-bottom: 1px solid #eee; text-align: right;">${r.orderaantal}</td>

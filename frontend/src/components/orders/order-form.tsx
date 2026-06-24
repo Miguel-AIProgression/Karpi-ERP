@@ -389,6 +389,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
       fact_plaats: addr.plaats,
       email_factuur: contact.email_factuur || null,
       email_overig: contact.email_overig || null,
+      email_pakbon: contact.email_pakbon || null,
     } : c)
     // Klant-detailpagina cachet onder ['klanten', debiteur_nr] én
     // ['klant-factuur-instellingen', debiteur_nr] — beide refreshen.
@@ -582,6 +583,27 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
         throw new Error(
           `Afleveradres onvolledig — vul ${ontbreekt.join(', ')} in (of vink "Afhalen" aan).`,
         )
+      }
+
+      // E-mail-gates: alle communicatiekanalen moeten gevuld zijn zodat de klant
+      // de factuur/pakbon, track & trace en orderbevestiging daadwerkelijk ontvangt.
+      // Alleen bij aanmaken — bewerken van een bestaande order blijft altijd mogelijk.
+      if (mode === 'create') {
+        if (!header.fact_email?.trim()) {
+          throw new Error(
+            'E-mailadres voor factuur en pakbon ontbreekt — klik "Wijzig" bij Factuuradres om het in te vullen.',
+          )
+        }
+        if (!afhalen && !header.afl_email?.trim()) {
+          throw new Error(
+            'E-mailadres voor track & trace ontbreekt — klik "Bewerken" bij Afleveradres om het in te vullen.',
+          )
+        }
+        if (!client.email_overig?.trim()) {
+          throw new Error(
+            'E-mailadres voor orderbevestiging ontbreekt — klik "Wijzig" bij Factuuradres, vul het in en sla op op klantpagina.',
+          )
+        }
       }
 
       const headerWithModus: Partial<OrderFormData> = overrideLeverModus
@@ -906,6 +928,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
               currentContact={{
                 email_factuur: client.email_factuur ?? '',
                 email_overig: client.email_overig ?? '',
+                email_pakbon: client.email_pakbon ?? '',
               }}
               factEmail={header.fact_email ?? ''}
               onAdresChange={handleFactuurAdresChange}
@@ -920,6 +943,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
               land={header.afl_land}
               aflEmail={header.afl_email ?? ''}
               afleveradresId={selectedAfleveradresId}
+              debiteurNr={client.debiteur_nr}
               onAdresChange={handleAflAdresChange}
               onEmailChange={handleAflEmailChange}
               dropshipEmailProbleem={dropshipEmailProbleem}

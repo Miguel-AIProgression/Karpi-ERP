@@ -435,10 +435,11 @@ export async function genereerOrderbevestigingPDF(input: OrderbevestigingInput):
     const eenheid = regel.artikelnr && !isVerzend ? t.eenheidStuks : null
     const kortingTxt = formatKorting(regel.korting_pct)
 
-    // Mig 469: een maatwerk-regel met een eigen verzendweek toont die i.p.v.
-    // de order-brede `input.verzendweek` — preciezer, want gebaseerd op
-    // daadwerkelijke materiaal-beschikbaarheid voor déze regel.
-    const verzendweekVoorRegel = regel.is_maatwerk && regel.verzendweek
+    // Per-regel verzendweek: als een regel zijn eigen verzendweek heeft (maatwerk
+    // via trigger, of vaste maat handmatig/via IO-claim), toon die i.p.v. de
+    // order-brede week. Geldt voor alle regeltypen — vaste maat regels kunnen
+    // bij gemengde orders (deels voorraad, deels IO) elk een andere week hebben.
+    const verzendweekVoorRegel = regel.verzendweek
       ? formatRegelVerzendweek(regel.verzendweek)
       : input.verzendweek
 

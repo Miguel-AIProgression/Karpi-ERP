@@ -536,12 +536,12 @@ export async function fetchKlantArtikelnummer(debiteurNr: number, artikelnr: str
 export async function fetchClientCommercialData(debiteurNr: number) {
   const { data, error } = await supabase
     .from('debiteuren')
-    .select('prijslijst_nr, korting_pct, gratis_verzending, verzendkosten, verzend_drempel, standaard_maat_werkdagen, maatwerk_weken, deelleveringen_toegestaan, default_lever_type, email_factuur, email_overig, email_verzend, afleverwijze')
+    .select('prijslijst_nr, korting_pct, gratis_verzending, verzendkosten, verzend_drempel, standaard_maat_werkdagen, maatwerk_weken, deelleveringen_toegestaan, default_lever_type, email_factuur, email_overig, email_verzend, email_pakbon, afleverwijze')
     .eq('debiteur_nr', debiteurNr)
     .single()
 
   if (error) throw error
-  return data as { prijslijst_nr: string | null; korting_pct: number; gratis_verzending: boolean; verzendkosten: number; verzend_drempel: number; standaard_maat_werkdagen: number | null; maatwerk_weken: number | null; deelleveringen_toegestaan: boolean; default_lever_type: 'week' | 'datum'; email_factuur: string | null; email_overig: string | null; email_verzend: string | null; afleverwijze: string | null }
+  return data as { prijslijst_nr: string | null; korting_pct: number; gratis_verzending: boolean; verzendkosten: number; verzend_drempel: number; standaard_maat_werkdagen: number | null; maatwerk_weken: number | null; deelleveringen_toegestaan: boolean; default_lever_type: 'week' | 'datum'; email_factuur: string | null; email_overig: string | null; email_verzend: string | null; email_pakbon: string | null; afleverwijze: string | null }
 }
 
 /** Update only the afwerking (+ optional band_kleur) on a single order_regel — used for locked orders where

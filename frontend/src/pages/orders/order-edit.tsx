@@ -96,6 +96,7 @@ export function OrderEditPage() {
     email_factuur: clientData?.email_factuur ?? null,
     email_overig: clientData?.email_overig ?? null,
     email_verzend: clientData?.email_verzend ?? null,
+    email_pakbon: clientData?.email_pakbon ?? null,
     vertegenw_code: order.vertegenw_code,
     prijslijst_nr: clientData?.prijslijst_nr ?? null,
     korting_pct: clientData?.korting_pct ?? 0,

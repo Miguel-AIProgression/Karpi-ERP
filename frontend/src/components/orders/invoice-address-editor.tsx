@@ -12,6 +12,7 @@ export interface FactuurAdres {
 export interface FactuurContact {
   email_factuur: string
   email_overig: string
+  email_pakbon: string
 }
 
 interface InvoiceAddressEditorProps {
@@ -37,7 +38,11 @@ export function InvoiceAddressEditor({
   const [editing, setEditing] = useState(false)
   const [draftAdres, setDraftAdres] = useState<FactuurAdres>(currentAdres)
   const [draftEmail, setDraftEmail] = useState(factEmail)
+  const [draftEmailOverig, setDraftEmailOverig] = useState(currentContact.email_overig)
+  const [draftEmailPakbon, setDraftEmailPakbon] = useState(currentContact.email_pakbon)
   const [saveEmail, setSaveEmail] = useState(true)
+  const [saveEmailOverig, setSaveEmailOverig] = useState(true)
+  const [saveEmailPakbon, setSaveEmailPakbon] = useState(true)
   const [persist, setPersist] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -45,7 +50,11 @@ export function InvoiceAddressEditor({
   function openEdit() {
     setDraftAdres(currentAdres)
     setDraftEmail(factEmail)
+    setDraftEmailOverig(currentContact.email_overig)
+    setDraftEmailPakbon(currentContact.email_pakbon)
     setSaveEmail(true)
+    setSaveEmailOverig(true)
+    setSaveEmailPakbon(true)
     setPersist(true)
     setError(null)
     setEditing(true)
@@ -67,6 +76,9 @@ export function InvoiceAddressEditor({
     }
     const normEmail = draftEmail.trim()
 
+    const normEmailOverig = draftEmailOverig.trim()
+    const normEmailPakbon = draftEmailPakbon.trim()
+
     if (persist && debiteurNr) {
       setSaving(true)
       const update: Record<string, unknown> = {
@@ -75,9 +87,9 @@ export function InvoiceAddressEditor({
         fact_postcode: normAdres.postcode || null,
         fact_plaats: normAdres.plaats,
       }
-      if (saveEmail) {
-        update.email_factuur = normEmail || null
-      }
+      if (saveEmail) update.email_factuur = normEmail || null
+      if (saveEmailOverig) update.email_overig = normEmailOverig || null
+      if (saveEmailPakbon) update.email_pakbon = normEmailPakbon || null
       const { error: updErr } = await supabase
         .from('debiteuren')
         .update(update)
@@ -89,7 +101,8 @@ export function InvoiceAddressEditor({
       }
       onSavedAsDefault?.(normAdres, {
         email_factuur: saveEmail ? normEmail : currentContact.email_factuur,
-        email_overig: currentContact.email_overig,
+        email_overig: saveEmailOverig ? normEmailOverig : currentContact.email_overig,
+        email_pakbon: saveEmailPakbon ? normEmailPakbon : currentContact.email_pakbon,
       })
     }
 
@@ -115,12 +128,27 @@ export function InvoiceAddressEditor({
           {currentAdres.naam && <p className="font-medium">{currentAdres.naam}</p>}
           {currentAdres.adres && <p>{currentAdres.adres}</p>}
           <p>{[currentAdres.postcode, currentAdres.plaats].filter(Boolean).join(' ')}</p>
-          {factEmail && (
-            <p className="mt-1 text-slate-500 text-xs">{factEmail}</p>
-          )}
-          {!factEmail && (
-            <p className="mt-1 text-slate-400 text-xs italic">Geen e-mailadres</p>
-          )}
+          <div className="mt-1.5 pt-1.5 border-t border-slate-200 space-y-0.5">
+            {factEmail ? (
+              <p className="text-xs text-slate-500">
+                <span className="text-slate-400">Factuur/pakbon: </span>{factEmail}
+              </p>
+            ) : (
+              <p className="text-xs text-amber-600 font-medium">Factuur/pakbon: ontbreekt — vereist</p>
+            )}
+            {currentContact.email_pakbon && (
+              <p className="text-xs text-slate-500">
+                <span className="text-slate-400">Pakbon: </span>{currentContact.email_pakbon}
+              </p>
+            )}
+            {currentContact.email_overig ? (
+              <p className="text-xs text-slate-500">
+                <span className="text-slate-400">Orderbevestiging: </span>{currentContact.email_overig}
+              </p>
+            ) : (
+              <p className="text-xs text-amber-600 font-medium">Orderbevestiging: ontbreekt — vereist</p>
+            )}
+          </div>
         </div>
       </div>
     )
@@ -147,7 +175,7 @@ export function InvoiceAddressEditor({
       </div>
       <div className="pt-2 mt-2 border-t border-slate-200 space-y-2">
         <ManualField
-          label="E-mail factuuradres"
+          label="E-mail factuur (vereist)"
           type="email"
           value={draftEmail}
           onChange={setDraftEmail}
@@ -162,12 +190,44 @@ export function InvoiceAddressEditor({
           />
           Opslaan als vast factuurmailadres op klantpagina
         </label>
+        <ManualField
+          label="E-mail pakbon (optioneel — apart adres)"
+          type="email"
+          value={draftEmailPakbon}
+          onChange={setDraftEmailPakbon}
+        />
+        <label className="inline-flex items-center gap-2 text-xs text-slate-700">
+          <input
+            type="checkbox"
+            checked={saveEmailPakbon}
+            onChange={(e) => setSaveEmailPakbon(e.target.checked)}
+            className="rounded border-slate-300 text-terracotta-500 focus:ring-terracotta-400/30"
+            disabled={!debiteurNr || !persist}
+          />
+          Opslaan als vast pakbon-mailadres op klantpagina
+        </label>
+        <ManualField
+          label="E-mail orderbevestiging (vereist)"
+          type="email"
+          value={draftEmailOverig}
+          onChange={setDraftEmailOverig}
+        />
+        <label className="inline-flex items-center gap-2 text-xs text-slate-700">
+          <input
+            type="checkbox"
+            checked={saveEmailOverig}
+            onChange={(e) => setSaveEmailOverig(e.target.checked)}
+            className="rounded border-slate-300 text-terracotta-500 focus:ring-terracotta-400/30"
+            disabled={!debiteurNr || !persist}
+          />
+          Opslaan als vast bevestigingsmailadres op klantpagina
+        </label>
       </div>
       <label className="inline-flex items-center gap-2 text-xs text-slate-700 mt-1">
         <input
           type="checkbox"
           checked={persist}
-          onChange={(e) => { setPersist(e.target.checked); if (!e.target.checked) setSaveEmail(false) }}
+          onChange={(e) => { setPersist(e.target.checked); if (!e.target.checked) { setSaveEmail(false); setSaveEmailOverig(false); setSaveEmailPakbon(false) } }}
           className="rounded border-slate-300 text-terracotta-500 focus:ring-terracotta-400/30"
           disabled={!debiteurNr}
         />

@@ -17,6 +17,8 @@ interface DeliveryAddressEditorProps {
   aflEmail: string
   /** DB-id van het geselecteerde afleveradressen-record (voor "opslaan als permanent"). */
   afleveradresId?: number
+  /** Debiteur_nr — nodig om email_verzend op de klant op te slaan. */
+  debiteurNr?: number | null
   onAdresChange: (addr: Pick<AfleverAdres, 'naam' | 'adres' | 'postcode' | 'plaats' | 'land'>) => void
   onEmailChange: (email: string) => void
   /** Alleen gevuld bij dropshipment-orders: toets van het T&T-adres (dropship-email.ts). */
@@ -28,7 +30,7 @@ interface DeliveryAddressEditorProps {
 
 export function DeliveryAddressEditor({
   naam, adres, postcode, plaats, land,
-  aflEmail, afleveradresId,
+  aflEmail, afleveradresId, debiteurNr,
   onAdresChange, onEmailChange, dropshipEmailProbleem,
   dropshipEmailGenegeerd, onDropshipEmailNegeer,
 }: DeliveryAddressEditorProps) {
@@ -43,6 +45,7 @@ export function DeliveryAddressEditor({
   })
   const [draftEmail, setDraftEmail] = useState(aflEmail)
   const [persist, setPersist] = useState(!!afleveradresId)
+  const [saveEmailVerzend, setSaveEmailVerzend] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -56,6 +59,7 @@ export function DeliveryAddressEditor({
     })
     setDraftEmail(aflEmail)
     setPersist(!!afleveradresId)
+    setSaveEmailVerzend(true)
     setError(null)
     setEditing(true)
   }
@@ -76,24 +80,38 @@ export function DeliveryAddressEditor({
     }
     const normEmail = draftEmail.trim()
 
-    if (persist && afleveradresId) {
+    if (persist) {
       setSaving(true)
-      const { error: updErr } = await supabase
-        .from('afleveradressen')
-        .update({
-          naam: normAdres.naam,
-          adres: normAdres.adres || null,
-          postcode: normAdres.postcode || null,
-          plaats: normAdres.plaats || null,
-          land: normAdres.land || null,
-          email: normEmail || null,
-        })
-        .eq('id', afleveradresId)
-      setSaving(false)
-      if (updErr) {
-        setError(updErr.message || 'Opslaan op klantpagina mislukt')
-        return
+      if (afleveradresId) {
+        const { error: updErr } = await supabase
+          .from('afleveradressen')
+          .update({
+            naam: normAdres.naam,
+            adres: normAdres.adres || null,
+            postcode: normAdres.postcode || null,
+            plaats: normAdres.plaats || null,
+            land: normAdres.land || null,
+            email: normEmail || null,
+          })
+          .eq('id', afleveradresId)
+        if (updErr) {
+          setSaving(false)
+          setError(updErr.message || 'Opslaan op klantpagina mislukt')
+          return
+        }
       }
+      if (saveEmailVerzend && debiteurNr) {
+        const { error: verzendErr } = await supabase
+          .from('debiteuren')
+          .update({ email_verzend: normEmail || null })
+          .eq('debiteur_nr', debiteurNr)
+        if (verzendErr) {
+          setSaving(false)
+          setError(verzendErr.message || 'Opslaan T&T-mailadres op klantpagina mislukt')
+          return
+        }
+      }
+      setSaving(false)
     }
 
     onAdresChange(normAdres)
@@ -124,8 +142,8 @@ export function DeliveryAddressEditor({
             </p>
           )}
           {!aflEmail && dropshipEmailProbleem !== 'ontbreekt' && (
-            <p className="mt-1 text-amber-600 text-xs italic">
-              Geen e-mailadres — klant ontvangt geen track &amp; trace
+            <p className="mt-1 text-amber-600 text-xs font-medium">
+              Track &amp; trace: ontbreekt — vereist voor aanmaken order
             </p>
           )}
           {dropshipEmailProbleem === 'ontbreekt' && (
@@ -173,23 +191,34 @@ export function DeliveryAddressEditor({
         <AflField label="Plaats" value={draftAdres.plaats} onChange={(v) => setDraftAdres(d => ({ ...d, plaats: v }))} />
         <AflField label="Land" value={draftAdres.land} onChange={(v) => setDraftAdres(d => ({ ...d, land: v }))} />
       </div>
-      <div className="pt-2 mt-2 border-t border-slate-200">
+      <div className="pt-2 mt-2 border-t border-slate-200 space-y-2">
         <AflField
-          label="E-mail (track & trace)"
+          label="E-mail track & trace (vereist)"
           type="email"
           value={draftEmail}
           onChange={setDraftEmail}
         />
-        <p className="mt-1 text-[11px] text-slate-400">
+        <p className="text-[11px] text-slate-400">
           De vervoerder stuurt de track &amp; trace naar dit e-mailadres.
         </p>
+        {debiteurNr && (
+          <label className="inline-flex items-center gap-2 text-xs text-slate-700">
+            <input
+              type="checkbox"
+              checked={saveEmailVerzend}
+              onChange={(e) => setSaveEmailVerzend(e.target.checked)}
+              className="rounded border-slate-300 text-terracotta-500 focus:ring-terracotta-400/30"
+            />
+            Opslaan als vast T&T-mailadres op klantpagina
+          </label>
+        )}
       </div>
       {afleveradresId && (
         <label className="inline-flex items-center gap-2 text-xs text-slate-700">
           <input
             type="checkbox"
             checked={persist}
-            onChange={(e) => setPersist(e.target.checked)}
+            onChange={(e) => { setPersist(e.target.checked); if (!e.target.checked) setSaveEmailVerzend(false) }}
             className="rounded border-slate-300 text-terracotta-500 focus:ring-terracotta-400/30"
           />
           Adreswijziging ook op klantpagina opslaan
