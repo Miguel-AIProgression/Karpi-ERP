@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Loader2, X, AlertTriangle, CreditCard, Euro, ChevronDown } from 'lucide-react'
+import { Loader2, X, AlertTriangle, CreditCard, Euro } from 'lucide-react'
 import {
   useMaakCreditfactuur,
   useStuurCreditfactuur,

@@ -52,6 +52,8 @@ export interface FactuurDetail {
   btw_controle_nodig_sinds: string | null
   /** Mig 456: snapshot regeling-code (nl_binnenland/eu_b2b_icl/eu_b2b_binnenland_afwijking/export_buiten_eu). */
   btw_regeling: string | null
+  /** Mig 371: intracommunautaire BTW-verlegging — true = 0% BTW op de factuur. */
+  btw_verlegd: boolean | null
   /** Mig 467: verwijst naar de originele debetfactuur als dit een creditnota is. */
   credit_voor_factuur_id: number | null
 }
