@@ -38,7 +38,6 @@ const MS_GRAPH_CLIENT_ID = Deno.env.get('MS_GRAPH_CLIENT_ID')!
 const MS_GRAPH_CLIENT_SECRET = Deno.env.get('MS_GRAPH_CLIENT_SECRET')!
 const FACTUUR_FROM = Deno.env.get('FACTUUR_FROM_EMAIL')!
 const FACTUUR_REPLY_TO = Deno.env.get('FACTUUR_REPLY_TO') ?? FACTUUR_FROM
-const AV_PATH = Deno.env.get('ALGEMENE_VOORWAARDEN_PATH') ?? 'algemene-voorwaarden-karpi-bv.pdf'
 
 const MAX_BATCH = 10
 const MAX_ATTEMPTS = 3
@@ -123,8 +122,7 @@ interface BedrijfConfig {
 
 interface DebiteurFactuurRow {
   email_factuur: string | null
-  email_pakbon: string | null   // mig 496: optioneel pakbon-specifiek adres
-  email_verzend: string | null  // mig 369: klant-niveau verzend-/leveringsadres (pakbon-fallback)
+  email_pakbon: string | null   // mig 496: optioneel pakbon-specifiek adres (terugval: factuuradres)
   naam: string | null
   vertegenw_code: string | null
   gln_bedrijf: string | null
@@ -266,7 +264,7 @@ serve(async () => {
         supabase
           .from('debiteuren')
           .select(
-            'email_factuur, email_pakbon, email_verzend, naam, vertegenw_code, gln_bedrijf, btw_nummer, betaler, ' +
+            'email_factuur, email_pakbon, naam, vertegenw_code, gln_bedrijf, btw_nummer, betaler, ' +
               'fact_naam, fact_adres, fact_postcode, fact_plaats, adres, postcode, plaats, land',
           )
           .eq('debiteur_nr', item.debiteur_nr)
@@ -394,7 +392,7 @@ serve(async () => {
         )
       }
 
-      // 7. Verstuur email met factuur-PDF + AV als bijlage, indien ingesteld.
+      // 7. Verstuur de factuurmail (+ losse pakbonmail), indien ingesteld.
       // Betaler-email alvast ophalen zodat verstuurd_naar correct wordt gelogd.
       let betalerEmail: string | null = null
       if (debiteur.betaler) {
@@ -410,203 +408,83 @@ serve(async () => {
       // live is (ediMailOnderdrukt=true). In test_modus staat de INVOIC op de
       // testqueue maar is e-mail het echte kanaal — de PDF gaat dan gewoon mee.
       // De PDF blijft altijd in storage; de INVOIC is in stap 6 al gezet.
+      //
+      // Verzoek Piet-Hein 25-06: factuur en pakbon gaan in TWEE aparte mails.
+      // De factuurmail bevat alléén de factuur-PDF; de pakbonmail alléén de
+      // pakbon-PDF(s) en gaat naar het pakbon-adres (terugval: factuuradres).
+      // De algemene voorwaarden gaan in geen van beide nog als bijlage mee.
       if (!ediMailOnderdrukt && debiteur.email_factuur) {
-        const { data: avBlob, error: avErr } = await supabase.storage
-          .from('documenten')
-          .download(AV_PATH)
-        if (avErr || !avBlob) throw new Error(`Download AV: ${avErr?.message ?? 'geen data'}`)
-        const avBytes = new Uint8Array(await avBlob.arrayBuffer())
-
         const orderIdsVoorLog = uniqueNumbers(regels.map((r) => Number(r.order_id)))
 
-        // Pakbon(nen) als extra bijlage: één pakbon-PDF per zending die deze
-        // factuur dekt — per_zending/bundel = 1, wekelijkse verzamelfactuur = N.
-        // Volledig best-effort: een ontbrekende pakbon mag de factuur-mail nooit
-        // blokkeren (zie genereerPakbonBijlagen).
-        const pakbonBijlagen = await genereerPakbonBijlagen(
-          supabase,
-          item.debiteur_nr,
-          orderIdsVoorLog,
-        )
-
-        // Mig 496: route de pakbon naar het pakbon-specifieke adres, met terugval
-        // email_pakbon -> email_verzend -> email_factuur. Valt die terug op het
-        // factuuradres (geen eigen pakbon-/verzendadres ingesteld — de meeste
-        // klanten), dan blijft de pakbon gewoon als bijlage op de factuurmail
-        // (géén gedragswijziging). Is wél een afwijkend adres gezet, dan gaat de
-        // pakbon uit de factuurmail en in een aparte mail naar dat adres (verderop).
-        const factuurTo = debiteur.email_factuur?.trim() ?? ''
-        const pakbonTo =
-          [debiteur.email_pakbon, debiteur.email_verzend, debiteur.email_factuur]
-            .map((v) => v?.trim())
-            .find((v) => v) ?? ''
-        const pakbonApart = pakbonBijlagen.length > 0 && pakbonTo !== factuurTo
-
-        const pakbonZin =
-          pakbonBijlagen.length > 0 && !pakbonApart
-            ? `<p>De ${pakbonBijlagen.length > 1 ? 'pakbonnen vindt u' : 'pakbon vindt u'} eveneens als bijlage.</p>`
-            : ''
-
-        const emailHtml = `
+        // --- Factuurmail: alléén de factuur-PDF ---
+        const factuurHtml = `
 <p>Geachte heer/mevrouw,</p>
 <p>Hierbij ontvangt u bijgaand factuur <strong>${factuur.factuur_nr}</strong>.</p>
-${pakbonZin}
-<p>Onze algemene voorwaarden vindt u als bijlage bij deze e-mail.</p>
 <p>Met vriendelijke groet,<br/>KARPI BV</p>
       `.trim()
+        const factuurAttachments = [{ filename: `${factuur.factuur_nr}.pdf`, content: pdfBytes }]
+        const factuurBijlagenMeta = [{ filename: `${factuur.factuur_nr}.pdf`, bucket: 'facturen', path: pdfPath }]
 
-        const attachments = [
-          { filename: `${factuur.factuur_nr}.pdf`, content: pdfBytes },
-          { filename: 'Algemene voorwaarden KARPI BV.pdf', content: avBytes },
-          ...(pakbonApart ? [] : pakbonBijlagen.map((p) => ({ filename: p.filename, content: p.content }))),
-        ]
-
-        // Mig 366: bijlage-verwijzingen voor de e-mailtijdlijn — bestanden staan
-        // in storage zodat de dialog ze via signed URL kan openen. Pakbonnen
-        // krijgen alleen een ref als hun storage-upload lukte (best-effort).
-        const bijlagenMeta = [
-          { filename: `${factuur.factuur_nr}.pdf`, bucket: 'facturen', path: pdfPath },
-          { filename: 'Algemene voorwaarden KARPI BV.pdf', bucket: 'documenten', path: AV_PATH },
-          ...(pakbonApart
-            ? []
-            : pakbonBijlagen
-                .filter((p) => p.bucket && p.path)
-                .map((p) => ({ filename: p.filename, bucket: p.bucket as string, path: p.path as string }))),
-        ]
-
-        // Stuur naar debiteur zelf
-        await sendFactuurEmail({
-          tenantId: MS_GRAPH_TENANT_ID,
-          clientId: MS_GRAPH_CLIENT_ID,
-          clientSecret: MS_GRAPH_CLIENT_SECRET,
-          from: FACTUUR_FROM,
+        await verstuurEnLog(supabase, {
           to: debiteur.email_factuur,
-          replyTo: FACTUUR_REPLY_TO,
           subject: `Factuur ${factuur.factuur_nr}`,
-          html: emailHtml,
-          attachments,
-        })
-
-        await logVerstuurdeEmails(supabase, {
+          html: factuurHtml,
+          attachments: factuurAttachments,
+          bijlagenMeta: factuurBijlagenMeta,
           orderIds: orderIdsVoorLog,
           factuurId,
-          onderwerp: `Factuur ${factuur.factuur_nr}`,
-          verzondenAan: debiteur.email_factuur,
-          html: emailHtml,
-          bijlagen: bijlagenMeta,
-        })
-
-        // Rauwe-payload-audit (mig 324/325): leg de uitgaande factuur-e-mail vast.
-        // Alleen de e-mail-tak — de EDI INVOIC wordt in edi_berichten gelogd, niet
-        // hier. PDF/AV-bytes worden gestript; alleen mail-metadata + bijlage-refs.
-        await logExternePayload(supabase, {
           kanaal: 'factuur',
-          richting: 'out',
-          bron: 'graph',
-          externeId: factuur.factuur_nr,
-          orderId: orderIdsVoorLog[0] ?? null,
-          status: 'verwerkt',
-          raw: JSON.stringify({ to: debiteur.email_factuur, subject: `Factuur ${factuur.factuur_nr}`, html: emailHtml }),
-          json: {
-            request: { to: debiteur.email_factuur, subject: `Factuur ${factuur.factuur_nr}`, html: emailHtml, bijlagen: bijlagenMeta },
-            ok: true,
-          },
+          factuurNr: factuur.factuur_nr,
         })
 
-        // Stuur kopie naar betaler indien aanwezig en anders dan debiteur
+        // Kopie naar betaler indien aanwezig en anders dan debiteur
         if (betalerEmail && betalerEmail !== debiteur.email_factuur) {
-          await sendFactuurEmail({
-            tenantId: MS_GRAPH_TENANT_ID,
-            clientId: MS_GRAPH_CLIENT_ID,
-            clientSecret: MS_GRAPH_CLIENT_SECRET,
-            from: FACTUUR_FROM,
+          await verstuurEnLog(supabase, {
             to: betalerEmail,
-            replyTo: FACTUUR_REPLY_TO,
             subject: `Factuur ${factuur.factuur_nr} (kopie voor betaler)`,
-            html: emailHtml,
-            attachments,
-          })
-
-          await logVerstuurdeEmails(supabase, {
+            html: factuurHtml,
+            attachments: factuurAttachments,
+            bijlagenMeta: factuurBijlagenMeta,
             orderIds: orderIdsVoorLog,
             factuurId,
-            onderwerp: `Factuur ${factuur.factuur_nr} (kopie voor betaler)`,
-            verzondenAan: betalerEmail,
-            html: emailHtml,
-            bijlagen: bijlagenMeta,
-          })
-
-          // Rauwe-payload-audit: ook de betaler-kopie vastleggen (PDF gestript).
-          await logExternePayload(supabase, {
             kanaal: 'factuur',
-            richting: 'out',
-            bron: 'graph',
-            externeId: factuur.factuur_nr,
-            orderId: orderIdsVoorLog[0] ?? null,
-            status: 'verwerkt',
-            raw: JSON.stringify({ to: betalerEmail, subject: `Factuur ${factuur.factuur_nr} (kopie voor betaler)`, html: emailHtml }),
-            json: {
-              request: { to: betalerEmail, subject: `Factuur ${factuur.factuur_nr} (kopie voor betaler)`, html: emailHtml, bijlagen: bijlagenMeta },
-              ok: true,
-            },
+            factuurNr: factuur.factuur_nr,
           })
         }
 
-        // Mig 496: aparte pakbon-mail naar het pakbon-/verzendadres als dat
-        // afwijkt van het factuuradres. Volledig BEST-EFFORT: de factuur is al
-        // verstuurd, dus een fout hier mag het queue-item niet laten retryen
-        // (zou de factuur dubbel mailen) — eigen try/catch die alleen logt.
-        if (pakbonApart && pakbonTo) {
+        // --- Pakbonmail: altijd apart, alléén de pakbon-PDF(s) ---
+        // Eén pakbon-PDF per zending die deze factuur dekt — per_zending/bundel = 1,
+        // wekelijkse verzamelfactuur = N. Best-effort: een ontbrekende pakbon mag
+        // de factuur-flow nooit blokkeren (zie genereerPakbonBijlagen).
+        const pakbonBijlagen = await genereerPakbonBijlagen(supabase, item.debiteur_nr, orderIdsVoorLog)
+        if (pakbonBijlagen.length > 0) {
+          // Pakbon-adres (mig 496 / verzoek 25-06): email_pakbon, terugval factuuradres.
+          const pakbonTo =
+            [debiteur.email_pakbon, debiteur.email_factuur].map((v) => v?.trim()).find((v) => v) ?? ''
+          // BEST-EFFORT: de factuur is al verstuurd, dus een pakbon-mailfout mag het
+          // queue-item niet laten retryen (= dubbele factuur) — eigen try/catch.
           try {
-            const pakbonMeervoud = pakbonBijlagen.length > 1
-            const pakbonOnderwerp = `Pakbon${pakbonMeervoud ? 'nen' : ''} bij factuur ${factuur.factuur_nr}`
-            const pakbonHtml = `
-<p>Geachte heer/mevrouw,</p>
-<p>Hierbij ontvangt u de pakbon${pakbonMeervoud ? 'nen' : ''} behorend bij factuur <strong>${factuur.factuur_nr}</strong> als bijlage.</p>
-<p>Met vriendelijke groet,<br/>KARPI BV</p>
-            `.trim()
-            const pakbonAttachments = pakbonBijlagen.map((p) => ({ filename: p.filename, content: p.content }))
-            const pakbonBijlagenMeta = pakbonBijlagen
-              .filter((p) => p.bucket && p.path)
-              .map((p) => ({ filename: p.filename, bucket: p.bucket as string, path: p.path as string }))
-
-            await sendFactuurEmail({
-              tenantId: MS_GRAPH_TENANT_ID,
-              clientId: MS_GRAPH_CLIENT_ID,
-              clientSecret: MS_GRAPH_CLIENT_SECRET,
-              from: FACTUUR_FROM,
+            const meervoud = pakbonBijlagen.length > 1
+            await verstuurEnLog(supabase, {
               to: pakbonTo,
-              replyTo: FACTUUR_REPLY_TO,
-              subject: pakbonOnderwerp,
-              html: pakbonHtml,
-              attachments: pakbonAttachments,
-            })
-
-            await logVerstuurdeEmails(supabase, {
+              subject: `Pakbon${meervoud ? 'nen' : ''} bij factuur ${factuur.factuur_nr}`,
+              html: `
+<p>Geachte heer/mevrouw,</p>
+<p>Hierbij ontvangt u de pakbon${meervoud ? 'nen' : ''} behorend bij factuur <strong>${factuur.factuur_nr}</strong> als bijlage.</p>
+<p>Met vriendelijke groet,<br/>KARPI BV</p>
+            `.trim(),
+              attachments: pakbonBijlagen.map((p) => ({ filename: p.filename, content: p.content })),
+              bijlagenMeta: pakbonBijlagen
+                .filter((p) => p.bucket && p.path)
+                .map((p) => ({ filename: p.filename, bucket: p.bucket as string, path: p.path as string })),
               orderIds: orderIdsVoorLog,
               factuurId,
-              onderwerp: pakbonOnderwerp,
-              verzondenAan: pakbonTo,
-              html: pakbonHtml,
-              bijlagen: pakbonBijlagenMeta,
-            })
-
-            await logExternePayload(supabase, {
               kanaal: 'pakbon',
-              richting: 'out',
-              bron: 'graph',
-              externeId: factuur.factuur_nr,
-              orderId: orderIdsVoorLog[0] ?? null,
-              status: 'verwerkt',
-              raw: JSON.stringify({ to: pakbonTo, subject: pakbonOnderwerp, html: pakbonHtml }),
-              json: {
-                request: { to: pakbonTo, subject: pakbonOnderwerp, html: pakbonHtml, bijlagen: pakbonBijlagenMeta },
-                ok: true,
-              },
+              factuurNr: factuur.factuur_nr,
             })
           } catch (pakbonMailErr) {
             console.warn(
-              `[factuur-verzenden] aparte pakbon-mail mislukt (factuur ${factuur.factuur_nr}): ${pakbonMailErr}`,
+              `[factuur-verzenden] pakbon-mail mislukt (factuur ${factuur.factuur_nr}): ${pakbonMailErr}`,
             )
           }
         }
@@ -662,6 +540,64 @@ ${pakbonZin}
     { headers: { 'content-type': 'application/json' } },
   )
 })
+
+// Verstuur één mail (factuur of pakbon) + leg 'm vast in de e-mailtijdlijn
+// (verstuurde_emails) en de rauwe-payload-audit (externe_payloads). De drie
+// stappen horen bij elkaar bij elke uitgaande mail — vandaar één seam, zodat
+// factuurmail, betaler-kopie en pakbonmail niet drie keer hetzelfde triplet
+// kopiëren. Gooit door als de e-mail zelf faalt; de caller bepaalt of dat
+// fataal is (factuur: ja → retry) of best-effort (pakbon: try/catch).
+async function verstuurEnLog(
+  supabase: ReturnType<typeof createClient>,
+  args: {
+    to: string
+    subject: string
+    html: string
+    attachments: Array<{ filename: string; content: Uint8Array }>
+    bijlagenMeta: Array<{ filename: string; bucket: string; path: string }>
+    orderIds: number[]
+    factuurId: number
+    kanaal: 'factuur' | 'pakbon'
+    factuurNr: string
+  },
+): Promise<void> {
+  await sendFactuurEmail({
+    tenantId: MS_GRAPH_TENANT_ID,
+    clientId: MS_GRAPH_CLIENT_ID,
+    clientSecret: MS_GRAPH_CLIENT_SECRET,
+    from: FACTUUR_FROM,
+    to: args.to,
+    replyTo: FACTUUR_REPLY_TO,
+    subject: args.subject,
+    html: args.html,
+    attachments: args.attachments,
+  })
+
+  await logVerstuurdeEmails(supabase, {
+    orderIds: args.orderIds,
+    factuurId: args.factuurId,
+    onderwerp: args.subject,
+    verzondenAan: args.to,
+    html: args.html,
+    bijlagen: args.bijlagenMeta,
+  })
+
+  // Rauwe-payload-audit (mig 324/325): leg de uitgaande mail vast. PDF-bytes
+  // worden gestript; alleen mail-metadata + bijlage-refs.
+  await logExternePayload(supabase, {
+    kanaal: args.kanaal,
+    richting: 'out',
+    bron: 'graph',
+    externeId: args.factuurNr,
+    orderId: args.orderIds[0] ?? null,
+    status: 'verwerkt',
+    raw: JSON.stringify({ to: args.to, subject: args.subject, html: args.html }),
+    json: {
+      request: { to: args.to, subject: args.subject, html: args.html, bijlagen: args.bijlagenMeta },
+      ok: true,
+    },
+  })
+}
 
 // Mig 366: e-mailtijdlijn — één log-rij per betrokken order (bundel-factuur
 // dekt meerdere orders). Best-effort: de mail is al verstuurd, logging mag de
