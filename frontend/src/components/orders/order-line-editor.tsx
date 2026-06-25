@@ -34,6 +34,9 @@ interface OrderLineEditorProps {
    *  `KwaliteitFirstSelector` zodat zoekopdrachten ook klant-eigen namen
    *  matchen (zie `searchKwaliteitenViaProducten`). */
   debiteurNr?: number
+  /** True bij het bewerken van een bestaande order — activeert de
+   *  "al gereserveerd voor dit order"-notitie bij 0 vrije voorraad. */
+  isBestaandeOrder?: boolean
   onArticleSelected?: (article: SelectedArticle) => Promise<{
     prijs: number | null
     prijs_bron?: PrijsBron
@@ -51,7 +54,7 @@ const inputClass = 'w-full text-right bg-transparent border border-slate-200 rou
 const selectClass = 'bg-transparent border border-slate-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-terracotta-400/30'
 
 function MaatwerkLineRow({
-  line, index, updateLine, removeLine, vormen, afwerkingen,
+  line, index, updateLine, removeLine, vormen, afwerkingen, isBestaandeOrder,
 }: {
   line: OrderRegelFormData
   index: number
@@ -66,6 +69,10 @@ function MaatwerkLineRow({
    *  (KwaliteitFirstSelector/VormAfmetingSelector), zodat een nieuwe afwerking
    *  (bv. FUR) hier ook meteen kiesbaar is zonder code-wijziging. */
   afwerkingen: AfwerkingTypeRow[]
+  /** True bij het bewerken van een bestaande order — in dat geval is vrije_voorraad
+   *  al verminderd met de reserveringen van DEZE order, waardoor '0' misleidend
+   *  lijkt terwijl de stuks al geclaimd zijn. */
+  isBestaandeOrder?: boolean
 }) {
   const isVasteMaatRegel = !line.is_maatwerk
     && line.artikelnr
@@ -76,6 +83,13 @@ function MaatwerkLineRow({
   const dekking = berekenRegelDekking(line)
   const uitwisselbaarTotaal = dekking.uitwisselbaar
   const tekortAantal = dekking.ioTekort
+
+  // Bij een bestaande order is vrije_voorraad al verminderd met deze order's
+  // eigen reserveringen (voorraad- én inkoop-claims). Een ioTekort > 0 in
+  // de edit-form betekent dan niet "niet gedekt" maar "gedekt via een claim
+  // die de vrije voorraad al heeft opgebruikt". Toon een notitie zodat de
+  // gebruiker weet dat de stuks al geclaimd zijn voor dit order.
+  const reedsDgedekt = isBestaandeOrder ? tekortAantal : 0
 
   // Issue #35: passieve summary van uitwisselbare voorraad — toont onder
   // het vrije-voorraad getal "+N via ander type" zodra er überhaupt
@@ -192,9 +206,14 @@ function MaatwerkLineRow({
             </>
           ) : (
             <>
-              <div className={`text-xs ${heeftEigenVoorraad ? 'text-emerald-600' : toonLeverbaarVia ? 'text-slate-500' : 'text-rose-500'}`}>
+              <div className={`text-xs ${heeftEigenVoorraad ? 'text-emerald-600' : toonLeverbaarVia ? 'text-slate-500' : reedsDgedekt >= tekortAantal && tekortAantal > 0 ? 'text-amber-600' : 'text-rose-500'}`}>
                 {line.vrije_voorraad ?? 0}
               </div>
+              {reedsDgedekt > 0 && !heeftEigenVoorraad && (
+                <div className="text-xs text-slate-400 mt-0.5 leading-tight" title={`${reedsDgedekt} stuks zijn al gereserveerd voor deze order`}>
+                  +{reedsDgedekt} voor<br />dit order
+                </div>
+              )}
               {/* Issue #36: expliciete "Leverbaar via …"-summary wanneer eigen
                   voorraad = 0 maar omsticker- of inkoop-pad beschikbaar is. */}
               {toonLeverbaarVia ? (
@@ -265,6 +284,11 @@ function MaatwerkLineRow({
                 if (opInkoop > 0) parts.push(`${opInkoop}× wacht op inkoop`)
                 return parts.join(', ')
               })()}
+              {reedsDgedekt > 0 && (
+                <span className="block text-slate-400 mt-0.5">
+                  (incl. {reedsDgedekt}× al gereserveerd voor dit order)
+                </span>
+              )}
             </div>
           )}
         </td>
@@ -446,7 +470,7 @@ function MaatwerkLineRow({
   )
 }
 
-export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr, debiteurNr, onArticleSelected }: OrderLineEditorProps) {
+export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr, debiteurNr, isBestaandeOrder, onArticleSelected }: OrderLineEditorProps) {
   const keyCounter = useRef(0)
   const lineKeys = useRef<Map<number, string>>(new Map())
 
@@ -699,6 +723,7 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr,
                     removeLine={removeLine}
                     vormen={vormen}
                     afwerkingen={afwerkingen}
+                    isBestaandeOrder={isBestaandeOrder}
                   />
                 ))}
             </tbody>

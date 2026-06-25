@@ -968,6 +968,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
         lines={regels}
         prijslijstNr={client?.prijslijst_nr ?? undefined}
         debiteurNr={client?.debiteur_nr ?? undefined}
+        isBestaandeOrder={!!initialData?.orderId}
         onChange={(newRegels) => {
           // Detect manual changes to the VERZEND line
           const oldShipping = regels.find(l => l.artikelnr === SHIPPING_PRODUCT_ID)
