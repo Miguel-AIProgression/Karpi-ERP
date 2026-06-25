@@ -70,19 +70,18 @@ serve(async (req) => {
     }
     if (doc.regels.length === 0) return json(422, { error: `Factuur ${doc.header.factuur_nr} heeft geen regels` })
 
-    // Scope V1: precies één order.
+    // Multi-order toegestaan: een verzamelfactuur (bundel mig 222 / wekelijks)
+    // dekt meerdere orders. De renderer mapt per regel de juiste order
+    // (orderNumberBuyer) via ordersById; ctx.orders[0] levert de partij-GLN's
+    // (zelfde adres binnen een bundel). Spiegelt het auto-pad factuur-verzenden.
     const orderIds = Array.from(new Set(doc.regels.map((r) => r.order_id).filter((v) => Number.isFinite(v))))
-    if (orderIds.length !== 1) {
-      return json(422, {
-        error:
-          `Factuur ${doc.header.factuur_nr} dekt ${orderIds.length} orders. EDI-factuur ondersteunt in ` +
-          `V1 alleen per-order facturen (1 order). Multi-order/weekly volgt later.`,
-      })
+    if (orderIds.length === 0) {
+      return json(422, { error: `Factuur ${doc.header.factuur_nr} heeft geen gekoppelde orders` })
     }
     const orderId = orderIds[0]
 
     const [orderRes, debiteurRes, configRes] = await Promise.all([
-      sb.from('orders').select(ORDER_VELDEN).eq('id', orderId).maybeSingle(),
+      sb.from('orders').select(ORDER_VELDEN).in('id', orderIds),
       sb
         .from('debiteuren')
         .select(
@@ -97,8 +96,11 @@ serve(async (req) => {
         .maybeSingle(),
     ])
 
-    if (orderRes.error) return json(500, { error: `Fetch order: ${orderRes.error.message}` })
-    if (!orderRes.data) return json(404, { error: `Order ${orderId} niet gevonden` })
+    if (orderRes.error) return json(500, { error: `Fetch orders: ${orderRes.error.message}` })
+    const orderRows = (orderRes.data ?? []) as unknown as FactuurInvoiceOrder[]
+    if (orderRows.length === 0) return json(404, { error: `Orders ${orderIds.join(',')} niet gevonden` })
+    const orderById = new Map(orderRows.map((o) => [o.id, o]))
+    const orders = orderIds.map((id) => orderById.get(id)).filter((o): o is FactuurInvoiceOrder => !!o)
     if (debiteurRes.error) return json(500, { error: `Fetch debiteur: ${debiteurRes.error.message}` })
     if (!debiteurRes.data) return json(404, { error: `Debiteur ${doc.header.debiteur_nr} niet gevonden` })
     if (configRes.error) return json(500, { error: `Fetch config: ${configRes.error.message}` })
@@ -126,7 +128,7 @@ serve(async (req) => {
         btw_nummer: bedrijf.btw_nummer ?? null,
       },
       debiteur: debiteurRes.data as FactuurInvoiceContext['debiteur'],
-      orders: [orderRes.data as unknown as FactuurInvoiceOrder],
+      orders,
       deliveryNoteNumber,
     }
     // De handmatige knop volgt de test-modus van de partner (mirror auto-pad).
