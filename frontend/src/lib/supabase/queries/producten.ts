@@ -523,6 +523,28 @@ export async function fetchBackorderPerArtikl(): Promise<BackorderArtikel[]> {
   return (data ?? []) as BackorderArtikel[]
 }
 
+export interface RolTekortArtikel {
+  kwaliteit_code: string
+  kleur_code: string | null
+  artikelnr: string | null
+  karpi_code: string | null
+  omschrijving: string | null
+  standaard_breedte_cm: number | null
+  aantal_stukken: number
+  benodigde_m2: number
+  benodigde_meters: number | null
+  aantal_orders: number
+}
+
+export async function fetchRolTekortPerArtikl(): Promise<RolTekortArtikel[]> {
+  const { data, error } = await supabase
+    .from('roltekort_per_artikel')
+    .select('*')
+    .order('benodigde_m2', { ascending: false })
+  if (error) throw error
+  return (data ?? []) as RolTekortArtikel[]
+}
+
 /** Fetch rollen for a product */
 export async function fetchRollenVoorProduct(artikelnr: string): Promise<RolRow[]> {
   const { data, error } = await supabase
