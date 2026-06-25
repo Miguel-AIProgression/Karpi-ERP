@@ -145,6 +145,17 @@ function buildBuyerParty(
 }
 
 /**
+ * GLN's kunnen een '.0'-importartefact dragen (debiteuren.gln_bedrijf) — strip
+ * de decimaalstaart vóór ze de EDI in gaan (spiegelt de .0-tolerantie van de
+ * debiteur-matcher, canoniek voor uitgaande berichten).
+ */
+function normGln(gln: string | number | null | undefined): string | null {
+  if (gln == null) return null
+  const s = String(gln).replace(/\.\d+$/, '').trim()
+  return s === '' ? null : s
+}
+
+/**
  * Render het Factuurdocument naar de INVOIC-builder-input.
  * Gooit bij ontbrekende GLN's (zoals de huidige buildEdiFactuurInput) — beter
  * falen dan een kapot INVOIC versturen.
@@ -156,9 +167,19 @@ export function naarInvoiceInput(doc: FactuurDocument, ctx: FactuurInvoiceContex
     throw new Error(`Factuur ${header.factuur_nr}: geen gekoppelde orders voor EDI INVOIC`)
   }
 
-  const invoiceeGln = firstNonEmpty(firstOrder.factuuradres_gln, ctx.debiteur.gln_bedrijf)
-  const buyerGln = firstNonEmpty(firstOrder.besteller_gln, firstOrder.afleveradres_gln, invoiceeGln)
-  const deliveryGln = firstNonEmpty(firstOrder.afleveradres_gln, buyerGln)
+  // NAD+IV (factuurontvanger) = de facturatie-entiteit van de DEBITEUR
+  // (gln_bedrijf), NIET de routerings-GLN. Bij centrale-facturatie-ketens
+  // (Hornbach, mig 306/307) levert Transus de interchange-GLN in
+  // gln_gefactureerd → orders.factuuradres_gln is dáár de UNB-routering, niet de
+  // invoicee. We factureren aan de debiteur, dus gln_bedrijf is de juiste,
+  // per-debiteur stabiele invoicee (8717056697390 i.p.v. interchange 4306517008994).
+  const invoiceeGln = normGln(firstNonEmpty(ctx.debiteur.gln_bedrijf, firstOrder.factuuradres_gln))
+  // UNB-routering: Transus bepaalt de werkelijke recipient via zijn partnerconfig
+  // (BDSK's interchange-GLN staat niet eens in onze payload) — factuuradres_gln
+  // is hier de interchange-GLN, bewust losgekoppeld van de invoicee hierboven.
+  const routingGln = normGln(firstNonEmpty(firstOrder.factuuradres_gln, ctx.debiteur.gln_bedrijf))
+  const buyerGln = normGln(firstNonEmpty(firstOrder.besteller_gln, firstOrder.afleveradres_gln, invoiceeGln))
+  const deliveryGln = normGln(firstNonEmpty(firstOrder.afleveradres_gln, buyerGln))
   if (!invoiceeGln || !buyerGln || !deliveryGln) {
     throw new Error(
       `Factuur ${header.factuur_nr}: GLN ontbreekt (IV=${invoiceeGln ?? '-'}, BY=${buyerGln ?? '-'}, DP=${deliveryGln ?? '-'})`,
@@ -209,7 +230,7 @@ export function naarInvoiceInput(doc: FactuurDocument, ctx: FactuurInvoiceContex
     invoiceDate: header.factuurdatum,
     invoiceNumber: header.factuur_nr,
     customerShortName: ctx.debiteur.naam ?? null,
-    recipientGln: invoiceeGln,
+    recipientGln: routingGln,
     orderNumberBuyer,
     orderDate: firstOrder.orderdatum ?? header.factuurdatum,
     deliveryNoteNumber,

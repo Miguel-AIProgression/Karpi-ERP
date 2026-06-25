@@ -1,5 +1,40 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-25 — EDI Hornbach: DESADV-leverbonnummer uniek per bericht + INVOIC NAD+IV-GLN gecorrigeerd
+
+Twee losse Hornbach-afkeuringen, beide veroorzaakt door het verwarren van twee
+identiteiten in één veld. **Geen migratie** — puur de gedeelde EDI-renderers.
+
+**1. DESADV — "Delivery note number already used" (mail 22-06).** Het leverbonnummer
+(`pakbonNummer` [1,9) → BGM+351) werd uit het zendingnummer afgeleid. Bij een
+bundel-zending (mig 222) zitten ≥2 orders in één zending → beide DESADVs kregen
+hetzelfde nummer → Hornbach weigert de 2e (ZEND-2026-0117 / orders ORD-2026-0006 +
+ORD-2026-0202). Alleen het paar **(zending, order)** is uniek per bericht; puur het
+ordernummer zou de spiegel-bug geven (deelzending = 1 order over 2 zendingen).
+Nieuw: `leverbonNummer()` = `last4(zendingNr) + last4(orderNr)` (8 cijfers) in
+[`karpi-verzendbericht.ts`](../supabase/functions/_shared/transus-formats/karpi-verzendbericht.ts).
+Byte-fixture-test valideert nu alle velden **m.u.v.** [1,9) (dat veld wijkt bewust af
+van het oude Windows Connect-pakbonnummer).
+
+**2. INVOIC — "GLN in NAD+IV-segment is incorrect" (mail 24-06, 15 orders).** De
+factuurontvanger-GLN (NAD+IV) werd uit `orders.factuuradres_gln` gehaald, maar voor
+Hornbach (centrale facturatie, mig 306/307) levert Transus daar de **interchange-/
+routerings-GLN** (`4306517008994`) i.p.v. de echte invoicee (`8717056697390`). Voor
+BDSK valt dat samen, voor Hornbach niet. Routering doet Transus zelf via de
+partnerconfig (BDSK-bewijs: hun interchange-GLN staat niet eens in onze payload), dus
+de NAD+IV kon veilig losgekoppeld worden. Nieuw in
+[`factuur-invoice-renderer.ts`](../supabase/functions/_shared/facturatie/factuur-invoice-renderer.ts):
+NAD+IV = `debiteuren.gln_bedrijf` (de facturatie-entiteit, `.0`-importartefact gestript
+via `normGln`), UNB-routering blijft `factuuradres_gln`. Geldt voor beide factuurpaden
+(auto `factuur-verzenden` + handmatig `bouw-factuur-edi`, ADR-0036).
+
+**Nog te doen (operationeel, geen code):** de al-afgekeurde DESADV's + 15 INVOIC's
+opnieuw versturen ná deploy; bij Hornbach/Transus bevestigen dat het nieuwe
+leverbonnummer-formaat (zending+order) geaccepteerd wordt. Tests: 12 nieuwe/gewijzigde
+asserties, alle EDI-format-tests groen.
+
+---
+
 ## 2026-06-25 — Backorder-pagina toont nu ook RugFlow-orders met ongedekte vraag (mig 515)
 
 **Probleem:** `backorder_per_artikel` filterde uitsluitend op `producten.backorder > 0` — een

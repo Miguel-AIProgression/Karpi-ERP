@@ -141,7 +141,7 @@ Deno.test('naarInvoiceInput: volledige KarpiInvoiceInput (golden, niet-verlegd)'
     },
     invoicee: {
       name: 'Klant BV',
-      gln: '1111111111111',
+      gln: '9999999999999', // NAD+IV = debiteur.gln_bedrijf (facturatie-entiteit), niet factuuradres_gln (routering)
       address: 'Straat 1',
       postcode: '1234 AB',
       city: 'Plaats',
@@ -237,6 +237,20 @@ Deno.test('naarInvoiceInput → fixed-width builder draait zonder fout', () => {
   // De builder heeft een eigen byte-test; hier alleen: renderer-output voedt 'm
   // zonder fout en levert een gevulde INVOIC (minstens de header-record).
   assertEquals(tekst.length >= 1107, true)
+})
+
+Deno.test('naarInvoiceInput: NAD+IV = gln_bedrijf, routering = factuuradres_gln (Hornbach centrale facturatie)', () => {
+  const doc = bouwFactuurDocument(FACTUUR, REGELS, lookups(), { vertegenwoordiger: 'Jan', isTestMessage: false })
+  // Hornbach: Transus levert de interchange-GLN in gln_gefactureerd → factuuradres_gln
+  // = routering; gln_bedrijf = de echte invoicee (met .0-importartefact).
+  const ctx: FactuurInvoiceContext = {
+    ...CTX,
+    debiteur: { ...CTX.debiteur, gln_bedrijf: '8717056697390.0' },
+    orders: [{ ...CTX.orders[0], factuuradres_gln: '4306517008994' }],
+  }
+  const out = naarInvoiceInput(doc, ctx)
+  assertEquals(out.invoicee.gln, '8717056697390') // NAD+IV = facturatie-entiteit, .0 gestript
+  assertEquals(out.recipientGln, '4306517008994') // UNB-routering blijft de interchange-GLN
 })
 
 Deno.test('naarInvoiceInput: ontbrekende GLN gooit', () => {

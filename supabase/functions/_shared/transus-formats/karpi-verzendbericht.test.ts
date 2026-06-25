@@ -60,14 +60,19 @@ const hornbachInput: VerzendberichtInput = {
   ],
 };
 
-Deno.test('buildKarpiVerzendbericht - reproduceert Hornbach DESADV fixture 172390327 byte-identiek', async () => {
+Deno.test('buildKarpiVerzendbericht - reproduceert Hornbach DESADV fixture 172390327 (m.u.v. leverbonnummer)', async () => {
   const fixture = await loadFixture('verzendbericht-uit-hornbach-172390327.txt');
   const built = buildKarpiVerzendbericht(hornbachInput);
 
-  // Byte-identiek inclusief CRLF-terminators en afsluitende CRLF.
-  assertEquals(built, fixture);
-  // En via dezelfde normalisatie als de INVOIC-fixture-tests.
-  assertEquals(normalizeFixedWidth(built), normalizeFixedWidth(fixture));
+  // Het leverbonnummer-veld [1,9) wijkt BEWUST af van het oude systeem: dat
+  // stuurde een los pakbon-nummer (00456666); wij leiden het nu af van
+  // (zending+order) om bundel-/deelzending-collisions te voorkomen. Alle ANDERE
+  // velden moeten byte-identiek blijven aan het echte, geaccepteerde bericht.
+  const zonderLeverbon = (s: string) => s.slice(0, 1) + s.slice(9);
+  assertEquals(zonderLeverbon(built), zonderLeverbon(fixture));
+  assertEquals(normalizeFixedWidth(zonderLeverbon(built)), normalizeFixedWidth(zonderLeverbon(fixture)));
+  // De nieuwe leverbon-afleiding zelf: last4(00456666) + last4(26581310).
+  assertEquals(built.slice(1, 9), '66661310');
 });
 
 Deno.test('buildKarpiVerzendbericht - normaliseert RugFlow-nummers naar 8 cijfers', () => {
@@ -77,7 +82,7 @@ Deno.test('buildKarpiVerzendbericht - normaliseert RugFlow-nummers naar 8 cijfer
   assertEquals(header.length, 291);
   assertEquals(regel.length, 245);
   assertEquals(header.substring(0, 1), '0');
-  assertEquals(header.substring(1, 9), '20260042'); // ZEND-2026-0042 → laatste 8 cijfers
+  assertEquals(header.substring(1, 9), '00420334'); // leverbon = last4(ZEND-2026-0042)+last4(ORD-2026-0334)
   assertEquals(header.substring(231, 239), '20260334'); // ORD-2026-0334 → laatste 8 cijfers
   assertEquals(header.substring(103, 117), 'BDSK Handels G'); // afgekapt op 14
   assertEquals(regel.substring(0, 1), '1');

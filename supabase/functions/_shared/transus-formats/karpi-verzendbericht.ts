@@ -223,11 +223,27 @@ export function buildKarpiVerzendbericht(input: VerzendberichtInput): string {
   return [header, ...lines, ''].join('\r\n');
 }
 
+/**
+ * Leverbonnummer (BGM+351 + RFF+DQ) — moet UNIEK zijn per uitgaand DESADV.
+ * Eén fysieke zending kan ≥2 orders bundelen (mig 222) ÉN één order kan over
+ * ≥2 zendingen verdeeld zijn (deelzending) — alleen het paar (zending, order)
+ * is uniek per bericht. Daarom: laatste 4 cijfers van het zendingnummer +
+ * laatste 4 van het ordernummer (8 cijfers, past in het veld).
+ * Vóór 2026-06-24 enkel zendingNr → bundel-orders deelden hetzelfde nummer,
+ * Hornbach weigerde de 2e ("delivery note number already used", 2026-06-22).
+ * Puur orderNr zou de spiegel-bug geven (deelzending → 2 berichten, 1 ordernr).
+ */
+function leverbonNummer(zendingNr: string, orderNr: string): string {
+  const z = zendingNr.replace(/\D/g, '').slice(-4).padStart(4, '0');
+  const o = orderNr.replace(/\D/g, '').slice(-4).padStart(4, '0');
+  return z + o;
+}
+
 function buildHeaderLine(input: VerzendberichtInput): string {
   const buf = new Array<string>(HEADER_LEN).fill(' ');
 
   setRange(buf, HDR.recordType, '0');
-  setRange(buf, HDR.pakbonNummer, formatDocumentNumber(input.zendingNr, 8));
+  setRange(buf, HDR.pakbonNummer, leverbonNummer(input.zendingNr, input.orderNumberSupplier));
   setRange(buf, HDR.documentDatum, formatDateYmd(input.verzenddatum));
   setRange(buf, HDR.leverDatum, formatDateYmd(input.leverdatum));
   setRange(buf, HDR.partnerNaam, fixed(input.partnerNaam ?? '', 14));
