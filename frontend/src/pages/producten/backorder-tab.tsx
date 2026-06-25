@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Search, ArrowUpDown, ArrowUp, ArrowDown, Info } from 'lucide-react'
+import { Search, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import {
   fetchBackorderPerArtikl,
   fetchRolTekortPerArtikl,
@@ -166,7 +166,7 @@ function VastRij({ rij: r }: { rij: BackorderArtikel }) {
 
 // ── Sectie 2: Rol-materiaal tekort ───────────────────────────────────────────
 
-type RolSortCol = 'benodigde_m2' | 'benodigde_meters' | 'kwaliteit_code' | 'aantal_stukken' | 'aantal_orders'
+type RolSortCol = 'benodigde_m2' | 'kwaliteit_code' | 'aantal_stukken' | 'aantal_orders'
 
 function RolTekortSectie() {
   const [search, setSearch] = useState('')
@@ -204,23 +204,15 @@ function RolTekortSectie() {
     return mul * (va - vb)
   })
 
-  const totaalM2 = data.reduce((s, r) => s + Number(r.benodigde_m2), 0)
-  const metMeters = data.filter(r => r.benodigde_meters !== null)
-  const totaalMeters = metMeters.reduce((s, r) => s + (r.benodigde_meters ?? 0), 0)
+  const totaalM2 = gesorteerd.reduce((s, r) => s + Number(r.benodigde_m2), 0)
 
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
-        <div>
-          <h2 className="text-sm font-semibold text-slate-700">
-            Rol-materiaal tekort
-            <span className="ml-2 text-xs font-normal text-slate-400">lengte meters (schatting)</span>
-          </h2>
-          <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1">
-            <Info size={11} />
-            Berekend als m² / rolbreedte — werkelijk benodigd (incl. snijverlies) ligt hoger
-          </p>
-        </div>
+        <h2 className="text-sm font-semibold text-slate-700">
+          Rol-materiaal tekort
+          <span className="ml-2 text-xs font-normal text-slate-400">m² (som van alle openstaande stukken zonder materiaal)</span>
+        </h2>
         <div className="relative w-64">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
@@ -238,18 +230,16 @@ function RolTekortSectie() {
             <tr>
               <ThBtn label="Kwaliteit · kleur" col="kwaliteit_code" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
               <th className="px-3 py-2.5 text-xs font-medium text-slate-500 text-left">Artikel</th>
-              <th className="px-3 py-2.5 text-xs font-medium text-slate-500 text-right">Breedte</th>
-              <ThBtn label="Ber. m²" col="benodigde_m2" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} align="right" />
-              <ThBtn label="Ber. meters" col="benodigde_meters" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} align="right" />
+              <ThBtn label="Backorder m²" col="benodigde_m2" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} align="right" />
               <ThBtn label="Stukken" col="aantal_stukken" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} align="right" />
               <ThBtn label="Orders" col="aantal_orders" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} align="right" />
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {isLoading ? (
-              <tr><td colSpan={7} className="px-3 py-8 text-center text-sm text-slate-400">Laden…</td></tr>
+              <tr><td colSpan={5} className="px-3 py-8 text-center text-sm text-slate-400">Laden…</td></tr>
             ) : gesorteerd.length === 0 ? (
-              <tr><td colSpan={7} className="px-3 py-8 text-center text-sm text-slate-400">
+              <tr><td colSpan={5} className="px-3 py-8 text-center text-sm text-slate-400">
                 {search ? 'Geen resultaten' : 'Geen maatwerk-tekorten'}
               </td></tr>
             ) : gesorteerd.map((r) => <RolTekortRij key={`${r.kwaliteit_code}-${r.kleur_code}`} rij={r} />)}
@@ -257,12 +247,11 @@ function RolTekortSectie() {
           {gesorteerd.length > 0 && (
             <tfoot className="bg-slate-50 border-t border-slate-200">
               <tr>
-                <td colSpan={3} className="px-3 py-2 text-xs text-slate-500 font-medium">Totaal ({gesorteerd.length} groepen)</td>
-                <td className="px-3 py-2 text-right text-xs font-semibold text-slate-700">
-                  {totaalM2.toFixed(1)} m²
+                <td colSpan={2} className="px-3 py-2 text-xs text-slate-500 font-medium">
+                  Totaal ({gesorteerd.length} groepen)
                 </td>
-                <td className="px-3 py-2 text-right text-xs font-semibold text-slate-700">
-                  {metMeters.length > 0 ? `≥ ${totaalMeters.toFixed(1)} m` : '—'}
+                <td className="px-3 py-2 text-right text-xs font-semibold text-rose-700">
+                  {totaalM2.toFixed(2)} m²
                 </td>
                 <td colSpan={2} />
               </tr>
@@ -290,23 +279,11 @@ function RolTekortRij({ rij: r }: { rij: RolTekortArtikel }) {
           <span className="text-xs text-slate-400 italic">geen artikel</span>
         )}
         {r.omschrijving && (
-          <div className="text-xs text-slate-500 mt-0.5 max-w-[200px] truncate">{r.omschrijving}</div>
+          <div className="text-xs text-slate-500 mt-0.5 max-w-[260px] truncate">{r.omschrijving}</div>
         )}
       </td>
-      <td className="px-3 py-2.5 text-right font-mono text-xs text-slate-500">
-        {r.standaard_breedte_cm ? `${r.standaard_breedte_cm} cm` : '—'}
-      </td>
       <td className="px-3 py-2.5 text-right">
-        <span className="text-xs text-slate-600">{Number(r.benodigde_m2).toFixed(1)}</span>
-      </td>
-      <td className="px-3 py-2.5 text-right">
-        {r.benodigde_meters !== null ? (
-          <span className="font-semibold text-rose-600">≥ {r.benodigde_meters} m</span>
-        ) : (
-          <span className="text-xs text-slate-400" title="Rolbreedte onbekend — vul standaard_breedte_cm in op kwaliteit">
-            {Number(r.benodigde_m2).toFixed(1)} m²
-          </span>
-        )}
+        <span className="font-semibold text-rose-600">{Number(r.benodigde_m2).toFixed(2)} m²</span>
       </td>
       <td className="px-3 py-2.5 text-right text-xs text-slate-500">{r.aantal_stukken}</td>
       <td className="px-3 py-2.5 text-right text-xs text-slate-500">{r.aantal_orders}</td>
@@ -340,8 +317,8 @@ export function BackorderTab() {
           <div className="text-xs text-rose-500 mt-0.5">stuks backorder (vast)</div>
         </div>
         <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5 text-center min-w-[130px]">
-          <div className="text-2xl font-bold text-amber-700">{totaalRolM2.toFixed(0)} m²</div>
-          <div className="text-xs text-amber-500 mt-0.5">rol-materiaal tekort</div>
+          <div className="text-2xl font-bold text-amber-700">{totaalRolM2.toFixed(1)} m²</div>
+          <div className="text-xs text-amber-500 mt-0.5">rol-tekort (m²)</div>
         </div>
         <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-center min-w-[120px]">
           <div className="text-2xl font-bold text-slate-700">{vastData.length + rolData.length}</div>
