@@ -22,6 +22,7 @@ import type { OrderRegel } from '@/lib/supabase/queries/orders'
  * i.p.v. een stil vals IO-tekort.
  */
 export interface RegelProductVelden {
+  voorraad?: number | null
   vrije_voorraad?: number | null
   besteld_inkoop?: number | null
   is_pseudo?: boolean | null
@@ -39,6 +40,7 @@ export function metProductVelden(
 ): OrderRegelFormData {
   return {
     ...regel,
+    voorraad: velden.voorraad ?? undefined,
     vrije_voorraad: velden.vrije_voorraad ?? undefined,
     besteld_inkoop: velden.besteld_inkoop ?? undefined,
     is_pseudo: velden.is_pseudo ?? undefined,
@@ -123,6 +125,7 @@ export function hydrateerOrderRegels(
     // Het regel-input-contract: producten-display-velden uit de join. Vóór deze
     // hydratie ontbraken vrije_voorraad/besteld_inkoop → vals IO-tekort.
     return metProductVelden(basis, {
+      voorraad: r.voorraad,
       vrije_voorraad: r.vrije_voorraad,
       besteld_inkoop: r.besteld_inkoop,
       is_pseudo: r.is_pseudo,

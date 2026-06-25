@@ -46,6 +46,7 @@ export interface OrderRegelFormData {
   bedrag?: number
   gewicht_kg?: number
   // Display-only fields (not sent to RPC)
+  voorraad?: number
   vrije_voorraad?: number
   besteld_inkoop?: number
   klant_eigen_naam?: string
