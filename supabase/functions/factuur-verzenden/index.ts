@@ -123,6 +123,8 @@ interface BedrijfConfig {
 
 interface DebiteurFactuurRow {
   email_factuur: string | null
+  email_pakbon: string | null   // mig 496: optioneel pakbon-specifiek adres
+  email_verzend: string | null  // mig 369: klant-niveau verzend-/leveringsadres (pakbon-fallback)
   naam: string | null
   vertegenw_code: string | null
   gln_bedrijf: string | null
@@ -264,7 +266,7 @@ serve(async () => {
         supabase
           .from('debiteuren')
           .select(
-            'email_factuur, naam, vertegenw_code, gln_bedrijf, btw_nummer, betaler, ' +
+            'email_factuur, email_pakbon, email_verzend, naam, vertegenw_code, gln_bedrijf, btw_nummer, betaler, ' +
               'fact_naam, fact_adres, fact_postcode, fact_plaats, adres, postcode, plaats, land',
           )
           .eq('debiteur_nr', item.debiteur_nr)
@@ -426,8 +428,22 @@ serve(async () => {
           item.debiteur_nr,
           orderIdsVoorLog,
         )
+
+        // Mig 496: route de pakbon naar het pakbon-specifieke adres, met terugval
+        // email_pakbon -> email_verzend -> email_factuur. Valt die terug op het
+        // factuuradres (geen eigen pakbon-/verzendadres ingesteld — de meeste
+        // klanten), dan blijft de pakbon gewoon als bijlage op de factuurmail
+        // (géén gedragswijziging). Is wél een afwijkend adres gezet, dan gaat de
+        // pakbon uit de factuurmail en in een aparte mail naar dat adres (verderop).
+        const factuurTo = debiteur.email_factuur?.trim() ?? ''
+        const pakbonTo =
+          [debiteur.email_pakbon, debiteur.email_verzend, debiteur.email_factuur]
+            .map((v) => v?.trim())
+            .find((v) => v) ?? ''
+        const pakbonApart = pakbonBijlagen.length > 0 && pakbonTo !== factuurTo
+
         const pakbonZin =
-          pakbonBijlagen.length > 0
+          pakbonBijlagen.length > 0 && !pakbonApart
             ? `<p>De ${pakbonBijlagen.length > 1 ? 'pakbonnen vindt u' : 'pakbon vindt u'} eveneens als bijlage.</p>`
             : ''
 
@@ -442,7 +458,7 @@ ${pakbonZin}
         const attachments = [
           { filename: `${factuur.factuur_nr}.pdf`, content: pdfBytes },
           { filename: 'Algemene voorwaarden KARPI BV.pdf', content: avBytes },
-          ...pakbonBijlagen.map((p) => ({ filename: p.filename, content: p.content })),
+          ...(pakbonApart ? [] : pakbonBijlagen.map((p) => ({ filename: p.filename, content: p.content }))),
         ]
 
         // Mig 366: bijlage-verwijzingen voor de e-mailtijdlijn — bestanden staan
@@ -451,9 +467,11 @@ ${pakbonZin}
         const bijlagenMeta = [
           { filename: `${factuur.factuur_nr}.pdf`, bucket: 'facturen', path: pdfPath },
           { filename: 'Algemene voorwaarden KARPI BV.pdf', bucket: 'documenten', path: AV_PATH },
-          ...pakbonBijlagen
-            .filter((p) => p.bucket && p.path)
-            .map((p) => ({ filename: p.filename, bucket: p.bucket as string, path: p.path as string })),
+          ...(pakbonApart
+            ? []
+            : pakbonBijlagen
+                .filter((p) => p.bucket && p.path)
+                .map((p) => ({ filename: p.filename, bucket: p.bucket as string, path: p.path as string }))),
         ]
 
         // Stuur naar debiteur zelf
@@ -532,6 +550,65 @@ ${pakbonZin}
               ok: true,
             },
           })
+        }
+
+        // Mig 496: aparte pakbon-mail naar het pakbon-/verzendadres als dat
+        // afwijkt van het factuuradres. Volledig BEST-EFFORT: de factuur is al
+        // verstuurd, dus een fout hier mag het queue-item niet laten retryen
+        // (zou de factuur dubbel mailen) — eigen try/catch die alleen logt.
+        if (pakbonApart && pakbonTo) {
+          try {
+            const pakbonMeervoud = pakbonBijlagen.length > 1
+            const pakbonOnderwerp = `Pakbon${pakbonMeervoud ? 'nen' : ''} bij factuur ${factuur.factuur_nr}`
+            const pakbonHtml = `
+<p>Geachte heer/mevrouw,</p>
+<p>Hierbij ontvangt u de pakbon${pakbonMeervoud ? 'nen' : ''} behorend bij factuur <strong>${factuur.factuur_nr}</strong> als bijlage.</p>
+<p>Met vriendelijke groet,<br/>KARPI BV</p>
+            `.trim()
+            const pakbonAttachments = pakbonBijlagen.map((p) => ({ filename: p.filename, content: p.content }))
+            const pakbonBijlagenMeta = pakbonBijlagen
+              .filter((p) => p.bucket && p.path)
+              .map((p) => ({ filename: p.filename, bucket: p.bucket as string, path: p.path as string }))
+
+            await sendFactuurEmail({
+              tenantId: MS_GRAPH_TENANT_ID,
+              clientId: MS_GRAPH_CLIENT_ID,
+              clientSecret: MS_GRAPH_CLIENT_SECRET,
+              from: FACTUUR_FROM,
+              to: pakbonTo,
+              replyTo: FACTUUR_REPLY_TO,
+              subject: pakbonOnderwerp,
+              html: pakbonHtml,
+              attachments: pakbonAttachments,
+            })
+
+            await logVerstuurdeEmails(supabase, {
+              orderIds: orderIdsVoorLog,
+              factuurId,
+              onderwerp: pakbonOnderwerp,
+              verzondenAan: pakbonTo,
+              html: pakbonHtml,
+              bijlagen: pakbonBijlagenMeta,
+            })
+
+            await logExternePayload(supabase, {
+              kanaal: 'pakbon',
+              richting: 'out',
+              bron: 'graph',
+              externeId: factuur.factuur_nr,
+              orderId: orderIdsVoorLog[0] ?? null,
+              status: 'verwerkt',
+              raw: JSON.stringify({ to: pakbonTo, subject: pakbonOnderwerp, html: pakbonHtml }),
+              json: {
+                request: { to: pakbonTo, subject: pakbonOnderwerp, html: pakbonHtml, bijlagen: pakbonBijlagenMeta },
+                ok: true,
+              },
+            })
+          } catch (pakbonMailErr) {
+            console.warn(
+              `[factuur-verzenden] aparte pakbon-mail mislukt (factuur ${factuur.factuur_nr}): ${pakbonMailErr}`,
+            )
+          }
         }
       }
 
