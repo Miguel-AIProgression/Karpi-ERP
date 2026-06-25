@@ -162,7 +162,10 @@ function bouwPart(c: VerhoekColliInput, volgnr: number, opties: VerhoekOpties): 
     // labelbarcode uit de gedeelde seam (AI(00)+SSCC). Eén bron met het label
     // en de andere carriers; geen per-carrier prefix-keuze meer.
     tag('ScanCode', labelBarcode(c.sscc) ?? ''),
-    tag('RolNummer', c.colli_nr),
+    // RolNummer: Verhoek (mail 24-06) wil de barcode ontvangen zolang er geen
+    // echte rolnummers zijn — dus dezelfde labelbarcode als ScanCode (AI(00)+SSCC),
+    // niet het colli-volgnummer. Print 1-op-1 met de fysieke barcode op de vrachtbrief.
+    tag('RolNummer', labelBarcode(c.sscc) ?? ''),
     // Decagram (eis Verhoek): 125 kg → 12500.
     tag('Gewicht', c.gewicht_kg ? naarDecagram(c.gewicht_kg) : ''),
     tag('Lengte', c.lengte_cm ?? ''),

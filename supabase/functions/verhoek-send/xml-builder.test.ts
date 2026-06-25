@@ -91,6 +91,8 @@ Deno.test('bouwVerhoekXml: structuur, escaping, kernvelden', () => {
   assertStringIncludes(xml, '<OrderEntryPartID>001</OrderEntryPartID>');
   assertStringIncludes(xml, '<OrderEntryPartID>002</OrderEntryPartID>');
   assertStringIncludes(xml, '<ScanCode>00087159540000000014</ScanCode>');
+  // RolNummer = de barcode (Verhoek-mail 24-06), dus gelijk aan ScanCode, niet het volgnummer.
+  assertStringIncludes(xml, '<RolNummer>00087159540000000014</RolNummer>');
   assertStringIncludes(xml, '<Gewicht>1234</Gewicht>');
   assertStringIncludes(xml, '<Lengte>160</Lengte>');
   assertStringIncludes(xml, '<Breedte>90</Breedte>');
