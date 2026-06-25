@@ -506,12 +506,14 @@ export interface BackorderArtikel {
   omschrijving: string | null
   lengte_cm: number | null
   breedte_cm: number | null
+  maatwerk_vorm_code: string | null
   voorraad: number
   vrije_voorraad: number
   besteld_inkoop: number
   totaal_backorder: number
   totaal_te_leveren: number
   aantal_orders: number
+  leverancier_naam: string | null
 }
 
 export async function fetchBackorderPerArtikl(): Promise<BackorderArtikel[]> {

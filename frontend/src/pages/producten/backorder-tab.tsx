@@ -51,8 +51,8 @@ type VastSortCol = 'totaal_backorder' | 'totaal_te_leveren' | 'artikelnr' | 'kwa
 
 function VasteMatensectie() {
   const [search, setSearch] = useState('')
-  const [sortCol, setSortCol] = useState<VastSortCol>('totaal_backorder')
-  const [sortDir, setSortDir] = useState<SortDir>('desc')
+  const [sortCol, setSortCol] = useState<VastSortCol>('kwaliteit_code')
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
 
   const { data = [], isLoading } = useQuery({
     queryKey: ['backorder-per-artikel'],
@@ -77,6 +77,19 @@ function VasteMatensectie() {
 
   const gesorteerd = [...gefilterd].sort((a, b) => {
     const mul = sortDir === 'asc' ? 1 : -1
+    if (sortCol === 'kwaliteit_code') {
+      // Compound sort: naam → rechthoekig eerst (NULL = rechthoek) → afmeting klein→groot
+      const naam = (a.kwaliteit_code ?? '').localeCompare(b.kwaliteit_code ?? '')
+      if (naam !== 0) return mul * naam
+      // rechthoekig (NULL) vóór andere vormen
+      const vormA = a.maatwerk_vorm_code == null ? 0 : 1
+      const vormB = b.maatwerk_vorm_code == null ? 0 : 1
+      if (vormA !== vormB) return mul * (vormA - vormB)
+      // afmeting klein → groot
+      const oppA = (a.lengte_cm ?? 0) * (a.breedte_cm ?? 0)
+      const oppB = (b.lengte_cm ?? 0) * (b.breedte_cm ?? 0)
+      return mul * (oppA - oppB)
+    }
     const va = a[sortCol] ?? 0
     const vb = b[sortCol] ?? 0
     if (typeof va === 'string' && typeof vb === 'string') return mul * va.localeCompare(vb)
@@ -108,6 +121,7 @@ function VasteMatensectie() {
               <ThBtn label="Artikel" col="artikelnr" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
               <ThBtn label="Kwaliteit" col="kwaliteit_code" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
               <th className="px-3 py-2.5 text-xs font-medium text-slate-500 text-left">Afmeting</th>
+              <th className="px-3 py-2.5 text-xs font-medium text-slate-500 text-left">Leverancier</th>
               <ThBtn label="Backorder" col="totaal_backorder" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} align="right" />
               <ThBtn label="Te leveren" col="totaal_te_leveren" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} align="right" />
               <ThBtn label="Orders" col="aantal_orders" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} align="right" />
@@ -117,9 +131,9 @@ function VasteMatensectie() {
           </thead>
           <tbody className="divide-y divide-slate-100">
             {isLoading ? (
-              <tr><td colSpan={8} className="px-3 py-8 text-center text-sm text-slate-400">Laden…</td></tr>
+              <tr><td colSpan={9} className="px-3 py-8 text-center text-sm text-slate-400">Laden…</td></tr>
             ) : gesorteerd.length === 0 ? (
-              <tr><td colSpan={8} className="px-3 py-8 text-center text-sm text-slate-400">
+              <tr><td colSpan={9} className="px-3 py-8 text-center text-sm text-slate-400">
                 {search ? 'Geen resultaten' : 'Geen openstaande backorders'}
               </td></tr>
             ) : gesorteerd.map((r) => <VastRij key={r.artikelnr} rij={r} />)}
@@ -146,6 +160,7 @@ function VastRij({ rij: r }: { rij: BackorderArtikel }) {
         {r.kleur_code && <span className="ml-1.5 text-xs text-slate-400">{r.kleur_code}</span>}
       </td>
       <td className="px-3 py-2.5 font-mono text-xs text-slate-600">{formatAfmeting(r.lengte_cm, r.breedte_cm)}</td>
+      <td className="px-3 py-2.5 text-xs text-slate-500">{r.leverancier_naam ?? ''}</td>
       <td className="px-3 py-2.5 text-right"><span className="font-semibold text-rose-600">{r.totaal_backorder}</span></td>
       <td className="px-3 py-2.5 text-right text-slate-600 text-xs">{r.totaal_te_leveren}</td>
       <td className="px-3 py-2.5 text-right text-slate-500 text-xs">{r.aantal_orders}</td>
