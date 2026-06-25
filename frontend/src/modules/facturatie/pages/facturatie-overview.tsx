@@ -76,7 +76,7 @@ export function FacturatieOverviewPage() {
         (typeFilter === 'debet' && !isCreditnota)
       return matchStatus && matchKlant && matchDatum && matchZoek && matchBtwControle && matchType
     })
-  }, [facturen, zoekterm, statusSelectie, klantSelectie, datumVan, datumTot, alleenBtwControleNodig])
+  }, [facturen, zoekterm, statusSelectie, klantSelectie, datumVan, datumTot, alleenBtwControleNodig, typeFilter])
 
   function toggle(id: number) {
     setSelectie((huidig) => {
