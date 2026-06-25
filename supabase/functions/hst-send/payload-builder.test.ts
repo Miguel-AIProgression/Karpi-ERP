@@ -161,7 +161,7 @@ Deno.test('bouwTransportOrderPayload — fallback naar aggregate-regel zonder co
   assertEquals(result.HasBarcode, false);
   assertEquals(result.TransportOrderLines.length, 1);
   assertEquals(result.TransportOrderLines[0].Quantity, 2);
-  assertEquals(result.TransportOrderLines[0].Weight, 50);
+  assertEquals(result.TransportOrderLines[0].Weight, 30); // 50 kg geclampt op HST-max 30
   assertEquals(result.TransportOrderLines[0].BarCode, { BarCode: '' });
   // Aggregate-fallback: Colli, default-lengte (geen colli-maat), 30x30, geen bel.
   assertEquals(result.TransportOrderLines[0].PackageUnitID, 'col');
@@ -250,6 +250,27 @@ Deno.test('bouwTransportOrderPayload kapt GoodsDescription af op 30 tekens', () 
   const desc = payload.TransportOrderLines[0].GoodsDescription;
   assert(desc.length <= 30, `GoodsDescription moet ≤30 zijn, is ${desc.length}`);
   assertEquals(desc, 'LORANDA Kleur 21 CA: 200x290 c');
+});
+
+// HST's Weight-veld weigert >30 kg (live-fout ZEND-2026-0261: MARI 200×290 =
+// 34,8 kg → 'Regel nummer 1 gewicht (min: 1 | max: 30)'). De builder clampt op 30.
+Deno.test('bouwTransportOrderPayload clampt colli-gewicht op HST-max 30 kg', () => {
+  const payload = bouwTransportOrderPayload({
+    zending: {
+      zending_nr: 'ZEND-2026-0261', afl_naam: 'ROOM108', afl_adres: 'Heusdensebaan 50',
+      afl_postcode: '5061PS', afl_plaats: 'Oisterwijk', afl_land: 'NL',
+      afl_telefoon: '085-9020840', afl_email: null, totaal_gewicht_kg: 34.8, aantal_colli: 1,
+      opmerkingen: null, verzenddatum: '2026-06-24',
+    },
+    order: { order_nr: 'ORD-2026-0754' },
+    bedrijf: KARPI_BEDRIJF,
+    hstCustomerId: '038267',
+    colli: [{
+      colli_nr: 1, sscc: '087159540000000632', gewicht_kg: 34.8, lengte_cm: 290, breedte_cm: 200,
+      omschrijving_snapshot: 'MARI42XX200290 290x200 cm',
+    }],
+  });
+  assertEquals(payload.TransportOrderLines[0].Weight, 30);
 });
 
 // HST's adres-Name-veld weigert >30 tekens (live-fouten ZEND-2026-0091/0094/

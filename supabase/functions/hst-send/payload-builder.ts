@@ -66,6 +66,17 @@ const DEFAULT_WEIGHT_KG = HST_DEFAULT_AFMETINGEN.gewichtKg;
 // StreetNumberAddition op 5).
 const HST_LENGTH_MAX_CM = 200;
 
+// HST's TransportOrderLine.Weight accepteert min 1 / max 30 kg en weigert de hele
+// order anders (live-fout ZEND-2026-0261: 'Regel nummer 1 gewicht (min: 1 | max:
+// 30)'). Zware tapijten (bv. MARI 200×290 = 34,8 kg) overschrijden dat → clampen
+// op het carrier-maximum (zoals Length op 200), per afspraak met de gebruiker.
+const HST_WEIGHT_MIN_KG = 1;
+const HST_WEIGHT_MAX_KG = 30;
+
+function clampGewicht(kg: number): number {
+  return Math.min(HST_WEIGHT_MAX_KG, Math.max(HST_WEIGHT_MIN_KG, kg));
+}
+
 // Korte zijde van het tapijt = de lengte van de opgerolde colli: de kleinste
 // van lengte/breedte (cm). Valt terug op de default als geen maat bekend is.
 // Geclampt op HST's veldmaximum.
@@ -133,7 +144,7 @@ function bouwLineUitColli(c: ZendingColliInput, order: OrderInput): HstTransport
     Length: korteZijdeCm(c.lengte_cm, c.breedte_cm),
     Width: ROL_BREEDTE_CM,
     Height: ROL_HOOGTE_CM,
-    Weight: c.gewicht_kg ?? DEFAULT_WEIGHT_KG,
+    Weight: clampGewicht(c.gewicht_kg ?? DEFAULT_WEIGHT_KG),
     // De labelbarcode (AI(00)+SSCC) uit de gedeelde seam — exact wat op het
     // label staat en bij elke vervoerder wordt aangemeld (single source).
     BarCode: { BarCode: labelBarcode(c.sscc) ?? '' },
@@ -160,7 +171,7 @@ function bouwAggregateLine(zending: ZendingInput, order: OrderInput): HstTranspo
     Length: DEFAULT_LENGTH_CM,
     Width: ROL_BREEDTE_CM,
     Height: ROL_HOOGTE_CM,
-    Weight: zending.totaal_gewicht_kg ?? DEFAULT_WEIGHT_KG,
+    Weight: clampGewicht(zending.totaal_gewicht_kg ?? DEFAULT_WEIGHT_KG),
     BarCode: { BarCode: '' },
     PackageUnitID: DEFAULT_PACKAGE_UNIT_ID,
   };
