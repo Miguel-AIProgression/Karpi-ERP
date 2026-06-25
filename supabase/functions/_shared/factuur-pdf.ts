@@ -102,9 +102,11 @@ export interface FactuurPDFRegel {
   aantal: number
   eenheid: string
   omschrijving: string
-  // Multi-line: "BANGKOK KLEUR 21 ca: 230x260 cm\nBand: PE21\nUw model:DESTINO"
+  // Multi-line: "BANGKOK KLEUR 21 ca: 230x260 cm\nBand: PE21\nKarpi: BAN21"
   // Elke regel wordt apart onder de hoofdregel afgedrukt.
   omschrijving_2?: string
+  /** Al-geresolvde klant-eigennaam — wordt als "Uw model: …" (vertaald) gerenderd. */
+  klant_model?: string | null
   prijs: number
   bedrag: number
   // Per order in de groep: alleen op de eerste regel van een order-groep getoond.
@@ -159,6 +161,7 @@ interface FactuurTeksten {
   totaalM2: string
   totaalGewicht: string
   betalingscond: string
+  model: string
 }
 
 const FACTUUR_TEKSTEN: Record<Taal, FactuurTeksten> = {
@@ -176,6 +179,7 @@ const FACTUUR_TEKSTEN: Record<Taal, FactuurTeksten> = {
     btwVerlegd: 'BTW verlegd', btwNrAfnemer: 'btw-nr afnemer',
     totaalM2: 'Totaal m2', totaalGewicht: 'Totaal gewicht (kg)',
     betalingscond: 'Betalingscond.',
+    model: 'Uw model',
   },
   de: {
     titel: 'RECHNUNG',
@@ -191,6 +195,7 @@ const FACTUUR_TEKSTEN: Record<Taal, FactuurTeksten> = {
     btwVerlegd: 'Steuerschuldnerschaft des Leistungsempfängers', btwNrAfnemer: 'USt-IdNr. Empfänger',
     totaalM2: 'Gesamt m2', totaalGewicht: 'Gesamtgewicht (kg)',
     betalingscond: 'Zahlungsbedingungen',
+    model: 'Ihr Modell',
   },
   fr: {
     titel: 'FACTURE',
@@ -206,6 +211,7 @@ const FACTUUR_TEKSTEN: Record<Taal, FactuurTeksten> = {
     btwVerlegd: 'Autoliquidation de la TVA', btwNrAfnemer: 'n° TVA client',
     totaalM2: 'Total m2', totaalGewicht: 'Poids total (kg)',
     betalingscond: 'Conditions de paiement',
+    model: 'Votre modèle',
   },
   en: {
     titel: 'INVOICE',
@@ -221,6 +227,7 @@ const FACTUUR_TEKSTEN: Record<Taal, FactuurTeksten> = {
     btwVerlegd: 'VAT reverse charged', btwNrAfnemer: 'VAT no. customer',
     totaalM2: 'Total m2', totaalGewicht: 'Total weight (kg)',
     betalingscond: 'Payment terms',
+    model: 'Your model',
   },
 }
 
@@ -918,10 +925,16 @@ export async function genereerFactuurPDF(input: FactuurPDFInput): Promise<Uint8A
         cursorY -= LINE_H
       }
 
-      // Vervolgregels uit omschrijving_2 (BANGKOK KLEUR ..., Band: ..., Uw model:..., MEERWERKKOSTEN ...)
+      // Vervolgregels uit omschrijving_2 (BANGKOK KLEUR ..., Band: ..., MEERWERKKOSTEN ...)
       for (const extra of extraRegels) {
         ensureRoom(LINE_H / MM)
         drawText(page, truncateNaarBreedte(extra, EXTRA_MAX_W, regular, SIZE), COL_OMSCHR, cursorY, regular, SIZE)
+        cursorY -= LINE_H
+      }
+      // Klant-eigennaam als "Uw model: …" — vertaald naar de klanttaal.
+      if (r.klant_model) {
+        ensureRoom(LINE_H / MM)
+        drawText(page, truncateNaarBreedte(`${t.model}: ${r.klant_model}`, EXTRA_MAX_W, regular, SIZE), COL_OMSCHR, cursorY, regular, SIZE)
         cursorY -= LINE_H
       }
     }

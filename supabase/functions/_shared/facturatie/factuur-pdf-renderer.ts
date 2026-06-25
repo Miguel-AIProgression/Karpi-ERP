@@ -55,7 +55,6 @@ export function naarFactuurPdfInput(doc: FactuurDocument): FactuurPdfDocumentDee
     const titel = r.presentatie.klant_titel
     const afwerkingRegel = titel && r.presentatie.afwerking ? `Afwerking: ${r.presentatie.afwerking}` : null
     const karpiCodeRegel = titel && r.presentatie.karpi_code ? `Karpi: ${r.presentatie.karpi_code}` : null
-    const modelRegel = titel && r.presentatie.klant_model ? `Uw model: ${r.presentatie.klant_model}` : null
     return {
       order_nr: r.order_nr,
       uw_referentie: r.uw_referentie,
@@ -64,8 +63,10 @@ export function naarFactuurPdfInput(doc: FactuurDocument): FactuurPdfDocumentDee
       eenheid: r.eenheid,
       omschrijving: titel ?? r.presentatie.artikel_tekst,
       omschrijving_2: titel
-        ? ([karpiCodeRegel, modelRegel, afwerkingRegel, klantRef].filter(Boolean).join('\n') || undefined)
+        ? ([karpiCodeRegel, afwerkingRegel, klantRef].filter(Boolean).join('\n') || undefined)
         : ([r.omschrijving_2, klantRef].filter(Boolean).join('\n') || undefined),
+      // Klant-eigennaam als apart veld — factuur-pdf.ts vertaalt het label naar de klanttaal.
+      klant_model: r.presentatie.klant_model ?? null,
       prijs: r.prijs,
       bedrag: r.bedrag,
     }

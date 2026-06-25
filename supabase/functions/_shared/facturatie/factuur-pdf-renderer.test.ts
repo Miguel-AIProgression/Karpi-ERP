@@ -114,7 +114,7 @@ Deno.test('naarFactuurPdfInput: tapijt-regel mét afwerking → titel + Karpi-co
   assertEquals(regels[0].omschrijving_2, 'Karpi: BAN21\nAfwerking: Breedband - band KK21')
 })
 
-Deno.test('naarFactuurPdfInput: klant-eigennaam als "Uw model:"-sub-regel, onze naam blijft hoofd', () => {
+Deno.test('naarFactuurPdfInput: klant-eigennaam als apart klant_model-veld, onze naam blijft hoofd', () => {
   const lk = lookups()
   lk.producten.set('ART1', {
     karpi_code: 'BAN21', omschrijving: 'BANGKOK KLEUR 21', ean_code: null, gewicht_kg: null,
@@ -124,7 +124,8 @@ Deno.test('naarFactuurPdfInput: klant-eigennaam als "Uw model:"-sub-regel, onze 
   lk.klantEigenNamen.set('GAL|21', 'BREDA')
   const doc = bouwFactuurDocument(FACTUUR, REGELS, lk, { vertegenwoordiger: 'Jan', isTestMessage: false })
   const { regels } = naarFactuurPdfInput(doc)
-  // Onze naam blijft de hoofdregel; klant-eigennaam als sub-regel "Uw model: …"
+  // Onze naam blijft de hoofdregel; klant-eigennaam als apart veld (factuur-pdf.ts vertaalt het label).
   assertEquals(regels[0].omschrijving, 'GALAXY - 60x90 cm')
-  assertEquals(regels[0].omschrijving_2, 'Karpi: BAN21\nUw model: BREDA')
+  assertEquals(regels[0].omschrijving_2, 'Karpi: BAN21')
+  assertEquals(regels[0].klant_model, 'BREDA')
 })
