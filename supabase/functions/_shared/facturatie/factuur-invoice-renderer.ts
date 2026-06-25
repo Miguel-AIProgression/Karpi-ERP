@@ -173,6 +173,13 @@ export function naarInvoiceInput(doc: FactuurDocument, ctx: FactuurInvoiceContex
   // gln_gefactureerd → orders.factuuradres_gln is dáár de UNB-routering, niet de
   // invoicee. We factureren aan de debiteur, dus gln_bedrijf is de juiste,
   // per-debiteur stabiele invoicee (8717056697390 i.p.v. interchange 4306517008994).
+  //
+  // Bewust GLOBAAL, niet Hornbach-gescoped: een uitgaande factuur gaat per definitie
+  // naar ónze debiteur, dus gln_bedrijf is altijd de juiste NAD+IV; factuuradres_gln
+  // is een inkomend-EDI-artefact (interchange/alias) dat puur de routering voedt.
+  // factuuradres_gln dient alleen als fallback zolang gln_bedrijf (nog) leeg is.
+  // NIET terugdraaien naar factuuradres_gln-eerst — dat is exact de Hornbach-bug
+  // (24 facturen met de interchange-GLN in NAD+IV, afgekeurd 2026-06-24).
   const invoiceeGln = normGln(firstNonEmpty(ctx.debiteur.gln_bedrijf, firstOrder.factuuradres_gln))
   // UNB-routering: Transus bepaalt de werkelijke recipient via zijn partnerconfig
   // (BDSK's interchange-GLN staat niet eens in onze payload) — factuuradres_gln

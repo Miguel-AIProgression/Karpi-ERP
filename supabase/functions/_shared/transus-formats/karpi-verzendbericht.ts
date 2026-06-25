@@ -232,6 +232,14 @@ export function buildKarpiVerzendbericht(input: VerzendberichtInput): string {
  * Vóór 2026-06-24 enkel zendingNr → bundel-orders deelden hetzelfde nummer,
  * Hornbach weigerde de 2e ("delivery note number already used", 2026-06-22).
  * Puur orderNr zou de spiegel-bug geven (deelzending → 2 berichten, 1 ordernr).
+ *
+ * ponytail: het 8-cijfer-veld dwingt truncatie af — last4+last4 dropt het jaar,
+ * dus het nummer recurt op meerjaren-horizon (zelfde zending/order-last4-paar) en
+ * Hornbach's historische "already used"-check kan het dan opnieuw afkeuren. Upgrade
+ * bij recurrence: een monotone bron (edi_berichten.id) i.p.v. truncatie. Niet nu
+ * gedaan omdat de insert in bouw-verzendbericht-edi meteen status='Wachtrij' zet →
+ * transus-send pakt de rij direct op; id-vóór-build vereist eerst die pickup-race
+ * weg (tussenstatus of aparte sequence).
  */
 function leverbonNummer(zendingNr: string, orderNr: string): string {
   const z = zendingNr.replace(/\D/g, '').slice(-4).padStart(4, '0');
