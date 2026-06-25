@@ -210,8 +210,8 @@ function MaatwerkLineRow({
                 {line.vrije_voorraad ?? 0}
               </div>
               {reedsDgedekt > 0 && !heeftEigenVoorraad && (
-                <div className="text-xs text-slate-400 mt-0.5 leading-tight" title={`${reedsDgedekt} stuks zijn al gereserveerd voor deze order`}>
-                  +{reedsDgedekt} voor<br />dit order
+                <div className="text-xs text-amber-600 mt-0.5 leading-tight font-medium" title={`${reedsDgedekt} stuks zijn al gereserveerd voor dit order`}>
+                  {reedsDgedekt}× gereserveerd
                 </div>
               )}
               {/* Issue #36: expliciete "Leverbaar via …"-summary wanneer eigen
@@ -278,17 +278,14 @@ function MaatwerkLineRow({
               {(() => {
                 const direct = Math.min(line.vrije_voorraad ?? 0, line.te_leveren)
                 const opInkoop = tekortAantal
+                const echTekort = Math.max(0, opInkoop - reedsDgedekt)
                 const parts: string[] = []
                 if (direct > 0) parts.push(`${direct}× direct`)
                 if (uitwisselbaarTotaal > 0) parts.push(`${uitwisselbaarTotaal}× omstickeren`)
-                if (opInkoop > 0) parts.push(`${opInkoop}× wacht op inkoop`)
+                if (echTekort > 0) parts.push(`${echTekort}× wacht op inkoop`)
+                if (reedsDgedekt > 0 && opInkoop > 0) parts.push(`${reedsDgedekt}× gereserveerd voor dit order`)
                 return parts.join(', ')
               })()}
-              {reedsDgedekt > 0 && (
-                <span className="block text-slate-400 mt-0.5">
-                  (incl. {reedsDgedekt}× al gereserveerd voor dit order)
-                </span>
-              )}
             </div>
           )}
         </td>
