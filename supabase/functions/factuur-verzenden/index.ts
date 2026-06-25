@@ -345,6 +345,11 @@ serve(async () => {
         pdfRegels = await metIntracomStatRegels(supabase, pdfDoc, pdfRegels, pdfTaal)
       }
 
+      // Logo (zelfde bron als de pakbon + on-demand factuur-preview) zodat de
+      // verzonden factuur-PDF visueel matcht met de pakbon-PDF. Best-effort:
+      // ontbreekt het logo, dan rendert de factuur het tekstmerk (oud gedrag).
+      const { logo: factuurLogo } = await fetchBedrijfMetLogo(supabase)
+
       const pdfBytes = await genereerFactuurPDF({
         bedrijf: {
           bedrijfsnaam: bedrijf.bedrijfsnaam,
@@ -367,6 +372,7 @@ serve(async () => {
         factuur: { ...pdfDeel.factuur, betalingscondities_tekst: betaalconditie },
         regels: pdfRegels,
         taal: pdfTaal,
+        logo: factuurLogo ? { ...factuurLogo, hoogte_mm: 18 } : undefined,
       })
 
       // 5. Upload PDF naar storage
