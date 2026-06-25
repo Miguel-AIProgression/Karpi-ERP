@@ -54,7 +54,8 @@ export function OrdersOverviewPage() {
       setSortDir(sortDir === 'asc' ? 'desc' : 'asc')
     } else {
       setSortBy(field)
-      setSortDir(field === 'klant_naam' ? 'asc' : 'desc')
+      // afleverdatum (Verzendweek): standaard oplopend = soonest delivery first
+      setSortDir(field === 'klant_naam' || field === 'afleverdatum' ? 'asc' : 'desc')
     }
     setPage(0)
   }

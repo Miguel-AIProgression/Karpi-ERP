@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Search, Link2, LayoutGrid, Layers, List } from 'lucide-react'
+import { Search, Link2, LayoutGrid, Layers, List, AlertCircle } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { cn } from '@/lib/utils/cn'
 import { useAuth } from '@/hooks/use-auth'
 import { useProducten, useDistincteVormen } from '@/hooks/use-producten'
 import { UitwisselbaarTab } from './uitwisselbaar-tab'
+import { BackorderTab } from './backorder-tab'
 import { ProductRow, SortHeader } from './product-row'
 import { KwaliteitenGroupedView } from './kwaliteiten-grouped-view'
 import { fetchKwaliteitenMetGewicht } from '@/lib/supabase/queries/kwaliteiten'
@@ -15,7 +16,7 @@ import type { VormCode } from '@/hooks/use-producten'
 
 export { ProductTypeBadge } from './product-row'
 
-type OverviewTab = 'collecties' | 'uitwisselbaar'
+type OverviewTab = 'collecties' | 'uitwisselbaar' | 'backorders'
 type ViewMode = 'per_kwaliteit' | 'per_product'
 
 const TYPE_OPTIONS: { value: ProductType | 'alle'; label: string }[] = [
@@ -150,9 +151,23 @@ export function ProductenOverviewPage() {
           <Link2 size={15} />
           Uitwisselbaar
         </button>
+        <button
+          onClick={() => setActiveTab('backorders')}
+          className={cn(
+            'flex items-center gap-2 pb-2.5 text-sm font-medium border-b-2 transition-colors -mb-px',
+            activeTab === 'backorders'
+              ? 'border-terracotta-500 text-terracotta-600'
+              : 'border-transparent text-slate-500 hover:text-slate-700',
+          )}
+        >
+          <AlertCircle size={15} />
+          Backorders
+        </button>
       </div>
 
-      {activeTab === 'uitwisselbaar' ? (
+      {activeTab === 'backorders' ? (
+        <BackorderTab />
+      ) : activeTab === 'uitwisselbaar' ? (
         <UitwisselbaarTab />
       ) : (
       <>

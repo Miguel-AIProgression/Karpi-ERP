@@ -223,7 +223,10 @@ export async function fetchOrders(params: {
   let query = supabase
     .from('orders_list')
     .select('*', { count: 'exact' })
-    .order(sortBy, { ascending: sortDir === 'asc' })
+    // afleverdatum (= Verzendweek): NULLs altijd onderaan ongeacht richting;
+    // PostgreSQL-default is NULLS FIRST voor DESC, waardoor orders zonder datum
+    // boven alles zouden staan — niet wat de gebruiker verwacht.
+    .order(sortBy, { ascending: sortDir === 'asc', nullsFirst: sortBy === 'afleverdatum' ? false : undefined })
     // Tiebreaker: id is monotoon stijgend (auto-increment) → bij gelijke
     // sort-waarde (typisch: meerdere orders op dezelfde orderdatum) komt de
     // laatst-aangemaakte order bovenaan. orders heeft geen aangemaakt_op

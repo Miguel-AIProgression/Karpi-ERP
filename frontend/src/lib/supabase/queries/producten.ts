@@ -496,6 +496,32 @@ export async function fetchClaimsVoorProduct(artikelnr: string): Promise<Product
   return (data ?? []) as ProductClaimRij[]
 }
 
+// ── Backorder per artikel (mig 508) ───────────────────────────────────────────
+
+export interface BackorderArtikel {
+  artikelnr: string
+  karpi_code: string | null
+  kwaliteit_code: string | null
+  kleur_code: string | null
+  omschrijving: string | null
+  lengte_cm: number | null
+  breedte_cm: number | null
+  vrije_voorraad: number
+  besteld_inkoop: number
+  totaal_backorder: number
+  totaal_te_leveren: number
+  aantal_orders: number
+}
+
+export async function fetchBackorderPerArtikl(): Promise<BackorderArtikel[]> {
+  const { data, error } = await supabase
+    .from('backorder_per_artikel')
+    .select('*')
+    .order('totaal_backorder', { ascending: false })
+  if (error) throw error
+  return (data ?? []) as BackorderArtikel[]
+}
+
 /** Fetch rollen for a product */
 export async function fetchRollenVoorProduct(artikelnr: string): Promise<RolRow[]> {
   const { data, error } = await supabase
