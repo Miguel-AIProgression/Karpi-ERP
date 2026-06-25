@@ -31,7 +31,8 @@ const CORS_HEADERS = {
 const ORDER_VELDEN =
   'id, order_nr, oud_order_nr, orderdatum, klant_referentie, ' +
   'bes_naam, bes_adres, bes_postcode, bes_plaats, bes_land, besteller_gln, ' +
-  'afl_naam, afl_naam_2, afl_adres, afl_postcode, afl_plaats, afl_land, afleveradres_gln'
+  'afl_naam, afl_naam_2, afl_adres, afl_postcode, afl_plaats, afl_land, ' +
+  'factuuradres_gln, afleveradres_gln'
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: CORS_HEADERS })
