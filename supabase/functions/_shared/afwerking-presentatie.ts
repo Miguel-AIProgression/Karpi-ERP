@@ -1,7 +1,7 @@
 // Gedeelde afwerking-presentatie voor klantdocumenten (orderbevestiging, pakbon,
-// factuur). Eén plek voor de regel "bandkleur alleen tonen bij Breedband" —
-// Smalband en Fur kennen óók een bandkleur in de data, maar die toont de klant
-// nergens (besluit gebruiker 2026-06-18).
+// factuur). Alleen Breedband (+ bandkleur), Volume afwerking en Onafgewerkt (ON)
+// verschijnen op klantdocumenten — alle andere zijn interne productie-codes
+// (besluit gebruiker 2026-06-26).
 
 // Geen esm.sh-import van SupabaseClient (zoals factuur-document.ts): dit bestand
 // wordt cross-root naar de frontend geshimd (ADR-0033) en `tsc -b` (Node/bundler-
@@ -18,14 +18,10 @@ export interface AfwerkingInfo {
 export type AfwerkingTypeMap = Map<string, AfwerkingInfo>
 
 /**
- * Stelt de afwerkingstekst samen: de afwerkingsnaam, en ALLEEN bij Breedband
- * (`type_bewerking === 'breedband'`) de gekozen bandkleur erachter —
- * "Breedband - band KK21". Voor elke andere afwerking (ook Smalband/Fur, die
- * ook een bandkleur kennen) komt er nooit een band in de tekst.
- *
- * Onbekende code → de code zelf als naam (defensief; de afwerking_types-tabel
- * verandert zelden maar mag een nieuw record missen in de cache).
- * Geen code → `null` (caller toont dan niets).
+ * Stelt de afwerkingstekst samen voor klantdocumenten (pakbon, orderbevestiging,
+ * factuur). Toont ALLEEN Breedband (+ bandkleur), Volume afwerking en Onafgewerkt.
+ * Alle andere afwerkingen (Smalband, ZO, Feston, …) geven `null` — de caller
+ * toont dan geen afwerkingregel.
  */
 export function afwerkingPresentatie(
   afwerkingCode: string | null | undefined,
@@ -34,8 +30,13 @@ export function afwerkingPresentatie(
 ): string | null {
   if (!afwerkingCode) return null
   const info = typeMap.get(afwerkingCode)
+  const type = info?.type_bewerking
+
+  // Whitelist: breedband, volume afwerking, en Onafgewerkt (ON heeft type_bewerking=null).
+  if (type !== 'breedband' && type !== 'volume afwerking' && afwerkingCode !== 'ON') return null
+
   const naam = info?.naam ?? afwerkingCode
-  const band = info?.type_bewerking === 'breedband' && bandKleur ? ` - band ${bandKleur}` : ''
+  const band = type === 'breedband' && bandKleur ? ` - band ${bandKleur}` : ''
   return `${naam}${band}`
 }
 

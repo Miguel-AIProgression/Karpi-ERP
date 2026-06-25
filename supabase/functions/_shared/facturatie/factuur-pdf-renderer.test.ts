@@ -73,6 +73,7 @@ Deno.test('naarFactuurPdfInput: zonder product-titel → bestaande artikeltekst 
     eenheid: 'St',
     omschrijving: 'BAN21 BANGKOK KLEUR 21',
     omschrijving_2: 'Band: PE21',
+    klant_model: null,
     prijs: 50,
     bedrag: 100,
   })

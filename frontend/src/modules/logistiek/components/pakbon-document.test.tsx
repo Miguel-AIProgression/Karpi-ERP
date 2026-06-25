@@ -465,7 +465,7 @@ describe('PakbonDocument — karakterisering rijopbouw', () => {
     await waitFor(() => expect(container.textContent).toContain('Afwerking: Breedband - band KK21'))
   })
 
-  it('afwerking: Smalband met bandkleur toont de band NIET', async () => {
+  it('afwerking: Smalband → niet tonen op klantdocumenten (2026-06-26)', () => {
     const zending = maakZending({
       zending_regels: [
         maakRegel({
@@ -484,7 +484,7 @@ describe('PakbonDocument — karakterisering rijopbouw', () => {
     })
 
     const { container } = renderPakbon(zending, 1)
-    await waitFor(() => expect(container.textContent).toContain('Afwerking: Smalband'))
+    expect(container.textContent).not.toContain('Afwerking:')
     expect(container.textContent).not.toContain('Piero Groen 1073')
   })
 
