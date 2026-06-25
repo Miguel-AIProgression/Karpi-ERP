@@ -57,6 +57,9 @@ export const RHENUS_GEEN_PALLET = 'ZAK'
 export function palletTypeOpties(code: string | null | undefined): PalletTypeOptie[] {
   if (code === 'hst_api') {
     return [
+      // Zak = geen pallet → pallet_type NULL → HST PackageUnitID 'col' (Colli).
+      // Teruggebracht na mig 485 (klacht 25-06: "geen verzendzakken meer, alleen pallets").
+      { value: RHENUS_GEEN_PALLET, label: 'Geen pallet (zak)' },
       { value: 'EP', label: 'EP — Europallet' },
       { value: 'SP', label: 'SP — wegwerp pallet' },
       { value: 'MP', label: 'MP — mini pallet' },
