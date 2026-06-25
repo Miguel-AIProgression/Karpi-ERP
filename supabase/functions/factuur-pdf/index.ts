@@ -11,6 +11,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { genereerFactuurPDF } from '../_shared/factuur-pdf.ts'
+import { fetchBedrijfLogo } from '../_shared/bedrijf-logo.ts'
 import { fetchFactuurDocument } from '../_shared/facturatie/factuur-document.ts'
 import { naarFactuurPdfInput } from '../_shared/facturatie/factuur-pdf-renderer.ts'
 import { bepaalTaal } from '../_shared/klant-taal.ts'
@@ -229,20 +230,12 @@ serve(async (req) => {
       return jsonError(500, e instanceof Error ? e.message : String(e))
     }
 
-    // Logo ophalen uit Storage (best effort — als bucket/pad niet bestaat: skip)
-    const logoBucket = bedrijf.logo_storage_bucket ?? 'public-assets'
-    const logoPad = bedrijf.logo_storage_pad ?? 'karpi-logo.jpg'
-    let logoOptie: { bytes: Uint8Array; format: 'jpg' | 'png'; hoogte_mm: number } | undefined
-    try {
-      const dl = await supabase.storage.from(logoBucket).download(logoPad)
-      if (dl.data) {
-        const bytes = new Uint8Array(await dl.data.arrayBuffer())
-        const format: 'jpg' | 'png' = logoPad.toLowerCase().endsWith('.png') ? 'png' : 'jpg'
-        logoOptie = { bytes, format, hoogte_mm: 18 }
-      }
-    } catch {
-      // Logo niet beschikbaar — PDF wordt zonder logo gerenderd (oude gedrag).
-    }
+    // Logo ophalen uit Storage (best effort — ontbreekt het, dan zonder logo).
+    const logoBron = await fetchBedrijfLogo(supabase, {
+      bucket: bedrijf.logo_storage_bucket,
+      pad: bedrijf.logo_storage_pad,
+    })
+    const logoOptie = logoBron ? { ...logoBron, hoogte_mm: 18 } : undefined
 
     // M² + gewicht per regel + afleveradres-per-order: PDF-specifieke verrijking
     // op het doc-gedreven regel-basis (base.regels). Indexen lopen 1-op-1 met

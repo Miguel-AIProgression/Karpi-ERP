@@ -4,6 +4,7 @@
 // stuur-verzendbevestiging.
 
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { fetchBedrijfLogo } from '../bedrijf-logo.ts'
 import type { PakbonBedrijf } from './types.ts'
 import type { PakbonPdfLogo } from './pakbon-pdf.ts'
 
@@ -30,18 +31,10 @@ export async function fetchBedrijfMetLogo(supabase: SupabaseClient): Promise<Bed
   const raw = res.data.waarde as BedrijfConfigRaw
 
   // Logo best-effort — ontbreekt het, dan rendert de pakbon het tekstmerk.
-  const bucket = raw.logo_storage_bucket ?? 'public-assets'
-  const pad = raw.logo_storage_pad ?? 'karpi-logo.jpg'
-  let logo: PakbonPdfLogo | undefined
-  try {
-    const dl = await supabase.storage.from(bucket).download(pad)
-    if (dl.data) {
-      const bytes = new Uint8Array(await dl.data.arrayBuffer())
-      logo = { bytes, format: pad.toLowerCase().endsWith('.png') ? 'png' : 'jpg' }
-    }
-  } catch {
-    // Geen logo — geen blokkade.
-  }
+  const logo = await fetchBedrijfLogo(supabase, {
+    bucket: raw.logo_storage_bucket,
+    pad: raw.logo_storage_pad,
+  })
 
   return { bedrijf: raw, logo }
 }
