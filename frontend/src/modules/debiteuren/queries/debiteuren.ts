@@ -41,7 +41,7 @@ export interface DebiteurDetail {
   email_2: string | null
   /** Klant-niveau verzend-/T&T-e-mailadres (mig 369). Default voor orders.afl_email vóór email_overig. */
   email_verzend: string | null
-  /** Optioneel pakbon-e-mailadres (mig 492). Huidige pakbon = bijlage bij factuurmail. */
+  /** Optioneel pakbon-e-mailadres (mig 496). Ontvanger van de aparte pakbonmail; leeg = factuuradres. */
   email_pakbon: string | null
   fax: string | null
   vertegenw_code: string | null

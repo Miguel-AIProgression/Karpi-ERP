@@ -114,7 +114,7 @@ export const EMAIL_VELDEN: {
   {
     key: 'email_pakbon',
     label: 'Pakbon (optioneel)',
-    hint: 'Apart adres voor de pakbon. Leeg = huidige werkwijze (pakbon als bijlage bij de factuurmail).',
+    hint: 'Apart adres voor de pakbonmail. Leeg = de pakbon gaat (als aparte mail) naar het factuuradres.',
     placeholder: 'pakbon@klant.nl',
   },
 ]

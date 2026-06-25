@@ -131,16 +131,21 @@ export function InvoiceAddressEditor({
           <div className="mt-1.5 pt-1.5 border-t border-slate-200 space-y-0.5">
             {factEmail ? (
               <p className="text-xs text-slate-500">
-                <span className="text-slate-400">Factuur/pakbon: </span>{factEmail}
+                <span className="text-slate-400">Factuur: </span>{factEmail}
               </p>
             ) : (
-              <p className="text-xs text-amber-600 font-medium">Factuur/pakbon: ontbreekt — vereist</p>
+              <p className="text-xs text-amber-600 font-medium">Factuur: ontbreekt — vereist</p>
             )}
-            {currentContact.email_pakbon && (
+            {currentContact.email_pakbon ? (
               <p className="text-xs text-slate-500">
                 <span className="text-slate-400">Pakbon: </span>{currentContact.email_pakbon}
               </p>
-            )}
+            ) : factEmail ? (
+              <p className="text-xs text-slate-500">
+                <span className="text-slate-400">Pakbon: </span>{factEmail}{' '}
+                <span className="text-slate-400">· zelfde als factuur</span>
+              </p>
+            ) : null}
             {currentContact.email_overig ? (
               <p className="text-xs text-slate-500">
                 <span className="text-slate-400">Orderbevestiging: </span>{currentContact.email_overig}
