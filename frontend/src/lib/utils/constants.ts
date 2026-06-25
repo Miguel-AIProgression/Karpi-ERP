@@ -136,6 +136,7 @@ export const NAV_GROUPS = [
     label: 'Producten & Voorraad',
     items: [
       { label: 'Producten', path: '/producten', icon: 'Grid3X3' },
+      { label: 'Backorders', path: '/backorders', icon: 'PackageMinus' },
       { label: 'Rollen & Reststukken', path: '/rollen', icon: 'Cylinder' },
       { label: 'Scanstation', path: '/scanstation', icon: 'ScanBarcode' },
     ],

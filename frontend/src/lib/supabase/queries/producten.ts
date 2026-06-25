@@ -506,6 +506,7 @@ export interface BackorderArtikel {
   omschrijving: string | null
   lengte_cm: number | null
   breedte_cm: number | null
+  voorraad: number
   vrije_voorraad: number
   besteld_inkoop: number
   totaal_backorder: number

@@ -13,6 +13,7 @@ import { ProductenOverviewPage } from '@/pages/producten/producten-overview'
 import { ProductDetailPage } from '@/pages/producten/product-detail'
 import { ProductCreatePage } from '@/pages/producten/product-create'
 import { ProductEditPage } from '@/pages/producten/product-edit'
+import { BackordersPage } from '@/pages/producten/backorders-page'
 import { VertegenwoordigersOverviewPage } from '@/pages/vertegenwoordigers/vertegenwoordigers-overview'
 import { VertegenwoordigerDetailPage } from '@/pages/vertegenwoordigers/vertegenwoordiger-detail'
 import { PrijslijstenOverviewPage } from '@/pages/prijslijsten/prijslijsten-overview'
@@ -92,6 +93,7 @@ export const router = createBrowserRouter([
       { path: 'producten/nieuw', element: <ProductCreatePage /> },
       { path: 'producten/:id', element: <ProductDetailPage /> },
       { path: 'producten/:id/bewerken', element: <ProductEditPage /> },
+      { path: 'backorders', element: <BackordersPage /> },
 
       // Prijslijsten
       { path: 'prijslijsten', element: <PrijslijstenOverviewPage /> },

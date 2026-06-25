@@ -9,6 +9,7 @@ import {
   ClipboardList,
   List,
   Package,
+  PackageMinus,
   Plus,
   Search,
 } from 'lucide-react'
@@ -23,8 +24,9 @@ import {
   type InkooporderStatus,
 } from '@/modules/inkoop'
 import { InkoopRegelOverzichtTab } from '../components/inkoop-regel-overzicht-tab'
+import { BackorderTab } from '@/pages/producten/backorder-tab'
 
-type ActiveTab = 'orders' | 'regels'
+type ActiveTab = 'orders' | 'regels' | 'backorders'
 
 const STATUSSEN: (InkooporderStatus | 'alle')[] = [
   'alle',
@@ -212,8 +214,20 @@ export function InkooporderOverviewPage() {
           <List size={15} />
           Regeloverzicht
         </button>
+        <button
+          onClick={() => setActiveTab('backorders')}
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+            activeTab === 'backorders'
+              ? 'border-terracotta-500 text-terracotta-600'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <PackageMinus size={15} />
+          Backorders
+        </button>
       </div>
 
+      {activeTab === 'backorders' && <BackorderTab />}
       {activeTab === 'regels' && <InkoopRegelOverzichtTab />}
 
       {activeTab === 'orders' && (
