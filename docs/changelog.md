@@ -1,5 +1,33 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-25 — Factuur- en pakbonmail gesplitst in twee aparte e-mails
+
+Verzoek Piet-Hein: sommige klanten willen de factuur naar een ander adres dan de
+pakbon. Tot nu toe gingen factuur-PDF + pakbon-PDF('s) + algemene voorwaarden
+samen in één factuurmail (de conditionele split eerder vandaag stuurde de pakbon
+alleen apart bij een afwijkend adres). **Geen migratie** — puur
+[`factuur-verzenden/index.ts`](../supabase/functions/factuur-verzenden/index.ts).
+
+- **Factuurmail** — werking/timing/afzender/onderwerp/verzendmoment ongewijzigd;
+  bevat nu alléén de factuur-PDF. Pakbon eruit. Algemene voorwaarden eruit
+  (AV-download + `AV_PATH`-const verwijderd). Betaler-kopie idem (alleen factuur).
+- **Pakbonmail** — voortaan **altijd** een aparte mail (niet meer alleen bij
+  afwijkend adres), met uitsluitend de pakbon-PDF('s). Ontvanger =
+  `debiteuren.email_pakbon`, terugval `email_factuur` (de mig-496-comment beschrijft
+  nog de oude "bijlage-bij-factuurmail"-stroom — hierbij achterhaald). `email_verzend`
+  uit de terugvalketen gehaald conform de letterlijke spec. Best-effort (try/catch):
+  de factuur is al verstuurd, een pakbonfout mag het queue-item niet laten retryen
+  (= dubbele factuur).
+- Send + e-mailtijdlijn-log (`verstuurde_emails`) + rauwe-payload-audit
+  (`externe_payloads`) geconsolideerd in één lokale seam `verstuurEnLog()` (3
+  call-sites: factuur-debiteur, betaler-kopie, pakbon). `soort` blijft `'factuur'`
+  (CHECK `IN ('factuur','orderbevestiging')`; het onderwerp onderscheidt), `kanaal`
+  in de payload-audit differentieert `'factuur'`/`'pakbon'`.
+
+Code-review (code-reviewer-agent): geen blockers; `deno check` 14 errors = identiek
+aan `origin/main` (pre-existing untyped-client cascade, geen deploy-blocker).
+**Na deploy nog e2e te testen** (beide inboxen, juiste ontvangers, geen AV).
+
 ## 2026-06-25 — EDI Hornbach: DESADV-leverbonnummer uniek per bericht + INVOIC NAD+IV-GLN gecorrigeerd
 
 Twee losse Hornbach-afkeuringen, beide veroorzaakt door het verwarren van twee
