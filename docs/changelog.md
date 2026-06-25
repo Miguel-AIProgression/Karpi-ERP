@@ -1,5 +1,29 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-25 — Backorder-pagina toont nu ook RugFlow-orders met ongedekte vraag (mig 515)
+
+**Probleem:** `backorder_per_artikel` filterde uitsluitend op `producten.backorder > 0` — een
+legacy-veld dat alleen gevuld is voor artikelen die bij de import al een backorder hadden.
+Alle nieuwe RugFlow-orders hebben `order_regels.backorder = 0`, waardoor artikelen als
+LORENZO 339230034 (vrije_voorraad = 0, 5 open orders met te_leveren = 1 elk) volledig
+onzichtbaar waren op de backorder-pagina.
+
+**Mig 515 — herziene view met CTE:**
+- Nieuw filter: `p.backorder > 0` (legacy) OR (`p.vrije_voorraad <= 0` EN er zijn open
+  order_regels met `te_leveren > 0`)
+- CTE `open_te_leveren` berekent per artikelnr de open ongeleverde vraag uit niet-Verzonden /
+  niet-Geannuleerde orders
+- Kolommen en interface ongewijzigd — backward-compatibel met frontend
+- Resultaat: 353 artikelen in de view (was ~111 legacy), waarvan 242 puur RugFlow
+
+**Frontend fixes (backorder-tab.tsx):**
+- `volledigGedekt` berekening gebruikte `totaal_backorder` als vraagmaat — altijd 0 voor
+  RugFlow → altijd "volledig gedekt" styling. Nu: `Math.max(totaal_backorder, totaal_te_leveren)`
+- Samenvatting-kaart toont nu som van `max(backorder, te_leveren)` i.p.v. alleen `backorder`
+  (geeft het werkelijke openstaande volume)
+
+---
+
 ## 2026-06-25 — Leverancier op kwaliteit-niveau (mig 512–514)
 
 **Single source of truth voor leverancier:** leverancier is een eigenschap van een

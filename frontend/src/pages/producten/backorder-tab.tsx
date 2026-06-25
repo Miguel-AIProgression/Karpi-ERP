@@ -145,8 +145,9 @@ function VasteMatensectie() {
 }
 
 function VastRij({ rij: r }: { rij: BackorderArtikel }) {
+  const vraag = Math.max(r.totaal_backorder, r.totaal_te_leveren)
   const dekking = r.vrije_voorraad + r.besteld_inkoop
-  const volledigGedekt = dekking >= r.totaal_backorder
+  const volledigGedekt = dekking >= vraag
   return (
     <tr className="hover:bg-slate-50 transition-colors">
       <td className="px-3 py-2.5">
@@ -320,7 +321,7 @@ export function BackorderTab() {
     staleTime: 60_000,
   })
 
-  const totaalVastBackorder = vastData.reduce((s, r) => s + r.totaal_backorder, 0)
+  const totaalVastBackorder = vastData.reduce((s, r) => s + Math.max(r.totaal_backorder, r.totaal_te_leveren), 0)
   const totaalRolM2 = rolData.reduce((s, r) => s + Number(r.benodigde_m2), 0)
 
   return (
@@ -329,7 +330,7 @@ export function BackorderTab() {
       <div className="flex items-center gap-4 mb-6">
         <div className="bg-rose-50 border border-rose-200 rounded-lg px-4 py-2.5 text-center min-w-[130px]">
           <div className="text-2xl font-bold text-rose-700">{totaalVastBackorder.toLocaleString('nl-NL')}</div>
-          <div className="text-xs text-rose-500 mt-0.5">stuks backorder (vast)</div>
+          <div className="text-xs text-rose-500 mt-0.5">stuks te leveren (vast)</div>
         </div>
         <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5 text-center min-w-[130px]">
           <div className="text-2xl font-bold text-amber-700">{totaalRolM2.toFixed(1)} m²</div>
