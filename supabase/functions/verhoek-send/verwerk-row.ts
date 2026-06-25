@@ -7,7 +7,7 @@
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 import { bouwVerhoekBestandsnaam, bouwVerhoekXml, valideerVerhoekColli } from './xml-builder.ts';
-import { type SftpConfig, uploadXmlViaSftp } from '../_shared/sftp-client.ts';
+import { type RelayConfig, uploadXmlViaRelay } from './relay-client.ts';
 import {
   type VerzendAdapter,
   type VerzendSummaryBasis,
@@ -34,12 +34,12 @@ export interface SendSummary extends VerzendSummaryBasis {
 }
 
 export interface VerwerkContext {
-  sftpConfig: SftpConfig | null; // null in dry-run
+  relayConfig: RelayConfig | null; // null in dry-run
   opties: VerhoekOpties;
   dryRun: boolean;
 }
 
-// Transport-resultaat: zowel de SFTP-upload als de dry-run leveren deze shape.
+// Transport-resultaat: zowel de relay-upload als de dry-run leveren deze shape.
 interface SftpResultaat {
   ok: boolean;
   remotePad: string | null;
@@ -81,7 +81,7 @@ export const verhoekAdapter: VerzendAdapter<VerhoekTransportOrderRow, VerwerkCon
   transport: (ctx, xml, bestandsnaam) =>
     ctx.dryRun
       ? Promise.resolve({ ok: true, remotePad: 'DRY_RUN — niet geüpload', errorMsg: null })
-      : uploadXmlViaSftp(ctx.sftpConfig!, bestandsnaam!, xml),
+      : uploadXmlViaRelay(ctx.relayConfig!, bestandsnaam!, xml),
   resultOk: (r) => r.ok,
   resultFout: (r) => r.errorMsg,
 

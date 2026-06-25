@@ -81,7 +81,7 @@ function configOk(extra: Partial<FakeSupabaseConfig['tables']> = {}): FakeSupaba
 Deno.test('Verhoek succes (dry-run, bestandsnaam preset) → audit + markeer_verstuurd', async () => {
   const fake = new FakeSupabase(configOk());
   const summary = legeSummary();
-  await verwerkRow(asClient(fake), rij(), { sftpConfig: null, opties: DEFAULT_VERHOEK_OPTIES, dryRun: true }, summary);
+  await verwerkRow(asClient(fake), rij(), { relayConfig: null, opties: DEFAULT_VERHOEK_OPTIES, dryRun: true }, summary);
 
   // Idempotentie-anker (mig 429) gaat als éérste rpc, vóór audit/upload/markeer.
   assertEquals(fake.rpcNames(), ['markeer_transport_bevestigd', 'log_externe_payload', 'markeer_transportorder_verstuurd']);
@@ -117,7 +117,7 @@ Deno.test('Verhoek succes (dry-run, bestandsnaam preset) → audit + markeer_ver
 Deno.test('Verhoek succes zonder bestandsnaam → eerst update (genereer-tak), dan audit + markeer', async () => {
   const fake = new FakeSupabase(configOk());
   const summary = legeSummary();
-  await verwerkRow(asClient(fake), rij({ extern_referentie: null }), { sftpConfig: null, opties: DEFAULT_VERHOEK_OPTIES, dryRun: true }, summary);
+  await verwerkRow(asClient(fake), rij({ extern_referentie: null }), { relayConfig: null, opties: DEFAULT_VERHOEK_OPTIES, dryRun: true }, summary);
 
   assertEquals(fake.calls.map((c) => c.op), ['update', 'rpc', 'rpc', 'storage_upload', 'rpc']);
   const update = fake.calls[0];
@@ -132,7 +132,7 @@ Deno.test('Verhoek preflight-fout (leeg afl_adres) → alleen markeer_fout, geen
   const zonderAdres = { ...ZENDING_OK, afl_adres: '' };
   const fake = new FakeSupabase(configOk({ zendingen: { single: { data: zonderAdres, error: null } } }));
   const summary = legeSummary();
-  await verwerkRow(asClient(fake), rij(), { sftpConfig: null, opties: DEFAULT_VERHOEK_OPTIES, dryRun: true }, summary);
+  await verwerkRow(asClient(fake), rij(), { relayConfig: null, opties: DEFAULT_VERHOEK_OPTIES, dryRun: true }, summary);
 
   assertEquals(fake.rpcNames(), ['markeer_transportorder_fout']);
   const fout = fake.rpcCalls()[0];
@@ -145,7 +145,7 @@ Deno.test('Verhoek preflight-fout (leeg afl_adres) → alleen markeer_fout, geen
 Deno.test('Verhoek 0-colli → markeer_fout met colli-reden', async () => {
   const fake = new FakeSupabase(configOk({ zending_colli: { list: { data: [], error: null } } }));
   const summary = legeSummary();
-  await verwerkRow(asClient(fake), rij(), { sftpConfig: null, opties: DEFAULT_VERHOEK_OPTIES, dryRun: true }, summary);
+  await verwerkRow(asClient(fake), rij(), { relayConfig: null, opties: DEFAULT_VERHOEK_OPTIES, dryRun: true }, summary);
 
   assertEquals(fake.rpcNames(), ['markeer_transportorder_fout']);
   assertMatch(fake.rpcCalls()[0].args.p_error, /Geen zending_colli/);
@@ -155,7 +155,7 @@ Deno.test('Verhoek 0-colli → markeer_fout met colli-reden', async () => {
 Deno.test('Verhoek zending niet gevonden → markeer_fout, geen verdere reads', async () => {
   const fake = new FakeSupabase(configOk({ zendingen: { single: { data: null, error: { message: 'not found' } } } }));
   const summary = legeSummary();
-  await verwerkRow(asClient(fake), rij(), { sftpConfig: null, opties: DEFAULT_VERHOEK_OPTIES, dryRun: true }, summary);
+  await verwerkRow(asClient(fake), rij(), { relayConfig: null, opties: DEFAULT_VERHOEK_OPTIES, dryRun: true }, summary);
 
   assertEquals(fake.rpcNames(), ['markeer_transportorder_fout']);
   assertMatch(fake.rpcCalls()[0].args.p_error, /niet gevonden/);

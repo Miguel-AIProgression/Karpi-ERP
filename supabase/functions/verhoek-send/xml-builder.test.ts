@@ -4,6 +4,7 @@ import {
   bouwVerhoekXml,
   naarDecagram,
   valideerVerhoekColli,
+  verhoekVerpakkingseenheid,
 } from './xml-builder.ts';
 import { DEFAULT_VERHOEK_OPTIES } from './types.ts';
 import type { BouwVerhoekXmlArgs, VerhoekColliInput } from './types.ts';
@@ -90,28 +91,54 @@ Deno.test('bouwVerhoekXml: structuur, escaping, kernvelden', () => {
   assertStringIncludes(xml, '<OrderEntryPartID>001</OrderEntryPartID>');
   assertStringIncludes(xml, '<OrderEntryPartID>002</OrderEntryPartID>');
   assertStringIncludes(xml, '<ScanCode>00087159540000000014</ScanCode>');
+  // RolNummer = de barcode (Verhoek-mail 24-06), dus gelijk aan ScanCode, niet het volgnummer.
+  assertStringIncludes(xml, '<RolNummer>00087159540000000014</RolNummer>');
   assertStringIncludes(xml, '<Gewicht>1234</Gewicht>');
   assertStringIncludes(xml, '<Lengte>160</Lengte>');
   assertStringIncludes(xml, '<Breedte>90</Breedte>');
   assertStringIncludes(xml, '<ArtikelID>SIGO21</ArtikelID>');
-  assertStringIncludes(xml, '<Verpakkingseenheid>Rol</Verpakkingseenheid>');
+  // Verpakkingseenheid afgeleid per colli (mail Verhoek 16-06): colli 1 (160×90)
+  // = Karpet, colli 2 (400×300) = Coupon. Nooit 'Rol'.
+  assertStringIncludes(xml, '<Verpakkingseenheid>Karpet</Verpakkingseenheid>');
+  assertStringIncludes(xml, '<Verpakkingseenheid>Coupon</Verpakkingseenheid>');
+  // Afzender = Karpi; AfwijkendeAfzender leeg (alleen vullen bij afwijking).
+  assertStringIncludes(xml, '<AfzenderNaam>KARPI BV</AfzenderNaam>');
+  assertStringIncludes(xml, '<AfwijkendeAfzenderNaam/>');
+  assertStringIncludes(xml, '<AfwijkendeAfzenderStraat/>');
 });
 
-Deno.test('bouwVerhoekXml: opties sturen verpakkingseenheid en codes; ScanCode blijft de labelbarcode', () => {
+Deno.test('verhoekVerpakkingseenheid: classificeert binnen Verhoeks maat-envelopes, nooit Rol', () => {
+  assertEquals(verhoekVerpakkingseenheid(160, 90), 'Karpet'); // kleine rug
+  assertEquals(verhoekVerpakkingseenheid(300, 200), 'Karpet'); // standaard rug, 6 m²
+  assertEquals(verhoekVerpakkingseenheid(400, 300), 'Coupon'); // te breed voor Karpet
+  assertEquals(verhoekVerpakkingseenheid(600, 100), 'Loper'); // smal & lang
+  assertEquals(verhoekVerpakkingseenheid(2000, 120), 'Loper'); // lange loper
+  assertEquals(verhoekVerpakkingseenheid(500, 500), 'Coupon'); // 25 m²
+  // Afmeting onbekend → null (caller valt terug op config-default).
+  assertEquals(verhoekVerpakkingseenheid(null, 90), null);
+  assertEquals(verhoekVerpakkingseenheid(160, 0), null);
+});
+
+Deno.test('bouwVerhoekXml: Levering/SoortLevering uit config; ScanCode blijft de labelbarcode', () => {
   const args = fixtureArgs();
-  args.opties = {
-    ...args.opties,
-    verpakkingseenheid: 'Doos',
-    levering: '2',
-    soort_levering: '3',
-  };
+  args.opties = { ...args.opties, levering: '2', soort_levering: '3' };
   const xml = bouwVerhoekXml(args);
   // ScanCode is altijd AI(00)+SSCC (gedeelde labelbarcode-seam) — geen
   // per-carrier prefix-vlag meer, dus geen kale-SSCC-variant.
   assertStringIncludes(xml, '<ScanCode>00087159540000000014</ScanCode>');
-  assertStringIncludes(xml, '<Verpakkingseenheid>Doos</Verpakkingseenheid>');
   assertStringIncludes(xml, '<Levering>2</Levering>');
   assertStringIncludes(xml, '<SoortLevering>3</SoortLevering>');
+});
+
+Deno.test('bouwVerhoekXml: fallback op config-Verpakkingseenheid als afmeting onbekend', () => {
+  const args = fixtureArgs();
+  args.colli = [{
+    colli_nr: 1, sscc: '087159540000000014', gewicht_kg: 12, omschrijving_snapshot: null,
+    artikelnr: 'X', lengte_cm: null, breedte_cm: null,
+  }];
+  args.opties = { ...args.opties, verpakkingseenheid: 'Coupon' };
+  const xml = bouwVerhoekXml(args);
+  assertStringIncludes(xml, '<Verpakkingseenheid>Coupon</Verpakkingseenheid>');
 });
 
 Deno.test('bouwVerhoekXml: zonder afl_email géén TrackTraceID; leeg opdrachtgevernummer = lege tag', () => {

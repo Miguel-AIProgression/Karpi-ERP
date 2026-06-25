@@ -2,20 +2,22 @@
 //
 // Cron-driven sender voor Verhoek-XML's (ADR-0031). Claimt 'Wachtrij'-rijen
 // uit de gedeelde `verzend_wachtrij` (vervoerder_code='verhoek_sftp', ADR-0038),
-// bouwt per zending een AA2.0-XML en levert
-// die via SFTP aan bij Verhoek. Audit: externe_payloads (kanaal 'verhoek',
-// elke poging een rij) + XML-kopie in storage (order-documenten/verhoek-xml/).
+// bouwt per zending een AA2.0-XML en pusht die via de Vercel Node-relay
+// (frontend/api/verhoek-sftp.ts) naar Verhoeks SFTP — de edge-runtime kan
+// Verhoeks aes256-ctr-cipher niet, de relay (echte Node.js) wél. Audit:
+// externe_payloads (kanaal 'verhoek', elke poging een rij) + XML-kopie in
+// storage (order-documenten/verhoek-xml/).
 //
 // DRY-RUN (secret VERHOEK_DRY_RUN, default 'true'): hele keten draait —
-// XML, preflight, storage, audit, markeer — maar de SFTP-upload wordt
-// overgeslagen. Go-live = VERHOEK_DRY_RUN=false + SFTP-secrets + config.
+// XML, preflight, storage, audit, markeer — maar de relay-upload wordt
+// overgeslagen. Go-live = VERHOEK_DRY_RUN=false + relay-secrets + config.
 //
 // Auth: Bearer-CRON_TOKEN-header (zelfde patroon als hst-send).
 // Plan: docs/superpowers/plans/2026-06-11-verhoek-transporteur-xml-sftp.md
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-import { type SftpConfig } from '../_shared/sftp-client.ts';
+import { type RelayConfig } from './relay-client.ts';
 import { capabilityVoor } from '../_shared/vervoerders/capabilities.ts';
 import { DEFAULT_VERHOEK_OPTIES } from './types.ts';
 import type { VerhoekOpties } from './types.ts';
@@ -44,20 +46,18 @@ Deno.serve(async (req) => {
   // niets de deur uit. Veilige standaard tot de go-live-checklist (Fase 2).
   const dryRun = (Deno.env.get('VERHOEK_DRY_RUN') ?? 'true').toLowerCase() !== 'false';
 
-  let sftpConfig: SftpConfig | null = null;
+  let relayConfig: RelayConfig | null = null;
   if (!dryRun) {
-    const host = Deno.env.get('VERHOEK_SFTP_HOST');
-    const user = Deno.env.get('VERHOEK_SFTP_USER');
-    const password = Deno.env.get('VERHOEK_SFTP_PASSWORD');
-    if (!host || !user || !password) {
-      return jsonResp({ error: 'VERHOEK_DRY_RUN=false maar VERHOEK_SFTP_HOST / USER / PASSWORD ontbreken' }, 500);
+    const url = Deno.env.get('VERHOEK_RELAY_URL');
+    const token = Deno.env.get('VERHOEK_RELAY_TOKEN');
+    if (!url || !token) {
+      return jsonResp({ error: 'VERHOEK_DRY_RUN=false maar VERHOEK_RELAY_URL / VERHOEK_RELAY_TOKEN ontbreken' }, 500);
     }
-    sftpConfig = {
-      host,
-      port: Number(Deno.env.get('VERHOEK_SFTP_PORT') ?? '22'),
-      username: user,
-      password,
-      remoteDir: Deno.env.get('VERHOEK_SFTP_REMOTE_DIR') ?? '/',
+    relayConfig = {
+      url,
+      token,
+      // Vercel-SSO bypass-header (leeg = project zonder SSO).
+      bypassToken: Deno.env.get('VERCEL_PROTECTION_BYPASS') ?? null,
     };
   }
 
@@ -96,7 +96,7 @@ Deno.serve(async (req) => {
     summary.processed += 1;
 
     try {
-      await verwerkRow(supabase, row, { sftpConfig, opties, dryRun }, summary);
+      await verwerkRow(supabase, row, { relayConfig, opties, dryRun }, summary);
     } catch (err) {
       summary.failed += 1;
       summary.details.push({ id: row.id, zending_id: row.zending_id, status: 'error', error: String(err) });
