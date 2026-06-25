@@ -34,6 +34,7 @@ LEFT JOIN order_regels orr ON orr.artikelnr = p.artikelnr
 LEFT JOIN orders o ON o.id = orr.order_id
 WHERE p.backorder > 0
   AND COALESCE(p.is_pseudo, FALSE) = FALSE
+  AND COALESCE(p.product_type, 'overig') != 'rol'
 GROUP BY
   p.artikelnr, p.karpi_code, p.kwaliteit_code, p.kleur_code,
   p.omschrijving, p.lengte_cm, p.breedte_cm, p.voorraad, p.vrije_voorraad,
