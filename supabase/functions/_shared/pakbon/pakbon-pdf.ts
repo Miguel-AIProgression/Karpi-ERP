@@ -231,7 +231,7 @@ export async function genereerPakbonPDF(
         // Mig 436: omsticker — fysiek gepakt equivalent, zelfde "OMB:"-notatie
         // als het verzendlabel en de geprinte pakbon.
         regel.omstickerCodes.length > 0 ? `OMB: ${regel.omstickerCodes.join(', ')}` : null,
-        regel.uwNaam ? `Uw naam: ${regel.uwNaam}` : null,
+        regel.uwNaam ? `Uw model: ${regel.uwNaam}` : null,
       ].filter(Boolean) as string[]
       const totaalH = omsLines.length * EXTRA_LINE_H + subRegels.length * EXTRA_LINE_H + ROW_GAP
       nieuwePaginaIndienNodig(totaalH)

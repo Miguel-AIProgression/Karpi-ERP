@@ -439,7 +439,7 @@ describe('PakbonDocument — karakterisering rijopbouw', () => {
 
     const { container } = renderPakbon(zending, 1)
 
-    expect(container.textContent).toContain('Uw naam: BREDA HUISMERK')
+    expect(container.textContent).toContain('Uw model: BREDA HUISMERK')
   })
 
   it('afwerking: Breedband toont de bandkleur, ook mét colli-snapshot', async () => {

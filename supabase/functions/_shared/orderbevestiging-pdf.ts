@@ -41,6 +41,8 @@ export interface OrderbevestigingRegel {
    *  order-brede `input.verzendweek` voor déze regel overstemt. */
   is_maatwerk?: boolean
   verzendweek?: string | null
+  /** Al-geresolvde klant-eigennaam — getoond als "Uw model: …" sub-regel. */
+  klant_model?: string | null
 }
 
 export interface OrderbevestigingInput {
@@ -444,7 +446,7 @@ export async function genereerOrderbevestigingPDF(input: OrderbevestigingInput):
       : input.verzendweek
 
     const omschrijvingLines = wrapText(regel.omschrijving ?? '', fontR, 7.5, colOmsch.w - mm(2))
-    const subLineCount = (regel.omschrijving_2 ? 1 : 0) + (regel.klant_referentie ? 1 : 0) + (verzendweekVoorRegel ? 1 : 0)
+    const subLineCount = (regel.omschrijving_2 ? 1 : 0) + (regel.klant_model ? 1 : 0) + (regel.klant_referentie ? 1 : 0) + (verzendweekVoorRegel ? 1 : 0)
     const totalH = ROW_H + (omschrijvingLines.length > 1 ? (omschrijvingLines.length - 1) * EXTRA_LINE_H : 0)
       + subLineCount * EXTRA_LINE_H
 
@@ -476,6 +478,10 @@ export async function genereerOrderbevestigingPDF(input: OrderbevestigingInput):
     let subY = textY - omschrijvingLines.length * EXTRA_LINE_H
     if (regel.omschrijving_2) {
       drawText(page, regel.omschrijving_2, omschX, subY, fontR, 6.5, SLATE)
+      subY -= EXTRA_LINE_H
+    }
+    if (regel.klant_model) {
+      drawText(page, `${t.model}: ${regel.klant_model}`, omschX, subY, fontR, 6.5, SLATE)
       subY -= EXTRA_LINE_H
     }
     if (regel.klant_referentie) {

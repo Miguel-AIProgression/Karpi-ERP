@@ -380,12 +380,18 @@ serve(async (req) => {
   const taal = bepaalTaal(factLandIso2)
   const v = VERTALINGEN[taal]
 
+  // Klant-eigennamen één keer ophalen — gedeeld door PDF-bijlage én HTML-mail.
+  const klantEigenNamen = await resolveKlantEigenNamen(supabase, o.debiteur_nr, regels)
+
   // Regel-omschrijvingen één keer woord-vertaald — dezelfde tekst op PDF en in
   // de mail (kwaliteit-/kleurcodes blijven onaangeroerd voor klanteigen-namen).
   const regelsVertaald = regels.map((r) => ({
     ...r,
     omschrijving: vertaalOmschrijving(r.omschrijving, taal),
     omschrijving_2: r.omschrijving_2 ? vertaalOmschrijving(r.omschrijving_2, taal) : null,
+    klant_model: r.kwaliteit_code
+      ? klantEigenNamen.get(`${r.kwaliteit_code}|${r.kleur_code ?? ''}`) ?? null
+      : null,
   }))
 
   // ── PDF genereren ──────────────────────────────────────────────────────────
@@ -419,10 +425,8 @@ serve(async (req) => {
   // ── E-mail versturen ───────────────────────────────────────────────────────
   const klantNaam = deb?.naam ?? o.fact_naam ?? 'Klant'
 
-  const klantEigenNamen = await resolveKlantEigenNamen(supabase, o.debiteur_nr, regels)
-
   const regelsHtml = regelsVertaald.map((r) => {
-    const model = r.kwaliteit_code ? klantEigenNamen.get(`${r.kwaliteit_code}|${r.kleur_code ?? ''}`) ?? null : null
+    const model = r.klant_model ?? null
     // Per-regel verzendweek voor alle regeltypen — ook vaste-maat-regels kunnen
     // bij gemengde orders (deels voorraad, deels IO) elk een andere week hebben.
     const verzendweekRegel = r.verzendweek ? formatVerzendweekLabel(r.verzendweek) : null

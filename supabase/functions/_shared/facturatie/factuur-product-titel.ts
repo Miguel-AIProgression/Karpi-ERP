@@ -1,12 +1,15 @@
 // Factuur-product-titel — de klant-facing regel-omschrijving op de PDF-factuur:
-// "kwaliteitnaam (of klant-eigennaam) − afmeting", bv. "Galaxy - 60x90 cm".
+// "kwaliteitnaam − afmeting", bv. "Galaxy - 60x90 cm".
 //
 // Spiegelt de verzendlabel-logica (vasteMaatRegels/productMaat in
 // shipping-label-data.ts, besluit 2026-06-18): kwaliteitnaam uit
-// producten.vervolgomschrijving, maat met de kleinste zijde eerst. Klant-eigennaam
-// (resolve_klanteigen_naam, mig 199/200) wint van de kwaliteitnaam als die bestaat.
+// producten.vervolgomschrijving, maat met de kleinste zijde eerst.
 //
-// Pure functie (geen DB) — de caller levert de al-geresolvde klant-eigennaam.
+// De klant-eigennaam (resolve_klanteigen_naam, mig 199/200) verschijnt NIET als
+// vervanging van de kwaliteitnaam, maar als aparte sub-regel "Uw model: …"
+// (via ArtikelPresentatie.klant_model → factuur-pdf-renderer).
+//
+// Pure functie (geen DB).
 // Retourneert null als er geen naam óf geen maat is → de caller valt dan terug op
 // de bestaande omschrijving (VERZEND/toeslagen/admin-pseudo blijven ongewijzigd).
 
@@ -23,8 +26,6 @@ export interface FactuurProductTitelInput {
   /** Vaste-maat-product (producten.*_cm); relevant als niet-maatwerk. */
   prodLengteCm: number | null
   prodBreedteCm: number | null
-  /** Al-geresolvde klant-eigennaam (resolve_klanteigen_naam) of null. */
-  klantEigenNaam: string | null
 }
 
 /**
@@ -33,10 +34,7 @@ export interface FactuurProductTitelInput {
  * onzinnige titel (zelfde gate als vasteMaatRegels op het verzendlabel).
  */
 export function factuurProductTitel(input: FactuurProductTitelInput): string | null {
-  const klanteigen = input.klantEigenNaam?.trim()
-  const naam = (klanteigen && klanteigen.length > 0)
-    ? klanteigen
-    : kwaliteitNaamUitVervolg(input.vervolgomschrijving)
+  const naam = kwaliteitNaamUitVervolg(input.vervolgomschrijving)
   if (!naam) return null
 
   const lengte = input.isMaatwerk ? input.maatwerkLengteCm : input.prodLengteCm

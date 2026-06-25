@@ -182,7 +182,7 @@ export function PakbonDocument({ zending, vervoerderNaam: _vervoerderNaam, colli
                     {r.omstickerCodes.length > 0 && (
                       <div className="text-slate-600">OMB: {r.omstickerCodes.join(', ')}</div>
                     )}
-                    {r.uwNaam && <div>Uw naam: {r.uwNaam}</div>}
+                    {r.uwNaam && <div>Uw model: {r.uwNaam}</div>}
                   </div>
                   <div className="text-right">{r.besteld}</div>
                   <div className="text-right">{r.geleverd}</div>

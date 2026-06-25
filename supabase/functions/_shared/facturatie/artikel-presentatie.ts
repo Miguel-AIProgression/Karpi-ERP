@@ -83,11 +83,16 @@ export interface ArtikelPresentatie {
   /** Samengestelde artikeltekst "[karpi_code] [omschrijving]" — gedeeld door PDF én EDI. */
   artikel_tekst: string
   /**
-   * Klant-facing titel voor de PDF-factuur: "kwaliteitnaam (of klant-eigennaam)
-   * − afmeting" (bv. "Galaxy - 60x90 cm"); null als niet samen te stellen (geen
+   * Klant-facing titel voor de PDF-factuur: "kwaliteitnaam − afmeting"
+   * (bv. "Galaxy - 60x90 cm"); null als niet samen te stellen (geen
    * kwaliteit/maat). ALLEEN de PDF-renderer leest dit — de EDI-INVOIC blijft
    * `artikel_tekst` gebruiken. */
   klant_titel: string | null
+  /**
+   * Al-geresolvde klant-eigennaam (resolve_klanteigen_naam) — verschijnt als
+   * sub-regel "Uw model: …" op PDF-factuur, orderbevestiging-PDF en pakbon.
+   * Null als de debiteur geen eigen naam heeft voor dit artikel. */
+  klant_model: string | null
   /**
    * Al-opgeloste afwerkingstekst (bv. "Breedband - band KK21"), ongewijzigd
    * doorgegeven uit de lookup. Zit al verwerkt in `omschrijving`/`artikel_tekst`
@@ -163,7 +168,6 @@ export function resolveArtikelPresentatie(
     vervolgomschrijving: product?.vervolgomschrijving ?? null,
     prodLengteCm: product?.lengte_cm ?? null,
     prodBreedteCm: product?.breedte_cm ?? null,
-    klantEigenNaam: klantEigenNaam ?? null,
   })
 
   return {
@@ -174,6 +178,7 @@ export function resolveArtikelPresentatie(
     omschrijving,
     artikel_tekst,
     klant_titel,
+    klant_model: klantEigenNaam ?? null,
     afwerking: orderRegel?.afwerking ?? null,
   }
 }
