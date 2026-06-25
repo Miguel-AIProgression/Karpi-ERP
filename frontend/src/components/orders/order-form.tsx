@@ -722,21 +722,31 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
   // IO-tekort = stuks die niet via voorraad eigen artikel + uitwisselbaar gedekt zijn
   // → echte wacht-op-inkoop. Alleen dán moet LeverModusDialog openen.
   // Gebruikt gedeelde helper berekenRegelDekking — zelfde bron als inline tekst.
+  //
+  // Bij een bestaande order (mode=edit) heeft de allocator al reserveringen
+  // aangemaakt voor dit order. Die reserveringen zijn al verrekend in
+  // vrije_voorraad (= voorraad − gereserveerd). berekenRegelDekking rapporteert
+  // daardoor een vals ioTekort. Trek het al-gereserveerde deel (reedsDgedkt) af
+  // zodat de dialog alleen opent bij een ECHT resterend tekort.
   const tekortRegels: LeverModusTekort[] = useMemo(
     () => regels
       .map((r, i) => {
         if (r.artikelnr === SHIPPING_PRODUCT_ID || r.is_pseudo) return null
         const { ioTekort } = berekenRegelDekking(r)
-        if (ioTekort <= 0) return null
+        const reedsDgedkt = mode === 'edit'
+          ? Math.max(0, (r.orderaantal ?? 0) - (r.vrije_voorraad ?? 0))
+          : 0
+        const echtTekort = Math.max(0, ioTekort - reedsDgedkt)
+        if (echtTekort <= 0) return null
         return {
           regelnummer: i + 1,
           artikelnr: r.artikelnr ?? null,
-          aantal_tekort: ioTekort,
+          aantal_tekort: echtTekort,
           verwachte_leverweek: null,
         } as LeverModusTekort
       })
       .filter((x): x is LeverModusTekort => x !== null),
-    [regels],
+    [regels, mode],
   )
 
   const handleSaveClick = () => {
