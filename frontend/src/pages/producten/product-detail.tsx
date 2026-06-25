@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Pencil, Truck } from 'lucide-react'
+import { ArrowLeft, Pencil, Truck, AlertTriangle } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { InfoField } from '@/components/ui/info-field'
 import { formatCurrency, formatNumber } from '@/lib/utils/formatters'
@@ -8,7 +8,7 @@ import { berekenProductGewichtKg } from '@/lib/utils/gewicht'
 import { cn } from '@/lib/utils/cn'
 import { useAuth } from '@/hooks/use-auth'
 import { useQuery } from '@tanstack/react-query'
-import { useProductDetail, useRollenVoorProduct, useClaimsVoorProduct, useEquivalenteProducten, useLeveranciers } from '@/hooks/use-producten'
+import { useProductDetail, useRollenVoorProduct, useClaimsVoorProduct, useEquivalenteProducten, useLeveranciers, useReserveringenVoorProduct } from '@/hooks/use-producten'
 import { useUitwisselbareGroepen } from '@/hooks/use-uitwisselbaar'
 import { UitwisselbaarGroepDialog } from '@/components/producten/uitwisselbaar-groep-dialog'
 import { ProductVerwijderenDialog } from '@/components/producten/product-verwijderen-dialog'
@@ -49,6 +49,7 @@ export function ProductDetailPage() {
   const { data: claims } = useClaimsVoorProduct(artikelnr)
   const { data: equivalenten } = useEquivalenteProducten(artikelnr)
   const { data: inkoopregels } = useOpenstaandeInkoopregelsVoorArtikel(artikelnr)
+  const { data: reserveringen } = useReserveringenVoorProduct(artikelnr)
   const { data: uitwisselGroepen } = useUitwisselbareGroepen()
   const { data: leveranciers } = useLeveranciers()
   const [koppelDialoogOpen, setKoppelDialoogOpen] = useState(false)
@@ -291,6 +292,63 @@ export function ProductDetailPage() {
         </div>
         )
       })()}
+
+      {/* Open orders met ongedekte vraag (backorder) */}
+      {reserveringen && reserveringen.length > 0 && product.vrije_voorraad <= 0 && (
+        <div className="bg-white rounded-[var(--radius)] border border-amber-300 overflow-hidden mb-6">
+          <div className="px-5 py-3 border-b border-amber-200 bg-amber-50 flex items-center justify-between">
+            <h3 className="font-medium flex items-center gap-2 text-amber-800">
+              <AlertTriangle size={16} className="text-amber-500" />
+              Open orders — ongedekte vraag ({reserveringen.length})
+            </h3>
+            <span className="text-sm text-amber-700">
+              Totaal te leveren:{' '}
+              <span className="font-semibold">
+                {reserveringen.reduce((s, r) => s + r.te_leveren, 0)} stuks
+              </span>
+            </span>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-100 bg-slate-50">
+                <th className="text-left px-4 py-2 font-medium text-slate-600">Order</th>
+                <th className="text-left px-4 py-2 font-medium text-slate-600">Klant</th>
+                <th className="text-left px-4 py-2 font-medium text-slate-600">Status</th>
+                <th className="text-left px-4 py-2 font-medium text-slate-600">Afleverdatum</th>
+                <th className="text-right px-4 py-2 font-medium text-slate-600">Te leveren</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reserveringen.map((r) => (
+                <tr key={`${r.order_id}`} className="border-b border-slate-50 hover:bg-slate-50">
+                  <td className="px-4 py-2">
+                    <Link to={`/orders/${r.order_id}`} className="text-terracotta-500 hover:underline font-mono text-xs">
+                      {r.order_nr}
+                    </Link>
+                  </td>
+                  <td className="px-4 py-2 text-slate-700">{r.klant_naam ?? '—'}</td>
+                  <td className="px-4 py-2">
+                    <span className={cn(
+                      'px-2 py-0.5 rounded-full text-xs',
+                      r.status === 'Wacht op inkoop' && 'bg-rose-100 text-rose-700',
+                      r.status === 'Wacht op voorraad' && 'bg-amber-100 text-amber-700',
+                      !['Wacht op inkoop', 'Wacht op voorraad'].includes(r.status) && 'bg-slate-100 text-slate-600',
+                    )}>
+                      {r.status}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2 text-slate-700 text-xs">
+                    {r.afleverdatum
+                      ? new Date(r.afleverdatum).toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                      : '—'}
+                  </td>
+                  <td className="px-4 py-2 text-right font-semibold text-amber-700">{r.te_leveren}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* Openstaande inkooporders */}
       {inkoopregels && inkoopregels.length > 0 && (

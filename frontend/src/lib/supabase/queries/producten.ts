@@ -423,6 +423,7 @@ export interface ReserveringRow {
   order_nr: string
   status: string
   orderdatum: string | null
+  afleverdatum: string | null
   klant_naam: string | null
   te_leveren: number
   omschrijving: string | null
@@ -436,7 +437,7 @@ export async function fetchReserveringenVoorProduct(artikelnr: string): Promise<
     .select(`
       te_leveren,
       omschrijving,
-      orders!inner(id, order_nr, status, orderdatum, debiteur_nr)
+      orders!inner(id, order_nr, status, orderdatum, afleverdatum, debiteur_nr)
     `)
     .or(`artikelnr.eq.${artikelnr},fysiek_artikelnr.eq.${artikelnr}`)
     .gt('te_leveren', 0)
@@ -462,6 +463,7 @@ export async function fetchReserveringenVoorProduct(artikelnr: string): Promise<
     order_nr: r.orders.order_nr,
     status: r.orders.status,
     orderdatum: r.orders.orderdatum,
+    afleverdatum: r.orders.afleverdatum,
     klant_naam: naamMap.get(r.orders.debiteur_nr) ?? null,
     te_leveren: r.te_leveren,
     omschrijving: r.omschrijving,
