@@ -115,6 +115,10 @@ export interface OrderDetail extends OrderRow {
    *  check): de bevestiging hoort naar het algemene/orderbevestiging-adres,
    *  niet naar het factuuradres (melding Marjon 11-06-2026, klant 803741). */
   klant_email_orderbev: string | null
+  /** Pakbon-bestemming op klantniveau (debiteuren.email_pakbon, mig 496). NULL =
+   *  geen apart adres → de weergave valt terug op het factuuradres. De aparte
+   *  pakbonmail (factuur-verzenden) gebruikt dezelfde terugval. */
+  klant_email_pakbon: string | null
   /** Mig 327 / ADR-0029: TRUE = productie-only order uit Basta (alleen snijden+
    *  confectie in RugFlow; verzending/facturatie in Basta). Voedt het
    *  BastaAfhandelingPaneel op order-detail. Voor gewone orders FALSE. */
@@ -540,7 +544,7 @@ export async function fetchOrderDetail(id: number): Promise<OrderDetail> {
   if (order.debiteur_nr) {
     const { data: deb } = await supabase
       .from('debiteuren')
-      .select('naam, vertegenw_code, email_factuur, email_overig')
+      .select('naam, vertegenw_code, email_factuur, email_overig, email_pakbon')
       .eq('debiteur_nr', order.debiteur_nr)
       .single()
     if (deb) {
@@ -548,6 +552,9 @@ export async function fetchOrderDetail(id: number): Promise<OrderDetail> {
       klant_vertegenw_code = deb.vertegenw_code
       ;(order as Record<string, unknown>).klant_email = deb.email_factuur ?? deb.email_overig ?? null
       ;(order as Record<string, unknown>).klant_email_orderbev = deb.email_overig ?? deb.email_factuur ?? null
+      // Pakbon-bestemming: het aparte pakbon-adres als dat gezet is, anders NULL
+      // → de weergave valt dan terug op het factuuradres ("zelfde als factuur").
+      ;(order as Record<string, unknown>).klant_email_pakbon = deb.email_pakbon ?? null
     }
   }
 

@@ -50,6 +50,19 @@ export function OrderAddresses({ order, dropshipEmailProbleem }: OrderAddressesP
                 <span className="text-amber-600">Geen factuur-e-mailadres bekend</span>
               )}
             </div>
+            <div className="mt-3 pt-3 border-t border-slate-100 text-sm">
+              <span className="text-slate-400 block mb-0.5">Pakbon per e-mail naar</span>
+              {order.klant_email_pakbon ? (
+                <span className="text-slate-700">{order.klant_email_pakbon}</span>
+              ) : order.fact_email || order.klant_email ? (
+                <span className="text-slate-700">
+                  {order.fact_email || order.klant_email}
+                  <span className="ml-1.5 text-xs text-slate-400">· zelfde als factuur</span>
+                </span>
+              ) : (
+                <span className="text-amber-600">Geen pakbon-e-mailadres bekend</span>
+              )}
+            </div>
           </div>
         )}
         {hasAflever && (
