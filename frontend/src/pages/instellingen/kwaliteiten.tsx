@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Search, AlertCircle, CheckCircle2, Plus } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { fetchKwaliteitenMetGewicht, updateKwaliteitGewicht, type KwaliteitMetGewicht } from '@/lib/supabase/queries/kwaliteiten'
+import { fetchKwaliteitenMetGewicht, updateKwaliteitGewicht, updateKwaliteitLeverancier, type KwaliteitMetGewicht } from '@/lib/supabase/queries/kwaliteiten'
+import { useLeveranciers } from '@/hooks/use-producten'
 import { formatNumber } from '@/lib/utils/formatters'
 import { cn } from '@/lib/utils/cn'
 
@@ -15,6 +16,7 @@ export function KwaliteitenInstellingenPage() {
     queryKey: ['kwaliteiten-met-gewicht'],
     queryFn: fetchKwaliteitenMetGewicht,
   })
+  const { data: leveranciers = [] } = useLeveranciers()
 
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<Filter>('alle')
@@ -30,6 +32,16 @@ export function KwaliteitenInstellingenPage() {
       setSavedCode(vars.code)
       setEditing(null)
       setTimeout(() => setSavedCode(null), 2000)
+    },
+  })
+
+  const leverancierMutation = useMutation({
+    mutationFn: (vars: { code: string; leverancier_id: number | null }) =>
+      updateKwaliteitLeverancier(vars.code, vars.leverancier_id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['kwaliteiten-met-gewicht'] })
+      queryClient.invalidateQueries({ queryKey: ['kwaliteit-info'] })
+      queryClient.invalidateQueries({ queryKey: ['product-detail'] })
     },
   })
 
@@ -137,6 +149,7 @@ export function KwaliteitenInstellingenPage() {
             <tr className="border-b border-slate-200 bg-slate-50 text-left">
               <th className="px-4 py-2 font-medium text-slate-600">Code</th>
               <th className="px-4 py-2 font-medium text-slate-600">Omschrijving</th>
+              <th className="px-4 py-2 font-medium text-slate-600">Leverancier</th>
               <th className="px-4 py-2 font-medium text-slate-600 text-right">Std breedte</th>
               <th className="px-4 py-2 font-medium text-slate-600 text-right">Gewicht/m²</th>
               <th className="px-4 py-2 font-medium text-slate-600 text-right">Producten</th>
@@ -147,10 +160,29 @@ export function KwaliteitenInstellingenPage() {
               const isEditing = editing?.code === q.code
               const isSaved = savedCode === q.code
               const isPending = mutation.isPending && mutation.variables?.code === q.code
+              const isLeverancierPending = leverancierMutation.isPending && leverancierMutation.variables?.code === q.code
               return (
                 <tr key={q.code} className="border-b border-slate-100 hover:bg-slate-50">
                   <td className="px-4 py-2 font-mono text-xs">{q.code}</td>
                   <td className="px-4 py-2 text-slate-700">{q.omschrijving ?? '—'}</td>
+                  <td className="px-4 py-2">
+                    <select
+                      value={q.leverancier_id ?? ''}
+                      disabled={isLeverancierPending}
+                      onChange={(e) =>
+                        leverancierMutation.mutate({
+                          code: q.code,
+                          leverancier_id: e.target.value ? Number(e.target.value) : null,
+                        })
+                      }
+                      className="text-sm border border-slate-200 rounded px-2 py-0.5 bg-white focus:border-terracotta-300 focus:outline-none w-full max-w-[160px] disabled:opacity-50"
+                    >
+                      <option value="">— geen —</option>
+                      {leveranciers.map((l) => (
+                        <option key={l.id} value={l.id}>{l.naam}</option>
+                      ))}
+                    </select>
+                  </td>
                   <td className="px-4 py-2 text-right text-slate-500">
                     {q.standaard_breedte_cm ? `${q.standaard_breedte_cm} cm` : '—'}
                   </td>
@@ -196,7 +228,7 @@ export function KwaliteitenInstellingenPage() {
             })}
             {gefilterd.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-slate-400 text-sm">
+                <td colSpan={6} className="px-4 py-8 text-center text-slate-400 text-sm">
                   Geen kwaliteiten gevonden voor deze filter.
                 </td>
               </tr>

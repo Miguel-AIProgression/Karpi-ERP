@@ -1,11 +1,11 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { useKwaliteiten, useLeveranciers, useUpdateProduct, useMaatwerkVormen } from '@/hooks/use-producten'
 import type { ProductDetail, ProductFormData, ProductType } from '@/lib/supabase/queries/producten'
-import { fetchKwaliteitInfo } from '@/lib/supabase/queries/kwaliteiten'
+import { fetchKwaliteitInfo, updateKwaliteitLeverancier } from '@/lib/supabase/queries/kwaliteiten'
 import { berekenProductGewichtKg } from '@/lib/utils/gewicht'
 import { formatNumber } from '@/lib/utils/formatters'
 
@@ -22,6 +22,7 @@ interface ProductFormProps {
 
 export function ProductFormPage({ product }: ProductFormProps) {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const { data: kwaliteiten } = useKwaliteiten()
   const { data: maatwerkVormen = [] } = useMaatwerkVormen()
   const { data: leveranciers } = useLeveranciers()
@@ -50,6 +51,20 @@ export function ProductFormPage({ product }: ProductFormProps) {
   })
   const [error, setError] = useState<string | null>(null)
 
+  // Leverancier-state los van form — bron is kwaliteiten.leverancier_id (single source of truth)
+  const [formLeverancierId, setFormLeverancierId] = useState<number | null>(null)
+  const leverancierInitRef = useRef(false)
+
+  const leverancierMutation = useMutation({
+    mutationFn: (vars: { code: string; leverancier_id: number | null }) =>
+      updateKwaliteitLeverancier(vars.code, vars.leverancier_id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['kwaliteit-info'] })
+      queryClient.invalidateQueries({ queryKey: ['kwaliteiten-met-gewicht'] })
+      queryClient.invalidateQueries({ queryKey: ['product-detail'] })
+    },
+  })
+
   const set = (field: keyof ProductFormData, value: unknown) =>
     setForm(f => ({ ...f, [field]: value }))
 
@@ -64,6 +79,14 @@ export function ProductFormPage({ product }: ProductFormProps) {
     queryFn: () => fetchKwaliteitInfo(form.kwaliteit_code ?? null),
     enabled: !!form.kwaliteit_code,
   })
+
+  // Initialiseer leverancier vanuit kwaliteiten (single source) — alleen eenmalig
+  useEffect(() => {
+    if (!leverancierInitRef.current && kwaliteitInfo) {
+      leverancierInitRef.current = true
+      setFormLeverancierId(kwaliteitInfo.leverancier_id)
+    }
+  }, [kwaliteitInfo])
   const gewichtWordtAfgeleid = form.product_type === 'vast' || form.product_type === 'staaltje'
   const gewichtPreview = gewichtWordtAfgeleid
     ? berekenProductGewichtKg({
@@ -82,6 +105,11 @@ export function ProductFormPage({ product }: ProductFormProps) {
       return
     }
     try {
+      // Leverancier opslaan op kwaliteit-niveau (single source of truth, mig 514)
+      if (form.kwaliteit_code) {
+        await leverancierMutation.mutateAsync({ code: form.kwaliteit_code, leverancier_id: formLeverancierId })
+      }
+
       const { artikelnr, ...rest } = form
       void artikelnr
       // producten.vorm is een apart, beperkt enum (alleen rechthoek/rond) dat
@@ -96,7 +124,7 @@ export function ProductFormPage({ product }: ProductFormProps) {
     }
   }
 
-  const isPending = updateMutation.isPending
+  const isPending = updateMutation.isPending || leverancierMutation.isPending
 
   return (
     <>
@@ -241,8 +269,8 @@ export function ProductFormPage({ product }: ProductFormProps) {
             </Field>
             <Field label="Leverancier">
               <select
-                value={form.leverancier_id ?? ''}
-                onChange={e => set('leverancier_id', e.target.value ? Number(e.target.value) : null)}
+                value={formLeverancierId ?? ''}
+                onChange={e => setFormLeverancierId(e.target.value ? Number(e.target.value) : null)}
                 className="input"
               >
                 <option value="">— geen —</option>
@@ -250,6 +278,11 @@ export function ProductFormPage({ product }: ProductFormProps) {
                   <option key={l.id} value={l.id}>{l.naam}</option>
                 ))}
               </select>
+              {form.kwaliteit_code && (
+                <p className="text-xs text-slate-400 mt-1">
+                  Geldt voor alle producten van kwaliteit {form.kwaliteit_code}.
+                </p>
+              )}
             </Field>
             <Field label="Locatie">
               <input

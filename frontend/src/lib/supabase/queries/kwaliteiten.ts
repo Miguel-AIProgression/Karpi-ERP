@@ -9,6 +9,8 @@ export interface KwaliteitMetGewicht {
   collectie_id: number | null
   standaard_breedte_cm: number | null
   gewicht_per_m2_kg: number | null
+  /** Single source of truth voor alle producten van deze kwaliteit (mig 514). */
+  leverancier_id: number | null
   aantal_producten: number
 }
 
@@ -26,7 +28,7 @@ export async function fetchKwaliteitenMetGewicht(): Promise<KwaliteitMetGewicht[
 
   const kwPromise = supabase
     .from('kwaliteiten')
-    .select('code, omschrijving, collectie_id, standaard_breedte_cm, gewicht_per_m2_kg')
+    .select('code, omschrijving, collectie_id, standaard_breedte_cm, gewicht_per_m2_kg, leverancier_id')
     .order('code')
 
   // Producten gepagineerd ophalen tot we alles hebben
@@ -77,6 +79,7 @@ export async function fetchKwaliteitenMetGewicht(): Promise<KwaliteitMetGewicht[
     collectie_id: q.collectie_id,
     standaard_breedte_cm: q.standaard_breedte_cm,
     gewicht_per_m2_kg: q.gewicht_per_m2_kg,
+    leverancier_id: q.leverancier_id,
     aantal_producten: counts.get(q.code) ?? 0,
   }))
 }
@@ -123,6 +126,8 @@ export interface KwaliteitInfo {
   omschrijving: string | null
   gewicht_per_m2_kg: number | null
   standaard_breedte_cm: number | null
+  /** Single source of truth voor leverancier — geldt voor alle kleuren/maten (mig 514). */
+  leverancier_id: number | null
 }
 
 /** Single kwaliteit-fetch voor product-detail enrichment */
@@ -130,11 +135,39 @@ export async function fetchKwaliteitInfo(code: string | null): Promise<Kwaliteit
   if (!code) return null
   const { data, error } = await supabase
     .from('kwaliteiten')
-    .select('code, omschrijving, gewicht_per_m2_kg, standaard_breedte_cm')
+    .select('code, omschrijving, gewicht_per_m2_kg, standaard_breedte_cm, leverancier_id')
     .eq('code', code)
     .maybeSingle()
   if (error) throw error
   return data
+}
+
+/**
+ * Update leverancier voor een kwaliteit. Propageert automatisch naar alle
+ * kleurnummers en afmetingen van die kwaliteit (single source of truth, mig 514).
+ */
+export async function updateKwaliteitLeverancier(code: string, leverancierId: number | null): Promise<void> {
+  const { error } = await supabase
+    .from('kwaliteiten')
+    .update({ leverancier_id: leverancierId })
+    .eq('code', code)
+  if (error) throw error
+}
+
+/**
+ * Maak een kwaliteit-rij aan (als die nog niet bestaat) inclusief leverancier.
+ * Gebruikt door het aanmaak-formulier voor nieuwe kwaliteiten — de FK op
+ * producten.kwaliteit_code vereist dat de kwaliteit al bestaat vóór de INSERT.
+ */
+export async function insertKwaliteit(
+  code: string,
+  omschrijving: string | null,
+  leverancierId: number | null,
+): Promise<void> {
+  const { error } = await supabase
+    .from('kwaliteiten')
+    .insert({ code, omschrijving, leverancier_id: leverancierId })
+  if (error) throw error
 }
 
 /** Kwaliteit-codes die moeilijk te snijden zijn (mig 460) — rechthoek telt

@@ -1,5 +1,40 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-25 — Leverancier op kwaliteit-niveau (mig 512–514)
+
+**Single source of truth voor leverancier:** leverancier is een eigenschap van een
+kwaliteit (DREAM = altijd HENAN), niet van een individuele kleur of maat. Door
+`kwaliteiten.leverancier_id` als enige schrijfplek te maken geldt een wijziging automatisch
+voor alle kleuren en afmetingen.
+
+**Backfill (mig 512–513):**
+- 415 producten gekoppeld aan leverancier via meest recente inkooporder (mig 512)
+- 1.555 producten via uitwisselgroepen — groepen met precies 1 leverancier erven die
+  automatisch; 103 groepen, 0 conflicten (mig 513)
+
+**Migratie 514:**
+- `ALTER TABLE kwaliteiten ADD COLUMN leverancier_id BIGINT REFERENCES leveranciers(id)`
+- Backfill: meest voorkomende leverancier per kwaliteit → 63 kwaliteiten gevuld
+- `backorder_per_artikel` view herbouwd: `COALESCE(kwaliteiten.leverancier_id,
+  producten.leverancier_id)` — valt terug op producten-kolom voor producten zonder kwaliteit
+
+**Frontend (alle pagina's gesynchroniseerd via kwaliteiten als bron):**
+- `/instellingen/kwaliteiten` — nieuwe Leverancier-kolom met inline dropdown; opslaan geeft
+  direct door naar product-detail en alle andere views via query-invalidation
+- Product aanmaken — leverancier in de Stamgegevens-sectie (gedeeld voor alle varianten);
+  wordt opgeslagen op kwaliteiten via `insertKwaliteit` (nieuw) of `updateKwaliteitLeverancier`
+  (bestaand); in variant-toevoegen-modus wordt de bestaande kwaliteit-leverancier
+  automatisch vooringevuld
+- Product bewerken — leverancier leest van `kwaliteitInfo.leverancier_id` (niet meer van
+  `producten.leverancier_id`); opslaan update de kwaliteit, niet het individuele product;
+  hint "Geldt voor alle producten van kwaliteit X"
+- Product-detail — leverancier toont `kwaliteitInfo.leverancier_id` met fallback naar
+  `producten.leverancier_id` voor backward-compat
+
+`producten.leverancier_id` blijft staan als legacy-kolom (niet meer beschreven door UI).
+
+---
+
 ## 2026-06-25 — Factuurlijst, vertegenwoordigers-omzet, taalfixes
 
 **Vertegenwoordigers: omzet via klantportfolio i.p.v. ordercode:** zowel het overzicht

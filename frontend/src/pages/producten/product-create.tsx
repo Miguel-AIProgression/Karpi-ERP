@@ -14,7 +14,7 @@ import {
 } from '@/modules/maatwerk'
 import { fetchKwaliteitBestaat } from '@/lib/supabase/queries/producten'
 import type { ProductType } from '@/lib/supabase/queries/producten'
-import { fetchKwaliteitInfo } from '@/lib/supabase/queries/kwaliteiten'
+import { fetchKwaliteitInfo, insertKwaliteit, updateKwaliteitLeverancier } from '@/lib/supabase/queries/kwaliteiten'
 import { berekenProductGewichtKg } from '@/lib/utils/gewicht'
 import { formatNumber } from '@/lib/utils/formatters'
 
@@ -197,6 +197,14 @@ export function ProductCreatePage() {
     queryFn: () => fetchKwaliteitInfo(kwaliteitCode || null),
     enabled: !!kwaliteitCode,
   })
+
+  // In variant-toevoegen-modus: initialiseer leverancier vanuit bestaande kwaliteit
+  useEffect(() => {
+    if (existingKwaliteitMode && kwaliteitInfo?.leverancier_id != null && !leverancierId) {
+      setLeverancierId(String(kwaliteitInfo.leverancier_id))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kwaliteitInfo?.leverancier_id])
 
   // Debounced artikelnrs voor live duplicate-check (artikelnr is de PK)
   const ingevuldeArtikelnrs = useMemo(
@@ -388,6 +396,20 @@ export function ProductCreatePage() {
     }
 
     try {
+      const leverancierIdNum = leverancierId ? Number(leverancierId) : null
+
+      // Stap 0: kwaliteit-rij aanmaken of leverancier bijwerken
+      if (kwaliteitCode) {
+        if (!existingKwaliteitMode) {
+          // Nieuwe kwaliteit — INSERT (FK op producten.kwaliteit_code vereist dat
+          // de kwaliteit al bestaat vóór de product-INSERT hieronder)
+          await insertKwaliteit(kwaliteitCode, naam.trim() || null, leverancierIdNum)
+        } else if (leverancierIdNum !== null) {
+          // Bestaande kwaliteit — alleen leverancier bijwerken (mig 514)
+          await updateKwaliteitLeverancier(kwaliteitCode, leverancierIdNum)
+        }
+      }
+
       for (const r of filledRows) {
         await createMutation.mutateAsync({
           artikelnr: r.artikelnr.trim(),
@@ -410,7 +432,7 @@ export function ProductCreatePage() {
           gewicht_kg: r.gewicht_kg ? Number(r.gewicht_kg) : null,
           voorraad: 0,
           locatie: r.locatie.trim() || null,
-          leverancier_id: leverancierId ? Number(leverancierId) : null,
+          leverancier_id: leverancierIdNum,
           actief,
         })
       }
@@ -568,7 +590,16 @@ export function ProductCreatePage() {
             </Field>
 
             {/* Leverancier */}
-            <Field label="Leverancier">
+            <Field
+              label="Leverancier"
+              hint={
+                existingKwaliteitMode
+                  ? `Geldt voor alle producten van kwaliteit ${kwaliteitParam}.`
+                  : kwaliteitCode
+                  ? `Geldt voor alle producten van kwaliteit ${kwaliteitCode}.`
+                  : 'Gemeenschappelijk voor alle varianten van deze kwaliteit.'
+              }
+            >
               <select
                 value={leverancierId}
                 onChange={e => setLeverancierId(e.target.value)}

@@ -133,12 +133,16 @@ export function ProductDetailPage() {
           <InfoField label="EAN" value={product.ean_code} />
           <InfoField label="Kwaliteit" value={product.kwaliteit_code} />
           <InfoField label="Zoeksleutel" value={product.zoeksleutel} />
-          {product.leverancier_id != null && (
-            <InfoField
-              label="Leverancier"
-              value={leveranciers?.find(l => l.id === product.leverancier_id)?.naam ?? `#${product.leverancier_id}`}
-            />
-          )}
+          {(() => {
+            const leverancierId = kwaliteitInfo?.leverancier_id ?? product.leverancier_id
+            if (leverancierId == null) return null
+            return (
+              <InfoField
+                label="Leverancier"
+                value={leveranciers?.find(l => l.id === leverancierId)?.naam ?? `#${leverancierId}`}
+              />
+            )
+          })()}
           {product.lengte_cm != null && product.breedte_cm != null && (
             <InfoField label="Maat" value={`${product.lengte_cm} × ${product.breedte_cm} cm`} />
           )}
