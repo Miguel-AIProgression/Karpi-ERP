@@ -13,7 +13,6 @@ import { FactuurBulkBalk } from '../components/factuur-bulk-balk'
 type FactuurType = 'alle' | 'debet' | 'credit'
 
 const ALLE_STATUSSEN: FactuurStatus[] = [
-  'Concept',
   'Verstuurd',
   'Betaald',
   'Herinnering',

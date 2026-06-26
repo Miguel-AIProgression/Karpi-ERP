@@ -6,7 +6,6 @@ import type { FactuurStatus } from '../queries/facturen'
 import { useAuth } from '@/hooks/use-auth'
 
 const STATUS_OPTIES: FactuurStatus[] = [
-  'Concept',
   'Verstuurd',
   'Betaald',
   'Herinnering',
