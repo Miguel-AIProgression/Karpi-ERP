@@ -78,7 +78,7 @@ serve(async (req) => {
         subtotaal, btw_percentage, btw_bedrag, totaal,
         fact_naam, fact_adres, fact_postcode, fact_plaats, fact_land,
         btw_nummer, btw_verlegd, opmerkingen, credit_voor_factuur_id, pdf_storage_path,
-        debiteuren(vertegenwoordiger_code)
+        debiteuren(vertegenw_code)
       `)
       .eq('id', factuurId)
       .maybeSingle()
@@ -87,7 +87,7 @@ serve(async (req) => {
     if (!factuur) return jsonError(404, `Factuur ${factuurId} niet gevonden`)
 
     const isCreditnota = Boolean(factuur.credit_voor_factuur_id)
-    const deb = factuur.debiteuren as { vertegenwoordiger_code: string | null } | null
+    const deb = factuur.debiteuren as { vertegenw_code: string | null } | null
 
     // 2. Haal factuurregels op
     const { data: regelsRaw, error: regelsErr } = await supabase
@@ -123,7 +123,7 @@ serve(async (req) => {
       factuur_nr:         factuur.factuur_nr,
       factuurdatum:       factuur.factuurdatum,
       debiteur_nr:        factuur.debiteur_nr,
-      vertegenwoordiger:  deb?.vertegenwoordiger_code ?? '',
+      vertegenwoordiger:  deb?.vertegenw_code ?? '',
       fact_naam:          factuur.fact_naam ?? '',
       fact_adres:         factuur.fact_adres ?? '',
       fact_postcode:      factuur.fact_postcode ?? '',
