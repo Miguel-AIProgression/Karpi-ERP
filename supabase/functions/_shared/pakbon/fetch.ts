@@ -21,7 +21,7 @@ const PAKBON_SELECT = `
     bundel_order:orders!zending_orders_order_id_fkey ( id, order_nr, klant_referentie, week )
   ),
   zending_regels (
-    id, order_regel_id, artikelnr, aantal,
+    id, order_regel_id, artikelnr, aantal, manco_aantal,
     order_regels (
       order_id, regelnummer, artikelnr, omschrijving, omschrijving_2,
       orderaantal, te_leveren, gewicht_kg, is_maatwerk,

@@ -185,7 +185,12 @@ export function PakbonDocument({ zending, vervoerderNaam: _vervoerderNaam, colli
                     {r.uwNaam && <div>Uw model: {r.uwNaam}</div>}
                   </div>
                   <div className="text-right">{r.besteld}</div>
-                  <div className="text-right">{r.geleverd}</div>
+                  <div className="text-right">
+                    {r.geleverd}
+                    {/* Mig 516: niet-gevonden colli (manco) blijft op de pakbon
+                        staan met geleverd 0 + een duidelijk MANCO-label. */}
+                    {r.isManco && <div className="font-bold">MANCO</div>}
+                  </div>
                 </div>
               ))}
             </div>

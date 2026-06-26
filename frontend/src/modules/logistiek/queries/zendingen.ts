@@ -81,6 +81,10 @@ export interface ZendingPrintRegel {
   artikelnr: string | null
   rol_id: number | null
   aantal: number | null
+  /** Mig 516: aantal niet-gevonden ("manco") stuks tijdens de pickronde. > 0 =
+   *  de regel blijft als manco op de zending staan (aantal verlaagd, colli weg);
+   *  de pakbon toont 'm dan met geleverd 0 + MANCO-label. */
+  manco_aantal?: number | null
   order_regels?: ZendingPrintOrderRegel | null
 }
 
@@ -368,7 +372,7 @@ export async function fetchZendingPrintSet(zending_nr: string): Promise<ZendingP
         )
       ),
       zending_regels (
-        id, order_regel_id, artikelnr, rol_id, aantal,
+        id, order_regel_id, artikelnr, rol_id, aantal, manco_aantal,
         order_regels (
           id, order_id, regelnummer, artikelnr, omschrijving, omschrijving_2, orderaantal, te_leveren,
           gewicht_kg, is_maatwerk, maatwerk_lengte_cm, maatwerk_breedte_cm,

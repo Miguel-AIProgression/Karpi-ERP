@@ -6,6 +6,7 @@ import { PageHeader } from '@/components/layout/page-header'
 import { MultiSelectDropdown } from '@/components/ui/multi-select-dropdown'
 import { StatusTabs } from '@/components/orders/status-tabs'
 import { OrdersTable } from '@/components/orders/orders-table'
+import { MancoTab } from '@/modules/orders/components/manco-tab'
 import { DebiteurTeBevestigenBanner } from '@/components/orders/debiteur-te-bevestigen-banner'
 import { useOrders, useStatusCounts, useOrderKlantOpties } from '@/hooks/use-orders'
 import { useFacturenVoorOrders } from '@/modules/facturatie'
@@ -200,19 +201,24 @@ export function OrdersOverviewPage() {
         totalCount={allOrdersCount}
       />
 
-      {/* Table */}
-      <OrdersTable
-        orders={orders}
-        isLoading={isLoading}
-        sortBy={sortBy}
-        sortDir={sortDir}
-        onSort={handleSort}
-        facturenPerOrder={facturenPerOrder}
-        snijHaalbaarheidPerOrder={snijHaalbaarheidPerOrder}
-      />
+      {/* De 'Manco'-tab toont de regel-niveau werklijst (binnendienst-resolutie),
+          niet de orderlijst. Alle andere tabs tonen de normale tabel. */}
+      {status === 'Manco' ? (
+        <MancoTab />
+      ) : (
+        <OrdersTable
+          orders={orders}
+          isLoading={isLoading}
+          sortBy={sortBy}
+          sortDir={sortDir}
+          onSort={handleSort}
+          facturenPerOrder={facturenPerOrder}
+          snijHaalbaarheidPerOrder={snijHaalbaarheidPerOrder}
+        />
+      )}
 
       {/* Pagination */}
-      {totalPages > 1 && (
+      {status !== 'Manco' && totalPages > 1 && (
         <div className="flex items-center justify-between mt-4">
           <span className="text-sm text-slate-500">
             Pagina {page + 1} van {totalPages}

@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { ArrowUp, ArrowDown, ArrowUpDown, AlertCircle, AlertTriangle, CheckCircle, Mail, Zap } from 'lucide-react'
+import { ArrowUp, ArrowDown, ArrowUpDown, AlertCircle, AlertTriangle, CheckCircle, Mail, Zap, PackageX } from 'lucide-react'
 import { StatusBadge } from '@/components/ui/status-badge'
 import { formatCurrency, formatDate } from '@/lib/utils/formatters'
 import { verzendWeekVoor } from '@/lib/orders/verzendweek'
@@ -228,6 +228,15 @@ function OrderTr({ order, bundel, facturenPerOrder, snijHaalbaarheidPerOrder }: 
             >
               <Zap size={12} className="fill-current" />
               Express
+            </span>
+          )}
+          {order.manco_sinds && (
+            <span
+              className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-800 px-2 py-0.5 text-xs font-semibold"
+              title="Deze order had een mankement — een colli werd tijdens het picken niet gevonden"
+            >
+              <PackageX size={12} />
+              Manco
             </span>
           )}
           {toonBundelChip && bundel && (

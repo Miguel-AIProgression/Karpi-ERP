@@ -306,6 +306,7 @@ Deno.test('golden: volledig PakbonDocument', () => {
             omstickerCodes: ['TIFF23XX200290'],
             besteld: '2',
             geleverd: '2',
+            isManco: false,
           },
         ],
       },

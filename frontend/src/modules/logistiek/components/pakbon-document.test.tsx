@@ -548,4 +548,37 @@ describe('PakbonDocument — karakterisering rijopbouw', () => {
 
     expect(container.textContent).not.toContain('OMB:')
   })
+
+  it('mig 516: manco-regel blijft staan met besteld 1 / geleverd 0 + MANCO-label', () => {
+    // Niet-gevonden colli tijdens de pickronde: voltooi_pickronde verlaagt
+    // zending_regels.aantal naar 0 en zet manco_aantal=1, colli verwijderd. De
+    // regel mag NIET wegvallen op de pakbon — toon besteld 1, geleverd 0, MANCO.
+    const zending = maakZending({
+      zending_regels: [
+        maakRegel({
+          id: 1,
+          order_regel_id: 10,
+          artikelnr: 'ART-A',
+          aantal: 0,
+          manco_aantal: 1,
+          order_regels: maakOrderRegel({
+            id: 10,
+            regelnummer: 1,
+            artikelnr: 'ART-A',
+            orderaantal: 1,
+          }),
+        }),
+      ],
+      zending_colli: [], // colli verwijderd door de manco-melding
+    })
+
+    const { container } = renderPakbon(zending, 1)
+
+    const [besteld, geleverd] = bestelGeleverd(container, 'ART-A')
+    expect(besteld).toBe(formatNumber(1))
+    // De geleverd-cel bevat "0" plus het MANCO-sublabel.
+    expect(geleverd).toContain(formatNumber(0))
+    expect(geleverd).toContain('MANCO')
+    expect(container.textContent).toContain('MANCO')
+  })
 })

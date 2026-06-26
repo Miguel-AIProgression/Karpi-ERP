@@ -20,6 +20,7 @@ export {
   usePickProblemen,
   useStartPickronde,
   useMarkeerColliNietGevonden,
+  useHerstelColli,
   useVoltooiPickronde,
   useAnnuleerPickronde,
 } from './hooks/use-pickronde'
@@ -37,7 +38,6 @@ export type {
 export type {
   PickColliRij,
   PickProbleemRij,
-  NietGevondenModus,
   MarkeerNietGevondenArgs,
 } from './queries/pickronde'
 

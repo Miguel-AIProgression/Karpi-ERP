@@ -21,6 +21,7 @@ vi.mock('@/lib/supabase/client', () => ({
 import {
   startPickronde,
   markeerColliNietGevonden,
+  herstelColli,
   voltooiPickronde,
   voltooiPickrondes,
 } from '../queries/pickronde'
@@ -55,35 +56,39 @@ describe('startPickronde', () => {
 })
 
 describe('markeerColliNietGevonden', () => {
-  it('blokkeer-modus zonder opmerking, met pickerId', async () => {
-    await markeerColliNietGevonden({ colliId: 7, modus: 'blokkeer', pickerId: 3 })
+  // Mig 516: 3-arg-RPC (modus weg). Niet-gevonden blokkeert de zending niet meer
+  // — afsplitsen naar Manco gebeurt bij voltooi_pickronde.
+  it('zonder opmerking, met pickerId', async () => {
+    await markeerColliNietGevonden({ colliId: 7, pickerId: 3 })
     expect(rpcCalls).toEqual([{
       fn: 'markeer_colli_niet_gevonden',
-      args: { p_zending_colli_id: 7, p_modus: 'blokkeer', p_opmerking: null, p_picker_id: 3 },
+      args: { p_zending_colli_id: 7, p_opmerking: null, p_picker_id: 3 },
     }])
   })
 
-  it('splits-modus met opmerking en pickerId', async () => {
-    await markeerColliNietGevonden({
-      colliId: 8,
-      modus: 'splits',
-      opmerking: 'rol kwijt',
-      pickerId: 5,
-    })
+  it('met opmerking en pickerId', async () => {
+    await markeerColliNietGevonden({ colliId: 8, opmerking: 'rol kwijt', pickerId: 5 })
     expect(rpcCalls).toEqual([{
       fn: 'markeer_colli_niet_gevonden',
-      args: { p_zending_colli_id: 8, p_modus: 'splits', p_opmerking: 'rol kwijt', p_picker_id: 5 },
+      args: { p_zending_colli_id: 8, p_opmerking: 'rol kwijt', p_picker_id: 5 },
     }])
   })
 
-  it('gooit fout met details bij splits-zonder-deelleveringen', async () => {
-    nextRpcResponse = {
-      data: null,
-      error: { message: "Splitsen vereist order.lever_modus='deelleveringen'" },
-    }
+  it('propageert RPC-fout', async () => {
+    nextRpcResponse = { data: null, error: { message: 'Pickronde niet actief' } }
     await expect(
-      markeerColliNietGevonden({ colliId: 9, modus: 'splits', pickerId: 1 })
-    ).rejects.toThrow(/deelleveringen/)
+      markeerColliNietGevonden({ colliId: 9, pickerId: 1 })
+    ).rejects.toThrow(/Pickronde niet actief/)
+  })
+})
+
+describe('herstelColli', () => {
+  it('roept herstel_colli_pick aan met p_zending_colli_id (Toch gevonden)', async () => {
+    await herstelColli(7)
+    expect(rpcCalls).toEqual([{
+      fn: 'herstel_colli_pick',
+      args: { p_zending_colli_id: 7 },
+    }])
   })
 })
 

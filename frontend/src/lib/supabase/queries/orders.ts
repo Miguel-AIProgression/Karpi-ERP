@@ -6,6 +6,8 @@ import { filterLeverweekTeBevestigen } from '@/lib/orders/edi-leverweek'
 import { filterAfleveradresIncompleet } from '@/lib/orders/afleveradres-gate'
 import { filterPrijsOntbreekt } from '@/lib/orders/prijs-ontbreekt'
 import { filterGeenVerzendweek } from '@/lib/orders/geen-verzendweek'
+import { filterMancoMarker } from '@/lib/orders/manco-marker'
+import { filterPickBackorder } from '@/lib/orders/pick-backorder'
 
 export interface OrderRow {
   id: number
@@ -76,6 +78,13 @@ export interface OrderRow {
    * cache-data zonder deze kolom niet crasht; default-render = false.
    */
   express?: boolean
+  /**
+   * Mig 516: permanente manco-markering — gezet bij de eerste niet-gevonden
+   * colli op deze order, nooit gewist (ook na Verzonden zichtbaar). Voedt de
+   * 'Had mankement'-tab + de manco-badge op de orderrij. Optional zodat oude
+   * cache-data zonder deze kolom niet crasht.
+   */
+  manco_sinds?: string | null
 }
 
 export interface OrderDetail extends OrderRow {
@@ -288,6 +297,16 @@ export async function fetchOrders(params: {
     // binnen zonder afleverdatum (2026-06-24). Productie-only orders (Basta)
     // worden uitgesloten (verzending via Basta, ADR-0029).
     query = filterGeenVerzendweek(query)
+  } else if (status === 'Had mankement') {
+    // Mig 516: orders waarop ooit een manco (niet-gevonden colli tijdens het
+    // picken) is gedetecteerd. Status-overstijgend én historisch — blijft ook
+    // zichtbaar nadat de order Verzonden is. Spiegelt isMancoMarker.
+    query = filterMancoMarker(query)
+  } else if (status === 'Manco') {
+    // De 'Manco'-tab toont de regel-niveau werklijst (MancoTab), niet de
+    // orderlijst — geef hier bewust niets terug zodat de (ongebruikte) tabel
+    // leeg blijft als de query toch draait.
+    query = query.eq('id', -1)
   } else if (status && status !== 'Alle') {
     query = query.eq('status', status)
   }
@@ -397,6 +416,8 @@ export async function fetchStatusCounts(): Promise<StatusCountResult> {
     aflAdresOntbreektRes,
     prijsOntbreektRes,
     geenVerzendweekRes,
+    mancoRes,
+    hadMankementRes,
   ] = await Promise.all([
     supabase.from('orders_status_telling').select('status, aantal'),
     supabase
@@ -420,6 +441,14 @@ export async function fetchStatusCounts(): Promise<StatusCountResult> {
       supabase.from('orders').select('id', { count: 'exact', head: true }),
     ),
     filterGeenVerzendweek(
+      supabase.from('orders').select('id', { count: 'exact', head: true }),
+    ),
+    // Mig 516: 'Manco' = open manco-werklijst (regel-niveau, open backorders).
+    filterPickBackorder(
+      supabase.from('order_regels').select('id', { count: 'exact', head: true }),
+    ),
+    // Mig 516: 'Had mankement' = orders met een (historische) manco-markering.
+    filterMancoMarker(
       supabase.from('orders').select('id', { count: 'exact', head: true }),
     ),
   ])
@@ -464,6 +493,16 @@ export async function fetchStatusCounts(): Promise<StatusCountResult> {
   const geenVerzendweek = geenVerzendweekRes.count ?? 0
   if (geenVerzendweek > 0) {
     counts.push({ status: 'Geen verzendweek', aantal: geenVerzendweek })
+  }
+
+  const manco = mancoRes.count ?? 0
+  if (manco > 0) {
+    counts.push({ status: 'Manco', aantal: manco })
+  }
+
+  const hadMankement = hadMankementRes.count ?? 0
+  if (hadMankement > 0) {
+    counts.push({ status: 'Had mankement', aantal: hadMankement })
   }
 
   return { counts, totalOrders }

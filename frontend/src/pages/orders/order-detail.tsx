@@ -27,6 +27,8 @@ import { isAfleveradresIncompleet } from '@/lib/orders/afleveradres-gate'
 import { AfleveradresIncompleetBanner } from '@/components/orders/afleveradres-incompleet-banner'
 import { isPrijsOntbreekt } from '@/lib/orders/prijs-ontbreekt'
 import { PrijsOntbreektBanner } from '@/components/orders/prijs-ontbreekt-banner'
+import { MancoMarkerBanner } from '@/components/orders/manco-marker-banner'
+import { isMancoMarker } from '@/lib/orders/manco-marker'
 import { heeftDropshipRegel } from '@/lib/orders/dropshipment-regel'
 import { dropshipAflEmailProbleem } from '@/lib/orders/dropship-email'
 import { useAuth } from '@/hooks/use-auth'
@@ -145,6 +147,9 @@ export function OrderDetailPage() {
           regels={regels}
         />
       )}
+
+      {/* Mig 516: permanente manco-markering (historisch, ook na Verzonden). */}
+      {isMancoMarker(order) && <MancoMarkerBanner mancoSinds={order.manco_sinds!} />}
 
       {order.bron_systeem === 'email' && order.opmerkingen && (
         <EmailInhoudPanel body={order.opmerkingen} />

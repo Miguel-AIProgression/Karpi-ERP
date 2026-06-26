@@ -81,6 +81,7 @@ function bouwGroepRegels(regels: PakbonRegel[], afwerkingTypes: AfwerkingTypeMap
       omstickerCodes: pr.omstickerCodes,
       besteld: formatAantal(pr.besteld),
       geleverd: formatAantal(pr.geleverd),
+      isManco: pr.isManco,
     }
   })
 }

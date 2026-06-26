@@ -93,6 +93,9 @@ export function bouwPakbonRegels(zending: PakbonRegelsInput): PakbonRegel[] {
           regel.order_regel_id != null
             ? omstickerPerOrderRegel.get(regel.order_regel_id) ?? []
             : [],
+        // Mig 516: manco = niet-gevonden colli tijdens de pickronde. De regel
+        // blijft op de pakbon staan (geleverd 0) met een MANCO-label.
+        isManco: Number(regel.manco_aantal ?? 0) > 0,
       }
     })
 }

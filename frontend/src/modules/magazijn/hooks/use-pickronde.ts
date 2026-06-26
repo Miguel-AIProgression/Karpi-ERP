@@ -4,6 +4,7 @@ import {
   annuleerPickronde,
   fetchColliVoorZending,
   fetchPickProblemen,
+  herstelColli,
   markeerColliNietGevonden,
   startPickronde,
   voltooiPickronde,
@@ -41,17 +42,26 @@ export function useStartPickronde() {
   })
 }
 
+// Mig 516: niet-gevonden zet alleen de colli op 'niet_gevonden' (geen
+// zending-mutatie meer — het afsplitsen naar Manco gebeurt bij voltooien).
 export function useMarkeerColliNietGevonden() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (args: MarkeerNietGevondenArgs) => markeerColliNietGevonden(args),
-    onSuccess: (_, args) => {
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['pickronde'] })
-      // Bij splits verandert ook zending_regels en aantal_colli.
-      if (args.modus === 'splits') {
-        qc.invalidateQueries({ queryKey: ['zendingen'] })
-        qc.invalidateQueries({ queryKey: ['pick-ship'] })
-      }
+    },
+  })
+}
+
+// Mig 516: "Toch gevonden" — zet een op niet-gevonden gezette colli terug op
+// 'open'. Zelfde cache-invalidatie als de niet-gevonden-mutatie.
+export function useHerstelColli() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (zendingColliId: number) => herstelColli(zendingColliId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['pickronde'] })
     },
   })
 }

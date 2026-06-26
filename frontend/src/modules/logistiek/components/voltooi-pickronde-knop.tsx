@@ -34,8 +34,10 @@ export function VoltooiPickrondeKnop({
   if (zendingStatus !== 'Picken') return null
 
   const aantalNietGevonden = colli.filter((c) => c.pick_uitkomst === 'niet_gevonden').length
-  // Picker optioneel (mig 394): niet langer geblokkeerd op lege picker.
-  const disabled = mutate.isPending || aantalNietGevonden > 0
+  // Mig 516: niet-gevonden colli blokkeren de pickronde niet meer — ze gaan
+  // automatisch naar de Manco-werklijst en de rest wordt verzonden. Picker
+  // optioneel (mig 394): niet langer geblokkeerd op lege picker.
+  const disabled = mutate.isPending
 
   async function handleClick() {
     setError(null)
@@ -49,7 +51,7 @@ export function VoltooiPickrondeKnop({
 
   const tooltip =
     aantalNietGevonden > 0
-      ? `Eerst ${aantalNietGevonden} pick-probleem oplossen (chef)`
+      ? `${aantalNietGevonden} niet-gevonden colli gaan naar de Manco-werklijst; de rest wordt verzonden`
       : 'Markeer alle colli als gepickt en sluit de pickronde — order gaat naar Verzonden, factuur volgt'
 
   return (

@@ -247,6 +247,11 @@ export async function genereerPakbonPDF(
       }
       drawTextRight(page, regel.besteld, colBes.x + colBes.w, topY, fontR, 7.5)
       drawTextRight(page, regel.geleverd, colGel.x + colGel.w, topY, fontR, 7.5)
+      // Mig 516: niet-gevonden colli (manco) blijft op de pakbon staan met
+      // geleverd 0 + een duidelijk "MANCO"-label naast de geleverd-kolom.
+      if (regel.isManco) {
+        drawTextRight(page, 'MANCO', colGel.x + colGel.w, topY - EXTRA_LINE_H, fontB, 7, BLACK)
+      }
 
       y = topY - omsLines.length * EXTRA_LINE_H - subRegels.length * EXTRA_LINE_H - ROW_GAP
     }

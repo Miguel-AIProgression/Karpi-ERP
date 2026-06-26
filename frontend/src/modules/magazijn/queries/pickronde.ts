@@ -1,11 +1,8 @@
 // frontend/src/modules/magazijn/queries/pickronde.ts
 import { supabase } from '@/lib/supabase/client'
 
-export type NietGevondenModus = 'blokkeer' | 'splits'
-
 export interface MarkeerNietGevondenArgs {
   colliId: number
-  modus: NietGevondenModus
   opmerking?: string | null
   pickerId: number | null
 }
@@ -19,16 +16,27 @@ export async function startPickronde(orderId: number, pickerId: number): Promise
   return Number(data)
 }
 
+// Mig 516: 3-arg-RPC (modus weg). Zet één colli op 'niet_gevonden' + opmerking;
+// het afsplitsen naar Manco gebeurt bij voltooi_pickronde — niet-gevonden
+// blokkeert de zending niet meer.
 export async function markeerColliNietGevonden(
   args: MarkeerNietGevondenArgs
 ): Promise<void> {
   const { error } = await supabase.rpc('markeer_colli_niet_gevonden', {
     p_zending_colli_id: args.colliId,
-    p_modus: args.modus,
     p_opmerking: args.opmerking ?? null,
     p_picker_id: args.pickerId,
   })
   if (error) throw toError(error, 'Markeren niet-gevonden mislukt')
+}
+
+// Mig 516: zet een per ongeluk op 'niet_gevonden' gezette colli terug naar
+// 'open' ("Toch gevonden"). No-op als de colli al open is.
+export async function herstelColli(zendingColliId: number): Promise<void> {
+  const { error } = await supabase.rpc('herstel_colli_pick', {
+    p_zending_colli_id: zendingColliId,
+  })
+  if (error) throw toError(error, 'Herstellen colli mislukt')
 }
 
 export async function voltooiPickronde(
