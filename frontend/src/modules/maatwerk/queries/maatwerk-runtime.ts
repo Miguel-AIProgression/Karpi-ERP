@@ -724,6 +724,22 @@ export interface DirectProductOptie {
  *
  * Matcht op omschrijving (ilike) OF exact artikelnr.
  */
+/** Sorteert directe producten: standaard eerst, dan varianten (KNUTZEN/INLEGVEL), dan DOOS. Binnen groepen op omschrijving. */
+function sorteerDirecteProducten(rijen: DirectProductOptie[]): DirectProductOptie[] {
+  const groep = (om: string): number => {
+    const u = om.toUpperCase()
+    if (u.startsWith('DOOS')) return 2
+    if (u.includes('KNUTZEN') || u.includes('INLEGVEL')) return 1
+    return 0
+  }
+  return [...rijen].sort((a, b) => {
+    const gA = groep(a.omschrijving ?? '')
+    const gB = groep(b.omschrijving ?? '')
+    if (gA !== gB) return gA - gB
+    return (a.omschrijving ?? '').localeCompare(b.omschrijving ?? '', 'nl')
+  })
+}
+
 export async function searchDirecteProducten(term: string): Promise<DirectProductOptie[]> {
   const trimmed = term.trim()
   if (trimmed.length < 2) return []
@@ -735,9 +751,8 @@ export async function searchDirecteProducten(term: string): Promise<DirectProduc
     .eq('is_pseudo', false)
     .is('kwaliteit_code', null)
     .or(`omschrijving.ilike.%${trimmed}%,artikelnr.eq.${trimmed}`)
-    .order('omschrijving')
-    .limit(20)
+    .limit(50)
 
   if (error) throw error
-  return (data ?? []) as DirectProductOptie[]
+  return sorteerDirecteProducten((data ?? []) as DirectProductOptie[])
 }
