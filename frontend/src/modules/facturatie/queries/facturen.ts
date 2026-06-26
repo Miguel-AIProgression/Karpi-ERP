@@ -20,6 +20,8 @@ export interface FactuurListItem {
   btw_controle_nodig_sinds: string | null
   /** Mig 467: NULL = debetfactuur, gevuld = creditnota. */
   credit_voor_factuur_id: number | null
+  /** True als dit een debetfactuur is met ≥1 creditnota maar status ≠ Gecrediteerd (= deelcredit). */
+  heeft_deelcredits: boolean
 }
 
 /** True als de factuur een creditnota is (credit_voor_factuur_id IS NOT NULL). */
@@ -87,7 +89,16 @@ export async function fetchFacturen(params?: { debiteurNr?: number }): Promise<F
   if (params?.debiteurNr) q = q.eq('debiteur_nr', params.debiteurNr)
   const { data, error } = await q
   if (error) throw error
-  return (data ?? []).map((f) => {
+  const allData = data ?? []
+
+  // Eerste pass: verzamel alle debet-id's waar ≥1 creditnota naar wijst.
+  const gecrediteerdDeIds = new Set<number>()
+  for (const f of allData) {
+    const cvf = (f as unknown as { credit_voor_factuur_id: number | null }).credit_voor_factuur_id
+    if (cvf != null) gecrediteerdDeIds.add(cvf)
+  }
+
+  return allData.map((f) => {
     // Distinct orders verzamelen uit de factuurregels (1 factuur kan een
     // bundel van meerdere orders zijn). Dedup op order_id; order_nr als
     // weergave met #id-fallback wanneer het nr (nog) niet gevuld is.
@@ -100,6 +111,7 @@ export async function fetchFacturen(params?: { debiteurNr?: number }): Promise<F
       if (r.order_id == null || ordersMap.has(r.order_id)) continue
       ordersMap.set(r.order_id, r.order_nr ?? `#${r.order_id}`)
     }
+    const credit_voor_factuur_id = (f as unknown as { credit_voor_factuur_id: number | null }).credit_voor_factuur_id ?? null
     return {
       id: f.id,
       factuur_nr: f.factuur_nr,
@@ -113,7 +125,9 @@ export async function fetchFacturen(params?: { debiteurNr?: number }): Promise<F
       pdf_storage_path: f.pdf_storage_path,
       orders: Array.from(ordersMap, ([id, nr]) => ({ id, nr })),
       btw_controle_nodig_sinds: f.btw_controle_nodig_sinds,
-      credit_voor_factuur_id: (f as unknown as { credit_voor_factuur_id: number | null }).credit_voor_factuur_id ?? null,
+      credit_voor_factuur_id,
+      // Deelcredit: debetfactuur met ≥1 creditnota maar nog niet volledig gecrediteerd.
+      heeft_deelcredits: credit_voor_factuur_id === null && f.status !== 'Gecrediteerd' && gecrediteerdDeIds.has(f.id),
     }
   })
 }

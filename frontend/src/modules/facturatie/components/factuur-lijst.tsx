@@ -172,7 +172,14 @@ export function FactuurLijst({
                   )}
                 </td>
                 <td className="py-3 pr-4">
-                  <StatusBadge status={f.status} type="factuur" />
+                  <div className="flex flex-col gap-0.5">
+                    <StatusBadge status={f.status} type="factuur" />
+                    {f.heeft_deelcredits && (
+                      <span className="inline-flex items-center rounded-md bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                        Deels gecrediteerd
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td className={`py-3 pr-4 font-mono text-xs text-slate-700 ${compact ? '' : 'py-3'}`}>
                   {f.factuur_nr}
