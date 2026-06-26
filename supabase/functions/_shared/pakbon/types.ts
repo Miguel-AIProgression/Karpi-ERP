@@ -34,7 +34,7 @@ export interface PakbonRegelInput {
   order_regel_id: number | null
   artikelnr: string | null
   aantal: number | null
-  /** Mig 516: aantal niet-gevonden stuks ("manco") tijdens de pickronde. > 0 =
+  /** Mig 518: aantal niet-gevonden stuks ("manco") tijdens de pickronde. > 0 =
    *  deze regel is (deels) als manco gemarkeerd → pakbon toont een MANCO-label. */
   manco_aantal?: number | null
   order_regels?: PakbonOrderRegel | null
@@ -49,6 +49,10 @@ export interface PakbonColliInput {
   /** Mig 436: karpi_code van het fysiek gepakte (omgesticker) equivalent als dat
    *  afwijkt van het bestelde artikel. null = geen omsticker → geen "OMB:"-regel. */
   omsticker_snapshot: string | null
+  /** Mig 518: live pick-uitkomst. 'niet_gevonden' (tijdens de pickronde, vóór
+   *  voltooi_pickronde manco_aantal zet) → de regel telt al als manco op de
+   *  pakbon. Ná voltooien is de colli verwijderd → manco_aantal draagt het. */
+  pick_uitkomst?: string | null
 }
 
 /**
@@ -134,7 +138,7 @@ export interface PakbonRegel {
    *  equivalent) over de colli van deze regel. Leeg = geen omsticker. De pakbon
    *  toont ze als "OMB:"-subregel, net als het verzendlabel. */
   omstickerCodes: string[]
-  /** Mig 516: TRUE = deze regel is (deels) als manco gemarkeerd (niet-gevonden
+  /** Mig 518: TRUE = deze regel is (deels) als manco gemarkeerd (niet-gevonden
    *  colli tijdens de pickronde, `zending_regels.manco_aantal > 0`). De pakbon
    *  blijft de regel tonen met "besteld N / geleverd 0" + een MANCO-label. */
   isManco: boolean
@@ -167,7 +171,7 @@ export interface PakbonRegelDisplay {
   omstickerCodes: string[]
   besteld: string
   geleverd: string
-  /** Mig 516: TRUE = (deels) manco — pakbon toont een "MANCO"-label naast de
+  /** Mig 518: TRUE = (deels) manco — pakbon toont een "MANCO"-label naast de
    *  regel zodat magazijn/klant zien dat dit niet-gevonden colli betreft. */
   isManco: boolean
 }

@@ -2,7 +2,7 @@ import { supabase } from '@/lib/supabase/client'
 import { filterPickBackorder } from '@/lib/orders/pick-backorder'
 import { landNaarIso2 } from '@/lib/utils/land-vlag'
 
-// Manco-werklijst (mig 516): orderregels die tijdens een Pickronde niet gevonden
+// Manco-werklijst (mig 518): orderregels die tijdens een Pickronde niet gevonden
 // zijn (pick_backorder_sinds gezet, nog niet afgehandeld) en wachten op
 // binnendienst-beoordeling. De open-manco-definitie leeft op één plek
 // (filterPickBackorder); deze module dupliceert het filter niet.

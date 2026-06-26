@@ -79,7 +79,7 @@ export interface OrderRow {
    */
   express?: boolean
   /**
-   * Mig 516: permanente manco-markering — gezet bij de eerste niet-gevonden
+   * Mig 518: permanente manco-markering — gezet bij de eerste niet-gevonden
    * colli op deze order, nooit gewist (ook na Verzonden zichtbaar). Voedt de
    * 'Had mankement'-tab + de manco-badge op de orderrij. Optional zodat oude
    * cache-data zonder deze kolom niet crasht.
@@ -298,7 +298,7 @@ export async function fetchOrders(params: {
     // worden uitgesloten (verzending via Basta, ADR-0029).
     query = filterGeenVerzendweek(query)
   } else if (status === 'Had mankement') {
-    // Mig 516: orders waarop ooit een manco (niet-gevonden colli tijdens het
+    // Mig 518: orders waarop ooit een manco (niet-gevonden colli tijdens het
     // picken) is gedetecteerd. Status-overstijgend én historisch — blijft ook
     // zichtbaar nadat de order Verzonden is. Spiegelt isMancoMarker.
     query = filterMancoMarker(query)
@@ -443,11 +443,11 @@ export async function fetchStatusCounts(): Promise<StatusCountResult> {
     filterGeenVerzendweek(
       supabase.from('orders').select('id', { count: 'exact', head: true }),
     ),
-    // Mig 516: 'Manco' = open manco-werklijst (regel-niveau, open backorders).
+    // Mig 518: 'Manco' = open manco-werklijst (regel-niveau, open backorders).
     filterPickBackorder(
       supabase.from('order_regels').select('id', { count: 'exact', head: true }),
     ),
-    // Mig 516: 'Had mankement' = orders met een (historische) manco-markering.
+    // Mig 518: 'Had mankement' = orders met een (historische) manco-markering.
     filterMancoMarker(
       supabase.from('orders').select('id', { count: 'exact', head: true }),
     ),

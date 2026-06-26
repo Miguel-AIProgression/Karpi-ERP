@@ -1,4 +1,4 @@
--- Migratie 516: Manco-afhandeling — niet-gevonden colli blokkeert de zending niet
+-- Migratie 518: Manco-afhandeling — niet-gevonden colli blokkeert de zending niet
 -- meer, gaat naar een Pick-backorder ("Manco"), met NL/DE-splitsing in de
 -- binnendienst-resolutie en een permanente order-markering.
 --
@@ -35,13 +35,13 @@ ALTER TABLE order_regels
   ADD COLUMN IF NOT EXISTS pick_backorder_geannuleerd_op TIMESTAMPTZ;
 
 COMMENT ON COLUMN order_regels.pick_backorder_sinds IS
-  'Mig 516: gezet door voltooi_pickronde als de colli van deze regel niet gevonden '
+  'Mig 518: gezet door voltooi_pickronde als de colli van deze regel niet gevonden '
   'werd. NOT NULL = open manco op de Manco-werklijst + uitgesloten uit pickbaarheid. '
   'manco_terug_naar_pickship/manco_niet_leverbaar (NL) wissen dit weer.';
 COMMENT ON COLUMN order_regels.pick_backorder_reden IS
-  'Mig 516: operator-opmerking bij niet-gevonden (uit zending_colli.pick_opmerking).';
+  'Mig 518: operator-opmerking bij niet-gevonden (uit zending_colli.pick_opmerking).';
 COMMENT ON COLUMN order_regels.pick_backorder_geannuleerd_op IS
-  'Mig 516: gezet door manco_niet_leverbaar (DE/buitenland). NOT NULL = regel '
+  'Mig 518: gezet door manco_niet_leverbaar (DE/buitenland). NOT NULL = regel '
   'definitief niet geleverd op deze order; telt niet mee voor de order-status.';
 
 CREATE INDEX IF NOT EXISTS idx_order_regels_pick_backorder
@@ -52,7 +52,7 @@ CREATE INDEX IF NOT EXISTS idx_order_regels_pick_backorder
 ALTER TABLE orders
   ADD COLUMN IF NOT EXISTS manco_sinds TIMESTAMPTZ;
 COMMENT ON COLUMN orders.manco_sinds IS
-  'Mig 516: eenmalig gezet bij de eerste manco-detectie op deze order; nooit '
+  'Mig 518: eenmalig gezet bij de eerste manco-detectie op deze order; nooit '
   'gewist (ook na Verzonden zichtbaar). Voedt de status-overstijgende Manco-tab.';
 
 -- Manco-aantal op de zending_regel zodat de pakbon de regel kan tonen met
@@ -60,7 +60,7 @@ COMMENT ON COLUMN orders.manco_sinds IS
 ALTER TABLE zending_regels
   ADD COLUMN IF NOT EXISTS manco_aantal INTEGER NOT NULL DEFAULT 0;
 COMMENT ON COLUMN zending_regels.manco_aantal IS
-  'Mig 516: aantal stuks van deze regel dat tijdens de pickronde niet gevonden is. '
+  'Mig 518: aantal stuks van deze regel dat tijdens de pickronde niet gevonden is. '
   '>0 = pakbon toont "MANCO" + geleverd = aantal (kan 0 zijn). De colli is verwijderd '
   '(niets fysiek verzonden); aantal is met manco_aantal verlaagd.';
 
@@ -129,7 +129,7 @@ BEGIN
     SELECT ore.order_id, 'manco_gedetecteerd', o.status,
            jsonb_build_object('order_regel_id', v_ng.order_regel_id,
                               'zending_id', p_zending_id,
-                              'reden', v_ng.pick_opmerking, 'migratie', 516)
+                              'reden', v_ng.pick_opmerking, 'migratie', 518)
       FROM order_regels ore JOIN orders o ON o.id = ore.order_id
      WHERE ore.id = v_ng.order_regel_id;
 
@@ -271,7 +271,7 @@ $$;
 GRANT EXECUTE ON FUNCTION voltooi_pickronde(BIGINT, BIGINT) TO authenticated;
 
 COMMENT ON FUNCTION voltooi_pickronde(BIGINT, BIGINT) IS
-  'Mig 516 (base 413): niet-gevonden colli''s gaan naar Manco (order_regels.'
+  'Mig 518 (base 413): niet-gevonden colli''s gaan naar Manco (order_regels.'
   'pick_backorder_sinds + orders.manco_sinds) i.p.v. te blokkeren. De regel blijft '
   'als MANCO op de zending (aantal-1/manco_aantal+1) → pakbon geleverd 0; de colli '
   'verdwijnt; de voorraad-claim blijft BEVROREN. Lege zending → verwijderd. '
@@ -369,12 +369,12 @@ SELECT oreg.id AS order_regel_id,
    LEFT JOIN rol_locatie_per_artikel rl ON rl.artikelnr = oreg.artikelnr
 WHERE (o.status <> ALL (ARRAY['Verzonden'::order_status, 'Geannuleerd'::order_status]))
   AND NOT is_admin_pseudo(oreg.artikelnr)
-  AND oreg.pick_backorder_sinds IS NULL;  -- mig 516: open manco uit Pick & Ship
+  AND oreg.pick_backorder_sinds IS NULL;  -- mig 518: open manco uit Pick & Ship
 
 COMMENT ON VIEW orderregel_pickbaarheid IS
   'Per orderregel: is_pickbaar, fysieke_locatie, bron, wacht_op, gewicht_kg. '
   'Mig 386: single source + admin-pseudo. Mig 498: voorraad-claim op SUM(aantal). '
-  'Mig 516: open manco-regels (pick_backorder_sinds NOT NULL) uitgesloten.';
+  'Mig 518: open manco-regels (pick_backorder_sinds NOT NULL) uitgesloten.';
 
 -- ============================================================================
 -- 4. orders_list — manco_sinds toegevoegd (base mig 451, volledige body + 1 kolom).
@@ -432,7 +432,7 @@ SELECT
   o.afl_adres_incompleet_sinds,
   o.prijs_ontbreekt_sinds,
   o.express,
-  -- Mig 516: permanente manco-markering + afleverland voor de Manco-tab/NL-DE-badge
+  -- Mig 518: permanente manco-markering + afleverland voor de Manco-tab/NL-DE-badge
   o.manco_sinds,
   o.afl_land
 FROM orders o
@@ -441,7 +441,7 @@ LEFT JOIN bundel_per_order b   ON b.order_id    = o.id;
 
 COMMENT ON VIEW orders_list IS
   'Order-overzicht voor frontend OrdersTable. Sinds mig 451: express. '
-  'Sinds mig 516: manco_sinds (permanente Manco-markering) + afl_land.';
+  'Sinds mig 518: manco_sinds (permanente Manco-markering) + afl_land.';
 
 -- ============================================================================
 -- 5. markeer_colli_niet_gevonden — vereenvoudigd (base mig 217, modus weg).
@@ -480,7 +480,7 @@ $$;
 GRANT EXECUTE ON FUNCTION markeer_colli_niet_gevonden(BIGINT, TEXT, BIGINT) TO authenticated;
 
 COMMENT ON FUNCTION markeer_colli_niet_gevonden(BIGINT, TEXT, BIGINT) IS
-  'Mig 516 (base 217): vereenvoudigd. Zet één colli op ''niet_gevonden'' + '
+  'Mig 518 (base 217): vereenvoudigd. Zet één colli op ''niet_gevonden'' + '
   'opmerking + picker. Afsplitsen naar Manco gebeurt bij voltooi_pickronde.';
 
 -- Herstel: zet een per ongeluk gemarkeerde colli terug naar 'open' (Toch gevonden).
@@ -504,7 +504,7 @@ $$;
 GRANT EXECUTE ON FUNCTION herstel_colli_pick(BIGINT) TO authenticated;
 
 COMMENT ON FUNCTION herstel_colli_pick(BIGINT) IS
-  'Mig 516: zet een op ''niet_gevonden'' gezette colli terug naar ''open'' '
+  'Mig 518: zet een op ''niet_gevonden'' gezette colli terug naar ''open'' '
   '(Toch gevonden). No-op als de colli al ''open'' is of de pickronde niet actief.';
 
 -- ============================================================================
@@ -531,7 +531,7 @@ BEGIN
 
   INSERT INTO order_events (order_id, event_type, status_na, metadata)
   VALUES (v_order_id, 'manco_terug_naar_pickship', v_status,
-          jsonb_build_object('order_regel_id', p_order_regel_id, 'migratie', 516));
+          jsonb_build_object('order_regel_id', p_order_regel_id, 'migratie', 518));
 
   PERFORM herbereken_wacht_status(v_order_id);
 END;
@@ -539,7 +539,7 @@ $$;
 GRANT EXECUTE ON FUNCTION manco_terug_naar_pickship(BIGINT) TO authenticated;
 
 COMMENT ON FUNCTION manco_terug_naar_pickship(BIGINT) IS
-  'Mig 516: Manco-actie A. Wist de gate → regel terug in Pick & Ship (claim stond '
+  'Mig 518: Manco-actie A. Wist de gate → regel terug in Pick & Ship (claim stond '
   'bevroren, dus direct pickbaar). Audit ''manco_terug_naar_pickship''.';
 
 -- Actie B — Niet leverbaar uit voorraad. De ENIGE plek die de telling raakt
@@ -600,7 +600,7 @@ BEGIN
     INSERT INTO order_events (order_id, event_type, status_na, metadata)
     VALUES (v_order_id, 'manco_voorraad_gecorrigeerd', v_status,
             jsonb_build_object('order_regel_id', p_order_regel_id, 'artikelnr', v_artikelnr,
-                               'aantal', v_manco_qty, 'migratie', 516));
+                               'aantal', v_manco_qty, 'migratie', 518));
   END IF;
 
   IF v_land = 'NL' THEN
@@ -617,7 +617,7 @@ BEGIN
     VALUES (v_order_id, 'manco_niet_leverbaar', v_status,
             jsonb_build_object('order_regel_id', p_order_regel_id, 'land', 'NL',
                                'reden', p_reden, 'corrigeer_voorraad', p_corrigeer_voorraad,
-                               'migratie', 516));
+                               'migratie', 518));
     RETURN;
   END IF;
 
@@ -631,7 +631,7 @@ BEGIN
   VALUES (v_order_id, 'manco_niet_leverbaar', v_status,
           jsonb_build_object('order_regel_id', p_order_regel_id, 'land', v_land,
                              'reden', p_reden, 'corrigeer_voorraad', p_corrigeer_voorraad,
-                             'migratie', 516));
+                             'migratie', 518));
 
   -- Order-status afleiden (spiegelt voltooi_pickronde/annuleer).
   IF NOT EXISTS (
@@ -685,7 +685,7 @@ $$;
 GRANT EXECUTE ON FUNCTION manco_niet_leverbaar(BIGINT, BOOLEAN, TEXT) TO authenticated;
 
 COMMENT ON FUNCTION manco_niet_leverbaar(BIGINT, BOOLEAN, TEXT) IS
-  'Mig 516: Manco-actie B. Optionele voorraad-correctie (producten.voorraad − '
+  'Mig 518: Manco-actie B. Optionele voorraad-correctie (producten.voorraad − '
   'manco_aantal; enige telling-mutatie). NL → wordt een normale backorder-'
   'tekortregel (gate weg, herallocatie = korte vorm mig 497: alleen eigen '
   'voorraad, geen auto-inkoop). DE/overig → regel afgesloten '

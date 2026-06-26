@@ -233,13 +233,29 @@ export async function genereerPakbonPDF(
         regel.omstickerCodes.length > 0 ? `OMB: ${regel.omstickerCodes.join(', ')}` : null,
         regel.uwNaam ? `Uw model: ${regel.uwNaam}` : null,
       ].filter(Boolean) as string[]
-      const totaalH = omsLines.length * EXTRA_LINE_H + subRegels.length * EXTRA_LINE_H + ROW_GAP
+      // Mig 518: manco-regel krijgt één extra regelhoogte voor de "Niet
+      // gevonden"-sub-regel; meetellen zodat de volgende rij niet overlapt.
+      const mancoExtra = regel.isManco ? EXTRA_LINE_H : 0
+      const totaalH =
+        omsLines.length * EXTRA_LINE_H + subRegels.length * EXTRA_LINE_H + mancoExtra + ROW_GAP
       nieuwePaginaIndienNodig(totaalH)
 
       const topY = y
       drawText(page, regel.regelnummer, colRgl.x, topY, fontR, 7.5)
       drawText(page, regel.artikelnr, colArt.x, topY, fontR, 7)
-      omsLines.forEach((line, i) => drawText(page, line, colOms.x, topY - i * EXTRA_LINE_H, fontR, 7.5))
+      omsLines.forEach((line, i) => {
+        const ly = topY - i * EXTRA_LINE_H
+        drawText(page, line, colOms.x, ly, fontR, 7.5)
+        // Mig 518: lichte streep door de productnaam bij een manco-regel.
+        if (regel.isManco) {
+          page.drawLine({
+            start: { x: colOms.x, y: ly + mm(1) },
+            end: { x: colOms.x + fontR.widthOfTextAtSize(line, 7.5), y: ly + mm(1) },
+            thickness: 0.4,
+            color: SLATE,
+          })
+        }
+      })
       let subY = topY - omsLines.length * EXTRA_LINE_H
       for (const sr of subRegels) {
         drawText(page, sr, colOms.x, subY, fontR, 7, SLATE)
@@ -247,13 +263,20 @@ export async function genereerPakbonPDF(
       }
       drawTextRight(page, regel.besteld, colBes.x + colBes.w, topY, fontR, 7.5)
       drawTextRight(page, regel.geleverd, colGel.x + colGel.w, topY, fontR, 7.5)
-      // Mig 516: niet-gevonden colli (manco) blijft op de pakbon staan met
-      // geleverd 0 + een duidelijk "MANCO"-label naast de geleverd-kolom.
+      // Mig 518: niet-gevonden colli (manco) blijft op de pakbon staan met
+      // geleverd 0 + een duidelijk "MANCO"-label naast de geleverd-kolom, plus
+      // een "Niet gevonden"-sub-regel onder de doorgestreepte productnaam.
       if (regel.isManco) {
-        drawTextRight(page, 'MANCO', colGel.x + colGel.w, topY - EXTRA_LINE_H, fontB, 7, BLACK)
+        drawTextRight(page, 'MANCO', colGel.x + colGel.w, topY - EXTRA_LINE_H, fontB, 8, BLACK)
+        drawText(page, 'Niet gevonden - niet meegeleverd', colOms.x, subY, fontB, 7, BLACK)
       }
 
-      y = topY - omsLines.length * EXTRA_LINE_H - subRegels.length * EXTRA_LINE_H - ROW_GAP
+      y =
+        topY -
+        omsLines.length * EXTRA_LINE_H -
+        subRegels.length * EXTRA_LINE_H -
+        mancoExtra -
+        ROW_GAP
     }
   }
 

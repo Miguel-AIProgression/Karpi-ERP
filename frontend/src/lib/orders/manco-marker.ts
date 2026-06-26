@@ -1,4 +1,4 @@
-// Bron van waarheid voor het 'Had mankement'-predicaat (mig 516): orders waarop
+// Bron van waarheid voor het 'Had mankement'-predicaat (mig 518): orders waarop
 // ooit een manco (niet-gevonden colli) is gedetecteerd. Permanent/historisch —
 // blijft NOT NULL ook nadat het manco is afgehandeld en de order Verzonden is.
 // Spiegelt het patroon van afleveradres-gate.ts / prijs-ontbreekt.ts, maar zonder

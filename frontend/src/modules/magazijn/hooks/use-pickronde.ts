@@ -42,7 +42,7 @@ export function useStartPickronde() {
   })
 }
 
-// Mig 516: niet-gevonden zet alleen de colli op 'niet_gevonden' (geen
+// Mig 518: niet-gevonden zet alleen de colli op 'niet_gevonden' (geen
 // zending-mutatie meer — het afsplitsen naar Manco gebeurt bij voltooien).
 export function useMarkeerColliNietGevonden() {
   const qc = useQueryClient()
@@ -54,7 +54,7 @@ export function useMarkeerColliNietGevonden() {
   })
 }
 
-// Mig 516: "Toch gevonden" — zet een op niet-gevonden gezette colli terug op
+// Mig 518: "Toch gevonden" — zet een op niet-gevonden gezette colli terug op
 // 'open'. Zelfde cache-invalidatie als de niet-gevonden-mutatie.
 export function useHerstelColli() {
   const qc = useQueryClient()

@@ -16,7 +16,7 @@ export async function startPickronde(orderId: number, pickerId: number): Promise
   return Number(data)
 }
 
-// Mig 516: 3-arg-RPC (modus weg). Zet één colli op 'niet_gevonden' + opmerking;
+// Mig 518: 3-arg-RPC (modus weg). Zet één colli op 'niet_gevonden' + opmerking;
 // het afsplitsen naar Manco gebeurt bij voltooi_pickronde — niet-gevonden
 // blokkeert de zending niet meer.
 export async function markeerColliNietGevonden(
@@ -30,7 +30,7 @@ export async function markeerColliNietGevonden(
   if (error) throw toError(error, 'Markeren niet-gevonden mislukt')
 }
 
-// Mig 516: zet een per ongeluk op 'niet_gevonden' gezette colli terug naar
+// Mig 518: zet een per ongeluk op 'niet_gevonden' gezette colli terug naar
 // 'open' ("Toch gevonden"). No-op als de colli al open is.
 export async function herstelColli(zendingColliId: number): Promise<void> {
   const { error } = await supabase.rpc('herstel_colli_pick', {

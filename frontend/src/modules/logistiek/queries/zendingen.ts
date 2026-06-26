@@ -81,7 +81,7 @@ export interface ZendingPrintRegel {
   artikelnr: string | null
   rol_id: number | null
   aantal: number | null
-  /** Mig 516: aantal niet-gevonden ("manco") stuks tijdens de pickronde. > 0 =
+  /** Mig 518: aantal niet-gevonden ("manco") stuks tijdens de pickronde. > 0 =
    *  de regel blijft als manco op de zending staan (aantal verlaagd, colli weg);
    *  de pakbon toont 'm dan met geleverd 0 + MANCO-label. */
   manco_aantal?: number | null
@@ -130,6 +130,9 @@ export interface ZendingPrintColli {
   /** Mig 436: karpi_code van het fysiek gepakte (omgesticker) equivalent als dat
    *  afwijkt van het bestelde artikel. null = geen omsticker → geen "OMB:"-regel. */
   omsticker_snapshot: string | null
+  /** Mig 518: live pick-uitkomst. 'niet_gevonden' (tijdens de pickronde) → de
+   *  pakbon toont de regel al als manco vóór voltooi_pickronde. */
+  pick_uitkomst?: string | null
 }
 
 export interface ZendingPrintSet {
@@ -384,7 +387,7 @@ export async function fetchZendingPrintSet(zending_nr: string): Promise<ZendingP
           )
         )
       ),
-      zending_colli ( id, colli_nr, sscc, order_regel_id, omschrijving_snapshot, klant_omschrijving_snapshot, klanteigen_naam_snapshot, omsticker_snapshot, bundel_colli_id, is_bundel )
+      zending_colli ( id, colli_nr, sscc, order_regel_id, omschrijving_snapshot, klant_omschrijving_snapshot, klanteigen_naam_snapshot, omsticker_snapshot, bundel_colli_id, is_bundel, pick_uitkomst )
     `,
     )
     .eq('zending_nr', zending_nr)

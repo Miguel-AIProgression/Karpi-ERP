@@ -549,7 +549,7 @@ describe('PakbonDocument — karakterisering rijopbouw', () => {
     expect(container.textContent).not.toContain('OMB:')
   })
 
-  it('mig 516: manco-regel blijft staan met besteld 1 / geleverd 0 + MANCO-label', () => {
+  it('mig 518: manco-regel blijft staan met besteld 1 / geleverd 0 + MANCO-label', () => {
     // Niet-gevonden colli tijdens de pickronde: voltooi_pickronde verlaagt
     // zending_regels.aantal naar 0 en zet manco_aantal=1, colli verwijderd. De
     // regel mag NIET wegvallen op de pakbon — toon besteld 1, geleverd 0, MANCO.
@@ -580,5 +580,37 @@ describe('PakbonDocument — karakterisering rijopbouw', () => {
     expect(geleverd).toContain(formatNumber(0))
     expect(geleverd).toContain('MANCO')
     expect(container.textContent).toContain('MANCO')
+  })
+
+  it('mig 518: niet-gevonden colli toont al manco vóór voltooien (geleverd 0 + MANCO)', () => {
+    // Tijdens de pickronde, vóór voltooi_pickronde: aantal staat nog op 1 en
+    // manco_aantal op 0, maar de colli draagt pick_uitkomst='niet_gevonden'. De
+    // pakbon moet 'm dan al als manco tonen zodat een herprint nu klopt (niet
+    // pas ná voltooien).
+    const zending = maakZending({
+      zending_regels: [
+        maakRegel({
+          id: 1,
+          order_regel_id: 10,
+          artikelnr: 'ART-A',
+          aantal: 1,
+          manco_aantal: 0,
+          order_regels: maakOrderRegel({
+            id: 10,
+            regelnummer: 1,
+            artikelnr: 'ART-A',
+            orderaantal: 1,
+          }),
+        }),
+      ],
+      zending_colli: [maakColli({ id: 1, order_regel_id: 10, pick_uitkomst: 'niet_gevonden' })],
+    })
+
+    const { container } = renderPakbon(zending, 1)
+
+    const [besteld, geleverd] = bestelGeleverd(container, 'ART-A')
+    expect(besteld).toBe(formatNumber(1))
+    expect(geleverd).toContain(formatNumber(0))
+    expect(geleverd).toContain('MANCO')
   })
 })

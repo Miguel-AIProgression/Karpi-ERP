@@ -73,10 +73,28 @@ export function bouwPakbonRegels(zending: PakbonRegelsInput): PakbonRegel[] {
   const orderIdVoor = (regel: PakbonRegelInput): number =>
     regel.order_regels?.order_id ?? primaireOrderId
 
+  // Mig 518: live niet-gevonden colli per orderregel. Vóór voltooi_pickronde
+  // staat manco_aantal nog op 0 en bestaat de colli nog met
+  // pick_uitkomst='niet_gevonden'; die telt al als manco zodat een (her)geprinte
+  // pakbon tijdens het picken klopt. Ná voltooien zijn die colli verwijderd en
+  // draagt manco_aantal de waarde — beide paden geven dezelfde uitkomst.
+  const nietGevondenPerOrderRegel = new Map<number, number>()
+  for (const c of (zending.zending_colli ?? []) as PakbonColliInput[]) {
+    if (c.order_regel_id == null || c.pick_uitkomst !== 'niet_gevonden') continue
+    nietGevondenPerOrderRegel.set(
+      c.order_regel_id,
+      (nietGevondenPerOrderRegel.get(c.order_regel_id) ?? 0) + 1,
+    )
+  }
+
   return [...fysiekeRegels]
     .sort((a, b) => (a.order_regels?.regelnummer ?? 0) - (b.order_regels?.regelnummer ?? 0))
     .map((regel) => {
-      const geleverd = geleverdAantal(regel)
+      const nietGevondenLive =
+        regel.order_regel_id != null
+          ? nietGevondenPerOrderRegel.get(regel.order_regel_id) ?? 0
+          : 0
+      const geleverd = Math.max(0, geleverdAantal(regel) - nietGevondenLive)
       const snapshot =
         (regel.order_regel_id != null
           ? snapshotPerOrderRegel.get(regel.order_regel_id)
@@ -93,9 +111,9 @@ export function bouwPakbonRegels(zending: PakbonRegelsInput): PakbonRegel[] {
           regel.order_regel_id != null
             ? omstickerPerOrderRegel.get(regel.order_regel_id) ?? []
             : [],
-        // Mig 516: manco = niet-gevonden colli tijdens de pickronde. De regel
-        // blijft op de pakbon staan (geleverd 0) met een MANCO-label.
-        isManco: Number(regel.manco_aantal ?? 0) > 0,
+        // Mig 518: manco = niet-gevonden colli. Bevroren (manco_aantal, ná
+        // voltooien) óf live (pick_uitkomst, tijdens het picken).
+        isManco: Number(regel.manco_aantal ?? 0) > 0 || nietGevondenLive > 0,
       }
     })
 }
@@ -106,7 +124,9 @@ export function bouwPakbonRegels(zending: PakbonRegelsInput): PakbonRegel[] {
  * legacy-pad (som van fysieke-regel-aantallen, minimaal 1).
  */
 export function telColli(zending: PakbonZendingInput): number {
-  const colli = zending.zending_colli ?? []
+  // Mig 518: niet-gevonden colli (pick_uitkomst='niet_gevonden') gaan niet fysiek
+  // mee → niet meetellen. Ná voltooi_pickronde zijn ze sowieso verwijderd.
+  const colli = (zending.zending_colli ?? []).filter((c) => c.pick_uitkomst !== 'niet_gevonden')
   if (colli.length > 0) return colli.length
   const fysiekeRegels = zending.zending_regels.filter((r) => !isShippingRegel(r))
   let som = 0

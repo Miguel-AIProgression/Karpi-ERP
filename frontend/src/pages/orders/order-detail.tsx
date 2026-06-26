@@ -148,7 +148,7 @@ export function OrderDetailPage() {
         />
       )}
 
-      {/* Mig 516: permanente manco-markering (historisch, ook na Verzonden). */}
+      {/* Mig 518: permanente manco-markering (historisch, ook na Verzonden). */}
       {isMancoMarker(order) && <MancoMarkerBanner mancoSinds={order.manco_sinds!} />}
 
       {order.bron_systeem === 'email' && order.opmerkingen && (

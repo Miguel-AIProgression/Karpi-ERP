@@ -174,8 +174,14 @@ export function PakbonDocument({ zending, vervoerderNaam: _vervoerderNaam, colli
                   <div>{r.regelnummer}</div>
                   <div className="truncate">{r.artikelnr}</div>
                   <div>
-                    <div>{eenheidVoor()}&nbsp;&nbsp;{r.hoofdNaam}</div>
-                    {r.maatRegel && <div className="text-slate-600">{r.maatRegel}</div>}
+                    <div className={r.isManco ? 'text-slate-400 line-through' : undefined}>
+                      {eenheidVoor()}&nbsp;&nbsp;{r.hoofdNaam}
+                    </div>
+                    {r.maatRegel && (
+                      <div className={r.isManco ? 'text-slate-400 line-through' : 'text-slate-600'}>
+                        {r.maatRegel}
+                      </div>
+                    )}
                     {r.afwerkingRegel && <div className="text-slate-600">Afwerking: {r.afwerkingRegel}</div>}
                     {/* Mig 436: omsticker — fysiek gepakt equivalent, zelfde
                         "OMB:"-notatie als het verzendlabel. */}
@@ -183,13 +189,17 @@ export function PakbonDocument({ zending, vervoerderNaam: _vervoerderNaam, colli
                       <div className="text-slate-600">OMB: {r.omstickerCodes.join(', ')}</div>
                     )}
                     {r.uwNaam && <div>Uw model: {r.uwNaam}</div>}
+                    {/* Mig 518: opvallende manco-markering onder de doorgestreepte regel. */}
+                    {r.isManco && (
+                      <div className="font-bold text-rose-600">⚠ Niet gevonden — niet meegeleverd</div>
+                    )}
                   </div>
                   <div className="text-right">{r.besteld}</div>
                   <div className="text-right">
                     {r.geleverd}
-                    {/* Mig 516: niet-gevonden colli (manco) blijft op de pakbon
+                    {/* Mig 518: niet-gevonden colli (manco) blijft op de pakbon
                         staan met geleverd 0 + een duidelijk MANCO-label. */}
-                    {r.isManco && <div className="font-bold">MANCO</div>}
+                    {r.isManco && <div className="font-bold text-rose-600">MANCO</div>}
                   </div>
                 </div>
               ))}

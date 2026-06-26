@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { PackageX } from 'lucide-react'
 
-// Mig 516: permanente, historische markering dat deze order ooit een manco had
+// Mig 518: permanente, historische markering dat deze order ooit een manco had
 // (niet-gevonden colli tijdens het picken). Geen actie/wis-knop — puur een spoor.
 // De binnendienst handelt de openstaande regel(s) af op de Manco-werklijst.
 export function MancoMarkerBanner({ mancoSinds }: { mancoSinds: string }) {

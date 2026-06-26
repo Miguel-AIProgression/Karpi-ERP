@@ -30,7 +30,7 @@ const PAKBON_SELECT = `
       producten!order_regels_artikelnr_fkey ( omschrijving, gewicht_kg )
     )
   ),
-  zending_colli ( colli_nr, sscc, order_regel_id, omschrijving_snapshot, klant_omschrijving_snapshot, omsticker_snapshot )
+  zending_colli ( colli_nr, sscc, order_regel_id, omschrijving_snapshot, klant_omschrijving_snapshot, omsticker_snapshot, pick_uitkomst )
 `
 
 /** Haalt één zending op en levert een `PakbonZendingInput` (bundel platgeslagen). */

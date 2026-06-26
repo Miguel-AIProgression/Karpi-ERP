@@ -56,7 +56,7 @@ describe('startPickronde', () => {
 })
 
 describe('markeerColliNietGevonden', () => {
-  // Mig 516: 3-arg-RPC (modus weg). Niet-gevonden blokkeert de zending niet meer
+  // Mig 518: 3-arg-RPC (modus weg). Niet-gevonden blokkeert de zending niet meer
   // — afsplitsen naar Manco gebeurt bij voltooi_pickronde.
   it('zonder opmerking, met pickerId', async () => {
     await markeerColliNietGevonden({ colliId: 7, pickerId: 3 })

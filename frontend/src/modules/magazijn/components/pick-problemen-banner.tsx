@@ -5,7 +5,7 @@ import { usePickProblemen } from '../hooks/use-pickronde'
 
 // Compact banner: rendert niets als er geen open pick-problemen zijn. Anders
 // een amber-banner bovenaan Pick & Ship met een uitklap-lijst van getroffen
-// colli's. Sinds mig 516 blokkeren niet-gevonden colli de zending niet meer —
+// colli's. Sinds mig 518 blokkeren niet-gevonden colli de zending niet meer —
 // ze gaan naar de Manco-werklijst waar de binnendienst ze afhandelt.
 export function PickProblemenBanner() {
   const { data: problemen = [] } = usePickProblemen()

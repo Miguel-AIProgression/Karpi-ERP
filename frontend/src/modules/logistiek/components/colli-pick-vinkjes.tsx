@@ -12,7 +12,7 @@ import { useAuth } from '@/hooks/use-auth'
 
 interface Props {
   zendingId: number
-  /** order.lever_modus — sinds mig 516 niet meer gebruikt (niet-gevonden gaat
+  /** order.lever_modus — sinds mig 518 niet meer gebruikt (niet-gevonden gaat
    *  altijd naar de Manco-backorder, geen splits-keuze meer). Blijft als prop
    *  staan zodat de printset-pagina onveranderd blijft. */
   leverModus?: 'deelleveringen' | 'in_een_keer' | null

@@ -285,6 +285,7 @@ Deno.test('golden: volledig PakbonDocument', () => {
     afleverTelefoon: null,
     factuuradres: ['Karpi Klant', 'Straat 1', '1000 AA Plaats'],
     isBundel: false,
+    isDeelzending: false,
     referentieRegel: '-',
     vertegenwoordiger: '-',
     orderDebiteur: 'ORD-2026-0107/152009',

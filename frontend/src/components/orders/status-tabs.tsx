@@ -22,10 +22,10 @@ import type { StatusCount } from '@/lib/supabase/queries/orders'
 // 'Geen verzendweek' = orders zonder afleverdatum (afleverdatum IS NULL);
 // status-overstijgend — zonder week geen weekindeling in Pick & Ship.
 // Aanleiding: EDI-orders SB MÖBEL BOSS / OSTERMANN zonder datum (2026-06-24).
-// 'Manco' = open manco-werklijst (mig 516, regel-niveau): colli's die tijdens
+// 'Manco' = open manco-werklijst (mig 518, regel-niveau): colli's die tijdens
 // het picken niet gevonden zijn en door de binnendienst beoordeeld moeten worden
 // (NL → backorder, DE → afstemmen). Rendert de MancoTab i.p.v. de orderlijst.
-// 'Had mankement' = orders waarop ooit een manco gedetecteerd is (mig 516,
+// 'Had mankement' = orders waarop ooit een manco gedetecteerd is (mig 518,
 // manco_sinds NOT NULL); historisch/status-overstijgend, blijft ook na Verzonden.
 const ALL_STATUSES = [
   'Alle',

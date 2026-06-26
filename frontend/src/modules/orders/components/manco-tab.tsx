@@ -4,7 +4,7 @@ import { PackageX, RotateCcw, XCircle, ExternalLink } from 'lucide-react'
 import { useMancoNietLeverbaar, useMancoRegels, useMancoTerugNaarPickship } from '../hooks/use-manco'
 import type { MancoRegel } from '../queries/manco'
 
-// Manco-werklijst (mig 516): regel-niveau. Toont orderregels die tijdens een
+// Manco-werklijst (mig 518): regel-niveau. Toont orderregels die tijdens een
 // Pickronde niet gevonden zijn. De binnendienst onderzoekt fysiek en kiest per
 // regel: "Weer beschikbaar" (terug in Pick & Ship) of "Niet leverbaar" (voorraad
 // corrigeren + NL → blijft backorder / DE → afsluiten). De claim staat tot dan
