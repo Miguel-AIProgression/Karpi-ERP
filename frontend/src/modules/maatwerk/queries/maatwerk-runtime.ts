@@ -702,3 +702,42 @@ export async function fetchMaatwerkLevertijdHint(
     verwachte_leverweek: weekStr as unknown as string,
   }
 }
+
+// === Directe producten zoeken (geen kwaliteitscode, bijv. antislip) ===
+
+export interface DirectProductOptie {
+  artikelnr: string
+  karpi_code: string | null
+  omschrijving: string | null
+  verkoopprijs: number | null
+  gewicht_kg: number | null
+  vrije_voorraad: number
+  besteld_inkoop: number
+  product_type: string
+}
+
+/**
+ * Zoekt actieve, niet-pseudo producten ZONDER kwaliteitscode (bijv. antislip,
+ * staalkaarten, overige losse artikelen). Wordt naast `searchKwaliteitenViaProducten`
+ * gebruikt zodat niet alleen tapijtkwaliteiten maar ook "Overig"-producten
+ * vindbaar zijn in het orderformulier.
+ *
+ * Matcht op omschrijving (ilike) OF exact artikelnr.
+ */
+export async function searchDirecteProducten(term: string): Promise<DirectProductOptie[]> {
+  const trimmed = term.trim()
+  if (trimmed.length < 2) return []
+
+  const { data, error } = await supabase
+    .from('producten')
+    .select('artikelnr, karpi_code, omschrijving, verkoopprijs, gewicht_kg, vrije_voorraad, besteld_inkoop, product_type')
+    .eq('actief', true)
+    .eq('is_pseudo', false)
+    .is('kwaliteit_code', null)
+    .or(`omschrijving.ilike.%${trimmed}%,artikelnr.eq.${trimmed}`)
+    .order('omschrijving')
+    .limit(20)
+
+  if (error) throw error
+  return (data ?? []) as DirectProductOptie[]
+}

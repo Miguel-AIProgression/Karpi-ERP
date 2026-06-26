@@ -22,6 +22,7 @@ export {
   fetchBandDefaultsVoorKwaliteit,
   fetchKwaliteitM2Prijs,
   searchKwaliteitenViaProducten,
+  searchDirecteProducten,
   fetchKleurenVoorKwaliteit,
   fetchStandaardMatenVoorKwaliteit,
   fetchMaatwerkLevertijdHint,
@@ -36,6 +37,7 @@ export type {
   BandDefaultRow,
   KwaliteitOptie,
   KleurOptie,
+  DirectProductOptie,
   StandaardMaat,
   MaatwerkLevertijdHintResult,
 } from './queries/maatwerk-runtime'

@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase/client'
 import {
   searchKwaliteitenViaProducten,
+  searchDirecteProducten,
   fetchKleurenVoorKwaliteit,
   fetchVormen,
   fetchAfwerkingTypes,
@@ -19,6 +20,7 @@ import {
   berekenOmtrekMeter,
   type KwaliteitOptie,
   type KleurOptie,
+  type DirectProductOptie,
 } from '@/modules/maatwerk'
 import { VormAfmetingSelector, type VormAfmetingData } from './vorm-afmeting-selector'
 import { SubstitutionPicker } from '@/modules/reserveringen'
@@ -123,6 +125,13 @@ export function KwaliteitFirstSelector({
     queryKey: ['kwaliteiten-search', debouncedKwaliteitTerm, debouncedKleurHint, debiteurNr ?? null],
     queryFn: () => searchKwaliteitenViaProducten(debouncedKwaliteitTerm || '', debiteurNr, debouncedKleurHint || undefined),
     enabled: debouncedKwaliteitTerm.length >= 2,
+    staleTime: 30_000,
+  })
+
+  const { data: directeProducten = [] } = useQuery({
+    queryKey: ['directe-producten-search', debouncedSearch],
+    queryFn: () => searchDirecteProducten(debouncedSearch),
+    enabled: debouncedSearch.length >= 2,
     staleTime: 30_000,
   })
 
@@ -389,6 +398,23 @@ export function KwaliteitFirstSelector({
     setStep('maten')
   }
 
+  function handleDirectProductSelect(p: DirectProductOptie) {
+    const article: SelectedArticle = {
+      artikelnr: p.artikelnr,
+      karpi_code: p.karpi_code,
+      omschrijving: p.omschrijving ?? '',
+      verkoopprijs: p.verkoopprijs,
+      gewicht_kg: p.gewicht_kg,
+      vrije_voorraad: p.vrije_voorraad,
+      besteld_inkoop: p.besteld_inkoop,
+      kwaliteit_code: null,
+      kleur_code: null,
+      product_type: p.product_type,
+    }
+    onSelectArticle(article)
+    handleReset()
+  }
+
   function handleKleurFilter(kleurCode: string) {
     setSelectedKleurCode(kleurCode)
     // Bij op maat ook de KleurOptie bijhouden
@@ -589,34 +615,66 @@ export function KwaliteitFirstSelector({
           </div>
         )}
 
-        {searchOpen && !kwaliteitenLoading && debouncedKwaliteitTerm.length >= 2 && filtered.length === 0 && (
+        {searchOpen && !kwaliteitenLoading && debouncedSearch.length >= 2 && filtered.length === 0 && directeProducten.length === 0 && (
           <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-[var(--radius-sm)] shadow-lg p-3 text-sm text-slate-400">
-            Geen kwaliteiten gevonden voor "{debouncedKwaliteitTerm}"
-            {debouncedKleurHint && ` met kleur ${debouncedKleurHint}`}
+            Geen artikelen gevonden voor "{debouncedSearch}"
           </div>
         )}
 
-        {searchOpen && filtered.length > 0 && (
-          <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-[var(--radius-sm)] shadow-lg max-h-60 overflow-y-auto">
-            {filtered.map((k) => (
-              <button
-                key={k.code}
-                type="button"
-                onClick={() => handleKwaliteitSelect(k)}
-                className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 border-b border-slate-50 last:border-0"
-              >
-                <span className="font-mono text-xs text-terracotta-500">{k.code}</span>
-                <span className="ml-2">{k.omschrijving}</span>
-                {k.klant_eigen_naam && (
-                  <span className="ml-2 text-xs text-blue-500" title="Klant-eigen naam voor deze kwaliteit">
-                    · klant: {k.klant_eigen_naam}
-                  </span>
+        {searchOpen && (filtered.length > 0 || directeProducten.length > 0) && (
+          <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-[var(--radius-sm)] shadow-lg max-h-72 overflow-y-auto">
+            {filtered.length > 0 && (
+              <>
+                {directeProducten.length > 0 && (
+                  <div className="px-3 py-1.5 text-xs font-medium text-slate-400 bg-slate-50 border-b border-slate-100 uppercase tracking-wide">
+                    Kwaliteiten
+                  </div>
                 )}
-                {parsedKleurHint && (
-                  <span className="ml-2 text-xs text-slate-400">→ kleur {parsedKleurHint}</span>
-                )}
-              </button>
-            ))}
+                {filtered.map((k) => (
+                  <button
+                    key={k.code}
+                    type="button"
+                    onClick={() => handleKwaliteitSelect(k)}
+                    className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 border-b border-slate-50 last:border-0"
+                  >
+                    <span className="font-mono text-xs text-terracotta-500">{k.code}</span>
+                    <span className="ml-2">{k.omschrijving}</span>
+                    {k.klant_eigen_naam && (
+                      <span className="ml-2 text-xs text-blue-500" title="Klant-eigen naam voor deze kwaliteit">
+                        · klant: {k.klant_eigen_naam}
+                      </span>
+                    )}
+                    {parsedKleurHint && (
+                      <span className="ml-2 text-xs text-slate-400">→ kleur {parsedKleurHint}</span>
+                    )}
+                  </button>
+                ))}
+              </>
+            )}
+            {directeProducten.length > 0 && (
+              <>
+                <div className="px-3 py-1.5 text-xs font-medium text-slate-400 bg-slate-50 border-b border-slate-100 uppercase tracking-wide">
+                  Overige artikelen
+                </div>
+                {directeProducten.map((p) => (
+                  <button
+                    key={p.artikelnr}
+                    type="button"
+                    onClick={() => handleDirectProductSelect(p)}
+                    className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 border-b border-slate-50 last:border-0"
+                  >
+                    <span className="font-mono text-xs text-slate-400">{p.artikelnr}</span>
+                    <span className="ml-2">{p.omschrijving}</span>
+                    <span className={`ml-3 text-xs ${p.vrije_voorraad > 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+                      Vrij: {p.vrije_voorraad}
+                    </span>
+                    {p.verkoopprijs != null && (
+                      <span className="ml-2 text-xs text-slate-500">{formatCurrency(p.verkoopprijs)}</span>
+                    )}
+                  </button>
+                ))}
+              </>
+            )}
           </div>
         )}
       </div>
