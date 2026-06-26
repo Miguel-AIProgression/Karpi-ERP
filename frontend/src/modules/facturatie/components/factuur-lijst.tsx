@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { ArrowDown, ArrowUp, ArrowUpDown, FileDown } from 'lucide-react'
 import { useFacturen } from '../hooks/use-facturen'
 import { StatusBadge } from '@/components/ui/status-badge'
@@ -36,6 +36,7 @@ export function FactuurLijst({
   onToggle,
   onToggleAlles,
 }: FactuurLijstProps) {
+  const navigate = useNavigate()
   const { data, isLoading } = useFacturen(debiteurNr)
   const [sort, setSort] = useState(DEFAULT_SORT)
   const [pdfBezig, setPdfBezig] = useState<number | null>(null)
@@ -144,10 +145,11 @@ export function FactuurLijst({
             return (
               <tr
                 key={f.id}
-                className={`hover:bg-slate-50 transition-colors ${aan ? 'bg-terracotta-50/40' : ''}`}
+                className={`hover:bg-slate-50 transition-colors cursor-pointer ${aan ? 'bg-terracotta-50/40' : ''}`}
+                onClick={() => navigate(`/facturatie/${f.id}`)}
               >
                 {showSelectie && (
-                  <td className="py-3 pr-3">
+                  <td className="py-3 pr-3" onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox"
                       checked={aan}
@@ -228,7 +230,7 @@ export function FactuurLijst({
                     {f.pdf_storage_path && (
                       <button
                         type="button"
-                        onClick={() => downloadPdf(f)}
+                        onClick={(e) => { e.stopPropagation(); downloadPdf(f) }}
                         disabled={pdfBezig === f.id}
                         title="Download PDF"
                         className="text-slate-400 hover:text-terracotta-500 disabled:opacity-40 transition-colors"
