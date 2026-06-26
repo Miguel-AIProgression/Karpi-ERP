@@ -467,6 +467,14 @@ function RegelRow({ regel, orderId, orderNr, orderdatum, orderVerzendweek, lever
   // Ongedekt deel (te_leveren − Σ actieve claims) — wat nu op nieuwe inkoop wacht.
   const totaalGeclaimd = claims.reduce((s, c) => s + c.aantal, 0)
   const tekort = regel.te_leveren - totaalGeclaimd
+  // Split voor "Te leveren" (uit voorraad) en "Backorder" (via IO + ongedekt).
+  // Alleen zinvol als toonSubRows=true; anders fallback op bestaande velden.
+  const voorraadAantal = toonSubRows
+    ? claims.filter((c) => c.bron === 'voorraad').reduce((s, c) => s + c.aantal, 0)
+    : 0
+  const backorderAantal = toonSubRows
+    ? claims.filter((c) => c.bron === 'inkooporder_regel').reduce((s, c) => s + c.aantal, 0) + Math.max(0, tekort)
+    : regel.backorder
 
   return (
     <>
@@ -510,13 +518,15 @@ function RegelRow({ regel, orderId, orderNr, orderdatum, orderVerzendweek, lever
         <td className="px-4 py-2 text-right">
           {regel.is_maatwerk ? (
             <MaatwerkFaseBadge snijplannen={regel.snijplannen} />
+          ) : toonSubRows ? (
+            voorraadAantal
           ) : (
             regel.te_leveren
           )}
         </td>
         <td className="px-4 py-2 text-right">
-          {regel.backorder > 0 ? (
-            <span className="text-amber-600">{regel.backorder}</span>
+          {backorderAantal > 0 ? (
+            <span className="text-amber-600">{backorderAantal}</span>
           ) : (
             '0'
           )}
