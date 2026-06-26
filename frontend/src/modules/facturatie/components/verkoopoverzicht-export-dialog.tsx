@@ -99,10 +99,8 @@ export function VerkoopoverzichtExportDialog({ open, onClose }: Props) {
           </div>
 
           <p className="text-xs text-slate-500">
-            Bevat verstuurde, betaalde, herinnerings- en aanmaningsfacturen
-            én alle creditnotas (ook niet-verzonden) met factuurdatum binnen
-            de geselecteerde periode. Concept-debetfacturen en gecrediteerde
-            debetfacturen worden uitgesloten.
+            Bevat alle facturen met factuurdatum binnen de geselecteerde
+            periode, inclusief concept, creditnotas en gecrediteerde facturen.
           </p>
 
           {fout && (

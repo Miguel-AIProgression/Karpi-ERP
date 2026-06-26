@@ -22,28 +22,15 @@ export interface VerkoopoverzichtRij {
   klant_refs: string | null
 }
 
-// Statussen die in de export verschijnen voor debetfacturen.
-// Creditnotas worden altijd meegenomen (ongeacht status) — ze zijn echte
-// boekhoud-documenten die AFAS nodig heeft als tegenboeking.
-// Concept-debetfacturen en Gecrediteerd-debetfacturen blijven uitgesloten.
-const DEBET_EXPORT_STATUSSEN: FactuurStatus[] = [
-  'Verstuurd',
-  'Betaald',
-  'Herinnering',
-  'Aanmaning',
-]
-
 export async function fetchVerkoopoverzicht(
   vanDatum: string,
   totDatum: string,
 ): Promise<VerkoopoverzichtRij[]> {
-  const statusFilter = DEBET_EXPORT_STATUSSEN.join(',')
   const { data, error } = await supabase
     .from('verkoopoverzicht_export')
     .select('*')
     .gte('factuurdatum', vanDatum)
     .lte('factuurdatum', totDatum)
-    .or(`status.in.(${statusFilter}),is_creditnota.is.true`)
     .order('debiteur_nr', { ascending: true })
     .order('factuur_nr', { ascending: true })
   if (error) throw error
