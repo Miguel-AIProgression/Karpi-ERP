@@ -1,8 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowDown, ArrowUp, ArrowUpDown, FileDown } from 'lucide-react'
+import { ArrowDown, ArrowUp, ArrowUpDown, Check, FileDown, X } from 'lucide-react'
 import { useFacturen } from '../hooks/use-facturen'
-import { StatusBadge } from '@/components/ui/status-badge'
 import { formatCurrency, formatDate } from '@/lib/utils/formatters'
 import { isFactuurCreditnota, getFactuurPdfSignedUrl, type FactuurListItem } from '../queries/facturen'
 
@@ -17,7 +16,7 @@ interface FactuurLijstProps {
   onToggleAlles?: (zichtbareIds: number[], aan: boolean) => void
 }
 
-type SortKey = 'factuur_nr' | 'factuurdatum' | 'klant_naam' | 'status' | 'totaal'
+type SortKey = 'factuur_nr' | 'factuurdatum' | 'klant_naam' | 'totaal'
 type SortDir = 'asc' | 'desc'
 
 // Default = factuurdatum desc, tiebreak factuur_nr desc (zodat 0014 boven 0013
@@ -128,7 +127,7 @@ export function FactuurLijst({
             {showKlant && (
               <SortHeader label="Klant" sortKey="klant_naam" sort={sort} onClick={klikHeader} />
             )}
-            <SortHeader label="Status" sortKey="status" sort={sort} onClick={klikHeader} />
+            <th className="pb-3 pr-4 font-medium text-slate-500">Verstuurd</th>
             <SortHeader
               label="Totaal"
               sortKey="totaal"
@@ -214,7 +213,9 @@ export function FactuurLijst({
                   </td>
                 )}
                 <td className="py-3 pr-4">
-                  <StatusBadge status={f.status} type="factuur" />
+                  {f.verstuurd_op
+                    ? <Check size={16} className="text-emerald-500" />
+                    : <X size={16} className="text-red-400" />}
                 </td>
                 <td className={`py-3 pr-4 text-right font-medium whitespace-nowrap tabular-nums ${isFactuurCreditnota(f) ? 'text-red-600' : 'text-slate-700'}`}>
                   {isFactuurCreditnota(f) ? `− ${formatCurrency(Math.abs(f.totaal))}` : formatCurrency(f.totaal)}
@@ -277,9 +278,7 @@ function SortHeader({ label, sortKey, sort, onClick, alignRight }: SortHeaderPro
 }
 
 function standaardRichting(key: SortKey): SortDir {
-  // Numerieke en datum-velden beginnen aflopend (recent/groot eerst).
-  // Tekst-velden beginnen oplopend (A-Z).
-  if (key === 'klant_naam' || key === 'status') return 'asc'
+  if (key === 'klant_naam') return 'asc'
   return 'desc'
 }
 
@@ -301,8 +300,6 @@ function vergelijk(a: FactuurListItem, b: FactuurListItem, key: SortKey): number
       return (a.klant_naam ?? '').localeCompare(b.klant_naam ?? '', 'nl', {
         sensitivity: 'base',
       })
-    case 'status':
-      return a.status.localeCompare(b.status)
     case 'totaal':
       return a.totaal - b.totaal
   }
