@@ -27,7 +27,7 @@ const STATUS_OPTIES = ALLE_STATUSSEN.map((s) => ({ value: s, label: s }))
 
 export function FacturatieOverviewPage() {
   const [zoekterm, setZoekterm] = useState('')
-  const [statusSelectie, setStatusSelectie] = useState<StatusFilterOptie[]>([])
+  const [statusSelectie, setStatusSelectie] = useState<string[]>([])
   const [klantSelectie, setKlantSelectie] = useState<string[]>([])
   const vandaag = new Date().toISOString().slice(0, 10)
   const [datumVan, setDatumVan] = useState('2026-01-01')
@@ -60,7 +60,7 @@ export function FacturatieOverviewPage() {
     return facturen.filter((f) => {
       const matchStatus =
         statusSet.size === 0 ||
-        statusSet.has(f.status) ||
+        statusSet.has(f.status as string) ||
         (statusSet.has('Gedeeltelijk gecrediteerd') && f.heeft_deelcredits)
       const matchKlant = klantSet.size === 0 || klantSet.has(String(f.debiteur_nr))
       // Datum-vergelijking op ISO-strings — facturen.factuurdatum is een

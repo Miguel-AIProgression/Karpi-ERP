@@ -427,6 +427,7 @@ export async function fetchCreditnotasVoorFactuur(factuurId: number): Promise<Fa
       orders: Array.from(ordersMap, ([id, nr]) => ({ id, nr })),
       btw_controle_nodig_sinds: f.btw_controle_nodig_sinds,
       credit_voor_factuur_id: (f as unknown as { credit_voor_factuur_id: number | null }).credit_voor_factuur_id ?? null,
+      heeft_deelcredits: false,
     }
   })
 }
