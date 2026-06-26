@@ -4,6 +4,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown, Check, FileDown, X } from 'lucide-reac
 import { useFacturen } from '../hooks/use-facturen'
 import { formatCurrency, formatDate } from '@/lib/utils/formatters'
 import { isFactuurCreditnota, getFactuurPdfSignedUrl, type FactuurListItem } from '../queries/facturen'
+import { StatusBadge } from '@/components/ui/status-badge'
 
 interface FactuurLijstProps {
   debiteurNr?: number
@@ -121,6 +122,7 @@ export function FactuurLijst({
               </th>
             )}
             <th className="pb-3 pr-4 font-medium text-slate-500">Type</th>
+            <th className="pb-3 pr-4 font-medium text-slate-500">Status</th>
             <SortHeader label="Factuurnr" sortKey="factuur_nr" sort={sort} onClick={klikHeader} />
             <SortHeader label="Datum" sortKey="factuurdatum" sort={sort} onClick={klikHeader} />
             <th className="pb-3 pr-4 font-medium text-slate-500">Order</th>
@@ -168,6 +170,9 @@ export function FactuurLijst({
                       Debet
                     </span>
                   )}
+                </td>
+                <td className="py-3 pr-4">
+                  <StatusBadge status={f.status} type="factuur" />
                 </td>
                 <td className={`py-3 pr-4 font-mono text-xs text-slate-700 ${compact ? '' : 'py-3'}`}>
                   {f.factuur_nr}
