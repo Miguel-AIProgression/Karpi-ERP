@@ -13,6 +13,7 @@ export const ROL_EXTERN_REP = 'vertegenwoordiger_extern'
 export interface AppRol {
   rol: string | null
   vertegenwCode: string | null
+  paginaRestricties: string[]
 }
 
 export function leesAppRol(user: User | null | undefined): AppRol {
@@ -20,7 +21,18 @@ export function leesAppRol(user: User | null | undefined): AppRol {
   return {
     rol: typeof m.rol === 'string' ? m.rol : null,
     vertegenwCode: typeof m.vertegenw_code === 'string' ? m.vertegenw_code : null,
+    paginaRestricties: Array.isArray(m.pagina_restricties)
+      ? (m.pagina_restricties as string[])
+      : [],
   }
+}
+
+/**
+ * TRUE als het pad geblokkeerd is voor deze gebruiker via pagina_restricties.
+ * Matcht prefix-based: '/inkoop' blokkeert ook '/inkoop/123'.
+ */
+export function isPadGeblokkeerd(restricties: string[], pathname: string): boolean {
+  return restricties.some((p) => pathname === p || pathname.startsWith(p + '/'))
 }
 
 /** TRUE als de ingelogde gebruiker de externe vertegenwoordiger is (read-only). */

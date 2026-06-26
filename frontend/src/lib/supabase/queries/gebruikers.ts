@@ -15,6 +15,8 @@ export interface GebruikerRow {
   /** Uitgenodigd maar nog nooit ingelogd / wachtwoord gezet. */
   uitnodiging_openstaand: boolean
   geblokkeerd: boolean
+  /** Paden die deze gebruiker niet mag bezoeken (bv. ['/inkoop']). */
+  pagina_restricties: string[]
 }
 
 /** Roept de edge function aan en normaliseert de foutafhandeling. */
@@ -102,4 +104,8 @@ export async function blokkeerGebruiker(id: string, blokkeren: boolean): Promise
 
 export async function verwijderGebruiker(id: string): Promise<void> {
   await roepBeheer({ actie: 'verwijderen', id })
+}
+
+export async function setPaginaRestricties(id: string, paden: string[]): Promise<void> {
+  await roepBeheer({ actie: 'set-pagina-restricties', id, pagina_restricties: paden })
 }

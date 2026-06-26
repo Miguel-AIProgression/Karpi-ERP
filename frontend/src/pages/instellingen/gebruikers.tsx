@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { UserPlus, KeyRound, Ban, CircleCheck, Trash2 } from 'lucide-react'
+import { UserPlus, KeyRound, Ban, CircleCheck, Trash2, ShieldOff } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { useAuth } from '@/hooks/use-auth'
 import {
@@ -7,10 +7,20 @@ import {
   useGenereerLoginLink,
   useBlokkeerGebruiker,
   useVerwijderGebruiker,
+  useSetPaginaRestricties,
 } from '@/hooks/use-gebruikers'
 import { UitnodigGebruikerDialog } from '@/components/instellingen/uitnodig-gebruiker-dialog'
 import { LinkDelenDialog } from '@/components/instellingen/link-delen'
 import type { GebruikerRow } from '@/lib/supabase/queries/gebruikers'
+
+/** Pagina's die een beheerder per gebruiker kan blokkeren. */
+const BESCHIKBARE_PAGINAS: { pad: string; label: string }[] = [
+  { pad: '/inkoop', label: 'Inkooporders' },
+  { pad: '/leveranciers', label: 'Leveranciers' },
+  { pad: '/edi/berichten', label: 'EDI berichten' },
+  { pad: '/facturatie', label: 'Facturatie' },
+  { pad: '/logistiek', label: 'Logistiek / zendingen' },
+]
 
 function formatDatum(iso: string | null): string {
   if (!iso) return '—'
@@ -47,6 +57,81 @@ function StatusBadge({ gebruiker }: { gebruiker: GebruikerRow }) {
   )
 }
 
+function ToegangDialog({
+  gebruiker,
+  onClose,
+}: {
+  gebruiker: GebruikerRow
+  onClose: () => void
+}) {
+  const [restricties, setRestricties] = useState<string[]>(gebruiker.pagina_restricties)
+  const [fout, setFout] = useState<string | null>(null)
+  const mut = useSetPaginaRestricties()
+
+  const toggle = (pad: string) => {
+    setRestricties((prev) =>
+      prev.includes(pad) ? prev.filter((p) => p !== pad) : [...prev, pad],
+    )
+  }
+
+  const handleOpslaan = async () => {
+    setFout(null)
+    try {
+      await mut.mutateAsync({ id: gebruiker.id, paden: restricties })
+      onClose()
+    } catch (err) {
+      setFout(err instanceof Error ? err.message : 'Opslaan mislukt')
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+      <div className="bg-white rounded-[var(--radius-sm)] border border-slate-200 shadow-xl w-full max-w-sm mx-4 p-5">
+        <h2 className="text-base font-semibold text-slate-800 mb-1">Paginatoegang</h2>
+        <p className="text-sm text-slate-500 mb-4">
+          Vink pagina's aan die <strong>{gebruiker.email}</strong> <em>niet</em> mag zien.
+        </p>
+
+        <div className="space-y-2 mb-5">
+          {BESCHIKBARE_PAGINAS.map(({ pad, label }) => (
+            <label key={pad} className="flex items-center gap-3 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={restricties.includes(pad)}
+                onChange={() => toggle(pad)}
+                className="h-4 w-4 rounded border-slate-300 text-terracotta-500 focus:ring-terracotta-400"
+              />
+              <span className="text-sm text-slate-700 group-hover:text-slate-900">{label}</span>
+            </label>
+          ))}
+        </div>
+
+        {fout && (
+          <div className="mb-3 px-3 py-2 bg-rose-50 border border-rose-100 text-xs text-rose-700 rounded-[var(--radius-sm)]">
+            {fout}
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="px-3 py-1.5 text-sm rounded-[var(--radius-sm)] border border-slate-200 text-slate-600 hover:bg-slate-50"
+          >
+            Annuleren
+          </button>
+          <button
+            onClick={handleOpslaan}
+            disabled={mut.isPending}
+            className="px-3 py-1.5 text-sm rounded-[var(--radius-sm)] bg-terracotta-500 text-white hover:bg-terracotta-600 disabled:opacity-50"
+          >
+            {mut.isPending ? 'Opslaan…' : 'Opslaan'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function GebruikersInstellingenPage() {
   const { user } = useAuth()
   const { data: gebruikers, isLoading, error } = useGebruikers()
@@ -54,6 +139,7 @@ export function GebruikersInstellingenPage() {
   const [actieFout, setActieFout] = useState<string | null>(null)
   const [bezigId, setBezigId] = useState<string | null>(null)
   const [gedeeldeLink, setGedeeldeLink] = useState<{ email: string; link: string } | null>(null)
+  const [toegangGebruiker, setToegangGebruiker] = useState<GebruikerRow | null>(null)
 
   const linkMut = useGenereerLoginLink()
   const blokkeerMut = useBlokkeerGebruiker()
@@ -128,7 +214,7 @@ export function GebruikersInstellingenPage() {
         </div>
       ) : !gebruikers || gebruikers.length === 0 ? (
         <div className="px-4 py-8 text-center text-sm text-slate-500 bg-slate-50 rounded-[var(--radius-sm)] border border-slate-200">
-          Nog geen gebruikers. Klik op “Gebruiker uitnodigen” om te beginnen.
+          Nog geen gebruikers. Klik op "Gebruiker uitnodigen" om te beginnen.
         </div>
       ) : (
         <div className="bg-white rounded-[var(--radius-sm)] border border-slate-200 overflow-hidden">
@@ -137,6 +223,7 @@ export function GebruikersInstellingenPage() {
               <tr>
                 <th className="px-4 py-2 font-medium">E-mailadres</th>
                 <th className="px-4 py-2 font-medium">Status</th>
+                <th className="px-4 py-2 font-medium">Geblokkeerde pagina's</th>
                 <th className="px-4 py-2 font-medium">Laatste login</th>
                 <th className="px-4 py-2 font-medium">Aangemaakt</th>
                 <th className="px-4 py-2 text-right font-medium">Acties</th>
@@ -146,6 +233,7 @@ export function GebruikersInstellingenPage() {
               {gebruikers.map((g) => {
                 const isZelf = user?.id === g.id
                 const bezig = bezigId === g.id
+                const restricties = g.pagina_restricties ?? []
                 return (
                   <tr key={g.id} className="hover:bg-slate-50">
                     <td className="px-4 py-2 font-medium text-slate-800">
@@ -156,6 +244,25 @@ export function GebruikersInstellingenPage() {
                     </td>
                     <td className="px-4 py-2">
                       <StatusBadge gebruiker={g} />
+                    </td>
+                    <td className="px-4 py-2">
+                      {restricties.length === 0 ? (
+                        <span className="text-slate-400 text-xs">—</span>
+                      ) : (
+                        <div className="flex flex-wrap gap-1">
+                          {restricties.map((pad) => {
+                            const label = BESCHIKBARE_PAGINAS.find((p) => p.pad === pad)?.label ?? pad
+                            return (
+                              <span
+                                key={pad}
+                                className="inline-block px-1.5 py-0.5 text-xs rounded-full bg-orange-50 text-orange-700 border border-orange-100"
+                              >
+                                {label}
+                              </span>
+                            )
+                          })}
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-2 text-slate-600">{formatDatum(g.laatste_login)}</td>
                     <td className="px-4 py-2 text-slate-600">{formatDatum(g.aangemaakt_op)}</td>
@@ -169,6 +276,16 @@ export function GebruikersInstellingenPage() {
                         >
                           <KeyRound size={16} />
                         </button>
+                        {!isZelf && (
+                          <button
+                            title="Paginatoegang beheren"
+                            disabled={bezig}
+                            onClick={() => setToegangGebruiker(g)}
+                            className="p-1.5 rounded-[var(--radius-sm)] text-slate-500 hover:bg-slate-100 hover:text-slate-800 disabled:opacity-40"
+                          >
+                            <ShieldOff size={16} />
+                          </button>
+                        )}
                         {!isZelf && (
                           <button
                             title={g.geblokkeerd ? 'Deblokkeren' : 'Blokkeren'}
@@ -207,6 +324,13 @@ export function GebruikersInstellingenPage() {
           beschrijving={`Stuur deze link naar ${gedeeldeLink.email}. Daarmee stelt diegene een nieuw wachtwoord in.`}
           link={gedeeldeLink.link}
           onClose={() => setGedeeldeLink(null)}
+        />
+      )}
+
+      {toegangGebruiker && (
+        <ToegangDialog
+          gebruiker={toegangGebruiker}
+          onClose={() => setToegangGebruiker(null)}
         />
       )}
     </>

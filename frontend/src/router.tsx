@@ -1,4 +1,5 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom'
+import { PaginaGuard } from '@/components/auth/pagina-guard'
 import { AppLayout } from '@/components/layout/app-layout'
 import { DashboardPage } from '@/pages/dashboard'
 import { PlaceholderPage } from '@/pages/placeholder'
@@ -133,10 +134,10 @@ export const router = createBrowserRouter([
       { path: 'logistiek/printset/bulk', element: <BulkPrintSetPage /> },
       { path: 'logistiek/:zending_nr/printset', element: <ZendingPrintSetPage /> },
       { path: 'logistiek/:zending_nr', element: <ZendingDetailPage /> },
-      { path: 'inkoop', element: <InkooporderOverviewPage /> },
-      { path: 'inkoop/:id', element: <InkooporderDetailPage /> },
-      { path: 'leveranciers', element: <LeveranciersOverviewPage /> },
-      { path: 'leveranciers/:id', element: <LeverancierDetailPage /> },
+      { path: 'inkoop', element: <PaginaGuard><InkooporderOverviewPage /></PaginaGuard> },
+      { path: 'inkoop/:id', element: <PaginaGuard><InkooporderDetailPage /></PaginaGuard> },
+      { path: 'leveranciers', element: <PaginaGuard><LeveranciersOverviewPage /></PaginaGuard> },
+      { path: 'leveranciers/:id', element: <PaginaGuard><LeverancierDetailPage /></PaginaGuard> },
 
       // EDI / Transus
       { path: 'edi/berichten', element: <EdiBerichtenOverzichtPage /> },

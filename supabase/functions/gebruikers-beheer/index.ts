@@ -37,6 +37,9 @@ interface RequestBody {
   // eigen rol/scope niet ophogen.
   rol?: string
   vertegenw_code?: string | null
+  // Paginabeperkingen: lijst van paden (/inkoop, /edi/berichten, …) die de
+  // gebruiker NIET mag zien. Leeg array = geen restricties.
+  pagina_restricties?: string[]
 }
 
 const ROL_EXTERN_REP = 'vertegenwoordiger_extern'
@@ -129,6 +132,10 @@ serve(async (req) => {
         const gebruikers = data.users.map((u) => {
           // banned_until zit wel in de runtime-respons maar niet in de TS-typing.
           const bannedUntil = (u as unknown as { banned_until?: string | null }).banned_until ?? null
+          const meta = (u.app_metadata ?? {}) as Record<string, unknown>
+          const restricties = Array.isArray(meta.pagina_restricties)
+            ? (meta.pagina_restricties as string[])
+            : []
           return {
             id: u.id,
             email: u.email ?? null,
@@ -138,6 +145,7 @@ serve(async (req) => {
             // Uitgenodigd maar nog nooit ingelogd / wachtwoord gezet.
             uitnodiging_openstaand: !u.last_sign_in_at,
             geblokkeerd: bannedUntil ? new Date(bannedUntil) > nu : false,
+            pagina_restricties: restricties,
           }
         })
         // Nieuwste eerst.
@@ -231,6 +239,24 @@ serve(async (req) => {
           return jsonResponse({ error: 'Je kunt je eigen account niet verwijderen' }, 400)
         }
         const { error } = await admin.auth.admin.deleteUser(id)
+        if (error) throw error
+        return jsonResponse({ ok: true }, 200)
+      }
+
+      case 'set-pagina-restricties': {
+        const id = (body.id ?? '').trim()
+        if (!id) return jsonResponse({ error: 'Gebruikers-id is verplicht' }, 400)
+        if (id === aanroeper.id) {
+          return jsonResponse({ error: 'Je kunt je eigen paginabeperkingen niet wijzigen' }, 400)
+        }
+        const restricties = Array.isArray(body.pagina_restricties) ? body.pagina_restricties : []
+        // Haal bestaande app_metadata op zodat andere velden (rol, vertegenw_code) bewaard blijven.
+        const { data: bestaand, error: fetchErr } = await admin.auth.admin.getUserById(id)
+        if (fetchErr) throw fetchErr
+        const bestaandeMeta = (bestaand.user.app_metadata ?? {}) as Record<string, unknown>
+        const { error } = await admin.auth.admin.updateUserById(id, {
+          app_metadata: { ...bestaandeMeta, pagina_restricties: restricties },
+        })
         if (error) throw error
         return jsonResponse({ ok: true }, 200)
       }

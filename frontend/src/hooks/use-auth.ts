@@ -37,7 +37,7 @@ export function useAuth() {
     if (error) throw error
   }
 
-  const { rol, vertegenwCode } = leesAppRol(user)
+  const { rol, vertegenwCode, paginaRestricties } = leesAppRol(user)
 
   return {
     user,
@@ -47,6 +47,7 @@ export function useAuth() {
     resetPassword,
     rol,
     vertegenwCode,
+    paginaRestricties,
     /** Externe vertegenwoordiger = read-only, alleen eigen klanten (mig 489). */
     isExternRep: isExterneVertegenwoordiger(user),
   }

@@ -6,6 +6,7 @@ import {
   wachtwoordResetGebruiker,
   blokkeerGebruiker,
   verwijderGebruiker,
+  setPaginaRestricties,
   type RolToewijzing,
 } from '@/lib/supabase/queries/gebruikers'
 
@@ -55,6 +56,14 @@ export function useVerwijderGebruiker() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => verwijderGebruiker(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: GEBRUIKERS_KEY }),
+  })
+}
+
+export function useSetPaginaRestricties() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, paden }: { id: string; paden: string[] }) => setPaginaRestricties(id, paden),
     onSuccess: () => qc.invalidateQueries({ queryKey: GEBRUIKERS_KEY }),
   })
 }
