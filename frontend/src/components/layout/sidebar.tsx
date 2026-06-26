@@ -5,7 +5,7 @@ import * as Icons from 'lucide-react'
 import { useHstMonitor } from '@/modules/logistiek/hooks/use-hst-monitor'
 import { telHstAandacht } from '@/modules/logistiek/queries/hst-monitor'
 import { useAuth } from '@/hooks/use-auth'
-import { isSysteembeheerPad } from '@/lib/auth/rol'
+import { isSysteembeheerPad, isPadGeblokkeerd } from '@/lib/auth/rol'
 
 type IconName = keyof typeof Icons
 
@@ -24,13 +24,15 @@ export function Sidebar() {
 
   // Externe vertegenwoordiger (mig 490 e.v.): read-only, ziet alles behalve
   // systeembeheer (Instellingen/Gebruikers/Vertegenwoordigers).
-  const { isExternRep } = useAuth()
-  const groups = isExternRep
-    ? NAV_GROUPS.map((g) => ({
-        ...g,
-        items: g.items.filter((i) => !isSysteembeheerPad(i.path)),
-      })).filter((g) => g.items.length > 0)
-    : NAV_GROUPS
+  const { isExternRep, paginaRestricties } = useAuth()
+  const groups = NAV_GROUPS.map((g) => ({
+    ...g,
+    items: g.items.filter((i) => {
+      if (isExternRep && isSysteembeheerPad(i.path)) return false
+      if (isPadGeblokkeerd(paginaRestricties, i.path)) return false
+      return true
+    }),
+  })).filter((g) => g.items.length > 0)
 
   return (
     <aside className="fixed left-0 top-0 bottom-0 w-[var(--sidebar-w)] bg-slate-900 text-slate-300 flex flex-col z-30">
