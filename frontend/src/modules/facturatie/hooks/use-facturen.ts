@@ -15,6 +15,8 @@ import {
   countBtwControleNodigFacturen,
   maakCreditfactuur,
   stuurCreditfactuur,
+  fetchDebiteurEmailFactuur,
+  verstuurFactuurHandmatig,
   type FactuurStatus,
   type MaakCreditfactuurParams,
 } from '../queries/facturen'
@@ -142,6 +144,26 @@ export function useStuurCreditfactuur() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (factuurId: number) => stuurCreditfactuur(factuurId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['facturen'] })
+    },
+  })
+}
+
+export function useDebiteurEmailFactuur(debiteurNr: number | undefined) {
+  return useQuery({
+    queryKey: ['debiteur-email-factuur', debiteurNr],
+    queryFn: () => fetchDebiteurEmailFactuur(debiteurNr!),
+    enabled: !!debiteurNr,
+    staleTime: 5 * 60_000,
+  })
+}
+
+export function useVerstuurFactuurHandmatig() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ factuurId, email }: { factuurId: number; email: string }) =>
+      verstuurFactuurHandmatig(factuurId, email),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['facturen'] })
     },

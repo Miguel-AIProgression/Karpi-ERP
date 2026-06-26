@@ -471,3 +471,37 @@ export async function stuurCreditfactuur(
   }
   return data as { ok: boolean; verstuurd_naar: string }
 }
+
+export async function fetchDebiteurEmailFactuur(
+  debiteurNr: number,
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('debiteuren')
+    .select('email_factuur')
+    .eq('debiteur_nr', debiteurNr)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  return data?.email_factuur ?? null
+}
+
+export async function verstuurFactuurHandmatig(
+  factuurId: number,
+  email: string,
+): Promise<{ ok: boolean; verstuurd_naar: string }> {
+  const { data, error } = await supabase.functions.invoke('verstuur-factuur-handmatig', {
+    body: { factuur_id: factuurId, email },
+  })
+  if (error) {
+    const ctx = (error as { context?: Response }).context
+    if (ctx && typeof ctx.json === 'function') {
+      try {
+        const body = await ctx.json()
+        throw new Error(body?.error ?? error.message)
+      } catch (e) {
+        if (e instanceof Error && e.message) throw e
+      }
+    }
+    throw error
+  }
+  return data as { ok: boolean; verstuurd_naar: string }
+}

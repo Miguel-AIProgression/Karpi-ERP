@@ -1,5 +1,5 @@
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Download, CheckCircle, ExternalLink, Send, CreditCard } from 'lucide-react'
+import { ArrowLeft, Download, CheckCircle, ExternalLink, Send, CreditCard, Mail } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { Fragment, useState } from 'react'
 import {
@@ -8,6 +8,8 @@ import {
   useEdiFactuurConfig,
   useVerstuurFactuurViaEdi,
   useCreditnotasVoorFactuur,
+  useDebiteurEmailFactuur,
+  useVerstuurFactuurHandmatig,
 } from '../hooks/use-facturen'
 import { FactuurStatusSelect } from '../components/factuur-status-select'
 import { BtwControleNodigBanner } from '../components/btw-controle-nodig-banner'
@@ -33,12 +35,17 @@ export function FactuurDetailPage() {
   const { data: creditnotas } = useCreditnotasVoorFactuur(
     data && !isFactuurCreditnota(data.factuur) ? factuurId : undefined,
   )
+  const debiteurEmailQuery = useDebiteurEmailFactuur(data?.factuur.debiteur_nr)
+  const verstuurHandmatig = useVerstuurFactuurHandmatig()
   // Externe vertegenwoordiger (mig 489): read-only — geen muteer-affordances.
   const { isExternRep } = useAuth()
   const [pdfBezig, setPdfBezig] = useState(false)
   const [pdfFout, setPdfFout] = useState<string | null>(null)
   const [ediMelding, setEdiMelding] = useState<{ type: 'ok' | 'fout'; tekst: string } | null>(null)
   const [showCreditDialog, setShowCreditDialog] = useState(false)
+  const [showEmailPanel, setShowEmailPanel] = useState(false)
+  const [emailInput, setEmailInput] = useState('')
+  const [emailMelding, setEmailMelding] = useState<{ type: 'ok' | 'fout'; tekst: string } | null>(null)
 
   if (isLoading) {
     return (
@@ -112,6 +119,31 @@ export function FactuurDetailPage() {
     })
   }
 
+  function handleOpenEmailPanel() {
+    setEmailInput(debiteurEmailQuery.data ?? '')
+    setEmailMelding(null)
+    setShowEmailPanel(true)
+  }
+
+  function handleVerstuurPerEmail() {
+    setEmailMelding(null)
+    verstuurHandmatig.mutate(
+      { factuurId: factuur.id, email: emailInput.trim() },
+      {
+        onSuccess: (res) => {
+          setEmailMelding({ type: 'ok', tekst: `Verstuurd naar ${res.verstuurd_naar}` })
+          setShowEmailPanel(false)
+        },
+        onError: (err) => {
+          setEmailMelding({
+            type: 'fout',
+            tekst: err instanceof Error ? err.message : 'Versturen mislukt',
+          })
+        },
+      },
+    )
+  }
+
   const isBetaald = factuur.status === 'Betaald'
   const isCreditnota = isFactuurCreditnota(factuur)
 
@@ -170,6 +202,16 @@ export function FactuurDetailPage() {
               <Download size={15} />
               {pdfLabel}
             </button>
+            {!isExternRep && (
+              <button
+                onClick={handleOpenEmailPanel}
+                title="Verstuur deze factuur handmatig per e-mail"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-[var(--radius-sm)] border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+              >
+                <Mail size={15} />
+                Verstuur per e-mail
+              </button>
+            )}
             {!isExternRep && toonEdiKnop && (
               <button
                 onClick={handleVerstuurEdi}
@@ -242,6 +284,70 @@ export function FactuurDetailPage() {
           }`}
         >
           {ediMelding.tekst}
+        </div>
+      )}
+
+      {/* E-mail verstuurpaneel */}
+      {showEmailPanel && (
+        <div className="mb-4 rounded-[var(--radius)] border border-slate-200 bg-white p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Mail size={15} className="text-slate-500" />
+            <h3 className="text-sm font-semibold text-slate-700">Verstuur per e-mail</h3>
+          </div>
+          <p className="text-xs text-slate-500 mb-3">
+            De factuur-PDF wordt opnieuw gegenereerd en als bijlage meegestuurd. Na verzending wordt het vinkje groen.
+          </p>
+          <div className="flex items-center gap-2">
+            <input
+              type="email"
+              value={emailInput}
+              onChange={(e) => setEmailInput(e.target.value)}
+              placeholder="E-mailadres"
+              className="flex-1 rounded-[var(--radius-sm)] border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 focus:border-terracotta-400"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !verstuurHandmatig.isPending) handleVerstuurPerEmail()
+              }}
+            />
+            <button
+              type="button"
+              onClick={handleVerstuurPerEmail}
+              disabled={verstuurHandmatig.isPending || !emailInput.trim()}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-[var(--radius-sm)] bg-terracotta-500 text-white text-sm font-medium hover:bg-terracotta-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+            >
+              <Mail size={14} />
+              {verstuurHandmatig.isPending ? 'Versturen…' : 'Versturen'}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setShowEmailPanel(false); setEmailMelding(null) }}
+              className="px-3 py-2 text-sm text-slate-500 hover:text-slate-700 transition-colors"
+            >
+              Annuleer
+            </button>
+          </div>
+          {emailMelding && (
+            <div
+              className={`mt-3 px-3 py-2 rounded-[var(--radius-sm)] text-sm ${
+                emailMelding.type === 'ok'
+                  ? 'bg-emerald-50 text-emerald-700'
+                  : 'bg-red-50 text-red-700'
+              }`}
+            >
+              {emailMelding.tekst}
+            </div>
+          )}
+        </div>
+      )}
+
+      {emailMelding && !showEmailPanel && (
+        <div
+          className={`mb-4 px-4 py-3 rounded-[var(--radius-sm)] border text-sm ${
+            emailMelding.type === 'ok'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+              : 'border-red-200 bg-red-50 text-red-700'
+          }`}
+        >
+          {emailMelding.tekst}
         </div>
       )}
 
