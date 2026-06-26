@@ -461,7 +461,7 @@ export async function maakCreditfactuur(params: MaakCreditfactuurParams): Promis
     p_los_reden:           params.los_reden ?? null,
     p_voorraad_bijwerken:  params.voorraad_bijwerken ?? false,
   })
-  if (error) throw error
+  if (error) throw new Error(error.message)
   return data as number
 }
 
@@ -483,7 +483,7 @@ export async function stuurCreditfactuur(
         if (e instanceof Error && e.message) throw e
       }
     }
-    throw error
+    throw new Error(error.message)
   }
   return data as { ok: boolean; verstuurd_naar: string }
 }
@@ -517,7 +517,7 @@ export async function verstuurFactuurHandmatig(
         if (e instanceof Error && e.message) throw e
       }
     }
-    throw error
+    throw new Error(error.message)
   }
   return data as { ok: boolean; verstuurd_naar: string }
 }
