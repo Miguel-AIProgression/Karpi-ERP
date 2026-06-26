@@ -1,7 +1,7 @@
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Download, CheckCircle, ExternalLink, Send, CreditCard, Mail } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { Fragment, useState } from 'react'
+import { Fragment, useState, useEffect } from 'react'
 import {
   useFactuurDetail,
   useMarkeerBetaald,
@@ -46,6 +46,14 @@ export function FactuurDetailPage() {
   const [showEmailPanel, setShowEmailPanel] = useState(false)
   const [emailInput, setEmailInput] = useState('')
   const [emailMelding, setEmailMelding] = useState<{ type: 'ok' | 'fout'; tekst: string } | null>(null)
+
+  // Vul het e-mailadres in zodra de debiteur-query klaar is (ook als het paneel
+  // al open was voor de query resolved). Behoudt wat de gebruiker al getypt heeft.
+  useEffect(() => {
+    if (showEmailPanel && debiteurEmailQuery.data !== undefined) {
+      setEmailInput((prev) => prev || debiteurEmailQuery.data || '')
+    }
+  }, [showEmailPanel, debiteurEmailQuery.data])
 
   if (isLoading) {
     return (
