@@ -89,6 +89,14 @@ serve(async (req) => {
     const isCreditnota = Boolean(factuur.credit_voor_factuur_id)
     const deb = factuur.debiteuren as { vertegenw_code: string | null } | null
 
+    // 1b. Vertegenwoordiger naam ophalen via code
+    let vertegenwoordigerNaam = ''
+    if (deb?.vertegenw_code) {
+      const { data: vert } = await supabase
+        .from('vertegenwoordigers').select('naam').eq('code', deb.vertegenw_code).maybeSingle()
+      vertegenwoordigerNaam = vert?.naam ?? deb.vertegenw_code
+    }
+
     // 2. Haal factuurregels op
     const { data: regelsRaw, error: regelsErr } = await supabase
       .from('factuur_regels')
@@ -123,7 +131,7 @@ serve(async (req) => {
       factuur_nr:         factuur.factuur_nr,
       factuurdatum:       factuur.factuurdatum,
       debiteur_nr:        factuur.debiteur_nr,
-      vertegenwoordiger:  deb?.vertegenw_code ?? '',
+      vertegenwoordiger:  vertegenwoordigerNaam,
       fact_naam:          factuur.fact_naam ?? '',
       fact_adres:         factuur.fact_adres ?? '',
       fact_postcode:      factuur.fact_postcode ?? '',

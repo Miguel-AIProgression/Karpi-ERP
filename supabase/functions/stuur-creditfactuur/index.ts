@@ -79,7 +79,7 @@ serve(async (req) => {
         fact_naam, fact_adres, fact_postcode, fact_plaats, fact_land,
         btw_nummer, btw_verlegd, opmerkingen, credit_voor_factuur_id,
         verstuurd_op,
-        debiteuren(naam, email_factuur, land, btw_nummer)
+        debiteuren(naam, email_factuur, land, btw_nummer, vertegenw_code)
       `)
       .eq('id', factuurId)
       .maybeSingle()
@@ -95,9 +95,18 @@ serve(async (req) => {
       email_factuur: string | null
       land: string | null
       btw_nummer: string | null
+      vertegenw_code: string | null
     } | null
 
     const effectiefEmail = emailOverride ?? deb?.email_factuur ?? null
+
+    // Vertegenwoordiger naam ophalen via code
+    let vertegenwoordigerNaam = ''
+    if (deb?.vertegenw_code) {
+      const { data: vert } = await supabase
+        .from('vertegenwoordigers').select('naam').eq('code', deb.vertegenw_code).maybeSingle()
+      vertegenwoordigerNaam = vert?.naam ?? deb.vertegenw_code
+    }
     if (!effectiefEmail) {
       return jsonError(400, `Debiteur ${factuur.debiteur_nr} heeft geen email_factuur`)
     }
@@ -136,7 +145,7 @@ serve(async (req) => {
       factuur_nr:    factuur.factuur_nr,
       factuurdatum:  factuur.factuurdatum,
       debiteur_nr:   factuur.debiteur_nr,
-      vertegenwoordiger: '',
+      vertegenwoordiger: vertegenwoordigerNaam,
       fact_naam:     factuur.fact_naam ?? '',
       fact_adres:    factuur.fact_adres ?? '',
       fact_postcode: factuur.fact_postcode ?? '',
