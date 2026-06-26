@@ -166,10 +166,13 @@ export function CreditfactuurDialog({ factuur, regels, onClose, onCreated }: Pro
     }
   }
 
-  // Productregels (geen admin-pseudo, geen VERZEND)
-  const productRegels = regels.filter(
-    (r) => r.artikelnr && r.artikelnr !== 'VERZEND' && r.artikelnr !== 'BUNDELKORTING' && r.artikelnr !== 'DREMPELKORTING' && r.artikelnr !== 'VORMTOESLAG',
-  )
+  // Pseudo-artikelen: crediteerbaar maar geen voorraad-ophoging (bewaakt door DB).
+  const PSEUDO_ARTIKELNRS = new Set([
+    'VERZEND', 'BUNDELKORTING', 'DREMPELKORTING', 'VORMTOESLAG', 'DROPSHIP-KLEIN', 'DROPSHIP-GROOT',
+  ])
+  function isPseudo(r: FactuurRegel) {
+    return r.artikelnr != null && PSEUDO_ARTIKELNRS.has(r.artikelnr)
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -255,12 +258,13 @@ export function CreditfactuurDialog({ factuur, regels, onClose, onCreated }: Pro
           {methode === 'orderregel' && (
             <div>
               <p className="text-sm font-medium text-slate-700 mb-2">Selecteer te crediteren regels</p>
-              {productRegels.length === 0 ? (
-                <p className="text-sm text-slate-400 italic">Geen productregels gevonden op deze factuur.</p>
+              {regels.length === 0 ? (
+                <p className="text-sm text-slate-400 italic">Geen regels gevonden op deze factuur.</p>
               ) : (
                 <div className="space-y-1 rounded-lg border border-slate-200 overflow-hidden">
-                  {productRegels.map((r) => {
+                  {regels.map((r) => {
                     const sel = regelSelectie[r.id]
+                    const pseudo = isPseudo(r)
                     return (
                       <div
                         key={r.id}
@@ -282,6 +286,9 @@ export function CreditfactuurDialog({ factuur, regels, onClose, onCreated }: Pro
                           </span>
                           {r.omschrijving_2 && (
                             <span className="text-slate-400 ml-1 text-xs">{r.omschrijving_2}</span>
+                          )}
+                          {pseudo && (
+                            <span className="ml-2 text-xs text-slate-400">(geen voorraad)</span>
                           )}
                         </div>
                         <div className="text-right shrink-0 flex items-center gap-2">
@@ -400,7 +407,7 @@ export function CreditfactuurDialog({ factuur, regels, onClose, onCreated }: Pro
                     className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${voorraadBijwerken ? 'translate-x-4' : ''}`}
                   />
                 </div>
-                <span className="text-sm text-slate-700">Voorraad bijwerken <span className="text-slate-400">(producten.voorraad ophogen)</span></span>
+                <span className="text-sm text-slate-700">Voorraad bijwerken <span className="text-slate-400">(alleen producten, niet verzend- of kortingsregels)</span></span>
               </label>
             )}
             <label className="flex items-center gap-3 cursor-pointer select-none">
