@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Loader2, X, AlertTriangle, CreditCard, Euro } from 'lucide-react'
 import {
   useMaakCreditfactuur,
@@ -6,6 +6,7 @@ import {
   useCreditnotasVoorFactuur,
 } from '../hooks/use-facturen'
 import type { FactuurDetail, FactuurRegel } from '../queries/facturen'
+import { fetchDebiteurEmailFactuur } from '../queries/facturen'
 import { formatCurrency } from '@/lib/utils/formatters'
 
 interface Props {
@@ -38,9 +39,19 @@ export function CreditfactuurDialog({ factuur, regels, onClose, onCreated }: Pro
 
   const [voorraadBijwerken, setVoorraadBijwerken] = useState(false)
   const [verzenden, setVerzenden] = useState(false)
+  const [emailAdres, setEmailAdres] = useState<string>('')
+  const [emailGeladen, setEmailGeladen] = useState(false)
 
   const [fout, setFout] = useState<string | null>(null)
   const [bezig, setBezig] = useState(false)
+
+  // Haal het standaard factuur-e-mailadres op zodra de dialog opent.
+  useEffect(() => {
+    fetchDebiteurEmailFactuur(factuur.debiteur_nr).then((email) => {
+      setEmailAdres(email ?? '')
+      setEmailGeladen(true)
+    })
+  }, [factuur.debiteur_nr])
 
   const maak = useMaakCreditfactuur()
   const stuur = useStuurCreditfactuur()
@@ -118,6 +129,10 @@ export function CreditfactuurDialog({ factuur, regels, onClose, onCreated }: Pro
       setFout(`Creditbedrag (${formatCurrency(previewTotaal)}) overschrijdt het resterende limiet (${formatCurrency(resterendLimiet)}).`)
       return
     }
+    if (verzenden && !emailAdres.trim()) {
+      setFout('Vul een e-mailadres in om de creditnota te versturen.')
+      return
+    }
 
     setBezig(true)
     try {
@@ -156,7 +171,7 @@ export function CreditfactuurDialog({ factuur, regels, onClose, onCreated }: Pro
       }
 
       if (verzenden) {
-        await stuur.mutateAsync(creditId)
+        await stuur.mutateAsync({ factuurId: creditId, emailOverride: emailAdres.trim() || undefined })
       }
 
       onCreated(creditId)
@@ -410,17 +425,42 @@ export function CreditfactuurDialog({ factuur, regels, onClose, onCreated }: Pro
                 <span className="text-sm text-slate-700">Voorraad bijwerken <span className="text-slate-400">(alleen producten, niet verzend- of kortingsregels)</span></span>
               </label>
             )}
-            <label className="flex items-center gap-3 cursor-pointer select-none">
-              <div
-                onClick={() => setVerzenden(!verzenden)}
-                className={`relative h-5 w-9 rounded-full transition-colors ${verzenden ? 'bg-terracotta-500' : 'bg-slate-300'}`}
-              >
-                <span
-                  className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${verzenden ? 'translate-x-4' : ''}`}
-                />
-              </div>
-              <span className="text-sm text-slate-700">Creditfactuur direct e-mailen naar klant</span>
-            </label>
+            <div className="space-y-2">
+              <label className="flex items-center gap-3 cursor-pointer select-none">
+                <div
+                  onClick={() => setVerzenden(!verzenden)}
+                  className={`relative h-5 w-9 rounded-full transition-colors shrink-0 ${verzenden ? 'bg-terracotta-500' : 'bg-slate-300'}`}
+                >
+                  <span
+                    className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${verzenden ? 'translate-x-4' : ''}`}
+                  />
+                </div>
+                <span className="text-sm text-slate-700">Creditfactuur direct e-mailen naar klant</span>
+              </label>
+              {verzenden && (
+                <div className="ml-12">
+                  <label className="block text-xs text-slate-500 mb-1">
+                    Verzenden naar
+                  </label>
+                  {emailGeladen ? (
+                    <input
+                      type="email"
+                      value={emailAdres}
+                      onChange={(e) => setEmailAdres(e.target.value)}
+                      placeholder="e-mailadres klant"
+                      className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-500"
+                    />
+                  ) : (
+                    <div className="text-sm text-slate-400">Laden…</div>
+                  )}
+                  {emailGeladen && !emailAdres && (
+                    <p className="text-xs text-amber-600 mt-1">
+                      Geen factuur-e-mailadres bekend voor deze klant. Vul er een in.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Fout */}

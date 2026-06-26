@@ -143,7 +143,8 @@ export function useMaakCreditfactuur() {
 export function useStuurCreditfactuur() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (factuurId: number) => stuurCreditfactuur(factuurId),
+    mutationFn: ({ factuurId, emailOverride }: { factuurId: number; emailOverride?: string }) =>
+      stuurCreditfactuur(factuurId, emailOverride),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['facturen'] })
     },

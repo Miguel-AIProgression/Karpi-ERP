@@ -468,9 +468,10 @@ export async function maakCreditfactuur(params: MaakCreditfactuurParams): Promis
 /** Verstuurt een creditnota per e-mail via de edge function `stuur-creditfactuur`. */
 export async function stuurCreditfactuur(
   factuurId: number,
+  emailOverride?: string,
 ): Promise<{ ok: boolean; verstuurd_naar: string }> {
   const { data, error } = await supabase.functions.invoke('stuur-creditfactuur', {
-    body: { factuur_id: factuurId },
+    body: { factuur_id: factuurId, email_override: emailOverride ?? null },
   })
   if (error) {
     const ctx = (error as { context?: Response }).context

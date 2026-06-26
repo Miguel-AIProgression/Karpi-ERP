@@ -53,9 +53,13 @@ serve(async (req) => {
   if (req.method !== 'POST') return jsonError(405, 'Alleen POST ondersteund')
 
   let factuurId: number
+  let emailOverride: string | null = null
   try {
     const body = await req.json()
     factuurId = Number(body?.factuur_id ?? 0)
+    emailOverride = typeof body?.email_override === 'string' && body.email_override.trim()
+      ? body.email_override.trim()
+      : null
   } catch {
     return jsonError(400, 'Ongeldig JSON body')
   }
@@ -94,7 +98,8 @@ serve(async (req) => {
       vertegenwoordiger_code: string | null
     } | null
 
-    if (!deb?.email_factuur) {
+    const effectiefEmail = emailOverride ?? deb?.email_factuur ?? null
+    if (!effectiefEmail) {
       return jsonError(400, `Debiteur ${factuur.debiteur_nr} heeft geen email_factuur`)
     }
 
@@ -235,7 +240,7 @@ serve(async (req) => {
       clientId:     MS_GRAPH_CLIENT_ID,
       clientSecret: MS_GRAPH_CLIENT_SECRET,
       from:         FACTUUR_FROM,
-      to:           deb.email_factuur,
+      to:           effectiefEmail,
       replyTo:      FACTUUR_REPLY_TO,
       subject:      `Creditnota ${factuur.factuur_nr}`,
       html:         emailHtml,
@@ -248,7 +253,7 @@ serve(async (req) => {
       .update({
         status:           'Verstuurd',
         verstuurd_op:     new Date().toISOString(),
-        verstuurd_naar:   deb.email_factuur,
+        verstuurd_naar:   effectiefEmail,
         pdf_storage_path: pdfPath,
       })
       .eq('id', factuurId)
@@ -261,11 +266,11 @@ serve(async (req) => {
       externeId: factuur.factuur_nr,
       orderId:   null,
       status:    'verwerkt',
-      raw:       JSON.stringify({ to: deb.email_factuur, subject: `Creditnota ${factuur.factuur_nr}` }),
-      json:      { request: { to: deb.email_factuur }, ok: true },
+      raw:       JSON.stringify({ to: effectiefEmail, subject: `Creditnota ${factuur.factuur_nr}` }),
+      json:      { request: { to: effectiefEmail }, ok: true },
     })
 
-    return jsonOk({ ok: true, factuur_nr: factuur.factuur_nr, verstuurd_naar: deb.email_factuur })
+    return jsonOk({ ok: true, factuur_nr: factuur.factuur_nr, verstuurd_naar: effectiefEmail })
   } catch (err) {
     console.error('[stuur-creditfactuur]', err)
     return jsonError(500, err instanceof Error ? err.message : String(err))
