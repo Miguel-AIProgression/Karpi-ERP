@@ -56,6 +56,15 @@ async function buildRegels(
   let matched = 0
   let unmatched = 0
 
+  // Debiteurenkorting eenmalig ophalen — geldt voor alle productenregels,
+  // maar NIET voor verzend-/admin-pseudo-regels (VERZEND, VORMTOESLAG etc.).
+  const { data: debRow } = await supabase
+    .from('debiteuren')
+    .select('korting_pct')
+    .eq('debiteur_nr', debiteurNr)
+    .maybeSingle()
+  const debiteurKortingPct: number = Number(debRow?.korting_pct ?? 0)
+
   for (const item of groepeerVoSelectionsItems(order.line_items)) {
     // Verzendregels van Shopify niet als orderregel importeren — die komen
     // uit shipping_lines en worden apart verwerkt.
@@ -94,7 +103,7 @@ async function buildRegels(
       breedte_cm: maatwerk_breedte_cm,
     })
     const prijs = klantPrijs.prijs
-    const bedrag = regelBedrag(prijs, aantal)
+    const bedrag = regelBedrag(prijs, aantal, debiteurKortingPct)
 
     regels.push({
       artikelnr: match.artikelnr,
@@ -103,7 +112,7 @@ async function buildRegels(
       orderaantal: aantal,
       te_leveren: aantal,
       prijs,
-      korting_pct: 0,
+      korting_pct: debiteurKortingPct,
       bedrag,
       gewicht_kg: normalizeGewicht(gramsToMicroKg(item.grams)),
       is_maatwerk: match.is_maatwerk ?? false,
