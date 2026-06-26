@@ -79,7 +79,7 @@ serve(async (req) => {
         fact_naam, fact_adres, fact_postcode, fact_plaats, fact_land,
         btw_nummer, btw_verlegd, opmerkingen, credit_voor_factuur_id,
         verstuurd_op,
-        debiteuren(naam, email_factuur, land, btw_nummer, vertegenwoordiger_code)
+        debiteuren(naam, email_factuur, land, btw_nummer)
       `)
       .eq('id', factuurId)
       .maybeSingle()
@@ -95,7 +95,6 @@ serve(async (req) => {
       email_factuur: string | null
       land: string | null
       btw_nummer: string | null
-      vertegenwoordiger_code: string | null
     } | null
 
     const effectiefEmail = emailOverride ?? deb?.email_factuur ?? null
@@ -137,7 +136,7 @@ serve(async (req) => {
       factuur_nr:    factuur.factuur_nr,
       factuurdatum:  factuur.factuurdatum,
       debiteur_nr:   factuur.debiteur_nr,
-      vertegenwoordiger: deb.vertegenwoordiger_code ?? '',
+      vertegenwoordiger: '',
       fact_naam:     factuur.fact_naam ?? '',
       fact_adres:    factuur.fact_adres ?? '',
       fact_postcode: factuur.fact_postcode ?? '',
