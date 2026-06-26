@@ -80,13 +80,13 @@ export function MancoTab() {
             className="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius-sm)] bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
             title="Toch gevonden / weer op voorraad → terug naar Pick & Ship"
           >
-            <RotateCcw size={13} /> Weer beschikbaar
+            <RotateCcw size={13} /> Opnieuw leveren
           </button>
           <button
             onClick={() => openDialoog(r)}
             className="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius-sm)] border border-rose-300 px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-50"
           >
-            <XCircle size={13} /> Niet leverbaar
+            <XCircle size={13} /> Niet leverbaar / annuleren
           </button>
         </div>
       ))}
@@ -94,7 +94,7 @@ export function MancoTab() {
       {dialoog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="w-full max-w-md rounded-lg bg-white p-6">
-            <h3 className="mb-1 text-lg font-semibold">Niet leverbaar — {dialoog.order_nr}</h3>
+            <h3 className="mb-1 text-lg font-semibold">Niet leverbaar / annuleren — {dialoog.order_nr}</h3>
             <p className="mb-3 text-sm text-slate-600">
               {isNl ? (
                 <>

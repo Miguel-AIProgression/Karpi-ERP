@@ -1,5 +1,36 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-26 — Manco-vervolg: verzendstatus per regel, knoplabels, order uit Pick & Ship
+
+Drie wijzigingen na livegebruik van de Manco-feature (mig 518). Branch
+`feat/manco-order-pickship` — **nog niet gemerged/getest door de gebruiker.**
+
+- **Verzendstatus per orderregel op order-detail** — per regel een badge:
+  *Verzonden* (groen), *Manco — niet gevonden* (amber, open manco), *Niet
+  geleverd* (afgesloten manco), of *Nog te verzenden* (alleen zodra de order al
+  deels de deur uit is, anders geen ruis). Verzonden-aantal uit `zending_regels`
+  in een eindstatus-zending; manco-status uit `order_regels.pick_backorder_*`
+  (bron-van-waarheid, blijft staan ook als een volledig-manco zending verwijderd
+  is). Nieuwe hook+badge [`regel-verzendstatus.tsx`](../frontend/src/components/orders/regel-verzendstatus.tsx)
+  (pure helper `bepaalRegelVerzendStatus` + vitest-vangnet); `OrderRegel` kreeg
+  `pick_backorder_sinds`/`_geannuleerd_op` (additieve SELECT).
+- **Manco-werklijst knoplabels** — "Weer beschikbaar" → **"Opnieuw leveren"**,
+  "Niet leverbaar" → **"Niet leverbaar / annuleren"** (idem dialoogtitel). Puur
+  copy, zelfde RPC's (`manco_terug_naar_pickship` / `manco_niet_leverbaar`).
+- **Order met open manco uit Pick & Ship (mig 521)** — een "Deels verzonden"
+  order hield een al-verzonden regel als `is_pickbaar=true` in
+  `orderregel_pickbaarheid` (die view weet niet dat de regel al in een
+  eindstatus-zending zit), waardoor "alle resterende (niet-manco) regels
+  pickbaar" TRUE werd en de order via `pick_ship_zichtbaar` terugkwam — terwijl
+  er fysiek niets te picken viel. `order_pickbaarheid.pick_ship_zichtbaar` krijgt
+  nu een guard: zolang de order ≥1 OPEN manco-regel heeft (`pick_backorder_sinds`
+  gezet, niet geannuleerd) is hij niet zichtbaar via de voorraad-/deellevering-
+  takken. De actieve-zending-tak (mig 476) blijft een override (lopende pickronde
+  moet vindbaar blijven). `start_pickronden`'s pickbaarheid-guard (mig 466/479)
+  leest de view → weigert een open-manco-order automatisch. De order komt pas
+  terug ná binnendienst-afhandeling op de Manco-werklijst ("Opnieuw leveren" →
+  weer pickbaar; "Niet leverbaar / annuleren" → NL backorder of DE afgesloten).
+
 ## 2026-06-25 — Factuur- en pakbonmail gesplitst in twee aparte e-mails
 
 Verzoek Piet-Hein: sommige klanten willen de factuur naar een ander adres dan de

@@ -13,6 +13,7 @@ import { isAdminPseudo } from '@/lib/orders/admin-pseudo'
 import { bepaalMaatwerkFase, MAATWERK_FASE_PRESENTATIE } from '@/lib/orders/maatwerk-productie'
 import { LevertijdBadge, UitwisselbaarToepassenRij, OntgrendelAllocatieKeuzeRij, type OrderRegelLevertijd, type OrderClaim } from '@/modules/reserveringen'
 import { OmzettenNaarMaatwerkDialog } from '@/components/orders/omzetten-naar-maatwerk-dialog'
+import { RegelVerzendBadge } from '@/components/orders/regel-verzendstatus'
 import type { HaalbaarheidsRij } from '@/modules/snijplanning'
 import { HAALBAARHEID_STATUS_STYLE } from '@/lib/orders/haalbaarheid-status-badge'
 import { usePlanningConfig } from '@/hooks/use-planning-config'
@@ -442,11 +443,15 @@ interface RegelRowProps {
   levertijd?: OrderRegelLevertijd
   claims: OrderClaim[]
   isEindstatus: boolean
+  /** Aantal van deze regel dat al in een eindstatus-zending zit (mig 518/deelzending). */
+  verzonden: number
+  /** Toon de "Nog te verzenden"-badge (alleen zodra de order al deels de deur uit is). */
+  toonNogTeVerzenden: boolean
   /** Afgeleide snijdatum/haalbaarheid per snijplan-id (zelfde id als `regel.snijplannen[].id`). */
   snijHaalbaarheidPerStuk?: Map<number, HaalbaarheidsRij>
 }
 
-function RegelRow({ regel, orderId, orderNr, orderdatum, orderVerzendweek, levertijd, claims, isEindstatus, snijHaalbaarheidPerStuk }: RegelRowProps) {
+function RegelRow({ regel, orderId, orderNr, orderdatum, orderVerzendweek, levertijd, claims, isEindstatus, verzonden, toonNogTeVerzenden, snijHaalbaarheidPerStuk }: RegelRowProps) {
   const [omzetOpen, setOmzetOpen] = useState(false)
   // Externe vertegenwoordiger (mig 489): read-only — verberg muteer-triggers
   // (omsticker-rij + omzetten-naar-maatwerk). De UitwisselbaarToepassenRij en
@@ -497,6 +502,9 @@ function RegelRow({ regel, orderId, orderNr, orderdatum, orderVerzendweek, lever
               {regel.klant_eigen_naam}
             </span>
           )}
+          <div>
+            <RegelVerzendBadge regel={regel} verzonden={verzonden} toonNogTeVerzenden={toonNogTeVerzenden} />
+          </div>
         </td>
         <td className="px-4 py-2 text-right">{regel.orderaantal}</td>
         <td className="px-4 py-2 text-right">
@@ -646,13 +654,20 @@ interface OrderRegelsTableProps {
   orderdatum: string
   /** ISO-datum van de order-afleverdatum; wordt omgezet naar verzendweek voor de vroegst_leverbaar-hint. */
   orderAfleverdatum?: string | null
+  /** Verzonden aantal per order_regel_id (mig 518/deelzending) — voedt de regel-badge. */
+  verzondenPerRegel?: Map<number, number>
   /** Afgeleide snijdatum/haalbaarheid per snijplan-id (zie `useSnijHaalbaarheid`). */
   snijHaalbaarheidPerStuk?: Map<number, HaalbaarheidsRij>
 }
 
-export function OrderRegelsTable({ regels, isLoading, levertijden, claims, orderStatus, orderId, orderNr, orderdatum, orderAfleverdatum, snijHaalbaarheidPerStuk }: OrderRegelsTableProps) {
+export function OrderRegelsTable({ regels, isLoading, levertijden, claims, orderStatus, orderId, orderNr, orderdatum, orderAfleverdatum, verzondenPerRegel, snijHaalbaarheidPerStuk }: OrderRegelsTableProps) {
   const [deelzendingOpen, setDeelzendingOpen] = useState(false)
   const isEindstatus = EINDSTATUS_ORDERS.has(orderStatus ?? '')
+  // "Nog te verzenden"-badges alleen tonen zodra de order al deels de deur uit is
+  // (anders ruis op elke gewone open order). Een afgeronde order is per definitie
+  // klaar, dus daar ook niet.
+  const heeftVerzonden = Array.from(verzondenPerRegel?.values() ?? []).some((v) => v > 0)
+  const toonNogTeVerzenden = heeftVerzonden && !isEindstatus
   const orderVerzendweek = isoWeekStringVanIso(orderAfleverdatum)
   // Externe vertegenwoordiger (mig 489): read-only — geen deelzending starten.
   const { isExternRep } = useAuth()
@@ -741,6 +756,8 @@ export function OrderRegelsTable({ regels, isLoading, levertijden, claims, order
                 levertijd={levertijdMap.get(regel.id)}
                 claims={claimsMap.get(regel.id) ?? []}
                 isEindstatus={isEindstatus}
+                verzonden={verzondenPerRegel?.get(regel.id) ?? 0}
+                toonNogTeVerzenden={toonNogTeVerzenden}
                 snijHaalbaarheidPerStuk={snijHaalbaarheidPerStuk}
               />
             ))}

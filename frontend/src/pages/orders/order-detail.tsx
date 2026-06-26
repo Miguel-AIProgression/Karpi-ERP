@@ -22,6 +22,7 @@ import { BastaAfhandelingPaneel } from '@/components/orders/basta-afhandeling-pa
 import { LevertijdWijzigingBanner } from '@/components/orders/levertijd-wijziging-banner'
 import { VerzendFoutBanner } from '@/components/orders/verzend-fout-banner'
 import { OrderZendingen } from '@/components/orders/order-zendingen'
+import { useVerzondenPerRegel } from '@/components/orders/regel-verzendstatus'
 import { isLevertijdWijzigingTeBevestigen } from '@/lib/orders/levertijd-wijziging'
 import { isAfleveradresIncompleet } from '@/lib/orders/afleveradres-gate'
 import { AfleveradresIncompleetBanner } from '@/components/orders/afleveradres-incompleet-banner'
@@ -65,6 +66,7 @@ export function OrderDetailPage() {
   const { data: regels, isLoading: regelsLoading } = useOrderRegels(orderId)
   const { data: levertijden } = useLevertijdVoorOrder(orderId)
   const { data: claims } = useClaimsVoorOrder(orderId)
+  const { data: verzondenPerRegel } = useVerzondenPerRegel(orderId)
   const { perStuk: snijHaalbaarheidPerStuk } = useSnijHaalbaarheid()
   const { isExternRep } = useAuth()
 
@@ -205,6 +207,7 @@ export function OrderDetailPage() {
         orderNr={order.order_nr}
         orderdatum={order.orderdatum}
         orderAfleverdatum={order.afleverdatum}
+        verzondenPerRegel={verzondenPerRegel}
         snijHaalbaarheidPerStuk={snijHaalbaarheidPerStuk}
       />
       <OrderZendingen orderId={order.id} />

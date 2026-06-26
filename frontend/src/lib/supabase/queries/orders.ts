@@ -203,6 +203,12 @@ export interface OrderRegel {
   /** Mig 412: vroegste verzenddatum voor deze regel op basis van actieve claims.
    * NULL = geen dekking of maatwerk. CURRENT_DATE of later = beschikbaar. */
   vroegst_leverbaar?: string | null
+  /** Mig 518: open manco (niet gevonden tijdens picken, wacht op binnendienst).
+   *  NOT NULL + geannuleerd_op NULL = open manco. */
+  pick_backorder_sinds?: string | null
+  /** Mig 518: manco afgesloten als niet-leverbaar (DE/buitenland). NOT NULL =
+   *  regel definitief niet geleverd op deze order. */
+  pick_backorder_geannuleerd_op?: string | null
   /** Kwaliteit/kleur + afmetingen van het gekoppelde product (producten-join) —
    *  voedt o.a. "omzetten naar maatwerk" (mig 472, prefill + kandidaat-rollen-lookup). */
   product_kwaliteit_code?: string | null
@@ -619,7 +625,7 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
     supabase.from('orders').select('debiteur_nr').eq('id', orderId).single(),
     supabase
       .from('order_regels')
-      .select('id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2, orderaantal, te_leveren, backorder, prijs, korting_pct, bedrag, gewicht_kg, vrije_voorraad, fysiek_artikelnr, omstickeren, is_maatwerk, maatwerk_vorm, maatwerk_lengte_cm, maatwerk_breedte_cm, maatwerk_diameter_cm, maatwerk_afwerking, maatwerk_band_kleur, maatwerk_instructies, maatwerk_m2_prijs, maatwerk_oppervlak_m2, maatwerk_vorm_toeslag, maatwerk_afwerking_prijs, verzendweek, verzendweek_bron, klant_referentie, vroegst_leverbaar, producten!order_regels_artikelnr_fkey(kwaliteit_code, kleur_code, is_pseudo, is_dropship, karpi_code, voorraad, vrije_voorraad, besteld_inkoop, lengte_cm, breedte_cm)')
+      .select('id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2, orderaantal, te_leveren, backorder, prijs, korting_pct, bedrag, gewicht_kg, vrije_voorraad, fysiek_artikelnr, omstickeren, is_maatwerk, maatwerk_vorm, maatwerk_lengte_cm, maatwerk_breedte_cm, maatwerk_diameter_cm, maatwerk_afwerking, maatwerk_band_kleur, maatwerk_instructies, maatwerk_m2_prijs, maatwerk_oppervlak_m2, maatwerk_vorm_toeslag, maatwerk_afwerking_prijs, verzendweek, verzendweek_bron, klant_referentie, vroegst_leverbaar, pick_backorder_sinds, pick_backorder_geannuleerd_op, producten!order_regels_artikelnr_fkey(kwaliteit_code, kleur_code, is_pseudo, is_dropship, karpi_code, voorraad, vrije_voorraad, besteld_inkoop, lengte_cm, breedte_cm)')
       .eq('order_id', orderId)
       .order('regelnummer'),
   ])
@@ -697,6 +703,8 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
       verzendweek_bron: row.verzendweek_bron ?? null,
       klant_referentie: row.klant_referentie ?? null,
       vroegst_leverbaar: row.vroegst_leverbaar ?? null,
+      pick_backorder_sinds: row.pick_backorder_sinds ?? null,
+      pick_backorder_geannuleerd_op: row.pick_backorder_geannuleerd_op ?? null,
       product_kwaliteit_code: kwalCode,
       product_kleur_code: kleurCode,
       product_lengte_cm: product?.lengte_cm ?? null,
