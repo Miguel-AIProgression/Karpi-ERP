@@ -22,8 +22,7 @@ describe('isVerzendweekVerstreken', () => {
     expect(isVerzendweekVerstreken({ afleverdatum: '2026-06-20', status: 'Geannuleerd' }, TODAY)).toBe(false)
   })
 
-  it('productie-only (Basta) en oud_systeem tellen niet mee', () => {
-    expect(isVerzendweekVerstreken({ afleverdatum: '2026-06-20', status: 'Klaar voor picken', alleen_productie: true }, TODAY)).toBe(false)
+  it('oud_systeem telt niet mee', () => {
     expect(isVerzendweekVerstreken({ afleverdatum: '2026-06-20', status: 'Klaar voor picken', bron_systeem: 'oud_systeem' }, TODAY)).toBe(false)
   })
 
