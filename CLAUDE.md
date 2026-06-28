@@ -135,6 +135,10 @@ Overige modules: placeholder pagina's, worden feature-voor-feature uitgebouwd.
 ## Werkwijze met Claude Code (team-tips van Boris Cherny)
 Deze werkafspraken verhogen kwaliteit en snelheid. Geen dogma's — experimenteer en behoud wat werkt.
 
+### Verplichte poorten (geen narratief — altijd toepassen)
+- **Impact-preflight vóór elke inhoudelijke wijziging:** bepaal welke tabellen/RPC's je raakt, grep de codebase op álle lezers/schrijvers daarvan, en meld welke modules geraakt worden — óók ongenoemde (inkoop, maatwerk, snijplanning, facturatie). De ADR-narratieven hieronder zijn retrospectief; deze stap dwingt dezelfde analyse vooraf af.
+- **Runtime-bewijs vóór "klaar":** een wijziging met een DB-schrijfactie is niet klaar tot een test of directe query bewijst dat de rij ECHT veranderde, en elke geraakte UI-knop getraceerd is knop→handler→RPC→tabel. "De code/trigger staat er" is geen bewijs. Dit naast de bestaande golden/contract-tests, niet in plaats daarvan.
+
 ### Planning & uitvoering
 - **Verticaal implementeren als standaard:** bouw features waar mogelijk in dunne verticale slices — één samenhangend stukje functionaliteit end-to-end door alle lagen (DB/migratie → RPC/edge function → query → UI), zodat het meteen werkt en testbaar is. NIET horizontaal (eerst alle DB, dan alle backend, dan alle frontend). Elke slice levert werkende, demonstreerbare waarde op; pas als verticaal echt niet kan, val terug op een horizontale aanpak.
 - **Plan-mode eerst bij niet-triviale taken:** maak eerst een solide plan, laat daarna implementeren. Bij complexe features: één Claude schrijft plan, een tweede reviewt als "staff engineer". Loopt het mis → terug naar plan-mode, niet doorduwen.
