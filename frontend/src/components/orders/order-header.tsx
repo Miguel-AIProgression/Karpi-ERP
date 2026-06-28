@@ -258,6 +258,7 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
           orderId={order.id}
           orderNr={order.order_nr}
           defaultEmail={order.bevestiging_email ?? (order as any).klant_email_orderbev ?? null}
+          afleverdatum={order.afleverdatum ?? null}
           isHerversturing={!!order.bevestigd_at}
           sluitEdiGate={isEdiOrder}
           onClose={() => setShowBevestigDialog(false)}

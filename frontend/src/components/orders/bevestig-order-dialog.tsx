@@ -1,13 +1,17 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase/client'
-import { CheckCircle, Mail, Loader2 } from 'lucide-react'
+import { CheckCircle, Mail, Loader2, AlertTriangle } from 'lucide-react'
 import { bevestigOrderZonderEdiBericht } from '@/modules/edi'
+import { isoWeekJaar, isoWeekJaarVanIso, lokaleDatumAlsUtc } from '@/lib/utils/iso-week'
 
 interface BevestigOrderDialogProps {
   orderId: number
   orderNr: string
   defaultEmail: string | null
+  /** ISO-datumstring (YYYY-MM-DD) van de huidige afleverdatum. Wordt gebruikt
+   *  om te signaleren als de leverweek al in het verleden ligt. */
+  afleverdatum?: string | null
   isHerversturing?: boolean
   /**
    * True als dit een EDI-order is die via e-mail bevestigd wordt (partner zonder
@@ -17,6 +21,15 @@ interface BevestigOrderDialogProps {
    */
   sluitEdiGate?: boolean
   onClose: () => void
+}
+
+function leverweekInVerleden(afleverdatum: string | null | undefined): { inVerleden: boolean; label: string } | null {
+  if (!afleverdatum) return null
+  const lever = isoWeekJaarVanIso(afleverdatum)
+  if (!lever) return null
+  const nu = isoWeekJaar(lokaleDatumAlsUtc(new Date()))
+  const inVerleden = lever.jaar < nu.jaar || (lever.jaar === nu.jaar && lever.week < nu.week)
+  return { inVerleden, label: `Wk ${lever.week} · ${lever.jaar}` }
 }
 
 async function stuurOrderbevestiging(params: {
@@ -49,9 +62,10 @@ async function stuurOrderbevestiging(params: {
   return json as { order_nr: string; verstuurd_naar: string; bevestigd_at: string }
 }
 
-export function BevestigOrderDialog({ orderId, orderNr, defaultEmail, isHerversturing = false, sluitEdiGate = false, onClose }: BevestigOrderDialogProps) {
+export function BevestigOrderDialog({ orderId, orderNr, defaultEmail, afleverdatum, isHerversturing = false, sluitEdiGate = false, onClose }: BevestigOrderDialogProps) {
   const [email, setEmail] = useState(defaultEmail ?? '')
   const qc = useQueryClient()
+  const verleden = leverweekInVerleden(afleverdatum)
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -112,12 +126,22 @@ export function BevestigOrderDialog({ orderId, orderNr, defaultEmail, isHerverst
                 {isHerversturing ? 'Orderbevestiging opnieuw versturen' : 'Orderbevestiging versturen'}
               </h3>
             </div>
-            <p className="text-sm text-slate-500 mb-5">
+            <p className="text-sm text-slate-500 mb-4">
               {isHerversturing
                 ? <>Er wordt een nieuwe PDF-orderbevestiging van <strong>{orderNr}</strong> gegenereerd en per e-mail verstuurd. Het vorige e-mailadres is vooringevuld.</>
                 : <>Er wordt een PDF-orderbevestiging van <strong>{orderNr}</strong> gegenereerd en per e-mail verstuurd.</>
               }
             </p>
+
+            {verleden?.inVerleden && (
+              <div className="flex gap-2 mb-4 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-[var(--radius-sm)]">
+                <AlertTriangle size={16} className="text-amber-500 shrink-0 mt-0.5" />
+                <p className="text-sm text-amber-800">
+                  De leverweek op de bevestiging (<strong>{verleden.label}</strong>) ligt in het verleden.
+                  Pas de afleverdatum eerst aan op de order, of verstuur toch als de klant al op de hoogte is.
+                </p>
+              </div>
+            )}
 
             <div className="mb-5">
               <label className="block text-sm font-medium text-slate-700 mb-1.5">
