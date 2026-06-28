@@ -3,6 +3,10 @@ import { cn } from '@/lib/utils/cn'
 import { AANDACHT_STATUSES } from '@/lib/orders/order-status-groepen'
 import type { StatusCount } from '@/lib/supabase/queries/orders'
 
+// Urgente vlaggen springen rood uit de kaart — hier moet meteen iets gebeuren
+// (Manco = niet-gevonden colli die de binnendienst direct moet oplossen).
+const URGENT_STATUSSEN = new Set<string>(['Manco'])
+
 interface VereistActieKaartProps {
   counts: StatusCount[]
   selected: string
@@ -28,23 +32,44 @@ export function VereistActieKaart({ counts, selected, onSelect }: VereistActieKa
         <span className="text-sm font-semibold text-amber-800">Vereist actie</span>
       </div>
       <div className="divide-y divide-amber-100">
-        {items.map(({ status, count }) => (
-          <button
-            key={status}
-            type="button"
-            onClick={() => onSelect(status)}
-            className={cn(
-              'w-full flex items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-amber-100/60',
-              selected === status && 'bg-amber-100',
-            )}
-          >
-            <span className="w-12 text-right text-base font-semibold text-amber-900 tabular-nums">
-              {count}
-            </span>
-            <span className="flex-1 text-sm text-slate-700">{status}</span>
-            <ChevronRight size={16} className="text-amber-500" />
-          </button>
-        ))}
+        {items.map(({ status, count }) => {
+          const urgent = URGENT_STATUSSEN.has(status)
+          return (
+            <button
+              key={status}
+              type="button"
+              onClick={() => onSelect(status)}
+              className={cn(
+                'w-full flex items-center gap-3 px-4 py-2 text-left transition-colors border-l-4',
+                urgent
+                  ? 'border-red-500 bg-red-50/70 hover:bg-red-100/70'
+                  : 'border-transparent hover:bg-amber-100/60',
+                selected === status && (urgent ? 'bg-red-100' : 'bg-amber-100'),
+              )}
+            >
+              <span
+                className={cn(
+                  'w-12 text-right tabular-nums font-semibold',
+                  urgent ? 'text-lg text-red-700' : 'text-base text-amber-900',
+                )}
+              >
+                {count}
+              </span>
+              <span
+                className={cn(
+                  'flex-1 text-sm',
+                  urgent ? 'font-semibold text-red-800' : 'text-slate-700',
+                )}
+              >
+                {status}
+                {urgent && (
+                  <span className="ml-2 text-xs font-medium text-red-600">· direct oppakken</span>
+                )}
+              </span>
+              <ChevronRight size={16} className={urgent ? 'text-red-500' : 'text-amber-500'} />
+            </button>
+          )
+        })}
       </div>
     </div>
   )
