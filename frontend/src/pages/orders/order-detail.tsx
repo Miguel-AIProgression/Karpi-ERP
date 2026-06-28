@@ -123,6 +123,18 @@ export function OrderDetailPage() {
         status={order.status}
       />
 
+      {/* Mig 524: retroactieve order — direct als Verzonden aangemaakt, geen pick/zending-flow. */}
+      {order.is_achteraf && order.verzonden_at && (
+        <div className="mb-4 flex items-start gap-2 rounded-[var(--radius)] border border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+          <span className="mt-0.5 text-slate-400">📋</span>
+          <span>
+            <span className="font-medium">{order.afhalen ? 'Afgehaald' : 'Verzonden'} op </span>
+            {new Date(order.verzonden_at).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' })}
+            {' — retroactief geregistreerd'}
+          </span>
+        </div>
+      )}
+
       <OrderHeader order={order} locked={computeOrderLock(regels) === 'full'} />
 
       {/* Open HST-verzendfout: order kan al "Verzonden" tonen terwijl de

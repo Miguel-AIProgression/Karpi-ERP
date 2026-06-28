@@ -122,6 +122,12 @@ export interface OrderRegelFormData {
   is_dropship?: boolean
   /** Mig 406: per-orderregel klantreferentie (bv. "REF Hugo / Veyron"). */
   klant_referentie?: string | null
+  /**
+   * Mig 524: vrije omschrijvingsregel — artikelnr=undefined, operator vult
+   * omschrijving en prijs zelf in. Geen voorraadinvloed, geen snijplan,
+   * geen pick-collo. Uitgesloten van orderregel_pickbaarheid.
+   */
+  is_vrije_regel?: boolean
 }
 
 /** Bronlabel voor de orderregel-prijs zoals geretourneerd door `bereken_orderregel_prijs` (mig 191, mig 253). */
@@ -288,6 +294,7 @@ export async function createOrder(
     maatwerk_kwaliteit_code: r.maatwerk_kwaliteit_code || null,
     maatwerk_kleur_code: r.maatwerk_kleur_code || null,
     klant_referentie: r.klant_referentie || null,
+    is_vrije_regel: r.is_vrije_regel ?? false,
   }))
 
   const { data, error } = await supabase.rpc('create_order_with_lines', {
@@ -361,6 +368,7 @@ export async function updateOrderWithLines(
     maatwerk_kwaliteit_code: r.maatwerk_kwaliteit_code || null,
     maatwerk_kleur_code: r.maatwerk_kleur_code || null,
     klant_referentie: r.klant_referentie || null,
+    is_vrije_regel: r.is_vrije_regel ?? false,
   }))
 
   const { error } = await supabase.rpc('update_order_with_lines', {
@@ -561,4 +569,68 @@ export async function updateRegelAfwerking(
     .eq('id', regelId)
 
   if (error) throw error
+}
+
+/**
+ * Mig 524: registreer een retroactieve order (al fysiek verzonden/afgehaald).
+ * Maakt de order direct aan als status='Verzonden', prikst een phantom-zending
+ * aan en triggert de normale factuur-pipeline.
+ * p_verzenddatum: datum van werkelijke verzending/afhaal (mag in verleden).
+ * p_afhalen: TRUE = klant heeft zelf opgehaald (geen vervoerder nodig).
+ */
+export async function registreerAchterafOrder(
+  order: OrderFormData,
+  regels: OrderRegelFormData[],
+  verzenddatum: string,
+  afhalen: boolean,
+): Promise<{ id: number; order_nr: string; zending_id: number; zending_nr: string }> {
+  const p_order = {
+    debiteur_nr: order.debiteur_nr,
+    klant_referentie: order.klant_referentie || null,
+    week: order.week || null,
+    vertegenw_code: order.vertegenw_code || null,
+    betaler: order.betaler || null,
+    inkooporganisatie: order.inkooporganisatie || null,
+    fact_naam: order.fact_naam || null,
+    fact_adres: order.fact_adres || null,
+    fact_postcode: order.fact_postcode || null,
+    fact_plaats: order.fact_plaats || null,
+    fact_land: order.fact_land || null,
+    fact_email: order.fact_email || null,
+    afl_naam: order.afl_naam || null,
+    afl_naam_2: order.afl_naam_2 || null,
+    afl_adres: order.afl_adres || null,
+    afl_postcode: order.afl_postcode || null,
+    afl_plaats: order.afl_plaats || null,
+    afl_land: order.afl_land || null,
+    afl_email: order.afl_email || null,
+  }
+
+  const p_regels = regels.map((r, i) => ({
+    regelnummer: i + 1,
+    artikelnr: r.artikelnr || null,
+    karpi_code: r.karpi_code || null,
+    omschrijving: r.omschrijving,
+    omschrijving_2: r.omschrijving_2 || null,
+    orderaantal: r.orderaantal,
+    te_leveren: r.te_leveren,
+    prijs: r.prijs ?? null,
+    korting_pct: r.korting_pct,
+    bedrag: r.bedrag ?? null,
+    gewicht_kg: r.gewicht_kg ?? null,
+    fysiek_artikelnr: r.fysiek_artikelnr || null,
+    omstickeren: r.omstickeren ?? false,
+    klant_referentie: r.klant_referentie || null,
+    is_vrije_regel: r.is_vrije_regel ?? false,
+  }))
+
+  const { data, error } = await supabase.rpc('registreer_achteraf_order', {
+    p_order,
+    p_regels,
+    p_verzenddatum: verzenddatum,
+    p_afhalen: afhalen,
+  })
+
+  if (error) throw error
+  return data as { id: number; order_nr: string; zending_id: number; zending_nr: string }
 }

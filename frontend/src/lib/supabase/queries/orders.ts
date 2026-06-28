@@ -89,6 +89,8 @@ export interface OrderRow {
 }
 
 export interface OrderDetail extends OrderRow {
+  /** Mig 524: TRUE = retroactieve order, direct als Verzonden aangemaakt. */
+  is_achteraf?: boolean
   week: string | null
   fact_naam: string | null
   fact_adres: string | null
@@ -201,6 +203,8 @@ export interface OrderRegel {
   verzendweek_bron?: string | null
   /** Mig 406: per-orderregel klantreferentie. */
   klant_referentie?: string | null
+  /** Mig 524: vrije omschrijvingsregel zonder artikelnr (geen voorraad, geen pick). */
+  is_vrije_regel?: boolean
   /** Mig 412: vroegste verzenddatum voor deze regel op basis van actieve claims.
    * NULL = geen dekking of maatwerk. CURRENT_DATE of later = beschikbaar. */
   vroegst_leverbaar?: string | null
@@ -642,7 +646,7 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
     supabase.from('orders').select('debiteur_nr').eq('id', orderId).single(),
     supabase
       .from('order_regels')
-      .select('id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2, orderaantal, te_leveren, backorder, prijs, korting_pct, bedrag, gewicht_kg, vrije_voorraad, fysiek_artikelnr, omstickeren, is_maatwerk, maatwerk_vorm, maatwerk_lengte_cm, maatwerk_breedte_cm, maatwerk_diameter_cm, maatwerk_afwerking, maatwerk_band_kleur, maatwerk_instructies, maatwerk_m2_prijs, maatwerk_oppervlak_m2, maatwerk_vorm_toeslag, maatwerk_afwerking_prijs, verzendweek, verzendweek_bron, klant_referentie, vroegst_leverbaar, pick_backorder_sinds, pick_backorder_geannuleerd_op, producten!order_regels_artikelnr_fkey(kwaliteit_code, kleur_code, is_pseudo, is_dropship, karpi_code, voorraad, vrije_voorraad, besteld_inkoop, lengte_cm, breedte_cm)')
+      .select('id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2, orderaantal, te_leveren, backorder, prijs, korting_pct, bedrag, gewicht_kg, vrije_voorraad, fysiek_artikelnr, omstickeren, is_maatwerk, maatwerk_vorm, maatwerk_lengte_cm, maatwerk_breedte_cm, maatwerk_diameter_cm, maatwerk_afwerking, maatwerk_band_kleur, maatwerk_instructies, maatwerk_m2_prijs, maatwerk_oppervlak_m2, maatwerk_vorm_toeslag, maatwerk_afwerking_prijs, verzendweek, verzendweek_bron, klant_referentie, vroegst_leverbaar, pick_backorder_sinds, pick_backorder_geannuleerd_op, is_vrije_regel, producten!order_regels_artikelnr_fkey(kwaliteit_code, kleur_code, is_pseudo, is_dropship, karpi_code, voorraad, vrije_voorraad, besteld_inkoop, lengte_cm, breedte_cm)')
       .eq('order_id', orderId)
       .order('regelnummer'),
   ])
@@ -726,6 +730,7 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
       product_kleur_code: kleurCode,
       product_lengte_cm: product?.lengte_cm ?? null,
       product_breedte_cm: product?.breedte_cm ?? null,
+      is_vrije_regel: row.is_vrije_regel === true,
     }
   }
 

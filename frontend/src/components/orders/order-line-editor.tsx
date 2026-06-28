@@ -24,6 +24,7 @@ import { fetchEquivalenteProducten } from '@/lib/supabase/queries/product-equiva
 import { isAdminPseudo } from '@/lib/orders/admin-pseudo'
 import { syncVormToeslagRegel, verwijderRegelMetCompanion } from '@/lib/orders/vorm-toeslag-regel'
 import { OverigeRegelToevoegen } from './overige-regel-toevoegen'
+import { VrijeRegelToevoegen } from './vrije-regel-toevoegen'
 
 interface OrderLineEditorProps {
   lines: OrderRegelFormData[]
@@ -690,6 +691,7 @@ export function OrderLineEditor({ lines, onChange, defaultKorting, prijslijstNr,
             onAddMaatwerk={(newLines) => onChange([...lines, ...newLines])}
           />
         </div>
+        <VrijeRegelToevoegen lines={lines} onChange={onChange} />
         <OverigeRegelToevoegen lines={lines} onChange={onChange} vormen={vormen} />
       </div>
 

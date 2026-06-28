@@ -16,7 +16,7 @@ import {
   SnelsteHaalbaarKnop,
   useNeemSnelsteOver,
 } from '@/modules/levertijd'
-import { createOrder, updateOrderWithLines, deleteOrder, resolveOrderlinePrice, fetchKlantArtikelnummer, setAllocatieKeuze, type LevertijdSnapshotContext } from '@/lib/supabase/queries/order-mutations'
+import { createOrder, updateOrderWithLines, deleteOrder, resolveOrderlinePrice, fetchKlantArtikelnummer, setAllocatieKeuze, registreerAchterafOrder, type LevertijdSnapshotContext } from '@/lib/supabase/queries/order-mutations'
 import type { OrderFormData, OrderRegelFormData, PrijsBron, PrijsBreakdown } from '@/lib/supabase/queries/order-mutations'
 import { fetchKlanteigenNaam } from '@/modules/debiteuren'
 import { supabase } from '@/lib/supabase/client'
@@ -87,6 +87,9 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
   )
   const [leverModusDialogOpen, setLeverModusDialogOpen] = useState(false)
   const [afhalen, setAfhalen] = useState<boolean>(initialData?.header?.afhalen ?? false)
+  // Mig 524: retroactieve order — al fysiek verzonden/afgehaald.
+  const [alAfgehandeld, setAlAfgehandeld] = useState(false)
+  const [verzenddatum, setVerzenddatum] = useState<string>(() => new Date().toISOString().split('T')[0])
   const [dropshipKeuze, setDropshipKeuze] = useState<DropshipmentKeuze>(
     () => detecteerDropshipKeuze(initialData?.regels ?? [])
   )
@@ -571,6 +574,23 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
         )
       }
       if (regels.filter(r => r.artikelnr !== SHIPPING_PRODUCT_ID).length === 0) throw new Error('Voeg minstens één orderregel toe')
+
+      // ── Mig 524: retroactief pad — order was al fysiek afgehandeld ──────────
+      if (alAfgehandeld && mode === 'create') {
+        if (!client.prijslijst_nr) {
+          throw new Error(
+            `${client.naam} heeft geen prijslijst gekoppeld — koppel eerst een prijslijst aan deze klant voordat je een order aanmaakt.`,
+          )
+        }
+        const orderData: OrderFormData = { ...header, afhalen, debiteur_nr: client.debiteur_nr }
+        // Retroactieve regels: geen admin-overhead (VERZEND/dropship), alleen
+        // echte productregels + vrije regels. Shipping-logic al verwerkt via
+        // applyShippingLogic (afhalen = VERZEND-regel al verwijderd).
+        const result = await registreerAchterafOrder(orderData, regels, verzenddatum, afhalen)
+        return { split: false as const, id: result.id, order_nr: result.order_nr }
+      }
+      // ────────────────────────────────────────────────────────────────────────
+
       if (isBlokkerendDropshipEmailProbleem(dropshipEmailProbleem) && !dropshipEmailGenegeerd) {
         throw new Error(DROPSHIP_EMAIL_MELDING[dropshipEmailProbleem])
       }
@@ -792,27 +812,61 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
         />
       </div>
 
+      {/* Mig 524: Al afgehandeld — retroactieve order (alleen aanmaken) */}
+      {mode === 'create' && (
+        <div className={`border rounded-[var(--radius-sm)] p-3 ${alAfgehandeld ? 'bg-amber-50 border-amber-300' : 'border-slate-200'}`}>
+          <label className="inline-flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={alAfgehandeld}
+              onChange={(e) => setAlAfgehandeld(e.target.checked)}
+              className="rounded border-slate-300 text-terracotta-500 focus:ring-terracotta-400/30"
+            />
+            Al afgehandeld — order is al verzonden of afgehaald
+          </label>
+          {alAfgehandeld && (
+            <div className="mt-2 flex flex-wrap items-center gap-4">
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <span className="text-slate-600 shrink-0">{afhalen ? 'Datum afgehaald' : 'Datum verzonden'}</span>
+                <input
+                  type="date"
+                  value={verzenddatum}
+                  max={new Date().toISOString().split('T')[0]}
+                  onChange={(e) => setVerzenddatum(e.target.value)}
+                  className="border border-slate-300 rounded-[var(--radius-sm)] px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-terracotta-400/30 focus:border-terracotta-400"
+                />
+              </label>
+              <span className="text-xs text-amber-700">
+                Order wordt direct als Verzonden aangemaakt en gefactureerd via de normale factuurpipeline.
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Header fields */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Field label="Klant referentie" value={header.klant_referentie} onChange={(v) => setHeader({ ...header, klant_referentie: v })} />
-        <LeverDatumField
-          leverType={header.lever_type ?? 'week'}
-          afleverdatum={header.afleverdatum}
-          onLeverTypeChange={(nieuw) => {
-            setAfleverdatumOverridden(true)
-            setHeader((h) => ({ ...h, lever_type: nieuw }))
-          }}
-          onChange={(nieuweDatum, weekNr) => {
-            setAfleverdatumOverridden(true)
-            setHeader({ ...header, afleverdatum: nieuweDatum, week: weekNr })
-          }}
-        />
+        {!alAfgehandeld && (
+          <LeverDatumField
+            leverType={header.lever_type ?? 'week'}
+            afleverdatum={header.afleverdatum}
+            onLeverTypeChange={(nieuw) => {
+              setAfleverdatumOverridden(true)
+              setHeader((h) => ({ ...h, lever_type: nieuw }))
+            }}
+            onChange={(nieuweDatum, weekNr) => {
+              setAfleverdatumOverridden(true)
+              setHeader({ ...header, afleverdatum: nieuweDatum, week: weekNr })
+            }}
+          />
+        )}
       </div>
 
       {/* Levertijd-Module (ADR-0020): inline fit-indicator + "klant heeft haast"-
           knop, gekoppeld aan de huidige afleverdatum. Read-only waarschuwing —
           blokkeert de save-flow niet, want commit blijft de operator-keuze. */}
-      {persistedRegelIds.length > 0 && (
+      {!alAfgehandeld && persistedRegelIds.length > 0 && (
         <div className="flex flex-wrap items-center gap-3">
           <LevertijdFitIndicator
             regelIds={persistedRegelIds}
@@ -847,7 +901,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
       )}
 
       {/* Real-time levertijd-suggestie voor maatwerk-regels */}
-      {levertijdInput && (
+      {!alAfgehandeld && levertijdInput && (
         <LevertijdSuggestie
           kwaliteitCode={levertijdInput.kwaliteitCode}
           kleurCode={levertijdInput.kleurCode}
@@ -1017,7 +1071,14 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
           disabled={saveMutation.isPending || !client || regels.filter(r => r.artikelnr !== SHIPPING_PRODUCT_ID).length === 0}
           className="px-6 py-2 bg-terracotta-500 text-white rounded-[var(--radius-sm)] text-sm font-medium hover:bg-terracotta-600 disabled:opacity-50 transition-colors"
         >
-          {saveMutation.isPending ? 'Opslaan...' : mode === 'create' ? 'Order aanmaken' : 'Wijzigingen opslaan'}
+          {saveMutation.isPending
+            ? 'Opslaan...'
+            : alAfgehandeld
+              ? 'Registreer als afgehandeld'
+              : mode === 'create'
+                ? 'Order aanmaken'
+                : 'Wijzigingen opslaan'
+          }
         </button>
         <button
           type="button"

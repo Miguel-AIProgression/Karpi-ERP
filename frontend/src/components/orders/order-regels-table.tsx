@@ -488,6 +488,8 @@ function RegelRow({ regel, orderId, orderNr, orderdatum, orderVerzendweek, lever
             >
               {regel.artikelnr}
             </Link>
+          ) : regel.is_vrije_regel ? (
+            <span className="inline-block rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500 font-medium">vrij</span>
           ) : (
             '—'
           )}

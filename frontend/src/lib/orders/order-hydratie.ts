@@ -119,6 +119,7 @@ export function hydrateerOrderRegels(
       maatwerk_vorm_toeslag: r.maatwerk_vorm_toeslag ?? undefined,
       maatwerk_afwerking_prijs: r.maatwerk_afwerking_prijs ?? undefined,
       klant_referentie: r.klant_referentie ?? null,
+      is_vrije_regel: r.is_vrije_regel === true,
       // Handmatige uitwisselbaar-claims gerehydrateerd (omstickeren).
       uitwisselbaar_keuzes: keuzesPerRegel.get(r.id) ?? [],
     }
