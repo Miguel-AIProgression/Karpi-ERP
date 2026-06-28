@@ -1,44 +1,26 @@
 import { cn } from '@/lib/utils/cn'
 import type { StatusCount } from '@/lib/supabase/queries/orders'
 
-// Status-tabs volgen ADR-0016: 'Klaar voor picken' is de default-fase;
-// 'In pickronde' / 'Deels verzonden' tonen pickronde-progressie;
-// 'Wacht op maatwerk' onderscheidt maatwerk-blokkade van voorraad-blokkade.
-// 'Actie vereist' is union van Wacht op voorraad ∪ Wacht op inkoop ∪
-// heeft_unmatched_regels (zie fetchOrders).
-// 'Te bevestigen' = EDI-orders met onbevestigde leverweek
-// (bron_systeem='edi' AND edi_bevestigd_op IS NULL); status-overstijgend, net als 'Actie vereist'.
-// 'Debiteur te bevestigen' = orders met onzekere fuzzy debiteur-match (mig 322,
-// debiteur_zeker=false, bron <> env_fallback); ook status-overstijgend.
-// 'Levertijd gewijzigd' = orders waarvan de leverweek is verschoven door een
-// leverancier/Karpi-ETA-update op een gekoppelde inkooporderregel (mig 326,
-// levertijd_wijziging_te_bevestigen_sinds IS NOT NULL); ook status-overstijgend.
-// 'Afleveradres ontbreekt' = orders met een onvolledig afleveradres-snapshot
-// (mig 395, afl_adres_incompleet_sinds IS NOT NULL); status-overstijgend en
-// blokkeert pickronde-start tot het adres is aangevuld.
-// 'Prijs ontbreekt' = orders met ≥1 regel zonder prijs (€0/NULL) (mig 396,
-// prijs_ontbreekt_sinds IS NOT NULL); status-overstijgend en blokkeert
-// pickronde-start tot de prijs is gecorrigeerd of bewust bevestigd.
-// 'Geen verzendweek' = orders zonder afleverdatum (afleverdatum IS NULL);
-// status-overstijgend — zonder week geen weekindeling in Pick & Ship.
-// Aanleiding: EDI-orders SB MÖBEL BOSS / OSTERMANN zonder datum (2026-06-24).
-// 'Manco' = open manco-werklijst (mig 518, regel-niveau): colli's die tijdens
-// het picken niet gevonden zijn en door de binnendienst beoordeeld moeten worden
-// (NL → backorder, DE → afstemmen). Rendert de MancoTab i.p.v. de orderlijst.
-// 'Had mankement' = orders waarop ooit een manco gedetecteerd is (mig 518,
-// manco_sinds NOT NULL); historisch/status-overstijgend, blijft ook na Verzonden.
-const ALL_STATUSES = [
+// Twee assen (zie ook ADR-0016):
+//  • FASE = de order-status zelf — waar zit de order in de flow. Vaste overzicht-rij,
+//    altijd alle chips zichtbaar zodat je de aantallen per fase in één oogopslag ziet.
+//  • AANDACHT = afgeleide, status-overstijgende vlaggen die om een menselijke actie
+//    vragen. Alleen getoond als hun teller > 0 (of als ze nu geselecteerd zijn) —
+//    een vlag op 0 is ruis en hoort niet permanent in de balk te staan.
+//
+// Betekenis van de aandacht-vlaggen:
+// 'Actie vereist'        = Wacht op voorraad ∪ Wacht op inkoop ∪ heeft_unmatched_regels.
+// 'Manco'                = open manco-werklijst (mig 518) — rendert de MancoTab i.p.v. de orderlijst.
+// 'Te bevestigen'        = EDI-orders met onbevestigde leverweek (edi_bevestigd_op IS NULL).
+// 'Debiteur te bevestigen' = onzekere fuzzy debiteur-match (mig 322).
+// 'Levertijd gewijzigd'  = leverweek verschoven door een ETA-update (mig 326).
+// 'Afleveradres ontbreekt' = onvolledig afleveradres-snapshot (mig 395).
+// 'Prijs ontbreekt'      = ≥1 regel zonder prijs (mig 396).
+// 'Geen verzendweek'     = order zonder afleverdatum (geen weekindeling in Pick & Ship).
+// 'Had mankement'        = order waarop ooit een manco gedetecteerd is (mig 518).
+const FASE_STATUSES = [
   'Alle',
   'Klaar voor picken',
-  'Actie vereist',
-  'Manco',
-  'Te bevestigen',
-  'Debiteur te bevestigen',
-  'Levertijd gewijzigd',
-  'Afleveradres ontbreekt',
-  'Prijs ontbreekt',
-  'Geen verzendweek',
-  'Had mankement',
   'Wacht op voorraad',
   'Wacht op inkoop',
   'Wacht op maatwerk',
@@ -48,50 +30,81 @@ const ALL_STATUSES = [
   'Geannuleerd',
 ]
 
+const AANDACHT_STATUSES = [
+  'Actie vereist',
+  'Manco',
+  'Te bevestigen',
+  'Debiteur te bevestigen',
+  'Levertijd gewijzigd',
+  'Afleveradres ontbreekt',
+  'Prijs ontbreekt',
+  'Geen verzendweek',
+  'Had mankement',
+]
+
 interface StatusTabsProps {
   selected: string
   onSelect: (status: string) => void
   counts: StatusCount[]
-  /** Totaal aantal unieke orders (fetchOrders totalCount). Gebruikt voor de
-   *  'Alle'-badge — sommige status-buckets zijn cross-cutting (Actie vereist:
-   *  heeft_unmatched_regels-component, Te bevestigen, etc.) en tellen anders
-   *  dubbel in een gewone optelsom. */
+  /** Totaal aantal unieke orders (fetchOrders totalCount) voor de 'Alle'-badge —
+   *  cross-cutting buckets tellen anders dubbel in een gewone optelsom. */
   totalCount?: number
 }
 
 export function StatusTabs({ selected, onSelect, counts, totalCount }: StatusTabsProps) {
   const countMap = new Map(counts.map((c) => [c.status, c.aantal]))
-  const allCount = totalCount ?? 0
+
+  const chip = (status: string, accent: 'fase' | 'aandacht') => {
+    const count = status === 'Alle' ? (totalCount ?? 0) : (countMap.get(status) ?? 0)
+    const isActive = selected === status
+    return (
+      <button
+        key={status}
+        onClick={() => onSelect(status)}
+        className={cn(
+          'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition-colors',
+          isActive
+            ? 'bg-terracotta-500 text-white font-medium'
+            : accent === 'aandacht'
+              ? 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+              : 'bg-slate-100 text-slate-600 hover:bg-slate-200',
+        )}
+      >
+        {status}
+        <span
+          className={cn(
+            'text-xs px-1.5 py-0.5 rounded-full',
+            isActive ? 'bg-white/20' : accent === 'aandacht' ? 'bg-amber-100' : 'bg-slate-200',
+          )}
+        >
+          {count}
+        </span>
+      </button>
+    )
+  }
+
+  // Aandacht-vlaggen alleen tonen als er iets openstaat (of de chip nu actief is, zodat
+  // een geselecteerde 0-vlag deselecteerbaar blijft).
+  const actieveAandacht = AANDACHT_STATUSES.filter(
+    (s) => (countMap.get(s) ?? 0) > 0 || selected === s,
+  )
 
   return (
-    <div className="flex gap-1 overflow-x-auto pb-2 mb-4">
-      {ALL_STATUSES.map((status) => {
-        const count = status === 'Alle' ? allCount : (countMap.get(status) ?? 0)
-        const isActive = selected === status
+    <div className="space-y-2 mb-4">
+      {/* Fase: de order-status zelf — vaste overzicht-rij */}
+      <div className="flex gap-1 overflow-x-auto pb-1">
+        {FASE_STATUSES.map((s) => chip(s, 'fase'))}
+      </div>
 
-        return (
-          <button
-            key={status}
-            onClick={() => onSelect(status)}
-            className={cn(
-              'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition-colors',
-              isActive
-                ? 'bg-terracotta-500 text-white font-medium'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            )}
-          >
-            {status}
-            <span
-              className={cn(
-                'text-xs px-1.5 py-0.5 rounded-full',
-                isActive ? 'bg-white/20' : 'bg-slate-200'
-              )}
-            >
-              {count}
-            </span>
-          </button>
-        )
-      })}
+      {/* Vereist actie: status-overstijgende vlaggen, alleen zichtbaar als er iets openstaat */}
+      {actieveAandacht.length > 0 && (
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+          <span className="text-xs font-medium text-amber-700/80 whitespace-nowrap pr-1">
+            Vereist actie
+          </span>
+          {actieveAandacht.map((s) => chip(s, 'aandacht'))}
+        </div>
+      )}
     </div>
   )
 }
