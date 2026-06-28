@@ -62,9 +62,6 @@ export function VereistActieKaart({ counts, selected, onSelect }: VereistActieKa
                 )}
               >
                 {status}
-                {urgent && (
-                  <span className="ml-2 text-xs font-medium text-red-600">· direct oppakken</span>
-                )}
               </span>
               <ChevronRight size={16} className={urgent ? 'text-red-500' : 'text-amber-500'} />
             </button>
