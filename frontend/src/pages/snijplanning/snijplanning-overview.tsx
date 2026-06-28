@@ -186,6 +186,13 @@ export function SnijplanningOverviewPage() {
         actions={
           <>
             <Link
+              to="/snijplanning/werklijst"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-[var(--radius-sm)] border border-terracotta-400 text-sm text-terracotta-600 bg-terracotta-50 hover:bg-terracotta-100 transition-colors font-medium"
+            >
+              <Scissors size={14} />
+              Snijderij werklijst
+            </Link>
+            <Link
               to="/snijplanning/master-planning"
               className="flex items-center gap-1.5 px-3 py-2 rounded-[var(--radius-sm)] border border-slate-300 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
             >
