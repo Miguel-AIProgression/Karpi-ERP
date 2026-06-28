@@ -58,12 +58,19 @@ dry-run heeft goedgekeurd.**
    ```
    python update_voorraad.py "..\Voorraadlijst <datum>.xls" --commit
    ```
+   Het script doet nu automatisch drie stappen:
+   - **Stap 1** — voorraad bijwerken (baseline uit kolom H, minus RugFlow-aftrek)
+   - **Stap 2** — herallocateer alle open orders voor de bijgewerkte artikelen
+     (inkoop-claims die nu door voorraad gedekt kunnen worden worden automatisch
+     omgezet naar voorraad-claims, en omgekeerd bij dalingen)
+   - **Stap 3** — herbereken gereserveerd-cache voor alle claim-artikelen
 
-5. **Verifiëren tegen de DB** met een kleine spot-check: pak een paar
-   `product_type='vast'`-artikelen uit de lijst en controleer dat
-   `producten.voorraad`/`vrije_voorraad` de waarde uit kolom H heeft en dat
-   `backorder`/`gereserveerd` op 0 staan. Controleer ook dat een staaltje/rol
-   ongemoeid bleef (andere `product_type`).
+   `herbereken_alle_reserveringen.py` hoeft daarna **niet** meer apart gedraaid te worden.
+
+5. **Verifiëren tegen de DB** met een kleine spot-check: pak een paar artikelen uit
+   de lijst en controleer dat `producten.voorraad` = kolom H − RugFlow-aftrek,
+   `gereserveerd` overeenkomt met de open reserveringen, en `vrije_voorraad` het
+   verschil is. Controleer ook dat een staaltje/rol ongemoeid bleef.
 
 6. **Documentatie bijwerken** (verplicht volgens `CLAUDE.md`):
    - `docs/changelog.md` — nieuwe entry met datum, aantallen en bijzonderheden.
@@ -100,8 +107,9 @@ dry-run heeft goedgekeurd.**
 |---|---|
 | Scope | Alleen `product_type='vast'`. Staaltje/rol/overig ongemoeid. |
 | Sleutel | Kolom A `Artikelnr` → `producten.artikelnr`. |
-| Waarde | Kolom H `Vrije voorraad` → `voorraad` + `vrije_voorraad`. Kolom D (bruto) NIET gebruiken. |
-| Backorder/gereserveerd | Altijd op 0. |
+| Waarde | Kolom H `Vrije voorraad` → baseline. Kolom D (bruto) NIET gebruiken. |
+| RugFlow-verzonden aftrek | Vóór wegschrijven: `te_leveren` van Verzonden RugFlow-orders (bron_systeem ≠ `oud_systeem`, `is_pseudo=FALSE`, `is_maatwerk=FALSE`) per artikelnr aftrekken. Deels verzonden: exact via `zending_regels.aantal`. Oud-systeem-orders (bron_systeem=`oud_systeem`) NOOIT meenemen — die zitten al in kolom F van het oud systeem. NULL-safe filter: `.or_("bron_systeem.is.null,bron_systeem.neq.oud_systeem")`. |
+| Backorder/gereserveerd | `backorder=0`, `gereserveerd=0` na de baseline-write. Daarna stap 2 herstelt gereserveerd. |
 | Maatwerk | Karpi-code met `MAATWERK` overslaan. |
 | Rode regels | Rood font (RGB 255,0,0) = niet inladen → voorraad 0 + toevoegen aan uitsluitlijst (**union**, nooit overschrijven). |
 | Vast in DB, niet in lijst | Voorraad → 0. |

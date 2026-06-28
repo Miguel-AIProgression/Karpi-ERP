@@ -1,5 +1,32 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-26 — Voorraadlijst 25-6-2026 geïmporteerd + nieuwe importregel (RugFlow-verzonden aftrek)
+
+Periodieke voorraadsynchronisatie uit het oude systeem, met een nieuwe correctieregel.
+
+**Nieuw in dit import-script (`import/update_voorraad.py`):**
+- **RugFlow-verzonden aftrek:** vóór het wegschrijven van de baseline (kolom H oud systeem)
+  worden de `te_leveren`-aantallen van alle Verzonden RugFlow-orders (bron_systeem ≠
+  `oud_systeem`) per vaste-maat artikelnr afgetrokken. Reden: het oude systeem weet
+  niets van RugFlow-zendingen; zonder aftrek werd al-verscheepte voorraad als "vrij"
+  getoond (oversold-risico). Voor Deels verzonden orders (5 stuks) wordt het exacte
+  verscheepte aantal via `zending_regels.aantal` gebruikt i.p.v. `te_leveren`.
+- **Filters:** alleen `product_type='vast'`, `is_pseudo=FALSE`, `is_maatwerk=FALSE`,
+  `bron_systeem != 'oud_systeem'` (NULL-safe via `or_`-filter). Oud-systeem-orders
+  (902×, In productie) zijn al verrekend in kolom F van het oud systeem → niet nogmaals
+  aftrekken. Geannuleerde orders hebben 0 actieve claims → geen actie.
+
+**Resultaten:**
+- 18.294 vaste-maat artikelen bijgewerkt
+- RugFlow-aftrek: 263 artikelen, 464 stuks afgetrokken van baseline
+- Daarna `herbereken_alle_reserveringen.py --commit` gedraaid → 445 artikelen,
+  gereserveerd hersteld uit bestaande claims (1.514 stuks)
+- 9 artikelen eindigen met vrije voorraad = −1 of −2 (tiny overshoot, correct gedrag)
+
+**Stappen na import (nieuwe standaardvolgorde):**
+1. `update_voorraad.py "<lijst>.xls" --commit`
+2. `herbereken_alle_reserveringen.py --commit`
+
 ## 2026-06-26 — Manco-vervolg: verzendstatus per regel, knoplabels, order uit Pick & Ship
 
 Drie wijzigingen na livegebruik van de Manco-feature (mig 518). Branch
