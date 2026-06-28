@@ -4,16 +4,16 @@ import { Plus, Search, Download } from 'lucide-react'
 import { exporterenNaarExcel } from '@/lib/orders/export-orders'
 import { PageHeader } from '@/components/layout/page-header'
 import { MultiSelectDropdown } from '@/components/ui/multi-select-dropdown'
-import { StatusTabs } from '@/components/orders/status-tabs'
+import { StatusFilterDropdown } from '@/components/orders/status-filter-dropdown'
+import { VereistActieKaart } from '@/components/orders/vereist-actie-kaart'
+import { FASE_STATUSES, ALLE_STATUS } from '@/lib/orders/order-status-groepen'
 import { OrdersTable } from '@/components/orders/orders-table'
 import { MancoTab } from '@/modules/orders/components/manco-tab'
-import { DebiteurTeBevestigenBanner } from '@/components/orders/debiteur-te-bevestigen-banner'
 import { useOrders, useStatusCounts, useOrderKlantOpties } from '@/hooks/use-orders'
 import { useFacturenVoorOrders } from '@/modules/facturatie'
 import { useSnijHaalbaarheid } from '@/modules/snijplanning'
 import { EdiTeKoppelenBanner } from '@/modules/edi'
 import { ShopifySyncStatusBanner } from '@/components/orders/shopify-sync-status-banner'
-import { GeenVerzendweekBanner } from '@/components/orders/geen-verzendweek-banner'
 import { useAuth } from '@/hooks/use-auth'
 import type { OrderSortField, SortDirection } from '@/lib/supabase/queries/orders'
 
@@ -81,6 +81,15 @@ export function OrdersOverviewPage() {
   const allOrdersCount = statusCountsResult?.totalOrders
   const { data: klantOptiesData } = useOrderKlantOpties()
 
+  // Fase-as voor de status-dropdown: 'Alle' + de order-status zelf, met counts.
+  const statusOpties = useMemo(() => {
+    const countMap = new Map((statusCounts ?? []).map((c) => [c.status, c.aantal]))
+    return [
+      { value: ALLE_STATUS, count: allOrdersCount ?? 0 },
+      ...FASE_STATUSES.map((s) => ({ value: s, count: countMap.get(s) ?? 0 })),
+    ]
+  }, [statusCounts, allOrdersCount])
+
   // Klant-opties komen uit feitelijke order-data — debiteur_nr (als string,
   // matcht het MultiSelect-API) wordt als value gebruikt zodat de ingebouwde
   // zoekbalk én op naam én op debiteur-nummer matcht.
@@ -120,27 +129,12 @@ export function OrdersOverviewPage() {
         }
       />
 
-      {/* Safety-net: inkomende EDI-orders die niet aan een klant gekoppeld konden worden */}
+      {/* Safety-net: inkomende EDI-orders die niet aan een klant gekoppeld konden worden
+          (geen order-status — staat los van de Vereist actie-kaart hieronder) */}
       <EdiTeKoppelenBanner />
-
-      {/* Safety-net: orders met onzekere (fuzzy) debiteur-match — mig 322 */}
-      <DebiteurTeBevestigenBanner
-        onBekijk={() => {
-          setStatus('Debiteur te bevestigen')
-          setPage(0)
-        }}
-      />
 
       {/* Storingssignaal: de geplande Shopify-orderpoll loopt vast of faalt */}
       <ShopifySyncStatusBanner />
-
-      {/* Orders zonder afleverdatum — geen weekindeling mogelijk in Pick & Ship */}
-      <GeenVerzendweekBanner
-        onBekijk={() => {
-          setStatus('Geen verzendweek')
-          setPage(0)
-        }}
-      />
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3 mb-4">
@@ -179,6 +173,15 @@ export function OrdersOverviewPage() {
           }}
         />
 
+        <StatusFilterDropdown
+          selected={status}
+          options={statusOpties}
+          onSelect={(s) => {
+            setStatus(s)
+            setPage(0)
+          }}
+        />
+
         <button
           onClick={handleExport}
           disabled={exportBezig || totalCount === 0}
@@ -190,15 +193,14 @@ export function OrdersOverviewPage() {
         </button>
       </div>
 
-      {/* Status tabs */}
-      <StatusTabs
+      {/* Meldingen: status-overstijgende vlaggen die om actie vragen (alleen >0) */}
+      <VereistActieKaart
+        counts={statusCounts ?? []}
         selected={status}
         onSelect={(s) => {
           setStatus(s)
           setPage(0)
         }}
-        counts={statusCounts ?? []}
-        totalCount={allOrdersCount}
       />
 
       {/* De 'Manco'-tab toont de regel-niveau werklijst (binnendienst-resolutie),
