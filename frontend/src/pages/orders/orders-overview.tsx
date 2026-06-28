@@ -6,7 +6,7 @@ import { PageHeader } from '@/components/layout/page-header'
 import { MultiSelectDropdown } from '@/components/ui/multi-select-dropdown'
 import { StatusFilterDropdown } from '@/components/orders/status-filter-dropdown'
 import { VereistActieKaart } from '@/components/orders/vereist-actie-kaart'
-import { FASE_STATUSES, ALLE_STATUS } from '@/lib/orders/order-status-groepen'
+import { FASE_STATUSES, FILTER_STATUSES, ALLE_STATUS } from '@/lib/orders/order-status-groepen'
 import { OrdersTable } from '@/components/orders/orders-table'
 import { MancoTab } from '@/modules/orders/components/manco-tab'
 import { useOrders, useStatusCounts, useOrderKlantOpties } from '@/hooks/use-orders'
@@ -87,6 +87,12 @@ export function OrdersOverviewPage() {
     return [
       { value: ALLE_STATUS, count: allOrdersCount ?? 0 },
       ...FASE_STATUSES.map((s) => ({ value: s, count: countMap.get(s) ?? 0 })),
+      // Informatieve filters onderaan, gescheiden door een lijntje.
+      ...FILTER_STATUSES.map((s, i) => ({
+        value: s,
+        count: countMap.get(s) ?? 0,
+        divider: i === 0,
+      })),
     ]
   }, [statusCounts, allOrdersCount])
 

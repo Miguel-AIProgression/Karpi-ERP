@@ -38,5 +38,10 @@ export const AANDACHT_STATUSES = [
   'Afleveradres ontbreekt',
   'Prijs ontbreekt',
   'Geen verzendweek',
-  'Had mankement',
 ] as const
+
+// Informatieve filters: geen openstaande actie, wél handig om op te kunnen
+// filteren. Verschijnen onderaan de status-dropdown (niet in de meldingenkaart).
+// 'Had mankement' = order waarop ooit een manco gedetecteerd is (mig 518) —
+// historisch; 'Manco' (de open werklijst) hoort wél bij de aandacht-vlaggen.
+export const FILTER_STATUSES = ['Had mankement'] as const

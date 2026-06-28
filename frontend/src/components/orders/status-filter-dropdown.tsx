@@ -5,6 +5,8 @@ import { cn } from '@/lib/utils/cn'
 export interface StatusOptie {
   value: string
   count: number
+  /** Toon een scheidingslijn vóór deze optie (scheidt fase- van filter-opties). */
+  divider?: boolean
 }
 
 interface StatusFilterDropdownProps {
@@ -52,24 +54,26 @@ export function StatusFilterDropdown({ selected, options, onSelect }: StatusFilt
       {open && (
         <div className="absolute z-30 left-0 top-full mt-1 w-64 rounded-md border border-slate-200 bg-white shadow-lg py-1 max-h-80 overflow-y-auto">
           {options.map((o) => (
-            <button
-              key={o.value}
-              type="button"
-              onClick={() => {
-                onSelect(o.value)
-                setOpen(false)
-              }}
-              className="w-full flex items-center justify-between gap-2 px-3 py-1.5 text-sm hover:bg-slate-50 text-left"
-            >
-              <span className="flex items-center gap-2 text-slate-700">
-                <Check
-                  size={14}
-                  className={o.value === selected ? 'text-terracotta-500' : 'text-transparent'}
-                />
-                {o.value}
-              </span>
-              <span className="text-xs text-slate-400 tabular-nums">{o.count}</span>
-            </button>
+            <div key={o.value}>
+              {o.divider && <div className="my-1 border-t border-slate-100" />}
+              <button
+                type="button"
+                onClick={() => {
+                  onSelect(o.value)
+                  setOpen(false)
+                }}
+                className="w-full flex items-center justify-between gap-2 px-3 py-1.5 text-sm hover:bg-slate-50 text-left"
+              >
+                <span className="flex items-center gap-2 text-slate-700">
+                  <Check
+                    size={14}
+                    className={o.value === selected ? 'text-terracotta-500' : 'text-transparent'}
+                  />
+                  {o.value}
+                </span>
+                <span className="text-xs text-slate-400 tabular-nums">{o.count}</span>
+              </button>
+            </div>
           ))}
         </div>
       )}
