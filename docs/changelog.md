@@ -1,5 +1,52 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-28 — Retroactieve order + vrije omschrijvingsregel (mig 524)
+
+Twee nieuwe features voor het administratief invoeren van al-afgehandelde bestellingen.
+
+**Feature A — Retroactieve order ("al afgehandeld"):**
+- Nieuwe RPC `registreer_achteraf_order`: maakt order direct als `Verzonden` aan
+  met een historische datum (verleden is toegestaan). Gebruik voor orders die al
+  fysiek verzonden of afgehaald zijn maar nog niet in het systeem stonden.
+- Volgorde in de RPC: INSERT orders (status=Verzonden, is_achteraf=TRUE) →
+  INSERT order_regels → INSERT order_reserveringen (status='verzonden' per
+  niet-pseudo/niet-vrije/niet-NULL-regel, exact als pickronde) →
+  INSERT zendingen (phantom, status='Gepland', gereed_op=NULL, geen carrier) →
+  INSERT order_events (pickronde_voltooid) → factuur_queue (pending).
+- Voorraadinvloed: `order_reserveringen.status='verzonden'` is wat
+  `herbereken_product_reservering` als "gereserveerd" telt (mig 468) — zelfde als
+  een echte pickronde, dus vrije_voorraad daalt correct.
+- Phantom zending status='Gepland': 'Klaar voor verzending' triggert
+  `fn_zending_klaar_voor_verzending` → `enqueue_zending_naar_vervoerder` (carrier-
+  queue!) plus `fn_zending_set_gereed_op` → DESADV-sweep. 'Gepland' is veilig.
+- `orders.is_achteraf BOOLEAN NOT NULL DEFAULT FALSE`: markeert retroactieve orders.
+  Zichtbaar op order-detail als amber banner "Afgehaald op [datum]" /
+  "Verzonden op [datum]".
+- UI: toggle "Al afgehandeld" in het order-aanmaakformulier (create-mode only),
+  met datum-picker (max=vandaag). Verbergt levertijd-module, toont
+  "Registreer als afgehandeld" knop. Zelfde prijslijst-gate als create_order_with_lines.
+
+**Feature B — Vrije omschrijvingsregel:**
+- `order_regels.is_vrije_regel BOOLEAN NOT NULL DEFAULT FALSE`: vrije tekstregel
+  zonder artikelnr, operator vult zelf omschrijving en prijs in.
+  Geen voorraadinvloed, geen snijplan, geen pick-collo, geen zending-rij.
+- Onderscheidt van maatwerk (ook artikelnr=NULL) en admin-pseudo.
+- Uitgesloten in `orderregel_pickbaarheid` (blokkeert pick-start niet).
+- Overgeslagen in `fn_zending_regels_skip_admin_pseudo` (extended).
+- Factuur-rendering werkt automatisch: `resolveArtikelPresentatie` in
+  `artikel-presentatie.ts` valt bij NULL-artikelnr terug op `regel.omschrijving`.
+- UI: "Vrije regel" knop in de order-regeleditor (naast "Overige regel").
+  Beschikbaar op zowel normale als retroactieve orders.
+- 'vrij' badge in de order-regels-table; `is_vrije_regel` in `OrderRegel` type,
+  query, en hydratie.
+
+**Bewezen op live DB (opgeruimd na test):**
+- Verzonden scenario (ORD-2026-1090, nu verwijderd): status=Verzonden,
+  is_achteraf=true, 1 rsv status=verzonden (2st art. 1000182), 1 vrije regel,
+  1 factuur_queue pending, zending Gepland gereed_op=null.
+- Afhalen scenario (ORD-2026-1091, nu verwijderd): afhalen=true, factuur
+  queue pending.
+
 ## 2026-06-26 — Voorraadlijst 25-6-2026 geïmporteerd + nieuwe importregel (RugFlow-verzonden aftrek)
 
 Periodieke voorraadsynchronisatie uit het oude systeem, met een nieuwe correctieregel.
