@@ -1,10 +1,11 @@
-import { Loader2 } from 'lucide-react'
+import { Loader2, RefreshCw } from 'lucide-react'
+import { cn } from '@/lib/utils/cn'
 import { PageHeader } from '@/components/layout/page-header'
 import { useWerklijst } from '@/modules/snijplanning/hooks/use-werklijst'
 import { WerklijstKwaliteitGroepItem } from '@/components/snijplanning/werklijst-kwaliteit-groep'
 
 export function WerklijstPage() {
-  const { groepen, isLoading, error } = useWerklijst()
+  const { groepen, isLoading, isFetching, error, ververs } = useWerklijst()
 
   const totaalStukken = groepen.reduce(
     (s, g) => s + g.aantalOpRol + g.aantalWachtOpInkoop + g.aantalTekort,
@@ -21,7 +22,24 @@ export function WerklijstPage() {
 
   return (
     <div>
-      <PageHeader title="Snijderij werklijst" description={beschrijving} />
+      <PageHeader
+        title="Snijderij werklijst"
+        description={beschrijving}
+        actions={
+          <button
+            type="button"
+            onClick={ververs}
+            disabled={isFetching}
+            className={cn(
+              'flex items-center gap-1.5 px-3 py-2 rounded-[var(--radius-sm)] border border-slate-300 text-sm text-slate-600 hover:bg-slate-50 transition-colors',
+              isFetching && 'opacity-60 cursor-not-allowed',
+            )}
+          >
+            <RefreshCw size={14} className={isFetching ? 'animate-spin' : ''} />
+            Ververs
+          </button>
+        }
+      />
 
       {isLoading && (
         <div className="flex items-center justify-center py-16 text-slate-400">
