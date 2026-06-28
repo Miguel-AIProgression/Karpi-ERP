@@ -14,6 +14,8 @@
 // 'Afleveradres ontbreekt' = onvolledig afleveradres-snapshot (mig 395).
 // 'Prijs ontbreekt'        = ≥1 regel zonder prijs (mig 396).
 // 'Geen verzendweek'       = order zonder afleverdatum (geen weekindeling in Pick & Ship).
+// 'Verzendweek verstreken' = afleverdatum in het verleden maar nog niet (deels) verzonden
+//                            (achterstallige verzending; langst over tijd bovenaan).
 // 'Had mankement'          = order waarop ooit een manco gedetecteerd is (mig 518).
 
 export const ALLE_STATUS = 'Alle'
@@ -37,6 +39,7 @@ export const AANDACHT_STATUSES = [
   'Afleveradres ontbreekt',
   'Prijs ontbreekt',
   'Geen verzendweek',
+  'Verzendweek verstreken',
 ] as const
 
 // Informatieve filters: geen direct oplosbare actie, wél handig om op te kunnen

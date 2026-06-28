@@ -6,6 +6,7 @@ import { filterLeverweekTeBevestigen } from '@/lib/orders/edi-leverweek'
 import { filterAfleveradresIncompleet } from '@/lib/orders/afleveradres-gate'
 import { filterPrijsOntbreekt } from '@/lib/orders/prijs-ontbreekt'
 import { filterGeenVerzendweek } from '@/lib/orders/geen-verzendweek'
+import { filterVerzendweekVerstreken } from '@/lib/orders/verzendweek-verstreken'
 import { filterMancoMarker } from '@/lib/orders/manco-marker'
 import { filterPickBackorder } from '@/lib/orders/pick-backorder'
 
@@ -303,6 +304,12 @@ export async function fetchOrders(params: {
     // binnen zonder afleverdatum (2026-06-24). Productie-only orders (Basta)
     // worden uitgesloten (verzending via Basta, ADR-0029).
     query = filterGeenVerzendweek(query)
+  } else if (status === 'Verzendweek verstreken') {
+    // Orders waarvan de afleverdatum (verzendweek) in het verleden ligt maar die
+    // nog niet (deels) verzonden zijn — achterstallige verzendingen. De caller
+    // sorteert op afleverdatum oplopend zodat de langst-over-tijd order bovenaan
+    // staat. Spiegelt isVerzendweekVerstreken.
+    query = filterVerzendweekVerstreken(query)
   } else if (status === 'Had mankement') {
     // Mig 518: orders waarop ooit een manco (niet-gevonden colli tijdens het
     // picken) is gedetecteerd. Status-overstijgend én historisch — blijft ook
@@ -422,6 +429,7 @@ export async function fetchStatusCounts(): Promise<StatusCountResult> {
     aflAdresOntbreektRes,
     prijsOntbreektRes,
     geenVerzendweekRes,
+    verzendweekVerstrekenRes,
     mancoRes,
     hadMankementRes,
   ] = await Promise.all([
@@ -447,6 +455,10 @@ export async function fetchStatusCounts(): Promise<StatusCountResult> {
       supabase.from('orders').select('id', { count: 'exact', head: true }),
     ),
     filterGeenVerzendweek(
+      supabase.from('orders').select('id', { count: 'exact', head: true }),
+    ),
+    // 'Verzendweek verstreken' = afleverdatum in het verleden, nog niet (deels) verzonden.
+    filterVerzendweekVerstreken(
       supabase.from('orders').select('id', { count: 'exact', head: true }),
     ),
     // Mig 518: 'Manco' = open manco-werklijst (regel-niveau, open backorders).
@@ -499,6 +511,11 @@ export async function fetchStatusCounts(): Promise<StatusCountResult> {
   const geenVerzendweek = geenVerzendweekRes.count ?? 0
   if (geenVerzendweek > 0) {
     counts.push({ status: 'Geen verzendweek', aantal: geenVerzendweek })
+  }
+
+  const verzendweekVerstreken = verzendweekVerstrekenRes.count ?? 0
+  if (verzendweekVerstreken > 0) {
+    counts.push({ status: 'Verzendweek verstreken', aantal: verzendweekVerstreken })
   }
 
   const manco = mancoRes.count ?? 0

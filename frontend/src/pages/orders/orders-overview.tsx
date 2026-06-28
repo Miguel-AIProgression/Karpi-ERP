@@ -50,6 +50,16 @@ export function OrdersOverviewPage() {
   const [sortDir, setSortDir] = useState<SortDirection>('desc')
   const [exportBezig, setExportBezig] = useState(false)
 
+  function kiesStatus(nieuw: string) {
+    setStatus(nieuw)
+    setPage(0)
+    // Achterstallige verzendingen: standaard langst-over-tijd bovenaan.
+    if (nieuw === 'Verzendweek verstreken') {
+      setSortBy('afleverdatum')
+      setSortDir('asc')
+    }
+  }
+
   const handleSort = (field: OrderSortField) => {
     if (sortBy === field) {
       setSortDir(sortDir === 'asc' ? 'desc' : 'asc')
@@ -182,10 +192,7 @@ export function OrdersOverviewPage() {
         <StatusFilterDropdown
           selected={status}
           options={statusOpties}
-          onSelect={(s) => {
-            setStatus(s)
-            setPage(0)
-          }}
+          onSelect={kiesStatus}
         />
 
         <button
@@ -203,10 +210,7 @@ export function OrdersOverviewPage() {
       <VereistActieKaart
         counts={statusCounts ?? []}
         selected={status}
-        onSelect={(s) => {
-          setStatus(s)
-          setPage(0)
-        }}
+        onSelect={kiesStatus}
       />
 
       {/* De 'Manco'-tab toont de regel-niveau werklijst (binnendienst-resolutie),
