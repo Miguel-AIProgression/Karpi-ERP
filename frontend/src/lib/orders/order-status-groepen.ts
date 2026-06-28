@@ -30,7 +30,6 @@ export const FASE_STATUSES = [
 ] as const
 
 export const AANDACHT_STATUSES = [
-  'Actie vereist',
   'Manco',
   'Te bevestigen',
   'Debiteur te bevestigen',
@@ -40,8 +39,11 @@ export const AANDACHT_STATUSES = [
   'Geen verzendweek',
 ] as const
 
-// Informatieve filters: geen openstaande actie, wél handig om op te kunnen
+// Informatieve filters: geen direct oplosbare actie, wél handig om op te kunnen
 // filteren. Verschijnen onderaan de status-dropdown (niet in de meldingenkaart).
+// 'Actie vereist' = Wacht op voorraad ∪ Wacht op inkoop ∪ unmatched — grotendeels
+//   wachten op inkoop, daar valt niks aan te doen; de wacht-statussen staan
+//   bovendien al los in de dropdown.
 // 'Had mankement' = order waarop ooit een manco gedetecteerd is (mig 518) —
-// historisch; 'Manco' (de open werklijst) hoort wél bij de aandacht-vlaggen.
-export const FILTER_STATUSES = ['Had mankement'] as const
+//   historisch; 'Manco' (de open werklijst) hoort wél bij de aandacht-vlaggen.
+export const FILTER_STATUSES = ['Actie vereist', 'Had mankement'] as const
