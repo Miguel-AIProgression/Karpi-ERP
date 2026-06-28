@@ -1,14 +1,18 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { PackageX, RotateCcw, XCircle, ExternalLink } from 'lucide-react'
+import { PackageX, RotateCcw, XCircle, Clock, ExternalLink } from 'lucide-react'
 import { useMancoNietLeverbaar, useMancoRegels, useMancoTerugNaarPickship } from '../hooks/use-manco'
-import type { MancoRegel } from '../queries/manco'
+import type { MancoActie, MancoRegel } from '../queries/manco'
 
-// Manco-werklijst (mig 518): regel-niveau. Toont orderregels die tijdens een
-// Pickronde niet gevonden zijn. De binnendienst onderzoekt fysiek en kiest per
-// regel: "Weer beschikbaar" (terug in Pick & Ship) of "Niet leverbaar" (voorraad
-// corrigeren + NL → blijft backorder / DE → afsluiten). De claim staat tot dan
-// bevroren op de voorraad (geen herverkoop).
+// Manco-werklijst (mig 518 + 522): regel-niveau. Toont orderregels die tijdens
+// een Pickronde niet gevonden zijn. De binnendienst onderzoekt fysiek en kiest
+// per regel één van drie expliciete uitkomsten (CONTEXT.md → Manco-resolutie):
+//   • Opnieuw leveren  — tóch gevonden → terug in Pick & Ship (raakt voorraad niet)
+//   • Wacht op voorraad — backorder op dezelfde order
+//   • Annuleren        — regel afsluiten
+// Land (NL/DE) bepaalt alleen de voorgeselecteerde default, niet de keuze. De
+// voorraadcorrectie staat standaard AAN (haalt de spookvoorraad weg die anders de
+// volgende order opnieuw manco laat lopen); opt-out alleen als het stuk er nog ligt.
 
 function LandBadge({ land }: { land: string | null }) {
   const isNl = land === 'NL'
@@ -19,24 +23,29 @@ function LandBadge({ land }: { land: string | null }) {
         'shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold ' +
         (isNl ? 'bg-sky-100 text-sky-700' : 'bg-amber-100 text-amber-800')
       }
-      title={isNl ? 'Nederland — blijft op backorder, komt terug zodra weer op voorraad' : 'Buitenland — binnendienst stemt af met de klant'}
+      title={isNl ? 'Nederland — advies: wacht op voorraad' : 'Buitenland — advies: annuleren'}
     >
       {label}
     </span>
   )
 }
 
+/** Land-gestuurde voorselectie: NL → backorder, anders → annuleren (mig 522). */
+function defaultActie(land: string | null): MancoActie {
+  return land === 'NL' ? 'backorder' : 'annuleren'
+}
+
 export function MancoTab() {
   const { data: regels = [], isLoading } = useMancoRegels()
   const terug = useMancoTerugNaarPickship()
   const nietLeverbaar = useMancoNietLeverbaar()
-  const [dialoog, setDialoog] = useState<MancoRegel | null>(null)
-  const [corrigeerVoorraad, setCorrigeerVoorraad] = useState(false)
+  const [dialoog, setDialoog] = useState<{ regel: MancoRegel; actie: MancoActie } | null>(null)
+  const [ligtErNog, setLigtErNog] = useState(false)
   const [reden, setReden] = useState('')
 
-  function openDialoog(r: MancoRegel) {
-    setDialoog(r)
-    setCorrigeerVoorraad(false)
+  function openDialoog(regel: MancoRegel, actie: MancoActie) {
+    setDialoog({ regel, actie })
+    setLigtErNog(false)
     setReden('')
   }
 
@@ -49,63 +58,86 @@ export function MancoTab() {
       </div>
     )
 
-  const isNl = dialoog?.land === 'NL'
+  const isBackorder = dialoog?.actie === 'backorder'
 
   return (
     <div className="space-y-2">
-      {regels.map((r) => (
-        <div
-          key={r.order_regel_id}
-          className="flex items-center gap-3 rounded-[var(--radius)] border border-amber-200 bg-amber-50/50 px-4 py-3"
-        >
-          <PackageX size={18} className="shrink-0 text-amber-600" />
-          <Link
-            to={`/orders/${r.order_id}`}
-            className="inline-flex shrink-0 items-center gap-1 font-medium text-amber-800 hover:underline"
+      {regels.map((r) => {
+        const advies = defaultActie(r.land)
+        return (
+          <div
+            key={r.order_regel_id}
+            className="flex items-center gap-3 rounded-[var(--radius)] border border-amber-200 bg-amber-50/50 px-4 py-3"
           >
-            {r.order_nr}
-            <ExternalLink size={11} />
-          </Link>
-          <LandBadge land={r.land} />
-          {r.klant_naam && <span className="shrink-0 text-sm text-slate-600">· {r.klant_naam}</span>}
-          <span className="min-w-0 flex-1 truncate text-sm text-slate-700">
-            {r.omschrijving ?? '—'}
-          </span>
-          {r.pick_backorder_reden && (
-            <span className="shrink-0 text-xs text-rose-600">⚠ {r.pick_backorder_reden}</span>
-          )}
-          <button
-            onClick={() => terug.mutate({ orderRegelId: r.order_regel_id })}
-            disabled={terug.isPending}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius-sm)] bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
-            title="Toch gevonden / weer op voorraad → terug naar Pick & Ship"
-          >
-            <RotateCcw size={13} /> Opnieuw leveren
-          </button>
-          <button
-            onClick={() => openDialoog(r)}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius-sm)] border border-rose-300 px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-50"
-          >
-            <XCircle size={13} /> Niet leverbaar / annuleren
-          </button>
-        </div>
-      ))}
+            <PackageX size={18} className="shrink-0 text-amber-600" />
+            <Link
+              to={`/orders/${r.order_id}`}
+              className="inline-flex shrink-0 items-center gap-1 font-medium text-amber-800 hover:underline"
+            >
+              {r.order_nr}
+              <ExternalLink size={11} />
+            </Link>
+            <LandBadge land={r.land} />
+            {r.klant_naam && <span className="shrink-0 text-sm text-slate-600">· {r.klant_naam}</span>}
+            <span className="min-w-0 flex-1 truncate text-sm text-slate-700">
+              {r.omschrijving ?? '—'}
+            </span>
+            {r.pick_backorder_reden && (
+              <span className="shrink-0 text-xs text-rose-600">⚠ {r.pick_backorder_reden}</span>
+            )}
+            <button
+              onClick={() => terug.mutate({ orderRegelId: r.order_regel_id })}
+              disabled={terug.isPending}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius-sm)] bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+              title="Toch gevonden / weer op voorraad → terug naar Pick & Ship"
+            >
+              <RotateCcw size={13} /> Opnieuw leveren
+            </button>
+            <button
+              onClick={() => openDialoog(r, 'backorder')}
+              className={
+                'inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius-sm)] border px-3 py-1.5 text-xs font-medium ' +
+                (advies === 'backorder'
+                  ? 'border-amber-400 bg-amber-100 text-amber-800 ring-1 ring-amber-300'
+                  : 'border-amber-300 text-amber-700 hover:bg-amber-50')
+              }
+              title="Blijft als backorder op de order, komt terug zodra er weer voorraad is"
+            >
+              <Clock size={13} /> Wacht op voorraad
+            </button>
+            <button
+              onClick={() => openDialoog(r, 'annuleren')}
+              className={
+                'inline-flex shrink-0 items-center gap-1.5 rounded-[var(--radius-sm)] border px-3 py-1.5 text-xs font-medium ' +
+                (advies === 'annuleren'
+                  ? 'border-rose-400 bg-rose-100 text-rose-800 ring-1 ring-rose-300'
+                  : 'border-rose-300 text-rose-700 hover:bg-rose-50')
+              }
+              title="Sluit de regel af op deze order"
+            >
+              <XCircle size={13} /> Annuleren
+            </button>
+          </div>
+        )
+      })}
 
       {dialoog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="w-full max-w-md rounded-lg bg-white p-6">
-            <h3 className="mb-1 text-lg font-semibold">Niet leverbaar / annuleren — {dialoog.order_nr}</h3>
+            <h3 className="mb-1 text-lg font-semibold">
+              {isBackorder ? 'Wacht op voorraad' : 'Annuleren'} — {dialoog.regel.order_nr}
+            </h3>
             <p className="mb-3 text-sm text-slate-600">
-              {isNl ? (
+              {isBackorder ? (
                 <>
-                  <strong>Nederland:</strong> de regel blijft als backorder op deze order staan en
-                  duikt automatisch weer op in Pick &amp; Ship zodra het artikel weer op voorraad is.
+                  De regel blijft als <strong>backorder</strong> op deze order staan en duikt
+                  automatisch weer op in Pick &amp; Ship zodra het artikel weer op voorraad is.
                 </>
               ) : (
                 <>
-                  <strong>Buitenland ({dialoog.land ?? '?'}):</strong> de regel wordt op deze order
-                  afgesloten. De binnendienst stemt met de klant af of er een nieuwe order komt of dat
-                  het product niet meer verzonden hoeft te worden.
+                  De regel wordt op deze order <strong>afgesloten</strong>. Is dit de laatste open
+                  regel: een al verzonden deel blijft staan (order → Verzonden), anders wordt de
+                  order geannuleerd.
                 </>
               )}
             </p>
@@ -113,30 +145,27 @@ export function MancoTab() {
             <label className="mb-3 flex items-start gap-2 rounded border border-slate-200 bg-slate-50 p-2 text-sm">
               <input
                 type="checkbox"
-                checked={corrigeerVoorraad}
-                onChange={(e) => setCorrigeerVoorraad(e.target.checked)}
+                checked={ligtErNog}
+                onChange={(e) => setLigtErNog(e.target.checked)}
                 className="mt-0.5"
               />
               <span>
-                Ligt fysiek <strong>niet meer</strong> in het magazijn — corrigeer de voorraadtelling.
+                Het ligt er fysiek <strong>nog wél</strong> — telling niet afboeken.
                 <span className="mt-0.5 block text-xs text-slate-500">
-                  Aanvinken alleen als het stuk echt weg is. Anders blijft de telling staan (bv. de
-                  klant wil het niet meer, maar het product ligt er nog).
+                  Standaard wordt 1 uit de voorraadtelling gehaald: een niet-gevonden stuk is meestal
+                  echt weg, en blijft de telling staan dan loopt de volgende order opnieuw manco. Vink
+                  dit alleen aan als het stuk er nog ligt (bv. de klant wil het niet meer).
                 </span>
               </span>
             </label>
 
-            {!isNl && (
-              <select
-                value={reden}
-                onChange={(e) => setReden(e.target.value)}
-                className="mb-3 w-full rounded border border-slate-200 p-2 text-sm"
-              >
-                <option value="">Reden (binnendienst)…</option>
-                <option value="nieuwe_order_gemaakt">Nieuwe order gemaakt voor de klant</option>
-                <option value="niet_verzenden">Hoeft niet meer verzonden te worden</option>
-              </select>
-            )}
+            <input
+              type="text"
+              value={reden}
+              onChange={(e) => setReden(e.target.value)}
+              placeholder="Reden (optioneel)…"
+              className="mb-3 w-full rounded border border-slate-200 p-2 text-sm"
+            />
 
             <div className="flex justify-end gap-2">
               <button
@@ -149,17 +178,21 @@ export function MancoTab() {
                 onClick={() =>
                   nietLeverbaar.mutate(
                     {
-                      orderRegelId: dialoog.order_regel_id,
-                      corrigeerVoorraad,
+                      orderRegelId: dialoog.regel.order_regel_id,
+                      actie: dialoog.actie,
+                      corrigeerVoorraad: !ligtErNog,
                       reden: reden || null,
                     },
                     { onSuccess: () => setDialoog(null) },
                   )
                 }
                 disabled={nietLeverbaar.isPending}
-                className="rounded-[var(--radius-sm)] bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-50"
+                className={
+                  'rounded-[var(--radius-sm)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50 ' +
+                  (isBackorder ? 'bg-amber-600 hover:bg-amber-700' : 'bg-rose-600 hover:bg-rose-700')
+                }
               >
-                {isNl ? 'Op backorder zetten' : 'Regel afsluiten'}
+                {isBackorder ? 'Op backorder zetten' : 'Regel afsluiten'}
               </button>
             </div>
           </div>

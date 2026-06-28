@@ -73,16 +73,23 @@ export async function mancoTerugNaarPickship(orderRegelId: number): Promise<void
   if (error) throw new Error(`Terug naar Pick & Ship mislukt: ${error.message}`)
 }
 
-/** Actie B — Niet leverbaar uit voorraad. `corrigeerVoorraad` boekt de telling af
- *  (alleen aanvinken als het stuk fysiek echt weg is). NL → blijft backorder op de
- *  order; DE/buitenland → regel afgesloten. */
+/** De twee niet-leverbaar-uitkomsten (mig 522). `backorder` houdt de regel op de
+ *  order en wacht op voorraad; `annuleren` sluit de regel af. */
+export type MancoActie = 'backorder' | 'annuleren'
+
+/** Actie B — Niet leverbaar uit voorraad. `actie` kiest expliciet backorder vs
+ *  annuleren (mig 522, land = alleen de frontend-default); `corrigeerVoorraad`
+ *  boekt de telling af (standaard aan — uit alleen als het stuk fysiek nog wél
+ *  aanwezig is, anders blijft de spookvoorraad de volgende order raken). */
 export async function mancoNietLeverbaar(
   orderRegelId: number,
+  actie: MancoActie,
   corrigeerVoorraad: boolean,
   reden: string | null,
 ): Promise<void> {
   const { error } = await supabase.rpc('manco_niet_leverbaar', {
     p_order_regel_id: orderRegelId,
+    p_actie: actie,
     p_corrigeer_voorraad: corrigeerVoorraad,
     p_reden: reden,
   })

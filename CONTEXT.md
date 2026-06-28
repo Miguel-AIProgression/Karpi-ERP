@@ -107,6 +107,37 @@ _Avoid_: reservering, blokkade
 
 ### Magazijn & verzending
 
+**Manco**:
+Een Orderregel die tijdens een Pickronde fysiek **niet gevonden** is. Bij
+`voltooi_pickronde` wordt de regel niet meer geblokkeerd maar **bevroren**:
+gate `order_regels.pick_backorder_sinds` (uit [[Pickbaarheid]]), permanente
+order-markering `orders.manco_sinds`, de regel blijft als manco op de zending
+(`aantal-1`, `zending_regels.manco_aantal+1`, colli weg), en de voorraad-claim
+blijft **gereserveerd zonder voorraadmutatie**. Een manco is dus géén status maar
+een te-onderzoeken signaal dat de telling waarschijnlijk te hoog staat. De
+binnendienst **resolvet** later (mig 518) met precies één van drie uitkomsten —
+zie [[Manco-resolutie]].
+_Avoid_: backorder (dat is één van de drie uitkomsten, niet de manco zelf), tekort, niet-leverbaar
+
+**Manco-resolutie**:
+De binnendienst-keuze die een [[Manco]] afhandelt, in drie expliciete uitkomsten:
+**Opnieuw leveren** (tóch gevonden → gate weg → regel terug in [[Pickbaarheid]],
+de volgende Pickronde levert een losse tweede [[Zending-colli|zending]] = een
+*nazending*; raakt de voorraad niet), **Wacht op voorraad** (backorder op
+**dezelfde** Order, claim vrij + herallocatie, komt vanzelf terug zodra er weer
+voorraad is) en **Annuleren** (regel afsluiten, `te_leveren=0`). Een *nazending*
+is geen aparte entiteit — hij ontstaat uit het bestaande multi-zending-mechanisme
+(de al-verzonden regels zijn `is_locked`). Het afleverland (NL/DE) bepaalt alleen
+de **voorgeselecteerde default** (NL→Wacht op voorraad, DE→Annuleren), niet de
+beschikbaarheid — de operator overschrijft altijd (`manco_niet_leverbaar.p_actie`,
+mig 522). **Voorraadcorrectie staat standaard AAN** bij Wacht op voorraad én
+Annuleren (boekt `producten.voorraad` af + `herbereken_product_reservering`): dat
+haalt de "spookvoorraad" weg die de bevroren claim anders bij het
+vrijgeven/annuleren weer als `vrije_voorraad` zou laten claimen door dezelfde of
+een volgende Order → herhaalde manco. Opt-out ("het ligt er fysiek nog") alleen
+bij een klant-annulering waar het product er nog wél is.
+_Avoid_: niet-leverbaar (oude tweeknoppen-term met impliciete NL/DE-splitsing)
+
 **Pickbaarheid**:
 Of een Orderregel fysiek te picken is (voorraad-claim of gereed Maatwerk-stuk),
 en op order-niveau of de Order in Pick & Ship zichtbaar is. Single source is de

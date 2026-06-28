@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { fetchMancoRegels, mancoNietLeverbaar, mancoTerugNaarPickship } from '../queries/manco'
+import type { MancoActie } from '../queries/manco'
 
 export function useMancoRegels() {
   return useQuery({ queryKey: ['manco'], queryFn: fetchMancoRegels, staleTime: 30_000 })
@@ -29,13 +30,15 @@ export function useMancoNietLeverbaar() {
   return useMutation({
     mutationFn: ({
       orderRegelId,
+      actie,
       corrigeerVoorraad,
       reden,
     }: {
       orderRegelId: number
+      actie: MancoActie
       corrigeerVoorraad: boolean
       reden?: string | null
-    }) => mancoNietLeverbaar(orderRegelId, corrigeerVoorraad, reden ?? null),
+    }) => mancoNietLeverbaar(orderRegelId, actie, corrigeerVoorraad, reden ?? null),
     onSuccess: invalidate,
   })
 }
