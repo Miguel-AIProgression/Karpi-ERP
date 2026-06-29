@@ -116,8 +116,8 @@ BEGIN
   -- MARGE-2.5CM: stuk_snij_marge_cm(afwerking, vorm, lengte, breedte, std_breedte)
   -- Wijzig mig 464 (stuk_snij_marge_cm) als de marge-waarde verandert.
   v_marge := stuk_snij_marge_cm(v_afwerking, v_vorm,
-    v_sp_lengte_cm::NUMERIC, v_sp_breedte_cm::NUMERIC,
-    v_standaard_breedte::NUMERIC);
+    v_sp_lengte_cm, v_sp_breedte_cm,
+    v_standaard_breedte);
   -- bijdrage = placed_breedte_cm (Y-as = rollengterichting = lengte verbruikt van IO)
   v_bijdrage_cm := ROUND(v_sp_breedte_cm::NUMERIC + v_marge)::INTEGER;
 
@@ -218,14 +218,14 @@ BEGIN
       AND sp.status IN ('Wacht', 'Gepland', 'Wacht op inkoop')
       AND (sp.verwacht_inkooporder_regel_id IS NULL
            OR sp.verwacht_inkooporder_regel_id <> p_io_regel_id)
-    FOR UPDATE OF sp
     ORDER BY sp.id
+    FOR UPDATE OF sp
   LOOP
     -- MARGE-2.5CM: bijdrage = placed_breedte_cm (Y-as, lente-richting)
     v_marge := stuk_snij_marge_cm(
       v_stuk.maatwerk_afwerking, v_stuk.maatwerk_vorm,
-      v_stuk.lengte_cm::NUMERIC, v_stuk.breedte_cm::NUMERIC,
-      v_stuk.standaard_breedte_cm::NUMERIC);
+      v_stuk.lengte_cm, v_stuk.breedte_cm,
+      v_stuk.standaard_breedte_cm);
     v_bijdrage := ROUND(v_stuk.breedte_cm::NUMERIC + v_marge)::INTEGER;
 
     v_te_koppelen_ids   := array_append(v_te_koppelen_ids, v_stuk.id);
@@ -346,8 +346,8 @@ BEGIN
 
   -- MARGE-2.5CM: zelfde formule als bij koppelen
   v_marge := stuk_snij_marge_cm(v_afwerking, v_vorm,
-    v_sp_lengte_cm::NUMERIC, v_sp_breedte_cm::NUMERIC,
-    v_standaard_breedte::NUMERIC);
+    v_sp_lengte_cm, v_sp_breedte_cm,
+    v_standaard_breedte);
   v_bijdrage_cm := ROUND(v_sp_breedte_cm::NUMERIC + v_marge)::INTEGER;
 
   -- Release van de IO-teller
