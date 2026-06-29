@@ -11,8 +11,17 @@
 --   snijplannen.verwacht_inkooporder_regel_id (SET bij koppel, CLEAR bij ontkoppel)
 --   snijplannen.status → 'Wacht op inkoop' (koppel) of 'Wacht' (ontkoppel)
 --   inkooporder_regels.snijplan_gebruikte_lengte_cm (incrementeel ±)
+--   order_regels.verzendweek / verzendweek_bron (twee paden):
+--     • koppel: via trigger trg_snijplan_rol_toegewezen_auto_verzendweek (mig 471)
+--       → zet week ALLEEN als verzendweek IS NULL én alle stuks gedekt zijn
+--         (voorstel, bron='automatisch_voorraad'; IS NULL-guard voorkomt overschrijven
+--          van een handmatig of al-berekende week)
+--     • ontkoppel: clearing arm in ontkoppel_snijplan_van_io (Beslissing 2)
+--       → wist week ALLEEN als verzendweek_bron='automatisch_voorraad' én
+--         orderregel na ontkoppeling niet meer volledig gedekt is
+--         handmatig gezette weken (bron='handmatig') worden NOOIT gewist
 -- LEEST (via JOIN):
---   order_regels.maatwerk_afwerking, .maatwerk_vorm
+--   order_regels.maatwerk_afwerking, .maatwerk_vorm, .order_regel_id
 --   kwaliteiten.standaard_breedte_cm (via k.code)
 --   inkooporders.status (open-check: Besteld / Deels ontvangen)
 -- TRIGGERS DIE VUREN na UPDATE op snijplannen.verwacht_inkooporder_regel_id:
@@ -308,14 +317,15 @@ DECLARE
   -- MARGE-2.5CM: zie stuk_snij_marge_cm (mig 464)
   v_marge         NUMERIC;
   v_bijdrage_cm   INTEGER;
+  v_sp_order_regel_id BIGINT;  -- voor clearing arm (Beslissing 2)
 BEGIN
   -- Haal stuk op + vergrendel
   SELECT sp.status, sp.rol_id, sp.verwacht_inkooporder_regel_id,
-         sp.breedte_cm, sp.lengte_cm,
+         sp.breedte_cm, sp.lengte_cm, sp.order_regel_id,
          oreg.maatwerk_afwerking, oreg.maatwerk_vorm,
          COALESCE(k.standaard_breedte_cm, 400)
   INTO v_sp_status, v_sp_rol_id, v_sp_oud_io_id,
-       v_sp_breedte_cm, v_sp_lengte_cm,
+       v_sp_breedte_cm, v_sp_lengte_cm, v_sp_order_regel_id,
        v_afwerking, v_vorm, v_standaard_breedte
   FROM snijplannen sp
   JOIN order_regels oreg ON oreg.id = sp.order_regel_id
@@ -351,6 +361,26 @@ BEGIN
   SET verwacht_inkooporder_regel_id = NULL,
       status = 'Wacht'
   WHERE id = p_snijplan_id;
+
+  -- Beslissing 2 — clearing arm:
+  -- Na ontkoppeling: als de orderregel niet meer volledig gedekt is (≥1 stuk
+  -- heeft geen rol_id én geen verwacht_inkooporder_regel_id, het nu-reset stuk
+  -- zelf telt mee), wis dan een automatisch gezette verzendweek.
+  -- Handmatig gezette weken (verzendweek_bron='handmatig') worden NOOIT gewist.
+  -- Het EXISTS-subquery leest de state NADAT het huidige stuk gereset is,
+  -- dus vindt altijd minstens het huidige stuk als ongedekt → correct.
+  UPDATE order_regels
+  SET verzendweek      = NULL,
+      verzendweek_bron = NULL
+  WHERE id = v_sp_order_regel_id
+    AND verzendweek_bron = 'automatisch_voorraad'
+    AND EXISTS (
+      SELECT 1 FROM snijplannen sp2
+      WHERE sp2.order_regel_id = v_sp_order_regel_id
+        AND sp2.status <> 'Geannuleerd'
+        AND sp2.rol_id IS NULL
+        AND sp2.verwacht_inkooporder_regel_id IS NULL
+    );
 
   RETURN jsonb_build_object(
     'ok', true,
