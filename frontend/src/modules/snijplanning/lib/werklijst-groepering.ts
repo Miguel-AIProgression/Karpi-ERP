@@ -210,11 +210,18 @@ export function groepeerWerklijst(input: WerklijstGroeperingInput): WerklijstKwa
       for (const [yPos, shStukken] of shelfMap) {
         // Sorteer op x-positie (links → rechts)
         shStukken.sort((a, b) => (a.positie_x_cm ?? 0) - (b.positie_x_cm ?? 0))
+        // Helperfuncties: placed_lengte/breedte zijn altijd de ONGEROTEERDE afmetingen;
+        // bij geroteerd=true draait X en Y om (breedte dwars op de rol, lengte langs de rol).
+        const xExtent = (s: (typeof shStukken)[0]) =>
+          s.geroteerd ? s.placed_breedte_cm : s.placed_lengte_cm
+        const yExtent = (s: (typeof shStukken)[0]) =>
+          s.geroteerd ? s.placed_lengte_cm : s.placed_breedte_cm
+
         const shelfStukken: WerklijstShelfStuk[] = shStukken.map((s) => ({
           snijplanId: s.id,
           orderRegelId: s.order_regel_id,
-          geplaatsteBreedteCm: s.placed_lengte_cm,  // X-as in view = lengte (breedte-richting rol)
-          geplaatstelLengteCm: s.placed_breedte_cm, // Y-as in view = breedte (lengterichting rol)
+          geplaatsteBreedteCm: xExtent(s),  // X = dwars op de rolbreedte
+          geplaatstelLengteCm: yExtent(s),  // Y = langs de rollengte
           xCm: s.positie_x_cm ?? 0,
           margeCm: s.marge_cm,
           geroteerd: s.geroteerd ?? false,
@@ -225,8 +232,8 @@ export function groepeerWerklijst(input: WerklijstGroeperingInput): WerklijstKwa
           maatwerk_vorm: s.maatwerk_vorm,
           maatwerk_afwerking: s.maatwerk_afwerking,
         }))
-        const eindY = yPos + Math.max(...shStukken.map((s) => s.placed_breedte_cm))
-        const gebruikteBreedte = shStukken.reduce((sum, s) => sum + s.placed_lengte_cm, 0)
+        const eindY = yPos + Math.max(...shStukken.map(yExtent))
+        const gebruikteBreedte = shStukken.reduce((sum, s) => sum + xExtent(s), 0)
         shelves.push({ positieYCm: yPos, eindYCm: eindY, stukken: shelfStukken, gebruikteBreedteCm: gebruikteBreedte })
       }
       // Sorteer shelves op Y-positie (snijvolgorde)
