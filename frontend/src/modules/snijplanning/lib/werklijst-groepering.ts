@@ -14,6 +14,7 @@ import type { WerklijstRow } from '../queries/werklijst'
 import type { HaalbaarheidStatus } from '@/lib/orders/snij-haalbaarheid'
 import { bepaalHaalbaarheidStatus, bepaalSnijDeadline, type SnijDeadlineConfig } from '@/lib/orders/snij-haalbaarheid'
 import type { Werktijden } from '@/lib/utils/bereken-agenda'
+import { isoWeekStringVanIso, maandagVanIsoWeek } from '@/lib/utils/iso-week'
 
 // ─── Geëxporteerde typen ────────────────────────────────────────────────────
 
@@ -47,6 +48,20 @@ export interface WerklijstShelf {
   gebruikteBreedteCm: number
 }
 
+/**
+ * Levertijdvertraging t.o.v. de oorspronkelijke belofte (afleverdatum).
+ * Alleen aanwezig voor op_rol / wacht_op_inkoop wanneer de geplande
+ * verzendweek later valt dan de week van de afleverdatum.
+ */
+export interface LevertijdVertraging {
+  /** ISO week afgeleid van de afleverdatum (de originele belofte). */
+  beloofdeWeek: string
+  /** Geplande verzendweek (verzendweek-kolom, gezet door trigger of handmatig). */
+  planningWeek: string
+  /** Aantal weken vertraging (altijd > 0). */
+  aantalWeken: number
+}
+
 /** Eén orderregel als rij in de werklijst. */
 export interface WerklijstOrderregel {
   orderRegelId: number
@@ -64,7 +79,17 @@ export interface WerklijstOrderregel {
   verzendweek: string | null
   afleverdatum: string | null
   materiaalStatus: 'op_rol' | 'wacht_op_inkoop' | 'tekort'
+  /**
+   * Urgentie-indicator voor TEKORT-stukken (geen materiaal beschikbaar).
+   * Voor op_rol / wacht_op_inkoop altijd null — gebruik levertijdVertraging.
+   */
   haalbaarheid: HaalbaarheidStatus | null
+  /**
+   * Levertijdvertraging voor op_rol / wacht_op_inkoop: toont wanneer de
+   * geplande verzendweek later valt dan de beloofde afleverdatumweek.
+   * Null als er geen vertraging is of als het een tekort-stuk betreft.
+   */
+  levertijdVertraging: LevertijdVertraging | null
   express: boolean
   /** Aanwezig als materiaalStatus='op_rol'. */
   rolnummer: string | null
@@ -123,6 +148,35 @@ function verzendweekSorteerwaarde(week: string | null): number {
   const m = week.match(/^(\d{4})-W(\d{1,2})$/)
   if (!m) return 999999
   return parseInt(m[1]) * 100 + parseInt(m[2])
+}
+
+/** Verschil in weken tussen twee ISO-weekstrings (b − a). Positief = b is later. */
+function weekVerschilTussen(weekA: string, weekB: string): number {
+  const parse = (w: string) => {
+    const m = w.match(/^(\d{4})-W(\d{1,2})$/)
+    return m ? { jaar: parseInt(m[1]), week: parseInt(m[2]) } : null
+  }
+  const a = parse(weekA)
+  const b = parse(weekB)
+  if (!a || !b) return 0
+  const msPerWeek = 7 * 24 * 60 * 60 * 1000
+  const dateA = maandagVanIsoWeek(a.jaar, a.week)
+  const dateB = maandagVanIsoWeek(b.jaar, b.week)
+  return Math.round((dateB.getTime() - dateA.getTime()) / msPerWeek)
+}
+
+/** Berekent LevertijdVertraging wanneer de geplande verzendweek later valt
+ *  dan de ISO week van de afleverdatum. Null = op tijd of geen data. */
+function berekenLevertijdVertraging(
+  afleverdatum: string | null,
+  verzendweek: string | null,
+): LevertijdVertraging | null {
+  if (!afleverdatum || !verzendweek) return null
+  const beloofdeWeek = isoWeekStringVanIso(afleverdatum)
+  if (!beloofdeWeek) return null
+  const aantalWeken = weekVerschilTussen(beloofdeWeek, verzendweek)
+  if (aantalWeken <= 0) return null
+  return { beloofdeWeek, planningWeek: verzendweek, aantalWeken }
 }
 
 /** Vroegste verzendweek (laagste numeriek) uit een lijst regels. */
@@ -343,16 +397,21 @@ function bouwOrderregelRij(
   config: SnijDeadlineConfig,
 ): WerklijstOrderregel {
   const eerste = stukken[0]
+
+  // haalbaarheid = urgentie-indicator uitsluitend voor TEKORT (geen materiaal).
+  // Op_rol / wacht_op_inkoop: stuk kan worden gemaakt → geen "Niet haalbaar".
   let haalbaarheid: HaalbaarheidStatus | null = null
-  if (eerste.afleverdatum) {
-    const deadline = bepaalSnijDeadline(
-      eerste.afleverdatum,
-      eerste.lever_type,
-      config,
-      werktijden,
-    )
+  if (materiaalStatus === 'tekort' && eerste.afleverdatum) {
+    const deadline = bepaalSnijDeadline(eerste.afleverdatum, eerste.lever_type, config, werktijden)
     haalbaarheid = bepaalHaalbaarheidStatus(deadline, vandaag, werktijden)
   }
+
+  // levertijdVertraging: voor op_rol / wacht_op_inkoop toon je hoeveel weken
+  // de geplande verzendweek later valt dan de beloofde afleverdatumweek.
+  const levertijdVertraging = materiaalStatus !== 'tekort'
+    ? berekenLevertijdVertraging(eerste.afleverdatum, eerste.verzendweek)
+    : null
+
   return {
     orderRegelId: eerste.order_regel_id,
     orderNr: eerste.order_nr,
@@ -368,6 +427,7 @@ function bouwOrderregelRij(
     afleverdatum: eerste.afleverdatum,
     materiaalStatus,
     haalbaarheid,
+    levertijdVertraging,
     express: stukken.some((s) => s.express),
     rolnummer: eerste.rolnummer,
     is_handmatig_toegewezen: stukken.some((s) => s.is_handmatig_toegewezen),

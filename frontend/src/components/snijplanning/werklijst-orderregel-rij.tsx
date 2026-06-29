@@ -80,12 +80,23 @@ export function WerklijstOrderregelRij({ regel, onKoppelClick }: Props) {
           {formatVerzendweek(regel.verzendweek)}
         </span>
       </td>
-      {/* Haalbaarheid + lock + IO-koppel-knop */}
+      {/* Status + lock + IO-koppel-knop */}
       <td className="py-2 pr-3">
-        <div className="flex items-center gap-1 justify-end">
+        <div className="flex items-center gap-1 justify-end flex-wrap">
           {regel.is_handmatig_toegewezen && (
             <Lock size={12} className="text-slate-400 shrink-0" aria-label="Handmatig vergrendeld" />
           )}
+          {/* Levertijdvertraging: op_rol / wacht_op_inkoop — stuk KAN worden gemaakt,
+              maar geplande verzendweek valt later dan de beloofde afleverdatumweek. */}
+          {regel.levertijdVertraging && (
+            <span className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-700 whitespace-nowrap">
+              {formatVerzendweek(regel.levertijdVertraging.beloofdeWeek)}
+              {' → '}
+              {formatVerzendweek(regel.levertijdVertraging.planningWeek)}
+              {` (+${regel.levertijdVertraging.aantalWeken} wkn)`}
+            </span>
+          )}
+          {/* Haalbaarheid: uitsluitend voor tekort (geen materiaal beschikbaar). */}
           {haalbaarheid && (
             <span className={cn('rounded px-1.5 py-0.5 text-[10px] font-medium', haalbaarheid.bg, haalbaarheid.text)}>
               {haalbaarheid.label}
