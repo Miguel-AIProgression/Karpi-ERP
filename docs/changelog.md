@@ -1,5 +1,21 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-29 — Structurele fix snijplanning_overzicht COALESCE-volgorde (mig 531)
+
+**Probleem (ontdekt bij analyse rol 10992503C FRIS/35):** Bij uitwisselbare kwaliteitsgroepen (LUXR↔VERR, HARM↔HYGG, FRIS↔LOUI etc.) kon een snijplan-stuk "wees" worden: status=Gepland, geen rol, geen positie — onbereikbaar voor de auto-planner.
+
+**Oorzaak:** `snijplanning_overzicht` gebruikte `COALESCE(r.kwaliteit_code, p.kwaliteit_code, oreg.maatwerk_kwaliteit_code)`. Voor ongeplaatste stukken (geen rol) gaf dit de product-kwaliteit voorrang boven de maatwerk-kwaliteit. Gevolg: auto-plan-groep voor groep B gaf een stuk vrij (mw_kw=B, op B-rol), maar kon het niet opnieuw inplannen (view toonde A=product-kwaliteit, fetchStukken zocht op B).
+
+**Fix (mig 531):** COALESCE-volgorde omgedraaid naar `COALESCE(r.kwaliteit_code, oreg.maatwerk_kwaliteit_code, p.kwaliteit_code)`. Voor ongeplaatste stukken bepaalt maatwerk_kwaliteit_code nu de groepsidentiteit. Geplaatste stukken (hebben een rol) onveranderd.
+
+**Aanleiding databug gefixt:** 71 snijplannen hadden maatwerk_kwaliteit_code=NULL (waardoor ze nooit vrijgegeven konden worden). Data-fix: mw_kw = rol.kwaliteit_code voor alle 71. Na herplanning (50 groepen) was sp=3043 (KNUTZEN, LOUI/35) wees geworden — de trigger voor mig 531.
+
+**Na-acties:** 68 groepen met wees-stukken herplannen. Roll 10992503C: van 430/475cm (46cm rest) naar 302/475cm (173cm rest).
+
+**Branch:** `fix/snijplanning-coalesce-volgorde` (mig 531, nog te mergen).
+
+---
+
 ## 2026-06-29 — Voorraad-import commit (voorraadlijst 25-6-2026)
 
 Import `update_voorraad.py` gedraaid met `--commit` voor `voorraadlijst 25-6-2026.xls`.

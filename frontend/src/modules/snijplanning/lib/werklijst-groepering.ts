@@ -65,6 +65,7 @@ export interface LevertijdVertraging {
 /** Eén orderregel als rij in de werklijst. */
 export interface WerklijstOrderregel {
   orderRegelId: number
+  orderId: number
   orderNr: string
   klantNaam: string
   /** Aantal snijplan-stukken (= het te snijden stuks-aantal). */
@@ -414,6 +415,7 @@ function bouwOrderregelRij(
 
   return {
     orderRegelId: eerste.order_regel_id,
+    orderId: eerste.order_id,
     orderNr: eerste.order_nr,
     klantNaam: eerste.klant_naam,
     aantalStuks: stukken.length,

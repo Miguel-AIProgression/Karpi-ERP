@@ -31,6 +31,7 @@ import {
 } from '@/lib/orders/verzendweek'
 import { WeekDatumPicker } from './week-datum-picker'
 import { applyShippingLogic } from '@/lib/orders/verzend-regel'
+import { applyToeslagLogic } from '@/lib/orders/toeslag-regel'
 import { bepaalOrderAfleverdatum } from '@/lib/orders/order-afleverdatum'
 import { SHIPPING_PRODUCT_ID } from '@/lib/constants/shipping'
 import { bouwOrderCommit, isGemengdeSplit } from '@/lib/orders/order-commit'
@@ -212,7 +213,10 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
   function handleAfhalenToggle(nieuw: boolean) {
     setAfhalen(nieuw)
     setShippingOverridden(false)
-    setRegels((current) => applyShippingLogic(current, client, nieuw))
+    setRegels((current) => {
+      const afterShipping = applyShippingLogic(current, client, nieuw)
+      return applyToeslagLogic(afterShipping, client)
+    })
   }
 
   function handleDropshipChange(keuze: DropshipmentKeuze) {
@@ -227,10 +231,10 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
     setShippingOverridden(keuze !== 'nee')
     setRegels((current) => {
       const metDropship = applyDropshipmentLogic(current, keuze, dropshipPrijzen)
-      if (keuze === 'nee') {
-        return applyShippingLogic(metDropship, client, afhalen)
-      }
-      return metDropship
+      const afterShipping = keuze === 'nee'
+        ? applyShippingLogic(metDropship, client, afhalen)
+        : metDropship
+      return applyToeslagLogic(afterShipping, client)
     })
     if (keuze !== 'nee') {
       // Het bij klant-selectie gedefaulte aflever-e-mailadres is de debiteur
@@ -326,7 +330,8 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
             return updated
           })
         )
-        setRegels(applyShippingLogic(updatedRegels, c, nieuweAfhalen))
+        const afterShipping = applyShippingLogic(updatedRegels, c, nieuweAfhalen)
+        setRegels(applyToeslagLogic(afterShipping, c))
       }
     }
   }
@@ -1054,8 +1059,9 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
             return
           }
 
-          // Normal change — apply shipping auto-logic if not overridden
-          const finalRegels = shippingOverridden ? newRegels : applyShippingLogic(newRegels, client, afhalen)
+          // Normal change — apply shipping + toeslag auto-logic if not overridden
+          const afterShipping = shippingOverridden ? newRegels : applyShippingLogic(newRegels, client, afhalen)
+          const finalRegels = applyToeslagLogic(afterShipping, client)
           setRegels(finalRegels)
           applyAfleverdatum(finalRegels, client)
         }}

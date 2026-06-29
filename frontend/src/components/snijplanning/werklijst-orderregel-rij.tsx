@@ -22,7 +22,7 @@ interface Props {
 export function WerklijstOrderregelRij({ regel, onKoppelClick }: Props) {
   const afwerking = regel.maatwerk_afwerking ? AFWERKING_MAP[regel.maatwerk_afwerking] : null
   const vorm = getVormDisplay(regel.maatwerk_vorm)
-  const toonVorm = regel.maatwerk_vorm && regel.maatwerk_vorm !== 'rechthoek'
+  const isBijzondereVorm = !!regel.maatwerk_vorm && regel.maatwerk_vorm !== 'rechthoek'
   const haalbaarheid = regel.haalbaarheid ? HAALBAARHEID_STATUS_STYLE[regel.haalbaarheid] : null
 
   return (
@@ -40,9 +40,7 @@ export function WerklijstOrderregelRij({ regel, onKoppelClick }: Props) {
             {regel.maatwerk_lengte_cm ?? '?'}×{regel.maatwerk_breedte_cm ?? '?'}
             <span className="text-slate-400 font-sans ml-0.5">cm</span>
           </span>
-          {(regel.aantalStuks > 1) && (
-            <span className="text-slate-400 text-xs">×{regel.aantalStuks}</span>
-          )}
+          <span className="text-slate-500 text-xs font-medium">×{regel.aantalStuks}</span>
         </div>
       </td>
       {/* Afwerking */}
@@ -55,16 +53,18 @@ export function WerklijstOrderregelRij({ regel, onKoppelClick }: Props) {
       </td>
       {/* Vorm */}
       <td className="py-2 pr-2">
-        {toonVorm && (
+        {isBijzondereVorm ? (
           <span className={cn('rounded px-1.5 py-0.5 text-[10px] font-medium', vorm.bg, vorm.text)}>
             {vorm.kort}
           </span>
+        ) : (
+          <span className="text-[10px] text-slate-400">{vorm.kort}</span>
         )}
       </td>
       {/* Order + klant */}
       <td className="py-2 pr-2 min-w-[80px]">
         <Link
-          to={`/orders/${regel.orderNr}`}
+          to={`/orders/${regel.orderId}`}
           className="text-xs text-terracotta-600 hover:underline tabular-nums"
           onClick={(e) => e.stopPropagation()}
         >
