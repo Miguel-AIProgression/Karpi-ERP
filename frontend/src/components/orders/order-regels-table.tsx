@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { Scissors, ArrowRight, Pencil, X, Check, PackageCheck } from 'lucide-react'
+import { Scissors, ArrowRight, Pencil, X, Check, PackageCheck, Calculator } from 'lucide-react'
 import { DeelzendingDialog } from '@/components/orders/deelzending-dialog'
 import { useQueryClient, useMutation } from '@tanstack/react-query'
 import { formatCurrency, formatDate } from '@/lib/utils/formatters'
@@ -176,12 +176,22 @@ function VerzendweekCell({ regel, orderId, orderdatum, levertijd, bewerkbaar }: 
   })() : (
     <span className="inline-flex items-center gap-1 group">
       {displayed ? (
-        <span
-          className={`text-xs ${isOverride ? 'font-medium text-slate-700' : 'text-slate-400 italic'}`}
-          title={bronLabel}
-        >
-          {formatVerzendweek(displayed)}
-        </span>
+        isOverride && regel.verzendweek_bron === 'automatisch_voorraad' ? (
+          <span className="inline-flex items-center gap-1" title={bronLabel}>
+            <span className="text-xs text-amber-700 italic">{formatVerzendweek(displayed)}</span>
+            <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-600 font-normal">
+              <Calculator size={10} className="shrink-0" />
+              berekend
+            </span>
+          </span>
+        ) : (
+          <span
+            className={`text-xs ${isOverride ? 'font-medium text-slate-700' : 'text-slate-400 italic'}`}
+            title={bronLabel}
+          >
+            {formatVerzendweek(displayed)}
+          </span>
+        )
       ) : (
         <span className="text-xs text-slate-300">—</span>
       )}

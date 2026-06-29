@@ -20,9 +20,12 @@ const EINDSTATUSSEN = ['Verzonden', 'Geannuleerd'] as const
 interface OrderHeaderProps {
   order: OrderDetail
   locked?: boolean
+  /** True als ≥1 maatwerk-regel bron='automatisch_voorraad' heeft — wordt
+   *  doorgegeven aan BevestigOrderDialog als waarschuwing. */
+  maatwerkMetVoorstelWeek?: boolean
 }
 
-export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
+export function OrderHeader({ order, locked = false, maatwerkMetVoorstelWeek = false }: OrderHeaderProps) {
   const verzendweek = verzendWeekVoor(order.afleverdatum)
   const relatief = verzendWeekRelatief(order.afleverdatum)
   const [showAnnuleerConfirm, setShowAnnuleerConfirm] = useState(false)
@@ -261,6 +264,7 @@ export function OrderHeader({ order, locked = false }: OrderHeaderProps) {
           afleverdatum={order.afleverdatum ?? null}
           isHerversturing={!!order.bevestigd_at}
           sluitEdiGate={isEdiOrder}
+          maatwerkMetVoorstelWeek={maatwerkMetVoorstelWeek}
           onClose={() => setShowBevestigDialog(false)}
         />
       ) : (

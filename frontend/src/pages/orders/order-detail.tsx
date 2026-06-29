@@ -135,7 +135,13 @@ export function OrderDetailPage() {
         </div>
       )}
 
-      <OrderHeader order={order} locked={computeOrderLock(regels) === 'full'} />
+      <OrderHeader
+        order={order}
+        locked={computeOrderLock(regels) === 'full'}
+        maatwerkMetVoorstelWeek={(regels ?? []).some(
+          r => r.is_maatwerk && r.verzendweek_bron === 'automatisch_voorraad'
+        )}
+      />
 
       {/* Open HST-verzendfout: order kan al "Verzonden" tonen terwijl de
           transportorder naar de vervoerder faalde. Rendert null zonder fout. */}

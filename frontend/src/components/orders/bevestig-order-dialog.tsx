@@ -20,6 +20,13 @@ interface BevestigOrderDialogProps {
    * en het amber paneel verdwijnen.
    */
   sluitEdiGate?: boolean
+  /**
+   * True als ≥1 maatwerk-regel een door het systeem berekende verzendweek heeft
+   * (bron='automatisch_voorraad') — de bevestiger krijgt dan een waarschuwing te
+   * zien zodat die de week controleert vóór verzending. Geen hard-block: de
+   * "Verstuur bevestiging"-knop blijft klikbaar (CLAUDE.md: klantbelofte-barrière).
+   */
+  maatwerkMetVoorstelWeek?: boolean
   onClose: () => void
 }
 
@@ -62,7 +69,7 @@ async function stuurOrderbevestiging(params: {
   return json as { order_nr: string; verstuurd_naar: string; bevestigd_at: string }
 }
 
-export function BevestigOrderDialog({ orderId, orderNr, defaultEmail, afleverdatum, isHerversturing = false, sluitEdiGate = false, onClose }: BevestigOrderDialogProps) {
+export function BevestigOrderDialog({ orderId, orderNr, defaultEmail, afleverdatum, isHerversturing = false, sluitEdiGate = false, maatwerkMetVoorstelWeek = false, onClose }: BevestigOrderDialogProps) {
   const [email, setEmail] = useState(defaultEmail ?? '')
   const qc = useQueryClient()
   const verleden = leverweekInVerleden(afleverdatum)
@@ -139,6 +146,17 @@ export function BevestigOrderDialog({ orderId, orderNr, defaultEmail, afleverdat
                 <p className="text-sm text-amber-800">
                   De leverweek op de bevestiging (<strong>{verleden.label}</strong>) ligt in het verleden.
                   Pas de afleverdatum eerst aan op de order, of verstuur toch als de klant al op de hoogte is.
+                </p>
+              </div>
+            )}
+
+            {maatwerkMetVoorstelWeek && (
+              <div className="flex gap-2 mb-4 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-[var(--radius-sm)]">
+                <AlertTriangle size={16} className="text-amber-500 shrink-0 mt-0.5" />
+                <p className="text-sm text-amber-800">
+                  Eén of meer maatwerk-regels hebben een <strong>berekende verzendweek</strong> (systeem-voorstel,
+                  nog niet handmatig bevestigd). Controleer de weken op het orderdetail vóór verzending —
+                  de klant krijgt anders een voorlopige planning te zien.
                 </p>
               </div>
             )}
