@@ -39,6 +39,10 @@ export interface FactuurDocumentHeader {
   /** Factuur-snapshot (facturen.btw_verlegd, mig 371) — canonieke verlegd-bron. */
   btw_verlegd: boolean
   btw_nummer_afnemer: string | null
+  /** Klant-toeslag (mig 528/529): berekend bedrag; 0 als niet van toepassing. */
+  toeslag_bedrag: number
+  /** Toeslagtekst met {percentage} al ingevuld; null als geen toeslag. */
+  toeslag_omschrijving: string | null
 }
 
 export interface FactuurDocumentRegel {
@@ -87,6 +91,8 @@ export interface FactuurDocumentFactuurRow {
   btw_bedrag: number | string
   totaal: number | string
   btw_verlegd: boolean | null
+  toeslag_bedrag: number | string | null
+  toeslag_omschrijving: string | null
 }
 
 export interface FactuurDocumentRegelRow {
@@ -154,6 +160,8 @@ export function bouwFactuurDocument(
     totaal: num(factuur.totaal),
     btw_verlegd: verlegd,
     btw_nummer_afnemer: factuur.btw_nummer ?? null,
+    toeslag_bedrag: num(factuur.toeslag_bedrag),
+    toeslag_omschrijving: factuur.toeslag_omschrijving ?? null,
   }
 
   const regels: FactuurDocumentRegel[] = regelRows.map((r) => {
@@ -222,7 +230,8 @@ export async function fetchFactuurDocument(
       .from('facturen')
       .select(
         'factuur_nr, factuurdatum, debiteur_nr, fact_naam, fact_adres, fact_postcode, ' +
-          'fact_plaats, fact_land, btw_nummer, subtotaal, btw_percentage, btw_bedrag, totaal, btw_verlegd',
+          'fact_plaats, fact_land, btw_nummer, subtotaal, btw_percentage, btw_bedrag, totaal, btw_verlegd, ' +
+          'toeslag_bedrag, toeslag_omschrijving',
       )
       .eq('id', factuurId)
       .maybeSingle(),

@@ -525,21 +525,60 @@ export function FactuurDetailPage() {
         </div>
       </div>
 
-      {/* Totalen-blok */}
+      {/* Totalen-blok — Optie II: subtotaal → toeslag → grondslag → BTW → totaal */}
       <div className="flex justify-end mb-8">
         <div className="w-full max-w-xs bg-white rounded-[var(--radius)] border border-slate-200 p-5 space-y-2 text-sm">
-          <div className="flex justify-between text-slate-600">
-            <span>Subtotaal</span>
-            <span className="font-medium">{formatCurrency(factuur.subtotaal)}</span>
-          </div>
-          <div className="flex justify-between text-slate-600">
-            <span>BTW ({factuur.btw_percentage}%)</span>
-            <span className="font-medium">{formatCurrency(factuur.btw_bedrag)}</span>
-          </div>
-          <div className="flex justify-between text-slate-800 font-semibold border-t border-slate-200 pt-2 mt-2 text-base">
-            <span>Totaal</span>
-            <span>{formatCurrency(factuur.totaal)}</span>
-          </div>
+          {(() => {
+            const toeslagBedrag = factuur.toeslag_bedrag ?? 0
+            const heeftToeslag = toeslagBedrag > 0
+            const verlegd = factuur.btw_verlegd === true
+            const grondslag = factuur.subtotaal + toeslagBedrag
+
+            return (
+              <>
+                {heeftToeslag ? (
+                  <>
+                    <div className="flex justify-between text-slate-600">
+                      <span>Subtotaal</span>
+                      <span className="font-medium">{formatCurrency(factuur.subtotaal)}</span>
+                    </div>
+                    <div className="flex justify-between text-amber-700">
+                      <span
+                        className="truncate max-w-[180px]"
+                        title={factuur.toeslag_omschrijving ?? undefined}
+                      >
+                        {factuur.toeslag_omschrijving ?? 'Toeslag'}
+                      </span>
+                      <span className="font-medium whitespace-nowrap pl-2">
+                        + {formatCurrency(toeslagBedrag)}
+                      </span>
+                    </div>
+                    {!verlegd && (
+                      <div className="flex justify-between text-slate-600">
+                        <span>BTW-grondslag</span>
+                        <span className="font-medium">{formatCurrency(grondslag)}</span>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="flex justify-between text-slate-600">
+                    <span>Subtotaal</span>
+                    <span className="font-medium">{formatCurrency(factuur.subtotaal)}</span>
+                  </div>
+                )}
+                {!verlegd && (
+                  <div className="flex justify-between text-slate-600">
+                    <span>BTW ({factuur.btw_percentage}%)</span>
+                    <span className="font-medium">{formatCurrency(factuur.btw_bedrag)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-slate-800 font-semibold border-t border-slate-200 pt-2 mt-2 text-base">
+                  <span>Totaal</span>
+                  <span>{formatCurrency(factuur.totaal)}</span>
+                </div>
+              </>
+            )
+          })()}
         </div>
       </div>
 

@@ -85,6 +85,9 @@ export interface FactuurHeader {
   betalingscondities_tekst?: string
   // Mig 504: creditnota-vlag — vervangt "FACTUUR" door "CREDITNOTA" als hoofdtitel.
   is_creditnota?: boolean
+  // Mig 528/529: klant-toeslag. 0 of undefined = geen toeslag (creditnota's nooit).
+  toeslag_bedrag?: number
+  toeslag_omschrijving?: string | null
 }
 
 export interface FactuurAfleveradres {
@@ -162,6 +165,8 @@ interface FactuurTeksten {
   totaalGewicht: string
   betalingscond: string
   model: string
+  subtotaalLabel: string
+  toeslagLabel: string
 }
 
 const FACTUUR_TEKSTEN: Record<Taal, FactuurTeksten> = {
@@ -180,6 +185,8 @@ const FACTUUR_TEKSTEN: Record<Taal, FactuurTeksten> = {
     totaalM2: 'Totaal m2', totaalGewicht: 'Totaal gewicht (kg)',
     betalingscond: 'Betalingscond.',
     model: 'Uw model',
+    subtotaalLabel: 'Subtotaal',
+    toeslagLabel: 'Toeslag',
   },
   de: {
     titel: 'RECHNUNG',
@@ -196,6 +203,8 @@ const FACTUUR_TEKSTEN: Record<Taal, FactuurTeksten> = {
     totaalM2: 'Gesamt m2', totaalGewicht: 'Gesamtgewicht (kg)',
     betalingscond: 'Zahlungsbedingungen',
     model: 'Ihr Modell',
+    subtotaalLabel: 'Zwischensumme',
+    toeslagLabel: 'Zuschlag',
   },
   fr: {
     titel: 'FACTURE',
@@ -212,6 +221,8 @@ const FACTUUR_TEKSTEN: Record<Taal, FactuurTeksten> = {
     totaalM2: 'Total m2', totaalGewicht: 'Poids total (kg)',
     betalingscond: 'Conditions de paiement',
     model: 'Votre modèle',
+    subtotaalLabel: 'Sous-total',
+    toeslagLabel: 'Supplément',
   },
   en: {
     titel: 'INVOICE',
@@ -228,6 +239,8 @@ const FACTUUR_TEKSTEN: Record<Taal, FactuurTeksten> = {
     totaalM2: 'Total m2', totaalGewicht: 'Total weight (kg)',
     betalingscond: 'Payment terms',
     model: 'Your model',
+    subtotaalLabel: 'Subtotal',
+    toeslagLabel: 'Surcharge',
   },
 }
 
@@ -618,6 +631,9 @@ function drawBtwBlok(
   // Header row: labels
   const SIZE_BOLD = 9
   const SIZE = 10
+  const toeslagBedrag = factuur.toeslag_bedrag ?? 0
+  const heeftToeslag = toeslagBedrag > 0
+
   if (factuur.btw_verlegd) {
     // Mig 371: intracommunautaire verlegging — geen BTW-kolommen, wel de
     // wettelijk vereiste vermelding "BTW verlegd" + btw-nummer van de afnemer.
@@ -628,7 +644,22 @@ function drawBtwBlok(
     drawHLine(page, y)
     y -= LINE_H
 
-    drawText(page, formatBedrag(factuur.subtotaal), MARGIN_L, y, regular, SIZE)
+    if (heeftToeslag) {
+      // Subtotaal-rij (product excl. toeslag)
+      drawText(page, t.subtotaalLabel, MARGIN_L, y, regular, SIZE)
+      drawTextRight(page, formatBedrag(factuur.subtotaal), COL_BEDRAG, y, regular, SIZE)
+      y -= LINE_H
+
+      // Toeslag-rij: toeslag_omschrijving als label (max 85 tekens), bedrag rechts
+      const toeslagTekst = factuur.toeslag_omschrijving ?? t.toeslagLabel
+      const toeslagLabel = toeslagTekst.length > 85
+        ? toeslagTekst.slice(0, 82) + '…'
+        : toeslagTekst
+      drawText(page, toeslagLabel, MARGIN_L, y, regular, SIZE)
+      drawTextRight(page, `+ ${formatBedrag(toeslagBedrag)}`, COL_BEDRAG, y, regular, SIZE)
+      y -= LINE_H
+    }
+
     drawTextRight(page, `${formatBedrag(factuur.totaal)} EUR`, COL_BEDRAG, y, regular, SIZE)
     y -= LINE_H
 
@@ -646,8 +677,25 @@ function drawBtwBlok(
     drawHLine(page, y)
     y -= LINE_H
 
-    // Values row
-    drawText(page, formatBedrag(factuur.subtotaal), MARGIN_L, y, regular, SIZE)
+    if (heeftToeslag) {
+      // Subtotaal-rij (product excl. toeslag)
+      drawText(page, t.subtotaalLabel, MARGIN_L, y, regular, SIZE)
+      drawTextRight(page, formatBedrag(factuur.subtotaal), COL_BEDRAG, y, regular, SIZE)
+      y -= LINE_H
+
+      // Toeslag-rij: toeslag_omschrijving als label (max 85 tekens), bedrag rechts
+      const toeslagTekst = factuur.toeslag_omschrijving ?? t.toeslagLabel
+      const toeslagLabel = toeslagTekst.length > 85
+        ? toeslagTekst.slice(0, 82) + '…'
+        : toeslagTekst
+      drawText(page, toeslagLabel, MARGIN_L, y, regular, SIZE)
+      drawTextRight(page, `+ ${formatBedrag(toeslagBedrag)}`, COL_BEDRAG, y, regular, SIZE)
+      y -= LINE_H
+    }
+
+    // Grondslag-rij (excl. toeslag = factuur.subtotaal, incl. toeslag = subtotaal + toeslag)
+    const grondslag = factuur.subtotaal + toeslagBedrag
+    drawText(page, formatBedrag(grondslag), MARGIN_L, y, regular, SIZE)
     drawText(page, `${factuur.btw_percentage}`, MARGIN_L + 30 * MM, y, regular, SIZE)
     drawText(page, formatBedrag(factuur.btw_bedrag), MARGIN_L + 50 * MM, y, regular, SIZE)
     drawTextRight(page, `${formatBedrag(factuur.totaal)} EUR`, COL_BEDRAG, y, regular, SIZE)

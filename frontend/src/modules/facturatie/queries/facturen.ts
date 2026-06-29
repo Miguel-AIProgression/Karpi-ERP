@@ -58,6 +58,10 @@ export interface FactuurDetail {
   btw_verlegd: boolean | null
   /** Mig 467: verwijst naar de originele debetfactuur als dit een creditnota is. */
   credit_voor_factuur_id: number | null
+  /** Mig 528: klant-toeslag — 0 wanneer geen toeslag van toepassing. */
+  toeslag_bedrag: number
+  /** Mig 528: omschrijving van de toeslag met gesubstitueerd percentage, of null. */
+  toeslag_omschrijving: string | null
 }
 
 export interface FactuurRegel {

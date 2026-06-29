@@ -8,6 +8,7 @@ import { isFactuurCreditnota, type FactuurStatus } from '../queries/facturen'
 import { VerkoopoverzichtExportDialog } from '../components/verkoopoverzicht-export-dialog'
 import { CbsExportDialog } from '../components/cbs-export-dialog'
 import { BtwControleNodigOverzichtBanner } from '../components/btw-controle-nodig-overzicht-banner'
+import { ToeslagAflooptBanner } from '@/modules/debiteuren/components/toeslag-afloopt-banner'
 import { FactuurBulkBalk } from '../components/factuur-bulk-balk'
 
 type FactuurType = 'alle' | 'debet' | 'credit'
@@ -144,6 +145,7 @@ export function FacturatieOverviewPage() {
         onClose={() => setCbsDialogOpen(false)}
       />
 
+      <ToeslagAflooptBanner />
       <BtwControleNodigOverzichtBanner onBekijk={() => setAlleenBtwControleNodig(true)} />
       {alleenBtwControleNodig && (
         <div className="mb-4 flex items-center gap-2 text-sm text-amber-700">

@@ -233,6 +233,29 @@ export function naarInvoiceInput(doc: FactuurDocument, ctx: FactuurInvoiceContex
     }
   })
 
+  // Mig 528/529: toeslag als extra INVOIC-regel (creditnota's hebben altijd toeslag_bedrag=0).
+  if (header.toeslag_bedrag > 0) {
+    const toeslagBtw = Math.round(header.toeslag_bedrag * header.btw_percentage) / 100
+    lines.push({
+      lineNumber: lines.length + 1,
+      supplierArticleNumber: 'TOESLAG',
+      articleDescription: header.toeslag_omschrijving ?? 'Toeslag',
+      deliveryNoteNumber,
+      gtin: null,
+      quantity: 1,
+      invoiceNumber: header.factuur_nr,
+      netPrice: header.toeslag_bedrag,
+      orderNumberBuyer,
+      buyerArticleNumber: null,
+      lineAmount: header.toeslag_bedrag,
+      taxableAmount: header.toeslag_bedrag,
+      vatAmount: toeslagBtw,
+      packageQuantity: 1,
+      weightKg: null,
+      vatPercentage: header.btw_percentage,
+    })
+  }
+
   return {
     invoiceDate: header.factuurdatum,
     invoiceNumber: header.factuur_nr,

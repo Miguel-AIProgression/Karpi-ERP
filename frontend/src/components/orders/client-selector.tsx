@@ -36,6 +36,12 @@ export interface SelectedClient {
   default_lever_type: 'week' | 'datum'
   /** Klantvoorkeur 'Afhalen' of 'Bezorgen' — bepaalt default van de afhalen-checkbox bij orderaanmaak. */
   afleverwijze: string | null
+  /** Mig 528: klant-toeslag instellingen — geldigheidscheck in applyToeslagLogic. */
+  toeslag_actief: boolean
+  toeslag_procent: number | null
+  toeslag_omschrijving: string | null
+  toeslag_begindatum: string | null
+  toeslag_einddatum: string | null
 }
 
 interface ClientSelectorProps {
@@ -64,7 +70,7 @@ export function ClientSelector({ value, onChange, disabled }: ClientSelectorProp
       // Wijzig je de kolomlijst hier, pas 'm daar óók aan.
       let query = supabase
         .from('debiteuren')
-        .select('debiteur_nr, naam, adres, postcode, plaats, land, fact_naam, fact_adres, fact_postcode, fact_plaats, email_factuur, email_overig, email_verzend, email_pakbon, vertegenw_code, prijslijst_nr, korting_pct, betaler, inkoopgroepen(naam), gratis_verzending, standaard_maat_werkdagen, maatwerk_weken, deelleveringen_toegestaan, default_lever_type, afleverwijze')
+        .select('debiteur_nr, naam, adres, postcode, plaats, land, fact_naam, fact_adres, fact_postcode, fact_plaats, email_factuur, email_overig, email_verzend, email_pakbon, vertegenw_code, prijslijst_nr, korting_pct, betaler, inkoopgroepen(naam), gratis_verzending, standaard_maat_werkdagen, maatwerk_weken, deelleveringen_toegestaan, default_lever_type, afleverwijze, toeslag_actief, toeslag_procent, toeslag_omschrijving, toeslag_begindatum, toeslag_einddatum')
         .eq('status', 'Actief')
         .limit(50)
 

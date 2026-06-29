@@ -110,6 +110,11 @@ export function OrderEditPage() {
     deelleveringen_toegestaan: clientData?.deelleveringen_toegestaan ?? false,
     default_lever_type: clientData?.default_lever_type ?? 'week',
     afleverwijze: clientData?.afleverwijze ?? null,
+    toeslag_actief: clientData?.toeslag_actief ?? false,
+    toeslag_procent: clientData?.toeslag_procent ?? null,
+    toeslag_omschrijving: clientData?.toeslag_omschrijving ?? null,
+    toeslag_begindatum: clientData?.toeslag_begindatum ?? null,
+    toeslag_einddatum: clientData?.toeslag_einddatum ?? null,
   } : null
 
   // Order-hydratie: bestaande Order → form-state (zie lib/orders/order-hydratie.ts,

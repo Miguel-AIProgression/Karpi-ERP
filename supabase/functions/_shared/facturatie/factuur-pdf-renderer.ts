@@ -37,6 +37,8 @@ export function naarFactuurPdfInput(doc: FactuurDocument): FactuurPdfDocumentDee
     totaal: h.totaal,
     btw_verlegd: h.btw_verlegd,
     btw_nummer_afnemer: h.btw_nummer_afnemer,
+    toeslag_bedrag: h.toeslag_bedrag,
+    toeslag_omschrijving: h.toeslag_omschrijving,
   }
 
   const regels: FactuurPDFRegel[] = doc.regels.map((r) => {
