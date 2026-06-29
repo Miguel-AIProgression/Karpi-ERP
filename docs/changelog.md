@@ -1,5 +1,21 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-29 — Voorraad-import commit (voorraadlijst 25-6-2026)
+
+Import `update_voorraad.py` gedraaid met `--commit` voor `voorraadlijst 25-6-2026.xls`.
+De import van 26-06 was alleen een dry-run geweest; de DB had nog de waarden van begin juni.
+
+**Resultaat:**
+- 18.296 vaste-maat artikelen bijgewerkt (baseline = kolom H vrije voorraad Basta)
+- 281 artikelen / 523 stuks RugFlow-verzonden-aftrek toegepast
+- 1.262 order_regels herallocateerd (0 fouten)
+- 482 artikelen gereserveerd-cache herberekend (0 fouten)
+- Uitsluitlijst ongewijzigd (5.404 artikelen, geen nieuwe rode regels)
+
+**Aanleiding:** Orders toonden "Wacht op inkoop" voor artikelen met ruime Basta-voorraad
+(bijv. PALMA 19358-6Y01 060x110: 135 vrij, PALMA 19066-08 060x110: 122 vrij) omdat de
+DB verouderde waarden had (37 resp. 28) en vrije_voorraad = 0.
+
 ## 2026-06-28 — Retroactieve order + vrije omschrijvingsregel (mig 524)
 
 Twee nieuwe features voor het administratief invoeren van al-afgehandelde bestellingen.
