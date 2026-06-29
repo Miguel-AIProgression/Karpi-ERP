@@ -122,6 +122,8 @@ export function hydrateerOrderRegels(
       is_vrije_regel: r.is_vrije_regel === true,
       // Handmatige uitwisselbaar-claims gerehydrateerd (omstickeren).
       uitwisselbaar_keuzes: keuzesPerRegel.get(r.id) ?? [],
+      // Actieve voorraad-claims van DIT order — voedt "N× gereserveerd" in order-line-editor.tsx.
+      eigen_voorraad_actief: r.eigen_voorraad_actief ?? 0,
     }
     // Het regel-input-contract: producten-display-velden uit de join. Vóór deze
     // hydratie ontbraken vrije_voorraad/besteld_inkoop → vals IO-tekort.

@@ -85,12 +85,15 @@ function MaatwerkLineRow({
   const uitwisselbaarTotaal = dekking.uitwisselbaar
   const tekortAantal = dekking.ioTekort
 
-  // Bij een bestaande order is vrije_voorraad al verminderd met deze order's
-  // eigen reserveringen (voorraad- én inkoop-claims). Een ioTekort > 0 in
-  // de edit-form betekent dan niet "niet gedekt" maar "gedekt via een claim
-  // die de vrije voorraad al heeft opgebruikt". Toon een notitie zodat de
-  // gebruiker weet dat de stuks al geclaimd zijn voor dit order.
-  const reedsDgedekt = isBestaandeOrder ? tekortAantal : 0
+  // "N× gereserveerd voor dit order" — alleen tonen als er daadwerkelijk een
+  // actieve voorraad-claim van DIT order bestaat. Bron: eigen_voorraad_actief =
+  // SUM(order_reserveringen bron='voorraad', status='actief') voor deze orderregel.
+  // NULL = data niet geladen (nieuwe order → 0). Min met tekortAantal: niet meer
+  // tonen dan het berekende tekort (anders toon je "2× gereserveerd" bij een
+  // order die die 2 stuks juist WEL direct uit vrije voorraad levert).
+  const reedsDgedekt = isBestaandeOrder
+    ? Math.min(tekortAantal, line.eigen_voorraad_actief ?? 0)
+    : 0
 
   // Issue #35: passieve summary van uitwisselbare voorraad — toont onder
   // het vrije-voorraad getal "+N via ander type" zodra er überhaupt

@@ -128,6 +128,10 @@ export interface OrderRegelFormData {
    * geen pick-collo. Uitgesloten van orderregel_pickbaarheid.
    */
   is_vrije_regel?: boolean
+  /** Display-only: actieve voorraad-claims van DIT order (order_reserveringen bron='voorraad',
+   *  status='actief'). Voedt "N× gereserveerd voor dit order" in order-line-editor.tsx.
+   *  NULL voor nieuwe orders (geen DB-rij). */
+  eigen_voorraad_actief?: number
 }
 
 /** Bronlabel voor de orderregel-prijs zoals geretourneerd door `bereken_orderregel_prijs` (mig 191, mig 253). */

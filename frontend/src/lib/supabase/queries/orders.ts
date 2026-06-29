@@ -205,6 +205,10 @@ export interface OrderRegel {
   klant_referentie?: string | null
   /** Mig 524: vrije omschrijvingsregel zonder artikelnr (geen voorraad, geen pick). */
   is_vrije_regel?: boolean
+  /** Actieve voorraad-claims van DIT order op deze regel (order_reserveringen bron='voorraad', status='actief').
+   *  Voedt de "N× gereserveerd voor dit order"-notitie in order-line-editor.tsx.
+   *  NULL = niet opgehaald (o.a. bij nieuwe orders). */
+  eigen_voorraad_actief?: number
   /** Mig 412: vroegste verzenddatum voor deze regel op basis van actieve claims.
    * NULL = geen dekking of maatwerk. CURRENT_DATE of later = beschikbaar. */
   vroegst_leverbaar?: string | null
@@ -797,6 +801,35 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
         if (snijplanMap.has(regel.id)) {
           regel.snijplannen = snijplanMap.get(regel.id)!
         }
+      }
+    }
+  }
+
+  // Fetch actieve voorraad-claims per orderregel voor DIT order — voor de
+  // "N× gereserveerd voor dit order"-notitie in order-line-editor.tsx.
+  // Doel: onderscheiden of vrije_voorraad=0 door EIGEN reservering (dan is de
+  // order al gedekt) of door ANDERE orders (dan is de order ongedekt tekort).
+  const alleRegelIds = baseRegels.map((r) => r.id)
+  if (alleRegelIds.length > 0) {
+    const { data: reserveringen } = await supabase
+      .from('order_reserveringen')
+      .select('order_regel_id, aantal')
+      .in('order_regel_id', alleRegelIds)
+      .eq('bron', 'voorraad')
+      .eq('status', 'actief')
+
+    if (reserveringen && reserveringen.length > 0) {
+      const reserveringMap = new Map<number, number>()
+      for (const r of reserveringen) {
+        const id = r.order_regel_id as number
+        reserveringMap.set(id, (reserveringMap.get(id) ?? 0) + (r.aantal as number))
+      }
+      for (const regel of baseRegels) {
+        regel.eigen_voorraad_actief = reserveringMap.get(regel.id) ?? 0
+      }
+    } else {
+      for (const regel of baseRegels) {
+        regel.eigen_voorraad_actief = 0
       }
     }
   }
