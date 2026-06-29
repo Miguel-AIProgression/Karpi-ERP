@@ -632,8 +632,6 @@ function drawBtwBlok(
   const SIZE_BOLD = 9
   const SIZE = 10
   const toeslagBedrag = factuur.toeslag_bedrag ?? 0
-  const heeftToeslag = toeslagBedrag > 0
-
   if (factuur.btw_verlegd) {
     // Mig 371: intracommunautaire verlegging — geen BTW-kolommen, wel de
     // wettelijk vereiste vermelding "BTW verlegd" + btw-nummer van de afnemer.
@@ -643,22 +641,6 @@ function drawBtwBlok(
     y -= 1 * MM
     drawHLine(page, y)
     y -= LINE_H
-
-    if (heeftToeslag) {
-      // Subtotaal-rij (product excl. toeslag)
-      drawText(page, t.subtotaalLabel, MARGIN_L, y, regular, SIZE)
-      drawTextRight(page, formatBedrag(factuur.subtotaal), COL_BEDRAG, y, regular, SIZE)
-      y -= LINE_H
-
-      // Toeslag-rij: toeslag_omschrijving als label (max 85 tekens), bedrag rechts
-      const toeslagTekst = factuur.toeslag_omschrijving ?? t.toeslagLabel
-      const toeslagLabel = toeslagTekst.length > 85
-        ? toeslagTekst.slice(0, 82) + '…'
-        : toeslagTekst
-      drawText(page, toeslagLabel, MARGIN_L, y, regular, SIZE)
-      drawTextRight(page, `+ ${formatBedrag(toeslagBedrag)}`, COL_BEDRAG, y, regular, SIZE)
-      y -= LINE_H
-    }
 
     drawTextRight(page, `${formatBedrag(factuur.totaal)} EUR`, COL_BEDRAG, y, regular, SIZE)
     y -= LINE_H
@@ -677,23 +659,7 @@ function drawBtwBlok(
     drawHLine(page, y)
     y -= LINE_H
 
-    if (heeftToeslag) {
-      // Subtotaal-rij (product excl. toeslag)
-      drawText(page, t.subtotaalLabel, MARGIN_L, y, regular, SIZE)
-      drawTextRight(page, formatBedrag(factuur.subtotaal), COL_BEDRAG, y, regular, SIZE)
-      y -= LINE_H
-
-      // Toeslag-rij: toeslag_omschrijving als label (max 85 tekens), bedrag rechts
-      const toeslagTekst = factuur.toeslag_omschrijving ?? t.toeslagLabel
-      const toeslagLabel = toeslagTekst.length > 85
-        ? toeslagTekst.slice(0, 82) + '…'
-        : toeslagTekst
-      drawText(page, toeslagLabel, MARGIN_L, y, regular, SIZE)
-      drawTextRight(page, `+ ${formatBedrag(toeslagBedrag)}`, COL_BEDRAG, y, regular, SIZE)
-      y -= LINE_H
-    }
-
-    // Grondslag-rij (excl. toeslag = factuur.subtotaal, incl. toeslag = subtotaal + toeslag)
+    // Grondslag-rij (toeslag opgenomen als artikelregel, grondslag = subtotaal + toeslag)
     const grondslag = factuur.subtotaal + toeslagBedrag
     drawText(page, formatBedrag(grondslag), MARGIN_L, y, regular, SIZE)
     drawText(page, `${factuur.btw_percentage}`, MARGIN_L + 30 * MM, y, regular, SIZE)
@@ -985,6 +951,38 @@ export async function genereerFactuurPDF(input: FactuurPDFInput): Promise<Uint8A
         drawText(page, truncateNaarBreedte(`${t.model}: ${r.klant_model}`, EXTRA_MAX_W, regular, SIZE), COL_OMSCHR, cursorY, regular, SIZE)
         cursorY -= LINE_H
       }
+    }
+  }
+
+  // Synthetic TOESLAG artikel-regel (uit facturen.toeslag_bedrag, niet uit factuur_regels).
+  // Getoond als normale artikelregel zonder groepskop, direct boven het BTW-blok.
+  if ((factuur.toeslag_bedrag ?? 0) > 0) {
+    const TOESLAG_LABELS: Record<Taal, string> = {
+      nl: 'Toeslag', de: 'Zuschlag', fr: 'Supplément', en: 'Surcharge',
+    }
+    const SIZE = 9
+    const toeslagBedrag = factuur.toeslag_bedrag!
+    const toeslagOmschr = factuur.toeslag_omschrijving ?? ''
+    const OMSCHR_MAX_W = COL_PRIJS - regular.widthOfTextAtSize(formatBedrag(toeslagBedrag), SIZE) - COL_OMSCHR - 2 * MM
+    const EXTRA_MAX_W = COL_BEDRAG - COL_OMSCHR - 2 * MM
+    const { eerste, vervolg } = splitOmschrijvingOverRegels(toeslagOmschr, OMSCHR_MAX_W, EXTRA_MAX_W, regular, SIZE)
+    ensureRoom((1 + 1 + vervolg.length) * (LINE_H / MM))  // blank + hoofdregel + vervolgregels
+
+    cursorY -= LINE_H  // visuele scheiding t.o.v. de ordergroepen
+
+    drawText(page, TOESLAG_LABELS[taal], COL_ARTIKEL, cursorY, regular, SIZE)
+    drawTextRight(page, '1', COL_AANTAL + COL_AANTAL_W, cursorY, regular, SIZE)
+    drawText(page, 'St', COL_EH, cursorY, regular, SIZE)
+    drawText(page, eerste, COL_OMSCHR, cursorY, regular, SIZE)
+    drawTextRight(page, formatBedrag(toeslagBedrag), COL_PRIJS, cursorY, regular, SIZE)
+    drawTextRight(page, formatBedrag(toeslagBedrag), COL_BEDRAG, cursorY, regular, SIZE)
+    paginaTotaal += toeslagBedrag
+    cursorY -= LINE_H
+
+    for (const rgl of vervolg) {
+      ensureRoom(LINE_H / MM)
+      drawText(page, rgl, COL_OMSCHR, cursorY, regular, SIZE)
+      cursorY -= LINE_H
     }
   }
 
