@@ -1,4 +1,4 @@
-import { Lock, Zap } from 'lucide-react'
+import { Lock, Zap, Link2, Unlink } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { cn } from '@/lib/utils/cn'
 import { AFWERKING_MAP } from '@/lib/utils/constants'
@@ -15,9 +15,11 @@ function formatVerzendweek(week: string | null): string {
 
 interface Props {
   regel: WerklijstOrderregel
+  /** Fase (c): callback voor IO-koppeling. Geeft een knop als aanwezig. */
+  onKoppelClick?: () => void
 }
 
-export function WerklijstOrderregelRij({ regel }: Props) {
+export function WerklijstOrderregelRij({ regel, onKoppelClick }: Props) {
   const afwerking = regel.maatwerk_afwerking ? AFWERKING_MAP[regel.maatwerk_afwerking] : null
   const vorm = getVormDisplay(regel.maatwerk_vorm)
   const toonVorm = regel.maatwerk_vorm && regel.maatwerk_vorm !== 'rechthoek'
@@ -78,7 +80,7 @@ export function WerklijstOrderregelRij({ regel }: Props) {
           {formatVerzendweek(regel.verzendweek)}
         </span>
       </td>
-      {/* Haalbaarheid + lock */}
+      {/* Haalbaarheid + lock + IO-koppel-knop */}
       <td className="py-2 pr-3">
         <div className="flex items-center gap-1 justify-end">
           {regel.is_handmatig_toegewezen && (
@@ -88,6 +90,26 @@ export function WerklijstOrderregelRij({ regel }: Props) {
             <span className={cn('rounded px-1.5 py-0.5 text-[10px] font-medium', haalbaarheid.bg, haalbaarheid.text)}>
               {haalbaarheid.label}
             </span>
+          )}
+          {/* Fase (c): IO-koppelknop voor tekort en wacht-op-inkoop */}
+          {onKoppelClick && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onKoppelClick() }}
+              title={regel.materiaalStatus === 'wacht_op_inkoop' ? 'IO-koppeling wijzigen' : 'Koppel aan inkooporder'}
+              className={cn(
+                'rounded p-1 transition-colors',
+                regel.materiaalStatus === 'wacht_op_inkoop'
+                  ? 'text-blue-400 hover:bg-blue-50 hover:text-blue-600'
+                  : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600',
+              )}
+            >
+              {regel.materiaalStatus === 'wacht_op_inkoop' ? (
+                <Unlink size={12} />
+              ) : (
+                <Link2 size={12} />
+              )}
+            </button>
           )}
         </div>
       </td>

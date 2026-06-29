@@ -3,7 +3,8 @@ import { ChevronDown, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { WerklijstRolSectie } from './werklijst-rol-sectie'
 import { WerklijstOrderregelRij } from './werklijst-orderregel-rij'
-import type { WerklijstKwaliteitGroep } from '@/modules/snijplanning/lib/werklijst-groepering'
+import { KoppelAanIoDialog } from './koppel-aan-io-dialog'
+import type { WerklijstKwaliteitGroep, WerklijstOrderregel } from '@/modules/snijplanning/lib/werklijst-groepering'
 
 function verzendweekLabel(week: string | null): string {
   if (!week) return ''
@@ -36,6 +37,8 @@ interface Props {
 
 export function WerklijstKwaliteitGroepItem({ groep, defaultOpen = false }: Props) {
   const [open, setOpen] = useState(defaultOpen)
+  // Fase (c): IO-koppeling dialog — één per groep, gedeeld over tekort + wacht-op-inkoop
+  const [koppelRegel, setKoppelRegel] = useState<WerklijstOrderregel | null>(null)
 
   const heeftProblemen = groep.aantalWachtOpInkoop > 0 || groep.aantalTekort > 0
 
@@ -111,7 +114,11 @@ export function WerklijstKwaliteitGroepItem({ groep, defaultOpen = false }: Prop
               </div>
               <RegelTabel>
                 {groep.wachtOpInkoop.map((r) => (
-                  <WerklijstOrderregelRij key={r.orderRegelId} regel={r} />
+                  <WerklijstOrderregelRij
+                    key={r.orderRegelId}
+                    regel={r}
+                    onKoppelClick={() => setKoppelRegel(r)}
+                  />
                 ))}
               </RegelTabel>
             </div>
@@ -126,12 +133,26 @@ export function WerklijstKwaliteitGroepItem({ groep, defaultOpen = false }: Prop
               </div>
               <RegelTabel>
                 {groep.tekort.map((r) => (
-                  <WerklijstOrderregelRij key={r.orderRegelId} regel={r} />
+                  <WerklijstOrderregelRij
+                    key={r.orderRegelId}
+                    regel={r}
+                    onKoppelClick={() => setKoppelRegel(r)}
+                  />
                 ))}
               </RegelTabel>
             </div>
           )}
         </div>
+      )}
+
+      {/* Fase (c): IO-koppeling dialog */}
+      {koppelRegel && (
+        <KoppelAanIoDialog
+          groepKwaliteitCode={groep.kwaliteit_code}
+          groepKleurCode={groep.kleur_code}
+          regel={koppelRegel}
+          onClose={() => setKoppelRegel(null)}
+        />
       )}
     </div>
   )

@@ -69,6 +69,14 @@ export interface WerklijstOrderregel {
   /** Aanwezig als materiaalStatus='op_rol'. */
   rolnummer: string | null
   is_handmatig_toegewezen: boolean
+  /** IDs van de individuele snijplan-stukken (voor fase-c IO-koppeling). */
+  snijplanIds: number[]
+  /**
+   * Conservatieve bijdrage aan de IO in cm = som van placed_breedte_cm per stuk.
+   * MARGE-2.5CM: gebaseerd op stuk_snij_marge_cm (mig 464). Naast-elkaar-packing
+   * kan de werkelijke bijdrage kleiner maken; auto-plan-groep herberekent exact.
+   */
+  totaalBijdrageCm: number
 }
 
 /** Eén rol met haar stukken, shelves en statistieken. */
@@ -356,6 +364,10 @@ function bouwOrderregelRij(
     express: stukken.some((s) => s.express),
     rolnummer: eerste.rolnummer,
     is_handmatig_toegewezen: stukken.some((s) => s.is_handmatig_toegewezen),
+    // Fase (c): snijplan-IDs + conservatieve bijdrage voor IO-koppeling
+    snijplanIds: stukken.map((s) => s.id),
+    // MARGE-2.5CM: placed_breedte_cm = breedte_cm + stuk_snij_marge_cm (mig 464)
+    totaalBijdrageCm: Math.round(stukken.reduce((som, s) => som + s.placed_breedte_cm, 0)),
   }
 }
 
