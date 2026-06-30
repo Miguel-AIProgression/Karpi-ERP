@@ -663,24 +663,32 @@ function drawBtwBlok(
   if (factuur.btw_verlegd) {
     // Mig 371: intracommunautaire verlegging — geen BTW-kolommen, wel de
     // wettelijk vereiste vermelding "BTW verlegd" + btw-nummer van de afnemer.
-    drawText(page, t.grondslag, MARGIN_L, y, bold, SIZE_BOLD)
-    drawTextRight(page, t.teBetalen, COL_BEDRAG, y, bold, SIZE_BOLD)
-
-    y -= 1 * MM
-    drawHLine(page, y)
-    y -= LINE_H
-
     if (heeftToeslag) {
-      // Mig 531: Grundlage = subtotaal vóór toeslag, dan Zuschlag-rij, dan Zu zahlen.
-      drawText(page, formatBedrag(factuur.subtotaal), MARGIN_L, y, regular, SIZE)
+      // Gestapelde layout (mig 531):
+      //   Grundlage
+      //   739.68
+      //   Zuschlag 4,5%        +€ 33.29
+      //   Zu zahlen            € 772.97
+      drawText(page, t.grondslag, MARGIN_L, y, bold, SIZE_BOLD)
+      y -= LINE_H
+      drawTextRight(page, formatBedrag(factuur.subtotaal), COL_BEDRAG, y, regular, SIZE)
       y -= LINE_H
       drawText(page, zuschlagLabel, MARGIN_L, y, regular, SIZE)
-      drawTextRight(page, `+ ${formatBedrag(toeslagBedrag)}`, COL_BEDRAG, y, regular, SIZE)
+      drawTextRight(page, `+€ ${formatBedrag(toeslagBedrag)}`, COL_BEDRAG, y, regular, SIZE)
+      y -= LINE_H
+      drawText(page, t.teBetalen, MARGIN_L, y, bold, SIZE_BOLD)
+      drawTextRight(page, `€ ${formatBedrag(factuur.totaal)}`, COL_BEDRAG, y, bold, SIZE_BOLD)
+      y -= LINE_H
+    } else {
+      // Originele 2-kolom layout zonder toeslag.
+      drawText(page, t.grondslag, MARGIN_L, y, bold, SIZE_BOLD)
+      drawTextRight(page, t.teBetalen, COL_BEDRAG, y, bold, SIZE_BOLD)
+      y -= 1 * MM
+      drawHLine(page, y)
+      y -= LINE_H
+      drawTextRight(page, `${formatBedrag(factuur.totaal)} EUR`, COL_BEDRAG, y, regular, SIZE)
       y -= LINE_H
     }
-
-    drawTextRight(page, `${formatBedrag(factuur.totaal)} EUR`, COL_BEDRAG, y, regular, SIZE)
-    y -= LINE_H
 
     const verlegdTekst = factuur.btw_nummer_afnemer
       ? `${t.btwVerlegd} — ${t.btwNrAfnemer}: ${factuur.btw_nummer_afnemer}`
