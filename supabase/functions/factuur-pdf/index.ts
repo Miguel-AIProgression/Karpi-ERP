@@ -50,6 +50,7 @@ interface ProductMeta {
   breedte_cm: number | null
   vorm: string | null
   kwaliteit_code: string | null
+  gewicht_kg: number | string | null
 }
 
 interface BedrijfConfig {
@@ -174,7 +175,7 @@ serve(async (req) => {
       artikelnrs.length > 0
         ? supabase
             .from('producten')
-            .select('artikelnr, lengte_cm, breedte_cm, vorm, kwaliteit_code')
+            .select('artikelnr, lengte_cm, breedte_cm, vorm, kwaliteit_code, gewicht_kg')
             .in('artikelnr', artikelnrs)
         : Promise.resolve({ data: [] as ProductMeta[], error: null }),
     ])
@@ -268,10 +269,18 @@ serve(async (req) => {
       })
       totaalM2 += m2PerStuk * aantal
 
-      // gewicht: order_regels.gewicht_kg is per regel-totaal (UNIQUE 1-op-1 mapping)
-      const gewichtKg = orderRegel?.gewicht_kg
-      if (gewichtKg !== null && gewichtKg !== undefined) {
-        totaalGewichtKg += Number(gewichtKg)
+      // Gewicht: order_regels.gewicht_kg is de gewichts-snapshot per regel.
+      // Fallback op producten.gewicht_kg als de snapshot NULL is (kan voorkomen
+      // bij orders aangemaakt vóór of tijdens de density-correctie, mig 185/387).
+      const regelGewichtKg = orderRegel?.gewicht_kg
+      const effectiefGewichtKg =
+        regelGewichtKg !== null && regelGewichtKg !== undefined
+          ? Number(regelGewichtKg)
+          : product?.gewicht_kg != null
+            ? Number(product.gewicht_kg)
+            : null
+      if (effectiefGewichtKg !== null) {
+        totaalGewichtKg += effectiefGewichtKg
       }
 
       // Mig 446: Stat.nr.-regel (Intrastat-statistieknummer) op buitenlandse
@@ -283,7 +292,7 @@ serve(async (req) => {
         taal,
         btwVerlegd: doc.header.btw_verlegd,
         goederencode,
-        gewichtKg,
+        gewichtKg: effectiefGewichtKg,
         m2Totaal: m2PerStuk * aantal,
         vervoerderCode: vervoerderByOrder.get(dr.order_id),
       })

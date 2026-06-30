@@ -350,8 +350,18 @@ serve(async () => {
           oud_order_nr: meta?.oud_order_nr ?? null,
         }
       })
+      let totaalM2 = 0
+      let totaalGewichtKg = 0
+
       if (pdfDoc.header.btw_verlegd) {
-        pdfRegels = await metIntracomStatRegels(supabase, pdfDoc, pdfRegels, pdfTaal)
+        const result = await metIntracomStatRegels(supabase, pdfDoc, pdfRegels, pdfTaal)
+        pdfRegels = result.regels
+        totaalM2 = result.totaalM2
+        totaalGewichtKg = result.totaalGewichtKg
+      } else {
+        const totalen = await berekenPdfTotalen(supabase, pdfDoc)
+        totaalM2 = totalen.totaalM2
+        totaalGewichtKg = totalen.totaalGewichtKg
       }
 
       // Logo (zelfde bron als de pakbon + on-demand factuur-preview) zodat de
@@ -378,7 +388,12 @@ serve(async () => {
           betalingscondities_tekst: bedrijf.betalingscondities_tekst,
           fax: bedrijf.fax,
         },
-        factuur: { ...pdfDeel.factuur, betalingscondities_tekst: betaalconditie },
+        factuur: {
+          ...pdfDeel.factuur,
+          betalingscondities_tekst: betaalconditie,
+          totaal_m2: totaalM2 > 0 ? totaalM2 : undefined,
+          totaal_gewicht_kg: totaalGewichtKg > 0 ? totaalGewichtKg : undefined,
+        },
         regels: pdfRegels,
         taal: pdfTaal,
         logo: factuurLogo ? { ...factuurLogo, hoogte_mm: 18 } : undefined,
@@ -747,19 +762,26 @@ async function fetchEdiConfig(
   return data as EdiConfig | null
 }
 
+interface PdfRegelEnTotalen {
+  regels: FactuurPDFRegel[]
+  totaalM2: number
+  totaalGewichtKg: number
+}
+
 /**
  * Mig 446: verrijkt de PDF-regels met de Intrastat-Stat.nr.-regel — alleen
- * aangeroepen bij intracommunautaire (btw_verlegd) facturen. Eigen, minimale
- * fetch (geen afleveradres/m²-totalen — dat blijft het on-demand preview-pad,
- * zie factuur-pdf/index.ts) zodat het reguliere NL-factuurpad geen extra
- * queries krijgt.
+ * aangeroepen bij intracommunautaire (btw_verlegd) facturen. Berekent ook
+ * totaalM2 en totaalGewichtKg voor de PDF-footer (fix: was hiervoor alleen
+ * beschikbaar in de on-demand preview-pad factuur-pdf/index.ts).
+ * Fallback op producten.gewicht_kg als order_regels.gewicht_kg NULL is
+ * (orders aangemaakt vóór density-correctie mig 185/387).
  */
 async function metIntracomStatRegels(
   supabase: ReturnType<typeof createClient>,
   doc: FactuurDocument,
   regels: FactuurPDFRegel[],
   taal: Taal,
-): Promise<FactuurPDFRegel[]> {
+): Promise<PdfRegelEnTotalen> {
   const orderRegelIds = uniqueNumbers(doc.regels.map((r) => r.order_regel_id))
   const artikelnrs = Array.from(new Set(doc.regels.map((r) => r.artikelnr).filter((v) => v.length > 0)))
 
@@ -773,7 +795,7 @@ async function metIntracomStatRegels(
     artikelnrs.length > 0
       ? supabase
           .from('producten')
-          .select('artikelnr, lengte_cm, breedte_cm, vorm, kwaliteit_code')
+          .select('artikelnr, lengte_cm, breedte_cm, vorm, kwaliteit_code, gewicht_kg')
           .in('artikelnr', artikelnrs)
       : Promise.resolve({ data: [], error: null }),
   ])
@@ -792,6 +814,7 @@ async function metIntracomStatRegels(
     breedte_cm: number | null
     vorm: string | null
     kwaliteit_code: string | null
+    gewicht_kg: number | string | null
   }
   const orderRegelsById = new Map<number, OrderRegelMeta>()
   for (const orr of (orderRegelsRes.data ?? []) as OrderRegelMeta[]) orderRegelsById.set(orr.id, orr)
@@ -813,7 +836,10 @@ async function metIntracomStatRegels(
   const orderIds = uniqueNumbers(doc.regels.map((r) => r.order_id))
   const vervoerderByOrder = await fetchVervoerderCodePerOrder(supabase, orderIds)
 
-  return regels.map((br, i) => {
+  let totaalM2 = 0
+  let totaalGewichtKg = 0
+
+  const resultRegels = regels.map((br, i) => {
     const dr = doc.regels[i]
     const orderRegel = orderRegelsById.get(dr.order_regel_id)
     const product = dr.artikelnr ? productenByArtikelnr.get(dr.artikelnr) : undefined
@@ -823,13 +849,26 @@ async function metIntracomStatRegels(
       productBreedteCm: product?.breedte_cm,
       productVorm: product?.vorm,
     })
+    totaalM2 += m2PerStuk * br.aantal
+
+    const regelGewichtKg = orderRegel?.gewicht_kg
+    const effectiefGewichtKg =
+      regelGewichtKg !== null && regelGewichtKg !== undefined
+        ? Number(regelGewichtKg)
+        : product?.gewicht_kg != null
+          ? Number(product.gewicht_kg)
+          : null
+    if (effectiefGewichtKg !== null) {
+      totaalGewichtKg += effectiefGewichtKg
+    }
+
     const kwaliteitCode = orderRegel?.maatwerk_kwaliteit_code ?? product?.kwaliteit_code ?? null
     const goederencode = kwaliteitCode ? goederencodeByKwaliteit.get(kwaliteitCode) : undefined
     const statRegel = bouwIntracomStatRegel({
       taal,
       btwVerlegd: doc.header.btw_verlegd,
       goederencode,
-      gewichtKg: orderRegel?.gewicht_kg,
+      gewichtKg: effectiefGewichtKg,
       m2Totaal: m2PerStuk * br.aantal,
       vervoerderCode: vervoerderByOrder.get(dr.order_id),
     })
@@ -838,6 +877,83 @@ async function metIntracomStatRegels(
       omschrijving_2: [br.omschrijving_2, statRegel].filter(Boolean).join('\n') || undefined,
     }
   })
+
+  return { regels: resultRegels, totaalM2, totaalGewichtKg }
+}
+
+/**
+ * Berekent totaalM2 en totaalGewichtKg voor niet-btw_verlegd facturen.
+ * Minimale fetch: alleen order_regels + producten, geen goederencodes/vervoerder.
+ */
+async function berekenPdfTotalen(
+  supabase: ReturnType<typeof createClient>,
+  doc: FactuurDocument,
+): Promise<{ totaalM2: number; totaalGewichtKg: number }> {
+  const orderRegelIds = uniqueNumbers(doc.regels.map((r) => r.order_regel_id))
+  const artikelnrs = Array.from(new Set(doc.regels.map((r) => r.artikelnr).filter((v) => v.length > 0)))
+
+  const [orderRegelsRes, productenRes] = await Promise.all([
+    orderRegelIds.length > 0
+      ? supabase
+          .from('order_regels')
+          .select('id, gewicht_kg, maatwerk_oppervlak_m2')
+          .in('id', orderRegelIds)
+      : Promise.resolve({ data: [], error: null }),
+    artikelnrs.length > 0
+      ? supabase
+          .from('producten')
+          .select('artikelnr, lengte_cm, breedte_cm, vorm, gewicht_kg')
+          .in('artikelnr', artikelnrs)
+      : Promise.resolve({ data: [], error: null }),
+  ])
+  if (orderRegelsRes.error) throw new Error(`Fetch order_regels (totalen): ${orderRegelsRes.error.message}`)
+  if (productenRes.error) throw new Error(`Fetch producten (totalen): ${productenRes.error.message}`)
+
+  interface OrrMin {
+    id: number
+    gewicht_kg: number | string | null
+    maatwerk_oppervlak_m2: number | string | null
+  }
+  interface ProdMin {
+    artikelnr: string
+    lengte_cm: number | null
+    breedte_cm: number | null
+    vorm: string | null
+    gewicht_kg: number | string | null
+  }
+  const orderRegelsById = new Map<number, OrrMin>()
+  for (const orr of (orderRegelsRes.data ?? []) as OrrMin[]) orderRegelsById.set(orr.id, orr)
+  const productenByArtikelnr = new Map<string, ProdMin>()
+  for (const p of (productenRes.data ?? []) as ProdMin[]) productenByArtikelnr.set(p.artikelnr, p)
+
+  let totaalM2 = 0
+  let totaalGewichtKg = 0
+
+  for (let i = 0; i < doc.regels.length; i++) {
+    const dr = doc.regels[i]
+    const orderRegel = orderRegelsById.get(dr.order_regel_id)
+    const product = dr.artikelnr ? productenByArtikelnr.get(dr.artikelnr) : undefined
+    const m2PerStuk = bereekenM2PerStuk({
+      maatwerkOppervlakM2: orderRegel?.maatwerk_oppervlak_m2,
+      productLengteCm: product?.lengte_cm,
+      productBreedteCm: product?.breedte_cm,
+      productVorm: product?.vorm,
+    })
+    totaalM2 += m2PerStuk * dr.aantal
+
+    const regelGewichtKg = orderRegel?.gewicht_kg
+    const effectiefGewichtKg =
+      regelGewichtKg !== null && regelGewichtKg !== undefined
+        ? Number(regelGewichtKg)
+        : product?.gewicht_kg != null
+          ? Number(product.gewicht_kg)
+          : null
+    if (effectiefGewichtKg !== null) {
+      totaalGewichtKg += effectiefGewichtKg
+    }
+  }
+
+  return { totaalM2, totaalGewichtKg }
 }
 
 async function queueEdiFactuur(
