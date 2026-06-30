@@ -3,6 +3,7 @@ import {
   fetchEdiBerichten,
   fetchEdiBericht,
   countTeKoppelenEdiOrders,
+  fetchEdiAfleveradresOngekoppeld,
   fetchHandelspartnerConfig,
   upsertHandelspartnerConfig,
   fetchEdiPartners,
@@ -40,6 +41,18 @@ export function useTeKoppelenEdiCount() {
     queryKey: ['edi-te-koppelen-count'],
     queryFn: countTeKoppelenEdiOrders,
     refetchInterval: 30_000,
+  })
+}
+
+/**
+ * EDI-orders met een aflever-GLN die geen vestiging matcht (mig 534) — de order viel
+ * stil terug op het debiteur-hoofdadres. Voedt de banner op het orders-overzicht.
+ */
+export function useEdiAfleveradresOngekoppeld() {
+  return useQuery({
+    queryKey: ['edi-afleveradres-ongekoppeld'],
+    queryFn: fetchEdiAfleveradresOngekoppeld,
+    refetchInterval: 60_000,
   })
 }
 

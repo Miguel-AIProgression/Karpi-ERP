@@ -46,6 +46,7 @@ export {
 } from './hooks/use-edi'
 
 export { EdiTeKoppelenBanner } from './components/te-koppelen-banner'
+export { EdiAfleveradresOngekoppeldBanner } from './components/afleveradres-ongekoppeld-banner'
 
 export { EdiBerichtenOverzichtPage } from './pages/berichten-overzicht'
 export { EdiBerichtDetailPage } from './pages/bericht-detail'
