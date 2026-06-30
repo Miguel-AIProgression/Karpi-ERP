@@ -1,5 +1,31 @@
 # Changelog — RugFlow ERP
 
+## 2026-06-30 — Concept-intake-gate: lekken dichten + bevestig RPC (mig 540-541)
+
+**Probleem:** `order_status = 'Concept'` bestond al (mig 308) maar werd behandeld als een normale actieve status — vier functies lieten Concept-orders onbedoeld meedraaien in de operationele keten.
+
+**Lek 1 — `derive_wacht_status`:** 'Concept' stond niet in de no-touch WHEN-lijst. Bij io_claim=true viel het door naar branch 2 → 'Wacht op voorraad' (geverifieerd via golden fixture). Gevolg: `herbereken_wacht_status` kon een Concept-order stilletjes van status wijzigen.
+
+**Lek 2 — `herallocateer_orderregel`:** de Verzonden/Geannuleerd-guard liet Concept-orders door → voorraadreclames werden aangemaakt bij INSERT op order_regels.
+
+**Lek 3 — `auto_maak_snijplan` + `auto_sync_snijplan_maten`:** geen order-status-check → maatwerk-snijplannen werden direct aangemaakt. Ook de self-healing fallback (UPDATE-trigger) kon snijplannen aanmaken bij maat-updates op Concept-orders.
+
+**Lek 4 — `actieve_snijgroepen` (cron sweep):** NOT IN-filter kende alleen Verzonden/Geannuleerd → Concept-stukken werden elke 30 minuten herplaatst.
+
+**Fix Fase A (mig 540):** alle vier lekken gedicht. TS-spiegel `derive-status.ts` bijgewerkt (Concept → EINDSTATUS_OF_PICKRONDE); golden fixture bijgewerkt (1 case gewijzigd + 3 toegevoegd); contract-test verwacht 26 cases.
+
+**Fix Fase B (mig 541):** nieuwe RPC `bevestig_concept_order(p_order_id)` — de enige legitieme uitweg uit Concept:
+1. `_apply_transitie` → 'Klaar voor picken' + audit-event 'concept_bevestigd'
+2. Maatwerk-snijplannen aanmaken (trigger was geblokkeerd door Fase A)
+3. `herallocateer_orderregel_auto` voor alle regels (volledige cascade incl. IO-claims)
+4. `herbereken_wacht_status` voor definitieve status
+
+Frontend (order-header.tsx, useBevestigConceptOrder) was al volledig aanwezig — mig 541 levert de backend.
+
+**Branch:** `feat/concept-intake-gate` (mig 540-541, nog te mergen).
+
+---
+
 ## 2026-06-29 — Structurele fix snijplanning_overzicht COALESCE-volgorde (mig 531)
 
 **Probleem (ontdekt bij analyse rol 10992503C FRIS/35):** Bij uitwisselbare kwaliteitsgroepen (LUXR↔VERR, HARM↔HYGG, FRIS↔LOUI etc.) kon een snijplan-stuk "wees" worden: status=Gepland, geen rol, geen positie — onbereikbaar voor de auto-planner.
