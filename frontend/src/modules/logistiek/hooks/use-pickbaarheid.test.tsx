@@ -52,6 +52,8 @@ function order(over: Partial<PickShipOrder> & { order_id: number }): PickShipOrd
     alle_regels_pickbaar: true,
     heeft_gepland_zending: false,
     afl_adres_incompleet_sinds: null,
+    afl_gln_ongekoppeld_sinds: null,
+    afl_gln_gecontroleerd_op: null,
     prijs_ontbreekt_sinds: null,
     actieve_pickronde: null,
     ...over,

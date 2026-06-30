@@ -16,13 +16,14 @@
 /**
  * De toestand van een order tegenover de pickronde-start. Precies één per order.
  * Canonieke prioriteit (eerste match wint):
- *   in_pickronde > niet_pickbaar > afl_adres > prijs > geen_vervoerder > startbaar
+ *   in_pickronde > niet_pickbaar > afl_adres > afl_gln > prijs > geen_vervoerder > startbaar
  */
 export type StartStatus =
   | 'startbaar' // kan nu een pickronde starten
   | 'in_pickronde' // lopende pickronde (in uitvoering) — maakt andere blockers moot
   | 'niet_pickbaar' // ≥1 regel wacht op snijden/inkoop/confectie/inpak (view order_pickbaarheid)
   | 'afl_adres' // afleveradres onvolledig (mig 395)
+  | 'afl_gln' // aflever-GLN matcht geen vestiging, niet vrijgegeven (mig 535)
   | 'prijs' // ≥1 regel zonder prijs €0 (mig 396)
   | 'geen_vervoerder' // niet-afhaal + geen matchende actieve vervoerder (mig 373)
 
@@ -39,6 +40,10 @@ export interface StartbaarheidInput {
   heeft_gepland_zending: boolean
   /** mig 395 — gezet = afleveradres onvolledig. */
   afl_adres_incompleet_sinds: string | null
+  /** mig 535 — gezet = aflever-GLN matcht geen vestiging (stille HQ-fallback). */
+  afl_gln_ongekoppeld_sinds: string | null
+  /** mig 535 — gezet = adres bewust vrijgegeven (heft de GLN-blokkade op). */
+  afl_gln_gecontroleerd_op: string | null
   /** mig 396 — gezet = ≥1 regel €0. */
   prijs_ontbreekt_sinds: string | null
   /** Loopt er al een pickronde voor deze order? (zending in 'Picken'). */
@@ -68,6 +73,7 @@ export function bepaalStartbaarheid(o: StartbaarheidInput): OrderStartbaarheid {
   if (o.in_pickronde) status = 'in_pickronde'
   else if (!o.alle_regels_pickbaar && !o.heeft_gepland_zending) status = 'niet_pickbaar'
   else if (o.afl_adres_incompleet_sinds) status = 'afl_adres'
+  else if (o.afl_gln_ongekoppeld_sinds && !o.afl_gln_gecontroleerd_op) status = 'afl_gln'
   else if (o.prijs_ontbreekt_sinds) status = 'prijs'
   else if (o.geen_vervoerder) status = 'geen_vervoerder'
   else status = 'startbaar'

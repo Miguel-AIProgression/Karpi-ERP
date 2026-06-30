@@ -15,6 +15,8 @@ function input(overrides: Partial<StartbaarheidInput> = {}): StartbaarheidInput 
     alle_regels_pickbaar: true,
     heeft_gepland_zending: false,
     afl_adres_incompleet_sinds: null,
+    afl_gln_ongekoppeld_sinds: null,
+    afl_gln_gecontroleerd_op: null,
     prijs_ontbreekt_sinds: null,
     in_pickronde: false,
     geen_vervoerder: false,
@@ -53,6 +55,19 @@ describe('bepaalStartbaarheid — één status per order', () => {
 
   it('afleveradres onvolledig → afl_adres', () => {
     expect(status({ afl_adres_incompleet_sinds: '2026-06-18T10:00:00Z' })).toBe('afl_adres')
+  })
+
+  it('aflever-GLN niet gekoppeld → afl_gln', () => {
+    expect(status({ afl_gln_ongekoppeld_sinds: '2026-06-30T10:00:00Z' })).toBe('afl_gln')
+  })
+
+  it('mig 535: GLN ongekoppeld maar bewust vrijgegeven → niet geblokkeerd', () => {
+    expect(
+      status({
+        afl_gln_ongekoppeld_sinds: '2026-06-30T10:00:00Z',
+        afl_gln_gecontroleerd_op: '2026-06-30T11:00:00Z',
+      }),
+    ).toBe('startbaar')
   })
 
   it('prijs ontbreekt → prijs', () => {

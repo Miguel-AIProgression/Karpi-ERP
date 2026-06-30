@@ -111,6 +111,8 @@ export function MagazijnOverviewPage() {
           alle_regels_pickbaar: o.alle_regels_pickbaar,
           heeft_gepland_zending: o.heeft_gepland_zending,
           afl_adres_incompleet_sinds: o.afl_adres_incompleet_sinds,
+          afl_gln_ongekoppeld_sinds: o.afl_gln_ongekoppeld_sinds,
+          afl_gln_gecontroleerd_op: o.afl_gln_gecontroleerd_op,
           prijs_ontbreekt_sinds: o.prijs_ontbreekt_sinds,
           in_pickronde: o.actieve_pickronde !== null,
           geen_vervoerder: heeftGeenVervoerder(o.afhalen, regelsPerOrder?.get(o.order_id)),
@@ -246,7 +248,12 @@ export function MagazijnOverviewPage() {
     const s = new Set<number>()
     for (const o of startbareOrders) {
       const status = startbaarheidStatus.get(o.order_id)
-      if (status === 'niet_pickbaar' || status === 'afl_adres' || status === 'prijs') {
+      if (
+        status === 'niet_pickbaar' ||
+        status === 'afl_adres' ||
+        status === 'afl_gln' ||
+        status === 'prijs'
+      ) {
         s.add(o.order_id)
       }
     }

@@ -28,6 +28,8 @@ import { isAfleveradresIncompleet } from '@/lib/orders/afleveradres-gate'
 import { AfleveradresIncompleetBanner } from '@/components/orders/afleveradres-incompleet-banner'
 import { isPrijsOntbreekt } from '@/lib/orders/prijs-ontbreekt'
 import { PrijsOntbreektBanner } from '@/components/orders/prijs-ontbreekt-banner'
+import { isAfleveradresGlnGeblokkeerd } from '@/lib/orders/afleveradres-gln-gate'
+import { AfleveradresGlnBanner } from '@/components/orders/afleveradres-gln-banner'
 import { MancoMarkerBanner } from '@/components/orders/manco-marker-banner'
 import { isMancoMarker } from '@/lib/orders/manco-marker'
 import { heeftDropshipRegel } from '@/lib/orders/dropshipment-regel'
@@ -155,6 +157,20 @@ export function OrderDetailPage() {
           afl_adres={order.afl_adres}
           afl_postcode={order.afl_postcode}
           afl_plaats={order.afl_plaats}
+        />
+      )}
+
+      {/* Mig 535: aflever-GLN matcht geen vestiging (stille HQ-fallback) — harde
+          blokkade tot koppelen of bewust vrijgeven. */}
+      {isAfleveradresGlnGeblokkeerd(order) && (
+        <AfleveradresGlnBanner
+          orderId={order.id}
+          sinds={order.afl_gln_ongekoppeld_sinds!}
+          afleveradresGln={order.afleveradres_gln ?? null}
+          aflNaam={order.afl_naam}
+          aflAdres={order.afl_adres}
+          aflPostcode={order.afl_postcode}
+          aflPlaats={order.afl_plaats}
         />
       )}
 

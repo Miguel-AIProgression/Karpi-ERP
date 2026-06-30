@@ -72,6 +72,10 @@ export interface OrderHeaderRij {
   /** Mig 396: NULL = prijs ok/geaccepteerd; gezet = ≥1 regel €0 → pick-start
    *  geblokkeerd (server-side in start_pickronden, frontend-spiegel in knop). */
   prijs_ontbreekt_sinds: string | null
+  /** Mig 535: gezet = aflever-GLN matcht geen vestiging (stille HQ-fallback). */
+  afl_gln_ongekoppeld_sinds: string | null
+  /** Mig 535: gezet = adres bewust vrijgegeven → gate open ondanks ongekoppelde GLN. */
+  afl_gln_gecontroleerd_op: string | null
 }
 
 export function initPickShipOrders(
@@ -97,6 +101,8 @@ export function initPickShipOrders(
       lever_type: h.lever_type,
       afl_adres_incompleet_sinds: h.afl_adres_incompleet_sinds,
       prijs_ontbreekt_sinds: h.prijs_ontbreekt_sinds,
+      afl_gln_ongekoppeld_sinds: h.afl_gln_ongekoppeld_sinds,
+      afl_gln_gecontroleerd_op: h.afl_gln_gecontroleerd_op,
       bucket: bucketVoor(h.afleverdatum, vandaag),
       verzend_week_sleutel: verzendWeekSleutel(h.afleverdatum),
       verzend_week_label: verzendWeekLabel(h.afleverdatum),

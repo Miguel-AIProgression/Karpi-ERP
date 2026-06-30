@@ -68,6 +68,7 @@ export function StartPickrondesButton({
     pickbareOrders,
     geenVervoerderIds,
     aantalAflAdres,
+    aantalAflGln,
     aantalPrijs,
     aantalGeblokkeerd,
     vervoerderResolutieLaadt,
@@ -82,10 +83,12 @@ export function StartPickrondesButton({
 
   const niksTeDoen = aantal === 0
   const alleenGeblokkeerd = niksTeDoen && aantalGeblokkeerd > 0
-  // Data-fouten op de order (mig 395/396) krijgen voorrang in de melding boven
-  // "nog geen vervoerder voor dit land". Adres vóór prijs.
+  // Data-fouten op de order (mig 395/535/396) krijgen voorrang in de melding boven
+  // "nog geen vervoerder voor dit land". Volgorde = server-poort: adres > gln > prijs.
   const alleenAflAdres = alleenGeblokkeerd && aantalAflAdres > 0
-  const alleenPrijs = alleenGeblokkeerd && aantalAflAdres === 0 && aantalPrijs > 0
+  const alleenAflGln = alleenGeblokkeerd && aantalAflAdres === 0 && aantalAflGln > 0
+  const alleenPrijs =
+    alleenGeblokkeerd && aantalAflAdres === 0 && aantalAflGln === 0 && aantalPrijs > 0
   const disabled = mutation.isPending || !vervoerderOk || niksTeDoen || vervoerderResolutieLaadt
 
   // Afleverlanden van de orders die op "geen vervoerder" geblokkeerd zijn.
@@ -106,7 +109,8 @@ export function StartPickrondesButton({
 
   // Alleen wanneer de knop daadwerkelijk "Geen vervoerder mogelijk" toont
   // (= geblokkeerd, maar niet door adres/prijs — die hebben hun eigen melding).
-  const toonGeenVervoerderReden = alleenGeblokkeerd && !alleenAflAdres && !alleenPrijs
+  const toonGeenVervoerderReden =
+    alleenGeblokkeerd && !alleenAflAdres && !alleenAflGln && !alleenPrijs
   const landTekst = geenVervoerderLanden.join(', ')
   // Korte, zichtbare reden onder de knop; de volledige oplossing staat in de tooltip.
   const geenVervoerderReden = toonGeenVervoerderReden
@@ -120,6 +124,8 @@ export function StartPickrondesButton({
     ? 'Activeer eerst minstens één vervoerder bij Logistiek > Vervoerders'
     : alleenAflAdres
       ? 'Afleveradres ontbreekt — vul het verzendadres aan op de order voordat je een pickronde start'
+      : alleenAflGln
+        ? 'Afleveradres niet gekoppeld — de aflever-GLN matcht geen vestiging (terugval op het hoofdadres). Koppel de juiste vestiging of geef het adres bewust vrij op de order'
       : alleenPrijs
         ? 'Prijs ontbreekt (€0) — corrigeer de prijs of bevestig op de order dat €0 klopt voordat je een pickronde start'
       : alleenGeblokkeerd
