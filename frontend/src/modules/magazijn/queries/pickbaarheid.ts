@@ -32,6 +32,7 @@ export interface PickShipStats {
   totaal_stuks: number
   totaal_m2: number
   per_bucket: Record<BucketKey, number>
+  per_bucket_stuks: Record<BucketKey, number>
 }
 
 export async function fetchPickShipOrders(
@@ -330,13 +331,25 @@ async function fetchKarpiNamenVoorArtikelen(
 
 export async function fetchPickShipStats(vandaag: Date = new Date()): Promise<PickShipStats> {
   const orders = await fetchPickShipOrders({ vandaag })
+  const emptyBuckets = (): Record<BucketKey, number> =>
+    ({ wk_1: 0, wk_2: 0, wk_3: 0, wk_4: 0, wk_5: 0, later: 0 })
   const stats: PickShipStats = {
     totaal_orders: orders.length,
-    totaal_stuks: orders.reduce((s, o) => s + o.aantal_regels, 0),
+    totaal_stuks: orders.reduce(
+      (s, o) => s + o.regels.reduce((rs, r) => rs + (r.orderaantal ?? 0), 0),
+      0,
+    ),
     totaal_m2: round2(orders.reduce((s, o) => s + o.totaal_m2, 0)),
-    per_bucket: { wk_1: 0, wk_2: 0, wk_3: 0, wk_4: 0, wk_5: 0, later: 0 },
+    per_bucket: emptyBuckets(),
+    per_bucket_stuks: emptyBuckets(),
   }
-  for (const o of orders) stats.per_bucket[o.bucket] += 1
+  for (const o of orders) {
+    stats.per_bucket[o.bucket] += 1
+    stats.per_bucket_stuks[o.bucket] += o.regels.reduce(
+      (s, r) => s + (r.orderaantal ?? 0),
+      0,
+    )
+  }
   return stats
 }
 

@@ -146,7 +146,8 @@ export function MagazijnOverviewPage() {
     // gegaan, dus dit telt de daadwerkelijk zichtbare orders. null = nog geen
     // data → val terug op de server-stats.
     if (!orders) return null
-    const m = new Map<BucketKey, number>()
+    const orders_m = new Map<BucketKey, number>()
+    const stuks_m = new Map<BucketKey, number>()
     for (const o of orders) {
       if (modus === 'afronden' ? !o.actieve_pickronde : o.actieve_pickronde) continue
       if (vervoerderFilter !== 'all') {
@@ -160,9 +161,11 @@ export function MagazijnOverviewPage() {
         else match = !o.afhalen && code === vervoerderFilter
         if (!match) continue
       }
-      m.set(o.bucket, (m.get(o.bucket) ?? 0) + 1)
+      orders_m.set(o.bucket, (orders_m.get(o.bucket) ?? 0) + 1)
+      const stuks = o.regels.reduce((s, r) => s + (r.orderaantal ?? 0), 0)
+      stuks_m.set(o.bucket, (stuks_m.get(o.bucket) ?? 0) + stuks)
     }
-    return m
+    return { orders: orders_m, stuks: stuks_m }
   }, [orders, regelsPerOrder, vervoerderFilter, modus])
 
   const naVervoerderFilter = useMemo(() => {
@@ -357,18 +360,21 @@ export function MagazijnOverviewPage() {
     {
       label: 'Open orders',
       value: stats?.totaal_orders ?? 0,
+      sub: stats ? `${stats.totaal_stuks} stuks` : null,
       icon: Package,
       color: 'text-teal-600',
     },
     {
       label: 'Te picken deze week',
       value: stats?.per_bucket.wk_1 ?? 0,
+      sub: stats ? `${stats.per_bucket_stuks.wk_1} stuks` : null,
       icon: CalendarCheck,
       color: 'text-rose-600',
     },
     {
       label: 'Later',
       value: stats?.per_bucket.later ?? 0,
+      sub: stats ? `${stats.per_bucket_stuks.later} stuks` : null,
       icon: CalendarClock,
       color: 'text-amber-600',
     },
@@ -386,8 +392,11 @@ export function MagazijnOverviewPage() {
     // op stats". Die fallback toonde voorheen onterecht het volledige weektotaal
     // voor een lege Afronden-bucket (bv. "74/74" i.p.v. "0/74").
     aantal: gefilterdeTellingenPerBucket
-      ? gefilterdeTellingenPerBucket.get(t.key) ?? 0
+      ? gefilterdeTellingenPerBucket.orders.get(t.key) ?? 0
       : stats?.per_bucket[t.key] ?? 0,
+    stuks: gefilterdeTellingenPerBucket
+      ? gefilterdeTellingenPerBucket.stuks.get(t.key) ?? 0
+      : stats?.per_bucket_stuks?.[t.key] ?? 0,
     aantalTotaal: toonTellingSuffix ? (stats?.per_bucket[t.key] ?? 0) : null,
   }))
 
@@ -416,7 +425,8 @@ export function MagazijnOverviewPage() {
               <s.icon size={16} className={s.color} />
               <span className="text-sm text-slate-500">{s.label}</span>
             </div>
-            <p className="text-2xl font-semibold">{s.value}</p>
+            <p className="text-2xl font-semibold">{s.value} <span className="text-base font-normal text-slate-400">orders</span></p>
+            {s.sub && <p className="text-sm text-slate-500 mt-0.5">{s.sub}</p>}
           </div>
         ))}
       </div>
@@ -485,6 +495,9 @@ export function MagazijnOverviewPage() {
                       /{t.aantalTotaal}
                     </span>
                   )}
+                  <span className={cn('opacity-60', isActive ? '' : 'text-slate-400')}>
+                    {' · '}{t.stuks} st
+                  </span>
                 </span>
               </button>
             )
