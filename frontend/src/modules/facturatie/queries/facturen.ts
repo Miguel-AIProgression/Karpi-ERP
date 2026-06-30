@@ -62,6 +62,8 @@ export interface FactuurDetail {
   toeslag_bedrag: number
   /** Mig 528: omschrijving van de toeslag met gesubstitueerd percentage, of null. */
   toeslag_omschrijving: string | null
+  /** Mig 531: percentage-snapshot (bv. 4.5) voor "Zuschlag 4,5%"-weergave. */
+  toeslag_procent: number | null
 }
 
 export interface FactuurRegel {
