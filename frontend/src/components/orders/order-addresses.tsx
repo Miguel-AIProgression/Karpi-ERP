@@ -1,4 +1,7 @@
+import { useQuery } from '@tanstack/react-query'
+import { MapPin } from 'lucide-react'
 import type { OrderDetail } from '@/lib/supabase/queries/orders'
+import { fetchBedrijfsConfig } from '@/lib/supabase/queries/bedrijfsconfig'
 import {
   DROPSHIP_EMAIL_MELDING,
   type DropshipEmailProbleem,
@@ -12,20 +15,19 @@ interface OrderAddressesProps {
 
 export function OrderAddresses({ order, dropshipEmailProbleem }: OrderAddressesProps) {
   const hasFactuur = order.fact_naam || order.fact_adres
-  const hasAflever = order.afl_naam || order.afl_adres
+  const hasAflever = !order.afhalen && (order.afl_naam || order.afl_adres)
+
+  const { data: bedrijf } = useQuery({
+    queryKey: ['bedrijfsgegevens'],
+    queryFn: fetchBedrijfsConfig,
+    staleTime: 10 * 60 * 1000,
+    enabled: !!order.afhalen,
+  })
 
   if (!hasFactuur && !hasAflever && !order.afhalen) return null
 
   return (
     <div className="space-y-3 mb-6">
-      {order.afhalen && (
-        <div className="bg-amber-50 border border-amber-200 rounded-[var(--radius-sm)] p-3 text-sm text-amber-800 flex items-center gap-2">
-          <span className="inline-block px-2 py-0.5 rounded bg-amber-200 text-amber-900 text-xs font-medium">
-            Afhalen
-          </span>
-          Klant haalt deze order zelf op bij Karpi — geen verzending.
-        </div>
-      )}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {hasFactuur && (
           <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-5">
@@ -65,7 +67,32 @@ export function OrderAddresses({ order, dropshipEmailProbleem }: OrderAddressesP
             </div>
           </div>
         )}
-        {hasAflever && (
+
+        {order.afhalen ? (
+          <div className="bg-amber-50 rounded-[var(--radius)] border border-amber-200 p-5">
+            <h3 className="text-sm font-medium text-amber-700 mb-2 flex items-center gap-1.5">
+              <MapPin className="h-3.5 w-3.5" />
+              Afhaallocatie
+            </h3>
+            <div className="text-sm leading-relaxed text-amber-900">
+              {bedrijf ? (
+                <>
+                  <p className="font-medium">{bedrijf.bedrijfsnaam}</p>
+                  <p>{bedrijf.adres}</p>
+                  <p>{bedrijf.postcode} {bedrijf.plaats}</p>
+                  {bedrijf.telefoon && (
+                    <p className="text-amber-700 mt-1">{bedrijf.telefoon}</p>
+                  )}
+                </>
+              ) : (
+                <p className="text-amber-700">Klant haalt op bij Karpi BV</p>
+              )}
+            </div>
+            <p className="mt-2 pt-2 border-t border-amber-200 text-xs text-amber-700">
+              Geen verzending — klant haalt deze order zelf op.
+            </p>
+          </div>
+        ) : hasAflever ? (
           <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-5">
             <h3 className="text-sm font-medium text-slate-500 mb-2">Afleveradres</h3>
             <AddressBlock
@@ -77,26 +104,24 @@ export function OrderAddresses({ order, dropshipEmailProbleem }: OrderAddressesP
               land={order.afl_land}
               telefoon={order.afl_telefoon}
             />
-            {!order.afhalen && (
-              <div className="mt-3 pt-3 border-t border-slate-100 text-sm">
-                <span className="text-slate-400 block mb-0.5">Track &amp; trace naar</span>
-                {order.afl_email ? (
-                  <span className="text-slate-700">{order.afl_email}</span>
-                ) : dropshipEmailProbleem === 'ontbreekt' ? (
-                  <span className="text-amber-600">{DROPSHIP_EMAIL_MELDING.ontbreekt}</span>
-                ) : (
-                  <span className="text-amber-600">
-                    Geen e-mailadres ingevuld — klant ontvangt geen track &amp; trace van de vervoerder
-                  </span>
-                )}
-                {(dropshipEmailProbleem === 'gelijk_aan_factuur' ||
-                  dropshipEmailProbleem === 'gelijk_aan_debiteur') && (
-                  <p className="mt-1 text-rose-600 text-xs">
-                    {DROPSHIP_EMAIL_MELDING[dropshipEmailProbleem]} Pas aan via order bewerken.
-                  </p>
-                )}
-              </div>
-            )}
+            <div className="mt-3 pt-3 border-t border-slate-100 text-sm">
+              <span className="text-slate-400 block mb-0.5">Track &amp; trace naar</span>
+              {order.afl_email ? (
+                <span className="text-slate-700">{order.afl_email}</span>
+              ) : dropshipEmailProbleem === 'ontbreekt' ? (
+                <span className="text-amber-600">{DROPSHIP_EMAIL_MELDING.ontbreekt}</span>
+              ) : (
+                <span className="text-amber-600">
+                  Geen e-mailadres ingevuld — klant ontvangt geen track &amp; trace van de vervoerder
+                </span>
+              )}
+              {(dropshipEmailProbleem === 'gelijk_aan_factuur' ||
+                dropshipEmailProbleem === 'gelijk_aan_debiteur') && (
+                <p className="mt-1 text-rose-600 text-xs">
+                  {DROPSHIP_EMAIL_MELDING[dropshipEmailProbleem]} Pas aan via order bewerken.
+                </p>
+              )}
+            </div>
             {order.opmerkingen && (
               <div className="mt-3 pt-3 border-t border-slate-100 text-sm text-slate-600">
                 <span className="text-slate-400 block mb-0.5">Opmerking</span>
@@ -104,7 +129,7 @@ export function OrderAddresses({ order, dropshipEmailProbleem }: OrderAddressesP
               </div>
             )}
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   )

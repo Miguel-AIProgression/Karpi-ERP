@@ -209,8 +209,24 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
   )
 
   /** Toggle afhalen — verwijdert/herstelt verzend-regel automatisch en zet
-   *  shippingOverridden uit zodat de auto-logica weer leidend wordt. */
+   *  shippingOverridden uit zodat de auto-logica weer leidend wordt.
+   *  Bij inschakelen: afl_*-velden worden gewist (afhalen heeft geen
+   *  afleveradres — afhaallocatie = Karpi's eigen adres). */
   function handleAfhalenToggle(nieuw: boolean) {
+    if (nieuw) {
+      setHeader((h) => ({
+        ...h,
+        afl_naam: undefined,
+        afl_naam_2: undefined,
+        afl_adres: undefined,
+        afl_postcode: undefined,
+        afl_plaats: undefined,
+        afl_land: undefined,
+        afl_email: undefined,
+        afl_telefoon: undefined,
+      }))
+      setSelectedAfleveradresId(undefined)
+    }
     setAfhalen(nieuw)
     setShippingOverridden(false)
     setRegels((current) => {
