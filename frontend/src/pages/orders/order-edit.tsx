@@ -115,6 +115,7 @@ export function OrderEditPage() {
     toeslag_omschrijving: clientData?.toeslag_omschrijving ?? null,
     toeslag_begindatum: clientData?.toeslag_begindatum ?? null,
     toeslag_einddatum: clientData?.toeslag_einddatum ?? null,
+    factuurvoorkeur: clientData?.factuurvoorkeur ?? null,
   } : null
 
   // Order-hydratie: bestaande Order → form-state (zie lib/orders/order-hydratie.ts,

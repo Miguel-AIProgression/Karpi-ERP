@@ -858,7 +858,10 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
                 />
               </label>
               <span className="text-xs text-amber-700">
-                Order wordt direct als Verzonden aangemaakt en gefactureerd via de normale factuurpipeline.
+                Order wordt direct als Verzonden aangemaakt.{' '}
+                {client?.factuurvoorkeur === 'wekelijks'
+                  ? 'Factuur verschijnt op de wekelijkse verzamelfactuur (maandag).'
+                  : 'Factuur wordt direct aangemaakt via de normale factuurpipeline.'}
               </span>
             </div>
           )}
