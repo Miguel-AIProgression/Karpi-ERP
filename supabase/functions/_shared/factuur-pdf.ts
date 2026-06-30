@@ -671,10 +671,8 @@ function drawBtwBlok(
     y -= LINE_H
 
     if (heeftToeslag) {
-      // Mig 531: grondslag (product-subtotaal + toeslag = BTW-grondslag = Zu zahlen) links,
-      // dan Zuschlag-rij als uitsplitsing, dan Zu zahlen rechts.
-      const grondslag = factuur.subtotaal + toeslagBedrag
-      drawText(page, formatBedrag(grondslag), MARGIN_L, y, regular, SIZE)
+      // Mig 531: Grundlage = subtotaal vóór toeslag, dan Zuschlag-rij, dan Zu zahlen.
+      drawText(page, formatBedrag(factuur.subtotaal), MARGIN_L, y, regular, SIZE)
       y -= LINE_H
       drawText(page, zuschlagLabel, MARGIN_L, y, regular, SIZE)
       drawTextRight(page, `+ ${formatBedrag(toeslagBedrag)}`, COL_BEDRAG, y, regular, SIZE)
