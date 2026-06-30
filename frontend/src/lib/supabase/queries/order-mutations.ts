@@ -576,6 +576,27 @@ export async function updateRegelAfwerking(
 }
 
 /**
+ * Mig 539: zet een BESTAANDE open order achteraf om naar status=Verzonden.
+ * Annuleert openstaande snijplannen, releaset IO-claims, maakt verzonden-
+ * reserveringen aan en triggert de factuur-pipeline.
+ * Hard-blokkeert bij actieve snijmachine ('Snijden'/'Gesneden') of pickronde
+ * ('Picken'/'Klaar voor verzending').
+ */
+export async function markeerAchterafVerzonden(
+  orderId: number,
+  verzenddatum: string,
+  afhalen: boolean,
+): Promise<{ order_id: number; order_nr: string; zending_id: number; zending_nr: string }> {
+  const { data, error } = await supabase.rpc('markeer_achteraf_verzonden', {
+    p_order_id:     orderId,
+    p_verzenddatum: verzenddatum,
+    p_afhalen:      afhalen,
+  })
+  if (error) throw error
+  return data as { order_id: number; order_nr: string; zending_id: number; zending_nr: string }
+}
+
+/**
  * Mig 524: registreer een retroactieve order (al fysiek verzonden/afgehaald).
  * Maakt de order direct aan als status='Verzonden', prikst een phantom-zending
  * aan en triggert de normale factuur-pipeline.
