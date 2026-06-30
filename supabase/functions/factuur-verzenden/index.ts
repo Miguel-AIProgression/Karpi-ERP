@@ -241,12 +241,21 @@ serve(async () => {
         }
       } else if (item.type === 'wekelijks') {
         if (!item.verzendweek) throw new Error(`Queue-rij ${item.id} type=wekelijks zonder verzendweek én zonder zending_id`)
-        const { data, error } = await supabase.rpc('genereer_factuur_voor_week', {
-          p_debiteur_nr: item.debiteur_nr,
-          p_jaar_week: item.verzendweek,
-        })
-        if (error) throw new Error(`RPC genereer_factuur_voor_week (legacy): ${error.message}`)
-        factuurId = data as number
+        if (item.factuur_id != null) {
+          // Retry pad: factuur al aangemaakt in vorige poging maar e-mail faalde.
+          // Sla de RPC over (no_data_found anders) en stuur alleen de e-mail opnieuw.
+          factuurId = item.factuur_id
+        } else {
+          const { data, error } = await supabase.rpc('genereer_factuur_voor_week', {
+            p_debiteur_nr: item.debiteur_nr,
+            p_jaar_week: item.verzendweek,
+          })
+          if (error) throw new Error(`RPC genereer_factuur_voor_week (legacy): ${error.message}`)
+          factuurId = data as number
+          // Schrijf factuur_id tussentijds terug zodat een e-mail-retry de RPC
+          // kan overslaan (spiegelt gefinaliseerd_op-patroon bij per_zending).
+          await supabase.from('factuur_queue').update({ factuur_id: factuurId }).eq('id', item.id)
+        }
       } else {
         const { data, error } = await supabase.rpc('genereer_factuur', {
           p_order_ids: item.order_ids,

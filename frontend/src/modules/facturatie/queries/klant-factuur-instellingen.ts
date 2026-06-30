@@ -4,6 +4,8 @@ export interface KlantFactuurInstellingen {
   btw_percentage: number
   btw_verlegd_intracom: boolean | null
   email_factuur: string | null
+  /** Mig 117: per_zending = factuur direct na elke zending; wekelijks = verzamelfactuur maandag 05:00 UTC. */
+  factuurvoorkeur: 'per_zending' | 'wekelijks' | null
   /** Mig 528: klant-toeslag instellingen. */
   toeslag_actief: boolean
   toeslag_procent: number | null
@@ -17,7 +19,7 @@ export async function fetchKlantFactuurInstellingen(
 ): Promise<KlantFactuurInstellingen | null> {
   const { data, error } = await supabase
     .from('debiteuren')
-    .select('btw_percentage, btw_verlegd_intracom, email_factuur, toeslag_actief, toeslag_procent, toeslag_omschrijving, toeslag_begindatum, toeslag_einddatum')
+    .select('btw_percentage, btw_verlegd_intracom, email_factuur, factuurvoorkeur, toeslag_actief, toeslag_procent, toeslag_omschrijving, toeslag_begindatum, toeslag_einddatum')
     .eq('debiteur_nr', debiteur_nr)
     .single()
   if (error) throw new Error(error.message)
