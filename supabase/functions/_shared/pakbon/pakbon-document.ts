@@ -7,6 +7,7 @@ import { bouwPakbonRegels, klantNaamWijktAf, productNamen, telColli } from './ag
 import { externReferentie } from '../referentie.ts'
 import { afwerkingPresentatie, type AfwerkingTypeMap } from '../afwerking-presentatie.ts'
 import type {
+  PakbonBedrijf,
   PakbonDocument,
   PakbonOrderGroep,
   PakbonRegel,
@@ -95,6 +96,9 @@ export interface BouwPakbonDocumentOpties {
   routecode?: string | null
   /** code → {naam, type_bewerking} uit `afwerking_types` (fetchAfwerkingTypeMap). */
   afwerkingTypes?: AfwerkingTypeMap
+  /** Bedrijfsgegevens (app_config 'bedrijfsgegevens'). Vereist voor het juiste
+   *  afhaallocatie-adres bij afhalen-orders (mig 537). */
+  bedrijf?: PakbonBedrijf | null
 }
 
 export function bouwPakbonDocument(
@@ -132,14 +136,28 @@ export function bouwPakbonDocument(
   const kolli = (opties.kolli ?? 0) > 0 ? (opties.kolli as number) : telColli(zending)
 
   // Adresblokken.
-  const aflLand = landNaam(zending.afl_land)
-  const afleveradres = [
-    zending.afl_naam ?? order.debiteuren?.naam ?? '',
-    order.afl_naam_2 ?? '',
-    zending.afl_adres ?? '',
-    `${zending.afl_postcode ?? ''} ${zending.afl_plaats ?? ''}`.trim(),
-    aflLand && zending.afl_land !== 'NL' ? aflLand : '',
-  ].filter((r) => r.trim().length > 0)
+  const isAfhalen = order.afhalen === true
+  const bedrijf = opties.bedrijf ?? null
+
+  // Afhalen-orders: toon Karpi's afhaallocatie i.p.v. klantadres (mig 537).
+  const afleveradres = isAfhalen
+    ? bedrijf
+      ? [
+          bedrijf.bedrijfsnaam,
+          bedrijf.adres,
+          `${bedrijf.postcode} ${bedrijf.plaats}`.trim(),
+        ].filter((r) => r.trim().length > 0)
+      : ['KARPI BV — afhaallocatie']
+    : (() => {
+        const aflLand = landNaam(zending.afl_land)
+        return [
+          zending.afl_naam ?? order.debiteuren?.naam ?? '',
+          order.afl_naam_2 ?? '',
+          zending.afl_adres ?? '',
+          `${zending.afl_postcode ?? ''} ${zending.afl_plaats ?? ''}`.trim(),
+          aflLand && zending.afl_land !== 'NL' ? aflLand : '',
+        ].filter((r) => r.trim().length > 0)
+      })()
 
   const klantLand = landNaam(order.fact_land)
   const factuuradres = [
@@ -170,6 +188,7 @@ export function bouwPakbonDocument(
     pakbonnr: zending.zending_nr,
     datum: formatDatum(zending.verzenddatum ?? zending.created_at),
     isDeelzending: zending.is_deelzending === true,
+    isAfhalen,
     afleveradres,
     afleverTelefoon: zending.afl_telefoon,
     factuuradres,

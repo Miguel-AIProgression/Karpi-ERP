@@ -11,7 +11,7 @@ const PAKBON_SELECT = `
   afl_naam, afl_adres, afl_postcode, afl_plaats, afl_land, afl_telefoon,
   aantal_colli, totaal_gewicht_kg,
   orders!zendingen_order_id_fkey!inner (
-    id, order_nr, klant_referentie, week, debiteur_nr, vertegenw_code,
+    id, order_nr, klant_referentie, week, debiteur_nr, vertegenw_code, afhalen,
     fact_naam, fact_adres, fact_postcode, fact_plaats, fact_land, afl_naam_2,
     debiteuren:debiteuren!orders_debiteur_nr_fkey ( naam ),
     vertegenwoordigers ( naam )

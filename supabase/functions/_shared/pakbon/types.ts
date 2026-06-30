@@ -102,6 +102,8 @@ export interface PakbonZendingInput {
     fact_plaats: string | null
     fact_land: string | null
     afl_naam_2: string | null
+    /** Mig 537: klant haalt zelf op bij Karpi — afleveradres = Karpi's adres. */
+    afhalen?: boolean | null
     debiteuren?: { naam: string | null } | null
     vertegenwoordigers?: { naam: string | null } | null
   }
@@ -207,7 +209,10 @@ export interface PakbonDocument {
   /** Mig 473: TRUE = deze pakbon dekt niet de hele order — toont een
    *  "DEELZENDING"-indicator zodat magazijn/klant niet denken dat alles binnen is. */
   isDeelzending: boolean
-  /** Afleveradres-blok (regels, leeg gefilterd). */
+  /** Mig 537: TRUE = klant haalt zelf op bij Karpi. Afleveradres-blok toont
+   *  "AFHAALLOCATIE" + Karpi's eigen adres i.p.v. een klantadres. */
+  isAfhalen: boolean
+  /** Afleveradres-blok (regels, leeg gefilterd). Bij afhalen = Karpi's adres. */
   afleveradres: string[]
   afleverTelefoon: string | null
   /** Factuuradres-blok (regels, leeg gefilterd). */

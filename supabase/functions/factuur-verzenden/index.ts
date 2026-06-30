@@ -700,7 +700,7 @@ async function genereerPakbonBijlagen(
     for (const zendingNr of zendingNrs) {
       try {
         const zending = await fetchPakbonZending(supabase, zendingNr)
-        const doc = bouwPakbonDocument(zending, { afwerkingTypes })
+        const doc = bouwPakbonDocument(zending, { afwerkingTypes, bedrijf })
         const bytes = await genereerPakbonPDF(doc, bedrijf, logo)
         const filename = `Pakbon-${zendingNr}.pdf`
 
