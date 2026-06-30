@@ -14,6 +14,9 @@ import type { OrderStatus } from './order-status'
 export type OrderWachtStatus = string  // bewust géén literal-union: order_status-enum-snapshot (Fase 1-stijl) is een aparte vervolgstap, buiten scope
 
 const EINDSTATUS_OF_PICKRONDE: ReadonlySet<string> = new Set([
+  // Mig 540: 'Concept' is no-touch — bevestig_concept_order (mig 541) is
+  // de enige legitieme uitweg; herbereken_wacht_status mag deze niet overschrijven.
+  'Concept',
   'Verzonden', 'Geannuleerd', 'Klaar voor verzending',
   'In productie', 'In snijplan', 'Deels gereed', 'Wacht op picken',
   'In pickronde', 'Deels verzonden',
