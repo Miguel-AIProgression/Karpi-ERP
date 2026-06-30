@@ -185,19 +185,10 @@ export function MagazijnOverviewPage() {
     })
   }, [gefilterd, vervoerderFilter, vervoerderMap, modus])
 
-  // Voorgestelde-bundels (mig 229): pure SQL-view die per (debiteur × adres ×
-  // vervoerder × verzendweek) de open-orders aggregeert met drempel-toets en
-  // besparing-indicator. Eén fetch over alle weken — staleTime via hook.
+  // Voorgestelde-bundels (mig 229/535): pure SQL-view per (debiteur × adres ×
+  // vervoerder) — week is geen bundel-dimensie meer (mig 535). Eén fetch over
+  // alle orders — staleTime via hook.
   const { data: voorgesteldeBundels = [] } = useVoorgesteldeBundels()
-  const bundelsPerWeek = useMemo(() => {
-    const m = new Map<string, typeof voorgesteldeBundels>()
-    for (const b of voorgesteldeBundels) {
-      const lijst = m.get(b.jaar_week) ?? []
-      lijst.push(b)
-      m.set(b.jaar_week, lijst)
-    }
-    return m
-  }, [voorgesteldeBundels])
 
   // Geblokkeerde orders ("Geen vervoerder mogelijk") gaan niet de week-secties
   // in maar naar een eigen sectie ónder alles (verzoek Miguel 2026-06-12):
@@ -576,16 +567,16 @@ export function MagazijnOverviewPage() {
                   status={groep.status}
                   groepeerOpLand={groepeerOpLand}
                   geblokkeerdeOrderIds={nietPrintbaarIds}
-                  // wk_1 is één gecombineerde sectie: geef ALLE voorgestelde
-                  // bundels mee. Na mig 403 zijn alle achterstallige bundels
-                  // geclampt naar de huidige week en zitten in de view — de
-                  // PickWeekSectie matcht op order_id, dus bundels van andere
-                  // tabs beïnvloeden de clustering niet.
-                  voorgesteldeBundels={
-                    filter === 'wk_1'
-                      ? voorgesteldeBundels
-                      : bundelsPerWeek.get(groep.sleutel) ?? []
-                  }
+                  // Mig 535: bundels filteren op order-id-membership i.p.v.
+                  // op jaar_week. Week is geen bundel-dimensie meer — een bundel
+                  // kan orders uit meerdere weken bevatten. De PickWeekSectie
+                  // matcht sowieso op order_id (sleutelByOrderId-map), dus
+                  // bundels van andere secties beïnvloeden de clustering niet.
+                  voorgesteldeBundels={voorgesteldeBundels.filter((b) =>
+                    b.order_ids.some((oid) =>
+                      groep.orders.some((o) => o.order_id === oid),
+                    )
+                  )}
                 />
               ))}
               <PickGeblokkeerdSectie
