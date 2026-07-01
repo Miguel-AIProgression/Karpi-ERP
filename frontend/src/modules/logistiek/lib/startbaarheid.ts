@@ -26,6 +26,7 @@ export type StartStatus =
   | 'afl_gln' // aflever-GLN matcht geen vestiging, niet vrijgegeven (mig 535)
   | 'prijs' // ≥1 regel zonder prijs €0 (mig 396)
   | 'geen_vervoerder' // niet-afhaal + geen matchende actieve vervoerder (mig 373)
+  | 'wacht_op_combi_levering' // klant wacht op vrachtvrije-drempel over meerdere orders (ADR-0039)
 
 export interface StartbaarheidInput {
   order_id: number
@@ -53,6 +54,10 @@ export interface StartbaarheidInput {
    * de vervoerder-regels via `heeftGeenVervoerder` — deze pure functie fetcht niet.
    */
   geen_vervoerder: boolean
+  /** Mig 486/ADR-0039: de Combi-levering-wachtgroep van deze order (indien de
+   *  klant de instelling aan heeft) heeft de drempel nog niet gehaald, of heeft
+   *  ≥1 lid dat nog niet pickbaar is. */
+  wacht_op_combi_levering: boolean
 }
 
 export interface OrderStartbaarheid {
@@ -76,6 +81,7 @@ export function bepaalStartbaarheid(o: StartbaarheidInput): OrderStartbaarheid {
   else if (o.afl_gln_ongekoppeld_sinds && !o.afl_gln_gecontroleerd_op) status = 'afl_gln'
   else if (o.prijs_ontbreekt_sinds) status = 'prijs'
   else if (o.geen_vervoerder) status = 'geen_vervoerder'
+  else if (o.wacht_op_combi_levering) status = 'wacht_op_combi_levering'
   else status = 'startbaar'
   return { order_id: o.order_id, status }
 }

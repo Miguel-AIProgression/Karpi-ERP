@@ -20,6 +20,7 @@ function input(overrides: Partial<StartbaarheidInput> = {}): StartbaarheidInput 
     prijs_ontbreekt_sinds: null,
     in_pickronde: false,
     geen_vervoerder: false,
+    wacht_op_combi_levering: false,
     ...overrides,
   }
 }
@@ -134,6 +135,20 @@ describe('bepaalStartbaarheid — canonieke prioriteit (eerste match wint)', () 
     expect(status({ geen_vervoerder: true })).toBe('geen_vervoerder')
     // Zodra er een hogere blocker bij komt, verdwijnt geen_vervoerder uit beeld.
     expect(status({ geen_vervoerder: true, afl_adres_incompleet_sinds: 'x' })).toBe('afl_adres')
+  })
+
+  it('wacht op combi-levering → wacht_op_combi_levering', () => {
+    expect(status({ wacht_op_combi_levering: true })).toBe('wacht_op_combi_levering')
+  })
+
+  it('geen_vervoerder wint van wacht_op_combi_levering', () => {
+    expect(
+      status({ geen_vervoerder: true, wacht_op_combi_levering: true }),
+    ).toBe('geen_vervoerder')
+  })
+
+  it('wacht_op_combi_levering wint van startbaar (laagste prioriteit vóór startbaar)', () => {
+    expect(status({ wacht_op_combi_levering: true })).not.toBe('startbaar')
   })
 })
 
