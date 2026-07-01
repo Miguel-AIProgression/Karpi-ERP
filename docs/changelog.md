@@ -1,5 +1,58 @@
 # Changelog — RugFlow ERP
 
+## 2026-07-01 — Combi-levering (mig 550-555, ADR-0039)
+
+**Waarom:** klanten die geen verzendkosten willen betalen voor een losse,
+kleine bestelling kunnen nu op klantniveau aangeven dat ze liever wachten:
+nieuwe orders die zelf onder de vrachtvrije-drempel blijven, blijven
+openstaan totdat het cumulatieve totaal van al hun openstaande orders naar
+hetzelfde adres de drempel haalt, waarna ze samen als 1 zending verzonden
+worden. Per order blijft dit doorbreekbaar ("verstuur toch, met kosten").
+
+- **Datamodel (mig 550):** twee nieuwe booleans — `debiteuren.combi_levering`
+  (klant-instelling, no-op als `gratis_verzending` al aanstaat) en
+  `orders.combi_levering_override` (order-niveau escape, analoog aan
+  `afhalen`).
+- **Live afgeleide wachtgroep (mig 551):** view `combi_levering_status`
+  groepeert op (debiteur × adres-norm) — bewust zónder vervoerder/verzendweek,
+  het punt is juist over meerdere weken heen wachten. Geen nieuwe tabel: net
+  als `voorgestelde_zending_bundels` herevalueert de view per query.
+- **VERZEND-regel op het juiste moment (mig 552):** twee triggers
+  (`trg_orders_combi_levering_override`/`trg_debiteuren_combi_levering`)
+  voegen/verwijderen de VERZEND-orderregel zodra de override of de
+  klant-instelling wijzigt — zolang een order wacht, staat er geen
+  voorlopige VERZEND-regel op.
+- **Startbaarheid (ADR-0037):** nieuwe laagste-prioriteit status
+  `wacht_op_combi_levering` in `startbaarheid.ts`, ná `geen_vervoerder`. Een
+  groep die de drempel haalt wordt als 1 order behandeld — pas startbaar als
+  ALLE leden individueel pickbaar zijn (ADR-0012-les: nooit een deel van de
+  groep laten "toevallig" los verzenden).
+- **Order-form:** checkbox `combi_levering_override` (alleen zichtbaar als de
+  klant de instelling aan heeft) + vroege uitstap in `applyShippingLogic`
+  (geen VERZEND-regel toevoegen zolang de order wacht). Doorgevoerd tot in
+  `create_order_with_lines`/`update_order_with_lines` (mig 553).
+- **Communicatie:** orderbevestiging (mail + PDF, 4-talig) krijgt een extra
+  paragraaf zolang de order wacht; order-detail-knop "Zet order in de wacht
+  voor Combi-levering" (mig 554) voor het scenario waarin een klant ná zijn
+  bevestiging alsnog belt om te wachten — zet de klant-instelling + herstuurt
+  de bevestiging.
+- **Pick & Ship:** waarschuwing op `StartPickrondesButton` als het niet
+  aanvinken van een order een Combi-levering-groep zou splitsen (vaste
+  audit-tekst i.p.v. vrije tekst, zelfde patroon als de deelzending-override).
+- **Geen nieuwe bundel-mechaniek:** de bestaande 4D-bundel-expansie in
+  `start_pickronden` (mig 403's verzendweek-clamp) bundelt vrijgegeven leden
+  automatisch in 1 zending zodra ze samen gestart worden.
+- **Code-review-fix (mig 555):** een order die al 'In pickronde'/'Deels
+  verzonden' is telde nog mee in het groep-subtotaal — gefixt (guard in de
+  view én in `herwaardeer_combi_levering_verzendregel` zelf).
+- Alle 6 migraties getest in rolled-back transacties tegen de live DB vóór
+  toepassing (view-scenario, VERZEND-regel-transities, RPC-CASE-gedrag).
+  Volledige frontend-testsuite + typecheck groen. Branch is gerebaset op
+  actuele `origin/main` en de migraties hernummerd 485-490 → 550-555 (botsing
+  met inmiddels-gemergde features die dezelfde nummers al gebruikten).
+- Zie [ADR-0039](adr/0039-combi-levering-als-startbaarheid-gate.md) en
+  [implementatieplan](superpowers/plans/2026-07-01-combi-levering.md).
+
 ## 2026-07-01 — Pakbon-PDF vertaalt mee naar klanttaal (nl/de/fr/en)
 
 **Waarom:** Marjon (Sales Support) meldde dat de pakbon die als bijlage bij de

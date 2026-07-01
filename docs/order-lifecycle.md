@@ -320,7 +320,19 @@ per-stuk-aandeel bijgehouden, alleen het totaal per virtuele rol).
    een niet-afhaal-order met ≥1 regel `bron='geen'` weigert met
    "Geen vervoerder mogelijk" — frontend-spiegel in `StartPickrondesButton`
    (disabled knop met zelfde label). Escape-hatch: vervoerder-override op de
-   orderregel.
+   orderregel. **Combi-levering (mig 550-555, ADR-0039):** frontend-only,
+   laagste-prioriteit Startbaarheid-blokkade `wacht_op_combi_levering`
+   ([`startbaarheid.ts`](../frontend/src/modules/logistiek/lib/startbaarheid.ts),
+   ná `geen_vervoerder`, vóór `startbaar`) — géén server-side hard-block in
+   `start_pickronden` zelf. Bron: view `combi_levering_status` (mig 551): TRUE
+   zolang de (debiteur × adres-norm)-groep van openstaande orders de
+   vrachtvrije-drempel niet haalt, of niet alle leden individueel pickbaar
+   zijn. Klant-instelling `debiteuren.combi_levering` + order-override
+   `orders.combi_levering_override`; trigger `trg_debiteuren_combi_levering`/
+   `trg_orders_combi_levering_override` (mig 552) voegt/verwijdert de
+   VERZEND-regel op het juiste moment. Géén nieuwe bundel-mechaniek: eenmaal
+   vrijgegeven orders landen via de bestaande 4D-bundel-expansie automatisch
+   in dezelfde zending.
 3. **`voltooi_pickronde`** (bundel-aware via `zending_orders`): zending →
    `'Klaar voor verzending'`; laatste open zending van de order → `markeer_verzonden`
    → `Verzonden`; anders → `Deels verzonden`.
