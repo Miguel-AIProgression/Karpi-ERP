@@ -5,6 +5,13 @@
 // alle ~220 groepen zijn zo in ~2 uur doorlopen. De willekeurige volgorde
 // zorgt dat elke groep gelijkmatig aan bod komt.
 //
+// Prioriteitspass (mig 552): groepen met recent aangemaakte 'Gepland'/no-roll
+// stukken (aangemaakt in de laatste PRIORITEIT_WINDOW_MIN minuten) worden
+// altijd meegenomen, ook als ze niet in de willekeurige 50 zouden vallen.
+// Dit voorkomt dat een nieuw bevestigde concept-order urenlang als
+// "Niet planbaar" verschijnt terwijl er wél materiaal is.
+// Maximaal MAX_PRIORITEIT extra groepen bovenop de willekeurige selectie.
+//
 // Supabase rate-limit: ~55 auto-plan-groep aanroepen per 31 seconden.
 // Met BATCH_SIZE=3 en MAX_GROEPEN=50 blijven we ruim binnen de tijdslimiet.
 
@@ -13,9 +20,19 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const BATCH_SIZE  = 3   // parallel per batch
 const BATCH_DELAY = 300 // ms pauze tussen batches (rate-limit buffer)
-const MAX_GROEPEN = 50  // max groepen per run (past ruim binnen 150s timeout)
+const MAX_GROEPEN = 50  // max willekeurige groepen per run
+const MAX_PRIORITEIT = 30  // max extra prioriteitsgroepen bovenop de willekeurige
+const PRIORITEIT_WINDOW_MIN = 360  // zoek nieuwe stukken tot 6 uur terug
 
-serve(async (_req) => {
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!
   const serviceKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
@@ -23,12 +40,15 @@ serve(async (_req) => {
   const start = Date.now()
 
   // Haal actieve groepen op; DB-functie sorteert al determinisch (kw/kl volgorde)
-  const { data: groepen, error } = await supabase.rpc('actieve_snijgroepen')
+  const [{ data: groepen, error }, { data: nieuwOngeplaatst }] = await Promise.all([
+    supabase.rpc('actieve_snijgroepen'),
+    supabase.rpc('groepen_met_nieuwe_ongeplande_stukken', { p_window_minuten: PRIORITEIT_WINDOW_MIN }),
+  ])
   if (error) {
     console.error('actieve_snijgroepen fout:', error)
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   }
 
@@ -38,8 +58,21 @@ serve(async (_req) => {
     const j = Math.floor(Math.random() * (i + 1))
     ;[alle[i], alle[j]] = [alle[j], alle[i]]
   }
-  const lijst = alle.slice(0, MAX_GROEPEN)
-  console.log(`herplan-sweep: ${alle.length} groepen beschikbaar, ${lijst.length} gepland voor deze run`)
+
+  // Prioriteitspass: recent aangemaakte stukken die nog niet ingepland zijn.
+  // Die groepen lopen altijd vooraan, ook als ze niet in de willekeurige 50 vallen.
+  type Groep = { kwaliteit_code: string; kleur_code: string }
+  const prioriteitsGroepen = ((nieuwOngeplaatst ?? []) as Groep[]).slice(0, MAX_PRIORITEIT)
+  const prioriteitsSleutels = new Set(prioriteitsGroepen.map(g => `${g.kwaliteit_code}/${g.kleur_code}`))
+
+  // Willekeurige groepen: sla prioriteitsgroepen over (worden al apart gedraaid)
+  const randGroepen = alle.filter(g => !prioriteitsSleutels.has(`${g.kwaliteit_code}/${g.kleur_code}`))
+  const lijst = [...prioriteitsGroepen, ...randGroepen.slice(0, MAX_GROEPEN)]
+
+  console.log(
+    `herplan-sweep: ${alle.length} groepen beschikbaar, ${lijst.length} gepland ` +
+    `(${prioriteitsGroepen.length} prioriteit + ${randGroepen.slice(0, MAX_GROEPEN).length} willekeurig)`
+  )
 
   const autoplanUrl = `${supabaseUrl}/functions/v1/auto-plan-groep`
   const authHeader  = `Bearer ${serviceKey}`
@@ -109,5 +142,5 @@ serve(async (_req) => {
     fouten: echtefouten.length,
     duur_ms: duurMs,
     fout_detail: echtefouten.length > 0 ? echtefouten : undefined,
-  }), { headers: { 'Content-Type': 'application/json' } })
+  }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
 })
