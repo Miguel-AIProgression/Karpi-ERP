@@ -2,6 +2,13 @@ import { describe, it, expect } from 'vitest'
 import { clusterOrdersOpKlant, groepeerOrdersOpLand } from '../groeperen'
 import type { PickShipOrder } from '../types'
 
+/** ISO-datum N dagen vanaf nu (negatief = verleden) — voor achterstallig-tests. */
+function isoDaysFromNow(days: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
 function makeOrder(overrides: Partial<PickShipOrder> = {}): PickShipOrder {
   return {
     order_id: 1,
@@ -171,6 +178,25 @@ describe('clusterOrdersOpKlant', () => {
     ]
     const clusters = clusterOrdersOpKlant(orders)
     expect(clusters.map((c) => c.klant_naam)).toEqual(['Alpha', 'Beta'])
+  })
+
+  it('achterstallige orders (pick-week al verstreken) sorteren boven op-tijd orders, ook tegen het alfabet in', () => {
+    const orders = [
+      makeOrder({ order_id: 1, order_nr: 'ORD-001', klant_naam: 'Alpha', afleverdatum: isoDaysFromNow(21) }),
+      makeOrder({ order_id: 2, order_nr: 'ORD-002', klant_naam: 'Zulu', afleverdatum: isoDaysFromNow(-21) }),
+    ]
+    const clusters = clusterOrdersOpKlant(orders)
+    expect(clusters.map((c) => c.klant_naam)).toEqual(['Zulu', 'Alpha'])
+  })
+
+  it('geblokkeerd wint nog steeds van achterstallig', () => {
+    const orders = [
+      makeOrder({ order_id: 1, order_nr: 'ORD-001', klant_naam: 'Alpha', afleverdatum: isoDaysFromNow(-21) }),
+      makeOrder({ order_id: 2, order_nr: 'ORD-002', klant_naam: 'Zulu', afleverdatum: isoDaysFromNow(21) }),
+    ]
+    const geblokkeerd = new Set([1])
+    const clusters = clusterOrdersOpKlant(orders, undefined, geblokkeerd)
+    expect(clusters.map((c) => c.klant_naam)).toEqual(['Zulu', 'Alpha'])
   })
 })
 

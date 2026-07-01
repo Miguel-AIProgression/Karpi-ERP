@@ -19,7 +19,7 @@ export type BucketKey = 'wk_1' | 'wk_2' | 'wk_3' | 'wk_4' | 'wk_5' | 'later'
 export const BUCKET_VOLGORDE: BucketKey[] = ['wk_1', 'wk_2', 'wk_3', 'wk_4', 'wk_5', 'later']
 
 export type PickShipBron = 'snijplan' | 'rol' | 'producten_default' | null
-export type PickShipWachtOp = 'snijden' | 'confectie' | 'inpak' | 'inkoop' | null
+export type PickShipWachtOp = 'snijden' | 'confectie' | 'inpak' | 'inkoop' | 'manco' | null
 
 export interface PickShipRegel {
   order_regel_id: number

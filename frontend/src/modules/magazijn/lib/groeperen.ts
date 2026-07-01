@@ -3,6 +3,7 @@
 // eerst splitsen op land. Geen rendering-logica hier — dat hoort in de
 // PickWeekSectie-component thuis.
 import { iso2NaarVlag, landNaarIso2 } from '@/lib/utils/land-vlag'
+import { pickStatusVoor } from '@/lib/orders/verzendweek'
 import type { PickShipOrder } from './types'
 
 export interface KlantCluster {
@@ -35,9 +36,13 @@ export interface LandGroep {
  *
  * Sortering: startbare orders boven geblokkeerde (`geblokkeerdeOrderIds`,
  * bv. "Geen vervoerder mogelijk" — verzoek Miguel 2026-06-12), daarbinnen
- * op `(klant_naam, order_nr)` zodat clusters van dezelfde klant visueel
- * naast elkaar blijven staan. Een cluster sorteert op zijn eerste (meest
- * startbare) order — volledig geblokkeerde clusters zakken dus naar onder.
+ * achterstallige orders (pick-week al verstreken) boven op-tijd orders
+ * (verzoek Miguel 01-07 — achterstallig moet prioriteit krijgen, niet
+ * verdwijnen tussen 100+ orders op alfabet), en pas daarna op
+ * `(klant_naam, order_nr)` zodat clusters van dezelfde klant visueel naast
+ * elkaar blijven staan. Een cluster sorteert op zijn eerste (meest
+ * urgente/startbare) order — volledig geblokkeerde clusters zakken dus naar
+ * onder.
  */
 export function clusterOrdersOpKlant(
   orders: PickShipOrder[],
@@ -48,6 +53,9 @@ export function clusterOrdersOpKlant(
     const ga = geblokkeerdeOrderIds?.has(a.order_id) ? 1 : 0
     const gb = geblokkeerdeOrderIds?.has(b.order_id) ? 1 : 0
     if (ga !== gb) return ga - gb
+    const aa = pickStatusVoor(a.afleverdatum) === 'achterstallig' ? 0 : 1
+    const ab = pickStatusVoor(b.afleverdatum) === 'achterstallig' ? 0 : 1
+    if (aa !== ab) return aa - ab
     const k = a.klant_naam.localeCompare(b.klant_naam)
     if (k !== 0) return k
     return a.order_nr.localeCompare(b.order_nr)

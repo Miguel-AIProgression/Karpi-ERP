@@ -24,6 +24,7 @@ import { iso2NaarVlag, landNaarIso2 } from '@/lib/utils/land-vlag'
 import { usePickSelectie } from '../context/pick-selectie-context'
 import { bepaalDagOrderUrgentie, type DagOrderUrgentie } from '../lib/dag-order-urgentie'
 import { useAuth } from '@/hooks/use-auth'
+import { pickStatusVoor } from '@/lib/orders/verzendweek'
 import type { PickShipOrder, PickShipRegel, PickShipWachtOp } from '../lib/types'
 
 /** Compacte NL-dag-badge "wo 14-05" voor dag-orders (ADR 0014). */
@@ -42,6 +43,7 @@ const WACHT_OP_LABEL: Record<NonNullable<PickShipWachtOp>, string> = {
   confectie: 'Wacht op confectie',
   inpak: 'Wacht op inpak',
   inkoop: 'Wacht op inkoop',
+  manco: 'Manco — wacht op binnendienst',
 }
 
 function formatLand(land: string | null): string | null {
@@ -149,6 +151,11 @@ export function OrderPickCard({ order }: Props) {
   const isDagOrder = order.lever_type === 'datum' && !!order.afleverdatum
   const dagOrderUrgentie = isDagOrder ? bepaalDagOrderUrgentie(order.afleverdatum!) : null
   const dagOrderStijl = dagOrderUrgentie ? DAG_ORDER_URGENTIE_STIJL[dagOrderUrgentie] : null
+  // Achterstallig = pick-week ligt al in het verleden (verzoek Miguel 01-07):
+  // een week-order die zijn pickweek al gemist heeft, mag niet stilletjes
+  // tussen op-tijd orders verdwijnen — zelfde zwaardere styling als een te
+  // late dag-order. Dag-orders hebben al hun eigen `dagOrderUrgentie`-badge.
+  const isAchterstallig = !isDagOrder && pickStatusVoor(order.afleverdatum) === 'achterstallig'
 
   return (
     <div
@@ -289,6 +296,14 @@ export function OrderPickCard({ order }: Props) {
           >
             {dagOrderUrgentie === 'te_laat' ? <AlertTriangle size={12} /> : <CalendarDays size={12} />}
             {formatDagBadge(order.afleverdatum!)} · {dagOrderStijl.label}
+          </div>
+        ) : isAchterstallig ? (
+          <div
+            className="hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[var(--radius-sm)] text-xs font-semibold whitespace-nowrap bg-rose-600 text-white"
+            title="Verzendweek ligt al in het verleden — deze order had al verzonden moeten zijn. Prioriteit."
+          >
+            <AlertTriangle size={12} />
+            {order.verzend_week_kort} · Achterstallig
           </div>
         ) : (
           <div
