@@ -141,7 +141,15 @@ export async function markeerVerwerktGezien(): Promise<number> {
 }
 
 export async function getBugBijlageSignedUrl(path: string): Promise<string> {
-  const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(path, 600)
+  const { data, error } = await supabase.storage
+    .from(BUCKET)
+    .createSignedUrl(path, 600, { download: bijlageBestandsnaam(path) })
   if (error) throw error
   return data.signedUrl
+}
+
+/** Bijlagepad is `{user_id}/{uuid}-{bestandsnaam}` — strip het uuid-prefix voor een leesbare downloadnaam. */
+export function bijlageBestandsnaam(path: string): string {
+  const basename = path.split('/').pop() ?? path
+  return basename.replace(/^[0-9a-f-]{36}-/, '')
 }

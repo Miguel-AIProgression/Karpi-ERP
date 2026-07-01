@@ -9,6 +9,7 @@ import {
   useDeleteDocument,
 } from '@/hooks/use-documenten'
 import { getDocumentSignedUrl, type DocumentItem, type DocumentKind } from '@/lib/supabase/queries/documenten'
+import { downloadUrl } from '@/lib/utils/download'
 import { useAuth } from '@/hooks/use-auth'
 
 interface Props {
@@ -162,8 +163,8 @@ function DocumentRow({ doc, onDelete, readOnly }: { doc: DocumentItem; onDelete:
   async function open() {
     try {
       setOpening(true)
-      const url = await getDocumentSignedUrl(doc.storage_path)
-      window.open(url, '_blank', 'noopener,noreferrer')
+      const url = await getDocumentSignedUrl(doc.storage_path, doc.bestandsnaam)
+      downloadUrl(url, doc.bestandsnaam)
     } finally {
       setOpening(false)
     }

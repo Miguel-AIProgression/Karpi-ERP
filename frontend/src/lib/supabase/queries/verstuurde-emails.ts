@@ -32,7 +32,7 @@ export async function fetchEmailsVoorOrder(orderId: number): Promise<VerstuurdeE
 export async function getEmailBijlageSignedUrl(bijlage: EmailBijlage): Promise<string> {
   const { data, error } = await supabase.storage
     .from(bijlage.bucket)
-    .createSignedUrl(bijlage.path, 600)
+    .createSignedUrl(bijlage.path, 600, { download: bijlage.filename })
   if (error) throw error
   return data.signedUrl
 }
