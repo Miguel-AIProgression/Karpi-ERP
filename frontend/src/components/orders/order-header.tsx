@@ -67,22 +67,29 @@ export function OrderHeader({ order, locked = false, maatwerkMetVoorstelWeek = f
     <div className="bg-white rounded-[var(--radius)] border border-slate-200 p-6 mb-6">
       {/* Concept-banner: e-mail order die nog bevestigd moet worden */}
       {isConcept && !isExternRep && (
-        <div className="flex items-center justify-between gap-4 mb-5 px-4 py-3 bg-amber-50 border border-amber-200 rounded-[var(--radius-sm)]">
-          <div className="flex items-center gap-2 text-sm text-amber-800">
-            <Mail size={16} className="shrink-0" />
-            <span>
-              <strong>Concept-order</strong> — automatisch aangemaakt vanuit e-mail.
-              Controleer de gegevens en bevestig om de order in verwerking te nemen.
-            </span>
+        <div className="mb-5">
+          <div className="flex items-center justify-between gap-4 px-4 py-3 bg-amber-50 border border-amber-200 rounded-[var(--radius-sm)]">
+            <div className="flex items-center gap-2 text-sm text-amber-800">
+              <Mail size={16} className="shrink-0" />
+              <span>
+                <strong>Concept-order</strong> — automatisch aangemaakt vanuit e-mail.
+                Controleer de gegevens en bevestig om de order in verwerking te nemen.
+              </span>
+            </div>
+            <button
+              type="button"
+              disabled={bevestigConcept.isPending}
+              onClick={() => bevestigConcept.mutate({ orderId: order.id })}
+              className="shrink-0 px-4 py-1.5 text-sm bg-amber-600 text-white rounded-[var(--radius-sm)] hover:bg-amber-700 font-medium transition-colors disabled:opacity-60"
+            >
+              {bevestigConcept.isPending ? 'Bezig…' : 'Bevestig concept'}
+            </button>
           </div>
-          <button
-            type="button"
-            disabled={bevestigConcept.isPending}
-            onClick={() => bevestigConcept.mutate({ orderId: order.id })}
-            className="shrink-0 px-4 py-1.5 text-sm bg-amber-600 text-white rounded-[var(--radius-sm)] hover:bg-amber-700 font-medium transition-colors disabled:opacity-60"
-          >
-            {bevestigConcept.isPending ? 'Bezig…' : 'Bevestig concept'}
-          </button>
+          {bevestigConcept.isError && (
+            <p className="mt-1.5 px-4 text-sm text-red-600">
+              Bevestigen mislukt: {bevestigConcept.error instanceof Error ? bevestigConcept.error.message : 'Onbekende fout'}
+            </p>
+          )}
         </div>
       )}
       <div className="flex items-start justify-between mb-4">
