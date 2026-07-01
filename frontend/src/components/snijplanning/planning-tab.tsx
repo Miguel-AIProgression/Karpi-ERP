@@ -4,6 +4,7 @@
 // Sessies zijn gekleurde blokken met kwaliteit, kleur, duur, ordregels en status.
 
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   Loader2,
   CalendarDays,
@@ -15,12 +16,21 @@ import {
   ChevronDown,
   ChevronRight,
   Wrench,
+  ExternalLink,
+  Layers,
 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import type { WerklijstKwaliteitGroep } from '@/modules/snijplanning/lib/werklijst-groepering'
+import type { WerklijstOrderregel, WerklijstRol } from '@/modules/snijplanning/lib/werklijst-groepering'
 import type { WerklijstRow } from '@/modules/snijplanning/queries/werklijst'
 import { usePlanningBerekening } from '@/modules/snijplanning/hooks/use-planning-berekening'
-import type { PlanningSession, PlanningDag, PlanningWeek, TekortGroep } from '@/modules/snijplanning/lib/planning-berekening'
+import type {
+  PlanningSession,
+  PlanningDag,
+  PlanningWeek,
+  TekortGroep,
+  TekortReden,
+} from '@/modules/snijplanning/lib/planning-berekening'
 
 // ─── Datum-formattering ──────────────────────────────────────────────────────
 
@@ -33,11 +43,112 @@ function formatDatum(iso: string): string {
   return `${dag} ${d.getUTCDate()} ${MAANDEN[d.getUTCMonth()]}`
 }
 
+function formatDatumKort(iso: string | null): string {
+  if (!iso) return '—'
+  const d = new Date(`${iso}T12:00:00Z`)
+  return `${d.getUTCDate()}-${d.getUTCMonth() + 1}-${d.getUTCFullYear()}`
+}
+
 function formatMinuten(min: number): string {
   if (min < 60) return `${min} min`
   const u = Math.floor(min / 60)
   const m = min % 60
   return m === 0 ? `${u} u` : `${u} u ${m} min`
+}
+
+function formatVorm(vorm: string | null): string {
+  if (!vorm) return 'Rechthoek'
+  const namen: Record<string, string> = {
+    rechthoek: 'Rechthoek',
+    rond: 'Rond',
+    ovaal: 'Ovaal',
+    ellips: 'Ellips',
+    afgeronde_hoeken: 'Afgeronde hoeken',
+    organisch_a: 'Organisch A',
+    organisch_b_sp: 'Organisch B gespiegeld',
+    pebble: 'Pebble',
+    klanteigen_vorm: 'Klant eigen vorm',
+  }
+  return namen[vorm] ?? vorm
+}
+
+function formatMaat(l: number | null, b: number | null): string {
+  if (!l && !b) return '—'
+  if (!b) return `${l} cm`
+  if (!l) return `${b} cm`
+  return `${l} × ${b} cm`
+}
+
+function formatWeek(week: string | null): string {
+  if (!week) return '—'
+  const m = week.match(/^(\d{4})-W0?(\d+)$/)
+  return m ? `wk ${m[2]}` : week
+}
+
+// ─── Orderregel-rij (herbruikbaar in sessie en tekort) ───────────────────────
+
+function OrderregelRij({
+  regel,
+  dimmen = false,
+}: {
+  regel: WerklijstOrderregel
+  dimmen?: boolean
+}) {
+  return (
+    <div className={cn('space-y-0.5', dimmen && 'opacity-60')}>
+      {/* Eerste rij: ordernr (klikbaar) + klant + express */}
+      <div className="flex items-center gap-2 text-xs">
+        <Link
+          to={`/orders/${regel.orderId}`}
+          className="font-mono font-medium text-terracotta-600 hover:underline flex items-center gap-0.5 shrink-0"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {regel.orderNr}
+          <ExternalLink size={10} className="opacity-60" />
+        </Link>
+        {regel.express && (
+          <span className="px-1 py-0 rounded text-[9px] font-bold bg-red-100 text-red-700 uppercase shrink-0">
+            express
+          </span>
+        )}
+        <span className="truncate text-slate-600">{regel.klantNaam}</span>
+        <span className="ml-auto shrink-0 text-slate-400">
+          {regel.aantalStuks}×
+        </span>
+      </div>
+
+      {/* Tweede rij: afmetingen + vorm + datum + leverweek */}
+      <div className="flex items-center gap-2 text-[11px] text-slate-400 pl-0.5">
+        <span className="font-medium text-slate-500">
+          {formatMaat(regel.maatwerk_lengte_cm, regel.maatwerk_breedte_cm)}
+        </span>
+        <span>·</span>
+        <span>{formatVorm(regel.maatwerk_vorm)}</span>
+        {regel.maatwerk_afwerking && (
+          <>
+            <span>·</span>
+            <span className="uppercase">{regel.maatwerk_afwerking}</span>
+          </>
+        )}
+        <span className="ml-auto shrink-0 flex items-center gap-1.5">
+          {regel.orderdatum && (
+            <span title="Besteldatum">
+              {formatDatumKort(regel.orderdatum)}
+            </span>
+          )}
+          <span className="text-slate-300">→</span>
+          <span className={cn(
+            'font-medium',
+            regel.haalbaarheid === 'rood' ? 'text-red-500' :
+            regel.haalbaarheid === 'oranje' ? 'text-amber-500' :
+            'text-slate-500'
+          )}>
+            {formatWeek(regel.verzendweek)}
+          </span>
+        </span>
+      </div>
+    </div>
+  )
 }
 
 // ─── Sessie-kaart ─────────────────────────────────────────────────────────────
@@ -76,7 +187,7 @@ function SessieKaart({ sessie }: { sessie: PlanningSession }) {
           )}
         </span>
 
-        {/* Kwaliteit + kleur */}
+        {/* Kwaliteit + kleur + labels */}
         <span className="flex-1 min-w-0">
           <span className="font-medium text-slate-800">
             {sessie.kwaliteit_code} {sessie.kleur_code}
@@ -86,7 +197,7 @@ function SessieKaart({ sessie }: { sessie: PlanningSession }) {
           )}
           {heeftIo && sessie.io_verwacht_datum && (
             <span className="ml-2 text-xs text-blue-500">
-              IO verwacht {sessie.io_verwacht_datum}
+              IO verwacht {formatDatumKort(sessie.io_verwacht_datum)}
             </span>
           )}
           {isInBewerking && (
@@ -99,32 +210,27 @@ function SessieKaart({ sessie }: { sessie: PlanningSession }) {
           )}
         </span>
 
-        {/* Stuks + duur */}
-        <span className="shrink-0 text-right text-xs text-slate-500">
-          <span className="font-medium text-slate-700">{sessie.aantalStuks}×</span>
-          {' · '}{formatMinuten(sessie.duurMinuten)}
-        </span>
-
-        {/* Open/dicht */}
-        <span className="shrink-0 text-slate-400 mt-0.5">
-          {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+        {/* Stuks + duur + toggle */}
+        <span className="shrink-0 text-right text-xs text-slate-500 flex items-center gap-2">
+          <span>
+            <span className="font-medium text-slate-700">{sessie.aantalStuks}×</span>
+            {' · '}{formatMinuten(sessie.duurMinuten)}
+          </span>
+          <span className="text-slate-400">
+            {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+          </span>
         </span>
       </button>
 
-      {/* Orderregels */}
+      {/* Orderregels (uitgeklapt) */}
       {open && (
-        <div className="border-t border-slate-100 px-3 pb-2 pt-1.5 space-y-1">
+        <div className="border-t border-slate-100 px-3 pb-3 pt-2 space-y-3">
           {sessie.orderregels.map((rij) => (
-            <div key={rij.orderRegelId} className="flex items-center gap-2 text-xs text-slate-600">
-              <span className="font-mono text-slate-400">{rij.orderNr}</span>
-              <span className="truncate">{rij.klantNaam}</span>
-              <span className="ml-auto shrink-0 text-slate-400">
-                {rij.aantalStuks}× · wk {rij.verzendweek?.replace(/^\d{4}-W/, '') ?? '?'}
-              </span>
-            </div>
+            <OrderregelRij key={rij.orderRegelId} regel={rij} />
           ))}
+          {/* Tijdsinschatting */}
           {sessie.duurMinuten > sessie.snijMinuten && (
-            <div className="flex items-center gap-1 text-[10px] text-slate-400 mt-1">
+            <div className="flex items-center gap-1 text-[10px] text-slate-400 pt-1 border-t border-slate-50">
               <Clock size={10} />
               <span>
                 snijden {formatMinuten(sessie.snijMinuten)} + wisselen {formatMinuten(sessie.duurMinuten - sessie.snijMinuten)}
@@ -239,7 +345,159 @@ function WeekSectie({
   )
 }
 
+// ─── Rol-pakking (voor tekort "te weinig materiaal") ─────────────────────────
+
+function RolPakkingKaart({ rol }: { rol: WerklijstRol }) {
+  const pct = rol.rolLengteCm > 0 ? Math.round((rol.gebruikteLengteCm / rol.rolLengteCm) * 100) : 0
+
+  return (
+    <div className="rounded border border-slate-200 bg-white p-2.5 space-y-2">
+      <div className="flex items-center gap-2 text-xs">
+        <Layers size={12} className="text-slate-400 shrink-0" />
+        <span className="font-medium text-slate-700">Rol {rol.rolnummer}</span>
+        <span className="text-slate-400">
+          {rol.rolBreedteCm} cm breed · {rol.rolLengteCm} cm lang
+        </span>
+        <span className="ml-auto text-slate-500">
+          {rol.gebruikteLengteCm} cm bezet ({pct}%)
+          {rol.restLengteCm > 0 && (
+            <span className="text-emerald-600"> · {rol.restLengteCm} cm rest</span>
+          )}
+        </span>
+      </div>
+
+      {/* Shelves */}
+      {rol.shelves.length > 0 && (
+        <div className="space-y-1 pl-4">
+          {rol.shelves.map((shelf) => (
+            <div key={shelf.positieYCm} className="text-[11px] text-slate-500 flex items-start gap-2">
+              <span className="text-slate-300 shrink-0 w-10 text-right">{shelf.positieYCm} cm</span>
+              <div className="flex flex-wrap gap-1">
+                {shelf.stukken.map((stuk) => (
+                  <span
+                    key={stuk.snijplanId}
+                    className="inline-block bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 text-[10px]"
+                    title={`${stuk.klantNaam} — ${formatMaat(stuk.maatwerk_lengte_cm, stuk.maatwerk_breedte_cm)}`}
+                  >
+                    {stuk.orderNr}
+                    {' '}
+                    <span className="text-slate-400">
+                      {Math.round(stuk.geplaatsteBreedteCm)}×{Math.round(stuk.geplaatstelLengteCm)}
+                    </span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Orderregels op de rol */}
+      <div className="space-y-1 pl-4 pt-1 border-t border-slate-50">
+        {rol.orderregels.map((regel) => (
+          <div key={regel.orderRegelId} className="text-[11px] flex items-center gap-2">
+            <Link
+              to={`/orders/${regel.orderId}`}
+              className="font-mono text-terracotta-600 hover:underline shrink-0"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {regel.orderNr}
+            </Link>
+            <span className="text-slate-500 truncate">{regel.klantNaam}</span>
+            <span className="ml-auto shrink-0 text-slate-400">
+              {formatMaat(regel.maatwerk_lengte_cm, regel.maatwerk_breedte_cm)} · {regel.aantalStuks}×
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ─── Tekort reden-badge ───────────────────────────────────────────────────────
+
+function TekortRedenBadge({ reden, ioAantalStuks }: { reden: TekortReden; ioAantalStuks: number }) {
+  if (reden === 'te_weinig_materiaal') {
+    return (
+      <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 font-medium">
+        Te weinig materiaal
+      </span>
+    )
+  }
+  if (reden === 'heeft_ook_io') {
+    return (
+      <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">
+        {ioAantalStuks} stuk{ioAantalStuks !== 1 ? 'ken' : ''} wacht op inkoop
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-medium">
+      Geen materiaal, geen inkoop
+    </span>
+  )
+}
+
 // ─── Tekort-sectie ────────────────────────────────────────────────────────────
+
+function TekortGroepKaart({ groep }: { groep: TekortGroep }) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <div className="rounded border border-red-200 bg-red-50 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left"
+      >
+        <AlertTriangle size={13} className="text-red-500 shrink-0" />
+        <span className="font-medium text-red-800 text-sm">
+          {groep.kwaliteit_code} {groep.kleur_code}
+        </span>
+        <TekortRedenBadge reden={groep.reden} ioAantalStuks={groep.ioAantalStuks} />
+        <span className="ml-auto shrink-0 flex items-center gap-2 text-xs text-red-500">
+          <span>{groep.aantalStuks} stukken · {groep.orderregels.length} orders</span>
+          {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+        </span>
+      </button>
+
+      {open && (
+        <div className="border-t border-red-200 bg-white px-3 pb-3 pt-2 space-y-3">
+          {/* Pakking-overzicht voor "te weinig materiaal" */}
+          {groep.reden === 'te_weinig_materiaal' && groep.rollenInGroep.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-slate-600">
+                Bezette rollen ({groep.rollenInGroep.length}):
+              </p>
+              {groep.rollenInGroep.map((rol) => (
+                <RolPakkingKaart key={rol.rolId} rol={rol} />
+              ))}
+              <p className="text-xs font-medium text-red-600 pt-1">
+                Niet planbaar ({groep.aantalStuks} stukken — geen vrij materiaal):
+              </p>
+            </div>
+          )}
+
+          {/* IO-context voor "heeft_ook_io" */}
+          {groep.reden === 'heeft_ook_io' && (
+            <div className="rounded bg-blue-50 border border-blue-200 px-3 py-2 text-xs text-blue-700">
+              {groep.ioAantalStuks} stuk{groep.ioAantalStuks !== 1 ? 'ken' : ''} van deze kwaliteit wacht op inkoop
+              (zichtbaar als blauwe sessies in de planning hierboven).
+              De onderstaande stukken hebben ook geen IO-claim — handmatig koppelen in de Werklijst-tab.
+            </div>
+          )}
+
+          {/* Tekort-orderregels */}
+          <div className="space-y-3">
+            {groep.orderregels.map((regel) => (
+              <OrderregelRij key={regel.orderRegelId} regel={regel} />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 function TekortSectie({ tekortGroepen }: { tekortGroepen: TekortGroep[] }) {
   const [open, setOpen] = useState(false)
@@ -258,20 +516,16 @@ function TekortSectie({ tekortGroepen }: { tekortGroepen: TekortGroep[] }) {
         <span className="font-medium text-red-700 text-sm">
           Tekort — {totaalStuks} stukken niet planbaar
         </span>
-        <span className="ml-auto text-xs text-red-400">
+        <span className="ml-auto text-xs text-red-400 flex items-center gap-2">
           {tekortGroepen.length} kwaliteiten
-          {open ? <ChevronDown size={13} className="inline ml-1" /> : <ChevronRight size={13} className="inline ml-1" />}
+          {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
         </span>
       </button>
 
       {open && (
-        <div className="border-t border-red-200 px-4 py-3 space-y-1">
+        <div className="border-t border-red-200 px-4 py-3 space-y-2">
           {tekortGroepen.map((g) => (
-            <div key={`${g.kwaliteit_code}|${g.kleur_code}`} className="flex items-center gap-2 text-sm text-red-700">
-              <span className="font-medium">{g.kwaliteit_code} {g.kleur_code}</span>
-              <span className="text-red-400">{g.aantalStuks} stukken</span>
-              <span className="ml-auto text-xs text-red-400">{g.orderregels.length} orders</span>
-            </div>
+            <TekortGroepKaart key={`${g.kwaliteit_code}|${g.kleur_code}`} groep={g} />
           ))}
         </div>
       )}
@@ -307,7 +561,6 @@ function StartdatumPicker({
 function volgendeWerkdagVanaf(iso: string): string {
   const d = new Date(`${iso}T12:00:00Z`)
   d.setUTCDate(d.getUTCDate() + 1)
-  // Skip weekend
   while ([0, 6].includes(d.getUTCDay())) d.setUTCDate(d.getUTCDate() + 1)
   return d.toISOString().slice(0, 10)
 }
@@ -325,9 +578,8 @@ export function PlanningTab({ groepen, rawStukken, isWerklijstLoading }: Plannin
 
   const totaalLoading = isWerklijstLoading || isLoading
 
-  // Capaciteitslimieten (defaults als config niet beschikbaar)
   const max = 400
-  const nettoMinuten = 480  // 08:00-17:00 minus pauzes
+  const nettoMinuten = 480
 
   if (totaalLoading) {
     return (
@@ -383,7 +635,7 @@ export function PlanningTab({ groepen, rawStukken, isWerklijstLoading }: Plannin
         </div>
       </div>
 
-      {/* Tekort bovenaan als waarschuwing */}
+      {/* Tekort bovenaan */}
       <TekortSectie tekortGroepen={tekortGroepen} />
 
       {/* Weken */}

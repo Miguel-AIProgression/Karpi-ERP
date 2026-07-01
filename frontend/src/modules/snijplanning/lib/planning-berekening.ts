@@ -16,7 +16,7 @@
 //
 // Sortering sessies: express eerst → vroegste verzendweek → kwaliteit + kleur.
 
-import type { WerklijstKwaliteitGroep, WerklijstOrderregel } from './werklijst-groepering'
+import type { WerklijstKwaliteitGroep, WerklijstOrderregel, WerklijstRol } from './werklijst-groepering'
 import type { WerklijstRow } from '../queries/werklijst'
 import type { Werktijden } from '@/lib/utils/bereken-agenda'
 import { bepaalSnijtijdMinuten } from './snijtijd'
@@ -91,10 +91,21 @@ export interface PlanningWeek {
   binnenMax: boolean
 }
 
+/** Waarom stukken niet planbaar zijn in de snijplanning. */
+export type TekortReden =
+  | 'geen_materiaal_geen_io'   // geen rol, geen IO-claim → volledig zonder plan
+  | 'heeft_ook_io'             // sommige stukken hebben IO-claim (blauw), andere niets
+  | 'te_weinig_materiaal'      // groep heeft rollen maar ook nog tekort (niet alles past)
+
 export interface TekortGroep {
   kwaliteit_code: string
   kleur_code: string
   aantalStuks: number
+  reden: TekortReden
+  /** Rollen die WEL bezet zijn binnen deze (kwaliteit, kleur) groep (voor pakking-tonen). */
+  rollenInGroep: WerklijstRol[]
+  /** Aantal stukken dat via IO-claim gepland staat (voor context bij 'heeft_ook_io'). */
+  ioAantalStuks: number
   orderregels: WerklijstOrderregel[]
 }
 
@@ -365,12 +376,23 @@ export function berekenPlanning(
       }
     }
 
-    // Tekort: niet planbaar
+    // Tekort: niet planbaar — bepaal waarom
     if (groep.tekort.length > 0) {
+      let reden: TekortReden
+      if (groep.rollen.length > 0) {
+        reden = 'te_weinig_materiaal'
+      } else if (groep.wachtOpInkoop.length > 0) {
+        reden = 'heeft_ook_io'
+      } else {
+        reden = 'geen_materiaal_geen_io'
+      }
       tekortGroepen.push({
         kwaliteit_code: groep.kwaliteit_code,
         kleur_code: groep.kleur_code,
         aantalStuks: groep.aantalTekort,
+        reden,
+        rollenInGroep: groep.rollen,
+        ioAantalStuks: groep.aantalWachtOpInkoop,
         orderregels: groep.tekort,
       })
     }
