@@ -371,21 +371,31 @@ function RolPakkingKaart({ rol }: { rol: WerklijstRol }) {
         <div className="space-y-1 pl-4">
           {rol.shelves.map((shelf) => (
             <div key={shelf.positieYCm} className="text-[11px] text-slate-500 flex items-start gap-2">
-              <span className="text-slate-300 shrink-0 w-10 text-right">{shelf.positieYCm} cm</span>
+              <span className="text-slate-300 shrink-0 w-20 text-right">{shelf.positieYCm}–{shelf.eindYCm} cm</span>
               <div className="flex flex-wrap gap-1">
-                {shelf.stukken.map((stuk) => (
-                  <span
-                    key={stuk.snijplanId}
-                    className="inline-block bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 text-[10px]"
-                    title={`${stuk.klantNaam} — ${formatMaat(stuk.maatwerk_lengte_cm, stuk.maatwerk_breedte_cm)}`}
-                  >
-                    {stuk.orderNr}
-                    {' '}
-                    <span className="text-slate-400">
-                      {Math.round(stuk.geplaatsteBreedteCm)}×{Math.round(stuk.geplaatstelLengteCm)}
+                {shelf.stukken.map((stuk) => {
+                  const margeCm = stuk.margeCm
+                  return (
+                    <span
+                      key={stuk.snijplanId}
+                      className="inline-block bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 text-[10px]"
+                      title={[
+                        stuk.klantNaam,
+                        `besteld: ${formatMaat(stuk.maatwerk_lengte_cm, stuk.maatwerk_breedte_cm)}`,
+                        margeCm > 0 ? `snijmarge: +${margeCm} cm → ${Math.round(stuk.geplaatsteBreedteCm)}×${Math.round(stuk.geplaatstelLengteCm)} cm op rol` : null,
+                      ].filter(Boolean).join(' — ')}
+                    >
+                      {stuk.orderNr}
+                      {' '}
+                      <span className="text-slate-500">
+                        {formatMaat(stuk.maatwerk_lengte_cm, stuk.maatwerk_breedte_cm)}
+                      </span>
+                      {margeCm > 0 && (
+                        <span className="text-slate-300 ml-0.5">+{margeCm}m</span>
+                      )}
                     </span>
-                  </span>
-                ))}
+                  )
+                })}
               </div>
             </div>
           ))}
