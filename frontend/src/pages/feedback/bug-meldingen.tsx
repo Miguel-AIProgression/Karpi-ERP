@@ -12,10 +12,12 @@ import {
 } from '@/hooks/use-bug-meldingen'
 import {
   getBugBijlageSignedUrl,
+  bijlageBestandsnaam,
   type BugMelding,
   type BugMeldingStatus,
   type BugUrgentie,
 } from '@/lib/supabase/queries/bug-meldingen'
+import { downloadUrl } from '@/lib/utils/download'
 
 const STATUS_COLORS: Record<BugMeldingStatus, { bg: string; text: string }> = {
   'Open': { bg: 'bg-blue-100', text: 'text-blue-700' },
@@ -310,7 +312,7 @@ function BijlageLink({ path }: { path: string }) {
     setLaden(true)
     try {
       const url = await getBugBijlageSignedUrl(path)
-      window.open(url, '_blank', 'noopener')
+      downloadUrl(url, bijlageBestandsnaam(path))
     } finally {
       setLaden(false)
     }
