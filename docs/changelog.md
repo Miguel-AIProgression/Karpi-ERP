@@ -1,5 +1,31 @@
 # Changelog — RugFlow ERP
 
+## 2026-07-01 — Leveranciers-kleurcode op verzendlabel
+
+**Waarom:** mail vanuit Pick & Ship — bij Sofia 80x150 toont het systeem bij
+"kleur" alleen "13", terwijl de fysieke rol van de leverancier gestickerd is
+met "G305". Data-onderzoek (21.801 vaste/staaltje-producten gescand) wees uit
+dat dit bij 18 kwaliteiten voorkomt (280 producten): ANNY, ARIA, CABA, DIAN,
+DREM, FAYN, ITEA, JEAS, LINE, MAND, MARG, MELW, OKSI, OPHE, ROMY, SOFI, WASI,
+WELL.
+
+- Nieuwe pure helper `leverancierskleurcodeUitVervolg` naast de bestaande
+  `kwaliteitNaamUitVervolg` in `supabase/functions/_shared/kwaliteit-naam.ts`
+  (ADR-0033) — herkent het patroon `{3-6 cijfers}-{2-6 alfanumeriek}` tussen de
+  kwaliteitsnaam en de "CA:"-marker in `producten.vervolgomschrijving` (bv.
+  "3726-G305" bij Sofia) en geeft alleen het deel ná de streep terug ("G305").
+  Sluit dessin-/patroonnummers ("1200") en "Kl.NN"-parse-artefacten uit.
+- `vasteMaatRegels()` (`frontend/src/modules/logistiek/lib/shipping-label-data.ts`)
+  toont de code, indien aanwezig, achter het kleurnummer: "SOFIA (13 – G305)
+  80x150 cm" i.p.v. "SOFIA (13) 80x150 cm". Raakt alle drie labelvarianten
+  (compact/staand/DPD delen `ShippingLabel`/`labelProductRegels`).
+- Geen DB-migratie, geen nieuwe kolom, geen query-uitbreiding — puur
+  tekst-parsing op al-opgehaalde data.
+- **Bewust niet aangeraakt:** de pakbon-PDF toont de code al correct (leest de
+  rauwe `omschrijving_snapshot`/`producten.omschrijving`, waar "3726-G305" al
+  in staat); de factuur-titel (`factuurProductTitel`) toont sowieso geen
+  kleurcode.
+
 ## 2026-07-01 — Voorraad-import commit (voorraadlijst 30-6-2026)
 
 Import `update_voorraad.py` gedraaid met `--commit` voor `voorraadlijst 30-6-2026.xls`.
