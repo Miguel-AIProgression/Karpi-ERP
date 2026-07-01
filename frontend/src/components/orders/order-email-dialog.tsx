@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Paperclip, X } from 'lucide-react'
 import { formatDateTime } from '@/lib/utils/formatters'
+import { downloadUrl } from '@/lib/utils/download'
 import {
   getEmailBijlageSignedUrl,
   type EmailBijlage,
@@ -16,8 +17,8 @@ interface Props {
 /**
  * In-app weergave van een verstuurde e-mail. De body wordt in een sandboxed
  * iframe gerenderd (sandbox="") zodat mail-HTML nooit scripts kan draaien of
- * kan navigeren binnen RugFlow. Bijlagen openen via een signed URL (10 min)
- * in een nieuw tabblad — zelfde patroon als de facturen-PDF.
+ * kan navigeren binnen RugFlow. Bijlagen downloaden direct via een signed URL
+ * (10 min, Content-Disposition: attachment).
  */
 export function OrderEmailDialog({ email, onClose }: Props) {
   const [bijlageError, setBijlageError] = useState<string | null>(null)
@@ -26,7 +27,7 @@ export function OrderEmailDialog({ email, onClose }: Props) {
     setBijlageError(null)
     try {
       const url = await getEmailBijlageSignedUrl(bijlage)
-      window.open(url, '_blank', 'noopener')
+      downloadUrl(url, bijlage.filename)
     } catch {
       setBijlageError(`Bijlage '${bijlage.filename}' kon niet geopend worden (bestand niet gevonden in storage).`)
     }

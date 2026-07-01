@@ -53,10 +53,22 @@ export async function fetchDocumenten(
   return (data ?? []) as DocumentItem[]
 }
 
-export async function getDocumentSignedUrl(storagePath: string): Promise<string> {
-  const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(storagePath, 600)
+export async function getDocumentSignedUrl(storagePath: string, filename?: string): Promise<string> {
+  const { data, error } = await supabase.storage
+    .from(BUCKET)
+    .createSignedUrl(storagePath, 600, filename ? { download: safeDownloadFilename(filename) } : undefined)
   if (error) throw error
   return data.signedUrl
+}
+
+/**
+ * Supabase plakt de download-filename ongeëncodeerd in de query-string en
+ * roept alleen `encodeURI` aan over de complete URL — die laat &, #, ?, =, ;
+ * en + ongemoeid. Bij een bestandsnaam met zo'n teken (bv. "Offerte & co.pdf")
+ * breekt de query-string en komt een afgekapte naam bij de server aan.
+ */
+function safeDownloadFilename(name: string): string {
+  return name.replace(/[&#;=?+]/g, '_')
 }
 
 export async function uploadDocument(

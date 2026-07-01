@@ -150,9 +150,10 @@ export async function fetchFactuurDetail(
   return { factuur: factuur as FactuurDetail, regels: (regels ?? []) as FactuurRegel[] }
 }
 
-export async function getFactuurPdfSignedUrl(pdfStoragePath: string): Promise<string> {
+export async function getFactuurPdfSignedUrl(pdfStoragePath: string, filename?: string): Promise<string> {
   const { data, error } = await supabase.storage
-    .from('facturen').createSignedUrl(pdfStoragePath, 600)
+    .from('facturen')
+    .createSignedUrl(pdfStoragePath, 600, filename ? { download: filename } : undefined)
   if (error) throw error
   return data.signedUrl
 }
