@@ -74,6 +74,10 @@ export interface OrderbevestigingInput {
   // Documenttaal — volgt het land van het factuuradres (zelfde bron als de
   // begeleidende e-mail in stuur-orderbevestiging). Default 'nl'.
   taal?: Taal
+  /** Mig 486/ADR-0039: TRUE zolang deze order op zijn Combi-levering-groep
+   *  wacht (klant-instelling aan, geen override, drempel nog niet gehaald op
+   *  het moment van versturen) — toont een uitlegparagraaf op de PDF. */
+  combiLeveringWacht?: boolean
 }
 
 // Alle vaste teksten op de PDF, per documenttaal. De NL-disclaimer is letterlijk
@@ -100,6 +104,8 @@ const PDF_VERTALINGEN: Record<Taal, {
   totaalInclBtw: string
   betalingsconditie: string
   disclaimer: string
+  /** Mig 486/ADR-0039: paragraaf zolang de order op zijn Combi-levering-groep wacht. */
+  combiLevering: string
   opmerkingen: string
   groet: string
   pagina: (nr: number, totaal: number) => string
@@ -124,6 +130,7 @@ const PDF_VERTALINGEN: Record<Taal, {
     totaalInclBtw: 'Totaalbedrag incl. btw',
     betalingsconditie: 'Betalingsconditie:',
     disclaimer: 'Een geringe maatafwijking van +/- 3% alsmede een kleurafwijking kan optreden.',
+    combiLevering: 'Wij leveren pas zodra uw gecombineerde bestellingen de vrachtvrije-drempel bereiken. Wordt dit niet gehaald vóór de vermelde levering, dan schuift de leverdatum automatisch op. U kunt hiervoor zelf zorgen door voldoende te bestellen, of contact met ons opnemen om deze order alsnog — met verzendkosten — te laten verzenden.',
     opmerkingen: 'Opmerkingen:',
     groet: 'Met vriendelijke groet,',
     pagina: (nr, totaal) => `Pagina ${nr} van ${totaal}`,
@@ -148,6 +155,7 @@ const PDF_VERTALINGEN: Record<Taal, {
     totaalInclBtw: 'Gesamtbetrag inkl. MwSt.',
     betalingsconditie: 'Zahlungsbedingung:',
     disclaimer: 'Geringe Maßabweichungen von +/- 3% sowie Farbabweichungen sind möglich.',
+    combiLevering: 'Wir liefern erst, sobald Ihre kombinierten Bestellungen die frachtfreie Grenze erreichen. Wird dies vor dem angegebenen Liefertermin nicht erreicht, verschiebt sich das Lieferdatum automatisch. Sie können dies selbst durch eine ausreichende Bestellmenge sicherstellen oder uns kontaktieren, um diesen Auftrag dennoch — gegen Versandkosten — versenden zu lassen.',
     opmerkingen: 'Anmerkungen:',
     groet: 'Mit freundlichen Grüßen,',
     pagina: (nr, totaal) => `Seite ${nr} von ${totaal}`,
@@ -172,6 +180,7 @@ const PDF_VERTALINGEN: Record<Taal, {
     totaalInclBtw: 'Montant total TVA comprise',
     betalingsconditie: 'Conditions de paiement:',
     disclaimer: 'Un léger écart de mesure de +/- 3 % ainsi qu\'une différence de couleur peuvent survenir.',
+    combiLevering: 'Nous ne livrerons qu\'une fois que vos commandes combinées atteindront le seuil de franco de port. Si ce seuil n\'est pas atteint avant la date de livraison indiquée, la date sera automatiquement reportée. Vous pouvez y remédier en commandant suffisamment, ou nous contacter pour faire expédier cette commande séparément — avec frais de port.',
     opmerkingen: 'Remarques:',
     groet: 'Cordialement,',
     pagina: (nr, totaal) => `Page ${nr} sur ${totaal}`,
@@ -196,6 +205,7 @@ const PDF_VERTALINGEN: Record<Taal, {
     totaalInclBtw: 'Total amount incl. VAT',
     betalingsconditie: 'Payment terms:',
     disclaimer: 'A slight size deviation of +/- 3% as well as a colour variation may occur.',
+    combiLevering: 'We will only deliver once your combined orders reach the free-shipping threshold. If this is not reached before the stated delivery date, the delivery date will shift automatically. You can ensure this yourself by ordering enough, or contact us to have this order shipped separately — with shipping costs.',
     opmerkingen: 'Remarks:',
     groet: 'Kind regards,',
     pagina: (nr, totaal) => `Page ${nr} of ${totaal}`,
@@ -556,6 +566,16 @@ export async function genereerOrderbevestigingPDF(input: OrderbevestigingInput):
     y -= 10
   }
   y -= 8
+
+  // ── Combi-levering (mig 486/ADR-0039) ──────────────────────────────────────
+  if (input.combiLeveringWacht) {
+    const lines = wrapText(t.combiLevering, fontR, 8, pageW - mL - mR)
+    for (const line of lines) {
+      drawText(page, line, mL, y, fontR, 8)
+      y -= 11
+    }
+    y -= 4
+  }
 
   // ── Opmerkingen ───────────────────────────────────────────────────────────
   if (input.opmerkingen) {
