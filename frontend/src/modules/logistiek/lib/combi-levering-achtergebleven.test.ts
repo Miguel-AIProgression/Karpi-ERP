@@ -11,6 +11,7 @@ function order(overrides: Partial<PickShipOrder> = {}): PickShipOrder {
     verzend_week_label: 'Verzendweek 31', verzend_week_kort: 'Wk 31', regels: [],
     totaal_m2: 0, totaal_gewicht_kg: 0, aantal_regels: 0, alle_regels_pickbaar: true,
     heeft_gepland_zending: false, afl_adres_incompleet_sinds: null,
+    afl_gln_ongekoppeld_sinds: null, afl_gln_gecontroleerd_op: null,
     prijs_ontbreekt_sinds: null, actieve_pickronde: null, wacht_op_combi_levering: false,
     ...overrides,
   }
