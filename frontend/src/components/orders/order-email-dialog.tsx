@@ -42,7 +42,7 @@ export function OrderEmailDialog({ email, onClose }: Props) {
         <header className="flex items-start justify-between gap-3 px-6 py-4 border-b border-slate-200">
           <div className="min-w-0">
             <div className="flex items-center gap-2 mb-1">
-              <EmailSoortBadge soort={email.soort} />
+              <EmailSoortBadge soort={email.soort} onderwerp={email.onderwerp} />
               <span className="text-xs text-slate-400">{formatDateTime(email.verzonden_op)}</span>
             </div>
             <h2 className="font-medium text-lg text-slate-800 truncate">{email.onderwerp}</h2>

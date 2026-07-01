@@ -57,7 +57,7 @@ export function OrderEmails({ orderId }: Props) {
                 <span className="text-xs text-slate-400 whitespace-nowrap w-28 shrink-0">
                   {formatDateTime(item.tijdstip)}
                 </span>
-                <EmailSoortBadge soort={item.email!.soort} />
+                <EmailSoortBadge soort={item.email!.soort} onderwerp={item.email!.onderwerp} />
                 <span className="text-sm text-terracotta-500 hover:underline truncate">
                   {item.email!.onderwerp}
                 </span>
