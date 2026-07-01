@@ -1,6 +1,9 @@
--- Migratie 548: manco-regel blijft in orderregel_pickbaarheid (is_pickbaar=false)
--- i.p.v. volledig uitgesloten — fix voor "achterstallige order onvindbaar in
--- Pick & Ship, alleen via zoeken" (Miguel, 2026-07-01, ORD-2026-0382).
+-- Migratie 549 (op de live DB gedraaid als werknummer 548 — hernummerd bij
+-- merge, collisie met 548_update_order_lines_snijplan_cascade.sql; inhoud
+-- ongewijzigd): manco-regel blijft in orderregel_pickbaarheid
+-- (is_pickbaar=false) i.p.v. volledig uitgesloten — fix voor "achterstallige
+-- order onvindbaar in Pick & Ship, alleen via zoeken" (Miguel, 2026-07-01,
+-- ORD-2026-0382).
 --
 -- Bug
 -- ---
@@ -130,7 +133,7 @@ COMMENT ON VIEW orderregel_pickbaarheid IS
   'Per orderregel: is_pickbaar, fysieke_locatie, bron, wacht_op, gewicht_kg. '
   'Mig 386: single source + admin-pseudo. Mig 498: voorraad-claim op SUM(aantal). '
   'Mig 518: introduceerde manco (pick_backorder_sinds), sloot de rij toen '
-  'volledig uit. Mig 548: rij blijft bestaan, is_pickbaar=false + '
+  'volledig uit. Mig 549: rij blijft bestaan, is_pickbaar=false + '
   'wacht_op=''manco'' — anders verliest order_pickbaarheid (mig 521) zijn '
   'enige rij zodra ALLE regels van een order manco zijn, en werkt de '
   'actieve-zending-override daar niet meer (ORD-2026-0382).';
