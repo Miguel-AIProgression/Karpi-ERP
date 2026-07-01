@@ -1,7 +1,7 @@
--- 535: Afleveradres-GLN-poort — blokkeer EDI-orders met niet-gekoppelde aflever-GLN
+-- 544 (hernummerd van 535, botsing met main): Afleveradres-GLN-poort — blokkeer EDI-orders met niet-gekoppelde aflever-GLN
 --      uit Pick & Ship tot het adres is opgelost óf bewust vrijgegeven.
 --
--- Bouwt voort op het read-only signaal (mig 534). De stille HQ-fallback van
+-- Bouwt voort op het read-only signaal (mig 543). De stille HQ-fallback van
 -- create_edi_order (mig 357) mag niet meer ongemerkt naar de werkvloer: een
 -- EDI-order waarvan de aflever-GLN geen vestiging matcht wordt nu een HARDE
 -- intake-gate, exact gespiegeld op de afleveradres-/prijs-gate (mig 395/396).
@@ -20,7 +20,7 @@
 --       per ongeluk doorglipt).
 --
 -- De NOT-EXISTS-match-logica leeft op ÉÉN plek (_afl_gln_matcht_vestiging, gespiegeld
--- op create_edi_order, .0-tolerant); de view (mig 534) + _valideer_intake_gates +
+-- op create_edi_order, .0-tolerant); de view (mig 543) + _valideer_intake_gates +
 -- frontend lezen alleen de twee kolommen.
 
 -- 1. Kolommen ---------------------------------------------------------------
@@ -126,7 +126,7 @@ UPDATE orders o
        )
    AND NOT _afl_gln_matcht_vestiging(o.debiteur_nr, o.afleveradres_gln);
 
--- 6. View herdefiniëren op de kolommen (mig 534 was NOT-EXISTS-gebaseerd) -----
+-- 6. View herdefiniëren op de kolommen (mig 543 was NOT-EXISTS-gebaseerd) -----
 -- Toont nu wat geblokkeerd-en-niet-vrijgegeven is. Output-kolommen ongewijzigd
 -- (de banner blijft werken).
 CREATE OR REPLACE VIEW edi_orders_afleveradres_ongekoppeld AS
@@ -144,7 +144,7 @@ SELECT o.id AS order_id,
    AND o.status NOT IN ('Verzonden', 'Geannuleerd', 'Concept');
 
 COMMENT ON VIEW edi_orders_afleveradres_ongekoppeld IS
-  'Mig 534/535: EDI-orders met niet-gekoppelde aflever-GLN die nog niet bewust '
+  'Mig 543/544: EDI-orders met niet-gekoppelde aflever-GLN die nog niet bewust '
   'zijn vrijgegeven. Voedt de EdiAfleveradresOngekoppeldBanner. Verdwijnt zodra '
   'de GLN gekoppeld wordt (afleveradressen-trigger) of de order vrijgegeven '
   'wordt (markeer_afleveradres_gecontroleerd).';
@@ -179,14 +179,14 @@ BEGIN
     p_order_id,
     'afleveradres_gln_gecontroleerd',
     v_status,
-    jsonb_build_object('ongekoppeld_sinds', v_sinds, 'migratie', 535)
+    jsonb_build_object('ongekoppeld_sinds', v_sinds, 'migratie', 544)
   );
 END;
 $$;
 GRANT EXECUTE ON FUNCTION markeer_afleveradres_gecontroleerd(BIGINT) TO authenticated;
 
 COMMENT ON FUNCTION markeer_afleveradres_gecontroleerd(BIGINT) IS
-  'Mig 535: zet orders.afl_gln_gecontroleerd_op — de operator bevestigt bewust '
+  'Mig 544: zet orders.afl_gln_gecontroleerd_op — de operator bevestigt bewust '
   'dat het afleveradres van deze order klopt (los van de orderbevestiging). '
   'No-op als de gate al dicht is. Audit via order_events '
   '''afleveradres_gln_gecontroleerd''. GLN koppelen aan een vestiging wist de '
@@ -249,15 +249,15 @@ END;
 $$;
 
 COMMENT ON FUNCTION _valideer_intake_gates(BIGINT[]) IS
-  'Mig 395/396/535: server-side intake-gate-poort voor start_pickronden. Weigert '
+  'Mig 395/396/544: server-side intake-gate-poort voor start_pickronden. Weigert '
   'orders met open afleveradres-gate (mig 395), niet-gekoppelde aflever-GLN-gate '
-  '(mig 535) of prijs-gate (mig 396). Frontend-spiegel: StartPickrondesButton + banners.';
+  '(mig 544) of prijs-gate (mig 396). Frontend-spiegel: StartPickrondesButton + banners.';
 
 -- 9. orders_list view: gate-kolommen toevoegen (order-detail leest deze view) -
 -- LET OP (bijgewerkt 2026-07-01, vóór apply): deze branch is afgetakt op main=533
 -- (30-06). Sindsdien kreeg de live orders_list drie extra kolommen (express,
 -- manco_sinds, afl_land — mig 451/518/521-klasse werk dat na deze branch landde).
--- De originele mig 535 herdefinieerde orders_list op de 30-06-snapshot, wat die
+-- De originele mig 544 herdefinieerde orders_list op de 30-06-snapshot, wat die
 -- drie kolommen bij apply stil zou hebben laten verdwijnen (frontend leest ze al
 -- live). Basis hieronder = de huidige productie-definitie (geverifieerd via
 -- pg_get_viewdef vlak vóór deze correctie), plus de twee nieuwe GLN-gate-kolommen.
@@ -316,7 +316,7 @@ SELECT
   o.express,
   o.manco_sinds,
   o.afl_land,
-  -- Mig 535: aflever-GLN-gate
+  -- Mig 544: aflever-GLN-gate
   o.afl_gln_ongekoppeld_sinds,
   o.afl_gln_gecontroleerd_op
 FROM orders o
@@ -325,6 +325,6 @@ LEFT JOIN bundel_per_order b   ON b.order_id    = o.id;
 
 COMMENT ON VIEW orders_list IS
   'Order-overzicht voor frontend OrdersTable. Sinds mig 396: prijs_ontbreekt_sinds. '
-  'Sinds mig 535: afl_gln_ongekoppeld_sinds + afl_gln_gecontroleerd_op (aflever-GLN-gate).';
+  'Sinds mig 544: afl_gln_ongekoppeld_sinds + afl_gln_gecontroleerd_op (aflever-GLN-gate).';
 
 NOTIFY pgrst, 'reload schema';

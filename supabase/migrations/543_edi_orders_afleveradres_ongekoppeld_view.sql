@@ -1,4 +1,4 @@
--- 534: Signaal — EDI-orders waarvan de aflever-GLN geen vestiging matcht.
+-- 543 (hernummerd van 534, botsing met main): Signaal — EDI-orders waarvan de aflever-GLN geen vestiging matcht.
 --
 -- Aanleiding (2026-06-30, melding Guido via ORD-2026-0892): een EDI-order van
 -- BDSK/XXXLutz droeg aflever-GLN 9007019015620 (vestiging Gottfrieding), maar die
@@ -40,7 +40,7 @@ SELECT o.id AS order_id,
    );
 
 COMMENT ON VIEW edi_orders_afleveradres_ongekoppeld IS
-  'Mig 534: EDI-orders waarvan de aflever-GLN geen vestiging in afleveradressen matcht '
+  'Mig 543: EDI-orders waarvan de aflever-GLN geen vestiging in afleveradressen matcht '
   '(create_edi_order viel stil terug op het debiteur-hoofdadres). Voedt de '
   'EdiAfleveradresOngekoppeldBanner op het orders-overzicht. Koppel de juiste '
   'vestiging-GLN aan het afleveradres zodat de order van de lijst verdwijnt.';
