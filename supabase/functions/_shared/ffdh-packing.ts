@@ -148,8 +148,14 @@ export function tryPlacePiece(
       if (orient.h <= shelf.height && shelf.usedWidth + orient.w <= shelf.maxWidth) {
         const remaining = shelf.maxWidth - shelf.usedWidth - orient.w
         const heightWaste = shelf.height - orient.h
+        // Naast-bestaande boost: exacte hoogte + identiek stuk in de queue →
+        // gelijk aan tier=1 (bruikbaar gat). Zonder deze boost wint een verse
+        // shelf (tier=2) altijd omdat het resterende gat enkel voor de tier=3
+        // "nutteloos gat"-tak in aanmerking komt, ook al past het identieke
+        // stuk er naast.
         const tier = remaining === 0 ? 0
           : gapIsUseful(remaining, shelf.height, futurePieces) ? 1
+          : (heightWaste === 0 && heeftZelfdeSoort) ? 1
           : 3
         const currentNaastElkaar = remaining > 0 && naastElkaarMogelijk(remaining, shelf.height)
 
