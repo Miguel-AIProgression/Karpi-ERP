@@ -35,6 +35,7 @@ import { isMancoMarker } from '@/lib/orders/manco-marker'
 import { heeftDropshipRegel } from '@/lib/orders/dropshipment-regel'
 import { dropshipAflEmailProbleem } from '@/lib/orders/dropship-email'
 import { useAuth } from '@/hooks/use-auth'
+import { CombiLeveringInWachtKnop } from '@/components/orders/combi-levering-in-wacht-knop'
 
 function EmailInhoudPanel({ body }: { body: string }) {
   const [open, setOpen] = useState(false)
@@ -218,6 +219,12 @@ export function OrderDetailPage() {
             matchBron={order.debiteur_match_bron}
           />
         )}
+
+      {/* Mig 489/ADR-0039: klant belt na de orderbevestiging alsnog om te
+          wachten op Combi-levering i.p.v. verzendkosten te betalen. */}
+      {order.status !== 'Geannuleerd' && (
+        <CombiLeveringInWachtKnop orderId={order.id} orderNr={order.order_nr} />
+      )}
 
       <OrderAddresses
         order={order}
