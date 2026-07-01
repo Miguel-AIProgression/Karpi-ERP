@@ -56,9 +56,13 @@ function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// Lege waarde → zelfsluitende tag, conform het voorbeeldbestand.
+// Lege waarde → open/dicht-tag (<Tag></Tag>), niet zelfsluitend. Het bestand
+// dat bij Verhoek's intake terugkwam als "leeg" toonde deze vorm i.p.v. onze
+// zelfsluitende tags — vermoedelijk een re-serialisatie door hun eigen
+// (MapForce-achtige) intaketool, maar goedkoop om onze kant hierop gelijk te
+// trekken als test (2026-07-01, n.a.v. ZEND-2026-0520/0521).
 function tag(naam: string, waarde: string | number | boolean | null | undefined): string {
-  if (waarde === null || waarde === undefined || waarde === '') return `<${naam}/>`;
+  if (waarde === null || waarde === undefined || waarde === '') return `<${naam}></${naam}>`;
   return `<${naam}>${esc(String(waarde))}</${naam}>`;
 }
 
@@ -261,10 +265,10 @@ export function bouwVerhoekXml(args: BouwVerhoekXmlArgs): string {
   const parts = colli.map((c, i) => bouwPart(c, i + 1, opties)).join('\n');
 
   return [
-    '<?xml version="1.0" encoding="utf-8"?>',
+    '<?xml version="1.0" encoding="UTF-8"?>',
     '<DATA>',
     '\t<Versie>AA2.0</Versie>',
-    '\t<FileHash/>',
+    '\t<FileHash></FileHash>',
     '\t<OrderEntry>',
     kop.map((r) => `\t\t${r}`).join('\n'),
     parts,

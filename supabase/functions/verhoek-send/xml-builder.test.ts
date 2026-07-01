@@ -73,7 +73,7 @@ Deno.test('valideerVerhoekColli: dims en gewicht verplicht', () => {
 
 Deno.test('bouwVerhoekXml: structuur, escaping, kernvelden', () => {
   const xml = bouwVerhoekXml(fixtureArgs());
-  assertStringIncludes(xml, '<?xml version="1.0" encoding="utf-8"?>');
+  assertStringIncludes(xml, '<?xml version="1.0" encoding="UTF-8"?>');
   assertStringIncludes(xml, '<Versie>AA2.0</Versie>');
   assertStringIncludes(xml, '<OrderEntryID>001</OrderEntryID>');
   assertStringIncludes(xml, '<OpdrachtgeverNummer>OG9999</OpdrachtgeverNummer>');
@@ -103,8 +103,8 @@ Deno.test('bouwVerhoekXml: structuur, escaping, kernvelden', () => {
   assertStringIncludes(xml, '<Verpakkingseenheid>Coupon</Verpakkingseenheid>');
   // Afzender = Karpi; AfwijkendeAfzender leeg (alleen vullen bij afwijking).
   assertStringIncludes(xml, '<AfzenderNaam>KARPI BV</AfzenderNaam>');
-  assertStringIncludes(xml, '<AfwijkendeAfzenderNaam/>');
-  assertStringIncludes(xml, '<AfwijkendeAfzenderStraat/>');
+  assertStringIncludes(xml, '<AfwijkendeAfzenderNaam></AfwijkendeAfzenderNaam>');
+  assertStringIncludes(xml, '<AfwijkendeAfzenderStraat></AfwijkendeAfzenderStraat>');
 });
 
 Deno.test('verhoekVerpakkingseenheid: classificeert binnen Verhoeks maat-envelopes, nooit Rol', () => {
@@ -146,7 +146,7 @@ Deno.test('bouwVerhoekXml: zonder afl_email géén TrackTraceID; leeg opdrachtge
   args.zending.afl_email = null;
   args.opties = { ...args.opties, opdrachtgever_nummer: '' };
   const xml = bouwVerhoekXml(args);
-  assertStringIncludes(xml, '<TrackTraceID/>');
-  assert(!xml.includes('<TrackTraceID>'));
-  assertStringIncludes(xml, '<OpdrachtgeverNummer/>');
+  assertStringIncludes(xml, '<TrackTraceID></TrackTraceID>');
+  assert(!xml.includes('<TrackTraceID>ZEND-2026-0042</TrackTraceID>'));
+  assertStringIncludes(xml, '<OpdrachtgeverNummer></OpdrachtgeverNummer>');
 });
