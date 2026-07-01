@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, ArrowDownCircle, ArrowUpCircle, AlertCircle, Check, Download, Send, Loader2, FileCode,
 } from 'lucide-react'
@@ -9,6 +9,8 @@ import { useEdiBericht } from '@/modules/edi/hooks/use-edi'
 import { KoppelVestigingWidget } from '@/modules/edi/components/koppel-vestiging-widget'
 import { bevestigOrderViaEdi } from '@/modules/edi/lib/bevestig-helper'
 import { downloadOrderbevAlsXml } from '@/modules/edi/lib/download-orderbev-xml'
+import { fetchHandelspartnerConfig } from '@/modules/edi/queries/edi'
+import { bepaalBevestigingKanaal } from '@/lib/orders/bevestiging-kanaal'
 import type { KarpiOrder } from '@/modules/edi/lib/karpi-fixed-width'
 import type { EdiBerichtStatus, EdiBerichtType } from '@/modules/edi/queries/edi'
 import { cn } from '@/lib/utils/cn'
@@ -33,6 +35,24 @@ export function EdiBerichtDetailPage() {
   // Externe vertegenwoordiger (mig 489): read-only — geen muteer-affordances.
   const { isExternRep } = useAuth()
 
+  // Config-check vóórdat de knop een ORDRSP mag bouwen — deze pagina riep
+  // bevestigOrderViaEdi voorheen onvoorwaardelijk aan, ongeacht wat de partner
+  // via edi_handelspartner_config.orderbev_uit aangeeft. Mirrort de dispatch
+  // in useBevestigEdiOrder/bepaalBevestigingKanaal (besluit 2026-06-11).
+  const isInkomendeOrderBericht = bericht?.richting === 'in' && bericht?.berichttype === 'order'
+  const { data: handelspartnerConfig } = useQuery({
+    queryKey: ['edi-handelspartner-config', bericht?.debiteur_nr],
+    queryFn: () => fetchHandelspartnerConfig(bericht!.debiteur_nr!),
+    enabled: isInkomendeOrderBericht && bericht?.debiteur_nr != null,
+    staleTime: 60_000,
+  })
+  const kanaal = bepaalBevestigingKanaal(
+    'edi',
+    handelspartnerConfig
+      ? { transus_actief: handelspartnerConfig.transus_actief, orderbev_uit: handelspartnerConfig.orderbev_uit }
+      : null,
+  )
+
   const qc = useQueryClient()
   const [bevestigBusy, setBevestigBusy] = useState(false)
   const [bevestigError, setBevestigError] = useState<string | null>(null)
@@ -47,7 +67,8 @@ export function EdiBerichtDetailPage() {
   const isInkomendeOrder = bericht.richting === 'in' && bericht.berichttype === 'order'
   const isUitgaandeOrderbev = bericht.richting === 'uit' && bericht.berichttype === 'orderbev'
   const heeftOrder = bericht.order_id != null
-  const kanBevestigen = isInkomendeOrder && heeftOrder
+  const kanBevestigen = isInkomendeOrder && heeftOrder && kanaal === 'edi'
+  const partnerWilGeenOrderbev = isInkomendeOrder && heeftOrder && kanaal === 'email'
   const kanXmlDownloaden = isUitgaandeOrderbev && heeftOrder
 
   async function handleXmlDownload() {
@@ -237,6 +258,21 @@ export function EdiBerichtDetailPage() {
             GLN's) — meestal een Transus-testbestand of een bericht van een onbekend
             type. Er kan geen order van gemaakt worden. Je kunt het negeren of opruimen
             via de EDI-test-data-knop op het berichten-overzicht.
+          </p>
+        </div>
+      )}
+
+      {partnerWilGeenOrderbev && (
+        <div className="mb-6 p-4 rounded-[var(--radius)] border border-amber-200 bg-amber-50">
+          <div className="font-medium text-amber-800 mb-1 flex items-center gap-2">
+            <AlertCircle size={16} /> Partner wil geen ORDRSP
+          </div>
+          <p className="text-xs text-amber-700">
+            Deze debiteur staat in <code>edi_handelspartner_config</code> op geen actieve
+            EDI-orderbevestiging — er wordt hier daarom geen ORDRSP gebouwd. Bevestig de
+            order via de "Bevestig order"-knop op{' '}
+            <Link to={`/orders/${bericht.order_id}`} className="underline">order-detail</Link>,
+            die stuurt automatisch de orderbevestiging per e-mail.
           </p>
         </div>
       )}
