@@ -60,10 +60,15 @@ export function MagazijnOverviewPage() {
 
   const weekTabs = useMemo(() => genereerWeekTabs(vandaagDate), [vandaagDate])
 
+  // Tijdens zoeken negeren we het week-filter en tonen we álle treffers, elk
+  // onder hun eigen verzendweek-kop (verzoek Miguel 01-07): anders lijkt een
+  // order/zending in een andere week "niet gevonden" omdat de actieve tab leeg is.
+  const zoekModus = search.trim().length > 0
   const gefilterd = useMemo(() => {
     if (!orders) return []
+    if (zoekModus) return orders
     return orders.filter((o) => o.bucket === filter)
-  }, [orders, filter])
+  }, [orders, filter, zoekModus])
 
   // Vervoerder-resolutie in ÉÉN batch-call (mig 401) i.p.v. N losse RPC's per
   // order-card. De `VervoerderResolutieProvider` rond de secties hieronder
@@ -177,9 +182,14 @@ export function MagazijnOverviewPage() {
     //  - 'starten' toont uitsluitend orders ZÓNDER lopende pickronde (de zwarte
     //    Verzendset-knop) — een al-gestarte order hoort in de Afronden-modus en
     //    mag de te-starten-lijst niet vervuilen.
-    const basis = gefilterd.filter((o) =>
-      modus === 'afronden' ? o.actieve_pickronde : !o.actieve_pickronde,
-    )
+    // Tijdens zoeken de modus-scheiding negeren: je zoekt om te vinden, niet om
+    // binnen één modus te handelen — anders mist een treffer die niet bij de
+    // actieve modus past (bv. een 'Klaar voor verzending'-zending).
+    const basis = zoekModus
+      ? gefilterd
+      : gefilterd.filter((o) =>
+          modus === 'afronden' ? o.actieve_pickronde : !o.actieve_pickronde,
+        )
     if (vervoerderFilter === 'all') return basis
     return basis.filter((o) => {
       const r = vervoerderMap.get(o.order_id)
@@ -188,7 +198,7 @@ export function MagazijnOverviewPage() {
       if (vervoerderFilter === 'geen') return !r.afhalen && !r.code
       return !r.afhalen && r.code === vervoerderFilter
     })
-  }, [gefilterd, vervoerderFilter, vervoerderMap, modus])
+  }, [gefilterd, vervoerderFilter, vervoerderMap, modus, zoekModus])
 
   // Voorgestelde-bundels (mig 229/535): pure SQL-view per (debiteur × adres ×
   // vervoerder) — week is geen bundel-dimensie meer (mig 535). Eén fetch over
@@ -333,10 +343,13 @@ export function MagazijnOverviewPage() {
       pickWeek: number | null
       status: PickStatus
     }
+    // Tijdens zoeken altijd per verzendweek groeperen (nooit de wk_1-samenvoeging)
+    // zodat elke treffer onder zijn eigen weekkop verschijnt.
+    const wk1Combined = filter === 'wk_1' && !zoekModus
     const map = new Map<string, Groep>()
     for (const o of weekOrders) {
       // wk_1: alles in één gecombineerde groep; andere buckets: per verzendweek.
-      const groepSleutel = filter === 'wk_1' ? '__wk1_gecombineerd__' : o.verzend_week_sleutel
+      const groepSleutel = wk1Combined ? '__wk1_gecombineerd__' : o.verzend_week_sleutel
 
       const bestaand = map.get(groepSleutel)
       if (bestaand) {
@@ -347,10 +360,10 @@ export function MagazijnOverviewPage() {
         // de sectiekop niet geheel rood kleurt terwijl er ook on-track orders in
         // zitten. Achterstallige orders zijn herkenbaar via hun eigen order-kaart.
         // Andere buckets: leid de header af van de eigenlijke afleverdatum.
-        const datumIso = filter === 'wk_1' ? vandaagIso : o.afleverdatum
+        const datumIso = wk1Combined ? vandaagIso : o.afleverdatum
         const verzend = verzendWeekVoor(datumIso)
         const pick = pickWeekVoor(datumIso)
-        const status: PickStatus = filter === 'wk_1' ? 'deze_week' : pickStatusVoor(o.afleverdatum, vandaagDate)
+        const status: PickStatus = wk1Combined ? 'deze_week' : pickStatusVoor(o.afleverdatum, vandaagDate)
         map.set(groepSleutel, {
           sleutel: groepSleutel,
           orders: [o],
@@ -361,7 +374,7 @@ export function MagazijnOverviewPage() {
       }
     }
     return Array.from(map.values()).sort((a, b) => a.sleutel.localeCompare(b.sleutel))
-  }, [weekOrders, filter, vandaagDate, vandaagIso])
+  }, [weekOrders, filter, zoekModus, vandaagDate, vandaagIso])
 
   const statCards = [
     {
@@ -477,6 +490,11 @@ export function MagazijnOverviewPage() {
           {tabs.map((t) => {
             const isActive = filter === t.key
             const isGefilterd = t.aantalTotaal !== null
+            // Amber accent alleen tijdens zoeken: buiten het zoeken heeft vrijwel
+            // elke week toch al orders (normale achterstand), dus zou de accent
+            // overal staan en niets meer beduiden. Tijdens zoeken is een
+            // niet-lege tab wél het signaal dat een treffer daar wacht (bv. "Later").
+            const heeftOrders = zoekModus && t.aantal > 0
             return (
               <button
                 key={t.key}
@@ -486,14 +504,20 @@ export function MagazijnOverviewPage() {
                   'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition-colors',
                   isActive
                     ? 'bg-terracotta-500 text-white font-medium'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    : heeftOrders
+                      ? 'bg-amber-50 text-amber-900 ring-1 ring-amber-300 hover:bg-amber-100'
+                      : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
                 )}
               >
                 {t.label}
                 <span
                   className={cn(
                     'inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-full',
-                    isActive ? 'bg-white/20' : 'bg-slate-200'
+                    isActive
+                      ? 'bg-white/20'
+                      : heeftOrders
+                        ? 'bg-amber-200 text-amber-900 font-semibold'
+                        : 'bg-slate-200'
                   )}
                 >
                   {t.aantal}
@@ -502,7 +526,7 @@ export function MagazijnOverviewPage() {
                       /{t.aantalTotaal}
                     </span>
                   )}
-                  <span className={cn('opacity-60', isActive ? '' : 'text-slate-400')}>
+                  <span className={cn('opacity-60', isActive ? '' : heeftOrders ? 'text-amber-800' : 'text-slate-400')}>
                     {' · '}{t.stuks} st
                   </span>
                 </span>
