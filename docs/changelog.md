@@ -1,5 +1,20 @@
 # Changelog — RugFlow ERP
 
+## 2026-07-01 — Concept-intake-gate Fase C: alle intake-kanalen op Concept (mig 542)
+
+**Aanleiding:** na mig 540-541 (lekken dichten + `bevestig_concept_order`) was de gate klaar, maar alleen e-mail-orders kwamen al in Concept binnen. EDI, Shopify/webshop en handmatige orders gingen nog naar 'Klaar voor picken'.
+
+**Fix (mig 542):** drie intake-functies aangepast:
+- `create_order_with_lines`: `'Nieuw'` → `'Concept'` (handmatige order-form UI)
+- `create_edi_order`: hardcoded `'Klaar voor picken'` → `'Concept'` (EDI/Transus)
+- `create_webshop_order`: `DEFAULT 'Klaar voor picken'` → `DEFAULT 'Concept'` (Shopify/webshop)
+
+**Geen edge function wijzigingen nodig:** `poll-email-orders` gaf al expliciet `'Concept'` mee; `shopify-order-processor`/`sync-webshop-order`/`transus-poll` gebruiken de SQL-default die nu veranderd is. De `IF p_initieel_status <> 'Concept' THEN` guard in `create_webshop_order` was al aanwezig (mig 308).
+
+**Effect:** elke nieuw aangemaakte order (handmatig, EDI, Shopify, webshop) belandt nu eerst in Concept. Triggers (herallocateer/snijplan/herplan-sweep) zijn inert voor Concept via mig 540. Alleen `bevestig_concept_order` (mig 541) activeert de order operationeel.
+
+---
+
 ## 2026-06-30 — Concept-intake-gate: lekken dichten + bevestig RPC (mig 540-541)
 
 **Probleem:** `order_status = 'Concept'` bestond al (mig 308) maar werd behandeld als een normale actieve status — vier functies lieten Concept-orders onbedoeld meedraaien in de operationele keten.
