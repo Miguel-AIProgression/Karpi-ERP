@@ -190,6 +190,20 @@ export function DebiteurDetailPage() {
     onError: showError('Tapijt-stickers bij standaard'),
   })
 
+  const combiLeveringMutation = useMutation({
+    mutationFn: async (newValue: boolean) => {
+      const { error } = await supabase
+        .from('debiteuren')
+        .update({ combi_levering: newValue })
+        .eq('debiteur_nr', debiteurNr)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['klanten', debiteurNr] })
+    },
+    onError: showError('Combi-levering'),
+  })
+
   const verzendDrempelMutation = useMutation({
     mutationFn: async (newValue: number) => {
       const { error } = await supabase
@@ -717,6 +731,32 @@ export function DebiteurDetailPage() {
               )}
               <span className="text-slate-700">
                 {klant.tapijt_sticker_bij_standaard ? 'Aan' : 'Uit'}
+              </span>
+            </div>
+          </div>
+
+          {/* Combi-levering — mig 485/ADR-0039 */}
+          <div>
+            <div className="text-xs text-slate-400 mb-1">Combi-levering (wacht op vrachtvrije drempel)</div>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={klant.combi_levering}
+                onClick={() => combiLeveringMutation.mutate(!klant.combi_levering)}
+                disabled={combiLeveringMutation.isPending}
+                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-terracotta-400/30 disabled:opacity-50 ${
+                  klant.combi_levering ? 'bg-terracotta-500' : 'bg-slate-300'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                    klant.combi_levering ? 'translate-x-4' : 'translate-x-0.5'
+                  }`}
+                />
+              </button>
+              <span className="text-slate-700">
+                {klant.combi_levering ? 'Aan' : 'Uit'}
               </span>
             </div>
           </div>

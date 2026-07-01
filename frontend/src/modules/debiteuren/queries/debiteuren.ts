@@ -69,6 +69,9 @@ export interface DebiteurDetail {
   /** Mig 303: tapijt-stickers (148×106 mm, klant-facing) ook printen voor
    *  standaard (niet-maatwerk) artikelen bij de vervoerderslabels. */
   tapijt_sticker_bij_standaard: boolean
+  /** Mig 485/ADR-0039: klant wil wachten met verzenden tot de gecombineerde
+   *  openstaande orders naar hetzelfde adres de vrachtvrije-drempel bereiken. */
+  combi_levering: boolean
   btw_percentage: number
   inkoopgroep_code: string | null
   inkoopgroep_naam?: string | null
