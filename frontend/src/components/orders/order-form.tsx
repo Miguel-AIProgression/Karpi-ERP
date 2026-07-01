@@ -47,6 +47,13 @@ import { DropshipmentSelector } from './dropshipment-selector'
 import type { DropshipmentKeuze } from '@/lib/constants/dropshipment'
 import { useDropshipPrijzen } from '@/hooks/use-dropship-prijzen'
 
+/** ADR-0039: één definitie van "wacht deze order op zijn Combi-levering-groep"
+ *  voor de applyShippingLogic-aanroepen — voorkomt dat de call-sites uit
+ *  elkaar drift. */
+function berekenWachtOpCombiLevering(client: SelectedClient | null, override: boolean): boolean {
+  return !!client?.combi_levering && !override
+}
+
 function getISOWeek(dateStr: string): number {
   return verzendWeekVoor(dateStr)?.week ?? 0
 }
@@ -234,7 +241,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
     setShippingOverridden(false)
     setRegels((current) => {
       const afterShipping = applyShippingLogic(current, client, nieuw, {
-        wachtOpCombiLevering: !!client?.combi_levering && !combiLeveringOverride,
+        wachtOpCombiLevering: berekenWachtOpCombiLevering(client, combiLeveringOverride),
       })
       return applyToeslagLogic(afterShipping, client)
     })
@@ -246,7 +253,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
     setCombiLeveringOverride(nieuw)
     setRegels((current) => {
       const afterShipping = applyShippingLogic(current, client, afhalen, {
-        wachtOpCombiLevering: !!client?.combi_levering && !nieuw,
+        wachtOpCombiLevering: berekenWachtOpCombiLevering(client, nieuw),
       })
       return applyToeslagLogic(afterShipping, client)
     })
@@ -266,7 +273,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
       const metDropship = applyDropshipmentLogic(current, keuze, dropshipPrijzen)
       const afterShipping = keuze === 'nee'
         ? applyShippingLogic(metDropship, client, afhalen, {
-            wachtOpCombiLevering: !!client?.combi_levering && !combiLeveringOverride,
+            wachtOpCombiLevering: berekenWachtOpCombiLevering(client, combiLeveringOverride),
           })
         : metDropship
       return applyToeslagLogic(afterShipping, client)
@@ -369,7 +376,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
           })
         )
         const afterShipping = applyShippingLogic(updatedRegels, c, nieuweAfhalen, {
-          wachtOpCombiLevering: !!c?.combi_levering,
+          wachtOpCombiLevering: berekenWachtOpCombiLevering(c, false),
         })
         setRegels(applyToeslagLogic(afterShipping, c))
       }
@@ -1128,7 +1135,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
           const afterShipping = shippingOverridden
             ? newRegels
             : applyShippingLogic(newRegels, client, afhalen, {
-                wachtOpCombiLevering: !!client?.combi_levering && !combiLeveringOverride,
+                wachtOpCombiLevering: berekenWachtOpCombiLevering(client, combiLeveringOverride),
               })
           const finalRegels = applyToeslagLogic(afterShipping, client)
           setRegels(finalRegels)

@@ -80,10 +80,14 @@ export function CombiLeveringInWachtKnop({ orderId, orderNr }: Props) {
         type="button"
         onClick={() => mutation.mutate()}
         disabled={mutation.isPending}
+        title="Zet de Combi-levering-instelling aan voor de hele klant — raakt dus ook alle andere openstaande orders van deze klant naar hetzelfde adres, niet alleen deze order."
         className="text-sm text-terracotta-500 hover:text-terracotta-700 font-medium disabled:opacity-50"
       >
         {mutation.isPending ? 'Bezig...' : 'Zet order in de wacht voor Combi-levering'}
       </button>
+      <p className="text-xs text-slate-400 mt-1">
+        Zet de instelling klantbreed aan — geldt ook voor andere openstaande orders van deze klant naar hetzelfde adres.
+      </p>
       {mutation.isError && (
         <p className="text-xs text-rose-600 mt-1">
           {mutation.error instanceof Error ? mutation.error.message : 'Er is iets misgegaan'}
