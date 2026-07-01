@@ -55,7 +55,7 @@ export function PakbonDocument({ zending, vervoerderNaam: _vervoerderNaam, colli
       ? hstDepotVoorPostcode(zending.afl_postcode, zending.afl_land)
       : null
 
-  const doc = bouwPakbonDocument(zending, { kolli: colliTotal, routecode, afwerkingTypes })
+  const doc = bouwPakbonDocument(zending, { kolli: colliTotal, routecode, afwerkingTypes, bedrijf: bedrijf ?? null })
 
   return (
     <div className="pakbon-page bg-white text-slate-900" style={{ width: '210mm', minHeight: '297mm' }}>
@@ -96,14 +96,26 @@ export function PakbonDocument({ zending, vervoerderNaam: _vervoerderNaam, colli
           </div>
         )}
 
-        {/* AFLEVERADRES als hoofd-adresblok (rechts van het midden) --------- */}
+        {/* Mig 537: klant haalt op bij Karpi. */}
+        {doc.isAfhalen && (
+          <div className="mt-2 inline-block self-start border-2 border-slate-900 px-2 py-1 font-sans text-[11px] font-bold tracking-wide">
+            AFHALEN — klant haalt op bij Karpi
+          </div>
+        )}
+
+        {/* AFLEVERADRES / AFHAALLOCATIE (rechts van het midden) ------------ */}
         <section className="mt-8 grid grid-cols-2">
           <div />
-          <div className="uppercase">
-            {doc.afleveradres.map((regel, i) => (
-              <div key={i}>{regel}</div>
-            ))}
-            {doc.afleverTelefoon && <div className="mt-3 normal-case">{doc.afleverTelefoon}</div>}
+          <div>
+            <div className="text-[8px] uppercase text-slate-500 mb-1 font-sans">
+              {doc.isAfhalen ? 'Afhaallocatie' : 'Afleveradres'}
+            </div>
+            <div className="uppercase">
+              {doc.afleveradres.map((regel, i) => (
+                <div key={i}>{regel}</div>
+              ))}
+              {doc.afleverTelefoon && <div className="mt-3 normal-case">{doc.afleverTelefoon}</div>}
+            </div>
           </div>
         </section>
 

@@ -16,7 +16,7 @@ import {
   SnelsteHaalbaarKnop,
   useNeemSnelsteOver,
 } from '@/modules/levertijd'
-import { createOrder, updateOrderWithLines, deleteOrder, resolveOrderlinePrice, fetchKlantArtikelnummer, setAllocatieKeuze, registreerAchterafOrder, type LevertijdSnapshotContext } from '@/lib/supabase/queries/order-mutations'
+import { createOrder, updateOrderWithLines, deleteOrder, resolveOrderlinePrice, fetchKlantArtikelnummer, setAllocatieKeuze, registreerAchterafOrder, markeerAchterafVerzonden, type LevertijdSnapshotContext } from '@/lib/supabase/queries/order-mutations'
 import type { OrderFormData, OrderRegelFormData, PrijsBron, PrijsBreakdown } from '@/lib/supabase/queries/order-mutations'
 import { fetchKlanteigenNaam } from '@/modules/debiteuren'
 import { supabase } from '@/lib/supabase/client'
@@ -209,8 +209,24 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
   )
 
   /** Toggle afhalen — verwijdert/herstelt verzend-regel automatisch en zet
-   *  shippingOverridden uit zodat de auto-logica weer leidend wordt. */
+   *  shippingOverridden uit zodat de auto-logica weer leidend wordt.
+   *  Bij inschakelen: afl_*-velden worden gewist (afhalen heeft geen
+   *  afleveradres — afhaallocatie = Karpi's eigen adres). */
   function handleAfhalenToggle(nieuw: boolean) {
+    if (nieuw) {
+      setHeader((h) => ({
+        ...h,
+        afl_naam: undefined,
+        afl_naam_2: undefined,
+        afl_adres: undefined,
+        afl_postcode: undefined,
+        afl_plaats: undefined,
+        afl_land: undefined,
+        afl_email: undefined,
+        afl_telefoon: undefined,
+      }))
+      setSelectedAfleveradresId(undefined)
+    }
     setAfhalen(nieuw)
     setShippingOverridden(false)
     setRegels((current) => {
@@ -594,6 +610,12 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
         const result = await registreerAchterafOrder(orderData, regels, verzenddatum, afhalen)
         return { split: false as const, id: result.id, order_nr: result.order_nr }
       }
+      // ── Mig 539: retroactief pad voor BESTAANDE orders ───────────────────────
+      if (alAfgehandeld && mode === 'edit') {
+        if (!initialData?.orderId) throw new Error('Order ID ontbreekt')
+        const result = await markeerAchterafVerzonden(initialData.orderId, verzenddatum, afhalen)
+        return { split: false as const, id: result.order_id, order_nr: result.order_nr }
+      }
       // ────────────────────────────────────────────────────────────────────────
 
       if (isBlokkerendDropshipEmailProbleem(dropshipEmailProbleem) && !dropshipEmailGenegeerd) {
@@ -817,8 +839,8 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
         />
       </div>
 
-      {/* Mig 524: Al afgehandeld — retroactieve order (alleen aanmaken) */}
-      {mode === 'create' && (
+      {/* Mig 524/539: Al afgehandeld — retroactief (aanmaken én bewerken) */}
+      {(mode === 'create' || !['Verzonden', 'Geannuleerd', 'Deels verzonden'].includes(initialData?.status ?? '')) && (
         <div className={`border rounded-[var(--radius-sm)] p-3 ${alAfgehandeld ? 'bg-amber-50 border-amber-300' : 'border-slate-200'}`}>
           <label className="inline-flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer">
             <input
@@ -842,7 +864,14 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
                 />
               </label>
               <span className="text-xs text-amber-700">
-                Order wordt direct als Verzonden aangemaakt en gefactureerd via de normale factuurpipeline.
+                {mode === 'edit'
+                  ? 'Order wordt direct op Verzonden gezet. Openstaande snijplannen worden geannuleerd en reserveringen worden vrijgegeven. Factuur wordt via de normale pipeline aangemaakt.'
+                  : <>
+                      Order wordt direct als Verzonden aangemaakt.{' '}
+                      {client?.factuurvoorkeur === 'wekelijks'
+                        ? 'Factuur verschijnt op de wekelijkse verzamelfactuur (maandag).'
+                        : 'Factuur wordt direct aangemaakt via de normale factuurpipeline.'}
+                    </>}
               </span>
             </div>
           )}

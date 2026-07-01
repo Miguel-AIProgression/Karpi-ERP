@@ -43,6 +43,8 @@ export interface FactuurDocumentHeader {
   toeslag_bedrag: number
   /** Toeslagtekst met {percentage} al ingevuld; null als geen toeslag. */
   toeslag_omschrijving: string | null
+  /** Toeslag-percentage snapshot (mig 531): bijv. 4.5 → PDF toont "Zuschlag 4,5%". */
+  toeslag_procent: number | null
 }
 
 export interface FactuurDocumentRegel {
@@ -93,6 +95,7 @@ export interface FactuurDocumentFactuurRow {
   btw_verlegd: boolean | null
   toeslag_bedrag: number | string | null
   toeslag_omschrijving: string | null
+  toeslag_procent: number | string | null
 }
 
 export interface FactuurDocumentRegelRow {
@@ -162,6 +165,7 @@ export function bouwFactuurDocument(
     btw_nummer_afnemer: factuur.btw_nummer ?? null,
     toeslag_bedrag: num(factuur.toeslag_bedrag),
     toeslag_omschrijving: factuur.toeslag_omschrijving ?? null,
+    toeslag_procent: factuur.toeslag_procent != null ? num(factuur.toeslag_procent) : null,
   }
 
   const regels: FactuurDocumentRegel[] = regelRows.map((r) => {
@@ -231,7 +235,7 @@ export async function fetchFactuurDocument(
       .select(
         'factuur_nr, factuurdatum, debiteur_nr, fact_naam, fact_adres, fact_postcode, ' +
           'fact_plaats, fact_land, btw_nummer, subtotaal, btw_percentage, btw_bedrag, totaal, btw_verlegd, ' +
-          'toeslag_bedrag, toeslag_omschrijving',
+          'toeslag_bedrag, toeslag_omschrijving, toeslag_procent',
       )
       .eq('id', factuurId)
       .maybeSingle(),

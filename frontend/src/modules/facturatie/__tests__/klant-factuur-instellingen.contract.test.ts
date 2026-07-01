@@ -35,25 +35,59 @@ beforeEach(() => {
 })
 
 describe('fetchKlantFactuurInstellingen', () => {
-  it('selecteert btw_percentage + btw_verlegd_intracom + email_factuur uit debiteuren op debiteur_nr', async () => {
+  it('selecteert alle facturatie-velden inclusief factuurvoorkeur uit debiteuren', async () => {
     nextResponse = {
-      data: { btw_percentage: 21, btw_verlegd_intracom: true, email_factuur: 'a@b.nl' },
+      data: {
+        btw_percentage: 21,
+        btw_verlegd_intracom: true,
+        email_factuur: 'a@b.nl',
+        factuurvoorkeur: 'per_zending',
+        toeslag_actief: false,
+        toeslag_procent: null,
+        toeslag_omschrijving: null,
+        toeslag_begindatum: null,
+        toeslag_einddatum: null,
+      },
       error: null,
     }
     const r = await fetchKlantFactuurInstellingen(123)
     expect(supabaseCalls[0]).toMatchObject({
       op: 'select',
       table: 'debiteuren',
-      cols: 'btw_percentage, btw_verlegd_intracom, email_factuur',
       col: 'debiteur_nr',
       val: 123,
     })
-    expect(r).toEqual({ btw_percentage: 21, btw_verlegd_intracom: true, email_factuur: 'a@b.nl' })
+    // Verifieer dat factuurvoorkeur in de select-string staat
+    expect(supabaseCalls[0].cols).toContain('factuurvoorkeur')
+    // Verifieer dat de kerntriplet nog steeds aanwezig is
+    expect(supabaseCalls[0].cols).toContain('btw_percentage')
+    expect(supabaseCalls[0].cols).toContain('btw_verlegd_intracom')
+    expect(supabaseCalls[0].cols).toContain('email_factuur')
+    expect(r?.factuurvoorkeur).toBe('per_zending')
+  })
+
+  it('geeft wekelijks terug als dat ingesteld is', async () => {
+    nextResponse = {
+      data: {
+        btw_percentage: 21,
+        btw_verlegd_intracom: false,
+        email_factuur: 'factuur@klant.nl',
+        factuurvoorkeur: 'wekelijks',
+        toeslag_actief: false,
+        toeslag_procent: null,
+        toeslag_omschrijving: null,
+        toeslag_begindatum: null,
+        toeslag_einddatum: null,
+      },
+      error: null,
+    }
+    const r = await fetchKlantFactuurInstellingen(260000)
+    expect(r?.factuurvoorkeur).toBe('wekelijks')
   })
 })
 
 describe('updateKlantFactuurInstellingen', () => {
-  it('update alleen de twee facturatie-velden', async () => {
+  it('kan btw_percentage patchen', async () => {
     await updateKlantFactuurInstellingen(123, { btw_percentage: 0 })
     expect(supabaseCalls[0]).toMatchObject({
       op: 'update',
@@ -72,6 +106,28 @@ describe('updateKlantFactuurInstellingen', () => {
       patch: { btw_verlegd_intracom: false },
       col: 'debiteur_nr',
       val: 123,
+    })
+  })
+
+  it('kan factuurvoorkeur omzetten naar wekelijks', async () => {
+    await updateKlantFactuurInstellingen(260000, { factuurvoorkeur: 'wekelijks' })
+    expect(supabaseCalls[0]).toMatchObject({
+      op: 'update',
+      table: 'debiteuren',
+      patch: { factuurvoorkeur: 'wekelijks' },
+      col: 'debiteur_nr',
+      val: 260000,
+    })
+  })
+
+  it('kan factuurvoorkeur terugzetten naar per_zending', async () => {
+    await updateKlantFactuurInstellingen(260000, { factuurvoorkeur: 'per_zending' })
+    expect(supabaseCalls[0]).toMatchObject({
+      op: 'update',
+      table: 'debiteuren',
+      patch: { factuurvoorkeur: 'per_zending' },
+      col: 'debiteur_nr',
+      val: 260000,
     })
   })
 })

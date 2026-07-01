@@ -176,7 +176,54 @@ export function KlantFactureringTab({ debiteurNr, btwNummer }: Props) {
 
   return (
     <div className="space-y-6">
-      {/* Factuurvoorkeur-sectie verwijderd per ADR-0010: factuur volgt voortaan altijd de bundel-zending in de wekelijkse cron. */}
+      <section>
+        <h3 className="text-sm font-semibold text-slate-700 mb-2">Factuurvoorkeur</h3>
+        {isExternRep ? (
+          <div className="flex items-center gap-2 text-sm text-slate-600">
+            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+              (instellingen.factuurvoorkeur ?? 'per_zending') === 'wekelijks'
+                ? 'bg-emerald-100 text-emerald-700'
+                : 'bg-slate-100 text-slate-500'
+            }`}>
+              {(instellingen.factuurvoorkeur ?? 'per_zending') === 'wekelijks' ? 'Wekelijks' : 'Per zending'}
+            </span>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+              <input
+                type="radio"
+                name={`factuurvoorkeur-${debiteurNr}`}
+                value="per_zending"
+                checked={(instellingen.factuurvoorkeur ?? 'per_zending') === 'per_zending'}
+                disabled={updateMut.isPending}
+                onChange={() => patch({ factuurvoorkeur: 'per_zending' })}
+                className="h-4 w-4 accent-terracotta-500"
+              />
+              <span>
+                <strong>Per zending</strong> — factuur direct na elke verzending
+              </span>
+            </label>
+            <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+              <input
+                type="radio"
+                name={`factuurvoorkeur-${debiteurNr}`}
+                value="wekelijks"
+                checked={(instellingen.factuurvoorkeur ?? 'per_zending') === 'wekelijks'}
+                disabled={updateMut.isPending}
+                onChange={() => patch({ factuurvoorkeur: 'wekelijks' })}
+                className="h-4 w-4 accent-terracotta-500"
+              />
+              <span>
+                <strong>Wekelijks</strong> — één verzamelfactuur per week, verstuurd op maandag 06:00
+              </span>
+            </label>
+          </div>
+        )}
+        <p className="mt-1 text-xs text-slate-400">
+          Wekelijks: alle orders die in de vorige week zijn <em>verzonden</em> komen op één factuur met één factuurnummer.
+        </p>
+      </section>
 
       <section>
         <h3 className="text-sm font-semibold text-slate-700 mb-2">E-mailadres factuur</h3>

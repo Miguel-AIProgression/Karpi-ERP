@@ -142,9 +142,22 @@ export async function genereerPakbonPDF(
     y -= mm(10)
   }
 
-  // ── Afleveradres (rechterkolom) ───────────────────────────────────────────
+  // Mig 537: afhaallocatie-badge.
+  if (doc.isAfhalen) {
+    const badgeTekst = 'AFHALEN — klant haalt op bij Karpi'
+    const badgeW = fontB.widthOfTextAtSize(badgeTekst, 9) + mm(4)
+    const badgeH = mm(6)
+    page.drawRectangle({
+      x: mL, y: y - badgeH + mm(1.5), width: badgeW, height: badgeH,
+      borderColor: BLACK, borderWidth: 1,
+    })
+    drawText(page, badgeTekst, mL + mm(2), y - mm(3), fontB, 9)
+    y -= mm(10)
+  }
+
+  // ── Afleveradres / Afhaallocatie (rechterkolom) ───────────────────────────
   const adresX = mL + mm(110)
-  drawText(page, 'Afleveradres:', adresX, y, fontB, 8, SLATE)
+  drawText(page, doc.isAfhalen ? 'Afhaallocatie:' : 'Afleveradres:', adresX, y, fontB, 8, SLATE)
   let ay = y - mm(5)
   for (const regel of doc.afleveradres) {
     drawText(page, regel.toUpperCase(), adresX, ay, fontR, 8)
