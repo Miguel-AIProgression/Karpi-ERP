@@ -34,6 +34,8 @@ import { useStartPickrondes } from '../hooks/use-zendingen'
 import { useVervoerders } from '../hooks/use-vervoerders'
 import { usePickbaarheid } from '../hooks/use-pickbaarheid'
 import { useAuth } from '@/hooks/use-auth'
+import { usePickShipOrders } from '@/modules/magazijn/hooks/use-pick-ship'
+import { vindtAchtergeblevenCombiLeveringLeden } from '../lib/combi-levering-achtergebleven'
 import { cn } from '@/lib/utils/cn'
 import { iso2NaarNaam, landNaarIso2 } from '@/lib/utils/land-vlag'
 import type { PickShipOrder } from '@/modules/magazijn'
@@ -63,6 +65,8 @@ export function StartPickrondesButton({
   const [error, setError] = useState<string | null>(null)
   // Externe vertegenwoordiger (mig 489): read-only — geen pickronde-start.
   const { isExternRep } = useAuth()
+  const [toonCombiWaarschuwing, setToonCombiWaarschuwing] = useState(false)
+  const [bevestigdAchterlaten, setBevestigdAchterlaten] = useState(false)
 
   const {
     pickbareOrders,
@@ -73,6 +77,17 @@ export function StartPickrondesButton({
     aantalGeblokkeerd,
     vervoerderResolutieLaadt,
   } = usePickbaarheid(orders)
+
+  // Mig 486/ADR-0039: de volledige, ongefilterde Pick & Ship-lijst — nodig om
+  // te detecteren of het niet-aanvinken van een order een Combi-levering-groep
+  // zou splitsen. Gedeeld via React Query-cache met de hoofdlijst (zelfde
+  // queryKey-vorm); geen extra fetch als de pagina de lijst al zonder
+  // zoekfilter geladen heeft.
+  const { data: alleOrders = [] } = usePickShipOrders({})
+  const achtergebleven = useMemo(
+    () => vindtAchtergeblevenCombiLeveringLeden(pickbareOrders.map((o) => o.order_id), alleOrders),
+    [pickbareOrders, alleOrders],
+  )
 
   const aantal = pickbareOrders.length
   const aantalOverig = orders.length - aantal
@@ -148,6 +163,10 @@ export function StartPickrondesButton({
 
   async function handleStart() {
     if (disabled) return
+    if (achtergebleven.length > 0 && !bevestigdAchterlaten) {
+      setToonCombiWaarschuwing(true)
+      return
+    }
     setError(null)
     try {
       const zendingen = await mutation.mutateAsync({
@@ -224,6 +243,21 @@ export function StartPickrondesButton({
         </div>
       )}
       {error && <div className="max-w-72 text-right text-[11px] text-rose-600">{error}</div>}
+      {toonCombiWaarschuwing && (
+        <div className="max-w-72 bg-amber-50 border border-amber-200 rounded-[var(--radius-sm)] px-3 py-2.5 space-y-2 text-left">
+          <p className="text-sm text-amber-800 font-medium">
+            {achtergebleven.length} andere order(s) van deze klant wachten nog op dezelfde Combi-levering-groep
+          </p>
+          <label className="flex items-start gap-2 text-xs text-amber-700 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={bevestigdAchterlaten}
+              onChange={(e) => setBevestigdAchterlaten(e.target.checked)}
+            />
+            <span>Ik wil deze order(s) toch los starten, ook al betekent dit dat de klant de vrachtvrije-drempel mogelijk niet haalt.</span>
+          </label>
+        </div>
+      )}
     </div>
   )
 }
