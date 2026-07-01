@@ -96,6 +96,11 @@ export interface PickShipOrder {
    *  Aanwezig zodra `start_pickronde` is aangeroepen, weg na voltooi.
    *  Drijft de "in progress"-staat op de pick-card. */
   actieve_pickronde: ActievePickronde | null
+  /** Mig 486/ADR-0039: TRUE zolang deze order in een Combi-levering-wachtgroep
+   *  zit die de vrachtvrije-drempel nog niet gehaald heeft, of waarvan niet
+   *  alle leden al pickbaar zijn. FALSE voor klanten zonder de instelling,
+   *  dropshipment-orders, en orders met combi_levering_override=true. */
+  wacht_op_combi_levering: boolean
 }
 
 export interface ActievePickronde {

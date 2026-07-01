@@ -121,6 +121,7 @@ export function MagazijnOverviewPage() {
           prijs_ontbreekt_sinds: o.prijs_ontbreekt_sinds,
           in_pickronde: o.actieve_pickronde !== null,
           geen_vervoerder: heeftGeenVervoerder(o.afhalen, regelsPerOrder?.get(o.order_id)),
+          wacht_op_combi_levering: o.wacht_op_combi_levering,
         }).status,
       )
     }

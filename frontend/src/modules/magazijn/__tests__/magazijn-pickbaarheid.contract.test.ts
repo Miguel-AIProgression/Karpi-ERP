@@ -192,6 +192,10 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
       error: null,
     })
 
+    // Mig 486/ADR-0039: Combi-levering-status — geen van deze fixture-klanten
+    // heeft de instelling aan, dus lege view-respons.
+    queueResponse('combi_levering_status', { data: [], error: null })
+
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 
     expect(result).toHaveLength(1)
@@ -225,6 +229,10 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     queueResponse('zending_orders', { data: [], error: null })
     // Mig 386: geen regels → geen rij in order_pickbaarheid → order onzichtbaar.
     queueResponse('order_pickbaarheid', { data: [], error: null })
+
+    // Mig 486/ADR-0039: Combi-levering-status — geen van deze fixture-klanten
+    // heeft de instelling aan, dus lege view-respons.
+    queueResponse('combi_levering_status', { data: [], error: null })
 
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 
@@ -284,6 +292,10 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
       error: null,
     })
 
+    // Mig 486/ADR-0039: Combi-levering-status — geen van deze fixture-klanten
+    // heeft de instelling aan, dus lege view-respons.
+    queueResponse('combi_levering_status', { data: [], error: null })
+
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 
     expect(result).toHaveLength(0)
@@ -321,6 +333,10 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
       error: null,
     })
 
+    // Mig 486/ADR-0039: Combi-levering-status — geen van deze fixture-klanten
+    // heeft de instelling aan, dus lege view-respons.
+    queueResponse('combi_levering_status', { data: [], error: null })
+
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 
     expect(result).toHaveLength(0)
@@ -340,6 +356,10 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
     queueResponse('zending_orders', { data: [], error: null })
     // Mig 386: geen regels → geen rij in order_pickbaarheid → order onzichtbaar.
     queueResponse('order_pickbaarheid', { data: [], error: null })
+
+    // Mig 486/ADR-0039: Combi-levering-status — geen van deze fixture-klanten
+    // heeft de instelling aan, dus lege view-respons.
+    queueResponse('combi_levering_status', { data: [], error: null })
 
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 
@@ -377,6 +397,10 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
       error: null,
     })
 
+    // Mig 486/ADR-0039: Combi-levering-status — geen van deze fixture-klanten
+    // heeft de instelling aan, dus lege view-respons.
+    queueResponse('combi_levering_status', { data: [], error: null })
+
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 
     expect(result).toHaveLength(0)
@@ -403,6 +427,7 @@ describe('magazijn-pickbaarheid seam — fetchPickShipOrders', () => {
       queueResponse('producten', { data: [], error: null })
       queueResponse('order_pickbaarheid', { data: [makeOrderPickbaarheidRow()], error: null })
       queueResponse('zending_orders', { data: [], error: null })
+      queueResponse('combi_levering_status', { data: [], error: null })
     }
 
     // Vrijdag 8 mei = vóór de horizon (ma 11 mei) → onzichtbaar.

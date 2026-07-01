@@ -160,6 +160,9 @@ describe('Pick & Ship R1-guard — productie-only orders worden uitgefilterd', (
       }],
       error: null,
     })
+    // Mig 486/ADR-0039: Combi-levering-status — geen van deze fixture-klanten
+    // heeft de instelling aan, dus lege view-respons.
+    queueResponse('combi_levering_status', { data: [], error: null })
 
     const result = await fetchPickShipOrders({ vandaag: new Date('2026-05-10T12:00:00Z') })
 

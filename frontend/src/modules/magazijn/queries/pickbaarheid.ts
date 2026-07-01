@@ -49,11 +49,12 @@ export async function fetchPickShipOrders(
   const perOrder = initPickShipOrders(headers, vandaag)
   const headerMap = new Map(headers.map((h) => [h.id, h]))
   const headerIds = headers.map((h) => h.id)
-  // Deze drie hangen alleen van headerIds af → parallel i.p.v. waterval.
-  const [regels, orderPickbaarheid, actievePickrondes] = await Promise.all([
+  // Deze vier hangen alleen van headerIds af → parallel i.p.v. waterval.
+  const [regels, orderPickbaarheid, actievePickrondes, combiLeveringStatus] = await Promise.all([
     fetchPickbaarheidRegels(headerIds),
     fetchOrderPickbaarheid(headerIds),
     fetchActievePickrondes(headerIds),
+    fetchCombiLeveringStatus(headerIds),
   ])
   // karpiNamen hangt wél van regels af → erna.
   const karpiNamen = await fetchKarpiNamenVoorArtikelen(regels.map((r) => r.artikelnr))
@@ -81,6 +82,7 @@ export async function fetchPickShipOrders(
     if (order) {
       order.alle_regels_pickbaar = opb.alle_regels_pickbaar
       order.heeft_gepland_zending = opb.heeft_gepland_zending
+      order.wacht_op_combi_levering = combiLeveringStatus.get(orderId) ?? false
     }
   }
 
@@ -296,6 +298,33 @@ async function fetchOrderPickbaarheid(
   )
   for (const row of perChunk.flat()) {
     map.set(row.order_id, row)
+  }
+  return map
+}
+
+/**
+ * Mig 486/ADR-0039: per order, TRUE zolang de Combi-levering-wachtgroep van
+ * die order (indien de klant de instelling aan heeft) de vrachtvrije-drempel
+ * nog niet gehaald heeft. Orders die niet in de view voorkomen (klant heeft
+ * de instelling niet aan, dropshipment, of override) zijn nooit geblokkeerd —
+ * caller gebruikt `?? false`.
+ */
+async function fetchCombiLeveringStatus(
+  orderIds: number[]
+): Promise<Map<number, boolean>> {
+  const map = new Map<number, boolean>()
+  const perChunk = await Promise.all(
+    chunks(orderIds, 100).map(async (ids) => {
+      const { data, error } = await supabase
+        .from('combi_levering_status')
+        .select('order_id, wacht_op_combi_levering')
+        .in('order_id', ids)
+      if (error) throw error
+      return (data ?? []) as Array<{ order_id: number; wacht_op_combi_levering: boolean }>
+    })
+  )
+  for (const row of perChunk.flat()) {
+    map.set(row.order_id, row.wacht_op_combi_levering)
   }
   return map
 }

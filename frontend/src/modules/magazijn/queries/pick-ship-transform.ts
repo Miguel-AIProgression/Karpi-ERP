@@ -114,6 +114,7 @@ export function initPickShipOrders(
       alle_regels_pickbaar: false,
       heeft_gepland_zending: false,
       actieve_pickronde: null,
+      wacht_op_combi_levering: false,
     })
   }
 
