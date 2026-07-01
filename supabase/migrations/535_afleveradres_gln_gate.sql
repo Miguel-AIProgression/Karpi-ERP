@@ -242,6 +242,13 @@ COMMENT ON FUNCTION _valideer_intake_gates(BIGINT[]) IS
   '(mig 535) of prijs-gate (mig 396). Frontend-spiegel: StartPickrondesButton + banners.';
 
 -- 9. orders_list view: gate-kolommen toevoegen (order-detail leest deze view) -
+-- LET OP (bijgewerkt 2026-07-01, vóór apply): deze branch is afgetakt op main=533
+-- (30-06). Sindsdien kreeg de live orders_list drie extra kolommen (express,
+-- manco_sinds, afl_land — mig 451/518/521-klasse werk dat na deze branch landde).
+-- De originele mig 535 herdefinieerde orders_list op de 30-06-snapshot, wat die
+-- drie kolommen bij apply stil zou hebben laten verdwijnen (frontend leest ze al
+-- live). Basis hieronder = de huidige productie-definitie (geverifieerd via
+-- pg_get_viewdef vlak vóór deze correctie), plus de twee nieuwe GLN-gate-kolommen.
 CREATE OR REPLACE VIEW orders_list AS
 WITH bundel_per_order AS (
   SELECT DISTINCT ON (zo.order_id)
@@ -294,6 +301,9 @@ SELECT
   o.bevestigd_at,
   o.afl_adres_incompleet_sinds,
   o.prijs_ontbreekt_sinds,
+  o.express,
+  o.manco_sinds,
+  o.afl_land,
   -- Mig 535: aflever-GLN-gate
   o.afl_gln_ongekoppeld_sinds,
   o.afl_gln_gecontroleerd_op
