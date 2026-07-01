@@ -29,10 +29,12 @@ export interface PickbaarheidResultaat {
   /** Ids per blokkade-reden — wederzijds exclusief (één status per order). */
   geenVervoerderIds: Set<number>
   aflAdresIds: Set<number>
+  aflGlnIds: Set<number>
   prijsIds: Set<number>
   /** Tellingen per blokkade-reden (= grootte van de sets hierboven). */
   aantalGeenVervoerder: number
   aantalAflAdres: number
+  aantalAflGln: number
   aantalPrijs: number
   aantalGeblokkeerd: number
   /** Laadt de vervoerder-resolutie nog? Voedt de disable van de knoppen. */
@@ -69,6 +71,8 @@ export function usePickbaarheid(orders: PickShipOrder[]): PickbaarheidResultaat 
           alle_regels_pickbaar: o.alle_regels_pickbaar,
           heeft_gepland_zending: o.heeft_gepland_zending,
           afl_adres_incompleet_sinds: o.afl_adres_incompleet_sinds,
+          afl_gln_ongekoppeld_sinds: o.afl_gln_ongekoppeld_sinds,
+          afl_gln_gecontroleerd_op: o.afl_gln_gecontroleerd_op,
           prijs_ontbreekt_sinds: o.prijs_ontbreekt_sinds,
           in_pickronde: o.actieve_pickronde !== null,
           geen_vervoerder: heeftGeenVervoerder(o.afhalen, regels),
@@ -87,16 +91,18 @@ export function usePickbaarheid(orders: PickShipOrder[]): PickbaarheidResultaat 
   // De drie blokkade-sets in één pass uit de status-map (statussen zijn
   // wederzijds exclusief). Eén useMemo i.p.v. een gedeelde closure — anders kan
   // de React Compiler de memoization niet behouden.
-  const { geenVervoerderIds, aflAdresIds, prijsIds } = useMemo(() => {
+  const { geenVervoerderIds, aflAdresIds, aflGlnIds, prijsIds } = useMemo(() => {
     const geen = new Set<number>()
     const adres = new Set<number>()
+    const gln = new Set<number>()
     const prijs = new Set<number>()
     for (const [id, status] of statusPerOrder) {
       if (status === 'geen_vervoerder') geen.add(id)
       else if (status === 'afl_adres') adres.add(id)
+      else if (status === 'afl_gln') gln.add(id)
       else if (status === 'prijs') prijs.add(id)
     }
-    return { geenVervoerderIds: geen, aflAdresIds: adres, prijsIds: prijs }
+    return { geenVervoerderIds: geen, aflAdresIds: adres, aflGlnIds: gln, prijsIds: prijs }
   }, [statusPerOrder])
 
   const vervoerderResolutieLaadt =
@@ -107,13 +113,16 @@ export function usePickbaarheid(orders: PickShipOrder[]): PickbaarheidResultaat 
     pickbareIds,
     geenVervoerderIds,
     aflAdresIds,
+    aflGlnIds,
     prijsIds,
     aantalGeenVervoerder: geenVervoerderIds.size,
     aantalAflAdres: aflAdresIds.size,
+    aantalAflGln: aflGlnIds.size,
     aantalPrijs: prijsIds.size,
     // Statussen zijn wederzijds exclusief → de som telt elke geblokkeerde order
     // exact één keer (voedt `alleenGeblokkeerd` in de knop).
-    aantalGeblokkeerd: geenVervoerderIds.size + aflAdresIds.size + prijsIds.size,
+    aantalGeblokkeerd:
+      geenVervoerderIds.size + aflAdresIds.size + aflGlnIds.size + prijsIds.size,
     vervoerderResolutieLaadt,
   }
 }

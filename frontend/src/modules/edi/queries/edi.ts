@@ -123,6 +123,32 @@ export async function countTeKoppelenEdiOrders(): Promise<number> {
   return count ?? 0
 }
 
+/**
+ * EDI-orders waarvan de aflever-GLN geen vestiging matcht — `create_edi_order` viel
+ * stil terug op het debiteur-hoofdadres (mig 534). Voedt de
+ * `EdiAfleveradresOngekoppeldBanner`. Bron = de gelijknamige view (single source).
+ */
+export interface EdiAfleveradresOngekoppeldRow {
+  order_id: number
+  order_nr: string
+  debiteur_nr: number | null
+  afl_naam: string | null
+  afl_plaats: string | null
+  afleveradres_gln: string | null
+  status: string | null
+}
+
+export async function fetchEdiAfleveradresOngekoppeld(): Promise<
+  EdiAfleveradresOngekoppeldRow[]
+> {
+  const { data, error } = await supabase
+    .from('edi_orders_afleveradres_ongekoppeld')
+    .select('order_id, order_nr, debiteur_nr, afl_naam, afl_plaats, afleveradres_gln, status')
+    .order('order_nr', { ascending: false })
+  if (error) throw error
+  return data ?? []
+}
+
 export async function fetchEdiBericht(id: number): Promise<EdiBerichtDetail | null> {
   const { data, error } = await supabase
     .from('edi_berichten')

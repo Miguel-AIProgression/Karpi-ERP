@@ -87,6 +87,11 @@ export interface PickShipOrder {
   /** Mig 396: NULL = prijs ok/geaccepteerd; gezet = ≥1 regel €0. Blokkeert de
    *  pick-start (server-side in start_pickronden; frontend-spiegel in de knop). */
   prijs_ontbreekt_sinds: string | null
+  /** Mig 535: gezet = aflever-GLN matcht geen vestiging (stille HQ-fallback).
+   *  Blokkeert de pick-start tot gekoppeld of bewust vrijgegeven. */
+  afl_gln_ongekoppeld_sinds: string | null
+  /** Mig 535: gezet = adres bewust vrijgegeven → gate open ondanks ongekoppelde GLN. */
+  afl_gln_gecontroleerd_op: string | null
   /** Mig 217: lopende Pickronde voor deze order (zending in status='Picken').
    *  Aanwezig zodra `start_pickronde` is aangeroepen, weg na voltooi.
    *  Drijft de "in progress"-staat op de pick-card. */

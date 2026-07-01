@@ -12,7 +12,7 @@ import { MancoTab } from '@/modules/orders/components/manco-tab'
 import { useOrders, useStatusCounts, useOrderKlantOpties } from '@/hooks/use-orders'
 import { useFacturenVoorOrders } from '@/modules/facturatie'
 import { useSnijHaalbaarheid } from '@/modules/snijplanning'
-import { EdiTeKoppelenBanner } from '@/modules/edi'
+import { EdiTeKoppelenBanner, EdiAfleveradresOngekoppeldBanner } from '@/modules/edi'
 import { ShopifySyncStatusBanner } from '@/components/orders/shopify-sync-status-banner'
 import { useAuth } from '@/hooks/use-auth'
 import type { OrderSortField, SortDirection } from '@/lib/supabase/queries/orders'
@@ -148,6 +148,10 @@ export function OrdersOverviewPage() {
       {/* Safety-net: inkomende EDI-orders die niet aan een klant gekoppeld konden worden
           (geen order-status — staat los van de Vereist actie-kaart hieronder) */}
       <EdiTeKoppelenBanner />
+
+      {/* Signaal: EDI-order met aflever-GLN die geen vestiging matcht — viel stil terug
+          op het debiteur-hoofdadres (mig 534) */}
+      <EdiAfleveradresOngekoppeldBanner />
 
       {/* Storingssignaal: de geplande Shopify-orderpoll loopt vast of faalt */}
       <ShopifySyncStatusBanner />

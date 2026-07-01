@@ -74,6 +74,15 @@ export interface OrderRow {
    */
   prijs_ontbreekt_sinds?: string | null
   /**
+   * Mig 535: tijdstip waarop gedetecteerd is dat de aflever-GLN van een
+   * EDI-order geen vestiging matcht (create_edi_order viel terug op het
+   * debiteur-hoofdadres). NULL = gekoppeld/n.v.t. Spiegelt
+   * isAfleveradresGlnGeblokkeerd; blokkeert de pick-start.
+   */
+  afl_gln_ongekoppeld_sinds?: string | null
+  /** Mig 535: gezet = adres bewust vrijgegeven (markeer_afleveradres_gecontroleerd). */
+  afl_gln_gecontroleerd_op?: string | null
+  /**
    * Mig 450 (Fase 2): handmatige vlag (planner/verkoper) — hoogste
    * sorteerprioriteit in de snijplanner (sortPieces). Optional zodat oude
    * cache-data zonder deze kolom niet crasht; default-render = false.
@@ -106,6 +115,8 @@ export interface OrderDetail extends OrderRow {
   afl_land: string | null
   afl_email: string | null
   afl_telefoon: string | null
+  /** Mig 306/535: aflever-GLN-snapshot uit het EDI-bericht. */
+  afleveradres_gln: string | null
   opmerkingen: string | null
   betaler: number | null
   inkooporganisatie: string | null
