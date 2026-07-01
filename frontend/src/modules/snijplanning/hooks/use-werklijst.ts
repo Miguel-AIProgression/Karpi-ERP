@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { usePlanningConfig } from '@/hooks/use-planning-config'
 import { fetchWerkagendaConfig } from '@/lib/supabase/queries/werkagenda'
-import { fetchWerklijstStukken } from '../queries/werklijst'
+import { fetchWerklijstStukken, type WerklijstRow } from '../queries/werklijst'
 import { groepeerWerklijst, type WerklijstKwaliteitGroep } from '../lib/werklijst-groepering'
 
 function vandaagIso(): string {
@@ -11,6 +11,8 @@ function vandaagIso(): string {
 
 export function useWerklijst(): {
   groepen: WerklijstKwaliteitGroep[]
+  /** Ruwe stukken — direct uit de DB, zonder groepering. Nodig voor de planning-tab. */
+  rawStukken: WerklijstRow[] | undefined
   isLoading: boolean
   isFetching: boolean
   error: Error | null
@@ -52,6 +54,7 @@ export function useWerklijst(): {
 
   return {
     groepen,
+    rawStukken: stukken,
     isLoading,
     isFetching: stukkenFetching,
     error: error as Error | null,
