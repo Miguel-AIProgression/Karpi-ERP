@@ -104,6 +104,15 @@ CREATE TRIGGER trg_afleveradressen_gln_gate
   EXECUTE FUNCTION fn_afleveradressen_gln_gate();
 
 -- 5. Backfill bestaande open orders -----------------------------------------
+-- Bewust beperkt tot orders die de pickronde nog niet zijn gestart (bijgewerkt
+-- 2026-07-01): een order die vóór het bestaan van deze poort al 'In pickronde'/
+-- 'Deels verzonden'/'Klaar voor verzending' is (de gate kon 'm toen niet
+-- tegenhouden) met terugwerkende kracht alsnog vlaggen levert alleen verwarrende
+-- ruis op een order die fysiek al in beweging is — de poort helpt daar niets meer
+-- (start_pickronden draait niet opnieuw). Uitsluitend de ONGOING trigger (stap 3
+-- hierboven) blijft ongewijzigd: die kan een order sowieso niet ná de poort in
+-- die statussen laten belanden zonder dat de GLN al matcht of bewust is
+-- vrijgegeven, dus dit is puur een eenmalige-backfill-verfijning.
 UPDATE orders o
    SET afl_gln_ongekoppeld_sinds = now()
  WHERE o.afl_gln_ongekoppeld_sinds IS NULL
@@ -111,7 +120,10 @@ UPDATE orders o
    AND o.afleveradres_gln IS NOT NULL AND o.afleveradres_gln <> ''
    AND COALESCE(o.afhalen, FALSE) = FALSE
    AND COALESCE(o.alleen_productie, FALSE) = FALSE
-   AND o.status NOT IN ('Verzonden', 'Geannuleerd', 'Concept')
+   AND o.status NOT IN (
+         'Verzonden', 'Geannuleerd', 'Concept',
+         'In pickronde', 'Deels verzonden', 'Klaar voor verzending'
+       )
    AND NOT _afl_gln_matcht_vestiging(o.debiteur_nr, o.afleveradres_gln);
 
 -- 6. View herdefiniëren op de kolommen (mig 534 was NOT-EXISTS-gebaseerd) -----
