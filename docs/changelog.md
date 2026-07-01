@@ -1,5 +1,32 @@
 # Changelog — RugFlow ERP
 
+## 2026-07-01 — Pakbon-PDF vertaalt mee naar klanttaal (nl/de/fr/en)
+
+**Waarom:** Marjon (Sales Support) meldde dat de pakbon die als bijlage bij de
+factuurmail/pakbonmail gaat altijd Nederlands was, ook voor een Duitse klant —
+de factuur zelf vertaalt al automatisch op basis van het factuuradres-land.
+
+- `genereerPakbonPDF` (`supabase/functions/_shared/pakbon/pakbon-pdf.ts`)
+  krijgt een `taal`-parameter (default `'nl'`, backwards-compatible) en een
+  eigen `PAKBON_TEKSTEN`-labeldictionary (nl/de/fr/en) — exact hetzelfde
+  patroon als `FACTUUR_TEKSTEN` in `factuur-pdf.ts`. Regel-inhoud (product-
+  omschrijving, maat, afwerking) loopt door de al-bestaande
+  `vertaalOmschrijving()` uit `klant-taal.ts`, net als op de factuur; het
+  "Uw model:"-label hergebruikt letterlijk `factuur-pdf.ts`'s `model`-tekst
+  (nl/de/fr/en) zodat beide documenten dezelfde term voeren.
+- Ook de nieuwere pakbon-toevoegingen (afhaallocatie-badge mig 537, MANCO-
+  label mig 516/518) zijn meevertaald — anders zou de vertaalfix zelf meteen
+  weer gaten hebben voor Duitse klanten met een afhaal- of manco-zending.
+- `factuur-verzenden/index.ts` geeft de al-berekende factuurtaal (`pdfTaal`,
+  afgeleid van `fact_land` via `bepaalTaal`) één-op-één door aan
+  `genereerPakbonBijlagen` — geen aparte taal-detectie nodig, de pakbon hoort
+  bij dezelfde factuur/klant (ook na de factuur/pakbon-mailsplitsing van
+  25-06).
+- **Scope bewust beperkt** tot de e-mail-bijlage (`_shared/pakbon/`). De
+  geprinte magazijn-pakbon (React-component, warehouse-staff) blijft
+  Nederlands — die is niet klant-facing.
+- Vangnet: nieuwe `pakbon-pdf.test.ts` (smoke-test per taal, magic-bytes).
+
 ## 2026-07-01 — Leveranciers-kleurcode op verzendlabel
 
 **Waarom:** mail vanuit Pick & Ship — bij Sofia 80x150 toont het systeem bij

@@ -486,7 +486,7 @@ serve(async () => {
         // Eén pakbon-PDF per zending die deze factuur dekt — per_zending/bundel = 1,
         // wekelijkse verzamelfactuur = N. Best-effort: een ontbrekende pakbon mag
         // de factuur-flow nooit blokkeren (zie genereerPakbonBijlagen).
-        const pakbonBijlagen = await genereerPakbonBijlagen(supabase, item.debiteur_nr, orderIdsVoorLog)
+        const pakbonBijlagen = await genereerPakbonBijlagen(supabase, item.debiteur_nr, orderIdsVoorLog, pdfTaal)
         if (pakbonBijlagen.length > 0) {
           // Pakbon-adres (mig 496 / verzoek 25-06): email_pakbon, terugval factuuradres.
           const pakbonTo =
@@ -680,6 +680,7 @@ async function genereerPakbonBijlagen(
   supabase: ReturnType<typeof createClient>,
   debiteurNr: number,
   orderIds: number[],
+  taal: Taal,
 ): Promise<PakbonBijlage[]> {
   if (orderIds.length === 0) return []
   try {
@@ -716,7 +717,7 @@ async function genereerPakbonBijlagen(
       try {
         const zending = await fetchPakbonZending(supabase, zendingNr)
         const doc = bouwPakbonDocument(zending, { afwerkingTypes, bedrijf })
-        const bytes = await genereerPakbonPDF(doc, bedrijf, logo)
+        const bytes = await genereerPakbonPDF(doc, bedrijf, logo, taal)
         const filename = `Pakbon-${zendingNr}.pdf`
 
         // Storage-upload óók best-effort: lukt het, dan krijgt de pakbon een

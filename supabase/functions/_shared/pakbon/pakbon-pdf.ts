@@ -14,6 +14,7 @@ import {
 } from 'https://esm.sh/pdf-lib@1.17.1'
 import type { PakbonBedrijf, PakbonDocument } from './types.ts'
 import { nlGewicht } from './pakbon-document.ts'
+import { type Taal, vertaalOmschrijving } from '../klant-taal.ts'
 
 const PT_PER_MM = 72 / 25.4
 function mm(v: number) { return v * PT_PER_MM }
@@ -53,12 +54,121 @@ export interface PakbonPdfLogo {
   format: 'jpg' | 'png'
 }
 
+// Statische pakbon-labels per taal (nl/de/fr/en) — zelfde patroon als
+// FACTUUR_TEKSTEN in factuur-pdf.ts. `modelLabel` is bewust letterlijk gelijk
+// aan `t.model` daar (commit a857bff5: "Uw model" i.p.v. "Uw naam" op zowel
+// factuur als pakbon). Regel-inhoud (omschrijving/maat/afwerking) loopt door
+// `vertaalOmschrijving` (klant-taal.ts), net als op de factuur.
+interface PakbonTeksten {
+  titel: string
+  pakbonnr: string
+  datum: string
+  deelzendingBadge: string
+  afhalenBadge: string
+  afleveradres: string
+  afhaallocatie: string
+  vertegenwoordiger: string
+  debiteurLabel: string
+  ordersLabel: string
+  ordersGebundeld: (n: number) => string
+  uwReferentie: string
+  orderDebiteur: string
+  routecodeLabel: string
+  factuuradres: string
+  colRgl: string
+  colArtikel: string
+  colOms: string
+  colBesteld: string
+  colGeleverd: string
+  kolliLabel: string
+  gewichtLabel: string
+  disclaimer: string
+  stPrefix: string
+  afwerkingLabel: string
+  modelLabel: string
+  mancoLabel: string
+  mancoNietGevonden: string
+}
+
+const PAKBON_TEKSTEN: Record<Taal, PakbonTeksten> = {
+  nl: {
+    titel: 'PAKBON', pakbonnr: 'Pakbonnr:', datum: 'Datum:',
+    deelzendingBadge: 'DEELZENDING — niet de volledige order',
+    afhalenBadge: 'AFHALEN — klant haalt op bij Karpi',
+    afleveradres: 'Afleveradres:', afhaallocatie: 'Afhaallocatie:',
+    vertegenwoordiger: 'Vertegenw.:',
+    debiteurLabel: 'Debiteur:', ordersLabel: 'Orders:',
+    ordersGebundeld: (n) => `${n} orders gebundeld`,
+    uwReferentie: 'Uw referentie:', orderDebiteur: 'Order/Debiteur:',
+    routecodeLabel: 'Routecode:', factuuradres: 'Factuuradres:',
+    colRgl: 'Rgl.', colArtikel: 'Artikel', colOms: 'Omschrijving',
+    colBesteld: 'Besteld', colGeleverd: 'Geleverd',
+    kolliLabel: 'Kolli', gewichtLabel: 'Gewicht',
+    disclaimer: 'EEN KLEINE MAATAFWIJKING (+/- 3%) EN KLEURAFWIJKINGEN KUNNEN OPTREDEN',
+    stPrefix: 'St', afwerkingLabel: 'Afwerking:', modelLabel: 'Uw model',
+    mancoLabel: 'MANCO', mancoNietGevonden: 'Niet gevonden - niet meegeleverd',
+  },
+  de: {
+    titel: 'LIEFERSCHEIN', pakbonnr: 'Lieferscheinnr.:', datum: 'Datum:',
+    deelzendingBadge: 'TEILLIEFERUNG — nicht die vollständige Bestellung',
+    afhalenBadge: 'ABHOLUNG — Kunde holt bei Karpi ab',
+    afleveradres: 'Lieferadresse:', afhaallocatie: 'Abholort:',
+    vertegenwoordiger: 'Vertreter:',
+    debiteurLabel: 'Kunde:', ordersLabel: 'Aufträge:',
+    ordersGebundeld: (n) => `${n} Aufträge gebündelt`,
+    uwReferentie: 'Ihre Referenz:', orderDebiteur: 'Auftrag/Kunde:',
+    routecodeLabel: 'Routencode:', factuuradres: 'Rechnungsadresse:',
+    colRgl: 'Pos.', colArtikel: 'Artikel', colOms: 'Bezeichnung',
+    colBesteld: 'Bestellt', colGeleverd: 'Geliefert',
+    kolliLabel: 'Kolli', gewichtLabel: 'Gewicht',
+    disclaimer: 'EINE GERINGE MASSABWEICHUNG (+/- 3%) UND FARBABWEICHUNGEN SIND MÖGLICH',
+    stPrefix: 'Stk', afwerkingLabel: 'Verarbeitung:', modelLabel: 'Ihr Modell',
+    mancoLabel: 'FEHLMENGE', mancoNietGevonden: 'Nicht gefunden - nicht mitgeliefert',
+  },
+  fr: {
+    titel: 'BON DE LIVRAISON', pakbonnr: 'N° bon:', datum: 'Date:',
+    deelzendingBadge: 'LIVRAISON PARTIELLE — pas la commande complète',
+    afhalenBadge: 'RETRAIT — le client vient chercher chez Karpi',
+    afleveradres: 'Adresse de livraison:', afhaallocatie: 'Lieu de retrait:',
+    vertegenwoordiger: 'Représentant:',
+    debiteurLabel: 'Client:', ordersLabel: 'Commandes:',
+    ordersGebundeld: (n) => `${n} commandes groupées`,
+    uwReferentie: 'Votre référence:', orderDebiteur: 'Commande/Client:',
+    routecodeLabel: 'Code de route:', factuuradres: 'Adresse de facturation:',
+    colRgl: 'Ligne', colArtikel: 'Article', colOms: 'Description',
+    colBesteld: 'Commandé', colGeleverd: 'Livré',
+    kolliLabel: 'Colis', gewichtLabel: 'Poids',
+    disclaimer: 'UN LÉGER ÉCART DE DIMENSION (+/- 3%) ET DES ÉCARTS DE COULEUR SONT POSSIBLES',
+    stPrefix: 'Pce', afwerkingLabel: 'Finition:', modelLabel: 'Votre modèle',
+    mancoLabel: 'MANQUANT', mancoNietGevonden: 'Non trouvé - non livré',
+  },
+  en: {
+    titel: 'PACKING LIST', pakbonnr: 'Packing list no.:', datum: 'Date:',
+    deelzendingBadge: 'PARTIAL SHIPMENT — not the full order',
+    afhalenBadge: 'PICKUP — customer collects at Karpi',
+    afleveradres: 'Delivery address:', afhaallocatie: 'Pickup location:',
+    vertegenwoordiger: 'Sales rep.:',
+    debiteurLabel: 'Customer:', ordersLabel: 'Orders:',
+    ordersGebundeld: (n) => `${n} orders bundled`,
+    uwReferentie: 'Your reference:', orderDebiteur: 'Order/Customer:',
+    routecodeLabel: 'Route code:', factuuradres: 'Invoice address:',
+    colRgl: 'Line', colArtikel: 'Item', colOms: 'Description',
+    colBesteld: 'Ordered', colGeleverd: 'Delivered',
+    kolliLabel: 'Packages', gewichtLabel: 'Weight',
+    disclaimer: 'A SMALL SIZE DEVIATION (+/- 3%) AND COLOUR VARIATIONS MAY OCCUR',
+    stPrefix: 'Pc', afwerkingLabel: 'Finish:', modelLabel: 'Your model',
+    mancoLabel: 'MISSING', mancoNietGevonden: 'Not found - not delivered',
+  },
+}
+
 /** Genereert de pakbon-PDF (A4) uit het canonieke document. */
 export async function genereerPakbonPDF(
   doc: PakbonDocument,
   bedrijf: PakbonBedrijf,
   logo?: PakbonPdfLogo,
+  taal: Taal = 'nl',
 ): Promise<Uint8Array> {
+  const t = PAKBON_TEKSTEN[taal]
   const pdf = await PDFDocument.create()
   const fontR = await pdf.embedFont(StandardFonts.Helvetica)
   const fontB = await pdf.embedFont(StandardFonts.HelveticaBold)
@@ -121,17 +231,17 @@ export async function genereerPakbonPDF(
   let y = tekenHeader()
 
   // ── Titel + pakbonnr/datum ────────────────────────────────────────────────
-  drawText(page, 'PAKBON', mL, y, fontB, 16)
+  drawText(page, t.titel, mL, y, fontB, 16)
   const metaX = mL + mm(120)
-  drawText(page, 'Pakbonnr:', metaX, y, fontB, 8)
+  drawText(page, t.pakbonnr, metaX, y, fontB, 8)
   drawText(page, doc.pakbonnr, metaX + mm(22), y, fontR, 8)
-  drawText(page, 'Datum:', metaX, y - mm(5), fontB, 8)
+  drawText(page, t.datum, metaX, y - mm(5), fontB, 8)
   drawText(page, doc.datum, metaX + mm(22), y - mm(5), fontR, 8)
   y -= mm(16)
 
   // Mig 473: deze zending dekt niet de hele order — niet missen op de werkvloer.
   if (doc.isDeelzending) {
-    const badgeTekst = 'DEELZENDING — niet de volledige order'
+    const badgeTekst = t.deelzendingBadge
     const badgeW = fontB.widthOfTextAtSize(badgeTekst, 9) + mm(4)
     const badgeH = mm(6)
     page.drawRectangle({
@@ -144,7 +254,7 @@ export async function genereerPakbonPDF(
 
   // Mig 537: afhaallocatie-badge.
   if (doc.isAfhalen) {
-    const badgeTekst = 'AFHALEN — klant haalt op bij Karpi'
+    const badgeTekst = t.afhalenBadge
     const badgeW = fontB.widthOfTextAtSize(badgeTekst, 9) + mm(4)
     const badgeH = mm(6)
     page.drawRectangle({
@@ -157,7 +267,7 @@ export async function genereerPakbonPDF(
 
   // ── Afleveradres / Afhaallocatie (rechterkolom) ───────────────────────────
   const adresX = mL + mm(110)
-  drawText(page, doc.isAfhalen ? 'Afhaallocatie:' : 'Afleveradres:', adresX, y, fontB, 8, SLATE)
+  drawText(page, doc.isAfhalen ? t.afhaallocatie : t.afleveradres, adresX, y, fontB, 8, SLATE)
   let ay = y - mm(5)
   for (const regel of doc.afleveradres) {
     drawText(page, regel.toUpperCase(), adresX, ay, fontR, 8)
@@ -177,26 +287,26 @@ export async function genereerPakbonPDF(
     ly -= mm(5)
   }
   if (doc.isBundel) {
-    labelWaarde('Vertegenw.:', doc.vertegenwoordiger)
-    labelWaarde('Debiteur:', doc.debiteur)
-    labelWaarde('Orders:', `${doc.bundelRegels.length} orders gebundeld`)
+    labelWaarde(t.vertegenwoordiger, doc.vertegenwoordiger)
+    labelWaarde(t.debiteurLabel, doc.debiteur)
+    labelWaarde(t.ordersLabel, t.ordersGebundeld(doc.bundelRegels.length))
     for (const br of doc.bundelRegels) {
       drawText(page, br, mL + mm(3), ly, fontR, 7.5, SLATE)
       ly -= mm(4.5)
     }
   } else {
-    labelWaarde('Uw referentie:', doc.referentieRegel)
-    labelWaarde('Vertegenw.:', doc.vertegenwoordiger)
-    labelWaarde('Order/Debiteur:', doc.orderDebiteur)
+    labelWaarde(t.uwReferentie, doc.referentieRegel)
+    labelWaarde(t.vertegenwoordiger, doc.vertegenwoordiger)
+    labelWaarde(t.orderDebiteur, doc.orderDebiteur)
   }
   if (doc.routecode) {
-    drawTextRight(page, `Routecode: ${doc.routecode}`, pageW - mR, y, fontR, 8)
+    drawTextRight(page, `${t.routecodeLabel} ${doc.routecode}`, pageW - mR, y, fontR, 8)
   }
 
   y = Math.min(ly, ay) - mm(4)
 
   // ── Factuuradres in de body ───────────────────────────────────────────────
-  drawText(page, 'Factuuradres:', mL, y, fontB, 8)
+  drawText(page, t.factuuradres, mL, y, fontB, 8)
   let fx = mL + mm(32)
   drawText(page, doc.factuuradres.join('  '), fx, y, fontR, 8)
   y -= mm(8)
@@ -205,11 +315,11 @@ export async function genereerPakbonPDF(
   const tekenTabelHeader = (yy: number): number => {
     page.drawLine({ start: { x: mL, y: yy }, end: { x: pageW - mR, y: yy }, thickness: 0.5, color: BLACK })
     const ty = yy - mm(4)
-    drawText(page, 'Rgl.', colRgl.x, ty, fontB, 7)
-    drawText(page, 'Artikel', colArt.x, ty, fontB, 7)
-    drawText(page, 'Omschrijving', colOms.x, ty, fontB, 7)
-    drawTextRight(page, 'Besteld', colBes.x + colBes.w, ty, fontB, 7)
-    drawTextRight(page, 'Geleverd', colGel.x + colGel.w, ty, fontB, 7)
+    drawText(page, t.colRgl, colRgl.x, ty, fontB, 7)
+    drawText(page, t.colArtikel, colArt.x, ty, fontB, 7)
+    drawText(page, t.colOms, colOms.x, ty, fontB, 7)
+    drawTextRight(page, t.colBesteld, colBes.x + colBes.w, ty, fontB, 7)
+    drawTextRight(page, t.colGeleverd, colGel.x + colGel.w, ty, fontB, 7)
     const lijnY = yy - mm(6)
     page.drawLine({ start: { x: mL, y: lijnY }, end: { x: pageW - mR, y: lijnY }, thickness: 0.5, color: BLACK })
     return lijnY - mm(3)
@@ -237,14 +347,17 @@ export async function genereerPakbonPDF(
       y -= mm(5)
     }
     for (const regel of groep.regels) {
-      const omsLines = wrapText(`St  ${regel.hoofdNaam}`, fontR, 7.5, colOms.w - mm(2))
+      const omsLines = wrapText(
+        vertaalOmschrijving(`${t.stPrefix}  ${regel.hoofdNaam}`, taal),
+        fontR, 7.5, colOms.w - mm(2),
+      )
       const subRegels = [
-        regel.maatRegel,
-        regel.afwerkingRegel ? `Afwerking: ${regel.afwerkingRegel}` : null,
+        regel.maatRegel ? vertaalOmschrijving(regel.maatRegel, taal) : null,
+        regel.afwerkingRegel ? `${t.afwerkingLabel} ${vertaalOmschrijving(regel.afwerkingRegel, taal)}` : null,
         // Mig 436: omsticker — fysiek gepakt equivalent, zelfde "OMB:"-notatie
-        // als het verzendlabel en de geprinte pakbon.
+        // als het verzendlabel en de geprinte pakbon (code, niet vertaald).
         regel.omstickerCodes.length > 0 ? `OMB: ${regel.omstickerCodes.join(', ')}` : null,
-        regel.uwNaam ? `Uw model: ${regel.uwNaam}` : null,
+        regel.uwNaam ? `${t.modelLabel}: ${regel.uwNaam}` : null,
       ].filter(Boolean) as string[]
       // Mig 518: manco-regel krijgt één extra regelhoogte voor de "Niet
       // gevonden"-sub-regel; meetellen zodat de volgende rij niet overlapt.
@@ -280,8 +393,8 @@ export async function genereerPakbonPDF(
       // geleverd 0 + een duidelijk "MANCO"-label naast de geleverd-kolom, plus
       // een "Niet gevonden"-sub-regel onder de doorgestreepte productnaam.
       if (regel.isManco) {
-        drawTextRight(page, 'MANCO', colGel.x + colGel.w, topY - EXTRA_LINE_H, fontB, 8, BLACK)
-        drawText(page, 'Niet gevonden - niet meegeleverd', colOms.x, subY, fontB, 7, BLACK)
+        drawTextRight(page, t.mancoLabel, colGel.x + colGel.w, topY - EXTRA_LINE_H, fontB, 8, BLACK)
+        drawText(page, t.mancoNietGevonden, colOms.x, subY, fontB, 7, BLACK)
       }
 
       y =
@@ -296,11 +409,11 @@ export async function genereerPakbonPDF(
   // ── Totalen ───────────────────────────────────────────────────────────────
   nieuwePaginaIndienNodig(mm(20))
   y -= mm(4)
-  drawText(page, 'Kolli', mL, y, fontB, 8)
+  drawText(page, t.kolliLabel, mL, y, fontB, 8)
   drawText(page, `: ${doc.kolli}`, mL + mm(22), y, fontR, 8)
   y -= mm(5)
   if (doc.totaalGewichtKg > 0) {
-    drawText(page, 'Gewicht', mL, y, fontB, 8)
+    drawText(page, t.gewichtLabel, mL, y, fontB, 8)
     drawText(page, `: ${nlGewicht.format(doc.totaalGewichtKg)} kg`, mL + mm(22), y, fontR, 8)
     y -= mm(5)
   }
@@ -308,7 +421,7 @@ export async function genereerPakbonPDF(
   // ── Disclaimer ────────────────────────────────────────────────────────────
   nieuwePaginaIndienNodig(mm(16))
   y -= mm(6)
-  drawText(page, 'EEN KLEINE MAATAFWIJKING (+/- 3%) EN KLEURAFWIJKINGEN KUNNEN OPTREDEN', mL, y, fontR, 7, SLATE)
+  drawText(page, t.disclaimer, mL, y, fontR, 7, SLATE)
 
   // ── Footer op alle pagina's ───────────────────────────────────────────────
   tekenFooter(page)
