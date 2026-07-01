@@ -1,4 +1,8 @@
--- Migratie 485: Combi-levering — twee nieuwe booleans (ADR-0039)
+-- Migratie 550: Combi-levering — twee nieuwe booleans (ADR-0039)
+-- (hernummerd van 485 — collisie met de al-gemergde HST-colli-bundeling-pallet
+-- feature op origin/main, zelfde nummer. Alleen bestandsnaam + interne
+-- commentaren bijgewerkt; al toegepast op de live DB onder het oude nummer,
+-- zie CLAUDE.md-conventie "Migratienummer-collisie bij merge".)
 --
 -- `debiteuren.combi_levering`: klant-instelling — wacht met verzenden tot de
 -- gecombineerde openstaande orders naar hetzelfde adres de vrachtvrije-drempel
@@ -13,7 +17,7 @@ ALTER TABLE debiteuren
   ADD COLUMN IF NOT EXISTS combi_levering BOOLEAN NOT NULL DEFAULT FALSE;
 
 COMMENT ON COLUMN debiteuren.combi_levering IS
-  'Mig 485 (ADR-0039): klant wil wachten met verzenden tot de gecombineerde '
+  'Mig 550 (ADR-0039): klant wil wachten met verzenden tot de gecombineerde '
   'openstaande orders naar hetzelfde adres de vrachtvrije-drempel '
   '(verzend_drempel) bereiken. No-op als gratis_verzending al TRUE is.';
 
@@ -21,7 +25,7 @@ ALTER TABLE orders
   ADD COLUMN IF NOT EXISTS combi_levering_override BOOLEAN NOT NULL DEFAULT FALSE;
 
 COMMENT ON COLUMN orders.combi_levering_override IS
-  'Mig 485 (ADR-0039): klant wil dít exemplaar toch los verzonden, met '
+  'Mig 550 (ADR-0039): klant wil dít exemplaar toch los verzonden, met '
   'verzendkosten, ongeacht debiteuren.combi_levering. Analoog aan afhalen '
   '(mig 204) — instelbaar in het order-form.';
 
