@@ -1,5 +1,24 @@
 # Changelog — RugFlow ERP
 
+## 2026-07-01 — Voorraad-import commit (voorraadlijst 30-6-2026)
+
+Import `update_voorraad.py` gedraaid met `--commit` voor `voorraadlijst 30-6-2026.xls`.
+
+**Resultaat:**
+- 18.298 vaste-maat artikelen bijgewerkt (baseline = kolom H vrije voorraad Basta)
+- 356 artikelen / 861 stuks RugFlow-verzonden-aftrek toegepast
+- 996 order_regels herallocateerd (0 fouten)
+- 455 artikelen gereserveerd-cache herberekend (0 fouten)
+- Uitsluitlijst ongewijzigd (5.404 artikelen, geen nieuwe rode regels)
+
+**Opvallende inkoopleveringen binnengekomen (25-6 → 30-6):**
+- LIGN +1.207 stuks (030x040: +200 per kleur), ECLA +1.022 stuks
+- PATS +637, PABL +468, OMBR +286, DELI +217, VERS +213, SPLE +204
+
+**Bijzonderheid:** LUXS99XX120170 staat op −2.414 vrije voorraad in Basta (zwaar oversold in oud systeem). DB staat correct op 0, import ongewijzigd.
+
+---
+
 ## 2026-07-01 — Concept-intake-gate Fase C: alle intake-kanalen op Concept (mig 542)
 
 **Aanleiding:** na mig 540-541 (lekken dichten + `bevestig_concept_order`) was de gate klaar, maar alleen e-mail-orders kwamen al in Concept binnen. EDI, Shopify/webshop en handmatige orders gingen nog naar 'Klaar voor picken'.
