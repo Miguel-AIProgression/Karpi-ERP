@@ -362,7 +362,11 @@ export function MagazijnOverviewPage() {
         // Andere buckets: leid de header af van de eigenlijke afleverdatum.
         const datumIso = wk1Combined ? vandaagIso : o.afleverdatum
         const verzend = verzendWeekVoor(datumIso)
-        const pick = pickWeekVoor(datumIso)
+        // wk1Combined: de huidige PICK-week is gewoon huidigeWeek zelf — niet
+        // pickWeekVoor(vandaagIso), die trekt (bedoeld voor een echte
+        // afleverdatum) nog een extra week af en gaf dus "week 26" i.p.v. 27
+        // (bugmelding Miguel 01-07: "het is nu week 27, niet 26").
+        const pick = wk1Combined ? huidigeWeek : pickWeekVoor(datumIso)
         const status: PickStatus = wk1Combined ? 'deze_week' : pickStatusVoor(o.afleverdatum, vandaagDate)
         map.set(groepSleutel, {
           sleutel: groepSleutel,
@@ -374,7 +378,7 @@ export function MagazijnOverviewPage() {
       }
     }
     return Array.from(map.values()).sort((a, b) => a.sleutel.localeCompare(b.sleutel))
-  }, [weekOrders, filter, zoekModus, vandaagDate, vandaagIso])
+  }, [weekOrders, filter, zoekModus, vandaagDate, vandaagIso, huidigeWeek])
 
   const statCards = [
     {

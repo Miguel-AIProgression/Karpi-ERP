@@ -3,7 +3,7 @@
 // eerst splitsen op land. Geen rendering-logica hier — dat hoort in de
 // PickWeekSectie-component thuis.
 import { iso2NaarVlag, landNaarIso2 } from '@/lib/utils/land-vlag'
-import { pickStatusVoor } from '@/lib/orders/verzendweek'
+import { verzendWeekAchterstallig } from '@/lib/orders/verzendweek'
 import type { PickShipOrder } from './types'
 
 export interface KlantCluster {
@@ -36,9 +36,11 @@ export interface LandGroep {
  *
  * Sortering: startbare orders boven geblokkeerde (`geblokkeerdeOrderIds`,
  * bv. "Geen vervoerder mogelijk" — verzoek Miguel 2026-06-12), daarbinnen
- * achterstallige orders (pick-week al verstreken) boven op-tijd orders
+ * achterstallige orders (verzendweek al verstreken) boven op-tijd orders
  * (verzoek Miguel 01-07 — achterstallig moet prioriteit krijgen, niet
- * verdwijnen tussen 100+ orders op alfabet), en pas daarna op
+ * verdwijnen tussen 100+ orders op alfabet). Binnen de achterstallige groep
+ * sorteren op verzendweek oplopend (oudste/meest-te-laat eerst — "sorteer op
+ * week nr", verzoek Miguel 01-07) i.p.v. alfabet. Pas daarna op
  * `(klant_naam, order_nr)` zodat clusters van dezelfde klant visueel naast
  * elkaar blijven staan. Een cluster sorteert op zijn eerste (meest
  * urgente/startbare) order — volledig geblokkeerde clusters zakken dus naar
@@ -53,9 +55,16 @@ export function clusterOrdersOpKlant(
     const ga = geblokkeerdeOrderIds?.has(a.order_id) ? 1 : 0
     const gb = geblokkeerdeOrderIds?.has(b.order_id) ? 1 : 0
     if (ga !== gb) return ga - gb
-    const aa = pickStatusVoor(a.afleverdatum) === 'achterstallig' ? 0 : 1
-    const ab = pickStatusVoor(b.afleverdatum) === 'achterstallig' ? 0 : 1
+    const aa = verzendWeekAchterstallig(a.afleverdatum) ? 0 : 1
+    const ab = verzendWeekAchterstallig(b.afleverdatum) ? 0 : 1
     if (aa !== ab) return aa - ab
+    if (aa === 0) {
+      // Binnen achterstallig: oudste verzendweek (meest te laat) eerst.
+      // verzend_week_sleutel is "YYYY-Www" (zero-padded) → lexicografisch
+      // sorteerbaar, ook over een jaarwisseling heen.
+      const w = a.verzend_week_sleutel.localeCompare(b.verzend_week_sleutel)
+      if (w !== 0) return w
+    }
     const k = a.klant_naam.localeCompare(b.klant_naam)
     if (k !== 0) return k
     return a.order_nr.localeCompare(b.order_nr)

@@ -180,12 +180,40 @@ describe('clusterOrdersOpKlant', () => {
     expect(clusters.map((c) => c.klant_naam)).toEqual(['Alpha', 'Beta'])
   })
 
-  it('achterstallige orders (pick-week al verstreken) sorteren boven op-tijd orders, ook tegen het alfabet in', () => {
+  it('achterstallige orders (verzendweek al verstreken) sorteren boven op-tijd orders, ook tegen het alfabet in', () => {
     const orders = [
       makeOrder({ order_id: 1, order_nr: 'ORD-001', klant_naam: 'Alpha', afleverdatum: isoDaysFromNow(21) }),
       makeOrder({ order_id: 2, order_nr: 'ORD-002', klant_naam: 'Zulu', afleverdatum: isoDaysFromNow(-21) }),
     ]
     const clusters = clusterOrdersOpKlant(orders)
+    expect(clusters.map((c) => c.klant_naam)).toEqual(['Zulu', 'Alpha'])
+  })
+
+  it('een order met verzendweek == huidige week is NIET achterstallig (blijft op alfabet)', () => {
+    // Bugmelding Miguel 01-07: een order die deze week nog verzonden moet
+    // worden is nog gewoon op tijd, ook al ligt de 1-week-vooruit-pickbuffer
+    // (Karpi's interne regel) daarvan al net achter ons.
+    const orders = [
+      makeOrder({ order_id: 1, order_nr: 'ORD-001', klant_naam: 'Zulu', afleverdatum: isoDaysFromNow(0) }),
+      makeOrder({ order_id: 2, order_nr: 'ORD-002', klant_naam: 'Alpha', afleverdatum: isoDaysFromNow(0) }),
+    ]
+    const clusters = clusterOrdersOpKlant(orders)
+    expect(clusters.map((c) => c.klant_naam)).toEqual(['Alpha', 'Zulu'])
+  })
+
+  it('binnen de achterstallige groep sorteert op verzendweek (oudste eerst), niet op alfabet', () => {
+    const orders = [
+      makeOrder({
+        order_id: 1, order_nr: 'ORD-001', klant_naam: 'Alpha',
+        afleverdatum: isoDaysFromNow(-7), verzend_week_sleutel: '2026-W26',
+      }),
+      makeOrder({
+        order_id: 2, order_nr: 'ORD-002', klant_naam: 'Zulu',
+        afleverdatum: isoDaysFromNow(-21), verzend_week_sleutel: '2026-W24',
+      }),
+    ]
+    const clusters = clusterOrdersOpKlant(orders)
+    // Zulu (week 24, oudste) hoort bovenaan te staan, ondanks het alfabet.
     expect(clusters.map((c) => c.klant_naam)).toEqual(['Zulu', 'Alpha'])
   })
 

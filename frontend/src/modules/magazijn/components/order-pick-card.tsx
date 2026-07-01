@@ -24,7 +24,7 @@ import { iso2NaarVlag, landNaarIso2 } from '@/lib/utils/land-vlag'
 import { usePickSelectie } from '../context/pick-selectie-context'
 import { bepaalDagOrderUrgentie, type DagOrderUrgentie } from '../lib/dag-order-urgentie'
 import { useAuth } from '@/hooks/use-auth'
-import { pickStatusVoor } from '@/lib/orders/verzendweek'
+import { verzendWeekAchterstallig } from '@/lib/orders/verzendweek'
 import type { PickShipOrder, PickShipRegel, PickShipWachtOp } from '../lib/types'
 
 /** Compacte NL-dag-badge "wo 14-05" voor dag-orders (ADR 0014). */
@@ -151,11 +151,11 @@ export function OrderPickCard({ order }: Props) {
   const isDagOrder = order.lever_type === 'datum' && !!order.afleverdatum
   const dagOrderUrgentie = isDagOrder ? bepaalDagOrderUrgentie(order.afleverdatum!) : null
   const dagOrderStijl = dagOrderUrgentie ? DAG_ORDER_URGENTIE_STIJL[dagOrderUrgentie] : null
-  // Achterstallig = pick-week ligt al in het verleden (verzoek Miguel 01-07):
-  // een week-order die zijn pickweek al gemist heeft, mag niet stilletjes
-  // tussen op-tijd orders verdwijnen — zelfde zwaardere styling als een te
-  // late dag-order. Dag-orders hebben al hun eigen `dagOrderUrgentie`-badge.
-  const isAchterstallig = !isDagOrder && pickStatusVoor(order.afleverdatum) === 'achterstallig'
+  // Achterstallig = de VERZENDweek zelf ligt al in het verleden (verzoek
+  // Miguel 01-07 — niet de pick-week: een order met verzendweek == huidige
+  // week is nog gewoon op tijd, ook al is de 1-week-vooruit-pickbuffer daarvan
+  // al verstreken). Dag-orders hebben al hun eigen `dagOrderUrgentie`-badge.
+  const isAchterstallig = !isDagOrder && verzendWeekAchterstallig(order.afleverdatum)
 
   return (
     <div

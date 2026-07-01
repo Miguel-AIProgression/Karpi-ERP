@@ -11,6 +11,7 @@ import {
   pickWeekVoor,
   pickWeekLabel,
   pickStatusVoor,
+  verzendWeekAchterstallig,
 } from '../verzendweek'
 
 describe('isoWeek', () => {
@@ -204,5 +205,30 @@ describe('pickStatusVoor', () => {
 
   it('verzendweek 22 -> later', () => {
     expect(pickStatusVoor('2026-05-29', vandaag)).toBe('later')
+  })
+})
+
+describe('verzendWeekAchterstallig', () => {
+  // Zelfde referentie als pickStatusVoor hierboven — bewust een ANDER
+  // criterium: de verzendweek zelf, niet de pick-week. Bugmelding Miguel
+  // 01-07: een order met verzendweek == huidige week is nog op tijd (moet
+  // deze week nog verzonden worden), ook al zegt pickStatusVoor 'achterstallig'
+  // (die kijkt naar de 1-week-vooruit-pickbuffer).
+  const vandaag = new Date('2026-05-06T12:00:00Z') // ISO-week 19, 2026
+
+  it('null afleverdatum -> false', () => {
+    expect(verzendWeekAchterstallig(null, vandaag)).toBe(false)
+  })
+
+  it('verzendweek = huidige week -> NIET achterstallig (in tegenstelling tot pickStatusVoor)', () => {
+    expect(verzendWeekAchterstallig('2026-05-08', vandaag)).toBe(false)
+  })
+
+  it('verzendweek 18 (al voorbij) -> achterstallig', () => {
+    expect(verzendWeekAchterstallig('2026-04-30', vandaag)).toBe(true)
+  })
+
+  it('verzendweek = volgende week -> niet achterstallig', () => {
+    expect(verzendWeekAchterstallig('2026-05-15', vandaag)).toBe(false)
   })
 })

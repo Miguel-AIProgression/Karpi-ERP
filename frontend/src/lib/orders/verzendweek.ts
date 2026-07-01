@@ -103,6 +103,24 @@ export function verzendWeekDiff(referentie: Date, doel: Date): number {
 }
 
 /**
+ * True als de VERZENDweek van de order al vóór de huidige week ligt — de
+ * order had dus al verzonden moeten zijn. Losstaand van `pickStatusVoor`
+ * (die naar de PICK-week kijkt, 1 week eerder door Karpi's picken-1-week-
+ * vooruit-regel): een order met verzendweek == huidige week is nog gewoon
+ * op tijd (moet deze week nog verzonden worden), ook al ligt de pick-week
+ * daarvan strikt genomen al achter ons. Voor "is dit te laat"-signalering in
+ * de UI wil je de verzendweek zelf vergelijken, niet de pick-buffer.
+ */
+export function verzendWeekAchterstallig(
+  afleverdatumIso: string | null,
+  vandaag: Date = new Date(),
+): boolean {
+  if (!afleverdatumIso) return false
+  const doel = new Date(afleverdatumIso + 'T00:00:00Z')
+  return verzendWeekDiff(lokaleDatumAlsUtc(vandaag), doel) < 0
+}
+
+/**
  * Mensvriendelijk relatief label voor de verzendweek t.o.v. vandaag:
  * "deze week" / "volgende week" / "over 3 weken" / "1 week geleden".
  * Retourneert null als afleverdatum ontbreekt — laat de UI zelf bepalen
