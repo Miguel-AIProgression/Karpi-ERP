@@ -44,6 +44,9 @@ export interface SelectedClient {
   toeslag_einddatum: string | null
   /** Mig 117: per_zending = factuur direct na elke zending; wekelijks = verzamelfactuur maandag 05:00 UTC. */
   factuurvoorkeur: 'per_zending' | 'wekelijks' | null
+  /** Mig 550/ADR-0039: klant wil wachten met verzenden tot de gecombineerde
+   *  openstaande orders naar hetzelfde adres de vrachtvrije-drempel bereiken. */
+  combi_levering: boolean
 }
 
 interface ClientSelectorProps {
@@ -72,7 +75,7 @@ export function ClientSelector({ value, onChange, disabled }: ClientSelectorProp
       // Wijzig je de kolomlijst hier, pas 'm daar óók aan.
       let query = supabase
         .from('debiteuren')
-        .select('debiteur_nr, naam, adres, postcode, plaats, land, fact_naam, fact_adres, fact_postcode, fact_plaats, email_factuur, email_overig, email_verzend, email_pakbon, vertegenw_code, prijslijst_nr, korting_pct, betaler, inkoopgroepen(naam), gratis_verzending, standaard_maat_werkdagen, maatwerk_weken, deelleveringen_toegestaan, default_lever_type, afleverwijze, toeslag_actief, toeslag_procent, toeslag_omschrijving, toeslag_begindatum, toeslag_einddatum, factuurvoorkeur')
+        .select('debiteur_nr, naam, adres, postcode, plaats, land, fact_naam, fact_adres, fact_postcode, fact_plaats, email_factuur, email_overig, email_verzend, email_pakbon, vertegenw_code, prijslijst_nr, korting_pct, betaler, inkoopgroepen(naam), gratis_verzending, standaard_maat_werkdagen, maatwerk_weken, deelleveringen_toegestaan, default_lever_type, afleverwijze, toeslag_actief, toeslag_procent, toeslag_omschrijving, toeslag_begindatum, toeslag_einddatum, factuurvoorkeur, combi_levering')
         .eq('status', 'Actief')
         .limit(50)
 

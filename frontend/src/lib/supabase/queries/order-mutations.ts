@@ -29,6 +29,9 @@ export interface OrderFormData {
   lever_modus?: 'deelleveringen' | 'in_een_keer' | null
   /** Klant haalt zelf af → UI onderdrukt automatische verzendkosten-regel; logistiek slaat vervoerder over. Mig 204. */
   afhalen?: boolean
+  /** Klant wil dít exemplaar toch los verzonden, met verzendkosten, ongeacht
+   *  debiteuren.combi_levering. Mig 485/ADR-0039. */
+  combi_levering_override?: boolean
   /** ADR 0014: 'week' = ergens binnen de leverweek (B2B-default), 'datum' = exact die afleverdatum (B2C). Mig 244. */
   lever_type?: 'week' | 'datum'
 }
@@ -264,6 +267,7 @@ export async function createOrder(
     afl_email: order.afl_email || null,
     lever_modus: order.lever_modus ?? null,
     afhalen: order.afhalen ?? false,
+    combi_levering_override: order.combi_levering_override ?? false,
     lever_type: order.lever_type ?? 'week',
   }
 
@@ -549,12 +553,12 @@ export async function fetchKlantArtikelnummer(debiteurNr: number, artikelnr: str
 export async function fetchClientCommercialData(debiteurNr: number) {
   const { data, error } = await supabase
     .from('debiteuren')
-    .select('prijslijst_nr, korting_pct, gratis_verzending, verzendkosten, verzend_drempel, standaard_maat_werkdagen, maatwerk_weken, deelleveringen_toegestaan, default_lever_type, email_factuur, email_overig, email_verzend, email_pakbon, afleverwijze, toeslag_actief, toeslag_procent, toeslag_omschrijving, toeslag_begindatum, toeslag_einddatum, factuurvoorkeur')
+    .select('prijslijst_nr, korting_pct, gratis_verzending, verzendkosten, verzend_drempel, standaard_maat_werkdagen, maatwerk_weken, deelleveringen_toegestaan, default_lever_type, email_factuur, email_overig, email_verzend, email_pakbon, afleverwijze, toeslag_actief, toeslag_procent, toeslag_omschrijving, toeslag_begindatum, toeslag_einddatum, factuurvoorkeur, combi_levering')
     .eq('debiteur_nr', debiteurNr)
     .single()
 
   if (error) throw error
-  return data as { prijslijst_nr: string | null; korting_pct: number; gratis_verzending: boolean; verzendkosten: number; verzend_drempel: number; standaard_maat_werkdagen: number | null; maatwerk_weken: number | null; deelleveringen_toegestaan: boolean; default_lever_type: 'week' | 'datum'; email_factuur: string | null; email_overig: string | null; email_verzend: string | null; email_pakbon: string | null; afleverwijze: string | null; toeslag_actief: boolean; toeslag_procent: number | null; toeslag_omschrijving: string | null; toeslag_begindatum: string | null; toeslag_einddatum: string | null; factuurvoorkeur: 'per_zending' | 'wekelijks' | null }
+  return data as { prijslijst_nr: string | null; korting_pct: number; gratis_verzending: boolean; verzendkosten: number; verzend_drempel: number; standaard_maat_werkdagen: number | null; maatwerk_weken: number | null; deelleveringen_toegestaan: boolean; default_lever_type: 'week' | 'datum'; email_factuur: string | null; email_overig: string | null; email_verzend: string | null; email_pakbon: string | null; afleverwijze: string | null; toeslag_actief: boolean; toeslag_procent: number | null; toeslag_omschrijving: string | null; toeslag_begindatum: string | null; toeslag_einddatum: string | null; factuurvoorkeur: 'per_zending' | 'wekelijks' | null; combi_levering: boolean }
 }
 
 /** Update only the afwerking (+ optional band_kleur) on a single order_regel — used for locked orders where

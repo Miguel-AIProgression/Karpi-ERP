@@ -21,6 +21,9 @@ export interface OrderCommitInput {
   header: Partial<OrderFormData>
   debiteurNr: number
   afhalen: boolean
+  /** Mig 485/ADR-0039: klant wil dít exemplaar toch los verzonden, ongeacht
+   *  debiteuren.combi_levering. */
+  combiLeveringOverride: boolean
   /** Stand van de "Deelleveringen"-checkbox (gemengde standaard/maatwerk-split). */
   deelleveringen: boolean
   /** Keuze uit de LeverModusDialog; wint van header.lever_modus. */
@@ -62,13 +65,13 @@ function getISOWeek(dateStr: string): number {
 
 export function bouwOrderCommit(input: OrderCommitInput): OrderCommitPlan {
   const {
-    regels, header, debiteurNr, afhalen, deelleveringen,
+    regels, header, debiteurNr, afhalen, combiLeveringOverride, deelleveringen,
     overrideLeverModus, afleverdatumInfo, echteMaatwerkDatum,
   } = input
 
   const headerWithModus: Partial<OrderFormData> = overrideLeverModus
-    ? { ...header, lever_modus: overrideLeverModus, afhalen }
-    : { ...header, afhalen }
+    ? { ...header, lever_modus: overrideLeverModus, afhalen, combi_levering_override: combiLeveringOverride }
+    : { ...header, afhalen, combi_levering_override: combiLeveringOverride }
   const orderData: OrderFormData = { ...headerWithModus, debiteur_nr: debiteurNr }
 
   // Split-order flow: deelleveringen AAN + gemengde order (standaard + maatwerk)

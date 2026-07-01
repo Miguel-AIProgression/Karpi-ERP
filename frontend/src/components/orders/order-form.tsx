@@ -91,6 +91,9 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
   // Mig 524: retroactieve order — al fysiek verzonden/afgehaald.
   const [alAfgehandeld, setAlAfgehandeld] = useState(false)
   const [verzenddatum, setVerzenddatum] = useState<string>(() => new Date().toISOString().split('T')[0])
+  const [combiLeveringOverride, setCombiLeveringOverride] = useState<boolean>(
+    initialData?.header?.combi_levering_override ?? false
+  )
   const [dropshipKeuze, setDropshipKeuze] = useState<DropshipmentKeuze>(
     () => detecteerDropshipKeuze(initialData?.regels ?? [])
   )
@@ -230,7 +233,21 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
     setAfhalen(nieuw)
     setShippingOverridden(false)
     setRegels((current) => {
-      const afterShipping = applyShippingLogic(current, client, nieuw)
+      const afterShipping = applyShippingLogic(current, client, nieuw, {
+        wachtOpCombiLevering: !!client?.combi_levering && !combiLeveringOverride,
+      })
+      return applyToeslagLogic(afterShipping, client)
+    })
+  }
+
+  /** Toggle combi-levering-override — herwaardeert de VERZEND-regel meteen
+   *  (ADR-0039), analoog aan handleAfhalenToggle. */
+  function handleCombiLeveringOverrideToggle(nieuw: boolean) {
+    setCombiLeveringOverride(nieuw)
+    setRegels((current) => {
+      const afterShipping = applyShippingLogic(current, client, afhalen, {
+        wachtOpCombiLevering: !!client?.combi_levering && !nieuw,
+      })
       return applyToeslagLogic(afterShipping, client)
     })
   }
@@ -248,7 +265,9 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
     setRegels((current) => {
       const metDropship = applyDropshipmentLogic(current, keuze, dropshipPrijzen)
       const afterShipping = keuze === 'nee'
-        ? applyShippingLogic(metDropship, client, afhalen)
+        ? applyShippingLogic(metDropship, client, afhalen, {
+            wachtOpCombiLevering: !!client?.combi_levering && !combiLeveringOverride,
+          })
         : metDropship
       return applyToeslagLogic(afterShipping, client)
     })
@@ -273,6 +292,9 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
   const handleClientChange = async (c: SelectedClient | null) => {
     setClient(c)
     setShippingOverridden(false)
+    // Nieuwe klant → de override op de vorige klant is niet meer relevant;
+    // de nieuwe klant-instelling (combi_levering) moet weer leidend zijn.
+    setCombiLeveringOverride(false)
     setDeelleveringen(c?.deelleveringen_toegestaan ?? false)
     // Klant-default 'Afhalen' moet de afhalen-checkbox vooraf aanvinken —
     // anders moet de operator dezelfde keuze die al op het klantprofiel
@@ -346,7 +368,9 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
             return updated
           })
         )
-        const afterShipping = applyShippingLogic(updatedRegels, c, nieuweAfhalen)
+        const afterShipping = applyShippingLogic(updatedRegels, c, nieuweAfhalen, {
+          wachtOpCombiLevering: !!c?.combi_levering,
+        })
         setRegels(applyToeslagLogic(afterShipping, c))
       }
     }
@@ -654,8 +678,8 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
       }
 
       const headerWithModus: Partial<OrderFormData> = overrideLeverModus
-        ? { ...header, lever_modus: overrideLeverModus, afhalen }
-        : { ...header, afhalen }
+        ? { ...header, lever_modus: overrideLeverModus, afhalen, combi_levering_override: combiLeveringOverride }
+        : { ...header, afhalen, combi_levering_override: combiLeveringOverride }
       const orderData: OrderFormData = { ...headerWithModus, debiteur_nr: client.debiteur_nr }
 
       // Levertijd-Module snapshot-context (ADR-0020 / mig 276): geef de klant
@@ -683,6 +707,7 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
           header,
           debiteurNr: client.debiteur_nr,
           afhalen,
+          combiLeveringOverride,
           deelleveringen,
           overrideLeverModus,
           afleverdatumInfo,
@@ -997,6 +1022,17 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
             />
             Klant haalt zelf af — verzendkosten vervallen
           </label>
+          {client.combi_levering && (
+            <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={combiLeveringOverride}
+                onChange={(e) => handleCombiLeveringOverrideToggle(e.target.checked)}
+                className="rounded border-slate-300 text-terracotta-500 focus:ring-terracotta-400/30"
+              />
+              Deze order toch los verzenden (met verzendkosten indien onder de drempel)
+            </label>
+          )}
           <AddressSelector
             debiteurNr={client.debiteur_nr}
             onSelect={handleAddressSelect}
@@ -1089,7 +1125,11 @@ export function OrderForm({ mode, initialData, onAfterCreate }: OrderFormProps) 
           }
 
           // Normal change — apply shipping + toeslag auto-logic if not overridden
-          const afterShipping = shippingOverridden ? newRegels : applyShippingLogic(newRegels, client, afhalen)
+          const afterShipping = shippingOverridden
+            ? newRegels
+            : applyShippingLogic(newRegels, client, afhalen, {
+                wachtOpCombiLevering: !!client?.combi_levering && !combiLeveringOverride,
+              })
           const finalRegels = applyToeslagLogic(afterShipping, client)
           setRegels(finalRegels)
           applyAfleverdatum(finalRegels, client)
