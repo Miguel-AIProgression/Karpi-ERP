@@ -1,5 +1,5 @@
 {
-  "_bron": "truthtable van derive_wacht_status — gespiegeld in mig 470 DO-assertie (mig 346/352 + B13-cases, betekenis 'Wacht op inkoop'/'Wacht op voorraad' omgedraaid in mig 470). null = no-op (niet wijzigen).",
+  "_bron": "truthtable van derive_wacht_status — gespiegeld in mig 470 DO-assertie (mig 346/352 + B13-cases, betekenis 'Wacht op inkoop'/'Wacht op voorraad' omgedraaid in mig 470). null = no-op (niet wijzigen). Mig 540: 'Concept' toegevoegd aan no-touch (alle 4 input-combinaties → null).",
   "cases": [
     { "huidig": "Nieuw",              "io": false, "tekort": false, "maatwerk": false, "verwacht": "Klaar voor picken" },
     { "huidig": "Nieuw",              "io": false, "tekort": false, "maatwerk": true,  "verwacht": "Wacht op maatwerk" },
@@ -11,7 +11,10 @@
     { "huidig": "Wacht op voorraad",  "io": false, "tekort": false, "maatwerk": false, "verwacht": "Klaar voor picken" },
     { "huidig": "Wacht op inkoop",    "io": true,  "tekort": false, "maatwerk": false, "verwacht": "Wacht op voorraad" },
     { "huidig": "Klaar voor picken",  "io": false, "tekort": false, "maatwerk": false, "verwacht": null },
-    { "huidig": "Concept",            "io": true,  "tekort": false, "maatwerk": false, "verwacht": "Wacht op voorraad" },
+    { "huidig": "Concept",            "io": true,  "tekort": false, "maatwerk": false, "verwacht": null },
+    { "huidig": "Concept",            "io": false, "tekort": true,  "maatwerk": false, "verwacht": null },
+    { "huidig": "Concept",            "io": false, "tekort": false, "maatwerk": true,  "verwacht": null },
+    { "huidig": "Concept",            "io": false, "tekort": false, "maatwerk": false, "verwacht": null },
     { "huidig": "Maatwerk afgerond",  "io": false, "tekort": false, "maatwerk": false, "verwacht": null },
     { "huidig": "Maatwerk afgerond",  "io": false, "tekort": false, "maatwerk": true,  "verwacht": null },
     { "huidig": "Maatwerk afgerond",  "io": true,  "tekort": true,  "maatwerk": true,  "verwacht": null },
