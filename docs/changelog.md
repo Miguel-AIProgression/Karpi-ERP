@@ -17,8 +17,9 @@ WELL.
   Sluit dessin-/patroonnummers ("1200") en "Kl.NN"-parse-artefacten uit.
 - `vasteMaatRegels()` (`frontend/src/modules/logistiek/lib/shipping-label-data.ts`)
   toont de code, indien aanwezig, achter het kleurnummer: "SOFIA (13 – G305)
-  80x150 cm" i.p.v. "SOFIA (13) 80x150 cm". Raakt alle drie labelvarianten
-  (compact/staand/DPD delen `ShippingLabel`/`labelProductRegels`).
+  80x150 cm" i.p.v. "SOFIA (13) 80x150 cm". Raakt het ene canonieke
+  verzendlabel (`ShippingLabel`) dat alle vervoerders sinds 2026-06-18 delen —
+  geen aparte varianten meer om los bij te werken.
 - Geen DB-migratie, geen nieuwe kolom, geen query-uitbreiding — puur
   tekst-parsing op al-opgehaalde data.
 - **Bewust niet aangeraakt:** de pakbon-PDF toont de code al correct (leest de
