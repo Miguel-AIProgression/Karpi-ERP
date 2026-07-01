@@ -490,10 +490,11 @@ export function MagazijnOverviewPage() {
           {tabs.map((t) => {
             const isActive = filter === t.key
             const isGefilterd = t.aantalTotaal !== null
-            // Amber accent voor niet-lege buckets zodat orders in een verder-in-de-
-            // toekomst-tab (bv. "Later") niet over het hoofd gezien worden — vóór
-            // deze wijziging zagen alle tabs er identiek grijs uit, ongeacht telling.
-            const heeftOrders = t.aantal > 0
+            // Amber accent alleen tijdens zoeken: buiten het zoeken heeft vrijwel
+            // elke week toch al orders (normale achterstand), dus zou de accent
+            // overal staan en niets meer beduiden. Tijdens zoeken is een
+            // niet-lege tab wél het signaal dat een treffer daar wacht (bv. "Later").
+            const heeftOrders = zoekModus && t.aantal > 0
             return (
               <button
                 key={t.key}
