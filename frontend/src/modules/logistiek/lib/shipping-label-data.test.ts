@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   labelProductRegels,
   kwaliteitNaamUitVervolg,
+  leverancierskleurcodeUitVervolg,
   klantNaamWijktAf,
   vormUitOmschrijving,
 } from './shipping-label-data'
@@ -85,6 +86,22 @@ describe('labelProductRegels — vaste maat', () => {
   it('laat het kleurnummer weg als kleur_code ontbreekt', () => {
     const regel = maakRegel(maakOrderRegel({ producten: { ...product, kleur_code: null } }))
     expect(labelProductRegels(regel).groot).toBe('GALAXY 200x290 cm')
+  })
+
+  it('toont de leverancierskleurcode achter het kleurnummer als vervolgomschrijving die bevat (Sofia)', () => {
+    const regel = maakRegel(
+      maakOrderRegel({
+        producten: {
+          ...product,
+          vervolgomschrijving: 'SOFIA 3726-G305 CA: 080x150 cm',
+          kleur_code: '13',
+          karpi_code: 'SOFI13XX080150',
+          lengte_cm: 80,
+          breedte_cm: 150,
+        },
+      }),
+    )
+    expect(labelProductRegels(regel).groot).toBe('SOFIA (13 – G305) 80x150 cm')
   })
 
   it('omsticker (mig 436): vervangt de Karpi-code-regel door "OMB: <fysieke code>"', () => {
@@ -244,6 +261,26 @@ describe('vormUitOmschrijving — vorm/uitvoering uit de productomschrijving', (
   for (const [invoer, verwacht] of gevallen) {
     it(`"${invoer}" -> ${verwacht === null ? 'null' : `"${verwacht}"`}`, () => {
       expect(vormUitOmschrijving(invoer)).toBe(verwacht)
+    })
+  }
+})
+
+describe('leverancierskleurcodeUitVervolg — leveranciers-kleurcode uit vervolgomschrijving', () => {
+  // Echte gevallen uit de productdata (2026-07-01, mail Pick & Ship).
+  const gevallen: Array<[string | null, string | null]> = [
+    ['SOFIA 3726-G305 CA: 080x150 cm', 'G305'],
+    ['MANDA 3726-1V48 CA: 240x330 cm', '1V48'],
+    ['CABANA 5367-6Y09 CA: 160x230 cm', '6Y09'],
+    ['GALAXY Kleur 10 CA: 200x290 cm', null], // normale "Kleur N", geen extra tekst
+    ['SILVER SPRING Kl.24 CA: 200x290 cm', null], // "Kl.NN"-parse-artefact, geen streepje
+    ['ROMANCE 1200 Kleur 41 CA:068x220 cm', null], // los dessin-nummer, geen streepje
+    ['GALAXY 10 CA: 240x340 cm ORGANIC', null], // los kleurnummer, geen streepje
+    [null, null],
+    ['', null],
+  ]
+  for (const [invoer, verwacht] of gevallen) {
+    it(`"${invoer}" -> ${verwacht === null ? 'null' : `"${verwacht}"`}`, () => {
+      expect(leverancierskleurcodeUitVervolg(invoer)).toBe(verwacht)
     })
   }
 })

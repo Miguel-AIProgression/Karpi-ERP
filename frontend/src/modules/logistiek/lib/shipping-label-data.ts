@@ -2,11 +2,18 @@
 // (liggende) en het staande 3×6-ontwerp zodat beide exact dezelfde
 // product-/referentie-logica tonen.
 import type { ZendingPrintRegel } from '@/modules/logistiek/queries/zendingen'
-// kwaliteitNaamUitVervolg leeft sinds 2026-06-18 in _shared/ (ADR-0033): één
-// bron voor het label én de factuur-PDF. Cross-root re-export houdt de bestaande
-// import `from './shipping-label-data'` (o.a. de test) ongewijzigd.
-import { kwaliteitNaamUitVervolg } from '../../../../../supabase/functions/_shared/kwaliteit-naam'
-export { kwaliteitNaamUitVervolg } from '../../../../../supabase/functions/_shared/kwaliteit-naam'
+// kwaliteitNaamUitVervolg/leverancierskleurcodeUitVervolg leven sinds
+// 2026-06-18 (resp. 2026-07-01) in _shared/ (ADR-0033): één bron voor het
+// label én de factuur-PDF. Cross-root re-export houdt de bestaande import
+// `from './shipping-label-data'` (o.a. de test) ongewijzigd.
+import {
+  kwaliteitNaamUitVervolg,
+  leverancierskleurcodeUitVervolg,
+} from '../../../../../supabase/functions/_shared/kwaliteit-naam'
+export {
+  kwaliteitNaamUitVervolg,
+  leverancierskleurcodeUitVervolg,
+} from '../../../../../supabase/functions/_shared/kwaliteit-naam'
 // Pakbon-naam-resolutie leeft sinds 2026-06-19 als single source in
 // _shared/pakbon (ADR-0033, Pakbondocument-consolidatie). Cross-root re-export
 // houdt de bestaande imports `from './shipping-label-data'` (label + pakbon)
@@ -88,6 +95,14 @@ function basisProductRegels(
  *
  * Kleurnummer en vorm zijn beide optioneel: ontbreekt het kleurnummer of is de
  * uitvoering gewoon rechthoekig (geen vorm-token), dan valt dat deel weg.
+ *
+ * Leveranciers-kleurcode (2026-07-01, mail Pick & Ship): bij 18 kwaliteiten
+ * (bv. Sofia) draagt de fysieke rol een sticker van de leverancier met een
+ * eigen kleurcode die afwijkt van Karpi's interne kleurnummer — Sofia kleur
+ * "13" is bij de leverancier "G305". Die code zit verstopt in
+ * `vervolgomschrijving` (`leverancierskleurcodeUitVervolg`) en wordt, als hij
+ * bestaat, achter het kleurnummer getoond: "SOFIA (13 – G305) 080x150 cm". De
+ * overige ~99% van de producten (geen match) blijft ongewijzigd.
  */
 function vasteMaatRegels(regel: ZendingPrintRegel | null): LabelProductRegels | null {
   const orderRegel = regel?.order_regels
@@ -98,11 +113,13 @@ function vasteMaatRegels(regel: ZendingPrintRegel | null): LabelProductRegels | 
   const lengte = product.lengte_cm
   if (!kwaliteit || !lengte) return null
   const kleur = (product.kleur_code ?? '').trim()
+  const leverancierskleurcode = leverancierskleurcodeUitVervolg(product.vervolgomschrijving)
+  const kleurWeergave = [kleur, leverancierskleurcode].filter(Boolean).join(' – ')
   const vorm = vormUitOmschrijving(product.vervolgomschrijving ?? product.omschrijving)
   const maat = maatWeergave(lengte, product.breedte_cm, vorm)
   if (!maat) return null
   const klein = (product.karpi_code ?? regel?.artikelnr ?? '').trim() || null
-  const groot = [kwaliteit, kleur ? `(${kleur})` : '', maat, vorm ?? '']
+  const groot = [kwaliteit, kleurWeergave ? `(${kleurWeergave})` : '', maat, vorm ?? '']
     .filter(Boolean)
     .join(' ')
   return { groot, klein }
