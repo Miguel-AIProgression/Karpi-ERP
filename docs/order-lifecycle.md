@@ -3,7 +3,7 @@
 > **Levend document** (aangemaakt 2026-06-10). Dit is de toetssteen voor elke wijziging
 > die de order-flow raakt: statussen, transities, gates, intake, productie, magazijn.
 > Werk het bij wanneer een migratie een transitie/gate toevoegt of wijzigt.
-> Vuistregel bij RPC's: de actuele body staat in `supabase/schema/schema.sql`
+> Vuistregel bij RPC's: de actuele body staat in `supabase/schema/functies.sql`
 > (of via `pg_get_functiondef` op de live DB) — NIET in de migratiebestanden;
 > zie §3.3. "Hoogst-genummerde migratie wint" is onbetrouwbaar gebleken
 > (hernummeringen bij merges — audit 2026-07-02).
@@ -29,7 +29,7 @@ handmatig (order-form)         ↕ Wacht op inkoop          Ingepakt)           
 
 ## 2. Order-statussen
 
-Enum `order_status` (snapshot geborgd door mig 350). Drie categorieën:
+Enum `order_status` (snapshot geborgd door mig 350, opvolger mig 568). Drie categorieën:
 
 | Status | Categorie | Sinds | Betekenis / eigenaar |
 |---|---|---|---|
@@ -38,6 +38,7 @@ Enum `order_status` (snapshot geborgd door mig 350). Drie categorieën:
 | `Wacht op voorraad` | canoniek | base | ≥1 regel met tekort zonder IO-claim |
 | `Wacht op inkoop` | canoniek | mig 144 | ≥1 actieve IO-claim |
 | `Wacht op maatwerk` | canoniek | mig 257 | ≥1 maatwerk-regel zonder snijplan `'Ingepakt'` |
+| `Wacht op combi-levering` | canoniek | mig 563 (ADR-0040) | Klant wacht op de vrachtvrije-drempel over meerdere orders naar hetzelfde adres (`combi_levering_status`); laagste prioriteit in de ladder, kan ook demoveren vanuit `Klaar voor picken`; blokkeert Pick & Ship (mig 566) én `start_deelzending` (mig 573 — de bedoelde ontsnappingsroute is de order-override, niet een deelzending), niet productie |
 | `In pickronde` | canoniek | mig 257 | Zending in `'Picken'`; command-beheerd (mig 258) |
 | `Deels verzonden` | canoniek | mig 257 | ≥1 zending verzonden, ≥1 open |
 | `Verzonden` | **terminaal** | base | Laatste open zending voltooid |
@@ -65,9 +66,9 @@ Afgedwongen door [`scripts/lint-no-direct-orders-status-update.sh`](../scripts/l
 |---|---|---|---|
 | `markeer_verzonden` | → `Verzonden` | faalt op `Geannuleerd` | mig 218 |
 | `markeer_geannuleerd` | → `Geannuleerd` | faalt op `Verzonden` | mig 218 |
-| `markeer_pickronde_gestart` | → `In pickronde` | no-op op pickronde-fases; faalt op eindstatus | mig 258 |
+| `markeer_pickronde_gestart` | → `In pickronde` | no-op op pickronde-fases; faalt op eindstatus | mig 258 (mig 571: + `herbereken_wacht_status`-cascade ná de transitie) |
 | `markeer_deels_verzonden` | → `Deels verzonden` | idem | mig 258 |
-| `herbereken_wacht_status` | → Wacht-op-X / `Klaar voor picken` | zie §4 | mig 275 (laatste) |
+| `herbereken_wacht_status` | → Wacht-op-X / `Klaar voor picken` | zie §4 | mig 565 (laatste; ADR-0040-groep-cascade) |
 | `voltooi_confectie` (na-stap) | → `Maatwerk afgerond` | alleen `alleen_productie=true` + alle snijplannen afgerond | mig 348 |
 | `bevestig_concept_order` | `Concept` → `Klaar voor picken` | faalt als status ≠ `Concept` | mig 354 |
 
@@ -93,16 +94,21 @@ migratie-body i.p.v. de live versie.
 
 De canonieke bron is de gegenereerde snapshot:
 
-    supabase/schema/schema.sql    (ververs met scripts/dump-schema.ps1)
+    supabase/schema/functies.sql + views.sql
+    (ververs met: node scripts/dump-schema.mjs)
 
-Zolang de eerste volledige dump nog niet gedraaid is (vereist Docker of een
-Management-API-token): haal de live body op via de SQL-editor —
-`SELECT pg_get_functiondef(p.oid) FROM pg_proc p JOIN pg_namespace n ON
-n.oid = p.pronamespace WHERE n.nspname='public' AND p.proname='<functie>';`
-— en werk NOOIT vanaf een migratiebestand. Wie een functie wijzigt: nieuwe
-migratie schrijven **vanaf de live/snapshot-body**, applyen, snapshot
+Ad-hoc één functie checken kan ook rechtstreeks:
+`supabase db query --linked -o json "SELECT pg_get_functiondef(p.oid) FROM
+pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE
+n.nspname='public' AND p.proname='<functie>'"` — maar werk NOOIT vanaf een
+migratiebestand. Wie een functie wijzigt: nieuwe migratie schrijven **vanaf
+de live/snapshot-body**, applyen (`supabase db query --linked -f`), snapshot
 verversen, beide committen. Migratiebestanden zijn write-once-geschiedenis
-(het "waarom"); de snapshot is de actuele staat (het "wat").
+(het "waarom"); de snapshot is de actuele staat (het "wat"). De per-RPC-
+wijzigingsgeschiedenis blijft vindbaar via `git log -S <functienaam> --
+supabase/migrations/` en docs/changelog.md — een handmatige tabel is niet
+meer nodig (bewijs: de laatste versie ervan miste 7 kern-RPC's en werd één
+dag na de audit alweer ingehaald door mig 565/572/573).
 
 ## 3.4 Trigger-landschap op `order_regels` (live geverifieerd 2026-07-02)
 
@@ -127,33 +133,51 @@ vuren. AFTER-triggers vuren alfabetisch op triggernaam — let op:
 Wie een orderregel-UPDATE debugt: dit is de volledige set — een agent die er
 maar één of twee kent, mist cascades.
 
-## 4. `herbereken_wacht_status` — beslislogica (mig 275)
+## 4. `herbereken_wacht_status` — beslislogica (mig 564/565, ADR-0040)
 
 Volgorde, eerste match wint:
 
-1. **No-touch**: huidig ∈ {`Verzonden`, `Geannuleerd`, `Klaar voor verzending`,
+1. **No-touch**: huidig ∈ {`Concept`, `Verzonden`, `Geannuleerd`, `Klaar voor verzending`,
    `In productie`, `In snijplan`, `Deels gereed`, `Wacht op picken`,
    `In pickronde`, `Deels verzonden`, `Maatwerk afgerond` (sinds mig 351)} → return.
    `Maatwerk afgerond` ontbrak t/m mig 275 (ouder dan mig 327) — regressie-pad
    naar `Wacht op maatwerk` bij elke orderregel-touch; zie bevinding B13.
-2. ≥1 actieve claim `bron='inkooporder_regel'` → `Wacht op inkoop`
-3. ≥1 niet-maatwerk, niet-admin-pseudo regel met `te_leveren > SUM(claims)` → `Wacht op voorraad`
+   `'Wacht op combi-levering'` staat hier BEWUST niet in (mig 564) — moet
+   herhaaldelijk herevalueerbaar blijven.
+2. ≥1 actieve claim `bron='inkooporder_regel'` → `Wacht op voorraad` (mig 470-betekenis)
+3. ≥1 niet-maatwerk, niet-admin-pseudo regel met `te_leveren > SUM(claims)` → `Wacht op inkoop` (mig 470-betekenis)
 4. ≥1 maatwerk-regel zonder snijplan `'Ingepakt'` → `Wacht op maatwerk`
-5. Huidig ∈ {Wacht-op-X, `Nieuw`} → `Klaar voor picken`
-6. Anders → no-op
+5. Klant wacht op de Combi-levering-drempel (`combi_levering_status.wacht_op_combi_levering`) → `Wacht op combi-levering` (mig 564, ADR-0040 — laagste prioriteit, kan ook demoveren vanuit `Klaar voor picken`)
+6. Huidig ∈ {Wacht-op-X (incl. `Wacht op combi-levering`), `Nieuw`} → `Klaar voor picken`
+7. Anders → no-op
 
 Admin-pseudo-regels (`producten.is_pseudo`, ADR-0018) tellen nergens mee.
-**Single-source sinds mig 346/352:** de beslislogica leeft in de pure functie
-`derive_wacht_status` (SQL, mig 346 + B13-fix in mig 352) met TS-spiegel
+**Single-source sinds mig 346/352/470/540/564:** de beslislogica leeft in de pure functie
+`derive_wacht_status` (SQL, laatste def mig 564) met TS-spiegel
 [`derive-status.ts`](../supabase/functions/_shared/order-lifecycle/derive-status.ts)
 en golden-fixture; `herbereken_wacht_status` verzamelt alleen nog de state en
 delegeert. Wijzig de ladder dus in `derive_wacht_status` + TS-spiegel + golden,
 nooit meer inline.
 
+**Groep-cascade (mig 565, ADR-0040):** Combi-levering is — anders dan de drie
+overige criteria — een groepsbeslissing (2D-sleutel debiteur_nr × genormaliseerd
+afleveradres, `combi_levering_status`). `herbereken_wacht_status` herevalueert
+daarom, ná de eigen-order-transitie, onvoorwaardelijk ook elke sibling in de
+groep (`p_cascade_groep`, default TRUE), met `cascade=FALSE` in de recursieve
+sibling-aanroep — geen cyclus mogelijk (max. recursiediepte 2).
+
 **Callers van `herbereken_wacht_status`:** (1) elke claim-/orderregel-mutatie via
 `herwaardeer_order_status` (mig 254-wrapper, ADR-0015); (2) sinds **mig 486** de
 listener `trg_snijplan_herbereken_order_status` op `snijplannen` zodra een stuk de
-`'Ingepakt'`-grens kruist (confectie→pick terugkoppeling — zie §8). Zonder (2) bleef
+`'Ingepakt'`-grens kruist (confectie→pick terugkoppeling — zie §8); (3) sinds
+**mig 567** de twee Combi-levering-triggers (`trg_orders_combi_levering_override_fn`
+cascade=TRUE, `trg_debiteuren_combi_levering_fn` cascade=FALSE — die loopt zelf al
+over alle orders van de klant); (4) sinds **mig 571** `markeer_pickronde_gestart`,
+ná de transitie naar `'In pickronde'` — zonder deze aanroep bleven achterblijvers
+van een deels gestarte Combi-levering-groep stale `'Klaar voor picken'` tot de
+gestarte order verzonden was; (5) sinds **mig 572** `update_order_with_lines`, aan
+het eind van élke edit (eigen order + nieuwe groep), plús `herbereken_combi_groep`
+voor de verlaten groep bij een adres-/debiteurwijziging. Zonder (2) bleef
 een afgeronde maatwerk-order op `Wacht op maatwerk` staan terwijl hij al pickbaar was.
 
 ## 5. `order_events` — types en listeners
@@ -354,7 +378,22 @@ per-stuk-aandeel bijgehouden, alleen het totaal per virtuele rol).
    een niet-afhaal-order met ≥1 regel `bron='geen'` weigert met
    "Geen vervoerder mogelijk" — frontend-spiegel in `StartPickrondesButton`
    (disabled knop met zelfde label). Escape-hatch: vervoerder-override op de
-   orderregel.
+   orderregel. **Combi-levering (mig 556-568, ADR-0040 — supersedeert
+   ADR-0039's Startbaarheid-gate):** géén frontend-only blokkade meer — een
+   wachtende order krijgt `orders.status='Wacht op combi-levering'` (§2/§4) en
+   bereikt de Pick & Ship-query (`order_pickbaarheid.pick_ship_zichtbaar`,
+   mig 566) dus nooit. Bron: view `combi_levering_status` (mig 557/561/562):
+   TRUE zolang de (debiteur × adres-norm)-groep van openstaande orders de
+   vrachtvrije-drempel niet haalt, of niet alle leden individueel pickbaar
+   zijn. Klant-instelling `debiteuren.combi_levering` + order-override
+   `orders.combi_levering_override`; trigger `trg_debiteuren_combi_levering`/
+   `trg_orders_combi_levering_override` (mig 558/567) voegt/verwijdert zowel de
+   VERZEND-regel als de `orders.status`-transitie op het juiste moment (met
+   groep-cascade, §4). Géén nieuwe bundel-mechaniek: eenmaal vrijgegeven
+   orders (promoveren automatisch, zodra de groep de drempel haalt — geen
+   operator-actie nodig) landen via de bestaande 4D-bundel-expansie automatisch
+   in dezelfde zending. Pick & Ship-vangnet tegen handmatige deelselectie van
+   een al-zichtbare groep: [`combi-levering-achtergebleven.ts`](../frontend/src/modules/logistiek/lib/combi-levering-achtergebleven.ts).
 3. **`voltooi_pickronde`** (bundel-aware via `zending_orders`): zending →
    `'Klaar voor verzending'`; laatste open zending van de order → `markeer_verzonden`
    → `Verzonden`; anders → `Deels verzonden`.

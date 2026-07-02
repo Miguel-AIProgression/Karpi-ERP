@@ -150,6 +150,7 @@ serve(async (req) => {
       fact_adres:    factuur.fact_adres ?? '',
       fact_postcode: factuur.fact_postcode ?? '',
       fact_plaats:   factuur.fact_plaats ?? '',
+      fact_land:     factuur.fact_land ?? null,
       subtotaal:     Number(factuur.subtotaal),
       btw_percentage: Number(factuur.btw_percentage),
       btw_bedrag:    Number(factuur.btw_bedrag),

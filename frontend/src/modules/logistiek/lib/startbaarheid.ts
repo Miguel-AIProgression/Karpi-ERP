@@ -17,6 +17,12 @@
  * De toestand van een order tegenover de pickronde-start. Precies één per order.
  * Canonieke prioriteit (eerste match wint):
  *   in_pickronde > niet_pickbaar > afl_adres > afl_gln > prijs > geen_vervoerder > startbaar
+ *
+ * Mig 563-566 (ADR-0040): Combi-levering is géén Startbaarheid-blokkade meer —
+ * een wachtende order krijgt `order_status='Wacht op combi-levering'` en
+ * bereikt de Pick & Ship-query (`order_pickbaarheid.pick_ship_zichtbaar`) dus
+ * nooit meer. Deze module ziet zo'n order daardoor domweg nooit (supersedeert
+ * ADR-0039's eerdere Startbaarheid-gate-keuze).
  */
 export type StartStatus =
   | 'startbaar' // kan nu een pickronde starten

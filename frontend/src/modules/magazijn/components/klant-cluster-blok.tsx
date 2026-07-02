@@ -116,7 +116,12 @@ export function KlantClusterBlok({ cluster, bundel }: Props) {
       )}
       <div className="space-y-2">
         {cluster.orders.map((o) => (
-          <OrderPickCard key={o.order_id} order={o} />
+          // Nog-niet-gestarte bundel (2+ orders) mag nooit gesplitst starten —
+          // de backend (start_pickronden) breidt elke selectie sowieso al uit
+          // naar de volledige bundel, dus een losse per-order checkbox/knop
+          // is misleidend UI die suggereert dat 1 order apart kan. `inBundel`
+          // verbergt die op de kaart; sturen kan alleen via de bundelkop hierboven.
+          <OrderPickCard key={o.order_id} order={o} inBundel={!isGestart} />
         ))}
       </div>
     </div>

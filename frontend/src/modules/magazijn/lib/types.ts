@@ -96,6 +96,16 @@ export interface PickShipOrder {
    *  Aanwezig zodra `start_pickronde` is aangeroepen, weg na voltooi.
    *  Drijft de "in progress"-staat op de pick-card. */
   actieve_pickronde: ActievePickronde | null
+  /** Mig 563-566 (ADR-0040): TRUE als deze order een Combi-levering-deelnemer
+   *  is (een rij heeft in `combi_levering_status` — klant heeft de instelling
+   *  aan, order niet overruled/dropshipment). Een order die nog op de
+   *  vrachtvrije-drempel wacht heeft `order_status='Wacht op combi-levering'`
+   *  en bereikt deze lijst sowieso nooit meer (order_pickbaarheid-guard,
+   *  mig 566) — elke order die hier verschijnt is dus altijd al startbaar.
+   *  Dit veld voedt uitsluitend de "laat een sibling achter"-waarschuwing
+   *  (combi-levering-achtergebleven.ts) als een operator handmatig een subset
+   *  van een groep selecteert. */
+  combi_levering_deelnemer: boolean
 }
 
 export interface ActievePickronde {

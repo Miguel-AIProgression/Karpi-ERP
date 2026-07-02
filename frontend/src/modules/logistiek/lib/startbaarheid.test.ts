@@ -135,6 +135,7 @@ describe('bepaalStartbaarheid — canonieke prioriteit (eerste match wint)', () 
     // Zodra er een hogere blocker bij komt, verdwijnt geen_vervoerder uit beeld.
     expect(status({ geen_vervoerder: true, afl_adres_incompleet_sinds: 'x' })).toBe('afl_adres')
   })
+
 })
 
 describe('heeftGeenVervoerder', () => {

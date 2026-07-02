@@ -15,6 +15,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { genereerOrderbevestigingPDF } from '../_shared/orderbevestiging-pdf.ts'
 import { type Taal, bepaalTaal, vertaalOmschrijving } from '../_shared/klant-taal.ts'
+import { COMBI_LEVERING_UITLEG } from '../_shared/combi-levering-tekst.ts'
 import { sendFactuurEmail } from '../_shared/graph-mail-client.ts'
 import { isoWeekJaar } from '../_shared/iso-week.ts'
 import { berekenFactuurTotalen } from '../_shared/factuur-bedrag.ts'
@@ -58,6 +59,8 @@ const VERTALINGEN: Record<Taal, {
   btwVerlegd: string
   totaalInclBtw: string
   disclaimer: string
+  /** Mig 486/ADR-0039: paragraaf zolang de order op zijn Combi-levering-groep wacht. */
+  combiLevering: string
   vragen: (email: string, telefoon: string) => string
   groet: string
 }> = {
@@ -80,6 +83,7 @@ const VERTALINGEN: Record<Taal, {
     btwVerlegd: 'BTW verlegd',
     totaalInclBtw: 'Totaalbedrag incl. btw',
     disclaimer: 'Een geringe maatafwijking van +/- 3% alsmede een kleurafwijking kan optreden.',
+    combiLevering: COMBI_LEVERING_UITLEG.nl,
     vragen: (email, tel) => `Heeft u vragen over uw order? Neem dan contact met ons op via <a href="mailto:${email}">${email}</a> of ${tel}.`,
     groet: 'Met vriendelijke groet,',
   },
@@ -102,6 +106,7 @@ const VERTALINGEN: Record<Taal, {
     btwVerlegd: 'Steuerschuldnerschaft des Leistungsempfängers (Reverse Charge)',
     totaalInclBtw: 'Gesamtbetrag inkl. MwSt.',
     disclaimer: 'Geringe Maßabweichungen von +/- 3% sowie Farbabweichungen sind möglich.',
+    combiLevering: COMBI_LEVERING_UITLEG.de,
     vragen: (email, tel) => `Haben Sie Fragen zu Ihrer Bestellung? Kontaktieren Sie uns über <a href="mailto:${email}">${email}</a> oder ${tel}.`,
     groet: 'Mit freundlichen Grüßen,',
   },
@@ -124,6 +129,7 @@ const VERTALINGEN: Record<Taal, {
     btwVerlegd: 'Autoliquidation de la TVA',
     totaalInclBtw: 'Montant total TVA comprise',
     disclaimer: 'Un léger écart de mesure de +/- 3 % ainsi qu\'une différence de couleur peuvent survenir.',
+    combiLevering: COMBI_LEVERING_UITLEG.fr,
     vragen: (email, tel) => `Des questions sur votre commande ? Contactez-nous via <a href="mailto:${email}">${email}</a> ou ${tel}.`,
     groet: 'Cordialement,',
   },
@@ -146,6 +152,7 @@ const VERTALINGEN: Record<Taal, {
     btwVerlegd: 'VAT reverse charged',
     totaalInclBtw: 'Total amount incl. VAT',
     disclaimer: 'A slight size deviation of +/- 3% as well as a colour variation may occur.',
+    combiLevering: COMBI_LEVERING_UITLEG.en,
     vragen: (email, tel) => `Questions about your order? Contact us via <a href="mailto:${email}">${email}</a> or ${tel}.`,
     groet: 'Kind regards,',
   },
@@ -246,6 +253,15 @@ serve(async (req) => {
     btw_percentage: number | string | null
     btw_verlegd_intracom: boolean | null
   } | null
+
+  // Mig 486/ADR-0039: single source of truth voor "wacht deze order op zijn
+  // Combi-levering-groep" — geen lokale herberekening (drift-risico).
+  const { data: combiStatus } = await supabase
+    .from('combi_levering_status')
+    .select('wacht_op_combi_levering')
+    .eq('order_id', order_id)
+    .maybeSingle()
+  const combiLeveringWacht = (combiStatus as { wacht_op_combi_levering: boolean } | null)?.wacht_op_combi_levering ?? false
 
   // Vertegenwoordiger: snapshot op de order (vertegenw_code), opgezocht in medewerkers.
   let vertegenwoordigerNaam: string | null = null
@@ -420,6 +436,7 @@ serve(async (req) => {
     totaal,
     betaalconditie: deb?.betaalconditie ?? null,
     taal,
+    combiLeveringWacht,
   })
 
   // ── E-mail versturen ───────────────────────────────────────────────────────
@@ -453,10 +470,13 @@ serve(async (req) => {
         </p>`
       : ''
 
+  const combiLeveringHtml = combiLeveringWacht ? `<p>${v.combiLevering}</p>` : ''
+
   const htmlBody = `
 <div style="font-family: Arial, sans-serif; max-width: 600px; color: #333;">
   <p>${v.aanhef(klantNaam)}</p>
   <p>${v.intro(o.order_nr, externReferentie(o.klant_referentie))}</p>
+  ${combiLeveringHtml}
   <p>
     <strong>${v.klantnummer}:</strong> ${o.debiteur_nr}<br>
     <strong>${v.ordernummer}:</strong> ${o.order_nr}<br>

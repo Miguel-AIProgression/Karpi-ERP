@@ -192,6 +192,36 @@ per-vervoerder-presentatieverschil (depot voor carrier X) = pas dán een descrip
 extraheren (twee adapters = echte seam), niet speculatief vooraf.
 _Avoid_: compact/staand/DPD-labelvariant, per-vervoerder labelontwerp
 
+**Combi-levering** (ADR-0039):
+Een klant-instelling (`debiteuren.combi_levering`) waarbij een nieuwe Order die
+zelf onder de vrachtvrije-drempel (`verzend_drempel`) blijft, niet los verzonden
+wordt maar wacht tot het cumulatieve subtotaal van **alle** openstaande,
+niet-dropshipment Orders van die klant naar hetzelfde afleveradres de drempel
+haalt. De wachtgroep is volledig live/dynamisch afgeleid (sleutel
+`debiteur × adres-norm` — géén vervoerder of verzendweek, in tegenstelling tot
+de Bundel-Zending-sleutel) en vergrendelt pas op het moment dat de pickronde
+daadwerkelijk start; tot dan kan een nieuwe Order nog aansluiten. Zodra de
+drempel gehaald is, wordt de groep **als één Order behandeld**:
+[[Startbaarheid]] blokkeert (reden `wacht_op_combi_levering`, laagste
+prioriteit, vlak vóór `startbaar`) voor **elk** lid — ook een lid dat zelf al
+[[Pickbaarheid|pickbaar]] is — totdat het traagste lid ook pickbaar is. Twee
+uitsluitingen doen nooit mee: een Dropshipment-kostenregel (klant betaalt al
+voor eigen verzending) en `orders.combi_levering_override=true` (klant wil dít
+exemplaar toch los, met verzendkosten). Voor de fysieke verzending is **geen
+nieuwe bundel-mechaniek** nodig — de bestaande Bundel-Zending-groepering
+(ADR-0012, met de verzendweek-clamp uit mig 403) bundelt vrijgegeven leden
+automatisch in één zending zodra ze samen gestart worden; alleen het
+losstartsplitsen van één lid krijgt een expliciete-reden-vereiste erbovenop.
+Het overschrijden van de eigen `afleverdatum` terwijl een Order nog wacht is
+bewust **geen** [[Order-aandacht-gate]] — dat is de verwachte, ontworpen
+werking van deze instelling, geen datastoring. De bestaande generieke
+"Verzendweek verstreken"-signalering (afleverdatum in het verleden, nog niet
+verzonden) blijft het enige vangnet; er komt geen apart automatisch
+opschuif-mechanisme voor de datum.
+_Avoid_: verzamelfactuur (de wekelijkse cron-batching van de factuur, ander
+mechanisme), bundel-zending (de fysieke verzendbundeling zelf, niet de
+wacht-beslissing)
+
 **Zending-colli**:
 De bevroren per-pakket-snapshotrijen van een zending (`zending_colli`: sscc,
 gewicht, afmetingen, omschrijving), aangemaakt bij pickronde-start door
@@ -295,6 +325,10 @@ _Avoid_: pakbon-afleiding per renderpad, inline JSX-presentatie naast bouwPakbon
 - Een **Pakbondocument** rendert naar de geprinte React-pakbon én de factuurmail-PDF;
   beide lezen dezelfde **Zending-colli**-snapshot, met de routecode als
   print-only render-context (alleen op de geprinte pakbon)
+- Een **Combi-levering**-groep blokkeert **Startbaarheid** voor al zijn leden
+  totdat de klant-drempel gehaald is én elk lid **Pickbaarheid** heeft; bij
+  vrijgave hergebruikt de fysieke bundeling de bestaande Bundel-Zending-
+  mechaniek (ADR-0012) zonder nieuwe code
 - Een **Productie-only order** bereikt **Maatwerk afgerond** zodra al zijn
   **Snijplannen** geconfectioneerd zijn; hij wordt nooit **Verzonden**
 - Echte **Snijplannen** van Productie-only orders **vervangen** de

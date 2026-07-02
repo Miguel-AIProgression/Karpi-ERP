@@ -107,3 +107,23 @@ describe('applyShippingLogic — dropship-guard (regel 0)', () => {
     expect(heeftVerzend(result)).toBe(true)
   })
 })
+
+describe('applyShippingLogic — combi-levering (ADR-0039)', () => {
+  it('voegt geen VERZEND-regel toe zolang de klant op combi-levering wacht', () => {
+    const regels: OrderRegelFormData[] = [
+      { artikelnr: 'ART1', omschrijving: 'Test', orderaantal: 1, te_leveren: 1, prijs: 50, korting_pct: 0, bedrag: 50 },
+    ]
+    const client: KlantVerzendInfo = { gratis_verzending: false, verzendkosten: 15, verzend_drempel: 500 }
+    const result = applyShippingLogic(regels, client, false, { wachtOpCombiLevering: true })
+    expect(result.some((l) => l.artikelnr === 'VERZEND')).toBe(false)
+  })
+
+  it('voegt VERZEND-regel gewoon toe als de order een combi-levering-override heeft', () => {
+    const regels: OrderRegelFormData[] = [
+      { artikelnr: 'ART1', omschrijving: 'Test', orderaantal: 1, te_leveren: 1, prijs: 50, korting_pct: 0, bedrag: 50 },
+    ]
+    const client: KlantVerzendInfo = { gratis_verzending: false, verzendkosten: 15, verzend_drempel: 500 }
+    const result = applyShippingLogic(regels, client, false, { wachtOpCombiLevering: false })
+    expect(result.some((l) => l.artikelnr === 'VERZEND')).toBe(true)
+  })
+})

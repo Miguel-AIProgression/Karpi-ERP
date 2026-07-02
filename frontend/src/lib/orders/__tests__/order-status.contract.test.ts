@@ -21,9 +21,9 @@ describe('order_status contract: TS ≡ golden (set-semantiek, mirrort mig 350)'
     expect(asSortedSet(ORDER_STATUSSEN_LEGACY)).toEqual(asSortedSet(golden.legacy))
   })
 
-  it('totaal = 17 waarden, geen dubbelen, geen overlap canoniek/legacy', () => {
-    expect(ORDER_STATUSSEN).toHaveLength(17)
-    expect(asSortedSet(ORDER_STATUSSEN)).toHaveLength(17)
+  it('totaal = 18 waarden, geen dubbelen, geen overlap canoniek/legacy', () => {
+    expect(ORDER_STATUSSEN).toHaveLength(18)
+    expect(asSortedSet(ORDER_STATUSSEN)).toHaveLength(18)
   })
 
   it('ORDER_STATUS_COLORS dekt exact alle enum-waarden (mig 350-spiegel geautomatiseerd)', () => {

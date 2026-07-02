@@ -31,6 +31,7 @@ export function naarFactuurPdfInput(doc: FactuurDocument): FactuurPdfDocumentDee
     fact_adres: h.fact_adres,
     fact_postcode: h.fact_postcode,
     fact_plaats: h.fact_plaats,
+    fact_land: h.fact_land ?? null,
     subtotaal: h.subtotaal,
     btw_percentage: h.btw_percentage,
     btw_bedrag: h.btw_bedrag,

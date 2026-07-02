@@ -39,7 +39,7 @@ function leverweekInVerleden(afleverdatum: string | null | undefined): { inVerle
   return { inVerleden, label: `Wk ${lever.week} · ${lever.jaar}` }
 }
 
-async function stuurOrderbevestiging(params: {
+export async function stuurOrderbevestiging(params: {
   orderId: number
   email: string
   bevestigdDoor: string

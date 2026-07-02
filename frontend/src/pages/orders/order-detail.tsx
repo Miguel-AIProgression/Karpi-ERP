@@ -36,6 +36,7 @@ import { heeftDropshipRegel } from '@/lib/orders/dropshipment-regel'
 import { dropshipAflEmailProbleem } from '@/lib/orders/dropship-email'
 import { getOrderNavigation } from '@/lib/orders/order-list-context'
 import { useAuth } from '@/hooks/use-auth'
+import { CombiLeveringInWachtKnop } from '@/components/orders/combi-levering-in-wacht-knop'
 
 function EmailInhoudPanel({ body }: { body: string }) {
   const [open, setOpen] = useState(false)
@@ -275,6 +276,13 @@ export function OrderDetailPage() {
             matchBron={order.debiteur_match_bron}
           />
         )}
+
+      {/* Mig 560/ADR-0039: klant belt na de orderbevestiging alsnog om te
+          wachten op Combi-levering i.p.v. verzendkosten te betalen. De
+          component bewaakt zelf volledig wanneer hij zichtbaar is (klant al
+          op combi_levering, of order al Geannuleerd/Verzonden/In pickronde/
+          Deels verzonden — code-review-fix). */}
+      <CombiLeveringInWachtKnop orderId={order.id} orderNr={order.order_nr} />
 
       <OrderAddresses
         order={order}

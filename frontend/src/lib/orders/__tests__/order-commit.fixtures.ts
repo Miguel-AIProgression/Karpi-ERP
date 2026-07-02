@@ -32,7 +32,12 @@ const HEADER: Partial<OrderFormData> = {
 }
 
 /** Spiegelt orderData in de huidige mutationFn (zonder lever_modus-override). */
-const ORDER_DATA: OrderFormData = { ...HEADER, afhalen: false, debiteur_nr: DEBITEUR_NR }
+const ORDER_DATA: OrderFormData = {
+  ...HEADER,
+  afhalen: false,
+  combi_levering_override: false,
+  debiteur_nr: DEBITEUR_NR,
+}
 
 const GEMENGD_INFO = {
   standaardDatum: '2026-06-12', // ISO-week 24
@@ -110,6 +115,7 @@ export const ORDER_COMMIT_GOLDENS: OrderCommitGolden[] = [
       header: HEADER,
       debiteurNr: DEBITEUR_NR,
       afhalen: false,
+      combiLeveringOverride: false,
       deelleveringen: true,
       afleverdatumInfo: GEMENGD_INFO,
       echteMaatwerkDatum: '2026-07-17', // ISO-week 29
@@ -142,6 +148,7 @@ export const ORDER_COMMIT_GOLDENS: OrderCommitGolden[] = [
       header: HEADER,
       debiteurNr: DEBITEUR_NR,
       afhalen: false,
+      combiLeveringOverride: false,
       deelleveringen: false,
       overrideLeverModus: 'deelleveringen',
       afleverdatumInfo: { ...GEMENGD_INFO },
@@ -178,6 +185,7 @@ export const ORDER_COMMIT_GOLDENS: OrderCommitGolden[] = [
       header: HEADER,
       debiteurNr: DEBITEUR_NR,
       afhalen: false,
+      combiLeveringOverride: false,
       deelleveringen: false,
       afleverdatumInfo: STANDAARD_INFO,
       echteMaatwerkDatum: null,
@@ -203,6 +211,7 @@ export const ORDER_COMMIT_GOLDENS: OrderCommitGolden[] = [
       header: HEADER,
       debiteurNr: DEBITEUR_NR,
       afhalen: false,
+      combiLeveringOverride: false,
       deelleveringen: true,
       afleverdatumInfo: GEMENGD_INFO,
       echteMaatwerkDatum: null,
@@ -236,6 +245,7 @@ export const ORDER_COMMIT_GOLDENS: OrderCommitGolden[] = [
       header: { ...HEADER, lever_modus: 'deelleveringen' },
       debiteurNr: DEBITEUR_NR,
       afhalen: false,
+      combiLeveringOverride: false,
       deelleveringen: false,
       afleverdatumInfo: STANDAARD_INFO,
       echteMaatwerkDatum: null,
@@ -268,6 +278,7 @@ export const ORDER_COMMIT_GOLDENS: OrderCommitGolden[] = [
       header: HEADER,
       debiteurNr: DEBITEUR_NR,
       afhalen: false,
+      combiLeveringOverride: false,
       deelleveringen: false,
       afleverdatumInfo: STANDAARD_INFO,
       echteMaatwerkDatum: null,
@@ -290,6 +301,7 @@ export const ORDER_COMMIT_GOLDENS: OrderCommitGolden[] = [
       header: HEADER,
       debiteurNr: DEBITEUR_NR,
       afhalen: false,
+      combiLeveringOverride: false,
       deelleveringen: false,
       overrideLeverModus: 'deelleveringen',
       afleverdatumInfo: STANDAARD_INFO,
@@ -321,6 +333,7 @@ export const ORDER_COMMIT_GOLDENS: OrderCommitGolden[] = [
       header: HEADER,
       debiteurNr: DEBITEUR_NR,
       afhalen: false,
+      combiLeveringOverride: false,
       deelleveringen: false,
       overrideLeverModus: 'in_een_keer',
       afleverdatumInfo: STANDAARD_INFO,
@@ -332,6 +345,39 @@ export const ORDER_COMMIT_GOLDENS: OrderCommitGolden[] = [
         {
           header: { ...ORDER_DATA, lever_modus: 'in_een_keer' },
           regels: [TEKORT_KLEIN],
+          triggerAutoplan: true,
+        },
+      ],
+    },
+  },
+  {
+    naam: 'i-combi-levering-override-propageert-naar-beide-split-headers',
+    toelichting:
+      'mig 485/ADR-0039: combiLeveringOverride=true + gemengde split (standaard/maatwerk) → ' +
+      'beide sub-orders (standaard-deel én maatwerk-deel) dragen combi_levering_override=true ' +
+      'op hun header, ondanks dat de override op het hele (nog ongesplitste) order-niveau ' +
+      'binnenkomt — verder identiek aan fixture a (verzend naar duurste deel, seam-datum).',
+    input: {
+      regels: [STANDAARD_300, MAATWERK_500, VERZEND_15],
+      header: HEADER,
+      debiteurNr: DEBITEUR_NR,
+      afhalen: false,
+      combiLeveringOverride: true,
+      deelleveringen: true,
+      afleverdatumInfo: GEMENGD_INFO,
+      echteMaatwerkDatum: '2026-07-17', // ISO-week 29
+    },
+    verwacht: {
+      gesplitst: true,
+      orders: [
+        {
+          header: { ...ORDER_DATA, combi_levering_override: true, afleverdatum: '2026-06-12', week: '24' },
+          regels: [STANDAARD_300],
+          triggerAutoplan: false,
+        },
+        {
+          header: { ...ORDER_DATA, combi_levering_override: true, afleverdatum: '2026-07-17', week: '29' },
+          regels: [MAATWERK_500, VERZEND_15],
           triggerAutoplan: true,
         },
       ],

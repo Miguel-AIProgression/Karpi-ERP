@@ -121,8 +121,7 @@ export function usePickbaarheid(orders: PickShipOrder[]): PickbaarheidResultaat 
     aantalPrijs: prijsIds.size,
     // Statussen zijn wederzijds exclusief → de som telt elke geblokkeerde order
     // exact één keer (voedt `alleenGeblokkeerd` in de knop).
-    aantalGeblokkeerd:
-      geenVervoerderIds.size + aflAdresIds.size + aflGlnIds.size + prijsIds.size,
+    aantalGeblokkeerd: geenVervoerderIds.size + aflAdresIds.size + aflGlnIds.size + prijsIds.size,
     vervoerderResolutieLaadt,
   }
 }

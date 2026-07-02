@@ -9,13 +9,22 @@ export interface KlantVerzendInfo {
   verzend_drempel: number
 }
 
+export interface CombiLeveringOptions {
+  /** TRUE zolang deze order op zijn Combi-levering-wachtgroep wacht — geen
+   *  VERZEND-regel toevoegen, de beslissing wordt uitgesteld tot vrijgave
+   *  (ADR-0039). */
+  wachtOpCombiLevering: boolean
+}
+
 /**
  * Voegt de automatische VERZEND-regel toe, verwijdert hem, of laat hem
- * staan op basis van vier regels:
+ * staan op basis van vijf regels:
  *
  * 0. Dropship-regel aanwezig (flag-based, mig 370) → VERZEND-regel altijd
  *    weg; de dropship-kostenregel ís de verzendcomponent van de order.
  * 1. `afhalen=true` → VERZEND-regel altijd weg; klant haalt zelf op.
+ * 1b. Klant wacht op zijn Combi-levering-groep (ADR-0039) → geen VERZEND-
+ *     regel; de drempel-beslissing wordt uitgesteld tot vrijgave.
  * 2. Subtotaal < klant-drempel én klant heeft geen `gratis_verzending` →
  *    VERZEND-regel toevoegen op klant-tarief (of fallback naar constants).
  * 3. Anders → bestaande VERZEND-regel verwijderen.
@@ -29,8 +38,16 @@ export function applyShippingLogic(
   regels: OrderRegelFormData[],
   client: KlantVerzendInfo | null,
   afhalen: boolean,
+  combiLevering: CombiLeveringOptions = { wachtOpCombiLevering: false },
 ): OrderRegelFormData[] {
   if (heeftDropshipRegel(regels) || afhalen) {
+    return regels.filter((l) => l.artikelnr !== SHIPPING_PRODUCT_ID)
+  }
+
+  if (combiLevering.wachtOpCombiLevering) {
+    // ADR-0039: de drempel-beslissing wordt uitgesteld tot de Combi-levering-
+    // groep de drempel haalt (of de klant expliciet overrult) — geen
+    // voorlopige VERZEND-regel die later weer verwijderd moet worden.
     return regels.filter((l) => l.artikelnr !== SHIPPING_PRODUCT_ID)
   }
 

@@ -11,6 +11,8 @@ export const ORDER_STATUS_COLORS: Record<string, { bg: string; text: string }> =
   'Wacht op voorraad':     { bg: 'bg-amber-100',   text: 'text-amber-700' },
   'Wacht op inkoop':       { bg: 'bg-orange-100',  text: 'text-orange-700' },
   'Wacht op maatwerk':     { bg: 'bg-purple-100',  text: 'text-purple-700' },
+  // Mig 563/ADR-0040: klant wacht op de vrachtvrije-drempel (Combi-levering)
+  'Wacht op combi-levering': { bg: 'bg-fuchsia-100', text: 'text-fuchsia-700' },
   'In pickronde':          { bg: 'bg-indigo-100',  text: 'text-indigo-700' },
   'Deels verzonden':       { bg: 'bg-cyan-100',    text: 'text-cyan-700' },
   'Verzonden':             { bg: 'bg-green-100',   text: 'text-green-700' },

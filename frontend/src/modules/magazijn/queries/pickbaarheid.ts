@@ -49,11 +49,12 @@ export async function fetchPickShipOrders(
   const perOrder = initPickShipOrders(headers, vandaag)
   const headerMap = new Map(headers.map((h) => [h.id, h]))
   const headerIds = headers.map((h) => h.id)
-  // Deze drie hangen alleen van headerIds af → parallel i.p.v. waterval.
-  const [regels, orderPickbaarheid, actievePickrondes] = await Promise.all([
+  // Deze vier hangen alleen van headerIds af → parallel i.p.v. waterval.
+  const [regels, orderPickbaarheid, actievePickrondes, combiLeveringDeelnemers] = await Promise.all([
     fetchPickbaarheidRegels(headerIds),
     fetchOrderPickbaarheid(headerIds),
     fetchActievePickrondes(headerIds),
+    fetchCombiLeveringDeelnemers(headerIds),
   ])
   // karpiNamen hangt wél van regels af → erna.
   const karpiNamen = await fetchKarpiNamenVoorArtikelen(regels.map((r) => r.artikelnr))
@@ -82,6 +83,14 @@ export async function fetchPickShipOrders(
       order.alle_regels_pickbaar = opb.alle_regels_pickbaar
       order.heeft_gepland_zending = opb.heeft_gepland_zending
     }
+  }
+
+  // Losstaand van de orderPickbaarheid-loop (code-review-fix): combi_levering_status
+  // kan een rij hebben voor een order zonder rij in order_pickbaarheid (bv. alleen
+  // admin-pseudo/vrije regels).
+  for (const orderId of combiLeveringDeelnemers) {
+    const order = perOrder.get(orderId)
+    if (order) order.combi_levering_deelnemer = true
   }
 
   let result = Array.from(perOrder.values())
@@ -298,6 +307,33 @@ async function fetchOrderPickbaarheid(
     map.set(row.order_id, row)
   }
   return map
+}
+
+/**
+ * Mig 563-566 (ADR-0040): de wacht-beslissing zelf zit nu in orders.status
+ * ('Wacht op combi-levering', mig 564/565) — een wachtende order bereikt deze
+ * pagina dus nooit meer (order_pickbaarheid-guard, mig 566). Hier blijft
+ * alleen over: welke ZICHTBARE orders zijn Combi-levering-deelnemer (hebben
+ * een rij in combi_levering_status, ongeacht de wacht-boolean) — voedt
+ * uitsluitend de "laat een sibling achter"-waarschuwing
+ * (combi-levering-achtergebleven.ts) bij handmatige selectie.
+ */
+async function fetchCombiLeveringDeelnemers(orderIds: number[]): Promise<Set<number>> {
+  const set = new Set<number>()
+  const perChunk = await Promise.all(
+    chunks(orderIds, 100).map(async (ids) => {
+      const { data, error } = await supabase
+        .from('combi_levering_status')
+        .select('order_id')
+        .in('order_id', ids)
+      if (error) throw error
+      return (data ?? []) as Array<{ order_id: number }>
+    })
+  )
+  for (const row of perChunk.flat()) {
+    set.add(row.order_id)
+  }
+  return set
 }
 
 /**

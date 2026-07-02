@@ -12,6 +12,7 @@ import { BevestigOrderEdiDialog } from './bevestig-order-edi-dialog'
 import { bepaalBevestigingKanaal, isOrderBevestigd } from '@/lib/orders/bevestiging-kanaal'
 import { fetchHandelspartnerConfig } from '@/modules/edi'
 import { ExpressToggle } from './express-toggle'
+import { CombiLeveringBadge, CombiWachtRedenLine } from './combi-levering-badge'
 import { useAuth } from '@/hooks/use-auth'
 import type { OrderDetail } from '@/lib/supabase/queries/orders'
 
@@ -101,6 +102,7 @@ export function OrderHeader({ order, locked = false, maatwerkMetVoorstelWeek = f
             <StatusBadge status={order.status} />
             <LevertijdStatusBadge orderId={order.id} />
             {!isExternRep && <ExpressToggle orderId={order.id} express={order.express ?? false} />}
+            <CombiLeveringBadge order={order} />
             {order.status === 'Verzonden' && order.verzonden_at && (
               <span
                 className="text-xs text-slate-500"
@@ -115,6 +117,20 @@ export function OrderHeader({ order, locked = false, maatwerkMetVoorstelWeek = f
               Oud systeem: {order.oud_order_nr}
             </p>
           )}
+          {(order.combi_levering_andere_orders?.length ?? 0) > 0 && (
+            <p className="text-sm text-slate-400">
+              Combi-levering met:{' '}
+              {order.combi_levering_andere_orders!.map((o, i) => (
+                <span key={o.id}>
+                  {i > 0 && ', '}
+                  <Link to={`/orders/${o.id}`} className="text-indigo-600 hover:underline">
+                    {o.order_nr}
+                  </Link>
+                </span>
+              ))}
+            </p>
+          )}
+          <CombiWachtRedenLine order={order} className="text-sm text-slate-400" />
         </div>
         <div className="flex gap-2 flex-wrap justify-end">
           {isExternRep ? null : <>

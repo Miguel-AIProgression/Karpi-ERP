@@ -25,6 +25,7 @@ export const FASE_STATUSES = [
   'Wacht op voorraad',
   'Wacht op inkoop',
   'Wacht op maatwerk',
+  'Wacht op combi-levering',
   'In pickronde',
   'Deels verzonden',
   'Verzonden',
