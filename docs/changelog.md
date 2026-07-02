@@ -23,6 +23,50 @@ deels-achterhaald-notitie (Manco mig 518, RPC-drop mig 581). Nieuw gedocumenteer
 nergens stond: de `afl_gln`-startbaarheidsgate (mig 543/544) en mig 549's
 manco-pickbaarheidsfix.
 
+## 2026-07-02 — Facturen per order bij bundel-zending (ADR-0041, mig 578)
+
+**Klanteis (Miguel):** "Facturen moeten apart gefactureerd worden en mogen
+niet verzameld worden. Dus als verschillende orders gebundeld worden wel
+aparte facturen (per order). En pakbon mag wel verzameld worden maar wel
+duidelijk welke artikelen bij welke order horen." Combi-levering (ADR-0039/
+0040) bundelt orders van klanten zoals SB Möbel Boss in één zending zodra
+hun cumulatieve waarde de vrachtvrije-drempel haalt — die bundel kreeg tot
+nu toe (ADR-0010) één factuur voor alle orders samen.
+
+**Beslissing (ADR-0041, supersedes het factuur-deel van ADR-0010):**
+factuur-granulariteit verschuift van zending naar (zending, order). Elke
+order in een bundel-zending krijgt zijn eigen concept-factuur, finalisatie
+en mail/EDI-INVOIC. De verzendkosten-drempel-toets blijft bundel-breed
+(ADR-0010's oorspronkelijke motief, nog steeds geldig) maar de grondslag
+komt nu uit `order_regels` over **alle** orders van de zending, **zonder**
+gefactureerd-filter — anders zou de uitkomst afhangen van welke factuur al
+gefinaliseerd is. De verzendkosten-drager krijgt DREMPELKORTING (drempel
+gehaald) of behoudt zijn VERZEND-regel; zusterorders krijgen BUNDELKORTING
+op hun eigen VERZEND-regel, **mits die bestaat** — een bewuste
+gedragscorrectie: het oude bundel-pad crediteerde BUNDELKORTING ook aan
+orders zónder eigen VERZEND-regel (korting voor nooit-gefactureerde kosten;
+op een echte 8-order-zending €210 te weinig gefactureerd — zie ADR-0041).
+Som van N per-order-facturen kan daarnaast op centen afwijken van de oude
+ene bundel-factuur door per-factuur-BTW-afronding (gemeten €0,02 op 8).
+De pakbon was al per-order-gegroepeerd (bestond al, geen wijziging) —
+elke order-factuur van een bundel krijgt dezelfde bundel-pakbon als bijlage.
+
+**Migratie 578:** `factuur_queue.order_id` (NULL = legacy/wekelijks);
+dedup-index verschoven van `(zending_id)` naar `(zending_id, order_id)`;
+`projecteer_concept_factuur`/`finaliseer_concept_factuur` krijgen 3e
+parameter `p_order_id DEFAULT NULL`; `claim_factuur_queue_items` retourneert
+`order_id` erbij. Deploy-window-vangnet: `finaliseer_concept_factuur` valt
+bij `p_order_id IS NULL` terug op een `factuur_queue`-lookup zodat een
+edge-function-deploy die nog met de oude 2-argument-vorm aanroept toch maar
+één order flipt, niet de hele bundel.
+
+**Edge function `factuur-verzenden/index.ts`:** geclaimde-item-type kreeg
+`order_id`; beide RPC-aanroepen in het per_zending-pad geven
+`p_order_id: item.order_id ?? null` mee. `genereerPakbonBijlagen` ongewijzigd.
+
+**Buiten scope:** het wekelijkse pad (`genereer_factuur_voor_week`) —
+alle 135 combi-klanten staan op `factuurvoorkeur='per_zending'` (live
+gecheckt 02-07), slechts 2 niet-combi-debiteuren op 'wekelijks'.
 ## 2026-07-02 — Architectuur-audit-remediatie (branch fix/audit-remediatie; mig 581-584 LIVE)
 
 Uitkomst van de multi-agent architectuur-audit (plan + voortgangslog:

@@ -38,7 +38,8 @@ De facturatie-module zet een verzonden (of deels verzonden) Zending om in een fa
 
 - [ADR-0005](../adr/0005-pickronde-sluit-de-factuur-keten.md) — `voltooi_pickronde` flipt `orders.status='Verzonden'`, wat de factuur-trigger sluit
 - [ADR-0007](../adr/0007-facturatie-als-deep-module.md) — facturatie geconsolideerd tot één frontend-module + event-driven trigger op `order_events`
-- [ADR-0010](../adr/0010-factuur-volgt-bundel-zending.md) — `factuurvoorkeur='per_zending'` volgt de bundel-zending (1 zending = 1 factuur), `'wekelijks'` blijft de tweede optie
+- [ADR-0010](../adr/0010-factuur-volgt-bundel-zending.md) — `factuurvoorkeur='per_zending'` volgt de bundel-zending; het "1 zending = 1 factuur"-deel is **superseded door ADR-0041** (de drempel-toets blijft wél bundel-breed)
+- [ADR-0041](../adr/0041-facturen-per-order-bij-bundel-zending.md) — facturen per order bij een bundel-zending: granulariteit `(zending_id, order_id)`, mig 578 (zie de bedrijfsregel-sectie hieronder)
 - [ADR-0022](../adr/0022-betaaltermijn-en-per-zending-factuur-volgt-bundel-rpc.md) — betaaltermijn uit `betaalcondities`-tabel + per_zending-factuur volgt de bundel-RPC (verzendkosten-drempel/bundeling per factuur)
 - [ADR-0036](../adr/0036-factuurdocument-als-deep-module.md) — Factuurdocument als deep module: één opgeloste factuur voor PDF én EDI-INVOIC (zie CONTEXT.md voor de begripsdefinitie)
 - Plan: [2026-06-18-factuur-concept-fase-uitgestelde-verzending.md](../superpowers/plans/2026-06-18-factuur-concept-fase-uitgestelde-verzending.md) — de concept/finalisatie-split
@@ -67,6 +68,14 @@ De facturatie-module zet een verzonden (of deels verzonden) Zending om in een fa
 - **`finaliseer_concept_factuur(zending, factuur_id)`** doet een verse projectie en dán de onomkeerbare stappen: `order_regels.gefactureerd`-flip + `BUNDELKORTING`/`DREMPELKORTING`-factuurregels (1-op-1 gespiegeld uit de kortingsberekening, geen aparte v_vk-afleiding).
 - **Deploy-volgorde:** migratie + edge function ~samen deployen. Tussen de twee in claimt de oude drain geen `per_zending`-rijen (`factuur_id` blijft NULL zolang de nieuwe fase-1-RPC nog niet draait).
 - Sinds **mig 550** is `projecteer_concept_factuur` herschreven als superset van mig 532 (toeslag op `created_at`-venster + procent-snapshot) — een eerdere overschrijving in mig 529/532 liet de `bepaal_btw_regeling`-aanroep wegvallen (drift-patroon: `CREATE OR REPLACE` zonder de vorige body als basis). Bij elke volgende wijziging aan deze RPC: de volledige mig-550-body als basis nemen, niet een oudere versie.
+
+### Facturen per order bij bundel-zending (ADR-0041, mig 578, 2026-07-02)
+
+- Klanteis: orders die fysiek gebundeld verzonden worden (Combi-levering/Bundel-Zending) krijgen **elk een eigen factuur** — factuur-granulariteit is `(zending_id, order_id)` op `factuur_queue` (dedup-index verschoven van alleen `zending_id`). Elke order: eigen concept-factuur, finalisatie, mail/EDI-INVOIC. De pakbon blijft gebundeld (was al per-order-gegroepeerd); elke order-factuur krijgt dezelfde bundel-pakbon als bijlage.
+- **Drempel-toets blijft bundel-breed** (ADR-0010's motief) en is **finalisatie-volgorde-onafhankelijk**: de grondslag komt in het order-scoped pad uit `order_regels.bedrag` over álle orders van de zending, **zonder** gefactureerd-filter — mét filter zou een eerder gefinaliseerde order-factuur de grondslag van een latere verlagen en de korting-uitkomst van de volgorde afhangen.
+- **Bewuste gedragscorrectie (geen neutraliteit):** een zusterorder krijgt alleen BUNDELKORTING als hij zélf een VERZEND-regel draagt — het oude bundel-pad crediteerde élke zusterorder (korting voor nooit-gefactureerde kosten; €210 te weinig op een echte 8-order-zending, zie ADR-0041). De som van N per-order-facturen kan bovendien op centen afwijken van de oude ene factuur door per-factuur-BTW-afronding.
+- **`order_id IS NULL`-pad = legacy-gedrag** (alle orders op 1 factuur): behouden voor in-flight queue-rijen van vóór mig 578 én als deploy-window-vangnet — `finaliseer_concept_factuur` valt bij `p_order_id IS NULL` terug op een `factuur_queue`-lookup op `factuur_id`, zodat een oude edge-function-aanroep maar 1 order flipt, niet de hele bundel. Deploy-volgorde: **mig 578 vóór de edge-deploy**.
+- Wekelijks pad (`genereer_factuur_voor_week`) onaangeroerd — alle 135 combi-klanten staan op `factuurvoorkeur='per_zending'` (live gecheckt 02-07).
 
 ### Pakbon bij de factuurmail
 

@@ -52,6 +52,7 @@ interface QueueItem {
   verzendweek: string | null  // mig 231: gevuld voor wekelijks-pad (legacy)
   factuur_id: number | null  // mig 428: concept-factuur gemaakt in fase 1 (projectie)
   gefinaliseerd_op: string | null  // mig 428: NULL = nog finaliseren; gezet = alleen (her)mailen
+  order_id: number | null  // mig 578 (ADR-0041): welke order binnen de zending deze rij dekt. NULL voor legacy/wekelijkse rijen (vóór mig 578) — projecteer/finaliseer vallen dan terug op hun eigen deploy-window-vangnet.
 }
 
 interface EdiConfig {
@@ -218,6 +219,7 @@ serve(async () => {
         if (item.factuur_id == null) {
           const { data, error } = await supabase.rpc('projecteer_concept_factuur', {
             p_zending_id: item.zending_id,
+            p_order_id: item.order_id ?? null,
           })
           if (error) throw new Error(`RPC projecteer_concept_factuur: ${error.message}`)
           item.factuur_id = data as number
@@ -226,6 +228,7 @@ serve(async () => {
           const { data, error } = await supabase.rpc('finaliseer_concept_factuur', {
             p_zending_id: item.zending_id,
             p_factuur_id: item.factuur_id,
+            p_order_id: item.order_id ?? null,
           })
           if (error) throw new Error(`RPC finaliseer_concept_factuur: ${error.message}`)
           factuurId = data as number
