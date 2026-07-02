@@ -23,6 +23,7 @@ import {
   fetchBezettePlaatsingen,
   fetchOpenInkoopRegels,
   fetchStandaardBreedte,
+  fetchStandaardBreedtes,
   fetchOudeRolToewijzingen,
   herstelVerdrongenStukken,
   buildFifoOptions,
@@ -395,21 +396,29 @@ serve(async (req) => {
     let nietGeplaatstFinaal = nietGeplaatst.filter((np) => !herstelIds.has(np.snijplan_id))
 
     if (nietGeplaatstPieces.length > 0) {
-      const [openRegels, standaardBreedteCm] = await Promise.all([
-        fetchOpenInkoopRegels(supabase, kwaliteit_code, kleur_code),
-        fetchStandaardBreedte(supabase, kwaliteit_code),
+      // IO-claim zoekt over ALLE uitwisselbare paren (niet alleen exacte kwaliteit).
+      // Een LAGO/13-stuk kan geclaimd worden op een VERI/13-inkooporder — bij
+      // levering wordt de rol omgestickerd. Elke IO-regel draagt zijn eigen
+      // kwaliteit_code mee; de breedte wordt per kwaliteit opgezocht.
+      const [openRegels, bredeMap] = await Promise.all([
+        fetchOpenInkoopRegels(supabase, paren),
+        fetchStandaardBreedtes(supabase, paren.map((p) => p.kwaliteit_code)),
       ])
+      // Alleen regels met bekende rolbreedte zijn bruikbaar als virtuele rol.
+      const openRegelsMetBreedte = openRegels
+        .map((r) => ({ ...r, breedte_cm: bredeMap.get(r.kwaliteit_code) ?? null }))
+        .filter((r): r is typeof r & { breedte_cm: number } => r.breedte_cm != null)
 
-      if (openRegels.length > 0 && standaardBreedteCm != null) {
+      if (openRegelsMetBreedte.length > 0) {
         // Negatieve id = veilige in-memory marker (regel_id is altijd > 0),
         // nooit gepersisteerd — voorkomt botsing met echte rollen.id.
-        const virtueleRollen: Roll[] = openRegels.map((r) => ({
+        const virtueleRollen: Roll[] = openRegelsMetBreedte.map((r) => ({
           id: -r.regel_id,
           rolnummer: r.inkooporder_nr,
           lengte_cm: Math.round(r.te_leveren_m * 100),
-          breedte_cm: standaardBreedteCm,
+          breedte_cm: r.breedte_cm,
           status: 'verwacht',
-          oppervlak_m2: Math.round(r.te_leveren_m * 100) * standaardBreedteCm / 10000,
+          oppervlak_m2: Math.round(r.te_leveren_m * 100) * r.breedte_cm / 10000,
           // 3 = altijd na reststuk(1)/beschikbaar(2) — echte voorraad gaat
           // hoe dan ook voor. sortRolls/sortRollsLargestFirst/makeSortRollsFifo
           // vergelijken sort_priority numeriek vóór leeftijd (geverifieerd).
@@ -432,7 +441,7 @@ serve(async (req) => {
         if (ioPak.rollResults.length > 0) {
           const claims: Array<{ snijplan_id: number; inkooporder_regel_id: number }> = []
           const regelTotalen: Array<{ inkooporder_regel_id: number; gebruikte_lengte_cm: number }> = []
-          const regelInfoMap = new Map(openRegels.map((r) => [r.regel_id, r]))
+          const regelInfoMap = new Map(openRegelsMetBreedte.map((r) => [r.regel_id, r]))
           const regels: Array<{
             inkooporder_nr: string
             gebruikte_lengte_cm: number

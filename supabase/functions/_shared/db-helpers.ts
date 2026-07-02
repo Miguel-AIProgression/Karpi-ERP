@@ -645,20 +645,30 @@ export interface OpenInkoopRegel {
   leverancier_naam: string | null
   verwacht_datum: string | null
   te_leveren_m: number
+  kwaliteit_code: string
 }
 
+/**
+ * Open rol-inkooporder regels (eenheid='m') voor een set uitwisselbare paren.
+ * Zoekt over ALLE kwaliteiten in de paren zodat LAGO/13-stukken ook geclaimd
+ * kunnen worden op VERI/13-inkoop (uitwisselbaar, omsticker bij levering).
+ * Elke regel draagt zijn eigen kwaliteit_code mee voor de breedte-lookup.
+ */
 export async function fetchOpenInkoopRegels(
   supabase: SupabaseClient,
-  kwaliteitCode: string,
-  kleurCode: string,
+  paren: KwaliteitKleurPair[],
 ): Promise<OpenInkoopRegel[]> {
-  const kleurVariants = getKleurVariants(kleurCode)
+  if (paren.length === 0) return []
+  const uitgebreid = expandKleurVarianten(paren)
+  const kwaliteitCodes = [...new Set(uitgebreid.map((p) => p.kwaliteit_code))]
+  const kleurCodes     = [...new Set(uitgebreid.map((p) => p.kleur_code))]
+
   const { data, error } = await supabase
     .from('openstaande_inkooporder_regels')
-    .select('regel_id, inkooporder_nr, leverancier_naam, verwacht_datum, te_leveren_m')
+    .select('regel_id, inkooporder_nr, leverancier_naam, verwacht_datum, te_leveren_m, kwaliteit_code')
     .eq('eenheid', 'm')
-    .eq('kwaliteit_code', kwaliteitCode)
-    .in('kleur_code', kleurVariants)
+    .in('kwaliteit_code', kwaliteitCodes)
+    .in('kleur_code', kleurCodes)
     .order('verwacht_datum', { ascending: true, nullsFirst: false })
     .order('regel_id', { ascending: true })
 
@@ -670,7 +680,31 @@ export async function fetchOpenInkoopRegels(
     leverancier_naam: (r.leverancier_naam as string | null) ?? null,
     verwacht_datum: (r.verwacht_datum as string | null) ?? null,
     te_leveren_m: Number(r.te_leveren_m ?? 0),
+    kwaliteit_code: r.kwaliteit_code as string,
   }))
+}
+
+/**
+ * Batch-opzoeken van standaard rolbreedte per kwaliteitscode.
+ * Retourneert alleen kwaliteiten met een bekende breedte > 0.
+ */
+export async function fetchStandaardBreedtes(
+  supabase: SupabaseClient,
+  kwaliteitCodes: string[],
+): Promise<Map<string, number>> {
+  if (kwaliteitCodes.length === 0) return new Map()
+  const { data, error } = await supabase
+    .from('kwaliteiten')
+    .select('code, standaard_breedte_cm')
+    .in('code', kwaliteitCodes)
+  if (error) throw error
+  const map = new Map<string, number>()
+  for (const r of (data ?? []) as Array<{ code: string; standaard_breedte_cm: number | null }>) {
+    if (r.standaard_breedte_cm != null && r.standaard_breedte_cm > 0) {
+      map.set(r.code, r.standaard_breedte_cm)
+    }
+  }
+  return map
 }
 
 /** Standaard rolbreedte (cm) voor een kwaliteit — `null` als onbekend/0 (dan
