@@ -407,6 +407,79 @@ END;
 $function$
 
 
+CREATE OR REPLACE FUNCTION public.assert_btw_regeling_contract(p_golden jsonb)
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  f        JSONB;
+  v_regel  TEXT;
+  v_pct    NUMERIC;
+  v_ctrl   BOOLEAN;
+  v_verw   JSONB;
+  v_n      INTEGER := 0;
+BEGIN
+  -- Vorm-guard: een getypo'de sleutel of lege array zou anders stil slagen
+  -- (jsonb_array_elements over NULL levert nul rijen) — en deze assert is
+  -- bij een handmatige SQL Editor-apply de laatste verdedigingslinie.
+  IF jsonb_typeof(p_golden->'cases') IS DISTINCT FROM 'array'
+     OR jsonb_array_length(p_golden->'cases') = 0 THEN
+    RAISE EXCEPTION 'btw-regeling-contract: "cases" ontbreekt, is geen array of is leeg';
+  END IF;
+
+  FOR f IN SELECT value FROM jsonb_array_elements(p_golden->'cases') LOOP
+    v_verw := f->'verwacht';
+
+    SELECT regeling, effectief_pct, controle_nodig
+      INTO v_regel, v_pct, v_ctrl
+      FROM bepaal_btw_regeling(
+        f->'input'->>'aflLandIso2',
+        f->'input'->>'debiteurLandIso2',
+        (f->'input'->>'afhalen')::boolean,
+        (f->'input'->>'verlegdVlag')::boolean,
+        f->'input'->>'btwNummer',
+        (f->'input'->>'btwPercentage')::numeric
+      );
+
+    IF v_regel IS DISTINCT FROM (v_verw->>'regeling') THEN
+      RAISE EXCEPTION 'btw-regeling-contract "%": regeling kreeg "%", verwacht "%"',
+        f->>'naam', v_regel, v_verw->>'regeling';
+    END IF;
+
+    IF v_pct IS DISTINCT FROM (v_verw->>'effectiefPct')::numeric THEN
+      RAISE EXCEPTION 'btw-regeling-contract "%": effectiefPct kreeg %, verwacht %',
+        f->>'naam', v_pct, v_verw->>'effectiefPct';
+    END IF;
+
+    IF v_ctrl IS DISTINCT FROM (v_verw->>'controleNodig')::boolean THEN
+      RAISE EXCEPTION 'btw-regeling-contract "%": controleNodig kreeg %, verwacht %',
+        f->>'naam', v_ctrl, v_verw->>'controleNodig';
+    END IF;
+
+    v_n := v_n + 1;
+  END LOOP;
+
+  -- Inline asserts op effectief_btw_pct (mig 371) — de kleinere bouwsteen die
+  -- bepaal_btw_regeling zelf ook aanroept voor de nl_binnenland-tak.
+  IF effectief_btw_pct(TRUE, 21) IS DISTINCT FROM 0.00::NUMERIC(5,2) THEN
+    RAISE EXCEPTION 'btw-regeling-contract: effectief_btw_pct(verlegd=TRUE, 21) verwacht 0, kreeg %',
+      effectief_btw_pct(TRUE, 21);
+  END IF;
+
+  IF effectief_btw_pct(FALSE, NULL) IS DISTINCT FROM 21.00::NUMERIC(5,2) THEN
+    RAISE EXCEPTION 'btw-regeling-contract: effectief_btw_pct(verlegd=FALSE, NULL) verwacht 21, kreeg %',
+      effectief_btw_pct(FALSE, NULL);
+  END IF;
+
+  IF effectief_btw_pct(FALSE, 9) IS DISTINCT FROM 9.00::NUMERIC(5,2) THEN
+    RAISE EXCEPTION 'btw-regeling-contract: effectief_btw_pct(verlegd=FALSE, 9) verwacht 9, kreeg %',
+      effectief_btw_pct(FALSE, 9);
+  END IF;
+
+  RAISE NOTICE 'btw-regeling-contract: alle % cases + 3 effectief_btw_pct-asserts geslaagd', v_n;
+END $function$
+
+
 CREATE OR REPLACE FUNCTION public.assert_bundel_sleutel_contract(p_golden jsonb)
  RETURNS void
  LANGUAGE plpgsql
@@ -499,6 +572,38 @@ BEGIN
   END LOOP;
 
   RAISE NOTICE 'normaliseer_land-contract: alle % cases geslaagd', v_n;
+END $function$
+
+
+CREATE OR REPLACE FUNCTION public.assert_verzendweek_contract(p_golden jsonb)
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  f      JSONB;
+  v_uit  TEXT;
+  v_verw TEXT;
+  v_n    INTEGER := 0;
+BEGIN
+  -- Vorm-guard: een getypo'de sleutel of lege array zou anders stil slagen
+  -- (jsonb_array_elements over NULL levert nul rijen) — en deze assert is
+  -- bij een handmatige SQL Editor-apply de laatste verdedigingslinie.
+  IF jsonb_typeof(p_golden->'cases') IS DISTINCT FROM 'array'
+     OR jsonb_array_length(p_golden->'cases') = 0 THEN
+    RAISE EXCEPTION 'verzendweek-contract: "cases" ontbreekt, is geen array of is leeg';
+  END IF;
+
+  FOR f IN SELECT value FROM jsonb_array_elements(p_golden->'cases') LOOP
+    v_uit  := verzendweek_voor_datum((f->>'datum')::date);
+    v_verw := f->>'verwacht';
+    IF v_uit IS DISTINCT FROM v_verw THEN
+      RAISE EXCEPTION 'verzendweek-contract "%": kreeg "%", verwacht "%"',
+        f->>'datum', v_uit, v_verw;
+    END IF;
+    v_n := v_n + 1;
+  END LOOP;
+
+  RAISE NOTICE 'verzendweek-contract: alle % cases geslaagd', v_n;
 END $function$
 
 
@@ -7308,40 +7413,6 @@ END;
 $function$
 
 
-CREATE OR REPLACE FUNCTION public.markeer_hst_verstuurd(p_id bigint, p_extern_transport_order_id text, p_extern_tracking_number text, p_request_payload jsonb, p_response_payload jsonb, p_response_http_code integer)
- RETURNS void
- LANGUAGE plpgsql
- SECURITY DEFINER
-AS $function$
-DECLARE
-  v_zending_id BIGINT;
-BEGIN
-  UPDATE hst_transportorders
-     SET status = 'Verstuurd',
-         extern_transport_order_id = p_extern_transport_order_id,
-         extern_tracking_number = p_extern_tracking_number,
-         request_payload = p_request_payload,
-         response_payload = p_response_payload,
-         response_http_code = p_response_http_code,
-         sent_at = now(),
-         error_msg = NULL
-   WHERE id = p_id
-   RETURNING zending_id INTO v_zending_id;
-
-  -- Tracking + status doorzetten naar zending
-  IF v_zending_id IS NOT NULL THEN
-    UPDATE zendingen
-       SET track_trace = COALESCE(p_extern_tracking_number, p_extern_transport_order_id),
-           status = CASE
-             WHEN status = 'Klaar voor verzending' THEN 'Onderweg'::zending_status
-             ELSE status
-           END
-     WHERE id = v_zending_id;
-  END IF;
-END;
-$function$
-
-
 CREATE OR REPLACE FUNCTION public.markeer_hst_verstuurd(p_id bigint, p_extern_transport_order_id text, p_extern_tracking_number text, p_request_payload jsonb, p_response_payload jsonb, p_response_http_code integer, p_pdf_path text DEFAULT NULL::text, p_pdf_uploaded_at timestamp with time zone DEFAULT NULL::timestamp with time zone)
  RETURNS void
  LANGUAGE plpgsql
@@ -7365,6 +7436,40 @@ BEGIN
    RETURNING zending_id INTO v_zending_id;
 
   -- Tracking + status doorzetten naar zending (ongewijzigd t.o.v. mig 171)
+  IF v_zending_id IS NOT NULL THEN
+    UPDATE zendingen
+       SET track_trace = COALESCE(p_extern_tracking_number, p_extern_transport_order_id),
+           status = CASE
+             WHEN status = 'Klaar voor verzending' THEN 'Onderweg'::zending_status
+             ELSE status
+           END
+     WHERE id = v_zending_id;
+  END IF;
+END;
+$function$
+
+
+CREATE OR REPLACE FUNCTION public.markeer_hst_verstuurd(p_id bigint, p_extern_transport_order_id text, p_extern_tracking_number text, p_request_payload jsonb, p_response_payload jsonb, p_response_http_code integer)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE
+  v_zending_id BIGINT;
+BEGIN
+  UPDATE hst_transportorders
+     SET status = 'Verstuurd',
+         extern_transport_order_id = p_extern_transport_order_id,
+         extern_tracking_number = p_extern_tracking_number,
+         request_payload = p_request_payload,
+         response_payload = p_response_payload,
+         response_http_code = p_response_http_code,
+         sent_at = now(),
+         error_msg = NULL
+   WHERE id = p_id
+   RETURNING zending_id INTO v_zending_id;
+
+  -- Tracking + status doorzetten naar zending
   IF v_zending_id IS NOT NULL THEN
     UPDATE zendingen
        SET track_trace = COALESCE(p_extern_tracking_number, p_extern_transport_order_id),
@@ -13376,104 +13481,6 @@ END;
 $function$
 
 
-CREATE OR REPLACE FUNCTION public.voltooi_snijplan_rol(p_rol_id bigint, p_gesneden_door text DEFAULT NULL::text)
- RETURNS TABLE(reststuk_id bigint, reststuk_rolnummer text, reststuk_lengte_cm integer)
- LANGUAGE plpgsql
-AS $function$
-DECLARE
-  v_rol RECORD;
-  v_gebruikte_lengte NUMERIC;
-  v_rest_lengte INTEGER;
-  v_nieuw_rolnummer TEXT;
-  v_reststuk_id BIGINT;
-  v_min_reststuk_cm INTEGER := 50; -- minimale lengte om reststuk aan te maken
-BEGIN
-  -- 1. Lock en haal rol op
-  SELECT * INTO v_rol FROM rollen WHERE id = p_rol_id FOR UPDATE;
-
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'Rol % niet gevonden', p_rol_id;
-  END IF;
-
-  IF v_rol.status <> 'in_snijplan' THEN
-    RAISE EXCEPTION 'Rol % heeft status "%" — kan alleen "in_snijplan" rollen voltooien', p_rol_id, v_rol.status;
-  END IF;
-
-  -- 2. Bereken gebruikte lengte op basis van geplaatste snijplannen
-  SELECT COALESCE(MAX(positie_y_cm + breedte_cm), 0)
-  INTO v_gebruikte_lengte
-  FROM snijvoorstel_plaatsingen
-  WHERE rol_id = p_rol_id
-    AND voorstel_id IN (SELECT id FROM snijvoorstellen WHERE status = 'goedgekeurd');
-
-  -- Fallback: bereken uit snijplannen direct
-  IF v_gebruikte_lengte = 0 THEN
-    SELECT COALESCE(MAX(positie_y_cm +
-      CASE WHEN geroteerd THEN lengte_cm ELSE breedte_cm END
-    ), 0)
-    INTO v_gebruikte_lengte
-    FROM snijplannen
-    WHERE rol_id = p_rol_id
-      AND status = 'Gepland';
-  END IF;
-
-  v_rest_lengte := GREATEST(0, v_rol.lengte_cm - CEIL(v_gebruikte_lengte));
-
-  -- 3. Markeer alle geplande snijplannen op deze rol als 'Gesneden'
-  UPDATE snijplannen
-  SET status = 'Gesneden',
-      gesneden_datum = CURRENT_DATE,
-      gesneden_op = NOW(),
-      gesneden_door = p_gesneden_door
-  WHERE rol_id = p_rol_id
-    AND status = 'Gepland';
-
-  -- 4. Maak reststuk aan als er genoeg over is
-  IF v_rest_lengte >= v_min_reststuk_cm THEN
-    -- Genereer rolnummer voor reststuk
-    v_nieuw_rolnummer := v_rol.rolnummer || '-REST';
-
-    INSERT INTO rollen (
-      rolnummer, artikelnr, karpi_code, omschrijving,
-      lengte_cm, breedte_cm, oppervlak_m2,
-      kwaliteit_code, kleur_code, zoeksleutel,
-      status, oorsprong_rol_id, reststuk_datum
-    ) VALUES (
-      v_nieuw_rolnummer,
-      v_rol.artikelnr,
-      v_rol.karpi_code,
-      v_rol.omschrijving,
-      v_rest_lengte,
-      v_rol.breedte_cm,
-      ROUND((v_rest_lengte * v_rol.breedte_cm)::NUMERIC / 10000, 2),
-      v_rol.kwaliteit_code,
-      v_rol.kleur_code,
-      v_rol.zoeksleutel,
-      'reststuk',
-      p_rol_id,
-      NOW()
-    )
-    RETURNING id INTO v_reststuk_id;
-
-    -- 5. Originele rol markeren als gesneden (volledig verwerkt)
-    UPDATE rollen
-    SET status = 'gesneden',
-        lengte_cm = CEIL(v_gebruikte_lengte)
-    WHERE id = p_rol_id;
-
-    RETURN QUERY SELECT v_reststuk_id, v_nieuw_rolnummer, v_rest_lengte;
-  ELSE
-    -- Geen bruikbaar reststuk — rol volledig verwerkt
-    UPDATE rollen
-    SET status = 'gesneden'
-    WHERE id = p_rol_id;
-
-    RETURN QUERY SELECT NULL::BIGINT, NULL::TEXT, NULL::INTEGER;
-  END IF;
-END;
-$function$
-
-
 CREATE OR REPLACE FUNCTION public.voltooi_snijplan_rol(p_rol_id bigint, p_gesneden_door text DEFAULT NULL::text, p_override_rest_lengte integer DEFAULT NULL::integer, p_reststukken jsonb DEFAULT NULL::jsonb, p_snijplan_ids bigint[] DEFAULT NULL::bigint[], p_aangebroken_lengte integer DEFAULT NULL::integer)
  RETURNS TABLE(reststuk_id bigint, reststuk_rolnummer text, reststuk_lengte_cm integer)
  LANGUAGE plpgsql
@@ -13709,6 +13716,104 @@ BEGIN
   END IF;
 
   RETURN QUERY SELECT * FROM _reststuk_out;
+END;
+$function$
+
+
+CREATE OR REPLACE FUNCTION public.voltooi_snijplan_rol(p_rol_id bigint, p_gesneden_door text DEFAULT NULL::text)
+ RETURNS TABLE(reststuk_id bigint, reststuk_rolnummer text, reststuk_lengte_cm integer)
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_rol RECORD;
+  v_gebruikte_lengte NUMERIC;
+  v_rest_lengte INTEGER;
+  v_nieuw_rolnummer TEXT;
+  v_reststuk_id BIGINT;
+  v_min_reststuk_cm INTEGER := 50; -- minimale lengte om reststuk aan te maken
+BEGIN
+  -- 1. Lock en haal rol op
+  SELECT * INTO v_rol FROM rollen WHERE id = p_rol_id FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Rol % niet gevonden', p_rol_id;
+  END IF;
+
+  IF v_rol.status <> 'in_snijplan' THEN
+    RAISE EXCEPTION 'Rol % heeft status "%" — kan alleen "in_snijplan" rollen voltooien', p_rol_id, v_rol.status;
+  END IF;
+
+  -- 2. Bereken gebruikte lengte op basis van geplaatste snijplannen
+  SELECT COALESCE(MAX(positie_y_cm + breedte_cm), 0)
+  INTO v_gebruikte_lengte
+  FROM snijvoorstel_plaatsingen
+  WHERE rol_id = p_rol_id
+    AND voorstel_id IN (SELECT id FROM snijvoorstellen WHERE status = 'goedgekeurd');
+
+  -- Fallback: bereken uit snijplannen direct
+  IF v_gebruikte_lengte = 0 THEN
+    SELECT COALESCE(MAX(positie_y_cm +
+      CASE WHEN geroteerd THEN lengte_cm ELSE breedte_cm END
+    ), 0)
+    INTO v_gebruikte_lengte
+    FROM snijplannen
+    WHERE rol_id = p_rol_id
+      AND status = 'Gepland';
+  END IF;
+
+  v_rest_lengte := GREATEST(0, v_rol.lengte_cm - CEIL(v_gebruikte_lengte));
+
+  -- 3. Markeer alle geplande snijplannen op deze rol als 'Gesneden'
+  UPDATE snijplannen
+  SET status = 'Gesneden',
+      gesneden_datum = CURRENT_DATE,
+      gesneden_op = NOW(),
+      gesneden_door = p_gesneden_door
+  WHERE rol_id = p_rol_id
+    AND status = 'Gepland';
+
+  -- 4. Maak reststuk aan als er genoeg over is
+  IF v_rest_lengte >= v_min_reststuk_cm THEN
+    -- Genereer rolnummer voor reststuk
+    v_nieuw_rolnummer := v_rol.rolnummer || '-REST';
+
+    INSERT INTO rollen (
+      rolnummer, artikelnr, karpi_code, omschrijving,
+      lengte_cm, breedte_cm, oppervlak_m2,
+      kwaliteit_code, kleur_code, zoeksleutel,
+      status, oorsprong_rol_id, reststuk_datum
+    ) VALUES (
+      v_nieuw_rolnummer,
+      v_rol.artikelnr,
+      v_rol.karpi_code,
+      v_rol.omschrijving,
+      v_rest_lengte,
+      v_rol.breedte_cm,
+      ROUND((v_rest_lengte * v_rol.breedte_cm)::NUMERIC / 10000, 2),
+      v_rol.kwaliteit_code,
+      v_rol.kleur_code,
+      v_rol.zoeksleutel,
+      'reststuk',
+      p_rol_id,
+      NOW()
+    )
+    RETURNING id INTO v_reststuk_id;
+
+    -- 5. Originele rol markeren als gesneden (volledig verwerkt)
+    UPDATE rollen
+    SET status = 'gesneden',
+        lengte_cm = CEIL(v_gebruikte_lengte)
+    WHERE id = p_rol_id;
+
+    RETURN QUERY SELECT v_reststuk_id, v_nieuw_rolnummer, v_rest_lengte;
+  ELSE
+    -- Geen bruikbaar reststuk — rol volledig verwerkt
+    UPDATE rollen
+    SET status = 'gesneden'
+    WHERE id = p_rol_id;
+
+    RETURN QUERY SELECT NULL::BIGINT, NULL::TEXT, NULL::INTEGER;
+  END IF;
 END;
 $function$
 
