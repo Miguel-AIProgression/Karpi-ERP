@@ -12,7 +12,7 @@ import { BevestigOrderEdiDialog } from './bevestig-order-edi-dialog'
 import { bepaalBevestigingKanaal, isOrderBevestigd } from '@/lib/orders/bevestiging-kanaal'
 import { fetchHandelspartnerConfig } from '@/modules/edi'
 import { ExpressToggle } from './express-toggle'
-import { CombiLeveringBadge } from './combi-levering-badge'
+import { CombiLeveringBadge, CombiWachtRedenLine } from './combi-levering-badge'
 import { useAuth } from '@/hooks/use-auth'
 import type { OrderDetail } from '@/lib/supabase/queries/orders'
 
@@ -130,6 +130,7 @@ export function OrderHeader({ order, locked = false, maatwerkMetVoorstelWeek = f
               ))}
             </p>
           )}
+          <CombiWachtRedenLine order={order} className="text-sm text-slate-400" />
         </div>
         <div className="flex gap-2 flex-wrap justify-end">
           {isExternRep ? null : <>

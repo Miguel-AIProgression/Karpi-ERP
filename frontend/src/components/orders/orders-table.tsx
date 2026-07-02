@@ -8,7 +8,7 @@ import type { OrderRow, OrderSortField, SortDirection } from '@/lib/supabase/que
 import type { FactuurVoorOrder } from '@/modules/facturatie'
 import type { OrderRij } from '@/modules/snijplanning'
 import { HAALBAARHEID_STATUS_STYLE } from '@/lib/orders/haalbaarheid-status-badge'
-import { CombiLeveringBadge } from './combi-levering-badge'
+import { CombiLeveringBadge, CombiWachtRedenLine } from './combi-levering-badge'
 import { useBundelGroupedOrders } from './use-bundel-grouped-orders'
 
 interface OrdersTableProps {
@@ -294,6 +294,7 @@ function OrderTr({ order, bundel, facturenPerOrder, snijHaalbaarheidPerOrder }: 
             ))}
           </span>
         )}
+        <CombiWachtRedenLine order={order} />
       </td>
       <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
         {formatDate(order.orderdatum)}

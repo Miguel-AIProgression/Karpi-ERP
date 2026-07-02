@@ -107,6 +107,12 @@ export interface OrderRow {
   wacht_op_combi_levering?: boolean | null
   /** Mig 569: overige orders in dezelfde Combi-levering-groep, voor de badge-tooltip/links. */
   combi_levering_andere_orders?: { id: number; order_nr: string }[] | null
+  /** Mig 575: groep-subtotaal (SUM over de leden) — voedt de wacht-reden-tekst op de badge. */
+  combi_levering_groep_subtotaal?: number | null
+  /** Mig 575: rauwe verzend_drempel van de debiteur (NULL = fallback € 500, zie combiWachtReden). */
+  combi_levering_drempel?: number | null
+  /** Mig 575: TRUE zodra alle leden van de groep pickbaar zijn — FALSE = een groepsgenoot (vaak maatwerk) blokkeert nog. */
+  combi_levering_alle_leden_pickbaar?: boolean | null
 }
 
 export interface OrderDetail extends OrderRow {
@@ -670,7 +676,7 @@ export async function fetchOrderDetail(id: number): Promise<OrderDetail> {
   // orders-tabel hierboven) — lichte extra fetch, geen bundel = geen rij.
   const { data: combiLevering } = await supabase
     .from('orders_list')
-    .select('combi_levering_aantal_orders, wacht_op_combi_levering, combi_levering_andere_orders')
+    .select('combi_levering_aantal_orders, wacht_op_combi_levering, combi_levering_andere_orders, combi_levering_groep_subtotaal, combi_levering_drempel, combi_levering_alle_leden_pickbaar')
     .eq('id', id)
     .maybeSingle()
 
