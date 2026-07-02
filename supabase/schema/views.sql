@@ -641,7 +641,7 @@ CREATE OR REPLACE VIEW orderregel_pickbaarheid AS
      LEFT JOIN maatwerk_aggr ma ON ((ma.order_regel_id = oreg.id)))
      LEFT JOIN voorraad_claim vc ON ((vc.order_regel_id = oreg.id)))
      LEFT JOIN rol_locatie_per_artikel rl ON ((rl.artikelnr = oreg.artikelnr)))
-  WHERE ((o.status <> ALL (ARRAY['Verzonden'::order_status, 'Geannuleerd'::order_status])) AND (NOT is_admin_pseudo(oreg.artikelnr)));
+  WHERE ((o.status <> ALL (ARRAY['Verzonden'::order_status, 'Geannuleerd'::order_status, 'Concept'::order_status])) AND (NOT is_admin_pseudo(oreg.artikelnr)));
 
 CREATE OR REPLACE VIEW orders_list AS
  WITH bundel_per_order AS (

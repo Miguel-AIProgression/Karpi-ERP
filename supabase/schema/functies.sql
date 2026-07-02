@@ -1,5 +1,5 @@
 -- GEGENEREERD: alle public-functies van de live DB (audit-remediatie Task 4.1).
--- Ververs met scripts/dump-schema.ps1 (db query-route). NIET handmatig bewerken.
+-- Ververs met: node scripts/dump-schema.mjs   (NIET handmatig bewerken)
 
 CREATE OR REPLACE FUNCTION public._afl_gln_matcht_vestiging(p_debiteur_nr integer, p_gln text)
  RETURNS boolean
