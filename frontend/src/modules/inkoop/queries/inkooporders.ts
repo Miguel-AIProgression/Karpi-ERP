@@ -404,7 +404,7 @@ export async function boekOntvangst(
   rollen: OntvangstRol[],
   medewerker?: string,
 ): Promise<Array<{ rol_id: number; rolnummer: string }>> {
-  const { data, error } = await supabase.rpc('boek_ontvangst', {
+  const { data, error } = await supabase.rpc('boek_inkooporder_ontvangst_rollen', {
     p_regel_id: regel_id,
     p_rollen: rollen,
     p_medewerker: medewerker ?? null,
@@ -418,7 +418,7 @@ export async function boekVoorraadOntvangst(
   aantal: number,
   medewerker?: string,
 ): Promise<void> {
-  const { error } = await supabase.rpc('boek_voorraad_ontvangst', {
+  const { error } = await supabase.rpc('boek_inkooporder_ontvangst_stuks', {
     p_regel_id: regel_id,
     p_aantal: aantal,
     p_medewerker: medewerker ?? null,

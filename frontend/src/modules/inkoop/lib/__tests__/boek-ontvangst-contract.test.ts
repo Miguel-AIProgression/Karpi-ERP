@@ -19,14 +19,13 @@
 //     forwarding. Deze gedrag-tests vereisen seed-data + rollback-mechanisme
 //     en runnen pas tegen een test-DB.
 //
-// LET OP — huidige codestate (mig 271 + Task 4 hooks):
+// LET OP — huidige codestate (mig 271 + Task 1 van "Inkoopproces Volledig"):
 //   De queries-functies `boekOntvangst` / `boekVoorraadOntvangst` roepen
-//   nog steeds de OUDE RPC-namen aan (`boek_ontvangst` / `boek_voorraad_
-//   ontvangst`) omdat die als DEPRECATED thin wrappers blijven werken.
-//   In Task 11+ worden ze omgezet naar de nieuwe Module-aligned namen
-//   (`boek_inkooporder_ontvangst_rollen` / `_stuks`). Tot die tijd test
-//   deze suite het CURRENT contract; de FUTURE contract staat als
-//   `describe.skip` klaar.
+//   de nieuwe Module-aligned RPC-namen aan (`boek_inkooporder_ontvangst_
+//   rollen` / `_stuks`). De OUDE namen (`boek_ontvangst` / `boek_voorraad_
+//   ontvangst`) bestaan nog als DEPRECATED thin wrappers in de DB (deadline
+//   2026-07-13, worden pas in mig 604 gedropt) maar worden vanuit de
+//   frontend niet meer aangeroepen.
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
@@ -54,11 +53,11 @@ beforeEach(() => {
 // ============================================================
 
 describe('boekVoorraadOntvangst (stuks-pad) — RPC-contract', () => {
-  it('roept RPC boek_voorraad_ontvangst aan met p_regel_id + p_aantal + p_medewerker', async () => {
+  it('roept RPC boek_inkooporder_ontvangst_stuks aan met p_regel_id + p_aantal + p_medewerker', async () => {
     await boekVoorraadOntvangst(42, 5, 'tester')
     expect(rpcCalls).toEqual([
       {
-        fn: 'boek_voorraad_ontvangst',
+        fn: 'boek_inkooporder_ontvangst_stuks',
         args: { p_regel_id: 42, p_aantal: 5, p_medewerker: 'tester' },
       },
     ])
@@ -95,14 +94,14 @@ describe('boekVoorraadOntvangst (stuks-pad) — RPC-contract', () => {
 // ============================================================
 
 describe('boekOntvangst (rollen-pad) — RPC-contract', () => {
-  it('roept RPC boek_ontvangst aan met p_regel_id + p_rollen + p_medewerker', async () => {
+  it('roept RPC boek_inkooporder_ontvangst_rollen aan met p_regel_id + p_rollen + p_medewerker', async () => {
     nextRpcResponse = { data: [{ rol_id: 100, rolnummer: 'R-2026-0001' }], error: null }
     const rollen = [{ lengte_cm: 2500, breedte_cm: 400, rolnummer: null }]
     const result = await boekOntvangst(42, rollen, 'tester')
 
     expect(rpcCalls).toEqual([
       {
-        fn: 'boek_ontvangst',
+        fn: 'boek_inkooporder_ontvangst_rollen',
         args: { p_regel_id: 42, p_rollen: rollen, p_medewerker: 'tester' },
       },
     ])
@@ -135,33 +134,7 @@ describe('boekOntvangst (rollen-pad) — RPC-contract', () => {
 })
 
 // ============================================================
-// Suite 3: FUTURE — RPC-naam-flip naar Module-aligned namen
-// ============================================================
-//
-// In Task 11+ (frontend-RPC-flip) worden de wrappers omgezet naar de nieuwe
-// namen `boek_inkooporder_ontvangst_stuks` / `_rollen`. Deze tests staan
-// klaar als `.skip` zodat de flip — wanneer hij gebeurt — een eenvoudige
-// "remove .skip" is i.p.v. tests opnieuw schrijven.
-//
-// TODO: enable wanneer queries/inkooporders.ts de nieuwe namen aanroept.
-
-describe.skip('FUTURE: boekVoorraadOntvangst → boek_inkooporder_ontvangst_stuks', () => {
-  it('roept de Module-aligned RPC-naam aan', async () => {
-    await boekVoorraadOntvangst(42, 5, 'tester')
-    expect(rpcCalls[0].fn).toBe('boek_inkooporder_ontvangst_stuks')
-  })
-})
-
-describe.skip('FUTURE: boekOntvangst → boek_inkooporder_ontvangst_rollen', () => {
-  it('roept de Module-aligned RPC-naam aan', async () => {
-    nextRpcResponse = { data: [], error: null }
-    await boekOntvangst(42, [], 'tester')
-    expect(rpcCalls[0].fn).toBe('boek_inkooporder_ontvangst_rollen')
-  })
-})
-
-// ============================================================
-// Suite 4: SKIPPED — gedrag-tests die een test-DB vereisen
+// Suite 3: SKIPPED — gedrag-tests die een test-DB vereisen
 // ============================================================
 //
 // Deze tests beschrijven het gewenste eindgedrag (post-mig-257) maar

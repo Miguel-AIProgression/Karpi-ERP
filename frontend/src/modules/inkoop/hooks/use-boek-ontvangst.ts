@@ -8,16 +8,9 @@ import { invalidateNaInkoopMutatie } from '../cache'
 
 /**
  * RPC-wrapper voor de ontvangst-flow.
- *
- * In Task 4 (mig 271) worden de onderliggende RPCs hernoemd naar
- * `boek_inkooporder_ontvangst_stuks` (stuks-pad) en `_rollen` (rollen-pad);
- * de queries-functies `boekOntvangst` / `boekVoorraadOntvangst` blijven
- * voorlopig de OUDE RPC-namen (`boek_ontvangst` / `boek_voorraad_ontvangst`)
- * aanroepen tot Task 4 ook hen omzet.
- *
+ * Roept de Inkoop-Module-RPC's aan: `boek_inkooporder_ontvangst_stuks`
+ * (stuks-pad) en `boek_inkooporder_ontvangst_rollen` (rollen-pad, mig 271+).
  * Discriminator op input: `aantal` → stuks-pad; `rollen` → rollen-pad.
- * Het publieke contract (`BoekOntvangstStuksInput` / `BoekOntvangstRollenInput`)
- * blijft stabiel over de Task 4-rename heen.
  */
 
 export interface BoekOntvangstStuksInput {
