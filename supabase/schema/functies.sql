@@ -4605,13 +4605,33 @@ BEGIN
   SELECT status INTO v_huidig FROM orders WHERE id = p_order_id;
   IF v_huidig IS NULL THEN RETURN; END IF;
 
-  -- 1) Inkoop-claim
-  SELECT EXISTS (
-    SELECT 1 FROM order_reserveringen r
-    JOIN order_regels oreg ON oreg.id = r.order_regel_id
-    WHERE oreg.order_id = p_order_id
-      AND r.bron = 'inkooporder_regel'
-      AND r.status = 'actief'
+  -- 1) Inkoop-claim — alleen tellen als de claims de te_leveren ook
+  --    daadwerkelijk DEKKEN voor elke regel met een actieve IO-claim
+  --    (B6-fix, mig 578). Een regel met tekort ÉN een actieve IO-claim is
+  --    "onvolledig gedekt" en moet naar 'Wacht op inkoop' vallen, niet
+  --    'Wacht op voorraad'.
+  SELECT (
+    EXISTS (
+      SELECT 1 FROM order_reserveringen r
+      JOIN order_regels oreg ON oreg.id = r.order_regel_id
+      WHERE oreg.order_id = p_order_id
+        AND r.bron = 'inkooporder_regel'
+        AND r.status = 'actief'
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM order_regels oreg
+      WHERE oreg.order_id = p_order_id
+        AND NOT is_admin_pseudo(oreg.artikelnr)
+        AND oreg.te_leveren > COALESCE((
+          SELECT SUM(r.aantal) FROM order_reserveringen r
+          WHERE r.order_regel_id = oreg.id AND r.status IN ('actief', 'verzonden')
+        ), 0)
+        AND EXISTS (
+          SELECT 1 FROM order_reserveringen r2
+          WHERE r2.order_regel_id = oreg.id
+            AND r2.bron = 'inkooporder_regel' AND r2.status = 'actief'
+        )
+    )
   ) INTO v_heeft_io_claim;
 
   -- 2) Voorraad-tekort (alleen vaste-maten, geen admin-pseudo's) — 'verzonden'
