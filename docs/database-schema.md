@@ -542,7 +542,6 @@ function `factuur-verzenden`. Zie migraties 118, 121, 122.
 | status | factuur_queue_status | pending → processing → done / failed |
 | attempts | INTEGER | Aantal retry-pogingen (max 3) |
 | last_error | TEXT | Laatste error-message bij falen |
-| factuur_id | BIGINT FK → facturen | Gezet na succes |
 | bron_event_id | BIGINT FK → order_events | Mig 223 (ADR-0007). Audit-link naar de event-rij die de queue-entry triggerde. NULL voor wekelijkse verzamelfacturen + legacy. |
 | verzendweek | TEXT | Mig 231. ISO-week (`YYYY-Www`) waarvoor type=`wekelijks` werd geënqueued. Gebruikt door edge function `factuur-verzenden` om `genereer_factuur_voor_week(debiteur_nr, jaar_week)` aan te roepen i.p.v. `genereer_factuur(order_ids)`. NULL bij type=`per_zending`. Index: `idx_factuur_queue_wekelijks_week (debiteur_nr, verzendweek) WHERE type='wekelijks'`. |
 | zending_id | BIGINT FK → zendingen | Mig 234 (ADR-0010): bron-FK voor het per_zending-pad; mig 237 maakt 'm NOT NULL voor nieuwe rijen (legacy wekelijkse/oude rijen NULL). |
@@ -556,7 +555,7 @@ function `factuur-verzenden`. Zie migraties 118, 121, 122.
 **Cron `enqueue_wekelijkse_verzamelfacturen`** (mig 231): groepeert vanaf nu per `(debiteur_nr, verzendweek_voor_datum(orders.afleverdatum))` i.p.v. alleen per debiteur. Filtert op verzendweek = vorige ISO-week (`CURRENT_DATE - 7 days`) en heeft dubbele-vuur-bescherming via `NOT EXISTS`-check op queue-rijen voor dezelfde `(debiteur, week)` met status pending/processing/done.
 
 **Functies (mig 578, ADR-0041) — factuur-granulariteit (zending, order):**
-- `projecteer_concept_factuur(p_zending_id BIGINT, p_factuur_id BIGINT, p_order_id BIGINT DEFAULT NULL)` — bouwt de concept-factuurregels. `p_order_id IS NULL` = oud gedrag (alle orders van de zending op 1 factuur, voor in-flight/legacy rijen); gevuld = alleen de regels van díe order. De verzendkosten-drempel-grondslag wordt altijd over **alle** orders van de zending berekend (`SUM(order_regels.bedrag)`, zonder gefactureerd-filter) zodat de uitkomst niet afhangt van welke order-factuur al gefinaliseerd is.
+- `projecteer_concept_factuur(p_zending_id BIGINT, p_factuur_id BIGINT, p_order_id BIGINT DEFAULT NULL)` — bouwt de concept-factuurregels. `p_order_id IS NULL` = oud gedrag (alle orders van de zending op 1 factuur, voor in-flight/legacy rijen); gevuld = alleen de regels van díe order. Bij een order-scoped aanroep wordt de verzendkosten-drempel-grondslag over **alle** orders van de zending berekend (`SUM(order_regels.bedrag)`, zonder gefactureerd-filter) zodat de uitkomst niet afhangt van welke order-factuur al gefinaliseerd is; het NULL-pad behoudt de oude grondslag uit de eigen factuurregels (byte-identiek pre-578-gedrag voor in-flight rijen).
 - `finaliseer_concept_factuur(p_zending_id BIGINT, p_factuur_id BIGINT, p_order_id BIGINT DEFAULT NULL)` — flipt `gefactureerd` alleen voor de scope-order(s). Deploy-window-vangnet: bij `p_order_id IS NULL` valt de functie terug op een lookup `SELECT order_id FROM factuur_queue WHERE factuur_id = p_factuur_id`.
 - `claim_factuur_queue_items(...)` — `RETURNS TABLE` uitgebreid met `order_id BIGINT` (return-shape-wijziging, `DROP FUNCTION` vereist, precedent mig 428).
 

@@ -37,7 +37,9 @@ Bewuste semantiek-nuance bij overlap met een deelzending: de grondslag telt de v
 Van de VERZEND-kostenregel-logica verhuist de "wie draagt de verzendkosten"-beslissing naar een per-order-blok:
 
 - De **verzendkosten-drager** (eerste order van de zending) krijgt DREMPELKORTING als de bundel de drempel haalt, of houdt zijn VERZEND-regel als dat niet zo is (klant betaalt 1× per bundel, niet per order).
-- **Zusterorders** krijgen altijd BUNDELKORTING op hun eigen VERZEND-regel (mits die regel bestaat en > €0) — een bundel is 1 fysieke transportbeweging, zusterorders betalen nooit een eigen verzendkosten-component.
+- **Zusterorders** krijgen BUNDELKORTING op hun eigen VERZEND-regel, **mits die regel bestaat en > €0** — een bundel is 1 fysieke transportbeweging, zusterorders betalen nooit een eigen verzendkosten-component.
+
+**Bewuste gedragscorrectie t.o.v. het oude bundel-pad (géén neutraliteit):** de oude bundel-brede factuur gaf BUNDELKORTING aan élke zusterorder, óók aan orders die zelf nooit een VERZEND-regel droegen — een korting van €35 voor kosten die nooit gefactureerd waren (empirisch aangetoond op een echte zending met 8 orders waarvan 2 met VERZEND: €210 te weinig gefactureerd). Het nieuwe per-order-pad crediteert alleen een daadwerkelijk aanwezige VERZEND-regel. Op "scheve" bundels (VERZEND op sommige maar niet alle orders) stijgt het gefactureerde totaal dus terecht. Daarnaast kan de som van N per-order-facturen op centen afwijken van de oude ene bundel-factuur doordat elke factuur zijn eigen BTW afrondt (gemeten: €0,02 op 8 facturen).
 
 ### Pakbon blijft ongewijzigd
 

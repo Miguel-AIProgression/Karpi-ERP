@@ -18,10 +18,15 @@ en mail/EDI-INVOIC. De verzendkosten-drempel-toets blijft bundel-breed
 komt nu uit `order_regels` over **alle** orders van de zending, **zonder**
 gefactureerd-filter — anders zou de uitkomst afhangen van welke factuur al
 gefinaliseerd is. De verzendkosten-drager krijgt DREMPELKORTING (drempel
-gehaald) of behoudt zijn VERZEND-regel; zusterorders krijgen altijd
-BUNDELKORTING op hun eigen VERZEND-regel. De pakbon was al per-order-
-gegroepeerd (bestond al, geen wijziging) — elke order-factuur van een
-bundel krijgt dezelfde bundel-pakbon als bijlage.
+gehaald) of behoudt zijn VERZEND-regel; zusterorders krijgen BUNDELKORTING
+op hun eigen VERZEND-regel, **mits die bestaat** — een bewuste
+gedragscorrectie: het oude bundel-pad crediteerde BUNDELKORTING ook aan
+orders zónder eigen VERZEND-regel (korting voor nooit-gefactureerde kosten;
+op een echte 8-order-zending €210 te weinig gefactureerd — zie ADR-0041).
+Som van N per-order-facturen kan daarnaast op centen afwijken van de oude
+ene bundel-factuur door per-factuur-BTW-afronding (gemeten €0,02 op 8).
+De pakbon was al per-order-gegroepeerd (bestond al, geen wijziging) —
+elke order-factuur van een bundel krijgt dezelfde bundel-pakbon als bijlage.
 
 **Migratie 578:** `factuur_queue.order_id` (NULL = legacy/wekelijks);
 dedup-index verschoven van `(zending_id)` naar `(zending_id, order_id)`;

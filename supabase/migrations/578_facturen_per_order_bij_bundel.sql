@@ -375,8 +375,14 @@ BEGIN
     FROM orders o
    WHERE o.id = ANY(v_order_ids);
 
+  -- NULL-pad (legacy/in-flight rijen): oude grondslag uit de eigen
+  -- factuurregels, byte-identiek aan het pre-578-gedrag. Alleen een
+  -- order-scoped factuur gebruikt de nieuwe volgorde-onafhankelijke grondslag.
   SELECT * INTO v_vk
-    FROM verzendkosten_voor_bundel(v_debiteur.debiteur_nr, v_drempel_grondslag, v_is_afhalen);
+    FROM verzendkosten_voor_bundel(
+      v_debiteur.debiteur_nr,
+      CASE WHEN p_order_id IS NULL THEN v_bundel_subtotaal ELSE v_drempel_grondslag END,
+      v_is_afhalen);
 
   -- Korting-FACTUURregels (DREMPELKORTING/BUNDELKORTING).
   DECLARE
