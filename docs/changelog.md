@@ -1,5 +1,62 @@
 # Changelog — RugFlow ERP
 
+## 2026-07-02 — Combi-levering pre-productie-audit: 4 blockers + 1 hoog gefixt (mig 564-568)
+
+**Waarom:** vóór het mergen van `feat/combi-levering` naar `main`/productie is een
+8-dimensie multi-agent audit gedraaid over de complete Combi-levering-keten
+(ADR-0039/0040, mig 550-563) — 24 bevestigde bevindingen, waarvan 4 blockers.
+Mig 564-568 zijn stuk voor stuk eerst in een rolled-back transactie tegen de
+live DB getest, daarna definitief toegepast — staan dus al live, vóór de merge
+naar `main` (urgentie van de blocker-fixes rechtvaardigde dat).
+
+- **Mig 564 (blocker 1):** herstelt een regressie die mig 563 per ongeluk
+  introduceerde — die migratie herbouwde de view `combi_levering_status` vanaf
+  een verouderde (pre-555/556) body, waardoor de uitsluiting van
+  `'In pickronde'/'Deels verzonden'`-orders en de
+  `COALESCE(verzend_drempel, 500)`-fallback stilletjes verdwenen. Body =
+  mig 556-semantiek + mig 563-kolommen, plus nieuw: `status='Concept'` en
+  `alleen_productie=TRUE`-orders tellen voortaan niet meer mee (onbevestigde
+  e-mail-intake resp. Basta-orders horen de groep niet te sturen of te
+  blokkeren).
+- **Mig 565 (blocker 2):** `markeer_pickronde_gestart` roept aan het eind nu
+  `herbereken_wacht_status(order_id)` aan — start een operator een subset van
+  een vrijgegeven Combi-levering-groep, dan vallen de achterblijvers direct
+  terug naar `'Wacht op combi-levering'` (voorheen bleven ze stale
+  `'Klaar voor picken'` — zichtbaar en startbaar in Pick & Ship, zonder
+  VERZEND-regel — tot de gestarte order verzonden was).
+- **Mig 566 (blocker 3):** nieuwe helper
+  `herbereken_combi_groep(debiteur_nr, adres_norm)` + `update_order_with_lines`
+  roept aan het eind altijd `herbereken_wacht_status` aan (dekt ook een
+  prijs-/korting-only-edit of regel-verwijdering, die
+  `trg_orderregel_herallocateer` niet triggert) en, bij een adres- of
+  debiteurwijziging, óók `herbereken_combi_groep` voor de VERLATEN groep — de
+  order zelf zit dan al in de nieuwe groep en kan de oude niet meer via de
+  normale sibling-cascade bereiken.
+- **Mig 567 (blocker 4):** `start_deelzending` gooit nu een `EXCEPTION` op een
+  order met status `'Wacht op combi-levering'` — een deelzending was een
+  stille omzeilroute om de drempel-toets/VERZEND-regel/audit-trail te
+  omzeilen; de bedoelde route is de order-override ("Toch verzenden met
+  verzendkosten"). Frontend: de deelzending-knop is verborgen op zo'n order
+  (`order-regels-table.tsx`).
+- **Mig 568 (hoog):** `herwaardeer_combi_levering_verzendregel` sluit
+  dropship-orders nu ook in het normale (niet-wachtende) pad uit van een
+  automatische VERZEND-regel — de dropship-kostenregel ís al de
+  verzendcomponent (mig 353/370); een klant-toggle voegde er voorheen per
+  ongeluk een tweede verzendregel aan toe.
+- Frontend (geen migratie): PO-prefill spiegelt `combi_levering` in de
+  client-select-query; externe-vertegenwoordiger-gates op de "zet in de
+  wacht"-knop en de klant-toggle op debiteur-detail (RLS blokkeerde de
+  UPDATEs al stil, maar de klant-mail zou wél echt vertrekken); teksten in de
+  subset-start-waarschuwing en de succesmelding volgen nu het
+  ADR-0040-statusmodel (niet meer het oude, gesuperseded ADR-0039-model); een
+  golden fixture dekt `combiLeveringOverride=true` bij een order-split.
+
+Branch `feat/combi-levering`. Zie
+[`docs/superpowers/plans/2026-07-02-combi-levering-pre-prod-fixes.md`](superpowers/plans/2026-07-02-combi-levering-pre-prod-fixes.md)
+voor de volledige beslisboom en het deploy-runbook (edge function
+`stuur-orderbevestiging` moet nog herdeployed worden bij de merge — enige
+function met gewijzigde `_shared`-afhankelijkheden uit de vorige ronde).
+
 ## 2026-07-02 — Combi-levering-badge op orders-overview + order-detail (mig 563)
 
 **Waarom:** Combi-levering-orders (mig 550-562) waren alleen in Pick & Ship

@@ -36,7 +36,7 @@ Enum `order_status` (snapshot geborgd door mig 350, opvolger mig 562). Drie cate
 | `Wacht op voorraad` | canoniek | base | ≥1 regel met tekort zonder IO-claim |
 | `Wacht op inkoop` | canoniek | mig 144 | ≥1 actieve IO-claim |
 | `Wacht op maatwerk` | canoniek | mig 257 | ≥1 maatwerk-regel zonder snijplan `'Ingepakt'` |
-| `Wacht op combi-levering` | canoniek | mig 557 (ADR-0040) | Klant wacht op de vrachtvrije-drempel over meerdere orders naar hetzelfde adres (`combi_levering_status`); laagste prioriteit in de ladder, kan ook demoveren vanuit `Klaar voor picken`; blokkeert Pick & Ship (mig 560), niet productie |
+| `Wacht op combi-levering` | canoniek | mig 557 (ADR-0040) | Klant wacht op de vrachtvrije-drempel over meerdere orders naar hetzelfde adres (`combi_levering_status`); laagste prioriteit in de ladder, kan ook demoveren vanuit `Klaar voor picken`; blokkeert Pick & Ship (mig 560) én `start_deelzending` (mig 567 — de bedoelde ontsnappingsroute is de order-override, niet een deelzending), niet productie |
 | `In pickronde` | canoniek | mig 257 | Zending in `'Picken'`; command-beheerd (mig 258) |
 | `Deels verzonden` | canoniek | mig 257 | ≥1 zending verzonden, ≥1 open |
 | `Verzonden` | **terminaal** | base | Laatste open zending voltooid |
@@ -64,7 +64,7 @@ Afgedwongen door [`scripts/lint-no-direct-orders-status-update.sh`](../scripts/l
 |---|---|---|---|
 | `markeer_verzonden` | → `Verzonden` | faalt op `Geannuleerd` | mig 218 |
 | `markeer_geannuleerd` | → `Geannuleerd` | faalt op `Verzonden` | mig 218 |
-| `markeer_pickronde_gestart` | → `In pickronde` | no-op op pickronde-fases; faalt op eindstatus | mig 258 |
+| `markeer_pickronde_gestart` | → `In pickronde` | no-op op pickronde-fases; faalt op eindstatus | mig 258 (mig 565: + `herbereken_wacht_status`-cascade ná de transitie) |
 | `markeer_deels_verzonden` | → `Deels verzonden` | idem | mig 258 |
 | `herbereken_wacht_status` | → Wacht-op-X / `Klaar voor picken` | zie §4 | mig 559 (laatste; ADR-0040-groep-cascade) |
 | `voltooi_confectie` (na-stap) | → `Maatwerk afgerond` | alleen `alleen_productie=true` + alle snijplannen afgerond | mig 348 |
@@ -89,6 +89,8 @@ Afgedwongen door [`scripts/lint-no-direct-orders-status-update.sh`](../scripts/l
 | `create_webshop_order` | **mig 343** (`maatwerk_vorm`) | 085, 086, 087, 092, 093, 308, 322 |
 | `herbereken_wacht_status` | **mig 559** (ADR-0040: 2e param `p_cascade_groep`, Combi-levering-groep-herwaardering) | 218, 258, 267, 275, 346, 351, 352, 468 |
 | `derive_wacht_status` (pure ladder) | **mig 558** (ADR-0040: 5e param `p_wacht_op_combi_levering`) | 346, 352, 470, 540 |
+| `update_order_with_lines` | **mig 566** (audit 02-07: roept ná elke edit `herbereken_wacht_status` aan — dekt ook prijs-/korting-only-edits en regel-verwijdering, die de INSERT/UPDATE-triggers niet vangen; bij een adres-/debiteurwijziging herevalueert óók de verlaten Combi-levering-groep via `herbereken_combi_groep`) | — |
+| `start_deelzending` | **mig 567** (audit 02-07: `EXCEPTION` op status `'Wacht op combi-levering'` — deelzending was een stille omzeilroute om de drempel-toets/VERZEND-regel te omzeilen) | 413, 473 |
 | `voltooi_confectie` | **mig 348** (`_apply_transitie`) | 101, 247, 250, 330 |
 | `voltooi_pickronde` | **mig 258** (bundel-aware + `Deels verzonden`-split) | 217, 218, 222 |
 | `voltooi_pickronden` (bulk) | **mig 414** (gedraaid als 412; loopt over zendingen → `voltooi_pickronde`, per-zending savepoint) | — |
@@ -134,7 +136,12 @@ listener `trg_snijplan_herbereken_order_status` op `snijplannen` zodra een stuk 
 `'Ingepakt'`-grens kruist (confectie→pick terugkoppeling — zie §8); (3) sinds
 **mig 561** de twee Combi-levering-triggers (`trg_orders_combi_levering_override_fn`
 cascade=TRUE, `trg_debiteuren_combi_levering_fn` cascade=FALSE — die loopt zelf al
-over alle orders van de klant). Zonder (2) bleef
+over alle orders van de klant); (4) sinds **mig 565** `markeer_pickronde_gestart`,
+ná de transitie naar `'In pickronde'` — zonder deze aanroep bleven achterblijvers
+van een deels gestarte Combi-levering-groep stale `'Klaar voor picken'` tot de
+gestarte order verzonden was; (5) sinds **mig 566** `update_order_with_lines`, aan
+het eind van élke edit (eigen order + nieuwe groep), plús `herbereken_combi_groep`
+voor de verlaten groep bij een adres-/debiteurwijziging. Zonder (2) bleef
 een afgeronde maatwerk-order op `Wacht op maatwerk` staan terwijl hij al pickbaar was.
 
 ## 5. `order_events` — types en listeners
