@@ -42,7 +42,6 @@ export {
   useCreateSnijplan,
   useUpdateSnijplanStatus,
   useBatchUpdateSnijplanStatus,
-  useAssignRol,
   useApproveSnijvoorstel,
   useGenereerSnijvoorstel,
   useKeurSnijvoorstelGoed,

@@ -71,15 +71,10 @@ export async function batchUpdateSnijplanStatus(ids: number[], status: SnijplanS
   if (error) throw error
 }
 
-/** Assign a roll to a cutting plan */
-export async function assignRolToSnijplan(snijplanId: number, rolId: number) {
-  const { error } = await supabase
-    .from('snijplannen')
-    .update({ rol_id: rolId })
-    .eq('id', snijplanId)
-
-  if (error) throw error
-}
+// assignRolToSnijplan is verwijderd (audit 2026-07-02): kale rol_id-UPDATE
+// zonder positie-herberekening reproduceert het VERR130-overlap-incident.
+// Rol toewijzen = RPC wijs_snijplan_handmatig_toe (mig 453) via de edge
+// function wijs-snijplan-handmatig-toe.
 
 /** Approve snijvoorstel: keur_snijvoorstel_goed zet status op 'Gepland' en
  *  wijst rol toe. No-op helper voor backwards-compat. */

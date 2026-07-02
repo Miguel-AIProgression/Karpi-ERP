@@ -23,7 +23,6 @@ import {
   createSnijplan,
   updateSnijplanStatus,
   batchUpdateSnijplanStatus,
-  assignRolToSnijplan,
   approveSnijvoorstel,
 } from '../queries/snijplanning-mutations'
 import type { SnijplanFormData } from '../queries/snijplanning-mutations'
@@ -311,17 +310,6 @@ export function useBatchUpdateSnijplanStatus() {
     onSuccess: () => {
       invalidateNaSnijplanMutatie(qc)
       invalidateNaConfectieMutatie(qc)
-    },
-  })
-}
-
-export function useAssignRol() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: ({ snijplanId, rolId }: { snijplanId: number; rolId: number }) =>
-      assignRolToSnijplan(snijplanId, rolId),
-    onSuccess: () => {
-      invalidateNaSnijplanMutatie(qc)
     },
   })
 }
