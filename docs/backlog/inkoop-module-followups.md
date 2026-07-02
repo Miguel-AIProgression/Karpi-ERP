@@ -30,7 +30,15 @@ daarna verwijderen". Risico: onbeperkt parallel-onderhoud van twee namen.
    `DROP FUNCTION boek_ontvangst(...)`. Lint-script `lint-no-direct-inkooporder-
    regel-write.sh` is al boundary-bescherming voor nieuwe callers.
 
-**Status**: ⏳ Open. Open een issue / herinnering voor 2026-07-13.
+**Status**: ✅ Migratie geschreven (mig 604, `604_drop_deprecated_ontvangst_wrappers.sql`)
+— **nog NIET toegepast**. Caller-check op de live DB (2026-07-02) bevestigt
+0 resterende SQL-callers; de laatste frontend-caller (`use-boek-ontvangst`)
+is al omgezet naar `boek_inkooporder_ontvangst_{stuks,rollen}` (Task 1 van
+het inkoopproces-implementatieplan, 2026-07-02 — het planbestand zelf
+staat nog niet op deze branch). Apply-voorwaarde: pas draaien ná merge
+naar `main` + Vercel-deploy — tot die tijd roept de live frontend de
+wrappers nog aan. Streefdatum **2026-07-13** blijft de deadline om 'm
+daadwerkelijk toe te passen.
 
 ---
 
