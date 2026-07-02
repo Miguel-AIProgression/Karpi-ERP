@@ -38,6 +38,10 @@ ALLOWED_MIGRATION_PATHS=(
 # Backlog: vervang door create_inkooporder-RPC in vervolg-werk (zie ADR-0017).
 ALLOWED_PYTHON_PATHS=(
   'import/import_inkoopoverzicht.py'
+  # Eenmalige ad-hoc syncs 2026 (referentie). Nieuw sync-werk: gebruik
+  # create_inkooporder (mig 601) + de regel-mutatie-RPC's (mig 602).
+  'import/sync_inkoopoverzicht_2026_06.py'
+  'import/sync_inkoopoverzicht_2026_06_25.py'
 )
 
 # Frontend-paden binnen de Inkoop-Module zelf (Module is haar eigen writer).
