@@ -33,7 +33,7 @@ describe('sync: golden ≡ $golden$-blok in de contract-migratie', () => {
       .sort()
     expect(
       kandidaten.length,
-      'geen contract-migratie gevonden — is mig 579 al aangemaakt?'
+      'geen contract-migratie gevonden — is mig 583 al aangemaakt?'
     ).toBeGreaterThan(0)
     const sql = readFileSync(join(migrationsDir, kandidaten.at(-1)!), 'utf8')
     const matches = [

@@ -1,4 +1,4 @@
--- Migratie 580: verzendweek-contract — SQL == TS via golden fixtures
+-- Migratie 584: verzendweek-contract — SQL == TS via golden fixtures
 --
 -- Audit-remediatie Task 5.2. Patroon: mig 385 (bundel-sleutel-contract) /
 -- mig 389 (normaliseer-land-contract) / mig 579 (btw-regeling-contract).

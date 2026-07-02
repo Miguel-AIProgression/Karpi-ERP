@@ -1,4 +1,4 @@
--- Migratie 578: 'Wacht op voorraad' vereist dat de bestaande claims het
+-- Migratie 582: 'Wacht op voorraad' vereist dat de bestaande claims het
 -- tekort ook daadwerkelijk DEKKEN (audit 2026-07-02, Task 1.5 / bug B6).
 --
 -- Bug
@@ -56,7 +56,7 @@ BEGIN
 
   -- 1) Inkoop-claim — alleen tellen als de claims de te_leveren ook
   --    daadwerkelijk DEKKEN voor elke regel met een actieve IO-claim
-  --    (B6-fix, mig 578). Een regel met tekort ÉN een actieve IO-claim is
+  --    (B6-fix, mig 582). Een regel met tekort ÉN een actieve IO-claim is
   --    "onvolledig gedekt" en moet naar 'Wacht op inkoop' vallen, niet
   --    'Wacht op voorraad'.
   SELECT (

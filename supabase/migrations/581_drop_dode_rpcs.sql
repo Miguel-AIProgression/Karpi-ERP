@@ -1,4 +1,4 @@
--- Migratie 577: drop dode RPC's (architectuur-audit 2026-07-02, Task 2.5).
+-- Migratie 581: drop dode RPC's (architectuur-audit 2026-07-02, Task 2.5).
 -- Verificatie vooraf (orchestrator, via supabase db query --linked):
 -- geen SQL-callers (pg_proc.prosrc-scan; enige hit = een comment in
 -- trg_zending_set_verzendweek), geen cron-jobs, geen frontend/edge-callers

@@ -1,4 +1,4 @@
--- Migratie 579: btw-regeling-contract — SQL == TS via golden fixtures
+-- Migratie 583: btw-regeling-contract — SQL == TS via golden fixtures
 --
 -- Audit-remediatie Task 5.1. Patroon: mig 385 (bundel-sleutel-contract) /
 -- mig 389 (normaliseer-land-contract). Geen wijziging aan bepaal_btw_regeling
@@ -18,7 +18,7 @@
 --       gedeeld met de frontend via de re-export-shim frontend/src/lib/orders/btw.ts.
 --
 -- Golden fixtures: frontend/src/lib/orders/__tests__/golden/btw-regeling.golden.json
--- (12 cases, veld "cases", input-sleutels aflLandIso2/debiteurLandIso2/afhalen/
+-- (13 cases, veld "cases", input-sleutels aflLandIso2/debiteurLandIso2/afhalen/
 -- verlegdVlag/btwNummer/btwPercentage → verwacht-sleutels regeling/effectiefPct/
 -- controleNodig). Getoetst aan TS-zijde door btw-regeling.contract.test.ts.
 --

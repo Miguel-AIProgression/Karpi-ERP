@@ -73,6 +73,7 @@ describe('VORMTOESLAG-companion volgt zijn maatwerk-parent (mig 465, array-posit
       header: HEADER,
       debiteurNr: DEBITEUR_NR,
       afhalen: false,
+      combiLeveringOverride: false,
       deelleveringen: true,
       afleverdatumInfo: {
         standaardDatum: '2026-06-12',
@@ -107,6 +108,7 @@ describe('VORMTOESLAG-companion volgt zijn maatwerk-parent (mig 465, array-posit
       header: HEADER,
       debiteurNr: DEBITEUR_NR,
       afhalen: false,
+      combiLeveringOverride: false,
       deelleveringen: false,
       overrideLeverModus: 'deelleveringen',
       afleverdatumInfo: {

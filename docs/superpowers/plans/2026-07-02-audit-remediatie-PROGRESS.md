@@ -44,7 +44,11 @@ branch `fix/audit-remediatie` (basis: origin/main 7130d579, 2026-07-02).
   ("non-maatwerk" bleek inherent: maatwerk-tak heeft nooit een artikelnr),
   kwaliteit APPROVED. Minors: expliciet type op `let productVelden`;
   fetch-fout-pad ongetest (geen testbestand voor order-create — acceptabel).
-- [ ] **1.5** B6 wacht-status dekkings-fix (STOP vóór apply!)
+- [x] **1.5** B6 dekkings-fix LIVE als **mig 582** (was 578, hernummerd —
+  zie slot). Commit `d10bf16c` + hernummer-herapply. Vanaf live body (incl.
+  combi's p_cascade_groep!); gedragstest beide kanten in rolled-back
+  transactie + inverted-assertion-sanity; impact 0 (Miguel-GO); TS-golden
+  27/27 ongewijzigd. Spec ✅ (byte-diff migratie↔live).
 - [x] **2.1** assignRolToSnijplan/useAssignRol weg. Commit `bf584779`,
   grep-bewijs 0 callers, 46 tests groen. Spec ✅, kwaliteit APPROVED.
   BIJVANGST reviewer → nieuwe bonustaak **2.6**: `createSnijplan` +
@@ -91,13 +95,6 @@ branch `fix/audit-remediatie` (basis: origin/main 7130d579, 2026-07-02).
   edge-consumers (alleen frontend-contracttest).
 - [x] **6.4** vindregel query-lagen in architectuur.md + CLAUDE.md-shim-
   verwijzing bijgewerkt (`48c61772`).
-- [ ] **3.2** order-lifecycle.md listener+triggers
-- [ ] **3.3** ADR-0031-addendum + sftp-header
-- [ ] **3.4** deploy-fan-out-manifest
-- [ ] **4.1** schema-snapshot script+dump
-- [ ] **4.2** §3.3 → snapshot-verwijzing
-- [ ] **5.1** BTW golden-contract
-- [ ] **5.2** verzendweek golden-contract
 - [x] **4.2** §3.3 herschreven naar snapshot/pg_get_functiondef-verwijzing +
   header-vuistregel gecorrigeerd (`8da28f6b`). 4.1-script gecommit
   (`ce825768`); volledige dump = open punt (Docker/token).
@@ -137,8 +134,26 @@ branch `fix/audit-remediatie` (basis: origin/main 7130d579, 2026-07-02).
   'Maatwerk afgerond' als eindstatus geclassificeerd (klopt met derive-status/
   mig 355). Spec ✅, kwaliteit APPROVED. → Open punt Miguel: akkoord met
   Concept in de telling?
-- [ ] **6.4** vindregel query-lagen
-- [ ] **7.1** eindverificatie + changelog; merge alleen op commando Miguel
+- [x] **3.2** afgerond: mig 480-listener-rij + §3.4 trigger-landschap (10
+  triggers, live geverifieerd) in order-lifecycle.md.
+- [x] **5.1+5.2** COMPLEET: goldens + TS-contracttests (`64aab573`, 13+8
+  cases, mig-550-semantiek) + SQL-asserts LIVE als **mig 583/584** (was
+  579/580) — beide draaien schoon: GEEN SQL↔TS-drift. Sync-tests pinnen
+  golden ≡ migratie-blok. Spec ✅ (steekproef 8 cases handmatig).
+- [x] **7.1** origin/main (t/m mig 577-concept-fix) in-gemerged
+  (`8ba38069`, 1 conflict: order-lifecycle §3.3 → snapshot-verwijzing wint);
+  post-merge combiLeveringOverride-fix in order-commit.test.ts;
+  **MIGRATIE-HERNUMMERING 577-580 → 581-584** (collisie met mains eigen 577,
+  exact de memory-valkuil) incl. herapply 582 + snapshot; eindverificatie:
+  typecheck OK, 898 tests groen (95 files), build OK. Merge naar main
+  alleen op commando Miguel.
+
+## EINDSTATUS (2026-07-02): ALLE PLAN-TAKEN AFGEROND
+Live toegepast: mig 581 (drop 5 dode RPC's), 582 (B6), 583/584
+(contract-asserts). Deploy-nota: 3 packing-edge-functions (auto-plan-groep,
+optimaliseer-snijplan, schat-benodigde-lengte) moeten mee bij de
+eerstvolgende edge-deploy (reststuk-score/compute-reststukken-refactor —
+puur verplaatsing, geen gedragswijziging; zie supabase/functions/DEPLOY.md).
 
 ## Open punten voor Miguel
 - **B2 live-verificatie (Task 1.2):** draai in de SQL-editor:
