@@ -22,7 +22,8 @@ set -euo pipefail
 #   136 — boek_ontvangst voorraad_mutaties schema fix
 #   148 — boek_voorraad_ontvangst claim-consume
 #   254 — boek_voorraad_ontvangst -> PERFORM boek_io_ontvangst_claims (ADR-0015)
-#   257 — RPC-rename naar boek_inkooporder_ontvangst_{stuks,rollen} (ADR-0017)
+#   271 — RPC-rename naar boek_inkooporder_ontvangst_{stuks,rollen} (ADR-0017)
+#   601-604 — inkoopproces-volledig: create/mutatie/ontvangst-RPC's + wrapper-drop
 ALLOWED_MIGRATION_PATHS=(
   'supabase/migrations/127_inkooporders_leveranciers.sql'
   'supabase/migrations/131_inkoop_dubbele_fks_opruimen.sql'
@@ -32,6 +33,10 @@ ALLOWED_MIGRATION_PATHS=(
   'supabase/migrations/148_boek_voorraad_ontvangst_consumeer_claims.sql'
   'supabase/migrations/254_reservering_module_split.sql'
   'supabase/migrations/271_inkoop_module_rename_ontvangst_rpcs.sql'
+  'supabase/migrations/601_create_inkooporder_rpc.sql'
+  'supabase/migrations/602_inkooporder_regel_mutaties.sql'
+  'supabase/migrations/603_ontvangst_locatie_overlevering.sql'
+  'supabase/migrations/604_drop_deprecated_ontvangst_wrappers.sql'
 )
 
 # Python-import-paden die initial-bulk-create doen.
