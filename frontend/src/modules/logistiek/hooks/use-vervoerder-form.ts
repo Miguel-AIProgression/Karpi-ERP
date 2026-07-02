@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Vervoerder, VervoerderUpdateInput } from '@/modules/logistiek/queries/vervoerders'
+import type { VervoerderType } from '@/lib/logistiek/vervoerder-type'
 
 export interface VervoerderFormState {
   api_endpoint: string
@@ -104,7 +105,7 @@ export function useVervoerderForm(vervoerder: Vervoerder | null | undefined) {
 
   const dirty = vervoerder ? !shallowFormEquals(form, fromVervoerder(vervoerder)) : false
 
-  const toUpdateInput = (type: 'api' | 'edi' | 'print'): VervoerderUpdateInput => ({
+  const toUpdateInput = (type: VervoerderType): VervoerderUpdateInput => ({
     api_endpoint: type === 'api' ? emptyToNull(form.api_endpoint) : null,
     api_customer_id: type === 'api' ? emptyToNull(form.api_customer_id) : null,
     account_nummer: emptyToNull(form.account_nummer),

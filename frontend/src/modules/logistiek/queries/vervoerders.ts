@@ -1,6 +1,10 @@
 import { supabase } from '@/lib/supabase/client'
 
-export type VervoerderType = 'api' | 'edi' | 'print'
+// VervoerderType leeft sinds 2026-07-02 op één plek (audit-fix, spiegelt de
+// DB-CHECK vervoerders_type_check, mig 424) — zie
+// _shared/vervoerders/vervoerder-type.ts. Re-export hier voor back-compat.
+import type { VervoerderType } from '@/lib/logistiek/vervoerder-type'
+export type { VervoerderType }
 
 /**
  * Vervoerder-row inclusief Fase A-instellingen (mig 174) en print-velden (mig 207).

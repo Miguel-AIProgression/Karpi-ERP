@@ -11,6 +11,7 @@ import { VervoerderCreateDialog } from '@/modules/logistiek/components/vervoerde
 import { VerzendregelsSectie } from '@/modules/logistiek/components/verzendregels-sectie'
 import { useAuth } from '@/hooks/use-auth'
 import type { Vervoerder, VervoerderStats } from '@/modules/logistiek/queries/vervoerders'
+import type { VervoerderType } from '@/lib/logistiek/vervoerder-type'
 
 interface VervoerderRowVm extends Vervoerder {
   stats: VervoerderStats | null
@@ -143,7 +144,7 @@ export function VervoerdersOverzichtPage() {
   )
 }
 
-function TypeBadge({ type }: { type: 'api' | 'edi' | 'print' }) {
+function TypeBadge({ type }: { type: VervoerderType }) {
   const styles =
     type === 'api'
       ? 'bg-blue-100 text-blue-700'
