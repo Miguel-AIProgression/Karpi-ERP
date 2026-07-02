@@ -92,9 +92,24 @@ branch `fix/audit-remediatie` (basis: origin/main 7130d579, 2026-07-02).
 - [ ] **4.2** §3.3 → snapshot-verwijzing
 - [ ] **5.1** BTW golden-contract
 - [ ] **5.2** verzendweek golden-contract
-- [ ] **5.3** compute-reststukken → shim
-- [ ] **5.4** reststuk-score één module
-- [ ] **6.1** VervoerderType één bron
+- [x] **4.2** §3.3 herschreven naar snapshot/pg_get_functiondef-verwijzing +
+  header-vuistregel gecorrigeerd (`8da28f6b`). 4.1-script gecommit
+  (`ce825768`); volledige dump = open punt (Docker/token).
+- [x] **5.3** compute-reststukken → pure shim (`1ea10b3d`). Kern was
+  byte-identiek (géén drift); 4 frontend-only functies verhuisd naar _shared
+  (StukGeometrie-adapter). Spec ✅, kwaliteit APPROVED. Minor: pre-existing
+  typo "Angebroken" (meegenomen, niet geïntroduceerd).
+- [x] **5.4** reststuk-score → `_shared/reststuk-score.ts` (`56b564b7`).
+  Byte-identieke extractie; reststukScoreCm2 blijft als aggregatie-wrapper
+  (filter = consumer-specifiek, gedocumenteerd contract); woordenboek-entry
+  bij. Spec ✅, kwaliteit APPROVED (0 issues). Deploy-let-op: 3 packing-edge-
+  functions mee bij eerstvolgende deploy (DEPLOY.md).
+- [x] **6.1** VervoerderType één bron → `_shared/vervoerders/vervoerder-type.ts`
+  (`e2f10ace`). CHECK geverifieerd ongewijzigd sinds mig 424:
+  api/edi/print/sftp/eigen. 3 niet-exhaustieve plekken blootgelegd door de
+  bredere union en aangevuld (vervoerder-tag.tsx Record, use-vervoerder-form.ts
+  toUpdateInput-param, vervoerders-overzicht.tsx lokale TypeBadge). ADR-0034
+  addendum. typecheck + vitest src/modules/logistiek (141 tests) groen.
 - [ ] **6.2** zending-status-predicaten
 - [ ] **6.3** drift-test ACTIVE_ORDER_STATUSES
 - [ ] **6.4** vindregel query-lagen
