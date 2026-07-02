@@ -364,6 +364,19 @@ hier verder uitgewerkt).
   `fact_email`, `afl_email`); drie latere herdefinities (547/548/572) namen de kapotte
   body over. Hersteld in mig 585. JSONB-RPC's droppen onbekende/ontbrekende sleutels
   zonder fout — de assert is de enige harde bewaking.
+- **Intake-regelmatching (Shopify/Lightspeed) is N+1-bewust gemaakt (perf, geen
+  bedrijfsregel-wijziging):** `buildRegels`/`buildLightspeedRegels` halen
+  `debiteuren` (korting_pct/prijslijst_nr/naam) nu één keer per order-run op i.p.v.
+  per orderregel, en geven `haalKlantPrijs` de `prijslijstNr` mee. `matchProduct`
+  krijgt daarnaast een optionele `IntakeCache` (`_shared/order-intake/intake-cache.ts`)
+  die `klanteigen_namen` per debiteur memoized binnen één run — bewust GEEN
+  module-globale cache (edge functions blijven warm; stale-data-risico over
+  orders/debiteuren heen). Matching-volgorde/-prioriteit is ongewijzigd; alleen
+  de query-herhaling is weg. Bewust niet aangepakt: de overige `producten`/
+  `karpi_code`/`ean`-lookups verderop in `matchProduct` (afhankelijk van
+  eerdere match-uitkomst per regel — batchen zou de aanroepvolgorde kunnen
+  wijzigen) en `matchAliasGlobaalUniek` (query hangt af van het eerste woord
+  van de productnaam, wisselt per regel).
 
 ## Openstaand / V2
 

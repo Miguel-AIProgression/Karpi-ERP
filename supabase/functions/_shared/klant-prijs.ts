@@ -25,17 +25,33 @@ export async function haalKlantPrijs(
   supabase: SupabaseClient,
   debiteurNr: number,
   artikelnr: string | null,
-  opts: { is_maatwerk?: boolean; lengte_cm?: number | null; breedte_cm?: number | null } = {},
+  opts: {
+    is_maatwerk?: boolean
+    lengte_cm?: number | null
+    breedte_cm?: number | null
+    /**
+     * Perf (N+1-fix, perf/n1-intake-allocator): de caller kan de al-opgehaalde
+     * `debiteuren.prijslijst_nr` meesturen (bv. één keer per order-run) zodat
+     * deze functie niet opnieuw `debiteuren` bevraagt voor elke orderregel.
+     * `undefined` = niet meegegeven → zelf ophalen (bestaand gedrag, dus
+     * backwards compatible met bestaande/toekomstige losse aanroepen).
+     */
+    prijslijstNr?: string | null
+  } = {},
 ): Promise<KlantPrijsResult> {
   if (!artikelnr) return { prijs: null, bron: 'geen' }
 
-  // 1) Prijslijst van de debiteur
-  const { data: deb } = await supabase
-    .from('debiteuren')
-    .select('prijslijst_nr')
-    .eq('debiteur_nr', debiteurNr)
-    .maybeSingle()
-  const prijslijstNr = deb?.prijslijst_nr ?? null
+  // 1) Prijslijst van de debiteur — alleen zelf ophalen als de caller 'm niet
+  // al meestuurde.
+  let prijslijstNr = opts.prijslijstNr
+  if (prijslijstNr === undefined) {
+    const { data: deb } = await supabase
+      .from('debiteuren')
+      .select('prijslijst_nr')
+      .eq('debiteur_nr', debiteurNr)
+      .maybeSingle()
+    prijslijstNr = deb?.prijslijst_nr ?? null
+  }
 
   if (prijslijstNr) {
     const { data: regel } = await supabase

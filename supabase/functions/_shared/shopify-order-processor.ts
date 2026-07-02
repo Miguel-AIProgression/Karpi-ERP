@@ -19,6 +19,7 @@ import { parseMaatwerkDims } from './order-matcher.ts'
 import { haalKlantPrijs } from './klant-prijs.ts'
 import { regelBedrag } from './order-intake/regel-bedrag.ts'
 import { logExternePayload, markeerExternePayload } from './externe-payload-audit.ts'
+import { createIntakeCache } from './order-intake/intake-cache.ts'
 
 type SupabaseClient = ReturnType<typeof createClient>
 
@@ -51,19 +52,32 @@ async function buildRegels(
   supabase: SupabaseClient,
   order: ShopifyOrderWebhook,
   debiteurNr: number,
-): Promise<{ regels: unknown[]; matched: number; unmatched: number }> {
+): Promise<{ regels: unknown[]; matched: number; unmatched: number; debiteurNaam: string | null }> {
   const regels: unknown[] = []
   let matched = 0
   let unmatched = 0
 
-  // Debiteurenkorting eenmalig ophalen — geldt voor alle productenregels,
-  // maar NIET voor verzend-/admin-pseudo-regels (VERZEND, VORMTOESLAG etc.).
-  const { data: debRow } = await supabase
+  // Eén debiteuren-fetch voor de hele order (perf: N+1-fix,
+  // perf/n1-intake-allocator). Vóór deze fix: korting_pct hier, naam ná
+  // buildRegels in processShopifyOrder, én prijslijst_nr opnieuw per
+  // orderregel binnen haalKlantPrijs — dus 2 + N queries. Nu 1.
+  const { data: debRow, error: debError } = await supabase
     .from('debiteuren')
-    .select('korting_pct')
+    .select('naam, korting_pct, prijslijst_nr')
     .eq('debiteur_nr', debiteurNr)
     .maybeSingle()
+  if (debError) {
+    // Deze fetch geldt nu voor de hele order (was per regel): een fout hier
+    // raakt álle regels (korting 0, geen prijslijst) — dus hoorbaar loggen.
+    console.error(`buildRegels: debiteuren-fetch gefaald voor ${debiteurNr}: ${debError.message}`)
+  }
   const debiteurKortingPct: number = Number(debRow?.korting_pct ?? 0)
+  const prijslijstNr: string | null = debRow?.prijslijst_nr ?? null
+  const debiteurNaam: string | null = debRow?.naam ?? null
+
+  // Gedeelde memo-cache voor deze order-run (bv. klanteigen_namen) — leeft
+  // alleen binnen deze buildRegels-aanroep, geen module-globale state.
+  const cache = createIntakeCache()
 
   for (const item of groepeerVoSelectionsItems(order.line_items)) {
     // Verzendregels van Shopify niet als orderregel importeren — die komen
@@ -73,7 +87,7 @@ async function buildRegels(
     }
 
     const matcherRow = shopifyLineItemToMatcherRow(item)
-    const match = await matchProduct(supabase, matcherRow, debiteurNr)
+    const match = await matchProduct(supabase, matcherRow, debiteurNr, cache)
 
     const omschrijving = buildOmschrijving(matcherRow, match)
 
@@ -101,6 +115,7 @@ async function buildRegels(
       is_maatwerk: match.is_maatwerk,
       lengte_cm: maatwerk_lengte_cm,
       breedte_cm: maatwerk_breedte_cm,
+      prijslijstNr,
     })
     const prijs = klantPrijs.prijs
     const bedrag = regelBedrag(prijs, aantal, debiteurKortingPct)
@@ -147,7 +162,7 @@ async function buildRegels(
     }
   }
 
-  return { regels, matched, unmatched }
+  return { regels, matched, unmatched, debiteurNaam }
 }
 
 function leidAfleverdatumAf(order: ShopifyOrderWebhook, orderdatum: string): string {
@@ -232,14 +247,10 @@ export async function processShopifyOrder(
     }
   }
 
-  const { regels, matched, unmatched } = await buildRegels(supabase, order, debiteurMatch.debiteur_nr)
-
-  const { data: debiteurInfo } = await supabase
-    .from('debiteuren')
-    .select('naam')
-    .eq('debiteur_nr', debiteurMatch.debiteur_nr)
-    .single()
-  const debiteurNaam = debiteurInfo?.naam ?? null
+  // Perf (N+1-fix): buildRegels haalt de debiteuren-rij nu zelf één keer op
+  // (naam + korting_pct + prijslijst_nr) en geeft debiteurNaam terug — geen
+  // aparte `naam`-query hier meer nodig.
+  const { regels, matched, unmatched, debiteurNaam } = await buildRegels(supabase, order, debiteurMatch.debiteur_nr)
 
   const shipping = extractShopifyShippingAddress(order)
   const billing = extractShopifyBillingAddress(order)

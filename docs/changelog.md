@@ -1,5 +1,32 @@
 # Changelog — RugFlow ERP
 
+## 2026-07-02 — N+1-queryfixes: order-intake + voorraad-allocator (mig 586, branch perf/n1-intake-allocator)
+
+Perf-audit (3 parallelle subagents over frontend/edge/SQL) vond N+1-patronen; de
+twee grootste zijn gefixt, gedrag identiek:
+
+1. **Order-intake (Shopify/Lightspeed):** per orderregel liepen 5-15 queries
+   (matchProduct + haalKlantPrijs). Nu: `debiteuren` (korting/prijslijst/naam)
+   1x per order-run gehoist, `klanteigen_namen` per debiteur gememoized via
+   run-scoped `IntakeCache` (`_shared/order-intake/intake-cache.ts`; bewust geen
+   module-globale cache — warme edge functions zouden stale data lekken).
+   Typische 10-regel-order: ~45-70 → ~25-35 queries. Matching-prioriteit
+   ongewijzigd (15 Deno-tests groen). Gefaalde fetches worden geloggd en niet
+   gecachet (review-fix: één transient error mag niet stil alle regels raken).
+2. **Allocator (mig 586, NOG NIET LIVE):** `herallocateer_orderregel_auto`
+   riep per loop-iteratie `voorraad_beschikbaar_voor_artikel`/`io_regel_ruimte`
+   aan (elk 2 interne SELECTs); nu vooraf set-based gematerialiseerd via CTE's
+   met identieke formules + greedy-volgorde. `allocatie_opties_voor_artikel`
+   evalueert `io_regel_ruimte` nu 1x per rij (LATERAL) i.p.v. 2x. Contract-assert
+   op signaturen + rolled-back before/after-test op live DB (regels 5832/7511:
+   identieke reserveringen). Kanttekening: bestaand ongelockt double-booking-
+   venster tussen gelijktijdige aanroepen wordt marginaal breder (zie mig-header).
+
+Bewust niet aangepakt (gedocumenteerd in docs/modules/orders.md): overige
+per-regel-lookups in matchProduct (conditioneel op match-uitkomst) en
+matchAliasGlobaalUniek. Kleinere restpunten uit de audit (EDI-sweep app_config,
+reprice bij klantwissel, resolve_klanteigen_naam in orderbevestiging) staan open.
+
 ## 2026-07-02 — Afhalen aanvinken bij bewerken deed stil niets (mig 585, branch fix/afhalen-update-order-rpc)
 
 Melding van binnendienst (Marjon, order ORD-2026-1186): order aanpassen naar "klant
@@ -18,7 +45,7 @@ huidige body (sleutel-aanwezigheids-CASE, NULL-pad-neutraal) + herbruikbare
 uit `order-mutations.ts` leest — verplicht aan te roepen in elke toekomstige
 herdefinitie. Rolled-back test op live DB bewees: `afhalen=true` persisteert,
 `afl_adres_incompleet_sinds` wordt door de gate-trigger leeggemaakt, regels intact.
-=======
+
 ## 2026-07-02 — SB Möbel Boss/Porta: 7 EDI-facturen gecorrigeerd op RG-Anschrift (naam), geen migratie
 
 Klant Porta (crediteurenadministratie van de SB-Möbel-BOSS-keten) meldde dat 7

@@ -10,6 +10,7 @@ import { regelBedrag } from './regel-bedrag.ts'
 import { haalKlantPrijs } from '../klant-prijs.ts'
 import { kgVanLightspeedGewicht } from './gewicht.ts'
 import type { IntakeRegel } from './types.ts'
+import { createIntakeCache } from './intake-cache.ts'
 
 /** Pure assemblage van één IntakeRegel uit reeds-bepaalde match + prijs + dims. */
 export function toIntakeRegel(input: {
@@ -52,8 +53,24 @@ export async function buildLightspeedRegels(
   let matched = 0
   let unmatched = 0
 
+  // Perf (N+1-fix, perf/n1-intake-allocator): prijslijst_nr één keer per
+  // order-run ophalen i.p.v. per regel opnieuw binnen haalKlantPrijs, en een
+  // gedeelde memo-cache (klanteigen_namen) door de matcher-loop heen geven.
+  const { data: debRow, error: debError } = await supabase
+    .from('debiteuren')
+    .select('prijslijst_nr')
+    .eq('debiteur_nr', debiteurNr)
+    .maybeSingle()
+  if (debError) {
+    // Geldt voor de hele order (was per regel binnen haalKlantPrijs) —
+    // een fout hier schakelt prijslijst-pricing uit voor álle regels.
+    console.error(`buildLightspeedRegels: debiteuren-fetch gefaald voor ${debiteurNr}: ${debError.message}`)
+  }
+  const prijslijstNr: string | null = debRow?.prijslijst_nr ?? null
+  const cache = createIntakeCache()
+
   for (const row of rows) {
-    const match = await matchProduct(supabase, row, debiteurNr)
+    const match = await matchProduct(supabase, row, debiteurNr, cache)
     // Staaltjes (Gratis Muster) worden niet ingeladen — Karpi factureert ze niet.
     if (match.unmatchedReden === 'muster') continue
 
@@ -71,6 +88,7 @@ export async function buildLightspeedRegels(
           is_maatwerk: match.is_maatwerk,
           lengte_cm: dims?.lengte ?? null,
           breedte_cm: dims?.breedte ?? null,
+          prijslijstNr,
         })
 
     regels.push(

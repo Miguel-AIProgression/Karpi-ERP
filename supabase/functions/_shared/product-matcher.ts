@@ -17,6 +17,7 @@
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { collectExtraTexts, parseMaatwerkDims, type OrderMatcherRow } from './order-matcher.ts'
 import { normaliseerNaam } from './debiteur-matcher.ts'
+import { createIntakeCache, getKlanteigenNamen, type IntakeCache } from './order-intake/intake-cache.ts'
 
 export type MatchBron =
   | 'verzend'
@@ -393,6 +394,12 @@ export async function matchProduct(
   supabase: SupabaseClient,
   row: OrderMatcherRow,
   debiteurNr?: number,
+  // Perf (N+1-fix, perf/n1-intake-allocator): caller kan een gedeelde
+  // IntakeCache meesturen zodat `klanteigen_namen` maar één keer per
+  // order/batch-run opgehaald wordt i.p.v. per orderregel. Zonder cache
+  // (default: verse instantie) is het gedrag identiek aan vóór deze fix —
+  // bestaande callers/tests hoeven niets aan te passen.
+  cache: IntakeCache = createIntakeCache(),
 ): Promise<ProductMatch> {
 
   // Muster/staaltjes VROEG detecteren — deze regels worden upstream
@@ -428,12 +435,9 @@ export async function matchProduct(
       || DURCHMESSER_PATROON.test(titleBlobEarly)
       || /MAATWERK$/i.test(row.articleCode ?? '')
 
-    const { data: aliasRows } = await supabase
-      .from('klanteigen_namen')
-      .select('benaming, kwaliteit_code')
-      .eq('debiteur_nr', debiteurNr)
+    const aliasRows = await getKlanteigenNamen(supabase, cache, debiteurNr)
 
-    let aliases = matchAliasesViaPrefix(naam, (aliasRows ?? []) as Array<{ benaming: string; kwaliteit_code: string }>)
+    let aliases = matchAliasesViaPrefix(naam, aliasRows)
 
     // Geen alias bij DEZE debiteur → val terug op de debiteur-overstijgende
     // unanimiteits-check (zie matchAliasGlobaalUniek). Alleen geprobeerd als
@@ -723,11 +727,8 @@ export async function matchProduct(
     const artcode = parseArticleCode(row.articleCode)
     let kwaliteit: string | null = artcode.kwaliteit
     if (debiteurNr) {
-      const { data: aliasRows } = await supabase
-        .from('klanteigen_namen')
-        .select('benaming, kwaliteit_code')
-        .eq('debiteur_nr', debiteurNr)
-      const hits = matchAliasesViaPrefix(naam, (aliasRows ?? []) as Array<{ benaming: string; kwaliteit_code: string }>)
+      const aliasRows = await getKlanteigenNamen(supabase, cache, debiteurNr)
+      const hits = matchAliasesViaPrefix(naam, aliasRows)
       if (hits.length > 0) kwaliteit = hits[0].kwaliteit_code
     }
     // Unsplit-first: een samengeplakte kwaliteit-kandidaat ("LUXR17") wordt
