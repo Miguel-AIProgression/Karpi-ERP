@@ -77,6 +77,7 @@ export interface WerklijstOrderregel {
   maatwerk_vorm: string | null
   maatwerk_afwerking: string | null
   maatwerk_band_kleur: string | null
+  orderdatum: string | null
   verzendweek: string | null
   afleverdatum: string | null
   materiaalStatus: 'op_rol' | 'wacht_op_inkoop' | 'tekort'
@@ -425,6 +426,7 @@ function bouwOrderregelRij(
     maatwerk_vorm: eerste.maatwerk_vorm,
     maatwerk_afwerking: eerste.maatwerk_afwerking,
     maatwerk_band_kleur: eerste.maatwerk_band_kleur,
+    orderdatum: eerste.orderdatum,
     verzendweek: eerste.verzendweek,
     afleverdatum: eerste.afleverdatum,
     materiaalStatus,

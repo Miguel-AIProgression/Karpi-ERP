@@ -4,6 +4,11 @@
 // _shared/debiteur-matcher.ts. De verlegd-vlag (intracommunautaire B2B-levering)
 // wint altijd van het per-debiteur percentage; `btw_percentage` blijft het
 // NL-tarief en wordt bij verlegd genegeerd.
+//
+// Mig 550: eu_b2b_binnenland_afwijking vervalt. EU-afleverland → altijd eu_b2b_icl
+// (0% BTW, ICL, art. 9(2)(b) Wet OB 1968), ongeacht btw_verlegd_intracom-vlag.
+// Karpi levert uitsluitend B2B; de vlag was handmatig en kon foutief staan
+// (DECOR-UNION incident 2026-07-01).
 
 export interface BtwDebiteur {
   btw_verlegd_intracom?: boolean | null
@@ -47,7 +52,6 @@ export function isEuLand(iso2: string | null | undefined): boolean {
 export type BtwRegeling =
   | 'nl_binnenland'
   | 'eu_b2b_icl'
-  | 'eu_b2b_binnenland_afwijking'
   | 'export_buiten_eu'
 
 export interface BtwRegelingResultaat {
@@ -102,24 +106,18 @@ export function bepaalBtwRegeling(input: BtwRegelingInput): BtwRegelingResultaat
     }
   }
 
+  // Mig 550: EU-afleverland → altijd eu_b2b_icl (ICL, 0% BTW), ongeacht
+  // btw_verlegd_intracom. Karpi is B2B-only: elke EU-niet-NL-levering is een ICL
+  // (art. 9(2)(b) Wet OB 1968). Advisory bij ontbrekend btw-nummer (ICP-opgave).
   if (isEuLand(iso2)) {
-    if (input.verlegdVlag === true) {
-      const geenBtwNr = !input.btwNummer || input.btwNummer.trim() === ''
-      return {
-        regeling: 'eu_b2b_icl',
-        effectiefPct: 0,
-        controleNodig: geenBtwNr,
-        controleReden: geenBtwNr
-          ? 'EU-intracommunautaire levering zonder btw-nummer bij de afnemer — controleer voor de ICP-opgave.'
-          : null,
-        landIso2: iso2,
-      }
-    }
+    const geenBtwNr = !input.btwNummer || input.btwNummer.trim() === ''
     return {
-      regeling: 'eu_b2b_binnenland_afwijking',
-      effectiefPct: nlOfOnbekendPct,
-      controleNodig: true,
-      controleReden: `Afleverland (${iso2}) is een andere EU-lidstaat dan NL, maar deze klant staat niet op "BTW verlegd". Controleer of dit een eenmalige afwijking is of dat de klant-instelling aangepast moet worden.`,
+      regeling: 'eu_b2b_icl',
+      effectiefPct: 0,
+      controleNodig: geenBtwNr,
+      controleReden: geenBtwNr
+        ? 'EU-intracommunautaire levering zonder btw-nummer bij de afnemer — controleer voor de ICP-opgave.'
+        : null,
       landIso2: iso2,
     }
   }
@@ -133,8 +131,8 @@ export function bepaalBtwRegeling(input: BtwRegelingInput): BtwRegelingResultaat
   }
 }
 
-/** Regelingen die de factuur-RPC's hard blokkeren (mig 456). Spiegelt de SQL-conditie. */
+/** Regelingen die de factuur-RPC's hard blokkeren (mig 456). Spiegelt de SQL-conditie.
+ *  Mig 550: eu_b2b_binnenland_afwijking verwijderd — die regeling bestaat niet meer. */
 export const HARD_BLOCK_REGELINGEN: ReadonlySet<BtwRegeling> = new Set([
-  'eu_b2b_binnenland_afwijking',
   'export_buiten_eu',
 ])

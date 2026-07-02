@@ -69,6 +69,8 @@ export interface FactuurHeader {
   fact_adres: string
   fact_postcode: string
   fact_plaats: string
+  /** Genormaliseerde landnaam (bijv. 'DEUTSCHLAND'). Alleen tonen als niet-NL. */
+  fact_land?: string | null
   subtotaal: number
   btw_percentage: number
   btw_bedrag: number
@@ -548,6 +550,13 @@ function drawFirstPageBlocks(
   drawText(page, factuur.fact_adres, MARGIN_L, y, regular, 10)
   y -= LINE_H
   drawText(page, `${factuur.fact_postcode}  ${factuur.fact_plaats}`, MARGIN_L, y, regular, 10)
+  // Land alleen tonen voor buitenlandse klanten (NL/NEDERLAND is standaard).
+  const landUpper = factuur.fact_land?.toUpperCase() ?? ''
+  const landTonen = landUpper && landUpper !== 'NL' && landUpper !== 'NEDERLAND'
+  if (landTonen) {
+    y -= LINE_H
+    drawText(page, factuur.fact_land as string, MARGIN_L, y, regular, 10)
+  }
 
   // Info-blok (right) — labels 9pt; colons uitlijnen op de langste label per taal
   // (Courier monospace → padding op tekenaantal volstaat).

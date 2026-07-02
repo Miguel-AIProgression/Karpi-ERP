@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { expandLabels } from './printset'
+import { bouwPicklijst, expandLabels } from './printset'
 import {
   klanteigenReferentie,
   labelDatumKort,
@@ -375,5 +375,46 @@ describe('expandLabels — klant-eigennaam-snapshot (Uw referentie)', () => {
     expect(klanteigenReferentie('')).toBeNull()
     expect(klanteigenReferentie('   ')).toBeNull()
     expect(klanteigenReferentie('  BREDA  ')).toBe('BREDA')
+  })
+})
+
+describe('bouwPicklijst — A4-loopblad', () => {
+  it('één rij per zending met colli + gewicht, plus grand totals', () => {
+    const z1 = maakZending({
+      zending_nr: 'ZEND-2026-0003',
+      afl_naam: 'BB Sjiek BV',
+      afl_adres: 'Dorpstraat 1',
+      afl_postcode: '8490',
+      afl_plaats: 'Jabbeke',
+      totaal_gewicht_kg: 5.89,
+      bundel_orders: [{ id: 1, order_nr: 'ORD-2026-0107', klant_referentie: null, week: null }],
+      zending_regels: [maakRegel({ aantal: 2 })],
+      zending_colli: [maakColli({ id: 1, colli_nr: 1 }), maakColli({ id: 2, colli_nr: 2 })],
+    })
+    const z2 = maakZending({
+      id: 30,
+      zending_nr: 'ZEND-2026-0004',
+      afl_naam: 'Enjooi',
+      totaal_gewicht_kg: 30.16,
+      bundel_orders: [{ id: 2, order_nr: 'ORD-2026-0200', klant_referentie: null, week: null }],
+      zending_regels: [maakRegel({ aantal: 2 })],
+      zending_colli: [maakColli({ id: 3, colli_nr: 1 }), maakColli({ id: 4, colli_nr: 2 })],
+    })
+
+    const pl = bouwPicklijst([z1, z2])
+
+    expect(pl.rijen).toHaveLength(2)
+    expect(pl.rijen[0]).toMatchObject({ naam: 'BB Sjiek BV', colli: 2, gewichtKg: 5.89 })
+    expect(pl.rijen[0].adres).toBe('Dorpstraat 1, 8490 Jabbeke')
+    expect(pl.rijen[0].orderNrs).toEqual(['ORD-2026-0107'])
+    expect(pl.totaalColli).toBe(4)
+    expect(pl.totaalGewichtKg).toBeCloseTo(36.05, 2)
+  })
+
+  it('gewicht null → 0, geen NaN in het totaal', () => {
+    const z = maakZending({ totaal_gewicht_kg: null, zending_regels: [maakRegel()] })
+    const pl = bouwPicklijst([z])
+    expect(pl.rijen[0].gewichtKg).toBe(0)
+    expect(pl.totaalGewichtKg).toBe(0)
   })
 })

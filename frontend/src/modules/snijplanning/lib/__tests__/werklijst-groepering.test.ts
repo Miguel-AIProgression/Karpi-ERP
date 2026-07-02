@@ -55,6 +55,7 @@ function rij(overrides: Partial<WerklijstRow> & { order_regel_id: number }): Wer
     order_nr: `ORD-2026-${overrides.order_regel_id}`,
     klant_naam: 'Testklant',
     debiteur_nr: 1,
+    orderdatum: null,
     afleverdatum: null,  // null → haalbaarheid=null (geen werkagenda-berekening nodig)
     lever_type: 'week',
     verzendweek: null,

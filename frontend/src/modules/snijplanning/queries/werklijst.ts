@@ -33,6 +33,7 @@ export interface WerklijstRow {
   order_nr: string
   klant_naam: string
   debiteur_nr: number
+  orderdatum: string | null
   afleverdatum: string | null
   lever_type: LeverType
   verzendweek: string | null
@@ -72,7 +73,7 @@ export async function fetchWerklijstStukken(): Promise<WerklijstRow[]> {
          kwaliteit_code, kleur_code, karpi_code,
          maatwerk_lengte_cm, maatwerk_breedte_cm, maatwerk_vorm, maatwerk_afwerking, maatwerk_band_kleur,
          orderaantal, order_regel_id, order_id, order_nr, klant_naam, debiteur_nr,
-         afleverdatum, lever_type, verzendweek,
+         orderdatum, afleverdatum, lever_type, verzendweek,
          snij_lengte_cm, snij_breedte_cm, marge_cm, placed_lengte_cm, placed_breedte_cm,
          positie_x_cm, positie_y_cm, geroteerd,
          rol_id, rolnummer, rol_breedte_cm, rol_lengte_cm,

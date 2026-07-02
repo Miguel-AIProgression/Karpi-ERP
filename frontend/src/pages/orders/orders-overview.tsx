@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Plus, Search, Download } from 'lucide-react'
 import { exporterenNaarExcel } from '@/lib/orders/export-orders'
@@ -15,6 +15,7 @@ import { useSnijHaalbaarheid } from '@/modules/snijplanning'
 import { EdiTeKoppelenBanner, EdiAfleveradresOngekoppeldBanner } from '@/modules/edi'
 import { ShopifySyncStatusBanner } from '@/components/orders/shopify-sync-status-banner'
 import { useAuth } from '@/hooks/use-auth'
+import { saveOrderListContext } from '@/lib/orders/order-list-context'
 import type { OrderSortField, SortDirection } from '@/lib/supabase/queries/orders'
 
 const KANAAL_OPTIES = [
@@ -122,6 +123,13 @@ export function OrdersOverviewPage() {
   const totalCount = data?.totalCount ?? 0
   const pageSize = 50
   const totalPages = Math.ceil(totalCount / pageSize)
+
+  // Sla de huidige gefilterde lijst op zodat de detail-pagina prev/next kan tonen.
+  useEffect(() => {
+    if (orders.length > 0) {
+      saveOrderListContext({ orderIds: orders.map((o) => o.id), totalCount, page, pageSize, statusFilter: status })
+    }
+  }, [orders, totalCount, page, status])
 
   const { data: facturenPerOrder } = useFacturenVoorOrders(orders.map((o) => o.id))
   const { perOrder: snijHaalbaarheidPerOrder } = useSnijHaalbaarheid()
