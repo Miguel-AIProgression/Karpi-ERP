@@ -107,11 +107,11 @@ export interface OrderRow {
   wacht_op_combi_levering?: boolean | null
   /** Mig 569: overige orders in dezelfde Combi-levering-groep, voor de badge-tooltip/links. */
   combi_levering_andere_orders?: { id: number; order_nr: string }[] | null
-  /** Mig 575: groep-subtotaal (SUM over de leden) — voedt de wacht-reden-tekst op de badge. */
+  /** Mig 576: groep-subtotaal (SUM over de leden) — voedt de wacht-reden-tekst op de badge. */
   combi_levering_groep_subtotaal?: number | null
-  /** Mig 575: rauwe verzend_drempel van de debiteur (NULL = fallback € 500, zie combiWachtReden). */
+  /** Mig 576: rauwe verzend_drempel van de debiteur (NULL = fallback € 500, zie combiWachtReden). */
   combi_levering_drempel?: number | null
-  /** Mig 575: TRUE zodra alle leden van de groep pickbaar zijn — FALSE = een groepsgenoot (vaak maatwerk) blokkeert nog. */
+  /** Mig 576: TRUE zodra alle leden van de groep pickbaar zijn — FALSE = een groepsgenoot (vaak maatwerk) blokkeert nog. */
   combi_levering_alle_leden_pickbaar?: boolean | null
 }
 

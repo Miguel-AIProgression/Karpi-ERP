@@ -1,4 +1,4 @@
--- Mig 575: orders_list toont de wacht-reden achter Combi-levering
+-- Mig 576: orders_list toont de wacht-reden achter Combi-levering
 --
 -- Aanleiding: de bestaande badge (CombiLeveringBadge, mig 569) toont alleen
 -- DAT een order op Combi-levering wacht (status 'Wacht op combi-levering' +
@@ -28,8 +28,8 @@
 -- € 300-drempel) heeft de reden-velden juist het hardst nodig. Het >= 2-
 -- filter is daarom uit de CTE gehaald; de drie bestaande kolommen
 -- (combi_levering_aantal_orders / wacht_op_combi_levering /
--- combi_levering_andere_orders) behouden hun pre-575-semantiek exact via
--- CASE WHEN aantal_orders >= 2 in de outer SELECT (vóór mig 575 waren álle
+-- combi_levering_andere_orders) behouden hun pre-576-semantiek exact via
+-- CASE WHEN aantal_orders >= 2 in de outer SELECT (vóór mig 576 waren álle
 -- drie NULL voor solo-orders — geverifieerd in de live viewdef, alle drie
 -- kwamen uit dezelfde gefilterde CTE), de drie NIEUWE reden-kolommen komen
 -- ongefilterd door (ook bij aantal_orders = 1).
@@ -110,6 +110,6 @@ WITH bundel_per_order AS (
      LEFT JOIN bundel_per_order b ON b.order_id = o.id
      LEFT JOIN combi_levering_per_order cl ON cl.order_id = o.id;
 
-COMMENT ON VIEW orders_list IS 'Order-overzicht voor frontend OrdersTable. Sinds mig 544: afl_gln_ongekoppeld_sinds + afl_gln_gecontroleerd_op. Sinds mig 569: combi_levering_aantal_orders/wacht_op_combi_levering/combi_levering_andere_orders (Combi-levering-badge). Sinds mig 575: combi_levering_groep_subtotaal/combi_levering_drempel/combi_levering_alle_leden_pickbaar (wacht-reden zichtbaar op de badge, i.p.v. alleen dat de order wacht) — deze drie zijn OOK gevuld voor solo-orders (aantal_orders=1); de drie mig 569-badge-kolommen blijven NULL onder de 2.';
+COMMENT ON VIEW orders_list IS 'Order-overzicht voor frontend OrdersTable. Sinds mig 544: afl_gln_ongekoppeld_sinds + afl_gln_gecontroleerd_op. Sinds mig 569: combi_levering_aantal_orders/wacht_op_combi_levering/combi_levering_andere_orders (Combi-levering-badge). Sinds mig 576: combi_levering_groep_subtotaal/combi_levering_drempel/combi_levering_alle_leden_pickbaar (wacht-reden zichtbaar op de badge, i.p.v. alleen dat de order wacht) — deze drie zijn OOK gevuld voor solo-orders (aantal_orders=1); de drie mig 569-badge-kolommen blijven NULL onder de 2.';
 
 NOTIFY pgrst, 'reload schema';

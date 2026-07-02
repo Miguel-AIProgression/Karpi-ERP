@@ -28,7 +28,7 @@ export function CombiLeveringBadge({ order }: { order: Pick<OrderRow, 'combi_lev
   )
 }
 
-/** Mig 575: fallback-drempel — mirrort combi_levering_status z'n eigen
+/** Mig 576: fallback-drempel — mirrort combi_levering_status z'n eigen
  *  COALESCE(verzend_drempel, 500) (SQL bron-van-waarheid); de view geeft de
  *  rauwe (nullable) verzend_drempel door, de fallback leeft hier. */
 const DEFAULT_DREMPEL = 500
@@ -68,11 +68,11 @@ export type CombiWachtRedenVelden = Pick<
 >
 
 /** Pure gate + reden voor één order. "Wacht" = `wacht_op_combi_levering`
- *  (alleen gevuld bij groepen ≥ 2 leden — pre-575-semantiek van orders_list,
+ *  (alleen gevuld bij groepen ≥ 2 leden — pre-576-semantiek van orders_list,
  *  bewust behouden) ÓF order-status 'Wacht op combi-levering' (mig 563) —
  *  dat laatste dekt de SOLO wachtende order (aantal_orders = 1): die heeft
  *  geen badge en geen wacht-vlag in de view, maar wél de status én (sinds
- *  mig 575, ongefilterd) de reden-velden — en juist daar is
+ *  mig 576, ongefilterd) de reden-velden — en juist daar is
  *  "nog € X nodig" het meest waardevol. */
 export function combiWachtRedenVoorOrder(order: CombiWachtRedenVelden): string | null {
   const wacht =

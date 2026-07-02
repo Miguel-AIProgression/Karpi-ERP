@@ -3,7 +3,7 @@ import { combiWachtReden, combiWachtRedenVoorOrder } from './combi-levering-badg
 import type { CombiWachtRedenVelden } from './combi-levering-badge'
 import { formatCurrency } from '@/lib/utils/formatters'
 
-// Mig 575: pure wacht-reden-helper achter CombiWachtRedenLine. Getest zonder
+// Mig 576: pure wacht-reden-helper achter CombiWachtRedenLine. Getest zonder
 // component-rendering — puur de tekst-afleiding uit (subtotaal, drempel,
 // alle_leden_pickbaar), spiegelt combi_levering_status z'n SQL-logica.
 // Verwachte teksten worden via formatCurrency zelf opgebouwd (i.p.v. de
@@ -45,9 +45,9 @@ describe('combiWachtReden', () => {
 })
 
 // De order-niveau gate: wacht_op_combi_levering (alleen gevuld bij groepen
-// ≥ 2, pre-575-semantiek) ÓF status 'Wacht op combi-levering' — de laatste
+// ≥ 2, pre-576-semantiek) ÓF status 'Wacht op combi-levering' — de laatste
 // dekt de solo wachtende order (aantal_orders=1, geen badge, geen wacht-vlag
-// in de view, wél reden-velden sinds mig 575).
+// in de view, wél reden-velden sinds mig 576).
 function orderVelden(over: Partial<CombiWachtRedenVelden> = {}): CombiWachtRedenVelden {
   return {
     status: 'Nieuw',
