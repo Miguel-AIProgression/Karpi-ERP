@@ -1,4 +1,4 @@
--- Migratie 567: start_deelzending blokkeert nu ook een order die op
+-- Migratie 573: start_deelzending blokkeert nu ook een order die op
 -- 'Wacht op combi-levering' staat (ADR-0040/Anker 4, audit-blocker 02-07).
 --
 -- Probleem: start_deelzending's eindstatus-guard toetste alleen op
@@ -8,9 +8,9 @@
 -- zichtbaar maakte in Pick & Ship en dus alsnog gepickt/verzonden kon
 -- worden — een stille bypass van de vrachtvrije-drempeltoets: geen
 -- drempeltoets, geen VERZEND-regel, geen reden-audit, geen sibling-herwaar-
--- dering (mig 561). De bedoelde route voor "toch nu al verzenden" is de
+-- dering (mig 567). De bedoelde route voor "toch nu al verzenden" is de
 -- order-niveau combi_levering_override ("Toch verzenden met verzendkosten",
--- mig 553), die de status, de VERZEND-regel én de siblings netjes
+-- mig 559), die de status, de VERZEND-regel én de siblings netjes
 -- herwaardeert.
 --
 -- Fix: één extra guard direct ná de bestaande eindstatus-guard (e), vóór de
@@ -23,7 +23,7 @@
 -- toevoeging is de nieuwe IF-guard. Geen wijziging aan p_override_reden-
 -- gedrag: die overrulet nog altijd alleen de deelleveringen_toegestaan-check
 -- (d), niet de nieuwe Combi-levering-guard — de combi-override is een apart,
--- expliciet mechanisme (mig 553), geen vrije-tekst-override op deze RPC.
+-- expliciet mechanisme (mig 559), geen vrije-tekst-override op deze RPC.
 
 CREATE OR REPLACE FUNCTION public.start_deelzending(p_order_id bigint, p_regel_ids bigint[], p_picker_id bigint, p_override_reden text DEFAULT NULL::text)
  RETURNS TABLE(zending_id bigint, zending_nr text, vervoerder_code text)
@@ -58,10 +58,10 @@ BEGIN
       USING ERRCODE = 'invalid_parameter_value';
   END IF;
 
-  -- Mig 567 (ADR-0040/Anker 4): een Combi-levering-wachtende order mag niet
+  -- Mig 573 (ADR-0040/Anker 4): een Combi-levering-wachtende order mag niet
   -- via een deelzending stilletjes ontsnappen — de bedoelde route is de
   -- order-override ("Toch verzenden met verzendkosten"), die de status, de
-  -- VERZEND-regel én de siblings netjes herwaardeert (mig 561).
+  -- VERZEND-regel én de siblings netjes herwaardeert (mig 567).
   IF v_order.status = 'Wacht op combi-levering' THEN
     RAISE EXCEPTION 'Order % wacht op Combi-levering (vrachtvrije drempel nog niet gehaald). Zet eerst "Toch verzenden met verzendkosten" (combi-levering-override) aan op de order voordat je een deelzending start.', v_order.order_nr
       USING ERRCODE = 'invalid_parameter_value';
@@ -187,9 +187,9 @@ COMMENT ON FUNCTION public.start_deelzending(bigint, bigint[], bigint, text) IS
   'Start een deelzending voor een subset orderregels (mig 413, override-reden '
   'mig 473). Guards: (e) eindstatus, (d) deelleveringen-toestemming '
   '(overrulebaar met reden), (a) regels horen bij order, (b) alle regels '
-  'pickbaar, (c) geen regel al in actieve zending. Mig 567 (ADR-0040/Anker 4): '
+  'pickbaar, (c) geen regel al in actieve zending. Mig 573 (ADR-0040/Anker 4): '
   'extra guard direct na (e) — een order op ''Wacht op combi-levering'' mag '
   'niet via een deelzending ontsnappen aan de vrachtvrije-drempeltoets; '
-  'gebruik de combi-levering-override (mig 553) op de order in plaats daarvan.';
+  'gebruik de combi-levering-override (mig 559) op de order in plaats daarvan.';
 
 NOTIFY pgrst, 'reload schema';

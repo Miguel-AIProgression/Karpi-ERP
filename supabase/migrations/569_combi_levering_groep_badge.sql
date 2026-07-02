@@ -1,4 +1,4 @@
--- Migratie 563: Combi-levering-groep zichtbaar op orders-overview + order-detail
+-- Migratie 569: Combi-levering-groep zichtbaar op orders-overview + order-detail
 --
 -- Gebruikerseis (02-07-2026): orders die samen op de vrachtvrije-drempel wachten
 -- (of 'm net gehaald hebben) moeten ook op het orders-overzicht en de order-
@@ -7,7 +7,7 @@
 -- zending-bundel (mig 222/orders_list.bundel_zending_nr — dat is een apart,
 -- al bestaand concept met eigen badge in orders-table.tsx).
 --
--- combi_levering_status (mig 551) had per order alleen een boolean/subtotaal,
+-- combi_levering_status (mig 557) had per order alleen een boolean/subtotaal,
 -- geen groepsgrootte of -leden. Voegt twee kolommen toe aan het EIND van de
 -- view (CREATE OR REPLACE VIEW-veilig — bestaande kolommen/volgorde ongewijzigd).
 
@@ -58,10 +58,10 @@ JOIN groep g ON g.debiteur_nr = l.debiteur_nr AND g.adres_norm = l.adres_norm
 JOIN debiteuren d ON d.debiteur_nr = l.debiteur_nr;
 
 COMMENT ON VIEW combi_levering_status IS
-  'Mig 551/563 (ADR-0039/0040): per order, alleen voor klanten met '
+  'Mig 557/569 (ADR-0039/0040): per order, alleen voor klanten met '
   'combi_levering=TRUE en niet-overruled/niet-dropshipment orders: '
   'wacht_op_combi_levering=TRUE zolang de (debiteur x adres-norm)-groep de '
-  'vrachtvrije-drempel niet haalt. aantal_orders/order_ids (mig 563) = '
+  'vrachtvrije-drempel niet haalt. aantal_orders/order_ids (mig 569) = '
   'groepsgrootte + leden, voedt de Combi-levering-badge op orders-overview/ '
   'order-detail (visuele koppeling, ongeacht wacht-status). Orders die niet in '
   'deze view voorkomen zijn nooit deelnemer — consumenten gebruiken LEFT JOIN.';
@@ -140,7 +140,7 @@ SELECT
   o.afl_land,
   o.afl_gln_ongekoppeld_sinds,
   o.afl_gln_gecontroleerd_op,
-  -- Mig 563: Combi-levering-groep (financiële bundel, ADR-0039/0040 — los van
+  -- Mig 569: Combi-levering-groep (financiële bundel, ADR-0039/0040 — los van
   -- de fysieke zending-bundel hierboven).
   cl.combi_levering_aantal_orders,
   cl.wacht_op_combi_levering,
@@ -152,7 +152,7 @@ LEFT JOIN combi_levering_per_order cl ON cl.order_id   = o.id;
 
 COMMENT ON VIEW orders_list IS
   'Order-overzicht voor frontend OrdersTable. Sinds mig 544: afl_gln_ongekoppeld_sinds '
-  '+ afl_gln_gecontroleerd_op. Sinds mig 563: combi_levering_aantal_orders/'
+  '+ afl_gln_gecontroleerd_op. Sinds mig 569: combi_levering_aantal_orders/'
   'wacht_op_combi_levering/combi_levering_andere_orders (Combi-levering-badge).';
 
 NOTIFY pgrst, 'reload schema';

@@ -1,10 +1,10 @@
--- Migratie 560: order_pickbaarheid — Combi-levering-wachtende order uit Pick & Ship (ADR-0040)
+-- Migratie 566: order_pickbaarheid — Combi-levering-wachtende order uit Pick & Ship (ADR-0040)
 --
 -- order_pickbaarheid.pick_ship_zichtbaar was tot nu toe PUUR regel-gebaseerd
 -- (orderregel_pickbaarheid) plus een paar losse status-onafhankelijke guards
 -- (bv. mig 521's open-manco-guard) — geen enkele `orders.status`-filter. Een
 -- order in 'Wacht op combi-levering' heeft per definitie alle eigen regels
--- pickbaar (dat is precies waarom hij die status kreeg, mig 558/559) en zou
+-- pickbaar (dat is precies waarom hij die status kreeg, mig 564/565) en zou
 -- dus zonder deze guard gewoon zichtbaar blijven in Pick & Ship. Zelfde stijl
 -- als mig 521's manco-guard: alleen op de reguliere pick_ship_zichtbaar-tak,
 -- NIET op de actieve-zending-OR-tak (die is hier nooit van toepassing — een
@@ -35,8 +35,8 @@ SELECT
            AND orm.pick_backorder_sinds IS NOT NULL
            AND orm.pick_backorder_geannuleerd_op IS NULL
       )
-      -- Mig 560 (ADR-0040): Combi-levering-wachtende order nooit in Pick & Ship —
-      -- de order_status-gate (mig 558/559) is hier de bron-van-waarheid.
+      -- Mig 566 (ADR-0040): Combi-levering-wachtende order nooit in Pick & Ship —
+      -- de order_status-gate (mig 564/565) is hier de bron-van-waarheid.
       AND bool_and(o.status <> 'Wacht op combi-levering'::order_status)
     )
     OR EXISTS (
@@ -60,7 +60,7 @@ LEFT JOIN debiteuren d ON d.debiteur_nr = o.debiteur_nr
 GROUP BY op.order_id, d.deelleveringen_toegestaan;
 
 COMMENT ON VIEW order_pickbaarheid IS
-  'Order-niveau pickbaarheid (mig 386/476/479/521/560). Mig 560 (ADR-0040): '
+  'Order-niveau pickbaarheid (mig 386/476/479/521/566). Mig 566 (ADR-0040): '
   'pick_ship_zichtbaar sluit een order met status ''Wacht op combi-levering'' uit '
   '(Combi-levering-drempel nog niet gehaald door de hele adres-groep); een '
   'actieve Gepland/Picken-zending blijft een override — nooit van toepassing '

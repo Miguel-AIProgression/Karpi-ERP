@@ -1,7 +1,7 @@
--- Migratie 559: herbereken_wacht_status — Combi-levering-bewust + groep-cascade (ADR-0040)
+-- Migratie 565: herbereken_wacht_status — Combi-levering-bewust + groep-cascade (ADR-0040)
 --
 -- Combi-levering is een groepsbeslissing (2D-sleutel debiteur_nr × genormaliseerd
--- afleveradres, view combi_levering_status uit mig 551/555/556) — anders dan de
+-- afleveradres, view combi_levering_status uit mig 557/561/562) — anders dan de
 -- overige drie wacht-criteria hierbeneden, die puur uit DÉZE order zelf komen.
 -- herbereken_wacht_status draait bij elke orderregel-/claim-/snijplan-mutatie
 -- van ÉÉN order, maar een sibling in dezelfde groep verandert daardoor niet mee
@@ -14,7 +14,7 @@
 -- Signatuurwijziging (1→2 args) vereist DROP + CREATE (mig 490-precedent).
 -- Body is de mig 468-versie (inclusief de 'verzonden'-claim-status-fix) plus:
 --   (a) een 4e verzamelde boolean v_heeft_combi_wacht uit combi_levering_status,
---       doorgegeven aan de nu 5-arg derive_wacht_status (mig 558);
+--       doorgegeven aan de nu 5-arg derive_wacht_status (mig 564);
 --   (b) de groep-cascade-stap, ONVOORWAARDELIJK na de transitie-stap — ook als
 --       v_doel NULL was voor DEZE order (bv. een annulering is voor de
 --       geannuleerde order zelf een no-op, maar moet wél zijn siblings
@@ -29,7 +29,7 @@
 -- cascade=FALSE aan — die cascadet zelf nooit verder, dus max. recursiediepte 2.
 --
 -- Sibling-lookup gaat BEWUST rechtstreeks via orders/debiteuren (dezelfde
--- WHERE-predicaten als combi_levering_status's leden-CTE, mig 555), niet via
+-- WHERE-predicaten als combi_levering_status's leden-CTE, mig 561), niet via
 -- de view zelf — de view kan voor een net-uitgesloten order (bv. net
 -- geannuleerd, in dezelfde transactie) een lege/inconsistente rij geven.
 
@@ -90,7 +90,7 @@ BEGIN
       )
   ) INTO v_heeft_maatwerk;
 
-  -- 4) Combi-levering (mig 558/ADR-0040) — geen rij in de view = nooit geblokkeerd.
+  -- 4) Combi-levering (mig 564/ADR-0040) — geen rij in de view = nooit geblokkeerd.
   SELECT wacht_op_combi_levering INTO v_heeft_combi_wacht
     FROM combi_levering_status WHERE order_id = p_order_id;
   v_heeft_combi_wacht := COALESCE(v_heeft_combi_wacht, FALSE);
@@ -106,7 +106,7 @@ BEGIN
     );
   END IF;
 
-  -- Groep-cascade (mig 559/ADR-0040): onvoorwaardelijk, ook als v_doel NULL was.
+  -- Groep-cascade (mig 565/ADR-0040): onvoorwaardelijk, ook als v_doel NULL was.
   IF p_cascade_groep THEN
     SELECT o.debiteur_nr, _normaliseer_afleveradres(o.afl_adres, o.afl_postcode, o.afl_land)
       INTO v_debiteur_nr, v_adres_norm
@@ -133,7 +133,7 @@ $function$;
 COMMENT ON FUNCTION public.herbereken_wacht_status(bigint, boolean) IS
   'Mig 218+258+272/273+275+346+351+352+468: verzamelt claim-/snijplan-state en '
   'delegeert de statuskeuze aan derive_wacht_status() (single-source). '
-  'Mig 559 (ADR-0040): 2e parameter p_cascade_groep (default TRUE) — herevalueert '
+  'Mig 565 (ADR-0040): 2e parameter p_cascade_groep (default TRUE) — herevalueert '
   'na de eigen transitie ook alle Combi-levering-siblings (debiteur × adres-norm), '
   'met cascade=FALSE in de recursieve aanroep zodat de cascade nooit cyclisch '
   'wordt (max. recursiediepte 2). Schrijft via _apply_transitie. '

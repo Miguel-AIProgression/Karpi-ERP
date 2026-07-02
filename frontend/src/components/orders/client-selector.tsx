@@ -44,7 +44,7 @@ export interface SelectedClient {
   toeslag_einddatum: string | null
   /** Mig 117: per_zending = factuur direct na elke zending; wekelijks = verzamelfactuur maandag 05:00 UTC. */
   factuurvoorkeur: 'per_zending' | 'wekelijks' | null
-  /** Mig 550/ADR-0039: klant wil wachten met verzenden tot de gecombineerde
+  /** Mig 556/ADR-0039: klant wil wachten met verzenden tot de gecombineerde
    *  openstaande orders naar hetzelfde adres de vrachtvrije-drempel bereiken. */
   combi_levering: boolean
 }

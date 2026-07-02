@@ -10,7 +10,7 @@ import { normaliseerAdresKey } from '@/lib/orders/normaliseer-adres'
  * operator op het punt staat achter te laten door 'm niet aan te vinken. Pure
  * functie, geen fetch.
  *
- * Mig 557-560 (ADR-0040): sinds de wacht-beslissing zelf in `orders.status`
+ * Mig 563-566 (ADR-0040): sinds de wacht-beslissing zelf in `orders.status`
  * zit (order bereikt Pick & Ship pas als hij écht startbaar is,
  * order_pickbaarheid-guard), is elke order die hier binnenkomt per definitie
  * al startbaar — de vroegere `wacht_op_combi_levering`-check is dus vervallen.

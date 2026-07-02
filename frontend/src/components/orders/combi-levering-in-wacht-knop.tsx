@@ -21,7 +21,7 @@ interface OrderCombiLeveringRow {
 }
 
 // Code-review-fix: zelfde statuslijst als de guard in
-// herwaardeer_combi_levering_verzendregel (mig 555) — een order die al fysiek
+// herwaardeer_combi_levering_verzendregel (mig 561) — een order die al fysiek
 // onderweg/verzonden/geannuleerd is, mag deze knop niet meer tonen (het
 // klantbrede combi_levering-effect + een nieuwe orderbevestiging zijn dan
 // niet meer van toepassing op DEZE order).
@@ -30,7 +30,7 @@ const GEEN_COMBI_LEVERING_KNOP_STATUSSEN: ReadonlySet<string> = new Set([
 ])
 
 /**
- * Mig 554/ADR-0039: scenario waarin een klant ná zijn orderbevestiging alsnog
+ * Mig 560/ADR-0039: scenario waarin een klant ná zijn orderbevestiging alsnog
  * belt om te wachten i.p.v. verzendkosten te betalen. Zichtbaar zolang de
  * klant nog niet op combi_levering staat (anders is er niets te "zetten") en
  * deze order niet al fysiek onderweg/verzonden/geannuleerd is.

@@ -696,7 +696,7 @@ export function OrderRegelsTable({ regels, isLoading, levertijden, claims, order
 
   // Toon de deelzending-knop alleen als er ≥2 niet-pseudo-regels zijn waarvan
   // minstens 1 eerder klaar is dan de order-verzendweek.
-  // Mig 567: wachtende Combi-levering-order → geen deelzending (gebruik de
+  // Mig 573: wachtende Combi-levering-order → geen deelzending (gebruik de
   // combi-levering-override op de order; zie ook de server-side guard).
   const wachtOpCombiLevering = orderStatus === 'Wacht op combi-levering'
   const heeftDeelzendingKandidaat = !isEindstatus && !wachtOpCombiLevering && orderVerzendweek != null && regels.some(

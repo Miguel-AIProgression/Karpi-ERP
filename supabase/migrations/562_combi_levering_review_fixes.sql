@@ -1,6 +1,6 @@
--- Migratie 556: Combi-levering — drie fixes gevonden bij (tweede) code-review
--- ná mig 550-555 (ADR-0039). Alle drie zijn CREATE OR REPLACE op een functie/
--- view die al in 553/555 stond; elke body hieronder is de volledige, actuele
+-- Migratie 562: Combi-levering — drie fixes gevonden bij (tweede) code-review
+-- ná mig 556-561 (ADR-0039). Alle drie zijn CREATE OR REPLACE op een functie/
+-- view die al in 559/561 stond; elke body hieronder is de volledige, actuele
 -- versie (opgehaald uit die migraties) plus de beschreven toevoeging/wijziging.
 
 -- ============================================================================
@@ -11,12 +11,12 @@
 -- via `AND NOT COALESCE(oreg.is_vrije_regel, FALSE)` uit orderregel_pickbaarheid
 -- worden gehouden). Mig 542 (alle-intake-kanalen-Concept, al op main) nam
 -- abusievelijk een oudere versie van de functie-body als basis en liet
--- is_vrije_regel weer weg; mig 553 kopieerde op zijn beurt mig 542's
+-- is_vrije_regel weer weg; mig 559 kopieerde op zijn beurt mig 542's
 -- (al-regressed) body 1-op-1. Zonder deze kolom persisteert een nieuwe vrije
 -- regel altijd is_vrije_regel=FALSE, wordt hij NIET uitgesloten van
 -- orderregel_pickbaarheid, kan hij nooit een voorraadclaim krijgen (NULL
 -- artikelnr) en blokkeert hij de hele order permanent in Pick & Ship.
--- Body = mig 553 + is_vrije_regel terug in de order_regels-INSERT (mig 524-stijl).
+-- Body = mig 559 + is_vrije_regel terug in de order_regels-INSERT (mig 524-stijl).
 
 CREATE OR REPLACE FUNCTION public.create_order_with_lines(p_order jsonb, p_regels jsonb)
  RETURNS jsonb
@@ -156,8 +156,8 @@ AS $$
 $$;
 
 COMMENT ON FUNCTION combi_levering_orderregel_subtotaal(BIGINT) IS
-  'Mig 551/556: order-subtotaal excl. admin-pseudo-regels (ADR-0018), voor de '
-  'Combi-levering-drempeltoets. Was tot mig 556 hardcoded op <> ''VERZEND'' '
+  'Mig 557/562: order-subtotaal excl. admin-pseudo-regels (ADR-0018), voor de '
+  'Combi-levering-drempeltoets. Was tot mig 562 hardcoded op <> ''VERZEND'' '
   '(mirrort voorgestelde_zending_bundels/mig 229) — nu de generieke '
   'is_admin_pseudo()-predicaat zodat VORMTOESLAG/DROPSHIP-*/BUNDELKORTING/'
   'DREMPELKORTING ook niet meetellen.';
@@ -218,12 +218,12 @@ JOIN groep g ON g.debiteur_nr = l.debiteur_nr AND g.adres_norm = l.adres_norm
 JOIN debiteuren d ON d.debiteur_nr = l.debiteur_nr;
 
 COMMENT ON VIEW combi_levering_status IS
-  'Mig 551/555/556 (ADR-0039): per order, alleen voor klanten met combi_levering=TRUE '
+  'Mig 557/561/562 (ADR-0039): per order, alleen voor klanten met combi_levering=TRUE '
   'en niet-overruled/niet-dropshipment/nog-niet-gestarte orders: wacht_op_combi_levering=TRUE '
   'zolang de (debiteur × adres-norm)-groep de vrachtvrije-drempel niet haalt, '
   'OF de drempel wel haalt maar niet al zijn leden individueel pickbaar zijn. '
-  'Mig 555: sluit In pickronde/Deels verzonden uit van het groep-subtotaal. '
-  'Mig 556: NULL verzend_drempel valt terug op €500 (SHIPPING_THRESHOLD), '
+  'Mig 561: sluit In pickronde/Deels verzonden uit van het groep-subtotaal. '
+  'Mig 562: NULL verzend_drempel valt terug op €500 (SHIPPING_THRESHOLD), '
   'consistent met de frontend-fallback in applyShippingLogic — was voorheen '
   '"geen drempel = altijd gehaald", nu hetzelfde gedrag als een order zonder '
   'Combi-levering met een niet-ingevulde drempel.';
@@ -244,7 +244,7 @@ BEGIN
   SELECT * INTO v_order FROM orders WHERE id = p_order_id;
   IF NOT FOUND THEN RETURN; END IF;
 
-  -- Mig 555: order al fysiek onderweg (in pickronde/deels verzonden) of in
+  -- Mig 561: order al fysiek onderweg (in pickronde/deels verzonden) of in
   -- een eindstatus — nooit meer aankomen aan de VERZEND-regel.
   IF v_order.status IN ('Verzonden', 'Geannuleerd', 'In pickronde', 'Deels verzonden') THEN
     RETURN;
@@ -270,7 +270,7 @@ BEGIN
   END IF;
 
   v_subtotaal := combi_levering_orderregel_subtotaal(p_order_id);
-  -- Mig 556: COALESCE-fallback 500 (was 0) — zelfde SHIPPING_THRESHOLD-default
+  -- Mig 562: COALESCE-fallback 500 (was 0) — zelfde SHIPPING_THRESHOLD-default
   -- als applyShippingLogic (frontend/src/lib/constants/shipping.ts).
   v_moet_verzendregel := NOT v_debiteur.gratis_verzending
     AND v_subtotaal < COALESCE(v_debiteur.verzend_drempel, 500);
@@ -293,10 +293,10 @@ END;
 $$;
 
 COMMENT ON FUNCTION herwaardeer_combi_levering_verzendregel(BIGINT) IS
-  'Mig 552/555/556 (ADR-0039): voegt/verwijdert de VERZEND-orderregel op een '
+  'Mig 558/561/562 (ADR-0039): voegt/verwijdert de VERZEND-orderregel op een '
   'order, rekening houdend met of de klant/order in een Combi-levering-'
-  'wachtgroep zit. Idempotent. Mig 555: no-op voor orders die al In pickronde/'
-  'Deels verzonden/Verzonden/Geannuleerd zijn. Mig 556: NULL verzend_drempel '
+  'wachtgroep zit. Idempotent. Mig 561: no-op voor orders die al In pickronde/'
+  'Deels verzonden/Verzonden/Geannuleerd zijn. Mig 562: NULL verzend_drempel '
   'valt terug op €500, consistent met de view en met applyShippingLogic.';
 
 NOTIFY pgrst, 'reload schema';

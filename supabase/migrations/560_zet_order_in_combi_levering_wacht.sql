@@ -1,10 +1,10 @@
--- Migratie 554 (hernummerd van 489): order-detail-knop "zet in de wacht voor Combi-levering" (ADR-0039)
+-- Migratie 560 (hernummerd van 489): order-detail-knop "zet in de wacht voor Combi-levering" (ADR-0039)
 --
 -- Zet debiteuren.combi_levering=TRUE (raakt daardoor ALLE openstaande orders
 -- van deze klant naar dit soort adressen, niet alleen p_order_id — bewuste
 -- keuze, bevestigd tijdens de grilling-sessie: de klant schakelt hiermee
 -- feitelijk helemaal over naar combi-levering-gedrag). De bestaande trigger
--- trg_debiteuren_combi_levering (mig 552) herwaardeert vanzelf de
+-- trg_debiteuren_combi_levering (mig 558) herwaardeert vanzelf de
 -- VERZEND-regels van al die orders.
 
 CREATE OR REPLACE FUNCTION zet_order_in_combi_levering_wacht(p_order_id BIGINT)
@@ -30,8 +30,8 @@ END;
 $$;
 
 COMMENT ON FUNCTION zet_order_in_combi_levering_wacht(BIGINT) IS
-  'Mig 554 (ADR-0039): order-detail-knop-RPC. Zet debiteuren.combi_levering=TRUE '
+  'Mig 560 (ADR-0039): order-detail-knop-RPC. Zet debiteuren.combi_levering=TRUE '
   '(klant-breed) en orders.combi_levering_override=FALSE voor deze order. '
-  'Trigger mig 552 herwaardeert de VERZEND-regels van alle geraakte orders.';
+  'Trigger mig 558 herwaardeert de VERZEND-regels van alle geraakte orders.';
 
 NOTIFY pgrst, 'reload schema';

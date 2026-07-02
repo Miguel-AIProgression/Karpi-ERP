@@ -1,12 +1,12 @@
--- Migratie 564: herstel combi_levering_status — mig 563 herbouwde de view
--- vanaf de pre-555/556-body en liet daarmee twee al-gefixte bugs terugkeren:
+-- Migratie 570: herstel combi_levering_status — mig 569 herbouwde de view
+-- vanaf de pre-561/562-body en liet daarmee twee al-gefixte bugs terugkeren:
 --   (1) 'In pickronde'/'Deels verzonden' telden weer mee in het groep-subtotaal
---       (mig 555-fix weg) — een achterblijver toonde "drempel gehaald" terwijl
+--       (mig 561-fix weg) — een achterblijver toonde "drempel gehaald" terwijl
 --       zijn maat al vertrokken was;
 --   (2) NULL verzend_drempel gold weer als "geen drempel = altijd gehaald"
---       (mig 556-fix weg) — feature stil buiten werking voor die klanten.
--- Deze body = mig 556-semantiek + de mig 563-kolommen (aantal_orders/order_ids).
--- Nieuw t.o.v. 556 (audit 02-07): 'Concept' en alleen_productie uitgesloten —
+--       (mig 562-fix weg) — feature stil buiten werking voor die klanten.
+-- Deze body = mig 562-semantiek + de mig 569-kolommen (aantal_orders/order_ids).
+-- Nieuw t.o.v. 562 (audit 02-07): 'Concept' en alleen_productie uitgesloten —
 -- een onbevestigde Concept-order (mig 540-542) mag het groepssubtotaal niet
 -- vullen en de groep niet blokkeren; Basta-orders (ADR-0029) hebben geen
 -- RugFlow-prijzen en verzenden buiten RugFlow om.
@@ -59,14 +59,14 @@ JOIN groep g ON g.debiteur_nr = l.debiteur_nr AND g.adres_norm = l.adres_norm
 JOIN debiteuren d ON d.debiteur_nr = l.debiteur_nr;
 
 COMMENT ON VIEW combi_levering_status IS
-  'Mig 551/555/556/563/564 (ADR-0039/0040): per order, alleen voor klanten met '
+  'Mig 557/561/562/569/570 (ADR-0039/0040): per order, alleen voor klanten met '
   'combi_levering=TRUE en niet-overruled/niet-dropshipment/nog-niet-gestarte, '
   'bevestigde (non-Concept), niet-alleen_productie orders: '
   'wacht_op_combi_levering=TRUE zolang de (debiteur x adres-norm)-groep de '
   'vrachtvrije-drempel (NULL -> 500, = frontend SHIPPING_THRESHOLD) niet haalt, '
   'OF de drempel haalt maar niet alle leden pickbaar zijn. '
-  'aantal_orders/order_ids (mig 563) voeden de groeps-badge. '
-  'Mig 564: herstel van de mig 563-regressie (555/556-fixes terug) + Concept/'
+  'aantal_orders/order_ids (mig 569) voeden de groeps-badge. '
+  'Mig 570: herstel van de mig 569-regressie (561/562-fixes terug) + Concept/'
   'alleen_productie-uitsluiting.';
 
 NOTIFY pgrst, 'reload schema';

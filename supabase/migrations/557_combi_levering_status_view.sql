@@ -1,4 +1,4 @@
--- Migratie 551: Combi-levering-wachtgroep (hernummerd van 486, collisie op origin/main) — live view (ADR-0039)
+-- Migratie 557: Combi-levering-wachtgroep (hernummerd van 486, collisie op origin/main) — live view (ADR-0039)
 --
 -- Puur lezend, geen state — herevalueert bij elke query, net als
 -- voorgestelde_zending_bundels (mig 229). Sleutel is (debiteur_nr, adres-norm),
@@ -22,7 +22,7 @@ AS $$
 $$;
 
 COMMENT ON FUNCTION combi_levering_orderregel_subtotaal(BIGINT) IS
-  'Mig 551: order-subtotaal excl. VERZEND, voor de Combi-levering-drempeltoets. '
+  'Mig 557: order-subtotaal excl. VERZEND, voor de Combi-levering-drempeltoets. '
   'Zelfde exclusie als voorgestelde_zending_bundels (mig 229) — geen tweede '
   'canonieke berekening.';
 
@@ -72,7 +72,7 @@ JOIN groep g ON g.debiteur_nr = l.debiteur_nr AND g.adres_norm = l.adres_norm
 JOIN debiteuren d ON d.debiteur_nr = l.debiteur_nr;
 
 COMMENT ON VIEW combi_levering_status IS
-  'Mig 551 (ADR-0039): per order, alleen voor klanten met combi_levering=TRUE '
+  'Mig 557 (ADR-0039): per order, alleen voor klanten met combi_levering=TRUE '
   'en niet-overruled/niet-dropshipment orders: wacht_op_combi_levering=TRUE '
   'zolang de (debiteur × adres-norm)-groep de vrachtvrije-drempel niet haalt, '
   'OF de drempel wel haalt maar niet al zijn leden individueel pickbaar zijn '

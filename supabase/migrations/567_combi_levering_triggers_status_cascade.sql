@@ -1,9 +1,9 @@
--- Migratie 561: Combi-levering-triggers herevalueren nu ook orders.status (ADR-0040)
+-- Migratie 567: Combi-levering-triggers herevalueren nu ook orders.status (ADR-0040)
 --
--- mig 552/555's twee triggers herwaardeerden tot nu toe alleen de VERZEND-
+-- mig 558/561's twee triggers herwaardeerden tot nu toe alleen de VERZEND-
 -- orderregel (herwaardeer_combi_levering_verzendregel) bij een override- of
 -- klant-instelling-toggle. Zonder aanvullende aanroep zou de nieuwe
--- order_status-gate (mig 558/559) pas bij de eerstvolgende toevallige
+-- order_status-gate (mig 564/565) pas bij de eerstvolgende toevallige
 -- orderregel-/claim-mutatie herevalueren — een operator die de instelling
 -- omzet, verwacht dat de order DIRECT verschijnt/verdwijnt in Pick & Ship.
 --
@@ -19,7 +19,7 @@
 -- Volgorde van de twee PERFORM-aanroepen maakt niet uit (beide zijn puur
 -- lezend-dan-schrijvend op onafhankelijke kolommen: order_regels.VERZEND-regel
 -- resp. orders.status) — VERZEND-regel eerst gehouden voor leesbaarheid t.o.v.
--- mig 552/555.
+-- mig 558/561.
 
 CREATE OR REPLACE FUNCTION trg_orders_combi_levering_override_fn()
 RETURNS TRIGGER
@@ -56,11 +56,11 @@ END;
 $$;
 
 COMMENT ON FUNCTION trg_orders_combi_levering_override_fn() IS
-  'Mig 552/561 (ADR-0039/0040): bij override-toggle op één order, herwaardeer '
+  'Mig 558/567 (ADR-0039/0040): bij override-toggle op één order, herwaardeer '
   'zowel de VERZEND-regel als orders.status (met groep-cascade, cascade=TRUE).';
 
 COMMENT ON FUNCTION trg_debiteuren_combi_levering_fn() IS
-  'Mig 552/555/561 (ADR-0039/0040): bij klant-instelling-toggle, herwaardeer voor '
+  'Mig 558/561/567 (ADR-0039/0040): bij klant-instelling-toggle, herwaardeer voor '
   'elk open order van de klant zowel de VERZEND-regel als orders.status '
   '(cascade=FALSE — deze buitenste loop bezoekt zelf al elk groepslid).';
 

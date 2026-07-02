@@ -220,7 +220,7 @@ export function OrderDetailPage() {
           />
         )}
 
-      {/* Mig 554/ADR-0039: klant belt na de orderbevestiging alsnog om te
+      {/* Mig 560/ADR-0039: klant belt na de orderbevestiging alsnog om te
           wachten op Combi-levering i.p.v. verzendkosten te betalen. De
           component bewaakt zelf volledig wanneer hij zichtbaar is (klant al
           op combi_levering, of order al Geannuleerd/Verzonden/In pickronde/

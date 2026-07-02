@@ -1,4 +1,4 @@
--- Migratie 566: order-edits herberekenen voortaan de Combi-levering-status
+-- Migratie 572: order-edits herberekenen voortaan de Combi-levering-status
 -- (audit-blocker 02-07). trg_orderregel_herallocateer (mig 146) vuurt alleen
 -- op artikelnr/te_leveren/is_maatwerk — een prijs-/korting-edit of regel-
 -- verwijdering wijzigde het groepssubtotaal zonder status-herberekening, en
@@ -6,7 +6,7 @@
 
 -- Deel 1: herbereken_combi_groep — herevalueer alle leden van één groep.
 -- Zelfde predicaten als de sibling-cascade in herbereken_wacht_status
--- (mig 559); cascade=FALSE want deze loop bezoekt zelf al elk lid.
+-- (mig 565); cascade=FALSE want deze loop bezoekt zelf al elk lid.
 CREATE OR REPLACE FUNCTION herbereken_combi_groep(
   p_debiteur_nr INTEGER,
   p_adres_norm  TEXT
@@ -36,7 +36,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION herbereken_combi_groep(INTEGER, TEXT) IS
-  'Mig 566 (ADR-0040): herevalueert alle Combi-levering-leden van één '
+  'Mig 572 (ADR-0040): herevalueert alle Combi-levering-leden van één '
   '(debiteur x adres-norm)-groep. Consument: update_order_with_lines voor de '
   'OUDE groep na een adres-/debiteurwijziging (de order zelf zit dan al in de '
   'nieuwe groep en kan de oude niet meer via de normale cascade bereiken).';
@@ -59,7 +59,7 @@ DECLARE
     v_oud_debiteur_nr    INTEGER;
     v_oud_adres_norm     TEXT;
 BEGIN
-    -- Mig 566: snapshot vóór de header-UPDATE hieronder afl_*/debiteur_nr
+    -- Mig 572: snapshot vóór de header-UPDATE hieronder afl_*/debiteur_nr
     -- overschrijft — nodig om na afloop te detecteren of de order naar een
     -- andere Combi-levering-groep is verhuisd.
     SELECT o.debiteur_nr,
@@ -242,9 +242,9 @@ BEGIN
            WHERE id = (r->>'id')::BIGINT AND order_id = p_order_id
        );
 
-    -- Mig 566: élke edit (ook prijs-only/regel-delete) herevalueert de
+    -- Mig 572: élke edit (ook prijs-only/regel-delete) herevalueert de
     -- eigen status + de (nieuwe) groep (herbereken_wacht_status cascadet
-    -- standaard, mig 559)...
+    -- standaard, mig 565)...
     PERFORM herbereken_wacht_status(p_order_id);
     -- ...en bij een groeps-verhuizing ook de achtergelaten oude groep, die
     -- de normale cascade niet meer bereikt (de order zelf zit er niet meer in).
@@ -260,6 +260,6 @@ $function$;
 
 COMMENT ON FUNCTION public.update_order_with_lines(bigint, jsonb, jsonb) IS
   'Update order header + UPSERT regels. Mig 548: cascade cleanup bij verwijderen regels — snijvoorstel_plaatsingen + confectie_orders eerst, dan snijplannen (Wacht/Gepland/Geannuleerd), dan order_regels. Late snijplannen (Snijden/+) blokkeren. Eerder: mig 547 snijplan-guard, mig 527 UPSERT, mig 406 klant_referentie. '
-  'Mig 566 (ADR-0040): herevalueert aan het eind altijd de Combi-levering-status van de order + zijn (nieuwe) groep — dekt prijs-/korting-edits en regel-verwijdering die trg_orderregel_herallocateer (mig 146) niet triggert — en bij een adres-/debiteurwijziging ook de achtergelaten OUDE groep via herbereken_combi_groep.';
+  'Mig 572 (ADR-0040): herevalueert aan het eind altijd de Combi-levering-status van de order + zijn (nieuwe) groep — dekt prijs-/korting-edits en regel-verwijdering die trg_orderregel_herallocateer (mig 146) niet triggert — en bij een adres-/debiteurwijziging ook de achtergelaten OUDE groep via herbereken_combi_groep.';
 
 NOTIFY pgrst, 'reload schema';

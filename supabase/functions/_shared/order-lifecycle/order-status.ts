@@ -7,7 +7,7 @@
 // direct door frontend-Vitest geïmporteerd (zelfde seam als derive-status.ts).
 // Set-semantiek: volgorde is NIET betekenis-dragend (mig 350-keuze).
 
-/** Statussen die actief geschreven worden (ADR-0016 + mig 308/327 + mig 557/ADR-0040). */
+/** Statussen die actief geschreven worden (ADR-0016 + mig 308/327 + mig 563/ADR-0040). */
 export const ORDER_STATUSSEN_CANONIEK = [
   'Concept', 'Klaar voor picken', 'Wacht op voorraad', 'Wacht op inkoop',
   'Wacht op maatwerk', 'Wacht op combi-levering', 'In pickronde',

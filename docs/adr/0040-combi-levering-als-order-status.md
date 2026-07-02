@@ -10,7 +10,7 @@ supersedes: 0039-combi-levering-als-startbaarheid-gate.md
 
 ADR-0039 koos bewust voor een Startbaarheid-gate (ADR-0037): een Combi-levering-order bleef `Klaar voor picken` en dus **zichtbaar in Pick & Ship**, met alleen het *starten* van de pickronde geblokkeerd via een frontend-only `wacht_op_combi_levering`-veld in `startbaarheid.ts`. De expliciet overwogen en afgewezen alternatief was een nieuwe `order_status`-waarde — de redenering destijds: "de order ís gewoon `Klaar voor picken`, een nieuwe status zou het onderscheid tussen productie-/logistiek-fase en pickronde-start-toestemming vervagen."
 
-Bij het testen (na livegang van mig 550-556) bleek dit niet de gewenste werking. De expliciete eis: een order die de vrachtvrije-drempel nog niet haalt moet **gelockt zijn op commercie, in een eigen tab, en helemaal niet in Pick & Ship verschijnen** — Pick & Ship moet schoon blijven van orders die er toch niets te zoeken hebben. ADR-0039's "geen nieuwe status"-argument bleek in de praktijk het probleem te zíjn, niet de oplossing.
+Bij het testen (na livegang van mig 556-562) bleek dit niet de gewenste werking. De expliciete eis: een order die de vrachtvrije-drempel nog niet haalt moet **gelockt zijn op commercie, in een eigen tab, en helemaal niet in Pick & Ship verschijnen** — Pick & Ship moet schoon blijven van orders die er toch niets te zoeken hebben. ADR-0039's "geen nieuwe status"-argument bleek in de praktijk het probleem te zíjn, niet de oplossing.
 
 ## Beslissing
 
@@ -18,15 +18,15 @@ Bij het testen (na livegang van mig 550-556) bleek dit niet de gewenste werking.
 
 ### Anker 1 — Laagste prioriteit in de bestaande ladder, niet in de no-touch-lijst
 
-`derive_wacht_status` (mig 558) krijgt een 5e parameter `p_wacht_op_combi_levering`, geëvalueerd ná de io-claim/tekort/maatwerk-checks en vóór de promotie naar `Klaar voor picken`. Bewust **niet** toegevoegd aan de no-touch/eindstatus-lijst: de status moet herhaaldelijk herevalueerbaar blijven en kan zowel promoveren naar `Klaar voor picken` als — symmetrisch aan het bestaande ADR-0027-claim-swap-precedent — demoveren vanuit `Klaar voor picken` als een sibling wegvalt en de groep weer onder de drempel zakt.
+`derive_wacht_status` (mig 564) krijgt een 5e parameter `p_wacht_op_combi_levering`, geëvalueerd ná de io-claim/tekort/maatwerk-checks en vóór de promotie naar `Klaar voor picken`. Bewust **niet** toegevoegd aan de no-touch/eindstatus-lijst: de status moet herhaaldelijk herevalueerbaar blijven en kan zowel promoveren naar `Klaar voor picken` als — symmetrisch aan het bestaande ADR-0027-claim-swap-precedent — demoveren vanuit `Klaar voor picken` als een sibling wegvalt en de groep weer onder de drempel zakt.
 
 ### Anker 2 — Groep-cascade in `herbereken_wacht_status`
 
-Combi-levering is een groepsbeslissing (2D-sleutel debiteur_nr × genormaliseerd afleveradres); de overige drie criteria zijn puur order-eigen. `herbereken_wacht_status` (mig 559) krijgt een `p_cascade_groep`-parameter (default TRUE): ná het herevalueren van de eigen order herevalueert dezelfde functie ook elke sibling in de groep, met `cascade=FALSE` in de recursieve aanroep zodat er nooit een cyclus ontstaat (max. recursiediepte 2). De cascade-parameter wordt bewust `FALSE` gezet in de ene call-site die zelf al over alle orders van een klant loopt (`trg_debiteuren_combi_levering_fn`), om O(n²)-overhead bij een klantbrede toggle te voorkomen.
+Combi-levering is een groepsbeslissing (2D-sleutel debiteur_nr × genormaliseerd afleveradres); de overige drie criteria zijn puur order-eigen. `herbereken_wacht_status` (mig 565) krijgt een `p_cascade_groep`-parameter (default TRUE): ná het herevalueren van de eigen order herevalueert dezelfde functie ook elke sibling in de groep, met `cascade=FALSE` in de recursieve aanroep zodat er nooit een cyclus ontstaat (max. recursiediepte 2). De cascade-parameter wordt bewust `FALSE` gezet in de ene call-site die zelf al over alle orders van een klant loopt (`trg_debiteuren_combi_levering_fn`), om O(n²)-overhead bij een klantbrede toggle te voorkomen.
 
 ### Anker 3 — Pick & Ship-zichtbaarheid wordt een status-guard
 
-`order_pickbaarheid` (mig 560) was tot nu toe puur regel-gebaseerd. Een expliciete `AND o.status <> 'Wacht op combi-levering'`-guard op de `pick_ship_zichtbaar`-tak (zelfde stijl als mig 521's open-manco-guard) is nu de daadwerkelijke bron van "niet zichtbaar in Pick & Ship".
+`order_pickbaarheid` (mig 566) was tot nu toe puur regel-gebaseerd. Een expliciete `AND o.status <> 'Wacht op combi-levering'`-guard op de `pick_ship_zichtbaar`-tak (zelfde stijl als mig 521's open-manco-guard) is nu de daadwerkelijke bron van "niet zichtbaar in Pick & Ship".
 
 ### Anker 4 — Orders-overzicht-tab is de bestaande status-dropdown
 
@@ -34,7 +34,7 @@ Combi-levering is een groepsbeslissing (2D-sleutel debiteur_nr × genormaliseerd
 
 ### Anker 5 — Wat blijft, wat vervalt
 
-Blijft ongewijzigd: `debiteuren.combi_levering`/`orders.combi_levering_override`, `combi_levering_status`-view, `combi_levering_orderregel_subtotaal`, de VERZEND-regel-triggers (mig 552/555, nu aangevuld met een status-herwaardering-aanroep, mig 561), order-form-toggle, debiteur-detail-toggle, `combi-levering-in-wacht-knop.tsx` + RPC, orderbevestiging-paragraaf.
+Blijft ongewijzigd: `debiteuren.combi_levering`/`orders.combi_levering_override`, `combi_levering_status`-view, `combi_levering_orderregel_subtotaal`, de VERZEND-regel-triggers (mig 558/561, nu aangevuld met een status-herwaardering-aanroep, mig 567), order-form-toggle, debiteur-detail-toggle, `combi-levering-in-wacht-knop.tsx` + RPC, orderbevestiging-paragraaf.
 
 Vervalt (dode code — een wachtende order bereikt Pick & Ship nooit meer): het `wacht_op_combi_levering`-veld/StartStatus-lid in `startbaarheid.ts` en de bijbehorende fetch/velden op `PickShipOrder`.
 
@@ -47,9 +47,9 @@ Blijft bestaan, maar vereenvoudigd: `combi-levering-achtergebleven.ts` — besch
 
 ## Consequenties
 
-### Migraties (feat/combi-levering, ná mig 556)
+### Migraties (feat/combi-levering, ná mig 562)
 
-557 (enum, geïsoleerd bestand) → 558 (`derive_wacht_status`, 5-arg) → 559 (`herbereken_wacht_status`, groep-cascade) → 560 (`order_pickbaarheid`-guard) → 561 (combi-levering-triggers roepen nu ook `herbereken_wacht_status` aan) → 562 (enum-snapshot-assert-opvolger van mig 350).
+563 (enum, geïsoleerd bestand) → 564 (`derive_wacht_status`, 5-arg) → 565 (`herbereken_wacht_status`, groep-cascade) → 566 (`order_pickbaarheid`-guard) → 567 (combi-levering-triggers roepen nu ook `herbereken_wacht_status` aan) → 568 (enum-snapshot-assert-opvolger van mig 350).
 
 ### Frontend
 

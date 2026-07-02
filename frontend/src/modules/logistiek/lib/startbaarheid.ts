@@ -18,7 +18,7 @@
  * Canonieke prioriteit (eerste match wint):
  *   in_pickronde > niet_pickbaar > afl_adres > afl_gln > prijs > geen_vervoerder > startbaar
  *
- * Mig 557-560 (ADR-0040): Combi-levering is géén Startbaarheid-blokkade meer —
+ * Mig 563-566 (ADR-0040): Combi-levering is géén Startbaarheid-blokkade meer —
  * een wachtende order krijgt `order_status='Wacht op combi-levering'` en
  * bereikt de Pick & Ship-query (`order_pickbaarheid.pick_ship_zichtbaar`) dus
  * nooit meer. Deze module ziet zo'n order daardoor domweg nooit (supersedeert

@@ -1,4 +1,4 @@
--- Migratie 552: Combi-levering — VERZEND-orderregel-herwaardering (ADR-0039, hernummerd van 487)
+-- Migratie 558: Combi-levering — VERZEND-orderregel-herwaardering (ADR-0039, hernummerd van 487)
 --
 -- Zolang een order in een Combi-levering-wachtgroep zit, staat er GEEN
 -- VERZEND-orderregel op — de drempel-beslissing wordt uitgesteld tot vrijgave.
@@ -74,7 +74,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION herwaardeer_combi_levering_verzendregel(BIGINT) IS
-  'Mig 552 (ADR-0039): voegt/verwijdert de VERZEND-orderregel op een order, '
+  'Mig 558 (ADR-0039): voegt/verwijdert de VERZEND-orderregel op een order, '
   'rekening houdend met of de klant/order in een Combi-levering-wachtgroep '
   'zit. Idempotent — aanroepbaar vanuit triggers en handmatig.';
 

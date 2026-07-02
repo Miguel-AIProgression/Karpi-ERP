@@ -1,7 +1,7 @@
--- Migratie 568: herwaardeer_combi_levering_verzendregel — dropship-guard ook
+-- Migratie 574: herwaardeer_combi_levering_verzendregel — dropship-guard ook
 -- in het "normale" (niet-wachtende) pad (audit 02-07). De dropship-kostenregel
 -- ís de verzendcomponent (mig 353/370); een VERZEND-regel erbovenop is fout.
--- Body = mig 556 + v_is_dropship in beide beslispunten. Superset-keten:
+-- Body = mig 562 + v_is_dropship in beide beslispunten. Superset-keten:
 -- élke volgende CREATE OR REPLACE moet deze volledige body als basis nemen.
 
 CREATE OR REPLACE FUNCTION herwaardeer_combi_levering_verzendregel(p_order_id BIGINT)
@@ -21,7 +21,7 @@ BEGIN
   SELECT * INTO v_order FROM orders WHERE id = p_order_id;
   IF NOT FOUND THEN RETURN; END IF;
 
-  -- Mig 555: order al fysiek onderweg (in pickronde/deels verzonden) of in
+  -- Mig 561: order al fysiek onderweg (in pickronde/deels verzonden) of in
   -- een eindstatus — nooit meer aankomen aan de VERZEND-regel.
   IF v_order.status IN ('Verzonden', 'Geannuleerd', 'In pickronde', 'Deels verzonden') THEN
     RETURN;
@@ -41,7 +41,7 @@ BEGIN
    WHERE order_id = p_order_id AND artikelnr = 'VERZEND'
    LIMIT 1;
 
-  -- Mig 568: een dropship-order krijgt via dit mechanisme NOOIT een
+  -- Mig 574: een dropship-order krijgt via dit mechanisme NOOIT een
   -- VERZEND-regel — de dropship-kostenregel is al de verzendcomponent.
   IF v_moet_wachten OR v_order.afhalen OR v_is_dropship THEN
     IF v_bestaande_regel_id IS NOT NULL AND (v_moet_wachten OR v_order.afhalen) THEN
@@ -51,7 +51,7 @@ BEGIN
   END IF;
 
   v_subtotaal := combi_levering_orderregel_subtotaal(p_order_id);
-  -- Mig 556: COALESCE-fallback 500 (was 0) — zelfde SHIPPING_THRESHOLD-default
+  -- Mig 562: COALESCE-fallback 500 (was 0) — zelfde SHIPPING_THRESHOLD-default
   -- als applyShippingLogic (frontend/src/lib/constants/shipping.ts).
   v_moet_verzendregel := NOT v_debiteur.gratis_verzending
     AND v_subtotaal < COALESCE(v_debiteur.verzend_drempel, 500);
@@ -74,9 +74,9 @@ END;
 $$;
 
 COMMENT ON FUNCTION herwaardeer_combi_levering_verzendregel(BIGINT) IS
-  'Mig 552/555/556/568 (ADR-0039/0040): voegt/verwijdert de VERZEND-orderregel, '
+  'Mig 558/561/562/574 (ADR-0039/0040): voegt/verwijdert de VERZEND-orderregel, '
   'Combi-levering-bewust. Idempotent. No-op op vertrokken/eindstatus-orders. '
-  'NULL verzend_drempel -> 500 (SHIPPING_THRESHOLD). Mig 568: dropship-orders '
+  'NULL verzend_drempel -> 500 (SHIPPING_THRESHOLD). Mig 574: dropship-orders '
   'krijgen nooit een VERZEND-regel via dit pad (kostenregel is al verzending); '
   'een al-bestaande VERZEND-regel op een dropship-order wordt bewust niet '
   'stilzwijgend verwijderd (handmatige beoordeling).';

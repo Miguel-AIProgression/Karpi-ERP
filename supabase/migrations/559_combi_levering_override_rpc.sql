@@ -1,4 +1,4 @@
--- Migratie 553 (hernummerd van 488): combi_levering_override door in create/update_order_with_lines
+-- Migratie 559 (hernummerd van 488): combi_levering_override door in create/update_order_with_lines
 -- (ADR-0039). CREATE OR REPLACE bevat de VOLLEDIGE, actuele body van beide
 -- functies (opgehaald via pg_get_functiondef op de live DB, 2026-07-01) plus
 -- de twee toevoegingen: de INSERT-kolom/waarde in create_order_with_lines, en

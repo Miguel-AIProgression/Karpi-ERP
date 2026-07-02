@@ -1,4 +1,4 @@
--- Migratie 558: derive_wacht_status — 5e parameter voor Combi-levering (ADR-0040)
+-- Migratie 564: derive_wacht_status — 5e parameter voor Combi-levering (ADR-0040)
 --
 -- Combi-levering krijgt de laagste prioriteit in de bestaande wacht-ladder,
 -- ná de stock-/maatwerk-gates en vóór de promotie naar 'Klaar voor picken'.
@@ -41,7 +41,7 @@ AS $function$
     WHEN p_heeft_tekort              THEN 'Wacht op inkoop'::order_status
     -- 4) Maatwerk nog niet pickbaar
     WHEN p_heeft_maatwerk            THEN 'Wacht op maatwerk'::order_status
-    -- 5) Alle stock-/productie-gates open, maar klant wacht op combi-levering (mig 558/ADR-0040)
+    -- 5) Alle stock-/productie-gates open, maar klant wacht op combi-levering (mig 564/ADR-0040)
     WHEN p_wacht_op_combi_levering   THEN 'Wacht op combi-levering'::order_status
     -- 6) Wacht-staat (of legacy 'Nieuw') zonder open blokkades → pickbaar
     WHEN p_huidig IN (
@@ -55,7 +55,7 @@ $function$;
 
 COMMENT ON FUNCTION public.derive_wacht_status(order_status, boolean, boolean, boolean, boolean) IS
   'Mig 470: ''Wacht op inkoop'' = nog geen IO-claim, ''Wacht op voorraad'' = IO-claim '
-  'bestaat al. Mig 540: ''Concept'' in de no-touch lijst. Mig 558 (ADR-0040): 5e '
+  'bestaat al. Mig 540: ''Concept'' in de no-touch lijst. Mig 564 (ADR-0040): 5e '
   'parameter p_wacht_op_combi_levering — laagste-prioriteit wacht-reden, tussen de '
   'maatwerk-check en de promotie-naar-Klaar-voor-picken-tak; kan ook demoveren '
   'vanuit Klaar voor picken (symmetrisch aan ADR-0027). '
@@ -104,7 +104,7 @@ BEGIN
     END IF;
   END LOOP;
 
-  RAISE NOTICE 'Mig 558: alle asserties geslaagd — Combi-levering in de wacht-ladder (5-arg)';
+  RAISE NOTICE 'Mig 564: alle asserties geslaagd — Combi-levering in de wacht-ladder (5-arg)';
 END $$;
 
 NOTIFY pgrst, 'reload schema';

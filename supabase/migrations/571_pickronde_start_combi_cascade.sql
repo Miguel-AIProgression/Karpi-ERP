@@ -1,10 +1,10 @@
--- Migratie 565: markeer_pickronde_gestart herevalueert nu ook de Combi-
+-- Migratie 571: markeer_pickronde_gestart herevalueert nu ook de Combi-
 -- levering-siblings (ADR-0040, audit-blocker 02-07). Tot nu toe bleven
 -- achterblijvers van een deels gestarte groep stale op 'Klaar voor picken'
 -- (zichtbaar in Pick & Ship, zonder VERZEND-regel) totdat de gestarte order
 -- 'Verzonden' werd. Body = mig 258 + PERFORM herbereken_wacht_status ná de
 -- transitie: voor de eigen order een no-op ('In pickronde' is no-touch), de
--- groep-cascade (mig 559, default TRUE) demoveert de siblings direct terug
+-- groep-cascade (mig 565, default TRUE) demoveert de siblings direct terug
 -- naar 'Wacht op combi-levering' als de rest-groep onder de drempel zakt.
 -- Niet-combi-klanten: sibling-query matcht niets (d2.combi_levering=TRUE).
 --
@@ -12,7 +12,7 @@
 -- mig 258-body die deze migratie als basis neemt — enige verschil zijn
 -- inline commentaarregels (triviale formattering, geen logica/guards/
 -- signatuur-afwijking). herbereken_wacht_status(bigint, boolean DEFAULT
--- true) bevestigd (mig 559) — de aanroep zonder 2e argument cascadet dus
+-- true) bevestigd (mig 565) — de aanroep zonder 2e argument cascadet dus
 -- standaard.
 
 CREATE OR REPLACE FUNCTION markeer_pickronde_gestart(
@@ -47,7 +47,7 @@ BEGIN
     p_actor_auth_user_id  := p_actor_auth_user_id
   );
 
-  -- Mig 565 (ADR-0040): eigen order = no-op (no-touch), maar de groep-cascade
+  -- Mig 571 (ADR-0040): eigen order = no-op (no-touch), maar de groep-cascade
   -- herevalueert de Combi-levering-siblings die zonder deze order mogelijk
   -- weer onder de vrachtvrije-drempel zakken.
   PERFORM herbereken_wacht_status(p_order_id);
@@ -57,7 +57,7 @@ $$;
 COMMENT ON FUNCTION markeer_pickronde_gestart IS
   'Mig 258 (ADR-0016): zet orders.status=''In pickronde'' + audit-event. '
   'Idempotent: no-op op In pickronde/Deels verzonden; faalt op Verzonden/'
-  'Geannuleerd. Mig 565 (ADR-0040): herevalueert na de transitie de Combi-'
-  'levering-siblings via de herbereken_wacht_status-groep-cascade (mig 559).';
+  'Geannuleerd. Mig 571 (ADR-0040): herevalueert na de transitie de Combi-'
+  'levering-siblings via de herbereken_wacht_status-groep-cascade (mig 565).';
 
 NOTIFY pgrst, 'reload schema';

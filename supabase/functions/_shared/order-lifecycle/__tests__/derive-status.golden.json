@@ -1,5 +1,5 @@
 {
-  "_bron": "truthtable van derive_wacht_status — gespiegeld in mig 558 DO-assertie (mig 346/352/470/540 + B13-cases, betekenis 'Wacht op inkoop'/'Wacht op voorraad' omgedraaid in mig 470). null = no-op (niet wijzigen). Mig 540: 'Concept' toegevoegd aan no-touch. Mig 558 (ADR-0040): 'combi'-veld toegevoegd aan elke case (default false = ongewijzigd gedrag) + 10 nieuwe cases voor Combi-levering (laagste prioriteit, kan ook demoveren vanuit 'Klaar voor picken').",
+  "_bron": "truthtable van derive_wacht_status — gespiegeld in mig 564 DO-assertie (mig 346/352/470/540 + B13-cases, betekenis 'Wacht op inkoop'/'Wacht op voorraad' omgedraaid in mig 470). null = no-op (niet wijzigen). Mig 540: 'Concept' toegevoegd aan no-touch. Mig 564 (ADR-0040): 'combi'-veld toegevoegd aan elke case (default false = ongewijzigd gedrag) + 10 nieuwe cases voor Combi-levering (laagste prioriteit, kan ook demoveren vanuit 'Klaar voor picken').",
   "cases": [
     { "huidig": "Nieuw",              "io": false, "tekort": false, "maatwerk": false, "combi": false, "verwacht": "Klaar voor picken" },
     { "huidig": "Nieuw",              "io": false, "tekort": false, "maatwerk": true,  "combi": false, "verwacht": "Wacht op maatwerk" },

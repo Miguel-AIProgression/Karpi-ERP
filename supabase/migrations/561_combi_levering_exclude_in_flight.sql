@@ -1,6 +1,6 @@
--- Migratie 555 (hernummerd van 490): Combi-levering — sluit al-gestarte orders uit de wachtgroep (review-fix)
+-- Migratie 561 (hernummerd van 490): Combi-levering — sluit al-gestarte orders uit de wachtgroep (review-fix)
 --
--- Gevonden bij code-review ná mig 551/552: de `leden`-CTE in combi_levering_status
+-- Gevonden bij code-review ná mig 557/558: de `leden`-CTE in combi_levering_status
 -- en de backfill-loop in trg_debiteuren_combi_levering_fn filterden alleen
 -- status NOT IN ('Verzonden','Geannuleerd') — een order die al 'In pickronde' of
 -- 'Deels verzonden' is (dus al fysiek aan het picken/verzenden, los van de rest
@@ -56,11 +56,11 @@ JOIN groep g ON g.debiteur_nr = l.debiteur_nr AND g.adres_norm = l.adres_norm
 JOIN debiteuren d ON d.debiteur_nr = l.debiteur_nr;
 
 COMMENT ON VIEW combi_levering_status IS
-  'Mig 551/555 (ADR-0039): per order, alleen voor klanten met combi_levering=TRUE '
+  'Mig 557/561 (ADR-0039): per order, alleen voor klanten met combi_levering=TRUE '
   'en niet-overruled/niet-dropshipment/nog-niet-gestarte orders: wacht_op_combi_levering=TRUE '
   'zolang de (debiteur × adres-norm)-groep de vrachtvrije-drempel niet haalt, '
   'OF de drempel wel haalt maar niet al zijn leden individueel pickbaar zijn. '
-  'Mig 555: een order die al In pickronde/Deels verzonden is telt niet meer mee '
+  'Mig 561: een order die al In pickronde/Deels verzonden is telt niet meer mee '
   'in de groep-pool (die is al vertrokken, niets meer om mee te combineren).';
 
 -- Defensieve guard in de kern-functie zelf (dekt zowel de per-order trigger
@@ -84,7 +84,7 @@ BEGIN
   SELECT * INTO v_order FROM orders WHERE id = p_order_id;
   IF NOT FOUND THEN RETURN; END IF;
 
-  -- Mig 555: order al fysiek onderweg (in pickronde/deels verzonden) of in
+  -- Mig 561: order al fysiek onderweg (in pickronde/deels verzonden) of in
   -- een eindstatus — nooit meer aankomen aan de VERZEND-regel.
   IF v_order.status IN ('Verzonden', 'Geannuleerd', 'In pickronde', 'Deels verzonden') THEN
     RETURN;

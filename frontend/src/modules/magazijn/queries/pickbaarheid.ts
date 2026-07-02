@@ -310,9 +310,9 @@ async function fetchOrderPickbaarheid(
 }
 
 /**
- * Mig 557-560 (ADR-0040): de wacht-beslissing zelf zit nu in orders.status
- * ('Wacht op combi-levering', mig 558/559) — een wachtende order bereikt deze
- * pagina dus nooit meer (order_pickbaarheid-guard, mig 560). Hier blijft
+ * Mig 563-566 (ADR-0040): de wacht-beslissing zelf zit nu in orders.status
+ * ('Wacht op combi-levering', mig 564/565) — een wachtende order bereikt deze
+ * pagina dus nooit meer (order_pickbaarheid-guard, mig 566). Hier blijft
  * alleen over: welke ZICHTBARE orders zijn Combi-levering-deelnemer (hebben
  * een rij in combi_levering_status, ongeacht de wacht-boolean) — voedt
  * uitsluitend de "laat een sibling achter"-waarschuwing

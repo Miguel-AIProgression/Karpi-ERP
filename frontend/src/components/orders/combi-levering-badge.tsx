@@ -1,7 +1,7 @@
 import { Link2 } from 'lucide-react'
 import type { OrderRow } from '@/lib/supabase/queries/orders'
 
-/** Mig 563 (ADR-0039/0040): Combi-levering-groep — orders die samen wachten
+/** Mig 569 (ADR-0039/0040): Combi-levering-groep — orders die samen wachten
  *  op (of net) de vrachtvrije-drempel (hebben) gehaald, om verzendkosten te
  *  besparen. Eén bron voor orders-overview (orders-table.tsx) én order-detail
  *  (order-header.tsx) — los van en anders gestyled dan de fysieke

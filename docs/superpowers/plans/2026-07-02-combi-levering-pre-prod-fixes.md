@@ -4,11 +4,11 @@
 
 **Goal:** De 4 blockers + hoog-bevindingen uit de pre-productie-audit van 02-07-2026 fixen zodat `feat/combi-levering` veilig naar `main`/productie kan.
 
-**Architecture:** Alle fixes haken aan op de bestaande single-source-keten (`herbereken_wacht_status` → 5-arg `derive_wacht_status`, mig 558/559) en de view `combi_levering_status`. Géén nieuwe mechanismes — alleen ontbrekende aanroep-momenten dichten, één view-regressie herstellen en drie frontend-gaten sluiten. Migratie-nummers 564-568 zijn voorlopig: her-verifieer vlak vóór apply (parallelle sessies schrijven live nummers — zie geheugen-regel "Migratienummer-collisie bij merge").
+**Architecture:** Alle fixes haken aan op de bestaande single-source-keten (`herbereken_wacht_status` → 5-arg `derive_wacht_status`, mig 564/565) en de view `combi_levering_status`. Géén nieuwe mechanismes — alleen ontbrekende aanroep-momenten dichten, één view-regressie herstellen en drie frontend-gaten sluiten. Migratie-nummers 570-574 zijn voorlopig: her-verifieer vlak vóór apply (parallelle sessies schrijven live nummers — zie geheugen-regel "Migratienummer-collisie bij merge").
 
 **Tech Stack:** Supabase (PostgreSQL migraties, handmatig via SQL-editor — géén `db push`), React/TypeScript frontend (Vitest), edge function `stuur-orderbevestiging` (Supabase CLI deploy).
 
-**Audit-referentie:** 24 bevestigde bevindingen (8-dimensie multi-agent review + adversariële verificatie, 02-07). Live-staat op moment van schrijven: mig 550-563 staan AL op productie, inclusief de mig 563-regressie (blocker 1). Er is al een echte combi-testgroep actief (orders 5062/5063, debiteur met drempel €500).
+**Audit-referentie:** 24 bevestigde bevindingen (8-dimensie multi-agent review + adversariële verificatie, 02-07). Live-staat op moment van schrijven: mig 556-569 staan AL op productie, inclusief de mig 569-regressie (blocker 1). Er is al een echte combi-testgroep actief (orders 5062/5063, debiteur met drempel €500).
 
 ---
 
@@ -34,7 +34,7 @@ Order van klant X naar adres A
 ├─ alleen_productie (Basta) ──────────────────► telt niet mee (fix Task 1)
 ├─ status In pickronde / Deels verzonden /
 │  Verzonden / Geannuleerd ───────────────────► al vertrokken: telt niet meer mee
-│                                                in de groep (mig 555-gedrag hersteld
+│                                                in de groep (mig 561-gedrag hersteld
 │                                                — fix Task 1)
 └─ anders ────────────────────────────────────► LID van de wachtgroep
                                                  (groep = debiteur × genormaliseerd
@@ -54,7 +54,7 @@ Groep (klant × adres) met leden zoals hierboven
 │                                                → onzichtbaar in Pick & Ship
 │                                                → géén VERZEND-regel (Anker 5)
 │                                                → zichtbaar op commercie: eigen
-│                                                  status-tab + groeps-badge (mig 563)
+│                                                  status-tab + groeps-badge (mig 569)
 ├─ drempel gehaald, maar ≥1 lid nog niet
 │  pickbaar (voorraad/productie loopt) ───────► HELE GROEP WACHT (Anker 3:
 │                                                "de hele groep of niemand")
@@ -73,9 +73,9 @@ Groep (klant × adres) met leden zoals hierboven
 | Order geannuleerd | Cascade via bestaande `trg_order_status_herallocateer`-keten — siblings vallen terug in wacht als groep onder drempel zakt (geverifieerd, geen fix nodig) |
 | Order verzonden | Zelfde keten — siblings herevalueren (geverifieerd, geen fix nodig) |
 | Pickronde gestart voor deel van de groep | Achterblijvers vallen DIRECT terug naar 'Wacht op combi-levering' en verdwijnen uit Pick & Ship (**fix Task 2**; voorheen bleven ze stale 'Klaar voor picken') |
-| Klant-toggle combi_levering aan/uit | Alle open orders van de klant: status + VERZEND-regel herwaardeerd (bestaand, mig 561) |
-| Order-override aan/uit | Order ontsnapt/keert terug; VERZEND-regel + status + siblings (bestaand, mig 561) |
-| "Zet in de wacht"-knop op order-detail | Klantbreed effect + nieuwe orderbevestiging met wacht-paragraaf (bestaand, mig 554) |
+| Klant-toggle combi_levering aan/uit | Alle open orders van de klant: status + VERZEND-regel herwaardeerd (bestaand, mig 567) |
+| Order-override aan/uit | Order ontsnapt/keert terug; VERZEND-regel + status + siblings (bestaand, mig 567) |
+| "Zet in de wacht"-knop op order-detail | Klantbreed effect + nieuwe orderbevestiging met wacht-paragraaf (bestaand, mig 560) |
 | Deelzending op wachtende order | **GEBLOKKEERD** met verwijzing naar de override (**fix Task 4**; was een stille omzeilroute) |
 
 ### 4. Vrijgave → verzending (het "doorzetten bij de limiet")
@@ -110,10 +110,10 @@ Groep haalt drempel + alle leden pickbaar
 
 ## Vooraf: coördinatie (LEES DIT EERST)
 
-1. Er werkt mogelijk een **tweede Claude-sessie** in deze worktree (mig 563 kwam 02-07 08:50 binnen tijdens de audit). Stem af / verifieer met `git log --oneline -3` en `git status` dat je niet door lopend werk heen schrijft.
-2. Het **niet-gecommitte ADR-0040-werk** (mig 556-562, status-laag-frontend, docs) moet gecommit zijn vóór deze fixes — de fixes bouwen erop voort.
+1. Er werkt mogelijk een **tweede Claude-sessie** in deze worktree (mig 569 kwam 02-07 08:50 binnen tijdens de audit). Stem af / verifieer met `git log --oneline -3` en `git status` dat je niet door lopend werk heen schrijft.
+2. Het **niet-gecommitte ADR-0040-werk** (mig 562-568, status-laag-frontend, docs) moet gecommit zijn vóór deze fixes — de fixes bouwen erop voort.
 3. **Migraties handmatig toepassen** via het Supabase SQL-dashboard (project `wqzeevfobwauxkalagtn`) — nooit `supabase db push` (geheugen-regel). Elke migratie eerst in een rolled-back transactie testen (`BEGIN; ... ROLLBACK;`), daarna definitief.
-4. Mig 550-563 staan al live: van dit plan hoeven alleen 564-568 nog naar de DB.
+4. Mig 556-569 staan al live: van dit plan hoeven alleen 570-574 nog naar de DB.
 
 ---
 
@@ -127,14 +127,14 @@ Run (in de worktree `C:/Users/migue/Documents/Karpi ERP/.worktrees/combi-leverin
 ```bash
 git log --oneline -3 && git status --short | head -40 && ls supabase/migrations | tail -5
 ```
-Expected: laatste commit `495af08e` (of nieuwer), uncommitted ADR-0040-bestanden zichtbaar, hoogste migratienummer bepaalt de nummering hieronder (plan gaat uit van 563 → nieuwe reeks 564-568; schuif op als er al hogere nummers zijn).
+Expected: laatste commit `495af08e` (of nieuwer), uncommitted ADR-0040-bestanden zichtbaar, hoogste migratienummer bepaalt de nummering hieronder (plan gaat uit van 569 → nieuwe reeks 570-574; schuif op als er al hogere nummers zijn).
 
 - [ ] **Step 2: Commit het openstaande ADR-0040-werk** (alleen als de andere sessie dat niet al deed — stem af bij twijfel)
 
 ```bash
 git add docs/adr/0040-combi-levering-als-order-status.md supabase/migrations/55[6-9]_*.sql supabase/migrations/56[0-2]_*.sql supabase/functions/_shared/combi-levering-tekst.ts
 git add -u
-git commit -m "feat(combi-levering): ADR-0040 — 'Wacht op combi-levering' als echte order_status (mig 556-562)"
+git commit -m "feat(combi-levering): ADR-0040 — 'Wacht op combi-levering' als echte order_status (mig 562-568)"
 ```
 
 - [ ] **Step 3: Draai de suite als nulmeting**
@@ -146,9 +146,9 @@ Expected: `850 passed` (of meer), `TSC-OK`.
 
 ---
 
-### Task 1 — BLOCKER 1: mig 564 herstelt de view-regressie van mig 563
+### Task 1 — BLOCKER 1: mig 570 herstelt de view-regressie van mig 569
 
-Mig 563 herbouwde `combi_levering_status` vanaf de verouderde mig 551-body: de uitsluiting van `'In pickronde'`/`'Deels verzonden'` (mig 555) en de `COALESCE(verzend_drempel, 500)`-fallback (mig 556) verdwenen — **en dit staat al live**. Deze migratie zet de mig 556-semantiek terug MET de mig 563-kolommen, en sluit meteen `'Concept'` (onbevestigde intake hoort de groep niet te sturen — zelfde filosofie als de Concept-intake-gate, mig 540-542) en `alleen_productie` (Basta-orders, ADR-0029: geen prijzen in RugFlow, verzending buiten RugFlow om) uit.
+Mig 569 herbouwde `combi_levering_status` vanaf de verouderde mig 557-body: de uitsluiting van `'In pickronde'`/`'Deels verzonden'` (mig 561) en de `COALESCE(verzend_drempel, 500)`-fallback (mig 562) verdwenen — **en dit staat al live**. Deze migratie zet de mig 562-semantiek terug MET de mig 569-kolommen, en sluit meteen `'Concept'` (onbevestigde intake hoort de groep niet te sturen — zelfde filosofie als de Concept-intake-gate, mig 540-542) en `alleen_productie` (Basta-orders, ADR-0029: geen prijzen in RugFlow, verzending buiten RugFlow om) uit.
 
 **Files:**
 - Create: `supabase/migrations/564_combi_levering_view_herstel.sql`
@@ -156,15 +156,15 @@ Mig 563 herbouwde `combi_levering_status` vanaf de verouderde mig 551-body: de u
 - [ ] **Step 1: Schrijf de migratie**
 
 ```sql
--- Migratie 564: herstel combi_levering_status — mig 563 herbouwde de view
--- vanaf de pre-555/556-body en liet daarmee twee al-gefixte bugs terugkeren:
+-- Migratie 570: herstel combi_levering_status — mig 569 herbouwde de view
+-- vanaf de pre-561/562-body en liet daarmee twee al-gefixte bugs terugkeren:
 --   (1) 'In pickronde'/'Deels verzonden' telden weer mee in het groep-subtotaal
---       (mig 555-fix weg) — een achterblijver toonde "drempel gehaald" terwijl
+--       (mig 561-fix weg) — een achterblijver toonde "drempel gehaald" terwijl
 --       zijn maat al vertrokken was;
 --   (2) NULL verzend_drempel gold weer als "geen drempel = altijd gehaald"
---       (mig 556-fix weg) — feature stil buiten werking voor die klanten.
--- Deze body = mig 556-semantiek + de mig 563-kolommen (aantal_orders/order_ids).
--- Nieuw t.o.v. 556 (audit 02-07): 'Concept' en alleen_productie uitgesloten —
+--       (mig 562-fix weg) — feature stil buiten werking voor die klanten.
+-- Deze body = mig 562-semantiek + de mig 569-kolommen (aantal_orders/order_ids).
+-- Nieuw t.o.v. 562 (audit 02-07): 'Concept' en alleen_productie uitgesloten —
 -- een onbevestigde Concept-order (mig 540-542) mag het groepssubtotaal niet
 -- vullen en de groep niet blokkeren; Basta-orders (ADR-0029) hebben geen
 -- RugFlow-prijzen en verzenden buiten RugFlow om.
@@ -217,14 +217,14 @@ JOIN groep g ON g.debiteur_nr = l.debiteur_nr AND g.adres_norm = l.adres_norm
 JOIN debiteuren d ON d.debiteur_nr = l.debiteur_nr;
 
 COMMENT ON VIEW combi_levering_status IS
-  'Mig 551/555/556/563/564 (ADR-0039/0040): per order, alleen voor klanten met '
+  'Mig 557/561/562/569/570 (ADR-0039/0040): per order, alleen voor klanten met '
   'combi_levering=TRUE en niet-overruled/niet-dropshipment/nog-niet-gestarte, '
   'bevestigde (non-Concept), niet-alleen_productie orders: '
   'wacht_op_combi_levering=TRUE zolang de (debiteur x adres-norm)-groep de '
   'vrachtvrije-drempel (NULL -> 500, = frontend SHIPPING_THRESHOLD) niet haalt, '
   'OF de drempel haalt maar niet alle leden pickbaar zijn. '
-  'aantal_orders/order_ids (mig 563) voeden de groeps-badge. '
-  'Mig 564: herstel van de mig 563-regressie (555/556-fixes terug) + Concept/'
+  'aantal_orders/order_ids (mig 569) voeden de groeps-badge. '
+  'Mig 570: herstel van de mig 569-regressie (561/562-fixes terug) + Concept/'
   'alleen_productie-uitsluiting.';
 
 NOTIFY pgrst, 'reload schema';
@@ -252,12 +252,12 @@ Expected: rij(en) voor 5062/5063 met dezelfde kolommen als nu, tweede query `0`.
 
 ```bash
 git add supabase/migrations/564_combi_levering_view_herstel.sql
-git commit -m "fix(combi-levering): mig 564 — herstel view-regressie uit mig 563 + Concept/alleen_productie-uitsluiting"
+git commit -m "fix(combi-levering): mig 570 — herstel view-regressie uit mig 569 + Concept/alleen_productie-uitsluiting"
 ```
 
 ---
 
-### Task 2 — BLOCKER 2: mig 565 laat pickronde-start de achterblijvers herevalueren
+### Task 2 — BLOCKER 2: mig 571 laat pickronde-start de achterblijvers herevalueren
 
 `markeer_pickronde_gestart` (mig 258) doet een kale statuswissel; `trg_order_status_herallocateer` vuurt alleen op Geannuleerd/Verzonden-transities. Gevolg: start je een subset van een vrijgegeven groep, dan blijven de achterblijvers stale `'Klaar voor picken'` (zichtbaar, startbaar, zonder VERZEND-regel) tot de gestarte order verzonden wordt. Eén extra `PERFORM` sluit dit: de eigen order is `'In pickronde'` (no-touch → no-op), de cascade (default `TRUE`) herevalueert de siblings. Voor niet-combi-klanten is de cascade een lege, goedkope query (filter `d2.combi_levering = TRUE`).
 
@@ -267,13 +267,13 @@ git commit -m "fix(combi-levering): mig 564 — herstel view-regressie uit mig 5
 - [ ] **Step 1: Schrijf de migratie** (volledige body = mig 258 + één PERFORM)
 
 ```sql
--- Migratie 565: markeer_pickronde_gestart herevalueert nu ook de Combi-
+-- Migratie 571: markeer_pickronde_gestart herevalueert nu ook de Combi-
 -- levering-siblings (ADR-0040, audit-blocker 02-07). Tot nu toe bleven
 -- achterblijvers van een deels gestarte groep stale op 'Klaar voor picken'
 -- (zichtbaar in Pick & Ship, zonder VERZEND-regel) totdat de gestarte order
 -- 'Verzonden' werd. Body = mig 258 + PERFORM herbereken_wacht_status ná de
 -- transitie: voor de eigen order een no-op ('In pickronde' is no-touch), de
--- groep-cascade (mig 559, default TRUE) demoveert de siblings direct terug
+-- groep-cascade (mig 565, default TRUE) demoveert de siblings direct terug
 -- naar 'Wacht op combi-levering' als de rest-groep onder de drempel zakt.
 -- Niet-combi-klanten: sibling-query matcht niets (d2.combi_levering=TRUE).
 
@@ -309,7 +309,7 @@ BEGIN
     p_actor_auth_user_id  := p_actor_auth_user_id
   );
 
-  -- Mig 565 (ADR-0040): eigen order = no-op (no-touch), maar de groep-cascade
+  -- Mig 571 (ADR-0040): eigen order = no-op (no-touch), maar de groep-cascade
   -- herevalueert de Combi-levering-siblings die zonder deze order mogelijk
   -- weer onder de vrachtvrije-drempel zakken.
   PERFORM herbereken_wacht_status(p_order_id);
@@ -319,8 +319,8 @@ $$;
 COMMENT ON FUNCTION markeer_pickronde_gestart IS
   'Mig 258 (ADR-0016): zet orders.status=''In pickronde'' + audit-event. '
   'Idempotent: no-op op In pickronde/Deels verzonden; faalt op Verzonden/'
-  'Geannuleerd. Mig 565 (ADR-0040): herevalueert na de transitie de Combi-'
-  'levering-siblings via de herbereken_wacht_status-groep-cascade (mig 559).';
+  'Geannuleerd. Mig 571 (ADR-0040): herevalueert na de transitie de Combi-'
+  'levering-siblings via de herbereken_wacht_status-groep-cascade (mig 565).';
 
 NOTIFY pgrst, 'reload schema';
 ```
@@ -346,19 +346,19 @@ Expected: sibling 5063 demoveert. (Zit 5063 solo tóch boven de drempel, fabrice
 
 ```bash
 git add supabase/migrations/565_pickronde_start_combi_cascade.sql
-git commit -m "fix(combi-levering): mig 565 — pickronde-start demoveert achterblijvende siblings direct"
+git commit -m "fix(combi-levering): mig 571 — pickronde-start demoveert achterblijvende siblings direct"
 ```
 
 ---
 
-### Task 3 — BLOCKER 3: mig 566 herberekent na élke order-edit (incl. prijs & oude adres-groep)
+### Task 3 — BLOCKER 3: mig 572 herberekent na élke order-edit (incl. prijs & oude adres-groep)
 
 `trg_orderregel_herallocateer` (mig 146) vuurt alleen op `artikelnr`/`te_leveren`/`is_maatwerk`. Een prijs-/korting-edit of regel-DELETE via `update_order_with_lines` wijzigt dus het groepssubtotaal zonder herberekening. Ook: bij een adres-/debiteurwijziging herevalueert alleen de NIEUWE groep (de order zelf draagt het nieuwe adres); de OUDE groep blijft stale. Fix: helper `herbereken_combi_groep` + twee toevoegingen aan `update_order_with_lines`.
 
 **Files:**
 - Create: `supabase/migrations/566_order_edit_combi_herbereken.sql`
 
-- [ ] **Step 1: Haal de actuele live body van `update_order_with_lines` op** (project-precedent mig 488/553 — de live DB is bron, niet het migratiebestand):
+- [ ] **Step 1: Haal de actuele live body van `update_order_with_lines` op** (project-precedent mig 488/559 — de live DB is bron, niet het migratiebestand):
 
 ```sql
 SELECT pg_get_functiondef(p.oid)
@@ -369,7 +369,7 @@ SELECT pg_get_functiondef(p.oid)
 - [ ] **Step 2: Schrijf de migratie.** Deel 1 is compleet hieronder; deel 2 = de opgehaalde body + de twee gemarkeerde inserties.
 
 ```sql
--- Migratie 566: order-edits herberekenen voortaan de Combi-levering-status
+-- Migratie 572: order-edits herberekenen voortaan de Combi-levering-status
 -- (audit-blocker 02-07). trg_orderregel_herallocateer (mig 146) vuurt alleen
 -- op artikelnr/te_leveren/is_maatwerk — een prijs-/korting-edit of regel-
 -- verwijdering wijzigde het groepssubtotaal zonder status-herberekening, en
@@ -377,7 +377,7 @@ SELECT pg_get_functiondef(p.oid)
 
 -- Deel 1: herbereken_combi_groep — herevalueer alle leden van één groep.
 -- Zelfde predicaten als de sibling-cascade in herbereken_wacht_status
--- (mig 559); cascade=FALSE want deze loop bezoekt zelf al elk lid.
+-- (mig 565); cascade=FALSE want deze loop bezoekt zelf al elk lid.
 CREATE OR REPLACE FUNCTION herbereken_combi_groep(
   p_debiteur_nr INTEGER,
   p_adres_norm  TEXT
@@ -407,7 +407,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION herbereken_combi_groep(INTEGER, TEXT) IS
-  'Mig 566 (ADR-0040): herevalueert alle Combi-levering-leden van één '
+  'Mig 572 (ADR-0040): herevalueert alle Combi-levering-leden van één '
   '(debiteur x adres-norm)-groep. Consument: update_order_with_lines voor de '
   'OUDE groep na een adres-/debiteurwijziging (de order zelf zit dan al in de '
   'nieuwe groep en kan de oude niet meer via de normale cascade bereiken).';
@@ -425,7 +425,7 @@ COMMENT ON FUNCTION herbereken_combi_groep(INTEGER, TEXT) IS
 --         FROM orders o WHERE o.id = p_order_id;
 --
 -- (b) Als allerlaatste statements vóór de afsluitende RETURN:
---       -- Mig 566: élke edit (ook prijs-only/regel-delete) herevalueert de
+--       -- Mig 572: élke edit (ook prijs-only/regel-delete) herevalueert de
 --       -- eigen status + de (nieuwe) groep...
 --       PERFORM herbereken_wacht_status(p_order_id);
 --       -- ...en bij een groeps-verhuizing ook de achtergelaten oude groep.
@@ -459,12 +459,12 @@ Expected: beide orders demoveren na de prijs-edit; vóór de fix bleef de status
 
 ```bash
 git add supabase/migrations/566_order_edit_combi_herbereken.sql
-git commit -m "fix(combi-levering): mig 566 — order-edit (incl. prijs) en adreswijziging herevalueren de wachtgroep(en)"
+git commit -m "fix(combi-levering): mig 572 — order-edit (incl. prijs) en adreswijziging herevalueren de wachtgroep(en)"
 ```
 
 ---
 
-### Task 4 — BLOCKER 4: mig 567 blokkeert deelzendingen op wachtende orders + verbergt de knop
+### Task 4 — BLOCKER 4: mig 573 blokkeert deelzendingen op wachtende orders + verbergt de knop
 
 `start_deelzending` blokkeert alleen Verzonden/Geannuleerd; een deelzending op een `'Wacht op combi-levering'`-order maakt een 'Gepland'-zending, waardoor de order via de actieve-zending-OR-tak weer in Pick & Ship opduikt en zonder drempeltoets/VERZEND-regel/reden-audit verzonden wordt — precies de stille omzeiling die ADR-0039 Anker 4 verbiedt. De nette route bestaat al: order-override.
 
@@ -475,10 +475,10 @@ git commit -m "fix(combi-levering): mig 566 — order-edit (incl. prijs) en adre
 - [ ] **Step 1: Schrijf de migratie.** Haal de actuele live body op (zelfde `pg_get_functiondef`-query als Task 3, `proname = 'start_deelzending'`) en voeg direct ná de bestaande eindstatus-guard (`IF v_order.status IN ('Verzonden', 'Geannuleerd') THEN ... END IF;`) toe:
 
 ```sql
-  -- Mig 567 (ADR-0040/Anker 4): een Combi-levering-wachtende order mag niet
+  -- Mig 573 (ADR-0040/Anker 4): een Combi-levering-wachtende order mag niet
   -- via een deelzending stilletjes ontsnappen — de bedoelde route is de
   -- order-override ("Toch verzenden met verzendkosten"), die de status, de
-  -- VERZEND-regel én de siblings netjes herwaardeert (mig 561).
+  -- VERZEND-regel én de siblings netjes herwaardeert (mig 567).
   IF v_order.status = 'Wacht op combi-levering' THEN
     RAISE EXCEPTION 'Order % wacht op Combi-levering (vrachtvrije drempel nog niet gehaald). Zet eerst "Toch verzenden met verzendkosten" (combi-levering-override) aan op de order voordat je een deelzending start.', v_order.order_nr
       USING ERRCODE = 'invalid_parameter_value';
@@ -490,7 +490,7 @@ Migratie-bestand = kop-commentaar + volledige `CREATE OR REPLACE FUNCTION`-body 
 - [ ] **Step 2: Verberg de knop in de frontend.** In [order-regels-table.tsx](frontend/src/components/orders/order-regels-table.tsx), regel 699:
 
 ```tsx
-  // Mig 567: wachtende Combi-levering-order → geen deelzending (gebruik de
+  // Mig 573: wachtende Combi-levering-order → geen deelzending (gebruik de
   // combi-levering-override op de order; zie ook de server-side guard).
   const wachtOpCombiLevering = orderStatus === 'Wacht op combi-levering'
   const heeftDeelzendingKandidaat = !isEindstatus && !wachtOpCombiLevering && orderVerzendweek != null && regels.some(
@@ -513,25 +513,25 @@ Expected: `EXCEPTION ... wacht op Combi-levering ...`.
 ```bash
 cd frontend && npx tsc -b --noEmit && cd ..
 git add supabase/migrations/567_deelzending_combi_guard.sql frontend/src/components/orders/order-regels-table.tsx
-git commit -m "fix(combi-levering): mig 567 — deelzending geblokkeerd op wachtende order (server-guard + knop)"
+git commit -m "fix(combi-levering): mig 573 — deelzending geblokkeerd op wachtende order (server-guard + knop)"
 ```
 
 ---
 
-### Task 5 — HOOG: mig 568 — dropship-order krijgt nooit een VERZEND-regel via de combi-trigger
+### Task 5 — HOOG: mig 574 — dropship-order krijgt nooit een VERZEND-regel via de combi-trigger
 
-In `herwaardeer_combi_levering_verzendregel` (mig 556-body) telt `is_dropship_order` alleen mee in `v_moet_wachten`. Een dropship-order van een combi-klant valt daardoor in het "normale" pad en krijgt bij een klant-toggle een VERZEND-regel toegevoegd — terwijl de dropship-kostenregel al de verzendcomponent ís (projectregel: `applyShippingLogic` weigert VERZEND bij dropship).
+In `herwaardeer_combi_levering_verzendregel` (mig 562-body) telt `is_dropship_order` alleen mee in `v_moet_wachten`. Een dropship-order van een combi-klant valt daardoor in het "normale" pad en krijgt bij een klant-toggle een VERZEND-regel toegevoegd — terwijl de dropship-kostenregel al de verzendcomponent ís (projectregel: `applyShippingLogic` weigert VERZEND bij dropship).
 
 **Files:**
 - Create: `supabase/migrations/568_combi_verzendregel_dropship_guard.sql`
 
-- [ ] **Step 1: Schrijf de migratie** (volledige body = mig 556 + dropship in het normale pad):
+- [ ] **Step 1: Schrijf de migratie** (volledige body = mig 562 + dropship in het normale pad):
 
 ```sql
--- Migratie 568: herwaardeer_combi_levering_verzendregel — dropship-guard ook
+-- Migratie 574: herwaardeer_combi_levering_verzendregel — dropship-guard ook
 -- in het "normale" (niet-wachtende) pad (audit 02-07). De dropship-kostenregel
 -- ís de verzendcomponent (mig 353/370); een VERZEND-regel erbovenop is fout.
--- Body = mig 556 + v_is_dropship in beide beslispunten. Superset-keten:
+-- Body = mig 562 + v_is_dropship in beide beslispunten. Superset-keten:
 -- élke volgende CREATE OR REPLACE moet deze volledige body als basis nemen.
 
 CREATE OR REPLACE FUNCTION herwaardeer_combi_levering_verzendregel(p_order_id BIGINT)
@@ -569,7 +569,7 @@ BEGIN
    WHERE order_id = p_order_id AND artikelnr = 'VERZEND'
    LIMIT 1;
 
-  -- Mig 568: een dropship-order krijgt via dit mechanisme NOOIT een
+  -- Mig 574: een dropship-order krijgt via dit mechanisme NOOIT een
   -- VERZEND-regel — de dropship-kostenregel is al de verzendcomponent.
   IF v_moet_wachten OR v_order.afhalen OR v_is_dropship THEN
     IF v_bestaande_regel_id IS NOT NULL AND (v_moet_wachten OR v_order.afhalen) THEN
@@ -600,9 +600,9 @@ END;
 $$;
 
 COMMENT ON FUNCTION herwaardeer_combi_levering_verzendregel(BIGINT) IS
-  'Mig 552/555/556/568 (ADR-0039/0040): voegt/verwijdert de VERZEND-orderregel, '
+  'Mig 558/561/562/574 (ADR-0039/0040): voegt/verwijdert de VERZEND-orderregel, '
   'Combi-levering-bewust. Idempotent. No-op op vertrokken/eindstatus-orders. '
-  'NULL verzend_drempel -> 500 (SHIPPING_THRESHOLD). Mig 568: dropship-orders '
+  'NULL verzend_drempel -> 500 (SHIPPING_THRESHOLD). Mig 574: dropship-orders '
   'krijgen nooit een VERZEND-regel via dit pad (kostenregel is al verzending); '
   'een al-bestaande VERZEND-regel op een dropship-order wordt bewust niet '
   'stilzwijgend verwijderd (handmatige beoordeling).';
@@ -610,7 +610,7 @@ COMMENT ON FUNCTION herwaardeer_combi_levering_verzendregel(BIGINT) IS
 NOTIFY pgrst, 'reload schema';
 ```
 
-- [ ] **Step 2: Test rolled-back** — dropship-order van combi-klant + klant-toggle → geen VERZEND-INSERT (query `order_regels WHERE artikelnr='VERZEND'` vóór/na). **Step 3: Pas toe. Step 4: Commit** (`fix(combi-levering): mig 568 — dropship nooit VERZEND via combi-trigger`).
+- [ ] **Step 2: Test rolled-back** — dropship-order van combi-klant + klant-toggle → geen VERZEND-INSERT (query `order_regels WHERE artikelnr='VERZEND'` vóór/na). **Step 3: Pas toe. Step 4: Commit** (`fix(combi-levering): mig 574 — dropship nooit VERZEND via combi-trigger`).
 
 ---
 
@@ -717,15 +717,15 @@ en de checkbox-label:
 cd frontend && npx vitest run --reporter=dot 2>&1 | tail -3 && npx tsc -b --noEmit && echo OK
 ```
 Expected: alles groen.
-- [ ] **Step 2:** Docs bijwerken: `docs/changelog.md` (entry 02-07: audit + fixes 564-568), `docs/order-lifecycle.md` (pickronde-start-cascade + deelzending-guard), CLAUDE.md-bedrijfsregel-bullet Combi-levering aanvullen met de fix-nummers. `docs/database-schema.md` alleen als kolommen wijzigden (n.v.t.).
+- [ ] **Step 2:** Docs bijwerken: `docs/changelog.md` (entry 02-07: audit + fixes 570-574), `docs/order-lifecycle.md` (pickronde-start-cascade + deelzending-guard), CLAUDE.md-bedrijfsregel-bullet Combi-levering aanvullen met de fix-nummers. `docs/database-schema.md` alleen als kolommen wijzigden (n.v.t.).
 - [ ] **Step 3: Commit** (`docs(combi-levering): changelog + order-lifecycle na pre-prod-fixes`).
 
 ---
 
 ### Task 11: Deploy-runbook (naar productie)
 
-- [ ] **Step 1 — DB (kan vóór de merge, mig 564 is urgent):** mig 564 → 565 → 566 → 567 → 568 in die volgorde toepassen via het Supabase SQL-dashboard, elk eerst rolled-back getest (zie de tasks). 550-563 staan al live.
-- [ ] **Step 2 — Nummer-collisie-check vlak vóór merge:** `git fetch && git log origin/main --oneline -5` + check dat 564-568 niet inmiddels op main bestaan; hernummer anders (geheugen-regel).
+- [ ] **Step 1 — DB (kan vóór de merge, mig 570 is urgent):** mig 570 → 571 → 572 → 573 → 574 in die volgorde toepassen via het Supabase SQL-dashboard, elk eerst rolled-back getest (zie de tasks). 556-569 staan al live.
+- [ ] **Step 2 — Nummer-collisie-check vlak vóór merge:** `git fetch && git log origin/main --oneline -5` + check dat 570-574 niet inmiddels op main bestaan; hernummer anders (geheugen-regel).
 - [ ] **Step 3 — Merge naar main** via push van de branch naar origin (`git push origin feat/combi-levering:main` ná fast-forward-verificatie, of regulier merge-commando volgens de CLAUDE.md-git-workflow). Vercel deployt de frontend automatisch — **niet** ook handmatig deployen.
 - [ ] **Step 4 — Edge function:** `supabase functions deploy stuur-orderbevestiging --project-ref wqzeevfobwauxkalagtn` (enige function met gewijzigde `_shared`-afhankelijkheden: `combi-levering-tekst.ts` + `orderbevestiging-pdf.ts`).
 - [ ] **Step 5 — Handmatige verificatie (alleen-mens):**
@@ -741,5 +741,5 @@ Expected: alles groen.
 - Performance-indexen op de view (`debiteuren.combi_levering`-partial, functionele adres-norm-index) — huidige volumes (handvol combi-klanten) rechtvaardigen dit nog niet.
 - `zet_order_in_combi_levering_wacht` naar het SECURITY DEFINER-patroon — SECURITY INVOKER is hier mét RLS juist veiliger; gedocumenteerd, niet gewijzigd.
 - PDF-opmaak van de wacht-paragraaf (visuele nadruk) — cosmetisch.
-- View-laag-contracttest voor de mig 560-guard — vereist DB-fixtures; de SQL-verificaties in Task 1/2 dekken het gedrag nu; structurele testinfra is een eigen klus.
-- Badge tonen voor al-vertrokken groepsleden (mig 563 nam ze impliciet mee; na Task 1 toont de badge alleen actieve leden — als Miguel vertrokken leden in de badge wil, is dat een aparte, bewuste view-uitbreiding).
+- View-laag-contracttest voor de mig 566-guard — vereist DB-fixtures; de SQL-verificaties in Task 1/2 dekken het gedrag nu; structurele testinfra is een eigen klus.
+- Badge tonen voor al-vertrokken groepsleden (mig 569 nam ze impliciet mee; na Task 1 toont de badge alleen actieve leden — als Miguel vertrokken leden in de badge wil, is dat een aparte, bewuste view-uitbreiding).
