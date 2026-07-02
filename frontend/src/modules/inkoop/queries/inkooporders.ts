@@ -380,17 +380,22 @@ export interface OntvangstRol {
   rolnummer?: string | null
   lengte_cm: number
   breedte_cm: number
+  /** Mig 603: optionele magazijnlocatie-code (bv. "A.01.L") — wordt server-side
+   *  gekoppeld via create_or_get_magazijn_locatie. */
+  locatie?: string | null
 }
 
 export async function boekOntvangst(
   regel_id: number,
   rollen: OntvangstRol[],
   medewerker?: string,
+  staOverleveringToe = false,
 ): Promise<Array<{ rol_id: number; rolnummer: string }>> {
   const { data, error } = await supabase.rpc('boek_inkooporder_ontvangst_rollen', {
     p_regel_id: regel_id,
     p_rollen: rollen,
     p_medewerker: medewerker ?? null,
+    p_sta_overlevering_toe: staOverleveringToe,
   })
   if (error) throw error
   return (data ?? []) as Array<{ rol_id: number; rolnummer: string }>

@@ -15,6 +15,7 @@ interface Props {
 interface RolInput {
   strekkende_m: string
   breedte_cm_manueel: string
+  locatie: string
 }
 
 function formatAantal(value: number): string {
@@ -28,10 +29,12 @@ export function OntvangstBoekenDialog({ regel, inkooporderNr, breedteCm, onClose
 
   const breedteBekend = breedteCm != null && breedteCm > 0
   const [rollen, setRollen] = useState<RolInput[]>([
-    { strekkende_m: '', breedte_cm_manueel: '' },
+    { strekkende_m: '', breedte_cm_manueel: '', locatie: '' },
   ])
   const [error, setError] = useState<string | null>(null)
   const [toegekend, setToegekend] = useState<Array<{ rol_id: number; rolnummer: string }> | null>(null)
+  const [overleveringMelding, setOverleveringMelding] = useState<string | null>(null)
+  const [overleveringBevestigd, setOverleveringBevestigd] = useState(false)
 
   const { data: huidigeRollen = [], isLoading: rollenLaden } = useRollenVoorArtikel(
     regel.artikelnr ?? undefined,
@@ -57,7 +60,7 @@ export function OntvangstBoekenDialog({ regel, inkooporderNr, breedteCm, onClose
   const restM2 = regel.te_leveren_m - ingevuldM2
 
   const voegRolToe = () =>
-    setRollen((prev) => [...prev, { strekkende_m: '', breedte_cm_manueel: '' }])
+    setRollen((prev) => [...prev, { strekkende_m: '', breedte_cm_manueel: '', locatie: '' }])
 
   const verwijderRol = (idx: number) =>
     setRollen((prev) => prev.filter((_, i) => i !== idx))
@@ -84,6 +87,7 @@ export function OntvangstBoekenDialog({ regel, inkooporderNr, breedteCm, onClose
       payload.push({
         lengte_cm: Math.round(strekkende * 100),
         breedte_cm: breedte,
+        locatie: r.locatie.trim() || null,
       })
     }
 
@@ -92,14 +96,20 @@ export function OntvangstBoekenDialog({ regel, inkooporderNr, breedteCm, onClose
         ioRegelId: regel.id,
         rollen: payload,
         medewerker: medewerker ?? undefined,
+        staOverleveringToe: overleveringMelding != null && overleveringBevestigd,
       })
       // Discriminator: rollen-pad geeft { kind: 'rollen', rollen: [...] } terug
       if (result.kind === 'rollen') {
         setToegekend(result.rollen)
       }
     } catch (err) {
-      console.error('boek_ontvangst RPC error:', err)
       const e = err as { message?: string; details?: string; hint?: string; code?: string }
+      const msg = e?.message ?? ''
+      if (msg.startsWith('Over-levering:')) {
+        setOverleveringMelding(msg)
+        return
+      }
+      console.error('boek_ontvangst RPC error:', err)
       const parts = [e?.message, e?.details, e?.hint].filter(Boolean)
       setError(parts.length ? parts.join(' · ') : JSON.stringify(err))
     }
@@ -233,6 +243,13 @@ export function OntvangstBoekenDialog({ regel, inkooporderNr, breedteCm, onClose
                       required
                     />
                   )}
+                  <input
+                    type="text"
+                    value={r.locatie}
+                    onChange={(e) => wijzigRol(idx, 'locatie', e.target.value)}
+                    placeholder="Locatie (bv. A.01.L)"
+                    className={`w-36 ${inputClasses}`}
+                  />
                   <button
                     type="button"
                     onClick={() => verwijderRol(idx)}
@@ -300,6 +317,21 @@ export function OntvangstBoekenDialog({ regel, inkooporderNr, breedteCm, onClose
             )}
           </div>
 
+          {overleveringMelding && (
+            <div className="text-sm bg-amber-50 border border-amber-200 rounded-[var(--radius-sm)] px-3 py-2 space-y-2">
+              <p className="text-amber-800">{overleveringMelding}</p>
+              <label className="flex items-start gap-2 text-amber-900 font-medium">
+                <input
+                  type="checkbox"
+                  checked={overleveringBevestigd}
+                  onChange={(e) => setOverleveringBevestigd(e.target.checked)}
+                  className="mt-0.5"
+                />
+                De levering is echt zo groot — boek de over-levering
+              </label>
+            </div>
+          )}
+
           {error && (
             <div className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">{error}</div>
           )}
@@ -314,7 +346,7 @@ export function OntvangstBoekenDialog({ regel, inkooporderNr, breedteCm, onClose
             </button>
             <button
               type="submit"
-              disabled={boek.isPending}
+              disabled={boek.isPending || (overleveringMelding != null && !overleveringBevestigd)}
               className="px-4 py-2 bg-emerald-600 text-white rounded-[var(--radius-sm)] text-sm font-medium hover:bg-emerald-700 disabled:opacity-50"
             >
               {boek.isPending ? 'Bezig…' : `Boek ${rollen.length} rol${rollen.length === 1 ? '' : 'len'}`}

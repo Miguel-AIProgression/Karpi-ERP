@@ -94,7 +94,7 @@ describe('boekVoorraadOntvangst (stuks-pad) — RPC-contract', () => {
 // ============================================================
 
 describe('boekOntvangst (rollen-pad) — RPC-contract', () => {
-  it('roept RPC boek_inkooporder_ontvangst_rollen aan met p_regel_id + p_rollen + p_medewerker', async () => {
+  it('roept RPC boek_inkooporder_ontvangst_rollen aan met p_regel_id + p_rollen + p_medewerker + p_sta_overlevering_toe', async () => {
     nextRpcResponse = { data: [{ rol_id: 100, rolnummer: 'R-2026-0001' }], error: null }
     const rollen = [{ lengte_cm: 2500, breedte_cm: 400, rolnummer: null }]
     const result = await boekOntvangst(42, rollen, 'tester')
@@ -102,7 +102,12 @@ describe('boekOntvangst (rollen-pad) — RPC-contract', () => {
     expect(rpcCalls).toEqual([
       {
         fn: 'boek_inkooporder_ontvangst_rollen',
-        args: { p_regel_id: 42, p_rollen: rollen, p_medewerker: 'tester' },
+        args: {
+          p_regel_id: 42,
+          p_rollen: rollen,
+          p_medewerker: 'tester',
+          p_sta_overlevering_toe: false,
+        },
       },
     ])
     expect(result).toEqual([{ rol_id: 100, rolnummer: 'R-2026-0001' }])
@@ -115,6 +120,15 @@ describe('boekOntvangst (rollen-pad) — RPC-contract', () => {
       p_regel_id: 7,
       p_rollen: [],
       p_medewerker: null,
+      p_sta_overlevering_toe: false,
+    })
+  })
+
+  it('met staOverleveringToe=true stuurt p_sta_overlevering_toe: true', async () => {
+    nextRpcResponse = { data: [], error: null }
+    await boekOntvangst(7, [], 'tester', true)
+    expect(rpcCalls[0].args).toMatchObject({
+      p_sta_overlevering_toe: true,
     })
   })
 
