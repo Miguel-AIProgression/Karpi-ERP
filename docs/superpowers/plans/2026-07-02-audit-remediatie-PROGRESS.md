@@ -27,12 +27,14 @@ branch `fix/audit-remediatie` (basis: origin/main 7130d579, 2026-07-02).
   aantoonbaar gemerged (ancestor-check én `git cherry` falen; dit repo merged
   via cherry-pick/hernummering). Alles blijft staan; Miguel kan handmatig
   opruimen wat hij live weet.
-- [~] **1.1** B1 BevestigingBadge → isOrderBevestigd. Commit `76421e95`,
-  suite 838 groen. Spec-review: loopt. Kwaliteitsreview: nog niet gestart.
-- [~] **1.2** B2 claim-status 'verzonden'. Commit `da4df8cc` — ClaimStatus-type
+- [x] **1.1** B1 BevestigingBadge → isOrderBevestigd. Commit `76421e95`,
+  suite 838 groen. Spec ✅, kwaliteit APPROVED. Minor-nits (niet blokkerend,
+  polish-kandidaat): prop-type → `Pick<OrderRow,...>`; dode
+  `?? bevestigd_at`-fallback in de edi-tak; `bevestigdOp!`-asserts vermijdbaar.
+- [x] **1.2** B2 claim-status 'verzonden'. Commit `da4df8cc` — ClaimStatus-type
   + `.in('status',['actief','verzonden'])` in fetchClaimsVoorOrder(-Regel);
-  fetchClaimsVoorIORegel bewust onaangeroerd. Geen extra hits elders (grep).
-  Typecheck+tests groen. Reviews: lopen.
+  fetchClaimsVoorIORegel bewust onaangeroerd. Spec ✅, kwaliteit APPROVED
+  (0 issues). Live-verificatie: open punt voor Miguel (zie boven).
 - [ ] **1.3** B3 VORMTOESLAG-split
 - [ ] **1.4** B5 PO-prefill metProductVelden
 - [ ] **1.5** B6 wacht-status dekkings-fix (STOP vóór apply!)
@@ -58,7 +60,18 @@ branch `fix/audit-remediatie` (basis: origin/main 7130d579, 2026-07-02).
 - [ ] **7.1** eindverificatie + changelog; merge alleen op commando Miguel
 
 ## Open punten voor Miguel
-- (nog geen)
+- **B2 live-verificatie (Task 1.2):** draai in de SQL-editor:
+  `SELECT o.order_nr, orr.id, orr.te_leveren, SUM(r.aantal) FILTER (WHERE r.status='actief') AS actief, SUM(r.aantal) FILTER (WHERE r.status='verzonden') AS verzonden FROM order_reserveringen r JOIN order_regels orr ON orr.id=r.order_regel_id JOIN orders o ON o.id=orr.order_id WHERE o.status='Deels verzonden' AND r.status='verzonden' GROUP BY 1,2,3 LIMIT 5;`
+  en open één zo'n order in de UI — de valse "Wacht op nieuwe inkoop"-subrij moet weg zijn.
+
+## BELANGRIJK: DB-toegang
+Supabase MCP `execute_sql` heeft GEEN rechten op dit project (bevestigd
+2026-07-02; zie memory reference_karpi_supabase_mcp). Het plan noemt op
+meerdere plekken "via MCP" — dat werkt dus niet. Werkwijze voor alle
+DB-taken (1.5, 2.5, 3.2-verificatie, 5.1/5.2-asserts, 4.1-fallback):
+migratie-/verificatie-SQL als bestand opleveren; Miguel draait ze in de
+SQL-editor en rapporteert de output terug. `supabase` CLI is wél gelinkt
+(functions deploy + `db dump` voor Task 4.1).
 
 ## Notities voor de uitvoerder
 - 1.1-detail: orders-query gebruikt `select('*')` → velden waren al aanwezig.
