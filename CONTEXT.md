@@ -105,6 +105,24 @@ wordt. Onzichtbaar in snijplanning/confectie. **Wordt vervangen** door echte
 Productie-only orders met echte Snijplannen (één bron van waarheid voor rollengte).
 _Avoid_: reservering, blokkade
 
+### Voorraad & inkoop
+
+**Claim-vloer**:
+De ondergrens waaronder een Inkooporder-regel niet verlaagd of verwijderd mag
+worden: `geleverd + actieve verkooporder-claims + snijplan-claims ('Wacht op
+inkoop')`. Verlagen/verwijderen onder deze vloer vereist expliciet vrijgeven
+(`p_vrijgeven=TRUE`, mig 602) — de RPC released dan zelf de geraakte claims,
+waarna getroffen Orders zichtbaar terugvallen naar 'Wacht op inkoop', nooit
+stil.
+_Avoid_: drempel, ondergrens (te generiek — het is een specifieke claim-optelsom, geen losse instelling)
+
+**Leveranciersportal**:
+portal.karpi.nl — een statische pagina (`docs/portal/index.html`) + edge
+function `supplier-portal` waarmee een leverancier **uitsluitend** de ETA en
+een notitie bij zijn eigen Inkooporder-regels bijwerkt. Nooit aantallen of
+prijzen — die blijven Karpi's eigen invoer.
+_Avoid_: leveranciersportaal (spelling), supplier-portal (dat is de edge function, niet het concept)
+
 ### Magazijn & verzending
 
 **Manco**:
