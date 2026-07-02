@@ -43,6 +43,10 @@ export {
   useAnnuleerRegel,
   useVerwijderRegel,
 } from './hooks/use-regel-mutaties'
+// Bewuste uitzondering op "alleen hooks naar buiten": pure predicaat (geen
+// data-query) dat de regel-mutatie-dialogs (Task 6) nodig hebben om de
+// 'Claim-vloer:'-fout te herkennen — mirrort Reservering's precedent van
+// pure helpers via de barrel.
 export { isClaimVloerFout } from './queries/regel-mutaties'
 
 // ---------------------------------------------------------------------------

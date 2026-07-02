@@ -22,11 +22,17 @@ export function useVoegRegelToe() {
   })
 }
 
+// Wijzig/annuleer/verwijder kunnen server-side claims muteren: het
+// vrijgeven-pad releaset order_reserveringen en roept herwaardeer_order_status
+// aan — precies de claim-mutatie waarvoor de isOntvangst-keten bestaat.
+// Daarom onvoorwaardelijk `{ isOntvangst: true }`, zelfde patroon als
+// use-boek-ontvangst.ts. Regel toevoegen raakt nooit claims → bare invalidate.
+
 export function useWijzigRegel() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: wijzigInkooporderRegel,
-    onSuccess: () => invalidateNaInkoopMutatie(qc),
+    onSuccess: () => invalidateNaInkoopMutatie(qc, { isOntvangst: true }),
   })
 }
 
@@ -35,7 +41,7 @@ export function useAnnuleerRegel() {
   return useMutation({
     mutationFn: ({ regelId, vrijgeven }: { regelId: number; vrijgeven?: boolean }) =>
       annuleerInkooporderRegel(regelId, vrijgeven ?? false),
-    onSuccess: () => invalidateNaInkoopMutatie(qc),
+    onSuccess: () => invalidateNaInkoopMutatie(qc, { isOntvangst: true }),
   })
 }
 
@@ -44,6 +50,6 @@ export function useVerwijderRegel() {
   return useMutation({
     mutationFn: ({ regelId, vrijgeven }: { regelId: number; vrijgeven?: boolean }) =>
       verwijderInkooporderRegel(regelId, vrijgeven ?? false),
-    onSuccess: () => invalidateNaInkoopMutatie(qc),
+    onSuccess: () => invalidateNaInkoopMutatie(qc, { isOntvangst: true }),
   })
 }
