@@ -259,16 +259,18 @@ BEGIN
   v_eigen_artikelnr := COALESCE(v_stuks_artikelnr, p_artikelnr);
 
   -- Optie 2: eigen artikel, open inkoop met ETA.
+  -- io_regel_ruimte(ir.id) 1x per rij via LATERAL (was: 2x, in SELECT en WHERE).
   RETURN QUERY
   SELECT 'inkooporder_regel'::TEXT, v_eigen_artikelnr, p.omschrijving,
-         ir.id, io_regel_ruimte(ir.id), io.verwacht_datum, v_eigen_artikelnr
+         ir.id, r.ruimte, io.verwacht_datum, v_eigen_artikelnr
     FROM inkooporder_regels ir
     JOIN inkooporders io ON io.id = ir.inkooporder_id
     JOIN producten p ON p.artikelnr = ir.artikelnr
+    CROSS JOIN LATERAL io_regel_ruimte(ir.id) AS r(ruimte)
    WHERE ir.artikelnr = v_eigen_artikelnr
      AND ir.eenheid = 'stuks'
      AND io.status IN ('Besteld', 'Deels ontvangen')
-     AND io_regel_ruimte(ir.id) > 0
+     AND r.ruimte > 0
    ORDER BY io.verwacht_datum NULLS LAST;
 
   SELECT p.kleur_code, k.collectie_id, p.breedte_cm, p.lengte_cm, p.maatwerk_vorm_code
@@ -298,13 +300,15 @@ BEGIN
    ORDER BY p.vrije_voorraad DESC;
 
   -- Optie 3: equivalent, wacht op zíjn eigen inkoop met ETA.
+  -- io_regel_ruimte(ir.id) 1x per rij via LATERAL (was: 2x, in SELECT en WHERE).
   RETURN QUERY
   SELECT 'inkooporder_regel'::TEXT, p.artikelnr, p.omschrijving,
-         ir.id, io_regel_ruimte(ir.id), io.verwacht_datum, v_eigen_artikelnr
+         ir.id, r.ruimte, io.verwacht_datum, v_eigen_artikelnr
     FROM producten p
     JOIN kwaliteiten k ON k.code = p.kwaliteit_code
     JOIN inkooporder_regels ir ON ir.artikelnr = p.artikelnr
     JOIN inkooporders io ON io.id = ir.inkooporder_id
+    CROSS JOIN LATERAL io_regel_ruimte(ir.id) AS r(ruimte)
    WHERE k.collectie_id = v_collectie_id
      AND p.kleur_code    = v_kleur_code
      AND p.breedte_cm    = v_breedte_cm
@@ -314,7 +318,7 @@ BEGIN
      AND p.maatwerk_vorm_code IS NOT DISTINCT FROM v_maatwerk_vorm_code
      AND ir.eenheid      = 'stuks'
      AND io.status IN ('Besteld', 'Deels ontvangen')
-     AND io_regel_ruimte(ir.id) > 0
+     AND r.ruimte > 0
    ORDER BY io.verwacht_datum NULLS LAST;
 END;
 $function$
@@ -4472,7 +4476,7 @@ AS $function$
     orr.maatwerk_kleur_code::TEXT
   FROM snijplannen sn
   JOIN order_regels orr ON sn.order_regel_id = orr.id
-  WHERE sn.status = 'Gepland'
+  WHERE sn.status IN ('Gepland', 'Wacht')
     AND sn.rol_id IS NULL
     AND sn.verwacht_inkooporder_regel_id IS NULL
     AND orr.maatwerk_kwaliteit_code IS NOT NULL
@@ -4481,14 +4485,13 @@ AS $function$
 
   UNION
 
-  -- Case 2 (mig 553): stukken die al ongeplaatst zijn (elke leeftijd) terwijl
-  -- er beschikbare rollen van dezelfde kwaliteit/kleur aanwezig zijn.
-  -- Geen tijdsfilter: zolang materiaal beschikbaar is én stukken wachten,
-  -- hoort de groep in de prioriteitspass. Reden: nieuwe rollen kunnen uren of
-  -- dagen geleden zijn binnengekomen en de willekeurige sweep heeft de groep
-  -- statistisch wel geraakt maar de planning toch niet afgerond (lock contention,
-  -- verdringingscheck, of transiënte fout). Zonder dit filter blijft zo'n groep
-  -- in de willekeurige roulatie terwijl direct actie mogelijk was.
+  -- Case 2 (mig 553 + 579): stukken die al ongeplaatst zijn (elke leeftijd,
+  -- status 'Gepland' OF 'Wacht') terwijl er beschikbare rollen van dezelfde
+  -- kwaliteit/kleur in het magazijn liggen.
+  -- Mig 553 filterde alleen op 'Gepland'; release_gepland_stukken (mig 133)
+  -- zet status terug naar 'Wacht' waardoor old-unplanned stukken niet als
+  -- prioriteit werden gepakt en tot 2 uur moesten wachten op de willekeurige
+  -- sweep — zelfs als er rollen klaar stonden (LOUV/12 incident 2026-07-02).
   SELECT DISTINCT
     orr.maatwerk_kwaliteit_code::TEXT,
     orr.maatwerk_kleur_code::TEXT
@@ -4501,7 +4504,7 @@ AS $function$
          OR ro.kleur_code = regexp_replace(orr.maatwerk_kleur_code, '\.0$', ''))
     AND ro.status IN ('beschikbaar', 'reststuk')
     AND ro.snijden_gestart_op IS NULL
-  WHERE sn.status = 'Gepland'
+  WHERE sn.status IN ('Gepland', 'Wacht')
     AND sn.rol_id IS NULL
     AND sn.verwacht_inkooporder_regel_id IS NULL
     AND orr.maatwerk_kwaliteit_code IS NOT NULL
@@ -4652,10 +4655,8 @@ DECLARE
   v_resterend          INTEGER;
   v_handmatig_totaal   INTEGER;
   v_alias              RECORD;
-  v_alias_beschikbaar  INTEGER;
   v_alias_alloc        INTEGER;
   v_io                 RECORD;
-  v_io_ruimte          INTEGER;
   v_alloc              INTEGER;
   v_stuks_artikelnr    TEXT;
   v_stuks_per_doos     INTEGER;
@@ -4728,6 +4729,12 @@ BEGIN
   v_resterend := v_resterend - v_op_voorraad;
 
   -- Stap 1.5: alias voorraad (zelfde collectie + kleur_code + maat + maatwerk_vorm_code)
+  -- Kandidaten + hun voorraad_beschikbaar_voor_artikel()-cijfer worden nu in EEN
+  -- set-based query gematerialiseerd (CTE's), i.p.v. de helperfunctie 1x per
+  -- loop-iteratie aan te roepen. Zelfde formule als voorraad_beschikbaar_voor_artikel:
+  -- GREATEST(0, voorraad - backorder - SUM(actieve/verzonden voorraad-claims van
+  -- andere regels)). De greedy-volgorde (ORDER BY vrije_voorraad DESC, artikelnr ASC)
+  -- en toewijzingsgedrag blijven identiek.
   IF v_resterend > 0 THEN
     SELECT p.kleur_code, k.collectie_id, p.breedte_cm, p.lengte_cm, p.maatwerk_vorm_code
       INTO v_kleur_code, v_collectie_id, v_breedte_cm, v_lengte_cm, v_maatwerk_vorm_code
@@ -4737,30 +4744,44 @@ BEGIN
 
     IF v_collectie_id IS NOT NULL AND v_kleur_code IS NOT NULL THEN
       FOR v_alias IN
-        SELECT p.artikelnr
-          FROM producten p
-          JOIN kwaliteiten k ON k.code = p.kwaliteit_code
-         WHERE k.collectie_id = v_collectie_id
-           AND p.kleur_code    = v_kleur_code
-           AND p.breedte_cm    = v_breedte_cm
-           AND p.lengte_cm     = v_lengte_cm
-           AND p.artikelnr    <> v_artikelnr
-           AND p.actief        = true
-           AND p.vrije_voorraad > 0
-           AND p.maatwerk_vorm_code IS NOT DISTINCT FROM v_maatwerk_vorm_code
-           AND NOT EXISTS (
-             SELECT 1 FROM order_reserveringen or2
-              WHERE or2.order_regel_id  = p_order_regel_id
-                AND or2.fysiek_artikelnr = p.artikelnr
-                AND or2.bron            = 'voorraad'
-                AND or2.status          = 'actief'
-                AND or2.is_handmatig    = true
-           )
-         ORDER BY p.vrije_voorraad DESC, p.artikelnr ASC
+        WITH kandidaten AS (
+          SELECT p.artikelnr, p.voorraad, p.backorder, p.vrije_voorraad
+            FROM producten p
+            JOIN kwaliteiten k ON k.code = p.kwaliteit_code
+           WHERE k.collectie_id = v_collectie_id
+             AND p.kleur_code    = v_kleur_code
+             AND p.breedte_cm    = v_breedte_cm
+             AND p.lengte_cm     = v_lengte_cm
+             AND p.artikelnr    <> v_artikelnr
+             AND p.actief        = true
+             AND p.vrije_voorraad > 0
+             AND p.maatwerk_vorm_code IS NOT DISTINCT FROM v_maatwerk_vorm_code
+             AND NOT EXISTS (
+               SELECT 1 FROM order_reserveringen or2
+                WHERE or2.order_regel_id  = p_order_regel_id
+                  AND or2.fysiek_artikelnr = p.artikelnr
+                  AND or2.bron            = 'voorraad'
+                  AND or2.status          = 'actief'
+                  AND or2.is_handmatig    = true
+             )
+        ),
+        claims AS (
+          SELECT r.fysiek_artikelnr AS artikelnr, COALESCE(SUM(r.aantal), 0) AS geclaimd
+            FROM order_reserveringen r
+           WHERE r.bron = 'voorraad'
+             AND r.status IN ('actief', 'verzonden')
+             AND r.order_regel_id <> p_order_regel_id
+             AND r.fysiek_artikelnr IN (SELECT artikelnr FROM kandidaten)
+           GROUP BY r.fysiek_artikelnr
+        )
+        SELECT k.artikelnr,
+               GREATEST(0, COALESCE(k.voorraad, 0) - COALESCE(k.backorder, 0) - COALESCE(c.geclaimd, 0)) AS beschikbaar
+          FROM kandidaten k
+          LEFT JOIN claims c ON c.artikelnr = k.artikelnr
+         ORDER BY k.vrije_voorraad DESC, k.artikelnr ASC
       LOOP
         EXIT WHEN v_resterend <= 0;
-        v_alias_beschikbaar := voorraad_beschikbaar_voor_artikel(v_alias.artikelnr, p_order_regel_id);
-        v_alias_alloc := LEAST(v_resterend, v_alias_beschikbaar);
+        v_alias_alloc := LEAST(v_resterend, v_alias.beschikbaar);
         IF v_alias_alloc > 0 THEN
           INSERT INTO order_reserveringen (order_regel_id, bron, aantal, fysiek_artikelnr, is_handmatig)
           VALUES (p_order_regel_id, 'voorraad', v_alias_alloc, v_alias.artikelnr, false);
@@ -4771,19 +4792,38 @@ BEGIN
   END IF;
 
   -- Stap 2: IO-claims stuks-artikel op oudste verwacht_datum eerst
+  -- Kandidaten + hun io_regel_ruimte()-cijfer worden nu in EEN set-based query
+  -- gematerialiseerd (CTE's), i.p.v. de helperfunctie 1x per loop-iteratie aan te
+  -- roepen. Zelfde formule als io_regel_ruimte (eenheid='stuks' staat al vast via
+  -- het kandidaten-filter): GREATEST(0, FLOOR(te_leveren_m) - SUM(actieve IO-claims)).
+  -- De greedy-volgorde (ORDER BY verwacht_datum NULLS LAST, id ASC) en
+  -- toewijzingsgedrag blijven identiek.
   IF v_resterend > 0 THEN
     FOR v_io IN
-      SELECT ir.id, io.verwacht_datum
-        FROM inkooporder_regels ir
-        JOIN inkooporders io ON io.id = ir.inkooporder_id
-       WHERE ir.artikelnr = v_artikelnr
-         AND ir.eenheid   = 'stuks'
-         AND io.status IN ('Besteld', 'Deels ontvangen')
-       ORDER BY io.verwacht_datum NULLS LAST, ir.id ASC
+      WITH kandidaten AS (
+        SELECT ir.id, ir.te_leveren_m, io.verwacht_datum
+          FROM inkooporder_regels ir
+          JOIN inkooporders io ON io.id = ir.inkooporder_id
+         WHERE ir.artikelnr = v_artikelnr
+           AND ir.eenheid   = 'stuks'
+           AND io.status IN ('Besteld', 'Deels ontvangen')
+      ),
+      claims AS (
+        SELECT r.inkooporder_regel_id AS id, COALESCE(SUM(r.aantal), 0) AS geclaimd
+          FROM order_reserveringen r
+         WHERE r.bron = 'inkooporder_regel'
+           AND r.status = 'actief'
+           AND r.inkooporder_regel_id IN (SELECT id FROM kandidaten)
+         GROUP BY r.inkooporder_regel_id
+      )
+      SELECT k.id, k.verwacht_datum,
+             GREATEST(0, FLOOR(COALESCE(k.te_leveren_m, 0))::INTEGER - COALESCE(c.geclaimd, 0)) AS ruimte
+        FROM kandidaten k
+        LEFT JOIN claims c ON c.id = k.id
+       ORDER BY k.verwacht_datum NULLS LAST, k.id ASC
     LOOP
       EXIT WHEN v_resterend <= 0;
-      v_io_ruimte := io_regel_ruimte(v_io.id);
-      v_alloc := LEAST(v_resterend, v_io_ruimte);
+      v_alloc := LEAST(v_resterend, v_io.ruimte);
       IF v_alloc > 0 THEN
         INSERT INTO order_reserveringen (order_regel_id, bron, inkooporder_regel_id, aantal, fysiek_artikelnr)
         VALUES (p_order_regel_id, 'inkooporder_regel', v_io.id, v_alloc, v_artikelnr);
@@ -5582,80 +5622,36 @@ $function$
 CREATE OR REPLACE FUNCTION public.keur_snijvoorstel_goed(p_voorstel_id bigint)
  RETURNS void
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
-DECLARE
-  v_status TEXT;
-  v_invalid_plannen INTEGER;
-  v_invalid_rollen INTEGER;
-  r RECORD;
 BEGIN
-  SELECT status INTO v_status
-  FROM snijvoorstellen
-  WHERE id = p_voorstel_id
-  FOR UPDATE;
+  -- Schrijf ALLEEN positie/rol/status/rotatie vanuit de goedgekeurde plaatsingen
+  -- naar snijplannen. NOOIT lengte_cm/breedte_cm — die zijn altijd de originele
+  -- maatwerk-dimensies (order_regels.maatwerk_lengte_cm/breedte_cm, mig 274/323).
+  --
+  -- snijvoorstel_plaatsingen.lengte_cm/breedte_cm = placed afmetingen
+  -- (marge-inclusief, mogelijke rotatie-swap voor visualisatie) — een afgeleide
+  -- waarde die NIET teruggeschreven mag worden (inflate-bug, mig 578).
+  UPDATE snijplannen sn
+  SET
+    rol_id        = svp.rol_id,
+    positie_x_cm = svp.positie_x_cm,
+    positie_y_cm = svp.positie_y_cm,
+    geroteerd     = svp.geroteerd,
+    status        = 'Gepland'::snijplan_status
+  FROM snijvoorstel_plaatsingen svp
+  WHERE svp.voorstel_id = p_voorstel_id
+    AND svp.snijplan_id = sn.id;
 
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'Snijvoorstel % niet gevonden', p_voorstel_id;
-  END IF;
-
-  IF v_status <> 'concept' THEN
-    RAISE EXCEPTION 'Snijvoorstel kan alleen goedgekeurd worden vanuit status "concept" (huidige status: %)', v_status;
-  END IF;
-
-  -- Snijplannen moeten nog "onaangetast" zijn: status = 'Gepland' of 'Snijden'
-  -- met rol_id IS NULL (na release, voor nieuwe toewijzing).
-  SELECT COUNT(*) INTO v_invalid_plannen
-  FROM snijvoorstel_plaatsingen sp
-  JOIN snijplannen sn ON sn.id = sp.snijplan_id
-  WHERE sp.voorstel_id = p_voorstel_id
-    AND (sn.status NOT IN ('Gepland', 'Snijden') OR sn.rol_id IS NOT NULL);
-
-  IF v_invalid_plannen > 0 THEN
-    RAISE EXCEPTION 'Niet alle snijplannen zijn nog onaangetast — % plan(nen) gewijzigd sinds voorstel', v_invalid_plannen;
-  END IF;
-
-  SELECT COUNT(*) INTO v_invalid_rollen
-  FROM snijvoorstel_plaatsingen sp
-  JOIN rollen ro ON ro.id = sp.rol_id
-  WHERE sp.voorstel_id = p_voorstel_id
-    AND (
-      ro.status NOT IN ('beschikbaar', 'reststuk', 'in_snijplan')
-      OR (ro.status = 'in_snijplan' AND ro.snijden_gestart_op IS NOT NULL)
-    );
-
-  IF v_invalid_rollen > 0 THEN
-    RAISE EXCEPTION 'Niet alle rollen zijn bruikbaar — % rol(len) inmiddels gewijzigd of al in productie', v_invalid_rollen;
-  END IF;
-
-  PERFORM ro.id
-  FROM snijvoorstel_plaatsingen sp
-  JOIN rollen ro ON ro.id = sp.rol_id
-  WHERE sp.voorstel_id = p_voorstel_id
-  FOR UPDATE OF ro;
-
-  -- Zet snijplannen op 'Gepland' (niet 'Snijden' — die komt pas bij start_snijden_rol).
-  FOR r IN
-    SELECT snijplan_id, rol_id, positie_x_cm, positie_y_cm, geroteerd
-    FROM snijvoorstel_plaatsingen
-    WHERE voorstel_id = p_voorstel_id
-  LOOP
-    UPDATE snijplannen
-    SET rol_id = r.rol_id,
-        positie_x_cm = r.positie_x_cm,
-        positie_y_cm = r.positie_y_cm,
-        geroteerd = r.geroteerd,
-        status = 'Gepland'
-    WHERE id = r.snijplan_id;
-  END LOOP;
-
-  UPDATE rollen
+  -- Rollen die stukken toegewezen kregen: naar 'in_snijplan'
+  UPDATE rollen r
   SET status = 'in_snijplan'
-  WHERE id IN (
-    SELECT DISTINCT rol_id
-    FROM snijvoorstel_plaatsingen
-    WHERE voorstel_id = p_voorstel_id
-  );
+  FROM snijvoorstel_plaatsingen svp
+  WHERE svp.voorstel_id = p_voorstel_id
+    AND r.id = svp.rol_id
+    AND r.status IN ('beschikbaar', 'reststuk');
 
+  -- Voorstel zelf: goedgekeurd
   UPDATE snijvoorstellen
   SET status = 'goedgekeurd'
   WHERE id = p_voorstel_id;
@@ -7640,40 +7636,6 @@ END;
 $function$
 
 
-CREATE OR REPLACE FUNCTION public.markeer_hst_verstuurd(p_id bigint, p_extern_transport_order_id text, p_extern_tracking_number text, p_request_payload jsonb, p_response_payload jsonb, p_response_http_code integer)
- RETURNS void
- LANGUAGE plpgsql
- SECURITY DEFINER
-AS $function$
-DECLARE
-  v_zending_id BIGINT;
-BEGIN
-  UPDATE hst_transportorders
-     SET status = 'Verstuurd',
-         extern_transport_order_id = p_extern_transport_order_id,
-         extern_tracking_number = p_extern_tracking_number,
-         request_payload = p_request_payload,
-         response_payload = p_response_payload,
-         response_http_code = p_response_http_code,
-         sent_at = now(),
-         error_msg = NULL
-   WHERE id = p_id
-   RETURNING zending_id INTO v_zending_id;
-
-  -- Tracking + status doorzetten naar zending
-  IF v_zending_id IS NOT NULL THEN
-    UPDATE zendingen
-       SET track_trace = COALESCE(p_extern_tracking_number, p_extern_transport_order_id),
-           status = CASE
-             WHEN status = 'Klaar voor verzending' THEN 'Onderweg'::zending_status
-             ELSE status
-           END
-     WHERE id = v_zending_id;
-  END IF;
-END;
-$function$
-
-
 CREATE OR REPLACE FUNCTION public.markeer_hst_verstuurd(p_id bigint, p_extern_transport_order_id text, p_extern_tracking_number text, p_request_payload jsonb, p_response_payload jsonb, p_response_http_code integer, p_pdf_path text DEFAULT NULL::text, p_pdf_uploaded_at timestamp with time zone DEFAULT NULL::timestamp with time zone)
  RETURNS void
  LANGUAGE plpgsql
@@ -7697,6 +7659,40 @@ BEGIN
    RETURNING zending_id INTO v_zending_id;
 
   -- Tracking + status doorzetten naar zending (ongewijzigd t.o.v. mig 171)
+  IF v_zending_id IS NOT NULL THEN
+    UPDATE zendingen
+       SET track_trace = COALESCE(p_extern_tracking_number, p_extern_transport_order_id),
+           status = CASE
+             WHEN status = 'Klaar voor verzending' THEN 'Onderweg'::zending_status
+             ELSE status
+           END
+     WHERE id = v_zending_id;
+  END IF;
+END;
+$function$
+
+
+CREATE OR REPLACE FUNCTION public.markeer_hst_verstuurd(p_id bigint, p_extern_transport_order_id text, p_extern_tracking_number text, p_request_payload jsonb, p_response_payload jsonb, p_response_http_code integer)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE
+  v_zending_id BIGINT;
+BEGIN
+  UPDATE hst_transportorders
+     SET status = 'Verstuurd',
+         extern_transport_order_id = p_extern_transport_order_id,
+         extern_tracking_number = p_extern_tracking_number,
+         request_payload = p_request_payload,
+         response_payload = p_response_payload,
+         response_http_code = p_response_http_code,
+         sent_at = now(),
+         error_msg = NULL
+   WHERE id = p_id
+   RETURNING zending_id INTO v_zending_id;
+
+  -- Tracking + status doorzetten naar zending
   IF v_zending_id IS NOT NULL THEN
     UPDATE zendingen
        SET track_trace = COALESCE(p_extern_tracking_number, p_extern_transport_order_id),
@@ -13933,98 +13929,54 @@ END;
 $function$
 
 
-CREATE OR REPLACE FUNCTION public.voltooi_snijplan_rol(p_rol_id bigint, p_gesneden_door text DEFAULT NULL::text)
+CREATE OR REPLACE FUNCTION public.voltooi_snijplan_rol(p_rol_id bigint, p_gesneden_door text DEFAULT NULL::text, p_override_rest_lengte integer DEFAULT NULL::integer)
  RETURNS TABLE(reststuk_id bigint, reststuk_rolnummer text, reststuk_lengte_cm integer)
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_rol RECORD;
   v_gebruikte_lengte NUMERIC;
   v_rest_lengte INTEGER;
-  v_nieuw_rolnummer TEXT;
   v_reststuk_id BIGINT;
-  v_min_reststuk_cm INTEGER := 50; -- minimale lengte om reststuk aan te maken
+  v_reststuk_nr TEXT;
 BEGIN
-  -- 1. Lock en haal rol op
-  SELECT * INTO v_rol FROM rollen WHERE id = p_rol_id FOR UPDATE;
+  SELECT * INTO v_rol FROM rollen WHERE id = p_rol_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Rol % niet gevonden', p_rol_id; END IF;
 
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'Rol % niet gevonden', p_rol_id;
-  END IF;
-
-  IF v_rol.status <> 'in_snijplan' THEN
-    RAISE EXCEPTION 'Rol % heeft status "%" — kan alleen "in_snijplan" rollen voltooien', p_rol_id, v_rol.status;
-  END IF;
-
-  -- 2. Bereken gebruikte lengte op basis van geplaatste snijplannen
-  SELECT COALESCE(MAX(positie_y_cm + breedte_cm), 0)
-  INTO v_gebruikte_lengte
-  FROM snijvoorstel_plaatsingen
-  WHERE rol_id = p_rol_id
-    AND voorstel_id IN (SELECT id FROM snijvoorstellen WHERE status = 'goedgekeurd');
-
-  -- Fallback: bereken uit snijplannen direct
-  IF v_gebruikte_lengte = 0 THEN
-    SELECT COALESCE(MAX(positie_y_cm +
-      CASE WHEN geroteerd THEN lengte_cm ELSE breedte_cm END
-    ), 0)
-    INTO v_gebruikte_lengte
-    FROM snijplannen
-    WHERE rol_id = p_rol_id
-      AND status = 'Gepland';
-  END IF;
-
-  v_rest_lengte := GREATEST(0, v_rol.lengte_cm - CEIL(v_gebruikte_lengte));
-
-  -- 3. Markeer alle geplande snijplannen op deze rol als 'Gesneden'
+  -- Markeer alle snijplannen op deze rol als Gesneden
   UPDATE snijplannen
   SET status = 'Gesneden',
       gesneden_datum = CURRENT_DATE,
       gesneden_op = NOW(),
       gesneden_door = p_gesneden_door
   WHERE rol_id = p_rol_id
-    AND status = 'Gepland';
+    AND status = 'Snijden';
 
-  -- 4. Maak reststuk aan als er genoeg over is
-  IF v_rest_lengte >= v_min_reststuk_cm THEN
-    -- Genereer rolnummer voor reststuk
-    v_nieuw_rolnummer := v_rol.rolnummer || '-REST';
+  SELECT COALESCE(MAX(positie_y_cm + CASE WHEN geroteerd THEN lengte_cm ELSE breedte_cm END), 0)
+  INTO v_gebruikte_lengte
+  FROM snijplannen WHERE rol_id = p_rol_id AND status = 'Gesneden';
 
-    INSERT INTO rollen (
-      rolnummer, artikelnr, karpi_code, omschrijving,
-      lengte_cm, breedte_cm, oppervlak_m2,
-      kwaliteit_code, kleur_code, zoeksleutel,
-      status, oorsprong_rol_id, reststuk_datum
-    ) VALUES (
-      v_nieuw_rolnummer,
-      v_rol.artikelnr,
-      v_rol.karpi_code,
-      v_rol.omschrijving,
-      v_rest_lengte,
-      v_rol.breedte_cm,
-      ROUND((v_rest_lengte * v_rol.breedte_cm)::NUMERIC / 10000, 2),
-      v_rol.kwaliteit_code,
-      v_rol.kleur_code,
-      v_rol.zoeksleutel,
-      'reststuk',
-      p_rol_id,
-      NOW()
-    )
+  IF p_override_rest_lengte IS NOT NULL THEN
+    v_rest_lengte := GREATEST(0, p_override_rest_lengte);
+  ELSE
+    v_rest_lengte := GREATEST(0, v_rol.lengte_cm - CEIL(v_gebruikte_lengte));
+  END IF;
+
+  UPDATE rollen SET status = 'gesneden' WHERE id = p_rol_id;
+
+  IF v_rest_lengte >= 100 THEN
+    v_reststuk_nr := v_rol.rolnummer || '-R';
+    INSERT INTO rollen (rolnummer, artikelnr, kwaliteit_code, kleur_code, lengte_cm, breedte_cm,
+                        oppervlak_m2, status, oorsprong_rol_id, reststuk_datum)
+    VALUES (v_reststuk_nr, v_rol.artikelnr, v_rol.kwaliteit_code, v_rol.kleur_code,
+            v_rest_lengte, v_rol.breedte_cm,
+            ROUND(v_rest_lengte * v_rol.breedte_cm / 10000.0, 2),
+            'beschikbaar', p_rol_id, CURRENT_DATE)
     RETURNING id INTO v_reststuk_id;
 
-    -- 5. Originele rol markeren als gesneden (volledig verwerkt)
-    UPDATE rollen
-    SET status = 'gesneden',
-        lengte_cm = CEIL(v_gebruikte_lengte)
-    WHERE id = p_rol_id;
-
-    RETURN QUERY SELECT v_reststuk_id, v_nieuw_rolnummer, v_rest_lengte;
+    RETURN QUERY SELECT v_reststuk_id, v_reststuk_nr, v_rest_lengte;
   ELSE
-    -- Geen bruikbaar reststuk — rol volledig verwerkt
-    UPDATE rollen
-    SET status = 'gesneden'
-    WHERE id = p_rol_id;
-
     RETURN QUERY SELECT NULL::BIGINT, NULL::TEXT, NULL::INTEGER;
   END IF;
 END;
@@ -14145,54 +14097,98 @@ END;
 $function$
 
 
-CREATE OR REPLACE FUNCTION public.voltooi_snijplan_rol(p_rol_id bigint, p_gesneden_door text DEFAULT NULL::text, p_override_rest_lengte integer DEFAULT NULL::integer)
+CREATE OR REPLACE FUNCTION public.voltooi_snijplan_rol(p_rol_id bigint, p_gesneden_door text DEFAULT NULL::text)
  RETURNS TABLE(reststuk_id bigint, reststuk_rolnummer text, reststuk_lengte_cm integer)
  LANGUAGE plpgsql
- SECURITY DEFINER
 AS $function$
 DECLARE
   v_rol RECORD;
   v_gebruikte_lengte NUMERIC;
   v_rest_lengte INTEGER;
+  v_nieuw_rolnummer TEXT;
   v_reststuk_id BIGINT;
-  v_reststuk_nr TEXT;
+  v_min_reststuk_cm INTEGER := 50; -- minimale lengte om reststuk aan te maken
 BEGIN
-  SELECT * INTO v_rol FROM rollen WHERE id = p_rol_id;
-  IF NOT FOUND THEN RAISE EXCEPTION 'Rol % niet gevonden', p_rol_id; END IF;
+  -- 1. Lock en haal rol op
+  SELECT * INTO v_rol FROM rollen WHERE id = p_rol_id FOR UPDATE;
 
-  -- Markeer alle snijplannen op deze rol als Gesneden
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Rol % niet gevonden', p_rol_id;
+  END IF;
+
+  IF v_rol.status <> 'in_snijplan' THEN
+    RAISE EXCEPTION 'Rol % heeft status "%" — kan alleen "in_snijplan" rollen voltooien', p_rol_id, v_rol.status;
+  END IF;
+
+  -- 2. Bereken gebruikte lengte op basis van geplaatste snijplannen
+  SELECT COALESCE(MAX(positie_y_cm + breedte_cm), 0)
+  INTO v_gebruikte_lengte
+  FROM snijvoorstel_plaatsingen
+  WHERE rol_id = p_rol_id
+    AND voorstel_id IN (SELECT id FROM snijvoorstellen WHERE status = 'goedgekeurd');
+
+  -- Fallback: bereken uit snijplannen direct
+  IF v_gebruikte_lengte = 0 THEN
+    SELECT COALESCE(MAX(positie_y_cm +
+      CASE WHEN geroteerd THEN lengte_cm ELSE breedte_cm END
+    ), 0)
+    INTO v_gebruikte_lengte
+    FROM snijplannen
+    WHERE rol_id = p_rol_id
+      AND status = 'Gepland';
+  END IF;
+
+  v_rest_lengte := GREATEST(0, v_rol.lengte_cm - CEIL(v_gebruikte_lengte));
+
+  -- 3. Markeer alle geplande snijplannen op deze rol als 'Gesneden'
   UPDATE snijplannen
   SET status = 'Gesneden',
       gesneden_datum = CURRENT_DATE,
       gesneden_op = NOW(),
       gesneden_door = p_gesneden_door
   WHERE rol_id = p_rol_id
-    AND status = 'Snijden';
+    AND status = 'Gepland';
 
-  SELECT COALESCE(MAX(positie_y_cm + CASE WHEN geroteerd THEN lengte_cm ELSE breedte_cm END), 0)
-  INTO v_gebruikte_lengte
-  FROM snijplannen WHERE rol_id = p_rol_id AND status = 'Gesneden';
+  -- 4. Maak reststuk aan als er genoeg over is
+  IF v_rest_lengte >= v_min_reststuk_cm THEN
+    -- Genereer rolnummer voor reststuk
+    v_nieuw_rolnummer := v_rol.rolnummer || '-REST';
 
-  IF p_override_rest_lengte IS NOT NULL THEN
-    v_rest_lengte := GREATEST(0, p_override_rest_lengte);
-  ELSE
-    v_rest_lengte := GREATEST(0, v_rol.lengte_cm - CEIL(v_gebruikte_lengte));
-  END IF;
-
-  UPDATE rollen SET status = 'gesneden' WHERE id = p_rol_id;
-
-  IF v_rest_lengte >= 100 THEN
-    v_reststuk_nr := v_rol.rolnummer || '-R';
-    INSERT INTO rollen (rolnummer, artikelnr, kwaliteit_code, kleur_code, lengte_cm, breedte_cm,
-                        oppervlak_m2, status, oorsprong_rol_id, reststuk_datum)
-    VALUES (v_reststuk_nr, v_rol.artikelnr, v_rol.kwaliteit_code, v_rol.kleur_code,
-            v_rest_lengte, v_rol.breedte_cm,
-            ROUND(v_rest_lengte * v_rol.breedte_cm / 10000.0, 2),
-            'beschikbaar', p_rol_id, CURRENT_DATE)
+    INSERT INTO rollen (
+      rolnummer, artikelnr, karpi_code, omschrijving,
+      lengte_cm, breedte_cm, oppervlak_m2,
+      kwaliteit_code, kleur_code, zoeksleutel,
+      status, oorsprong_rol_id, reststuk_datum
+    ) VALUES (
+      v_nieuw_rolnummer,
+      v_rol.artikelnr,
+      v_rol.karpi_code,
+      v_rol.omschrijving,
+      v_rest_lengte,
+      v_rol.breedte_cm,
+      ROUND((v_rest_lengte * v_rol.breedte_cm)::NUMERIC / 10000, 2),
+      v_rol.kwaliteit_code,
+      v_rol.kleur_code,
+      v_rol.zoeksleutel,
+      'reststuk',
+      p_rol_id,
+      NOW()
+    )
     RETURNING id INTO v_reststuk_id;
 
-    RETURN QUERY SELECT v_reststuk_id, v_reststuk_nr, v_rest_lengte;
+    -- 5. Originele rol markeren als gesneden (volledig verwerkt)
+    UPDATE rollen
+    SET status = 'gesneden',
+        lengte_cm = CEIL(v_gebruikte_lengte)
+    WHERE id = p_rol_id;
+
+    RETURN QUERY SELECT v_reststuk_id, v_nieuw_rolnummer, v_rest_lengte;
   ELSE
+    -- Geen bruikbaar reststuk — rol volledig verwerkt
+    UPDATE rollen
+    SET status = 'gesneden'
+    WHERE id = p_rol_id;
+
     RETURN QUERY SELECT NULL::BIGINT, NULL::TEXT, NULL::INTEGER;
   END IF;
 END;
