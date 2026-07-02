@@ -7,7 +7,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const rpc = vi.fn().mockResolvedValue({ error: null })
 const eq = vi.fn().mockResolvedValue({ error: null })
-const update = vi.fn(() => ({ eq }))
+const update = vi.fn((_payload: Record<string, unknown>) => ({ eq }))
 const from = vi.fn(() => ({ update }))
 
 vi.mock('@/lib/supabase/client', () => ({
