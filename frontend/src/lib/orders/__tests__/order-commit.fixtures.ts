@@ -350,4 +350,37 @@ export const ORDER_COMMIT_GOLDENS: OrderCommitGolden[] = [
       ],
     },
   },
+  {
+    naam: 'i-combi-levering-override-propageert-naar-beide-split-headers',
+    toelichting:
+      'mig 485/ADR-0039: combiLeveringOverride=true + gemengde split (standaard/maatwerk) → ' +
+      'beide sub-orders (standaard-deel én maatwerk-deel) dragen combi_levering_override=true ' +
+      'op hun header, ondanks dat de override op het hele (nog ongesplitste) order-niveau ' +
+      'binnenkomt — verder identiek aan fixture a (verzend naar duurste deel, seam-datum).',
+    input: {
+      regels: [STANDAARD_300, MAATWERK_500, VERZEND_15],
+      header: HEADER,
+      debiteurNr: DEBITEUR_NR,
+      afhalen: false,
+      combiLeveringOverride: true,
+      deelleveringen: true,
+      afleverdatumInfo: GEMENGD_INFO,
+      echteMaatwerkDatum: '2026-07-17', // ISO-week 29
+    },
+    verwacht: {
+      gesplitst: true,
+      orders: [
+        {
+          header: { ...ORDER_DATA, combi_levering_override: true, afleverdatum: '2026-06-12', week: '24' },
+          regels: [STANDAARD_300],
+          triggerAutoplan: false,
+        },
+        {
+          header: { ...ORDER_DATA, combi_levering_override: true, afleverdatum: '2026-07-17', week: '29' },
+          regels: [MAATWERK_500, VERZEND_15],
+          triggerAutoplan: true,
+        },
+      ],
+    },
+  },
 ]
