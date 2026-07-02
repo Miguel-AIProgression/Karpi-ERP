@@ -28,6 +28,8 @@ export interface ReststukRect {
 // blijven werken.
 import { RESTSTUK_MIN_SHORT, RESTSTUK_MIN_LONG, AANGEBROKEN_MIN_LENGTE } from './reststuk-config.ts'
 export { RESTSTUK_MIN_SHORT, RESTSTUK_MIN_LONG, AANGEBROKEN_MIN_LENGTE } from './reststuk-config.ts'
+// Shape-biased reststuk-scoreformule (ADR-0025): één bron, zie ./reststuk-score.ts.
+import { reststukScore } from './reststuk-score.ts'
 
 function qualifies(r: ReststukRect, minShort: number, minLong: number): boolean {
   const short = Math.min(r.breedte_cm, r.lengte_cm)
@@ -124,20 +126,6 @@ function computeMaximalFreeRects(
     })
   }
   return free
-}
-
-/**
- * Shape-biased score (ADR-0025): `area × √(short/long)`. Synchroon met
- * `_shared/guillotine-packing.ts::reststukScoreCm2`. Pure m² is shape-blind —
- * een 150×450 (verkoopbaar tapijt) en 75×905 (alleen staaltjes-bruikbaar)
- * scoren bij gelijke area gelijk, waardoor greedy onbedoeld de langste-smalste
- * strip claimt. De wortel-weighting prefereert chunkier vormen zonder
- * smalle strips weg te schrijven.
- */
-function reststukScore(r: FreeRect): number {
-  const short = Math.min(r.width, r.height)
-  const long = Math.max(r.width, r.height)
-  return r.width * r.height * Math.sqrt(short / long)
 }
 
 /**
