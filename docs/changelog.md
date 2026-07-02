@@ -1,5 +1,15 @@
 # Changelog — RugFlow ERP
 
+## 2026-07-02 — Volledig inkoopproces: transactioneel aanmaken, regel-mutaties met Claim-vloer, ontvangst met locatie, portal-huishouding
+
+- **Mig 601 `create_inkooporder`**: transactioneel aanmaken (header+regels in één RPC) — de oude 3-losse-inserts-flow kon een lege order achterlaten. UI kan nu ook `eenheid='stuks'`-regels maken (antislip-regel mig 408 was via de UI onbereikbaar). Besteldatum default CURRENT_DATE (kolom is NOT NULL).
+- **Mig 602 regel-mutaties**: `voeg_inkooporder_regel_toe`/`wijzig_inkooporder_regel`/`annuleer_inkooporder_regel`/`verwijder_inkooporder_regel` + helper `herbereken_inkooporder_status`, met **Claim-vloer**-guard (CONTEXT.md): verlagen/verwijderen onder de beloftes vereist expliciet vrijgeven; getroffen orders vallen zichtbaar terug naar 'Wacht op inkoop'. Vrijgeven force-releaset ook handmatige claims op de regel (de allocator laat die by design nooit los, maar de IO-dekking verdwijnt hier); verwijderen weigert regels met claim-historie (append-only audit, FK RESTRICT). UI: bewerk-/annuleer-/verwijder-knoppen + "Regel toevoegen" op inkooporder-detail, met Claim-vloer-bevestigings-checkbox.
+- **Mig 603 ontvangst**: per-rol magazijnlocatie (→ `rollen.locatie_id` via `create_or_get_magazijn_locatie`) + over-leveringsgrens 110% met expliciete bevestiging. Superset-keten 281→603. Bijvangst: `v_product`-crash op artikelnr-loze regels gefixt; karpi_code-only regels weigeren rol-ontvangst met heldere melding (rollen.artikelnr is NOT NULL+FK; karpi_code niet uniek — geen auto-resolutie).
+- **Mig 604** (geschreven, ⚠ nog NIET gedraaid — pas na merge+Vercel-deploy, vóór 13-07): deprecated wrappers `boek_ontvangst`/`boek_voorraad_ontvangst` droppen; frontend-callers al omgezet naar de mig-271-namen.
+- **Portal**: dode React-portal (`/portal/*`) verwijderd — portal.karpi.nl (statische `docs/portal/index.html`) is de enige implementatie. Uitrol naar meer leveranciers: opt-in, later (besluit 02-07).
+- **Werkinstructie**: `docs/werkwijze-inkoop.md` (bestellen/verwachten/portal/ontvangen/wijzigen).
+- E2E-portal-rondreis met testleverancier geslaagd (login → GET → PATCH ETA → herkomst 'leverancier' → karpi_code-guard → ontvangst met locatie → cleanup, 0 residu).
+
 ## 2026-07-02 — Concept-orders zichtbaar in Pick & Ship (mig 577, LIVE)
 
 **Bug (gemeld door Karpi, ORD-2026-1165):** een order die nog op status
