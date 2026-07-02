@@ -1,5 +1,32 @@
 # Changelog — RugFlow ERP
 
+## 2026-07-02 — Combi-levering-badge op orders-overview + order-detail (mig 563)
+
+**Waarom:** Combi-levering-orders (mig 550-562) waren alleen in Pick & Ship
+herkenbaar als bundel — op het orders-overzicht en de order-detailpagina zelf
+was nergens zichtbaar dat twee orders samen op de vrachtvrije-drempel wachten
+of 'm net gehaald hebben (verzoek gebruiker, na screenshot van twee losstaand
+ogende TEST-orders).
+
+- `combi_levering_status` (mig 551) kreeg twee kolommen erbij: `aantal_orders`
+  en `order_ids` — groepsgrootte + leden (was alleen een per-order boolean).
+- `orders_list` kreeg drie kolommen: `combi_levering_aantal_orders`,
+  `wacht_op_combi_levering`, `combi_levering_andere_orders` (jsonb
+  `{id, order_nr}[]` van de sibling-orders, alleen gevuld bij een echte
+  bundel van ≥2). Beide `CREATE OR REPLACE VIEW`, additief.
+- Nieuwe gedeelde component `combi-levering-badge.tsx` (indigo, `Link2`-icon,
+  bewust een andere kleur/reden dan de bestaande terracotta fysieke-
+  zending-bundel-chip) — gebruikt door zowel `orders-table.tsx`
+  (orders-overzicht) als `order-header.tsx` (order-detail), met een
+  klikbare "Combi met: ORD-XXXX"-sub-regel naar de zusterorder(s).
+  Zichtbaar ongeacht wacht-status (ook ná promotie naar 'Klaar voor picken')
+  — het punt is de blijvende visuele koppeling, niet alleen de blokkade.
+- Getest in een rolled-back transactie tegen de live DB (`supabase db query`):
+  bevestigd op de echte TEST-orders ORD-2026-1262/1263.
+
+Branch `feat/combi-levering`, migratie 563 nog niet toegepast op de live DB
+(handmatig via dashboard-SQL-editor, per projectconventie).
+
 ## 2026-07-01 — Combi-levering (mig 550-555, ADR-0039)
 
 **Waarom:** klanten die geen verzendkosten willen betalen voor een losse,
@@ -45,13 +72,90 @@ worden. Per order blijft dit doorbreekbaar ("verstuur toch, met kosten").
 - **Code-review-fix (mig 555):** een order die al 'In pickronde'/'Deels
   verzonden' is telde nog mee in het groep-subtotaal — gefixt (guard in de
   view én in `herwaardeer_combi_levering_verzendregel` zelf).
-- Alle 6 migraties getest in rolled-back transacties tegen de live DB vóór
-  toepassing (view-scenario, VERZEND-regel-transities, RPC-CASE-gedrag).
-  Volledige frontend-testsuite + typecheck groen. Branch is gerebaset op
-  actuele `origin/main` en de migraties hernummerd 485-490 → 550-555 (botsing
-  met inmiddels-gemergde features die dezelfde nummers al gebruikten).
+- **Tweede code-review-ronde (mig 556 + frontend, zelfde dag):** acht extra
+  bevindingen, waarvan drie serieuze correctness-bugs:
+  1. `create_order_with_lines` had via mig 542 (al op `main`) stilletjes
+     `is_vrije_regel` (mig 524) verloren in zijn `order_regels`-INSERT — mig
+     553 kopieerde die regressie door. Een nieuwe vrije-omschrijvingsregel
+     kreeg daardoor nooit `is_vrije_regel=TRUE`, werd niet uitgesloten van
+     `orderregel_pickbaarheid`, en blokkeerde de hele order permanent in
+     Pick & Ship. Mig 556 zet de kolom terug.
+  2. `order-edit.tsx` rehydrateerde `combi_levering_override` niet — exact de
+     bugklasse van het ORD-2026-0350-incident (`fact_email`/`afl_email`).
+     Elke bewerk-save van een bestaande order zette de override stil terug
+     op `false` en trok de order terug de wachtgroep in.
+  3. De Pick & Ship-"achtergebleven"-waarschuwing controleerde niet of een
+     sibling-order ook echt Combi-levering-deelnemer was —
+     `wacht_op_combi_levering=false` is ook de default voor een gewone,
+     niet-deelnemende order. Elke klant met 2+ orders naar hetzelfde adres
+     kreeg zo een vals-positieve waarschuwing bij het los starten van één
+     order. Nieuw veld `PickShipOrder.combi_levering_deelnemer` maakt het
+     onderscheid.
+  4-8. `CombiLeveringInWachtKnop` kreeg een statusguard
+     (Verzonden/In pickronde/Deels verzonden, mirrort mig 555's SQL-guard) en
+     een correct succesbericht (geen "verstuurd"-claim zonder e-mailadres);
+     de vier-talige `combiLevering`-tekst is gededupliceerd naar één bron
+     ([`_shared/combi-levering-tekst.ts`](../supabase/functions/_shared/combi-levering-tekst.ts),
+     ADR-0033); `combi_levering_orderregel_subtotaal` gebruikt nu het
+     generieke `is_admin_pseudo()`-predicaat (ADR-0018) i.p.v. hardcoded
+     `<> 'VERZEND'`; NULL `verzend_drempel` valt in de view + trigger nu net
+     als de frontend terug op €500 (`SHIPPING_THRESHOLD`) i.p.v. "geen
+     drempel = altijd gehaald".
+  Volledige frontend-testsuite (844 tests) + `tsc --noEmit -p
+  tsconfig.app.json` groen na deze ronde. Migratie 556 nog te testen in een
+  rolled-back transactie en te draaien op de live DB (geen DB-toegang in deze
+  sessie).
+- Alle 6 migraties (550-555) getest in rolled-back transacties tegen de live
+  DB vóór toepassing (view-scenario, VERZEND-regel-transities,
+  RPC-CASE-gedrag). Volledige frontend-testsuite + typecheck groen. Branch is
+  gerebaset op actuele `origin/main` en de migraties hernummerd 485-490 →
+  550-555 (botsing met inmiddels-gemergde features die dezelfde nummers al
+  gebruikten).
 - Zie [ADR-0039](adr/0039-combi-levering-als-startbaarheid-gate.md) en
   [implementatieplan](superpowers/plans/2026-07-01-combi-levering.md).
+
+## 2026-07-01 — Combi-levering herzien naar een echte order_status (mig 557-562, ADR-0040)
+
+**Waarom:** bij het testen van de hierboven beschreven Startbaarheid-gate bleek
+dit niet de gewenste werking — de eis is dat een Combi-levering-order gelockt
+is op commercie, in een eigen tab, en Pick & Ship nooit bereikt (schoon
+blijven), niet zichtbaar-maar-geblokkeerd. ADR-0039's "geen nieuwe
+order_status"-argument is teruggedraaid; zie [ADR-0040](adr/0040-combi-levering-als-order-status.md)
+(ADR-0039 blijft als audit trail staan, `status: superseded`).
+
+- **Enum-waarde (mig 557, geïsoleerd bestand):** `'Wacht op combi-levering'`
+  toegevoegd aan `order_status` — Postgres staat `ADD VALUE` niet toe in
+  dezelfde transactie als gebruik (project-precedent mig 437/438).
+- **`derive_wacht_status` (mig 558):** 5e parameter, laagste-prioriteit
+  wacht-reden ná io-claim/tekort/maatwerk — bewust niet in de no-touch-lijst,
+  kan (symmetrisch aan ADR-0027) ook demoveren vanuit `Klaar voor picken`.
+  TS-spiegel + golden fixture (36 cases, was 26) + contracttest bijgewerkt.
+- **`herbereken_wacht_status` (mig 559):** groep-cascade — Combi-levering is
+  een groepsbeslissing, de overige drie criteria zijn order-eigen. Ná de
+  eigen-order-transitie herevalueert de functie ook elke sibling
+  (`p_cascade_groep`, `cascade=FALSE` in de recursieve aanroep, geen cyclus
+  mogelijk, max. recursiediepte 2).
+- **`order_pickbaarheid` (mig 560):** `pick_ship_zichtbaar` krijgt de eerste
+  `orders.status`-guard ooit op deze view (`<> 'Wacht op combi-levering'`,
+  stijl mig 521) — was tot nu toe puur regel-gebaseerd.
+- **Triggers (mig 561):** de twee Combi-levering-triggers (mig 552) roepen nu
+  ook `herbereken_wacht_status` aan — met bewust verschillende
+  cascade-parameter per trigger (voorkomt O(n²) i.p.v. O(n) bij een
+  klantbrede toggle; bevinding uit een adversariale review-pas vóór
+  implementatie).
+- **Snapshot-assert (mig 562):** opvolger van mig 350.
+- **Frontend:** `FASE_STATUSES` (eigen tab), `ORDER_STATUS_COLORS`,
+  `ACTIVE_ORDER_STATUSES` (vertegenwoordigers-dashboard, los tel-bestand
+  zonder generieke fallback — gemist in het eerste ontwerp, gevonden door de
+  review-agent). Dode code verwijderd: `wacht_op_combi_levering` uit
+  `startbaarheid.ts`/`PickShipOrder`. `combi-levering-achtergebleven.ts`
+  blijft bestaan (andere use-case dan gedacht: beschermt tegen handmatige
+  deelselectie in Pick & Ship, niet tegen een gemiste cascade) maar
+  vereenvoudigd.
+- Plan geschreven + adversarieel gereviewd (2 achtergrondagents: research +
+  stress-test) vóór implementatie. Volledige frontend-testsuite (850 tests) +
+  `tsc --noEmit -p tsconfig.app.json` groen. Migraties 557-562 nog te draaien
+  op de live DB (rolled-back transactietest eerst).
 
 ## 2026-07-01 — Pakbon-PDF vertaalt mee naar klanttaal (nl/de/fr/en)
 

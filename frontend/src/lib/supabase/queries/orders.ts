@@ -95,6 +95,18 @@ export interface OrderRow {
    * cache-data zonder deze kolom niet crasht.
    */
   manco_sinds?: string | null
+  /**
+   * Mig 563 (ADR-0039/0040): grootte van de Combi-levering-groep (debiteur x
+   * afleveradres) waar deze order deel van is. NULL/undefined of < 2 = geen
+   * bundel, geen badge. Los van de fysieke zending-bundel (bundel_zending_nr
+   * hierboven) — dit is de vóór-verzending financiële groepering op de
+   * vrachtvrije-drempel.
+   */
+  combi_levering_aantal_orders?: number | null
+  /** Mig 563: TRUE zolang de groep de vrachtvrije-drempel nog niet haalt. */
+  wacht_op_combi_levering?: boolean | null
+  /** Mig 563: overige orders in dezelfde Combi-levering-groep, voor de badge-tooltip/links. */
+  combi_levering_andere_orders?: { id: number; order_nr: string }[] | null
 }
 
 export interface OrderDetail extends OrderRow {
@@ -124,6 +136,9 @@ export interface OrderDetail extends OrderRow {
   vertegenw_naam?: string
   lever_modus: 'deelleveringen' | 'in_een_keer' | null
   afhalen: boolean
+  /** Mig 550/ADR-0039: klant wil dít exemplaar toch los verzonden, met
+   *  verzendkosten, ongeacht debiteuren.combi_levering. */
+  combi_levering_override: boolean
   /** ADR 0014 / mig 244: 'week' = ergens binnen de leverweek (B2B-default);
    *  'datum' = specifieke leverdag-belofte (B2C, prominentere weergave + striktere
    *  pick-horizon + snij-prioriteit). */
@@ -651,7 +666,20 @@ export async function fetchOrderDetail(id: number): Promise<OrderDetail> {
     if (vtw) vertegenw_naam = vtw.naam
   }
 
-  return { ...order, klant_naam, vertegenw_naam } as unknown as OrderDetail
+  // Mig 563: Combi-levering-groepsinfo leeft in orders_list (niet in de kale
+  // orders-tabel hierboven) — lichte extra fetch, geen bundel = geen rij.
+  const { data: combiLevering } = await supabase
+    .from('orders_list')
+    .select('combi_levering_aantal_orders, wacht_op_combi_levering, combi_levering_andere_orders')
+    .eq('id', id)
+    .maybeSingle()
+
+  return {
+    ...order,
+    klant_naam,
+    vertegenw_naam,
+    ...(combiLevering ?? {}),
+  } as unknown as OrderDetail
 }
 
 /** Fetch order lines enriched with klanteigen namen and klant artikelnummers */

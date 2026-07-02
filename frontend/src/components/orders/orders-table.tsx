@@ -8,6 +8,7 @@ import type { OrderRow, OrderSortField, SortDirection } from '@/lib/supabase/que
 import type { FactuurVoorOrder } from '@/modules/facturatie'
 import type { OrderRij } from '@/modules/snijplanning'
 import { HAALBAARHEID_STATUS_STYLE } from '@/lib/orders/haalbaarheid-status-badge'
+import { CombiLeveringBadge } from './combi-levering-badge'
 import { useBundelGroupedOrders } from './use-bundel-grouped-orders'
 
 interface OrdersTableProps {
@@ -247,6 +248,7 @@ function OrderTr({ order, bundel, facturenPerOrder, snijHaalbaarheidPerOrder }: 
               {bundel.zendingNr}
             </span>
           )}
+          <CombiLeveringBadge order={order} />
           {order.heeft_unmatched_regels && (
             <span
               className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-800 px-2 py-0.5 text-xs font-medium"
@@ -273,6 +275,23 @@ function OrderTr({ order, bundel, facturenPerOrder, snijHaalbaarheidPerOrder }: 
         {order.oud_order_nr && (
           <span className="block text-xs text-slate-400">
             Oud: {order.oud_order_nr}
+          </span>
+        )}
+        {(order.combi_levering_andere_orders?.length ?? 0) > 0 && (
+          <span className="block text-xs text-slate-400">
+            Combi met:{' '}
+            {order.combi_levering_andere_orders!.map((o, i) => (
+              <span key={o.id}>
+                {i > 0 && ', '}
+                <Link
+                  to={`/orders/${o.id}`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-indigo-600 hover:underline"
+                >
+                  {o.order_nr}
+                </Link>
+              </span>
+            ))}
           </span>
         )}
       </td>
