@@ -56,6 +56,37 @@ export interface EdiBerichtenFilters {
   zoek?: string
 }
 
+interface EdiBerichtRow {
+  id: number
+  richting: EdiRichting
+  berichttype: EdiBerichtType
+  status: EdiBerichtStatus
+  transactie_id: string | null
+  debiteur_nr: number | null
+  order_id: number | null
+  factuur_id: number | null
+  is_test: boolean
+  retry_count: number
+  error_msg: string | null
+  ack_status: number | null
+  created_at: string
+  sent_at: string | null
+  acked_at: string | null
+  debiteuren?: { naam?: string }[]
+  orders?: { order_nr?: string }[]
+  facturen?: { factuur_nr?: string }[]
+}
+
+interface EdiBerichtDetailRow extends EdiBerichtRow {
+  payload_raw: string | null
+  payload_parsed: Record<string, unknown> | null
+  ack_details: string | null
+  bron_tabel: string | null
+  bron_id: number | null
+  zending_id: number | null
+  updated_at: string
+}
+
 export async function fetchEdiBerichten(filters: EdiBerichtenFilters = {}): Promise<EdiBerichtListItem[]> {
   let q = supabase
     .from('edi_berichten')
@@ -83,18 +114,18 @@ export async function fetchEdiBerichten(filters: EdiBerichtenFilters = {}): Prom
   const { data, error } = await q
   if (error) throw error
 
-  return (data ?? []).map((row: Record<string, unknown> & { debiteuren?: { naam?: string }; orders?: { order_nr?: string }; facturen?: { factuur_nr?: string } }) => ({
+  return (data ?? []).map((row: EdiBerichtRow) => ({
     id: row.id,
     richting: row.richting,
     berichttype: row.berichttype,
     status: row.status,
     transactie_id: row.transactie_id,
     debiteur_nr: row.debiteur_nr,
-    klant_naam: row.debiteuren?.naam,
+    klant_naam: row.debiteuren?.[0]?.naam,
     order_id: row.order_id,
-    order_nr: row.orders?.order_nr,
+    order_nr: row.orders?.[0]?.order_nr,
     factuur_id: row.factuur_id,
-    factuur_nr: row.facturen?.factuur_nr,
+    factuur_nr: row.facturen?.[0]?.factuur_nr,
     is_test: row.is_test,
     retry_count: row.retry_count,
     error_msg: row.error_msg,
@@ -120,7 +151,7 @@ export async function fetchEdiBericht(id: number): Promise<EdiBerichtDetail | nu
   if (error) throw error
   if (!data) return null
 
-  const row = data as Record<string, unknown> & { debiteuren?: { naam?: string }; orders?: { order_nr?: string }; facturen?: { factuur_nr?: string } }
+  const row = data as EdiBerichtDetailRow
   return {
     id: row.id,
     richting: row.richting,
@@ -128,11 +159,11 @@ export async function fetchEdiBericht(id: number): Promise<EdiBerichtDetail | nu
     status: row.status,
     transactie_id: row.transactie_id,
     debiteur_nr: row.debiteur_nr,
-    klant_naam: row.debiteuren?.naam,
+    klant_naam: row.debiteuren?.[0]?.naam,
     order_id: row.order_id,
-    order_nr: row.orders?.order_nr,
+    order_nr: row.orders?.[0]?.order_nr,
     factuur_id: row.factuur_id,
-    factuur_nr: row.facturen?.factuur_nr,
+    factuur_nr: row.facturen?.[0]?.factuur_nr,
     is_test: row.is_test,
     retry_count: row.retry_count,
     error_msg: row.error_msg,

@@ -39,12 +39,12 @@ export const commitMetDrift: CommitOrderVoorstelResult = {
 }
 
 // Design-validatie: afwijking_t_o_v_voorstel mag niet leeg zijn bij drift
-const _assertAfwijkingAanwezig: true =
+const _assertAfwijkingAanwezig: boolean =
   commitMetDrift.afwijking_t_o_v_voorstel.length > 0
 void _assertAfwijkingAanwezig
 
 // Design-validatie: gekregen < gevraagd
-const _assertDrift: true =
+const _assertDrift: boolean =
   commitMetDrift.afwijking_t_o_v_voorstel[0].gekregen <
   commitMetDrift.afwijking_t_o_v_voorstel[0].gevraagd
 void _assertDrift

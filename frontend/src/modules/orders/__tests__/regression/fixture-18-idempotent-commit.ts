@@ -40,5 +40,5 @@ export const commitResultaat2: CommitOrderVoorstelResult = {
 }
 
 // Design-validatie assertion (compileer-tijd)
-const _assertSameOrderId: true = commitResultaat1.order_id === commitResultaat2.order_id
+const _assertSameOrderId: boolean = commitResultaat1.order_id === commitResultaat2.order_id
 void _assertSameOrderId
