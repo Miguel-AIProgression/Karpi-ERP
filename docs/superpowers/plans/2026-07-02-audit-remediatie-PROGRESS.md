@@ -35,8 +35,15 @@ branch `fix/audit-remediatie` (basis: origin/main 7130d579, 2026-07-02).
   + `.in('status',['actief','verzonden'])` in fetchClaimsVoorOrder(-Regel);
   fetchClaimsVoorIORegel bewust onaangeroerd. Spec ✅, kwaliteit APPROVED
   (0 issues). Live-verificatie: open punt voor Miguel (zie boven).
-- [ ] **1.3** B3 VORMTOESLAG-split
-- [ ] **1.4** B5 PO-prefill metProductVelden
+- [x] **1.3** B3 VORMTOESLAG-split. Commit `fe5f2432` — beide split-paden
+  (gemengd + IO) laten companion zijn parent volgen; 346 tests groen, golden
+  fixtures byte-identiek. Spec ✅, kwaliteit APPROVED. Minors (polish): comment
+  bij `laatsteBucket`-mixed-coverage-tak (invariant leeft in dekking-preview),
+  stijl-asymmetrie lookback vs mutable bucket.
+- [x] **1.4** B5 PO-prefill metProductVelden. Commit `44a32840`. Spec ✅
+  ("non-maatwerk" bleek inherent: maatwerk-tak heeft nooit een artikelnr),
+  kwaliteit APPROVED. Minors: expliciet type op `let productVelden`;
+  fetch-fout-pad ongetest (geen testbestand voor order-create — acceptabel).
 - [ ] **1.5** B6 wacht-status dekkings-fix (STOP vóór apply!)
 - [ ] **2.1** assignRolToSnijplan weg
 - [ ] **2.2** useStartPickronde weg
