@@ -3,6 +3,8 @@ status: accepted
 date: 2026-05-08
 ---
 
+> **Superseded (gedeeltelijk) door [ADR-0041](0041-facturen-per-order-bij-bundel-zending.md) (2026-07-02):** het factuur-deel van deze ADR — "1 bundel-zending = 1 factuur" — is vervangen door "1 bundel-zending = N facturen, 1 per order" (klanteis: facturen mogen niet verzameld worden). De bundel-zending/pakbon-mechaniek en de bundel-brede drempel-toets die hieronder beschreven staan blijven onverkort van kracht — alleen de factuur-granulariteit is gewijzigd. Dit document blijft staan als audit trail, niet gewijzigd.
+
 # Factuur volgt bundel-zending — `factuurvoorkeur='per_zending'` vervalt
 
 > **Numbering note**: deze ADR werd op 2026-05-08 eerst als 0009 geschreven; tijdens dezelfde dag landde ook ADR-0009 (Maatwerk-Module) op `main`. Hernummerd naar 0010 om collision te voorkomen.
