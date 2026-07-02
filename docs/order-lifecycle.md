@@ -147,6 +147,7 @@ een afgeronde maatwerk-order op `Wacht op maatwerk` staan terwijl hij al pickbaa
 | `trg_enqueue_factuur_op_event` | `pickronde_voltooid` + `status_na='Verzonden'` | factuur op queue (voorkeur per_zending/wekelijks) | mig 223 |
 | `trg_order_events_reservering_release` | `geannuleerd` | alle actieve claims → `released` | mig 255 |
 | `trg_order_events_snijplan_release` | `geannuleerd` | **alle** snijplannen → `'Geannuleerd'` (ongeacht voortgang) + rollen vrijgeven met NOT-EXISTS-guard | mig 290 |
+| `trg_order_events_zending_release` | `geannuleerd` | verwijdert per zending met status `'Gepland'`/`'Picken'` de regels/colli van DE geannuleerde order; bundel-bewust (zending blijft bestaan met herberekende `aantal_colli`/`totaal_gewicht_kg` als een andere order 'm nog draagt) | mig 480 |
 
 Listeners vuren onafhankelijk en moeten idempotent zijn. Nieuwe cascade-effecten =
 nieuwe listener op `order_events`, géén edit in de command-RPC's.

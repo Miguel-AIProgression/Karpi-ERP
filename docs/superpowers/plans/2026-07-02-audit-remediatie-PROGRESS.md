@@ -110,8 +110,27 @@ branch `fix/audit-remediatie` (basis: origin/main 7130d579, 2026-07-02).
   bredere union en aangevuld (vervoerder-tag.tsx Record, use-vervoerder-form.ts
   toUpdateInput-param, vervoerders-overzicht.tsx lokale TypeBadge). ADR-0034
   addendum. typecheck + vitest src/modules/logistiek (141 tests) groen.
-- [ ] **6.2** zending-status-predicaten
-- [ ] **6.3** drift-test ACTIVE_ORDER_STATUSES
+  Spec ✅, kwaliteit APPROVED (0 issues). Follow-up-kandidaat (pre-existing,
+  buiten scope): TYPE_OPTIES in vervoerder-create-dialog mist sftp/eigen als
+  keuze-optie.
+- [x] **6.2** zending-status-predicaten (`5e884b65` + fix `804d10b2`).
+  Slechts 2 échte in-memory 'Gepland'-checks (annuleer-pickronde-knop,
+  zending-printset) — rest querybuilders/snijplan-context/booleans. Spec ✅.
+  Kwaliteit: 1e ronde CHANGES_NEEDED (ZENDING_LOPEND dode/duplicerende
+  export) → fix: predicaat leunt nu op de array + JSDoc → her-review APPROVED.
+- [x] **2.6** (bonus) createSnijplan/updateSnijplanStatus + hooks + dode
+  types/imports weg (`6332e890`, +7/-113). Spec ✅ (comment-RPC-claims
+  geverifieerd: start_snijden_rol/pauzeer/voltooi_snijplan_rol/
+  keur_snijvoorstel_goed bestaan echt). Kwaliteitsreview beargumenteerd
+  overgeslagen: pure deletie volgens goedgekeurd 2.1-recept, comment-feiten
+  al per grep getoetst.
+- [x] **6.3** drift-test ACTIVE_ORDER_STATUSES (`95b7f9ee`). ECHTE VONDST:
+  kopie miste 'Concept' (mig 540) én 'Maatwerk afgerond'. 'Concept'
+  toegevoegd → GEDRAGSKEUZE: open-orders-TELLING vertegenwoordiger-pagina
+  telt Concept-orders nu mee (omzet onaangeroerd — aparte filter, geverifieerd).
+  'Maatwerk afgerond' als eindstatus geclassificeerd (klopt met derive-status/
+  mig 355). Spec ✅, kwaliteit APPROVED. → Open punt Miguel: akkoord met
+  Concept in de telling?
 - [ ] **6.4** vindregel query-lagen
 - [ ] **7.1** eindverificatie + changelog; merge alleen op commando Miguel
 
