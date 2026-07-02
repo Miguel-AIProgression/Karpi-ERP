@@ -625,3 +625,21 @@ Doel is de verzamelaar in het magazijn: omsticker-rijen krijgen amber-accent + l
 
 ### `vrije_voorraad`-formule (mig 149)
 Voorheen: `voorraad − gereserveerd − backorder + besteld_inkoop`. Sinds mig 149: `voorraad − gereserveerd − backorder` (geen `+ besteld_inkoop`). Toekomstige inkoop is zichtbaar via aparte velden + via `order_reserveringen`, maar telt niet in "vandaag-leverbaar".
+
+## Vindregel: waar leeft domein-logica in de frontend?
+
+Twee query-lagen bestaan naast elkaar (historisch gegroeid):
+
+- `frontend/src/lib/supabase/queries/` — de oudere centrale laag (orders,
+  order-mutations, documenten, reserveringen, …)
+- `frontend/src/modules/<domein>/queries/` — de per-module-laag (facturatie,
+  logistiek, magazijn, snijplanning, reserveringen, orders-lifecycle, …)
+
+**Regel bij zoeken: ALTIJD beide lagen grep'en** — bv. order-status-transities
+(`markeer_verzonden`, `bevestig_concept_order`) staan in
+`modules/orders-lifecycle/queries/transities.ts`, NIET in `order-mutations.ts`;
+facturen staan uitsluitend in `modules/facturatie/queries/`. Nieuwe queries:
+in de module-laag; de centrale laag alleen aanvullen als het bestand daar al
+bestaat. Losse `.from('orders')`-calls buiten beide lagen (o.a.
+`components/orders/deelzending-dialog.tsx` met inline RPC's) zijn bekende
+uitzonderingen — niet als patroon kopiëren.
