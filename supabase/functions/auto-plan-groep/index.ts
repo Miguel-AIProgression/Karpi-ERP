@@ -415,10 +415,14 @@ serve(async (req) => {
         const virtueleRollen: Roll[] = openRegelsMetBreedte.map((r) => ({
           id: -r.regel_id,
           rolnummer: r.inkooporder_nr,
-          lengte_cm: Math.round(r.te_leveren_m * 100),
+          // Gebruik effectief_te_leveren_m (netto na bestaande claims van andere
+          // kwaliteitsgroepen) zodat cross-kwaliteit IO-claims niet overbookings
+          // geven. fetchOpenInkoopRegels filtert IOs met 0 effectieve capaciteit
+          // al weg; hier ronden we naar cm (>= 1cm voor veiligheid).
+          lengte_cm: Math.round(r.effectief_te_leveren_m * 100),
           breedte_cm: r.breedte_cm,
           status: 'verwacht',
-          oppervlak_m2: Math.round(r.te_leveren_m * 100) * r.breedte_cm / 10000,
+          oppervlak_m2: Math.round(r.effectief_te_leveren_m * 100) * r.breedte_cm / 10000,
           // 3 = altijd na reststuk(1)/beschikbaar(2) — echte voorraad gaat
           // hoe dan ook voor. sortRolls/sortRollsLargestFirst/makeSortRollsFifo
           // vergelijken sort_priority numeriek vóór leeftijd (geverifieerd).
@@ -459,7 +463,8 @@ serve(async (req) => {
             regelTotalen.push({ inkooporder_regel_id: regelId, gebruikte_lengte_cm: Math.round(r.gebruikte_lengte_cm) })
 
             const info = regelInfoMap.get(regelId)
-            const teLeverenCm = Math.round((info?.te_leveren_m ?? 0) * 100)
+            // Toon effectieve capaciteit (netto, na andere groepen) als teLeverenCm
+            const teLeverenCm = Math.round((info?.effectief_te_leveren_m ?? 0) * 100)
             regels.push({
               inkooporder_nr: r.rolnummer,
               gebruikte_lengte_cm: Math.round(r.gebruikte_lengte_cm),

@@ -644,7 +644,12 @@ export interface OpenInkoopRegel {
   inkooporder_nr: string
   leverancier_naam: string | null
   verwacht_datum: string | null
+  /** Bruto te leveren meters (besteld − geleverd, inclusief bestaande claims). */
   te_leveren_m: number
+  /** Al geclaimd door snijplannen in 'Wacht op inkoop' status (over ALLE kwaliteiten). */
+  snijplan_gebruikte_lengte_cm: number
+  /** Effectief resterende meters = te_leveren_m − snijplan_gebruikte_lengte_cm/100. */
+  effectief_te_leveren_m: number
   kwaliteit_code: string
 }
 
@@ -653,6 +658,9 @@ export interface OpenInkoopRegel {
  * Zoekt over ALLE kwaliteiten in de paren zodat LAGO/13-stukken ook geclaimd
  * kunnen worden op VERI/13-inkoop (uitwisselbaar, omsticker bij levering).
  * Elke regel draagt zijn eigen kwaliteit_code mee voor de breedte-lookup.
+ *
+ * Filtert IOs met 0 effectieve resterende capaciteit — dat zijn IOs waarvan
+ * al het beschikbare materiaal door andere snijplannen geclaimd is.
  */
 export async function fetchOpenInkoopRegels(
   supabase: SupabaseClient,
@@ -665,7 +673,7 @@ export async function fetchOpenInkoopRegels(
 
   const { data, error } = await supabase
     .from('openstaande_inkooporder_regels')
-    .select('regel_id, inkooporder_nr, leverancier_naam, verwacht_datum, te_leveren_m, kwaliteit_code')
+    .select('regel_id, inkooporder_nr, leverancier_naam, verwacht_datum, te_leveren_m, snijplan_gebruikte_lengte_cm, kwaliteit_code')
     .eq('eenheid', 'm')
     .in('kwaliteit_code', kwaliteitCodes)
     .in('kleur_code', kleurCodes)
@@ -674,14 +682,23 @@ export async function fetchOpenInkoopRegels(
 
   if (error) throw error
 
-  return (data ?? []).map((r: Record<string, unknown>) => ({
-    regel_id: r.regel_id as number,
-    inkooporder_nr: r.inkooporder_nr as string,
-    leverancier_naam: (r.leverancier_naam as string | null) ?? null,
-    verwacht_datum: (r.verwacht_datum as string | null) ?? null,
-    te_leveren_m: Number(r.te_leveren_m ?? 0),
-    kwaliteit_code: r.kwaliteit_code as string,
-  }))
+  return (data ?? [])
+    .map((r: Record<string, unknown>) => {
+      const teLeverenM = Number(r.te_leveren_m ?? 0)
+      const gebruiktCm = Number(r.snijplan_gebruikte_lengte_cm ?? 0)
+      const effectief  = Math.max(0, teLeverenM - gebruiktCm / 100)
+      return {
+        regel_id: r.regel_id as number,
+        inkooporder_nr: r.inkooporder_nr as string,
+        leverancier_naam: (r.leverancier_naam as string | null) ?? null,
+        verwacht_datum: (r.verwacht_datum as string | null) ?? null,
+        te_leveren_m: teLeverenM,
+        snijplan_gebruikte_lengte_cm: gebruiktCm,
+        effectief_te_leveren_m: effectief,
+        kwaliteit_code: r.kwaliteit_code as string,
+      }
+    })
+    .filter((r) => r.effectief_te_leveren_m > 0)
 }
 
 /**
