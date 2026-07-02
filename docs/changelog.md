@@ -1,5 +1,40 @@
 # Changelog — RugFlow ERP
 
+## 2026-07-02 — vrije_voorraad bleef stale bij handmatige voorraad-correctie + Basta-veilige ledger (mig 575, LIVE)
+
+**Bug (gemeld door Karpi):** een handmatige voorraad-wijziging op het
+product-bewerk-scherm (bv. staaltje AESTHETIC Kleur 13: voorraad 10 → 9)
+liet `vrije_voorraad` onaangeroerd staan op de oude waarde. Oorzaak:
+`vrije_voorraad` (mig 149) werd alleen herberekend door
+`herbereken_product_reservering()`, die uitsluitend op claim-wijzigingen
+reageert — een kale `UPDATE producten SET voorraad=...` (zoals het
+bewerk-formulier deed) sloeg die berekening over. Op productie stonden
+hierdoor al 5 producten scheef (bevestigd vóór de fix).
+
+**Fix 1 — altijd in sync:** trigger `trg_producten_sync_vrije_voorraad`
+(`BEFORE UPDATE OF voorraad, gereserveerd, backorder`) herberekent
+`vrije_voorraad = voorraad - gereserveerd - backorder` bij élke wijziging van
+die kolommen, ongeacht de bron (UI, RPC, import-script). Eenmalige backfill
+heeft de 5 bestaande scheve rijen rechtgetrokken.
+
+**Fix 2 — Basta-veilig:** een handmatige correctie mag niet stilletjes
+verdwijnen zodra de periodieke Basta-voorraadlijst opnieuw wordt ingeladen
+(die zet `producten.voorraad` hard op Basta's eigen fysieke telling, die
+niets van RugFlow's correctie afweet). Nieuwe ledger-tabel
+`producten_voorraad_correcties` + RPC `corrigeer_voorraad_handmatig` loggen
+elke handmatige wijziging (van/naar/delta/reden/wie). `updateProduct()`
+(frontend) routeert een voorraad-wijziging voortaan via die RPC i.p.v. een
+kale kolom-update. `import/update_voorraad.py` telt bij elke import alleen
+de open correcties mee die ná de lijst-datum (uit de bestandsnaam geparsed)
+zijn gemaakt — Basta's telling kende die nog niet, dus die worden bovenop de
+nieuwe baseline opgeteld en blijven open. Correcties van vóór de lijst-datum
+worden afgesloten (Basta's nieuwe telling heeft ze al verwerkt) — zo gaat een
+correctie nooit verloren en telt hij nooit dubbel.
+
+Migratie 575 is getest via een rolled-back transactie en daarna definitief
+toegepast op productie. Branch `fix/vrije-voorraad-handmatige-correctie`
+(frontend nog niet gemerged naar `main`).
+
 ## 2026-07-02 — Combi-levering pre-productie-audit: 4 blockers + 1 hoog gefixt (mig 570-574)
 
 **Waarom:** vóór het mergen van `feat/combi-levering` naar `main`/productie is een

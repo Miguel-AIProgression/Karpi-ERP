@@ -1157,6 +1157,22 @@ Audittrail voor handmatige rol-CRUD (voorraadcorrectie/inventarisatie). Mig 290 
 
 ---
 
+### producten_voorraad_correcties
+Audit-ledger van handmatige `producten.voorraad`-wijzigingen. Mig 575 (2026-07-02). Enige weg naar een handmatige wijziging is RPC `corrigeer_voorraad_handmatig(artikelnr, nieuwe_voorraad, reden)` — het bewerk-formulier (`updateProduct()`) roept die aan i.p.v. een kale kolom-update, zodat `import/update_voorraad.py` (periodieke Basta-voorraadlijst) een correctie kan meewegen i.p.v. stilletjes overschrijven/dubbeltellen (zie module-docstring van dat script).
+| Kolom | Type | Toelichting |
+|-------|------|-------------|
+| id | BIGINT PK | `BIGSERIAL` |
+| artikelnr | TEXT FK → producten | `ON DELETE CASCADE` |
+| van / naar / delta | INTEGER | Oude waarde / nieuwe waarde / `naar - van` |
+| reden | TEXT | Vrije tekst, optioneel |
+| aangemaakt_op | TIMESTAMPTZ | `DEFAULT now()` |
+| aangemaakt_door | TEXT | `huidige_actor_email()` |
+| verwerkt_in_import_op | TIMESTAMPTZ | NULL = nog open (telt nog mee bij de eerstvolgende Basta-import); gevuld = een lijst met snapshot-datum ná deze correctie heeft 'm al meegenomen |
+
+Trigger `trg_producten_sync_vrije_voorraad` (`BEFORE UPDATE OF voorraad, gereserveerd, backorder ON producten`) houdt `vrije_voorraad = voorraad - gereserveerd - backorder` bij élke wijziging van die kolommen in sync, ongeacht de bron — vóór mig 575 gebeurde dat alleen via `herbereken_product_reservering()` (reageert op claims), waardoor een kale voorraad-update `vrije_voorraad` stale liet staan.
+
+---
+
 ### migratie_blokkering
 **Tijdelijke** FIFO-lengtereservering van nog-niet-gesneden oud-systeem maatwerk-orders op fysieke rollen (ADR-0028, mig 313). Doel: voorkomen dat de bij migratie overgenomen voorraad dubbel wordt verkocht terwijl de openstaande op-maat-orders nog niet zijn gesneden. Bron-van-waarheid zolang de overgang naar het nieuwe systeem loopt. De tabel is leeg zodra alle geblokkeerde orders zijn gesneden en vrijgegeven.
 
@@ -1550,6 +1566,8 @@ Mig 174, aangepast in mig 176. Read-only view die de `/logistiek/vervoerders`-ov
 | `herbereken_klant_tiers()` | Gold (top 10%), Silver (top 30%), Bronze (rest) |
 | `update_order_totalen()` | Trigger: herbereken order bedrag/gewicht/regels |
 | `herbereken_product_reservering(artikelnr TEXT)` | Sinds migratie 149: `gereserveerd` = SUM van `order_reserveringen.aantal` waar `bron='voorraad'` en `status='actief'`; `vrije_voorraad = voorraad − gereserveerd − backorder`. |
+| `sync_vrije_voorraad()` | Trigger-functie (mig 575, `BEFORE UPDATE OF voorraad, gereserveerd, backorder ON producten`): forceert `vrije_voorraad = voorraad − gereserveerd − backorder` bij élke wijziging van die kolommen, ongeacht de bron. |
+| `corrigeer_voorraad_handmatig(artikelnr TEXT, nieuwe_voorraad INTEGER, reden TEXT)` | Mig 575: enige weg voor een handmatige `producten.voorraad`-wijziging — logt van/naar/delta in `producten_voorraad_correcties` (zie tabel hierboven) zodat `import/update_voorraad.py` de correctie kan meewegen i.p.v. overschrijven. |
 | `iso_week_plus(p_datum DATE, p_weken INTEGER)` | NULL-safe: returnt ISO-week-string `YYYY-Www` voor `p_datum + p_weken*7`. IMMUTABLE. Migratie 145. |
 | `voorraad_beschikbaar_voor_artikel(p_artikelnr TEXT, p_excl_order_regel_id BIGINT)` | Beschikbare voorraad voor allocatie aan deze orderregel: `voorraad − backorder − ANDERE actieve voorraadclaims`. Migratie 145. |
 | `io_regel_ruimte(p_io_regel_id BIGINT)` | Resterende claim-ruimte op een IO-regel (alleen `eenheid='stuks'`): `FLOOR(te_leveren_m) − SUM(actieve claims)`. Migratie 145. |
