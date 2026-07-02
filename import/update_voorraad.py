@@ -7,7 +7,11 @@ scripts (update_voorraad_2026_05.py / _2026_06_01.py): geef het bestandspad
 gewoon als argument mee.
 
 Beslissingen (vastgelegd met Karpi):
-  - Scope: ALLEEN product_type='vast'. Staaltje/rol/overig NIET aangeraakt.
+  - Scope: product_type IN ('vast', 'staaltje'). Rol/overig NIET aangeraakt.
+    Achtergrond: in Basta-G bestaat geen onderscheid tussen "staaltje" en "vaste
+    maat" — het is puur een afmeting. De 'staaltje'-classificatie in RugFlow is
+    een import-artefact (drempel < 10.000 cm²) zonder betekenis in het bronsysteem.
+    De voorraadlijst bevat ALLE artikelen (één export, geen aparte staallijst).
   - Sleutel: kolom A 'Artikelnr' -> producten.artikelnr (PK).
   - Waarde:  kolom H 'Vrije voorraad' (= fysiek D - oude reserveringen F).
     HERZIEN 2026-06-15 (was kolom D 'Voorraad' (FYSIEK) sinds 2026-06-08).
@@ -505,7 +509,7 @@ def main():
         actief.setdefault(x["artikelnr"], x)
 
     db = laad_db_producten(sb)
-    vast = {a for a, (t, _) in db.items() if t == "vast"}
+    vast = {a for a, (t, _) in db.items() if t in ("vast", "staaltje")}
 
     # --- RugFlow-aftrek: al verscheepte stuks (Verzonden/Deels verzonden,
     #     NIET oud_systeem) per vaste-maat artikelnr ---
@@ -544,22 +548,21 @@ def main():
         if kwal and kwal not in geldige_kwal and kwal not in ontbrekende_kwal:
             ontbrekende_kwal[kwal] = x["karpi_code"]
 
-    skip_types = {"staaltje": 0, "rol": 0, "overig": 0}
+    skip_types = {"rol": 0, "overig": 0}
     for a, (t, _) in db.items():
         if t in skip_types:
             skip_types[t] += 1
 
     print("\n--- SAMENVATTING ---")
-    print(f"  vast geupdatet (uit lijst)        : {len(updates)}")
-    print(f"  vast uitgesloten -> 0             : {len(op_0_uitgesloten)}")
-    print(f"  vast niet in lijst -> 0           : {len(op_0_niet_in_lijst)}")
+    print(f"  vast+staaltje geupdatet (uit lijst): {len(updates)}")
+    print(f"  vast+staaltje uitgesloten -> 0    : {len(op_0_uitgesloten)}")
+    print(f"  vast+staaltje niet in lijst -> 0  : {len(op_0_niet_in_lijst)}")
     print(f"  nieuw aanmaken (vaste maat, vrd>0): {len(nieuw)}")
     print(f"  nieuw vaste maat 0/neg -> skip    : {len(nieuw_vast_leeg)}")
     print(f"  nieuw broadloom -> overgeslagen   : {len(nieuw_broadloom)}")
     print(f"  ontbrekende kwaliteiten aanmaken  : {len(ontbrekende_kwal)}"
           + (f"  ({', '.join(sorted(ontbrekende_kwal))})" if ontbrekende_kwal else ""))
     print(f"  uitsluitlijst totaal (union)      : {len(exclude_artnr)}")
-    print(f"  overgeslagen staaltje             : {skip_types['staaltje']}")
     print(f"  overgeslagen rol                  : {skip_types['rol']}")
     print(f"  overgeslagen overig               : {skip_types['overig']}")
     print(f"\n--- RUGFLOW-AFTREK (Verzonden, niet-oud_systeem) ---")
@@ -604,16 +607,15 @@ def main():
     )
     df_samenvatting = pd.DataFrame([
         {"Categorie": "bestand", "Aantal": pad.name},
-        {"Categorie": "vast geupdatet uit lijst", "Aantal": len(updates)},
-        {"Categorie": "vast uitgesloten -> 0", "Aantal": len(op_0_uitgesloten)},
-        {"Categorie": "vast niet in lijst -> 0", "Aantal": len(op_0_niet_in_lijst)},
+        {"Categorie": "vast+staaltje geupdatet uit lijst", "Aantal": len(updates)},
+        {"Categorie": "vast+staaltje uitgesloten -> 0", "Aantal": len(op_0_uitgesloten)},
+        {"Categorie": "vast+staaltje niet in lijst -> 0", "Aantal": len(op_0_niet_in_lijst)},
         {"Categorie": "nieuw aangemaakt (vaste maat, vrd>0)", "Aantal": len(nieuw)},
         {"Categorie": "nieuw vaste maat 0/neg overgeslagen", "Aantal": len(nieuw_vast_leeg)},
         {"Categorie": "nieuw broadloom overgeslagen", "Aantal": len(nieuw_broadloom)},
         {"Categorie": "ontbrekende kwaliteiten aangemaakt", "Aantal": len(ontbrekende_kwal)},
         {"Categorie": "uitsluitlijst totaal (union)", "Aantal": len(exclude_artnr)},
         {"Categorie": "nieuw rood toegevoegd deze run", "Aantal": len(nieuw_rood_extra)},
-        {"Categorie": "overgeslagen staaltje", "Aantal": skip_types["staaltje"]},
         {"Categorie": "overgeslagen rol", "Aantal": skip_types["rol"]},
         {"Categorie": "overgeslagen overig", "Aantal": skip_types["overig"]},
         {"Categorie": "RugFlow aftrek: artikelen (Verzonden)", "Aantal": aftrek_artikelen},
