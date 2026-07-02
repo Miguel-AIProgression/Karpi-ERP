@@ -293,6 +293,18 @@ export async function fetchNextArtikelnr(
 export async function updateProduct(artikelnr: string, data: Partial<Omit<ProductFormData, 'artikelnr'>>): Promise<void> {
   const updates: Record<string, unknown> = { ...data }
 
+  // Mig 575: voorraad loopt via de RPC (logt het delta zodat de Basta-import
+  // 'm niet stilletjes overschrijft) i.p.v. een kale kolom-update.
+  if ('voorraad' in updates) {
+    const nieuweVoorraad = updates.voorraad as number
+    delete updates.voorraad
+    const { error: rpcError } = await supabase.rpc('corrigeer_voorraad_handmatig', {
+      p_artikelnr: artikelnr,
+      p_nieuwe_voorraad: nieuweVoorraad,
+    })
+    if (rpcError) throw rpcError
+  }
+
   if ('kwaliteit_code' in data || 'kleur_code' in data) {
     const { data: current } = await supabase
       .from('producten')
@@ -303,6 +315,8 @@ export async function updateProduct(artikelnr: string, data: Partial<Omit<Produc
     const kleur = data.kleur_code ?? current?.kleur_code
     updates.zoeksleutel = kwal && kleur ? `${kwal}_${kleur}` : null
   }
+
+  if (Object.keys(updates).length === 0) return
 
   const { error } = await supabase
     .from('producten')
