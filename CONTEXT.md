@@ -206,10 +206,11 @@ _Avoid_: per-adapter colli-query, live maatwerk→product-join voor verzending
 
 **Verzend-wachtrij** (ADR-0038, mig 426 — gebouwd):
 De operationele wachtrij van zendingen die naar een vervoerder verstuurd moeten
-worden. Eén tabel `verzend_wachtrij`, gediscrimineerd op `vervoerder_code` — niet
-drie kopieën (de oude `hst_transportorders`/`verhoek_transportorders`/
-`rhenus_transportorders` blijven t/m de contract-drop nog als rollback-vangnet
-staan). Het draagt alléén operationele state (`status` via enum `verzend_status`,
+worden. Eén tabel `verzend_wachtrij`, gediscrimineerd op `vervoerder_code`
+— niet drie kopieën (de oude `hst_transportorders`/`verhoek_transportorders`/
+`rhenus_transportorders` zijn per mig 427 definitief gedropt; de "NIET
+DRAAIEN"-banner in dat migratiebestand is historie, de drop is uitgevoerd).
+Het draagt alléén operationele state (`status` via enum `verzend_status`,
 `retry_count`, `error_msg`, timestamps) + drie generieke correlatievelden die de
 carrier-kolommen subsumeren (`extern_referentie` = transportOrderId|bestandsnaam,
 `track_trace` = HST/Verhoek-T&T of NULL bij Rhenus, `document_pad` = PDF|XML) + de
