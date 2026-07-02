@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase/client'
+import { useAuth } from '@/hooks/use-auth'
 import { stuurOrderbevestiging } from './bevestig-order-dialog'
 
 interface Props {
@@ -37,6 +38,9 @@ const GEEN_COMBI_LEVERING_KNOP_STATUSSEN: ReadonlySet<string> = new Set([
 export function CombiLeveringInWachtKnop({ orderId, orderNr }: Props) {
   const [gedaan, setGedaan] = useState(false)
   const [mailVerstuurd, setMailVerstuurd] = useState(false)
+  // Mig 494/audit 02-07: externe vertegenwoordiger is read-only — RLS blokkeert
+  // de UPDATEs stil (0 rijen), maar de klant-mail zou wél echt vertrekken.
+  const { isExternRep } = useAuth()
   const queryClient = useQueryClient()
 
   const { data } = useQuery({
@@ -80,7 +84,7 @@ export function CombiLeveringInWachtKnop({ orderId, orderNr }: Props) {
     },
   })
 
-  if (!data || data.debiteuren?.combi_levering || GEEN_COMBI_LEVERING_KNOP_STATUSSEN.has(data.status)) {
+  if (isExternRep || !data || data.debiteuren?.combi_levering || GEEN_COMBI_LEVERING_KNOP_STATUSSEN.has(data.status)) {
     return null
   }
 
