@@ -72,7 +72,13 @@ branch `fix/audit-remediatie` (basis: origin/main 7130d579, 2026-07-02).
   en daarbij zijn ongecommitte PROGRESS-edits teruggedraaid — voortaan geldt:
   subagents mogen NOOIT `git stash`/`git checkout --` op de worktree draaien;
   orchestrator commit progress-updates zo snel mogelijk.
-- [ ] **2.5** dode RPC's droppen (mig ~556+, nummer verifiëren)
+- [x] **2.5** mig 577 — 5 dode RPC's gedropt op de LIVE DB (`a57a7755`):
+  start_pickronden_voor_order, start_pickronden_bundel (bleek al weg sinds
+  mig 249), genereer_factuur_voor_bundel, start_pickronde,
+  create_zending_voor_order (dode keten). Rollback-getest, post-apply
+  COUNT=0, 301→297 functies (exact −4), snapshot ververst, 2 stale
+  comments gefixt. Spec ✅ (live geverifieerd). Kwaliteitsreview
+  beargumenteerd overgeslagen (mechanisch recept + diepe live-verificatie).
 - [x] **3.1** CONTEXT.md: Verzend-wachtrij-correctie toegepast (`1280a85d`).
   ONTDEKKING: de "Order-aandacht-gate"-sectie bestaat NIET op main — die zat
   alleen in ongecommitte lokale edits van de oude checkout (combi-levering-
@@ -139,7 +145,34 @@ branch `fix/audit-remediatie` (basis: origin/main 7130d579, 2026-07-02).
   `SELECT o.order_nr, orr.id, orr.te_leveren, SUM(r.aantal) FILTER (WHERE r.status='actief') AS actief, SUM(r.aantal) FILTER (WHERE r.status='verzonden') AS verzonden FROM order_reserveringen r JOIN order_regels orr ON orr.id=r.order_regel_id JOIN orders o ON o.id=orr.order_id WHERE o.status='Deels verzonden' AND r.status='verzonden' GROUP BY 1,2,3 LIMIT 5;`
   en open één zo'n order in de UI — de valse "Wacht op nieuwe inkoop"-subrij moet weg zijn.
 
-## BELANGRIJK: DB-toegang
+## DB-TOEGANG HERSTELD (2026-07-02, later op de dag)
+`supabase db query --linked` (CLI ≥2.100, Management API) geeft volledige
+SQL-toegang incl. DDL — zie memory reference_karpi_supabase_mcp (besluit
+Miguel 02-07: migraties zelf draaien; `db push` blijft verboden). De
+SQL-editor-workflow hieronder is daarmee VERVALLEN; de orchestrator heeft de
+hele UITVRAAG zelf gedraaid. Uitkomsten:
+- **A/E/F:** live bodies gedumpt naar `supabase/schema/live/*.live.sql`
+  (herbereken_wacht_status, derive_wacht_status, bepaal_btw_regeling,
+  effectief_btw_pct, verzendweek_voor_datum).
+- **B (B6-impact): 0 orders flippen.** Miguel gaf GO → mig 578 volgt.
+- **C:** poort leeg; bijvangst: `create_zending_voor_order` (enige caller van
+  `start_pickronde`) is zelf ook dood → drop-lijst = 5 (mig 577, loopt).
+- **D:** 10 triggers op order_regels (niet 4) — §3.4 in order-lifecycle.md
+  bijgewerkt met de volledige geverifieerde lijst.
+- **F-formaat:** SQL geeft exact 2026-W27/2026-W01/2026-W53 — matcht de
+  TS-fixtures.
+- **G:** momenteel 0 Deels-verzonden-orders met verzonden-claims (B2-bug nu
+  niet zichtbaar op live data; UI-check vervalt).
+- **4.1 COMPLEET:** volledige snapshot `supabase/schema/functies.sql` (301
+  functies, 14.772 regels) + `views.sql`; dump-schema.ps1 omgebouwd naar de
+  db-query-route (geen Docker nodig).
+- **LET OP eindstap 7.1:** origin/main staat inmiddels op mig 576
+  (combi-levering 556-574 + 575/576) — branch moet main eerst in-mergen en
+  de suite herdraaien vóór merge. Mig-nummering vanaf 577.
+- **5.1-vondst:** mig 550 schafte `eu_b2b_binnenland_afwijking` af — EU-land
+  is altijd `eu_b2b_icl`; fixtures daarop gebouwd (commit `64aab573`).
+
+## (VERVALLEN) BELANGRIJK: DB-toegang
 Supabase MCP `execute_sql` heeft GEEN rechten op dit project (bevestigd
 2026-07-02; zie memory reference_karpi_supabase_mcp). Het plan noemt op
 meerdere plekken "via MCP" — dat werkt dus niet. Werkwijze voor alle

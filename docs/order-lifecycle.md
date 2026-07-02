@@ -104,6 +104,29 @@ migratie schrijven **vanaf de live/snapshot-body**, applyen, snapshot
 verversen, beide committen. Migratiebestanden zijn write-once-geschiedenis
 (het "waarom"); de snapshot is de actuele staat (het "wat").
 
+## 3.4 Trigger-landschap op `order_regels` (live geverifieerd 2026-07-02)
+
+Een `INSERT`/`UPDATE`/`DELETE` op `order_regels` kan tot **10** triggers laten
+vuren. AFTER-triggers vuren alfabetisch op triggernaam — let op:
+`trg_order_regels_…` sorteert vóór `trg_orderregel_…`. Volledige lijst
+(bron: `pg_trigger` op de live DB; definities in `supabase/schema/functies.sql`):
+
+| Trigger | Vuurt op |
+|---|---|
+| `order_regels_sync_unmatched` | AFTER I/D/U OF `artikelnr` |
+| `order_regels_totalen` | AFTER INSERT/DELETE/UPDATE |
+| `order_regels_updated_at` | BEFORE UPDATE |
+| `trg_auto_maatwerk` | BEFORE INSERT |
+| `trg_auto_snijplan` | AFTER INSERT |
+| `trg_auto_sync_snijplan_maten` | AFTER UPDATE OF `maatwerk_lengte_cm`, `maatwerk_breedte_cm`, `is_maatwerk` |
+| `trg_lock_orderregel_vervoerder` | BEFORE UPDATE OF `vervoerder_code` (guard, blokkeert) |
+| `trg_order_regels_maatwerk_kw_fallback` | BEFORE INSERT/UPDATE |
+| `trg_order_regels_prijs_gate` | AFTER I/D/U OF `prijs`, `korting_pct`, `artikelnr` |
+| `trg_orderregel_herallocateer` | AFTER INSERT/DELETE/UPDATE (élke kolom) → `herallocateer_orderregel` → claims + `herwaardeer_order_status` |
+
+Wie een orderregel-UPDATE debugt: dit is de volledige set — een agent die er
+maar één of twee kent, mist cascades.
+
 ## 4. `herbereken_wacht_status` — beslislogica (mig 275)
 
 Volgorde, eerste match wint:
