@@ -50,9 +50,10 @@ WHERE n.nspname = 'public'
   AND p.prosrc ILIKE ANY (ARRAY[
     '%start_pickronden_voor_order%',
     '%start_pickronden_bundel%',
-    '%genereer_factuur_voor_bundel%'])
+    '%genereer_factuur_voor_bundel%',
+    '%start_pickronde(%'])
   AND p.proname NOT IN
-    ('start_pickronden_voor_order','start_pickronden_bundel','genereer_factuur_voor_bundel');
+    ('start_pickronden_voor_order','start_pickronden_bundel','genereer_factuur_voor_bundel','start_pickronde');
 
 SELECT jobname, command FROM cron.job
 WHERE command ILIKE ANY (ARRAY[

@@ -45,8 +45,21 @@ branch `fix/audit-remediatie` (basis: origin/main 7130d579, 2026-07-02).
   kwaliteit APPROVED. Minors: expliciet type op `let productVelden`;
   fetch-fout-pad ongetest (geen testbestand voor order-create — acceptabel).
 - [ ] **1.5** B6 wacht-status dekkings-fix (STOP vóór apply!)
-- [ ] **2.1** assignRolToSnijplan weg
-- [ ] **2.2** useStartPickronde weg
+- [x] **2.1** assignRolToSnijplan/useAssignRol weg. Commit `bf584779`,
+  grep-bewijs 0 callers, 46 tests groen. Spec ✅, kwaliteit APPROVED.
+  BIJVANGST reviewer → nieuwe bonustaak **2.6**: `createSnijplan` +
+  `updateSnijplanStatus` (+ hooks useCreateSnijplan/useUpdateSnijplanStatus)
+  zijn óók dood (0 consumers buiten de module) én rauwe snijplannen-writes
+  buiten de RPC-laag = zelfde VERR130-vorm. Zelfde verwijder-recept als 2.1.
+- [x] **2.2** useStartPickronde/startPickronde weg. Commit `ec1b52bd`
+  (4 bestanden, 49 deleties, incl. bug B4 no-op query-key). Spec ✅,
+  kwaliteit APPROVED. BIJVANGST → Task 2.5-kandidaat erbij: DB-RPC
+  `start_pickronde(BIGINT,BIGINT)` (mig 249 hield 'm "voor de
+  useStartPickronde-export") is nu wees — UITVRAAG sectie C uitgebreid.
+- [~] **2.3** packAcrossRolls: 1e implementer terecht BLOCKED
+  (werklijst-packing.test.ts gebruikt 'm als test-driver). Besluit: functie
+  VERHUIST naar dat testbestand (0 productie-callers); herziene implementer
+  loopt.
 - [ ] **2.3** packAcrossRolls (ffdh) weg
 - [ ] **2.4** vervoerder-eisen-shim weg
 - [ ] **2.5** dode RPC's droppen (mig ~556+, nummer verifiëren)
