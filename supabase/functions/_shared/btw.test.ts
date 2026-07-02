@@ -92,12 +92,14 @@ Deno.test('bepaalBtwRegeling: EU + verlegd zonder btw-nummer → eu_b2b_icl, adv
   assertEquals(HARD_BLOCK_REGELINGEN.has(r.regeling), false) // mig 164-besluit: niet blokkerend
 })
 
-Deno.test('bepaalBtwRegeling: EU + niet-verlegd → mismatch, hard-block', () => {
+Deno.test('bepaalBtwRegeling: EU afleverland → altijd eu_b2b_icl, 0% (mig 550, Wet OB art. 9(2)(b))', () => {
+  // eu_b2b_binnenland_afwijking vervalt: EU-land is altijd ICL voor B2B,
+  // ongeacht btw_verlegd_intracom-vlag (handmatig, foutgevoelig).
   const r = bepaalBtwRegeling({ aflLandIso2: 'FR', verlegdVlag: false, btwPercentage: 21 })
-  assertEquals(r.regeling, 'eu_b2b_binnenland_afwijking')
-  assertEquals(r.effectiefPct, 21)
-  assertEquals(r.controleNodig, true)
-  assertEquals(HARD_BLOCK_REGELINGEN.has(r.regeling), true)
+  assertEquals(r.regeling, 'eu_b2b_icl')
+  assertEquals(r.effectiefPct, 0)
+  assertEquals(r.controleNodig, true)  // advisory: geen btw-nummer meegegeven
+  assertEquals(HARD_BLOCK_REGELINGEN.has(r.regeling), false)  // nooit hard-block
 })
 
 Deno.test('bepaalBtwRegeling: buiten EU → export_buiten_eu, 0%, hard-block', () => {

@@ -1,5 +1,41 @@
 # Changelog — RugFlow ERP
 
+## 2026-07-02 — BTW-regeling op afleverland, herstel factuur 2026000390 (mig 550)
+
+**Root cause:** Factuur 2026000390 (DECOR-UNION DE, levering Hannover) had 21% BTW in plaats van 0% (ICL). Twee samenhangende oorzaken:
+1. **Mig 529/532 regressie:** `projecteer_concept_factuur` werd volledig herschreven zonder de `bepaal_btw_regeling`-aanroep uit mig 456/518 mee te nemen — de functie las daarna direct `debiteuren.btw_verlegd_intracom` uit.
+2. **DECOR-UNION data-fout:** `debiteur 331228` had `btw_verlegd_intracom = FALSE` (handmatig foutief ingesteld). Alle andere DE/BE-debiteuren stonden correct op TRUE, vandaar dat alleen deze factuur raak was.
+
+**Mig 550 — structurele fix:**
+
+**A. `bepaal_btw_regeling` herschreven (Wet OB 1968 art. 9(2)(b)):**
+- `eu_b2b_binnenland_afwijking`-tak vervalt volledig. Voor Karpi (uitsluitend B2B) is elk ander EU-lid een ICL: 0% BTW, ongeacht `btw_verlegd_intracom`-vlag.
+- EU-afleverland → altijd `eu_b2b_icl, 0%`. Ontbrekend btw-nummer → advisory (`controle_nodig=true`, mig 164-besluit: niet-blokkerend).
+- `btw_verlegd_intracom` blijft data voor ICP-opgave; bepaalt de BTW-regeling niet meer voor EU-leveringen.
+
+**B. `projecteer_concept_factuur` hersteld (superset mig 532 + mig 518):**
+- Voegt `v_eerste_order orders%ROWTYPE` en `v_btw_regeling RECORD` toe aan DECLARE.
+- Roept `bepaal_btw_regeling` aan op het afleverland van de eerste order in de bundel.
+- `btw_verlegd`, `btw_regeling`, `btw_controle_nodig_sinds` worden correct uit de regeling-output gevuld.
+- Bewaart de volledige toeslag-logica uit mig 529/532 en de `pick_backorder`-filter uit mig 518.
+
+**C. One-time herstel factuur 2026000390 (DECOR-UNION):**
+- `btw_verlegd`: false → true, `btw_percentage`: 21% → 0%, `btw_bedrag`: €9,25 → €0,00, `totaal`: €53,32 → €44,07.
+- `btw_regeling = 'eu_b2b_icl'`, `btw_controle_nodig_sinds = now()` (advisory: geen BTW-nummer bij DECOR-UNION).
+- Alle `factuur_regels.btw_percentage` → 0%.
+- Queue-entry 455 gereset naar `pending`, `gefinaliseerd_op` bewaard → drain re-mailte alleen (geen her-finalisatie). Hermail ontvangen 07:39 UTC door `invoice@decor-union.de`.
+
+**D. TS-spiegel `_shared/btw.ts`:**
+- `BtwRegeling` type: `eu_b2b_binnenland_afwijking` verwijderd.
+- `bepaalBtwRegeling`: EU-tak check op `verlegdVlag` verwijderd; altijd `eu_b2b_icl, 0%`.
+- `HARD_BLOCK_REGELINGEN`: `eu_b2b_binnenland_afwijking` verwijderd.
+
+**E. Edge functions herdeployed:** `factuur-verzenden`, `stuur-orderbevestiging`, `bouw-factuur-edi`, `factuur-pdf`.
+
+**Wat er al goed ging:** alle andere DE/BE-facturen hadden correct 0% BTW (die debiteuren stonden wél op `btw_verlegd_intracom=TRUE`). 33 EU-debiteuren zonder btw-nummer: alleen advisory, geen blokkade (mig 164-besluit).
+
+---
+
 ## 2026-07-02 — Prev/next navigatie op order-detailpagina
 
 Nieuwe navigatiebalk rechtsboven op de order-detailpagina: "Vorige / 47 van 312 / Volgende" op basis van de gefilterde lijst die het orderoverzicht had geladen. Pijltjestoetsen ← → werken ook (tenzij focus in een input). "Terug naar orders" herstelt de actieve statusfilter via URL. Implementatie: `order-list-context.ts` slaat de orderlijst op in `sessionStorage` zonder extra API-calls.
