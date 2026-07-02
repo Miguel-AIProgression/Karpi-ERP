@@ -15,6 +15,7 @@ import { berekenRegelDekking } from '@/modules/reserveringen/lib/dekking-preview
 import { wijsVerzendNaarDuurste, splitRegelOpDekking } from './split-order'
 import { verzendWeekVoor } from './verzendweek'
 import { SHIPPING_PRODUCT_ID } from '@/lib/constants/shipping'
+import { isVormToeslagRegel } from './vorm-toeslag-regel'
 
 export interface OrderCommitInput {
   regels: OrderRegelFormData[]
@@ -74,8 +75,19 @@ export function bouwOrderCommit(input: OrderCommitInput): OrderCommitPlan {
   // Split-order flow: deelleveringen AAN + gemengde order (standaard + maatwerk)
   if (isGemengdeSplit(deelleveringen, afleverdatumInfo.heeftGemengd)) {
     const shippingRegel = regels.find(r => r.artikelnr === SHIPPING_PRODUCT_ID)
-    const standaardRegels = regels.filter(r => r.artikelnr !== SHIPPING_PRODUCT_ID && !r.is_maatwerk)
-    const maatwerkRegels = regels.filter(r => r.artikelnr !== SHIPPING_PRODUCT_ID && r.is_maatwerk)
+    // VORMTOESLAG-companion (mig 465) is is_maatwerk=false maar hoort via de
+    // array-positie-convention direct ná zijn maatwerk-parent — bij de split
+    // volgt hij de bucket van de regel vóór hem, niet zijn eigen vlag.
+    const overige = regels.filter(r => r.artikelnr !== SHIPPING_PRODUCT_ID)
+    const standaardRegels: OrderRegelFormData[] = []
+    const maatwerkRegels: OrderRegelFormData[] = []
+    for (let i = 0; i < overige.length; i++) {
+      const r = overige[i]
+      const naarMaatwerk = isVormToeslagRegel(r)
+        ? overige[i - 1]?.is_maatwerk === true
+        : r.is_maatwerk === true
+      ;(naarMaatwerk ? maatwerkRegels : standaardRegels).push(r)
+    }
 
     const standaardOrder: OrderFormData = {
       ...orderData,
@@ -110,15 +122,24 @@ export function bouwOrderCommit(input: OrderCommitInput): OrderCommitPlan {
     const directeRegels: OrderRegelFormData[] = []
     const ioRegels: OrderRegelFormData[] = []
     let shippingRegel: OrderRegelFormData | null = null
+    let laatsteBucket: OrderRegelFormData[] | null = null
 
     for (const r of regels) {
       if (r.artikelnr === SHIPPING_PRODUCT_ID) {
         shippingRegel = r // pas later toewijzen aan duurste deel (issue #33)
         continue
       }
+      if (isVormToeslagRegel(r)) {
+        // Companion volgt de bucket van zijn parent (maatwerk splitst nooit op
+        // IO-dekking) en gaat zelf nooit door splitRegelOpDekking — een pseudo-
+        // regel zonder vrije_voorraad zou anders een vals IO-deel krijgen.
+        ;(laatsteBucket ?? directeRegels).push(r)
+        continue
+      }
       const { directeRegel, ioRegel } = splitRegelOpDekking(r, berekenRegelDekking(r))
       if (directeRegel) directeRegels.push(directeRegel)
       if (ioRegel) ioRegels.push(ioRegel)
+      laatsteBucket = ioRegel && !directeRegel ? ioRegels : directeRegels
     }
 
     const verdeeld = wijsVerzendNaarDuurste(directeRegels, ioRegels, shippingRegel)
