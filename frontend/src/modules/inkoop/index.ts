@@ -73,6 +73,10 @@ export { EtaEditCell } from './components/eta-edit-cell'
 // Components — verhuisd in Stap 11 (cleanup)
 export { LeverancierFormDialog } from './components/leverancier-form-dialog'
 
+// Components — Task 6 (regel-mutaties-UI, mig 601/602)
+export { RegelBewerkenDialog, type RegelBewerkModus } from './components/regel-bewerken-dialog'
+export { RegelToevoegenDialog } from './components/regel-toevoegen-dialog'
+
 // ---------------------------------------------------------------------------
 // Types — verhuisd vanuit lib/supabase/queries (Stap 2)
 // ---------------------------------------------------------------------------

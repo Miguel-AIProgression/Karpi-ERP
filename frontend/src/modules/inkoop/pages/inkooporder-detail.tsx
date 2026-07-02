@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, PackageCheck, Ban, Printer } from 'lucide-react'
+import { ArrowLeft, PackageCheck, Ban, Printer, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
 import { PageHeader } from '@/components/layout/page-header'
 import {
@@ -12,7 +12,10 @@ import {
   VoorraadOntvangstDialog,
   IORegelClaimsPopover,
   EtaEditCell,
+  RegelBewerkenDialog,
+  RegelToevoegenDialog,
   type InkooporderRegel,
+  type RegelBewerkModus,
 } from '@/modules/inkoop'
 import { DocumentenCompact } from '@/components/documenten/documenten-compact'
 
@@ -43,6 +46,8 @@ export function InkooporderDetailPage() {
   const { data, isLoading, error } = useInkooporderDetail(orderId)
   const updateStatus = useUpdateInkooporderStatus()
   const [ontvangstRegel, setOntvangstRegel] = useState<InkooporderRegel | null>(null)
+  const [bewerkRegel, setBewerkRegel] = useState<{ regel: InkooporderRegel; modus: RegelBewerkModus } | null>(null)
+  const [toonRegelToevoegen, setToonRegelToevoegen] = useState(false)
 
   if (isLoading) {
     return <div className="p-12 text-center text-slate-400">Inkooporder laden…</div>
@@ -69,6 +74,7 @@ export function InkooporderDetailPage() {
     totaalStuks > 0 ? `${formatAantal(totaalStuks)} st.` : null,
   ].filter(Boolean).join(' + ') || '0'
   const kanAnnuleren = order.status === 'Concept' || order.status === 'Besteld'
+  const kanWijzigen = order.status !== 'Geannuleerd' && !isExternRep
 
   return (
     <>
@@ -139,9 +145,20 @@ export function InkooporderDetailPage() {
         <section className="bg-white rounded-[var(--radius)] border border-slate-200 p-5 md:col-span-2">
           <div className="flex items-center justify-between mb-3">
             <h2 className="font-medium">Regels ({regels.length})</h2>
-            <span className="text-sm text-slate-500">
-              Nog te leveren: <strong>{totaalLabel}</strong>
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-slate-500">
+                Nog te leveren: <strong>{totaalLabel}</strong>
+              </span>
+              {kanWijzigen && (
+                <button
+                  onClick={() => setToonRegelToevoegen(true)}
+                  className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium bg-terracotta-50 text-terracotta-700 hover:bg-terracotta-100 rounded-[var(--radius-sm)]"
+                >
+                  <Plus size={13} />
+                  Regel toevoegen
+                </button>
+              )}
+            </div>
           </div>
           <table className="w-full text-sm">
             <thead className="text-slate-500">
@@ -217,35 +234,66 @@ export function InkooporderDetailPage() {
                       />
                     </td>
                     <td className="py-2 text-right">
-                      {r.te_leveren_m > 0 && !isExternRep ? (
-                        <button
-                          onClick={() => setOntvangstRegel(r)}
-                          className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-[var(--radius-sm)]"
-                        >
-                          <PackageCheck size={13} />
-                          Ontvangst
-                        </button>
-                      ) : r.te_leveren_m > 0 ? null : (
-                        (() => {
-                          const ids = rolIdsPerRegel.get(r.id) ?? []
-                          if (ids.length === 0) return null
-                          return (
+                      <div className="flex items-center justify-end gap-1">
+                        {kanWijzigen && (
+                          <>
                             <button
-                              onClick={() =>
-                                window.open(
-                                  `/rollen/stickers?ids=${ids.join(',')}`,
-                                  '_blank',
-                                  'noopener,noreferrer',
-                                )
-                              }
-                              className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-[var(--radius-sm)]"
+                              onClick={() => setBewerkRegel({ regel: r, modus: 'bewerken' })}
+                              title="Aantal of prijs wijzigen"
+                              className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded"
                             >
-                              <Printer size={13} />
-                              Stickers
+                              <Pencil size={13} />
                             </button>
-                          )
-                        })()
-                      )}
+                            {r.te_leveren_m > 0 && (
+                              <button
+                                onClick={() => setBewerkRegel({ regel: r, modus: 'annuleren' })}
+                                title="Regel annuleren (rest komt niet meer)"
+                                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"
+                              >
+                                <Ban size={13} />
+                              </button>
+                            )}
+                            {r.geleverd_m === 0 && regels.length > 1 && (
+                              <button
+                                onClick={() => setBewerkRegel({ regel: r, modus: 'verwijderen' })}
+                                title="Regel verwijderen"
+                                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            )}
+                          </>
+                        )}
+                        {r.te_leveren_m > 0 && !isExternRep ? (
+                          <button
+                            onClick={() => setOntvangstRegel(r)}
+                            className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-[var(--radius-sm)]"
+                          >
+                            <PackageCheck size={13} />
+                            Ontvangst
+                          </button>
+                        ) : r.te_leveren_m > 0 ? null : (
+                          (() => {
+                            const ids = rolIdsPerRegel.get(r.id) ?? []
+                            if (ids.length === 0) return null
+                            return (
+                              <button
+                                onClick={() =>
+                                  window.open(
+                                    `/rollen/stickers?ids=${ids.join(',')}`,
+                                    '_blank',
+                                    'noopener,noreferrer',
+                                  )
+                                }
+                                className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-[var(--radius-sm)]"
+                              >
+                                <Printer size={13} />
+                                Stickers
+                              </button>
+                            )
+                          })()
+                        )}
+                      </div>
                     </td>
                   </tr>
                 )
@@ -271,6 +319,16 @@ export function InkooporderDetailPage() {
           inkooporderNr={order.inkooporder_nr}
           onClose={() => setOntvangstRegel(null)}
         />
+      )}
+      {bewerkRegel && (
+        <RegelBewerkenDialog
+          regel={bewerkRegel.regel}
+          modus={bewerkRegel.modus}
+          onClose={() => setBewerkRegel(null)}
+        />
+      )}
+      {toonRegelToevoegen && (
+        <RegelToevoegenDialog inkooporderId={order.id} onClose={() => setToonRegelToevoegen(false)} />
       )}
     </>
   )
