@@ -209,14 +209,15 @@ nieuwe listener op `order_events`, géén edit in de command-RPC's.
 | Concept (e-mail-review) | `status='Concept'` (status, geen kolom-gate) | `poll-email-orders` via `p_initieel_status` | `bevestig_concept_order` → `Klaar voor picken` | status-filter | **Ja** — allocator + snijplan gegate tot bevestiging (mig 308) |
 | EDI "Te koppelen" | `edi_berichten.order_id IS NULL` (vóór order-bestaan) | `transus-poll` bij GLN-mismatch | `koppel_edi_afleveradres` / `koppel_edi_debiteur_alias` | [`te-koppelen.ts`](../frontend/src/modules/edi/lib/te-koppelen.ts) | n.v.t. — er ís nog geen order |
 | Afleveradres ontbreekt | `afl_adres_incompleet_sinds` | BEFORE-trigger `trg_orders_afl_adres_gate` bij leeg afl_naam/adres/postcode/plaats (niet-afhaal, mig 395) | adres aanvullen (trigger wist auto) | [`afleveradres-gate.ts`](../frontend/src/lib/orders/afleveradres-gate.ts) | **Ja** — `start_pickronden` weigert via `_valideer_intake_gates`; herhaalbaar |
+| Aflever-GLN ongekoppeld | `afl_gln_ongekoppeld_sinds` + `afl_gln_gecontroleerd_op` | trigger `trg_orders_afl_gln_gate` bij EDI-order met aflever-GLN zonder vestiging-match (`_afl_gln_matcht_vestiging`, mig 543/544) | GLN aan afleveradres koppelen (trigger wist op álle wachtende orders) of `markeer_afleveradres_gecontroleerd` | view `edi_orders_afleveradres_ongekoppeld` | **Ja** — tweede van de drie checks in `_valideer_intake_gates` (adres → afl_gln → prijs); zie [modules/edi.md](modules/edi.md) |
 | Prijs ontbreekt | `prijs_ontbreekt_sinds` | AFTER-trigger `trg_order_regels_prijs_gate` bij €0/NULL-regel (niet pseudo/VERZEND, korting<100, mig 396) | `markeer_prijs_geaccepteerd` of prijscorrectie | [`prijs-ontbreekt.ts`](../frontend/src/lib/orders/prijs-ontbreekt.ts) | **Ja** — `start_pickronden` weigert via `_valideer_intake_gates`; herhaalbaar |
 
 Eenmalige gates (EDI-leverweek, debiteur) vs. herhaalbare gate (levertijd) — bewust
 verschillend ontworpen (zie CLAUDE.md, mig 326-toelichting). Alle predicaten hebben
 één bron-van-waarheid-helper; inline duplicaten zijn opgeruimd (intake-consolidatie slice 2).
 
-De intake-gates afleveradres (mig 395) & prijs (mig 396) zijn de enige **blokkerende**
-kolom-gates: ze delen de server-side poort `_valideer_intake_gates(order_ids[])` die
+De intake-gates afleveradres (mig 395), aflever-GLN (mig 543/544) & prijs (mig 396) zijn
+de **blokkerende** kolom-gates: ze delen de server-side poort `_valideer_intake_gates(order_ids[])` die
 `start_pickronden` aanroept ná de bundel-uitbreiding. Detectie zit in DB-triggers (single
 source) zodat álle intake-kanalen gedekt zijn, niet per kanaal. **Productie-only orders
 (`alleen_productie=true`, Basta) zijn uitgesloten van beide gates (mig 397)** — verzending

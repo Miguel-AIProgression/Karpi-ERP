@@ -1,5 +1,28 @@
 # Changelog — RugFlow ERP
 
+## 2026-07-02 — CLAUDE.md ontvlochten naar module-kaart + afgedwongen docs-discipline (branch docs/claude-md-ontvlechting)
+
+CLAUDE.md was 160 KB gegroeid (71 bedrijfsregel-bullets, 82% van het bestand); een
+steekproef-audit toonde dat 14 van 15 gecheckte bullets volledig elders gedocumenteerd
+waren, met intern verval als gevolg (twee tegenstrijdige "Universele bevestig-knop"-bullets).
+**Ontvlechting:** de bullets zijn vervangen door 7 module-docs in `docs/modules/`
+(orders, snijplanning, voorraad-inkoop, magazijn-pickship, logistiek-verzending,
+facturatie, edi) — elk met kernbestanden-tabel, geldende ADR's, huidige-staat-bedrijfsregels
+en de behouden gotcha-laag ("niet te verwarren met", "bewust niet gebouwd",
+deploy-volgordes). CLAUDE.md is nu een dunne index (~13 KB) met module-kaart-tabel.
+**Onderhoudsdiscipline afgedwongen:** nieuwe pre-commit-hook
+(`scripts/git-hooks/pre-commit`, actief via `git config core.hooksPath scripts/git-hooks`)
+blokkeert commits die `supabase/migrations|functions/` of `frontend/src/` raken zonder
+docs-wijziging; override via `KARPI_SKIP_DOCS_CHECK=1`. Regel: vervangen, niet stapelen.
+**Correcties en passant (code-geverifieerd door de schrijf-agents):** bevestig-knop-
+tegenspraak beslecht in het voordeel van besluit 2026-06-11 (EDI zonder actieve
+orderbev-toggle → e-mail); BTW-regelingen sinds mig 550 versmald naar 3
+(`eu_b2b_binnenland_afwijking` vervallen); pakbon gaat sinds 25-06 als losse mail;
+ADR-0027 (claim-swap) gemarkeerd als superseded door mig 497-502; ADR-0003 kreeg een
+deels-achterhaald-notitie (Manco mig 518, RPC-drop mig 581). Nieuw gedocumenteerd wat
+nergens stond: de `afl_gln`-startbaarheidsgate (mig 543/544) en mig 549's
+manco-pickbaarheidsfix.
+
 ## 2026-07-02 — Architectuur-audit-remediatie (branch fix/audit-remediatie; mig 581-584 LIVE)
 
 Uitkomst van de multi-agent architectuur-audit (plan + voortgangslog:
