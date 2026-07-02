@@ -162,4 +162,31 @@ describe('mapMatchNaarPrefill', () => {
     const p = mapMatchNaarPrefill({ ...baseMatch, spoed: true })
     expect(p.samenvatting.spoed).toBe(true)
   })
+
+  it('past metProductVelden toe op zeker-gematchte regels wanneer productVelden meegegeven zijn', () => {
+    const m: PoMatchResultaat = {
+      ...baseMatch,
+      regels: [
+        { aantal: 2, ruwe_omschrijving: 'A', artikelnr: '900000005', is_maatwerk: false, maatwerk_kwaliteit_code: null, maatwerk_kleur_code: null, lengte_cm: null, breedte_cm: null, vorm_tekst: null, prijs: 100, korting_pct: 0, zeker: true },
+      ],
+    }
+    const productVelden = new Map([
+      ['900000005', { vrije_voorraad: 12, besteld_inkoop: 0, is_pseudo: false, is_dropship: false, voorraad: 12 }],
+    ])
+    const { regels } = mapMatchNaarPrefill(m, productVelden)
+    expect(regels[0].vrije_voorraad).toBe(12)
+    expect(regels[0].is_pseudo).toBe(false)
+  })
+
+  it('blijft kaal (geen product-velden) zonder productVelden-map — geen regressie', () => {
+    const m: PoMatchResultaat = {
+      ...baseMatch,
+      regels: [
+        { aantal: 2, ruwe_omschrijving: 'A', artikelnr: '900000005', is_maatwerk: false, maatwerk_kwaliteit_code: null, maatwerk_kleur_code: null, lengte_cm: null, breedte_cm: null, vorm_tekst: null, prijs: 100, korting_pct: 0, zeker: true },
+      ],
+    }
+    const { regels } = mapMatchNaarPrefill(m)
+    expect(regels[0].vrije_voorraad).toBeUndefined()
+    expect(regels[0].is_pseudo).toBeUndefined()
+  })
 })

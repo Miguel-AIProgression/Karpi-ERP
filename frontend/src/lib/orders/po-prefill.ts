@@ -1,5 +1,6 @@
 import type { OrderFormData, OrderRegelFormData } from '@/lib/supabase/queries/order-mutations'
 import { verzendWeekStringToDatum } from '@/lib/orders/verzendweek'
+import { metProductVelden, type RegelProductVelden } from './order-hydratie'
 
 /** Eén regel zoals match_klant_po die teruggeeft. */
 export interface PoMatchRegel {
@@ -87,7 +88,10 @@ function parseWeek(tekst: string | null): { week: number; jaar: number | null } 
   return { week, jaar: Number(rawJaar) }
 }
 
-export function mapMatchNaarPrefill(match: PoMatchResultaat): PoPrefill {
+export function mapMatchNaarPrefill(
+  match: PoMatchResultaat,
+  productVelden?: Map<string, RegelProductVelden>,
+): PoPrefill {
   const header: Partial<OrderFormData> = {}
 
   if (match.klant_referentie) header.klant_referentie = match.klant_referentie
@@ -124,13 +128,10 @@ export function mapMatchNaarPrefill(match: PoMatchResultaat): PoPrefill {
 
   let gematcht = 0
   let concept = 0
-  // TODO (backlog — "bron → order-form-state"-seam, zie lib/orders/order-hydratie.ts):
-  // deze adapter zet GEEN vrije_voorraad/besteld_inkoop op de regels (het regel-input-
-  // contract, RegelProductVelden). match_klant_po levert geen producten-join, dus de
-  // velden zijn hier niet beschikbaar. Gevolg: een PO-voorgevulde voorradige regel
-  // kan met vrije_voorraad=undefined door berekenRegelDekking gaan → vals IO-tekort,
-  // zelfde klasse als ORD-2026-0614. Echte fix vereist een producten-lookup voor de
-  // gematchte artikelnrs en daarna metProductVelden(regel, …) — eigen slice.
+  // Regel-input-contract (RegelProductVelden): de caller levert per gematcht
+  // artikelnr de producten-velden aan (fetchProductVeldenVoorArtikelnrs) en
+  // mapMatchNaarPrefill past metProductVelden toe — zelfde contract als
+  // Order-hydratie en addArticle. Zonder map (bv. in tests) blijft de regel kaal.
   const regels: OrderRegelFormData[] = match.regels.map((r) => {
     const aantal = r.aantal ?? 1
     const basis: OrderRegelFormData = {
@@ -143,7 +144,9 @@ export function mapMatchNaarPrefill(match: PoMatchResultaat): PoPrefill {
 
     if (r.zeker && r.artikelnr) {
       gematcht++
-      return { ...basis, artikelnr: r.artikelnr }
+      const regel: OrderRegelFormData = { ...basis, artikelnr: r.artikelnr }
+      const velden = productVelden?.get(r.artikelnr)
+      return velden ? metProductVelden(regel, velden) : regel
     }
     if (r.zeker && r.is_maatwerk) {
       gematcht++
