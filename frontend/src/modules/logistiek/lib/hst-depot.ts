@@ -2,7 +2,9 @@ import { landNaarIso2 } from '@/lib/utils/land-vlag'
 
 // HST-depotnummer per afleverpostcode.
 //
-// Bron: "Postcodeverdeling NL+BE.xlsx" (door HST aangeleverd, 2026-06-17). HST
+// Bron: "Postcodeverdeling NL+BE.xlsx" (door HST aangeleverd, 2026-06-17); de
+// NL-tabel is geverifieerd tegen de bijgewerkte verdeler "Map1.xlsx" (periode
+// vanaf 2026-07-01) — alle 85 NL-ranges identiek, geen wijziging. HST
 // sorteert binnenkomende colli op depot op basis van de afleverpostcode; ze
 // willen dat depotnummer ZELF op het etiket zien dat Karpi print en plakt.
 // Print-only: het depot zit NIET in de HST-API-payload — HST scant alleen de

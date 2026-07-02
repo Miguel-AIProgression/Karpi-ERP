@@ -91,6 +91,11 @@ export interface PickShipOrder {
    *  Aanwezig zodra `start_pickronde` is aangeroepen, weg na voltooi.
    *  Drijft de "in progress"-staat op de pick-card. */
   actieve_pickronde: ActievePickronde | null
+  /** Zending-nummers van deze order met status t/m 'Klaar voor verzending'
+   *  (dus Gepland/Picken/Klaar voor verzending, NIET Verzonden/Afgehaald/
+   *  Afgeleverd/Geannuleerd). Alleen gevuld tijdens zoeken — dient puur om op
+   *  zending-nr te kunnen zoeken (verzoek Miguel 01-07). */
+  zending_nrs: string[]
 }
 
 export interface ActievePickronde {

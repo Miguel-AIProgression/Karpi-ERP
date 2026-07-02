@@ -12,6 +12,7 @@ import { FactuurStatusSelect } from '../components/factuur-status-select'
 import { BtwControleNodigBanner } from '../components/btw-controle-nodig-banner'
 import { getFactuurPdfSignedUrl, renderFactuurPdfBlobUrl, type FactuurRegel } from '../queries/facturen'
 import { formatCurrency, formatDate } from '@/lib/utils/formatters'
+import { downloadUrl } from '@/lib/utils/download'
 
 export function FactuurDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -50,14 +51,15 @@ export function FactuurDetailPage() {
   async function handleDownloadPdf() {
     setPdfFout(null)
     setPdfBezig(true)
+    const filename = `Factuur-${factuur.factuur_nr}.pdf`
     try {
       let url: string
       if (factuur.pdf_storage_path) {
-        url = await getFactuurPdfSignedUrl(factuur.pdf_storage_path)
+        url = await getFactuurPdfSignedUrl(factuur.pdf_storage_path, filename)
       } else {
         url = await renderFactuurPdfBlobUrl(factuur.id)
       }
-      window.open(url, '_blank')
+      downloadUrl(url, filename)
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'PDF kon niet worden gemaakt'
       console.error('PDF downloaden mislukt', err)

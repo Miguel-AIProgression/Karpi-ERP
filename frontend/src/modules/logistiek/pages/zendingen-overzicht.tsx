@@ -1,8 +1,8 @@
 import { useState, useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Truck, AlertCircle, Settings, Printer } from 'lucide-react'
+import { Truck, AlertCircle, Settings, Printer, Search, X } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
-import { useZendingen } from '@/modules/logistiek/hooks/use-zendingen'
+import { useZendingen, useZoekZendingen } from '@/modules/logistiek/hooks/use-zendingen'
 import { ZendingStatusBadge, zendingStatusLabel } from '@/modules/logistiek/components/zending-status-badge'
 import { VervoerderTag } from '@/modules/logistiek/components/vervoerder-tag'
 import { VERVOERDER_REGISTRY, type VervoerderCode } from '@/modules/logistiek/registry'
@@ -173,12 +173,20 @@ export function ZendingenOverzichtPage() {
   const [vervoerderFilter, setVervoerderFilter] = useState<VervoerderFilter>('alle')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('alle')
   const [datumFilter, setDatumFilter] = useState<string>('alle')
+  const [zoekterm, setZoekterm] = useState('')
+
+  const zoekActief = zoekterm.trim().length >= 2
 
   const { data: zendingen = [], isLoading } = useZendingen({
     status: statusFilter === 'alle' ? undefined : statusFilter,
   })
+  const { data: zoekResultaten = [], isLoading: zoekLaadt } = useZoekZendingen(zoekterm)
 
+  // Tijdens zoeken: gebruik de server-side zoekresultaten (alle statussen) en
+  // negeer de pillen/datum-filters — een manco-melding gaat vaak over een al
+  // verzonden zending die de filters juist zouden wegfilteren.
   const gefilterd = useMemo(() => {
+    if (zoekActief) return (zoekResultaten as unknown as ZendingRow[]) ?? []
     const rows = (zendingen as unknown as ZendingRow[]) ?? []
     if (vervoerderFilter === 'alle') return rows
     return rows.filter((r) => {
@@ -186,7 +194,7 @@ export function ZendingenOverzichtPage() {
       if (vervoerderFilter === 'geen') return !code
       return code === vervoerderFilter
     })
-  }, [zendingen, vervoerderFilter])
+  }, [zendingen, zoekResultaten, zoekActief, vervoerderFilter])
 
   // Beschikbare afrond-datums (uit de vervoerder-gefilterde set), in dezelfde
   // volgorde als de query-sortering (gereed_op DESC) zodat de dropdown
@@ -204,11 +212,11 @@ export function ZendingenOverzichtPage() {
     return keys
   }, [gefilterd])
 
-  // Pas het gekozen datumfilter toe.
+  // Pas het gekozen datumfilter toe (niet tijdens zoeken — dan tellen alle datums).
   const naDatum = useMemo(() => {
-    if (datumFilter === 'alle') return gefilterd
+    if (zoekActief || datumFilter === 'alle') return gefilterd
     return gefilterd.filter((r) => groepKeyVan(r) === datumFilter)
-  }, [gefilterd, datumFilter])
+  }, [gefilterd, datumFilter, zoekActief])
 
   // Groepeer per afrond-dag; insertion-order volgt de query-sortering.
   const groepen = useMemo(() => {
@@ -235,7 +243,11 @@ export function ZendingenOverzichtPage() {
             Zendingen
           </span>
         }
-        description={`${naDatum.length} zendingen${aantalFout ? ` — ${aantalFout} met verzendfout` : ''}${statusFilter === 'alle' ? ' (lopende Pickrondes verborgen)' : ''}`}
+        description={
+          zoekActief
+            ? `${naDatum.length} ${naDatum.length === 1 ? 'zending' : 'zendingen'} gevonden voor "${zoekterm.trim()}"`
+            : `${naDatum.length} zendingen${aantalFout ? ` — ${aantalFout} met verzendfout` : ''}${statusFilter === 'alle' ? ' (lopende Pickrondes verborgen)' : ''}`
+        }
         actions={
           <Link
             to="/logistiek/vervoerders"
@@ -248,8 +260,35 @@ export function ZendingenOverzichtPage() {
         }
       />
 
-      {/* Filter-bar */}
-      <div className="space-y-3 mb-5">
+      {/* Zoekveld — barcode (SSCC), ordernummer of zendingnummer. Zoekt over
+          álle statussen (ook verzonden); handig bij een manco-melding van de
+          vervoerder die alleen barcodes noemt. */}
+      <div className="relative mb-4 max-w-xl">
+        <Search
+          size={16}
+          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+        />
+        <input
+          type="search"
+          value={zoekterm}
+          onChange={(e) => setZoekterm(e.target.value)}
+          placeholder="Zoek op barcode, ordernummer of zending…"
+          className="w-full rounded-[var(--radius-sm)] border border-slate-200 bg-white py-2 pl-9 pr-9 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-terracotta-400/30"
+        />
+        {zoekterm && (
+          <button
+            type="button"
+            onClick={() => setZoekterm('')}
+            aria-label="Zoekopdracht wissen"
+            className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-6 w-6 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+          >
+            <X size={14} />
+          </button>
+        )}
+      </div>
+
+      {/* Filter-bar — verborgen tijdens zoeken (zoekresultaten negeren de filters). */}
+      <div className={cn('space-y-3 mb-5', zoekActief && 'hidden')}>
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs uppercase tracking-wide text-slate-500 mr-2">Vervoerder:</span>
           {VERVOERDER_PILLEN.map((p) => (
@@ -305,9 +344,19 @@ export function ZendingenOverzichtPage() {
 
       {/* Tabel */}
       <div className="bg-white rounded-[var(--radius)] border border-slate-200 overflow-hidden">
-        {isLoading ? (
-          <div className="p-8 text-center text-slate-500 text-sm">Laden…</div>
+        {(zoekActief ? zoekLaadt : isLoading) ? (
+          <div className="p-8 text-center text-slate-500 text-sm">
+            {zoekActief ? 'Zoeken…' : 'Laden…'}
+          </div>
         ) : naDatum.length === 0 ? (
+          zoekActief ? (
+            <div className="p-12 text-center text-slate-500 text-sm">
+              <div className="mb-2">Geen zending gevonden voor "{zoekterm.trim()}".</div>
+              <div className="text-xs text-slate-400">
+                Zoek op barcode (de 20-cijferige code op het label), ordernummer of zendingnummer.
+              </div>
+            </div>
+          ) : (
           <div className="p-12 text-center text-slate-500 text-sm">
             <div className="mb-2">Geen zendingen gevonden.</div>
             <div className="text-xs text-slate-400">
@@ -315,6 +364,7 @@ export function ZendingenOverzichtPage() {
               op "Zending aanmaken" klikt.
             </div>
           </div>
+          )
         ) : (
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs text-slate-500 uppercase tracking-wider">

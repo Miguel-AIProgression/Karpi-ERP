@@ -117,15 +117,23 @@ const ORDER_TYPE_TINT: Record<OrderType, { card: string; row: string; title: str
 
 interface Props {
   order: PickShipOrder
+  /** True als deze card binnen een nog-niet-gestarte 2+-order bundel staat
+   *  (KlantClusterBlok) — blokkeert de losse checkbox/Verzendset-knop zodat
+   *  de bundel nooit per ongeluk gesplitst gestart kan worden. Sturen kan dan
+   *  alleen via de bundelkop. */
+  inBundel?: boolean
 }
 
-export function OrderPickCard({ order }: Props) {
+export function OrderPickCard({ order, inBundel = false }: Props) {
   const [open, setOpen] = useState(false)
   const selectie = usePickSelectie()
   // Multi-select staat alleen aan binnen een PickSelectieProvider; buiten de
   // Pick & Ship-overview (geen provider) rendert de card zonder checkbox.
   const toonSelectie = selectie !== null
-  const selecteerbaar = selectie?.isSelectable(order.order_id) ?? false
+  // Al gestart (actieve_pickronde) → geen blokkade nodig, die order is al
+  // onderdeel van de gedeelde zending en voltooien is toch bundel-breed.
+  const geblokkeerdDoorBundel = inBundel && !order.actieve_pickronde
+  const selecteerbaar = !geblokkeerdDoorBundel && (selectie?.isSelectable(order.order_id) ?? false)
   const geselecteerd = selectie?.isSelected(order.order_id) ?? false
   // Afrond-modus kleurt groen (= op compleet zetten); starten kleurt terracotta.
   const afrondModus = selectie?.modus === 'afronden'
@@ -201,7 +209,15 @@ export function OrderPickCard({ order }: Props) {
                 aria-label={`Selecteer order ${order.order_nr}`}
               />
             ) : (
-              <span className="inline-block h-4 w-4" aria-hidden />
+              <span
+                className="inline-block h-4 w-4"
+                aria-hidden
+                title={
+                  geblokkeerdDoorBundel
+                    ? 'Onderdeel van een bundel — selecteer/start via de bundel-checkbox hierboven'
+                    : undefined
+                }
+              />
             )}
           </span>
         )}
@@ -325,6 +341,13 @@ export function OrderPickCard({ order }: Props) {
                 ? `In pickronde · ${order.actieve_pickronde.picker_naam}`
                 : 'In pickronde'}
             </Link>
+          ) : geblokkeerdDoorBundel ? (
+            <span
+              className="text-xs text-terracotta-600/80 italic whitespace-nowrap"
+              title="Start deze order samen met de rest van de bundel via de knop bovenaan"
+            >
+              In bundel
+            </span>
           ) : (
             <StartPickrondesButton orders={[order]} variant="compact" />
           )}

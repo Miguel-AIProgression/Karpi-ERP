@@ -9,9 +9,10 @@
 // en dus hetzelfde label-formaat.
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, FileText, Tags } from 'lucide-react'
+import { ArrowLeft, ClipboardList, FileText, Tags } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { PakbonDocument } from '@/modules/logistiek/components/pakbon-document'
+import { PicklijstDocument } from '@/modules/logistiek/components/picklijst-document'
 import { ShippingLabel } from '@/modules/logistiek/components/shipping-label'
 import { useZendingPrintSets } from '@/modules/logistiek/hooks/use-zendingen'
 import { useZendingStickerDataBulk } from '@/modules/logistiek/hooks/use-zending-stickers'
@@ -29,7 +30,7 @@ import {
 } from '@/modules/logistiek/lib/printset'
 import type { ZendingPrintSet } from '@/modules/logistiek/queries/zendingen'
 
-type PrintMode = 'all' | 'labels' | 'pakbon' | 'tapijt-stickers'
+type PrintMode = 'all' | 'labels' | 'pakbon' | 'tapijt-stickers' | 'picklijst'
 
 function parseZendingNrs(raw: string | null): string[] {
   if (!raw) return []
@@ -234,6 +235,13 @@ export function BulkPrintSetPage() {
                 Pick & Ship
               </Link>
               <button
+                onClick={() => print('picklijst')}
+                className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] bg-terracotta-500 px-3 py-2 text-sm font-medium text-white hover:bg-terracotta-600"
+              >
+                <ClipboardList size={16} />
+                Picklijst printen
+              </button>
+              <button
                 onClick={() => print('labels')}
                 className="inline-flex items-center gap-2 rounded-[var(--radius-sm)] bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
               >
@@ -272,6 +280,7 @@ export function BulkPrintSetPage() {
         data-print-mode={printMode}
         data-include-tapijt-stickers={tapijtStickersMeeprinten ? 'true' : 'false'}
       >
+        <PicklijstDocument zendingen={zendingen} />
         {zendingen.map((z) => (
           <ZendingBlok
             key={z.id}
@@ -321,6 +330,22 @@ export function BulkPrintSetPage() {
           }
           .zending-printset[data-print-mode="all"][data-include-tapijt-stickers="false"] .tapijt-stickers {
             display: none;
+          }
+          /* Picklijst = eigen loopblad: alleen in 'picklijst'-modus, en dan
+             juist niets anders. */
+          .zending-printset:not([data-print-mode="picklijst"]) .picklijst-page {
+            display: none;
+          }
+          .zending-printset[data-print-mode="picklijst"] .shipping-labels,
+          .zending-printset[data-print-mode="picklijst"] .pakbon-page,
+          .zending-printset[data-print-mode="picklijst"] .tapijt-stickers {
+            display: none;
+          }
+          .picklijst-page {
+            page: picklijst;
+            break-after: page;
+            margin: 0;
+            box-shadow: none;
           }
           .shipping-labels { gap: 0 !important; }
           .shipping-label {
@@ -391,6 +416,10 @@ export function BulkPrintSetPage() {
             margin: 0;
           }
           @page pakbon {
+            size: A4;
+            margin: 10mm;
+          }
+          @page picklijst {
             size: A4;
             margin: 10mm;
           }

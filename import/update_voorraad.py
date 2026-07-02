@@ -20,6 +20,16 @@ Beslissingen (vastgelegd met Karpi):
     vrij = fysiek - oude verplichtingen - nieuwe RugFlow-orders. (De 2026-06-08
     keuze voor kolom D negeerde de oude verplichtingen -> RugFlow toonde te veel
     vrij = oversold-risico.) Backorder/gereserveerd als baseline op 0.
+  - VERZONDEN-correctie (2026-06-24, afgesproken met Karpi): Basta staat LOS van
+    RugFlow en verlaagt zijn voorraad NIET bij een RugFlow-verzending. Een nieuwe
+    (EDI/Shopify/handmatige) order die al verzonden is, staat dus nog vol in de
+    Basta-baseline (kolom H) terwijl de rol fysiek weg is -> oversold. Daarom:
+    baseline H MIN de som van orderaantal over alle VERZONDEN niet-maatwerk
+    regels per artikel (clamp 0). Veilig zonder dubbel-aftrek omdat de vaste-maat
+    RugFlow-orders 100% post-cutover zijn (geverifieerd 2026-06-24: 0
+    'oud_systeem'), dus disjunct van Basta's eigen reserveringen (kolom F). Open
+    orders blijven daarbovenop via herallocateer_open_orders.py reserveren.
+    Eindformule: vrije voorraad RugFlow = Basta(H) - verzonden - open reserv.
   - MAATWERK-regels (Karpi-code bevat 'MAATWERK') uitgesloten.
   - Rode regels (rood font) = "niet meer inladen". Karpi markeert deze
     PROGRESSIEF ALFABETISCH per lijst, dus de uitsluitlijst is een UNION:
@@ -242,6 +252,47 @@ def laad_db_producten(sb):
     return out
 
 
+def laad_verzonden_aantallen(sb):
+    """artikelnr -> som orderaantal van VERZONDEN niet-maatwerk regels.
+
+    Basta kent RugFlow-verzendingen niet -> die fysiek-afgevoerde voorraad staat
+    nog in de baseline en moet eraf. ponytail: alleen status 'Verzonden'; een
+    'Deels verzonden'-status bestaat (nog) niet in de data en zou per
+    zending_regel gerekend moeten worden, niet per orderaantal.
+
+    UITGESLOTEN: bron_systeem='oud_systeem' (pre-cutover Basta-orders). Die zitten
+    al in Basta's kolom H verwerkt -> nog eens aftrekken = dubbel. NULL/edi/shopify/
+    handmatig zijn post-cutover en tellen wél mee. (.or_ i.p.v. .neq zodat NULL
+    meedoet — .neq zou NULL eruit filteren, het ACTIEF_OR_FILTER-patroon.)"""
+    ids = []
+    start = 0
+    while True:
+        r = (sb.table("orders").select("id")
+             .eq("status", "Verzonden")
+             .or_("bron_systeem.is.null,bron_systeem.neq.oud_systeem")
+             .range(start, start + 999).execute())
+        if not r.data:
+            break
+        ids += [o["id"] for o in r.data]
+        if len(r.data) < 1000:
+            break
+        start += 1000
+
+    uit = defaultdict(int)
+    for i in range(0, len(ids), 100):
+        r = (sb.table("order_regels")
+             .select("artikelnr,orderaantal,is_maatwerk")
+             .in_("order_id", ids[i:i + 100]).execute())
+        for x in (r.data or []):
+            if x.get("is_maatwerk") or not x.get("artikelnr"):
+                continue
+            art = str(x["artikelnr"]).strip()
+            if art.endswith(".0"):
+                art = art[:-2]
+            uit[art] += x.get("orderaantal") or 0
+    return uit
+
+
 def laad_kwaliteiten(sb):
     """set van bestaande kwaliteit-codes (paginated)."""
     codes = set()
@@ -304,15 +355,24 @@ def main():
 
     db = laad_db_producten(sb)
     vast = {a for a, (t, _) in db.items() if t == "vast"}
+    verzonden = laad_verzonden_aantallen(sb)
 
     updates = []
     op_0_niet_in_lijst = []
     op_0_uitgesloten = []
+    vz_artikelen = 0       # # vaste artikelen met >0 verzonden afgetrokken
+    vz_afgetrokken = 0     # totaal afgetrokken stuks (na clamp)
     for artnr in vast:
         if artnr in exclude_artnr:
             op_0_uitgesloten.append(artnr)
         elif artnr in actief:
-            updates.append((artnr, max(0, actief[artnr]["voorraad"])))
+            basis = max(0, actief[artnr]["voorraad"])  # kolom H
+            vz = verzonden.get(artnr, 0)               # RugFlow verzonden
+            na = max(0, basis - vz)
+            if vz > 0:
+                vz_artikelen += 1
+                vz_afgetrokken += basis - na
+            updates.append((artnr, na))
         else:
             op_0_niet_in_lijst.append(artnr)
 
@@ -338,6 +398,8 @@ def main():
             skip_types[t] += 1
 
     print("\n--- SAMENVATTING ---")
+    print(f"  verzonden-aftrek: {vz_artikelen} artikelen, "
+          f"{vz_afgetrokken} stuks van baseline H af (Basta kent verzending niet)")
     print(f"  vast geupdatet (uit lijst)        : {len(updates)}")
     print(f"  vast uitgesloten -> 0             : {len(op_0_uitgesloten)}")
     print(f"  vast niet in lijst -> 0           : {len(op_0_niet_in_lijst)}")

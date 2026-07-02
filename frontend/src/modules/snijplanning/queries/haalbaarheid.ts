@@ -3,6 +3,7 @@
 // `snijplanning_overzicht`-view (mig 331, uitgebreid met lever_type +
 // verwacht_inkooporder_regel_id in mig 447).
 import { supabase } from '@/lib/supabase/client'
+import { fetchAllPaginated } from '@/lib/utils/paginate'
 import type { LeverType } from '@/lib/orders/snij-haalbaarheid'
 
 export interface MaatwerkHaalbaarheidRow {
@@ -35,11 +36,8 @@ export async function fetchMaatwerkHaalbaarheid(): Promise<MaatwerkHaalbaarheidR
   // zou de agenda-berekening (berekenAgenda, in de pagina) de wachtrij stilletjes
   // incompleet zien, wat de afgeleide snijdatums te optimistisch maakt voor alles
   // ná de eerste 1000 rijen (zelfde bugklasse als de Pick & Ship-fix 2026-06-11).
-  const all: MaatwerkHaalbaarheidRow[] = []
-  const pageSize = 1000
-  let from = 0
-  while (true) {
-    const { data, error } = await supabase
+  return fetchAllPaginated<MaatwerkHaalbaarheidRow>((from, to) =>
+    supabase
       .from('snijplanning_overzicht')
       .select(
         `id, snijplan_nr, status, order_id, order_nr, debiteur_nr, klant_naam,
@@ -52,15 +50,8 @@ export async function fetchMaatwerkHaalbaarheid(): Promise<MaatwerkHaalbaarheidR
       .not('status', 'in', `(${TERMINALE_STATUSSEN.map((s) => `"${s}"`).join(',')})`)
       .not('afleverdatum', 'is', null)
       .order('id')
-      .range(from, from + pageSize - 1)
-
-    if (error) throw error
-    const batch = (data ?? []) as MaatwerkHaalbaarheidRow[]
-    all.push(...batch)
-    if (batch.length < pageSize) break
-    from += pageSize
-  }
-  return all
+      .range(from, to) as unknown as PromiseLike<{ data: MaatwerkHaalbaarheidRow[] | null; error: unknown }>,
+  )
 }
 
 export interface InkoopRegelInfo {

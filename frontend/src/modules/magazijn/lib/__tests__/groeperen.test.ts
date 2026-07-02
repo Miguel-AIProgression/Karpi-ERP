@@ -30,6 +30,7 @@ function makeOrder(overrides: Partial<PickShipOrder> = {}): PickShipOrder {
     afl_adres_incompleet_sinds: null,
     prijs_ontbreekt_sinds: null,
     actieve_pickronde: null,
+    zending_nrs: [],
     ...overrides,
   }
 }

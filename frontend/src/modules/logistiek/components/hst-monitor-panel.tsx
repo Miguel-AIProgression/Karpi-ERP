@@ -65,7 +65,7 @@ export function HstMonitorPanel() {
                   <td className="px-3 py-2 text-right text-slate-600">{f.retry_count}</td>
                   <td className="px-3 py-2 text-right">
                     <button
-                      onClick={() => afhandelen.mutate({ id: f.id, externRef: f.extern_referentie })}
+                      onClick={() => afhandelen.mutate({ id: f.id, externRef: f.extern_referentie, vervoerderCode: 'hst_api' })}
                       disabled={afhandelen.isPending}
                       className="rounded-[var(--radius-sm)] bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
                     >

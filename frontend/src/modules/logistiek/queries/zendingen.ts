@@ -332,6 +332,9 @@ export async function fetchZendingMetTransportorders(zending_nr: string) {
           id, order_id, regelnummer, artikelnr, omschrijving
         )
       ),
+      zending_colli (
+        id, colli_nr, sscc, omschrijving_snapshot, bundel_colli_id, is_bundel
+      ),
       verzend_wachtrij ( * )
     `,
     )
@@ -492,11 +495,16 @@ function toError(error: unknown, fallback: string): Error {
 export async function markeerZendingHandmatigAfgehandeld(
   transportorder_id: number,
   extern_referentie: string | null,
+  vervoerder_code: string | null,
 ) {
+  // ponytail: alleen HST's extern_referentie (= OrderNumber) is een echte T&T.
+  // Bij Rhenus/Verhoek is extern_referentie de XML-bestandsnaam — géén T&T.
+  const track_trace = vervoerder_code === 'hst_api' ? extern_referentie : null
   const { error } = await supabase.rpc('markeer_transportorder_verstuurd', {
     p_id: transportorder_id,
     p_extern_referentie: extern_referentie ?? 'HANDMATIG-PORTAL',
-    p_track_trace: null,
+    p_track_trace: track_trace,
+
     p_document_pad: null,
   })
   if (error) throw error

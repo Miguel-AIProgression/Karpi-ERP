@@ -1,6 +1,8 @@
 node_modules
 dist
 .env
+.verhoek.env
+**/.verhoek.env
 *.local
 *.local.md
 brondata/logos/

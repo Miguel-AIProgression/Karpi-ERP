@@ -203,3 +203,46 @@ export function bouwVerzenddocument(zending: ZendingPrintSet): Verzenddocument {
 export function expandLabels(zending: ZendingPrintSet): LabelItem[] {
   return bouwVerzenddocument(zending).colliRijen
 }
+
+// ── Picklijst (A4-loopblad) ─────────────────────────────────────────────────
+// Eén rij per zending (= één fysiek afleveradres; een bundel-zending is één
+// rij), zodat de picker met één A4 de zojuist-gestarte groep afloopt. Kolommen
+// spiegelen de oude "Picklist-totalen per adres": debiteur, naam, adres,
+// gewicht, colli — plus de order-nummers zodat elk pakbon te matchen is.
+export interface PicklijstRij {
+  zendingNr: string
+  debiteurNr: number
+  naam: string
+  adres: string
+  orderNrs: string[]
+  colli: number
+  gewichtKg: number
+}
+
+export interface Picklijst {
+  rijen: PicklijstRij[]
+  totaalColli: number
+  totaalGewichtKg: number
+}
+
+export function bouwPicklijst(zendingen: ZendingPrintSet[]): Picklijst {
+  const rijen: PicklijstRij[] = zendingen.map((z) => {
+    const colli = expandLabels(z).length
+    const gewichtKg = Number(z.totaal_gewicht_kg ?? 0)
+    const postcodePlaats = [z.afl_postcode, z.afl_plaats].filter(Boolean).join(' ')
+    return {
+      zendingNr: z.zending_nr,
+      debiteurNr: z.orders.debiteur_nr,
+      naam: z.afl_naam ?? z.orders.debiteuren?.naam ?? '',
+      adres: [z.afl_adres, postcodePlaats].filter(Boolean).join(', '),
+      orderNrs: (z.bundel_orders ?? []).map((o) => o.order_nr),
+      colli,
+      gewichtKg,
+    }
+  })
+  return {
+    rijen,
+    totaalColli: rijen.reduce((s, r) => s + r.colli, 0),
+    totaalGewichtKg: rijen.reduce((s, r) => s + r.gewichtKg, 0),
+  }
+}

@@ -522,18 +522,15 @@ export async function fetchOrderDetail(id: number): Promise<OrderDetail> {
 
 /** Fetch order lines enriched with klanteigen namen and klant artikelnummers */
 export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
-  // First get the order to know the debiteur_nr
-  const { data: orderData } = await supabase
-    .from('orders')
-    .select('debiteur_nr')
-    .eq('id', orderId)
-    .single()
-
-  const { data, error } = await supabase
-    .from('order_regels')
-    .select('id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2, orderaantal, te_leveren, backorder, prijs, korting_pct, bedrag, gewicht_kg, vrije_voorraad, fysiek_artikelnr, omstickeren, is_maatwerk, maatwerk_vorm, maatwerk_lengte_cm, maatwerk_breedte_cm, maatwerk_diameter_cm, maatwerk_afwerking, maatwerk_band_kleur, maatwerk_instructies, maatwerk_m2_prijs, maatwerk_oppervlak_m2, maatwerk_vorm_toeslag, maatwerk_afwerking_prijs, verzendweek, verzendweek_bron, klant_referentie, vroegst_leverbaar, producten!order_regels_artikelnr_fkey(kwaliteit_code, kleur_code, is_pseudo, is_dropship, karpi_code, vrije_voorraad, besteld_inkoop, lengte_cm, breedte_cm)')
-    .eq('order_id', orderId)
-    .order('regelnummer')
+  // debiteur_nr en de order_regels hangen beide alleen van orderId af → parallel.
+  const [{ data: orderData }, { data, error }] = await Promise.all([
+    supabase.from('orders').select('debiteur_nr').eq('id', orderId).single(),
+    supabase
+      .from('order_regels')
+      .select('id, regelnummer, artikelnr, karpi_code, omschrijving, omschrijving_2, orderaantal, te_leveren, backorder, prijs, korting_pct, bedrag, gewicht_kg, vrije_voorraad, fysiek_artikelnr, omstickeren, is_maatwerk, maatwerk_vorm, maatwerk_lengte_cm, maatwerk_breedte_cm, maatwerk_diameter_cm, maatwerk_afwerking, maatwerk_band_kleur, maatwerk_instructies, maatwerk_m2_prijs, maatwerk_oppervlak_m2, maatwerk_vorm_toeslag, maatwerk_afwerking_prijs, verzendweek, verzendweek_bron, klant_referentie, vroegst_leverbaar, producten!order_regels_artikelnr_fkey(kwaliteit_code, kleur_code, is_pseudo, is_dropship, karpi_code, vrije_voorraad, besteld_inkoop, lengte_cm, breedte_cm)')
+      .eq('order_id', orderId)
+      .order('regelnummer'),
+  ])
 
   if (error) throw error
 
@@ -634,13 +631,14 @@ export async function fetchOrderRegels(orderId: number): Promise<OrderRegel[]> {
     return regels.map((r) => toRegel(r, undefined, undefined, fysiekOmschMap))
   }
 
-  const eigenNaamMap = await fetchKlanteigenNamenMap(debiteurNr)
-
-  // Fetch all klant artikelnummers for this customer in one query
-  const { data: klantArtNrs } = await supabase
-    .from('klant_artikelnummers')
-    .select('artikelnr, klant_artikel')
-    .eq('debiteur_nr', debiteurNr)
+  // Beide hangen alleen van debiteurNr af (onafhankelijk van elkaar) → parallel.
+  const [eigenNaamMap, { data: klantArtNrs }] = await Promise.all([
+    fetchKlanteigenNamenMap(debiteurNr),
+    supabase
+      .from('klant_artikelnummers')
+      .select('artikelnr, klant_artikel')
+      .eq('debiteur_nr', debiteurNr),
+  ])
 
   const klantArtMap = new Map(
     (klantArtNrs ?? []).map((n: { artikelnr: string; klant_artikel: string }) => [n.artikelnr, n.klant_artikel])

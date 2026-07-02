@@ -45,12 +45,29 @@ export async function fetchPickShipOrders(
   ])
   if (headers.length === 0) return []
 
+  // Zoeken moet ook op zending-nr kunnen — en een al-'Klaar voor verzending'-
+  // zending vindbaar houden (verzoek Miguel 01-07). Die orders vallen normaal uit
+  // pick_ship_zichtbaar; we halen hun zending-nrs alleen op tijdens zoeken en
+  // laten ze dan door de gate (zie hieronder).
+  const isZoek = !!(search && search.trim())
+
   const perOrder = initPickShipOrders(headers, vandaag)
   const headerMap = new Map(headers.map((h) => [h.id, h]))
-  const regels = await fetchPickbaarheidRegels(headers.map((h) => h.id))
+  const headerIds = headers.map((h) => h.id)
+  // Deze hangen alleen van headerIds af → parallel i.p.v. waterval.
+  const [regels, orderPickbaarheid, actievePickrondes, zendingNrs] = await Promise.all([
+    fetchPickbaarheidRegels(headerIds),
+    fetchOrderPickbaarheid(headerIds),
+    fetchActievePickrondes(headerIds),
+    isZoek ? fetchZendingNrsPerOrder(headerIds) : Promise.resolve(new Map<number, string[]>()),
+  ])
+
+  for (const [orderId, nrs] of zendingNrs) {
+    const order = perOrder.get(orderId)
+    if (order) order.zending_nrs = nrs
+  }
+  // karpiNamen hangt wél van regels af → erna.
   const karpiNamen = await fetchKarpiNamenVoorArtikelen(regels.map((r) => r.artikelnr))
-  const orderPickbaarheid = await fetchOrderPickbaarheid(headers.map((h) => h.id))
-  const actievePickrondes = await fetchActievePickrondes(headers.map((h) => h.id))
 
   for (const [orderId, ronde] of actievePickrondes) {
     const order = perOrder.get(orderId)
@@ -94,15 +111,21 @@ export async function fetchPickShipOrders(
   const vandaagIso = isoLokaal(vandaag)
   result = result.filter((o) => {
     const opb = orderPickbaarheid.get(o.order_id)
-    if (!opb) return false // geen (niet-pseudo) regels → niets te picken
-    const header = headerMap.get(o.order_id)
-    if (header?.lever_type === 'datum' && header.afleverdatum) {
-      // Horizon telt met de centrale werkagenda (feestdagen) — valt een vrije dag vóór de
-      // afleverdatum, dan verschijnt de dag-order een werkdag eerder.
-      const horizon = werkdagMinN(header.afleverdatum, 1, werktijden)
-      if (vandaagIso < horizon) return false
+    if (opb?.pick_ship_zichtbaar) {
+      const header = headerMap.get(o.order_id)
+      if (header?.lever_type === 'datum' && header.afleverdatum) {
+        // Horizon telt met de centrale werkagenda (feestdagen) — valt een vrije dag vóór de
+        // afleverdatum, dan verschijnt de dag-order een werkdag eerder.
+        const horizon = werkdagMinN(header.afleverdatum, 1, werktijden)
+        if (vandaagIso < horizon) return false
+      }
+      return true
     }
-    return opb.pick_ship_zichtbaar
+    // Niet-zichtbaar (geen pickbare regels meer, bv. al 'Klaar voor verzending'):
+    // alleen tijdens zoeken tonen én alleen als de order nog een niet-verzonden
+    // zending heeft — dan is het een geldige zending-treffer. De tekst-match
+    // (filterPickShipOrders) beslist daarna of het écht een treffer is.
+    return isZoek && o.zending_nrs.length > 0
   })
   if (search) result = filterPickShipOrders(result, search)
   if (bucket) result = result.filter((o) => o.bucket === bucket)
@@ -161,22 +184,22 @@ async function fetchPickbaarheidRegels(orderIds: number[]): Promise<Pickbaarheid
   // juni 2026: 2068) kregen orders buiten de eerste 1000 rijen géén regels,
   // waardoor `regels.length === 0` ze stilletjes uit Pick & Ship filterde
   // (91 zichtbaar van ~236 pickbare orders).
-  const rows: PickbaarheidRij[] = []
-  for (const ids of chunks(orderIds, 100)) {
-    const { data, error } = await supabase
-      .from('orderregel_pickbaarheid')
-      .select(
-        'order_regel_id, order_id, regelnummer, artikelnr, is_maatwerk, ' +
-          'orderaantal, maatwerk_lengte_cm, maatwerk_breedte_cm, omschrijving, ' +
-          'maatwerk_kwaliteit_code, maatwerk_kleur_code, totaal_stuks, ' +
-          'pickbaar_stuks, is_pickbaar, bron, fysieke_locatie, wacht_op, gewicht_kg'
-      )
-      .in('order_id', ids)
-
-    if (error) throw error
-    rows.push(...((data ?? []) as unknown as PickbaarheidRij[]))
-  }
-  return rows
+  const perChunk = await Promise.all(
+    chunks(orderIds, 100).map(async (ids) => {
+      const { data, error } = await supabase
+        .from('orderregel_pickbaarheid')
+        .select(
+          'order_regel_id, order_id, regelnummer, artikelnr, is_maatwerk, ' +
+            'orderaantal, maatwerk_lengte_cm, maatwerk_breedte_cm, omschrijving, ' +
+            'maatwerk_kwaliteit_code, maatwerk_kleur_code, totaal_stuks, ' +
+            'pickbaar_stuks, is_pickbaar, bron, fysieke_locatie, wacht_op, gewicht_kg'
+        )
+        .in('order_id', ids)
+      if (error) throw error
+      return (data ?? []) as unknown as PickbaarheidRij[]
+    })
+  )
+  return perChunk.flat()
 }
 
 /**
@@ -203,28 +226,31 @@ async function fetchActievePickrondes(
     picker_id: number | null
   }> = []
 
-  for (const ids of chunks(orderIds, 100)) {
-    const { data, error } = await supabase
-      .from('zending_orders')
-      .select('order_id, zendingen!inner(id, zending_nr, picker_id, status)')
-      .in('order_id', ids)
-      .eq('zendingen.status', 'Picken')
-    if (error) {
-      console.error('[pickbaarheid] fetchActievePickrondes zending_orders-query error', error)
-      throw error
-    }
-    for (const row of (data ?? []) as unknown as Array<{
-      order_id: number
-      zendingen: { id: number; zending_nr: string; picker_id: number | null; status: string } | null
-    }>) {
-      if (!row.zendingen) continue
-      zendingen.push({
-        id: row.zendingen.id,
-        zending_nr: row.zendingen.zending_nr,
-        order_id: row.order_id,
-        picker_id: row.zendingen.picker_id,
-      })
-    }
+  const zendingChunks = await Promise.all(
+    chunks(orderIds, 100).map(async (ids) => {
+      const { data, error } = await supabase
+        .from('zending_orders')
+        .select('order_id, zendingen!inner(id, zending_nr, picker_id, status)')
+        .in('order_id', ids)
+        .eq('zendingen.status', 'Picken')
+      if (error) {
+        console.error('[pickbaarheid] fetchActievePickrondes zending_orders-query error', error)
+        throw error
+      }
+      return (data ?? []) as unknown as Array<{
+        order_id: number
+        zendingen: { id: number; zending_nr: string; picker_id: number | null; status: string } | null
+      }>
+    })
+  )
+  for (const row of zendingChunks.flat()) {
+    if (!row.zendingen) continue
+    zendingen.push({
+      id: row.zendingen.id,
+      zending_nr: row.zendingen.zending_nr,
+      order_id: row.order_id,
+      picker_id: row.zendingen.picker_id,
+    })
   }
 
   if (zendingen.length === 0) return map
@@ -265,24 +291,59 @@ async function fetchActievePickrondes(
   return map
 }
 
+/**
+ * Per order: de zending-nummers van alle zendingen t/m 'Klaar voor verzending'
+ * (Gepland/Picken/Klaar voor verzending — NIET Verzonden/Afgehaald/Afgeleverd/
+ * Geannuleerd). Alleen aangeroepen tijdens zoeken zodat op zending-nr gezocht
+ * kan worden (verzoek Miguel 01-07). Bundel-aware via zending_orders M2M.
+ */
+async function fetchZendingNrsPerOrder(orderIds: number[]): Promise<Map<number, string[]>> {
+  const map = new Map<number, string[]>()
+  if (orderIds.length === 0) return map
+  const perChunk = await Promise.all(
+    chunks(orderIds, 100).map(async (ids) => {
+      const { data, error } = await supabase
+        .from('zending_orders')
+        .select('order_id, zendingen!inner(zending_nr, status)')
+        .in('order_id', ids)
+        .in('zendingen.status', ['Gepland', 'Picken', 'Klaar voor verzending'])
+      if (error) throw error
+      return (data ?? []) as unknown as Array<{
+        order_id: number
+        zendingen: { zending_nr: string; status: string } | null
+      }>
+    })
+  )
+  for (const row of perChunk.flat()) {
+    if (!row.zendingen) continue
+    const lijst = map.get(row.order_id) ?? []
+    lijst.push(row.zendingen.zending_nr)
+    map.set(row.order_id, lijst)
+  }
+  return map
+}
+
 async function fetchOrderPickbaarheid(
   orderIds: number[]
 ): Promise<Map<number, OrderPickbaarheidRij>> {
   const map = new Map<number, OrderPickbaarheidRij>()
   // Gechunkt per order_id — zelfde PostgREST-max-rows-cap-reden als fetchPickbaarheidRegels
   // (1 rij per order, maar >1000 open orders is realistisch met EDI-instroom).
-  for (const ids of chunks(orderIds, 100)) {
-    const { data, error } = await supabase
-      .from('order_pickbaarheid')
-      .select(
-        'order_id, totaal_regels, pickbare_regels, alle_regels_pickbaar, ' +
-          'heeft_pickbare_regel, deelleveringen_toegestaan, pick_ship_zichtbaar, heeft_gepland_zending'
-      )
-      .in('order_id', ids)
-    if (error) throw error
-    for (const row of (data ?? []) as unknown as OrderPickbaarheidRij[]) {
-      map.set(row.order_id, row)
-    }
+  const perChunk = await Promise.all(
+    chunks(orderIds, 100).map(async (ids) => {
+      const { data, error } = await supabase
+        .from('order_pickbaarheid')
+        .select(
+          'order_id, totaal_regels, pickbare_regels, alle_regels_pickbaar, ' +
+            'heeft_pickbare_regel, deelleveringen_toegestaan, pick_ship_zichtbaar, heeft_gepland_zending'
+        )
+        .in('order_id', ids)
+      if (error) throw error
+      return (data ?? []) as unknown as OrderPickbaarheidRij[]
+    })
+  )
+  for (const row of perChunk.flat()) {
+    map.set(row.order_id, row)
   }
   return map
 }
@@ -301,15 +362,18 @@ async function fetchKarpiNamenVoorArtikelen(
   const map = new Map<string, string>()
   if (uniek.length === 0) return map
 
-  for (const ids of chunks(uniek, 200)) {
-    const { data, error } = await supabase
-      .from('producten')
-      .select('artikelnr, omschrijving')
-      .in('artikelnr', ids)
-    if (error) throw error
-    for (const row of (data ?? []) as Array<{ artikelnr: string; omschrijving: string | null }>) {
-      if (row.omschrijving) map.set(row.artikelnr, row.omschrijving)
-    }
+  const perChunk = await Promise.all(
+    chunks(uniek, 200).map(async (ids) => {
+      const { data, error } = await supabase
+        .from('producten')
+        .select('artikelnr, omschrijving')
+        .in('artikelnr', ids)
+      if (error) throw error
+      return (data ?? []) as Array<{ artikelnr: string; omschrijving: string | null }>
+    })
+  )
+  for (const row of perChunk.flat()) {
+    if (row.omschrijving) map.set(row.artikelnr, row.omschrijving)
   }
   return map
 }

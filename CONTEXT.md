@@ -91,6 +91,69 @@ stil kan vergeten — de oorzaak van ORD-2026-0614 (ontbrekend `vrije_voorraad`
 `order-edit.tsx` (heeft client-context nodig).
 _Avoid_: order-edit-mapping (de oude inline-locatie, niet het concept), rehydratie (te vaag)
 
+### Order-aandacht
+
+**Order-aandacht-gate**:
+Een toestand waarin een Order menselijke aandacht vereist vóór hij verder mag
+stromen, gepresenteerd als status-overstijgende tab + telling + order-detail-banner.
+De vijf gates — onvolledig afleveradres (mig 395), ontbrekende prijs (mig 396),
+onbevestigde EDI-leverweek (mig 158/309), onzekere debiteur-match (mig 322) en
+ETA-gedreven levertijd-wijziging (mig 326) — zijn isomorf: ze verschillen alleen
+op detectie, eindstatus-uitsluiting, wis-mechanisme en banner-rijkheid. Daarom
+leeft de set op **één plek** als registry van descriptors (`OrderAandachtGate[]`),
+niet als ~5 near-identiek gekopieerde sjablonen verspreid over `fetchOrders`,
+`fetchStatusCounts`, `ALL_STATUSES` en vijf losse banner-triplets (de drift was al
+zichtbaar: de levertijd-gate was de enige zónder `filterX`-helper, 2× inline). De
+tab-lijst, beide query-takken en de order-detail-banners worden **afgeleid** uit de
+registry; een nieuwe gate is één registry-rij. De detectie-as is een discriminated
+union `{ kind:'timestamp', kolom } | { kind:'composite', applyFilter, predicate }`
+— de timestamp-variant levert filter + predicaat + "open sinds" gratis uit één
+kolomnaam, de composite-variant (de twee afgeleide gates) draagt zijn eigen
+PostgREST-veilige `.or()/.eq()`-filter (géén kolom-vs-kolom — respecteert de
+mig-326-constraint). De eindstatus-uitsluiting is één descriptor-veld als single
+source voor zowel de PostgREST-filter als de defensieve predicaat-mirror (heft de
+4× SQL+TS-dubbele-check op). De banner is een component-**referentie**, geen
+gegenereerde inhoud: een gedeelde `AandachtBannerShell` als default voor de
+shell-gates, een eigen rijke component voor de diagnose-gates (prijs doet een
+prijslijst-lookup, levertijd een `order_events`-lookup) en de EDI-week-picker. **Niet
+de poort die pickronde-start blokkeert**: twee gates (afleveradres, prijs) blokkeren
+wél, maar die blokkering blijft 100% bij [[Startbaarheid]] (ADR-0037) en de
+server-poort `_valideer_intake_gates` — de registry draagt `blokkeertPickronde` als
+pure metadata en raakt Startbaarheid alleen via de twee gedeelde order-kolommen,
+nooit via een code-afhankelijkheid. Order-scoped: `btw-controle-nodig` (mig 456)
+heeft dezelfde vorm maar leeft op `facturen` met een eigen presentatielaag (toggle
+i.p.v. tab) — een verwachte tweede adapter, bewust nog niet meegegeneraliseerd (de
+pure timestamp-predicaat-primitieven zijn wél herbruikbaar geschreven). `Actie
+vereist` valt erbuiten: dat is een union van échte lifecycle-statussen + een
+boolean, geen aandacht-vlag.
+_Avoid_: intake-gate (te smal — levertijd-wijziging is post-intake), status-tab (presentatie, niet het concept), order-validatie (te generiek)
+
+### Inkoop
+
+**Claim-vloer** (besluit 2026-07-02):
+De ondergrens waaronder het bestelde aantal van een Inkooporderregel niet
+verlaagd (of de regel verwijderd) mag worden: `geleverd + actieve
+verkooporder-claims + snijplan-claims ('Wacht op inkoop')`. Een openstaande
+inkooporderregel is al verkocht-in-de-toekomst zodra er claims op liggen —
+eronder zakken vereist eerst een expliciete vrijgeef-stap
+(`release_wacht_op_inkoop_stukken` / `herallocateer_orderregel`), zodat
+getroffen verkooporders zichtbaar terugvallen naar 'Wacht op inkoop', nooit
+stil breken. Wijzigen van een Inkooporder (regel toevoegen/verwijderen,
+aantal, prijs, regel annuleren) loopt via RPC's in de inkoop-module
+(ADR-0017), nooit directe writes.
+_Avoid_: "gewoon aanpassen", vrije voorraad (dat is de verkoop-kant)
+
+**Leveranciersportal** (besluit 2026-07-02):
+Extern portaal (portal.karpi.nl) waar een Leverancier zelf de ETA + notitie op
+zijn openstaande Inkooporderregels bijwerkt (`update_regel_eta`,
+`p_door='leverancier'`). Opt-in per leverancier (credentials via
+`stel_portal_credentials_in`), geleidelijk uit te rollen — HENAN was de eerste.
+Schrijfrechten bewust beperkt tot ETA + notitie: een leverancier mag nooit
+aantallen of prijzen muteren (raakt de [[Claim-vloer]]); afwijkingen komen als
+notitie/voorstel binnen en Karpi verwerkt ze. Terugval-pad voor
+niet-deelnemende leveranciers: Karpi voert de ETA zelf in (`p_door='karpi'`).
+_Avoid_: supplier self-service (te breed — het is alleen ETA-terugkoppeling)
+
 ### Snijden & confectie
 
 **Snijplan**:
@@ -252,6 +315,9 @@ _Avoid_: pakbon-afleiding per renderpad, inline JSX-presentatie naast bouwPakbon
   kanaal bouwt zijn invoer via de **Order-commit**-pipeline
 - **Order-hydratie** is de inverse van **Order-commit**: de bewerk-flow laadt een
   bestaande **Order** terug naar dezelfde `OrderRegelFormData`-form-state-shape
+- Een **Order-aandacht-gate** deelt twee order-kolommen met **Startbaarheid**
+  (afleveradres + prijs) maar leidt nooit pickronde-blokkering af — dat blijft
+  Startbaarheids domein (ADR-0037); de registry voedt alleen tab + telling + banner
 - Een maatwerk-**Orderregel** produceert één **Snijplan** per stuk
 - Een **Factuurdocument** rendert naar factuur-PDF én EDI-INVOIC; beide tonen
   dezelfde **Artikelpresentatie**, die óók de orderbevestiging voedt
