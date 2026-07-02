@@ -115,6 +115,7 @@ export function initPickShipOrders(
       heeft_gepland_zending: false,
       actieve_pickronde: null,
       combi_levering_deelnemer: false,
+      zending_nrs: [],
     })
   }
 
@@ -166,7 +167,8 @@ export function filterPickShipOrders(orders: PickShipOrder[], search: string): P
       o.status.toLowerCase().includes(s) ||
       String(o.debiteur_nr).includes(s) ||
       (o.afl_naam ?? '').toLowerCase().includes(s) ||
-      (o.afl_plaats ?? '').toLowerCase().includes(s)
+      (o.afl_plaats ?? '').toLowerCase().includes(s) ||
+      o.zending_nrs.some((nr) => nr.toLowerCase().includes(s))
 
     return (
       headerMatches ||

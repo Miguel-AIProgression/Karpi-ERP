@@ -44,6 +44,68 @@ edge-function-deploy die nog met de oude 2-argument-vorm aanroept toch maar
 **Buiten scope:** het wekelijkse pad (`genereer_factuur_voor_week`) —
 alle 135 combi-klanten staan op `factuurvoorkeur='per_zending'` (live
 gecheckt 02-07), slechts 2 niet-combi-debiteuren op 'wekelijks'.
+## 2026-07-02 — Architectuur-audit-remediatie (branch fix/audit-remediatie; mig 581-584 LIVE)
+
+Uitkomst van de multi-agent architectuur-audit (plan + voortgangslog:
+`docs/superpowers/plans/2026-07-02-audit-remediatie-*.md`). Doel: de twee
+foutklassen dichten waardoor agents verdwalen — verspreide logica die bij
+elkaar hoort, en valse koppelingen/dode paden.
+
+**Bugfixes (frontend):** B1 BevestigingBadge gebruikt `isOrderBevestigd`
+(EDI-orders toonden "Geen OB" na ORDRSP); B2 claim-status `'verzonden'`
+(mig 468) telt mee als dekking (vals "Wacht op nieuwe inkoop" op
+Deels-verzonden-orders); B3 VORMTOESLAG-companion volgt zijn maatwerk-parent
+bij gemengde/IO-order-splits (mig 465-conventie); B5 PO-prefill zet het
+regel-input-contract (`metProductVelden` — ORD-2026-0614-klasse).
+
+**Live DB:** mig 581 dropt 5 dode RPC's (start_pickronden_voor_order/_bundel,
+genereer_factuur_voor_bundel, start_pickronde, create_zending_voor_order —
+drievoudig geverifieerd); mig 582 (B6) laat 'Wacht op voorraad' vereisen dat
+claims het tekort dekken (mig 470-semantiek; impact bij apply: 0 orders);
+mig 583/584 = golden-contract-asserts voor `bepaal_btw_regeling`/
+`effectief_btw_pct` en `verzendweek_voor_datum` — SQL==TS bewezen, mig
+385-conventie.
+
+**Structureel:** schema-snapshot `supabase/schema/functies.sql`+`views.sql`
+(gegenereerd, `node scripts/dump-schema.mjs`) is voortaan de canonieke bron
+voor live functie-bodies — de handmatige RPC→migratie-tabel in
+order-lifecycle.md §3.3 is vervangen (was verouderd voor 7 kern-RPC's; de
+mig-428-klasse "oude body herbouwd" is hiermee structureel gedicht);
+§3.4 documenteert het volledige trigger-landschap op order_regels (10
+triggers, live geverifieerd). Dode code verwijderd: assignRolToSnijplan/
+useAssignRol + createSnijplan/updateSnijplanStatus (VERR130-risicovorm),
+useStartPickronde-keten, FFDH-packAcrossRolls → test-driver.
+compute-reststukken frontend-kopie → echte ADR-0033-shim (kern bleek
+byte-identiek); reststuk-score (ADR-0025) naar één module; VervoerderType
+één bron gespiegeld aan de DB-CHECK (3 afwijkende unions geconsolideerd,
+ADR-0034-addendum); zending-status-predicaten ('Gepland'-collision met
+snijplan_status); drift-test ACTIVE_ORDER_STATUSES (vond ontbrekende
+'Concept' → open-orders-telling vertegenwoordigers telt Concept nu mee —
+gedragskeuze, omzet onaangeroerd). Docs-correcties: CONTEXT.md
+(transportorder-tabellen zijn gedropt), ADR-0031-addendum Verhoek-relay,
+deploy-fan-out-manifest `supabase/functions/DEPLOY.md`, vindregel
+query-lagen in architectuur.md. dump-schema via Node (PS5.1-mojibake +
+Node-.cmd-EINVAL omzeild).
+## 2026-07-02 — Pick & Ship: zoeken op zending-nummer (frontend-only, LIVE)
+
+**Verzoek Miguel 01-07:** in Pick & Ship ook kunnen zoeken op zending-nummer,
+inclusief zendingen die al 'Klaar voor verzending' staan (die orders vallen
+normaal uit `pick_ship_zichtbaar` en waren dus onvindbaar zodra de pickronde
+voltooid was).
+
+**Implementatie (puur frontend, geen migratie):** tijdens zoeken haalt
+`fetchPickShipOrders` per open order de zending-nummers op van zendingen met
+status Gepland/Picken/Klaar voor verzending (nieuwe helper
+`fetchZendingNrsPerOrder`, bundel-aware via `zending_orders` M2M, gechunkt
+tegen de PostgREST-rijencap) — als 5e parallelle fetch, alléén wanneer er een
+zoekterm is. `filterPickShipOrders` matcht daarnaast op `zending_nrs`. De
+zichtbaarheids-gate laat een niet-`pick_ship_zichtbaar`-order alleen door als
+er gezocht wordt én de order nog een niet-verzonden zending heeft; de
+tekst-match beslist daarna of het een echte treffer is. Buiten zoeken is het
+gedrag byte-identiek aan voorheen. Nieuw veld `PickShipOrder.zending_nrs`
+(alleen gevuld tijdens zoeken). Oorspronkelijk WIP uit de hoofd-working-tree
+(veiliggesteld op `wip/hoofdmap-2026-07-02`), geport naar de actuele main
+bovenop combi-levering/GLN-gates/manco.
 
 ## 2026-07-02 — Concept-orders zichtbaar in Pick & Ship (mig 577, LIVE)
 

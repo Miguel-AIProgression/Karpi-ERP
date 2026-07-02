@@ -6,7 +6,6 @@ import {
   fetchPickProblemen,
   herstelColli,
   markeerColliNietGevonden,
-  startPickronde,
   voltooiPickronde,
   voltooiPickrondes,
   type MarkeerNietGevondenArgs,
@@ -26,19 +25,6 @@ export function usePickProblemen() {
     queryKey: ['pickronde', 'problemen'],
     queryFn: fetchPickProblemen,
     staleTime: 30_000,
-  })
-}
-
-export function useStartPickronde() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: ({ orderId, pickerId }: { orderId: number; pickerId: number }) =>
-      startPickronde(orderId, pickerId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['pickronde'] })
-      qc.invalidateQueries({ queryKey: ['pick-ship'] })
-      qc.invalidateQueries({ queryKey: ['zendingen'] })
-    },
   })
 }
 

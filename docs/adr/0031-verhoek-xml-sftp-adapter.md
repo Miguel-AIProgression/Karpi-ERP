@@ -46,3 +46,13 @@ formaat 1-op-1 aan op hun server; Verhoek vertaalt niets.
 - Derde vervoerder = moment om de orchestrator-loop te generaliseren — nu
   bewust gespiegeld, niet geabstraheerd (HST is live en stabiel).
 - Statusterugkoppeling van Verhoek: V2-backlog.
+
+## Addendum (2026-07-02): Vercel Node-relay i.p.v. directe SFTP
+
+Deno-edge ondersteunt het door Verhoek vereiste aes256-ctr-cipher niet.
+Het transport loopt daarom via een Vercel serverless function
+(`frontend/api/verhoek-sftp.ts`, Node-runtime): `verhoek-send` (edge) →
+HTTPS-relay (`VERHOEK_RELAY_URL`/`VERHOEK_RELAY_TOKEN` +
+`VERCEL_PROTECTION_BYPASS`) → SFTP. `_shared/sftp-client.ts` wordt door
+Verhoek NIET meer gebruikt (alleen nog Rhenus). Debugging van een
+Verhoek-storing = Vercel-function-logs, niet edge-logs.

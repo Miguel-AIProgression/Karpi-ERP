@@ -23,10 +23,13 @@ export interface ReststukRect {
   lengte_cm: number   // afmeting langs Y
 }
 
-// Reststuk-drempels: één bron (ADR-0033). Re-export zodat bestaande importeurs
-// van deze module ongewijzigd blijven werken.
-import { RESTSTUK_MIN_SHORT, RESTSTUK_MIN_LONG } from './reststuk-config.ts'
-export { RESTSTUK_MIN_SHORT, RESTSTUK_MIN_LONG } from './reststuk-config.ts'
+// Reststuk-/aanbreek-drempels: één bron (ADR-0033). Re-export zodat bestaande
+// importeurs van deze module (incl. de frontend re-export-shim) ongewijzigd
+// blijven werken.
+import { RESTSTUK_MIN_SHORT, RESTSTUK_MIN_LONG, AANGEBROKEN_MIN_LENGTE } from './reststuk-config.ts'
+export { RESTSTUK_MIN_SHORT, RESTSTUK_MIN_LONG, AANGEBROKEN_MIN_LENGTE } from './reststuk-config.ts'
+// Shape-biased reststuk-scoreformule (ADR-0025): één bron, zie ./reststuk-score.ts.
+import { reststukScore } from './reststuk-score.ts'
 
 function qualifies(r: ReststukRect, minShort: number, minLong: number): boolean {
   const short = Math.min(r.breedte_cm, r.lengte_cm)
@@ -126,20 +129,6 @@ function computeMaximalFreeRects(
 }
 
 /**
- * Shape-biased score (ADR-0025): `area × √(short/long)`. Synchroon met
- * `_shared/guillotine-packing.ts::reststukScoreCm2`. Pure m² is shape-blind —
- * een 150×450 (verkoopbaar tapijt) en 75×905 (alleen staaltjes-bruikbaar)
- * scoren bij gelijke area gelijk, waardoor greedy onbedoeld de langste-smalste
- * strip claimt. De wortel-weighting prefereert chunkier vormen zonder
- * smalle strips weg te schrijven.
- */
-function reststukScore(r: FreeRect): number {
-  const short = Math.min(r.width, r.height)
-  const long = Math.max(r.width, r.height)
-  return r.width * r.height * Math.sqrt(short / long)
-}
-
-/**
  * Selecteer een disjoint set reststukken greedy: kies telkens de
  * kwalificerende rechthoek met de hoogste shape-biased score, "claim" die,
  * en gebruik hem als obstacle voor de volgende iteratie. Stopt wanneer geen
@@ -204,4 +193,147 @@ export function computeReststukken(
     breedte_cm: r.width,
     lengte_cm: r.height,
   }))
+}
+
+/**
+ * Variant die ook afval-rechthoeken teruggeeft: alle resterende vrije ruimte
+ * die NIET als reststuk kwalificeert.
+ *
+ * Implementatie: claim eerst alle reststukken via greedy, dan wat overblijft
+ * in de maximal free-rects = afval. Dat geeft een samenhangend beeld: som van
+ * reststuk-area + afval-area = totale vrije rol-area.
+ */
+export function computeReststukkenEnAfval(
+  rolLengte: number,
+  rolBreedte: number,
+  plaatsingen: Placement[],
+  minShort: number = RESTSTUK_MIN_SHORT,
+  minLong: number = RESTSTUK_MIN_LONG,
+): { reststukken: ReststukRect[]; afval: ReststukRect[] } {
+  if (plaatsingen.length === 0) {
+    const full: ReststukRect = { x_cm: 0, y_cm: 0, breedte_cm: rolBreedte, lengte_cm: rolLengte }
+    if (qualifies(full, minShort, minLong)) return { reststukken: [full], afval: [] }
+    return { reststukken: [], afval: [full] }
+  }
+  const reststukRects = greedyDisjointReststukken(rolBreedte, rolLengte, plaatsingen, minShort, minLong)
+  // Afval = maximal free rects minus geclaimde reststukken.
+  let afvalFree = computeMaximalFreeRects(rolBreedte, rolLengte, plaatsingen)
+  for (const claim of reststukRects) {
+    afvalFree = subtractRect(afvalFree, claim)
+  }
+  const reststukken = reststukRects.map((r) => ({
+    x_cm: r.x, y_cm: r.y, breedte_cm: r.width, lengte_cm: r.height,
+  }))
+  const afval: ReststukRect[] = afvalFree
+    .filter((r) => r.width > 0 && r.height > 0)
+    .map((r) => ({ x_cm: r.x, y_cm: r.y, breedte_cm: r.width, lengte_cm: r.height }))
+  return { reststukken, afval }
+}
+
+/**
+ * Minimale geometrie die een "stuk op de rol" nodig heeft om als plaatsing
+ * mee te tellen. Bewust losser dan `Placement`/de frontend `SnijStuk` (die
+ * ook order-/klant-metadata draagt) — puur de vijf velden die de
+ * reststuk-geometrie nodig heeft, zodat callers een rijker domein-object
+ * kunnen doorgeven zonder eerst te mappen.
+ */
+export interface StukGeometrie {
+  snijplan_id?: number | null
+  x_cm: number
+  y_cm: number
+  lengte_cm: number
+  breedte_cm: number
+  geroteerd?: boolean
+}
+
+function naarPlaatsingen(stukken: StukGeometrie[]): Placement[] {
+  return stukken.map((s) => ({
+    snijplan_id: s.snijplan_id ?? 0,
+    positie_x_cm: s.x_cm,
+    positie_y_cm: s.y_cm,
+    lengte_cm: s.lengte_cm,
+    breedte_cm: s.breedte_cm,
+    geroteerd: s.geroteerd ?? false,
+  }))
+}
+
+/** Convenience: bereken reststukken direct uit een array "stukken op de rol". */
+export function computeReststukkenFromStukken(
+  rolLengte: number,
+  rolBreedte: number,
+  stukken: StukGeometrie[],
+  minShort: number = RESTSTUK_MIN_SHORT,
+  minLong: number = RESTSTUK_MIN_LONG,
+): ReststukRect[] {
+  return computeReststukken(rolLengte, rolBreedte, naarPlaatsingen(stukken), minShort, minLong)
+}
+
+/** Convenience: reststukken + afval direct uit een array "stukken op de rol". */
+export function computeReststukkenEnAfvalFromStukken(
+  rolLengte: number,
+  rolBreedte: number,
+  stukken: StukGeometrie[],
+  minShort: number = RESTSTUK_MIN_SHORT,
+  minLong: number = RESTSTUK_MIN_LONG,
+): { reststukken: ReststukRect[]; afval: ReststukRect[] } {
+  return computeReststukkenEnAfval(rolLengte, rolBreedte, naarPlaatsingen(stukken), minShort, minLong)
+}
+
+// AANGEBROKEN_MIN_LENGTE (boven geïmporteerd uit ./reststuk-config.ts,
+// ADR-0033): minimale lengte (cm) voor een bruikbare aangebroken rol. Full-width
+// end-strips korter dan deze waarde zijn niet aan te breken (het volgende
+// snijplan zou er geen zinvol stuk uit kunnen halen) — die worden als reststuk
+// geclassificeerd zolang ze voldoen aan RESTSTUK_MIN_SHORT × RESTSTUK_MIN_LONG,
+// en anders als afval. Synchroon met `rol-uitvoer-modal.tsx` (aangebrokenLengte).
+
+/**
+ * Splitst de analyse verder: end-of-roll strip met volle breedte wordt als
+ * "aangebrokenEnd" apart teruggegeven (de originele rol krijgt dan een
+ * verkorte lengte — zie `voltooi_snijplan_rol(p_aangebroken_lengte)`) MITS
+ * lang genoeg om de rol opnieuw aan te breken (≥ AANGEBROKEN_MIN_LENGTE).
+ * Kortere full-width strips gaan als normaal reststuk door (met eigen rolnummer
+ * en sticker), zodat ze niet "verloren" gaan in een dode zone tussen reststuk
+ * en aangebroken-rol.
+ *
+ * `aangebrokenEnd` is alleen gezet wanneer rol_type in ('volle_rol',
+ * 'aangebroken'); bij een reststuk-rol geeft deze functie altijd null
+ * terug en blijft het oude reststuk-gedrag gelden.
+ */
+export function computeReststukkenAngebrokenAfval(
+  rolLengte: number,
+  rolBreedte: number,
+  stukken: StukGeometrie[],
+  rolType: 'volle_rol' | 'aangebroken' | 'reststuk' | null | undefined,
+  minShort: number = RESTSTUK_MIN_SHORT,
+  minLong: number = RESTSTUK_MIN_LONG,
+): {
+  reststukken: ReststukRect[]
+  aangebrokenEnd: { y_cm: number; breedte_cm: number; lengte_cm: number } | null
+  afval: ReststukRect[]
+} {
+  const { reststukken: allRest, afval } = computeReststukkenEnAfvalFromStukken(
+    rolLengte,
+    rolBreedte,
+    stukken,
+    minShort,
+    minLong,
+  )
+
+  const kanAanbreken = rolType === 'volle_rol' || rolType === 'aangebroken'
+  if (!kanAanbreken) {
+    return { reststukken: allRest, aangebrokenEnd: null, afval }
+  }
+
+  let aangebrokenEnd: { y_cm: number; breedte_cm: number; lengte_cm: number } | null = null
+  const reststukken: ReststukRect[] = []
+  for (const r of allRest) {
+    const isFullWidthEnd = r.x_cm === 0 && r.breedte_cm === rolBreedte
+    const aanbreekbaar = r.lengte_cm >= AANGEBROKEN_MIN_LENGTE
+    if (isFullWidthEnd && aanbreekbaar && !aangebrokenEnd) {
+      aangebrokenEnd = { y_cm: r.y_cm, breedte_cm: r.breedte_cm, lengte_cm: r.lengte_cm }
+    } else {
+      reststukken.push(r)
+    }
+  }
+  return { reststukken, aangebrokenEnd, afval }
 }

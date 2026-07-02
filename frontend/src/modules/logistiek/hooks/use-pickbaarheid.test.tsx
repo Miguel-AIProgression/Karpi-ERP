@@ -57,6 +57,7 @@ function order(over: Partial<PickShipOrder> & { order_id: number }): PickShipOrd
     prijs_ontbreekt_sinds: null,
     actieve_pickronde: null,
     combi_levering_deelnemer: false,
+    zending_nrs: [],
     ...over,
   }
 }

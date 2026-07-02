@@ -77,3 +77,12 @@ de signatuur van een ontbrekende deep module.
   een `protocol`-veld op de descriptor maakt de protocoltak leesbaar. Een
   SQL-kolom-correctie is optioneel en achter een eigen migratie (raakt mogelijk
   bestaande `type`-filters).
+
+## Addendum (2026-07-02)
+
+"Vierde vervoerder = één capability-rij + één format-adapter" was onvolledig:
+óók bijwerken — (1) `frontend/src/modules/logistiek/registry.ts`
+(UI-display-registry, niet auto-gesynchroniseerd), (2) een rij in de
+`vervoerders`-tabel, (3) routering in `vervoerder_selectie_regels`. Het
+`VervoerderType`-union leeft sinds deze datum op één plek:
+`_shared/vervoerders/vervoerder-type.ts` (spiegelt de DB-CHECK, mig 424).

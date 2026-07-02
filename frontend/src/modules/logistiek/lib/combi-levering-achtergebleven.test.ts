@@ -14,6 +14,7 @@ function order(overrides: Partial<PickShipOrder> = {}): PickShipOrder {
     afl_gln_ongekoppeld_sinds: null, afl_gln_gecontroleerd_op: null,
     prijs_ontbreekt_sinds: null, actieve_pickronde: null,
     combi_levering_deelnemer: false,
+    zending_nrs: [],
     ...overrides,
   }
 }

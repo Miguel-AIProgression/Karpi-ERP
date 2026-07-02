@@ -1,10 +1,16 @@
 import { supabase } from '../client'
 
-// Alle statussen behalve eindstatussen ('Verzonden' / 'Geannuleerd'). Bevat de
-// canonieke ADR-0016-statussen + legacy waarden die in historische data nog
-// kunnen voorkomen ('Nieuw' tot mig-275-backfill, 'Actie vereist', productie-
-// statussen uit mig 218 pragmatisch pad).
-const ACTIVE_ORDER_STATUSES = [
+// Alle statussen behalve eindstatussen ('Verzonden' / 'Geannuleerd' /
+// 'Maatwerk afgerond' — productie-only terminaal, ADR-0029, mig 355 rekent 'm
+// al bij de eindstatus-guards elders). Bevat de canonieke ADR-0016-statussen
+// + legacy waarden die in historische data nog kunnen voorkomen ('Nieuw' tot
+// mig-275-backfill, 'Actie vereist', productie-statussen uit mig 218
+// pragmatisch pad). Drift-vangnet: __tests__/vertegenwoordigers-statussen.test.ts
+// pint deze lijst tegen de golden order_status-enum (mig 350-anker) — bij een
+// nieuwe enum-waarde (zoals 'Concept', mig 540) wordt die test rood i.p.v.
+// dat deze kopie stil achterblijft.
+export const ACTIVE_ORDER_STATUSES = [
+  'Concept',
   'Klaar voor picken',
   'Wacht op voorraad',
   'Wacht op inkoop',

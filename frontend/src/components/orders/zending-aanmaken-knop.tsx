@@ -24,8 +24,9 @@ interface ZendingAanmakenKnopProps {
  *
  * - Verschijnt alleen bij die status.
  * - Disabled als er niet precies 1 actieve vervoerder is.
- * - Roept RPC `create_zending_voor_order` aan, die een rij in `zendingen`
- *   aanmaakt + via trigger een adapter-rij voor de automatisch gekozen vervoerder.
+ * - Roept RPC `start_pickronden` aan (via `useStartPickrondes`), die een rij
+ *   in `zendingen` aanmaakt + via trigger een adapter-rij voor de automatisch
+ *   gekozen vervoerder.
  */
 export function ZendingAanmakenKnop({ order }: ZendingAanmakenKnopProps) {
   const navigate = useNavigate()
