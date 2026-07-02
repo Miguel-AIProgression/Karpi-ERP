@@ -3,8 +3,10 @@
 > **Levend document** (aangemaakt 2026-06-10). Dit is de toetssteen voor elke wijziging
 > die de order-flow raakt: statussen, transities, gates, intake, productie, magazijn.
 > Werk het bij wanneer een migratie een transitie/gate toevoegt of wijzigt.
-> Vuistregel bij RPC's: **de hoogst-genummerde migratie met `CREATE OR REPLACE` wint** —
-> zie §3.3 voor de actuele eigenaar per RPC.
+> Vuistregel bij RPC's: de actuele body staat in `supabase/schema/schema.sql`
+> (of via `pg_get_functiondef` op de live DB) — NIET in de migratiebestanden;
+> zie §3.3. "Hoogst-genummerde migratie wint" is onbetrouwbaar gebleken
+> (hernummeringen bij merges — audit 2026-07-02).
 
 ## 1. De hoofdflow
 
@@ -77,22 +79,30 @@ Afgedwongen door [`scripts/lint-no-direct-orders-status-update.sh`](../scripts/l
 | [`308_concept_order_status.sql:126`](../supabase/migrations/308_concept_order_status.sql) | `bevestig_concept_order`: directe `UPDATE` + events-INSERT op **niet-bestaande kolom `actor`** (crashte bij elke bevestiging) | **Opgelost in mig 354** (via `_apply_transitie`; bevinding B3) |
 | `import_productie_only_order` (mig 329) | directe INSERT met status `'In productie'` | bewust: legacy-status, `herbereken` raakt hem niet aan |
 
-### 3.3 RPC → actuele definitie (hoogst-genummerde migratie wint)
+### 3.3 Welke functie-body is actueel?
 
-| RPC | Laatste definitie | Eerdere versies |
-|---|---|---|
-| `create_order_with_lines` | **mig 275** (status `'Klaar voor picken'`) | 152, 245 |
-| `create_edi_order` | **mig 357** (status `'Klaar voor picken'` definitief) | 158, 159, 166, 275 (string-patch), 309, 312 |
-| `bevestig_concept_order` | **mig 354** (via `_apply_transitie`; 308-versie crashte) | 308 |
-| `match_edi_artikel` | **mig 349** (maat-suffix-guard) | 159, 162 |
-| `create_webshop_order` | **mig 343** (`maatwerk_vorm`) | 085, 086, 087, 092, 093, 308, 322 |
-| `herbereken_wacht_status` | **mig 352** (delegatie naar `derive_wacht_status` mét `Maatwerk afgerond`) | 218, 258, 267, 275, 346, 351 |
-| `derive_wacht_status` (pure ladder) | **mig 352** (`Maatwerk afgerond` no-touch) | 346 |
-| `voltooi_confectie` | **mig 348** (`_apply_transitie`) | 101, 247, 250, 330 |
-| `voltooi_pickronde` | **mig 258** (bundel-aware + `Deels verzonden`-split) | 217, 218, 222 |
-| `voltooi_pickronden` (bulk) | **mig 414** (gedraaid als 412; loopt over zendingen → `voltooi_pickronde`, per-zending savepoint) | — |
-| `start_pickronden` (unified) | **mig 373** (geen-vervoerder-guard) | 220, 222, 248, 258 |
-| `sync_order_afleverdatum_met_claims` | **mig 355** (`Maatwerk afgerond` eindstatus) | 153, 298 |
+**Kijk NOOIT in `supabase/migrations/` voor de actuele body van een functie**
+— dezelfde functie is daar tot 16× herdefinieerd (`genereer_factuur`), de
+bestandsnummers lopen niet 1-op-1 met de toepassingsvolgorde (hernummeringen
+bij merges), en de handmatige RPC→migratie-tabel die hier stond was zelf
+verouderd voor 7 van de kern-RPC's (audit 2026-07-02 — o.a.
+`herbereken_wacht_status` stond op mig 352 terwijl mig 468/470 de live body
+droegen; `create_order_with_lines` op 275 terwijl 481/542 wonnen). Precies zo
+ontstond de mig-428-BTW-regressie: een nieuwe RPC herbouwde een oude
+migratie-body i.p.v. de live versie.
+
+De canonieke bron is de gegenereerde snapshot:
+
+    supabase/schema/schema.sql    (ververs met scripts/dump-schema.ps1)
+
+Zolang de eerste volledige dump nog niet gedraaid is (vereist Docker of een
+Management-API-token): haal de live body op via de SQL-editor —
+`SELECT pg_get_functiondef(p.oid) FROM pg_proc p JOIN pg_namespace n ON
+n.oid = p.pronamespace WHERE n.nspname='public' AND p.proname='<functie>';`
+— en werk NOOIT vanaf een migratiebestand. Wie een functie wijzigt: nieuwe
+migratie schrijven **vanaf de live/snapshot-body**, applyen, snapshot
+verversen, beide committen. Migratiebestanden zijn write-once-geschiedenis
+(het "waarom"); de snapshot is de actuele staat (het "wat").
 
 ## 4. `herbereken_wacht_status` — beslislogica (mig 275)
 
