@@ -1,11 +1,15 @@
 // Deno test: `deno test supabase/functions/_shared/ffdh-packing.test.ts`
+//
+// packAcrossRolls-cases zijn verhuisd naar werklijst-packing.test.ts (audit
+// 2026-07-02, 0 productie-callers voor de FFDH-variant — zie het commentaar
+// op `packAcrossRolls`'s oude plek in ffdh-packing.ts). Dit bestand test nog
+// uitsluitend de losse bouwstenen die wél productie-callers hebben
+// (reconstructShelves, sortPieces).
 import { assertEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import {
   reconstructShelves,
-  packAcrossRolls,
   sortPieces,
   type Placement,
-  type Roll,
   type SnijplanPiece,
 } from './ffdh-packing.ts'
 
@@ -25,26 +29,6 @@ function piece(
     afleverdatum,
     area_cm2: lengte * breedte,
     express: false,
-  }
-}
-
-function roll(
-  id: number,
-  lengte: number,
-  breedte: number,
-  status: string,
-  opts: Partial<Roll> = {},
-): Roll {
-  return {
-    id,
-    rolnummer: `R${id}`,
-    lengte_cm: lengte,
-    breedte_cm: breedte,
-    status,
-    oppervlak_m2: (lengte * breedte) / 10000,
-    sort_priority: status === 'reststuk' ? 1 : 2,
-    is_exact: true,
-    ...opts,
   }
 }
 
@@ -92,87 +76,6 @@ Deno.test('reconstructShelves met twee stukken op dezelfde shelf', () => {
   assertEquals(shelves[0].usedWidth, 220) // 100 + 120
 })
 
-Deno.test('packAcrossRolls zonder bezetteMap: bestaand gedrag blijft', () => {
-  // Twee stukken, één rol — moet op dezelfde rol gepackt worden.
-  const pieces = [piece(1, 100, 100), piece(2, 100, 100)]
-  const rolls = [roll(1, 1000, 320, 'beschikbaar')]
-  const { rollResults, nietGeplaatst } = packAcrossRolls(
-    pieces,
-    rolls,
-    new Map(),
-  )
-  assertEquals(nietGeplaatst.length, 0)
-  assertEquals(rollResults.length, 1)
-  assertEquals(rollResults[0].plaatsingen.length, 2)
-})
-
-Deno.test('packAcrossRolls: nieuw stuk landt in shelf-gap van deels-geplande rol', () => {
-  // Scenario Miguel: rol OASI 11 heeft al 240×340 (shelf 1) en 170×170 (shelf 2).
-  // Nieuw stuk 100×100 komt binnen — moet in gap van shelf 2 (naast 170×170)
-  // landen, NIET op een aparte rol.
-  const pieces = [piece(100, 100, 100, '2026-04-24')]
-  const rolls = [
-    roll(11, 4620, 320, 'in_snijplan', { has_existing_placements: true }),
-    roll(1101, 1500, 320, 'beschikbaar'),
-  ]
-  const bezetteMap = new Map<number, Placement[]>([
-    [11, [
-      placement(1, 0, 0, 240, 340),
-      placement(2, 0, 340, 170, 170),
-    ]],
-  ])
-
-  const { rollResults, nietGeplaatst } = packAcrossRolls(
-    pieces,
-    rolls,
-    new Map(),
-    { bezetteMap },
-  )
-
-  assertEquals(nietGeplaatst.length, 0)
-  assertEquals(rollResults.length, 1)
-  assertEquals(rollResults[0].rol_id, 11) // op rol OASI 11, niet 1101
-  assertEquals(rollResults[0].plaatsingen[0].snijplan_id, 100)
-  assertEquals(rollResults[0].plaatsingen[0].positie_y_cm, 340) // op shelf 2
-})
-
-Deno.test('packAcrossRolls: reststuk verworpen als afval > max_pct', () => {
-  // Reststuk 500×320 (16 m²), stuk 100×100 (1 m²) → afval 99% bij plaatsing
-  // op reststuk. Met max_pct=50: reststuk MOET overgeslagen worden.
-  const pieces = [piece(1, 100, 100)]
-  const rolls = [
-    roll(1, 500, 320, 'reststuk'),
-    roll(2, 1500, 320, 'beschikbaar'),
-  ]
-  const { rollResults } = packAcrossRolls(
-    pieces,
-    rolls,
-    new Map(),
-    { maxReststukVerspillingPct: 50 },
-  )
-  assertEquals(rollResults.length, 1)
-  assertEquals(rollResults[0].rol_status, 'beschikbaar') // niet 'reststuk'
-})
-
-Deno.test('packAcrossRolls: reststuk wel gebruikt als afval onder max_pct', () => {
-  // Reststuk 150×170 (2.55 m²), stuk 100×100 (1 m²). Bij plaatsing:
-  // gebruikte_lengte=100, afval ≈ 100*170-100*100 / (100*170) ≈ 41%.
-  // Met max_pct=50: MOET reststuk gebruikt worden.
-  const pieces = [piece(1, 100, 100)]
-  const rolls = [
-    roll(1, 170, 150, 'reststuk'),
-    roll(2, 1500, 320, 'beschikbaar'),
-  ]
-  const { rollResults } = packAcrossRolls(
-    pieces,
-    rolls,
-    new Map(),
-    { maxReststukVerspillingPct: 50 },
-  )
-  assertEquals(rollResults.length, 1)
-  assertEquals(rollResults[0].rol_status, 'reststuk')
-})
-
 // ---------------------------------------------------------------------------
 // Fase 2 (mig 450): express altijd eerst in sortPieces, ongeacht grootte.
 // ---------------------------------------------------------------------------
@@ -192,104 +95,3 @@ Deno.test('sortPieces: bij twee express stukken geldt de normale grootte/datum-s
   assertEquals(sorted[0].id, 2, 'gelijke grootte → vroegste afleverdatum wint, ook binnen express')
 })
 
-Deno.test('packAcrossRolls: express stuk verdringt een niet-express stuk van de enige passende rol', () => {
-  // Rol heeft precies plek voor 1 stuk van 100×100 (breedte 100, geen ruimte
-  // voor een tweede shelf naast elkaar). Het niet-express stuk komt het eerst
-  // binnen, maar het express-stuk moet toch de rol krijgen — het niet-express
-  // stuk wordt nietGeplaatst (= verdrongen; auto-plan-groep's verdringingscheck
-  // vergelijkt dit tegen de oude toewijzing).
-  const nietExpress = piece(1, 100, 100)
-  const express = { ...piece(2, 100, 100), express: true }
-  const rolls = [roll(1, 100, 100, 'beschikbaar')]
-
-  const { rollResults, nietGeplaatst } = packAcrossRolls(
-    [nietExpress, express],
-    rolls,
-    new Map(),
-  )
-
-  assertEquals(rollResults.length, 1)
-  assertEquals(rollResults[0].plaatsingen.length, 1)
-  assertEquals(rollResults[0].plaatsingen[0].snijplan_id, 2, 'express stuk krijgt de rol')
-  assertEquals(nietGeplaatst.length, 1)
-  assertEquals(nietGeplaatst[0].snijplan_id, 1, 'niet-express stuk is verdrongen')
-})
-
-// ---------------------------------------------------------------------------
-// naastElkaarMogelijk-tiebreaker: twee gelijke stukken gaan naast-elkaar
-// ---------------------------------------------------------------------------
-
-Deno.test('naast-elkaar: twee 160×230 op een 400cm-brede rol → zelfde Y, x=0 en x=160', () => {
-  // Precies de casus die de gebruiker zag: twee 160×230 maatwerkkleden
-  // op een tapijrrol van 400cm breed. Verwacht: beide op shelf Y=0,
-  // het eerste stuk op x=0 en het tweede naast-elkaar op x=160.
-  const pieces = [piece(1, 160, 230), piece(2, 160, 230)]
-  const rolls = [roll(1, 2000, 400, 'beschikbaar')]
-  const { rollResults, nietGeplaatst } = packAcrossRolls(pieces, rolls, new Map())
-
-  assertEquals(nietGeplaatst.length, 0, 'beide stukken moeten geplaatst zijn')
-  assertEquals(rollResults.length, 1)
-  const plaatsingen = rollResults[0].plaatsingen
-  assertEquals(plaatsingen.length, 2)
-
-  // Beide stukken op dezelfde Y (zelfde shelf = naast-elkaar)
-  assertEquals(
-    plaatsingen[0].positie_y_cm,
-    plaatsingen[1].positie_y_cm,
-    `stukken staan op Y=${plaatsingen[0].positie_y_cm} en Y=${plaatsingen[1].positie_y_cm} — verwacht dezelfde shelf`,
-  )
-  // Eerste stuk begint op x=0, tweede naast-elkaar op x=160
-  const xValues = plaatsingen.map(p => p.positie_x_cm).sort((a, b) => a - b)
-  assertEquals(xValues[0], 0, 'eerste stuk op x=0')
-  assertEquals(xValues[1], 160, 'tweede stuk naast-elkaar op x=160')
-  // Beide stukken zijn 160cm breed (niet geroteerd naar 230)
-  for (const p of plaatsingen) {
-    assertEquals(p.lengte_cm, 160, 'stuk is 160cm breed (packer-X), niet geroteerd naar 230cm')
-  }
-})
-
-Deno.test('naast-elkaar: drie 160×230 op 400cm — eerste twee naast-elkaar, derde op nieuwe shelf', () => {
-  const pieces = [piece(1, 160, 230), piece(2, 160, 230), piece(3, 160, 230)]
-  const rolls = [roll(1, 2000, 400, 'beschikbaar')]
-  const { rollResults, nietGeplaatst } = packAcrossRolls(pieces, rolls, new Map())
-
-  assertEquals(nietGeplaatst.length, 0)
-  const plaatsingen = rollResults[0].plaatsingen
-  assertEquals(plaatsingen.length, 3)
-
-  // De eerste twee stukken staan op dezelfde Y-positie (naast-elkaar)
-  const yValues = plaatsingen.map(p => p.positie_y_cm).sort((a, b) => a - b)
-  assertEquals(yValues[0], yValues[1], 'de eerste twee stukken staan op dezelfde shelf (naast-elkaar)')
-  // Het derde stuk staat lager (aparte shelf)
-  assertEquals(yValues[2] > yValues[0], true, 'derde stuk op een eigen lagere shelf')
-})
-
-Deno.test('naast-elkaar: twee 230×160 (omgekeerd) op 400cm → ook naast-elkaar mogelijk', () => {
-  // Zelfde stuk, andere orientatie-invoer: 230×160 in plaats van 160×230
-  const pieces = [piece(1, 230, 160), piece(2, 230, 160)]
-  const rolls = [roll(1, 2000, 400, 'beschikbaar')]
-  const { rollResults, nietGeplaatst } = packAcrossRolls(pieces, rolls, new Map())
-
-  assertEquals(nietGeplaatst.length, 0)
-  const plaatsingen = rollResults[0].plaatsingen
-  assertEquals(plaatsingen.length, 2)
-  assertEquals(
-    plaatsingen[0].positie_y_cm,
-    plaatsingen[1].positie_y_cm,
-    'ook omgekeerd opgegeven → zelfde shelf',
-  )
-})
-
-Deno.test('sortRolls: rol met bestaande plaatsingen komt eerst', () => {
-  const pieces = [piece(1, 100, 100)]
-  const rollA = roll(1, 4620, 320, 'in_snijplan', { has_existing_placements: true })
-  const rollB = roll(2, 1500, 320, 'beschikbaar')
-  // Stop bezetteMap leeg: de test kijkt alleen naar sortering-effect.
-  // Als rol A eerst komt, landt het 100×100 daarop.
-  const { rollResults } = packAcrossRolls(
-    pieces,
-    [rollB, rollA], // volgorde omgekeerd in input
-    new Map(),
-  )
-  assertEquals(rollResults[0].rol_id, 1) // rol A ondanks dat hij als tweede binnenkwam
-})
