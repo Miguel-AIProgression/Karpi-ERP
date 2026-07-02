@@ -246,7 +246,7 @@ export function StartPickrondesButton({
       {toonCombiWaarschuwing && (
         <div className="max-w-72 bg-amber-50 border border-amber-200 rounded-[var(--radius-sm)] px-3 py-2.5 space-y-2 text-left">
           <p className="text-sm text-amber-800 font-medium">
-            {achtergebleven.length} andere order(s) van deze klant wachten nog op dezelfde Combi-levering-groep
+            {achtergebleven.length} andere order(s) van deze Combi-levering-groep start je nu niet mee
           </p>
           <label className="flex items-start gap-2 text-xs text-amber-700 cursor-pointer">
             <input
@@ -254,7 +254,7 @@ export function StartPickrondesButton({
               checked={bevestigdAchterlaten}
               onChange={(e) => setBevestigdAchterlaten(e.target.checked)}
             />
-            <span>Ik wil deze order(s) toch los starten, ook al betekent dit dat de klant de vrachtvrije-drempel mogelijk niet haalt.</span>
+            <span>Ik start deze selectie toch los — de overige order(s) vallen direct terug in de wacht (verdwijnen uit Pick &amp; Ship) totdat de groep de vrachtvrije-drempel opnieuw haalt.</span>
           </label>
         </div>
       )}

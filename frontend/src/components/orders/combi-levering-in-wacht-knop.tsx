@@ -35,7 +35,7 @@ const GEEN_COMBI_LEVERING_KNOP_STATUSSEN: ReadonlySet<string> = new Set([
  * klant nog niet op combi_levering staat (anders is er niets te "zetten") en
  * deze order niet al fysiek onderweg/verzonden/geannuleerd is.
  */
-export function CombiLeveringInWachtKnop({ orderId, orderNr }: Props) {
+export function CombiLeveringInWachtKnop({ orderId }: Props) {
   const [gedaan, setGedaan] = useState(false)
   const [mailVerstuurd, setMailVerstuurd] = useState(false)
   // Mig 494/audit 02-07: externe vertegenwoordiger is read-only — RLS blokkeert
@@ -91,7 +91,7 @@ export function CombiLeveringInWachtKnop({ orderId, orderNr }: Props) {
   if (gedaan) {
     return (
       <span className="text-sm text-emerald-700">
-        Order {orderNr} staat nu in de wacht voor Combi-levering
+        Combi-levering staat nu aan voor deze klant — openstaande orders naar dit adres wachten voortaan tot de vrachtvrije-drempel gehaald is
         {mailVerstuurd
           ? ' — nieuwe bevestiging verstuurd.'
           : ' (geen e-mailadres bekend bij deze klant — géén nieuwe bevestiging verstuurd).'}
