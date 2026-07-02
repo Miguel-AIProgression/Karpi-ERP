@@ -19,6 +19,7 @@ interface RegelInput {
   artikel_omschrijving: string
   besteld_m: string
   inkoopprijs_eur: string
+  eenheid: 'm' | 'stuks'
 }
 
 const legeRegel = (): RegelInput => ({
@@ -27,6 +28,7 @@ const legeRegel = (): RegelInput => ({
   artikel_omschrijving: '',
   besteld_m: '',
   inkoopprijs_eur: '',
+  eenheid: 'm',
 })
 
 export function InkooporderFormDialog({ onClose }: Props) {
@@ -52,7 +54,7 @@ export function InkooporderFormDialog({ onClose }: Props) {
   const voegRegelToe = () => setRegels((r) => [...r, legeRegel()])
   const verwijderRegel = (idx: number) => setRegels((r) => r.filter((_, i) => i !== idx))
   const wijzigRegel = (idx: number, veld: keyof RegelInput, waarde: string) =>
-    setRegels((r) => r.map((rx, i) => (i === idx ? { ...rx, [veld]: waarde } : rx)))
+    setRegels((r) => r.map((rx, i) => (i === idx ? { ...rx, [veld]: waarde as RegelInput[typeof veld] } : rx)))
 
   const totaalMeter = regels.reduce((s, r) => s + (Number(r.besteld_m) || 0), 0)
 
@@ -83,6 +85,7 @@ export function InkooporderFormDialog({ onClose }: Props) {
         artikel_omschrijving: r.artikel_omschrijving.trim() || null,
         besteld_m: besteld,
         inkoopprijs_eur: r.inkoopprijs_eur ? Number(r.inkoopprijs_eur) : null,
+        eenheid: r.eenheid,
       })
     }
 
@@ -184,6 +187,7 @@ export function InkooporderFormDialog({ onClose }: Props) {
                     <th className="text-left pb-2 font-medium">Artikelnr</th>
                     <th className="text-left pb-2 font-medium">Karpi-code</th>
                     <th className="text-left pb-2 font-medium">Omschrijving</th>
+                    <th className="text-left pb-2 font-medium w-28">Eenheid</th>
                     <th className="text-right pb-2 font-medium w-24">Besteld</th>
                     <th className="text-right pb-2 font-medium w-28">Prijs (€)</th>
                     <th className="w-8"></th>
@@ -217,6 +221,16 @@ export function InkooporderFormDialog({ onClose }: Props) {
                           onChange={(e) => wijzigRegel(idx, 'artikel_omschrijving', e.target.value)}
                           className={`w-full ${inputClasses}`}
                         />
+                      </td>
+                      <td className="py-1 pr-2">
+                        <select
+                          value={r.eenheid}
+                          onChange={(e) => wijzigRegel(idx, 'eenheid', e.target.value)}
+                          className={`w-full ${inputClasses}`}
+                        >
+                          <option value="m">m² (rol)</option>
+                          <option value="stuks">stuks (vast)</option>
+                        </select>
                       </td>
                       <td className="py-1 pr-2">
                         <input

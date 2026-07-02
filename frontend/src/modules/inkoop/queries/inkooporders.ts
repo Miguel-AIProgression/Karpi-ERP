@@ -348,44 +348,27 @@ export async function createInkooporder(
   header: InkooporderFormData,
   regels: InkooporderRegelInput[],
 ): Promise<number> {
-  // Genereer inkooporder_nr via volgend_nummer RPC (zelfde patroon als orders)
-  const { data: nummerData, error: e0 } = await supabase.rpc('volgend_nummer', { p_type: 'INK' })
-  if (e0) throw e0
-
-  const inkooporder_nr = nummerData as string
-
-  const { data: ingevoerd, error: e1 } = await supabase
-    .from('inkooporders')
-    .insert({
-      ...header,
-      inkooporder_nr,
-      bron: 'handmatig',
-      status: header.status ?? 'Besteld',
-    })
-    .select('id')
-    .single()
-  if (e1) throw e1
-
-  const inkooporder_id = (ingevoerd as { id: number }).id
-
-  if (regels.length > 0) {
-    const payload = regels.map((r) => ({
-      inkooporder_id,
-      regelnummer: r.regelnummer,
+  // Eén transactionele RPC (mig 601) — geen half-aangemaakte orders meer.
+  const { data, error } = await supabase.rpc('create_inkooporder', {
+    p_header: {
+      leverancier_id: header.leverancier_id,
+      besteldatum: header.besteldatum ?? null,
+      leverweek: header.leverweek ?? null,
+      verwacht_datum: header.verwacht_datum ?? null,
+      opmerkingen: header.opmerkingen ?? null,
+    },
+    p_regels: regels.map((r) => ({
       artikelnr: r.artikelnr,
-      karpi_code: r.karpi_code,
-      artikel_omschrijving: r.artikel_omschrijving,
-      inkoopprijs_eur: r.inkoopprijs_eur,
+      karpi_code: r.karpi_code ?? null,
+      artikel_omschrijving: r.artikel_omschrijving ?? null,
+      inkoopprijs_eur: r.inkoopprijs_eur ?? null,
       besteld_m: r.besteld_m,
-      geleverd_m: 0,
-      te_leveren_m: r.besteld_m,
       eenheid: r.eenheid ?? 'm',
-    }))
-    const { error: e2 } = await supabase.from('inkooporder_regels').insert(payload)
-    if (e2) throw e2
-  }
-
-  return inkooporder_id
+    })),
+  })
+  if (error) throw error
+  const row = (Array.isArray(data) ? data[0] : data) as { inkooporder_id: number }
+  return Number(row.inkooporder_id)
 }
 
 export async function updateInkooporderStatus(id: number, status: InkooporderStatus): Promise<void> {
