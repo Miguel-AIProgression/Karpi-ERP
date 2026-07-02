@@ -186,6 +186,23 @@ overschrijfbaar via `LeverDatumField` (segmented toggle,
 normaal als de sleutel matcht. Terracotta 📅-badges op order-detail/Pick & Ship/orders-
 overzicht onderscheiden dag-orders.
 
+**`afhalen` (mig 204, hersteld mig 585):** order-niveau boolean "klant haalt zelf op".
+Geen vervoerder-waarde — de vlag omzeilt de hele vervoerder-as
+(`enqueue_zending_naar_vervoerder` → `'afhalen_geen_vervoerder'`, mig 205). Bij
+`afhalen=TRUE`: adres-gate én GLN-gate slaan niet aan (`fn_orders_afl_adres_gate`),
+`afl_*`-velden horen leeg te zijn (mig 537 — documenten/UI leiden het Karpi-afhaaladres
+af uit `app_config.bedrijfsgegevens`: pakbon "AFHAALLOCATIE", orderbevestiging,
+order-detail), VERZEND-regel vervalt altijd (`verzend-regel.ts` +
+`verzendkosten_voor_bundel` → `'gratis_afhalen'`), BTW volgt het debiteurland (nooit
+`afl_land`), en de zending eindigt handmatig via `markeer_zending_afgehaald` op status
+`'Afgehaald'` (mig 482/483). Facturatie triggert normaal op `pickronde_voltooid` —
+losgekoppeld van het afhaal-moment. **Contract (mig 585):** de header-kolomlijst van
+`update_order_with_lines` moet álle sleutels lezen die
+[`order-mutations.ts`](../../frontend/src/lib/supabase/queries/order-mutations.ts)
+meestuurt; `assert_update_order_header_contract()` toetst dat en móet slagen in elke
+migratie die de RPC herdefinieert (mig 527 verloor zo `afhalen`/`lever_type`/
+`fact_email`/`afl_email` — afhalen aanvinken bij bewerken deed wekenlang stil niets).
+
 **Bundel-sleutel (mig 228-230):** een order groepeert met andere orders in
 `(debiteur × adres-norm × effectieve vervoerder × verzendweek)` — single source
 [`bundel-sleutel.ts`](../../frontend/src/lib/orders/bundel-sleutel.ts), SQL↔TS-contract
@@ -341,6 +358,12 @@ hier verder uitgewerkt).
 - **RPC-bodies nooit uit `supabase/migrations/` lezen** — dezelfde functie is soms tot 16×
   herdefinieerd; de canonieke bron is de snapshot (`supabase/schema/functies.sql`/
   `views.sql`), zie order-lifecycle.md §3.3.
+- **`update_order_with_lines` herdefiniëren = van de snapshot uitgaan én
+  `assert_update_order_header_contract()` aanroepen** — mig 527 herschreef de body vanaf
+  een verouderde versie en verloor stilzwijgend 4 header-kolommen (`afhalen`, `lever_type`,
+  `fact_email`, `afl_email`); drie latere herdefinities (547/548/572) namen de kapotte
+  body over. Hersteld in mig 585. JSONB-RPC's droppen onbekende/ontbrekende sleutels
+  zonder fout — de assert is de enige harde bewaking.
 
 ## Openstaand / V2
 

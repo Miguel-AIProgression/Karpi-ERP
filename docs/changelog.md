@@ -1,5 +1,24 @@
 # Changelog — RugFlow ERP
 
+## 2026-07-02 — Afhalen aanvinken bij bewerken deed stil niets (mig 585, branch fix/afhalen-update-order-rpc)
+
+Melding van binnendienst (Marjon, order ORD-2026-1186): order aanpassen naar "klant
+haalt zelf op" kon niet worden opgeslagen; order toonde daarna de rode banner
+"Afleveradres onvolledig" en was geblokkeerd voor Pick & Ship. **Root cause:** de
+herschrijving van `update_order_with_lines` in mig 527 verloor 4 header-toewijzingen
+uit de SET-clause (`afhalen`, `lever_type`, `fact_email`, `afl_email`) — de frontend
+stuurde `afhalen: true` keurig mee, de RPC negeerde het stil (JSONB-sleutel-drop);
+mig 547/548/572 bouwden op de kapotte body voort. Gevolg: de afhalen-toggle wiste wél
+de `afl_*`-velden maar de vlag bleef `false` → adres-gate sloeg aan. De rest van de
+afhalen-keten (gates, startbaarheid, pakbon "AFHAALLOCATIE", gratis verzending,
+BTW-op-debiteurland, zending 'Afgehaald', facturatie) bleek al volledig sluitend —
+alleen dit schrijfpad was kapot. **Fix mig 585:** de 4 toewijzingen terug in de
+huidige body (sleutel-aanwezigheids-CASE, NULL-pad-neutraal) + herbruikbare
+`assert_update_order_header_contract()` die afdwingt dat de RPC álle header-sleutels
+uit `order-mutations.ts` leest — verplicht aan te roepen in elke toekomstige
+herdefinitie. Rolled-back test op live DB bewees: `afhalen=true` persisteert,
+`afl_adres_incompleet_sinds` wordt door de gate-trigger leeggemaakt, regels intact.
+
 ## 2026-07-02 — CLAUDE.md ontvlochten naar module-kaart + afgedwongen docs-discipline (branch docs/claude-md-ontvlechting)
 
 CLAUDE.md was 160 KB gegroeid (71 bedrijfsregel-bullets, 82% van het bestand); een
