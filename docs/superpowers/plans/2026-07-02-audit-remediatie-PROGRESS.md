@@ -56,14 +56,35 @@ branch `fix/audit-remediatie` (basis: origin/main 7130d579, 2026-07-02).
   kwaliteit APPROVED. BIJVANGST → Task 2.5-kandidaat erbij: DB-RPC
   `start_pickronde(BIGINT,BIGINT)` (mig 249 hield 'm "voor de
   useStartPickronde-export") is nu wees — UITVRAAG sectie C uitgebreid.
-- [~] **2.3** packAcrossRolls: 1e implementer terecht BLOCKED
-  (werklijst-packing.test.ts gebruikt 'm als test-driver). Besluit: functie
-  VERHUIST naar dat testbestand (0 productie-callers); herziene implementer
-  loopt.
-- [ ] **2.3** packAcrossRolls (ffdh) weg
-- [ ] **2.4** vervoerder-eisen-shim weg
+- [x] **2.3** packAcrossRolls VERHUISD naar werklijst-packing.test.ts (1e
+  implementer terecht BLOCKED: testbestand gebruikte 'm als test-driver;
+  besluit: verplaatsen naar de enige gebruiker, 0 productie-callers). Commit
+  `227d629c` — body byte-identiek, 8 cases mee + 1 duplicaat weg, 19/19
+  groen. Spec ✅, kwaliteit APPROVED. Minor (polish): testbestand is nu
+  twee-doelen-grabbelton — evt. later ffdh-orchestratie.test.ts afsplitsen.
+  BASELINE-NOTITIE main: 25 pre-existing deno type-errors (o.a.
+  auto-plan-groep supabase.rpc-typing) + 1 pre-existing failure
+  guillotine-packing.test.ts "K1756006D" — bewezen los van onze diffs.
+- [x] **2.4** vervoerder-eisen-shim weg (0 consumers, grep-bewijs; door
+  orchestrator inline). Commit `75fa506e`. CLAUDE.md-verwijzing wordt in de
+  docs-bundel bijgewerkt.
+  ⚠️ PROCES-NOTITIE: een subagent draaide `git stash` in de gedeelde worktree
+  en daarbij zijn ongecommitte PROGRESS-edits teruggedraaid — voortaan geldt:
+  subagents mogen NOOIT `git stash`/`git checkout --` op de worktree draaien;
+  orchestrator commit progress-updates zo snel mogelijk.
 - [ ] **2.5** dode RPC's droppen (mig ~556+, nummer verifiëren)
-- [ ] **3.1** CONTEXT.md corrigeren
+- [x] **3.1** CONTEXT.md: Verzend-wachtrij-correctie toegepast (`1280a85d`).
+  ONTDEKKING: de "Order-aandacht-gate"-sectie bestaat NIET op main — die zat
+  alleen in ongecommitte lokale edits van de oude checkout (combi-levering-
+  sessie?). Audit-bevinding "CONTEXT.md liegt over registry" geldt dus voor
+  die lokale kopie, niet voor main. Geen ONTWERP-disclaimer nodig.
+- [x] **3.3** ADR-0031-addendum + sftp-client-header (`1fbfd388`) — relay-
+  bedrading geverifieerd, env-namen klopten.
+- [x] **3.4** DEPLOY.md (`b9b52e06`) — grep-gecorrigeerd: bouw-factuur-edi
+  toegevoegd aan facturatie-rij; `_shared/order-lifecycle/*` heeft 0
+  edge-consumers (alleen frontend-contracttest).
+- [x] **6.4** vindregel query-lagen in architectuur.md + CLAUDE.md-shim-
+  verwijzing bijgewerkt (`48c61772`).
 - [ ] **3.2** order-lifecycle.md listener+triggers
 - [ ] **3.3** ADR-0031-addendum + sftp-header
 - [ ] **3.4** deploy-fan-out-manifest
