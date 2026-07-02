@@ -40,7 +40,7 @@ BEGIN
   ) VALUES (
     v_nr,
     v_leverancier_id,
-    NULLIF(p_header->>'besteldatum', '')::DATE,
+    COALESCE(NULLIF(p_header->>'besteldatum', '')::DATE, CURRENT_DATE),
     NULLIF(p_header->>'leverweek', ''),
     NULLIF(p_header->>'verwacht_datum', '')::DATE,
     'Besteld',

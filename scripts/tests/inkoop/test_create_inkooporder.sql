@@ -26,6 +26,14 @@ BEGIN
   ASSERT (SELECT eenheid FROM inkooporder_regels WHERE inkooporder_id = v_result.inkooporder_id AND regelnummer = 2) = 'stuks', 'eenheid stuks niet doorgekomen';
   ASSERT (SELECT te_leveren_m FROM inkooporder_regels WHERE inkooporder_id = v_result.inkooporder_id AND regelnummer = 1) = 50, 'te_leveren_m niet gelijk aan besteld_m';
 
+  -- Header zonder besteldatum: default CURRENT_DATE (mag niet op NOT NULL falen)
+  SELECT * INTO v_result FROM create_inkooporder(
+    jsonb_build_object('leverancier_id', v_lev_id),
+    jsonb_build_array(jsonb_build_object('karpi_code', 'TEST-CI-DEFAULT', 'besteld_m', 5))
+  );
+  ASSERT (SELECT besteldatum FROM inkooporders WHERE id = v_result.inkooporder_id) = CURRENT_DATE,
+    'besteldatum niet gedefault naar CURRENT_DATE bij ontbrekende header-waarde';
+
   -- Guard: 0 regels moet weigeren (transactie-atomair: géén order achterlaten)
   BEGIN
     PERFORM create_inkooporder(jsonb_build_object('leverancier_id', v_lev_id), '[]'::jsonb);
