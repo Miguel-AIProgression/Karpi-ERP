@@ -11,6 +11,7 @@ interface Props {
 interface OrderCombiLeveringRow {
   debiteur_nr: number
   combi_levering_override: boolean
+  status: string
   debiteuren: {
     combi_levering: boolean
     email_overig: string | null
@@ -18,13 +19,24 @@ interface OrderCombiLeveringRow {
   } | null
 }
 
+// Code-review-fix: zelfde statuslijst als de guard in
+// herwaardeer_combi_levering_verzendregel (mig 555) — een order die al fysiek
+// onderweg/verzonden/geannuleerd is, mag deze knop niet meer tonen (het
+// klantbrede combi_levering-effect + een nieuwe orderbevestiging zijn dan
+// niet meer van toepassing op DEZE order).
+const GEEN_COMBI_LEVERING_KNOP_STATUSSEN: ReadonlySet<string> = new Set([
+  'Geannuleerd', 'Verzonden', 'In pickronde', 'Deels verzonden',
+])
+
 /**
- * Mig 489/ADR-0039: scenario waarin een klant ná zijn orderbevestiging alsnog
+ * Mig 554/ADR-0039: scenario waarin een klant ná zijn orderbevestiging alsnog
  * belt om te wachten i.p.v. verzendkosten te betalen. Zichtbaar zolang de
- * klant nog niet op combi_levering staat (anders is er niets te "zetten").
+ * klant nog niet op combi_levering staat (anders is er niets te "zetten") en
+ * deze order niet al fysiek onderweg/verzonden/geannuleerd is.
  */
 export function CombiLeveringInWachtKnop({ orderId, orderNr }: Props) {
   const [gedaan, setGedaan] = useState(false)
+  const [mailVerstuurd, setMailVerstuurd] = useState(false)
   const queryClient = useQueryClient()
 
   const { data } = useQuery({
@@ -32,7 +44,7 @@ export function CombiLeveringInWachtKnop({ orderId, orderNr }: Props) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('orders')
-        .select('debiteur_nr, combi_levering_override, debiteuren!orders_debiteur_nr_fkey(combi_levering, email_overig, email_factuur)')
+        .select('debiteur_nr, combi_levering_override, status, debiteuren!orders_debiteur_nr_fkey(combi_levering, email_overig, email_factuur)')
         .eq('id', orderId)
         .single()
       if (error) throw error
@@ -56,20 +68,29 @@ export function CombiLeveringInWachtKnop({ orderId, orderNr }: Props) {
           bevestigdDoor: user?.email ?? user?.id ?? 'onbekend',
         })
       }
+      // Code-review-fix: het succesbericht mag alleen "nieuwe bevestiging
+      // verstuurd" claimen als er ook echt een e-mailadres was.
+      return { mailVerstuurd: !!email }
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       setGedaan(true)
+      setMailVerstuurd(result.mailVerstuurd)
       queryClient.invalidateQueries({ queryKey: ['orders', orderId] })
       queryClient.invalidateQueries({ queryKey: ['orders'] })
     },
   })
 
-  if (!data || data.debiteuren?.combi_levering) return null
+  if (!data || data.debiteuren?.combi_levering || GEEN_COMBI_LEVERING_KNOP_STATUSSEN.has(data.status)) {
+    return null
+  }
 
   if (gedaan) {
     return (
       <span className="text-sm text-emerald-700">
-        Order {orderNr} staat nu in de wacht voor Combi-levering — nieuwe bevestiging verstuurd.
+        Order {orderNr} staat nu in de wacht voor Combi-levering
+        {mailVerstuurd
+          ? ' — nieuwe bevestiging verstuurd.'
+          : ' (geen e-mailadres bekend bij deze klant — géén nieuwe bevestiging verstuurd).'}
       </span>
     )
   }

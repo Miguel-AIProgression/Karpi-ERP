@@ -9,6 +9,7 @@ const ACTIVE_ORDER_STATUSES = [
   'Wacht op voorraad',
   'Wacht op inkoop',
   'Wacht op maatwerk',
+  'Wacht op combi-levering', // mig 557/ADR-0040
   'In pickronde',
   'Deels verzonden',
   // Legacy / pragmatisch pad

@@ -173,6 +173,11 @@ export function OrderEditPage() {
             afl_plaats: order.afl_plaats ?? undefined,
             afl_land: order.afl_land ?? undefined,
             afhalen: order.afhalen ?? false,
+            // combi_levering_override rehydrateren: anders is header altijd
+            // false → OrderForm's state start altijd op false en de update-RPC
+            // zet de override elke save terug (zelfde wis-bug-klasse als de
+            // e-mail-snapshots/lever_modus hieronder, ontdekt bij code-review).
+            combi_levering_override: order.combi_levering_override ?? false,
             // lever_modus rehydrateren: anders is header.lever_modus altijd
             // undefined → de !header.lever_modus-guard in order-form opent de
             // LeverModusDialog opnieuw, én de update-RPC zet lever_modus op NULL

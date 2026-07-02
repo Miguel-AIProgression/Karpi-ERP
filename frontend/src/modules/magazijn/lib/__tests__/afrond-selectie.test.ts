@@ -32,7 +32,7 @@ function makeOrder(overrides: Partial<PickShipOrder> = {}): PickShipOrder {
     afl_gln_gecontroleerd_op: null,
     prijs_ontbreekt_sinds: null,
     actieve_pickronde: null,
-    wacht_op_combi_levering: false,
+    combi_levering_deelnemer: false,
     ...overrides,
   }
 }

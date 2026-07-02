@@ -1,7 +1,10 @@
 ---
-status: accepted
+status: superseded
 date: 2026-07-01
+superseded-by: 0040-combi-levering-als-order-status.md
 ---
+
+> **Superseded door [ADR-0040](0040-combi-levering-als-order-status.md) (zelfde dag):** bij het testen bleek de Startbaarheid-gate-keuze hieronder niet de gewenste werking — een Combi-levering-order moet helemaal niet in Pick & Ship verschijnen (gelockt op commercie, eigen tab), niet zichtbaar-maar-geblokkeerd. ADR-0040 vervangt Anker 3 (Startbaarheid) door een echte `order_status`-waarde `'Wacht op combi-levering'` in het bestaande `derive_wacht_status`-model. Ankers 1, 2, 4, 5, 6, 7 hieronder (booleans, groeperingssleutel, geen nieuwe bundel-code, drempel-toets-moment, vangnet, communicatie) blijven ongewijzigd van kracht — alleen het startbaarheid/zichtbaarheid-mechanisme is vervangen. Dit document blijft staan als audit trail, niet gewijzigd.
 
 # Combi-levering — commerciële wacht-op-drempel als Startbaarheid-gate, geen nieuwe bundel-mechaniek
 

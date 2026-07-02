@@ -10,6 +10,7 @@ import {
   rgb,
 } from 'https://esm.sh/pdf-lib@1.17.1'
 import type { Taal } from './klant-taal.ts'
+import { COMBI_LEVERING_UITLEG } from './combi-levering-tekst.ts'
 
 export interface OrderbevestigingBedrijf {
   bedrijfsnaam: string
@@ -130,7 +131,7 @@ const PDF_VERTALINGEN: Record<Taal, {
     totaalInclBtw: 'Totaalbedrag incl. btw',
     betalingsconditie: 'Betalingsconditie:',
     disclaimer: 'Een geringe maatafwijking van +/- 3% alsmede een kleurafwijking kan optreden.',
-    combiLevering: 'Wij leveren pas zodra uw gecombineerde bestellingen de vrachtvrije-drempel bereiken. Wordt dit niet gehaald vóór de vermelde levering, dan schuift de leverdatum automatisch op. U kunt hiervoor zelf zorgen door voldoende te bestellen, of contact met ons opnemen om deze order alsnog — met verzendkosten — te laten verzenden.',
+    combiLevering: COMBI_LEVERING_UITLEG.nl,
     opmerkingen: 'Opmerkingen:',
     groet: 'Met vriendelijke groet,',
     pagina: (nr, totaal) => `Pagina ${nr} van ${totaal}`,
@@ -155,7 +156,7 @@ const PDF_VERTALINGEN: Record<Taal, {
     totaalInclBtw: 'Gesamtbetrag inkl. MwSt.',
     betalingsconditie: 'Zahlungsbedingung:',
     disclaimer: 'Geringe Maßabweichungen von +/- 3% sowie Farbabweichungen sind möglich.',
-    combiLevering: 'Wir liefern erst, sobald Ihre kombinierten Bestellungen die frachtfreie Grenze erreichen. Wird dies vor dem angegebenen Liefertermin nicht erreicht, verschiebt sich das Lieferdatum automatisch. Sie können dies selbst durch eine ausreichende Bestellmenge sicherstellen oder uns kontaktieren, um diesen Auftrag dennoch — gegen Versandkosten — versenden zu lassen.',
+    combiLevering: COMBI_LEVERING_UITLEG.de,
     opmerkingen: 'Anmerkungen:',
     groet: 'Mit freundlichen Grüßen,',
     pagina: (nr, totaal) => `Seite ${nr} von ${totaal}`,
@@ -180,7 +181,7 @@ const PDF_VERTALINGEN: Record<Taal, {
     totaalInclBtw: 'Montant total TVA comprise',
     betalingsconditie: 'Conditions de paiement:',
     disclaimer: 'Un léger écart de mesure de +/- 3 % ainsi qu\'une différence de couleur peuvent survenir.',
-    combiLevering: 'Nous ne livrerons qu\'une fois que vos commandes combinées atteindront le seuil de franco de port. Si ce seuil n\'est pas atteint avant la date de livraison indiquée, la date sera automatiquement reportée. Vous pouvez y remédier en commandant suffisamment, ou nous contacter pour faire expédier cette commande séparément — avec frais de port.',
+    combiLevering: COMBI_LEVERING_UITLEG.fr,
     opmerkingen: 'Remarques:',
     groet: 'Cordialement,',
     pagina: (nr, totaal) => `Page ${nr} sur ${totaal}`,
@@ -205,7 +206,7 @@ const PDF_VERTALINGEN: Record<Taal, {
     totaalInclBtw: 'Total amount incl. VAT',
     betalingsconditie: 'Payment terms:',
     disclaimer: 'A slight size deviation of +/- 3% as well as a colour variation may occur.',
-    combiLevering: 'We will only deliver once your combined orders reach the free-shipping threshold. If this is not reached before the stated delivery date, the delivery date will shift automatically. You can ensure this yourself by ordering enough, or contact us to have this order shipped separately — with shipping costs.',
+    combiLevering: COMBI_LEVERING_UITLEG.en,
     opmerkingen: 'Remarks:',
     groet: 'Kind regards,',
     pagina: (nr, totaal) => `Page ${nr} of ${totaal}`,

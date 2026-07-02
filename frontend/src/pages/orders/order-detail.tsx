@@ -220,11 +220,12 @@ export function OrderDetailPage() {
           />
         )}
 
-      {/* Mig 489/ADR-0039: klant belt na de orderbevestiging alsnog om te
-          wachten op Combi-levering i.p.v. verzendkosten te betalen. */}
-      {order.status !== 'Geannuleerd' && (
-        <CombiLeveringInWachtKnop orderId={order.id} orderNr={order.order_nr} />
-      )}
+      {/* Mig 554/ADR-0039: klant belt na de orderbevestiging alsnog om te
+          wachten op Combi-levering i.p.v. verzendkosten te betalen. De
+          component bewaakt zelf volledig wanneer hij zichtbaar is (klant al
+          op combi_levering, of order al Geannuleerd/Verzonden/In pickronde/
+          Deels verzonden — code-review-fix). */}
+      <CombiLeveringInWachtKnop orderId={order.id} orderNr={order.order_nr} />
 
       <OrderAddresses
         order={order}
