@@ -1,5 +1,26 @@
 # Changelog — RugFlow ERP
 
+## 2026-07-02 — Pick & Ship: zoeken op zending-nummer (frontend-only, LIVE)
+
+**Verzoek Miguel 01-07:** in Pick & Ship ook kunnen zoeken op zending-nummer,
+inclusief zendingen die al 'Klaar voor verzending' staan (die orders vallen
+normaal uit `pick_ship_zichtbaar` en waren dus onvindbaar zodra de pickronde
+voltooid was).
+
+**Implementatie (puur frontend, geen migratie):** tijdens zoeken haalt
+`fetchPickShipOrders` per open order de zending-nummers op van zendingen met
+status Gepland/Picken/Klaar voor verzending (nieuwe helper
+`fetchZendingNrsPerOrder`, bundel-aware via `zending_orders` M2M, gechunkt
+tegen de PostgREST-rijencap) — als 5e parallelle fetch, alléén wanneer er een
+zoekterm is. `filterPickShipOrders` matcht daarnaast op `zending_nrs`. De
+zichtbaarheids-gate laat een niet-`pick_ship_zichtbaar`-order alleen door als
+er gezocht wordt én de order nog een niet-verzonden zending heeft; de
+tekst-match beslist daarna of het een echte treffer is. Buiten zoeken is het
+gedrag byte-identiek aan voorheen. Nieuw veld `PickShipOrder.zending_nrs`
+(alleen gevuld tijdens zoeken). Oorspronkelijk WIP uit de hoofd-working-tree
+(veiliggesteld op `wip/hoofdmap-2026-07-02`), geport naar de actuele main
+bovenop combi-levering/GLN-gates/manco.
+
 ## 2026-07-02 — Concept-orders zichtbaar in Pick & Ship (mig 577, LIVE)
 
 **Bug (gemeld door Karpi, ORD-2026-1165):** een order die nog op status

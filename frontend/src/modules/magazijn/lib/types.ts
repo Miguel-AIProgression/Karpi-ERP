@@ -106,6 +106,11 @@ export interface PickShipOrder {
    *  (combi-levering-achtergebleven.ts) als een operator handmatig een subset
    *  van een groep selecteert. */
   combi_levering_deelnemer: boolean
+  /** Zending-nummers van deze order met status t/m 'Klaar voor verzending'
+   *  (dus Gepland/Picken/Klaar voor verzending, NIET Verzonden/Afgehaald/
+   *  Afgeleverd/Geannuleerd). Alleen gevuld tijdens zoeken — dient puur om op
+   *  zending-nr te kunnen zoeken (verzoek Miguel 01-07). */
+  zending_nrs: string[]
 }
 
 export interface ActievePickronde {
