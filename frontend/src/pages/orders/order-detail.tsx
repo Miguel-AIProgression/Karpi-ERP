@@ -1,6 +1,6 @@
-import { useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, ChevronDown, ChevronUp, Mail } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { useParams, Link, useNavigate } from 'react-router-dom'
+import { ArrowLeft, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Mail } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { OrderHeader } from '@/components/orders/order-header'
 import { OrderAddresses } from '@/components/orders/order-addresses'
@@ -34,6 +34,7 @@ import { MancoMarkerBanner } from '@/components/orders/manco-marker-banner'
 import { isMancoMarker } from '@/lib/orders/manco-marker'
 import { heeftDropshipRegel } from '@/lib/orders/dropshipment-regel'
 import { dropshipAflEmailProbleem } from '@/lib/orders/dropship-email'
+import { getOrderNavigation } from '@/lib/orders/order-list-context'
 import { useAuth } from '@/hooks/use-auth'
 
 function EmailInhoudPanel({ body }: { body: string }) {
@@ -63,6 +64,7 @@ function EmailInhoudPanel({ body }: { body: string }) {
 export function OrderDetailPage() {
   const { id } = useParams<{ id: string }>()
   const orderId = Number(id)
+  const navigate = useNavigate()
 
   const { data: order, isLoading: orderLoading } = useOrderDetail(orderId)
   const { data: regels, isLoading: regelsLoading } = useOrderRegels(orderId)
@@ -71,6 +73,19 @@ export function OrderDetailPage() {
   const { data: verzondenPerRegel } = useVerzondenPerRegel(orderId)
   const { perStuk: snijHaalbaarheidPerStuk } = useSnijHaalbaarheid()
   const { isExternRep } = useAuth()
+
+  const { prev, next, position, totalCount, backUrl } = getOrderNavigation(orderId)
+
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      const target = e.target as HTMLElement
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return
+      if (e.key === 'ArrowLeft' && prev) navigate(`/orders/${prev}`)
+      else if (e.key === 'ArrowRight' && next) navigate(`/orders/${next}`)
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [navigate, prev, next])
 
   if (orderLoading) {
     return (
@@ -94,14 +109,56 @@ export function OrderDetailPage() {
 
   return (
     <>
-      <div className="mb-4">
+      <div className="mb-4 flex items-center justify-between">
         <Link
-          to="/orders"
+          to={backUrl}
           className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700"
         >
           <ArrowLeft size={14} />
           Terug naar orders
         </Link>
+
+        {(position !== null || prev || next) && (
+          <div className="flex items-center gap-1">
+            {prev ? (
+              <Link
+                to={`/orders/${prev}`}
+                className="inline-flex items-center gap-0.5 px-2 py-1 text-sm text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-[var(--radius-sm)] transition-colors"
+                title="Vorige order (←)"
+              >
+                <ChevronLeft size={15} />
+                Vorige
+              </Link>
+            ) : (
+              <span className="inline-flex items-center gap-0.5 px-2 py-1 text-sm text-slate-300 select-none">
+                <ChevronLeft size={15} />
+                Vorige
+              </span>
+            )}
+
+            {position !== null && totalCount > 0 && (
+              <span className="px-2 text-xs text-slate-400 tabular-nums">
+                {position} / {totalCount}
+              </span>
+            )}
+
+            {next ? (
+              <Link
+                to={`/orders/${next}`}
+                className="inline-flex items-center gap-0.5 px-2 py-1 text-sm text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-[var(--radius-sm)] transition-colors"
+                title="Volgende order (→)"
+              >
+                Volgende
+                <ChevronRight size={15} />
+              </Link>
+            ) : (
+              <span className="inline-flex items-center gap-0.5 px-2 py-1 text-sm text-slate-300 select-none">
+                Volgende
+                <ChevronRight size={15} />
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       <PageHeader
