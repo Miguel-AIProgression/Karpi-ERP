@@ -1,5 +1,39 @@
 # Changelog — RugFlow ERP
 
+## 2026-07-02 — Concept-orders zichtbaar in Pick & Ship (mig 577, LIVE)
+
+**Bug (gemeld door Karpi, ORD-2026-1165):** een order die nog op status
+`Concept` staat (onbevestigde e-mail/Shopify/EDI-intake, mig 308) verscheen
+al onder Pick & Ship. Live bleken 46 Concept-orders zichtbaar (44 EDI,
+1 Shopify, 1 zonder bron).
+
+**Oorzaak (twee lagen):** het enige status-filter zit in
+`orderregel_pickbaarheid` en sloot alleen `Verzonden`/`Geannuleerd` uit —
+`Concept` kwam gewoon door. En een Concept-order krijgt wél echte
+voorraadclaims: `trg_orderregel_herallocateer` vuurt onvoorwaardelijk bij de
+regel-INSERT (vóór de `p_initieel_status <> 'Concept'`-guard in
+`create_webshop_order` ooit bereikt wordt) en `herallocateer_orderregel`
+heeft alleen een vroege-return voor Verzonden/Geannuleerd. Resultaat:
+`is_pickbaar=true` → `pick_ship_zichtbaar=true` terwijl de order nog
+Concept is.
+
+**Fix (mig 577):** `'Concept'` toegevoegd aan het status-filter van
+`orderregel_pickbaarheid` — zelfde precedent als `orders_zonder_vervoerder`
+(mig 372) en `hst_verzend_monitor` (mig 338). Geen rijen in de view = geen
+rij in `order_pickbaarheid` = onzichtbaar; bij bevestiging verschijnt de
+order vanzelf. View-body = letterlijke live definitie (superset van mig 386
+mét de manco-kolommen van mig 518/521 — de lokale mig-files liepen achter op
+de live DB). Rolled-back getest: 46→0 zichtbare Concept-orders, 120→0
+Concept-regels, 2568 niet-Concept-regels exact ongewijzigd; geen enkele
+Concept-order had een actieve zending (mig 476-OR-tak niet geraakt). Daarna
+live toegepast en geverifieerd.
+
+**Bewust niet gedaan:** de claims zelf releasen / `herallocateer_orderregel`
+een Concept-guard geven. Dat een Concept-order al voorraad reserveert is
+mogelijk zelfs gewenst (claim-volgorde-prio vanaf intake); het aanpassen
+verandert allocatie-gedrag en is een aparte bedrijfskeuze. Ook geen
+frontend-vangnet — de view is de single source (mig 386).
+
 ## 2026-07-02 — vrije_voorraad bleef stale bij handmatige voorraad-correctie + Basta-veilige ledger (mig 575, LIVE)
 
 **Bug (gemeld door Karpi):** een handmatige voorraad-wijziging op het
