@@ -18,7 +18,6 @@ export { useMagazijnLocaties } from './hooks/use-magazijn-locaties'
 export {
   useColliVoorZending,
   usePickProblemen,
-  useStartPickronde,
   useMarkeerColliNietGevonden,
   useHerstelColli,
   useVoltooiPickronde,
