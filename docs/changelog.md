@@ -18,6 +18,40 @@ huidige body (sleutel-aanwezigheids-CASE, NULL-pad-neutraal) + herbruikbare
 uit `order-mutations.ts` leest — verplicht aan te roepen in elke toekomstige
 herdefinitie. Rolled-back test op live DB bewees: `afhalen=true` persisteert,
 `afl_adres_incompleet_sinds` wordt door de gate-trigger leeggemaakt, regels intact.
+=======
+## 2026-07-02 — SB Möbel Boss/Porta: 7 EDI-facturen gecorrigeerd op RG-Anschrift (naam), geen migratie
+
+Klant Porta (crediteurenadministratie van de SB-Möbel-BOSS-keten) meldde dat 7
+EDI-facturen (26000271-276, 278; debiteur 150761) waren afgekeurd wegens
+"falsche RG-Anschriften". Onderzoek (systematic-debugging) wees uit dat GLN
+(`4040052000005`) en BTW-nummer (`DE126012488`) al exact klopten — alleen
+`debiteuren.fact_naam` voerde de handelsnaam "SB MÖBEL BOSS" in plaats van de
+volledige juridische naam "SB Möbel Boss Handelsgesellschaft mbH & Co.KG",
+bevestigd door de klant via een bijgeleverde GLN/Rechnungsanschrift-referentielijst.
+
+**Fix (pure data-correctie, geen migratie/code):** `debiteuren.fact_naam`
+aangepast voor debiteur 150761. Voor de 7 al-verstuurde facturen bleek er
+geen bestaand mechanisme om een verstuurde factuur te corrigeren of te
+herzenden — `maak_creditfactuur` is mail-only (geen EDI-creditnota, zie
+mig 467) en er is geen RPC voor "herfactureer na creditnota". Handmatig per
+factuur: (1) `maak_creditfactuur` voor de interne boekhouding (creditnota
+niet gemaild — Porta had de originele factuur toch al niet verwerkt), met
+een losse correctie van de creditnota's eigen `fact_naam` (die RPC kopieert
+'m van het origineel); (2) `order_regels.gefactureerd` teruggezet naar 0 voor
+de betrokken orders; (3) de oude `factuur_regels.order_regel_id` naar NULL
+(anders knalt de unieke index `idx_factuur_regels_order_regel` bij de
+nieuwe factuur); (4) `genereer_factuur` voor een nieuwe, correct-genaamde
+factuur (zelfde bedragen, nieuw factuurnummer: 2026000527/529/531/533/
+535/537/539); (5) `bouw-factuur-edi` om de nieuwe facturen in de EDI-wachtrij
+te zetten. Volledig getest via een `BEGIN…ROLLBACK`-droogrun vóór de
+werkelijke `COMMIT`.
+
+**Dit legde twee documentatiegaten bloot** (nu vastgelegd in
+[docs/modules/facturatie.md](modules/facturatie.md)): creditnota's hebben
+geen EDI-pad, en er bestaat geen RPC om een order na een creditnota opnieuw
+te factureren — beide keren nu handmatige SQL. Ook een vermoedelijke
+regressie sinds mig 518-520: een volledige creditnota zet het origineel niet
+meer op `status='Gecrediteerd'` (was wel zo in mig 504/517).
 
 ## 2026-07-02 — CLAUDE.md ontvlochten naar module-kaart + afgedwongen docs-discipline (branch docs/claude-md-ontvlechting)
 
