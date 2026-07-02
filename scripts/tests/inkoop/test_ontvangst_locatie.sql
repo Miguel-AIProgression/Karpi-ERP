@@ -10,13 +10,13 @@ DECLARE
   v_rol RECORD;
   v_locatie_id BIGINT;
   v_artikelnr TEXT := 'TEST-OL-ART';
+  v_io_kc RECORD;
+  v_regel_kc BIGINT;
 BEGIN
-  -- NB: create_inkooporder staat een regel met alleen karpi_code (geen artikelnr)
-  -- toe, maar boek_inkooporder_ontvangst_rollen faalt dan op een pre-existing,
-  -- aan deze migratie ongerelateerde bug (RECORD v_product wordt nooit
-  -- toegewezen als artikelnr NULL is → "record v_product is not assigned yet").
-  -- Dat is losstaand van locatie/over-levering (Task 7's scope) — de test
-  -- gebruikt daarom een echt artikelnr zodat de nieuwe logica getest wordt.
+  -- Scenario 1-4 draaien op een regel MET artikelnr; scenario 5 dekt het
+  -- karpi_code-only pad (artikelnr NULL — sinds mig 601/de nieuwe UI een
+  -- normaal pad) dat vóór mig 603 crashte op
+  -- "record v_product is not assigned yet".
   INSERT INTO producten (artikelnr, karpi_code, omschrijving)
   VALUES (v_artikelnr, 'TEST-OL-ROL', 'TEST product ontvangst_locatie');
 
@@ -68,6 +68,29 @@ BEGIN
     TRUE
   );
   ASSERT (SELECT geleverd_m FROM inkooporder_regels WHERE id = v_regel) = 120, 'geleverd_m niet 120 na bevestigde over-levering';
+
+  -- 5. Karpi_code-only regel (artikelnr NULL, geen producten-rij): een rol
+  --    vereist altijd een artikel (rollen.artikelnr NOT NULL + FK) — ontvangst
+  --    moet dus falen met de DUIDELIJKE guard-melding uit mig 603, niet met
+  --    de oude crash "record v_product is not assigned yet" of een rauwe
+  --    NOT NULL-constraint-violation.
+  SELECT * INTO v_io_kc FROM create_inkooporder(
+    jsonb_build_object('leverancier_id', v_lev_id),
+    jsonb_build_array(jsonb_build_object('karpi_code', 'TEST-OL-KC', 'besteld_m', 50, 'eenheid', 'm'))
+  );
+  SELECT id INTO v_regel_kc FROM inkooporder_regels WHERE inkooporder_id = v_io_kc.inkooporder_id;
+  BEGIN
+    PERFORM boek_inkooporder_ontvangst_rollen(
+      v_regel_kc,
+      jsonb_build_array(jsonb_build_object('lengte_cm', 1000, 'breedte_cm', 400)),
+      'test'
+    );
+    RAISE EXCEPTION 'TEST FAILED: karpi_code-only ontvangst werd geaccepteerd (rollen.artikelnr is NOT NULL — hoe?)';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE 'TEST FAILED%' THEN RAISE; END IF;
+    ASSERT SQLERRM LIKE 'Regel % heeft geen gekoppeld artikel%',
+           format('verwachtte de duidelijke artikel-guard-melding, kreeg: %s', SQLERRM);
+  END;
 
   RAISE NOTICE 'test_ontvangst_locatie: ALLE ASSERTS GESLAAGD';
 END $$;

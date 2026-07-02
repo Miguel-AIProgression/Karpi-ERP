@@ -6,7 +6,15 @@
 -- (mig 169) → rollen.locatie_id; (2) pre-pass die de totale payload-m² telt en
 -- >110% van besteld weigert tenzij p_sta_overlevering_toe=TRUE (over-levering
 -- is normaal in tapijt — meters zijn nooit exact — maar een tikfout van 10×
--- de bestelling mag niet stil doorglippen).
+-- de bestelling mag niet stil doorglippen); (3) fix latente crash op
+-- karpi_code-only regels (artikelnr NULL — sinds mig 601/de nieuwe UI een
+-- normaal pad): de product-lookup is nu onvoorwaardelijk zodat v_product
+-- altijd toegewezen is (was: "record v_product is not assigned yet"), plus
+-- een expliciete guard met duidelijke melding — rollen.artikelnr is NOT NULL
+-- (FK naar producten), dus een regel zonder gekoppeld artikel kan
+-- fundamenteel geen rol worden; zonder guard was de fout een rauwe
+-- constraint-violation. Automatisch karpi_code→artikelnr resolven is bewust
+-- NIET gedaan: producten.karpi_code is niet uniek (167 dubbele codes live).
 -- Signature wijzigt (4e param) → DROP vereist; de deprecated wrapper
 -- boek_ontvangst (mig 271) resolvet zijn 3-arg-call daarna op de DEFAULT.
 
@@ -49,6 +57,15 @@ BEGIN
       v_regel.regelnummer, v_regel.eenheid;
   END IF;
 
+  -- Guard (mig 603): een rol vereist altijd een artikel (rollen.artikelnr is
+  -- NOT NULL, FK naar producten). Een karpi_code-only regel (mig 601) moet
+  -- dus eerst aan een artikel gekoppeld worden vóór ontvangst — met deze
+  -- duidelijke melding i.p.v. een rauwe NOT NULL-constraint-violation.
+  IF v_regel.artikelnr IS NULL THEN
+    RAISE EXCEPTION 'Regel % heeft geen gekoppeld artikel (alleen karpi_code %). Koppel eerst een artikel aan de inkooporder-regel — een rol vereist altijd een artikelnr.',
+      v_regel.regelnummer, COALESCE(v_regel.karpi_code, '?');
+  END IF;
+
   -- Pre-pass (mig 603): valideer maten + tel de payload-m² VÓÓR er iets
   -- geïnsert wordt, zodat de over-leveringsgrens atomair kan weigeren.
   FOR v_rol IN SELECT * FROM jsonb_array_elements(COALESCE(p_rollen, '[]'::jsonb)) LOOP
@@ -70,13 +87,14 @@ BEGIN
       ROUND(v_regel.geleverd_m + v_payload_m2, 2), v_regel.besteld_m;
   END IF;
 
-  IF v_regel.artikelnr IS NOT NULL THEN
-    SELECT p.karpi_code, p.kwaliteit_code, p.kleur_code, p.zoeksleutel, p.omschrijving,
-           p.verkoopprijs AS vvp_m2
-      INTO v_product
-    FROM producten p
-    WHERE p.artikelnr = v_regel.artikelnr;
-  END IF;
+  -- Altijd uitvoeren: bij artikelnr NULL of onbekend krijgt v_product NULL-velden
+  -- (fix van de latente 'record v_product is not assigned yet'-crash op
+  -- karpi_code-only regels — die zijn sinds mig 601/de nieuwe UI een normaal pad).
+  SELECT p.karpi_code, p.kwaliteit_code, p.kleur_code, p.zoeksleutel, p.omschrijving,
+         p.verkoopprijs AS vvp_m2
+    INTO v_product
+  FROM producten p
+  WHERE p.artikelnr = v_regel.artikelnr;
 
   FOR v_rol IN SELECT * FROM jsonb_array_elements(COALESCE(p_rollen, '[]'::jsonb)) LOOP
     v_lengte_cm := (v_rol->>'lengte_cm')::INTEGER;
@@ -154,7 +172,9 @@ COMMENT ON FUNCTION boek_inkooporder_ontvangst_rollen(BIGINT, JSONB, TEXT, BOOLE
   'Inkoop-Module: boek rollen-ontvangst op een eenheid=m IO-regel. Superset-keten '
   '281→603: mig 603 voegt per-rol ''locatie'' (→ rollen.locatie_id via '
   'create_or_get_magazijn_locatie) en de 110%%-over-leveringsgrens toe '
-  '(p_sta_overlevering_toe). Geen claim-consume (claims zijn alleen op eenheid=stuks).';
+  '(p_sta_overlevering_toe), en fixt de latente v_product-crash op karpi_code-only '
+  'regels: product-lookup onvoorwaardelijk + duidelijke guard (regel zonder artikelnr '
+  'geweigerd — rollen.artikelnr is NOT NULL). Geen claim-consume (claims zijn alleen op eenheid=stuks).';
 
 GRANT EXECUTE ON FUNCTION boek_inkooporder_ontvangst_rollen(BIGINT, JSONB, TEXT, BOOLEAN) TO authenticated;
 
