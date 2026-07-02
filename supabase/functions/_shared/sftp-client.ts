@@ -1,7 +1,9 @@
-// Dunne SFTP-wrapper voor de sftp-vervoerder-adapters (verhoek-send,
-// rhenus-send). Bewust geïsoleerd: als de runtime ssh2 niet draait, is dít de
-// enige module die vervangen wordt (fallback: n8n-SFTP-workflow of
-// Python-worker die dezelfde adapter-wachtrijen leegt).
+// Dunne SFTP-wrapper voor de sftp-vervoerder-adapters (rhenus-send;
+// verhoek-send gebruikt sinds de relay-cutover relay-client.ts →
+// frontend/api/verhoek-sftp.ts, zie ADR-0031-addendum). Bewust geïsoleerd:
+// als de runtime ssh2 niet draait, is dít de enige module die vervangen
+// wordt (fallback: n8n-SFTP-workflow of Python-worker die dezelfde
+// adapter-wachtrijen leegt).
 // Geëxtraheerd uit verhoek-send (ADR-0031 Taak 9) → _shared bij de komst van
 // Rhenus als tweede SFTP-vervoerder (ADR-0032). Gedrag ongewijzigd.
 
