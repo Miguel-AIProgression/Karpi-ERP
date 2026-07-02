@@ -20,12 +20,9 @@ import type { SnijplanSortField, SortDirection, TekortAnalyseRow, WachtOpInkoopR
 import { fetchMaatwerkHaalbaarheid, fetchInkoopRegelInfo } from '../queries/haalbaarheid'
 import { fetchMasterPlanningRegels, fetchConceptSnijplanVoorstelMap } from '../queries/master-planning'
 import {
-  createSnijplan,
-  updateSnijplanStatus,
   batchUpdateSnijplanStatus,
   approveSnijvoorstel,
 } from '../queries/snijplanning-mutations'
-import type { SnijplanFormData } from '../queries/snijplanning-mutations'
 import {
   generateSnijvoorstel,
   fetchSnijvoorstel,
@@ -52,8 +49,6 @@ import {
   wijsHandmatigToe,
   ontgrendelHandmatigeToewijzing,
 } from '../queries/handmatige-toewijzing'
-import { berekenTotDatum } from '@/components/snijplanning/week-filter'
-import { fetchPlanningConfig } from '@/lib/supabase/queries/planning-config'
 import { invalidateNaSnijplanMutatie } from '../cache'
 import { invalidateNaConfectieMutatie } from '@/modules/confectie'
 import { fetchVormen } from '@/modules/maatwerk'
@@ -247,58 +242,6 @@ export function useRolLocaties(rolIds: number[]) {
     queryFn: () => fetchRolLocaties(rolIds),
     enabled: rolIds.length > 0,
     staleTime: 60_000,
-  })
-}
-
-export interface CreateSnijplanData extends SnijplanFormData {
-  /** Kwaliteit code voor auto-planning trigger */
-  kwaliteit_code?: string
-  /** Kleur code voor auto-planning trigger */
-  kleur_code?: string
-  /** Afleverdatum (ISO) voor auto-planning horizon check */
-  afleverdatum?: string
-}
-
-export function useCreateSnijplan() {
-  const qc = useQueryClient()
-  const autoplan = useTriggerAutoplan()
-  const { data: autoConfig } = useAutoplanningConfig()
-
-  return useMutation({
-    mutationFn: (data: CreateSnijplanData) => createSnijplan(data),
-    onSuccess: async (_result, variables) => {
-      invalidateNaSnijplanMutatie(qc)
-      invalidateNaConfectieMutatie(qc)
-
-      // Auto-plan trigger: als auto-planning aan staat, trigger heroptimalisatie.
-      // De horizon komt uit planningConfig.weken_vooruit (single source of truth).
-      if (autoConfig?.enabled && variables.kwaliteit_code && variables.kleur_code) {
-        const planning = await qc.ensureQueryData({
-          queryKey: ['planning-config'],
-          queryFn: fetchPlanningConfig,
-        })
-        const horizonDatum = berekenTotDatum(planning.weken_vooruit ?? null)
-        if (!variables.afleverdatum || !horizonDatum || variables.afleverdatum <= horizonDatum) {
-          autoplan.mutate({
-            kwaliteitCode: variables.kwaliteit_code,
-            kleurCode: variables.kleur_code,
-            totDatum: horizonDatum,
-          })
-        }
-      }
-    },
-  })
-}
-
-export function useUpdateSnijplanStatus() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: ({ id, status }: { id: number; status: Parameters<typeof updateSnijplanStatus>[1] }) =>
-      updateSnijplanStatus(id, status),
-    onSuccess: () => {
-      invalidateNaSnijplanMutatie(qc)
-      invalidateNaConfectieMutatie(qc)
-    },
   })
 }
 
