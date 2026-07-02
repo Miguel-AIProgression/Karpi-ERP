@@ -12,6 +12,11 @@ from lib.normalize import clean_value as _clean
 
 
 def bouw_insert_record(r):
+    # kwaliteit_code/kleur_code/zoeksleutel worden NIET meegestuurd:
+    # trigger trg_rollen_sync_kwaliteit (mig 554) leidt ze automatisch
+    # af uit producten.artikelnr bij elke INSERT. parse_karpi_code gaf
+    # voor sommige codes (bv. TAM123400ONG → TAM/12 i.p.v. TAMA/23)
+    # het verkeerde resultaat; de DB-trigger is de bron-van-waarheid.
     return {
         'rolnummer': str(r['rolnummer']),
         'artikelnr': _clean(r['artikelnr']),
@@ -22,9 +27,6 @@ def bouw_insert_record(r):
         'oppervlak_m2': _clean(r['oppervlak_m2']),
         'vvp_m2': _clean(r['vvp_m2']),
         'waarde': _clean(r['waarde']),
-        'kwaliteit_code': _clean(r['kwaliteit_code']),
-        'kleur_code': _clean(r['kleur_code']),
-        'zoeksleutel': _clean(r['zoeksleutel']),
         'status': 'beschikbaar',
     }
 
@@ -80,10 +82,6 @@ def load_bron(path):
     )
     df['lengte_cm'] = (df['lengte_m'] * 100).round().astype('Int64')
     df['breedte_cm'] = (df['breedte_m'] * 100).round().astype('Int64')
-    parsed = df['karpi_code'].apply(parse_karpi_code)
-    df['kwaliteit_code'] = parsed.apply(lambda t: t[0])
-    df['kleur_code'] = parsed.apply(lambda t: t[1])
-    df['zoeksleutel'] = parsed.apply(lambda t: t[2])
     df = df.drop_duplicates(subset=['rolnummer'], keep='first')
     return df
 

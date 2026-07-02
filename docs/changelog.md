@@ -1,5 +1,9 @@
 # Changelog — RugFlow ERP
 
+## 2026-07-02 — Prev/next navigatie op order-detailpagina
+
+Nieuwe navigatiebalk rechtsboven op de order-detailpagina: "Vorige / 47 van 312 / Volgende" op basis van de gefilterde lijst die het orderoverzicht had geladen. Pijltjestoetsen ← → werken ook (tenzij focus in een input). "Terug naar orders" herstelt de actieve statusfilter via URL. Implementatie: `order-list-context.ts` slaat de orderlijst op in `sessionStorage` zonder extra API-calls.
+
 ## 2026-07-01 — Pakbon-PDF vertaalt mee naar klanttaal (nl/de/fr/en)
 
 **Waarom:** Marjon (Sales Support) meldde dat de pakbon die als bijlage bij de
@@ -53,6 +57,32 @@ WELL.
   rauwe `omschrijving_snapshot`/`producten.omschrijving`, waar "3726-G305" al
   in staat); de factuur-titel (`factuurProductTitel`) toont sowieso geen
   kleurcode.
+
+## 2026-07-01 — Verdringingscheck bugfix + naast-elkaar packing + herplan-prioriteitspass uitgebreid (mig 552-553)
+
+**Aanleiding:** VERR/15 stukken stonden als "Niet planbaar" in de werklijst terwijl 4 beschikbare rollen aanwezig waren. Root cause: twee samenhangende bugs + een te enge prioriteitspass.
+
+**Bug 1 — verdringingscheck logica omgedraaid (auto-plan-groep/index.ts):**
+Vóór de fix: `status === 'rood'` (= deadline al verstreken) triggerde `verdringingRisico=true`, waardoor de auto-approver het voorstel als 'concept' hield. `status === 'groen'/'oranje'` (= deadline NOG haalbaar maar stuk verdrongen) deed niets.
+Fix: `rood` → `continue` (deadline is sowieso gemist, geen risico meer); `groen`/`oranje` → `verdringingRisico = true` (dit zijn de stukken die beschermd moeten worden).
+Gevolg van de bug: OUD-orders met verstreken afleverdatums in de `oudeToewijzingen` zorgden dat elke herplan-run als 'concept' bleef, waardoor materiaal dat wél beschikbaar was nooit geplaatst werd.
+
+**Bug 2 — uitwisselbare stukken telden vals als verdrongen (auto-plan-groep/index.ts):**
+`fetchOudeRolToewijzingen` queried `snijplanning_overzicht` met kwaliteit_code='VERR'. Die view gebruikt de kwaliteit_code van de ROL voor geplaatste stukken — dus LUXR-stukken op VERR-rollen verschenen ook in die query. Bij een VERR-herplan stonden die LUXR-stukken daarmee in `oudeToewijzingen`, maar niet in `pieces` (de packer werkt alleen op VERR-stukken). Gevolg: ze leken altijd "verdrongen".
+Fix: `pieceIds = new Set(pieces.map(p => p.id))` en filter `verdrongenKandidaten` op `pieceIds.has(snijplanId)`.
+
+**Verbetering — naast-elkaar packing (ffdh-packing.ts):**
+Nieuwe tiebreaker in `tryPlacePiece`: als een toekomstig stuk van exact dezelfde maten bestaat, kies een oriëntatie die ruimte laat voor dat stuk naast-elkaar op dezelfde shelf (zelfde positie_y_cm). Geverifieerd via nieuwe Vitest-test: twee 160×230 stukken op een 400cm-brede rol → beide op Y=0 naast-elkaar.
+
+**Mig 552 (herplan-sweep prioriteitspass Case 1):** stukken aangemaakt in de laatste 6 uur zonder rol of IO-claim → altijd in prioriteitspass. Voorkomt dat een nieuw bevestigde concept-order uren als "Niet planbaar" wacht.
+
+**Mig 553 (herplan-sweep prioriteitspass Case 2):** stukken die ongeplaatst staan (elke leeftijd) terwijl er wél beschikbare rollen van dezelfde kwaliteit/kleur aanwezig zijn → ook in prioriteitspass. Zolang materiaal beschikbaar is, hoort de groep voorrang te krijgen bij elke sweep-run.
+
+**Werklijst UI (planning-tab.tsx):** shelf-bereik (Y start–eind) en snijmarge zichtbaar per stuk als badges.
+
+**Resultaat na bugfix + herplan-run:** alle 203 snijgroepen OK gerund; 0 groepen in 'concept'-loop.
+
+---
 
 ## 2026-07-01 — Voorraad-import commit (voorraadlijst 30-6-2026)
 

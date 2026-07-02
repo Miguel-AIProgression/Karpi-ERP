@@ -118,10 +118,26 @@ export function tryPlacePiece(
     { w: piece.breedte_cm, h: piece.lengte_cm, rotated: true },
   ]
 
+  // Naast-elkaar-tiebreaker: als een toekomstig stuk van DEZELFDE afmetingen in het
+  // restgat past, geef die oriëntatie voorrang boven de kleinere-restbreedte-voorkeur.
+  // Zo worden twee 160×230 stuks op een 400cm rol NAAST ELKAAR geplaatst (2×160=320≤400)
+  // i.p.v. apart (elk 230cm breed op een eigen shelf). Alleen actief als er echt een
+  // volgend stuk van dezelfde maat bestaat (voorkomen dat we onnodig ruimte reserveren).
+  const heeftZelfdeSoort = futurePieces.some(p =>
+    (Math.abs(p.lengte_cm - piece.lengte_cm) < 0.1 && Math.abs(p.breedte_cm - piece.breedte_cm) < 0.1) ||
+    (Math.abs(p.lengte_cm - piece.breedte_cm) < 0.1 && Math.abs(p.breedte_cm - piece.lengte_cm) < 0.1)
+  )
+  const naastElkaarMogelijk = (gapW: number, gapH: number): boolean => {
+    if (!heeftZelfdeSoort) return false
+    return (piece.lengte_cm <= gapW && piece.breedte_cm <= gapH) ||
+           (piece.breedte_cm <= gapW && piece.lengte_cm <= gapH)
+  }
+
   let bestPlacement: Placement | null = null
   let bestTier = Infinity
   let bestHeightWaste = Infinity
   let bestWidthWaste = Infinity
+  let bestNaastElkaar = false
 
   for (const orient of orientations) {
     // Skip if piece wider than roll
@@ -132,18 +148,27 @@ export function tryPlacePiece(
       if (orient.h <= shelf.height && shelf.usedWidth + orient.w <= shelf.maxWidth) {
         const remaining = shelf.maxWidth - shelf.usedWidth - orient.w
         const heightWaste = shelf.height - orient.h
+        // Naast-bestaande boost: exacte hoogte + identiek stuk in de queue →
+        // gelijk aan tier=1 (bruikbaar gat). Zonder deze boost wint een verse
+        // shelf (tier=2) altijd omdat het resterende gat enkel voor de tier=3
+        // "nutteloos gat"-tak in aanmerking komt, ook al past het identieke
+        // stuk er naast.
         const tier = remaining === 0 ? 0
           : gapIsUseful(remaining, shelf.height, futurePieces) ? 1
+          : (heightWaste === 0 && heeftZelfdeSoort) ? 1
           : 3
+        const currentNaastElkaar = remaining > 0 && naastElkaarMogelijk(remaining, shelf.height)
 
         if (
           tier < bestTier ||
           (tier === bestTier && heightWaste < bestHeightWaste) ||
-          (tier === bestTier && heightWaste === bestHeightWaste && remaining < bestWidthWaste)
+          (tier === bestTier && heightWaste === bestHeightWaste && currentNaastElkaar && !bestNaastElkaar) ||
+          (tier === bestTier && heightWaste === bestHeightWaste && currentNaastElkaar === bestNaastElkaar && remaining < bestWidthWaste)
         ) {
           bestTier = tier
           bestHeightWaste = heightWaste
           bestWidthWaste = remaining
+          bestNaastElkaar = currentNaastElkaar
           bestPlacement = {
             snijplan_id: piece.id,
             positie_x_cm: shelf.usedWidth,
@@ -167,15 +192,18 @@ export function tryPlacePiece(
       const tier = remaining === 0 ? 0
         : gapIsUseful(remaining, orient.h, futurePieces) ? 2
         : 4
+      const currentNaastElkaar = remaining > 0 && naastElkaarMogelijk(remaining, orient.h)
 
       if (
         tier < bestTier ||
         (tier === bestTier && heightWaste < bestHeightWaste) ||
-        (tier === bestTier && heightWaste === bestHeightWaste && remaining < bestWidthWaste)
+        (tier === bestTier && heightWaste === bestHeightWaste && currentNaastElkaar && !bestNaastElkaar) ||
+        (tier === bestTier && heightWaste === bestHeightWaste && currentNaastElkaar === bestNaastElkaar && remaining < bestWidthWaste)
       ) {
         bestTier = tier
         bestHeightWaste = heightWaste
         bestWidthWaste = remaining
+        bestNaastElkaar = currentNaastElkaar
         bestPlacement = {
           snijplan_id: piece.id,
           positie_x_cm: 0,

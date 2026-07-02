@@ -248,8 +248,14 @@ serve(async (req) => {
     )
     let verdringingRisico = false
     const verdrongenOrders: Array<{ order_id: number; order_nr: string | null; snijplan_id: number; snijplan_nr: string | null }> = []
+    // Verdringingscheck alleen voor stukken die daadwerkelijk in `pieces` zaten
+    // (d.w.z. door de packer overwogen zijn). Stukken van uitwisselbare kwaliteiten
+    // die vóór de release op een rol lagen (en daardoor in oudeToewijzingen zitten)
+    // maar niet in pieces voorkomen (andere kwaliteit → onzichtbaar voor packer),
+    // worden altijd "verdrongen" en zouden elke replan blokkeren — die horen hier niet.
+    const pieceIds = new Set(pieces.map((p) => p.id))
     const verdrongenKandidaten = [...oudeToewijzingen.entries()].filter(
-      ([snijplanId]) => !geplaatsteIds.has(snijplanId),
+      ([snijplanId]) => !geplaatsteIds.has(snijplanId) && pieceIds.has(snijplanId),
     )
     const teHerstellen: Array<{ snijplanId: number; oude: OudeRolToewijzing }> = []
     if (verdrongenKandidaten.length > 0) {
@@ -258,16 +264,23 @@ serve(async (req) => {
       for (const [snijplanId, oude] of verdrongenKandidaten) {
         if (!oude.afleverdatum) continue
         const { status } = berekenHaalbaarheid(oude.afleverdatum, oude.leverType, deadlineConfig, werktijden, vandaag)
-        if (status === 'rood') {
-          verdringingRisico = true
-          verdrongenOrders.push({
-            order_id: oude.orderId,
-            order_nr: oude.orderNr,
-            snijplan_id: snijplanId,
-            snijplan_nr: oude.snijplanNr,
-          })
-          teHerstellen.push({ snijplanId, oude })
-        }
+        // 'rood' = snij-deadline al verstreken vóór deze run (puur kalender-
+        // bepaald, onafhankelijk van rol_id). Verplaatsing maakt het niet slechter:
+        // het stuk wordt tekort in de werklijst, zichtbaar voor de operator.
+        // Herstellen zou alleen een vals gevoel van controle geven — de deadline
+        // is al gemist ongeacht welke rol het stuk heeft.
+        if (status === 'rood') continue
+        // Groen/oranje: deadline nog haalbaar op de kalender, maar stuk is nu
+        // verdrongen. Zonder wachtrij-simulatie kunnen we niet precies bepalen
+        // of de nieuwe positie de deadline alsnog haalt — conservatief flaggen.
+        verdringingRisico = true
+        verdrongenOrders.push({
+          order_id: oude.orderId,
+          order_nr: oude.orderNr,
+          snijplan_id: snijplanId,
+          snijplan_nr: oude.snijplanNr,
+        })
+        teHerstellen.push({ snijplanId, oude })
       }
     }
 
