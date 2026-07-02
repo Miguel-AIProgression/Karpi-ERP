@@ -11,7 +11,10 @@ DECLARE
   v_nieuwe_regel BIGINT;
   v_claim RECORD;
   v_hist_regel BIGINT;
+  v_claim_regel BIGINT;
   v_or_id BIGINT;
+  v_io2 RECORD;
+  v_regel_solo BIGINT;
 BEGIN
   INSERT INTO leveranciers (naam) VALUES ('TEST regel_mutaties') RETURNING id INTO v_lev_id;
   SELECT * INTO v_io FROM create_inkooporder(
@@ -46,6 +49,7 @@ BEGIN
     RAISE EXCEPTION 'TEST FAILED: verlagen onder geleverd geaccepteerd';
   EXCEPTION WHEN OTHERS THEN
     IF SQLERRM LIKE 'TEST FAILED%' THEN RAISE; END IF;
+    ASSERT SQLERRM LIKE '%kan niet lager dan al geleverd%', format('verkeerde melding: %s', SQLERRM);
   END;
 
   -- 5. Claim-vloer m-regel: snijplan-claim (kolom gezet = claim aanwezig)
@@ -90,11 +94,47 @@ BEGIN
     RAISE NOTICE 'SKIP: geen live actieve stuks-IO-claim gevonden — stap 6 overgeslagen';
   END IF;
 
+  -- 6b. Claim-vloer stuks-regel, DETERMINISTISCH: gefabriceerde actieve claim
+  -- (het force-release-pad wordt zo altijd geraakt, ook als live claims
+  -- opdrogen en stap 6 SKIPt). Stabiliteit: de claim is is_handmatig=true,
+  -- dus herallocateer_orderregel (via release_claims_voor_io_regel) laat 'm
+  -- met rust — tenzij de geleende order Verzonden/Geannuleerd is, dan flipt
+  -- herallocateer 'm zelf naar verzonden/released. Beide paden eindigen op
+  -- 0 actieve claims; en de korte-vorm-allocator maakt zelf nooit nieuwe
+  -- inkooporder_regel-claims aan (alleen bron='voorraad'), dus geen
+  -- her-creatie-flakiness op deze regel.
+  v_claim_regel := voeg_inkooporder_regel_toe(
+    v_io.inkooporder_id,
+    jsonb_build_object('karpi_code', 'TEST-RM-CLAIM', 'besteld_m', 10, 'eenheid', 'stuks')
+  );
+  SELECT id INTO v_or_id FROM order_regels LIMIT 1;
+  ASSERT v_or_id IS NOT NULL, 'geen order_regels-rij gevonden voor fabricage';
+  INSERT INTO order_reserveringen (order_regel_id, bron, inkooporder_regel_id, aantal, status, is_handmatig)
+  VALUES (v_or_id, 'inkooporder_regel', v_claim_regel, 3, 'actief', TRUE);
+  -- (a) verlagen onder geleverd(0)+claim(3) zonder vrijgeven → Claim-vloer
+  BEGIN
+    PERFORM wijzig_inkooporder_regel(v_claim_regel, 2, NULL, FALSE);
+    RAISE EXCEPTION 'TEST FAILED: verlagen onder gefabriceerde stuks-claim zonder vrijgeven geaccepteerd';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE 'TEST FAILED%' THEN RAISE; END IF;
+    ASSERT SQLERRM LIKE 'Claim-vloer:%', format('verkeerde melding: %s', SQLERRM);
+  END;
+  -- (b) mét vrijgeven → slaagt, actieve claims op deze regel = 0
+  PERFORM wijzig_inkooporder_regel(v_claim_regel, 2, NULL, TRUE);
+  ASSERT (SELECT COALESCE(SUM(aantal),0) FROM order_reserveringen
+           WHERE inkooporder_regel_id = v_claim_regel
+             AND bron='inkooporder_regel' AND status='actief') = 0,
+         'gefabriceerde claim niet vrijgegeven na p_vrijgeven=TRUE';
+  ASSERT (SELECT besteld_m FROM inkooporder_regels WHERE id = v_claim_regel) = 2, 'besteld niet verlaagd (6b)';
+  -- Sluit de regel voor stap 9 (verwijderen kan niet meer: claim-historie)
+  PERFORM annuleer_inkooporder_regel(v_claim_regel, FALSE);
+  ASSERT (SELECT te_leveren_m FROM inkooporder_regels WHERE id = v_claim_regel) = 0, 'claim-regel niet geannuleerd';
+
   -- 7. Regel annuleren: besteld := geleverd, order-status herberekend
   PERFORM annuleer_inkooporder_regel(v_regel_stuks, FALSE);
   ASSERT (SELECT te_leveren_m FROM inkooporder_regels WHERE id = v_regel_stuks) = 0, 'annuleren zette te_leveren niet op 0';
 
-  -- 8. Verwijderen: geleverd>0 weigeren; verse regel wél; laatste regel weigeren
+  -- 8. Verwijderen: geleverd>0 weigeren; verse regel zonder historie wél
   BEGIN
     PERFORM verwijder_inkooporder_regel(v_regel_m, TRUE);
     RAISE EXCEPTION 'TEST FAILED: verwijderen met geleverd>0 geaccepteerd';
@@ -127,6 +167,23 @@ BEGIN
   -- Annuleren blijft de juiste route voor deze regel (sluit 'm voor stap 9)
   PERFORM annuleer_inkooporder_regel(v_hist_regel, FALSE);
   ASSERT (SELECT te_leveren_m FROM inkooporder_regels WHERE id = v_hist_regel) = 0, 'historie-regel niet geannuleerd';
+
+  -- 8c. Laatste regel van een order verwijderen → weigeren
+  SELECT * INTO v_io2 FROM create_inkooporder(
+    jsonb_build_object('leverancier_id', v_lev_id),
+    jsonb_build_array(
+      jsonb_build_object('karpi_code', 'TEST-RM-SOLO', 'besteld_m', 5, 'eenheid', 'stuks')
+    )
+  );
+  SELECT id INTO v_regel_solo FROM inkooporder_regels WHERE inkooporder_id = v_io2.inkooporder_id;
+  BEGIN
+    PERFORM verwijder_inkooporder_regel(v_regel_solo, FALSE);
+    RAISE EXCEPTION 'TEST FAILED: laatste regel van order verwijderd';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE 'TEST FAILED%' THEN RAISE; END IF;
+    ASSERT SQLERRM LIKE '%Laatste regel%', format('verkeerde melding: %s', SQLERRM);
+  END;
+  ASSERT EXISTS (SELECT 1 FROM inkooporder_regels WHERE id = v_regel_solo), 'laatste regel toch verwijderd';
 
   -- 9. Status-herberekening: alle regels dicht → Ontvangen
   PERFORM annuleer_inkooporder_regel(v_regel_m, TRUE);
