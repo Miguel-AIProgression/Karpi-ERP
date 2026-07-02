@@ -21,6 +21,18 @@
 -- wacht_op_combi_levering-berekening) wordt in de frontend toegepast
 -- (combiWachtReden-helper), niet hier, zodat een toekomstige wijziging van
 -- de fallback-waarde op één plek blijft.
+--
+-- Solo-orders (review-fix): de oude CTE filterde op aantal_orders >= 2 —
+-- correct voor de badge-kolommen (badge toont pas iets bij een échte groep),
+-- maar een SOLO wachtende order (aantal_orders = 1, bv. € 103,97 onder een
+-- € 300-drempel) heeft de reden-velden juist het hardst nodig. Het >= 2-
+-- filter is daarom uit de CTE gehaald; de drie bestaande kolommen
+-- (combi_levering_aantal_orders / wacht_op_combi_levering /
+-- combi_levering_andere_orders) behouden hun pre-575-semantiek exact via
+-- CASE WHEN aantal_orders >= 2 in de outer SELECT (vóór mig 575 waren álle
+-- drie NULL voor solo-orders — geverifieerd in de live viewdef, alle drie
+-- kwamen uit dezelfde gefilterde CTE), de drie NIEUWE reden-kolommen komen
+-- ongefilterd door (ook bij aantal_orders = 1).
 
 CREATE OR REPLACE VIEW orders_list AS
 WITH bundel_per_order AS (
@@ -53,7 +65,6 @@ WITH bundel_per_order AS (
         cls.verzend_drempel AS combi_levering_drempel,
         cls.alle_leden_pickbaar AS combi_levering_alle_leden_pickbaar
        FROM combi_levering_status cls
-      WHERE cls.aantal_orders >= 2
     )
  SELECT o.id,
     o.order_nr,
@@ -88,9 +99,9 @@ WITH bundel_per_order AS (
     o.afl_land,
     o.afl_gln_ongekoppeld_sinds,
     o.afl_gln_gecontroleerd_op,
-    cl.combi_levering_aantal_orders,
-    cl.wacht_op_combi_levering,
-    cl.combi_levering_andere_orders,
+    CASE WHEN cl.combi_levering_aantal_orders >= 2 THEN cl.combi_levering_aantal_orders END AS combi_levering_aantal_orders,
+    CASE WHEN cl.combi_levering_aantal_orders >= 2 THEN cl.wacht_op_combi_levering END AS wacht_op_combi_levering,
+    CASE WHEN cl.combi_levering_aantal_orders >= 2 THEN cl.combi_levering_andere_orders END AS combi_levering_andere_orders,
     cl.combi_levering_groep_subtotaal,
     cl.combi_levering_drempel,
     cl.combi_levering_alle_leden_pickbaar
@@ -99,6 +110,6 @@ WITH bundel_per_order AS (
      LEFT JOIN bundel_per_order b ON b.order_id = o.id
      LEFT JOIN combi_levering_per_order cl ON cl.order_id = o.id;
 
-COMMENT ON VIEW orders_list IS 'Order-overzicht voor frontend OrdersTable. Sinds mig 544: afl_gln_ongekoppeld_sinds + afl_gln_gecontroleerd_op. Sinds mig 569: combi_levering_aantal_orders/wacht_op_combi_levering/combi_levering_andere_orders (Combi-levering-badge). Sinds mig 575: combi_levering_groep_subtotaal/combi_levering_drempel/combi_levering_alle_leden_pickbaar (wacht-reden zichtbaar op de badge, i.p.v. alleen dat de order wacht).';
+COMMENT ON VIEW orders_list IS 'Order-overzicht voor frontend OrdersTable. Sinds mig 544: afl_gln_ongekoppeld_sinds + afl_gln_gecontroleerd_op. Sinds mig 569: combi_levering_aantal_orders/wacht_op_combi_levering/combi_levering_andere_orders (Combi-levering-badge). Sinds mig 575: combi_levering_groep_subtotaal/combi_levering_drempel/combi_levering_alle_leden_pickbaar (wacht-reden zichtbaar op de badge, i.p.v. alleen dat de order wacht) — deze drie zijn OOK gevuld voor solo-orders (aantal_orders=1); de drie mig 569-badge-kolommen blijven NULL onder de 2.';
 
 NOTIFY pgrst, 'reload schema';

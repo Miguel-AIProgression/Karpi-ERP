@@ -57,31 +57,48 @@ export function combiWachtReden(
   return null
 }
 
-/** Compacte, gedempte sub-regel onder de badge — alleen zichtbaar zolang de
- *  order daadwerkelijk wacht (wacht_op_combi_levering). Volgt de bestaande
- *  "Combi met: ..."-sub-regel-stijl (kleine gedempte tekst, block-level zodat
- *  hij op een eigen regel valt). `className` laat de caller de exacte
- *  tekstgrootte matchen (order-header.tsx gebruikt text-sm, orders-table.tsx
- *  text-xs). */
-export function CombiWachtRedenLine({
-  order,
-  className = 'text-xs text-slate-400',
-}: {
-  order: Pick<
-    OrderRow,
-    | 'wacht_op_combi_levering'
-    | 'combi_levering_groep_subtotaal'
-    | 'combi_levering_drempel'
-    | 'combi_levering_alle_leden_pickbaar'
-  >
-  className?: string
-}) {
-  if (!order.wacht_op_combi_levering) return null
-  const reden = combiWachtReden(
+/** Velden die de wacht-reden-afleiding nodig heeft (subset van orders_list). */
+export type CombiWachtRedenVelden = Pick<
+  OrderRow,
+  | 'status'
+  | 'wacht_op_combi_levering'
+  | 'combi_levering_groep_subtotaal'
+  | 'combi_levering_drempel'
+  | 'combi_levering_alle_leden_pickbaar'
+>
+
+/** Pure gate + reden voor één order. "Wacht" = `wacht_op_combi_levering`
+ *  (alleen gevuld bij groepen ≥ 2 leden — pre-575-semantiek van orders_list,
+ *  bewust behouden) ÓF order-status 'Wacht op combi-levering' (mig 563) —
+ *  dat laatste dekt de SOLO wachtende order (aantal_orders = 1): die heeft
+ *  geen badge en geen wacht-vlag in de view, maar wél de status én (sinds
+ *  mig 575, ongefilterd) de reden-velden — en juist daar is
+ *  "nog € X nodig" het meest waardevol. */
+export function combiWachtRedenVoorOrder(order: CombiWachtRedenVelden): string | null {
+  const wacht =
+    order.wacht_op_combi_levering === true || order.status === 'Wacht op combi-levering'
+  if (!wacht) return null
+  return combiWachtReden(
     order.combi_levering_groep_subtotaal,
     order.combi_levering_drempel,
     order.combi_levering_alle_leden_pickbaar
   )
+}
+
+/** Compacte, gedempte sub-regel onder de badge — alleen zichtbaar zolang de
+ *  order daadwerkelijk wacht (zie combiWachtRedenVoorOrder; werkt óók voor
+ *  solo-orders zonder badge). Volgt de bestaande "Combi met: ..."-sub-regel-
+ *  stijl (kleine gedempte tekst, block-level zodat hij op een eigen regel
+ *  valt). `className` laat de caller de exacte tekstgrootte matchen
+ *  (order-header.tsx gebruikt text-sm, orders-table.tsx text-xs). */
+export function CombiWachtRedenLine({
+  order,
+  className = 'text-xs text-slate-400',
+}: {
+  order: CombiWachtRedenVelden
+  className?: string
+}) {
+  const reden = combiWachtRedenVoorOrder(order)
   if (!reden) return null
   return <span className={`block ${className}`}>{reden}</span>
 }
