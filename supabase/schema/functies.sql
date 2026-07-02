@@ -320,6 +320,22 @@ END;
 $function$
 
 
+CREATE OR REPLACE FUNCTION public.annuleer_inkooporder_regel(p_regel_id bigint, p_vrijgeven boolean DEFAULT false)
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_geleverd NUMERIC;
+BEGIN
+  SELECT geleverd_m INTO v_geleverd FROM inkooporder_regels WHERE id = p_regel_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Inkooporder-regel % niet gevonden', p_regel_id;
+  END IF;
+  PERFORM wijzig_inkooporder_regel(p_regel_id, v_geleverd, NULL, p_vrijgeven);
+END;
+$function$
+
+
 CREATE OR REPLACE FUNCTION public.annuleer_pickronde(p_zending_id bigint, p_reden text DEFAULT NULL::text, p_actor_medewerker_id bigint DEFAULT NULL::bigint)
  RETURNS bigint
  LANGUAGE plpgsql
@@ -573,6 +589,41 @@ BEGIN
 
   RAISE NOTICE 'normaliseer_land-contract: alle % cases geslaagd', v_n;
 END $function$
+
+
+CREATE OR REPLACE FUNCTION public.assert_update_order_header_contract()
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_def TEXT;
+  v_sleutel TEXT;
+BEGIN
+  SELECT pg_get_functiondef(p.oid) INTO v_def
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.proname = 'update_order_with_lines';
+
+  IF v_def IS NULL THEN
+    RAISE EXCEPTION 'contract: update_order_with_lines bestaat niet';
+  END IF;
+
+  FOREACH v_sleutel IN ARRAY ARRAY[
+    'klant_referentie', 'afleverdatum', 'week', 'vertegenw_code', 'betaler',
+    'inkooporganisatie',
+    'fact_naam', 'fact_adres', 'fact_postcode', 'fact_plaats', 'fact_land',
+    'fact_email',
+    'afl_naam', 'afl_naam_2', 'afl_adres', 'afl_postcode', 'afl_plaats',
+    'afl_land', 'afl_email',
+    'lever_modus', 'afhalen', 'lever_type', 'combi_levering_override'
+  ] LOOP
+    IF position('''' || v_sleutel || '''' IN v_def) = 0 THEN
+      RAISE EXCEPTION
+        'contract: update_order_with_lines leest header-sleutel ''%'' niet meer — frontend stuurt die wél (order-mutations.ts). Zie mig 585 (sleutel-drop-regressie mig 527).',
+        v_sleutel;
+    END IF;
+  END LOOP;
+END;
+$function$
 
 
 CREATE OR REPLACE FUNCTION public.assert_verzendweek_contract(p_golden jsonb)
@@ -1504,7 +1555,7 @@ END;
 $function$
 
 
-CREATE OR REPLACE FUNCTION public.boek_inkooporder_ontvangst_rollen(p_regel_id bigint, p_rollen jsonb, p_medewerker text DEFAULT NULL::text)
+CREATE OR REPLACE FUNCTION public.boek_inkooporder_ontvangst_rollen(p_regel_id bigint, p_rollen jsonb, p_medewerker text DEFAULT NULL::text, p_sta_overlevering_toe boolean DEFAULT false)
  RETURNS TABLE(rol_id bigint, rolnummer text)
  LANGUAGE plpgsql
 AS $function$
@@ -1520,6 +1571,9 @@ DECLARE
   v_nieuw_id BIGINT;
   v_totaal_geleverd_m2 NUMERIC := 0;
   v_open_regels INTEGER;
+  v_locatie_code TEXT;
+  v_locatie_id BIGINT;
+  v_payload_m2 NUMERIC := 0;
 BEGIN
   SELECT * INTO v_regel FROM inkooporder_regels WHERE id = p_regel_id FOR UPDATE;
   IF NOT FOUND THEN
@@ -1536,24 +1590,55 @@ BEGIN
       v_regel.regelnummer, v_regel.eenheid;
   END IF;
 
-  IF v_regel.artikelnr IS NOT NULL THEN
-    SELECT p.karpi_code, p.kwaliteit_code, p.kleur_code, p.zoeksleutel, p.omschrijving,
-           p.verkoopprijs AS vvp_m2
-      INTO v_product
-    FROM producten p
-    WHERE p.artikelnr = v_regel.artikelnr;
+  -- Guard (mig 603): een rol vereist altijd een artikel (rollen.artikelnr is
+  -- NOT NULL, FK naar producten). Een karpi_code-only regel (mig 601) moet
+  -- dus eerst aan een artikel gekoppeld worden vóór ontvangst — met deze
+  -- duidelijke melding i.p.v. een rauwe NOT NULL-constraint-violation.
+  IF v_regel.artikelnr IS NULL THEN
+    RAISE EXCEPTION 'Regel % heeft geen gekoppeld artikel (alleen karpi_code %). Koppel eerst een artikel aan de inkooporder-regel — een rol vereist altijd een artikelnr.',
+      v_regel.regelnummer, COALESCE(v_regel.karpi_code, '?');
   END IF;
+
+  -- Pre-pass (mig 603): valideer maten + tel de payload-m² VÓÓR er iets
+  -- geïnsert wordt, zodat de over-leveringsgrens atomair kan weigeren.
+  FOR v_rol IN SELECT * FROM jsonb_array_elements(COALESCE(p_rollen, '[]'::jsonb)) LOOP
+    v_lengte_cm := (v_rol->>'lengte_cm')::INTEGER;
+    v_breedte_cm := (v_rol->>'breedte_cm')::INTEGER;
+    IF v_lengte_cm IS NULL OR v_lengte_cm <= 0 THEN
+      RAISE EXCEPTION 'Ongeldige lengte_cm in rol: %', v_rol;
+    END IF;
+    IF v_breedte_cm IS NULL OR v_breedte_cm <= 0 THEN
+      RAISE EXCEPTION 'Ongeldige breedte_cm in rol: %', v_rol;
+    END IF;
+    v_payload_m2 := v_payload_m2 + ROUND((v_lengte_cm * v_breedte_cm) / 10000.0, 2);
+  END LOOP;
+
+  IF NOT p_sta_overlevering_toe
+     AND v_regel.besteld_m > 0
+     AND v_regel.geleverd_m + v_payload_m2 > v_regel.besteld_m * 1.10 THEN
+    RAISE EXCEPTION 'Over-levering: totaal geleverd wordt % m² op % m² besteld (meer dan 110%%). Bevestig expliciet als de levering echt zo groot is.',
+      ROUND(v_regel.geleverd_m + v_payload_m2, 2), v_regel.besteld_m;
+  END IF;
+
+  -- Altijd uitvoeren: bij artikelnr NULL of onbekend krijgt v_product NULL-velden
+  -- (fix van de latente 'record v_product is not assigned yet'-crash op
+  -- karpi_code-only regels — die zijn sinds mig 601/de nieuwe UI een normaal pad).
+  SELECT p.karpi_code, p.kwaliteit_code, p.kleur_code, p.zoeksleutel, p.omschrijving,
+         p.verkoopprijs AS vvp_m2
+    INTO v_product
+  FROM producten p
+  WHERE p.artikelnr = v_regel.artikelnr;
 
   FOR v_rol IN SELECT * FROM jsonb_array_elements(COALESCE(p_rollen, '[]'::jsonb)) LOOP
     v_lengte_cm := (v_rol->>'lengte_cm')::INTEGER;
     v_breedte_cm := (v_rol->>'breedte_cm')::INTEGER;
     v_rolnummer := NULLIF(TRIM(COALESCE(v_rol->>'rolnummer', '')), '');
 
-    IF v_lengte_cm IS NULL OR v_lengte_cm <= 0 THEN
-      RAISE EXCEPTION 'Ongeldige lengte_cm in rol: %', v_rol;
-    END IF;
-    IF v_breedte_cm IS NULL OR v_breedte_cm <= 0 THEN
-      RAISE EXCEPTION 'Ongeldige breedte_cm in rol: %', v_rol;
+    -- Locatie (mig 603): optioneel per rol; vindt-of-maakt de magazijnlocatie.
+    v_locatie_code := NULLIF(TRIM(COALESCE(v_rol->>'locatie', '')), '');
+    v_locatie_id := NULL;
+    IF v_locatie_code IS NOT NULL THEN
+      v_locatie_id := create_or_get_magazijn_locatie(v_locatie_code);
     END IF;
 
     IF v_rolnummer IS NULL THEN
@@ -1569,7 +1654,7 @@ BEGIN
       rolnummer, artikelnr, karpi_code, omschrijving,
       lengte_cm, breedte_cm, oppervlak_m2, vvp_m2,
       kwaliteit_code, kleur_code, zoeksleutel,
-      status, inkooporder_regel_id, reststuk_datum, in_magazijn_sinds
+      status, inkooporder_regel_id, reststuk_datum, in_magazijn_sinds, locatie_id
     ) VALUES (
       v_rolnummer, v_regel.artikelnr,
       COALESCE(v_product.karpi_code, v_regel.karpi_code),
@@ -1577,7 +1662,7 @@ BEGIN
       v_lengte_cm, v_breedte_cm, v_oppervlak_m2,
       v_product.vvp_m2,
       v_product.kwaliteit_code, v_product.kleur_code, v_product.zoeksleutel,
-      'beschikbaar', p_regel_id, NOW(), CURRENT_DATE
+      'beschikbaar', p_regel_id, NOW(), CURRENT_DATE, v_locatie_id
     )
     RETURNING id INTO v_nieuw_id;
 
@@ -1785,7 +1870,7 @@ $function$
 
 
 CREATE OR REPLACE FUNCTION public.claim_factuur_queue_items(p_max_batch integer DEFAULT 10)
- RETURNS TABLE(id bigint, debiteur_nr integer, order_ids bigint[], type text, attempts integer, zending_id bigint, verzendweek text, factuur_id bigint, gefinaliseerd_op timestamp with time zone)
+ RETURNS TABLE(id bigint, debiteur_nr integer, order_ids bigint[], order_id bigint, type text, attempts integer, zending_id bigint, verzendweek text, factuur_id bigint, gefinaliseerd_op timestamp with time zone)
  LANGUAGE sql
 AS $function$
   UPDATE factuur_queue q
@@ -1801,7 +1886,7 @@ AS $function$
       LIMIT p_max_batch
       FOR UPDATE SKIP LOCKED
    )
-  RETURNING q.id, q.debiteur_nr, q.order_ids, q.type, q.attempts,
+  RETURNING q.id, q.debiteur_nr, q.order_ids, q.order_id, q.type, q.attempts,
             q.zending_id, q.verzendweek, q.factuur_id, q.gefinaliseerd_op;
 $function$
 
@@ -2364,6 +2449,85 @@ BEGIN
   UPDATE edi_berichten SET order_id = v_order_id WHERE id = p_inkomend_bericht_id;
 
   RETURN v_order_id;
+END;
+$function$
+
+
+CREATE OR REPLACE FUNCTION public.create_inkooporder(p_header jsonb, p_regels jsonb)
+ RETURNS TABLE(inkooporder_id bigint, inkooporder_nr text)
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_leverancier_id BIGINT := (p_header->>'leverancier_id')::BIGINT;
+  v_nr TEXT;
+  v_id BIGINT;
+  v_regel JSONB;
+  v_regelnummer INTEGER := 0;
+  v_besteld NUMERIC;
+  v_eenheid TEXT;
+  v_artikelnr TEXT;
+BEGIN
+  IF v_leverancier_id IS NULL THEN
+    RAISE EXCEPTION 'leverancier_id is verplicht';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM leveranciers l WHERE l.id = v_leverancier_id) THEN
+    RAISE EXCEPTION 'Leverancier % bestaat niet', v_leverancier_id;
+  END IF;
+  IF p_regels IS NULL OR jsonb_typeof(p_regels) <> 'array' OR jsonb_array_length(p_regels) = 0 THEN
+    RAISE EXCEPTION 'Minimaal één regel is verplicht';
+  END IF;
+
+  v_nr := volgend_nummer('INK');
+
+  INSERT INTO inkooporders (
+    inkooporder_nr, leverancier_id, besteldatum, leverweek, verwacht_datum,
+    status, bron, opmerkingen
+  ) VALUES (
+    v_nr,
+    v_leverancier_id,
+    COALESCE(NULLIF(p_header->>'besteldatum', '')::DATE, CURRENT_DATE),
+    NULLIF(p_header->>'leverweek', ''),
+    NULLIF(p_header->>'verwacht_datum', '')::DATE,
+    'Besteld',
+    COALESCE(NULLIF(p_header->>'bron', ''), 'handmatig'),
+    NULLIF(p_header->>'opmerkingen', '')
+  ) RETURNING id INTO v_id;
+
+  FOR v_regel IN SELECT * FROM jsonb_array_elements(p_regels) LOOP
+    v_regelnummer := v_regelnummer + 1;
+    v_besteld  := (v_regel->>'besteld_m')::NUMERIC;
+    v_eenheid  := COALESCE(NULLIF(v_regel->>'eenheid', ''), 'm');
+    v_artikelnr := NULLIF(v_regel->>'artikelnr', '');
+
+    IF v_besteld IS NULL OR v_besteld <= 0 THEN
+      RAISE EXCEPTION 'Regel %: besteld_m moet > 0 zijn', v_regelnummer;
+    END IF;
+    IF v_eenheid NOT IN ('m', 'stuks') THEN
+      RAISE EXCEPTION 'Regel %: eenheid moet ''m'' of ''stuks'' zijn (kreeg %)', v_regelnummer, v_eenheid;
+    END IF;
+    IF v_artikelnr IS NULL AND NULLIF(v_regel->>'karpi_code', '') IS NULL THEN
+      RAISE EXCEPTION 'Regel %: artikelnr of karpi_code is verplicht', v_regelnummer;
+    END IF;
+    IF v_artikelnr IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM producten p WHERE p.artikelnr = v_artikelnr) THEN
+      RAISE EXCEPTION 'Regel %: artikel % bestaat niet', v_regelnummer, v_artikelnr;
+    END IF;
+
+    INSERT INTO inkooporder_regels (
+      inkooporder_id, regelnummer, artikelnr, karpi_code, artikel_omschrijving,
+      inkoopprijs_eur, besteld_m, geleverd_m, te_leveren_m, eenheid
+    ) VALUES (
+      v_id, v_regelnummer, v_artikelnr,
+      NULLIF(v_regel->>'karpi_code', ''),
+      NULLIF(v_regel->>'artikel_omschrijving', ''),
+      NULLIF(v_regel->>'inkoopprijs_eur', '')::NUMERIC,
+      v_besteld, 0, v_besteld, v_eenheid
+    );
+  END LOOP;
+
+  inkooporder_id := v_id;
+  inkooporder_nr := v_nr;
+  RETURN NEXT;
 END;
 $function$
 
@@ -2988,23 +3152,23 @@ BEGIN
    WHERE ac.sleutel = 'facturatie';
   v_vertraging_min := COALESCE(v_vertraging_min, 120);
 
-  -- Per zending waarin deze order zit: één queue-rij, beschikbaar over
-  -- v_vertraging_min minuten. ON CONFLICT dedupliceert het herhaald vuren van
-  -- de trigger voor de zusterorders van dezelfde bundel-zending (én voorkomt
-  -- nu ook een dubbele rij voor een deelzending die al eerder ingequeued is).
-  INSERT INTO factuur_queue (debiteur_nr, order_ids, type, zending_id, bron_event_id, beschikbaar_op)
+  -- Mig 578: per zending waarin deze order zit, één queue-rij VOOR DEZE ORDER
+  -- (order_id gevuld) — niet meer voor de hele bundel. ON CONFLICT
+  -- (zending_id, order_id) dedupliceert het herhaald vuren van de trigger
+  -- voor dezelfde (zending, order)-combinatie (en voorkomt nog steeds een
+  -- dubbele rij voor een deelzending die al eerder ingequeued is).
+  INSERT INTO factuur_queue (debiteur_nr, order_ids, order_id, type, zending_id, bron_event_id, beschikbaar_op)
   SELECT
     v_debiteur_nr,
-    (SELECT array_agg(zo2.order_id ORDER BY zo2.order_id)
-       FROM zending_orders zo2
-      WHERE zo2.zending_id = zo.zending_id),
+    ARRAY[NEW.order_id],
+    NEW.order_id,
     'per_zending',
     zo.zending_id,
     NEW.id,
     now() + make_interval(mins => v_vertraging_min)
   FROM zending_orders zo
   WHERE zo.order_id = NEW.order_id
-  ON CONFLICT (zending_id) WHERE zending_id IS NOT NULL DO NOTHING;
+  ON CONFLICT (zending_id, order_id) WHERE zending_id IS NOT NULL DO NOTHING;
 
   RETURN NEW;
 END;
@@ -3274,38 +3438,62 @@ END;
 $function$
 
 
-CREATE OR REPLACE FUNCTION public.finaliseer_concept_factuur(p_zending_id bigint, p_factuur_id bigint)
+CREATE OR REPLACE FUNCTION public.finaliseer_concept_factuur(p_zending_id bigint, p_factuur_id bigint, p_order_id bigint DEFAULT NULL::bigint)
  RETURNS bigint
  LANGUAGE plpgsql
 AS $function$
 DECLARE
-  v_factuur_id BIGINT;
-  v_order_ids  BIGINT[];
-  v_admin_regelnr INTEGER;
+  v_factuur_id      BIGINT;
+  v_order_ids       BIGINT[];
+  v_scope_ids       BIGINT[];
+  v_order_id_lookup BIGINT;
+  v_admin_regelnr   INTEGER;
   r RECORD;
 BEGIN
   IF p_factuur_id IS NULL THEN
     RAISE EXCEPTION 'p_factuur_id is verplicht voor finalisatie';
   END IF;
 
-  -- Verse rebuild op de bestaande concept-factuur.
-  v_factuur_id := projecteer_concept_factuur(p_zending_id, p_factuur_id);
+  -- Mig 578 deploy-window-vangnet: een oude 2-arg-aanroep (p_order_id NULL)
+  -- valt terug op de queue-rij die deze factuur bouwde, zodat alleen de
+  -- juiste order geflipt wordt i.p.v. de hele bundel.
+  IF p_order_id IS NULL THEN
+    SELECT fq.order_id INTO v_order_id_lookup
+      FROM factuur_queue fq
+     WHERE fq.factuur_id = p_factuur_id
+     LIMIT 1;
+    IF v_order_id_lookup IS NOT NULL THEN
+      p_order_id := v_order_id_lookup;
+    END IF;
+  END IF;
+
+  -- Verse rebuild op de bestaande concept-factuur, met dezelfde order-scope.
+  v_factuur_id := projecteer_concept_factuur(p_zending_id, p_factuur_id, p_order_id);
 
   SELECT array_agg(zo.order_id ORDER BY zo.order_id)
     INTO v_order_ids
     FROM zending_orders zo
    WHERE zo.zending_id = p_zending_id;
 
+  v_scope_ids := CASE WHEN p_order_id IS NULL THEN v_order_ids ELSE ARRAY[p_order_id] END;
+
   -- Side-effect 1: flip gefactureerd (product + VERZEND; korting-orderregels
   -- bestaan hier nog niet en worden hieronder met gefactureerd=1 ingevoegd).
+  -- Mig 578: WHERE order_id = ANY(v_scope_ids) i.p.v. de hele bundel — bij een
+  -- order-scoped factuur mag de flip alleen DIE order raken, anders zou
+  -- factuur 2 straks 0 te-factureren regels vinden voor een order die al
+  -- door factuur 1 geflipt was.
   UPDATE order_regels
      SET gefactureerd = orderaantal
-   WHERE order_id = ANY(v_order_ids)
+   WHERE order_id = ANY(v_scope_ids)
      AND COALESCE(gefactureerd, 0) < orderaantal
      AND pick_backorder_sinds IS NULL AND pick_backorder_geannuleerd_op IS NULL
      AND COALESCE(artikelnr, '') NOT IN ('BUNDELKORTING', 'DREMPELKORTING');
 
   -- Side-effect 2: spiegel de korting-FACTUURregels naar korting-ORDERregels.
+  -- Loopt al via `factuur_regels WHERE factuur_id = v_factuur_id` — die bevat
+  -- bij een order-scoped factuur alleen de eigen korting-regel(s), dus dit is
+  -- automatisch per-order correct zonder wijziging.
   -- bedrag <> 0 filtert het theoretische DREMPEL-bij-0-verzendkosten-geval
   -- (mig 341 deel 3a vereiste v_verzendkosten_per_order > 0).
   FOR r IN
@@ -4632,6 +4820,45 @@ BEGIN
   LOOP
     PERFORM herbereken_wacht_status(v_order_id, FALSE);
   END LOOP;
+END;
+$function$
+
+
+CREATE OR REPLACE FUNCTION public.herbereken_inkooporder_status(p_inkooporder_id bigint)
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_status inkooporder_status;
+  v_regels INTEGER;
+  v_open INTEGER;
+  v_geleverd NUMERIC;
+BEGIN
+  SELECT status INTO v_status FROM inkooporders WHERE id = p_inkooporder_id FOR UPDATE;
+  -- Concept nooit stil promoveren: een order in opbouw blijft Concept tot een
+  -- expliciete actie hem op Besteld zet (dormant vandaag — create_inkooporder
+  -- mig 601 zet direct 'Besteld' — maar goedkope robuustheid; spec-review 02-07).
+  IF NOT FOUND OR v_status IN ('Geannuleerd', 'Concept') THEN RETURN; END IF;
+
+  SELECT COUNT(*),
+         COUNT(*) FILTER (WHERE te_leveren_m > 0),
+         COALESCE(SUM(geleverd_m), 0)
+    INTO v_regels, v_open, v_geleverd
+    FROM inkooporder_regels
+   WHERE inkooporder_id = p_inkooporder_id;
+
+  IF v_regels = 0 THEN RETURN; END IF;
+
+  IF v_open = 0 THEN
+    UPDATE inkooporders SET status = 'Ontvangen'
+     WHERE id = p_inkooporder_id AND status <> 'Ontvangen';
+  ELSIF v_geleverd > 0 THEN
+    UPDATE inkooporders SET status = 'Deels ontvangen'
+     WHERE id = p_inkooporder_id AND status <> 'Deels ontvangen';
+  ELSE
+    UPDATE inkooporders SET status = 'Besteld'
+     WHERE id = p_inkooporder_id AND status NOT IN ('Concept', 'Besteld');
+  END IF;
 END;
 $function$
 
@@ -7413,6 +7640,40 @@ END;
 $function$
 
 
+CREATE OR REPLACE FUNCTION public.markeer_hst_verstuurd(p_id bigint, p_extern_transport_order_id text, p_extern_tracking_number text, p_request_payload jsonb, p_response_payload jsonb, p_response_http_code integer)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE
+  v_zending_id BIGINT;
+BEGIN
+  UPDATE hst_transportorders
+     SET status = 'Verstuurd',
+         extern_transport_order_id = p_extern_transport_order_id,
+         extern_tracking_number = p_extern_tracking_number,
+         request_payload = p_request_payload,
+         response_payload = p_response_payload,
+         response_http_code = p_response_http_code,
+         sent_at = now(),
+         error_msg = NULL
+   WHERE id = p_id
+   RETURNING zending_id INTO v_zending_id;
+
+  -- Tracking + status doorzetten naar zending
+  IF v_zending_id IS NOT NULL THEN
+    UPDATE zendingen
+       SET track_trace = COALESCE(p_extern_tracking_number, p_extern_transport_order_id),
+           status = CASE
+             WHEN status = 'Klaar voor verzending' THEN 'Onderweg'::zending_status
+             ELSE status
+           END
+     WHERE id = v_zending_id;
+  END IF;
+END;
+$function$
+
+
 CREATE OR REPLACE FUNCTION public.markeer_hst_verstuurd(p_id bigint, p_extern_transport_order_id text, p_extern_tracking_number text, p_request_payload jsonb, p_response_payload jsonb, p_response_http_code integer, p_pdf_path text DEFAULT NULL::text, p_pdf_uploaded_at timestamp with time zone DEFAULT NULL::timestamp with time zone)
  RETURNS void
  LANGUAGE plpgsql
@@ -7436,40 +7697,6 @@ BEGIN
    RETURNING zending_id INTO v_zending_id;
 
   -- Tracking + status doorzetten naar zending (ongewijzigd t.o.v. mig 171)
-  IF v_zending_id IS NOT NULL THEN
-    UPDATE zendingen
-       SET track_trace = COALESCE(p_extern_tracking_number, p_extern_transport_order_id),
-           status = CASE
-             WHEN status = 'Klaar voor verzending' THEN 'Onderweg'::zending_status
-             ELSE status
-           END
-     WHERE id = v_zending_id;
-  END IF;
-END;
-$function$
-
-
-CREATE OR REPLACE FUNCTION public.markeer_hst_verstuurd(p_id bigint, p_extern_transport_order_id text, p_extern_tracking_number text, p_request_payload jsonb, p_response_payload jsonb, p_response_http_code integer)
- RETURNS void
- LANGUAGE plpgsql
- SECURITY DEFINER
-AS $function$
-DECLARE
-  v_zending_id BIGINT;
-BEGIN
-  UPDATE hst_transportorders
-     SET status = 'Verstuurd',
-         extern_transport_order_id = p_extern_transport_order_id,
-         extern_tracking_number = p_extern_tracking_number,
-         request_payload = p_request_payload,
-         response_payload = p_response_payload,
-         response_http_code = p_response_http_code,
-         sent_at = now(),
-         error_msg = NULL
-   WHERE id = p_id
-   RETURNING zending_id INTO v_zending_id;
-
-  -- Tracking + status doorzetten naar zending
   IF v_zending_id IS NOT NULL THEN
     UPDATE zendingen
        SET track_trace = COALESCE(p_extern_tracking_number, p_extern_transport_order_id),
@@ -8698,7 +8925,7 @@ END;
 $function$
 
 
-CREATE OR REPLACE FUNCTION public.projecteer_concept_factuur(p_zending_id bigint, p_factuur_id bigint DEFAULT NULL::bigint)
+CREATE OR REPLACE FUNCTION public.projecteer_concept_factuur(p_zending_id bigint, p_factuur_id bigint DEFAULT NULL::bigint, p_order_id bigint DEFAULT NULL::bigint)
  RETURNS bigint
  LANGUAGE plpgsql
 AS $function$
@@ -8713,10 +8940,13 @@ DECLARE
   v_betaaltermijn_dagen   INTEGER := 30;
   v_aantal_te_factureren  INTEGER;
   v_order_ids             BIGINT[];
+  v_scope_ids             BIGINT[];
+  v_order_id_lookup       BIGINT;
   v_subtotaal             NUMERIC(12,2);
   v_btw_bedrag            NUMERIC(12,2);
   v_totaal                NUMERIC(12,2);
   v_bundel_subtotaal      NUMERIC(12,2);
+  v_drempel_grondslag     NUMERIC(12,2);
   v_is_afhalen            BOOLEAN;
   v_vk                    RECORD;
   -- Toeslag (mig 529/532)
@@ -8742,6 +8972,28 @@ BEGIN
     RAISE EXCEPTION 'Zending % heeft geen gekoppelde orders', p_zending_id;
   END IF;
 
+  -- Mig 578 deploy-window-vangnet: een oude aanroep-vorm (2 args, of expliciet
+  -- p_order_id NULL) op een BESTAANDE concept-factuur valt terug op de
+  -- queue-rij die 'm gebouwd heeft, zodat de scope niet per ongeluk naar de
+  -- hele bundel terugvalt tijdens het venster tussen mig-apply en edge-deploy.
+  IF p_factuur_id IS NOT NULL AND p_order_id IS NULL THEN
+    SELECT fq.order_id INTO v_order_id_lookup
+      FROM factuur_queue fq
+     WHERE fq.factuur_id = p_factuur_id
+     LIMIT 1;
+    IF v_order_id_lookup IS NOT NULL THEN
+      p_order_id := v_order_id_lookup;
+    END IF;
+  END IF;
+
+  IF p_order_id IS NOT NULL AND NOT (p_order_id = ANY(v_order_ids)) THEN
+    RAISE EXCEPTION 'Order % hoort niet bij zending % (orders: %)',
+      p_order_id, p_zending_id, v_order_ids;
+  END IF;
+
+  -- Scope-array: NULL = hele bundel (legacy/in-flight); gezet = 1 order.
+  v_scope_ids := CASE WHEN p_order_id IS NULL THEN v_order_ids ELSE ARRAY[p_order_id] END;
+
   IF (SELECT COUNT(DISTINCT debiteur_nr) FROM orders WHERE id = ANY(v_order_ids)) > 1 THEN
     RAISE EXCEPTION 'Bundel-zending % kruist debiteur-grens (orders %)',
       p_zending_id, v_order_ids;
@@ -8753,10 +9005,11 @@ BEGIN
     RAISE EXCEPTION 'Geen debiteur voor orders %', v_order_ids;
   END IF;
 
-  -- Mig 550 (hersteld van mig 456/518): eerste order als representatief
-  -- afleverland. Bundel-zending is al gegroepeerd op genormaliseerd adres, dus
-  -- gemengd-land-binnen-1-bundel is een laag restrisico.
-  SELECT * INTO v_eerste_order FROM orders WHERE id = v_order_ids[1];
+  -- Mig 578: afleverland/BTW-representant is de scope-order zelf (was
+  -- v_order_ids[1] — voor een order-scoped factuur is dat exact dezelfde
+  -- order; voor het NULL-pad is v_scope_ids[1] = v_order_ids[1], dus
+  -- byte-identiek).
+  SELECT * INTO v_eerste_order FROM orders WHERE id = v_scope_ids[1];
 
   SELECT * INTO v_btw_regeling
     FROM bepaal_btw_regeling(
@@ -8771,9 +9024,10 @@ BEGIN
   v_btw_pct := v_btw_regeling.effectief_pct;
   v_betaaltermijn_dagen := betaaltermijn_dagen(v_debiteur.betaalconditie);
 
-  -- Toeslag-activatie (mig 532): geldig als toeslag_actief=TRUE EN ALLE orders
-  -- in de zending zijn aangemaakt binnen de periode begindatum..einddatum.
-  -- BOOL_AND over lege set = NULL → FALSE → geen toeslag (veilig).
+  -- Toeslag-activatie (mig 532), scope-gebonden (mig 578: v_scope_ids i.p.v.
+  -- v_order_ids — bij een order-scoped factuur telt alleen de eigen order
+  -- mee voor de aanmaakdatum-periode-check). BOOL_AND over lege set = NULL
+  -- → FALSE → geen toeslag (veilig).
   v_toeslag_actief := COALESCE(v_debiteur.toeslag_actief, FALSE)
     AND v_debiteur.toeslag_procent IS NOT NULL
     AND (
@@ -8781,15 +9035,16 @@ BEGIN
             o.created_at::date >= COALESCE(v_debiteur.toeslag_begindatum, 'infinity'::date)
             AND o.created_at::date <= COALESCE(v_debiteur.toeslag_einddatum, 'infinity'::date)
         )
-        FROM orders o WHERE o.id = ANY(v_order_ids)
+        FROM orders o WHERE o.id = ANY(v_scope_ids)
     );
 
-  -- No-op-guard: faal vroeg als alle regels al gefactureerd zijn.
-  -- pick_backorder-filter (mig 518/hersteld): regels met actieve
-  -- backorder-markering worden nooit gefactureerd — gelijk aan finaliseer.
+  -- No-op-guard: faal vroeg als alle regels al gefactureerd zijn. Scope-
+  -- gebonden (mig 578: v_scope_ids). pick_backorder-filter (mig 518/hersteld):
+  -- regels met actieve backorder-markering worden nooit gefactureerd — gelijk
+  -- aan finaliseer.
   SELECT COUNT(*) INTO v_aantal_te_factureren
     FROM order_regels orr
-   WHERE orr.order_id = ANY(v_order_ids)
+   WHERE orr.order_id = ANY(v_scope_ids)
      AND COALESCE(orr.gefactureerd, 0) < orr.orderaantal
      AND orr.pick_backorder_sinds IS NULL AND orr.pick_backorder_geannuleerd_op IS NULL
      AND COALESCE(orr.artikelnr, '') NOT IN ('BUNDELKORTING', 'DREMPELKORTING');
@@ -8846,7 +9101,8 @@ BEGIN
 
   -- Product- + VERZEND-orderregels (1 factuur-regel per order × regel).
   -- BUNDELKORTING/DREMPELKORTING → hieronder als korting-factuurregels.
-  -- TOESLAG (pseudo-orderregel) → eigen totaal-sectie (mig 529).
+  -- TOESLAG (pseudo-orderregel) → eigen totaal-sectie (mig 529). Scope-
+  -- gebonden (mig 578: v_scope_ids i.p.v. v_order_ids).
   INSERT INTO factuur_regels (
     factuur_id, order_id, order_regel_id, regelnummer,
     artikelnr, omschrijving, omschrijving_2,
@@ -8860,25 +9116,51 @@ BEGIN
     orr.orderaantal, orr.prijs, COALESCE(orr.korting_pct, 0), orr.bedrag, v_btw_pct
   FROM order_regels orr
   JOIN orders o ON o.id = orr.order_id
-  WHERE orr.order_id = ANY(v_order_ids)
+  WHERE orr.order_id = ANY(v_scope_ids)
     AND COALESCE(orr.gefactureerd, 0) < orr.orderaantal
     AND COALESCE(orr.artikelnr, '') NOT IN ('BUNDELKORTING', 'DREMPELKORTING', 'TOESLAG')
   ORDER BY orr.order_id, orr.regelnummer;
 
-  -- Product-subtotaal (excl. VERZEND) = grondslag voor toeslag + drempel-check.
+  -- Product-subtotaal (excl. VERZEND) van de EIGEN factuur = grondslag voor
+  -- de toeslag (ongewijzigd, mig 529) — bewust NIET de drempel-grondslag
+  -- (zie hieronder).
   SELECT COALESCE(SUM(bedrag), 0)::NUMERIC(12,2)
     INTO v_bundel_subtotaal
     FROM factuur_regels
    WHERE factuur_id = v_factuur_id
      AND COALESCE(artikelnr, '') NOT IN ('VERZEND', 'BUNDELKORTING', 'DREMPELKORTING');
 
+  -- Mig 578 drempel-grondslag-fix: de bundel-brede drempel-toets mag niet
+  -- langer leunen op de factuurregels van ÉÉN (order-scoped) factuur — bij
+  -- per-order-facturen zou finalisatie van factuur 1 (gefactureerd-flip) de
+  -- grondslag verlagen die factuur 2's verse rebuild ziet, waardoor de
+  -- korting zou verdwijnen afhankelijk van finalisatie-volgorde. Nieuw:
+  -- grondslag = SUM(order_regels.bedrag) over ALLE v_order_ids (de hele
+  -- zending, ongeacht scope), MET de bestaande backorder-filters, ZONDER
+  -- gefactureerd-filter. Deterministisch en volgorde-onafhankelijk.
+  -- Bewuste semantiek-nuance bij deelzending-overlap: de grondslag telt de
+  -- hele order-waarde (ook een al-gefactureerd deel) — klant-gunstig, past
+  -- bij de combi-intentie (gedocumenteerd in ADR-0041).
+  SELECT COALESCE(SUM(orr.bedrag), 0)::NUMERIC(12,2)
+    INTO v_drempel_grondslag
+    FROM order_regels orr
+   WHERE orr.order_id = ANY(v_order_ids)
+     AND orr.pick_backorder_sinds IS NULL AND orr.pick_backorder_geannuleerd_op IS NULL
+     AND COALESCE(orr.artikelnr, '') NOT IN ('VERZEND', 'BUNDELKORTING', 'DREMPELKORTING', 'TOESLAG');
+
   SELECT BOOL_OR(COALESCE(o.afhalen, FALSE))
     INTO v_is_afhalen
     FROM orders o
    WHERE o.id = ANY(v_order_ids);
 
+  -- NULL-pad (legacy/in-flight rijen): oude grondslag uit de eigen
+  -- factuurregels, byte-identiek aan het pre-578-gedrag. Alleen een
+  -- order-scoped factuur gebruikt de nieuwe volgorde-onafhankelijke grondslag.
   SELECT * INTO v_vk
-    FROM verzendkosten_voor_bundel(v_debiteur.debiteur_nr, v_bundel_subtotaal, v_is_afhalen);
+    FROM verzendkosten_voor_bundel(
+      v_debiteur.debiteur_nr,
+      CASE WHEN p_order_id IS NULL THEN v_bundel_subtotaal ELSE v_drempel_grondslag END,
+      v_is_afhalen);
 
   -- Korting-FACTUURregels (DREMPELKORTING/BUNDELKORTING).
   DECLARE
@@ -8898,36 +9180,15 @@ BEGIN
     SELECT COALESCE(MAX(regelnummer), 0) INTO v_korting_regelnr
       FROM factuur_regels WHERE factuur_id = v_factuur_id;
 
-    -- 1) DREMPELKORTING op order[1]
-    IF v_vk.status = 'gratis_drempel' AND v_aantal_verzend_regels > 0 THEN
-      SELECT order_nr, klant_referentie
-        INTO v_target_order_nr, v_target_uw_referentie
-        FROM orders WHERE id = v_order_ids[1];
+    IF p_order_id IS NULL THEN
+      -- Mig 578: ongewijzigde hele-bundel-logica — byte-identiek voor
+      -- in-flight (legacy) rijen zonder order-scope.
 
-      v_korting_regelnr := v_korting_regelnr + 1;
-      INSERT INTO factuur_regels (
-        factuur_id, order_id, order_regel_id, regelnummer,
-        artikelnr, omschrijving,
-        uw_referentie, order_nr,
-        aantal, prijs, korting_pct, bedrag, btw_percentage
-      ) VALUES (
-        v_factuur_id, v_order_ids[1], NULL, v_korting_regelnr,
-        'DREMPELKORTING',
-        format('Drempelkorting verzending — vanaf €%s',
-          to_char(v_debiteur.verzend_drempel, 'FM999999.00')),
-        v_target_uw_referentie, v_target_order_nr,
-        1, -v_verzendkosten_per_order, 0, -v_verzendkosten_per_order, v_btw_pct
-      );
-    END IF;
-
-    -- 2) BUNDELKORTING per order[2..N]
-    IF v_verzendkosten_per_order > 0 AND v_aantal_verzend_regels > 1 THEN
-      FOR v_order_idx IN 2..array_length(v_order_ids, 1) LOOP
-        v_target_order_id := v_order_ids[v_order_idx];
-
+      -- 1) DREMPELKORTING op order[1]
+      IF v_vk.status = 'gratis_drempel' AND v_aantal_verzend_regels > 0 THEN
         SELECT order_nr, klant_referentie
           INTO v_target_order_nr, v_target_uw_referentie
-          FROM orders WHERE id = v_target_order_id;
+          FROM orders WHERE id = v_order_ids[1];
 
         v_korting_regelnr := v_korting_regelnr + 1;
         INSERT INTO factuur_regels (
@@ -8936,18 +9197,102 @@ BEGIN
           uw_referentie, order_nr,
           aantal, prijs, korting_pct, bedrag, btw_percentage
         ) VALUES (
-          v_factuur_id, v_target_order_id, NULL, v_korting_regelnr,
-          'BUNDELKORTING',
-          format('Bundelkorting verzending (gebundeld %s orders)',
-            v_aantal_verzend_regels),
+          v_factuur_id, v_order_ids[1], NULL, v_korting_regelnr,
+          'DREMPELKORTING',
+          format('Drempelkorting verzending — vanaf €%s',
+            to_char(v_debiteur.verzend_drempel, 'FM999999.00')),
           v_target_uw_referentie, v_target_order_nr,
           1, -v_verzendkosten_per_order, 0, -v_verzendkosten_per_order, v_btw_pct
         );
-      END LOOP;
+      END IF;
+
+      -- 2) BUNDELKORTING per order[2..N]
+      IF v_verzendkosten_per_order > 0 AND v_aantal_verzend_regels > 1 THEN
+        FOR v_order_idx IN 2..array_length(v_order_ids, 1) LOOP
+          v_target_order_id := v_order_ids[v_order_idx];
+
+          SELECT order_nr, klant_referentie
+            INTO v_target_order_nr, v_target_uw_referentie
+            FROM orders WHERE id = v_target_order_id;
+
+          v_korting_regelnr := v_korting_regelnr + 1;
+          INSERT INTO factuur_regels (
+            factuur_id, order_id, order_regel_id, regelnummer,
+            artikelnr, omschrijving,
+            uw_referentie, order_nr,
+            aantal, prijs, korting_pct, bedrag, btw_percentage
+          ) VALUES (
+            v_factuur_id, v_target_order_id, NULL, v_korting_regelnr,
+            'BUNDELKORTING',
+            format('Bundelkorting verzending (gebundeld %s orders)',
+              v_aantal_verzend_regels),
+            v_target_uw_referentie, v_target_order_nr,
+            1, -v_verzendkosten_per_order, 0, -v_verzendkosten_per_order, v_btw_pct
+          );
+        END LOOP;
+      END IF;
+
+    ELSE
+      -- Mig 578: order-scoped factuur — de eigen VERZEND-regel op DEZE
+      -- factuur bepaalt of/welke korting hier hoort. Geen eigen VERZEND-regel
+      -- (bv. een pseudo-scope zonder verzendkosten) → geen korting-regel.
+      IF v_aantal_verzend_regels > 0 THEN
+        IF p_order_id = v_order_ids[1] THEN
+          -- Verzendkosten-drager: drempel gehaald → DREMPELKORTING
+          -- neutraliseert de eigen VERZEND-regel; anders blijft VERZEND
+          -- gewoon staan (klant betaalt 1× verzendkosten per bundel).
+          IF v_vk.status = 'gratis_drempel' THEN
+            SELECT order_nr, klant_referentie
+              INTO v_target_order_nr, v_target_uw_referentie
+              FROM orders WHERE id = p_order_id;
+
+            v_korting_regelnr := v_korting_regelnr + 1;
+            INSERT INTO factuur_regels (
+              factuur_id, order_id, order_regel_id, regelnummer,
+              artikelnr, omschrijving,
+              uw_referentie, order_nr,
+              aantal, prijs, korting_pct, bedrag, btw_percentage
+            ) VALUES (
+              v_factuur_id, p_order_id, NULL, v_korting_regelnr,
+              'DREMPELKORTING',
+              format('Drempelkorting verzending — vanaf €%s',
+                to_char(v_debiteur.verzend_drempel, 'FM999999.00')),
+              v_target_uw_referentie, v_target_order_nr,
+              1, -v_verzendkosten_per_order, 0, -v_verzendkosten_per_order, v_btw_pct
+            );
+          END IF;
+        ELSE
+          -- Zusterorder: een bundel is 1 fysieke transportbeweging —
+          -- zusterorders betalen nooit verzendkosten, ongeacht de drempel.
+          -- N = array_length(v_order_ids) — uit de zending, niet uit de
+          -- (altijd ≤1) VERZEND-regels op deze eigen factuur.
+          IF v_verzendkosten_per_order > 0 THEN
+            SELECT order_nr, klant_referentie
+              INTO v_target_order_nr, v_target_uw_referentie
+              FROM orders WHERE id = p_order_id;
+
+            v_korting_regelnr := v_korting_regelnr + 1;
+            INSERT INTO factuur_regels (
+              factuur_id, order_id, order_regel_id, regelnummer,
+              artikelnr, omschrijving,
+              uw_referentie, order_nr,
+              aantal, prijs, korting_pct, bedrag, btw_percentage
+            ) VALUES (
+              v_factuur_id, p_order_id, NULL, v_korting_regelnr,
+              'BUNDELKORTING',
+              format('Bundelkorting verzending (gebundeld %s orders)',
+                array_length(v_order_ids, 1)),
+              v_target_uw_referentie, v_target_order_nr,
+              1, -v_verzendkosten_per_order, 0, -v_verzendkosten_per_order, v_btw_pct
+            );
+          END IF;
+        END IF;
+      END IF;
     END IF;
   END;
 
-  -- Toeslag-berekening (mig 529): grondslag = v_bundel_subtotaal (product excl. VERZEND).
+  -- Toeslag-berekening (mig 529): grondslag = v_bundel_subtotaal (product
+  -- excl. VERZEND, over de EIGEN factuurregels) — ongewijzigde formule.
   IF v_toeslag_actief THEN
     v_toeslag_bedrag := ROUND(v_bundel_subtotaal * v_debiteur.toeslag_procent / 100, 2);
     v_toeslag_omschrijving := REPLACE(
@@ -12517,13 +12862,25 @@ BEGIN
         fact_naam = p_header->>'fact_naam', fact_adres = p_header->>'fact_adres',
         fact_postcode = p_header->>'fact_postcode', fact_plaats = p_header->>'fact_plaats',
         fact_land = p_header->>'fact_land',
+        fact_email = NULLIF(p_header->>'fact_email', ''),
         afl_naam = p_header->>'afl_naam', afl_naam_2 = p_header->>'afl_naam_2',
         afl_adres = p_header->>'afl_adres', afl_postcode = p_header->>'afl_postcode',
         afl_plaats = p_header->>'afl_plaats', afl_land = p_header->>'afl_land',
+        afl_email = NULLIF(p_header->>'afl_email', ''),
         lever_modus = CASE
           WHEN p_header ? 'lever_modus'
             THEN NULLIF(p_header->>'lever_modus', '')
           ELSE lever_modus
+        END,
+        afhalen = CASE
+          WHEN p_header ? 'afhalen'
+            THEN COALESCE((p_header->>'afhalen')::BOOLEAN, false)
+          ELSE afhalen
+        END,
+        lever_type = CASE
+          WHEN p_header ? 'lever_type'
+            THEN COALESCE(NULLIF(p_header->>'lever_type', ''), 'week')::lever_type
+          ELSE lever_type
         END,
         combi_levering_override = CASE
           WHEN p_header ? 'combi_levering_override'
@@ -12924,7 +13281,7 @@ DECLARE
   v_fid BIGINT;
 BEGIN
   FOR r IN
-    SELECT q.id, q.zending_id
+    SELECT q.id, q.zending_id, q.order_id
       FROM factuur_queue q
      WHERE q.status = 'pending'
        AND q.factuur_id IS NULL
@@ -12934,7 +13291,7 @@ BEGIN
      FOR UPDATE SKIP LOCKED
   LOOP
     BEGIN
-      v_fid := projecteer_concept_factuur(r.zending_id, NULL);
+      v_fid := projecteer_concept_factuur(r.zending_id, NULL, r.order_id);
       UPDATE factuur_queue SET factuur_id = v_fid WHERE id = r.id;
       queue_id := r.id; factuur_id := v_fid;
       RETURN NEXT;
@@ -13033,6 +13390,46 @@ END;
 $function$
 
 
+CREATE OR REPLACE FUNCTION public.verwijder_inkooporder_regel(p_regel_id bigint, p_vrijgeven boolean DEFAULT false)
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_regel inkooporder_regels%ROWTYPE;
+BEGIN
+  SELECT * INTO v_regel FROM inkooporder_regels WHERE id = p_regel_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Inkooporder-regel % niet gevonden', p_regel_id;
+  END IF;
+  IF v_regel.geleverd_m > 0
+     OR EXISTS (SELECT 1 FROM rollen r WHERE r.inkooporder_regel_id = p_regel_id) THEN
+    RAISE EXCEPTION 'Regel heeft al ontvangsten — gebruik "Regel annuleren" i.p.v. verwijderen';
+  END IF;
+  -- order_reserveringen is append-only historie (claims worden status-geflipt
+  -- naar released/verzonden/geleverd, nooit verwijderd) én de FK
+  -- order_reserveringen.inkooporder_regel_id is ON DELETE RESTRICT — een regel
+  -- die OOIT een claim droeg was operationeel actief en de DELETE zou hoe dan
+  -- ook op een rauwe 23503 FK-fout stranden (live gereproduceerd op regel 401:
+  -- 0 actieve, 4 released claims). De FK nullen zou de audit-koppeling
+  -- vernietigen — weiger dus met een heldere melding; verwijderen is alleen
+  -- voor pure vergissingen zonder enige historie.
+  IF EXISTS (SELECT 1 FROM order_reserveringen orr WHERE orr.inkooporder_regel_id = p_regel_id) THEN
+    RAISE EXCEPTION 'Regel heeft claim-historie (audit-trail) — gebruik "Regel annuleren" i.p.v. verwijderen';
+  END IF;
+  IF (SELECT COUNT(*) FROM inkooporder_regels
+       WHERE inkooporder_id = v_regel.inkooporder_id) = 1 THEN
+    RAISE EXCEPTION 'Laatste regel van de order — annuleer de hele inkooporder i.p.v. de regel te verwijderen';
+  END IF;
+
+  -- Zelfde Claim-vloer + vrijgeef-mechaniek als verlagen-naar-0; de check op
+  -- resterende claims beschermt de ON DELETE RESTRICT-FK van order_reserveringen.
+  PERFORM wijzig_inkooporder_regel(p_regel_id, 0, NULL, p_vrijgeven);
+  DELETE FROM inkooporder_regels WHERE id = p_regel_id;
+  PERFORM herbereken_inkooporder_status(v_regel.inkooporder_id);
+END;
+$function$
+
+
 CREATE OR REPLACE FUNCTION public.verwijder_portal_toegang(p_leverancier_id integer)
  RETURNS void
  LANGUAGE plpgsql
@@ -13103,6 +13500,61 @@ AS $function$
     WHEN p_datum IS NULL THEN NULL
     ELSE to_char(p_datum, 'IYYY') || '-W' || to_char(p_datum, 'IW')
   END;
+$function$
+
+
+CREATE OR REPLACE FUNCTION public.voeg_inkooporder_regel_toe(p_inkooporder_id bigint, p_regel jsonb)
+ RETURNS bigint
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_status inkooporder_status;
+  v_besteld NUMERIC := (p_regel->>'besteld_m')::NUMERIC;
+  v_eenheid TEXT := COALESCE(NULLIF(p_regel->>'eenheid', ''), 'm');
+  v_artikelnr TEXT := NULLIF(p_regel->>'artikelnr', '');
+  v_nieuw_id BIGINT;
+BEGIN
+  SELECT status INTO v_status FROM inkooporders WHERE id = p_inkooporder_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Inkooporder % niet gevonden', p_inkooporder_id;
+  END IF;
+  IF v_status = 'Geannuleerd' THEN
+    RAISE EXCEPTION 'Inkooporder is geannuleerd — geen regels meer toe te voegen';
+  END IF;
+  IF v_besteld IS NULL OR v_besteld <= 0 THEN
+    RAISE EXCEPTION 'besteld_m moet > 0 zijn';
+  END IF;
+  IF v_eenheid NOT IN ('m', 'stuks') THEN
+    RAISE EXCEPTION 'eenheid moet ''m'' of ''stuks'' zijn (kreeg %)', v_eenheid;
+  END IF;
+  IF v_artikelnr IS NULL AND NULLIF(p_regel->>'karpi_code', '') IS NULL THEN
+    RAISE EXCEPTION 'artikelnr of karpi_code is verplicht';
+  END IF;
+  IF v_artikelnr IS NOT NULL
+     AND NOT EXISTS (SELECT 1 FROM producten p WHERE p.artikelnr = v_artikelnr) THEN
+    RAISE EXCEPTION 'Artikel % bestaat niet', v_artikelnr;
+  END IF;
+
+  INSERT INTO inkooporder_regels (
+    inkooporder_id, regelnummer, artikelnr, karpi_code, artikel_omschrijving,
+    inkoopprijs_eur, besteld_m, geleverd_m, te_leveren_m, eenheid
+  )
+  SELECT p_inkooporder_id,
+         COALESCE(MAX(r.regelnummer), 0) + 1,
+         v_artikelnr,
+         NULLIF(p_regel->>'karpi_code', ''),
+         NULLIF(p_regel->>'artikel_omschrijving', ''),
+         NULLIF(p_regel->>'inkoopprijs_eur', '')::NUMERIC,
+         v_besteld, 0, v_besteld, v_eenheid
+    FROM inkooporder_regels r
+   WHERE r.inkooporder_id = p_inkooporder_id
+  RETURNING id INTO v_nieuw_id;
+
+  -- trg_io_regel_insert_swap_evaluate (mig 297/470) en trg_sync_besteld_inkoop
+  -- vuren vanzelf op deze INSERT.
+  PERFORM herbereken_inkooporder_status(p_inkooporder_id);
+  RETURN v_nieuw_id;
+END;
 $function$
 
 
@@ -13481,6 +13933,272 @@ END;
 $function$
 
 
+CREATE OR REPLACE FUNCTION public.voltooi_snijplan_rol(p_rol_id bigint, p_gesneden_door text DEFAULT NULL::text)
+ RETURNS TABLE(reststuk_id bigint, reststuk_rolnummer text, reststuk_lengte_cm integer)
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_rol RECORD;
+  v_gebruikte_lengte NUMERIC;
+  v_rest_lengte INTEGER;
+  v_nieuw_rolnummer TEXT;
+  v_reststuk_id BIGINT;
+  v_min_reststuk_cm INTEGER := 50; -- minimale lengte om reststuk aan te maken
+BEGIN
+  -- 1. Lock en haal rol op
+  SELECT * INTO v_rol FROM rollen WHERE id = p_rol_id FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Rol % niet gevonden', p_rol_id;
+  END IF;
+
+  IF v_rol.status <> 'in_snijplan' THEN
+    RAISE EXCEPTION 'Rol % heeft status "%" — kan alleen "in_snijplan" rollen voltooien', p_rol_id, v_rol.status;
+  END IF;
+
+  -- 2. Bereken gebruikte lengte op basis van geplaatste snijplannen
+  SELECT COALESCE(MAX(positie_y_cm + breedte_cm), 0)
+  INTO v_gebruikte_lengte
+  FROM snijvoorstel_plaatsingen
+  WHERE rol_id = p_rol_id
+    AND voorstel_id IN (SELECT id FROM snijvoorstellen WHERE status = 'goedgekeurd');
+
+  -- Fallback: bereken uit snijplannen direct
+  IF v_gebruikte_lengte = 0 THEN
+    SELECT COALESCE(MAX(positie_y_cm +
+      CASE WHEN geroteerd THEN lengte_cm ELSE breedte_cm END
+    ), 0)
+    INTO v_gebruikte_lengte
+    FROM snijplannen
+    WHERE rol_id = p_rol_id
+      AND status = 'Gepland';
+  END IF;
+
+  v_rest_lengte := GREATEST(0, v_rol.lengte_cm - CEIL(v_gebruikte_lengte));
+
+  -- 3. Markeer alle geplande snijplannen op deze rol als 'Gesneden'
+  UPDATE snijplannen
+  SET status = 'Gesneden',
+      gesneden_datum = CURRENT_DATE,
+      gesneden_op = NOW(),
+      gesneden_door = p_gesneden_door
+  WHERE rol_id = p_rol_id
+    AND status = 'Gepland';
+
+  -- 4. Maak reststuk aan als er genoeg over is
+  IF v_rest_lengte >= v_min_reststuk_cm THEN
+    -- Genereer rolnummer voor reststuk
+    v_nieuw_rolnummer := v_rol.rolnummer || '-REST';
+
+    INSERT INTO rollen (
+      rolnummer, artikelnr, karpi_code, omschrijving,
+      lengte_cm, breedte_cm, oppervlak_m2,
+      kwaliteit_code, kleur_code, zoeksleutel,
+      status, oorsprong_rol_id, reststuk_datum
+    ) VALUES (
+      v_nieuw_rolnummer,
+      v_rol.artikelnr,
+      v_rol.karpi_code,
+      v_rol.omschrijving,
+      v_rest_lengte,
+      v_rol.breedte_cm,
+      ROUND((v_rest_lengte * v_rol.breedte_cm)::NUMERIC / 10000, 2),
+      v_rol.kwaliteit_code,
+      v_rol.kleur_code,
+      v_rol.zoeksleutel,
+      'reststuk',
+      p_rol_id,
+      NOW()
+    )
+    RETURNING id INTO v_reststuk_id;
+
+    -- 5. Originele rol markeren als gesneden (volledig verwerkt)
+    UPDATE rollen
+    SET status = 'gesneden',
+        lengte_cm = CEIL(v_gebruikte_lengte)
+    WHERE id = p_rol_id;
+
+    RETURN QUERY SELECT v_reststuk_id, v_nieuw_rolnummer, v_rest_lengte;
+  ELSE
+    -- Geen bruikbaar reststuk — rol volledig verwerkt
+    UPDATE rollen
+    SET status = 'gesneden'
+    WHERE id = p_rol_id;
+
+    RETURN QUERY SELECT NULL::BIGINT, NULL::TEXT, NULL::INTEGER;
+  END IF;
+END;
+$function$
+
+
+CREATE OR REPLACE FUNCTION public.voltooi_snijplan_rol(p_rol_id bigint, p_gesneden_door text DEFAULT NULL::text, p_override_rest_lengte integer DEFAULT NULL::integer, p_reststukken jsonb DEFAULT NULL::jsonb)
+ RETURNS TABLE(reststuk_id bigint, reststuk_rolnummer text, reststuk_lengte_cm integer)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE
+  v_rol RECORD;
+  v_gebruikte_lengte NUMERIC;
+  v_rest_lengte INTEGER;
+  v_reststuk_id BIGINT;
+  v_reststuk_nr TEXT;
+  v_idx INTEGER;
+  v_created INTEGER;
+  v_rect JSONB;
+  v_rect_breedte INTEGER;
+  v_rect_lengte INTEGER;
+BEGIN
+  SELECT * INTO v_rol FROM rollen WHERE id = p_rol_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Rol % niet gevonden', p_rol_id; END IF;
+
+  -- Markeer alle snijplannen op deze rol als Gesneden
+  UPDATE snijplannen
+  SET status = 'Gesneden',
+      gesneden_datum = CURRENT_DATE,
+      gesneden_op = NOW(),
+      gesneden_door = p_gesneden_door
+  WHERE rol_id = p_rol_id
+    AND status = 'Snijden';
+
+  UPDATE rollen SET status = 'gesneden' WHERE id = p_rol_id;
+
+  -- ---------------------------------------------------------------------
+  -- Nieuwe flow: expliciete lijst van reststuk-rechthoeken
+  -- ---------------------------------------------------------------------
+  IF p_reststukken IS NOT NULL AND jsonb_array_length(p_reststukken) > 0 THEN
+    v_idx := 0;
+    v_created := 0;
+    FOR v_rect IN SELECT * FROM jsonb_array_elements(p_reststukken)
+    LOOP
+      v_idx := v_idx + 1;
+      v_rect_breedte := (v_rect->>'breedte_cm')::INTEGER;
+      v_rect_lengte := (v_rect->>'lengte_cm')::INTEGER;
+
+      -- Harde drempel: min 70x140 cm (kleiner = afval)
+      IF LEAST(v_rect_breedte, v_rect_lengte) < 70
+         OR GREATEST(v_rect_breedte, v_rect_lengte) < 140 THEN
+        CONTINUE;
+      END IF;
+
+      v_reststuk_nr := v_rol.rolnummer || '-R' || v_idx::TEXT;
+
+      INSERT INTO rollen (rolnummer, artikelnr, kwaliteit_code, kleur_code,
+                          lengte_cm, breedte_cm, oppervlak_m2, status,
+                          oorsprong_rol_id, reststuk_datum)
+      VALUES (v_reststuk_nr, v_rol.artikelnr, v_rol.kwaliteit_code, v_rol.kleur_code,
+              v_rect_lengte, v_rect_breedte,
+              ROUND(v_rect_lengte * v_rect_breedte / 10000.0, 2),
+              'beschikbaar', p_rol_id, CURRENT_DATE)
+      RETURNING id INTO v_reststuk_id;
+
+      reststuk_id := v_reststuk_id;
+      reststuk_rolnummer := v_reststuk_nr;
+      reststuk_lengte_cm := v_rect_lengte;
+      v_created := v_created + 1;
+      RETURN NEXT;
+    END LOOP;
+
+    -- Als geen enkele rect kwalificeerde, geef een lege row terug (compat)
+    IF v_created = 0 THEN
+      reststuk_id := NULL;
+      reststuk_rolnummer := NULL;
+      reststuk_lengte_cm := NULL;
+      RETURN NEXT;
+    END IF;
+    RETURN;
+  END IF;
+
+  -- ---------------------------------------------------------------------
+  -- Fallback: oud gedrag (1 end-of-roll reststuk, threshold 100 cm)
+  -- ---------------------------------------------------------------------
+  SELECT COALESCE(MAX(positie_y_cm + CASE WHEN geroteerd THEN lengte_cm ELSE breedte_cm END), 0)
+  INTO v_gebruikte_lengte
+  FROM snijplannen WHERE rol_id = p_rol_id AND status = 'Gesneden';
+
+  IF p_override_rest_lengte IS NOT NULL THEN
+    v_rest_lengte := GREATEST(0, p_override_rest_lengte);
+  ELSE
+    v_rest_lengte := GREATEST(0, v_rol.lengte_cm - CEIL(v_gebruikte_lengte));
+  END IF;
+
+  IF v_rest_lengte >= 100 THEN
+    v_reststuk_nr := v_rol.rolnummer || '-R';
+    INSERT INTO rollen (rolnummer, artikelnr, kwaliteit_code, kleur_code, lengte_cm, breedte_cm,
+                        oppervlak_m2, status, oorsprong_rol_id, reststuk_datum)
+    VALUES (v_reststuk_nr, v_rol.artikelnr, v_rol.kwaliteit_code, v_rol.kleur_code,
+            v_rest_lengte, v_rol.breedte_cm,
+            ROUND(v_rest_lengte * v_rol.breedte_cm / 10000.0, 2),
+            'beschikbaar', p_rol_id, CURRENT_DATE)
+    RETURNING id INTO v_reststuk_id;
+
+    reststuk_id := v_reststuk_id;
+    reststuk_rolnummer := v_reststuk_nr;
+    reststuk_lengte_cm := v_rest_lengte;
+    RETURN NEXT;
+  ELSE
+    reststuk_id := NULL;
+    reststuk_rolnummer := NULL;
+    reststuk_lengte_cm := NULL;
+    RETURN NEXT;
+  END IF;
+END;
+$function$
+
+
+CREATE OR REPLACE FUNCTION public.voltooi_snijplan_rol(p_rol_id bigint, p_gesneden_door text DEFAULT NULL::text, p_override_rest_lengte integer DEFAULT NULL::integer)
+ RETURNS TABLE(reststuk_id bigint, reststuk_rolnummer text, reststuk_lengte_cm integer)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE
+  v_rol RECORD;
+  v_gebruikte_lengte NUMERIC;
+  v_rest_lengte INTEGER;
+  v_reststuk_id BIGINT;
+  v_reststuk_nr TEXT;
+BEGIN
+  SELECT * INTO v_rol FROM rollen WHERE id = p_rol_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Rol % niet gevonden', p_rol_id; END IF;
+
+  -- Markeer alle snijplannen op deze rol als Gesneden
+  UPDATE snijplannen
+  SET status = 'Gesneden',
+      gesneden_datum = CURRENT_DATE,
+      gesneden_op = NOW(),
+      gesneden_door = p_gesneden_door
+  WHERE rol_id = p_rol_id
+    AND status = 'Snijden';
+
+  SELECT COALESCE(MAX(positie_y_cm + CASE WHEN geroteerd THEN lengte_cm ELSE breedte_cm END), 0)
+  INTO v_gebruikte_lengte
+  FROM snijplannen WHERE rol_id = p_rol_id AND status = 'Gesneden';
+
+  IF p_override_rest_lengte IS NOT NULL THEN
+    v_rest_lengte := GREATEST(0, p_override_rest_lengte);
+  ELSE
+    v_rest_lengte := GREATEST(0, v_rol.lengte_cm - CEIL(v_gebruikte_lengte));
+  END IF;
+
+  UPDATE rollen SET status = 'gesneden' WHERE id = p_rol_id;
+
+  IF v_rest_lengte >= 100 THEN
+    v_reststuk_nr := v_rol.rolnummer || '-R';
+    INSERT INTO rollen (rolnummer, artikelnr, kwaliteit_code, kleur_code, lengte_cm, breedte_cm,
+                        oppervlak_m2, status, oorsprong_rol_id, reststuk_datum)
+    VALUES (v_reststuk_nr, v_rol.artikelnr, v_rol.kwaliteit_code, v_rol.kleur_code,
+            v_rest_lengte, v_rol.breedte_cm,
+            ROUND(v_rest_lengte * v_rol.breedte_cm / 10000.0, 2),
+            'beschikbaar', p_rol_id, CURRENT_DATE)
+    RETURNING id INTO v_reststuk_id;
+
+    RETURN QUERY SELECT v_reststuk_id, v_reststuk_nr, v_rest_lengte;
+  ELSE
+    RETURN QUERY SELECT NULL::BIGINT, NULL::TEXT, NULL::INTEGER;
+  END IF;
+END;
+$function$
+
+
 CREATE OR REPLACE FUNCTION public.voltooi_snijplan_rol(p_rol_id bigint, p_gesneden_door text DEFAULT NULL::text, p_override_rest_lengte integer DEFAULT NULL::integer, p_reststukken jsonb DEFAULT NULL::jsonb, p_snijplan_ids bigint[] DEFAULT NULL::bigint[], p_aangebroken_lengte integer DEFAULT NULL::integer)
  RETURNS TABLE(reststuk_id bigint, reststuk_rolnummer text, reststuk_lengte_cm integer)
  LANGUAGE plpgsql
@@ -13716,272 +14434,6 @@ BEGIN
   END IF;
 
   RETURN QUERY SELECT * FROM _reststuk_out;
-END;
-$function$
-
-
-CREATE OR REPLACE FUNCTION public.voltooi_snijplan_rol(p_rol_id bigint, p_gesneden_door text DEFAULT NULL::text)
- RETURNS TABLE(reststuk_id bigint, reststuk_rolnummer text, reststuk_lengte_cm integer)
- LANGUAGE plpgsql
-AS $function$
-DECLARE
-  v_rol RECORD;
-  v_gebruikte_lengte NUMERIC;
-  v_rest_lengte INTEGER;
-  v_nieuw_rolnummer TEXT;
-  v_reststuk_id BIGINT;
-  v_min_reststuk_cm INTEGER := 50; -- minimale lengte om reststuk aan te maken
-BEGIN
-  -- 1. Lock en haal rol op
-  SELECT * INTO v_rol FROM rollen WHERE id = p_rol_id FOR UPDATE;
-
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'Rol % niet gevonden', p_rol_id;
-  END IF;
-
-  IF v_rol.status <> 'in_snijplan' THEN
-    RAISE EXCEPTION 'Rol % heeft status "%" — kan alleen "in_snijplan" rollen voltooien', p_rol_id, v_rol.status;
-  END IF;
-
-  -- 2. Bereken gebruikte lengte op basis van geplaatste snijplannen
-  SELECT COALESCE(MAX(positie_y_cm + breedte_cm), 0)
-  INTO v_gebruikte_lengte
-  FROM snijvoorstel_plaatsingen
-  WHERE rol_id = p_rol_id
-    AND voorstel_id IN (SELECT id FROM snijvoorstellen WHERE status = 'goedgekeurd');
-
-  -- Fallback: bereken uit snijplannen direct
-  IF v_gebruikte_lengte = 0 THEN
-    SELECT COALESCE(MAX(positie_y_cm +
-      CASE WHEN geroteerd THEN lengte_cm ELSE breedte_cm END
-    ), 0)
-    INTO v_gebruikte_lengte
-    FROM snijplannen
-    WHERE rol_id = p_rol_id
-      AND status = 'Gepland';
-  END IF;
-
-  v_rest_lengte := GREATEST(0, v_rol.lengte_cm - CEIL(v_gebruikte_lengte));
-
-  -- 3. Markeer alle geplande snijplannen op deze rol als 'Gesneden'
-  UPDATE snijplannen
-  SET status = 'Gesneden',
-      gesneden_datum = CURRENT_DATE,
-      gesneden_op = NOW(),
-      gesneden_door = p_gesneden_door
-  WHERE rol_id = p_rol_id
-    AND status = 'Gepland';
-
-  -- 4. Maak reststuk aan als er genoeg over is
-  IF v_rest_lengte >= v_min_reststuk_cm THEN
-    -- Genereer rolnummer voor reststuk
-    v_nieuw_rolnummer := v_rol.rolnummer || '-REST';
-
-    INSERT INTO rollen (
-      rolnummer, artikelnr, karpi_code, omschrijving,
-      lengte_cm, breedte_cm, oppervlak_m2,
-      kwaliteit_code, kleur_code, zoeksleutel,
-      status, oorsprong_rol_id, reststuk_datum
-    ) VALUES (
-      v_nieuw_rolnummer,
-      v_rol.artikelnr,
-      v_rol.karpi_code,
-      v_rol.omschrijving,
-      v_rest_lengte,
-      v_rol.breedte_cm,
-      ROUND((v_rest_lengte * v_rol.breedte_cm)::NUMERIC / 10000, 2),
-      v_rol.kwaliteit_code,
-      v_rol.kleur_code,
-      v_rol.zoeksleutel,
-      'reststuk',
-      p_rol_id,
-      NOW()
-    )
-    RETURNING id INTO v_reststuk_id;
-
-    -- 5. Originele rol markeren als gesneden (volledig verwerkt)
-    UPDATE rollen
-    SET status = 'gesneden',
-        lengte_cm = CEIL(v_gebruikte_lengte)
-    WHERE id = p_rol_id;
-
-    RETURN QUERY SELECT v_reststuk_id, v_nieuw_rolnummer, v_rest_lengte;
-  ELSE
-    -- Geen bruikbaar reststuk — rol volledig verwerkt
-    UPDATE rollen
-    SET status = 'gesneden'
-    WHERE id = p_rol_id;
-
-    RETURN QUERY SELECT NULL::BIGINT, NULL::TEXT, NULL::INTEGER;
-  END IF;
-END;
-$function$
-
-
-CREATE OR REPLACE FUNCTION public.voltooi_snijplan_rol(p_rol_id bigint, p_gesneden_door text DEFAULT NULL::text, p_override_rest_lengte integer DEFAULT NULL::integer)
- RETURNS TABLE(reststuk_id bigint, reststuk_rolnummer text, reststuk_lengte_cm integer)
- LANGUAGE plpgsql
- SECURITY DEFINER
-AS $function$
-DECLARE
-  v_rol RECORD;
-  v_gebruikte_lengte NUMERIC;
-  v_rest_lengte INTEGER;
-  v_reststuk_id BIGINT;
-  v_reststuk_nr TEXT;
-BEGIN
-  SELECT * INTO v_rol FROM rollen WHERE id = p_rol_id;
-  IF NOT FOUND THEN RAISE EXCEPTION 'Rol % niet gevonden', p_rol_id; END IF;
-
-  -- Markeer alle snijplannen op deze rol als Gesneden
-  UPDATE snijplannen
-  SET status = 'Gesneden',
-      gesneden_datum = CURRENT_DATE,
-      gesneden_op = NOW(),
-      gesneden_door = p_gesneden_door
-  WHERE rol_id = p_rol_id
-    AND status = 'Snijden';
-
-  SELECT COALESCE(MAX(positie_y_cm + CASE WHEN geroteerd THEN lengte_cm ELSE breedte_cm END), 0)
-  INTO v_gebruikte_lengte
-  FROM snijplannen WHERE rol_id = p_rol_id AND status = 'Gesneden';
-
-  IF p_override_rest_lengte IS NOT NULL THEN
-    v_rest_lengte := GREATEST(0, p_override_rest_lengte);
-  ELSE
-    v_rest_lengte := GREATEST(0, v_rol.lengte_cm - CEIL(v_gebruikte_lengte));
-  END IF;
-
-  UPDATE rollen SET status = 'gesneden' WHERE id = p_rol_id;
-
-  IF v_rest_lengte >= 100 THEN
-    v_reststuk_nr := v_rol.rolnummer || '-R';
-    INSERT INTO rollen (rolnummer, artikelnr, kwaliteit_code, kleur_code, lengte_cm, breedte_cm,
-                        oppervlak_m2, status, oorsprong_rol_id, reststuk_datum)
-    VALUES (v_reststuk_nr, v_rol.artikelnr, v_rol.kwaliteit_code, v_rol.kleur_code,
-            v_rest_lengte, v_rol.breedte_cm,
-            ROUND(v_rest_lengte * v_rol.breedte_cm / 10000.0, 2),
-            'beschikbaar', p_rol_id, CURRENT_DATE)
-    RETURNING id INTO v_reststuk_id;
-
-    RETURN QUERY SELECT v_reststuk_id, v_reststuk_nr, v_rest_lengte;
-  ELSE
-    RETURN QUERY SELECT NULL::BIGINT, NULL::TEXT, NULL::INTEGER;
-  END IF;
-END;
-$function$
-
-
-CREATE OR REPLACE FUNCTION public.voltooi_snijplan_rol(p_rol_id bigint, p_gesneden_door text DEFAULT NULL::text, p_override_rest_lengte integer DEFAULT NULL::integer, p_reststukken jsonb DEFAULT NULL::jsonb)
- RETURNS TABLE(reststuk_id bigint, reststuk_rolnummer text, reststuk_lengte_cm integer)
- LANGUAGE plpgsql
- SECURITY DEFINER
-AS $function$
-DECLARE
-  v_rol RECORD;
-  v_gebruikte_lengte NUMERIC;
-  v_rest_lengte INTEGER;
-  v_reststuk_id BIGINT;
-  v_reststuk_nr TEXT;
-  v_idx INTEGER;
-  v_created INTEGER;
-  v_rect JSONB;
-  v_rect_breedte INTEGER;
-  v_rect_lengte INTEGER;
-BEGIN
-  SELECT * INTO v_rol FROM rollen WHERE id = p_rol_id;
-  IF NOT FOUND THEN RAISE EXCEPTION 'Rol % niet gevonden', p_rol_id; END IF;
-
-  -- Markeer alle snijplannen op deze rol als Gesneden
-  UPDATE snijplannen
-  SET status = 'Gesneden',
-      gesneden_datum = CURRENT_DATE,
-      gesneden_op = NOW(),
-      gesneden_door = p_gesneden_door
-  WHERE rol_id = p_rol_id
-    AND status = 'Snijden';
-
-  UPDATE rollen SET status = 'gesneden' WHERE id = p_rol_id;
-
-  -- ---------------------------------------------------------------------
-  -- Nieuwe flow: expliciete lijst van reststuk-rechthoeken
-  -- ---------------------------------------------------------------------
-  IF p_reststukken IS NOT NULL AND jsonb_array_length(p_reststukken) > 0 THEN
-    v_idx := 0;
-    v_created := 0;
-    FOR v_rect IN SELECT * FROM jsonb_array_elements(p_reststukken)
-    LOOP
-      v_idx := v_idx + 1;
-      v_rect_breedte := (v_rect->>'breedte_cm')::INTEGER;
-      v_rect_lengte := (v_rect->>'lengte_cm')::INTEGER;
-
-      -- Harde drempel: min 70x140 cm (kleiner = afval)
-      IF LEAST(v_rect_breedte, v_rect_lengte) < 70
-         OR GREATEST(v_rect_breedte, v_rect_lengte) < 140 THEN
-        CONTINUE;
-      END IF;
-
-      v_reststuk_nr := v_rol.rolnummer || '-R' || v_idx::TEXT;
-
-      INSERT INTO rollen (rolnummer, artikelnr, kwaliteit_code, kleur_code,
-                          lengte_cm, breedte_cm, oppervlak_m2, status,
-                          oorsprong_rol_id, reststuk_datum)
-      VALUES (v_reststuk_nr, v_rol.artikelnr, v_rol.kwaliteit_code, v_rol.kleur_code,
-              v_rect_lengte, v_rect_breedte,
-              ROUND(v_rect_lengte * v_rect_breedte / 10000.0, 2),
-              'beschikbaar', p_rol_id, CURRENT_DATE)
-      RETURNING id INTO v_reststuk_id;
-
-      reststuk_id := v_reststuk_id;
-      reststuk_rolnummer := v_reststuk_nr;
-      reststuk_lengte_cm := v_rect_lengte;
-      v_created := v_created + 1;
-      RETURN NEXT;
-    END LOOP;
-
-    -- Als geen enkele rect kwalificeerde, geef een lege row terug (compat)
-    IF v_created = 0 THEN
-      reststuk_id := NULL;
-      reststuk_rolnummer := NULL;
-      reststuk_lengte_cm := NULL;
-      RETURN NEXT;
-    END IF;
-    RETURN;
-  END IF;
-
-  -- ---------------------------------------------------------------------
-  -- Fallback: oud gedrag (1 end-of-roll reststuk, threshold 100 cm)
-  -- ---------------------------------------------------------------------
-  SELECT COALESCE(MAX(positie_y_cm + CASE WHEN geroteerd THEN lengte_cm ELSE breedte_cm END), 0)
-  INTO v_gebruikte_lengte
-  FROM snijplannen WHERE rol_id = p_rol_id AND status = 'Gesneden';
-
-  IF p_override_rest_lengte IS NOT NULL THEN
-    v_rest_lengte := GREATEST(0, p_override_rest_lengte);
-  ELSE
-    v_rest_lengte := GREATEST(0, v_rol.lengte_cm - CEIL(v_gebruikte_lengte));
-  END IF;
-
-  IF v_rest_lengte >= 100 THEN
-    v_reststuk_nr := v_rol.rolnummer || '-R';
-    INSERT INTO rollen (rolnummer, artikelnr, kwaliteit_code, kleur_code, lengte_cm, breedte_cm,
-                        oppervlak_m2, status, oorsprong_rol_id, reststuk_datum)
-    VALUES (v_reststuk_nr, v_rol.artikelnr, v_rol.kwaliteit_code, v_rol.kleur_code,
-            v_rest_lengte, v_rol.breedte_cm,
-            ROUND(v_rest_lengte * v_rol.breedte_cm / 10000.0, 2),
-            'beschikbaar', p_rol_id, CURRENT_DATE)
-    RETURNING id INTO v_reststuk_id;
-
-    reststuk_id := v_reststuk_id;
-    reststuk_rolnummer := v_reststuk_nr;
-    reststuk_lengte_cm := v_rest_lengte;
-    RETURN NEXT;
-  ELSE
-    reststuk_id := NULL;
-    reststuk_rolnummer := NULL;
-    reststuk_lengte_cm := NULL;
-    RETURN NEXT;
-  END IF;
 END;
 $function$
 
@@ -14359,6 +14811,117 @@ BEGIN
      AND status <> 'in_snijplan';
 
   RETURN QUERY SELECT v_kwaliteit, v_kleur;
+END;
+$function$
+
+
+CREATE OR REPLACE FUNCTION public.wijzig_inkooporder_regel(p_regel_id bigint, p_besteld numeric DEFAULT NULL::numeric, p_inkoopprijs_eur numeric DEFAULT NULL::numeric, p_vrijgeven boolean DEFAULT false)
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_regel inkooporder_regels%ROWTYPE;
+  v_order_status inkooporder_status;
+  v_geclaimd NUMERIC := 0;
+  v_snijplan_cm INTEGER := 0;
+  v_onder_vloer BOOLEAN := FALSE;
+  v_resterende_claim RECORD;
+BEGIN
+  SELECT * INTO v_regel FROM inkooporder_regels WHERE id = p_regel_id FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Inkooporder-regel % niet gevonden', p_regel_id;
+  END IF;
+  SELECT status INTO v_order_status FROM inkooporders WHERE id = v_regel.inkooporder_id FOR UPDATE;
+  IF v_order_status = 'Geannuleerd' THEN
+    RAISE EXCEPTION 'Inkooporder is geannuleerd — regels niet meer wijzigbaar';
+  END IF;
+
+  IF p_inkoopprijs_eur IS NOT NULL THEN
+    UPDATE inkooporder_regels SET inkoopprijs_eur = p_inkoopprijs_eur WHERE id = p_regel_id;
+  END IF;
+
+  IF p_besteld IS NULL OR p_besteld = v_regel.besteld_m THEN
+    RETURN;
+  END IF;
+
+  IF p_besteld < v_regel.geleverd_m THEN
+    RAISE EXCEPTION 'Besteld (%) kan niet lager dan al geleverd (%)', p_besteld, v_regel.geleverd_m;
+  END IF;
+
+  IF p_besteld < v_regel.besteld_m THEN
+    SELECT COALESCE(SUM(aantal), 0) INTO v_geclaimd
+      FROM order_reserveringen
+     WHERE inkooporder_regel_id = p_regel_id
+       AND bron = 'inkooporder_regel' AND status = 'actief';
+    v_snijplan_cm := COALESCE(v_regel.snijplan_gebruikte_lengte_cm, 0);
+
+    v_onder_vloer :=
+         (v_regel.eenheid = 'stuks' AND p_besteld < v_regel.geleverd_m + v_geclaimd)
+      OR (v_regel.eenheid = 'm'     AND v_snijplan_cm > 0);
+
+    IF v_onder_vloer AND NOT p_vrijgeven THEN
+      RAISE EXCEPTION 'Claim-vloer: op deze regel rusten beloftes (verkooporder-claims: % stuks, snijplanning: % cm). Verlagen vereist expliciet vrijgeven — getroffen orders vallen dan zichtbaar terug naar "Wacht op inkoop".',
+        v_geclaimd, v_snijplan_cm;
+    END IF;
+  END IF;
+
+  UPDATE inkooporder_regels
+     SET besteld_m = p_besteld,
+         te_leveren_m = GREATEST(p_besteld - geleverd_m, 0)
+   WHERE id = p_regel_id;
+
+  IF v_onder_vloer AND p_vrijgeven THEN
+    -- Snijplan-claims op DEZE regel loslaten. Stukken gaan terug naar 'Wacht'
+    -- (trigger snijplan_wacht_naar_snijden normaliseert verder, zelfde patroon
+    -- als mig 445); auto-plan-groep plant ze bij de volgende run opnieuw in —
+    -- werkinstructie: draai "Auto-plan opnieuw" voor de groep na vrijgeven.
+    UPDATE snijplannen
+       SET status = 'Wacht', verwacht_inkooporder_regel_id = NULL
+     WHERE verwacht_inkooporder_regel_id = p_regel_id
+       AND status = 'Wacht op inkoop';
+    UPDATE inkooporder_regels SET snijplan_gebruikte_lengte_cm = 0 WHERE id = p_regel_id;
+
+    -- Verkooporder-claims: herallocateer alle claimende orderregels. De
+    -- allocator ziet de al-verlaagde ruimte en dekt elders — of laat de order
+    -- zichtbaar terugvallen naar 'Wacht op inkoop' (derive_wacht_status).
+    PERFORM release_claims_voor_io_regel(p_regel_id);
+
+    -- release_claims_voor_io_regel delegeert naar herallocateer_orderregel,
+    -- die BEWUST handmatige claims (mig 154, is_handmatig=true) met rust
+    -- laat — correct voor gewone herallocatie, maar hier verdwijnt de BRON
+    -- zelf door een expliciete p_vrijgeven=TRUE-operatoractie. Wat na de
+    -- release nog actief op DEZE regel staat is dus per definitie een
+    -- handmatige claim (live geverifieerd: alle 16 bestaande actieve
+    -- inkooporder_regel-claims zijn is_handmatig=true) — alsnog releasen +
+    -- de getroffen order herwaarderen, zodat de status zichtbaar terugvalt
+    -- i.p.v. een claim te laten hangen op een regel die net verkleind is.
+    FOR v_resterende_claim IN
+      SELECT DISTINCT ors.order_regel_id, ore.order_id
+        FROM order_reserveringen ors
+        JOIN order_regels ore ON ore.id = ors.order_regel_id
+       WHERE ors.inkooporder_regel_id = p_regel_id
+         AND ors.bron = 'inkooporder_regel' AND ors.status = 'actief'
+    LOOP
+      UPDATE order_reserveringen
+         SET status = 'released', updated_at = now()
+       WHERE order_regel_id = v_resterende_claim.order_regel_id
+         AND inkooporder_regel_id = p_regel_id
+         AND bron = 'inkooporder_regel' AND status = 'actief';
+      PERFORM herwaardeer_order_status(v_resterende_claim.order_id);
+    END LOOP;
+
+    -- Defensief: blijven er claims boven de nieuwe ruimte staan (bv. door een
+    -- pad dat de allocator bewust niet loslaat), dan hard falen i.p.v. een
+    -- stille overclaim op een verkleinde regel.
+    IF (SELECT COALESCE(SUM(aantal), 0) FROM order_reserveringen
+         WHERE inkooporder_regel_id = p_regel_id
+           AND bron = 'inkooporder_regel' AND status = 'actief')
+       > GREATEST(p_besteld - v_regel.geleverd_m, 0) THEN
+      RAISE EXCEPTION 'Vrijgeven onvolledig: er blijven claims boven de nieuwe ruimte op deze regel — los ze eerst op via de claim-uitsplitsing op order-detail';
+    END IF;
+  END IF;
+
+  PERFORM herbereken_inkooporder_status(v_regel.inkooporder_id);
 END;
 $function$
 
